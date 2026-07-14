@@ -36,22 +36,20 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 |---|---|
 | `planning` | 새 기능·변경 구현 전 8단계 설계 → docs 정비 → task 생성 |
 
-## 주의: 글로벌 override 와 work 레포 공존 (landmine)
+## 주의: 전역 스킬이 프로젝트 스킬보다 우선한다
 
-Claude Code 는 같은 이름의 스킬이 겹치면 **personal(글로벌 `~/.claude/skills`)이 project(`<repo>/.claude/skills`)를 override** 한다 (공식 문서 skills.md line 112: "personal overrides project").
+Claude Code 는 같은 이름의 스킬이 여러 위치에 겹치면 **개인 전역(`~/.claude/skills`)이 프로젝트(`<repo>/.claude/skills`)보다 우선**한다 (공식 문서 skills.md: "personal overrides project").
 
-즉 이 글로벌 `planning` 코어는 **자체 in-repo `planning` 스킬을 가진 다른 레포를 내 로컬 머신에서 가린다.** 현재 그런 레포:
-
-- 회사 work 레포 — `OCR.API`, `ai-playground-docu-parser`, `cv.ocr.general_inf`, `webtoon-maker-v1` 등. 각자 특화 planning 을 in-repo 로 유지한다.
+즉 이 전역 `planning` 코어는, **자체 `planning` 스킬을 저장소 안에 따로 둔 다른 프로젝트를 내 로컬 머신에서 가린다.**
 
 영향 범위:
 
-- **내 로컬 머신 한정.** 팀원은 이 글로벌 스킬이 없으니 work 레포의 in-repo planning 을 정상 사용한다.
-- 내가 그 work 레포에서 `/planning` 을 부르면 그 레포 특화 대신 이 개인 코어가 뜬다 (오버레이도 없어 도메인 중립으로 동작).
+- **내 로컬 머신 한정.** 다른 사람은 이 전역 스킬이 없으니 각 프로젝트의 자체 planning 을 그대로 쓴다.
+- 내가 그런 프로젝트에서 `/planning` 을 부르면 그 프로젝트 전용 대신 이 개인 코어가 뜬다 (오버레이가 없어 도메인 중립으로 동작).
 
-해결 (그 work 레포에서 실제로 `/planning` 이 필요해질 때):
+해결 (그 프로젝트에서 실제로 `/planning` 이 필요해질 때):
 
-- 그 레포 in-repo planning 을 namespace 로 rename (예: `planning-ocr`) 해 충돌을 없앤다. 단 팀 공용이면 팀원 혼란 주의.
-- `skillOverrides: {"planning": "off"}` 는 그 이름을 통째로 숨길 뿐 project 것을 드러내지 못하므로(fallthrough 없음) 차폐용으로 쓰지 않는다.
+- 그 프로젝트의 자체 planning 을 다른 이름(예: `planning-<프로젝트>`)으로 바꿔 충돌을 없앤다.
+- `skillOverrides: {"planning": "off"}` 는 그 이름을 통째로 숨길 뿐 프로젝트 쪽 스킬을 대신 띄워주지 않으므로 가림막 용도로 쓰지 않는다.
 
-현재는 work 레포가 planning 을 당장 안 쓰므로 방치(accept)하고, 실사용 시점에 위 방법으로 정리한다.
+당장 그런 프로젝트에서 planning 을 쓰지 않으면 그대로 두고, 실제로 필요해질 때 위 방법으로 정리한다.
