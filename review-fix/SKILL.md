@@ -15,8 +15,6 @@ description: |
 PR 에 달린 코드 리뷰 댓글을 분석하고, 필수 → 권장 순으로 코드를 반영한 뒤 commit & push 하고,
 봇 리뷰 스레드를 resolve 해 머지 가능 상태로 만든다.
 
-이 스킬은 **여러 레포가 공유하는 단일 코어**다 (`~/personal/fos-skills/review-fix`, 글로벌 `~/.claude/skills/review-fix` 로 symlink).
-워크플로 개선은 여기 한 곳만 고치면 전 레포에 반영된다.
 review-fix 는 **반응형** 스킬이라 대부분 오버레이가 필요 없다 — 레포 특화는 각 레포 `CLAUDE.md` 를 참조해 동작한다.
 
 ## 레포 오버레이 로딩 (선택 첫 단계)
