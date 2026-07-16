@@ -3,7 +3,7 @@ name: build-with-teams
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json + phase 파일)를 읽어 phase 단위로 팀을 실행한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit + PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 ---
 
-# build-with-teams (공용 코어)
+# build-with-teams
 
 planning 이 만든 task(`index.json` + `phase-*.md`)를 팀 기반 파이프라인으로 실행하는 시스템.
 team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율해 phase 를 순차 실행하고, phase 단위로 atomic commit 을 쌓아 PR 까지 만든다.

@@ -3,7 +3,7 @@ name: planning
 description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크플로우를 수행하는 공용 코어 skill. 구현 가능성 → 기술 스택 → 호출/사용자 흐름 → 인터페이스 → 데이터/스키마 → 코드 구조 → docs 영향 → task 생성 순으로 모호함을 제거하고 의사결정을 기록한다. "/planning", "계획 세워보자", "설계해보자", "plan 세워줘", "기획해줘", "task 파일 만들어줘", "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(도메인 단계·docs 컨벤션·검증)는 레포 오버레이로 주입된다.
 ---
 
-# planning (공용 코어)
+# planning
 
 새 기능이나 변경사항을 구현하기 전, 모호함을 모두 해소하고 문서를 정비한 뒤 실행(build)으로 넘기는 8단계 설계 워크플로.
 
@@ -168,7 +168,7 @@ gh pr list --state open --json number,headRefName,title --jq '.[] | "\(.headRefN
 
 ## 파일
 
-- `SKILL.md` — 이 문서 (공용 코어)
+- `SKILL.md` — 이 문서
 - `task-create.md` — task/phase 작성 + task 검증 일반 명세
 - `scripts/verify-task.sh` — task 자동 검증 5 패턴
 

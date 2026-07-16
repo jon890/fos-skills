@@ -9,7 +9,7 @@
 
 ```
 fos-skills/
-  planning/                 # 구현 전 8단계 설계 워크플로 (공용 코어)
+  planning/                 # 구현 전 8단계 설계 워크플로
     SKILL.md
     task-create.md
     scripts/verify-task.sh

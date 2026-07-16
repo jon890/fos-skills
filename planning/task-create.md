@@ -1,4 +1,4 @@
-# Task 생성 가이드 (공용 코어)
+# Task 생성 가이드
 
 AI 에이전트가 구현 task 를 생성할 때 따르는 일반 규칙이다. `/planning` 후 또는 단순 task 생성 시 참조.
 레포별 검증 명령·레이어 구조·common-pitfalls 경로는 레포 오버레이(`<repo>/.claude/planning-overlay.md`)가 채운다.

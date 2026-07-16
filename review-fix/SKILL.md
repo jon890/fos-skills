@@ -10,7 +10,7 @@ description: |
   레포별 특화(빌드/테스트/lint 명령·커밋 컨벤션·학습 누적 위치·CI 원인 표)는 레포 CLAUDE.md·오버레이로 주입된다.
 ---
 
-# review-fix (공용 코어)
+# review-fix
 
 PR 에 달린 코드 리뷰 댓글을 분석하고, 필수 → 권장 순으로 코드를 반영한 뒤 commit & push 하고,
 봇 리뷰 스레드를 resolve 해 머지 가능 상태로 만든다.
