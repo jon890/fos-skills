@@ -14,6 +14,19 @@ DIR="tasks/$PLAN"
 [ -d "$DIR" ] || { echo "디렉터리 없음: $DIR"; exit 2; }
 ls "$DIR"/phase-*.md >/dev/null 2>&1 || { echo "phase 파일 없음: $DIR"; exit 2; }
 
+# execution profile schema: 신규 provider-neutral field + legacy read compatibility.
+jq -e '
+  .phases
+  | all(
+      ((has("execution_profile") and (.execution_profile | IN("fast", "standard", "deep")))
+       or
+       (has("model") and (.model | IN("haiku", "sonnet", "opus"))))
+      and
+      ((has("execution_profile") and has("model")) | not)
+    )
+' "$DIR/index.json" >/dev/null || \
+  echo "$DIR/index.json — execution_profile/model schema 오류"
+
 # 1-2: "전체" 표현 (파일 범위 부정확)
 grep -nE "전체\s*(수정|변경|적용|교체|리팩토링|삭제)" "$DIR"/phase-*.md
 

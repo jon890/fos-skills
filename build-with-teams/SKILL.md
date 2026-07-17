@@ -124,19 +124,45 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 
 team-lead 는 종료 시 phase 별 특이사항을 누적해 사용자에게 명시 보고하고, 후속이 필요하면 이슈 등록을 제안한다.
 
-## 모델 라우팅 (규모 기반)
+## 실행 등급 라우팅 (공급자 중립)
 
-task 를 읽고 규모를 판정해 팀원 모델을 조정한다.
+task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
+공용 skill과 task에는 실제 모델 ID나 공급자 제품명을 저장하지 않는다.
 
 | 규모 | 조건 | team-lead | critic | executor | code-reviewer | docs-verifier |
 |---|---|:---:|:---:|:---:|:---:|:---:|
-| **소** | 1 phase, 버그·미세 조정 | sonnet | sonnet | sonnet | sonnet | sonnet |
-| **중** | 2-3 phase, 기능 확장·리팩토링 | sonnet | opus | sonnet | sonnet | sonnet |
-| **대** | 4개 이상 phase, 아키텍처·신규 도메인 | opus | opus | sonnet | sonnet | opus |
+| **소** | 1 phase, 버그·미세 조정 | standard | standard | standard | standard | standard |
+| **중** | 2-3 phase, 기능 확장·리팩토링 | standard | deep | standard | standard | standard |
+| **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
 
-executor·code-reviewer 는 모든 규모에서 sonnet 고정. 사용자가 모델을 명시하면 라우팅보다 우선한다.
+executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
+사용자가 현재 실행에 실제 모델을 명시하면 runtime override로 적용하되 task 파일에는 기록하지 않는다.
 
-phase 파일이 모델을 명시할 수 있다: 기계적 작업(git·빌드 검증·파일 삭제)은 `haiku`, 구현 대부분은 `sonnet`, 복잡 알고리즘은 `opus`.
+phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있다.
+기계적 작업은 `fast`, 구현 대부분은 `standard`, 복잡 알고리즘은 `deep`을 사용한다.
+
+### surface별 해석
+
+- Claude surface는 자체 adapter에서 `fast`, `standard`, `deep`을 사용 가능한 Claude 모델에 매핑한다.
+- Codex surface는 설치된 `agent_type` role과 parent session routing을 우선하고 실행 등급을 capability hint로 사용한다.
+- Codex custom agent는 버전 중립성을 위해 `model`과 `model_reasoning_effort`를 기본적으로 생략하고 parent session에서 상속한다.
+- Codex는 role을 먼저 선택하고 spawn prompt에 요청 실행 등급을 전달해 자동 model·reasoning 선택을 유도한다.
+- 사용자가 특정 모델을 요청하거나 runtime이 일회성 override를 지원하는 경우에만 spawn 시점에 모델을 지정한다.
+- 다른 공급자는 같은 세 등급을 해당 runtime adapter에서 매핑한다.
+- surface가 요청 등급을 정확히 지원하지 않으면 가장 가까운 설치 role을 사용하고 실제 선택을 실행 보고에 남긴다.
+
+legacy task의 `model: haiku | sonnet | opus`는 각각 `fast | standard | deep`으로 읽는다.
+legacy field는 호환 입력일 뿐이며 신규 task 생성에는 사용하지 않는다.
+한 phase에 `execution_profile`과 legacy `model`이 함께 있으면 우선순위를 추측하지 않고 `PHASE_BLOCKED: execution profile schema conflict`로 종료한다.
+
+### 선택 우선순위
+
+1. 사용자가 현재 실행에 명시한 실제 모델 override
+2. phase의 `execution_profile`
+3. legacy phase의 `model` alias
+4. task 규모 기반 기본 실행 등급
+
+2~4는 capability 선택 기준이며 실제 모델 ID를 task나 공용 skill에 영속화하지 않는다.
 
 ## 재시도 한도
 

@@ -32,7 +32,7 @@ tasks/
       "number": 1,
       "file": "phase-01.md",
       "title": "phase 제목 (간결)",
-      "model": "sonnet",                  // haiku | sonnet | opus
+      "execution_profile": "standard",     // fast | standard | deep
       "status": "pending"
     }
   ]
@@ -42,22 +42,35 @@ tasks/
 ### 검증 체크리스트
 
 - [ ] `total_phases` == `phases` 배열 길이
-- [ ] 모든 phase 에 `number` / `title` / `file` / `model` / `status` 존재
+- [ ] 모든 phase 에 `number` / `title` / `file` / `execution_profile` / `status` 존재
 - [ ] `number` 가 1 부터 순차 증가
 - [ ] 각 `file` 에 해당하는 `.md` 파일이 실제로 존재
 - [ ] `name` 이 `tasks/{name}/` 디렉터리명과 일치
 
 ---
 
-## Model 라우팅 (토큰 최적화)
+## 실행 등급 라우팅
 
-| 모델 | 용도 |
+task는 특정 모델 공급자 이름을 저장하지 않는다.
+실행 surface가 `execution_profile`을 설치된 모델·role에 매핑한다.
+
+| 실행 등급 | 용도 |
 |---|---|
-| `haiku` | trivial 수정 / 빌드 검증 / 커밋. dead code 정리, 마지막 phase 의 검증·커밋 |
-| `sonnet` | 표준 구현 — 다중 파일 수정·rename·리팩토링·새 컴포넌트·마이그레이션 |
-| `opus` | 새 아키텍처 설계 / 복잡 알고리즘 — phase 안에 신규 도메인 핵심 설계가 있을 때만 |
+| `fast` | 기계적 수정, 빌드 검증, 잔재 정리 |
+| `standard` | 표준 구현, 다중 파일 수정, rename, 리팩토링, 신규 컴포넌트, migration |
+| `deep` | 새 아키텍처 설계, 복잡 알고리즘, 장기 trade-off 판단 |
 
-**기계적 작업은 opus 금지**. rename / 이동 / 경로 수정은 파일 수가 많아도 sonnet 으로 충분.
+기계적 작업은 `deep`을 사용하지 않는다.
+rename, 이동, 경로 수정은 파일 수와 무관하게 `standard`면 충분하다.
+
+legacy task의 `model`은 read 시에만 다음처럼 해석한다.
+
+- `haiku` → `fast`
+- `sonnet` → `standard`
+- `opus` → `deep`
+
+신규 task와 수정 task는 legacy `model`을 새로 쓰지 않는다.
+한 phase에 `execution_profile`과 `model`이 함께 있으면 해석하지 않고 schema 오류로 차단한다.
 
 ---
 
@@ -74,7 +87,7 @@ tasks/
 ```markdown
 # Phase NN — {제목}
 
-**Model**: sonnet
+**Execution profile**: standard
 **Status**: pending
 
 ---
@@ -185,7 +198,7 @@ scripts/verify-task.sh plan{N}-{slug}
 
 | Phase | 제목 | 모델 | 내용 |
 |---|---|---|---|
-| 마지막 | 통합 검증 + 잔재 grep | `haiku` | 레포의 lint/type/build/test, 잔재 grep, dead code 정리 |
+| 마지막 | 통합 검증 + 잔재 grep | `fast` | 레포의 lint/type/build/test, 잔재 grep, dead code 정리 |
 
 마지막 phase 에 **`index.json` 의 status="completed" 마킹** 명시.
 
