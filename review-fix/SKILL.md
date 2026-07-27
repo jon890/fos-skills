@@ -327,7 +327,11 @@ ADR 급 결정은 review-fix 가 자의로 작성하지 않고 `AskUserQuestion`
 
 학습 commit 은 같은 fix PR 에 추가 commit 으로 흡수한다(1 호출 = 1 PR). main 직접 commit 은 다른 작업과 섞일 위험이 있어 권장하지 않는다.
 
-### 10단계: 결과 보고
+### 10단계: 실행 기록과 결과 보고
+
+보고 전에 `docs/retrospectives/RUNS.md` 에 한 줄 남긴다.
+스킬은 `review-fix`, 대상은 PR 번호, FIX 열에는 반영한 리뷰 항목 수, 개입 열에는 사용자에게 되물은 횟수를 적는다.
+중단된 실행도 기록한다. 형식은 `~/.claude/skills/build-with-teams/references/run-record.md` 를 따른다.
 
 ```
 ## 완료 — PR #<N>

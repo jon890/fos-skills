@@ -362,14 +362,17 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
    - 기본 checkout 이나 다른 안전한 cwd 로 옮긴 뒤 `git worktree remove <절대경로>` 를 실행한다.
    - `git worktree list` 로 제거를 확인한다.
    - PR 브랜치는 유지한다. 브랜치 삭제는 머지 후 사용자 요청이 있을 때만 한다.
-8. 특이사항과 신규 노하우를 모아 사용자에게 보고한다.
+8. **실행 기록 한 줄 추가** — `docs/retrospectives/RUNS.md` 에 이번 실행의 결과를 남긴다.
+   REVISE·FIX_NEEDED·docs-verifier 판정 횟수와 사용자 개입 횟수를 적는다.
+   중단된 실행도 기록한다. 형식은 [`references/run-record.md`](references/run-record.md) 를 따른다.
+9. 특이사항과 신규 노하우를 모아 사용자에게 보고한다.
    보고 첫 줄에 **PR 번호와 리뷰 반영 명령**을 적는다.
    worktree 를 정리한 뒤라 cwd 브랜치가 `main` 이어서, 후속 스킬이 PR 을 자동으로 찾지 못하기 때문이다.
 
    ```
    PR #<번호> 생성 완료 — 리뷰 반영은 /review-fix <번호>
    ```
-9. 사용자가 PR 을 머지하면 완료 상태가 main 에 자동 반영된다. main 후속 작업 0개.
+10. 사용자가 PR 을 머지하면 완료 상태가 main 에 자동 반영된다. main 후속 작업 0개.
 
 ## worktree 기반 격리 실행
 

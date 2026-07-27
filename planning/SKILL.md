@@ -166,7 +166,10 @@ task 파일을 만든 직후, 커밋하기 전에 세 가지를 순서대로 한
 5. **브랜치를 확인한다** — 오버레이 정책을 따르고, 기본은 `plan{N}-slug` 브랜치다.
 6. plan별로 커밋한다 — 관심사를 분리하고, 오버레이에 규칙이 있으면 그쪽을 우선한다.
 7. plan별로 push 한다.
-8. 사용자에게 plan 순서와 plan별 실행 명령을 보고한다 (형식은 오버레이).
+8. **실행 기록 한 줄 추가** — `docs/retrospectives/RUNS.md` 에 이번 planning 결과를 남긴다.
+   스킬은 `planning`, 대상은 plan 이름, 개입 열에는 사용자에게 되물은 횟수를 적는다.
+   중단된 planning 도 기록한다. 형식은 `~/.claude/skills/build-with-teams/references/run-record.md` 를 따른다.
+9. 사용자에게 plan 순서와 plan별 실행 명령을 보고한다 (형식은 오버레이).
 
 **실제 phase 실행은 사용자가 실행 명령을 호출할 때 시작.** planning 은 task 생성과 push 까지.
 보고에는 각 plan 의 **브랜치 이름**을 함께 적는다 — 실행 스킬이 그 브랜치에서 worktree 를 분기하므로, 이름이 곧 핸드오프 인자다.
