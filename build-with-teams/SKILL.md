@@ -142,6 +142,7 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 | **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
+planning 분할 게이트를 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 ledger에 남은 plan이므로 "대"로 다룬다.
 사용자가 현재 실행에 실제 모델을 명시하면 runtime override로 적용하되 task 파일에는 기록하지 않는다.
 
 phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있다.
@@ -279,7 +280,7 @@ docs 불일치를 더 일찍 잡아야 하면 별도 사전 pass 를 만들지 �
 
 1. 설계 결정(ADR 등) 위반 여부.
 2. 레이어·코딩 규칙 준수 (레포 `CLAUDE.md` 참조).
-3. docs 업데이트 필요 여부, 의사결정 의도 보존 여부.
+3. docs 업데이트 필요 여부, 의사결정 의도 보존 여부. planning 이 관리하는 필수 문서(`prd`·`flow`·`code-architecture`·`data-schema`·`adr`)와 오버레이 추가 문서가 최종 코드와 맞는지 본다.
 4. **문서 부패 검증**: 코드에서 제거·변경된 기능이 docs 에 dead reference 로 남아 있는지 (`grep -rn` 로 검출).
 
 docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하면 SKILL 은 위임만 하고 항목을 반복하지 않는다.
