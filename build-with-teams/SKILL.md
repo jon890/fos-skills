@@ -185,7 +185,7 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
 
 ### 1. 팀 생성
 
-critic·docs-verifier 를 `run_in_background: true` 로 스폰해 대기시킨다 (self-shutdown 패턴이 있으면 검사 시점에 새로 스폰하는 게 안전).
+critic 을 `run_in_background: true` 로 스폰한다. code-reviewer·docs-verifier 는 미리 대기시키지 않고 7·8단계 검사 시점에 스폰한다 — self-shutdown 패턴 때문에 오래 대기시킨 팀원은 어차피 재스폰해야 한다.
 스폰 직후 "정식 팀원 스폰 규칙" 의 등록 검증을 통과해야 다음 단계로 넘어간다.
 
 ### 2. task 파악
@@ -260,7 +260,10 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 
 - **검사 범위**: executor 가 변경한 파일만 (`git diff --name-only` 기준).
 - **검사 항목은 인라인하지 않는다** — 오버레이가 지정한 common-pitfalls 를 라우터로 골라 grep 점검하도록 지시한다.
-- **비자명 설계 결정 첨부**: plan 의 의도된 raw 패턴·helper 우회 사유·scope 외 placeholder 를 1-2줄 요약해 첨부한다. 없으면 reviewer 가 정상 설계를 false positive 로 올린다.
+- **전부 보고 지시**: 심각도로 자체 필터링하지 말고 발견한 것을 전부 올리라고 지시한다. "중대한 것만" · "보수적으로" 같은 지시는 문자 그대로 따라 실제 결함 보고까지 줄인다.
+- **설계 맥락 첨부 (판정 참고용)**: plan 의 의도된 raw 패턴·helper 우회 사유·scope 외 placeholder 를 1-2줄 요약해 첨부한다. reviewer 가 보고를 생략할 근거가 아니라 team-lead 가 분류할 때 쓰는 자료다.
+
+**필터는 team-lead 의 별도 패스** — reviewer 보고 전체를 받아 (a) 실제 결함, (b) 의도된 설계, (c) 범위 외 후속으로 분류하고 (a) 만 `FIX_NEEDED` 로 되돌린다. (b)·(c) 는 폐기하지 말고 특이사항 4종에 합쳐 보고한다.
 
 판정: **PASS** → 8단계. **FIX_NEEDED** → executor 재투입 후 재검사 (한도 2회).
 
@@ -269,10 +272,9 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 
 ### 8. docs-verifier 검증
 
-모든 phase commit 후 code-reviewer와 docs-verifier 사전 검토를 병렬로 시작할 수 있다.
-사전 검토는 코드와 문서의 불일치를 일찍 찾기 위한 참고용 결과이며 최종 승인을 뜻하지 않는다.
-전체 구현에 대한 code-reviewer PASS와 review fix 완료 후, docs-verifier가 최종 HEAD를 다시 읽고 누적 코드와 문서의 정합성을 판정한다 (self-shutdown 시 재스폰 + 즉시 지시).
-phase마다 docs-verifier를 호출하지 않는다. 검증 관점:
+code-reviewer PASS 와 review fix 가 끝난 뒤 docs-verifier 를 스폰해 최종 HEAD 기준으로 **한 번만** 정합성을 판정한다 (self-shutdown 시 재스폰 + 즉시 지시).
+phase마다 호출하거나 사전 검토·최종 검증으로 나눠 두 번 돌리지 않는다 — 같은 diff 를 두 번 읽는 비용만 늘고 유효한 판정은 최종 HEAD 것뿐이다.
+docs 불일치를 더 일찍 잡아야 하면 별도 사전 pass 를 만들지 말고 7단계 code-reviewer 지시에 docs 축을 얹는다. 검증 관점:
 
 1. 설계 결정(ADR 등) 위반 여부.
 2. 레이어·코딩 규칙 준수 (레포 `CLAUDE.md` 참조).
@@ -324,8 +326,8 @@ executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase
     → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
     → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
     → [모든 executor 실행 — phase 단위 spawn·검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
-    → [누적 diff code-reviewer 검사 + docs-verifier 사전 검토 병렬] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
-    → [code-reviewer PASS 후 최종 HEAD docs-verifier 재검증] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 전체 재검증 (한도 2회)
+    → [누적 diff code-reviewer 검사 — 전부 보고 후 team-lead 필터] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
+    → [code-reviewer PASS 후 최종 HEAD docs-verifier 검증 1회] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
     → [통합 검증 — 실패 시 plan 범위 내/외 분기]
     → [team-lead 일괄 push (완료 마킹은 PR 브랜치 안)]
     → [PR 생성·갱신]
