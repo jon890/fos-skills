@@ -150,13 +150,9 @@ phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있
 
 ### surface별 해석
 
-- Claude surface는 자체 adapter에서 `fast`, `standard`, `deep`을 사용 가능한 Claude 모델에 매핑한다.
-- Codex surface는 설치된 `agent_type` role과 parent session routing을 우선하고 실행 등급을 capability hint로 사용한다.
-- Codex custom agent는 버전 중립성을 위해 `model`과 `model_reasoning_effort`를 기본적으로 생략하고 parent session에서 상속한다.
-- Codex는 role을 먼저 선택하고 spawn prompt에 요청 실행 등급을 전달해 자동 model·reasoning 선택을 유도한다.
-- 사용자가 특정 모델을 요청하거나 runtime이 일회성 override를 지원하는 경우에만 spawn 시점에 모델을 지정한다.
-- 다른 공급자는 같은 세 등급을 해당 runtime adapter에서 매핑한다.
-- surface가 요청 등급을 정확히 지원하지 않으면 가장 가까운 설치 role을 사용하고 실제 선택을 실행 보고에 남긴다.
+- 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다. 정확히 맞는 등급이 없으면 가장 가까운 role을 쓰고 실제 선택을 실행 보고에 남긴다.
+- 모델·reasoning 파라미터는 기본적으로 지정하지 않고 parent session에서 상속한다 — 특정 공급자 버전에 묶이지 않기 위해서다.
+- 사용자가 특정 모델을 요청하거나 runtime이 일회성 override를 지원할 때만 spawn 시점에 모델을 지정한다.
 
 legacy task의 `model: haiku | sonnet | opus`는 각각 `fast | standard | deep`으로 읽는다.
 legacy field는 호환 입력일 뿐이며 신규 task 생성에는 사용하지 않는다.
