@@ -131,8 +131,11 @@ git add <lockfile>
 처리 후 conflict 마커 0건 확인 + 레포 CLAUDE.md 검증 명령으로 빌드 확인:
 
 ```bash
-grep -rE "^(<<<<<<<|=======|>>>>>>>)" $(git diff --name-only --diff-filter=U) ; echo "exit=$?"   # exit 1 이면 OK
+git grep -nE "^(<<<<<<<|=======|>>>>>>>)" -- . ; echo "exit=$?"   # exit 1 이면 마커 0건 = OK
 ```
+
+> 미해결 파일 목록(`--diff-filter=U`)을 `grep` 인자로 넘기면, 해결이 끝나 목록이 비었을 때
+> 인자 없는 재귀 grep 으로 의미가 바뀐다. 추적 파일 전체를 보는 `git grep` 이 안전하다.
 
 conflict 해결 결과는 commit 전에 `AskUserQuestion` 으로 confirm 한다(충돌 파일별 1줄 요약 노출).
 **머지/rebase commit 은 review fix commit 과 별도로 둔다** — 회귀 시 분리 revert 가능. base 동기화를 먼저 push 한 후 fix 를 진행한다.
