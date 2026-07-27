@@ -58,23 +58,14 @@ for f in $(git ls-files '*.md' 2>/dev/null); do
   done
 done
 
-# 한국어 정책 위반 — 규칙 문서에만 적어 두면 지켜지지 않아 실행 가능한 검사로 둔다
-#   금지어 목록의 단일 소스는 ~/.claude/rules/korean-style.md 매핑 표다.
-for f in $(git ls-files '*.md' 2>/dev/null); do
-  awk -v F="$f" '
-    /^```/ { c = !c; next } c { next }
-    {
-      line = $0
-      gsub(/`[^`]*`/, "", line)                    # 코드 스팬 제외
-      split("게이트 매트릭스 트리아지 베이스라인 스파이크 카나리 클램프 폭주 강등 오살 외과적", ban, " ")
-      for (i in ban)
-        if (index(line, ban[i]) > 0)
-          print F ":" NR ": 금지어 \"" ban[i] "\" — korean-style 매핑 표 참조"
-      if (line ~ / \+ /)
-        print F ":" NR ": 인라인 + 연결 — 쉼표·와/과 또는 목록으로"
-    }
-  ' "$f"
-done
+# 한국어 표기 정책 — 공용 검사기에 위임한다.
+#   같은 검사기를 편집 직후 hook 도 호출해, 작성 시점과 감사 시점이 같은 기준을 쓴다.
+#   검사기나 규칙 파일이 없는 환경(팀원 등)에서는 이 항목만 건너뛰고 나머지는 계속 검사한다.
+STYLE_CHECK="${KOREAN_STYLE_CHECK:-$HOME/.claude/scripts/korean-style-check.sh}"
+if [ -x "$STYLE_CHECK" ]; then
+  # shellcheck disable=SC2046
+  "$STYLE_CHECK" $(git ls-files '*.md' 2>/dev/null)
+fi
 
 # 문체 정적 패턴 — 코드 블록과 코드 스팬(`...`)은 렌더 대상이 아니므로 제외한다
 for f in $(git ls-files '*.md' 2>/dev/null); do
