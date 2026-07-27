@@ -24,6 +24,40 @@ if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
   done
 fi
 
+# 마크다운 문법 깨짐 — 렌더가 어긋나는 결정적 오류만 본다
+for f in $(git ls-files '*.md' 2>/dev/null); do
+  awk -v F="$f" '
+    # 코드 블록 안은 렌더 대상이 아니다 — 셸 주석(#)을 헤딩으로 오인하지 않도록 건너뛴다
+    /^```/ { fence++; in_code = !in_code; next }
+    in_code { next }
+    # 구분선은 열 수 비교 대상이 아니지만 표를 끊지도 않는다
+    /^[[:space:]]*\|[[:space:]]*:?-/ { next }
+    # 표 행의 열 수가 헤더와 다르면 셀이 밀려 렌더된다
+    /^[[:space:]]*\|/ {
+      n = gsub(/\|/, "|")
+      if (tbl == 0) { tbl = 1; cols = n }
+      else if (n != cols) print F ":" NR ": 표 열 수 불일치 (헤더 " cols-1 "칸, 이 행 " n-1 "칸)"
+      next
+    }
+    { tbl = 0 }
+    # 헤딩 레벨 건너뛰기 (h2 다음 h4 등)
+    /^#+ / {
+      lvl = index($0, " ") - 1
+      if (prev > 0 && lvl > prev + 1) print F ":" NR ": 헤딩 레벨 건너뜀 (h" prev " → h" lvl ")"
+      prev = lvl
+    }
+    END { if (fence % 2 != 0) print F ": 코드 펜스 짝이 안 맞음 (``` " fence "개)" }
+  ' "$f"
+
+  # 상대 링크가 실제 파일을 가리키는가
+  grep -oE '\]\([^)#][^)]*\)' "$f" 2>/dev/null | tr -d '()]' | while read -r target; do
+    case "$target" in
+      http*|mailto:*|"") continue ;;
+    esac
+    [ -e "$(dirname "$f")/${target%%#*}" ] || echo "$f: 깨진 링크 → $target"
+  done
+done
+
 # 문체 정적 패턴 — 코드 블록과 코드 스팬(`...`)은 렌더 대상이 아니므로 제외한다
 for f in $(git ls-files '*.md' 2>/dev/null); do
   awk -v F="$f" '
