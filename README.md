@@ -41,7 +41,8 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 
 ## 주의: 전역 스킬이 프로젝트 스킬보다 우선한다
 
-Claude Code 는 같은 이름의 스킬이 여러 위치에 겹치면 **개인 전역(`~/.claude/skills`)이 프로젝트(`<repo>/.claude/skills`)보다 우선**한다 (공식 문서 skills.md: "personal overrides project").
+Claude Code 는 같은 이름의 스킬이 여러 위치에 겹치면 **개인 전역(`~/.claude/skills`)이 프로젝트(`<repo>/.claude/skills`)보다 우선**한다.
+공식 문서 `skills.md` 의 "personal overrides project" 규칙이다.
 
 즉 이 전역 `planning` 코어는, **자체 `planning` 스킬을 저장소 안에 따로 둔 다른 프로젝트를 내 로컬 머신에서 가린다.**
 

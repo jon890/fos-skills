@@ -265,7 +265,8 @@ reply 원칙: 커밋 해시 명시, 지적 → 해결책 간결 기술, 건너�
 > - **재트리거 토큰**: `/review`, `@claude`, `@github-actions`, `@dependabot` 등 봇 워크플로 `if:` 조건이 substring 매칭하는 키워드.
 >   봇을 지칭해야 하면 백틱 코드 fence(`` `@claude` ``) 또는 평문("Claude bot")으로.
 >   (실사례: reply body 가 `## /review 반영 완료` 로 시작 → `issue_comment` 트리거 발동.)
-> - **GitHub auto-link**: `#숫자`, `GH-숫자`, `owner/repo#숫자` — 리뷰 항목 번호(예: "🟡 #1 반영")가 실재 issue/PR 로 cross-ref 되어 무관한 PR timeline 에 알림 발생.
+> - **GitHub auto-link**: `#숫자`, `GH-숫자`, `owner/repo#숫자` 는 자동으로 링크된다.
+>   리뷰 항목 번호(예: "🟡 #1 반영")가 실제 issue·PR 로 연결돼 무관한 PR timeline 에 알림이 간다.
 >   의도된 PR 참조가 아니면 백틱으로 감싼다.
 >
 > reply 등록 직전 grep 으로 검출한다:

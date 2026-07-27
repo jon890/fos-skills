@@ -178,7 +178,8 @@ AI 가 임의로 자동 수정하지 않고, 위반은 질문 도구로 확인�
 도메인 의존이라 grep 검출 불가. task 작성 시 사람 (AI) 이 직접 self-check.
 
 - **1-1 수치 추측**: "약 30개" / "100줄" 같은 수치가 실측 명령 결과인지 확인. `git diff --stat` 등 실측 명령을 plan 에 인용.
-- **1-3 이전 plan / main 커밋 상호작용**: `git log origin/main --oneline -20 -- <scope>/` 결과 중 plan 범위와 겹치는 변경이 있는지, 있다면 "어느 쪽이 final" 명시.
+- **1-3 이전 plan·main 커밋과의 상호작용**: `git log origin/main --oneline -20 -- <scope>/` 결과에 plan 범위와 겹치는 변경이 있는지 본다.
+  겹치면 어느 쪽이 최종인지 명시한다.
 - **1-6 외부 상태 gate**: PR / 배포 / push 단계 앞에 상태 확인 명령이 있는지.
 - **1-7 4면 가드**: load-bearing 불변식 도입 시 관련 계층(예: Migration/Repository/Mapper/UI) 모두 가드 명시.
 

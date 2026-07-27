@@ -3,7 +3,8 @@
 **역할**: 실행 프롬프트 작성자. 이 대화를 전혀 못 본 executor 가 읽는다고 가정하는 사람.
 **통과시키지 않는 것**: 읽는 사람이 되물어야 실행할 수 있는 phase. "여기서 정한 대로" 같은 대화 의존 표현.
 
-`tasks/plan{N}-<kebab-slug>/` 아래 `index.json`, `phase-*.md` 를 만든다. **상세 규칙·자체 검토·task 검증 절차는 `task-create.md`** 를 읽고 따른다.
+`tasks/plan{N}-<kebab-slug>/` 아래 `index.json`, `phase-*.md` 를 만든다.
+**상세 규칙·자체 검토·task 검증 절차는 `task-create.md`** 를 읽고 따른다.
 
 ## 필수 산출물
 
