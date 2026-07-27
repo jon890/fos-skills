@@ -142,7 +142,7 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 | **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
-planning 분할 점검를 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 ledger에 남은 plan이므로 "대"로 다룬다.
+planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
 사용자가 현재 실행에 실제 모델을 명시하면 runtime override로 적용하되 task 파일에는 기록하지 않는다.
 
 phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있다.

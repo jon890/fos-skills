@@ -16,11 +16,11 @@ if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
     diff <(echo "$BODY") <(echo "$INDEX") | sed 's/^/  /'
   fi
 
-  # ADR bloat — 30줄 초과는 기능 명세로 변질됐는지 검토 신호
+  # ADR 과대화 — 30줄 초과는 기능 명세로 변질됐는지 검토 신호
   for f in "$ADR_DIR"/*.md; do
     [ -f "$f" ] || continue
     size=$(wc -l < "$f" | tr -d ' ')
-    [ "$size" -gt 30 ] && echo "BLOAT: $f ($size 줄 > 30) — 슬림화 검토"
+    [ "$size" -gt 30 ] && echo "과대화: $f ($size 줄 > 30) — 슬림화 검토"
   done
 fi
 

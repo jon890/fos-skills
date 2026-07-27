@@ -182,7 +182,7 @@ AI 가 임의로 자동 수정하지 않고, 위반은 질문 도구로 확인�
 - **1-6 외부 상태 gate**: PR / 배포 / push 단계 앞에 상태 확인 명령이 있는지.
 - **1-7 4면 가드**: load-bearing 불변식 도입 시 관련 계층(예: Migration/Repository/Mapper/UI) 모두 가드 명시.
 
-### self-review (제출 전 fresh eyes)
+### 자체 검토 (제출 전 새로운 눈으로)
 
 위 자동검증·critic pitfalls 와 별개로, task 전체를 새로운 눈으로 한 번 훑는다.
 
