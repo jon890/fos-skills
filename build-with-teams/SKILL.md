@@ -1,11 +1,11 @@
 ---
 name: build-with-teams
-description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json + phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit + PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
+description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 ---
 
 # build-with-teams
 
-planning 이 만든 task(`index.json` + `phase-*.md`)를 팀 기반 파이프라인으로 실행하는 시스템.
+planning 이 만든 task(`index.json`, `phase-*.md`)를 팀 기반 파이프라인으로 실행하는 시스템.
 team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율해 phase 를 순차 실행하고, phase 단위로 atomic commit 을 쌓아 PR 까지 만든다.
 
 ## 레포 오버레이 로딩 (첫 단계)
@@ -17,7 +17,7 @@ team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율�
     - **통합 검증 명령** — lint/타입검사/테스트/빌드 명령 (레포 CLAUDE.md 에 있으면 그쪽 참조).
     - **브랜치 규칙** — 작업 브랜치 이름 형식, planning 이 브랜치를 미리 만드는지 여부, worktree 루트 경로.
     - **에이전트 이름** — executor·docs-verifier 로 쓸 전용 에이전트 (레포마다 다름).
-    - **task 스키마 세부** — `index.json` 필드·phase 파일 규격 (planning 의 task-create 규격 + 레포 변형).
+    - **task 스키마 세부** — `index.json` 필드·phase 파일 규격 (planning 의 task-create 규격과 레포 변형).
     - **common-pitfalls 경로** — critic·code-reviewer 가 사전 해소 점검할 패턴 파일 위치.
     - **커밋·PR 컨벤션** — 커밋 메시지 형식, PR 제목 형식, 노하우 누적 위치.
     - **환경 setup** — worktree 생성 후 의존성 설치·환경 파일 준비 절차.
@@ -27,7 +27,7 @@ team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율�
 
 ## 핵심 원칙
 
-1. **docs-first**: docs 반영 + 커밋 → task 생성 → 실행. 순서 위반 금지.
+1. **docs-first**: docs 반영과 커밋 → task 생성 → 실행. 순서 위반 금지.
 2. **가시적 협업**: 백그라운드 스크립트 대신 에이전트 팀이 각 단계를 명시적으로 수행한다.
 3. **단독 결정 금지**: 분기점에서 자의적으로 결정하지 말고 구조화 질문 도구(Claude Code 는 `AskUserQuestion`)로 사용자에게 옵션을 제시한다.
 4. **plan 1개 = PR 1개**: 한 실행은 정확히 하나의 plan만 다루고 그 plan의 단일 PR로 끝낸다. 여러 plan을 한 브랜치·PR에 합치거나 한 plan을 여러 PR로 쪼개지 않는다.
@@ -38,7 +38,7 @@ team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율�
 
 plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검증을 수행한다. 하나라도 걸리면 사용자에게 알리고 실행을 차단한다 — 사용자 확인 전에는 진행하지 않는다.
 
-1. **plan 브랜치 + task 존재** — 원격 `plan{N}-<slug>` 브랜치가 있는지, 그 브랜치에 task 디렉터리(`index.json`)가 있는지 본다. 있으면 완료 상태 필드를 확인한다.
+1. **plan 브랜치와 task 존재** — 원격 `plan{N}-<slug>` 브랜치가 있는지, 그 브랜치에 task 디렉터리(`index.json`)가 있는지 본다. 있으면 완료 상태 필드를 확인한다.
    - **브랜치 부재** → planning 을 먼저 호출할지 사용자에게 확인.
    - **브랜치는 있는데 task 부재** → planning 이 중단됐거나 push 가 안 된 상태다. planning 재호출이 아니라 **그 브랜치의 상태를 사용자에게 보여주고 결정**을 받는다.
    - 완료 상태 → 아래 4번(정합 검증)으로.
@@ -63,9 +63,9 @@ team-lead 가 task 를 읽고 규모를 판정한 직후, 첫 작업(worktree �
 
 | 옵션 | 설명 | 권장 상황 |
 |---|---|---|
-| **A. 정식 팀 흐름** | critic + executor + code-reviewer + docs-verifier 모두 spawn | 대 규모 (4개 이상 phase / 아키텍처 / 스키마 대규모 / 신규 도메인) |
-| **B. 사후 검수만** | team-lead 직접 처리 후 완료 시 code-reviewer + docs-verifier 만 spawn | 중 규모 (2-3 phase / 기존 기능 확장) |
-| **C. team-lead 직접 처리** | spawn 없음, 모든 단계 team-lead 가 수행 | 소 규모 (1 phase / 버그 / 미세 조정) + 사용자 명시 효율 우선 |
+| **A. 정식 팀 흐름** | critic, executor, code-reviewer, docs-verifier 모두 spawn | 대 규모 (4개 이상 phase / 아키텍처 / 스키마 대규모 / 신규 도메인) |
+| **B. 사후 검수만** | team-lead 직접 처리 후 완료 시 code-reviewer, docs-verifier 만 spawn | 중 규모 (2-3 phase / 기존 기능 확장) |
+| **C. team-lead 직접 처리** | spawn 없음, 모든 단계 team-lead 가 수행 | 소 규모 (1 phase / 버그 / 미세 조정), 사용자 명시 효율 우선 |
 
 기본 권장은 규모 기반(소 → C, 중 → B, 대 → A). "이전 세션이 그랬으니까" 같은 자의적 판단은 하지 않고 **매 호출마다 새로 질문**한다 (사용자가 "앞으로도 X 로" 라고 명시했으면 그 결정을 따른다).
 
@@ -73,7 +73,7 @@ team-lead 가 task 를 읽고 규모를 판정한 직후, 첫 작업(worktree �
 
 ## 분기점 단독 결정 금지 (일반 가드)
 
-위 모드 점검 외에도 작업 도중 **2개 이상 옵션 사이에서 결정해야 하는 상황**이면 자의적으로 진행하지 말고 즉시 옵션 + 트레이드오프를 질문한다.
+위 모드 점검 외에도 작업 도중 **2개 이상 옵션 사이에서 결정해야 하는 상황**이면 자의적으로 진행하지 말고 즉시 옵션과 트레이드오프를 질문한다.
 
 - spec 충실도 (정확히 따를지 vs 일부 보류)
 - scope 변경 (executor 가 task 외 변경 발견)
@@ -105,7 +105,7 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 
 팀원(critic·executor·code-reviewer·docs-verifier)을 스폰·통신할 때 실측 사고로 굳어진 가드가 있다. 각 가드를 무시하면 사후 검수 비용이 재스폰·재검증보다 훨씬 크므로, 아래 요약만 보지 말고 스폰 전 상세를 반드시 읽는다.
 
-- **정식 팀원 스폰**: `team_name`+`name` 지정해 스폰한다. 일회성 호출은 팀 컨텍스트 밖이라 이후 `SendMessage` 협업이 끊긴다.
+- **정식 팀원 스폰**: `team_name` 과 `name` 을 지정해 스폰한다. 일회성 호출은 팀 컨텍스트 밖이라 이후 `SendMessage` 협업이 끊긴다.
 - **worktree 절대경로**: 팀원에게 주는 파일 참조는 상대경로가 아니라 worktree 절대경로로 준다. 상대경로는 main 의 구버전 파일을 가리킬 수 있다.
 - **SendMessage 회신 강제**: 자기 화면 출력만 하고 종료하면 team-lead 에 결과가 안 닿는다. 스폰 프롬프트에 회신 의무를 명시한다.
 - **자발적 실행 방지**: team-lead 지시 전 팀원이 먼저 실행·검증을 시작하면 점검 시점 정합성이 깨진다.
@@ -188,17 +188,17 @@ critic 을 `run_in_background: true` 로 스폰한다. code-reviewer·docs-verif
 
 ### 2. task 파악
 
-team-lead 가 task(`index.json` + `phase-*.md`)와 관련 docs·`CLAUDE.md`·오버레이를 읽는다.
-planning 이 이미 task 를 만들었으면 검토 + 필요 시 같은 브랜치에 보강 commit 만 한다 (별도 PR 금지). 이 skill 이 직접 task 를 만들어야 하면 아래 3-4 를 수행한다.
+team-lead 가 task(`index.json`, `phase-*.md`)와 관련 docs·`CLAUDE.md`·오버레이를 읽는다.
+planning 이 이미 task 를 만들었으면 검토하고 필요 시 같은 브랜치에 보강 commit 만 한다 (별도 PR 금지). 이 skill 이 직접 task 를 만들어야 하면 아래 3-4 를 수행한다.
 요청에 여러 plan이 포함되면 이번 실행 대상 plan 하나만 선택한다. 실행 순서는 planning 이 보고한 순서를 따른다.
 
-### 3. docs 최신화 + 커밋 (해당 시)
+### 3. docs 최신화와 커밋 (해당 시)
 
 논의 결과를 task 생성 전에 docs 에 반영하고 단독 커밋한다.
 
 ### 4. task 파일 검증·생성
 
-`index.json` + `phase-*.md` 규격은 **planning 의 task-create 규격 + 레포 오버레이**를 따른다. phase 프롬프트 공통 규칙:
+`index.json`, `phase-*.md` 규격은 **planning 의 task-create 규격과 레포 오버레이**를 따른다. phase 프롬프트 공통 규칙:
 
 - 원자적 단일 책임, 작업 항목 5개 이하.
 - 자기완결적 (이전 대화 없이 독립 실행 가능).
@@ -224,7 +224,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 
 **critic v2 재평가 시 강제 재읽기**(필수): critic 이 REVISE 후 v2 변경을 받고도 v1 평가를 반복 송신하는 사고가 있다. 원인은 worktree 의 새 파일을 다시 Read 하지 않은 것. 재평가 메시지에 다음 3가지를 반드시 포함:
 
-1. "Read tool 로 다음 파일을 다시 읽고 재평가" + 변경 파일 절대경로.
+1. "Read tool 로 다음 파일을 다시 읽고 재평가" 지시와 변경 파일 절대경로.
 2. 확인 포인트 체크리스트 (어느 라인이 어떻게 바뀌었는지).
 3. "직전 메시지는 첫 평가 사본일 수 있음 — 실제 파일 상태 기준으로 판정 부탁".
 
@@ -232,19 +232,19 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 
 ### 6. executor 실행
 
-critic APPROVE 후 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰한다 (critic 승인 + docs-verifier 검증의 이중 안전망).
+critic APPROVE 후 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰한다 (critic 승인과 docs-verifier 검증의 이중 안전망).
 
 이 단계는 `index.json`의 **모든 미완료 phase를 순서대로 구현·검증·atomic commit할 때까지 반복**한다.
 개별 phase 완료는 다음 executor로 넘어가는 commit 경계이지 code-reviewer·docs-verifier 호출 경계가 아니다.
 code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 검증한다.
 단, 진행을 막는 결함의 원인 확인이 필요하면 조기 자문을 받을 수 있으며 그 결과는 최종 reviewer verdict를 대체하지 않는다.
 
-- **phase 단위 spawn → shutdown 사이클**(4+ phase 필수): 한 phase 완료·커밋 후 그 executor 를 **반드시 종료한 뒤** 다음 phase 를 새 이름(`executor-p{N}`)으로 스폰한다. 컨텍스트 격리 + 이름 충돌·auto-deliver 누락 회피.
+- **phase 단위 spawn → shutdown 사이클**(4+ phase 필수): 한 phase 완료·커밋 후 그 executor 를 **반드시 종료한 뒤** 다음 phase 를 새 이름(`executor-p{N}`)으로 스폰한다. 컨텍스트 격리, 이름 충돌·auto-deliver 누락 회피.
     - 종료 방법: `SendMessage({to, message:{type:"shutdown_request"}})` 또는 `TaskStop`. 종료를 확인한 뒤 다음 executor 를 스폰한다.
     - **종료를 빠뜨리면 phase 마다 executor 가 누적된다** (8-phase task 에서 팀원 8개 잔존 관측). 다음 스폰 직전에 이전 executor 종료를 매 phase 강제한다.
     - 3 phase 이하는 executor 를 한 번만 스폰해 재사용한다 (다음 phase 는 새로 스폰하지 않고 `SendMessage` 로 지시).
 - executor 규칙: phase 를 순서대로 실행, phase 완료 후 성공 기준 검증, **커밋은 team-lead 가** (executor 는 하지 않음), 완료·실패를 SendMessage 로 보고. 코드 주석 규칙은 레포 `CLAUDE.md` 를 따른다.
-- 위 "executor cwd 격리" + "scope 확장 보고" 가드 문구를 스폰 프롬프트에 그대로 포함한다.
+- 위 "executor cwd 격리" 와 "scope 확장 보고" 가드 문구를 스폰 프롬프트에 그대로 포함한다.
 
 **phase 단위 atomic commit**: 한 phase 완료·검증 후 team-lead 가 그 phase 만 commit 한다. commit 전 `git status` 로 staged 전체를 점검해 관심사가 섞이지 않게 한다 (executor 가 staging 한 무관 변경이 딸려올 수 있음 — 섞였으면 `git reset` 후 명시적 add 또는 경로 한정 commit).
 
@@ -270,7 +270,7 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 
 ### 8. docs-verifier 검증
 
-code-reviewer PASS 와 review fix 가 끝난 뒤 docs-verifier 를 스폰해 최종 HEAD 기준으로 **한 번만** 정합성을 판정한다 (self-shutdown 시 재스폰 + 즉시 지시).
+code-reviewer PASS 와 review fix 가 끝난 뒤 docs-verifier 를 스폰해 최종 HEAD 기준으로 **한 번만** 정합성을 판정한다 (self-shutdown 시 재스폰, 즉시 지시).
 phase마다 호출하거나 사전 검토·최종 검증으로 나눠 두 번 돌리지 않는다 — 같은 diff 를 두 번 읽는 비용만 늘고 유효한 판정은 최종 HEAD 것뿐이다.
 docs 불일치를 더 일찍 잡아야 하면 별도 사전 pass 를 만들지 말고 7단계 code-reviewer 지시에 docs 축을 얹는다. 검증 관점:
 
@@ -283,13 +283,13 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 
 판정: **PASS** → 9단계. **UPDATE_NEEDED** → docs 업데이트 후 재검증 (한도 2회). **VIOLATION** → 코드 수정 지시 (executor 재투입, 한도 2회).
 
-### 9. 완료 + PR 생성 + 팀 종료
+### 9. 완료, PR 생성, 팀 종료
 
 1. team-lead 가 누적 commit 을 검토한다 — phase 별 commit 이 의도대로 들어갔는지, 마지막 phase commit 에 완료 마킹이 포함됐는지 확인.
 2. **통합 검증** — 레포 CLAUDE.md·오버레이의 검증 명령을 실행해 모든 phase 누적 후에도 통과하는지 확인한다.
 3. **검증 실패 시 분기**(필수) — 실패 원인 파일과 변경 파일을 매칭해 책임을 분류한다. 자의적으로 plan PR 에 외부 잔존 깨짐 fix 를 흡수하지 않는다.
    - **plan 범위 내**: 본 plan 변경 파일에서 실패 → executor 재투입(또는 team-lead 직접 fix). 사용자 결정 불필요.
-   - **plan 범위 외**: 실패 원인이 변경 외 파일(`git diff origin/main -- <파일>` 이 비어있음 = main 자체 깨짐) → 사용자에게 옵션 제시 (A: PR 에 fix 흡수 / B: 별도 hotfix PR 후 rebase / C: 그대로 PR + description 에 의존 명시). 결정 이력은 PR description 에 명시.
+   - **plan 범위 외**: 실패 원인이 변경 외 파일(`git diff origin/main -- <파일>` 이 비어있음 = main 자체 깨짐) → 사용자에게 옵션 제시 (A: PR 에 fix 흡수 / B: 별도 hotfix PR 후 rebase / C: 그대로 PR, description 에 의존 명시). 결정 이력은 PR description 에 명시.
 4. **완료 마킹은 PR 브랜치 안에서만** — 마지막 phase commit 에 포함(이상), 또는 브랜치 안 별도 commit(차선). **main 직접 커밋/푸시 금지** (이중 진실원·push 충돌 위험. 재실행 방지는 사전 검증이 담당).
 5. push 후 PR 생성·갱신 (오픈 PR 없으면 신규, 있으면 갱신). base 는 `main`, head 는 `plan{N}-<slug>` 다.
    이 PR 하나에 **planning 의 docs·tasks 커밋과 구현 phase 커밋이 함께** 담긴다 — 기획부터 구현까지가 하나의 완결된 변경으로 남는다.
@@ -309,7 +309,7 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 작업 간 충돌을 막기 위해 git worktree 를 쓴다. worktree 는 프로젝트 내부 `.claude/worktrees/` 하위에 만든다 (부모 디렉터리 오염 방지). `.gitignore` 에 `.claude/worktrees/` 가 등록돼 있어야 한다.
 
 - **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다. 자동완성 오타(`.claire-worktrees` 등) 로 유사 철자 디렉터리를 만들면 후속 검증이 깨진다. worktree 생성 전후로 `.claude` 외 `.cla*` 디렉터리를 탐지해 명백한 오타는 즉시 제거한다.
-- **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 확인한다 (`pwd`). 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜 main repo 의 task 를 실수로 건드릴 수 있다. commit 전 main repo + worktree 양쪽 `git status` 동시 점검 권장.
+- **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 확인한다 (`pwd`). 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜 main repo 의 task 를 실수로 건드릴 수 있다. commit 전 main repo, worktree 양쪽 `git status` 동시 점검 권장.
 - **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다. planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있고, 구현 커밋이 같은 브랜치에 쌓여 PR 1개로 닫힌다.
 - **base 신선도**: plan 브랜치가 원격 main 보다 뒤처졌으면 worktree 분기 전에 갱신한다.
     - 방법: `git rebase origin/main` 후 `git push --force-with-lease`.

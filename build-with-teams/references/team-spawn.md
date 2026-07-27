@@ -4,7 +4,7 @@
 
 ## 목차
 
-1. [정식 팀원 스폰 규칙](#1-정식-팀원-스폰-규칙) — `team_name`+`name` 없이 스폰하면 SendMessage 협업이 끊긴다
+1. [정식 팀원 스폰 규칙](#1-정식-팀원-스폰-규칙) — `team_name` 과 `name` 없이 스폰하면 SendMessage 협업이 끊긴다
 2. [팀원 프롬프트·메시지는 worktree 절대경로](#2-팀원-프롬프트메시지는-worktree-절대경로) — 상대경로는 main 의 구버전 파일을 가리킬 수 있다
 3. [팀원 SendMessage 회신 강제](#3-팀원-sendmessage-회신-강제) — 자기 화면 출력만 하고 종료하면 team-lead 에 안 닿는다
 4. [팀원 자발적 실행 방지](#4-팀원-자발적-실행-방지) — 지시 전 선행 실행은 점검 시점 정합성을 깬다
@@ -16,7 +16,7 @@
 
 ## 1. 정식 팀원 스폰 규칙
 
-팀원은 **팀의 정식 멤버로 스폰**한다 (`team_name` + `name` 지정). 일회성 `Agent` 호출(team_name 없이)로 대체하지 않는다.
+팀원은 **팀의 정식 멤버로 스폰**한다 (`team_name`, `name` 지정). 일회성 `Agent` 호출(team_name 없이)로 대체하지 않는다.
 
 - **왜**: 일회성 호출은 팀 컨텍스트 밖에서 동작해 `SendMessage` 반복 협업이 불가하다. 정식 팀원은 idle 로 대기하며 REVISE 재평가·executor 재실행·재검증 사이클을 자연스럽게 처리한다.
 - `name` 은 `critic`/`executor`/`code-reviewer`/`docs-verifier` 로 통일한다.
@@ -38,7 +38,7 @@ sub-agent 는 main 워킹 디렉터리에서 실행될 수 있다. 상대경로�
 
 sub-agent 가 결론을 자기 화면에만 출력하고 종료하면 team-lead 까지 라우팅되지 않는다. idle 알림만 도착해 team-lead 가 다음 단계로 못 간다.
 
-스폰 프롬프트 + 작업 지시 메시지 양쪽에 다음을 포함:
+스폰 프롬프트와 작업 지시 메시지 양쪽에 다음을 포함:
 
 ```
 회신은 반드시 SendMessage tool 호출로 team-lead 에게 전송할 것.
@@ -61,10 +61,10 @@ team-lead 는 critic 평가가 끝나기 전에 워크트리 상태(`git log`, `
 
 ## 5. 팀원 self-shutdown 대응
 
-code-reviewer·docs-verifier 는 `run_in_background: true` + idle 프롬프트로 스폰해도 **idle 알림 직후 자체 종료하는 경향**이 관측된다.
+code-reviewer·docs-verifier 는 `run_in_background: true`, idle 프롬프트로 스폰해도 **idle 알림 직후 자체 종료하는 경향**이 관측된다.
 
-- **우회**: 검사 대상 결과물이 준비된 시점에 즉시 새로 spawn (idle 대기 의존 금지). team-lead 는 팀원이 죽었다는 알림을 받으면 침묵 말고 **재spawn + 즉시 지시 메시지** 묶음으로 처리한다.
-- **판정 시간 규칙**: SendMessage 후 일정 시간(약 90초) 안에 verdict 회신이 없고 idle 알림만 2회 이상 오면 self-shutdown 을 의심한다. 강제 재요청 1회 → 무응답이면 재spawn + 동일 지시 → 3회 누적 실패 시 사용자에게 에스컬레이션.
+- **우회**: 검사 대상 결과물이 준비된 시점에 즉시 새로 spawn (idle 대기 의존 금지). team-lead 는 팀원이 죽었다는 알림을 받으면 침묵 말고 **재spawn, 즉시 지시 메시지** 묶음으로 처리한다.
+- **판정 시간 규칙**: SendMessage 후 일정 시간(약 90초) 안에 verdict 회신이 없고 idle 알림만 2회 이상 오면 self-shutdown 을 의심한다. 강제 재요청 1회 → 무응답이면 재spawn, 동일 지시 → 3회 누적 실패 시 사용자에게 에스컬레이션.
 
 ## 6. executor cwd 격리
 

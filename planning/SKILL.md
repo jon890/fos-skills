@@ -38,7 +38,7 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 - **모호함 제로**: 조금이라도 모호하면 사용자와 논의. 넘어가지 않는다.
 - **AI 에이전트 관점**: 최종 문서는 AI 가 읽고 phase 로 구현 가능할 만큼 명확.
 - **간결한 문서**: 의사결정 의도는 보존하되 코드로 확인되는 구현 상세는 뺀다.
-- **선택지는 질문 도구로**: 추천안 첫 번째 + label 끝 `(추천)` + 트레이드오프. long-form 나열 금지.
+- **선택지는 질문 도구로**: 추천안 첫 번째, label 끝 `(추천)`, 트레이드오프. long-form 나열 금지.
 - **질문 규율**: 깊은 모호함은 하나씩. 사실(파일·git·도구)은 직접 조회, 사용자에겐 결정만 묻는다.
 
 ## 모호함 능동 발굴 (모든 단계 필수)
@@ -46,7 +46,7 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 각 단계는 산출물만 뽑고 넘어가지 않는다. **미명시·애매한 설계점을 능동적으로 캐내** 사용자와 토론해 확정한다.
 
 - **능동 발굴** — 그 단계 reference 의 "캐낼 모호점" 을 하나씩 짚어, 명시 안 됐거나 해석이 갈리는 지점을 찾아낸다. "알아서 됐겠지" 로 지나가지 않는다.
-- **추측 금지** — 명시 안 된 건 임의로 정하지 말고 **옵션 + 트레이드오프 + 추천안**으로 `AskUserQuestion`. 사용자만 답할 결정은 반드시 묻는다.
+- **추측 금지** — 명시 안 된 건 임의로 정하지 말고 **옵션, 트레이드오프, 추천안**으로 `AskUserQuestion`. 사용자만 답할 결정은 반드시 묻는다.
 - **하나씩 토론** — 상호 의존·깊은 결정은 한 번에 하나씩. 얕은 다수 질문 금지.
 - **확정 후 진행** — 그 단계에 남은 미해결 모호점이 **0** 이 되어야 통과한다. 하나라도 남으면 다음 단계로 못 간다.
 
@@ -70,7 +70,7 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
     - **planning 은 PR 을 만들지 않는다** — 이 브랜치는 기획에서 끝나지 않고 **구현이 이어 붙는 같은 브랜치**다.
         - 실행 스킬이 이 브랜치에서 worktree 를 분기해 phase 커밋을 쌓는다.
         - 기획 커밋과 구현 커밋을 담은 **PR 1개**를 마지막에 연다 — plan 1개 = PR 1개는 여기서 지켜진다.
-- **번호 선점** — 번호 부여 전 `git fetch` 후 `git branch -a` + `gh pr list --state open` 로 plan·ADR 번호를 원격까지 스캔 → 다음 가용 → **브랜치를 즉시 생성해 claim**. read-only 체크만 하면 두 세션이 같은 번호를 집는다.
+- **번호 선점** — 번호 부여 전 `git fetch` 후 `git branch -a`, `gh pr list --state open` 로 plan·ADR 번호를 원격까지 스캔 → 다음 가용 → **브랜치를 즉시 생성해 claim**. read-only 체크만 하면 두 세션이 같은 번호를 집는다.
 - **공유 문서는 append 편집** — 새 ADR·phase 파일은 충돌 없음. README·data-schema 같은 공유 인덱스는 **끝에 행 추가**만(기존 행 재배열·중간 삽입 금지) → merge 깔끔.
 - **ADR 번호** — 브랜치로 claim 안 되니 시작 시 원격까지 스캔, 충돌 나면 merge 때 재번호(최후).
 
@@ -87,8 +87,8 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 | 4 | 인터페이스 설계 | `references/step-4-interface.md` |
 | 5 | API/함수 설계 | `references/step-5-api.md` |
 | 6 | 데이터/코드 구조 (역할: 데이터 모델러+CTO) | `references/step-6-data-code.md` |
-| 7 | docs 영향 종합 + 기술 결정 기록 | `references/step-7-docs.md` |
-| 8 | task 파일 생성 + 커밋 | `references/step-8-tasks.md` + `task-create.md` |
+| 7 | docs 영향 종합과 기술 결정 기록 | `references/step-7-docs.md` |
+| 8 | task 파일 생성과 커밋 | `references/step-8-tasks.md`, `task-create.md` |
 
 ## 의사결정 누적 → 논의 완료 시 docs 반영
 
@@ -121,15 +121,15 @@ rebase 는 **PR 생성 전에만** 한다.
 
 분할하지 않는다면 경고선 이하라는 이유만 쓰지 말고 하나의 원자적 변경으로 묶여야 하는 근거를 ledger에 남긴다.
 
-## self-review + task 검증 (생성 직후, 필수)
+## self-review 와 task 검증 (생성 직후, 필수)
 
-task 작성 직후·커밋 전: `references/step-8-tasks.md` 와 `task-create.md` 의 self-review(placeholder·모순·식별자 일관성) + `~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}`(cwd 는 타깃 레포 루트, 5 패턴 0 줄) + 사람 판단 4 패턴. 위반은 질문 도구로 확인(임의 자동수정 금지).
+task 작성 직후·커밋 전: `references/step-8-tasks.md` 와 `task-create.md` 의 self-review(placeholder·모순·식별자 일관성), `~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}`(cwd 는 타깃 레포 루트, 5 패턴 0 줄), 사람 판단 4 패턴. 위반은 질문 도구로 확인(임의 자동수정 금지).
 
 ## 완료 후 (필수)
 
-1. 필수 관리 문서 다섯 개와 오버레이 추가 문서 반영 확인. 2. task 파일 확인. 3. 규모 분할 결과와 `plan 1개 = PR 1개` 확인. 4. verify-task + self-review. 5. **branch 확인**(오버레이 정책, 기본은 `plan{N}-slug` 브랜치). 6. plan별 commit(관심사 분리, 오버레이 규칙 우선). 7. plan별 push. 8. 사용자에게 plan 순서와 개별 실행 명령 보고(오버레이).
+1. 필수 관리 문서 다섯 개와 오버레이 추가 문서 반영 확인. 2. task 파일 확인. 3. 규모 분할 결과와 `plan 1개 = PR 1개` 확인. 4. verify-task, self-review. 5. **branch 확인**(오버레이 정책, 기본은 `plan{N}-slug` 브랜치). 6. plan별 commit(관심사 분리, 오버레이 규칙 우선). 7. plan별 push. 8. 사용자에게 plan 순서와 개별 실행 명령 보고(오버레이).
 
-**실제 phase 실행은 사용자가 실행 명령을 호출할 때 시작.** planning 은 task 생성 + push 까지.
+**실제 phase 실행은 사용자가 실행 명령을 호출할 때 시작.** planning 은 task 생성과 push 까지.
 보고에는 각 plan 의 **브랜치 이름**을 함께 적는다 — 실행 스킬이 그 브랜치에서 worktree 를 분기하므로, 이름이 곧 핸드오프 인자다.
 
 예외: 논의만(docs·task 없음) → commit 생략 고지. main 직접 push 금지 — 산출물은 plan 브랜치에만 둔다.
@@ -144,7 +144,7 @@ task 작성 직후·커밋 전: `references/step-8-tasks.md` 와 `task-create.md
 
 - `SKILL.md` — 이 문서(오케스트레이터).
 - `references/step-*.md` — 단계별 역할·필수 산출물·누락 체크리스트·통과 기준.
-- `task-create.md` — task/phase 작성 + 검증 명세.
+- `task-create.md` — task/phase 작성과 검증 명세.
 - `scripts/verify-task.sh` — task 자동 검증 5 패턴. 스킬 디렉터리에서 실행하고 cwd 는 타깃 레포 루트로 둔다.
 
 ## 의도적으로 안 하는 것
