@@ -91,7 +91,8 @@ HEAD_REF=$(gh pr view <N> --json headRefName --jq '.headRefName')
 ```
 
 - **워킹 트리가 dirty 면 체크아웃하지 않는다** — 다른 작업 중일 수 있다. 변경 내용을 보여주고 사용자에게 확인받는다.
-- **현재 브랜치가 `main`·`master` 인 경우가 정상 진입**이다. 구현 스킬이 worktree 를 정리하고 기본 checkout 으로 빠져나온 직후가 그 상태다. 예외로 취급하지 않는다.
+- **현재 브랜치가 `main`·`master` 인 경우가 정상 진입**이다. 예외로 취급하지 않는다.
+    - 구현 스킬이 worktree 를 정리하고 기본 checkout 으로 빠져나온 직후가 그 상태다.
 
 정렬이 끝나면 PR 이 base 와 conflict 상태인지 본다.
 CONFLICTING 인 채로 fix 를 push 하면 여전히 머지 불가 — fix 효과가 무력화된다.
