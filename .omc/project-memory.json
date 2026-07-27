@@ -79,26 +79,26 @@
   "hotPaths": [
     {
       "path": "planning/SKILL.md",
-      "accessCount": 6,
-      "lastAccessed": 1785113171013,
+      "accessCount": 7,
+      "lastAccessed": 1785113219549,
+      "type": "file"
+    },
+    {
+      "path": "planning/references/step-7-docs.md",
+      "accessCount": 3,
+      "lastAccessed": 1785113212520,
       "type": "file"
     },
     {
       "path": "planning/task-create.md",
-      "accessCount": 2,
-      "lastAccessed": 1785113090664,
+      "accessCount": 3,
+      "lastAccessed": 1785113213910,
       "type": "file"
     },
     {
       "path": "planning/scripts/verify-task.sh",
       "accessCount": 2,
       "lastAccessed": 1785113119900,
-      "type": "file"
-    },
-    {
-      "path": "planning/references/step-7-docs.md",
-      "accessCount": 2,
-      "lastAccessed": 1785113180182,
       "type": "file"
     },
     {
