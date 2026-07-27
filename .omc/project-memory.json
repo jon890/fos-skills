@@ -79,8 +79,8 @@
   "hotPaths": [
     {
       "path": "planning/SKILL.md",
-      "accessCount": 4,
-      "lastAccessed": 1785113143508,
+      "accessCount": 6,
+      "lastAccessed": 1785113171013,
       "type": "file"
     },
     {
@@ -93,6 +93,12 @@
       "path": "planning/scripts/verify-task.sh",
       "accessCount": 2,
       "lastAccessed": 1785113119900,
+      "type": "file"
+    },
+    {
+      "path": "planning/references/step-7-docs.md",
+      "accessCount": 2,
+      "lastAccessed": 1785113180182,
       "type": "file"
     },
     {
