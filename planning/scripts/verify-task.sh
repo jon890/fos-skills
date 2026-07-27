@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # task 생성 직후 자동 검증 — common-pitfalls.md 섹션 1 의 자동화 가능한 5 패턴 검출.
-# 사용법: scripts/verify-task.sh plan{N}-{slug}
-# cwd: <repo root>. 위반 라인을 stdout 으로 출력한다. 출력 0 줄이면 통과.
+# 사용법: ~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}
+# 스크립트는 스킬 디렉터리에 있고, cwd 는 tasks/ 를 가진 <타깃 레포 root> 여야 한다.
+# 위반 라인을 stdout 으로 출력한다. 출력 0 줄이면 통과.
 # 주의: grep 무매치가 exit 1 이므로 set -e 를 쓰지 않는다.
 set -u
 

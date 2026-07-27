@@ -8,7 +8,7 @@
 - `index.json`(status·phases·depends_on·related_docs) + phase 파일들.
 - `related_docs`는 task가 직접 수정하거나 구현 중 특별히 참조해야 하는 문서만 선택적으로 연결한다. 7단계 필수 문서 갱신의 증거로 사용하지 않는다.
 - 각 phase: 목표·범위 외·작업 항목·Critical Files·검증(cwd 명시)·의도 메모.
-- self-review(placeholder·모순·식별자 일관성) + `scripts/verify-task.sh plan{N}-{slug}`(0 줄).
+- self-review(placeholder·모순·식별자 일관성) + `~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}`(cwd 는 타깃 레포 루트, 0 줄).
 - 규모가 큰 요청은 SKILL.md의 규모 분할 게이트를 통과한 여러 plan 디렉터리. 각 plan은 자체 브랜치·PR·검증 단위이며 `depends_on`으로만 연결한다.
 
 ## 캐낼 모호점 (능동 발굴 → 사용자 확정)

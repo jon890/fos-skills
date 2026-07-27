@@ -103,7 +103,7 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 
 ## self-review + task 검증 (생성 직후, 필수)
 
-task 작성 직후·커밋 전: `references/step-8-tasks.md` 와 `task-create.md` 의 self-review(placeholder·모순·식별자 일관성) + `scripts/verify-task.sh plan{N}-{slug}`(5 패턴 0 줄) + 사람 판단 4 패턴. 위반은 질문 도구로 확인(임의 자동수정 금지).
+task 작성 직후·커밋 전: `references/step-8-tasks.md` 와 `task-create.md` 의 self-review(placeholder·모순·식별자 일관성) + `~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}`(cwd 는 타깃 레포 루트, 5 패턴 0 줄) + 사람 판단 4 패턴. 위반은 질문 도구로 확인(임의 자동수정 금지).
 
 ## 완료 후 (필수)
 
@@ -123,7 +123,7 @@ task 작성 직후·커밋 전: `references/step-8-tasks.md` 와 `task-create.md
 - `SKILL.md` — 이 문서(오케스트레이터).
 - `references/step-*.md` — 단계별 역할·필수 산출물·누락 체크리스트·게이트 기준.
 - `task-create.md` — task/phase 작성 + 검증 명세.
-- `scripts/verify-task.sh` — task 자동 검증 5 패턴.
+- `scripts/verify-task.sh` — task 자동 검증 5 패턴. 스킬 디렉터리에서 실행하고 cwd 는 타깃 레포 루트로 둔다.
 
 ## 의도적으로 안 하는 것
 

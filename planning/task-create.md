@@ -150,9 +150,12 @@ AI 가 임의로 자동 수정하지 않고, 위반은 질문 도구로 확인�
 아래 스크립트를 실행한다. 위반 라인을 stdout 으로 출력하며, 출력이 0 줄이면 통과.
 
 ```bash
-# cwd: <repo root>
-scripts/verify-task.sh plan{N}-{slug}
+# cwd: <타깃 레포 root> — tasks/ 를 상대참조하므로 cwd 는 레포 루트여야 한다
+~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}
 ```
+
+스크립트는 타깃 레포가 아니라 **스킬 디렉터리**에 있다. 두 경로를 헷갈리면 실행되지 않는다.
+스킬 설치 경로가 다르면 그 경로의 `scripts/verify-task.sh` 를 쓴다.
 
 스크립트가 검출하는 5 패턴 (task 위생 공통 검사):
 
