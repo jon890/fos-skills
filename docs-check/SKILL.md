@@ -78,6 +78,8 @@ docs-check 는 두 종류의 검사를 서로 다른 방식으로 돌린다.
 
 오버레이·CLAUDE.md 가 지정한 docs 목록을 수집한다. 지정이 없으면 레포의 `docs/**/*.md`·`*.md`·`.claude/skills/*/SKILL.md` 를 훑는다.
 
+planning 이 관리하는 필수 문서(`docs/prd.md`·`flow.md`·`code-architecture.md`·`data-schema.md`·`docs/adr/`)가 있으면 반드시 대상에 포함한다 — 설계 단계에서 갱신된 문서라 부패가 가장 먼저 드러나는 곳이다.
+
 ### 2. 가벼운 정적 검사 (메인 직접, fail-fast)
 
 의미 검사 전에 정적 검사를 먼저 돌려 결정적 위반을 잡는다.
