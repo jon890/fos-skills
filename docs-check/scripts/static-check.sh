@@ -58,6 +58,24 @@ for f in $(git ls-files '*.md' 2>/dev/null); do
   done
 done
 
+# 한국어 정책 위반 — 규칙 문서에만 적어 두면 지켜지지 않아 실행 가능한 검사로 둔다
+#   금지어 목록의 단일 소스는 ~/.claude/rules/korean-style.md 매핑 표다.
+for f in $(git ls-files '*.md' 2>/dev/null); do
+  awk -v F="$f" '
+    /^```/ { c = !c; next } c { next }
+    {
+      line = $0
+      gsub(/`[^`]*`/, "", line)                    # 코드 스팬 제외
+      split("게이트 매트릭스 트리아지 베이스라인 스파이크 카나리 클램프 폭주 강등 오살 외과적", ban, " ")
+      for (i in ban)
+        if (index(line, ban[i]) > 0)
+          print F ":" NR ": 금지어 \"" ban[i] "\" — korean-style 매핑 표 참조"
+      if (line ~ / \+ /)
+        print F ":" NR ": 인라인 + 연결 — 쉼표·와/과 또는 목록으로"
+    }
+  ' "$f"
+done
+
 # 문체 정적 패턴 — 코드 블록과 코드 스팬(`...`)은 렌더 대상이 아니므로 제외한다
 for f in $(git ls-files '*.md' 2>/dev/null); do
   awk -v F="$f" '
