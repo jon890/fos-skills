@@ -297,7 +297,11 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
    PR diff에 다른 plan의 task·구현이 섞였으면 생성하지 말고 브랜치 범위를 정리한다.
 6. **팀 종료**(모든 잔존 팀원) — 남아 있는 팀원 전부(`executor`·`executor-p{N}`·`critic`·`code-reviewer`·`docs-verifier`)에 각각 `shutdown_request`(또는 `TaskStop`)를 보내 종료를 확인한다. phase 단위 사이클에서 미종료된 executor 가 있으면 여기서 일괄 정리한다.
 7. **worktree 정리** — PR 생성·갱신과 원격 push가 끝난 뒤 worktree가 깨끗하고 로컬 전용 commit이 없음을 확인한다. 기본 checkout이나 다른 안전한 cwd로 이동해 `git worktree remove <절대경로>`를 실행하고 `git worktree list`에서 제거를 확인한다. PR 브랜치는 유지하며 브랜치 삭제는 머지 후 사용자 요청이 있을 때만 수행한다.
-8. 특이사항과 신규 노하우를 집계해 사용자에게 보고한다.
+8. 특이사항과 신규 노하우를 집계해 사용자에게 보고한다. 보고 첫 줄에 **PR 번호와 리뷰 반영 명령**을 적는다 — worktree 를 정리한 뒤라 cwd 브랜치가 `main` 이어서 후속 스킬의 PR 자동 감지가 실패한다.
+
+   ```
+   PR #<번호> 생성 완료 — 리뷰 반영은 /review-fix <번호>
+   ```
 9. 사용자가 PR 을 머지하면 완료 상태가 main 에 자동 반영된다. main 후속 작업 0개.
 
 ## worktree 기반 격리 실행
