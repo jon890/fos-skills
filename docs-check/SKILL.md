@@ -79,36 +79,17 @@ docs-check 는 두 종류의 검사를 서로 다른 방식으로 돌린다.
 
 ### 2. 가벼운 정적 검사 (메인 직접, fail-fast)
 
-의미 검사 전에 정적 검사를 먼저 돌려 결정적 위반을 잡는다. 아래는 도메인 중립 검사다 — 레포 특화 grep(스키마·라우트 대조)은 오버레이 명령을 실행한다.
-
-**ADR Index 동기화** — 본문 ADR 번호가 Index 에 모두 있는가:
+의미 검사 전에 정적 검사를 먼저 돌려 결정적 위반을 잡는다.
 
 ```bash
-# cwd: <repo root> — ADR 위치는 오버레이 참조 (예: docs/adr/)
-BODY=$(grep -rhoE '^## ADR-[0-9]+' <ADR_DIR>/*.md 2>/dev/null | grep -oE 'ADR-[0-9]+' | sort -u)
-INDEX=$(grep -oE 'ADR-[0-9]+' <ADR_DIR>/INDEX.md 2>/dev/null | sort -u)
-diff <(echo "$BODY") <(echo "$INDEX") && echo "OK: ADR Index synced"
+# cwd: <검사 대상 레포 root> — ADR 위치는 오버레이 참조 (예: docs/adr/)
+~/.claude/skills/docs-check/scripts/static-check.sh <ADR_DIR>
 ```
 
-**ADR bloat** — 파일·항목이 30줄을 넘으면 기능 명세 변질 의심:
+ADR Index 동기화, ADR 30줄 초과 bloat, 문체 정적 패턴(`~` 짝수개·`§`·Bold+괄호)을 한 번에 검사한다.
+출력 0 줄이면 통과. 코드 블록과 코드 스팬은 렌더 대상이 아니라 검사에서 제외된다.
 
-```bash
-for f in <ADR_DIR>/*.md; do
-  size=$(wc -l < "$f" | tr -d ' ')
-  [ "$size" -gt 30 ] && echo "BLOAT: $f ($size lines > 30) — 슬림화 검토"
-done
-```
-
-**문체 정적 패턴** — `~` 짝수개·`§`·Bold+괄호(F 가독성):
-
-```bash
-for f in $(git ls-files '*.md'); do
-  awk -v F="$f" '{ n=gsub(/~/,"~"); if (n>0 && n%2==0) print F":"NR": ~ 짝수개("n") — 취소선 렌더 위험" }' "$f"
-  grep -nP '\x{00A7}' "$f" && echo "  ↑ $f: § 섹션 기호"
-  grep -nE '\*\*[^*]*\([^)]*\)\*\*' "$f" && echo "  ↑ $f: Bold+괄호 — **텍스트**(영문) 로"
-done
-```
-
+레포 특화 grep(스키마·라우트 대조)은 오버레이가 지정한 명령을 이어서 실행한다.
 정적 검사 결과는 리포트 Critical 섹션으로 통합한다.
 
 ### 3. 무거운 의미 검사 (위임)

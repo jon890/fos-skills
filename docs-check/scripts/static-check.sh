@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# docs-check 가벼운 정적 검사 — 결정적으로 판정되는 위반만 검출한다.
+# 사용법: ~/.claude/skills/docs-check/scripts/static-check.sh [ADR_DIR]
+# cwd 는 검사 대상 <레포 root>. ADR_DIR 생략 시 ADR 검사는 건너뛴다.
+# 위반 라인을 stdout 으로 출력한다. 출력 0 줄이면 통과.
+# 주의: grep 무매치가 exit 1 이므로 set -e 를 쓰지 않는다.
+set -u
+ADR_DIR="${1:-}"
+
+if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
+  # ADR Index 동기화 — 본문 ADR 번호가 Index 에 모두 있는가
+  BODY=$(grep -rhoE 'ADR-[0-9]+' "$ADR_DIR"/*.md 2>/dev/null | sort -u)
+  INDEX=$(grep -ohE 'ADR-[0-9]+' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
+  if [ "$BODY" != "$INDEX" ]; then
+    echo "INDEX_DESYNC: $ADR_DIR — 본문과 INDEX.md 의 ADR 번호 집합이 다르다"
+    diff <(echo "$BODY") <(echo "$INDEX") | sed 's/^/  /'
+  fi
+
+  # ADR bloat — 30줄 초과는 기능 명세로 변질됐는지 검토 신호
+  for f in "$ADR_DIR"/*.md; do
+    [ -f "$f" ] || continue
+    size=$(wc -l < "$f" | tr -d ' ')
+    [ "$size" -gt 30 ] && echo "BLOAT: $f ($size 줄 > 30) — 슬림화 검토"
+  done
+fi
+
+# 문체 정적 패턴 — 코드 블록과 코드 스팬(`...`)은 렌더 대상이 아니므로 제외한다
+for f in $(git ls-files '*.md' 2>/dev/null); do
+  awk -v F="$f" '
+    /^```/ { in_code = !in_code; next }
+    in_code { next }
+    {
+      line = $0
+      gsub(/`[^`]*`/, "", line)          # 코드 스팬 제거 — ~/path 오탐 방지
+      n = gsub(/~/, "~", line)
+      if (n > 0 && n % 2 == 0) print F ":" NR ": ~ 짝수개(" n ") — 취소선 렌더 위험"
+      if (line ~ /§/)          print F ":" NR ": § 섹션 기호 — \"섹션 N\" 으로"
+      if (line ~ /\*\*[^*]*\([^)]*\)\*\*/) print F ":" NR ": Bold+괄호 — **텍스트**(부연) 로"
+    }
+  ' "$f"
+done
