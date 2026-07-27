@@ -64,8 +64,8 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 
 여러 세션이 동시에 planning 하면 번호·문서·push 가 충돌한다. 방지:
 
-- **branch-per-plan** — planning 을 **main 이 아니라 `plan{N}-<slug>` 브랜치**에서. docs+tasks 를 브랜치에 커밋 → PR 로 merge. 충돌은 merge 시점에 드러난다(silent 아님). (레포 branch 정책은 오버레이 우선.)
-    - **구현 브랜치와 이름을 겹치지 않게 한다** — `plan{N}-<slug>` 는 기획 산출물 전용이고, 구현 브랜치는 실행 스킬이 따로 만든다. 이름이 같으면 실행 스킬의 재실행 방지 검증이 원격 브랜치를 보고 "이미 작업 중" 으로 오인해 실행을 막는다. 오버레이가 구현 브랜치 형식을 지정하지 않으면 기본은 `impl/plan{N}-<slug>`.
+- **branch-per-plan** — planning 을 **main 이 아니라 `plan{N}-<slug>` 브랜치**에서. docs+tasks 를 브랜치에 커밋·push 한다. 충돌은 merge 시점에 드러난다(silent 아님). (레포 branch 정책은 오버레이 우선.)
+    - **planning 은 PR 을 만들지 않는다** — 이 브랜치는 기획에서 끝나지 않고 **구현이 이어 붙는 같은 브랜치**다. 실행 스킬이 이 브랜치에서 worktree 를 분기해 phase 커밋을 쌓고, 기획 커밋과 구현 커밋을 담은 **PR 1개**를 마지막에 연다. plan 1개 = PR 1개는 여기서 지켜진다.
 - **번호 선점** — 번호 부여 전 `git fetch` 후 `git branch -a` + `gh pr list --state open` 로 plan·ADR 번호를 원격까지 스캔 → 다음 가용 → **브랜치를 즉시 생성해 claim**. read-only 체크만 하면 두 세션이 같은 번호를 집는다.
 - **공유 문서는 append 편집** — 새 ADR·phase 파일은 충돌 없음. README·data-schema 같은 공유 인덱스는 **끝에 행 추가**만(기존 행 재배열·중간 삽입 금지) → merge 깔끔.
 - **ADR 번호** — 브랜치로 claim 안 되니 시작 시 원격까지 스캔, 충돌 나면 merge 때 재번호(최후).
@@ -101,7 +101,8 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 - 각 분할 plan에 목표, 범위 외, 검증 기준, 선행 plan 번호(`depends_on`)를 지정한다.
 - 의존 plan은 선행 plan이 `main`에 병합된 뒤 최신 `main`에서 시작하도록 순서를 정한다. 여러 plan을 한 브랜치나 한 PR에 합치지 않는다.
 - 분할안을 사용자에게 순서·의존성·각 PR의 검토 초점과 함께 제시하고 확정받은 뒤 번호를 선점하고 task를 만든다.
-- 7단계 docs 갱신분은 plan별로 쪼개지 않고 첫 plan 브랜치에 함께 커밋한다. 후속 plan은 그 PR이 머지된 최신 `main`에서 시작한다.
+- 7단계 docs 갱신분은 plan별로 쪼개지 않고 첫 plan 브랜치에 함께 커밋한다.
+- 후속 plan 브랜치는 번호 claim 을 위해 지금 만들되, **base 는 선행 plan 머지 후 최신 `main` 으로 갱신한 뒤 실행**한다. 만든 시점 그대로 두면 선행 plan 의 docs 가 빠진 base 위에서 구현하게 된다.
 
 분할하지 않는다면 경고선 이하라는 이유만 쓰지 말고 하나의 원자적 변경으로 묶여야 하는 근거를 ledger에 남긴다.
 
@@ -114,8 +115,9 @@ task 작성 직후·커밋 전: `references/step-8-tasks.md` 와 `task-create.md
 1. 필수 관리 문서 다섯 개와 오버레이 추가 문서 반영 확인. 2. task 파일 확인. 3. 규모 분할 결과와 `plan 1개 = PR 1개` 확인. 4. verify-task + self-review. 5. **branch 확인**(오버레이 정책, 기본은 `plan{N}-slug` 브랜치). 6. plan별 commit(관심사 분리, 오버레이 규칙 우선). 7. plan별 push. 8. 사용자에게 plan 순서와 개별 실행 명령 보고(오버레이).
 
 **실제 phase 실행은 사용자가 실행 명령을 호출할 때 시작.** planning 은 task 생성 + push 까지.
+보고에는 각 plan 의 **브랜치 이름**을 함께 적는다 — 실행 스킬이 그 브랜치에서 worktree 를 분기하므로, 이름이 곧 핸드오프 인자다.
 
-예외: 논의만(docs·task 없음) → commit 생략 고지. force push 금지(새 커밋). main push 차단 → PR.
+예외: 논의만(docs·task 없음) → commit 생략 고지. force push 금지(새 커밋). main 직접 push 금지 — 산출물은 plan 브랜치에만 둔다.
 
 ## plan 네이밍
 

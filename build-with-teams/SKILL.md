@@ -38,11 +38,12 @@ team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율�
 
 plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검증을 수행한다. 하나라도 걸리면 사용자에게 알리고 실행을 차단한다 — 사용자 확인 전에는 진행하지 않는다.
 
-1. **task 존재 + 완료 상태** — 대상 task 디렉터리(`index.json`)가 있는지, 있으면 완료 상태 필드를 본다.
-   - 부재 → planning 을 먼저 호출할지 사용자에게 확인.
+1. **plan 브랜치 + task 존재** — 원격 `plan{N}-<slug>` 브랜치가 있는지, 그 브랜치에 task 디렉터리(`index.json`)가 있는지 본다. 있으면 완료 상태 필드를 확인한다.
+   - **브랜치 부재** → planning 을 먼저 호출할지 사용자에게 확인.
+   - **브랜치는 있는데 task 부재** → planning 이 중단됐거나 push 가 안 된 상태다. planning 재호출이 아니라 **그 브랜치의 상태를 사용자에게 보여주고 결정**을 받는다.
    - 완료 상태 → 아래 4번(정합 검증)으로.
-2. **원격 작업 브랜치 존재** — 해당 plan 의 **구현** 브랜치가 원격에 있는지 확인한다. 있으면 이미 작업 중이거나 PR 미머지 상태일 수 있으니 차단 후 사용자 결정.
-   - planning 산출물 브랜치(`plan{N}-<slug>`)는 구현 브랜치와 다른 이름이므로 차단 대상이 아니다. 오버레이가 형식을 지정하지 않으면 구현 브랜치 기본값은 `impl/plan{N}-<slug>` 다.
+2. **plan 브랜치의 구현 커밋 존재** — plan 브랜치가 항상 원격에 있으므로 **브랜치 존재 자체는 재실행 신호가 아니다**. 대신 그 브랜치에 기획 커밋 외에 **phase 구현 커밋이 이미 쌓여 있는지** 본다 (`git log origin/plan{N}-<slug> --oneline`, `git diff origin/main...origin/plan{N}-<slug> --stat` 로 docs·tasks 외 변경 확인).
+   - 구현 커밋이 있으면 이미 실행됐거나 중단된 상태다 → 차단 후 사용자 결정(이어서 작업 / 되돌리고 새로 시작).
 3. **오픈 PR 존재** — 해당 plan 제목·브랜치를 포함한 오픈 PR 이 있는지 확인한다. 있으면 완료 후 머지 대기일 수 있으니 차단 후 사용자 결정.
 4. **완료 상태 ↔ 머지 정합**(역방향) — 완료로 표기됐는데 실제 머지 커밋이 원격 main 에 없으면 마킹 사고. 사용자에게 알리고 상태를 되돌릴지 결정.
 
@@ -290,7 +291,9 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
    - **plan 범위 내**: 본 plan 변경 파일에서 실패 → executor 재투입(또는 team-lead 직접 fix). 사용자 결정 불필요.
    - **plan 범위 외**: 실패 원인이 변경 외 파일(`git diff origin/main -- <파일>` 이 비어있음 = main 자체 깨짐) → 사용자에게 옵션 제시 (A: PR 에 fix 흡수 / B: 별도 hotfix PR 후 rebase / C: 그대로 PR + description 에 의존 명시). 결정 이력은 PR description 에 명시.
 4. **완료 마킹은 PR 브랜치 안에서만** — 마지막 phase commit 에 포함(이상), 또는 브랜치 안 별도 commit(차선). **main 직접 커밋/푸시 금지** (이중 진실원·push 충돌 위험. 재실행 방지는 사전 검증이 담당).
-5. push 후 PR 생성·갱신 (오픈 PR 없으면 신규, 있으면 갱신). PR 제목·body 형식은 레포 커밋 컨벤션을 따르고, phase 별 commit 목록 + "특이사항 및 후속" 섹션을 포함한다.
+5. push 후 PR 생성·갱신 (오픈 PR 없으면 신규, 있으면 갱신). base 는 `main`, head 는 `plan{N}-<slug>` 다.
+   이 PR 하나에 **planning 의 docs·tasks 커밋과 구현 phase 커밋이 함께** 담긴다 — 기획부터 구현까지가 하나의 완결된 변경으로 남는다.
+   PR 제목·body 형식은 레포 커밋 컨벤션을 따르고, 기획 커밋과 phase 별 commit 을 구분해 나열한 뒤 "특이사항 및 후속" 섹션을 포함한다.
    PR diff에 다른 plan의 task·구현이 섞였으면 생성하지 말고 브랜치 범위를 정리한다.
 6. **팀 종료**(모든 잔존 팀원) — 남아 있는 팀원 전부(`executor`·`executor-p{N}`·`critic`·`code-reviewer`·`docs-verifier`)에 각각 `shutdown_request`(또는 `TaskStop`)를 보내 종료를 확인한다. phase 단위 사이클에서 미종료된 executor 가 있으면 여기서 일괄 정리한다.
 7. **worktree 정리** — PR 생성·갱신과 원격 push가 끝난 뒤 worktree가 깨끗하고 로컬 전용 commit이 없음을 확인한다. 기본 checkout이나 다른 안전한 cwd로 이동해 `git worktree remove <절대경로>`를 실행하고 `git worktree list`에서 제거를 확인한다. PR 브랜치는 유지하며 브랜치 삭제는 머지 후 사용자 요청이 있을 때만 수행한다.
@@ -303,7 +306,8 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 
 - **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다. 자동완성 오타(`.claire-worktrees` 등) 로 유사 철자 디렉터리를 만들면 후속 검증이 깨진다. worktree 생성 전후로 `.claude` 외 `.cla*` 디렉터리를 탐지해 명백한 오타는 즉시 제거한다.
 - **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 확인한다 (`pwd`). 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜 main repo 의 task 를 실수로 건드릴 수 있다. commit 전 main repo + worktree 양쪽 `git status` 동시 점검 권장.
-- **base 신선도**: worktree 는 원격 main 기반으로 분기한다. 로컬 main 이 원격보다 앞서 있으면 미푸시 커밋 누락 위험을 안내한다.
+- **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다. planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있고, 구현 커밋이 같은 브랜치에 쌓여 PR 1개로 닫힌다.
+- **base 신선도**: plan 브랜치가 원격 main 보다 뒤처졌으면(특히 선행 plan 이 그 사이 머지됐으면) worktree 분기 전에 최신 main 을 반영한다. 선행 plan 의 docs 갱신이 빠진 채로 구현하면 문서와 코드가 어긋난다.
 - **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비(예: gitignore 된 env 파일 공유)는 레포마다 다르므로 **오버레이·CLAUDE.md 절차**를 따른다.
 - **정리 시점**: PR 생성·갱신, 원격 push, clean status 확인이 모두 끝난 뒤 제거한다. 작업 중이거나 push되지 않은 변경이 있으면 제거하지 않는다.
 - **정리 위치**: 제거 대상 worktree 내부를 cwd로 둔 채 실행하지 않는다. 기본 checkout이나 다른 안전한 경로에서 절대경로로 `git worktree remove`를 실행한다.
@@ -316,10 +320,10 @@ executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase
 ## 실행 흐름 요약
 
 ```
-[사전 검증 3중 — task 상태 + 원격 브랜치 + 오픈 PR (+ 완료↔머지 정합)]
+[사전 검증 3중 — plan 브랜치·task + 구현 커밋 유무 + 오픈 PR (+ 완료↔머지 정합)]
     → [실행 모드 선택 게이트 — A 정식 / B 사후검수 / C 직접]
     → [메인 워킹 트리 사전 점검 + 오타 worktree 정리]
-    → [worktree 생성 (원격 main 기반) + 레포 환경 setup]
+    → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
     → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
     → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
     → [모든 executor 실행 — phase 단위 spawn·검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
