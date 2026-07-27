@@ -29,7 +29,8 @@ jq -e '
   echo "$DIR/index.json — execution_profile/model schema 오류"
 
 # 범위 불명확: "전체" 표현 — executor 가 어디까지 손댈지 알 수 없다
-grep -nE "전체\s*(수정|변경|적용|교체|리팩토링|삭제)" "$DIR"/phase-*.md
+#   -H: phase 파일이 하나뿐일 때도 파일명을 붙여 다른 검사와 출력 형식을 맞춘다.
+grep -HnE "전체\s*(수정|변경|적용|교체|리팩토링|삭제)" "$DIR"/phase-*.md
 
 # cwd 누락: Bash 블록에 실행 위치가 없으면 worktree 대신 main repo 를 고칠 수 있다
 awk '
