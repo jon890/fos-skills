@@ -19,7 +19,7 @@ phase 단위로 atomic commit 을 쌓아 PR 까지 만든다.
     - **브랜치 규칙** — 작업 브랜치 이름 형식, planning 이 브랜치를 미리 만드는지 여부, worktree 루트 경로.
     - **에이전트 이름** — executor·docs-verifier 로 쓸 전용 에이전트 (레포마다 다름).
     - **task 스키마 세부** — `index.json` 필드·phase 파일 규격 (planning 의 task-create 규격과 레포 변형).
-    - **common-pitfalls 경로** — critic·code-reviewer 가 사전 해소 점검할 패턴 파일 위치.
+    - **반복 함정 목록 경로** — critic·code-reviewer 가 사전 해소를 점검할 패턴 파일 위치.
     - **커밋·PR 컨벤션** — 커밋 메시지 형식, PR 제목 형식, 노하우 누적 위치.
     - **환경 setup** — worktree 생성 후 의존성 설치·환경 파일 준비 절차.
 - 오버레이가 **없으면** 레포 `CLAUDE.md` 참조로 동작한다. CLAUDE.md 에도 근거가 없으면 사용자에게 확인한다.
@@ -238,7 +238,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 4. phase 크기가 5개 이하인가?
 5. 성공 기준이 충분한가?
 6. **실제 코드와 일치하는가?** (파일 존재·함수명·줄 수 검증)
-7. **오버레이가 지정한 common-pitfalls 의 관련 패턴이 사전 해소됐는가?**
+7. **오버레이가 지정한 반복 함정 목록의 관련 패턴이 사전 해소됐는가?**
 
 판정: **APPROVE** → 6단계. **REVISE** → 수정 후 재평가 (한도 3회).
 
@@ -291,7 +291,7 @@ team-lead 가 직접 검사하지 않는다 — 건너뛰기를 막기 위해서
 phase마다 code-reviewer를 반복 호출하지 않는다.
 
 - **검사 범위**: executor 가 변경한 파일만 (`git diff --name-only` 기준).
-- **검사 항목은 인라인하지 않는다** — 오버레이가 지정한 common-pitfalls 를 라우터로 골라 grep 점검하도록 지시한다.
+- **검사 항목을 본문에 나열하지 않는다** — 오버레이가 지정한 반복 함정 목록에서 관련 패턴을 골라 grep 으로 점검하도록 지시한다.
 - **전부 보고 지시**: 심각도로 자체 필터링하지 말고 발견한 것을 전부 올리라고 지시한다. "중대한 것만" · "보수적으로" 같은 지시는 문자 그대로 따라 실제 결함 보고까지 줄인다.
 - **설계 맥락 첨부**(판정 참고용): plan 이 의도한 raw 패턴, helper 를 우회한 사유, 범위 밖 placeholder 를 1-2줄로 요약해 붙인다.
     - reviewer 가 보고를 생략할 근거가 아니라, team-lead 가 분류할 때 쓰는 자료다.
@@ -425,7 +425,7 @@ executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase
 
 | 종류 | 누적 위치 |
 |---|---|
-| critic 반복 지적 | 오버레이가 지정한 common-pitfalls |
+| critic 반복 지적 | 오버레이가 지정한 반복 함정 목록 |
 | 프로세스 결함 | 이 SKILL.md 의 해당 섹션 |
 | 도메인 결정 | 레포 ADR |
 | 코딩 규칙 | `CLAUDE.md`·`AGENTS.md` |

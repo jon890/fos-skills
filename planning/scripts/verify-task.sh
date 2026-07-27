@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# task 생성 직후 자동 검증 — common-pitfalls.md 섹션 1 의 자동화 가능한 5 패턴 검출.
+# task 생성 직후 자동 검증 — 기계적으로 판정되는 task 위생 5 패턴을 검출한다.
 # 사용법: ~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}
 # 스크립트는 스킬 디렉터리에 있고, cwd 는 tasks/ 를 가진 <타깃 레포 root> 여야 한다.
 # 위반 라인을 stdout 으로 출력한다. 출력 0 줄이면 통과.
@@ -28,10 +28,10 @@ jq -e '
 ' "$DIR/index.json" >/dev/null || \
   echo "$DIR/index.json — execution_profile/model schema 오류"
 
-# 1-2: "전체" 표현 (파일 범위 부정확)
+# 범위 불명확: "전체" 표현 — executor 가 어디까지 손댈지 알 수 없다
 grep -nE "전체\s*(수정|변경|적용|교체|리팩토링|삭제)" "$DIR"/phase-*.md
 
-# 1-4: Bash 블록의 cwd 주석 누락
+# cwd 누락: Bash 블록에 실행 위치가 없으면 worktree 대신 main repo 를 고칠 수 있다
 awk '
   /^```bash/ { in_block=1; lines=""; start_line=NR; next }
   /^```/ && in_block {
@@ -41,19 +41,19 @@ awk '
   in_block { lines = lines "\n" $0 }
 ' "$DIR"/phase-*.md
 
-# 1-5: 인간 의존 검증 (코드 블록 외 prose 라인만)
+# 사람 의존 검증: 자동 실행이 끊긴다 (코드 블록 밖 본문만 본다)
 #   "수동 smoke" 는 dev server 동작 확인이라 정규식이 잡지 않는다.
 awk '
   /^```/ { in_code = !in_code; next }
   !in_code && /수동 검토|눈으로 확인|직접 확인|육안/ { print FILENAME ":" NR ": " $0 }
 ' "$DIR"/phase-*.md
 
-# 1-8: 마지막 phase 에 index.json completed 마킹 지시 누락
+# 완료 마킹 누락: plan 이 끝나도 상태가 안 바뀌어 재실행 사고로 이어진다
 LAST_PHASE=$(ls "$DIR"/phase-*.md | sort | tail -1)
 grep -E "index\.json.*completed|status.*completed" "$LAST_PHASE" > /dev/null || \
   echo "$LAST_PHASE — index.json completed 마킹 지시 누락"
 
-# 1-9: macOS BSD sed \b 미지원 (코드 블록 외 prose 라인만)
+# BSD sed \b 미지원: macOS 에서 조용히 아무것도 치환되지 않는다 (코드 블록 밖 본문만 본다)
 awk '
   /^```/ { in_code = !in_code; next }
   !in_code && /sed[[:space:]].*\\b/ { print FILENAME ":" NR ": " $0 }
