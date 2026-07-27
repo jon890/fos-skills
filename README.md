@@ -12,7 +12,21 @@ fos-skills/
   planning/                 # 구현 전 8단계 설계 워크플로
     SKILL.md
     task-create.md
+    references/step-*.md
     scripts/verify-task.sh
+  build-with-teams/         # task 를 팀 에이전트로 실행해 PR 까지
+    SKILL.md
+    references/
+  review-fix/               # PR 리뷰 반영
+    SKILL.md
+  docs-check/               # docs 6축 감사
+    SKILL.md
+    references/six-axis.md
+    scripts/static-check.sh
+  evaluation/               # 스킬 자체 측정
+    rubric.md
+    score.sh
+    baseline-*.md
 ```
 
 ## 설치 (글로벌 심링크)
@@ -38,6 +52,22 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 | `review-fix` | PR 봇 리뷰(🔴/🟡)를 우선순위대로 반영 → 스레드 resolve → commit·push. 검증·커밋 규칙은 레포 CLAUDE.md 참조 |
 | `build-with-teams` | task(index.json+phase)를 팀 에이전트로 phase 단위 실행 → critic·review·docs-verifier 검증 → PR. 검증 명령·에이전트·스키마는 레포 오버레이/CLAUDE.md |
 | `docs-check` | docs 6축 감사(부패·과대화·추론성·중복·자명성·가독성) → 승인 후 수정. docs 구조·docs-verifier 에이전트는 레포 오버레이/CLAUDE.md |
+
+## 스킬이 나아졌는지 재는 법
+
+세 층으로 나눠 본다. 하나로 합치면 어느 층이 나빠졌는지 보이지 않는다.
+
+| 층 | 무엇을 보나 | 어떻게 |
+|---|---|---|
+| 문서 위생 | 끊긴 참조, 표기 위반, 본문 분량 | `evaluation/score.sh` |
+| 실행 결과 | REVISE·FIX·개입 횟수의 추세 | 각 레포의 `docs/retrospectives/RUNS.md` |
+| 정성 판단 | 지침 정렬, 강제력, 계층 분리 | `evaluation/rubric.md` 를 독립 에이전트에 |
+
+**체감과 가장 직결되는 것은 실행 결과의 개입 횟수**다.
+스킬이 나아졌다는 것은 결국 사용자가 덜 끼어들어도 됐다는 뜻이다.
+
+점수를 목표로 삼지 않는다 — 올리려고 문서를 다듬으면 규칙을 우회하는 방향으로 변형된다.
+자세한 기준과 함정은 `evaluation/rubric.md` 를 본다.
 
 ## 주의: 전역 스킬이 프로젝트 스킬보다 우선한다
 
