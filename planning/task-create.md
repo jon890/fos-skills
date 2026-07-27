@@ -25,7 +25,7 @@ tasks/
   "status": "pending",                    // pending | in_progress | completed | failed
   "created_at": "2026-01-01",             // YYYY-MM-DD
   "total_phases": 3,                      // phases 배열 길이와 일치
-  "related_docs": [],                     // (선택) 관련 docs 경로
+  "related_docs": [],                     // (선택) task가 직접 수정·특별 참조하는 docs
   "depends_on": [],                       // (선택) 선행 plan 번호
   "phases": [
     {
@@ -46,6 +46,7 @@ tasks/
 - [ ] `number` 가 1 부터 순차 증가
 - [ ] 각 `file` 에 해당하는 `.md` 파일이 실제로 존재
 - [ ] `name` 이 `tasks/{name}/` 디렉터리명과 일치
+- [ ] 7단계에서 영향을 받는 필수 문서를 실제로 갱신했고 문서 diff를 검증함
 
 ---
 
@@ -212,9 +213,18 @@ scripts/verify-task.sh plan{N}-{slug}
 
 ## 별도 plan 으로 분리 vs 같은 plan 의 phase 분리
 
-같은 plan 의 phase: 의존성 있음 (phase 1 산출물을 phase 2 가 사용). PR 1개로 묶임.
+같은 plan 의 phase: 하나의 원자적 목표를 완성하기 위한 순차 작업. PR 1개로 묶임.
 
-별도 plan: 독립 실행 가능, PR 분리. 사용자 검토 시점 분리 / 의존성 / 도메인 분리일 때.
+별도 plan: 독립적인 완료·검토·검증 기준을 가짐. plan별 PR로 분리하고 `depends_on`으로 순서를 연결함.
+
+다음 중 하나라도 해당하면 별도 plan 분할을 우선한다.
+
+- 서로 다른 변경 이유나 도메인 경계를 가진다.
+- DB·저장 계약, backend API, frontend 연결, skill·tooling처럼 독립된 검토 초점이 있다.
+- 일부만 먼저 병합해도 기존 동작을 깨지 않고 가치를 제공한다.
+- 생성 파일을 제외한 예상 변경이 약 25개 파일, 800줄 또는 5개 phase를 넘는다.
+
+한 plan을 여러 PR로 나누거나 여러 plan을 한 PR에 합치지 않는다.
 
 ---
 
