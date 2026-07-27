@@ -190,7 +190,7 @@ critic 을 `run_in_background: true` 로 스폰한다. code-reviewer·docs-verif
 
 team-lead 가 task(`index.json` + `phase-*.md`)와 관련 docs·`CLAUDE.md`·오버레이를 읽는다.
 planning 이 이미 task 를 만들었으면 검토 + 필요 시 같은 브랜치에 보강 commit 만 한다 (별도 PR 금지). 이 skill 이 직접 task 를 만들어야 하면 아래 3-4 를 수행한다.
-요청에 여러 plan이 포함되면 `depends_on` 순서와 각 plan의 독립 PR 경계를 확인하고 이번 실행 대상 plan 하나만 선택한다. 선행 plan이 아직 `main`에 병합되지 않았으면 후속 plan 실행을 시작하지 않는다.
+요청에 여러 plan이 포함되면 이번 실행 대상 plan 하나만 선택한다. 실행 순서는 planning 이 보고한 순서를 따른다.
 
 ### 3. docs 최신화 + 커밋 (해당 시)
 
@@ -311,7 +311,7 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 - **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다. 자동완성 오타(`.claire-worktrees` 등) 로 유사 철자 디렉터리를 만들면 후속 검증이 깨진다. worktree 생성 전후로 `.claude` 외 `.cla*` 디렉터리를 탐지해 명백한 오타는 즉시 제거한다.
 - **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 확인한다 (`pwd`). 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜 main repo 의 task 를 실수로 건드릴 수 있다. commit 전 main repo + worktree 양쪽 `git status` 동시 점검 권장.
 - **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다. planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있고, 구현 커밋이 같은 브랜치에 쌓여 PR 1개로 닫힌다.
-- **base 신선도**: plan 브랜치가 원격 main 보다 뒤처졌으면(특히 선행 plan 이 그 사이 머지됐으면) worktree 분기 전에 최신 main 을 반영한다. 선행 plan 의 docs 갱신이 빠진 채로 구현하면 문서와 코드가 어긋난다.
+- **base 신선도**: plan 브랜치가 원격 main 보다 뒤처졌으면 worktree 분기 전에 `git rebase origin/main` + `git push --force-with-lease` 로 갱신한다. 오래된 base 위에서 구현하면 그사이 머지된 docs 와 코드가 어긋난다. PR 이 아직 없는 시점이라 rebase 로 잃을 것이 없다.
 - **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비(예: gitignore 된 env 파일 공유)는 레포마다 다르므로 **오버레이·CLAUDE.md 절차**를 따른다.
 - **정리 시점**: PR 생성·갱신, 원격 push, clean status 확인이 모두 끝난 뒤 제거한다. 작업 중이거나 push되지 않은 변경이 있으면 제거하지 않는다.
 - **정리 위치**: 제거 대상 worktree 내부를 cwd로 둔 채 실행하지 않는다. 기본 checkout이나 다른 안전한 경로에서 절대경로로 `git worktree remove`를 실행한다.

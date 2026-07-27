@@ -25,8 +25,6 @@ tasks/
   "status": "pending",                    // pending | in_progress | completed | failed
   "created_at": "2026-01-01",             // YYYY-MM-DD
   "total_phases": 3,                      // phases 배열 길이와 일치
-  "related_docs": [],                     // (선택) task가 직접 수정·특별 참조하는 docs
-  "depends_on": [],                       // (선택) 선행 plan 번호
   "phases": [
     {
       "number": 1,
@@ -218,7 +216,7 @@ AI 가 임의로 자동 수정하지 않고, 위반은 질문 도구로 확인�
 
 같은 plan 의 phase: 하나의 원자적 목표를 완성하기 위한 순차 작업. PR 1개로 묶임.
 
-별도 plan: 독립적인 완료·검토·검증 기준을 가짐. plan별 PR로 분리하고 `depends_on`으로 순서를 연결함.
+별도 plan: 독립적인 완료·검토·검증 기준을 가짐. plan별 PR로 분리하고 실행 순서는 사용자 보고로 전달함.
 
 다음 중 하나라도 해당하면 별도 plan 분할을 우선한다.
 
