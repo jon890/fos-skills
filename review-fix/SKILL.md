@@ -113,7 +113,7 @@ git status --short | grep "^UU"
 | **delete vs modify** | 한쪽 제거, 한쪽 수정 | 🛑 사용자 confirm 필수 |
 | **import 누락** | 한쪽이 import 제거 + 다른 쪽이 그 모듈 사용 | ⚠️ import 재추가 — silent NameError 회피 |
 
-**lockfile 처리 (언어 일반)** — lockfile 은 수동 머지하지 않는다 (무결성 깨짐). main 을 채택한 뒤 그 레포 패키지 매니저로 재생성한다.
+**lockfile 처리**(언어 일반) — lockfile 은 수동 머지하지 않는다 (무결성 깨짐). main 을 채택한 뒤 그 레포 패키지 매니저로 재생성한다.
 패키지 매니저는 **lockfile 종류로 감지**한다:
 
 - `pnpm-lock.yaml` → `pnpm install`
@@ -238,7 +238,7 @@ gh api repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
 
 reply 원칙: 커밋 해시 명시, 지적 → 해결책 간결 기술, 건너뛴 항목(이미 반영·해당 없음)은 reply 안 함.
 
-> **⚠️ 자동 재트리거 토큰 + cross-reference 금지 (CRITICAL — 봇 무한루프 방지)**
+> **⚠️ 자동 재트리거 토큰 + cross-reference 금지**(CRITICAL — 봇 무한루프 방지)
 > reply 본문에 다음 패턴을 포함하면 워크플로 재실행·봇 오인·의도치 않은 cross-reference 가 발생한다:
 >
 > - **재트리거 토큰**: `/review`, `@claude`, `@github-actions`, `@dependabot` 등 봇 워크플로 `if:` 조건이 substring 매칭하는 키워드.

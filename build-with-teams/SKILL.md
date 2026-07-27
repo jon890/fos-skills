@@ -45,7 +45,7 @@ plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검�
 2. **원격 작업 브랜치 존재** — 해당 plan 의 **구현** 브랜치가 원격에 있는지 확인한다. 있으면 이미 작업 중이거나 PR 미머지 상태일 수 있으니 차단 후 사용자 결정.
    - planning 산출물 브랜치(`plan{N}-<slug>`)는 구현 브랜치와 다른 이름이므로 차단 대상이 아니다. 오버레이가 형식을 지정하지 않으면 구현 브랜치 기본값은 `impl/plan{N}-<slug>` 다.
 3. **오픈 PR 존재** — 해당 plan 제목·브랜치를 포함한 오픈 PR 이 있는지 확인한다. 있으면 완료 후 머지 대기일 수 있으니 차단 후 사용자 결정.
-4. **완료 상태 ↔ 머지 정합 (역방향)** — 완료로 표기됐는데 실제 머지 커밋이 원격 main 에 없으면 마킹 사고. 사용자에게 알리고 상태를 되돌릴지 결정.
+4. **완료 상태 ↔ 머지 정합**(역방향) — 완료로 표기됐는데 실제 머지 커밋이 원격 main 에 없으면 마킹 사고. 사용자에게 알리고 상태를 되돌릴지 결정.
 
 > **왜 3중인가** — PR 머지 전 단계에서 main 의 `index.json` 은 여전히 미완료 상태이므로 1번만 보면 재실행 사고를 놓친다. 2·3번이 그 창을 덮는다.
 
@@ -112,7 +112,7 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 - **self-shutdown 대응**: code-reviewer·docs-verifier 는 idle 알림 직후 자체 종료하는 경향이 있다 — idle 대기 대신 필요 시점에 재스폰한다.
 - **executor cwd 격리**: executor 가 main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓰게 한다.
 - **executor scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 critic·code-reviewer 게이트를 우회한다 — 발견 시 보고만 하고 team-lead 승인 후 반영한다.
-- **cmux split-pane 팀원 회귀 (환경)**: cmux 위에서 Claude Code 2.1.183+ 는 named teammate split-pane 스폰이 깨진다 (cmux #6447 — claude 가 tmux shim 을 안 거침). `name` 지정 스폰이 `Could not determine current tmux pane/window` 로 실패하면, `name` 없이 백그라운드 subagent 로 스폰하고 완료 알림으로 결과를 회수한다 — 파이프라인 게이트는 동일하게 굴러간다. 재시작·shell config 로는 안 고쳐지니 폴백을 바로 쓴다.
+- **cmux split-pane 팀원 회귀**(환경): cmux 위에서 Claude Code 2.1.183+ 는 named teammate split-pane 스폰이 깨진다 (cmux #6447 — claude 가 tmux shim 을 안 거침). `name` 지정 스폰이 `Could not determine current tmux pane/window` 로 실패하면, `name` 없이 백그라운드 subagent 로 스폰하고 완료 알림으로 결과를 회수한다 — 파이프라인 게이트는 동일하게 굴러간다. 재시작·shell config 로는 안 고쳐지니 폴백을 바로 쓴다.
 - **watchdog stall 복구**: executor 가 무거운 외부 상호작용(DB-in-jest·긴 통합 실행)에서 `no progress 600s` stall 하면, 그 상호작용을 없애는 쪽으로 재프레이밍한다 — 예: jest DB 하네스가 없는 레포에선 파이프라인이 쓰는 순수 함수를 spec 안에서 in-process 조립해 검증(DB 미개방). 재스폰 프롬프트에 "DB 열지 말라" 를 명시하면 같은 stall 을 피한다.
 
 상세 프롬프트 문구·근거·판정 시간 규칙은 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
@@ -222,7 +222,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 
 판정: **APPROVE** → 6단계. **REVISE** → 수정 후 재평가 (한도 3회).
 
-**critic v2 재평가 시 강제 재읽기 (필수)**: critic 이 REVISE 후 v2 변경을 받고도 v1 평가를 반복 송신하는 사고가 있다. 원인은 worktree 의 새 파일을 다시 Read 하지 않은 것. 재평가 메시지에 다음 3가지를 반드시 포함:
+**critic v2 재평가 시 강제 재읽기**(필수): critic 이 REVISE 후 v2 변경을 받고도 v1 평가를 반복 송신하는 사고가 있다. 원인은 worktree 의 새 파일을 다시 Read 하지 않은 것. 재평가 메시지에 다음 3가지를 반드시 포함:
 
 1. "Read tool 로 다음 파일을 다시 읽고 재평가" + 변경 파일 절대경로.
 2. 확인 포인트 체크리스트 (어느 라인이 어떻게 바뀌었는지).
@@ -239,7 +239,7 @@ critic APPROVE 후 executor 를 `run_in_background: true`, `mode: "bypassPermiss
 code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 검증한다.
 단, 진행을 막는 결함의 원인 확인이 필요하면 조기 자문을 받을 수 있으며 그 결과는 최종 reviewer verdict를 대체하지 않는다.
 
-- **phase 단위 spawn → shutdown 사이클 (4+ phase 필수)**: 한 phase 완료·커밋 후 그 executor 를 **반드시 종료한 뒤** 다음 phase 를 새 이름(`executor-p{N}`)으로 스폰한다. 컨텍스트 격리 + 이름 충돌·auto-deliver 누락 회피.
+- **phase 단위 spawn → shutdown 사이클**(4+ phase 필수): 한 phase 완료·커밋 후 그 executor 를 **반드시 종료한 뒤** 다음 phase 를 새 이름(`executor-p{N}`)으로 스폰한다. 컨텍스트 격리 + 이름 충돌·auto-deliver 누락 회피.
     - 종료 방법: `SendMessage({to, message:{type:"shutdown_request"}})` 또는 `TaskStop`. 종료를 확인한 뒤 다음 executor 를 스폰한다.
     - **종료를 빠뜨리면 phase 마다 executor 가 누적된다** (8-phase task 에서 팀원 8개 잔존 관측). 다음 스폰 직전에 이전 executor 종료를 매 phase 강제한다.
     - 3 phase 이하는 executor 를 한 번만 스폰해 재사용한다 (다음 phase 는 새로 스폰하지 않고 `SendMessage` 로 지시).
@@ -259,7 +259,7 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 - **검사 범위**: executor 가 변경한 파일만 (`git diff --name-only` 기준).
 - **검사 항목은 인라인하지 않는다** — 오버레이가 지정한 common-pitfalls 를 라우터로 골라 grep 점검하도록 지시한다.
 - **전부 보고 지시**: 심각도로 자체 필터링하지 말고 발견한 것을 전부 올리라고 지시한다. "중대한 것만" · "보수적으로" 같은 지시는 문자 그대로 따라 실제 결함 보고까지 줄인다.
-- **설계 맥락 첨부 (판정 참고용)**: plan 의 의도된 raw 패턴·helper 우회 사유·scope 외 placeholder 를 1-2줄 요약해 첨부한다. reviewer 가 보고를 생략할 근거가 아니라 team-lead 가 분류할 때 쓰는 자료다.
+- **설계 맥락 첨부**(판정 참고용): plan 의 의도된 raw 패턴·helper 우회 사유·scope 외 placeholder 를 1-2줄 요약해 첨부한다. reviewer 가 보고를 생략할 근거가 아니라 team-lead 가 분류할 때 쓰는 자료다.
 
 **필터는 team-lead 의 별도 패스** — reviewer 보고 전체를 받아 (a) 실제 결함, (b) 의도된 설계, (c) 범위 외 후속으로 분류하고 (a) 만 `FIX_NEEDED` 로 되돌린다. (b)·(c) 는 폐기하지 말고 특이사항 4종에 합쳐 보고한다.
 
@@ -287,13 +287,13 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 
 1. team-lead 가 누적 commit 을 검토한다 — phase 별 commit 이 의도대로 들어갔는지, 마지막 phase commit 에 완료 마킹이 포함됐는지 확인.
 2. **통합 검증** — 레포 CLAUDE.md·오버레이의 검증 명령을 실행해 모든 phase 누적 후에도 통과하는지 확인한다.
-3. **검증 실패 시 분기 (필수)** — 실패 원인 파일과 변경 파일을 매칭해 책임을 분류한다. 자의적으로 plan PR 에 외부 잔존 깨짐 fix 를 흡수하지 않는다.
+3. **검증 실패 시 분기**(필수) — 실패 원인 파일과 변경 파일을 매칭해 책임을 분류한다. 자의적으로 plan PR 에 외부 잔존 깨짐 fix 를 흡수하지 않는다.
    - **plan 범위 내**: 본 plan 변경 파일에서 실패 → executor 재투입(또는 team-lead 직접 fix). 사용자 결정 불필요.
    - **plan 범위 외**: 실패 원인이 변경 외 파일(`git diff origin/main -- <파일>` 이 비어있음 = main 자체 깨짐) → 사용자에게 옵션 제시 (A: PR 에 fix 흡수 / B: 별도 hotfix PR 후 rebase / C: 그대로 PR + description 에 의존 명시). 결정 이력은 PR description 에 명시.
 4. **완료 마킹은 PR 브랜치 안에서만** — 마지막 phase commit 에 포함(이상), 또는 브랜치 안 별도 commit(차선). **main 직접 커밋/푸시 금지** (이중 진실원·push 충돌 위험. 재실행 방지는 사전 검증이 담당).
 5. push 후 PR 생성·갱신 (오픈 PR 없으면 신규, 있으면 갱신). PR 제목·body 형식은 레포 커밋 컨벤션을 따르고, phase 별 commit 목록 + "특이사항 및 후속" 섹션을 포함한다.
    PR diff에 다른 plan의 task·구현이 섞였으면 생성하지 말고 브랜치 범위를 정리한다.
-6. **팀 종료 (모든 잔존 팀원)** — 남아 있는 팀원 전부(`executor`·`executor-p{N}`·`critic`·`code-reviewer`·`docs-verifier`)에 각각 `shutdown_request`(또는 `TaskStop`)를 보내 종료를 확인한다. phase 단위 사이클에서 미종료된 executor 가 있으면 여기서 일괄 정리한다.
+6. **팀 종료**(모든 잔존 팀원) — 남아 있는 팀원 전부(`executor`·`executor-p{N}`·`critic`·`code-reviewer`·`docs-verifier`)에 각각 `shutdown_request`(또는 `TaskStop`)를 보내 종료를 확인한다. phase 단위 사이클에서 미종료된 executor 가 있으면 여기서 일괄 정리한다.
 7. **worktree 정리** — PR 생성·갱신과 원격 push가 끝난 뒤 worktree가 깨끗하고 로컬 전용 commit이 없음을 확인한다. 기본 checkout이나 다른 안전한 cwd로 이동해 `git worktree remove <절대경로>`를 실행하고 `git worktree list`에서 제거를 확인한다. PR 브랜치는 유지하며 브랜치 삭제는 머지 후 사용자 요청이 있을 때만 수행한다.
 8. 특이사항과 신규 노하우를 집계해 사용자에게 보고한다.
 9. 사용자가 PR 을 머지하면 완료 상태가 main 에 자동 반영된다. main 후속 작업 0개.
