@@ -1,0 +1,118 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1785111467442,
+  "projectRoot": "/Users/nhn/personal/fos-skills",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "build-with-teams": {
+      "path": "build-with-teams",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785111467432,
+      "keyFiles": [
+        "SKILL.md"
+      ]
+    },
+    "docs-check": {
+      "path": "docs-check",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785111467432,
+      "keyFiles": [
+        "SKILL.md"
+      ]
+    },
+    "planning": {
+      "path": "planning",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1785111467433,
+      "keyFiles": [
+        "SKILL.md",
+        "task-create.md"
+      ]
+    },
+    "review-fix": {
+      "path": "review-fix",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785111467433,
+      "keyFiles": [
+        "SKILL.md"
+      ]
+    },
+    "planning/scripts": {
+      "path": "planning/scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 1,
+      "lastAccessed": 1785111467434,
+      "keyFiles": [
+        "verify-task.sh"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "planning/SKILL.md",
+      "accessCount": 4,
+      "lastAccessed": 1785113143508,
+      "type": "file"
+    },
+    {
+      "path": "planning/task-create.md",
+      "accessCount": 2,
+      "lastAccessed": 1785113090664,
+      "type": "file"
+    },
+    {
+      "path": "planning/scripts/verify-task.sh",
+      "accessCount": 2,
+      "lastAccessed": 1785113119900,
+      "type": "file"
+    },
+    {
+      "path": "review-fix/SKILL.md",
+      "accessCount": 1,
+      "lastAccessed": 1785111499743,
+      "type": "file"
+    },
+    {
+      "path": "docs-check/SKILL.md",
+      "accessCount": 1,
+      "lastAccessed": 1785111499923,
+      "type": "file"
+    },
+    {
+      "path": "planning/references/step-8-tasks.md",
+      "accessCount": 1,
+      "lastAccessed": 1785113114482,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

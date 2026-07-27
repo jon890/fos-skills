@@ -63,6 +63,7 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 여러 세션이 동시에 planning 하면 번호·문서·push 가 충돌한다. 방지:
 
 - **branch-per-plan** — planning 을 **main 이 아니라 `plan{N}-<slug>` 브랜치**에서. docs+tasks 를 브랜치에 커밋 → PR 로 merge. 충돌은 merge 시점에 드러난다(silent 아님). (레포 branch 정책은 오버레이 우선.)
+    - **구현 브랜치와 이름을 겹치지 않게 한다** — `plan{N}-<slug>` 는 기획 산출물 전용이고, 구현 브랜치는 실행 스킬이 따로 만든다. 이름이 같으면 실행 스킬의 재실행 방지 검증이 원격 브랜치를 보고 "이미 작업 중" 으로 오인해 실행을 막는다. 오버레이가 구현 브랜치 형식을 지정하지 않으면 기본은 `impl/plan{N}-<slug>`.
 - **번호 선점** — 번호 부여 전 `git fetch` 후 `git branch -a` + `gh pr list --state open` 로 plan·ADR 번호를 원격까지 스캔 → 다음 가용 → **브랜치를 즉시 생성해 claim**. read-only 체크만 하면 두 세션이 같은 번호를 집는다.
 - **공유 문서는 append 편집** — 새 ADR·phase 파일은 충돌 없음. README·data-schema 같은 공유 인덱스는 **끝에 행 추가**만(기존 행 재배열·중간 삽입 금지) → merge 깔끔.
 - **ADR 번호** — 브랜치로 claim 안 되니 시작 시 원격까지 스캔, 충돌 나면 merge 때 재번호(최후).
