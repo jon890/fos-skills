@@ -32,7 +32,7 @@ team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율�
 3. **단독 결정 금지**: 분기점에서 자의적으로 결정하지 말고 구조화 질문 도구(Claude Code 는 `AskUserQuestion`)로 사용자에게 옵션을 제시한다.
 4. **plan 1개 = PR 1개**: 한 실행은 정확히 하나의 plan만 다루고 그 plan의 단일 PR로 끝낸다. 여러 plan을 한 브랜치·PR에 합치거나 한 plan을 여러 PR로 쪼개지 않는다.
 
-게이트(critic 승인·docs 정합성·재시도 한도)는 원칙으로 되풀이하지 않고 각 절차 섹션이 단일 소스다.
+통과 조건(critic 승인·docs 정합성·재시도 한도)는 원칙으로 되풀이하지 않고 각 절차 섹션이 단일 소스다.
 
 ## 사전 검증 (재실행 방지)
 
@@ -57,7 +57,7 @@ plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검�
 - 이어서 작업(옵션 A) vs 새로 시작(옵션 B) 분기 정책
 구체 검증 명령(`git ls-remote`, `gh pr list`, `jq .status` 등)은 레포 브랜치 규칙에 맞춰 조립한다.
 
-## 실행 모드 선택 게이트 (사전 검증 통과 직후)
+## 실행 모드 선택 점검 (사전 검증 통과 직후)
 
 team-lead 가 task 를 읽고 규모를 판정한 직후, 첫 작업(worktree 생성 등) 전에 구조화 질문 도구로 팀원 spawn 모드를 묻는다 — 자의적으로 판단하지 않는다.
 
@@ -69,11 +69,11 @@ team-lead 가 task 를 읽고 규모를 판정한 직후, 첫 작업(worktree �
 
 기본 권장은 규모 기반(소 → C, 중 → B, 대 → A). "이전 세션이 그랬으니까" 같은 자의적 판단은 하지 않고 **매 호출마다 새로 질문**한다 (사용자가 "앞으로도 X 로" 라고 명시했으면 그 결정을 따른다).
 
-> **왜 이 게이트가 필요한가** — 자의적으로 모드 C 를 골라 모든 게이트를 skip 하면 사후 검수로 보강하는 비용이 크다. 시작 시점 1번 질문이 훨씬 싸다.
+> **왜 이 점검이 필요한가** — 자의적으로 모드 C 를 골라 모든 점검을 건너뛰면 사후 검수로 보강하는 비용이 크다. 시작 시점 1번 질문이 훨씬 싸다.
 
 ## 분기점 단독 결정 금지 (일반 가드)
 
-위 모드 게이트 외에도 작업 도중 **2개 이상 옵션 사이에서 결정해야 하는 상황**이면 자의적으로 진행하지 말고 즉시 옵션 + 트레이드오프를 질문한다.
+위 모드 점검 외에도 작업 도중 **2개 이상 옵션 사이에서 결정해야 하는 상황**이면 자의적으로 진행하지 말고 즉시 옵션 + 트레이드오프를 질문한다.
 
 - spec 충실도 (정확히 따를지 vs 일부 보류)
 - scope 변경 (executor 가 task 외 변경 발견)
@@ -108,11 +108,11 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 - **정식 팀원 스폰**: `team_name`+`name` 지정해 스폰한다. 일회성 호출은 팀 컨텍스트 밖이라 이후 `SendMessage` 협업이 끊긴다.
 - **worktree 절대경로**: 팀원에게 주는 파일 참조는 상대경로가 아니라 worktree 절대경로로 준다. 상대경로는 main 의 구버전 파일을 가리킬 수 있다.
 - **SendMessage 회신 강제**: 자기 화면 출력만 하고 종료하면 team-lead 에 결과가 안 닿는다. 스폰 프롬프트에 회신 의무를 명시한다.
-- **자발적 실행 방지**: team-lead 지시 전 팀원이 먼저 실행·검증을 시작하면 게이트 시점 정합성이 깨진다.
+- **자발적 실행 방지**: team-lead 지시 전 팀원이 먼저 실행·검증을 시작하면 점검 시점 정합성이 깨진다.
 - **self-shutdown 대응**: code-reviewer·docs-verifier 는 idle 알림 직후 자체 종료하는 경향이 있다 — idle 대기 대신 필요 시점에 재스폰한다.
 - **executor cwd 격리**: executor 가 main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓰게 한다.
-- **executor scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 critic·code-reviewer 게이트를 우회한다 — 발견 시 보고만 하고 team-lead 승인 후 반영한다.
-- **cmux split-pane 팀원 회귀**(환경): cmux 위에서 Claude Code 2.1.183+ 는 named teammate split-pane 스폰이 깨진다 (cmux #6447 — claude 가 tmux shim 을 안 거침). `name` 지정 스폰이 `Could not determine current tmux pane/window` 로 실패하면, `name` 없이 백그라운드 subagent 로 스폰하고 완료 알림으로 결과를 회수한다 — 파이프라인 게이트는 동일하게 굴러간다. 재시작·shell config 로는 안 고쳐지니 폴백을 바로 쓴다.
+- **executor scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 critic·code-reviewer 검토를 우회한다 — 발견 시 보고만 하고 team-lead 승인 후 반영한다.
+- **cmux split-pane 팀원 회귀**(환경): cmux 위에서 Claude Code 2.1.183+ 는 named teammate split-pane 스폰이 깨진다 (cmux #6447 — claude 가 tmux shim 을 안 거침). `name` 지정 스폰이 `Could not determine current tmux pane/window` 로 실패하면, `name` 없이 백그라운드 subagent 로 스폰하고 완료 알림으로 결과를 회수한다 — 파이프라인 점검는 동일하게 굴러간다. 재시작·shell config 로는 안 고쳐지니 폴백을 바로 쓴다.
 - **watchdog stall 복구**: executor 가 무거운 외부 상호작용(DB-in-jest·긴 통합 실행)에서 `no progress 600s` stall 하면, 그 상호작용을 없애는 쪽으로 재프레이밍한다 — 예: jest DB 하네스가 없는 레포에선 파이프라인이 쓰는 순수 함수를 spec 안에서 in-process 조립해 검증(DB 미개방). 재스폰 프롬프트에 "DB 열지 말라" 를 명시하면 같은 stall 을 피한다.
 
 상세 프롬프트 문구·근거·판정 시간 규칙은 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
@@ -142,7 +142,7 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 | **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
-planning 분할 게이트를 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 ledger에 남은 plan이므로 "대"로 다룬다.
+planning 분할 점검를 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 ledger에 남은 plan이므로 "대"로 다룬다.
 사용자가 현재 실행에 실제 모델을 명시하면 runtime override로 적용하되 task 파일에는 기록하지 않는다.
 
 phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있다.
@@ -169,9 +169,9 @@ legacy field는 호환 입력일 뿐이며 신규 task 생성에는 사용하지
 
 ## 재시도 한도
 
-무한 루프를 막기 위해 각 게이트에 한도를 둔다. 초과 시 `PHASE_BLOCKED` 로 사용자(team-lead)에게 결정을 위임한다.
+무한 루프를 막기 위해 각 점검에 한도를 둔다. 초과 시 `PHASE_BLOCKED` 로 사용자(team-lead)에게 결정을 위임한다.
 
-| 게이트 | 한도 | 초과 시 |
+| 점검 | 한도 | 초과 시 |
 |---|---|---|
 | **critic REVISE** | 3회 | `PHASE_BLOCKED: critic REVISE 한도 초과 — team-lead 결정 필요` |
 | **code-reviewer FIX_NEEDED** | 2회 | `PHASE_BLOCKED: code-reviewer FIX 한도 초과 — 수동 검토 필요` |
@@ -208,7 +208,7 @@ planning 이 이미 task 를 만들었으면 검토 + 필요 시 같은 브랜�
 
 **task 재분할 시 index.json 동시 갱신 강제**: phase 파일을 추가·제거·재작성하면 `index.json` 의 phase 개수·배열·설명을 **같은 commit 으로** 갱신한다. phase 파일만 추가하고 index.json 을 안 고치면 파이프라인이 새 phase 를 인식 못 해 핵심이 누락된다. commit 직전 phase 파일 수와 index.json 값이 일치하는지 sanity check.
 
-### 5. critic 평가 (게이트)
+### 5. critic 평가 (통과 조건)
 
 team-lead → critic 에게 계획 전송. critic 평가 관점:
 
@@ -328,7 +328,7 @@ executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase
 
 ```
 [사전 검증 3중 — plan 브랜치·task + 구현 커밋 유무 + 오픈 PR (+ 완료↔머지 정합)]
-    → [실행 모드 선택 게이트 — A 정식 / B 사후검수 / C 직접]
+    → [실행 모드 선택 점검 — A 정식 / B 사후검수 / C 직접]
     → [메인 워킹 트리 사전 점검 + 오타 worktree 정리]
     → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
     → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
@@ -354,7 +354,7 @@ executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase
 
 오버레이에 별도 경로가 없으면 `docs/retrospectives/`와 그 `INDEX.md`를 회고 단일 소스로 사용한다.
 `tasks/`에는 계획·phase·상태만 두고 회고를 저장하지 않는다.
-회고는 승격 여부와 무관하게 보존하고, `docs/pitfalls`의 엄격한 축적 게이트를 통과하지 못했다는 이유로 버리지 않는다.
+회고는 승격 여부와 무관하게 보존하고, `docs/pitfalls`의 엄격한 축적 기준를 통과하지 못했다는 이유로 버리지 않는다.
 
 PR 생성 후 worktree 정리 직전, 사용자에게 "이번 세션 누적 노하우" 를 1-3줄 보고한다. 누적 안 했으면 "신규 노하우 없음" 으로 명시한다.
 

@@ -7,7 +7,7 @@
 1. [정식 팀원 스폰 규칙](#1-정식-팀원-스폰-규칙) — `team_name`+`name` 없이 스폰하면 SendMessage 협업이 끊긴다
 2. [팀원 프롬프트·메시지는 worktree 절대경로](#2-팀원-프롬프트메시지는-worktree-절대경로) — 상대경로는 main 의 구버전 파일을 가리킬 수 있다
 3. [팀원 SendMessage 회신 강제](#3-팀원-sendmessage-회신-강제) — 자기 화면 출력만 하고 종료하면 team-lead 에 안 닿는다
-4. [팀원 자발적 실행 방지](#4-팀원-자발적-실행-방지) — 지시 전 선행 실행은 게이트 시점 정합성을 깬다
+4. [팀원 자발적 실행 방지](#4-팀원-자발적-실행-방지) — 지시 전 선행 실행은 점검 시점 정합성을 깬다
 5. [팀원 self-shutdown 대응](#5-팀원-self-shutdown-대응) — idle 알림 직후 자체 종료하는 경향에 대한 우회
 6. [executor cwd 격리](#6-executor-cwd-격리) — main repo 오염 방지
 7. [executor scope 확장 보고 의무](#7-executor-scope-확장-보고-의무) — 범위 외 수정 자체 판단 금지
@@ -50,7 +50,7 @@ team-lead 는 idle 알림만 2회 이상 연속 수신하고 결과 메시지가
 
 ## 4. 팀원 자발적 실행 방지
 
-정식 팀원이 team-lead 의 지시 전에 자발적으로 실행·검증을 시작하면 게이트 시점 정합성이 깨진다. 스폰 프롬프트에 다음을 포함:
+정식 팀원이 team-lead 의 지시 전에 자발적으로 실행·검증을 시작하면 점검 시점 정합성이 깨진다. 스폰 프롬프트에 다음을 포함:
 
 ```
 대기 상태. team-lead 의 SendMessage 지시 전에 절대 자발적으로 작업/검증을 시작하지 말 것.
@@ -81,7 +81,7 @@ team-lead 는 executor 작업 중 main repo working tree 가 clean 한지 주기
 
 ## 7. executor scope 확장 보고 의무
 
-executor 가 task 범위 외 수정(pre-existing 에러 픽스, 발견한 bug, 규칙 위반 자체 변경)을 자체 판단으로 추가하면 critic·code-reviewer 게이트를 우회하게 된다. 스폰 프롬프트에 다음을 그대로 포함한다:
+executor 가 task 범위 외 수정(pre-existing 에러 픽스, 발견한 bug, 규칙 위반 자체 변경)을 자체 판단으로 추가하면 critic·code-reviewer 검토를 우회하게 된다. 스폰 프롬프트에 다음을 그대로 포함한다:
 
 ```
 task 범위 외 코드 수정(pre-existing 에러, 발견한 bug, 규칙 위반 자체 변경)은 자체 판단 금지.

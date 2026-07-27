@@ -36,6 +36,6 @@
 4. `git diff -- docs/prd.md docs/flow.md docs/code-architecture.md docs/data-schema.md docs/adr`로 변경을 읽고 용어·상태·API·저장 모델이 서로 일치하는지 확인한다.
 5. 영향이 없는 문서와 그 근거를 단계 결과에 남긴다.
 
-## 게이트 통과
+## 통과 조건
 
 최종 결정이 필수 관리 문서와 필요한 ADR에 실제 반영되고, 문서 diff 검증이 끝나고, 모호점 **0** → 8단계. 문서 계획만 작성했거나 갱신을 phase로 미뤘다면 통과하지 못한다.

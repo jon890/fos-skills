@@ -9,7 +9,7 @@
 
 - 7단계 필수 문서의 영향 판정·갱신·diff 검증이 끝났다는 근거. 없으면 task 파일을 만들지 않는다.
 - `index.json` + phase 파일. 스키마·phase 구조·self-review·verify-task 절차는 `task-create.md` 를 따른다.
-- 규모가 큰 요청은 규모 분할 게이트를 통과한 여러 plan 디렉터리. 각 plan 은 자체 브랜치·PR·검증 단위이며, 실행 순서는 사용자 보고로 전달한다.
+- 규모가 큰 요청은 규모 분할 점검를 통과한 여러 plan 디렉터리. 각 plan 은 자체 브랜치·PR·검증 단위이며, 실행 순서는 사용자 보고로 전달한다.
 
 ## 캐낼 모호점 (능동 발굴 → 사용자 확정)
 
@@ -23,6 +23,6 @@
 - 번호는 SKILL.md "동시성 안전"대로: `git fetch` → 원격 스캔 → 브랜치 claim.
 - 공유 인덱스(README·data-schema)는 append 편집.
 
-## 게이트 통과
+## 통과 조건
 
-7단계 문서 우선 게이트 + 규모 분할 게이트 + plan별 verify-task 0 줄 + self-review 통과 + 모호점 **0** → 각 plan 브랜치에 커밋·push(완료 후 절차).
+7단계 문서 우선 점검 + 규모 분할 점검 + plan별 verify-task 0 줄 + self-review 통과 + 모호점 **0** → 각 plan 브랜치에 커밋·push(완료 후 절차).
