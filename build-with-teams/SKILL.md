@@ -120,8 +120,7 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 - **self-shutdown 대응**: code-reviewer·docs-verifier 는 idle 알림 직후 자체 종료하는 경향이 있다 — idle 대기 대신 필요 시점에 재스폰한다.
 - **executor cwd 격리**: executor 가 main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓰게 한다.
 - **executor scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 critic·code-reviewer 검토를 우회한다 — 발견 시 보고만 하고 team-lead 승인 후 반영한다.
-- **cmux split-pane 팀원 회귀**(환경): cmux 위에서 Claude Code 2.1.183+ 는 이름을 지정한 팀원의 split-pane 스폰이 깨진다.
-    - 원인: cmux #6447 — claude 가 tmux shim 을 거치지 않는다.
+- **split-pane 팀원 스폰 실패**(환경): tmux 없는 터미널에서는 이름을 지정한 팀원의 split-pane 스폰이 깨진다.
     - 증상: `name` 지정 스폰이 `Could not determine current tmux pane/window` 로 실패한다.
     - 폴백: `name` 없이 백그라운드 subagent 로 스폰하고 완료 알림으로 결과를 회수한다. 파이프라인 점검은 그대로 굴러간다.
     - 재시작이나 shell 설정으로는 안 고쳐지니 폴백을 바로 쓴다.
