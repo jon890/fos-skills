@@ -167,8 +167,11 @@ phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있
 ### surface별 해석
 
 - 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다. 정확히 맞는 등급이 없으면 가장 가까운 role을 쓰고 실제 선택을 실행 보고에 남긴다.
-- 모델·reasoning 파라미터는 기본적으로 지정하지 않고 parent session에서 상속한다 — 특정 공급자 버전에 묶이지 않기 위해서다.
-- 사용자가 특정 모델을 요청하거나 runtime이 일회성 override를 지원할 때만 spawn 시점에 모델을 지정한다.
+- **등급 표가 기준이고 상속은 결과다.** 스폰 전에 그 팀원의 등급을 먼저 정하고, parent session이 이미 그 등급이면 모델 인자를 생략한다 (생략이 곧 그 등급이므로 공급자 버전에 묶이지 않는다).
+- **parent 등급과 다르면 spawn 시점에 명시 지정한다.** 생략은 "적절히 맞춰진다"는 뜻이 아니라 "parent 등급을 그대로 쓴다"는 뜻이다.
+    - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해, 표에 `standard`라 적혀 있는데도 deep으로 떴다.
+    - 부모가 deep인 실행에서는 `standard`·`fast` 팀원 **전원**이 이 함정에 걸린다. 스폰 직전에 "이 팀원 등급 == parent 등급인가"를 매번 확인한다.
+- 사용자가 특정 모델을 요청하면 그 override가 등급 표보다 우선한다.
 
 legacy task의 `model: haiku | sonnet | opus`는 각각 `fast | standard | deep`으로 읽는다.
 legacy field는 호환 입력일 뿐이며 신규 task 생성에는 사용하지 않는다.
