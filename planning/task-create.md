@@ -14,7 +14,7 @@ tasks/
     ...
 ```
 
-`plan{N}` 의 N 은 다음 가용 번호 (SKILL.md "plan 네이밍 규칙" 의 번호 충돌 방지 참조).
+`plan{N}` 의 N 은 다음 가용 번호 (SKILL.md "동시성 안전" 의 번호 선점 참조).
 
 ## index.json 스키마
 
