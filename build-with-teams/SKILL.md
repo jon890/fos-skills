@@ -1,6 +1,6 @@
 ---
 name: build-with-teams
-version: 1.0.0
+version: 1.1.0
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 ---
 
@@ -197,6 +197,23 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 재실행 시에도 유지한다.
 
 ## 실행 절차
+
+```
+[사전 검증 3중 — plan 브랜치·task + 구현 커밋 유무 + 오픈 PR (+ 완료↔머지 정합)]
+    → [실행 모드 선택 점검 — A 정식 / B 사후검수 / C 직접]
+    → [메인 워킹 트리 사전 점검 + 오타 worktree 정리]
+    → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
+    → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
+    → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
+    → [모든 executor 실행 — phase 단위 spawn·검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
+    → [누적 diff code-reviewer 검사 — 전부 보고 후 team-lead 필터] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
+    → [code-reviewer PASS 후 최종 HEAD docs-verifier 검증 1회] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
+    → [통합 검증 — 실패 시 plan 범위 내/외 분기]
+    → [team-lead 일괄 push (완료 마킹은 PR 브랜치 안)]
+    → [PR 생성·갱신]
+    → [팀 shutdown + worktree 정리 + 특이사항 집계 보고]
+    → (사용자 PR 머지 → 완료 상태 자동 main 반영, 후속 0개)
+```
 
 ### 1. 팀 생성
 
@@ -403,25 +420,6 @@ worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
 ## 실패 복구
 
 executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase 수정 필요 시 critic 재평가(5단계) → 단순 에러면 executor 재실행 지시.
-
-## 실행 흐름 요약
-
-```
-[사전 검증 3중 — plan 브랜치·task + 구현 커밋 유무 + 오픈 PR (+ 완료↔머지 정합)]
-    → [실행 모드 선택 점검 — A 정식 / B 사후검수 / C 직접]
-    → [메인 워킹 트리 사전 점검 + 오타 worktree 정리]
-    → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
-    → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
-    → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
-    → [모든 executor 실행 — phase 단위 spawn·검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
-    → [누적 diff code-reviewer 검사 — 전부 보고 후 team-lead 필터] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
-    → [code-reviewer PASS 후 최종 HEAD docs-verifier 검증 1회] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
-    → [통합 검증 — 실패 시 plan 범위 내/외 분기]
-    → [team-lead 일괄 push (완료 마킹은 PR 브랜치 안)]
-    → [PR 생성·갱신]
-    → [팀 shutdown + worktree 정리 + 특이사항 집계 보고]
-    → (사용자 PR 머지 → 완료 상태 자동 main 반영, 후속 0개)
-```
 
 ## 노하우 누적 (세션마다 보강)
 
