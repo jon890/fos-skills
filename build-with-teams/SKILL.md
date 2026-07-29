@@ -25,8 +25,6 @@ phase 단위로 atomic commit 을 쌓아 PR 까지 만든다.
     - **환경 setup** — worktree 생성 후 의존성 설치·환경 파일 준비 절차.
 - 오버레이가 **없으면** 레포 `CLAUDE.md` 참조로 동작한다. CLAUDE.md 에도 근거가 없으면 사용자에게 확인한다.
 
-오버레이는 코어를 *덮어쓰는* 게 아니라 *채운다*.
-
 ## 핵심 원칙
 
 1. **docs-first**: docs 반영과 커밋 → task 생성 → 실행. 순서 위반 금지.
@@ -162,8 +160,8 @@ executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한�
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
 사용자가 현재 실행에 실제 모델을 명시하면 runtime override로 적용하되 task 파일에는 기록하지 않는다.
 
-phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있다.
-기계적 작업은 `fast`, 구현 대부분은 `standard`, 복잡 알고리즘은 `deep`을 사용한다.
+phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
+스키마 소유자인 `planning/task-create.md` 의 "실행 등급 라우팅" 을 따른다.
 
 ### surface별 해석
 
@@ -174,8 +172,6 @@ phase 파일은 `execution_profile: fast | standard | deep`을 명시할 수 있
     - 부모가 deep인 실행에서는 `standard`·`fast` 팀원 **전원**이 이 함정에 걸린다. 스폰 직전에 "이 팀원 등급 == parent 등급인가"를 매번 확인한다.
 - 사용자가 특정 모델을 요청하면 그 override가 등급 표보다 우선한다.
 
-legacy task의 `model: haiku | sonnet | opus`는 각각 `fast | standard | deep`으로 읽는다.
-legacy field는 호환 입력일 뿐이며 신규 task 생성에는 사용하지 않는다.
 한 phase 에 `execution_profile` 과 legacy `model` 이 함께 있으면 우선순위를 추측하지 않는다.
 `PHASE_BLOCKED: execution profile schema conflict` 로 종료한다.
 
@@ -383,7 +379,7 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 ## worktree 기반 격리 실행
 
 작업 간 충돌을 막기 위해 git worktree 를 쓴다.
-worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다 — 부모 디렉터리를 어지럽히지 않기 위해서다.
+worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
 `.gitignore` 에 `.claude/worktrees/` 가 등록돼 있어야 한다.
 
 - **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다.
@@ -400,9 +396,9 @@ worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다 — �
     - 오래된 base 위에서 구현하면 그사이 머지된 docs 와 코드가 어긋난다.
     - PR 이 아직 없는 시점이라 rebase 로 잃을 것이 없다.
 - **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비(예: gitignore 된 env 파일 공유)는 레포마다 다르므로 **오버레이·CLAUDE.md 절차**를 따른다.
-- **정리 시점**: PR 생성·갱신, 원격 push, clean status 확인이 모두 끝난 뒤 제거한다. 작업 중이거나 push되지 않은 변경이 있으면 제거하지 않는다.
 - **정리 위치**: 제거 대상 worktree 내부를 cwd로 둔 채 실행하지 않는다. 기본 checkout이나 다른 안전한 경로에서 절대경로로 `git worktree remove`를 실행한다.
-- **브랜치 보존**: worktree만 제거하고 PR 브랜치는 유지한다. 브랜치 삭제·원복은 PR 머지 후 사용자 판단에 따른다.
+
+정리 시점과 브랜치 보존은 9단계 7항이 소유한다.
 
 ## 실패 복구
 
@@ -456,9 +452,3 @@ executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase
 `docs/pitfalls` 의 엄격한 축적 기준을 통과하지 못했다는 이유로 버리지 않는다.
 
 PR 생성 후 worktree 정리 직전, 사용자에게 "이번 세션 누적 노하우" 를 1-3줄 보고한다. 누적 안 했으면 "신규 노하우 없음" 으로 명시한다.
-
-## 의도적으로 안 하는 것
-
-- **planning 역할 침범**: task 설계 워크플로는 planning 이 담당한다.
-  이 skill 은 이미 만들어진 task 를 실행한다 — task 가 없으면 planning 을 안내하거나 최소한만 생성한다.
-- **검증 우회**: 통합 검증을 건너뛰거나 우회 플래그로 통과시키지 않는다.
