@@ -91,17 +91,17 @@ description: 새 기능·변경사항을 구현하기 전 8단계 설계 워크�
 
 각 단계는 진입 시 해당 reference 를 읽고 그 역할로 수행 → 단계 표기 → 모호점 0 확인 → 다음.
 
-| 단계 | 이름 | reference |
-|---|---|---|
-| 0 | 보정(선택) — 지식수준·압박강도 | `references/step-0-calibration.md` |
-| 1 | 구현 가능성 (역할: CTO) | `references/step-1-feasibility.md` |
-| 2 | 기술 스택 | `references/step-2-tech-stack.md` |
-| 3 | 호출/사용자 흐름 (역할: 워크플로/UX) | `references/step-3-flow.md` |
-| 4 | 인터페이스 설계 | `references/step-4-interface.md` |
-| 5 | API/함수 설계 | `references/step-5-api.md` |
-| 6 | 데이터/코드 구조 (역할: 데이터 모델러+CTO) | `references/step-6-data-code.md` |
-| 7 | docs 영향 종합과 기술 결정 기록 | `references/step-7-docs.md` |
-| 8 | task 파일 생성과 커밋 | `references/step-8-tasks.md`, `task-create.md` |
+| 단계 | 이름 | 무엇을 정하는가 | reference |
+|---|---|---|---|
+| 0 | 보정 (선택) | 질문 깊이와 압박 강도를 사용자에 맞춘다 | `references/step-0-calibration.md` |
+| 1 | 구현 가능성 (역할: CTO) | 되는가, 무엇을 재사용하나, 무엇이 위험한가 | `references/step-1-feasibility.md` |
+| 2 | 기술 스택 | 기존 스택으로 되는가, 새 의존이 정당한가 | `references/step-2-tech-stack.md` |
+| 3 | 호출·사용자 흐름 (역할: 워크플로/UX) | 정상 흐름과 실패·빈 상태·동시 충돌 | `references/step-3-flow.md` |
+| 4 | 인터페이스 설계 | 사용자와 호출자가 마주하는 표면 | `references/step-4-interface.md` |
+| 5 | API·함수 설계 | 엔드포인트·시그니처·요청과 응답 스키마 | `references/step-5-api.md` |
+| 6 | 데이터·코드 구조 (역할: 데이터 모델러 겸 CTO) | 스키마·상태와 디렉터리 배치 | `references/step-6-data-code.md` |
+| 7 | docs 영향과 기술 결정 기록 | 책임 문서 판정과 실제 갱신 | `references/step-7-docs.md` |
+| 8 | task 파일 생성과 커밋 | 대화를 못 본 executor 가 읽고 실행할 phase | `references/step-8-tasks.md`, `task-create.md` |
 
 ## 의사결정 누적 → 논의 완료 시 docs 반영
 
