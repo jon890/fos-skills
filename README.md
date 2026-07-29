@@ -11,16 +11,20 @@
 fos-skills/
   planning/                 # 구현 전 8단계 설계 워크플로
     SKILL.md
+    CHANGELOG.md
     task-create.md
     references/step-*.md
     scripts/verify-task.sh
   build-with-teams/         # task 를 팀 에이전트로 실행해 PR 까지
     SKILL.md
+    CHANGELOG.md
     references/
   review-fix/               # PR 리뷰 반영
     SKILL.md
+    CHANGELOG.md
   docs-check/               # docs 6축 감사
     SKILL.md
+    CHANGELOG.md
     references/six-axis.md
     scripts/static-check.sh
   evaluation/               # 스킬 자체 측정
@@ -52,6 +56,30 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 | `review-fix` | PR 봇 리뷰(🔴/🟡)를 우선순위대로 반영 → 스레드 resolve → commit·push. 검증·커밋 규칙은 레포 CLAUDE.md 참조 |
 | `build-with-teams` | task(index.json+phase)를 팀 에이전트로 phase 단위 실행 → critic·review·docs-verifier 검증 → PR. 검증 명령·에이전트·스키마는 레포 오버레이/CLAUDE.md |
 | `docs-check` | docs 6축 감사(부패·과대화·추론성·중복·자명성·가독성) → 승인 후 수정. docs 구조·docs-verifier 에이전트는 레포 오버레이/CLAUDE.md |
+
+## 버전과 변경 이력
+
+각 스킬은 `SKILL.md` frontmatter 의 `version` 과 같은 디렉터리의 `CHANGELOG.md` 로 이력을 남긴다.
+
+**이 버전은 배포 핀이 아니다.** 소비 방식이 심링크라 모든 프로젝트가 항상 최신을 쓴다.
+특정 버전에 고정할 수단이 없으므로, 버전의 목적은 무엇이 언제 왜 바뀌었는지 추적하는 것뿐이다.
+이 점을 잊으면 태그와 릴리스까지 붙는 과설계로 간다.
+
+올리는 기준은 셋이다.
+
+| 등급 | 언제 | 예 |
+|---|---|---|
+| major | 워크플로 단계가 바뀌어 기존 오버레이나 task 형식과 안 맞는다 | 단계 수를 8에서 6으로 줄인다 |
+| minor | 지시를 추가하거나 제거한다 | 스폰 폴백 단계화를 넣는다 |
+| patch | 문구만 다듬는다 | 표현을 고치고 오타를 바로잡는다 |
+
+규칙 두 가지를 지킨다.
+
+- 저장소 루트에는 CHANGELOG 를 두지 않는다. 갱신 지점이 갈려 한쪽이 먼저 낡는다.
+- git 태그는 만들지 않는다. 심링크 소비에서는 태그가 아무것도 고정하지 못한다.
+
+`evaluation/` 은 스킬이 아니라 측정 도구라 버전을 붙이지 않는다.
+이력은 `baseline-<날짜>.md` 파일이 대신한다.
 
 ## 스킬이 나아졌는지 재는 법
 
