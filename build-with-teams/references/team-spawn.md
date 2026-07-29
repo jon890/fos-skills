@@ -35,7 +35,12 @@
 
 - **왜**: 일회성 호출은 팀 컨텍스트 밖에서 동작해 `SendMessage` 로 이어 가는 협업이 불가능하다.
   정식 팀원은 idle 로 대기하며 REVISE 재평가·executor 재실행·재검증 사이클을 자연스럽게 처리한다.
-- `name` 은 `critic`/`executor`/`code-reviewer`/`docs-verifier` 로 통일한다.
+- `name` 은 `critic`/`executor`/`code-reviewer`/`docs-verifier` 를 기본으로 쓴다.
+    - **동시에 두 개 이상의 worktree 가 돌면 이름에 plan 번호를 붙인다** (`critic-p{N}` 형태).
+      같은 이름을 쓰면 응답이 다른 worktree 의 team-lead 에 도착해, 본 plan 과 무관한 분석을 받는다.
+      실제로 그 사고가 관측됐고, 무시하지 않으면 잘못된 수정 지시로 이어진다.
+    - 충돌 조건은 "동시 worktree 2개 이상" 이라 harness 와 무관하다. 오버레이로 넘기지 않는다.
+    - phase 단위 executor 가 이미 `executor-p{N}` 을 쓰므로 같은 규칙을 나머지 팀원에도 적용하는 셈이다.
 - `run_in_background: true` 로 idle 대기.
 - 이후 통신은 **모두 `SendMessage({to: "<name>", ...})` 로만** 진행.
 
@@ -45,7 +50,7 @@
 - 1차 식별은 응답 형식으로 한다 — 정식 멤버는 `agent_id`·`name`·`team_name` 을 노출한다.
 - 팀 config 로 실제 등록을 확인하고, 누락이면 `name` 을 넣어 재스폰한다.
 
-> 팀 런타임 형태(TeamCreate 명령 유무, config 경로, 이름 충돌 시 suffix 처리)는 harness 마다 다르다. harness 세부는 오버레이 또는 harness 문서를 따른다.
+> 팀 런타임 형태(TeamCreate 명령 유무, config 경로)는 harness 마다 다르다. harness 세부는 오버레이 또는 harness 문서를 따른다.
 
 ## 2. 팀원 프롬프트·메시지는 worktree 절대경로
 

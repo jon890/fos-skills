@@ -3,6 +3,21 @@
 버전은 `SKILL.md` frontmatter 의 `version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.2.0
+
+pitfalls 대조에서 드러난 결함 두 건을 고쳤다.
+
+- **팀원 이름 규칙이 충돌을 유발하고 있었다.** `name` 을 critic·executor 등으로 통일하라는 지시가
+  동시 worktree 환경에서 응답을 엉뚱한 team-lead 로 보내는 원인이었다.
+  동시 worktree 가 둘 이상이면 이름에 plan 번호를 붙이도록 바꿨다.
+  "이름 충돌 시 suffix 처리는 harness 마다 다르다" 며 오버레이로 넘기던 문장도 지웠다 —
+  충돌 조건은 동시 worktree 개수라 harness 와 무관하다.
+- **7단계 검사 범위에 diff 범위가 없었다.** 3-dot 을 명시했다.
+  2-dot 은 worktree 분기 후 base 에 들어온 외부 커밋까지 끌어와 false positive 를 만든다.
+
+두 건 모두 docu-parser 의 `docs/pitfalls/team/` 에 사고로 기록돼 있었는데
+스킬 본문에는 반영되지 않은 상태였다.
+
 ## 1.1.0
 
 중복 지시를 걷고 실행 흐름 요약을 절차 앞으로 옮겼다.

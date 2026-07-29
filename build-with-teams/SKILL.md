@@ -1,6 +1,6 @@
 ---
 name: build-with-teams
-version: 1.1.0
+version: 1.2.0
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 ---
 
@@ -320,7 +320,9 @@ phase commit 전 특이사항 4종에서 회고 가치가 있는 사건을 `docs
 team-lead 가 직접 검사하지 않는다 — 건너뛰기를 막기 위해서다.
 phase마다 code-reviewer를 반복 호출하지 않는다.
 
-- **검사 범위**: executor 가 변경한 파일만 (`git diff --name-only` 기준).
+- **검사 범위**: executor 가 변경한 파일만. 범위는 **3-dot** 으로 잡는다 — `git diff --name-only origin/main...HEAD`.
+    - 2-dot(`origin/main..HEAD`)은 worktree 분기 후 origin/main 에 들어온 외부 커밋까지 끌어와 false positive 를 만든다.
+    - 실제로 무관한 차이 50여 건이 섞여 reviewer 판정이 오염된 사례가 있다.
 - **검사 항목을 본문에 나열하지 않는다** — 오버레이가 지정한 반복 함정 목록에서 관련 패턴을 골라 grep 으로 점검하도록 지시한다.
 - **전부 보고 지시**: 심각도로 자체 필터링하지 말고 발견한 것을 전부 올리라고 지시한다. "중대한 것만" · "보수적으로" 같은 지시는 문자 그대로 따라 실제 결함 보고까지 줄인다.
 - **설계 맥락 첨부**(판정 참고용): plan 이 의도한 raw 패턴, helper 를 우회한 사유, 범위 밖 placeholder 를 1-2줄로 요약해 붙인다.
