@@ -9,6 +9,10 @@
 
 ```
 fos-skills/
+  adjust-harness/           # 현재 모델 기준 하네스 지시 교정
+    SKILL.md
+    CHANGELOG.md
+    references/audit-axes.md
   planning/                 # 구현 전 8단계 설계 워크플로
     SKILL.md
     CHANGELOG.md
@@ -52,6 +56,7 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 
 | 스킬 | 역할 |
 |---|---|
+| `adjust-harness` | 현재 모델 역량과 실측 이력으로 하네스 지시를 감사하고 승인 후 교정 |
 | `planning` | 새 기능·변경 구현 전 8단계 설계 → docs 정비 → task 생성 |
 | `review-fix` | PR 봇 리뷰(🔴/🟡)를 우선순위대로 반영 → 스레드 resolve → commit·push. 검증·커밋 규칙은 레포 CLAUDE.md 참조 |
 | `build-with-teams` | task(index.json+phase)를 팀 에이전트로 phase 단위 실행 → critic·review·docs-verifier 검증 → PR. 검증 명령·에이전트·스키마는 레포 오버레이/CLAUDE.md |
