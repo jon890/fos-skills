@@ -1,7 +1,8 @@
 ---
 name: build-with-teams
-version: 1.2.0
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
+metadata:
+  version: "1.3.0"
 ---
 
 # build-with-teams
@@ -158,7 +159,26 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
-사용자가 현재 실행에 실제 모델을 명시하면 runtime override로 적용하되 task 파일에는 기록하지 않는다.
+사용자가 현재 실행에 실제 모델을 명시해도 실행 형태 게이트를 먼저 적용한다.
+게이트와 같거나 더 엄격한 모델만 runtime override로 허용하고 task 파일에는 기록하지 않는다.
+
+### executor 실행 형태 게이트
+
+`execution_profile`은 작업의 필요 역량을 나타낼 뿐, 저비용 모델 사용 자격을 자동으로 부여하지 않는다.
+각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해 다음 실행 형태 중 하나를 받는다.
+
+- `BOUNDED` — 실행 명세가 닫혀 있고 새로운 판단 없이 구현·검증할 수 있다.
+- `JUDGMENT_REQUIRED` — 구현 중 일반적인 기술 판단이 필요하다.
+- `HIGH_RISK` — 설계·보안·데이터·호환성 등 실패 비용이 큰 판단이 필요하다.
+
+`BOUNDED`는 모든 적합성 조건이 증명된 경우에만 선택한다.
+critic 판정이 누락되거나 team-lead와 critic이 불일치하면 더 엄격한 실행 형태를 선택한다.
+고위험 여부가 확정되지 않은 경우에도 더 엄격한 실행 형태를 선택한다.
+`fast`나 `standard`도 `BOUNDED`를 자동 의미하지 않고, `deep`은 `BOUNDED`로 내리지 않는다.
+
+적합성 조건과 차단 조건은 [`references/executor-routing.md`](references/executor-routing.md)를 따른다.
+critic 출력 계약과 실행 중 승격 규칙도 같은 문서를 따른다.
+critic 평가 전과 executor 스폰 직전에 이 참조 문서를 반드시 읽는다.
 
 phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
 스키마 소유자인 `planning/task-create.md` 의 "실행 등급 라우팅" 을 따른다.
@@ -170,19 +190,22 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 - **parent 등급과 다르면 spawn 시점에 명시 지정한다.** 생략은 "적절히 맞춰진다"는 뜻이 아니라 "parent 등급을 그대로 쓴다"는 뜻이다.
     - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해, 표에 `standard`라 적혀 있는데도 deep으로 떴다.
     - 부모가 deep인 실행에서는 `standard`·`fast` 팀원 **전원**이 이 함정에 걸린다. 스폰 직전에 "이 팀원 등급 == parent 등급인가"를 매번 확인한다.
-- 사용자가 특정 모델을 요청하면 그 override가 등급 표보다 우선한다.
+- 사용자가 특정 모델을 요청하면 실행 형태 게이트를 통과한 뒤 적용한다.
+  게이트가 반환한 실행 형태보다 낮은 모델로 내리는 override는 허용하지 않는다.
 
 한 phase 에 `execution_profile` 과 legacy `model` 이 함께 있으면 우선순위를 추측하지 않는다.
 `PHASE_BLOCKED: execution profile schema conflict` 로 종료한다.
 
-### 선택 우선순위
+### 선택 순서
 
-1. 사용자가 현재 실행에 명시한 실제 모델 override
-2. phase의 `execution_profile`
-3. legacy phase의 `model` alias
-4. task 규모 기반 기본 실행 등급
+1. phase의 `execution_profile`
+2. legacy phase의 `model` alias
+3. task 규모 기반 기본 실행 등급
+4. critic·team-lead 판정과 결정적 게이트가 만든 최종 실행 형태
+5. 게이트와 같거나 더 엄격한 사용자 모델 override
 
-2~4는 capability 선택 기준이며 실제 모델 ID를 task나 공용 skill에 영속화하지 않는다.
+1~3은 필요 역량의 기준이고 4는 저비용 실행 적합성의 기준이다.
+실제 모델 ID는 task나 공용 skill에 영속화하지 않는다.
 
 ## 재시도 한도
 
@@ -205,6 +228,7 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
     → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
     → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
     → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
+    → [phase 별 executor 실행 형태 게이트 — BOUNDED / JUDGMENT_REQUIRED / HIGH_RISK]
     → [모든 executor 실행 — phase 단위 spawn·검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
     → [누적 diff code-reviewer 검사 — 전부 보고 후 team-lead 필터] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
     → [code-reviewer PASS 후 최종 HEAD docs-verifier 검증 1회] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
@@ -262,6 +286,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 **판정과 발견 목록을 분리해 회신받는다.** 둘을 한 덩어리로 받으면 APPROVE 와 앞뒤가 안 맞아 보이는 지적을 critic 이 스스로 삼킨다.
 
 - **판정**: APPROVE 또는 REVISE 중 하나.
+- **phase 별 실행 형태**: `BOUNDED`, `JUDGMENT_REQUIRED`, `HIGH_RISK` 중 하나와 근거.
 - **발견 목록**: 판정과 무관하게 눈에 걸린 것을 전부 적는다. APPROVE 여도 비워 두지 않고, 없으면 "없음" 으로 명시한다.
 
 발견을 무엇으로 처리할지는 team-lead 가 정한다.
@@ -287,6 +312,14 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 
 critic APPROVE 후 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰한다.
 critic 승인과 docs-verifier 검증이 이중 안전망 역할을 한다.
+
+각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 게이트를 실행한다.
+team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `scripts/executor_routing_gate.py`를 통과시킨다.
+스크립트가 차단하거나 반환한 실행 형태보다 낮은 경로를 선택하면 executor를 스폰하지 않는다.
+같은 수준의 모델이 없을 때 더 엄격한 모델로 올리는 폴백은 허용한다.
+surface adapter는 결정된 실행 형태를 사용 가능한 role·모델에 매핑한다.
+실제 선택·폴백·승격은 실행 보고에 남긴다.
+`BOUNDED`로 시작한 executor가 실행 중 새로운 판단이 필요하다고 보고하면 수정을 계속하지 않고 승격 규칙으로 복귀한다.
 
 이 단계는 `index.json`의 **모든 미완료 phase를 순서대로 구현·검증·atomic commit할 때까지 반복**한다.
 개별 phase 완료는 다음 executor로 넘어가는 commit 경계이지 code-reviewer·docs-verifier 호출 경계가 아니다.
