@@ -1,6 +1,5 @@
 ---
 name: docs-check
-version: 1.0.0
 description: |
   문서 건전성 점검 공용 코어 스킬. 레포의 docs 를 6축(부패·과대화·추론성·중복·자명성·가독성)으로 감사하고
   정리 제안 리포트를 만든 뒤 사용자 승인 후 수정한다. ADR 은 "기술 의사결정만 / 최종 상태만 /
@@ -10,6 +9,8 @@ description: |
   "코드-문서 불일치", "ADR Index sync 확인" 같은 요청 시 반드시 이 스킬 사용.
   발견 전용이며 수정은 사용자 승인 후 진행한다.
   레포별 특화(docs 구조·문서 목록·검증기 에이전트·grep 경로)는 레포 오버레이·CLAUDE.md 로 주입된다.
+metadata:
+  version: "1.0.0"
 ---
 
 # docs-check

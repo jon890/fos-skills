@@ -64,7 +64,7 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 
 ## 버전과 변경 이력
 
-각 스킬은 `SKILL.md` frontmatter 의 `version` 과 같은 디렉터리의 `CHANGELOG.md` 로 이력을 남긴다.
+각 스킬은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 디렉터리의 `CHANGELOG.md` 로 이력을 남긴다.
 
 **이 버전은 배포 핀이 아니다.** 소비 방식이 심링크라 모든 프로젝트가 항상 최신을 쓴다.
 특정 버전에 고정할 수단이 없으므로, 버전의 목적은 무엇이 언제 왜 바뀌었는지 추적하는 것뿐이다.

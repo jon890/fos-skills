@@ -1,6 +1,6 @@
 # CHANGELOG — adjust-harness
 
-버전은 `SKILL.md` frontmatter의 `version`과 같은 값을 쓴다.
+버전은 `SKILL.md` frontmatter의 `metadata.version`과 같은 값을 쓴다.
 올리는 기준은 저장소 README의 "버전과 변경 이력"을 따른다.
 
 ## 1.0.0

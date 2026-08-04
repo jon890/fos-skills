@@ -1,6 +1,5 @@
 ---
 name: review-fix
-version: 1.1.0
 description: |
   PR 코드 리뷰 반영 공용 코어 스킬. PR 에 달린 리뷰 댓글(주로 봇의 🔴/🟡 구조화 리뷰)을 분석해
   🔴 필수 → 🟡 권장 순으로 코드를 고치고 commit & push, 리뷰 스레드 resolve 까지 완료한다.
@@ -9,6 +8,8 @@ description: |
   "리뷰 반영해줘", "리뷰 처리해줘" 같은 표현이 나오면 반드시 이 스킬을 사용한다.
   PR 번호가 주어지면 해당 PR 을, 없으면 현재 브랜치의 PR 을 읽는다.
   레포별 특화(빌드/테스트/lint 명령·커밋 컨벤션·학습 누적 위치·CI 원인 표)는 레포 CLAUDE.md·오버레이로 주입된다.
+metadata:
+  version: "1.1.0"
 ---
 
 # review-fix

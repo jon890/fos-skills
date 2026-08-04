@@ -1,6 +1,5 @@
 ---
 name: adjust-harness
-version: 1.0.0
 description: |
   하네스 문서 교정 공용 스킬.
   전역과 프로젝트의 CLAUDE.md와 rules를 비롯해 공용 스킬, 프로젝트 스킬,
@@ -14,6 +13,8 @@ description: |
   프로젝트 docs와 planning 문서가 코드에 맞는지 묻는 요청은 docs-check가 담당하고,
   하네스 지시가 지금 모델에게 필요한지 묻는 요청은 이 스킬이 담당한다.
   "문서 점검"만으로 대상이 불분명하면 이 경계로 어떤 감사를 원하는지 확인한다.
+metadata:
+  version: "1.0.0"
 ---
 
 # adjust-harness
