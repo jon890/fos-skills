@@ -64,15 +64,15 @@ plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검�
 
 team-lead 가 task 규모를 보고 팀원 spawn 범위를 스스로 정한다. 사용자가 모드를 명시했으면 그것을 따른다.
 
-| 모드 | 설명 | 규모 |
+| 모드 | 구현 | 규모 |
 |---|---|---|
-| **A. 정식 팀 흐름** | critic, executor, code-reviewer, docs-verifier 모두 spawn | 대 (4개 이상 phase / 아키텍처 / 스키마 대규모 / 신규 도메인) |
-| **B. 계획 평가와 사후 검수** | 구현은 team-lead 직접, critic 으로 계획 평가, 완료 후 code-reviewer·docs-verifier spawn | 중 (2-3 phase / 기존 기능 확장) |
-| **C. 사후 검수만** | 계획·구현 모두 team-lead 직접, critic 생략, 완료 후 code-reviewer·docs-verifier spawn | 소 (1 phase / 버그 / 미세 조정) |
+| **A. 정식 팀 흐름** | executor 를 spawn 해 phase 를 위임한다 | 대 (4개 이상 phase / 아키텍처 / 스키마 대규모 / 신규 도메인) |
+| **B. team-lead 구현** | executor 없이 team-lead 가 직접 구현한다 | 소·중 (1-3 phase / 버그 / 기존 기능 확장) |
 
-**어느 모드에서도 7·8단계 독립 검토는 건너뛰지 않는다.**
-code-reviewer 와 docs-verifier 스폰은 규모와 무관하게 필수다.
-같은 세션이 자기 구현을 그대로 승인하면 결함이 드러나지 않는다 — 프론티어 모델도 여기서는 자기 맥락에 갇힌다.
+**모드가 가르는 것은 구현 위임 여부뿐이다.**
+critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다.
+계획 평가와 사후 검토를 규모로 깎지 않는다 — 같은 세션이 자기 계획과 자기 구현을 그대로 승인하면 결함이 드러나지 않는다.
+프론티어 모델도 여기서는 자기 맥락에 갇힌다.
 스폰이 환경 제약으로 실패하면 건너뛰지 말고 그 사실과 대체 검증 근거를 실행 보고에 남긴다.
 
 ## 분기점 단독 결정 금지 (일반 가드)
@@ -157,10 +157,6 @@ planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분�
 각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해
 `BOUNDED`·`JUDGMENT_REQUIRED`·`HIGH_RISK` 중 하나를 받는다. 증명되지 않으면 항상 더 엄격한 쪽을 고른다.
 
-**모드 C 는 점검 스크립트를 돌리지 않는다.** critic 회신이 없으면 스크립트가 입력 부족으로 스폰을 차단한다.
-critic 판정 없이 `BOUNDED` 를 증명할 수 없으므로 `JUDGMENT_REQUIRED` 로 스폰하고 그 사유를 실행 보고에 남긴다.
-저비용 경로를 쓰려면 critic 을 스폰하는 모드 A·B 를 고른다.
-
 세 형태의 정의, 적합성 조건과 차단 조건, critic 출력 계약, 실행 중 승격 규칙은
 모두 [`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
 critic 평가 전과 executor 스폰 직전에 이 참조 문서를 반드시 읽는다.
@@ -209,7 +205,7 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
 
 ```
 [사전 검증 3중 — plan 브랜치·task + 구현 커밋 유무 + 오픈 PR (+ 완료↔머지 정합)]
-    → [실행 모드 결정 — A 정식 / B 사후검수 / C 최소 팀]
+    → [실행 모드 결정 — A executor 위임 / B team-lead 구현]
     → [메인 워킹 트리 사전 점검 + 오타 worktree 정리]
     → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
     → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
@@ -259,8 +255,6 @@ planning 이 이미 task 를 만들었으면 검토하고 필요 시 같은 브�
 
 ### 5. critic 평가 (통과 조건)
 
-모드 A·B 에서 수행한다. 모드 C 는 이 단계를 생략하고 team-lead 판정으로 6단계에 들어간다 — 7·8단계 검토는 그대로다.
-
 team-lead → critic 에게 계획 전송. critic 평가 관점:
 
 1. phase 순서·의존성이 올바른가?
@@ -298,10 +292,10 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 
 ### 6. executor 실행
 
-critic APPROVE 후 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰한다.
-critic 승인과 docs-verifier 검증이 이중 안전망 역할을 한다.
+critic APPROVE 후 구현에 들어간다. 모드 A 는 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰하고, 모드 B 는 team-lead 가 직접 구현한다.
+아래 실행 형태 점검과 phase 단위 커밋·검증 규칙은 두 모드에 같이 적용한다 — 구현 주체만 다르고 통과 조건은 같다.
 
-모드 A·B 는 각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다 (모드 C 는 위 "executor 실행 형태 점검" 을 따른다).
+각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
 team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py`를 통과시킨다.
 스크립트가 차단하거나 반환한 실행 형태보다 낮은 경로를 선택하면 executor를 스폰하지 않는다.
 같은 수준의 role 이 없으면 더 엄격한 쪽으로만 올린다 — 내려서 스폰하지 않는다.

@@ -31,7 +31,10 @@ if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
 fi
 
 # 마크다운 문법 깨짐 — 렌더가 어긋나는 결정적 오류만 본다
-for f in $(md_files); do
+#   `for f in $(md_files)` 는 공백 있는 파일명을 두 조각으로 쪼갠다.
+#   쪼개진 경로는 존재하지 않아 awk·grep 이 stderr 로만 실패하고 stdout 에는 아무것도 안 남는다.
+#   이 스크립트의 계약이 "출력 0 줄이면 통과" 라서 그대로 거짓 통과가 된다.
+while IFS= read -r f; do
   awk -v F="$f" '
     # 코드 블록 안은 렌더 대상이 아니다 — 셸 주석(#)을 헤딩으로 오인하지 않도록 건너뛴다
     /^```/ { fence++; in_code = !in_code; next }
@@ -62,19 +65,18 @@ for f in $(md_files); do
     esac
     [ -e "$(dirname "$f")/${target%%#*}" ] || echo "$f: 깨진 링크 → $target"
   done
-done
+done < <(md_files)
 
 # 한국어 표기 정책 — 공용 검사기에 위임한다.
 #   같은 검사기를 편집 직후 hook 도 호출해, 작성 시점과 감사 시점이 같은 기준을 쓴다.
 #   검사기나 규칙 파일이 없는 환경(팀원 등)에서는 이 항목만 건너뛰고 나머지는 계속 검사한다.
 STYLE_CHECK="${KOREAN_STYLE_CHECK:-$HOME/.claude/scripts/korean-style-check.sh}"
 if [ -x "$STYLE_CHECK" ]; then
-  # shellcheck disable=SC2046
-  "$STYLE_CHECK" $(md_files)
+  md_files | tr '\n' '\0' | xargs -0 "$STYLE_CHECK"
 fi
 
 # 문체 정적 패턴 — 코드 블록과 코드 스팬(`...`)은 렌더 대상이 아니므로 제외한다
-for f in $(md_files); do
+while IFS= read -r f; do
   awk -v F="$f" '
     /^```/ { in_code = !in_code; next }
     in_code { next }
@@ -87,4 +89,4 @@ for f in $(md_files); do
       if (line ~ /\*\*[^*]*\([^)]*\)\*\*/) print F ":" NR ": Bold+괄호 — **텍스트**(부연) 로"
     }
   ' "$f"
-done
+done < <(md_files)

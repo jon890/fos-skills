@@ -29,7 +29,7 @@
 | 열 | 내용 |
 |---|---|
 | 대상 | plan 이름 또는 PR 번호 |
-| 모드 | 실행 모드 (A 정식 / B 계획 평가와 사후 검수 / C 사후 검수만). 해당 없으면 `-` |
+| 모드 | 실행 모드 (A executor 위임 / B team-lead 구현). 해당 없으면 `-` |
 | phase | 이번 실행이 처리한 phase 수 |
 | REVISE | critic 이 REVISE 를 낸 횟수 |
 | FIX | code-reviewer 가 FIX_NEEDED 를 낸 횟수 |
