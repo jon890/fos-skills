@@ -97,43 +97,27 @@ executor·docs-verifier 이름은 오버레이가 지정한다.
 
 상세 프롬프트 문구·근거·판정 시간 규칙은 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
 
-### 특이사항 4종 집계 (필수)
+## worktree 기반 격리 실행
 
-구현자는 phase 보고에 아래 4종을 함께 적는다. 없으면 "없음" 으로 명시한다 — 침묵으로 갈음하면 사용자가 후속 필요 여부를 판단할 수 없다.
-모드 A 는 executor 가 `SendMessage` 로 올리고, 모드 B 는 team-lead 가 phase 커밋 시점에 스스로 기록한다.
+worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore` 에 있어야 한다.
 
-- **pre-existing** — 이번 변경과 무관하게 원래 있던 문제.
-- **신규 deprecation** — 이번 변경이 유발한 경고·예정 폐기.
-- **미검증** — 로컬에서 확인 불가해 운영·검증 단계로 넘긴 영역.
-- **범위 외 발견** — plan 범위 밖이지만 후속이 필요한 발견.
+- **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다.
+  - 자동완성 오타(`.claire-worktrees` 등)로 비슷한 철자의 디렉터리가 생기면 후속 검증이 깨진다.
+  실제로 `.claire-worktrees/plan011-...` 가 남아 ESLint 에러를 냈다.
+  - worktree 생성 전후로 `.claude` 외의 `.cla*` 디렉터리를 찾아 명백한 오타는 즉시 제거한다.
+- **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 `pwd` 로 확인한다.
+  - 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜, main repo 의 task 를 실수로 건드릴 수 있다.
+  - commit 전에 main repo 와 worktree 양쪽 `git status` 를 함께 본다.
+- **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다.
+  - planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있다.
+  - 구현 커밋이 같은 브랜치에 쌓여 PR 1개로 닫힌다.
+- **base 신선도**: plan 브랜치가 원격 main 보다 뒤처졌으면 worktree 분기 전에 갱신한다.
+  - 방법: `git rebase origin/main` 후 `git push --force-with-lease`.
+  - 오래된 base 위에서 구현하면 그사이 머지된 docs 와 코드가 어긋난다.
+  - PR 이 아직 없는 시점이라 rebase 로 잃을 것이 없다.
+- **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비는 오버레이 절차를 따른다.
 
-team-lead 는 종료 시 phase 별 특이사항을 누적해 사용자에게 명시 보고하고, 후속이 필요하면 이슈 등록을 제안한다.
-각 phase 종료, 검토자의 `FIX_NEEDED`, 검증 장시간 정체·복구 직후에는 재사용 가치가 있는 사건을 `docs/retrospectives/`에 회고 하나당 파일 하나로 즉시 기록한다.
-종료 시점까지 미루지 않는다. 형식과 승격 규칙은 [`references/retrospective.md`](references/retrospective.md)를 따른다.
-
-## 실행 등급 라우팅 (공급자 중립)
-
-팀원을 어느 등급(`fast`·`standard`·`deep`)으로 돌릴지는
-[`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
-규모별 기본 등급 표, 실행 형태 점검, 출발값과 하한을 고르는 순서, surface별 상속 함정이 거기 있다.
-공용 skill과 task에는 실제 모델 ID나 공급자 제품명을 저장하지 않는다.
-
-critic 평가 전과 phase 착수 직전에 그 문서를 반드시 읽는다.
-모드 B 에서 team-lead 가 감당할 수 없는 phase 를 만났을 때의 전환 절차도 같은 문서에 있다.
-
-## 재시도 한도
-
-무한 루프를 막기 위해 각 점검에 한도를 둔다. 초과 시 `PHASE_BLOCKED` 로 사용자(team-lead)에게 결정을 위임한다.
-
-
-| 점검                                 | 한도  | 초과 시                                                   |
-| ---------------------------------- | --- | ------------------------------------------------------ |
-| **critic REVISE**                  | 3회  | `PHASE_BLOCKED: critic REVISE 한도 초과 — team-lead 결정 필요` |
-| **code-reviewer FIX_NEEDED**       | 2회  | `PHASE_BLOCKED: code-reviewer FIX 한도 초과 — 수동 검토 필요`    |
-| **docs-verifier UPDATE/VIOLATION** | 2회  | `PHASE_BLOCKED: docs-verifier 한도 초과 — 정합성 수동 점검`       |
-
-
-team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 재실행 시에도 유지한다.
+정리 시점·위치와 브랜치 보존은 7단계 7항이 소유한다.
 
 ## 실행 절차
 
@@ -257,6 +241,12 @@ code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 �
 phase commit 전 특이사항 4종에서 회고 가치가 있는 사건을 `docs/retrospectives/<NNNN>-<slug>.md`로 기록하고 `INDEX.md`를 갱신한다.
 신규 회고가 없으면 파일을 만들지 않고 phase 보고에 `신규 회고 없음`을 명시한다.
 
+**phase 실패 시**
+
+phase 가 실패하면 team-lead 가 원인을 분석한다.
+phase 자체를 고쳐야 하면 critic 재평가(3단계)로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
+모드 A 는 executor 보고로 실패를 받고 재실행을 지시한다. 모드 B 는 team-lead 가 검증 실패를 직접 확인한다.
+
 ### 5. 코드 품질 검사 (code-reviewer)
 
 모든 phase 의 구현·검증·atomic commit 이 끝난 뒤, team-lead 가 code-reviewer 를 새로 스폰해 누적 구현 전체 검사를 지시한다.
@@ -348,33 +338,19 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
   ```
 10. 사용자가 PR 을 머지하면 완료 상태가 main 에 자동 반영된다. main 후속 작업 0개.
 
-## worktree 기반 격리 실행
+## 특이사항 4종 집계 (필수)
 
-worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore` 에 있어야 한다.
+구현자는 phase 보고에 아래 4종을 함께 적는다. 없으면 "없음" 으로 명시한다 — 침묵으로 갈음하면 사용자가 후속 필요 여부를 판단할 수 없다.
+모드 A 는 executor 가 `SendMessage` 로 올리고, 모드 B 는 team-lead 가 phase 커밋 시점에 스스로 기록한다.
 
-- **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다.
-  - 자동완성 오타(`.claire-worktrees` 등)로 비슷한 철자의 디렉터리가 생기면 후속 검증이 깨진다.
-  실제로 `.claire-worktrees/plan011-...` 가 남아 ESLint 에러를 냈다.
-  - worktree 생성 전후로 `.claude` 외의 `.cla*` 디렉터리를 찾아 명백한 오타는 즉시 제거한다.
-- **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 `pwd` 로 확인한다.
-  - 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜, main repo 의 task 를 실수로 건드릴 수 있다.
-  - commit 전에 main repo 와 worktree 양쪽 `git status` 를 함께 본다.
-- **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다.
-  - planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있다.
-  - 구현 커밋이 같은 브랜치에 쌓여 PR 1개로 닫힌다.
-- **base 신선도**: plan 브랜치가 원격 main 보다 뒤처졌으면 worktree 분기 전에 갱신한다.
-  - 방법: `git rebase origin/main` 후 `git push --force-with-lease`.
-  - 오래된 base 위에서 구현하면 그사이 머지된 docs 와 코드가 어긋난다.
-  - PR 이 아직 없는 시점이라 rebase 로 잃을 것이 없다.
-- **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비는 오버레이 절차를 따른다.
+- **pre-existing** — 이번 변경과 무관하게 원래 있던 문제.
+- **신규 deprecation** — 이번 변경이 유발한 경고·예정 폐기.
+- **미검증** — 로컬에서 확인 불가해 운영·검증 단계로 넘긴 영역.
+- **범위 외 발견** — plan 범위 밖이지만 후속이 필요한 발견.
 
-정리 시점·위치와 브랜치 보존은 7단계 7항이 소유한다.
-
-## 실패 복구
-
-phase 가 실패하면 team-lead 가 원인을 분석한다.
-phase 자체를 고쳐야 하면 critic 재평가(3단계)로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
-모드 A 는 executor 보고로 실패를 받고 재실행을 지시한다. 모드 B 는 team-lead 가 검증 실패를 직접 확인한다.
+team-lead 는 종료 시 phase 별 특이사항을 누적해 사용자에게 명시 보고하고, 후속이 필요하면 이슈 등록을 제안한다.
+각 phase 종료, 검토자의 `FIX_NEEDED`, 검증 장시간 정체·복구 직후에는 재사용 가치가 있는 사건을 `docs/retrospectives/`에 회고 하나당 파일 하나로 즉시 기록한다.
+종료 시점까지 미루지 않는다. 형식과 승격 규칙은 [`references/retrospective.md`](references/retrospective.md)를 따른다.
 
 ## 노하우 누적 (세션마다 보강)
 
@@ -399,3 +375,27 @@ phase 자체를 고쳐야 하면 critic 재평가(3단계)로 돌아가고, 단�
 `docs/pitfalls` 의 엄격한 축적 기준을 통과하지 못했다는 이유로 버리지 않는다.
 
 PR 생성 후 worktree 정리 직전, 사용자에게 "이번 세션 누적 노하우" 를 1-3줄 보고한다. 누적 안 했으면 "신규 노하우 없음" 으로 명시한다.
+
+## 재시도 한도
+
+무한 루프를 막기 위해 각 점검에 한도를 둔다. 초과 시 `PHASE_BLOCKED` 로 사용자(team-lead)에게 결정을 위임한다.
+
+
+| 점검                                 | 한도  | 초과 시                                                   |
+| ---------------------------------- | --- | ------------------------------------------------------ |
+| **critic REVISE**                  | 3회  | `PHASE_BLOCKED: critic REVISE 한도 초과 — team-lead 결정 필요` |
+| **code-reviewer FIX_NEEDED**       | 2회  | `PHASE_BLOCKED: code-reviewer FIX 한도 초과 — 수동 검토 필요`    |
+| **docs-verifier UPDATE/VIOLATION** | 2회  | `PHASE_BLOCKED: docs-verifier 한도 초과 — 정합성 수동 점검`       |
+
+
+team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 재실행 시에도 유지한다.
+
+## 실행 등급 라우팅 (공급자 중립)
+
+팀원을 어느 등급(`fast`·`standard`·`deep`)으로 돌릴지는
+[`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
+규모별 기본 등급 표, 실행 형태 점검, 출발값과 하한을 고르는 순서, surface별 상속 함정이 거기 있다.
+공용 skill과 task에는 실제 모델 ID나 공급자 제품명을 저장하지 않는다.
+
+critic 평가 전과 phase 착수 직전에 그 문서를 반드시 읽는다.
+모드 B 에서 team-lead 가 감당할 수 없는 phase 를 만났을 때의 전환 절차도 같은 문서에 있다.
