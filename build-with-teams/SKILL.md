@@ -102,13 +102,6 @@ executor·docs-verifier 이름은 오버레이가 지정한다.
 
 worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore` 에 있어야 한다.
 
-- **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다.
-  - 자동완성 오타(`.claire-worktrees` 등)로 비슷한 철자의 디렉터리가 생기면 후속 검증이 깨진다.
-  실제로 `.claire-worktrees/plan011-...` 가 남아 ESLint 에러를 냈다.
-  - worktree 생성 전후로 `.claude` 외의 `.cla*` 디렉터리를 찾아 명백한 오타는 즉시 제거한다.
-- **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 `pwd` 로 확인한다.
-  - 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜, main repo 의 task 를 실수로 건드릴 수 있다.
-  - commit 전에 main repo 와 worktree 양쪽 `git status` 를 함께 본다.
 - **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다.
   - planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있다.
   - 구현 커밋이 같은 브랜치에 쌓여 PR 1개로 닫힌다.
@@ -150,11 +143,7 @@ code-reviewer·docs-verifier 는 검토 시점(5·6단계)에 **둘을 함께** 
 ### 2. task 파악
 
 team-lead 가 task(`index.json`, `phase-*.md`)와 관련 docs·`CLAUDE.md`·오버레이를 읽는다.
-**요청에 여러 plan 이 포함돼도 이번 실행은 하나만 다룬다** — 한 plan 이 한 브랜치, 한 PR 로 닫힌다.
-실행 순서는 planning 이 보고한 순서를 따른다.
 
-phase 파일을 추가·제거·재작성했으면 `index.json` 의 phase 배열을 **같은 commit 으로** 갱신한다.
-phase 파일만 늘리면 파이프라인이 새 phase 를 인식하지 못해 그 작업이 통째로 빠진다.
 
 ### 3. critic 평가 (통과 조건)
 
@@ -163,10 +152,9 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 1. phase 순서·의존성이 올바른가?
 2. 누락된 작업이 있는가?
 3. 각 phase 의 리스크는?
-4. phase 크기가 5개 이하인가?
-5. 성공 기준이 충분한가?
-6. **실제 코드와 일치하는가?** (파일 존재·함수명·줄 수 검증)
-7. **오버레이가 지정한 반복 함정 목록의 관련 패턴이 사전 해소됐는가?**
+4. 성공 기준이 충분한가?
+5. **실제 코드와 일치하는가?** (파일 존재·함수명·줄 수 검증)
+6. **오버레이가 지정한 반복 함정 목록의 관련 패턴이 사전 해소됐는가?**
 
 **판정과 발견 목록을 분리해 회신받는다.** 둘을 한 덩어리로 받으면 APPROVE 와 앞뒤가 안 맞아 보이는 지적을 critic 이 스스로 삼킨다.
 
@@ -295,7 +283,7 @@ phase마다 호출하지는 않는다. 검토 대상은 개별 phase 가 아니�
 1. 설계 결정(ADR 등) 위반 여부.
 2. 레이어·코딩 규칙 준수 (레포 `CLAUDE.md` 참조).
 3. docs 갱신이 필요한지, 의사결정 의도가 보존됐는지 본다.
-   planning 이 관리하는 필수 문서(`prd`·`flow`·`code-architecture`·`data-schema`·`adr`)와 오버레이가 추가한 문서가 최종 코드와 맞는지 확인한다.
+ planning 이 관리하는 필수 문서(`prd`·`flow`·`code-architecture`·`data-schema`·`adr`)와 오버레이가 추가한 문서가 최종 코드와 맞는지 확인한다.
 4. **문서 부패 검증**: 코드에서 제거·변경된 기능이 docs 에 dead reference 로 남아 있는지 (`grep -rn` 로 검출).
 
 docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하면 SKILL 은 위임만 하고 항목을 반복하지 않는다.
@@ -314,25 +302,25 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
     - B: 별도 hotfix PR 을 만든 뒤 rebase 한다.
     - C: 그대로 PR 하고 설명에 의존 관계를 밝힌다.
 4. **완료 마킹은 PR 브랜치 안에서만** — 마지막 phase commit 에 포함하는 것이 가장 좋고, 브랜치 안 별도 commit 이 차선이다.
-   **main 직접 커밋·푸시는 금지**한다. 진실의 출처가 둘로 갈라지고 push 충돌 위험이 있다.
-   재실행 방지는 사전 검증이 담당하므로 main 을 건드릴 이유가 없다.
+ **main 직접 커밋·푸시는 금지**한다. 진실의 출처가 둘로 갈라지고 push 충돌 위험이 있다.
+ 재실행 방지는 사전 검증이 담당하므로 main 을 건드릴 이유가 없다.
 5. push 후 PR 생성·갱신 (오픈 PR 없으면 신규, 있으면 갱신). base 는 `main`, head 는 `plan{N}-<slug>` 다.
-   이 PR 하나에 **planning 의 docs·tasks 커밋과 구현 phase 커밋이 함께** 담긴다 — 기획부터 구현까지가 하나의 완결된 변경으로 남는다.
-   PR 제목·body 형식은 레포 커밋 컨벤션을 따르고, 기획 커밋과 phase 별 commit 을 구분해 나열한 뒤 "특이사항 및 후속" 섹션을 포함한다.
-   PR diff에 다른 plan의 task·구현이 섞였으면 생성하지 말고 브랜치 범위를 정리한다.
+ 이 PR 하나에 **planning 의 docs·tasks 커밋과 구현 phase 커밋이 함께** 담긴다 — 기획부터 구현까지가 하나의 완결된 변경으로 남는다.
+ PR 제목·body 형식은 레포 커밋 컨벤션을 따르고, 기획 커밋과 phase 별 commit 을 구분해 나열한 뒤 "특이사항 및 후속" 섹션을 포함한다.
+ PR diff에 다른 plan의 task·구현이 섞였으면 생성하지 말고 브랜치 범위를 정리한다.
 6. **팀 종료** — 남아 있는 팀원 전부에 `shutdown_request`(또는 `TaskStop`)를 보내고 종료를 확인한다.
-   대상은 `executor`·`executor-p{N}`·`critic`·`code-reviewer`·`docs-verifier` 다.
-   phase 단위 사이클에서 종료되지 않은 executor 가 있으면 여기서 일괄 정리한다.
+ 대상은 `executor`·`executor-p{N}`·`critic`·`code-reviewer`·`docs-verifier` 다.
+ phase 단위 사이클에서 종료되지 않은 executor 가 있으면 여기서 일괄 정리한다.
 7. **worktree 정리** — PR 생성·갱신과 원격 push 가 끝난 뒤에 한다.
   - worktree 가 깨끗하고 로컬에만 있는 commit 이 없는지 확인한다.
   - 제거 대상 worktree 내부를 cwd 로 둔 채 실행하지 않는다. 기본 checkout 이나 다른 안전한 cwd 로 옮긴 뒤 `git worktree remove <절대경로>` 를 실행한다.
   - `git worktree list` 로 제거를 확인한다. 잠긴 worktree 나 미커밋 변경이 있으면 remove 가 실패하는데, 확인하지 않으면 그 실패가 묻힌다.
 8. **실행 기록 한 줄 추가** — `docs/retrospectives/RUNS.md` 에 이번 실행의 결과를 남긴다.
-   REVISE·FIX_NEEDED·docs-verifier 판정 횟수와 사용자 개입 횟수를 적는다.
-   중단된 실행도 기록한다. 형식은 [`references/run-record.md`](references/run-record.md) 를 따른다.
+ REVISE·FIX_NEEDED·docs-verifier 판정 횟수와 사용자 개입 횟수를 적는다.
+ 중단된 실행도 기록한다. 형식은 [`references/run-record.md`](references/run-record.md) 를 따른다.
 9. 특이사항과 신규 노하우를 모아 사용자에게 보고한다.
-   보고 첫 줄에 **PR 번호와 리뷰 반영 명령**을 적는다.
-   worktree 를 정리한 뒤라 cwd 브랜치가 `main` 이어서, 후속 스킬이 PR 을 자동으로 찾지 못하기 때문이다.
+ 보고 첫 줄에 **PR 번호와 리뷰 반영 명령**을 적는다.
+ worktree 를 정리한 뒤라 cwd 브랜치가 `main` 이어서, 후속 스킬이 PR 을 자동으로 찾지 못하기 때문이다.
   ```
    PR #<번호> 생성 완료 — 리뷰 반영은 /review-fix <번호>
   ```
