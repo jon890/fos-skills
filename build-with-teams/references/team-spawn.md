@@ -13,7 +13,7 @@ SKILL.md 는 한 줄 요약만 두고, 각 가드의 본문은 이 문서가 소
 |---|---|---|
 | 1~5 (스폰·통신 규약) | 발동 | 발동 — critic·code-reviewer·docs-verifier 를 스폰하므로 그대로 적용된다 |
 | 6·7 (구현자 가드) | executor 에게 적용 | **team-lead 자신에게 적용** |
-| 8 (split-pane 폴백) | 발동 | 발동 |
+| 8 (split-pane 폴백) | `teammateMode` 를 켠 환경에서만 | 같음 |
 | 9 (watchdog stall) | 발동 | 워치독은 없지만 회피 원칙은 같다 — 무거운 외부 상호작용을 없애는 쪽으로 작업을 다시 짠다 |
 
 6·7절은 모드 B 에서 team-lead 자신에게 적용된다.
@@ -21,38 +21,34 @@ SKILL.md 는 한 줄 요약만 두고, 각 가드의 본문은 이 문서가 소
 
 ## 목차
 
-1. [정식 팀원 스폰 규칙](#1-정식-팀원-스폰-규칙) — `team_name` 과 `name` 없이 스폰하면 SendMessage 협업이 끊긴다
+1. [팀원 스폰 규칙](#1-팀원-스폰-규칙) — `name` 없이 스폰하면 SendMessage 협업이 끊긴다
 2. [팀원 프롬프트·메시지는 worktree 절대경로](#2-팀원-프롬프트메시지는-worktree-절대경로) — 상대경로는 main 의 구버전 파일을 가리킬 수 있다
 3. [팀원 SendMessage 회신 강제](#3-팀원-sendmessage-회신-강제) — 자기 화면 출력만 하고 종료하면 team-lead 에 안 닿는다
 4. [팀원 자발적 실행 방지](#4-팀원-자발적-실행-방지) — 지시 전 선행 실행은 점검 시점 정합성을 깬다
-5. [팀원 self-shutdown 대응](#5-팀원-self-shutdown-대응) — idle 알림 직후 자체 종료하는 경향에 대한 우회
+5. [팀원 재개](#5-팀원-재개) — idle 은 종료가 아니다. 이름으로 부르면 컨텍스트를 유지한 채 재개된다
 6. [구현자 cwd 격리](#6-구현자-cwd-격리) — main repo 오염 방지
 7. [구현자 scope 확장 보고 의무](#7-구현자-scope-확장-보고-의무) — 범위 외 수정 자체 판단 금지
-8. [split-pane 스폰 실패 폴백](#8-split-pane-스폰-실패-폴백) — tmux 없는 터미널에서 `name` 지정 스폰이 깨진다
+8. [split-pane 스폰 실패 폴백](#8-split-pane-스폰-실패-폴백) — `teammateMode` 를 켠 환경에서만 발동
 9. [watchdog stall 복구](#9-watchdog-stall-복구) — 무거운 외부 상호작용에서 executor 가 멈춘다
 
 ---
 
-## 1. 정식 팀원 스폰 규칙
+## 1. 팀원 스폰 규칙
 
-팀원은 **팀의 정식 멤버로 스폰**한다 (`team_name`, `name` 지정). 일회성 `Agent` 호출(team_name 없이)로 대체하지 않는다.
+팀원은 **`name` 을 지정해 스폰**한다. 이름 없는 스폰은 폴백이지 선택지가 아니다.
 
-**스폰 방식 우선순위 — 위에서부터 시도하고, 실패한 경우에만 아래로 내려간다.**
+| 방식 | 협업 가능 범위 | 언제 |
+|---|---|---|
+| `name` 지정 | 양방향 `SendMessage`, 이름으로 재개 | 기본값 |
+| 이름 없는 subagent | 단방향 (완료 알림만) | 위가 환경 제약으로 실패할 때만 |
 
-| 순위 | 방식 | 협업 가능 범위 | 언제 |
-|---|---|---|---|
-| 1 | `team_name` 과 `name` 을 함께 지정 | 양방향 `SendMessage`, 공유 task 목록 claim | 기본값 |
-| 2 | `name` 만 지정 | 양방향 `SendMessage` | harness 가 `team_name` 을 미지원·무시할 때 |
-| 3 | 이름 없는 백그라운드 subagent | 단방향 (완료 알림만) | 1·2 가 환경 제약으로 실패할 때만 |
+- 폴백으로 내려가면 재평가·재투입을 재스폰으로 대신해야 해 REVISE·FIX_NEEDED 사이클 비용이 오른다.
+  **어느 팀원을 왜 내렸는지 실행 보고에 남긴다.** 조용히 내려가면 협업 단절이 사고로만 드러난다.
+- `team_name` 인자는 넘기지 않는다. v2.1.178부터 **받아들이되 무시된다**.
+  `TeamCreate`·`TeamDelete` 도 없어졌고, 팀은 세션 시작 시 자동으로 구성된다.
 
-- 3순위는 **폴백이지 선택지가 아니다.** 스폰이 간단하다는 이유로 고르지 않는다.
-- 3순위로 내려가면 team-lead 가 재평가·재투입을 재스폰으로 대신해야 하므로, REVISE·FIX_NEEDED 사이클 비용이 눈에 띄게 오른다.
-- 폴백을 썼으면 **어느 팀원을 왜 내렸는지 실행 보고에 남긴다.** 조용히 내려가면 협업 단절이 나중에 사고로만 드러난다.
-- harness 가 `team_name` 을 deprecated 로 무시하더라도 계속 넘긴다. 인자가 무시될 뿐 손해가 없고, 지원하는 harness 에서 자동으로 1순위가 된다.
-    - 예외는 8절이다. tmux 없는 터미널에서는 `team_name` 이 무시되지 않고 스폰 자체를 깨뜨린다. 그때만 빼고 재시도한다.
-
-- **왜**: 일회성 호출은 팀 컨텍스트 밖에서 동작해 `SendMessage` 로 이어 가는 협업이 불가능하다.
-  정식 팀원은 idle 로 대기하며 REVISE 재평가·executor 재실행·재검증 사이클을 자연스럽게 처리한다.
+- **왜**: 이름이 없으면 `SendMessage` 로 이어 가는 협업이 불가능하다.
+  이름이 있으면 idle 로 대기하다 REVISE 재평가·재실행·재검증 사이클을 그대로 이어받는다.
 - `name` 은 `critic`/`executor`/`code-reviewer`/`docs-verifier` 를 기본으로 쓴다.
     - **동시에 두 개 이상의 worktree 가 돌면 이름에 plan 번호를 붙인다** (`critic-p{N}` 형태).
       같은 이름을 쓰면 응답이 다른 worktree 의 team-lead 에 도착해, 본 plan 과 무관한 분석을 받는다.
@@ -62,13 +58,9 @@ SKILL.md 는 한 줄 요약만 두고, 각 가드의 본문은 이 문서가 소
 - `run_in_background: true` 로 idle 대기.
 - 이후 통신은 **모두 `SendMessage({to: "<name>", ...})` 로만** 진행.
 
-**스폰 직후 검증**: `name` 을 빠뜨려도 호출은 조용히 성공하고, 응답이 정식 멤버와 거의 같아 보인다.
-
-- 일회성으로 처리되면 sub-agent 가 응답 직후 종료해 `SendMessage` 가 빈 mailbox 로 향한다.
-- 1차 식별은 응답 형식으로 한다 — 정식 멤버는 `agent_id`·`name`·`team_name` 을 노출한다.
-- 팀 config 로 실제 등록을 확인하고, 누락이면 `name` 을 넣어 재스폰한다.
-
-> 팀 런타임 형태(TeamCreate 명령 유무, config 경로)는 harness 마다 다르다. harness 세부는 오버레이 또는 harness 문서를 따른다.
+**스폰 직후 검증**: `name` 을 빠뜨려도 호출은 조용히 성공하고 응답이 비슷해 보인다.
+스폰 결과의 `agent_id`·`name` 을 확인하고, 누락이면 `name` 을 넣어 재스폰한다.
+팀 구성은 `~/.claude/teams/{team-name}/config.json` 에 있고 team-name 은 `session-` 뒤에 세션 ID 앞 8자를 붙인 값이다.
 
 ## 2. 팀원 프롬프트·메시지는 worktree 절대경로
 
@@ -94,7 +86,7 @@ team-lead 는 idle 알림만 2회 이상 연속 수신하고 결과 메시지가
 
 ## 4. 팀원 자발적 실행 방지
 
-정식 팀원이 team-lead 의 지시 전에 자발적으로 실행·검증을 시작하면 점검 시점 정합성이 깨진다. 스폰 프롬프트에 다음을 포함:
+팀원이 team-lead 의 지시 전에 자발적으로 실행·검증을 시작하면 점검 시점 정합성이 깨진다. 스폰 프롬프트에 다음을 포함:
 
 ```
 대기 상태. team-lead 의 SendMessage 지시 전에 절대 자발적으로 작업/검증을 시작하지 말 것.
@@ -103,16 +95,21 @@ team-lead 가 명시적으로 "시작" 지시할 때까지 idle 유지. 자발�
 
 team-lead 는 critic 평가가 끝나기 전에 워크트리 상태(`git log`, `git status`)를 점검해 자발적 실행을 조기 감지한다.
 
-## 5. 팀원 self-shutdown 대응
+## 5. 팀원 재개
 
-code-reviewer·docs-verifier 는 `run_in_background: true`, idle 프롬프트로 스폰해도 **idle 알림 직후 자체 종료하는 경향**이 관측된다.
+**idle 은 종료가 아니다.** 팀원은 idle 상태로 계속 살아 있고 이름으로 부를 수 있다.
+`SendMessage` 를 보내면 자기 transcript 에서 컨텍스트를 유지한 채 재개된다.
+**재스폰은 그 컨텍스트를 버리므로 최후 수단이다.**
 
-- **우회**: 검사 대상 결과물이 준비된 시점에 즉시 새로 spawn 한다 — idle 대기에 기대지 않는다.
-  team-lead 는 팀원이 죽었다는 알림을 받으면 가만히 있지 말고 **재spawn 과 즉시 지시 메시지**를 묶어 처리한다.
-- **판정 시간 규칙**: `SendMessage` 후 약 90초 안에 verdict 회신이 없고 idle 알림만 2회 이상 오면 스스로 종료한 것으로 의심한다.
-    1. 강제로 한 번 재요청한다.
-    2. 그래도 무응답이면 재spawn 해 같은 지시를 보낸다.
-    3. 3회 누적 실패하면 사용자에게 올린다.
+`idleReason` 으로 정상 대기와 실패를 가른다.
+
+| 값 | 뜻 | 대응 |
+|---|---|---|
+| `available` | 턴이 끝나 대기 중 | 이름으로 `SendMessage` — 그대로 재개된다 |
+| `failed` | API 오류·한도 초과 등으로 턴이 끊김 | `failureReason` 을 읽고 판단. 세션 한도면 재스폰해도 같은 이유로 막힌다 |
+
+회신이 오지 않으면 임의 시간으로 죽었다고 단정하지 않는다 — 그런 기준은 없다.
+한 번 재요청하고, 그래도 무응답이면 사용자에게 올린다.
 
 ## 6. 구현자 cwd 격리
 
@@ -157,17 +154,11 @@ verification 보고는 검증 명령 전체 결과를 보고할 것. "프로덕�
 
 ## 8. split-pane 스폰 실패 폴백
 
-tmux 없는 터미널에서는 이름을 지정한 팀원의 split-pane 스폰이 깨진다.
+기본 표시 모드는 `in-process` 라 이 절은 대개 발동하지 않는다.
+`teammateMode` 를 `tmux`·`auto`·`iterm2` 로 켠 환경에서만 해당한다.
 
-- 증상: `name` 지정 스폰이 `Could not determine current tmux pane/window` 로 실패한다.
-- 재시작이나 shell 설정으로는 안 고쳐진다. 이 증상을 확인했으면 폴백을 바로 쓴다.
-
-폴백은 **한 단계씩만 내려간다.** 1절의 스폰 방식 우선순위와 같은 사다리다.
-
-1. 먼저 `team_name` 만 빼고 `name` 은 유지해 재시도한다.
-   `name` 이 살아 있으면 `SendMessage` 라우팅이 유지되므로 협업이 끊기지 않는다.
-2. 그래도 실패할 때만 `name` 없이 백그라운드 subagent 로 스폰하고 완료 알림으로 결과를 회수한다.
-   이 단계에는 양방향 통신이 없어 재평가·재투입 사이클을 team-lead 가 재스폰으로 대신해야 한다.
+- 증상: 스폰이 `Could not determine current tmux pane/window` 로 실패한다.
+- 재시작이나 shell 설정으로는 안 고쳐진다. `teammateMode` 를 `in-process` 로 되돌리거나 이름 없는 subagent 로 폴백한다.
 
 ## 9. watchdog stall 복구
 

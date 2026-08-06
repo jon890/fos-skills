@@ -82,14 +82,13 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 모드 B 도 critic·code-reviewer·docs-verifier 를 스폰하므로 대부분 그대로 발동한다.
 **구현자** 로 시작하는 둘은 모드 B 에서 team-lead 자신에게 적용된다.
 
-- **정식 팀원 스폰이 1순위**: `team_name` 과 `name` 을 지정해 스폰한다. 이름 없는 subagent 는 환경 제약으로 실패했을 때만 쓰는 폴백이고, 내려갔으면 실행 보고에 남긴다.
+- **`name` 지정 스폰이 1순위**: 이름 없는 subagent 는 환경 제약으로 실패했을 때만 쓰는 폴백이고, 내려갔으면 실행 보고에 남긴다.
 - **worktree 절대경로**: 팀원에게 주는 파일 참조는 상대경로가 아니라 worktree 절대경로로 준다. 상대경로는 main 의 구버전 파일을 가리킬 수 있다.
 - **SendMessage 회신 강제**: 자기 화면 출력만 하고 종료하면 team-lead 에 결과가 안 닿는다. 스폰 프롬프트에 회신 의무를 명시한다.
 - **자발적 실행 방지**: team-lead 지시 전 팀원이 먼저 실행·검증을 시작하면 점검 시점 정합성이 깨진다.
-- **self-shutdown 대응**: code-reviewer·docs-verifier 는 idle 알림 직후 자체 종료하는 경향이 있다 — idle 대기 대신 필요 시점에 재스폰한다.
+- **팀원 재개**: idle 은 종료가 아니다. 이름으로 `SendMessage` 하면 컨텍스트를 유지한 채 재개된다 — 재스폰하지 않는다.
 - **구현자 cwd 격리**: main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓴다. 모드 B 에서 위험이 더 크다.
 - **구현자 scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 검토를 우회한다. 모드 B 는 자기 승인이 되므로 사용자에게 확인한다.
-- **split-pane 스폰 실패**(환경): tmux 없는 터미널에서 `name` 지정 스폰이 깨진다 — 폴백을 한 단계씩만 내려간다.
 - **watchdog stall 복구**: 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
 워치독은 모드 A 에만 있지만 회피 원칙은 모드 B 에서도 같다.
 
@@ -157,10 +156,8 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
 
 ### 1. 팀 생성
 
-critic 을 `run_in_background: true` 로 스폰한다.
-code-reviewer·docs-verifier 는 미리 대기시키지 않고 모든 phase 구현이 끝난 검토 시점에 **둘을 함께** 스폰한다.
-오래 대기시킨 팀원은 스스로 종료하는 패턴 때문에 어차피 재스폰해야 하기 때문이다.
-스폰 직후 "정식 팀원 스폰 규칙" 의 등록 검증을 통과해야 다음 단계로 넘어간다.
+critic 을 `name` 지정으로 스폰한다. idle 로 대기하다 5단계에서 이름으로 부른다.
+code-reviewer·docs-verifier 는 검토 시점(7·8단계)에 **둘을 함께** 스폰한다.
 
 ### 2. task 파악
 
@@ -284,7 +281,7 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 
 ### 8. docs-verifier 검증
 
-모든 phase 구현이 끝난 뒤 docs-verifier 를 스폰해 정합성을 판정한다 (self-shutdown 시 재스폰, 즉시 지시).
+모든 phase 구현이 끝난 뒤 docs-verifier 를 스폰해 정합성을 판정한다.
 **7단계 code-reviewer 와 병렬로 돌린다** — 두 검토는 서로의 입력이 아니라서 순서에 의존하지 않는다.
 phase마다 호출하지는 않는다. 검토 대상은 개별 phase 가 아니라 누적 diff 다.
 
