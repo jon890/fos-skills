@@ -42,6 +42,7 @@ plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검�
 - 브랜치 이름 형식
 - task 디렉터리 매칭(정확 일치 / 슬러그 suffix / fuzzy)
 - 이어서 작업(옵션 A) vs 새로 시작(옵션 B) 분기 정책
+
 구체 검증 명령(`git ls-remote`, `gh pr list`, `jq .status` 등)은 레포 브랜치 규칙에 맞춰 조립한다.
 
 ## 실행 모드 (사전 검증 통과 직후)
@@ -93,7 +94,7 @@ executor·docs-verifier 이름은 오버레이가 지정한다.
 - **구현자 cwd 격리**: main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓴다. 모드 B 에서 위험이 더 크다.
 - **구현자 scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 검토를 우회한다. 모드 B 는 자기 승인이 되므로 사용자에게 확인한다.
 - **watchdog stall 복구**: 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
-워치독은 모드 A 에만 있지만 회피 원칙은 모드 B 에서도 같다.
+  워치독은 모드 A 에만 있지만 회피 원칙은 모드 B 에서도 같다.
 
 상세 프롬프트 문구·근거·판정 시간 규칙은 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
 
@@ -204,10 +205,10 @@ team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만�
 판정을 무엇으로 집행할지는 모드마다 다르다.
 
 - **모드 A** — 반환된 실행 형태보다 낮은 role 로 executor 를 스폰하지 않는다.
-같은 수준의 role 이 없으면 더 엄격한 쪽으로만 올린다 — 내려서 스폰하지 않는다.
+  같은 수준의 role 이 없으면 더 엄격한 쪽으로만 올린다 — 내려서 스폰하지 않는다.
 - **모드 B** — team-lead 가 직접 구현해도 되는지를 가른다.
-전환 조건과 절차, 실행 형태를 등급으로 옮기는 변환표는
-[`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
+  전환 조건과 절차, 실행 형태를 등급으로 옮기는 변환표는
+  [`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
 
 실행 보고에 남길 항목과 실행 중 승격 처리는 같은 참조 문서를 따른다.
 
