@@ -153,25 +153,15 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
-사용자가 현재 실행에 실제 모델을 명시해도 실행 형태 점검을 먼저 적용한다.
-점검 결과와 같거나 더 엄격한 모델만 runtime override로 허용하고 task 파일에는 기록하지 않는다.
 
 ### executor 실행 형태 점검
 
 `execution_profile`은 작업의 필요 역량을 나타낼 뿐, 저비용 모델 사용 자격을 자동으로 부여하지 않는다.
-각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해 다음 실행 형태 중 하나를 받는다.
+각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해
+`BOUNDED`·`JUDGMENT_REQUIRED`·`HIGH_RISK` 중 하나를 받는다. 증명되지 않으면 항상 더 엄격한 쪽을 고른다.
 
-- `BOUNDED` — 실행 명세가 닫혀 있고 새로운 판단 없이 구현·검증할 수 있다.
-- `JUDGMENT_REQUIRED` — 구현 중 일반적인 기술 판단이 필요하다.
-- `HIGH_RISK` — 설계·보안·데이터·호환성 등 실패 비용이 큰 판단이 필요하다.
-
-`BOUNDED`는 모든 적합성 조건이 증명된 경우에만 선택한다.
-critic 판정이 누락되거나 team-lead와 critic이 불일치하면 더 엄격한 실행 형태를 선택한다.
-고위험 여부가 확정되지 않은 경우에도 더 엄격한 실행 형태를 선택한다.
-`fast`나 `standard`도 `BOUNDED`를 자동 의미하지 않고, `deep`은 `BOUNDED`로 내리지 않는다.
-
-적합성 조건과 차단 조건은 [`references/executor-routing.md`](references/executor-routing.md)를 따른다.
-critic 출력 계약과 실행 중 승격 규칙도 같은 문서를 따른다.
+세 형태의 정의, 적합성 조건과 차단 조건, critic 출력 계약, 실행 중 승격 규칙은
+모두 [`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
 critic 평가 전과 executor 스폰 직전에 이 참조 문서를 반드시 읽는다.
 
 phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
@@ -199,7 +189,6 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 5. 점검 결과와 같거나 더 엄격한 사용자 모델 override
 
 1~3은 필요 역량의 기준이고 4는 저비용 실행 적합성의 기준이다.
-실제 모델 ID는 task나 공용 skill에 영속화하지 않는다.
 
 ## 재시도 한도
 
@@ -310,10 +299,7 @@ critic 승인과 docs-verifier 검증이 이중 안전망 역할을 한다.
 각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
 team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py`를 통과시킨다.
 스크립트가 차단하거나 반환한 실행 형태보다 낮은 경로를 선택하면 executor를 스폰하지 않는다.
-같은 수준의 모델이 없을 때 더 엄격한 모델로 올리는 폴백은 허용한다.
-surface adapter는 결정된 실행 형태를 사용 가능한 role·모델에 매핑한다.
-실제 선택·폴백·승격은 실행 보고에 남긴다.
-`BOUNDED`로 시작한 executor가 실행 중 새로운 판단이 필요하다고 보고하면 수정을 계속하지 않고 승격 규칙으로 복귀한다.
+폴백 허용 범위, role 매핑, 실행 보고에 남길 항목, 실행 중 승격 처리는 같은 참조 문서를 따른다.
 
 이 단계는 `index.json`의 **모든 미완료 phase를 순서대로 구현·검증·atomic commit할 때까지 반복**한다.
 개별 phase 완료는 다음 executor로 넘어가는 commit 경계이지 code-reviewer·docs-verifier 호출 경계가 아니다.
