@@ -64,9 +64,6 @@ task는 특정 모델 공급자 이름을 저장하지 않는다.
 | `standard` | 표준 구현, 다중 파일 수정, rename, 리팩토링, 신규 컴포넌트, migration |
 | `deep` | 새 아키텍처 설계, 복잡 알고리즘, 장기 trade-off 판단 |
 
-기계적 작업은 `deep`을 사용하지 않는다.
-rename, 이동, 경로 수정은 파일 수와 무관하게 `standard`면 충분하다.
-
 legacy task의 `model`은 read 시에만 다음처럼 해석한다.
 
 - `haiku` → `fast`

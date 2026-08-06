@@ -233,7 +233,6 @@ phase 자체를 고쳐야 하면 critic 재평가(3단계)로 돌아가고, 단�
 모든 phase 의 구현·검증·atomic commit 이 끝난 뒤, team-lead 가 code-reviewer 를 새로 스폰해 누적 구현 전체 검사를 지시한다.
 6단계 docs-verifier 도 같은 시점에 함께 스폰한다 — 두 검토는 병렬로 돈다.
 team-lead 가 직접 검사하지 않는다 — 건너뛰기를 막기 위해서다.
-phase마다 code-reviewer를 반복 호출하지 않는다.
 
 스폰 프롬프트에 [`references/role-code-reviewer.md`](references/role-code-reviewer.md)를 읽으라고 지시하고
 반복 함정 목록 경로와 설계 맥락(의도한 raw 패턴, helper 우회 사유, 범위 밖 placeholder)을 담는다.
@@ -250,13 +249,12 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 리뷰 반영이 docs 를 바꿨으면 6단계의 docs-verifier 재검증도 함께 건다.
 
 `FIX_NEEDED`이면 수정에 들어가기 전에 독립 회고 파일을 만들고 `status: open`으로 둔다.
-재검사 후에는 같은 파일에 해결 commit·검증 근거를 추가하고 `status`를 갱신하며, 발견 기록을 삭제하거나 성공 결과로 덮어쓰지 않는다.
+재검사 후 같은 파일을 갱신하는 규칙은 [`references/retrospective.md`](references/retrospective.md)가 소유한다.
 
 ### 6. docs-verifier 검증
 
 모든 phase 구현이 끝난 뒤 docs-verifier 를 스폰해 정합성을 판정한다.
 **5단계 code-reviewer 와 병렬로 돌린다** — 두 검토는 서로의 입력이 아니라서 순서에 의존하지 않는다.
-phase마다 호출하지는 않는다. 검토 대상은 개별 phase 가 아니라 누적 diff 다.
 
 병렬 실행의 유일한 대가는 재검증이다. code-reviewer 지적이 docs 를 바꾸면 docs-verifier 판정이 낡으므로 한 번 더 돌린다.
 그래서 team-lead 는 code-reviewer 판정을 받은 시점에 재검증 필요 여부를 가른다.
@@ -359,7 +357,6 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
 팀원을 어느 등급(`fast`·`standard`·`deep`)으로 돌릴지는
 [`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
 규모별 기본 등급 표, 실행 형태 점검, 출발값과 하한을 고르는 순서, surface별 상속 함정이 거기 있다.
-공용 skill과 task에는 실제 모델 ID나 공급자 제품명을 저장하지 않는다.
 
 critic 평가 전과 phase 착수 직전에 그 문서를 반드시 읽는다.
 모드 B 에서 team-lead 가 감당할 수 없는 phase 를 만났을 때의 전환 절차도 같은 문서에 있다.
