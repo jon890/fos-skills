@@ -10,7 +10,7 @@ description: |
   발견 전용이며 수정은 사용자 승인 후 진행한다.
   레포별 특화(docs 구조·문서 목록·검증기 에이전트·grep 경로)는 레포 오버레이·CLAUDE.md 로 주입된다.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # docs-check
