@@ -2,7 +2,7 @@
 name: build-with-teams
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 metadata:
-  version: "2.3.0"
+  version: "3.0.0"
 ---
 # build-with-teams
 
@@ -326,7 +326,6 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
   - worktree 가 깨끗하고 로컬에만 있는 commit 이 없는지 확인한다.
   - 제거 대상 worktree 내부를 cwd 로 둔 채 실행하지 않는다. 기본 checkout 이나 다른 안전한 cwd 로 옮긴 뒤 `git worktree remove <절대경로>` 를 실행한다.
   - `git worktree list` 로 제거를 확인한다. 잠긴 worktree 나 미커밋 변경이 있으면 remove 가 실패하는데, 확인하지 않으면 그 실패가 묻힌다.
-  - PR 브랜치는 유지한다. 브랜치 삭제는 머지 후 사용자 요청이 있을 때만 한다.
 8. **실행 기록 한 줄 추가** — `docs/retrospectives/RUNS.md` 에 이번 실행의 결과를 남긴다.
    REVISE·FIX_NEEDED·docs-verifier 판정 횟수와 사용자 개입 횟수를 적는다.
    중단된 실행도 기록한다. 형식은 [`references/run-record.md`](references/run-record.md) 를 따른다.
