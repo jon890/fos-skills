@@ -62,12 +62,16 @@ plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검�
 
 ## 실행 모드 (사전 검증 통과 직후)
 
-team-lead 가 task 규모를 보고 팀원 spawn 범위를 스스로 정한다. 사용자가 모드를 명시했으면 그것을 따른다.
+team-lead 가 task 규모를 보고 구현을 위임할지 스스로 정한다. 사용자가 모드를 명시했으면 그것을 따른다.
 
 | 모드 | 구현 | 규모 |
 |---|---|---|
 | **A. 정식 팀 흐름** | executor 를 spawn 해 phase 를 위임한다 | 대 (4개 이상 phase / 아키텍처 / 스키마 대규모 / 신규 도메인) |
 | **B. team-lead 구현** | executor 없이 team-lead 가 직접 구현한다 | 소·중 (1-3 phase / 버그 / 기존 기능 확장) |
+
+**구현자** — 이 문서에서 구현 주체를 가리키는 말이다. 모드 A 는 executor, 모드 B 는 team-lead 다.
+구현자를 주어로 쓴 지시는 두 모드에 그대로 적용된다.
+`executor` 를 주어로 쓴 지시는 스폰된 팀원에게만 해당하므로 모드 A 전용이다.
 
 **모드가 가르는 것은 구현 위임 여부뿐이다.**
 critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다.
@@ -80,7 +84,7 @@ critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다
 작업 도중 **2개 이상 옵션 사이에서 결정해야 하는 상황**이면 자의적으로 진행하지 말고 즉시 옵션과 트레이드오프를 질문한다.
 
 - spec 충실도 (정확히 따를지 vs 일부 보류)
-- scope 변경 (executor 가 task 외 변경 발견)
+- scope 변경 (구현자가 task 외 변경 발견)
 - 통합 검증 실패 분류 (plan 내 / plan 외)
 - critic REVISE 한도 초과 후 다음 행동
 - docs-verifier UPDATE_NEEDED 처리 시점 (PR 안 / 별도 PR / 머지 후)
@@ -90,7 +94,7 @@ critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다
 **예외** — 질문 없이 진행해도 되는 분기:
 - 위 실행 모드 선택. 규모로 판정 가능하고 독립 검토는 어느 모드에서도 유지되므로 회수 비용이 없다.
 - 이번 세션에서 사용자가 이미 명시적으로 결정한 동일 분기의 재발.
-- 본 skill·오버레이에 이미 명시된 가드 (executor cwd 격리 등).
+- 본 skill·오버레이에 이미 명시된 가드 (구현자 cwd 격리 등).
 - 자명한 사실 확인 (파일 존재 / git status 등).
 
 ## 팀 구성 (역할 — 에이전트 이름은 오버레이가 지정)
@@ -99,7 +103,7 @@ critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다
 |---|---|---|
 | **team-lead** | main session | 계획 수립, task 검토, 팀 조율, phase 단위 atomic commit, 최종 push/PR |
 | **critic** | `oh-my-claudecode:critic` | 계획 평가 (APPROVE/REVISE), 실제 코드 대조 |
-| **executor** | 레포의 executor 에이전트 | phase 순차 실행, 코드 수정 (커밋 제외), `bypassPermissions` |
+| **executor** | 레포의 executor 에이전트 | phase 순차 실행, 코드 수정 (커밋 제외), `bypassPermissions`. **모드 A 에서만 스폰** — 모드 B 는 team-lead 가 구현자를 겸한다 |
 | **code-reviewer** | `oh-my-claudecode:code-reviewer` | 코드 품질 검사 (PASS/FIX_NEEDED), 금지 패턴 탐지 |
 | **docs-verifier** | 레포의 docs-verifier 에이전트 | 코드와 docs 정합성 검증 (PASS/UPDATE_NEEDED/VIOLATION) |
 
@@ -109,6 +113,7 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 ### 팀원 스폰 가드 (요약)
 
 팀원(critic·executor·code-reviewer·docs-verifier)을 스폰·통신할 때 실제 사고를 겪고 굳어진 가드가 있다.
+아래에서 **구현자** 로 시작하는 둘은 모드 B 에도 적용된다. 나머지는 스폰이 있는 경우에만 발동한다.
 
 - **정식 팀원 스폰이 1순위**: `team_name` 과 `name` 을 지정해 스폰한다. 일회성 호출은 팀 컨텍스트 밖이라 이후 `SendMessage` 협업이 끊긴다.
     - 이름 없는 subagent 는 **팀원 스폰이 환경 제약으로 실패했을 때만** 쓰는 폴백이다. 편해서 고르지 않는다.
@@ -117,8 +122,11 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 - **SendMessage 회신 강제**: 자기 화면 출력만 하고 종료하면 team-lead 에 결과가 안 닿는다. 스폰 프롬프트에 회신 의무를 명시한다.
 - **자발적 실행 방지**: team-lead 지시 전 팀원이 먼저 실행·검증을 시작하면 점검 시점 정합성이 깨진다.
 - **self-shutdown 대응**: code-reviewer·docs-verifier 는 idle 알림 직후 자체 종료하는 경향이 있다 — idle 대기 대신 필요 시점에 재스폰한다.
-- **executor cwd 격리**: executor 가 main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓰게 한다.
-- **executor scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 critic·code-reviewer 검토를 우회한다 — 발견 시 보고만 하고 team-lead 승인 후 반영한다.
+- **구현자 cwd 격리**: main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓴다.
+    - 모드 A 는 스폰 프롬프트에 가드를 넣는다. 모드 B 는 team-lead 자신에게 적용되며 **위험이 더 크다** — cwd 가 main repo 에서 시작하기 때문이다.
+- **구현자 scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 critic·code-reviewer 검토를 우회한다.
+    - 모드 A 는 executor 가 보고하고 team-lead 가 승인한다.
+    - 모드 B 는 구현자가 곧 team-lead 라 자기 승인이 된다. 승인으로 갈음하지 말고 **사용자에게 확인**한다.
 - **split-pane 스폰 실패**(환경): tmux 없는 터미널에서 `name` 지정 스폰이 깨진다 — 폴백을 한 단계씩만 내려간다.
 - **watchdog stall 복구**: executor 가 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
 
@@ -126,7 +134,8 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 
 ### 특이사항 4종 집계 (필수)
 
-각 executor 는 phase 보고에 아래 4종을 함께 적는다. 없으면 "없음" 으로 명시한다 — 침묵으로 갈음하면 사용자가 후속 필요 여부를 판단할 수 없다.
+구현자는 phase 보고에 아래 4종을 함께 적는다. 없으면 "없음" 으로 명시한다 — 침묵으로 갈음하면 사용자가 후속 필요 여부를 판단할 수 없다.
+모드 A 는 executor 가 `SendMessage` 로 올리고, 모드 B 는 team-lead 가 phase 커밋 시점에 스스로 기록한다.
 
 - **pre-existing** — 이번 변경과 무관하게 원래 있던 문제.
 - **신규 deprecation** — 이번 변경이 유발한 경고·예정 폐기.
@@ -149,6 +158,7 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 | **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
+모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다 — 구현자가 team-lead 라 team-lead 열이 적용된다.
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
 
 ### executor 실행 형태 점검
@@ -159,7 +169,7 @@ planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분�
 
 세 형태의 정의, 적합성 조건과 차단 조건, critic 출력 계약, 실행 중 승격 규칙은
 모두 [`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
-critic 평가 전과 executor 스폰 직전에 이 참조 문서를 반드시 읽는다.
+critic 평가 전과 phase 착수 직전에 이 참조 문서를 반드시 읽는다.
 
 phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
 스키마 소유자인 `planning/task-create.md` 의 "실행 등급 라우팅" 을 따른다.
@@ -210,8 +220,8 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
     → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
     → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
     → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
-    → [phase 별 executor 실행 형태 점검 — BOUNDED / JUDGMENT_REQUIRED / HIGH_RISK]
-    → [모든 executor 실행 — phase 단위 spawn·검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
+    → [phase 별 실행 형태 점검 — BOUNDED / JUDGMENT_REQUIRED / HIGH_RISK]
+    → [모든 phase 구현 — 검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
     → [누적 diff code-reviewer 검사 — 전부 보고 후 team-lead 필터] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
     → [code-reviewer PASS 후 최종 HEAD docs-verifier 검증 1회] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
     → [통합 검증 — 실패 시 plan 범위 내/외 분기]
@@ -274,7 +284,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 발견을 무엇으로 처리할지는 team-lead 가 정한다.
 
 - 계획을 고쳐야 하는 것 → REVISE 로 되돌린다.
-- 구현하며 챙기면 되는 것 → executor 스폰 프롬프트의 `critic minor notes` 로 넘긴다.
+- 구현하며 챙기면 되는 것 → `critic minor notes` 로 구현자에게 넘긴다 (모드 A 는 스폰 프롬프트에, 모드 B 는 phase 착수 메모에).
 - 이번 plan 밖의 것 → 특이사항 4종에 합쳐 보고한다.
 
 판정: **APPROVE** → 6단계. **REVISE** → 수정 후 재평가 (한도 3회).
@@ -290,50 +300,61 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 회신이 v1 과 같으면 team-lead 가 수정된 실제 라인을 `grep`·`awk` 로 떠서 증거로 붙여 재요청한다.
 이 패턴은 **code-reviewer·docs-verifier 재검사에도 그대로 적용**한다.
 
-### 6. executor 실행
+### 6. 구현
 
 critic APPROVE 후 구현에 들어간다. 모드 A 는 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰하고, 모드 B 는 team-lead 가 직접 구현한다.
 아래 실행 형태 점검과 phase 단위 커밋·검증 규칙은 두 모드에 같이 적용한다 — 구현 주체만 다르고 통과 조건은 같다.
 
-각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
+각 phase 착수 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
 team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py`를 통과시킨다.
-스크립트가 차단하거나 반환한 실행 형태보다 낮은 경로를 선택하면 executor를 스폰하지 않는다.
-같은 수준의 role 이 없으면 더 엄격한 쪽으로만 올린다 — 내려서 스폰하지 않는다.
+스크립트가 차단하면 그 phase 에 착수하지 않는다.
+
+판정을 무엇으로 집행할지는 모드마다 다르다.
+
+- **모드 A** — 반환된 실행 형태보다 낮은 role 로 executor 를 스폰하지 않는다.
+  같은 수준의 role 이 없으면 더 엄격한 쪽으로만 올린다 — 내려서 스폰하지 않는다.
+- **모드 B** — team-lead 가 직접 구현해도 되는지를 가른다.
+  `HIGH_RISK` 면 직접 구현하지 않고 **모드 A 로 전환해** 그 phase 를 executor 에 위임한다.
+  team-lead 자신의 등급이 판정보다 낮으면 같은 방법으로 전환한다.
+
 실행 보고에 남길 항목과 실행 중 승격 처리는 같은 참조 문서를 따른다.
 
 이 단계는 `index.json`의 **모든 미완료 phase를 순서대로 구현·검증·atomic commit할 때까지 반복**한다.
-개별 phase 완료는 다음 executor로 넘어가는 commit 경계이지 code-reviewer·docs-verifier 호출 경계가 아니다.
+개별 phase 완료는 commit 경계이지 code-reviewer·docs-verifier 호출 경계가 아니다.
 code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 검증한다.
 단, 진행을 막는 결함의 원인 확인이 필요하면 조기 자문을 받을 수 있으며 그 결과는 최종 reviewer verdict를 대체하지 않는다.
 
-- **phase 단위 spawn → shutdown 사이클** (4개 이상 phase 에서 필수)
+구현자 공통 규칙이다.
+
+- phase 를 순서대로 구현하고, 완료 후 성공 기준을 검증한다.
+- 코드 주석 규칙은 레포 `CLAUDE.md` 를 따른다.
+- 위 "구현자 cwd 격리" 와 "구현자 scope 확장 보고" 를 지킨다.
+
+**모드 A 전용** — 스폰이 있을 때만 발동한다.
+
+- **phase 단위 spawn → shutdown 사이클**
     - 한 phase 완료·커밋 후 그 executor 를 **반드시 종료한 뒤** 다음 phase 를 새 이름(`executor-p{N}`)으로 스폰한다.
     - 이유: 컨텍스트를 분리하고, 이름 충돌과 auto-deliver 누락을 피한다.
     - 종료 방법: `SendMessage({to, message:{type:"shutdown_request"}})` 또는 `TaskStop`. 종료를 확인한 뒤 다음 executor 를 스폰한다.
     - **종료를 빠뜨리면 phase 마다 executor 가 누적된다** (8-phase task 에서 팀원 8개 잔존 관측). 다음 스폰 직전에 이전 executor 종료를 매 phase 강제한다.
-    - 3 phase 이하는 executor 를 한 번만 스폰해 재사용한다 (다음 phase 는 새로 스폰하지 않고 `SendMessage` 로 지시).
-- executor 규칙
-    - phase 를 순서대로 실행하고, 완료 후 성공 기준을 검증한다.
-    - **커밋은 team-lead 가 한다** — executor 는 커밋하지 않는다.
-    - 완료·실패를 `SendMessage` 로 보고한다.
-    - 코드 주석 규칙은 레포 `CLAUDE.md` 를 따른다.
-- 위 "executor cwd 격리" 와 "scope 확장 보고" 가드 문구를 스폰 프롬프트에 그대로 포함한다.
+- **커밋은 team-lead 가 한다** — executor 는 커밋하지 않고 완료·실패를 `SendMessage` 로 보고한다.
+- 위 두 구현자 가드 문구를 스폰 프롬프트에 그대로 포함한다.
 
 **phase 단위 atomic commit**: 한 phase 완료·검증 후 team-lead 가 그 phase 만 commit 한다.
 
 - commit 전 `git status` 로 staged 전체를 점검해 관심사가 섞이지 않게 한다.
-- executor 가 staging 해 둔 무관한 변경이 딸려올 수 있다. 섞였으면 `git reset` 후 명시적으로 add 하거나 경로를 한정해 commit 한다.
+- 모드 A 에서 executor 가 staging 해 둔 무관한 변경이 딸려올 수 있다. 섞였으면 `git reset` 후 명시적으로 add 하거나 경로를 한정해 commit 한다.
 
 phase commit 전 특이사항 4종에서 회고 가치가 있는 사건을 `docs/retrospectives/<NNNN>-<slug>.md`로 기록하고 `INDEX.md`를 갱신한다.
 신규 회고가 없으면 파일을 만들지 않고 phase 보고에 `신규 회고 없음`을 명시한다.
 
 ### 7. 코드 품질 검사 (code-reviewer)
 
-모든 phase 의 executor 실행·검증·atomic commit 이 끝난 뒤, team-lead 가 code-reviewer 를 새로 스폰해 누적 구현 전체 검사를 지시한다.
+모든 phase 의 구현·검증·atomic commit 이 끝난 뒤, team-lead 가 code-reviewer 를 새로 스폰해 누적 구현 전체 검사를 지시한다.
 team-lead 가 직접 검사하지 않는다 — 건너뛰기를 막기 위해서다.
 phase마다 code-reviewer를 반복 호출하지 않는다.
 
-- **검사 범위**: executor 가 변경한 파일만. 범위는 **3-dot** 으로 잡는다 — `git diff --name-only origin/main...HEAD`.
+- **검사 범위**: 이번 plan 이 변경한 파일만. 범위는 **3-dot** 으로 잡는다 — `git diff --name-only origin/main...HEAD`.
     - 2-dot(`origin/main..HEAD`)은 worktree 분기 후 origin/main 에 들어온 외부 커밋까지 끌어와 false positive 를 만든다.
     - 실제로 무관한 차이 50여 건이 섞여 reviewer 판정이 오염된 사례가 있다.
 - **검사 항목을 본문에 나열하지 않는다** — 오버레이가 지정한 반복 함정 목록에서 관련 패턴을 골라 grep 으로 점검하도록 지시한다.
@@ -349,7 +370,7 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 
 (b)·(c) 는 버리지 말고 특이사항 4종에 합쳐 보고한다.
 
-판정: **PASS** → 8단계. **FIX_NEEDED** → executor 재투입 후 재검사 (한도 2회).
+판정: **PASS** → 8단계. **FIX_NEEDED** → 구현자 재투입 후 재검사 (한도 2회. 모드 A 는 executor 재스폰, 모드 B 는 team-lead 직접 수정).
 
 `FIX_NEEDED`이면 수정에 들어가기 전에 독립 회고 파일을 만들고 `status: open`으로 둔다.
 재검사 후에는 같은 파일에 해결 commit·검증 근거를 추가하고 `status`를 갱신하며, 발견 기록을 삭제하거나 성공 결과로 덮어쓰지 않는다.
@@ -368,14 +389,14 @@ docs 불일치를 더 일찍 잡아야 하면 별도 사전 pass 를 만들지 �
 
 docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하면 SKILL 은 위임만 하고 항목을 반복하지 않는다.
 
-판정: **PASS** → 9단계. **UPDATE_NEEDED** → docs 업데이트 후 재검증 (한도 2회). **VIOLATION** → 코드 수정 지시 (executor 재투입, 한도 2회).
+판정: **PASS** → 9단계. **UPDATE_NEEDED** → docs 업데이트 후 재검증 (한도 2회). **VIOLATION** → 코드 수정 (구현자 재투입, 한도 2회).
 
 ### 9. 완료, PR 생성, 팀 종료
 
 1. team-lead 가 누적 commit 을 검토한다 — phase 별 commit 이 의도대로 들어갔는지, 마지막 phase commit 에 완료 마킹이 포함됐는지 확인.
 2. **통합 검증** — 레포 CLAUDE.md·오버레이의 검증 명령을 실행해 모든 phase 누적 후에도 통과하는지 확인한다.
 3. **검증 실패 시 분기**(필수) — 실패 원인 파일과 변경 파일을 매칭해 책임을 분류한다. 자의적으로 plan PR 에 외부 잔존 깨짐 fix 를 흡수하지 않는다.
-   - **plan 범위 내**: 본 plan 변경 파일에서 실패 → executor 재투입(또는 team-lead 직접 fix). 사용자 결정 불필요.
+   - **plan 범위 내**: 본 plan 변경 파일에서 실패 → 구현자 재투입. 사용자 결정 불필요.
    - **plan 범위 밖**: 실패 원인이 변경하지 않은 파일에 있다 (`git diff origin/main -- <파일>` 이 비어 있으면 main 자체가 깨진 것).
        사용자에게 세 가지를 제시하고, 무엇을 골랐는지 PR 설명에 남긴다.
        - A: 이 PR 에 fix 를 흡수한다.
@@ -434,7 +455,9 @@ worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
 
 ## 실패 복구
 
-executor 가 phase 실패를 보고하면: team-lead 가 원인 분석 → phase 수정 필요 시 critic 재평가(5단계) → 단순 에러면 executor 재실행 지시.
+phase 가 실패하면 team-lead 가 원인을 분석한다.
+phase 자체를 고쳐야 하면 critic 재평가(5단계)로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
+모드 A 는 executor 보고로 실패를 받고 재실행을 지시한다. 모드 B 는 team-lead 가 검증 실패를 직접 확인한다.
 
 ## 노하우 누적 (세션마다 보강)
 
