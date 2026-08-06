@@ -2,7 +2,7 @@
 name: build-with-teams
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 metadata:
-  version: "2.2.0"
+  version: "2.3.0"
 ---
 
 # build-with-teams
@@ -176,8 +176,10 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
     → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
     → [phase 별 실행 형태 점검 — BOUNDED / JUDGMENT_REQUIRED / HIGH_RISK]
     → [모든 phase 구현 — 검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
-    → [누적 diff code-reviewer 검사 — 전부 보고 후 team-lead 필터] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
-    → [code-reviewer PASS 후 최종 HEAD docs-verifier 검증 1회] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
+    → [누적 diff 검토 — code-reviewer 와 docs-verifier 를 병렬 스폰]
+        ├─ code-reviewer: 전부 보고 후 team-lead 필터 ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
+        └─ docs-verifier: 정합성 판정 ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
+    → [리뷰 반영이 docs 를 바꿨으면 docs-verifier 재검증]
     → [통합 검증 — 실패 시 plan 범위 내/외 분기]
     → [team-lead 일괄 push (완료 마킹은 PR 브랜치 안)]
     → [PR 생성·갱신]
@@ -188,7 +190,7 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
 ### 1. 팀 생성
 
 critic 을 `run_in_background: true` 로 스폰한다.
-code-reviewer·docs-verifier 는 미리 대기시키지 않고 7·8단계 검사 시점에 스폰한다.
+code-reviewer·docs-verifier 는 미리 대기시키지 않고 모든 phase 구현이 끝난 검토 시점에 **둘을 함께** 스폰한다.
 오래 대기시킨 팀원은 스스로 종료하는 패턴 때문에 어차피 재스폰해야 하기 때문이다.
 스폰 직후 "정식 팀원 스폰 규칙" 의 등록 검증을 통과해야 다음 단계로 넘어간다.
 
@@ -307,6 +309,7 @@ phase commit 전 특이사항 4종에서 회고 가치가 있는 사건을 `docs
 ### 7. 코드 품질 검사 (code-reviewer)
 
 모든 phase 의 구현·검증·atomic commit 이 끝난 뒤, team-lead 가 code-reviewer 를 새로 스폰해 누적 구현 전체 검사를 지시한다.
+8단계 docs-verifier 도 같은 시점에 함께 스폰한다 — 두 검토는 병렬로 돈다.
 team-lead 가 직접 검사하지 않는다 — 건너뛰기를 막기 위해서다.
 phase마다 code-reviewer를 반복 호출하지 않는다.
 
@@ -326,16 +329,26 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 
 (b)·(c) 는 버리지 말고 특이사항 4종에 합쳐 보고한다.
 
-판정: **PASS** → 8단계. **FIX_NEEDED** → 구현자 재투입 후 재검사 (한도 2회. 모드 A 는 executor 재스폰, 모드 B 는 team-lead 직접 수정).
+판정: **PASS** → 9단계. **FIX_NEEDED** → 구현자 재투입 후 재검사 (한도 2회. 모드 A 는 executor 재스폰, 모드 B 는 team-lead 직접 수정).
+리뷰 반영이 docs 를 바꿨으면 8단계의 docs-verifier 재검증도 함께 건다.
 
 `FIX_NEEDED`이면 수정에 들어가기 전에 독립 회고 파일을 만들고 `status: open`으로 둔다.
 재검사 후에는 같은 파일에 해결 commit·검증 근거를 추가하고 `status`를 갱신하며, 발견 기록을 삭제하거나 성공 결과로 덮어쓰지 않는다.
 
 ### 8. docs-verifier 검증
 
-code-reviewer PASS 와 review fix 가 끝난 뒤 docs-verifier 를 스폰해 최종 HEAD 기준으로 **한 번만** 정합성을 판정한다 (self-shutdown 시 재스폰, 즉시 지시).
-phase마다 호출하거나 사전 검토·최종 검증으로 나눠 두 번 돌리지 않는다 — 같은 diff 를 두 번 읽는 비용만 늘고 유효한 판정은 최종 HEAD 것뿐이다.
-docs 불일치를 더 일찍 잡아야 하면 별도 사전 pass 를 만들지 말고 7단계 code-reviewer 지시에 docs 축을 얹는다. 검증 관점:
+모든 phase 구현이 끝난 뒤 docs-verifier 를 스폰해 정합성을 판정한다 (self-shutdown 시 재스폰, 즉시 지시).
+**7단계 code-reviewer 와 병렬로 돌린다** — 두 검토는 서로의 입력이 아니라서 순서에 의존하지 않는다.
+phase마다 호출하지는 않는다. 검토 대상은 개별 phase 가 아니라 누적 diff 다.
+
+병렬 실행의 유일한 대가는 재검증이다. code-reviewer 지적이 docs 를 바꾸면 docs-verifier 판정이 낡으므로 한 번 더 돌린다.
+그래서 team-lead 는 code-reviewer 판정을 받은 시점에 재검증 필요 여부를 가른다.
+
+- 리뷰 반영이 docs 를 건드렸으면 → docs-verifier 재검증. 바뀐 파일을 명시해 재요청한다.
+- 코드만 건드렸으면 → 첫 판정을 그대로 쓴다.
+- 재검증 횟수는 아래 한도에 함께 계산한다.
+
+검증 관점:
 
 1. 설계 결정(ADR 등) 위반 여부.
 2. 레이어·코딩 규칙 준수 (레포 `CLAUDE.md` 참조).
