@@ -414,9 +414,6 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
 `.gitignore` 에 `.claude/worktrees/` 가 등록돼 있어야 한다.
 
-- **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다.
-    - 자동완성 오타(`.claire-worktrees` 등)로 비슷한 철자의 디렉터리를 만들면 후속 검증이 깨진다.
-    - worktree 생성 전후로 `.claude` 외의 `.cla*` 디렉터리를 찾아 명백한 오타는 즉시 제거한다.
 - **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 `pwd` 로 확인한다.
     - 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜, main repo 의 task 를 실수로 건드릴 수 있다.
     - commit 전에 main repo 와 worktree 양쪽 `git status` 를 함께 본다.
