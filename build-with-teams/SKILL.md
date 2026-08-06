@@ -153,7 +153,6 @@ code-reviewer·docs-verifier 는 검토 시점(5·6단계)에 **둘을 함께** 
 
 team-lead 가 task(`index.json`, `phase-*.md`)와 관련 docs·`CLAUDE.md`·오버레이를 읽는다.
 
-
 ### 3. critic 평가 (통과 조건)
 
 team-lead → critic 에게 계획 전송.

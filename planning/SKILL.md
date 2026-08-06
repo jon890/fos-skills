@@ -144,7 +144,7 @@ task 파일을 만든 직후, 커밋하기 전에 세 가지를 순서대로 한
    중단된 planning 도 기록한다. 형식은 `~/.claude/skills/build-with-teams/references/run-record.md` 를 따른다.
 4. 사용자에게 plan 순서와 plan별 실행 명령을 보고한다 (형식은 오버레이).
 
-**실제 phase 실행은 사용자가 실행 명령을 호출할 때 시작.** planning 은 task 생성과 push 까지.
+**실제 phase 실행은 사용자가 실행 명령을 호출할 때 시작한다.** planning 은 task 생성과 push 까지 담당한다.
 보고에는 각 plan 의 **브랜치 이름**을 함께 적는다 — 실행 스킬이 그 브랜치에서 worktree 를 분기하므로, 이름이 곧 핸드오프 인자다.
 
 예외: 논의만(docs·task 없음) → commit 생략 고지. main 직접 push 금지 — 산출물은 plan 브랜치에만 둔다.
