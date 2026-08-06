@@ -67,8 +67,8 @@ team-lead 가 task 규모를 보고 팀원 spawn 범위를 스스로 정한다. 
 | 모드 | 설명 | 규모 |
 |---|---|---|
 | **A. 정식 팀 흐름** | critic, executor, code-reviewer, docs-verifier 모두 spawn | 대 (4개 이상 phase / 아키텍처 / 스키마 대규모 / 신규 도메인) |
-| **B. 사후 검수만** | 구현은 team-lead 직접, 완료 후 code-reviewer, docs-verifier spawn | 중 (2-3 phase / 기존 기능 확장) |
-| **C. 최소 팀** | 구현·계획 모두 team-lead 직접, 검토만 spawn | 소 (1 phase / 버그 / 미세 조정) |
+| **B. 계획 평가와 사후 검수** | 구현은 team-lead 직접, critic 으로 계획 평가, 완료 후 code-reviewer·docs-verifier spawn | 중 (2-3 phase / 기존 기능 확장) |
+| **C. 사후 검수만** | 계획·구현 모두 team-lead 직접, critic 생략, 완료 후 code-reviewer·docs-verifier spawn | 소 (1 phase / 버그 / 미세 조정) |
 
 **어느 모드에서도 7·8단계 독립 검토는 건너뛰지 않는다.**
 code-reviewer 와 docs-verifier 스폰은 규모와 무관하게 필수다.
@@ -88,6 +88,7 @@ code-reviewer 와 docs-verifier 스폰은 규모와 무관하게 필수다.
 **판정 기준**: 결정 결과가 (a) 회수 비용이 크거나 (b) 사용자 의도·스타일에 따라 갈리거나 (c) plan scope 를 벗어나면 즉시 질문한다.
 
 **예외** — 질문 없이 진행해도 되는 분기:
+- 위 실행 모드 선택. 규모로 판정 가능하고 독립 검토는 어느 모드에서도 유지되므로 회수 비용이 없다.
 - 이번 세션에서 사용자가 이미 명시적으로 결정한 동일 분기의 재발.
 - 본 skill·오버레이에 이미 명시된 가드 (executor cwd 격리 등).
 - 자명한 사실 확인 (파일 존재 / git status 등).
@@ -165,7 +166,9 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 
 ### surface별 해석
 
-- 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다. 정확히 맞는 등급이 없으면 가장 가까운 role을 쓰고 실제 선택을 실행 보고에 남긴다.
+- 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다.
+  정확히 맞는 등급이 없으면 **더 엄격한 쪽으로만** 올려 잡는다. 아래로 내리는 폴백은 없다.
+  실제 선택과 올려 잡은 사유를 실행 보고에 남긴다.
 - **등급 표가 기준이고 상속은 결과다.** 스폰 전에 그 팀원의 등급을 먼저 정하고, parent session이 이미 그 등급이면 모델 인자를 생략한다 (생략이 곧 그 등급이므로 공급자 버전에 묶이지 않는다).
 - **parent 등급과 다르면 spawn 시점에 명시 지정한다.** 생략은 "적절히 맞춰진다"는 뜻이 아니라 "parent 등급을 그대로 쓴다"는 뜻이다.
     - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해, 표에 `standard`라 적혀 있는데도 deep으로 떴다.
@@ -295,7 +298,8 @@ critic 승인과 docs-verifier 검증이 이중 안전망 역할을 한다.
 각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
 team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py`를 통과시킨다.
 스크립트가 차단하거나 반환한 실행 형태보다 낮은 경로를 선택하면 executor를 스폰하지 않는다.
-폴백 허용 범위, role 매핑, 실행 보고에 남길 항목, 실행 중 승격 처리는 같은 참조 문서를 따른다.
+같은 수준의 role 이 없으면 더 엄격한 쪽으로만 올린다 — 내려서 스폰하지 않는다.
+실행 보고에 남길 항목과 실행 중 승격 처리는 같은 참조 문서를 따른다.
 
 이 단계는 `index.json`의 **모든 미완료 phase를 순서대로 구현·검증·atomic commit할 때까지 반복**한다.
 개별 phase 완료는 다음 executor로 넘어가는 commit 경계이지 code-reviewer·docs-verifier 호출 경계가 아니다.
@@ -390,6 +394,7 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 7. **worktree 정리** — PR 생성·갱신과 원격 push 가 끝난 뒤에 한다.
    - worktree 가 깨끗하고 로컬에만 있는 commit 이 없는지 확인한다.
    - 제거 대상 worktree 내부를 cwd 로 둔 채 실행하지 않는다. 기본 checkout 이나 다른 안전한 cwd 로 옮긴 뒤 `git worktree remove <절대경로>` 를 실행한다.
+   - `git worktree list` 로 제거를 확인한다. 잠긴 worktree 나 미커밋 변경이 있으면 remove 가 실패하는데, 확인하지 않으면 그 실패가 묻힌다.
    - PR 브랜치는 유지한다. 브랜치 삭제는 머지 후 사용자 요청이 있을 때만 한다.
 8. **실행 기록 한 줄 추가** — `docs/retrospectives/RUNS.md` 에 이번 실행의 결과를 남긴다.
    REVISE·FIX_NEEDED·docs-verifier 판정 횟수와 사용자 개입 횟수를 적는다.
@@ -409,6 +414,10 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
 `.gitignore` 에 `.claude/worktrees/` 가 등록돼 있어야 한다.
 
+- **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다.
+    - 자동완성 오타(`.claire-worktrees` 등)로 비슷한 철자의 디렉터리가 생기면 후속 검증이 깨진다.
+      실제로 `.claire-worktrees/plan011-...` 가 남아 ESLint 에러를 냈다.
+    - worktree 생성 전후로 `.claude` 외의 `.cla*` 디렉터리를 찾아 명백한 오타는 즉시 제거한다.
 - **cwd 추적**: task 파일 수정·commit·검증 시 자신의 shell cwd 가 main repo 인지 worktree 인지 매번 `pwd` 로 확인한다.
     - 같은 상대경로가 cwd 에 따라 다른 파일을 가리켜, main repo 의 task 를 실수로 건드릴 수 있다.
     - commit 전에 main repo 와 worktree 양쪽 `git status` 를 함께 본다.
