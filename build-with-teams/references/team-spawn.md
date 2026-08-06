@@ -5,6 +5,20 @@
 SKILL.md 는 한 줄 요약만 두고, 각 가드의 본문은 이 문서가 소유한다.
 **팀원 스폰 전 반드시 읽는다.**
 
+## 두 모드에서 이 문서를 읽는 법
+
+`SKILL.md` 의 실행 모드에 따라 발동 범위가 다르다.
+
+| 절 | 모드 A | 모드 B |
+|---|---|---|
+| 1~5 (스폰·통신 규약) | 발동 | 발동 — critic·code-reviewer·docs-verifier 를 스폰하므로 그대로 적용된다 |
+| 6·7 (구현자 가드) | executor 에게 적용 | **team-lead 자신에게 적용** |
+| 8 (split-pane 폴백) | 발동 | 발동 |
+| 9 (watchdog stall) | 발동 | 워치독은 없지만 회피 원칙은 같다 — 무거운 외부 상호작용을 없애는 쪽으로 작업을 다시 짠다 |
+
+6·7절은 모드 B 에서 team-lead 자신에게 적용된다.
+**승인 경로만은 다르다** — 7절이 모드별로 따로 적는다.
+
 ## 목차
 
 1. [정식 팀원 스폰 규칙](#1-정식-팀원-스폰-규칙) — `team_name` 과 `name` 없이 스폰하면 SendMessage 협업이 끊긴다
@@ -12,8 +26,8 @@ SKILL.md 는 한 줄 요약만 두고, 각 가드의 본문은 이 문서가 소
 3. [팀원 SendMessage 회신 강제](#3-팀원-sendmessage-회신-강제) — 자기 화면 출력만 하고 종료하면 team-lead 에 안 닿는다
 4. [팀원 자발적 실행 방지](#4-팀원-자발적-실행-방지) — 지시 전 선행 실행은 점검 시점 정합성을 깬다
 5. [팀원 self-shutdown 대응](#5-팀원-self-shutdown-대응) — idle 알림 직후 자체 종료하는 경향에 대한 우회
-6. [executor cwd 격리](#6-executor-cwd-격리) — main repo 오염 방지
-7. [executor scope 확장 보고 의무](#7-executor-scope-확장-보고-의무) — 범위 외 수정 자체 판단 금지
+6. [구현자 cwd 격리](#6-구현자-cwd-격리) — main repo 오염 방지
+7. [구현자 scope 확장 보고 의무](#7-구현자-scope-확장-보고-의무) — 범위 외 수정 자체 판단 금지
 8. [split-pane 스폰 실패 폴백](#8-split-pane-스폰-실패-폴백) — tmux 없는 터미널에서 `name` 지정 스폰이 깨진다
 9. [watchdog stall 복구](#9-watchdog-stall-복구) — 무거운 외부 상호작용에서 executor 가 멈춘다
 
@@ -100,26 +114,30 @@ code-reviewer·docs-verifier 는 `run_in_background: true`, idle 프롬프트로
     2. 그래도 무응답이면 재spawn 해 같은 지시를 보낸다.
     3. 3회 누적 실패하면 사용자에게 올린다.
 
-## 6. executor cwd 격리
+## 6. 구현자 cwd 격리
 
-executor 가 main 워킹 디렉터리에서 실행돼 main 브랜치를 직접 고치는 사고가 관측된다.
+구현자가 main 워킹 디렉터리에서 실행돼 main 브랜치를 직접 고치는 사고가 관측된다.
 main 이 origin 과 갈라지거나 다른 plan 의 미푸시 작업과 충돌한다.
 이 사고를 막는 것이 이 가드의 목적이다.
 
-executor 스폰 프롬프트에 다음 가드를 그대로 포함한다:
+**모드 B 에서 위험이 더 크다** — team-lead 의 cwd 는 main repo 에서 시작하므로 기본값이 이미 위반 상태다.
+
+모드 A 는 executor 스폰 프롬프트에 다음 가드를 그대로 포함한다.
+모드 B 는 team-lead 가 같은 내용을 자신에게 적용한다.
 
 ```
 모든 파일 경로 / cd / git 명령은 worktree 절대경로 (/Users/.../.claude/worktrees/{plan}/) 기준으로만 수행.
 main repo 루트 직접 cd / 직접 편집 절대 금지. 의심되면 `pwd` 로 확인 후 진행.
 ```
 
-team-lead 는 executor 작업 중 main repo working tree 가 clean 한지 주기 점검하고, dirty 발견 시 즉시 중단 후 분류한다.
+team-lead 는 구현 중 main repo working tree 가 clean 한지 주기 점검하고, dirty 발견 시 즉시 중단 후 분류한다.
 
-## 7. executor scope 확장 보고 의무
+## 7. 구현자 scope 확장 보고 의무
 
-executor 가 task 범위 밖 수정을 스스로 판단해 끼워 넣으면 critic·code-reviewer 검토를 우회하게 된다.
+구현자가 task 범위 밖 수정을 스스로 판단해 끼워 넣으면 critic·code-reviewer 검토를 우회하게 된다.
 원래 있던 에러 수정, 새로 발견한 bug, 규칙 위반을 직접 고치는 것이 여기 해당한다.
-스폰 프롬프트에 다음을 그대로 포함한다.
+
+모드 A 는 스폰 프롬프트에 다음을 그대로 포함한다.
 
 ```
 task 범위 외 코드 수정(pre-existing 에러, 발견한 bug, 규칙 위반 자체 변경)은 자체 판단 금지.
@@ -129,7 +147,13 @@ lint/타입 검사 무시 주석(disable/ignore 류) 자체 추가 금지 — �
 verification 보고는 검증 명령 전체 결과를 보고할 것. "프로덕션 코드만" 같은 한정 표현 금지 (테스트 파일 에러 누락 위험).
 ```
 
-team-lead 는 보고 시 critic 사후 평가로 ACCEPT/REJECT 를 가르고, ACCEPT 면 commit 메시지에 범위 확장을 명시한다.
+**승인 경로는 모드마다 다르다.**
+
+- **모드 A** — team-lead 가 보고를 받아 critic 사후 평가로 ACCEPT/REJECT 를 가른다.
+- **모드 B** — 구현자가 곧 team-lead 라 위 경로를 그대로 쓰면 자기 승인이 된다.
+  team-lead 승인으로 갈음하지 말고 **사용자에게 확인**한다. 이 저장소의 self-approval 금지 원칙이 여기에도 적용된다.
+
+어느 쪽이든 ACCEPT 면 commit 메시지에 범위 확장을 명시한다.
 
 ## 8. split-pane 스폰 실패 폴백
 

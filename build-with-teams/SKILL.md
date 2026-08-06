@@ -2,7 +2,7 @@
 name: build-with-teams
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # build-with-teams
@@ -113,22 +113,19 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 ### 팀원 스폰 가드 (요약)
 
 팀원(critic·executor·code-reviewer·docs-verifier)을 스폰·통신할 때 실제 사고를 겪고 굳어진 가드가 있다.
-아래에서 **구현자** 로 시작하는 둘은 모드 B 에도 적용된다. 나머지는 스폰이 있는 경우에만 발동한다.
+모드 B 도 critic·code-reviewer·docs-verifier 를 스폰하므로 대부분 그대로 발동한다.
+**구현자** 로 시작하는 둘은 모드 B 에서 team-lead 자신에게 적용된다.
 
-- **정식 팀원 스폰이 1순위**: `team_name` 과 `name` 을 지정해 스폰한다. 일회성 호출은 팀 컨텍스트 밖이라 이후 `SendMessage` 협업이 끊긴다.
-    - 이름 없는 subagent 는 **팀원 스폰이 환경 제약으로 실패했을 때만** 쓰는 폴백이다. 편해서 고르지 않는다.
-    - 폴백으로 내려갔으면 어느 팀원을 왜 subagent 로 돌렸는지 실행 보고에 남긴다 — 조용히 내려가면 협업 단절이 사고로만 드러난다.
+- **정식 팀원 스폰이 1순위**: `team_name` 과 `name` 을 지정해 스폰한다. 이름 없는 subagent 는 환경 제약으로 실패했을 때만 쓰는 폴백이고, 내려갔으면 실행 보고에 남긴다.
 - **worktree 절대경로**: 팀원에게 주는 파일 참조는 상대경로가 아니라 worktree 절대경로로 준다. 상대경로는 main 의 구버전 파일을 가리킬 수 있다.
 - **SendMessage 회신 강제**: 자기 화면 출력만 하고 종료하면 team-lead 에 결과가 안 닿는다. 스폰 프롬프트에 회신 의무를 명시한다.
 - **자발적 실행 방지**: team-lead 지시 전 팀원이 먼저 실행·검증을 시작하면 점검 시점 정합성이 깨진다.
 - **self-shutdown 대응**: code-reviewer·docs-verifier 는 idle 알림 직후 자체 종료하는 경향이 있다 — idle 대기 대신 필요 시점에 재스폰한다.
-- **구현자 cwd 격리**: main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓴다.
-    - 모드 A 는 스폰 프롬프트에 가드를 넣는다. 모드 B 는 team-lead 자신에게 적용되며 **위험이 더 크다** — cwd 가 main repo 에서 시작하기 때문이다.
-- **구현자 scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 critic·code-reviewer 검토를 우회한다.
-    - 모드 A 는 executor 가 보고하고 team-lead 가 승인한다.
-    - 모드 B 는 구현자가 곧 team-lead 라 자기 승인이 된다. 승인으로 갈음하지 말고 **사용자에게 확인**한다.
+- **구현자 cwd 격리**: main 워킹 디렉터리를 직접 건드리면 main 이 origin 과 갈라진다 — worktree 경로만 쓴다. 모드 B 에서 위험이 더 크다.
+- **구현자 scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 검토를 우회한다. 모드 B 는 자기 승인이 되므로 사용자에게 확인한다.
 - **split-pane 스폰 실패**(환경): tmux 없는 터미널에서 `name` 지정 스폰이 깨진다 — 폴백을 한 단계씩만 내려간다.
-- **watchdog stall 복구**: executor 가 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
+- **watchdog stall 복구**: 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
+    워치독은 모드 A 에만 있지만 회피 원칙은 모드 B 에서도 같다.
 
 상세 프롬프트 문구·근거·판정 시간 규칙은 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
 
@@ -161,7 +158,7 @@ executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한�
 모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다 — 구현자가 team-lead 라 team-lead 열이 적용된다.
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
 
-### executor 실행 형태 점검
+### 실행 형태 점검
 
 `execution_profile`은 작업의 필요 역량을 나타낼 뿐, 저비용 모델 사용 자격을 자동으로 부여하지 않는다.
 각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해
@@ -314,8 +311,8 @@ team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만�
 - **모드 A** — 반환된 실행 형태보다 낮은 role 로 executor 를 스폰하지 않는다.
   같은 수준의 role 이 없으면 더 엄격한 쪽으로만 올린다 — 내려서 스폰하지 않는다.
 - **모드 B** — team-lead 가 직접 구현해도 되는지를 가른다.
-  `HIGH_RISK` 면 직접 구현하지 않고 **모드 A 로 전환해** 그 phase 를 executor 에 위임한다.
-  team-lead 자신의 등급이 판정보다 낮으면 같은 방법으로 전환한다.
+  전환 조건과 절차, 실행 형태를 등급으로 옮기는 변환표는
+  [`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
 
 실행 보고에 남길 항목과 실행 중 승격 처리는 같은 참조 문서를 따른다.
 
@@ -332,7 +329,9 @@ code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 �
 
 **모드 A 전용** — 스폰이 있을 때만 발동한다.
 
-- **phase 단위 spawn → shutdown 사이클**
+- **phase 단위 spawn → shutdown 사이클** (4개 이상 phase 에서 필수)
+    - 3 phase 이하는 executor 를 한 번만 스폰해 재사용한다 (다음 phase 는 `SendMessage` 로 지시).
+      모드 B 에서 전환된 phase 처럼 모드 A 가 소규모로 켜지는 경우가 여기 해당한다.
     - 한 phase 완료·커밋 후 그 executor 를 **반드시 종료한 뒤** 다음 phase 를 새 이름(`executor-p{N}`)으로 스폰한다.
     - 이유: 컨텍스트를 분리하고, 이름 충돌과 auto-deliver 누락을 피한다.
     - 종료 방법: `SendMessage({to, message:{type:"shutdown_request"}})` 또는 `TaskStop`. 종료를 확인한 뒤 다음 executor 를 스폰한다.
