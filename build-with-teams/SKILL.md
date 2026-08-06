@@ -314,7 +314,7 @@ critic APPROVE 후 executor 를 `run_in_background: true`, `mode: "bypassPermiss
 critic 승인과 docs-verifier 검증이 이중 안전망 역할을 한다.
 
 각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
-team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `scripts/executor_routing_gate.py`를 통과시킨다.
+team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py`를 통과시킨다.
 스크립트가 차단하거나 반환한 실행 형태보다 낮은 경로를 선택하면 executor를 스폰하지 않는다.
 같은 수준의 모델이 없을 때 더 엄격한 모델로 올리는 폴백은 허용한다.
 surface adapter는 결정된 실행 형태를 사용 가능한 role·모델에 매핑한다.
