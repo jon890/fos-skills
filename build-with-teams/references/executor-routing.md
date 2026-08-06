@@ -4,7 +4,6 @@
 팀원을 어느 등급으로 돌릴지, 저비용 경로를 쓸 자격이 있는지를 모두 이 문서가 소유한다.
 저비용 실행 경로는 작업이 명확하다는 것이 증명된 경우에만 사용한다.
 적합성을 증명하지 못하면 더 엄격한 실행 형태를 선택한다.
-이를 통해 비용 절감이 품질 하락으로 이어지지 않게 한다.
 
 ## 두 모드에서 이 문서를 읽는 법
 
@@ -207,11 +206,7 @@ executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한�
 모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다 — 구현자가 team-lead 라 team-lead 열이 적용된다.
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
 
-## 실행 형태 점검이 하는 일
-
-`execution_profile`은 작업의 필요 역량을 나타낼 뿐, 저비용 모델 사용 자격을 자동으로 부여하지 않는다.
-각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해
-`BOUNDED`·`JUDGMENT_REQUIRED`·`HIGH_RISK` 중 하나를 받는다. 증명되지 않으면 항상 더 엄격한 쪽을 고른다.
+## `execution_profile` 스키마 소유자
 
 phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
 스키마 소유자인 `planning/task-create.md` 의 "실행 등급 라우팅" 을 따른다.
