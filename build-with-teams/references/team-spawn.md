@@ -1,7 +1,8 @@
 # 팀원 스폰 가드 상세
 
 `SKILL.md` "팀 구성" 절이 가리키는 참조 문서다.
-팀원(executor·critic·code-reviewer·docs-verifier)을 스폰·통신할 때 실제 사고를 겪고 굳어진 가드 7종의 상세 프롬프트와 근거를 담는다.
+팀원(executor·critic·code-reviewer·docs-verifier)을 스폰·통신할 때 실제 사고를 겪고 굳어진 가드의 상세 프롬프트와 근거를 담는다.
+SKILL.md 는 한 줄 요약만 두고, 각 가드의 본문은 이 문서가 소유한다.
 **팀원 스폰 전 반드시 읽는다.**
 
 ## 목차
@@ -13,6 +14,8 @@
 5. [팀원 self-shutdown 대응](#5-팀원-self-shutdown-대응) — idle 알림 직후 자체 종료하는 경향에 대한 우회
 6. [executor cwd 격리](#6-executor-cwd-격리) — main repo 오염 방지
 7. [executor scope 확장 보고 의무](#7-executor-scope-확장-보고-의무) — 범위 외 수정 자체 판단 금지
+8. [split-pane 스폰 실패 폴백](#8-split-pane-스폰-실패-폴백) — tmux 없는 터미널에서 `name` 지정 스폰이 깨진다
+9. [watchdog stall 복구](#9-watchdog-stall-복구) — 무거운 외부 상호작용에서 executor 가 멈춘다
 
 ---
 
@@ -126,3 +129,25 @@ verification 보고는 검증 명령 전체 결과를 보고할 것. "프로덕�
 ```
 
 team-lead 는 보고 시 critic 사후 평가로 ACCEPT/REJECT 를 가르고, ACCEPT 면 commit 메시지에 범위 확장을 명시한다.
+
+## 8. split-pane 스폰 실패 폴백
+
+tmux 없는 터미널에서는 이름을 지정한 팀원의 split-pane 스폰이 깨진다.
+
+- 증상: `name` 지정 스폰이 `Could not determine current tmux pane/window` 로 실패한다.
+- 재시작이나 shell 설정으로는 안 고쳐진다. 이 증상을 확인했으면 폴백을 바로 쓴다.
+
+폴백은 **한 단계씩만 내려간다.** 1절의 스폰 방식 우선순위와 같은 사다리다.
+
+1. 먼저 `team_name` 만 빼고 `name` 은 유지해 재시도한다.
+   `name` 이 살아 있으면 `SendMessage` 라우팅이 유지되므로 협업이 끊기지 않는다.
+2. 그래도 실패할 때만 `name` 없이 백그라운드 subagent 로 스폰하고 완료 알림으로 결과를 회수한다.
+   이 단계에는 양방향 통신이 없어 재평가·재투입 사이클을 team-lead 가 재스폰으로 대신해야 한다.
+
+## 9. watchdog stall 복구
+
+executor 가 무거운 외부 상호작용(DB-in-jest·긴 통합 실행)에서 `no progress 600s` 로 멈춘다.
+멈춘 실행을 그대로 재시도하지 말고 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
+
+- 예: jest DB 하네스가 없는 레포에서는 파이프라인이 쓰는 순수 함수만 spec 안에서 조립해 검증한다 (DB 를 열지 않는다).
+- 재스폰 프롬프트에 "DB 열지 말라" 를 명시하면 같은 멈춤을 피한다.
