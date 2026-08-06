@@ -1,6 +1,7 @@
 # 실행 형태 적합성 점검
 
-`SKILL.md` "실행 형태 점검"과 5·6단계가 가리키는 참조 문서다.
+`SKILL.md` "실행 등급 라우팅"과 5·6단계가 가리키는 참조 문서다.
+팀원을 어느 등급으로 돌릴지, 저비용 경로를 쓸 자격이 있는지를 모두 이 문서가 소유한다.
 저비용 실행 경로는 작업이 명확하다는 것이 증명된 경우에만 사용한다.
 적합성을 증명하지 못하면 더 엄격한 실행 형태를 선택한다.
 이를 통해 비용 절감이 품질 하락으로 이어지지 않게 한다.
@@ -29,22 +30,25 @@
 | `JUDGMENT_REQUIRED` | `standard` |
 | `HIGH_RISK` | `deep` |
 
-**최소값이지 지정값이 아니다.** `SKILL.md` 의 규모별 등급 표가 이보다 높으면 높은 쪽을 쓴다.
-두 기준 중 엄격한 쪽을 고르는 것이 원칙이고, 낮추는 방향은 어느 경우에도 없다.
+**하한이지 지정값이 아니다.** 출발값은 아래 "선택 순서" 가 정한다.
+이 표는 그 출발값이 더 낮을 때 끌어올리는 데만 쓴다. 낮추는 방향은 없다.
 
 ## 모드 B 에서 모드 A 로 전환
 
 모드 B 구현자(team-lead)가 그 phase 를 감당할 수 없을 때 쓴다. 조건은 둘이다.
 
 - 판정이 `HIGH_RISK` 다.
-- team-lead 의 현재 등급이 위 표의 최소 등급보다 낮다.
+- team-lead 의 현재 등급이 그 phase 판정의 최소 등급(위 변환표)보다 낮다.
 
 절차는 다음과 같다.
 
 1. **그 phase 하나만 전환한다.** 다음 phase 는 다시 판정하고, 조건에 걸리지 않으면 모드 B 로 돌아온다.
-2. 전환한 phase 의 executor 등급은 위 표의 최소 등급과 규모 표 중 **엄격한 쪽**을 쓴다.
+2. 전환한 phase 의 executor 등급은 아래 "선택 순서" 를 그대로 따른다.
+   출발값을 고른 뒤 그 phase 판정의 최소 등급으로 끌어올린다.
 3. `SKILL.md` 6단계의 모드 A 규칙(스폰 가드, 커밋 주체, 완료 보고)을 그 phase 에 그대로 적용한다.
-4. 실행 기록의 모드 열에 `B→A(p{N})` 로 남긴다. 전환 사유도 실행 보고에 적는다.
+4. 그 phase 의 커밋이 끝나면 **전환한 executor 를 종료한 뒤** 모드 B 로 돌아온다.
+   종료하지 않으면 팀 종료 시점까지 idle 로 남고, 전환이 여러 phase 에서 일어나면 그만큼 쌓인다.
+5. 실행 기록의 모드 열에 `B→A(p{N})` 로 남긴다. 전환 사유도 실행 보고에 적는다.
 
 ## 실행 형태
 
@@ -201,3 +205,59 @@ phase 보고에 다음을 남긴다.
 - 승격 여부와 사유
 - 최종 reviewer 판정
 - 점검 출력 JSON 또는 그 저장 경로
+
+## 규모별 기본 실행 등급
+
+task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
+
+| 규모 | 조건 | team-lead | critic | executor | code-reviewer | docs-verifier |
+|---|---|:---:|:---:|:---:|:---:|:---:|
+| **소** | 1 phase, 버그·미세 조정 | standard | standard | standard | standard | standard |
+| **중** | 2-3 phase, 기능 확장·리팩토링 | standard | deep | standard | standard | standard |
+| **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
+
+executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
+모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다 — 구현자가 team-lead 라 team-lead 열이 적용된다.
+planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
+
+## 실행 형태 점검이 하는 일
+
+`execution_profile`은 작업의 필요 역량을 나타낼 뿐, 저비용 모델 사용 자격을 자동으로 부여하지 않는다.
+각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해
+`BOUNDED`·`JUDGMENT_REQUIRED`·`HIGH_RISK` 중 하나를 받는다. 증명되지 않으면 항상 더 엄격한 쪽을 고른다.
+
+phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
+스키마 소유자인 `planning/task-create.md` 의 "실행 등급 라우팅" 을 따른다.
+
+## surface별 해석
+
+- 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다.
+  정확히 맞는 등급이 없으면 **더 엄격한 쪽으로만** 올려 잡는다. 아래로 내리는 폴백은 없다.
+  실제 선택과 올려 잡은 사유를 실행 보고에 남긴다.
+- **등급 표가 기준이고 상속은 결과다.** 스폰 전에 그 팀원의 등급을 먼저 정하고, parent session이 이미 그 등급이면 모델 인자를 생략한다 (생략이 곧 그 등급이므로 공급자 버전에 묶이지 않는다).
+- **parent 등급과 다르면 spawn 시점에 명시 지정한다.** 생략은 "적절히 맞춰진다"는 뜻이 아니라 "parent 등급을 그대로 쓴다"는 뜻이다.
+    - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해, 표에 `standard`라 적혀 있는데도 deep으로 떴다.
+    - 부모가 deep인 실행에서는 `standard`·`fast` 팀원 **전원**이 이 함정에 걸린다. 스폰 직전에 "이 팀원 등급 == parent 등급인가"를 매번 확인한다.
+- 사용자가 특정 모델을 요청하면 실행 형태 점검을 통과한 뒤 적용한다.
+  점검이 반환한 실행 형태보다 낮은 모델로 내리는 override는 허용하지 않는다.
+
+한 phase 에 `execution_profile` 과 legacy `model` 이 함께 있으면 우선순위를 추측하지 않는다.
+`PHASE_BLOCKED: execution profile schema conflict` 로 종료한다.
+
+## 선택 순서
+
+**출발값을 하나 고르고, 그 값을 하한으로 끌어올린다.** 둘은 성격이 달라 섞지 않는다.
+
+출발값 — 위에서부터 하나만 적용한다. 위가 있으면 아래는 보지 않는다.
+
+1. phase의 `execution_profile`
+2. legacy phase의 `model` alias
+3. task 규모 기반 기본 실행 등급 (위 표)
+
+하한 — 출발값이 아래보다 낮으면 끌어올린다. 낮추는 방향은 없다.
+
+4. 실행 형태 점검이 반환한 최종 형태의 최소 등급 (위 "실행 형태 → 실행 등급" 표)
+5. 사용자 모델 override 는 4의 하한을 지킬 때만 적용한다
+
+**규모 표는 기본값이지 하한이 아니다.** phase 가 `execution_profile` 로 등급을 지정했으면 그쪽이 이긴다.
+규모 표를 하한으로 읽으면 executor 가 전 규모 `standard` 라 `BOUNDED` 가 증명해 낸 `fast` 경로가 영영 열리지 않는다.

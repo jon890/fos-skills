@@ -2,7 +2,7 @@
 name: build-with-teams
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
 ---
 
 # build-with-teams
@@ -145,56 +145,13 @@ team-lead 는 종료 시 phase 별 특이사항을 누적해 사용자에게 명
 
 ## 실행 등급 라우팅 (공급자 중립)
 
-task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
+팀원을 어느 등급(`fast`·`standard`·`deep`)으로 돌릴지는
+[`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
+규모별 기본 등급 표, 실행 형태 점검, 출발값과 하한을 고르는 순서, surface별 상속 함정이 거기 있다.
 공용 skill과 task에는 실제 모델 ID나 공급자 제품명을 저장하지 않는다.
 
-| 규모 | 조건 | team-lead | critic | executor | code-reviewer | docs-verifier |
-|---|---|:---:|:---:|:---:|:---:|:---:|
-| **소** | 1 phase, 버그·미세 조정 | standard | standard | standard | standard | standard |
-| **중** | 2-3 phase, 기능 확장·리팩토링 | standard | deep | standard | standard | standard |
-| **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
-
-executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
-모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다 — 구현자가 team-lead 라 team-lead 열이 적용된다.
-planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
-
-### 실행 형태 점검
-
-`execution_profile`은 작업의 필요 역량을 나타낼 뿐, 저비용 모델 사용 자격을 자동으로 부여하지 않는다.
-각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해
-`BOUNDED`·`JUDGMENT_REQUIRED`·`HIGH_RISK` 중 하나를 받는다. 증명되지 않으면 항상 더 엄격한 쪽을 고른다.
-
-세 형태의 정의, 적합성 조건과 차단 조건, critic 출력 계약, 실행 중 승격 규칙은
-모두 [`references/executor-routing.md`](references/executor-routing.md)가 소유한다.
-critic 평가 전과 phase 착수 직전에 이 참조 문서를 반드시 읽는다.
-
-phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
-스키마 소유자인 `planning/task-create.md` 의 "실행 등급 라우팅" 을 따른다.
-
-### surface별 해석
-
-- 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다.
-  정확히 맞는 등급이 없으면 **더 엄격한 쪽으로만** 올려 잡는다. 아래로 내리는 폴백은 없다.
-  실제 선택과 올려 잡은 사유를 실행 보고에 남긴다.
-- **등급 표가 기준이고 상속은 결과다.** 스폰 전에 그 팀원의 등급을 먼저 정하고, parent session이 이미 그 등급이면 모델 인자를 생략한다 (생략이 곧 그 등급이므로 공급자 버전에 묶이지 않는다).
-- **parent 등급과 다르면 spawn 시점에 명시 지정한다.** 생략은 "적절히 맞춰진다"는 뜻이 아니라 "parent 등급을 그대로 쓴다"는 뜻이다.
-    - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해, 표에 `standard`라 적혀 있는데도 deep으로 떴다.
-    - 부모가 deep인 실행에서는 `standard`·`fast` 팀원 **전원**이 이 함정에 걸린다. 스폰 직전에 "이 팀원 등급 == parent 등급인가"를 매번 확인한다.
-- 사용자가 특정 모델을 요청하면 실행 형태 점검을 통과한 뒤 적용한다.
-  점검이 반환한 실행 형태보다 낮은 모델로 내리는 override는 허용하지 않는다.
-
-한 phase 에 `execution_profile` 과 legacy `model` 이 함께 있으면 우선순위를 추측하지 않는다.
-`PHASE_BLOCKED: execution profile schema conflict` 로 종료한다.
-
-### 선택 순서
-
-1. phase의 `execution_profile`
-2. legacy phase의 `model` alias
-3. task 규모 기반 기본 실행 등급
-4. critic·team-lead 판정과 결정적 점검이 만든 최종 실행 형태
-5. 점검 결과와 같거나 더 엄격한 사용자 모델 override
-
-1~3은 필요 역량의 기준이고 4는 저비용 실행 적합성의 기준이다.
+critic 평가 전과 phase 착수 직전에 그 문서를 반드시 읽는다.
+모드 B 에서 team-lead 가 감당할 수 없는 phase 를 만났을 때의 전환 절차도 같은 문서에 있다.
 
 ## 재시도 한도
 
