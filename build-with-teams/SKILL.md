@@ -55,6 +55,9 @@ team-lead 가 task 규모를 보고 구현을 위임할지 스스로 정한다. 
 | **B. team-lead 구현** | executor 없이 team-lead 가 직접 구현한다 | 소·중 (버그 / 기존 기능 확장)         |
 
 
+**구현자** — 이 문서에서 구현 주체를 가리키는 말이다. 모드 A 는 executor, 모드 B 는 team-lead 다.
+구현자를 주어로 쓴 지시는 두 모드에 적용되고, `executor` 를 주어로 쓴 것은 모드 A 전용이다.
+
 **모드가 가르는 것은 구현 위임 여부뿐이다.**
 critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다.
 계획 평가와 사후 검토를 규모로 깎지 않는다 — 같은 세션이 자기 계획과 자기 구현을 그대로 승인하면 결함이 드러나지 않는다.
@@ -139,7 +142,7 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
     → [실행 모드 결정 — A executor 위임 / B team-lead 구현]
     → [메인 워킹 트리 사전 점검 + 오타 worktree 정리]
     → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
-    → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
+    → [task 파악 — plan 하나 선택, index.json 정합 확인]
     → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
     → [phase 별 실행 형태 점검 — BOUNDED / JUDGMENT_REQUIRED / HIGH_RISK]
     → [모든 phase 구현 — 검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
@@ -156,14 +159,19 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
 
 ### 1. 팀 생성
 
-critic 을 `name` 지정으로 스폰한다. idle 로 대기하다 5단계에서 이름으로 부른다.
-code-reviewer·docs-verifier 는 검토 시점(7·8단계)에 **둘을 함께** 스폰한다.
+critic 을 `name` 지정으로 스폰한다. idle 로 대기하다 3단계에서 이름으로 부른다.
+code-reviewer·docs-verifier 는 검토 시점(5·6단계)에 **둘을 함께** 스폰한다.
 
 ### 2. task 파악
 
 team-lead 가 task(`index.json`, `phase-*.md`)와 관련 docs·`CLAUDE.md`·오버레이를 읽는다.
+**요청에 여러 plan 이 포함돼도 이번 실행은 하나만 다룬다** — 한 plan 이 한 브랜치, 한 PR 로 닫힌다.
+실행 순서는 planning 이 보고한 순서를 따른다.
 
-### 5. critic 평가 (통과 조건)
+phase 파일을 추가·제거·재작성했으면 `index.json` 의 phase 배열을 **같은 commit 으로** 갱신한다.
+phase 파일만 늘리면 파이프라인이 새 phase 를 인식하지 못해 그 작업이 통째로 빠진다.
+
+### 3. critic 평가 (통과 조건)
 
 team-lead → critic 에게 계획 전송. critic 평가 관점:
 
@@ -187,7 +195,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 - 구현하며 챙기면 되는 것 → `critic minor notes` 로 구현자에게 넘긴다 (모드 A 는 스폰 프롬프트에, 모드 B 는 phase 착수 메모에).
 - 이번 plan 밖의 것 → 특이사항 4종에 합쳐 보고한다.
 
-판정: **APPROVE** → 6단계. **REVISE** → 수정 후 재평가 (한도 3회).
+판정: **APPROVE** → 4단계. **REVISE** → 수정 후 재평가 (한도 3회).
 
 **critic v2 재평가 시 강제 재읽기**(필수): critic 이 REVISE 후 v2 변경을 받고도 v1 평가를 그대로 다시 보내는 사고가 있다.
 원인은 worktree 의 새 파일을 다시 Read 하지 않은 것이다.
@@ -200,7 +208,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 회신이 v1 과 같으면 team-lead 가 수정된 실제 라인을 `grep`·`awk` 로 떠서 증거로 붙여 재요청한다.
 이 패턴은 **code-reviewer·docs-verifier 재검사에도 그대로 적용**한다.
 
-### 6. 구현
+### 4. 구현
 
 critic APPROVE 후 구현에 들어간다. 모드 A 는 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰하고, 모드 B 는 team-lead 가 직접 구현한다.
 아래 실행 형태 점검과 phase 단위 커밋·검증 규칙은 두 모드에 같이 적용한다 — 구현 주체만 다르고 통과 조건은 같다.
@@ -250,10 +258,10 @@ code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 �
 phase commit 전 특이사항 4종에서 회고 가치가 있는 사건을 `docs/retrospectives/<NNNN>-<slug>.md`로 기록하고 `INDEX.md`를 갱신한다.
 신규 회고가 없으면 파일을 만들지 않고 phase 보고에 `신규 회고 없음`을 명시한다.
 
-### 7. 코드 품질 검사 (code-reviewer)
+### 5. 코드 품질 검사 (code-reviewer)
 
 모든 phase 의 구현·검증·atomic commit 이 끝난 뒤, team-lead 가 code-reviewer 를 새로 스폰해 누적 구현 전체 검사를 지시한다.
-8단계 docs-verifier 도 같은 시점에 함께 스폰한다 — 두 검토는 병렬로 돈다.
+6단계 docs-verifier 도 같은 시점에 함께 스폰한다 — 두 검토는 병렬로 돈다.
 team-lead 가 직접 검사하지 않는다 — 건너뛰기를 막기 위해서다.
 phase마다 code-reviewer를 반복 호출하지 않는다.
 
@@ -273,16 +281,16 @@ phase마다 code-reviewer를 반복 호출하지 않는다.
 
 (b)·(c) 는 버리지 말고 특이사항 4종에 합쳐 보고한다.
 
-판정: **PASS** → 9단계. **FIX_NEEDED** → 구현자 재투입 후 재검사 (한도 2회. 모드 A 는 executor 재스폰, 모드 B 는 team-lead 직접 수정).
-리뷰 반영이 docs 를 바꿨으면 8단계의 docs-verifier 재검증도 함께 건다.
+판정: **PASS** → 7단계. **FIX_NEEDED** → 구현자 재투입 후 재검사 (한도 2회. 모드 A 는 executor 재스폰, 모드 B 는 team-lead 직접 수정).
+리뷰 반영이 docs 를 바꿨으면 6단계의 docs-verifier 재검증도 함께 건다.
 
 `FIX_NEEDED`이면 수정에 들어가기 전에 독립 회고 파일을 만들고 `status: open`으로 둔다.
 재검사 후에는 같은 파일에 해결 commit·검증 근거를 추가하고 `status`를 갱신하며, 발견 기록을 삭제하거나 성공 결과로 덮어쓰지 않는다.
 
-### 8. docs-verifier 검증
+### 6. docs-verifier 검증
 
 모든 phase 구현이 끝난 뒤 docs-verifier 를 스폰해 정합성을 판정한다.
-**7단계 code-reviewer 와 병렬로 돌린다** — 두 검토는 서로의 입력이 아니라서 순서에 의존하지 않는다.
+**5단계 code-reviewer 와 병렬로 돌린다** — 두 검토는 서로의 입력이 아니라서 순서에 의존하지 않는다.
 phase마다 호출하지는 않는다. 검토 대상은 개별 phase 가 아니라 누적 diff 다.
 
 병렬 실행의 유일한 대가는 재검증이다. code-reviewer 지적이 docs 를 바꾸면 docs-verifier 판정이 낡으므로 한 번 더 돌린다.
@@ -302,9 +310,9 @@ phase마다 호출하지는 않는다. 검토 대상은 개별 phase 가 아니�
 
 docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하면 SKILL 은 위임만 하고 항목을 반복하지 않는다.
 
-판정: **PASS** → 9단계. **UPDATE_NEEDED** → docs 업데이트 후 재검증 (한도 2회). **VIOLATION** → 코드 수정 (구현자 재투입, 한도 2회).
+판정: **PASS** → 7단계. **UPDATE_NEEDED** → docs 업데이트 후 재검증 (한도 2회). **VIOLATION** → 코드 수정 (구현자 재투입, 한도 2회).
 
-### 9. 완료, PR 생성, 팀 종료
+### 7. 완료, PR 생성, 팀 종료
 
 1. team-lead 가 누적 commit 을 검토한다 — phase 별 commit 이 의도대로 들어갔는지, 마지막 phase commit 에 완료 마킹이 포함됐는지 확인.
 2. **통합 검증** — 레포 CLAUDE.md·오버레이의 검증 명령을 실행해 모든 phase 누적 후에도 통과하는지 확인한다.
@@ -363,12 +371,12 @@ worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
   - PR 이 아직 없는 시점이라 rebase 로 잃을 것이 없다.
 - **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비(예: gitignore 된 env 파일 공유)는 레포마다 다르므로 **오버레이·CLAUDE.md 절차**를 따른다.
 
-정리 시점·위치와 브랜치 보존은 9단계 7항이 소유한다.
+정리 시점·위치와 브랜치 보존은 7단계 7항이 소유한다.
 
 ## 실패 복구
 
 phase 가 실패하면 team-lead 가 원인을 분석한다.
-phase 자체를 고쳐야 하면 critic 재평가(5단계)로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
+phase 자체를 고쳐야 하면 critic 재평가(3단계)로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
 모드 A 는 executor 보고로 실패를 받고 재실행을 지시한다. 모드 B 는 team-lead 가 검증 실패를 직접 확인한다.
 
 ## 노하우 누적 (세션마다 보강)
