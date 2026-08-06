@@ -7,14 +7,20 @@
 #
 # Usage:
 #   check_enforcement.sh <repo> gitignore <경로>
-#   check_enforcement.sh <repo> lint <probe 파일 경로> '<probe 내용>' '<lint 명령>'
+#   check_enforcement.sh <repo> lint <probe 파일 경로> '<probe 내용>' '<검사 명령>'
+#   check_enforcement.sh <repo> grep <probe 파일 경로> '<probe 내용>' '<검사 명령>'
 #   check_enforcement.sh <repo> tools <agent 정의 파일>
+#
+# lint 와 grep 은 절차가 같고 종료 코드를 읽는 방향만 반대다. 관례가 정반대이기 때문이다.
+#   lint — 위반이 있으면 non-zero 로 끝난다 (린터·타입 검사기)
+#   grep — 위반을 찾으면 히트라서 0 으로 끝난다 (문서의 검증 grep)
+# 방향을 잘못 고르면 "이미 막힌다" 를 "안 막힌다" 로 뒤집어 읽는다.
 #
 set -u
 
 REPO="${1:-}"
 MODE="${2:-}"
-[ -n "$REPO" ] && [ -n "$MODE" ] || { sed -n '3,14p' "$0"; exit 2; }
+[ -n "$REPO" ] && [ -n "$MODE" ] || { sed -n '3,20p' "$0"; exit 2; }
 cd "$REPO" || exit 2
 
 case "$MODE" in
@@ -32,17 +38,18 @@ gitignore)
   exit 1
   ;;
 
-lint)
+lint | grep)
   PROBE="${3:?probe 파일 경로를 지정하라}"
   BODY="${4:?probe 내용을 지정하라}"
-  CMD="${5:?lint 명령을 지정하라}"
+  CMD="${5:?검사 명령을 지정하라}"
   [ -e "$PROBE" ] && { echo "이미 있는 파일이다 — 다른 경로를 쓰라: $PROBE" >&2; exit 2; }
 
-  # probe 는 lint 가 실제로 훑는 위치에 놓아야 한다. 설정의 include 범위 밖이면 통과가 당연하다.
+  # probe 는 검사가 실제로 훑는 위치에 놓아야 한다. 설정의 include 범위 밖이면 통과가 당연하다.
   mkdir -p "$(dirname "$PROBE")"
   printf '%s\n' "$BODY" > "$PROBE"
   trap 'rm -f "$PROBE"' EXIT
 
+  echo "모드: $MODE (검출 신호 = $([ "$MODE" = grep ] && echo "exit 0 히트" || echo "non-zero"))"
   echo "probe: $PROBE"
   echo "명령: $CMD"
   echo "---"
@@ -51,12 +58,19 @@ lint)
   echo "---"
   echo "exit code: $code"
 
-  if [ "$code" -ne 0 ]; then
-    echo "판정: lint 가 probe 를 잡는다. 같은 내용의 문장 지침은 지울 수 있다."
+  if [ "$MODE" = grep ]; then
+    detected=$([ "$code" -eq 0 ] && echo yes || echo no)
+  else
+    detected=$([ "$code" -ne 0 ] && echo yes || echo no)
+  fi
+
+  if [ "$detected" = yes ]; then
+    echo "판정: 검사가 probe 를 잡는다. 같은 내용의 문장 지침은 지울 수 있다."
     exit 0
   fi
-  echo "판정: lint 가 통과시킨다. 규칙이 없거나 probe 위치가 검사 범위 밖이다."
-  echo "      규칙 설정을 확인하고, 없으면 문장 지침을 남긴다."
+  echo "판정: 검사가 통과시킨다. 규칙이 없거나 probe 위치가 검사 범위 밖이다."
+  echo "      모드를 반대로 고르지 않았는지 먼저 확인하고, 규칙 설정을 본다."
+  echo "      규칙이 없으면 문장 지침을 남긴다."
   exit 1
   ;;
 
