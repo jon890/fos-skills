@@ -9,7 +9,7 @@ description: |
   PR 번호가 주어지면 해당 PR 을, 없으면 현재 브랜치의 PR 을 읽는다.
   레포별 특화(빌드/테스트/lint 명령·커밋 컨벤션·학습 누적 위치·CI 원인 표)는 레포 CLAUDE.md·오버레이로 주입된다.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # review-fix

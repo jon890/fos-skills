@@ -3,6 +3,21 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.4.0
+
+하네스 감사(harness-cleanup)로 드러난 결함을 고치고 지시를 덜어냈다.
+
+- `executor_routing_gate.py` 를 상대경로로 적어 두어 타깃 레포 cwd 에서 실행되지 않았다.
+  절대경로로 고쳐 점검이 실제로 돌게 했다.
+- korean-style 매핑 표를 어긴 음차 표기 16건을 "점검" 으로 바꿨다.
+- 스폰 가드의 소유권을 `references/team-spawn.md` 로 일원화했다.
+  split-pane·watchdog 2종이 참조 문서에 없어 개수 표기도 어긋나 있었다.
+- 실행 형태 정의와 BOUNDED 선택 규칙이 본문과 참조 문서에 이중으로 있어 참조 문서만 남겼다.
+- 실행 모드를 매 호출마다 묻던 강제를 걷고 team-lead 자율 판정으로 바꿨다.
+  대신 모드 C 를 "최소 팀" 으로 바꿔 어느 모드에서도 code-reviewer·docs-verifier 를 건너뛰지 않게 했다.
+- 반복 지시·자명한 확인·근거 없는 오타 가드를 걷어냈다.
+- `evals/` 를 지우고 측정을 저장소 `evaluation/` 으로 일원화했다.
+
 ## 1.3.0
 
 실행 등급과 저비용 executor 적합성을 분리했다.
