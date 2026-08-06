@@ -221,10 +221,15 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 - 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다.
   정확히 맞는 등급이 없으면 **더 엄격한 쪽으로만** 올려 잡는다. 아래로 내리는 폴백은 없다.
   실제 선택과 올려 잡은 사유를 실행 보고에 남긴다.
-- **등급 표가 기준이고 상속은 결과다.** 스폰 전에 그 팀원의 등급을 먼저 정하고, parent session이 이미 그 등급이면 모델 인자를 생략한다 (생략이 곧 그 등급이므로 공급자 버전에 묶이지 않는다).
-- **parent 등급과 다르면 spawn 시점에 명시 지정한다.** 생략은 "적절히 맞춰진다"는 뜻이 아니라 "parent 등급을 그대로 쓴다"는 뜻이다.
-    - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해, 표에 `standard`라 적혀 있는데도 deep으로 떴다.
-    - 부모가 deep인 실행에서는 `standard`·`fast` 팀원 **전원**이 이 함정에 걸린다. 스폰 직전에 "이 팀원 등급 == parent 등급인가"를 매번 확인한다.
+- **등급은 스폰 시점에 항상 명시 지정한다.** 생략하면 parent 등급을 물려받는 것이 아니다.
+  공식 문서 기준으로 팀원은 team-lead 의 `/model` 선택을 상속하지 않고,
+  프롬프트가 모델을 지정하지 않으면 `/config` 의 **Default teammate model** 이 적용된다.
+  그 설정의 기본값은 공급자의 default Opus 라 대개 `deep` 으로 뜬다.
+    - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해,
+      표에 `standard`라 적혀 있는데도 deep으로 떴다.
+      parent 가 deep 이라 상속된 것으로 보였지만 실제 원인은 Default teammate model 이다.
+    - 그래서 parent 등급이 무엇이든 함정은 그대로다. "parent 와 같으니 생략해도 된다" 는 판단을 쓰지 않는다.
+- 팀원은 team-lead 의 effort 는 상속한다. 모델과 effort 를 같은 것으로 묶어 생각하지 않는다.
 - 사용자가 특정 모델을 요청하면 실행 형태 점검을 통과한 뒤 적용한다.
   점검이 반환한 실행 형태보다 낮은 모델로 내리는 override는 허용하지 않는다.
 
