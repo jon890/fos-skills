@@ -37,6 +37,11 @@ tasks/
 }
 ```
 
+**phase 파일과 `phases` 배열은 같은 commit 으로 함께 바꾼다.**
+task 를 만들 때만이 아니라 실행 중 phase 를 추가·제거·재작성할 때도 적용한다
+(build-with-teams 가 critic REVISE 를 받아 계획을 고치는 경우가 여기 해당한다).
+phase 파일만 늘리면 파이프라인이 `phases` 를 읽어 순회하므로 새 phase 를 인식하지 못하고 그 작업이 통째로 빠진다.
+
 ### 검증 체크리스트
 
 - [ ] `total_phases` == `phases` 배열 길이

@@ -96,6 +96,10 @@ executor·docs-verifier 이름은 오버레이가 지정한다.
 - **구현자 scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 검토를 우회한다. 모드 B 는 자기 승인이 되므로 사용자에게 확인한다.
 - **watchdog stall 복구**: 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
   워치독은 모드 A 에만 있지만 회피 원칙은 모드 B 에서도 같다.
+- **역할 계약 파일은 스킬 절대경로로 준다**: 팀원에게 역할 계약을 읽히려면
+  `~/.claude/skills/build-with-teams/references/` 아래 해당 역할 파일을 절대경로로 지시한다.
+  아래 본문의 상대경로 링크는 team-lead 가 읽을 때의 표기이고, 그대로 넘기면
+  팀원 cwd(worktree·main repo) 기준으로 풀려 없는 파일이 된다.
 
 상세 프롬프트 문구와 근거는 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
 
@@ -167,7 +171,7 @@ team-lead → critic 에게 계획 전송.
 
 판정: **APPROVE** → 4단계. **REVISE** → 수정 후 재평가 (한도 3회).
 
-**재평가 요청에는 변경 파일 절대경로를 담는다.** 회신이 직전 판정과 같으면
+**재평가 요청에는 변경 파일 절대경로와 어느 라인이 어떻게 바뀌었는지를 담는다.** 회신이 직전 판정과 같으면
 수정된 실제 라인을 `grep` 으로 떠서 증거로 붙여 재요청한다.
 code-reviewer·docs-verifier 재검사도 같다.
 
@@ -208,7 +212,7 @@ code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 �
   - 종료 방법: `SendMessage({to, message:{type:"shutdown_request"}})` 또는 `TaskStop`. 종료를 확인한 뒤 다음 executor 를 스폰한다.
   - **종료를 빠뜨리면 phase 마다 executor 가 누적된다** (8-phase task 에서 팀원 8개 잔존 관측). 다음 스폰 직전에 이전 executor 종료를 매 phase 강제한다.
 - **커밋은 team-lead 가 한다** — executor 는 커밋하지 않고 완료·실패를 `SendMessage` 로 보고한다.
-- 위 두 구현자 가드 문구를 스폰 프롬프트에 그대로 포함한다.
+- "팀원 스폰 가드" 의 **구현자 cwd 격리** 와 **구현자 scope 확장 보고** 문구를 스폰 프롬프트에 그대로 포함한다.
 
 **phase 단위 atomic commit**: 한 phase 완료·검증 후 team-lead 가 그 phase 만 commit 한다.
 
