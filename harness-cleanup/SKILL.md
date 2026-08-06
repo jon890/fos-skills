@@ -16,7 +16,7 @@ description: |
   하네스 지시가 지금 모델에게 필요한지 묻는 요청은 이 스킬이 담당한다.
   "문서 점검"만으로 대상이 불분명하면 이 경계로 어떤 감사를 원하는지 확인한다.
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
 ---
 
 # harness-cleanup
@@ -96,7 +96,13 @@ bash    $S/collect_targets.sh    <대상 저장소>   # 줄 수 합계, 파일 �
 python3 $S/check_references.py   <대상 저장소>   # 참조가 실재하는지
 python3 $S/check_facts.py        <대상 저장소>   # 개수 표기, 여러 문서에 흩어진 목록
 python3 $S/check_duplication.py  <대상 저장소>   # 같은 내용을 소유한 파일이 둘 이상인지
+bash    $S/check_rename_drift.sh <대상 저장소>   # 본문만 고치고 참조 문서를 안 고쳤는지
 ```
+
+`check_rename_drift.sh`는 교정 **직후에도** 실행한다.
+본문에서 절 이름이나 개념을 바꾸고 그것을 위임받은 참조 문서를 그대로 두면
+요약본과 소유자 문서가 서로 다른 것을 지시하게 된다.
+이 저장소에서 네 번 반복된 실패라 사람 눈으로는 잡히지 않는다.
 
 스크립트가 판정하지는 않는다. 재현 가능한 검토 지점을 뽑아 줄 뿐이다.
 
