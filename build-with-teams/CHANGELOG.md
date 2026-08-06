@@ -8,13 +8,13 @@
 실행 등급과 저비용 executor 적합성을 분리했다.
 
 - `standard` 등급을 저비용 모델로 일괄 매핑하지 않도록
-  `BOUNDED`, `JUDGMENT_REQUIRED`, `HIGH_RISK` 실행 형태 게이트를 추가했다.
+  `BOUNDED`, `JUDGMENT_REQUIRED`, `HIGH_RISK` 실행 형태 점검을 추가했다.
 - critic이 계획 판정과 별개로 phase별 실행 형태를 회신하게 했다.
 - 적합성이 증명되지 않으면 더 엄격한 경로를 선택한다.
   실행 중 새로운 판단이 필요하면 `EXECUTOR_ESCALATE`로 중단·승격하게 했다.
 - 상세 계약은 `references/executor-routing.md`로 분리해 critic 평가 전과 executor 스폰 직전에 읽도록 했다.
 - `scripts/executor_routing_gate.py`가 누락·불일치·고위험 조건을 결정적으로 승격하거나 스폰을 차단하게 했다.
-- 게이트의 실패 폐쇄 동작을 단위 테스트로 고정했다.
+- 점검의 실패 폐쇄 동작을 단위 테스트로 고정했다.
 - `BOUNDED`, `JUDGMENT_REQUIRED`, `HIGH_RISK` 경계를 고정하는 회귀 평가 세 건을 추가했다.
 
 ## 1.2.0

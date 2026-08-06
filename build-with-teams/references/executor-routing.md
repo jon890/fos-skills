@@ -1,6 +1,6 @@
-# executor 적합성 게이트
+# executor 적합성 점검
 
-`SKILL.md` "executor 실행 형태 게이트"와 5·6단계가 가리키는 참조 문서다.
+`SKILL.md` "executor 실행 형태 점검"과 5·6단계가 가리키는 참조 문서다.
 저비용 실행 경로는 작업이 명확하다는 것이 증명된 경우에만 사용한다.
 적합성을 증명하지 못하면 더 엄격한 실행 형태를 선택한다.
 이를 통해 비용 절감이 품질 하락으로 이어지지 않게 한다.
@@ -20,9 +20,9 @@
 - 판정이 누락되거나 근거가 부족하면 `JUDGMENT_REQUIRED` 이상을 선택한다.
 - `execution_profile: deep`이면 `HIGH_RISK`를 선택한다.
 
-`fast`와 `standard`는 아래 적합성 게이트를 모두 통과해야 `BOUNDED`가 될 수 있다.
+`fast`와 `standard`는 아래 적합성 점검을 모두 통과해야 `BOUNDED`가 될 수 있다.
 
-## `BOUNDED` 적합성 게이트
+## `BOUNDED` 적합성 점검
 
 다음 조건을 모두 만족해야 한다.
 
@@ -65,7 +65,7 @@
 공용 skill과 task에는 실제 모델 ID를 저장하지 않는다.
 실행 형태도 `index.json` 스키마에 추가하지 않고 critic 회신과 phase 실행 보고에만 기록한다.
 
-## 결정적 게이트 실행
+## 결정적 점검 실행
 
 team-lead는 각 executor 스폰 직전에 critic 회신과 직접 점검 결과를 assessment JSON으로 만든다.
 `scripts/executor_routing_gate.py`가 이 입력을 검증하고 더 엄격한 최종 실행 형태를 계산한다.
@@ -158,4 +158,4 @@ phase 보고에 다음을 남긴다.
 - 실제 role·모델과 폴백 여부
 - 승격 여부와 사유
 - 최종 reviewer 판정
-- 게이트 출력 JSON 또는 그 저장 경로
+- 점검 출력 JSON 또는 그 저장 경로

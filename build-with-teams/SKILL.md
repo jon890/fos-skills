@@ -159,10 +159,10 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
-사용자가 현재 실행에 실제 모델을 명시해도 실행 형태 게이트를 먼저 적용한다.
-게이트와 같거나 더 엄격한 모델만 runtime override로 허용하고 task 파일에는 기록하지 않는다.
+사용자가 현재 실행에 실제 모델을 명시해도 실행 형태 점검을 먼저 적용한다.
+점검 결과와 같거나 더 엄격한 모델만 runtime override로 허용하고 task 파일에는 기록하지 않는다.
 
-### executor 실행 형태 게이트
+### executor 실행 형태 점검
 
 `execution_profile`은 작업의 필요 역량을 나타낼 뿐, 저비용 모델 사용 자격을 자동으로 부여하지 않는다.
 각 phase는 critic 평가와 team-lead의 결정적 점검을 모두 통과해 다음 실행 형태 중 하나를 받는다.
@@ -190,8 +190,8 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 - **parent 등급과 다르면 spawn 시점에 명시 지정한다.** 생략은 "적절히 맞춰진다"는 뜻이 아니라 "parent 등급을 그대로 쓴다"는 뜻이다.
     - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해, 표에 `standard`라 적혀 있는데도 deep으로 떴다.
     - 부모가 deep인 실행에서는 `standard`·`fast` 팀원 **전원**이 이 함정에 걸린다. 스폰 직전에 "이 팀원 등급 == parent 등급인가"를 매번 확인한다.
-- 사용자가 특정 모델을 요청하면 실행 형태 게이트를 통과한 뒤 적용한다.
-  게이트가 반환한 실행 형태보다 낮은 모델로 내리는 override는 허용하지 않는다.
+- 사용자가 특정 모델을 요청하면 실행 형태 점검을 통과한 뒤 적용한다.
+  점검이 반환한 실행 형태보다 낮은 모델로 내리는 override는 허용하지 않는다.
 
 한 phase 에 `execution_profile` 과 legacy `model` 이 함께 있으면 우선순위를 추측하지 않는다.
 `PHASE_BLOCKED: execution profile schema conflict` 로 종료한다.
@@ -201,8 +201,8 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 1. phase의 `execution_profile`
 2. legacy phase의 `model` alias
 3. task 규모 기반 기본 실행 등급
-4. critic·team-lead 판정과 결정적 게이트가 만든 최종 실행 형태
-5. 게이트와 같거나 더 엄격한 사용자 모델 override
+4. critic·team-lead 판정과 결정적 점검이 만든 최종 실행 형태
+5. 점검 결과와 같거나 더 엄격한 사용자 모델 override
 
 1~3은 필요 역량의 기준이고 4는 저비용 실행 적합성의 기준이다.
 실제 모델 ID는 task나 공용 skill에 영속화하지 않는다.
@@ -228,7 +228,7 @@ team-lead 는 한도 카운터를 상태 저장소(`.omc/state/`)에 기록해 �
     → [worktree 생성 (원격 plan{N} 브랜치 기반) + 레포 환경 setup]
     → [task 파악 / (필요 시) docs 최신화 + task 생성·검증]
     → [critic 평가] ←─ REVISE 면 수정 후 재평가 (한도 3회)
-    → [phase 별 executor 실행 형태 게이트 — BOUNDED / JUDGMENT_REQUIRED / HIGH_RISK]
+    → [phase 별 executor 실행 형태 점검 — BOUNDED / JUDGMENT_REQUIRED / HIGH_RISK]
     → [모든 executor 실행 — phase 단위 spawn·검증·atomic commit] ←─ 실패 시 원인 분석 후 해당 phase 재실행
     → [누적 diff code-reviewer 검사 — 전부 보고 후 team-lead 필터] ←─ FIX_NEEDED 면 재투입 후 전체 재검사 (한도 2회)
     → [code-reviewer PASS 후 최종 HEAD docs-verifier 검증 1회] ←─ VIOLATION/UPDATE_NEEDED 면 재투입 후 재검증 (한도 2회)
@@ -313,7 +313,7 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 critic APPROVE 후 executor 를 `run_in_background: true`, `mode: "bypassPermissions"` 로 스폰한다.
 critic 승인과 docs-verifier 검증이 이중 안전망 역할을 한다.
 
-각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 게이트를 실행한다.
+각 phase 스폰 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
 team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `scripts/executor_routing_gate.py`를 통과시킨다.
 스크립트가 차단하거나 반환한 실행 형태보다 낮은 경로를 선택하면 executor를 스폰하지 않는다.
 같은 수준의 모델이 없을 때 더 엄격한 모델로 올리는 폴백은 허용한다.
