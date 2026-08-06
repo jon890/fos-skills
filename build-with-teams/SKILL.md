@@ -29,9 +29,8 @@ phase 단위로 atomic commit 을 쌓아 PR 까지 만든다.
 ## 핵심 원칙
 
 1. **docs-first**: docs 반영과 커밋 → task 생성 → 실행. 순서 위반 금지.
-2. **가시적 협업**: 백그라운드 스크립트 대신 에이전트 팀이 각 단계를 명시적으로 수행한다.
-3. **단독 결정 금지**: 분기점에서 자의적으로 결정하지 말고 구조화 질문 도구(Claude Code 는 `AskUserQuestion`)로 사용자에게 옵션을 제시한다.
-4. **plan 1개 = PR 1개**: 한 실행은 정확히 하나의 plan만 다루고 그 plan의 단일 PR로 끝낸다. 여러 plan을 한 브랜치·PR에 합치거나 한 plan을 여러 PR로 쪼개지 않는다.
+2. **단독 결정 금지**: 분기점에서 자의적으로 결정하지 말고 구조화 질문 도구(Claude Code 는 `AskUserQuestion`)로 사용자에게 옵션을 제시한다.
+3. **plan 1개 = PR 1개**: 한 실행은 정확히 하나의 plan만 다루고 그 plan의 단일 PR로 끝낸다. 여러 plan을 한 브랜치·PR에 합치거나 한 plan을 여러 PR로 쪼개지 않는다.
 
 통과 조건(critic 승인·docs 정합성·재시도 한도)는 원칙으로 되풀이하지 않고 각 절차 섹션이 단일 소스다.
 
@@ -63,7 +62,7 @@ plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검�
 
 ## 실행 모드 선택 점검 (사전 검증 통과 직후)
 
-team-lead 가 task 를 읽고 규모를 판정한 직후, 첫 작업(worktree 생성 등) 전에 구조화 질문 도구로 팀원 spawn 모드를 묻는다 — 자의적으로 판단하지 않는다.
+team-lead 가 task 를 읽고 규모를 판정한 직후, 첫 작업(worktree 생성 등) 전에 구조화 질문 도구로 팀원 spawn 모드를 묻는다.
 
 | 옵션 | 설명 | 권장 상황 |
 |---|---|---|
@@ -110,8 +109,6 @@ executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CL
 ### 팀원 스폰 가드 (요약)
 
 팀원(critic·executor·code-reviewer·docs-verifier)을 스폰·통신할 때 실제 사고를 겪고 굳어진 가드가 있다.
-가드를 무시하면 사후 검수 비용이 재스폰·재검증보다 훨씬 크다.
-아래 요약만 보지 말고 스폰 전에 상세를 반드시 읽는다.
 
 - **정식 팀원 스폰이 1순위**: `team_name` 과 `name` 을 지정해 스폰한다. 일회성 호출은 팀 컨텍스트 밖이라 이후 `SendMessage` 협업이 끊긴다.
     - 이름 없는 subagent 는 **팀원 스폰이 환경 제약으로 실패했을 때만** 쓰는 폴백이다. 편해서 고르지 않는다.
@@ -393,8 +390,7 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
    phase 단위 사이클에서 종료되지 않은 executor 가 있으면 여기서 일괄 정리한다.
 7. **worktree 정리** — PR 생성·갱신과 원격 push 가 끝난 뒤에 한다.
    - worktree 가 깨끗하고 로컬에만 있는 commit 이 없는지 확인한다.
-   - 기본 checkout 이나 다른 안전한 cwd 로 옮긴 뒤 `git worktree remove <절대경로>` 를 실행한다.
-   - `git worktree list` 로 제거를 확인한다.
+   - 제거 대상 worktree 내부를 cwd 로 둔 채 실행하지 않는다. 기본 checkout 이나 다른 안전한 cwd 로 옮긴 뒤 `git worktree remove <절대경로>` 를 실행한다.
    - PR 브랜치는 유지한다. 브랜치 삭제는 머지 후 사용자 요청이 있을 때만 한다.
 8. **실행 기록 한 줄 추가** — `docs/retrospectives/RUNS.md` 에 이번 실행의 결과를 남긴다.
    REVISE·FIX_NEEDED·docs-verifier 판정 횟수와 사용자 개입 횟수를 적는다.
@@ -425,9 +421,8 @@ worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
     - 오래된 base 위에서 구현하면 그사이 머지된 docs 와 코드가 어긋난다.
     - PR 이 아직 없는 시점이라 rebase 로 잃을 것이 없다.
 - **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비(예: gitignore 된 env 파일 공유)는 레포마다 다르므로 **오버레이·CLAUDE.md 절차**를 따른다.
-- **정리 위치**: 제거 대상 worktree 내부를 cwd로 둔 채 실행하지 않는다. 기본 checkout이나 다른 안전한 경로에서 절대경로로 `git worktree remove`를 실행한다.
 
-정리 시점과 브랜치 보존은 9단계 7항이 소유한다.
+정리 시점·위치와 브랜치 보존은 9단계 7항이 소유한다.
 
 ## 실패 복구
 
