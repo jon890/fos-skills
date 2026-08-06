@@ -7,6 +7,12 @@
 set -u
 ADR_DIR="${1:-}"
 
+# 검사 대상 마크다운 — 추적 파일과 미추적 신규 파일을 모두 본다.
+#   `git ls-files` 만 쓰면 방금 만든 문서를 통째로 건너뛴 채 0 줄을 내, 거짓 통과가 된다.
+#   docs-check 가 부르는 시점이 대개 문서를 새로 쓴 직후라 그 파일이 가장 중요한 검사 대상이다.
+#   -c 추적 / -o 미추적 / --exclude-standard 로 gitignore 대상은 뺀다.
+md_files() { git ls-files -co --exclude-standard '*.md' 2>/dev/null; }
+
 if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
   # ADR Index 동기화 — 본문 ADR 번호가 Index 에 모두 있는가
   BODY=$(grep -rhoE 'ADR-[0-9]+' "$ADR_DIR"/*.md 2>/dev/null | sort -u)
@@ -25,7 +31,7 @@ if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
 fi
 
 # 마크다운 문법 깨짐 — 렌더가 어긋나는 결정적 오류만 본다
-for f in $(git ls-files '*.md' 2>/dev/null); do
+for f in $(md_files); do
   awk -v F="$f" '
     # 코드 블록 안은 렌더 대상이 아니다 — 셸 주석(#)을 헤딩으로 오인하지 않도록 건너뛴다
     /^```/ { fence++; in_code = !in_code; next }
@@ -64,11 +70,11 @@ done
 STYLE_CHECK="${KOREAN_STYLE_CHECK:-$HOME/.claude/scripts/korean-style-check.sh}"
 if [ -x "$STYLE_CHECK" ]; then
   # shellcheck disable=SC2046
-  "$STYLE_CHECK" $(git ls-files '*.md' 2>/dev/null)
+  "$STYLE_CHECK" $(md_files)
 fi
 
 # 문체 정적 패턴 — 코드 블록과 코드 스팬(`...`)은 렌더 대상이 아니므로 제외한다
-for f in $(git ls-files '*.md' 2>/dev/null); do
+for f in $(md_files); do
   awk -v F="$f" '
     /^```/ { in_code = !in_code; next }
     in_code { next }
