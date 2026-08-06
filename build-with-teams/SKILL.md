@@ -96,7 +96,7 @@ executor·docs-verifier 이름은 오버레이가 지정한다.
 - **watchdog stall 복구**: 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
   워치독은 모드 A 에만 있지만 회피 원칙은 모드 B 에서도 같다.
 
-상세 프롬프트 문구·근거·판정 시간 규칙은 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
+상세 프롬프트 문구와 근거는 [`references/team-spawn.md`](references/team-spawn.md) 참조 — **팀원 스폰 전 반드시 읽는다**.
 
 ## worktree 기반 격리 실행
 
