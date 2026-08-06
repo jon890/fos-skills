@@ -37,7 +37,7 @@ plan 인자를 받으면 **가장 먼저** 재실행 사고를 막는 3중 검�
 3. **오픈 PR 존재** — 해당 plan 제목·브랜치를 포함한 오픈 PR 이 있는지 확인한다. 있으면 완료 후 머지 대기일 수 있으니 차단 후 사용자 결정.
 4. **완료 상태 ↔ 머지 정합**(역방향) — 완료로 표기됐는데 실제 머지 커밋이 원격 main 에 없으면 마킹 사고. 사용자에게 알리고 상태를 되돌릴지 결정.
 
-**세부는 레포마다 다르다** — 아래는 **오버레이·CLAUDE.md 를 따른다**:
+아래는 오버레이가 지정한다.
 
 - 브랜치 이름 형식
 - task 디렉터리 매칭(정확 일치 / 슬러그 suffix / fuzzy)
@@ -76,7 +76,7 @@ critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다
 | **docs-verifier** | 레포의 docs-verifier 에이전트           | 코드와 docs 정합성 검증 (PASS/UPDATE_NEEDED/VIOLATION)                                                 |
 
 
-executor·docs-verifier 로 쓸 **구체 에이전트 이름은 오버레이·CLAUDE.md 가 단일 소스**다. 레포마다 다르므로 코어는 지정하지 않는다.
+executor·docs-verifier 이름은 오버레이가 지정한다.
 전용 에이전트가 도메인 지식을 보유하므로, spawn 프롬프트에는 호출 인자(task 파일 절대경로·직전 phase 학습·critic minor notes)만 담고 도메인 규칙을 반복하지 않는다.
 
 ### 팀원 스폰 가드 (요약)
@@ -230,7 +230,6 @@ team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만�
 이 단계는 `index.json`의 **모든 미완료 phase를 순서대로 구현·검증·atomic commit할 때까지 반복**한다.
 개별 phase 완료는 commit 경계이지 code-reviewer·docs-verifier 호출 경계가 아니다.
 code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 검증한다.
-단, 진행을 막는 결함의 원인 확인이 필요하면 조기 자문을 받을 수 있으며 그 결과는 최종 reviewer verdict를 대체하지 않는다.
 
 구현자 공통 규칙이다.
 
@@ -351,9 +350,7 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
 
 ## worktree 기반 격리 실행
 
-작업 간 충돌을 막기 위해 git worktree 를 쓴다.
-worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
-`.gitignore` 에 `.claude/worktrees/` 가 등록돼 있어야 한다.
+worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore` 에 있어야 한다.
 
 - **경로 철자 엄수**: worktree 루트는 정확히 `.claude/worktrees/` 다.
   - 자동완성 오타(`.claire-worktrees` 등)로 비슷한 철자의 디렉터리가 생기면 후속 검증이 깨진다.
@@ -369,7 +366,7 @@ worktree 는 프로젝트 내부 `.claude/worktrees/` 아래에 만든다.
   - 방법: `git rebase origin/main` 후 `git push --force-with-lease`.
   - 오래된 base 위에서 구현하면 그사이 머지된 docs 와 코드가 어긋난다.
   - PR 이 아직 없는 시점이라 rebase 로 잃을 것이 없다.
-- **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비(예: gitignore 된 env 파일 공유)는 레포마다 다르므로 **오버레이·CLAUDE.md 절차**를 따른다.
+- **환경 setup**: worktree 생성 후 의존성 설치·환경 파일 준비는 오버레이 절차를 따른다.
 
 정리 시점·위치와 브랜치 보존은 7단계 7항이 소유한다.
 
@@ -382,18 +379,10 @@ phase 자체를 고쳐야 하면 critic 재평가(3단계)로 돌아가고, 단�
 ## 노하우 누적 (세션마다 보강)
 
 실행 중 원시 회고는 `docs/retrospectives/`에 사건별 독립 파일로 누적한다.
-매 실행 후 그중 **재발 방지 가치 있는 것**만 1-2줄 규칙으로 승격한다.
-
-누적할 가치가 있는지는 네 가지로 판단한다.
-
-- 다시 일어날 수 있는 패턴이나 프로세스 결함인가.
-- 한두 단어로 추상화할 수 있는가.
-- 재발했을 때 grep·test·build 로 검출할 수 있는가.
-- 팀원의 일반적인 행동에 영향을 주는가.
-
+매 실행 후 그중 **다시 일어날 수 있고 grep·test·build 로 검출 가능한 것**만 1-2줄 규칙으로 승격한다.
 1회성 오타나 특정 plan 에만 해당하는 메모는 누적하지 않는다.
 
-**누적 위치는 레포마다 다르다.** 구체 경로와 형식은 **오버레이·CLAUDE.md** 를 따른다.
+누적 위치는 오버레이가 지정한다.
 
 
 | 종류           | 누적 위치                   |
