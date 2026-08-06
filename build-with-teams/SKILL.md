@@ -152,20 +152,12 @@ team-lead 가 task(`index.json`, `phase-*.md`)와 관련 docs·`CLAUDE.md`·오�
 
 ### 3. critic 평가 (통과 조건)
 
-team-lead → critic 에게 계획 전송. critic 평가 관점:
+team-lead → critic 에게 계획 전송.
+스폰 프롬프트에 [`references/role-critic.md`](references/role-critic.md)를 읽으라고 지시하고
+호출 인자(task 파일 절대경로, 반복 함정 목록 경로)만 담는다.
 
-1. phase 순서·의존성이 올바른가?
-2. 누락된 작업이 있는가?
-3. 각 phase 의 리스크는?
-4. 성공 기준이 충분한가?
-5. **실제 코드와 일치하는가?** (파일 존재·함수명·줄 수 검증)
-6. **오버레이가 지정한 반복 함정 목록의 관련 패턴이 사전 해소됐는가?**
-
-**판정과 발견 목록을 분리해 회신받는다.** 둘을 한 덩어리로 받으면 APPROVE 와 앞뒤가 안 맞아 보이는 지적을 critic 이 스스로 삼킨다.
-
-- **판정**: APPROVE 또는 REVISE 중 하나.
-- **phase 별 실행 형태**: `BOUNDED`, `JUDGMENT_REQUIRED`, `HIGH_RISK` 중 하나와 근거.
-- **발견 목록**: 판정과 무관하게 눈에 걸린 것을 전부 적는다. APPROVE 여도 비워 두지 않고, 없으면 "없음" 으로 명시한다.
+회신은 **판정 / phase 별 실행 형태 / 발견 목록** 셋으로 나뉘어 온다.
+셋 중 실행 형태가 없으면 재요청한다 — 4단계 점검의 입력이다.
 
 발견을 무엇으로 처리할지는 team-lead 가 정한다.
 
@@ -175,16 +167,9 @@ team-lead → critic 에게 계획 전송. critic 평가 관점:
 
 판정: **APPROVE** → 4단계. **REVISE** → 수정 후 재평가 (한도 3회).
 
-**critic v2 재평가 시 강제 재읽기**(필수): critic 이 REVISE 후 v2 변경을 받고도 v1 평가를 그대로 다시 보내는 사고가 있다.
-원인은 worktree 의 새 파일을 다시 Read 하지 않은 것이다.
-재평가 메시지에 다음 3가지를 반드시 포함한다.
-
-1. "Read tool 로 다음 파일을 다시 읽고 재평가" 지시와 변경 파일 절대경로.
-2. 확인 포인트 체크리스트 (어느 라인이 어떻게 바뀌었는지).
-3. "직전 메시지는 첫 평가 사본일 수 있음 — 실제 파일 상태 기준으로 판정 부탁".
-
-회신이 v1 과 같으면 team-lead 가 수정된 실제 라인을 `grep`·`awk` 로 떠서 증거로 붙여 재요청한다.
-이 패턴은 **code-reviewer·docs-verifier 재검사에도 그대로 적용**한다.
+**재평가 요청에는 변경 파일 절대경로를 담는다.** 회신이 직전 판정과 같으면
+수정된 실제 라인을 `grep` 으로 떠서 증거로 붙여 재요청한다.
+code-reviewer·docs-verifier 재검사도 같다.
 
 ### 4. 구현
 
@@ -210,11 +195,8 @@ team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만�
 code-reviewer와 docs-verifier는 모든 phase 구현이 끝난 누적 diff를 검증한다.
 단 진행을 막는 결함의 원인 확인이 필요하면 조기 자문을 받을 수 있고, 그 결과가 최종 판정을 대체하지는 않는다.
 
-구현자 공통 규칙이다.
-
-- phase 를 순서대로 구현하고, 완료 후 성공 기준을 검증한다.
-- 코드 주석 규칙은 레포 `CLAUDE.md` 를 따른다.
-- 위 "구현자 cwd 격리" 와 "구현자 scope 확장 보고" 를 지킨다.
+구현 계약은 [`references/role-executor.md`](references/role-executor.md)가 소유한다.
+모드 A 는 스폰 프롬프트에서 그 파일을 읽게 하고, 모드 B 는 team-lead 가 직접 따른다.
 
 **모드 A 전용** — 스폰이 있을 때만 발동한다.
 
@@ -249,13 +231,8 @@ phase 자체를 고쳐야 하면 critic 재평가(3단계)로 돌아가고, 단�
 team-lead 가 직접 검사하지 않는다 — 건너뛰기를 막기 위해서다.
 phase마다 code-reviewer를 반복 호출하지 않는다.
 
-- **검사 범위**: 이번 plan 이 변경한 파일만. 범위는 **3-dot** 으로 잡는다 — `git diff --name-only origin/main...HEAD`.
-  - 2-dot(`origin/main..HEAD`)은 worktree 분기 후 origin/main 에 들어온 외부 커밋까지 끌어와 false positive 를 만든다.
-  - 실제로 무관한 차이 50여 건이 섞여 reviewer 판정이 오염된 사례가 있다.
-- **검사 항목을 본문에 나열하지 않는다** — 오버레이가 지정한 반복 함정 목록에서 관련 패턴을 골라 grep 으로 점검하도록 지시한다.
-- **전부 보고 지시**: 심각도로 자체 필터링하지 말고 발견한 것을 전부 올리라고 지시한다. "중대한 것만" · "보수적으로" 같은 지시는 문자 그대로 따라 실제 결함 보고까지 줄인다.
-- **설계 맥락 첨부**(판정 참고용): plan 이 의도한 raw 패턴, helper 를 우회한 사유, 범위 밖 placeholder 를 1-2줄로 요약해 붙인다.
-  - reviewer 가 보고를 생략할 근거가 아니라, team-lead 가 분류할 때 쓰는 자료다.
+스폰 프롬프트에 [`references/role-code-reviewer.md`](references/role-code-reviewer.md)를 읽으라고 지시하고
+반복 함정 목록 경로와 설계 맥락(의도한 raw 패턴, helper 우회 사유, 범위 밖 placeholder)을 담는다.
 
 **필터는 team-lead 의 별도 패스** — reviewer 보고 전체를 받아 셋으로 분류한다.
 
@@ -284,15 +261,8 @@ phase마다 호출하지는 않는다. 검토 대상은 개별 phase 가 아니�
 - 코드만 건드렸으면 → 첫 판정을 그대로 쓴다.
 - 재검증 횟수는 아래 한도에 함께 계산한다.
 
-검증 관점:
-
-1. 설계 결정(ADR 등) 위반 여부.
-2. 레이어·코딩 규칙 준수 (레포 `CLAUDE.md` 참조).
-3. docs 갱신이 필요한지, 의사결정 의도가 보존됐는지 본다.
- planning 이 관리하는 필수 문서(`prd`·`flow`·`code-architecture`·`data-schema`·`adr`)와 오버레이가 추가한 문서가 최종 코드와 맞는지 확인한다.
-4. **문서 부패 검증**: 코드에서 제거·변경된 기능이 docs 에 dead reference 로 남아 있는지 (`grep -rn` 로 검출).
-
-docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하면 SKILL 은 위임만 하고 항목을 반복하지 않는다.
+스폰 프롬프트에 [`references/role-docs-verifier.md`](references/role-docs-verifier.md)를 읽으라고 지시한다.
+레포에 전용 docs-verifier 에이전트가 있으면 그 정의가 검증 항목의 단일 소스다.
 
 판정: **PASS** → 7단계. **UPDATE_NEEDED** → docs 업데이트 후 재검증 (한도 2회). **VIOLATION** → 코드 수정 (구현자 재투입, 한도 2회).
 
@@ -330,17 +300,13 @@ docs-verifier 전용 에이전트가 도메인 검증 항목 전체를 보유하
   ```
    PR #<번호> 생성 완료 — 리뷰 반영은 /review-fix <번호>
   ```
-10. 사용자가 PR 을 머지하면 완료 상태가 main 에 자동 반영된다. main 후속 작업 0개.
+10. 사용자가 PR 을 머지하면 완료 상태가 main 에 자동 반영된다.
 
 ## 특이사항 4종 집계 (필수)
 
-구현자는 phase 보고에 아래 4종을 함께 적는다. 없으면 "없음" 으로 명시한다 — 침묵으로 갈음하면 사용자가 후속 필요 여부를 판단할 수 없다.
-모드 A 는 executor 가 `SendMessage` 로 올리고, 모드 B 는 team-lead 가 phase 커밋 시점에 스스로 기록한다.
-
-- **pre-existing** — 이번 변경과 무관하게 원래 있던 문제.
-- **신규 deprecation** — 이번 변경이 유발한 경고·예정 폐기.
-- **미검증** — 로컬에서 확인 불가해 운영·검증 단계로 넘긴 영역.
-- **범위 외 발견** — plan 범위 밖이지만 후속이 필요한 발견.
+구현자가 phase 보고에 담는 4종(pre-existing·신규 deprecation·미검증·범위 외 발견)은
+[`references/role-executor.md`](references/role-executor.md)가 소유한다.
+모드 B 는 team-lead 가 phase 커밋 시점에 스스로 기록한다.
 
 team-lead 는 종료 시 phase 별 특이사항을 누적해 사용자에게 명시 보고하고, 후속이 필요하면 이슈 등록을 제안한다.
 각 phase 종료, 검토자의 `FIX_NEEDED`, 검증 장시간 정체·복구 직후에는 재사용 가치가 있는 사건을 `docs/retrospectives/`에 회고 하나당 파일 하나로 즉시 기록한다.

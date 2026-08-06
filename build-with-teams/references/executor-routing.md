@@ -152,21 +152,8 @@ python3 ~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py <asse
 
 ## critic 출력 계약
 
-critic은 계획 판정과 실행 형태를 분리해 회신한다.
-
-```text
-계획 판정: APPROVE | REVISE
-
-phase별 실행 형태:
-- phase 01: BOUNDED | JUDGMENT_REQUIRED | HIGH_RISK
-  근거: ...
-  BOUNDED 차단 조건: 없음 | ...
-
-발견 목록:
-- 없음 | ...
-```
-
-`APPROVE`라도 phase별 실행 형태가 누락되면 executor를 스폰하지 않고 critic에게 재요청한다.
+critic 이 실행 형태를 어떤 형식으로 회신하는지는 [`role-critic.md`](role-critic.md)가 소유한다.
+`APPROVE` 라도 phase별 실행 형태가 누락되면 executor 를 스폰하지 않고 재요청한다.
 
 ## executor 실행 중 승격
 
