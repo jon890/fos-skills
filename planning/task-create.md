@@ -25,13 +25,12 @@ tasks/
   "status": "pending",                    // pending | in_progress | completed | failed
   "created_at": "2026-01-01",             // YYYY-MM-DD
   "total_phases": 3,                      // phases 배열 길이와 일치
+  "current_phases": 1,
   "phases": [
     {
       "number": 1,
       "file": "phase-01.md",
-      "title": "phase 제목 (간결)",
-      "execution_profile": "standard",     // fast | standard | deep
-      "status": "pending"
+      "execution_profile": "standard"     // fast | standard | deep
     }
   ]
 }
@@ -45,7 +44,7 @@ phase 파일만 늘리면 파이프라인이 `phases` 를 읽어 순회하므로
 ### 검증 체크리스트
 
 - [ ] `total_phases` == `phases` 배열 길이
-- [ ] 모든 phase 에 `number` / `title` / `file` / `execution_profile` / `status` 존재
+- [ ] 모든 phase 에 `number` / `title` / `file` / `execution_profile` 존재
 - [ ] `number` 가 1 부터 순차 증가
 - [ ] 각 `file` 에 해당하는 `.md` 파일이 실제로 존재
 - [ ] `name` 이 `tasks/{name}/` 디렉터리명과 일치
@@ -58,20 +57,13 @@ phase 파일만 늘리면 파이프라인이 `phases` 를 읽어 순회하므로
 task는 특정 모델 공급자 이름을 저장하지 않는다.
 실행 surface가 `execution_profile`을 설치된 모델·role에 매핑한다.
 
-| 실행 등급 | 용도 |
-|---|---|
-| `fast` | 기계적 수정, 빌드 검증, 잔재 정리 |
+
+| 실행 등급      | 용도                                                |
+| ---------- | ------------------------------------------------- |
+| `fast`     | 기계적 수정, 빌드 검증, 잔재 정리                              |
 | `standard` | 표준 구현, 다중 파일 수정, rename, 리팩토링, 신규 컴포넌트, migration |
-| `deep` | 새 아키텍처 설계, 복잡 알고리즘, 장기 trade-off 판단 |
+| `deep`     | 새 아키텍처 설계, 복잡 알고리즘, 장기 trade-off 판단               |
 
-legacy task의 `model`은 read 시에만 다음처럼 해석한다.
-
-- `haiku` → `fast`
-- `sonnet` → `standard`
-- `opus` → `deep`
-
-신규 task와 수정 task는 legacy `model`을 새로 쓰지 않는다.
-한 phase에 `execution_profile`과 `model`이 함께 있으면 해석하지 않고 schema 오류로 차단한다.
 
 ---
 
@@ -80,7 +72,7 @@ legacy task의 `model`은 read 시에만 다음처럼 해석한다.
 ### 핵심 원칙
 
 1. **자기완결적** — 각 phase 프롬프트는 이전 대화 컨텍스트 없이 독립 실행. 필요한 모든 맥락을 프롬프트 안에 포함.
-2. **단일 책임** — 한 phase 는 명확히 하나의 작업 단위. 작업 항목 5개 이하.
+2. **단일 책임** — 한 phase 는 명확히 하나의 작업 단위. 
 3. **검증 가능** — phase 마지막에 실행 가능한 성공 기준 명시 (grep / test / build). 구체 명령은 레포 도구에 맞춘다.
 
 ### phase 파일 구조
@@ -89,7 +81,6 @@ legacy task의 `model`은 read 시에만 다음처럼 해석한다.
 # Phase NN — {제목}
 
 **Execution profile**: standard
-**Status**: pending
 
 ---
 
@@ -136,8 +127,7 @@ legacy task의 `model`은 read 시에만 다음처럼 해석한다.
 - [ ] 함수/컴포넌트의 이름·파라미터·반환 타입이 구체적
 - [ ] 이전 phase 산출물 참조 시 경로 명시
 - [ ] 성공 기준에 실행 가능한 명령과 기대값 명시
-- [ ] 오버레이가 지정한 반복 함정 목록의 패턴을 모두 사전 해소
-
+- [ ] 오버레이가 지정한 반복 함정 목록의 패턴을 모두 사전 확인
 ---
 
 ## task 검증 (생성 직후)
@@ -160,79 +150,6 @@ AI 가 임의로 자동 수정하지 않고, 위반은 질문 도구로 확인�
 
 - **범위 불명확** — '전체 수정/변경/적용/…' 표현. 구체 파일 목록으로 대체한다.
 - **cwd 주석 누락** — Bash 블록 앞에 `# cwd:` 가 없다.
-- **사람 의존 검증** — '수동 검토'·'눈으로 확인'·'육안' 등. "수동 smoke" 는 동작 확인이라 제외한다.
+- **사람 의존 검증** — '수동 검토'·'눈으로 확인'·'육안' 등. 
 - **완료 마킹 누락** — 마지막 phase 에 `index.json` 완료 마킹 지시가 없다.
 - **BSD sed `\b` 미지원** — macOS 에서 조용히 실패한다. `perl -i -pe 's/\bfoo\b/.../g'` 로 대체한다.
-
-출력이 1줄이라도 나오면 아래 흐름을 따른다. 레포가 추가 패턴을 오버레이로 정의할 수 있다.
-
-### 위반 발견 시 처리 (사용자 확인 우선)
-
-위반된 패턴과 위치를 정리해 질문 도구를 호출한다.
-
-- 옵션 1: **수정** — 위반 라인을 패턴별 권장 대안으로 바꾼 뒤 `verify-task.sh` 를 다시 실행한다 (최대 2회).
-- 옵션 2: **넘어가기** — 이번 위반은 의도된 표현이다. 실행·critic 단계에서 다시 판단한다.
-- 옵션 3: **면제** — 이 plan 에 한한 면제 사유를 phase 파일의 "의도 메모 (왜)" 에 적고 통과시킨다.
-
-### 사람 판단이 필요한 4 패턴 (자동 검출 불가)
-
-도메인에 따라 달라져 grep 으로 잡을 수 없다. task 작성 시 직접 확인한다.
-
-- **수치 추측**: "약 30개"·"100줄" 같은 수치가 실제로 측정한 값인지 확인한다.
-  `git diff --stat` 처럼 측정에 쓴 명령을 plan 에 함께 적는다.
-- **이전 plan·main 커밋과의 상호작용**: `git log origin/main --oneline -20 -- <scope>/` 결과에 plan 범위와 겹치는 변경이 있는지 본다.
-  겹치면 어느 쪽이 최종인지 명시한다.
-- **외부 상태 확인**: PR·배포·push 단계 앞에 상태를 확인하는 명령이 있는지 본다.
-- **여러 계층 가드**: 코드가 기대는 불변식을 새로 도입하면 관련 계층 전부에 가드를 명시한다 (예: Migration·Repository·Mapper·UI).
-
-### 자체 검토 (제출 전 새로운 눈으로)
-
-위 자동 검증과 반복 함정 점검과는 별개로, task 전체를 새로운 눈으로 한 번 훑는다.
-
-1. **placeholder 스캔**: `TBD` / `TODO` / '나중에' / 빈 섹션이 남아 있나. 있으면 채운다.
-2. **모순 스캔**: phase 간·docs 간 상충하는 서술이 없나.
-3. **식별자 일관성**: 앞 phase 에서 정한 이름을 뒤 phase 가 똑같이 쓰나. `clearLayers()` vs `clearFullLayers()` 같은 불일치는 버그다.
-
-발견 즉시 인라인 수정.
-
----
-
-## 마지막 phase 표준 (권장)
-
-소규모 plan (1~2 phase) 은 검증을 본 phase 에 흡수. 중규모 이상 (3+ phase) 은 마지막 phase 를 검증 전용으로 분리:
-
-| Phase | 제목 | 모델 | 내용 |
-|---|---|---|---|
-| 마지막 | 통합 검증과 잔재 grep | `fast` | 레포의 lint/type/build/test, 잔재 grep, dead code 정리 |
-
-마지막 phase 에 **`index.json` 의 status="completed" 마킹** 명시.
-
----
-
-## Phase 묶기 vs 분리 기준
-
-**묶기**: 동일 패턴 복제 / 동일 스키마 확장 / 동일 기능의 다른 영역 확장.
-
-**별도 phase 로 분리**: 서로 다른 도메인 / 독립 실행 가능하고 의존 없음 / 검증 단위가 다름.
-
-## 별도 plan 으로 분리 vs 같은 plan 의 phase 분리
-
-같은 plan 의 phase: 하나의 원자적 목표를 완성하기 위한 순차 작업. PR 1개로 묶임.
-
-별도 plan: 독립적인 완료·검토·검증 기준을 가짐. plan별 PR로 분리하고 실행 순서는 사용자 보고로 전달함.
-
-다음 중 하나라도 해당하면 별도 plan 분할을 우선한다.
-
-- 서로 다른 변경 이유나 도메인 경계를 가진다.
-- DB·저장 계약, backend API, frontend 연결, skill·tooling처럼 독립된 검토 초점이 있다.
-- 일부만 먼저 병합해도 기존 동작을 깨지 않고 가치를 제공한다.
-- 예상 변경이 SKILL.md 규모 분할 점검의 경고선을 넘는다.
-
-한 plan을 여러 PR로 나누거나 여러 plan을 한 PR에 합치지 않는다.
-
----
-
-## 참조
-
-- 레포 오버레이 `<repo>/.claude/planning-overlay.md` — 반복 함정 목록 경로, 레이어별 phase 가이드, 검증 명령
-- SKILL.md — 8단계 워크플로와 plan 네이밍
