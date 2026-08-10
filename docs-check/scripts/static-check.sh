@@ -88,6 +88,7 @@ while IFS= read -r f; do
     {
       line = $0
       gsub(/`[^`]*`/, "", line)          # 코드 스팬 제거 — ~/path 오탐 방지
+      gsub(/\\~/, "", line)              # 이스케이프한 물결표는 취소선을 만들지 않는다
       n = gsub(/~/, "~", line)
       if (n > 0 && n % 2 == 0) print F ":" NR ": ~ 짝수개(" n ") — 취소선 렌더 위험"
       if (line ~ /§/)          print F ":" NR ": § 섹션 기호 — \"섹션 N\" 으로"
