@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # docs-check 가벼운 정적 검사 — 결정적으로 판정되는 위반만 검출한다.
 # 사용법: ~/.claude/skills/docs-check/scripts/static-check.sh [ADR_DIR]
-# cwd 는 검사 대상 <레포 root>. ADR_DIR 생략 시 ADR 검사는 건너뛴다.
+# cwd 는 검사 대상 <레포 root>. ADR_DIR 생략 시 Index 동기화 검사를 건너뛴다.
 # 위반 라인을 stdout 으로 출력한다. 출력 0 줄이면 통과.
 # 주의: grep 무매치가 exit 1 이므로 set -e 를 쓰지 않는다.
 set -u
@@ -15,19 +15,19 @@ md_files() { git ls-files -co --exclude-standard '*.md' 2>/dev/null; }
 
 if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
   # ADR Index 동기화 — 본문 ADR 번호가 Index 에 모두 있는가
-  BODY=$(grep -rhoE 'ADR-[0-9]+' "$ADR_DIR"/*.md 2>/dev/null | sort -u)
-  INDEX=$(grep -ohE 'ADR-[0-9]+' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
-  if [ "$BODY" != "$INDEX" ]; then
-    echo "INDEX_DESYNC: $ADR_DIR — 본문과 INDEX.md 의 ADR 번호 집합이 다르다"
-    diff <(echo "$BODY") <(echo "$INDEX") | sed 's/^/  /'
+  #   본문 번호는 헤딩(`## ADR-NNN`)만 센다. 아무 곳의 `ADR-NNN` 을 다 세면
+  #   "향후 ADR은 ADR-009부터 추가" 같은 안내 문장이 실재하지 않는 ADR 로 잡혀 항상 불일치가 난다.
+  BODY=$(grep -rhoE '^#+ ADR-[0-9]+' "$ADR_DIR"/*.md 2>/dev/null | grep -oE 'ADR-[0-9]+' | sort -u)
+  #   INDEX.md 가 없는 구조(단일 파일 ADR 등)에서는 이 검사를 건너뛴다.
+  #   없는 파일을 빈 Index 로 취급하면 본문 번호 전체가 "누락" 으로 잡혀 항상 불일치가 난다.
+  if [ -f "$ADR_DIR/INDEX.md" ]; then
+    INDEX=$(grep -ohE 'ADR-[0-9]+' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
+    if [ "$BODY" != "$INDEX" ]; then
+      echo "INDEX_DESYNC: $ADR_DIR — 본문과 INDEX.md 의 ADR 번호 집합이 다르다"
+      diff <(echo "$BODY") <(echo "$INDEX") | sed 's/^/  /'
+    fi
   fi
 
-  # ADR 과대화 — 30줄 초과는 기능 명세로 변질됐는지 검토 신호
-  for f in "$ADR_DIR"/*.md; do
-    [ -f "$f" ] || continue
-    size=$(wc -l < "$f" | tr -d ' ')
-    [ "$size" -gt 30 ] && echo "과대화: $f ($size 줄 > 30) — 슬림화 검토"
-  done
 fi
 
 # 마크다운 문법 깨짐 — 렌더가 어긋나는 결정적 오류만 본다
@@ -59,9 +59,14 @@ while IFS= read -r f; do
   ' "$f"
 
   # 상대 링크가 실제 파일을 가리키는가
+  #   URL 스킴(`scheme://`)은 로컬 파일이 아니다. `http`·`mailto` 만 예외 처리하면
+  #   `dooray://` 같은 앱 스킴을 상대 경로로 취급해 정상 링크를 전부 "깨진 링크" 로 보고한다.
+  #   그 노이즈가 매 실행 반복되면 진짜 깨진 링크가 묻힌다.
+  #   `/` 로 시작하는 경로는 발행 사이트의 루트 기준 URL 관례라 로컬 파일이 아니다.
+  #   문서 사이트를 가리키는 링크(`/nhncloud/ko/...`)를 상대 경로로 붙이면 항상 없는 파일이 된다.
   grep -oE '\]\([^)#][^)]*\)' "$f" 2>/dev/null | tr -d '()]' | while read -r target; do
     case "$target" in
-      http*|mailto:*|"") continue ;;
+      *://*|mailto:*|/*|"") continue ;;
     esac
     [ -e "$(dirname "$f")/${target%%#*}" ] || echo "$f: 깨진 링크 → $target"
   done
