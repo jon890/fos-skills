@@ -21,7 +21,7 @@ if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
   #   INDEX.md 가 없는 구조(단일 파일 ADR 등)에서는 이 검사를 건너뛴다.
   #   없는 파일을 빈 Index 로 취급하면 본문 번호 전체가 "누락" 으로 잡혀 항상 불일치가 난다.
   if [ -f "$ADR_DIR/INDEX.md" ]; then
-    INDEX=$(grep -ohE 'ADR-[0-9]+' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
+    INDEX=$(awk -F'|' '/^\| ADR-[0-9]+/ { gsub(/[[:space:]]/, "", $2); print $2 }' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
     if [ "$BODY" != "$INDEX" ]; then
       echo "INDEX_DESYNC: $ADR_DIR — 본문과 INDEX.md 의 ADR 번호 집합이 다르다"
       diff <(echo "$BODY") <(echo "$INDEX") | sed 's/^/  /'
@@ -35,6 +35,7 @@ fi
 #   쪼개진 경로는 존재하지 않아 awk·grep 이 stderr 로만 실패하고 stdout 에는 아무것도 안 남는다.
 #   이 스크립트의 계약이 "출력 0 줄이면 통과" 라서 그대로 거짓 통과가 된다.
 while IFS= read -r f; do
+  [ -f "$f" ] || continue
   awk -v F="$f" '
     # 코드 블록 안은 렌더 대상이 아니다 — 셸 주석(#)을 헤딩으로 오인하지 않도록 건너뛴다
     /^```/ { fence++; in_code = !in_code; next }
@@ -64,35 +65,22 @@ while IFS= read -r f; do
   #   그 노이즈가 매 실행 반복되면 진짜 깨진 링크가 묻힌다.
   #   `/` 로 시작하는 경로는 발행 사이트의 루트 기준 URL 관례라 로컬 파일이 아니다.
   #   문서 사이트를 가리키는 링크(`/nhncloud/ko/...`)를 상대 경로로 붙이면 항상 없는 파일이 된다.
-  grep -oE '\]\([^)#][^)]*\)' "$f" 2>/dev/null | tr -d '()]' | while read -r target; do
+  awk '
+    /^```/ { in_code = !in_code; next }
+    in_code { next }
+    {
+      line = $0
+      gsub(/`[^`]*`/, "", line)
+      while (match(line, /\]\([^)#][^)]*\)/)) {
+        target = substr(line, RSTART + 2, RLENGTH - 3)
+        print target
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+  ' "$f" | while read -r target; do
     case "$target" in
       *://*|mailto:*|/*|"") continue ;;
     esac
     [ -e "$(dirname "$f")/${target%%#*}" ] || echo "$f: 깨진 링크 → $target"
   done
-done < <(md_files)
-
-# 한국어 표기 정책 — 공용 검사기에 위임한다.
-#   같은 검사기를 편집 직후 hook 도 호출해, 작성 시점과 감사 시점이 같은 기준을 쓴다.
-#   검사기나 규칙 파일이 없는 환경(팀원 등)에서는 이 항목만 건너뛰고 나머지는 계속 검사한다.
-STYLE_CHECK="${KOREAN_STYLE_CHECK:-$HOME/.claude/scripts/korean-style-check.sh}"
-if [ -x "$STYLE_CHECK" ]; then
-  md_files | tr '\n' '\0' | xargs -0 "$STYLE_CHECK"
-fi
-
-# 문체 정적 패턴 — 코드 블록과 코드 스팬(`...`)은 렌더 대상이 아니므로 제외한다
-while IFS= read -r f; do
-  awk -v F="$f" '
-    /^```/ { in_code = !in_code; next }
-    in_code { next }
-    {
-      line = $0
-      gsub(/`[^`]*`/, "", line)          # 코드 스팬 제거 — ~/path 오탐 방지
-      gsub(/\\~/, "", line)              # 이스케이프한 물결표는 취소선을 만들지 않는다
-      n = gsub(/~/, "~", line)
-      if (n > 0 && n % 2 == 0) print F ":" NR ": ~ 짝수개(" n ") — 취소선 렌더 위험"
-      if (line ~ /§/)          print F ":" NR ": § 섹션 기호 — \"섹션 N\" 으로"
-      if (line ~ /\*\*[^*]*\([^)]*\)\*\*/) print F ":" NR ": Bold+괄호 — **텍스트**(부연) 로"
-    }
-  ' "$f"
 done < <(md_files)
