@@ -5,7 +5,7 @@ Dooray 는 본문을 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/J
 를 쓰는 템플릿에 markdown 을 흘려 넣으면 실제 등록 화면과 거의 동일한 미리보기가 된다.
 
 사용 예:
-    python3 ~/.claude/templates/dooray-preview/generate.py \
+    python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
         --title "[VectorSearch] [DocParser] ..." \
         --tag "Document Parser" --tag "개선" --tag "REAL" \
         --meta "담당자:김병태" --meta "참조:개발 그룹" \
