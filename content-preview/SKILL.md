@@ -37,10 +37,9 @@ Dooray·GitHub·메일·슬랙 등 외부로 나가는 본문을, 사용자가 �
 미리보기로 넘어가기 전에 아래를 통과한다. 건너뛰면 사용자가 같은 규칙 위반을 반복 지적하게 된다. 컨텍스트 누적으로 규칙이 밀려도 이 단계만은 강제한다.
 
 - 본인 명의 업무 글이면 페르소나 자가 점검 8항목을 통과했는지 — 댓글에 `##` 헤더나 표를 넣지 않았는지가 가장 자주 걸린다
-- 마크다운 가독성 규칙 적용 여부 — `~/.claude/rules/markdown-readability.md`
-- 같은 규칙의 자가 점검: 인라인 항목 연결, 명사형 종결, 긴 나열, 압축된 표 셀
-- 작성 함정: `~` 짝수개(취소선 오작동), `§` 기호, heredoc escape 잔존
-- 한국어 표현 정책 — `~/.claude/rules/korean-style.md`
+- 언어 — 인라인 항목 연결, 명사형 종결, 괄호 2겹 (`~/.claude/rules/korean-style.md`)
+- 구조 — 분량 구간에 맞는 헤더와 표인지, 긴 나열이 남아 있는지 (`~/.claude/rules/writing-structure.md`)
+- 매체 — `~` 짝수개로 인한 취소선, heredoc escape 잔존, 압축된 표 셀 (`~/.claude/rules/markdown-readability.md`)
 - 본문 파일이 실제로 갱신됐는지 — 아래 "본문 파일 덮어쓰기" 참조
 
 ## HTML 미리보기 생성 (Dooray · GitHub)
