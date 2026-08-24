@@ -47,6 +47,7 @@ show() {
 
 echo "프로젝트 지침"
 show CLAUDE.md
+for f in .claude/rules/*.md; do show "$f"; done
 
 echo "하네스별 역할 정의"
 for f in .claude/agents/*.md .codex/agents/*.toml; do show "$f"; done

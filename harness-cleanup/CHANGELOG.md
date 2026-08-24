@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter의 `metadata.version`과 같은 값을 쓴다.
 올리는 기준은 저장소 README의 "버전과 변경 이력"을 따른다.
 
+## 2.5.0
+
+- **`check_rename_drift.sh` 가 `.claude/skills/` 아래도 훑는다.**
+  SKILL.md 가 놓이는 위치는 둘이다.
+  저장소가 스킬 원본이면 루트 바로 아래이고, 프로젝트 저장소면 `.claude/skills/<skill>/SKILL.md` 다.
+  루트만 훑으면 후자에서 검사 대상이 영구히 0개가 되고, 그것이 통과로 읽힌다.
+- **`collect_targets.sh` 가 `.claude/rules/*.md` 를 수집 대상에 넣는다.**
+  프로젝트 지침이 `CLAUDE.md` 하나만 잡혀 있어 rules 로 분리된 지침이 감사에서 빠졌다.
+
 ## 2.4.0
 
 `check_rename_drift.sh` 에 절 이동 오탐 가드를 넣었다.

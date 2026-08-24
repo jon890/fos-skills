@@ -16,7 +16,7 @@ description: |
   하네스 지시가 지금 모델에게 필요한지 묻는 요청은 이 스킬이 담당한다.
   "문서 점검"만으로 대상이 불분명하면 이 경계로 어떤 감사를 원하는지 확인한다.
 metadata:
-  version: "2.4.0"
+  version: "2.5.0"
 ---
 
 # harness-cleanup
