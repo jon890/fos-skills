@@ -33,6 +33,12 @@ fos-skills/
     CHANGELOG.md
     references/six-axis.md
     scripts/static-check.sh
+  content-preview/          # 외부 게시 본문 미리보기
+    SKILL.md
+    CHANGELOG.md
+    scripts/show-preview.sh
+    scripts/dooray-preview/, scripts/github-preview/
+    references/work-writing-persona.md
   evaluation/               # 스킬 자체 측정
     rubric.md
     score.sh
@@ -63,6 +69,7 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 | `review-fix` | PR 봇 리뷰(🔴/🟡)를 우선순위대로 반영 → 스레드 resolve → commit·push. 검증·커밋 규칙은 레포 CLAUDE.md 참조 |
 | `build-with-teams` | task(index.json+phase)를 팀 에이전트로 phase 단위 실행 → critic·review·docs-verifier 검증 → PR. 검증 명령·에이전트·스키마는 레포 오버레이/CLAUDE.md |
 | `docs-check` | docs 6축 감사(부패·과대화·추론성·중복·자명성·가독성) → 승인 후 수정. docs 구조·docs-verifier 에이전트는 레포 오버레이/CLAUDE.md |
+| `content-preview` | 외부에 나갈 본문을 등록 전 렌더링 HTML 로 보여주고 자가 점검. Dooray·GitHub 생성기와 업무 글 페르소나 포함 |
 
 ## 버전과 변경 이력
 
