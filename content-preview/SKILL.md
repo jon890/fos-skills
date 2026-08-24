@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 description: 외부에 게시·등록되는 본문(Dooray 댓글·업무, GitHub 이슈·PR, 메일·슬랙 메시지, 위키 등)을 사용자에게 등록 전 미리보기로 보여줄 때 사용한다. 렌더링 HTML 을 띄우는 절차, 미리보기 직전 자가 점검 체크리스트, Dooray(TOAST UI)·GitHub(marked.js) HTML 생성기 사용법을 담는다. 사용자가 "미리보기"라고 명시하지 않아도, 외부에 나갈 텍스트를 작성해 등록·게시하려는 순간이면 반드시 이 skill 을 연다. 로컬 파일 작성·코드 커밋처럼 외부에 게시되지 않는 산출물은 대상이 아니다.
 ---
 
@@ -36,7 +36,9 @@ Dooray·GitHub·메일·슬랙 등 외부로 나가는 본문을, 사용자가 �
 
 미리보기로 넘어가기 전에 아래를 통과한다. 건너뛰면 사용자가 같은 규칙 위반을 반복 지적하게 된다. 컨텍스트 누적으로 규칙이 밀려도 이 단계만은 강제한다.
 
-- 본인 명의 업무 글이면 페르소나 자가 점검 8항목을 통과했는지 — 댓글에 `##` 헤더나 표를 넣지 않았는지가 가장 자주 걸린다
+- 본인 명의 업무 글이면 페르소나 자가 점검 항목을 통과했는지
+- 굵은 글씨를 뺀 자리에 형광펜이나 문장 순서로 강조를 남겼는지 — 그냥 빼면 강조가 통째로 사라진다
+- 분량 구간을 `writing-structure.md` 로 판단했는지 — 훑어 찾는 글이면 댓글에도 헤더를 쓴다. 처음부터 끝까지 읽는 짧은 댓글에만 헤더를 뺀다
 - 언어 — 인라인 항목 연결, 명사형 종결, 괄호 2겹 (`~/.claude/rules/korean-style.md`)
 - 구조 — 분량 구간에 맞는 헤더와 표인지, 긴 나열이 남아 있는지 (`~/.claude/rules/writing-structure.md`)
 - 매체 — `~` 짝수개로 인한 취소선, heredoc escape 잔존, 압축된 표 셀 (`~/.claude/rules/markdown-readability.md`)
@@ -57,6 +59,21 @@ Dooray 업무·댓글, GitHub issue·PR 본문은 실제 렌더링과 비슷한 
 
 - 본문에 `` `</script>` `` 문자열 금지 (생성기가 검출·거부).
 - CDN 로드라 오프라인이면 스타일이 빠진다.
+
+### 화면에 띄우기
+
+`show-preview.sh` 로 띄운다. `orca tab create` 를 직접 부르지 않는다.
+
+```bash
+~/.claude/skills/content-preview/scripts/show-preview.sh "$SP/preview.html"
+```
+
+같은 파일의 탭이 이미 있으면 갱신하고, 없으면 새로 만든 뒤 화면 앞으로 가져온다.
+
+`orca tab create` 만 부르면 탭은 생기지만 앞으로 나오지 않아 **사용자가 미리보기를 찾지 못한다.**
+본문을 고쳐 재생성할 때 다시 부르면 같은 파일의 탭이 계속 쌓이고, 사용자는 오래된 탭을 읽고 판단한다.
+
+출력이 `갱신` 인지 `새 탭` 인지 확인한다. 재생성했는데 `새 탭` 이 나오면 사용자가 보던 탭이 닫힌 것이다.
 
 ### 본문 파일 덮어쓰기
 
@@ -80,7 +97,7 @@ python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
   --tag "Document Parser" --tag "개선" --tag "REAL" \
   --meta "담당자:김병태" --meta "참조:개발 그룹" \
   --md-file /tmp/body.md --out /tmp/dooray-preview.html
-orca tab create --url "file:///tmp/dooray-preview.html"
+~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/dooray-preview.html
 ```
 
 GitHub 사용법 (`--type` 은 `issue` 또는 `pr`, 헤더 배지 색 구분):
@@ -91,7 +108,7 @@ python3 ~/.claude/skills/content-preview/scripts/github-preview/generate.py \
   --repo "toast-lab/ai-playground-docu-parser" \
   --title "..." \
   --md-file /tmp/gh-body.md --out /tmp/gh-preview.html
-orca tab create --url "file:///tmp/gh-preview.html"
+~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/gh-preview.html
 ```
 
 - GitHub 고유 자동링크(`#번호`)와 `:emoji:` 코드는 marked.js 가 변환하지 않는다. 정확한 GFM 은 등록 후 GitHub 에서 확인한다.
