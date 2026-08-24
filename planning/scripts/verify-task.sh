@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# task 생성 직후 자동 검증 — 기계적으로 판정되는 task 위생 5 패턴을 검출한다.
+# task 생성 직후 자동 검증 — 기계적으로 판정되는 task 위생 6 패턴을 검출한다.
+#   범위 불명확 / cwd 누락 / 사람 의존 검증 / 완료 마킹 / BSD sed / 필수 섹션 누락
 # 사용법: ~/.claude/skills/planning/scripts/verify-task.sh plan{N}-{slug}
 # 스크립트는 스킬 디렉터리에 있고, cwd 는 tasks/ 를 가진 <타깃 레포 root> 여야 한다.
 # 위반 라인을 stdout 으로 출력한다. 출력 0 줄이면 통과.
@@ -42,12 +43,27 @@ awk '
   in_block { lines = lines "\n" $0 }
 ' "$DIR"/phase-*.md
 
-# 사람 의존 검증: 자동 실행이 끊긴다 (코드 블록 밖 본문만 본다)
+# 사람 의존 검증: 자동 실행이 끊긴다 (코드 블록 밖, "## 검증" 절 안만 본다)
 #   "수동 smoke" 는 dev server 동작 확인이라 정규식이 잡지 않는다.
+#   절을 한정하는 이유: 설계 근거를 적은 본문에도 "직접 확인" 같은 표현이 자연스럽게 나온다.
+#   그것까지 잡으면 글을 규칙에 맞춰 비틀게 되고, 정작 검증 기준의 결함은 그대로 남는다.
 awk '
   /^```/ { in_code = !in_code; next }
-  !in_code && /수동 검토|눈으로 확인|직접 확인|육안/ { print FILENAME ":" NR ": " $0 }
+  in_code { next }
+  /^## / { in_verify = ($0 ~ /검증/) ; next }
+  in_verify && /수동 검토|눈으로 확인|직접 확인|육안/ { print FILENAME ":" NR ": " $0 }
 ' "$DIR"/phase-*.md
+
+# 필수 섹션 누락: build-with-teams 의 executor_routing_gate.py 와 같은 목록을 본다.
+#   두 검사가 다른 기준을 쓰면 planning 통과 후 구현 착수 직전에 막힌다 (실제 발생).
+#   목록 단일 소스는 그 스크립트의 REQUIRED_SECTIONS 다.
+for f in "$DIR"/phase-*.md; do
+  grep -q "^## 목표" "$f"          || echo "$f — 필수 섹션 누락: ## 목표"
+  grep -q "\*\*범위 외\*\*" "$f"    || echo "$f — 필수 섹션 누락: **범위 외**"
+  grep -q "^## 작업 항목" "$f"      || echo "$f — 필수 섹션 누락: ## 작업 항목"
+  grep -q "^## Critical Files" "$f" || echo "$f — 필수 섹션 누락: ## Critical Files"
+  grep -q "^## 검증" "$f"          || echo "$f — 필수 섹션 누락: ## 검증"
+done
 
 # 완료 마킹 누락: plan 이 끝나도 상태가 안 바뀌어 재실행 사고로 이어진다
 LAST_PHASE=$(ls "$DIR"/phase-*.md | sort | tail -1)
