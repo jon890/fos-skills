@@ -9,13 +9,12 @@
 # 그쪽이 dirty 하거나 다른 브랜치일 때 사고가 난다.
 #
 # 설치: scripts/install-hooks.sh
-# 팀 저장소 위치는 TEAM_SKILLS_DIR 로 바꾼다.
+# 팀 저장소 위치는 TEAM_SKILLS_DIR 로 바꾼다 (export-to-team.sh 가 읽는다).
 set -u
 
-TEAM_DIR="${TEAM_SKILLS_DIR:-$HOME/projects/AiSdtSkill}"
-SYNC="$TEAM_DIR/scripts/sync-shared-skills.sh"
+SYNC="$(git rev-parse --show-toplevel)/scripts/export-to-team.sh"
 
-# 팀 저장소가 없는 환경에서는 조용히 지나간다.
+# 내보내기 도구가 없으면 조용히 지나간다.
 [ -x "$SYNC" ] || exit 0
 
 # 이번 커밋이 건드린 최상위 디렉터리 가운데 팀에 전파하는 것이 있는지 본다.
