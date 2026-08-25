@@ -31,7 +31,12 @@ for s in $shared; do
 done
 $hit || exit 0
 
+# 같으면 조용히 지나간다. 커밋마다 알림이 뜨면 읽지 않게 된다.
+if out=$("$SYNC" 2>&1); then
+  exit 0
+fi
+
 echo
-echo "── 공용 스킬이 바뀌었다. 팀 저장소 반영이 남아 있다."
-"$SYNC" || true
+echo "── 공용 스킬이 바뀌었고 팀 저장소와 어긋난다."
+printf '%s\n' "$out"
 echo "──"
