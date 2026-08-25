@@ -8,7 +8,7 @@ Dooray 는 본문을 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/J
     python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
         --title "[VectorSearch] [DocParser] ..." \
         --tag "Document Parser" --tag "개선" --tag "REAL" \
-        --meta "담당자:김병태" --meta "참조:개발 그룹" \
+        --meta "담당자:홍길동" --meta "참조:개발 그룹" \
         --md-file /tmp/body.md \
         --out /tmp/dooray-preview.html
     ~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/dooray-preview.html
@@ -32,7 +32,7 @@ def main() -> int:
     ap.add_argument("--project", default="AI-TF-VectorSearch", help="프로젝트명 (헤더 표시용)")
     ap.add_argument("--tag", action="append", default=[], help="태그 (반복 지정)")
     ap.add_argument("--meta", action="append", default=[],
-                    help="메타 정보 '라벨:값' (반복 지정, 예: 담당자:김병태)")
+                    help="메타 정보 '라벨:값' (반복 지정, 예: 담당자:홍길동)")
     ap.add_argument("--md-file", required=True, help="본문 markdown 파일 경로 ('-' 는 stdin)")
     ap.add_argument("--out", required=True, help="출력 HTML 경로")
     args = ap.parse_args()

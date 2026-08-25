@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# 공용 스킬을 고쳐 커밋하면, 사본을 두고 쓰는 저장소에 반영이 필요함을 알린다.
+#
+# 왜 필요한가 (실측):
+#   같은 스킬을 이 저장소와 팀 저장소에 나눠 두고 각각 커밋한 적이 있다.
+#   어느 쪽이 최신인지 알 방법이 없어 낡은 판이 조용히 남았다.
+#
+# 알리기만 하고 고치지 않는다. 다른 저장소의 작업 트리를 말없이 건드리면
+# 그쪽이 dirty 하거나 다른 브랜치일 때 사고가 난다.
+#
+# 설치: scripts/install-hooks.sh
+# 팀 저장소 위치는 TEAM_SKILLS_DIR 로 바꾼다.
+set -u
+
+TEAM_DIR="${TEAM_SKILLS_DIR:-$HOME/projects/AiSdtSkill}"
+SYNC="$TEAM_DIR/scripts/sync-shared-skills.sh"
+
+# 팀 저장소가 없는 환경에서는 조용히 지나간다.
+[ -x "$SYNC" ] || exit 0
+
+# 이번 커밋이 건드린 최상위 디렉터리 가운데 팀에 전파하는 것이 있는지 본다.
+changed=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | cut -d/ -f1 | sort -u)
+[ -n "$changed" ] || exit 0
+
+shared=$(sed -n 's/^SHARED_SKILLS=(\(.*\))$/\1/p' "$SYNC" | tr ' ' '\n')
+[ -n "$shared" ] || exit 0
+
+hit=false
+for s in $shared; do
+  printf '%s\n' "$changed" | grep -qx "$s" && hit=true
+done
+$hit || exit 0
+
+echo
+echo "── 공용 스킬이 바뀌었다. 팀 저장소 반영이 남아 있다."
+"$SYNC" || true
+echo "──"

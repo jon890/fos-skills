@@ -6,6 +6,9 @@
 #      사용자가 미리보기를 찾지 못한다. 미리보기는 사람이 읽어야 하므로 기본 브라우저로 띄운다.
 #   2. 본문을 고쳐 같은 경로로 재생성할 때마다 탭이 쌓인다. 사용자는 어느 탭이 새 본문인지
 #      알 수 없고, 오래된 탭을 읽고 판단한다.
+#   3. 에이전트 IDE 안의 브라우저(orca 등)로 보는 사람은 위 두 경로로 찾을 수 없다.
+#      AppleScript 는 Chrome 계열과 Safari 만 훑기 때문이다. browser-driver 가 있으면
+#      백엔드 판단을 그쪽에 맡기고, 돌려받은 page id 로 같은 탭을 다시 쓴다.
 #
 # 사용법:
 #   show-preview.sh /path/to/preview.html
@@ -17,6 +20,32 @@ FILE="${1:?미리보기 HTML 경로가 필요하다}"
 
 ABS="$(cd "$(dirname "$FILE")" && pwd)/$(basename "$FILE")"
 BASE="$(basename "$ABS")"
+
+# 1순위 — browser-driver 가 있으면 그것으로 띄운다.
+# 어느 브라우저를 쓰는지는 드라이버가 정하므로 에이전트 IDE 안의 탭도 잡힌다.
+# page id 를 HTML 옆에 남겨 다음 실행이 같은 탭을 다시 쓴다.
+DRIVER="${BROWSER_DRIVER_SH:-$HOME/.claude/scripts/browser-driver.sh}"
+if [ -x "$DRIVER" ]; then
+  IDFILE="$ABS.tabid"
+  if [ -f "$IDFILE" ]; then
+    PAGE="$(cat "$IDFILE")"
+    # 탭이 닫혔으면 url 조회가 실패한다. 그때는 아래에서 새로 연다.
+    if [ -n "$PAGE" ] && "$DRIVER" url "$PAGE" >/dev/null 2>&1; then
+      if "$DRIVER" nav "$PAGE" "file://$ABS" >/dev/null 2>&1; then
+        echo "갱신: 기존 탭 ($PAGE)"
+        exit 0
+      fi
+      echo "기존 탭을 찾았으나 갱신하지 못했다. 새로 연다." >&2
+    fi
+  fi
+  if PAGE="$("$DRIVER" open "file://$ABS" 2>/dev/null)" && [ -n "$PAGE" ]; then
+    printf '%s\n' "$PAGE" >| "$IDFILE"
+    echo "새로 열었다: $ABS"
+    exit 0
+  fi
+  # 여기까지 왔으면 드라이버가 실패한 것이다. 조용히 넘어가지 않고 알린 뒤 기본 브라우저로 간다.
+  echo "browser-driver 로 열지 못했다. 기본 브라우저로 내려간다." >&2
+fi
 
 # macOS 에서만 기존 탭을 찾아 갱신할 수 있다. 다른 환경은 새로 여는 것으로 내려간다.
 if [ "$(uname -s)" = "Darwin" ]; then
@@ -75,9 +104,12 @@ AS
     exit 0
   fi
 
-  open "$ABS"
-  echo "새로 열었다: $ABS"
-  exit 0
+  if open "$ABS"; then
+    echo "새로 열었다: $ABS"
+    exit 0
+  fi
+  echo "기본 브라우저로 열지 못했다: $ABS" >&2
+  exit 2
 fi
 
 if command -v xdg-open >/dev/null 2>&1; then
