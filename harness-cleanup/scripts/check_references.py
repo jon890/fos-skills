@@ -10,54 +10,44 @@
 Usage: python3 check_references.py [repo-root]
 종료 코드: 깨진 참조가 있으면 1
 """
-import os
 import pathlib
 import re
 import sys
 
+from target_files import iter_targets
+
 ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 
-TARGET_GLOBS = [
-    "CLAUDE.md",
-    ".claude/agents/*.md",
-    ".claude/skills/*/SKILL.md",
-    ".claude/skills/*/references/*.md",
-    ".claude/*-overlay.md",
-    "skills/*/SKILL.md",
-    "skills/*/references/*.md",
-    # 공용 스킬 원본 저장소 — 스킬이 저장소 루트에 바로 놓인다
-    "*/SKILL.md",
-    "*/references/*.md",
-]
-
 # 경로처럼 보이는 백틱 조각. 디렉터리 구분자를 포함해야 경로로 본다.
-# 파일명만 적힌 경우(`flow.md`)는 어느 디렉터리인지 알 수 없어 basename 탐색으로 확인한다.
 PATH_IN_BACKTICK = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)`")
-BARE_FILE = re.compile(r"`([A-Za-z0-9_-]+\.(?:md|ts|json|sh|py|yml))`")
-MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md)\)")
+MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 SECTION_REF = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:의|에)?\s*[\"“]([^\"”]{2,60})[\"”]\s*(섹션|표|절)")
-SKILL_REF = re.compile(r"`([a-z][a-z0-9-]+)`\s*skill")
+SKILL_REF = re.compile(r"`([a-z][a-z0-9-]+)`\s*(?:skill|스킬)")
 
 # 검사에서 제외 — 플레이스홀더, 홈 밖 경로, 와일드카드, URL
 SKIP = re.compile(r"[<>{}*]|^~|^\$|^https?:|^\.\./\.\.")
 
 
 def targets():
-    seen = []
-    for g in TARGET_GLOBS:
-        for p in sorted(ROOT.glob(g)):
-            if p.is_file():
-                seen.append(p)
-    return seen
+    return [path for path in iter_targets(ROOT) if path.resolve().is_relative_to(ROOT)]
 
 
 def installed_skills():
     """설치된 스킬 이름 — 홈과 repo 양쪽."""
     names = set()
-    for base in [pathlib.Path.home() / ".claude/skills", ROOT / ".claude/skills", ROOT / "skills"]:
+    for base in [
+        pathlib.Path.home() / ".claude/skills",
+        pathlib.Path.home() / ".codex/skills",
+        ROOT / ".claude/skills",
+        ROOT / ".agents/skills",
+        ROOT / "skills",
+    ]:
         if base.is_dir():
             for d in base.iterdir():
                 names.add(d.name)
+    for skill_file in iter_targets(ROOT):
+        if skill_file.name == "SKILL.md" and skill_file.resolve().is_relative_to(ROOT):
+            names.add(skill_file.parent.name)
     # 플러그인 스킬
     plug = pathlib.Path.home() / ".claude/plugins"
     if plug.is_dir():
@@ -103,7 +93,7 @@ def main():
             for link in MD_LINK.findall(line):
                 if SKIP.search(link):
                     continue
-                target = (f.parent / link).resolve()
+                target = (f.parent / link.split("#", 1)[0]).resolve()
                 if not target.is_file():
                     broken.append((rel, i, "링크", link))
 
@@ -112,26 +102,35 @@ def main():
                 if SKIP.search(cand):
                     continue
                 bare = cand.rstrip("/")
-                if (ROOT / bare).exists() or (f.parent / bare).exists():
+                normalized = bare[2:] if bare.startswith("./") else bare
+                bases = [ROOT, *[parent for parent in f.parents if parent.is_relative_to(ROOT)]]
+                if any((base / bare).exists() for base in bases):
                     continue
                 # 스킬 번들 안의 문서는 번들 root 기준 상대 경로를 쓴다 (예: scripts 아래 파일)
                 bundle = bundle_root(f)
                 if bundle and (bundle / bare).exists():
                     continue
+                # 저장소 루트의 배포용 스킬은 대상 프로젝트에 생성할 경로를 계약으로 적는다.
+                # 이 경로를 스킬 원본 저장소 안에서 찾으면 정상 지침을 깨진 참조로 오인한다.
+                if (
+                    bundle
+                    and bundle.parent == ROOT
+                    and not normalized.startswith(("assets/", "references/", "scripts/"))
+                ):
+                    continue
                 # repo 밖 경로(홈 설정 등)는 판정 대상이 아니다
-                if bare.startswith((".claude/", "docs/", "src/", "skills/", "scripts/", "tasks/", ".github/")):
+                if normalized.startswith((
+                    ".claude/",
+                    ".github/",
+                    "assets/",
+                    "docs/",
+                    "references/",
+                    "scripts/",
+                    "skills/",
+                    "src/",
+                    "tasks/",
+                )):
                     broken.append((rel, i, "경로", cand))
-
-            # 2-b) 파일명만 적힌 경우 — repo 나 설치된 스킬 안에 같은 이름이 있으면 통과
-            for cand in BARE_FILE.findall(line):
-                if SKIP.search(cand) or (ROOT / cand).exists():
-                    continue
-                if any(ROOT.glob(f"**/{cand}")):
-                    continue
-                home_skills = pathlib.Path.home() / ".claude"
-                if home_skills.is_dir() and any(home_skills.glob(f"**/{cand}")):
-                    continue
-                broken.append((rel, i, "파일명", cand))
 
             # 3) 섹션 참조
             for doc, section, kind in SECTION_REF.findall(line):

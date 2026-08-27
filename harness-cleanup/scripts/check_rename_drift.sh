@@ -22,14 +22,8 @@ cd "$REPO" || exit 2
 found=0
 scanned=0
 
-# SKILL.md 가 놓이는 위치가 둘이다.
-#   저장소가 스킬 원본이면 루트 바로 아래 (`<skill>/SKILL.md`),
-#   프로젝트 저장소면 `.claude/skills/<skill>/SKILL.md` 다.
-#   루트만 훑으면 후자에서 검사 대상이 영구히 0개가 되고, 그것이 통과로 읽힌다.
-for skill in */ .claude/skills/*/; do
-  skill="${skill%/}"
-  md="$skill/SKILL.md"
-  [ -f "$md" ] || continue
+while IFS= read -r -d '' md; do
+  skill="${md%/SKILL.md}"
   [ -d "$skill/references" ] || continue
 
   # SKILL.md 가 이번에 바뀌지 않았으면 볼 것이 없다
@@ -80,7 +74,9 @@ for skill in */ .claude/skills/*/; do
       found=$((found + 1))
     fi
   done <<< "$removed"
-done
+done < <(find . \
+  -type d \( -name .git -o -name .omx -o -name node_modules -o -name data -o -name private -o -name sources -o -name tasks \) -prune -o \
+  -type f -name SKILL.md -print0)
 
 if [ "$scanned" -eq 0 ]; then
   echo "검사 대상 없음 — 기준 '$BASE' 대비 변경된 SKILL.md 가 하나도 없다 (통과가 아니다)" >&2

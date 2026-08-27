@@ -10,21 +10,10 @@ import collections
 import pathlib
 import sys
 
+from target_files import iter_targets
+
 ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 MIN_RUN = int(sys.argv[2]) if len(sys.argv) > 2 else 3
-
-TARGET_GLOBS = [
-    "CLAUDE.md",
-    ".claude/agents/*.md",
-    ".claude/skills/*/SKILL.md",
-    ".claude/skills/*/references/*.md",
-    ".claude/*-overlay.md",
-    "skills/*/SKILL.md",
-    "skills/*/references/*.md",
-    # 공용 스킬 원본 저장소 — 스킬이 저장소 루트에 바로 놓인다
-    "*/SKILL.md",
-    "*/references/*.md",
-]
 
 
 WARNING = """
@@ -37,13 +26,26 @@ def normalize(line):
     return " ".join(line.split())
 
 
+def without_frontmatter(lines):
+    if not lines or lines[0].strip() != "---":
+        return lines
+    result = list(lines)
+    result[0] = ""
+    for index in range(1, len(result)):
+        line = result[index]
+        result[index] = ""
+        if line.strip() == "---":
+            break
+    return result
+
+
 def load():
     docs = {}
-    for g in TARGET_GLOBS:
-        for p in sorted(ROOT.glob(g)):
-            if p.is_file():
-                rel = str(p.relative_to(ROOT))
-                docs[rel] = p.read_text(encoding="utf-8", errors="replace").splitlines()
+    for p in iter_targets(ROOT):
+        if p.resolve().is_relative_to(ROOT):
+            rel = str(p.relative_to(ROOT))
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+            docs[rel] = without_frontmatter(lines)
     return docs
 
 
