@@ -45,8 +45,15 @@ if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
   BODY=$(grep -rhoE '^#+ ADR-[0-9]+' "$ADR_DIR"/*.md 2>/dev/null | grep -oE 'ADR-[0-9]+' | sort -u)
   #   INDEX.md 가 없는 구조(단일 파일 ADR 등)에서는 이 검사를 건너뛴다.
   #   없는 파일을 빈 Index 로 취급하면 본문 번호 전체가 "누락" 으로 잡혀 항상 불일치가 난다.
+  #   INDEX 번호는 등재 항목만 센다. 등재 항목은 줄이 `-`, `*`, `|` 로 시작하고
+  #   바로 뒤에 번호가 오는 줄이다. 본문 헤딩만 세는 것과 같은 이유로 좁게 센다.
+  #   아무 곳의 `ADR-NNN` 을 다 세면 "향후 ADR은 ADR-011부터 추가" 같은 안내 문장이
+  #   실재하지 않는 ADR 로 잡혀 항상 불일치가 난다. 실측으로 그 문장이 있는 저장소가 있었다.
+  #   INDEX.md 의 형식은 강제하지 않는다. 표(`| ADR-NNN |`)만 읽으면 목록형
+  #   (`- [ADR-NNN](...)`) 저장소에서 0 개를 뽑아 본문 번호 전체를 "누락" 으로 보고한다.
+  #   실측으로 목록형이 다수였다. 두 형식을 모두 등재 항목으로 받는다.
   if [ -f "$ADR_DIR/INDEX.md" ]; then
-    INDEX=$(awk -F'|' '/^\| ADR-[0-9]+/ { gsub(/[[:space:]]/, "", $2); print $2 }' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
+    INDEX=$(grep -hoE '^[[:space:]]*([-*][[:space:]]+\[?|\|[[:space:]]*)ADR-[0-9]+' "$ADR_DIR"/INDEX.md 2>/dev/null | grep -oE 'ADR-[0-9]+' | sort -u)
     if [ "$BODY" != "$INDEX" ]; then
       echo "INDEX_DESYNC: $ADR_DIR — 본문과 INDEX.md 의 ADR 번호 집합이 다르다"
       diff <(echo "$BODY") <(echo "$INDEX") | sed 's/^/  /'

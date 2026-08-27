@@ -24,8 +24,12 @@ MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 SECTION_REF = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:의|에)?\s*[\"“]([^\"”]{2,60})[\"”]\s*(섹션|표|절)")
 SKILL_REF = re.compile(r"`([a-z][a-z0-9-]+)`\s*(?:skill|스킬)")
 
-# 검사에서 제외 — 플레이스홀더, 홈 밖 경로, 와일드카드, URL
-SKIP = re.compile(r"[<>{}*]|^~|^\$|^https?:|^\.\./\.\.")
+# 검사에서 제외 — 플레이스홀더, 홈 경로, 와일드카드, URL
+#   `../..` 로 시작하는 깊은 상대 경로를 여기서 빼면 안 된다.
+#   이 스킬은 조건부 절을 `references/` 로 내리라고 처방하고, 그렇게 옮기면 링크가
+#   한 단 깊어져 정확히 그 형태가 된다. 스킬이 시킨 작업이 만드는 링크를
+#   스킬의 검사기가 안 보게 된다. 저장소 밖으로 나가는지는 해석 결과로 판정한다.
+SKIP = re.compile(r"[<>{}*]|^~|^\$|^https?:")
 
 
 def targets():
@@ -94,6 +98,10 @@ def main():
                 if SKIP.search(link):
                     continue
                 target = (f.parent / link.split("#", 1)[0]).resolve()
+                # 저장소 밖을 가리키는 경로는 판정 대상이 아니다.
+                #   상대 경로가 몇 단을 올라가든 해석한 뒤에 경계를 따진다.
+                if not target.is_relative_to(ROOT):
+                    continue
                 if not target.is_file():
                     broken.append((rel, i, "링크", link))
 

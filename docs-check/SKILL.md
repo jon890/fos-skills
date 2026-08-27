@@ -2,7 +2,7 @@
 name: docs-check
 description: 저장소 문서를 부패, 과대화, 추론성, 중복, 자명성과 구조 무결성으로 감사한다. 코드와 맞지 않는 설명, 구현 명세가 된 ADR, 중복된 단일 출처와 깨진 링크를 찾아 리포트로 제시하고 사용자 승인 후 수정한다. 문서 점검, docs 감사, stale ADR, 코드-문서 불일치와 ADR Index 동기화 요청에 사용한다. 하네스 지침의 필요성은 harness-cleanup이 담당한다.
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 ---
 
 # 문서 건전성 감사
