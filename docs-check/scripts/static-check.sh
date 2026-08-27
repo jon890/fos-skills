@@ -45,8 +45,11 @@ if [ -n "$ADR_DIR" ] && [ -d "$ADR_DIR" ]; then
   BODY=$(grep -rhoE '^#+ ADR-[0-9]+' "$ADR_DIR"/*.md 2>/dev/null | grep -oE 'ADR-[0-9]+' | sort -u)
   #   INDEX.md 가 없는 구조(단일 파일 ADR 등)에서는 이 검사를 건너뛴다.
   #   없는 파일을 빈 Index 로 취급하면 본문 번호 전체가 "누락" 으로 잡혀 항상 불일치가 난다.
+  #   INDEX.md 의 형식을 강제하지 않는다. 표(`| ADR-NNN |`)만 읽으면 목록형
+  #   (`- [ADR-NNN](...)`) 저장소에서 0 개를 뽑아 본문 번호 전체를 "누락" 으로 보고한다.
+  #   실측으로 목록형이 다수였다. 번호만 긁어 형식 무관으로 비교한다.
   if [ -f "$ADR_DIR/INDEX.md" ]; then
-    INDEX=$(awk -F'|' '/^\| ADR-[0-9]+/ { gsub(/[[:space:]]/, "", $2); print $2 }' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
+    INDEX=$(grep -oE 'ADR-[0-9]+' "$ADR_DIR"/INDEX.md 2>/dev/null | sort -u)
     if [ "$BODY" != "$INDEX" ]; then
       echo "INDEX_DESYNC: $ADR_DIR — 본문과 INDEX.md 의 ADR 번호 집합이 다르다"
       diff <(echo "$BODY") <(echo "$INDEX") | sed 's/^/  /'
