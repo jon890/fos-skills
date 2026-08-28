@@ -24,7 +24,7 @@ BASE="$(basename "$ABS")"
 # 1순위 — browser-driver 가 있으면 그것으로 띄운다.
 # 어느 브라우저를 쓰는지는 드라이버가 정하므로 에이전트 IDE 안의 탭도 잡힌다.
 # page id 를 HTML 옆에 남겨 다음 실행이 같은 탭을 다시 쓴다.
-DRIVER="${BROWSER_DRIVER_SH:-$HOME/.claude/scripts/browser-driver.sh}"
+DRIVER="${BROWSER_DRIVER:-$HOME/.claude/scripts/browser-driver}"
 if [ -x "$DRIVER" ]; then
   IDFILE="$ABS.tabid"
   if [ -f "$IDFILE" ]; then
