@@ -26,7 +26,11 @@ if [ ! -d "$TEAM_DIR/skills" ]; then
 fi
 
 APPLY=false
-[ "${1:-}" = "--apply" ] && APPLY=true
+case "${1:-}" in
+  "")       ;;
+  --apply)  APPLY=true ;;
+  *)        echo "알 수 없는 인자: $1  (쓸 수 있는 것은 --apply 뿐이다)" >&2; exit 2 ;;
+esac
 
 REPO_DIR="$REPO_DIR" TEAM_DIR="$TEAM_DIR" APPLY="$APPLY" \
 SHARED="${SHARED_SKILLS[*]}" EXCLUDES="${EXCLUDE[*]}" python3 - <<'PYEOF'
@@ -54,6 +58,18 @@ def is_junk(rel: str) -> bool:
     )
 
 
+VERSION_RE = re.compile(
+    r'^(?:metadata:\n\s+version:\s*"?|version:\s*"?)([0-9]+)\.([0-9]+)\.([0-9]+)"?\s*$',
+    re.M,
+)
+
+
+def version_of(text: str):
+    """SKILL.md frontmatter 의 판 번호. 두 저장소의 표기가 달라 둘 다 읽는다."""
+    m = VERSION_RE.search(text)
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
 def to_team_frontmatter(text: str) -> str:
     """이 저장소의 metadata.version 을 팀 저장소가 검사하는 최상위 version 으로 바꾼다.
 
@@ -75,13 +91,35 @@ def rendered(src: pathlib.Path, rel: str) -> bytes:
     return raw
 
 
+# 방향 보호. 이 저장소가 원본이라는 전제는 이쪽 판이 뒤처지지 않았을 때만 성립한다.
+# 팀 쪽에서 직접 고친 뒤 판을 올리면 --apply 가 그것을 옛 내용으로 되돌린다 (실측).
+# 한 파일도 건드리기 전에 전부 본다. 복사하면서 검사하면 뒤 스킬에서 막아도 앞 스킬은 이미 덮인다.
+regressions = []
+for name in skills:
+    if not (repo / name).is_dir():
+        print(f"이 저장소에 없는 스킬: {name}", file=sys.stderr)
+        sys.exit(2)
+    s_skill = repo / name / "SKILL.md"
+    d_skill = team / "skills" / name / "SKILL.md"
+    if not (s_skill.is_file() and d_skill.is_file()):
+        continue
+    ours = version_of(s_skill.read_text(encoding="utf-8"))
+    theirs = version_of(d_skill.read_text(encoding="utf-8"))
+    if ours and theirs and theirs > ours:
+        regressions.append(
+            f"  {name}: 팀 {'.'.join(map(str, theirs))} > 이 저장소 {'.'.join(map(str, ours))}"
+        )
+
+if regressions:
+    print("팀 저장소의 판이 더 높다. 내보내면 팀의 수정을 되돌린다:")
+    print("\n".join(regressions))
+    print("\n팀 쪽 변경을 이 저장소로 먼저 가져온 뒤 다시 실행한다.")
+    sys.exit(3)
+
 drift = []
 for name in skills:
     s_dir = repo / name
     d_dir = team / "skills" / name
-    if not s_dir.is_dir():
-        print(f"이 저장소에 없는 스킬: {name}", file=sys.stderr)
-        sys.exit(2)
 
     seen = set()
     for s in sorted(s_dir.rglob("*")):
