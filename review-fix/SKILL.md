@@ -10,7 +10,7 @@ description: |
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
   레포별 특화(빌드/테스트/lint 명령·커밋 컨벤션·학습 누적 위치·CI 원인 표)는 레포 CLAUDE.md·오버레이로 주입된다.
 metadata:
-  version: "1.3.1"
+  version: "1.4.0"
 ---
 
 # review-fix
@@ -253,9 +253,12 @@ ADR 급 결정은 review-fix 가 자의로 작성하지 않고 `AskUserQuestion`
 
 ### 10단계: 실행 기록과 결과 보고
 
-보고 전에 `docs/retrospectives/RUNS.md` 에 한 줄 남긴다.
+대상 PR 을 머지하기 전에 그 PR 브랜치에서 `docs/retrospectives/RUNS.md` 에 한 줄 남긴다.
 스킬은 `review-fix`, 대상은 PR 번호, FIX 열에는 반영한 리뷰 항목 수, 개입 열에는 사용자에게 되물은 횟수를 적는다.
 중단된 실행도 기록한다. 형식은 `~/.claude/skills/build-with-teams/references/run-record.md` 를 따른다.
+
+실행 기록 commit 은 대상 PR 브랜치에 별도 commit 으로 남긴다(1 호출 = 1 PR).
+머지 뒤에 기록하면 기록을 담을 브랜치가 사라져 별도 PR 을 하나 더 열게 된다.
 
 ```
 ## 완료 — PR #<N>
