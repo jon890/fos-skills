@@ -35,7 +35,8 @@ grep -HnE "전체\s*(수정|변경|적용|교체|리팩토링|삭제)" "$DIR"/ph
 
 # cwd 누락: Bash 블록에 실행 위치가 없으면 worktree 대신 main repo 를 고칠 수 있다
 awk '
-  /^```bash/ { in_block=1; lines=""; start_line=NR; next }
+  FNR == 1 { in_block=0 }
+  /^```bash/ { in_block=1; lines=""; start_line=FNR; next }
   /^```/ && in_block {
     if (lines !~ /# cwd:/) print FILENAME ":" start_line " — Bash 블록 cwd 주석 누락"
     in_block=0; next
@@ -43,15 +44,19 @@ awk '
   in_block { lines = lines "\n" $0 }
 ' "$DIR"/phase-*.md
 
-# 사람 의존 검증: 자동 실행이 끊긴다 (코드 블록 밖, "## 검증" 절 안만 본다)
+# 사람 의존 검증: 자동 실행이 끊긴다 (코드 블록 밖, "## 의도 메모" 절만 뺀다)
 #   "수동 smoke" 는 dev server 동작 확인이라 정규식이 잡지 않는다.
-#   절을 한정하는 이유: 설계 근거를 적은 본문에도 "직접 확인" 같은 표현이 자연스럽게 나온다.
+#   의도 메모를 빼는 이유: 설계 근거를 적는 절이라 "직접 확인" 같은 표현이 자연스럽게 나온다.
 #   그것까지 잡으면 글을 규칙에 맞춰 비틀게 되고, 정작 검증 기준의 결함은 그대로 남는다.
+#   뺄 절을 하나만 지정한다. 볼 절을 열거하면 작업 항목처럼 자동 실행이 실제로 끊기는
+#   자리를 놓친다. 사람 의존 지시는 검증 절보다 작업 항목에 더 자주 들어간다.
+#   첫 "## " 이전의 제목과 머리말도 뺀다. 지시가 아니라 phase 를 소개하는 문장이다.
 awk '
+  FNR == 1 { in_code = 0; skip = 1 }
   /^```/ { in_code = !in_code; next }
   in_code { next }
-  /^## / { in_verify = ($0 ~ /검증/) ; next }
-  in_verify && /수동 검토|눈으로 확인|직접 확인|육안/ { print FILENAME ":" NR ": " $0 }
+  /^## / { skip = ($0 ~ /의도 메모/) ; next }
+  !skip && /수동 검토|눈으로 확인|직접 확인|육안/ { print FILENAME ":" FNR ": " $0 }
 ' "$DIR"/phase-*.md
 
 # 필수 섹션 누락: build-with-teams 의 executor_routing_gate.py 와 같은 목록을 본다.
@@ -72,6 +77,7 @@ grep -E "index\.json.*completed|status.*completed" "$LAST_PHASE" > /dev/null || 
 
 # BSD sed \b 미지원: macOS 에서 조용히 아무것도 치환되지 않는다 (코드 블록 밖 본문만 본다)
 awk '
+  FNR == 1 { in_code = 0 }
   /^```/ { in_code = !in_code; next }
-  !in_code && /sed[[:space:]].*\\b/ { print FILENAME ":" NR ": " $0 }
+  !in_code && /sed[[:space:]].*\\b/ { print FILENAME ":" FNR ": " $0 }
 ' "$DIR"/phase-*.md
