@@ -28,11 +28,21 @@ fos-skills/
   review-fix/               # PR 리뷰 반영
     SKILL.md
     CHANGELOG.md
+  pr-review/                # 남의 PR 에 리뷰 작성·등록
+    SKILL.md
+    CHANGELOG.md
+    references/
+    scripts/gh-review-*.sh, scripts/render-comments.py
   docs-check/               # docs 6축 감사
     SKILL.md
     CHANGELOG.md
     references/six-axis.md
     scripts/static-check.sh
+  content-preview/          # 외부 게시 본문 미리보기
+    SKILL.md
+    CHANGELOG.md
+    scripts/show-preview.sh
+    scripts/dooray-preview/, scripts/github-preview/
   presentation/             # 발표 자료 HTML 슬라이드 덱
     SKILL.md
     CHANGELOG.md
@@ -67,8 +77,10 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 | `harness-cleanup` | 현재 모델 역량과 실측 이력으로 하네스 지시를 감사하고 승인 후 교정. 측정·검출 검증·강제 여부 확인을 스크립트로 실행 |
 | `planning` | 새 기능·변경 구현 전 8단계 설계 → docs 정비 → task 생성 |
 | `review-fix` | PR 봇 리뷰(🔴/🟡)를 우선순위대로 반영 → 스레드 resolve → commit·push. 검증·커밋 규칙은 레포 CLAUDE.md 참조 |
+| `pr-review` | 남의 PR 에 근거와 등급을 갖춘 리뷰를 작성 → 미리보기 → 등록·검증. 호스트·등급 표기·후속 업무 등록처는 레포 오버레이 |
 | `build-with-teams` | task(index.json+phase)를 팀 에이전트로 phase 단위 실행 → critic·review·docs-verifier 검증 → PR. 검증 명령·에이전트·스키마는 레포 오버레이/CLAUDE.md |
 | `docs-check` | docs 6축 감사(부패·과대화·추론성·중복·자명성·가독성) → 승인 후 수정. docs 구조·docs-verifier 에이전트는 레포 오버레이/CLAUDE.md |
+| `content-preview` | 외부에 나갈 본문을 등록 전 렌더링 HTML 로 보여주고 자가 점검. Dooray·GitHub 생성기를 포함한다. 개인 문체 참조는 배포하지 않고 `~/.claude/references/` 에 각자 둔다 |
 | `presentation` | 발표 자료를 HTML 덱 한 파일로. 인터뷰로 방향을 정하고 판정 가능한 규칙으로 훑는다. 골격 템플릿과 구조 검사기 포함 |
 
 ## 버전과 변경 이력
