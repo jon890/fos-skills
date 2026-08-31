@@ -10,7 +10,7 @@ description: |
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
   레포별 특화(빌드/테스트/lint 명령·커밋 컨벤션·학습 누적 위치·CI 원인 표)는 레포 CLAUDE.md·오버레이로 주입된다.
 metadata:
-  version: "1.5.0"
+  version: "1.4.0"
 ---
 
 # review-fix
