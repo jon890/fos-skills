@@ -1,6 +1,8 @@
 # 덱 골격과 편집 함정
 
-`assets/deck-template.html` 한 파일이 골격 전부다. 외부 의존이 없어 브라우저로 바로 연다.
+`assets/deck-template.html` 한 파일이 골격 전부다. 빌드 없이 브라우저로 바로 연다.
+글꼴만 Google Fonts 에서 받는다. 대체 글꼴이 있어 깨지지는 않지만 망이 없는 발표장에서는
+화면이 달라진다. 발표 전에 망 없는 상태로 한 번 열어 확인한다.
 
 ## 조작
 
@@ -52,12 +54,12 @@
 
 ## 파일을 고칠 때 지키는 것
 
-한 파일이 2,000줄이라 편집 사고가 파일 전체를 날린다. 실제로 한 번 날렸다.
+한 파일이 1,300줄을 넘어 편집 사고가 파일 전체를 날린다. 실제로 한 번 날렸다.
 
 - **여러 줄 블록을 정규식으로 지우지 않는다.** 같은 주석이 CSS 와 JS 양쪽에 있어 엉뚱한 쪽이 지워진다.
   줄 번호로 경계를 확인하고 그 범위만 자른다.
 - 큰 편집 전에 사본을 뜬다.
-- 편집 뒤 `scripts/check-deck.py <파일>` 을 돌린다.
+- 편집 뒤 `~/.claude/skills/presentation/scripts/check-deck.py <파일>` 을 돌린다.
 - 문자열 교체는 `count == 1` 을 확인한 뒤 바꾼다. 여러 곳이 걸리면 의도가 아니다.
 
 파일을 잃었을 때 브라우저 탭이 아직 열려 있으면 `document.documentElement.outerHTML` 로 되찾을 수 있다.
@@ -66,8 +68,8 @@
 ## 검사
 
 ```bash
-python3 scripts/check-deck.py <deck.html>            # 구조·JS·금지어
-python3 scripts/check-deck.py <deck.html> --browser  # 세로 넘침까지
+python3 ~/.claude/skills/presentation/scripts/check-deck.py <deck.html>            # 구조·JS·금지어
+python3 ~/.claude/skills/presentation/scripts/check-deck.py <deck.html> --browser  # 세로 넘침까지
 ```
 
 `--browser` 는 `~/.claude/scripts/browser-driver` 를 쓴다. 없으면 그 항목만 건너뛴다.
@@ -78,7 +80,7 @@ python3 scripts/check-deck.py <deck.html> --browser  # 세로 넘침까지
 | --- | --- |
 | 장 수와 주석 번호, active 장 1개 | 장마다 주장이 하나인가 |
 | JS 문법, `<script>` 쌍 | 숫자에 근거가 있는가 |
-| 이전 판에서 남은 하드코딩 값 | 주어와 목적어가 있는가 |
+| 이전 버전에서 남은 하드코딩 값 | 주어와 목적어가 있는가 |
 | 금지어 | 목차와 부 전환이 실제 장과 맞는가 |
 | 세로 넘침 | 제목이 무엇이 일어났는지 말하는가 |
 

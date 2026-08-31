@@ -2,7 +2,7 @@
 name: presentation
 description: 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고 검수한다. 인터뷰로 발표 성격과 남길 한 문장을 먼저 정하고, 판정 가능한 규칙으로 전체를 훑어 고친다. 발표자 노트와 스크립트 편집, 개요 판, 전체 화면, 프롬프트 재현 애니메이션이 들어 있는 골격 템플릿을 함께 제공한다. "발표 자료", "발표 준비", "슬라이드", "슬라이드 덱", "세미나 자료", "랩 세미나", "발표 스크립트", "발표 장 검수", "PPT 대신 HTML", "deck", "presentation" 을 언급하면 스킬 이름을 부르지 않아도 반드시 이 스킬을 쓴다. 이미 만든 덱의 장을 고치거나 제목을 검수하거나 스크립트를 다듬는 요청도 여기 해당한다. 외부에 게시하는 본문은 content-preview 가, 문서 감사는 docs-check 가 맡는다.
 metadata:
-  version: 1.0.0
+  version: "1.1.0"
 ---
 
 # presentation
@@ -37,12 +37,15 @@ metadata:
 ## 만드는 순서
 
 1. **인터뷰**로 위 여섯 가지를 정한다.
-2. `assets/deck-template.html` 을 위 이름으로 복사한다. 골격과 컴포넌트가 다 들어 있다.
+2. `~/.claude/skills/presentation/assets/deck-template.html` 을 위 이름으로 복사한다. 골격과 컴포넌트가 다 들어 있다.
 3. 부 전환 장과 목차를 먼저 만든다. 전체 흐름이 여기서 정해진다.
 4. 장을 채운다. 한 장에 주장 하나다.
 5. 장마다 발표자 노트를 함께 쓴다. 화면 본문은 최소로 두고 말할 내용은 노트로 내린다.
-6. `scripts/check-deck.py <파일> --browser` 로 검사한다.
+6. `python3 ~/.claude/skills/presentation/scripts/check-deck.py <파일> --browser` 로 검사한다.
 7. `references/slide-rules.md` 로 덱 전체를 훑는다.
+
+경로는 절대 경로로 쓴다. 덱은 저장소 밖에서 만들므로 상대 경로는 그 디렉터리를 가리켜
+없는 파일이 된다. 스킬 설치 경로가 다르면 그 경로의 `assets/`·`scripts/` 를 쓴다.
 
 캡처는 `data:image/png;base64,` 로 파일 안에 박는다. 외부 파일에 의존하면 다른 기기에서 깨진다.
 
