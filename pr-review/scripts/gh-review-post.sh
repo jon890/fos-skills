@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # 인라인 리뷰를 검증한 뒤 등록한다.
 #
-# usage: gh-review-post.sh <owner/repo> <PR번호> <파일경로> <줄번호> <본문.md> [핵심낱말...]
-#   reply 모드: gh-review-post.sh --reply <owner/repo> <PR번호> <댓글id> <본문.md> [핵심낱말...]
+# usage: gh-review-post.sh <owner/repo> <PR번호> <파일경로> <줄번호> <본문.md> <핵심낱말>...
+#   reply 모드: gh-review-post.sh --reply <owner/repo> <PR번호> <댓글id> <본문.md> <핵심낱말>...
+#
+# 핵심 낱말은 하나 이상 필수다. 그 리뷰에만 있는 문구를 넣는다.
+# 등급 접두사만 보면 접두사가 같은 옛 payload 가 그대로 통과한다.
+# DRY_RUN=1 이면 검증만 하고 등록하지 않는다.
 #
 # 호스트는 git remote 에서 자동으로 찾는다. GH_HOST 로 덮어쓸 수 있다.
 # payload 는 매번 새 임시 파일에 쓰고, 등록 직전에 본문을 검증한다.
@@ -33,6 +37,8 @@ else
     BODY_FILE="${4:?본문 파일}"; shift 4
 fi
 KEYWORDS=("$@")
+[[ ${#KEYWORDS[@]} -ge 1 ]] \
+    || die "핵심 낱말을 하나 이상 넘기세요. 그 리뷰에만 있는 문구여야 옛 본문을 거릅니다."
 
 [[ -s "$BODY_FILE" ]] || die "본문 파일이 비어 있습니다: $BODY_FILE"
 HOST=$(detect_host)
@@ -40,10 +46,10 @@ HOST=$(detect_host)
 # 본문 검증 — 옛 payload 가 등록되는 사고를 막는 마지막 관문
 BODY=$(cat "$BODY_FILE")
 if [[ "$MODE" == review ]]; then
-    grep -qE '^\(P[1-5]\)' <<<"$BODY" \
-        || die "본문이 (P1)~(P5) 로 시작하지 않습니다. 등급 표기를 확인하세요."
+    grep -qE '^\(P[1-5]\)' <<<"$(head -1 "$BODY_FILE")" \
+        || die "본문 첫 줄이 (P1)~(P5) 로 시작하지 않습니다. 등급 표기를 확인하세요."
 fi
-for kw in ${KEYWORDS[@]+"${KEYWORDS[@]}"}; do
+for kw in "${KEYWORDS[@]}"; do
     grep -qF -- "$kw" <<<"$BODY" || die "본문에 '$kw' 가 없습니다. 다른 본문일 수 있습니다."
 done
 if grep -qE '(^|[^`])(/review|@claude|@github-actions|@dependabot)\b' <<<"$BODY"; then

@@ -88,8 +88,24 @@ gh pr list --state open --limit 20
 [posting.md](references/posting.md) 를 따른다. 등록 뒤에는 반드시 확인한다.
 
 ```bash
-scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md>
+# 등록. 마지막 인자는 본문에 반드시 있어야 하는 핵심 낱말이고 하나 이상 필수다.
+~/.claude/skills/pr-review/scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
+
+# 스레드 답글
+~/.claude/skills/pr-review/scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
+
+# 이미 달린 댓글과 스레드를 읽는다
+~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR> [--thread <root댓글id>] [--mine]
 ```
+
+경로는 절대 경로로 쓴다. 이 스킬은 대상 저장소를 cwd 로 두고 도므로
+`scripts/` 상대 경로는 그 저장소를 가리켜 없는 파일이 된다.
+스킬 설치 경로가 다르면 그 경로의 `scripts/` 를 쓴다.
+
+**핵심 낱말은 그 리뷰에만 있는 문구로 고른다.** 등급 접두사만으로는 옛 payload 를 거른다는
+보장이 없다. 지적한 식별자나 수치처럼 다른 본문에는 없을 것을 넣는다.
+
+등록하지 않고 검증만 하려면 `DRY_RUN=1` 을 앞에 붙인다.
 
 이 스크립트는 등록 전에 본문을 검증한다. 검증 없이 `gh api` 를 직접 부르지 않는다.
 

@@ -30,10 +30,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 HOST=$(detect_host)
-ME=$(GH_HOST="$HOST" gh api user --jq .login)
+ME=""
+[[ "$MINE" == 1 ]] && ME=$(GH_HOST="$HOST" gh api user --jq .login)
 
 RAW=$(mktemp -t gh-review-list.XXXXXX)
 trap 'rm -f "$RAW"' EXIT
-GH_HOST="$HOST" gh api "repos/$REPO/pulls/$PR/comments?per_page=100" > "$RAW"
+# --paginate 로 100 건을 넘겨 받는다. per_page 만 두면 넘는 댓글이 조용히 잘린다.
+GH_HOST="$HOST" gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" \
+    | python3 -c 'import json,sys; json.dump([c for p in json.load(sys.stdin) for c in p], sys.stdout)' \
+    > "$RAW"
 
 python3 "$HERE/render-comments.py" "$RAW" "$THREAD" "$MINE" "$ME"

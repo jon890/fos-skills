@@ -44,7 +44,16 @@ SQL 로그가 있으면 구문별로 센다. 건수와 합계를 같이 낸다.
 건당 시간이 네트워크 왕복과 비슷하면 **쿼리가 아니라 호출 횟수가 문제**다. 왕복을 따로 재서 확인한다.
 
 ```bash
-python3 -c "import socket,time;.."   # 대상 호스트로 TCP 연결 왕복 측정
+# 대상 호스트로 TCP 연결 왕복을 20 번 재서 중앙값을 낸다
+python3 - <<'PY'
+import socket, statistics, time
+HOST, PORT = "db.example.internal", 5432
+d = []
+for _ in range(20):
+    s = socket.socket(); t = time.perf_counter()
+    s.connect((HOST, PORT)); d.append((time.perf_counter() - t) * 1000); s.close()
+print(f"중앙값 {statistics.median(d):.2f}ms  최소 {min(d):.2f}ms  최대 {max(d):.2f}ms")
+PY
 ```
 
 ### 인덱스

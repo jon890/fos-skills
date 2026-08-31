@@ -28,6 +28,15 @@ GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/<N>/comments
 답글 경로에 **PR 번호가 들어간다.** `pulls/comments/{id}/replies` 는 404 다.
 삭제 경로에는 PR 번호가 없다. 둘이 달라서 헷갈린다.
 
+조회와 답글도 스크립트를 쓴다. 경로와 호스트를 매번 손으로 맞추지 않는다.
+
+```bash
+~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR>                      # 전체 댓글
+~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR> --thread <root댓글id>  # 한 스레드
+~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR> --mine                # 내가 쓴 것만
+~/.claude/skills/pr-review/scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
+```
+
 ## 등록은 리뷰 단위로 한다
 
 댓글 하나만 달 때도 `reviews` 로 보낸다. `event` 는 `COMMENT` 를 쓴다.
@@ -58,7 +67,15 @@ zsh 의 `noclobber` 는 기존 파일 덮어쓰기를 거부한다.
 - `rm -f` 를 먼저 한다
 - **등록 직전에 본문을 검증한다.** 등급 접두사와 핵심 낱말이 들어 있는지 본다
 
-`scripts/gh-review-post.sh` 가 이 셋을 강제한다. 직접 `gh api` 를 부르지 않는다.
+`gh-review-post.sh` 가 이 셋을 강제한다. 직접 `gh api` 를 부르지 않는다.
+
+```bash
+~/.claude/skills/pr-review/scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
+```
+
+핵심 낱말은 하나 이상 필수다. 없으면 스크립트가 등록하지 않고 종료한다.
+등급 접두사만 보는 검증은 접두사가 같은 옛 본문을 그대로 통과시키기 때문이다.
+`DRY_RUN=1` 을 앞에 붙이면 검증만 하고 등록하지 않는다.
 
 ## 등록 뒤 확인
 
