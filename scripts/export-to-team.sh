@@ -65,7 +65,7 @@ VERSION_RE = re.compile(
 
 
 def version_of(text: str):
-    """SKILL.md frontmatter 의 판 번호. 두 저장소의 표기가 달라 둘 다 읽는다."""
+    """SKILL.md frontmatter 의 버전. 두 저장소의 표기가 달라 둘 다 읽는다."""
     m = VERSION_RE.search(text)
     return tuple(int(g) for g in m.groups()) if m else None
 
@@ -91,8 +91,8 @@ def rendered(src: pathlib.Path, rel: str) -> bytes:
     return raw
 
 
-# 방향 보호. 이 저장소가 원본이라는 전제는 이쪽 판이 뒤처지지 않았을 때만 성립한다.
-# 팀 쪽에서 직접 고친 뒤 판을 올리면 --apply 가 그것을 옛 내용으로 되돌린다 (실측).
+# 방향 보호. 이 저장소가 원본이라는 전제는 이쪽 버전이 뒤처지지 않았을 때만 성립한다.
+# 팀 쪽에서 직접 고친 뒤 버전을 올리면 --apply 가 그것을 옛 내용으로 되돌린다 (실측).
 # 한 파일도 건드리기 전에 전부 본다. 복사하면서 검사하면 뒤 스킬에서 막아도 앞 스킬은 이미 덮인다.
 regressions = []
 for name in skills:
@@ -111,7 +111,7 @@ for name in skills:
         )
 
 if regressions:
-    print("팀 저장소의 판이 더 높다. 내보내면 팀의 수정을 되돌린다:")
+    print("팀 저장소의 버전이 더 높다. 내보내면 팀의 수정을 되돌린다:")
     print("\n".join(regressions))
     print("\n팀 쪽 변경을 이 저장소로 먼저 가져온 뒤 다시 실행한다.")
     sys.exit(3)
