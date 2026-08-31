@@ -4,7 +4,9 @@
 Dooray 는 본문을 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/JS (uicdn.toast.com)
 를 쓰는 템플릿에 markdown 을 흘려 넣으면 실제 등록 화면과 거의 동일한 미리보기가 된다.
 
-사용 예:
+업무 본문과 댓글은 Dooray 화면에서 머리가 다르다. --mode 로 고른다.
+
+사용 예 (업무 본문):
     python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
         --title "[VectorSearch] [DocParser] ..." \
         --tag "Document Parser" --tag "개선" --tag "REAL" \
@@ -12,6 +14,13 @@ Dooray 는 본문을 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/J
         --md-file /tmp/body.md \
         --out /tmp/dooray-preview.html
     ~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/dooray-preview.html
+
+사용 예 (댓글):
+    python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
+        --mode comment --author "홍길동" \
+        --title "주간보고 2026년 8월 4주차 — #199" \
+        --md-file /tmp/body.md \
+        --out /tmp/dooray-preview.html
 
 주의:
 - markdown 본문에 '</script>' 문자열이 있으면 안 된다 (text/plain 블록이 깨짐).
@@ -28,7 +37,10 @@ TEMPLATE = Path(__file__).parent / "template.html"
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Dooray 본문 미리보기 HTML 생성")
-    ap.add_argument("--title", required=True, help="업무 제목")
+    ap.add_argument("--title", required=True, help="업무 제목 (댓글 모드에서는 미리보기 제목)")
+    ap.add_argument("--mode", choices=("task", "comment"), default="task",
+                    help="task 는 업무 본문 머리, comment 는 작성자 머리")
+    ap.add_argument("--author", default="작성자", help="댓글 모드의 작성자명")
     ap.add_argument("--project", default="AI-TF-VectorSearch", help="프로젝트명 (헤더 표시용)")
     ap.add_argument("--tag", action="append", default=[], help="태그 (반복 지정)")
     ap.add_argument("--meta", action="append", default=[],
@@ -46,18 +58,34 @@ def main() -> int:
         print("오류: 본문에 '</script>' 가 포함되어 미리보기가 깨진다. 본문을 수정하라.", file=sys.stderr)
         return 1
 
-    tags_html = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in args.tag)
-    meta_parts = []
-    for m in args.meta:
-        label, _, value = m.partition(":")
-        meta_parts.append(f"<span>{html.escape(label)} <b>{html.escape(value)}</b></span>")
+    if args.mode == "comment":
+        author = html.escape(args.author)
+        head_html = (
+            '<div class="dooray-comment-head">'
+            f'<div class="dooray-avatar">{author[:1]}</div>'
+            f'<div><div class="dooray-author">{author}</div>'
+            f'<div class="dooray-on">{html.escape(args.title)}</div></div>'
+            "</div>"
+        )
+    else:
+        tags_html = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in args.tag)
+        meta_parts = []
+        for m in args.meta:
+            label, _, value = m.partition(":")
+            meta_parts.append(f"<span>{html.escape(label)} <b>{html.escape(value)}</b></span>")
+        head_html = (
+            '<div class="dooray-head">'
+            f'<div class="dooray-proj">{html.escape(args.project)}</div>'
+            f'<div class="dooray-title">{html.escape(args.title)}</div>'
+            f'<div class="dooray-meta">{"".join(meta_parts)}</div>'
+            f'<div class="tags">{tags_html}</div>'
+            "</div>"
+        )
 
     out = (
         TEMPLATE.read_text(encoding="utf-8")
         .replace("{{TITLE}}", html.escape(args.title))
-        .replace("{{PROJECT}}", html.escape(args.project))
-        .replace("{{TAGS_HTML}}", tags_html)
-        .replace("{{META_HTML}}", "".join(meta_parts))
+        .replace("{{HEAD_HTML}}", head_html)
         .replace("{{MD_BODY}}", md)
     )
     Path(args.out).write_text(out, encoding="utf-8")

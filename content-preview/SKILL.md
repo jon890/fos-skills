@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "1.2.0"
+  version: "1.5.0"
 description: 외부에 게시·등록되는 본문(Dooray 댓글·업무, GitHub 이슈·PR, 메일·슬랙 메시지, 위키 등)을 사용자에게 등록 전 미리보기로 보여줄 때 사용한다. 렌더링 HTML 을 띄우는 절차, 미리보기 직전 자가 점검 체크리스트, Dooray(TOAST UI)·GitHub(marked.js) HTML 생성기 사용법을 담는다. 사용자가 "미리보기"라고 명시하지 않아도, 외부에 나갈 텍스트를 작성해 등록·게시하려는 순간이면 반드시 이 skill 을 연다. 로컬 파일 작성·코드 커밋처럼 외부에 게시되지 않는 산출물은 대상이 아니다.
 ---
 
@@ -18,7 +18,7 @@ Dooray·GitHub·메일·슬랙 등 외부로 나가는 본문을, 사용자가 �
 ```
 
 - **본인 명의로 나가는 글이면 본문을 쓰기 전에 개인 문체 참조를 읽는다.** 다 쓴 뒤 점검 항목으로 확인하면 늦다. 헤더와 표로 짜놓은 본문은 문체를 고치는 게 아니라 처음부터 다시 쓰는 일이 된다.
-    * 참조 위치는 `~/.claude/skills/content-preview/references/work-writing-persona.md` 다. 개인이 만들어 두는 파일이라 **없으면 이 항목을 건너뛴다.**
+    * 참조 위치는 `~/.claude/references/work-writing-persona.md` 다. 개인이 만들어 두는 파일이라 **없으면 이 항목을 건너뛴다.**
     * 문체는 사람마다 다르므로 이 저장소는 참조를 배포하지 않는다. 만드는 방법은 아래 「개인 문체 참조」 를 본다.
 - **HTML 미리보기를 띄운다.** 사용자가 따로 요청하지 않아도 생략하지 않는다.
 - **본문 전문을 채팅에 다시 쓰지 않는다.** 무엇을 띄웠는지와 제목만 한 줄로 알린다.
@@ -59,6 +59,25 @@ Dooray 업무·댓글, GitHub issue·PR 본문은 실제 렌더링과 비슷한 
 | Dooray | NHN TOAST UI Editor viewer CSS/JS (`uicdn.toast.com/editor/latest`) → 실제 등록 화면과 거의 동일 | `scripts/dooray-preview/` |
 | GitHub | github-markdown-css(공식 스타일)와 marked.js(GitHub Flavored Markdown) → 실제 화면과 비슷 | `scripts/github-preview/` |
 
+Dooray 는 업무 본문과 댓글의 머리가 다르므로 `--mode` 로 고른다.
+
+| 값 | 머리 | 쓰는 곳 |
+| --- | --- | --- |
+| `task` (기본) | 프로젝트, 제목, 메타, 태그 | 업무 본문 |
+| `comment` | 작성자 아바타와 이름 | 댓글, 진행 기록, 주간보고 |
+
+```bash
+python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
+  --mode comment --author "홍길동" \
+  --title "주간보고 2026년 8월 4주차 — #199" \
+  --md-file /tmp/body.md --out /tmp/preview.html
+```
+
+**Dooray 본문을 다른 렌더러로 미리 보지 않는다.** marked 계열은 같은 markdown 을 다르게 렌더한다.
+한 문장마다 줄을 나눈 본문을 marked 는 한 문단으로 붙이고, TOAST UI 는 줄을 살린다.
+범위 표기의 물결표도 marked 만 취소선으로 읽는다 (실측).
+등록 결과와 다른 화면을 보고 판단하게 되므로 Dooray 대상은 이 생성기를 쓴다.
+
 공통 주의:
 
 - 본문에 `` `</script>` `` 문자열 금지 (생성기가 검출·거부).
@@ -78,6 +97,18 @@ Dooray 업무·댓글, GitHub issue·PR 본문은 실제 렌더링과 비슷한 
 AppleScript 로 Chrome 계열과 Safari 만 훑던 때는 IDE 안의 탭을 찾지 못했다. 그래서 재생성할 때마다 탭이 쌓였고 사용자는 오래된 본문을 읽고 판단했다 (실측).
 
 출력이 `갱신` 인지 `새로 열었다` 인지 확인한다. 재생성했는데 새로 열렸다면 사용자가 보던 탭이 닫힌 것이다.
+
+**`orca` 백엔드는 셸의 작업 디렉토리가 속한 워크트리에 탭을 만든다.**
+조사하느라 다른 저장소로 `cd` 한 뒤 띄우면, 사용자가 보고 있는 워크트리가 아닌 곳에 탭이 생긴다.
+`갱신` 이라고 출력돼도 사용자 화면은 그대로다 (실측).
+사용자의 작업 경로에서 띄우거나, 그 경로를 `ORCA_WORKTREE` 로 고정한다.
+
+```bash
+ORCA_WORKTREE="path:$HOME/projects/MyRepo" \
+  ~/.claude/skills/content-preview/scripts/show-preview.sh "$SP/preview.html"
+```
+
+`open` 이 `탭 위치:` 한 줄을 남기므로 어디에 열렸는지 그 자리에서 확인한다.
 
 ### 본문 파일 덮어쓰기
 
@@ -120,8 +151,13 @@ python3 ~/.claude/skills/content-preview/scripts/github-preview/generate.py \
 ## 개인 문체 참조 (선택)
 
 본인 명의로 나가는 글의 문체를 고정하고 싶으면
-`~/.claude/skills/content-preview/references/work-writing-persona.md` 를 만든다.
-이 저장소는 이 파일을 배포하지 않는다. 문체는 사람마다 다르고, 남의 문체를 강제하면 글이 어색해진다.
+`~/.claude/references/work-writing-persona.md` 를 만든다.
+스킬 안에 두지 않는다. 스킬을 옮기거나 심링크를 다시 걸 때 참조가 꼬이고,
+이 저장소가 개인 파일을 무시하는 규칙을 따로 들고 있어야 한다.
+문체는 사람마다 다르고, 남의 문체를 강제하면 글이 어색해진다.
+
+`~/.claude/rules/` 에도 두지 않는다. 하네스가 그 디렉터리를 전역 지침으로 무조건 읽어
+글을 쓰지 않는 세션에도 전문이 실린다.
 
 없으면 이 skill 은 미리보기 절차만 수행한다. 문체 관련 지시는 건너뛴다.
 

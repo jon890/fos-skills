@@ -28,6 +28,29 @@
   .dooray-meta { margin-top: 12px; font-size: 12px; color: #666; display: flex; gap: 16px; flex-wrap: wrap; }
   .dooray-meta b { color: #333; font-weight: 600; }
   .tags { margin-top: 10px; }
+  /* 댓글 모드 — 업무 본문이 아니라 댓글로 등록하는 본문의 머리다. */
+  .dooray-comment-head {
+    padding: 20px 32px 14px;
+    border-bottom: 1px solid #eceef0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .dooray-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #3565c0;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .dooray-author { font-size: 14px; font-weight: 600; color: #222; }
+  .dooray-on { font-size: 12px; color: #888; margin-top: 2px; }
   .tag {
     display: inline-block;
     font-size: 11px;
@@ -45,12 +68,7 @@
 </head>
 <body>
 <div class="dooray-frame">
-  <div class="dooray-head">
-    <div class="dooray-proj">{{PROJECT}}</div>
-    <div class="dooray-title">{{TITLE}}</div>
-    <div class="dooray-meta">{{META_HTML}}</div>
-    <div class="tags">{{TAGS_HTML}}</div>
-  </div>
+  {{HEAD_HTML}}
   <div class="dooray-body"><div id="viewer"></div></div>
 </div>
 
