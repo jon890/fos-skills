@@ -11,21 +11,9 @@ import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+from target_files import iter_targets
 
-TARGET_GLOBS = [
-    "CLAUDE.md",
-    "README.md",
-    ".claude/agents/*.md",
-    ".claude/skills/*/SKILL.md",
-    ".claude/skills/*/references/*.md",
-    ".claude/*-overlay.md",
-    "skills/*/SKILL.md",
-    "skills/*/references/*.md",
-    # 공용 스킬 원본 저장소 — 스킬이 저장소 루트에 바로 놓인다
-    "*/SKILL.md",
-    "*/references/*.md",
-]
+ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 
 # "N개 명령", "N개 파일", "16개" 처럼 개수를 박은 표기
 COUNT = re.compile(r"(\d+)\s*개(?:\s*(명령|파일|패턴|항목|축|단계|행))?")
@@ -36,10 +24,7 @@ JSONFILE = re.compile(r"`([a-z][a-z0-9-]*\.json)`")
 
 
 def targets():
-    for g in TARGET_GLOBS:
-        for p in sorted(ROOT.glob(g)):
-            if p.is_file():
-                yield p
+    yield from (path for path in iter_targets(ROOT, include_readme=True) if path.resolve().is_relative_to(ROOT))
 
 
 def main():

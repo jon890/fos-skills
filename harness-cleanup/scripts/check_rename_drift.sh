@@ -22,10 +22,8 @@ cd "$REPO" || exit 2
 found=0
 scanned=0
 
-for skill in */; do
-  skill="${skill%/}"
-  md="$skill/SKILL.md"
-  [ -f "$md" ] || continue
+while IFS= read -r -d '' md; do
+  skill="${md%/SKILL.md}"
   [ -d "$skill/references" ] || continue
 
   # SKILL.md 가 이번에 바뀌지 않았으면 볼 것이 없다
@@ -76,7 +74,9 @@ for skill in */; do
       found=$((found + 1))
     fi
   done <<< "$removed"
-done
+done < <(find . \
+  -type d \( -name .git -o -name .omx -o -name node_modules -o -name data -o -name private -o -name sources -o -name tasks \) -prune -o \
+  -type f -name SKILL.md -print0)
 
 if [ "$scanned" -eq 0 ]; then
   echo "검사 대상 없음 — 기준 '$BASE' 대비 변경된 SKILL.md 가 하나도 없다 (통과가 아니다)" >&2
