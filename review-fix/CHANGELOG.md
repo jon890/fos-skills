@@ -1,18 +1,17 @@
-# CHANGELOG — review-fix
+# CHANGELOG: review-fix
 
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
 ## 1.4.0
 
-- **실행 기록을 남기는 시점과 위치를 10단계에 적었다.**
-  팀 저장소에서 먼저 고친 것을 이 저장소로 가져온다.
-  대상 PR 을 머지하기 전에 그 PR 브랜치에서 남긴다. 머지 뒤에 기록하면 기록을 담을
-  브랜치가 사라져 PR 을 하나 더 열게 된다. 실행 기록 commit 은 별도 commit 으로 남긴다.
+- 소비되지 않던 `docs/retrospectives/RUNS.md` 실행 기록을 제거했다.
+- 저장 위치가 없을 때 원시 회고를 만드는 폴백을 제거했다.
+  재현·검출 가능한 패턴만 저장소가 지정한 반복 함정 위치에 패턴당 한 파일로 남긴다.
 
 ## 1.3.1
 
-- `pr-review` 를 가리키는 경계 한 줄을 description 에 넣었다.
+- `pr-review`를 가리키는 경계 한 줄을 description에 넣었다.
   한쪽만 상대를 알면 "PR 리뷰 좀" 같은 모호한 입력에서 엉뚱한 쪽이 잡힌다.
 
 ## 1.3.0
