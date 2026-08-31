@@ -8,7 +8,7 @@
 # 주의: grep 무매치가 exit 1 이므로 set -e 를 쓰지 않는다.
 set -u
 
-SKILLS="${*:-planning build-with-teams review-fix docs-check harness-cleanup}"
+SKILLS="${*:-planning build-with-teams review-fix docs-check harness-cleanup content-preview pr-review presentation}"
 STYLE_CHECK="${KOREAN_STYLE_CHECK:-$HOME/.claude/scripts/korean-style-check.sh}"
 
 printf '%-18s %6s %6s %8s %8s\n' 스킬 본문줄 참조수 끊긴참조 표기위반
@@ -35,7 +35,7 @@ for s in $SKILLS; do
         ;;
     esac
   done < <(
-    grep -rhoE '`(references|scripts|templates|examples)/[A-Za-z0-9._*/-]+`' "$s" 2>/dev/null |
+    grep -rhoE '`(references|scripts|templates|examples|assets)/[A-Za-z0-9._*/-]+`' "$s" 2>/dev/null |
       tr -d '`' | grep -v '\*' | sort -u
     grep -rhoE '~/\.claude/skills/[A-Za-z0-9._/-]+' "$s" 2>/dev/null |
       sed "s|^~|$HOME|" | sort -u
