@@ -33,6 +33,12 @@ fos-skills/
     CHANGELOG.md
     references/six-axis.md
     scripts/static-check.sh
+  presentation/             # 발표 자료 HTML 슬라이드 덱
+    SKILL.md
+    CHANGELOG.md
+    references/slide-rules.md, references/deck-mechanics.md
+    assets/deck-template.html
+    scripts/check-deck.py
   evaluation/               # 스킬 자체 측정
     rubric.md
     score.sh
@@ -63,6 +69,7 @@ ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 | `review-fix` | PR 봇 리뷰(🔴/🟡)를 우선순위대로 반영 → 스레드 resolve → commit·push. 검증·커밋 규칙은 레포 CLAUDE.md 참조 |
 | `build-with-teams` | task(index.json+phase)를 팀 에이전트로 phase 단위 실행 → critic·review·docs-verifier 검증 → PR. 검증 명령·에이전트·스키마는 레포 오버레이/CLAUDE.md |
 | `docs-check` | docs 6축 감사(부패·과대화·추론성·중복·자명성·가독성) → 승인 후 수정. docs 구조·docs-verifier 에이전트는 레포 오버레이/CLAUDE.md |
+| `presentation` | 발표 자료를 HTML 덱 한 파일로. 인터뷰로 방향을 정하고 판정 가능한 규칙으로 훑는다. 골격 템플릿과 구조 검사기 포함 |
 
 ## 버전과 변경 이력
 
