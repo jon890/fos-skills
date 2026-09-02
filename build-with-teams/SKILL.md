@@ -2,7 +2,7 @@
 name: build-with-teams
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 metadata:
-  version: "4.2.0"
+  version: "4.2.1"
 ---
 # build-with-teams
 
@@ -146,8 +146,8 @@ worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore
 
 ### 1. critic 스폰
 
-**팀을 따로 만드는 단계는 없다.** 팀은 세션 시작 시 자동으로 구성되고 `TeamCreate` 는 없어졌다.
-이 단계가 하는 일은 critic 을 `name` 지정으로 스폰하는 것 하나다.
+**이 단계가 하는 일은 critic 을 `name` 지정으로 스폰하는 것 하나다.**
+팀은 세션 시작 시 자동으로 구성되므로 따로 만들지 않는다.
 
 critic 은 idle 로 대기하다 3단계에서 이름으로 부른다.
 code-reviewer·docs-verifier 는 검토 시점(5·6단계)에 **둘을 함께** 스폰한다.
