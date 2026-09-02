@@ -47,7 +47,7 @@
 3. `SKILL.md` 4단계의 모드 A 규칙(스폰 가드, 커밋 주체, 완료 보고)을 그 phase 에 그대로 적용한다.
 4. 그 phase 의 커밋이 끝나면 **전환한 executor 를 종료한 뒤** 모드 B 로 돌아온다.
    종료하지 않으면 팀 종료 시점까지 idle 로 남고, 전환이 여러 phase 에서 일어나면 그만큼 쌓인다.
-5. 실행 기록의 모드 열에 `B→A(p{N})` 로 남긴다. 전환 사유도 실행 보고에 적는다.
+5. 완료 보고에 `B→A(p{N})`와 전환 사유를 남긴다.
 
 ## 실행 형태
 
@@ -203,7 +203,7 @@ task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 | **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
-모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다 — 구현자가 team-lead 라 team-lead 열이 적용된다.
+모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다. 구현자가 team-lead 라 team-lead 열이 적용된다.
 planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
 
 ## `execution_profile` 스키마 소유자
@@ -235,13 +235,13 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 
 **출발값을 하나 고르고, 그 값을 하한으로 끌어올린다.** 둘은 성격이 달라 섞지 않는다.
 
-출발값 — 위에서부터 하나만 적용한다. 위가 있으면 아래는 보지 않는다.
+출발값: 위에서부터 하나만 적용한다. 위가 있으면 아래는 보지 않는다.
 
 1. phase의 `execution_profile`
 2. legacy phase의 `model` alias
 3. task 규모 기반 기본 실행 등급 (위 표)
 
-하한 — 출발값이 아래보다 낮으면 끌어올린다. 낮추는 방향은 없다.
+하한: 출발값이 아래보다 낮으면 끌어올린다. 낮추는 방향은 없다.
 
 4. 실행 형태 점검이 반환한 최종 형태의 최소 등급 (위 "실행 형태 → 실행 등급" 표)
 5. 사용자 모델 override 는 4의 하한을 지킬 때만 적용한다
