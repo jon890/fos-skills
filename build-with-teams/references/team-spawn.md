@@ -81,7 +81,7 @@ agent teams 는 실험 기능이고 **기본적으로 꺼져 있다.**
 sub-agent 는 main 워킹 디렉터리에서 실행될 수 있다.
 상대경로나 `tasks/{plan}/...` 형태로 지시하면, worktree 브랜치에 커밋된 최신 파일이 아니라 main 의 옛 파일(또는 없는 파일)을 읽어 잘못 판단한다.
 
-- 파일 참조는 반드시 worktree 절대경로(`/Users/.../.claude/worktrees/{plan}/tasks/{plan}/phase-XX.md`).
+- 파일 참조는 반드시 선택된 worktree 절대경로(`/Users/.../worktrees/{repo}/{plan}/tasks/{plan}/phase-XX.md`).
 - 팀원이 구버전을 본다고 의심되면 `grep` 한 실제 내용을 메시지에 붙이고 절대경로를 재확인시킨다.
 
 ## 3. 팀원 SendMessage 회신 강제
@@ -139,7 +139,7 @@ main 이 origin 과 갈라지거나 다른 plan 의 미푸시 작업과 충돌�
 모드 B 는 team-lead 가 같은 내용을 자신에게 적용한다.
 
 ```
-모든 파일 경로 / cd / git 명령은 worktree 절대경로 (/Users/.../.claude/worktrees/{plan}/) 기준으로만 수행.
+모든 파일 경로 / cd / git 명령은 선택된 worktree 절대경로 (/Users/.../worktrees/{repo}/{plan}/) 기준으로만 수행.
 main repo 루트 직접 cd / 직접 편집 절대 금지. 의심되면 `pwd` 로 확인 후 진행.
 ```
 
@@ -183,4 +183,3 @@ executor 가 무거운 외부 상호작용(DB-in-jest·긴 통합 실행)에서 
 
 - 예: jest DB 하네스가 없는 레포에서는 파이프라인이 쓰는 순수 함수만 spec 안에서 조립해 검증한다 (DB 를 열지 않는다).
 - 재스폰 프롬프트에 "DB 열지 말라" 를 명시하면 같은 멈춤을 피한다.
-

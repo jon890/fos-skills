@@ -2,7 +2,7 @@
 name: build-with-teams
 description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
 metadata:
-  version: "4.3.1"
+  version: "4.3.2"
 ---
 # build-with-teams
 
@@ -105,7 +105,17 @@ executor·docs-verifier 이름은 오버레이가 지정한다.
 
 ## worktree 기반 격리 실행
 
-worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore` 에 있어야 한다.
+worktree 위치는 저장소별 설정을 따른다.
+
+1. 오버레이가 worktree root를 지정하면 그 값을 쓴다.
+2. Orca CLI를 사용할 수 있고 등록된 repo의 `worktreeBasePath`가 있으면
+   `orca repo show --repo path:<repo-root> --json`으로 읽어 그 값을 쓴다.
+   상대경로는 repo root 기준으로 해석한다.
+3. 둘 다 없으면 `<repo-root>/worktrees`를 기본값으로 쓴다.
+
+target은 `<resolved-worktree-base>/<repo-name>/<plan-branch>`로 만들고,
+resolved worktree base가 저장소 안이면 그 경로가 `.gitignore`에 있어야 한다.
+`.claude/worktrees`나 임의의 `/tmp` 경로를 폴백으로 만들지 않는다.
 
 - **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다.
   - planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있다.
