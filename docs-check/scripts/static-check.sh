@@ -22,6 +22,8 @@ if [ ! -e "$DOC_SCOPE" ]; then
   exit 2
 fi
 
+HERE=$(cd "$(dirname "$0")" && pwd)
+
 RESULTS=$(mktemp)
 trap 'rm -f "$RESULTS"' EXIT
 
@@ -118,6 +120,11 @@ while IFS= read -r f; do
     [ -e "$(dirname "$f")/${target%%#*}" ] || echo "$f: 깨진 링크 → $target"
   done
 done < <(md_files)
+
+# `#앵커` 링크가 실제 헤딩을 가리키는가
+#   위 깨진 링크 검사는 정규식이 `[^)#]` 로 시작해 `#` 대상을 아예 보지 않는다.
+#   그 빈틈으로 목차가 헤딩과 어긋난 채 통과한 실측이 있다. 이것이 그 자리를 메운다.
+md_files | python3 "$HERE/check_anchors.py"
 } >"$RESULTS"
 
 echo "검사한 Markdown: ${checked}개 (scope: $DOC_SCOPE)" >&2
