@@ -5,19 +5,6 @@
 저비용 실행 경로는 작업이 명확하다는 것이 증명된 경우에만 사용한다.
 적합성을 증명하지 못하면 더 엄격한 실행 형태를 선택한다.
 
-## 두 모드에서 이 문서를 읽는 법
-
-이 문서는 `executor` 를 주어로 쓴다. `SKILL.md` 의 실행 모드에 따라 그 자리에 들어가는 주체가 다르다.
-
-| 모드 | 구현자 | 판정을 무엇으로 집행하나 |
-|---|---|---|
-| A | 스폰된 executor | 반환된 실행 형태보다 낮은 role 로 스폰하지 않는다 |
-| B | team-lead 직접 | 아래 "모드 B 에서 모드 A 로 전환" 의 조건에 걸리면 그 phase 를 위임한다 |
-
-모드 B 에는 스폰 경계가 없으므로 "스폰 직전" 은 "phase 착수 직전" 으로, "스폰을 차단한다" 는
-"그 phase 에 착수하지 않는다" 로 읽는다. 판정 기준과 차단 조건 자체는 두 모드가 같다.
-`EXECUTOR_ESCALATE` 회신도 모드 B 에서는 team-lead 가 자신의 실행 보고에 같은 항목으로 기록한다.
-
 ## 실행 형태 → 실행 등급
 
 실행 형태는 "무엇을 증명했는가" 이고 실행 등급(`fast`·`standard`·`deep`)은 "어느 모델로 돌리는가" 다.
@@ -31,23 +18,6 @@
 
 **하한이지 지정값이 아니다.** 출발값은 아래 "선택 순서" 가 정한다.
 이 표는 그 출발값이 더 낮을 때 끌어올리는 데만 쓴다. 낮추는 방향은 없다.
-
-## 모드 B 에서 모드 A 로 전환
-
-모드 B 구현자(team-lead)가 그 phase 를 감당할 수 없을 때 쓴다. 조건은 둘이다.
-
-- 판정이 `HIGH_RISK` 다.
-- team-lead 의 현재 등급이 그 phase 판정의 최소 등급(위 변환표)보다 낮다.
-
-절차는 다음과 같다.
-
-1. **그 phase 하나만 전환한다.** 다음 phase 는 다시 판정하고, 조건에 걸리지 않으면 모드 B 로 돌아온다.
-2. 전환한 phase 의 executor 등급은 아래 "선택 순서" 를 그대로 따른다.
-   출발값을 고른 뒤 그 phase 판정의 최소 등급으로 끌어올린다.
-3. `SKILL.md` 4단계의 모드 A 규칙(스폰 가드, 커밋 주체, 완료 보고)을 그 phase 에 그대로 적용한다.
-4. 그 phase 의 커밋이 끝나면 **전환한 executor 를 종료한 뒤** 모드 B 로 돌아온다.
-   종료하지 않으면 팀 종료 시점까지 idle 로 남고, 전환이 여러 phase 에서 일어나면 그만큼 쌓인다.
-5. 완료 보고에 `B→A(p{N})`와 전환 사유를 남긴다.
 
 ## 실행 형태
 
@@ -104,7 +74,7 @@
 2. team-lead가 phase 필수 섹션·검증 명령·`execution_profile`을 직접 확인한다.
 3. 오버레이의 반복 함정·고위험 경로·금지 패턴과 대조한다.
 4. critic과 team-lead 판정 중 더 엄격한 결과를 최종 실행 형태로 삼는다.
-5. surface adapter가 최종 실행 형태를 사용 가능한 role·모델에 매핑한다.
+5. team-lead가 최종 실행 형태를 설치된 role·모델에 대응시킨다.
 
 공용 skill과 task에는 실제 모델 ID를 저장하지 않는다.
 실행 형태도 `index.json` 스키마에 추가하지 않고 critic 회신과 phase 실행 보고에만 기록한다.
@@ -143,7 +113,7 @@ python3 scripts/executor_routing_gate.py <assessment.json>
 ```
 
 - 종료 코드 `0`이면 출력 JSON의 `effective_shape`를 사용한다.
-- `bounded_eligible: true`일 때만 surface adapter가 저비용 실행 경로를 선택할 수 있다.
+- `bounded_eligible: true`일 때만 저비용 실행 경로를 선택할 수 있다.
 - 종료 코드가 `0`이 아니면 executor 스폰을 차단한다.
 - critic이나 team-lead가 `BOUNDED`로 판정했어도 필수 조건이 누락되면
   스크립트가 `JUDGMENT_REQUIRED` 이상으로 올린다.
@@ -196,40 +166,36 @@ phase 보고에 다음을 남긴다.
 
 task를 읽고 규모를 판정해 팀원 실행 등급을 조정한다.
 
-| 규모 | 조건 | team-lead | critic | executor | code-reviewer | docs-verifier |
+| 규모 | 무엇이 그런가 | team-lead | critic | executor | code-reviewer | docs-verifier |
 |---|---|:---:|:---:|:---:|:---:|:---:|
-| **소** | 1 phase, 버그·미세 조정 | standard | standard | standard | standard | standard |
-| **중** | 2-3 phase, 기능 확장·리팩토링 | standard | deep | standard | standard | standard |
-| **대** | 4개 이상 phase, 아키텍처·신규 도메인 | deep | deep | standard | standard | deep |
+| **소** | 버그 수정, 미세 조정 | standard | standard | standard | standard | standard |
+| **중** | 기능 확장, 리팩토링 | standard | deep | standard | standard | standard |
+| **대** | 새 아키텍처, 신규 도메인, 스키마 대규모 변경 | deep | deep | standard | standard | deep |
+
+규모는 phase 개수가 아니라 **무엇을 바꾸는가**로 가른다.
+phase 가 하나여도 스키마를 바꾸면 "대" 이고, 다섯이어도 같은 패턴 반복이면 "중" 이다.
 
 executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한다.
-모드 B 는 executor 를 스폰하지 않으므로 executor 열은 읽지 않는다. 구현자가 team-lead 라 team-lead 열이 적용된다.
-planning 분할 점검을 통과한 plan은 5 phase 이하다. 4~5 phase는 분할 예외 근거가 단계 기록에 남은 plan이므로 "대"로 다룬다.
 
 ## `execution_profile` 스키마 소유자
 
-phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석은
-스키마 소유자인 `planning/task-create.md` 의 "실행 등급 라우팅" 을 따른다.
+세 등급의 의미는 `planning` 스킬의 `references/task-create.md` 「실행 등급 라우팅」 이 소유한다.
+`model` 을 쓰는 옛 task 도 같은 세 값을 쓴다.
 
-## surface별 해석
+## 등급을 실제 모델로 옮기기
 
-- 각 surface의 runtime adapter가 세 등급을 설치된 모델·role에 매핑한다.
+- team-lead가 세 등급을 그 환경에 설치된 모델·role에 대응시킨다.
   정확히 맞는 등급이 없으면 **더 엄격한 쪽으로만** 올려 잡는다. 아래로 내리는 폴백은 없다.
   실제 선택과 올려 잡은 사유를 실행 보고에 남긴다.
-- **등급은 스폰 시점에 항상 명시 지정한다.** 생략하면 parent 등급을 물려받는 것이 아니다.
-  공식 문서 기준으로 팀원은 team-lead 의 `/model` 선택을 상속하지 않고,
-  프롬프트가 모델을 지정하지 않으면 `/config` 의 **Default teammate model** 이 적용된다.
-  그 설정의 기본값은 공급자의 default Opus 라 대개 `deep` 으로 뜬다.
+- **등급은 스폰 시점에 항상 명시 지정한다.** 생략했을 때 무엇이 적용되는지는 환경 설정이 정한다.
+  스폰 도구의 계약은 「모델 인자를 생략하면 에이전트 정의의 모델을 쓰고, 그것도 없으면
+  기본값을 쓴다. 그 기본값은 팀원 기본 모델이 설정되어 있으면 그 값이고, 없으면 team-lead 를 상속한다」 다.
+  어느 쪽이 적용될지는 문서를 읽어서 알 수 없으므로 매번 명시한다.
     - 실제 사고: team-lead가 deep인 대 규모 실행에서 `standard` executor를 모델 인자 없이 스폰해,
       표에 `standard`라 적혀 있는데도 deep으로 떴다.
-      parent 가 deep 이라 상속된 것으로 보였지만 실제 원인은 Default teammate model 이다.
-    - 그래서 parent 등급이 무엇이든 함정은 그대로다. "parent 와 같으니 생략해도 된다" 는 판단을 쓰지 않는다.
-- 팀원은 team-lead 의 effort 는 상속한다. 모델과 effort 를 같은 것으로 묶어 생각하지 않는다.
+- 모델과 effort 는 다른 축이다. 모델을 지정했다고 effort 까지 정해지지 않는다.
 - 사용자가 특정 모델을 요청하면 실행 형태 점검을 통과한 뒤 적용한다.
   점검이 반환한 실행 형태보다 낮은 모델로 내리는 override는 허용하지 않는다.
-
-한 phase 에 `execution_profile` 과 legacy `model` 이 함께 있으면 우선순위를 추측하지 않는다.
-`PHASE_BLOCKED: execution profile schema conflict` 로 종료한다.
 
 ## 선택 순서
 
@@ -238,7 +204,7 @@ phase 파일의 `execution_profile` 값 의미와 legacy `model` 필드 해석�
 출발값: 위에서부터 하나만 적용한다. 위가 있으면 아래는 보지 않는다.
 
 1. phase의 `execution_profile`
-2. legacy phase의 `model` alias
+2. 옛 phase 의 `model` 값
 3. task 규모 기반 기본 실행 등급 (위 표)
 
 하한: 출발값이 아래보다 낮으면 끌어올린다. 낮추는 방향은 없다.
