@@ -1,7 +1,14 @@
-# CHANGELOG — content-preview
+# CHANGELOG: content-preview
 
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
+
+## 1.7.0
+
+- `~/.claude/skills/content-preview/` 절대경로 열셋을 번들 상대경로로 바꿨다.
+  그 심링크가 팀 사본을 가리켜, 원본 `scripts/` 를 고치고 내보내지 않으면
+  문서와 실행되는 코드가 갈리는 구조였다.
+- 제목의 엠대시를 뺐다.
 
 ## 1.6.0
 

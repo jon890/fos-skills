@@ -1,11 +1,14 @@
 ---
 name: content-preview
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: 외부에 게시·등록되는 본문(Dooray 댓글·업무, GitHub 이슈·PR, 메일·슬랙 메시지, 위키 등)을 사용자에게 등록 전 미리보기로 보여줄 때 사용한다. 렌더링 HTML 을 띄우는 절차, 미리보기 직전 자가 점검 체크리스트, Dooray(TOAST UI)·GitHub(marked.js) HTML 생성기 사용법을 담는다. 사용자가 "미리보기"라고 명시하지 않아도, 외부에 나갈 텍스트를 작성해 등록·게시하려는 순간이면 반드시 이 skill 을 연다. 로컬 파일 작성·코드 커밋처럼 외부에 게시되지 않는 산출물은 대상이 아니다.
 ---
 
-# content-preview — 외부 게시 본문 미리보기
+# content-preview
+
+**이 문서의 `scripts/`, `references/`, `assets/` 는 이 스킬 번들 기준 상대경로다.**
+하네스가 알려주는 스킬 base 디렉터리에 붙여 쓴다. 설치 위치를 가정하지 않는다.
 
 Dooray·GitHub·메일·슬랙 등 외부로 나가는 본문을, 사용자가 등록 전에 검토·수정할 수 있도록 미리보기로 보여주는 절차다.
 
@@ -67,7 +70,7 @@ Dooray 는 업무 본문과 댓글의 머리가 다르므로 `--mode` 로 고른
 | `comment` | 작성자 아바타와 이름 | 댓글, 진행 기록, 주간보고 |
 
 ```bash
-python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
+python3 scripts/dooray-preview/generate.py \
   --mode comment --author "홍길동" \
   --title "주간보고 2026년 8월 4주차 — #199" \
   --md-file /tmp/body.md --out /tmp/preview.html
@@ -88,7 +91,7 @@ python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
 `show-preview.sh` 로 띄운다. 브라우저를 직접 열지 않는다.
 
 ```bash
-~/.claude/skills/content-preview/scripts/show-preview.sh "$SP/preview.html"
+scripts/show-preview.sh "$SP/preview.html"
 ```
 
 같은 파일의 탭이 이미 있으면 갱신하고, 없으면 새로 만든 뒤 화면 앞으로 가져온다.
@@ -105,7 +108,7 @@ AppleScript 로 Chrome 계열과 Safari 만 훑던 때는 IDE 안의 탭을 찾�
 
 ```bash
 ORCA_WORKTREE="path:$HOME/projects/MyRepo" \
-  ~/.claude/skills/content-preview/scripts/show-preview.sh "$SP/preview.html"
+  scripts/show-preview.sh "$SP/preview.html"
 ```
 
 `open` 이 `탭 위치:` 한 줄을 남기므로 어디에 열렸는지 그 자리에서 확인한다.
@@ -127,23 +130,23 @@ head -3 "$SP/body.md"
 Dooray 사용법:
 
 ```bash
-python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
+python3 scripts/dooray-preview/generate.py \
   --title "[VectorSearch] [DocParser] ..." \
   --tag "Document Parser" --tag "개선" --tag "REAL" \
   --meta "담당자:홍길동" --meta "참조:개발 그룹" \
   --md-file /tmp/body.md --out /tmp/dooray-preview.html
-~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/dooray-preview.html
+scripts/show-preview.sh /tmp/dooray-preview.html
 ```
 
 GitHub 사용법 (`--type` 은 `issue` 또는 `pr`, 헤더 배지 색 구분):
 
 ```bash
-python3 ~/.claude/skills/content-preview/scripts/github-preview/generate.py \
+python3 scripts/github-preview/generate.py \
   --type issue \
   --repo "toast-lab/ai-playground-docu-parser" \
   --title "..." \
   --md-file /tmp/gh-body.md --out /tmp/gh-preview.html
-~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/gh-preview.html
+scripts/show-preview.sh /tmp/gh-preview.html
 ```
 
 - GitHub 고유 자동링크(`#번호`)와 `:emoji:` 코드는 marked.js 가 변환하지 않는다. 정확한 GFM 은 등록 후 GitHub 에서 확인한다.

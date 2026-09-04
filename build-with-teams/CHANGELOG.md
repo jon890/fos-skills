@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.4.0
+
+- `~/.claude/skills/build-with-teams/` 절대경로 넷을 번들 상대경로로 바꿨다.
+  팀원에게 넘기는 역할 계약 파일만 절대경로가 필요하므로, 그 자리는 하네스가 알려주는
+  base 디렉터리를 쓰라고 고쳐 적었다.
+- 행동 지시의 부정형 넷을 긍정형으로 바꿨다. 경계와 차단 조건은 그대로 두었다.
+
 ## 4.3.2
 
 - worktree 위치를 `.claude/worktrees`로 고정하지 않고 저장소 오버레이,

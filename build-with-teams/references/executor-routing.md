@@ -112,7 +112,7 @@
 ## 결정적 점검 실행
 
 team-lead는 각 executor 스폰 직전에 critic 회신과 직접 점검 결과를 assessment JSON으로 만든다.
-`~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py`가 이 입력을 검증하고
+`scripts/executor_routing_gate.py`가 이 입력을 검증하고
 더 엄격한 최종 실행 형태를 계산한다.
 
 ```json
@@ -139,7 +139,7 @@ assessment는 상태 저장소나 안전한 임시 경로에 만들고 task 스�
 
 ```bash
 # cwd: 무관 — 스크립트와 assessment 를 모두 절대경로로 준다
-python3 ~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py <assessment.json>
+python3 scripts/executor_routing_gate.py <assessment.json>
 ```
 
 - 종료 코드 `0`이면 출력 JSON의 `effective_shape`를 사용한다.
