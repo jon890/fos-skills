@@ -30,30 +30,28 @@
 ## 전제
 
 - **감사할 저장소 경로.** 모든 스크립트가 `<repo-root>` 를 인자로 받는다.
-- **이번 실행에서 로드한 `harness-cleanup` 디렉터리 경로.** 스크립트를 `$S=<skill-dir>/scripts` 로 부른다.
-  설치 위치를 `~/.claude` 나 `~/.codex` 로 가정하지 않는다.
 - **`python3`, `bash`, `zsh`.** `run_doc_snippets.sh` 는 문서의 코드 블록을 bash 와 zsh 양쪽에서 돌려 셸 차이를 본다.
 - **현재 실행 환경의 설정과 도구 설명.** 실제 모델과 런타임, 설치된 역할과 스킬,
   프로젝트가 읽는 지침 파일을 여기서 확인한다. 찾지 못하면 추측하지 않고 검증 공백으로 둔다.
 - **사용자 승인.** 판정표를 제시한 뒤 승인받은 항목만 수정한다.
 - **저장소의 표현·가독성 검사.** 고친 Markdown 이 이것을 통과해야 한다.
-- **읽기 전용 검토자.** 가능하면 최종 diff 를 작성과 분리된 검토자에게 맡긴다.
-  그 검토자에게 수정과 commit 과 push 권한을 주지 않는다.
+- **읽기 전용 검토자.** 최종 diff 를 작성과 분리된 검토자에게 읽기 전용으로 맡긴다.
+  띄울 수 없으면 메인이 직접 확인하고 그 사실을 완료 보고에 남긴다.
 
 ## 구성
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 6단계 절차. 기준과 범위, 실측 명령 순서, 유지와 제거의 근거 목록, 판정표 형식, 교정 규칙, 재검증 |
+| `SKILL.md` | 목표와 6단계 절차, 단계별 통과 조건, 실측 명령 순서와 종료 코드 규약, 판정표 형식 |
 | `references/audit-axes.md` | 무엇을 찾을지. 소유권 중복, 죽은 검출, 값 하드코딩, 지시 충돌, 계층 분리, 정책 잔존, 런타임 동작 변화, 사용 이력 0 |
-| `references/judgment.md` | 찾은 것을 어떻게 처리할지. 유지와 제거의 기준, 문장 단위 판정 열 가지, 목록을 지우기 전 절차, 공개 스킬의 독자 |
+| `references/judgment.md` | 찾은 것을 유지할지 지울지. 유지와 제거의 기준, 문장 단위 판정 열 축, 기계 강제 확인 절차 |
 | `scripts/target_files.py` | 감사 대상 파일 선택 기준. 다른 스크립트가 이것을 가져다 쓴다 |
 | `scripts/collect_targets.py` | 감사 대상 파일과 줄 수 출력 |
 | `scripts/collect_targets.sh` | `collect_targets.py` 를 스킬 디렉터리 기준으로 부르는 진입점 |
 | `scripts/check_references.py` | 마크다운 링크, 백틱 경로, 다른 문서의 섹션 참조, 스킬 참조가 실재하는지 확인. 깨진 참조가 있으면 종료 코드 1 |
 | `scripts/check_facts.py` | 문서에 적힌 개수와 목록 표기를 뽑아 검토 지점으로 제시한다. 자동 판정이 아니다 |
 | `scripts/check_duplication.py` | 지침 파일 사이에 연속 N줄 이상 같은 내용이 반복되는 구간 검출 |
-| `scripts/check_rename_drift.sh` | `SKILL.md` 를 고치고 그것이 위임한 참조 문서를 안 고친 경우 검출. 종료 코드 0 통과, 1 검출, 2 사용법 오류 |
+| `scripts/check_rename_drift.sh` | `SKILL.md` 를 고치고 그것이 위임한 참조 문서를 안 고친 경우 검출. 변경된 `SKILL.md` 가 없으면 종료 코드 2 |
 | `scripts/check_enforcement.sh` | 지침이 금지하는 대상을 gitignore, lint, grep, 도구 권한이 실제로 막는지 판정 |
 | `scripts/run_doc_snippets.sh` | 문서의 bash 코드 블록을 그대로 추출해 bash 와 zsh 에서 실행. 종료 코드가 아니라 출력으로 판정한다 |
 | `CHANGELOG.md` | 버전 이력 |

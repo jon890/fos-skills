@@ -78,11 +78,14 @@ done < <(find . \
   -type d \( -name .git -o -name .omx -o -name node_modules -o -name data -o -name private -o -name sources -o -name tasks \) -prune -o \
   -type f -name SKILL.md -print0)
 
+# 검사 대상이 없으면 통과가 아니라 검사가 돌지 못한 것이다.
+# 0 으로 끝내면 아무것도 보지 않은 실행이 통과로 기록된다 (실측).
 if [ "$scanned" -eq 0 ]; then
-  echo "검사 대상 없음 — 기준 '$BASE' 대비 변경된 SKILL.md 가 하나도 없다 (통과가 아니다)" >&2
-else
-  echo "검사한 SKILL.md: ${scanned}개, 드리프트: ${found}건" >&2
+  echo "검사 대상 없음 — 기준 '$BASE' 대비 변경된 SKILL.md 가 하나도 없다." >&2
+  echo "기준을 바꾸거나 (BASE=<ref>) 변경을 커밋한 뒤 다시 돌린다." >&2
+  exit 2
 fi
 
+echo "검사한 SKILL.md: ${scanned}개, 드리프트: ${found}건" >&2
 [ "$found" -eq 0 ] || exit 1
 exit 0
