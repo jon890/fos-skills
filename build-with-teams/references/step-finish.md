@@ -41,8 +41,9 @@ base 는 `main`, head 는 plan 브랜치다. 오픈 PR 이 없으면 새로 만�
 
 ## 팀 종료와 작업 공간 정리
 
-1. 남아 있는 팀원 전부를 `TaskStop` 으로 종료하고 확인한다.
+1. 남아 있는 팀원 전부를 종료하고 확인한다.
    대상은 `executor-p{N}`, `critic`, `code-reviewer`, `docs-verifier` 다.
+   종료 수단은 [`team-spawn.md`](team-spawn.md)의 하네스별 대응표를 따른다.
 2. **PR 생성과 원격 push 가 끝난 뒤에** 작업 공간을 정리한다.
    미커밋 변경과 로컬에만 있는 commit 이 없는지 먼저 확인한다. 정리 방법은 오버레이를 따른다.
 

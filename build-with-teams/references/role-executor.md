@@ -46,7 +46,7 @@
 
 ## 커밋하지 않는다
 
-완료와 실패를 `SendMessage` 로 team-lead 에게 보고하면 team-lead 가 커밋한다.
+완료와 실패를 team-lead 에게 메시지로 보고하면 team-lead 가 커밋한다.
 
 ## 지켜야 할 가드
 
