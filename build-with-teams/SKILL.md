@@ -86,7 +86,7 @@ python3 scripts/plan_precheck.py <plan> --repo <repo-root>
 
 ### 2. 작업 공간
 
-만드는 방법은 오버레이가 소유한다. 이 스킬이 요구하는 것은 통과 조건 셋이다.
+만드는 방법은 오버레이가 소유한다. 이 스킬이 요구하는 것은 아래 통과 조건이다.
 
 - **원격 plan 브랜치 위**: planning 의 docs 와 tasks 커밋이 그 위에 있어야 task 를 읽을 수 있고,
   구현 커밋이 같은 브랜치에 쌓여야 기획과 구현이 PR 하나에 담긴다.
@@ -101,7 +101,7 @@ plan 브랜치가 원격 main 보다 뒤처졌으면 갱신할지 사용자에�
 `index.json` 과 `phase-*.md`, 그것이 가리키는 docs 를 읽는다.
 critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 목록 경로)를 담는다.
 
-회신 셋 중 **실행 형태가 없으면 재요청한다.** 4단계 판정의 입력이다.
+회신에 **실행 형태가 없으면 재요청한다.** 4단계 판정의 입력이다.
 
 발견 목록을 team-lead 가 셋으로 나눈다.
 
@@ -111,23 +111,17 @@ critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 �
 
 ### 4. phase 구현
 
-`index.json` 의 미완료 phase 를 순서대로 돈다. **한 phase 마다 여섯을 반복한다.**
+`index.json` 의 미완료 phase 를 순서대로 돈다. **한 phase 의 작업 순서는 다음과 같다.**
 
-1. **실행 형태를 판정한다.** critic 회신과 직접 점검을 assessment JSON 으로 만들어 통과시킨다.
-   차단하면 그 phase 에 착수하지 않는다.
-   ```bash
-   python3 scripts/executor_routing_gate.py <assessment.json>
-   ```
+1. **실행 형태를 판정한다.** critic 판정과 team-lead 직접 점검 중 더 엄격한 쪽을 고른다.
+   `HIGH_RISK` 차단 조건에 걸리거나 판정 근거가 부족하면 더 엄격한 쪽으로 올린다.
 2. **실행 등급을 정한다.** 출발값을 고르고 실행 형태의 최소 등급으로 끌어올린다. 낮추는 방향은 없다.
 3. **executor 를 스폰한다.** 이름은 `executor-p{N}` 이고 **등급을 명시 지정한다.**
    생략했을 때 무엇이 적용되는지는 환경 설정이 정하므로 문서를 읽어서는 알 수 없다.
 4. **executor 가 구현하고 검증한 뒤 회신한다.**
 5. **team-lead 가 그 phase 만 커밋한다.** 커밋 전 `git status` 로 staged 전체를 본다.
    무관한 변경이 섞였으면 `git reset` 후 경로를 한정해 커밋한다.
-6. **team-lead 가 그 executor 를 종료한다.** 확인한 뒤 다음 phase 로 간다.
-   한 executor 가 여러 phase 를 이어 받으면 앞 phase 의 판단이 뒤에 섞인다.
-   종료를 빠뜨리면 phase 마다 누적된다 (8-phase task 에서 팀원 8개 잔존 관측).
-   에이전트가 한 번 쓰고 끝나는 하네스에서는 이 항목이 발동하지 않는다.
+6. **커밋 후 그 phase 의 executor 를 정리한다.**
 
 phase 가 실패하면 원인을 분석한다.
 phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
