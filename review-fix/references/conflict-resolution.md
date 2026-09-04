@@ -63,7 +63,7 @@ git grep -nE "^(<<<<<<< |=======$|>>>>>>> )" -- . ; echo "exit=$?"   # exit 1 �
 
 ## 커밋
 
-conflict 해결 결과는 commit 전에 `AskUserQuestion` 으로 confirm 한다 (충돌 파일별 1줄 요약 노출).
+conflict 해결 결과는 commit 전에 사용자에게 확인받는다. 충돌 파일마다 한 줄로 요약해 보여준다.
 
 **머지·rebase commit 은 review fix commit 과 별도로 둔다.** 회귀했을 때 따로 revert 할 수 있다.
 base 동기화를 먼저 push 한 후 fix 를 진행한다.
