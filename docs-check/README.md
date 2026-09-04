@@ -23,9 +23,9 @@
 
 ## 전제
 
-- 검사 대상 저장소 루트에서 실행해야 한다. `static-check.sh` 는 git 저장소가 아니면 종료 코드 2 로 멈춘다
+- 검사 대상 저장소 루트에서 실행해야 한다. git 저장소가 아니면 종료 코드 2 로 멈춘다
 - ADR 디렉터리 경로가 필요하다. 넘기지 않으면 Index 동기화 검사를 건너뛴다
-- `python3` 가 있어야 한다. `static-check.sh` 가 앵커 검사에 쓴다
+- `python3` 가 있어야 한다. 정적 검사가 python 으로 돌아간다
 - `<repo-root>/.claude/docs-check-overlay.md` 는 선택이다. 문서 경계, 검증 명령,
   저장소 특화 코드 대조 grep 을 오버레이가 채운다. 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 본다
 - 독립 검토자를 띄울 수 있으면 읽기 전용으로 격리한다. 띄울 수 없으면 메인이 직접 검사하고
@@ -35,8 +35,8 @@
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 목표와 6단계 실행 절차, 단계별 통과 조건, 여섯 축 목록, 리포트 형식 |
-| `references/six-axis.md` | 부패, 과대화, 추론성, 중복, 자명성, 구조 무결성의 세부 판정 기준 |
-| `scripts/static-check.sh` | 결정적으로 판정되는 위반만 검출하는 정적 검사. 위반 라인을 stdout 으로 낸다 |
-| `scripts/check_anchors.py` | `#앵커` 링크가 실제 헤딩을 가리키는지 본다. `static-check.sh` 가 부른다 |
+| `SKILL.md` | 목표와 6단계 실행 절차, 단계별 통과 조건, 문서 역할 기본값, 여섯 축 목록, 리포트 형식 |
+| `references/six-axis.md` | 여섯 축의 세부 판정 기준과 `superseded` ADR 의 예외 |
+| `scripts/static_check.py` | 결정적으로 판정되는 위반만 검출한다. ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와 앵커 |
+| `tests/test_static_check.py` | 검사마다 걸리는 표본과 걸리지 않는 표본을 함께 둔 검출력 검사 |
 | `CHANGELOG.md` | 버전 이력 |
