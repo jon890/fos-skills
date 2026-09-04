@@ -3,6 +3,20 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.4.0
+
+- `~/.claude/skills/build-with-teams/` 절대경로 넷을 번들 상대경로로 바꿨다.
+  팀원에게 넘기는 역할 계약 파일만 절대경로가 필요하므로, 그 자리는 하네스가 알려주는
+  base 디렉터리를 쓰라고 고쳐 적었다.
+- 행동 지시의 부정형 넷을 긍정형으로 바꿨다. 경계와 차단 조건은 그대로 두었다.
+
+## 4.3.2
+
+- worktree 위치를 `.claude/worktrees`로 고정하지 않고 저장소 오버레이,
+  Orca의 `worktreeBasePath`, 저장소의 `worktrees` 기본값 순서로 결정한다.
+- 선택한 base 아래에 repo 이름과 plan 브랜치를 두어 서로 다른 저장소의 worktree가 섞이지 않게 한다.
+- 임시 디렉터리와 `.claude/worktrees`를 자동 폴백으로 만들지 않는다.
+
 ## 4.3.1
 
 - **1단계와 스폰 참조에서 없어진 도구를 알리는 서술을 제거했다.**

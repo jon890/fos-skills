@@ -1,17 +1,18 @@
 ---
 name: pr-review
 description: |
-  남의 PR 에 코드 리뷰를 작성하고 등록하는 공용 코어 스킬. 문제를 찾는 일이 아니라,
-  찾은 것을 근거와 등급을 갖춰 쓰고 미리보기로 확인한 뒤 PR 에 등록하는 절차를 소유한다.
-  "/pr-review", "pr-review", "PR 리뷰해줘", "코드 리뷰 해줘", "리뷰 작성", "리뷰 등록",
-  "리뷰 남겨줘", "이 PR 봐줘", "리뷰 초안", "리뷰 댓글 달아줘" 같은 표현이면 이 스킬을 쓴다.
+  남의 PR 에 코드 리뷰를 쓰고 등록한다.
+  "/pr-review", "PR 리뷰해줘", "코드 리뷰 해줘", "리뷰 작성", "리뷰 등록",
+  "리뷰 남겨줘", "이 PR 봐줘", "리뷰 초안", "리뷰 댓글 달아줘" 같은 요청이면 이 스킬을 쓴다.
   이미 달린 리뷰를 코드에 반영하는 일은 `review-fix` 가 맡는다. 방향이 반대다.
-  레포별 특화(호스트, 등급 표기, 후속 업무 프로젝트)는 레포 오버레이로 주입된다.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # pr-review
+
+**이 문서의 `scripts/`, `references/`, `assets/` 는 이 스킬 번들 기준 상대경로다.**
+하네스가 알려주는 스킬 base 디렉터리에 붙여 쓴다. 설치 위치를 가정하지 않는다.
 
 남의 PR 에 리뷰를 남긴다. 이 스킬이 소유하는 것은 **작성과 등록**이다.
 
@@ -31,7 +32,10 @@ metadata:
 
 `<repo-root>/.claude/pr-review-overlay.md` 가 있으면 먼저 읽고 코어보다 우선한다.
 
-- 오버레이가 채우는 것: git 호스트, 등급 표기, 후속 업무를 등록할 곳, 저장소 고유 점검 항목.
+- 오버레이가 채우는 것: git 호스트, 등급 기준(이 저장소에서 P2 는 무엇인가), 후속 업무를 등록할 곳,
+  저장소 고유 점검 항목.
+- **등급 표기는 오버레이가 바꾸지 않는다.** `references/grading.md` 가 소유하고
+  `scripts/gh-review-post.sh` 가 등록 직전에 강제한다.
 - 없으면 레포 `CLAUDE.md` 와 `REVIEW.md` 를 본다. 셋 다 없으면 사용자에게 확인한다.
 - 오버레이는 코어를 덮어쓰지 않고 채운다. 아래 다섯 단계는 생략할 수 없다.
 
@@ -89,13 +93,13 @@ gh pr list --state open --limit 20
 
 ```bash
 # 등록. 마지막 인자는 본문에 반드시 있어야 하는 핵심 낱말이고 하나 이상 필수다.
-~/.claude/skills/pr-review/scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
+scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
 
 # 스레드 답글
-~/.claude/skills/pr-review/scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
+scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
 
 # 이미 달린 댓글과 스레드를 읽는다
-~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR> [--thread <root댓글id>] [--mine]
+scripts/gh-review-list.sh <owner/repo> <PR> [--thread <root댓글id>] [--mine]
 ```
 
 경로는 절대 경로로 쓴다. 이 스킬은 대상 저장소를 cwd 로 두고 도므로

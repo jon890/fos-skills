@@ -1,10 +1,17 @@
 ---
 name: build-with-teams
-description: 팀 기반 구현 자동화 공용 코어 skill. planning 이 만든 task(index.json, phase 파일)를 읽고 plan 1개를 단일 브랜치·단일 PR로 완료한다. 계획(team-lead) → 평가(critic) → 실행(executor) → 검토(code-reviewer) → 정합성 검증(docs-verifier) 파이프라인으로 phase 를 순차 처리하고 phase 단위 atomic commit 과 PR 까지 완료한다. "/build-with-teams", "build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행", "critic 평가", "docs-verifier 검증", "task 실행해줘", "phase 실행" 같은 요청 시 반드시 이 스킬 사용. 레포별 특화(빌드/검증 명령·브랜치 규칙·에이전트 이름·스키마 세부·커밋 컨벤션)는 레포 오버레이·CLAUDE.md 로 주입된다.
+description: |
+  planning 이 만든 task 를 읽어 plan 하나를 구현까지 끝낸다.
+  "/build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행",
+  "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
+  task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "4.3.1"
+  version: "4.4.0"
 ---
 # build-with-teams
+
+**이 문서의 `scripts/`, `references/`, `assets/` 는 이 스킬 번들 기준 상대경로다.**
+하네스가 알려주는 스킬 base 디렉터리에 붙여 쓴다. 설치 위치를 가정하지 않는다.
 
 planning 이 만든 task(`index.json`, `phase-*.md`)를 팀 기반 파이프라인으로 실행하는 시스템.
 team-lead 가 팀원(critic·executor·code-reviewer·docs-verifier)을 조율해 phase 를 순차 실행한다.
@@ -64,7 +71,7 @@ team-lead 가 task 규모를 보고 구현을 위임할지 스스로 정한다. 
 critic·code-reviewer·docs-verifier 스폰은 두 모드 모두에서 필수다.
 계획 평가와 사후 검토를 규모로 깎지 않는다: 같은 세션이 자기 계획과 자기 구현을 그대로 승인하면 결함이 드러나지 않는다.
 프론티어 모델도 여기서는 자기 맥락에 갇힌다.
-스폰이 환경 제약으로 실패하면 건너뛰지 말고 그 사실과 대체 검증 근거를 실행 보고에 남긴다.
+스폰이 환경 제약으로 실패하면 그 사실과 대체 검증 근거를 실행 보고에 남긴다.
 
 ## 팀 구성 (역할: 에이전트 이름은 오버레이가 지정)
 
@@ -96,16 +103,26 @@ executor·docs-verifier 이름은 오버레이가 지정한다.
 - **구현자 scope 확장 보고**: task 범위 외 수정을 자체 판단으로 추가하면 검토를 우회한다. 모드 B 는 자기 승인이 되므로 사용자에게 확인한다.
 - **watchdog stall 복구**: 무거운 외부 상호작용에서 멈추면 그 상호작용을 없애는 쪽으로 작업을 다시 짠다.
   워치독은 모드 A 에만 있지만 회피 원칙은 모드 B 에서도 같다.
-- **역할 계약 파일은 스킬 절대경로로 준다**: 팀원에게 역할 계약을 읽히려면
-  `~/.claude/skills/build-with-teams/references/` 아래 해당 역할 파일을 절대경로로 지시한다.
-  아래 본문의 상대경로 링크는 team-lead 가 읽을 때의 표기이고, 그대로 넘기면
+- **역할 계약 파일은 절대경로로 준다**: 팀원에게 역할 계약을 읽히려면
+  하네스가 알려준 이 스킬 base 디렉터리에 `references/<역할>.md` 를 붙여 절대경로로 지시한다.
+  아래 본문의 상대경로 표기는 team-lead 가 읽을 때의 것이고, 그대로 넘기면
   팀원 cwd(worktree·main repo) 기준으로 풀려 없는 파일이 된다.
 
 상세 프롬프트 문구와 근거는 [`references/team-spawn.md`](references/team-spawn.md) 참조: **팀원 스폰 전 반드시 읽는다**.
 
 ## worktree 기반 격리 실행
 
-worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore` 에 있어야 한다.
+worktree 위치는 저장소별 설정을 따른다.
+
+1. 오버레이가 worktree root를 지정하면 그 값을 쓴다.
+2. Orca CLI를 사용할 수 있고 등록된 repo의 `worktreeBasePath`가 있으면
+   `orca repo show --repo path:<repo-root> --json`으로 읽어 그 값을 쓴다.
+   상대경로는 repo root 기준으로 해석한다.
+3. 둘 다 없으면 `<repo-root>/worktrees`를 기본값으로 쓴다.
+
+target은 `<resolved-worktree-base>/<repo-name>/<plan-branch>`로 만들고,
+resolved worktree base가 저장소 안이면 그 경로가 `.gitignore`에 있어야 한다.
+`.claude/worktrees`나 임의의 `/tmp` 경로를 폴백으로 만들지 않는다.
 
 - **base**: worktree 는 **원격 `plan{N}-<slug>` 브랜치 기반**으로 분기한다.
   - planning 의 docs·tasks 커밋이 그 위에 있어야 task 를 읽을 수 있다.
@@ -121,7 +138,7 @@ worktree 는 `.claude/worktrees/` 아래에 만들고, 그 경로가 `.gitignore
 ## 실행 절차
 
 절차 어디서든 **결정 결과가 (a) 회수 비용이 크거나 (b) 사용자 의도·스타일에 따라 갈리거나
-(c) plan scope 를 벗어나면** 자의로 진행하지 말고 옵션과 트레이드오프를 질문한다.
+(c) plan scope 를 벗어나면** 옵션과 트레이드오프를 붙여 질문한다.
 긴 자동 실행에서는 완료 압력이 걸려 이 판단이 "일단 진행" 쪽으로 기운다.
 
 ```
@@ -183,7 +200,7 @@ critic APPROVE 후 구현에 들어간다. 모드 A 는 executor 를 `run_in_bac
 아래 실행 형태 점검과 phase 단위 커밋·검증 규칙은 두 모드에 같이 적용한다: 구현 주체만 다르고 통과 조건은 같다.
 
 각 phase 착수 직전에 [`references/executor-routing.md`](references/executor-routing.md)의 적합성 점검을 실행한다.
-team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `~/.claude/skills/build-with-teams/scripts/executor_routing_gate.py`를 통과시킨다.
+team-lead는 critic 회신과 직접 점검 결과를 assessment JSON으로 만들고 `scripts/executor_routing_gate.py`를 통과시킨다.
 스크립트가 차단하면 그 phase 에 착수하지 않는다.
 
 판정을 무엇으로 집행할지는 모드마다 다르다.
@@ -242,7 +259,7 @@ team-lead 가 직접 검사하지 않는다: 건너뛰기를 막기 위해서다
 - (b) 의도된 설계
 - (c) 범위 밖 후속
 
-(b)·(c) 는 버리지 말고 특이사항 4종에 합쳐 보고한다.
+(b)·(c) 는 특이사항 4종에 합쳐 보고한다.
 
 판정: **PASS** → 7단계. **FIX_NEEDED** → 구현자 재투입 후 재검사 (한도 2회. 모드 A 는 executor 재스폰, 모드 B 는 team-lead 직접 수정).
 리뷰 반영이 docs 를 바꿨으면 6단계의 docs-verifier 재검증도 함께 건다.
@@ -281,7 +298,7 @@ team-lead 가 직접 검사하지 않는다: 건너뛰기를 막기 위해서다
 5. push 후 PR 생성·갱신 (오픈 PR 없으면 신규, 있으면 갱신). base 는 `main`, head 는 `plan{N}-<slug>` 다.
  이 PR 하나에 **planning 의 docs·tasks 커밋과 구현 phase 커밋이 함께** 담긴다: 기획부터 구현까지가 하나의 완결된 변경으로 남는다.
  PR 제목·body 형식은 레포 커밋 컨벤션을 따르고, 기획 커밋과 phase 별 commit 을 구분해 나열한 뒤 "특이사항 및 후속" 섹션을 포함한다.
- PR diff에 다른 plan의 task·구현이 섞였으면 생성하지 말고 브랜치 범위를 정리한다.
+ PR diff 에 다른 plan 의 task 나 구현이 섞였으면 브랜치 범위를 정리한 뒤 생성한다.
 6. **팀 종료**: 남아 있는 팀원 전부에 `shutdown_request`(또는 `TaskStop`)를 보내고 종료를 확인한다.
  대상은 `executor`·`executor-p{N}`·`critic`·`code-reviewer`·`docs-verifier` 다.
  phase 단위 사이클에서 종료되지 않은 executor 가 있으면 여기서 일괄 정리한다.

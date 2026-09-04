@@ -7,16 +7,16 @@ Dooray 는 본문을 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/J
 업무 본문과 댓글은 Dooray 화면에서 머리가 다르다. --mode 로 고른다.
 
 사용 예 (업무 본문):
-    python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
+    python3 scripts/dooray-preview/generate.py \
         --title "[VectorSearch] [DocParser] ..." \
         --tag "Document Parser" --tag "개선" --tag "REAL" \
         --meta "담당자:홍길동" --meta "참조:개발 그룹" \
         --md-file /tmp/body.md \
         --out /tmp/dooray-preview.html
-    ~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/dooray-preview.html
+    scripts/show-preview.sh /tmp/dooray-preview.html
 
 사용 예 (댓글):
-    python3 ~/.claude/skills/content-preview/scripts/dooray-preview/generate.py \
+    python3 scripts/dooray-preview/generate.py \
         --mode comment --author "홍길동" \
         --title "주간보고 2026년 8월 4주차 — #199" \
         --md-file /tmp/body.md \

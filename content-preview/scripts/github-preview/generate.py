@@ -5,16 +5,16 @@ GitHub 은 본문을 GitHub Flavored Markdown 으로 렌더링한다. 같은 모
 github-markdown-css (GitHub 공식 마크다운 스타일) + marked.js (클라이언트 GFM 렌더) 를
 쓰는 템플릿에 markdown 을 흘려 넣어 등록 전 본문을 실제 화면과 비슷하게 검토한다.
 
-Dooray 미리보기(~/.claude/skills/content-preview/scripts/dooray-preview/) 와 같은 구조 — viewer 엔진만 다르다.
+Dooray 미리보기(scripts/dooray-preview/) 와 같은 구조 — viewer 엔진만 다르다.
 
 사용 예:
-    python3 ~/.claude/skills/content-preview/scripts/github-preview/generate.py \
+    python3 scripts/github-preview/generate.py \
         --type issue \
         --repo "toast-lab/ai-playground-docu-parser" \
         --title "markdown 표: th+td 혼합 첫 행 헤더 중복 잔존" \
         --md-file /tmp/gh-body.md \
         --out /tmp/gh-preview.html
-    ~/.claude/skills/content-preview/scripts/show-preview.sh /tmp/gh-preview.html
+    scripts/show-preview.sh /tmp/gh-preview.html
 
 주의:
 - markdown 본문에 '</script>' 문자열이 있으면 안 된다 (text/markdown 블록이 깨진다).
