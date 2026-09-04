@@ -20,9 +20,9 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 
 | 팀원 | 목표 | 판정 | 기준 |
 | --- | --- | --- | --- |
-| **critic** | 대화를 보지 못한 사람이 phase 만 읽고 구현할 수 있는지 본다 | `APPROVE` / `REVISE` | `references/role-critic.md` |
+| **critic** | 구현할 컨텍스트가 갖춰졌는지, 계획에 결함이 없는지 본다 | `APPROVE` / `REVISE` | `references/role-critic.md` |
 | **executor** | 배정받은 phase 를 적힌 그대로 구현하고 테스트로 증명한다 | 완료 보고 | `references/role-executor.md` |
-| **code-reviewer** | 구현이 계획과 같은지, 다음 사람이 고칠 수 있는지 본다 | `PASS` / `FIX_NEEDED` | `references/role-code-reviewer.md` |
+| **code-reviewer** | 구현이 계획과 같은지, 코드가 앞으로 안전하고 고칠 수 있는지 본다 | `PASS` / `FIX_NEEDED` | `references/role-code-reviewer.md` |
 | **docs-verifier** | 코드가 docs 의 결정을 어기지 않는지, docs 가 지금 코드를 말하는지 본다 | `PASS` / `UPDATE_NEEDED` / `VIOLATION` | `references/role-docs-verifier.md` |
 
 **team-lead 는 조율, phase 단위 커밋, 검토 결과의 분류, PR 생성을 한다.**  
@@ -129,7 +129,7 @@ phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 p
 ### 5. 코드 리뷰와 문서 정합성을 검토받는다
 
 **모든 phase 가 끝난 뒤에 code-reviewer 와 docs-verifier 를 함께 스폰한다.**
-검토 대상은 누적 diff 다. 두 검토는 서로의 입력이 아니라서 병렬로 돈다.
+검토 대상은 누적 diff 다. 두 검토는 병렬로 돈다.
 
 code-reviewer 스폰 프롬프트에 반복 함정 목록 경로를 담는다.
 **무엇이 의도된 것인지 미리 알려주지 않는다.** 그러면 리뷰어가 그 자리를 보고에서 뺀다.

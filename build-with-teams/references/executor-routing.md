@@ -85,11 +85,10 @@ task 가 적어 둔 등급을 그대로 쓰지 않고, 그 phase 가 실제로 �
 | **중** | 기능 확장, 리팩토링 | standard | deep | standard | standard | standard |
 | **대** | 새 아키텍처, 신규 도메인, 스키마 대규모 변경 | deep | deep | standard | standard | deep |
 
-규모는 phase 개수가 아니라 **무엇을 바꾸는가**로 가른다.
+규모는 **무엇을 바꾸는가**로 가른다.
 phase 가 하나여도 스키마를 바꾸면 「대」 이고, 여러 개여도 같은 패턴 반복이면 「중」 이다.
 
-**이 표는 기본값이지 하한이 아니다.** phase 가 `execution_profile` 로 등급을 지정했으면 그 값을 쓴다.
-하한으로 읽으면 executor 가 전 규모 `standard` 라 `BOUNDED` 가 증명해 낸 `fast` 경로가 열리지 않는다.
+**이 표는 출발값이다.** phase 가 `execution_profile` 로 등급을 지정했으면 그 값이 이 표보다 앞선다.
 
 옛 task 의 `model` 값도 같은 세 등급에 대응시킨다.
 
