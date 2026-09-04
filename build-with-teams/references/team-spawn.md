@@ -1,9 +1,8 @@
 # 팀원 스폰 가드 상세
 
-`SKILL.md` "팀 구성" 절이 가리키는 참조 문서다.
+`SKILL.md` 가 팀원 스폰 전에 읽으라고 가리키는 문서다.
 팀원(executor·critic·code-reviewer·docs-verifier)을 스폰·통신할 때 실제 사고를 겪고 굳어진 가드의 상세 프롬프트와 근거를 담는다.
-SKILL.md 는 한 줄 요약만 두고, 각 가드의 본문은 이 문서가 소유한다.
-**팀원 스폰 전 반드시 읽는다.**
+**팀원 스폰 전에 읽는다.**
 
 ## 목차
 
@@ -40,7 +39,6 @@ agent teams 는 실험 기능이고 **기본적으로 꺼져 있다.**
 
 - 이름 없이 스폰했으면 그 agent id 를 실행 보고에 남긴다. 나중에 부를 주소가 그것뿐이다.
 - `team_name` 인자는 넘기지 않는다. 받아들이되 무시된다.
-  팀은 세션 시작 시 자동으로 구성되므로 만들거나 지우지 않는다.
 - `name` 은 `critic`/`executor`/`code-reviewer`/`docs-verifier` 를 기본으로 쓴다.
   - **동시에 두 개 이상의 worktree 가 돌면 이름에 plan 번호를 붙인다** (`critic-p{N}` 형태).
     같은 이름을 쓰면 응답이 다른 worktree 의 team-lead 에 도착해, 본 plan 과 무관한 분석을 받는다.
