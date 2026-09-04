@@ -61,7 +61,7 @@ Claude Code 에서는 이름 없이 띄워도 스폰 결과가 주는 id 로 메
 판정/결론 + 핵심 사유 1-2 문단을 메시지 본문으로 보낼 것.
 ```
 
-**executor, cwd 격리.** main 워킹 디렉터리에서 실행돼 main 브랜치를 직접 고치는 사고가 관측된다.
+**executor, cwd 격리.** 하위 에이전트의 cwd 는 지정하지 않으면 main 워킹 디렉터리다.
 
 ```
 모든 파일 경로 / cd / git 명령은 지정된 작업 공간 절대경로 기준으로만 수행.
@@ -90,9 +90,9 @@ Claude Code 는 대기와 실패를 `idleReason` 으로 가른다.
 `available` 은 턴이 끝나 대기 중이므로 이름으로 부르면 재개된다.
 `failed` 는 `failureReason` 을 읽고 판단한다. 세션 한도면 재스폰해도 같은 이유로 막힌다.
 
-## 실패 사례
+## 스폰이 실패할 때
 
-Claude Code 에서 관측된 것이다.
+Claude Code 고유의 오류다.
 
 - **`Could not determine current tmux pane/window`**
   `teammateMode` 를 `tmux`, `auto`, `iterm2` 로 켠 환경에서 난다.

@@ -20,7 +20,7 @@ git diff --name-only origin/main...HEAD
 ```
 
 2-dot(`origin/main..HEAD`)은 분기 후 origin/main 에 들어온 외부 커밋까지 끌어온다.
-실제로 무관한 차이 50여 건이 섞여 판정이 오염된 사례가 있다.
+이번 plan 과 무관한 변경을 리뷰하게 된다.
 
 검토 대상은 개별 phase 가 아니라 **모든 phase 가 끝난 누적 diff** 다.
 
