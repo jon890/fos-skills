@@ -7,7 +7,7 @@
 # 워크플로 버전에 따라 리뷰가 담기는 위치가 다르다.
 # 한 소스만 보면 봇의 구조화 리뷰를 놓친다.
 #
-# 리뷰 스레드를 함께 내는 이유는 7단계가 THREAD_ID 로 회신하기 때문이다.
+# 리뷰 스레드를 함께 내는 이유는 「회신」 단계가 THREAD_ID 로 회신하기 때문이다.
 # REST 댓글의 path 와 line 을 스레드의 것과 대조해 어느 지적에 회신할지 정한다.
 #
 # diff_hunk, html_url, _links, reactions 는 토큰만 차지하므로 jq 로 빼고 body 는 잘라 낸다.
@@ -32,5 +32,5 @@ gh api "repos/$owner/$repo/pulls/$num/comments" \
 echo "## 3. 일반 PR(issue) 댓글"
 gh pr view "$num" --repo "$owner/$repo" --comments
 
-echo "## 4. 미해결 리뷰 스레드 (7단계 회신 대상)"
+echo "## 4. 미해결 리뷰 스레드 (「회신」 단계의 대상)"
 "$here/review-threads.sh" list "$owner" "$repo" "$num"

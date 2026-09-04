@@ -1,57 +1,48 @@
-# Conflict 해결 절차
+# Conflict 해결
 
 `mergeable: CONFLICTING` 또는 `mergeStateStatus: DIRTY` 일 때만 읽는다.
-작업 트리 정렬(체크아웃)은 이 문서를 읽기 전 2단계에서 이미 끝났다.
+작업 트리 정렬은 「작업 트리 정렬」 단계에서 이미 끝났다.
 
-CONFLICTING 인 채로 fix 를 push 하면 여전히 머지 불가라 fix 효과가 무력화된다.
+CONFLICTING 인 채로 fix 를 push 하면 여전히 머지 불가라 fix 효과가 사라진다.
 
-## base 가져와 머지
+**base 를 가져와 그 저장소의 머지 정책에 맞춰 merge 또는 rebase 한다.**
+어느 쪽을 썼는지 기억해 둔다. 아래 lockfile 처리에서 갈린다.
 
-레포 머지 정책에 맞춰 merge 또는 rebase 한다.
+## 사용자에게 확인받는 충돌
 
-```bash
-BASE=$(gh pr view <N> --json baseRefName --jq '.baseRefName')
-git fetch origin "$BASE"
-git merge "origin/$BASE" --no-commit --no-ff   # rebase 정책이면 git rebase origin/$BASE
-git status --short | grep "^UU"
-```
+아래 둘은 스스로 정하지 않는다. 어느 쪽을 남겨도 상대의 의도를 지우기 때문이다.
 
-## 충돌 분류와 처리 (언어 무관)
+- **같은 줄을 양쪽이 다르게 고쳤다.** 같은 시그니처를 양쪽에서 수정한 경우가 여기 해당한다.
+- **한쪽이 지우고 한쪽이 고쳤다.**
 
+나머지 충돌은 판단해서 해결한다.
 
-| 카테고리                            | 예시                            | 처리                                  |
-| ------------------------------- | ----------------------------- | ----------------------------------- |
-| **양쪽 추가** (서로 다른 항목)            | 서로 다른 파일/섹션 추가                | ✅ 둘 다 보존                            |
-| **수치/카운트 갱신**                   | 인덱스 카운트가 다른 PR 머지로 증가         | ✅ 더 큰 수치와 본 PR 의미 합성                |
-| **lockfile 충돌**                 | 아래 "lockfile 처리"              | ✅ main 채택 후 재생성                     |
-| **same-line different-content** | 같은 시그니처 양쪽 수정                 | ⚠️ 사용자 confirm 필수                   |
-| **delete vs modify**            | 한쪽 제거, 한쪽 수정                  | 🛑 사용자 confirm 필수                   |
-| **import 누락**                   | 한쪽이 import 제거하고 다른 쪽이 그 모듈 사용 | ⚠️ import 재추가 — silent NameError 회피 |
+## lockfile
 
+**lockfile 은 수동으로 머지하지 않는다. 무결성이 깨진다.**
+base 를 채택한 뒤 그 저장소의 패키지 매니저로 재생성한다.
 
-## lockfile 처리
+| lockfile | 재생성 명령 |
+|---|---|
+| `pnpm-lock.yaml` | `pnpm install` |
+| `package-lock.json` | `npm install` |
+| `yarn.lock` | `yarn install` |
 
-lockfile 은 수동 머지하지 않는다. 무결성이 깨진다.
-main 을 채택한 뒤 그 레포 패키지 매니저로 재생성한다.
-패키지 매니저는 lockfile 종류로 감지한다.
-
-- `pnpm-lock.yaml` → `pnpm install`
-- `package-lock.json` → `npm install`
-- `yarn.lock` → `yarn install`
-- 위 lockfile 이 없으면 (예: Gradle·Maven 등 lockfile 미사용 프로젝트) 이 단계는 스킵한다.
+위 셋이 없으면 lockfile 을 쓰지 않는 프로젝트이므로 이 절을 건너뛴다.
 
 ```bash
-git checkout --theirs <lockfile>  # merge 중 --theirs 가 base 다. rebase 중에는 --ours 가 base 다
-<감지된 install 명령>            # lock 재생성
+git checkout --theirs <lockfile>   # merge 중에는 --theirs 가 base 다
+git checkout --ours   <lockfile>   # rebase 중에는 --ours 가 base 다
+<재생성 명령>
 git add <lockfile>
 ```
 
 ## 해결 확인
 
-conflict 마커가 0건인지 확인하고, 레포 CLAUDE.md 의 검증 명령으로 빌드를 확인한다.
+conflict 마커가 0건인지 확인하고, 그 저장소의 검증 명령으로 빌드를 확인한다.
 
 ```bash
-git grep -nE "^(<<<<<<< |=======$|>>>>>>> )" -- . ; echo "exit=$?"   # exit 1 이면 마커 0건 = OK
+git grep -nE "^(<<<<<<< |=======$|>>>>>>> )" -- . ; echo "exit=$?"   # exit 1 이면 마커 0건
 ```
 
 미해결 파일 목록(`--diff-filter=U`)을 `grep` 인자로 넘기면, 해결이 끝나 목록이 비었을 때
@@ -63,7 +54,7 @@ git grep -nE "^(<<<<<<< |=======$|>>>>>>> )" -- . ; echo "exit=$?"   # exit 1 �
 
 ## 커밋
 
-conflict 해결 결과는 commit 전에 사용자에게 확인받는다. 충돌 파일마다 한 줄로 요약해 보여준다.
+해결 결과는 커밋 전에 사용자에게 확인받는다. 충돌 파일마다 한 줄로 요약해 보여준다.
 
-**머지·rebase commit 은 review fix commit 과 별도로 둔다.** 회귀했을 때 따로 revert 할 수 있다.
-base 동기화를 먼저 push 한 후 fix 를 진행한다.
+**머지나 rebase 커밋은 fix 커밋과 별도로 둔다.** 회귀했을 때 따로 revert 할 수 있다.
+base 동기화를 먼저 push 한 뒤 fix 를 진행한다.
