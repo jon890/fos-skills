@@ -14,10 +14,24 @@ $B doctor
 
 이 문서는 그 둘이 내지 않는 것을 담는다. 백엔드 선택 규칙, 백엔드마다 갈리는 동작, 함정, 새 백엔드 추가다.
 
-## 부르는 쪽
+## 구성
 
-`browser_driver.py` 하나가 백엔드 선택, 명령 처리, 도움말, 진단, 설치를 모두 담는다.
-설정 예시는 `browser.config.example.json` 이다.
+| 파일 | 담는 것 |
+| --- | --- |
+| `browser_driver.py` | 진입점. 명령을 갈라 보내고 예외를 종료 코드로 바꾼다 |
+| `driver/commands.py` | 명령 스펙과 `help` 렌더 |
+| `driver/config.py` | 설정 파일과 기본 제한 시간 |
+| `driver/errors.py` | 예외와 종료 코드 |
+| `driver/shell.py` | 백엔드 프로세스 호출과 반환값 정규화 |
+| `driver/admin.py` | `doctor` 와 `install` |
+| `driver/backends/__init__.py` | 백엔드 목록과 선택 규칙 |
+| `driver/backends/base.py` | 백엔드 공통 계약 |
+| `driver/backends/orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
+| `browser.config.example.json` | 설정 예시 |
+
+진입점만 실행 파일이다. 심링크로 불려도 실체 경로를 잡아 옆의 `driver` 패키지를 찾는다.
+
+## 부르는 쪽
 
 스킬은 이 드라이버를 세 자리에서 찾는다. 환경변수 `BROWSER_DRIVER`, 스킬과 함께 받은 저장소 안,
 개인이 걸어 둔 `~/.claude/scripts/browser-driver` 순이다.
@@ -34,7 +48,7 @@ $B doctor
 
 1. 환경변수 `BROWSER_DRIVER`
 2. `~/.claude/browser.config.json` 의 `driver`
-3. 자동 감지. 순서와 그 이유는 `browser_driver.py` 의 `DETECT_ORDER` 가 소유한다
+3. 자동 감지. 순서와 그 이유는 `driver/backends/__init__.py` 의 `DETECT_ORDER` 가 소유한다
 
 ## 백엔드마다 갈리는 것
 
@@ -101,7 +115,8 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" $B open "file:///tmp/preview.html"
 
 ## 새 백엔드 추가
 
-`browser_driver.py` 의 `Backend` 를 상속해 클래스 하나를 더하고 `BACKENDS` 에 등록한다.
+`driver/backends/` 에 파일 하나를 더한다.
+`base.py` 의 `Backend` 를 상속하고 `__init__.py` 의 `BACKENDS` 에 등록한다.
 
 - 실패를 종료 코드로 알리지 않는 CLI 라면 출력에서 실패 표식을 찾아 `DriverError` 를 던진다.
 - 조건 대기 명령이 없으면 `wait_expression` 으로 만든 폴링 표현식을 `eval` 에 넘긴다.

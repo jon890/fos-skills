@@ -88,10 +88,8 @@ Dooray 업무와 댓글, GitHub issue 와 PR 본문은 실제 렌더링과 비�
 | Dooray | TOAST UI Editor viewer 의 CSS 와 JS. 실제 등록 화면과 거의 같다 | `scripts/dooray-preview/` |
 | GitHub | github-markdown-css 와 marked.js. 실제 화면과 비슷하다 | `scripts/github-preview/` |
 
-**Dooray 본문을 다른 렌더러로 미리 보지 않는다.** marked 계열은 같은 markdown 을 다르게 렌더한다.
-한 문장마다 줄을 나눈 본문을 marked 는 한 문단으로 붙이고, TOAST UI 는 줄을 살린다.
-범위 표기의 물결표도 marked 만 취소선으로 읽는다 (실측).
-등록 결과와 다른 화면을 보고 판단하게 되므로 Dooray 대상은 이 생성기를 쓴다.
+**대상과 생성기를 바꿔 쓰지 않는다.** marked 는 한 문장마다 줄을 나눈 본문을 한 문단으로 붙이고
+물결표를 취소선으로 읽는다. TOAST UI 는 둘 다 살린다 (실측).
 
 인자는 각 생성기의 `--help` 가 소유한다. Dooray 는 `--mode` 로 머리를 고른다.
 
