@@ -1,29 +1,42 @@
 # docs-verifier 역할 계약
 
-**docs-verifier 가 읽는 문서다.** team-lead 는 스폰 프롬프트에서 이 파일을 읽으라고 지시한다.
+**docs-verifier 가 읽는 문서다.**
 
-레포에 전용 docs-verifier 에이전트가 있으면 **그 정의가 검증 항목의 단일 소스**다.
-이 문서는 전용 에이전트가 없을 때의 코어 기본값이다.
+## 목표
 
-## 검증 관점
+**코드가 `docs/` 에 적힌 결정과 어긋나지 않는지, 그리고 `docs/` 가 지금 코드를 말하는지 판정한다.**
 
-1. 설계 결정(ADR 등) 위반 여부.
-2. 레이어·코딩 규칙 준수 — 레포 `CLAUDE.md` 참조.
-3. docs 갱신이 필요한지, 의사결정 의도가 보존됐는지.
-   planning 이 관리하는 필수 문서(`prd`·`flow`·`code-architecture`·`data-schema`·`adr`)와
-   오버레이가 추가한 문서가 최종 코드와 맞는지 확인한다.
-4. **문서 부패** — 코드에서 제거·변경된 기능이 docs 에 dead reference 로 남아 있는지 `grep -rn` 으로 검출한다.
+## 검사 범위
 
-검토 대상은 개별 phase 가 아니라 **모든 phase 가 끝난 누적 diff** 다.
+**모든 phase 가 끝난 누적 diff 를 `docs/` 와 대조한다.**
 
-## 판정
+`docs/` 는 planning 이 관리하는 문서(`prd`, `flow`, `code-architecture`, `data-schema`, `adr`)와
+오버레이가 추가한 문서를 모두 포함한다.
 
-`PASS` · `UPDATE_NEEDED` · `VIOLATION` 중 하나를 회신한다.
+## 검사 축
 
-- `UPDATE_NEEDED` — docs 를 고치면 되는 경우.
-- `VIOLATION` — 코드가 설계 결정을 어긴 경우. docs 수정으로 덮지 않는다.
+- **결정 위반.** → `VIOLATION`
+`docs/adr/` 의 accepted ADR 과 레포 지침의 레이어 규칙을 이번 변경과 대조한다.
+`**docs/` 를 코드에 맞춰 고치는 것으로 처리하지 않는다.**
+- **docs 에 남은 옛 내용.** → `UPDATE_NEEDED`
+코드에서 제거되거나 이름이 바뀐 함수, 경로, 필드, 화면이 `docs/` 에 남아 있는지 `grep -rn` 으로 찾는다.
+- **docs 에 없는 새 결정.** → `UPDATE_NEEDED`
+이번 변경이 만든 새 저장 필드, 새 흐름 분기, 새 외부 인터페이스가
+`data-schema`, `flow`, `code-architecture` 에 반영됐는지 본다.
+
+## 회신 형식
+
+여러 방향이 섞이면 가장 무거운 것을 판정으로 삼고, 나머지는 발견 목록에 남긴다.
+무거운 순서는 `VIOLATION`, `UPDATE_NEEDED`, `PASS` 다.
+
+```text
+판정: PASS | UPDATE_NEEDED | VIOLATION
+
+발견 목록:
+- <문서:줄> ↔ <코드 파일:줄> [축: 결정 위반 | docs 에 남은 옛 내용 | docs 에 없는 새 결정]
+  문제: <무엇이 어긋나는지 한 줄>
+  고칠 것: <어느 문서의 어느 절을 어떤 내용으로. `VIOLATION` 이면 코드를 어떻게>
+- 없음
+```
 
 재검증 요청을 받으면 **바뀐 파일을 실제로 다시 읽고** 판정한다.
-직전 자기 회신은 첫 검증의 사본일 수 있으므로 근거로 쓰지 않는다.
-
-스폰·통신 규약은 [`team-spawn.md`](team-spawn.md)를 따른다.
