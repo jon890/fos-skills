@@ -41,7 +41,7 @@ main 을 채택한 뒤 그 레포 패키지 매니저로 재생성한다.
 - 위 lockfile 이 없으면 (예: Gradle·Maven 등 lockfile 미사용 프로젝트) 이 단계는 스킵한다.
 
 ```bash
-git checkout --ours <lockfile>   # merge 중 --ours = base. rebase 중이면 --theirs 로 방향 반대
+git checkout --theirs <lockfile>  # merge 중 --theirs 가 base 다. rebase 중에는 --ours 가 base 다
 <감지된 install 명령>            # lock 재생성
 git add <lockfile>
 ```
@@ -51,11 +51,15 @@ git add <lockfile>
 conflict 마커가 0건인지 확인하고, 레포 CLAUDE.md 의 검증 명령으로 빌드를 확인한다.
 
 ```bash
-git grep -nE "^(<<<<<<<|=======|>>>>>>>)" -- . ; echo "exit=$?"   # exit 1 이면 마커 0건 = OK
+git grep -nE "^(<<<<<<< |=======$|>>>>>>> )" -- . ; echo "exit=$?"   # exit 1 이면 마커 0건 = OK
 ```
 
 미해결 파일 목록(`--diff-filter=U`)을 `grep` 인자로 넘기면, 해결이 끝나 목록이 비었을 때
 인자 없는 재귀 grep 으로 의미가 바뀐다. 추적 파일 전체를 보는 `git grep` 이 안전하다.
+
+`=======` 뒤에 줄 끝을 요구하고 나머지 둘 뒤에 공백을 요구하는 이유는,
+마크다운의 setext 제목과 구분선이 등호를 일곱 개 넘게 쓰는 경우가 있어서다.
+좁히지 않으면 마커가 0건인데도 검출된다.
 
 ## 커밋
 
