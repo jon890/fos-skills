@@ -9,14 +9,14 @@
 
 | 스킬 | 목표 |
 | --- | --- |
-| `build-with-teams` | planning 이 만든 task 를 읽어 plan 하나를 구현까지 끝낸다 |
-| `content-preview` | 외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다 |
-| `docs-check` | 저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다 |
-| `harness-cleanup` | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 사용자 승인을 받아 고친다 |
-| `planning` | 사용자와 합의한 것을 `docs/` 에 남기고, 그것만 읽고 구현할 수 있는 `tasks/` 를 만든다 |
-| `pr-review` | 남의 PR 에 코드 리뷰를 쓰고 등록한다 |
-| `presentation` | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고 검수한다 |
-| `review-fix` | PR 에 이미 달린 리뷰를 읽고 코드에 반영한다 |
+| [`build-with-teams`](build-with-teams/README.md) | planning 이 만든 task 를 읽어 plan 하나를 구현까지 끝낸다 |
+| [`content-preview`](content-preview/README.md) | 외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다 |
+| [`docs-check`](docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다 |
+| [`harness-cleanup`](harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 사용자 승인을 받아 고친다 |
+| [`planning`](planning/README.md) | 사용자와 합의한 것을 `docs/` 에 남기고, 그것만 읽고 구현할 수 있는 `tasks/` 를 만든다 |
+| [`pr-review`](pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록한다 |
+| [`presentation`](presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고 검수한다 |
+| [`review-fix`](review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영한다 |
 
 ## 설치
 
