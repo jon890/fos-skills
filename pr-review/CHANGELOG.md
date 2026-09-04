@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.1.0
+
+- `detect_host` 복제 22줄을 `scripts/gh-host.sh` 로 바꿨다.
+  SSH config 별칭 리모트에서 `github-personal` 을 그대로 내 접속에 실패했다 (실측).
+  `review-fix` 가 이미 고친 결함이 이쪽에만 남아 있었다.
+  두 번들의 사본은 저장소 루트의 공용 파일 대조 스크립트가 확인한다.
+- `SKILL.md` 가 오버레이에 넘기던 「등급 표기」를 「등급 기준」으로 고쳤다.
+  표기는 `references/grading.md` 가 소유하고 `gh-review-post.sh` 가 강제한다.
+- 절대경로 여덟을 번들 상대경로로 바꿨다.
+
 ## 1.0.0
 
 첫 버전. 실제 PR 리뷰 한 건(메일 임베딩 기능, 등급을 매긴 리뷰 16건과 답글 10건)에서 겪은 것만 담았다.

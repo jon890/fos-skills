@@ -31,10 +31,10 @@ GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/<N>/comments
 조회와 답글도 스크립트를 쓴다. 경로와 호스트를 매번 손으로 맞추지 않는다.
 
 ```bash
-~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR>                      # 전체 댓글
-~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR> --thread <root댓글id>  # 한 스레드
-~/.claude/skills/pr-review/scripts/gh-review-list.sh <owner/repo> <PR> --mine                # 내가 쓴 것만
-~/.claude/skills/pr-review/scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
+scripts/gh-review-list.sh <owner/repo> <PR>                      # 전체 댓글
+scripts/gh-review-list.sh <owner/repo> <PR> --thread <root댓글id>  # 한 스레드
+scripts/gh-review-list.sh <owner/repo> <PR> --mine                # 내가 쓴 것만
+scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
 ```
 
 ## 등록은 리뷰 단위로 한다
@@ -70,7 +70,7 @@ zsh 의 `noclobber` 는 기존 파일 덮어쓰기를 거부한다.
 `gh-review-post.sh` 가 이 셋을 강제한다. 직접 `gh api` 를 부르지 않는다.
 
 ```bash
-~/.claude/skills/pr-review/scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
+scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
 ```
 
 핵심 낱말은 하나 이상 필수다. 없으면 스크립트가 등록하지 않고 종료한다.

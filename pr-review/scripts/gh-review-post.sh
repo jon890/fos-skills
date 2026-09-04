@@ -14,16 +14,12 @@ set -euo pipefail
 
 die() { echo "$*" >&2; exit 1; }
 
+# 호스트 판별은 scripts/gh-host.sh 가 소유한다.
+# review-fix 번들에도 같은 파일이 있다. 스킬마다 심링크가 따로 걸려 번들 밖 파일에는 닿지 않으므로
+# 사본을 두고 evaluation/score.sh 의 드리프트 검사가 어긋남을 잡는다.
 detect_host() {
-    [[ -n "${GH_HOST:-}" ]] && { echo "$GH_HOST"; return; }
-    local url
-    url=$(git remote get-url origin 2>/dev/null || true)
-    case "$url" in
-        *github.com*) echo "github.com" ;;
-        https://*|http://*) echo "$url" | sed -E 's#^https?://([^/]+)/.*#\1#' ;;
-        *@*:*) echo "$url" | sed -E 's#^[^@]+@([^:]+):.*#\1#' ;;
-        *) die "git remote 에서 호스트를 찾지 못했습니다. GH_HOST 를 지정하세요." ;;
-    esac
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh-host.sh" \
+        || die "git remote 에서 호스트를 찾지 못했습니다. GH_HOST 를 지정하세요."
 }
 
 MODE=review

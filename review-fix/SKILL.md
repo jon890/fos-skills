@@ -11,7 +11,7 @@ description: |
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
   레포별 특화(빌드/테스트/lint 명령·커밋 컨벤션·학습 누적 위치·CI 원인 표)는 레포 CLAUDE.md·오버레이로 주입된다.
 metadata:
-  version: "1.5.2"
+  version: "1.6.0"
 ---
 
 # review-fix
@@ -27,13 +27,15 @@ PR 에 달린 코드 리뷰 댓글을 분석하고, 필수 → 권장 순으로 
 ## 핵심 원칙
 
 - **AI 임의 자동수정 금지**: 리뷰가 요구하지 않은 변경, 추측성 수정은 하지 않는다. 모호한 지적은 사용자에게 확인받는다.
-- **선택지 제시는 질문 도구로**: 옵션을 고르게 할 때는 구조화 질문 도구(Claude Code 는 `AskUserQuestion`)를 쓴다. 추천안은 첫 번째, label 끝 `(추천)`.
 - **위임하지 않는다**: 리뷰 항목별로 subagent 를 뿌리지 않는다. 각 항목은 파일 하나를 읽고 몇 줄 고치는 일이라 위임 비용이 작업보다 크다.
 - **검증을 우회하지 않는다**: `--no-verify` 같은 플래그로 건너뛰지 않는다.
 
 ## 실행 절차
 
 `/review-fix [PR번호]` 호출 시 아래 단계를 순차 진행한다. 규모가 작으면 단계를 합칠 수 있다.
+
+**아래의 `scripts/` 와 `references/` 는 이 스킬 번들 기준 상대경로다.**
+하네스가 알려주는 스킬 base 디렉터리에 붙여 쓴다. 설치 위치를 가정하지 않는다.
 
 ### 1단계: PR 및 댓글 수집
 
@@ -45,7 +47,7 @@ gh pr view --json number --jq '.number' 2>/dev/null \
 ```
 
 자동 감지는 **실패가 기본 경로**다. 구현 스킬이 worktree 를 정리한 뒤라 현재 브랜치가 `main` 인 경우가 흔하고, main 에는 PR 이 없다.
-실패를 오류로 던지지 말고 오픈 PR 목록을 보여주고 구조화 질문 도구로 고르게 한다. 목록이 1건이면 그것을 제시하고 확인만 받는다.
+오픈 PR 목록을 보여주고 구조화 질문 도구로 고르게 한다. 목록이 1건이면 그것을 제시하고 확인만 받는다.
 
 `<owner>/<repo>` 는 `gh repo view --json owner,name --jq '.owner.login + "/" + .name'` 로 얻는다.
 
@@ -60,7 +62,7 @@ gh pr view --json number --jq '.number' 2>/dev/null \
 스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 호스트를 붙인다.
 
 ```bash
-gh api --hostname "$(~/.claude/skills/review-fix/scripts/gh-host.sh)" repos/<owner>/<repo>/...
+gh api --hostname "$(scripts/gh-host.sh)" repos/<owner>/<repo>/...
 ```
 
 - 결과가 `github.com` 이어도 그대로 넘긴다. 넘겨도 동작이 달라지지 않는다 (실측).
@@ -73,7 +75,7 @@ gh api --hostname "$(~/.claude/skills/review-fix/scripts/gh-host.sh)" repos/<own
 한 소스만 보면 봇의 구조화 리뷰를 놓친다.
 
 ```bash
-~/.claude/skills/review-fix/scripts/collect-review.sh <owner> <repo> <N>
+scripts/collect-review.sh <owner> <repo> <N>
 ```
 
 스크립트는 네 소스를 낸다. 넷째가 미해결 리뷰 스레드이고, `path` 와 `line` 을 함께 내므로
@@ -160,7 +162,7 @@ GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
 2. 최소한의 수정만 적용한다.
 3. 리뷰 제안이 레포 컨벤션에 맞는지 `CLAUDE.md` 로 확인한다.
 
-이미 반영된 항목은 건너뛰고 이유를 보고한다. 지적이 모호하면 추측하지 말고 사용자에게 확인받는다.
+이미 반영된 항목은 건너뛰고 이유를 보고한다. 지적이 모호하면 사용자에게 확인받는다.
 
 ### 5단계: 검증
 
@@ -205,7 +207,7 @@ push 직후 mergeable 을 재확인한다: fix push 와 base 갱신의 시간차
 목록이 비었는데 인라인 댓글이 있으면 앞선 실행이 이미 resolve 한 것일 수 있으니 `list-all` 로 확인한다.
 
 ```bash
-~/.claude/skills/review-fix/scripts/review-threads.sh list <owner> <repo> <N>
+scripts/review-threads.sh list <owner> <repo> <N>
 ```
 
 | 상태 | 회신 경로 |
@@ -218,7 +220,7 @@ push 직후 mergeable 을 재확인한다: fix push 와 base 갱신의 시간차
 REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없으므로, 스레드는 GraphQL 로 읽고 GraphQL 로 회신한다 (실측).
 
 ```bash
-~/.claude/skills/review-fix/scripts/review-threads.sh reply <THREAD_ID> <본문파일>
+scripts/review-threads.sh reply <THREAD_ID> <본문파일>
 ```
 
 > **본문은 파일로 넘긴다.** `gh api graphql -f b='...'` 에 본문을 직접 쓰면 셸이 해석해
@@ -228,7 +230,7 @@ REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없으므로, �
 리뷰어가 어느 커밋에서 반영됐는지 찾을 방법이 reply 본문뿐이다.
 
 ```bash
-gh api --hostname "$(~/.claude/skills/review-fix/scripts/gh-host.sh)" \
+gh api --hostname "$(scripts/gh-host.sh)" \
   repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
   -X POST -F body=@<본문파일>
 ```
@@ -271,9 +273,9 @@ resolve 하지 않으면 **"A conversation must be resolved"** 보호 규칙이 
 
 ```bash
 # 미해결 스레드 조회
-~/.claude/skills/review-fix/scripts/review-threads.sh list <owner> <repo> <N>
+scripts/review-threads.sh list <owner> <repo> <N>
 # 반영·확인이 끝난 스레드를 resolve (여러 개 가능)
-~/.claude/skills/review-fix/scripts/review-threads.sh resolve <THREAD_ID> ...
+scripts/review-threads.sh resolve <THREAD_ID> ...
 ```
 
 이 스크립트도 호스트를 스스로 구하므로 앞에 아무것도 붙이지 않는다.
@@ -288,10 +290,17 @@ fix 가 끝났다고 항상 학습하지 않는다. **재현 가능한 패턴**�
 - ✅ 누적: 같은 실수가 다른 코드에서도 날 수 있고 구체적 검출(grep·lint 룰)이 가능한 패턴.
 - ❌ 누적 금지: 1회성 오타, 특정 PR 컨텍스트 한정, 칭찬, 단순 확인.
 
-누적 위치·형식은 레포마다 다르다.
-레포에 학습을 쌓아 두는 곳(반복 함정 목록, ADR 등)이 있으면 **CLAUDE.md·오버레이가 지정한 위치**에 지정한 형식으로 누적한다.
-반복 함정은 패턴 하나당 파일 하나로 두고, 같은 패턴이면 기존 파일을 갱신한다.
-지정된 위치가 없으면 결과 보고로만 남기고 파일에 쓰지 않는다.
+누적 위치는 오버레이나 레포 `CLAUDE.md` 가 지정하면 그것을 따른다.
+
+**지정이 없으면 `docs/pitfalls/code-review/<패턴>.md` 를 기본값으로 쓴다.**
+기본값이 없으면 오버레이를 만들지 않은 저장소에서 이 단계가 아무것도 하지 않는다.
+실측으로 이 구조를 쓰는 저장소가 셋이고, 셋 다 `docs/pitfalls/` 아래를
+`plan/`, `code-review/`, `team/` 으로 나누고 `INDEX.md` 를 함께 둔다.
+
+- 패턴 하나당 파일 하나로 두고, 같은 패턴이면 기존 파일을 갱신한다.
+- `INDEX.md` 가 있으면 함께 갱신한다. 생성기가 있으면 그것을 쓴다.
+- **`docs/` 자체가 없는 저장소면 디렉터리를 만들지 않는다.** 결과 보고로만 남긴다.
+  문서를 두지 않기로 한 저장소에 구조를 새로 만드는 것은 이 스킬이 정할 일이 아니다.
 ADR 급 결정은 review-fix 가 자의로 작성하지 않고 `AskUserQuestion` 으로 confirm 한다.
 
 학습 commit 은 같은 fix PR 에 추가 commit 으로 흡수한다(1 호출 = 1 PR).
