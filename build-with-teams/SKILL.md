@@ -131,9 +131,8 @@ phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 p
 **모든 phase 가 끝난 뒤에 code-reviewer 와 docs-verifier 를 함께 스폰한다.**
 검토 대상은 누적 diff 다. 두 검토는 서로의 입력이 아니라서 병렬로 돈다.
 
-code-reviewer 스폰 프롬프트에 반복 함정 목록 경로와
-설계 맥락(의도한 raw 패턴, helper 우회 사유, 범위 밖 placeholder)을 담는다.
-그 맥락은 보고를 생략할 근거가 아니라 team-lead 가 분류할 때 쓰는 자료다.
+code-reviewer 스폰 프롬프트에 반복 함정 목록 경로를 담는다.
+**무엇이 의도된 것인지 미리 알려주지 않는다.** 그러면 리뷰어가 그 자리를 보고에서 뺀다.
 
 code-reviewer 보고를 team-lead 가 별도 패스로 나눈다.
 실제 결함만 `FIX_NEEDED` 로 되돌리고, 의도된 설계와 범위 밖 후속은 6단계 보고에 합친다.
