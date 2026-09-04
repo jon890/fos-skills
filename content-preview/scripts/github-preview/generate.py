@@ -2,19 +2,19 @@
 """GitHub issue/PR 본문 미리보기 HTML 생성기.
 
 GitHub 은 본문을 GitHub Flavored Markdown 으로 렌더링한다. 같은 모양을 재현하기 위해
-github-markdown-css (GitHub 공식 마크다운 스타일) + marked.js (클라이언트 GFM 렌더) 를
+github-markdown-css 와 marked.js 를
 쓰는 템플릿에 markdown 을 흘려 넣어 등록 전 본문을 실제 화면과 비슷하게 검토한다.
 
-Dooray 미리보기(scripts/dooray-preview/) 와 같은 구조 — viewer 엔진만 다르다.
+Dooray 미리보기(scripts/dooray-preview/) 와 같은 구조이고 viewer 엔진만 다르다.
 
 사용 예:
     python3 scripts/github-preview/generate.py \
         --type issue \
-        --repo "toast-lab/ai-playground-docu-parser" \
-        --title "markdown 표: th+td 혼합 첫 행 헤더 중복 잔존" \
-        --md-file /tmp/gh-body.md \
-        --out /tmp/gh-preview.html
-    scripts/show-preview.sh /tmp/gh-preview.html
+        --repo "<owner>/<repo>" \
+        --title "<issue 또는 PR 제목>" \
+        --md-file "$SP/body.md" \
+        --out "$SP/preview.html"
+    scripts/show-preview.sh "$SP/preview.html"
 
 주의:
 - markdown 본문에 '</script>' 문자열이 있으면 안 된다 (text/markdown 블록이 깨진다).
@@ -39,7 +39,7 @@ TYPE_MAP = {
 def main() -> int:
     ap = argparse.ArgumentParser(description="GitHub issue/PR 본문 미리보기 HTML 생성")
     ap.add_argument("--type", choices=["issue", "pr"], default="issue", help="본문 종류")
-    ap.add_argument("--repo", default="", help="저장소 (예: toast-lab/ai-playground-docu-parser)")
+    ap.add_argument("--repo", default="", help="저장소 (예: <owner>/<repo>)")
     ap.add_argument("--title", required=True, help="issue/PR 제목")
     ap.add_argument("--md-file", required=True, help="본문 markdown 파일 경로 ('-' 는 stdin)")
     ap.add_argument("--out", required=True, help="출력 HTML 경로")
