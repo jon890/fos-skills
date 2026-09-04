@@ -33,18 +33,24 @@ REQUIRED_SECTIONS = [
     "## 검증",
 ]
 
+# 스키마에 없는 키. 실행 순서는 사용자 보고로 전달하고 task 파일에 넣지 않는다.
+FORBIDDEN_KEYS = ("depends_on", "related_docs", "prerequisites")
+
 PROFILES = {"fast", "standard", "deep"}
 MODELS = {"haiku", "sonnet", "opus"}
 
 VAGUE_SCOPE = re.compile(r"전체\s*(수정|변경|적용|교체|리팩토링|삭제)")
 HUMAN_CHECK = re.compile(r"수동 검토|눈으로 확인|직접 확인|육안")
 BSD_SED = re.compile(r"sed\s.*\\b")
+DOC_REF = re.compile(r"\*\*근거 문서\*\*\s*:(.*)")
+DOC_PATH = re.compile(r"`(docs/[^`\s]+)`")
+TEST_WORD = re.compile(r"테스트|test|spec")
 
 
-def check_index(path: Path, out: list) -> None:
-    """execution_profile 과 model 은 하나만 있어야 한다.
+def check_index(path: Path, plan_name: str, phase_files: list, out: list) -> None:
+    """index.json 이 스키마와 실제 파일에 맞는지 본다.
 
-    신규 필드는 provider 중립인 execution_profile 이고, model 은 읽기 호환용이다.
+    execution_profile 은 provider 중립 필드이고 model 은 읽기 호환용이다.
     둘 다 있으면 어느 쪽이 이기는지 정해져 있지 않아 실행 등급이 갈린다.
     """
     try:
@@ -53,7 +59,30 @@ def check_index(path: Path, out: list) -> None:
         out.append(f"{path} — 읽지 못했다: {e}")
         return
 
-    for i, phase in enumerate(data.get("phases", [])):
+    if data.get("name") != plan_name:
+        out.append(f"{path} — name 이 디렉터리명과 다르다: {data.get('name')!r} != {plan_name!r}")
+
+    phases = data.get("phases", [])
+    if data.get("total_phases") != len(phases):
+        out.append(f"{path} — total_phases({data.get('total_phases')}) 가 phases 길이({len(phases)})와 다르다")
+
+    for key in FORBIDDEN_KEYS:
+        if key in data:
+            out.append(f"{path} — 스키마에 없는 키: {key}")
+
+    on_disk = {f.name for f in phase_files}
+    for i, phase in enumerate(phases):
+        for key in ("number", "file", "execution_profile"):
+            if key not in phase:
+                out.append(f"{path} — phases[{i}] 에 {key} 가 없다")
+
+        if phase.get("number") != i + 1:
+            out.append(f"{path} — phases[{i}] number 가 {i + 1} 이 아니다: {phase.get('number')}")
+
+        f = phase.get("file")
+        if f and f not in on_disk:
+            out.append(f"{path} — phases[{i}] 가 가리키는 {f} 가 없다")
+
         has_profile = phase.get("execution_profile") in PROFILES
         has_model = phase.get("model") in MODELS
         both = "execution_profile" in phase and "model" in phase
@@ -102,6 +131,32 @@ def iter_prose(text: str):
             yield n, line
 
 
+def check_phase_prompt(path: Path, text: str, out: list) -> None:
+    """phase 가 실행 프롬프트로 성립하는지 본다.
+
+    구현자는 이 파일 하나만 읽는다. 근거 문서가 없는 경로를 가리키거나,
+    검증에 실행할 명령이 없거나, 마지막 작업 항목이 테스트가 아니면
+    그 phase 가 끝났는지 판정할 방법이 사라진다.
+    """
+    m = DOC_REF.search(text)
+    if not m:
+        out.append(f"{path} — 근거 문서가 없다. 이 phase 가 어느 합의에서 나왔는지 가리킨다")
+    else:
+        for rel in DOC_PATH.findall(m.group(1)):
+            if not Path(rel).exists():
+                out.append(f"{path} — 근거 문서가 없는 경로를 가리킨다: {rel}")
+
+    verify = re.search(r"^## 검증\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    if not verify or "```" not in verify.group(1):
+        out.append(f"{path} — 검증 절에 실행할 명령이 없다")
+
+    items = re.findall(r"^### .+", text, re.M)
+    if not items:
+        out.append(f"{path} — 작업 항목이 없다")
+    elif not TEST_WORD.search(items[-1]):
+        out.append(f"{path} — 마지막 작업 항목이 테스트가 아니다: {items[-1][:60]}")
+
+
 def main(argv: list) -> int:
     if len(argv) != 2:
         print("사용법: verify_task.py <plan 디렉터리명>   (예: plan053-foo)")
@@ -118,7 +173,7 @@ def main(argv: list) -> int:
         return 2
 
     out: list = []
-    check_index(plan_dir / "index.json", out)
+    check_index(plan_dir / "index.json", argv[1], phases, out)
 
     for path in phases:
         text = path.read_text(encoding="utf-8")
@@ -144,6 +199,8 @@ def main(argv: list) -> int:
                 continue
             if not in_code and BSD_SED.search(line):
                 out.append(f"{path}:{n}: {line}")
+
+        check_phase_prompt(path, text, out)
 
     # 완료 마킹 누락: plan 이 끝나도 상태가 안 바뀌어 재실행 사고로 이어진다
     last = phases[-1]
