@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.1.0
+
+레포 설정의 폴백에서 `CLAUDE.md` 하나만 보던 것을 `AGENTS.md` 와 함께 보도록 바꿨다.
+Codex 를 비롯한 다른 에이전트는 `AGENTS.md` 를 읽는다.
 ## 2.0.0
 
 목표를 셋으로 세우고, 그 셋을 실제로 강제하는 것만 남겼다.

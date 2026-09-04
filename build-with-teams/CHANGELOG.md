@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.1.0
+
+레포 설정의 폴백에서 `CLAUDE.md` 하나만 보던 것을 `AGENTS.md` 와 함께 보도록 바꿨다.
+Codex 를 비롯한 다른 에이전트는 `AGENTS.md` 를 읽는다.
+
+재사용 패턴 승격 표의 코딩 규칙 행에서 파일 이름을 뺐다.
 ## 5.0.0
 
 **목표: planning 이 만든 `tasks/` 를 읽어 구현하고, 검토를 거쳐 PR 을 만든다.**

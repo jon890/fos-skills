@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.0.0"
+  version: "5.1.0"
 ---
 # build-with-teams
 
@@ -37,8 +37,8 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 레포 고유의 값은 아래 순서로 찾는다. 앞에서 찾으면 뒤를 보지 않는다.
 
 1. `<repo-root>/.claude/build-with-teams-overlay.md`
-2. `<repo-root>/CLAUDE.md`
-3. 두 파일이 다 없거나 찾는 값이 그 안에 없으면 사용자에게 확인한다
+2. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
+3. 어디에도 없으면 사용자에게 확인한다
 
 | 설정 값 | 쓰는 단계 |
 | --- | --- |

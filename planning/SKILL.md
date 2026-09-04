@@ -6,7 +6,7 @@ description: |
   "/planning", "계획 세워보자", "설계해보자", "plan 세워줘", "기획해줘", "task 파일 만들어줘",
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 # planning
 
@@ -33,8 +33,8 @@ metadata:
 레포 고유의 값은 아래 순서로 찾는다. 앞에서 찾으면 뒤를 보지 않는다.
 
 1. `<repo-root>/.claude/planning-overlay.md`
-2. `<repo-root>/CLAUDE.md`
-3. 둘 다 없거나 그 값이 없으면 사용자에게 확인한다
+2. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
+3. 어디에도 없으면 사용자에게 확인한다
 
 검증 명령, 레이어 구조, 도메인 변형, 추가 문서가 여기 해당한다.
 실측으로 오버레이 없이 `CLAUDE.md` 만 둔 저장소가 셋이다.

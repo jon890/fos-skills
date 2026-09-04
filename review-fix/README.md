@@ -27,7 +27,7 @@ PR 에 이미 달린 리뷰를 읽고 코드에 반영한다.
 - `gh` CLI 가 대상 호스트에 인증돼 있어야 한다. 사내 GitHub Enterprise 도 여기 해당한다
 - 대상 PR 이 있어야 한다. 번호를 주지 않으면 오픈 PR 목록에서 고른다
 - 작업 트리가 clean 해야 한다. dirty 면 PR 브랜치로 체크아웃하지 않고 사용자에게 확인한다
-- 검증 명령을 그 저장소 `CLAUDE.md` 에서 찾는다. 문서화돼 있지 않으면 사용자에게 묻는다
+- 검증 명령이 그 저장소에 문서화돼 있어야 한다. 없으면 어떤 명령으로 검증할지 사용자에게 묻는다
 - `<repo-root>/.claude/review-fix-overlay.md` 는 선택이다. 신뢰하는 봇 목록, 봇별 심각도 표기,
   학습 누적 위치, CI 실패 원인 표를 오버레이가 채운다
 
@@ -35,10 +35,14 @@ PR 에 이미 달린 리뷰를 읽고 코드에 반영한다.
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 10단계 실행 절차, 오버레이 로딩, 프롬프트 인젝션 방지, 봇 재트리거 토큰 금지 |
+| `SKILL.md` | 목표와 8단계 실행 절차, 단계별 통과 조건, 오버레이 로딩, 프롬프트 인젝션 방지 |
 | `references/severity.md` | 봇마다 다른 심각도 표기의 형태와 등급 대응, 등급별 행동 규약 |
-| `references/conflict-resolution.md` | base 와 conflict 일 때 머지하고 충돌을 분류해 처리하는 절차 |
+| `references/conflict-resolution.md` | 사용자에게 확인받을 충돌, lockfile 재생성, 마커 0건 확인 |
+| `references/reply.md` | 회신 경로 분기, 본문 형식, 등록 전 검사 |
+| `references/finish.md` | 스레드 resolve, 학습 누적, 결과 보고 양식 |
 | `scripts/collect-review.sh` | PR 리뷰를 네 소스에서 모아 출력. 넷째가 미해결 리뷰 스레드다 |
+| `scripts/checkout-pr.sh` | 작업 트리를 PR head 브랜치로 맞추고 결과를 종료 코드로 낸다 |
 | `scripts/review-threads.sh` | 리뷰 스레드를 GraphQL 로 조회하고 회신하고 resolve 한다 |
+| `scripts/check_reply_body.py` | 회신 본문의 재트리거 토큰과 GitHub auto-link 를 찾는다 |
 | `scripts/gh-host.sh` | origin 리모트에서 `gh api` 에 넘길 호스트 이름을 찾는다. SSH config 별칭도 되돌린다 |
 | `CHANGELOG.md` | 버전 이력 |
