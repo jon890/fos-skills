@@ -10,7 +10,7 @@ metadata:
 ---
 # build-with-teams
 
-**목표: planning 이 만든 `tasks/` 를 읽어 구현하고, 네 검토를 거쳐 PR 하나로 올린다.**
+**목표: planning 이 만든** `tasks/` **를 읽어 구현하고, 검토를 거쳐 PR을 만든다.**
 
 - 계획에 결함이 있으면 구현 전에 잡는다.
 - 구현된 코드가 계획한 것과 같아야 한다.
@@ -25,8 +25,8 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 | **code-reviewer** | 구현이 계획과 같은지, 다음 사람이 고칠 수 있는지 본다 | `PASS` / `FIX_NEEDED` | `references/role-code-reviewer.md` |
 | **docs-verifier** | 코드가 docs 의 결정을 어기지 않는지, docs 가 지금 코드를 말하는지 본다 | `PASS` / `UPDATE_NEEDED` / `VIOLATION` | `references/role-docs-verifier.md` |
 
-**team-lead 는 조율, phase 단위 커밋, 검토 결과의 분류, PR 을 한다.**
-구현과 검토는 규모와 무관하게 팀원에게 맡긴다.
+**team-lead 는 조율, phase 단위 커밋, 검토 결과의 분류, PR 생성을 한다.**  
+구현과 검토는 규모와 무관하게 팀원에게 맡긴다.  
 자기 계획과 자기 구현을 같은 맥락에서 승인하면 결함이 드러나지 않는다.
 
 **넷에 어느 에이전트를 쓸지는 오버레이가 지정한다.**
@@ -57,12 +57,12 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 재실행 방지 | `plan_precheck.py` 종료 코드 0, 또는 발견 사항에 대한 사용자 확정 | `scripts/plan_precheck.py` |
-| 2 | 작업 공간 | plan 브랜치 위에 있고, main 과 분리됐고, 팀원에게 줄 절대경로가 있다 | 오버레이 |
+| 1 | 재실행인지 확인 | `plan_precheck.py` 종료 코드 0, 또는 발견 사항에 대한 사용자 확정 | `scripts/plan_precheck.py` |
+| 2 | 작업 공간 준비 | plan 브랜치 위에 있고, main 과 분리됐고, 팀원에게 줄 절대경로가 있다 | 오버레이 |
 | 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 살아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
-| 5 | 누적 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
-| 6 | 마감 | 통합 검증이 통과했고 PR 이 있고 팀원이 남지 않았다 | `references/step-finish.md` |
+| 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
+| 6 | 통합 검증과 PR | 통합 검증이 통과했고 PR 이 있고 팀원이 남지 않았다 | `references/step-finish.md` |
 
 **팀원을 스폰하기 전에 [`references/team-spawn.md`](references/team-spawn.md)를 읽는다.**
 이름, 절대경로, 회신 강제, 재개가 거기 있다.
@@ -71,7 +71,7 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 옵션과 트레이드오프를 붙여 질문한다.
 긴 자동 실행에서는 묻지 않고 진행하는 쪽을 고르기 쉽다.
 
-### 1. 재실행 방지
+### 1. 재실행인지 확인한다
 
 plan 인자를 받으면 가장 먼저 돌린다.
 
@@ -84,7 +84,7 @@ python3 scripts/plan_precheck.py <plan> --repo <repo-root>
 
 무엇을 이어서 하고 무엇을 새로 시작할지는 사용자가 정한다.
 
-### 2. 작업 공간
+### 2. 작업 공간을 준비한다
 
 만드는 방법은 오버레이가 소유한다. 이 스킬이 요구하는 것은 아래 통과 조건이다.
 
@@ -96,7 +96,7 @@ python3 scripts/plan_precheck.py <plan> --repo <repo-root>
 plan 브랜치가 원격 main 보다 뒤처졌으면 갱신할지 사용자에게 확인한다.
 오래된 base 위에서 구현하면 그사이 머지된 docs 와 코드가 어긋난다.
 
-### 3. 계획 검토
+### 3. 계획을 critic 에게 검토받는다
 
 `index.json` 과 `phase-*.md`, 그것이 가리키는 docs 를 읽는다.
 critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 목록 경로)를 담는다.
@@ -109,7 +109,7 @@ critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 �
 - 구현하며 챙기면 되는 것 → `critic minor notes` 로 executor 스폰 프롬프트에 넘긴다.
 - 이번 plan 밖의 것 → 6단계 보고에 합친다.
 
-### 4. phase 구현
+### 4. phase 를 하나씩 구현한다
 
 `index.json` 의 미완료 phase 를 순서대로 돈다. **한 phase 의 작업 순서는 다음과 같다.**
 
@@ -126,7 +126,7 @@ critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 �
 phase 가 실패하면 원인을 분석한다.
 phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
 
-### 5. 누적 검토
+### 5. 코드 리뷰와 문서 정합성을 검토받는다
 
 **모든 phase 가 끝난 뒤에 code-reviewer 와 docs-verifier 를 함께 스폰한다.**
 검토 대상은 누적 diff 다. 두 검토는 서로의 입력이 아니라서 병렬로 돈다.
@@ -149,7 +149,7 @@ code-reviewer 보고를 team-lead 가 별도 패스로 나눈다.
 회신이 직전 판정과 같으면 바뀐 실제 라인을 `grep` 으로 출력해 증거로 붙인다.
 같은 지적이 반복되면 계획이 틀렸다는 신호이므로 `PHASE_BLOCKED` 로 사용자에게 넘긴다.
 
-### 6. 마감
+### 6. 통합 검증을 통과시키고 PR 을 만든다
 
 [`references/step-finish.md`](references/step-finish.md)를 읽고 수행한다.
 통합 검증, 완료 마킹, PR, 팀 종료, 작업 공간 정리, 보고, 패턴 승격이 거기 있다.
