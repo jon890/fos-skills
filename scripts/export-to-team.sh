@@ -48,11 +48,12 @@ excludes = set(os.environ["EXCLUDES"].split())
 
 
 def is_junk(rel: str) -> bool:
-    """빌드 부산물과 git 내부 파일. 어느 스킬에서나 내보내지 않는다."""
+    """빌드 부산물, git 내부 파일, 런타임 상태. 어느 스킬에서나 내보내지 않는다."""
     parts = rel.split("/")
     return (
         "__pycache__" in parts
         or ".git" in parts
+        or ".omc" in parts
         or ".DS_Store" in parts
         or rel.endswith((".pyc", ".pyo"))
     )
