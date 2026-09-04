@@ -212,5 +212,5 @@ executor와 code-reviewer는 모든 규모에서 `standard`를 기본으로 한�
 4. 실행 형태 점검이 반환한 최종 형태의 최소 등급 (위 "실행 형태 → 실행 등급" 표)
 5. 사용자 모델 override 는 4의 하한을 지킬 때만 적용한다
 
-**규모 표는 기본값이지 하한이 아니다.** phase 가 `execution_profile` 로 등급을 지정했으면 그쪽이 이긴다.
+**규모 표는 기본값이지 하한이 아니다.** phase 가 `execution_profile` 로 등급을 지정했으면 그 값을 쓴다.
 규모 표를 하한으로 읽으면 executor 가 전 규모 `standard` 라 `BOUNDED` 가 증명해 낸 `fast` 경로가 영영 열리지 않는다.

@@ -41,7 +41,7 @@ phase 마다 `BOUNDED`, `JUDGMENT_REQUIRED`, `HIGH_RISK` 중 하나를 고른다
 ## 회신 형식
 
 **판정과 발견 목록을 분리해 적는다.**
-둘을 한 덩어리로 쓰면 `APPROVE` 와 앞뒤가 안 맞아 보이는 지적을 스스로 삼키게 된다.
+둘을 한 덩어리로 쓰면 `APPROVE` 와 앞뒤가 안 맞아 보이는 지적을 스스로 빼게 된다.
 
 ```text
 계획 판정: APPROVE | REVISE
