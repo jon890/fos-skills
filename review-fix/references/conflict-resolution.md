@@ -18,18 +18,20 @@ git status --short | grep "^UU"
 
 ## 충돌 분류와 처리 (언어 무관)
 
-| 카테고리 | 예시 | 처리 |
-|---|---|---|
-| **양쪽 추가** (서로 다른 항목) | 서로 다른 파일/섹션 추가 | ✅ 둘 다 보존 |
-| **수치/카운트 갱신** | 인덱스 카운트가 다른 PR 머지로 증가 | ✅ 더 큰 수치와 본 PR 의미 합성 |
-| **lockfile 충돌** | 아래 "lockfile 처리" | ✅ main 채택 후 재생성 |
-| **same-line different-content** | 같은 시그니처 양쪽 수정 | ⚠️ 사용자 confirm 필수 |
-| **delete vs modify** | 한쪽 제거, 한쪽 수정 | 🛑 사용자 confirm 필수 |
-| **import 누락** | 한쪽이 import 제거하고 다른 쪽이 그 모듈 사용 | ⚠️ import 재추가 — silent NameError 회피 |
+
+| 카테고리                            | 예시                            | 처리                                  |
+| ------------------------------- | ----------------------------- | ----------------------------------- |
+| **양쪽 추가** (서로 다른 항목)            | 서로 다른 파일/섹션 추가                | ✅ 둘 다 보존                            |
+| **수치/카운트 갱신**                   | 인덱스 카운트가 다른 PR 머지로 증가         | ✅ 더 큰 수치와 본 PR 의미 합성                |
+| **lockfile 충돌**                 | 아래 "lockfile 처리"              | ✅ main 채택 후 재생성                     |
+| **same-line different-content** | 같은 시그니처 양쪽 수정                 | ⚠️ 사용자 confirm 필수                   |
+| **delete vs modify**            | 한쪽 제거, 한쪽 수정                  | 🛑 사용자 confirm 필수                   |
+| **import 누락**                   | 한쪽이 import 제거하고 다른 쪽이 그 모듈 사용 | ⚠️ import 재추가 — silent NameError 회피 |
+
 
 ## lockfile 처리
 
-lockfile 은 수동 머지하지 않는다 — 무결성이 깨진다.
+lockfile 은 수동 머지하지 않는다. 무결성이 깨진다.
 main 을 채택한 뒤 그 레포 패키지 매니저로 재생성한다.
 패키지 매니저는 lockfile 종류로 감지한다.
 
@@ -59,5 +61,5 @@ git grep -nE "^(<<<<<<<|=======|>>>>>>>)" -- . ; echo "exit=$?"   # exit 1 이�
 
 conflict 해결 결과는 commit 전에 `AskUserQuestion` 으로 confirm 한다 (충돌 파일별 1줄 요약 노출).
 
-**머지·rebase commit 은 review fix commit 과 별도로 둔다** — 회귀 시 분리 revert 가 가능하다.
+**머지·rebase commit 은 review fix commit 과 별도로 둔다.** 회귀했을 때 따로 revert 할 수 있다.
 base 동기화를 먼저 push 한 후 fix 를 진행한다.

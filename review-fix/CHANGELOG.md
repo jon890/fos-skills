@@ -3,6 +3,22 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.5.0
+
+- 봇의 심각도 표기를 P1 부터 P5 로 갱신했다. 실측한 P3 부터 P5 의 문구를 그대로 옮겼고,
+  실측하지 못한 P1 과 P2 는 등급 이름과 색만 적었다.
+  옛 표기(🔴 필수 수정, 🟡 개선 권장)와 `codeowl[bot]` 의 Low·Medium·High 도 함께 읽도록 대응표를 뒀다.
+  표기 설명과 행동 규약은 `severity.md` 로 분리했다.
+- 호스트 판별을 1단계로 올리고 `gh-host.sh` 로 분리했다.
+  `gh api` 는 `--repo` 를 받지 않아 기본 호스트를 보므로, 사내 GHE 에서 1단계와 7단계가 `Not Found` 로 실패했다.
+  origin 이 SSH config 별칭이면 별칭이 그대로 나와 접속에 실패하므로 `ssh -G` 로 실제 호스트를 되찾는다 (실측).
+- 7단계 회신 경로를 셋으로 나눴다. 봇의 발견사항은 리뷰 스레드로 달리는 경우가 많고,
+  REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없어 GraphQL 로 읽고 GraphQL 로 회신한다 (실측).
+  기존 인라인 댓글 REST 경로와 통합 댓글 경로는 그대로 남겼다.
+  스레드도 인라인 댓글과 같게 지적 하나에 회신 하나를 단다고 명시했다.
+- `resolve-threads.sh` 를 `review-threads.sh` 로 바꾸고 `reply` 하위 명령을 넣었다.
+  회신 본문은 파일로 받는다. `-f b='...'` 로 직접 넘기면 셸이 본문 안의 백틱과 달러를 명령 치환으로 없앤다 (실측).
+
 ## 1.4.0
 
 - 소비되지 않던 `docs/retrospectives/RUNS.md` 실행 기록을 제거했다.
@@ -34,7 +50,7 @@ SKILL.md 는 366줄에서 272줄이 됐고, references 가 0개에서 1개, scri
 
 - conflict 해결 절차를 `references/conflict-resolution.md` 로 옮겼다.
   대부분의 실행에서 conflict 는 없으므로 그때만 읽는다.
-- 리뷰 스레드 조회·resolve 의 GraphQL 쿼리를 `scripts/resolve-threads.sh` 로 옮겼다.
+- 리뷰 스레드 조회·resolve 의 GraphQL 쿼리를 `resolve-threads.sh` 로 옮겼다 (1.5.0 에서 `review-threads.sh` 로 이름이 바뀌었다).
   heredoc 을 매 실행 다시 옮겨 적는 구조라 escape 실수가 끼어들 자리였다.
 
 제거한 것:

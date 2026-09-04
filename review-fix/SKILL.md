@@ -1,8 +1,9 @@
 ---
 name: review-fix
 description: |
-  PR 코드 리뷰 반영 공용 코어 스킬. PR 에 달린 리뷰 댓글(주로 봇의 🔴/🟡 구조화 리뷰)을 분석해
-  🔴 필수 → 🟡 권장 순으로 코드를 고치고 commit & push, 리뷰 스레드 resolve 까지 완료한다.
+  PR 코드 리뷰 반영 공용 코어 스킬. PR 에 달린 리뷰 댓글(주로 봇의 P1 부터 P5 구조화 리뷰)을 분석해
+  P1 과 P2 를 먼저, P3 을 다음으로 고치고 commit & push, 리뷰 스레드 resolve 까지 완료한다.
+  옛 표기(🔴 필수 수정, 🟡 개선 권장)와 codeowl 의 Low·Medium·High 표기도 함께 읽는다.
   "/review-fix", "review-fix", "리뷰 반영", "PR 리뷰 수정", "코드 리뷰 반영", "리뷰 댓글 처리",
   "봇 코멘트 반영", "봇 코멘트 처리", "review comment 수정", "리뷰 코멘트 확인해서 수정",
   "리뷰 반영해줘", "리뷰 처리해줘" 같은 표현이 나오면 반드시 이 스킬을 사용한다.
@@ -10,7 +11,7 @@ description: |
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
   레포별 특화(빌드/테스트/lint 명령·커밋 컨벤션·학습 누적 위치·CI 원인 표)는 레포 CLAUDE.md·오버레이로 주입된다.
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 ---
 
 # review-fix
@@ -47,6 +48,21 @@ gh pr view --json number --jq '.number' 2>/dev/null \
 실패를 오류로 던지지 말고 오픈 PR 목록을 보여주고 구조화 질문 도구로 고르게 한다. 목록이 1건이면 그것을 제시하고 확인만 받는다.
 
 `<owner>/<repo>` 는 `gh repo view --json owner,name --jq '.owner.login + "/" + .name'` 로 얻는다.
+
+**호스트를 먼저 정하고, 이후 모든 `gh api` 를 그 호스트로 보낸다.**
+`gh api` 는 `--repo` 를 받지 않아 기본 호스트를 본다.
+사내 GHE 저장소에서 지정하지 않으면 1단계와 7단계, 8단계의 `gh api` 가 `Not Found` 로 실패한다.
+아래 스크립트가 호스트를 구해 export 한다.
+
+```bash
+eval "$(~/.claude/skills/review-fix/scripts/gh-host.sh)"
+```
+
+- 결과가 `github.com` 이어도 그대로 export 한다. 지정해도 동작이 달라지지 않는다 (실측).
+- origin 이 SSH config 별칭이면 그 별칭이 그대로 나온다.
+  실측으로 `git@github-personal:...` 이 `github-personal` 로 나왔고,
+  그대로 쓰면 `error connecting to github-personal` 로 실패했다.
+  스크립트가 `ssh -G` 로 실제 호스트를 되찾는다.
 
 **댓글 수집: 세 소스를 모두 수집한다** (워크플로 버전에 따라 리뷰 위치가 다르다):
 
@@ -103,13 +119,16 @@ gh pr view <N> --json mergeable,mergeStateStatus
 
 ### 3단계: 리뷰 분류 및 우선순위 결정
 
-봇은 보통 아래 형식으로 리뷰한다:
+봇의 심각도 표기는 하나가 아니다. 한 저장소에 봇이 둘 붙어 서로 다른 표기로 내는 경우가 있다 (실측).
+아래 셋을 모두 읽을 수 있어야 한다. 등급별 행동은 `references/severity.md` 가 소유한다.
 
-```
-🔴 필수 수정: ...
-🟡 개선 권장: ...
-🟢 잘 된 점: ...   ← 수정 불필요
-```
+| 표기 | 내는 주체 | 형태 |
+|---|---|---|
+| P1 부터 P5 | `github-actions[bot]` | 요약 표 뒤에 「발견사항」 절, 등급별 소제목 |
+| Low, Medium, High | `codeowl[bot]` | `분류: Low 1개` 처럼 등급과 건수 |
+| 옛 표기 | 오래된 PR, 다른 봇 | `🔴 필수 수정`, `🟡 개선 권장`, `🟢 잘 된 점` |
+
+**세 표기를 모두 만나면 `references/severity.md` 를 읽고 등급을 대응시킨 뒤 4단계로 간다.**
 
 구조화 마커가 없어도 "수정 요청", "변경 필요", "이슈" 등 수정을 암시하는 표현을 추출한다.
 GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
@@ -125,19 +144,21 @@ GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
 ```
 ## 리뷰 분석 결과: PR #<N>
 
-🔴 필수 수정 (<count>건)
+🔴 P1 / 🟠 P2 필수 (<count>건)
   1. <파일>: <요약> [소범위 / 대범위]
-🟡 권장 사항 (<count>건)
+🟡 P3 권장 (<count>건)
   1. <파일>: <요약> [소범위 / 대범위]
-🟢 칭찬 / 수정 불필요: <count>건 (생략)
+🟢 P4 / ⚪ P5 참고 (<count>건)
+  1. <파일>: <요약>
+잘 된 점: <count>건 (생략)
 ```
 
-- 🔴 없고 🟡 만 있으면 권장 사항 처리 여부를 사용자에게 확인한다(이미 "다 해줘" 승인 시 바로 진행).
-- 모두 🟢 이면 "수정할 사항 없음" 알리고 종료.
+- P1 과 P2 가 없고 P3 아래만 있으면 처리 범위를 사용자에게 확인한다(이미 "다 해줘" 승인 시 바로 진행).
+- 발견사항이 없고 「잘 된 점」 만 있으면 "수정할 사항 없음" 알리고 종료.
 
 ### 4단계: 코드 수정
 
-🔴 항목부터, 완료 후 🟡 항목을 처리한다. 각 항목 처리 전:
+P1 과 P2 항목부터, 완료 후 P3 항목을 처리한다. P4 와 P5 는 사용자가 지시한 경우에만 고친다. 각 항목 처리 전:
 
 1. 리뷰가 가리키는 라인이 현재 파일에서 어디인지 대조한다: 라인 번호가 밀렸거나 이미 반영된 지적일 수 있다.
 2. 최소한의 수정만 적용한다.
@@ -180,25 +201,46 @@ push 직후 mergeable 을 재확인한다: fix push 와 base 갱신의 시간차
 
 처리한 리뷰 댓글에 reply 를 달아 해결됨을 알린다.
 
-**형식 분기**:
+**회신은 지적 하나에 하나씩 단다.** 통합 댓글 하나로 대신하면 어느 지적에 대한 답인지 사라진다.
+리뷰 스레드도 인라인 댓글과 같게 다룬다: 스레드마다 따로 회신한다.
+
+**경로 분기**: 봇의 발견사항이 리뷰 스레드로 달렸는지 인라인 댓글로 달렸는지 먼저 본다.
+판별은 `reviewThreads` 가 비어 있는지로 한다.
 
 ```bash
+~/.claude/skills/review-fix/scripts/review-threads.sh list <owner> <repo> <N>
 INLINE_COUNT=$(gh api repos/<owner>/<repo>/pulls/<N>/comments --jq 'length')
 ```
 
-- 인라인 댓글이 있으면 (`> 0`) 각 댓글에 1:1 reply:
+| 상태 | 회신 경로 |
+|---|---|
+| 리뷰 스레드가 있다 | `review-threads.sh reply <THREAD_ID> <본문파일>` (GraphQL) |
+| 스레드가 없고 인라인 댓글만 있다 | REST `pulls/<N>/comments/<comment_id>/replies` |
+| 둘 다 없다 | `gh pr comment <N> --body-file <path>` 로 통합 reply 1건 |
+
+봇의 발견사항은 리뷰 스레드로 달리는 경우가 많다.
+REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없으므로, 스레드는 GraphQL 로 읽고 GraphQL 로 회신한다 (실측).
+
+```bash
+~/.claude/skills/review-fix/scripts/review-threads.sh reply <THREAD_ID> <본문파일>
+```
+
+> **본문은 파일로 넘긴다.** `gh api graphql -f b='...'` 에 본문을 직접 쓰면 셸이 해석해
+> 본문 안의 백틱과 달러가 명령 치환으로 사라진다 (실측). 스크립트가 파일에서 읽어 넘긴다.
+
+인라인 댓글 경로의 본문 형식은 아래와 같고, 세 경로 모두 커밋 해시를 넣는다:
+리뷰어가 어느 커밋에서 반영됐는지 찾을 방법이 reply 본문뿐이다.
 
 ```bash
 gh api repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
   -X POST -f body="✅ **반영 완료** (커밋: <COMMIT_HASH>)
 
-<무엇을 어떻게 수정했는지 1~2줄>"
+<무엇을 어떻게 수정했는지 한두 줄>"
 ```
 
-- 인라인 댓글이 없으면(통합 댓글 형식) `gh pr comment <N> --body-file <path>` 로 통합 reply 1건.
-  이 경로에도 커밋 해시를 넣는다: 리뷰어가 어느 커밋에서 반영됐는지 찾을 방법이 reply 본문뿐이다.
+세 경로 모두 1단계에서 export 한 `GH_HOST` 가 필요하다. 없으면 사내 GHE 에서 `Not Found` 가 난다.
 
-건너뛴 항목(이미 반영·해당 없음)에는 reply 하지 않는다.
+건너뛴 항목(이미 반영됐거나 해당 없는 항목)에는 reply 하지 않는다.
 
 > **⚠️ 자동 재트리거 토큰과 cross-reference 금지**(CRITICAL: 봇 무한루프 방지)
 > reply 본문에 다음 패턴을 포함하면 워크플로 재실행·봇 오인·의도치 않은 cross-reference 가 발생한다:
@@ -220,18 +262,17 @@ gh api repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
 
 ### 8단계: 리뷰 스레드 resolve (필수: 머지 차단 해소)
 
-🟡 반영·push 후, 봇이 남긴 인라인 리뷰 스레드를 resolve 한다.
+반영과 push 가 끝난 뒤, 봇이 남긴 리뷰 스레드를 resolve 한다.
 resolve 하지 않으면 **"A conversation must be resolved"** 보호 규칙이 머지를 막는다 (`mergeStateStatus: BLOCKED` 원인 중 하나).
 
 ```bash
 # 미해결 스레드 조회
-~/.claude/skills/review-fix/scripts/resolve-threads.sh list <owner> <repo> <N>
+~/.claude/skills/review-fix/scripts/review-threads.sh list <owner> <repo> <N>
 # 반영·확인이 끝난 스레드를 resolve (여러 개 가능)
-~/.claude/skills/review-fix/scripts/resolve-threads.sh resolve <THREAD_ID> ...
+~/.claude/skills/review-fix/scripts/review-threads.sh resolve <THREAD_ID> ...
 ```
 
-github.com 이 아닌 호스트(사내 GHE 등)는 `GH_HOST=<호스트>` 를 앞에 붙인다.
-`gh api graphql` 은 `--repo` 를 받지 않아 기본 호스트를 보므로, 지정하지 않으면 `NOT_FOUND` 가 난다.
+1단계에서 export 한 `GH_HOST` 가 이 스크립트에도 그대로 적용된다.
 
 아직 반영하지 않았거나 사용자 confirm 이 필요한 스레드는 resolve 하지 않는다: resolve 는 "이 지적을 처리했다"는 표시다.
 resolve 후 `gh pr view <N> --json mergeStateStatus` 로 BLOCKED 가 풀렸는지 확인한다.
@@ -262,7 +303,7 @@ ADR 급 결정은 review-fix 가 자의로 작성하지 않고 `AskUserQuestion`
   - <파일>: <무엇을 수정했는지>
 📋 이슈로 등록 (<count>건)
   - #<번호>: <범위가 커서 이슈로 추적>
-💬 reply 완료 (<count>건)
+💬 reply 완료 (<count>건, 스레드 <count>건 / 인라인 <count>건)
 🧵 스레드 resolve (<count>건)
 ⏭️ 건너뛴 항목 (<이유>)
 📚 학습 누적 (<count>건 또는 "신규 학습 없음")
