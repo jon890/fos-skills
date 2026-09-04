@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter의 `metadata.version`과 같은 값을 쓴다.
 올리는 기준은 저장소 README의 "버전과 변경 이력"을 따른다.
 
+## 2.11.0
+
+감사 대상 목록을 산문에서 뺐다.
+`scripts/target_files.py` 가 이미 그 판정을 소유하고 있었고,
+산문의 목록은 `.codex/agents/*.toml` 과 `.agents/roles/` 를 빠뜨린 사본이었다.
 ## 2.10.0
 
 - 판정 축에 「10. 실측이 도구 동작인가 모델 행동인가」 를 더했다.
