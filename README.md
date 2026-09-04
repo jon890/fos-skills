@@ -7,6 +7,9 @@
 
 ## 스킬 목록
 
+**여기에 두는 것은 반복해서 쓰는 스킬이다.**
+쓰임이 굳지 않은 스킬은 `~/.claude/skills/` 에만 두고, 여러 번 써서 절차가 자리를 잡은 뒤에 옮긴다.
+
 | 스킬 | 목표 |
 | --- | --- |
 | [`build-with-teams`](build-with-teams/README.md) | planning 이 만든 task 를 읽어 plan 하나를 구현까지 끝낸다 |
@@ -14,8 +17,6 @@
 | [`docs-check`](docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다 |
 | [`harness-cleanup`](harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 사용자 승인을 받아 고친다 |
 | [`planning`](planning/README.md) | 사용자와 합의한 것을 `docs/` 에 남기고, 그것만 읽고 구현할 수 있는 `tasks/` 를 만든다 |
-| [`pr-review`](pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록한다 |
-| [`presentation`](presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고 검수한다 |
 | [`review-fix`](review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영한다 |
 
 ## 설치
