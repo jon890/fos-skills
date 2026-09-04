@@ -17,6 +17,9 @@ TEAM_DIR="${TEAM_SKILLS_DIR:-$HOME/projects/AiSdtSkill}"
 # 팀 저장소로 내보내는 스킬. 늘어나면 여기에 추가한다.
 SHARED_SKILLS=(content-preview planning build-with-teams docs-check review-fix)
 
+# 스킬이 아닌 공용 도구. 이 저장소의 tools/<이름> 이 팀 저장소의 tools/<이름> 이 된다.
+SHARED_TOOLS=(browser-driver)
+
 # 개인 자산이라 내보내지 않는 경로 (스킬 디렉터리 기준 상대 경로)
 EXCLUDE=(references/work-writing-persona.md)
 
@@ -33,7 +36,7 @@ case "${1:-}" in
 esac
 
 REPO_DIR="$REPO_DIR" TEAM_DIR="$TEAM_DIR" APPLY="$APPLY" \
-SHARED="${SHARED_SKILLS[*]}" EXCLUDES="${EXCLUDE[*]}" python3 - <<'PYEOF'
+SHARED="${SHARED_SKILLS[*]}" TOOLS="${SHARED_TOOLS[*]}" EXCLUDES="${EXCLUDE[*]}" python3 - <<'PYEOF'
 import os
 import pathlib
 import re
@@ -44,7 +47,13 @@ repo = pathlib.Path(os.environ["REPO_DIR"])
 team = pathlib.Path(os.environ["TEAM_DIR"])
 apply = os.environ["APPLY"] == "true"
 skills = os.environ["SHARED"].split()
+tools = os.environ["TOOLS"].split()
 excludes = set(os.environ["EXCLUDES"].split())
+
+# 내보낼 (이 저장소 기준 경로, 팀 저장소 기준 경로) 쌍.
+# 스킬은 repo/<이름> 이 team/skills/<이름> 이 되고, 도구는 tools/ 아래에서 이름이 같다.
+PAIRS = [(name, f"skills/{name}") for name in skills]
+PAIRS += [(f"tools/{name}", f"tools/{name}") for name in tools]
 
 
 def is_junk(rel: str) -> bool:
@@ -96,19 +105,19 @@ def rendered(src: pathlib.Path, rel: str) -> bytes:
 # 팀 쪽에서 직접 고친 뒤 버전을 올리면 --apply 가 그것을 옛 내용으로 되돌린다 (실측).
 # 한 파일도 건드리기 전에 전부 본다. 복사하면서 검사하면 뒤 스킬에서 막아도 앞 스킬은 이미 덮인다.
 regressions = []
-for name in skills:
-    if not (repo / name).is_dir():
-        print(f"이 저장소에 없는 스킬: {name}", file=sys.stderr)
+for src_rel, dst_rel in PAIRS:
+    if not (repo / src_rel).is_dir():
+        print(f"이 저장소에 없다: {src_rel}", file=sys.stderr)
         sys.exit(2)
-    s_skill = repo / name / "SKILL.md"
-    d_skill = team / "skills" / name / "SKILL.md"
+    s_skill = repo / src_rel / "SKILL.md"
+    d_skill = team / dst_rel / "SKILL.md"
     if not (s_skill.is_file() and d_skill.is_file()):
         continue
     ours = version_of(s_skill.read_text(encoding="utf-8"))
     theirs = version_of(d_skill.read_text(encoding="utf-8"))
     if ours and theirs and theirs > ours:
         regressions.append(
-            f"  {name}: 팀 {'.'.join(map(str, theirs))} > 이 저장소 {'.'.join(map(str, ours))}"
+            f"  {src_rel}: 팀 {'.'.join(map(str, theirs))} > 이 저장소 {'.'.join(map(str, ours))}"
         )
 
 if regressions:
@@ -118,9 +127,9 @@ if regressions:
     sys.exit(3)
 
 drift = []
-for name in skills:
-    s_dir = repo / name
-    d_dir = team / "skills" / name
+for src_rel, dst_rel in PAIRS:
+    s_dir = repo / src_rel
+    d_dir = team / dst_rel
 
     seen = set()
     for s in sorted(s_dir.rglob("*")):
@@ -133,9 +142,9 @@ for name in skills:
         d = d_dir / rel
         want = rendered(s, rel)
         if not d.exists():
-            drift.append(f"  없음   {name}/{rel}")
+            drift.append(f"  없음   {dst_rel}/{rel}")
         elif d.read_bytes() != want:
-            drift.append(f"  다름   {name}/{rel}")
+            drift.append(f"  다름   {dst_rel}/{rel}")
         else:
             continue
         if apply:
@@ -151,7 +160,7 @@ for name in skills:
             rel = d.relative_to(d_dir).as_posix()
             if rel in excludes or is_junk(rel) or rel in seen:
                 continue
-            drift.append(f"  남음   {name}/{rel}")
+            drift.append(f"  남음   {dst_rel}/{rel}")
             if apply:
                 d.unlink()
 

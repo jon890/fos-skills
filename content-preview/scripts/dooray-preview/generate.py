@@ -8,19 +8,20 @@ Dooray 는 본문을 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/J
 
 사용 예 (업무 본문):
     python3 scripts/dooray-preview/generate.py \
-        --title "[VectorSearch] [DocParser] ..." \
-        --tag "Document Parser" --tag "개선" --tag "REAL" \
-        --meta "담당자:홍길동" --meta "참조:개발 그룹" \
-        --md-file /tmp/body.md \
-        --out /tmp/dooray-preview.html
-    scripts/show-preview.sh /tmp/dooray-preview.html
+        --project "<프로젝트명>" \
+        --title "<업무 제목>" \
+        --tag "<태그>" --tag "<태그>" \
+        --meta "담당자:<이름>" --meta "참조:<그룹>" \
+        --md-file "$SP/body.md" \
+        --out "$SP/preview.html"
+    scripts/show-preview.sh "$SP/preview.html"
 
 사용 예 (댓글):
     python3 scripts/dooray-preview/generate.py \
-        --mode comment --author "홍길동" \
-        --title "주간보고 2026년 8월 4주차 — #199" \
-        --md-file /tmp/body.md \
-        --out /tmp/dooray-preview.html
+        --mode comment --author "<작성자>" \
+        --title "<미리보기 제목>" \
+        --md-file "$SP/body.md" \
+        --out "$SP/preview.html"
 
 주의:
 - markdown 본문에 '</script>' 문자열이 있으면 안 된다 (text/plain 블록이 깨짐).
@@ -41,10 +42,10 @@ def main() -> int:
     ap.add_argument("--mode", choices=("task", "comment"), default="task",
                     help="task 는 업무 본문 머리, comment 는 작성자 머리")
     ap.add_argument("--author", default="작성자", help="댓글 모드의 작성자명")
-    ap.add_argument("--project", default="AI-TF-VectorSearch", help="프로젝트명 (헤더 표시용)")
+    ap.add_argument("--project", default="", help="프로젝트명 (헤더 표시용). 없으면 그 줄을 그린다")
     ap.add_argument("--tag", action="append", default=[], help="태그 (반복 지정)")
     ap.add_argument("--meta", action="append", default=[],
-                    help="메타 정보 '라벨:값' (반복 지정, 예: 담당자:홍길동)")
+                    help="메타 정보 '라벨:값' (반복 지정, 예: 담당자:<이름>)")
     ap.add_argument("--md-file", required=True, help="본문 markdown 파일 경로 ('-' 는 stdin)")
     ap.add_argument("--out", required=True, help="출력 HTML 경로")
     args = ap.parse_args()
@@ -73,9 +74,13 @@ def main() -> int:
         for m in args.meta:
             label, _, value = m.partition(":")
             meta_parts.append(f"<span>{html.escape(label)} <b>{html.escape(value)}</b></span>")
+        proj_html = (
+            f'<div class="dooray-proj">{html.escape(args.project)}</div>'
+            if args.project else ""
+        )
         head_html = (
             '<div class="dooray-head">'
-            f'<div class="dooray-proj">{html.escape(args.project)}</div>'
+            f'{proj_html}'
             f'<div class="dooray-title">{html.escape(args.title)}</div>'
             f'<div class="dooray-meta">{"".join(meta_parts)}</div>'
             f'<div class="tags">{tags_html}</div>'

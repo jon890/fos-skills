@@ -1,0 +1,10 @@
+{
+  "_comment": "브라우저 자동화 드라이버 설정. ~/.claude/browser.config.json 으로 복사해 쓴다.",
+  "_drivers": {
+    "orca": "Orca 내장 브라우저. 앱 로그인 세션을 그대로 쓰므로 SSO 가 필요한 사내 시스템에 적합하다.",
+    "agent-browser": "agent-browser CLI. 스스로 브라우저를 띄운다. SSO 가 필요하면 로그인된 Chrome 의 cdpPort 를 함께 적는다.",
+    "cmux": "cmux 내장 브라우저. cmux 터미널 안에서 에이전트를 돌릴 때 쓴다. 밖에서 부르면 소켓 접근이 거부된다."
+  },
+  "driver": "orca",
+  "cdpPort": 9222
+}

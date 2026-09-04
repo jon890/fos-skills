@@ -19,12 +19,29 @@
 | [`planning`](planning/README.md) | 사용자와 합의한 것을 `docs/` 에 남기고, 그것만 읽고 구현할 수 있는 `tasks/` 를 만든다 |
 | [`review-fix`](review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영한다 |
 
+## 공용 도구
+
+`tools/` 에는 스킬이 아닌 공용 도구를 둔다.
+스킬 하나가 소유하기에는 다른 스킬도 쓰고, 전역에 두기에는 이 저장소가 관리해야 하는 것이다.
+
+| 도구 | 하는 일 | 쓰는 스킬 |
+| --- | --- | --- |
+| `tools/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작한다. 실패를 종료 코드로 드러낸다 | `content-preview` |
+
+스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려간다.
+
 ## 설치
 
 각 코어 스킬을 글로벌 스킬 디렉터리에 심링크한다. 그러면 모든 프로젝트에서 사용할 수 있다.
 
 ```bash
 ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
+```
+
+공용 도구를 전역에서도 부르려면 함께 건다.
+
+```bash
+ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/scripts/browser-driver
 ```
 
 ## 코어와 오버레이

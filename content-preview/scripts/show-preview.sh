@@ -29,7 +29,31 @@ FILE_URL="file://$ABS"
 # 1순위 — browser-driver 가 있으면 그것으로 띄운다.
 # 어느 브라우저를 쓰는지는 드라이버가 정하므로 에이전트 IDE 안의 탭도 잡힌다.
 # page id 를 HTML 옆에 남겨 다음 실행이 같은 탭을 다시 쓴다.
-DRIVER="${BROWSER_DRIVER:-$HOME/.claude/scripts/browser-driver}"
+#
+# 찾는 순서는 셋이다. 호출자가 지정한 것, 스킬과 함께 받은 것, 개인이 걸어 둔 것.
+# 함께 받은 것을 개인 심링크보다 먼저 보는 이유는, 스킬만 받은 사람도 그대로 돌아가야 해서다.
+#
+# 위로 올라가며 찾는 이유는 저장소마다 배치가 달라서다.
+# 개인 공용은 <repo>/content-preview/scripts, 팀 공용은 <repo>/skills/content-preview/scripts 라
+# tools/ 까지의 거리가 한 단 다르다. 고정 상대경로로는 둘 다 맞출 수 없다 (실측).
+# pwd -P 로 실체 경로를 잡는다. 스킬 디렉터리가 심링크라 논리 경로로는 저장소 밖으로 나간다.
+find_bundled_driver() {
+  dir="$(cd "$(dirname "$0")" && pwd -P)"
+  for _ in 1 2 3 4 5; do
+    dir="$(dirname "$dir")"
+    [ "$dir" = "/" ] && return 1
+    cand="$dir/tools/browser-driver/browser_driver.py"
+    [ -x "$cand" ] && { printf '%s\n' "$cand"; return 0; }
+  done
+  return 1
+}
+
+DRIVER=""
+for cand in "${BROWSER_DRIVER:-}" \
+            "$(find_bundled_driver || true)" \
+            "$HOME/.claude/scripts/browser-driver"; do
+  [ -n "$cand" ] && [ -x "$cand" ] && { DRIVER="$cand"; break; }
+done
 
 # 사람이 보는 화면은 이 세션이 서 있는 워크트리다. ORCA_WORKTREE 가 없으면 현재 저장소 루트를
 # 그 값으로 쓴다. 비워 두면 조사하느라 다른 저장소로 cd 한 채 만든 탭이 그대로 재사용되고,
