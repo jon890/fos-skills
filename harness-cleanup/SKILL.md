@@ -42,7 +42,7 @@ metadata:
 **모델 이름과 버전을 산문에 복제하지 않는다.**
 설정을 찾지 못하면 추측하지 않고 검증 공백으로 둔다.
 
-감사 대상은 `scripts/collect_targets.sh` 가 내는 목록과 실행 중 소비되는 회피 패턴이다.
+감사 대상은 `scripts/collect_targets.py` 가 내는 목록과 실행 중 소비되는 회피 패턴이다.
 어떤 파일이 대상인지는 `scripts/target_files.py` 가 소유한다.
 
 일반 `docs/` 와 planning 산출물의 코드 정합성은 `docs-check` 로 보낸다.
@@ -51,11 +51,11 @@ metadata:
 ### 2. 실측
 
 ```bash
-bash scripts/collect_targets.sh <repo-root>
+python3 scripts/collect_targets.py <repo-root>
 python3 scripts/check_references.py <repo-root>
 python3 scripts/check_facts.py <repo-root>
 python3 scripts/check_duplication.py <repo-root>
-bash scripts/check_rename_drift.sh <repo-root>
+python3 scripts/check_rename_drift.py <repo-root>
 ```
 
 **각 명령을 따로 실행하고 출력과 종료 코드를 읽는다.**
@@ -71,7 +71,7 @@ bash scripts/check_rename_drift.sh <repo-root>
 - **대상 파일 수가 0이면 통과가 아니다.**
 - 깨진 참조와 중복 0건은 정적 검사가 찾지 못했다는 뜻일 뿐 의미 검사의 통과가 아니다.
 - 고정 개수, 옵션과 파일 목록은 실제 코드, `--help` 와 설정에 대조한다.
-- 문서에 검출 명령이 있으면 `scripts/run_doc_snippets.sh` 로 실제 입력과 대조 표본을 검사한다.
+- 문서에 검출 명령이 있으면 `scripts/run_doc_snippets.py` 로 실제 입력과 대조 표본을 검사한다.
   **이 스크립트만 출력으로 판정한다.** 블록에 문법 오류가 있어도 종료 코드가 0 이다 (실측).
 - 스킬을 수정할 가능성이 있으면 변경 전 평가 명령이 있는지 확인하고 기준값을 기록한다.
 
@@ -80,7 +80,7 @@ bash scripts/check_rename_drift.sh <repo-root>
 `references/audit-axes.md` 와 `references/judgment.md` 를 읽고 문장과 절 단위로 판정한다.
 
 축은 무엇을 찾을지를, 판정 기준은 찾은 것을 유지할지 지울지를 소유한다.
-기계가 이미 막는다는 근거로 지우려면 `scripts/check_enforcement.sh` 로 확인한다.
+기계가 이미 막는다는 근거로 지우려면 `scripts/check_enforcement.py` 로 확인한다.
 발동 조건과 네 모드의 통과 조건은 `references/judgment.md` 가 소유한다.
 
 ### 4. 판정표와 승인

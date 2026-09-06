@@ -32,3 +32,12 @@
 판정 기준은 `judgment.md` 하나가 소유하고, `SKILL.md` 에만 있던 유지 항목 둘을 그쪽으로 옮겼다.
 
 `<skill-dir>` 상대경로 설명을 뺐다. 다른 스킬 넷에서 같은 문장을 지운 것과 같다.
+
+검사 스크립트를 모두 python 으로 통일했다.
+`check_enforcement.sh`, `check_rename_drift.sh`, `run_doc_snippets.sh` 를 옮기고,
+`collect_targets.py` 를 부르기만 하던 `collect_targets.sh` 는 지웠다.
+
+이식은 옮기기 전 출력을 기준으로 삼았다.
+gitignore 히트와 미스, grep 검출과 통과, lint 검출, 도구 우회 가능과 불가,
+모르는 모드, 인자 부족, 머리말 없음, 파일 없음, 드리프트 검출과 대상 없음까지
+열네 경로의 출력과 종료 코드가 모두 같다.
