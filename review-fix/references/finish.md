@@ -5,8 +5,8 @@
 ## 리뷰 스레드 resolve
 
 ```bash
-scripts/review-threads.sh list <owner> <repo> <N>
-scripts/review-threads.sh resolve <THREAD_ID> ...
+python3 scripts/review_threads.py list <owner> <repo> <N>
+python3 scripts/review_threads.py resolve <THREAD_ID> ...
 ```
 
 resolve 는 「이 지적을 처리했다」 는 표시다.

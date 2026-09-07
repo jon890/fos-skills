@@ -15,12 +15,12 @@
 봇은 리뷰 스레드로 다는 경우가 많다.
 
 ```bash
-scripts/review-threads.sh list <owner> <repo> <N>
+python3 scripts/review_threads.py list <owner> <repo> <N>
 ```
 
 | 상태 | 회신 경로 |
 |---|---|
-| 리뷰 스레드가 있다 | `scripts/review-threads.sh reply <THREAD_ID> <본문파일>` |
+| 리뷰 스레드가 있다 | `python3 scripts/review_threads.py reply <THREAD_ID> <본문파일>` |
 | 스레드가 없고 인라인 댓글만 있다 | REST `pulls/<N>/comments/<comment_id>/replies` |
 | 둘 다 없다 | `gh pr comment <N> --body-file <본문파일>` 로 통합 회신 하나 |
 
@@ -30,7 +30,7 @@ scripts/review-threads.sh list <owner> <repo> <N>
 인라인 댓글 경로는 아래와 같다.
 
 ```bash
-gh api --hostname "$(scripts/gh-host.sh)" \
+gh api --hostname "$(python3 scripts/gh_host.py)" \
   repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
   -X POST -F body=@<본문파일>
 ```
@@ -61,7 +61,7 @@ python3 scripts/check_reply_body.py <본문파일>
 이미 등록한 댓글에서 발견하면 본문을 교체한다.
 
 ```bash
-gh api --hostname "$(scripts/gh-host.sh)" \
+gh api --hostname "$(python3 scripts/gh_host.py)" \
   repos/<owner>/<repo>/issues/comments/<id> -X PATCH -F body=@<본문파일>
 ```
 

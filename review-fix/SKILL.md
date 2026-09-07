@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.0.1"
+  version: "2.1.0"
 ---
 
 # review-fix
@@ -30,7 +30,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 리뷰 수집 | PR 번호가 정해졌고 네 소스의 리뷰를 모았다 | `scripts/collect-review.sh` |
+| 1 | 리뷰 수집 | PR 번호가 정해졌고 네 소스의 리뷰를 모았다 | `scripts/collect_review.py` |
 | 2 | 작업 트리 정렬 | 현재 브랜치가 PR head 브랜치이고 conflict 가 없다 | `references/conflict-resolution.md` |
 | 3 | 분류 | 모든 지적에 등급이 붙었고 처리 범위를 사용자가 확정했다 | `references/severity.md` |
 | 4 | 수정 | 처리하기로 한 지적이 반영됐다 | `references/severity.md` |
@@ -54,7 +54,7 @@ base 에는 열린 PR 이 없기 때문이다. 그래서 둘째 명령의 오픈
 
 ```bash
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
-scripts/collect-review.sh <owner> <repo> <N>
+python3 scripts/collect_review.py <owner> <repo> <N>
 ```
 
 **네 소스에서 모은다.** 워크플로 버전에 따라 리뷰가 담기는 위치가 달라,
@@ -62,10 +62,10 @@ scripts/collect-review.sh <owner> <repo> <N>
 넷째가 미해결 리뷰 스레드이고 `path` 와 `line` 을 함께 내므로, 「회신」 단계에서 REST 댓글과 대조할 수 있다.
 
 이 스킬의 스크립트는 호스트를 스스로 구한다.
-스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 호스트를 붙인다. 이유는 `scripts/gh-host.sh` 가 소유한다.
+스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
 
 ```bash
-gh api --hostname "$(scripts/gh-host.sh)" repos/<owner>/<repo>/...
+gh api --hostname "$(python3 scripts/gh_host.py)" repos/<owner>/<repo>/...
 ```
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
@@ -79,7 +79,7 @@ gh api --hostname "$(scripts/gh-host.sh)" repos/<owner>/<repo>/...
 ### 2. 작업 트리 정렬
 
 ```bash
-scripts/checkout-pr.sh <N>
+python3 scripts/checkout_pr.py <N>
 ```
 
 종료 코드 1 은 작업 트리가 dirty 하다는 뜻이다. 변경 내용을 보여주고 사용자에게 확인받는다.
