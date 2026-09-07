@@ -22,9 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-# build-with-teams 의 executor_routing_gate.py 와 같은 목록을 본다.
-# 두 검사가 다른 기준을 쓰면 planning 통과 후 구현 착수 직전에 막힌다 (실제 발생).
-# 목록 단일 소스는 그 스크립트의 REQUIRED_SECTIONS 다.
+# task 생성 시 phase 파일에 필요한 필수 절을 검사한다.
 REQUIRED_SECTIONS = [
     "## 목표",
     "**범위 외**",

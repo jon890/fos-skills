@@ -6,7 +6,7 @@ description: |
   "하네스 정리", "지침 감사", "스킬 지침 점검", "프롬프트 교정" 같은 요청이면 이 스킬을 쓴다.
   일반 제품 문서가 코드와 맞는지는 `docs-check` 가 맡는다.
 metadata:
-  version: "3.0.0"
+  version: "3.1.0"
 ---
 
 # harness-cleanup
@@ -71,7 +71,8 @@ python3 scripts/check_rename_drift.py <repo-root>
 - **대상 파일 수가 0이면 통과가 아니다.**
 - 깨진 참조와 중복 0건은 정적 검사가 찾지 못했다는 뜻일 뿐 의미 검사의 통과가 아니다.
 - 고정 개수, 옵션과 파일 목록은 실제 코드, `--help` 와 설정에 대조한다.
-- 문서에 검출 명령이 있으면 `scripts/run_doc_snippets.py` 로 실제 입력과 대조 표본을 검사한다.
+- **문서의 실행 가능한 블록을 전부 `scripts/run_doc_snippets.py` 로 돌린다.** 검출 명령만이 아니다.
+  검출 명령은 실제 입력과 대조 표본으로 검사하고, 상대경로가 어느 디렉터리를 전제하는지 함께 본다.
   **이 스크립트만 출력으로 판정한다.** 블록에 문법 오류가 있어도 종료 코드가 0 이다 (실측).
 - 스킬을 수정할 가능성이 있으면 변경 전 평가 명령이 있는지 확인하고 기준값을 기록한다.
 
@@ -80,6 +81,7 @@ python3 scripts/check_rename_drift.py <repo-root>
 `references/audit-axes.md` 와 `references/judgment.md` 를 읽고 문장과 절 단위로 판정한다.
 
 축은 무엇을 찾을지를, 판정 기준은 찾은 것을 유지할지 지울지를 소유한다.
+스킬을 감사할 때는 `스킬 구조와 유지보수성` 축으로 목표, 책임 분리, 단계별 context, 검증 실행과 사람이 읽는 구조를 함께 본다.
 기계가 이미 막는다는 근거로 지우려면 `scripts/check_enforcement.py` 로 확인한다.
 발동 조건과 네 모드의 통과 조건은 `references/judgment.md` 가 소유한다.
 
