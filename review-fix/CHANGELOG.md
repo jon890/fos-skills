@@ -3,6 +3,25 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.1.0
+
+셸 스크립트 넷을 python 으로 옮겼다.
+이 스킬의 스크립트가 다섯인데 하나만 python 이던 상태가 해소됐다.
+
+| 옛 파일 | 새 파일 |
+| --- | --- |
+| `gh-host.sh` | `gh_host.py` |
+| `checkout-pr.sh` | `checkout_pr.py` |
+| `collect-review.sh` | `collect_review.py` |
+| `review-threads.sh` | `review_threads.py` |
+
+호스트 해석은 이제 모듈로도 쓴다.
+셸 판은 서로를 하위 프로세스로 불렀는데, 이제 `gh_host.resolve()` 를 가져다 쓴다.
+
+옮기기 전 출력을 기준으로 삼았다.
+호스트 해석 둘, 사용법 오류 다섯, 실제 PR 의 스레드 조회와 리뷰 수집까지 아홉 경로가 같다.
+객체 출력은 `gh --jq` 가 키를 알파벳순으로 내므로 그것에 맞췄다 (실측).
+
 ## 2.0.1
 
 지침 파일 이름을 산문에서 뺐다.
