@@ -27,6 +27,16 @@ CODE_SPAN = re.compile(r"`[^`\n]*`")
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 TABLE_SEP = re.compile(r"^\s*\|\s*:?-")
 TABLE_ROW = re.compile(r"^\s*\|")
+# 표의 열을 세기 전에 역슬래시 이스케이프를 지운다.
+#   `\|` 는 셀 안의 문자이지 열 구분자가 아니다. 지우지 않으면 그 셀이 둘로 세어져
+#   열 수가 실제보다 많아진다. 실측으로 `| `x` | 안의 `\|` 를 센다 |` 한 줄과
+#   `` `[Ship\|Show\|Ask]` `` 한 줄이 이 오탐으로 걸렸다.
+#   `\\|` 는 역슬래시 다음의 진짜 구분자다. 이 정규식이 `\\` 를 먼저 먹어 `|` 가 남는다.
+#
+#   코드 스팬은 지우지 않는다. GFM 은 인라인을 해석하기 전에 파이프로 셀을 가르므로,
+#   백틱 안의 파이프도 구분자로 동작한다. 그래서 GFM 은 코드 스팬 안에서도 이스케이프를
+#   요구한다. 코드 스팬을 지우면 백틱 안의 맨 파이프가 만드는 진짜 어긋남을 놓친다.
+ESCAPE = re.compile(r"\\.")
 
 # 본문 ADR 번호는 헤딩만 센다.
 #   아무 곳의 ADR-NNN 을 다 세면 "향후 ADR은 ADR-009부터 추가" 같은 안내 문장이
@@ -134,7 +144,7 @@ def check_markdown(path, lines):
         if TABLE_SEP.match(line):
             continue  # 구분선은 열 수 비교 대상이 아니지만 표를 끊지도 않는다
         if TABLE_ROW.match(line):
-            n = line.count("|")
+            n = ESCAPE.sub("", line).count("|")
             if cols is None:
                 cols = n
             elif n != cols:
