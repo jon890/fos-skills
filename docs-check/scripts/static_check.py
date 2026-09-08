@@ -37,6 +37,13 @@ ADR_BODY = re.compile(r"^#+\s+.*?(ADR-\d+)")
 #   실측으로 목록형이 다수였다.
 ADR_INDEX = re.compile(r"^\s*(?:[-*]\s+\[?|\|\s*)(ADR-\d+)")
 
+# 문서가 `tasks/` 의 계획서를 번호로 가리키는 자리를 찾는다.
+#   계획서는 구현이 끝나면 제거되므로, 번호로 가리킨 자리는 그때 깨진 참조가 된다.
+#   앞에 단어 문자가 붙은 것은 제외한다. `test_plan032_error_classify.py` 처럼
+#   식별자의 일부인 것은 참조가 아니라 이름이고, 바꾸면 그 이름을 부르는 쪽도 함께 깨진다.
+#   자리 표시자(`plan{N}`, `plan###`)에는 숫자가 없어 걸리지 않는다.
+PLAN_REF = re.compile(r"(?<![A-Za-z0-9_])plan[-_]?\d{2,}")
+
 
 def git(*args):
     """git 을 돌려 표준 출력을 낸다. 실패하면 None 이다."""
@@ -152,6 +159,29 @@ def check_markdown(path, lines):
     return out
 
 
+def in_plan_dir(path):
+    """그 파일이 계획서 디렉터리 안에 있는가.
+
+    계획서 안에서 자기 plan 번호를 부르는 것은 참조가 아니다. 파일과 함께 사라진다.
+    """
+    return any(PLAN_REF.fullmatch(part.split("-")[0]) for part in path.parts)
+
+
+def check_plan_ref(path, lines):
+    """문서가 계획서를 번호로 가리키는가.
+
+    코드 스팬은 제외하지 않는다. 계획서 경로는 대개 백틱 안에 적혀,
+    제외하면 가장 흔한 형태를 놓친다. 코드 블록의 예시만 제외한다.
+    """
+    if in_plan_dir(path):
+        return []
+    out = []
+    for lineno, line in outside_fence(lines):
+        for m in PLAN_REF.finditer(line):
+            out.append(f"{path}:{lineno}: PLAN_REF 계획서를 번호로 가리킨다 → {m.group(0)}")
+    return out
+
+
 def links_of(lines):
     """코드 블록과 코드 스팬 밖의 (줄번호, 대상) 목록."""
     for lineno, line in outside_fence(lines):
@@ -248,6 +278,7 @@ def main(argv):
         lines = read_lines(path)
         results += check_markdown(path, lines)
         results += check_links(path, lines, cache)
+        results += check_plan_ref(path, lines)
 
     print(f"검사한 Markdown: {checked}개 (scope: {scope})", file=sys.stderr)
     if checked == 0:

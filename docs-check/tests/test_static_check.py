@@ -67,6 +67,31 @@ class TestUnit(unittest.TestCase):
         body = "# 하나\n\n```bash\n#### 셸 주석\n| 표 | 아님 |\n```"
         self.assertEqual(sc.check_markdown(Path("t.md"), lines(body)), [])
 
+    def test_plan_ref_catches_prose_path_and_frontmatter(self):
+        for body, want in (
+            ("이 결정의 출처는 (ADR-008, plan051) 이다.", 1),
+            ("구현은 `tasks/plan059-foo/` 에 있다.", 1),
+            ("source: [plan037, plan041]", 2),
+            ("plan-018 을 본다.", 1),
+        ):
+            found = sc.check_plan_ref(Path("docs/a.md"), lines(body))
+            self.assertEqual(len(found), want, body)
+            self.assertIn("PLAN_REF", found[0])
+
+    def test_plan_ref_skips_identifier_placeholder_and_fence(self):
+        for body in (
+            "`tests/unit/test_plan032_error_classify.py` 를 본다.",
+            "`tasks/plan{N}-{slug}/` 를 만든다.",
+            "사고 사례(plan###)는 1개로 충분하다.",
+            "```\ntasks/plan051/\n```",
+        ):
+            self.assertEqual(sc.check_plan_ref(Path("docs/a.md"), lines(body)), [], body)
+
+    def test_plan_ref_skips_file_inside_plan_dir(self):
+        body = "plan059 의 두 번째 phase 다."
+        path = Path("tasks/plan059-foo/phase-01.md")
+        self.assertEqual(sc.check_plan_ref(path, lines(body)), [])
+
 
 class TestRepo(unittest.TestCase):
     """실제 git 저장소에서 파일 수집과 종료 코드를 본다."""
