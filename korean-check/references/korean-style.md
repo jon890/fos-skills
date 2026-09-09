@@ -5,7 +5,7 @@
 
 ## 외래어 매핑 표
 
-이 표는 이 스킬의 `scripts/korean-style-check.sh` 가 런타임에 읽는 단일 소스다.
+이 표는 이 스킬의 `scripts/korean-style-check.py` 가 런타임에 읽는 단일 소스다.
 다른 위치의 표를 쓰려면 `KOREAN_STYLE_RULES` 로 경로를 준다.
 
 

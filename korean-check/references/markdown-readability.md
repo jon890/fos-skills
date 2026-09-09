@@ -41,7 +41,7 @@
 
 | 강제 주체 | 잡는 것 | 발동 |
 | --- | --- | --- |
-| `scripts/korean-style-check.sh` | 외래어 매핑 표의 금지어, 인라인 `+` 연결 | 편집 도구가 `.md` 를 바꾼 직후 |
+| `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어, 인라인 `+` 연결 | 편집 도구가 `.md` 를 바꾼 직후 |
 | `scripts/check-readability.py` | 괄호 2겹 중첩(`NEST`), `§`(`SECT`), 범위 물결표(`TILDE`), 엠대시(`DASH`) | 편집 도구가 `.md` 를 바꾼 직후 |
 | 사람 | 한 문장 한 줄, `=` 와 `→` 압축, 문장 성분 생략, 종결어미 | 작성 직후 |
 | 사람 | 분량 구간 판단, 목록 구조, 내용 점검 | 작성 직후 |
@@ -52,7 +52,7 @@ scripts/check.sh <파일.md> [<파일.md>...]
 ```
 
 `check.sh` 가 둘을 함께 돌리고 종료 코드를 하나로 합친다.
-한쪽만 부를 일이 있으면 `scripts/korean-style-check.sh` 와 `scripts/check-readability.py` 를 직접 부른다.
+한쪽만 부를 일이 있으면 `scripts/korean-style-check.py` 와 `scripts/check-readability.py` 를 직접 부른다.
 
 ## 훅이 잡지 못하는 것
 

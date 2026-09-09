@@ -22,9 +22,7 @@
 
 ## 전제
 
-- `bash`, `awk`, `python3` 로 검사기를 돌린다
-- `korean-style-check.sh` 의 훅 모드는 `jq` 를 쓴다. 없으면 그 검사기가 결과를 내지 않고 0 으로 끝난다.
-  `check-readability.py` 는 표준 라이브러리로 JSON 을 읽어 `jq` 없이 돈다
+- `bash` 와 `python3` 로 검사기를 돌린다. 검사기 둘 다 표준 라이브러리만 쓴다
 - 매핑 표는 `references/korean-style.md` 다. 다른 위치의 표를 쓰려면 `KOREAN_STYLE_RULES` 로 경로를 준다
 
 ## 설치
@@ -39,11 +37,11 @@ ln -sfn ~/personal/fos-skills/korean-check ~/.claude/skills/korean-check
 심링크로 걸면 스킬을 고칠 때 훅 설정을 다시 손대지 않는다.
 
 ```bash
-ln -sfn ~/personal/fos-skills/korean-check/scripts/korean-style-check.sh ~/.claude/scripts/korean-style-check.sh
+ln -sfn ~/personal/fos-skills/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
 ln -sfn ~/personal/fos-skills/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
 ```
 
-`korean-style-check.sh` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
+`korean-style-check.py` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
 훅에 넣을 설정은 `SKILL.md` 의 「훅에 걸기」가 소유한다.
 
 규칙 파일을 항상 맥락에 두려면 규칙 디렉터리에도 건다.
@@ -65,7 +63,7 @@ done
 | `references/markdown-readability.md` | 렌더링 함정, 자동 검사가 잡는 것과 잡지 못하는 것 |
 | `references/review-axes.md` | 검토자에게 무엇을 주고 무엇을 받는가, 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
-| `scripts/korean-style-check.sh` | 외래어 매핑 표의 금지어와 인라인 `+` 연결을 찾는다. 훅 모드를 갖는다 |
+| `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어와 인라인 `+` 연결을 찾는다. 훅 모드를 갖는다 |
 | `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 찾는다. 훅 모드와 문자열 모드를 갖는다 |
 | `CHANGELOG.md` | 버전 이력 |
 

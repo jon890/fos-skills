@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조, 렌더링 함정의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -20,7 +20,7 @@ description: |
 | 검사기 | 매핑 표의 금지어와 렌더링 함정 | 종료 코드 | `references/markdown-readability.md` 의 「자동 검사」 |
 | 검토 | 검사기가 판정하지 못하는 것 | 발견 목록 | `references/review-axes.md` 의 「축」 |
 
-**판정 기준과 검사기를 한 자리에 둔다.** `scripts/korean-style-check.sh` 가
+**판정 기준과 검사기를 한 자리에 둔다.** `scripts/korean-style-check.py` 가
 `references/korean-style.md` 의 매핑 표를 런타임에 읽는다.
 둘을 갈라 두면 표를 찾지 못해 검사기가 종료 코드 2 로 끝난다.
 
@@ -74,7 +74,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 "PostToolUse": [{
   "matcher": "Edit|Write|MultiEdit",
   "hooks": [
-    { "type": "command", "command": "~/.claude/scripts/korean-style-check.sh --hook", "timeout": 15 },
+    { "type": "command", "command": "~/.claude/scripts/korean-style-check.py --hook", "timeout": 15 },
     { "type": "command", "command": "~/.claude/scripts/check-readability.py --hook", "timeout": 15 }
   ]
 }]

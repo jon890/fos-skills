@@ -20,7 +20,7 @@
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd -P)"
-STYLE="$HERE/korean-style-check.sh"
+STYLE="$HERE/korean-style-check.py"
 READABILITY="$HERE/check-readability.py"
 
 if [ "${1:-}" = "--where" ]; then

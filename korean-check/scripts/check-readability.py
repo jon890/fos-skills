@@ -21,7 +21,7 @@ korean-style.md 가 언어, writing-structure.md 가 구조, markdown-readabilit
 
 나머지 축은 다른 곳이 맡는다.
 
-- 외래어와 인라인 `+` 연결은 `korean-style-check.sh` 가 강제한다
+- 외래어와 인라인 `+` 연결은 `korean-style-check.py` 가 강제한다
 - 렌더러 고유 함정과 게시 대상 고유 형식은 그 매체를 쓰는 저장소의 검사기가 강제한다
 - 한 문장 한 줄, `=` 와 `→` 압축, bullet 다중 속성은 의미 판단이 필요해 사람이 본다
 
