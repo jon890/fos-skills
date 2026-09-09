@@ -50,6 +50,31 @@ class TestUnit(unittest.TestCase):
         body = "| 머리 | 값 |\n| --- | --- |\n| 하나 | 1 |"
         self.assertEqual(sc.check_markdown(Path("t.md"), lines(body)), [])
 
+    def test_escaped_pipe_in_code_span_is_not_a_column(self):
+        """실측 오탐 둘. 코드 스팬 안의 `\\|` 를 열 구분자로 세었다."""
+        head = "| 이름 | 설명 | 처리 |\n| --- | --- | --- |\n"
+        cases = (
+            "| `table_cell_health` | 셀 안의 `\\|` 를 센다 | 고쳤다 |",
+            "| 배포 방식 | `[Ship\\|Show\\|Ask]` 로 적는다 | 그대로 |",
+        )
+        for row in cases:
+            with self.subTest(row=row):
+                found = sc.check_markdown(Path("t.md"), lines(head + row))
+                self.assertEqual(found, [])
+
+    def test_bare_pipe_in_code_span_still_counts(self):
+        """GFM 은 백틱 안의 맨 파이프도 셀을 가른다. 그래서 이것은 진짜 어긋남이다."""
+        body = "| 머리 | 값 |\n| --- | --- |\n| `a|b` | 1 |"
+        found = sc.check_markdown(Path("t.md"), lines(body))
+        self.assertEqual(len(found), 1)
+        self.assertIn("표 열 수 불일치", found[0])
+
+    def test_escaped_backslash_before_pipe_is_a_column(self):
+        """`\\\\|` 는 역슬래시 다음의 진짜 구분자다. 지워서 놓치지 않는다."""
+        body = "| 머리 | 값 |\n| --- | --- |\n| 경로\\\\ | 1 | 남는다 |"
+        found = sc.check_markdown(Path("t.md"), lines(body))
+        self.assertEqual(len(found), 1)
+
     def test_heading_level_skip(self):
         found = sc.check_markdown(Path("t.md"), lines("# 하나\n#### 넷"))
         self.assertEqual(len(found), 1)
@@ -66,6 +91,31 @@ class TestUnit(unittest.TestCase):
     def test_shell_comment_in_fence_is_not_heading(self):
         body = "# 하나\n\n```bash\n#### 셸 주석\n| 표 | 아님 |\n```"
         self.assertEqual(sc.check_markdown(Path("t.md"), lines(body)), [])
+
+    def test_plan_ref_catches_prose_path_and_frontmatter(self):
+        for body, want in (
+            ("이 결정의 출처는 (ADR-008, plan051) 이다.", 1),
+            ("구현은 `tasks/plan059-foo/` 에 있다.", 1),
+            ("source: [plan037, plan041]", 2),
+            ("plan-018 을 본다.", 1),
+        ):
+            found = sc.check_plan_ref(Path("docs/a.md"), lines(body))
+            self.assertEqual(len(found), want, body)
+            self.assertIn("PLAN_REF", found[0])
+
+    def test_plan_ref_skips_identifier_placeholder_and_fence(self):
+        for body in (
+            "`tests/unit/test_plan032_error_classify.py` 를 본다.",
+            "`tasks/plan{N}-{slug}/` 를 만든다.",
+            "사고 사례(plan###)는 1개로 충분하다.",
+            "```\ntasks/plan051/\n```",
+        ):
+            self.assertEqual(sc.check_plan_ref(Path("docs/a.md"), lines(body)), [], body)
+
+    def test_plan_ref_skips_file_inside_plan_dir(self):
+        body = "plan059 의 두 번째 phase 다."
+        path = Path("tasks/plan059-foo/phase-01.md")
+        self.assertEqual(sc.check_plan_ref(path, lines(body)), [])
 
 
 class TestRepo(unittest.TestCase):

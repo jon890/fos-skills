@@ -15,7 +15,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEAM_DIR="${TEAM_SKILLS_DIR:-$HOME/projects/AiSdtSkill}"
 
 # 팀 저장소로 내보내는 스킬. 늘어나면 여기에 추가한다.
-SHARED_SKILLS=(content-preview planning build-with-teams docs-check review-fix)
+SHARED_SKILLS=(content-preview planning build-with-teams docs-check review-fix korean-check)
 
 # 스킬이 아닌 공용 도구. 이 저장소의 tools/<이름> 이 팀 저장소의 tools/<이름> 이 된다.
 SHARED_TOOLS=(browser-driver)
