@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.3.1
+
+korean-check 1.2.0 이 등록한 금지어 「가르다」 계열을 변경 기록과 `references/six-axis.md` 에서 「정한다」로 바꿨다.
+
 ## 2.3.0
 
 표의 열을 셀 때 이스케이프된 파이프를 구분자로 세던 오탐을 고쳤다.
@@ -29,7 +33,7 @@
 계획서를 번호로 가리킨 자리를 검사한다.
 
 계획서는 구현이 끝나면 제거되므로, 문서가 번호로 가리킨 자리는 그때 깨진 참조가 된다.
-`static_check.py` 가 `PLAN_REF` 로 위치를 뽑고, `references/six-axis.md` 가 유형과 예외를 가른다.
+`static_check.py` 가 `PLAN_REF` 로 위치를 뽑고, `references/six-axis.md` 가 유형과 예외를 정한다.
 
 기본은 아무것도 적지 않는 것이다. 무엇이 언제 왜 바뀌었는지는 git 이력이 이미 추적한다.
 결정의 근거가 필요하면 ADR 번호를, 변경의 이력이 필요하면 PR 번호를 적는다.
