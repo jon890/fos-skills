@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.2.1
+
+1.2.0 이 등록한 금지어가 자기 문서에 남아 있던 자리를 고쳤다.
+`references/markdown-readability.md` 의 한 곳을 「정한다」로 바꿨다.
+
 ## 1.2.0
 
 비유어 「가르다」 계열을 외래어 매핑 표에 등록했다.
