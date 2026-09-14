@@ -7,16 +7,22 @@
   3. 다른 문서의 섹션 참조 — `"섹션명" 섹션` / `"섹션명" 표`
   4. 스킬 참조 — `` `이름` skill ``
 
-Usage: python3 check_references.py [repo-root]
+Usage: python3 check_references.py [repo-root] [--scope <저장소 안 경로>]
 종료 코드: 깨진 참조가 있으면 1
 """
 import pathlib
 import re
 import sys
 
-from target_files import iter_targets
+from target_files import iter_targets, resolve_scope, take_scope
 
-ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+try:
+    ARGV, SCOPE_ARG = take_scope(sys.argv[1:])
+    ROOT = pathlib.Path(ARGV[0] if ARGV else ".").resolve()
+    SCOPE = resolve_scope(ROOT, SCOPE_ARG)
+except ValueError as error:
+    print(error, file=sys.stderr)
+    sys.exit(2)
 
 # 경로처럼 보이는 백틱 조각. 디렉터리 구분자를 포함해야 경로로 본다.
 PATH_IN_BACKTICK = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)`")
@@ -33,7 +39,7 @@ SKIP = re.compile(r"[<>{}*]|^~|^\$|^https?:")
 
 
 def targets():
-    return [path for path in iter_targets(ROOT) if path.resolve().is_relative_to(ROOT)]
+    return [path for path in iter_targets(ROOT, scope=SCOPE) if path.resolve().is_relative_to(ROOT)]
 
 
 def installed_skills():

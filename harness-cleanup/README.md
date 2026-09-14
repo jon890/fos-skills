@@ -14,6 +14,7 @@
 | 완료 보고 | 처리한 판정, 전후 측정, 실행한 검증, 커밋, 남은 검증 공백 |
 
 감사 대상은 `scripts/collect_targets.py` 가 내는 목록이다. 어떤 파일이 대상인지는 `scripts/target_files.py` 가 소유한다.
+스킬 하나만 감사할 때는 `--scope <저장소 안 경로>` 로 좁힌다.
 저장소 밖을 가리키는 심볼릭 링크는 표시만 하고 수정하지 않는다.
 
 ## 사용 시점
@@ -46,14 +47,14 @@
 | `SKILL.md` | 목표와 6단계 절차, 단계별 통과 조건, 조사를 나눠 맡기는 방식, 실측 명령 순서와 종료 코드 규약, 판정표 형식 |
 | `references/audit-axes.md` | 무엇을 찾을지. 소유권 중복, 죽은 검출, 값 하드코딩, 지시 충돌, 계층 분리, 정책 잔존, 런타임 동작 변화, 사용 이력 0 |
 | `references/judgment.md` | 찾은 것을 유지할지 지울지. 유지와 제거의 기준, 문장 단위 판정 열 축, 기계 강제 확인 절차 |
-| `scripts/target_files.py` | 감사 대상 파일 선택 기준. 다른 스크립트가 이것을 가져다 쓴다 |
+| `scripts/target_files.py` | 감사 대상 파일 선택 기준과 `--scope` 해석. 다른 스크립트가 이것을 가져다 쓴다 |
 | `scripts/collect_targets.py` | 감사 대상 파일과 줄 수 출력 |
 | `scripts/check_references.py` | 마크다운 링크, 백틱 경로, 다른 문서의 섹션 참조, 스킬 참조가 실재하는지 확인. 깨진 참조가 있으면 종료 코드 1 |
 | `scripts/check_facts.py` | 문서에 적힌 개수와 목록 표기를 뽑아 검토 지점으로 제시한다. 자동 판정이 아니다 |
 | `scripts/check_duplication.py` | 지침 파일 사이에 연속 N줄 이상 같은 내용이 반복되는 구간 검출 |
 | `scripts/check_rename_drift.py` | `SKILL.md` 를 고치고 그것이 위임한 참조 문서를 안 고친 경우 검출. 변경된 `SKILL.md` 가 없으면 종료 코드 2 |
 | `scripts/check_enforcement.py` | 지침이 금지하는 대상을 gitignore, lint, grep, 도구 권한이 실제로 막는지 판정 |
-| `scripts/run_doc_snippets.py` | 문서의 bash 코드 블록을 그대로 추출해 bash 와 zsh 에서 실행. 종료 코드가 아니라 출력으로 판정한다 |
+| `scripts/run_doc_snippets.py` | 문서의 bash 코드 블록을 그대로 추출해 bash 와 zsh 에서 실행. 머리말을 생략하면 전부 돈다. 종료 코드가 아니라 출력으로 판정한다 |
 | `CHANGELOG.md` | 버전 이력 |
 
 실행 절차는 `SKILL.md` 가 소유한다.

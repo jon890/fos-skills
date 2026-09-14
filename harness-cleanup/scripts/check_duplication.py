@@ -4,16 +4,22 @@
 연속 N줄 이상이 다른 파일과 일치하면 보고한다.
 "A 가 단일 소스다" 라고 적어 두고 내용을 복사한 경우가 가장 흔하다.
 
-Usage: python3 check_duplication.py [repo-root] [최소-연속-줄수]
+Usage: python3 check_duplication.py [repo-root] [최소-연속-줄수] [--scope <저장소 안 경로>]
 """
 import collections
 import pathlib
 import sys
 
-from target_files import iter_targets
+from target_files import iter_targets, resolve_scope, take_scope
 
-ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-MIN_RUN = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+try:
+    ARGV, SCOPE_ARG = take_scope(sys.argv[1:])
+    ROOT = pathlib.Path(ARGV[0] if ARGV else ".").resolve()
+    SCOPE = resolve_scope(ROOT, SCOPE_ARG)
+except ValueError as error:
+    print(error, file=sys.stderr)
+    sys.exit(2)
+MIN_RUN = int(ARGV[1]) if len(ARGV) > 1 else 3
 
 
 WARNING = """
@@ -41,7 +47,7 @@ def without_frontmatter(lines):
 
 def load():
     docs = {}
-    for p in iter_targets(ROOT):
+    for p in iter_targets(ROOT, scope=SCOPE):
         if p.resolve().is_relative_to(ROOT):
             rel = str(p.relative_to(ROOT))
             lines = p.read_text(encoding="utf-8", errors="replace").splitlines()

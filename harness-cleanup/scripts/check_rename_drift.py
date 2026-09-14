@@ -2,9 +2,10 @@
 """`SKILL.md` 를 고치고 그것이 위임한 참조 문서를 안 고친 경우를 찾는다.
 
 사용법:
-    check_rename_drift.py <대상 저장소> [<기준 커밋>]
+    check_rename_drift.py <대상 저장소> [<기준 커밋>] [--scope <저장소 안 경로>]
 
 기준 커밋을 생략하면 `HEAD` 와 작업 트리를 비교한다.
+`--scope` 를 주면 그 아래의 `SKILL.md` 만 본다.
 
 종료 코드:
     0  드리프트 없음
@@ -18,12 +19,27 @@
 검사 대상 수를 표준 오류로 알린다.
 출력 0줄이 「깨끗함」 인지 「볼 것이 없었음」 인지 구분되지 않으면,
 억제된 검사가 통과로 읽혀 회귀가 그대로 지나간다.
+
+## 이 검사가 놓치는 것
+
+**이번 변경에서 새로 만든 참조 문서 안의 드리프트는 잡지 못한다.**
+
+참조 문서가 옛 이름을 아직 담고 있는지만 보면 둘을 가를 수 없다.
+절 이름을 바꾼 경우와 절을 통째로 새 참조 파일에 옮긴 경우가 모두
+「참조 문서에 그 이름이 있다」 로 같게 보이기 때문이다.
+실측으로 내용만 보는 판정을 만들어 돌렸더니 이동 사례를 드리프트로 잡았다.
+
+그래서 둘을 가르는 데 `git diff` 를 쓴다. 기준 커밋에 없던 파일은 이번에 쓴 것이므로
+글쓴이가 방금 손댄 것으로 보고 대상에서 뺀다.
+같은 변경에서 새 파일을 만들면서 그 안에 자기가 버리는 이름을 쓴 경우가 이 틈에 들어간다.
 """
 
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from target_files import resolve_scope, take_scope
 
 PRUNE = {".git", ".omx", "node_modules", "data", "private", "sources", "tasks"}
 
@@ -43,6 +59,11 @@ def changed(repo, base, path):
     return git(repo, "diff", "--quiet", base, "--", str(path)).returncode != 0
 
 
+def exists_in(repo, base, path):
+    """기준 커밋에 그 파일이 있었는가."""
+    return git(repo, "cat-file", "-e", f"{base}:{path}").returncode == 0
+
+
 def removed_labels(repo, base, md):
     """`SKILL.md` 에서 사라진 헤딩과 굵은 라벨."""
     diff = git(repo, "diff", base, "--", str(md)).stdout
@@ -58,10 +79,13 @@ def removed_labels(repo, base, md):
     return sorted(found)
 
 
-def skill_files(repo):
+def skill_files(repo, scope=None):
     """가지치기할 디렉터리를 빼고 `SKILL.md` 를 모은다."""
+    start = scope or repo
+    if start.is_file():
+        return [start] if start.name == "SKILL.md" else []
     out = []
-    for path in sorted(repo.rglob("SKILL.md")):
+    for path in sorted(start.rglob("SKILL.md")):
         if PRUNE & set(path.relative_to(repo).parts):
             continue
         out.append(path)
@@ -69,19 +93,29 @@ def skill_files(repo):
 
 
 def main(argv):
-    if len(argv) < 2:
+    try:
+        rest, scope_arg = take_scope(argv[1:])
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    if not rest:
         print(__doc__, file=sys.stderr)
         return 2
-    repo = Path(argv[1])
-    base = argv[2] if len(argv) > 2 else "HEAD"
+    repo = Path(rest[0])
+    base = rest[1] if len(rest) > 1 else "HEAD"
     if not repo.is_dir():
         print(f"대상 저장소가 없다: {repo}", file=sys.stderr)
         return 2
     repo = repo.resolve()
+    try:
+        scope = resolve_scope(repo, scope_arg)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
 
     scanned = 0
     findings = []
-    for md in skill_files(repo):
+    for md in skill_files(repo, scope):
         refs = md.parent / "references"
         if not refs.is_dir():
             continue
@@ -99,6 +133,12 @@ def main(argv):
 
             owners = [p for p in sorted(refs.glob("*.md"))
                       if label in p.read_text(encoding="utf-8", errors="replace")]
+
+            # 기준 커밋에 없던 참조 문서는 드리프트 대상이 아니다.
+            # 절을 새 참조 파일로 옮기는 것이 이 스킬이 처방하는 정상 작업인데,
+            # 새 파일은 `git diff` 에 변경으로 잡히지 않아 「안 고친 문서」 로 세어진다 (실측).
+            # 그러면 분리 작업마다 종료 코드 1 이 나서 진짜 드리프트가 묻힌다.
+            owners = [p for p in owners if exists_in(repo, base, p.relative_to(repo))]
             if not owners:
                 continue
 

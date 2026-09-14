@@ -1,25 +1,38 @@
 #!/usr/bin/env python3
-"""하네스 감사 대상과 줄 수를 출력한다."""
+"""하네스 감사 대상과 줄 수를 출력한다.
+
+Usage: python3 collect_targets.py [repo-root] [--scope <저장소 안 경로>]
+"""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from target_files import iter_targets
+from target_files import iter_targets, resolve_scope, take_scope
 
 
 def main() -> int:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+    try:
+        argv, scope_arg = take_scope(sys.argv[1:])
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    root = Path(argv[0] if argv else ".").resolve()
     if not root.is_dir():
         print(f"대상 저장소를 찾을 수 없다: {root}", file=sys.stderr)
+        return 2
+    try:
+        scope = resolve_scope(root, scope_arg)
+    except ValueError as error:
+        print(error, file=sys.stderr)
         return 2
 
     count = 0
     lines = 0
     external = 0
-    print("감사 대상")
-    for path in iter_targets(root):
+    print("감사 대상" if scope is None else f"감사 대상 (범위: {scope.relative_to(root)})")
+    for path in iter_targets(root, scope=scope):
         relative = path.relative_to(root)
         resolved = path.resolve()
         if not resolved.is_relative_to(root):
