@@ -4,16 +4,22 @@
 자동 판정이 아니다. 개수와 목록은 맥락을 봐야 맞는지 알 수 있으므로
 "여기가 틀리기 쉽다" 를 모아 보여 준다.
 
-Usage: python3 check_facts.py [repo-root]
+Usage: python3 check_facts.py [repo-root] [--scope <저장소 안 경로>]
 """
 import collections
 import pathlib
 import re
 import sys
 
-from target_files import iter_targets
+from target_files import iter_targets, resolve_scope, take_scope
 
-ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+try:
+    ARGV, SCOPE_ARG = take_scope(sys.argv[1:])
+    ROOT = pathlib.Path(ARGV[0] if ARGV else ".").resolve()
+    SCOPE = resolve_scope(ROOT, SCOPE_ARG)
+except ValueError as error:
+    print(error, file=sys.stderr)
+    sys.exit(2)
 
 # "N개 명령", "N개 파일", "16개" 처럼 개수를 박은 표기
 COUNT = re.compile(r"(\d+)\s*개(?:\s*(명령|파일|패턴|항목|축|단계|행))?")
@@ -24,7 +30,7 @@ JSONFILE = re.compile(r"`([a-z][a-z0-9-]*\.json)`")
 
 
 def targets():
-    yield from (path for path in iter_targets(ROOT, include_readme=True) if path.resolve().is_relative_to(ROOT))
+    yield from (path for path in iter_targets(ROOT, include_readme=True, scope=SCOPE) if path.resolve().is_relative_to(ROOT))
 
 
 def main():

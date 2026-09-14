@@ -6,7 +6,7 @@ description: |
   "하네스 정리", "지침 감사", "스킬 지침 점검", "프롬프트 교정" 같은 요청이면 이 스킬을 쓴다.
   일반 제품 문서가 코드와 맞는지는 `docs-check` 가 맡는다.
 metadata:
-  version: "3.3.1"
+  version: "3.4.0"
 ---
 
 # harness-cleanup
@@ -70,6 +70,17 @@ metadata:
 감사 대상은 `scripts/collect_targets.py` 가 내는 목록과 실행 중 소비되는 회피 패턴이다.
 어떤 파일이 대상인지는 `scripts/target_files.py` 가 소유한다.
 
+**사용자가 스킬 하나나 디렉터리 하나만 감사해 달라고 하면 `--scope` 로 좁힌다.**
+좁히지 않으면 다른 스킬의 오버레이가 걸려 종료 코드 1 이 나고, 대상이 아닌 자리를 손으로 골라내야 한다.
+
+```bash
+python3 scripts/collect_targets.py <repo-root> --scope .claude/skills/<이름>
+```
+
+범위는 저장소 루트 밑의 디렉터리나 파일 경로다.
+대상 판정은 언제나 저장소 루트 기준이므로, 좁혀도 같은 파일이 같은 판정을 받는다.
+**범위를 정했으면 2단계와 6단계에서 같은 값을 쓴다.** 범위가 달라지면 재검증이 다른 것을 본다.
+
 일반 `docs/` 와 planning 산출물의 코드 정합성은 `docs-check` 로 보낸다.
 저장소 밖을 가리키는 심볼릭 링크는 표시만 하고 수정하지 않는다.
 
@@ -82,6 +93,9 @@ python3 scripts/check_facts.py <repo-root>
 python3 scripts/check_duplication.py <repo-root>
 python3 scripts/check_rename_drift.py <repo-root>
 ```
+
+1단계에서 범위를 정했으면 다섯 모두에 `--scope <경로>` 를 붙인다.
+`check_duplication.py` 는 최소 연속 줄 수를 위치 인자로 받으므로 `<repo-root> 5 --scope <경로>` 처럼 적는다.
 
 맡길 수 있으면 이 절을 하위 에이전트에게 넘기고 종료 코드와 걸린 자리를 회신받는다.
 
@@ -98,7 +112,8 @@ python3 scripts/check_rename_drift.py <repo-root>
 - **대상 파일 수가 0이면 통과가 아니다.**
 - 깨진 참조와 중복 0건은 정적 검사가 찾지 못했다는 뜻일 뿐 의미 검사의 통과가 아니다.
 - 고정 개수, 옵션과 파일 목록은 실제 코드, `--help` 와 설정에 대조한다.
-- **문서의 실행 가능한 블록을 전부 `scripts/run_doc_snippets.py` 로 돌린다.** 검출 명령만이 아니다.
+- **문서의 실행 가능한 블록을 전부 `scripts/run_doc_snippets.py <파일>` 로 돌린다.** 검출 명령만이 아니다.
+  머리말을 생략하면 그 파일의 블록을 전부 돌고, 머리말을 주면 그 뒤 첫 블록 하나만 돈다.
   검출 명령은 실제 입력과 대조 표본으로 검사하고, 상대경로가 어느 디렉터리를 전제하는지 함께 본다.
   **이 스크립트만 출력으로 판정한다.** 블록에 문법 오류가 있어도 종료 코드가 0 이다 (실측).
 - 스킬을 수정할 가능성이 있으면 변경 전 평가 명령이 있는지 확인하고 기준값을 기록한다.

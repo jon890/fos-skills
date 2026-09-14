@@ -66,9 +66,65 @@ def is_target(path: Path, root: Path, include_readme: bool = False) -> bool:
     return False
 
 
-def iter_targets(root: Path, include_readme: bool = False) -> Iterable[Path]:
+def resolve_scope(root: Path, scope: str | None) -> Path | None:
+    """`--scope` 값을 저장소 안의 절대 경로로 바꾼다.
+
+    범위 밖이거나 없는 경로면 `ValueError` 를 낸다.
+    """
+    if scope is None:
+        return None
+    path = Path(scope)
+    if not path.is_absolute():
+        path = root / path
+    path = path.resolve()
+    if not path.exists():
+        raise ValueError(f"범위 경로가 없다: {scope}")
+    if path != root and not path.is_relative_to(root):
+        raise ValueError(f"범위가 저장소 밖을 가리킨다: {scope}")
+    return path
+
+
+def take_scope(argv: list[str]) -> tuple[list[str], str | None]:
+    """argv 에서 `--scope` 를 떼어내고 나머지를 그대로 돌려준다.
+
+    위치 인자의 자리를 바꾸지 않으므로, 두 번째 위치 인자를 쓰는 스크립트도 그대로 동작한다.
+    """
+    rest: list[str] = []
+    scope: str | None = None
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        if item == "--scope":
+            if index + 1 >= len(argv):
+                raise ValueError("--scope 에 경로가 없다")
+            scope = argv[index + 1]
+            index += 2
+            continue
+        if item.startswith("--scope="):
+            scope = item.split("=", 1)[1]
+            index += 1
+            continue
+        rest.append(item)
+        index += 1
+    return rest, scope
+
+
+def iter_targets(
+    root: Path, include_readme: bool = False, scope: Path | None = None
+) -> Iterable[Path]:
+    """감사 대상 파일을 낸다.
+
+    `scope` 를 주면 그 디렉터리 아래나 그 파일 하나만 본다.
+    대상 판정은 언제나 `root` 기준이므로, 범위를 좁혀도 같은 파일이 같은 판정을 받는다.
+    """
+    start = scope or root
+    if start.is_file():
+        if is_target(start, root, include_readme=include_readme):
+            yield start
+        return
+
     seen: set[Path] = set()
-    for current, directories, filenames in os.walk(root, followlinks=False):
+    for current, directories, filenames in os.walk(start, followlinks=False):
         directories[:] = sorted(
             directory for directory in directories if directory not in SKIP_PARTS
         )

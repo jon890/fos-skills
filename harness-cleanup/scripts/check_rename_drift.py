@@ -2,9 +2,10 @@
 """`SKILL.md` 를 고치고 그것이 위임한 참조 문서를 안 고친 경우를 찾는다.
 
 사용법:
-    check_rename_drift.py <대상 저장소> [<기준 커밋>]
+    check_rename_drift.py <대상 저장소> [<기준 커밋>] [--scope <저장소 안 경로>]
 
 기준 커밋을 생략하면 `HEAD` 와 작업 트리를 비교한다.
+`--scope` 를 주면 그 아래의 `SKILL.md` 만 본다.
 
 종료 코드:
     0  드리프트 없음
@@ -25,6 +26,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from target_files import resolve_scope, take_scope
+
 PRUNE = {".git", ".omx", "node_modules", "data", "private", "sources", "tasks"}
 
 # diff 줄은 `-` 마커 뒤에 리스트 마커가 또 붙는다 (`-- **이름**...`).
@@ -43,6 +46,7 @@ def changed(repo, base, path):
     return git(repo, "diff", "--quiet", base, "--", str(path)).returncode != 0
 
 
+
 def removed_labels(repo, base, md):
     """`SKILL.md` 에서 사라진 헤딩과 굵은 라벨."""
     diff = git(repo, "diff", base, "--", str(md)).stdout
@@ -58,10 +62,13 @@ def removed_labels(repo, base, md):
     return sorted(found)
 
 
-def skill_files(repo):
+def skill_files(repo, scope=None):
     """가지치기할 디렉터리를 빼고 `SKILL.md` 를 모은다."""
+    start = scope or repo
+    if start.is_file():
+        return [start] if start.name == "SKILL.md" else []
     out = []
-    for path in sorted(repo.rglob("SKILL.md")):
+    for path in sorted(start.rglob("SKILL.md")):
         if PRUNE & set(path.relative_to(repo).parts):
             continue
         out.append(path)
@@ -69,19 +76,29 @@ def skill_files(repo):
 
 
 def main(argv):
-    if len(argv) < 2:
+    try:
+        rest, scope_arg = take_scope(argv[1:])
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    if not rest:
         print(__doc__, file=sys.stderr)
         return 2
-    repo = Path(argv[1])
-    base = argv[2] if len(argv) > 2 else "HEAD"
+    repo = Path(rest[0])
+    base = rest[1] if len(rest) > 1 else "HEAD"
     if not repo.is_dir():
         print(f"대상 저장소가 없다: {repo}", file=sys.stderr)
         return 2
     repo = repo.resolve()
+    try:
+        scope = resolve_scope(repo, scope_arg)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
 
     scanned = 0
     findings = []
-    for md in skill_files(repo):
+    for md in skill_files(repo, scope):
         refs = md.parent / "references"
         if not refs.is_dir():
             continue
@@ -98,8 +115,7 @@ def main(argv):
                 continue
 
             owners = [p for p in sorted(refs.glob("*.md"))
-                      if label in p.read_text(encoding="utf-8", errors="replace")]
-            if not owners:
+                      if label in p.read_text(encoding="utf-8", errors="replace")]            if not owners:
                 continue
 
             # 그 라벨을 담은 문서가 하나라도 함께 바뀌었으면 반영된 것으로 본다.
