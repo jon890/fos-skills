@@ -65,7 +65,11 @@ done
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
 | `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어와 인라인 `+` 연결을 찾는다. 훅 모드를 갖는다 |
 | `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 찾는다. 훅 모드와 문자열 모드를 갖는다 |
+| `tests/test_korean_style_check.py` | 제외 규칙과 활용형마다 걸리는 표본과 걸리지 않는 표본을 함께 둔 검출력 검사 |
+| `tests/test_check_readability.py` | 네 검사와 허용 예외마다 같은 방식으로 둔 검출력 검사 |
 | `CHANGELOG.md` | 버전 이력 |
+
+시험은 `python3 -m unittest discover -s korean-check/tests` 로 돌린다.
 
 ## 개인 문체 참조는 담지 않는다
 

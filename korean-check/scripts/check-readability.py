@@ -40,7 +40,7 @@ from pathlib import Path
 # 여는 괄호 안에서 다시 괄호가 열리고 닫히는 형태만 잡는다.
 NESTED_PAREN = re.compile(r"\([^()]*\([^()]*\)")
 
-# 목록 항목. 이름과 설명을 엠대시로 가르는 용도가 규칙상 허용이라 DASH 검사에서 뺀다.
+# 목록 항목. 이름과 설명을 엠대시로 나누는 용도가 규칙상 허용이라 DASH 검사에서 뺀다.
 LIST_ITEM = re.compile(r"^([-*+]|\d+\.)\s")
 
 # 홈 경로의 물결표는 범위 표기가 아니다.
@@ -122,7 +122,7 @@ def check(path):
         if "§" in line:
             found.append((path, n, "SECT", "§ 대신 섹션이나 장, 또는 번호를 쓴다"))
 
-        # 엠대시. 목록 항목과 표 행에서 이름과 설명을 가르는 용도는 규칙이 허용한다.
+        # 엠대시. 목록 항목과 표 행에서 이름과 설명을 나누는 용도는 규칙이 허용한다.
         if "\u2014" in body and not LIST_ITEM.match(body):
             if body.startswith("#"):
                 found.append((path, n, "DASH",

@@ -18,7 +18,7 @@ $B doctor
 
 | 파일 | 담는 것 |
 | --- | --- |
-| `browser_driver.py` | 진입점. 명령을 갈라 보내고 예외를 종료 코드로 바꾼다 |
+| `browser_driver.py` | 진입점. 명령을 나눠 보내고 예외를 종료 코드로 바꾼다 |
 | `driver/commands.py` | 명령 스펙과 `help` 렌더 |
 | `driver/config.py` | 설정 파일과 기본 제한 시간 |
 | `driver/errors.py` | 예외와 종료 코드 |
