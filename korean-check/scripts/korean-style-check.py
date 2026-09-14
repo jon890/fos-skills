@@ -13,7 +13,8 @@
 위반 줄을 stdout 으로 출력한다. 출력이 0 줄이면 통과다.
 검사에서 제외하는 것 — 렌더·표기 대상이 아니거나 이미 구조화된 형식이다.
 YAML frontmatter, 코드 블록(```, 목록 안에 들여쓴 것 포함), 코드 스팬(`...`),
-표 행, 제목, 링크 정의 줄, 링크 대상 URL, 자동 링크 URL 이 여기 해당한다.
+표 행, 링크 정의 줄, 링크 대상 URL, 자동 링크 URL 이 여기 해당한다.
+제목은 검사한다. 제목에 쓴 금지어가 본문과 같은 무게로 읽히는데 통과하던 것을 고쳤다.
 산술식은 제외 목록에 없다. `GPU 수 × (A + B)` 처럼 코드 스팬으로 감싸면 빠진다.
 
 종료 코드 — CI 와 스크립트가 실패로 잡을 수 있게 결과를 코드로도 낸다.
@@ -60,7 +61,6 @@ CODE_SPAN = re.compile(r"`[^`]*`")
 # 줄 자체를 건너뛰는 형태.
 FRONT_MATTER_MARK = re.compile(r"^---[ \t]*$")
 FENCE = re.compile(r"^[ \t]*```")
-HEADING = re.compile(r"^ {0,3}#+[ \t]")
 TABLE_LINE = re.compile(r"^[ \t]*\|")
 LINK_DEFINITION = re.compile(r"^[ \t]*\[[^\]]+\]:")
 
@@ -224,7 +224,7 @@ def scan(path, matchers):
         if in_fence:
             continue
 
-        if HEADING.match(raw) or TABLE_LINE.match(raw) or LINK_DEFINITION.match(raw):
+        if TABLE_LINE.match(raw) or LINK_DEFINITION.match(raw):
             continue
 
         line = strip_link_targets(raw)  # 링크 문구는 남기고 URL 제외
