@@ -75,7 +75,7 @@ team-lead 가 scope 확장 보고를 받으면 그 phase 안에서 처리할지 
 **회신이 오지 않으면 한 번 재요청하고, 그래도 무응답이면 사용자에게 올린다.**
 얼마나 기다린 뒤에 무응답으로 판정할지에 대한 기준은 없다.
 
-Claude Code 는 대기와 실패를 `idleReason` 으로 가른다.
+Claude Code 는 대기와 실패를 `idleReason` 으로 구분한다.
 `available` 은 턴이 끝나 대기 중이므로 이름으로 부르면 재개된다.
 `failed` 는 `failureReason` 을 읽고 판단한다. 세션 한도면 재스폰해도 같은 이유로 막힌다.
 

@@ -80,7 +80,7 @@
 | **중** | 기능 확장, 리팩토링 | standard | deep | standard | standard | standard |
 | **대** | 새 아키텍처, 신규 도메인, 스키마 대규모 변경 | deep | deep | standard | standard | deep |
 
-규모는 phase 개수가 아니라 **무엇을 바꾸는가**로 가른다.
+규모는 phase 개수가 아니라 **무엇을 바꾸는가**로 정한다.
 phase 가 하나여도 스키마를 바꾸면 「대」 이고, 여러 개여도 같은 패턴 반복이면 「중」 이다.
 
 ### 등급과 실제 모델의 대응
