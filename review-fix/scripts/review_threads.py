@@ -157,8 +157,16 @@ def cmd_resolve(host, thread_ids):
     return failed
 
 
+class BadRepo(ValueError):
+    """`--repo` 값이 `<owner>/<repo>` 꼴이 아니다."""
+
+
 def take_repo(argv):
-    """argv 에서 `--repo <owner>/<repo>` 를 떼어내고 나머지를 그대로 돌려준다."""
+    """argv 에서 `--repo <owner>/<repo>` 를 떼어내고 나머지를 그대로 돌려준다.
+
+    값에 `/` 가 없으면 `BadRepo` 를 낸다.
+    조용히 버리면 현재 디렉터리로 되돌아가 엉뚱한 호스트를 쓰게 된다.
+    """
     rest, owner, repo = [], None, None
     index = 0
     while index < len(argv):
@@ -171,13 +179,19 @@ def take_repo(argv):
         else:
             rest.append(item)
             index += 1
-        if value and "/" in value:
+        if value is not None:
+            if "/" not in value:
+                raise BadRepo(f"--repo 는 <owner>/<repo> 꼴이어야 한다: {value}")
             owner, repo = value.split("/", 1)
     return rest, owner, repo
 
 
 def main(argv):
-    argv, given_owner, given_repo = take_repo(argv)
+    try:
+        argv, given_owner, given_repo = take_repo(argv)
+    except BadRepo as e:
+        print(e, file=sys.stderr)
+        return 2
     if len(argv) < 2:
         return usage()
     cmd, rest = argv[1], argv[2:]
