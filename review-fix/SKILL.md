@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.2.0"
+  version: "2.3.0"
 ---
 
 # review-fix
@@ -65,8 +65,13 @@ python3 scripts/collect_review.py <owner> <repo> <N>
 스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py)" repos/<owner>/<repo>/...
+gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" repos/<owner>/<repo>/...
 ```
+
+**호스트를 구할 때 `<owner> <repo>` 를 함께 넘긴다.**
+넘기지 않으면 현재 디렉터리의 origin 을 보므로, 스킬 디렉터리에서 돌리면
+그 디렉터리가 속한 저장소의 호스트를 집는다.
+실측으로 사내 GHE 저장소의 리뷰를 모으다 네 소스가 모두 404 로 끝났다.
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
 

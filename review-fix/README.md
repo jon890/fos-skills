@@ -45,5 +45,5 @@ PR 에 이미 달린 리뷰를 읽고 코드에 반영한다.
 | `scripts/checkout_pr.py` | 작업 트리를 PR head 브랜치로 맞추고 결과를 종료 코드로 낸다 |
 | `scripts/review_threads.py` | 리뷰 스레드를 GraphQL 로 조회하고 회신하고 resolve 한다 |
 | `scripts/check_reply_body.py` | 회신 본문의 재트리거 토큰과 GitHub auto-link 를 찾는다 |
-| `scripts/gh_host.py` | origin 리모트에서 `gh api` 에 넘길 호스트 이름을 찾는다. SSH config 별칭도 되돌린다 |
+| `scripts/gh_host.py` | `<owner> <repo>` 로 `gh api` 에 넘길 호스트 이름을 찾는다. 현재 디렉터리를 보지 않는다. SSH config 별칭도 되돌린다 |
 | `CHANGELOG.md` | 버전 이력 |
