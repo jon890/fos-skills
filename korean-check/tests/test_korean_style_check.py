@@ -57,10 +57,10 @@ class TestHeading(Base):
     """
 
     def test_heading_is_scanned(self):
-        self.assertCaught("# 미리 주어지는 것과 직접 쓰는 것을 가른다\n", "가른다")
+        self.assertCaught("# 미리 주어지는 것과 직접 쓰는 것을 가른다\n", "가른")
 
     def test_deep_heading_is_scanned(self):
-        self.assertCaught("#### 무엇을 가른다\n", "가른다")
+        self.assertCaught("#### 무엇을 가른다\n", "가른")
 
     def test_heading_inside_code_fence_is_skipped(self):
         self.assertPassed("```\n# 가른다\n```\n")
@@ -83,7 +83,7 @@ class TestExclusion(Base):
 
     def test_link_url_is_skipped_but_text_is_scanned(self):
         self.assertPassed("[문구](https://example.com/가른다)\n")
-        self.assertCaught("[가른다](https://example.com/a)\n", "가른다")
+        self.assertCaught("[가른다](https://example.com/a)\n", "가른")
 
     def test_link_definition_line_is_skipped(self):
         self.assertPassed("[ref]: https://example.com/가른다\n")
@@ -93,12 +93,18 @@ class TestConjugation(Base):
     """등록 형태가 좁으면 같은 낱말의 다른 활용형이 빠져나간다."""
 
     def test_registered_forms_are_caught(self):
-        for form in ("가른다", "가르는", "갈랐다", "가르지", "가르고", "가르며", "가름"):
+        for form in ("가른", "가르는", "갈랐다", "가르지", "가르고", "가르며", "가름"):
             with self.subTest(form=form):
                 self.assertCaught(f"둘을 {form} 자리다.\n", form)
 
-    def test_attributive_form_is_caught(self):
-        self.assertCaught("이미 가른 자리다.\n", "가른")
+    def test_declarative_form_is_covered_by_attributive(self):
+        """`가른` 이 `가른다` 를 포함하므로 따로 등록하지 않는다.
+
+        둘 다 등록하면 한 위반이 두 줄로 보고돼 건수를 세는 쪽이 두 배로 읽는다.
+        """
+        done = self.run_on("둘을 가른다 자리다.\n")
+        self.assertEqual(done.returncode, 1)
+        self.assertEqual(done.stdout.count("금지어"), 1)
 
 
 class TestFalsePositive(Base):
@@ -116,6 +122,82 @@ class TestFalsePositive(Base):
     def test_compound_allow_still_works(self):
         self.assertPassed("API 게이트웨이를 앞에 둔다.\n")
         self.assertCaught("배포 게이트를 통과한다.\n", "게이트")
+
+
+class TestEnglishTerm(Base):
+    """영문 금지어는 단어 경계로 찾는다. 부분 문자열로 찾으면 다른 낱말을 잡는다."""
+
+    def test_bare_english_term_is_caught(self):
+        self.assertCaught("외부 상태 gate 를 둔다.\n", "gate")
+
+    def test_longer_word_containing_it_is_not_caught(self):
+        self.assertPassed("aggregate 를 쓴다.\n")
+        self.assertPassed("gateway 를 앞에 둔다.\n")
+
+    def test_hyphen_is_part_of_the_word(self):
+        self.assertPassed("pre-gate-check 라는 이름이다.\n")
+
+
+class TestInlinePlus(Base):
+    """인라인 `+` 연결. 검사기가 선언한 두 축 중 하나다."""
+
+    def test_inline_plus_is_caught(self):
+        done = self.run_on("배포 + 검증을 함께 한다.\n")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("인라인 + 연결", done.stdout)
+
+    def test_plus_without_spaces_is_not_caught(self):
+        self.assertPassed("a+b 를 계산한다.\n")
+
+    def test_plus_in_code_span_is_not_caught(self):
+        self.assertPassed("`GPU 수 + 1` 로 센다.\n")
+
+
+class TestAutoLink(Base):
+    """`<https://...>` 형태의 자동 링크 URL 은 제외한다."""
+
+    def test_auto_link_url_is_skipped(self):
+        self.assertPassed("<https://example.com/가른>\n")
+
+    def test_text_around_auto_link_is_scanned(self):
+        self.assertCaught("둘을 가른 <https://example.com/a>\n", "가른")
+
+
+class TestRulesFileItself(Base):
+    """매핑 표 자신은 건너뛴다. 표가 곧 금지어 목록이라 전부 위반으로 잡힌다."""
+
+    def test_rules_file_is_skipped(self):
+        done = subprocess.run(
+            ["python3", str(SCRIPT), str(RULES)],
+            capture_output=True, text=True,
+            env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(done.returncode, 0, done.stdout)
+
+
+class TestNonMarkdown(Base):
+    """`.md` 가 아닌 경로는 이 검사기가 조용히 건너뛴다.
+
+    `check.sh` 가 앞에서 2 로 막으므로 실사용에서는 드러나지 않는다.
+    직접 부르는 쪽은 검사되지 않은 것이 통과로 보이므로 현재 동작을 고정한다.
+    """
+
+    def test_txt_is_skipped_here(self):
+        path = self.write("a.txt", "둘을 가른 자리다.\n")
+        done = subprocess.run(
+            ["python3", str(SCRIPT), str(path)],
+            capture_output=True, text=True,
+            env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(done.returncode, 0)
+
+    def test_txt_is_rejected_by_check_sh(self):
+        path = self.write("a.txt", "둘을 가른 자리다.\n")
+        done = subprocess.run(
+            [str(SCRIPT.parent / "check.sh"), str(path)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(done.returncode, 2)
 
 
 class TestExitCode(Base):
@@ -176,7 +258,7 @@ class TestHookMode(Base):
     def test_violation_still_exits_zero(self):
         done = self.hook(self.write("a.md", "# 무엇을 가른다\n"))
         self.assertEqual(done.returncode, 0)
-        self.assertIn("가른다", done.stdout)
+        self.assertIn("가른", done.stdout)
 
     def test_clean_file_exits_zero(self):
         done = self.hook(self.write("a.md", "문제가 없는 문장이다.\n"))
