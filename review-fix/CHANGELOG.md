@@ -17,14 +17,18 @@
 | --- | --- |
 | `scripts/gh_host.py` | `resolve(owner, repo)` 로 받는다. CLI 도 `<owner> <repo>` 를 받는다 |
 | `scripts/collect_review.py` | 이미 받은 `<owner> <repo>` 를 넘긴다 |
-| `scripts/review_threads.py` | `list` 는 위치 인자로, `reply` 와 `resolve` 는 `--repo` 로 정한다 |
+| `scripts/review_threads.py` | `list` 는 위치 인자로, `reply` 와 `resolve` 는 `--repo` 로 정한다. 값이 `<owner>/<repo>` 꼴이 아니면 거절한다 |
 | 「1. 리뷰 수집」 | 호스트를 구할 때 `<owner> <repo>` 를 함께 넘긴다 |
 | `references/reply.md`, `references/finish.md` | 명령 예시에 `--repo` 를 넣었다 |
 
 정하는 순서는 셋이다.
 `GH_HOST` 가 있으면 그것을 쓰고, `gh` 에 로그인된 호스트가 하나면 조회 없이 그것을 쓰고,
 여럿이면 각 호스트에 그 저장소가 있는지 물어 맞는 것을 고른다.
-셋 다 실패하면 현재 디렉터리의 origin 으로 되돌아간다.
+저장소 이름이 실제로 쓰이는 것은 셋째 경우뿐이다.
+로그인된 호스트 어디에도 그 저장소가 없으면 현재 디렉터리의 origin 에서 호스트를 읽는다.
+
+`--repo` 값에 `/` 가 없으면 종료 코드 2 로 끝낸다.
+조용히 버리면 현재 디렉터리로 되돌아가 엉뚱한 호스트를 쓰게 된다.
 
 `GH_HOST` 를 존중하는 분기는 그대로 뒀다. 오버레이가 호스트를 고정하는 경우가 있다.
 
