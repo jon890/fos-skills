@@ -20,7 +20,6 @@
 | silent failure                | 묻혀버린 실패, 노출 안 되는 실패     |
 | in-flight (요청)                | 처리 중인 요청, 진행 중인 요청      |
 | 리포지토리 위생 (repo hygiene)       | 리포지토리 정리                |
-| 카나리 (canary)                  | 인스턴스 배포 후 검증            |
 | ramp                          | 단계적 상향                  |
 | flat fan-out / fan-out        | 통합 병렬 호출, 병렬 호출         |
 | ephemeral (instance / runner) | 일회성 인스턴스·러너             |
