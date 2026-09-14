@@ -16,7 +16,7 @@
 REST 댓글의 `path` 와 `line` 을 스레드의 것과 대조해 어느 지적에 회신할지 정한다.
 
 `diff_hunk`, `html_url`, `_links`, `reactions` 는 토큰만 차지하므로 빼고 `body` 는 잘라 낸다.
-호스트는 `gh_host.py` 로 스스로 구한다. 미리 지정할 필요가 없다.
+호스트는 `<owner> <repo>` 로 정한다. 현재 디렉터리를 보지 않으므로 어디서 돌려도 된다.
 """
 
 import os
@@ -52,7 +52,7 @@ def main(argv):
     owner, repo, num = argv[1], argv[2], argv[3]
 
     try:
-        env = {"GH_HOST": gh_host.resolve()}
+        env = {"GH_HOST": gh_host.resolve(owner, repo)}
     except RuntimeError as e:
         print(e, file=sys.stderr)
         return 2
