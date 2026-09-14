@@ -3,6 +3,34 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.3.0
+
+호스트를 저장소 이름으로 정한다. 현재 디렉터리를 보지 않는다.
+
+`gh_host.resolve()` 가 `git remote get-url origin` 을 현재 디렉터리에서 불렀다.
+`SKILL.md` 가 `python3 scripts/collect_review.py` 를 상대경로로 안내해 스킬 디렉터리에서 돌게 되는데,
+그 디렉터리는 이 저장소라 `github.com` 이 나온다.
+사내 GHE 저장소를 그 호스트에서 찾으니 네 소스가 모두 404 로 끝났다 (실측).
+저장소를 잘못 짚은 것이 아니라 호스트를 잘못 짚은 것이라 오류 문구에 원인이 드러나지 않는다.
+
+| 위치 | 변경점 |
+| --- | --- |
+| `scripts/gh_host.py` | `resolve(owner, repo)` 로 받는다. CLI 도 `<owner> <repo>` 를 받는다 |
+| `scripts/collect_review.py` | 이미 받은 `<owner> <repo>` 를 넘긴다 |
+| `scripts/review_threads.py` | `list` 는 위치 인자로, `reply` 와 `resolve` 는 `--repo` 로 정한다 |
+| 「1. 리뷰 수집」 | 호스트를 구할 때 `<owner> <repo>` 를 함께 넘긴다 |
+| `references/reply.md`, `references/finish.md` | 명령 예시에 `--repo` 를 넣었다 |
+
+정하는 순서는 셋이다.
+`GH_HOST` 가 있으면 그것을 쓰고, `gh` 에 로그인된 호스트가 하나면 조회 없이 그것을 쓰고,
+여럿이면 각 호스트에 그 저장소가 있는지 물어 맞는 것을 고른다.
+셋 다 실패하면 현재 디렉터리의 origin 으로 되돌아간다.
+
+`GH_HOST` 를 존중하는 분기는 그대로 뒀다. 오버레이가 호스트를 고정하는 경우가 있다.
+
+`reply` 와 `resolve` 는 THREAD_ID 만 받아 저장소를 알 수 없다.
+그래서 이 둘만 `--repo` 로 받고, 주지 않으면 현재 디렉터리를 본다.
+
 ## 2.2.0
 
 커밋을 관심사별로 나누게 했다.
