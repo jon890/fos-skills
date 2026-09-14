@@ -46,6 +46,10 @@ def changed(repo, base, path):
     return git(repo, "diff", "--quiet", base, "--", str(path)).returncode != 0
 
 
+def exists_in(repo, base, path):
+    """기준 커밋에 그 파일이 있었는가."""
+    return git(repo, "cat-file", "-e", f"{base}:{path}").returncode == 0
+
 
 def removed_labels(repo, base, md):
     """`SKILL.md` 에서 사라진 헤딩과 굵은 라벨."""
@@ -115,7 +119,14 @@ def main(argv):
                 continue
 
             owners = [p for p in sorted(refs.glob("*.md"))
-                      if label in p.read_text(encoding="utf-8", errors="replace")]            if not owners:
+                      if label in p.read_text(encoding="utf-8", errors="replace")]
+
+            # 기준 커밋에 없던 참조 문서는 드리프트 대상이 아니다.
+            # 절을 새 참조 파일로 옮기는 것이 이 스킬이 처방하는 정상 작업인데,
+            # 새 파일은 `git diff` 에 변경으로 잡히지 않아 「안 고친 문서」 로 세어진다 (실측).
+            # 그러면 분리 작업마다 종료 코드 1 이 나서 진짜 드리프트가 묻힌다.
+            owners = [p for p in owners if exists_in(repo, base, p.relative_to(repo))]
+            if not owners:
                 continue
 
             # 그 라벨을 담은 문서가 하나라도 함께 바뀌었으면 반영된 것으로 본다.
