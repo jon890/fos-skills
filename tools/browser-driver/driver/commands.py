@@ -23,13 +23,16 @@ class Command:
 COMMANDS = [
     Command("open", ["<url>", "[ready_timeout_ms]"],
             "탭을 열고 로드가 끝날 때까지 기다린다",
-            returns="핸들 한 줄. 이후 모든 명령의 첫 인자로 넘긴다"),
+            returns="핸들 한 줄. 이후 모든 명령의 첫 인자로 넘긴다",
+            note="탭이 열린 워크트리를 stderr 에 한 줄 더 알린다. $( ) 로 받으면 핸들만 들어온다.\n"
+                 "2>&1 로 받지 않는다. 그 줄이 핸들에 섞여 다음 명령이 탭을 찾지 못한다"),
     Command("nav", ["<handle>", "<url>", "[ready_timeout_ms]"],
             "이미 열린 탭을 다른 주소로 보낸다"),
     Command("js", ["<handle>", "<expression>"],
             "JS 표현식을 실행한다",
             returns="표현식의 값",
-            note="숨은 요소나 겹침 화면은 이 명령으로 조작한다. 인자는 작은따옴표로 감싼다"),
+            note="숨은 요소나 겹침 화면은 이 명령으로 조작한다.\n"
+                 "인자는 작은따옴표로 감싼다. 큰따옴표는 셸이 $( 를 명령 치환으로 먹는다"),
     Command("waitjs", ["<handle>", "<condition>", "[timeout_ms]"],
             "JS 조건이 참이 될 때까지 기다린다",
             note=f"고정 대기 대신 이것을 쓴다. 기본 제한 시간 {WAIT_TIMEOUT_DEFAULT}ms"),
@@ -37,17 +40,23 @@ COMMANDS = [
             "document.readyState 가 complete 가 될 때까지 기다린다"),
     Command("url", ["<handle>"],
             "지금 보고 있는 주소를 낸다",
+            returns="지금 보고 있는 주소",
             note="조회 결과가 비면 먼저 이것으로 로그인 화면으로 튕겼는지 본다"),
     Command("snap", ["<handle>"],
-            "화면의 접근성 트리를 낸다"),
+            "화면의 접근성 트리를 낸다",
+            returns="화면의 접근성 트리"),
     Command("shot", ["<handle>", "[path]"],
             "화면을 이미지 파일로 저장한다",
             returns="저장한 경로"),
-    Command("console", ["<handle>"], "콘솔 로그를 낸다"),
-    Command("errors", ["<handle>"], "페이지 오류를 낸다"),
+    Command("console", ["<handle>"], "콘솔 로그를 낸다",
+            returns="콘솔 로그 JSON"),
+    Command("errors", ["<handle>"], "페이지 오류를 낸다",
+            returns="페이지 오류 JSON"),
     Command("worktree", ["<handle>"],
             "탭이 붙어 있는 워크트리 경로를 낸다",
-            note="orca 백엔드 전용. 사람이 볼 화면을 갱신하기 전에 기대한 곳의 탭인지 확인한다"),
+            returns="탭이 붙어 있는 워크트리 경로",
+            note="orca 백엔드 전용. 사람이 볼 화면은 ORCA_WORKTREE 로 워크트리를 고정하고\n"
+                 "갱신하기 전에 이것으로 기대한 곳의 탭인지 확인한다"),
     Command("close", ["<handle>"], "탭을 닫는다"),
 ]
 
@@ -59,6 +68,25 @@ META_COMMANDS = [
     Command("help", [], "이 도움말을 낸다"),
     Command("install", ["[--dst <dir>]"], "~/.claude/scripts/ 에 심볼릭 링크를 만든다"),
 ]
+
+
+def _detail(field):
+    """명령별 서술을 `이름: 내용` 줄로 낸다. 값이 빈 명령은 건너뛴다.
+
+    반환값과 함정 절을 손으로 적으면 명령을 더할 때마다 두 곳을 고쳐야 하고,
+    한쪽만 고치면 도움말이 실제와 어긋난다.
+    실측으로 worktree, snap, console, errors 네 명령이 값을 내는데도
+    반환값 절은 그 넷이 아무것도 내지 않는다고 적고 있었다.
+    """
+    out = []
+    for c in COMMANDS:
+        text = getattr(c, field)
+        if not text:
+            continue
+        head, *rest = text.split("\n")
+        out.append(f"  {c.name}: {head}")
+        out += [f"    {r}" for r in rest]
+    return out
 
 
 def render_help(backend_name=None, unsupported=frozenset()):
@@ -78,21 +106,12 @@ def render_help(backend_name=None, unsupported=frozenset()):
     lines.append("")
     for c in META_COMMANDS:
         lines.append(f"  {c.usage:<{width}}{c.summary}")
+    lines += ["", "반환값",
+              "  아래 값을 stdout 으로 낸다. 적히지 않은 명령은 성공하면 아무것도 내지 않는다."]
+    lines += _detail("returns")
+    lines += ["", "함정"]
+    lines += _detail("note")
     lines += [
-        "",
-        "반환값",
-        "  open 은 핸들 한 줄을 stdout 으로 낸다. 나머지 명령의 첫 인자로 그 값을 넘긴다.",
-        "  open 은 탭이 열린 워크트리를 stderr 에 한 줄 더 알린다. 터미널에서는 두 줄이 함께 보이지만",
-        "  그 줄은 핸들이 아니다. $( ) 로 받으면 핸들만 들어온다.",
-        "  값을 내는 명령은 js, url, shot, snap, console, errors, worktree 다.",
-        "  나머지는 성공하면 아무것도 내지 않는다.",
-        "",
-        "함정",
-        "  고정 대기 대신 waitjs 로 조건을 기다린다.",
-        "  js 인자는 작은따옴표로 감싼다. 큰따옴표는 셸이 $( 를 명령 치환으로 먹는다.",
-        "  open 을 2>&1 로 받지 않는다. 워크트리 줄이 핸들에 섞여 다음 명령이 탭을 찾지 못한다.",
-        "  조회 결과가 비면 url 로 로그인 화면으로 튕겼는지 먼저 본다.",
-        "  사람이 볼 화면은 ORCA_WORKTREE 로 워크트리를 고정하고 worktree 로 확인한다.",
         "",
         "종료 코드는 0 성공, 1 조작 실패, 2 잘못된 호출이나 환경 문제.",
         "백엔드별 상세는 README.md, 환경 진단은 doctor 를 본다.",
