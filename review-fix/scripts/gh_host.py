@@ -121,16 +121,32 @@ def resolve(owner=None, repo=None):
         for host in hosts:
             if _has_repo(host, owner, repo):
                 return host
-        # 로그인 정보로 가리지 못하면 현재 디렉터리로 되돌아간다.
+        # 로그인 정보로 어느 호스트인지 가려내지 못하면 현재 디렉터리로 되돌아간다.
         # 맞을 수도 있고 아닐 수도 있으나, 여기서 멈추면 쓸 수 있는 값이 없다.
+        #
+        # **되돌아간 것을 알린다.** 이 스크립트가 없애려는 것이 바로 이 동작이라,
+        # 조용히 넘어가면 호출자는 저장소 이름으로 정해진 줄 안다.
+        # `gh auth status` 가 0 이 아닌 코드로 끝나면 로그인된 호스트가 빈 목록이 되어
+        # 저장소 이름을 넘겨도 이 경로로 온다 (실측).
+        reason = "로그인된 호스트가 없다" if not hosts else "로그인된 호스트에 그 저장소가 없다"
+        print(
+            f"gh_host: {reason}. {owner}/{repo} 대신 현재 디렉터리의 origin 으로 정한다.",
+            file=sys.stderr,
+        )
 
     return _from_origin()
+
+
+USAGE = """사용법:
+    gh_host.py <owner> <repo>   그 저장소의 호스트
+    gh_host.py                  현재 디렉터리의 origin 으로 정한다"""
 
 
 def main(argv):
     owner, repo = (argv[1], argv[2]) if len(argv) == 3 else (None, None)
     if len(argv) not in (1, 3):
-        print(__doc__, file=sys.stderr)
+        # 머리말 전체를 내면 40줄이 오류 출력으로 나와 정작 사용법이 묻힌다.
+        print(USAGE, file=sys.stderr)
         return 2
     try:
         print(resolve(owner, repo))
