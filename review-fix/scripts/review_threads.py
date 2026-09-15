@@ -7,6 +7,8 @@
     review_threads.py reply    <THREAD_ID> <본문파일>
     review_threads.py resolve  <THREAD_ID> [<THREAD_ID> ...]
 
+    --repo <owner>/<repo>    reply 와 resolve 에서 호스트를 정한다. 어느 자리에 와도 된다
+
 종료 코드:
     0  성공
     1  GitHub 호출 실패
@@ -22,7 +24,10 @@ REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없어 조회�
 resolve 하지 않으면 "A conversation must be resolved" 보호 규칙이 머지를 막는다.
 아직 반영하지 않은 스레드는 resolve 하지 않는다. resolve 는 "처리했다"는 표시다.
 
-호스트는 `gh_host.py` 로 스스로 구한다. 미리 지정할 필요가 없다.
+호스트는 `gh_host.py` 가 정한다.
+`list` 와 `list-all` 은 받은 `<owner> <repo>` 를 그대로 넘기므로 현재 디렉터리를 보지 않는다.
+`reply` 와 `resolve` 는 THREAD_ID 만 받아 저장소를 알 수 없으므로 `--repo` 로 준다.
+주지 않으면 현재 디렉터리의 origin 을 보므로, 대상 저장소 안에서 돌려야 한다.
 """
 
 import json
@@ -152,13 +157,50 @@ def cmd_resolve(host, thread_ids):
     return failed
 
 
+class BadRepo(ValueError):
+    """`--repo` 값이 `<owner>/<repo>` 꼴이 아니다."""
+
+
+def take_repo(argv):
+    """argv 에서 `--repo <owner>/<repo>` 를 떼어내고 나머지를 그대로 돌려준다.
+
+    값에 `/` 가 없으면 `BadRepo` 를 낸다.
+    조용히 버리면 현재 디렉터리로 되돌아가 엉뚱한 호스트를 쓰게 된다.
+    """
+    rest, owner, repo = [], None, None
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        value = None
+        if item == "--repo" and index + 1 < len(argv):
+            value, index = argv[index + 1], index + 2
+        elif item.startswith("--repo="):
+            value, index = item.split("=", 1)[1], index + 1
+        else:
+            rest.append(item)
+            index += 1
+        if value is not None:
+            if "/" not in value:
+                raise BadRepo(f"--repo 는 <owner>/<repo> 꼴이어야 한다: {value}")
+            owner, repo = value.split("/", 1)
+    return rest, owner, repo
+
+
 def main(argv):
+    try:
+        argv, given_owner, given_repo = take_repo(argv)
+    except BadRepo as e:
+        print(e, file=sys.stderr)
+        return 2
     if len(argv) < 2:
         return usage()
     cmd, rest = argv[1], argv[2:]
 
+    if cmd in ("list", "list-all") and len(rest) == 3:
+        given_owner, given_repo = rest[0], rest[1]
+
     try:
-        host = gh_host.resolve()
+        host = gh_host.resolve(given_owner, given_repo)
     except RuntimeError as e:
         print(e, file=sys.stderr)
         return 2

@@ -20,9 +20,12 @@ python3 scripts/review_threads.py list <owner> <repo> <N>
 
 | 상태 | 회신 경로 |
 |---|---|
-| 리뷰 스레드가 있다 | `python3 scripts/review_threads.py reply <THREAD_ID> <본문파일>` |
+| 리뷰 스레드가 있다 | `python3 scripts/review_threads.py reply --repo <owner>/<repo> <THREAD_ID> <본문파일>` |
 | 스레드가 없고 인라인 댓글만 있다 | REST `pulls/<N>/comments/<comment_id>/replies` |
 | 둘 다 없다 | `gh pr comment <N> --body-file <본문파일>` 로 통합 회신 하나 |
+
+**`reply` 와 `resolve` 에는 `--repo <owner>/<repo>` 를 붙인다.**
+THREAD_ID 만으로는 저장소를 알 수 없어, 붙이지 않으면 현재 디렉터리의 origin 으로 호스트를 정한다.
 
 `list` 는 이미 resolve 된 스레드를 빼고 낸다.
 목록이 비었는데 인라인 댓글이 있으면 앞선 실행이 resolve 한 것일 수 있으니 `list-all` 로 확인한다.
@@ -30,7 +33,7 @@ python3 scripts/review_threads.py list <owner> <repo> <N>
 인라인 댓글 경로는 아래와 같다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py)" \
+gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" \
   repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
   -X POST -F body=@<본문파일>
 ```
@@ -78,7 +81,7 @@ python3 scripts/check_reply_body.py <본문파일>
 이미 등록한 댓글에서 발견하면 본문을 교체한다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py)" \
+gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" \
   repos/<owner>/<repo>/issues/comments/<id> -X PATCH -F body=@<본문파일>
 ```
 

@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.2.0"
+  version: "2.3.0"
 ---
 
 # review-fix
@@ -57,16 +57,32 @@ gh repo view --json owner,name --jq '.owner.login + "/" + .name'
 python3 scripts/collect_review.py <owner> <repo> <N>
 ```
 
+**두 명령은 서 있어야 할 디렉터리가 다르다.**
+첫 명령은 현재 디렉터리의 저장소를 읽으므로 대상 저장소의 워크트리에서 돌린다.
+둘째 명령의 `scripts/` 는 이 스킬 디렉터리를 전제하므로 그 경로를 절대경로로 주거나
+스킬 디렉터리에서 돌린다. 호스트는 넘긴 `<owner> <repo>` 로 정해지므로 어느 쪽이든 맞다.
+
+저장소 이름을 이미 알고 있으면 첫 명령을 건너뛴다.
+스킬 디렉터리에서 첫 명령을 돌리면 엉뚱한 저장소 이름이 나오고,
+그것을 그대로 넘기면 `collect_review.py` 가 그 저장소에서 PR 을 찾는다.
+
 **네 소스에서 모은다.** 워크플로 버전에 따라 리뷰가 담기는 위치가 달라,
 한 소스만 보면 봇의 구조화 리뷰를 놓친다.
 넷째가 미해결 리뷰 스레드이고 `path` 와 `line` 을 함께 내므로, 「회신」 단계에서 REST 댓글과 대조할 수 있다.
 
-이 스킬의 스크립트는 호스트를 스스로 구한다.
+이 스킬의 스크립트는 호스트를 스스로 구한다. 다만 무엇으로 구하는지가 갈린다.
+`collect_review.py` 와 `review_threads.py list` 는 받은 `<owner> <repo>` 로 정하고,
+`reply` 와 `resolve` 는 `--repo` 를 줘야 그것으로 정한다. 주지 않으면 현재 디렉터리를 본다.
 스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py)" repos/<owner>/<repo>/...
+gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" repos/<owner>/<repo>/...
 ```
+
+**호스트를 구할 때 `<owner> <repo>` 를 함께 넘긴다.**
+넘기지 않으면 현재 디렉터리의 origin 을 보므로, 스킬 디렉터리에서 돌리면
+그 디렉터리가 속한 저장소의 호스트를 집는다.
+실측으로 사내 GHE 저장소의 리뷰를 모으다 네 소스가 모두 404 로 끝났다.
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
 
