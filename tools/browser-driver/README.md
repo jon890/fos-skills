@@ -52,8 +52,9 @@ $B doctor
 
 **용도가 갈리면 부르는 쪽이 백엔드를 고정한다.** 자동 감지는 쓸 수 있는 것을 고르는 규칙이고
 그 호출에 알맞은 것을 고르는 규칙이 아니다.
-사람이 읽을 화면을 띄우는 쪽은 `orca` 를, 사람이 보지 않는 자동화는 `ego` 를 고정하는 편이 맞다.
-`content-preview` 의 `show-preview.sh` 가 그렇게 `orca` 를 고정한다.
+사람이 읽을 화면을 띄우는 쪽은 `orca` 처럼 IDE 안의 탭을 만들고 `worktree` 를 다루는 백엔드가,
+사람이 보지 않는 자동화는 `ego` 가 맞다.
+`content-preview` 의 `show-preview.sh` 가 그 값을 설정 파일의 `previewDriver` 로 읽는다.
 
 ## 백엔드마다 갈리는 것
 
