@@ -6,18 +6,22 @@ import subprocess
 from .config import WAIT_INTERVAL
 from .errors import DriverError
 
-def run(argv, check_marker=None):
+def run(argv, check_marker=None, stdin_text=None, check_exit=False):
     """외부 명령을 돌리고 stdout+stderr 를 한 덩어리로 돌려준다.
 
     check_marker 가 있으면 출력 줄머리에서 그 표식을 찾아 실패로 판정한다.
     백엔드가 실패를 종료 코드로 알리지 않기 때문이다 (실측).
+    stdin_text 를 주면 그 문자열을 표준 입력으로 넘긴다.
+    check_exit 가 참이면 0 이 아닌 종료 코드를 실패로 판정한다.
     """
-    proc = subprocess.run(argv, capture_output=True, text=True)
+    proc = subprocess.run(argv, capture_output=True, text=True, input=stdin_text)
     out = (proc.stdout or "") + (proc.stderr or "")
     if check_marker:
         for line in out.splitlines():
             if line.startswith(check_marker):
                 raise DriverError(out.strip())
+    if check_exit and proc.returncode != 0:
+        raise DriverError(out.strip() or f"{argv[0]} 가 종료 코드 {proc.returncode} 로 끝났다")
     return out
 
 
