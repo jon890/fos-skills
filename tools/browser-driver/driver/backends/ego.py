@@ -1,15 +1,22 @@
 """ego-browser 백엔드. 사용자가 쓰는 Chromium 의 로그인 세션을 그대로 쓴다."""
 
 import json
+import os
+import sys
 
 from ..config import READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT
 from ..errors import DriverError, UsageError
 from ..shell import js_value, run
 from .base import Backend
 
-#: 이 드라이버가 쓰는 TaskSpace 이름. 여러 번 open 해도 한 공간에 모인다.
-#: 사용자가 그 공간을 가져가면 `browser-driver #2` 처럼 번호를 붙여 새로 만든다.
-SPACE_NAME = "browser-driver"
+#: TaskSpace 이름의 앞부분. 뒤에 프로필 id 를 붙여 `browser-driver/Profile 2` 로 쓴다.
+#: 여러 번 open 해도 같은 프로필의 호출은 한 공간에 모이고, 프로필이 다르면 공간도 갈린다.
+#: 사용자가 그 공간을 가져가면 `browser-driver/Profile 2 #2` 처럼 번호를 붙여 새로 만든다.
+SPACE_PREFIX = "browser-driver"
+
+#: 쓸 프로필을 정하는 환경변수. 프로필 id 와 이름을 모두 받는다.
+#: 비어 있으면 ego 의 기본 프로필을 쓴다.
+PROFILE_ENV = "BROWSER_EGO_PROFILE"
 
 #: 아직 아무 곳도 열지 않은 페이지의 주소. 새 공간은 p1 을 이 상태로 들고 시작한다 (실측).
 BLANK_URLS = ("about:blank", "chrome://new-tab-page/")
@@ -27,6 +34,12 @@ class EgoBackend(Backend):
     종료 코드로 실패를 알린다 (실측).
     콘솔 로그와 페이지 오류는 대응 API 가 없어 console 과 errors 를 다루지 않는다.
     `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 성격이 다르다.
+
+    로그인 세션의 경계는 TaskSpace 가 아니라 브라우저 프로필이다. 같은 프로필의 다른
+    공간에서 쿠키와 localStorage 가 그대로 보이고, 다른 프로필에서는 보이지 않는다 (실측).
+    사용자가 손으로 열어 둔 탭도 같은 프로필의 쿠키 저장소를 함께 쓴다.
+    그래서 개인 작업과 회사 자동화를 나누는 수단은 프로필이고, `BROWSER_EGO_PROFILE` 이
+    그것을 정한다.
     """
 
     name = "ego"
@@ -35,9 +48,12 @@ class EgoBackend(Backend):
                  "shot", "close"}
 
     def prepare_note(self):
-        return (f"사용자가 로그인해 둔 세션을 그대로 쓴다 (실측). 탭은 '{SPACE_NAME}' 로 "
-                "시작하는 TaskSpace 하나에 모인다. 사용자가 그 공간의 제어권을 가져가면 "
-                "다음 open 이 번호를 붙인 새 공간을 만든다")
+        want = os.environ.get(PROFILE_ENV)
+        where = f"'{want}'" if want else "ego 의 기본 프로필 (환경변수가 비어 있다)"
+        return (f"사용자가 로그인해 둔 세션을 그대로 쓴다 (실측). 쓸 프로필은 {where} 다. "
+                f"로그인 세션은 프로필 단위로 갈리므로 개인 작업과 회사 자동화를 나눌 때 "
+                f"{PROFILE_ENV} 로 프로필을 정한다. 탭은 프로필마다 다른 TaskSpace 에 모이고, "
+                "사용자가 그 공간의 제어권을 가져가면 다음 open 이 번호를 붙여 새로 만든다")
 
     def _run(self, body):
         """Node 스크립트를 stdin 으로 넘기고 표식 뒤의 반환값만 돌려준다.
@@ -85,21 +101,39 @@ class EgoBackend(Backend):
             timeout = int(args[1]) if len(args) > 1 else READY_TIMEOUT_DEFAULT
             # 새 공간은 빈 p1 을 들고 시작하므로, 늘 newPage() 하면 그 p1 이 빈 채로 남는다 (실측).
             # 빈 페이지가 있으면 그것을 쓰고 없을 때만 새로 만든다.
+            want = os.environ.get(PROFILE_ENV) or ""
             body = (
-                f"const base = {json.dumps(SPACE_NAME)};\n"
+                f"const prefix = {json.dumps(SPACE_PREFIX)};\n"
+                f"const want = {json.dumps(want)};\n"
                 f"const blank = {json.dumps(list(BLANK_URLS))};\n"
+                # 프로필 id 는 이름과 엇갈려 있다. ego 의 'Default' 가 개인 계정이고
+                # 'Profile 2' 가 회사 계정인 경우를 실측했다. 그래서 id 와 이름을 모두 받는다.
+                "const list = await profiles();\n"
+                "let prof;\n"
+                "if (want) {\n"
+                "  prof = list.find((p) => p.id === want) || list.find((p) => p.name === want);\n"
+                "  if (!prof) throw new Error('프로필을 찾지 못했다: ' + want + '. 쓸 수 있는 것: '\n"
+                "    + list.map((p) => p.id + ' (' + p.name + ')').join(', '));\n"
+                "} else {\n"
+                "  prof = list.find((p) => p.isDefault) || list[0];\n"
+                "}\n"
+                "const base = prefix + '/' + prof.id;\n"
                 "const spaces = await listTaskSpaces();\n"
                 # 이름만으로 잡으면 사용자가 제어권을 가져간 공간에 걸려 그 뒤로 계속 거절된다
                 # (실측). 그래서 에이전트가 가진 공간만 골라 다시 쓰고, 없으면 겹치지 않는
                 # 이름으로 새로 만든다.
-                "const mine = spaces.find((s) => s.ownership === 'agent'"
-                " && (s.name === base || s.name.startsWith(base + ' #')));\n"
+                #
+                # profileId 는 런타임이 알릴 때만 실린다. 실리지 않아도 이름에 프로필 id 가
+                # 들어 있어 공간은 프로필별로 갈린다. 그래서 실렸을 때만 대조한다.
+                "const mine = spaces.find((s) => s.ownership === 'agent'\n"
+                "  && (!s.profileId || s.profileId === prof.id)\n"
+                "  && (s.name === base || s.name.startsWith(base + ' #')));\n"
                 "let task;\n"
                 "if (mine) { task = await taskSpace(mine.id); } else {\n"
                 "  const taken = new Set(spaces.map((s) => s.name));\n"
                 "  let name = base;\n"
                 "  for (let n = 2; taken.has(name); n += 1) name = base + ' #' + n;\n"
-                "  task = await taskSpace(name);\n"
+                "  task = await taskSpace(name, { profileId: prof.id });\n"
                 "}\n"
                 "let page = null;\n"
                 "for (const p of await task.pages()) {\n"
@@ -108,11 +142,16 @@ class EgoBackend(Backend):
                 "if (!page) page = await task.newPage();\n"
                 f"await page.goto({json.dumps(url)});\n"
                 f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n"
-                "__out(task.spaceId + ':' + page.label);\n"
+                "__out(task.spaceId + ':' + page.label + '\\t' + prof.id + '\\t' + prof.name);\n"
             )
-            handle = self._run(body).strip()
+            handle, _, profile = self._run(body).strip().partition("\t")
             if not handle:
                 raise DriverError("ego 가 핸들을 내지 않았다")
+            # 어느 프로필에서 열렸는지 알린다. 지정하지 않으면 기본 프로필에서 돌므로,
+            # 개인 세션과 회사 자동화가 섞이는 것을 여기서 바로 드러낸다.
+            prof_id, _, prof_name = profile.partition("\t")
+            if prof_id:
+                print(f"프로필: {prof_id} ({prof_name})", file=sys.stderr)
             return handle
 
         if cmd == "nav":
