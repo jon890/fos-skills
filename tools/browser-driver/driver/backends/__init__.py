@@ -8,9 +8,10 @@ from ..errors import UsageError
 from .agent_browser import AgentBrowserBackend
 from .base import Backend  # noqa: F401  새 백엔드를 만드는 쪽이 여기서 가져간다
 from .cmux import CmuxBackend
+from .ego import EgoBackend
 from .orca import OrcaBackend
 
-BACKENDS = {b.name: b for b in (OrcaBackend, AgentBrowserBackend, CmuxBackend)}
+BACKENDS = {b.name: b for b in (EgoBackend, OrcaBackend, AgentBrowserBackend, CmuxBackend)}
 
 #: 자동 감지 순서. 사내 시스템은 SSO 세션이 필요해 orca 를 먼저 본다.
 #: cmux 는 마지막이다. 설치돼 있어도 cmux 밖에서는 소켓 접근이 거부되므로 (실측)
