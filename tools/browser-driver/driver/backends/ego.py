@@ -40,7 +40,13 @@ class EgoBackend(Backend):
                 "다음 open 이 번호를 붙인 새 공간을 만든다")
 
     def _run(self, body):
-        """Node 스크립트를 stdin 으로 넘기고 표식 뒤의 반환값만 돌려준다."""
+        """Node 스크립트를 stdin 으로 넘기고 표식 뒤의 반환값만 돌려준다.
+
+        모든 명령의 스크립트가 끝에서 `__out` 을 부른다. 그래서 표식이 없다는 것은
+        스크립트가 끝까지 가지 못했다는 뜻이고, 여기서 실패로 판정한다.
+        ego 는 브라우저 서비스에 붙지 못할 때 종료 코드 0 으로 끝내므로 (실측)
+        종료 코드만 보면 값을 내지 않는 명령의 실패가 드러나지 않는다.
+        """
         script = (
             f"const __mark = {json.dumps(MARKER)};\n"
             "const __out = (v) => process.stdout.write("
@@ -59,7 +65,9 @@ class EgoBackend(Backend):
                     + str(e))
             raise
         if MARKER not in out:
-            return None
+            raise DriverError(
+                "ego 스크립트가 끝까지 돌지 않았다. 브라우저 서비스에 붙지 못했을 수 있다.\n"
+                + (out.strip() or "(출력이 없다)"))
         return out.rsplit(MARKER + "\n", 1)[-1]
 
     def _page(self, handle):
@@ -102,7 +110,7 @@ class EgoBackend(Backend):
                 f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n"
                 "__out(task.spaceId + ':' + page.label);\n"
             )
-            handle = (self._run(body) or "").strip()
+            handle = self._run(body).strip()
             if not handle:
                 raise DriverError("ego 가 핸들을 내지 않았다")
             return handle
@@ -111,7 +119,8 @@ class EgoBackend(Backend):
             timeout = int(args[2]) if len(args) > 2 else READY_TIMEOUT_DEFAULT
             self._run(self._page(args[0])
                       + f"await page.goto({json.dumps(args[1])});\n"
-                      + f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n")
+                      + f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n"
+                      + "__out('');\n")
             return None
 
         if cmd == "js":
@@ -127,7 +136,7 @@ class EgoBackend(Backend):
             raw = self._run(self._page(args[0])
                             + f"const r = await page.evaluate({json.dumps(wrapped)});\n"
                             + "__out(r.u ? '' : JSON.stringify(r.v));\n")
-            raw = (raw or "").rstrip("\n")
+            raw = raw.rstrip("\n")
             if not raw:
                 return ""
             try:
@@ -141,30 +150,34 @@ class EgoBackend(Backend):
             # 페이지 인자가 없으면 undefined 를 먼저 넘긴다.
             self._run(self._page(args[0])
                       + f"await page.waitForFunction({json.dumps(args[1])}, undefined, "
-                      + f"{{ timeout: {timeout} }});\n")
+                      + f"{{ timeout: {timeout} }});\n"
+                      + "__out('');\n")
             return None
 
         if cmd == "ready":
             timeout = int(args[1]) if len(args) > 1 else READY_TIMEOUT_DEFAULT
             self._run(self._page(args[0])
-                      + f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n")
+                      + f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n"
+                      + "__out('');\n")
             return None
 
         if cmd == "url":
-            return (self._run(self._page(args[0]) + "__out(await page.url());\n") or "").strip()
+            return self._run(self._page(args[0]) + "__out(await page.url());\n").strip()
 
         if cmd == "snap":
-            return (self._run(self._page(args[0])
-                              + "__out(await page.snapshot());\n") or "").rstrip("\n")
+            return self._run(self._page(args[0])
+                             + "__out(await page.snapshot());\n").rstrip("\n")
 
         if cmd == "shot":
             out = args[1] if len(args) > 1 else "/tmp/ego-shot.png"
             self._run(self._page(args[0])
-                      + f"await page.screenshot({{ path: {json.dumps(out)} }});\n")
+                      + f"await page.screenshot({{ path: {json.dumps(out)} }});\n"
+                      + "__out('');\n")
             return out
 
         if cmd == "close":
-            self._run(self._page(args[0]) + "await page.close();\n")
+            self._run(self._page(args[0]) + "await page.close();\n"
+                      + "__out('');\n")
             return None
 
         raise UsageError(f"ego 백엔드가 '{cmd}' 를 다루지 않는다")
