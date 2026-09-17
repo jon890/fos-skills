@@ -9,10 +9,11 @@
 #   3. 에이전트 IDE 안의 브라우저(orca 등)로 보는 사람은 위 두 경로로 찾을 수 없다.
 #      AppleScript 는 Chrome 계열과 Safari 만 훑기 때문이다. browser-driver 로 열고
 #      돌려받은 page id 로 같은 탭을 다시 쓴다.
-#   5. 백엔드는 이 스크립트가 고정한다. 드라이버의 자동 감지에 맡기지 않는다.
-#      미리보기는 사람이 읽는 화면이라 IDE 안의 탭에 떠야 하고, 워크트리 대조도 되어야 한다.
-#      자동화용 백엔드는 그 둘을 주지 못한다. ego 는 worktree 명령이 없어 대조를 건너뛰고,
-#      사용자가 로그인해 둔 프로필의 탭을 자동화와 함께 쓰게 된다.
+#   5. 어느 백엔드로 띄울지는 사람이 정한다. 이 스크립트가 값을 박지 않는다.
+#      미리보기는 사람이 읽는 화면이라 IDE 안의 탭에 떠야 하고 워크트리 대조도 되어야 하는데,
+#      그 둘을 주는 백엔드가 환경마다 다르다. 자동화용 백엔드로 띄우면 worktree 명령이 없어
+#      대조를 건너뛰고, 사용자가 로그인해 둔 프로필의 탭을 자동화와 함께 쓰게 된다.
+#      그래서 값을 정할 자리를 두고, 정하지 않았으면 대조를 건너뛴다는 것만 알린다.
 #   4. 그 탭은 사용자가 보는 워크트리에 있어야 한다. 다른 워크트리에 열리면 갱신은 성공하는데
 #      화면은 바뀌지 않아, 사용자는 미리보기가 열리지 않았다고 판단한다. 그래서 열거나 다시 쓸
 #      때마다 워크트리를 대조하고, 어긋나면 그 탭을 닫고 기본 브라우저로 내려간다.
@@ -71,14 +72,31 @@ if [ -n "${ORCA_WORKTREE:-}" ]; then
 else
   WANT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
-# 미리보기가 쓸 백엔드. 위 4번과 5번이 이 값을 정한다.
-# 다른 백엔드로 띄워야 할 일이 생기면 호출자가 이 변수로 바꾼다.
-PREVIEW_BROWSER_DRIVER="${PREVIEW_BROWSER_DRIVER:-orca}"
+# 미리보기가 쓸 백엔드. 위 4번과 5번이 무엇을 고려해 정하는지 말한다.
+# 찾는 순서는 둘이다. 호출자가 준 환경변수, 그리고 설정 파일의 previewDriver.
+# 둘 다 없으면 값을 주지 않아 드라이버의 자동 감지에 맡긴다.
+#
+# 설정 파일 경로는 드라이버와 같은 것을 본다. 두 곳이 갈리면 doctor 가 읽는 파일과
+# 미리보기가 읽는 파일이 달라져, 사용자가 고친 값이 반영되지 않는다.
+preview_driver_from_config() {
+  cfg="${BROWSER_CONFIG:-$HOME/.claude/browser.config.json}"
+  [ -f "$cfg" ] || return 0
+  python3 -c 'import json, sys
+try:
+    print(json.load(open(sys.argv[1], encoding="utf-8")).get("previewDriver") or "")
+except Exception:
+    pass' "$cfg" 2>/dev/null
+}
+PREVIEW_BROWSER_DRIVER="${PREVIEW_BROWSER_DRIVER:-$(preview_driver_from_config)}"
 
-# 드라이버를 부르는 단일 창구. 백엔드를 매번 같은 값으로 고정한다.
-# 직접 "$DRIVER" 를 부르면 그 호출만 자동 감지로 돌아 다른 백엔드에 열린다.
+# 드라이버를 부르는 단일 창구. 정해진 값이 있으면 매번 그 백엔드로 부른다.
+# 직접 "$DRIVER" 를 부르면 그 호출만 다른 백엔드로 돌아 탭이 갈린다.
 drv() {
-  BROWSER_DRIVER="$PREVIEW_BROWSER_DRIVER" "$DRIVER" "$@"
+  if [ -n "$PREVIEW_BROWSER_DRIVER" ]; then
+    BROWSER_DRIVER="$PREVIEW_BROWSER_DRIVER" "$DRIVER" "$@"
+  else
+    "$DRIVER" "$@"
+  fi
 }
 
 if [ -x "$DRIVER" ]; then
@@ -90,6 +108,9 @@ if [ -x "$DRIVER" ]; then
       # 살아 있어도 사용자가 보는 곳의 탭이 아닐 수 있다. 조사하느라 다른 저장소로 cd 한 채
       # 만든 탭이 그대로 남으면, 갱신은 성공하는데 사용자 화면은 바뀌지 않는다 (실측).
       # 드라이버가 worktree 명령을 모르면 대조를 건너뛴다.
+      if ! drv worktree "$PAGE" >/dev/null 2>&1; then
+        echo "이 백엔드는 worktree 를 다루지 않아 탭 위치를 대조하지 못한다." >&2
+      fi
       if HAVE="$(drv worktree "$PAGE" 2>/dev/null)" && [ -n "$HAVE" ] && [ "$HAVE" != "$WANT" ]; then
         echo "기존 탭이 다른 워크트리에 있다: $HAVE. 새로 연다." >&2
         PAGE=""
@@ -107,6 +128,10 @@ if [ -x "$DRIVER" ]; then
       || echo "탭 id 를 남기지 못했다. 다음 실행은 새 탭을 연다: $IDFILE" >&2
     echo "새로 열었다: $ABS"
     # 어느 워크트리에 열렸는지 함께 알린다. 사용자가 탭을 찾지 못하는 상황을 바로 드러낸다.
+    if ! drv worktree "$PAGE" >/dev/null 2>&1; then
+      echo "이 백엔드는 worktree 를 다루지 않아 탭 위치를 대조하지 못한다." >&2
+      echo "사람이 볼 화면이면 설정 파일의 previewDriver 나 PREVIEW_BROWSER_DRIVER 로 정한다." >&2
+    fi
     if WT="$(drv worktree "$PAGE" 2>/dev/null)" && [ -n "$WT" ]; then
       echo "탭 위치: $WT"
       if [ "$WT" != "$WANT" ]; then
@@ -123,7 +148,7 @@ if [ -x "$DRIVER" ]; then
     fi
   fi
   # 여기까지 왔으면 드라이버가 실패한 것이다. 조용히 넘어가지 않고 알린 뒤 기본 브라우저로 간다.
-  echo "browser-driver($PREVIEW_BROWSER_DRIVER) 로 열지 못했다. 기본 브라우저로 내려간다." >&2
+  echo "browser-driver(${PREVIEW_BROWSER_DRIVER:-자동 감지}) 로 열지 못했다. 기본 브라우저로 내려간다." >&2
 fi
 
 # macOS 에서만 기존 탭을 찾아 갱신할 수 있다. 다른 환경은 새로 여는 것으로 내려간다.

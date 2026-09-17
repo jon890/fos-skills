@@ -5,11 +5,15 @@
 
 ## 3.1.0
 
-미리보기가 쓸 브라우저 백엔드를 `show-preview.sh` 가 `orca` 로 고정한다.
+미리보기가 쓸 브라우저 백엔드를 정할 자리를 만들었다.
 전에는 드라이버의 자동 감지에 맡겼다. 자동 감지 순서에 자동화용 백엔드가 앞에 서면
 미리보기가 그쪽으로 열린다. 그 백엔드에는 `worktree` 명령이 없어 사용자가 보는 곳의
 탭인지 대조하지 못하고, 사용자가 로그인해 둔 프로필의 탭을 자동화와 함께 쓰게 된다.
-바꿔야 하면 `PREVIEW_BROWSER_DRIVER` 로 준다.
+
+값은 설정 파일(`~/.claude/browser.config.json`)의 `previewDriver` 로 정한다.
+`PREVIEW_BROWSER_DRIVER` 로 그 호출만 바꿀 수 있다.
+둘 다 없으면 자동 감지를 따르고, 그 백엔드가 `worktree` 를 다루지 않으면
+탭 위치를 대조하지 못한다고 알린다.
 
 드라이버 경로를 지정하는 변수를 `BROWSER_DRIVER` 에서 `BROWSER_DRIVER_PATH` 로 바꿨다.
 드라이버 자신이 `BROWSER_DRIVER` 를 백엔드 이름으로 읽어, 한 이름이 두 뜻을 갖고 있었다.
