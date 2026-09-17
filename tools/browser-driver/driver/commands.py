@@ -24,7 +24,8 @@ COMMANDS = [
     Command("open", ["<url>", "[ready_timeout_ms]"],
             "탭을 열고 로드가 끝날 때까지 기다린다",
             returns="핸들 한 줄. 이후 모든 명령의 첫 인자로 넘긴다",
-            note="탭이 열린 워크트리를 stderr 에 한 줄 더 알린다. $( ) 로 받으면 핸들만 들어온다.\n"
+            note="탭이 열린 자리를 stderr 에 한 줄 더 알린다. orca 는 워크트리, ego 는 프로필이다.\n"
+                 "$( ) 로 받으면 핸들만 들어온다.\n"
                  "2>&1 로 받지 않는다. 그 줄이 핸들에 섞여 다음 명령이 탭을 찾지 못한다"),
     Command("nav", ["<handle>", "<url>", "[ready_timeout_ms]"],
             "이미 열린 탭을 다른 주소로 보낸다"),

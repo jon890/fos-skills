@@ -50,6 +50,11 @@ $B doctor
 2. `~/.claude/browser.config.json` 의 `driver`
 3. 자동 감지. 순서와 그 이유는 `driver/backends/__init__.py` 의 `DETECT_ORDER` 가 소유한다
 
+**용도가 갈리면 부르는 쪽이 백엔드를 고정한다.** 자동 감지는 쓸 수 있는 것을 고르는 규칙이고
+그 호출에 알맞은 것을 고르는 규칙이 아니다.
+사람이 읽을 화면을 띄우는 쪽은 `orca` 를, 사람이 보지 않는 자동화는 `ego` 를 고정하는 편이 맞다.
+`content-preview` 의 `show-preview.sh` 가 그렇게 `orca` 를 고정한다.
+
 ## 백엔드마다 갈리는 것
 
 **핸들의 의미가 다르다.** `orca` 는 탭의 page id 를, `agent-browser` 는 세션 이름을,
@@ -65,7 +70,7 @@ $B doctor
 `agent-browser` 는 `undefined` 에 `null` 을 낸다.
 
 **`close` 뒤의 동작이 다르다.** `agent-browser` 는 핸들이 죽지 않아 다음 명령이 새 브라우저를 띄우고,
-`orca` 는 없는 탭이라고 실패한다.
+`orca` 와 `ego` 는 없는 탭이라고 실패한다 (실측).
 
 **`charset` 을 선언하지 않은 `file://` 문서를 `cmux` 는 UTF-8 로 추정하지 않는다.** `orca` 는 추정한다 (실측).
 
@@ -83,12 +88,12 @@ $B doctor
 
 `ego`
 
-- 탭은 `browser-driver` 라는 TaskSpace 하나에 모인다. `open` 을 여러 번 불러도 같은 공간에
-  page 만 늘어난다. 새 공간의 `p1` 은 빈 페이지라 첫 `open` 이 그것을 쓰고,
-  그 뒤의 `open` 이 `p2`, `p3` 을 만든다.
+- 탭은 `browser-driver/<프로필 id>` 라는 TaskSpace 에 모인다. `open` 을 여러 번 불러도 같은
+  프로필의 호출은 같은 공간에 page 만 늘어난다. 새 공간의 `p1` 은 빈 페이지라 첫 `open` 이
+  그것을 쓰고, 그 뒤의 `open` 이 `p2`, `p3` 을 만든다.
 - 사용자가 브라우저에서 그 공간의 제어권을 가져가면 그 공간의 모든 호출이 거절된다 (실측).
   이름만으로 공간을 잡으면 그 뒤로 계속 거절되므로, `open` 은 에이전트가 가진 공간만 골라
-  다시 쓰고 없으면 `browser-driver #2` 처럼 번호를 붙여 새로 만든다.
+  다시 쓰고 없으면 `browser-driver/Profile 2 #2` 처럼 번호를 붙여 새로 만든다.
   이미 받은 핸들로는 되살릴 수 없다. `open` 을 다시 부른다.
 - `console` 과 `errors` 는 대응 API 가 없어 종료 코드 2 로 거절한다.
   `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 콘솔 로그 버퍼가 아니다.
@@ -109,6 +114,41 @@ $B doctor
 - 실패를 종료 코드로 정확히 알리는 유일한 백엔드다. 그래서 드라이버가 출력 표식을 보지 않는다.
 
 `worktree` 명령은 `orca` 에만 있다. 나머지는 종료 코드 2 로 거절한다.
+
+## 로그인 세션과 프로필
+
+`ego` 백엔드에서만 해당한다.
+
+**로그인 세션의 경계는 TaskSpace 가 아니라 브라우저 프로필이다.**
+`example.com` 에 쿠키와 `localStorage` 를 심고 다른 곳에서 읽어 확인했다 (실측).
+
+| 읽는 곳 | 쿠키 | localStorage |
+| --- | --- | --- |
+| 같은 프로필의 다른 TaskSpace | 보인다 | 보인다 |
+| 다른 프로필의 TaskSpace | 빈 문자열 | `null` |
+
+사용자가 손으로 열어 둔 탭도 같은 프로필의 쿠키 저장소를 함께 쓴다.
+그래서 공간을 여러 개로 나눠도 세션은 나뉘지 않는다.
+개인 작업과 회사 자동화를 나누는 수단은 프로필이다.
+
+```bash
+BROWSER_EGO_PROFILE="Profile 2" $B open "https://example.com"
+BROWSER_EGO_PROFILE="BiFOS"     $B open "https://example.com"
+```
+
+- 프로필 id 와 이름을 모두 받는다. `profiles()` 의 `id` 와 `name` 을 그 순서로 대조한다.
+- 값이 없으면 ego 의 기본 프로필을 쓴다. 그래서 `open` 은 어느 프로필에서 열렸는지
+  표준 오류로 한 줄 알린다. 지정을 빠뜨려 개인 세션에서 도는 것을 여기서 드러낸다.
+- 없는 프로필을 주면 쓸 수 있는 목록을 붙여 종료 코드 1 로 끝난다.
+- 프로필은 공간을 만들 때 정해지고 나중에 바꿀 수 없다. 이미 받은 핸들의 프로필을
+  바꾸려면 `open` 을 다시 부른다.
+
+**id 가 이름과 엇갈려 있을 수 있다.** 이 머신에서는 ego 의 `Default` 가 개인 계정이고
+`Profile 2` 가 회사 계정이다 (실측). id 만 보고 `Default` 를 기본으로 읽으면 반대를 고른다.
+어느 쪽이 무엇인지는 `ego-browser import list` 의 메일 주소와 `profiles()` 의 이름을 대조해 정한다.
+
+프로필 전체를 지우는 CDP 명령은 프로필 단위로 미친다.
+그 상세는 `ego-browser` 스킬의 `references/clearing-state.md` 가 소유한다.
 
 ## 탭이 열리는 워크트리
 
