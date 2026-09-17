@@ -26,7 +26,7 @@ $B doctor
 | `driver/admin.py` | `doctor` 와 `install` |
 | `driver/backends/__init__.py` | 백엔드 목록과 선택 규칙 |
 | `driver/backends/base.py` | 백엔드 공통 계약 |
-| `driver/backends/orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
+| `driver/backends/ego.py`, `orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
 | `browser.config.example.json` | 설정 예시 |
 
 진입점만 실행 파일이다. 심링크로 불려도 실체 경로를 잡아 옆의 `driver` 패키지를 찾는다.
@@ -52,14 +52,17 @@ $B doctor
 
 ## 백엔드마다 갈리는 것
 
-**핸들의 의미가 다르다.** `orca` 는 탭의 page id 를, `agent-browser` 는 세션 이름을 돌려준다.
+**핸들의 의미가 다르다.** `orca` 는 탭의 page id 를, `agent-browser` 는 세션 이름을,
+`ego` 는 `<spaceId>:<pageLabel>` 을 돌려준다.
 드라이버는 이 값을 그대로 넘기기만 하므로 어느 쪽이든 같이 동작한다.
 
 **`js` 의 반환값은 드라이버가 같은 형식으로 맞춘다.**
 문자열은 따옴표 없이, 객체와 배열은 여백 없는 JSON 으로 낸다.
 `agent-browser` 의 `eval` 은 값을 JSON 으로 인코딩해 내므로 드라이버가 한 겹 벗긴다.
 그대로 흘리면 `JSON.stringify` 결과를 파싱하는 소비자가 따옴표에서 깨진다 (실측).
-`undefined` 는 예외다. `agent-browser` 는 `null` 을 내고 `orca` 는 값이 없다며 실패한다.
+`ego` 의 `evaluate` 는 `undefined` 를 `null` 로 바꿔 내보내 그 둘을 구분할 수 없으므로,
+드라이버가 표현식을 페이지 안에서 한 겹 감싸 어느 쪽인지를 따로 받는다 (실측).
+`agent-browser` 는 `undefined` 에 `null` 을 낸다.
 
 **`close` 뒤의 동작이 다르다.** `agent-browser` 는 핸들이 죽지 않아 다음 명령이 새 브라우저를 띄우고,
 `orca` 는 없는 탭이라고 실패한다.
@@ -68,14 +71,29 @@ $B doctor
 
 ## 함정
 
-**백엔드는 실패해도 종료 코드가 0 이다.** 드라이버가 이것을 1 로 바꾸므로 백엔드를 직접 부르지 않는다.
-직접 부르면 오류가 드러나지 않는다.
+**`orca` 와 `agent-browser` 는 실패해도 종료 코드가 0 이다.** 드라이버가 이것을 1 로 바꾸므로
+백엔드를 직접 부르지 않는다. 직접 부르면 오류가 드러나지 않는다.
+`ego` 와 `cmux` 는 종료 코드로 알린다.
 
 `orca`
 
 - `orca wait --load` 는 이미 로드된 페이지에서도 항상 시간이 초과되어 드라이버가 쓰지 않는다.
 - `click`, `fill`, `select` 는 CSS 선택자가 아니라 화면 요소 참조를 받는다. 동적 폼과 화면에 나타나지 않는 요소, 다른 요소에 가려진 화면은 `js` 로 직접 조작한다.
 - 탭은 셸의 작업 디렉토리가 속한 워크트리에 만들어진다. 아래 「탭이 열리는 워크트리」 를 본다.
+
+`ego`
+
+- 탭은 `browser-driver` 라는 TaskSpace 하나에 모인다. `open` 을 여러 번 불러도 같은 공간에
+  page 만 늘어난다. 새 공간의 `p1` 은 빈 페이지라 첫 `open` 이 그것을 쓰고,
+  그 뒤의 `open` 이 `p2`, `p3` 을 만든다.
+- 사용자가 브라우저에서 그 공간의 제어권을 가져가면 그 공간의 모든 호출이 거절된다 (실측).
+  이름만으로 공간을 잡으면 그 뒤로 계속 거절되므로, `open` 은 에이전트가 가진 공간만 골라
+  다시 쓰고 없으면 `browser-driver #2` 처럼 번호를 붙여 새로 만든다.
+  이미 받은 핸들로는 되살릴 수 없다. `open` 을 다시 부른다.
+- `console` 과 `errors` 는 대응 API 가 없어 종료 코드 2 로 거절한다.
+  `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 콘솔 로그 버퍼가 아니다.
+- 조건 대기는 폴링이 아니라 ego 의 `waitForFunction` 과 `waitForLoadState` 를 그대로 쓴다.
+- 실패를 종료 코드 1 로 알린다. 그래서 드라이버가 출력 표식을 보지 않는다.
 
 `agent-browser`
 
@@ -119,4 +137,8 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" $B open "file:///tmp/preview.html"
 `base.py` 의 `Backend` 를 상속하고 `__init__.py` 의 `BACKENDS` 에 등록한다.
 
 - 실패를 종료 코드로 알리지 않는 CLI 라면 출력에서 실패 표식을 찾아 `DriverError` 를 던진다.
+  종료 코드로 알리는 CLI 라면 `run` 에 `check_exit=True` 를 준다.
 - 조건 대기 명령이 없으면 `wait_expression` 으로 만든 폴링 표현식을 `eval` 에 넘긴다.
+  그 백엔드에 대기 API 가 있으면 폴링으로 대신하지 말고 그것을 쓴다.
+- `js` 의 반환값은 `shell.py` 의 `js_value` 를 거쳐 낸다. 백엔드마다 형식이 갈리면
+  같은 표현식이 다른 바이트로 나온다.
