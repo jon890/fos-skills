@@ -30,8 +30,12 @@ Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키�
 - `python3` 로 생성기를 돌린다
 - CDN 에서 스타일과 렌더러를 받으므로 망이 없으면 스타일이 빠진다.
   Dooray 는 `uicdn.toast.com` 의 TOAST UI Editor viewer, GitHub 은 github-markdown-css 와 marked.js 를 쓴다
-- 브라우저 드라이버가 띄울 곳을 정한다. 이 저장소의 `tools/browser-driver/` 를 함께 받으면
-  따로 설치하지 않아도 되고, 없으면 기본 브라우저로 내려간다
+- 브라우저 드라이버로 띄운다. 이 저장소의 `tools/browser-driver/` 를 함께 받으면
+  따로 설치하지 않아도 되고, 없으면 기본 브라우저로 내려간다.
+  드라이버의 경로를 직접 주려면 `BROWSER_DRIVER_PATH` 를 쓴다
+- 백엔드는 `orca` 로 고정한다. 자동 감지에 맡기지 않는다.
+  미리보기는 사람이 읽는 화면이라 IDE 안의 탭에 떠야 하고 워크트리 대조도 되어야 하는데,
+  자동화용 백엔드는 그 둘을 주지 못한다. 바꿔야 하면 `PREVIEW_BROWSER_DRIVER` 로 준다
 - `orca` 백엔드는 셸의 작업 디렉토리가 속한 워크트리에 탭을 만든다.
   다른 저장소로 `cd` 한 뒤 띄우면 `ORCA_WORKTREE` 로 사용자의 작업 경로를 고정해야 한다
 - 표기 검사기와 판정 기준은 `korean-check` 스킬이 소유한다. 이 저장소가 함께 배포한다.
@@ -45,7 +49,7 @@ Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키�
 | `SKILL.md` | 목표와 6단계 실행 절차, 단계별 통과 조건, 검토를 건너뛰는 조건, 생성기 사용법 |
 | `references/persona.md` | 개인 문체 참조를 어디에 두고 무엇을 적는지 |
 | `scripts/style-check.sh` | `korean-check` 를 찾아 본문 파일과 제목에 검사기를 돌린다 |
-| `scripts/show-preview.sh` | 미리보기 HTML 을 사용자 화면에 띄운다. 같은 파일의 탭을 찾아 갱신하고 워크트리를 대조한다 |
+| `scripts/show-preview.sh` | 미리보기 HTML 을 사용자 화면에 띄운다. 쓸 백엔드를 고정하고, 같은 파일의 탭을 찾아 갱신하고 워크트리를 대조한다 |
 | `scripts/dooray-preview/generate.py` | Dooray 본문 미리보기 HTML 생성. `--mode` 로 업무 본문과 댓글의 머리를 고른다 |
 | `scripts/dooray-preview/template.html` | TOAST UI Editor viewer 를 쓰는 Dooray 미리보기 골격 |
 | `scripts/github-preview/generate.py` | GitHub issue 와 PR 본문 미리보기 HTML 생성. `--type` 으로 헤더 배지 색을 가른다 |

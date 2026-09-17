@@ -7,8 +7,12 @@
 #   2. 본문을 고쳐 같은 경로로 재생성할 때마다 탭이 쌓인다. 사용자는 어느 탭이 새 본문인지
 #      알 수 없고, 오래된 탭을 읽고 판단한다.
 #   3. 에이전트 IDE 안의 브라우저(orca 등)로 보는 사람은 위 두 경로로 찾을 수 없다.
-#      AppleScript 는 Chrome 계열과 Safari 만 훑기 때문이다. browser-driver 가 있으면
-#      백엔드 판단을 그쪽에 맡기고, 돌려받은 page id 로 같은 탭을 다시 쓴다.
+#      AppleScript 는 Chrome 계열과 Safari 만 훑기 때문이다. browser-driver 로 열고
+#      돌려받은 page id 로 같은 탭을 다시 쓴다.
+#   5. 백엔드는 이 스크립트가 고정한다. 드라이버의 자동 감지에 맡기지 않는다.
+#      미리보기는 사람이 읽는 화면이라 IDE 안의 탭에 떠야 하고, 워크트리 대조도 되어야 한다.
+#      자동화용 백엔드는 그 둘을 주지 못한다. ego 는 worktree 명령이 없어 대조를 건너뛰고,
+#      사용자가 로그인해 둔 프로필의 탭을 자동화와 함께 쓰게 된다.
 #   4. 그 탭은 사용자가 보는 워크트리에 있어야 한다. 다른 워크트리에 열리면 갱신은 성공하는데
 #      화면은 바뀌지 않아, 사용자는 미리보기가 열리지 않았다고 판단한다. 그래서 열거나 다시 쓸
 #      때마다 워크트리를 대조하고, 어긋나면 그 탭을 닫고 기본 브라우저로 내려간다.
@@ -33,6 +37,10 @@ FILE_URL="file://$ABS"
 # 찾는 순서는 셋이다. 호출자가 지정한 것, 스킬과 함께 받은 것, 개인이 걸어 둔 것.
 # 함께 받은 것을 개인 심링크보다 먼저 보는 이유는, 스킬만 받은 사람도 그대로 돌아가야 해서다.
 #
+# 경로를 지정하는 변수는 BROWSER_DRIVER_PATH 다. BROWSER_DRIVER 를 쓰지 않는 이유는
+# 드라이버 자신이 그 이름을 백엔드 이름으로 읽기 때문이다. 한 이름에 두 뜻을 두면
+# BROWSER_DRIVER=ego 를 셸에 둔 사람이 여기서는 실행 파일 경로로 해석되는 값을 주게 된다.
+#
 # 위로 올라가며 찾는 이유는 저장소마다 배치가 달라서다.
 # 개인 공용은 <repo>/content-preview/scripts, 팀 공용은 <repo>/skills/content-preview/scripts 라
 # tools/ 까지의 거리가 한 단 다르다. 고정 상대경로로는 둘 다 맞출 수 없다 (실측).
@@ -49,7 +57,7 @@ find_bundled_driver() {
 }
 
 DRIVER=""
-for cand in "${BROWSER_DRIVER:-}" \
+for cand in "${BROWSER_DRIVER_PATH:-}" \
             "$(find_bundled_driver || true)" \
             "$HOME/.claude/scripts/browser-driver"; do
   [ -n "$cand" ] && [ -x "$cand" ] && { DRIVER="$cand"; break; }
@@ -63,39 +71,49 @@ if [ -n "${ORCA_WORKTREE:-}" ]; then
 else
   WANT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
+# 미리보기가 쓸 백엔드. 위 4번과 5번이 이 값을 정한다.
+# 다른 백엔드로 띄워야 할 일이 생기면 호출자가 이 변수로 바꾼다.
+PREVIEW_BROWSER_DRIVER="${PREVIEW_BROWSER_DRIVER:-orca}"
+
+# 드라이버를 부르는 단일 창구. 백엔드를 매번 같은 값으로 고정한다.
+# 직접 "$DRIVER" 를 부르면 그 호출만 자동 감지로 돌아 다른 백엔드에 열린다.
+drv() {
+  BROWSER_DRIVER="$PREVIEW_BROWSER_DRIVER" "$DRIVER" "$@"
+}
+
 if [ -x "$DRIVER" ]; then
   IDFILE="$ABS.tabid"
   if [ -f "$IDFILE" ]; then
     PAGE="$(cat "$IDFILE")"
     # 탭이 닫혔으면 url 조회가 실패한다. 그때는 아래에서 새로 연다.
-    if [ -n "$PAGE" ] && "$DRIVER" url "$PAGE" >/dev/null 2>&1; then
+    if [ -n "$PAGE" ] && drv url "$PAGE" >/dev/null 2>&1; then
       # 살아 있어도 사용자가 보는 곳의 탭이 아닐 수 있다. 조사하느라 다른 저장소로 cd 한 채
       # 만든 탭이 그대로 남으면, 갱신은 성공하는데 사용자 화면은 바뀌지 않는다 (실측).
       # 드라이버가 worktree 명령을 모르면 대조를 건너뛴다.
-      if HAVE="$("$DRIVER" worktree "$PAGE" 2>/dev/null)" && [ -n "$HAVE" ] && [ "$HAVE" != "$WANT" ]; then
+      if HAVE="$(drv worktree "$PAGE" 2>/dev/null)" && [ -n "$HAVE" ] && [ "$HAVE" != "$WANT" ]; then
         echo "기존 탭이 다른 워크트리에 있다: $HAVE. 새로 연다." >&2
         PAGE=""
       fi
-      if [ -n "$PAGE" ] && "$DRIVER" nav "$PAGE" "$FILE_URL" >/dev/null 2>&1; then
+      if [ -n "$PAGE" ] && drv nav "$PAGE" "$FILE_URL" >/dev/null 2>&1; then
         echo "갱신: 기존 탭 ($PAGE)"
         exit 0
       fi
       [ -n "$PAGE" ] && echo "기존 탭을 찾았으나 갱신하지 못했다. 새로 연다." >&2
     fi
   fi
-  if PAGE="$("$DRIVER" open "$FILE_URL" 2>/dev/null)" && [ -n "$PAGE" ]; then
+  if PAGE="$(drv open "$FILE_URL" 2>/dev/null)" && [ -n "$PAGE" ]; then
     # 쓰기에 실패해도 탭은 이미 열렸다. set -e 로 조용히 죽지 않게 알리고 계속한다.
     printf '%s\n' "$PAGE" >| "$IDFILE" 2>/dev/null \
       || echo "탭 id 를 남기지 못했다. 다음 실행은 새 탭을 연다: $IDFILE" >&2
     echo "새로 열었다: $ABS"
     # 어느 워크트리에 열렸는지 함께 알린다. 사용자가 탭을 찾지 못하는 상황을 바로 드러낸다.
-    if WT="$("$DRIVER" worktree "$PAGE" 2>/dev/null)" && [ -n "$WT" ]; then
+    if WT="$(drv worktree "$PAGE" 2>/dev/null)" && [ -n "$WT" ]; then
       echo "탭 위치: $WT"
       if [ "$WT" != "$WANT" ]; then
         # 여기서 성공으로 끝내면 사용자는 보이지 않는 탭을 찾다가 미리보기가 열리지 않았다고 판단한다.
         echo "이 탭은 사용자가 보는 워크트리($WANT)가 아니다. 기본 브라우저로 다시 띄운다." >&2
         # 남겨 두면 다음 실행이 다시 집어 갈 수 있고, 사용자가 찾지 못하는 탭만 쌓인다.
-        "$DRIVER" close "$PAGE" >/dev/null 2>&1 || true
+        drv close "$PAGE" >/dev/null 2>&1 || true
         rm -f "$IDFILE"
         PAGE=""
       fi
@@ -105,7 +123,7 @@ if [ -x "$DRIVER" ]; then
     fi
   fi
   # 여기까지 왔으면 드라이버가 실패한 것이다. 조용히 넘어가지 않고 알린 뒤 기본 브라우저로 간다.
-  echo "browser-driver 로 열지 못했다. 기본 브라우저로 내려간다." >&2
+  echo "browser-driver($PREVIEW_BROWSER_DRIVER) 로 열지 못했다. 기본 브라우저로 내려간다." >&2
 fi
 
 # macOS 에서만 기존 탭을 찾아 갱신할 수 있다. 다른 환경은 새로 여는 것으로 내려간다.

@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.0.1"
+  version: "3.1.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
