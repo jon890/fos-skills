@@ -6,7 +6,7 @@ description: |
   "/planning", "계획 세워보자", "설계해보자", "plan 세워줘", "기획해줘", "task 파일 만들어줘",
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
 metadata:
-  version: "2.2.1"
+  version: "2.3.0"
 ---
 # planning
 
@@ -84,9 +84,11 @@ metadata:
 task 파일을 만든 직후, 사용자에게 보고하기 전에 둘을 한다.
 
 1. **스크립트를 돌린다.** 종료 코드 0 이어야 한다.
+   `$SKILL_DIR` 은 이 스킬 번들 경로이고, `$PLAN` 은 `plan9-db-backup` 같은 디렉터리 이름이다.
+   **스크립트는 스킬 번들에 있고 cwd 는 타깃 레포다.** 둘을 같은 경로로 두면 파일을 찾지 못한다.
   ```bash
-   # cwd: 타깃 레포 root
-   python3 scripts/verify_task.py plan{N}-{slug}
+   # cwd: tasks/ 를 가진 타깃 레포 root
+   python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN"
   ```
 2. **스크립트가 잡지 못하는 것을 확인한다.**
    phase 를 처음 읽는 사람이 되물어야 실행할 수 있는 곳,
