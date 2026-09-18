@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
 """셸 스크립트에서 `$변수` 바로 뒤에 한글이 붙은 자리를 찾는다.
 
-큰따옴표 안의 `$removed개` 는 셸이 `${removed개}` 로 읽는다.
-`set -u` 아래에서는 `unbound variable` 로 죽고, 없으면 빈 문자열이 된다.
-`${removed}개` 로 써야 한다.
+큰따옴표 안의 `$removed개` 를 어떤 셸은 `${removed개}` 로 읽는다.
+`${removed}개` 로 써야 어느 셸에서나 같게 돈다.
 
-**어느 도구도 이것을 잡지 못한다 (실측).**
+**이것은 이식성 결함이다. 어디서나 죽는 것이 아니다.**
+변수 이름을 non-ASCII 앞에서 끊는 셸과 이름의 일부로 읽는 셸이 갈린다.
+
+| 셸 | 결과 | 확인한 곳 |
+| --- | --- | --- |
+| bash 3.2.57 (`/bin/bash`, macOS 기본) | `n?: unbound variable` 로 죽는다 | 작업용 Mac |
+| zsh (macOS 기본 로그인 셸) | `n건: parameter not set` 으로 죽는다 | 작업용 Mac |
+| `/bin/sh` | 죽는다 | 작업용 Mac |
+| dash | 정상 동작한다 | 작업용 Mac |
+| bash 5.2.21 | 정상 동작한다 | 다른 세션의 홈서버 |
+
+**bash 5 에서 시험한 결과만 보고 이 검사를 지우지 않는다.**
+macOS 기본 `/bin/bash` 가 3.2 이고 기본 로그인 셸인 zsh 도 죽는다.
+같은 파일이 홈서버의 bash 5 에서는 통과하다가 Mac 에서 죽은 사례가 있다.
+
+**어느 도구도 이것을 잡지 못한다.**
 
 | 무엇으로 봤나 | 결과 |
 | --- | --- |
-| `bash script.sh` | `removed?: unbound variable` 로 죽는다 |
 | `bash -n script.sh` | 종료 코드 0. 문법은 올바르다 |
 | `shellcheck script.sh` | 종료 코드 0. 지적이 없다 |
 
-조사가 붙은 `$PATH가` 도 같다. `PATH가: unbound variable` 로 죽는 것을 확인했다.
+조사가 붙은 `$PATH가` 도 같다. bash 3.2 에서 `PATH가: unbound variable` 로 죽는다.
 
 이 검사가 `korean-check` 가 아니라 이 저장소의 공용 층에 있는 이유는,
 그 스킬이 마크다운 전용으로 경계를 선언해 두었기 때문이다.
@@ -97,7 +110,9 @@ def main(argv=None):
         print(f"통과: 셸 파일 {len(files)}개")
         return 0
 
-    print(f"\n위반 {total}건. 셸이 변수 이름으로 읽어 set -u 아래에서 죽는다.", file=sys.stderr)
+    print(f"\n위반 {total}건. 이식성 결함이다. "
+          "bash 3.2 와 zsh 는 변수 이름의 일부로 읽어 set -u 아래에서 죽고, "
+          "bash 5 는 끊어 읽어 통과한다.", file=sys.stderr)
     return 0 if args.hook else 1
 
 
