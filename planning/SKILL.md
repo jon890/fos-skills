@@ -6,7 +6,7 @@ description: |
   "/planning", "계획 세워보자", "설계해보자", "plan 세워줘", "기획해줘", "task 파일 만들어줘",
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
 metadata:
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 # planning
 

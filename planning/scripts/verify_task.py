@@ -42,7 +42,9 @@ HUMAN_CHECK = re.compile(r"수동 검토|눈으로 확인|직접 확인|육안")
 BSD_SED = re.compile(r"sed\s.*\\b")
 DOC_REF = re.compile(r"\*\*근거 문서\*\*\s*:(.*)")
 DOC_PATH = re.compile(r"`(docs/[^`\s]+)`")
-TEST_WORD = re.compile(r"테스트|test|spec")
+# 한국어 저장소는 테스트를 「검사」라 부르는 곳이 많다.
+# 저장소 20개를 세어 여덟이 「검사」 우세였고, 그 말을 빼면 실제 테스트 항목이 위반으로 잡혔다.
+TEST_WORD = re.compile(r"테스트|검사|test|spec")
 
 
 def check_index(path: Path, plan_name: str, phase_files: list, out: list) -> None:
