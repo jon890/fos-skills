@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.9.0
+
+2단계의 `run_doc_snippets.py` 설명이 불릿 하나 안에 25줄로 들어 있었다.
+저장소 밖에서 돌릴 때만 필요한 조건부 절차라 매 실행 context 를 차지할 이유가 없다.
+`references/run-doc-snippets.md` 로 내리고 본문에는 발동 조건과 읽을 경로만 남겼다.
+
 ## 3.8.0
 
 2단계의 종료 코드 표가 다섯 검사에 똑같이 적용되는 것처럼 적혀 있었다.
