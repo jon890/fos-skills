@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.4.0
+
+2단계의 `static_check.py` 호출을 스킬 번들 절대 경로로 바꿨다.
+「검사 대상 저장소 루트에서 실행한다」 고 적고 상대 경로로 불러,
+그 자리에서 그대로 실행하면 종료 코드 2 로 죽었다.
+스크립트는 스킬 번들에 있고 cwd 는 검사 대상 저장소다.
+
+`planning` 이 쓰던 `$SKILL_DIR` 과 `# cwd:` 주석 형태로 통일했다.
+
 ## 2.3.1
 
 korean-check 1.2.0 이 등록한 금지어 「가르다」 계열을 변경 기록과 `references/six-axis.md` 에서 「정한다」로 바꿨다.

@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조, 렌더링 함정의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -35,11 +35,16 @@ description: |
 
 ## 검사기를 돌린다
 
+`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$FILE` 은 검사할 `.md` 파일이다.
+**스크립트는 스킬 번들에 있고 cwd 는 어디든 된다.** 상대 경로로 부르면 검사 대상 저장소에서 찾지 못한다.
+
 ```bash
-scripts/check.sh <파일.md> [<파일.md>...]
-scripts/check.sh --text "<제목이나 커밋 메시지>"
+# cwd: 아무 곳
+bash "$SKILL_DIR/scripts/check.sh" "$FILE"
+bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 ```
 
+파일은 여러 개를 이어 줄 수 있다. `--where` 는 이 스킬 번들 경로를 낸다.
 `check.sh` 가 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다.
 종료 코드 규약과 인자는 그 스크립트의 머리말이 소유한다.
 

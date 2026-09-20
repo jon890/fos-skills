@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.1.0"
+  version: "3.2.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -72,9 +72,11 @@ head -3 "$SP/body.md"
 ### 3. 표기 검사
 
 본문 파일에 검사기를 돌린다. 판정 기준과 검사기는 `korean-check` 스킬이 소유한다.
+`$SKILL_DIR` 은 이 스킬 번들 경로다. **스크립트는 스킬 번들에 있고 cwd 는 어디든 된다.**
 
 ```bash
-scripts/style-check.sh "$SP/body.md"
+# cwd: 아무 곳
+bash "$SKILL_DIR/scripts/style-check.sh" "$SP/body.md"
 ```
 
 | 코드 | 무엇을 한다 |
@@ -90,7 +92,7 @@ Bash 의 heredoc 이나 `sed` 로 만든 본문은 훅이 돌지 않아 위반�
 제목도 함께 검사한다. 제목은 파일이 아니라 인자로 나가 훅을 거치지 않는다.
 
 ```bash
-scripts/style-check.sh --text "<제목>"
+bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 ```
 
 ### 4. 검토
@@ -103,7 +105,7 @@ scripts/style-check.sh --text "<제목>"
 경로는 3단계의 스크립트가 알려준다.
 
 ```bash
-scripts/style-check.sh --where
+bash "$SKILL_DIR/scripts/style-check.sh" --where
 ```
 
 대상은 본문과 함께 나가는 파일의 한국어, 그리고 제목이다.
@@ -137,17 +139,18 @@ Dooray 업무와 댓글, GitHub issue 와 PR 본문은 실제 렌더링과 비�
 | `comment` | 작성자 아바타와 이름 | 댓글, 진행 기록, 주간보고 |
 
 ```bash
-python3 scripts/dooray-preview/generate.py \
+# cwd: 아무 곳. $REPO 는 owner/repo 형태다
+python3 "$SKILL_DIR/scripts/dooray-preview/generate.py" \
   --mode comment --author "$USER" \
   --title "주간보고 2026년 8월 4주차" \
   --md-file "$SP/body.md" --out "$SP/preview.html"
 
-python3 scripts/github-preview/generate.py \
-  --type issue --repo "<owner>/<repo>" \
-  --title "..." \
+python3 "$SKILL_DIR/scripts/github-preview/generate.py" \
+  --type issue --repo "$REPO" \
+  --title "$TITLE" \
   --md-file "$SP/body.md" --out "$SP/preview.html"
 
-scripts/show-preview.sh "$SP/preview.html"
+bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
 ```
 
 **`show-preview.sh` 로 띄운다. 브라우저를 직접 열지 않는다.**

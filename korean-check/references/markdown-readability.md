@@ -48,7 +48,8 @@
 | 사람 | 위지윅 붙여넣기 | 게시 직전 |
 
 ```bash
-scripts/check.sh <파일.md> [<파일.md>...]
+# cwd: 아무 곳. $SKILL_DIR 은 이 스킬 번들 경로다
+bash "$SKILL_DIR/scripts/check.sh" "$FILE"
 ```
 
 `check.sh` 가 둘을 함께 돌리고 종료 코드를 하나로 합친다.
@@ -76,7 +77,7 @@ scripts/check.sh <파일.md> [<파일.md>...]
 제목은 문자열 모드로 검사한다.
 
 ```bash
-scripts/check.sh --text "<제목>"
+bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 ```
 
 **검사와 등록을 한 명령에 묶지 않는다.** 앞의 검사가 실패해도 뒤의 등록이 그대로 돌아,

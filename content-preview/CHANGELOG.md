@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.2.0
+
+스크립트 호출을 스킬 번들 절대 경로로 바꿨다.
+`scripts/style-check.sh` 와 두 생성기, `scripts/show-preview.sh` 를 상대 경로로 적고 있어
+저장소 루트에서 그대로 부르면 종료 코드 127 로 죽는다.
+
+`planning` 이 쓰던 `$SKILL_DIR` 과 `# cwd:` 주석 형태로 통일했다.
+제목과 저장소 이름의 꺾쇠 플레이스홀더도 셸 변수로 바꿨다.
+
 ## 3.1.0
 
 미리보기가 쓸 브라우저 백엔드를 정할 자리를 만들었다.

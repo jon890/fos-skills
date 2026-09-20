@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "2.3.1"
+  version: "2.4.0"
 ---
 # docs-check
 
@@ -100,10 +100,12 @@ metadata:
 
 ### 2. 정적 검사
 
-검사 대상 저장소 루트에서 실행한다.
+`$SKILL_DIR` 은 이 스킬 번들 경로다.
+**스크립트는 스킬 번들에 있고 cwd 는 검사 대상 저장소 루트다.** 둘을 같은 경로로 두면 파일을 찾지 못한다.
 
 ```bash
-python3 scripts/static_check.py <ADR_DIR> <scope>
+# cwd: 검사 대상 저장소 루트
+python3 "$SKILL_DIR/scripts/static_check.py" "$ADR_DIR" "$SCOPE"
 ```
 
 
