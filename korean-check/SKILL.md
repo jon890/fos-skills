@@ -1,10 +1,10 @@
 ---
 name: korean-check
 metadata:
-  version: "1.8.0"
+  version: "1.9.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
-  어휘와 문장 구성, 분량과 구조, 렌더링 함정의 판정 기준과 검사기를 이 스킬이 소유한다.
+  어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
   파일, PR 본문, 커밋 메시지, 업무와 위키, 게시글, 아티팩트, 채팅 답변이 모두 대상이다.
   판정 기준을 이 스킬이 소유하므로 다른 스킬은 여기를 가리킨다.
 ---
@@ -17,7 +17,7 @@ description: |
 
 | 층 | 무엇 | 판정 수단 | 축의 소유자 |
 | --- | --- | --- | --- |
-| 검사기 | 매핑 표의 금지어와 렌더링 함정 | 종료 코드 | `references/markdown-readability.md` 의 「자동 검사」 |
+| 검사기 | 매핑 표의 금지어와 괄호 중첩, 범위 물결표, 엠대시 | 종료 코드 | `references/markdown-readability.md` 의 「자동 검사」 |
 | 검토 | 검사기가 판정하지 못하는 것 | 발견 목록 | `references/review-axes.md` 의 「축」 |
 
 **판정 기준과 검사기를 한 자리에 둔다.** `scripts/korean-style-check.py` 가
@@ -30,7 +30,8 @@ description: |
 | --- | --- |
 | 어떤 낱말을 쓸지, 문장을 어떻게 맺을지 | `references/korean-style.md` |
 | 헤더와 표를 쓸지, 밖으로 나가는 글인지 | `references/writing-structure.md` |
-| 이 매체에서 어떻게 렌더될지 | `references/markdown-readability.md` |
+| 검사기가 무엇을 건너뛰는지, 훅이 언제 돌지 않는지 | `references/markdown-readability.md` |
+| 이 매체에서 어떻게 렌더될지 | [`../content-preview/references/render-traps.md`](../content-preview/references/render-traps.md) |
 | 검토자에게 무엇을 주고 받은 것을 어떻게 처리할지 | `references/review-axes.md` |
 
 ## 검사기를 돌린다

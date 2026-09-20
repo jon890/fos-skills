@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.4.0
+
+`references/render-traps.md` 를 만들어 매체별 렌더링 함정을 받았다.
+`korean-check` 의 `references/markdown-readability.md` 에 있던 것이다.
+이 스킬이 렌더링 미리보기를 소유하므로 그 규칙의 자리가 여기다.
+
+범위 물결표, heredoc escape, 위지윅 style 소실, Dooray 왕복, 백틱 세 개,
+그리고 표 셀 `<br>` 이 옮겨 왔다. 2단계에서 읽는다.
+
 ## 3.3.0
 
 `korean-check` 를 가리키던 참조 셋이 해석되지 않는 형태였다.

@@ -48,10 +48,13 @@ ln -sfn ~/personal/fos-skills/korean-check/scripts/check-readability.py ~/.claud
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.
 
 ```bash
-for f in korean-style writing-structure markdown-readability; do
+for f in korean-style writing-structure; do
   ln -sfn ~/personal/fos-skills/korean-check/references/$f.md ~/.claude/rules/$f.md
 done
 ```
+
+**`markdown-readability.md` 는 걸지 않는다.** 어휘와 문장 구성, 독자 구간은 채팅 답변에도
+적용되므로 항상 실려야 하지만, 검사 제외 대상과 훅의 사각은 검사기를 돌릴 때만 쓰인다.
 
 ## 구성
 
@@ -60,7 +63,7 @@ done
 | `SKILL.md` | 목표, 두 층의 구분, 검사기 실행법, 훅에 거는 방법 |
 | `references/korean-style.md` | 어휘 매핑 표, 문장 구성, 출력 직전 점검, 용어를 옮기지 않는 기준 |
 | `references/writing-structure.md` | 독자 구간, 분량 구간, 목록과 표로 나누는 방식, 내용 점검 |
-| `references/markdown-readability.md` | 렌더링 함정, 자동 검사가 잡는 것과 잡지 못하는 것 |
+| `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
 | `references/review-axes.md` | 검토자에게 무엇을 주고 무엇을 받는가, 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
 | `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어와 인라인 `+` 연결을 찾는다. 훅 모드를 갖는다 |

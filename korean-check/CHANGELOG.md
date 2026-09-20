@@ -3,6 +3,20 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.9.0
+
+`references/markdown-readability.md` 에 성격이 다른 둘이 섞여 있었다.
+매체마다 다르게 렌더되는 함정과, 검사기가 무엇을 건너뛰고 훅이 언제 돌지 않는지다.
+
+앞의 것을 `content-preview` 의 `references/render-traps.md` 로 옮겼다.
+그 스킬이 렌더링 미리보기를 소유하므로 그 규칙이 거기 있는 것이 맞다.
+표 셀 `<br>` 한 줄도 함께 옮겼다. 양쪽에 포인터만 두고 내용은 복제하지 않았다.
+
+`~/.claude/rules/markdown-readability.md` 심링크도 제거했다.
+이 파일의 내용은 외부에 게시할 때만 쓰여 매 세션 전역 지침으로 실릴 이유가 없다.
+`korean-style.md` 와 `writing-structure.md` 는 채팅 답변에도 적용돼야 해서 그대로 둔다.
+`README.md` 의 설치 블록에서도 이 파일을 뺐다. 그대로 두면 다음 설치가 심링크를 되살린다.
+
 ## 1.8.0
 
 `SKILL.md` 와 `references/markdown-readability.md` 에 같은 문장이 셋 있었다.

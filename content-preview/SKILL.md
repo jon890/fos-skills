@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.3.0"
+  version: "3.4.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -30,7 +30,7 @@ description: |
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
 | 1 | 수신자와 문체 | 누가 읽는지 정했고, 개인 문체 참조가 있으면 본문을 쓰기 전에 읽었다 | `references/persona.md` |
-| 2 | 본문 작성 | 본문 파일의 첫 줄이 새 내용이다 | |
+| 2 | 본문 작성 | 본문 파일의 첫 줄이 새 내용이다 | `references/render-traps.md` |
 | 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.sh` |
 | 4 | 검토 | 검토 축의 통과 조건 셋을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다 | `scripts/show-preview.sh` |
@@ -68,6 +68,9 @@ head -3 "$SP/body.md"
 ```
 
 **첫 줄을 확인해 갱신됐는지 본다.** 이것이 이 단계의 통과 조건이다.
+
+매체마다 다르게 렌더되는 함정은 [`references/render-traps.md`](references/render-traps.md) 가 소유한다.
+표기와 문장 구성의 판정 기준은 `korean-check` 가 소유한다.
 
 ### 3. 표기 검사
 

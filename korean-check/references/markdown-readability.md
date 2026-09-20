@@ -1,7 +1,10 @@
-# 마크다운과 렌더링
+# 검사에서 제외하는 것과 훅이 놓치는 것
 
-렌더링 엔진과 편집기가 정하는 규칙을 둔다.
-같은 문장이 Dooray, GitHub, 위지윅에서 다르게 보이는 지점만 다룬다.
+검사기가 무엇을 보고 무엇을 건너뛰는지, 훅이 언제 돌지 않는지를 둔다.
+
+매체마다 다르게 렌더되는 함정은
+[`../../content-preview/references/render-traps.md`](../../content-preview/references/render-traps.md) 가 소유한다.
+그 스킬이 렌더링 미리보기를 가진다.
 
 ## 규칙 층
 
@@ -9,12 +12,12 @@
 | --- | --- | --- |
 | `references/korean-style.md` | 어휘와 문장 구성 | 바뀌지 않음 |
 | `references/writing-structure.md` | 분량과 정보량이 정하는 구조 | 글이 길어지면 |
-| `references/markdown-readability.md` | 렌더링과 편집기 함정 | 매체가 달라지면 |
+| `references/markdown-readability.md` | 검사 제외 대상과 훅의 사각 | 검사기가 바뀌면 |
+| [`../../content-preview/references/render-traps.md`](../../content-preview/references/render-traps.md) | 매체별 렌더링 함정 | 매체가 달라지면 |
 | [`../../content-preview/references/persona.md`](../../content-preview/references/persona.md) | 개인 습관 | 사람마다 |
 
 ## 표기
 
-- 표 셀에 정보가 많으면 `<br>`로 분리한다. 셀 안 줄바꿈이 먹히지 않는 렌더러가 있다.
 - 검사에서 제외하는 것은 검사기마다 다르다. 아래 표가 그것을 정한다.
   - 코드 블록은 목록 안에 들여쓴 것도 포함한다.
   - frontmatter 를 제외하는 이유는 `triggers` 다. 금지어를 다루는 문서는 그 낱말을 검색 식별자로 가져야 찾힌다.
@@ -26,16 +29,6 @@
 | 제목 | 검사한다 | 검사한다. `DASH` 와 `NEST` 와 `SECT` 가 걸린다 |
 | 마크다운 링크 | 링크 텍스트는 검사하고 URL 만 제외 | 링크 전체를 제외 |
 - 산술식은 제외 대상이 아니다. `GPU 수 × (A + B)` 처럼 코드 스팬으로 감싼다.
-
-## 렌더링 함정
-
-| 패턴 | 문제 | 대응 |
-| --- | --- | --- |
-| 범위 표기의 `~` | 같은 단락의 물결표가 취소선으로 해석될 수 있음 | `부터`, `까지`, `-` 또는 `\~` 사용 |
-| quoted heredoc 안의 불필요한 escape | 역슬래시가 본문에 그대로 남음 | 본문 파일을 만들고 `--body-file`로 전달 |
-| 위지윅 편집기에 붙여넣기 | `<style>` 태그와 `class` 가 사라짐 | 인라인 `style` 만 쓰고 렌더링된 화면에서 복사 |
-| Dooray 본문을 CLI 로 읽어 다시 등록 | `<mark>` 가 백틱 세 개로 내려와 코드 표기로 바뀜 | 왕복하지 말고, 렌더 판정은 원본 페이지의 DOM 으로 한다 |
-| 강조하려고 세 백틱을 감싼 문장 | 코드 블록으로 렌더돼 산문이 코드로 보임 | `<mark>` 를 쓴다 |
 
 ## 자동 검사
 
