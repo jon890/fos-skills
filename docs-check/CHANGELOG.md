@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.5.0
+
+1단계가 「`planning` 이 규약을 소유한다」 고 적고도 문서 다섯 표를 그대로 복제하고 있었다.
+이미 갈려서, `planning` 쪽 flow.md 행에는 「mermaid 로 그린다」 가 있고 사본에는 없었다.
+표를 지우고 소유자 링크만 남겼다.
+
 ## 2.4.0
 
 2단계의 `static_check.py` 호출을 스킬 번들 절대 경로로 바꿨다.

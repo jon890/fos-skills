@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.3.0
+
+`korean-check` 를 가리키던 참조 셋이 해석되지 않는 형태였다.
+`harness-cleanup` 의 참조 검사가 이 저장소에서 깨진 참조로 잡았다.
+스킬 사이를 건너는 상대 링크로 바꿔 워크트리와 `~/.claude/skills` 심링크 배치 양쪽에서 열린다.
+
+훅이 놓치는 파일을 설명하던 두 줄은 `korean-check` 가 소유하므로 참조로 줄였다.
+`references/persona.md` 의 읽는 시점 재진술도 지웠다. `SKILL.md` 1단계가 소유한다.
+
 ## 3.2.0
 
 스크립트 호출을 스킬 번들 절대 경로로 바꿨다.

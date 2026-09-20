@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.2.0"
+  version: "3.3.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -32,7 +32,7 @@ description: |
 | 1 | 수신자와 문체 | 누가 읽는지 정했고, 개인 문체 참조가 있으면 본문을 쓰기 전에 읽었다 | `references/persona.md` |
 | 2 | 본문 작성 | 본문 파일의 첫 줄이 새 내용이다 | |
 | 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.sh` |
-| 4 | 검토 | `review-axes.md` 의 통과 조건 셋을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | `korean-check` 의 `references/review-axes.md` |
+| 4 | 검토 | 검토 축의 통과 조건 셋을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다 | `scripts/show-preview.sh` |
 | 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다 | |
 
@@ -86,8 +86,9 @@ bash "$SKILL_DIR/scripts/style-check.sh" "$SP/body.md"
 | 2 | 검사기가 돌지 못한 것이다. stderr 가 원인을 말한다. 사용자에게 알리고 그것을 먼저 해소한다 |
 
 **만든 방법과 무관하게 이 자리에서 직접 돌린다.**
-편집 훅은 편집 도구로 만든 파일만 검사한다.
-Bash 의 heredoc 이나 `sed` 로 만든 본문은 훅이 돌지 않아 위반이 그대로 나간다 (실측).
+편집 훅이 어떤 파일을 놓치는지는
+[`../korean-check/references/markdown-readability.md`](../korean-check/references/markdown-readability.md) 의
+「훅이 잡지 못하는 것」 이 소유한다.
 
 제목도 함께 검사한다. 제목은 파일이 아니라 인자로 나가 훅을 거치지 않는다.
 
@@ -101,7 +102,8 @@ bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 읽기 전용 검토 역할이 있으면 그것에 맡기고, 없으면 사용자에게 검토를 청한다.
 
 검토자에게 무엇을 주고 받은 것을 어떻게 처리하는지는
-`korean-check` 의 `references/review-axes.md` 가 소유한다. 그 파일을 읽고 수행한다.
+[`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) 가 소유한다.
+그 파일을 읽고 수행한다.
 경로는 3단계의 스크립트가 알려준다.
 
 ```bash
@@ -115,7 +117,7 @@ bash "$SKILL_DIR/scripts/style-check.sh" --where
 
 **짧은 글은 이 단계를 건너뛴다.** 댓글 한 줄에 검토자를 띄우는 것은 과하다.
 긴 문서와 정형 양식만 수행한다.
-분량 구간의 판정 기준은 `korean-check` 의 `references/writing-structure.md` 가 소유한다.
+분량 구간의 판정 기준은 [`../korean-check/references/writing-structure.md`](../korean-check/references/writing-structure.md) 가 소유한다.
 
 건너뛰었으면 등록 단계의 보고에 그 사실을 한 줄로 적는다.
 

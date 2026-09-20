@@ -10,7 +10,7 @@
 | `references/korean-style.md` | 어휘와 문장 구성 | 바뀌지 않음 |
 | `references/writing-structure.md` | 분량과 정보량이 정하는 구조 | 글이 길어지면 |
 | `references/markdown-readability.md` | 렌더링과 편집기 함정 | 매체가 달라지면 |
-| `content-preview` 의 `references/persona.md` | 개인 습관 | 사람마다 |
+| [`../../content-preview/references/persona.md`](../../content-preview/references/persona.md) | 개인 습관 | 사람마다 |
 
 ## 표기
 
