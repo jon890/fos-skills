@@ -185,8 +185,8 @@ BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
 지정을 빠뜨린 호출이 출력에서 눈에 띈다.
 
 ```
-프로필: Default (BiFOS) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal
-경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / 병태)
+프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal
+경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / <회사 프로필 이름>)
 ```
 
 `doctor` 도 같은 판정을 한 줄 낸다. 돌리기 전에 어디로 갈지 여기서 본다.
