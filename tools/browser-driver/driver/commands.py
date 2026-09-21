@@ -61,9 +61,10 @@ COMMANDS = [
     Command("close", ["<handle>"], "탭을 닫는다"),
     Command("pages", ["[profile]"],
             "그 프로필의 공간에 열려 있는 탭을 핸들과 함께 낸다",
-            returns="`<핸들>\t<주소>` 한 줄씩. 열린 탭이 없으면 아무것도 내지 않는다",
+            returns="`<핸들><TAB><openedBy><TAB><주소>` 한 줄씩. 열린 탭이 없으면 아무것도 내지 않는다",
             note="핸들은 open 이 내는 것과 같은 형식이라 close, nav, js 에 그대로 넘긴다.\n"
-                 "page 수가 한도에 차서 open 이 막히면 이것으로 무엇을 닫을지 고른다"),
+                 "page 수가 한도에 차서 open 이 막히면 이것으로 무엇을 닫을지 고른다.\n"
+                 "openedBy 가 agent 인 줄이 reset 이 닫을 대상이다"),
     Command("reset", ["[profile]"],
             "그 공간에서 에이전트가 연 탭을 전부 닫는다",
             returns="닫은 탭을 `<핸들>\t<주소>` 한 줄씩. 닫지 못한 탭은 이유를 한 칸 더 붙인다",

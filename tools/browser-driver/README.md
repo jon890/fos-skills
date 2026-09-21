@@ -110,7 +110,7 @@ $B doctor
   규칙으로 고른다.
 
   ```sh
-  $B pages Default          # 29:p2<TAB>https://...
+  $B pages Default          # 29:p2<TAB>agent<TAB>https://...
   $B close 29:p2            # 골라 닫는다
   $B reset Default          # 에이전트가 연 것을 한 번에 닫는다
   ```

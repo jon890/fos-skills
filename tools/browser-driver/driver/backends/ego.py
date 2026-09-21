@@ -315,11 +315,14 @@ class EgoBackend(Backend):
             # 핸들은 open 만 냈다. budget 이 차면 open 이 막히므로 그때 닫을 것을
             # 고를 길이 없었다. 여기서 같은 형식의 핸들을 내 close, nav, js 에 그대로 쓴다.
             # url 은 tabs() 가 필드로 실어 주므로 멈춘 page 도 걸리지 않는다.
+            # openedBy 를 함께 내, reset 이 무엇을 닫을지 실행 전에 이 목록으로 본다.
             out = self._run(
                 self._space_js(self._want(args), create=False)
                 + "const out = [];\n"
                 "if (task) for (const t of await task.tabs()) {\n"
-                "  if (t.label) out.push(task.spaceId + ':' + t.label + '\\t' + (t.url || ''));\n"
+                "  if (!t.label) continue;\n"
+                "  out.push(task.spaceId + ':' + t.label + '\\t' + (t.openedBy || 'unknown')\n"
+                "    + '\\t' + (t.url || ''));\n"
                 "}\n"
                 "__out(out.join('\\n'));\n"
             ).rstrip("\n")
