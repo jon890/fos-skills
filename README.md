@@ -12,7 +12,6 @@
 
 | 스킬 | 목표 |
 | --- | --- |
-| [`build-to-learn`](build-to-learn/README.md) | 회사에서 해볼 수 없는 경험을 모의로 훈련하는 학습을 함께 진행한다 |
 | [`build-with-teams`](build-with-teams/README.md) | planning 이 만든 task 를 읽어 plan 하나를 구현까지 끝낸다 |
 | [`content-preview`](content-preview/README.md) | 외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다 |
 | [`docs-check`](docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다 |
