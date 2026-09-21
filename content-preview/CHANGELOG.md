@@ -3,6 +3,33 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.4.0
+
+`references/render-traps.md` 를 만들어 매체별 렌더링 함정을 받았다.
+`korean-check` 의 `references/markdown-readability.md` 에 있던 것이다.
+이 스킬이 렌더링 미리보기를 소유하므로 그 규칙의 자리가 여기다.
+
+범위 물결표, heredoc escape, 위지윅 style 소실, Dooray 왕복, 백틱 세 개,
+그리고 표 셀 `<br>` 이 옮겨 왔다. 2단계에서 읽는다.
+
+## 3.3.0
+
+`korean-check` 를 가리키던 참조 셋이 해석되지 않는 형태였다.
+`harness-cleanup` 의 참조 검사가 이 저장소에서 깨진 참조로 잡았다.
+스킬 사이를 건너는 상대 링크로 바꿔 워크트리와 `~/.claude/skills` 심링크 배치 양쪽에서 열린다.
+
+훅이 놓치는 파일을 설명하던 두 줄은 `korean-check` 가 소유하므로 참조로 줄였다.
+`references/persona.md` 의 읽는 시점 재진술도 지웠다. `SKILL.md` 1단계가 소유한다.
+
+## 3.2.0
+
+스크립트 호출을 스킬 번들 절대 경로로 바꿨다.
+`scripts/style-check.sh` 와 두 생성기, `scripts/show-preview.sh` 를 상대 경로로 적고 있어
+저장소 루트에서 그대로 부르면 종료 코드 127 로 죽는다.
+
+`planning` 이 쓰던 `$SKILL_DIR` 과 `# cwd:` 주석 형태로 통일했다.
+제목과 저장소 이름의 꺾쇠 플레이스홀더도 셸 변수로 바꿨다.
+
 ## 3.1.0
 
 미리보기가 쓸 브라우저 백엔드를 정할 자리를 만들었다.

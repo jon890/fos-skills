@@ -1,10 +1,10 @@
 ---
 name: korean-check
 metadata:
-  version: "1.6.0"
+  version: "1.9.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
-  어휘와 문장 구성, 분량과 구조, 렌더링 함정의 판정 기준과 검사기를 이 스킬이 소유한다.
+  어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
   파일, PR 본문, 커밋 메시지, 업무와 위키, 게시글, 아티팩트, 채팅 답변이 모두 대상이다.
   판정 기준을 이 스킬이 소유하므로 다른 스킬은 여기를 가리킨다.
 ---
@@ -17,7 +17,7 @@ description: |
 
 | 층 | 무엇 | 판정 수단 | 축의 소유자 |
 | --- | --- | --- | --- |
-| 검사기 | 매핑 표의 금지어와 렌더링 함정 | 종료 코드 | `references/markdown-readability.md` 의 「자동 검사」 |
+| 검사기 | 매핑 표의 금지어와 괄호 중첩, 범위 물결표, 엠대시 | 종료 코드 | `references/markdown-readability.md` 의 「자동 검사」 |
 | 검토 | 검사기가 판정하지 못하는 것 | 발견 목록 | `references/review-axes.md` 의 「축」 |
 
 **판정 기준과 검사기를 한 자리에 둔다.** `scripts/korean-style-check.py` 가
@@ -30,25 +30,28 @@ description: |
 | --- | --- |
 | 어떤 낱말을 쓸지, 문장을 어떻게 맺을지 | `references/korean-style.md` |
 | 헤더와 표를 쓸지, 밖으로 나가는 글인지 | `references/writing-structure.md` |
-| 이 매체에서 어떻게 렌더될지 | `references/markdown-readability.md` |
+| 검사기가 무엇을 건너뛰는지, 훅이 언제 돌지 않는지 | `references/markdown-readability.md` |
+| 이 매체에서 어떻게 렌더될지 | [`../content-preview/references/render-traps.md`](../content-preview/references/render-traps.md) |
 | 검토자에게 무엇을 주고 받은 것을 어떻게 처리할지 | `references/review-axes.md` |
 
 ## 검사기를 돌린다
 
+`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$FILE` 은 검사할 `.md` 파일이다.
+**스크립트는 스킬 번들에 있고 cwd 는 어디든 된다.** 상대 경로로 부르면 검사 대상 저장소에서 찾지 못한다.
+
 ```bash
-scripts/check.sh <파일.md> [<파일.md>...]
-scripts/check.sh --text "<제목이나 커밋 메시지>"
+# cwd: 아무 곳
+bash "$SKILL_DIR/scripts/check.sh" "$FILE"
+bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 ```
 
+파일은 여러 개를 이어 줄 수 있다. `--where` 는 이 스킬 번들 경로를 낸다.
 `check.sh` 가 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다.
 종료 코드 규약과 인자는 그 스크립트의 머리말이 소유한다.
 
 **만든 방법과 무관하게 파일 경로로 직접 돌린다.**
-편집 훅은 편집 도구로 만든 파일만 검사한다.
-Bash 의 heredoc 이나 `sed` 로 만든 파일은 훅이 돌지 않아 위반이 그대로 나간다 (실측).
-
-**검사와 등록을 한 명령에 묶지 않는다.** 앞의 검사가 실패해도 뒤의 등록이 그대로 돌아,
-이미 올라간 뒤에 위반을 알게 된다. 실측으로 그렇게 등록된 PR 이 있다.
+훅이 어떤 파일을 놓치는지와 검사를 등록과 묶으면 무엇이 일어나는지는
+`references/markdown-readability.md` 의 「훅이 잡지 못하는 것」 이 소유한다.
 
 파일이 아닌 것은 `--text` 로 검사한다. 업무와 위키 제목, PR 과 이슈 제목, 커밋 메시지가 그 경로로 들어온다.
 
@@ -81,6 +84,4 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 ```
 
 두 검사기를 그 경로에 심링크로 걸어 두면 스킬을 고칠 때 훅 설정을 다시 손대지 않는다.
-설치 방법은 `README.md` 가 소유한다.
-
-훅 모드는 위반이 있어도 0 으로 끝난다. 편집을 막지 않고 결과만 알린다.
+설치 방법은 `README.md` 가, 훅 모드의 동작은 `references/markdown-readability.md` 가 소유한다.

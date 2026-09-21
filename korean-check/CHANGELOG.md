@@ -3,6 +3,39 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.9.0
+
+`references/markdown-readability.md` 에 성격이 다른 둘이 섞여 있었다.
+매체마다 다르게 렌더되는 함정과, 검사기가 무엇을 건너뛰고 훅이 언제 돌지 않는지다.
+
+앞의 것을 `content-preview` 의 `references/render-traps.md` 로 옮겼다.
+그 스킬이 렌더링 미리보기를 소유하므로 그 규칙이 거기 있는 것이 맞다.
+표 셀 `<br>` 한 줄도 함께 옮겼다. 양쪽에 포인터만 두고 내용은 복제하지 않았다.
+
+`~/.claude/rules/markdown-readability.md` 심링크도 제거했다.
+이 파일의 내용은 외부에 게시할 때만 쓰여 매 세션 전역 지침으로 실릴 이유가 없다.
+`korean-style.md` 와 `writing-structure.md` 는 채팅 답변에도 적용돼야 해서 그대로 둔다.
+`README.md` 의 설치 블록에서도 이 파일을 뺐다. 그대로 두면 다음 설치가 심링크를 되살린다.
+
+## 1.8.0
+
+`SKILL.md` 와 `references/markdown-readability.md` 에 같은 문장이 셋 있었다.
+훅이 놓치는 파일, 검사와 등록을 묶지 않는 이유, 훅 모드가 0 으로 끝나는 것이다.
+`SKILL.md` 의 층 표가 이미 「검사기 축의 소유자」 로 그 참조를 지목하고 있어
+세 자리를 참조로 줄이고 본문은 소유자 쪽에 남겼다.
+
+`content-preview` 를 가리키던 표의 경로도 해석되는 상대 링크로 바꿨다.
+
+## 1.7.0
+
+검사기 호출을 스킬 번들 절대 경로로 바꿨다.
+`SKILL.md` 와 `references/markdown-readability.md` 가 `scripts/check.sh` 를 상대 경로로 적고
+어느 디렉터리를 전제하는지는 적지 않았다.
+검사 대상 저장소 루트에서 그대로 부르면 종료 코드 127 로 죽는다.
+
+`planning` 이 쓰던 `$SKILL_DIR` 과 `# cwd:` 주석 형태로 통일했다.
+플레이스홀더도 셸 변수로 바꿨다. 꺾쇠 플레이스홀더는 셸이 입력 리다이렉션으로 읽어 실행 전에 죽는다.
+
 ## 1.6.0
 
 제목을 금지어 검사 대상에 넣고, 매핑 표의 `가르다` 계열 등록 형태를 다시 잡았다.

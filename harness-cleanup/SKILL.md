@@ -7,7 +7,7 @@ description: |
   일반 hook 설정 추가, 제품 문서 수정과 보통 코드 수정은 대상이 아니다.
   일반 제품 문서가 코드와 맞는지는 `docs-check` 가 맡는다.
 metadata:
-  version: "3.6.0"
+  version: "3.9.1"
 ---
 
 # harness-cleanup
@@ -74,8 +74,12 @@ metadata:
 **사용자가 스킬 하나나 디렉터리 하나만 감사해 달라고 하면 `--scope` 로 좁힌다.**
 좁히지 않으면 다른 스킬의 오버레이가 걸려 종료 코드 1 이 나고, 대상이 아닌 자리를 손으로 골라내야 한다.
 
+`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$ROOT` 는 감사 대상 저장소 루트다.
+**스크립트는 스킬 번들에 있고 감사 대상은 다른 저장소다.** 둘을 같은 경로로 두면 파일을 찾지 못한다.
+
 ```bash
-python3 scripts/collect_targets.py <repo-root> --scope .claude/skills/<이름>
+# cwd: 아무 곳
+python3 "$SKILL_DIR/scripts/collect_targets.py" "$ROOT" --scope "$SCOPE"
 ```
 
 범위는 저장소 루트 밑의 디렉터리나 파일 경로다.
@@ -88,15 +92,16 @@ python3 scripts/collect_targets.py <repo-root> --scope .claude/skills/<이름>
 ### 2. 실측
 
 ```bash
-python3 scripts/collect_targets.py <repo-root>
-python3 scripts/check_references.py <repo-root>
-python3 scripts/check_facts.py <repo-root>
-python3 scripts/check_duplication.py <repo-root>
-python3 scripts/check_rename_drift.py <repo-root>
+# cwd: 아무 곳. $BASE 는 check_rename_drift 의 기준 커밋이다
+python3 "$SKILL_DIR/scripts/collect_targets.py" "$ROOT"
+python3 "$SKILL_DIR/scripts/check_references.py" "$ROOT"
+python3 "$SKILL_DIR/scripts/check_facts.py" "$ROOT"
+python3 "$SKILL_DIR/scripts/check_duplication.py" "$ROOT" 5
+python3 "$SKILL_DIR/scripts/check_rename_drift.py" "$ROOT" "$BASE"
 ```
 
-1단계에서 범위를 정했으면 다섯 모두에 `--scope <경로>` 를 붙인다.
-`check_duplication.py` 는 최소 연속 줄 수를 위치 인자로 받으므로 `<repo-root> 5 --scope <경로>` 처럼 적는다.
+1단계에서 범위를 정했으면 위 다섯 모두에 `--scope "$SCOPE"` 를 붙인다.
+`check_duplication.py` 는 최소 연속 줄 수를 위치 인자로 받으므로 `"$ROOT" 5 --scope "$SCOPE"` 순서로 적는다.
 
 맡길 수 있으면 이 절을 하위 에이전트에게 넘기고 종료 코드와 걸린 자리를 회신받는다.
 
@@ -110,33 +115,27 @@ python3 scripts/check_rename_drift.py <repo-root>
 | 1 | 위반 있음 |
 | 2 | 검사가 돌지 못함 |
 
+**이 셋을 모든 검사에 그대로 적용하지 않는다.** 스크립트마다 낼 수 있는 코드가 다르다 (실측).
+
+| 스크립트 | 내는 코드 | 읽는 법 |
+| --- | --- | --- |
+| `collect_targets.py` | 0, 2 | 대상 파일 수로 판정한다 |
+| `check_references.py` | 0, 1, 2 | 위 표대로다 |
+| `check_facts.py` | 0, 2 | **1 을 내지 않는다.** 발견을 출력하면서 0 으로 끝나므로 출력으로 판정한다 |
+| `check_duplication.py` | 0, 1, 2 | 위 표대로다 |
+| `check_rename_drift.py` | 0, 1, 2 | 기준 커밋 대비 바뀐 `SKILL.md` 가 없으면 2 다. 검사 실패가 아니다 |
+| `run_doc_snippets.py` | 0, 2, 3 | 블록을 찾지 못하면 3 이다. 블록이 죽어도 0 이므로 출력으로 판정한다 |
+
 - **대상 파일 수가 0이면 통과가 아니다.**
 - 깨진 참조와 중복 0건은 정적 검사가 찾지 못했다는 뜻일 뿐 의미 검사의 통과가 아니다.
-- 고정 개수, 옵션과 파일 목록은 실제 코드, `--help` 와 설정에 대조한다.
-- **문서의 실행 가능한 블록을 전부 `scripts/run_doc_snippets.py <파일>` 로 돌린다.** 검출 명령만이 아니다.
-  머리말을 생략하면 그 파일의 블록을 전부 돌고, 머리말을 주면 그 뒤 첫 블록 하나만 돈다.
-  검출 명령은 실제 입력과 대조 표본으로 검사하고, 상대경로가 어느 디렉터리를 전제하는지 함께 본다.
-  **이 스크립트만 출력으로 판정한다.** 블록에 문법 오류가 있어도 종료 코드가 0 이다 (실측).
-  **이 스크립트는 블록을 그대로 실행하고 안전장치가 없다.** 감사 대상 문서에 `git push`,
-  `gh pr create`, `gh release create`, `nhncloud configure` 같은 명령이 들어 있으면 그대로 실행된다.
-  **블록을 먼저 읽고 무엇이 도는지 확인한 뒤에 돌린다.** 이것이 유일한 안전장치다.
-  이 스크립트는 블록 단위로만 돌아 줄 하나를 빼고 돌릴 수단이 없다.
-  머리말을 주어 블록 하나만 고르는 것이 범위를 좁히는 유일한 방법이다.
-
-  | 대상 | 저장소 밖 디렉터리에서 돌리면 |
-  | --- | --- |
-  | `git`, 그리고 저장소를 현재 디렉터리로 추론하는 `gh` | 닿지 않는다 (실측) |
-  | `--repo` 나 `GH_REPO` 로 저장소를 명시한 `gh` | 그대로 닿는다 |
-  | 블록 안에서 `cd` 나 `git -C` 로 경로를 정하는 것 | 그대로 닿는다 |
-  | `nhncloud configure` 처럼 사용자 설정을 바꾸는 명령 | 그대로 실행된다 |
-
-  닿는 것이 있으면 그 블록은 돌리지 말고 읽어서 판정한다.
-
-  **저장소 밖에서 돌리면 블록 안의 상대경로가 풀리지 않는다.**
-  이 스크립트는 부르는 셸의 디렉터리를 그대로 물려주므로,
-  `python3 scripts/xxx.py` 같은 블록은 파일을 찾지 못해 실패한다.
-  위에서 요구한 「상대경로가 어느 디렉터리를 전제하는지」 는 그 상태로 확인할 수 없다.
-  경로를 보는 것과 위험한 명령을 피하는 것은 한 번에 되지 않으므로 나눠 돌린다.
+- 고정 개수, 옵션과 파일 목록은 실제 코드와 설정에 대조한다.
+  `--help` 는 argparse 를 쓰는 스크립트에서만 인자 목록을 낸다.
+  쓰지 않는 스크립트는 `--help` 를 위치 인자로 먹는다.
+  이 스킬의 `check_references.py` 는 그것을 저장소 경로로 읽어 「깨진 참조 0건」 을 내고 0 으로 끝난다 (실측).
+  그런 스크립트는 파일 머리말의 docstring 이 사용법을 소유한다.
+- **문서의 실행 가능한 블록을 전부 돌린다.** 검출 명령만이 아니다.
+  블록을 그대로 실행하는 스크립트라 먼저 읽고 무엇이 도는지 확인한다.
+  절차와 안전 조건은 [`references/run-doc-snippets.md`](references/run-doc-snippets.md) 가 소유한다.
 - 스킬을 수정할 가능성이 있으면 변경 전 평가 명령이 있는지 확인하고 기준값을 기록한다.
 
 ### 3. 의미 감사
