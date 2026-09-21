@@ -4,7 +4,13 @@
     "orca": "Orca 내장 브라우저. 앱 로그인 세션을 그대로 쓰므로 SSO 가 필요한 사내 시스템에 적합하다.",
     "agent-browser": "agent-browser CLI. 스스로 브라우저를 띄운다. SSO 가 필요하면 로그인된 Chrome 의 cdpPort 를 함께 적는다.",
     "cmux": "cmux 내장 브라우저. cmux 터미널 안에서 에이전트를 돌릴 때 쓴다. 밖에서 부르면 소켓 접근이 거부된다.",
-    "ego": "ego-browser. 사용자가 로그인해 둔 프로필의 세션을 그대로 쓴다. 쓸 프로필은 BROWSER_EGO_PROFILE 로 정한다."
+    "ego": "ego-browser. 사용자가 로그인해 둔 프로필의 세션을 그대로 쓴다. 쓸 프로필은 BROWSER_EGO_PROFILE 이나 BROWSER_EGO_PURPOSE 로 정한다."
+  },
+  "_egoProfiles": "ego 백엔드가 쓸 프로필을 용도 이름으로 고르게 한다. 프로필 id 는 머신마다 다르므로 호출자는 용도만 적는다. BROWSER_EGO_PURPOSE 가 키를 고르고, 없으면 default 를 쓴다. 이 키가 아예 없으면 ego 의 기본 프로필로 돌고 open 이 경고를 낸다. 값은 프로필 id 나 이름을 받는다.",
+  "egoProfiles": {
+    "default": "Profile 2",
+    "work": "Profile 2",
+    "personal": "Default"
   },
   "_previewDriver": "사람이 읽을 화면을 띄우는 쪽이 쓸 백엔드. content-preview 의 show-preview.sh 가 읽는다. 비우면 driver 와 자동 감지를 따른다.",
   "driver": "orca",

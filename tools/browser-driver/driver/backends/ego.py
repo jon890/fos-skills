@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-from ..config import READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT
+from ..config import READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT, config_value
 from ..errors import DriverError, UsageError
 from ..shell import js_value, run
 from .base import Backend
@@ -15,8 +15,18 @@ from .base import Backend
 SPACE_PREFIX = "browser-driver"
 
 #: 쓸 프로필을 정하는 환경변수. 프로필 id 와 이름을 모두 받는다.
-#: 비어 있으면 ego 의 기본 프로필을 쓴다.
+#: 비어 있으면 아래 해석 순서의 다음 자리로 넘어간다.
 PROFILE_ENV = "BROWSER_EGO_PROFILE"
+
+#: 용도로 프로필을 고르는 환경변수. 설정의 `egoProfiles` 에서 키를 찾는다.
+#: 프로필 id 는 머신마다 다르므로 호출자가 그것을 몰라도 되게 하는 자리다.
+PURPOSE_ENV = "BROWSER_EGO_PURPOSE"
+
+#: 용도 이름과 프로필을 잇는 설정 키. `{"work": "Profile 2", "personal": "Default"}` 모양이다.
+PROFILES_KEY = "egoProfiles"
+
+#: 용도를 고르지 않았을 때 `egoProfiles` 에서 찾는 키.
+DEFAULT_PURPOSE = "default"
 
 #: 아직 아무 곳도 열지 않은 페이지의 주소. 새 공간은 p1 을 이 상태로 들고 시작한다 (실측).
 #: open 은 이 주소를 `task.tabs()` 가 실어 주는 url 필드로 본다.
@@ -24,6 +34,45 @@ BLANK_URLS = ("about:blank", "chrome://new-tab-page/")
 
 #: 반환값을 다른 출력과 나누는 표식. ego 는 업데이트 알림 같은 줄을 같은 stdout 에 섞는다.
 MARKER = "<<<browser-driver-result>>>"
+
+
+def resolve_profile():
+    """쓸 프로필과 그것을 정한 자리를 함께 돌려준다.
+
+    `(프로필, 출처)` 둘을 낸다. 넷을 이 순서로 본다.
+
+    1. `BROWSER_EGO_PROFILE` — 프로필 id 나 이름을 직접 준다
+    2. `BROWSER_EGO_PURPOSE` — 설정의 `egoProfiles` 에서 그 키를 찾는다
+    3. 설정의 `egoProfiles.default`
+    4. 셋 다 없으면 `("", None)`. 이 경우에만 ego 의 `isDefault` 로 떨어진다
+
+    출처가 None 이라는 것은 호출자가 프로필을 정하지 않았다는 뜻이다. 부르는 쪽이
+    그때만 경고를 낸다. 이 머신의 `isDefault` 는 회사 계정이라, 정하지 않은 호출이
+    개인 작업까지 회사 프로필에서 돌게 된다 (실측).
+    """
+    direct = os.environ.get(PROFILE_ENV)
+    if direct:
+        return direct, f"{PROFILE_ENV}={direct}"
+
+    table = config_value(PROFILES_KEY) or {}
+    if not isinstance(table, dict):
+        raise UsageError(f"설정의 {PROFILES_KEY} 는 용도와 프로필을 잇는 객체여야 한다")
+
+    purpose = os.environ.get(PURPOSE_ENV)
+    if purpose:
+        value = table.get(purpose)
+        if not value:
+            known = ", ".join(sorted(table)) or "(설정에 egoProfiles 가 없다)"
+            raise UsageError(
+                f"{PURPOSE_ENV}={purpose} 에 해당하는 프로필이 설정에 없다. "
+                f"쓸 수 있는 용도: {known}")
+        return value, f"{PURPOSE_ENV}={purpose} → {PROFILES_KEY}.{purpose}"
+
+    fallback = table.get(DEFAULT_PURPOSE)
+    if fallback:
+        return fallback, f"{PROFILES_KEY}.{DEFAULT_PURPOSE}"
+
+    return "", None
 
 
 class EgoBackend(Backend):
@@ -49,12 +98,21 @@ class EgoBackend(Backend):
                  "shot", "close", "pages", "reset"}
 
     def prepare_note(self):
-        want = os.environ.get(PROFILE_ENV)
-        where = f"'{want}'" if want else "ego 의 기본 프로필 (환경변수가 비어 있다)"
-        return (f"사용자가 로그인해 둔 세션을 그대로 쓴다 (실측). 쓸 프로필은 {where} 다. "
-                f"로그인 세션은 프로필 단위로 갈리므로 개인 작업과 회사 자동화를 나눌 때 "
-                f"{PROFILE_ENV} 로 프로필을 정한다. 탭은 프로필마다 다른 TaskSpace 에 모이고, "
-                "사용자가 그 공간의 제어권을 가져가면 다음 open 이 번호를 붙여 새로 만든다")
+        head = ("사용자가 로그인해 둔 세션을 그대로 쓴다 (실측). 로그인 세션은 프로필 단위로 "
+                f"갈리므로 개인 작업과 회사 자동화를 나눌 때 {PROFILE_ENV} 이나 {PURPOSE_ENV} 로 "
+                "프로필을 정한다. 탭은 프로필마다 다른 TaskSpace 에 모이고, 사용자가 그 공간의 "
+                "제어권을 가져가면 다음 open 이 번호를 붙여 새로 만든다")
+        # 돌리기 전에 어디로 갈지 보이게 한다. 설정과 환경변수를 둘 다 보므로
+        # 사람이 머릿속에서 순서를 되짚지 않아도 된다.
+        try:
+            want, source = resolve_profile()
+        except UsageError as e:
+            return head + f"\n프로필 해석: 정하지 못했다. {e}"
+        if source:
+            return head + f"\n프로필 해석: {want} ({source})"
+        return head + ("\n프로필 해석: 정해진 것이 없어 ego 의 기본 프로필로 돈다. "
+                       f"{PROFILE_ENV} 이나 {PURPOSE_ENV} 로 정하거나 설정에 "
+                       f"{PROFILES_KEY}.{DEFAULT_PURPOSE} 를 둔다")
 
     def _run(self, body):
         """Node 스크립트를 stdin 으로 넘기고 표식 뒤의 반환값만 돌려준다.
@@ -147,8 +205,8 @@ class EgoBackend(Backend):
         )
 
     def _want(self, args):
-        """명령이 받은 프로필 인자를 환경변수보다 앞에 둔다."""
-        return (args[0] if args else "") or os.environ.get(PROFILE_ENV) or ""
+        """명령이 받은 프로필 인자를 해석 순서보다 앞에 둔다."""
+        return (args[0] if args else "") or resolve_profile()[0]
 
     def dispatch(self, cmd, args):
         if cmd == "open":
@@ -156,8 +214,9 @@ class EgoBackend(Backend):
             timeout = int(args[1]) if len(args) > 1 else READY_TIMEOUT_DEFAULT
             # 새 공간은 빈 p1 을 들고 시작하므로, 늘 newPage() 하면 그 p1 이 빈 채로 남는다 (실측).
             # 빈 페이지가 있으면 그것을 쓰고 없을 때만 새로 만든다.
+            want, source = resolve_profile()
             body = (
-                self._space_js(os.environ.get(PROFILE_ENV) or "", create=True)
+                self._space_js(want, create=True)
                 + f"const blank = {json.dumps(list(BLANK_URLS))};\n"
                 # p.url() 은 page.evaluate 를 거치므로 멈춘 page 에서 15초 뒤 던지고,
                 # 그 예외가 open 전체를 끝낸다 (실측). tabs() 는 url 을 필드로 실어 주므로
@@ -177,11 +236,14 @@ class EgoBackend(Backend):
             handle, _, profile = self._run(body).strip().partition("\t")
             if not handle:
                 raise DriverError("ego 가 핸들을 내지 않았다")
-            # 어느 프로필에서 열렸는지 알린다. 지정하지 않으면 기본 프로필에서 돌므로,
-            # 개인 세션과 회사 자동화가 섞이는 것을 여기서 바로 드러낸다.
+            # 어느 프로필에서 열렸는지 알린다. 정한 호출과 정하지 않은 호출의 문구를 갈라,
+            # 지정을 빠뜨린 것이 출력 목록에서 눈에 띄게 한다.
             prof_id, _, prof_name = profile.partition("\t")
-            if prof_id:
-                print(f"프로필: {prof_id} ({prof_name})", file=sys.stderr)
+            if prof_id and source:
+                print(f"프로필: {prof_id} ({prof_name}) — {source}", file=sys.stderr)
+            elif prof_id:
+                print(f"경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 "
+                      f"({prof_id} / {prof_name})", file=sys.stderr)
             return handle
 
         if cmd == "nav":
