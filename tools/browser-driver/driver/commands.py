@@ -67,8 +67,10 @@ COMMANDS = [
                  "openedBy 가 agent 인 줄이 reset 이 닫을 대상이다"),
     Command("reset", ["[profile]"],
             "그 공간에서 에이전트가 연 탭을 전부 닫는다",
-            returns="닫은 탭을 `<핸들>\t<주소>` 한 줄씩. 닫지 못한 탭은 이유를 한 칸 더 붙인다",
-            note="사용자가 연 탭은 남긴다. 공간째 닫지 않으므로 사용자가 보던 화면은 그대로다"),
+            returns="닫은 탭을 `<핸들><TAB><주소>` 한 줄씩. 닫지 못한 탭은 이유를 한 칸 더 붙인다",
+            note="사용자가 직접 연 탭과 ego 가 소유를 판정하지 못한 탭은 남는다.\n"
+                 "에이전트가 열어 사람이 이어서 쓰고 있는 탭은 닫힌다. openedBy 로는 둘을 구분하지 못한다.\n"
+                 "무엇이 닫힐지는 pages 의 openedBy 열로 먼저 본다"),
 ]
 
 COMMAND_MAP = {c.name: c for c in COMMANDS}
