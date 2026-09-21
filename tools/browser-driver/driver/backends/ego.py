@@ -46,7 +46,7 @@ class EgoBackend(Backend):
     name = "ego"
     binary = "ego-browser"
     supported = {"open", "nav", "js", "waitjs", "ready", "url", "snap",
-                 "shot", "close"}
+                 "shot", "close", "pages", "reset"}
 
     def prepare_note(self):
         want = os.environ.get(PROFILE_ENV)
@@ -80,6 +80,13 @@ class EgoBackend(Backend):
                     "사용자가 이 TaskSpace 의 제어권을 가지고 있어 조작이 거절됐다. "
                     "브라우저에서 제어권을 돌려주거나, open 을 다시 불러 새 공간을 만든다.\n"
                     + str(e))
+            # page 수 한도는 살아 있는 page 수로 센다. 닫으면 회복된다 (실측).
+            # 닫지 않으면 open 이 계속 막히므로 회복 방법을 첫 줄에 적는다.
+            if "PageBudget" in str(e):
+                raise DriverError(
+                    "이 공간의 page 수가 한도에 찼다. pages 로 무엇이 열려 있는지 보고 "
+                    "close 로 골라 닫거나, reset 으로 에이전트가 연 page 를 한 번에 닫는다.\n"
+                    + str(e))
             raise
         if MARKER not in out:
             raise DriverError(
@@ -96,46 +103,62 @@ class EgoBackend(Backend):
         return (f"const task = await taskSpace({int(space)});\n"
                 f"const page = task.page({json.dumps(label)});\n")
 
+    def _space_js(self, want, create):
+        """프로필을 고르고 그 프로필의 browser-driver 공간을 잡는 스크립트 앞부분을 만든다.
+
+        끝나면 `prof` 와 `task` 가 정의돼 있다. `create` 가 거짓이면 공간이 없을 때
+        `task` 가 null 로 남는다. 조회와 정리는 공간을 만들 이유가 없기 때문이다.
+        """
+        make = (
+            "if (!task) {\n"
+            "  const taken = new Set(spaces.map((s) => s.name));\n"
+            "  let name = base;\n"
+            "  for (let n = 2; taken.has(name); n += 1) name = base + ' #' + n;\n"
+            "  task = await taskSpace(name, { profileId: prof.id });\n"
+            "}\n"
+        ) if create else ""
+        return (
+            f"const prefix = {json.dumps(SPACE_PREFIX)};\n"
+            f"const want = {json.dumps(want)};\n"
+            # 프로필 id 는 이름과 엇갈려 있다. ego 의 'Default' 가 개인 계정이고
+            # 'Profile 2' 가 회사 계정인 경우를 실측했다. 그래서 id 와 이름을 모두 받는다.
+            "const list = await profiles();\n"
+            "let prof;\n"
+            "if (want) {\n"
+            "  prof = list.find((p) => p.id === want) || list.find((p) => p.name === want);\n"
+            "  if (!prof) throw new Error('프로필을 찾지 못했다: ' + want + '. 쓸 수 있는 것: '\n"
+            "    + list.map((p) => p.id + ' (' + p.name + ')').join(', '));\n"
+            "} else {\n"
+            "  prof = list.find((p) => p.isDefault) || list[0];\n"
+            "}\n"
+            "const base = prefix + '/' + prof.id;\n"
+            "const spaces = await listTaskSpaces();\n"
+            # 이름만으로 잡으면 사용자가 제어권을 가져간 공간에 걸려 그 뒤로 계속 거절된다
+            # (실측). 그래서 에이전트가 가진 공간만 골라 다시 쓰고, 없으면 겹치지 않는
+            # 이름으로 새로 만든다.
+            #
+            # profileId 는 런타임이 알릴 때만 실린다. 실리지 않아도 이름에 프로필 id 가
+            # 들어 있어 공간은 프로필별로 갈린다. 그래서 실렸을 때만 대조한다.
+            "const mine = spaces.find((s) => s.ownership === 'agent'\n"
+            "  && (!s.profileId || s.profileId === prof.id)\n"
+            "  && (s.name === base || s.name.startsWith(base + ' #')));\n"
+            "let task = mine ? await taskSpace(mine.id) : null;\n"
+            + make
+        )
+
+    def _want(self, args):
+        """명령이 받은 프로필 인자를 환경변수보다 앞에 둔다."""
+        return (args[0] if args else "") or os.environ.get(PROFILE_ENV) or ""
+
     def dispatch(self, cmd, args):
         if cmd == "open":
             url = args[0]
             timeout = int(args[1]) if len(args) > 1 else READY_TIMEOUT_DEFAULT
             # 새 공간은 빈 p1 을 들고 시작하므로, 늘 newPage() 하면 그 p1 이 빈 채로 남는다 (실측).
             # 빈 페이지가 있으면 그것을 쓰고 없을 때만 새로 만든다.
-            want = os.environ.get(PROFILE_ENV) or ""
             body = (
-                f"const prefix = {json.dumps(SPACE_PREFIX)};\n"
-                f"const want = {json.dumps(want)};\n"
-                f"const blank = {json.dumps(list(BLANK_URLS))};\n"
-                # 프로필 id 는 이름과 엇갈려 있다. ego 의 'Default' 가 개인 계정이고
-                # 'Profile 2' 가 회사 계정인 경우를 실측했다. 그래서 id 와 이름을 모두 받는다.
-                "const list = await profiles();\n"
-                "let prof;\n"
-                "if (want) {\n"
-                "  prof = list.find((p) => p.id === want) || list.find((p) => p.name === want);\n"
-                "  if (!prof) throw new Error('프로필을 찾지 못했다: ' + want + '. 쓸 수 있는 것: '\n"
-                "    + list.map((p) => p.id + ' (' + p.name + ')').join(', '));\n"
-                "} else {\n"
-                "  prof = list.find((p) => p.isDefault) || list[0];\n"
-                "}\n"
-                "const base = prefix + '/' + prof.id;\n"
-                "const spaces = await listTaskSpaces();\n"
-                # 이름만으로 잡으면 사용자가 제어권을 가져간 공간에 걸려 그 뒤로 계속 거절된다
-                # (실측). 그래서 에이전트가 가진 공간만 골라 다시 쓰고, 없으면 겹치지 않는
-                # 이름으로 새로 만든다.
-                #
-                # profileId 는 런타임이 알릴 때만 실린다. 실리지 않아도 이름에 프로필 id 가
-                # 들어 있어 공간은 프로필별로 갈린다. 그래서 실렸을 때만 대조한다.
-                "const mine = spaces.find((s) => s.ownership === 'agent'\n"
-                "  && (!s.profileId || s.profileId === prof.id)\n"
-                "  && (s.name === base || s.name.startsWith(base + ' #')));\n"
-                "let task;\n"
-                "if (mine) { task = await taskSpace(mine.id); } else {\n"
-                "  const taken = new Set(spaces.map((s) => s.name));\n"
-                "  let name = base;\n"
-                "  for (let n = 2; taken.has(name); n += 1) name = base + ' #' + n;\n"
-                "  task = await taskSpace(name, { profileId: prof.id });\n"
-                "}\n"
+                self._space_js(os.environ.get(PROFILE_ENV) or "", create=True)
+                + f"const blank = {json.dumps(list(BLANK_URLS))};\n"
                 # p.url() 은 page.evaluate 를 거치므로 멈춘 page 에서 15초 뒤 던지고,
                 # 그 예외가 open 전체를 끝낸다 (실측). tabs() 는 url 을 필드로 실어 주므로
                 # evaluate 를 거치지 않는다. 빈 page 재사용은 편의이므로, 훑기가 실패하면
@@ -225,5 +248,36 @@ class EgoBackend(Backend):
             self._run(self._page(args[0]) + "await page.close();\n"
                       + "__out('');\n")
             return None
+
+        if cmd == "pages":
+            # 핸들은 open 만 냈다. budget 이 차면 open 이 막히므로 그때 닫을 것을
+            # 고를 길이 없었다. 여기서 같은 형식의 핸들을 내 close, nav, js 에 그대로 쓴다.
+            # url 은 tabs() 가 필드로 실어 주므로 멈춘 page 도 걸리지 않는다.
+            out = self._run(
+                self._space_js(self._want(args), create=False)
+                + "const out = [];\n"
+                "if (task) for (const t of await task.tabs()) {\n"
+                "  if (t.label) out.push(task.spaceId + ':' + t.label + '\\t' + (t.url || ''));\n"
+                "}\n"
+                "__out(out.join('\\n'));\n"
+            ).rstrip("\n")
+            return out or None
+
+        if cmd == "reset":
+            # 사용자가 연 page 는 남긴다. ego 의 API 문서가 openedBy 가 'unknown' 인 것도
+            # 사용자 소유로 다루라고 정하고 있으므로 'agent' 인 것만 고른다.
+            # 공간째 닫지 않는 것도 같은 이유다. 사용자가 보던 것까지 사라진다.
+            out = self._run(
+                self._space_js(self._want(args), create=False)
+                + "const out = [];\n"
+                "if (task) for (const t of await task.tabs()) {\n"
+                "  if (!t.label || t.openedBy !== 'agent') continue;\n"
+                "  const h = task.spaceId + ':' + t.label + '\\t' + (t.url || '');\n"
+                "  try { await task.page(t.label).close(); out.push(h); }\n"
+                "  catch (e) { out.push(h + '\\t닫지 못했다: ' + String(e).split('\\n')[0]); }\n"
+                "}\n"
+                "__out(out.join('\\n'));\n"
+            ).rstrip("\n")
+            return out or None
 
         raise UsageError(f"ego 백엔드가 '{cmd}' 를 다루지 않는다")

@@ -101,6 +101,22 @@ $B doctor
   예전에는 이 훑기가 page 마다 `page.evaluate` 를 거쳐, 멈춘 page 하나가 있으면
   목적지 주소와 무관하게 `page.evaluate timed out after 15000ms` 로 끝났다 (실측).
   멈춘 page 자체는 브라우저에서 닫거나 새로고침해야 사라진다.
+- page 수에는 공간마다 한도가 있고, 그 한도는 발급한 label 번호가 아니라 살아 있는
+  page 수로 센다 (실측). `close` 로 닫으면 다시 열 수 있다. 한도에 차면 `open` 이
+  무엇을 해야 하는지 첫 줄에 적고 종료 코드 1 로 끝난다.
+- 한도에 차서 `open` 이 막히면 핸들을 새로 얻을 길이 없으므로 `pages` 와 `reset` 을 쓴다.
+  `pages` 는 핸들을 프로필 단위로 내고, `reset` 은 에이전트가 연 page 를 한 번에 닫는다.
+  둘 다 ego 전용이고 핸들 대신 프로필을 받는다. 프로필을 적지 않으면 `open` 과 같은
+  규칙으로 고른다.
+
+  ```sh
+  $B pages Default          # 29:p2<TAB>https://...
+  $B close 29:p2            # 골라 닫는다
+  $B reset Default          # 에이전트가 연 것을 한 번에 닫는다
+  ```
+
+  `reset` 은 `openedBy` 가 `agent` 인 page 만 닫는다. 사용자가 연 page 와 ego 가
+  소유를 판정하지 못한 page 는 남긴다. 공간째 닫지 않으므로 사용자가 보던 화면도 그대로다.
 - `console` 과 `errors` 는 대응 API 가 없어 종료 코드 2 로 거절한다.
   `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 콘솔 로그 버퍼가 아니다.
 - 조건 대기는 폴링이 아니라 ego 의 `waitForFunction` 과 `waitForLoadState` 를 그대로 쓴다.
