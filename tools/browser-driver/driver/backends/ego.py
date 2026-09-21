@@ -19,6 +19,7 @@ SPACE_PREFIX = "browser-driver"
 PROFILE_ENV = "BROWSER_EGO_PROFILE"
 
 #: 아직 아무 곳도 열지 않은 페이지의 주소. 새 공간은 p1 을 이 상태로 들고 시작한다 (실측).
+#: open 은 이 주소를 `task.tabs()` 가 실어 주는 url 필드로 본다.
 BLANK_URLS = ("about:blank", "chrome://new-tab-page/")
 
 #: 반환값을 다른 출력과 나누는 표식. ego 는 업데이트 알림 같은 줄을 같은 stdout 에 섞는다.
@@ -135,10 +136,16 @@ class EgoBackend(Backend):
                 "  for (let n = 2; taken.has(name); n += 1) name = base + ' #' + n;\n"
                 "  task = await taskSpace(name, { profileId: prof.id });\n"
                 "}\n"
+                # p.url() 은 page.evaluate 를 거치므로 멈춘 page 에서 15초 뒤 던지고,
+                # 그 예외가 open 전체를 끝낸다 (실측). tabs() 는 url 을 필드로 실어 주므로
+                # evaluate 를 거치지 않는다. 빈 page 재사용은 편의이므로, 훑기가 실패하면
+                # 새로 만든다.
                 "let page = null;\n"
-                "for (const p of await task.pages()) {\n"
-                "  if (blank.includes(await p.url())) { page = p; break; }\n"
-                "}\n"
+                "try {\n"
+                "  for (const t of await task.tabs()) {\n"
+                "    if (t.label && blank.includes(t.url)) { page = task.page(t.label); break; }\n"
+                "  }\n"
+                "} catch (e) { page = null; }\n"
                 "if (!page) page = await task.newPage();\n"
                 f"await page.goto({json.dumps(url)});\n"
                 f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n"

@@ -96,6 +96,11 @@ $B doctor
   이름만으로 공간을 잡으면 그 뒤로 계속 거절되므로, `open` 은 에이전트가 가진 공간만 골라
   다시 쓰고 없으면 `browser-driver/Profile 2 #2` 처럼 번호를 붙여 새로 만든다.
   이미 받은 핸들로는 되살릴 수 없다. `open` 을 다시 부른다.
+- 응답하지 않는 page 가 공간에 남아 있어도 `open` 은 막히지 않는다. 빈 page 를 다시 쓰려고
+  훑을 때 `task.tabs()` 가 실어 주는 url 만 보고, 훑기가 실패하면 새 page 를 만든다.
+  예전에는 이 훑기가 page 마다 `page.evaluate` 를 거쳐, 멈춘 page 하나가 있으면
+  목적지 주소와 무관하게 `page.evaluate timed out after 15000ms` 로 끝났다 (실측).
+  멈춘 page 자체는 브라우저에서 닫거나 새로고침해야 사라진다.
 - `console` 과 `errors` 는 대응 API 가 없어 종료 코드 2 로 거절한다.
   `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 콘솔 로그 버퍼가 아니다.
 - 조건 대기는 폴링이 아니라 ego 의 `waitForFunction` 과 `waitForLoadState` 를 그대로 쓴다.
