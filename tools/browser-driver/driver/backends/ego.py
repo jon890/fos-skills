@@ -332,8 +332,18 @@ class EgoBackend(Backend):
             # 사용자가 연 page 는 남긴다. ego 의 API 문서가 openedBy 가 'unknown' 인 것도
             # 사용자 소유로 다루라고 정하고 있으므로 'agent' 인 것만 고른다.
             # 공간째 닫지 않는 것도 같은 이유다. 사용자가 보던 것까지 사라진다.
-            out = self._run(
-                self._space_js(self._want(args), create=False)
+            #
+            # 되돌릴 수 없는 명령이라 어디에 대고 도는지 먼저 알린다. 인자를 생략하면
+            # 해석 순서가 고른 프로필에서 돌아, 알리지 않으면 엉뚱한 공간을 비우고도
+            # 닫은 것이 없다는 출력과 구분되지 않는다.
+            if args and args[0]:
+                want, source = args[0], "인자"
+            else:
+                want, source = resolve_profile()
+            print(f"reset 대상 프로필: {want or '(ego 의 기본 프로필)'}"
+                  f" — {source or '아무 호출자도 정하지 않았다'}", file=sys.stderr)
+            raw = self._run(
+                self._space_js(want, create=False)
                 + "const out = [];\n"
                 "if (task) for (const t of await task.tabs()) {\n"
                 "  if (!t.label || t.openedBy !== 'agent') continue;\n"
@@ -341,8 +351,10 @@ class EgoBackend(Backend):
                 "  try { await task.page(t.label).close(); out.push(h); }\n"
                 "  catch (e) { out.push(h + '\\t닫지 못했다: ' + String(e).split('\\n')[0]); }\n"
                 "}\n"
-                "__out(out.join('\\n'));\n"
-            ).rstrip("\n")
-            return out or None
+                "__out((task ? task.spaceId : '(공간 없음)') + '\\n' + out.join('\\n'));\n"
+            )
+            space, _, out = raw.partition("\n")
+            print(f"reset 대상 공간: {space.strip()}", file=sys.stderr)
+            return out.rstrip("\n") or None
 
         raise UsageError(f"ego 백엔드가 '{cmd}' 를 다루지 않는다")
