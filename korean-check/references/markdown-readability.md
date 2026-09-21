@@ -6,16 +6,6 @@
 [`../../content-preview/references/render-traps.md`](../../content-preview/references/render-traps.md) 가 소유한다.
 그 스킬이 렌더링 미리보기를 가진다.
 
-## 규칙 층
-
-| 파일 | 담는 것 | 바뀌는 조건 |
-| --- | --- | --- |
-| `references/korean-style.md` | 어휘와 문장 구성 | 바뀌지 않음 |
-| `references/writing-structure.md` | 분량과 정보량이 정하는 구조 | 글이 길어지면 |
-| `references/markdown-readability.md` | 검사 제외 대상과 훅의 사각 | 검사기가 바뀌면 |
-| [`../../content-preview/references/render-traps.md`](../../content-preview/references/render-traps.md) | 매체별 렌더링 함정 | 매체가 달라지면 |
-| [`../../content-preview/references/persona.md`](../../content-preview/references/persona.md) | 개인 습관 | 사람마다 |
-
 ## 표기
 
 - 검사에서 제외하는 것은 검사기마다 다르다. 아래 표가 그것을 정한다.
@@ -32,21 +22,14 @@
 
 ## 자동 검사
 
-| 강제 주체 | 잡는 것 | 발동 |
-| --- | --- | --- |
-| `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어, 인라인 `+` 연결 | 편집 도구가 `.md` 를 바꾼 직후 |
-| `scripts/check-readability.py` | 괄호 2겹 중첩(`NEST`), `§`(`SECT`), 범위 물결표(`TILDE`), 엠대시(`DASH`) | 편집 도구가 `.md` 를 바꾼 직후 |
-| 사람 | 한 문장 한 줄, `=` 와 `→` 압축, 문장 성분 생략, 종결어미 | 작성 직후 |
-| 사람 | 분량 구간 판단, 목록 구조, 내용 점검 | 작성 직후 |
-| 사람 | 위지윅 붙여넣기 | 게시 직전 |
+두 검사기가 무엇을 잡는지는 각 스크립트의 docstring 이 소유한다.
+사람이 보는 몫은 아래 셋이다.
 
-```bash
-# cwd: 아무 곳. $SKILL_DIR 은 이 스킬 번들 경로다
-bash "$SKILL_DIR/scripts/check.sh" "$FILE"
-```
-
-`check.sh` 가 둘을 함께 돌리고 종료 코드를 하나로 합친다.
-한쪽만 부를 일이 있으면 `scripts/korean-style-check.py` 와 `scripts/check-readability.py` 를 직접 부른다.
+| 사람이 보는 것 | 발동 |
+| --- | --- |
+| 한 문장 한 줄, `=` 와 `→` 압축, 문장 성분 생략, 종결어미 | 작성 직후 |
+| 분량 구간 판단, 목록 구조, 내용 점검 | 작성 직후 |
+| 위지윅 붙여넣기 | 게시 직전 |
 
 ## 훅이 잡지 못하는 것
 
@@ -64,19 +47,11 @@ bash "$SKILL_DIR/scripts/check.sh" "$FILE"
 실측으로 엠대시가 둘 든 파일을 heredoc 으로 만들었을 때 훅은 아무 출력도 내지 않았고,
 같은 파일에 검사기를 손으로 돌리자 `DASH` 2건이 나왔다.
 
-만든 방법과 무관하게 파일 경로로 직접 돌린다.
-외부로 나가는 본문은 `content-preview` 의 표기 검사 단계가 이 실행을 소유한다.
-
-제목은 문자열 모드로 검사한다.
-
-```bash
-bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
-```
+만든 방법과 무관하게 파일 경로로 직접 돌린다. 제목은 문자열 모드로 검사한다.
+두 실행 모두 `SKILL.md` 의 「검사기를 돌린다」 가 소유한다.
 
 **검사와 등록을 한 명령에 묶지 않는다.** 앞의 검사가 실패해도 뒤의 등록이 그대로 돌아,
 이미 올라간 뒤에 위반을 알게 된다. 실측으로 그렇게 등록된 PR 이 있다.
-
-종료 코드 규약은 `scripts/check.sh` 의 머리말이 소유한다.
 
 훅 모드는 위반이 있어도 0 으로 끝난다. 편집을 막지 않고 결과만 알린다.
 

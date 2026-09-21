@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.10.0"
+  version: "1.11.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -17,7 +17,7 @@ description: |
 
 | 층 | 무엇 | 판정 수단 | 축의 소유자 |
 | --- | --- | --- | --- |
-| 검사기 | 매핑 표의 금지어와 괄호 중첩, 범위 물결표, 엠대시 | 종료 코드 | `references/markdown-readability.md` 의 「자동 검사」 |
+| 검사기 | 두 검사기가 코드에 담은 축 | 종료 코드 | 두 검사기의 docstring |
 | 검토 | 검사기가 판정하지 못하는 것 | 발견 목록 | `references/review-axes.md` 의 「축」 |
 
 **판정 기준과 검사기를 한 자리에 둔다.** `scripts/korean-style-check.py` 가
@@ -45,9 +45,8 @@ bash "$SKILL_DIR/scripts/check.sh" "$FILE"
 bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 ```
 
-파일은 여러 개를 이어 줄 수 있다. `--where` 는 이 스킬 번들 경로를 낸다.
 `check.sh` 가 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다.
-종료 코드 규약과 인자는 그 스크립트의 머리말이 소유한다.
+종료 코드 규약과 나머지 인자는 그 스크립트의 머리말이 소유한다.
 
 **만든 방법과 무관하게 파일 경로로 직접 돌린다.**
 훅이 어떤 파일을 놓치는지와 검사를 등록과 묶으면 무엇이 일어나는지는
@@ -70,18 +69,5 @@ bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 
 ## 훅에 걸기
 
-편집 직후 자동 검사는 하네스 설정이 소유한다.
-Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
-
-```json
-"PostToolUse": [{
-  "matcher": "Edit|Write|MultiEdit",
-  "hooks": [
-    { "type": "command", "command": "~/.claude/scripts/korean-style-check.py --hook", "timeout": 15 },
-    { "type": "command", "command": "~/.claude/scripts/check-readability.py --hook", "timeout": 15 }
-  ]
-}]
-```
-
-두 검사기를 그 경로에 심링크로 걸어 두면 스킬을 고칠 때 훅 설정을 다시 손대지 않는다.
-설치 방법은 `README.md` 가, 훅 모드의 동작은 `references/markdown-readability.md` 가 소유한다.
+편집 직후 자동 검사는 하네스 설정이 소유하고, 거는 방법은 `README.md` 가 소유한다.
+훅 모드의 동작은 `references/markdown-readability.md` 가 소유한다.
