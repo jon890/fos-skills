@@ -28,7 +28,12 @@ def cmd_doctor():
         mark = "✓" if cls.verified else "!"
         print(f"  {mark} {name:<14} {path}")
         if note:
-            print(f"      참고: {note}")
+            # 백엔드가 줄을 나눠 오면 그대로 나눠 낸다. ego 의 프로필 해석처럼
+            # 한 줄로 이으면 묻히는 판정이 있다.
+            head, *rest = note.split("\n")
+            print(f"      참고: {head}")
+            for line in rest:
+                print(f"      {line}")
         missing = sorted({c.name for c in COMMANDS} - cls.supported)
         if missing:
             print(f"      못 쓰는 명령: {', '.join(missing)}")

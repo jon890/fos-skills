@@ -96,6 +96,32 @@ $B doctor
   이름만으로 공간을 잡으면 그 뒤로 계속 거절되므로, `open` 은 에이전트가 가진 공간만 골라
   다시 쓰고 없으면 `browser-driver/Profile 2 #2` 처럼 번호를 붙여 새로 만든다.
   이미 받은 핸들로는 되살릴 수 없다. `open` 을 다시 부른다.
+- 응답하지 않는 page 가 공간에 남아 있어도 `open` 은 막히지 않는다. 빈 page 를 다시 쓰려고
+  훑을 때 `task.tabs()` 가 실어 주는 url 만 보고, 훑기가 실패하면 새 page 를 만든다.
+  예전에는 이 훑기가 page 마다 `page.evaluate` 를 거쳐, 멈춘 page 하나가 있으면
+  목적지 주소와 무관하게 `page.evaluate timed out after 15000ms` 로 끝났다 (실측).
+  멈춘 page 자체는 브라우저에서 닫거나 새로고침해야 사라진다.
+- page 수에는 공간마다 한도가 있고, 그 한도는 발급한 label 번호가 아니라 살아 있는
+  page 수로 센다 (실측). `close` 로 닫으면 다시 열 수 있다. 한도에 차면 `open` 이
+  무엇을 해야 하는지 첫 줄에 적고 종료 코드 1 로 끝난다.
+- 한도에 차서 `open` 이 막히면 핸들을 새로 얻을 길이 없으므로 `pages` 와 `reset` 을 쓴다.
+  `pages` 는 핸들을 프로필 단위로 내고, `reset` 은 에이전트가 연 page 를 한 번에 닫는다.
+  둘 다 ego 전용이고 핸들 대신 프로필을 받는다. 프로필을 적지 않으면 `open` 과 같은
+  규칙으로 고른다.
+
+  ```sh
+  $B pages Default          # 29:p2<TAB>agent<TAB>https://...
+  $B close 29:p2            # 골라 닫는다
+  $B reset Default          # 에이전트가 연 것을 한 번에 닫는다
+  ```
+
+  `reset` 은 `openedBy` 가 `agent` 인 page 만 닫는다. 사용자가 연 page 와 ego 가
+  소유를 판정하지 못한 page 는 남는다. 공간째 닫지도 않는다.
+
+  **에이전트가 열어 사람이 이어서 쓰고 있는 page 는 닫힌다.** `openedBy` 만으로는
+  그것을 구분하지 못한다. 실측으로 이 머신의 공간에 남은 탭이 전부 `agent` 였고
+  그중에 사람이 보던 화면이 섞여 있었다. 닫은 주소는 출력에 남지만 입력 중이던 폼은 잃는다.
+  무엇이 닫힐지는 `pages` 의 `openedBy` 열로 먼저 본다.
 - `console` 과 `errors` 는 대응 API 가 없어 종료 코드 2 로 거절한다.
   `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 콘솔 로그 버퍼가 아니다.
 - 조건 대기는 폴링이 아니라 ego 의 `waitForFunction` 과 `waitForLoadState` 를 그대로 쓴다.
@@ -133,15 +159,47 @@ $B doctor
 그래서 공간을 여러 개로 나눠도 세션은 나뉘지 않는다.
 개인 작업과 회사 자동화를 나누는 수단은 프로필이다.
 
+### 해석 순서
+
+쓸 프로필은 넷을 이 순서로 봐서 정한다.
+
+| 순서 | 무엇 | 예 |
+| --- | --- | --- |
+| 1 | `BROWSER_EGO_PROFILE` | 프로필 id 나 이름을 직접 준다 |
+| 2 | `BROWSER_EGO_PURPOSE` | 설정의 `egoProfiles` 에서 그 키를 찾는다 |
+| 3 | 설정의 `egoProfiles.default` | 호출자가 아무것도 주지 않았을 때의 값 |
+| 4 | ego 의 `isDefault` | 셋 다 없을 때만 여기로 떨어진다 |
+
 ```bash
 BROWSER_EGO_PROFILE="Profile 2" $B open "https://example.com"
-BROWSER_EGO_PROFILE="BiFOS"     $B open "https://example.com"
+BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
 ```
 
+용도 이름을 두는 자리가 2번이다. 프로필 id 는 머신마다 다르므로 호출자가 그것을
+알아야 하면 스킬 본문에 못 박을 수 없다. 설정이 id 를 들고, 호출자는 용도만 적는다.
+
+```json
+"egoProfiles": {
+  "default": "Profile 2",
+  "work": "Profile 2",
+  "personal": "Default"
+}
+```
+
+`open` 은 정해진 자리를 표준 오류로 한 줄 알린다. 4번으로 떨어졌을 때만 문구가 경고로 바뀌어,
+지정을 빠뜨린 호출이 출력에서 눈에 띈다.
+
+```
+프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal
+경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / <회사 프로필 이름>)
+```
+
+`doctor` 도 같은 판정을 한 줄 낸다. 돌리기 전에 어디로 갈지 여기서 본다.
+
 - 프로필 id 와 이름을 모두 받는다. `profiles()` 의 `id` 와 `name` 을 그 순서로 대조한다.
-- 값이 없으면 ego 의 기본 프로필을 쓴다. 그래서 `open` 은 어느 프로필에서 열렸는지
-  표준 오류로 한 줄 알린다. 지정을 빠뜨려 개인 세션에서 도는 것을 여기서 드러낸다.
 - 없는 프로필을 주면 쓸 수 있는 목록을 붙여 종료 코드 1 로 끝난다.
+  `BROWSER_EGO_PURPOSE` 에 설정에 없는 용도를 주면 쓸 수 있는 용도를 붙여 종료 코드 2 로 끝난다.
+- `pages` 와 `reset` 은 인자로 받은 프로필을 이 순서보다 앞에 둔다.
 - 프로필은 공간을 만들 때 정해지고 나중에 바꿀 수 없다. 이미 받은 핸들의 프로필을
   바꾸려면 `open` 을 다시 부른다.
 
