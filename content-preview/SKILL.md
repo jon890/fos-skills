@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.4.0"
+  version: "3.5.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -136,12 +136,14 @@ Dooray 업무와 댓글, GitHub issue 와 PR 본문은 실제 렌더링과 비�
 **대상과 생성기를 바꿔 쓰지 않는다.** marked 는 한 문장마다 줄을 나눈 본문을 한 문단으로 붙이고
 물결표를 취소선으로 읽는다. TOAST UI 는 둘 다 살린다 (실측).
 
-인자는 각 생성기의 `--help` 가 소유한다. Dooray 는 `--mode` 로 머리를 고른다.
+인자는 각 생성기의 `--help` 가 소유한다. Dooray 는 `--mode`, GitHub 는 `--type` 으로 머리를 고른다.
 
-| 값 | 머리 | 쓰는 곳 |
-| --- | --- | --- |
-| `task` (기본) | 프로젝트, 제목, 메타, 태그 | 업무 본문 |
-| `comment` | 작성자 아바타와 이름 | 댓글, 진행 기록, 주간보고 |
+| 생성기 | 값 | 머리 | 쓰는 곳 |
+| --- | --- | --- | --- |
+| Dooray | `task` (기본) | 프로젝트, 제목, 메타, 태그 | 업무 본문 |
+| Dooray | `comment` | 작성자 아바타와 이름 | 댓글, 진행 기록, 주간보고 |
+| GitHub | `issue` (기본) | Issue 배지 | 이슈 본문 |
+| GitHub | `pr` | Pull Request 배지 | PR 본문, 리뷰 응답 |
 
 ```bash
 # cwd: 아무 곳. $REPO 는 owner/repo 형태다
@@ -151,7 +153,7 @@ python3 "$SKILL_DIR/scripts/dooray-preview/generate.py" \
   --md-file "$SP/body.md" --out "$SP/preview.html"
 
 python3 "$SKILL_DIR/scripts/github-preview/generate.py" \
-  --type issue --repo "$REPO" \
+  --type pr --repo "$REPO" \
   --title "$TITLE" \
   --md-file "$SP/body.md" --out "$SP/preview.html"
 

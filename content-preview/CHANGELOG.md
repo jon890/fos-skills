@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.5.0
+
+GitHub 생성기의 `--type` 을 고르는 기준이 없었다.
+Dooray 의 `--mode` 만 표로 두고, GitHub 는 예시의 `--type issue` 한 줄이 전부였다.
+PR 본문이 이 스킬의 잦은 대상인데 그 값을 쓰는 것을 문서가 알려 주지 않았다.
+
+생성기별 값 표로 합치고 예시를 `--type pr` 로 바꿨다.
+
 ## 3.4.0
 
 `references/render-traps.md` 를 만들어 매체별 렌더링 함정을 받았다.
