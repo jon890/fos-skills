@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.10.0
+
+「읽기 전용 검토 역할이 있으면」 은 실행하는 쪽이 무엇을 부를지 알 수 없는 말이었다.
+subagent 에 맡긴다고 적고, 띄울 수 없는 환경을 위한 폴백만 남겼다.
+`content-preview` 의 같은 문장도 함께 고쳤다.
+
 ## 1.9.0
 
 `references/markdown-readability.md` 에 성격이 다른 둘이 섞여 있었다.

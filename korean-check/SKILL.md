@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.9.0"
+  version: "1.10.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -61,7 +61,7 @@ bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 축, 실측 근거, 통과 조건은 `references/review-axes.md` 가 소유한다.
 
 **긴 문서와 정형 양식은 쓰지 않은 쪽이 읽는다.**
-읽기 전용 검토 역할이 있으면 그것에 맡기고, 없으면 사용자에게 검토를 청한다.
+검토는 subagent 에 맡긴다. 띄울 수 없는 환경이면 사용자에게 검토를 청한다.
 짧은 댓글 한 줄은 이 층을 건너뛰고 검사기 통과로 끝낸다.
 분량 구간의 판정 기준은 `references/writing-structure.md` 가 소유한다.
 
