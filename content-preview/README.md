@@ -24,7 +24,7 @@ Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키�
 - 브라우저 드라이버로 띄운다. 이 저장소의 `tools/browser-driver/` 를 함께 받으면
   따로 설치하지 않아도 되고, 없으면 기본 브라우저로 내려간다.
   드라이버를 고르는 환경 변수와 설정 키, 그리고 그렇게 하는 이유는
-  `scripts/show-preview.sh` 머리말이 소유한다
+  `scripts/show-preview.sh` 가 소유한다
 - 표기 검사기와 판정 기준은 `korean-check` 스킬이 소유한다. 이 저장소가 함께 배포한다.
   `scripts/style-check.sh` 가 그것을 찾아 부르고, 찾지 못하면 종료 코드 2 로 끝낸다
 - 개인 문체 참조는 선택이다. 이 저장소는 배포하지 않고, 없으면 그 항목을 건너뛴다
@@ -33,7 +33,7 @@ Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키�
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 목표와 6단계 실행 절차, 단계별 통과 조건, 검토를 건너뛰는 조건, 생성기 사용법 |
+| `SKILL.md` | 목표와 6단계 실행 절차, 단계별 통과 조건, 검토를 건너뛰는 때, 생성기 사용법 |
 | `references/render-traps.md` | 매체마다 다르게 렌더되는 함정과 그 대응 |
 | `references/persona.md` | 개인 문체 참조를 어디에 두고 무엇을 적는지 |
 | `scripts/style-check.sh` | `korean-check` 를 찾아 본문 파일과 제목에 검사기를 돌린다 |
