@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """마크다운 가독성 규칙 중 기계로 판정 가능한 축을 검사한다.
 
-규칙의 단일 소스는 이 스킬의 `references/` 파일들이다.
-korean-style.md 가 언어, writing-structure.md 가 구조, markdown-readability.md 가 매체를 소유한다.
-이 스크립트는 그 파일을 읽지 않는다. 검사 축을 코드에 담고 있다.
+**이 파일이 검사 축의 단일 소스다.** references 파일을 읽지 않고 축을 코드에 담는다.
+사람이 보는 몫은 `references/` 가 소유한다.
+korean-style.md 가 언어, writing-structure.md 가 구조, markdown-readability.md 가 검사 제외 대상이다.
 
 사용법:
     check-readability.py <파일.md> [<파일.md>...]
+    check-readability.py --text "<제목이나 커밋 메시지>"   # 파일이 아닌 문자열
     check-readability.py --hook          # PostToolUse 훅 모드 (stdin 으로 JSON)
 
 위반 줄을 stdout 으로 출력한다. 출력이 0 줄이면 통과다.
 위반이 있으면 종료 코드 1, 사용법 오류면 2 로 끝난다.
 
-여기서 검사하는 것은 `markdown-readability.md` 가 소유한 매체·렌더 축이다.
+검사하는 축은 넷이다.
 
     NEST   괄호 2겹 중첩
     SECT   `§` 사용

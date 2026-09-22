@@ -75,7 +75,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 목표, 두 층의 구분, 검사기 실행법, 훅에 거는 방법 |
+| `SKILL.md` | 목표, 두 층의 구분, 검사기 실행법 |
 | `references/korean-style.md` | 어휘 매핑 표, 문장 구성, 출력 직전 점검, 용어를 옮기지 않는 기준 |
 | `references/writing-structure.md` | 독자 구간, 분량 구간, 목록과 표로 나누는 방식, 내용 점검 |
 | `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |

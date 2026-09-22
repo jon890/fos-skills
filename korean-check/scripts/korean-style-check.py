@@ -25,7 +25,7 @@ YAML frontmatter, 코드 블록(```, 목록 안에 들여쓴 것 포함), 코드
 
 편집 직후 자동 검사 (settings.json 은 머신 로컬이라 추적하지 않으므로 여기 남긴다).
 하네스 설정의 PostToolUse 훅에 `<이 파일 경로> --hook` 을 걸면 .md 를 쓸 때마다 검사한다.
-Claude Code 의 예시는 SKILL.md 의 「훅에 걸기」가 소유한다.
+Claude Code 의 예시는 README.md 의 「훅 설정」이 소유한다.
 """
 
 import json
