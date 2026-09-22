@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.11.0"
+  version: "1.12.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.

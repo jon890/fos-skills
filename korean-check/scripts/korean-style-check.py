@@ -21,7 +21,8 @@ YAML frontmatter, 코드 블록(```, 목록 안에 들여쓴 것 포함), 코드
 
     0  통과 (--hook 모드는 위반이 있어도 늘 0 이다. 훅은 작업을 막지 않는다)
     1  위반 발견
-    2  검사기가 돌지 못함. 매핑 표 파일이 없거나, 표에서 금지어를 추출하지 못한 경우다
+    2  검사기가 돌지 못함. 매핑 표 파일이 없거나, 표에서 금지어를 추출하지 못했거나,
+       인자가 없거나 다루지 않는 옵션을 받은 경우다
 
 편집 직후 자동 검사 (settings.json 은 머신 로컬이라 추적하지 않으므로 여기 남긴다).
 하네스 설정의 PostToolUse 훅에 `<이 파일 경로> --hook` 을 걸면 .md 를 쓸 때마다 검사한다.
@@ -323,7 +324,16 @@ def main():
         return run_hook(rules, build_matchers(terms)) if terms else 0
 
     if not args:
-        return 0
+        print(__doc__, file=sys.stderr)
+        return 2
+
+    # 이 검사기는 --text 를 받지 않는다. check.sh 가 임시 파일로 바꿔 넘긴다.
+    # 그대로 두면 옵션이 파일 경로로 읽혀 금지어가 있어도 통과로 끝난다 (실측).
+    unknown = [a for a in args if a.startswith("-")]
+    if unknown:
+        print(f"korean-style-check: 다루지 않는 인자다: {' '.join(unknown)}", file=sys.stderr)
+        print(__doc__, file=sys.stderr)
+        return 2
 
     terms = load_terms_or_complain(rules)
     if not terms:

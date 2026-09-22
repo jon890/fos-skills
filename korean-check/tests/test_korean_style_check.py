@@ -235,13 +235,34 @@ class TestExitCode(Base):
         )
         self.assertEqual(done.returncode, 2)
 
-    def test_no_argument_is_zero(self):
+    def test_no_argument_is_two(self):
         done = subprocess.run(
             ["python3", str(SCRIPT)],
             capture_output=True, text=True,
             env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
         )
-        self.assertEqual(done.returncode, 0)
+        self.assertEqual(done.returncode, 2)
+
+    def test_unknown_option_is_two(self):
+        """이 검사기는 --text 를 받지 않는다. check.sh 가 임시 파일로 바꿔 넘긴다.
+
+        받아들이면 옵션이 파일 경로로 읽혀 금지어가 있어도 통과로 끝난다.
+        """
+        done = subprocess.run(
+            ["python3", str(SCRIPT), "--text", "게이트를 지난다"],
+            capture_output=True, text=True,
+            env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(done.returncode, 2)
+
+    def test_file_argument_still_runs(self):
+        path = self.write("a.md", "이 게이트를 지난다.\n")
+        done = subprocess.run(
+            ["python3", str(SCRIPT), str(path)],
+            capture_output=True, text=True,
+            env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(done.returncode, 1)
 
 
 class TestHookMode(Base):
