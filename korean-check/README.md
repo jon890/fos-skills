@@ -42,7 +42,6 @@ ln -sfn ~/personal/fos-skills/korean-check/scripts/check-readability.py ~/.claud
 ```
 
 `korean-style-check.py` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
-훅에 넣을 설정은 `SKILL.md` 의 「훅에 걸기」가 소유한다.
 
 규칙 파일을 항상 맥락에 두려면 규칙 디렉터리에도 건다.
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.
@@ -56,23 +55,44 @@ done
 **`markdown-readability.md` 는 걸지 않는다.** 어휘와 문장 구성, 독자 구간은 채팅 답변에도
 적용되므로 항상 실려야 하지만, 검사 제외 대상과 훅의 사각은 검사기를 돌릴 때만 쓰인다.
 
+### 훅 설정
+
+Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
+
+```json
+"PostToolUse": [{
+  "matcher": "Edit|Write|MultiEdit",
+  "hooks": [
+    { "type": "command", "command": "~/.claude/scripts/korean-style-check.py --hook", "timeout": 15 },
+    { "type": "command", "command": "~/.claude/scripts/check-readability.py --hook", "timeout": 15 }
+  ]
+}]
+```
+
+훅 모드의 동작은 `references/markdown-readability.md` 가 소유한다.
+
 ## 구성
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 목표, 두 층의 구분, 검사기 실행법, 훅에 거는 방법 |
+| `SKILL.md` | 목표, 두 층의 구분, 검사기 실행법 |
 | `references/korean-style.md` | 어휘 매핑 표, 문장 구성, 출력 직전 점검, 용어를 옮기지 않는 기준 |
 | `references/writing-structure.md` | 독자 구간, 분량 구간, 목록과 표로 나누는 방식, 내용 점검 |
 | `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
 | `references/review-axes.md` | 검토자에게 무엇을 주고 무엇을 받는가, 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
 | `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어와 인라인 `+` 연결을 찾는다. 훅 모드를 갖는다 |
-| `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 찾는다. 훅 모드와 문자열 모드를 갖는다 |
+| `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 찾는다. 인자 형태는 docstring 이 소유한다 |
 | `tests/test_korean_style_check.py` | 제외 규칙과 활용형마다 걸리는 표본과 걸리지 않는 표본을 함께 둔 검출력 검사 |
 | `tests/test_check_readability.py` | 네 검사와 허용 예외마다 같은 방식으로 둔 검출력 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 
-시험은 `python3 -m unittest discover -s korean-check/tests` 로 돌린다.
+시험은 저장소 루트에서 돌린다. 다른 곳에서 부르면 `ImportError` 로 끝난다.
+
+```bash
+# cwd: 저장소 루트
+python3 -m unittest discover -s korean-check/tests
+```
 
 ## 개인 문체 참조는 담지 않는다
 
