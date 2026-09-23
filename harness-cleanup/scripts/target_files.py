@@ -52,6 +52,7 @@ def is_target(path: Path, root: Path, include_readme: bool = False) -> bool:
         return False
     for prefix in (
         (".claude", "agents"),
+        (".claude", "references"),
         (".claude", "rules"),
         (".agents", "roles"),
         (".claude", "skills", "_shared"),
