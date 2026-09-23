@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.10.0
+
+전역 `CLAUDE.md` 가 실행 전에 읽도록 지정한 `.claude/references` 문서가
+감사 대상에서 빠져 있었다.
+`target_files.py` 가 `.claude/references` 를 수집하도록 고쳤고,
+일반 `references` 디렉터리는 이전처럼 제외한다.
+
+`audit-axes.md` 는 존재하지 않는 전역 「문서와 한국어 표현」 절을 가리켰다.
+스킬 문서의 구조는 `~/.claude/references/skill-structure.md` 로,
+한국어 표현과 문서 구조는 `korean-check` 의 `references` 디렉터리로 나눠 연결했다.
+
 ## 3.9.1
 
 3.9.0 에서 참조로 옮길 때 빠진 지시 한 줄을 되돌렸다.
