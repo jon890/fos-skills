@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.4.1
+
+레포 설정을 찾는 순서는 유지하고, `CLAUDE.md` 만 둔 저장소 개수처럼 시간이 지나면 낡는 문장을 지웠다.
+
 ## 2.4.0
 
 `verify_task.py` 의 `TEST_WORD` 에 「검사」를 더했다.
