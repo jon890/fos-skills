@@ -31,8 +31,8 @@ fix 가 끝났다고 항상 학습하지 않는다. **재현 가능한 패턴**�
 누적 위치를 오버레이나 그 저장소 지침이 지정하면 그것을 따른다.
 
 **지정이 없으면 `docs/pitfalls/code-review/<패턴>.md` 를 기본값으로 쓴다.**
-실측으로 이 구조를 쓰는 저장소가 셋이고, 셋 다 `docs/pitfalls/` 아래를
-`plan/`, `code-review/`, `team/` 으로 나누고 `INDEX.md` 를 함께 둔다.
+`docs/pitfalls/` 아래는 `plan/`, `code-review/`, `team/` 으로 나누고
+`INDEX.md` 를 함께 둔다.
 
 - 패턴 하나당 파일 하나로 두고, 같은 패턴이면 기존 파일을 갱신한다.
 - `INDEX.md` 가 있으면 함께 갱신한다. 생성기가 있으면 그것을 쓴다.

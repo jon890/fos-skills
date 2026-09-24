@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.3.0"
+  version: "2.3.1"
 ---
 
 # review-fix
@@ -127,7 +127,6 @@ gh pr view <N> --json baseRefName,mergeable,mergeStateStatus
 
 구조화 마커가 없어도 「수정 요청」, 「변경 필요」, 「이슈」 처럼 수정을 암시하는 표현을 추출한다.
 GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
-구조화 리뷰가 아예 없으면 PR diff 를 직접 검토해 잠재 이슈를 보고하고, 수정 여부는 사용자가 정한다.
 
 **각 항목의 변경 범위를 함께 정한다.**
 
