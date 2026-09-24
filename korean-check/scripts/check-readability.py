@@ -11,7 +11,7 @@ korean-style.md 가 언어, writing-structure.md 가 구조, markdown-readabilit
     check-readability.py --hook          # PostToolUse 훅 모드 (stdin 으로 JSON)
 
 위반 줄을 stdout 으로 출력한다. 출력이 0 줄이면 통과다.
-위반이 있으면 종료 코드 1, 사용법 오류면 2 로 끝난다.
+위반이 있으면 종료 코드 1, 사용법 오류이거나 넘긴 경로에 파일이 없으면 2 로 끝난다.
 
 검사하는 축은 넷이다.
 
@@ -199,12 +199,20 @@ def main():
             print(f"(문자열)  [{code}] {msg}")
         sys.exit(1 if found else 0)
 
+    missing = False
     for path in sys.argv[1:]:
+        # 없는 경로를 0 으로 넘기면 오타 난 경로가 통과로 보인다.
+        if not os.path.isfile(path):
+            print(f"{path}: 파일이 없다", file=sys.stderr)
+            missing = True
+            continue
         found.extend(check(path))
 
     for path, n, code, msg in found:
         print(f"{path}:{n}  [{code}] {msg}")
 
+    if missing:
+        return 2
     return 1 if found else 0
 
 

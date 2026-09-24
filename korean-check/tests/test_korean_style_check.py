@@ -206,18 +206,23 @@ class TestExitCode(Base):
     def test_clean_file_is_zero(self):
         self.assertPassed("문제가 없는 문장이다.\n")
 
-    def test_missing_path_is_zero_here_and_two_in_check_sh(self):
-        """없는 경로를 이 검사기는 건너뛰고 0 으로 끝낸다.
-
-        `check.sh` 가 앞에서 2 로 막으므로 실사용에서는 드러나지 않는다.
-        직접 부르는 쪽은 오타 난 경로가 통과로 보이므로, 현재 동작을 여기 고정해 둔다.
-        """
+    def test_missing_path_is_two_here_and_in_check_sh(self):
+        """없는 경로는 검사기를 직접 불러도 2 로 끝난다. 0 이면 오타 난 경로가 통과로 보인다."""
         done = subprocess.run(
             ["python3", str(SCRIPT), str(self.root / "없다.md")],
             capture_output=True, text=True,
             env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
         )
-        self.assertEqual(done.returncode, 0)
+        self.assertEqual(done.returncode, 2)
+
+        path = self.write("a.md", "이 게이트를 지난다.\n")
+        done = subprocess.run(
+            ["python3", str(SCRIPT), str(path), str(self.root / "없다.md")],
+            capture_output=True, text=True,
+            env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("게이트", done.stdout)
 
         wrapper = SCRIPT.parent / "check.sh"
         done = subprocess.run(

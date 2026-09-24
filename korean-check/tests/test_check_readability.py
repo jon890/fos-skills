@@ -174,5 +174,25 @@ class TestRepository(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stdout)
 
 
+class TestMissingPath(Base):
+    """없는 경로는 2 로 끝난다. 0 이면 오타 난 경로가 통과로 보인다."""
+
+    def test_missing_path_is_two(self):
+        done = subprocess.run(
+            ["python3", str(SCRIPT), str(self.root / "없다.md")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(done.returncode, 2)
+
+    def test_missing_path_beats_violation(self):
+        path = self.write("a.md", "제목 — 설명\n")
+        done = subprocess.run(
+            ["python3", str(SCRIPT), str(path), str(self.root / "없다.md")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("[DASH]", done.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

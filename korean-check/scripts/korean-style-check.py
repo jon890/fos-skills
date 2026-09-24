@@ -22,7 +22,7 @@ YAML frontmatter, 코드 블록(```, 목록 안에 들여쓴 것 포함), 코드
     0  통과 (--hook 모드는 위반이 있어도 늘 0 이다. 훅은 작업을 막지 않는다)
     1  위반 발견
     2  검사기가 돌지 못함. 매핑 표 파일이 없거나, 표에서 금지어를 추출하지 못했거나,
-       인자가 없거나 다루지 않는 옵션을 받은 경우다
+       인자가 없거나 다루지 않는 옵션을 받았거나, 넘긴 경로에 파일이 없는 경우다
 
 편집 직후 자동 검사 (settings.json 은 머신 로컬이라 추적하지 않으므로 여기 남긴다).
 하네스 설정의 PostToolUse 훅에 `<이 파일 경로> --hook` 을 걸면 .md 를 쓸 때마다 검사한다.
@@ -252,7 +252,12 @@ def check(paths, rules, matchers):
     """
     status = 0
     for path in paths:
-        if not path.endswith(".md") or not os.path.isfile(path):
+        # 없는 경로를 건너뛰고 0 으로 끝내면 오타 난 경로가 통과로 보인다.
+        if not os.path.isfile(path):
+            print(f"korean-style-check: 파일이 없다: {path}", file=sys.stderr)
+            status = 2
+            continue
+        if not path.endswith(".md"):
             continue
         # 규칙 파일 자신은 건너뛴다 — 매핑 표가 곧 금지어 목록이라 전부 위반으로 잡힌다.
         if rules.is_file() and os.path.samefile(path, rules):
@@ -261,7 +266,7 @@ def check(paths, rules, matchers):
         found = scan(path, matchers)
         if found:
             print("\n".join(found))
-            status = 1
+            status = max(status, 1)
     return status
 
 
