@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.12.1
+
+`판`·`정점`의 부분 문자열 오탐과 `재다` 활용형 선정 근거를
+`references/checker-maintenance.md`로 옮겼다.
+매 세션에 실리는 표현 정책에는 매핑 표를 고칠 때 읽을 경로만 남겼다.
+
 ## 1.12.0
 
 `korean-style-check.py` 가 인자 없이 끝날 때와 `--text` 를 받을 때 모두 종료 코드 0 이었다.
