@@ -156,6 +156,7 @@
 1. claude-api 스킬의 `shared/` 아래에서 대상 모델 절의 `Behavioral shifts` 와
    `prompt-audit.md` 의 `Group 1d(Fossils)` 와 keep list 를 읽는다.
    번들 버전마다 경로가 바뀌므로 고정 경로를 적지 않는다.
+   대상 모델 절이 재시험 목록을 앞 모델 절로 넘기면 그 절의 `Behavioral shifts` 까지 읽는다.
 2. 해당 모델의 발표문과 시스템 카드의 alignment 절을 읽는다.
    시스템 카드 PDF 가 10MB 를 넘으면 WebFetch 가 실패하므로 내려받아 `pdftotext` 로 변환해 검색한다.
 
