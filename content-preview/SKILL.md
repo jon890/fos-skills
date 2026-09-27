@@ -191,12 +191,13 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 
 #### 보는 사람이 없는 세션에서 등록할 때
 
-아래 둘이 모두 참이면 사용자 응답을 기다리지 않고 이 턴에 등록한다.
+이 세션이 Orca orchestration dispatch 로 일을 받았으면 아래를 따른다.
+받은 지시문에 dispatch 머리말(`You are a dispatched worker`)이 있으면 dispatch 로 받은 것이다.
 
-- 지시문이 이 세션의 화면을 사람이 보지 않는다고 밝혔다. Orca dispatch 워커의 지시문이 그렇다.
-- 지시한 쪽이 그 본문의 등록을 지시문에 적었다. 「PR 을 연다」 가 그 예다.
+- 지시한 쪽이 그 본문의 등록을 지시문에 적었으면 사용자 응답을 기다리지 않고 이 턴에 등록한다. 「PR 을 연다」 가 그 예다.
+  등록한 뒤 보고서에 `$SP/preview.html` 의 절대경로와 등록한 URL 을 적는다.
+  지시한 쪽이 등록 뒤에 그 보고서로 본문을 읽는다.
+- 등록 지시가 없으면 등록하지 않고 `orca orchestration ask` 로 지시한 쪽에 등록할지 묻는다.
+  질문에 `$SP/preview.html` 의 절대경로를 담는다. dispatch 워커에는 다음 턴에 응답할 사용자가 없다.
 
-등록한 뒤 보고서에 `$SP/preview.html` 의 절대경로와 등록한 URL 을 적는다.
-지시한 쪽이 등록 뒤에 그 보고서로 본문을 읽는다.
-
-둘 중 하나라도 아니면 위 절차대로 사용자가 읽고 응답한 다음 턴에 등록한다.
+dispatch 로 일을 받지 않았으면 위 절차대로 사용자가 읽고 응답한 다음 턴에 등록한다.
