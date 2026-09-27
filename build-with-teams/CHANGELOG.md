@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.3.0
+
+스폰 프롬프트에 넣는 문구에 「모든 팀원, orchestration 메시지 금지」 를 더했다.
+
+team-lead 가 Orca dispatch 워커로 돌 때 팀원이 `worker_done` 을 보내 dispatch 가 먼저 끝났고,
+team-lead 의 보고는 거절됐다.
+팀원은 dispatch 안에서 도는지 알 수 없으므로, 조건 없이 늘 지키는 문장으로 적었다.
+역할 계약 파일마다 복제하지 않고 모든 팀원이 받는 스폰 프롬프트 한 곳에 두었다.
+
 ## 5.2.1
 
 korean-check 1.2.0 이 등록한 금지어 「가르다」 계열을 참조 문서 네 곳에서 뜻에 맞는 낱말로 바꿨다.

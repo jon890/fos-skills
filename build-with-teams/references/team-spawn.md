@@ -51,6 +51,14 @@ Claude Code 에서는 id 로도 메시지가 오간다 (실측).
 그 형식을 벗어난 산문 요약으로 대신하지 말 것.
 ```
 
+**모든 팀원, orchestration 메시지 금지.**
+team-lead 가 Orca dispatch 워커로 돌 때 팀원이 보낸 `worker_done` 이 그 dispatch 를 먼저 끝내고, 뒤이은 team-lead 의 보고는 거절된다 (실측).
+
+```
+`orca orchestration` 명령(worker_done, escalation, ask, heartbeat)을 실행하지 말 것.
+결과와 질문은 team-lead 에게만 보낼 것.
+```
+
 **executor, cwd 격리.** 하위 에이전트의 cwd 는 지정하지 않으면 main 워킹 디렉터리다.
 
 ```
