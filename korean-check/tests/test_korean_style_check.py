@@ -127,6 +127,16 @@ class TestFalsePositive(Base):
 class TestEnglishTerm(Base):
     """영문 금지어는 단어 경계로 찾는다. 부분 문자열로 찾으면 다른 낱말을 잡는다."""
 
+    def test_allowed_english_terms_pass(self):
+        for term in ("baseline", "fan-out", "flat fan-out", "in-flight", "ingest"):
+            with self.subTest(term=term):
+                self.assertPassed(f"{term} 을 사용한다.\n")
+
+    def test_korean_transliteration_and_remaining_english_terms_are_caught(self):
+        for term in ("베이스라인", "wall-time", "sweep"):
+            with self.subTest(term=term):
+                self.assertCaught(f"{term} 을 사용한다.\n", term)
+
     def test_bare_english_term_is_caught(self):
         self.assertCaught("외부 상태 gate 를 둔다.\n", "gate")
 

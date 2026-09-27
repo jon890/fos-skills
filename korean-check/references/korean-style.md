@@ -12,22 +12,19 @@
 | ----------------------------- | ----------------------- |
 | 매트릭스 (matrix)                 | 표, 영향 표, 변경 표           |
 | 트리아지 (triage)                 | 분류, 분류 작업               |
-| 베이스라인 / baseline              | 기준값, 기준점, 기준선           |
+| 베이스라인                         | baseline, 기준값, 기준점, 기준선 |
 | 스파이크 (spike)                  | 사전 조사, 탐색 작업, 실증        |
 | 게이트 (gate)                    | 점검, 사전 점검, 통과 조건        |
 | wall-time / wall clock time   | 전체 처리 시간, 실제 처리 시간      |
 | silent failure                | 묻혀버린 실패, 노출 안 되는 실패     |
-| in-flight (요청)                | 처리 중인 요청, 진행 중인 요청      |
 | 리포지토리 위생 (repo hygiene)       | 리포지토리 정리                |
 | ramp                          | 단계적 상향                  |
-| flat fan-out / fan-out        | 통합 병렬 호출, 병렬 호출         |
 | ephemeral (instance / runner) | 일회성 인스턴스·러너             |
 | 클램프 / clamp                   | 값을 범위로 제한, 하한이나 상한으로 제한 |
 | 폭주 (CPU 폭주 등)                 | 과점유, 과도한 점유             |
 | 강등 (로그 레벨 강등)                 | 낮춤                      |
 | 오살 (stale PID 오살)             | 엉뚱한 프로세스를 죽이는 문제        |
 | 외과적 (surgical)                | 정밀한, 국소적, 범위를 좁힌        |
-| ingest                        | 적재                      |
 | 사전 소진                         | 사전 해소                   |
 | 단일 진실원                        | 단일 소스                   |
 | 변질 의심                         | 변질 우려                   |
@@ -129,6 +126,7 @@
 ## 용어를 옮기지 않는다
 
 새 번역어를 만들지 않는다. 옮기기 전에 그 저장소가 이미 쓰는 표기를 찾아 그것을 따른다.
+외래어 매핑 표는 한글 음차와 비유어를 막는 표다. 영문 원어를 한국어로 옮기라는 뜻이 아니다.
 
 ```bash
 grep -rn "<후보 표기>" docs/ CLAUDE.md
@@ -157,6 +155,7 @@ grep -rn "<후보 표기>" docs/ CLAUDE.md
 | 글자 추출기 | PDF backend | 파싱 백엔드     |
 | 절단     | truncation  | 뒷부분 누락     |
 | 유입 제한  | rate limit  | rate limit  |
+| 틀      | template    | template    |
 
 
 외래어 매핑 표에 항목을 더하거나 뺄 때는 [`checker-maintenance.md`](checker-maintenance.md)를 읽는다.
