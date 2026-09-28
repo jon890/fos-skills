@@ -31,7 +31,7 @@ metadata:
 
 ## 레포 설정을 먼저 읽는다
 
-레포 고유의 값은 아래 순서로 찾는다. 앞에서 찾으면 뒤를 보지 않는다.
+레포 고유의 값은 아래 순서로 찾는다.
 
 1. `<repo-root>/.claude/planning-overlay.md`
 2. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
