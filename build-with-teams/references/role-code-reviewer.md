@@ -12,12 +12,13 @@
 발견마다 **어느 phase 의 변경인지**를 적는다. team-lead 가 그 phase 의 executor 를 다시 띄운다.
 
 이번 plan 이 변경한 파일만 본다. 범위는 **3-dot** 으로 잡는다.
+`$BASE_BRANCH`는 team-lead가 사전 검사에서 정해 전달한 기준 브랜치다.
 
 ```bash
-git diff --name-only origin/main...HEAD
+git diff --name-only "origin/$BASE_BRANCH...HEAD"
 ```
 
-2-dot(`origin/main..HEAD`)은 분기 후 origin/main 에 들어온 외부 커밋까지 끌어온다.
+2-dot은 분기 후 기준 브랜치에 들어온 외부 커밋까지 끌어온다.
 
 ## 검사 축
 
@@ -26,7 +27,7 @@ git diff --name-only origin/main...HEAD
 - **계획 일치.** 적힌 것이 구현됐고, 적히지 않은 것이 들어오지 않았는가.
 각 phase 의 「목표」 와 「작업 항목」 을 diff 와 대조한다.
 적히지 않은 변경은 critic 검토를 우회한 것이다.
-- **테스트.** 각 phase 의 마지막 테스트를 읽고 아래를 찾는다.
+- **테스트.** 각 phase에서 만들거나 고친 테스트를 읽고 아래를 찾는다.
   - 기대값을 실제 출력에 맞춰 놓았다. 구현을 바꿔도 늘 통과한다
   - 단언이 없거나 항상 참인 조건이다
   - `skip`, `only`, 주석 처리된 케이스가 있다

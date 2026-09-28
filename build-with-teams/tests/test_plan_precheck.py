@@ -2,8 +2,12 @@
 """plan_precheck 의 판정 함수 검사."""
 
 import importlib.util
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location(
     "plan_precheck", Path(__file__).resolve().parents[1] / "scripts" / "plan_precheck.py"
@@ -99,6 +103,105 @@ class TestFindLocal(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as empty:
             self.assertIsNone(pc.find_local(Path(empty), "plan001"))
+
+
+class TestBaseBranch(unittest.TestCase):
+    def test_explicit_base_overrides_git_setting(self):
+        with patch.object(pc, "try_run") as optional, patch.object(pc, "run") as run:
+            self.assertEqual(pc.resolve_base(Path("."), "develop"), "develop")
+            optional.assert_not_called()
+            run.assert_called_once_with(["git", "check-ref-format", "--branch", "develop"], Path("."))
+
+    def test_git_setting_overrides_remote_default(self):
+        with patch.object(pc, "try_run", return_value="develop"), patch.object(pc, "run") as run:
+            self.assertEqual(pc.resolve_base(Path(".")), "develop")
+            self.assertEqual(run.call_count, 1)
+
+    def test_remote_default_can_be_trunk(self):
+        with patch.object(pc, "try_run", return_value=None), patch.object(pc, "run", side_effect=["ref: refs/heads/trunk\tHEAD\nabc\tHEAD", ""]):
+            self.assertEqual(pc.resolve_base(Path(".")), "trunk")
+
+    def test_unknown_base_is_execution_error(self):
+        with patch.object(pc, "try_run", return_value=None), patch.object(pc, "run", return_value="abc\tHEAD"):
+            with self.assertRaises(pc.PrecheckError):
+                pc.resolve_base(Path("."))
+
+    def test_develop_diff_excludes_changes_already_on_base(self):
+        def command(args, cwd):
+            if args[1] == "ls-remote":
+                return "abc\trefs/heads/feature/app"
+            if args[1] == "diff":
+                self.assertIn("origin/develop...FETCH_HEAD", args)
+                return "tasks/plan1/phase-01.md\ndocs/flow.md"
+            if args[1] == "branch":
+                return "origin/develop"
+            return ""
+        with patch.object(pc, "run", side_effect=command):
+            facts = pc.branch_facts(Path("."), "feature/app", "develop")
+        self.assertFalse(facts["has_impl_commits"])
+        self.assertTrue(facts["merged_into_base"])
+        self.assertEqual(facts["base"], "develop")
+
+    def test_diff_failure_is_not_clean_branch(self):
+        def command(args, cwd):
+            if args[1] == "ls-remote":
+                return "abc\trefs/heads/feature/app"
+            if args[1] == "diff":
+                raise pc.PrecheckError("비교 기준이 없다")
+            return ""
+        with patch.object(pc, "run", side_effect=command):
+            with self.assertRaises(pc.PrecheckError):
+                pc.branch_facts(Path("."), "feature/app", "develop")
+
+    def test_completed_uses_develop_merge_fact(self):
+        facts = {"branch": "feature/app", "remote_exists": True, "base": "develop", "merged_into_base": True}
+        self.assertFalse(any("머지되지 않았다" in f for f in pc.judge({"status": "completed"}, facts, [])))
+
+    def test_git_setting_is_read_from_repository_only(self):
+        with patch.object(pc, "try_run", return_value=None) as optional, patch.object(pc, "run", side_effect=["ref: refs/heads/main\tHEAD", ""]):
+            pc.resolve_base(Path("."))
+            optional.assert_called_once_with(["git", "config", "--local", "--get", "build-with-teams.baseBranch"], Path("."))
+
+    # 사용자 전역 설정의 build-with-teams.baseBranch 나 init.defaultBranch 가 결과를 바꾸지 않게 한다.
+    @patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+    def test_real_git_remote_uses_develop_and_detects_later_implementation(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+            root = Path(tmp)
+            repo, remote = root / "repo", root / "remote.git"
+            repo.mkdir()
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+            git("init", "--quiet", "-b", "main")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            (repo / "README.md").write_text("initial\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "initial")
+            git("checkout", "--quiet", "-b", "develop")
+            (repo / "src").mkdir()
+            (repo / "src" / "app.py").write_text("existing implementation\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "develop implementation")
+            git("checkout", "--quiet", "-b", "feature/app")
+            (repo / "docs").mkdir()
+            (repo / "docs" / "flow.md").write_text("new plan\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "planning")
+            git("clone", "--quiet", "--bare", str(repo), str(remote))
+            subprocess.run(["git", "--git-dir", str(remote), "symbolic-ref", "HEAD", "refs/heads/develop"], check=True, capture_output=True)
+            git("remote", "add", "origin", str(remote))
+            base = pc.resolve_base(repo)
+            self.assertEqual(base, "develop")
+            self.assertTrue(pc.branch_facts(repo, "feature/app", "main")["has_impl_commits"])
+            self.assertFalse(pc.branch_facts(repo, "feature/app", base)["has_impl_commits"])
+            (repo / "src" / "app.py").write_text("changed implementation\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "implementation")
+            git("push", "--quiet", "origin", "feature/app")
+            facts = pc.branch_facts(repo, "feature/app", base)
+            self.assertEqual(facts["impl_files"], ["src/app.py"])
 
 
 if __name__ == "__main__":

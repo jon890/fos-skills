@@ -57,7 +57,8 @@
 | `references/step-7-docs.md` | 필수 다섯 전체의 영향 판정, ADR 로 남길 결정을 가르는 두 조건 |
 | `references/step-8-tasks.md` | phase 분할 기준, plan 을 나눌 조건, plan 번호를 원격까지 훑어 정하는 방법 |
 | `references/task-create.md` | `index.json` 스키마, ADR 템플릿과 supersede 처리, phase 파일 구조와 작성 규칙 |
-| `scripts/verify_task.py` | 기계로 판정되는 task 위생 일곱 가지 검출. 종료 코드 0 통과, 1 위반, 2 실행 불가 |
+| `scripts/verify_task.py` | 생성한 task와 커밋 전 staged 범위 검사. 종료 코드 0 통과, 1 위반, 2 실행 불가 |
+| `tests/test_verify_task.py` | 파일 상태, 같은 phase의 테스트 실행, staged 범위와 오탐 회귀 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 
 실행 절차는 `SKILL.md` 가 소유한다.

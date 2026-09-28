@@ -76,18 +76,33 @@ def parse_index(path: Path) -> dict:
         raise PrecheckError(f"{path} 를 읽지 못했다: {exc}") from exc
 
 
-def branch_facts(repo: Path, branch: str) -> dict:
+def resolve_base(repo: Path, explicit: str | None = None) -> str:
+    """명시 인자, 저장소 Git 설정, 원격 기본 브랜치 순으로 정한다."""
+    base = explicit or try_run(["git", "config", "--local", "--get", "build-with-teams.baseBranch"], repo)
+    if not base:
+        remote = run(["git", "ls-remote", "--symref", "origin", "HEAD"], repo)
+        for line in remote.splitlines():
+            if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD"):
+                base = line.split()[1].removeprefix("refs/heads/")
+                break
+    if not base:
+        raise PrecheckError("원격 기본 브랜치를 찾지 못했다. --base 로 기준 브랜치를 지정한다.")
+    run(["git", "check-ref-format", "--branch", base], repo)
+    return base
+
+
+def branch_facts(repo: Path, branch: str, base: str) -> dict:
     remote_ref = f"refs/heads/{branch}"
     ls = run(["git", "ls-remote", "--heads", "origin", branch], repo)
     exists = any(line.endswith(remote_ref) for line in ls.splitlines())
-    facts = {"branch": branch, "remote_exists": exists}
+    facts = {"branch": branch, "remote_exists": exists, "base": base}
     if not exists:
         return facts
 
-    run(["git", "fetch", "--quiet", "origin", branch], repo)
-    changed = try_run(
-        ["git", "diff", "--name-only", "origin/main...FETCH_HEAD"], repo
-    ) or ""
+    # 기준을 먼저 갱신하고 작업 브랜치를 마지막에 fetch 한다. FETCH_HEAD 는 작업 브랜치다.
+    run(["git", "fetch", "--quiet", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}"], repo)
+    run(["git", "fetch", "--quiet", "origin", f"refs/heads/{branch}"], repo)
+    changed = run(["git", "diff", "--name-only", f"origin/{base}...FETCH_HEAD"], repo)
     impl = [
         f for f in changed.splitlines()
         if f and not f.startswith(PLANNING_PREFIXES)
@@ -95,9 +110,9 @@ def branch_facts(repo: Path, branch: str) -> dict:
     facts["impl_files"] = impl
     facts["has_impl_commits"] = bool(impl)
 
-    merged = try_run(["git", "branch", "--remotes", "--contains", "FETCH_HEAD"], repo) or ""
-    facts["merged_into_main"] = any(
-        line.strip() in ("origin/main", "origin/HEAD -> origin/main")
+    merged = run(["git", "branch", "--remotes", "--contains", "FETCH_HEAD"], repo)
+    facts["merged_into_base"] = any(
+        line.strip() in (f"origin/{base}", f"origin/HEAD -> origin/{base}")
         for line in merged.splitlines()
     )
     return facts
@@ -148,9 +163,9 @@ def judge(index: dict, branch: dict, prs: list[dict]) -> list[str]:
         listed = ", ".join(f"#{p['number']} {p['title']}" for p in prs)
         found.append(f"이 브랜치로 열린 PR 이 있다: {listed}")
 
-    if status in DONE_STATUS and not branch.get("merged_into_main"):
+    if status in DONE_STATUS and not branch.get("merged_into_base", branch.get("merged_into_main")):
         found.append(
-            "completed 인데 브랜치가 main 에 머지되지 않았다. 완료 표기가 실제와 어긋난다."
+            f"completed 인데 브랜치가 {branch.get('base', 'main')} 에 머지되지 않았다. 완료 표기가 실제와 어긋난다."
         )
 
     return found
@@ -161,6 +176,7 @@ def main() -> int:
     ap.add_argument("plan", help="task 디렉터리 이름이나 그 앞부분 (예: plan260)")
     ap.add_argument("--repo", default=".", help="저장소 루트 (기본: 현재 디렉터리)")
     ap.add_argument("--branch", help="원격 브랜치 이름 (기본: task 디렉터리 이름)")
+    ap.add_argument("--base", help="기준 브랜치. 저장소 설정에서 정한 값을 넘긴다")
     ap.add_argument("--json", action="store_true", help="사실을 JSON 으로 출력한다")
     args = ap.parse_args()
 
@@ -168,7 +184,8 @@ def main() -> int:
     try:
         task_dir = find_local(repo, args.plan)
         name = task_dir.name if task_dir else args.plan
-        branch = branch_facts(repo, args.branch or name)
+        base = resolve_base(repo, args.base)
+        branch = branch_facts(repo, args.branch or name, base)
         prs = open_pr(repo, branch["branch"]) if branch["remote_exists"] else []
 
         if task_dir:
