@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.5.0"
+  version: "5.6.0"
 ---
 # build-with-teams
 
@@ -44,6 +44,7 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 | 설정 값 | 쓰는 단계 |
 | --- | --- |
 | 통합 검증 명령 (lint, 타입 검사, 테스트, 빌드) | 6 |
+| 기준 브랜치 (사전 검사, 리뷰, PR에 같은 값 사용) | 1, 2, 5, 6 |
 | 브랜치 이름 형식, 작업 공간을 만들고 정리하는 방법 | 1, 2, 6 |
 | 네 역할에 쓸 전용 에이전트 이름 | 3, 4, 5 |
 | `index.json` 필드와 phase 파일 규격의 레포 변형 | 3 |
@@ -72,10 +73,14 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 ### 1. 재실행 확인
 
 plan 인자를 받으면 가장 먼저 돌린다.
-`<스킬 루트>` 는 하네스가 알려준 이 스킬의 base 디렉터리다. 절대경로로 적는다.
+`$SKILL_DIR`은 이 스킬 번들, `$PLAN`은 task 디렉터리 이름, `$REPO`는 대상 저장소다.
+레포 설정에서 기준 브랜치를 찾으면 `$BASE_BRANCH`에 담고 `--base`로 넘긴다.
+없으면 `--base`를 생략한다. Git 설정 `build-with-teams.baseBranch`, 원격 기본 브랜치 순으로 찾는다.
+검사 결과의 `branch.base`를 이후 단계와 검토자에게 전달한다. 찾지 못하면 종료 코드 2다.
 
 ```bash
-python3 <스킬 루트>/scripts/plan_precheck.py <plan> --repo <repo-root>
+# cwd: 대상 저장소 root
+python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" --json
 ```
 
 | 종료 코드 | 대응 |
@@ -94,7 +99,7 @@ python3 <스킬 루트>/scripts/plan_precheck.py <plan> --repo <repo-root>
 - main 워킹 디렉터리와 분리한다.
 - 팀원에게 줄 절대경로를 확보한다.
 
-plan 브랜치가 원격 main 보다 뒤처졌으면 갱신할지 사용자에게 확인한다.
+plan 브랜치가 원격 기준 브랜치보다 뒤처졌으면 갱신할지 사용자에게 확인한다.
 
 ### 3. 계획 검토
 
@@ -125,12 +130,26 @@ critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 �
 3. **executor 를 스폰한다.** 이름은 `executor-p{N}` 이고 **등급을 명시 지정한다.**
    호출 인자로 phase 파일 절대경로, **1항에서 정한 실행 형태**, `critic minor notes` 를 담는다.
 4. **executor 가 구현하고 검증한 뒤 회신한다.**
-5. **team-lead 가 그 phase 만 커밋한다.** 커밋 전 `git status` 로 staged 전체를 본다.
-   무관한 변경이 섞였으면 `git reset` 후 경로를 한정해 커밋한다.
+5. **team-lead 가 그 phase 만 커밋한다.** 아래 「커밋 전 대조」를 통과한 파일만 커밋한다.
 6. **커밋 후 그 phase 의 executor 를 정리한다.**
 
 phase 가 실패하면 원인을 분석한다.
 phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
+
+#### 커밋 전 대조
+
+`git status`로 변경을 확인하고 해당 phase의 경로만 stage한다.
+executor의 테스트 실행 결과가 모두 통과했는지 확인한 뒤 목록과 staged 파일을 대조한다.
+`$PLANNING_SKILL_DIR`은 하네스에서 찾은 planning 번들, `$PHASE_FILE`은 해당 phase 파일의 경로다.
+
+```bash
+# cwd: 대상 저장소 root
+python3 "$PLANNING_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
+```
+
+종료 코드 0이면 커밋한다. 1이면 출력한 범위 밖 파일이나 변경 종류를 바로잡는다.
+계획의 파일 목록이 빠진 경우에는 3단계로 돌아간다. 2이면 실행 오류를 해소하고 다시 대조한다.
+변경 파일 목록의 작성 규칙은 [planning의 task 작성 규칙](../planning/references/task-create.md#변경-파일-작성)을 따른다.
 
 ### 5. 코드 리뷰와 문서 정합성 검토
 
@@ -140,6 +159,8 @@ phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 p
 
 - code-reviewer: 반복 함정 목록 경로
 - docs-verifier: 오버레이가 추가한 문서 경로
+
+두 검토자에게 1단계에서 정한 기준 브랜치도 전달한다.
 
 **의도한 설계를 미리 알려주지 않는다.**
 
