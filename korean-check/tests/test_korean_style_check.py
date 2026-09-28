@@ -106,6 +106,16 @@ class TestConjugation(Base):
         self.assertEqual(done.returncode, 1)
         self.assertEqual(done.stdout.count("금지어"), 1)
 
+    def test_narrow_verb_forms_are_caught(self):
+        for form in ("좁힌다", "좁혀", "좁혔다", "좁히면", "좁힐", "좁힘", "좁힙니다"):
+            with self.subTest(form=form):
+                self.assertCaught(f"대상을 {form}.\n")
+
+    def test_narrow_adjective_forms_are_not_caught(self):
+        for form in ("좁은", "좁다", "좁았다"):
+            with self.subTest(form=form):
+                self.assertPassed(f"길이 {form}.\n")
+
 
 class TestFalsePositive(Base):
     """부분 문자열로 찾으므로 무관한 낱말을 잡지 않는지 본다."""
@@ -183,6 +193,9 @@ class TestRulesFileItself(Base):
             env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
         )
         self.assertEqual(done.returncode, 0, done.stdout)
+
+    def test_changelog_is_scanned_when_passed_directly(self):
+        self.assertCaught("대상을 좁혔다.\n", "좁혔", "CHANGELOG.md")
 
 
 class TestNonMarkdown(Base):
@@ -300,6 +313,11 @@ class TestHookMode(Base):
         done = self.hook(self.write("a.md", "문제가 없는 문장이다.\n"))
         self.assertEqual(done.returncode, 0)
 
+    def test_changelog_is_scanned_in_hook(self):
+        done = self.hook(self.write("CHANGELOG.md", "예전에 대상을 좁혔다.\n"))
+        self.assertEqual(done.returncode, 0)
+        self.assertIn("좁혔", done.stdout)
+
 
 class TestRepository(unittest.TestCase):
     """이 저장소 자신이 자기 규칙을 지키는지 본다.
@@ -313,6 +331,8 @@ class TestRepository(unittest.TestCase):
             ["git", "ls-files", "*.md"], cwd=root,
             capture_output=True, text=True, check=True,
         ).stdout.split()
+        # 과거 변경 이력의 표현은 수정하지 않는다. 새 이력은 직접 검사한다.
+        files = [path for path in files if Path(path).name != "CHANGELOG.md"]
         self.assertTrue(files, "검사할 .md 를 찾지 못했다")
         done = subprocess.run(
             ["python3", str(SCRIPT), *files], cwd=root,
