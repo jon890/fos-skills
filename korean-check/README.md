@@ -5,7 +5,7 @@
 ## 산출물
 
 - 검사기 둘의 종료 코드. 0 이 아니면 걸린 파일과 줄 번호
-- 검사기가 잡지 못하는 축의 발견 목록. 쓰지 않은 쪽이 읽고 낸다
+- 검사기가 잡지 못하는 축의 발견 목록과 확인 범위. 메인이 직접 점검해 남긴다
 - 반영하지 않은 발견과 그 이유
 
 ## 사용 시점
@@ -79,7 +79,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | `references/korean-style.md` | 어휘 매핑 표, 문장 구성, 출력 직전 점검, 용어를 옮기지 않는 기준 |
 | `references/writing-structure.md` | 독자 구간, 분량 구간, 목록과 표로 나누는 방식, 내용 점검 |
 | `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
-| `references/review-axes.md` | 검토자에게 무엇을 주고 무엇을 받는가, 반영 통과 조건 |
+| `references/review-axes.md` | 메인과 별도 검토 역할이 쓰는 의미 점검 축, 발견 형식과 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
 | `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어와 인라인 `+` 연결을 찾는다. 훅 모드를 갖는다 |
 | `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 찾는다. 인자 형태는 docstring 이 소유한다 |

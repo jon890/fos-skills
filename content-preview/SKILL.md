@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.9.0"
+  version: "3.10.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -32,7 +32,7 @@ description: |
 | 1 | 수신자와 문체 | 누가 읽는지 정했고, 개인 문체 참조가 있으면 본문을 쓰기 전에 읽었다 | `references/persona.md` |
 | 2 | 본문 작성 | 본문 파일의 첫 줄이 새 내용이다 | `references/render-traps.md` |
 | 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.sh` |
-| 4 | 검토 | 검토 축의 통과 조건 셋을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
+| 4 | 검토 | 의미 점검의 통과 조건을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다 | `scripts/show-preview.sh` |
 | 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다 | |
 
@@ -103,12 +103,13 @@ bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 
 ### 4. 검토
 
-검토는 subagent 에 맡긴다. 띄울 수 없는 환경이면 사용자에게 검토를 청한다.
-검토자에게 무엇을 주고 받은 것을 어떻게 처리하는지는
+메인이 본문을 의미 점검 축으로 직접 점검한다.
+담당자와 별도 검토 조건은 [`../korean-check/SKILL.md`](../korean-check/SKILL.md) 가,
+점검에 쓸 자료와 발견을 처리하는 방법은
 [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) 가 소유한다.
 그 파일을 읽고 수행한다.
 
-그 목록에 없는 것 둘을 함께 준다. 제목, 그리고 개인 문체 참조를 두고 있으면 그 점검 항목이다.
+본문과 함께 제목, 그리고 개인 문체 참조가 있으면 그 점검 항목을 함께 본다.
 
 `korean-check` 가 어디 있는지는 아래 명령이 낸다. 저장소마다 배치가 한 단 다르다.
 
@@ -118,7 +119,7 @@ bash "$SKILL_DIR/scripts/style-check.sh" --where
 
 #### 검토를 건너뛰는 때
 
-**짧은 글은 이 단계를 건너뛴다.** 댓글 한 줄에 검토자를 띄우는 것은 과하다.
+**짧은 글은 이 단계를 건너뛴다.**
 긴 문서와 정형 양식만 수행한다.
 분량 구간의 판정 기준은 [`../korean-check/references/writing-structure.md`](../korean-check/references/writing-structure.md) 가 소유한다.
 
@@ -178,10 +179,10 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 **무엇을 띄웠는지와 제목만 한 줄로 알리고 턴을 끝낸다.**
 사용자가 채팅에서 보자고 명시할 때만 전문을 옮겨 적는다.
 
-**검토 단계에서 반영하지 않은 발견을 그 보고에 한 줄로 덧붙인다.**
+**의미 점검에서 반영하지 않은 발견을 그 보고에 한 줄로 덧붙인다.**
 내가 판단해 버린 것을 사용자가 되짚을 수 있어야 한다.
 반영한 발견과 발견 목록 전문은 적지 않는다. 목록이 길어지면 본문을 가린다.
-검토 단계를 건너뛰었으면 그것을 한 줄로 적는다.
+본문과 제목 등 확인한 범위를 한 줄로 적는다. 의미 점검을 건너뛰었으면 그 사실을 적는다.
 
 **미리보기와 구조화된 질문을 같은 턴에 묶지 않는다.**
 선택창이 본문을 가려 사용자가 읽기 전에 결정하게 된다.

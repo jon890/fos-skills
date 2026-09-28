@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.5.0
+
+PR 제목과 본문 형식은 create-pr에 맡기고 브랜치, 커밋 맥락과 검증·의존 관계만 전달한다.
+README의 PR 형식과 설정 설명을 맞추고 오버레이가 필수가 아님을 명시했다.
+
+## 5.4.0
+
+critic, code-reviewer와 docs-verifier 역할은 유지한다.
+수정 뒤에는 바뀐 파일과 영향을 받는 판정 축만 재평가하고 회신에 그 범위를 남긴다.
+
 ## 5.3.0
 
 스폰 프롬프트에 넣는 문구에 「모든 팀원, orchestration 메시지 금지」 를 더했다.

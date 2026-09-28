@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.14.0"
+  version: "1.15.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -11,14 +11,14 @@ description: |
 
 # korean-check
 
-**목표: 한국어 산출물이 나가기 전에 기계가 판정할 축은 검사기로 걸러내고, 남은 축은 쓰지 않은 쪽이 읽는다.**
+**목표: 한국어 산출물이 나가기 전에 기계가 판정할 축은 검사기로 걸러내고, 남은 축은 메인이 점검해 발견과 확인 범위를 남긴다.**
 
 두 층으로 나뉜다.
 
 | 층 | 무엇 | 판정 수단 | 축의 소유자 |
 | --- | --- | --- | --- |
 | 검사기 | 두 검사기가 코드에 담은 축 | 종료 코드 | 두 검사기의 docstring |
-| 검토 | 검사기가 판정하지 못하는 것 | 발견 목록 | `references/review-axes.md` 의 「축」 |
+| 의미 점검 | 검사기가 판정하지 못하는 것 | 발견 목록과 확인 범위 | `references/review-axes.md` 의 「축」 |
 
 **판정 기준과 검사기를 한 자리에 둔다.** `scripts/korean-style-check.py` 가
 `references/korean-style.md` 의 매핑 표를 런타임에 읽는다.
@@ -32,7 +32,7 @@ description: |
 | 헤더와 표를 쓸지, 밖으로 나가는 글인지 | `references/writing-structure.md` |
 | 검사기가 무엇을 건너뛰는지, 훅이 언제 돌지 않는지 | `references/markdown-readability.md` |
 | 이 매체에서 어떻게 렌더될지 | [`../content-preview/references/render-traps.md`](../content-preview/references/render-traps.md) |
-| 검토자에게 무엇을 주고 받은 것을 어떻게 처리할지 | `references/review-axes.md` |
+| 검사기가 잡지 못하는 축과 발견을 처리하는 방법 | [`references/review-axes.md`](references/review-axes.md) |
 
 ## 검사기를 돌린다
 
@@ -57,12 +57,15 @@ bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 ## 검사기가 잡지 못하는 축을 본다
 
 **검사기의 종료 코드 0 은 본문이 통과했다는 뜻이 아니다.**
-축, 실측 근거, 통과 조건은 `references/review-axes.md` 가 소유한다.
+축과 발견 형식, 통과 조건은 [`references/review-axes.md`](references/review-axes.md) 가 소유한다.
 
-**긴 문서와 정형 양식은 쓰지 않은 쪽이 읽는다.**
-검토는 subagent 에 맡긴다. 띄울 수 없는 환경이면 사용자에게 검토를 청한다.
+**긴 문서와 정형 양식은 메인이 축 목록으로 직접 점검한다.**
+완료 보고에 확인한 범위와 반영하지 않은 발견을 남긴다.
 짧은 댓글 한 줄은 이 층을 건너뛰고 검사기 통과로 끝낸다.
 분량 구간의 판정 기준은 `references/writing-structure.md` 가 소유한다.
+
+사용자가 별도 검토를 요청했거나 하네스 지침이 별도 검토를 요구하면 그 경로를 따른다.
+아티팩트 페이지 발행 전 검토가 해당한다. 별도 검토에도 같은 축과 발견 형식을 쓴다.
 
 검사기에 넣을 파일이 없고 제목처럼 한 줄도 아닌 산출물은 이 층만 적용한다.
 채팅 답변이 그렇다.
