@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.6.1
+
+코드 리뷰 지침에서 검증 결과의 일부만 보고하는 경우를 직접 설명한다.
+
 ## 5.6.0
 
 phase 커밋 전에 planning의 변경 파일 목록과 staged 파일을 대조한다.
