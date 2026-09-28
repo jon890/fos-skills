@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.3.0"
+  version: "5.4.0"
 ---
 # build-with-teams
 
@@ -145,9 +145,9 @@ phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 p
 
 | 판정 | 누가 고치나 | 다음 |
 | --- | --- | --- |
-| `FIX_NEEDED` | 그 phase 의 executor 를 다시 띄운다 | 전체 재검사 |
-| `UPDATE_NEEDED` | team-lead 가 docs 를 고친다 | 재검증 |
-| `VIOLATION` | 그 phase 의 executor 를 다시 띄운다 | 재검증 |
+| `FIX_NEEDED` | 그 phase 의 executor 를 다시 띄운다 | 변경 범위 재평가 |
+| `UPDATE_NEEDED` | team-lead 가 docs 를 고친다 | 변경 범위 재평가 |
+| `VIOLATION` | 그 phase 의 executor 를 다시 띄운다 | 변경 범위 재평가 |
 
 **재스폰 등급은 그 phase 의 원래 등급을 그대로 쓴다.** 실행 형태가 올라갔으면 그 하한을 따른다.
 이 단계의 수정은 **검토 반영 커밋 하나로 묶는다.** phase 커밋과 구분되게 메시지에 밝힌다.
@@ -155,7 +155,9 @@ phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 p
 code-reviewer 회신의 「team-lead 가 정할 것」 목록에서 무엇을 고칠지 team-lead 가 정한다.
 고치지 않기로 한 것은 6단계 보고에 남긴다.
 
-**리뷰 반영이 docs 를 건드렸으면 docs-verifier 를 다시 돌린다.** 바뀐 파일을 명시해 재요청한다.
+**리뷰 반영 뒤에는 바뀐 파일과 영향을 받는 판정 축만 다시 본다.**
+docs 를 건드렸으면 그 범위로 docs-verifier 에게 재요청한다.
+변경의 영향을 받지 않은 판정은 유지하고, 회신에 재평가 범위를 남긴다.
 
 재투입 요청에는 **어느 파일의 어느 라인이 어떻게 바뀌었는지**를 담는다.
 회신이 직전 판정과 같으면 바뀐 실제 라인을 `grep` 으로 출력해 증거로 붙인다.
