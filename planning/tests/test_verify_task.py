@@ -4,6 +4,7 @@ import importlib.util
 import contextlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -39,6 +40,10 @@ class TaskRulesTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.repo = Path(self.tmp.name)
         self.file("docs/flow.md")
+        # 실제 git 테스트가 사용자 전역 설정의 영향을 받지 않게 한다.
+        env = patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+        env.start()
+        self.addCleanup(env.stop)
 
     def file(self, rel, content=""):
         path = self.repo / rel
@@ -150,6 +155,41 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual(out, [])
         self.assertTrue(any("판정하지 못한" in w for w in warnings))
         self.assertTrue(self.inspect("### 1. `tests/test_app.py`", "ruff check src\nnpm run lint", [("tests/test_app.py", "수정")]))
+
+    def test_spec_suffix_needs_test_directory_or_code_test_name(self):
+        for rel in ("src/main/java/UserSpec.java", "docs/specs/x.md", "src/testing.py"):
+            with self.subTest(rel=rel):
+                self.assertFalse(verify.is_test(rel))
+        for rel in ("src/test/java/UserSpec.java", "spec/user_spec.rb", "tests/fixtures/data.json", "web/app.spec.ts", "pkg/app_test.go", "src/AppTest.java", "tests/test_*.py", "tests"):
+            with self.subTest(rel=rel):
+                self.assertTrue(verify.is_test(rel))
+
+    def test_exit_zero_suppression_and_tee_without_pipefail(self):
+        entries = [("tests/test_app.py", "신규")]
+        self.assertTrue(self.inspect("### 1. `tests/test_app.py`", "pytest || exit 0", entries))
+        out, warnings = [], []
+        verify.check_phase_prompt(Path("p"), self.prompt("### 1. `tests/test_app.py`", "pytest | tee out.log"), out, entries, self.repo, warnings)
+        self.assertEqual(out, [])
+        self.assertTrue(any("pipefail" in w for w in warnings))
+        warnings = []
+        verify.check_phase_prompt(Path("p"), self.prompt("### 1. `tests/test_app.py`", "set -euo pipefail\npytest | tee out.log"), [], entries, self.repo, warnings)
+        self.assertFalse(any("pipefail" in w for w in warnings))
+
+    def test_completion_mark_must_share_a_paragraph(self):
+        self.assertTrue(verify.marks_completed("마지막에 `index.json` 을\ncompleted 로 바꾼다."))
+        self.assertFalse(verify.marks_completed("`index.json` 을 읽는다.\n\n테스트가 completed 되면 끝낸다."))
+
+    def test_bsd_sed_inside_shell_block_is_reported(self):
+        out = []
+        verify.check_code_sed(Path("p"), "## 작업 항목\n```bash\nsed -i '' 's/\\bfoo/bar/' a.txt\n```\n```python\nsed = r'sed x \\b'\n```", out)
+        self.assertEqual(len(out), 1)
+        self.assertIn("p:3", out[0])
+
+    def test_fence_helper_needs_matching_closing_fence(self):
+        text = "## 작업 항목\n````bash\n```\n## 코드 안\n````\n## 검증\n끝"
+        self.assertIn("## 코드 안", verify.section(text, "작업 항목"))
+        self.assertEqual([n for n, _ in verify.iter_prose(text)], [7])
+        self.assertEqual([body for _, _, body in verify.code_blocks(text)], ["```\n## 코드 안"])
 
     def test_assignments_chains_and_multiline_commands(self):
         commands = list(verify.shell_commands('```bash\nenv FLAG=1 pytest \\\n tests/test_app.py; echo "exit=$?"\ngrep x a && pytest\n```'))
@@ -268,6 +308,11 @@ class TaskRulesTest(unittest.TestCase):
             (plan / "index.json").write_text("{")
             self.assertEqual(verify.main(["verify", "plan1-app"]), 2)
             self.assertEqual(verify.main(["verify", "missing"]), 2)
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(err):
+            self.assertEqual(verify.main(["verify"]), 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("--staged", err.getvalue())
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True)

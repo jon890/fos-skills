@@ -75,12 +75,15 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 plan 인자를 받으면 가장 먼저 돌린다.
 `$SKILL_DIR`은 이 스킬 번들, `$PLAN`은 task 디렉터리 이름, `$REPO`는 대상 저장소다.
 레포 설정에서 기준 브랜치를 찾으면 `$BASE_BRANCH`에 담고 `--base`로 넘긴다.
-없으면 `--base`를 생략한다. Git 설정 `build-with-teams.baseBranch`, 원격 기본 브랜치 순으로 찾는다.
+없으면 `--base`를 생략한다. 저장소 Git 설정 `build-with-teams.baseBranch`, 원격 기본 브랜치 순으로 찾는다.
 검사 결과의 `branch.base`를 이후 단계와 검토자에게 전달한다. 찾지 못하면 종료 코드 2다.
 
 ```bash
 # cwd: 대상 저장소 root
+# 레포 설정에서 기준 브랜치를 찾았을 때
 python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" --json
+# 찾지 못했을 때
+python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" --json
 ```
 
 | 종료 코드 | 대응 |

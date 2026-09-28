@@ -78,7 +78,7 @@ def parse_index(path: Path) -> dict:
 
 def resolve_base(repo: Path, explicit: str | None = None) -> str:
     """명시 인자, 저장소 Git 설정, 원격 기본 브랜치 순으로 정한다."""
-    base = explicit or try_run(["git", "config", "--get", "build-with-teams.baseBranch"], repo)
+    base = explicit or try_run(["git", "config", "--local", "--get", "build-with-teams.baseBranch"], repo)
     if not base:
         remote = run(["git", "ls-remote", "--symref", "origin", "HEAD"], repo)
         for line in remote.splitlines():

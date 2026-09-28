@@ -2,6 +2,7 @@
 """plan_precheck 의 판정 함수 검사."""
 
 import importlib.util
+import os
 import subprocess
 import tempfile
 import unittest
@@ -156,6 +157,13 @@ class TestBaseBranch(unittest.TestCase):
         facts = {"branch": "feature/app", "remote_exists": True, "base": "develop", "merged_into_base": True}
         self.assertFalse(any("머지되지 않았다" in f for f in pc.judge({"status": "completed"}, facts, [])))
 
+    def test_git_setting_is_read_from_repository_only(self):
+        with patch.object(pc, "try_run", return_value=None) as optional, patch.object(pc, "run", side_effect=["ref: refs/heads/main\tHEAD", ""]):
+            pc.resolve_base(Path("."))
+            optional.assert_called_once_with(["git", "config", "--local", "--get", "build-with-teams.baseBranch"], Path("."))
+
+    # 사용자 전역 설정의 build-with-teams.baseBranch 나 init.defaultBranch 가 결과를 바꾸지 않게 한다.
+    @patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
     def test_real_git_remote_uses_develop_and_detects_later_implementation(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
             root = Path(tmp)

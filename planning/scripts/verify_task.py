@@ -51,9 +51,11 @@ VAGUE_SCOPE = re.compile(r"전체\s*(수정|변경|적용|교체|리팩토링|�
 HUMAN_CHECK = re.compile(r"수동\s*(?:검토|확인|검증)|눈으로\s*확인|직접\s*확인|육안")
 BSD_SED = re.compile(r"sed\s.*\\b")
 DOC_PATH = re.compile(r"`(docs/[^`\s]+)`")
-TEST_PATH = re.compile(r"(?:^|/)(?:tests?|specs?|__tests__)(?:/|$)|(?:Test|Tests|Spec)\.[^.]+$|(?:^|/)test_[^/]+|[._-](?:test|spec)\.[^.]+$")
+TEST_DIRS = {"test", "tests", "__tests__"}
+TEST_NAME = re.compile(r"^test_|(?:Test|Tests)\.[^.]+$|[._-](?:test|spec)\.[^.]+$")
 BUNDLE = re.compile(r"\$(?:SKILL_DIR|\{SKILL_DIR\})|~/\.(?:claude|codex)/skills|\$HOME/\.(?:claude|codex)/skills")
-CODE_SUFFIXES = {".java", ".kt", ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".cs", ".rb", ".sh", ".bash", ".c", ".cpp"}
+CODE_SUFFIXES = {".java", ".kt", ".groovy", ".scala", ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".cs", ".rb", ".php", ".swift", ".sh", ".bash", ".c", ".cpp"}
+SHELL = {"", "bash", "sh", "shell", "zsh"}
 # 「다음 케이스」 처럼 phase 와 무관한 「다음」 은 미루기가 아니다. 다른 phase 나 plan 을 가리키는 구절만 본다.
 DEFER_TEST = re.compile(
     r"(?=.*(?:테스트|회귀\s*검증))"
@@ -65,17 +67,48 @@ NOT_DEFERRED = re.compile(r"(?:미루|넘기)지\s*(?:않|말)")
 HUMAN_ONLY = re.compile(r"(?:사람이|담당자가|사용자가)\s*(?:확인|검토|판정)|화면(?:에서|을)\s*(?:확인|검토)")
 
 
+def is_test(rel):
+    """테스트 디렉터리 아래 파일, 또는 테스트 이름을 가진 코드 파일이다.
+
+    `UserSpec.java` 같은 운영 코드와 `docs/specs/` 문서는 테스트가 아니다.
+    """
+    parts = rel.removeprefix("./").split("/")
+    if TEST_DIRS.intersection(parts[:-1]) or parts[-1] in TEST_DIRS:
+        return True
+    name = parts[-1]
+    if not (Path(name).suffix in CODE_SUFFIXES or is_glob(name)):
+        return False
+    return bool({"spec", "specs"}.intersection(parts[:-1]) or TEST_NAME.search(name))
+
+
+def fences(text):
+    """(줄 번호, 줄, 종류, 언어)를 낸다. 종류는 open, code, close, text 다.
+
+    닫는 fence 는 여는 fence 와 같은 문자로 같은 길이 이상이어야 한다.
+    """
+    fence, language = None, ""
+    for n, line in enumerate(text.splitlines(), 1):
+        if fence is None:
+            marker = re.match(r"^\s*(`{3,}|~{3,})\s*([\w+-]*)", line)
+            if marker:
+                fence, language = marker.group(1), marker.group(2).lower()
+                yield n, line, "open", language
+            else:
+                yield n, line, "text", ""
+            continue
+        marker = re.fullmatch(r"\s*(`{3,}|~{3,})\s*", line)
+        if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
+            fence = None
+            yield n, line, "close", language
+        else:
+            yield n, line, "code", language
+
+
 def section(text, name):
     """코드 블록 속 제목은 절 구분자로 쓰지 않는다."""
-    lines, active, fence = [], False, None
-    for line in text.splitlines():
-        marker = re.match(r"^\s*(`{3,}|~{3,})", line)
-        if marker:
-            if fence is None:
-                fence = marker.group(1)[0]
-            elif marker.group(1)[0] == fence:
-                fence = None
-        elif fence is None and line.startswith("## "):
+    lines, active = [], False
+    for _, line, kind, _ in fences(text):
+        if kind == "text" and line.startswith("## "):
             if active:
                 break
             active = line.strip() == f"## {name}"
@@ -86,16 +119,14 @@ def section(text, name):
 
 
 def code_blocks(text):
-    lines, language, start, fence = [], "", 0, None
-    for n, line in enumerate(text.splitlines(), 1):
-        marker = re.match(r"^\s*(`{3,}|~{3,})\s*(\w*)", line)
-        if marker and fence is None:
-            fence, language, start, lines = marker.group(1)[0], marker.group(2).lower(), n, []
-        elif marker and marker.group(1)[0] == fence:
-            yield start, language, "\n".join(lines)
-            fence = None
-        elif fence:
+    lines, start = [], 0
+    for n, line, kind, language in fences(text):
+        if kind == "open":
+            lines, start = [], n
+        elif kind == "code":
             lines.append(line)
+        elif kind == "close":
+            yield start, language, "\n".join(lines)
 
 
 def manifest(path, text, out, warnings):
@@ -197,7 +228,7 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
 def shell_commands(text):
     """프로그램 위치를 읽는다. echo/grep 에 적힌 테스트 이름은 실행이 아니다."""
     for _, language, body in code_blocks(text):
-        if language not in {"", "bash", "sh", "shell", "zsh"}:
+        if language not in SHELL:
             continue
         for line in body.replace("\\\n", " ").splitlines():
             try:
@@ -315,7 +346,7 @@ def classify(command, entries, repo):
     script = script.removeprefix("./")
     if not script.startswith(("scripts/", "tests/", "test/")):
         return "other" if program in KNOWN or "/" in script else "unknown"
-    named = TEST_PATH.search(script) or re.search(r"(?:^|/)(?:check|verify|test)[_.-]", script)
+    named = is_test(script) or re.search(r"(?:^|/)(?:check|verify|test)[_.-]", script)
     available = (repo / script).is_file() or any(matches(script, rel) and action != "삭제" for rel, action in entries)
     return "test" if named and available else "other"
 
@@ -430,13 +461,9 @@ def iter_prose(text: str):
     뺄 절을 하나만 지정한다. 볼 절을 열거하면 작업 항목처럼 자동 실행이 실제로
     끊기는 자리를 놓친다. 사람 의존 지시는 검증 절보다 작업 항목에 더 자주 들어간다.
     """
-    in_code = False
     skip = True  # 첫 "## " 이전은 phase 를 소개하는 문장이라 뺀다
-    for n, line in enumerate(text.splitlines(), 1):
-        if re.match(r"^\s*(?:`{3,}|~{3,})", line):
-            in_code = not in_code
-            continue
-        if in_code:
+    for n, line, kind, _ in fences(text):
+        if kind != "text":
             continue
         if line.startswith("## "):
             skip = "의도 메모" in line
@@ -470,22 +497,27 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
             warnings.append(f"{path} — 테스트 실행 여부를 판정하지 못한 명령이다. 테스트를 실행하는지 직접 확인한다: {' '.join(unknown[0])}")
         else:
             out.append(f"{path} — 검증 절에 테스트 실행 명령이 없다 (lint/grep/echo 만으로 완료할 수 없다)")
+    def runs(part):
+        return any(test_command(c, entries, repo) for c in shell_commands(f"```bash\n{part}\n```"))
+
     for _, language, body in code_blocks(validation):
-        if language not in {"", "bash", "sh", "shell", "zsh"}:
+        if language not in SHELL:
             continue
+        pipefail = re.search(r"set\s+-[A-Za-z]*o\s+pipefail", body)
         for line in body.splitlines():
-            if re.search(r"\|\|\s*(?:true|:)(?:\s|$)", line):
-                left = line.split("||", 1)[0]
-                if any(test_command(c, entries, repo) for c in shell_commands(f"```bash\n{left}\n```")):
-                    out.append(f"{path} — 테스트 실패를 무시하는 명령: {line.strip()}")
+            if re.search(r"\|\|\s*(?:true|:|exit\s+0)(?:\s|;|$)", line) and runs(line.split("||", 1)[0]):
+                out.append(f"{path} — 테스트 실패를 무시하는 명령: {line.strip()}")
+            pipes = re.split(r"(?<!\|)\|(?!\|)", line)
+            if not pipefail and len(pipes) > 1 and re.match(r"\s*tee\b", pipes[-1]) and runs(pipes[0]):
+                warnings.append(f"{path} — pipefail 없이 tee 로 넘기면 테스트 실패 종료 코드가 사라진다: {line.strip()}")
     for _, line in iter_prose("## 작업 항목\n" + work + "\n## 검증\n" + validation):
         if DEFER_TEST.search(line) and not NOT_DEFERRED.search(line):
             out.append(f"{path} — 테스트를 다른 phase 로 미루는 지시: {line.strip()}")
-    changed_code = [rel for rel, action in entries if action != "삭제" and Path(rel).suffix in CODE_SUFFIXES and not TEST_PATH.search(rel)]
-    changed_tests = [rel for rel, action in entries if action != "삭제" and TEST_PATH.search(rel)]
+    changed_code = [rel for rel, action in entries if action != "삭제" and Path(rel).suffix in CODE_SUFFIXES and not is_test(rel)]
+    changed_tests = [rel for rel, action in entries if action != "삭제" and is_test(rel)]
     prose = "\n".join(line for _, line in iter_prose("## 작업 항목\n" + work))
     references = re.findall(r"`([^`\n]+)`", prose)
-    test_references = [ref for ref in references if TEST_PATH.search(ref) or re.search(r"(?:Test|Tests|Spec)$", ref)]
+    test_references = [ref for ref in references if is_test(ref) or re.search(r"(?:Test|Tests|Spec)$", ref)]
     declared_tests = [
         rel for rel in changed_tests
         if any(ref == rel or Path(ref).name in {Path(rel).name, Path(rel).stem} for ref in references)
@@ -494,7 +526,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     checked_script = any(any(arg.removeprefix("./") in changed_code and arg in work for arg in command) for command in runners)
     if changed_code and not declared_tests and not checked_script:
         out.append(f"{path} — 코드 변경을 검증할 테스트 파일 또는 검증 스크립트 작업이 같은 phase 에 없다")
-    targeted = [arg for command in runners for arg in command if TEST_PATH.search(arg)]
+    targeted = [arg for command in runners for arg in command if is_test(arg)]
     if declared_tests and targeted and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
         for rel in declared_tests:
             if not any(matches(rel, arg) or Path(rel).name == Path(arg).name or rel.startswith(arg.rstrip("/") + "/") for arg in targeted):
@@ -502,6 +534,20 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     for command in runners:
         if any(arg.removeprefix("./").startswith("scripts/") for arg in command):
             warnings.append(f"{path} — 저장소 스크립트의 테스트 범위와 실패 종료 코드는 직접 확인한다: {' '.join(command)}")
+
+
+def check_code_sed(path, text, out):
+    """셸 블록의 `sed ... \\b` 도 산문과 같이 본다. BSD sed 는 `\\b` 를 모른다."""
+    for n, line, kind, language in fences(text):
+        if kind == "code" and language in SHELL and BSD_SED.search(line):
+            out.append(f"{path}:{n}: {line}")
+
+
+def marks_completed(text):
+    """index.json 과 completed 가 같은 단락에 있어야 한다. 파일 전체에 흩어진 두 낱말은 지시가 아니다."""
+    return any(re.search(r"index\.json", p) and "completed" in p for p in re.split(r"\n\s*\n", text)) or bool(
+        re.search(r"status.*completed", text)
+    )
 
 
 def check_human_verification(path, text, out):
@@ -523,7 +569,7 @@ def main(argv: list) -> int:
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
     if bool(args.plan) == bool(args.staged) or (args.audit and args.staged):
-        print("plan 또는 --staged PHASE 중 하나를 지정한다")
+        print("plan 또는 --staged PHASE 중 하나를 지정한다", file=sys.stderr)
         return 2
     repo, out, warnings = Path.cwd(), [], []
     try:
@@ -552,10 +598,11 @@ def main(argv: list) -> int:
                 for n, line in iter_prose(text):
                     if VAGUE_SCOPE.search(line) or HUMAN_CHECK.search(line) or BSD_SED.search(line):
                         out.append(f"{path}:{n}: {line}")
+                check_code_sed(path, text, out)
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
             last = phases[-1]
-            if not re.search(r"index\.json[\s\S]*?completed|status.*completed", last.read_text(encoding="utf-8")):
+            if not marks_completed(last.read_text(encoding="utf-8")):
                 out.append(f"{last} — index.json completed 마킹 지시 누락")
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"검사를 실행하지 못했다: {exc}", file=sys.stderr)
