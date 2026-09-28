@@ -54,7 +54,14 @@ DOC_PATH = re.compile(r"`(docs/[^`\s]+)`")
 TEST_PATH = re.compile(r"(?:^|/)(?:tests?|specs?|__tests__)(?:/|$)|(?:Test|Tests|Spec)\.[^.]+$|(?:^|/)test_[^/]+|[._-](?:test|spec)\.[^.]+$")
 BUNDLE = re.compile(r"\$(?:SKILL_DIR|\{SKILL_DIR\})|~/\.(?:claude|codex)/skills|\$HOME/\.(?:claude|codex)/skills")
 CODE_SUFFIXES = {".java", ".kt", ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".cs", ".rb", ".sh", ".bash", ".c", ".cpp"}
-DEFER_TEST = re.compile(r"(?:테스트|회귀\s*검증).*(?:다음|후속|나중).*(?:phase|단계|미룬|작성|추가)|(?:다음|후속)\s*(?:phase|단계).*테스트.*(?:작성|추가|미룬)", re.I)
+# 「다음 케이스」 처럼 phase 와 무관한 「다음」 은 미루기가 아니다. 다른 phase 나 plan 을 가리키는 구절만 본다.
+DEFER_TEST = re.compile(
+    r"(?=.*(?:테스트|회귀\s*검증))"
+    r"(?=.*(?:(?:다음|후속|이후)\s*(?:phase|단계|plan)|나중에?))"
+    r"(?=.*(?:작성|추가|미루|미룬|넘기|넘긴|진행|수행|다루|다룬|구현|보강|처리))",
+    re.I,
+)
+NOT_DEFERRED = re.compile(r"(?:미루|넘기)지\s*(?:않|말)")
 HUMAN_ONLY = re.compile(r"(?:사람이|담당자가|사용자가)\s*(?:확인|검토|판정)|화면(?:에서|을)\s*(?:확인|검토)")
 
 
@@ -142,18 +149,38 @@ def matches(rel, pattern):
     return match(0, 0)
 
 
-def check_file_state(path, entries, repo, virtual, out, warnings):
-    """앞 phase 의 생성과 삭제를 적용한 파일 상태로 대조한다."""
+def legacy_manifest(text):
+    return not section(text, "변경 파일") and bool(section(text, "Critical Files"))
+
+
+def is_glob(rel):
+    return any(c in rel for c in "*?[")
+
+
+def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, created=None):
+    """앞 phase 의 생성과 삭제를 적용한 파일 상태로 대조한다.
+
+    생략 경로는 커밋 전 staged 대조에서 막히므로 「변경 파일」 절에서는 생성 때 위반이다.
+    Critical Files 는 읽기 호환이라 경고로 둔다.
+    created 는 앞 phase 가 신규로 선언한 glob 이다. 뒤 phase 가 그 glob 에 맞는 파일을 수정하면 존재로 본다.
+    """
+    created = created if created is not None else []
     for rel, action in entries:
         if omitted(rel):
-            warnings.append(f"{path} — 생략 경로는 존재를 대조하지 않는다: {rel}")
+            if legacy:
+                warnings.append(f"{path} — 생략 경로는 존재를 대조하지 않는다: {rel}")
+            else:
+                out.append(f"{path} — 변경 파일에는 생략하지 않은 경로가 필요하다: {rel}")
             continue
-        glob = any(c in rel for c in "*?[")
+        glob = is_glob(rel)
         candidates = {p.relative_to(repo).as_posix() for p in repo.glob(rel)} if glob else {rel}
         candidates.update(p for p in virtual if matches(p, rel))
         exists = any(virtual.get(p, (repo / p).exists()) for p in candidates)
+        if not glob and not exists and virtual.get(rel) is not False:
+            exists = any(matches(rel, pattern) for pattern in created)
         if action == "신규" and glob:
             warnings.append(f"{path} — 신규 glob 은 구체 파일의 부재를 보장하지 못한다: {rel}")
+            created.append(rel)
         elif action == "신규" and exists:
             out.append(f"{path} — 신규 파일이 이미 존재한다: {rel} (구현 후 검사는 --audit)")
         elif action in {"수정", "삭제"} and not exists:
@@ -163,7 +190,7 @@ def check_file_state(path, entries, repo, virtual, out, warnings):
                 virtual[candidate] = False
     # 같은 phase 의 신규 선언으로 그 phase 의 수정 오류를 숨기지 않는다.
     for rel, action in entries:
-        if not omitted(rel) and not any(c in rel for c in "*?["):
+        if not omitted(rel) and not is_glob(rel):
             virtual[rel] = action != "삭제"
 
 
@@ -174,14 +201,14 @@ def shell_commands(text):
             continue
         for line in body.replace("\\\n", " ").splitlines():
             try:
-                lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
+                lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|()")
                 lexer.whitespace_split = True
                 tokens = list(lexer)
             except ValueError:
                 continue
             command = []
             for token in tokens + [";"]:
-                if token and all(c in ";&|" for c in token):
+                if token and all(c in ";&|()" for c in token):
                     if command:
                         while command and re.match(r"^[A-Za-z_][A-Za-z_0-9]*=", command[0]):
                             command.pop(0)
@@ -196,38 +223,105 @@ def shell_commands(text):
                     command.append(token)
 
 
-def test_command(command, entries, repo):
+# 실행기 앞에 붙어 뒤 명령을 그대로 실행하는 접두어다. 벗긴 뒤 판정한다.
+WRAPPERS = (("npx",), ("bunx",), ("uv", "run"), ("poetry", "run"), ("pipenv", "run"), ("bundle", "exec"), ("pnpm", "exec"), ("pnpm", "dlx"), ("yarn", "exec"), ("yarn", "dlx"))
+WRAPPER_VALUE_OPTIONS = {"--with", "--python", "--project", "--directory", "--package", "--from", "-p"}
+# 패키지 관리자에서 값을 받는 옵션이다. 옵션을 건너뛰고 스크립트 이름을 찾는다.
+VALUE_OPTIONS = {
+    "npm": {"--prefix", "-w", "--workspace"},
+    "pnpm": {"--filter", "-F", "-C", "--dir"},
+    "yarn": {"--cwd"},
+    "bun": {"--cwd", "--filter"},
+}
+TEST_RUNNERS = {"pytest", "pytest-3", "tox", "nox", "jest", "vitest", "mocha", "rspec", "phpunit", "ctest"}
+# 테스트를 실행하지 않는다고 알려진 명령이다. 여기에도 실행기에도 없는 명령은 판정하지 못해 경고로 둔다.
+NON_TEST = {
+    "echo", "printf", "cat", "ls", "cd", "pwd", "git", "grep", "rg", "egrep", "sed", "awk", "find", "jq", "curl",
+    "wc", "head", "tail", "diff", "cmp", "mkdir", "rm", "cp", "mv", "touch", "export", "source", ".", "set",
+    "sleep", "exit", "true", "false", ":", "test", "[", "ruff", "flake8", "pylint", "mypy", "black", "isort",
+    "eslint", "prettier", "tsc", "shellcheck", "shfmt", "docker", "kubectl",
+}
+KNOWN = TEST_RUNNERS | set(VALUE_OPTIONS) | {"python", "python3", "gradlew", "gradle", "mvn", "mvnw", "go", "cargo", "dotnet", "make", "gmake", "bash", "sh"}
+
+
+def unwrap(command):
+    command = list(command)
+    for prefix in WRAPPERS:
+        if tuple(Path(t).name if i == 0 else t for i, t in enumerate(command[:len(prefix)])) == prefix:
+            command = command[len(prefix):]
+            while command and command[0].startswith("-"):
+                option = command.pop(0)
+                if option in WRAPPER_VALUE_OPTIONS and command:
+                    command.pop(0)
+            return unwrap(command)
+    return command
+
+
+def positional(program, args):
+    """패키지 관리자의 옵션을 건너뛴 나머지 인자를 낸다."""
+    rest, skip = [], False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in VALUE_OPTIONS.get(program, set()):
+            skip = True
+        elif not arg.startswith("-") or rest:
+            rest.append(arg)
+    if program == "yarn" and rest[:1] == ["workspace"]:
+        rest = rest[2:]
+    return rest
+
+
+def classify(command, entries, repo):
+    """test, other, unknown 중 하나를 낸다. unknown 은 판정하지 못한 실행기다."""
+    command = unwrap(command)
+    if not command:
+        return "other"
     program, args = Path(command[0]).name, command[1:]
     if any(a in {"--skipTests", "-DskipTests", "-Dmaven.test.skip=true", "--collect-only", "--help", "--dry-run"} or (a.startswith("-DskipTests=") and a != "-DskipTests=false") for a in args):
-        return False
+        return "other"
     if program in {"gradlew", "gradle"}:
         excluded = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg in {"-x", "--exclude-task"}]
         excluded.extend(arg.split("=", 1)[1] for arg in args if arg.startswith("--exclude-task="))
         if "-m" in args or any(task.split(":")[-1] in {"test", "check"} for task in excluded):
-            return False
-    if program in {"pytest", "pytest-3"}:
-        return True
-    if program in {"python", "python3"} and args[:2] in (["-m", "pytest"], ["-m", "unittest"]):
-        return True
-    if program in {"gradlew", "gradle"}:
-        return any(a.split(":")[-1] in {"test", "check", "build"} for a in args)
-    if program in {"mvn", "mvnw"}:
-        return any(a in {"test", "verify", "package", "install"} for a in args)
-    if program in {"npm", "pnpm", "yarn", "bun"}:
-        return bool(args) and (args[0] == "test" or args[0].startswith("test:") or (len(args) > 1 and args[0] == "run" and (args[1] == "test" or args[1].startswith("test:"))))
-    if program in {"go", "cargo", "dotnet"}:
-        return bool(args) and args[0] == "test"
+            return "other"
+    found = None
+    if program in TEST_RUNNERS:
+        found = True
+    elif program in {"python", "python3"} and args[:2] in (["-m", "pytest"], ["-m", "unittest"]):
+        found = True
+    elif program in {"gradlew", "gradle"}:
+        found = any(a.split(":")[-1] in {"test", "check", "build"} for a in args)
+    elif program in {"mvn", "mvnw"}:
+        found = any(a in {"test", "verify", "package", "install"} for a in args)
+    elif program in VALUE_OPTIONS:
+        rest = positional(program, args)
+        if rest[:1] in (["run"], ["run-script"]):
+            rest = rest[1:]
+        found = bool(rest) and (rest[0] == "test" or rest[0].startswith("test:"))
+    elif program in {"go", "cargo", "dotnet"}:
+        found = bool(args) and args[0] == "test"
+    elif program in {"make", "gmake"}:
+        found = any(a in {"test", "check"} for a in args)
+    if found is not None:
+        return "test" if found else "other"
     script = command[0]
     if program in {"bash", "sh", "python", "python3"}:
         if not args or args[0].startswith("-"):
-            return False
+            return "other"
         script = args[0]
+    elif program in NON_TEST:
+        return "other"
     script = script.removeprefix("./")
     if not script.startswith(("scripts/", "tests/", "test/")):
-        return False
+        return "other" if program in KNOWN or "/" in script else "unknown"
     named = TEST_PATH.search(script) or re.search(r"(?:^|/)(?:check|verify|test)[_.-]", script)
     available = (repo / script).is_file() or any(matches(script, rel) and action != "삭제" for rel, action in entries)
-    return bool(named and available)
+    return "test" if named and available else "other"
+
+
+def test_command(command, entries, repo):
+    return classify(command, entries, repo) == "test"
 
 
 def check_staged(path, text, repo, out, warnings):
@@ -257,6 +351,15 @@ def check_staged(path, text, repo, out, warnings):
             out.append(f"{path} — phase 범위 밖의 staged 파일: {rel}")
         elif not any(kind == action for _, kind in allowed):
             out.append(f"{path} — staged 변경 종류가 목록과 다르다: {rel} ({action})")
+    # 목록에 있는데 staged 에 없는 파일이다. 신규 테스트가 빠진 커밋을 막는다.
+    staged = set(changes)
+    for rel, action in entries:
+        if is_glob(rel) or (rel, action) in staged:
+            continue
+        if action == "신규":
+            out.append(f"{path} — 신규로 적은 파일이 staged 에 없다: {rel}")
+        else:
+            warnings.append(f"{path} — {action}로 적은 파일이 staged 에 없다: {rel}")
 
 
 def check_index(path: Path, plan_name: str, phase_files: list, out: list) -> None:
@@ -362,7 +465,11 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     if not commands:
         out.append(f"{path} — 검증 절에 실행할 명령이 없다")
     elif not runners:
-        out.append(f"{path} — 검증 절에 테스트 실행 명령이 없다 (lint/grep/echo 만으로 완료할 수 없다)")
+        unknown = [command for command in commands if classify(command, entries, repo) == "unknown"]
+        if unknown:
+            warnings.append(f"{path} — 테스트 실행 여부를 판정하지 못한 명령이다. 테스트를 실행하는지 직접 확인한다: {' '.join(unknown[0])}")
+        else:
+            out.append(f"{path} — 검증 절에 테스트 실행 명령이 없다 (lint/grep/echo 만으로 완료할 수 없다)")
     for _, language, body in code_blocks(validation):
         if language not in {"", "bash", "sh", "shell", "zsh"}:
             continue
@@ -372,7 +479,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
                 if any(test_command(c, entries, repo) for c in shell_commands(f"```bash\n{left}\n```")):
                     out.append(f"{path} — 테스트 실패를 무시하는 명령: {line.strip()}")
     for _, line in iter_prose("## 작업 항목\n" + work + "\n## 검증\n" + validation):
-        if DEFER_TEST.search(line) and not re.search(r"미루지|넘기지|않", line):
+        if DEFER_TEST.search(line) and not NOT_DEFERRED.search(line):
             out.append(f"{path} — 테스트를 다른 phase 로 미루는 지시: {line.strip()}")
     changed_code = [rel for rel, action in entries if action != "삭제" and Path(rel).suffix in CODE_SUFFIXES and not TEST_PATH.search(rel)]
     changed_tests = [rel for rel, action in entries if action != "삭제" and TEST_PATH.search(rel)]
@@ -430,7 +537,7 @@ def main(argv: list) -> int:
             if not phases:
                 raise ValueError(f"phase 파일 없음: {plan_dir}")
             check_index(plan_dir / "index.json", args.plan, phases, out)
-            virtual = {}
+            virtual, created = {}, []
             if args.audit:
                 warnings.append("구현 후 문서 검사: 신규/수정/삭제 파일의 구현 전 존재 조건은 대조하지 않는다")
             for path in phases:
@@ -440,7 +547,7 @@ def main(argv: list) -> int:
                         out.append(f"{path} — 필수 섹션 누락: {marker}")
                 entries = manifest(path, text, out, warnings)
                 if not args.audit:
-                    check_file_state(path, entries, repo, virtual, out, warnings)
+                    check_file_state(path, entries, repo, virtual, out, warnings, legacy_manifest(text), created)
                 check_bash_cwd(path, text, out)
                 for n, line in iter_prose(text):
                     if VAGUE_SCOPE.search(line) or HUMAN_CHECK.search(line) or BSD_SED.search(line):

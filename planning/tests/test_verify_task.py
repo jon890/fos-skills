@@ -108,6 +108,16 @@ class TaskRulesTest(unittest.TestCase):
     def test_same_phase_regression_script_can_be_run(self):
         self.assertEqual(self.inspect("### 1. `scripts/check-app.sh` 에 실패 응답 검증 추가", "bash scripts/check-app.sh", [("scripts/check-app.sh", "신규")]), [])
 
+    def test_deferral_detection_ignores_next_case_and_catches_other_plans(self):
+        entries = [("tests/test_app.py", "수정")]
+        work = "### 1. `tests/test_app.py`\n"
+        for prose in ("테스트는 다음 케이스를 추가한다.", "테스트 픽스처는 다음 형식으로 작성한다.", "회귀 테스트를 후속 plan 으로 넘기지 않는다."):
+            with self.subTest(prose=prose):
+                self.assertEqual(self.inspect(work + prose, "pytest", entries), [])
+        for prose in ("테스트는 다음 phase 에서 작성한다. 지금은 필요하지 않다.", "회귀 테스트는 후속 plan 으로 넘긴다.", "테스트는 나중에 추가한다."):
+            with self.subTest(prose=prose):
+                self.assertTrue(self.inspect(work + prose, "pytest", entries))
+
     def test_next_phase_test_deferral_is_rejected(self):
         entries = [("tests/test_app.py", "수정")]
         self.assertTrue(self.inspect("### 1. `tests/test_app.py`\n회귀 테스트는 다음 phase 에 작성한다.", "pytest", entries))
@@ -125,6 +135,21 @@ class TaskRulesTest(unittest.TestCase):
         for command in ("pytest", "python3 -m unittest discover", "npm test", "pnpm run test", "npm run test:unit", "yarn test", "./gradlew :api:build", "./gradlew test -x lint", "mvn verify -DskipTests=false", "go test ./...", "cargo test", "dotnet test"):
             with self.subTest(command=command):
                 self.assertTrue(any(verify.test_command(c, [], self.repo) for c in verify.shell_commands(f"```bash\n{command}\n```")))
+
+    def test_wrapped_and_workspace_test_commands(self):
+        for command in ("make test", "make -C api check", "tox", "tox -e py312", "jest", "npx vitest run", "npx jest --ci", "bundle exec rspec", "uv run pytest", "uv run --with x pytest -q", "poetry run pytest", "pipenv run python -m pytest", "pnpm --filter web test", "pnpm -r test", "npm --prefix web test", "npm -w web run test", "yarn workspace web test", "(cd web && npm test)"):
+            with self.subTest(command=command):
+                self.assertTrue(any(verify.test_command(c, [], self.repo) for c in verify.shell_commands(f"```bash\n{command}\n```")))
+        for command in ("make lint", "npx eslint .", "uv run ruff check", "pnpm --filter web lint", "(cd web && npm run build)"):
+            with self.subTest(command=command):
+                self.assertFalse(any(verify.test_command(c, [], self.repo) for c in verify.shell_commands(f"```bash\n{command}\n```")))
+
+    def test_unknown_runner_is_warning_not_violation(self):
+        out, warnings = [], []
+        verify.check_phase_prompt(Path("p"), self.prompt("### 1. `tests/test_app.py`", "just test"), out, [("tests/test_app.py", "수정")], self.repo, warnings)
+        self.assertEqual(out, [])
+        self.assertTrue(any("판정하지 못한" in w for w in warnings))
+        self.assertTrue(self.inspect("### 1. `tests/test_app.py`", "ruff check src\nnpm run lint", [("tests/test_app.py", "수정")]))
 
     def test_assignments_chains_and_multiline_commands(self):
         commands = list(verify.shell_commands('```bash\nenv FLAG=1 pytest \\\n tests/test_app.py; echo "exit=$?"\ngrep x a && pytest\n```'))
@@ -194,11 +219,29 @@ class TaskRulesTest(unittest.TestCase):
         self.assertTrue(self.inspect("### 1. `tests/test_app.py`", "pytest || true", entries))
         self.assertEqual(self.inspect("### 1. `tests/test_app.py`", "pytest\ngrep optional README.md || true", entries), [])
 
-    def test_omitted_paths_and_new_glob_are_warnings(self):
+    def test_omitted_path_is_violation_in_manifest_and_warning_in_legacy(self):
+        # 생성 검사가 경고로 통과시킨 경로를 커밋 전 staged 대조가 막던 불일치의 재현이다.
         out, warnings = [], []
-        verify.check_file_state(Path("p"), [("src/.../App.java", "수정"), ("src/*.py", "신규")], self.repo, {}, out, warnings)
+        verify.check_file_state(Path("p"), [("src/.../app.py", "수정"), ("src/*.py", "신규")], self.repo, {}, out, warnings)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(len(warnings), 1)
+        out, warnings = [], []
+        verify.check_file_state(Path("p"), [("src/.../app.py", "수정")], self.repo, {}, out, warnings, legacy=True)
         self.assertEqual(out, [])
-        self.assertEqual(len(warnings), 2)
+        self.assertEqual(len(warnings), 1)
+        self.assertFalse(verify.legacy_manifest("## 변경 파일\n| `a` | 수정 |"))
+        self.assertTrue(verify.legacy_manifest("## Critical Files\n| `a` | 수정 |"))
+
+    def test_new_glob_from_earlier_phase_counts_as_existing(self):
+        virtual, created, out = {}, [], []
+        verify.check_file_state(Path("p1"), [("src/dto/*.java", "신규")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p2"), [("src/dto/Foo.java", "수정")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(out, [])
+        verify.check_file_state(Path("p3"), [("src/dto/Foo.java", "삭제")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p4"), [("src/dto/Foo.java", "수정")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 1)
+        verify.check_file_state(Path("p5"), [("src/other/Foo.java", "수정")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 2)
 
     def test_manifest_compatibility_and_invalid_rows(self):
         for name in ("변경 파일", "Critical Files"):
@@ -249,6 +292,22 @@ class TaskRulesTest(unittest.TestCase):
         out = []
         verify.check_staged(Path("p"), text, self.repo, out, [])
         self.assertEqual(len(out), 1)
+
+    def test_listed_file_missing_from_staged(self):
+        self.git("init", "--quiet")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("config", "user.name", "Test")
+        self.file("src/app.py", "before\n")
+        self.file("src/edit.py", "before\n")
+        self.git("add", ".")
+        self.git("commit", "--quiet", "-m", "initial")
+        self.file("src/app.py", "after\n")
+        self.git("add", "src/app.py")
+        text = "## 변경 파일\n| `src/app.py` | 수정 |\n| `tests/test_app.py` | 신규 |\n| `src/edit.py` | 수정 |\n| `src/gen/*.py` | 신규 |\n"
+        out, warnings = [], []
+        verify.check_staged(Path("p"), text, self.repo, out, warnings)
+        self.assertEqual(out, ["p — 신규로 적은 파일이 staged 에 없다: tests/test_app.py"])
+        self.assertEqual(warnings, ["p — 수정로 적은 파일이 staged 에 없다: src/edit.py"])
 
     def test_staged_type_mismatch_and_ellipsis_are_rejected(self):
         self.git("init", "--quiet")

@@ -104,6 +104,8 @@ plan 브랜치가 원격 기준 브랜치보다 뒤처졌으면 갱신할지 사
 ### 3. 계획 검토
 
 `index.json` 과 `phase-*.md`, 그것이 가리키는 docs 를 읽는다.
+**「변경 파일」 절에 `src/.../App.java` 처럼 생략한 경로가 있으면 구현 전에 전체 경로로 고친다.**
+커밋 전 대조가 생략한 경로를 staged 파일과 맞출 수 없어 그 phase 를 커밋하지 못한다.
 critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 목록 경로)를 담는다.
 **plan 의 모든 phase 를 한 번에 넘긴다.**
 
@@ -143,11 +145,12 @@ executor의 테스트 실행 결과가 모두 통과했는지 확인한 뒤 목�
 `$PLANNING_SKILL_DIR`은 하네스에서 찾은 planning 번들, `$PHASE_FILE`은 해당 phase 파일의 경로다.
 
 ```bash
-# cwd: 대상 저장소 root
+# cwd: plan 작업 공간(worktree) root
 python3 "$PLANNING_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
 ```
 
-종료 코드 0이면 커밋한다. 1이면 출력한 범위 밖 파일이나 변경 종류를 바로잡는다.
+종료 코드 0이면 커밋한다. 1이면 출력한 범위 밖 파일, 변경 종류, 목록에 신규로 적었지만 staged 에 없는 파일을 바로잡는다.
+수정·삭제로 적은 파일이 staged 에 없으면 경고로 출력한다. 그 파일을 바꾸지 않아도 되는지 확인한다.
 계획의 파일 목록이 빠진 경우에는 3단계로 돌아간다. 2이면 실행 오류를 해소하고 다시 대조한다.
 변경 파일 목록의 작성 규칙은 [planning의 task 작성 규칙](../planning/references/task-create.md#변경-파일-작성)을 따른다.
 
