@@ -175,10 +175,6 @@ class TaskRulesTest(unittest.TestCase):
         verify.check_phase_prompt(Path("p"), self.prompt("### 1. `tests/test_app.py`", "set -euo pipefail\npytest | tee out.log"), [], entries, self.repo, warnings)
         self.assertFalse(any("pipefail" in w for w in warnings))
 
-    def test_completion_mark_must_share_a_paragraph(self):
-        self.assertTrue(verify.marks_completed("마지막에 `index.json` 을\ncompleted 로 바꾼다."))
-        self.assertFalse(verify.marks_completed("`index.json` 을 읽는다.\n\n테스트가 completed 되면 끝낸다."))
-
     def test_bsd_sed_inside_shell_block_is_reported(self):
         out = []
         verify.check_code_sed(Path("p"), "## 작업 항목\n```bash\nsed -i '' 's/\\bfoo/bar/' a.txt\n```\n```python\nsed = r'sed x \\b'\n```", out)
@@ -314,6 +310,18 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("--staged", err.getvalue())
 
+    def test_last_phase_needs_no_completion_mark(self):
+        # 완료한 계획서는 지우므로 마지막 phase 가 index.json 을 completed 로 바꾸라고 적지 않아도 된다.
+        self.file("src/app.py")
+        phase = self.prompt("### 1. `tests/test_app.py` 추가", "pytest tests/test_app.py")
+        phase += "\n## 목표\n앱\n**범위 외**: 배포\n## 변경 파일\n| `src/app.py` | 수정 |\n| `tests/test_app.py` | 신규 |\n"
+        self.file("tasks/plan2-app/phase-01.md", phase)
+        index = {"name": "plan2-app", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
+        self.file("tasks/plan2-app/index.json", json.dumps(index))
+        with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertEqual(verify.main(["verify", "plan2-app"]), 0, stdout.getvalue())
+        self.assertNotIn("completed", stdout.getvalue())
+
     def test_subproject_docs_path_is_evidence(self):
         self.file("frontend/docs/flow.md")
         out = []
@@ -331,7 +339,7 @@ class TaskRulesTest(unittest.TestCase):
     def test_cli_prefixed_plan_under_tasks_dir(self):
         self.file("frontend/docs/flow.md")
         phase = self.prompt("### 1. `frontend/tests/test_app.py` 추가", "pytest frontend/tests/test_app.py").replace("`docs/flow.md`", "`frontend/docs/flow.md`")
-        phase += "\n## 목표\n앱\n**범위 외**: 배포\n## 변경 파일\n| `frontend/src/app.py` | 신규 |\n| `frontend/tests/test_app.py` | 신규 |\n## 마감\nindex.json status completed\n"
+        phase += "\n## 목표\n앱\n**범위 외**: 배포\n## 변경 파일\n| `frontend/src/app.py` | 신규 |\n| `frontend/tests/test_app.py` | 신규 |\n"
         index = {"name": "fe-plan27-app", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
         for tasks_dir in ("tasks", "frontend/tasks"):
             self.file(f"{tasks_dir}/fe-plan27-app/phase-01.md", phase)

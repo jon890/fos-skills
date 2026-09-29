@@ -14,7 +14,9 @@
 | `tasks/plan{N}-<kebab-slug>/phase-*.md` | 이 대화를 보지 못한 구현자가 읽고 실행하는 실행 명세 |
 | 커밋 | 문서 갱신과 task 파일을 담은 기획 커밋 |
 
-`docs/` 는 구현이 끝난 뒤에도 읽는 문서이고, `tasks/` 는 구현이 끝나면 역할이 끝난다.
+`docs/` 는 구현이 끝난 뒤에도 읽는 문서이고, `tasks/` 는 구현 PR 에서 지운다.
+현재 사실은 `docs/` 와 코드가 소유한다. 계획서는 구현 뒤 곧 낡아서, 남겨 두면 에이전트나 사람이 다시 읽고 틀린 근거로 쓴다.
+지난 계획은 git 이력에서 찾는다.
 
 규모가 크면 plan 을 여러 디렉터리로 나눈다.
 한 plan 은 한 번에 검토할 수 있는 크기이고 PR 하나에 대응한다.
@@ -56,13 +58,13 @@
 | `references/step-5-api.md` | 엔드포인트와 함수 시그니처, 요청과 응답 스키마, 4단계와 병합할 때의 표기 |
 | `references/step-6-data-code.md` | 테이블과 컬럼과 키와 제약, cascade 범위, 새 코드가 앉을 레이어와 디렉터리 |
 | `references/step-7-docs.md` | 필수 다섯 전체의 영향 판정, ADR 로 남길 결정을 가르는 두 조건 |
-| `references/step-8-tasks.md` | phase 분할 기준, plan 을 나눌 조건, plan 번호를 원격까지 훑어 정하는 방법 |
+| `references/step-8-tasks.md` | phase 분할 기준, plan 을 나눌 조건, plan 번호를 원격과 git 이력까지 훑어 정하는 방법 |
 | `references/task-create.md` | `index.json` 스키마, ADR 템플릿과 supersede 처리, phase 파일 구조와 작성 규칙 |
 | `references/monorepo.md` | 모노레포 판정, 대상 하위 프로젝트를 정하는 순서, 오버레이 탐색 순서, 오버레이가 지정하는 docs 경로와 tasks 경로와 plan 접두사. 네 스킬이 함께 쓴다 |
-| `scripts/plan_number.sh` | 원격 브랜치를 훑어 쓰인 plan 번호와 다음 번호를 낸다. 접두사마다 따로 센다 |
+| `scripts/plan_number.sh` | 원격 브랜치와 git 이력을 훑어 쓰인 plan 번호와 다음 번호를 낸다. 접두사마다 따로 센다 |
 | `scripts/verify_task.py` | 생성한 task와 커밋 전 staged 범위 검사. 종료 코드 0 통과, 1 위반, 2 실행 불가 |
 | `tests/test_verify_task.py` | 파일 상태, 같은 phase의 테스트 실행, staged 범위와 오탐 회귀 검사 |
-| `tests/test_plan_number.py` | 접두사별 번호, tasks 경로와 앞의 0 을 실제 git 저장소로 검사 |
+| `tests/test_plan_number.py` | 접두사별 번호, tasks 경로, 지운 계획서와 앞의 0 을 실제 git 저장소로 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 
 실행 절차는 `SKILL.md` 가 소유한다.

@@ -1,4 +1,4 @@
-"""plan_number.sh 가 접두사와 tasks 경로를 세는지 실제 git 저장소로 검증한다."""
+"""plan_number.sh 가 접두사, tasks 경로, 지운 계획서를 세는지 실제 git 저장소로 검증한다."""
 
 import os
 import subprocess
@@ -55,6 +55,22 @@ class PlanNumberTest(unittest.TestCase):
         code, out = self.run_script("work")
         self.assertEqual((code, out.splitlines()[-1]), (0, "다음 번호: 5"))
 
+    def test_deleted_plan_is_counted_from_history(self):
+        self.commit("tasks/plan1-a/index.json", "plan1")
+        self.commit("tasks/plan2-b/index.json", "plan2")
+        self.remove("tasks/plan2-b", "plan2 삭제")
+        code, out = self.run_script()
+        self.assertEqual(out.splitlines()[-1], "다음 번호: 3", out)
+        self.assertIn("plan2", out)
+        self.assertIn("git 이력에만 있다", out)
+
+    def test_all_plans_deleted_still_advances(self):
+        self.commit("tasks/plan7-a/index.json", "plan7")
+        self.remove("tasks", "모두 삭제")
+        code, out = self.run_script()
+        self.assertNotIn("쓰인 번호가 없다", out)
+        self.assertEqual(out.splitlines()[-1], "다음 번호: 8")
+
     def test_prefix_counts_only_its_own_sequence(self):
         self.commit("tasks/fe-plan026-a/index.json", "fe")
         self.commit("tasks/be-plan040-b/index.json", "be")
@@ -77,6 +93,7 @@ class PlanNumberTest(unittest.TestCase):
 
     def test_subdirectory_tasks_dir_with_prefix(self):
         self.commit("backend/tasks/be-plan002-a/index.json", "be")
+        self.remove("backend/tasks/be-plan002-a", "삭제")
         self.commit("frontend/tasks/be-plan009-x/index.json", "다른 디렉터리")
         code, out = self.run_script("--tasks-dir", "backend/tasks/", "--prefix", "be-")
         self.assertEqual(out.splitlines()[-1], "다음 번호: 3", out)

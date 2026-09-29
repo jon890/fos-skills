@@ -9,6 +9,9 @@
 오버레이가 docs 경로, tasks 경로, plan 접두사를 지정한다. `plan_number.sh --prefix --tasks-dir` 와 `verify_task.py --tasks-dir` 가 그 값을 받는다.
 `verify_task.py` 가 `frontend/docs/flow.md` 처럼 하위 프로젝트의 docs 경로를 근거 문서로 받는다.
 `plan_number.sh` 가 `plan010` 처럼 앞에 0 이 붙은 번호를 8진수로 읽던 결함을 고쳤다.
+구현이 끝난 계획서를 구현 PR 에서 지운다. 현재 사실은 `docs/` 와 코드가 소유하고 계획서는 곧 낡아 틀린 근거가 되기 때문이다.
+`plan_number.sh` 가 git 이력을 함께 훑어 지운 계획서의 번호를 다시 내주지 않는다.
+`verify_task.py` 가 마지막 phase 의 `completed` 표시 지시를 요구하지 않는다. phase 는 `tasks/` 를 바꾸지 않는다.
 
 ## 2.8.0
 

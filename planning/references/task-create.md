@@ -11,7 +11,7 @@
 {
   "name": "plan{N}-{kebab-slug}",       // 디렉터리명과 일치. 접두사가 있으면 "fe-plan{N}-{kebab-slug}"
   "description": "한 줄 요약 — 무엇을 / 왜",
-  "status": "pending",                    // pending | in_progress | completed | failed
+  "status": "pending",                    // pending | in_progress | failed. 구현이 끝나면 디렉터리째 지운다
   "created_at": "2026-01-01",             // YYYY-MM-DD
   "total_phases": 3,                      // phases 배열 길이와 일치
   "current_phase": 1,
@@ -137,7 +137,8 @@
 
 작업 항목의 변경 경로를 이 목록에 모은다. `build-with-teams` 는 커밋 전에 staged 파일과 대조한다.
 목록에 없는 변경이 생기면 계획에 빠진 파일인지 무관한 변경인지 먼저 판정한다.
-마지막 phase 가 바꾸는 `tasks/` 의 완료 상태와 근거 문서 갱신도 목록에 포함한다.
+근거 문서 갱신도 목록에 포함한다.
+phase 는 `tasks/` 를 바꾸지 않는다. 구현이 끝난 계획서는 `build-with-teams` 의 마감 단계가 지운다.
 
 - 파일 경로를 `.../` 로 생략하지 않는다. 「변경 파일」 절의 생략 경로는 생성 검사와 커밋 전 대조 모두 위반이다.
   기존 `Critical Files` 절의 생략 경로만 생성 검사에서 경고로 둔다.

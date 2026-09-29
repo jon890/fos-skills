@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# 원격 브랜치까지 훑어 이미 쓰인 plan 번호와 다음 번호를 낸다.
+# 원격 브랜치와 git 이력까지 훑어 이미 쓰인 plan 번호와 다음 번호를 낸다.
 #
 # 왜 로컬만 보면 안 되나 (실측):
 #   tasks/ 의 로컬 목록이 plan5, plan6, plan7 이라 다음이 plan8 로 보였으나,
 #   main 에 머지되지 않은 원격 브랜치 셋에 plan8 이 이미 있었다.
 #   그 브랜치를 체크아웃하지 않으면 로컬 작업 트리에 나타나지 않는다.
+#
+# 왜 git 이력도 보나:
+#   구현이 끝난 계획서는 지운다. 지운 뒤에는 어느 브랜치의 트리에도 없어서
+#   트리만 보면 마지막 번호를 다시 내준다. 지운 계획서는 커밋 이력에만 남는다.
 #
 # 사용법:
 #   plan_number.sh [--tasks-dir DIR] [--prefix PREFIX] [DIR]
@@ -70,7 +74,13 @@ PAIRS=$(
   done | awk '{print $1 + 0, $2}' | sort -u | sort -n -s -k1,1
 )
 
-ALL_NUMS=$(echo "$PAIRS" | awk 'NF {print $1}' | sort -n -u)
+# 지운 계획서는 트리에 없고 그것을 더한 커밋에만 남는다. --all 이라 머지되지 않은 브랜치도 본다.
+HISTORY_NUMS=$(
+  git log --all --format= --name-only -- "$TASKS_DIR/*/index.json" 2>/dev/null \
+    | sed -n "s|^${TASKS_DIR}/${NAME_RE}[^/]*/index\.json$|\1|p" | awk '{print $1 + 0}' | sort -n -u
+)
+
+ALL_NUMS=$( { echo "$PAIRS" | awk 'NF {print $1}'; echo "$HISTORY_NUMS"; } | awk 'NF' | sort -n -u)
 
 if [ -z "$ALL_NUMS" ]; then
   echo "쓰인 번호가 없다"
@@ -78,7 +88,7 @@ if [ -z "$ALL_NUMS" ]; then
   exit 0
 fi
 
-# main 에 있는 번호는 이미 끝난 계획이다. 판단이 필요한 것은 main 밖에만 있는 번호다.
+# main 에 있는 번호는 머지됐지만 아직 지우지 않은 계획이다. 판단이 필요한 것은 main 밖에만 있는 번호다.
 MAIN_REF=$(git rev-parse --verify --quiet origin/main >/dev/null 2>&1 && echo origin/main || echo HEAD)
 MAIN_NUMS=$(git ls-tree -d --name-only "$MAIN_REF" "$TASKS_DIR/" 2>/dev/null \
   | sed -n "s|^${TASKS_DIR}/${NAME_RE}.*|\1|p" | awk '{print $1 + 0}' | sort -n -u)
@@ -89,8 +99,10 @@ for n in $ALL_NUMS; do
   refs=$(echo "$PAIRS" | awk -v n="$n" '$1 == n {print $2}' | paste -sd' ' -)
   if echo "$MAIN_NUMS" | grep -qx "$n"; then
     printf '  %-12s %s 안에 있다\n' "$label" "$MAIN_REF"
-  else
+  elif [ -n "$refs" ]; then
     printf '  %-12s %s 밖에만 있다: %s\n' "$label" "$MAIN_REF" "$refs"
+  else
+    printf '  %-12s 지워졌고 git 이력에만 있다\n' "$label"
   fi
 done
 

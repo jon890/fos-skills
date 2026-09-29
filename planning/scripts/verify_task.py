@@ -2,7 +2,8 @@
 """task 생성 직후 자동 검증.
 
 index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시와
-스킬 번들 cwd, 사람 의존 검증, 필수 절, 완료 표시, BSD sed 를 검사한다.
+스킬 번들 cwd, 사람 의존 검증, 필수 절, BSD sed 를 검사한다.
+완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 build-with-teams 가 디렉터리째 지운다.
 계획에 적힌 명령은 실행하지 않는다.
 
 사용법:
@@ -546,13 +547,6 @@ def check_code_sed(path, text, out):
             out.append(f"{path}:{n}: {line}")
 
 
-def marks_completed(text):
-    """index.json 과 completed 가 같은 단락에 있어야 한다. 파일 전체에 흩어진 두 낱말은 지시가 아니다."""
-    return any(re.search(r"index\.json", p) and "completed" in p for p in re.split(r"\n\s*\n", text)) or bool(
-        re.search(r"status.*completed", text)
-    )
-
-
 def check_human_verification(path, text, out):
     """추가 낱말은 명령 없는 검증 절에 한정해 설계 설명의 오탐을 피한다."""
     validation = section(text, "검증")
@@ -605,9 +599,6 @@ def main(argv: list) -> int:
                 check_code_sed(path, text, out)
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
-            last = phases[-1]
-            if not marks_completed(last.read_text(encoding="utf-8")):
-                out.append(f"{last} — index.json completed 마킹 지시 누락")
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"검사를 실행하지 못했다: {exc}", file=sys.stderr)
         return 2
