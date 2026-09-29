@@ -9,7 +9,7 @@ plan 하나를 브랜치 하나와 PR 하나로 끝낸다.
 | 산출물 | 내용 |
 | --- | --- |
 | plan 브랜치의 커밋 | phase 하나마다 커밋 하나. 다른 plan 의 변경이 섞이지 않는다 |
-| `tasks/plan{N}-<slug>/index.json` | 완료 마킹. PR 브랜치 안에서만 한다 |
+| `tasks/plan{N}-<slug>/` 삭제 커밋 | 구현을 마친 계획서를 PR 안에서 지운다. 현재 사실은 `docs/` 와 코드가 소유하고 계획서는 곧 낡기 때문이다 |
 | PR | base는 사전 검사에서 정한 기준 브랜치, head는 plan 브랜치. 제목과 본문 형식은 create-pr이 소유한다 |
 | 완료 보고 | PR 번호와 리뷰 반영 명령, pre-existing 과 미검증과 범위 외 발견, code-reviewer 지적 중 고치지 않은 것과 그 이유 |
 | 반복 함정 문서 | 승격 조건을 만족한 사건만 저장소의 반복 함정 목록에 추가된다 |
@@ -55,9 +55,9 @@ planning 이 만들어 둔 task 를 실제로 구현할 때 쓴다.
 | `references/role-executor.md` | executor 가 읽는 계약. 구현 범위와 품질 기준, 계획이 틀렸을 때의 보고 |
 | `references/role-code-reviewer.md` | code-reviewer 가 읽는 계약. 3-dot 으로 잡는 검사 범위와 `PASS` / `FIX_NEEDED` 판정 |
 | `references/role-docs-verifier.md` | docs-verifier 가 읽는 계약. `docs/` 대조 축과 `PASS` / `UPDATE_NEEDED` / `VIOLATION` 판정 |
-| `references/step-finish.md` | 통합 검증 실패의 책임 구분, 완료 마킹, create-pr에 넘길 값, 팀 종료와 작업 공간 정리, 보고 형식, 반복 함정 승격 조건 |
+| `references/step-finish.md` | 통합 검증 실패의 책임 구분, 계획서 삭제와 그 이유, create-pr에 넘길 값, 팀 종료와 작업 공간 정리, 보고 형식, 반복 함정 승격 조건 |
 | `scripts/plan_precheck.py` | 재실행 사고를 막는 사전 검증. 종료 코드 0 진행 가능, 1 사용자 결정 필요, 2 실행 불가 |
-| `tests/test_plan_precheck.py` | `plan_precheck.py` 판정 함수의 단위 검사 |
+| `tests/test_plan_precheck.py` | `plan_precheck.py` 판정 함수, 하위 프로젝트 경로, 지운 계획서 조회 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 
 실행 절차는 `SKILL.md` 가 소유한다.

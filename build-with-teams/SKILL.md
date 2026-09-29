@@ -15,7 +15,7 @@ metadata:
 - 계획에 결함이 있으면 구현 전에 찾아낸다.
 - 구현된 코드가 계획한 것과 같아야 한다.
 - 코드가 `docs/` 에 적힌 결정과 어긋나지 않아야 한다.
-- 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획서는 구현이 끝나면 제거된다.
+- 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획서는 이 스킬이 PR 에서 지운다.
 
 team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서가 소유한다.
 
@@ -68,7 +68,7 @@ plan 이름의 접두사로 대상 하위 프로젝트를 정하고, 그 하위 
 | 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
 | 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
-| 6 | 통합 검증과 PR | 통합 검증이 통과했고 PR 이 있고 팀원이 남지 않았다 | `references/step-finish.md` |
+| 6 | 통합 검증과 PR | 통합 검증이 통과했고 계획서 삭제 커밋을 담은 PR 이 있고 팀원이 남지 않았다 | `references/step-finish.md` |
 
 **팀원을 스폰하기 전에 [`references/team-spawn.md`](references/team-spawn.md)를 읽는다.**
 
@@ -97,7 +97,7 @@ python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" \
 | 종료 코드 | 대응 |
 | --- | --- |
 | 0 | 2단계로 간다 |
-| 1 | 출력한 발견 사항을 사용자에게 보여주고, 이어서 할지 새로 시작할지 확정받는다 |
+| 1 | 출력한 발견 사항을 사용자에게 보여주고, 이어서 할지 새로 시작할지 확정받는다. 지운 계획서로 나오면 이미 구현된 plan 이다 |
 | 2 | 출력한 원인을 해소하고 다시 돌린다. `gh` 인증 실패와 `index.json` 부재가 여기 해당한다 |
 
 브랜치 이름이 task 디렉터리 이름과 다르면 `--branch` 로 넘긴다.
@@ -212,4 +212,4 @@ phase 파일의 「Blocked 조건」 에 걸려 executor 가 같은 값을 회�
 ### 6. 통합 검증과 PR
 
 [`references/step-finish.md`](references/step-finish.md)를 읽고 수행한다.
-통합 검증, 완료 마킹, PR, 팀 종료, 작업 공간 정리, 보고, 패턴 승격이 거기 있다.
+통합 검증, 계획서 삭제, PR, 팀 종료, 작업 공간 정리, 보고, 패턴 승격이 거기 있다.

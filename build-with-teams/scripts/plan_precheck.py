@@ -15,6 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+# 계획서를 지우지 않던 때의 완료 표시다. 지운 계획서는 find_deleted 가 찾는다.
 DONE_STATUS = {"completed"}
 STOPPED_STATUS = {"cancelled", "failed"}
 # 구현 커밋과 기획 커밋을 구분하는 경로의 기본값. 이 밖을 건드리면 구현으로 본다.
@@ -56,6 +57,29 @@ def find_local(repo: Path, plan: str, tasks_dir: str = "tasks") -> Path | None:
             f"'{plan}' 이 여러 디렉터리에 맞는다: {', '.join(d.name for d in hits)}"
         )
     return hits[0] if hits else None
+
+
+def find_deleted(repo: Path, plan: str, tasks_dir: str = "tasks") -> tuple[str, str] | None:
+    """지운 계획서를 git 이력에서 찾는다. (디렉터리 이름, 지운 커밋) 을 낸다.
+
+    구현이 끝난 계획서는 PR 에서 지운다. 지운 뒤에는 로컬에도 브랜치 트리에도 없어서
+    이력을 보지 않으면 「planning 을 먼저 돌린다」 로 잘못 안내한다.
+    --all 이라 아직 머지되지 않은 PR 브랜치에서 지운 것도 찾는다.
+    """
+    out = try_run(
+        ["git", "log", "--all", "--diff-filter=D", "--format=commit %h", "--name-only",
+         "--", f"{tasks_dir}/*/index.json"],
+        repo,
+    )
+    commit = None
+    for line in (out or "").splitlines():
+        if line.startswith("commit "):
+            commit = line.removeprefix("commit ")
+            continue
+        parts = line.removeprefix(f"{tasks_dir}/").split("/")
+        if len(parts) == 2 and parts[1] == "index.json" and (parts[0] == plan or parts[0].startswith(f"{plan}-")):
+            return parts[0], commit
+    return None
 
 
 def load_remote_index(repo: Path, branch: str, name: str, tasks_dir: str = "tasks") -> dict | None:
@@ -203,7 +227,10 @@ def main() -> int:
             index = None
             where = "없음"
 
-        if index is None and not branch["remote_exists"]:
+        deleted = find_deleted(repo, args.plan, tasks_dir) if index is None else None
+        if deleted:
+            name = deleted[0]
+        if index is None and not branch["remote_exists"] and not deleted:
             raise PrecheckError(
                 f"'{args.plan}' 의 index.json 을 로컬 {tasks_dir}/ 에서도 "
                 f"원격 브랜치에서도 찾지 못했다. planning 을 먼저 돌린다."
@@ -212,7 +239,17 @@ def main() -> int:
         print(f"검사를 돌리지 못했다: {exc}", file=sys.stderr)
         return 2
 
-    if index is None:
+    if index is None and deleted:
+        found = [
+            f"`{deleted[0]}` 은 커밋 {deleted[1]} 에서 지운 계획서다. "
+            "구현이 끝난 plan 을 다시 도는 중일 수 있다."
+        ]
+        if prs:
+            found.append(
+                "이 브랜치로 열린 PR 이 있다: "
+                + ", ".join(f"#{p['number']} {p['title']}" for p in prs)
+            )
+    elif index is None:
         # 브랜치는 있는데 task 가 없다. planning 이 중단됐거나 push 되지 않았다.
         found = [
             f"`{branch['branch']}` 브랜치는 있는데 그 안에 {tasks_dir}/{name}/index.json 이 없다. "
@@ -230,7 +267,9 @@ def main() -> int:
 
     if args.json:
         print(json.dumps(
-            {"task": str(task_dir) if task_dir else name, "found_in": where,
+            {"task": str(task_dir) if task_dir else name,
+             "found_in": "지운 계획서" if index is None and deleted else where,
+             "deleted_in": deleted[1] if deleted else None,
              "status": index.get("status") if index else None,
              "total_phases": index.get("total_phases") if index else None,
              "current_phase": index.get("current_phase") if index else None,

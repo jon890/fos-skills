@@ -150,6 +150,85 @@ class TestMonorepo(unittest.TestCase):
         self.assertEqual(facts["impl_files"], ["frontend/docs/flow.md"])
 
 
+@patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+class TestDeletedPlan(unittest.TestCase):
+    """구현이 끝나 지운 계획서를 git 이력에서 찾는다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(dir="/tmp")
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name)
+        self.git("init", "--quiet", "-b", "main")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("config", "user.name", "Test")
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True).stdout
+
+    def add(self, rel):
+        path = self.repo / rel / "index.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+        self.git("add", "-A")
+        self.git("commit", "--quiet", "-m", f"add {rel}")
+
+    def delete(self, rel):
+        self.git("rm", "-r", "--quiet", rel)
+        self.git("commit", "--quiet", "-m", f"delete {rel}")
+        return self.git("rev-parse", "--short", "HEAD").strip()
+
+    def test_deleted_plan_is_found_by_prefix(self):
+        self.add("tasks/plan002-beta")
+        commit = self.delete("tasks/plan002-beta")
+        self.assertEqual(pc.find_deleted(self.repo, "plan002"), ("plan002-beta", commit))
+
+    def test_deleted_on_unmerged_branch_is_found(self):
+        self.add("tasks/plan003-x")
+        self.git("checkout", "--quiet", "-b", "plan003-x")
+        commit = self.delete("tasks/plan003-x")
+        self.git("checkout", "--quiet", "main")
+        self.assertEqual(pc.find_deleted(self.repo, "plan003-x"), ("plan003-x", commit))
+
+    def test_live_plan_is_not_deleted(self):
+        self.add("tasks/plan004-live")
+        self.assertIsNone(pc.find_deleted(self.repo, "plan004"))
+
+    def test_similar_number_and_other_prefix_do_not_match(self):
+        self.add("tasks/plan0020-gamma")
+        self.add("tasks/be-plan002-x")
+        self.delete("tasks")
+        self.assertIsNone(pc.find_deleted(self.repo, "plan002"))
+        self.assertEqual(pc.find_deleted(self.repo, "be-plan002")[0], "be-plan002-x")
+
+    def run_main(self, plan):
+        import contextlib, io, sys
+        facts = {"branch": plan, "remote_exists": False, "base": "main"}
+        with patch.object(pc, "resolve_base", return_value="main"), patch.object(pc, "branch_facts", return_value=facts), \
+                patch.object(sys, "argv", ["plan_precheck.py", plan, "--repo", str(self.repo)]), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = pc.main()
+        return code, out.getvalue() + err.getvalue()
+
+    def test_main_reports_deleted_plan_as_user_decision(self):
+        self.add("tasks/plan005-done")
+        self.delete("tasks/plan005-done")
+        code, out = self.run_main("plan005")
+        self.assertEqual(code, 1, out)
+        self.assertIn("지운 계획서", out)
+
+    def test_main_unknown_plan_is_still_execution_error(self):
+        self.add("tasks/plan006-live")
+        code, out = self.run_main("plan007")
+        self.assertEqual(code, 2, out)
+        self.assertIn("planning 을 먼저", out)
+
+    def test_tasks_dir_under_subproject(self):
+        self.add("frontend/tasks/fe-plan001-a")
+        self.delete("frontend/tasks/fe-plan001-a")
+        self.assertIsNone(pc.find_deleted(self.repo, "fe-plan001"))
+        self.assertEqual(pc.find_deleted(self.repo, "fe-plan001", "frontend/tasks")[0], "fe-plan001-a")
+
+
 class TestBaseBranch(unittest.TestCase):
     def test_explicit_base_overrides_git_setting(self):
         with patch.object(pc, "try_run") as optional, patch.object(pc, "run") as run:
