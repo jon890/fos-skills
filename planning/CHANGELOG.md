@@ -14,6 +14,7 @@
 `plan_number.sh` 가 git 이력을 함께 훑어 지운 계획서의 번호를 다시 내주지 않는다.
 `plan_number.sh` 가 `gh pr list --state all` 의 head 브랜치 이름에서도 번호를 읽는다. 계획서를 지운 PR 을 squash 머지하고 브랜치를 지우면 git 이력에 남지 않기 때문이다.
 `verify_task.py` 가 마지막 phase 의 `completed` 표시 지시를 요구하지 않는다. phase 는 `tasks/` 를 바꾸지 않는다.
+`verify_task.py` 가 앞 phase 의 신규 glob 과 겹치는 뒤 phase 의 수정·삭제 glob 을 존재로 본다. `backend/**` 를 신규로 두고 `backend/tasks/**` 를 삭제하면 위반으로 판정하던 결함을 고쳤다.
 
 ## 2.8.0
 

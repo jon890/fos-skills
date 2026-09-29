@@ -279,6 +279,24 @@ class TaskRulesTest(unittest.TestCase):
         verify.check_file_state(Path("p5"), [("src/other/Foo.java", "수정")], self.repo, virtual, out, [], created=created)
         self.assertEqual(len(out), 2)
 
+    def test_glob_inside_earlier_new_glob_counts_as_existing(self):
+        # 앞 phase 가 backend/** 를 신규로 두고 뒤 phase 가 backend/tasks/** 를 삭제하던 계획서의 재현이다.
+        virtual, created, out = {}, [], []
+        verify.check_file_state(Path("p1"), [("backend/**", "신규")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p2"), [("backend/tasks/**", "삭제")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(out, [])
+        verify.check_file_state(Path("p3"), [("backend/tasks/**", "삭제")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p4"), [("backend/tasks/a.py", "수정")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 2)
+        verify.check_file_state(Path("p5"), [("backend/src/*.py", "수정")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 2)
+
+    def test_glob_outside_earlier_new_glob_is_still_missing(self):
+        virtual, created, out = {}, [], []
+        verify.check_file_state(Path("p1"), [("backend/**", "신규")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p2"), [("frontend/tasks/**", "삭제")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 1)
+
     def test_manifest_compatibility_and_invalid_rows(self):
         for name in ("변경 파일", "Critical Files"):
             out, warnings = [], []

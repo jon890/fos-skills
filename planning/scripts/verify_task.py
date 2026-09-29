@@ -197,7 +197,8 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
 
     생략 경로는 커밋 전 staged 대조에서 막히므로 「변경 파일」 절에서는 생성 때 위반이다.
     Critical Files 는 읽기 호환이라 경고로 둔다.
-    created 는 앞 phase 가 신규로 선언한 glob 이다. 뒤 phase 가 그 glob 에 맞는 파일을 수정하면 존재로 본다.
+    created 는 앞 phase 가 신규로 선언한 glob 이다. 뒤 phase 가 그 glob 과 겹치는 경로나 glob 을
+    수정하거나 삭제하면 존재로 본다. 앞 phase 가 삭제한 경로와 glob 은 virtual 에 False 로 남아 계속 위반이다.
     """
     created = created if created is not None else []
     for rel, action in entries:
@@ -209,10 +210,12 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
             continue
         glob = is_glob(rel)
         candidates = {p.relative_to(repo).as_posix() for p in repo.glob(rel)} if glob else {rel}
-        candidates.update(p for p in virtual if matches(p, rel))
+        candidates.update(p for p in virtual if not is_glob(p) and matches(p, rel))
         exists = any(virtual.get(p, (repo / p).exists()) for p in candidates)
-        if not glob and not exists and virtual.get(rel) is not False:
-            exists = any(matches(rel, pattern) for pattern in created)
+        deleted = [p for p, alive in virtual.items() if alive is False]
+        if not exists and not any(matches(rel, p) for p in deleted):
+            # glob 끼리는 한쪽 문자열을 경로로 보고 다른 쪽에 맞춰 포함 관계를 판정한다.
+            exists = any(matches(rel, pattern) or matches(pattern, rel) for pattern in created)
         if action == "신규" and glob:
             warnings.append(f"{path} — 신규 glob 은 구체 파일의 부재를 보장하지 못한다: {rel}")
             created.append(rel)
@@ -223,6 +226,7 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
         if action == "삭제" and glob:
             for candidate in candidates:
                 virtual[candidate] = False
+            virtual[rel] = False
     # 같은 phase 의 신규 선언으로 그 phase 의 수정 오류를 숨기지 않는다.
     for rel, action in entries:
         if not omitted(rel) and not is_glob(rel):
