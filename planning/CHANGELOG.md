@@ -6,6 +6,7 @@
 ## 2.9.0
 
 모노레포를 지원한다. 하위 프로젝트 오버레이를 루트 오버레이보다 먼저 읽고, 판정과 탐색 순서는 `references/monorepo.md` 가 소유한다.
+`scripts/overlay_paths.py` 가 그 판정을 실행해 대상 하위 프로젝트와 레포 설정을 읽을 순서를 낸다.
 오버레이가 docs 경로, tasks 경로, plan 접두사를 지정한다. `plan_number.sh --prefix --tasks-dir` 와 `verify_task.py --tasks-dir` 가 그 값을 받는다.
 `verify_task.py` 가 `frontend/docs/flow.md` 처럼 하위 프로젝트의 docs 경로를 근거 문서로 받는다.
 `plan_number.sh` 가 `plan010` 처럼 앞에 0 이 붙은 번호를 8진수로 읽던 결함을 고쳤다.

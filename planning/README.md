@@ -61,9 +61,11 @@
 | `references/step-8-tasks.md` | phase 분할 기준, plan 을 나눌 조건, plan 번호를 원격과 git 이력까지 훑어 정하는 방법 |
 | `references/task-create.md` | `index.json` 스키마, ADR 템플릿과 supersede 처리, phase 파일 구조와 작성 규칙 |
 | `references/monorepo.md` | 모노레포 판정, 대상 하위 프로젝트를 정하는 순서, 오버레이 탐색 순서, 오버레이가 지정하는 docs 경로와 tasks 경로와 plan 접두사. 네 스킬이 함께 쓴다 |
+| `scripts/overlay_paths.py` | `references/monorepo.md` 의 판정을 실행해 대상 하위 프로젝트와 레포 설정을 읽을 순서를 낸다 |
 | `scripts/plan_number.sh` | 원격 브랜치와 git 이력을 훑어 쓰인 plan 번호와 다음 번호를 낸다. 접두사마다 따로 센다 |
 | `scripts/verify_task.py` | 생성한 task와 커밋 전 staged 범위 검사. 종료 코드 0 통과, 1 위반, 2 실행 불가 |
 | `tests/test_verify_task.py` | 파일 상태, 같은 phase의 테스트 실행, staged 범위와 오탐 회귀 검사 |
+| `tests/test_overlay_paths.py` | 단일 저장소 하위 호환, 변경 경로와 plan 접두사와 cwd 로 정하는 대상, 정하지 못하는 표본 |
 | `tests/test_plan_number.py` | 접두사별 번호, tasks 경로, 지운 계획서와 앞의 0 을 실제 git 저장소로 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 

@@ -3,6 +3,23 @@
 `planning`, `build-with-teams`, `docs-check`, `review-fix` 가 레포 설정을 찾는 방법이다.
 네 스킬은 시작할 때 이 문서를 따라 오버레이를 찾고, 자기 스킬 이름만 바꿔 읽는다.
 
+## 명령으로 판정한다
+
+아래 절의 판정과 탐색 순서를 `scripts/overlay_paths.py` 가 그대로 실행한다.
+`$PLANNING_SKILL_DIR` 은 planning 번들 경로이고, `$SKILL` 은 부르는 스킬 이름이다.
+변경 경로를 알면 인자로 넘기고, plan 이름을 알면 `--plan` 으로 넘긴다.
+
+```bash
+# cwd: 대상 저장소 루트
+git diff --name-only origin/main...HEAD | python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill "$SKILL" -
+```
+
+| 종료 코드 | 뜻 |
+| --- | --- |
+| 0 | `targets` 가 대상 하위 프로젝트다. 단일 저장소면 비어 있다. `search` 순서대로 읽는다 |
+| 1 | 모노레포인데 대상을 정하지 못했다. 사용자에게 묻고 `--sub` 로 다시 돌린다 |
+| 2 | 실행하지 못했다. 저장소 밖이거나 `--sub` 에 오버레이가 없다 |
+
 ## 단일 저장소
 
 저장소 루트 하나가 프로젝트 하나인 경우다. 아래 순서로 찾는다.
