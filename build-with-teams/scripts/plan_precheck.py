@@ -17,7 +17,8 @@ from pathlib import Path
 
 DONE_STATUS = {"completed"}
 STOPPED_STATUS = {"cancelled", "failed"}
-# 구현 커밋과 기획 커밋을 가르는 경로. 이 밖을 건드리면 구현으로 본다.
+# 구현 커밋과 기획 커밋을 구분하는 경로의 기본값. 이 밖을 건드리면 구현으로 본다.
+# 모노레포는 --tasks-dir 와 --docs-dir 로 하위 프로젝트 경로를 넘긴다.
 PLANNING_PREFIXES = ("tasks/", "docs/")
 
 
@@ -37,9 +38,9 @@ def try_run(args: list[str], cwd: Path) -> str | None:
     return proc.stdout.strip() if proc.returncode == 0 else None
 
 
-def find_local(repo: Path, plan: str) -> Path | None:
+def find_local(repo: Path, plan: str, tasks_dir: str = "tasks") -> Path | None:
     """plan 이름이나 그 앞부분으로 task 디렉터리를 찾는다."""
-    tasks = repo / "tasks"
+    tasks = repo / tasks_dir
     if not tasks.is_dir():
         return None
     exact = tasks / plan
@@ -57,10 +58,10 @@ def find_local(repo: Path, plan: str) -> Path | None:
     return hits[0] if hits else None
 
 
-def load_remote_index(repo: Path, branch: str, name: str) -> dict | None:
+def load_remote_index(repo: Path, branch: str, name: str, tasks_dir: str = "tasks") -> dict | None:
     """브랜치에만 있는 task 를 읽는다. planning 이 push 한 직후가 이 상태다."""
     # branch_facts 가 방금 fetch 했다. origin/<branch> 는 오래됐을 수 있다.
-    blob = try_run(["git", "show", f"FETCH_HEAD:tasks/{name}/index.json"], repo)
+    blob = try_run(["git", "show", f"FETCH_HEAD:{tasks_dir}/{name}/index.json"], repo)
     if blob is None:
         return None
     try:
@@ -91,7 +92,7 @@ def resolve_base(repo: Path, explicit: str | None = None) -> str:
     return base
 
 
-def branch_facts(repo: Path, branch: str, base: str) -> dict:
+def branch_facts(repo: Path, branch: str, base: str, planning_prefixes: tuple[str, ...] = PLANNING_PREFIXES) -> dict:
     remote_ref = f"refs/heads/{branch}"
     ls = run(["git", "ls-remote", "--heads", "origin", branch], repo)
     exists = any(line.endswith(remote_ref) for line in ls.splitlines())
@@ -105,7 +106,7 @@ def branch_facts(repo: Path, branch: str, base: str) -> dict:
     changed = run(["git", "diff", "--name-only", f"origin/{base}...FETCH_HEAD"], repo)
     impl = [
         f for f in changed.splitlines()
-        if f and not f.startswith(PLANNING_PREFIXES)
+        if f and not f.startswith(planning_prefixes)
     ]
     facts["impl_files"] = impl
     facts["has_impl_commits"] = bool(impl)
@@ -177,22 +178,26 @@ def main() -> int:
     ap.add_argument("--repo", default=".", help="저장소 루트 (기본: 현재 디렉터리)")
     ap.add_argument("--branch", help="원격 브랜치 이름 (기본: task 디렉터리 이름)")
     ap.add_argument("--base", help="기준 브랜치. 저장소 설정에서 정한 값을 넘긴다")
+    ap.add_argument("--tasks-dir", default="tasks", help="계획서 디렉터리. 저장소 루트 기준 (기본: tasks)")
+    ap.add_argument("--docs-dir", action="append", help="기획 커밋으로 볼 docs 경로. 여러 번 줄 수 있다 (기본: docs)")
     ap.add_argument("--json", action="store_true", help="사실을 JSON 으로 출력한다")
     args = ap.parse_args()
 
     repo = Path(args.repo).resolve()
+    tasks_dir = args.tasks_dir.rstrip("/")
+    prefixes = tuple(f"{d.rstrip('/')}/" for d in [tasks_dir, *(args.docs_dir or ["docs"])])
     try:
-        task_dir = find_local(repo, args.plan)
+        task_dir = find_local(repo, args.plan, tasks_dir)
         name = task_dir.name if task_dir else args.plan
         base = resolve_base(repo, args.base)
-        branch = branch_facts(repo, args.branch or name, base)
+        branch = branch_facts(repo, args.branch or name, base, prefixes)
         prs = open_pr(repo, branch["branch"]) if branch["remote_exists"] else []
 
         if task_dir:
             index = parse_index(task_dir / "index.json")
             where = "로컬"
         elif branch["remote_exists"]:
-            index = load_remote_index(repo, branch["branch"], name)
+            index = load_remote_index(repo, branch["branch"], name, tasks_dir)
             where = "브랜치"
         else:
             index = None
@@ -200,7 +205,7 @@ def main() -> int:
 
         if index is None and not branch["remote_exists"]:
             raise PrecheckError(
-                f"'{args.plan}' 의 index.json 을 로컬 tasks/ 에서도 "
+                f"'{args.plan}' 의 index.json 을 로컬 {tasks_dir}/ 에서도 "
                 f"원격 브랜치에서도 찾지 못했다. planning 을 먼저 돌린다."
             )
     except PrecheckError as exc:
@@ -210,7 +215,7 @@ def main() -> int:
     if index is None:
         # 브랜치는 있는데 task 가 없다. planning 이 중단됐거나 push 되지 않았다.
         found = [
-            f"`{branch['branch']}` 브랜치는 있는데 그 안에 tasks/{name}/index.json 이 없다. "
+            f"`{branch['branch']}` 브랜치는 있는데 그 안에 {tasks_dir}/{name}/index.json 이 없다. "
             "planning 이 중단됐거나 push 되지 않았다."
         ]
         if prs:
@@ -221,7 +226,7 @@ def main() -> int:
     else:
         found = judge(index, branch, prs)
         if where == "브랜치":
-            found.insert(0, f"task 가 로컬 tasks/ 에 없고 `{branch['branch']}` 브랜치에만 있다.")
+            found.insert(0, f"task 가 로컬 {tasks_dir}/ 에 없고 `{branch['branch']}` 브랜치에만 있다.")
 
     if args.json:
         print(json.dumps(

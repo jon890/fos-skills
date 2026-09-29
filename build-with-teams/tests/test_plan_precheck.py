@@ -105,6 +105,51 @@ class TestFindLocal(unittest.TestCase):
             self.assertIsNone(pc.find_local(Path(empty), "plan001"))
 
 
+class TestMonorepo(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name)
+        for rel in ("tasks/fe-plan027-login", "tasks/be-plan027-login", "backend/tasks/be-plan003-x"):
+            d = self.repo / rel
+            d.mkdir(parents=True)
+            (d / "index.json").write_text("{}")
+
+    def test_prefixed_plan_is_found_by_its_prefix(self):
+        self.assertEqual(pc.find_local(self.repo, "fe-plan027").name, "fe-plan027-login")
+
+    def test_other_prefix_with_same_number_is_not_matched(self):
+        # 접두사를 떼고 번호만 맞추면 be-plan027 이 fe-plan027 자리에 잡힌다.
+        self.assertIsNone(pc.find_local(self.repo, "plan027"))
+
+    def test_tasks_dir_under_subproject(self):
+        self.assertEqual(pc.find_local(self.repo, "be-plan003", "backend/tasks").name, "be-plan003-x")
+        self.assertIsNone(pc.find_local(self.repo, "be-plan003"))
+
+    def test_subproject_docs_are_planning_not_implementation(self):
+        def command(args, cwd):
+            if args[1] == "ls-remote":
+                return "abc\trefs/heads/plan/fe-027-login"
+            if args[1] == "diff":
+                return "tasks/fe-plan027-login/phase-01.md\nfrontend/docs/flow.md\nfrontend/src/app.ts"
+            return ""
+        with patch.object(pc, "run", side_effect=command):
+            facts = pc.branch_facts(Path("."), "plan/fe-027-login", "main", ("tasks/", "frontend/docs/"))
+        self.assertEqual(facts["impl_files"], ["frontend/src/app.ts"])
+
+    def test_default_prefixes_treat_subproject_docs_as_implementation(self):
+        # 기본값은 이전과 같다. 루트 docs/ 만 기획으로 본다.
+        def command(args, cwd):
+            if args[1] == "ls-remote":
+                return "abc\trefs/heads/x"
+            if args[1] == "diff":
+                return "docs/flow.md\nfrontend/docs/flow.md"
+            return ""
+        with patch.object(pc, "run", side_effect=command):
+            facts = pc.branch_facts(Path("."), "x", "main")
+        self.assertEqual(facts["impl_files"], ["frontend/docs/flow.md"])
+
+
 class TestBaseBranch(unittest.TestCase):
     def test_explicit_base_overrides_git_setting(self):
         with patch.object(pc, "try_run") as optional, patch.object(pc, "run") as run:

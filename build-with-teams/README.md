@@ -34,7 +34,8 @@ planning 이 만들어 둔 task 를 실제로 구현할 때 쓴다.
   그리고 그 phase 가 인용하는 `docs/` 가 있어야 한다.
 - **하위 에이전트를 띄우고 결과를 받는 하네스.** 이것이 없으면 스킬이 돌지 않는다.
   결과 회수와 재투입 수단이 없을 때의 대응은 `references/team-spawn.md` 가 정한다.
-- **대상 저장소의 레포 설정.** `<repo-root>/.claude/build-with-teams-overlay.md` 를 먼저 보고,
+- **대상 저장소의 레포 설정.** 모노레포면 하위 프로젝트의 `.claude/build-with-teams-overlay.md` 를 먼저 본다.
+  그다음 `<repo-root>/.claude/build-with-teams-overlay.md` 를 보고,
   없으면 그 저장소의 하네스 지침 파일(`AGENTS.md`, `CLAUDE.md`)을 본다.
   통합 검증 명령, 브랜치 이름 형식, 작업 공간을 만들고 정리하는 방법,
   네 역할에 쓸 전용 에이전트 이름, 커밋 컨벤션, 의존성 설치 방법을 여기서 찾는다.
