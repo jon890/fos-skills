@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "3.1.1"
+  version: "3.2.0"
 ---
 # docs-check
 
@@ -22,6 +22,13 @@ metadata:
 `<repo-root>/.claude/docs-check-overlay.md` 가 있으면 **먼저 읽고** 코어보다 우선한다.
 오버레이는 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 을 소유한다.
 없으면 그 저장소의 하네스 지침 파일(`AGENTS.md`, `CLAUDE.md`)에서 문서 경계와 검증 명령을 찾는다.
+
+**루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
+감사 범위가 속한 하위 프로젝트를 정하고, 그 하위 프로젝트 오버레이를 루트 오버레이보다 먼저 읽는다.
+범위가 두 하위 프로젝트에 걸치면 하위 프로젝트마다 오버레이를 읽고 따로 감사한 뒤 한 리포트로 합친다.
+판정 방법과 탐색 순서, 오버레이가 지정하는 docs 경로는
+[planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
+이 문서의 `docs/` 는 그 docs 경로로 바꿔 읽는다.
 
 ## 실행 절차
 
@@ -97,6 +104,8 @@ metadata:
 # cwd: 검사 대상 저장소 루트
 python3 "$SKILL_DIR/scripts/static_check.py" "$ADR_DIR" "$SCOPE"
 ```
+
+모노레포면 `$SCOPE` 에 `frontend/docs` 처럼 하위 프로젝트의 docs 경로를 준다. cwd 는 그대로 저장소 루트다.
 
 
 | 종료 코드 | 뜻                       |
