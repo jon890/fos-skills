@@ -200,10 +200,11 @@ class TestDeletedPlan(unittest.TestCase):
         self.assertIsNone(pc.find_deleted(self.repo, "plan002"))
         self.assertEqual(pc.find_deleted(self.repo, "be-plan002")[0], "be-plan002-x")
 
-    def run_main(self, plan):
+    def run_main(self, plan, merged=()):
         import contextlib, io, sys
         facts = {"branch": plan, "remote_exists": False, "base": "main"}
         with patch.object(pc, "resolve_base", return_value="main"), patch.object(pc, "branch_facts", return_value=facts), \
+                patch.object(pc, "merged_pr", return_value=list(merged)), \
                 patch.object(sys, "argv", ["plan_precheck.py", plan, "--repo", str(self.repo)]), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
             code = pc.main()
@@ -215,6 +216,16 @@ class TestDeletedPlan(unittest.TestCase):
         code, out = self.run_main("plan005")
         self.assertEqual(code, 1, out)
         self.assertIn("지운 계획서", out)
+
+    def test_main_squash_merged_plan_is_user_decision(self):
+        # 계획서가 이력에 없어도 그 브랜치로 머지된 PR 이 있으면 재실행을 막는다.
+        code, out = self.run_main("plan/fe-027-login", merged=[{"number": 41, "title": "로그인", "url": "u"}])
+        self.assertEqual(code, 1, out)
+        self.assertIn("#41", out)
+
+    def test_merged_pr_tolerates_gh_failure(self):
+        with patch.object(pc, "try_run", return_value=None):
+            self.assertEqual(pc.merged_pr(self.repo, "x"), [])
 
     def test_main_unknown_plan_is_still_execution_error(self):
         self.add("tasks/plan006-live")

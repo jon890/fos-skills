@@ -154,6 +154,23 @@ def open_pr(repo: Path, branch: str) -> list[dict]:
     return json.loads(out or "[]")
 
 
+def merged_pr(repo: Path, branch: str) -> list[dict]:
+    """이 브랜치로 머지된 PR. squash 머지 뒤 브랜치를 지우면 git 이력에서 계획서를 찾지 못한다.
+
+    같은 PR 에서 계획서를 더하고 지운 뒤 squash 하면 기준 브랜치 이력에 index.json 이 없고,
+    원 브랜치를 지우면 git log --all 도 보지 못한다. PR 목록은 남는다.
+    gh 가 실패하면 빈 목록을 낸다. 호출한 쪽이 원래의 오류 안내로 돌아간다.
+    """
+    out = try_run(
+        ["gh", "pr", "list", "--head", branch, "--state", "merged", "--json", "number,title,url"],
+        repo,
+    )
+    try:
+        return json.loads(out or "[]")
+    except json.JSONDecodeError:
+        return []
+
+
 def judge(index: dict, branch: dict, prs: list[dict]) -> list[str]:
     """진행을 막을 사실만 모은다."""
     found = []
@@ -230,7 +247,8 @@ def main() -> int:
         deleted = find_deleted(repo, args.plan, tasks_dir) if index is None else None
         if deleted:
             name = deleted[0]
-        if index is None and not branch["remote_exists"] and not deleted:
+        merged = merged_pr(repo, branch["branch"]) if index is None and not deleted and not branch["remote_exists"] else []
+        if index is None and not branch["remote_exists"] and not deleted and not merged:
             raise PrecheckError(
                 f"'{args.plan}' 의 index.json 을 로컬 {tasks_dir}/ 에서도 "
                 f"원격 브랜치에서도 찾지 못했다. planning 을 먼저 돌린다."
@@ -239,7 +257,13 @@ def main() -> int:
         print(f"검사를 돌리지 못했다: {exc}", file=sys.stderr)
         return 2
 
-    if index is None and deleted:
+    if index is None and merged:
+        found = [
+            f"`{branch['branch']}` 브랜치로 머지된 PR 이 있다: "
+            + ", ".join(f"#{p['number']} {p['title']}" for p in merged)
+            + ". 구현을 마치고 계획서를 지운 뒤 squash 머지한 plan 일 수 있다."
+        ]
+    elif index is None and deleted:
         found = [
             f"`{deleted[0]}` 은 커밋 {deleted[1]} 에서 지운 계획서다. "
             "구현이 끝난 plan 을 다시 도는 중일 수 있다."
@@ -268,7 +292,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(
             {"task": str(task_dir) if task_dir else name,
-             "found_in": "지운 계획서" if index is None and deleted else where,
+             "found_in": "지운 계획서" if index is None and deleted else "머지된 PR" if index is None and merged else where,
              "deleted_in": deleted[1] if deleted else None,
              "status": index.get("status") if index else None,
              "total_phases": index.get("total_phases") if index else None,

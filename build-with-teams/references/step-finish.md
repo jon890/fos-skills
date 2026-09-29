@@ -45,7 +45,8 @@ git commit -m "chore: 구현을 마친 $PLAN 계획서를 지운다"
 - 지우기 전에 phase 가 인용한 근거 문서가 `docs/` 에 있는지 본다.
   계획서에만 있는 결정이 남았으면 docs-verifier 의 `UPDATE_NEEDED` 처럼 `docs/` 로 옮긴 뒤 지운다.
 - phase 커밋과 분리한 커밋 하나로 둔다. 리뷰어가 구현 diff 와 삭제를 따로 본다.
-- 지운 계획서는 `plan_precheck.py` 가 git 이력에서 찾아 재실행을 막는다. `index.json` 을 `completed` 로 바꾸지 않는다.
+- 지운 계획서는 `plan_precheck.py` 가 git 이력과 그 브랜치로 머지된 PR 에서 찾아 재실행을 막는다.
+  squash 머지 뒤 브랜치를 지우면 git 이력에 남지 않아 PR 을 함께 본다. `index.json` 을 `completed` 로 바꾸지 않는다.
 
 레포 설정이 계획서를 남기라고 정했으면 지우지 않고, `index.json` 의 `status` 를 `completed` 로 바꿔 같은 자리에 커밋한다.
 
