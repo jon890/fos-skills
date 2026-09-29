@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.5.1"
+  version: "2.6.0"
 ---
 
 # review-fix
@@ -23,6 +23,19 @@ metadata:
 `<repo-root>/.claude/review-fix-overlay.md` 가 있으면 **먼저 읽고** 코어보다 우선한다.
 오버레이는 신뢰하는 봇 목록, 봇별 심각도 표기, 학습 누적 위치, CI 실패 원인 표를 소유한다.
 없으면 코어 기본값으로 동작한다.
+
+**루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
+PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 정하고, 그 오버레이를 루트 오버레이보다 먼저 읽는다.
+`$PLANNING_SKILL_DIR` 은 planning 번들 경로이고, `$PR` 은 1단계에서 정한 PR 번호다.
+
+```bash
+# cwd: 대상 저장소 루트
+gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill review-fix -
+```
+
+`targets` 가 둘 이상이면 PR 이 두 하위 프로젝트에 걸친 것이다.
+검증 명령과 학습 누적 위치는 지적이 달린 파일의 하위 프로젝트 오버레이에서 읽고, 검증은 둘 다 실행한다.
+종료 코드 1 이면 사용자에게 묻는다. 판정 규칙은 [planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
 
 ## 실행 절차
 
@@ -193,6 +206,7 @@ GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
 - lint, 빌드와 타입 검사, 테스트 순으로 실행한다.
 - 테스트를 변경했으면 diff에서 삭제, skip과 단언 완화를 판정한다.
 - 오버레이가 CI 실패 원인 표를 제공하면 그 표로 진단한다.
+- 모노레포에서 PR 이 두 하위 프로젝트에 걸치면 두 오버레이의 검증 명령을 모두 실행한다.
 
 검증 명령이 문서화돼 있지 않으면 어떤 명령으로 검증할지 사용자에게 묻는다.
 

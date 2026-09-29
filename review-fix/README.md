@@ -31,6 +31,8 @@ PR 에 이미 달린 리뷰를 읽고 코드에 반영한다.
 - 검증 명령이 그 저장소에 문서화돼 있어야 한다. 없으면 어떤 명령으로 검증할지 사용자에게 묻는다
 - `<repo-root>/.claude/review-fix-overlay.md` 는 선택이다. 신뢰하는 봇 목록, 봇별 심각도 표기,
   학습 누적 위치, CI 실패 원인 표를 오버레이가 채운다
+- 모노레포면 하위 프로젝트의 `.claude/review-fix-overlay.md` 를 루트 오버레이보다 먼저 읽는다.
+  대상 판정에 planning 번들의 `scripts/overlay_paths.py` 를 쓰므로 planning 도 설치돼 있어야 한다
 
 ## 구성
 
