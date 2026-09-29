@@ -16,6 +16,13 @@ class PlanNumberTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory(dir="/tmp")
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
+        # 실제 gh 를 부르지 않게 PATH 앞에 가짜 gh 를 둔다. heads 파일이 PR 의 head 브랜치 목록이다.
+        bin_dir, self.heads = root / "bin", root / "heads"
+        bin_dir.mkdir()
+        self.heads.write_text("")
+        (bin_dir / "gh").write_text(f'#!/bin/sh\n[ -f "{self.heads}" ] || exit 1\ncat "{self.heads}"\n')
+        (bin_dir / "gh").chmod(0o755)
+        self.env = {**ENV, "PATH": f"{bin_dir}:{ENV['PATH']}"}
         self.remote, self.repo = root / "remote.git", root / "repo"
         self.git(root, "init", "--quiet", "--bare", "-b", "main", str(self.remote))
         self.git(root, "clone", "--quiet", str(self.remote), str(self.repo))
@@ -40,7 +47,7 @@ class PlanNumberTest(unittest.TestCase):
 
     def run_script(self, *args):
         self.git(self.repo, "push", "--quiet", "-u", "origin", "HEAD")
-        result = subprocess.run(["bash", str(SCRIPT), *args], cwd=self.repo, env=ENV, capture_output=True, text=True)
+        result = subprocess.run(["bash", str(SCRIPT), *args], cwd=self.repo, env=self.env, capture_output=True, text=True)
         return result.returncode, result.stdout
 
     def test_default_counts_tree_like_before(self):
@@ -109,6 +116,28 @@ class PlanNumberTest(unittest.TestCase):
         code, out = self.run_script()
         self.assertIn("밖에만 있다", out)
         self.assertEqual(out.splitlines()[-1], "다음 번호: 3")
+
+    def test_squash_merged_plan_is_counted_from_pr_branch(self):
+        # 같은 PR 에서 계획서를 더하고 지운 뒤 squash 머지하고 브랜치를 지우면 git 이력에 남지 않는다.
+        self.commit("tasks/fe-plan020-a/index.json", "fe")
+        self.heads.write_text("plan/fe-027-login\nfe-plan025-old\nfeature/fe-plan026-x\nplan/be-099-api\n")
+        code, out = self.run_script("--prefix", "fe-")
+        self.assertEqual(out.splitlines()[-1], "다음 번호: 28", out)
+        self.assertIn("PR 브랜치 이름에만 있다", out)
+        self.assertNotIn("99", out)
+
+    def test_unprefixed_pr_branch_formats(self):
+        self.heads.write_text("plan/12-slug\nplan/fe-040-x\nfeat/unrelated\n")
+        code, out = self.run_script()
+        self.assertEqual(out.splitlines()[-1], "다음 번호: 13", out)
+
+    def test_gh_failure_is_reported_before_number(self):
+        self.heads.unlink()
+        self.commit("tasks/plan1-a/index.json", "plan1")
+        code, out = self.run_script()
+        lines = out.splitlines()
+        self.assertEqual((code, lines[-1]), (0, "다음 번호: 2"))
+        self.assertIn("PR 이력을 보지 못했다", lines[-2])
 
     def test_invalid_prefix_is_rejected(self):
         code, _ = self.run_script("--prefix", "fe.*")

@@ -12,6 +12,7 @@
 `plan_number.sh` 가 `plan010` 처럼 앞에 0 이 붙은 번호를 8진수로 읽던 결함을 고쳤다.
 구현이 끝난 계획서를 구현 PR 에서 지운다. 현재 사실은 `docs/` 와 코드가 소유하고 계획서는 곧 낡아 틀린 근거가 되기 때문이다.
 `plan_number.sh` 가 git 이력을 함께 훑어 지운 계획서의 번호를 다시 내주지 않는다.
+`plan_number.sh` 가 `gh pr list --state all` 의 head 브랜치 이름에서도 번호를 읽는다. 계획서를 지운 PR 을 squash 머지하고 브랜치를 지우면 git 이력에 남지 않기 때문이다.
 `verify_task.py` 가 마지막 phase 의 `completed` 표시 지시를 요구하지 않는다. phase 는 `tasks/` 를 바꾸지 않는다.
 
 ## 2.8.0

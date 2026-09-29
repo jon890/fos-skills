@@ -10,6 +10,13 @@
 #   구현이 끝난 계획서는 지운다. 지운 뒤에는 어느 브랜치의 트리에도 없어서
 #   트리만 보면 마지막 번호를 다시 내준다. 지운 계획서는 커밋 이력에만 남는다.
 #
+# 왜 PR 의 head 브랜치 이름도 보나:
+#   같은 PR 안에서 계획서를 더하고 지운 뒤 squash 머지하면 main 이력에 index.json 이 남지 않는다.
+#   머지 후 원 브랜치를 지우면 git log --all 도 그 번호를 보지 못한다.
+#   PR 목록은 브랜치를 지워도 남으므로 gh pr list --state all 의 headRefName 에서 번호를 읽는다.
+#   `{접두사}plan{N}-...` 와 `plan/{접두사}{N}-...` 두 형식을 읽는다. 다른 형식은 읽지 못한다.
+#   gh 가 없거나 실패하면 번호를 내되, 마지막 줄 앞에 PR 이력을 보지 못했다고 알린다.
+#
 # 사용법:
 #   plan_number.sh [--tasks-dir DIR] [--prefix PREFIX] [DIR]
 #
@@ -80,10 +87,24 @@ HISTORY_NUMS=$(
     | sed -n "s|^${TASKS_DIR}/${NAME_RE}[^/]*/index\.json$|\1|p" | awk '{print $1 + 0}' | sort -n -u
 )
 
-ALL_NUMS=$( { echo "$PAIRS" | awk 'NF {print $1}'; echo "$HISTORY_NUMS"; } | awk 'NF' | sort -n -u)
+# 브랜치 이름은 `fe-plan027-login` 이나 `plan/fe-027-login` 이다. 앞에 `feature/` 같은 디렉터리가 붙어도 읽는다.
+PR_SEEN=1
+PR_NUMS=""
+if HEADS=$(gh pr list --state all --limit 1000 --json headRefName --jq '.[].headRefName' 2>/dev/null); then
+  PR_NUMS=$(echo "$HEADS" | sed -n \
+      -e "s#^\(.*/\)\{0,1\}${PREFIX}plan\([0-9]\{1,\}\)\(-.*\)\{0,1\}\$#\2#p" \
+      -e "s#^plan/${PREFIX}\([0-9]\{1,\}\)\(-.*\)\{0,1\}\$#\1#p" \
+    | awk '{print $1 + 0}' | sort -n -u)
+else
+  PR_SEEN=0
+fi
+
+ALL_NUMS=$( { echo "$PAIRS" | awk 'NF {print $1}'; echo "$HISTORY_NUMS"; echo "$PR_NUMS"; } | awk 'NF' | sort -n -u)
+PR_WARNING="PR 이력을 보지 못했다 (gh 미설치 또는 인증 실패). squash 머지 후 브랜치를 지운 번호는 빠졌을 수 있다."
 
 if [ -z "$ALL_NUMS" ]; then
   echo "쓰인 번호가 없다"
+  [ "$PR_SEEN" = 1 ] || echo "$PR_WARNING"
   echo "다음 번호: 1"
   exit 0
 fi
@@ -101,9 +122,13 @@ for n in $ALL_NUMS; do
     printf '  %-12s %s 안에 있다\n' "$label" "$MAIN_REF"
   elif [ -n "$refs" ]; then
     printf '  %-12s %s 밖에만 있다: %s\n' "$label" "$MAIN_REF" "$refs"
-  else
+  elif echo "$HISTORY_NUMS" | grep -qx "$n"; then
     printf '  %-12s 지워졌고 git 이력에만 있다\n' "$label"
+  else
+    printf '  %-12s PR 브랜치 이름에만 있다\n' "$label"
   fi
 done
+
+[ "$PR_SEEN" = 1 ] || echo "$PR_WARNING"
 
 echo "다음 번호: $(( $(echo "$ALL_NUMS" | tail -1) + 1 ))"
