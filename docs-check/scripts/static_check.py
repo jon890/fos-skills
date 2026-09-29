@@ -53,6 +53,8 @@ ADR_INDEX = re.compile(r"^\s*(?:[-*]\s+\[?|\|\s*)(ADR-\d+)")
 #   식별자의 일부인 것은 참조가 아니라 이름이고, 바꾸면 그 이름을 부르는 쪽도 함께 깨진다.
 #   자리 표시자(`plan{N}`, `plan###`)에는 숫자가 없어 걸리지 않는다.
 PLAN_REF = re.compile(r"(?<![A-Za-z0-9_])plan[-_]?\d{2,}")
+# 계획서 디렉터리 이름. 모노레포는 `fe-plan027-login` 처럼 하위 프로젝트 접두사를 붙인다.
+PLAN_DIR = re.compile(r"(?:[A-Za-z0-9]+-)?plan[-_]?\d{2,}(?:-.*)?")
 
 
 def git(*args):
@@ -174,7 +176,7 @@ def in_plan_dir(path):
 
     계획서 안에서 자기 plan 번호를 부르는 것은 참조가 아니다. 파일과 함께 사라진다.
     """
-    return any(PLAN_REF.fullmatch(part.split("-")[0]) for part in path.parts)
+    return any(PLAN_DIR.fullmatch(part) for part in path.parts)
 
 
 def check_plan_ref(path, lines):

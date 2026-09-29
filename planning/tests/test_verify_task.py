@@ -175,10 +175,6 @@ class TaskRulesTest(unittest.TestCase):
         verify.check_phase_prompt(Path("p"), self.prompt("### 1. `tests/test_app.py`", "set -euo pipefail\npytest | tee out.log"), [], entries, self.repo, warnings)
         self.assertFalse(any("pipefail" in w for w in warnings))
 
-    def test_completion_mark_must_share_a_paragraph(self):
-        self.assertTrue(verify.marks_completed("마지막에 `index.json` 을\ncompleted 로 바꾼다."))
-        self.assertFalse(verify.marks_completed("`index.json` 을 읽는다.\n\n테스트가 completed 되면 끝낸다."))
-
     def test_bsd_sed_inside_shell_block_is_reported(self):
         out = []
         verify.check_code_sed(Path("p"), "## 작업 항목\n```bash\nsed -i '' 's/\\bfoo/bar/' a.txt\n```\n```python\nsed = r'sed x \\b'\n```", out)
@@ -283,6 +279,24 @@ class TaskRulesTest(unittest.TestCase):
         verify.check_file_state(Path("p5"), [("src/other/Foo.java", "수정")], self.repo, virtual, out, [], created=created)
         self.assertEqual(len(out), 2)
 
+    def test_glob_inside_earlier_new_glob_counts_as_existing(self):
+        # 앞 phase 가 backend/** 를 신규로 두고 뒤 phase 가 backend/tasks/** 를 삭제하던 계획서의 재현이다.
+        virtual, created, out = {}, [], []
+        verify.check_file_state(Path("p1"), [("backend/**", "신규")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p2"), [("backend/tasks/**", "삭제")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(out, [])
+        verify.check_file_state(Path("p3"), [("backend/tasks/**", "삭제")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p4"), [("backend/tasks/a.py", "수정")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 2)
+        verify.check_file_state(Path("p5"), [("backend/src/*.py", "수정")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 2)
+
+    def test_glob_outside_earlier_new_glob_is_still_missing(self):
+        virtual, created, out = {}, [], []
+        verify.check_file_state(Path("p1"), [("backend/**", "신규")], self.repo, virtual, out, [], created=created)
+        verify.check_file_state(Path("p2"), [("frontend/tasks/**", "삭제")], self.repo, virtual, out, [], created=created)
+        self.assertEqual(len(out), 1)
+
     def test_manifest_compatibility_and_invalid_rows(self):
         for name in ("변경 파일", "Critical Files"):
             out, warnings = [], []
@@ -313,6 +327,45 @@ class TaskRulesTest(unittest.TestCase):
             self.assertEqual(verify.main(["verify"]), 2)
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("--staged", err.getvalue())
+
+    def test_last_phase_needs_no_completion_mark(self):
+        # 완료한 계획서는 지우므로 마지막 phase 가 index.json 을 completed 로 바꾸라고 적지 않아도 된다.
+        self.file("src/app.py")
+        phase = self.prompt("### 1. `tests/test_app.py` 추가", "pytest tests/test_app.py")
+        phase += "\n## 목표\n앱\n**범위 외**: 배포\n## 변경 파일\n| `src/app.py` | 수정 |\n| `tests/test_app.py` | 신규 |\n"
+        self.file("tasks/plan2-app/phase-01.md", phase)
+        index = {"name": "plan2-app", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
+        self.file("tasks/plan2-app/index.json", json.dumps(index))
+        with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertEqual(verify.main(["verify", "plan2-app"]), 0, stdout.getvalue())
+        self.assertNotIn("completed", stdout.getvalue())
+
+    def test_subproject_docs_path_is_evidence(self):
+        self.file("frontend/docs/flow.md")
+        out = []
+        text = self.prompt("### 1. 문서", "pytest").replace("`docs/flow.md`", "`frontend/docs/flow.md`")
+        verify.check_phase_prompt(Path("p"), text, out, repo=self.repo)
+        self.assertFalse(any("근거 문서" in issue for issue in out), out)
+
+    def test_subproject_evidence_must_exist_and_be_docs(self):
+        for evidence in ("`frontend/docs/absent.md`", "`frontend/src/app.ts`"):
+            out = []
+            text = self.prompt("### 1. 문서", "pytest").replace("`docs/flow.md`", evidence)
+            verify.check_phase_prompt(Path("p"), text, out, repo=self.repo)
+            self.assertTrue(any("근거 문서" in issue for issue in out), evidence)
+
+    def test_cli_prefixed_plan_under_tasks_dir(self):
+        self.file("frontend/docs/flow.md")
+        phase = self.prompt("### 1. `frontend/tests/test_app.py` 추가", "pytest frontend/tests/test_app.py").replace("`docs/flow.md`", "`frontend/docs/flow.md`")
+        phase += "\n## 목표\n앱\n**범위 외**: 배포\n## 변경 파일\n| `frontend/src/app.py` | 신규 |\n| `frontend/tests/test_app.py` | 신규 |\n"
+        index = {"name": "fe-plan27-app", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
+        for tasks_dir in ("tasks", "frontend/tasks"):
+            self.file(f"{tasks_dir}/fe-plan27-app/phase-01.md", phase)
+            self.file(f"{tasks_dir}/fe-plan27-app/index.json", json.dumps(index))
+        with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(verify.main(["verify", "fe-plan27-app"]), 0, stdout.getvalue())
+            self.assertEqual(verify.main(["verify", "fe-plan27-app", "--tasks-dir", "frontend/tasks"]), 0, stdout.getvalue())
+            self.assertEqual(verify.main(["verify", "fe-plan27-app", "--tasks-dir", "backend/tasks"]), 2)
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True)

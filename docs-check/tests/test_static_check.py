@@ -117,6 +117,18 @@ class TestUnit(unittest.TestCase):
         path = Path("tasks/plan059-foo/phase-01.md")
         self.assertEqual(sc.check_plan_ref(path, lines(body)), [])
 
+    def test_plan_ref_skips_file_inside_prefixed_plan_dir(self):
+        for path in ("tasks/fe-plan027-login/phase-01.md", "backend/tasks/be-plan003/phase-02.md"):
+            self.assertEqual(sc.check_plan_ref(Path(path), lines("plan027 의 phase 다.")), [], path)
+
+    def test_prefixed_plan_ref_in_subproject_docs_is_caught(self):
+        body = "근거는 `tasks/fe-plan027-login/` 에 있다."
+        self.assertEqual(len(sc.check_plan_ref(Path("frontend/docs/flow.md"), lines(body))), 1)
+
+    def test_identifier_with_plan_number_is_not_a_plan_dir(self):
+        # `test_plan032` 는 식별자다. 계획서 디렉터리로 보면 그 아래 문서의 참조를 놓친다.
+        self.assertEqual(len(sc.check_plan_ref(Path("docs/test_plan032/a.md"), lines("plan051 을 본다."))), 1)
+
 
 class TestRepo(unittest.TestCase):
     """실제 git 저장소에서 파일 수집과 종료 코드를 본다."""

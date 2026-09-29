@@ -3,6 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.9.0
+
+모노레포를 지원한다. 하위 프로젝트 오버레이를 루트 오버레이보다 먼저 읽고, 판정과 탐색 순서는 `references/monorepo.md` 가 소유한다.
+`scripts/overlay_paths.py` 가 그 판정을 실행해 대상 하위 프로젝트와 레포 설정을 읽을 순서를 낸다.
+오버레이가 docs 경로, tasks 경로, plan 접두사를 지정한다. `plan_number.sh --prefix --tasks-dir` 와 `verify_task.py --tasks-dir` 가 그 값을 받는다.
+`verify_task.py` 가 `frontend/docs/flow.md` 처럼 하위 프로젝트의 docs 경로를 근거 문서로 받는다.
+`plan_number.sh` 가 `plan010` 처럼 앞에 0 이 붙은 번호를 8진수로 읽던 결함을 고쳤다.
+구현이 끝난 계획서를 구현 PR 에서 지운다. 현재 사실은 `docs/` 와 코드가 소유하고 계획서는 곧 낡아 틀린 근거가 되기 때문이다.
+`plan_number.sh` 가 git 이력을 함께 훑어 지운 계획서의 번호를 다시 내주지 않는다.
+`plan_number.sh` 가 `gh pr list --state all` 의 head 브랜치 이름에서도 번호를 읽는다. 계획서를 지운 PR 을 squash 머지하고 브랜치를 지우면 git 이력에 남지 않기 때문이다.
+`verify_task.py` 가 마지막 phase 의 `completed` 표시 지시를 요구하지 않는다. phase 는 `tasks/` 를 바꾸지 않는다.
+`verify_task.py` 가 앞 phase 의 신규 glob 과 겹치는 뒤 phase 의 수정·삭제 glob 을 존재로 본다. `backend/**` 를 신규로 두고 `backend/tasks/**` 를 삭제하면 위반으로 판정하던 결함을 고쳤다.
+
 ## 2.8.0
 
 Critical Files를 「변경 파일」로 바꾸고 기존 이름은 읽기 호환으로 유지한다.

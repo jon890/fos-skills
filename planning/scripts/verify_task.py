@@ -2,12 +2,14 @@
 """task 생성 직후 자동 검증.
 
 index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시와
-스킬 번들 cwd, 사람 의존 검증, 필수 절, 완료 표시, BSD sed 를 검사한다.
+스킬 번들 cwd, 사람 의존 검증, 필수 절, BSD sed 를 검사한다.
+완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 build-with-teams 가 디렉터리째 지운다.
 계획에 적힌 명령은 실행하지 않는다.
 
 사용법:
     python3 scripts/verify_task.py PLAN
     python3 scripts/verify_task.py PLAN --audit
+    python3 scripts/verify_task.py fe-plan27-login --tasks-dir tasks
     python3 scripts/verify_task.py --staged tasks/PLAN/phase-01.md
 
 기본 검사는 구현 전 파일 상태를 대조한다. --audit 는 구현 후 문서 검사라
@@ -15,7 +17,8 @@ index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시�
 --staged 는 git index 와 phase 변경 파일 목록을 대조한다.
 테스트 범위, 실패 전파, 식별자와 스키마의 일치는 사람이 확인한다.
 
-cwd 는 tasks/ 를 가진 타깃 레포 root 여야 한다.
+cwd 는 타깃 레포 root 여야 한다. 계획서 디렉터리는 --tasks-dir 로 바꾼다 (기본값 tasks).
+모노레포의 근거 문서는 `frontend/docs/flow.md` 처럼 하위 프로젝트의 docs 경로도 받는다.
 경로는 이 스킬 번들 기준 상대경로다. 하네스가 알려주는 base 디렉터리에 붙여 쓴다.
 
 종료 코드
@@ -50,7 +53,8 @@ MODELS = {"haiku", "sonnet", "opus"}
 VAGUE_SCOPE = re.compile(r"전체\s*(수정|변경|적용|교체|리팩토링|삭제)")
 HUMAN_CHECK = re.compile(r"수동\s*(?:검토|확인|검증)|눈으로\s*확인|직접\s*확인|육안")
 BSD_SED = re.compile(r"sed\s.*\\b")
-DOC_PATH = re.compile(r"`(docs/[^`\s]+)`")
+# 모노레포는 하위 프로젝트마다 docs 를 둔다. 루트 기준 경로의 어느 조각이든 `docs` 면 근거 문서로 본다.
+DOC_PATH = re.compile(r"`((?:[A-Za-z0-9_.-]+/)*docs/[^`\s]+)`")
 TEST_DIRS = {"test", "tests", "__tests__"}
 TEST_NAME = re.compile(r"^test_|(?:Test|Tests)\.[^.]+$|[._-](?:test|spec)\.[^.]+$")
 BUNDLE = re.compile(r"\$(?:SKILL_DIR|\{SKILL_DIR\})|~/\.(?:claude|codex)/skills|\$HOME/\.(?:claude|codex)/skills")
@@ -193,7 +197,8 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
 
     생략 경로는 커밋 전 staged 대조에서 막히므로 「변경 파일」 절에서는 생성 때 위반이다.
     Critical Files 는 읽기 호환이라 경고로 둔다.
-    created 는 앞 phase 가 신규로 선언한 glob 이다. 뒤 phase 가 그 glob 에 맞는 파일을 수정하면 존재로 본다.
+    created 는 앞 phase 가 신규로 선언한 glob 이다. 뒤 phase 가 그 glob 과 겹치는 경로나 glob 을
+    수정하거나 삭제하면 존재로 본다. 앞 phase 가 삭제한 경로와 glob 은 virtual 에 False 로 남아 계속 위반이다.
     """
     created = created if created is not None else []
     for rel, action in entries:
@@ -205,10 +210,12 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
             continue
         glob = is_glob(rel)
         candidates = {p.relative_to(repo).as_posix() for p in repo.glob(rel)} if glob else {rel}
-        candidates.update(p for p in virtual if matches(p, rel))
+        candidates.update(p for p in virtual if not is_glob(p) and matches(p, rel))
         exists = any(virtual.get(p, (repo / p).exists()) for p in candidates)
-        if not glob and not exists and virtual.get(rel) is not False:
-            exists = any(matches(rel, pattern) for pattern in created)
+        deleted = [p for p, alive in virtual.items() if alive is False]
+        if not exists and not any(matches(rel, p) for p in deleted):
+            # glob 끼리는 한쪽 문자열을 경로로 보고 다른 쪽에 맞춰 포함 관계를 판정한다.
+            exists = any(matches(rel, pattern) or matches(pattern, rel) for pattern in created)
         if action == "신규" and glob:
             warnings.append(f"{path} — 신규 glob 은 구체 파일의 부재를 보장하지 못한다: {rel}")
             created.append(rel)
@@ -219,6 +226,7 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
         if action == "삭제" and glob:
             for candidate in candidates:
                 virtual[candidate] = False
+            virtual[rel] = False
     # 같은 phase 의 신규 선언으로 그 phase 의 수정 오류를 숨기지 않는다.
     for rel, action in entries:
         if not omitted(rel) and not is_glob(rel):
@@ -543,13 +551,6 @@ def check_code_sed(path, text, out):
             out.append(f"{path}:{n}: {line}")
 
 
-def marks_completed(text):
-    """index.json 과 completed 가 같은 단락에 있어야 한다. 파일 전체에 흩어진 두 낱말은 지시가 아니다."""
-    return any(re.search(r"index\.json", p) and "completed" in p for p in re.split(r"\n\s*\n", text)) or bool(
-        re.search(r"status.*completed", text)
-    )
-
-
 def check_human_verification(path, text, out):
     """추가 낱말은 명령 없는 검증 절에 한정해 설계 설명의 오탐을 피한다."""
     validation = section(text, "검증")
@@ -564,6 +565,7 @@ def main(argv: list) -> int:
     parser.add_argument("plan", nargs="?")
     parser.add_argument("--audit", action="store_true", help="구현 후 문서 검사. 구현 전 파일 상태는 대조하지 않는다")
     parser.add_argument("--staged", type=Path, metavar="PHASE", help="phase 변경 파일 목록과 git index 대조")
+    parser.add_argument("--tasks-dir", default="tasks", help="계획서 디렉터리. 저장소 루트 기준 (기본값 tasks)")
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
@@ -577,8 +579,8 @@ def main(argv: list) -> int:
             check_staged(args.staged, args.staged.read_text(encoding="utf-8"), repo, out, warnings)
         else:
             if Path(args.plan).name != args.plan:
-                raise ValueError("plan 은 tasks/ 아래 디렉터리 이름이어야 한다")
-            plan_dir = repo / "tasks" / args.plan
+                raise ValueError(f"plan 은 {args.tasks_dir}/ 아래 디렉터리 이름이어야 한다")
+            plan_dir = repo / args.tasks_dir / args.plan
             phases = sorted(plan_dir.glob("phase-*.md"))
             if not phases:
                 raise ValueError(f"phase 파일 없음: {plan_dir}")
@@ -601,9 +603,6 @@ def main(argv: list) -> int:
                 check_code_sed(path, text, out)
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
-            last = phases[-1]
-            if not marks_completed(last.read_text(encoding="utf-8")):
-                out.append(f"{last} — index.json completed 마킹 지시 누락")
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"검사를 실행하지 못했다: {exc}", file=sys.stderr)
         return 2
