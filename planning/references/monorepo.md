@@ -36,8 +36,10 @@ git diff --name-only origin/main...HEAD | python3 "$PLANNING_SKILL_DIR/scripts/o
 
 ```bash
 # cwd: 저장소 루트
-ls -d */.claude/*-overlay.md 2>/dev/null
+find . -mindepth 3 -maxdepth 3 -path './*/.claude/*-overlay.md'
 ```
+
+zsh 에서 `ls */.claude/*-overlay.md` 는 맞는 파일이 없으면 셸이 `no matches found` 로 멈춘다. `find` 는 빈 출력으로 끝난다.
 
 출력이 비었으면 단일 저장소다.
 출력에 나온 디렉터리 이름이 하위 프로젝트다. `frontend/.claude/planning-overlay.md` 가 있으면 `frontend` 가 하위 프로젝트다.
