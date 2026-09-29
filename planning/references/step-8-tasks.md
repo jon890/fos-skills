@@ -3,7 +3,8 @@
 **역할**: 실행 프롬프트 작성자. 이 대화를 전혀 보지 못한 구현자가 읽는다고 가정한다.
 **통과시키지 않는 것**: 읽는 사람이 되물어야 실행할 수 있는 phase. "여기서 정한 대로" 같은 대화 의존 표현.
 
-`tasks/plan{N}-<kebab-slug>/` 아래 `index.json` 과 `phase-*.md` 를 만든다.
+`tasks/{접두사}plan{N}-<kebab-slug>/` 아래 `index.json` 과 `phase-*.md` 를 만든다.
+접두사와 tasks 경로는 레포 설정이 지정한다. 지정이 없으면 접두사 없이 `tasks/` 다.
 스키마와 phase 구조는 `task-create.md` 가 소유한다.
 
 ## 정할 것
@@ -22,13 +23,14 @@
 ## 번호를 정하는 방법
 
 **스크립트로 훑는다.** `$SKILL_DIR` 은 이 스킬 번들 경로다.
+`$TASKS_DIR` 과 `$PLAN_PREFIX` 는 레포 설정의 tasks 경로와 plan 접두사다. 지정이 없으면 비워 둔다.
 
 ```bash
-# cwd: tasks/ 를 가진 타깃 레포 root
-bash "$SKILL_DIR/scripts/plan_number.sh"
+# cwd: 타깃 레포 root
+bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir "${TASKS_DIR:-tasks}" ${PLAN_PREFIX:+--prefix "$PLAN_PREFIX"}
 ```
 
-마지막 줄이 다음 번호다.
+마지막 줄이 다음 번호다. 접두사가 있으면 그 접두사의 번호만 센다.
 `origin/main 밖에만 있다` 로 나온 번호는 머지되지 않은 브랜치가 쥔 것이고 그 번호도 쓰지 않는다.
 로컬 `tasks/` 만 보면 그 번호가 보이지 않는다.
 

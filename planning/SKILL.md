@@ -6,7 +6,7 @@ description: |
   "/planning", "계획 세워보자", "설계해보자", "plan 세워줘", "기획해줘", "task 파일 만들어줘",
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
 metadata:
-  version: "2.8.0"
+  version: "2.9.0"
 ---
 # planning
 
@@ -38,6 +38,12 @@ metadata:
 3. 어디에도 없으면 사용자에게 확인한다
 
 검증 명령, 레이어 구조, 도메인 변형, 추가 문서가 여기 해당한다.
+
+**루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
+대상 하위 프로젝트를 정하고, 그 하위 프로젝트 오버레이를 루트 오버레이보다 먼저 읽는다.
+판정 방법과 탐색 순서, 오버레이가 지정하는 docs 경로, tasks 경로, plan 접두사는
+[`references/monorepo.md`](references/monorepo.md) 가 소유한다.
+이 문서의 `docs/` 와 `tasks/` 는 그 값으로 바꿔 읽는다.
 
 ## 8단계 실행 절차
 
@@ -106,11 +112,12 @@ task 파일을 만든 직후, 구현 전 상태에서 스크립트를 돌린다.
 경고는 작성자가 확인하고 대조하지 못한 경로와 검증 범위를 보고에 남긴다.
 
 `$SKILL_DIR` 은 이 스킬 번들 경로이고, `$PLAN` 은 `plan9-db-backup` 같은 디렉터리 이름이다.
+`$TASKS_DIR` 은 레포 설정의 tasks 경로이고 지정이 없으면 `tasks` 다.
 **스크립트는 스킬 번들에 있고 cwd 는 타깃 레포다.** 둘을 같은 경로로 두면 파일을 찾지 못한다.
 
 ```bash
-# cwd: tasks/ 를 가진 타깃 레포 root
-python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN"
+# cwd: 타깃 레포 root
+python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
 ```
 
 위반을 찾으면 임의로 고치지 않고 사용자에게 확인받는다.

@@ -8,6 +8,7 @@ index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시�
 사용법:
     python3 scripts/verify_task.py PLAN
     python3 scripts/verify_task.py PLAN --audit
+    python3 scripts/verify_task.py fe-plan27-login --tasks-dir tasks
     python3 scripts/verify_task.py --staged tasks/PLAN/phase-01.md
 
 기본 검사는 구현 전 파일 상태를 대조한다. --audit 는 구현 후 문서 검사라
@@ -15,7 +16,8 @@ index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시�
 --staged 는 git index 와 phase 변경 파일 목록을 대조한다.
 테스트 범위, 실패 전파, 식별자와 스키마의 일치는 사람이 확인한다.
 
-cwd 는 tasks/ 를 가진 타깃 레포 root 여야 한다.
+cwd 는 타깃 레포 root 여야 한다. 계획서 디렉터리는 --tasks-dir 로 바꾼다 (기본값 tasks).
+모노레포의 근거 문서는 `frontend/docs/flow.md` 처럼 하위 프로젝트의 docs 경로도 받는다.
 경로는 이 스킬 번들 기준 상대경로다. 하네스가 알려주는 base 디렉터리에 붙여 쓴다.
 
 종료 코드
@@ -50,7 +52,8 @@ MODELS = {"haiku", "sonnet", "opus"}
 VAGUE_SCOPE = re.compile(r"전체\s*(수정|변경|적용|교체|리팩토링|삭제)")
 HUMAN_CHECK = re.compile(r"수동\s*(?:검토|확인|검증)|눈으로\s*확인|직접\s*확인|육안")
 BSD_SED = re.compile(r"sed\s.*\\b")
-DOC_PATH = re.compile(r"`(docs/[^`\s]+)`")
+# 모노레포는 하위 프로젝트마다 docs 를 둔다. 루트 기준 경로의 어느 조각이든 `docs` 면 근거 문서로 본다.
+DOC_PATH = re.compile(r"`((?:[A-Za-z0-9_.-]+/)*docs/[^`\s]+)`")
 TEST_DIRS = {"test", "tests", "__tests__"}
 TEST_NAME = re.compile(r"^test_|(?:Test|Tests)\.[^.]+$|[._-](?:test|spec)\.[^.]+$")
 BUNDLE = re.compile(r"\$(?:SKILL_DIR|\{SKILL_DIR\})|~/\.(?:claude|codex)/skills|\$HOME/\.(?:claude|codex)/skills")
@@ -564,6 +567,7 @@ def main(argv: list) -> int:
     parser.add_argument("plan", nargs="?")
     parser.add_argument("--audit", action="store_true", help="구현 후 문서 검사. 구현 전 파일 상태는 대조하지 않는다")
     parser.add_argument("--staged", type=Path, metavar="PHASE", help="phase 변경 파일 목록과 git index 대조")
+    parser.add_argument("--tasks-dir", default="tasks", help="계획서 디렉터리. 저장소 루트 기준 (기본값 tasks)")
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
@@ -577,8 +581,8 @@ def main(argv: list) -> int:
             check_staged(args.staged, args.staged.read_text(encoding="utf-8"), repo, out, warnings)
         else:
             if Path(args.plan).name != args.plan:
-                raise ValueError("plan 은 tasks/ 아래 디렉터리 이름이어야 한다")
-            plan_dir = repo / "tasks" / args.plan
+                raise ValueError(f"plan 은 {args.tasks_dir}/ 아래 디렉터리 이름이어야 한다")
+            plan_dir = repo / args.tasks_dir / args.plan
             phases = sorted(plan_dir.glob("phase-*.md"))
             if not phases:
                 raise ValueError(f"phase 파일 없음: {plan_dir}")

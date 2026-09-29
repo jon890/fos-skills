@@ -314,6 +314,33 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("--staged", err.getvalue())
 
+    def test_subproject_docs_path_is_evidence(self):
+        self.file("frontend/docs/flow.md")
+        out = []
+        text = self.prompt("### 1. 문서", "pytest").replace("`docs/flow.md`", "`frontend/docs/flow.md`")
+        verify.check_phase_prompt(Path("p"), text, out, repo=self.repo)
+        self.assertFalse(any("근거 문서" in issue for issue in out), out)
+
+    def test_subproject_evidence_must_exist_and_be_docs(self):
+        for evidence in ("`frontend/docs/absent.md`", "`frontend/src/app.ts`"):
+            out = []
+            text = self.prompt("### 1. 문서", "pytest").replace("`docs/flow.md`", evidence)
+            verify.check_phase_prompt(Path("p"), text, out, repo=self.repo)
+            self.assertTrue(any("근거 문서" in issue for issue in out), evidence)
+
+    def test_cli_prefixed_plan_under_tasks_dir(self):
+        self.file("frontend/docs/flow.md")
+        phase = self.prompt("### 1. `frontend/tests/test_app.py` 추가", "pytest frontend/tests/test_app.py").replace("`docs/flow.md`", "`frontend/docs/flow.md`")
+        phase += "\n## 목표\n앱\n**범위 외**: 배포\n## 변경 파일\n| `frontend/src/app.py` | 신규 |\n| `frontend/tests/test_app.py` | 신규 |\n## 마감\nindex.json status completed\n"
+        index = {"name": "fe-plan27-app", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
+        for tasks_dir in ("tasks", "frontend/tasks"):
+            self.file(f"{tasks_dir}/fe-plan27-app/phase-01.md", phase)
+            self.file(f"{tasks_dir}/fe-plan27-app/index.json", json.dumps(index))
+        with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(verify.main(["verify", "fe-plan27-app"]), 0, stdout.getvalue())
+            self.assertEqual(verify.main(["verify", "fe-plan27-app", "--tasks-dir", "frontend/tasks"]), 0, stdout.getvalue())
+            self.assertEqual(verify.main(["verify", "fe-plan27-app", "--tasks-dir", "backend/tasks"]), 2)
+
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True)
 

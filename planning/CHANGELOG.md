@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.9.0
+
+모노레포를 지원한다. 하위 프로젝트 오버레이를 루트 오버레이보다 먼저 읽고, 판정과 탐색 순서는 `references/monorepo.md` 가 소유한다.
+오버레이가 docs 경로, tasks 경로, plan 접두사를 지정한다. `plan_number.sh --prefix --tasks-dir` 와 `verify_task.py --tasks-dir` 가 그 값을 받는다.
+`verify_task.py` 가 `frontend/docs/flow.md` 처럼 하위 프로젝트의 docs 경로를 근거 문서로 받는다.
+`plan_number.sh` 가 `plan010` 처럼 앞에 0 이 붙은 번호를 8진수로 읽던 결함을 고쳤다.
+
 ## 2.8.0
 
 Critical Files를 「변경 파일」로 바꾸고 기존 이름은 읽기 호환으로 유지한다.

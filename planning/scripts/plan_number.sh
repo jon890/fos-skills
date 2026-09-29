@@ -7,18 +7,43 @@
 #   그 브랜치를 체크아웃하지 않으면 로컬 작업 트리에 나타나지 않는다.
 #
 # 사용법:
-#   plan_number.sh [<tasks 디렉터리>]
+#   plan_number.sh [--tasks-dir DIR] [--prefix PREFIX] [DIR]
 #
-# cwd 는 그 저장소 안이어야 한다. 디렉터리 인자를 생략하면 tasks 를 본다.
+#   --tasks-dir  계획서를 담는 디렉터리. 저장소 루트 기준이다. 기본값 tasks
+#                이전 호출과 같이 첫 위치 인자로 줘도 된다
+#   --prefix     plan 접두사. 모노레포에서 하위 프로젝트마다 번호를 따로 셀 때 쓴다
+#                `fe-` 면 `fe-plan{N}-*` 만 센다. 주지 않으면 접두사 없는 `plan{N}-*` 만 센다
+#
+# cwd 는 그 저장소 안이어야 한다.
+# 번호는 앞의 0 을 떼고 센다. `plan027` 은 27 이다. 자릿수 맞춤은 저장소 관례를 따른다.
 # 브랜치 20개 남짓인 저장소에서 3초쯤 걸린다 (실측). ref 마다 ls-tree 를 한 번 부른다.
 #
 # 종료 코드:
 #   0  훑기 성공. 마지막 줄이 다음 번호다
-#   2  저장소가 아니거나 fetch 가 실패했다
+#   2  인자가 잘못됐거나, 저장소가 아니거나, fetch 가 실패했다
 
 set -euo pipefail
 
-TASKS_DIR="${1:-tasks}"
+TASKS_DIR=tasks
+PREFIX=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tasks-dir) TASKS_DIR="${2:?--tasks-dir 에 값이 없다}"; shift 2 ;;
+    --prefix) PREFIX="${2:?--prefix 에 값이 없다}"; shift 2 ;;
+    -h|--help) awk 'NR > 1 && /^#/ {sub(/^# ?/, ""); print; next} NR > 1 {exit}' "$0"; exit 0 ;;
+    -*) echo "모르는 옵션: $1" >&2; exit 2 ;;
+    *) TASKS_DIR="$1"; shift ;;
+  esac
+done
+TASKS_DIR="${TASKS_DIR%/}"
+
+# 접두사와 경로는 sed 정규식에 들어간다. 메타 문자가 섞이면 엉뚱한 디렉터리를 센다.
+case "$PREFIX" in
+  *[!A-Za-z0-9_-]*) echo "접두사는 영문, 숫자, -, _ 만 쓴다: $PREFIX" >&2; exit 2 ;;
+esac
+case "$TASKS_DIR" in
+  ''|*[!A-Za-z0-9_./-]*) echo "tasks 경로는 영문, 숫자, -, _, ., / 만 쓴다: $TASKS_DIR" >&2; exit 2 ;;
+esac
 
 git rev-parse --git-dir >/dev/null 2>&1 || {
   echo "git 저장소가 아니다: $PWD" >&2
@@ -31,6 +56,8 @@ git fetch --all --quiet || {
   exit 2
 }
 
+NAME_RE="${PREFIX}plan\([0-9]\{1,\}\)-"
+
 # ref 마다 한 번만 훑어 `번호 ref` 줄을 모은다.
 # ls-tree 는 체크아웃 없이 그 ref 의 트리를 읽으므로 작업 트리를 건드리지 않는다.
 #
@@ -39,11 +66,13 @@ git fetch --all --quiet || {
 PAIRS=$(
   for ref in HEAD $(git branch -a --format='%(refname:short)' | grep -v 'HEAD$'); do
     git ls-tree -d --name-only "$ref" "$TASKS_DIR/" 2>/dev/null \
-      | sed -n "s|^${TASKS_DIR}/plan\([0-9]\{1,\}\)-.*|\1 ${ref}|p"
-  done | sort -u | sort -n -s -k1,1
+      | sed -n "s|^${TASKS_DIR}/${NAME_RE}.*|\1 ${ref}|p"
+  done | awk '{print $1 + 0, $2}' | sort -u | sort -n -s -k1,1
 )
 
-if [ -z "$PAIRS" ]; then
+ALL_NUMS=$(echo "$PAIRS" | awk 'NF {print $1}' | sort -n -u)
+
+if [ -z "$ALL_NUMS" ]; then
   echo "쓰인 번호가 없다"
   echo "다음 번호: 1"
   exit 0
@@ -52,16 +81,17 @@ fi
 # main 에 있는 번호는 이미 끝난 계획이다. 판단이 필요한 것은 main 밖에만 있는 번호다.
 MAIN_REF=$(git rev-parse --verify --quiet origin/main >/dev/null 2>&1 && echo origin/main || echo HEAD)
 MAIN_NUMS=$(git ls-tree -d --name-only "$MAIN_REF" "$TASKS_DIR/" 2>/dev/null \
-  | sed -n "s|^${TASKS_DIR}/plan\([0-9]\{1,\}\)-.*|\1|p" | sort -n -u)
+  | sed -n "s|^${TASKS_DIR}/${NAME_RE}.*|\1|p" | awk '{print $1 + 0}' | sort -n -u)
 
 echo "쓰인 번호:"
-for n in $(echo "$PAIRS" | awk '{print $1}' | sort -n -u); do
+for n in $ALL_NUMS; do
+  label="${PREFIX}plan${n}"
+  refs=$(echo "$PAIRS" | awk -v n="$n" '$1 == n {print $2}' | paste -sd' ' -)
   if echo "$MAIN_NUMS" | grep -qx "$n"; then
-    printf '  plan%-4s %s 안에 있다\n' "$n" "$MAIN_REF"
+    printf '  %-12s %s 안에 있다\n' "$label" "$MAIN_REF"
   else
-    refs=$(echo "$PAIRS" | awk -v n="$n" '$1 == n {print $2}' | paste -sd' ' -)
-    printf '  plan%-4s %s 밖에만 있다: %s\n' "$n" "$MAIN_REF" "$refs"
+    printf '  %-12s %s 밖에만 있다: %s\n' "$label" "$MAIN_REF" "$refs"
   fi
 done
 
-echo "다음 번호: $(( $(echo "$PAIRS" | awk '{print $1}' | sort -n | tail -1) + 1 ))"
+echo "다음 번호: $(( $(echo "$ALL_NUMS" | tail -1) + 1 ))"

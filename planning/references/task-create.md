@@ -9,7 +9,7 @@
 
 ```jsonc
 {
-  "name": "plan{N}-{kebab-slug}",       // 디렉터리명과 일치
+  "name": "plan{N}-{kebab-slug}",       // 디렉터리명과 일치. 접두사가 있으면 "fe-plan{N}-{kebab-slug}"
   "description": "한 줄 요약 — 무엇을 / 왜",
   "status": "pending",                    // pending | in_progress | completed | failed
   "created_at": "2026-01-01",             // YYYY-MM-DD
@@ -125,7 +125,7 @@
 
 ## 변경 파일
 
-이 phase 의 커밋에 담을 파일을 저장소 root 기준 경로로 적는다.
+이 phase 의 커밋에 담을 파일을 저장소 root 기준 경로로 적는다. 모노레포면 `frontend/src/app.ts` 처럼 하위 프로젝트 디렉터리부터 적는다.
 
 | 파일 | 변경 |
 |---|---|
