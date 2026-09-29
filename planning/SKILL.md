@@ -6,7 +6,7 @@ description: |
   "/planning", "계획 세워보자", "설계해보자", "plan 세워줘", "기획해줘", "task 파일 만들어줘",
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
 metadata:
-  version: "2.9.0"
+  version: "2.10.0"
 ---
 # planning
 
@@ -120,6 +120,13 @@ task 파일을 만든 직후, 구현 전 상태에서 스크립트를 돌린다.
 ```bash
 # cwd: 타깃 레포 root
 python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
+```
+
+구현이 끝난 뒤, 그리고 구현 PR 에서 계획서를 검증할 때는 같은 명령에 `--audit` 를 붙인다.
+붙이지 않으면 phase 「변경 파일」에 신규로 적은 파일이 이미 있어 위반으로 센다.
+
+```bash
+python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}" --audit
 ```
 
 위반을 찾으면 임의로 고치지 않고 사용자에게 확인받는다.
