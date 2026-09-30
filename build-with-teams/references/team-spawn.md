@@ -88,8 +88,9 @@ Claude Code 는 대기와 실패를 `idleReason` 으로 구분한다.
 `failed` 는 `failureReason` 을 읽고 판단한다.
 사용 한도로 실패했으면 같은 모델로 재스폰해도 같은 이유로 막힌다.
 스폰 도구의 모델 인자로 다른 모델을 명시해 다시 띄운다.
-바꾼 모델은 실행 보고에 남긴다. 역할에 따라 낮은 등급 모델로 판정 품질이 달라질 수 있어서다.
-실측: 2026-09-30, critic 이 상속 모델의 주간 한도(`You've hit your weekly limit`)로 `failed` 가 됐고, 모델을 `sonnet` 으로 명시해 다시 띄우자 판정까지 마쳤다.
+이때도 [`executor-routing.md`](executor-routing.md) 의 최소 등급 아래로 내리지 않는다. 대체할 모델이 없어 등급을 낮춰야 하면 사용자에게 올린다.
+고른 모델과 바꾼 사유는 실행 보고에 남긴다. critic, code-reviewer 처럼 판정하는 역할은 낮은 등급 모델에서 결과가 달라질 수 있어 사용자가 알아야 한다.
+실측: 2026-09-30, critic 이 상속 모델의 주간 한도(`You've hit your weekly limit`)로 `failed` 가 됐다. `sonnet` 으로 다시 띄워 판정 회신을 받았지만, 그 역할의 기본 등급(deep)보다 낮아 이 하한 규칙에 맞지 않았다.
 
 ## 스폰 실패
 
