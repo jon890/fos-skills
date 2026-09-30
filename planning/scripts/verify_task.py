@@ -489,6 +489,36 @@ def pathspec_matches(rel, spec):
     return spec in {"", "."} or rel == spec or rel.startswith(spec + "/") or fnmatch.fnmatchcase(rel, spec)
 
 
+REMOTE_PROGRAMS = {"ssh", "scp", "sftp", "mosh"}
+
+
+def remote_command(command):
+    """push 나 원격 호스트 접속이 있어야 끝나는 명령이면 True 다."""
+    command = unwrap(command)
+    if not command:
+        return False
+    program, args = Path(command[0]).name, command[1:]
+    if program in REMOTE_PROGRAMS:
+        return True
+    if program == "git":
+        rest = list(args)
+        while rest and rest[0].startswith("-"):
+            option = rest.pop(0)
+            if option in {"-C", "-c"} and rest:
+                rest.pop(0)
+        return rest[:1] == ["push"]
+    if program == "rsync":
+        # `host:경로` 나 `user@host:경로` 는 원격이다. 옵션 값의 `=` 뒤 콜론은 보지 않는다.
+        return any(re.match(r"^(?:[\w.-]+@)?[\w.-]+:", arg) for arg in args if not arg.startswith("-"))
+    return False
+
+
+def check_remote_commands(path, commands, warnings):
+    for command in commands:
+        if remote_command(command):
+            warnings.append(f"{path} — 검증 절에 push 나 원격 접속이 있다. phase 검증은 커밋 전에 작업 공간에서 끝나야 한다. remote-verification.md 로 옮긴다: {' '.join(command)}")
+
+
 def check_forbidden_grep_paths(path, commands, entries, warnings):
     """금지 문자열 검사의 경로에 같은 phase 의 테스트 파일이 있으면 경고한다.
 
@@ -650,6 +680,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
             out.append(f"{path} — 검증 절에 테스트 실행 명령이 없다 (lint/grep/echo 만으로 완료할 수 없다)")
     check_bun_dot_paths(path, commands, out)
     check_forbidden_grep_paths(path, commands, entries, warnings)
+    check_remote_commands(path, commands, warnings)
 
     def runs(part):
         return any(test_command(c, entries, repo) for c in shell_commands(f"```bash\n{part}\n```"))
