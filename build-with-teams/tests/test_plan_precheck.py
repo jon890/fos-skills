@@ -339,5 +339,72 @@ class TestBaseBranch(unittest.TestCase):
             self.assertEqual(facts["impl_files"], ["src/app.py"])
 
 
+@patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+class TestUnpushedBranch(unittest.TestCase):
+    """계획서와 구현을 한 브랜치에서 끝내고 PR 때 push 하는 흐름이다."""
+
+    def test_judge_local_only_branch_is_not_a_finding(self):
+        local = {"branch": "plan001-x", "remote_exists": False, "local_exists": True, "impl_files": [], "has_impl_commits": False}
+        self.assertEqual(pc.judge({"status": "pending"}, local, []), [])
+        self.assertTrue(pc.notes(local, "로컬"))
+        # 로컬에만 있어도 구현 변경이 이미 있으면 재실행일 수 있다.
+        local.update(impl_files=["src/a.ts"], has_impl_commits=True)
+        self.assertTrue(any("src/a.ts" in f for f in pc.judge({"status": "pending"}, local, [])))
+        # 로컬 브랜치도 없으면 브랜치 이름 형식이 다른 경우라 지금처럼 발견 사항이다.
+        self.assertTrue(pc.judge({"status": "pending"}, {"branch": "x", "remote_exists": False, "local_exists": False}, []))
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(dir="/tmp")
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.repo, remote = root / "repo", root / "remote.git"
+        self.repo.mkdir()
+        self.git("init", "--quiet", "-b", "main")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("config", "user.name", "Test")
+        (self.repo / "README.md").write_text("initial\n")
+        self.git("add", ".")
+        self.git("commit", "--quiet", "-m", "initial")
+        subprocess.run(["git", "clone", "--quiet", "--bare", str(self.repo), str(remote)], check=True, capture_output=True)
+        self.git("remote", "add", "origin", str(remote))
+        # 워커가 origin/main 에서 새 브랜치를 만들고 계획서만 커밋한 상태다.
+        self.git("checkout", "--quiet", "-b", "plan001-x")
+        task = self.repo / "tasks" / "plan001-x"
+        task.mkdir(parents=True)
+        (task / "index.json").write_text('{"status": "pending", "current_phase": 1, "total_phases": 1}')
+        self.git("add", ".")
+        self.git("commit", "--quiet", "-m", "planning")
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True)
+
+    def run_main(self, *extra):
+        import contextlib, io, sys
+        argv = ["plan_precheck.py", "plan001", "--repo", str(self.repo), "--base", "main", "--json", *extra]
+        with patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()) as out, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            code = pc.main()
+        return code, out.getvalue() + err.getvalue()
+
+    def test_unpushed_plan_branch_passes_with_note(self):
+        code, out = self.run_main()
+        self.assertEqual(code, 0, out)
+        self.assertIn("로컬에만 있다", out)
+
+    def test_unpushed_branch_with_implementation_is_user_decision(self):
+        (self.repo / "src").mkdir()
+        (self.repo / "src" / "app.py").write_text("impl\n")
+        self.git("add", ".")
+        self.git("commit", "--quiet", "-m", "implementation")
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("src/app.py", out)
+
+    def test_branch_name_mismatch_is_still_user_decision(self):
+        code, out = self.run_main("--branch", "plan/001-x")
+        self.assertEqual(code, 1, out)
+        self.assertIn("브랜치 이름 형식이 다르다", out)
+
+
 if __name__ == "__main__":
     unittest.main()

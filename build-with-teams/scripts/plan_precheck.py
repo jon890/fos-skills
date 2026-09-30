@@ -122,18 +122,27 @@ def branch_facts(repo: Path, branch: str, base: str, planning_prefixes: tuple[st
     exists = any(line.endswith(remote_ref) for line in ls.splitlines())
     facts = {"branch": branch, "remote_exists": exists, "base": base}
     if not exists:
-        return facts
-
-    # 기준을 먼저 갱신하고 작업 브랜치를 마지막에 fetch 한다. FETCH_HEAD 는 작업 브랜치다.
-    run(["git", "fetch", "--quiet", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}"], repo)
-    run(["git", "fetch", "--quiet", "origin", f"refs/heads/{branch}"], repo)
-    changed = run(["git", "diff", "--name-only", f"origin/{base}...FETCH_HEAD"], repo)
+        # 계획서와 구현을 한 브랜치에서 끝내고 PR 때 push 하는 흐름에서는 원격에 아직 없다.
+        # 로컬 브랜치가 있으면 그 브랜치의 구현 변경을 기준 브랜치와 비교한다.
+        facts["local_exists"] = try_run(["git", "rev-parse", "--verify", "--quiet", remote_ref], repo) is not None
+        if not facts["local_exists"]:
+            return facts
+        run(["git", "fetch", "--quiet", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}"], repo)
+        head = remote_ref
+    else:
+        # 기준을 먼저 갱신하고 작업 브랜치를 마지막에 fetch 한다. FETCH_HEAD 는 작업 브랜치다.
+        run(["git", "fetch", "--quiet", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}"], repo)
+        run(["git", "fetch", "--quiet", "origin", f"refs/heads/{branch}"], repo)
+        head = "FETCH_HEAD"
+    changed = run(["git", "diff", "--name-only", f"origin/{base}...{head}"], repo)
     impl = [
         f for f in changed.splitlines()
         if f and not f.startswith(planning_prefixes)
     ]
     facts["impl_files"] = impl
     facts["has_impl_commits"] = bool(impl)
+    if not exists:
+        return facts
 
     merged = run(["git", "branch", "--remotes", "--contains", "FETCH_HEAD"], repo)
     facts["merged_into_base"] = any(
@@ -171,6 +180,19 @@ def merged_pr(repo: Path, branch: str) -> list[dict]:
         return []
 
 
+def impl_finding(branch: dict) -> str:
+    files = ", ".join(branch["impl_files"][:5])
+    more = f" 외 {len(branch['impl_files']) - 5}개" if len(branch["impl_files"]) > 5 else ""
+    return f"브랜치에 이미 구현 변경이 있다: {files}{more}"
+
+
+def notes(branch: dict, where: str) -> list[str]:
+    """진행을 막지 않지만 알릴 사실이다. 종료 코드에 영향을 주지 않는다."""
+    if where == "로컬" and not branch["remote_exists"] and branch.get("local_exists"):
+        return [f"`{branch['branch']}` 브랜치가 로컬에만 있다. push 전 브랜치로 보고 진행한다."]
+    return []
+
+
 def judge(index: dict, branch: dict, prs: list[dict]) -> list[str]:
     """진행을 막을 사실만 모은다."""
     found = []
@@ -189,6 +211,10 @@ def judge(index: dict, branch: dict, prs: list[dict]) -> list[str]:
             found.append(
                 f"원격에 `{branch['branch']}` 브랜치가 없다. 머지 후 정리된 것으로 보인다."
             )
+        elif branch.get("local_exists"):
+            # push 전 브랜치다. 원격 부재는 notes 가 알리고, 로컬 구현 변경만 발견 사항으로 본다.
+            if branch.get("has_impl_commits"):
+                found.append(impl_finding(branch))
         else:
             found.append(
                 f"원격에 `{branch['branch']}` 브랜치가 없다. "
@@ -197,9 +223,7 @@ def judge(index: dict, branch: dict, prs: list[dict]) -> list[str]:
         return found
 
     if branch.get("has_impl_commits"):
-        files = ", ".join(branch["impl_files"][:5])
-        more = f" 외 {len(branch['impl_files']) - 5}개" if len(branch["impl_files"]) > 5 else ""
-        found.append(f"브랜치에 이미 구현 변경이 있다: {files}{more}")
+        found.append(impl_finding(branch))
 
     if prs:
         listed = ", ".join(f"#{p['number']} {p['title']}" for p in prs)
@@ -257,6 +281,7 @@ def main() -> int:
         print(f"검사를 돌리지 못했다: {exc}", file=sys.stderr)
         return 2
 
+    info: list[str] = []
     if index is None and merged:
         found = [
             f"`{branch['branch']}` 브랜치로 머지된 PR 이 있다: "
@@ -286,6 +311,7 @@ def main() -> int:
             )
     else:
         found = judge(index, branch, prs)
+        info = notes(branch, where)
         if where == "브랜치":
             found.insert(0, f"task 가 로컬 {tasks_dir}/ 에 없고 `{branch['branch']}` 브랜치에만 있다.")
 
@@ -297,7 +323,7 @@ def main() -> int:
              "status": index.get("status") if index else None,
              "total_phases": index.get("total_phases") if index else None,
              "current_phase": index.get("current_phase") if index else None,
-             "branch": branch, "open_prs": prs, "findings": found},
+             "branch": branch, "open_prs": prs, "findings": found, "notes": info},
             ensure_ascii=False, indent=2,
         ))
     elif found:
@@ -310,6 +336,8 @@ def main() -> int:
             f"status={index.get('status')} "
             f"phase={index.get('current_phase')}/{index.get('total_phases')}"
         )
+        for note in info:
+            print(f"  - {note}")
 
     return 1 if found else 0
 
