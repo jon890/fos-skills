@@ -39,7 +39,7 @@ Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키�
 | `scripts/style-check.sh` | `korean-check` 를 찾아 본문 파일과 제목에 검사기를 돌린다 |
 | `scripts/show-preview.sh` | 미리보기 HTML 을 사용자 화면에 띄운다. 쓸 백엔드를 고정하고, 같은 파일의 탭을 찾아 갱신하고 워크트리를 대조한다 |
 | `scripts/dooray-preview/generate.py` | Dooray 본문 미리보기 HTML 생성. `--mode` 로 업무 본문과 댓글의 머리를 고른다 |
-| `scripts/dooray-preview/template.html` | TOAST UI Editor viewer 를 쓰는 Dooray 미리보기 골격 |
+| `scripts/dooray-preview/template.html` | TOAST UI Editor viewer 와 mermaid 를 쓰는 Dooray 미리보기 골격 |
 | `scripts/github-preview/generate.py` | GitHub issue 와 PR 본문 미리보기 HTML 생성. `--type` 으로 헤더 배지 색을 가른다 |
 | `scripts/github-preview/template.html` | github-markdown-css 와 marked.js 를 쓰는 GitHub 미리보기 골격 |
 | `CHANGELOG.md` | 버전 이력 |
