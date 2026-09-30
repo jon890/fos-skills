@@ -3,7 +3,7 @@
 
 **이 파일이 검사 축의 단일 소스다.** references 파일을 읽지 않고 축을 코드에 담는다.
 사람이 보는 몫은 `references/` 가 소유한다.
-korean-style.md 가 언어, writing-structure.md 가 구조, markdown-readability.md 가 검사 제외 대상이다.
+korean-style.md 가 언어, korean-examples.md 가 언어 예시, writing-structure.md 가 구조, markdown-readability.md 가 검사 제외 대상이다.
 
 사용법:
     check-readability.py <파일.md> [<파일.md>...]
