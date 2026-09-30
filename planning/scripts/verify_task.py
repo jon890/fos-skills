@@ -3,6 +3,7 @@
 
 index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시와
 스킬 번들 cwd, 사람 의존 검증, 필수 절, BSD sed 를 검사한다.
+`bun test` 의 점 디렉터리 경로와 금지 문자열 검사가 같은 phase 의 테스트에 걸리는지도 본다.
 완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 build-with-teams 가 디렉터리째 지운다.
 계획에 적힌 명령은 실행하지 않는다.
 
@@ -30,6 +31,7 @@ cwd 는 타깃 레포 root 여야 한다. 계획서 디렉터리는 --tasks-dir 
 import argparse
 import fnmatch
 import json
+import posixpath
 import re
 import shlex
 import subprocess
@@ -412,6 +414,98 @@ def test_command(command, entries, repo):
     return classify(command, entries, repo) == "test"
 
 
+# bun test 에서 값을 따로 받는 옵션이다. 값은 테스트 경로 인자가 아니다.
+BUN_TEST_VALUE_OPTIONS = {"-t", "--test-name-pattern", "--timeout", "--rerun-each", "--preload", "-r", "--reporter", "--reporter-outfile", "--coverage-dir", "--coverage-reporter", "--seed", "--bail", "--max-concurrency"}
+# git grep 에서 값을 따로 받는 옵션이다. 패턴과 경로를 찾을 때 건너뛴다.
+GIT_GREP_VALUE_OPTIONS = {"-e", "-f", "-A", "-B", "-C", "-m", "--max-count", "--max-depth", "--threads", "--open-files-in-pager", "-O"}
+
+
+def check_bun_dot_paths(path, commands, out):
+    """bun 1.3.5 실측이다. `./`, `../`, `/` 로 시작하지 않는 인자는 경로가 아니라 파일 이름 필터다.
+
+    필터로 읽힌 인자는 `.claude/` 같은 점 디렉터리 아래를 찾지 않는다.
+    다른 인자가 테스트를 찾으면 종료 코드가 0 이라 그 테스트를 건너뛴 것이 드러나지 않는다.
+    """
+    for command in commands:
+        command = unwrap(command)
+        if not command or Path(command[0]).name != "bun":
+            continue
+        rest = positional("bun", command[1:])
+        if rest[:1] != ["test"]:
+            continue
+        skip = False
+        for arg in rest[1:]:
+            if skip:
+                skip = False
+            elif arg in BUN_TEST_VALUE_OPTIONS:
+                skip = True
+            elif arg.startswith("-") or arg.startswith(("./", "../", "/")):
+                continue
+            elif any(part.startswith(".") and part not in {".", ".."} for part in arg.split("/")):
+                out.append(f"{path} — bun test 는 `./` 로 시작하지 않는 인자를 이름 필터로 읽어 점 디렉터리 아래 테스트를 찾지 않는다. `./{arg}` 로 쓴다")
+
+
+def git_grep_paths(command):
+    """`! git grep ...` 이면 (포함 pathspec, 제외 pathspec) 을, 아니면 None 을 낸다. 경로가 없으면 저장소 전체다."""
+    if command[:1] != ["!"]:
+        return None
+    command, prefix = command[1:], ""
+    if not command or Path(command[0]).name != "git":
+        return None
+    args = command[1:]
+    while args and args[0].startswith("-"):
+        option = args.pop(0)
+        if option == "-C" and args:
+            prefix = args.pop(0).removeprefix("./").rstrip("/") + "/"
+    if args[:1] != ["grep"]:
+        return None
+    args, positional_args, pattern_given, skip, separated = args[1:], [], False, None, False
+    for arg in args:
+        if skip:
+            pattern_given = pattern_given or skip in {"-e", "-f"}
+            skip = None
+        elif separated:
+            positional_args.append(arg)
+        elif arg == "--":
+            # `--` 앞의 위치 인자는 패턴과 revision 이다.
+            separated, positional_args = True, []
+        elif arg in GIT_GREP_VALUE_OPTIONS:
+            skip = arg
+        elif not arg.startswith("-"):
+            positional_args.append(arg)
+    if not separated and not pattern_given:
+        positional_args = positional_args[1:]
+    include, exclude = [], []
+    for spec in positional_args:
+        excluded = re.match(r"^:(?:!|\^|\(exclude\))", spec)
+        target = exclude if excluded else include
+        target.append(posixpath.normpath(prefix + spec[excluded.end() if excluded else 0:]))
+    return include or [posixpath.normpath(prefix or ".")], exclude
+
+
+def pathspec_matches(rel, spec):
+    """git pathspec 의 기본 규칙이다. 디렉터리는 그 아래 전체이고 glob 의 `*` 는 `/` 도 넘는다."""
+    spec = spec.rstrip("/")
+    return spec in {"", "."} or rel == spec or rel.startswith(spec + "/") or fnmatch.fnmatchcase(rel, spec)
+
+
+def check_forbidden_grep_paths(path, commands, entries, warnings):
+    """금지 문자열 검사의 경로에 같은 phase 의 테스트 파일이 있으면 경고한다.
+
+    「X 가 없어야 한다」 를 단언하는 테스트는 X 를 문자열로 담는다. 그 파일이 검사 경로에 있으면
+    두 검증이 동시에 통과할 수 없다. 테스트가 X 를 담는지는 구현 전이라 알 수 없어 경고로 둔다.
+    """
+    tests = [rel for rel, action in entries if action != "삭제" and is_test(rel)]
+    for command in commands:
+        paths = git_grep_paths(command)
+        if not paths:
+            continue
+        include, exclude = paths
+        for rel in tests:
+            if any(pathspec_matches(rel, spec) for spec in include) and not any(pathspec_matches(rel, spec) for spec in exclude):
+                warnings.append(f"{path} — 금지 문자열 검사가 같은 phase 의 테스트 파일에 걸릴 수 있다. 경로에서 빼거나 pathspec 제외(`':!{rel}'`)를 쓴다: {' '.join(command)}")
+
+
 def check_staged(path, text, repo, out, warnings):
     entries = manifest(path, text, out, warnings)
     if any(omitted(rel) for rel, _ in entries):
@@ -554,6 +648,9 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
             warnings.append(f"{path} — 테스트 실행 여부를 판정하지 못한 명령이다. 테스트를 실행하는지 직접 확인한다: {' '.join(unknown[0])}")
         else:
             out.append(f"{path} — 검증 절에 테스트 실행 명령이 없다 (lint/grep/echo 만으로 완료할 수 없다)")
+    check_bun_dot_paths(path, commands, out)
+    check_forbidden_grep_paths(path, commands, entries, warnings)
+
     def runs(part):
         return any(test_command(c, entries, repo) for c in shell_commands(f"```bash\n{part}\n```"))
 
