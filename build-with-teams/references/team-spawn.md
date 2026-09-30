@@ -85,7 +85,11 @@ team-lead 가 scope 확장 보고를 받으면 그 phase 안에서 처리할지 
 
 Claude Code 는 대기와 실패를 `idleReason` 으로 구분한다.
 `available` 은 턴이 끝나 대기 중이므로 이름으로 부르면 재개된다.
-`failed` 는 `failureReason` 을 읽고 판단한다. 세션 한도면 재스폰해도 같은 이유로 막힌다.
+`failed` 는 `failureReason` 을 읽고 판단한다.
+사용 한도로 실패했으면 같은 모델로 재스폰해도 같은 이유로 막힌다.
+스폰 도구의 모델 인자로 다른 모델을 명시해 다시 띄운다.
+바꾼 모델은 실행 보고에 남긴다. 역할에 따라 낮은 등급 모델로 판정 품질이 달라질 수 있어서다.
+실측: 2026-09-30, critic 이 상속 모델의 주간 한도(`You've hit your weekly limit`)로 `failed` 가 됐고, 모델을 `sonnet` 으로 명시해 다시 띄우자 판정까지 마쳤다.
 
 ## 스폰 실패
 
