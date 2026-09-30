@@ -280,7 +280,24 @@ NON_TEST = {
     "sleep", "exit", "true", "false", ":", "test", "[", "ruff", "flake8", "pylint", "mypy", "black", "isort",
     "eslint", "prettier", "tsc", "shellcheck", "shfmt", "docker", "kubectl",
 }
-KNOWN = TEST_RUNNERS | set(VALUE_OPTIONS) | {"python", "python3", "gradlew", "gradle", "mvn", "mvnw", "go", "cargo", "dotnet", "make", "gmake", "bash", "sh"}
+KNOWN = TEST_RUNNERS | set(VALUE_OPTIONS) | {"python", "python3", "gradlew", "gradle", "mvn", "mvnw", "go", "cargo", "deno", "dotnet", "make", "gmake", "bash", "sh"}
+# node 에서 값을 따로 받는 옵션이다. `--test` 가 스크립트 이름보다 앞에 있는지 볼 때 건너뛴다.
+NODE_VALUE_OPTIONS = {"--import", "--require", "-r", "--loader", "--experimental-loader", "--env-file", "--conditions", "-C"}
+
+
+def node_test(args):
+    """`node [옵션] --test [파일...]` 이다. 스크립트 이름 뒤의 `--test` 는 스크립트 인자다."""
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg == "--test":
+            return True
+        elif arg in NODE_VALUE_OPTIONS:
+            skip = True
+        elif not arg.startswith("-"):
+            return False
+    return False
 
 
 def unwrap(command):
@@ -338,7 +355,9 @@ def classify(command, entries, repo):
         if rest[:1] in (["run"], ["run-script"]):
             rest = rest[1:]
         found = bool(rest) and (rest[0] == "test" or rest[0].startswith("test:"))
-    elif program in {"go", "cargo", "dotnet"}:
+    elif program == "node" and node_test(args):
+        found = True
+    elif program in {"go", "cargo", "deno", "dotnet"}:
         found = bool(args) and args[0] == "test"
     elif program in {"make", "gmake"}:
         found = any(a in {"test", "check"} for a in args)

@@ -149,6 +149,23 @@ class TaskRulesTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(any(verify.test_command(c, [], self.repo) for c in verify.shell_commands(f"```bash\n{command}\n```")))
 
+    def test_node_test_runner_and_deno_test(self):
+        for command in ("node --test", "node --test test/unit/a.test.ts", "node --import tsx --test test/*.test.ts", "node --experimental-strip-types --test", "deno test", "bun test"):
+            with self.subTest(command=command):
+                self.assertTrue(any(verify.test_command(c, [], self.repo) for c in verify.shell_commands(f"```bash\n{command}\n```")))
+        # --test 가 없거나 스크립트 뒤에 있으면 지금처럼 판정하지 못한 명령으로 둔다.
+        for command, kind in (("node scripts/build.ts", "unknown"), ("node build.ts --test", "unknown"), ("deno run main.ts", "other")):
+            with self.subTest(command=command):
+                self.assertEqual([verify.classify(c, [], self.repo) for c in verify.shell_commands(f"```bash\n{command}\n```")], [kind])
+
+    def test_node_test_files_count_as_targeted_beside_other_runner(self):
+        # node --test 파일이 targeted 에 빠져 pnpm 의 파일 인자만으로 대조하던 계획서의 재현이다.
+        entries = [("web/src/a.ts", "수정"), ("web/test/unit/a.test.ts", "신규"), ("web/tests/e2e/b.spec.ts", "신규")]
+        work = "### 1. `web/test/unit/a.test.ts`\n### 2. `web/tests/e2e/b.spec.ts`"
+        command = "node --test test/unit/a.test.ts\npnpm test:browser b.spec.ts"
+        self.assertEqual(self.inspect(work, command, entries), [])
+        self.assertTrue(self.inspect(work, "node --test test/unit/other.test.ts\npnpm test:browser b.spec.ts", entries))
+
     def test_unknown_runner_is_warning_not_violation(self):
         out, warnings = [], []
         verify.check_phase_prompt(Path("p"), self.prompt("### 1. `tests/test_app.py`", "just test"), out, [("tests/test_app.py", "수정")], self.repo, warnings)

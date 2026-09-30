@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.11.0
+
+`verify_task.py` 가 `node --test`, `deno test` 를 테스트 실행 명령으로 판정하고, `node --test` 에 준 테스트 파일을 검증 명령이 실행하는 테스트로 센다. 이전에는 같은 절에 파일을 지정한 다른 테스트 명령이 있으면 `node --test` 의 파일을 실행하지 않는다고 판정했다.
+
 ## 2.10.0
 
 구현이 끝난 뒤와 구현 PR 에서 계획서를 검증할 때는 `verify_task.py` 에 `--audit` 를 붙인다. 붙이지 않으면 이미 만든 신규 파일을 위반으로 센다.
