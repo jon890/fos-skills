@@ -233,6 +233,34 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual([n for n, _ in verify.iter_prose(text)], [7])
         self.assertEqual([body for _, _, body in verify.code_blocks(text)], ["```\n## 코드 안"])
 
+    def test_bun_test_dot_directory_needs_path_prefix(self):
+        # `bun test career-os/.claude/skills/...` 가 그 아래 테스트를 찾지 않고 종료 코드 0 으로 끝난 계획서의 재현이다.
+        entries = [("career-os/.claude/skills/x/a.ts", "수정"), ("career-os/.claude/skills/x/a.test.ts", "수정")]
+        work = "### 1. `career-os/.claude/skills/x/a.test.ts`"
+        for command in ("bun test career-os/.claude/skills/x", "bun test src .hidden", "bunx bun test career-os/.claude/skills/x/a.test.ts", "bun --cwd web test pkg/.claude"):
+            with self.subTest(command=command):
+                self.assertTrue(any("`./" in issue for issue in self.inspect(work, command, entries)))
+        for command in ("bun test ./career-os/.claude/skills/x", "bun test ../.hidden", "bun test /repo/.claude/x", "bun test src", "bun test -t .only ./career-os/.claude/skills/x"):
+            with self.subTest(command=command):
+                self.assertFalse(any("bun test" in issue for issue in self.inspect(work, command, entries)))
+
+    def test_forbidden_grep_over_same_phase_test_is_warning(self):
+        # 「X 가 없어야 한다」 를 단언하는 테스트가 X 를 담아, 같은 경로의 `! git grep X` 와 동시에 통과할 수 없던 계획서의 재현이다.
+        entries = [("src/policy.ts", "수정"), ("src/policy.test.ts", "신규")]
+        work = "### 1. `src/policy.test.ts` 에 `legacyKey` 가 없는지 단언"
+
+        def warned(command):
+            out, warnings = [], []
+            verify.check_phase_prompt(Path("p"), self.prompt(work, f"npm test\n{command}"), out, entries, self.repo, warnings)
+            return any("금지 문자열" in w for w in warnings)
+
+        for command in ('! git grep "legacyKey" -- src', "! git grep -n legacyKey -- src/policy.test.ts", "! git grep legacyKey", "! git grep -e legacyKey src/", "! git grep legacyKey -- 'src/*.ts'", "! git -C src grep legacyKey -- ."):
+            with self.subTest(command=command):
+                self.assertTrue(warned(command))
+        for command in ("! git grep legacyKey -- src ':!src/policy.test.ts'", "! git grep legacyKey -- src ':(exclude)src/*.test.ts'", "! git grep legacyKey -- docs", "git grep legacyKey -- src", "! git grep legacyKey HEAD -- docs"):
+            with self.subTest(command=command):
+                self.assertFalse(warned(command))
+
     def test_assignments_chains_and_multiline_commands(self):
         commands = list(verify.shell_commands('```bash\nenv FLAG=1 pytest \\\n tests/test_app.py; echo "exit=$?"\ngrep x a && pytest\n```'))
         self.assertEqual([c[0] for c in commands], ["pytest", "echo", "grep", "pytest"])
