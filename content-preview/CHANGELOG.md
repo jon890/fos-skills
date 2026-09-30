@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.11.0
+
+Dooray 미리보기가 ` ```mermaid ` 블록을 도표로 그린다.
+Dooray 업무 본문은 mermaid 블록을 도표로 렌더하는데 미리보기는 코드로 보여 줘 실제 화면과 달랐다.
+
+- TOAST UI viewer 의 `customHTMLRenderer` 로 mermaid 블록만 div 로 내보내고, viewer 렌더가 끝난 뒤 mermaid 11.4.1 로 그린다.
+- 블록마다 따로 parse 하고 render 한다. 문법 오류가 난 블록만 오류 메시지와 원문으로 표시하고 나머지 블록과 본문은 그대로 그린다.
+
 ## 3.10.0
 
 긴 문서와 정형 양식은 korean-check의 기준으로 메인이 직접 점검한다.
