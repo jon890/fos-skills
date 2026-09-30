@@ -261,6 +261,23 @@ class TaskRulesTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(warned(command))
 
+    def test_remote_validation_command_is_warning(self):
+        # phase 검증 절에 push 뒤 홈서버에서 검증하는 명령을 넣어, 검증을 끝내려면 먼저 커밋해야 했던 계획서의 재현이다.
+        entries = [("src/app.py", "수정"), ("tests/test_app.py", "수정")]
+        work = "### 1. `tests/test_app.py`"
+
+        def warned(command):
+            out, warnings = [], []
+            verify.check_phase_prompt(Path("p"), self.prompt(work, f"pytest tests/test_app.py\n{command}"), out, entries, self.repo, warnings)
+            return any("원격 접속" in w for w in warnings)
+
+        for command in ("git push origin HEAD", "ssh home 'cd /tmp/wt && scripts/verify.sh live'", "scp dist/app home:/srv/", "git -C . push", "rsync -a dist/ deploy@home:/srv/app/"):
+            with self.subTest(command=command):
+                self.assertTrue(warned(command))
+        for command in ("git status --short", "rsync -a dist/ build/", "grep ssh docs/flow.md", "echo push"):
+            with self.subTest(command=command):
+                self.assertFalse(warned(command))
+
     def test_assignments_chains_and_multiline_commands(self):
         commands = list(verify.shell_commands('```bash\nenv FLAG=1 pytest \\\n tests/test_app.py; echo "exit=$?"\ngrep x a && pytest\n```'))
         self.assertEqual([c[0] for c in commands], ["pytest", "echo", "grep", "pytest"])

@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.14.0
+
+phase 의 「검증」 절에는 작업 공간에서 커밋 전에 끝나는 검증만 둔다. push, 배포, 원격 호스트 접속이 있어야 끝나는 검증은 phase 로 만들지 않고 plan 디렉터리의 `remote-verification.md` 에 모은다. push 한 뒤 원격에서 돌리는 검증을 phase 에 넣자, 검증을 끝내려면 먼저 커밋해야 해서 실패를 고친 커밋이 phase 밖에 생겼다.
+`verify_task.py` 가 검증 절의 `ssh`, `scp`, `sftp`, `git push`, `host:경로` 를 받는 `rsync` 를 경고한다.
+
 ## 2.13.0
 
 `verify_task.py` 가 검증 절의 `bun test` 인자 중 점 디렉터리를 담았는데 `./`, `../`, `/` 로 시작하지 않는 것을 위반으로 판정한다. bun 1.3.5 실측으로 이런 인자는 파일 이름 필터로 읽혀 점 디렉터리 아래 테스트를 찾지 않고, 다른 인자가 테스트를 찾으면 종료 코드 0 으로 끝난다.
