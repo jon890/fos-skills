@@ -285,6 +285,41 @@ class TaskRulesTest(unittest.TestCase):
         self.assertFalse(verify.legacy_manifest("## 변경 파일\n| `a` | 수정 |"))
         self.assertTrue(verify.legacy_manifest("## Critical Files\n| `a` | 수정 |"))
 
+    def test_dynamic_route_segments_are_literal_paths(self):
+        # Next.js 의 [...path] 를 생략으로, [id] 를 문자 클래스로 읽던 결함의 재현이다.
+        route = "web/src/app/api/x/[id]/files/[...path]/route.ts"
+        self.file(route)
+        for rel in (route, "web/src/app/[[...slug]]/page.tsx"):
+            with self.subTest(rel=rel):
+                self.assertFalse(verify.omitted(rel))
+                self.assertFalse(verify.is_glob(rel))
+        out, warnings = [], []
+        verify.check_file_state(Path("p"), [(route, "수정"), ("web/src/app/[[...slug]]/page.tsx", "신규")], self.repo, {}, out, warnings)
+        self.assertEqual((out, warnings), ([], []))
+        # 한 글자 디렉터리는 [id] 문자 클래스에 맞지만 문자 그대로 대조하므로 존재로 보지 않는다.
+        self.file("web/src/app/api/y/i/route.ts")
+        out = []
+        verify.check_file_state(Path("p"), [("web/src/app/api/y/[id]/route.ts", "수정")], self.repo, {}, out, [])
+        self.assertEqual(len(out), 1)
+        # 대괄호 조각과 * 가 섞인 glob 은 대괄호 조각만 문자 그대로 읽는다.
+        out = []
+        verify.check_file_state(Path("p"), [("web/src/app/api/x/[id]/files/*/route.ts", "수정")], self.repo, {}, out, [])
+        self.assertEqual(out, [])
+        self.assertTrue(verify.matches(route, "web/src/app/api/x/[id]/files/*/route.ts"))
+        self.assertFalse(verify.matches("web/src/app/api/x/i/files/a/route.ts", "web/src/app/api/x/[id]/files/*/route.ts"))
+        # 조각 안의 대괄호와 대괄호 밖의 ... 는 지금처럼 glob 과 생략이다.
+        self.assertTrue(verify.is_glob("src/file[0-9].py"))
+        self.assertTrue(verify.omitted("src/.../[id]/route.ts"))
+
+    def test_staged_dynamic_route_matches_literally(self):
+        self.git("init", "--quiet")
+        route = "web/src/app/api/x/[id]/files/[...path]/route.ts"
+        self.file(route)
+        self.git("add", "web")
+        out, warnings = [], []
+        verify.check_staged(Path("p"), f"## 변경 파일\n| `{route}` | 신규 |\n", self.repo, out, warnings)
+        self.assertEqual((out, warnings), ([], []))
+
     def test_new_glob_from_earlier_phase_counts_as_existing(self):
         virtual, created, out = {}, [], []
         verify.check_file_state(Path("p1"), [("src/dto/*.java", "신규")], self.repo, virtual, out, [], created=created)
@@ -383,6 +418,20 @@ class TaskRulesTest(unittest.TestCase):
             self.assertEqual(verify.main(["verify", "fe-plan27-app"]), 0, stdout.getvalue())
             self.assertEqual(verify.main(["verify", "fe-plan27-app", "--tasks-dir", "frontend/tasks"]), 0, stdout.getvalue())
             self.assertEqual(verify.main(["verify", "fe-plan27-app", "--tasks-dir", "backend/tasks"]), 2)
+
+    def test_cli_node_test_and_dynamic_route_phase(self):
+        # node --test 와 파일을 지정한 pnpm 테스트, Next.js 동적 라우트를 한 phase 에 적은 계획서다.
+        route = "web/src/app/api/x/[id]/files/[...path]/route.ts"
+        self.file(route)
+        work = "### 1. `web/test/unit/a.test.ts` 추가\n### 2. `web/tests/b.spec.ts` 추가"
+        phase = self.prompt(work, "node --test test/unit/a.test.ts\npnpm test:browser b.spec.ts")
+        phase += f"\n## 목표\n라우트\n**범위 외**: 배포\n## 변경 파일\n| `{route}` | 수정 |\n| `web/test/unit/a.test.ts` | 신규 |\n| `web/tests/b.spec.ts` | 신규 |\n"
+        index = {"name": "plan1-route", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
+        self.file("tasks/plan1-route/phase-01.md", phase)
+        self.file("tasks/plan1-route/index.json", json.dumps(index))
+        with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertEqual(verify.main(["verify", "plan1-route"]), 0, stdout.getvalue())
+        self.assertIn("위반 0건", stdout.getvalue())
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True)

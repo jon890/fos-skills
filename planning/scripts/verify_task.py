@@ -166,13 +166,28 @@ def manifest(path, text, out, warnings):
     return entries
 
 
+# Next.js 동적 라우트 조각이다. `[id]`, `[...path]`, `[[...slug]]` 처럼 조각 전체가 대괄호다.
+# 조각 전체를 문자 클래스로 쓰는 glob 은 한 글자 디렉터리만 맞아 계획서에 쓸 일이 없다.
+DYNAMIC_SEGMENT = re.compile(r"\[\[?(?:\.\.\.)?[^\[\]/*?]+\]\]?")
+
+
+def literal_segment(part):
+    return bool(DYNAMIC_SEGMENT.fullmatch(part))
+
+
 def omitted(rel):
-    return "..." in rel or "…" in rel
+    """`src/.../App.java` 처럼 생략한 경로다. 동적 라우트 조각 안의 `...` 는 생략이 아니다."""
+    return any(("..." in part or "…" in part) and not literal_segment(part) for part in rel.split("/"))
+
+
+def glob_pattern(rel):
+    """동적 라우트 조각을 escape 해 glob 으로 넘긴다."""
+    return "/".join(re.sub(r"\[", "[[]", part) if literal_segment(part) else part for part in rel.split("/"))
 
 
 def matches(rel, pattern):
-    """* 는 한 경로 조각, ** 는 0개 이상의 디렉터리를 나타낸다."""
-    parts, patterns = rel.split("/"), pattern.split("/")
+    """* 는 한 경로 조각, ** 는 0개 이상의 디렉터리를 나타낸다. 동적 라우트 조각은 문자 그대로 대조한다."""
+    parts, patterns = rel.split("/"), glob_pattern(pattern).split("/")
 
     def match(i, j):
         if j == len(patterns):
@@ -189,7 +204,7 @@ def legacy_manifest(text):
 
 
 def is_glob(rel):
-    return any(c in rel for c in "*?[")
+    return any(any(c in part for c in "*?[") and not literal_segment(part) for part in rel.split("/"))
 
 
 def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, created=None):
@@ -209,7 +224,7 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
                 out.append(f"{path} — 변경 파일에는 생략하지 않은 경로가 필요하다: {rel}")
             continue
         glob = is_glob(rel)
-        candidates = {p.relative_to(repo).as_posix() for p in repo.glob(rel)} if glob else {rel}
+        candidates = {p.relative_to(repo).as_posix() for p in repo.glob(glob_pattern(rel))} if glob else {rel}
         candidates.update(p for p in virtual if not is_glob(p) and matches(p, rel))
         exists = any(virtual.get(p, (repo / p).exists()) for p in candidates)
         deleted = [p for p, alive in virtual.items() if alive is False]
@@ -548,7 +563,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     declared_tests = [
         rel for rel in changed_tests
         if any(ref == rel or Path(ref).name in {Path(rel).name, Path(rel).stem} for ref in references)
-        or (any(c in rel for c in "*?[") and test_references)
+        or (is_glob(rel) and test_references)
     ]
     checked_script = any(any(arg.removeprefix("./") in changed_code and arg in work for arg in command) for command in runners)
     if changed_code and not declared_tests and not checked_script:
