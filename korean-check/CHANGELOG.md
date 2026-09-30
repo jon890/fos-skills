@@ -3,6 +3,30 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.18.0
+
+`korean-style.md` 와 `writing-structure.md` 는 rules 심링크로 매 세션 실려 두 파일이 12.5KB 였다.
+1.9.0 에서 두 파일을 채팅 답변에도 적용하려고 그대로 두었다. 이 판단은 유지한다.
+다만 매 답변에 필요한 것은 규칙이고, 예시 표와 실측 사례는 문서를 쓰거나 검토할 때만 필요하다.
+
+그래서 `korean-style.md` 에는 매 답변에 적용하는 핵심만 남겼다.
+외래어 매핑 표는 제목과 위치, 내용을 그대로 두어 검사기 동작이 같다.
+옮긴 것은 아래와 같다.
+
+| 내용 | 전 | 후 |
+| --- | --- | --- |
+| 「문장 구성」 의 고칠 문장 표 | `korean-style.md` | `korean-examples.md` 「문장 구성」 |
+| 「고쳐 쓴 예시」 네 표 | `korean-style.md` | `korean-examples.md` 「고쳐 쓴 예시」 |
+| 실측으로 되돌린 사례 표 | `korean-style.md` | `korean-examples.md` 「실측으로 되돌린 사례」 |
+| 「짧은 글에서 하지 않는 것」 | `writing-structure.md` | `korean-style.md` |
+
+옮긴 자리에는 읽을 때와 경로만 남겼다.
+짧은 글인지 판정하는 「분량 구간」 은 `writing-structure.md` 에 그대로 있다.
+
+`README.md` 의 설치 블록은 rules 에 `korean-style.md` 하나만 건다.
+그대로 두면 다음 설치가 `writing-structure.md` 심링크를 되살린다.
+`review-axes.md` 와 `SKILL.md` 의 참조도 새 위치로 고쳤다.
+
 ## 1.17.0
 
 `좁히다` 의 활용형 전체를 금지어로 등록했다.

@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.17.0"
+  version: "1.18.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -29,6 +29,7 @@ description: |
 | 판단할 것 | 읽을 파일 |
 | --- | --- |
 | 어떤 낱말을 쓸지, 문장을 어떻게 맺을지 | `references/korean-style.md` |
+| 문서를 쓰거나 검토할 때 고쳐 쓴 예시와 되돌린 표기 | `references/korean-examples.md` |
 | 헤더와 표를 쓸지, 밖으로 나가는 글인지 | `references/writing-structure.md` |
 | 검사기가 무엇을 건너뛰는지, 훅이 언제 돌지 않는지 | `references/markdown-readability.md` |
 | 이 매체에서 어떻게 렌더될지 | [`../content-preview/references/render-traps.md`](../content-preview/references/render-traps.md) |

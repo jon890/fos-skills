@@ -47,13 +47,12 @@ ln -sfn ~/personal/fos-skills/korean-check/scripts/check-readability.py ~/.claud
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.
 
 ```bash
-for f in korean-style writing-structure; do
-  ln -sfn ~/personal/fos-skills/korean-check/references/$f.md ~/.claude/rules/$f.md
-done
+ln -sfn ~/personal/fos-skills/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
 ```
 
-**`markdown-readability.md` 는 걸지 않는다.** 어휘와 문장 구성, 독자 구간은 채팅 답변에도
-적용되므로 항상 실려야 하지만, 검사 제외 대상과 훅의 사각은 검사기를 돌릴 때만 쓰인다.
+**`korean-style.md` 하나만 건다.** 어휘와 문장 구성, 짧은 글 규칙은 채팅 답변에도 적용되므로 항상 실려야 한다.
+`writing-structure.md` 와 `korean-examples.md` 는 문서를 쓰거나 검토할 때,
+`markdown-readability.md` 는 검사기를 돌릴 때만 쓰여 스킬이 발동할 때 읽는다.
 
 ### 훅 설정
 
@@ -76,8 +75,9 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | 파일 | 소유하는 것 |
 | --- | --- |
 | `SKILL.md` | 목표, 두 층의 구분, 검사기 실행법 |
-| `references/korean-style.md` | 어휘 매핑 표, 문장 구성, 출력 직전 점검, 용어를 옮기지 않는 기준 |
-| `references/writing-structure.md` | 독자 구간, 분량 구간, 목록과 표로 나누는 방식, 내용 점검 |
+| `references/korean-style.md` | 매 답변에 적용하는 핵심. 어휘 매핑 표, 문장 구성, 출력 직전 점검, 짧은 글에서 하지 않는 것, 용어를 옮기지 않는 기준 |
+| `references/korean-examples.md` | 문서를 쓰거나 검토할 때 읽는 예시. 고칠 문장 표, 고쳐 쓴 예시, 실측으로 되돌린 사례 |
+| `references/writing-structure.md` | 독자 구간, 분량 구간, 긴 문서에서 나누는 방식, 번호, 내용 점검 |
 | `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
 | `references/review-axes.md` | 메인과 별도 검토 역할이 쓰는 의미 점검 축, 발견 형식과 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
