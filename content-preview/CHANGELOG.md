@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.12.0
+
+Orca dispatch 워커의 5단계 통과 조건을 미리보기 HTML 생성으로 정했다.
+`show-preview.sh` 는 호출하지 않고, 지시한 쪽이 파일로 읽는 기존 등록 절차를 따른다.
+실행 절차 표에도 이 통과 조건과 5단계의 분기를 적었다.
+
 ## 3.11.0
 
 Dooray 미리보기가 ` ```mermaid ` 블록을 도표로 그린다.
