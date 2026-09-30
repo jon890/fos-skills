@@ -145,6 +145,8 @@ critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 �
 ### 4. phase 구현
 
 `index.json` 의 `current_phase` 부터 마지막 phase 까지 순서대로 돈다.
+**순서대로가 기본이다.** 두 phase 의 변경 파일이 겹치지 않고 뒤 phase 가 앞 phase 결과에 기대지 않을 때만 나란히 돌린다.
+나란히 돌릴 때는 [`references/executor-routing.md`](references/executor-routing.md#phase-를-나란히-돌리는-조건)의 조건과 지킬 것을 따른다.
 **한 phase 의 작업 순서는 다음과 같다.**
 
 1. **실행 형태를 판정한다.** 3단계에서 받은 critic 의 그 phase 판정과 team-lead 직접 점검 중

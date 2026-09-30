@@ -51,7 +51,7 @@ planning 이 만들어 둔 task 를 실제로 구현할 때 쓴다.
 | `SKILL.md` | 팀 구성과 파이프라인, 레포 설정 탐색 순서, 6단계 표와 통과 조건, 단계별 team-lead 행동 |
 | `references/team-spawn.md` | 하네스 요구 조건과 하네스별 대응, 팀원 이름, 스폰 프롬프트에 넣을 문구, 무응답과 스폰 실패 처리 |
 | `references/role-critic.md` | critic 이 읽는 계약. `REVISE` 판정 기준과 회신 형식 |
-| `references/executor-routing.md` | 실행 형태 `BOUNDED` 와 `HIGH_RISK` 의 판정, 실행 등급 선택과 승격 규칙, phase 마다 남길 기록 |
+| `references/executor-routing.md` | 실행 형태 `BOUNDED` 와 `HIGH_RISK` 의 판정, 실행 등급 선택과 승격 규칙, phase 마다 남길 기록, phase 를 나란히 돌리는 조건 |
 | `references/role-executor.md` | executor 가 읽는 계약. 구현 범위와 품질 기준, 계획이 틀렸을 때의 보고 |
 | `references/role-code-reviewer.md` | code-reviewer 가 읽는 계약. 3-dot 으로 잡는 검사 범위와 `PASS` / `FIX_NEEDED` 판정 |
 | `references/role-docs-verifier.md` | docs-verifier 가 읽는 계약. `docs/` 대조 축과 `PASS` / `UPDATE_NEEDED` / `VIOLATION` 판정 |
