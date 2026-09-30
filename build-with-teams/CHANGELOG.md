@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.10.0
+
+`references/team-spawn.md` 의 하네스별 대응 표에 이름 없는 Claude Code 에이전트 경로를 더했다.
+이름 등록에 필요한 tmux pane 을 찾지 못하면 `name` 없이 띄우고, 반환된 `agentId` 로 재투입한다.
+이 경로의 회신은 최종 답이므로 스폰 프롬프트도 이름을 가진 팀원의 메시지 회신과 구분했다.
+
 ## 5.9.0
 
 `references/team-spawn.md` 의 무응답 절을 「무응답과 실패」 로 넓히고, 사용 한도로 `failed` 가 된 팀원을 다시 띄우는 방법을 적었다. 같은 모델로 재스폰하면 같은 한도에 막히므로 다른 모델을 명시하되, `executor-routing.md` 의 최소 등급 아래로는 내리지 않는다. 대체할 모델이 없으면 사용자에게 올리고, 고른 모델은 실행 보고에 남긴다.
