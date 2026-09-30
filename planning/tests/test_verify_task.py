@@ -181,6 +181,35 @@ class TaskRulesTest(unittest.TestCase):
             with self.subTest(rel=rel):
                 self.assertTrue(verify.is_test(rel))
 
+    def test_support_files_under_test_directory_are_not_runnable_tests(self):
+        for rel in ("test/e2e/fake-hermes.ts", "test/browser/fixtures.ts", "tests/conftest.py", "tests/helpers.py", "src/test/java/TestUtils.java", "tests/fixtures/data.json"):
+            with self.subTest(rel=rel):
+                self.assertTrue(verify.is_test(rel))
+                self.assertFalse(verify.runnable_test(rel))
+        for rel in ("src/test/java/UserSpec.java", "src/test/java/AppIT.java", "spec/user_spec.rb", "web/app.spec.ts", "pkg/app_test.go", "src/AppTest.java", "tests/test_*.py", "tests"):
+            with self.subTest(rel=rel):
+                self.assertTrue(verify.runnable_test(rel))
+
+    def test_support_files_do_not_need_to_be_targeted(self):
+        # 가짜 서버와 fixture 를 수정하고 그것을 쓰는 spec 을 파일 이름으로 실행하던 계획서의 재현이다.
+        entries = [("web/src/panel.ts", "수정"), ("test/e2e/fake-hermes.ts", "수정"), ("test/browser/fixtures.ts", "수정"),
+                   ("test/unit/tool-label.test.ts", "신규"), ("test/browser/activity-scroll.spec.ts", "신규")]
+        work = ("### 1. `test/e2e/fake-hermes.ts` 에 이벤트 추가\n### 2. `test/browser/fixtures.ts` 갱신\n"
+                "### 3. `test/unit/tool-label.test.ts`\n### 4. `test/browser/activity-scroll.spec.ts`")
+        command = "node --test test/unit/tool-label.test.ts\npnpm test:browser activity-scroll.spec.ts"
+        self.assertEqual(self.inspect(work, command, entries), [])
+        # 실행 대상 테스트는 지금처럼 파일 단위로 대조한다.
+        self.assertTrue(self.inspect(work, "node --test test/unit/tool-label.test.ts\npnpm test:browser other.spec.ts", entries))
+
+    def test_support_file_only_phase_still_needs_test_run(self):
+        entries = [("test/browser/fixtures.ts", "수정")]
+        work = "### 1. `test/browser/fixtures.ts` 갱신"
+        self.assertTrue(self.inspect(work, "npx eslint test/browser/fixtures.ts", entries))
+        self.assertTrue(self.inspect(work, "echo done", entries))
+        self.assertEqual(self.inspect(work, "pnpm test:browser activity-scroll.spec.ts", entries), [])
+        # 운영 코드를 바꾸면서 보조 파일만 고치면 같은 phase 의 테스트 작업으로 친다. 지금과 같은 판정이다.
+        self.assertEqual(self.inspect(work, "pnpm test:browser", entries + [("web/src/panel.ts", "수정")]), [])
+
     def test_exit_zero_suppression_and_tee_without_pipefail(self):
         entries = [("tests/test_app.py", "신규")]
         self.assertTrue(self.inspect("### 1. `tests/test_app.py`", "pytest || exit 0", entries))

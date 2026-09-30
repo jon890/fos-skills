@@ -57,6 +57,8 @@ BSD_SED = re.compile(r"sed\s.*\\b")
 DOC_PATH = re.compile(r"`((?:[A-Za-z0-9_.-]+/)*docs/[^`\s]+)`")
 TEST_DIRS = {"test", "tests", "__tests__"}
 TEST_NAME = re.compile(r"^test_|(?:Test|Tests)\.[^.]+$|[._-](?:test|spec)\.[^.]+$")
+# 테스트 디렉터리 안에서만 테스트로 보는 이름이다. `UserSpec.java`, `AppIT.java` 같은 JVM 규칙이다.
+RUNNABLE_NAME = re.compile(r"(?:Spec|IT)\.[^.]+$")
 BUNDLE = re.compile(r"\$(?:SKILL_DIR|\{SKILL_DIR\})|~/\.(?:claude|codex)/skills|\$HOME/\.(?:claude|codex)/skills")
 CODE_SUFFIXES = {".java", ".kt", ".groovy", ".scala", ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".cs", ".rb", ".php", ".swift", ".sh", ".bash", ".c", ".cpp"}
 SHELL = {"", "bash", "sh", "shell", "zsh"}
@@ -83,6 +85,19 @@ def is_test(rel):
     if not (Path(name).suffix in CODE_SUFFIXES or is_glob(name)):
         return False
     return bool({"spec", "specs"}.intersection(parts[:-1]) or TEST_NAME.search(name))
+
+
+def runnable_test(rel):
+    """테스트 실행기가 직접 실행하는 테스트다. 테스트 디렉터리의 fixture, fake, helper, conftest 는 뺀다.
+
+    이름으로 판정하지 못하는 glob 과 테스트 디렉터리 자체는 실행 대상으로 둔다.
+    """
+    if not is_test(rel):
+        return False
+    name = rel.removeprefix("./").split("/")[-1]
+    if name in TEST_DIRS or is_glob(name):
+        return True
+    return Path(name).suffix in CODE_SUFFIXES and bool(TEST_NAME.search(name) or RUNNABLE_NAME.search(name))
 
 
 def fences(text):
@@ -569,8 +584,10 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     if changed_code and not declared_tests and not checked_script:
         out.append(f"{path} — 코드 변경을 검증할 테스트 파일 또는 검증 스크립트 작업이 같은 phase 에 없다")
     targeted = [arg for command in runners for arg in command if is_test(arg)]
-    if declared_tests and targeted and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
-        for rel in declared_tests:
+    # 보조 파일은 그것을 쓰는 테스트가 실행한다. 어느 테스트가 쓰는지는 구현 전이라 알 수 없어 파일 단위로 대조하지 않는다.
+    runnable = [rel for rel in declared_tests if runnable_test(rel)]
+    if runnable and targeted and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
+        for rel in runnable:
             if not any(matches(rel, arg) or Path(rel).name == Path(arg).name or rel.startswith(arg.rstrip("/") + "/") for arg in targeted):
                 out.append(f"{path} — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: {rel}")
     for command in runners:
