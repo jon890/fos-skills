@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.11.0
+
+phase 안에서는 구현, 작업 공간 안의 검증, 커밋만 한다. push, 배포, 원격 호스트 접속이 있어야 끝나는 검증은 phase 안에서 돌리지 않고, 통합 검증 뒤 PR 본문의 확인 목록으로 옮긴다. 실패하면 이미 커밋한 phase 를 다시 열지 않고 새 수정 작업으로 받는다.
+그 목록은 planning 이 만든 `remote-verification.md`, phase 검증 절에서 뺀 명령, executor 가 「미검증」 에 적은 원격 명령에서 모은다. `references/step-finish.md` 의 「원격 검증 목록」 이 소유한다.
+
 ## 5.10.0
 
 `references/team-spawn.md` 의 하네스별 대응 표에 이름 없는 Claude Code 에이전트 경로를 더했다.
