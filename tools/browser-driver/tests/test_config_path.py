@@ -1,6 +1,7 @@
 """설정 파일 경로 결정과 config-path 명령, 미리보기의 경로 조회를 시험한다.
 
-HOME 은 바꾸지 않는다. 옛 위치는 함수 인자로 바꾸고, 하위 프로세스는 실제 옛 위치 문자열과 비교한다.
+HOME 은 바꾸지 않는다. 옛 위치와 홈은 함수 인자로 바꾸고, 하위 프로세스는 실제 옛 위치 문자열과 비교한다.
+하위 프로세스에는 CODEX_HOME 과 CLAUDE_CONFIG_DIR 를 물려주지 않고 필요하면 임시 폴더로 준다.
 """
 
 import json
@@ -14,7 +15,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent.parent
-SHOW_PREVIEW = REPO / "content-preview" / "scripts" / "show-preview.sh"
+
+# 이 저장소는 <repo>/content-preview/ 에, 팀 저장소는 <repo>/plugins/<플러그인>/skills/content-preview/ 에 둔다.
+# 시험 파일은 팀 저장소에서 <repo>/plugins/<플러그인>/tools/browser-driver/tests/ 에 놓인다.
+SHOW_PREVIEW_CANDIDATES = (
+    REPO / "content-preview" / "scripts" / "show-preview.sh",
+    ROOT.parent.parent / "skills" / "content-preview" / "scripts" / "show-preview.sh",
+)
+SHOW_PREVIEW = next((p for p in SHOW_PREVIEW_CANDIDATES if p.is_file()), SHOW_PREVIEW_CANDIDATES[0])
 sys.path.insert(0, str(ROOT))
 
 from driver import config  # noqa: E402
@@ -30,21 +38,28 @@ def copy_driver(dst):
 class Layout:
     """plugins/cache/m/p/1.0.0/tools/browser-driver 를 임시 디렉터리에 만든다."""
 
-    def __init__(self):
+    def __init__(self, codex=False):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name).resolve()
+        # Codex 설치본은 루트에 config.toml 파일이 있고 데이터 폴더가 없다. 데이터는 Claude 설정 폴더에 둔다.
+        self.claude = self.root / "claude-home"
         self.driver = copy_driver(self.root / "plugins/cache/m/p/1.0.0/tools/browser-driver")
         self.data = self.root / "plugins/data/p-m"
+        if codex:
+            (self.root / "config.toml").write_text("", encoding="utf-8")
+            self.data = self.claude / "plugins/data/p-m"
 
     def put_data_config(self):
         self.data.mkdir(parents=True)
         (self.data / "browser.config.json").write_text("{}", encoding="utf-8")
         return self.data / "browser.config.json"
 
-    def run(self, *args, env_config=None):
-        env = {k: v for k, v in os.environ.items() if k != "BROWSER_CONFIG"}
+    def run(self, *args, env_config=None, extra_env=None):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("BROWSER_CONFIG", "CODEX_HOME", "CLAUDE_CONFIG_DIR")}
         if env_config:
             env["BROWSER_CONFIG"] = str(env_config)
+        env.update(extra_env or {})
         return subprocess.run([sys.executable, str(self.driver / "browser_driver.py"), *args],
                               env=env, capture_output=True, text=True, timeout=30)
 
@@ -88,6 +103,52 @@ class ResolveConfigPathTest(unittest.TestCase):
         self.assertFalse(self.lay.data.exists())
 
 
+class CodexLayoutTest(unittest.TestCase):
+    """Codex 설치본은 <CODEX_HOME>/plugins/cache/... 이고 데이터 폴더는 Claude 설정 폴더 아래다."""
+
+    def setUp(self):
+        self.lay = Layout(codex=True)
+        self.addCleanup(self.lay.close)
+        self.legacy = self.lay.root / "legacy.json"
+        self.mod = self.lay.driver / "driver" / "config.py"
+        self.env = {"CLAUDE_CONFIG_DIR": str(self.lay.claude)}
+
+    def test_config_toml_file_means_codex_and_data_dir_is_under_claude_dir(self):
+        self.assertEqual(config.plugin_data_dir(self.mod, self.env), self.lay.data)
+
+    def test_resolve_uses_claude_data_file(self):
+        expected = self.lay.put_data_config()
+        self.assertEqual(config.resolve_config_path(self.env, self.mod, self.legacy), expected)
+
+    def test_resolve_falls_back_to_legacy_without_data_file(self):
+        self.assertEqual(config.resolve_config_path(self.env, self.mod, self.legacy), self.legacy)
+
+    def test_config_toml_directory_means_claude_code_install(self):
+        (self.lay.root / "config.toml").unlink()
+        (self.lay.root / "config.toml").mkdir()
+        self.assertEqual(config.plugin_data_dir(self.mod, self.env), self.lay.root / "plugins/data/p-m")
+
+    def test_empty_claude_config_dir_uses_dot_claude_in_home(self):
+        home = self.lay.root / "fake-home"
+        got = config.plugin_data_dir(self.mod, {"CLAUDE_CONFIG_DIR": ""}, home)
+        self.assertEqual(got, home / ".claude/plugins/data/p-m")
+        got = config.plugin_data_dir(self.mod, {}, home)
+        self.assertEqual(got, home / ".claude/plugins/data/p-m")
+
+    def test_relative_claude_config_dir_becomes_absolute(self):
+        got = config.plugin_data_dir(self.mod, {"CLAUDE_CONFIG_DIR": "rel/dir"})
+        self.assertEqual(got, Path("rel/dir").resolve() / "plugins/data/p-m")
+
+    def test_does_not_create_dirs(self):
+        config.resolve_config_path(self.env, self.mod, self.legacy)
+        self.assertFalse(self.lay.claude.exists())
+
+    def test_command_prints_claude_data_file(self):
+        expected = self.lay.put_data_config()
+        r = self.lay.run("config-path", extra_env=self.env)
+        self.assertEqual((r.returncode, r.stdout), (0, f"{expected}\n"))
+
+
 class ConfigPathCommandTest(unittest.TestCase):
     def test_prints_one_line_and_exits_zero_even_if_missing(self):
         lay = Layout()
@@ -121,6 +182,8 @@ class ShowPreviewConfigTest(unittest.TestCase):
     """show-preview.sh 가 드라이버에게 경로를 묻는지, 모르는 드라이버와도 도는지 본다."""
 
     def setUp(self):
+        if not SHOW_PREVIEW.is_file():
+            self.skipTest("show-preview.sh 를 두 배치 어디에서도 찾지 못했다")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
