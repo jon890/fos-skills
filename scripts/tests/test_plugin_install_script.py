@@ -25,6 +25,16 @@ class PluginInstallScriptTest(unittest.TestCase):
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("알 수 없는 인자: --nope", result.stderr)
 
+    def test_unknown_argument_after_keep_exits_2(self):
+        result = run_script("--keep", "--nope")
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("알 수 없는 인자: --nope", result.stderr)
+
+    def test_unknown_argument_before_keep_exits_2(self):
+        result = run_script("--nope", "--keep")
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("알 수 없는 인자: --nope", result.stderr)
+
     def test_missing_claude_exits_2(self):
         with tempfile.TemporaryDirectory() as bin_dir:
             for tool in ("git", "tar", "python3", "dirname", "mktemp"):

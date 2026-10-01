@@ -17,11 +17,12 @@ FAKE_URL="https://marketplace.test/fos-skills.git"
 PLUGIN_ID="fos-skills@fos-skills"
 
 KEEP=false
-case "${1:-}" in
-  "")      ;;
-  --keep)  KEEP=true ;;
-  *)       echo "알 수 없는 인자: $1  (쓸 수 있는 것은 --keep 뿐이다)" >&2; exit 2 ;;
-esac
+for arg in "$@"; do
+  case "$arg" in
+    --keep)  KEEP=true ;;
+    *)       echo "알 수 없는 인자: $arg" >&2; exit 2 ;;
+  esac
+done
 
 for tool in claude git tar python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "실행 불가: $tool 없음" >&2; exit 2; }
