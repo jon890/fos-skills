@@ -58,12 +58,11 @@ def installed_skills():
     for skill_file in iter_targets(ROOT):
         if skill_file.name == "SKILL.md" and skill_file.resolve().is_relative_to(ROOT):
             names.add(skill_file.parent.name)
-    # 플러그인 스킬
+    # 플러그인 스킬. 스킬을 skills/ 아래에 두지 않는 플러그인도 있어 SKILL.md 로 찾는다.
     plug = pathlib.Path.home() / ".claude/plugins"
     if plug.is_dir():
-        for p in plug.rglob("skills/*"):
-            if p.is_dir():
-                names.add(p.name)
+        for skill_file in plug.rglob("SKILL.md"):
+            names.add(skill_file.parent.name)
     return names
 
 
