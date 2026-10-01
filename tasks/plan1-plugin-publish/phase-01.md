@@ -84,12 +84,12 @@ assert report["success"] is True, report
 assert manifest["errors"] == [], manifest["errors"]
 assert paths == ["plugins[0] plugin.json → version"], paths
 '
-bash scripts/export-to-team.sh; test $? -ne 2
+bash scripts/export-to-team.sh || test $? -ne 2
 ```
 
 - `unittest` 는 일곱 테스트가 모두 통과한다.
 - `validate` 는 오류가 없고 경고가 버전 경고 하나뿐이다.
-- 마지막 줄은 내보내기 스크립트가 이 변경 뒤에도 실행되는지를 본다. 종료 코드 0 은 사본이 같다는 뜻이고 1 은 이미 있던 어긋남이다. 2 는 실행 오류라 실패로 본다. 팀 저장소가 없는 머신에서는 0 으로 끝난다.
+- 마지막 줄은 내보내기 스크립트가 이 변경 뒤에도 실행되는지를 본다. 종료 코드 0 은 사본이 같다는 뜻이고 1 은 이미 있던 어긋남이고 3 은 팀 쪽 버전이 더 높다는 뜻이다. 2 는 실행 오류라 실패로 본다. `|| test` 로 이어 종료 코드 1 과 3 에서도 이 줄을 통과시킨다. 팀 저장소가 없는 머신에서는 0 으로 끝난다.
 
 ## 변경 파일
 

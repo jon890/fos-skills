@@ -92,11 +92,14 @@
 python3 -m unittest discover -s harness-cleanup/tests -v
 grep -n 'version: "3.14.2"' harness-cleanup/SKILL.md
 grep -n '^## 3.14.2$' harness-cleanup/CHANGELOG.md
-bash korean-check/scripts/check.sh harness-cleanup/CHANGELOG.md
+section="$(mktemp -d)/section.md"
+sed -n '/^## 3.14.2$/,/^## 3.14.1$/p' harness-cleanup/CHANGELOG.md | sed '$d' > "$section"
+bash korean-check/scripts/check.sh "$section"
 ```
 
 - `unittest` 는 세 테스트가 통과한다. 고치기 전 코드에서는 첫 번째 테스트가 종료 코드 1 로 실패한다.
 - 두 `grep` 은 각각 한 줄을 찾는다.
+- `korean-check` 는 새로 넣은 `3.14.2` 절만 검사하고 종료 코드 0 이다. `CHANGELOG.md` 의 옛 절 140, 150, 155, 169, 171행에 금지어 `좁히` 류 다섯 건이 이미 있어 파일 전체는 종료 코드 1 이다. 옛 절은 고치지 않는다.
 
 ## 변경 파일
 

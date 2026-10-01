@@ -32,7 +32,7 @@
 `review-fix/SKILL.md` 는 `$SKILL_DIR` 을 다른 곳에서 쓰지 않는다. 그래서 그 문장 안에서 `$SKILL_DIR` 이 무엇인지도 함께 적는다.
 
 스킬을 고치면 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 디렉터리의 `CHANGELOG.md` 를 함께 고친다. 기준은 `README.md` 의 「버전과 변경 이력」 절이다.
-지금 버전은 `build-with-teams` 가 `5.11.0`, `review-fix` 가 `2.6.0` 이다.
+지금 버전은 `build-with-teams` 가 `5.12.0`, `review-fix` 가 `2.6.0` 이다.
 
 두 스킬은 `scripts/export-to-team.sh` 가 팀 저장소로 내보내는 대상이다. 커밋하면 `hooks/post-commit` 이 팀 저장소의 사본과 어긋난다고 알린다. 알림은 정상이다.
 
@@ -56,14 +56,14 @@
 `$PHASE_FILE`은 해당 phase 파일의 경로다.
 ```
 
-frontmatter 의 `version: "5.11.0"` 을 `version: "5.12.0"` 으로 바꾼다.
+frontmatter 의 `version: "5.12.0"` 을 `version: "5.13.0"` 으로 바꾼다.
 
-### 2. `build-with-teams/CHANGELOG.md` 에 5.12.0 절 추가
+### 2. `build-with-teams/CHANGELOG.md` 에 5.13.0 절 추가
 
-`## 5.11.0` 위에 넣는다.
+`## 5.12.0` 위에 넣는다.
 
 ```markdown
-## 5.12.0
+## 5.13.0
 
 `$PLANNING_SKILL_DIR` 의 값을 이 스킬 번들의 형제 디렉터리 `$SKILL_DIR/../planning` 으로 정했다.
 플러그인으로 설치하면 `~/.claude/skills/planning` 이 없어 planning 번들의 위치를 본문만으로 알 수 없었다.
@@ -105,7 +105,9 @@ grep -c 'SKILL_DIR/../planning' build-with-teams/SKILL.md review-fix/SKILL.md
 ! grep -n '하네스에서 찾은 planning' build-with-teams/SKILL.md
 test -f build-with-teams/../planning/scripts/verify_task.py
 test -f review-fix/../planning/scripts/overlay_paths.py
-grep -n 'version: "5.12.0"' build-with-teams/SKILL.md
+grep -n 'version: "5.13.0"' build-with-teams/SKILL.md
+grep -n '^## 5.13.0$' build-with-teams/CHANGELOG.md
+test "$(grep -c '^## 5.12.0$' build-with-teams/CHANGELOG.md)" = 1
 grep -n 'version: "2.7.0"' review-fix/SKILL.md
 bash korean-check/scripts/check.sh build-with-teams/SKILL.md build-with-teams/CHANGELOG.md review-fix/SKILL.md review-fix/CHANGELOG.md
 ```

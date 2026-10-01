@@ -1,6 +1,6 @@
 # Phase 05. README 의 설치와 버전 설명을 플러그인 기준으로 고친다
 
-**Execution profile**: fast
+**Execution profile**: standard
 
 ## 목표
 

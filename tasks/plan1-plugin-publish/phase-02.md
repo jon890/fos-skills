@@ -58,9 +58,9 @@ git 소스로 등록하려고 가짜 주소를 임시 저장소로 돌린다. `G
 
 1. 인자를 해석한다. 그다음 `claude`, `git`, `tar`, `python3` 가 있는지 `command -v` 로 본다. 없는 것이 있으면 표준 오류에 `실행 불가: <이름> 없음` 을 쓰고 종료 코드 2 로 끝난다. 이 두 단계는 다른 외부 명령을 부르기 전에 한다.
 2. `mktemp -d` 로 임시 디렉터리 `T` 를 만든다. `--keep` 이 아니면 `trap` 으로 지운다.
-3. 작업 트리를 `T/src` 로 복사한다. 복사할 목록은 `git ls-files -z --cached --others --exclude-standard` 로 얻고, 작업 트리에 없는 경로는 뺀다. 이렇게 하면 무시되는 `worktrees/` 와 `.omc/` 가 빠지고 아직 커밋하지 않은 새 파일은 들어간다.
+3. 작업 트리를 `T/src` 로 복사한다. 작업 트리 루트는 `scripts/export-to-team.sh` 처럼 `$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)` 로 정한다. 실행한 cwd 와 무관해야 한다. 복사할 목록은 `git ls-files -z --cached --others --exclude-standard` 로 얻고, 작업 트리에 없는 경로는 뺀다. 이렇게 하면 무시되는 `worktrees/` 와 `.omc/` 가 빠지고 아직 커밋하지 않은 새 파일은 들어간다.
 4. `T/src` 에서 `git init`, `git add -A`, 커밋을 한다. 커밋에는 `-c user.name=tester -c user.email=tester@example.com` 을 준다.
-5. `CLAUDE_CONFIG_DIR="$T/config"` 를 export 한다. 가짜 주소 `https://marketplace.test/fos-skills.git` 를 `T/src` 로 돌리는 git 환경 변수 셋을 export 한다.
+5. `CLAUDE_CONFIG_DIR="$T/config"` 를 export 한다. 가짜 주소 `https://marketplace.test/fos-skills.git` 를 `T/src` 로 돌리는 git 환경 변수 셋을 export 한다. 이 순서 뒤에서 `claude` 를 처음 부르기 직전에 `CLAUDE_CONFIG_DIR` 이 `$T/` 아래인지 확인하고, 아니면 `실행 불가: CLAUDE_CONFIG_DIR 격리 실패` 를 표준 오류에 쓰고 종료 코드 2 로 끝난다. 실제 `~/.claude` 에 가짜 마켓플레이스가 등록되는 것을 막는다.
 6. `T/src` 에서 `claude plugin validate . --json` 을 돌려 `success` 가 참이고, `manifest.errors` 가 비었고, `manifest.warnings` 의 `path` 가 `plugins[0] plugin.json → version` 하나뿐인지 본다.
 7. `claude plugin marketplace add <가짜 주소>` 와 `claude plugin install fos-skills@fos-skills` 를 실행한다.
 8. 아래 표의 검사를 한다. 검사 하나마다 `ok: <설명>` 이나 `FAIL: <설명>` 한 줄을 출력한다.
