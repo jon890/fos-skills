@@ -134,6 +134,53 @@ class TestFalsePositive(Base):
         self.assertCaught("배포 게이트를 통과한다.\n", "게이트")
 
 
+class TestVersionPhrase(Base):
+    """버전 뜻의 구절은 잡고 판단·판정이 들어간 문장은 통과시킨다."""
+
+    def test_registered_noun_phrases_are_caught(self):
+        for prefix in ("SDK", "BOM", "같은", "고정", "마지막", "지시문"):
+            for particle, action in (("을", "사용한다"), ("이", "필요하다"), ("으로", "변경한다")):
+                term = f"{prefix} 판{particle}"
+                with self.subTest(term=term):
+                    self.assertCaught(f"{term} {action}.\n", term)
+
+    def test_registered_verb_phrases_are_caught(self):
+        samples = (
+            ("판을 올", "판을 올린다."),
+            ("판이 바뀌", "판이 바뀌었다."),
+            ("판으로 고정", "판으로 고정한다."),
+            ("판도 올", "판도 올렸다."),
+        )
+        for term, text in samples:
+            with self.subTest(term=term):
+                self.assertCaught(f"{text}\n", term)
+
+    def test_judgment_words_with_candidate_prefixes_pass(self):
+        for prefix in ("SDK", "BOM", "같은", "고정", "마지막", "지시문"):
+            for word in ("판단", "판정"):
+                for particle in ("을", "이", "으로"):
+                    text = f"{prefix} {word}{particle} 표시한다.\n"
+                    with self.subTest(text=text):
+                        self.assertPassed(text)
+
+    def test_natural_judgment_sentences_pass(self):
+        samples = (
+            "판단을 다시 한다. 같은 판정을 낸다.",
+            "판단을 올려 보고한다.",
+            "판정이 바뀌었다.",
+            "판단으로 고정하지 않는다.",
+            "판정으로 고정한다.",
+            "판단도 올바르다. 판정도 올바르다.",
+        )
+        for text in samples:
+            with self.subTest(text=text):
+                self.assertPassed(f"{text}\n")
+
+    def test_recommended_version_phrases_pass(self):
+        self.assertPassed("SDK 버전을 올린다. 같은 버전으로 고정한다.\n")
+        self.assertPassed("BOM 버전이 바뀌었다. 지시문 버전도 올렸다.\n")
+
+
 class TestEnglishTerm(Base):
     """영문 금지어는 단어 경계로 찾는다. 부분 문자열로 찾으면 다른 낱말을 잡는다."""
 

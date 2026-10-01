@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.19.0
+
+버전 뜻의 `판` 을 조사나 서술어가 붙은 구절로 외래어 매핑 표에 등록했다.
+`판` 으로 끝나는 후보 여섯 개는 판단·판정과 겹치므로 조사까지 늘렸다.
+등록 구절의 검출과 판단·판정의 정상 문장 통과를 회귀 테스트로 확인한다.
+등록한 구절과 제외 이유는 [`checker-maintenance.md`](references/checker-maintenance.md)에 남겼다.
+
 ## 1.18.0
 
 `korean-style.md` 와 `writing-structure.md` 는 rules 심링크로 매 세션 실려 두 파일이 12.5KB 였다.
