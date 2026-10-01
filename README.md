@@ -2,7 +2,7 @@
 
 여러 레포가 공유하는 공용 Claude Code 스킬의 단일 소스다.
 
-워크플로 개선은 여기 한 곳만 고치면 심링크로 연결된 전 프로젝트에 반영된다.
+워크플로 개선은 여기 한 곳만 고쳐 main 에 머지하면, 플러그인을 설치한 모든 프로젝트가 갱신으로 받는다.
 레포마다 다른 부분은 각 프로젝트의 오버레이 파일로 주입한다.
 
 ## 스킬 목록
@@ -37,6 +37,7 @@
 | --- | --- |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정한다 |
 | `scripts/install-hooks.sh` | `hooks/` 의 훅을 `.git/hooks` 에 건다 |
+| `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 시험한다 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾는다. 셸에 따라 죽는 이식성 결함이다 |
 
 `check-shell-korean.py` 가 `korean-check` 에 없는 이유는 그 스킬이 마크다운 전용으로
@@ -44,11 +45,54 @@
 
 ## 설치
 
-각 코어 스킬을 글로벌 스킬 디렉터리에 심링크한다. 그러면 모든 프로젝트에서 사용할 수 있다.
+Claude Code 플러그인으로 설치한다.
+
+```bash
+claude plugin marketplace add jon890/fos-skills
+claude plugin install fos-skills@fos-skills
+```
+
+설치한 스킬은 `fos-skills:planning` 처럼 접두사가 붙어 불린다.
+
+### 갱신
+
+플러그인에 버전을 쓰지 않으므로, 버전을 올리지 않아도 main 의 새 커밋을 받는다.
+
+```bash
+claude plugin update fos-skills@fos-skills
+```
+
+### 고치는 동안
+
+설치본은 main 에 push 한 뒤에만 바뀐다.
+그래서 고치는 동안에는 작업 트리를 그 세션에만 로드한다.
+
+```bash
+claude --plugin-dir "$(git rev-parse --show-toplevel)"
+```
+
+로드가 맞는지 판정하는 방법은 [고치는 동안의 확인](docs/flow.md#고치는-동안의-확인) 이 소유한다.
+
+### 스킬을 더할 때
+
+고칠 곳은 셋이다.
+
+- `.claude-plugin/plugin.json` 의 `skills` 배열
+- 이 README 의 스킬 목록 표
+- 팀에도 내보낼 스킬이면 `scripts/export-to-team.sh` 의 `SHARED_SKILLS`
+
+`skills` 배열을 빠뜨리면 `python3 -m unittest discover -s scripts/tests` 가 실패한다.
+
+### 링크로 설치
+
+플러그인 시스템이 없는 에이전트에서는 스킬 디렉터리를 글로벌 스킬 디렉터리에 심링크한다.
 
 ```bash
 ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
 ```
+
+플러그인과 같은 이름의 링크를 함께 두면 스킬이 둘씩 뜬다.
+링크에서 플러그인으로 옮기는 순서는 [링크 설치에서 옮기기](docs/flow.md#링크-설치에서-옮기기) 를 따른다.
 
 공용 도구를 전역에서도 부르려면 함께 건다.
 
@@ -68,9 +112,9 @@ ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/s
 
 각 스킬은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 디렉터리의 `CHANGELOG.md` 로 이력을 남긴다.
 
-**이 버전은 배포 핀이 아니다.** 소비 방식이 심링크라 모든 프로젝트가 항상 최신을 쓴다.
-특정 버전에 고정할 수단이 없으므로, 버전의 목적은 무엇이 언제 왜 바뀌었는지 추적하는 것뿐이다.
-이 점을 잊으면 태그와 릴리스까지 붙는 과설계로 간다.
+**이 버전은 배포 핀이 아니다.** 플러그인에는 버전을 쓰지 않아 커밋 SHA 가 버전이 되고, 설치한 쪽은 main 의 새 커밋을 갱신으로 받는다.
+스킬 버전의 목적은 무엇이 언제 왜 바뀌었는지 추적하는 것뿐이다.
+이 점을 잊으면 태그와 릴리스까지 붙는 과설계로 간다. 근거는 [ADR-002](docs/adr/002-plugin-version-is-commit-sha.md) 가 소유한다.
 
 올리는 기준은 셋이다.
 
@@ -83,4 +127,4 @@ ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/s
 규칙 두 가지를 지킨다.
 
 - 저장소 루트에는 CHANGELOG 를 두지 않는다. 갱신 지점이 갈려 한쪽이 먼저 낡는다.
-- git 태그는 만들지 않는다. 심링크 소비에서는 태그가 아무것도 고정하지 못한다.
+- git 태그는 만들지 않는다. 설치한 쪽이 main 의 커밋을 받으므로 태그가 아무것도 고정하지 못한다.
