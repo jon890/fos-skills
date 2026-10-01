@@ -20,6 +20,8 @@ BACKENDS = {b.name: b for b in (EgoBackend, OrcaBackend, AgentBrowserBackend, Cm
 #: 자동 감지로 먼저 잡히면 쓸 수 없는 백엔드가 선택된다.
 DETECT_ORDER = ("ego", "orca", "agent-browser", "cmux")
 
+EGO_INSTALL_URL = "https://lite.ego.app/"
+
 
 def resolve_backend_name():
     """환경변수 → 설정 파일 → 자동 감지 순서로 백엔드를 정한다."""
@@ -33,8 +35,9 @@ def resolve_backend_name():
         if BACKENDS[name].available():
             return name, "자동 감지"
     raise UsageError(
-        "쓸 수 있는 브라우저 백엔드가 없다. orca 나 agent-browser 를 설치하거나\n"
-        f"{CONFIG_PATH} 에 driver 를 적는다. 자세한 상태는 doctor 로 본다.")
+        f"쓸 수 있는 브라우저 백엔드가 없다. ego lite({EGO_INSTALL_URL})를 먼저 설치한다.\n"
+        "orca 나 agent-browser 를 설치해도 된다.\n"
+        f"{CONFIG_PATH} 에 driver 를 적을 수도 있다. 자세한 상태는 doctor 로 본다.")
 
 
 def load_backend():
