@@ -1,4 +1,4 @@
-"""플러그인 매니페스트의 skills 배열이 루트의 스킬 디렉터리와 맞는지, 버전이 없는지 검증한다."""
+"""내보내기 전용 원본을 제외한 스킬 디렉터리와 매니페스트를 대조하고 버전이 없는지 검증한다."""
 
 import json
 import tempfile
@@ -8,13 +8,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / ".claude-plugin" / "plugin.json"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
+EXPORT_ONLY = set(json.loads((ROOT / "scripts" / "export-only-skills.json").read_text(encoding="utf-8")))
 
 
 def skill_diff(array, root):
-    """root 바로 아래에서 SKILL.md 를 가진 디렉터리와 array 를 비교해 (빠진 것, 남는 것) 을 돌려준다."""
+    """내보내기 전용 원본을 제외하고 array 와 비교해 (빠진 것, 남는 것) 을 돌려준다."""
     found = {f"./{child.name}" for child in Path(root).iterdir() if (child / "SKILL.md").is_file()}
     declared = set(array)
-    return sorted(found - declared), sorted(declared - found)
+    expected = found - EXPORT_ONLY
+    return sorted(expected - declared), sorted(declared - expected)
 
 
 def load(manifest):
@@ -29,6 +31,24 @@ class PluginManifestTest(unittest.TestCase):
     def test_array_is_sorted(self):
         skills = load(PLUGIN)["skills"]
         self.assertEqual(sorted(skills), skills)
+
+    def test_export_only_sources_are_present(self):
+        for skill in EXPORT_ONLY:
+            self.assertTrue((ROOT / skill / "SKILL.md").is_file(), skill)
+
+    def test_export_only_sources_are_not_registered(self):
+        self.assertTrue(EXPORT_ONLY.isdisjoint(load(PLUGIN)["skills"]))
+
+    def test_export_only_sources_can_be_omitted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("a", "content-preview", "korean-check"):
+                (root / name).mkdir()
+                (root / name / "SKILL.md").write_text("")
+            self.assertEqual(([], []), skill_diff(["./a"], root))
+            self.assertEqual((["./a"], []), skill_diff([], root))
+            registered_export_source = ["./a", "./content-preview"]
+            self.assertEqual(([], ["./content-preview"]), skill_diff(registered_export_source, root))
 
     def test_missing_skill_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:

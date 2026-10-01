@@ -28,7 +28,7 @@ for tool in claude git tar python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "실행 불가: $tool 없음" >&2; exit 2; }
 done
 
-T="$(mktemp -d)"
+T="$(mktemp -d /tmp/fos-skills-plugin.XXXXXX)"
 T="$(cd "$T" && pwd -P)"
 if $KEEP; then
   echo "임시 디렉터리를 남긴다: $T"
@@ -86,6 +86,24 @@ for s in json.load(open(sys.argv[1], encoding="utf-8"))["skills"]:
     print(s[2:] if s.startswith("./") else s)
 ' "$T/src/.claude-plugin/plugin.json")
 EXPECTED=${#SKILLS[@]}
+
+# 내보내기 전용 원본만 배열에서 빠질 수 있다. 다른 스킬 누락은 설치 전에 잡는다.
+run python3 -m unittest discover -s "$T/src/scripts/tests" -p test_plugin_manifest.py
+if [ "$RC" -eq 0 ]; then
+  ok "매니페스트 시험: 내보내기 전용 원본만 스킬 목록에서 제외된다"
+else
+  fail "매니페스트 시험이 실패했다"
+  printf '%s\n' "$OUT"
+fi
+
+EXPORT_ONLY_SKILLS=()
+while IFS= read -r line; do
+  [ -n "$line" ] && EXPORT_ONLY_SKILLS+=("$line")
+done < <(python3 -c '
+import json, sys
+for skill in json.load(open(sys.argv[1], encoding="utf-8")):
+    print(skill[2:] if skill.startswith("./") else skill)
+' "$T/src/scripts/export-only-skills.json")
 
 # 검증: 매니페스트 오류가 없고 경고는 version 하나뿐이어야 한다.
 run bash -c 'cd "$1" && claude plugin validate . --json' _ "$T/src"
@@ -161,6 +179,19 @@ if [ -z "$CACHE" ]; then
   # 캐시가 없으면 이후 검사는 의미가 없다.
   fail "스킬 파일, 형제 참조, 검사기 탐색, 도구, 스크립트 실행, 링크 없음 검사를 할 수 없다"
 else
+  # 내보내기 전용 원본은 캐시에 남지만 스킬로 인식되면 안 된다.
+  for name in "${EXPORT_ONLY_SKILLS[@]}"; do
+    if [ -f "$CACHE/$name/SKILL.md" ]; then
+      ok "내보내기 전용 원본: $name/SKILL.md 가 캐시에 남는다"
+    else
+      fail "내보내기 전용 원본: $name/SKILL.md 가 캐시에 없다"
+    fi
+    case "$SKILLS_LINE" in
+      *"$name"*) fail "내보내기 전용 원본: $name 이 스킬로 인식됐다" ;;
+      *) ok "내보내기 전용 원본: $name 이 스킬 목록에 없다" ;;
+    esac
+  done
+
   # 스킬 파일
   NO_SKILL_MD=""
   for name in "${SKILLS[@]}"; do
