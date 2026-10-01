@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.13.0
+
+`show-preview.sh` 가 설정 파일 경로를 드라이버 본체에게 `config-path` 로 묻는다.
+플러그인 설치본은 설정을 데이터 폴더에 두는데 이 스크립트는 옛 위치만 읽어, 드라이버와 미리보기가 서로 다른 파일을 읽었다.
+
+- 순서는 `BROWSER_CONFIG`, `config-path` 의 출력, `~/.claude/browser.config.json` 이다.
+- `config-path` 를 모르는 옛 드라이버는 실패하므로 옛 위치로 내려간다.
+- 경로를 정하는 곳은 `tools/browser-driver/driver/config.py` 하나다.
+
 ## 3.12.0
 
 Orca dispatch 워커의 5단계 통과 조건을 미리보기 HTML 생성으로 정했다.
