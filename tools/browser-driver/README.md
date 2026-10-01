@@ -20,10 +20,10 @@ $B doctor
 | --- | --- |
 | `browser_driver.py` | 진입점. 명령을 나눠 보내고 예외를 종료 코드로 바꾼다 |
 | `driver/commands.py` | 명령 스펙과 `help` 렌더 |
-| `driver/config.py` | 설정 파일과 기본 제한 시간 |
+| `driver/config.py` | 설정 파일 경로와 기본 제한 시간 |
 | `driver/errors.py` | 예외와 종료 코드 |
 | `driver/shell.py` | 백엔드 프로세스 호출과 반환값 정규화 |
-| `driver/admin.py` | `doctor` 와 `install` |
+| `driver/admin.py` | `doctor`, `install` |
 | `driver/backends/__init__.py` | 백엔드 목록과 선택 규칙 |
 | `driver/backends/base.py` | 백엔드 공통 계약 |
 | `driver/backends/ego.py`, `orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
@@ -45,10 +45,24 @@ $B doctor
 
 같은 이름의 실제 파일이 있으면 `.bak.{pid}` 로 옮긴 뒤 링크를 건다.
 
+## 설정 파일
+
+경로는 `config-path` 가 한 줄로 낸다. 파일이 없어도 경로를 내고 종료 코드는 0 이다.
+경로를 정하는 곳은 `driver/config.py` 하나이고, `show-preview.sh` 도 이 명령으로 같은 파일을 읽는다.
+
+1. 환경변수 `BROWSER_CONFIG`
+2. 본체가 플러그인 설치 캐시 안에 있으면 그 플러그인의 데이터 폴더에 있는 `browser.config.json`. 그 파일이 있을 때만 쓴다
+3. 옛 위치 `~/.claude/browser.config.json`
+
+2번의 판정은 `Path(__file__).resolve()` 가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/tools/browser-driver/driver/config.py` 꼴인지 본다.
+맞으면 데이터 폴더는 `<루트>/plugins/data/<플러그인>-<마켓플레이스>/` 다. 이 이름 규칙은 Claude Code 2.1.286 에서 실측했다.
+저장소 체크아웃이나 `~/.claude/scripts/` 링크로 부르면 2번을 건너뛴다.
+읽기만 하고 폴더를 만들거나 파일을 옮기지 않는다. 데이터 폴더는 설치만으로는 생기지 않으므로 `install` 이 `mkdir -p` 를 먼저 안내한다.
+
 ## 백엔드 선택
 
 1. 환경변수 `BROWSER_DRIVER`
-2. `~/.claude/browser.config.json` 의 `driver`
+2. 설정 파일의 `driver` (경로는 위 「설정 파일」)
 3. 자동 감지. 순서와 그 이유는 `driver/backends/__init__.py` 의 `DETECT_ORDER` 가 소유한다
 
 **용도가 갈리면 부르는 쪽이 백엔드를 고정한다.** 자동 감지는 쓸 수 있는 것을 고르는 규칙이고

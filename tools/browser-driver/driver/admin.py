@@ -1,6 +1,7 @@
 """진단과 설치. 브라우저를 조작하지 않는 명령이다."""
 
 import os
+import shlex
 import shutil
 from pathlib import Path
 
@@ -113,5 +114,7 @@ def cmd_install(argv):
 
     print("")
     print("설정을 바꾸려면 예시를 복사해 고친다.")
-    print(f"  cp {src.parent / 'browser.config.example.json'} {CONFIG_PATH}")
+    # 플러그인 데이터 폴더는 설치만으로는 생기지 않아 부모가 없으면 cp 가 실패한다.
+    print(f"  mkdir -p {shlex.quote(str(CONFIG_PATH.parent))}")
+    print(f"  cp {shlex.quote(str(src.parent / 'browser.config.example.json'))} {shlex.quote(str(CONFIG_PATH))}")
     return 0

@@ -78,8 +78,16 @@ fi
 #
 # 설정 파일 경로는 드라이버와 같은 것을 본다. 두 곳이 갈리면 doctor 가 읽는 파일과
 # 미리보기가 읽는 파일이 달라져, 사용자가 고친 값이 반영되지 않는다.
+# 경로를 정하는 곳은 드라이버 본체 하나라 BROWSER_CONFIG 가 없으면 `config-path` 로 묻는다.
+# 플러그인 설치본은 설정을 데이터 폴더에 두므로 이 스크립트가 옛 위치를 박으면 갈린다.
+# config-path 를 모르는 옛 드라이버는 실패하므로 옛 위치로 내려간다.
 preview_driver_from_config() {
-  cfg="${BROWSER_CONFIG:-$HOME/.claude/browser.config.json}"
+  cfg="${BROWSER_CONFIG:-}"
+  if [ -z "$cfg" ] && [ -n "$DRIVER" ]; then
+    cfg="$("$DRIVER" config-path 2>/dev/null)" || cfg=""
+    case "$cfg" in *$'\n'*) cfg="" ;; esac
+  fi
+  [ -n "$cfg" ] || cfg="$HOME/.claude/browser.config.json"
   [ -f "$cfg" ] || return 0
   python3 -c 'import json, sys
 try:

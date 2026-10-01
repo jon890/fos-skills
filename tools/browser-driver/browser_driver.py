@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from driver.admin import cmd_doctor, cmd_install  # noqa: E402
 from driver.backends import BACKENDS, load_backend, resolve_backend_name  # noqa: E402
 from driver.commands import COMMAND_MAP, COMMANDS, META_COMMANDS, render_help  # noqa: E402
+from driver.config import CONFIG_PATH  # noqa: E402
 from driver.errors import EXIT_FAIL, EXIT_USAGE, DriverError, UsageError  # noqa: E402
 
 
@@ -49,6 +50,11 @@ def main(argv):
 
     if cmd == "doctor":
         return cmd_doctor()
+
+    if cmd == "config-path":
+        # 파일이 있는지는 보지 않는다. 미리보기 같은 호출자가 드라이버와 같은 파일을 읽으려고 묻는다.
+        print(CONFIG_PATH)
+        return 0
 
     if cmd == "install":
         return cmd_install(args)
