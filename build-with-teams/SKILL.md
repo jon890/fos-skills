@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.11.0"
+  version: "5.12.0"
 ---
 # build-with-teams
 
@@ -68,7 +68,7 @@ plan 이름의 접두사로 대상 하위 프로젝트를 정하고, 그 하위 
 | 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
 | 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
-| 6 | 통합 검증과 PR | 통합 검증이 통과했고, 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, 팀원이 남지 않았다 | `references/step-finish.md` |
+| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, 팀원이 남지 않았다 | `references/step-finish.md` |
 
 **팀원을 스폰하기 전에 [`references/team-spawn.md`](references/team-spawn.md)를 읽는다.**
 
@@ -231,4 +231,4 @@ phase 파일의 「Blocked 조건」 에 걸려 executor 가 같은 값을 회�
 ### 6. 통합 검증과 PR
 
 [`references/step-finish.md`](references/step-finish.md)를 읽고 수행한다.
-통합 검증, 원격 검증 목록, 계획서 삭제, PR, 팀 종료, 작업 공간 정리, 보고, 패턴 승격이 거기 있다.
+기준 브랜치 확인, 통합 검증, 원격 검증 목록, 계획서 삭제, PR, 팀 종료, 작업 공간 정리, 보고, 패턴 승격이 거기 있다.
