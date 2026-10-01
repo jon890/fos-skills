@@ -1,0 +1,15 @@
+{
+  "name": "plan1-plugin-publish",
+  "description": "fos-skills 를 Claude Code 플러그인으로 발행한다 — 사외 머신에서 clone 과 링크 없이 두 명령으로 일곱 스킬을 설치하기 위해",
+  "status": "pending",
+  "created_at": "2026-10-01",
+  "total_phases": 5,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "standard" },
+    { "number": 2, "file": "phase-02.md", "execution_profile": "standard" },
+    { "number": 3, "file": "phase-03.md", "execution_profile": "standard" },
+    { "number": 4, "file": "phase-04.md", "execution_profile": "fast" },
+    { "number": 5, "file": "phase-05.md", "execution_profile": "fast" }
+  ]
+}
