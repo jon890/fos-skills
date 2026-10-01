@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.13.0
+
+`$PLANNING_SKILL_DIR` 의 값을 이 스킬 번들의 형제 디렉터리 `$SKILL_DIR/../planning` 으로 정했다.
+플러그인으로 설치하면 `~/.claude/skills/planning` 이 없어 planning 번들의 위치를 본문만으로 알 수 없었다.
+
 ## 5.12.0
 
 executor 가 index 를 건드리는 범위를 정했다. 커밋은 하지 않고, phase 가 지시한 `git mv` 와 특정 경로의 `git add` 만 실행하며, `stash`, `reset`, `checkout -- <파일>`, `clean` 은 실행하지 않는다. 규칙은 `references/role-executor.md` 가 소유하고, 스폰 프롬프트 문구는 `references/team-spawn.md` 에 있다. 나란히 도는 phase 용 문구는 그 문구를 가리킨다. 4단계 「커밋 전 대조」 는 staged 로 남은 이동에 그 phase 의 경로만 더 stage 하도록 적었다.
