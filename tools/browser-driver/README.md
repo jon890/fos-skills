@@ -56,6 +56,9 @@ $B doctor
 
 2번의 판정은 `Path(__file__).resolve()` 가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/tools/browser-driver/driver/config.py` 꼴인지 본다.
 맞으면 데이터 폴더는 `<루트>/plugins/data/<플러그인>-<마켓플레이스>/` 다. 이 이름 규칙은 Claude Code 2.1.286 에서 실측했다.
+Codex 설치본(`<CODEX_HOME>/plugins/cache/…`)은 `<CODEX_HOME>/config.toml` 이 파일로 있고 데이터 폴더가 없다.
+이때는 Claude Code 와 같은 설정을 쓰도록 `<Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/` 를 본다.
+Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값이고, 아니면 `~/.claude` 다 (Codex 0.159.3 에서 실측).
 저장소 체크아웃이나 `~/.claude/scripts/` 링크로 부르면 2번을 건너뛴다.
 읽기만 하고 폴더를 만들거나 파일을 옮기지 않는다. 데이터 폴더는 설치만으로는 생기지 않으므로 `install` 이 `mkdir -p` 를 먼저 안내한다.
 
