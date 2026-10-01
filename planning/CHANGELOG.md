@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.14.1
+
+`verify_task.py` 의 「수정·삭제 파일이 존재하지 않는다」 위반 문구에 안내를 더했다. 선행 계획이 만들 파일이면 그 계획이 머지된 뒤 기준 브랜치로 rebase 해 다시 돌린다. 판정과 종료 코드는 그대로다.
+`references/task-create.md` 의 「변경 파일 작성」 에 같은 안내를 적었다.
+
 ## 2.14.0
 
 phase 의 「검증」 절에는 작업 공간에서 커밋 전에 끝나는 검증만 둔다. push, 배포, 원격 호스트 접속이 있어야 끝나는 검증은 phase 로 만들지 않고 plan 디렉터리의 `remote-verification.md` 에 모은다. push 한 뒤 원격에서 돌리는 검증을 phase 에 넣자, 검증을 끝내려면 먼저 커밋해야 해서 실패를 고친 커밋이 phase 밖에 생겼다.
