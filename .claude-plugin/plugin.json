@@ -1,15 +1,13 @@
 {
   "name": "fos-skills",
-  "description": "계획, 구현, 리뷰 반영, 문서 감사, 하네스 정리, 게시 전 미리보기, 한국어 점검 스킬",
+  "description": "계획, 구현, 리뷰 반영, 문서 감사, 하네스 정리 스킬",
   "author": { "name": "jon890" },
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
   "skills": [
     "./build-with-teams",
-    "./content-preview",
     "./docs-check",
     "./harness-cleanup",
-    "./korean-check",
     "./planning",
     "./review-fix"
   ]
