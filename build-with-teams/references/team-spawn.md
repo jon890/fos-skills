@@ -74,6 +74,15 @@ team-lead 가 Orca dispatch 워커로 돌 때 팀원이 보낸 `worker_done` 이
 main repo 루트 직접 cd / 직접 편집 금지. 첫 파일 작업 전에 `pwd` 로 작업 공간 경로와 같은지 확인.
 ```
 
+**executor, index 범위.** 규칙은 `role-executor.md` 의 「index 와 작업 트리」 가 소유한다.
+
+```
+커밋하지 말 것.
+phase 의 「작업 항목」 이 지시한 `git mv` 와 특정 경로의 `git add` 만 실행할 것.
+그 밖의 `git add`, `commit`, `stash`, `reset`, `checkout -- <파일>`, `clean` 은 실행하지 말 것.
+회신의 「변경한 파일」 에 staged 로 남긴 것을 적을 것.
+```
+
 **executor, scope 확장 보고.**
 
 ```

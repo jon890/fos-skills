@@ -178,6 +178,8 @@ executor의 테스트 실행 결과가 모두 통과했는지 확인한 뒤 목�
 python3 "$PLANNING_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
 ```
 
+executor 가 `git mv` 를 staged 로 남겼으면 team-lead 는 그 phase 의 경로만 더 stage 한 뒤 대조한다. `git add -A` 는 그 경로에만 쓴다.
+
 종료 코드 0이면 커밋한다. 1이면 출력한 범위 밖 파일, 변경 종류, 목록에 신규로 적었지만 staged 에 없는 파일을 바로잡는다.
 수정·삭제로 적은 파일이 staged 에 없으면 경고로 출력한다. 그 파일을 바꾸지 않아도 되는지 확인한다.
 계획의 파일 목록이 빠진 경우에는 3단계로 돌아간다. 2이면 실행 오류를 해소하고 다시 대조한다.
