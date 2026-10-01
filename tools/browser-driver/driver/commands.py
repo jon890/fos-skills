@@ -78,6 +78,7 @@ COMMAND_MAP = {c.name: c for c in COMMANDS}
 META_COMMANDS = [
     Command("driver", [], "지금 고른 백엔드 이름을 낸다"),
     Command("doctor", [], "백엔드 감지 결과와 준비 상태를 판정해 낸다"),
+    Command("config-path", [], "설정 파일 경로를 한 줄로 낸다. 파일이 없어도 경로를 낸다"),
     Command("help", [], "이 도움말을 낸다"),
     Command("install", ["[--dst <dir>]"], "~/.claude/scripts/ 에 심볼릭 링크를 만든다"),
 ]
