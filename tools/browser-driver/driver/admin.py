@@ -4,7 +4,7 @@ import os
 import shutil
 from pathlib import Path
 
-from .backends import BACKENDS, resolve_backend_name
+from .backends import BACKENDS, EGO_INSTALL_URL, resolve_backend_name
 from .commands import COMMANDS
 from .config import CONFIG_PATH
 from .errors import EXIT_USAGE, UsageError
@@ -46,6 +46,11 @@ def cmd_doctor():
         print(f"  {e}")
         return EXIT_USAGE
     print(f"판정: {name} ({source})")
+    if name != "ego":
+        if BACKENDS["ego"].available():
+            print("  권고: 로그인 세션이 필요한 자동화는 ego 가 맞다. 설치돼 있으니 driver 를 ego 로 두는 것을 권한다.")
+        else:
+            print(f"  권고: 로그인 세션이 필요한 자동화는 ego lite 가 맞다. {EGO_INSTALL_URL} 에서 설치하길 권한다.")
     return 0
 
 
