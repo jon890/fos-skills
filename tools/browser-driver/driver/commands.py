@@ -24,7 +24,7 @@ COMMANDS = [
     Command("open", ["<url>", "[ready_timeout_ms]"],
             "탭을 열고 로드가 끝날 때까지 기다린다",
             returns="핸들 한 줄. 이후 모든 명령의 첫 인자로 넘긴다",
-            note="탭이 열린 자리를 stderr 에 한 줄 더 알린다. orca 는 워크트리, ego 는 프로필이다.\n"
+            note="탭이 열린 자리를 stderr 에 한 줄 더 알린다. orca 는 워크트리, ego 는 프로필과 공간이다.\n"
                  "$( ) 로 받으면 핸들만 들어온다.\n"
                  "2>&1 로 받지 않는다. 그 줄이 핸들에 섞여 다음 명령이 탭을 찾지 못한다"),
     Command("nav", ["<handle>", "<url>", "[ready_timeout_ms]"],
@@ -127,6 +127,8 @@ def render_help(backend_name=None, unsupported=frozenset()):
     lines += [
         "",
         "종료 코드는 0 성공, 1 조작 실패, 2 잘못된 호출이나 환경 문제.",
+        "ego 의 BROWSER_EGO_SPACE 는 open, pages, reset 이 쓸 공간의 기준 이름을 정한다.",
+        "공간을 나눠도 로그인 세션의 경계는 기존 프로필이다.",
         "백엔드별 상세는 README.md, 환경 진단은 doctor 를 본다.",
     ]
     if backend_name:

@@ -14,6 +14,8 @@ from .base import Backend
 #: 사용자가 그 공간을 가져가면 `browser-driver/Profile 2 #2` 처럼 번호를 붙여 새로 만든다.
 SPACE_PREFIX = "browser-driver"
 
+SPACE_ENV = "BROWSER_EGO_SPACE"
+
 #: 쓸 프로필을 정하는 환경변수. 프로필 id 와 이름을 모두 받는다.
 #: 비어 있으면 아래 해석 순서의 다음 자리로 넘어간다.
 PROFILE_ENV = "BROWSER_EGO_PROFILE"
@@ -34,6 +36,18 @@ BLANK_URLS = ("about:blank", "chrome://new-tab-page/")
 
 #: 반환값을 다른 출력과 나누는 표식. ego 는 업데이트 알림 같은 줄을 같은 stdout 에 섞는다.
 MARKER = "<<<browser-driver-result>>>"
+
+
+def resolve_space():
+    """공간의 기준 이름을 검증한다. 없거나 빈 값이면 기존 이름을 쓴다."""
+    raw = os.environ.get(SPACE_ENV)
+    if raw is None or raw == "":
+        return None
+
+    name = raw.strip()
+    if not name or raw.splitlines() != [raw]:
+        raise UsageError(f"{SPACE_ENV} 는 공백뿐이거나 줄바꿈이 든 이름을 받을 수 없다")
+    return name
 
 
 def resolve_profile():
@@ -104,15 +118,20 @@ class EgoBackend(Backend):
                 "제어권을 가져가면 다음 open 이 번호를 붙여 새로 만든다")
         # 돌리기 전에 어디로 갈지 보이게 한다. 설정과 환경변수를 둘 다 보므로
         # 사람이 머릿속에서 순서를 되짚지 않아도 된다.
+        space = resolve_space()
         try:
             want, source = resolve_profile()
         except UsageError as e:
             return head + f"\n프로필 해석: 정하지 못했다. {e}"
+        if space:
+            space_note = f"\n공간 해석: {space} ({SPACE_ENV}, 사용 중이면 번호를 붙인다)"
+        else:
+            space_note = "\n공간 해석: browser-driver/<해석된 프로필 id> (사용 중이면 번호를 붙인다)"
         if source:
-            return head + f"\n프로필 해석: {want} ({source})"
+            return head + f"\n프로필 해석: {want} ({source})" + space_note
         return head + ("\n프로필 해석: 정해진 것이 없어 ego 의 기본 프로필로 돈다. "
                        f"{PROFILE_ENV} 이나 {PURPOSE_ENV} 로 정하거나 설정에 "
-                       f"{PROFILES_KEY}.{DEFAULT_PURPOSE} 를 둔다")
+                       f"{PROFILES_KEY}.{DEFAULT_PURPOSE} 를 둔다") + space_note
 
     def _run(self, body):
         """Node 스크립트를 stdin 으로 넘기고 표식 뒤의 반환값만 돌려준다.
@@ -167,16 +186,23 @@ class EgoBackend(Backend):
         끝나면 `prof` 와 `task` 가 정의돼 있다. `create` 가 거짓이면 공간이 없을 때
         `task` 가 null 로 남는다. 조회와 정리는 공간을 만들 이유가 없기 때문이다.
         """
+        space = resolve_space()
+        if space is not None:
+            profile_match = "s.profileId === prof.id"
+        else:
+            profile_match = "(!s.profileId || s.profileId === prof.id)"
         make = (
             "if (!task) {\n"
             "  const taken = new Set(spaces.map((s) => s.name));\n"
             "  let name = base;\n"
             "  for (let n = 2; taken.has(name); n += 1) name = base + ' #' + n;\n"
             "  task = await taskSpace(name, { profileId: prof.id });\n"
+            "  spaceName = name;\n"
             "}\n"
         ) if create else ""
         return (
             f"const prefix = {json.dumps(SPACE_PREFIX)};\n"
+            f"const customSpace = {json.dumps(space)};\n"
             f"const want = {json.dumps(want)};\n"
             # 프로필 id 는 이름과 엇갈려 있다. ego 의 'Default' 가 개인 계정이고
             # 'Profile 2' 가 회사 계정인 경우를 실측했다. 그래서 id 와 이름을 모두 받는다.
@@ -189,18 +215,19 @@ class EgoBackend(Backend):
             "} else {\n"
             "  prof = list.find((p) => p.isDefault) || list[0];\n"
             "}\n"
-            "const base = prefix + '/' + prof.id;\n"
+            "const base = customSpace === null ? prefix + '/' + prof.id : customSpace;\n"
             "const spaces = await listTaskSpaces();\n"
             # 이름만으로 잡으면 사용자가 제어권을 가져간 공간에 걸려 그 뒤로 계속 거절된다
             # (실측). 그래서 에이전트가 가진 공간만 골라 다시 쓰고, 없으면 겹치지 않는
             # 이름으로 새로 만든다.
             #
-            # profileId 는 런타임이 알릴 때만 실린다. 실리지 않아도 이름에 프로필 id 가
-            # 들어 있어 공간은 프로필별로 갈린다. 그래서 실렸을 때만 대조한다.
+            # 기본 이름은 프로필 id 를 포함하므로 기존 재사용 규칙을 유지한다.
+            # 사용자 지정 이름은 profileId 가 일치할 때만 재사용한다.
             "const mine = spaces.find((s) => s.ownership === 'agent'\n"
-            "  && (!s.profileId || s.profileId === prof.id)\n"
+            f"  && {profile_match}\n"
             "  && (s.name === base || s.name.startsWith(base + ' #')));\n"
             "let task = mine ? await taskSpace(mine.id) : null;\n"
+            "let spaceName = mine ? mine.name : base;\n"
             + make
         )
 
@@ -231,19 +258,20 @@ class EgoBackend(Backend):
                 "if (!page) page = await task.newPage();\n"
                 f"await page.goto({json.dumps(url)});\n"
                 f"await page.waitForLoadState('load', {{ timeout: {timeout} }});\n"
-                "__out(task.spaceId + ':' + page.label + '\\t' + prof.id + '\\t' + prof.name);\n"
+                "__out(task.spaceId + ':' + page.label + '\\t' + prof.id + '\\t' + prof.name\n"
+                "  + '\\t' + spaceName);\n"
             )
             handle, _, profile = self._run(body).strip().partition("\t")
             if not handle:
                 raise DriverError("ego 가 핸들을 내지 않았다")
             # 어느 프로필에서 열렸는지 알린다. 정한 호출과 정하지 않은 호출의 문구를 갈라,
             # 지정을 빠뜨린 것이 출력 목록에서 눈에 띄게 한다.
-            prof_id, _, prof_name = profile.partition("\t")
+            prof_id, prof_name, space_name = profile.split("\t", 2)
             if prof_id and source:
-                print(f"프로필: {prof_id} ({prof_name}) — {source}", file=sys.stderr)
+                print(f"프로필: {prof_id} ({prof_name}) — {source}; 공간: {space_name}", file=sys.stderr)
             elif prof_id:
                 print(f"경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 "
-                      f"({prof_id} / {prof_name})", file=sys.stderr)
+                      f"({prof_id} / {prof_name}); 공간: {space_name}", file=sys.stderr)
             return handle
 
         if cmd == "nav":

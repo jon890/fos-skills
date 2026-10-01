@@ -95,6 +95,23 @@ $B doctor
 - 탭은 `browser-driver/<프로필 id>` 라는 TaskSpace 에 모인다. `open` 을 여러 번 불러도 같은
   프로필의 호출은 같은 공간에 page 만 늘어난다. 새 공간의 `p1` 은 빈 페이지라 첫 `open` 이
   그것을 쓰고, 그 뒤의 `open` 이 `p2`, `p3` 을 만든다.
+- 작업마다 공간을 나누려면 `BROWSER_EGO_SPACE` 에 기준 이름을 준다.
+  `open`, `pages`, `reset` 은 그 이름과 번호를 붙인 공간에서 에이전트가 가진 공간을 고른다.
+  변수의 앞뒤 공백은 제거한다. 변수가 없거나 빈 문자열이면 기존 이름을 쓰고,
+  공백뿐이거나 줄바꿈이 든 값은 종료 코드 2로 거절한다.
+
+  ```sh
+  export BROWSER_EGO_SPACE='월 공수 등록'
+  PAGE=$($B open 'https://example.com')
+  $B pages
+  $B reset
+  ```
+
+  프로필은 기존 해석 순서를 따른다. 공간을 나눠도 같은 프로필의 로그인 세션은 함께 쓴다.
+  사용자 지정 이름은 `profileId` 가 고른 프로필과 일치하는 공간만 다시 쓴다.
+  `profileId` 를 알리지 않는 런타임에서는 호출마다 새 공간이 생길 수 있고,
+  `pages` 와 `reset` 은 그런 공간을 대상으로 삼지 못한다.
+  이미 받은 핸들은 환경 변수를 바꿔도 핸들의 공간 id 를 그대로 쓴다.
 - 사용자가 브라우저에서 그 공간의 제어권을 가져가면 그 공간의 모든 호출이 거절된다 (실측).
   이름만으로 공간을 잡으면 그 뒤로 계속 거절되므로, `open` 은 에이전트가 가진 공간만 골라
   다시 쓰고 없으면 `browser-driver/Profile 2 #2` 처럼 번호를 붙여 새로 만든다.
@@ -189,15 +206,17 @@ BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
 }
 ```
 
-`open` 은 정해진 자리를 표준 오류로 한 줄 알린다. 4번으로 떨어졌을 때만 문구가 경고로 바뀌어,
+`open` 은 정해진 프로필과 실제 공간 이름을 표준 오류로 한 줄 알린다. 4번으로 떨어졌을 때만 문구가 경고로 바뀌어,
 지정을 빠뜨린 호출이 출력에서 눈에 띈다.
 
 ```
-프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal
-경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / <회사 프로필 이름>)
+프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal; 공간: 월 공수 등록
+경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / <회사 프로필 이름>); 공간: browser-driver/Profile 2
 ```
 
-`doctor` 도 같은 판정을 한 줄 낸다. 돌리기 전에 어디로 갈지 여기서 본다.
+`doctor` 도 프로필 판정과 공간의 기준 이름을 각각 한 줄 낸다. 돌리기 전에 어디로 갈지 여기서 본다.
+프로필 이름으로 지정했거나 ego 기본 프로필에 맡긴 경우에는 브라우저 조회 없이 id 를 알 수 없어,
+기본 공간 이름을 `browser-driver/<해석된 프로필 id>` 로 표시한다.
 
 - 프로필 id 와 이름을 모두 받는다. `profiles()` 의 `id` 와 `name` 을 그 순서로 대조한다.
 - 없는 프로필을 주면 쓸 수 있는 목록을 붙여 종료 코드 1 로 끝난다.
