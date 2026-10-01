@@ -28,6 +28,7 @@ $B doctor
 | `driver/backends/base.py` | 백엔드 공통 계약 |
 | `driver/backends/ego.py`, `orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
 | `browser.config.example.json` | 설정 예시 |
+| `tests/` | `unittest` 시험. `python3 -m unittest discover -s tests` |
 
 진입점만 실행 파일이다. 심링크로 불려도 실체 경로를 잡아 옆의 `driver` 패키지를 찾는다.
 
@@ -54,6 +55,8 @@ $B doctor
 그 호출에 알맞은 것을 고르는 규칙이 아니다.
 사람이 읽을 화면을 띄우는 쪽은 `orca` 처럼 IDE 안의 탭을 만들고 `worktree` 를 다루는 백엔드가,
 사람이 보지 않는 자동화는 `ego` 가 맞다.
+`ego` 는 사용자가 로그인해 둔 프로필의 세션을 그대로 쓰므로 SSO 와 로그인이 필요한 주소에서 다른 백엔드가 못 여는 화면을 연다.
+그래서 예시 설정의 `driver` 도 `ego` 이고, 설치돼 있지 않으면 `doctor` 와 오류 문구가 ego lite(`https://lite.ego.app/`)를 권한다.
 `content-preview` 의 `show-preview.sh` 가 그 값을 설정 파일의 `previewDriver` 로 읽는다.
 
 ## 백엔드마다 갈리는 것
