@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.14.2
+
+`check_references.py` 가 플러그인 스킬 이름을 `SKILL.md` 를 가진 디렉터리에서 모은다.
+스킬을 `skills/` 아래에 두지 않는 플러그인의 스킬이 깨진 참조로 잡혔다.
+
 ## 3.14.1
 
 `--scope` 로 대상 범위를 지정하는 절차와 블록 선택 설명을 명확히 했다.

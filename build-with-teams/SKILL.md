@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.12.0"
+  version: "5.13.0"
 ---
 # build-with-teams
 
@@ -171,7 +171,8 @@ phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 p
 
 `git status`로 변경을 확인하고 해당 phase의 경로만 stage한다.
 executor의 테스트 실행 결과가 모두 통과했는지 확인한 뒤 목록과 staged 파일을 대조한다.
-`$PLANNING_SKILL_DIR`은 하네스에서 찾은 planning 번들, `$PHASE_FILE`은 해당 phase 파일의 경로다.
+`$PLANNING_SKILL_DIR`은 planning 번들이고 이 스킬 번들의 형제 디렉터리다. 값은 `$SKILL_DIR/../planning` 이다.
+`$PHASE_FILE`은 해당 phase 파일의 경로다.
 
 ```bash
 # cwd: plan 작업 공간(worktree) root

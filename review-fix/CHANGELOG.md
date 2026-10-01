@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.7.0
+
+`$PLANNING_SKILL_DIR` 의 값을 이 스킬 번들의 형제 디렉터리 `$SKILL_DIR/../planning` 으로 정했다.
+플러그인으로 설치하면 `~/.claude/skills/planning` 이 없어 planning 번들의 위치를 본문만으로 알 수 없었다.
+
 ## 2.6.0
 
 모노레포를 지원한다. PR 의 변경 경로로 대상 하위 프로젝트를 정하고 그 오버레이를 루트 오버레이보다 먼저 읽는다.

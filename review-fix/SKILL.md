@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.6.0"
+  version: "2.7.0"
 ---
 
 # review-fix
@@ -26,7 +26,8 @@ metadata:
 
 **루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
 PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 정하고, 그 오버레이를 루트 오버레이보다 먼저 읽는다.
-`$PLANNING_SKILL_DIR` 은 planning 번들 경로이고, `$PR` 은 1단계에서 정한 PR 번호다.
+`$PLANNING_SKILL_DIR` 은 planning 번들이고 이 스킬 번들의 형제 디렉터리다. 이 스킬 번들 경로를 `$SKILL_DIR` 이라 하면 값은 `$SKILL_DIR/../planning` 이다.
+`$PR` 은 1단계에서 정한 PR 번호다.
 
 ```bash
 # cwd: 대상 저장소 루트
