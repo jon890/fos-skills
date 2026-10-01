@@ -125,12 +125,12 @@ executor 가 중단 보고하는 조건과 형식은 [`role-executor.md`](role-e
 
 - **커밋은 phase 마다 따로 한다.** 그 phase 의 「변경 파일」 경로만 골라 stage 하고 `SKILL.md` 4단계 「커밋 전 대조」 를 통과시킨다.
   `git add -A` 나 `git add .` 는 다른 executor 의 변경까지 stage 한다.
-- **각 executor 의 스폰 프롬프트에 아래 문구를 넣는다.**
+- **각 executor 의 스폰 프롬프트에 `team-spawn.md` 의 executor index 범위 문구와 아래 문구를 함께 넣는다.**
 
 ```
 이 작업 공간에서 다른 executor 가 다른 phase 를 동시에 구현한다.
 자기 phase 의 「변경 파일」 밖의 파일을 고치거나 되돌리지 말 것.
-git stash, git checkout -- <파일>, git reset, git clean 을 실행하지 말 것. 다른 executor 의 변경이 사라진다.
+index 를 되돌리는 명령(stash, reset, checkout, clean)은 `team-spawn.md` 의 executor index 범위 문구를 따를 것. 다른 executor 의 변경이 사라진다.
 검증 중 자기 변경과 무관한 실패가 나면 고치지 말고 그 출력과 함께 team-lead 에게 보고할 것.
 ```
 

@@ -6,6 +6,30 @@
 
 **구현한 것을 PR 하나로 올리고, 다음 사람이 이어받을 것을 남긴다.**
 
+## 기준 브랜치 확인
+
+통합 검증 전에 원격 기준 브랜치를 fetch 해 plan 브랜치가 뒤처졌는지 본다. phase 와 두 검토를 도는 동안 기준 브랜치에 커밋이 들어올 수 있다.
+`$BASE_BRANCH` 는 사전 검사가 낸 `branch.base` 다.
+
+```bash
+# cwd: plan 작업 공간(worktree) root
+git fetch origin "$BASE_BRANCH"
+git rev-list --count "HEAD..origin/$BASE_BRANCH"
+```
+
+0 이면 통합 검증으로 간다. 1 이상이면 갱신한다.
+
+| plan 브랜치 | 갱신 |
+| --- | --- |
+| 아직 push 하지 않았다 | `git rebase "origin/$BASE_BRANCH"` |
+| 이미 push 했다 | `git merge "origin/$BASE_BRANCH"` |
+
+- 충돌은 풀고 갱신을 끝낸다. 통합 검증은 갱신한 뒤의 상태에서 돌린다.
+- 변경 이력 파일처럼 양쪽 항목을 모두 남기면 되는 충돌은 team-lead 가 푼다.
+- 이번 plan 이 바꾼 파일에서 같은 줄을 양쪽이 다르게 고쳤으면 내용 판단이 필요하다. 사용자에게 올린다.
+
+실측: 2026-10-01, 모든 phase 와 두 검토를 마친 뒤 기준 브랜치에 커밋 셋이 들어와 있었다. push 전이라 rebase 했고 CHANGELOG 충돌을 풀고 통합 검증을 다시 돌렸다.
+
 ## 통합 검증
 
 레포 설정에서 찾은 통합 검증 명령을 실행한다. phase 마다 통과했어도 누적 후에 깨질 수 있다.
