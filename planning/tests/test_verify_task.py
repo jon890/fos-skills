@@ -328,6 +328,15 @@ class TaskRulesTest(unittest.TestCase):
                 verify.check_file_state(Path("p"), entries, self.repo, {}, out, [])
                 self.assertEqual(len(out), expected)
 
+    def test_missing_file_violation_points_to_rebase(self):
+        for action in ("수정", "삭제"):
+            with self.subTest(action=action):
+                out = []
+                verify.check_file_state(Path("p"), [("absent.py", action)], self.repo, {}, out, [])
+                self.assertEqual(len(out), 1)
+                self.assertIn(f"{action} 파일이 존재하지 않는다: absent.py", out[0])
+                self.assertIn("선행 계획이 만들 파일이면 그 계획이 머지된 뒤 기준 브랜치로 rebase 해 다시 돌린다", out[0])
+
     def test_glob_delete_is_visible_to_later_phase(self):
         self.file("src/app.py")
         virtual, out = {}, []

@@ -254,7 +254,7 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
         elif action == "신규" and exists:
             out.append(f"{path} — 신규 파일이 이미 존재한다: {rel} (구현 후 검사는 --audit)")
         elif action in {"수정", "삭제"} and not exists:
-            out.append(f"{path} — {action} 파일이 존재하지 않는다: {rel}")
+            out.append(f"{path} — {action} 파일이 존재하지 않는다: {rel} (선행 계획이 만들 파일이면 그 계획이 머지된 뒤 기준 브랜치로 rebase 해 다시 돌린다)")
         if action == "삭제" and glob:
             for candidate in candidates:
                 virtual[candidate] = False
