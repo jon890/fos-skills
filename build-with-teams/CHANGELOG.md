@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.12.0
+
+executor 가 index 를 건드리는 범위를 정했다. 커밋은 하지 않고, phase 가 지시한 `git mv` 와 특정 경로의 `git add` 만 실행하며, `stash`, `reset`, `checkout -- <파일>`, `clean` 은 실행하지 않는다. 규칙은 `references/role-executor.md` 가 소유하고, 스폰 프롬프트 문구는 `references/team-spawn.md` 에 있다. 나란히 도는 phase 용 문구는 그 문구를 가리킨다. 4단계 「커밋 전 대조」 는 staged 로 남은 이동에 그 phase 의 경로만 더 stage 하도록 적었다.
+6단계에 기준 브랜치 확인을 더했다. 통합 검증 전에 fetch 해 뒤처졌으면 push 전에는 rebase, push 후에는 병합으로 갱신하고, 갱신한 뒤의 상태에서 통합 검증을 돌린다. 이번 plan 이 바꾼 같은 줄의 충돌은 사용자에게 올린다. `references/step-finish.md` 의 「기준 브랜치 확인」 이 소유한다.
+
 ## 5.11.0
 
 phase 안에서는 구현, 작업 공간 안의 검증, 커밋만 한다. push, 배포, 원격 호스트 접속이 있어야 끝나는 검증은 phase 안에서 돌리지 않고, 통합 검증 뒤 PR 본문의 확인 목록으로 옮긴다. 실패하면 이미 커밋한 phase 를 다시 열지 않고 새 수정 작업으로 받는다.
