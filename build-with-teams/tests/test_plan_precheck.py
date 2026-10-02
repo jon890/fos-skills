@@ -137,17 +137,29 @@ class TestMonorepo(unittest.TestCase):
             facts = pc.branch_facts(Path("."), "plan/fe-027-login", "main", ("tasks/", "frontend/docs/"))
         self.assertEqual(facts["impl_files"], ["frontend/src/app.ts"])
 
-    def test_default_prefixes_treat_subproject_docs_as_implementation(self):
-        # 기본값은 이전과 같다. 루트 docs/ 만 기획으로 본다.
+    def test_default_prefixes_treat_subproject_code_as_implementation(self):
+        # 기본값은 루트 tasks/ 와 docs/ 만 기획으로 본다. 하위 프로젝트의 코드는 구현이다.
         def command(args, cwd):
             if args[1] == "ls-remote":
                 return "abc\trefs/heads/x"
             if args[1] == "diff":
-                return "docs/flow.md\nfrontend/docs/flow.md"
+                return "docs/flow.md\nfrontend/docs/flow.ts"
             return ""
         with patch.object(pc, "run", side_effect=command):
             facts = pc.branch_facts(Path("."), "x", "main")
-        self.assertEqual(facts["impl_files"], ["frontend/docs/flow.md"])
+        self.assertEqual(facts["impl_files"], ["frontend/docs/flow.ts"])
+
+    def test_markdown_outside_planning_dirs_is_not_implementation(self):
+        # fe-plan9: 계획 커밋이 frontend/README.md 한 줄을 고쳐 구현 변경으로 잡혔다.
+        def command(args, cwd):
+            if args[1] == "ls-remote":
+                return "abc\trefs/heads/x"
+            if args[1] == "diff":
+                return "frontend/README.md\nCLAUDE.md\nAGENTS.md\nfrontend/src/app.ts\nscripts/run.sh"
+            return ""
+        with patch.object(pc, "run", side_effect=command):
+            facts = pc.branch_facts(Path("."), "x", "main")
+        self.assertEqual(facts["impl_files"], ["frontend/src/app.ts", "scripts/run.sh"])
 
 
 @patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})

@@ -21,6 +21,9 @@ STOPPED_STATUS = {"cancelled", "failed"}
 # 구현 커밋과 기획 커밋을 구분하는 경로의 기본값. 이 밖을 건드리면 구현으로 본다.
 # 모노레포는 --tasks-dir 와 --docs-dir 로 하위 프로젝트 경로를 넘긴다.
 PLANNING_PREFIXES = ("tasks/", "docs/")
+# 계획 단계에서 README 나 CLAUDE.md 의 설명 한 줄을 고치는 일이 흔하다. 마크다운은 구현으로 세지 않는다.
+# 코드 파일은 경로와 관계없이 계속 구현으로 센다.
+PLANNING_SUFFIXES = (".md",)
 
 
 class PrecheckError(RuntimeError):
@@ -137,7 +140,7 @@ def branch_facts(repo: Path, branch: str, base: str, planning_prefixes: tuple[st
     changed = run(["git", "diff", "--name-only", f"origin/{base}...{head}"], repo)
     impl = [
         f for f in changed.splitlines()
-        if f and not f.startswith(planning_prefixes)
+        if f and not f.startswith(planning_prefixes) and not f.endswith(PLANNING_SUFFIXES)
     ]
     facts["impl_files"] = impl
     facts["has_impl_commits"] = bool(impl)

@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.14.0
+
+`plan_precheck.py` 가 `.md` 파일의 변경을 구현으로 세지 않는다. 계획 커밋이 `frontend/README.md` 의 설명 한 줄을 고치면 「브랜치에 이미 구현 변경이 있다」 로 종료 코드 1 이 나와 사용자 판단을 물어야 했다. 코드 파일은 경로와 관계없이 계속 구현으로 센다.
+네 역할 계약 문서(`role-*.md`)의 「회신 형식」 바로 위에 `orca orchestration` 명령 금지를 뒀다. 스폰 프롬프트에서 금지 블록이 빠지면 docs-verifier 가 판정을 `worker_done` 으로 보내 team-lead 의 dispatch 가 닫혔다.
+
 ## 5.13.0
 
 `$PLANNING_SKILL_DIR` 의 값을 이 스킬 번들의 형제 디렉터리 `$SKILL_DIR/../planning` 으로 정했다.

@@ -30,6 +30,8 @@
 
 ## 회신 형식
 
+`orca orchestration` 명령(worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 팀원이 보낸 `worker_done` 은 team-lead 의 dispatch 를 먼저 끝내 이후 보고가 거절된다.
+
 여러 방향이 섞이면 가장 무거운 것을 판정으로 삼고, 나머지는 발견 목록에 남긴다.
 무거운 순서는 `VIOLATION`, `UPDATE_NEEDED`, `PASS` 다.
 
