@@ -201,6 +201,18 @@ class TestRepo(unittest.TestCase):
         done = self.invoke("docs/adr")
         self.assertEqual(done.returncode, 0, done.stdout)
 
+    def test_index_in_sync_passes_with_all_four_entry_forms(self):
+        for n in range(1, 5):
+            self.write(f"docs/adr/ADR-00{n}.md", f"# 결정\n\n## ADR-00{n} 결정\n")
+        self.write(
+            "docs/adr/INDEX.md",
+            "# INDEX\n\n- ADR-001 목록 링크 없음\n- [ADR-002](ADR-002.md) 목록 링크 있음\n\n"
+            "| 번호 | 제목 |\n| --- | --- |\n"
+            "| ADR-003 | 표 링크 없음 |\n| [ADR-004](ADR-004.md) | 표 링크 있음 |\n",
+        )
+        done = self.invoke("docs/adr")
+        self.assertEqual(done.returncode, 0, done.stdout)
+
     def test_missing_index_skips_the_check(self):
         self.write("docs/adr/ADR-001.md", "# 하나\n\n## ADR-001 첫 결정\n")
         done = self.invoke("docs/adr")
