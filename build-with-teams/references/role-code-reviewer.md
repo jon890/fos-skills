@@ -60,6 +60,8 @@ lint 와 타입 검사 무시 주석, 타입 단언으로 오류 보고를 없�
 
 ## 회신 형식
 
+`orca orchestration` 명령(worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 팀원이 보낸 `worker_done` 은 team-lead 의 dispatch 를 먼저 끝내 이후 보고가 거절된다.
+
 **계획 대조 축에 걸린 것이 하나라도 있으면 `FIX_NEEDED` 다.** 없으면 `PASS` 다.
 코드 리뷰 축은 판정을 바꾸지 않는다. team-lead 가 무엇을 고칠지 정한다.
 **걸린 것은 전부 적는다.** 의도된 설계로 보여도 적고, 무엇이 의도된 것인지는 team-lead 가 판정한다.

@@ -75,6 +75,8 @@ push, 배포, `ssh` 처럼 원격이 있어야 끝나는 명령은 실행하지 
 
 ## 회신 형식
 
+`orca orchestration` 명령(worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 팀원이 보낸 `worker_done` 은 team-lead 의 dispatch 를 먼저 끝내 이후 보고가 거절된다.
+
 커밋은 team-lead 가 한다. 아래를 team-lead 에게 메시지로 보낸다.
 
 ```text

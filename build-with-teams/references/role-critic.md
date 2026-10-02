@@ -35,6 +35,8 @@
 
 ## 회신 형식
 
+`orca orchestration` 명령(worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 팀원이 보낸 `worker_done` 은 team-lead 의 dispatch 를 먼저 끝내 이후 보고가 거절된다.
+
 **계획 판정과 발견 목록을 분리해 적는다.**
 
 ```text
