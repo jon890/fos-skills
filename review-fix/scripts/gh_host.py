@@ -50,12 +50,16 @@ SCP_LIKE = re.compile(r"^[^@/]*@([^:/]+)[:/]")
 URL_LIKE = re.compile(r"^[a-z]+://([^/]+)/")
 
 
-def _run(argv):
+def _run(argv, any_exit=False):
+    """stdout 을 낸다. `any_exit` 이면 종료 코드가 0 이 아니어도 stderr 와 함께 낸다."""
     try:
         done = subprocess.run(argv, capture_output=True, text=True)
     except OSError:
         return None
-    return done.stdout if done.returncode == 0 else None
+    if done.returncode == 0:
+        return done.stdout
+    # 실패한 `gh auth status` 는 호스트별 상태를 stderr 로 낸다 (실측).
+    return done.stdout + done.stderr if any_exit else None
 
 
 def _from_url(url):
@@ -81,8 +85,13 @@ HOSTNAME_LINE = re.compile(r"^([A-Za-z0-9.-]+\.[A-Za-z]{2,})$")
 
 
 def logged_in_hosts():
-    """`gh` 에 로그인된 호스트. 출력 순서를 그대로 쓴다."""
-    out = _run(["gh", "auth", "status"]) or ""
+    """`gh` 에 로그인된 호스트. 출력 순서를 그대로 쓴다.
+
+    `gh auth status` 는 호스트 하나라도 토큰 확인에 실패하면 종료 코드 1 이다.
+    github.com 은 로그인돼 있어도 사내 호스트의 timeout 때문에 1 이 나오므로
+    종료 코드를 보지 않고 stdout 과 stderr 를 읽는다 (실측).
+    """
+    out = _run(["gh", "auth", "status"], any_exit=True) or ""
     hosts = []
     for line in out.splitlines():
         m = HOSTNAME_LINE.match(line.strip())
