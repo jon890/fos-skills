@@ -4,6 +4,7 @@
 사용법:
     review_threads.py list     <owner> <repo> <PR번호>   # 미해결 스레드만
     review_threads.py list-all <owner> <repo> <PR번호>   # resolve 된 것까지
+    review_threads.py list --count <owner> <repo> <PR번호>   # 미해결 스레드 수만 정수로 낸다
     review_threads.py reply    <THREAD_ID> <본문파일>
     review_threads.py resolve  <THREAD_ID> [<THREAD_ID> ...]
 
@@ -11,8 +12,12 @@
 
 종료 코드:
     0  성공
-    1  GitHub 호출 실패
+    1  GitHub 호출 실패. `--count` 는 스레드가 한 번에 조회하는 수를 넘어도 1 이다
     2  사용법 오류
+
+머지 전 확인은 `list --count` 로 한다. 출력에서 `"resolved":false` 를 grep 해 세지 않는다.
+한 줄 JSON 은 여백이 없어 `"resolved": false` 패턴이 늘 0 으로 나온다 (실측).
+`--count` 의 0 은 미해결 스레드가 없다는 뜻이다. 조회가 잘렸으면 0 으로 내지 않고 실패한다.
 
 봇의 발견사항은 인라인 댓글이 아니라 리뷰 스레드로 달리는 경우가 많다.
 REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없어 조회와 회신 모두 GraphQL 로 한다 (실측).
@@ -97,7 +102,7 @@ def emit(value):
         print(json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
 
 
-def cmd_list(host, owner, repo, num, only_unresolved):
+def cmd_list(host, owner, repo, num, only_unresolved, count_only=False):
     code, out, err = gh("api", "graphql", "-f", f"query={LIST_QUERY}",
                         "-f", f"owner={owner}", "-f", f"repo={repo}", "-F", f"num={num}",
                         env={"GH_HOST": host})
@@ -107,6 +112,14 @@ def cmd_list(host, owner, repo, num, only_unresolved):
 
     threads = json.loads(out)["data"]["repository"]["pullRequest"]["reviewThreads"]
     total = threads["totalCount"]
+    if count_only:
+        if total > PAGE_SIZE:
+            # 잘린 조회의 수는 머지 판단에 쓸 수 없다. 0 으로 보일 수도 있어 실패로 낸다.
+            print(f"스레드 {total}건 중 {PAGE_SIZE}건만 조회해 수를 세지 못했다", file=sys.stderr)
+            return 1
+        nodes = [n for n in threads["nodes"] if not (only_unresolved and n["isResolved"])]
+        print(len(nodes))
+        return 0
     if total > PAGE_SIZE:
         emit(f"경고: 스레드 {total}건 중 {PAGE_SIZE}건만 조회했다")
 
@@ -187,6 +200,8 @@ def take_repo(argv):
 
 
 def main(argv):
+    count_only = "--count" in argv
+    argv = [a for a in argv if a != "--count"]
     try:
         argv, given_owner, given_repo = take_repo(argv)
     except BadRepo as e:
@@ -208,7 +223,8 @@ def main(argv):
     if cmd in ("list", "list-all"):
         if len(rest) != 3:
             return usage()
-        return cmd_list(host, rest[0], rest[1], rest[2], only_unresolved=(cmd == "list"))
+        return cmd_list(host, rest[0], rest[1], rest[2],
+                        only_unresolved=(cmd == "list"), count_only=count_only)
     if cmd == "reply":
         return cmd_reply(host, *rest[:2]) if len(rest) == 2 else usage()
     if cmd == "resolve":

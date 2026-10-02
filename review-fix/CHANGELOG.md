@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.8.0
+
+`review_threads.py list --count` 가 미해결 스레드 수를 정수 하나로 낸다. `references/finish.md` 에 머지 전에 이 명령으로 0 을 확인하라고 적었다. 코디네이터가 한 줄 JSON 출력을 `grep -c '"resolved": false'` 로 세어 늘 0 을 얻었고, 미해결 스레드가 있는 PR 을 머지 가능으로 보고해 브랜치 정리 중에 PR 이 닫혔다. 조회가 한 번에 가져오는 수를 넘으면 수를 내지 않고 실패한다.
+`gh_host.py` 가 `gh auth status` 의 종료 코드를 보지 않고 출력의 호스트 목록을 읽는다. 다른 호스트 하나의 토큰 확인이 실패해 종료 코드가 1 이면 github.com 에 로그인돼 있어도 호스트가 없는 것으로 판정했고, 호출마다 「로그인된 호스트가 없다」 경고가 찍혔다.
+
 ## 2.7.0
 
 `$PLANNING_SKILL_DIR` 의 값을 이 스킬 번들의 형제 디렉터리 `$SKILL_DIR/../planning` 으로 정했다.
