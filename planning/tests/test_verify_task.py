@@ -138,6 +138,22 @@ class TaskRulesTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(self.inspect(work, command, entries))
 
+    def test_bun_test_directory_argument_executes_tests_under_it(self):
+        # `bun test career-os/scripts/profile` 이 디렉터리 인자로 읽히지 않아 테스트를 실행하지 않는다고 판정된 재현이다.
+        work = "### 1. `career-os/scripts/profile/a.test.ts` 추가"
+        entries = [("career-os/scripts/profile/a.ts", "수정"), ("career-os/scripts/profile/a.test.ts", "신규")]
+        for command in (
+            "bun test career-os/scripts/profile",
+            "bun test ./career-os/scripts/profile/",
+            "cd career-os && bun test scripts/profile",
+            "bun test -t 이름 career-os/scripts",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.inspect(work, command, entries), [])
+        for command in ("bun test career-os/scripts/other", "bun test scripts/profile", "bun run lint career-os/scripts/profile"):
+            with self.subTest(command=command):
+                self.assertTrue(self.inspect(work, command, entries))
+
     def test_same_phase_regression_script_can_be_run(self):
         self.assertEqual(self.inspect("### 1. `scripts/check-app.sh` 에 실패 응답 검증 추가", "bash scripts/check-app.sh", [("scripts/check-app.sh", "신규")]), [])
 
