@@ -137,7 +137,8 @@ def branch_facts(repo: Path, branch: str, base: str, planning_prefixes: tuple[st
         run(["git", "fetch", "--quiet", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}"], repo)
         run(["git", "fetch", "--quiet", "origin", f"refs/heads/{branch}"], repo)
         head = "FETCH_HEAD"
-    changed = run(["git", "diff", "--name-only", f"origin/{base}...{head}"], repo)
+    # 기본 설정에서 git 은 한글 경로를 따옴표와 8진 escape 로 감싼다. 그러면 `.md` 로 끝나는지 판정하지 못한다.
+    changed = run(["git", "-c", "core.quotePath=false", "diff", "--name-only", f"origin/{base}...{head}"], repo)
     impl = [
         f for f in changed.splitlines()
         if f and not f.startswith(planning_prefixes) and not f.endswith(PLANNING_SUFFIXES)

@@ -130,7 +130,7 @@ class TestMonorepo(unittest.TestCase):
         def command(args, cwd):
             if args[1] == "ls-remote":
                 return "abc\trefs/heads/plan/fe-027-login"
-            if args[1] == "diff":
+            if "diff" in args:
                 return "tasks/fe-plan027-login/phase-01.md\nfrontend/docs/flow.md\nfrontend/src/app.ts"
             return ""
         with patch.object(pc, "run", side_effect=command):
@@ -142,7 +142,7 @@ class TestMonorepo(unittest.TestCase):
         def command(args, cwd):
             if args[1] == "ls-remote":
                 return "abc\trefs/heads/x"
-            if args[1] == "diff":
+            if "diff" in args:
                 return "docs/flow.md\nfrontend/docs/flow.ts"
             return ""
         with patch.object(pc, "run", side_effect=command):
@@ -154,12 +154,25 @@ class TestMonorepo(unittest.TestCase):
         def command(args, cwd):
             if args[1] == "ls-remote":
                 return "abc\trefs/heads/x"
-            if args[1] == "diff":
+            if "diff" in args:
                 return "frontend/README.md\nCLAUDE.md\nAGENTS.md\nfrontend/src/app.ts\nscripts/run.sh"
             return ""
         with patch.object(pc, "run", side_effect=command):
             facts = pc.branch_facts(Path("."), "x", "main")
         self.assertEqual(facts["impl_files"], ["frontend/src/app.ts", "scripts/run.sh"])
+
+    def test_korean_markdown_path_is_not_implementation(self):
+        # git 의 기본 설정이 `"career-os/docs/adr/ADR-132-\354\212\244..."` 로 감싸 내던 경로의 재현이다.
+        def command(args, cwd):
+            if args[1] == "ls-remote":
+                return "abc\trefs/heads/x"
+            if "diff" in args:
+                self.assertIn("core.quotePath=false", args)
+                return "career-os/docs/adr/ADR-132-스키마.md\nfrontend/설명.md\nfrontend/src/앱.ts"
+            return ""
+        with patch.object(pc, "run", side_effect=command):
+            facts = pc.branch_facts(Path("."), "x", "main", ("tasks/", "career-os/docs/"))
+        self.assertEqual(facts["impl_files"], ["frontend/src/앱.ts"])
 
 
 @patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
@@ -277,7 +290,7 @@ class TestBaseBranch(unittest.TestCase):
         def command(args, cwd):
             if args[1] == "ls-remote":
                 return "abc\trefs/heads/feature/app"
-            if args[1] == "diff":
+            if "diff" in args:
                 self.assertIn("origin/develop...FETCH_HEAD", args)
                 return "tasks/plan1/phase-01.md\ndocs/flow.md"
             if args[1] == "branch":
@@ -293,7 +306,7 @@ class TestBaseBranch(unittest.TestCase):
         def command(args, cwd):
             if args[1] == "ls-remote":
                 return "abc\trefs/heads/feature/app"
-            if args[1] == "diff":
+            if "diff" in args:
                 raise pc.PrecheckError("비교 기준이 없다")
             return ""
         with patch.object(pc, "run", side_effect=command):
@@ -349,6 +362,31 @@ class TestBaseBranch(unittest.TestCase):
             git("push", "--quiet", "origin", "feature/app")
             facts = pc.branch_facts(repo, "feature/app", base)
             self.assertEqual(facts["impl_files"], ["src/app.py"])
+
+    def test_real_git_korean_markdown_path_is_not_implementation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, remote = root / "repo", root / "remote.git"
+            repo.mkdir()
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+            git("init", "--quiet", "-b", "main")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            git("commit", "--quiet", "--allow-empty", "-m", "initial")
+            git("checkout", "--quiet", "-b", "x")
+            (repo / "docs" / "adr").mkdir(parents=True)
+            (repo / "docs" / "adr" / "ADR-132-스키마.md").write_text("adr\n")
+            (repo / "설명.md").write_text("readme\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "planning")
+            git("clone", "--quiet", "--bare", str(repo), str(remote))
+            git("remote", "add", "origin", str(remote))
+            facts = pc.branch_facts(repo, "x", "main")
+            self.assertEqual(facts["impl_files"], [])
+            self.assertFalse(facts["has_impl_commits"])
 
 
 @patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
