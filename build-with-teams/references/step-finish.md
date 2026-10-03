@@ -48,6 +48,19 @@ git rev-list --count "HEAD..origin/$BASE_BRANCH"
 
 무엇을 골랐는지 PR 설명에 남긴다.
 
+같은 기준 브랜치로 가는 다른 plan 브랜치가 열려 있으면, 둘을 합친 임시 사본에서 통합 검증을 한 번 더 돌린다.
+plan 둘이 각자 통합 검증을 통과해도 합치면 깨질 수 있다. 같은 시각 접두사의 DB migration 이 이름 정렬에서 충돌하거나 `docs/` 가 겹친다 (실측: 두 plan 이 같은 접두사의 Prisma migration 을 만들었다).
+
+```bash
+# cwd: plan 작업 공간(worktree) root
+gh pr list --base "$BASE_BRANCH" --state open --json number,headRefName
+```
+
+- 열린 PR 의 head 가 이 plan 브랜치뿐이면 건너뛴다.
+- 임시 사본은 오버레이가 정한 작업 공간 위치에 만든다. 저장소 hook 이 정해진 위치 밖의 worktree 를 막을 수 있다.
+- 사본에서 기준 브랜치에 두 브랜치를 차례로 합치고 통합 검증 명령을 돌린다. 합치다 충돌하면 어느 파일인지 사용자에게 올린다.
+- 확인이 끝나면 임시 사본을 지운다. 두 plan 브랜치에는 합친 결과를 커밋하지 않는다.
+
 ## 원격 검증 목록
 
 push, 배포, 원격 호스트 접속이 있어야 끝나는 검증을 모은다. 계획서를 지우기 전에 읽는다.
