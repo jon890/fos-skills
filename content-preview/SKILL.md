@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.13.0"
+  version: "3.14.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -34,7 +34,7 @@ description: |
 | 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.sh` |
 | 4 | 검토 | 의미 점검의 통과 조건을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$SP/preview.html` 을 생성했다 | `scripts/show-preview.sh` |
-| 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다 | |
+| 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다 | |
 
 이 세션이 Orca orchestration dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
 
@@ -189,6 +189,16 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 
 부분 수정은 바뀐 블록만 AS-IS 와 TO-BE 로 채팅에 보인다.
 렌더링된 전문은 무엇이 바뀌었는지 보여주지 못하고, 바뀐 블록은 전문이 아니라 diff 다.
+
+#### 사용자가 이번 본문의 등록을 미리 승인했을 때
+
+**사용자가 이번 본문의 등록을 대화에서 명시적으로 미리 승인했으면 미리보기를 생략하고 바로 등록한다.**
+다음 턴의 확인도 받지 않는다. 「PR 생성을 승인한다」 처럼 이 본문을 가리킨 말이 승인이다.
+
+- 등록한 뒤 결과에 미리보기를 생략했다는 사실과 본문 파일의 경로를 적는다.
+- 다른 건에 대한 과거 승인은 승인이 아니다.
+- 「알아서 해」 같은 일반 위임과 에이전트 자신의 판단도 승인이 아니다.
+- 생략하는 것은 5단계와 6단계의 확인뿐이다. 3단계의 표기 검사(`korean-check`)는 그대로 통과시킨 뒤 등록한다.
 
 #### 보는 사람이 없는 세션에서 등록할 때
 
