@@ -6,6 +6,7 @@
 ## 5.15.0
 
 `plan_precheck.py` 가 한글 파일 이름의 `.md` 변경을 구현으로 세지 않는다. git 이 non-ASCII 경로를 따옴표와 8진 escape 로 감싸 내서 `.md` 로 끝나는지 판정하지 못했다. 경로를 `core.quotePath=false` 로 읽는다.
+`references/team-spawn.md` 에 팀원은 2단계에서 만든 작업 공간의 절대경로에서 일하게 하고 하네스의 격리 worktree 옵션을 쓰지 않는다는 줄을 더했다. 옵션으로 띄운 팀원이 plan 브랜치가 아니라 기본 브랜치에서 갈라졌다.
 
 ## 5.14.0
 
