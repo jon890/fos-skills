@@ -416,8 +416,9 @@ def test_command(command, entries, repo):
 
 # 디렉터리 인자를 하위 테스트 전체로 받는 실행기다. jest 와 vitest 의 위치 인자는 경로 패턴이라 디렉터리 아래를
 # 모두 실행하고, pytest 는 디렉터리를 재귀로 모은다. 패키지 관리자의 `test` 스크립트는 jest 나 vitest 를 부른다고 본다.
-# bun 은 점 디렉터리 규칙이 따로 있고 mocha 는 `--recursive` 가 있어야 해서, 확인하지 못한 실행기와 함께 뺀다.
-DIRECTORY_RUNNERS = {"jest", "vitest", "pytest", "pytest-3"}
+# bun test 의 위치 인자는 경로 필터라 디렉터리 이름을 주면 그 아래 테스트를 모두 실행한다. 점 디렉터리는 check_bun_dot_paths 가 따로 본다.
+# mocha 는 `--recursive` 가 있어야 해서, 확인하지 못한 실행기와 함께 뺀다.
+DIRECTORY_RUNNERS = {"jest", "vitest", "pytest", "pytest-3", "bun"}
 DIRECTORY_PACKAGE_MANAGERS = {"npm", "pnpm", "yarn"}
 
 
@@ -426,7 +427,25 @@ def recursive_directory_runner(command):
     if not command:
         return False
     program, args = Path(command[0]).name, command[1:]
+    if program == "bun":
+        return positional("bun", args)[:1] == ["test"]
     return program in DIRECTORY_RUNNERS or program in DIRECTORY_PACKAGE_MANAGERS or (program in {"python", "python3"} and args[:2] == ["-m", "pytest"])
+
+
+def directory_args(command):
+    """디렉터리일 수 있는 인자를 낸다. `bun test src/profile` 의 `profile` 처럼 이름이 테스트처럼 보이지 않아도 경로 필터다."""
+    command = unwrap(command)
+    if command and Path(command[0]).name == "bun":
+        rest, skip = [], False
+        for arg in positional("bun", command[1:])[1:]:
+            if skip:
+                skip = False
+            elif arg in BUN_TEST_VALUE_OPTIONS:
+                skip = True
+            elif not arg.startswith("-"):
+                rest.append(arg)
+        return rest
+    return [arg for arg in command if is_test(arg)]
 
 
 def command_cwds(commands):
@@ -745,11 +764,11 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
         posixpath.normpath(posixpath.join(cwd, arg))
         for command, cwd in zip(commands, cwds)
         if test_command(command, entries, repo) and recursive_directory_runner(command)
-        for arg in command if is_test(arg) and not arg.startswith(("/", "-"))
+        for arg in directory_args(command) if not arg.startswith(("/", "-"))
     ]
     # 보조 파일은 그것을 쓰는 테스트가 실행한다. 어느 테스트가 쓰는지는 구현 전이라 알 수 없어 파일 단위로 대조하지 않는다.
     runnable = [rel for rel in declared_tests if runnable_test(rel)]
-    if runnable and targeted and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
+    if runnable and (targeted or directories) and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
         for rel in runnable:
             if not any(matches(rel, arg) or Path(rel).name == Path(arg).name or rel.startswith(arg.rstrip("/") + "/") for arg in targeted) \
                     and not any(rel.startswith(directory + "/") for directory in directories):

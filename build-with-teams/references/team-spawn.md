@@ -67,6 +67,11 @@ team-lead 가 Orca dispatch 워커로 돌 때 팀원이 보낸 `worker_done` 이
 결과와 질문은 team-lead 에게만 보낼 것.
 ```
 
+**모든 팀원, 하네스의 격리 worktree 옵션을 쓰지 않는다.**
+팀원은 2단계에서 만든 작업 공간의 절대경로에서 일하게 한다. `Agent` 도구의 `isolation: "worktree"` 같은 옵션으로 띄우지 않는다.
+그 옵션은 plan 브랜치가 아니라 기본 브랜치에서 갈라진 사본을 만든다. 팀원이 기본 브랜치 기준 파일을 읽고 고쳐서,
+plan 브랜치의 앞선 phase 커밋이 보이지 않고 결과를 `merge --ff-only` 로 plan 브랜치에 맞춰야 했다 (실측).
+
 **executor, cwd 격리.** 하위 에이전트의 cwd 는 지정하지 않으면 main 워킹 디렉터리다.
 
 ```

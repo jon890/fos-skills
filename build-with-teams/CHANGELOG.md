@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.15.0
+
+`plan_precheck.py` 가 한글 파일 이름의 `.md` 변경을 구현으로 세지 않는다. git 이 non-ASCII 경로를 따옴표와 8진 escape 로 감싸 내서 `.md` 로 끝나는지 판정하지 못했다. 경로를 `core.quotePath=false` 로 읽는다.
+`references/team-spawn.md` 에 팀원은 2단계에서 만든 작업 공간의 절대경로에서 일하게 하고 하네스의 격리 worktree 옵션을 쓰지 않는다는 줄을 더했다. 옵션으로 띄운 팀원이 plan 브랜치가 아니라 기본 브랜치에서 갈라졌다.
+`references/step-finish.md` 의 통합 검증에 같은 기준 브랜치로 가는 다른 plan 브랜치가 열려 있으면 둘을 합친 임시 사본에서 한 번 더 돌린다는 절을 더했다.
+
 ## 5.14.0
 
 `plan_precheck.py` 가 `.md` 파일의 변경을 구현으로 세지 않는다. 계획 커밋이 `frontend/README.md` 의 설명 한 줄을 고치면 「브랜치에 이미 구현 변경이 있다」 로 종료 코드 1 이 나와 사용자 판단을 물어야 했다. 코드 파일은 경로와 관계없이 계속 구현으로 센다.

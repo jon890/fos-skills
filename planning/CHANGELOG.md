@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.15.1
+
+`verify_task.py` 가 `bun test <디렉터리>` 의 디렉터리 인자를 인정한다. `bun test career-os/scripts/profile` 처럼 테스트처럼 보이는 이름이 없는 경로를 주면 인자로 읽지 못하고 하위 명령 `test` 만 남아, 작업 항목의 테스트를 실행하지 않는다는 위반이 났다. 점 디렉터리 규칙은 그대로다.
+`references/task-create.md` 의 디렉터리 인자 줄에 `bun test` 를 더했다.
+
 ## 2.15.0
 
 `verify_task.py` 가 검증 명령의 디렉터리 인자를 인정한다. jest, vitest, pytest 와 `pnpm test --` 같은 패키지 관리자의 test 스크립트가 작업 항목의 테스트 파일을 담은 디렉터리를 인자로 받으면 그 테스트를 실행하는 것으로 본다. `cd frontend && pnpm test -- src/__tests__/components/calendar` 가 파일 단위로 다시 적으라는 위반을 내던 문제다. 경로는 앞선 `cd <dir>` 를 반영한 저장소 루트 기준으로 대조한다. bun 의 점 디렉터리 규칙과 그 밖의 실행기는 그대로다.
