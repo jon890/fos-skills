@@ -110,6 +110,34 @@ class TaskRulesTest(unittest.TestCase):
     def test_targeted_test_glob_executes_declared_file(self):
         self.assertEqual(self.inspect("### 1. `tests/test_app.py` 추가", "pytest tests/test_*.py", [("src/app.py", "수정"), ("tests/test_app.py", "신규")]), [])
 
+    def test_directory_argument_executes_tests_under_it(self):
+        work = "### 1. `frontend/src/__tests__/components/calendar/X.test.tsx` 추가"
+        entries = [("frontend/src/a.tsx", "수정"), ("frontend/src/__tests__/components/calendar/X.test.tsx", "신규")]
+        for command in (
+            "cd frontend && pnpm test -- src/__tests__/components/calendar",
+            "cd frontend && pnpm test -- src/__tests__/components/calendar/ src/__tests__/services/calendar",
+            "cd frontend\nnpx vitest run ./src/__tests__/components/calendar",
+            "cd frontend && npx jest src/__tests__/components",
+            "pnpm test -- frontend/src/__tests__/components/calendar",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.inspect(work, command, entries), [])
+        entries = [("src/a.py", "수정"), ("tests/unit/test_a.py", "신규")]
+        self.assertEqual(self.inspect("### 1. `tests/unit/test_a.py` 추가", "pytest tests/unit", entries), [])
+        self.assertEqual(self.inspect("### 1. `tests/unit/test_a.py` 추가", "pytest tests", entries), [])
+
+    def test_directory_argument_elsewhere_is_rejected(self):
+        work = "### 1. `frontend/src/__tests__/components/calendar/X.test.tsx` 추가"
+        entries = [("frontend/src/a.tsx", "수정"), ("frontend/src/__tests__/components/calendar/X.test.tsx", "신규")]
+        for command in (
+            "cd frontend && pnpm test -- src/__tests__/services/calendar",
+            "cd frontend && pnpm test -- src/__tests__/components/calendar2",
+            "pnpm test -- src/__tests__/components/calendar",
+            "cd web && pnpm test -- src/__tests__/components/calendar",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.inspect(work, command, entries))
+
     def test_same_phase_regression_script_can_be_run(self):
         self.assertEqual(self.inspect("### 1. `scripts/check-app.sh` 에 실패 응답 검증 추가", "bash scripts/check-app.sh", [("scripts/check-app.sh", "신규")]), [])
 

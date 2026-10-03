@@ -414,6 +414,33 @@ def test_command(command, entries, repo):
     return classify(command, entries, repo) == "test"
 
 
+# 디렉터리 인자를 하위 테스트 전체로 받는 실행기다. jest 와 vitest 의 위치 인자는 경로 패턴이라 디렉터리 아래를
+# 모두 실행하고, pytest 는 디렉터리를 재귀로 모은다. 패키지 관리자의 `test` 스크립트는 jest 나 vitest 를 부른다고 본다.
+# bun 은 점 디렉터리 규칙이 따로 있고 mocha 는 `--recursive` 가 있어야 해서, 확인하지 못한 실행기와 함께 뺀다.
+DIRECTORY_RUNNERS = {"jest", "vitest", "pytest", "pytest-3"}
+DIRECTORY_PACKAGE_MANAGERS = {"npm", "pnpm", "yarn"}
+
+
+def recursive_directory_runner(command):
+    command = unwrap(command)
+    if not command:
+        return False
+    program, args = Path(command[0]).name, command[1:]
+    return program in DIRECTORY_RUNNERS or program in DIRECTORY_PACKAGE_MANAGERS or (program in {"python", "python3"} and args[:2] == ["-m", "pytest"])
+
+
+def command_cwds(commands):
+    """명령마다 앞선 `cd <dir>` 를 반영한 저장소 루트 기준 작업 디렉터리를 낸다. 절대 경로와 `cd` 인자 없음은 루트로 본다."""
+    cwd = ""
+    for command in commands:
+        if command[0] == "cd":
+            target = next((a for a in command[1:] if not a.startswith("-")), None)
+            cwd = "" if target is None or target.startswith(("/", "~", "$")) else posixpath.normpath(posixpath.join(cwd, target))
+            if cwd == "." or cwd.startswith(".."):
+                cwd = ""
+        yield cwd
+
+
 # bun test 에서 값을 따로 받는 옵션이다. 값은 테스트 경로 인자가 아니다.
 BUN_TEST_VALUE_OPTIONS = {"-t", "--test-name-pattern", "--timeout", "--rerun-each", "--preload", "-r", "--reporter", "--reporter-outfile", "--coverage-dir", "--coverage-reporter", "--seed", "--bail", "--max-concurrency"}
 # git grep 에서 값을 따로 받는 옵션이다. 패턴과 경로를 찾을 때 건너뛴다.
@@ -669,6 +696,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     if not re.search(r"^### .+", work, re.M):
         out.append(f"{path} — 작업 항목이 없다")
     commands = list(shell_commands(validation))
+    cwds = list(command_cwds(commands))
     runners = [command for command in commands if test_command(command, entries, repo)]
     if not commands:
         out.append(f"{path} — 검증 절에 실행할 명령이 없다")
@@ -712,11 +740,19 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     if changed_code and not declared_tests and not checked_script:
         out.append(f"{path} — 코드 변경을 검증할 테스트 파일 또는 검증 스크립트 작업이 같은 phase 에 없다")
     targeted = [arg for command in runners for arg in command if is_test(arg)]
+    # 디렉터리 인자는 `cd <dir> &&` 를 반영한 저장소 루트 기준 경로로도 대조한다.
+    directories = [
+        posixpath.normpath(posixpath.join(cwd, arg))
+        for command, cwd in zip(commands, cwds)
+        if test_command(command, entries, repo) and recursive_directory_runner(command)
+        for arg in command if is_test(arg) and not arg.startswith(("/", "-"))
+    ]
     # 보조 파일은 그것을 쓰는 테스트가 실행한다. 어느 테스트가 쓰는지는 구현 전이라 알 수 없어 파일 단위로 대조하지 않는다.
     runnable = [rel for rel in declared_tests if runnable_test(rel)]
     if runnable and targeted and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
         for rel in runnable:
-            if not any(matches(rel, arg) or Path(rel).name == Path(arg).name or rel.startswith(arg.rstrip("/") + "/") for arg in targeted):
+            if not any(matches(rel, arg) or Path(rel).name == Path(arg).name or rel.startswith(arg.rstrip("/") + "/") for arg in targeted) \
+                    and not any(rel.startswith(directory + "/") for directory in directories):
                 out.append(f"{path} — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: {rel}")
     for command in runners:
         if any(arg.removeprefix("./").startswith("scripts/") for arg in command):
