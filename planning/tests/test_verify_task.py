@@ -162,6 +162,18 @@ class TaskRulesTest(unittest.TestCase):
                 self.assertEqual(self.inspect(work, valid, entries), [])
                 self.assertTrue(any("테스트를 실행하지 않는다" in issue for issue in self.inspect(work, invalid, entries)))
 
+    def test_package_test_option_values_are_not_directory_arguments(self):
+        work = "### 1. `frontend/src/components/calendar/X.test.tsx` 추가"
+        entries = [("frontend/src/components/calendar/X.test.tsx", "신규")]
+        for command in ("pnpm test -- --testNamePattern", "npm run test -- --coverageDirectory", "yarn test:ci -t"):
+            with self.subTest(command=command):
+                tokens = command.split() + ["src/components/calendar"]
+                self.assertEqual(verify.directory_args(tokens), [])
+                valid = f"cd frontend && {command} src/components/calendar src/components/calendar"
+                invalid = f"cd frontend && {command} src/components/calendar src/components/elsewhere"
+                self.assertEqual(self.inspect(work, valid, entries), [])
+                self.assertTrue(any("테스트를 실행하지 않는다" in issue for issue in self.inspect(work, invalid, entries)))
+
     def test_cwds_reset_between_lines_and_blocks(self):
         text = "```bash\ncd frontend && pnpm test\n```\n\n```sh\ncd frontend && pnpm test -- src/__tests__/a\n```"
         numbered = list(verify.shell_commands(text, with_line_numbers=True))

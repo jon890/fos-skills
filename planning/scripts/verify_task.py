@@ -423,6 +423,13 @@ def test_command(command, entries, repo):
 # mocha 는 `--recursive` 가 있어야 해서, 확인하지 못한 실행기와 함께 뺀다.
 DIRECTORY_RUNNERS = {"jest", "vitest", "pytest", "pytest-3", "bun"}
 DIRECTORY_PACKAGE_MANAGERS = {"npm", "pnpm", "yarn"}
+# 패키지 스크립트로 실행하는 Jest/Vitest 의 값 옵션이다. 값은 테스트 디렉터리가 아니다.
+PACKAGE_TEST_VALUE_OPTIONS = {
+    "-t", "--testNamePattern", "--test-name-pattern", "--testPathPattern", "--testPathPatterns",
+    "--coverageDirectory", "--coverage-dir", "--coverage.reportsDirectory",
+    "--outputFile", "--output-file", "--reporter", "--reporters",
+    "--maxWorkers", "-w", "--config", "-c", "--testTimeout", "--test-timeout",
+}
 
 
 def recursive_directory_runner(command):
@@ -443,7 +450,15 @@ def directory_args(command):
         args = positional(program, command[1:])
         if args[:1] in (["run"], ["run-script"]):
             args = args[1:]
-        return [arg for arg in args[1:] if not arg.startswith("-")]
+        rest, skip = [], False
+        for arg in args[1:]:
+            if skip:
+                skip = False
+            elif arg in PACKAGE_TEST_VALUE_OPTIONS:
+                skip = True
+            elif not arg.startswith("-"):
+                rest.append(arg)
+        return rest
     if command and Path(command[0]).name == "bun":
         rest, skip = [], False
         for arg in positional("bun", command[1:])[1:]:
