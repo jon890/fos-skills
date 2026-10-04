@@ -116,7 +116,7 @@ class TaskRulesTest(unittest.TestCase):
         for command in (
             "cd frontend && pnpm test -- src/__tests__/components/calendar",
             "cd frontend && pnpm test -- src/__tests__/components/calendar/ src/__tests__/services/calendar",
-            "cd frontend\nnpx vitest run ./src/__tests__/components/calendar",
+            "cd frontend && npx vitest run ./src/__tests__/components/calendar",
             "cd frontend && npx jest src/__tests__/components",
             "pnpm test -- frontend/src/__tests__/components/calendar",
         ):
@@ -125,6 +125,102 @@ class TaskRulesTest(unittest.TestCase):
         entries = [("src/a.py", "수정"), ("tests/unit/test_a.py", "신규")]
         self.assertEqual(self.inspect("### 1. `tests/unit/test_a.py` 추가", "pytest tests/unit", entries), [])
         self.assertEqual(self.inspect("### 1. `tests/unit/test_a.py` 추가", "pytest tests", entries), [])
+
+    def test_package_script_names_are_not_directory_arguments(self):
+        for command in (
+            ["pnpm", "test"],
+            ["npm", "run", "test"],
+            ["npm", "run-script", "test"],
+            ["yarn", "test:ci"],
+            ["pnpm", "--filter", "tests", "run", "test"],
+            ["yarn", "workspace", "tests", "test"],
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(verify.directory_args(command), [])
+        for command in (
+            ["pnpm", "test", "--", "src/__tests__/a"],
+            ["npm", "run", "test", "--", "src/__tests__/a"],
+            ["yarn", "test:ci", "src/__tests__/a"],
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(verify.directory_args(command), ["src/__tests__/a"])
+
+    def test_package_script_without_arguments_is_a_full_run(self):
+        work = "### 1. `frontend/src/__tests__/a/X.test.tsx` 추가"
+        entries = [("frontend/src/__tests__/a/X.test.tsx", "신규")]
+        for command in ("pnpm test", "npm run test", "npm run-script test", "yarn test:ci"):
+            with self.subTest(command=command):
+                self.assertEqual(self.inspect(work, f"cd frontend && {command}", entries), [])
+
+    def test_package_directory_arguments_need_no_test_name(self):
+        work = "### 1. `frontend/src/components/calendar/X.test.tsx` 추가"
+        entries = [("frontend/src/components/calendar/X.test.tsx", "신규")]
+        for command in ("pnpm test --", "npm run test --", "yarn test:ci"):
+            with self.subTest(command=command):
+                valid = f"cd frontend && {command} src/components/calendar"
+                invalid = f"cd frontend && {command} src/components/elsewhere"
+                self.assertEqual(self.inspect(work, valid, entries), [])
+                self.assertTrue(any("테스트를 실행하지 않는다" in issue for issue in self.inspect(work, invalid, entries)))
+
+    def test_package_test_option_values_are_not_directory_arguments(self):
+        work = "### 1. `frontend/src/components/calendar/X.test.tsx` 추가"
+        entries = [("frontend/src/components/calendar/X.test.tsx", "신규")]
+        for command in ("pnpm test -- --testNamePattern", "npm run test -- --coverageDirectory", "yarn test:ci -t"):
+            with self.subTest(command=command):
+                tokens = command.split() + ["src/components/calendar"]
+                self.assertEqual(verify.directory_args(tokens), [])
+                valid = f"cd frontend && {command} src/components/calendar src/components/calendar"
+                invalid = f"cd frontend && {command} src/components/calendar src/components/elsewhere"
+                self.assertEqual(self.inspect(work, valid, entries), [])
+                self.assertTrue(any("테스트를 실행하지 않는다" in issue for issue in self.inspect(work, invalid, entries)))
+
+    def test_cwds_reset_between_lines_and_blocks(self):
+        text = "```bash\ncd frontend && pnpm test\n```\n\n```sh\ncd frontend && pnpm test -- src/__tests__/a\n```"
+        numbered = list(verify.shell_commands(text, with_line_numbers=True))
+        commands = [command for _, command in numbered]
+        lines = [line for line, _ in numbered]
+        self.assertEqual(list(verify.command_cwds(commands, lines)), ["frontend"] * 4)
+
+    def test_cwds_keep_same_line_chain_and_continuation(self):
+        text = "```bash\ncd frontend && cd src && pnpm test\ncd backend && \\\npytest tests\npnpm test\n```"
+        numbered = list(verify.shell_commands(text, with_line_numbers=True))
+        commands = [command for _, command in numbered]
+        lines = [line for line, _ in numbered]
+        self.assertEqual(list(verify.command_cwds(commands, lines)), ["frontend", "frontend/src", "frontend/src", "backend", "backend", ""])
+
+    def test_full_run_and_directory_run_in_separate_blocks(self):
+        work = "### 1. `frontend/src/__tests__/a/X.test.tsx` 추가"
+        entries = [("frontend/src/__tests__/a/X.test.tsx", "신규")]
+        for separator in ("\n", "\n```\n\n```bash\n"):
+            command = "cd frontend && pnpm test" + separator + "cd frontend && pnpm test -- src/__tests__/a"
+            with self.subTest(separator=separator):
+                self.assertEqual(self.inspect(work, command, entries), [])
+                wrong = command.replace("-- src/__tests__/a", "-- src/__tests__/elsewhere")
+                self.assertTrue(any("테스트를 실행하지 않는다" in issue for issue in self.inspect(work, wrong, entries)))
+
+    def test_standalone_cd_does_not_change_the_next_line(self):
+        work = "### 1. `frontend/src/__tests__/a/X.test.tsx` 추가"
+        entries = [("frontend/src/__tests__/a/X.test.tsx", "신규")]
+        self.assertTrue(self.inspect(work, "cd frontend\npnpm test -- src/__tests__/a", entries))
+
+    def test_cli_accepts_full_run_and_directory_run_in_separate_blocks(self):
+        rel = "frontend/src/__tests__/a/X.test.tsx"
+        command = "cd frontend && pnpm test\n```\n\n```bash\ncd frontend && pnpm test -- src/__tests__/a"
+        phase = self.prompt(f"### 1. `{rel}` 추가", command)
+        phase += f"\n## 목표\n테스트 추가\n**범위 외**: 배포\n## 변경 파일\n| `{rel}` | 신규 |\n"
+        index = {"name": "plan1-cwd", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
+        self.file("tasks/plan1-cwd/phase-01.md", phase)
+        self.file("tasks/plan1-cwd/index.json", json.dumps(index))
+        with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertEqual(verify.main(["verify", "plan1-cwd"]), 0, stdout.getvalue())
+        self.assertIn("위반 0건", stdout.getvalue())
+
+    def test_bun_dot_paths_are_checked_across_independent_lines(self):
+        work = "### 1. `frontend/.claude/a.test.ts` 추가"
+        entries = [("frontend/.claude/a.test.ts", "신규")]
+        safe = "cd frontend && bun test ./.claude\ncd frontend && bun test ./.claude"
+        self.assertEqual(self.inspect(work, safe, entries), [])
+        self.assertTrue(any("점 디렉터리" in issue for issue in self.inspect(work, safe.replace("./.claude", ".claude"), entries)))
 
     def test_directory_argument_elsewhere_is_rejected(self):
         work = "### 1. `frontend/src/__tests__/components/calendar/X.test.tsx` 추가"

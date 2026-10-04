@@ -265,12 +265,12 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
             virtual[rel] = action != "삭제"
 
 
-def shell_commands(text):
-    """프로그램 위치를 읽는다. echo/grep 에 적힌 테스트 이름은 실행이 아니다."""
-    for _, language, body in code_blocks(text):
+def shell_commands(text, with_line_numbers=False):
+    """프로그램 위치를 읽는다. 필요하면 논리 줄 번호도 낸다. echo/grep 에 적힌 테스트 이름은 실행이 아니다."""
+    for start, language, body in code_blocks(text):
         if language not in SHELL:
             continue
-        for line in body.replace("\\\n", " ").splitlines():
+        for offset, line in enumerate(body.replace("\\\n", " ").splitlines(), 1):
             try:
                 lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|()")
                 lexer.whitespace_split = True
@@ -288,7 +288,10 @@ def shell_commands(text):
                             while command and re.match(r"^[A-Za-z_][A-Za-z_0-9]*=", command[0]):
                                 command.pop(0)
                         if command:
-                            yield command
+                            if with_line_numbers:
+                                yield start + offset, command
+                            else:
+                                yield command
                     command = []
                 else:
                     command.append(token)
@@ -420,6 +423,13 @@ def test_command(command, entries, repo):
 # mocha 는 `--recursive` 가 있어야 해서, 확인하지 못한 실행기와 함께 뺀다.
 DIRECTORY_RUNNERS = {"jest", "vitest", "pytest", "pytest-3", "bun"}
 DIRECTORY_PACKAGE_MANAGERS = {"npm", "pnpm", "yarn"}
+# 패키지 스크립트로 실행하는 Jest/Vitest 의 값 옵션이다. 값은 테스트 디렉터리가 아니다.
+PACKAGE_TEST_VALUE_OPTIONS = {
+    "-t", "--testNamePattern", "--test-name-pattern", "--testPathPattern", "--testPathPatterns",
+    "--coverageDirectory", "--coverage-dir", "--coverage.reportsDirectory",
+    "--outputFile", "--output-file", "--reporter", "--reporters",
+    "--maxWorkers", "-w", "--config", "-c", "--testTimeout", "--test-timeout",
+}
 
 
 def recursive_directory_runner(command):
@@ -435,6 +445,20 @@ def recursive_directory_runner(command):
 def directory_args(command):
     """디렉터리일 수 있는 인자를 낸다. `bun test src/profile` 의 `profile` 처럼 이름이 테스트처럼 보이지 않아도 경로 필터다."""
     command = unwrap(command)
+    if command and Path(command[0]).name in DIRECTORY_PACKAGE_MANAGERS:
+        program = Path(command[0]).name
+        args = positional(program, command[1:])
+        if args[:1] in (["run"], ["run-script"]):
+            args = args[1:]
+        rest, skip = [], False
+        for arg in args[1:]:
+            if skip:
+                skip = False
+            elif arg in PACKAGE_TEST_VALUE_OPTIONS:
+                skip = True
+            elif not arg.startswith("-"):
+                rest.append(arg)
+        return rest
     if command and Path(command[0]).name == "bun":
         rest, skip = [], False
         for arg in positional("bun", command[1:])[1:]:
@@ -448,10 +472,18 @@ def directory_args(command):
     return [arg for arg in command if is_test(arg)]
 
 
-def command_cwds(commands):
-    """명령마다 앞선 `cd <dir>` 를 반영한 저장소 루트 기준 작업 디렉터리를 낸다. 절대 경로와 `cd` 인자 없음은 루트로 본다."""
+def command_cwds(commands, line_numbers=None):
+    """같은 줄의 `cd <dir>` 를 반영한다. 줄이 바뀌면 저장소 루트로 돌아간다.
+
+    줄 번호가 없으면 한 줄의 명령 체인으로 본다. 절대 경로와 `cd` 인자 없음은 루트로 본다.
+    """
     cwd = ""
-    for command in commands:
+    previous_line = None
+    for index, command in enumerate(commands):
+        line_number = line_numbers[index] if line_numbers is not None else 0
+        if line_number != previous_line:
+            cwd = ""
+        previous_line = line_number
         if command[0] == "cd":
             target = next((a for a in command[1:] if not a.startswith("-")), None)
             cwd = "" if target is None or target.startswith(("/", "~", "$")) else posixpath.normpath(posixpath.join(cwd, target))
@@ -714,8 +746,10 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     work, validation = section(text, "작업 항목"), section(text, "검증")
     if not re.search(r"^### .+", work, re.M):
         out.append(f"{path} — 작업 항목이 없다")
-    commands = list(shell_commands(validation))
-    cwds = list(command_cwds(commands))
+    numbered_commands = list(shell_commands(validation, with_line_numbers=True))
+    commands = [command for _, command in numbered_commands]
+    line_numbers = [number for number, _ in numbered_commands]
+    cwds = list(command_cwds(commands, line_numbers))
     runners = [command for command in commands if test_command(command, entries, repo)]
     if not commands:
         out.append(f"{path} — 검증 절에 실행할 명령이 없다")
@@ -758,7 +792,14 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     checked_script = any(any(arg.removeprefix("./") in changed_code and arg in work for arg in command) for command in runners)
     if changed_code and not declared_tests and not checked_script:
         out.append(f"{path} — 코드 변경을 검증할 테스트 파일 또는 검증 스크립트 작업이 같은 phase 에 없다")
-    targeted = [arg for command in runners for arg in command if is_test(arg)]
+    targeted = []
+    for command in runners:
+        unwrapped = unwrap(command)
+        if unwrapped and Path(unwrapped[0]).name in DIRECTORY_PACKAGE_MANAGERS:
+            candidates = directory_args(command)
+        else:
+            candidates = command
+        targeted.extend(arg for arg in candidates if is_test(arg))
     # 디렉터리 인자는 `cd <dir> &&` 를 반영한 저장소 루트 기준 경로로도 대조한다.
     directories = [
         posixpath.normpath(posixpath.join(cwd, arg))
