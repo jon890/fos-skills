@@ -177,6 +177,14 @@ bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
 ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
 ```
 
+#### 본문이 여럿일 때
+
+한 턴에 등록할 본문이 여럿이면 미리보기 스크립트가 탭 하나를 다시 쓰므로, 본문마다 띄우면 마지막 것만 보인다.
+
+- 본문은 각자 파일로 쓰고 3단계의 검사기도 각각 돌린다.
+- 미리보기용으로만 본문들을 `# <순번>. <제목>` 머리를 붙여 한 파일로 이어 붙이고, 그 파일로 미리보기를 한 번 띄운다.
+- 등록은 각자의 본문 파일로 한다. 이어 붙인 파일은 등록하지 않는다.
+
 ### 6. 등록
 
 **무엇을 띄웠는지와 제목만 한 줄로 알리고 턴을 끝낸다.**
