@@ -60,7 +60,7 @@ Claude Code 에서는 id 로도 메시지가 오간다 (실측).
 ```
 
 **모든 팀원, orchestration 메시지 금지.**
-team-lead 가 Orca dispatch 워커로 돌 때 팀원이 보낸 `worker_done` 이 그 dispatch 를 먼저 끝내고, 뒤이은 team-lead 의 보고는 거절된다 (실측).
+team-lead 가 에이전트 조율 도구의 dispatch 워커로 돌 때 팀원이 보낸 `worker_done` 이 그 dispatch 를 먼저 끝내고, 뒤이은 team-lead 의 보고는 거절된다 (실측).
 
 ```
 `orca orchestration` 명령(worker_done, escalation, ask, heartbeat)을 실행하지 말 것.

@@ -3,10 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.16.1
+
+변경 이력과 예시의 저장소 이름을 일반 표현으로 바꿨다.
+동작은 바뀌지 않는다.
+
 ## 5.16.0
 
 `references/step-finish.md` 의 PR 절에 plan 마다 기준 브랜치를 base 로 PR 을 열고, 쌓았다면 앞 PR 을 머지하기 전에 뒤 PR 의 base 를 기준 브랜치로 바꾼다는 절을 더했다. 앞 PR 을 `--delete-branch` 로 머지하자 그 브랜치를 base 로 둔 PR 이 자동으로 닫혔고, 하나는 기준 브랜치가 아닌 앞 브랜치로 머지됐다.
-1단계 `--branch` 설명과 2단계에 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면 그 브랜치를 plan 브랜치로 쓰고 `plan_precheck.py --branch` 로 넘긴다는 줄을 더했다. Orca worker 는 브랜치를 미리 만들어 띄워서, 스킬이 기대한 task 디렉터리 이름과 어긋났다.
+1단계 `--branch` 설명과 2단계에 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면 그 브랜치를 plan 브랜치로 쓰고 `plan_precheck.py --branch` 로 넘긴다는 줄을 더했다. 에이전트 조율 도구의 worker 는 브랜치를 미리 만들어 띄워서, 스킬이 기대한 task 디렉터리 이름과 어긋났다.
 
 ## 5.15.0
 
@@ -86,7 +91,7 @@ critic, code-reviewer와 docs-verifier 역할은 유지한다.
 
 스폰 프롬프트에 넣는 문구에 「모든 팀원, orchestration 메시지 금지」 를 더했다.
 
-team-lead 가 Orca dispatch 워커로 돌 때 팀원이 `worker_done` 을 보내 dispatch 가 먼저 끝났고,
+team-lead 가 에이전트 조율 도구의 dispatch 워커로 돌 때 팀원이 `worker_done` 을 보내 dispatch 가 먼저 끝났고,
 team-lead 의 보고는 거절됐다.
 팀원은 dispatch 안에서 도는지 알 수 없으므로, 조건 없이 늘 지키는 문장으로 적었다.
 역할 계약 파일마다 복제하지 않고 모든 팀원이 받는 스폰 프롬프트 한 곳에 두었다.
