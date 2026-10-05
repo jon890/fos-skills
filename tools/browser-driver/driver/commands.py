@@ -89,8 +89,6 @@ def _detail(field):
 
     반환값과 함정 절을 손으로 적으면 명령을 더할 때마다 두 곳을 고쳐야 하고,
     한쪽만 고치면 도움말이 실제와 어긋난다.
-    실측으로 worktree, snap, console, errors 네 명령이 값을 내는데도
-    반환값 절은 그 넷이 아무것도 내지 않는다고 적고 있었다.
     """
     out = []
     for c in COMMANDS:

@@ -8,7 +8,7 @@
   3. agent-browser 에는 JS 조건 대기 명령이 없다. eval 안의 async 폴링으로 메운다 (실측).
 
 명령 목록과 백엔드 상태는 `browser-driver help`, 환경 진단은 `browser-driver doctor` 가 낸다.
-백엔드별 함정은 README.md 가 소유한다.
+백엔드별 규칙은 README.md 가 소유한다.
 
 종료 코드:
   0 성공

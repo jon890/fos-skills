@@ -12,7 +12,7 @@ plan 하나를 브랜치 하나와 PR 하나로 끝낸다.
 | `tasks/plan{N}-<slug>/` 삭제 커밋 | 구현을 마친 계획서를 PR 안에서 지운다. 현재 사실은 `docs/` 와 코드가 소유하고 계획서는 곧 낡기 때문이다 |
 | PR | base는 사전 검사에서 정한 기준 브랜치, head는 plan 브랜치. 제목과 본문 형식은 create-pr이 소유한다 |
 | 완료 보고 | PR 번호와 리뷰 반영 명령, pre-existing 과 미검증과 범위 외 발견, code-reviewer 지적 중 고치지 않은 것과 그 이유 |
-| 반복 함정 문서 | 승격 조건을 만족한 사건만 저장소의 반복 함정 목록에 추가된다 |
+| 저장소 규칙 | 반복될 실패만 그 저장소의 검사, 코드 구조, 규칙 문장으로 일반화해 들어간다. 사건 기록은 남기지 않는다 |
 
 정리된 작업 공간도 결과에 포함된다. PR 생성과 원격 push 가 끝난 뒤에 팀원을 종료하고 작업 공간을 정리한다.
 
@@ -55,7 +55,7 @@ planning 이 만들어 둔 task 를 실제로 구현할 때 쓴다.
 | `references/role-executor.md` | executor 가 읽는 계약. 구현 범위와 품질 기준, 계획이 틀렸을 때의 보고 |
 | `references/role-code-reviewer.md` | code-reviewer 가 읽는 계약. 3-dot 으로 잡는 검사 범위와 `PASS` / `FIX_NEEDED` 판정 |
 | `references/role-docs-verifier.md` | docs-verifier 가 읽는 계약. `docs/` 대조 축과 `PASS` / `UPDATE_NEEDED` / `VIOLATION` 판정 |
-| `references/step-finish.md` | 통합 검증 실패의 책임 구분, 계획서 삭제와 그 이유, create-pr에 넘길 값, 팀 종료와 작업 공간 정리, 보고 형식, 반복 함정 승격 조건 |
+| `references/step-finish.md` | 통합 검증 실패의 책임 구분, 계획서 삭제와 그 이유, create-pr에 넘길 값, 팀 종료와 작업 공간 정리, 보고 형식, 반복될 실패를 저장소 규칙으로 옮기는 조건 |
 | `scripts/plan_precheck.py` | 재실행 사고를 막는 사전 검증. 종료 코드 0 진행 가능, 1 사용자 결정 필요, 2 실행 불가 |
 | `tests/test_plan_precheck.py` | `plan_precheck.py` 판정 함수, 하위 프로젝트 경로, 지운 계획서 조회, push 전 로컬 브랜치 검사 |
 | `CHANGELOG.md` | 버전 이력 |

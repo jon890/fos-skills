@@ -24,7 +24,7 @@ def plugin_data_dir(module_file, env=None, home=None):
         <Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/
         Claude 설정 폴더는 환경변수 CLAUDE_CONFIG_DIR 가 비어 있지 않으면 그 값, 아니면 ~/.claude 다.
       - 없으면 Claude Code 설치본이다. <루트>/plugins/data/<플러그인>-<마켓플레이스>/
-    이름 규칙은 Claude Code 2.1.286 과 Codex 0.159.3 에서 실측했다 (2026-10-02).
+    이름 규칙은 Claude Code 2.1.286 과 Codex 0.159.3 에서 실측했다.
     저장소 체크아웃이나 ~/.claude/scripts/ 링크는 이 꼴이 아니므로 resolve() 로 실체 경로를 본다.
     읽기만 한다. env 와 home 은 시험이 바꿀 수 있게 열어 둔 인자다.
     """

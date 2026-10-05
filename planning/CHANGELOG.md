@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.17.0
+
+반복 함정 목록을 읽기만 하고 새로 쓰지 않는다고 적었다. 목록의 항목은 저장소 규칙으로 옮길 후보이고, 옮기는 일은 `build-with-teams` 마감 단계가 맡는다.
+
+변경 이력과 예시의 저장소 이름을 일반 표현으로 바꿨다.
+`plan_number.sh` 주석의 plan 번호 사례를 규칙과 이유 한 줄로 바꿨다.
+
 ## 2.16.0
 
 `verify_task.py` 가 `pnpm test`, `npm run test`, `yarn test:ci` 의 스크립트 이름을 디렉터리 인자에서 뺀다.
@@ -12,11 +19,11 @@
 
 `references/task-create.md` 에 각 검증 줄을 저장소 루트에서 실행하고, 필요한 `cd` 를 같은 줄에 적는 규칙을 정했다.
 `references/step-5-api.md` 에 응답 필드를 읽는 소비자와 배포 순서를 묻고, 그 결과를 phase 순서와 원격 검증 목록에 남기는 항목을 더했다.
-fos-accountbook 에서 필드를 지운 백엔드가 먼저 배포되면, 그 필드를 필수로 검증하는 이전 프론트엔드의 화면이 깨지는 사례가 있었다.
+한 저장소에서 필드를 지운 백엔드가 먼저 배포되면, 그 필드를 필수로 검증하는 이전 프론트엔드의 화면이 깨지는 사례가 있었다.
 
 ## 2.15.1
 
-`verify_task.py` 가 `bun test <디렉터리>` 의 디렉터리 인자를 인정한다. `bun test career-os/scripts/profile` 처럼 테스트처럼 보이는 이름이 없는 경로를 주면 인자로 읽지 못하고 하위 명령 `test` 만 남아, 작업 항목의 테스트를 실행하지 않는다는 위반이 났다. 점 디렉터리 규칙은 그대로다.
+`verify_task.py` 가 `bun test <디렉터리>` 의 디렉터리 인자를 인정한다. `bun test <패키지>/scripts/<모듈>` 처럼 테스트처럼 보이는 이름이 없는 경로를 주면 인자로 읽지 못하고 하위 명령 `test` 만 남아, 작업 항목의 테스트를 실행하지 않는다는 위반이 났다. 점 디렉터리 규칙은 그대로다.
 `references/task-create.md` 의 디렉터리 인자 줄에 `bun test` 를 더했다.
 
 ## 2.15.0
@@ -199,6 +206,6 @@ Codex 를 비롯한 다른 에이전트는 `AGENTS.md` 를 읽는다.
 ### 넘어가는 것
 
 `verify-task.sh` 와 `task-create.md` 경로를 이름으로 참조하는 오버레이가 셋 있다.
-`fos-accountbook`, `fos-accountbook-backend`, `nhncloud-cli` 다. 그쪽을 함께 고쳐야 한다.
+서비스 저장소 둘의 오버레이와 `nhncloud-cli` 다. 그쪽을 함께 고쳐야 한다.
 
 도입 이전 이력은 `git log -- planning/` 에서 본다.

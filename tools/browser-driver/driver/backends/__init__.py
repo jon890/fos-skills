@@ -13,9 +13,8 @@ from .orca import OrcaBackend
 
 BACKENDS = {b.name: b for b in (EgoBackend, OrcaBackend, AgentBrowserBackend, CmuxBackend)}
 
-#: 자동 감지 순서. 로그인 세션이 필요한 주소는 ego 가 먼저다. orca 로 Cloudflare
-#: 대시보드에 로그인하지 못했고, 같은 주소를 ego 로 열었을 때는 사용자의 로그인
-#: 세션이 그대로 쓰였다 (실측).
+#: 자동 감지 순서. 로그인 세션이 필요한 주소는 ego 가 먼저다. ego 는 사용자가
+#: 로그인해 둔 프로필의 세션을 그대로 쓰고, orca 의 탭은 그 세션을 갖지 않는다.
 #: cmux 는 마지막이다. 설치돼 있어도 cmux 밖에서는 소켓 접근이 거부되므로 (실측)
 #: 자동 감지로 먼저 잡히면 쓸 수 없는 백엔드가 선택된다.
 DETECT_ORDER = ("ego", "orca", "agent-browser", "cmux")

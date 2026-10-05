@@ -33,7 +33,7 @@ class AgentBrowserBackend(Backend):
         port = config_value("cdpPort")
         if not port:
             return ("cdpPort 가 없어도 스스로 브라우저를 띄운다 (실측). 다만 그 브라우저에는 "
-                    "로그인 세션이 없다. SSO 가 필요한 사내 시스템은 Chrome 을 "
+                    "로그인 세션이 없다. SSO 가 필요한 시스템은 Chrome 을 "
                     f"--remote-debugging-port 로 띄우고 {CONFIG_PATH} 에 cdpPort 를 적는다")
         return ""
 

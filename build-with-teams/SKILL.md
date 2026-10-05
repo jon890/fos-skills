@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.16.0"
+  version: "5.17.0"
 ---
 # build-with-teams
 
@@ -52,9 +52,9 @@ plan 이름의 접두사로 대상 하위 프로젝트를 정하고, 그 하위 
 | 브랜치 이름 형식, 작업 공간을 만들고 정리하는 방법 | 1, 2, 6 |
 | 네 역할에 쓸 전용 에이전트 이름 | 3, 4, 5 |
 | `index.json` 필드와 phase 파일 규격의 레포 변형 | 3 |
-| 반복 함정 목록 경로 (기본값 `docs/pitfalls/`) | 3, 5 |
+| 반복 함정 목록 경로 (기본값 `docs/pitfalls/`). 읽기만 하고 새로 쓰지 않는다 | 3, 5, 6 |
 | docs 경로와 tasks 경로 (기본값 `docs/`, `tasks/`) | 1, 3, 5, 6 |
-| 커밋 컨벤션, 노하우 누적 위치 | 4, 6 |
+| 커밋 컨벤션, 반복될 실패를 규칙으로 넣을 위치 | 4, 6 |
 | 의존성 설치와 환경 파일 준비 | 2 |
 
 ## 실행 절차
@@ -110,7 +110,7 @@ python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" \
 | `index.json` 상태가 `completed` 다 | 발견 사항이다. 머지 후 정리된 브랜치로 본다 |
 
 브랜치 이름이 task 디렉터리 이름과 다르면 `--branch` 로 넘긴다.
-이미 만들어진 작업 공간과 브랜치 위에서 시작했으면(예: Orca 의 `worker-start --worktree new-top-level` 이 worker 마다 브랜치를 미리 만든다) 그 브랜치를 plan 브랜치로 쓰고 `--branch <그 이름>` 으로 넘긴다.
+이미 만들어진 작업 공간과 브랜치 위에서 시작했으면(예: 에이전트 조율 도구의 `worker-start --worktree new-top-level` 이 worker 마다 브랜치를 미리 만든다) 그 브랜치를 plan 브랜치로 쓰고 `--branch <그 이름>` 으로 넘긴다.
 모노레포에서 루트 `docs/` 도 기획 문서로 쓰면 `--docs-dir` 를 한 번 더 준다.
 경로와 관계없이 `.md` 파일은 구현 변경으로 세지 않는다. 계획 커밋이 README 나 CLAUDE.md 의 설명을 고치기 때문이다.
 
@@ -235,4 +235,4 @@ phase 파일의 「Blocked 조건」 에 걸려 executor 가 같은 값을 회�
 ### 6. 통합 검증과 PR
 
 [`references/step-finish.md`](references/step-finish.md)를 읽고 수행한다.
-기준 브랜치 확인, 통합 검증, 원격 검증 목록, 계획서 삭제, PR, 팀 종료, 작업 공간 정리, 보고, 패턴 승격이 거기 있다.
+기준 브랜치 확인, 통합 검증, 원격 검증 목록, 계획서 삭제, PR, 팀 종료, 작업 공간 정리, 보고, 반복될 실패를 저장소 규칙으로 옮기는 일이 거기 있다.

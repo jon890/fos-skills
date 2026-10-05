@@ -31,11 +31,11 @@
  그 범위 안에서 목표에 도달하지 못하면 계획이 틀린 것이다.
  phase 하나가 실제로는 둘 이상의 일을 담고 있는지도 여기서 본다.
 7. **반복 함정 목록의 관련 패턴이 계획에 반영됐는가.**
- 호출 인자로 받은 경로를 읽고, 이번 변경에 걸리는 패턴을 골라 대조한다.
+ 호출 인자로 받은 경로를 읽고, 이번 변경에 걸리는 패턴을 골라 대조한다. 경로가 없으면 이 항목을 건너뛴다.
 
 ## 회신 형식
 
-`orca orchestration` 명령(worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 팀원이 보낸 `worker_done` 은 team-lead 의 dispatch 를 먼저 끝내 이후 보고가 거절된다.
+worker 를 띄우는 조율 도구의 보고 명령(예: `orca orchestration` 의 worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 이유는 [`team-spawn.md`](team-spawn.md) 의 「스폰 프롬프트에 넣는 문구」 가 소유한다.
 
 **계획 판정과 발견 목록을 분리해 적는다.**
 

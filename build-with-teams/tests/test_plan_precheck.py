@@ -162,16 +162,16 @@ class TestMonorepo(unittest.TestCase):
         self.assertEqual(facts["impl_files"], ["frontend/src/app.ts", "scripts/run.sh"])
 
     def test_korean_markdown_path_is_not_implementation(self):
-        # git 의 기본 설정이 `"career-os/docs/adr/ADR-132-\354\212\244..."` 로 감싸 내던 경로의 재현이다.
+        # git 의 기본 설정이 `"pkg/docs/adr/ADR-132-\354\212\244..."` 로 감싸 내던 경로의 재현이다.
         def command(args, cwd):
             if args[1] == "ls-remote":
                 return "abc\trefs/heads/x"
             if "diff" in args:
                 self.assertIn("core.quotePath=false", args)
-                return "career-os/docs/adr/ADR-132-스키마.md\nfrontend/설명.md\nfrontend/src/앱.ts"
+                return "pkg/docs/adr/ADR-132-스키마.md\nfrontend/설명.md\nfrontend/src/앱.ts"
             return ""
         with patch.object(pc, "run", side_effect=command):
-            facts = pc.branch_facts(Path("."), "x", "main", ("tasks/", "career-os/docs/"))
+            facts = pc.branch_facts(Path("."), "x", "main", ("tasks/", "pkg/docs/"))
         self.assertEqual(facts["impl_files"], ["frontend/src/앱.ts"])
 
 

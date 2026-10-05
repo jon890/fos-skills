@@ -56,11 +56,11 @@ lint 와 타입 검사 무시 주석, 타입 단언으로 오류 보고를 없�
   측정 없이 「느릴 것 같다」 로 올리지 않는다. 어떤 입력에서 얼마나 커지는지 적는다.
 - **유지보수.** 같은 일을 하는 기존 코드와 다른 형태로 짠 곳, 새로 만든 추상화,
   우회한 helper, 죽은 코드, 뜻이 드러나지 않는 이름을 본다.
-- **반복 함정.** 받은 경로를 읽고 관련 패턴을 골라 `grep` 으로 점검한다.
+- **반복 함정.** 받은 경로를 읽고 관련 패턴을 골라 `grep` 으로 점검한다. 경로가 없으면 건너뛴다.
 
 ## 회신 형식
 
-`orca orchestration` 명령(worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 팀원이 보낸 `worker_done` 은 team-lead 의 dispatch 를 먼저 끝내 이후 보고가 거절된다.
+worker 를 띄우는 조율 도구의 보고 명령(예: `orca orchestration` 의 worker_done, escalation, ask, heartbeat)은 실행하지 않는다. 이 형식은 team-lead 에게만 보낸다. 이유는 [`team-spawn.md`](team-spawn.md) 의 「스폰 프롬프트에 넣는 문구」 가 소유한다.
 
 **계획 대조 축에 걸린 것이 하나라도 있으면 `FIX_NEEDED` 다.** 없으면 `PASS` 다.
 코드 리뷰 축은 판정을 바꾸지 않는다. team-lead 가 무엇을 고칠지 정한다.

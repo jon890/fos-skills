@@ -7,7 +7,7 @@
     gh api --hostname "$(gh_host.py <owner> <repo>)" <경로>   # 한 번만 쓸 때
 
 `gh api` 는 `--repo` 를 받지 않아 기본 호스트를 본다.
-사내 GHE 저장소에서 호스트를 넘기지 않으면 `Not Found` 가 난다.
+GitHub Enterprise 저장소에서 호스트를 넘기지 않으면 `Not Found` 가 난다.
 결과가 `github.com` 이어도 그대로 넘긴다. 넘겨도 동작이 달라지지 않는다 (실측).
 
 환경 변수는 호출 사이에 남지 않는다 (실측). 에이전트 하네스는 명령마다 새 셸을 띄운다.
@@ -18,9 +18,8 @@
 **`<owner> <repo>` 를 주면 현재 디렉터리를 보지 않는다.**
 어디서 돌리든 같은 결과가 나온다.
 
-현재 디렉터리를 보면 엉뚱한 호스트를 집는다.
-실측으로 스킬 디렉터리에서 `collect_review.py` 를 돌렸더니 그 디렉터리가 속한 저장소의
-`github.com` 을 집었고, 사내 GHE 저장소를 그 호스트에서 찾아 네 소스가 모두 404 로 끝났다.
+현재 디렉터리를 보면 엉뚱한 호스트를 집는다. 스킬 디렉터리에서 돌리면 그 디렉터리가 속한
+저장소의 호스트(예: `github.com`)를 집고, GitHub Enterprise 저장소를 그 호스트에서 찾아 404 로 끝난다.
 저장소를 잘못 짚은 것이 아니라 호스트를 잘못 짚은 것이라 오류 문구에 원인이 드러나지 않는다.
 
 정하는 순서는 셋이다.
@@ -37,8 +36,8 @@
 그 저장소 안에서 돌리는 것이 확실할 때만 이 형태를 쓴다.
 
 origin 이 SSH config 별칭이면 별칭이 그대로 나오므로 `ssh -G` 로 실제 호스트를 되찾는다.
-실측: `git@github-personal:...` 이 `github-personal` 로 나왔고, 그대로 쓰면
-`error connecting to github-personal` 로 실패했다. `ssh -G` 가 `github.com` 으로 되돌린다.
+`git@github-personal:...` 은 `github-personal` 로 나오고, 그대로 쓰면
+`error connecting to github-personal` 로 실패한다. `ssh -G` 가 `github.com` 으로 되돌린다.
 """
 
 import os
@@ -88,7 +87,7 @@ def logged_in_hosts():
     """`gh` 에 로그인된 호스트. 출력 순서를 그대로 쓴다.
 
     `gh auth status` 는 호스트 하나라도 토큰 확인에 실패하면 종료 코드 1 이다.
-    github.com 은 로그인돼 있어도 사내 호스트의 timeout 때문에 1 이 나오므로
+    github.com 은 로그인돼 있어도 다른 호스트의 timeout 때문에 1 이 나오므로
     종료 코드를 보지 않고 stdout 과 stderr 를 읽는다 (실측).
     """
     out = _run(["gh", "auth", "status"], any_exit=True) or ""

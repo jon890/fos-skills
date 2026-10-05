@@ -30,15 +30,15 @@
 스킬을 글로벌 스킬 디렉터리에 심링크한다.
 
 ```bash
-ln -sfn ~/personal/fos-skills/korean-check ~/.claude/skills/korean-check
+ln -sfn <체크아웃 경로>/korean-check ~/.claude/skills/korean-check
 ```
 
 편집 훅에서 부르려면 검사기 둘도 함께 건다.
 심링크로 걸면 스킬을 고칠 때 훅 설정을 다시 손대지 않는다.
 
 ```bash
-ln -sfn ~/personal/fos-skills/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
-ln -sfn ~/personal/fos-skills/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
+ln -sfn <체크아웃 경로>/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
+ln -sfn <체크아웃 경로>/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
 ```
 
 `korean-style-check.py` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
@@ -47,7 +47,7 @@ ln -sfn ~/personal/fos-skills/korean-check/scripts/check-readability.py ~/.claud
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.
 
 ```bash
-ln -sfn ~/personal/fos-skills/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
+ln -sfn <체크아웃 경로>/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
 ```
 
 **`korean-style.md` 하나만 건다.** 어휘와 문장 구성, 짧은 글 규칙은 채팅 답변에도 적용되므로 항상 실려야 한다.

@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.14.0"
+  version: "3.14.1"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -36,7 +36,7 @@ description: |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$SP/preview.html` 을 생성했다 | `scripts/show-preview.sh` |
 | 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다 | |
 
-이 세션이 Orca orchestration dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
+이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
 
 본문과 미리보기를 둘 자리를 하나 정해 `SP` 에 담는다.
 하네스가 알려주는 임시 디렉터리가 있으면 그것을 쓰고, 없으면 저장소 밖의 임시 경로를 쓴다.
@@ -71,7 +71,7 @@ head -3 "$SP/body.md"
 
 **첫 줄을 확인해 갱신됐는지 본다.** 이것이 이 단계의 통과 조건이다.
 
-매체마다 다르게 렌더되는 함정은 [`references/render-traps.md`](references/render-traps.md) 가 소유한다.
+매체마다 다르게 렌더되는 패턴과 그 대응은 [`references/render-traps.md`](references/render-traps.md) 가 소유한다.
 표기와 문장 구성의 판정 기준은 `korean-check` 가 소유한다.
 
 ### 3. 표기 검사
@@ -202,7 +202,7 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 
 #### 보는 사람이 없는 세션에서 등록할 때
 
-이 세션이 Orca orchestration dispatch 로 일을 받았으면 아래를 따른다.
+이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 아래를 따른다.
 받은 지시문에 dispatch 머리말(`You are a dispatched worker`)이 있으면 dispatch 로 받은 것이다.
 
 **5단계는 대상 생성기로 `$SP/preview.html` 을 만드는 것까지 수행한다.**
@@ -211,7 +211,7 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 - 지시한 쪽이 그 본문의 등록을 지시문에 적었으면 사용자 응답을 기다리지 않고 이 턴에 등록한다. 「PR 을 연다」 가 그 예다.
   등록한 뒤 보고서에 `$SP/preview.html` 의 절대경로와 등록한 URL 을 적는다.
   지시한 쪽이 등록 뒤에 그 보고서로 본문을 읽는다.
-- 등록 지시가 없으면 등록하지 않고 `orca orchestration ask` 로 지시한 쪽에 등록할지 묻는다.
+- 등록 지시가 없으면 등록하지 않고 조율 도구의 질문 명령(예: `orca orchestration ask`)으로 지시한 쪽에 등록할지 묻는다.
   질문에 `$SP/preview.html` 의 절대경로를 담는다. dispatch 워커에는 다음 턴에 응답할 사용자가 없다.
 
 dispatch 로 일을 받지 않았으면 위 절차대로 사용자가 읽고 응답한 다음 턴에 등록한다.

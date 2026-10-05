@@ -12,7 +12,7 @@ $B help
 $B doctor
 ```
 
-이 문서는 그 둘이 내지 않는 것을 담는다. 백엔드 선택 규칙, 백엔드마다 갈리는 동작, 함정, 새 백엔드 추가다.
+이 문서는 그 둘이 내지 않는 것을 담는다. 백엔드 선택 규칙, 백엔드마다 갈리는 동작, 새 백엔드 추가다.
 
 ## 구성
 
@@ -95,7 +95,7 @@ Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값�
 
 **`charset` 을 선언하지 않은 `file://` 문서를 `cmux` 는 UTF-8 로 추정하지 않는다.** `orca` 는 추정한다 (실측).
 
-## 함정
+## 백엔드별 규칙
 
 **`orca` 와 `agent-browser` 는 실패해도 종료 코드가 0 이다.** 드라이버가 이것을 1 로 바꾸므로
 백엔드를 직접 부르지 않는다. 직접 부르면 오류가 드러나지 않는다.
@@ -118,7 +118,7 @@ Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값�
   공백뿐이거나 줄바꿈이 든 값은 종료 코드 2로 거절한다.
 
   ```sh
-  export BROWSER_EGO_SPACE='월 공수 등록'
+  export BROWSER_EGO_SPACE='양식 등록'
   PAGE=$($B open 'https://example.com')
   $B pages
   $B reset
@@ -135,8 +135,8 @@ Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값�
   이미 받은 핸들로는 되살릴 수 없다. `open` 을 다시 부른다.
 - 응답하지 않는 page 가 공간에 남아 있어도 `open` 은 막히지 않는다. 빈 page 를 다시 쓰려고
   훑을 때 `task.tabs()` 가 실어 주는 url 만 보고, 훑기가 실패하면 새 page 를 만든다.
-  예전에는 이 훑기가 page 마다 `page.evaluate` 를 거쳐, 멈춘 page 하나가 있으면
-  목적지 주소와 무관하게 `page.evaluate timed out after 15000ms` 로 끝났다 (실측).
+  page 마다 `page.evaluate` 를 부르는 방식으로 바꾸지 않는다. 멈춘 page 하나가 있으면
+  목적지 주소와 무관하게 `page.evaluate timed out after 15000ms` 로 끝난다.
   멈춘 page 자체는 브라우저에서 닫거나 새로고침해야 사라진다.
 - page 수에는 공간마다 한도가 있고, 그 한도는 발급한 label 번호가 아니라 살아 있는
   page 수로 센다 (실측). `close` 로 닫으면 다시 열 수 있다. 한도에 차면 `open` 이
@@ -156,8 +156,8 @@ Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값�
   소유를 판정하지 못한 page 는 남는다. 공간째 닫지도 않는다.
 
   **에이전트가 열어 사람이 이어서 쓰고 있는 page 는 닫힌다.** `openedBy` 만으로는
-  그것을 구분하지 못한다. 실측으로 이 머신의 공간에 남은 탭이 전부 `agent` 였고
-  그중에 사람이 보던 화면이 섞여 있었다. 닫은 주소는 출력에 남지만 입력 중이던 폼은 잃는다.
+  그것을 구분하지 못한다. 사람이 보던 화면도 에이전트가 열었으면 `agent` 로 나온다.
+  닫은 주소는 출력에 남지만 입력 중이던 폼은 잃는다.
   무엇이 닫힐지는 `pages` 의 `openedBy` 열로 먼저 본다.
 - `console` 과 `errors` 는 대응 API 가 없어 종료 코드 2 로 거절한다.
   `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 콘솔 로그 버퍼가 아니다.
@@ -167,7 +167,7 @@ Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값�
 
 `agent-browser`
 
-- SSO 가 필요한 사내 시스템은 설정에 `cdpPort` 를 적어야 한다. 상세는 `doctor` 가 낸다.
+- SSO 가 필요한 시스템은 설정에 `cdpPort` 를 적어야 한다. 상세는 `doctor` 가 낸다.
 - 조건 대기 명령이 없어서 드라이버가 `eval` 안의 폴링으로 대신한다.
 
 `cmux`
@@ -227,7 +227,7 @@ BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
 지정을 빠뜨린 호출이 출력에서 눈에 띈다.
 
 ```
-프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal; 공간: 월 공수 등록
+프로필: Default (<개인 프로필 이름>) — BROWSER_EGO_PURPOSE=personal → egoProfiles.personal; 공간: 양식 등록
 경고: 프로필을 정하지 않아 ego 의 기본 프로필로 돈다 (Profile 2 / <회사 프로필 이름>); 공간: browser-driver/Profile 2
 ```
 
@@ -242,8 +242,8 @@ BROWSER_EGO_PURPOSE=personal    $B open "https://example.com"
 - 프로필은 공간을 만들 때 정해지고 나중에 바꿀 수 없다. 이미 받은 핸들의 프로필을
   바꾸려면 `open` 을 다시 부른다.
 
-**id 가 이름과 엇갈려 있을 수 있다.** 이 머신에서는 ego 의 `Default` 가 개인 계정이고
-`Profile 2` 가 회사 계정이다 (실측). id 만 보고 `Default` 를 기본으로 읽으면 반대를 고른다.
+**id 는 어느 계정인지 말하지 않는다.** ego 의 `Default` 가 개인 계정이고 `Profile 2` 가
+회사 계정인 머신이 있다. id 만 보고 `Default` 를 기본으로 읽으면 반대를 고를 수 있다.
 어느 쪽이 무엇인지는 `ego-browser import list` 의 메일 주소와 `profiles()` 의 이름을 대조해 정한다.
 
 프로필 전체를 지우는 CDP 명령은 프로필 단위로 미친다.
