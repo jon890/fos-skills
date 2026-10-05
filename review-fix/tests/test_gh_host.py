@@ -14,11 +14,11 @@ spec.loader.exec_module(gh_host)
 
 # 사내 호스트의 토큰 확인이 timeout 나면 gh auth status 는 종료 코드 1 이다. github.com 은 정상이다.
 PARTIAL_FAILURE = """github.nhnent.com
-  X Timeout trying to log in to github.nhnent.com account bifos (keyring)
+  X Timeout trying to log in to github.nhnent.com account dev-user (keyring)
   - Active account: true
 
 github.com
-  ✓ Logged in to github.com account jon890 (keyring)
+  ✓ Logged in to github.com account octocat (keyring)
   - Active account: true
 """
 
@@ -52,7 +52,7 @@ class TestLoggedInHosts(unittest.TestCase):
                 patch.object(gh_host.subprocess, "run", side_effect=run), \
                 patch.object(gh_host, "_from_origin", side_effect=AssertionError("origin 으로 되돌아갔다")):
             gh_host.os.environ.pop("GH_HOST", None)
-            self.assertEqual(gh_host.resolve("jon890", "fos-accountbook"), "github.com")
+            self.assertEqual(gh_host.resolve("octocat", "sample-repo"), "github.com")
 
 
 if __name__ == "__main__":
