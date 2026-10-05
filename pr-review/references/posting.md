@@ -51,9 +51,12 @@ scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심
 
 ## 조회할 때의 함정
 
-`line` 이 `null` 인 댓글은 `pulls/{N}/comments` 목록에서 빠진다.
-그래서 등록한 개수보다 적게 보인다. **목록 개수로 등록 성공을 판정하지 않는다.**
-등록 응답의 리뷰 id 로 `reviews/{id}/comments` 를 직접 조회한다.
+`reviews/{id}/comments` 는 줄에 정상으로 붙은 댓글도 `line: null`, `position: 216` 으로 준다(실측).
+`pulls/{N}/comments` 는 같은 댓글을 `line: 216`, `subject_type: "line"` 으로 준다.
+그래서 `reviews/{id}/comments` 의 `line: null` 만 보고 줄에 못 붙었다고 판단하지 않는다.
+
+줄이 diff 에 없어 실제로 `line: null` 로 붙은 댓글은 `pulls/{N}/comments` 목록에서 빠진다.
+**등록한 개수와 `pulls/{N}/comments` 에서 리뷰 id 로 고른 개수를 비교한다.** 모자라면 그것이 신호다.
 
 ## payload 파일을 다시 쓸 때
 
@@ -79,14 +82,16 @@ scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱�
 
 ## 등록 뒤 확인
 
-등록 응답의 id 로 본문 앞부분을 다시 읽어 확인한다.
+`pulls/{N}/comments` 를 `--paginate` 로 받아 등록 응답의 리뷰 id 로 고르고, 붙은 위치와 첫 줄의 등급 표기를 본다.
+`gh-review-post.sh` 가 이 조회를 하고, 등록한 인라인 수와 찾은 수가 다르면 stderr 에 경고하고 종료 코드 1 로 끝낸다.
 
 ```bash
-GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/<N>/reviews/<리뷰id>/comments \
-  --jq '.[] | {id, path, head: (.body[0:45])}'
+GH_HOST=<호스트> gh api --paginate repos/<owner>/<repo>/pulls/<N>/comments \
+  --jq '.[] | select(.pull_request_review_id == <리뷰id> and .line != null)
+        | {id, path, line, head: (.body | split("\n")[0])}'
 ```
 
-붙은 위치와 첫 줄의 등급 표기를 본다. 본문 전문을 채팅에 다시 쓰지 않는다.
+본문 전문을 채팅에 다시 쓰지 않는다.
 
 ## 잘못 등록했을 때
 

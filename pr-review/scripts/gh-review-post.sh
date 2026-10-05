@@ -31,6 +31,23 @@ detect_host() {
         || die "git remote 에서 호스트를 찾지 못했습니다. GH_HOST 를 지정하세요."
 }
 
+# 등록한 인라인이 모두 줄에 붙었는지 확인한다.
+# reviews/{id}/comments 는 줄에 붙은 댓글도 line 을 null 로 준다(실측). 판정에 쓰지 않고
+# pulls/{N}/comments 에서 pull_request_review_id 로 골라 path:line 을 본다.
+# 줄이 diff 에 없어 line 이 null 로 붙은 댓글은 이 목록에서 빠지므로 수가 모자라면 실패한다.
+verify_inline() {
+    local review_id="$1" expected="$2" found count
+    found=$(GH_HOST="$HOST" gh api --paginate "repos/$REPO/pulls/$PR/comments" \
+        --jq ".[] | select(.pull_request_review_id == $review_id and .line != null)
+              | \"  댓글 \(.id)  \(.path):\(.line)  첫 줄: \(.body | split(\"\\n\")[0])\"")
+    [[ -z "$found" ]] || echo "$found"
+    count=$(grep -c . <<<"$found" || true)
+    if [[ "$count" != "$expected" ]]; then
+        echo "경고: 인라인 ${expected}건을 등록했지만 줄에 붙은 것은 ${count}건입니다. 줄이 diff 에 없을 수 있습니다." >&2
+        return 1
+    fi
+}
+
 MODE=review
 if [[ "${1:-}" == "--reply" ]]; then MODE=reply; shift; fi
 if [[ "${1:-}" == "--summary" ]]; then MODE=summary; shift; fi
@@ -127,8 +144,7 @@ PY
     RESULT=$(GH_HOST="$HOST" gh api "repos/$REPO/pulls/$PR/reviews" -X POST --input "$PAYLOAD")
     REVIEW_ID=$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["id"])' <<<"$RESULT")
     echo "등록 완료: 리뷰 $REVIEW_ID"
-    GH_HOST="$HOST" gh api "repos/$REPO/pulls/$PR/reviews/$REVIEW_ID/comments" \
-        --jq '.[] | "  댓글 \(.id)  \(.path):\(.line)  첫 줄: \(.body[0:30])"'
+    verify_inline "$REVIEW_ID" "${#INLINES[@]}"
 elif [[ "$MODE" == edit ]]; then
     python3 - "$BODY_FILE" "$AI_NOTICE" > "$PAYLOAD" <<'PY'
 import json, sys
@@ -138,7 +154,7 @@ if sys.argv[2] not in body:
 print(json.dumps({"body": body}, ensure_ascii=False))
 PY
     GH_HOST="$HOST" gh api "repos/$REPO/pulls/comments/$COMMENT_ID" -X PATCH --input "$PAYLOAD" \
-        --jq '"수정 완료: 댓글 \(.id)  \(.path)  첫 줄: \(.body[0:30])"'
+        --jq '"수정 완료: 댓글 \(.id)  \(.path)  첫 줄: \(.body | split("\n")[0])"'
 elif [[ "$MODE" == summary ]]; then
     python3 - "$BODY_FILE" "$AI_NOTICE" > "$PAYLOAD" <<'PY'
 import json, sys
@@ -162,8 +178,7 @@ PY
     RESULT=$(GH_HOST="$HOST" gh api "repos/$REPO/pulls/$PR/reviews" -X POST --input "$PAYLOAD")
     REVIEW_ID=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["id"])' <<<"$RESULT")
     echo "등록 완료: 리뷰 $REVIEW_ID"
-    GH_HOST="$HOST" gh api "repos/$REPO/pulls/$PR/reviews/$REVIEW_ID/comments" \
-        --jq '.[] | "  댓글 \(.id)  \(.path)  첫 줄: \(.body[0:30])"'
+    verify_inline "$REVIEW_ID" 1
 else
     RESULT=$(GH_HOST="$HOST" gh api "repos/$REPO/pulls/$PR/comments/$COMMENT_ID/replies" \
         -X POST -F body=@"$BODY_FILE")
