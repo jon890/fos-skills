@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # 원격 브랜치와 git 이력까지 훑어 이미 쓰인 plan 번호와 다음 번호를 낸다.
 #
-# 왜 로컬만 보면 안 되나 (실측):
-#   tasks/ 의 로컬 목록이 plan5, plan6, plan7 이라 다음이 plan8 로 보였으나,
-#   main 에 머지되지 않은 원격 브랜치 셋에 plan8 이 이미 있었다.
-#   그 브랜치를 체크아웃하지 않으면 로컬 작업 트리에 나타나지 않는다.
+# 왜 로컬만 보면 안 되나:
+#   main 에 머지되지 않은 원격 브랜치가 이미 다음 번호를 쓰고 있을 수 있다.
+#   그 브랜치를 체크아웃하지 않으면 로컬 작업 트리의 tasks/ 에 나타나지 않는다.
 #
 # 왜 git 이력도 보나:
 #   구현이 끝난 계획서는 지운다. 지운 뒤에는 어느 브랜치의 트리에도 없어서
@@ -73,7 +72,7 @@ NAME_RE="${PREFIX}plan\([0-9]\{1,\}\)-"
 # ls-tree 는 체크아웃 없이 그 ref 의 트리를 읽으므로 작업 트리를 건드리지 않는다.
 #
 # `sort -n -u` 를 쓰지 않는다. `-n` 은 첫 숫자 필드로만 비교해서
-# 같은 번호를 쥔 다른 ref 를 중복으로 보고 지운다 (실측: plan8 의 ref 넷이 하나로 줄었다).
+# 같은 번호를 쥔 다른 ref 를 중복으로 보고 하나만 남긴다.
 PAIRS=$(
   for ref in HEAD $(git branch -a --format='%(refname:short)' | grep -v 'HEAD$'); do
     git ls-tree -d --name-only "$ref" "$TASKS_DIR/" 2>/dev/null \
