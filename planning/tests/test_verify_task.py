@@ -235,18 +235,18 @@ class TaskRulesTest(unittest.TestCase):
                 self.assertTrue(self.inspect(work, command, entries))
 
     def test_bun_test_directory_argument_executes_tests_under_it(self):
-        # `bun test career-os/scripts/profile` 이 디렉터리 인자로 읽히지 않아 테스트를 실행하지 않는다고 판정된 재현이다.
-        work = "### 1. `career-os/scripts/profile/a.test.ts` 추가"
-        entries = [("career-os/scripts/profile/a.ts", "수정"), ("career-os/scripts/profile/a.test.ts", "신규")]
+        # `bun test pkg/scripts/profile` 이 디렉터리 인자로 읽히지 않아 테스트를 실행하지 않는다고 판정된 재현이다.
+        work = "### 1. `pkg/scripts/profile/a.test.ts` 추가"
+        entries = [("pkg/scripts/profile/a.ts", "수정"), ("pkg/scripts/profile/a.test.ts", "신규")]
         for command in (
-            "bun test career-os/scripts/profile",
-            "bun test ./career-os/scripts/profile/",
-            "cd career-os && bun test scripts/profile",
-            "bun test -t 이름 career-os/scripts",
+            "bun test pkg/scripts/profile",
+            "bun test ./pkg/scripts/profile/",
+            "cd pkg && bun test scripts/profile",
+            "bun test -t 이름 pkg/scripts",
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.inspect(work, command, entries), [])
-        for command in ("bun test career-os/scripts/other", "bun test scripts/profile", "bun run lint career-os/scripts/profile"):
+        for command in ("bun test pkg/scripts/other", "bun test scripts/profile", "bun run lint pkg/scripts/profile"):
             with self.subTest(command=command):
                 self.assertTrue(self.inspect(work, command, entries))
 
@@ -374,13 +374,13 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual([body for _, _, body in verify.code_blocks(text)], ["```\n## 코드 안"])
 
     def test_bun_test_dot_directory_needs_path_prefix(self):
-        # `bun test career-os/.claude/skills/...` 가 그 아래 테스트를 찾지 않고 종료 코드 0 으로 끝난 계획서의 재현이다.
-        entries = [("career-os/.claude/skills/x/a.ts", "수정"), ("career-os/.claude/skills/x/a.test.ts", "수정")]
-        work = "### 1. `career-os/.claude/skills/x/a.test.ts`"
-        for command in ("bun test career-os/.claude/skills/x", "bun test src .hidden", "bunx bun test career-os/.claude/skills/x/a.test.ts", "bun --cwd web test pkg/.claude"):
+        # `bun test pkg/.claude/skills/...` 가 그 아래 테스트를 찾지 않고 종료 코드 0 으로 끝난 계획서의 재현이다.
+        entries = [("pkg/.claude/skills/x/a.ts", "수정"), ("pkg/.claude/skills/x/a.test.ts", "수정")]
+        work = "### 1. `pkg/.claude/skills/x/a.test.ts`"
+        for command in ("bun test pkg/.claude/skills/x", "bun test src .hidden", "bunx bun test pkg/.claude/skills/x/a.test.ts", "bun --cwd web test pkg/.claude"):
             with self.subTest(command=command):
                 self.assertTrue(any("`./" in issue for issue in self.inspect(work, command, entries)))
-        for command in ("bun test ./career-os/.claude/skills/x", "bun test ../.hidden", "bun test /repo/.claude/x", "bun test src", "bun test -t .only ./career-os/.claude/skills/x"):
+        for command in ("bun test ./pkg/.claude/skills/x", "bun test ../.hidden", "bun test /repo/.claude/x", "bun test src", "bun test -t .only ./pkg/.claude/skills/x"):
             with self.subTest(command=command):
                 self.assertFalse(any("bun test" in issue for issue in self.inspect(work, command, entries)))
 
