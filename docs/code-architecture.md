@@ -8,7 +8,7 @@
 
 | 구분 | 대상 |
 | --- | --- |
-| 플러그인에 담는다 | `build-with-teams`, `docs-check`, `harness-cleanup`, `planning`, `review-fix` |
+| 플러그인에 담는다 | `build-with-teams`, `docs-check`, `harness-cleanup`, `planning`, `pr-review`, `review-fix` |
 | 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
 | 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `scripts/`, `hooks/`, `docs/` |
 | 플러그인이 설치하지 않는다 | `PostToolUse` 훅, `~/.claude/rules/` 의 규칙 파일, `~/.claude/scripts/` 의 링크 |
@@ -26,6 +26,7 @@ docs-check/
 harness-cleanup/
 korean-check/
 planning/
+pr-review/
 review-fix/
 tools/browser-driver/               content-preview 가 쓰는 공용 도구
 scripts/export-to-team.sh           공용 스킬을 팀 저장소로 내보낸다
@@ -50,7 +51,7 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
     {
       "name": "fos-skills",
       "source": "./",
-      "description": "계획, 구현, 리뷰 반영, 문서 감사, 하네스 정리 스킬"
+      "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리 스킬"
     }
   ]
 }
@@ -61,7 +62,7 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 ```json
 {
   "name": "fos-skills",
-  "description": "계획, 구현, 리뷰 반영, 문서 감사, 하네스 정리 스킬",
+  "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리 스킬",
   "author": { "name": "jon890" },
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
@@ -70,6 +71,7 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
     "./docs-check",
     "./harness-cleanup",
     "./planning",
+    "./pr-review",
     "./review-fix"
   ]
 }
@@ -153,7 +155,7 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 | 명령 | 확인하는 것 |
 | --- | --- |
 | `python3 -m unittest discover -s scripts/tests` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다 |
-| `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 스킬 다섯 개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
+| `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 스킬 여섯 개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
 `claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.
 설치 시험이 `claude plugin validate . --json` 의 결과에서 오류가 없고 경고가 버전 경고 하나뿐인지를 확인한다.
