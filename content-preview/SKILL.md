@@ -61,8 +61,11 @@ SP=<본문과 미리보기를 둘 디렉터리>
 zsh 의 `noclobber` 로 `cat > 기존파일` 이 거부되는데, 오류는 `file exists` 한 줄로만 나오고
 뒤이은 생성기는 그대로 성공한다. 이전 본문으로 만든 미리보기를 새 본문이라고 착각하게 된다.
 
+**`rm` 대상의 변수는 `${SP:?}` 로 쓴다.** `$SP` 가 비어 있으면 셸이 오류를 내고 `rm` 을 실행하지 않는다.
+Claude Code 의 안전 검사도 비면 루트 경로가 되는 변수로 시작하는 `rm` 대상을 막는다.
+
 ```bash
-rm -f "$SP/body.md" "$SP/preview.html"
+rm -f "${SP:?}/body.md" "${SP:?}/preview.html"
 cat > "$SP/body.md" <<'EOF'
 ...
 EOF
