@@ -20,7 +20,6 @@ python3 scripts/review_threads.py list --count <owner> <repo> <N>
 
 출력은 정수 하나다. 0 이 아니면 머지 가능으로 보고하지 않는다.
 `list` 출력을 `grep` 으로 세지 않는다. 한 줄 JSON 에 여백이 없어 `"resolved": false` 패턴은 늘 0 이 나온다.
-미해결 스레드가 남은 PR 을 머지 가능으로 보고해 브랜치를 정리했다가 PR 이 닫힌 실측이 있다.
 
 resolve 한 뒤 보호 규칙이 풀렸는지 본다.
 

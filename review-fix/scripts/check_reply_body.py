@@ -14,7 +14,7 @@
 
 재트리거 토큰
     봇 워크플로의 `if:` 조건이 본문을 부분 문자열로 맞춰 본다.
-    실사례로 회신 본문이 `## /review 반영 완료` 로 시작해 issue_comment 트리거가 발동했다.
+    회신 본문이 `## /review 반영 완료` 로 시작하면 `/review` 를 찾는 issue_comment 트리거가 발동한다.
 
 auto-link
     GitHub 이 `#숫자`, `GH-숫자`, `owner/repo#숫자` 를 자동으로 링크한다.
