@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.2.2
+
+`static_check.py` 주석의 저장소 사례를 규칙과 이유 한 줄로 바꿨다.
+동작은 바뀌지 않는다.
+
 ## 3.2.1
 
 `static_check.py` 가 INDEX 표 칸에 링크를 건 `| [ADR-001](...)` 형을 등재 항목으로 센다.
