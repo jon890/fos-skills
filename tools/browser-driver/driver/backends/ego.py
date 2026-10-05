@@ -61,8 +61,8 @@ def resolve_profile():
     4. 셋 다 없으면 `("", None)`. 이 경우에만 ego 의 `isDefault` 로 떨어진다
 
     출처가 None 이라는 것은 호출자가 프로필을 정하지 않았다는 뜻이다. 부르는 쪽이
-    그때만 경고를 낸다. 이 머신의 `isDefault` 는 회사 계정이라, 정하지 않은 호출이
-    개인 작업까지 회사 프로필에서 돌게 된다 (실측).
+    그때만 경고를 낸다. `isDefault` 가 어느 계정인지는 머신마다 달라, 정하지 않은 호출이
+    의도와 다른 계정의 프로필에서 돌 수 있다.
     """
     direct = os.environ.get(PROFILE_ENV)
     if direct:
@@ -204,8 +204,8 @@ class EgoBackend(Backend):
             f"const prefix = {json.dumps(SPACE_PREFIX)};\n"
             f"const customSpace = {json.dumps(space)};\n"
             f"const want = {json.dumps(want)};\n"
-            # 프로필 id 는 이름과 엇갈려 있다. ego 의 'Default' 가 개인 계정이고
-            # 'Profile 2' 가 회사 계정인 경우를 실측했다. 그래서 id 와 이름을 모두 받는다.
+            # 프로필 id 는 계정을 말하지 않는다. 'Default' 가 기본 계정이라는 보장이 없어
+            # id 와 이름을 모두 받는다.
             "const list = await profiles();\n"
             "let prof;\n"
             "if (want) {\n"
@@ -340,8 +340,8 @@ class EgoBackend(Backend):
             return None
 
         if cmd == "pages":
-            # 핸들은 open 만 냈다. budget 이 차면 open 이 막히므로 그때 닫을 것을
-            # 고를 길이 없었다. 여기서 같은 형식의 핸들을 내 close, nav, js 에 그대로 쓴다.
+            # 핸들은 open 만 낸다. budget 이 차면 open 이 막히므로 닫을 것을 고르려면
+            # 핸들이 따로 필요하다. 여기서 같은 형식의 핸들을 내 close, nav, js 에 그대로 쓴다.
             # url 은 tabs() 가 필드로 실어 주므로 멈춘 page 도 걸리지 않는다.
             # openedBy 를 함께 내, reset 이 무엇을 닫을지 실행 전에 이 목록으로 본다.
             out = self._run(
