@@ -49,7 +49,7 @@ README 가 가리키는 `~/.claude/references/work-writing-persona.md` 는 이 �
   실측이 주장을 뒤집은 다섯 사례를 그대로 실었다. 다섯 번 모두 처음 주장이 틀렸다.
 - `grading.md` — P1 부터 P5 까지의 판정을 근거의 강도로 정의했다.
   측정하지 않은 성능 지적은 P4 라는 것과, 등급은 내리기만 한다는 것을 명시했다.
-- `scope.md` — 리뷰와 후속 업무를 가르는 질문 하나를 두었다. 이 PR 이 만든 문제인가.
+- `scope.md` — 리뷰와 후속 업무를 나누는 질문 하나를 두었다. 이 PR 이 만든 문제인가.
   Anthropic 관리형 Code Review 의 `Pre-existing` 등급을 표기가 아니라 행선지 판정으로 가져왔다.
 - `posting.md` — 실행해 보기 전에는 알 수 없는 것만 적었다.
   사내 GHE 에서 `gh api` 가 `GH_HOST` 없이 404 나는 것, 답글 경로에만 PR 번호가 들어가는 것,
