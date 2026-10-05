@@ -60,7 +60,8 @@ Claude Code 에서는 id 로도 메시지가 오간다 (실측).
 ```
 
 **모든 팀원, orchestration 메시지 금지.**
-team-lead 가 에이전트 조율 도구의 dispatch 워커로 돌 때 팀원이 보낸 `worker_done` 이 그 dispatch 를 먼저 끝내고, 뒤이은 team-lead 의 보고는 거절된다 (실측).
+team-lead 가 worker 를 띄우는 조율 도구(예: Orca)의 dispatch 워커로 돌 때 팀원이 보낸 `worker_done` 이 그 dispatch 를 먼저 끝내고, 뒤이은 team-lead 의 보고는 거절된다.
+조율 도구가 Orca 가 아니면 아래 문구의 명령 이름을 그 도구의 보고 명령으로 바꾼다.
 
 ```
 `orca orchestration` 명령(worker_done, escalation, ask, heartbeat)을 실행하지 말 것.
@@ -69,8 +70,7 @@ team-lead 가 에이전트 조율 도구의 dispatch 워커로 돌 때 팀원이
 
 **모든 팀원, 하네스의 격리 worktree 옵션을 쓰지 않는다.**
 팀원은 2단계에서 만든 작업 공간의 절대경로에서 일하게 한다. `Agent` 도구의 `isolation: "worktree"` 같은 옵션으로 띄우지 않는다.
-그 옵션은 plan 브랜치가 아니라 기본 브랜치에서 갈라진 사본을 만든다. 팀원이 기본 브랜치 기준 파일을 읽고 고쳐서,
-plan 브랜치의 앞선 phase 커밋이 보이지 않고 결과를 `merge --ff-only` 로 plan 브랜치에 맞춰야 했다 (실측).
+그 옵션은 plan 브랜치가 아니라 기본 브랜치에서 갈라진 사본을 만든다. 그 사본에서는 plan 브랜치의 앞선 phase 커밋이 보이지 않는다.
 
 **executor, cwd 격리.** 하위 에이전트의 cwd 는 지정하지 않으면 main 워킹 디렉터리다.
 
@@ -112,7 +112,7 @@ Claude Code 는 대기와 실패를 `idleReason` 으로 구분한다.
 스폰 도구의 모델 인자로 다른 모델을 명시해 다시 띄운다.
 이때도 [`executor-routing.md`](executor-routing.md) 의 최소 등급 아래로 내리지 않는다. 대체할 모델이 없어 등급을 낮춰야 하면 사용자에게 올린다.
 고른 모델과 바꾼 사유는 실행 보고에 남긴다. critic, code-reviewer 처럼 판정하는 역할은 낮은 등급 모델에서 결과가 달라질 수 있어 사용자가 알아야 한다.
-실측: 2026-09-30, critic 이 상속 모델의 주간 한도(`You've hit your weekly limit`)로 `failed` 가 됐다. `sonnet` 으로 다시 띄워 판정 회신을 받았지만, 그 역할의 기본 등급(deep)보다 낮아 이 하한 규칙에 맞지 않았다.
+사용 한도 실패는 `failureReason` 에 `You've hit your weekly limit` 같은 문구로 드러난다.
 
 ## 스폰 실패
 

@@ -49,7 +49,7 @@ git rev-list --count "HEAD..origin/$BASE_BRANCH"
 무엇을 골랐는지 PR 설명에 남긴다.
 
 같은 기준 브랜치로 가는 다른 plan 브랜치가 열려 있으면, 둘을 합친 임시 사본에서 통합 검증을 한 번 더 돌린다.
-plan 둘이 각자 통합 검증을 통과해도 합치면 깨질 수 있다. 같은 시각 접두사의 DB migration 이 이름 정렬에서 충돌하거나 `docs/` 가 겹친다 (실측: 두 plan 이 같은 접두사의 Prisma migration 을 만들었다).
+plan 둘이 각자 통합 검증을 통과해도 합치면 깨질 수 있다. 같은 시각 접두사의 DB migration 이 이름 정렬에서 충돌하거나 `docs/` 가 겹친다.
 
 ```bash
 # cwd: plan 작업 공간(worktree) root
@@ -124,8 +124,8 @@ git commit -m "chore: 구현을 마친 $PLAN 계획서를 지운다"
 gh pr edit <뒤 PR 번호> --base "$BASE_BRANCH"
 ```
 
-실측: 2026-10-05, 앞 PR 을 `gh pr merge --delete-branch` 로 머지하자 그 브랜치를 base 로 둔 PR 둘이 자동으로 닫혔다.
-다른 하나는 기준 브랜치가 아니라 앞 브랜치로 머지됐다. 모든 커밋을 담은 브랜치로 PR 을 다시 열어 복구했다.
+`gh pr merge --delete-branch` 로 앞 브랜치를 지우면 그 브랜치를 base 로 둔 PR 이 자동으로 닫힌다.
+닫히지 않은 PR 도 기준 브랜치가 아니라 앞 브랜치로 머지될 수 있다. 닫혔으면 모든 커밋을 담은 브랜치로 PR 을 다시 연다.
 
 ## 팀 종료와 작업 공간 정리
 
