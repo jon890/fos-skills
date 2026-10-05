@@ -16,9 +16,10 @@
 | [`docs-check`](docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다 |
 | [`harness-cleanup`](harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 사용자 승인을 받아 고친다 |
 | [`planning`](planning/README.md) | 사용자와 합의한 것을 `docs/` 에 남기고, 그것만 읽고 구현할 수 있는 `tasks/` 를 만든다 |
+| [`pr-review`](pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록한다 |
 | [`review-fix`](review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영한다 |
 
-이 플러그인은 위 다섯 스킬을 싣는다.
+이 플러그인은 위 여섯 스킬을 싣는다.
 [`content-preview`](content-preview/README.md) 와 [`korean-check`](korean-check/README.md) 의 원본도 여기 있지만, 스킬로는 사본을 싣는 팀 저장소의 플러그인으로 받는다.
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
 두 디렉터리는 설치 캐시에 그대로 복사되므로 파일 경로로 읽거나 스크립트를 실행할 수 있다.

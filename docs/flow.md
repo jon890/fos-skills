@@ -13,7 +13,7 @@ claude plugin install fos-skills@fos-skills
 claude plugin details fos-skills@fos-skills
 ```
 
-이 설치로 스킬 다섯 개를 받는다.
+이 설치로 스킬 여섯 개를 받는다.
 `content-preview` 와 `korean-check` 의 원본은 여기 있고, 스킬로는 사본을 싣는 팀 저장소의 플러그인으로 받는다.
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
 파일은 이 플러그인의 설치 캐시에도 남으므로 경로로 직접 읽고 실행할 수 있다.
@@ -25,7 +25,7 @@ flowchart TD
     B -- 이미 등록됨 --> C
     B -- 예 --> C[plugin install fos-skills@fos-skills]
     C --> D[plugin details fos-skills@fos-skills]
-    D --> E{Skills 가 5 인가}
+    D --> E{Skills 가 6 인가}
     E -- 예 --> F[세션을 새로 열어 쓴다]
     E -- 아니오 --> G[plugin.json 의 skills 배열에서 빠진 스킬을 찾는다]
     G --> H[저장소에서 배열을 고쳐 main 에 push 한 뒤 갱신한다]
@@ -35,7 +35,7 @@ flowchart TD
 | --- | --- |
 | 마켓플레이스가 이미 등록돼 있다 | 등록을 건너뛰고 설치로 간다 |
 | 플러그인이 이미 설치돼 있다 | 설치 대신 「갱신」 의 명령을 쓴다 |
-| 스킬 수가 다섯과 다르다 | `skills` 배열과 내보내기 전용 원본 목록을 확인한다. 매니페스트 시험이 미등록 스킬을 저장소에서 잡는다 |
+| 스킬 수가 여섯과 다르다 | `skills` 배열과 내보내기 전용 원본 목록을 확인한다. 매니페스트 시험이 미등록 스킬을 저장소에서 잡는다 |
 
 ## 갱신
 
@@ -102,7 +102,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[매니페스트가 main 에 있다] --> B[marketplace add 와 plugin install]
-    B --> C{details 의 Skills 가 5 인가}
+    B --> C{details 의 Skills 가 6 인가}
     C -- 아니오 --> C1[링크를 지우지 않고 멈춘다]
     C -- 예 --> D[저장소 밖의 참조를 찾는다]
     D --> E[전역 지침의 경로를 체크아웃 경로로 고친다]
@@ -113,18 +113,18 @@ flowchart TD
     H --> I
 ```
 
-1. 설치하고 `claude plugin details fos-skills@fos-skills` 가 스킬 다섯 개를 보이는지 확인한다. 다섯이 아니면 링크를 지우지 않는다.
+1. 설치하고 `claude plugin details fos-skills@fos-skills` 가 스킬 여섯 개를 보이는지 확인한다. 여섯이 아니면 링크를 지우지 않는다.
 2. 저장소 밖에서 링크 경로를 적은 곳을 찾는다.
 
    ```bash
-   grep -rnE '\.claude/skills/(build-with-teams|content-preview|docs-check|harness-cleanup|korean-check|planning|review-fix)' \
+   grep -rnE '\.claude/skills/(build-with-teams|content-preview|docs-check|harness-cleanup|korean-check|planning|pr-review|review-fix)' \
      ~/.claude/CLAUDE.md ~/.claude/references ~/.claude/rules
    ```
 
 3. 찾은 경로의 `~/.claude/skills/<스킬>/` 을 `~/personal/fos-skills/<스킬>/` 로 고친다. 캐시 경로는 갱신할 때마다 바뀌므로 적지 않는다.
 4. 다른 저장소의 스킬이나 오버레이가 `~/.claude/skills/<스킬>/` 아래 파일을 실행하면 그 스킬의 링크는 그 저장소를 고칠 때까지 남긴다. 설명으로만 적은 경로는 링크를 남길 이유가 아니다.
 5. 나머지 링크를 지운다. `~/.claude/scripts/` 와 `~/.claude/rules/` 의 링크는 지우지 않는다. 스킬 링크가 아니라 체크아웃 안의 파일을 가리킨다.
-6. 세션을 새로 열어 `fos-skills:` 접두사가 붙은 스킬 다섯 개가 뜨는지 확인한다. 두 내보내기 전용 스킬은 팀 저장소의 플러그인을 설치했으면 그쪽에만 뜨고, 받을 수 없으면 뜨지 않는다.
+6. 세션을 새로 열어 `fos-skills:` 접두사가 붙은 스킬 여섯 개가 뜨는지 확인한다. 두 내보내기 전용 스킬은 팀 저장소의 플러그인을 설치했으면 그쪽에만 뜨고, 받을 수 없으면 뜨지 않는다.
 
 | 상황 | 동작 |
 | --- | --- |
