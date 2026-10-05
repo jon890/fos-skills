@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.4.0
+
+개인 로컬 층(`~/.claude/skills/`)에서 fos-skills 로 옮겼다. git 으로 추적되고 플러그인으로 설치된다. 스킬 본문은 바꾸지 않았다.
+`.claude-plugin/plugin.json` 의 `skills` 배열과 저장소 README, `docs/` 의 스킬 목록에 더했다.
+README 가 가리키는 `~/.claude/references/work-writing-persona.md` 는 이 저장소의 다른 스킬에 선례가 없어 그대로 뒀다. 사용자 전역 파일이라 설치한 환경에 없을 수 있다.
+
 ## 1.3.0
 
 - `gh-review-post.sh --batch` 를 더했다. 요약과 인라인 여러 건을 리뷰 하나로 등록한다.
