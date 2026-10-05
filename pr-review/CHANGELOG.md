@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.5.0
+
+- `gh-review-post.sh` 의 등록 뒤 확인이 줄 번호를 `null` 로 보이던 것을 고쳤다.
+  `reviews/{id}/comments` 는 줄에 정상으로 붙은 댓글도 `line: null` 로 준다 (실측).
+  `pulls/{N}/comments` 를 `--paginate` 로 받아 리뷰 id 로 골라 `path:line` 을 출력한다.
+- 등록한 인라인 수와 찾은 수가 다르면 stderr 에 경고하고 종료 코드 1 로 끝낸다.
+- 확인 출력과 `--edit` 출력은 본문의 첫 줄만 보인다. 앞 30자를 자르던 때는 줄바꿈이 섞여 출력이 깨졌다.
+- `references/posting.md` 의 「조회할 때의 함정」 과 「등록 뒤 확인」 을 실측에 맞게 고쳤다.
+- CHANGELOG 의 금지어를 권장어로 바꿨다.
+
 ## 1.4.0
 
 개인 로컬 층(`~/.claude/skills/`)에서 fos-skills 로 옮겼다. git 으로 추적되고 플러그인으로 설치된다. 스킬 본문은 바꾸지 않았다.
