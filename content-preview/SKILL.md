@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.15.0"
+  version: "3.16.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -33,16 +33,16 @@ description: |
 | 2 | 본문 작성 | 본문 파일의 첫 줄이 새 내용이다 | `references/render-traps.md` |
 | 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.sh` |
 | 4 | 검토 | 의미 점검의 통과 조건을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
-| 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$SP/preview.html` 을 생성했다 | `scripts/show-preview.sh` |
+| 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$PREVIEW_DIR/preview.html` 을 생성했다 | `scripts/show-preview.sh` |
 | 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다 | |
 
 이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
 
-본문과 미리보기를 둘 자리를 하나 정해 `SP` 에 담는다.
+본문과 미리보기를 둘 자리를 하나 정해 `PREVIEW_DIR` 에 담는다.
 하네스가 알려주는 임시 디렉터리가 있으면 그것을 쓰고, 없으면 저장소 밖의 임시 경로를 쓴다.
 
 ```bash
-SP=<본문과 미리보기를 둘 디렉터리>
+PREVIEW_DIR=<본문과 미리보기를 둘 디렉터리>
 ```
 
 ### 1. 수신자와 문체
@@ -55,21 +55,20 @@ SP=<본문과 미리보기를 둘 디렉터리>
 
 ### 2. 본문 작성
 
-본문을 `$SP/body.md` 에 쓴다.
+본문을 `$PREVIEW_DIR/body.md` 에 쓴다.
 
 **수정본을 같은 경로에 다시 쓸 때는 기존 파일을 먼저 지운다.**
 zsh 의 `noclobber` 로 `cat > 기존파일` 이 거부되는데, 오류는 `file exists` 한 줄로만 나오고
 뒤이은 생성기는 그대로 성공한다. 이전 본문으로 만든 미리보기를 새 본문이라고 착각하게 된다.
 
-**`rm` 대상의 변수는 `${SP:?}` 로 쓴다.** `$SP` 가 비어 있으면 셸이 오류를 내고 `rm` 을 실행하지 않는다.
-Claude Code 의 안전 검사도 비면 루트 경로가 되는 변수로 시작하는 `rm` 대상을 막는다.
+**`rm` 대상의 변수는 `${PREVIEW_DIR:?}` 로 쓴다.** `$PREVIEW_DIR` 가 비어 있으면 셸이 오류를 내고 `rm` 을 실행하지 않는다.
 
 ```bash
-rm -f "${SP:?}/body.md" "${SP:?}/preview.html"
-cat > "$SP/body.md" <<'EOF'
+rm -f "${PREVIEW_DIR:?}/body.md" "${PREVIEW_DIR:?}/preview.html"
+cat > "$PREVIEW_DIR/body.md" <<'EOF'
 ...
 EOF
-head -3 "$SP/body.md"
+head -3 "$PREVIEW_DIR/body.md"
 ```
 
 **첫 줄을 확인해 갱신됐는지 본다.** 이것이 이 단계의 통과 조건이다.
@@ -84,7 +83,7 @@ head -3 "$SP/body.md"
 
 ```bash
 # cwd: 아무 곳
-bash "$SKILL_DIR/scripts/style-check.sh" "$SP/body.md"
+bash "$SKILL_DIR/scripts/style-check.sh" "$PREVIEW_DIR/body.md"
 ```
 
 | 코드 | 무엇을 한다 |
@@ -152,14 +151,14 @@ Dooray 업무와 댓글, GitHub issue 와 PR 본문은 실제 렌더링과 비�
 python3 "$SKILL_DIR/scripts/dooray-preview/generate.py" \
   --mode comment --author "$USER" \
   --title "주간보고 2026년 8월 4주차" \
-  --md-file "$SP/body.md" --out "$SP/preview.html"
+  --md-file "$PREVIEW_DIR/body.md" --out "$PREVIEW_DIR/preview.html"
 
 python3 "$SKILL_DIR/scripts/github-preview/generate.py" \
   --type pr --repo "$REPO" \
   --title "$TITLE" \
-  --md-file "$SP/body.md" --out "$SP/preview.html"
+  --md-file "$PREVIEW_DIR/body.md" --out "$PREVIEW_DIR/preview.html"
 
-bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
+bash "$SKILL_DIR/scripts/show-preview.sh" "$PREVIEW_DIR/preview.html"
 ```
 
 **`show-preview.sh` 로 띄운다. 브라우저를 직접 열지 않는다.**
@@ -174,7 +173,7 @@ bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
 
 ```bash
 # cwd: 아무 곳
-ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
+ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview.sh" "$PREVIEW_DIR/preview.html"
 ```
 
 #### 본문이 여럿일 때
@@ -216,13 +215,13 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 아래를 따른다.
 받은 지시문에 dispatch 머리말(`You are a dispatched worker`)이 있으면 dispatch 로 받은 것이다.
 
-**5단계는 대상 생성기로 `$SP/preview.html` 을 만드는 것까지 수행한다.**
+**5단계는 대상 생성기로 `$PREVIEW_DIR/preview.html` 을 만드는 것까지 수행한다.**
 `show-preview.sh` 는 호출하지 않는다. 지시한 쪽이 읽을 미리보기 파일이 생성되면 5단계를 통과한다.
 
 - 지시한 쪽이 그 본문의 등록을 지시문에 적었으면 사용자 응답을 기다리지 않고 이 턴에 등록한다. 「PR 을 연다」 가 그 예다.
-  등록한 뒤 보고서에 `$SP/preview.html` 의 절대경로와 등록한 URL 을 적는다.
+  등록한 뒤 보고서에 `$PREVIEW_DIR/preview.html` 의 절대경로와 등록한 URL 을 적는다.
   지시한 쪽이 등록 뒤에 그 보고서로 본문을 읽는다.
 - 등록 지시가 없으면 등록하지 않고 조율 도구의 질문 명령(예: `orca orchestration ask`)으로 지시한 쪽에 등록할지 묻는다.
-  질문에 `$SP/preview.html` 의 절대경로를 담는다. dispatch 워커에는 다음 턴에 응답할 사용자가 없다.
+  질문에 `$PREVIEW_DIR/preview.html` 의 절대경로를 담는다. dispatch 워커에는 다음 턴에 응답할 사용자가 없다.
 
 dispatch 로 일을 받지 않았으면 위 절차대로 사용자가 읽고 응답한 다음 턴에 등록한다.
