@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.14.0"
+  version: "3.14.1"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -36,7 +36,7 @@ description: |
 | 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$SP/preview.html` 을 생성했다 | `scripts/show-preview.sh` |
 | 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다 | |
 
-이 세션이 Orca orchestration dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
+이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
 
 본문과 미리보기를 둘 자리를 하나 정해 `SP` 에 담는다.
 하네스가 알려주는 임시 디렉터리가 있으면 그것을 쓰고, 없으면 저장소 밖의 임시 경로를 쓴다.
@@ -202,7 +202,7 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 
 #### 보는 사람이 없는 세션에서 등록할 때
 
-이 세션이 Orca orchestration dispatch 로 일을 받았으면 아래를 따른다.
+이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 아래를 따른다.
 받은 지시문에 dispatch 머리말(`You are a dispatched worker`)이 있으면 dispatch 로 받은 것이다.
 
 **5단계는 대상 생성기로 `$SP/preview.html` 을 만드는 것까지 수행한다.**
