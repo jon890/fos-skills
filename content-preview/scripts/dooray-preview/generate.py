@@ -12,16 +12,16 @@ Dooray 는 본문을 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/J
         --title "<업무 제목>" \
         --tag "<태그>" --tag "<태그>" \
         --meta "담당자:<이름>" --meta "참조:<그룹>" \
-        --md-file "$SP/body.md" \
-        --out "$SP/preview.html"
-    scripts/show-preview.sh "$SP/preview.html"
+        --md-file "$PREVIEW_DIR/body.md" \
+        --out "$PREVIEW_DIR/preview.html"
+    scripts/show-preview.sh "$PREVIEW_DIR/preview.html"
 
 사용 예 (댓글):
     python3 scripts/dooray-preview/generate.py \
         --mode comment --author "<작성자>" \
         --title "<미리보기 제목>" \
-        --md-file "$SP/body.md" \
-        --out "$SP/preview.html"
+        --md-file "$PREVIEW_DIR/body.md" \
+        --out "$PREVIEW_DIR/preview.html"
 
 주의:
 - markdown 본문에 '</script>' 문자열이 있으면 안 된다 (text/plain 블록이 깨짐).

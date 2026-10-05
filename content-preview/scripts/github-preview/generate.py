@@ -12,9 +12,9 @@ Dooray 미리보기(scripts/dooray-preview/) 와 같은 구조이고 viewer 엔�
         --type issue \
         --repo "<owner>/<repo>" \
         --title "<issue 또는 PR 제목>" \
-        --md-file "$SP/body.md" \
-        --out "$SP/preview.html"
-    scripts/show-preview.sh "$SP/preview.html"
+        --md-file "$PREVIEW_DIR/body.md" \
+        --out "$PREVIEW_DIR/preview.html"
+    scripts/show-preview.sh "$PREVIEW_DIR/preview.html"
 
 주의:
 - markdown 본문에 '</script>' 문자열이 있으면 안 된다 (text/markdown 블록이 깨진다).
