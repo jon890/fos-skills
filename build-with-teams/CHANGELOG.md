@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.16.0
+
+`references/step-finish.md` 의 PR 절에 plan 마다 기준 브랜치를 base 로 PR 을 열고, 쌓았다면 앞 PR 을 머지하기 전에 뒤 PR 의 base 를 기준 브랜치로 바꾼다는 절을 더했다. 앞 PR 을 `--delete-branch` 로 머지하자 그 브랜치를 base 로 둔 PR 이 자동으로 닫혔고, 하나는 기준 브랜치가 아닌 앞 브랜치로 머지됐다.
+1단계 `--branch` 설명과 2단계에 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면 그 브랜치를 plan 브랜치로 쓰고 `plan_precheck.py --branch` 로 넘긴다는 줄을 더했다. Orca worker 는 브랜치를 미리 만들어 띄워서, 스킬이 기대한 task 디렉터리 이름과 어긋났다.
+
 ## 5.15.0
 
 `plan_precheck.py` 가 한글 파일 이름의 `.md` 변경을 구현으로 세지 않는다. git 이 non-ASCII 경로를 따옴표와 8진 escape 로 감싸 내서 `.md` 로 끝나는지 판정하지 못했다. 경로를 `core.quotePath=false` 로 읽는다.

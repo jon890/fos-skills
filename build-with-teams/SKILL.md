@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.15.0"
+  version: "5.16.0"
 ---
 # build-with-teams
 
@@ -110,6 +110,7 @@ python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" \
 | `index.json` 상태가 `completed` 다 | 발견 사항이다. 머지 후 정리된 브랜치로 본다 |
 
 브랜치 이름이 task 디렉터리 이름과 다르면 `--branch` 로 넘긴다.
+이미 만들어진 작업 공간과 브랜치 위에서 시작했으면(예: Orca 의 `worker-start --worktree new-top-level` 이 worker 마다 브랜치를 미리 만든다) 그 브랜치를 plan 브랜치로 쓰고 `--branch <그 이름>` 으로 넘긴다.
 모노레포에서 루트 `docs/` 도 기획 문서로 쓰면 `--docs-dir` 를 한 번 더 준다.
 경로와 관계없이 `.md` 파일은 구현 변경으로 세지 않는다. 계획 커밋이 README 나 CLAUDE.md 의 설명을 고치기 때문이다.
 
@@ -118,6 +119,7 @@ python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" \
 만드는 방법은 오버레이가 소유한다. 이 스킬이 요구하는 것은 아래와 같다.
 
 - plan 브랜치 위에서 작업한다. 1단계가 로컬에만 있는 브랜치라고 알렸으면 그 로컬 브랜치를 쓴다.
+- 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면 브랜치를 새로 만들거나 이름을 바꾸지 않는다. 그 브랜치를 plan 브랜치로 쓰고 `plan_precheck.py --branch <그 이름>` 으로 넘긴다.
 - main 워킹 디렉터리와 분리한다.
 - 팀원에게 줄 절대경로를 확보한다.
 
