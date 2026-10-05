@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.14.1"
+  version: "3.15.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -61,8 +61,11 @@ SP=<본문과 미리보기를 둘 디렉터리>
 zsh 의 `noclobber` 로 `cat > 기존파일` 이 거부되는데, 오류는 `file exists` 한 줄로만 나오고
 뒤이은 생성기는 그대로 성공한다. 이전 본문으로 만든 미리보기를 새 본문이라고 착각하게 된다.
 
+**`rm` 대상의 변수는 `${SP:?}` 로 쓴다.** `$SP` 가 비어 있으면 셸이 오류를 내고 `rm` 을 실행하지 않는다.
+Claude Code 의 안전 검사도 비면 루트 경로가 되는 변수로 시작하는 `rm` 대상을 막는다.
+
 ```bash
-rm -f "$SP/body.md" "$SP/preview.html"
+rm -f "${SP:?}/body.md" "${SP:?}/preview.html"
 cat > "$SP/body.md" <<'EOF'
 ...
 EOF
@@ -173,6 +176,14 @@ bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
 # cwd: 아무 곳
 ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview.sh" "$SP/preview.html"
 ```
+
+#### 본문이 여럿일 때
+
+한 턴에 등록할 본문이 여럿이면 미리보기 스크립트가 탭 하나를 다시 쓰므로, 본문마다 띄우면 마지막 것만 보인다.
+
+- 본문은 각자 파일로 쓰고 3단계의 검사기도 각각 돌린다.
+- 미리보기용으로만 본문들을 `# <순번>. <제목>` 머리를 붙여 한 파일로 이어 붙이고, 그 파일로 미리보기를 한 번 띄운다.
+- 등록은 각자의 본문 파일로 한다. 이어 붙인 파일은 등록하지 않는다.
 
 ### 6. 등록
 

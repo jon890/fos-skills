@@ -147,7 +147,7 @@ if [ -x "$DRIVER" ]; then
         echo "이 탭은 사용자가 보는 워크트리($WANT)가 아니다. 기본 브라우저로 다시 띄운다." >&2
         # 남겨 두면 다음 실행이 다시 집어 갈 수 있고, 사용자가 찾지 못하는 탭만 쌓인다.
         drv close "$PAGE" >/dev/null 2>&1 || true
-        rm -f "$IDFILE"
+        rm -f "${IDFILE:?}"
         PAGE=""
       fi
     fi
