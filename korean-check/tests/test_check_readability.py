@@ -158,20 +158,68 @@ class TestExitCode(Base):
 
 
 class TestRepository(unittest.TestCase):
-    """이 저장소 자신이 자기 규칙을 지키는지 본다."""
+    """저장소 문서를 검사하되 linguist-vendored 가 set 또는 true 인 외부 사본은 제외한다."""
 
-    def test_repo_markdown_passes(self):
-        root = Path(__file__).resolve().parents[2]
+    def run_on_repository(self, root):
         files = subprocess.run(
-            ["git", "ls-files", "*.md"], cwd=root,
+            ["git", "ls-files", "-z", "*.md"], cwd=root,
             capture_output=True, text=True, check=True,
-        ).stdout.split()
+        ).stdout.split("\0")[:-1]
         self.assertTrue(files, "검사할 .md 를 찾지 못했다")
-        done = subprocess.run(
+
+        attributes = subprocess.run(
+            ["git", "check-attr", "-z", "--stdin", "linguist-vendored"],
+            cwd=root, input="\0".join(files) + "\0",
+            capture_output=True, text=True, check=True,
+        ).stdout.split("\0")[:-1]
+        vendored = {
+            path
+            for path, value in zip(attributes[::3], attributes[2::3])
+            if value in {"set", "true"}
+        }
+        files = [path for path in files if path not in vendored]
+        self.assertTrue(files, "외부 사본을 제외하고 검사할 .md 를 찾지 못했다")
+
+        return subprocess.run(
             ["python3", str(SCRIPT), *files], cwd=root,
             capture_output=True, text=True,
         )
+
+    def test_repo_markdown_passes(self):
+        root = Path(__file__).resolve().parents[2]
+        done = self.run_on_repository(root)
         self.assertEqual(done.returncode, 0, done.stdout)
+
+    def test_vendored_markdown_is_skipped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet"], cwd=root,
+                capture_output=True, text=True, check=True,
+            )
+            (root / "clean.md").write_text("문제가 없는 문장이다.\n", encoding="utf-8")
+            (root / "external copy.md").write_text("고쳤다 — 빠져 있었다.\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "."], cwd=root,
+                capture_output=True, text=True, check=True,
+            )
+
+            cases = [
+                ("linguist-vendored", 0),
+                ("linguist-vendored=true", 0),
+                ("linguist-vendored=false", 1),
+                ("-linguist-vendored", 1),
+                ("!linguist-vendored", 1),
+            ]
+            for attribute, expected in cases:
+                with self.subTest(attribute=attribute):
+                    (root / ".gitattributes").write_text(
+                        f'"external copy.md" {attribute}\n', encoding="utf-8",
+                    )
+                    done = self.run_on_repository(root)
+                    self.assertEqual(done.returncode, expected, done.stdout)
+                    if expected == 1:
+                        self.assertIn("[DASH]", done.stdout)
 
 
 class TestMissingPath(Base):
