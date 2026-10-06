@@ -110,6 +110,20 @@ def take_scope(argv: list[str]) -> tuple[list[str], str | None]:
     return rest, scope
 
 
+SCRIPT_SUFFIXES = {".py", ".sh", ".bash", ".zsh"}
+
+
+def count_scripts(start: Path) -> int:
+    """`start` 아래(또는 파일 하나)의 실행 파일 수를 센다. 건너뛰는 디렉터리는 대상과 같다."""
+    if start.is_file():
+        return int(start.suffix in SCRIPT_SUFFIXES)
+    total = 0
+    for _, directories, filenames in os.walk(start, followlinks=False):
+        directories[:] = [d for d in directories if d not in SKIP_PARTS]
+        total += sum(1 for name in filenames if Path(name).suffix in SCRIPT_SUFFIXES)
+    return total
+
+
 def iter_targets(
     root: Path, include_readme: bool = False, scope: Path | None = None
 ) -> Iterable[Path]:
