@@ -79,7 +79,7 @@ class RunDocSnippetsTest(unittest.TestCase):
         lines = done.stdout.splitlines()
         self.assertEqual(len(lines), 3)
         self.assertNotIn("[위험", lines[0])
-        self.assertIn("[위험: gh ", lines[1])
+        self.assertIn("[위험: gh]", lines[1])
         self.assertIn("[위험: git push", lines[2])
 
     def test_list_does_not_execute(self):
