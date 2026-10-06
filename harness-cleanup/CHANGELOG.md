@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.15.0
+
+범위에 Markdown 이 없고 스크립트만 있을 때 `collect_targets.py` 가 스크립트 수를 내고 스크립트 감사 절차를 가리킨다.
+전에는 저장소 루트를 의심하라고만 해서, 루트가 맞아도 막힌 곳이 어디인지 알 수 없었다.
+`references/script-audit.md` 에 호출처, 전제 재현, 테스트 세 가지와 제거 후보, 보류의 판정 기준을 더했다.
+깨진 참조가 다른 저장소를 말하는 문장이면 `~/` 전체 경로로 고친다는 규칙을 2단계에 더했다.
+`run_doc_snippets.py` 에 `--list` 와 `--block N` 을 더했다. `--list` 는 블록을 실행하지 않고 저장소나 외부에 닿는 명령에 위험 표시를 붙인다.
+
 ## 3.14.2
 
 `check_references.py` 가 플러그인 스킬 이름을 `SKILL.md` 를 가진 디렉터리에서 모은다.
