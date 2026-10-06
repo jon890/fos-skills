@@ -82,6 +82,10 @@ class PluginManifestTest(unittest.TestCase):
     def test_author_name_present(self):
         self.assertTrue(load(PLUGIN)["author"]["name"])
 
+    def test_no_bin_directory(self):
+        # PATH 명령은 nhn-dev 가 소유한다. 근거는 docs/adr/004-no-plugin-bin.md
+        self.assertFalse((ROOT / "bin").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
