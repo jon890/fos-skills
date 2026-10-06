@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from target_files import iter_targets, resolve_scope, take_scope
+from target_files import count_scripts, iter_targets, resolve_scope, take_scope
 
 
 def main() -> int:
@@ -48,7 +48,15 @@ def main() -> int:
     if external:
         print(f"외부 symlink: {external}개")
     if count == 0:
-        print("대상 파일을 찾지 못했다. 저장소 루트를 확인한다.", file=sys.stderr)
+        scripts = count_scripts(scope) if scope is not None else 0
+        if scripts:
+            print(f"Markdown 대상은 없고 스크립트 {scripts}개가 있다.", file=sys.stderr)
+            print(
+                "저장소 루트는 맞다. references/script-audit.md 의 절차로 스크립트를 감사한다.",
+                file=sys.stderr,
+            )
+        else:
+            print("대상 파일을 찾지 못했다. 저장소 루트를 확인한다.", file=sys.stderr)
         return 2
     return 0
 

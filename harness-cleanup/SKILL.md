@@ -7,7 +7,7 @@ description: |
   일반 hook 설정 추가, 제품 문서 수정과 보통 코드 수정은 대상이 아니다.
   일반 제품 문서가 코드와 맞는지는 `docs-check` 가 맡는다.
 metadata:
-  version: "3.14.2"
+  version: "3.15.0"
 ---
 
 # harness-cleanup
@@ -135,8 +135,12 @@ python3 "$SKILL_DIR/scripts/check_rename_drift.py" "$ROOT" "$BASE"
   쓰지 않는 스크립트는 `--help` 를 위치 인자로 먹는다.
   이 스킬의 `check_references.py` 는 그것을 저장소 경로로 읽어 「깨진 참조 0건」 을 내고 0 으로 끝난다 (실측).
   그런 스크립트는 파일 머리말의 docstring 이 사용법을 소유한다.
+- **깨진 참조를 판정하기 전에 그 문장이 다른 저장소를 말하는지 본다.**
+  그렇다면 문서를 `~/` 로 시작하는 전체 경로로 고친다. 검사기는 `~` 경로를 건너뛰므로 고치면 사라진다.
+- **범위에 Markdown 이 없고 스크립트만 있으면** `collect_targets.py` 가 스크립트 수를 내고 2 로 끝난다.
+  [`references/script-audit.md`](references/script-audit.md) 를 읽고 그 절차로 감사한다.
 - **문서의 실행 가능한 블록을 전부 돌린다.** 검출 명령만이 아니다.
-  블록을 그대로 실행하는 스크립트라 먼저 읽고 무엇이 도는지 확인한다.
+  블록을 그대로 실행하는 스크립트라 `--list` 로 블록과 위험 표시를 먼저 보고 무엇이 도는지 확인한다.
   절차와 안전 조건은 [`references/run-doc-snippets.md`](references/run-doc-snippets.md) 가 소유한다.
 - 스킬을 수정할 가능성이 있으면 변경 전 평가 명령이 있는지 확인하고 기준값을 기록한다.
 
