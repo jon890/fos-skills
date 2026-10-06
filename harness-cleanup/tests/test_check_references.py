@@ -60,5 +60,80 @@ class CheckReferencesTest(unittest.TestCase):
         self.assertIn("[스킬] no-such-skill", result.stdout)
 
 
+class SiblingAndPluginTest(CheckReferencesTest):
+    """형제 스킬의 파일 참조와 플러그인 이름을 깨진 참조로 내지 않는지 검증한다."""
+
+    def make_repo_skill(self, relative, *files):
+        base = self.repo / relative
+        base.mkdir(parents=True)
+        (base / "SKILL.md").write_text("---\nname: x\n---\n")
+        for name in files:
+            target = base / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("# 문서\n")
+        return base
+
+    def write_doc(self, relative, text):
+        doc = self.repo / relative
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        doc.write_text(text)
+
+    def test_sibling_skill_path_with_qualified_name_is_not_broken(self):
+        self.make_repo_skill("plugins/nhn-dev/skills/dooray-cli", "references/mention-link.md")
+        self.make_repo_skill("plugins/ai-sdt/skills/weekly-report")
+        self.write_doc(
+            "plugins/ai-sdt/skills/weekly-report/references/format.md",
+            "`nhn-dev:dooray-cli` 스킬의 `references/mention-link.md` 가 소유한다.\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_sibling_skill_path_with_plain_name_is_not_broken(self):
+        self.make_repo_skill("skills/alpha", "references/shared.md")
+        self.make_repo_skill("skills/beta")
+        self.write_doc("skills/beta/SKILL.md", "`alpha` 스킬의 `references/shared.md` 를 읽는다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_missing_file_in_named_sibling_is_still_broken(self):
+        self.make_repo_skill("plugins/nhn-dev/skills/dooray-cli", "references/other.md")
+        self.make_repo_skill("plugins/ai-sdt/skills/weekly-report")
+        self.write_doc(
+            "plugins/ai-sdt/skills/weekly-report/references/format.md",
+            "`nhn-dev:dooray-cli` 스킬의 `references/mention-link.md` 가 소유한다.\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[경로] references/mention-link.md", result.stdout)
+
+    def test_path_without_sibling_name_is_still_broken(self):
+        self.make_repo_skill("skills/alpha", "references/shared.md")
+        self.make_repo_skill("skills/beta")
+        self.write_doc("skills/beta/SKILL.md", "`references/shared.md` 를 읽는다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+    def test_plugin_directory_name_is_not_a_skill_reference(self):
+        self.make_repo_skill("plugins/nhn-dev/skills/dooray-cli")
+        self.write_claude_md("nhn-dev")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_plugin_json_name_is_not_a_skill_reference(self):
+        manifest = self.repo / ".claude-plugin/plugin.json"
+        manifest.parent.mkdir()
+        manifest.write_text('{"name": "my-plugin"}')
+        self.write_claude_md("my-plugin")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_unknown_name_is_still_reported_next_to_plugins(self):
+        self.make_repo_skill("plugins/nhn-dev/skills/dooray-cli")
+        self.write_claude_md("no-such-skill")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[스킬] no-such-skill", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
