@@ -6,7 +6,7 @@ description: |
   "리뷰 남겨줘", "이 PR 봐줘", "리뷰 초안", "리뷰 댓글 달아줘" 같은 요청이면 이 스킬을 쓴다.
   이미 달린 리뷰를 코드에 반영하는 일은 `review-fix` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "1.5.0"
+  version: "1.5.1"
 ---
 
 # pr-review
@@ -64,7 +64,7 @@ gh pr list --state open --limit 20
 
 ### 2단계: 근거 확보
 
-**주장하기 전에 잰다.** 이 스킬에서 가장 값이 큰 규칙이다.
+**주장하기 전에 측정한다.** 이 스킬에서 가장 값이 큰 규칙이다.
 
 [evidence.md](references/evidence.md) 를 따른다. 요약하면 셋이다.
 
@@ -74,7 +74,7 @@ gh pr list --state open --limit 20
 
 ### 3단계: 등급과 범위 판정
 
-[grading.md](references/grading.md) 로 등급을, [scope.md](references/scope.md) 로 리뷰인지 후속 업무인지 가른다.
+[grading.md](references/grading.md) 로 등급을 정하고, [scope.md](references/scope.md) 로 리뷰와 후속 업무를 구분한다.
 
 작성자가 이 PR 에서 고칠 수 있는 것만 리뷰로 낸다.
 저장소 공통 문제를 리뷰에 섞으면 작성자가 감당할 수 없는 것을 요구하게 된다.
