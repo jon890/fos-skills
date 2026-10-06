@@ -1,6 +1,7 @@
 """내보내기 전용 원본을 제외한 스킬 디렉터리와 매니페스트를 대조하고 버전이 없는지 검증한다."""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,6 +82,10 @@ class PluginManifestTest(unittest.TestCase):
 
     def test_author_name_present(self):
         self.assertTrue(load(PLUGIN)["author"]["name"])
+
+    def test_no_bin_directory(self):
+        # PATH 명령은 nhn-dev 가 소유한다. 근거는 docs/adr/004-no-plugin-bin.md
+        self.assertFalse(os.path.lexists(ROOT / "bin"), "루트에 bin 을 두지 않는다. docs/adr/004-no-plugin-bin.md")
 
 
 if __name__ == "__main__":
