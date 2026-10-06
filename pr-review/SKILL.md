@@ -6,7 +6,7 @@ description: |
   "리뷰 남겨줘", "이 PR 봐줘", "리뷰 초안", "리뷰 댓글 달아줘" 같은 요청이면 이 스킬을 쓴다.
   이미 달린 리뷰를 코드에 반영하는 일은 `review-fix` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "1.5.0"
+  version: "1.5.1"
 ---
 
 # pr-review

@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.5.1
+
+`SKILL.md` 와 `references/evidence.md`, `references/grading.md`, `references/scope.md` 의 표현 여섯 곳을 권장 표현으로 바꿨다.
+측정 원칙, 리뷰와 후속 업무의 구분 기준, 재리뷰의 등급 제한은 그대로 유지한다.
+
 ## 1.5.0
 
 - `gh-review-post.sh` 의 등록 뒤 확인이 줄 번호를 `null` 로 보이던 것을 고쳤다.
