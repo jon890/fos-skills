@@ -1,5 +1,6 @@
 """collect_targets.py 의 스크립트 전용 범위 안내와 run_doc_snippets.py 의 --list, --block 을 검증한다."""
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -82,6 +83,27 @@ class StrayDirsTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
         done = run("collect_targets.py", self.root)
         self.assertNotIn("경고", done.stderr)
+
+    def test_missing_git_binary_skips_warning(self):
+        (self.root / "plugins/p/skills/old").mkdir()
+        empty = tempfile.TemporaryDirectory()
+        self.addCleanup(empty.cleanup)
+        env = {**os.environ, "PATH": empty.name}
+        done = subprocess.run(
+            [sys.executable, str(SCRIPTS / "collect_targets.py"), str(self.root)],
+            capture_output=True, text=True, env=env,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+        self.assertNotIn("경고", done.stderr)
+
+    def test_scope_on_one_skill_ignores_sibling_dirs(self):
+        (self.root / "plugins/p/skills/old").mkdir()
+        done = run("collect_targets.py", self.root, "--scope", "plugins/p/skills/live")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("plugins/p/skills/old", done.stderr)
+        done = run("collect_targets.py", self.root, "--scope", "plugins/p/skills")
+        self.assertIn("plugins/p/skills/old", done.stderr)
 
     def test_non_git_directory_does_not_warn(self):
         other = tempfile.TemporaryDirectory()

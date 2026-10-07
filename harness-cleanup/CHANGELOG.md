@@ -3,11 +3,18 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 3.16.2
+## 3.16.3
 
 문구만 고쳤다. 스크립트 코드는 건드리지 않았다.
 `script-audit.md` 의 호출처 grep 예시가 찾을 위치를 `$SEARCH_DIRS` 배열로 받는다. 이전 블록은 저장소 루트의 `settings.json`, `references`, `skills` 만 찾아, 감사 범위가 `~/.claude` 아래인 사용자 전역 하네스에서는 호출처가 하나도 나오지 않았다. 저장소 하네스와 사용자 전역 하네스의 예를 하나씩 두었고, 배열이라 bash 와 zsh 에서 같게 돈다.
 이 변경 이력의 금지어 다섯 곳을 매핑 표의 권장 표현으로 고쳤다. 뜻은 바꾸지 않았다.
+
+## 3.16.2
+
+`find_test_requirements.py` 가 문서용 제외 목록 대신 시험 탐색 전용 제외 목록(`.git`, `node_modules`, `.venv`, `worktrees`, `__pycache__`)을 쓴다. `tests/data/` 같은 fixture 폴더, CI 설정, `scripts/validate*` 도 찾고, 빈 문자열 인자는 종료 코드 2 로 거부한다.
+`collect_targets.py` 는 `git` 이 없으면 경고만 건너뛰고, `--scope` 가 스킬 하나를 가리키면 범위 밖 형제 폴더를 경고하지 않는다.
+`find_test_requirements.py` 는 제목 인자의 `#` 표기를 뗀 문자열로도 찾아, 시험이 제목을 표기 없이 갖고 있는 경우를 놓치지 않는다.
+`check_references.py` 는 `plugin:skill` 꼴의 앞쪽이 알려진 플러그인 이름일 때만 형제 스킬 지명으로 받는다.
 
 ## 3.16.1
 
