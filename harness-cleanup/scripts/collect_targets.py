@@ -16,7 +16,7 @@ from target_files import count_scripts, iter_targets, resolve_scope, take_scope
 def stray_skill_dirs(root: Path, scope: Path | None) -> list[Path]:
     """스킬 루트 바로 밑에서 SKILL.md 도 없고 git 추적 파일도 없는 디렉터리를 찾는다.
 
-    `__pycache__` 와 `.omc` 만 남은 옛 스킬 폴더가 여기 해당한다. git 저장소가 아니면 비운다.
+    `__pycache__` 와 `.omc` 만 남은 옛 스킬 폴더가 여기 해당한다. git 저장소가 아니거나 git 이 없으면 비운다. `--scope` 가 스킬 하나를 가리키면 그 스킬만 본다.
     """
     roots = [root / "skills", *sorted(root.glob("plugins/*/skills"))]
     found = []
@@ -26,13 +26,19 @@ def stray_skill_dirs(root: Path, scope: Path | None) -> list[Path]:
         if scope is not None and not (scope.is_relative_to(skill_root) or skill_root.is_relative_to(scope)):
             continue
         for directory in sorted(d for d in skill_root.iterdir() if d.is_dir() and not d.is_symlink()):
+            if scope is not None and scope.is_relative_to(skill_root) and scope != skill_root:
+                if not (scope.is_relative_to(directory) or directory.is_relative_to(scope)):
+                    continue
             if (directory / "SKILL.md").exists():
                 continue
-            done = subprocess.run(
-                ["git", "-C", str(root), "ls-files", "--", str(directory.relative_to(root))],
-                capture_output=True,
-                text=True,
-            )
+            try:
+                done = subprocess.run(
+                    ["git", "-C", str(root), "ls-files", "--", str(directory.relative_to(root))],
+                    capture_output=True,
+                    text=True,
+                )
+            except FileNotFoundError:
+                return []
             if done.returncode == 0 and not done.stdout.strip():
                 found.append(directory)
     return found
