@@ -7,7 +7,7 @@ description: |
   일반 hook 설정 추가, 제품 문서 수정과 보통 코드 수정은 대상이 아니다.
   일반 제품 문서가 코드와 맞는지는 `docs-check` 가 맡는다.
 metadata:
-  version: "3.16.1"
+  version: "3.16.2"
 ---
 
 # harness-cleanup
@@ -161,6 +161,8 @@ python3 "$SKILL_DIR/scripts/check_rename_drift.py" "$ROOT" "$BASE"
 발동 조건과 네 모드의 통과 조건은 `references/judgment.md` 가 소유한다.
 
 **제거, 축소, 이름 변경으로 판정하기 전에 그 제목과 문장을 시험이 요구하는지 찾는다.**
+시험 폴더(`tests/data/` 같은 fixture 포함), 시험 파일, CI 설정(`.github/workflows/*.yml`), `scripts/validate*` 를 읽는다.
+제목 인자(`## 언제 쓰나`)는 `#` 표기를 뗀 문자열로도 찾는다.
 승인 뒤 적용 단계에서 시험이 깨져 판정이 뒤집힌 사례가 있었다.
 찾은 위치는 판정표 근거에 「시험이 요구」 로 적고, 시험도 함께 고칠지를 별도 승인 항목으로 낸다.
 

@@ -106,6 +106,16 @@ class SiblingAndPluginTest(CheckReferencesTest):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("[경로] references/mention-link.md", result.stdout)
 
+    def test_unknown_prefix_is_not_a_sibling_reference(self):
+        self.make_repo_skill("plugins/nhn-dev/skills/dooray-cli", "references/mention-link.md")
+        self.make_repo_skill("plugins/ai-sdt/skills/weekly-report")
+        self.write_doc(
+            "plugins/ai-sdt/skills/weekly-report/references/format.md",
+            "`foo:dooray-cli` 의 `references/mention-link.md` 가 소유한다.\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
     def test_path_without_sibling_name_is_still_broken(self):
         self.make_repo_skill("skills/alpha", "references/shared.md")
         self.make_repo_skill("skills/beta")
