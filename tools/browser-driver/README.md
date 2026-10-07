@@ -26,7 +26,7 @@ $B doctor
 | `driver/admin.py` | `doctor`, `install` |
 | `driver/backends/__init__.py` | 백엔드 목록과 선택 규칙 |
 | `driver/backends/base.py` | 백엔드 공통 계약 |
-| `driver/backends/ego.py`, `orca.py`, `cmux.py` | 백엔드 하나씩 |
+| `driver/backends/ego.py`, `orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
 | `browser.config.example.json` | 설정 예시 |
 | `tests/` | `unittest` 시험. `python3 -m unittest discover -s tests` |
 
@@ -78,22 +78,26 @@ Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값�
 
 ## 백엔드마다 갈리는 것
 
-**핸들의 의미가 다르다.** `orca` 는 탭의 page id 를,
+**핸들의 의미가 다르다.** `orca` 는 탭의 page id 를, `agent-browser` 는 세션 이름을,
 `ego` 는 `<spaceId>:<pageLabel>` 을 돌려준다.
 드라이버는 이 값을 그대로 넘기기만 하므로 어느 쪽이든 같이 동작한다.
 
 **`js` 의 반환값은 드라이버가 같은 형식으로 맞춘다.**
 문자열은 따옴표 없이, 객체와 배열은 여백 없는 JSON 으로 낸다.
+`agent-browser` 의 `eval` 은 값을 JSON 으로 인코딩해 내므로 드라이버가 한 겹 벗긴다.
+그대로 흘리면 `JSON.stringify` 결과를 파싱하는 소비자가 따옴표에서 깨진다 (실측).
 `ego` 의 `evaluate` 는 `undefined` 를 `null` 로 바꿔 내보내 그 둘을 구분할 수 없으므로,
 드라이버가 표현식을 페이지 안에서 한 겹 감싸 어느 쪽인지를 따로 받는다 (실측).
+`agent-browser` 는 `undefined` 에 `null` 을 낸다.
 
-**`close` 뒤에는 핸들을 다시 쓰지 않는다.** `orca` 와 `ego` 는 없는 탭이라고 실패한다 (실측).
+**`close` 뒤의 동작이 다르다.** `agent-browser` 는 핸들이 죽지 않아 다음 명령이 새 브라우저를 띄우고,
+`orca` 와 `ego` 는 없는 탭이라고 실패한다 (실측).
 
 **`charset` 을 선언하지 않은 `file://` 문서를 `cmux` 는 UTF-8 로 추정하지 않는다.** `orca` 는 추정한다 (실측).
 
 ## 백엔드별 규칙
 
-**`orca` 는 실패해도 종료 코드가 0 이다.** 드라이버가 이것을 1 로 바꾸므로
+**`orca` 와 `agent-browser` 는 실패해도 종료 코드가 0 이다.** 드라이버가 이것을 1 로 바꾸므로
 백엔드를 직접 부르지 않는다. 직접 부르면 오류가 드러나지 않는다.
 `ego` 와 `cmux` 는 종료 코드로 알린다.
 
@@ -160,6 +164,11 @@ Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값�
 - 조건 대기는 폴링이 아니라 ego 의 `waitForFunction` 과 `waitForLoadState` 를 그대로 쓴다.
 - 실패를 종료 코드 1 로 알린다. 다만 브라우저 서비스에 붙지 못하면 종료 코드 0 으로 끝난다 (실측).
   그래서 드라이버는 모든 명령이 끝에 남기는 표식이 있는지도 본다. 표식이 없으면 실패로 판정한다.
+
+`agent-browser`
+
+- SSO 가 필요한 시스템은 설정에 `cdpPort` 를 적어야 한다. 상세는 `doctor` 가 낸다.
+- 조건 대기 명령이 없어서 드라이버가 `eval` 안의 폴링으로 대신한다.
 
 `cmux`
 
