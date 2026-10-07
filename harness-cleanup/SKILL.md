@@ -160,6 +160,15 @@ python3 "$SKILL_DIR/scripts/check_rename_drift.py" "$ROOT" "$BASE"
 기계가 이미 막는다는 근거로 지우려면 `scripts/check_enforcement.py` 로 확인한다.
 발동 조건과 네 모드의 통과 조건은 `references/judgment.md` 가 소유한다.
 
+**제거, 축소, 이름 변경으로 판정하기 전에 그 제목과 문장을 시험이 요구하는지 찾는다.**
+승인 뒤 적용 단계에서 시험이 깨져 판정이 뒤집힌 사례가 있었다.
+찾은 위치는 판정표 근거에 「시험이 요구」 로 적고, 시험도 함께 고칠지를 별도 승인 항목으로 낸다.
+
+```bash
+# cwd: 아무 곳. 지우거나 바꿀 제목과 문장을 인자로 준다
+python3 "$SKILL_DIR/scripts/find_test_requirements.py" "$ROOT" "## 언제 쓰나" "## 일곱 단계"
+```
+
 ### 4. 판정표와 승인
 
 나눠 맡겼으면 돌아온 회신을 한 표로 모은다.
