@@ -12,9 +12,21 @@
 2. docstring 이나 머리 주석이 말하는 전제를 재현한다.
 3. 그 스크립트의 테스트를 돌린다.
 
+`$SEARCH_DIRS` 에는 호출처가 있을 파일과 폴더를 `$ROOT` 기준 배열로 넣는다.
+저장소 하네스는 훅 설정 `.claude/settings.json`, 지침 `CLAUDE.md` 와 `AGENTS.md`, 문서 폴더, git hook 폴더처럼 저장소가 가진 것을 넣는다.
+사용자 전역 하네스는 `$ROOT` 가 `~` 이고 설정, 지침, 참조, 스킬이 모두 `.claude` 아래에 있다.
+공백으로 나눈 문자열은 zsh 가 단어 분할을 하지 않으므로 배열을 쓴다.
+
 ```bash
-# cwd: $ROOT. 호출처는 설정 파일, 지침, 스킬에서 찾는다
-grep -rn "$(basename "$SCRIPT")" settings.json CLAUDE.md references skills 2>/dev/null
+# cwd: $ROOT. 저장소 하네스의 예
+SEARCH_DIRS=(.claude/settings.json CLAUDE.md AGENTS.md README.md docs hooks)
+grep -rn "$(basename "$SCRIPT")" "${SEARCH_DIRS[@]}" 2>/dev/null
+```
+
+```bash
+# cwd: ~. 사용자 전역 하네스의 예
+SEARCH_DIRS=(.claude/settings.json .claude/CLAUDE.md .claude/references .claude/skills)
+grep -rn "$(basename "$SCRIPT")" "${SEARCH_DIRS[@]}" 2>/dev/null
 ```
 
 찾을 곳은 저장소마다 다르다. 훅은 `settings.json` 에, 스킬 호출은 각 `SKILL.md` 에 있다.
