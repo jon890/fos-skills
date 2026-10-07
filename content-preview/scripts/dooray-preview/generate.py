@@ -37,7 +37,7 @@ from pathlib import Path
 TEMPLATE = Path(__file__).parent / "template.html"
 
 LINK_WARNING = "경고: Dooray 메신저의 업무·위키 dooray:// 마크다운 링크는 https 주소로 바꾸세요."
-UNSUPPORTED_LINK = re.compile(r'\]\(dooray://[^\s)]*/(?:tasks|pages)/', re.IGNORECASE)
+UNSUPPORTED_LINK = re.compile(r'dooray://[^\s)>]*/(?:tasks|pages)/', re.IGNORECASE)
 MENTION = r'\[@[^\]\n]+\]\(dooray://[^\s)]+/members/[^\s)]+\s+"member"\)'
 MESSENGER_TOKEN = re.compile(
     MENTION +
@@ -78,7 +78,7 @@ def main() -> int:
     ap.add_argument("--mode", choices=("task", "comment", "messenger"), default="task",
                     help="task 는 업무, comment 는 댓글, messenger 는 대화방 메시지")
     ap.add_argument("--author", default="작성자", help="댓글 작성자 또는 메신저 보내는 사람")
-    ap.add_argument("--strict", action="store_true", help="메신저 링크 경고가 있으면 HTML 생성 후 종료 코드 1")
+    ap.add_argument("--strict", action="store_true", help="messenger 모드에서만 적용: 링크 경고가 있으면 HTML 생성 후 종료 코드 1")
     ap.add_argument("--project", default="", help="프로젝트명 (헤더 표시용). 없으면 그 줄을 그린다")
     ap.add_argument("--tag", action="append", default=[], help="태그 (반복 지정)")
     ap.add_argument("--meta", action="append", default=[],

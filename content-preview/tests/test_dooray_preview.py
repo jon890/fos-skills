@@ -40,7 +40,7 @@ class DoorayPreviewTests(unittest.TestCase):
             if strict:
                 command.append("--strict")
             result = subprocess.run(command, input=body, text=True, capture_output=True)
-            return result, out.read_text() if out.exists() else ""
+            return result, out.read_text(encoding="utf-8") if out.exists() else ""
 
     def test_messenger_renders_only_verified_links(self):
         body = ('[@example](dooray://example/members/example "member")\n'
@@ -81,6 +81,28 @@ class DoorayPreviewTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stderr, "")
         self.assertEqual(PreviewParser(source).alerts, 0)
+
+    def test_warning_for_task_and_page_url_formats(self):
+        for resource in ("tasks", "pages"):
+            url = f"dooray://example/{resource}/example"
+            for body in (url, f"[example](<{url}>)", f"[example]( {url})"):
+                for strict in (False, True):
+                    with self.subTest(resource=resource, body=body, strict=strict):
+                        result, source = self.generate(body, strict=strict)
+                        parsed = PreviewParser(source)
+                        self.assertEqual(result.returncode, int(strict))
+                        self.assertEqual(parsed.alerts, 1)
+                        self.assertIn("https", result.stderr)
+                        self.assertIn(body, "".join(parsed.text))
+
+    def test_no_warning_for_member_url_formats(self):
+        url = "dooray://example/members/example"
+        for body in (url, f"[@example](<{url}>)", f"[@example]( {url})"):
+            with self.subTest(body=body):
+                result, source = self.generate(body, strict=True)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, "")
+                self.assertEqual(PreviewParser(source).alerts, 0)
 
     def test_html_is_text_and_url_attributes_are_escaped(self):
         result, source = self.generate('<img src=x onerror=alert(1)> </script>\nhttps://example.com/?a=1&b=2')
