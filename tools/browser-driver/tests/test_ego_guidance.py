@@ -59,7 +59,7 @@ class EgoGuidanceTest(unittest.TestCase):
         r = self.make().run("doctor")
         self.assertEqual(r.returncode, 2)
         self.assertIn(URL, r.stdout)
-        self.assertIn("ego lite", r.stdout)
+        self.assertLess(r.stdout.index("ego lite"), r.stdout.index("orca 나 agent-browser"))
 
     def test_no_backend_error_on_command(self):
         r = self.make().run("open", "about:blank")

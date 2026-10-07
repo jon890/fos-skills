@@ -94,7 +94,7 @@ class EgoBackend(Backend):
 
     호출마다 Node 프로세스가 새로 뜨고 스크립트의 변수는 남지 않는다. TaskSpace 와
     page label 은 남으므로 그 둘을 `<spaceId>:<pageLabel>` 핸들로 쓴다 (실측).
-    실패하면 종료 코드 1 과 오류 메시지를 낸다. orca 와 달리
+    실패하면 종료 코드 1 과 오류 메시지를 낸다. orca 나 agent-browser 와 달리
     종료 코드로 실패를 알린다 (실측).
     콘솔 로그와 페이지 오류는 대응 API 가 없어 console 과 errors 를 다루지 않는다.
     `page.events()` 는 버퍼를 비우는 프로토콜 이벤트 배열이라 성격이 다르다.
