@@ -87,7 +87,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | `tests/test_check_readability.py` | 네 검사와 허용 예외마다 같은 방식으로 둔 검출력 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 
-시험은 저장소 루트에서 돌린다. 다른 곳에서 부르면 `ImportError` 로 끝난다.
+테스트는 저장소 루트에서 돌린다. 다른 곳에서 부르면 `ImportError` 로 끝난다.
 
 ```bash
 # cwd: 저장소 루트
