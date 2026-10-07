@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.19.3
+
+`test` 를 `테스트` 로 쓰는 사례를 「실측으로 되돌린 사례」 에 더했다.
+
 ## 1.19.2
 
 저장소 가독성 시험에서 `linguist-vendored` 속성이 `set` 또는 `true` 인 외부 사본을 제외한다.
