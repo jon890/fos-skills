@@ -40,6 +40,25 @@ class FindTestRequirementsTest(unittest.TestCase):
         self.assertEqual(done.stdout.count("시험이 요구"), 1)
         self.assertEqual(done.stdout.count("없음"), 1)
 
+    def test_reads_fixture_ci_and_validate_files(self):
+        for relative in ("tests/data/expected.txt", ".github/workflows/ci.yml", "scripts/validate.sh"):
+            target = self.root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("## 표본 제목\n")
+        done = self.run_script("## 표본 제목")
+        for relative in ("tests/data/expected.txt", ".github/workflows/ci.yml", "scripts/validate.sh"):
+            self.assertIn(f"시험이 요구: {relative}:1", done.stdout)
+
+    def test_skips_worktrees_and_node_modules(self):
+        for relative in ("worktrees/w/tests/t.txt", "node_modules/m/tests/t.txt"):
+            target = self.root / relative
+            target.parent.mkdir(parents=True)
+            target.write_text("## 표본 제목\n")
+        self.assertIn("없음", self.run_script("## 표본 제목").stdout)
+
+    def test_empty_string_argument_exits_with_2(self):
+        self.assertEqual(self.run_script("").returncode, 2)
+
     def test_missing_arguments_exit_with_2(self):
         done = self.run_script()
         self.assertEqual(done.returncode, 2)
