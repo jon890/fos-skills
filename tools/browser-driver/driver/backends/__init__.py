@@ -5,19 +5,18 @@ import os
 from ..config import CONFIG_PATH, config_value
 from ..errors import UsageError
 
-from .agent_browser import AgentBrowserBackend
 from .base import Backend  # noqa: F401  새 백엔드를 만드는 쪽이 여기서 가져간다
 from .cmux import CmuxBackend
 from .ego import EgoBackend
 from .orca import OrcaBackend
 
-BACKENDS = {b.name: b for b in (EgoBackend, OrcaBackend, AgentBrowserBackend, CmuxBackend)}
+BACKENDS = {b.name: b for b in (EgoBackend, OrcaBackend, CmuxBackend)}
 
 #: 자동 감지 순서. 로그인 세션이 필요한 주소는 ego 가 먼저다. ego 는 사용자가
 #: 로그인해 둔 프로필의 세션을 그대로 쓰고, orca 의 탭은 그 세션을 갖지 않는다.
 #: cmux 는 마지막이다. 설치돼 있어도 cmux 밖에서는 소켓 접근이 거부되므로 (실측)
 #: 자동 감지로 먼저 잡히면 쓸 수 없는 백엔드가 선택된다.
-DETECT_ORDER = ("ego", "orca", "agent-browser", "cmux")
+DETECT_ORDER = ("ego", "orca", "cmux")
 
 EGO_INSTALL_URL = "https://lite.ego.app/"
 
@@ -35,7 +34,6 @@ def resolve_backend_name():
             return name, "자동 감지"
     raise UsageError(
         f"쓸 수 있는 브라우저 백엔드가 없다. ego lite({EGO_INSTALL_URL})를 먼저 설치한다.\n"
-        "orca 나 agent-browser 를 설치해도 된다.\n"
         f"{CONFIG_PATH} 에 driver 를 적을 수도 있다. 자세한 상태는 doctor 로 본다.")
 
 
