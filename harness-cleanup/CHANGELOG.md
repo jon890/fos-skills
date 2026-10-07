@@ -7,6 +7,7 @@
 
 `find_test_requirements.py` 가 문서용 제외 목록 대신 시험 탐색 전용 제외 목록(`.git`, `node_modules`, `.venv`, `worktrees`, `__pycache__`)을 쓴다. `tests/data/` 같은 fixture 폴더, CI 설정, `scripts/validate*` 도 찾고, 빈 문자열 인자는 종료 코드 2 로 거부한다.
 `collect_targets.py` 는 `git` 이 없으면 경고만 건너뛰고, `--scope` 가 스킬 하나를 가리키면 범위 밖 형제 폴더를 경고하지 않는다.
+`find_test_requirements.py` 는 제목 인자의 `#` 표기를 뗀 문자열로도 찾아, 시험이 제목을 표기 없이 갖고 있는 경우를 놓치지 않는다.
 `check_references.py` 는 `plugin:skill` 꼴의 앞쪽이 알려진 플러그인 이름일 때만 형제 스킬 지명으로 받는다.
 
 ## 3.16.1

@@ -59,6 +59,11 @@ class FindTestRequirementsTest(unittest.TestCase):
     def test_empty_string_argument_exits_with_2(self):
         self.assertEqual(self.run_script("").returncode, 2)
 
+    def test_heading_marker_is_stripped_when_searching(self):
+        (self.root / "tests/test_skill.py").write_text('    "언제 쓰나",\n')
+        done = self.run_script("## 언제 쓰나")
+        self.assertIn("시험이 요구: tests/test_skill.py:1", done.stdout)
+
     def test_missing_arguments_exit_with_2(self):
         done = self.run_script()
         self.assertEqual(done.returncode, 2)
