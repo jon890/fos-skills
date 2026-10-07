@@ -45,6 +45,55 @@ class CollectTargetsTest(unittest.TestCase):
         self.assertIn("CLAUDE.md", done.stdout)
 
 
+class StrayDirsTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        git = ["git", "-C", str(self.root)]
+        subprocess.run([*git, "init", "-q"], check=True)
+        live = self.root / "plugins/p/skills/live"
+        live.mkdir(parents=True)
+        (live / "SKILL.md").write_text("---\nname: live\n---\n")
+        subprocess.run([*git, "add", "."], check=True)
+        subprocess.run(
+            [*git, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "init"],
+            check=True,
+        )
+
+    def test_untracked_skill_dir_without_skill_md_warns_and_keeps_exit_code(self):
+        stray = self.root / "plugins/p/skills/old/__pycache__"
+        stray.mkdir(parents=True)
+        (stray / "x.pyc").write_text("")
+        done = run("collect_targets.py", self.root)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("plugins/p/skills/old", done.stderr)
+        self.assertTrue(stray.exists())
+
+    def test_tracked_skill_dirs_do_not_warn(self):
+        done = run("collect_targets.py", self.root)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("경고", done.stderr)
+
+    def test_tracked_dir_without_skill_md_does_not_warn(self):
+        shared = self.root / "plugins/p/skills/_shared"
+        shared.mkdir()
+        (shared / "notes.txt").write_text("x")
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        done = run("collect_targets.py", self.root)
+        self.assertNotIn("경고", done.stderr)
+
+    def test_non_git_directory_does_not_warn(self):
+        other = tempfile.TemporaryDirectory()
+        self.addCleanup(other.cleanup)
+        plain = Path(other.name).resolve()
+        (plain / "skills/old").mkdir(parents=True)
+        (plain / "CLAUDE.md").write_text("# 지침\n")
+        done = run("collect_targets.py", plain)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("경고", done.stderr)
+
+
 DOC = """# 문서
 
 안전한 블록이다.
