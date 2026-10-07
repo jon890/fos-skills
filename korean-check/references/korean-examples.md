@@ -74,3 +74,4 @@
 | 절단     | truncation  | 뒷부분 누락     |
 | 유입 제한  | rate limit  | rate limit  |
 | 틀      | template    | template    |
+| 시험     | test        | 테스트       |
