@@ -1,10 +1,10 @@
 ---
 name: content-preview
 metadata:
-  version: "3.16.0"
+  version: "3.17.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
-  Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
+  Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
   사용자가 "미리보기" 라고 말하지 않아도, 외부에 나갈 텍스트를 등록하려는 순간이면 이 스킬을 쓴다.
   로컬 파일 작성과 코드 커밋처럼 외부에 나가지 않는 것은 대상이 아니다.
 ---
@@ -127,11 +127,12 @@ bash "$SKILL_DIR/scripts/style-check.sh" --where
 
 ### 5. 미리보기
 
-Dooray 업무와 댓글, GitHub issue 와 PR 본문은 실제 렌더링과 비슷한 HTML 을 만들어 브라우저로 띄운다.
+Dooray 업무와 댓글·메신저, GitHub issue 와 PR 본문은 실제 렌더링과 비슷한 HTML 을 만들어 브라우저로 띄운다.
 
 | 대상 | 렌더링 원리 | 생성기 |
 | --- | --- | --- |
-| Dooray | TOAST UI Editor viewer 의 CSS 와 JS. 실제 등록 화면과 거의 같다 | `scripts/dooray-preview/` |
+| Dooray 업무·댓글 | TOAST UI Editor viewer 의 CSS 와 JS. 실제 등록 화면과 거의 같다 | `scripts/dooray-preview/` |
+| Dooray 메신저 | 확인된 멘션과 HTTPS 주소만 렌더한다. 미확인 형식은 원문으로 둔다 | `scripts/dooray-preview/` |
 | GitHub | github-markdown-css 와 marked.js. 실제 화면과 비슷하다 | `scripts/github-preview/` |
 
 **대상과 생성기를 바꿔 쓰지 않는다.** marked 는 한 문장마다 줄을 나눈 본문을 한 문단으로 붙이고
@@ -143,8 +144,11 @@ Dooray 업무와 댓글, GitHub issue 와 PR 본문은 실제 렌더링과 비�
 | --- | --- | --- | --- |
 | Dooray | `task` (기본) | 프로젝트, 제목, 메타, 태그 | 업무 본문 |
 | Dooray | `comment` | 작성자 아바타와 이름 | 댓글, 진행 기록, 주간보고 |
+| Dooray | `messenger` | 대화방 이름과 보내는 사람 | 대화방 메시지 |
 | GitHub | `issue` (기본) | Issue 배지 | 이슈 본문 |
 | GitHub | `pr` | Pull Request 배지 | PR 본문, 리뷰 응답 |
+
+메신저를 미리볼 때는 [`references/messenger-rendering.md`](references/messenger-rendering.md) 의 확인 범위를 읽는다.
 
 ```bash
 # cwd: 아무 곳. $REPO 는 owner/repo 형태다

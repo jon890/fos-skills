@@ -62,6 +62,10 @@
     border: 1px solid #d7e3f6;
   }
   .dooray-body { padding: 24px 32px 40px; }
+  .dooray-warning { padding: 14px 32px; background: #fff3cd; color: #664d03; border-bottom: 1px solid #ffecb5; }
+  .dooray-messenger-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
+  .dooray-messenger-text a { color: #3565c0; }
+  .dooray-mention { background: #eef3fb; border-radius: 3px; text-decoration: none; }
   .toastui-editor-contents { font-size: 14px; }
   .toastui-editor-contents table { width: auto; }
   /* mermaid 가 그리기 전이나 CDN 을 받지 못했을 때 원문이 읽히게 둔다. */
@@ -77,10 +81,11 @@
   .toastui-editor-contents .mermaid-error-msg { color: #c0392b; font-size: 12px; margin-bottom: 6px; white-space: pre-wrap; font-family: monospace; }
 </style>
 </head>
-<body>
+<body data-mode="{{MODE}}">
 <div class="dooray-frame">
+  {{WARNING_HTML}}
   {{HEAD_HTML}}
-  <div class="dooray-body"><div id="viewer"></div></div>
+  <div class="dooray-body"><div id="viewer">{{MESSENGER_BODY}}</div></div>
 </div>
 
 <script type="text/plain" id="md">
@@ -91,6 +96,7 @@
 <!-- Dooray 는 ```mermaid 블록을 도표로 그린다. 두레이 내장 버전은 확인하지 못해 여기서 고정한다. -->
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
 <script>
+if (document.body.dataset.mode !== 'messenger') {
   const md = document.getElementById('md').textContent;
   toastui.Editor.factory({
     el: document.querySelector('#viewer'),
@@ -135,6 +141,7 @@
       }
     }
   })();
+}
 </script>
 </body>
 </html>

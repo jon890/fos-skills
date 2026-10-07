@@ -12,7 +12,7 @@
 
 ## 사용 시점
 
-Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키처럼 외부에 나갈 텍스트를
+Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키처럼 외부에 나갈 텍스트를
 등록하려는 순간이면 쓴다. 사용자가 「미리보기」 라고 말하지 않아도 마찬가지다.
 로컬 파일 작성과 코드 커밋처럼 외부에 나가지 않는 것은 대상이 아니다.
 
@@ -38,8 +38,16 @@ Dooray 댓글과 업무, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키�
 | `references/persona.md` | 개인 문체 참조를 어디에 두고 무엇을 적는지 |
 | `scripts/style-check.sh` | `korean-check` 를 찾아 본문 파일과 제목에 검사기를 돌린다 |
 | `scripts/show-preview.sh` | 미리보기 HTML 을 사용자 화면에 띄운다. 쓸 백엔드를 고정하고, 같은 파일의 탭을 찾아 갱신하고 워크트리를 대조한다 |
-| `scripts/dooray-preview/generate.py` | Dooray 본문 미리보기 HTML 생성. `--mode` 로 업무 본문과 댓글의 머리를 고른다 |
-| `scripts/dooray-preview/template.html` | TOAST UI Editor viewer 와 mermaid 를 쓰는 Dooray 미리보기 골격 |
+| `scripts/dooray-preview/generate.py` | Dooray 미리보기 HTML 생성. `--mode` 로 업무·댓글·메신저를 고르고, 메신저 링크 경고를 낸다 |
+| `scripts/dooray-preview/template.html` | 업무·댓글은 TOAST UI Editor viewer 와 mermaid, 메신저는 확인된 형식만 표시하는 골격 |
+| `references/messenger-rendering.md` | 메신저 렌더 확인 범위와 미확인 형식의 처리 |
+| `tests/test_dooray_preview.py` | 메신저 렌더, 링크 경고와 종료 코드, 기존 모드의 회귀 검사 |
 | `scripts/github-preview/generate.py` | GitHub issue 와 PR 본문 미리보기 HTML 생성. `--type` 으로 헤더 배지 색을 가른다 |
 | `scripts/github-preview/template.html` | github-markdown-css 와 marked.js 를 쓰는 GitHub 미리보기 골격 |
 | `CHANGELOG.md` | 버전 이력 |
+
+## 검증
+
+```bash
+python3 -m unittest discover -s content-preview/tests -v
+```
