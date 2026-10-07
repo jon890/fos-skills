@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.16.0
+
+`check_facts.py` 가 고유어 수사로 쓴 개수를 검토 지점에 올린다. 둘이다, 셋, 일곱 단계, 세 항목, 다섯 개가 숫자가 아니라는 이유로 통과했다.
+`check_references.py` 가 다른 스킬의 이름과 함께 적은 `references/` 경로를 그 형제 스킬 폴더에서 찾고, 플러그인 이름을 스킬 이름으로 읽지 않는다.
+`collect_targets.py` 가 스킬 루트에서 SKILL.md 도 git 추적 파일도 없는 폴더를 stderr 경고로 알리고, 1단계가 그 경고를 읽게 했다.
+`find_test_requirements.py` 를 더해 3단계에서 제거나 이름 변경 판정 전에 시험이 그 문자열을 요구하는지 찾는다.
+
 ## 3.15.0
 
 범위에 Markdown 이 없고 스크립트만 있을 때 `collect_targets.py` 가 스크립트 수를 내고 스크립트 감사 절차를 가리킨다.
