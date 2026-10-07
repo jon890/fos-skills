@@ -6,10 +6,36 @@ Usage: python3 collect_targets.py [repo-root] [--scope <저장소 안 경로>]
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
 from target_files import count_scripts, iter_targets, resolve_scope, take_scope
+
+
+def stray_skill_dirs(root: Path, scope: Path | None) -> list[Path]:
+    """스킬 루트 바로 밑에서 SKILL.md 도 없고 git 추적 파일도 없는 디렉터리를 찾는다.
+
+    `__pycache__` 와 `.omc` 만 남은 옛 스킬 폴더가 여기 해당한다. git 저장소가 아니면 비운다.
+    """
+    roots = [root / "skills", *sorted(root.glob("plugins/*/skills"))]
+    found = []
+    for skill_root in roots:
+        if not skill_root.is_dir():
+            continue
+        if scope is not None and not (scope.is_relative_to(skill_root) or skill_root.is_relative_to(scope)):
+            continue
+        for directory in sorted(d for d in skill_root.iterdir() if d.is_dir() and not d.is_symlink()):
+            if (directory / "SKILL.md").exists():
+                continue
+            done = subprocess.run(
+                ["git", "-C", str(root), "ls-files", "--", str(directory.relative_to(root))],
+                capture_output=True,
+                text=True,
+            )
+            if done.returncode == 0 and not done.stdout.strip():
+                found.append(directory)
+    return found
 
 
 def main() -> int:
@@ -27,6 +53,12 @@ def main() -> int:
     except ValueError as error:
         print(error, file=sys.stderr)
         return 2
+
+    for directory in stray_skill_dirs(root, scope):
+        print(
+            f"경고: git 이 추적하지 않는 스킬 폴더가 있다 (SKILL.md 없음): {directory.relative_to(root)}",
+            file=sys.stderr,
+        )
 
     count = 0
     lines = 0

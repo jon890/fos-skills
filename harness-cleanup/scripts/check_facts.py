@@ -23,6 +23,21 @@ except ValueError as error:
 
 # "N개 명령", "N개 파일", "16개" 처럼 개수를 박은 표기
 COUNT = re.compile(r"(\d+)\s*개(?:\s*(명령|파일|패턴|항목|축|단계|행))?")
+# 고유어 수사로 쓴 개수. 관형사형(두·세·네)과 수사형(둘·셋·넷)이 다르고, 열은 '열다', '열' 과 겹쳐 단위가 붙을 때만 본다.
+NATIVE_UNIT = (
+    r"개|가지|항목|단계|축|행|명령|파일|패턴|줄|곳|종류|절|문장|칸|표|문서|스킬|검사|판정|조건|"
+    r"역할|층|부분|갈래|군데|사례|옵션|스크립트|플래그"
+)
+NATIVE_DETERMINER = re.compile(
+    rf"(?<![가-힣])(?:두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:{NATIVE_UNIT})(?![가-힣]*째)"
+)
+# 'X 는 둘이다', '스킬 넷' 처럼 단독으로 개수를 말하는 수사. 개수를 명사 앞에서 말할 때는 관형사(두·세·네)를 쓰므로,
+# 수사가 공백 뒤 낱말로 이어지는 꼴('둘 다가', '둘 때', '둘 자리', '여섯 달') 은 개수 표기가 아니다.
+# 서술격 어미, 보조사 '은/는/뿐', 문장부호, 줄 끝 앞에서만 잡는다. '둘째', '셋째' 도 '째' 가 이어져 빠진다.
+NATIVE_NUMERAL = re.compile(
+    r"(?<![가-힣])(?:둘|셋|넷|다섯|여섯|일곱|여덟|아홉)"
+    r"(?=이다|이고|이며|입니다|이었|이라|은|는|뿐|[,.;:?!)]|\s*$)"
+)
 # 문서 안에 나열된 옵션 플래그
 FLAG = re.compile(r"`(--[a-z][a-z0-9-]+)`")
 # 코드 식별자로 보이는 백틱 조각 — 파일명 나열 여부 판단용
@@ -45,6 +60,9 @@ def main():
                 n, unit = m.group(1), m.group(2) or ""
                 # 버전·날짜·TTL 등은 대상이 아니다
                 if unit or int(n) > 2:
+                    counts.append((rel, i, m.group(0).strip(), line.strip()[:70]))
+            for pattern in (NATIVE_DETERMINER, NATIVE_NUMERAL):
+                for m in pattern.finditer(line):
                     counts.append((rel, i, m.group(0).strip(), line.strip()[:70]))
             for fl in FLAG.findall(line):
                 flags[fl].add(str(rel))

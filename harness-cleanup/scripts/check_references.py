@@ -10,6 +10,7 @@
 Usage: python3 check_references.py [repo-root] [--scope <저장소 안 경로>]
 종료 코드: 깨진 참조가 있으면 1
 """
+import json
 import pathlib
 import re
 import sys
@@ -29,6 +30,9 @@ PATH_IN_BACKTICK = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)`")
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 SECTION_REF = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:의|에)?\s*[\"“]([^\"”]{2,60})[\"”]\s*(섹션|표|절)")
 SKILL_REF = re.compile(r"`([a-z][a-z0-9-]+)`\s*(?:skill|스킬)")
+# 같은 줄이 형제 스킬을 말하는 표기 — `플러그인:스킬` 이나 `스킬` 스킬
+QUALIFIED_SKILL = re.compile(r"\b[a-z][a-z0-9-]*:([a-z][a-z0-9-]+)")
+BUNDLE_DIRS = ("assets/", "references/", "scripts/")
 
 # 검사에서 제외 — 플레이스홀더, 홈 경로, 와일드카드, URL
 #   `../..` 로 시작하는 깊은 상대 경로를 여기서 빼면 안 된다.
@@ -66,6 +70,29 @@ def installed_skills():
     return names
 
 
+def plugin_names():
+    """저장소가 가진 플러그인 이름 — `plugins/<이름>/` 과 plugin.json 의 name."""
+    names = set()
+    plugins_dir = ROOT / "plugins"
+    if plugins_dir.is_dir():
+        names.update(d.name for d in plugins_dir.iterdir() if d.is_dir())
+    for manifest in [ROOT / ".claude-plugin/plugin.json", *ROOT.glob("plugins/*/.claude-plugin/plugin.json")]:
+        try:
+            names.add(json.loads(manifest.read_text(encoding="utf-8"))["name"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return names
+
+
+def skill_dirs():
+    """저장소 안 스킬 이름 → SKILL.md 를 가진 디렉터리들."""
+    dirs = {}
+    for skill_file in iter_targets(ROOT):
+        if skill_file.name == "SKILL.md" and skill_file.resolve().is_relative_to(ROOT):
+            dirs.setdefault(skill_file.parent.name, []).append(skill_file.parent)
+    return dirs
+
+
 def bundle_root(path):
     """스킬 번들 안의 파일이면 SKILL.md 를 가진 디렉터리를 돌려준다."""
     for parent in path.parents:
@@ -88,8 +115,16 @@ def headers(path):
     return out
 
 
+def in_sibling_skill(line, bare, siblings):
+    """같은 줄이 이름으로 부른 형제 스킬 폴더에 그 경로가 있는지."""
+    named = set(QUALIFIED_SKILL.findall(line)) | set(SKILL_REF.findall(line))
+    return any((d / bare).exists() for name in named for d in siblings.get(name, []))
+
+
 def main():
     skills = installed_skills()
+    plugins = plugin_names()
+    siblings = skill_dirs()
     broken = []
 
     for f in targets():
@@ -118,6 +153,9 @@ def main():
                 normalized = bare[2:] if bare.startswith("./") else bare
                 bases = [ROOT, *[parent for parent in f.parents if parent.is_relative_to(ROOT)]]
                 if any((base / bare).exists() for base in bases):
+                    continue
+                # 다른 스킬의 이름과 함께 적은 번들 경로는 그 형제 스킬 폴더에서 찾는다
+                if normalized.startswith(BUNDLE_DIRS) and in_sibling_skill(line, bare, siblings):
                     continue
                 # 스킬 번들 안의 문서는 번들 root 기준 상대 경로를 쓴다 (예: scripts 아래 파일)
                 bundle = bundle_root(f)
@@ -158,7 +196,7 @@ def main():
 
             # 4) 스킬 참조
             for name in SKILL_REF.findall(line):
-                if name not in skills:
+                if name not in skills and name not in plugins:
                     broken.append((rel, i, "스킬", name))
 
     if not broken:
