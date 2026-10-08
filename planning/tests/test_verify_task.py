@@ -22,6 +22,14 @@ class ExistingRulesTest(unittest.TestCase):
         text = "## 의도 메모\n직접 확인했다\n## 작업 항목\n직접 확인한다\n```bash\n육안\n```\n"
         self.assertEqual(list(verify.iter_prose(text)), [(4, "직접 확인한다")])
 
+    def test_vague_scope_ignores_noun_modifier_but_keeps_real_instructions(self):
+        for line in ("프로젝트 전체 삭제 경로를 탔는지를 담는다", "전체 변경 이력을 남긴다"):
+            with self.subTest(line=line):
+                self.assertFalse(verify.vague_scope(line))
+        for line in ("전체 삭제한다", "전체 삭제를 한다", "전체 삭제.", "모듈 전체 교체하여 반영한다"):
+            with self.subTest(line=line):
+                self.assertTrue(verify.vague_scope(line))
+
     def test_missing_evidence_document_is_reported(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
             out = []
@@ -214,6 +222,20 @@ class TaskRulesTest(unittest.TestCase):
         with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(verify.main(["verify", "plan1-cwd"]), 0, stdout.getvalue())
         self.assertIn("위반 0건", stdout.getvalue())
+
+    def test_cli_prose_violations_name_the_check(self):
+        rel = "src/a.py"
+        phase = self.prompt(f"### 1. `{rel}` 추가\n전체 삭제를 한다\n직접 확인한다\n전체 삭제 경로를 담는다", "pytest")
+        phase += f"\n## 목표\n테스트 추가\n**범위 외**: 배포\n## 변경 파일\n| `{rel}` | 신규 |\n"
+        index = {"name": "plan1-names", "total_phases": 1, "phases": [{"number": 1, "file": "phase-01.md", "execution_profile": "standard"}]}
+        self.file("tasks/plan1-names/phase-01.md", phase)
+        self.file("tasks/plan1-names/index.json", json.dumps(index))
+        with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            verify.main(["verify", "plan1-names"])
+        lines = stdout.getvalue().splitlines()
+        self.assertTrue(any("모호한 범위 지시: 전체 삭제를 한다" in line for line in lines), lines)
+        self.assertTrue(any("사람 의존 검증: 직접 확인한다" in line for line in lines), lines)
+        self.assertFalse(any("전체 삭제 경로" in line for line in lines), lines)
 
     def test_bun_dot_paths_are_checked_across_independent_lines(self):
         work = "### 1. `frontend/.claude/a.test.ts` 추가"
