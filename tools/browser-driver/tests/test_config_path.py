@@ -1,9 +1,10 @@
 """설정 파일 경로 결정과 config-path 명령, 미리보기의 경로 조회를 시험한다.
 
 HOME 은 바꾸지 않는다. 옛 위치와 홈은 함수 인자로 바꾸고, 하위 프로세스는 실제 옛 위치 문자열과 비교한다.
-하위 프로세스에는 CODEX_HOME 과 CLAUDE_CONFIG_DIR 를 물려주지 않고 필요하면 임시 폴더로 준다.
+하위 프로세스에는 CODEX_HOME 을 물려주지 않고 CLAUDE_CONFIG_DIR 는 임시 폴더로 준다.
 """
 
+import io
 import json
 import os
 import shutil
@@ -11,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent.parent
@@ -59,6 +62,9 @@ class Layout:
                if k not in ("BROWSER_CONFIG", "CODEX_HOME", "CLAUDE_CONFIG_DIR")}
         if env_config:
             env["BROWSER_CONFIG"] = str(env_config)
+        env["CLAUDE_CONFIG_DIR"] = str(self.claude)
+        env.pop("BROWSER_EGO_PURPOSE", None)
+        env.pop("BROWSER_EGO_PROFILE", None)
         env.update(extra_env or {})
         return subprocess.run([sys.executable, str(self.driver / "browser_driver.py"), *args],
                               env=env, capture_output=True, text=True, timeout=30)
@@ -75,7 +81,7 @@ class ResolveConfigPathTest(unittest.TestCase):
         self.mod = self.lay.driver / "driver" / "config.py"
 
     def resolve(self, env=None, module=None):
-        return config.resolve_config_path(env or {}, module or self.mod, self.legacy)
+        return config.resolve_config_path(env or {}, module or self.mod, self.legacy, self.lay.root / "fake-home")
 
     def test_cache_with_data_file_uses_data_dir(self):
         expected = self.lay.put_data_config()
@@ -101,6 +107,189 @@ class ResolveConfigPathTest(unittest.TestCase):
     def test_does_not_create_data_dir(self):
         self.resolve()
         self.assertFalse(self.lay.data.exists())
+
+
+class CheckoutConfigTest(unittest.TestCase):
+    """캐시 밖의 후보 수와 진단을 임시 홈, 임시 Claude 설정 폴더로 시험한다."""
+
+    def setUp(self):
+        self.lay = Layout()
+        self.addCleanup(self.lay.close)
+        self.home = self.lay.root / "fake-home"
+        self.legacy = self.home / ".claude/browser.config.json"
+        self.mod = self.lay.root / "checkout/tools/browser-driver/driver/config.py"
+        self.env = {"CLAUDE_CONFIG_DIR": str(self.lay.claude)}
+
+    def put_config(self, plugin="p-m", data=None):
+        cfg = self.lay.claude / "plugins/data" / plugin / "browser.config.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(json.dumps({} if data is None else data), encoding="utf-8")
+        return cfg
+
+    def resolve(self, env=None):
+        return config.resolve_config_path(self.env if env is None else env, self.mod, home=self.home)
+
+    def test_one_candidate_beats_existing_legacy_without_changing_it(self):
+        expected = self.put_config()
+        self.legacy.parent.mkdir(parents=True)
+        self.legacy.write_text('{"legacy": true}', encoding="utf-8")
+        self.assertEqual(self.resolve(), expected)
+        self.assertEqual(self.legacy.read_text(), '{"legacy": true}')
+
+    def test_multiple_candidates_warn_with_sorted_list_and_use_legacy(self):
+        second = self.put_config("z-m")
+        first = self.put_config("a-m")
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            self.assertEqual(self.resolve(), self.legacy)
+        warning = stderr.getvalue()
+        self.assertIn("경고", warning)
+        self.assertIn(str(self.legacy), warning)
+        self.assertLess(warning.index(str(first)), warning.index(str(second)))
+        self.assertIn("BROWSER_CONFIG", warning)
+        self.assertFalse(self.legacy.exists())
+
+    def test_no_candidates_use_legacy_without_creating_dirs(self):
+        self.assertEqual(self.resolve(), self.legacy)
+        self.assertFalse(self.home.exists())
+        self.assertFalse(self.lay.claude.exists())
+
+    def test_existing_legacy_symlink_is_preserved(self):
+        cfg = self.put_config()
+        self.legacy.parent.mkdir(parents=True)
+        self.legacy.symlink_to(cfg)
+        self.assertEqual(self.resolve(), cfg)
+        self.assertTrue(self.legacy.is_symlink())
+        self.assertEqual(self.legacy.readlink(), cfg)
+
+    def test_symlink_to_checkout_uses_data_candidate(self):
+        cfg = self.put_config()
+        self.mod.parent.mkdir(parents=True)
+        self.mod.touch()
+        link = self.lay.root / "linked-config.py"
+        link.symlink_to(self.mod)
+        self.assertEqual(config.resolve_config_path(self.env, link, home=self.home), cfg)
+
+    def test_browser_config_wins_even_if_missing_and_candidates_are_ambiguous(self):
+        self.put_config("a-m")
+        self.put_config("z-m")
+        chosen = self.lay.root / "chosen.json"
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            self.assertEqual(self.resolve({**self.env, "BROWSER_CONFIG": str(chosen)}), chosen)
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_default_and_empty_claude_config_dir_use_supplied_home(self):
+        cfg = self.home / ".claude/plugins/data/p-m/browser.config.json"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text("{}", encoding="utf-8")
+        for env in ({}, {"CLAUDE_CONFIG_DIR": ""}):
+            with self.subTest(env=env):
+                self.assertEqual(self.resolve(env), cfg)
+
+    def test_directory_named_browser_config_json_does_not_count(self):
+        expected = self.put_config()
+        (self.lay.claude / "plugins/data/q-m/browser.config.json").mkdir(parents=True)
+        self.assertEqual(self.resolve(), expected)
+
+    def test_cache_never_selects_another_plugin(self):
+        self.put_config("other-m")
+        cached_mod = self.lay.driver / "driver/config.py"
+        self.assertEqual(config.resolve_config_path(self.env, cached_mod, home=self.home), self.legacy)
+
+    def run_checkout(self, *args, extra_env=None):
+        self.lay.driver = ROOT
+        return self.lay.run(*args, extra_env={**self.env, **(extra_env or {})})
+
+    def test_command_outside_cache_uses_one_candidate(self):
+        expected = self.put_config()
+        result = self.run_checkout("config-path")
+        self.assertEqual((result.returncode, result.stdout), (0, f"{expected}\n"))
+        self.assertEqual(result.stderr, "")
+
+    def test_command_multiple_candidates_keeps_stdout_one_line(self):
+        first = self.put_config("a-m")
+        second = self.put_config("z-m")
+        result = self.run_checkout("config-path")
+        self.assertEqual((result.returncode, result.stdout), (0, f"{REAL_LEGACY}\n"))
+        self.assertIn(str(first), result.stderr)
+        self.assertIn(str(second), result.stderr)
+
+    def test_doctor_explains_selected_path_and_reason(self):
+        expected = self.put_config()
+        result = self.run_checkout("doctor", extra_env={"BROWSER_DRIVER": "ego", "PATH": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"설정 파일: {expected}", result.stdout)
+        self.assertIn("설정 판정: 설치 캐시 밖에서 플러그인 데이터 설정 후보가 하나", result.stdout)
+
+    def test_doctor_explains_ambiguous_candidates_and_legacy_fallback(self):
+        from driver import admin
+        self.put_config("a-m")
+        self.put_config("z-m")
+        resolution = config.resolve_config(self.env, self.mod, home=self.home)
+        stdout = io.StringIO()
+        with patch.object(admin, "CONFIG_PATH", resolution.path), \
+                patch.object(admin, "CONFIG_RESOLUTION", resolution), \
+                patch.object(admin.shutil, "which", return_value=None), \
+                patch.object(admin, "resolve_backend_name", return_value=("ego", "시험")), \
+                redirect_stdout(stdout):
+            self.assertEqual(admin.cmd_doctor(), 0)
+        self.assertIn(f"설정 파일: {self.legacy}", stdout.getvalue())
+        self.assertIn("후보가 여러 개여서 옛 위치 사용", stdout.getvalue())
+
+    def test_missing_config_profile_error_lists_search_paths_and_recovery(self):
+        self.assert_profile_error()
+
+    def test_config_without_ego_profiles_reports_selected_file_and_recovery(self):
+        cfg = self.put_config()
+        self.assert_profile_error(cfg)
+
+    def test_empty_ego_profiles_report_recovery(self):
+        cfg = self.put_config(data={"egoProfiles": {}})
+        self.assert_profile_error(cfg)
+
+    def test_ambiguous_profile_error_lists_all_candidates_and_legacy(self):
+        first = self.put_config("a-m")
+        second = self.put_config("z-m")
+        message = self.assert_profile_error()
+        self.assertIn(str(first), message)
+        self.assertIn(str(second), message)
+
+    def test_explicit_missing_config_profile_error_stays_on_that_path(self):
+        selected = self.lay.root / "missing.json"
+        self.env["BROWSER_CONFIG"] = str(selected)
+        message = self.assert_profile_error(selected, check_glob=False)
+        self.assertNotIn(str(self.lay.claude / "plugins/data/*/browser.config.json"), message)
+
+    def test_selected_candidate_resolves_purpose_profile(self):
+        from driver.backends.ego import resolve_profile
+        cfg = self.put_config(data={"egoProfiles": {"personal": "Default"}})
+        resolution = config.resolve_config(self.env, self.mod, home=self.home)
+        self.assertEqual(resolution.path, cfg)
+        with patch.dict(os.environ, {"BROWSER_EGO_PURPOSE": "personal"}, clear=True), \
+                patch.object(config, "CONFIG_PATH", resolution.path):
+            self.assertEqual(resolve_profile(), ("Default", "BROWSER_EGO_PURPOSE=personal → egoProfiles.personal"))
+
+    def assert_profile_error(self, selected=None, check_glob=True):
+        from driver.backends.ego import resolve_profile
+        from driver.errors import UsageError
+        resolution = config.resolve_config(self.env, self.mod, home=self.home)
+        with patch.dict(os.environ, {"BROWSER_EGO_PURPOSE": "personal"}, clear=True), \
+                patch.object(config, "CONFIG_PATH", resolution.path), \
+                patch.object(config, "CONFIG_RESOLUTION", resolution):
+            with self.assertRaises(UsageError) as error:
+                resolve_profile()
+        message = str(error.exception)
+        self.assertIn("BROWSER_EGO_PURPOSE=personal", message)
+        self.assertIn("egoProfiles", message)
+        self.assertIn("찾아본 경로:", message)
+        if check_glob:
+            self.assertIn(str(self.lay.claude / "plugins/data/*/browser.config.json"), message)
+        self.assertIn(str(selected or self.legacy), message)
+        self.assertIn('export BROWSER_CONFIG=', message)
+        self.assertIn('ln -s "$BROWSER_CONFIG"', message)
+        self.assertIn(str(self.legacy), message)
+        return message
 
 
 class CodexLayoutTest(unittest.TestCase):
