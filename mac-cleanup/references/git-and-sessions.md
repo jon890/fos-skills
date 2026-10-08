@@ -51,11 +51,15 @@ git -C "$REPO" branch -d "$BR"
 
 upstream 이 사라졌고 머지 판정이 안 된 브랜치는 PR 이 MERGED 인지 확인한 뒤에만 `-D` 를 쓴다.
 확인할 수 없으면(gh 인증 실패, PR 없음) 유지한다.
-`--check-prs` 로 "PR 머지됨(-D)" 가 나온 것은 이 확인을 이미 거친 것이므로 바로 `-D` 를 쓴다.
+`--check-prs` 로 "PR 머지됨(-D)" 가 나온 것은 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조한 결과다.
+머지된 PR 은 있으나 커밋이 다르면 "PR 확인 필요(-D)" 로 남는다. 같은 이름을 다시 써서 PR 이후 커밋을 쌓은 브랜치다.
+조사와 실행 사이에 커밋이 생길 수 있으므로, 실행 직전 `git rev-parse` 가 조사 때 값과 같은지 한 번 더 본 뒤 `-D` 를 쓴다. 다르면 지우지 않는다.
 `gh` 는 cwd 저장소를 조회하므로 저장소로 옮겨서 부른다.
+직접 확인할 때도 출력의 `headRefOid` 가 `git rev-parse` 값과 같은 PR 이 있어야 한다.
 
 ```bash
-(cd "$REPO" && gh pr list --head "$BR" --state merged --json number,state)
+(cd "$REPO" && gh pr list --head "$BR" --state merged --json number,state,headRefOid)
+git -C "$REPO" rev-parse "$BR"
 git -C "$REPO" branch -D "$BR"
 ```
 
