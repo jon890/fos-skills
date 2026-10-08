@@ -71,6 +71,24 @@ class GitClassifyTest(unittest.TestCase):
         self.assertEqual(sg.classify_branch(br("feat/b", upstream_gone=True), "main", set()), "PR 확인 필요(-D)")
         self.assertEqual(sg.classify_branch(br("feat/c"), "main", set()), "유지")
 
+    def test_worktree_pr_merged(self):
+        self.assertEqual(sg.classify_worktree(wt(), pr_merged=True), "제거 후보(PR 머지됨)")
+        self.assertEqual(sg.classify_worktree(wt(dirty=2), pr_merged=True), "유지")
+        self.assertEqual(sg.classify_worktree(wt(stash=1), pr_merged=True), "유지")
+        self.assertEqual(sg.classify_worktree(wt(in_use=True), pr_merged=True), "유지")
+        self.assertEqual(sg.classify_worktree(wt(upstream_gone=True)), "PR 확인 필요")
+
+    def test_branch_pr_merged(self):
+        br = {"name": "feat/a", "merged": False, "upstream_gone": False}
+        self.assertEqual(sg.classify_branch(br, "main", set(), pr_merged=True), "PR 머지됨(-D)")
+        self.assertEqual(sg.classify_branch(br, "main", {"feat/a"}, pr_merged=True), "유지")
+        self.assertEqual(sg.classify_branch(br, "main", set()), "유지")
+
+    def test_parse_stash_branches(self):
+        text = "WIP on feat/x: abc msg\nOn feat/x: manual\nWIP on main: def other\nOn (no branch): z\nweird\n"
+        self.assertEqual(sg.parse_stash_branches(text), {"feat/x": 2, "main": 1})
+        self.assertEqual(sg.parse_stash_branches(""), {})
+
     def test_parse_worktrees(self):
         text = "worktree /r\nHEAD abc\nbranch refs/heads/main\n\nworktree /r/w\nHEAD def\nbranch refs/heads/feat/x\nprunable gitdir file points to non-existent location\n\n"
         items = sg.parse_worktrees(text)
@@ -82,6 +100,8 @@ class GitClassifyTest(unittest.TestCase):
         rows = sg.parse_branches("a\t[gone]\t100\t\nb\t\t200\t/w\n")
         self.assertTrue(rows[0]["upstream_gone"])
         self.assertEqual(rows[1]["worktreepath"], "/w")
+        self.assertFalse(rows[0]["has_upstream"])
+        self.assertTrue(sg.parse_branches("a\t\t1\t\torigin/a\n")[0]["has_upstream"])
 
 
 class DockerImageTest(unittest.TestCase):
