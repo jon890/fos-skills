@@ -21,7 +21,8 @@ kill -TERM $PIDS
 
 ## 워크트리
 
-"제거 후보" 는 머지됨, 미커밋 변경 0, stash 0, 사용 중 아님을 모두 만족한 것이다.
+"제거 후보" 는 머지됨, 미커밋 변경 0, 그 브랜치의 stash 0, 사용 중 아님을 모두 만족한 것이다.
+`--check-prs` 로 나온 "제거 후보(PR 머지됨)" 는 머지됨 대신 머지된 PR 이 있는 것이고, 나머지 조건은 같다.
 기준 브랜치와 같은 커밋에서 막 만든 워크트리도 머지됨으로 잡히므로, 경과 일수가 짧은 것은 사용자에게 한 번 더 확인한다.
 
 Orca 관리 워크트리는 Orca 명령으로 지우고 기록을 정리한다. 그 밖은 git 으로 지운다.
@@ -38,6 +39,7 @@ git -C "$REPO" worktree remove "$WT"
 - `--force` 는 쓰지 않는다. 미커밋 변경이 있으면 거절되는 것이 맞다.
 - "기록만 남음"(prunable)은 디렉터리가 이미 없는 기록이므로 `git -C "$REPO" worktree prune` 만 돌린다.
 - "PR 확인 필요"는 upstream 이 사라졌지만 머지 판정이 안 된 것이다. squash 머지일 수 있으므로 아래 브랜치 절차로 PR 상태를 확인한 뒤에만 제거한다.
+- 워크트리에 체크아웃된 브랜치는 브랜치 후보에서 빠진다. 워크트리를 지운 뒤 `survey_git.py` 를 다시 돌려야 그 브랜치가 후보로 올라온다.
 
 ## 브랜치
 
@@ -49,9 +51,11 @@ git -C "$REPO" branch -d "$BR"
 
 upstream 이 사라졌고 머지 판정이 안 된 브랜치는 PR 이 MERGED 인지 확인한 뒤에만 `-D` 를 쓴다.
 확인할 수 없으면(gh 인증 실패, PR 없음) 유지한다.
+`--check-prs` 로 "PR 머지됨(-D)" 가 나온 것은 이 확인을 이미 거친 것이므로 바로 `-D` 를 쓴다.
+`gh` 는 cwd 저장소를 조회하므로 저장소로 옮겨서 부른다.
 
 ```bash
-gh pr list --head "$BR" --state merged --json number,state
+(cd "$REPO" && gh pr list --head "$BR" --state merged --json number,state)
 git -C "$REPO" branch -D "$BR"
 ```
 

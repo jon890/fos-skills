@@ -6,7 +6,7 @@ description: |
   "오래된 세션 정리", "머지된 브랜치 정리", "워크트리 정리", "disk cleanup" 같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, 스킬 문서) 정리는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # mac-cleanup
@@ -41,6 +41,7 @@ python3 "$SKILL_DIR/scripts/docker_images.py"
 ```
 
 - `survey_git.py` 는 기본으로 원격 ref 를 갱신하지 않는다. 마지막 fetch 이후의 머지는 보이지 않으므로, 후보를 믿기 전에 `--fetch` 로 한 번 돌릴지 사용자에게 묻는다.
+- squash 머지는 `--is-ancestor` 로 보이지 않는다. `--check-prs` 를 함께 쓸지도 묻는다. 머지 판정이 안 된 브랜치마다 `gh` 원격 호출이 생기므로 브랜치가 많으면 오래 걸린다.
 - `docker_images.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 Docker 항목을 건너뛴다.
 - 정리 전 수치는 `survey_system.sh` 첫 절의 디스크 여유, 스왑 사용량, `memory_pressure` 의 여유 비율이다.
   5단계에서 같은 값을 다시 읽으므로 지금 적어 둔다.
@@ -66,6 +67,7 @@ python3 "$SKILL_DIR/scripts/docker_images.py"
 승인한 묶음의 명령만 돌리고, 명령마다 종료 코드와 확보량을 기록한다.
 세션, 브랜치, 워크트리 정리는 `references/git-and-sessions.md` 의 절차를 따른다.
 명령이 실패하면 다음 명령으로 넘어가지 않고 원인을 보고한다.
+워크트리에 체크아웃된 브랜치는 브랜치 후보에서 빠지므로, 워크트리를 지운 뒤 `survey_git.py` 를 다시 돌려 브랜치 후보를 새로 본다.
 
 ## 5. 재측정과 보고
 
