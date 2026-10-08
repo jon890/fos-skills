@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-from ..config import READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT, config_value
+from ..config import READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT, config_value, profile_config_guidance
 from ..errors import DriverError, UsageError
 from ..shell import js_value, run
 from .base import Backend
@@ -77,9 +77,10 @@ def resolve_profile():
         value = table.get(purpose)
         if not value:
             known = ", ".join(sorted(table)) or "(설정에 egoProfiles 가 없다)"
+            guidance = profile_config_guidance() if not table else ""
             raise UsageError(
                 f"{PURPOSE_ENV}={purpose} 에 해당하는 프로필이 설정에 없다. "
-                f"쓸 수 있는 용도: {known}")
+                f"쓸 수 있는 용도: {known}{guidance}")
         return value, f"{PURPOSE_ENV}={purpose} → {PROFILES_KEY}.{purpose}"
 
     fallback = table.get(DEFAULT_PURPOSE)

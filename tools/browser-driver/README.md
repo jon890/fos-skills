@@ -52,15 +52,28 @@ $B doctor
 
 1. 환경변수 `BROWSER_CONFIG`
 2. 본체가 플러그인 설치 캐시 안에 있으면 그 플러그인의 데이터 폴더에 있는 `browser.config.json`. 그 파일이 있을 때만 쓴다
-3. 옛 위치 `~/.claude/browser.config.json`
+3. 본체가 설치 캐시 밖에 있으면 Claude 설정 폴더의 `plugins/data/*/browser.config.json`. 파일이 정확히 하나일 때만 쓴다
+4. 옛 위치 `~/.claude/browser.config.json`
 
 2번의 판정은 `Path(__file__).resolve()` 가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/tools/browser-driver/driver/config.py` 꼴인지 본다.
 맞으면 데이터 폴더는 `<루트>/plugins/data/<플러그인>-<마켓플레이스>/` 다. 이 이름 규칙은 Claude Code 2.1.286 에서 실측했다.
 Codex 설치본(`<CODEX_HOME>/plugins/cache/…`)은 `<CODEX_HOME>/config.toml` 이 파일로 있고 데이터 폴더가 없다.
 이때는 Claude Code 와 같은 설정을 쓰도록 `<Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/` 를 본다.
 Claude 설정 폴더는 `CLAUDE_CONFIG_DIR` 가 비어 있지 않으면 그 값이고, 아니면 `~/.claude` 다 (Codex 0.159.3 에서 실측).
-저장소 체크아웃이나 `~/.claude/scripts/` 링크로 부르면 2번을 건너뛴다.
+저장소 체크아웃을 직접 부르거나 그 체크아웃에 연결된 `~/.claude/scripts/` 링크로 부르면 3번에서 찾는다.
+후보가 둘 이상이면 어느 것도 고르지 않고 옛 위치를 쓴다. 후보 목록과 `BROWSER_CONFIG` 지정 안내는 stderr 에 경고로 낸다.
+캐시 안에서 실행할 때는 해당 플러그인의 데이터 파일이 없어도 다른 플러그인의 설정을 찾지 않는다.
 읽기만 하고 폴더를 만들거나 파일을 옮기지 않는다. 데이터 폴더는 설치만으로는 생기지 않으므로 `install` 이 `mkdir -p` 를 먼저 안내한다.
+
+`doctor` 는 선택한 설정 경로와 판정 이유를 함께 낸다.
+`BROWSER_EGO_PURPOSE` 를 요청했는데 설정 파일이나 `egoProfiles` 가 없으면 찾아본 경로와 복구 명령을 오류에 담는다.
+`egoProfiles` 가 있는 실제 파일을 `BROWSER_CONFIG` 로 지정하거나, 옛 위치가 없을 때 그 파일에 링크를 건다.
+아래 첫 줄의 경로는 실제 파일 경로로 바꾼다. 이미 있는 파일이나 링크는 덮어쓰지 않는다.
+
+```bash
+export BROWSER_CONFIG="/실제/설정/browser.config.json"
+ln -s "$BROWSER_CONFIG" ~/.claude/browser.config.json
+```
 
 ## 백엔드 선택
 

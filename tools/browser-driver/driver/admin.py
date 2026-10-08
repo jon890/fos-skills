@@ -7,13 +7,14 @@ from pathlib import Path
 
 from .backends import BACKENDS, EGO_INSTALL_URL, resolve_backend_name
 from .commands import COMMANDS
-from .config import CONFIG_PATH
+from .config import CONFIG_PATH, CONFIG_RESOLUTION
 from .errors import EXIT_USAGE, UsageError
 
 def cmd_doctor():
     print("=== 브라우저 드라이버 진단 ===")
     print("")
     print(f"설정 파일: {CONFIG_PATH}" + ("" if CONFIG_PATH.exists() else "  (없음, 자동 감지로 돈다)"))
+    print(f"설정 판정: {CONFIG_RESOLUTION.reason}")
 
     env = os.environ.get("BROWSER_DRIVER")
     print(f"BROWSER_DRIVER: {env if env else '(비어 있음)'}")
