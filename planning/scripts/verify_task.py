@@ -52,7 +52,12 @@ FORBIDDEN_KEYS = ("depends_on", "related_docs", "prerequisites")
 PROFILES = {"fast", "standard", "deep"}
 MODELS = {"haiku", "sonnet", "opus"}
 
-VAGUE_SCOPE = re.compile(r"전체\s*(수정|변경|적용|교체|리팩토링|삭제)")
+VAGUE_SCOPE = re.compile(r"전체\s*(?:수정|변경|적용|교체|리팩토링|삭제)")
+# 「전체 삭제 경로」 처럼 뒤에 명사가 이어지면 수식어라 범위 지시가 아니다.
+# 바로 붙은 조사, 또는 떨어져 있어도 서술어로 이어지면 범위 지시로 본다. 목록에 없는 어미는 오탐으로 남는다.
+VAGUE_SCOPE_TAIL = re.compile(
+    r"^(?:(?:[을를은는이가도만과와에]|으로|로|에서|및)|\s*(?:하|한|할|해|합|되|된|될|시키|시켜))"
+)
 HUMAN_CHECK = re.compile(r"수동\s*(?:검토|확인|검증)|눈으로\s*확인|직접\s*확인|육안")
 BSD_SED = re.compile(r"sed\s.*\\b")
 # 모노레포는 하위 프로젝트마다 docs 를 둔다. 루트 기준 경로의 어느 조각이든 `docs` 면 근거 문서로 본다.
@@ -710,6 +715,15 @@ def check_bash_cwd(path: Path, text: str, out: list) -> None:
                 out.append(f"{path}:{start} — 스킬 번들 명령의 cwd 주석 누락")
 
 
+def vague_scope(line: str) -> bool:
+    """「전체 삭제」 류가 범위 지시로 쓰였는지 본다. 뒤에 명사가 이어진 수식어는 뺀다."""
+    for m in VAGUE_SCOPE.finditer(line):
+        tail = line[m.end():]
+        if not tail.strip() or not re.match(r"\s*[가-힣]", tail) or VAGUE_SCOPE_TAIL.match(tail):
+            return True
+    return False
+
+
 def iter_prose(text: str):
     """코드 블록 밖의 산문만 낸다. 「의도 메모」 절과 첫 절 이전의 머리말은 뺀다.
 
@@ -823,7 +837,7 @@ def check_code_sed(path, text, out):
     """셸 블록의 `sed ... \\b` 도 산문과 같이 본다. BSD sed 는 `\\b` 를 모른다."""
     for n, line, kind, language in fences(text):
         if kind == "code" and language in SHELL and BSD_SED.search(line):
-            out.append(f"{path}:{n}: {line}")
+            out.append(f"{path}:{n} — BSD sed 에서 동작하지 않는 \\b: {line.strip()}")
 
 
 def check_human_verification(path, text, out):
@@ -873,8 +887,12 @@ def main(argv: list) -> int:
                     check_file_state(path, entries, repo, virtual, out, warnings, legacy_manifest(text), created)
                 check_bash_cwd(path, text, out)
                 for n, line in iter_prose(text):
-                    if VAGUE_SCOPE.search(line) or HUMAN_CHECK.search(line) or BSD_SED.search(line):
-                        out.append(f"{path}:{n}: {line}")
+                    if vague_scope(line):
+                        out.append(f"{path}:{n} — 모호한 범위 지시: {line.strip()}")
+                    if HUMAN_CHECK.search(line):
+                        out.append(f"{path}:{n} — 사람 의존 검증: {line.strip()}")
+                    if BSD_SED.search(line):
+                        out.append(f"{path}:{n} — BSD sed 에서 동작하지 않는 \\b: {line.strip()}")
                 check_code_sed(path, text, out)
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
