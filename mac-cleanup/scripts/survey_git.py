@@ -58,24 +58,36 @@ def parse_stash_branches(text):
     return counts
 
 
-def classify_worktree(wt, pr_merged=False):
+def judge_pr(tip, prs):
+    """로컬 브랜치 끝 커밋 tip 과 머지된 PR 목록(headRefOid 를 가진 dict)을 대조한다.
+
+    'merged': 머지된 PR 의 headRefOid 가 tip 과 같다.
+    'diverged': 머지된 PR 은 있으나 tip 이 다르다. PR 이후 로컬 커밋이 있다는 뜻이다.
+    None: 머지된 PR 이 없다.
+    """
+    if not prs:
+        return None
+    return "merged" if any(pr.get("headRefOid") == tip for pr in prs) else "diverged"
+
+
+def classify_worktree(wt, pr_state=None):
     """워크트리 하나를 '제거 후보', '제거 후보(PR 머지됨)', '기록만 남음', 'PR 확인 필요', '유지' 로 나눈다.
 
-    pr_merged 는 --check-prs 로 머지된 PR 을 확인했는지다.
+    pr_state 는 --check-prs 의 judge_pr 결과다.
     """
     if wt["prunable"]:
         return "기록만 남음"
     free = wt["dirty"] == 0 and wt["stash"] == 0 and not wt["in_use"]
     if wt["merged"]:
         return "제거 후보" if free else "유지"
-    if pr_merged:
+    if pr_state == "merged":
         return "제거 후보(PR 머지됨)" if free else "유지"
-    if wt.get("upstream_gone"):
+    if pr_state == "diverged" or wt.get("upstream_gone"):
         return "PR 확인 필요"
     return "유지"
 
 
-def classify_branch(br, base, checked_out, pr_merged=False):
+def classify_branch(br, base, checked_out, pr_state=None):
     """브랜치 하나를 '삭제 후보(-d)', 'PR 머지됨(-D)', 'PR 확인 필요(-D)', '유지' 로 나눈다."""
     name = br["name"]
     if name == base or name.startswith("release/"):
@@ -84,9 +96,9 @@ def classify_branch(br, base, checked_out, pr_merged=False):
         return "유지"
     if br["merged"]:
         return "삭제 후보(-d)"
-    if pr_merged:
+    if pr_state == "merged":
         return "PR 머지됨(-D)"
-    if br["upstream_gone"]:
+    if pr_state == "diverged" or br["upstream_gone"]:
         return "PR 확인 필요(-D)"
     return "유지"
 
@@ -167,19 +179,18 @@ def in_use(path, cwds):
 BRANCH_FORMAT = "%(refname:short)\t%(upstream:track)\t%(committerdate:unix)\t%(worktreepath)\t%(upstream)"
 
 
-def count_merged_prs(repo, branch):
-    """머지된 PR 수. gh 가 없거나 실패하면 None. 표준 입력을 닫지 않으면 gh 가 셸 반복문의 입력을 읽는다."""
+def merged_prs(repo, branch):
+    """머지된 PR 목록(number, headRefOid). gh 가 없거나 실패하면 None. 표준 입력을 닫지 않으면 gh 가 셸 반복문의 입력을 읽는다."""
     try:
         done = subprocess.run(
-            ["gh", "pr", "list", "--head", branch, "--state", "merged", "--json", "number", "--jq", "length"],
+            ["gh", "pr", "list", "--head", branch, "--state", "merged", "--json", "number,headRefOid"],
             cwd=repo, capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
-    except (subprocess.TimeoutExpired, OSError) as exc:
+        if done.returncode != 0:
+            raise ValueError(done.stderr.strip()[:120])
+        return json.loads(done.stdout)
+    except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
         print(f"경고: gh 실패 {repo} {branch}: {exc}", file=sys.stderr)
         return None
-    if done.returncode != 0 or not done.stdout.strip().isdigit():
-        print(f"경고: gh 실패 {repo} {branch}: {done.stderr.strip()[:120]}", file=sys.stderr)
-        return None
-    return int(done.stdout.strip())
 
 
 def survey_repo(repo, cwds, orca, check_prs=False):
@@ -193,12 +204,14 @@ def survey_repo(repo, cwds, orca, check_prs=False):
     stashes = parse_stash_branches(git(repo, "stash", "list", "--format=%gs").stdout)
     pr_cache = {}
 
-    def pr_merged(name, merged):
-        """--check-prs 일 때 머지 판정이 안 됐고 upstream 이 있는 브랜치만 gh 로 묻는다. 결과는 저장소 안에서 재사용한다."""
+    def pr_state(name, merged):
+        """--check-prs 일 때 머지 판정이 안 됐고 upstream 이 있는 브랜치만 gh 로 묻고 끝 커밋을 대조한다. 결과는 저장소 안에서 재사용한다."""
         if not check_prs or merged or not name or name not in has_upstream:
-            return False
+            return None
         if name not in pr_cache:
-            pr_cache[name] = bool(count_merged_prs(repo, name))
+            prs = merged_prs(repo, name)
+            tip = git(repo, "rev-parse", f"refs/heads/{name}").stdout.strip()
+            pr_cache[name] = judge_pr(tip, prs) if prs is not None else None
         return pr_cache[name]
 
     now = time.time()
@@ -218,15 +231,15 @@ def survey_repo(repo, cwds, orca, check_prs=False):
             entry["upstream_gone"] = wt["branch"] in gone
         else:
             entry.update(dirty=0, stash=0, in_use=False, merged=False, ahead=None, age_days=None, upstream_gone=False)
-        entry["pr_merged"] = pr_merged(wt["branch"], entry["merged"])
-        entry["class"] = classify_worktree(entry, entry["pr_merged"])
+        entry["pr_state"] = pr_state(wt["branch"], entry["merged"])
+        entry["class"] = classify_worktree(entry, entry["pr_state"])
         worktrees.append(entry)
     checked_out = {w["branch"] for w in wts if w["branch"]}
     base_name = base.removeprefix("origin/")
     branches = []
     for br in all_branches:
         br["merged"] = git(repo, "merge-base", "--is-ancestor", br["name"], base).returncode == 0
-        br["class"] = classify_branch(br, base_name, checked_out, pr_merged(br["name"], br["merged"]))
+        br["class"] = classify_branch(br, base_name, checked_out, pr_state(br["name"], br["merged"]))
         branches.append(br)
     return {"repo": repo, "base": base, "worktrees": worktrees, "branches": branches}
 

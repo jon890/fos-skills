@@ -72,16 +72,29 @@ class GitClassifyTest(unittest.TestCase):
         self.assertEqual(sg.classify_branch(br("feat/c"), "main", set()), "유지")
 
     def test_worktree_pr_merged(self):
-        self.assertEqual(sg.classify_worktree(wt(), pr_merged=True), "제거 후보(PR 머지됨)")
-        self.assertEqual(sg.classify_worktree(wt(dirty=2), pr_merged=True), "유지")
-        self.assertEqual(sg.classify_worktree(wt(stash=1), pr_merged=True), "유지")
-        self.assertEqual(sg.classify_worktree(wt(in_use=True), pr_merged=True), "유지")
+        self.assertEqual(sg.classify_worktree(wt(), pr_state="merged"), "제거 후보(PR 머지됨)")
+        self.assertEqual(sg.classify_worktree(wt(dirty=2), pr_state="merged"), "유지")
+        self.assertEqual(sg.classify_worktree(wt(stash=1), pr_state="merged"), "유지")
+        self.assertEqual(sg.classify_worktree(wt(in_use=True), pr_state="merged"), "유지")
         self.assertEqual(sg.classify_worktree(wt(upstream_gone=True)), "PR 확인 필요")
+
+    def test_worktree_pr_diverged(self):
+        self.assertEqual(sg.classify_worktree(wt(), pr_state="diverged"), "PR 확인 필요")
+
+    def test_judge_pr(self):
+        prs = [{"number": 1, "headRefOid": "aaa"}, {"number": 2, "headRefOid": "bbb"}]
+        self.assertEqual(sg.judge_pr("bbb", prs), "merged")
+        self.assertEqual(sg.judge_pr("ccc", prs), "diverged")
+        self.assertIsNone(sg.judge_pr("ccc", []))
+
+    def test_branch_pr_diverged(self):
+        br = {"name": "feat/a", "merged": False, "upstream_gone": False}
+        self.assertEqual(sg.classify_branch(br, "main", set(), pr_state="diverged"), "PR 확인 필요(-D)")
 
     def test_branch_pr_merged(self):
         br = {"name": "feat/a", "merged": False, "upstream_gone": False}
-        self.assertEqual(sg.classify_branch(br, "main", set(), pr_merged=True), "PR 머지됨(-D)")
-        self.assertEqual(sg.classify_branch(br, "main", {"feat/a"}, pr_merged=True), "유지")
+        self.assertEqual(sg.classify_branch(br, "main", set(), pr_state="merged"), "PR 머지됨(-D)")
+        self.assertEqual(sg.classify_branch(br, "main", {"feat/a"}, pr_state="merged"), "유지")
         self.assertEqual(sg.classify_branch(br, "main", set()), "유지")
 
     def test_parse_stash_branches(self):
