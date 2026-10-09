@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """check-readability 의 검출력 검사.
 
-검사마다 걸리는 표본과 걸리지 않는 표본을 함께 둔다.
-걸리는 쪽만 두면 그 검사가 모든 것을 잡는 상태가 돼도 통과한다.
+검사마다 경고가 나는 표본과 나지 않는 표본을 함께 둔다.
+경고가 나는 쪽만 두면 그 검사가 모든 것을 잡는 상태가 돼도 통과한다.
+
+**이 검사기는 실패로 막지 않는다.** 경고가 있어도 종료 코드는 0 이다.
+그래서 표본은 종료 코드가 아니라 출력의 경고 줄로 판정한다.
 
 **허용 예외가 이 파일의 중심이다.**
 DASH 는 목록과 표에서 이름과 설명을 나누는 용도를 허용하고,
@@ -38,12 +41,13 @@ class Base(unittest.TestCase):
 
     def assertCaught(self, text, code):
         done = self.run_on(text)
-        self.assertEqual(done.returncode, 1, f"통과하면 안 되는 표본이 통과했다: {text!r}")
-        self.assertIn(f"[{code}]", done.stdout)
+        self.assertEqual(done.returncode, 0, f"경고가 실패로 올라갔다: {done.stdout}")
+        self.assertIn(f"경고 [{code}]", done.stdout, f"경고가 나야 하는 표본이 조용했다: {text!r}")
 
     def assertPassed(self, text):
         done = self.run_on(text)
-        self.assertEqual(done.returncode, 0, f"걸리면 안 되는 표본이 걸렸다: {done.stdout}")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertEqual(done.stdout, "", f"경고가 나면 안 되는 표본에서 경고가 났다: {done.stdout}")
 
 
 class TestNest(Base):
@@ -117,10 +121,10 @@ class TestTextMode(Base):
             capture_output=True, text=True,
         )
 
-    def test_violation_in_text_exits_one(self):
+    def test_violation_in_text_warns_and_exits_zero(self):
         done = self.run_text("검사기를 고쳤다 — 제목이 빠져 있었다")
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("[DASH]", done.stdout)
+        self.assertEqual(done.returncode, 0)
+        self.assertIn("경고 [DASH]", done.stdout)
 
     def test_clean_text_exits_zero(self):
         done = self.run_text("fix(korean-check): 제목을 검사 대상에 넣는다")
@@ -148,78 +152,13 @@ class TestHookMode(Base):
 
 
 class TestExitCode(Base):
-    """종료 코드 규약. 0 통과, 1 위반, 2 사용법 오류다."""
+    """종료 코드 규약. 경고가 있어도 0 이고, 사용법 오류만 2 다."""
 
     def test_no_argument_is_two(self):
         done = subprocess.run(
             ["python3", str(SCRIPT)], capture_output=True, text=True,
         )
         self.assertEqual(done.returncode, 2)
-
-
-class TestRepository(unittest.TestCase):
-    """저장소 문서를 검사하되 linguist-vendored 가 set 또는 true 인 외부 사본은 제외한다."""
-
-    def run_on_repository(self, root):
-        files = subprocess.run(
-            ["git", "ls-files", "-z", "*.md"], cwd=root,
-            capture_output=True, text=True, check=True,
-        ).stdout.split("\0")[:-1]
-        self.assertTrue(files, "검사할 .md 를 찾지 못했다")
-
-        attributes = subprocess.run(
-            ["git", "check-attr", "-z", "--stdin", "linguist-vendored"],
-            cwd=root, input="\0".join(files) + "\0",
-            capture_output=True, text=True, check=True,
-        ).stdout.split("\0")[:-1]
-        vendored = {
-            path
-            for path, value in zip(attributes[::3], attributes[2::3])
-            if value in {"set", "true"}
-        }
-        files = [path for path in files if path not in vendored]
-        self.assertTrue(files, "외부 사본을 제외하고 검사할 .md 를 찾지 못했다")
-
-        return subprocess.run(
-            ["python3", str(SCRIPT), *files], cwd=root,
-            capture_output=True, text=True,
-        )
-
-    def test_repo_markdown_passes(self):
-        root = Path(__file__).resolve().parents[2]
-        done = self.run_on_repository(root)
-        self.assertEqual(done.returncode, 0, done.stdout)
-
-    def test_vendored_markdown_is_skipped(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            subprocess.run(
-                ["git", "init", "--quiet"], cwd=root,
-                capture_output=True, text=True, check=True,
-            )
-            (root / "clean.md").write_text("문제가 없는 문장이다.\n", encoding="utf-8")
-            (root / "external copy.md").write_text("고쳤다 — 빠져 있었다.\n", encoding="utf-8")
-            subprocess.run(
-                ["git", "add", "."], cwd=root,
-                capture_output=True, text=True, check=True,
-            )
-
-            cases = [
-                ("linguist-vendored", 0),
-                ("linguist-vendored=true", 0),
-                ("linguist-vendored=false", 1),
-                ("-linguist-vendored", 1),
-                ("!linguist-vendored", 1),
-            ]
-            for attribute, expected in cases:
-                with self.subTest(attribute=attribute):
-                    (root / ".gitattributes").write_text(
-                        f'"external copy.md" {attribute}\n', encoding="utf-8",
-                    )
-                    done = self.run_on_repository(root)
-                    self.assertEqual(done.returncode, expected, done.stdout)
-                    if expected == 1:
-                        self.assertIn("[DASH]", done.stdout)
 
 
 class TestMissingPath(Base):
@@ -232,7 +171,7 @@ class TestMissingPath(Base):
         )
         self.assertEqual(done.returncode, 2)
 
-    def test_missing_path_beats_violation(self):
+    def test_missing_path_beats_warning(self):
         path = self.write("a.md", "제목 — 설명\n")
         done = subprocess.run(
             ["python3", str(SCRIPT), str(path), str(self.root / "없다.md")],

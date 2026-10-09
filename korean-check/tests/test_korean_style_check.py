@@ -206,18 +206,23 @@ class TestEnglishTerm(Base):
 
 
 class TestInlinePlus(Base):
-    """인라인 `+` 연결. 검사기가 선언한 두 축 중 하나다."""
+    """인라인 `+` 연결. 문장 구성 지침이라 경고로만 알리고 실패로 막지 않는다."""
 
-    def test_inline_plus_is_caught(self):
+    def test_inline_plus_warns_but_passes(self):
         done = self.run_on("배포 + 검증을 함께 한다.\n")
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("인라인 + 연결", done.stdout)
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertIn("경고: 인라인 + 연결", done.stdout)
+
+    def assertNoWarning(self, text):
+        done = self.run_on(text)
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertNotIn("인라인 + 연결", done.stdout)
 
     def test_plus_without_spaces_is_not_caught(self):
-        self.assertPassed("a+b 를 계산한다.\n")
+        self.assertNoWarning("a+b 를 계산한다.\n")
 
     def test_plus_in_code_span_is_not_caught(self):
-        self.assertPassed("`GPU 수 + 1` 로 센다.\n")
+        self.assertNoWarning("`GPU 수 + 1` 로 센다.\n")
 
 
 class TestAutoLink(Base):
@@ -271,7 +276,7 @@ class TestNonMarkdown(Base):
 
 
 class TestExitCode(Base):
-    """종료 코드 규약. 0 통과, 1 위반, 2 돌지 못함이다."""
+    """종료 코드 규약. 0 통과, 1 금지어 발견, 2 돌지 못함이다."""
 
     def test_clean_file_is_zero(self):
         self.assertPassed("문제가 없는 문장이다.\n")
