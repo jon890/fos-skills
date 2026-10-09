@@ -57,152 +57,126 @@ class TestHeading(Base):
     """
 
     def test_heading_is_scanned(self):
-        self.assertCaught("# 미리 주어지는 것과 직접 쓰는 것을 가른다\n", "가른")
+        self.assertCaught("# 장애를 트리아지한다\n", "트리아지")
 
     def test_deep_heading_is_scanned(self):
-        self.assertCaught("#### 무엇을 가른다\n", "가른")
+        self.assertCaught("#### 트리아지 순서\n", "트리아지")
 
     def test_heading_inside_code_fence_is_skipped(self):
-        self.assertPassed("```\n# 가른다\n```\n")
+        self.assertPassed("```\n# 트리아지\n```\n")
 
 
 class TestExclusion(Base):
     """제목 검사를 켤 때 함께 깨지기 쉬운 제외 규칙들이다."""
 
     def test_code_span_is_skipped(self):
-        self.assertPassed("본문에서 `가른다` 는 코드 스팬이라 제외된다.\n")
+        self.assertPassed("본문에서 `트리아지` 는 코드 스팬이라 제외된다.\n")
 
     def test_table_row_is_skipped(self):
-        self.assertPassed("| 가른다 | 나눈다 |\n| --- | --- |\n")
+        self.assertPassed("| 트리아지 | 분류 |\n| --- | --- |\n")
 
     def test_front_matter_is_skipped(self):
-        self.assertPassed("---\ntriggers: 가른다\n---\n\n본문이다.\n")
+        self.assertPassed("---\ntriggers: 트리아지\n---\n\n본문이다.\n")
 
     def test_indented_code_fence_is_skipped(self):
-        self.assertPassed("- 목록\n\n  ```\n  가른다\n  ```\n")
+        self.assertPassed("- 목록\n\n  ```\n  트리아지\n  ```\n")
 
     def test_link_url_is_skipped_but_text_is_scanned(self):
-        self.assertPassed("[문구](https://example.com/가른다)\n")
-        self.assertCaught("[가른다](https://example.com/a)\n", "가른")
+        self.assertPassed("[문구](https://example.com/트리아지)\n")
+        self.assertCaught("[트리아지](https://example.com/a)\n", "트리아지")
 
     def test_link_definition_line_is_skipped(self):
-        self.assertPassed("[ref]: https://example.com/가른다\n")
+        self.assertPassed("[ref]: https://example.com/트리아지\n")
 
 
-class TestConjugation(Base):
-    """등록 형태가 좁으면 같은 낱말의 다른 활용형이 빠져나간다."""
+class TestRegisteredForms(Base):
+    """`기계` 는 한 글자로 등록하지 않고 조사가 붙은 형태만 등록한다.
+
+    한 글자로 등록하면 기계 학습, 기계 번역까지 걸린다.
+    """
 
     def test_registered_forms_are_caught(self):
-        for form in ("가른", "가르는", "갈랐다", "가르지", "가르고", "가르며", "가름"):
+        for form in ("기계가", "기계로", "기계적"):
             with self.subTest(form=form):
-                self.assertCaught(f"둘을 {form} 자리다.\n", form)
+                self.assertCaught(f"{form} 판정한다.\n", form)
 
-    def test_declarative_form_is_covered_by_attributive(self):
-        """`가른` 이 `가른다` 를 포함하므로 따로 등록하지 않는다.
+    def test_machine_learning_is_not_caught(self):
+        self.assertPassed("기계 학습 모델과 기계 번역을 쓴다.\n")
 
-        둘 다 등록하면 한 위반이 두 줄로 보고돼 건수를 세는 쪽이 두 배로 읽는다.
-        """
-        done = self.run_on("둘을 가른다 자리다.\n")
-        self.assertEqual(done.returncode, 1)
-        self.assertEqual(done.stdout.count("금지어"), 1)
-
-    def test_narrow_verb_forms_are_caught(self):
-        for form in ("좁힌다", "좁혀", "좁혔다", "좁히면", "좁힐", "좁힘", "좁힙니다"):
-            with self.subTest(form=form):
-                self.assertCaught(f"대상을 {form}.\n")
-
-    def test_narrow_adjective_forms_are_not_caught(self):
-        for form in ("좁은", "좁다", "좁았다"):
-            with self.subTest(form=form):
-                self.assertPassed(f"길이 {form}.\n")
+    def test_test_is_caught(self):
+        self.assertCaught("시험이 실패한다.\n", "시험")
 
 
 class TestFalsePositive(Base):
     """부분 문자열로 찾으므로 무관한 낱말을 잡지 않는지 본다."""
 
-    def test_teaching_verb_is_not_caught(self):
-        self.assertPassed("남을 가르치는 일이다.\n")
-
-    def test_intransitive_idiom_is_not_caught(self):
-        self.assertPassed("의견이 갈리다. 판정이 갈린다.\n")
-
-    def test_splitting_apart_is_not_caught(self):
-        self.assertPassed("원본과 갈라지는 문제가 생긴다.\n")
-
     def test_compound_allow_still_works(self):
-        self.assertPassed("API 게이트웨이를 앞에 둔다.\n")
-        self.assertCaught("배포 게이트를 통과한다.\n", "게이트")
+        self.assertPassed("새 설정을 시험적으로 도입한다.\n")
+        self.assertCaught("시험적으로 도입하고 시험을 돌린다.\n", "시험")
 
 
-class TestVersionPhrase(Base):
-    """버전 뜻의 구절은 잡고 판단·판정이 들어간 문장은 통과시킨다."""
+class TestRemovedTerms(Base):
+    """평범한 우리말과 영어 원어는 금지어가 아니다.
 
-    def test_registered_noun_phrases_are_caught(self):
-        for prefix in ("SDK", "BOM", "같은", "고정", "마지막", "지시문"):
-            for particle, action in (("을", "사용한다"), ("이", "필요하다"), ("으로", "변경한다")):
-                term = f"{prefix} 판{particle}"
-                with self.subTest(term=term):
-                    self.assertCaught(f"{term} {action}.\n", term)
+    금지어가 많아지자 에이전트가 영어 개발 용어를 우리말로 옮기며 어색한 말을 만들었다.
+    그래서 누가 봐도 어색한 말만 남기고 나머지를 뺐다. 다시 넣으면 이 테스트가 실패한다.
+    """
 
-    def test_registered_verb_phrases_are_caught(self):
+    def test_plain_korean_passes(self):
         samples = (
-            ("판을 올", "판을 올린다."),
-            ("판이 바뀌", "판이 바뀌었다."),
-            ("판으로 고정", "판으로 고정한다."),
-            ("판도 올", "판도 올렸다."),
-        )
-        for term, text in samples:
-            with self.subTest(term=term):
-                self.assertCaught(f"{text}\n", term)
-
-    def test_judgment_words_with_candidate_prefixes_pass(self):
-        for prefix in ("SDK", "BOM", "같은", "고정", "마지막", "지시문"):
-            for word in ("판단", "판정"):
-                for particle in ("을", "이", "으로"):
-                    text = f"{prefix} {word}{particle} 표시한다.\n"
-                    with self.subTest(text=text):
-                        self.assertPassed(text)
-
-    def test_natural_judgment_sentences_pass(self):
-        samples = (
-            "판단을 다시 한다. 같은 판정을 낸다.",
-            "판단을 올려 보고한다.",
-            "판정이 바뀌었다.",
-            "판단으로 고정하지 않는다.",
-            "판정으로 고정한다.",
-            "판단도 올바르다. 판정도 올바르다.",
+            "원인을 좁혀 나간다.",
+            "두 경우를 가른다.",
+            "테스트가 이 경우를 덮는다.",
+            "응답 시간을 잰다.",
+            "SDK 판을 올린다.",
+            "로그 레벨을 강등한다.",
         )
         for text in samples:
             with self.subTest(text=text):
                 self.assertPassed(f"{text}\n")
 
-    def test_recommended_version_phrases_pass(self):
-        self.assertPassed("SDK 버전을 올린다. 같은 버전으로 고정한다.\n")
-        self.assertPassed("BOM 버전이 바뀌었다. 지시문 버전도 올렸다.\n")
-
-
-class TestEnglishTerm(Base):
-    """영문 금지어는 단어 경계로 찾는다. 부분 문자열로 찾으면 다른 낱말을 잡는다."""
-
-    def test_allowed_english_terms_pass(self):
-        for term in ("baseline", "fan-out", "flat fan-out", "in-flight", "ingest"):
+    def test_english_origins_pass(self):
+        for term in ("matrix", "triage", "spike", "sweep", "gate", "wall-time", "baseline"):
             with self.subTest(term=term):
                 self.assertPassed(f"{term} 을 사용한다.\n")
 
-    def test_korean_transliteration_and_remaining_english_terms_are_caught(self):
-        for term in ("베이스라인", "wall-time", "sweep"):
-            with self.subTest(term=term):
-                self.assertCaught(f"{term} 을 사용한다.\n", term)
 
-    def test_bare_english_term_is_caught(self):
-        self.assertCaught("외부 상태 gate 를 둔다.\n", "gate")
+class TestTableParsing(Base):
+    """표 형식에 따른 금지어 추출과 영문 금지어의 단어 경계를 임시 표로 고정한다.
 
-    def test_longer_word_containing_it_is_not_caught(self):
-        self.assertPassed("aggregate 를 쓴다.\n")
-        self.assertPassed("gateway 를 앞에 둔다.\n")
+    지금 표에는 영문 금지어가 없어, 실제 표로는 이 동작을 확인할 수 없다.
+    """
 
-    def test_hyphen_is_part_of_the_word(self):
-        self.assertPassed("pre-gate-check 라는 이름이다.\n")
+    TABLE = (
+        "## 어색한 말 매핑 표\n\n"
+        "| 금지 | 원어 | 권장 |\n"
+        "| --- | --- | --- |\n"
+        "| 폭주 (CPU 폭주 등) | runaway | 과점유 |\n"
+        "| gate / 게이트 | | 점검 |\n"
+    )
+
+    def run_with_table(self, text):
+        rules = self.write("rules.md", self.TABLE)
+        path = self.write("a.md", text)
+        return subprocess.run(
+            ["python3", str(SCRIPT), str(path)],
+            capture_output=True, text=True,
+            env={"KOREAN_STYLE_RULES": str(rules), "PATH": "/usr/bin:/bin"},
+        )
+
+    def test_slash_separates_terms(self):
+        for text in ("외부 상태 gate 를 둔다.\n", "배포 게이트를 지난다.\n"):
+            with self.subTest(text=text):
+                self.assertEqual(self.run_with_table(text).returncode, 1)
+
+    def test_parenthesized_note_and_origin_column_are_not_terms(self):
+        self.assertEqual(self.run_with_table("CPU 가 runaway 상태다.\n").returncode, 0)
+        self.assertEqual(self.run_with_table("CPU 가 폭주한다.\n").returncode, 1)
+
+    def test_longer_english_word_is_not_caught(self):
+        for text in ("aggregate 를 쓴다.\n", "gateway 를 앞에 둔다.\n", "pre-gate-check 라는 이름이다.\n"):
+            with self.subTest(text=text):
+                self.assertEqual(self.run_with_table(text).returncode, 0)
 
 
 class TestInlinePlus(Base):
@@ -229,10 +203,10 @@ class TestAutoLink(Base):
     """`<https://...>` 형태의 자동 링크 URL 은 제외한다."""
 
     def test_auto_link_url_is_skipped(self):
-        self.assertPassed("<https://example.com/가른>\n")
+        self.assertPassed("<https://example.com/트리아지>\n")
 
     def test_text_around_auto_link_is_scanned(self):
-        self.assertCaught("둘을 가른 <https://example.com/a>\n", "가른")
+        self.assertCaught("트리아지 <https://example.com/a>\n", "트리아지")
 
 
 class TestRulesFileItself(Base):
@@ -247,7 +221,7 @@ class TestRulesFileItself(Base):
         self.assertEqual(done.returncode, 0, done.stdout)
 
     def test_changelog_is_scanned_when_passed_directly(self):
-        self.assertCaught("대상을 좁혔다.\n", "좁혔", "CHANGELOG.md")
+        self.assertCaught("장애를 트리아지했다.\n", "트리아지", "CHANGELOG.md")
 
 
 class TestNonMarkdown(Base):
@@ -258,7 +232,7 @@ class TestNonMarkdown(Base):
     """
 
     def test_txt_is_skipped_here(self):
-        path = self.write("a.txt", "둘을 가른 자리다.\n")
+        path = self.write("a.txt", "트리아지 자리다.\n")
         done = subprocess.run(
             ["python3", str(SCRIPT), str(path)],
             capture_output=True, text=True,
@@ -267,7 +241,7 @@ class TestNonMarkdown(Base):
         self.assertEqual(done.returncode, 0)
 
     def test_txt_is_rejected_by_check_sh(self):
-        path = self.write("a.txt", "둘을 가른 자리다.\n")
+        path = self.write("a.txt", "트리아지 자리다.\n")
         done = subprocess.run(
             [str(SCRIPT.parent / "check.sh"), str(path)],
             capture_output=True, text=True,
@@ -290,14 +264,14 @@ class TestExitCode(Base):
         )
         self.assertEqual(done.returncode, 2)
 
-        path = self.write("a.md", "이 게이트를 지난다.\n")
+        path = self.write("a.md", "장애를 트리아지한다.\n")
         done = subprocess.run(
             ["python3", str(SCRIPT), str(path), str(self.root / "없다.md")],
             capture_output=True, text=True,
             env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
         )
         self.assertEqual(done.returncode, 2)
-        self.assertIn("게이트", done.stdout)
+        self.assertIn("트리아지", done.stdout)
 
         wrapper = SCRIPT.parent / "check.sh"
         done = subprocess.run(
@@ -329,14 +303,14 @@ class TestExitCode(Base):
         받아들이면 옵션이 파일 경로로 읽혀 금지어가 있어도 통과로 끝난다.
         """
         done = subprocess.run(
-            ["python3", str(SCRIPT), "--text", "게이트를 지난다"],
+            ["python3", str(SCRIPT), "--text", "장애를 트리아지한다"],
             capture_output=True, text=True,
             env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
         )
         self.assertEqual(done.returncode, 2)
 
     def test_file_argument_still_runs(self):
-        path = self.write("a.md", "이 게이트를 지난다.\n")
+        path = self.write("a.md", "장애를 트리아지한다.\n")
         done = subprocess.run(
             ["python3", str(SCRIPT), str(path)],
             capture_output=True, text=True,
@@ -357,18 +331,18 @@ class TestHookMode(Base):
         )
 
     def test_violation_still_exits_zero(self):
-        done = self.hook(self.write("a.md", "# 무엇을 가른다\n"))
+        done = self.hook(self.write("a.md", "# 장애를 트리아지한다\n"))
         self.assertEqual(done.returncode, 0)
-        self.assertIn("가른", done.stdout)
+        self.assertIn("트리아지", done.stdout)
 
     def test_clean_file_exits_zero(self):
         done = self.hook(self.write("a.md", "문제가 없는 문장이다.\n"))
         self.assertEqual(done.returncode, 0)
 
     def test_changelog_is_scanned_in_hook(self):
-        done = self.hook(self.write("CHANGELOG.md", "예전에 대상을 좁혔다.\n"))
+        done = self.hook(self.write("CHANGELOG.md", "예전에 장애를 트리아지했다.\n"))
         self.assertEqual(done.returncode, 0)
-        self.assertIn("좁혔", done.stdout)
+        self.assertIn("트리아지", done.stdout)
 
 
 class TestRepository(unittest.TestCase):
