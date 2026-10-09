@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""한국어 표기 정책 검사 — 금지어와 인라인 `+` 연결을 찾는다.
+"""한국어 표기 정책 검사 — 금지어를 찾고, 인라인 `+` 연결은 경고로 알린다.
 
-금지어 목록의 단일 소스는 이 스킬의 `references/korean-style.md` 의 「외래어 매핑 표」다.
+금지어 목록의 단일 소스는 이 스킬의 `references/korean-style.md` 의 「어색한 말 매핑 표」다.
 별도 데이터 파일을 두지 않는다. 검사기가 쓰는 정보는 그 표의 부분집합이라,
 사본을 만들면 원본과 갈라지는 문제만 되돌아온다.
 다른 위치의 표를 쓰려면 `KOREAN_STYLE_RULES` 로 경로를 준다.
@@ -10,7 +10,8 @@
     korean-style-check.py <파일.md> [<파일.md>...]
     korean-style-check.py --hook          # PostToolUse 훅 모드 (stdin 으로 JSON)
 
-위반 줄을 stdout 으로 출력한다. 출력이 0 줄이면 통과다.
+위반과 경고 줄을 stdout 으로 출력한다. 경고만 있으면 통과다.
+실패로 막는 것은 매핑 표의 금지어뿐이다. 문장 구성 규칙은 지침이라 경고로만 알린다.
 검사에서 제외하는 것 — 렌더·표기 대상이 아니거나 이미 구조화된 형식이다.
 YAML frontmatter, 코드 블록(```, 목록 안에 들여쓴 것 포함), 코드 스팬(`...`),
 표 행, 링크 정의 줄, 링크 대상 URL, 자동 링크 URL 이 여기 해당한다.
@@ -19,8 +20,8 @@ YAML frontmatter, 코드 블록(```, 목록 안에 들여쓴 것 포함), 코드
 
 종료 코드 — CI 와 스크립트가 실패로 잡을 수 있게 결과를 코드로도 낸다.
 
-    0  통과 (--hook 모드는 위반이 있어도 늘 0 이다. 훅은 작업을 막지 않는다)
-    1  위반 발견
+    0  통과. 경고만 있어도 0 이다 (--hook 모드는 위반이 있어도 늘 0 이다. 훅은 작업을 막지 않는다)
+    1  금지어 발견
     2  검사기가 돌지 못함. 매핑 표 파일이 없거나, 표에서 금지어를 추출하지 못했거나,
        인자가 없거나 다루지 않는 옵션을 받았거나, 넘긴 경로에 파일이 없는 경우다
 
@@ -36,21 +37,20 @@ import sys
 from pathlib import Path
 
 # 금지어를 부분 문자열로 품고 있지만 그 자체로는 정당한 합성어.
-# 한국어 금지어는 조사가 붙어 「게이트를」 처럼 쓰이므로 부분 문자열로 찾아야 한다.
-# 그래서 「게이트웨이」(gateway) 처럼 다른 낱말인 경우도 같이 걸린다.
+# 한국어 금지어는 조사가 붙어 「시험이」 처럼 쓰이므로 부분 문자열로 찾아야 한다.
+# 그래서 「시험적」(experimental) 처럼 다른 뜻의 낱말도 같이 걸린다.
 # 뒤 글자가 한글인지로는 조사와 합성어를 구분할 수 없어, 예외는 여기에 명시한다.
-# 검사 전에 이 낱말들을 줄에서 지우므로, 같은 줄에 맨 「게이트」가 따로 있으면 그건 여전히 잡힌다.
-COMPOUND_ALLOW = ["게이트웨이"]
+# 검사 전에 이 낱말들을 줄에서 지우므로, 같은 줄에 맨 「시험」이 따로 있으면 그건 여전히 잡힌다.
+COMPOUND_ALLOW = ["시험적"]
 
-TABLE_HEADING = "## 외래어 매핑 표"
+TABLE_HEADING = "## 어색한 말 매핑 표"
 SECTION_HEADING = re.compile(r"^## ")
 TABLE_ROW = re.compile(r"^\| ")
 TABLE_RULE_ROW = re.compile(r"^\|\s*-")
 TABLE_HEADER_ROW = re.compile(r"^\| 금지 ")
 
-# 매핑 표 첫 열의 괄호와, 괄호 안이 영어 원어인 경우.
-PARENTHESIZED = re.compile(r"\(([^)]*)\)")
-ENGLISH_ORIGIN = re.compile(r"[A-Za-z][A-Za-z -]*")
+# 매핑 표 첫 열의 괄호. 용례 설명이라 금지어에서 뺀다.
+PARENTHESIZED = re.compile(r"\([^)]*\)")
 
 # 영문 용어는 단어 경계로 찾는다. 그 판정에 쓰는 형태다.
 ENGLISH_TERM = re.compile(r"[A-Za-z-]+")
@@ -85,12 +85,10 @@ def rules_path():
 def load_terms(rules):
     """매핑 표 첫 열에서 금지어를 뽑는다.
 
-        "클램프 / clamp"     → 클램프, clamp   (슬래시는 동의어 구분)
-        "게이트 (gate)"      → 게이트, gate    (괄호 안 영어 원어도 금지어)
-        "폭주 (CPU 폭주 등)" → 폭주            (괄호 안이 한국어면 용례 설명이라 제외)
-        "ephemeral (instance / runner)" → ephemeral  (괄호 안 슬래시는 한정 설명이라 제외)
+        "기계가 / 기계로"    → 기계가, 기계로  (슬래시는 동의어 구분)
+        "폭주 (CPU 폭주 등)" → 폭주            (괄호 안은 용례 설명이라 제외)
 
-    괄호 안 영어를 등록하지 않으면 「외부 상태 gate」처럼 원어를 그대로 쓴 문장이 통과한다.
+    둘째 열 이후는 읽지 않는다. 원어 열의 영어는 금지어가 아니다.
     """
     terms = set()
     in_table = False
@@ -108,13 +106,7 @@ def load_terms(rules):
         if TABLE_RULE_ROW.match(line) or TABLE_HEADER_ROW.match(line):
             continue
 
-        column = line.split("|")[1]
-        # 괄호를 하나씩 걷어내며 안쪽이 영어 원어면 금지어로 등록한다.
-        while (paren := PARENTHESIZED.search(column)) is not None:
-            inner = paren.group(1)
-            column = column[: paren.start()] + " " + column[paren.end() :]
-            if ENGLISH_ORIGIN.fullmatch(inner):
-                terms.add(inner.strip())
+        column = PARENTHESIZED.sub(" ", line.split("|")[1])
         for part in column.split("/"):
             if part.strip():
                 terms.add(part.strip())
@@ -199,8 +191,9 @@ def strip_link_targets(line):
 
 
 def scan(path, matchers):
-    """한 파일을 검사해 위반 줄 목록을 반환한다."""
+    """한 파일을 검사해 (위반 줄 목록, 경고 줄 목록) 을 반환한다."""
     found = []
+    warnings = []
     in_front = False
     in_fence = False
 
@@ -240,13 +233,13 @@ def scan(path, matchers):
                     f'{path}:{n}: 금지어 "{term}" — korean-style 매핑 표의 권장 표현으로'
                 )
         if INLINE_PLUS.search(line):
-            found.append(f"{path}:{n}: 인라인 + 연결 — 쉼표·와/과 또는 목록으로")
+            warnings.append(f"{path}:{n}: 경고: 인라인 + 연결 — 쉼표·와/과 또는 목록으로")
 
-    return found
+    return found, warnings
 
 
 def check(paths, rules, matchers):
-    """대상 파일들을 검사해 위반 줄을 출력하고 종료 코드를 반환한다.
+    """대상 파일들을 검사해 위반과 경고 줄을 출력하고 종료 코드를 반환한다.
 
     검사는 끝까지 돌린다. 첫 파일에서 멈추면 나머지 위반이 안 보인다.
     """
@@ -263,9 +256,10 @@ def check(paths, rules, matchers):
         if rules.is_file() and os.path.samefile(path, rules):
             continue
 
-        found = scan(path, matchers)
+        found, warnings = scan(path, matchers)
+        if found or warnings:
+            print("\n".join(found + warnings))
         if found:
-            print("\n".join(found))
             status = max(status, 1)
     return status
 
@@ -293,8 +287,8 @@ def run_hook(rules, matchers):
     if rules.is_file() and os.path.samefile(target, rules):
         return 0
 
-    found = scan(target, matchers)
-    if not found:
+    found, warnings = scan(target, matchers)
+    if not found and not warnings:
         return 0
 
     print(
@@ -303,8 +297,9 @@ def run_hook(rules, matchers):
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",
                     "additionalContext": (
-                        "한국어 표기 정책 위반 — 방금 편집한 파일에서 발견했다. 지금 고쳐라.\n"
-                        + "\n".join(found)
+                        "한국어 표기 정책 점검 — 방금 편집한 파일에서 발견했다. "
+                        "금지어는 지금 고치고, 경고는 문맥을 보고 판단한다.\n"
+                        + "\n".join(found + warnings)
                     ),
                 }
             },

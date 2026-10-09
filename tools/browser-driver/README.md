@@ -28,7 +28,7 @@ $B doctor
 | `driver/backends/base.py` | 백엔드 공통 계약 |
 | `driver/backends/ego.py`, `orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
 | `browser.config.example.json` | 설정 예시 |
-| `tests/` | `unittest` 시험. `python3 -m unittest discover -s tests` |
+| `tests/` | `unittest` 테스트. `python3 -m unittest discover -s tests` |
 
 진입점만 실행 파일이다. 심링크로 불려도 실체 경로를 잡아 옆의 `driver` 패키지를 찾는다.
 

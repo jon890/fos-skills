@@ -44,10 +44,10 @@
 | --- | --- |
 | `SKILL.md` | 목표와 6단계 절차, 단계별 통과 조건, 조사를 나눠 맡기는 방식, 실측 명령 순서와 종료 코드 규약, 판정표 형식 |
 | `references/audit-axes.md` | 무엇을 찾을지. 소유권 중복, 죽은 검출, 값 하드코딩, 지시 충돌, 계층 분리, 정책 잔존, 런타임 동작 변화, 사용 이력 0 |
-| `references/judgment.md` | 찾은 것을 유지할지 지울지. 유지와 제거의 기준, 문장 단위 판정 열 축, 기계 강제 확인 절차 |
+| `references/judgment.md` | 찾은 것을 유지할지 지울지. 유지와 제거의 기준, 문장 단위 판정 열 축, 도구가 강제하는지 확인하는 절차 |
 | `scripts/target_files.py` | 감사 대상 파일 선택 기준과 `--scope` 해석. 다른 스크립트가 이것을 가져다 쓴다 |
 | `scripts/collect_targets.py` | 감사 대상 파일과 줄 수 출력. SKILL.md 도 git 추적 파일도 없는 스킬 폴더는 stderr 로 경고한다(종료 코드는 그대로, git 이 없으면 건너뜀) |
-| `scripts/find_test_requirements.py` | 지우거나 이름을 바꿀 문자열을 시험 파일, fixture, CI 설정, `scripts/validate*` 가 요구하는지 찾는다. 찾지 못해도 종료 코드 0, 빈 문자열은 2 |
+| `scripts/find_test_requirements.py` | 지우거나 이름을 바꿀 문자열을 테스트 파일, fixture, CI 설정, `scripts/validate*` 가 요구하는지 찾는다. 찾지 못해도 종료 코드 0, 빈 문자열은 2 |
 | `scripts/check_references.py` | 마크다운 링크, 백틱 경로, 다른 문서의 섹션 참조, 스킬 참조가 실재하는지 확인. 깨진 참조가 있으면 종료 코드 1 |
 | `scripts/check_facts.py` | 문서에 적힌 개수와 목록 표기를 뽑아 검토 지점으로 제시한다. 자동 판정이 아니다 |
 | `scripts/check_duplication.py` | 지침 파일 사이에 연속 N줄 이상 같은 내용이 반복되는 구간 검출 |
