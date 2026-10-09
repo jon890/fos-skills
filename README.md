@@ -43,7 +43,7 @@
 | --- | --- |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정한다 |
 | `scripts/install-hooks.sh` | `hooks/` 의 훅을 `.git/hooks` 에 건다 |
-| `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 시험한다 |
+| `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트한다 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾는다. 셸에 따라 죽는 이식성 결함이다 |
 
 `check-shell-korean.py` 가 `korean-check` 에 없는 이유는 그 스킬이 마크다운 전용으로
