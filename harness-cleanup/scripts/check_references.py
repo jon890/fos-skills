@@ -6,6 +6,21 @@
   2. 백틱으로 감싼 repo 상대 경로
   3. 다른 문서의 섹션 참조 — `"섹션명" 섹션` / `"섹션명" 표`
   4. 스킬 참조 — `` `이름` skill ``
+  5. 절 이름 참조 — 파일 표기 바로 뒤의 「제목」. 「A」 의 「B」 와 「A」 「B」 는 제목마다 본다.
+     파일 표기는 백틱 경로, Markdown 링크, `{@code 경로}`, 맨 경로(`backend/AGENTS.md`)다.
+     제목은 그 파일의 `#` 부터 `######` 제목과 앞뒤 공백만 무시하고 글자 그대로 비교한다.
+     「A」 의 「B」 처럼 두 번째 이후 항목은 줄 머리(목록 표기 뒤)의 굵은 라벨 `**B.**` 도 인정한다.
+     끝의 마침표와 콜론은 무시한다. check_rename_drift.py 도 제목과 굵은 라벨을 같은 라벨로 본다.
+     첫 항목은 Markdown 제목만 인정한다. 점만 있는 「...」 는 서식 자리표시자라 건너뛴다.
+     대상 파일은 참조하는 파일 기준, 그다음 저장소 루트 기준으로 찾고, 못 찾으면 건너뛴다.
+     파일 표기가 바로 앞에 없는 「」 는 화면 문구로 보고 검사하지 않는다.
+
+5번은 두 범위를 본다. 감사 대상 지침 전부와, git 이 추적하는 텍스트 파일 가운데
+가리키는 파일이 감사 대상 지침인 참조다. 지침의 절 이름을 바꾸면 코드 주석과 프롬프트의
+참조가 깨지기 때문이다. 바이너리와 디코딩이 안 되는 파일은 건너뛴다.
+추적 파일 범위에서 CHANGELOG*.md 는 뺀다. 변경 이력은 과거의 절 이름을 적는 글이라
+이름이 바뀐 지금 보면 늘 깨진 참조로 읽힌다.
+`--scope` 는 읽는 파일을 그 아래로 제한한다. 두 범위 모두 같다.
 
 Usage: python3 check_references.py [repo-root] [--scope <저장소 안 경로>]
 종료 코드: 깨진 참조가 있으면 1
@@ -13,6 +28,7 @@ Usage: python3 check_references.py [repo-root] [--scope <저장소 안 경로>]
 import json
 import pathlib
 import re
+import subprocess
 import sys
 
 from target_files import iter_targets, resolve_scope, take_scope
@@ -29,6 +45,19 @@ except ValueError as error:
 PATH_IN_BACKTICK = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)`")
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 SECTION_REF = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:의|에)?\s*[\"“]([^\"”]{2,60})[\"”]\s*(섹션|표|절)")
+# 파일 표기 + (의|에) + 「제목」 이 하나 이상. 파일 표기가 바로 앞에 없는 「」 는 잡지 않는다.
+SECTION_TITLES = r"(?P<titles>「[^」\n]+」(?:\s*(?:의\s*)?「[^」\n]+」)*)"
+GUIDE_REF = re.compile(
+    r"(?:`(?P<tick>[^`\s]+\.md)`"
+    r"|\[[^\]]*\]\((?P<link>[^)\s#]+\.md)(?:#[^)]*)?\)"
+    r"|\{@code\s+(?P<code>[^}\s]+\.md)\s*\}"
+    r"|(?<![\w./`(\-])(?P<bare>(?:\.{1,2}/)*[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.md))"
+    r"\s*(?:의|에)?\s*" + SECTION_TITLES
+)
+TITLE = re.compile(r"「([^」\n]+)」")
+PLACEHOLDER_TITLE = re.compile(r"^[.…\s]+$")
+BOLD_LABEL = re.compile(r"^\s*(?:(?:[-*+]|\d+\.)\s+)?\*\*([^*]+)\*\*")
+MAX_EXTRA_BYTES = 2_000_000
 SKILL_REF = re.compile(r"`([a-z][a-z0-9-]+)`\s*(?:skill|스킬)")
 # 같은 줄이 형제 스킬을 말하는 표기 — `플러그인:스킬` 이나 `스킬` 스킬
 QUALIFIED_SKILL = re.compile(r"\b([a-z][a-z0-9-]*):([a-z][a-z0-9-]+)")
@@ -103,6 +132,22 @@ def bundle_root(path):
     return None
 
 
+_LABELS = {}
+
+
+def labels(path):
+    """파일의 줄 머리 굵은 라벨 집합. 끝의 마침표와 콜론은 뗀다."""
+    if path not in _LABELS:
+        out = set()
+        if path.is_file():
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                m = BOLD_LABEL.match(line)
+                if m:
+                    out.add(m.group(1).strip().rstrip(".:").strip())
+        _LABELS[path] = out
+    return _LABELS[path]
+
+
 def headers(path):
     """파일의 헤더 텍스트 집합."""
     out = set()
@@ -113,6 +158,56 @@ def headers(path):
         if m:
             out.add(m.group(1).strip())
     return out
+
+
+def tracked_text_files():
+    """git 이 추적하는 텍스트 파일. git 저장소가 아니면 비어 있다. 바이너리와 디코딩 실패는 건너뛴다."""
+    done = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True)
+    if done.returncode != 0:
+        return
+    for name in done.stdout.decode("utf-8", errors="replace").split("\0"):
+        path = ROOT / name
+        if not name or not path.is_file() or path.is_symlink() or path.name.startswith("CHANGELOG"):
+            continue
+        if SCOPE is not None and path != SCOPE and not path.is_relative_to(SCOPE):
+            continue
+        try:
+            raw = path.read_bytes()
+            if len(raw) > MAX_EXTRA_BYTES or b"\0" in raw:
+                continue
+            yield path, raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+
+
+def guide_target(source, name):
+    """절 참조의 대상 파일. 참조하는 파일 기준, 그다음 저장소 루트 기준이다."""
+    for base in (source.parent, ROOT):
+        candidate = (base / name).resolve()
+        if candidate.is_file() and candidate.is_relative_to(ROOT):
+            return candidate
+    return None
+
+
+def broken_guide_refs(source, line, instructions):
+    """한 줄의 「제목」 참조 가운데 대상 파일에 없는 제목. `instructions` 가 있으면 그 파일만 가리키는 참조를 본다."""
+    found = []
+    for match in GUIDE_REF.finditer(line):
+        name = match["tick"] or match["link"] or match["code"] or match["bare"]
+        if SKIP.search(name):
+            continue
+        target = guide_target(source, name)
+        if target is None or (instructions is not None and target not in instructions):
+            continue
+        known = headers(target)
+        for index, title in enumerate(TITLE.findall(match["titles"])):
+            text = title.strip()
+            if text in known or PLACEHOLDER_TITLE.match(text) or SKIP.search(text):
+                continue
+            if index > 0 and text.rstrip(".:").strip() in labels(target):
+                continue
+            found.append((name, title))
+    return found
 
 
 def in_sibling_skill(line, bare, siblings, plugins):
@@ -130,8 +225,11 @@ def main():
     plugins = plugin_names()
     siblings = skill_dirs()
     broken = []
+    instructions = {path.resolve() for path in iter_targets(ROOT)}
+    scanned = set()
 
     for f in targets():
+        scanned.add(f.resolve())
         rel = f.relative_to(ROOT)
         text = f.read_text(encoding="utf-8", errors="replace")
         lines = text.splitlines()
@@ -202,6 +300,18 @@ def main():
             for name in SKILL_REF.findall(line):
                 if name not in skills and name not in plugins:
                     broken.append((rel, i, "스킬", name))
+
+            # 5) 절 이름 참조 — 「제목」
+            for name, title in broken_guide_refs(f, line, None):
+                broken.append((rel, i, "절 제목", f"{name} → 「{title}」"))
+
+    # 지침이 아닌 추적 파일(코드 주석, 프롬프트)이 지침의 절을 가리키는 참조
+    for f, text in tracked_text_files():
+        if f.resolve() in scanned:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            for name, title in broken_guide_refs(f, line, instructions):
+                broken.append((f.relative_to(ROOT), i, "절 제목", f"{name} → 「{title}」"))
 
     if not broken:
         print("깨진 참조 0건")
