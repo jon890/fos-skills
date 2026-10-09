@@ -145,5 +145,121 @@ class SiblingAndPluginTest(CheckReferencesTest):
         self.assertIn("[스킬] no-such-skill", result.stdout)
 
 
+class GuideSectionRefTest(CheckReferencesTest):
+    """파일 표기 바로 뒤의 「제목」 참조가 그 파일의 제목과 맞는지 검증한다."""
+
+    def setUp(self):
+        super().setUp()
+        (self.repo / "AGENTS.md").write_text(
+            "# 지침\n\n## 머지는 PR 로 한다\n\n## 용어\n\n- **코드 주석은 한국어로 쓴다.**\n"
+        )
+
+    def write(self, relative, text):
+        target = self.repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+
+    def git_init(self, *files):
+        for command in (["init", "-q"], ["add", *files]):
+            subprocess.run(["git", *command], cwd=self.repo, check=True, capture_output=True)
+
+    def test_existing_title_passes_for_every_file_notation(self):
+        self.write(
+            "CLAUDE.md",
+            "`AGENTS.md` 「머지는 PR 로 한다」 가 정한다.\n"
+            "[`AGENTS.md`](AGENTS.md) 의 「용어」 절에 있다.\n"
+            "{@code AGENTS.md} 「용어」 를 따른다.\n"
+            "맨 경로 AGENTS.md 에 「머지는 PR 로 한다」 가 있다.\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_missing_title_is_reported_with_line(self):
+        self.write("CLAUDE.md", "첫 줄\n`AGENTS.md` 「없는 제목」 을 따른다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("CLAUDE.md:2  [절 제목] AGENTS.md → 「없는 제목」", result.stdout)
+
+    def test_title_is_compared_by_exact_text(self):
+        self.write("CLAUDE.md", "`AGENTS.md` 「머지는 PR로 한다」 를 따른다.\n")
+        self.assertEqual(self.run_check().returncode, 1)
+
+    def test_chained_titles_are_each_checked(self):
+        self.write("CLAUDE.md", "`AGENTS.md` 「용어」 의 「머지는 PR 로 한다」 를 따른다.\n`AGENTS.md` 「용어」 「없는 제목」.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("「없는 제목」", result.stdout)
+        self.assertEqual(result.stdout.count("[절 제목]"), 1)
+
+    def test_bold_label_is_accepted_after_the_first_title_only(self):
+        self.write("CLAUDE.md", "`AGENTS.md` 「용어」 의 「코드 주석은 한국어로 쓴다」 를 따른다.\n")
+        self.assertEqual(self.run_check().returncode, 0)
+        self.write("CLAUDE.md", "`AGENTS.md` 「코드 주석은 한국어로 쓴다」 를 따른다.\n")
+        self.assertEqual(self.run_check().returncode, 1)
+
+    def test_quote_without_file_notation_is_ignored(self):
+        self.write("CLAUDE.md", "화면의 「저장」 버튼을 누른다. 「없는 제목」 이라는 문구가 뜬다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_placeholder_and_unresolved_file_are_skipped(self):
+        self.write(
+            "CLAUDE.md",
+            "`AGENTS.md` 의 「...」 절\n`~/AGENTS.md` 「없는 제목」\n`no-such.md` 「없는 제목」\n"
+            "`AGENTS.md` 「<제목>」\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_code_comment_pointing_to_instruction_is_checked(self):
+        self.write("src/Rules.java", " * 근거: {@code AGENTS.md} 「없는 제목」.\n")
+        self.write("README.md", "[`AGENTS.md`](AGENTS.md) 「용어」\n")
+        self.git_init("AGENTS.md", "src/Rules.java", "README.md")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("src/Rules.java:1  [절 제목] AGENTS.md → 「없는 제목」", result.stdout)
+
+    def test_code_comment_with_existing_title_passes(self):
+        self.write("backend/Rules.java", " * 근거: backend/AGENTS.md 「포맷」 절, ../AGENTS.md 「용어」.\n")
+        self.write("backend/AGENTS.md", "## 포맷\n")
+        self.git_init("AGENTS.md", "backend/Rules.java", "backend/AGENTS.md")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_tracked_file_pointing_to_non_instruction_is_not_checked(self):
+        self.write("docs/notes.md", "# 메모\n")
+        self.write("src/Rules.java", " * {@code docs/notes.md} 「없는 제목」\n")
+        self.git_init("AGENTS.md", "docs/notes.md", "src/Rules.java")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_untracked_and_binary_files_are_skipped(self):
+        self.write("src/Untracked.java", " * `AGENTS.md` 「없는 제목」\n")
+        (self.repo / "blob.bin").write_bytes(b"\0\xff`AGENTS.md` \xe3\x80\x8c\xea\xb0\x80\xe3\x80\x8d")
+        self.git_init("AGENTS.md", "blob.bin")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_changelog_is_not_scanned_outside_instructions(self):
+        self.write("CHANGELOG.md", "`AGENTS.md` 의 「옛 이름」 을 바꿨다.\n")
+        self.git_init("AGENTS.md", "CHANGELOG.md")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_scope_limits_the_files_that_are_read(self):
+        self.write("src/Rules.java", " * `AGENTS.md` 「없는 제목」\n")
+        self.write("other/Rules.java", " * `AGENTS.md` 「없는 제목」\n")
+        self.git_init("AGENTS.md", "src/Rules.java", "other/Rules.java")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), str(self.repo), "--scope", "other"],
+            env={**os.environ, "HOME": str(self.home)},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("other/Rules.java:1", result.stdout)
+        self.assertNotIn("src/Rules.java", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

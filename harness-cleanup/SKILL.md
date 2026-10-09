@@ -7,7 +7,7 @@ description: |
   일반 hook 설정 추가, 제품 문서 수정과 보통 코드 수정은 대상이 아니다.
   일반 제품 문서가 코드와 맞는지는 `docs-check` 가 맡는다.
 metadata:
-  version: "3.16.3"
+  version: "3.17.0"
 ---
 
 # harness-cleanup
@@ -131,6 +131,7 @@ python3 "$SKILL_DIR/scripts/check_rename_drift.py" "$ROOT" "$BASE"
 | `check_facts.py` | 0, 2 | **1 을 내지 않는다.** 발견을 출력하면서 0 으로 끝나므로 출력으로 판정한다 |
 | `check_duplication.py` | 0, 1, 2 | 위 표대로다 |
 | `check_rename_drift.py` | 0, 1, 2 | 기준 커밋 대비 바뀐 `SKILL.md` 가 없으면 2 다. 검사 실패가 아니다 |
+| `find_test_requirements.py` | 0, 2 | **1 을 내지 않는다.** 찾지 못해도 0 이므로 출력의 「없음」 으로 판정한다. 인자 오류는 2 다 |
 | `run_doc_snippets.py` | 0, 2, 3 | 블록을 찾지 못하면 3 이다. 블록이 죽어도 0 이므로 출력으로 판정한다 |
 
 - **대상 파일 수가 0이면 통과가 아니다.**
@@ -140,6 +141,9 @@ python3 "$SKILL_DIR/scripts/check_rename_drift.py" "$ROOT" "$BASE"
   쓰지 않는 스크립트는 `--help` 를 위치 인자로 먹는다.
   이 스킬의 `check_references.py` 는 그것을 저장소 경로로 읽어 「깨진 참조 0건」 을 내고 0 으로 끝난다 (실측).
   그런 스크립트는 파일 머리말의 docstring 이 사용법을 소유한다.
+- `check_references.py` 는 파일 표기 바로 뒤의 「제목」 참조도 대상 파일의 제목과 대조한다.
+  감사 대상 지침 전부와, 지침을 가리키는 git 추적 파일(코드 주석, 프롬프트)을 함께 본다.
+  지침의 절 이름을 바꾸기 전에 `[절 제목]` 이 0건인지 본다. `check_rename_drift.py` 는 이 참조를 보지 않는다.
 - **깨진 참조를 판정하기 전에 그 문장이 다른 저장소를 말하는지 본다.**
   그렇다면 문서를 `~/` 로 시작하는 전체 경로로 고친다. 검사기는 `~` 경로를 건너뛰므로 고치면 사라진다.
 - **범위에 Markdown 이 없고 스크립트만 있으면** `collect_targets.py` 가 스크립트 수를 내고 2 로 끝난다.
@@ -162,7 +166,8 @@ python3 "$SKILL_DIR/scripts/check_rename_drift.py" "$ROOT" "$BASE"
 
 **제거, 축소, 이름 변경으로 판정하기 전에 그 제목과 문장을 시험이 요구하는지 찾는다.**
 시험 폴더(`tests/data/` 같은 fixture 포함), 시험 파일, CI 설정(`.github/workflows/*.yml`), `scripts/validate*` 를 읽는다.
-제목 인자(`## 언제 쓰나`)는 `#` 표기를 뗀 문자열로도 찾는다.
+제목 인자(`## 언제 쓰나`)는 `#` 표기를 뗀 문자열이 따옴표나 「」 로 감싸였거나 줄 전체인 줄도 시험이 요구하는 것으로 낸다.
+git 이 무시하는 빌드 결과물은 읽지 않는다. 낱말만 겹친 줄은 개수만 내고 목록은 `--loose` 로 본다.
 승인 뒤 적용 단계에서 시험이 깨져 판정이 뒤집힌 사례가 있었다.
 찾은 위치는 판정표 근거에 「시험이 요구」 로 적고, 시험도 함께 고칠지를 별도 승인 항목으로 낸다.
 

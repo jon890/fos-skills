@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.17.0
+
+`check_references.py` 가 파일 표기 바로 뒤의 「제목」 참조를 대상 파일의 Markdown 제목과 대조한다. `AGENTS.md` 의 절 이름을 바꿔도 그 절을 가리키는 다른 파일은 확인되지 않았다.
+파일 표기는 백틱 경로, Markdown 링크, `{@code 경로}`, 맨 경로를 받는다. 「A」 의 「B」 와 「A」 「B」 는 제목마다 보고, 두 번째 이후 항목은 줄 머리의 굵은 라벨도 인정한다.
+감사 대상 지침 전부와, 지침을 가리키는 git 추적 파일(코드 주석, 프롬프트)을 본다. `CHANGELOG*.md` 는 과거의 절 이름을 적는 글이라 뺀다.
+`check_rename_drift.py` 는 역할을 그대로 두고, 검사 대상이 없어 2 로 끝날 때 다른 지침의 절 참조는 `check_references.py` 가 본다고 안내한다.
+`find_test_requirements.py` 가 후보 파일을 `git ls-files -co --exclude-standard` 로 정해 빌드 결과물을 읽지 않는다. git 저장소가 아니면 `build`, `dist`, `out`, `target`, `coverage`, `.next` 를 건너뛴다.
+「시험이 요구」 는 인자 그대로 담은 줄, `#` 를 뗀 문자열이 따옴표나 「」, 『』 로 감싸인 줄, 줄 전체가 그 문자열인 줄 셋이다. 나머지 부분 문자열 일치는 개수만 내고 `--loose` 로 목록을 펼친다. `## 확인` 한 건에 수백 줄이 걸리던 것을 줄였다.
+
 ## 3.16.3
 
 문구만 고쳤다. 스크립트 코드는 건드리지 않았다.
