@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.2.0
+
+`survey_git.py` 가 브랜치와 워크트리의 끝 커밋을 JSON 의 `tip`(전체 해시)과 텍스트의 `끝=`(짧은 해시)로 출력한다. 이전에는 `-D` 직전에 대조할 조사 때 값이 출력에 없어 `gh` 를 다시 불러야 했다.
+`classify_branch` 가 기준 브랜치가 아니어도 `main`, `master`, `develop` 을 "유지" 로 둔다. 기준이 `develop` 인 저장소에서 로컬 `main`, `master` 가 "삭제 후보(-d)" 로 나오던 문제다.
+`--check-prs` 에서 `gh` 가 실패하면 `pr_state` 를 `"error"` 로 표시하고, 합계에 `gh 확인 실패 N개` 를 센다. 분류 결과는 바뀌지 않고, 실패한 항목은 "유지" 여도 출력에 남는다. `--gh-timeout` 으로 시간 초과를 정하고 기본은 20초다.
+SKILL.md 와 `git-and-sessions.md` 가 실행 목록을 `--json` 으로 만들고, `-D` 직전 대조를 JSON 의 `tip` 과 `git rev-parse` 로 하라고 안내한다.
+부팅 직후 Colima 가 올라오기 전이면 `docker_images.py` 가 종료 코드 1 로 끝나므로, 건너뛰기 전에 `colima status` 를 보라는 안내를 더했다.
+
 ## 1.1.0
 
 `survey_git.py` 가 stash 를 워크트리 브랜치 기준으로 센다. 이전에는 저장소 전체 stash 수를 모든 워크트리에 넣어, stash 가 하나라도 있는 저장소의 워크트리가 모두 "유지" 로 분류됐다.
