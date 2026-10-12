@@ -10,6 +10,7 @@
 제외를 넓히는 변경은 조용히 통과하므로 표본으로 고정한다.
 """
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -146,6 +147,30 @@ class TestVersionTerm(Base):
         for text in samples:
             with self.subTest(text=text):
                 self.assertPassed(f"{text}\n")
+
+
+class TestWordStartPrefixes(unittest.TestCase):
+    """WORD_START_PREFIXES 에 글자가 둘 이상일 때 각각의 글자로 시작하는 금지어에 경계가 걸린다.
+
+    checker-maintenance.md 가 말하는 「막아야 하는 구절과 통과해야 하는 합성어를 함께 넣는다」 의 예시다.
+    실제 규칙 파일의 금지어를 쓰지 않으려고 모듈을 읽어 접두사와 금지어를 바꿔 넣는다.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("korean_style_check", SCRIPT)
+        self.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.module)
+        self.module.WORD_START_PREFIXES = ("가", "다")
+        self.matchers = dict(self.module.build_matchers(["가나", "다라", "마바"]))
+
+    def test_each_prefix_applies_word_start_boundary(self):
+        for term in ("가나", "다라"):
+            with self.subTest(term=term):
+                self.assertTrue(self.matchers[term](f"새 {term} 를 쓴다"))
+                self.assertFalse(self.matchers[term](f"초{term} 를 쓴다"))
+
+    def test_term_without_registered_prefix_keeps_substring_match(self):
+        self.assertTrue(self.matchers["마바"]("초마바 를 쓴다"))
 
 
 class TestRemovedTerms(Base):
