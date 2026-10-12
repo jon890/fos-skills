@@ -77,6 +77,12 @@ class ExportToTeamScriptTest(unittest.TestCase):
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("커밋을 찾지 못했다: no-such-ref-xyz", result.stderr)
 
+    def test_unknown_source_ref_exits_2_without_team_repository(self):
+        self.team = self.team / "missing"
+        result = self.run_script("--source-ref", "no-such-ref-xyz")
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("커밋을 찾지 못했다: no-such-ref-xyz", result.stderr)
+
     def test_source_ref_reports_sha(self):
         result = self.run_script("--source-ref", "HEAD")
         # 팀 저장소가 비어 있으므로 모든 파일이 「없음」 으로 어긋난다.

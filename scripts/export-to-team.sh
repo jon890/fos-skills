@@ -42,6 +42,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# 잘못된 ref 는 팀 저장소가 없는 환경에서도 드러나게, 팀 저장소 확인보다 앞에서 푼다.
+if [ -n "$SOURCE_REF" ]; then
+  SOURCE_SHA="$(git -C "$REPO_DIR" rev-parse --verify --quiet "${SOURCE_REF}^{commit}")" \
+    || { echo "커밋을 찾지 못했다: $SOURCE_REF" >&2; exit 2; }
+fi
+
 if [ ! -d "$TEAM_DIR/skills" ]; then
   echo "팀 저장소가 없어 건너뛴다: $TEAM_DIR"
   exit 0
@@ -50,8 +56,6 @@ fi
 # 원본 디렉터리와 결과에 적을 원본 설명을 정한다.
 SRC_DIR="$REPO_DIR"
 if [ -n "$SOURCE_REF" ]; then
-  SOURCE_SHA="$(git -C "$REPO_DIR" rev-parse --verify --quiet "${SOURCE_REF}^{commit}")" \
-    || { echo "커밋을 찾지 못했다: $SOURCE_REF" >&2; exit 2; }
   SRC_DIR="$(mktemp -d)"
   trap 'rm -rf "$SRC_DIR"' EXIT
   # .gitattributes 의 export-ignore 가 붙은 파일은 archive 에서 빠져 팀 쪽 사본이 「남음」 으로 지워진다.
