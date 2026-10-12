@@ -4,6 +4,9 @@
 index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시와
 스킬 번들 cwd, 사람 의존 검증, 필수 절, BSD sed 를 검사한다.
 `remote-verification.md` 가 있으면 선행 조건과 시점 열의 값을 검사한다.
+작업 항목이 호출 형태(`name()`)로 적은 함수를 수정 파일이 정의하면, 그 함수를 부르는 파일 중
+plan 의 변경 파일에 없는 것을 git grep 으로 찾아 경고한다.
+Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 직접 실행하는지 본다.
 `bun test` 의 점 디렉터리 경로와 금지 문자열 검사가 같은 phase 의 테스트에 걸리는지도 본다.
 완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 build-with-teams 가 디렉터리째 지운다.
 계획에 적힌 명령은 실행하지 않는다.
@@ -64,7 +67,7 @@ BSD_SED = re.compile(r"sed\s.*\\b")
 # 모노레포는 하위 프로젝트마다 docs 를 둔다. 루트 기준 경로의 어느 조각이든 `docs` 면 근거 문서로 본다.
 DOC_PATH = re.compile(r"`((?:[A-Za-z0-9_.-]+/)*docs/[^`\s]+)`")
 TEST_DIRS = {"test", "tests", "__tests__"}
-TEST_NAME = re.compile(r"^test_|(?:Test|Tests)\.[^.]+$|[._-](?:test|spec)\.[^.]+$")
+TEST_NAME = re.compile(r"^test[_-]|(?:Test|Tests)\.[^.]+$|[._-](?:test|spec)\.[^.]+$")
 # 테스트 디렉터리 안에서만 테스트로 보는 이름이다. `UserSpec.java`, `AppIT.java` 같은 JVM 규칙이다.
 RUNNABLE_NAME = re.compile(r"(?:Spec|IT)\.[^.]+$")
 BUNDLE = re.compile(r"\$(?:SKILL_DIR|\{SKILL_DIR\})|~/\.(?:claude|codex)/skills|\$HOME/\.(?:claude|codex)/skills")
@@ -661,6 +664,44 @@ def check_remote_verification(path, out, warnings):
             out.append(f"{path}:{n} — 머지나 배포가 선행 조건인 검증은 PR 전에 돌릴 수 없다")
 
 
+def python_module_name_problem(rel):
+    """Python 테스트 파일의 이름이 모듈 이름이 될 수 없으면 True 다. `test-foo.py` 가 그 예다."""
+    return rel.endswith(".py") and not is_glob(rel) and is_test(rel) and not Path(rel).stem.isidentifier()
+
+
+def runs_path_directly(command, rel):
+    """모듈 이름을 거치지 않고 파일 경로로 실행한다. `python3 tests/test-foo.py` 와 `pytest tests/test-foo.py` 다."""
+    command = unwrap(command)
+    if not command:
+        return False
+    program, args = Path(command[0]).name, command[1:]
+    if program in {"python", "python3"} and args[:2] == ["-m", "pytest"]:
+        program, args = "pytest", args[2:]
+    elif program in {"python", "python3"}:
+        args = args[:1]
+    elif program not in {"pytest", "pytest-3"}:
+        return False
+    return any(arg.removeprefix("./").split("::")[0] == rel.removeprefix("./") for arg in args)
+
+
+def check_python_test_names(path, commands, entries, out):
+    """하이픈 같은 문자가 든 Python 테스트 파일은 모듈로 import 할 수 없다.
+
+    `unittest discover` 는 그런 파일을 알리지 않고 건너뛰고, pytest 의 디렉터리 수집도 기본 패턴(`test_*.py`)에 걸리지 않아 빠진다.
+    `python3 -m unittest tests.test-foo` 는 import 오류로 끝난다. 테스트가 돌지 않는데 검증이 통과하므로 위반으로 막는다.
+    경로를 직접 실행하는 명령이 있으면 모듈 이름을 거치지 않으므로 허용한다.
+    """
+    for rel, action in entries:
+        if action == "삭제" or not python_module_name_problem(rel):
+            continue
+        if any(runs_path_directly(command, rel) for command in commands):
+            continue
+        out.append(
+            f"{path} — Python 테스트 파일 이름이 모듈 이름이 될 수 없어 unittest discover 와 pytest 디렉터리 수집이 건너뛴다: {rel}. "
+            f"`{re.sub(r'[^0-9A-Za-z_]', '_', Path(rel).stem)}.py` 처럼 밑줄로 쓰거나 검증 명령에서 경로로 직접 실행한다"
+        )
+
+
 def check_forbidden_grep_paths(path, commands, entries, warnings):
     """금지 문자열 검사의 경로에 같은 phase 의 테스트 파일이 있으면 경고한다.
 
@@ -834,6 +875,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
             out.append(f"{path} — 검증 절에 테스트 실행 명령이 없다 (lint/grep/echo 만으로 완료할 수 없다)")
     check_bun_dot_paths(path, commands, out)
     check_forbidden_grep_paths(path, commands, entries, warnings)
+    check_python_test_names(path, commands, entries, out)
     check_remote_commands(path, commands, warnings)
 
     def runs(part):
@@ -908,6 +950,54 @@ def check_human_verification(path, text, out):
                 out.append(f"{path} — 명령 없는 사람 의존 검증: {line.strip()}")
 
 
+# 작업 항목이 함수를 가리키는 형태다. `save()`, `save(user)`, `Repo.save()` 의 마지막 이름을 잡는다.
+CALL_REFERENCE = re.compile(r"`(?:[A-Za-z_][\w]*[.:#]+)*([A-Za-z_]\w*)\([^`]*\)`")
+CALLER_LIMIT = 5
+
+
+def git_grep_files(repo, name, exclude):
+    """name 을 낱말로 담은 코드 파일을 낸다. git 저장소가 아니면 빈 목록이다."""
+    done = subprocess.run(["git", "-C", str(repo), "grep", "-l", "-w", "-F", "-e", name],
+                          capture_output=True, text=True)
+    if done.returncode not in (0, 1):
+        return []
+    return [rel for rel in done.stdout.splitlines()
+            if Path(rel).suffix in CODE_SUFFIXES and rel not in exclude and not rel.startswith(exclude_prefixes(exclude))]
+
+
+def exclude_prefixes(exclude):
+    return tuple(rel.rstrip("/") + "/" for rel in exclude if not Path(rel).suffix)
+
+
+def check_callers(phase_entries, repo, tasks_dir, warnings):
+    """수정하는 함수의 호출자가 plan 의 변경 파일에 빠졌는지 본다.
+
+    phase_entries 는 (phase 경로, 작업 항목 절, 변경 파일 목록) 이다.
+    이름을 낱말로 grep 하므로 같은 이름의 다른 함수도 걸린다. 그래서 위반이 아니라 경고로 낸다.
+    호출자가 바꿀 필요가 없으면 그대로 두고, 바꿔야 하면 그 파일을 변경 파일 표에 넣는다.
+    """
+    planned = {rel for _, _, entries in phase_entries for rel, _ in entries}
+    planned.add(tasks_dir)
+    for path, work, entries in phase_entries:
+        modified = [rel for rel, action in entries
+                    if action in {"수정", "삭제"} and Path(rel).suffix in CODE_SUFFIXES and not is_glob(rel)]
+        if not modified:
+            continue
+        names = dict.fromkeys(CALL_REFERENCE.findall(work))
+        for name in names:
+            owners = [rel for rel in modified if (repo / rel).is_file()
+                      and re.search(rf"\b{re.escape(name)}\b", (repo / rel).read_text(encoding="utf-8", errors="ignore"))]
+            if not owners:
+                continue
+            callers = git_grep_files(repo, name, planned)
+            if callers:
+                shown = ", ".join(callers[:CALLER_LIMIT]) + (f" 외 {len(callers) - CALLER_LIMIT}개" if len(callers) > CALLER_LIMIT else "")
+                warnings.append(
+                    f"{path} — `{name}` 을 쓰는 파일이 plan 의 변경 파일에 없다: {shown}. "
+                    f"시그니처나 동작이 바뀌어 고쳐야 하면 변경 파일 표에 넣는다"
+                )
+
+
 def main(argv: list) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan", nargs="?")
@@ -936,7 +1026,7 @@ def main(argv: list) -> int:
             remote = plan_dir / "remote-verification.md"
             if remote.is_file():
                 check_remote_verification(remote, out, warnings)
-            virtual, created = {}, []
+            virtual, created, phase_entries = {}, [], []
             if args.audit:
                 warnings.append("구현 후 문서 검사: 신규/수정/삭제 파일의 구현 전 존재 조건은 대조하지 않는다")
             for path in phases:
@@ -958,6 +1048,9 @@ def main(argv: list) -> int:
                 check_code_sed(path, text, out)
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
+                phase_entries.append((path, section(text, "작업 항목"), entries))
+            if not args.audit:
+                check_callers(phase_entries, repo, args.tasks_dir, warnings)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"검사를 실행하지 못했다: {exc}", file=sys.stderr)
         return 2
