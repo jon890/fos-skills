@@ -146,7 +146,7 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 
 ## 팀 저장소 내보내기
 
-`scripts/export-to-team.sh` 와 `hooks/post-commit` 은 고치지 않는다.
+플러그인을 루트에서 싣는 구조 때문에 `scripts/export-to-team.sh` 와 `hooks/post-commit` 의 경로를 바꿀 것은 없다.
 스킬이 루트에 그대로 있으므로 원본 경로 `<저장소>/<이름>` 과 목적지 `<팀 저장소>/skills/<이름>` 이 그대로다.
 팀 저장소가 `skills/<이름>` 을 플러그인 안의 본체를 가리키는 상대 링크로 바꿔도, 내보내기는 링크 너머로 읽고 쓰므로 목적지를 바꾸지 않는다.
 
