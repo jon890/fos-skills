@@ -2,6 +2,12 @@
 """하네스 감사 대상과 줄 수를 출력한다.
 
 Usage: python3 collect_targets.py [repo-root] [--scope <저장소 안 경로>]
+
+종료 코드:
+    0  대상 파일이 1 이상이다
+    2  저장소나 범위 경로가 없거나, 대상 파일이 0 이다.
+       범위에 Markdown 은 없고 스크립트만 있으면 그 수를 표준 오류로 알린다
+1 은 내지 않는다. 판정은 출력의 대상 파일 수로 한다.
 """
 
 from __future__ import annotations

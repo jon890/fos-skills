@@ -12,7 +12,6 @@
 ## 경로 분기
 
 봇의 발견사항이 리뷰 스레드로 달렸는지 인라인 댓글로 달렸는지 먼저 본다.
-봇은 리뷰 스레드로 다는 경우가 많다.
 
 ```bash
 python3 scripts/review_threads.py list <owner> <repo> <N>

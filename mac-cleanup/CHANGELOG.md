@@ -3,6 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.4.0
+
+지시끼리 어긋난 곳을 맞추고, reference 와 스크립트가 이미 소유한 문장을 걷어낸다.
+
+- 1단계 통과 조건이 Colima 가 꺼져 `docker_images.py` 만 1 로 끝나는 경우를 허용한다
+- 4단계의 「실패하면 멈춘다」 에서 `branch -d` 의 `not fully merged` 거절을 뺐다. 그 처리는 `git-and-sessions.md` 가 정한다
+- 3단계 승인 질문에서 하네스 도구 이름을 지우고 「구조화 질문 도구가 있으면」 으로 바꿨다
+- 4단계 reference 에 `targets.md` 를 더했다
+- `git-and-sessions.md`, `targets.md`, 스크립트 docstring 과 겹치던 `SKILL.md` 문장(JSON 파싱 함정, 워크트리 삭제 뒤 재조사, 현재 세션 제외, sudo 확인, gh 확인 실패 처리)을 지웠다
+- 행동을 바꾸지 않는 실측 수치와 문장(옵션 재실행 24개, npx 44개 중 25개, 부팅 직후 종료 코드, 눈으로 해시 대조)을 지웠다
+- 브랜치 제외 이름 목록을 `survey_git.py` 의 `KEEP_BRANCHES` 를 가리키는 문장으로 바꿨다
+- `targets.md` 에서 `docker_images.py` 내부의 태그 비교 설명을 지웠다
+
 ## 1.3.0
 
 `targets.md` 가 `npm cache clean --force` 는 `_cacache` 만 비운다고 적고, `~/.npm/_npx` 를 "확인 필요" 후보로 더했다. 이전에는 `~/.npm` 이 전부 `_npx` 여도 명령이 종료 코드 0 에 확보량 0 으로 끝났다. `survey_system.sh` 가 `~/.npm/_npx` 크기를 따로 한 줄 보인다.

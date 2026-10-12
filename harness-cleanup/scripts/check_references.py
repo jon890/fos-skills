@@ -3,7 +3,8 @@
 
 검사 항목
   1. 마크다운 링크 `[텍스트](경로.md)`
-  2. 백틱으로 감싼 repo 상대 경로
+  2. 백틱으로 감싼 repo 상대 경로. 링크 문구 안의 백틱 경로는 링크 대상이 실재하고
+     대상 경로의 끝이 그 경로와 같으면 보지 않는다. 대상은 링크가 이미 말한다.
   3. 다른 문서의 섹션 참조 — `"섹션명" 섹션` / `"섹션명" 표`
   4. 스킬 참조 — `` `이름` skill ``
   5. 절 이름 참조 — 파일 표기 바로 뒤의 「제목」. 「A」 의 「B」 와 「A」 「B」 는 제목마다 본다.
@@ -23,7 +24,7 @@
 `--scope` 는 읽는 파일을 그 아래로 제한한다. 두 범위 모두 같다.
 
 Usage: python3 check_references.py [repo-root] [--scope <저장소 안 경로>]
-종료 코드: 깨진 참조가 있으면 1
+종료 코드: 0 깨진 참조 없음, 1 깨진 참조 있음, 2 `--scope` 인자 오류.
 """
 import json
 import pathlib
@@ -44,6 +45,8 @@ except ValueError as error:
 # 경로처럼 보이는 백틱 조각. 디렉터리 구분자를 포함해야 경로로 본다.
 PATH_IN_BACKTICK = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)`")
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
+# 확장자와 무관한 링크 한 개. 링크 문구의 백틱 경로를 2번 검사에서 가릴 때 쓴다.
+LINK_SPAN = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
 SECTION_REF = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:의|에)?\s*[\"“]([^\"”]{2,60})[\"”]\s*(섹션|표|절)")
 # 파일 표기 + (의|에) + 「제목」 이 하나 이상. 파일 표기가 바로 앞에 없는 「」 는 잡지 않는다.
 SECTION_TITLES = r"(?P<titles>「[^」\n]+」(?:\s*(?:의\s*)?「[^」\n]+」)*)"
@@ -210,6 +213,28 @@ def broken_guide_refs(source, line, instructions):
     return found
 
 
+def mask_resolved_link_text(source, line):
+    """링크 대상이 실재하고 문구의 백틱 경로가 모두 그 대상의 끝과 같으면 문구를 지운다.
+
+    `[planning 의 `references/x.md`](../planning/references/x.md)` 처럼 문구가 대상을 다시 적은 경우,
+    문구의 경로를 따로 해석하면 엉뚱한 기준으로 찾아 깨진 참조로 낸다. 대상은 링크가 이미 말한다.
+    대상이 없거나 문구와 대상이 어긋나면 그대로 두어 2번 검사가 잡게 한다.
+    """
+    def replace(match):
+        dest = match[2].split("#", 1)[0]
+        if not dest or SKIP.search(dest):
+            return match[0]
+        resolved = (source.parent / dest).resolve()
+        paths = PATH_IN_BACKTICK.findall(match[1])
+        if resolved.exists() and paths and all(
+            resolved.as_posix().endswith("/" + path.rstrip("/").removeprefix("./")) for path in paths
+        ):
+            return "[](" + match[2] + ")"
+        return match[0]
+
+    return LINK_SPAN.sub(replace, line)
+
+
 def in_sibling_skill(line, bare, siblings, plugins):
     """같은 줄이 이름으로 부른 형제 스킬 폴더에 그 경로가 있는지.
 
@@ -248,7 +273,7 @@ def main():
                     broken.append((rel, i, "링크", link))
 
             # 2) 백틱 경로 — repo 상대 경로로 해석
-            for cand in PATH_IN_BACKTICK.findall(line):
+            for cand in PATH_IN_BACKTICK.findall(mask_resolved_link_text(f, line)):
                 if SKIP.search(cand):
                     continue
                 bare = cand.rstrip("/")

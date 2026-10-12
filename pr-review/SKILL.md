@@ -6,34 +6,27 @@ description: |
   "리뷰 남겨줘", "이 PR 봐줘", "리뷰 초안", "리뷰 댓글 달아줘" 같은 요청이면 이 스킬을 쓴다.
   이미 달린 리뷰를 코드에 반영하는 일은 `review-fix` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "1.5.1"
+  version: "1.6.0"
 ---
 
 # pr-review
 
+**목표: 찾아 둔 지적에 근거와 등급을 붙이고, 사용자가 미리보기로 읽은 뒤 PR 에 등록해 줄에 붙었는지까지 확인한다.**
+
 **이 문서의 `scripts/`, `references/`, `assets/` 는 이 스킬 번들 기준 상대경로다.**
-하네스가 알려주는 스킬 base 디렉터리에 붙여 쓴다. 설치 위치를 가정하지 않는다.
+하네스가 알려주는 스킬 base 디렉터리에 붙여 절대 경로로 쓴다. 설치 위치를 가정하지 않는다.
+이 스킬은 대상 저장소를 cwd 로 두고 돌므로 `scripts/` 상대 경로는 그 저장소의 없는 파일을 가리킨다.
 
-남의 PR 에 리뷰를 남긴다. 이 스킬이 소유하는 것은 **작성과 등록**이다.
-
+이 스킬이 소유하는 것은 **작성과 등록**이다.
 문제를 찾는 일은 다른 것이 한다. `/code-review` 내장 명령, 직접 읽기, 실행해 보기 중 무엇을 써도 된다.
 이 스킬은 그렇게 찾은 것을 **틀리지 않게 쓰고 안전하게 올리는** 절차다.
-
-## 어느 reference 를 읽을지
-
-| 하려는 일 | 문서 |
-| --- | --- |
-| 주장이 맞는지 확인한다 | [evidence.md](references/evidence.md) |
-| 등급을 매긴다 | [grading.md](references/grading.md) |
-| 리뷰로 낼지 후속 업무로 낼지 가른다 | [scope.md](references/scope.md) |
-| PR 에 등록한다 | [posting.md](references/posting.md) |
 
 ## 첫 단계: 레포 오버레이
 
 `<repo-root>/.claude/pr-review-overlay.md` 가 있으면 먼저 읽고 코어보다 우선한다.
 
 - 오버레이가 채우는 것: git 호스트, 등급 기준(이 저장소에서 P2 는 무엇인가), 후속 업무를 등록할 곳,
-  저장소 고유 점검 항목.
+  저장소 고유 점검 항목, 사용자 문체 파일의 경로.
 - **등급 표기는 오버레이가 바꾸지 않는다.** `references/grading.md` 가 소유하고
   `scripts/gh-review-post.sh` 가 등록 직전에 강제한다.
 - 없으면 레포 `CLAUDE.md` 와 `REVIEW.md` 를 본다. 셋 다 없으면 사용자에게 확인한다.
@@ -42,11 +35,15 @@ metadata:
 **스킬 파일은 세션 중에 바뀔 수 있다.** 컨텍스트에 실린 사본은 세션 시작 시점에 고정되므로,
 `content-preview` 나 `dooray-task` 를 실제로 부르기 직전에 그 `SKILL.md` 를 다시 읽는다.
 
-## 다섯 단계
+## 실행 절차
 
-```
-대상 확정 → 근거 확보 → 등급과 범위 판정 → 미리보기(턴 종료) → 등록과 검증
-```
+| 단계 | 이름 | 통과 조건 | reference |
+| --- | --- | --- | --- |
+| 1 | 대상 확정 | PR 번호와 호스트가 정해졌고 리뷰 범위를 사용자와 맞췄다 | |
+| 2 | 근거 확보 | 지적마다 주장의 종류에 맞는 근거가 붙었거나 질문형으로 바뀌었다 | [evidence.md](references/evidence.md) |
+| 3 | 등급과 범위 판정 | 지적마다 등급과 행선지(리뷰 또는 후속 업무)가 정해졌다 | [grading.md](references/grading.md), [scope.md](references/scope.md) |
+| 4 | 미리보기 | 본문 전부를 미리보기로 띄우고 턴을 끝냈다 | `content-preview` 스킬 |
+| 5 | 등록과 검증 | 사용자가 등록을 확인했고 `gh-review-post.sh` 가 종료 코드 0 으로 끝났다 | [posting.md](references/posting.md) |
 
 각 단계를 건너뛰면 되돌리는 비용이 크다. 잘못 등록한 리뷰는 작성자가 읽은 뒤에야 지울 수 있다.
 
@@ -66,11 +63,7 @@ gh pr list --state open --limit 20
 
 **주장하기 전에 측정한다.** 이 스킬에서 가장 값이 큰 규칙이다.
 
-[evidence.md](references/evidence.md) 를 따른다. 요약하면 셋이다.
-
-- 동작 주장은 코드 인용으로 받친다. 이름에서 추론한 것은 근거가 아니다.
-- 성능·메모리·빈도 주장은 실측 없이 쓰지 않는다.
-- 잴 수 없으면 등급을 내리거나 질문형으로 바꾼다.
+[evidence.md](references/evidence.md) 를 따른다.
 
 ### 3단계: 등급과 범위 판정
 
@@ -86,36 +79,15 @@ gh pr list --state open --limit 20
 - 본문 전문을 채팅에 다시 쓰지 않는다. 위치와 등급, 담은 내용의 요약만 보고한다.
 - 요약 리뷰도 미리보기 대상이다. 인라인 본문과 요약을 한 미리보기에 함께 띄운다.
 - 미리보기 턴은 미리보기로 끝낸다. 등록 확인은 사용자가 읽은 다음 턴에 받는다.
-- 본인 명의로 나가는 글이므로 업무 글 페르소나를 **본문을 쓰기 전에** 읽는다.
+- 본인 명의로 나가는 글이므로 사용자 문체 파일이 있으면 **본문을 쓰기 전에** 읽는다. 경로는 오버레이가 준다.
 
 ### 5단계: 등록과 검증
 
 [posting.md](references/posting.md) 를 따른다. 등록 뒤에는 반드시 확인한다.
 
-```bash
-# 등록. 마지막 인자는 본문에 반드시 있어야 하는 핵심 낱말이고 하나 이상 필수다.
-scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
-
-# 요약과 인라인을 리뷰 하나로 묶어 등록한다. 지적이 둘 이상이면 이 모드를 쓴다.
-# 요약 형식은 references/grading.md 의 「요약 리뷰」 가 소유한다.
-scripts/gh-review-post.sh --batch <owner/repo> <PR> <summary.md> <핵심낱말>... -- <path>:<line>:<body.md>...
-
-# 인라인이 없을 때의 요약만
-scripts/gh-review-post.sh --summary <owner/repo> <PR> <summary.md> <핵심낱말>...
-
-# 이미 등록한 인라인 리뷰의 본문 수정
-scripts/gh-review-post.sh --edit <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
-
-# 스레드 답글
-scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
-
-# 이미 달린 댓글과 스레드를 읽는다
-scripts/gh-review-list.sh <owner/repo> <PR> [--thread <root댓글id>] [--mine]
-```
-
-경로는 절대 경로로 쓴다. 이 스킬은 대상 저장소를 cwd 로 두고 도므로
-`scripts/` 상대 경로는 그 저장소를 가리켜 없는 파일이 된다.
-스킬 설치 경로가 다르면 그 경로의 `scripts/` 를 쓴다.
+모드와 인자는 `scripts/gh-review-post.sh` 의 머리 주석이, 조회는 `scripts/gh-review-list.sh` 의 머리 주석이 소유한다.
+지적이 둘 이상이면 `--batch` 로 요약과 인라인을 리뷰 하나로 묶는다.
+요약 형식은 [grading.md](references/grading.md) 의 「요약 리뷰」 가 소유한다.
 
 **핵심 낱말은 그 리뷰에만 있는 문구로 고른다.** 등급 접두사만으로는 옛 payload 를 거른다는
 보장이 없다. 지적한 식별자나 수치처럼 다른 본문에는 없을 것을 넣는다.
@@ -134,6 +106,4 @@ scripts/gh-review-list.sh <owner/repo> <PR> [--thread <root댓글id>] [--mine]
 
 ## 하지 않는 것
 
-- 서식과 취향을 기본 대상으로 삼지 않는다. CI 나 포매터가 잡는 것은 리뷰하지 않는다.
 - 리뷰 안에서 코드를 고치지 않는다. 고치는 것은 `review-fix` 나 작성자의 일이다.
-- 등급을 인상하는 방향으로 재조정하지 않는다. 실측이 약하면 내리기만 한다.

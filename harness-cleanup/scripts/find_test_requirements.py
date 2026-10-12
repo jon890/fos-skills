@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""지우거나 이름을 바꾸려는 문자열을 저장소의 시험이 요구하는지 찾는다.
+"""지우거나 이름을 바꾸려는 문자열을 저장소의 테스트가 요구하는지 찾는다.
 
 판정표에 제거·축소·이름 변경을 적기 전에 그 제목이나 문장을 넘긴다.
-찾으면 그 위치가 「시험이 요구」 근거다. 시험도 함께 고칠지를 승인 항목으로 낸다.
-탐색 대상은 시험 폴더와 시험 파일 이름 규칙에 맞는 파일, CI 설정(`.github/workflows/*.yml`), `scripts/validate*` 다.
+찾으면 그 위치가 「테스트가 요구」 근거다. 테스트도 함께 고칠지를 승인 항목으로 낸다.
+탐색 대상은 테스트 폴더와 테스트 파일 이름 규칙에 맞는 파일, CI 설정(`.github/workflows/*.yml`), `scripts/validate*` 다.
 `tests/data/` 같은 fixture 폴더도 읽는다.
 
 후보 파일은 git 저장소면 `git ls-files -co --exclude-standard` 로 정한다. git 이 무시하는 빌드 결과물은 빠진다.
 git 저장소가 아니면 디렉터리를 순회하고 `.git`, `node_modules`, `.venv`, `worktrees`, `__pycache__` 와
 빌드 결과물 폴더(`build`, `dist`, `out`, `target`, `coverage`, `.next`)를 건너뛴다.
 
-「시험이 요구」 로 내는 줄은 셋이다. 인자가 Markdown 제목 표기(`#` 와 공백)로 시작하면 표기를 뗀 문자열을 `S` 라 한다.
+「테스트가 요구」 로 내는 줄은 셋이다. 인자가 Markdown 제목 표기(`#` 와 공백)로 시작하면 표기를 뗀 문자열을 `S` 라 한다.
   1. 인자를 그대로 담은 줄. 예: `## 확인`
   2. `S` 가 따옴표(`"`, `'`, `` ` ``)나 「」, 『』 로 감싸인 줄
   3. 줄 전체를 trim 한 값이 `S` 와 같은 줄
@@ -79,7 +79,7 @@ def stripped_form(needle: str) -> str:
 
 
 def requires(needle: str, line: str) -> bool:
-    """줄이 「시험이 요구」 에 드는가. 인자 그대로, 감싼 `S`, 줄 전체가 `S`."""
+    """줄이 「테스트가 요구」 에 드는가. 인자 그대로, 감싼 `S`, 줄 전체가 `S`."""
     if needle in line:
         return True
     bare = stripped_form(needle)
@@ -116,7 +116,7 @@ def main(argv: list[str]) -> int:
             contents.append((path.relative_to(root), path.read_text(encoding="utf-8").splitlines()))
         except (OSError, UnicodeDecodeError):
             continue
-    print(f"시험 파일 {len(contents)}개에서 {len(needles)}개 문자열을 찾는다")
+    print(f"테스트 파일 {len(contents)}개에서 {len(needles)}개 문자열을 찾는다")
     for needle in needles:
         hits, overlaps = [], []
         for rel, lines in contents:
@@ -128,7 +128,7 @@ def main(argv: list[str]) -> int:
                     overlaps.append(entry)
         print(f"\n\"{needle}\"")
         for rel, i, text in hits:
-            print(f"  시험이 요구: {rel}:{i}  {text}")
+            print(f"  테스트가 요구: {rel}:{i}  {text}")
         if not hits:
             print("  없음")
         if overlaps:

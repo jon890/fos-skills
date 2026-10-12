@@ -15,11 +15,7 @@
 파일, PR 본문, 커밋 메시지, 업무와 위키, 게시글, 아티팩트, 채팅 답변이 모두 대상이다.
 
 **판정 기준은 이 스킬이 소유한다.** 다른 스킬은 여기를 가리킨다.
-
-| 가리키는 쪽 | 어디서 |
-| --- | --- |
-| `content-preview` | 표기 검사 단계와 검토 단계 |
-| 사용자 하네스 지침 | 한국어 산출물 점검 절 |
+가리키는 문서는 `grep -rl korean-check --include='*.md' .` 로 찾는다.
 
 ## 전제
 
@@ -28,18 +24,18 @@
 
 ## 설치
 
-스킬을 글로벌 스킬 디렉터리에 심링크한다.
+스킬을 글로벌 스킬 디렉터리에 심링크한다. `$CHECKOUT` 은 이 저장소를 체크아웃한 경로다.
 
 ```bash
-ln -sfn <체크아웃 경로>/korean-check ~/.claude/skills/korean-check
+ln -sfn "$CHECKOUT"/korean-check ~/.claude/skills/korean-check
 ```
 
 편집 훅에서 부르려면 검사기 둘도 함께 건다.
 심링크로 걸면 스킬을 고칠 때 훅 설정을 다시 손대지 않는다.
 
 ```bash
-ln -sfn <체크아웃 경로>/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
-ln -sfn <체크아웃 경로>/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
+ln -sfn "$CHECKOUT"/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
+ln -sfn "$CHECKOUT"/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
 ```
 
 `korean-style-check.py` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
@@ -48,7 +44,7 @@ ln -sfn <체크아웃 경로>/korean-check/scripts/check-readability.py ~/.claud
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.
 
 ```bash
-ln -sfn <체크아웃 경로>/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
+ln -sfn "$CHECKOUT"/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
 ```
 
 **`korean-style.md` 하나만 건다.** 어휘와 문장 구성, 짧은 글 규칙은 채팅 답변에도 적용되므로 항상 실려야 한다.
@@ -79,7 +75,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | `references/korean-style.md` | 매 답변에 적용하는 핵심. 어색한 말 매핑 표, 문장 구성, 출력 직전 점검, 짧은 글에서 하지 않는 것, 영어로 두는 개발 용어 |
 | `references/korean-examples.md` | 문서를 쓰거나 검토할 때 읽는 예시. 고칠 문장 표, 고쳐 쓴 예시, 실측으로 되돌린 사례 |
 | `references/writing-structure.md` | 독자 구간, 분량 구간, 긴 문서에서 나누는 방식, 번호, 내용 점검 |
-| `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
+| `references/markdown-readability.md` | 검사에서 제외하는 대상, 훅이 잡지 못하는 것 |
 | `references/review-axes.md` | 메인과 별도 검토 역할이 쓰는 의미 점검 축, 발견 형식과 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
 | `scripts/check-diff.py` | `check.sh --diff` 의 본체. git diff 로 더한 줄의 발견만 종료 코드에 넣고, 기존 줄의 발견은 따로 낸다 |
@@ -90,7 +86,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | `tests/test_check_diff.py` | 임시 git 저장소에서 기존 줄의 발견은 통과하고 더한 줄의 금지어는 막히는지 본다 |
 | `CHANGELOG.md` | 버전 이력 |
 
-테스트는 저장소 루트에서 돌린다. 다른 곳에서 부르면 `ImportError` 로 끝난다.
+테스트는 저장소 루트에서 돌린다. `-s` 를 상대 경로로 주고 다른 곳에서 부르면 `ImportError` 로 끝난다.
 
 ```bash
 # cwd: 저장소 루트

@@ -3,6 +3,18 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.6.0
+
+목표 문장과 단계 개요 표를 더하고, 스크립트가 이미 소유하거나 강제하는 사용법과 검사를 산문에서 지운다.
+
+- SKILL.md 에 목표 문장과 단계, 통과 조건, reference 를 담은 개요 표를 더했다. reference 표는 개요 표로 합쳤다
+- 사용자 문체 파일은 오버레이가 경로를 준다. 개인 환경 경로를 지웠다
+- 5단계의 명령 블록을 지우고 `gh-review-post.sh` 머리 주석을 가리킨다. `--batch` 를 고르는 기준은 남겼다
+- 스크립트 경로 규칙을 한 곳으로 합쳤다
+- 2단계의 evidence.md 요약, 「하지 않는 것」 의 scope.md 와 grading.md 중복 두 줄을 지웠다
+- posting.md: payload 재사용 방지, 등록 뒤 확인, 봇 재트리거 토큰은 스크립트가 강제하므로 이유 한 줄과 종료 코드 1 의 뜻만 남겼다
+- evidence.md 의 모델 행동 관측 표를 지우고 규칙만 남겼다. scope.md 의 외부 제품 소개 문장을 지웠다
+
 ## 1.5.1
 
 `SKILL.md` 와 `references/evidence.md`, `references/grading.md`, `references/scope.md` 의 표현 여섯 곳을 권장 표현으로 바꿨다.

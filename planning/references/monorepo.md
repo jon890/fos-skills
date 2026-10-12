@@ -28,21 +28,13 @@ git diff --name-only origin/main...HEAD | python3 "$PLANNING_SKILL_DIR/scripts/o
 2. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
 3. 어디에도 없으면 사용자에게 확인한다
 
-하위 프로젝트 오버레이가 하나도 없으면 이 순서만 쓴다. 이전 버전과 동작이 같다.
+하위 프로젝트 오버레이가 하나도 없으면 이 순서만 쓴다.
 
 ## 모노레포인지 판정한다
 
 **루트 바로 아래 디렉터리에 오버레이가 하나라도 있으면 모노레포로 본다.**
-
-```bash
-# cwd: 저장소 루트
-find . -mindepth 3 -maxdepth 3 -path './*/.claude/*-overlay.md'
-```
-
-zsh 에서 `ls */.claude/*-overlay.md` 는 맞는 파일이 없으면 셸이 `no matches found` 로 멈춘다. `find` 는 빈 출력으로 끝난다.
-
-출력이 비었으면 단일 저장소다.
-출력에 나온 디렉터리 이름이 하위 프로젝트다. `frontend/.claude/planning-overlay.md` 가 있으면 `frontend` 가 하위 프로젝트다.
+오버레이가 없으면 단일 저장소다.
+오버레이를 가진 디렉터리가 하위 프로젝트다. `frontend/.claude/planning-overlay.md` 가 있으면 `frontend` 가 하위 프로젝트다.
 
 ## 작업 대상 하위 프로젝트를 정한다
 

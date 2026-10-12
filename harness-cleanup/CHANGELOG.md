@@ -3,6 +3,20 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.18.0
+
+낡은 종료 코드 설명과 중복을 걷어내고, 링크 문구 안의 경로를 깨진 참조로 내던 오탐을 고친다.
+
+- `check_references.py` 는 링크 대상이 실재하고 그 끝이 문구의 백틱 경로와 같으면 문구의 경로를 따로 해석하지 않는다. 테스트 3건을 더했다
+- 스크립트별 종료 코드 표를 `SKILL.md` 에서 지우고 각 스크립트 docstring 으로 옮겼다. `collect_targets.py`, `check_facts.py`, `check_duplication.py` 에 종료 코드를 새로 적었다
+- `--help` 를 넣으면 「깨진 참조 0건」 이 나온다는 낡은 실측을 지우고 「`--help` 를 받지 않는다」 로 바꿨다
+- 단계 절이 「조사를 나눠 맡긴다」 의 하위 절이던 구조를 고쳐 단계를 `##` 로 올리고 위임 절을 끝으로 옮겼다
+- 2단계 통과 조건의 「검사 다섯」 을 실제 명령과 `run_doc_snippets.py` 실행으로 바꿨다
+- `judgment.md` 축 제목을 번호는 두고 명사구로 바꿨다. 사례 중복과 `check_enforcement.py` docstring 중복을 지웠다
+- `audit-axes.md` 에서 skill-structure 와 korean-check 가 소유한 문서 구조 설명, 규칙의 근거로 붙은 모델 행동 문장, 하네스 도구 이름을 걷어냈다
+- `find_test_requirements.py` 의 출력과 docstring 에서 매핑 표의 금지어를 「테스트」 로 바꿨다. 출력 문구가 `테스트가 요구:` 가 됐다
+- README 구성 표의 낡은 축 목록과 개수를 지우고 references 두 파일을 더했다
+
 ## 3.17.0
 
 `check_references.py` 가 파일 표기 바로 뒤의 「제목」 참조를 대상 파일의 Markdown 제목과 대조한다. `AGENTS.md` 의 절 이름을 바꿔도 그 절을 가리키는 다른 파일은 확인되지 않았다.

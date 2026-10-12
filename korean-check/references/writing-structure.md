@@ -1,7 +1,8 @@
 # 글의 구조
 
 분량과 정보량이 정하는 규칙을 둔다.
-언어는 `korean-style.md`, 렌더링은 `markdown-readability.md` 가 소유한다.
+언어는 `korean-style.md`, 검사에서 제외하는 대상은 `markdown-readability.md`,
+매체별 렌더링은 `content-preview` 의 [`render-traps.md`](../../content-preview/references/render-traps.md) 가 소유한다.
 
 ## 독자 구간
 

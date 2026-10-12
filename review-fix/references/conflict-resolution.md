@@ -20,7 +20,7 @@ CONFLICTING 인 채로 fix 를 push 하면 여전히 머지 불가라 fix 효과
 ## lockfile
 
 **lockfile 은 수동으로 머지하지 않는다. 무결성이 깨진다.**
-base 를 채택한 뒤 그 저장소의 패키지 매니저로 재생성한다.
+충돌한 lockfile 은 base 를 채택한 뒤 그것을 만든 패키지 매니저로 재생성한다. 아래 표는 자주 만나는 예다.
 
 | lockfile | 재생성 명령 |
 |---|---|
@@ -28,7 +28,7 @@ base 를 채택한 뒤 그 저장소의 패키지 매니저로 재생성한다.
 | `package-lock.json` | `npm install` |
 | `yarn.lock` | `yarn install` |
 
-위 셋이 없으면 lockfile 을 쓰지 않는 프로젝트이므로 이 절을 건너뛴다.
+lockfile 이 충돌하지 않았으면 이 절을 건너뛴다.
 
 ```bash
 git checkout --theirs <lockfile>   # merge 중에는 --theirs 가 base 다

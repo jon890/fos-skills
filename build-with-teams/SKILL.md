@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.18.0"
+  version: "5.19.0"
 ---
 # build-with-teams
 
@@ -41,9 +41,7 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 2. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
 3. 어디에도 없으면 사용자에게 확인한다
 
-**루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
-plan 이름의 접두사로 대상 하위 프로젝트를 정하고, 그 하위 프로젝트 오버레이를 1번보다 먼저 읽는다.
-판정 방법과 탐색 순서는 [planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
+모노레포 판정과 하위 프로젝트 오버레이 탐색은 [planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 를 따른다.
 
 | 설정 값 | 쓰는 단계 |
 | --- | --- |
@@ -56,6 +54,7 @@ plan 이름의 접두사로 대상 하위 프로젝트를 정하고, 그 하위 
 | docs 경로와 tasks 경로 (기본값 `docs/`, `tasks/`) | 1, 3, 5, 6 |
 | 커밋 컨벤션, 반복될 실패를 규칙으로 넣을 위치 | 4, 6 |
 | 의존성 설치와 환경 파일 준비 | 2 |
+| 계획서 보존 여부 (기본값: 지운다) | 6 |
 
 ## 실행 절차
 
@@ -81,8 +80,8 @@ plan 인자를 받으면 가장 먼저 돌린다.
 `$SKILL_DIR`은 이 스킬 번들, `$PLAN`은 task 디렉터리 이름, `$REPO`는 대상 저장소다.
 `$TASKS_DIR`과 `$DOCS_DIR`은 레포 설정의 tasks 경로와 docs 경로이고, 지정이 없으면 `tasks`와 `docs`다.
 레포 설정에서 기준 브랜치를 찾으면 `$BASE_BRANCH`에 담고 `--base`로 넘긴다.
-없으면 `--base`를 생략한다. 저장소 Git 설정 `build-with-teams.baseBranch`, 원격 기본 브랜치 순으로 찾는다.
-검사 결과의 `branch.base`를 이후 단계와 검토자에게 전달한다. 찾지 못하면 종료 코드 2다.
+없으면 `--base`를 생략한다.
+검사 결과의 `branch.base`를 이후 단계와 검토자에게 전달한다.
 
 ```bash
 # cwd: 대상 저장소 root
@@ -100,26 +99,16 @@ python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" \
 | 1 | 출력한 발견 사항을 사용자에게 보여주고, 이어서 할지 새로 시작할지 확정받는다. 지운 계획서로 나오면 이미 구현된 plan 이다 |
 | 2 | 출력한 원인을 해소하고 다시 돌린다. `gh` 인증 실패와 `index.json` 부재가 여기 해당한다 |
 
-원격에 plan 브랜치가 없을 때의 판정이다.
-계획서와 구현을 한 브랜치에서 끝내고 PR 때 push 하는 흐름에서는 원격 부재가 정상이라 발견 사항으로 올리지 않는다.
-
-| 상태 | 판정 |
-| --- | --- |
-| 로컬에 같은 이름의 브랜치가 있고 계획서가 로컬에 있다 | `notes` 로만 알린다. 기준 브랜치 대비 구현 변경이 있으면 발견 사항이다 |
-| 로컬에도 그 브랜치가 없다 | 발견 사항이다. push 하지 않았거나 브랜치 이름 형식이 다르다 |
-| `index.json` 상태가 `completed` 다 | 발견 사항이다. 머지 후 정리된 브랜치로 본다 |
-
 브랜치 이름이 task 디렉터리 이름과 다르면 `--branch` 로 넘긴다.
 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면(예: 에이전트 조율 도구의 `worker-start --worktree new-top-level` 이 worker 마다 브랜치를 미리 만든다) 그 브랜치를 plan 브랜치로 쓰고 `--branch <그 이름>` 으로 넘긴다.
 모노레포에서 루트 `docs/` 도 기획 문서로 쓰면 `--docs-dir` 를 한 번 더 준다.
-경로와 관계없이 `.md` 파일은 구현 변경으로 세지 않는다. 계획 커밋이 README 나 CLAUDE.md 의 설명을 고치기 때문이다.
 
 ### 2. 작업 공간 준비
 
 만드는 방법은 오버레이가 소유한다. 이 스킬이 요구하는 것은 아래와 같다.
 
 - plan 브랜치 위에서 작업한다. 1단계가 로컬에만 있는 브랜치라고 알렸으면 그 로컬 브랜치를 쓴다.
-- 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면 브랜치를 새로 만들거나 이름을 바꾸지 않는다. 그 브랜치를 plan 브랜치로 쓰고 `plan_precheck.py --branch <그 이름>` 으로 넘긴다.
+- 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면 그 브랜치를 그대로 쓴다.
 - main 워킹 디렉터리와 분리한다.
 - 팀원에게 줄 절대경로를 확보한다.
 
@@ -128,8 +117,15 @@ plan 브랜치가 원격 기준 브랜치보다 뒤처졌으면 갱신할지 사
 ### 3. 계획 검토
 
 `index.json` 과 `phase-*.md`, 그것이 가리키는 docs 를 읽는다.
-**「변경 파일」 절에 `src/.../App.java` 처럼 생략한 경로가 있으면 구현 전에 전체 경로로 고친다.**
-커밋 전 대조가 생략한 경로를 staged 파일과 맞출 수 없어 그 phase 를 커밋하지 못한다.
+critic 을 띄우기 전에 계획서 형식을 검사한다. `$PLANNING_SKILL_DIR` 은 아래 「커밋 전 대조」 에서 정한 값이다.
+종료 코드 1 이면 출력한 위반을 계획서에서 고치고 다시 돌린다.
+이어서 하는 plan 이면 앞 phase 가 이미 만든 파일에 「신규 파일이 이미 존재한다」 가 나온다. 그 위반은 고치지 않는다.
+
+```bash
+# cwd: plan 작업 공간(worktree) root
+python3 "$PLANNING_SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
+```
+
 critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 목록 경로)를 담는다.
 **plan 의 모든 phase 를 한 번에 넘긴다.**
 
@@ -185,9 +181,8 @@ python3 "$PLANNING_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
 
 executor 가 `git mv` 를 staged 로 남겼으면 team-lead 는 그 phase 의 경로만 더 stage 한 뒤 대조한다. `git add -A` 는 그 경로에만 쓴다.
 
-종료 코드 0이면 커밋한다. 1이면 출력한 범위 밖 파일, 변경 종류, 목록에 신규로 적었지만 staged 에 없는 파일을 바로잡는다.
-수정·삭제로 적은 파일이 staged 에 없으면 경고로 출력한다. 그 파일을 바꾸지 않아도 되는지 확인한다.
-계획의 파일 목록이 빠진 경우에는 3단계로 돌아간다. 2이면 실행 오류를 해소하고 다시 대조한다.
+종료 코드 0이면 커밋한다. 경고가 나오면 그 파일을 바꾸지 않아도 되는지 확인한다.
+1이면 출력대로 바로잡고, 계획의 파일 목록이 빠진 경우에는 3단계로 돌아간다. 2이면 실행 오류를 해소하고 다시 대조한다.
 변경 파일 목록의 작성 규칙은 [planning의 task 작성 규칙](../planning/references/task-create.md#변경-파일-작성)을 따른다.
 
 ### 5. 코드 리뷰와 문서 정합성 검토

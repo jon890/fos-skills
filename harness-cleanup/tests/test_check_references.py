@@ -123,6 +123,38 @@ class SiblingAndPluginTest(CheckReferencesTest):
         result = self.run_check()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
+    def test_link_text_path_matching_existing_target_is_not_broken(self):
+        self.make_repo_skill("skills/planning", "references/monorepo.md")
+        self.make_repo_skill("skills/beta")
+        self.write_doc(
+            "skills/beta/SKILL.md",
+            "[planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_link_text_path_with_missing_target_is_still_broken(self):
+        self.make_repo_skill("skills/planning")
+        self.make_repo_skill("skills/beta")
+        self.write_doc(
+            "skills/beta/SKILL.md",
+            "[planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[링크] ../planning/references/monorepo.md", result.stdout)
+
+    def test_link_text_path_differing_from_target_is_still_broken(self):
+        self.make_repo_skill("skills/planning", "references/monorepo.md")
+        self.make_repo_skill("skills/beta")
+        self.write_doc(
+            "skills/beta/SKILL.md",
+            "[`references/other.md`](../planning/references/monorepo.md) 가 소유한다.\n",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[경로] references/other.md", result.stdout)
+
     def test_plugin_directory_name_is_not_a_skill_reference(self):
         self.make_repo_skill("plugins/nhn-dev/skills/dooray-cli")
         self.write_claude_md("nhn-dev")
