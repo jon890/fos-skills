@@ -3,6 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.20.0
+
+하네스 감사 결과로 중복과 낡은 문구를 걷어내고, 반복 실패를 넣을 곳을 공용 문서로 올린다.
+
+- `references/rule-placement.md` 를 새로 만든다. 넣을 곳 표, 규칙 문장 형식, 반복 함정 목록 처리를 build-with-teams 와 review-fix 가 함께 쓴다
+- SKILL.md 개요 표의 열을 통과 조건으로 바꾸고, 레포 설정 탐색은 `overlay_paths.py` 명령으로 바꾼다
+- description 과 목표에 build-with-teams 로 넘어가는 경계를 적는다
+- 검사기 위반은 형식이면 고쳐 다시 돌리고, 합의를 바꿔야 할 때만 묻는다
+- 계획서 번호 규칙, plan 분할, cwd 설명처럼 다른 문서나 스크립트가 소유한 중복을 지운다
+- task-create.md 의 검사기 내부 동작 설명을 작성 규칙 목록으로 줄이고, `index.json` 의 status 값을 build-with-teams 와 맞춘다
+- 「공유 인덱스」 를 여러 plan 이 함께 고치는 색인 파일로 풀어 쓴다
+- monorepo.md 의 수동 find 명령과 역사 서술을 지운다
+
 ## 2.18.0
 
 `verify_task.py` 가 `전체 삭제 경로` 처럼 뒤에 명사가 이어진 설명 문장을 모호한 범위 지시로 잡지 않는다. `전체 삭제한다`, `전체 삭제를 한다`, 문장 끝의 `전체 삭제` 는 그대로 위반이다.

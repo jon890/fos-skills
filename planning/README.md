@@ -15,8 +15,6 @@
 | 커밋 | 문서 갱신과 task 파일을 담은 기획 커밋 |
 
 `docs/` 는 구현이 끝난 뒤에도 읽는 문서이고, `tasks/` 는 구현 PR 에서 지운다.
-현재 사실은 `docs/` 와 코드가 소유한다. 계획서는 구현 뒤 곧 낡아서, 남겨 두면 에이전트나 사람이 다시 읽고 틀린 근거로 쓴다.
-지난 계획은 git 이력에서 찾는다.
 
 규모가 크면 plan 을 여러 디렉터리로 나눈다.
 한 plan 은 한 번에 검토할 수 있는 크기이고 PR 하나에 대응한다.
@@ -35,11 +33,8 @@
 
 ## 전제
 
-- **대상 저장소의 레포 설정.** `<repo-root>/.claude/planning-overlay.md` 를 먼저 보고,
-  없으면 그 저장소의 하네스 지침 파일(`AGENTS.md`, `CLAUDE.md`)을 본다.
-  모노레포면 하위 프로젝트의 `.claude/planning-overlay.md` 를 그보다 먼저 본다.
-  검증 명령, 레이어 구조, 도메인 변형, 필수 다섯 밖의 추가 문서가 여기 들어 있다.
-  둘 다 없거나 그 값이 없으면 사용자에게 확인한다.
+- **대상 저장소의 레포 설정.** 검증 명령, 레이어 구조, 도메인 변형, 필수 다섯 밖의 추가 문서가 여기 들어 있다.
+  찾는 순서는 `references/monorepo.md` 가 정한다.
 - **사용자가 답할 수 있는 상태.** 각 단계의 통과 조건에 사용자 확정이 들어 있어
   취향, 범위, 되돌리기 어려운 선택은 물어서 정한다.
 - **`python3`.** task 생성 직후 `scripts/verify_task.py` 를 돌린다.
@@ -50,7 +45,7 @@
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 관리 문서 다섯의 책임 분담, 레포 설정 탐색 순서, 8단계 표와 단계별 통과 조건, task 생성 직후 확인 절차 |
+| `SKILL.md` | 관리 문서 다섯의 책임 분담, 레포 설정 탐색 명령, 8단계 표와 단계별 통과 조건, task 생성 직후 확인 절차 |
 | `references/step-1-feasibility.md` | 구현 가능 판단, 재사용 지점을 파일 경로로 짚는 기준, 리스크와 제약 |
 | `references/step-2-tech-stack.md` | 기존 스택으로 되는지 판단, 새 의존 도입 심사, ADR 로 남길 조건 |
 | `references/step-3-flow.md` | 정상 흐름과 에러·빈 상태·동시 요청의 갈래, `docs/flow.md` 에 mermaid 로 남기는 규칙 |
@@ -60,6 +55,7 @@
 | `references/step-7-docs.md` | 필수 다섯 전체의 영향 판정, ADR 로 남길 결정을 가르는 두 조건 |
 | `references/step-8-tasks.md` | phase 분할 기준, plan 을 나눌 조건, plan 번호를 원격과 git 이력까지 훑어 정하는 방법 |
 | `references/task-create.md` | `index.json` 스키마, ADR 템플릿과 supersede 처리, phase 파일 구조와 작성 규칙 |
+| `references/rule-placement.md` | 반복될 실패를 저장소 규칙으로 옮길 때 넣을 곳 표, 규칙 문장 형식, 반복 함정 목록 처리. `build-with-teams` 와 `review-fix` 가 함께 쓴다 |
 | `references/monorepo.md` | 모노레포 판정, 대상 하위 프로젝트를 정하는 순서, 오버레이 탐색 순서, 오버레이가 지정하는 docs 경로와 tasks 경로와 plan 접두사. 네 스킬이 함께 쓴다 |
 | `scripts/overlay_paths.py` | `references/monorepo.md` 의 판정을 실행해 대상 하위 프로젝트와 레포 설정을 읽을 순서를 낸다 |
 | `scripts/plan_number.sh` | 원격 브랜치와 git 이력을 훑어 쓰인 plan 번호와 다음 번호를 낸다. 접두사마다 따로 센다 |
