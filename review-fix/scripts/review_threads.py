@@ -6,13 +6,15 @@
     review_threads.py list-all <owner> <repo> <PR번호>   # resolve 된 것까지
     review_threads.py list --count <owner> <repo> <PR번호>   # 미해결 스레드 수만 정수로 낸다
     review_threads.py reply    <THREAD_ID> <본문파일>
+    review_threads.py reply-batch <map.tsv>   # 줄마다 `THREAD_ID<탭>본문파일`. 빈 줄과 # 줄은 건너뛴다
+    review_threads.py carried  <owner> <repo> <PR번호> [--marker 문구]   # 회신에 문구가 든 스레드
     review_threads.py resolve  <THREAD_ID> [<THREAD_ID> ...]
 
     --repo <owner>/<repo>    reply 와 resolve 에서 호스트를 정한다. 어느 자리에 와도 된다
 
 종료 코드:
     0  성공
-    1  GitHub 호출 실패. `--count` 는 스레드가 한 번에 조회하는 수를 넘어도 1 이다
+    1  GitHub 호출 실패. `reply-batch` 는 하나라도 실패하면 1 이다. `--count` 는 스레드가 한 번에 조회하는 수를 넘어도 1 이다
     2  사용법 오류
 
 머지 전 확인은 `list --count` 로 한다. 출력에서 `"resolved":false` 를 grep 해 세지 않는다.
@@ -66,6 +68,21 @@ REPLY_MUTATION = """
           comment { url }
         }
       }"""
+
+CARRIED_QUERY = """
+    query($owner:String!, $repo:String!, $num:Int!) {
+      repository(owner:$owner, name:$repo) {
+        pullRequest(number:$num) {
+          reviewThreads(first:%d) {
+            totalCount
+            nodes { id isResolved path line
+                    comments(first:50){ nodes{ author{login} body url } } }
+          }
+        }
+      }
+    }""" % PAGE_SIZE
+
+DEFAULT_MARKER = "다음 PR"
 
 RESOLVE_MUTATION = """
         mutation($threadId:ID!) {
@@ -155,6 +172,83 @@ def cmd_reply(host, thread_id, body_file):
     return 0
 
 
+def parse_batch_map(text):
+    """`THREAD_ID<탭>본문파일` 줄을 (줄 번호, id, 파일) 로 푼다. 빈 줄과 `#` 줄은 건너뛴다.
+
+    탭이 없는 줄은 (줄 번호, None, 원문) 으로 내고 호출부가 실패로 센다.
+    """
+    rows = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+            rows.append((number, None, line))
+        else:
+            rows.append((number, parts[0].strip(), parts[1].strip()))
+    return rows
+
+
+def cmd_reply_batch(host, map_file):
+    """map.tsv 의 모든 줄을 회신한다. 실패해도 나머지를 계속 돌리고 끝에 실패 목록을 낸다."""
+    try:
+        text = Path(map_file).read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"map 파일을 읽을 수 없다: {map_file} ({e})", file=sys.stderr)
+        return 2
+    rows = parse_batch_map(text)
+    if not rows:
+        print(f"회신할 줄이 없다: {map_file}", file=sys.stderr)
+        return 2
+    base = Path(map_file).resolve().parent
+    failed = []
+    for number, tid, body in rows:
+        if tid is None:
+            print(f"줄 {number}: `THREAD_ID<탭>본문파일` 꼴이 아니다: {body}", file=sys.stderr)
+            failed.append(f"줄 {number}")
+            continue
+        body_path = Path(body)
+        if not body_path.is_absolute():
+            body_path = base / body_path
+        print(f"[{tid}] ", end="", flush=True)
+        if cmd_reply(host, tid, str(body_path)) != 0:
+            failed.append(f"줄 {number} {tid}")
+    if failed:
+        print(f"회신 실패 {len(failed)}/{len(rows)}건: " + ", ".join(failed), file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_carried(host, owner, repo, num, marker):
+    """이전 PR 의 스레드 중 첫 댓글 뒤의 회신에 marker 가 든 것을 낸다. resolve 된 것도 낸다."""
+    code, out, err = gh("api", "graphql", "-f", f"query={CARRIED_QUERY}",
+                        "-f", f"owner={owner}", "-f", f"repo={repo}", "-F", f"num={num}",
+                        env={"GH_HOST": host})
+    if code != 0:
+        print(err.strip() or out.strip(), file=sys.stderr)
+        return 1
+    threads = json.loads(out)["data"]["repository"]["pullRequest"]["reviewThreads"]
+    if threads["totalCount"] > PAGE_SIZE:
+        emit(f"경고: 스레드 {threads['totalCount']}건 중 {PAGE_SIZE}건만 조회했다")
+    for node in threads["nodes"]:
+        comments = node["comments"]["nodes"]
+        hits = [c for c in comments[1:] if marker in (c.get("body") or "")]
+        if not hits:
+            continue
+        first = comments[0]
+        emit({
+            "pr": int(num),
+            "id": node["id"],
+            "resolved": node["isResolved"],
+            "path": node["path"],
+            "line": node["line"],
+            "author": (first.get("author") or {}).get("login"),
+            "head": (first.get("body") or "")[:HEAD_LEN],
+            "reply_url": hits[-1].get("url"),
+        })
+    return 0
+
+
 def cmd_resolve(host, thread_ids):
     failed = 0
     for tid in thread_ids:
@@ -207,11 +301,18 @@ def main(argv):
     except BadRepo as e:
         print(e, file=sys.stderr)
         return 2
+    marker = DEFAULT_MARKER
+    if "--marker" in argv:
+        at = argv.index("--marker")
+        if at + 1 >= len(argv):
+            return usage()
+        marker = argv[at + 1]
+        del argv[at:at + 2]
     if len(argv) < 2:
         return usage()
     cmd, rest = argv[1], argv[2:]
 
-    if cmd in ("list", "list-all") and len(rest) == 3:
+    if cmd in ("list", "list-all", "carried") and len(rest) == 3:
         given_owner, given_repo = rest[0], rest[1]
 
     try:
@@ -227,6 +328,10 @@ def main(argv):
                         only_unresolved=(cmd == "list"), count_only=count_only)
     if cmd == "reply":
         return cmd_reply(host, *rest[:2]) if len(rest) == 2 else usage()
+    if cmd == "reply-batch":
+        return cmd_reply_batch(host, rest[0]) if len(rest) == 1 else usage()
+    if cmd == "carried":
+        return cmd_carried(host, *rest[:3], marker) if len(rest) == 3 else usage()
     if cmd == "resolve":
         return cmd_resolve(host, rest) if rest else usage()
     return usage()
