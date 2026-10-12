@@ -7,6 +7,9 @@
 # 사용법:
 #   check.sh <파일.md> [<파일.md>...]
 #   check.sh --text "<제목이나 커밋 메시지>"
+#   check.sh --diff [<기준>] [-- <파일.md>...]
+#                                          git diff 로 더한 줄의 발견만 판정한다.
+#                                          기준 기본값은 HEAD. 인자와 출력은 check-diff.py 가 소유한다
 #   check.sh --where                       이 스킬 디렉터리 경로를 낸다
 #
 # 종료 코드:
@@ -28,7 +31,16 @@ if [ "${1:-}" = "--where" ]; then
   exit 0
 fi
 
-[ $# -gt 0 ] || { echo "검사할 파일이나 --text 가 필요하다" >&2; exit 2; }
+# --diff 는 파일 전체를 검사한 뒤 발견을 이번 변경과 기존 줄로 나눈다. 종료 코드는 이번 변경 몫만 본다.
+if [ "${1:-}" = "--diff" ]; then
+  shift
+  base="HEAD"
+  if [ $# -gt 0 ] && [ "$1" != "--" ]; then base="$1"; shift; fi
+  [ "${1:-}" = "--" ] && shift
+  exec python3 "$HERE/check-diff.py" --base "$base" "$@"
+fi
+
+[ $# -gt 0 ] || { echo "검사할 파일이나 --text 나 --diff 가 필요하다" >&2; exit 2; }
 
 for f in "$STYLE" "$READABILITY"; do
   [ -f "$f" ] || { echo "검사기가 없다: $f" >&2; exit 2; }
