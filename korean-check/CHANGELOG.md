@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.24.0
+
+앞에 글자가 붙은 합성어의 오탐을 막는 경계를 다른 금지어에도 쓸 수 있게 하고, 저장소 밖 사본에서 테스트가 실패하지 않게 한다.
+
+- `WORD_START_PREFIX` 를 튜플 `WORD_START_PREFIXES` 로 바꿨다. 동작은 그대로다
+- checker-maintenance.md: 금지어 앞에 글자가 붙은 합성어가 걸리면 첫 글자를 `WORD_START_PREFIXES` 에 더한다는 규칙을 적었다
+- `test_repo_markdown_passes` 는 git 저장소 밖이면 건너뛴다. git archive 사본에서 돌리면 `git ls-files` 가 실패했다
+
 ## 1.23.0
 
 하네스 감사 결과로 중복과 낡은 소유 표기를 정리하고, 별도 검토 대상을 아티팩트 발행 전과 사용자 요청으로 확정한다.
