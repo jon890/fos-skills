@@ -3,6 +3,7 @@
 
 index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시와
 스킬 번들 cwd, 사람 의존 검증, 필수 절, BSD sed 를 검사한다.
+`remote-verification.md` 가 있으면 선행 조건과 시점 열의 값을 검사한다.
 `bun test` 의 점 디렉터리 경로와 금지 문자열 검사가 같은 phase 의 테스트에 걸리는지도 본다.
 완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 build-with-teams 가 디렉터리째 지운다.
 계획에 적힌 명령은 실행하지 않는다.
@@ -602,6 +603,64 @@ def check_remote_commands(path, commands, warnings):
             warnings.append(f"{path} — 검증 절에 push 나 원격 접속이 있다. phase 검증은 커밋 전에 작업 공간에서 끝나야 한다. remote-verification.md 로 옮긴다: {' '.join(command)}")
 
 
+REMOTE_COLUMNS = ("선행 조건", "시점", "실행 위치", "명령", "기대값")
+REMOTE_PREREQUISITES = ("없음", "push", "머지", "배포")
+REMOTE_TIMINGS = ("PR 전", "PR 뒤")
+
+
+def table_rows(text):
+    """첫 마크다운 표의 (줄 번호, 칸 목록) 을 머리 행부터 낸다. 구분 행은 뺀다."""
+    rows = []
+    for n, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if rows:
+                break
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if all(re.fullmatch(r":?-+:?", c) for c in cells if c):
+            continue
+        rows.append((n, cells))
+    return rows
+
+
+def check_remote_verification(path, out, warnings):
+    """remote-verification.md 의 선행 조건과 시점이 정한 값인지 본다.
+
+    시점 열이 없는 옛 형식은 모두 PR 뒤로 읽고 경고만 한다. 진행 중인 계획을 막지 않는다.
+    PR 전 항목이 읽기 전용인지는 명령의 뜻이라 판정하지 않는다. 작성자가 확인한다.
+    """
+    rows = table_rows(path.read_text(encoding="utf-8"))
+    if not rows:
+        out.append(f"{path} — 원격 검증 표가 없다")
+        return
+    (_, header), body = rows[0], rows[1:]
+    missing = [c for c in REMOTE_COLUMNS if c not in header]
+    legacy = missing == ["시점"]
+    if legacy:
+        warnings.append(f"{path} — 시점 열이 없는 옛 형식이다. 모든 항목을 PR 뒤로 읽는다")
+    elif missing:
+        out.append(f"{path} — 원격 검증 표에 열이 없다: {', '.join(missing)}")
+        return
+    col = {name: header.index(name) for name in REMOTE_COLUMNS if name in header}
+    for n, cells in body:
+        def cell(name):
+            i = col.get(name)
+            return cells[i] if i is not None and i < len(cells) else ""
+        prerequisite = cell("선행 조건")
+        if not re.match(r"(?:%s)(?:\s|$)" % "|".join(REMOTE_PREREQUISITES), prerequisite):
+            message = f"{path}:{n} — 선행 조건은 {', '.join(REMOTE_PREREQUISITES)} 중 하나로 시작한다: {prerequisite}"
+            (warnings if legacy else out).append(message)
+            continue
+        if legacy:
+            continue
+        timing = cell("시점")
+        if timing not in REMOTE_TIMINGS:
+            out.append(f"{path}:{n} — 시점은 {' 또는 '.join(REMOTE_TIMINGS)} 이다: {timing}")
+        elif timing == "PR 전" and prerequisite.split()[0] in ("머지", "배포"):
+            out.append(f"{path}:{n} — 머지나 배포가 선행 조건인 검증은 PR 전에 돌릴 수 없다")
+
+
 def check_forbidden_grep_paths(path, commands, entries, warnings):
     """금지 문자열 검사의 경로에 같은 phase 의 테스트 파일이 있으면 경고한다.
 
@@ -874,6 +933,9 @@ def main(argv: list) -> int:
             if not phases:
                 raise ValueError(f"phase 파일 없음: {plan_dir}")
             check_index(plan_dir / "index.json", args.plan, phases, out)
+            remote = plan_dir / "remote-verification.md"
+            if remote.is_file():
+                check_remote_verification(remote, out, warnings)
             virtual, created = {}, []
             if args.audit:
                 warnings.append("구현 후 문서 검사: 신규/수정/삭제 파일의 구현 전 존재 조건은 대조하지 않는다")
