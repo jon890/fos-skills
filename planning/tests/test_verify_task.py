@@ -440,6 +440,36 @@ class TaskRulesTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(warned(command))
 
+    def test_remote_verification_table(self):
+        # dev 읽기 전용 실측은 push 없이 PR 전에 돌려야 했는데, 양식이 시점을 받지 않아 PR 뒤로만 읽혔던 재현이다.
+        head = "| 선행 조건 | 시점 | 실행 위치 | 명령 | 기대값 |\n|---|---|---|---|---|\n"
+
+        def check(body, header=head):
+            out, warnings = [], []
+            verify.check_remote_verification(self.file("tasks/p/remote-verification.md", "# 원격 검증\n\n" + header + body), out, warnings)
+            return out, warnings
+
+        ok = "| 없음 | PR 전 | dev 서버 | `ssh dev 'select 1'` | 1 |\n| push 한 뒤 | PR 뒤 | 홈서버 | `verify.sh live` | 0 |\n| 배포 | PR 뒤 | dev | `curl /health` | 200 |\n"
+        self.assertEqual(check(ok), ([], []))
+        for row, needle in (
+            ("| 머지 | PR 전 | dev | `x` | 0 |\n", "PR 전에 돌릴 수 없다"),
+            ("| 배포 | PR 전 | dev | `x` | 0 |\n", "PR 전에 돌릴 수 없다"),
+            ("| 없음 | 언젠가 | dev | `x` | 0 |\n", "시점은"),
+            ("| 아마 | PR 전 | dev | `x` | 0 |\n", "선행 조건은"),
+        ):
+            with self.subTest(row=row):
+                out, _ = check(row)
+                self.assertTrue(any(needle in o for o in out), out)
+        out, _ = check("| 없음 | dev | `x` |\n", "| 선행 조건 | 실행 위치 | 명령 |\n|---|---|---|\n")
+        self.assertTrue(any("열이 없다" in o for o in out), out)
+
+    def test_remote_verification_legacy_table_only_warns(self):
+        legacy = "| 선행 조건 | 실행 위치 | 명령 | 기대값 |\n|---|---|---|---|\n| PR 브랜치를 push 한 뒤 | 홈서버 | `x` | 0 |\n"
+        out, warnings = [], []
+        verify.check_remote_verification(self.file("tasks/p/remote-verification.md", legacy), out, warnings)
+        self.assertEqual(out, [])
+        self.assertTrue(any("옛 형식" in w for w in warnings), warnings)
+
     def test_assignments_chains_and_multiline_commands(self):
         commands = list(verify.shell_commands('```bash\nenv FLAG=1 pytest \\\n tests/test_app.py; echo "exit=$?"\ngrep x a && pytest\n```'))
         self.assertEqual([c[0] for c in commands], ["pytest", "echo", "grep", "pytest"])
