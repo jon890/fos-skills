@@ -67,7 +67,7 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 | 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
 | 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
-| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, 팀원이 남지 않았다 | `references/step-finish.md` |
+| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, 팀원이 남지 않았다 | `references/step-finish.md` |
 
 **팀원을 스폰하기 전에 [`references/team-spawn.md`](references/team-spawn.md)를 읽는다.**
 
@@ -161,7 +161,8 @@ critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 �
 push, 배포, 원격 호스트 접속이 있어야 끝나는 검증은 phase 안에서 돌리지 않는다.
 그 검증을 끝내려면 먼저 커밋하고 push 해야 해서, 실패를 고친 커밋이 phase 밖에 생긴다.
 phase 「검증」 절에 그런 명령이 있으면 executor 에게 실행하지 말라고 스폰 프롬프트에 적고,
-그 명령을 원격 검증 목록에 더한다. 목록은 6단계에서 PR 본문으로 옮긴다.
+그 명령을 원격 검증 목록에 선행 조건과 시점을 붙여 더한다. 값은 [planning 의 「원격 검증 목록」](../planning/references/task-create.md#원격-검증-목록)이 정한다.
+목록은 6단계에서 다룬다.
 
 phase 가 실패하면 원인을 분석한다.
 phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
