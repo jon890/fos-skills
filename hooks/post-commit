@@ -31,7 +31,8 @@ done
 $hit || exit 0
 
 # 같으면 조용히 지나간다. 커밋마다 알림이 뜨면 읽지 않게 된다.
-if out=$("$SYNC" 2>&1); then
+# 방금 만든 커밋을 원본으로 비교한다. 작업 트리를 보면 커밋하지 않은 변경 때문에 어긋났다고 알린다.
+if out=$("$SYNC" --source-ref HEAD 2>&1); then
   exit 0
 fi
 
