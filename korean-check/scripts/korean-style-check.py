@@ -41,7 +41,7 @@ from pathlib import Path
 # 그래서 「시험적」(experimental) 처럼 다른 뜻의 낱말도 같이 걸린다.
 # 뒤 글자가 한글인지로는 조사와 합성어를 구분할 수 없어, 예외는 여기에 명시한다.
 # 검사 전에 이 낱말들을 줄에서 지우므로, 같은 줄에 맨 「시험」이 따로 있으면 그건 여전히 잡힌다.
-COMPOUND_ALLOW = ["시험적"]
+COMPOUND_ALLOW = ["시험적", "게시판", "간판"]
 
 TABLE_HEADING = "## 어색한 말 매핑 표"
 SECTION_HEADING = re.compile(r"^## ")

@@ -115,6 +115,29 @@ class TestFalsePositive(Base):
         self.assertCaught("시험적으로 도입하고 시험을 돌린다.\n", "시험")
 
 
+class TestVersionTerm(Base):
+    """version 의 뜻으로 쓴 「판」 은 막고, 다른 낱말 속의 「판」 은 막지 않는다.
+
+    「판」 한 글자는 판단, 판정, 출판 까지 걸려 등록하지 못한다.
+    그래서 버전 뜻으로만 쓰이는 구절을 등록한다.
+    """
+
+    def test_version_phrases_are_caught(self):
+        for text in ("SDK 판을 올린다.", "라이브러리 판 올리기를 한다.", "배포 판 번호를 적는다.", "의존성 판 고정이 필요하다."):
+            with self.subTest(text=text):
+                self.assertCaught(f"{text}\n", "금지어")
+
+    def test_other_words_with_pan_pass(self):
+        samples = (
+            "원인을 판단한다.", "결과를 판별한다.", "통과 여부를 판정한다.", "문서를 출판한다.",
+            "간판을 단다.", "게시판에 올린다.", "게시판을 올려 둔다.", "게시판 번호를 적는다.",
+            "간판을 올린다.", "상품을 판매한다.", "판단 기준을 정한다.", "새 판단을 내린다.",
+        )
+        for text in samples:
+            with self.subTest(text=text):
+                self.assertPassed(f"{text}\n")
+
+
 class TestRemovedTerms(Base):
     """평범한 우리말과 영어 원어는 금지어가 아니다.
 
@@ -128,7 +151,6 @@ class TestRemovedTerms(Base):
             "두 경우를 가른다.",
             "테스트가 이 경우를 덮는다.",
             "응답 시간을 잰다.",
-            "SDK 판을 올린다.",
             "로그 레벨을 강등한다.",
         )
         for text in samples:
