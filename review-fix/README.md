@@ -43,9 +43,10 @@ PR 에 이미 달린 리뷰를 읽고 코드에 반영한다.
 | `references/conflict-resolution.md` | 사용자에게 확인받을 충돌, lockfile 재생성, 마커 0건 확인 |
 | `references/reply.md` | 회신 경로 분기, 본문 형식, 등록 전 검사 |
 | `references/finish.md` | 스레드 resolve, 반복될 지적의 규칙 반영, 결과 보고 양식 |
-| `scripts/collect_review.py` | PR 리뷰를 네 소스에서 모아 출력. 넷째가 미해결 리뷰 스레드다 |
+| `scripts/collect_review.py` | PR 리뷰를 네 소스에서 모아 출력. 넷째가 미해결 리뷰 스레드다. `--carried-from` 이면 이전 PR 에서 미룬 스레드가 다섯째로 붙는다 |
 | `scripts/checkout_pr.py` | 작업 트리를 PR head 브랜치로 맞추고 결과를 종료 코드로 낸다 |
-| `scripts/review_threads.py` | 리뷰 스레드를 GraphQL 로 조회하고 회신하고 resolve 한다 |
+| `scripts/review_threads.py` | 리뷰 스레드를 GraphQL 로 조회하고 회신(`reply-batch` 로 여럿을 한 번에)하고 resolve 한다. `carried` 는 회신에 문구가 든 스레드를 찾는다 |
+| `scripts/fold_fixup.sh` | 검증 실패 원인이 HEAD 가 아닌 앞 커밋일 때 스테이징한 수정을 그 커밋에 비대화형으로 접어 넣는다 |
 | `scripts/check_reply_body.py` | 회신 본문의 재트리거 토큰과 GitHub auto-link 를 찾는다 |
 | `scripts/gh_host.py` | `<owner> <repo>` 로 `gh api` 에 넘길 호스트 이름을 찾는다. 현재 디렉터리를 보지 않는다. SSH config 별칭도 되돌린다 |
 | `CHANGELOG.md` | 버전 이력 |
