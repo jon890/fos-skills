@@ -30,11 +30,11 @@
 
 ## 전제
 
-- **감사할 저장소 경로.** 모든 스크립트가 `<repo-root>` 를 인자로 받는다.
+- **감사할 저장소 경로.** 검사 스크립트가 감사 대상 저장소 루트를 첫 인자로 받는다. `run_doc_snippets.py` 는 문서 파일을 받는다.
 - **`python3`, `bash`, `zsh`.** 검사는 모두 python 이고,
   `run_doc_snippets.py` 가 문서의 코드 블록을 bash 와 zsh 양쪽에서 돌려 셸 차이를 본다.
 - **현재 실행 환경의 설정과 도구 설명.** 실제 모델과 런타임, 설치된 역할과 스킬,
-  프로젝트가 읽는 지침 파일을 여기서 확인한다. 찾지 못하면 추측하지 않고 검증 공백으로 둔다.
+  프로젝트가 읽는 지침 파일을 여기서 확인한다. 찾지 못하면 검증 공백으로 둔다.
 - **사용자 승인.** 판정표를 제시한 뒤 승인받은 항목만 수정한다.
 - **저장소의 표현·가독성 검사.** 고친 Markdown 이 이것을 통과해야 한다.
 
@@ -42,18 +42,20 @@
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 목표와 6단계 절차, 단계별 통과 조건, 조사를 나눠 맡기는 방식, 실측 명령 순서와 종료 코드 규약, 판정표 형식 |
-| `references/audit-axes.md` | 무엇을 찾을지. 소유권 중복, 죽은 검출, 값 하드코딩, 지시 충돌, 계층 분리, 정책 잔존, 런타임 동작 변화, 사용 이력 0 |
-| `references/judgment.md` | 찾은 것을 유지할지 지울지. 유지와 제거의 기준, 문장 단위 판정 열 축, 도구가 강제하는지 확인하는 절차 |
+| `SKILL.md` | 목표와 단계별 절차, 단계별 통과 조건, 실측 명령, 판정표 형식, 조사를 나눠 맡기는 방식 |
+| `references/audit-axes.md` | 무엇을 찾을지. 감사 축마다 찾는 방법과 실측 사례 |
+| `references/judgment.md` | 찾은 것을 유지할지 지울지. 유지와 제거의 기준, 문장 단위 판정 축, 도구가 강제하는지 확인하는 절차 |
+| `references/run-doc-snippets.md` | 감사 대상 문서의 bash 블록을 돌리는 절차와 안전 조건 |
+| `references/script-audit.md` | 범위에 Markdown 없이 스크립트만 있을 때의 감사 절차 |
 | `scripts/target_files.py` | 감사 대상 파일 선택 기준과 `--scope` 해석. 다른 스크립트가 이것을 가져다 쓴다 |
-| `scripts/collect_targets.py` | 감사 대상 파일과 줄 수 출력. SKILL.md 도 git 추적 파일도 없는 스킬 폴더는 stderr 로 경고한다(종료 코드는 그대로, git 이 없으면 건너뜀) |
-| `scripts/find_test_requirements.py` | 지우거나 이름을 바꿀 문자열을 테스트 파일, fixture, CI 설정, `scripts/validate*` 가 요구하는지 찾는다. git 이 무시하는 빌드 결과물은 읽지 않고, 낱말만 겹친 줄은 개수만 낸다(`--loose` 로 목록). 찾지 못해도 종료 코드 0, 빈 문자열은 2 |
-| `scripts/check_references.py` | 마크다운 링크, 백틱 경로, 다른 문서의 섹션 참조, 파일 표기 뒤 「제목」 절 참조(코드 주석과 프롬프트 포함), 스킬 참조가 실재하는지 확인. 깨진 참조가 있으면 종료 코드 1 |
-| `scripts/check_facts.py` | 문서에 적힌 개수와 목록 표기를 뽑아 검토 지점으로 제시한다. 자동 판정이 아니다 |
-| `scripts/check_duplication.py` | 지침 파일 사이에 연속 N줄 이상 같은 내용이 반복되는 구간 검출 |
-| `scripts/check_rename_drift.py` | `SKILL.md` 를 고치고 그것이 위임한 참조 문서를 안 고친 경우 검출. 변경된 `SKILL.md` 가 없으면 종료 코드 2. 다른 지침의 절 참조는 보지 않는다 |
-| `scripts/check_enforcement.py` | 지침이 금지하는 대상을 gitignore, lint, grep, 도구 권한이 실제로 막는지 판정 |
-| `scripts/run_doc_snippets.py` | 문서의 bash 코드 블록을 그대로 추출해 bash 와 zsh 에서 실행. 머리말을 생략하면 전부 돈다. 종료 코드가 아니라 출력으로 판정한다 |
+| `scripts/collect_targets.py` | 감사 대상 파일과 줄 수 출력 |
+| `scripts/find_test_requirements.py` | 지우거나 이름을 바꿀 문자열을 테스트와 CI 설정이 요구하는지 찾는다 |
+| `scripts/check_references.py` | 지침이 가리키는 파일, 절, 스킬이 실재하는지 확인 |
+| `scripts/check_facts.py` | 문서에 적힌 개수와 목록 표기를 검토 지점으로 제시. 자동 판정이 아니다 |
+| `scripts/check_duplication.py` | 지침 파일 사이에 같은 내용이 반복되는 구간 검출 |
+| `scripts/check_rename_drift.py` | `SKILL.md` 를 고치고 그것이 위임한 참조 문서를 안 고친 경우 검출 |
+| `scripts/check_enforcement.py` | 지침이 금지하는 대상을 다른 수단이 실제로 막는지 판정 |
+| `scripts/run_doc_snippets.py` | 문서의 bash 코드 블록을 그대로 추출해 bash 와 zsh 에서 실행 |
 | `CHANGELOG.md` | 버전 이력 |
 
-실행 절차는 `SKILL.md` 가 소유한다.
+실행 절차는 `SKILL.md` 가, 각 스크립트의 사용법과 종료 코드는 그 파일 머리의 docstring 이 소유한다.

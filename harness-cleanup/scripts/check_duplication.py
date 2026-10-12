@@ -5,6 +5,8 @@
 "A 가 단일 소스다" 라고 적어 두고 내용을 복사한 경우가 가장 흔하다.
 
 Usage: python3 check_duplication.py [repo-root] [최소-연속-줄수] [--scope <저장소 안 경로>]
+
+종료 코드: 0 중복 없음, 1 중복 있음, 2 범위 인자 오류이거나 대상 파일이 0.
 """
 import collections
 import pathlib

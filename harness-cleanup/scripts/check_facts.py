@@ -5,6 +5,9 @@
 "여기가 틀리기 쉽다" 를 모아 보여 준다.
 
 Usage: python3 check_facts.py [repo-root] [--scope <저장소 안 경로>]
+
+종료 코드: 0 검사를 마침, 2 범위 인자 오류.
+1 은 내지 않는다. 발견을 출력하면서 0 으로 끝나므로 출력으로 판정한다.
 """
 import collections
 import pathlib
