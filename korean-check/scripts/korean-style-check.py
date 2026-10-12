@@ -41,7 +41,12 @@ from pathlib import Path
 # 그래서 「시험적」(experimental) 처럼 다른 뜻의 낱말도 같이 걸린다.
 # 뒤 글자가 한글인지로는 조사와 합성어를 구분할 수 없어, 예외는 여기에 명시한다.
 # 검사 전에 이 낱말들을 줄에서 지우므로, 같은 줄에 맨 「시험」이 따로 있으면 그건 여전히 잡힌다.
-COMPOUND_ALLOW = ["시험적"]
+COMPOUND_ALLOW = ["시험적", "판이하"]
+
+# 이 글자로 시작하는 금지어는 앞 글자가 한글이면 다른 낱말의 일부라서 건너뛴다.
+# 「번호판 번호」, 「출판 번호」, 「초판을 올린다」 의 「판」 이 버전 뜻이 아니기 때문이다.
+# X판 합성어는 끝없이 늘어 COMPOUND_ALLOW 로 하나씩 막을 수 없다.
+WORD_START_PREFIX = "판"
 
 TABLE_HEADING = "## 어색한 말 매핑 표"
 SECTION_HEADING = re.compile(r"^## ")
@@ -134,6 +139,7 @@ def build_matchers(terms):
 
     영문 용어는 단어 경계로 찾는다. 부분 문자열로 찾으면 다른 낱말 안에서도 걸린다.
     한국어는 조사가 붙어 「게이트를」 처럼 쓰이므로 부분 문자열로 찾는다.
+    WORD_START_PREFIX 로 시작하는 금지어는 앞 글자가 한글이 아닐 때만 찾는다.
     """
     matchers = []
     for term in terms:
@@ -142,6 +148,9 @@ def build_matchers(terms):
                 r"(?:^|[^A-Za-z-])" + re.escape(term) + r"(?:[^A-Za-z-]|$)"
             )
             matchers.append((term, boundary.search))
+        elif term.startswith(WORD_START_PREFIX):
+            word_start = re.compile(r"(?<![가-힣])" + re.escape(term))
+            matchers.append((term, word_start.search))
         else:
             matchers.append((term, lambda line, t=term: t in line))
     return matchers
