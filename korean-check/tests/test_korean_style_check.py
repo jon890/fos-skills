@@ -384,6 +384,13 @@ class TestRepository(unittest.TestCase):
 
     def test_repo_markdown_passes(self):
         root = Path(__file__).resolve().parents[2]
+        # git archive 사본처럼 저장소 밖에서 돌리면 git ls-files 가 실패해 검사할 목록을 얻지 못한다.
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"], cwd=root,
+            capture_output=True, text=True,
+        )
+        if inside.returncode != 0:
+            self.skipTest("git 저장소 밖이라 추적 중인 .md 목록을 얻을 수 없다")
         files = subprocess.run(
             ["git", "ls-files", "*.md"], cwd=root,
             capture_output=True, text=True, check=True,
