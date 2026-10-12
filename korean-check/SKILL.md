@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.20.0"
+  version: "1.21.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -56,6 +56,19 @@ bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
 `references/markdown-readability.md` 의 「훅이 잡지 못하는 것」 이 소유한다.
 
 파일이 아닌 것은 `--text` 로 검사한다. 업무와 위키 제목, PR 과 이슈 제목, 커밋 메시지가 그 경로로 들어온다.
+
+**남이 함께 고치는 기존 문서는 이번에 더한 줄만 판정한다.**
+파일 전체를 돌리면 손대지 않은 문장의 금지어까지 실패로 막힌다.
+`--diff` 는 발견을 「이번 변경」 과 「기존 줄」 로 나눠 내고, 종료 코드는 이번 변경 몫만 본다.
+cwd 는 검사할 저장소 안이다. `$BASE` 는 비교 기준이고, 브랜치 전체를 보려면 `origin/main` 같은 기준 브랜치를 준다.
+
+```bash
+# cwd: 검사할 저장소 안
+bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE"
+bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE" -- "$FILE"
+```
+
+기존 줄의 발견은 완료 보고에 범위 밖 발견으로 남긴다. 기준을 생략하면 커밋하지 않은 변경만 본다.
 
 ## 검사기가 잡지 못하는 축을 본다
 

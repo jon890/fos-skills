@@ -82,10 +82,12 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
 | `references/review-axes.md` | 메인과 별도 검토 역할이 쓰는 의미 점검 축, 발견 형식과 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
+| `scripts/check-diff.py` | `check.sh --diff` 의 본체. git diff 로 더한 줄의 발견만 종료 코드에 넣고, 기존 줄의 발견은 따로 낸다 |
 | `scripts/korean-style-check.py` | 어색한 말 매핑 표의 금지어를 실패로 막고, 인라인 `+` 연결은 경고로 알린다. 훅 모드를 갖는다 |
 | `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 경고로 알린다. 실패로 막지 않는다. 인자 형태는 docstring 이 소유한다 |
 | `tests/test_korean_style_check.py` | 제외 규칙과 표 형식마다 걸리는 표본과 걸리지 않는 표본을 함께 둔 검출력 검사. 뺀 금지어가 다시 걸리지 않는지도 본다 |
 | `tests/test_check_readability.py` | 네 경고와 허용 예외마다 같은 방식으로 둔 검출력 검사 |
+| `tests/test_check_diff.py` | 임시 git 저장소에서 기존 줄의 발견은 통과하고 더한 줄의 금지어는 막히는지 본다 |
 | `CHANGELOG.md` | 버전 이력 |
 
 테스트는 저장소 루트에서 돌린다. 다른 곳에서 부르면 `ImportError` 로 끝난다.
