@@ -154,5 +154,34 @@ class TestReplyBatch(unittest.TestCase):
         self.assertEqual((code, calls), (2, []))
 
 
+class TestResolveIds(unittest.TestCase):
+    def run_resolve(self, args, stdin=""):
+        calls = []
+
+        def fake_gh(*a, env=None):
+            calls.append(next(x.split("=", 1)[1] for x in a if x.startswith("threadId=")))
+            return 0, f"{calls[-1]} resolved=true\n", ""
+
+        with patch.object(rt.gh_host, "resolve", return_value="github.com"), \
+                patch.object(rt, "gh", side_effect=fake_gh), \
+                patch.object(rt.sys, "stdin", io.StringIO(stdin)), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = rt.main(["review_threads.py", "resolve", "--repo", "o/r", *args])
+        return code, calls
+
+    def test_separate_args(self):
+        self.assertEqual(self.run_resolve(["T1", "T2"]), (0, ["T1", "T2"]))
+
+    def test_zsh_unsplit_variable_arrives_as_one_arg(self):
+        # zsh 에서 IDS="T1 T2"; resolve $IDS 는 인자 하나로 온다
+        self.assertEqual(self.run_resolve(["T1 T2"]), (0, ["T1", "T2"]))
+
+    def test_dash_reads_stdin(self):
+        self.assertEqual(self.run_resolve(["-"], "T1\nT2\n\n"), (0, ["T1", "T2"]))
+
+    def test_empty_stdin_is_usage_error(self):
+        self.assertEqual(self.run_resolve(["-"], "\n"), (2, []))
+
+
 if __name__ == "__main__":
     unittest.main()

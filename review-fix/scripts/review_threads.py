@@ -9,6 +9,7 @@
     review_threads.py reply-batch <map.tsv>   # 줄마다 `THREAD_ID<탭>본문파일`. 빈 줄과 # 줄은 건너뛴다
     review_threads.py carried  <owner> <repo> <PR번호> [--marker 문구]   # 회신에 문구가 든 스레드
     review_threads.py resolve  <THREAD_ID> [<THREAD_ID> ...]
+    review_threads.py resolve  -              # 표준 입력에서 공백이나 줄로 나뉜 THREAD_ID 를 읽는다
 
     --repo <owner>/<repo>    reply 와 resolve 에서 호스트를 정한다. 어느 자리에 와도 된다
 
@@ -27,6 +28,10 @@ REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없어 조회�
 
 회신 본문은 파일로 받는다. 셸에서 본문을 직접 넘기면
 백틱과 달러가 명령 치환으로 사라진다 (실측).
+
+여러 ID 를 셸 변수 하나에 담아 `resolve $IDS` 로 넘기지 않는다.
+bash 는 낱말로 나누지만 zsh 는 나누지 않아 ID 전체가 인자 하나로 가고 GraphQL 이 실패한다 (실측).
+`resolve -` 로 표준 입력에서 읽거나, 인자 하나에 공백이 섞여 와도 이 스크립트가 나눈다.
 
 resolve 하지 않으면 "A conversation must be resolved" 보호 규칙이 머지를 막는다.
 아직 반영하지 않은 스레드는 resolve 하지 않는다. resolve 는 "처리했다"는 표시다.
@@ -249,6 +254,20 @@ def cmd_carried(host, owner, repo, num, marker):
     return 0
 
 
+def split_thread_ids(args, stdin):
+    """resolve 인자를 THREAD_ID 목록으로 편다.
+
+    `-` 는 표준 입력의 내용으로 바꾼다. 인자 안의 공백과 줄바꿈으로도 나눈다.
+    zsh 는 따옴표 없는 변수를 낱말로 나누지 않아 `resolve $IDS` 가 인자 하나로 오기 때문이다.
+    THREAD_ID 에는 공백이 없으므로 나눠도 잃는 것이 없다.
+    """
+    ids = []
+    for arg in args:
+        text = stdin.read() if arg == "-" else arg
+        ids.extend(text.split())
+    return ids
+
+
 def cmd_resolve(host, thread_ids):
     failed = 0
     for tid in thread_ids:
@@ -333,7 +352,8 @@ def main(argv):
     if cmd == "carried":
         return cmd_carried(host, *rest[:3], marker) if len(rest) == 3 else usage()
     if cmd == "resolve":
-        return cmd_resolve(host, rest) if rest else usage()
+        thread_ids = split_thread_ids(rest, sys.stdin)
+        return cmd_resolve(host, thread_ids) if thread_ids else usage()
     return usage()
 
 
