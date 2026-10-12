@@ -31,7 +31,7 @@ review-fix/
 tools/browser-driver/               content-preview 가 쓰는 공용 도구
 scripts/export-to-team.sh           공용 스킬을 팀 저장소로 내보낸다
 scripts/install-hooks.sh            hooks/ 의 git 훅을 건다
-scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 시험한다
+scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 테스트한다
 scripts/tests/test_plugin_manifest.py   매니페스트와 루트의 스킬 디렉터리를 대조한다
 hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 ```
@@ -160,7 +160,7 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 | `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 스킬 여섯 개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
 `claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.
-설치 시험이 `claude plugin validate . --json` 의 결과에서 오류가 없고 경고가 버전 경고 하나뿐인지를 확인한다.
+설치 테스트가 `claude plugin validate . --json` 의 결과에서 오류가 없고 경고가 버전 경고 하나뿐인지를 확인한다.
 
 ## 다음 차수
 

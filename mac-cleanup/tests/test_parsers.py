@@ -97,6 +97,33 @@ class GitClassifyTest(unittest.TestCase):
         self.assertEqual(sg.classify_branch(br, "main", {"feat/a"}, pr_state="merged"), "유지")
         self.assertEqual(sg.classify_branch(br, "main", set()), "유지")
 
+    def test_branch_keeps_default_names_when_base_differs(self):
+        def br(name):
+            return {"name": name, "merged": True, "upstream_gone": False}
+        for name in ("main", "master", "develop"):
+            self.assertEqual(sg.classify_branch(br(name), "develop", set()), "유지")
+            self.assertEqual(sg.classify_branch(br(name), "main", set()), "유지")
+        self.assertEqual(sg.classify_branch(br("feat/a"), "develop", set()), "삭제 후보(-d)")
+
+    def test_judge_pr_error(self):
+        self.assertEqual(sg.judge_pr("aaa", None), "error")
+        self.assertIsNone(sg.judge_pr("aaa", []))
+
+    def test_pr_error_keeps_existing_classes(self):
+        br = {"name": "feat/a", "merged": False, "upstream_gone": False}
+        self.assertEqual(sg.classify_branch(br, "main", set(), pr_state="error"), "유지")
+        self.assertEqual(sg.classify_branch({**br, "upstream_gone": True}, "main", set(), pr_state="error"), "PR 확인 필요(-D)")
+        self.assertEqual(sg.classify_branch({**br, "merged": True}, "main", set(), pr_state="error"), "삭제 후보(-d)")
+        self.assertEqual(sg.classify_worktree(wt(), pr_state="error"), "유지")
+        self.assertEqual(sg.classify_worktree(wt(upstream_gone=True), pr_state="error"), "PR 확인 필요")
+
+    def test_parse_tip(self):
+        rows = sg.parse_branches("a\t\t1\t\torigin/a\tdeadbeef\nb\t\t2\t\t\n")
+        self.assertEqual(rows[0]["tip"], "deadbeef")
+        self.assertIsNone(rows[1]["tip"])
+        items = sg.parse_worktrees("worktree /r\nHEAD abc123\nbranch refs/heads/main\n\n")
+        self.assertEqual(items[0]["head"], "abc123")
+
     def test_parse_stash_branches(self):
         text = "WIP on feat/x: abc msg\nOn feat/x: manual\nWIP on main: def other\nOn (no branch): z\nweird\n"
         self.assertEqual(sg.parse_stash_branches(text), {"feat/x": 2, "main": 1})

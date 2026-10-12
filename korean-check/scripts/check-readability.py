@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""마크다운 가독성 규칙 중 기계로 판정 가능한 축을 검사한다.
+"""마크다운 가독성 규칙 중 스크립트로 판정할 수 있는 축을 경고로 알린다.
 
 **이 파일이 검사 축의 단일 소스다.** references 파일을 읽지 않고 축을 코드에 담는다.
 사람이 보는 몫은 `references/` 가 소유한다.
@@ -10,8 +10,11 @@ korean-style.md 가 언어, korean-examples.md 가 언어 예시, writing-struct
     check-readability.py --text "<제목이나 커밋 메시지>"   # 파일이 아닌 문자열
     check-readability.py --hook          # PostToolUse 훅 모드 (stdin 으로 JSON)
 
-위반 줄을 stdout 으로 출력한다. 출력이 0 줄이면 통과다.
-위반이 있으면 종료 코드 1, 사용법 오류이거나 넘긴 경로에 파일이 없으면 2 로 끝난다.
+경고 줄을 stdout 으로 출력한다. 경고가 있어도 종료 코드는 0 이다.
+사용법 오류이거나 넘긴 경로에 파일이 없으면 2 로 끝난다.
+
+**이 검사기는 실패로 막지 않는다.** 실패로 막는 것은 `korean-style-check.py` 의 금지어뿐이다.
+아래 축은 지침이라, 걸린 줄을 보고 문맥에 맞으면 그대로 둔다.
 
 검사하는 축은 넷이다.
 
@@ -22,7 +25,7 @@ korean-style.md 가 언어, korean-examples.md 가 언어 예시, writing-struct
 
 나머지 축은 다른 곳이 맡는다.
 
-- 외래어와 인라인 `+` 연결은 `korean-style-check.py` 가 강제한다
+- 매핑 표의 금지어는 `korean-style-check.py` 가 실패로 막고, 인라인 `+` 연결은 같은 검사기가 경고로 알린다
 - 렌더러 고유 동작과 게시 대상 고유 형식은 그 매체를 쓰는 저장소의 검사기가 강제한다
 - 한 문장 한 줄, `=` 와 `→` 압축, bullet 다중 속성은 의미 판단이 필요해 사람이 본다
 
@@ -158,14 +161,14 @@ def run_hook():
     if not found:
         return 0
 
-    lines = "\n".join(f"{p}:{n}  [{c}] {m}" for p, n, c, m in found)
+    lines = "\n".join(f"{p}:{n}  경고 [{c}] {m}" for p, n, c, m in found)
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",
                     "additionalContext": (
-                        "마크다운 가독성 위반 — 방금 편집한 파일에서 발견했다. 지금 고쳐라.\n"
+                        "마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. 문맥을 보고 고칠지 판단한다.\n"
                         + lines
                     ),
                 }
@@ -196,8 +199,8 @@ def main():
             tmp.unlink(missing_ok=True)
         for item in found:
             code, msg = item[-2], item[-1]
-            print(f"(문자열)  [{code}] {msg}")
-        sys.exit(1 if found else 0)
+            print(f"(문자열)  경고 [{code}] {msg}")
+        return 0
 
     missing = False
     for path in sys.argv[1:]:
@@ -209,11 +212,9 @@ def main():
         found.extend(check(path))
 
     for path, n, code, msg in found:
-        print(f"{path}:{n}  [{code}] {msg}")
+        print(f"{path}:{n}  경고 [{code}] {msg}")
 
-    if missing:
-        return 2
-    return 1 if found else 0
+    return 2 if missing else 0
 
 
 if __name__ == "__main__":

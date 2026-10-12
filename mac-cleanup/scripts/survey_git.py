@@ -2,11 +2,13 @@
 """저장소별 워크트리와 브랜치의 정리 후보를 분류한다. 읽기 전용이다.
 
 사용법:
-  survey_git.py [--roots DIR...] [--fetch] [--check-prs] [--json]
+  survey_git.py [--roots DIR...] [--fetch] [--check-prs] [--gh-timeout SEC] [--json]
 
 --fetch 를 주면 저장소마다 `git fetch --prune origin` 으로 원격 ref 만 갱신한다.
 --check-prs 를 주면 머지 판정이 안 됐고 upstream 이 있는 브랜치마다 `gh pr list` 로 머지된 PR 이 있는지 묻는다.
 원격 호출이 브랜치 수만큼 생긴다. squash 머지를 알아보는 용도다.
+gh 호출이 실패하면 그 브랜치의 pr_state 가 "error" 가 되고 분류는 gh 없이 낸 결과 그대로다. 실패 수는 합계에 따로 나온다.
+--json 은 브랜치와 워크트리마다 끝 커밋 전체 해시(tip)를 담는다. 지우기 직전 `git rev-parse` 값과 대조하는 용도다.
 종료 코드: 0 조사 완료, 2 인자 오류.
 """
 
@@ -21,6 +23,9 @@ import time
 SKIP_DIRS = {"node_modules", "worktrees", ".orca-worktree-trash", ".git"}
 MAX_DEPTH = 3
 BASE_CANDIDATES = ("origin/main", "origin/master", "main", "master")
+# 기준 브랜치가 아니어도 기본 브랜치나 배포 브랜치로 쓰는 이름이라 지우면 사람이 헷갈린다.
+KEEP_BRANCHES = {"main", "master", "develop"}
+DEFAULT_GH_TIMEOUT = 20
 
 
 def parse_worktrees(porcelain):
@@ -34,9 +39,11 @@ def parse_worktrees(porcelain):
             continue
         key, _, value = line.partition(" ")
         if key == "worktree":
-            cur = {"path": value, "branch": None, "prunable": False, "detached": False}
+            cur = {"path": value, "branch": None, "head": None, "prunable": False, "detached": False}
         elif cur is not None:
-            if key == "branch":
+            if key == "HEAD":
+                cur["head"] = value
+            elif key == "branch":
                 cur["branch"] = value.removeprefix("refs/heads/")
             elif key == "prunable":
                 cur["prunable"] = True
@@ -63,8 +70,11 @@ def judge_pr(tip, prs):
 
     'merged': 머지된 PR 의 headRefOid 가 tip 과 같다.
     'diverged': 머지된 PR 은 있으나 tip 이 다르다. PR 이후 로컬 커밋이 있다는 뜻이다.
+    'error': prs 가 None 이다. gh 호출이 실패해 확인하지 못했다. 분류에서는 판정 없음(None)과 같게 다룬다.
     None: 머지된 PR 이 없다.
     """
+    if prs is None:
+        return "error"
     if not prs:
         return None
     return "merged" if any(pr.get("headRefOid") == tip for pr in prs) else "diverged"
@@ -90,7 +100,7 @@ def classify_worktree(wt, pr_state=None):
 def classify_branch(br, base, checked_out, pr_state=None):
     """브랜치 하나를 '삭제 후보(-d)', 'PR 머지됨(-D)', 'PR 확인 필요(-D)', '유지' 로 나눈다."""
     name = br["name"]
-    if name == base or name.startswith("release/"):
+    if name == base or name in KEEP_BRANCHES or name.startswith("release/"):
         return "유지"
     if name in checked_out:
         return "유지"
@@ -104,7 +114,7 @@ def classify_branch(br, base, checked_out, pr_state=None):
 
 
 def parse_branches(output):
-    """for-each-ref 출력(탭 구분: 이름, track, 커밋 시각, worktreepath, upstream)을 dict 목록으로 만든다."""
+    """for-each-ref 출력(탭 구분: 이름, track, 커밋 시각, worktreepath, upstream, 끝 커밋)을 dict 목록으로 만든다."""
     rows = []
     for line in output.splitlines():
         parts = line.split("\t")
@@ -114,6 +124,7 @@ def parse_branches(output):
             "name": parts[0], "upstream_gone": "[gone]" in parts[1],
             "commit_ts": int(parts[2]) if parts[2].isdigit() else 0, "worktreepath": parts[3],
             "has_upstream": len(parts) > 4 and bool(parts[4]),
+            "tip": parts[5] if len(parts) > 5 and parts[5] else None,
         })
     return rows
 
@@ -176,15 +187,15 @@ def in_use(path, cwds):
     return any(c == real or c.startswith(real + "/") for c in cwds)
 
 
-BRANCH_FORMAT = "%(refname:short)\t%(upstream:track)\t%(committerdate:unix)\t%(worktreepath)\t%(upstream)"
+BRANCH_FORMAT = "%(refname:short)\t%(upstream:track)\t%(committerdate:unix)\t%(worktreepath)\t%(upstream)\t%(objectname)"
 
 
-def merged_prs(repo, branch):
+def merged_prs(repo, branch, timeout=DEFAULT_GH_TIMEOUT):
     """머지된 PR 목록(number, headRefOid). gh 가 없거나 실패하면 None. 표준 입력을 닫지 않으면 gh 가 셸 반복문의 입력을 읽는다."""
     try:
         done = subprocess.run(
             ["gh", "pr", "list", "--head", branch, "--state", "merged", "--json", "number,headRefOid"],
-            cwd=repo, capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+            cwd=repo, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         if done.returncode != 0:
             raise ValueError(done.stderr.strip()[:120])
         return json.loads(done.stdout)
@@ -193,7 +204,7 @@ def merged_prs(repo, branch):
         return None
 
 
-def survey_repo(repo, cwds, orca, check_prs=False):
+def survey_repo(repo, cwds, orca, check_prs=False, gh_timeout=DEFAULT_GH_TIMEOUT):
     base = base_ref(repo)
     if not base:
         return None
@@ -209,15 +220,15 @@ def survey_repo(repo, cwds, orca, check_prs=False):
         if not check_prs or merged or not name or name not in has_upstream:
             return None
         if name not in pr_cache:
-            prs = merged_prs(repo, name)
+            prs = merged_prs(repo, name, gh_timeout)
             tip = git(repo, "rev-parse", f"refs/heads/{name}").stdout.strip()
-            pr_cache[name] = judge_pr(tip, prs) if prs is not None else None
+            pr_cache[name] = judge_pr(tip, prs)
         return pr_cache[name]
 
     now = time.time()
     worktrees = []
     for wt in wts[1:]:
-        entry = {"path": wt["path"], "branch": wt["branch"], "prunable": wt["prunable"],
+        entry = {"path": wt["path"], "branch": wt["branch"], "tip": wt["head"], "prunable": wt["prunable"],
                  "orca": None if orca is None else os.path.realpath(wt["path"]) in orca}
         if not wt["prunable"]:
             entry["dirty"] = len([l for l in git(wt["path"], "status", "--porcelain").stdout.splitlines() if l])
@@ -239,9 +250,15 @@ def survey_repo(repo, cwds, orca, check_prs=False):
     branches = []
     for br in all_branches:
         br["merged"] = git(repo, "merge-base", "--is-ancestor", br["name"], base).returncode == 0
-        br["class"] = classify_branch(br, base_name, checked_out, pr_state(br["name"], br["merged"]))
+        br["pr_state"] = pr_state(br["name"], br["merged"])
+        br["class"] = classify_branch(br, base_name, checked_out, br["pr_state"])
         branches.append(br)
-    return {"repo": repo, "base": base, "worktrees": worktrees, "branches": branches}
+    gh_errors = sorted(name for name, state in pr_cache.items() if state == "error")
+    return {"repo": repo, "base": base, "gh_errors": gh_errors, "worktrees": worktrees, "branches": branches}
+
+
+def short(tip):
+    return tip[:8] if tip else "-"
 
 
 def main(argv=None):
@@ -249,6 +266,7 @@ def main(argv=None):
     ap.add_argument("--roots", nargs="+", default=["~/projects", "~/personal"])
     ap.add_argument("--fetch", action="store_true")
     ap.add_argument("--check-prs", action="store_true")
+    ap.add_argument("--gh-timeout", type=int, default=DEFAULT_GH_TIMEOUT, metavar="SEC")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
@@ -260,11 +278,12 @@ def main(argv=None):
             if done.returncode != 0:
                 print(f"경고: fetch 실패 {repo}: {done.stderr.strip()[:120]}", file=sys.stderr)
     cwds, orca = collect_cwds(), orca_paths()
-    results = [r for r in (survey_repo(repo, cwds, orca, args.check_prs) for repo in repos) if r]
+    results = [r for r in (survey_repo(repo, cwds, orca, args.check_prs, args.gh_timeout) for repo in repos) if r]
     shown = []
     for r in results:
-        r["worktrees"] = [w for w in r["worktrees"] if w["class"] != "유지"]
-        r["branches"] = [b for b in r["branches"] if b["class"] != "유지"]
+        # gh 확인에 실패한 항목은 분류가 "유지" 여도 남겨, 확인하지 못했다는 사실이 보고에서 빠지지 않게 한다.
+        r["worktrees"] = [w for w in r["worktrees"] if w["class"] != "유지" or w["pr_state"] == "error"]
+        r["branches"] = [b for b in r["branches"] if b["class"] != "유지" or b["pr_state"] == "error"]
         if r["worktrees"] or r["branches"]:
             shown.append(r)
 
@@ -274,19 +293,25 @@ def main(argv=None):
         return 0
 
     totals = {}
+    gh_failed = sum(len(r["gh_errors"]) for r in shown)
     for r in shown:
         print(f"## {r['repo']}  (기준 {r['base']})")
         for w in r["worktrees"]:
-            totals[f"워크트리 {w['class']}"] = totals.get(f"워크트리 {w['class']}", 0) + 1
+            if w["class"] != "유지":
+                totals[f"워크트리 {w['class']}"] = totals.get(f"워크트리 {w['class']}", 0) + 1
             orca_mark = "" if w["orca"] is None else (" orca" if w["orca"] else " 비-orca")
             print(f"  [워크트리 {w['class']}]{orca_mark} {w['path']}  브랜치={w['branch']} 변경={w['dirty']} stash={w['stash']} "
-                  f"앞섬={w['ahead']} 경과={w['age_days']}일 사용중={w['in_use']}")
+                  f"앞섬={w['ahead']} 경과={w['age_days']}일 사용중={w['in_use']} 끝={short(w['tip'])}"
+                  f"{' gh확인실패' if w['pr_state'] == 'error' else ''}")
         for b in r["branches"]:
-            totals[f"브랜치 {b['class']}"] = totals.get(f"브랜치 {b['class']}", 0) + 1
-            print(f"  [브랜치 {b['class']}] {b['name']}")
+            if b["class"] != "유지":
+                totals[f"브랜치 {b['class']}"] = totals.get(f"브랜치 {b['class']}", 0) + 1
+            print(f"  [브랜치 {b['class']}] {b['name']}  끝={short(b['tip'])}{' gh확인실패' if b['pr_state'] == 'error' else ''}")
     print(f"\n## 합계 (저장소 {len(repos)}개 조사, 후보가 있는 저장소 {len(shown)}개)")
     for key, count in sorted(totals.items()):
         print(f"{count:>4}  {key}")
+    if args.check_prs:
+        print(f"{gh_failed:>4}  gh 확인 실패")
     if not totals:
         print("후보 없음")
     return 0

@@ -75,3 +75,4 @@
 | 유입 제한  | rate limit  | rate limit  |
 | 틀      | template    | template    |
 | 시험     | test        | 테스트       |
+| 기계     | automated check | 자동 검사, CI |

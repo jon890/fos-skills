@@ -4,7 +4,8 @@
 
 ## 산출물
 
-- 검사기 둘의 종료 코드. 0 이 아니면 걸린 파일과 줄 번호
+- 검사기 둘의 종료 코드. 1 이면 매핑 표 금지어가 걸린 파일과 줄 번호
+- 경고 줄. 실패로 막지 않으며 문맥을 보고 고칠지 판단한다
 - 검사기가 잡지 못하는 축의 발견 목록과 확인 범위. 메인이 직접 점검해 남긴다
 - 반영하지 않은 발견과 그 이유
 
@@ -75,16 +76,16 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | 파일 | 소유하는 것 |
 | --- | --- |
 | `SKILL.md` | 목표, 두 층의 구분, 검사기 실행법 |
-| `references/korean-style.md` | 매 답변에 적용하는 핵심. 어휘 매핑 표, 문장 구성, 출력 직전 점검, 짧은 글에서 하지 않는 것, 용어를 옮기지 않는 기준 |
+| `references/korean-style.md` | 매 답변에 적용하는 핵심. 어색한 말 매핑 표, 문장 구성, 출력 직전 점검, 짧은 글에서 하지 않는 것, 영어로 두는 개발 용어 |
 | `references/korean-examples.md` | 문서를 쓰거나 검토할 때 읽는 예시. 고칠 문장 표, 고쳐 쓴 예시, 실측으로 되돌린 사례 |
 | `references/writing-structure.md` | 독자 구간, 분량 구간, 긴 문서에서 나누는 방식, 번호, 내용 점검 |
 | `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
 | `references/review-axes.md` | 메인과 별도 검토 역할이 쓰는 의미 점검 축, 발견 형식과 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
-| `scripts/korean-style-check.py` | 외래어 매핑 표의 금지어와 인라인 `+` 연결을 찾는다. 훅 모드를 갖는다 |
-| `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 찾는다. 인자 형태는 docstring 이 소유한다 |
-| `tests/test_korean_style_check.py` | 제외 규칙과 활용형마다 걸리는 표본과 걸리지 않는 표본을 함께 둔 검출력 검사 |
-| `tests/test_check_readability.py` | 네 검사와 허용 예외마다 같은 방식으로 둔 검출력 검사 |
+| `scripts/korean-style-check.py` | 어색한 말 매핑 표의 금지어를 실패로 막고, 인라인 `+` 연결은 경고로 알린다. 훅 모드를 갖는다 |
+| `scripts/check-readability.py` | 괄호 중첩, `§`, 범위 물결표, 엠대시를 경고로 알린다. 실패로 막지 않는다. 인자 형태는 docstring 이 소유한다 |
+| `tests/test_korean_style_check.py` | 제외 규칙과 표 형식마다 걸리는 표본과 걸리지 않는 표본을 함께 둔 검출력 검사. 뺀 금지어가 다시 걸리지 않는지도 본다 |
+| `tests/test_check_readability.py` | 네 경고와 허용 예외마다 같은 방식으로 둔 검출력 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 
 테스트는 저장소 루트에서 돌린다. 다른 곳에서 부르면 `ImportError` 로 끝난다.
