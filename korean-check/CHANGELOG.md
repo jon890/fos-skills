@@ -15,6 +15,7 @@
 - review-axes.md 의 「검사 결과의 경계」 와 「사실 주장의 근거」 중복 절, korean-style.md 의 종료 코드 0 중복 문장을 지운다
 - checker-maintenance.md 의 모델 행동 관측과 버전 이력 문장을 지운다
 - README 의 참조처 표를 grep 명령으로 바꾸고 설치 명령의 `<체크아웃 경로>` 를 `"$CHECKOUT"` 로 바꾼다
+- 「검사기를 돌린다」 절의 check.sh 머리말 중복 문장을 지우고, README 구성 표와 테스트 실행 조건을 실제 동작에 맞춘다
 
 ## 1.22.0
 

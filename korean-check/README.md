@@ -75,7 +75,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | `references/korean-style.md` | 매 답변에 적용하는 핵심. 어색한 말 매핑 표, 문장 구성, 출력 직전 점검, 짧은 글에서 하지 않는 것, 영어로 두는 개발 용어 |
 | `references/korean-examples.md` | 문서를 쓰거나 검토할 때 읽는 예시. 고칠 문장 표, 고쳐 쓴 예시, 실측으로 되돌린 사례 |
 | `references/writing-structure.md` | 독자 구간, 분량 구간, 긴 문서에서 나누는 방식, 번호, 내용 점검 |
-| `references/markdown-readability.md` | 검사에서 제외하는 대상, 자동 검사가 잡는 것과 잡지 못하는 것 |
+| `references/markdown-readability.md` | 검사에서 제외하는 대상, 훅이 잡지 못하는 것 |
 | `references/review-axes.md` | 메인과 별도 검토 역할이 쓰는 의미 점검 축, 발견 형식과 반영 통과 조건 |
 | `scripts/check.sh` | 검사기 둘을 함께 돌리고 종료 코드 중 큰 값을 낸다. `--where` 로 이 스킬 경로를 낸다 |
 | `scripts/check-diff.py` | `check.sh --diff` 의 본체. git diff 로 더한 줄의 발견만 종료 코드에 넣고, 기존 줄의 발견은 따로 낸다 |
@@ -86,7 +86,7 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 | `tests/test_check_diff.py` | 임시 git 저장소에서 기존 줄의 발견은 통과하고 더한 줄의 금지어는 막히는지 본다 |
 | `CHANGELOG.md` | 버전 이력 |
 
-테스트는 저장소 루트에서 돌린다. 다른 곳에서 부르면 `ImportError` 로 끝난다.
+테스트는 저장소 루트에서 돌린다. `-s` 를 상대 경로로 주고 다른 곳에서 부르면 `ImportError` 로 끝난다.
 
 ```bash
 # cwd: 저장소 루트
