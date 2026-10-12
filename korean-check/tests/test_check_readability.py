@@ -161,6 +161,16 @@ class TestExitCode(Base):
         self.assertEqual(done.returncode, 2)
 
 
+    def test_unknown_option_is_two_and_named_as_option(self):
+        path = self.write("a.md", "문제가 없는 문장이다.\n")
+        done = subprocess.run(
+            ["python3", str(SCRIPT), "--bogus", str(path)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("다루지 않는 옵션", done.stderr)
+
+
 class TestMissingPath(Base):
     """없는 경로는 2 로 끝난다. 0 이면 오타 난 경로가 통과로 보인다."""
 

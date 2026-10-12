@@ -71,7 +71,17 @@ FENCE = re.compile(r"^[ \t]*```")
 TABLE_LINE = re.compile(r"^[ \t]*\|")
 LINK_DEFINITION = re.compile(r"^[ \t]*\[[^\]]+\]:")
 
-INLINE_PLUS = re.compile(r" \+ ")
+INLINE_PLUS = re.compile(r"(\S+) \+ (\S+)")
+# 코드 스팬이나 대문자 상수를 잇는 `+` 는 항목 나열이 아니라 값의 조합이다.
+CODE_PLACEHOLDER = "\x00"
+CONSTANT = re.compile(r"[A-Z][A-Z0-9_]*[,.;:)]*")
+
+
+def joins_items(match):
+    """` + ` 양옆이 모두 코드 스팬이나 대문자 상수면 항목 이어 붙이기가 아니다."""
+    left = match.group(1).lstrip("(")
+    right = match.group(2)
+    return not all(CODE_PLACEHOLDER in side or CONSTANT.fullmatch(side) for side in (left, right))
 
 
 def rules_path():
@@ -233,6 +243,7 @@ def scan(path, matchers):
 
         line = strip_link_targets(raw)  # 링크 문구는 남기고 URL 제외
         line = AUTO_LINK.sub("", line)  # 자동 링크 URL 제외
+        plus_line = CODE_SPAN.sub(CODE_PLACEHOLDER, line)  # + 판정은 코드 스팬 자리를 남긴다
         line = CODE_SPAN.sub("", line)  # 코드 스팬 제외
         for compound in COMPOUND_ALLOW:  # 정당한 합성어 제외
             line = line.replace(compound, "")
@@ -242,7 +253,7 @@ def scan(path, matchers):
                 found.append(
                     f'{path}:{n}: 금지어 "{term}" — korean-style 매핑 표의 권장 표현으로'
                 )
-        if INLINE_PLUS.search(line):
+        if any(joins_items(m) for m in INLINE_PLUS.finditer(plus_line)):
             warnings.append(f"{path}:{n}: 경고: 인라인 + 연결 — 쉼표·와/과 또는 목록으로")
 
     return found, warnings

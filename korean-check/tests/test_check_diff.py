@@ -73,7 +73,7 @@ class TestDiffMode(Base):
         self.assertIn("doc.md:5", self.sections(done.stdout)[0])
 
     def test_warning_in_new_line_does_not_fail(self):
-        (self.root / "doc.md").write_text(OLD + "\nA + B 를 쓴다.\n", encoding="utf-8")
+        (self.root / "doc.md").write_text(OLD + "\n배포 + 검증을 쓴다.\n", encoding="utf-8")
         done = self.run_diff()
         self.assertEqual(done.returncode, 0, done.stdout)
         self.assertIn("인라인 + 연결", self.sections(done.stdout)[0])

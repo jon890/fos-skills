@@ -202,6 +202,11 @@ def main():
             print(f"(문자열)  경고 [{code}] {msg}")
         return 0
 
+    unknown = [a for a in sys.argv[1:] if a.startswith("-")]
+    if unknown:
+        print(f"check-readability: 다루지 않는 옵션이다: {' '.join(unknown)}", file=sys.stderr)
+        return 2
+
     missing = False
     for path in sys.argv[1:]:
         # 없는 경로를 0 으로 넘기면 오타 난 경로가 통과로 보인다.
