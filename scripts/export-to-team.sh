@@ -34,7 +34,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --apply)       APPLY=true; shift ;;
     --source-ref)
-      [ $# -ge 2 ] || { echo "--source-ref 뒤에 커밋이나 브랜치를 준다" >&2; exit 2; }
+      case "${2:-}" in
+        ""|-*) echo "--source-ref 뒤에 커밋이나 브랜치를 준다" >&2; exit 2 ;;
+      esac
       SOURCE_REF="$2"; shift 2 ;;
     *)             echo "알 수 없는 인자: $1  (쓸 수 있는 것은 --apply, --source-ref 다)" >&2; exit 2 ;;
   esac
@@ -52,6 +54,7 @@ if [ -n "$SOURCE_REF" ]; then
     || { echo "커밋을 찾지 못했다: $SOURCE_REF" >&2; exit 2; }
   SRC_DIR="$(mktemp -d)"
   trap 'rm -rf "$SRC_DIR"' EXIT
+  # .gitattributes 의 export-ignore 가 붙은 파일은 archive 에서 빠져 팀 쪽 사본이 「남음」 으로 지워진다.
   git -C "$REPO_DIR" archive "$SOURCE_SHA" | tar -x -C "$SRC_DIR"
   SOURCE_DESC="$SOURCE_REF ($SOURCE_SHA)"
 else
