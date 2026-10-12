@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.9.1"
+  version: "2.10.0"
 ---
 
 # review-fix
@@ -23,20 +23,7 @@ metadata:
 `<repo-root>/.claude/review-fix-overlay.md` 가 있으면 **먼저 읽고** 코어보다 우선한다.
 오버레이는 신뢰하는 봇 목록, 봇별 심각도 표기, 반복될 지적을 규칙으로 넣을 위치, CI 실패 원인 표를 소유한다.
 없으면 코어 기본값으로 동작한다.
-
-**루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
-PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 정하고, 그 오버레이를 루트 오버레이보다 먼저 읽는다.
-`$PLANNING_SKILL_DIR` 은 planning 번들이고 이 스킬 번들의 형제 디렉터리다. 이 스킬 번들 경로를 `$SKILL_DIR` 이라 하면 값은 `$SKILL_DIR/../planning` 이다.
-`$PR` 은 1단계에서 정한 PR 번호다.
-
-```bash
-# cwd: 대상 저장소 루트
-gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill review-fix -
-```
-
-`targets` 가 둘 이상이면 PR 이 두 하위 프로젝트에 걸친 것이다.
-검증 명령과 규칙을 넣을 위치는 지적이 달린 파일의 하위 프로젝트 오버레이에서 읽고, 검증은 둘 다 실행한다.
-종료 코드 1 이면 사용자에게 묻는다. 판정 규칙은 [planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
+모노레포면 하위 프로젝트 오버레이를 「리뷰 수집」 단계에서 PR 번호를 정한 뒤 정한다.
 
 ## 실행 절차
 
@@ -44,7 +31,7 @@ gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_path
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 리뷰 수집 | PR 번호가 정해졌고 네 소스의 리뷰를 모았다 | `scripts/collect_review.py` |
+| 1 | 리뷰 수집 | PR 번호와 대상 하위 프로젝트가 정해졌고 네 소스의 리뷰를 모았다 | `scripts/collect_review.py` |
 | 2 | 작업 트리 정렬 | 현재 브랜치가 PR head 브랜치이고 base 브랜치 이름을 받았고 conflict 가 없다 | `references/conflict-resolution.md` |
 | 3 | 분류 | 모든 지적에 등급이 붙었고 처리 범위를 사용자가 확정했다 | `references/severity.md` |
 | 4 | 수정 | 처리하기로 한 지적이 반영되고 지적마다 커밋이 나뉘어 남았다 | `references/severity.md` |
@@ -62,9 +49,23 @@ gh pr view --json number --jq '.number' 2>/dev/null \
   || gh pr list --state open --json number,title,headRefName --limit 20
 ```
 
-**첫 명령은 대부분 PR 번호를 찾지 못한다.** 구현 스킬이 워크트리를 정리하면 현재 브랜치가 base 로 돌아오는데,
-base 에는 열린 PR 이 없기 때문이다. 그래서 둘째 명령의 오픈 PR 목록을 보여주고
+**첫 명령은 PR 번호를 찾지 못할 수 있다.** 구현 스킬이 워크트리를 정리하면 현재 브랜치가 base 로 돌아오는데,
+base 에는 열린 PR 이 없기 때문이다. 그때는 둘째 명령의 오픈 PR 목록을 보여주고
 구조화 질문 도구가 있으면 그것으로 고르게 한다. 목록이 1건이면 그것을 제시하고 확인만 받는다.
+
+**루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
+PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 정하고, 그 오버레이를 루트 오버레이보다 먼저 읽는다.
+`$PLANNING_SKILL_DIR` 은 planning 번들이고 이 스킬 번들의 형제 디렉터리다. 이 스킬 번들 경로를 `$SKILL_DIR` 이라 하면 값은 `$SKILL_DIR/../planning` 이다.
+`$PR` 은 위에서 정한 PR 번호다.
+
+```bash
+# cwd: 대상 저장소 루트
+gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill review-fix -
+```
+
+`targets` 가 둘 이상이면 PR 이 두 하위 프로젝트에 걸친 것이다.
+검증 명령과 규칙을 넣을 위치는 지적이 달린 파일의 하위 프로젝트 오버레이에서 읽고, 검증은 둘 다 실행한다.
+종료 코드 1 이면 사용자에게 묻는다. 판정 규칙은 [planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
 
 ```bash
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
@@ -75,28 +76,14 @@ python3 scripts/collect_review.py <owner> <repo> <N>
 첫 명령은 현재 디렉터리의 저장소를 읽으므로 대상 저장소의 워크트리에서 돌린다.
 둘째 명령의 `scripts/` 는 이 스킬 디렉터리를 전제하므로 그 경로를 절대경로로 주거나
 스킬 디렉터리에서 돌린다. 호스트는 넘긴 `<owner> <repo>` 로 정해지므로 어느 쪽이든 맞다.
-
 저장소 이름을 이미 알고 있으면 첫 명령을 건너뛴다.
-스킬 디렉터리에서 첫 명령을 돌리면 엉뚱한 저장소 이름이 나오고,
-그것을 그대로 넘기면 `collect_review.py` 가 그 저장소에서 PR 을 찾는다.
 
-**네 소스에서 모은다.** 워크플로 버전에 따라 리뷰가 담기는 위치가 달라,
-한 소스만 보면 봇의 구조화 리뷰를 놓친다.
-넷째가 미해결 리뷰 스레드이고 `path` 와 `line` 을 함께 내므로, 「회신」 단계에서 REST 댓글과 대조할 수 있다.
-
-이 스킬의 스크립트는 호스트를 스스로 구한다. 다만 무엇으로 구하는지가 갈린다.
-`collect_review.py` 와 `review_threads.py list` 는 받은 `<owner> <repo>` 로 정하고,
-`reply` 와 `resolve` 는 `--repo` 를 줘야 그것으로 정한다. 주지 않으면 현재 디렉터리를 본다.
-스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
+이 스킬의 스크립트는 호스트를 스스로 구한다.
+스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 아래처럼 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
 
 ```bash
 gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" repos/<owner>/<repo>/...
 ```
-
-**호스트를 구할 때 `<owner> <repo>` 를 함께 넘긴다.**
-넘기지 않으면 현재 디렉터리의 origin 을 보므로, 스킬 디렉터리에서 돌리면
-그 디렉터리가 속한 저장소의 호스트를 집는다.
-대상이 GitHub Enterprise 저장소면 네 소스가 모두 404 로 끝나고, 오류 문구에 호스트가 원인이라는 것이 드러나지 않는다.
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
 
@@ -121,7 +108,7 @@ python3 scripts/checkout_pr.py <N>
 gh pr view <N> --json baseRefName,mergeable,mergeStateStatus
 ```
 
-**`baseRefName` 을 적어 둔다.** 「커밋과 push」 단계가 `origin/<baseRefName>..HEAD` 로 커밋 범위를 정한다.
+**`baseRefName` 을 적어 둔다.** conflict 를 해결할 때 가져올 base 브랜치다.
 
 | 결과 | 판정 |
 |---|---|
@@ -133,8 +120,6 @@ gh pr view <N> --json baseRefName,mergeable,mergeStateStatus
 미해결 리뷰 스레드가 원인일 수 있으므로 「마무리」 단계의 resolve 로 풀리는지 함께 본다.
 
 ### 3. 분류
-
-봇의 심각도 표기는 하나가 아니다. 한 저장소에 봇이 둘 붙어 서로 다른 표기로 내는 경우가 있다 (실측).
 
 **표기가 무엇이든 `references/severity.md` 를 읽고 등급을 대응시킨다.**
 표기별 형태, 등급 대응, 행동 규약을 그 문서가 소유한다.
@@ -202,7 +187,6 @@ GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
 ### 5. 검증
 
 **그 저장소가 문서화한 빌드, 테스트, lint 명령으로 한다.**
-코어는 특정 명령을 하드코딩하지 않는다. 저장소마다 다르기 때문이다.
 
 - lint, 빌드와 타입 검사, 테스트 순으로 실행한다.
 - 테스트를 변경했으면 diff에서 삭제, skip과 단언 완화를 판정한다.
@@ -222,18 +206,19 @@ GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
 이 단계는 그 커밋들이 분리 기준을 지켰는지 확인하고, 대응 표를 만들고, push 한다.
 
 ```bash
-git log --oneline --no-merges origin/<baseRefName>..HEAD
-git diff --stat origin/<baseRefName>..HEAD
+git log --oneline --no-merges '@{u}..HEAD'
+git diff --stat '@{u}..HEAD'
 ```
 
-`--no-merges` 를 붙이는 이유는, 「작업 트리 정렬」 단계에서 base 를 머지했으면
-그 머지 커밋이 이 범위에 함께 들어오기 때문이다. 그것은 fix 커밋이 아니다.
+범위는 PR head 브랜치의 upstream(`@{u}`) 부터다. `gh pr checkout` 이 upstream 을 잡아 준다.
+`origin/<baseRefName>..HEAD` 로 잡으면 PR 작성자의 기존 커밋까지 범위에 들어온다.
+`--no-merges` 는 base 를 머지했는데 아직 push 하지 않은 경우 그 머지 커밋을 뺀다. 그것은 fix 커밋이 아니다.
 
 커밋 메시지 형식은 그 저장소의 git 관례를 따르고, scope 는 그 커밋이 실제로 고친 영역으로 쓴다.
 
 커밋 목록을 사용자에게 보여주고 승인받은 뒤 push 한다.
-분리 방식이 거절되면 아직 push 하지 않았으므로 `git reset --soft origin/<baseRefName>` 으로
-되돌려 다시 나눈다.
+분리 방식이 거절되면 아직 push 하지 않았으므로 `git reset --soft '@{u}'` 로
+되돌려 다시 나눈다. base 로 되돌리면 PR 의 기존 커밋까지 스테이징으로 뭉쳐진다.
 
 **지적과 커밋 해시의 대응을 표로 만들어 파일로 남긴다.**
 「회신」 단계와 「마무리」 단계가 이 표를 읽는다.

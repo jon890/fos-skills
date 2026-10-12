@@ -38,6 +38,9 @@
 
 **문구는 실제로 받은 리뷰의 소제목을 그대로 읽어 쓴다.**
 
+`pr-review` 스킬로 등록한 리뷰는 본문 첫 줄에 등급을 적고, P4 에 `🔵` 를 쓴다.
+그 표기는 [pr-review 의 grading.md](../../pr-review/references/grading.md) 가 소유한다.
+
 ## Low, Medium, High
 
 `분류: Low 1개` 처럼 등급과 건수를 적는다.

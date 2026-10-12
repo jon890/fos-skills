@@ -3,6 +3,20 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.10.0
+
+fix 커밋 범위와 되돌리기 기준을 PR head 의 upstream 으로 바로잡고, 스크립트와 공용 문서가 소유한 내용을 지운다.
+
+- 커밋 범위를 `origin/<baseRefName>..HEAD` 에서 `@{u}..HEAD` 로 바꿨다. base 기준이면 PR 작성자의 기존 커밋이 범위에 들어오고 `reset --soft` 가 PR 전체를 뭉친다
+- 모노레포 오버레이 판정을 「리뷰 수집」 단계 안으로 옮기고 통과 조건에 대상 하위 프로젝트를 더했다
+- 「첫 명령은 대부분 PR 번호를 찾지 못한다」 를 「찾지 못할 수 있다」 로 약하게 썼다
+- 네 소스 설명, 호스트 결정 방식, 중복된 저장소 이름 안내를 지웠다. 스크립트 머리 주석이 소유한다
+- 봇 표기 실측 문장과 「코어는 하드코딩하지 않는다」 를 지웠다
+- finish.md 의 「넣을 곳」 표, 규칙 문장, pitfalls 정책을 planning 의 `rule-placement.md` 링크로 바꿨다. 고르는 기준은 남겼다
+- finish.md 와 reply.md 에서 `review_threads.py` 머리 주석과 겹치는 문장을 지웠다
+- conflict-resolution.md: lockfile 표를 예시로 바꾸고 「셋이 없으면 lockfile 이 없다」 는 틀린 문장을 고쳤다
+- severity.md 에 pr-review 의 등급 표기(P4 는 🔵)를 가리키는 문장을 더했다
+
 ## 2.9.1
 
 마무리 단계 표의 `기계로 검출` 을 `자동 검사로 검출` 로 바꿨다. 동작은 바뀌지 않는다.
