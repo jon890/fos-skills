@@ -33,7 +33,7 @@ Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시�
 
 | 파일 | 소유하는 것 |
 | --- | --- |
-| `SKILL.md` | 목표와 6단계 실행 절차, 단계별 통과 조건, 검토를 건너뛰는 때, 생성기 사용법 |
+| `SKILL.md` | 목표와 6단계 실행 절차, 단계별 통과 조건, 생성기 사용법 |
 | `references/render-traps.md` | 매체마다 다르게 렌더되는 패턴과 그 대응 |
 | `references/persona.md` | 개인 문체 참조를 어디에 두고 무엇을 적는지 |
 | `scripts/style-check.sh` | `korean-check` 를 찾아 본문 파일과 제목에 검사기를 돌린다 |

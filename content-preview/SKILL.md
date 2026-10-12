@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.17.0"
+  version: "3.18.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -16,8 +16,7 @@ description: |
 임시 파일에만 저장하면 사용자 화면에는 도구 호출만 보이고 내용이 숨겨져, 검토와 수정 지시를 할 수 없다.
 그래서 본문을 실제 렌더링 HTML 로 띄워 눈으로 볼 수 있게 한다.
 
-- 본문 전문을 채팅에 다시 쓰지 않는다. 사용자는 렌더링된 쪽을 읽는다.
-- 미리보기 턴은 미리보기로 끝낸다. 등록 확인은 사용자가 읽고 응답한 다음 턴에 받는다.
+사용자는 렌더링된 쪽을 읽고, 등록은 사용자가 응답한 다음 턴에 한다. 보고 방식은 6단계가 정한다.
 
 **본문을 등록하기 전에 무엇을 보여주고 언제 승인을 받는지는 이 스킬이 소유한다.**
 본문을 외부에 등록하는 스킬과 레포 오버레이는 여기를 가리키고
@@ -39,10 +38,11 @@ description: |
 이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
 
 본문과 미리보기를 둘 자리를 하나 정해 `PREVIEW_DIR` 에 담는다.
-하네스가 알려주는 임시 디렉터리가 있으면 그것을 쓰고, 없으면 저장소 밖의 임시 경로를 쓴다.
+하네스가 알려주는 임시 디렉터리가 있으면 아래 값을 그것으로 바꾼다. 없으면 아래처럼 저장소 밖의 임시 경로를 쓴다.
 
 ```bash
-PREVIEW_DIR=<본문과 미리보기를 둘 디렉터리>
+PREVIEW_DIR="${TMPDIR:-/tmp}/content-preview"
+mkdir -p "$PREVIEW_DIR"
 ```
 
 ### 1. 수신자와 문체
@@ -105,11 +105,10 @@ bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 
 ### 4. 검토
 
-메인이 본문을 의미 점검 축으로 직접 점검한다.
-담당자와 별도 검토 조건은 [`../korean-check/SKILL.md`](../korean-check/SKILL.md) 가,
-점검에 쓸 자료와 발견을 처리하는 방법은
-[`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) 가 소유한다.
-그 파일을 읽고 수행한다.
+의미 점검을 할지, 누가 하는지는 [`../korean-check/SKILL.md`](../korean-check/SKILL.md) 의
+「검사기가 잡지 못하는 축을 본다」 를 따른다.
+축과 발견 처리 방법은 [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) 를 읽고 수행한다.
+짧은 글이라 건너뛰었으면 그 사실을 6단계 보고에 적는다.
 
 본문과 함께 제목, 그리고 개인 문체 참조가 있으면 그 점검 항목을 함께 본다.
 
@@ -118,12 +117,6 @@ bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 ```bash
 bash "$SKILL_DIR/scripts/style-check.sh" --where
 ```
-
-#### 검토를 건너뛰는 때
-
-**짧은 글은 이 단계를 건너뛴다.**
-긴 문서와 정형 양식만 수행한다.
-분량 구간의 판정 기준은 [`../korean-check/references/writing-structure.md`](../korean-check/references/writing-structure.md) 가 소유한다.
 
 ### 5. 미리보기
 
@@ -138,22 +131,17 @@ Dooray 업무와 댓글·메신저, GitHub issue 와 PR 본문은 실제 렌더�
 **대상과 생성기를 바꿔 쓰지 않는다.** marked 는 한 문장마다 줄을 나눈 본문을 한 문단으로 붙이고
 물결표를 취소선으로 읽는다. TOAST UI 는 둘 다 살린다 (실측).
 
-인자는 각 생성기의 `--help` 가 소유한다. Dooray 는 `--mode`, GitHub 는 `--type` 으로 머리를 고른다.
-
-| 생성기 | 값 | 머리 | 쓰는 곳 |
-| --- | --- | --- | --- |
-| Dooray | `task` (기본) | 프로젝트, 제목, 메타, 태그 | 업무 본문 |
-| Dooray | `comment` | 작성자 아바타와 이름 | 댓글, 진행 기록, 주간보고 |
-| Dooray | `messenger` | 대화방 이름과 보내는 사람 | 대화방 메시지 |
-| GitHub | `issue` (기본) | Issue 배지 | 이슈 본문 |
-| GitHub | `pr` | Pull Request 배지 | PR 본문, 리뷰 응답 |
+인자는 각 생성기의 `--help` 가 소유한다.
+Dooray 의 `--mode comment` 는 댓글과 진행 기록, 주간보고에, GitHub 의 `--type pr` 은 PR 본문과 리뷰 응답에 쓴다.
 
 메신저를 미리볼 때는 [`references/messenger-rendering.md`](references/messenger-rendering.md) 의 확인 범위를 읽는다.
+
+`$AUTHOR` 는 Dooray 에 표시되는 작성자 이름이다. OS 계정명(`$USER`)과 다를 수 있다.
 
 ```bash
 # cwd: 아무 곳. $REPO 는 owner/repo 형태다
 python3 "$SKILL_DIR/scripts/dooray-preview/generate.py" \
-  --mode comment --author "$USER" \
+  --mode comment --author "$AUTHOR" \
   --title "주간보고 2026년 8월 4주차" \
   --md-file "$PREVIEW_DIR/body.md" --out "$PREVIEW_DIR/preview.html"
 
@@ -201,8 +189,8 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 **미리보기와 구조화된 질문을 같은 턴에 묶지 않는다.**
 선택창이 본문을 가려 사용자가 읽기 전에 결정하게 된다.
 
-부분 수정은 바뀐 블록만 AS-IS 와 TO-BE 로 채팅에 보인다.
-렌더링된 전문은 무엇이 바뀌었는지 보여주지 못하고, 바뀐 블록은 전문이 아니라 diff 다.
+부분 수정이면 5단계 미리보기를 함께 띄우고, 바뀐 블록만 AS-IS 와 TO-BE 로 채팅에 보인다.
+렌더링된 전문만으로는 무엇이 바뀌었는지 알 수 없다.
 
 #### 사용자가 이번 본문의 등록을 미리 승인했을 때
 
@@ -216,7 +204,6 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 
 #### 보는 사람이 없는 세션에서 등록할 때
 
-이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 아래를 따른다.
 받은 지시문에 dispatch 머리말(`You are a dispatched worker`)이 있으면 dispatch 로 받은 것이다.
 
 **5단계는 대상 생성기로 `$PREVIEW_DIR/preview.html` 을 만드는 것까지 수행한다.**
