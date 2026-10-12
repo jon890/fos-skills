@@ -7,6 +7,9 @@
 기준 커밋을 생략하면 `HEAD` 와 작업 트리를 비교한다.
 `--scope` 를 주면 그 아래의 `SKILL.md` 만 본다.
 
+이 검사의 대상은 `SKILL.md` 와 그것이 위임한 `references/` 사이다.
+`AGENTS.md` 같은 다른 지침의 절 이름을 가리키는 「제목」 참조는 `check_references.py` 가 본다.
+
 종료 코드:
     0  드리프트 없음
     1  드리프트 검출
@@ -161,6 +164,7 @@ def main(argv):
     if scanned == 0:
         print(f"검사 대상 없음 — 기준 '{base}' 대비 변경된 SKILL.md 가 하나도 없다.", file=sys.stderr)
         print("기준을 바꾸거나 변경을 커밋한 뒤 다시 돌린다.", file=sys.stderr)
+        print("다른 지침의 절 참조는 check_references.py 가 본다.", file=sys.stderr)
         return 2
 
     print(f"검사한 SKILL.md: {scanned}개, 드리프트: {len(findings)}건", file=sys.stderr)
