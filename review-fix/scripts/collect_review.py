@@ -2,7 +2,12 @@
 """PR 의 리뷰를 네 소스에서 모아 낸다.
 
 사용법:
-    collect_review.py <owner> <repo> <PR번호>
+    collect_review.py <owner> <repo> <PR번호> [--carried-from <PR번호> ...] [--carried-marker 문구]
+
+    --carried-from    이전 PR 에서 「다음 PR 에서 반영」 으로 회신한 스레드를 다섯째 소스로 더한다.
+                      PR 번호를 여럿 줄 수 있고, resolve 된 스레드도 낸다
+                      숫자는 모두 PR 번호로 읽으므로 `<owner> <repo> <PR번호>` 를 먼저 준다
+    --carried-marker  회신에서 찾을 문구. 기본은 「다음 PR」
 
 종료 코드:
     0  성공
@@ -47,11 +52,38 @@ def run(header, argv, env):
     return subprocess.run(argv, text=True, env=merged).returncode
 
 
+def parse_args(argv):
+    """(owner, repo, num, carried PR 목록, marker) 를 낸다. 틀리면 None."""
+    positional, carried, marker = [], [], None
+    seen_carried = False
+    index = 1
+    while index < len(argv):
+        item = argv[index]
+        if item == "--carried-from":
+            seen_carried = True
+            index += 1
+            while index < len(argv) and argv[index].isdigit():
+                carried.append(argv[index])
+                index += 1
+        elif item == "--carried-marker":
+            if index + 1 >= len(argv):
+                return None
+            marker = argv[index + 1]
+            index += 2
+        else:
+            positional.append(item)
+            index += 1
+    if len(positional) != 3 or (seen_carried and not carried):
+        return None
+    return (*positional, carried, marker)
+
+
 def main(argv):
-    if len(argv) != 4:
+    parsed = parse_args(argv)
+    if parsed is None:
         print(__doc__, file=sys.stderr)
         return 2
-    owner, repo, num = argv[1], argv[2], argv[3]
+    owner, repo, num, carried, marker = parsed
 
     try:
         env = {"GH_HOST": gh_host.resolve(owner, repo)}
@@ -72,6 +104,11 @@ def main(argv):
     failed |= run("## 4. 미해결 리뷰 스레드 (「회신」 단계의 대상)",
                   [sys.executable, str(HERE / "review_threads.py"),
                    "list", owner, repo, num], env)
+    for prior in carried:
+        extra = ["--marker", marker] if marker else []
+        failed |= run(f"## 5. 이전 PR #{prior} 에서 「{marker or '다음 PR'}」 로 회신한 스레드",
+                      [sys.executable, str(HERE / "review_threads.py"),
+                       "carried", owner, repo, prior, *extra], env)
 
     return 1 if failed else 0
 

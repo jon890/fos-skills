@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.10.0"
+  version: "2.11.0"
 ---
 
 # review-fix
@@ -83,6 +83,13 @@ python3 scripts/collect_review.py <owner> <repo> <N>
 
 ```bash
 gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" repos/<owner>/<repo>/...
+```
+
+**이전 PR 에서 「다음 PR 에서 반영」 으로 미룬 지적이 있으면** 그 PR 번호를 `--carried-from` 으로 준다.
+회신에 「다음 PR」 이 든 스레드를 다섯째 소스로 모은다. resolve 된 것도 나온다. 다른 문구는 `--carried-marker` 로 준다.
+
+```bash
+python3 scripts/collect_review.py <owner> <repo> <N> --carried-from <이전 PR 번호>
 ```
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
@@ -196,9 +203,24 @@ GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
 검증 명령이 문서화돼 있지 않으면 어떤 명령으로 검증할지 사용자에게 묻는다.
 
 검증은 커밋마다 돌리지 않고 이 단계에서 한 번 돌린다.
-**실패하면 원인이 된 커밋을 `git commit --amend` 로 고친다.**
+**실패하면 원인이 된 커밋에 수정을 접어 넣는다.**
 커밋을 하나 더 얹으면 지적 하나에 해시가 둘이 되어 회신에 무엇을 넣을지 정해지지 않는다.
 해시가 바뀌지만 대응 표는 다음 단계에서 만들므로 다시 적을 것이 없다.
+
+원인이 HEAD 면 고친 파일을 `git add` 하고 `git commit --amend --no-edit` 를 쓴다.
+
+**원인이 HEAD 가 아닌 앞 커밋일 때는 `scripts/fold_fixup.sh` 를 쓴다.**
+대화형 rebase 는 이 환경에서 쓸 수 없다. 이 스크립트가 `commit --fixup` 과 `rebase --autosquash` 를 편집기 없이 돈다.
+`CAUSE` 는 접어 넣을 커밋의 해시다. 스테이징하지 않은 변경은 그대로 남는다.
+
+```bash
+CAUSE=$(git rev-parse HEAD~1)   # 원인이 된 커밋으로 바꾼다
+git add -u
+bash scripts/fold_fixup.sh "$CAUSE"
+```
+
+종료 코드 1 은 겹치는 수정이 충돌한 것이다. 스크립트가 rebase 를 중단했고 fixup 커밋이 HEAD 에 남아 있다.
+두 커밋을 사용자에게 보이고 어디에 접을지 확인받는다. 범위에 머지 커밋이 있으면(종료 코드 2) 접지 않는다.
 
 ### 6. 커밋과 push
 

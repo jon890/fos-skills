@@ -61,5 +61,98 @@ class TestCount(unittest.TestCase):
         self.assertIn('"resolved":false', lines[0])
 
 
+def carried_response(threads):
+    nodes = [{"id": tid, "isResolved": resolved, "path": "a.py", "line": 3,
+              "comments": {"nodes": [{"author": {"login": "bot"}, "body": "지적", "url": "u0"}] +
+                           [{"author": {"login": "me"}, "body": b, "url": f"u{i}"}
+                            for i, b in enumerate(replies, 1)]}}
+             for tid, resolved, replies in threads]
+    return json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {
+        "totalCount": len(nodes), "nodes": nodes}}}}})
+
+
+class TestCarried(unittest.TestCase):
+    def test_lists_only_threads_whose_reply_has_marker_including_resolved(self):
+        out = carried_response([("T1", True, ["다음 PR 에서 반영한다"]),
+                                ("T2", False, ["반영했다"]),
+                                ("T3", False, [])])
+        code, stdout, _ = run_main(["carried", "o", "r", "7"], out)
+        self.assertEqual(code, 0)
+        lines = stdout.splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn('"id":"T1"', lines[0])
+        self.assertIn('"pr":7', lines[0])
+
+    def test_first_comment_with_marker_is_not_a_reply(self):
+        nodes = json.loads(carried_response([("T1", False, [])]))
+        nodes["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0][
+            "comments"]["nodes"][0]["body"] = "다음 PR"
+        code, stdout, _ = run_main(["carried", "o", "r", "7"], json.dumps(nodes))
+        self.assertEqual((code, stdout), (0, ""))
+
+    def test_custom_marker(self):
+        out = carried_response([("T1", False, ["후속 처리"])])
+        code, stdout, _ = run_main(["carried", "o", "r", "7", "--marker", "후속"], out)
+        self.assertEqual(code, 0)
+        self.assertIn('"id":"T1"', stdout)
+
+
+class TestReplyBatch(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+        for name in ("a.md", "b.md", "c.md"):
+            (self.dir / name).write_text(name)
+
+    def map_file(self, text):
+        path = self.dir / "map.tsv"
+        path.write_text(text)
+        return str(path)
+
+    def run_batch(self, text, fail_ids=()):
+        calls = []
+
+        def fake_gh(*args, env=None):
+            tid = next(a.split("=", 1)[1] for a in args if a.startswith("threadId="))
+            calls.append(tid)
+            if tid in fail_ids:
+                return 1, "", "boom"
+            return 0, f"https://x/{tid}\n", ""
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(rt.gh_host, "resolve", return_value="github.com"), \
+                patch.object(rt, "gh", side_effect=fake_gh), \
+                contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = rt.main(["review_threads.py", "reply-batch", self.map_file(text)])
+        return code, calls, stdout.getvalue(), stderr.getvalue()
+
+    def test_all_succeed(self):
+        code, calls, out, _ = self.run_batch("T1\ta.md\n# 주석\n\nT2\tb.md\n")
+        self.assertEqual((code, calls), (0, ["T1", "T2"]))
+        self.assertIn("https://x/T2", out)
+
+    def test_failure_is_named_and_remaining_still_run(self):
+        code, calls, _, err = self.run_batch("T1\ta.md\nT2\tb.md\nT3\tc.md\n", fail_ids={"T2"})
+        self.assertEqual((code, calls), (1, ["T1", "T2", "T3"]))
+        self.assertIn("줄 2 T2", err)
+        self.assertIn("1/3", err)
+
+    def test_missing_body_file_counts_as_failure(self):
+        code, calls, _, err = self.run_batch("T1\tnope.md\nT2\tb.md\n")
+        self.assertEqual((code, calls), (1, ["T2"]))
+        self.assertIn("줄 1 T1", err)
+
+    def test_malformed_line_counts_as_failure(self):
+        code, calls, _, err = self.run_batch("T1 a.md\nT2\tb.md\n")
+        self.assertEqual((code, calls), (1, ["T2"]))
+        self.assertIn("줄 1", err)
+
+    def test_empty_map_is_usage_error(self):
+        code, calls, _, _ = self.run_batch("# 비었다\n")
+        self.assertEqual((code, calls), (2, []))
+
+
 if __name__ == "__main__":
     unittest.main()

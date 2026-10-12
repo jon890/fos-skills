@@ -23,6 +23,14 @@ python3 scripts/review_threads.py list <owner> <repo> <N>
 | 스레드가 없고 인라인 댓글만 있다 | REST `pulls/<N>/comments/<comment_id>/replies` |
 | 둘 다 없다 | `gh pr comment <N> --body-file <본문파일>` 로 통합 회신 하나 |
 
+**회신이 여럿이면 `reply-batch` 로 한 번에 단다.** map 은 줄마다 `THREAD_ID`, 탭, 본문 파일 경로다.
+상대 경로는 map 파일 위치를 기준으로 푼다. 하나가 실패해도 나머지는 계속 달고, 끝에 실패한 줄과 스레드를 알리며 종료 코드 1 이다.
+실패한 줄만 남겨 다시 돌린다. 이미 달린 회신을 다시 돌리면 같은 회신이 또 달린다.
+
+```bash
+python3 scripts/review_threads.py reply-batch --repo <owner>/<repo> "$MAP"
+```
+
 **`reply` 와 `resolve` 에는 `--repo <owner>/<repo>` 를 붙인다.**
 THREAD_ID 만으로는 저장소를 알 수 없어, 붙이지 않으면 현재 디렉터리의 origin 으로 호스트를 정한다.
 

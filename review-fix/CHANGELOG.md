@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.11.0
+
+검증 실패 수정, 여러 회신, 미뤄 둔 지적의 추적을 스크립트로 옮긴다.
+
+- `scripts/fold_fixup.sh <원인커밋>`: 앞 커밋에 수정을 편집기 없이 접어 넣는다. 「검증」 단계에 원인이 HEAD 가 아닐 때를 적었다
+- `review_threads.py reply-batch <map.tsv>`: 여러 스레드에 한 번에 회신한다. 실패한 줄을 알리고 종료 코드 1 이다
+- `review_threads.py carried` 와 `collect_review.py --carried-from`: 이전 PR 에서 「다음 PR」 로 회신한 스레드를 찾는다
+
 ## 2.10.0
 
 fix 커밋 범위와 되돌리기 기준을 PR head 의 upstream 으로 바로잡고, 스크립트와 공용 문서가 소유한 내용을 지운다.
