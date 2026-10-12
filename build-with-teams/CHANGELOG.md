@@ -14,6 +14,7 @@
 - step-finish: 날짜가 붙은 실측 기록을 지운다. 임시 사본 검증의 생략 조건을 push 전 흐름에 맞게 고치고, `gh pr edit` 블록의 플레이스홀더를 변수로 바꾼다. 「넣을 곳」 공통 표와 반복 함정 목록 정책은 planning 의 rule-placement.md 를 가리키고 이 스킬 고유의 두 자리만 남긴다.
 - executor-routing: 「내리는 방향은 없다」 중복을 줄인다.
 - README: SKILL.md 와 겹치는 레포 설정 탐색 순서를 지우고, plan 브랜치를 원격에서 만든다는 낡은 전제를 고친다.
+- `team-spawn.md` 의 무응답 판정을 `idleReason: available` 관측으로 바꾸고, 행동을 바꾸지 않던 「기준은 없다」 를 지운다
 
 ## 5.18.0
 
