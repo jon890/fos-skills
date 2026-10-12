@@ -89,6 +89,13 @@ class ExportToTeamScriptTest(unittest.TestCase):
         result = self.run_script()
         self.assertIn(f"원본: 작업 트리 (HEAD {self.sha}), 커밋하지 않은 변경 있음", result.stdout)
 
+    def test_default_path_runs_outside_git_repository(self):
+        shutil.rmtree(self.repo / ".git")
+        result = self.run_script()
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("원본: 작업 트리 (git 저장소 아님)", result.stdout)
+        self.assertIn(f"없음   skills/{self.skill}/NOTE.md", result.stdout)
+
     def test_source_ref_ignores_working_tree(self):
         self.edit_working_tree()
         result = self.run_script("--source-ref", "HEAD", "--apply")

@@ -58,10 +58,14 @@ if [ -n "$SOURCE_REF" ]; then
   git -C "$REPO_DIR" archive "$SOURCE_SHA" | tar -x -C "$SRC_DIR"
   SOURCE_DESC="$SOURCE_REF ($SOURCE_SHA)"
 else
-  SOURCE_SHA="$(git -C "$REPO_DIR" rev-parse HEAD)"
-  SOURCE_DESC="작업 트리 (HEAD $SOURCE_SHA)"
-  if [ -n "$(git -C "$REPO_DIR" status --porcelain -- "${SHARED_SKILLS[@]}" "${SHARED_TOOLS[@]/#/tools/}")" ]; then
-    SOURCE_DESC="$SOURCE_DESC, 커밋하지 않은 변경 있음"
+  # git archive 로 푼 사본처럼 git 저장소가 아니어도 기본 경로는 돌아야 한다. SHA 와 변경 표시만 생략한다.
+  if SOURCE_SHA="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)"; then
+    SOURCE_DESC="작업 트리 (HEAD $SOURCE_SHA)"
+    if [ -n "$(git -C "$REPO_DIR" status --porcelain -- "${SHARED_SKILLS[@]}" "${SHARED_TOOLS[@]/#/tools/}")" ]; then
+      SOURCE_DESC="$SOURCE_DESC, 커밋하지 않은 변경 있음"
+    fi
+  else
+    SOURCE_DESC="작업 트리 (git 저장소 아님)"
   fi
 fi
 echo "원본: $SOURCE_DESC"
