@@ -59,7 +59,11 @@ if [ -n "$SOURCE_REF" ]; then
   SRC_DIR="$(mktemp -d)"
   trap 'rm -rf "$SRC_DIR"' EXIT
   # .gitattributes 의 export-ignore 가 붙은 파일은 archive 에서 빠져 팀 쪽 사본이 「남음」 으로 지워진다.
-  git -C "$REPO_DIR" archive "$SOURCE_SHA" | tar -x -C "$SRC_DIR"
+  # 이 경로는 추적하는 파일만 원본으로 본다. 기본 경로는 작업 트리의 추적하지 않는 파일도 본다.
+  # 내보내는 디렉터리만 풀어 양을 줄인다.
+  # 그 커밋에 내보낼 디렉터리가 없으면 pathspec 오류이므로 기본 경로와 같게 종료 코드 2 로 끝낸다.
+  git -C "$REPO_DIR" archive "$SOURCE_SHA" -- "${SHARED_SKILLS[@]}" "${SHARED_TOOLS[@]/#/tools/}" | tar -x -C "$SRC_DIR" \
+    || { echo "그 커밋에 내보낼 디렉터리가 없다: $SOURCE_REF" >&2; exit 2; }
   SOURCE_DESC="$SOURCE_REF ($SOURCE_SHA)"
 else
   # git archive 로 푼 사본처럼 git 저장소가 아니어도 기본 경로는 돌아야 한다. SHA 와 변경 표시만 생략한다.
