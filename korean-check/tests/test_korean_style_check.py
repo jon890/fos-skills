@@ -117,6 +117,18 @@ class TestFalsePositive(Base):
         self.assertCaught("시험적으로 도입하고 시험을 돌린다.\n", "시험")
 
 
+class TestThresholdTerm(Base):
+    """threshold 를 옮긴 「문턱」 은 조사와 합성어 형태까지 막는다."""
+
+    def test_forms_are_caught(self):
+        for form in ("문턱값", "문턱으로", "문턱을"):
+            with self.subTest(form=form):
+                self.assertCaught(f"{form} 넘는다.\n", "문턱")
+
+    def test_recommended_terms_pass(self):
+        self.assertPassed("임계값을 넘으면 기준값으로 되돌린다.\n")
+
+
 class TestVersionTerm(Base):
     """version 의 뜻으로 쓴 「판」 은 막고, 다른 낱말 속의 「판」 은 막지 않는다.
 
