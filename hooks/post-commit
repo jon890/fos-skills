@@ -24,11 +24,11 @@ changed=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | cut -d/
 shared=$(sed -n 's/^SHARED_SKILLS=(\(.*\))$/\1/p' "$SYNC" | tr ' ' '\n')
 [ -n "$shared" ] || exit 0
 
-hit=false
+touched=()
 for s in $shared; do
-  printf '%s\n' "$changed" | grep -qx "$s" && hit=true
+  printf '%s\n' "$changed" | grep -qx "$s" && touched+=("$s")
 done
-$hit || exit 0
+[ ${#touched[@]} -gt 0 ] || exit 0
 
 # 같으면 조용히 지나간다. 커밋마다 알림이 뜨면 읽지 않게 된다.
 # 방금 만든 커밋을 원본으로 비교한다. 작업 트리를 보면 커밋하지 않은 변경 때문에 어긋났다고 알린다.
@@ -36,7 +36,22 @@ if out=$("$SYNC" --source-ref HEAD 2>&1); then
   exit 0
 fi
 
+# 어긋남이 많으면 이번 커밋의 것이 가려진다. 이번에 건드린 스킬의 파일만 자세히 내고 나머지는 개수만 낸다.
+# 어긋남 줄의 형식은 「  다름|없음|남음   <경로>」 이고, 경로에 /<스킬>/ 이 들어 있으면 그 스킬의 것이다.
+drift_re='^  (다름|없음|남음) '
+mine_re="^  (다름|없음|남음) +[^ ]*/($(IFS='|'; echo "${touched[*]}"))/"
+mine=$(printf '%s\n' "$out" | grep -E "$mine_re")
+others=$(printf '%s\n' "$out" | grep -E "$drift_re" | grep -vcE "$mine_re")
+
 echo
-echo "── 공용 스킬이 바뀌었고 팀 저장소와 어긋난다."
-printf '%s\n' "$out"
+if [ -n "$mine" ]; then
+  echo "── 이번 커밋이 건드린 공용 스킬이 팀 저장소와 어긋난다."
+  printf '%s\n' "$out" | sed -n '/^원본:/p'
+  printf '%s\n' "$mine"
+  echo "반영: scripts/export-to-team.sh --source-ref HEAD --apply"
+else
+  echo "── 이번 커밋이 건드린 공용 스킬은 팀 저장소와 같다."
+fi
+[ "$others" -gt 0 ] && echo "다른 스킬의 어긋난 파일 ${others}개 (이번 커밋과 무관). 전체는 scripts/export-to-team.sh 로 본다."
 echo "──"
+exit 0
