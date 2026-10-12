@@ -3,8 +3,8 @@
 
 검사 항목
   1. 마크다운 링크 `[텍스트](경로.md)`
-  2. 백틱으로 감싼 repo 상대 경로. 링크 문구 안의 백틱 경로는 링크 대상이 실재하고
-     대상 경로의 끝이 그 경로와 같으면 보지 않는다. 대상은 링크가 이미 말한다.
+  2. 백틱으로 감싼 repo 상대 경로. 링크 문구 안의 백틱 경로는 링크 대상이 실재하면 보지 않는다.
+     대상은 링크가 이미 말한다. 대상이 없으면 1번이 깨진 링크로 내고, 문구의 경로도 함께 본다.
   3. 다른 문서의 섹션 참조 — `"섹션명" 섹션` / `"섹션명" 표`
   4. 스킬 참조 — `` `이름` skill ``
   5. 절 이름 참조 — 파일 표기 바로 뒤의 「제목」. 「A」 의 「B」 와 「A」 「B」 는 제목마다 본다.
@@ -214,21 +214,19 @@ def broken_guide_refs(source, line, instructions):
 
 
 def mask_resolved_link_text(source, line):
-    """링크 대상이 실재하고 문구의 백틱 경로가 모두 그 대상의 끝과 같으면 문구를 지운다.
+    """링크 대상이 실재하면 그 링크 문구를 지운다.
 
-    `[planning 의 `references/x.md`](../planning/references/x.md)` 처럼 문구가 대상을 다시 적은 경우,
+    `[planning 의 `references/x.md`](../planning/references/x.md)` 처럼 문구가 대상을 다시 적거나
+    `[`scripts/` 절](./step.md)` 처럼 대상 안의 것을 가리키는 경우,
     문구의 경로를 따로 해석하면 엉뚱한 기준으로 찾아 깨진 참조로 낸다. 대상은 링크가 이미 말한다.
-    대상이 없거나 문구와 대상이 어긋나면 그대로 두어 2번 검사가 잡게 한다.
+    대상이 없으면 그대로 두어 문구의 경로도 2번 검사가 잡게 한다.
     """
     def replace(match):
         dest = match[2].split("#", 1)[0]
         if not dest or SKIP.search(dest):
             return match[0]
         resolved = (source.parent / dest).resolve()
-        paths = PATH_IN_BACKTICK.findall(match[1])
-        if resolved.exists() and paths and all(
-            resolved.as_posix().endswith("/" + path.rstrip("/").removeprefix("./")) for path in paths
-        ):
+        if resolved.exists():
             return "[](" + match[2] + ")"
         return match[0]
 
