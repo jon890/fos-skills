@@ -15,11 +15,7 @@
 파일, PR 본문, 커밋 메시지, 업무와 위키, 게시글, 아티팩트, 채팅 답변이 모두 대상이다.
 
 **판정 기준은 이 스킬이 소유한다.** 다른 스킬은 여기를 가리킨다.
-
-| 가리키는 쪽 | 어디서 |
-| --- | --- |
-| `content-preview` | 표기 검사 단계와 검토 단계 |
-| 사용자 하네스 지침 | 한국어 산출물 점검 절 |
+가리키는 문서는 `grep -rl korean-check --include='*.md' .` 로 찾는다.
 
 ## 전제
 
@@ -28,18 +24,18 @@
 
 ## 설치
 
-스킬을 글로벌 스킬 디렉터리에 심링크한다.
+스킬을 글로벌 스킬 디렉터리에 심링크한다. `$CHECKOUT` 은 이 저장소를 체크아웃한 경로다.
 
 ```bash
-ln -sfn <체크아웃 경로>/korean-check ~/.claude/skills/korean-check
+ln -sfn "$CHECKOUT"/korean-check ~/.claude/skills/korean-check
 ```
 
 편집 훅에서 부르려면 검사기 둘도 함께 건다.
 심링크로 걸면 스킬을 고칠 때 훅 설정을 다시 손대지 않는다.
 
 ```bash
-ln -sfn <체크아웃 경로>/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
-ln -sfn <체크아웃 경로>/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
+ln -sfn "$CHECKOUT"/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
+ln -sfn "$CHECKOUT"/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
 ```
 
 `korean-style-check.py` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
@@ -48,7 +44,7 @@ ln -sfn <체크아웃 경로>/korean-check/scripts/check-readability.py ~/.claud
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.
 
 ```bash
-ln -sfn <체크아웃 경로>/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
+ln -sfn "$CHECKOUT"/korean-check/references/korean-style.md ~/.claude/rules/korean-style.md
 ```
 
 **`korean-style.md` 하나만 건다.** 어휘와 문장 구성, 짧은 글 규칙은 채팅 답변에도 적용되므로 항상 실려야 한다.

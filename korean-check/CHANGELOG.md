@@ -3,6 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.22.0
+
+하네스 감사 결과로 중복과 낡은 소유 표기를 정리하고, 별도 검토 대상을 아티팩트 발행 전과 사용자 요청으로 확정한다.
+
+- 별도 검토 역할에 넘기는 때를 「아티팩트 발행 전과 사용자가 요청했을 때」 로 확정한다
+- description 의 유지보수 문장과 SKILL.md 의 매핑 표 위치 설명을 지운다
+- writing-structure.md 의 렌더링 소유자를 content-preview render-traps.md 로 바로잡는다
+- markdown-readability.md 의 「사람이 보는 몫」 표를 review-axes.md 「축」 포인터로 바꾸고, 빠진 종결어미와 한 줄 한 문장, `=`·`→` 압축을 「문장 성분」 축으로 옮긴다
+- markdown-readability.md 의 docstring 중복(훅 모드 종료 코드)과 「긴 한국어 본문은 편집 도구로 쓴다」 를 지운다
+- review-axes.md 의 「검사 결과의 경계」 와 「사실 주장의 근거」 중복 절, korean-style.md 의 종료 코드 0 중복 문장을 지운다
+- checker-maintenance.md 의 모델 행동 관측과 버전 이력 문장을 지운다
+- README 의 참조처 표를 grep 명령으로 바꾸고 설치 명령의 `<체크아웃 경로>` 를 `"$CHECKOUT"` 로 바꾼다
+
 ## 1.20.0
 
 korean-check 를 누가 봐도 어색한 말만 걸러 내는 필터로 바꿨다.
