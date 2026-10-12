@@ -9,7 +9,7 @@
 
 - `WORD_START_PREFIX` 를 튜플 `WORD_START_PREFIXES` 로 바꿨다. 동작은 그대로다
 - checker-maintenance.md: 금지어 앞에 글자가 붙은 합성어가 걸리면 첫 글자를 `WORD_START_PREFIXES` 에 더한다는 규칙을 적었다. 그 글자로 시작하는 금지어 전체에 경계가 걸리므로 `재시험` 처럼 앞에 붙은 합성어를 잡아야 하는 금지어는 더하지 않는다고 함께 적었다
-- `test_repo_markdown_passes` 는 git 저장소 밖이면 건너뛴다. git archive 사본에서 돌리면 `git ls-files` 가 실패했다
+- `test_repo_markdown_passes` 는 git 저장소 밖이거나 git 이 없을 때만 건너뛴다. git archive 사본에서 돌리면 `git ls-files` 가 실패했다. 소유자가 달라 git 이 거부하는 것처럼 저장소 안의 실패는 건너뛰지 않고 실패로 둔다
 
 ## 1.23.0
 

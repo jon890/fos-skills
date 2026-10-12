@@ -11,6 +11,7 @@
 """
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -385,11 +386,17 @@ class TestRepository(unittest.TestCase):
     def test_repo_markdown_passes(self):
         root = Path(__file__).resolve().parents[2]
         # git archive 사본처럼 저장소 밖에서 돌리면 git ls-files 가 실패해 검사할 목록을 얻지 못한다.
-        inside = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"], cwd=root,
-            capture_output=True, text=True,
-        )
+        # 저장소 밖이거나 git 이 없을 때만 건너뛴다. .git 이 깨졌거나 소유자가 달라 git 이 거부한 경우는 실패로 둔다.
+        try:
+            inside = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"], cwd=root,
+                capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"},
+            )
+        except FileNotFoundError:
+            self.skipTest("git 이 없어 추적 중인 .md 목록을 얻을 수 없다")
         if inside.returncode != 0:
+            if "not a git repository" not in inside.stderr:
+                self.fail(f"git 이 저장소를 읽지 못했다: {inside.stderr}")
             self.skipTest("git 저장소 밖이라 추적 중인 .md 목록을 얻을 수 없다")
         files = subprocess.run(
             ["git", "ls-files", "*.md"], cwd=root,
