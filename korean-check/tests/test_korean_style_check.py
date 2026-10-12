@@ -267,6 +267,23 @@ class TestInlinePlus(Base):
     def test_plus_in_code_span_is_not_caught(self):
         self.assertNoWarning("`GPU 수 + 1` 로 센다.\n")
 
+    def test_plus_between_code_spans_is_not_caught(self):
+        self.assertNoWarning("`BASE` + `OFFSET` 으로 계산한다.\n")
+
+    def test_plus_between_constants_is_not_caught(self):
+        self.assertNoWarning("TIMEOUT + RETRY_DELAY 만큼 기다린다.\n")
+
+    def test_plus_between_code_span_and_constant_is_not_caught(self):
+        self.assertNoWarning("`base` + MAX_SIZE 로 상한을 정한다.\n")
+
+    def test_plus_between_words_still_warns(self):
+        done = self.run_on("(배포 + 검증) 을 함께 한다.\n")
+        self.assertIn("인라인 + 연결", done.stdout)
+
+    def test_plus_between_code_span_and_word_still_warns(self):
+        done = self.run_on("`build` + 검증을 함께 한다.\n")
+        self.assertIn("인라인 + 연결", done.stdout)
+
 
 class TestAutoLink(Base):
     """`<https://...>` 형태의 자동 링크 URL 은 제외한다."""
@@ -316,6 +333,16 @@ class TestNonMarkdown(Base):
             capture_output=True, text=True,
         )
         self.assertEqual(done.returncode, 2)
+
+    def test_unknown_option_is_reported_as_option_by_check_sh(self):
+        path = self.write("a.md", "문제가 없는 문장이다.\n")
+        done = subprocess.run(
+            [str(SCRIPT.parent / "check.sh"), "--bogus", str(path)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("다루지 않는 옵션", done.stderr)
+        self.assertNotIn("대상이 없다", done.stderr)
 
 
 class TestExitCode(Base):
