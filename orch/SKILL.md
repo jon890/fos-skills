@@ -1,0 +1,99 @@
+---
+name: orch
+description: |
+  Orca orchestration 으로 worker 를 띄워 PR 머지와 정리까지 끝내는 코디네이터 절차다.
+  에이전트와 모델 고르기, 지시서, 띄우기, 기다리기, 답하기, 완료 검증, 머지와 정리를 다룬다.
+  "/orch", "worker 띄워", "worker 로 맡겨", "병렬로 맡겨", "코디네이터", "머지 큐",
+  "worker_done 확인", "PR 머지하고 정리" 같은 요청이면 이 스킬을 쓴다.
+  다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
+  orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
+metadata:
+  version: "1.0.0"
+---
+
+# orch
+
+**목표: worker 가 보고한 완료가 실제로 끝난 작업이고, 머지한 뒤 워크트리, 브랜치, 대기 프로세스가 남지 않는다.**
+
+명령 문법과 lifecycle 은 Orca 의 `orchestration` 가이드(`orca skills get orchestration`)가 소유한다.
+이 스킬은 그 가이드에 없는 코디네이터의 판단과, 각 단계에서 같은 실패를 피하는 규칙을 담는다.
+`$SKILL_DIR` 은 이 스킬 번들 경로다.
+
+## 언제 쓰나
+
+| 상황 | 방식 |
+| --- | --- |
+| 현재 세션이 연 저장소가 아닌 곳의 파일을 고치고 커밋, 푸시해야 한다 | 이 스킬로 worker 를 띄운다 |
+| 다른 저장소를 조회하거나 로그를 보거나 이미 있는 스크립트를 실행한다 | 현재 세션에서 직접 한다 |
+| 현재 저장소 안의 독립적이고 큰 작업이다(구현, PR, 머지까지 가는 일) | 이 스킬로 worker 를 띄운다 |
+| 결과만 받으면 되는 짧은 조사, 판정, 리뷰 | 하위 에이전트를 쓴다 |
+| 사용자가 감독 없이 작업을 통째로 넘기라고 했다 | `orca-cli` 로 handoff 한다 |
+
+현재 저장소의 큰 작업도 worker 로 띄운다. 사용자가 Orca 화면에서 어느 worker 가 어느 워크트리에서 무엇을 하는지 보고, 중간에 직접 끼어들 수 있어야 한다.
+저장소마다 변경이 독립된 검토 단위로 남아야 한다. 한 세션이 여러 저장소의 브랜치를 쥐면 어느 변경이 어디에 얹혔는지 추적하기 어렵다.
+
+## 원칙
+
+- **사용자 요청을 바로 worker 에게 넘기지 않는다.** 코드와 운영 상태로 사실을 먼저 확인하고, 사용자가 정할 것은 배경과 권장안을 붙여 묻고 나서 맡긴다.
+  요청 문장 그대로 넘기면 worker 가 사실과 다른 전제로 구현하거나, 사용자가 정해야 할 것을 worker 가 대신 정한다
+- **worker 는 모두 코디네이터가 띄운다.** worker 는 다시 worker 를 띄우지 못한다(`nested_worker_depth_exceeded`).
+  일을 나눠야 하면 worker 에게는 계획서와 worktree 준비까지만 맡기고, 소계획마다 `ready: <plan> <worktree 절대경로> <지시서 절대경로>` status 를 받아 코디네이터가 띄운다
+- **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다
+- **범위가 큰 일은 지시서에 「`planning` 으로 설계를 확정한 뒤 `build-with-teams` 로 구현한다」 를 적는다.** 보안 경계, 저장 구조, 여러 화면에 걸친 변경이 여기 해당한다
+- **worker 보고서의 사용자 안내(누를 단추, 순서, 화면 문구)는 코드나 화면으로 확인한 뒤 사용자에게 전한다.** 계획한 화면과 실제 화면이 다를 수 있다
+- **「따로 맡기겠다」 고 말한 일은 그 자리에서 맡기거나 할 일로 남긴다.** 말로만 미룬 일은 다음 요청에 묻혀 빠진다
+
+## 레포 오버레이
+
+`<repo-root>/.claude/orch-overlay.md` 가 있으면 그 저장소의 worker 를 띄우기 전에 **먼저 읽고** 코어보다 우선한다.
+오버레이는 기준 브랜치, 검증 명령, 머지 전 명령, CI runner 장애 대응, 원격 접속 규칙, 마이그레이션 순서를 소유한다.
+무엇을 적는지는 [`references/overlay.md`](references/overlay.md) 가 소유한다. 없으면 코어 기본값으로 동작한다.
+
+## 실행 절차
+
+worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에 두면 4단계 대기는 run 하나에 하나만 건다.
+각 단계는 진입할 때 해당 reference 를 읽고 수행한다. 통과 조건을 확인한 뒤 다음으로 간다.
+
+| 단계 | 이름 | 통과 조건 | reference |
+| --- | --- | --- | --- |
+| 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 고른 이유가 dispatch 보고에 한 줄로 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
+| 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다 | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
+| 3 | 띄우기 | `worker-start` 가 종료 코드 0 으로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
+| 4 | 기다리기 | 이 세션의 백그라운드 `check --wait` 가 하나만 돌고, 앞 대기가 돌려준 `deliveryId` 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages.py` 로 읽었다 | [`references/waiting.md`](references/waiting.md) |
+| 5 | 답하고 지시 보내기 | 답과 지시를 worker 의 마지막 메시지에 `reply` 로 보냈고, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
+| 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다. 앞 PR 이 머지된 뒤라면 최신 base 와 합친 사본에서 통과했다 | [`references/verification.md`](references/verification.md) |
+| 7 | 머지와 정리 | `merge-queue.sh` 가 `QUEUE-DONE` 으로 끝났고, 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
+
+진행 보드를 쓰는 환경이면 상태가 바뀌는 단계마다 보드를 고친다. 보드가 없으면 건너뛴다.
+
+## 1. 에이전트 고르기
+
+Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
+
+## 2. 지시서 쓰기
+
+저장소마다 공통 지시서를 한 번 만들고, 개별 지시서는 담당 범위와 완료 기준만 적는다.
+넣을 항목과 그 이유는 reference 가 소유한다.
+
+## 3. 띄우기
+
+원격을 갱신한 뒤 `origin/<기준 브랜치>` 위에 띄우고, 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
+첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
+
+## 4. 기다리기
+
+`check --wait` 를 백그라운드로 하나만 걸고, 깨어나면 `triage-messages.py` 로 `worker_done`, `escalation`, `question` 을 먼저 본다.
+heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.
+
+## 5. 답하고 지시 보내기
+
+답은 마지막 메시지에 `reply` 로 단다. 입력 대기로 멈춘 worker, 끝난 worker, PR 생성과 회신이 막힌 worker 는 각각 reference 의 해당 절을 따른다.
+
+## 6. 완료 검증
+
+`worker_done` 은 근거가 아니다. git 으로 완료 기준을 대조하고, diff 를 읽고, 검사를 다시 돌린다.
+충돌을 직접 풀었으면 reference 의 「충돌을 직접 풀 때」 를 따른다.
+
+## 7. 머지와 정리
+
+`merge-queue.sh` 로 머지하고, 머지 직후 같은 흐름에서 정리 목록을 모두 한다. 워크트리는 `remove-worktree.sh` 로만 지운다.
