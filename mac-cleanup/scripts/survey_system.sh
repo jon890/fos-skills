@@ -63,6 +63,7 @@ fi
 section "도구 캐시"
 size_of() { [ -e "$1" ] && du -sh "$1" 2>/dev/null; }
 size_of "$HOME/.npm"
+size_of "$HOME/.npm/_npx"
 if have pnpm; then size_of "$(pnpm store path 2>/dev/null)"; fi
 size_of "$HOME/.gradle"
 size_of "$HOME/.m2"

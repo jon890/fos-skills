@@ -47,11 +47,28 @@ git -C "$REPO" worktree remove "$WT"
 ## 브랜치
 
 `main`, `master`, `develop` 은 기준 브랜치가 아니어도 후보에서 빠진다. 기본 브랜치나 배포 브랜치로 쓰는 이름이다.
-머지된 브랜치는 `-d` 로 지운다. 머지가 안 됐다고 나오면 지우지 않는다.
+머지된 브랜치는 `-d` 로 지운다.
 
 ```bash
 git -C "$REPO" branch -d "$BR"
 ```
+
+`-d` 가 `not fully merged` 로 거절할 수 있다(실측: 후보 둘이 거절됐다).
+`survey_git.py` 는 원격 기준 브랜치(JSON 의 `base`)와 비교하고, `git branch -d` 는 upstream 이 사라진 브랜치를 로컬 HEAD 와 비교하기 때문이다.
+로컬 main 이 뒤처졌거나 detached HEAD 이면 `origin/<기준>` 에는 포함된 브랜치도 거절된다.
+거절되면 아래 두 가지를 다시 확인하고, 둘 다 맞을 때만 `-D` 로 지운다. 하나라도 다르면 유지한다.
+`$BASE` 는 조사 JSON 의 `base` 다.
+
+1. `git -C "$REPO" rev-parse "$BR"` 가 조사 JSON 의 `tip` 과 같다
+2. `git -C "$REPO" merge-base --is-ancestor "$BR" "$BASE"` 가 종료 코드 0 이다
+
+```bash
+git -C "$REPO" rev-parse "$BR"
+git -C "$REPO" merge-base --is-ancestor "$BR" "$BASE"; echo $?
+git -C "$REPO" branch -D "$BR"
+```
+
+사용자 체크아웃(로컬 main pull 등)은 이 때문에 바꾸지 않는다.
 
 upstream 이 사라졌고 머지 판정이 안 된 브랜치는 PR 이 MERGED 인지 확인한 뒤에만 `-D` 를 쓴다.
 확인할 수 없으면(gh 인증 실패, PR 없음) 유지한다.

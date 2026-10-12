@@ -6,7 +6,7 @@ description: |
   "오래된 세션 정리", "머지된 브랜치 정리", "워크트리 정리", "disk cleanup" 같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, 스킬 문서) 정리는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # mac-cleanup
@@ -21,7 +21,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 조사 | 조사 스크립트가 모두 종료 코드 0 으로 끝났고, 정리 전 수치(디스크 여유, 스왑 사용량, 메모리 여유 비율)를 적어 두었다 | |
+| 1 | 조사 | `--fetch`, `--check-prs` 사용 여부를 사용자에게 물어 정했고, 조사 스크립트가 그 옵션으로 모두 종료 코드 0 으로 끝났고, 정리 전 수치(디스크 여유, 스왑 사용량, 메모리 여유 비율)를 적어 두었다 | |
 | 2 | 후보 분류 | 모든 후보에 크기와 등급(안전 / 확인 필요 / 유지)이 붙었다 | `references/targets.md` |
 | 3 | 승인 | 사용자가 묶음별로 고른 답이 있다 | |
 | 4 | 실행 | 승인한 묶음의 명령만 돌렸고 각 명령의 종료 코드와 확보량을 기록했다 | `references/git-and-sessions.md` |
@@ -32,6 +32,10 @@ metadata:
 `$SKILL_DIR` 은 이 스킬 번들 경로다. 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
 `survey_system.sh` 는 `du` 때문에 1분에서 5분 걸리므로 백그라운드로 돌리고, 나머지를 그동안 돌린다.
 
+조사를 돌리기 전에 아래 두 옵션을 사용자에게 먼저 묻는다. 3단계 승인 질문에 섞지 않는다.
+승인 뒤에 옵션을 바꿔 다시 돌리면 후보가 새로 나와 승인을 다시 받아야 한다(실측: `--check-prs` 로 "PR 머지됨(-D)" 후보가 24개 새로 나왔다).
+고른 옵션으로 돌린 결과로 2단계 분류를 한다.
+
 ```bash
 bash "$SKILL_DIR/scripts/survey_system.sh"
 python3 "$SKILL_DIR/scripts/survey_sessions.py"
@@ -40,8 +44,8 @@ bash "$SKILL_DIR/scripts/survey_gradle.sh"
 python3 "$SKILL_DIR/scripts/docker_images.py"
 ```
 
-- `survey_git.py` 는 기본으로 원격 ref 를 갱신하지 않는다. 마지막 fetch 이후의 머지는 보이지 않으므로, 후보를 믿기 전에 `--fetch` 로 한 번 돌릴지 사용자에게 묻는다.
-- squash 머지는 `--is-ancestor` 로 보이지 않는다. `--check-prs` 를 함께 쓸지도 묻는다. 머지 판정이 안 된 브랜치마다 `gh` 원격 호출이 생기므로 브랜치가 많으면 오래 걸린다.
+- `survey_git.py` 는 기본으로 원격 ref 를 갱신하지 않는다. 마지막 fetch 이후의 머지는 보이지 않으므로, 후보를 믿기 전에 `--fetch` 로 돌릴지 이 단계에서 묻는다.
+- squash 머지는 `--is-ancestor` 로 보이지 않는다. `--check-prs` 를 함께 쓸지도 이 단계에서 묻는다. 머지 판정이 안 된 브랜치마다 `gh` 원격 호출이 생기므로 브랜치가 많으면 오래 걸린다.
   합계의 `gh 확인 실패` 가 0 이 아니면 그 브랜치는 PR 을 확인하지 못한 것이다. `--gh-timeout` 을 늘려 다시 돌리거나, 보고에 확인하지 못했다고 적는다.
 - `docker_images.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌리고, 떠 있지 않을 때만 Docker 항목을 건너뛴다. 부팅 직후에는 Colima 가 아직 올라오지 않아 종료 코드 1 이 나온다.
 - `survey_system.sh` 의 Docker 절이 같은 이유로 건너뛰었다면 Colima 가 올라온 뒤 그 절만 다시 보면 된다.

@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.3.0
+
+`targets.md` 가 `npm cache clean --force` 는 `_cacache` 만 비운다고 적고, `~/.npm/_npx` 를 "확인 필요" 후보로 더했다. 이전에는 `~/.npm` 이 전부 `_npx` 여도 명령이 종료 코드 0 에 확보량 0 으로 끝났다. `survey_system.sh` 가 `~/.npm/_npx` 크기를 따로 한 줄 보인다.
+`git-and-sessions.md` 가 `git branch -d` 의 `not fully merged` 거절을 다룬다. 조사 JSON 의 `tip` 과 `git rev-parse` 가 같고 `merge-base --is-ancestor "$BR" "$BASE"` 가 0 일 때만 `-D` 로 지우고, 하나라도 다르면 유지한다.
+`targets.md` 가 Docker 이미지 확보량을 "최대" 로 적고 약속하지 않게 했다. 남는 이미지와 레이어를 공유하면 실제 확보량이 미사용 합계보다 훨씬 작다.
+`targets.md` 가 `docker volume prune` 을 금지하고, 조사 때 열어 본 volume 만 `docker volume rm` 으로 지우게 했다. 실행 직전에 testcontainers 의 ryuk 가 떠 있는지 본다.
+SKILL.md 가 `--fetch` 와 `--check-prs` 를 1단계에서 묻게 하고 통과 조건에 넣었다. 이전에는 승인 뒤 옵션을 바꿔 다시 조사해 후보가 새로 나왔다.
+
 ## 1.2.0
 
 `survey_git.py` 가 브랜치와 워크트리의 끝 커밋을 JSON 의 `tip`(전체 해시)과 텍스트의 `끝=`(짧은 해시)로 출력한다. 이전에는 `-D` 직전에 대조할 조사 때 값이 출력에 없어 `gh` 를 다시 불러야 했다.

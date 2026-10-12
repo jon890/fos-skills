@@ -34,16 +34,43 @@
 | pnpm | 안전 | `pnpm store prune` |
 | Docker 빌드 캐시 | 안전 | `docker builder prune -af` |
 
+**`npm cache clean --force` 는 `~/.npm/_cacache` 만 비운다.** `~/.npm/_npx` 는 그대로라 종료 코드 0 이어도 확보량이 0 일 수 있다(실측: `~/.npm` 3.4GB 가 전부 `_npx` 였다). 확보량은 `~/.npm` 합계가 아니라 `_cacache` 크기로 약속한다.
+
 **`pnpm store prune` 은 참조되지 않는 패키지만 지운다.** store 대부분이 프로젝트에서 쓰이면 거의 줄지 않는다(실측 13GB 중 114MB). 큰 확보량을 약속하지 않는다.
+
+## npx 캐시
+
+| 대상 | 등급 | 이유 |
+| --- | --- | --- |
+| `~/.npm/_npx` | 확인 필요 | npx 로 띄운 MCP 서버 같은 실행 중 프로세스가 그 디렉터리를 쓴다 |
+
+30일 지난 하위 디렉터리만, 그 경로를 쓰는 프로세스가 없는지 확인한 뒤 지운다(실측: 44개 중 25개, 1.6GB).
+`$DAYS` 는 사용자가 정한 기준 일수이고, `$DIR` 는 위 `find` 가 보인 하위 디렉터리다.
+
+```bash
+find ~/.npm/_npx -mindepth 1 -maxdepth 1 -type d -mtime +"$DAYS"
+pgrep -fl _npx
+rm -rf "$DIR"
+```
+
+`pgrep` 이 그 디렉터리를 쓰는 프로세스를 보이면 그 디렉터리는 남긴다.
 
 ## Docker
 
 - **Colima 에서 prune 해도 호스트 디스크는 바로 늘지 않는다.** VM 디스크 파일이 그대로라 `colima ssh -- sudo fstrim -av` 를 돌려야 반영된다(실측: 76GB 에서 13GB).
-- **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** `docker volume prune -f` 는 익명 volume 만 지운다. 이름 있는 volume 과 멈춘 컨테이너에 붙은 volume 은 남는다.
-  기본 등급은 확인 필요다. 하나를 열어 내용을 확인하고 등급을 정한다. 최근 몇 분 안에 생긴 volume 이 있으면 다른 세션이 테스트 중일 수 있으니 사용자에게 알린다.
+- **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** **`docker volume prune` 을 쓰지 않는다.** 정리 도중 다른 세션이 시작한 테스트의 volume 까지 지울 수 있다(실측: 정리 중 `testcontainers/ryuk` 컨테이너가 떴다).
+  기본 등급은 확인 필요다. 하나를 열어 내용을 확인하고 등급을 정한다. 조사 때 열어 본 volume 만 이름을 지정해 `docker volume rm` 으로 지운다.
+  실행 직전에 ryuk 가 떠 있는지 보고, 떠 있으면 다른 세션이 테스트 중이니 사용자에게 알린다. 최근 몇 분 안에 생긴 volume 도 같다.
+
+```bash
+docker ps --filter ancestor=testcontainers/ryuk:"$TAG"
+docker ps --format '{{.Image}}' | grep ryuk   # 태그를 모를 때
+docker volume rm "$VOLUME"
+```
 - 이미지는 `scripts/docker_images.py` 가 사용 중, 미사용, 최근 생성으로 나눈다.
   컨테이너의 `Image` 값과 `repo:tag` 를 비교할 때 태그 생략(`:latest`)을 맞춘다. 그대로 비교하면 실행 중 컨테이너가 쓰는 이미지가 미사용으로 잡힌다.
 - 오래됐거나 같은 이미지의 이전 버전, `<none>` 태그는 안전에 가깝다. 최근 하루 안에 만든 로컬 테스트 이미지는 확인 필요다.
+- 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다(실측: `docker system df` 와 `docker_images.py` 의 미사용 합계는 5.1GB, `docker image prune -af` 의 확보량은 1.14GB). 호스트 디스크의 실제 확보는 `fstrim` 뒤에 잰다.
 - 확인용으로 받은 이미지(`alpine` 등)는 끝나고 지운다.
 
 ## Gradle
