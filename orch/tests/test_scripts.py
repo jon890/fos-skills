@@ -1,0 +1,250 @@
+"""orch 스크립트를 검증한다. orca 와 GitHub 에는 닿지 않는다. gh, git, sleep 은 가짜를 PATH 앞에 둔다."""
+
+import datetime as dt
+import importlib.util
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), SCRIPTS / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+tm = load("triage-messages")
+gp = load("goal-progress")
+
+
+def msg(i, kind, created="2026-10-12T15:00:00Z", who="term_a", body="본문"):
+    return {"id": i, "type": kind, "subject": f"s{i}", "body": body, "payload": None,
+            "created_at": created, "from_handle": who}
+
+
+class TriageTest(unittest.TestCase):
+    def test_parses_objects_mixed_with_noise(self):
+        text = '{"_keepalive":true}\n{"result":{"deliveryId":"d1","messages":[]}}\nexit code 0\n{"result":{}}'
+        objs = tm.parse_objects(text)
+        self.assertEqual(3, len(objs))
+        self.assertEqual(["d1"], tm.collect(objs)[0])
+
+    def test_groups_priority_first_and_counts_heartbeats(self):
+        msgs = [msg("1", "heartbeat"), msg("2", "status"), msg("3", "worker_done"),
+                msg("4", "heartbeat", who="term_b"), msg("5", "question"), msg("6", "heartbeat")]
+        r = tm.triage(msgs)
+        self.assertEqual(["worker_done", "question", "status"], list(r["groups"]))
+        self.assertEqual({"term_a": 2, "term_b": 1}, r["heartbeats"])
+
+    def test_dedups_by_id_across_deliveries(self):
+        obj = {"result": {"deliveryId": "d", "messages": [msg("1", "worker_done")]}}
+        _, messages = tm.collect([obj, obj])
+        self.assertEqual(1, len(messages))
+
+    def test_since_filters_old_messages(self):
+        msgs = [msg("1", "worker_done", "2026-10-12T14:00:00Z"), msg("2", "worker_done", "2026-10-12T16:00:00Z")]
+        r = tm.triage(msgs, tm.parse_since("2026-10-12T15:00:00Z"))
+        self.assertEqual(["2"], [m["id"] for m in r["groups"]["worker_done"]])
+
+    def test_relative_since(self):
+        now = dt.datetime(2026, 10, 12, 16, tzinfo=dt.timezone.utc)
+        self.assertEqual(dt.datetime(2026, 10, 12, 14, 30, tzinfo=dt.timezone.utc), tm.parse_since("90m", now))
+        self.assertEqual(dt.datetime(2026, 10, 11, 16, tzinfo=dt.timezone.utc), tm.parse_since("1d", now))
+
+    def test_render_truncates_body(self):
+        r = tm.triage([msg("1", "escalation", body="가" * 20)])
+        out = tm.render(["d"], r, 5)
+        self.assertIn("가" * 5 + " …(잘림)", out)
+
+    def test_file_without_result_fails(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write("nothing here")
+        try:
+            self.assertEqual(1, tm.main([f.name]))
+        finally:
+            os.unlink(f.name)
+
+
+class GoalProgressTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.board = self.tmp / "board.json"
+        self.board.write_text(json.dumps({"items": [
+            {"id": "goal", "status": "goal", "title": "목표"},
+            {"id": "a", "status": "done", "title": "A"},
+            {"id": "b", "status": "doing", "title": "B"},
+        ]}), encoding="utf-8")
+        self.calls = self.tmp / "calls.json"
+        self.bin = self.tmp / "board.py"
+        self.bin.write_text(f"import json,sys\njson.dump(sys.argv[1:], open({str(self.calls)!r}, 'w'))\n")
+
+    def test_progress_counts_done_and_missing(self):
+        by_id = gp.board_items(json.loads(self.board.read_text()))
+        done, details, missing = gp.progress(by_id, ["a", "b", "gone"])
+        self.assertEqual(1, done)
+        self.assertEqual(["✓ A", "B", "gone"], details)
+        self.assertEqual(["gone"], missing)
+
+    def test_sets_progress_and_details(self):
+        items = self.tmp / "items.txt"
+        items.write_text("# 오늘\na\n\nb\n", encoding="utf-8")
+        rc = gp.main(["goal", "--items-file", str(items), "--board", str(self.board),
+                      "--board-bin", str(self.bin), "--details"])
+        self.assertEqual(0, rc)
+        argv = json.loads(self.calls.read_text())
+        self.assertEqual(["set", "goal", "--progress", "1/2", "--file", str(self.board),
+                          "--detail", "✓ A", "--detail", "B"], argv)
+
+    def test_dry_run_does_not_call_board(self):
+        rc = gp.main(["goal", "a", "--board", str(self.board), "--board-bin", str(self.bin), "--dry-run"])
+        self.assertEqual(0, rc)
+        self.assertFalse(self.calls.exists())
+
+    def test_unknown_goal_fails(self):
+        self.assertEqual(1, gp.main(["nope", "a", "--board", str(self.board), "--dry-run"]))
+
+
+FAKE_GH = textwrap.dedent("""\
+    #!/usr/bin/env python3
+    import json, os, subprocess, sys
+    state = json.load(open(os.environ["FAKE_STATE"]))
+    args = sys.argv[1:]
+    log = open(os.environ["FAKE_LOG"], "a")
+    log.write(" ".join(args) + "\\n")
+    if args[:2] == ["pr", "merge"]:
+        pr = state[args[2]]
+        if "--match-head-commit" in args and args[args.index("--match-head-commit") + 1] == pr["headRefOid"]:
+            pr["state"] = "MERGED"
+            json.dump(state, open(os.environ["FAKE_STATE"], "w"))
+            print("merged")
+            sys.exit(0)
+        print("head mismatch"); sys.exit(1)
+    if args[:2] == ["pr", "list"]:
+        print(os.environ.get("FAKE_BASED", "0")); sys.exit(0)
+    if args[:2] == ["pr", "view"]:
+        pr = state[args[2]]
+        jq = args[args.index("--jq") + 1]
+        out = subprocess.run(["jq", "-r", jq], input=json.dumps(pr), capture_output=True, text=True)
+        sys.stdout.write(out.stdout)
+        sys.exit(out.returncode)
+    sys.exit(3)
+    """)
+
+FAKE_GIT = textwrap.dedent("""\
+    #!/usr/bin/env python3
+    import json, os, sys
+    args = sys.argv[1:]
+    open(os.environ["FAKE_LOG"], "a").write("git " + " ".join(args) + "\\n")
+    if args[:1] == ["rev-parse"]:
+        print(os.environ.get("FAKE_REMOTE_HEAD", ""))
+    sys.exit(0)
+    """)
+
+
+@unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "jq 와 bash 가 필요하다")
+class MergeQueueTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        bindir = self.tmp / "bin"
+        bindir.mkdir()
+        for name, body in (("gh", FAKE_GH), ("git", FAKE_GIT), ("sleep", "#!/bin/sh\nexit 0\n")):
+            p = bindir / name
+            p.write_text(body)
+            p.chmod(p.stat().st_mode | stat.S_IEXEC)
+        self.state = self.tmp / "state.json"
+        self.log = self.tmp / "log.txt"
+        self.env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
+                        FAKE_LOG=str(self.log), FAKE_REMOTE_HEAD="abc")
+
+    def pr(self, **over):
+        base = {"state": "OPEN", "statusCheckRollup": [{"status": "COMPLETED", "conclusion": "SUCCESS"}],
+                "mergeable": "MERGEABLE", "url": "https://git.example.com/owner/repo/pull/1",
+                "headRefName": "feat", "headRefOid": "abc", "isCrossRepository": False}
+        base.update(over)
+        return base
+
+    def run_queue(self, state, *args, threads="0"):
+        self.state.write_text(json.dumps(state))
+        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.tmp),
+               "--threads-cmd", f"echo {threads}", *args]
+        return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+
+    def test_merges_and_runs_before_command_with_env(self):
+        marker = self.tmp / "before.txt"
+        r = self.run_queue({"1": self.pr()}, f"1:echo \"$PR $BRANCH $OWNER/$REPO\" > {marker}")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("QUEUE-DONE", r.stdout)
+        self.assertEqual("1 feat owner/repo\n", marker.read_text())
+        self.assertIn("pr merge 1 --merge --match-head-commit abc", self.log.read_text())
+        self.assertIn("git push -q origin --delete feat", self.log.read_text())
+
+    def test_stops_on_unresolved_threads(self):
+        r = self.run_queue({"1": self.pr()}, "1", threads="2")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("threads=2", r.stdout)
+        self.assertNotIn("pr merge", self.log.read_text())
+
+    def test_stops_on_failed_check(self):
+        r = self.run_queue({"1": self.pr(statusCheckRollup=[{"status": "COMPLETED", "conclusion": "FAILURE"}])}, "1")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("실패한 체크 1 개", r.stdout)
+
+    def test_stops_on_head_mismatch(self):
+        self.env["FAKE_REMOTE_HEAD"] = "def"
+        r = self.run_queue({"1": self.pr()}, "1")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("head 불일치", r.stdout)
+
+    def test_stops_when_before_command_fails(self):
+        r = self.run_queue({"1": self.pr()}, "--before", "exit 3", "1")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("머지 전 명령 실패", r.stdout)
+
+    def test_skips_already_merged_and_keeps_fork_branch(self):
+        state = {"1": self.pr(state="MERGED"), "2": self.pr(isCrossRepository=True)}
+        r = self.run_queue(state, "1", "2")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 이미 MERGED", r.stdout)
+        self.assertNotIn("--delete", self.log.read_text())
+
+    def test_stops_when_head_moves_during_before_command(self):
+        move = (f"python3 -c \"import json; p='{self.state}'; d=json.load(open(p)); "
+                f"d['1']['headRefOid']='new'; json.dump(d, open(p, 'w'))\"")
+        r = self.run_queue({"1": self.pr()}, f"1:{move}")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("검사 뒤 HEAD 가 바뀌었다", r.stdout)
+        self.assertNotIn("pr merge", self.log.read_text())
+
+    def test_keeps_release_and_stacked_base_branches(self):
+        r = self.run_queue({"1": self.pr(headRefName="release/1.0")}, "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.env["FAKE_BASED"] = "1"
+        r2 = self.run_queue({"2": self.pr()}, "2")
+        self.assertEqual(0, r2.returncode, r2.stdout + r2.stderr)
+        self.assertNotIn("--delete", self.log.read_text())
+
+    def test_missing_option_value_is_usage_error(self):
+        r = self.run_queue({}, "1", "--check-timeout")
+        self.assertEqual(2, r.returncode)
+        r = self.run_queue({}, "--check-timeout", "1.5", "1")
+        self.assertEqual(2, r.returncode)
+
+    def test_unknown_option_is_usage_error(self):
+        r = self.run_queue({}, "--nope", "1")
+        self.assertEqual(2, r.returncode)
+
+
+if __name__ == "__main__":
+    unittest.main()
