@@ -29,13 +29,7 @@ GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/<N>/comments
 삭제 경로에는 PR 번호가 없다. 둘이 달라서 헷갈린다.
 
 조회와 답글도 스크립트를 쓴다. 경로와 호스트를 매번 손으로 맞추지 않는다.
-
-```bash
-scripts/gh-review-list.sh <owner/repo> <PR>                      # 전체 댓글
-scripts/gh-review-list.sh <owner/repo> <PR> --thread <root댓글id>  # 한 스레드
-scripts/gh-review-list.sh <owner/repo> <PR> --mine                # 내가 쓴 것만
-scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심낱말>...
-```
+인자는 `scripts/gh-review-list.sh` 와 `scripts/gh-review-post.sh` 의 머리 주석이 소유한다.
 
 ## 등록은 리뷰 단위로 한다
 
@@ -58,38 +52,17 @@ scripts/gh-review-post.sh --reply <owner/repo> <PR> <댓글id> <body.md> <핵심
 줄이 diff 에 없어 실제로 `line: null` 로 붙은 댓글은 `pulls/{N}/comments` 목록에서 빠진다.
 **등록한 개수와 `pulls/{N}/comments` 에서 리뷰 id 로 고른 개수를 비교한다.** 모자라면 그것이 신호다.
 
-## payload 파일을 다시 쓸 때
+## 등록은 스크립트로 한다
 
-zsh 의 `noclobber` 는 기존 파일 덮어쓰기를 거부한다.
-오류는 `file exists` 한 줄뿐이고 **뒤이은 `gh api` 는 그대로 성공한다.**
-그러면 이전 payload 가 다시 등록된다. 실제로 엉뚱한 댓글이 올라가 삭제한 적이 있다.
-
-세 가지를 같이 지킨다.
-
-- 파일명을 새로 만든다
-- `rm -f` 를 먼저 한다
-- **등록 직전에 본문을 검증한다.** 등급 접두사와 핵심 낱말이 들어 있는지 본다
-
-`gh-review-post.sh` 가 이 셋을 강제한다. 직접 `gh api` 를 부르지 않는다.
-
-```bash
-scripts/gh-review-post.sh <owner/repo> <PR> <path> <line> <body.md> <핵심낱말>...
-```
-
-핵심 낱말은 하나 이상 필수다. 없으면 스크립트가 등록하지 않고 종료한다.
-등급 접두사만 보는 검증은 접두사가 같은 옛 본문을 그대로 통과시키기 때문이다.
-`DRY_RUN=1` 을 앞에 붙이면 검증만 하고 등록하지 않는다.
+**`gh api` 를 직접 부르지 않고 `gh-review-post.sh` 로 등록한다.**
+zsh 의 `noclobber` 는 기존 payload 파일 덮어쓰기를 `file exists` 한 줄로 거부하고,
+뒤이은 `gh api` 는 그대로 성공해 이전 payload 를 다시 등록한다.
+스크립트는 매번 새 임시 파일을 쓰고 등록 직전에 본문을 검증한다.
 
 ## 등록 뒤 확인
 
-`pulls/{N}/comments` 를 `--paginate` 로 받아 등록 응답의 리뷰 id 로 고르고, 붙은 위치와 첫 줄의 등급 표기를 본다.
-`gh-review-post.sh` 가 이 조회를 하고, 등록한 인라인 수와 찾은 수가 다르면 stderr 에 경고하고 종료 코드 1 로 끝낸다.
-
-```bash
-GH_HOST=<호스트> gh api --paginate repos/<owner>/<repo>/pulls/<N>/comments \
-  --jq '.[] | select(.pull_request_review_id == <리뷰id> and .line != null)
-        | {id, path, line, head: (.body | split("\n")[0])}'
-```
+`gh-review-post.sh` 가 등록 뒤에 붙은 위치와 첫 줄을 조회해 출력한다.
+**종료 코드 1 은 등록한 인라인 일부가 줄에 붙지 않았다는 뜻이다.** 그 줄이 diff 에 있는지 확인한다.
 
 본문 전문을 채팅에 다시 쓰지 않는다.
 
@@ -103,10 +76,7 @@ GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/comments/<댓글id> -X DEL
 
 지운 뒤 올바른 본문으로 다시 등록한다. 사용자에게 무엇을 왜 지웠는지 알린다.
 
-## 재트리거 토큰
-
-본문에 `/review`, `@claude`, `@github-actions` 같은 문자열이 그대로 들어가면
-봇 워크플로가 다시 돈다. 봇을 지칭해야 하면 코드 스팬으로 감싼다.
+## 자동 링크
 
 `#숫자` 는 자동으로 다른 이슈나 PR 로 링크된다.
 리뷰 항목 번호로 쓸 생각이면 백틱으로 감싼다.
