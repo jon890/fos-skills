@@ -355,6 +355,48 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual(1, r.returncode)
         self.assertIn("--required 로 준다", r.stdout)
 
+    def allow_fail_state(self, *failed):
+        checks = [self.check("backend")] + [dict(self.check(n), conclusion="FAILURE") for n in failed]
+        return {"1": self.pr(statusCheckRollup=checks)}
+
+    def test_failed_optional_check_stops_without_allow_fail(self):
+        r = self.run_queue(self.allow_fail_state("claude-review"), "--required", "backend", "1")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("실패한 체크 1 개", r.stdout)
+        self.assertNotIn("pr merge", self.log.read_text())
+
+    def test_allow_fail_merges_and_warns(self):
+        r = self.run_queue(self.allow_fail_state("claude-review"), "--required", "backend",
+                           "--allow-fail", "claude-review", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("경고: 1 실패를 허용한 체크 claude-review", r.stdout)
+        self.assertIn("1 MERGED", r.stdout)
+        self.assertLess(r.stdout.index("경고:"), r.stdout.index("MERGED"))
+
+    def test_allow_fail_does_not_cover_other_failed_checks(self):
+        r = self.run_queue(self.allow_fail_state("claude-review", "browser"), "--required", "backend",
+                           "--allow-fail", "claude-review", "1")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("실패한 체크 1 개", r.stdout)
+        self.assertNotIn("pr merge", self.log.read_text())
+
+    def test_allow_fail_with_required_name_is_usage_error(self):
+        r = self.run_queue(self.allow_fail_state(), "--required", "backend,lint", "--allow-fail", "lint", "1")
+        self.assertEqual(2, r.returncode)
+        self.assertIn("필수 체크의 실패는 허용할 수 없다", r.stderr)
+
+    def test_allow_fail_with_rule_required_name_stops(self):
+        state = self.allow_fail_state("backend")
+        state["_rules"] = self.rules("backend")
+        r = self.run_queue(state, "--allow-fail", "backend", "1")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("필수 체크의 실패는 허용할 수 없다", r.stdout)
+        self.assertNotIn("pr merge", self.log.read_text())
+
+    def test_allow_fail_rejects_quotes(self):
+        r = self.run_queue({}, "--allow-fail", 'a"b', "1")
+        self.assertEqual(2, r.returncode)
+
     def test_missing_option_value_is_usage_error(self):
         r = self.run_queue({}, "1", "--check-timeout")
         self.assertEqual(2, r.returncode)
