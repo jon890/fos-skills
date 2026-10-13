@@ -129,6 +129,24 @@ class TestThresholdTerm(Base):
         self.assertPassed("임계값을 넘으면 기준값으로 되돌린다.\n")
 
 
+class TestRawElementTerm(Base):
+    """raw element 를 옮긴 「날 요소」 계열은 막고, 「날짜」 같은 평범한 말은 막지 않는다."""
+
+    def test_phrases_are_caught(self):
+        for phrase in ("날 요소", "날 HTML 요소", "날 태그", "날 <button> 대신"):
+            with self.subTest(phrase=phrase):
+                self.assertCaught(f"{phrase}를 쓴다.\n", "날")
+
+    def test_ordinary_words_pass(self):
+        for text in ("날짜를 적는다.", "그 날 요청이 들어왔다.", "오늘날 요소가 많다.",
+                     "생일날 태그를 단다.", "날씨 HTML 을 만든다.", "a < b 이면 날 수 있다."):
+            with self.subTest(text=text):
+                self.assertPassed(text + "\n")
+
+    def test_recommended_term_passes(self):
+        self.assertPassed("HTML 기본 요소 대신 컴포넌트를 쓴다.\n")
+
+
 class TestVersionTerm(Base):
     """version 의 뜻으로 쓴 「판」 은 막고, 다른 낱말 속의 「판」 은 막지 않는다.
 
