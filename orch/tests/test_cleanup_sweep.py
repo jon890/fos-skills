@@ -36,6 +36,7 @@ class CleanupSweepTest(unittest.TestCase):
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
         self.prs, self.workers, self.terminals, self.held = {}, [], [], []
+        self.orca_fail = False
         self.log = self.tmp / "calls.log"
         self.write_fakes()
 
@@ -57,6 +58,8 @@ class CleanupSweepTest(unittest.TestCase):
                 print(0)
             """)
         orca = fake % "orca" + textwrap.dedent("""\
+            if st.get("orca_fail"):
+                sys.exit(1)
             if a[:2] == ["terminal", "list"]:
                 print(json.dumps({"result": {"terminals": st["terminals"]}}))
             elif a[:2] == ["orchestration", "worker-list"]:
@@ -75,7 +78,8 @@ class CleanupSweepTest(unittest.TestCase):
 
     def save_state(self):
         (self.tmp / "state.json").write_text(json.dumps(
-            {"prs": self.prs, "workers": self.workers, "terminals": self.terminals, "held": self.held}))
+            {"prs": self.prs, "workers": self.workers, "terminals": self.terminals, "held": self.held,
+             "orca_fail": self.orca_fail}))
 
     def worktree(self, name, push=True, commits=1):
         path = self.wts / name
@@ -95,12 +99,12 @@ class CleanupSweepTest(unittest.TestCase):
         self.prs[name] = ["MERGED", head]
         return head
 
-    def run_sweep(self, *args):
+    def run_sweep(self, *args, code=0):
         self.save_state()
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}", ORCA=str(self.bin / "orca"), GH=str(self.bin / "gh"))
         done = subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo), "--wait", "1", *args],
                               capture_output=True, text=True, env=env)
-        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.returncode, code, done.stderr)
         return done.stdout
 
     def branches(self):
@@ -211,6 +215,51 @@ class CleanupSweepTest(unittest.TestCase):
         path = self.worktree("release/1.0")
         self.squash_merge("release/1.0", path)
         self.run_sweep("--apply")
+        self.assertTrue(path.exists())
+
+    def fresh_gone_branch(self, name):
+        """막 만든 브랜치. base 와 같고 커밋 0 이며 upstream 이 gone 이라 cherry 판정을 통과한다."""
+        path = self.worktree(name, commits=0)
+        sh("git", "-C", str(self.repo), "push", "-q", "origin", "--delete", name)
+        return path
+
+    def calls(self):
+        return self.log.read_text() if self.log.exists() else ""
+
+    def test_succeeded_dispatch_with_live_terminal_is_a_live_worker(self):
+        path = self.fresh_gone_branch("prompt-fix")
+        self.workers = [{"dispatchId": "ctx_p", "workerState": "succeeded", "agentTerminalHandle": "term_p",
+                         "resource": {"worktreeId": f"x::{path}"}}]
+        self.terminals = [{"handle": "term_p", "worktreePath": str(path)}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("살아 있는 worker ctx_p", out)
+        self.assertNotIn("terminal close", self.calls())
+        self.assertNotIn("worker-release", self.calls())
+
+    def test_succeeded_worker_with_live_terminal_is_kept_even_when_pr_merged(self):
+        path = self.worktree("sensor-fail")
+        self.squash_merge("sensor-fail", path)
+        self.workers = [{"dispatchId": "ctx_s", "workerState": "succeeded", "agentTerminalHandle": "term_s",
+                         "resource": {"worktreeId": f"x::{path}"}}]
+        self.terminals = [{"handle": "term_s", "worktreePath": str(path)}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_terminal_is_not_closed_without_merged_pr(self):
+        path = self.fresh_gone_branch("fresh")
+        self.terminals = [{"handle": "term_f", "worktreePath": str(path)}]
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("살아 있는 터미널", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_terminal_list_failure_stops_before_touching_anything(self):
+        path = self.worktree("feat-x")
+        self.squash_merge("feat-x", path)
+        self.orca_fail = True
+        self.run_sweep("--apply", code=2)
         self.assertTrue(path.exists())
 
 

@@ -21,11 +21,14 @@
 건너뜀 (이유를 낸다):
     - 커밋 안 된 변경이 있다
     - 원격에도 머지된 PR HEAD 에도 없는 커밋이 있다
-    - 살아 있는 worker 가 그 worktree 를 맡고 있다 (workerState 가 working 이나 ready)
+    - 살아 있는 worker 가 그 worktree 를 맡고 있다. workerState 가 working 이나 ready 이거나,
+      Dispatch 상태와 상관없이 그 worker 의 터미널이 `orca terminal list` 에 살아 있으면 살아 있다고 본다.
+      Dispatch 가 succeeded 여도 같은 터미널에서 후속 일을 하는 worker 가 있고,
+      그 브랜치가 막 만든 상태(base 와 같고 커밋 0)면 머지 판정을 통과해 일하는 worker 를 지우게 된다
     - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다
 
 실행 순서 (worktree 마다):
-    그 경로의 Orca 터미널 close, 끝난 Dispatch release, `remove-worktree.sh --delete-branch --merged-head`,
+    그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만), 끝난 Dispatch release, `remove-worktree.sh --delete-branch --merged-head`,
     원격 브랜치 삭제(이미 없으면 통과), 지시서 삭제.
     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다.
@@ -50,6 +53,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REMOVE = HERE / "remove-worktree.sh"
 LIVE_STATES = {"working", "ready"}
+BY_PR = "PR MERGED"
 ORCA = os.environ.get("ORCA", "orca")
 GH = os.environ.get("GH", "gh")
 
@@ -100,7 +104,7 @@ def merged(repo, branch, base):
     """(머지됐는지, 머지된 PR HEAD, 판정 근거)."""
     state, head = pr_of(repo, branch)
     if state == "MERGED":
-        return True, head, "PR MERGED"
+        return True, head, BY_PR
     _, track, _ = git(repo, "for-each-ref", "--format=%(upstream:track)", f"refs/heads/{branch}")
     if track != "[gone]":
         return False, None, f"PR {state or '없음'}, upstream 이 남아 있다"
@@ -150,9 +154,14 @@ def workers_at(workers, path):
     return [w for w in workers if str((w.get("resource") or {}).get("worktreeId", "")).endswith("::" + path)]
 
 
-def terminals_at(path):
-    result = orca_json("terminal", "list") or {}
-    return [t["handle"] for t in result.get("terminals", []) if t.get("worktreePath") == path and t.get("handle")]
+def live_terminals():
+    """살아 있는 터미널 목록. 조회에 실패하면 None 이다."""
+    result = orca_json("terminal", "list")
+    return None if result is None else result.get("terminals", [])
+
+
+def terminals_at(terminals, path):
+    return [t["handle"] for t in terminals or [] if t.get("worktreePath") == path and t.get("handle")]
 
 
 def protected(repo, branch, base):
@@ -191,7 +200,7 @@ def delete_specs(specs_dir, name, apply, log):
                 log(f"  지시서를 지울 것 {candidate}")
 
 
-def sweep_worktree(repo, path, branch, args, workers, specs_dir, log):
+def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log):
     name = Path(path).name
     if not branch:
         log(f"건너뜀 {path}: 브랜치가 없다(detached)")
@@ -212,13 +221,19 @@ def sweep_worktree(repo, path, branch, args, workers, specs_dir, log):
         log(f"건너뜀 {path}: 원격에 없는 커밋 {lost if lost > 0 else '확인 실패'}")
         return
     mine = workers_at(workers, path)
-    live = [w for w in mine if w.get("workerState") in LIVE_STATES]
+    alive = {t.get("handle") for t in terminals or []}
+    live = [w for w in mine if w.get("workerState") in LIVE_STATES or w.get("agentTerminalHandle") in alive]
     if live:
         log(f"건너뜀 {path}: 살아 있는 worker {', '.join(w.get('dispatchId', '?') for w in live)}")
         return
+    by_pr = why == BY_PR
+    if not by_pr and terminals_at(terminals, path):
+        log(f"건너뜀 {path}: 살아 있는 터미널이 있다. PR 이 MERGED 가 아니면 터미널을 닫지 않는다")
+        return
 
     log(f"정리 {path} ({branch}, {why})")
-    for handle in terminals_at(path):
+    # 터미널은 PR 이 MERGED 일 때만 닫는다. cherry 로만 판정한 브랜치는 막 만든 브랜치일 수 있다
+    for handle in terminals_at(terminals, path) if by_pr else []:
         if args.apply:
             code, _, _ = run([ORCA, "terminal", "close", "--terminal", handle, "--json"])
             log(f"  터미널 닫음 {handle}" if code == 0 else f"  터미널 닫기 실패 {handle}")
@@ -312,11 +327,15 @@ def main(argv=None):
         print(f"cleanup-sweep: {exc}", file=sys.stderr)
         return 2
     workers = []
+    terminals = live_terminals()
+    if terminals is None:
+        print("cleanup-sweep: orca terminal list 를 읽지 못해 살아 있는 worker 를 판정할 수 없다", file=sys.stderr)
+        return 2
     if args.run:
         workers = (orca_json("orchestration", "worker-list", "--run", args.run) or {}).get("workers", [])
     log(f"cleanup-sweep {'apply' if args.apply else 'dry-run'}: {repo} (base {args.base})")
     for path, branch in items:
-        sweep_worktree(repo, path, branch, args, workers, specs_dir, log)
+        sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     remaining = {branch for _, branch in worktrees(repo)}
     _, main_branch, _ = git(repo, "branch", "--show-current")
     sweep_branches(repo, args, remaining | {main_branch}, log)
