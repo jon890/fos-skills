@@ -47,7 +47,7 @@ COMPOUND_ALLOW = ["시험적", "판이하"]
 # 「번호판 번호」, 「출판 번호」, 「초판을 올린다」 의 「판」 이 버전 뜻이 아니기 때문이다.
 # X판 합성어는 끝없이 늘어 COMPOUND_ALLOW 로 하나씩 막을 수 없다.
 # 다른 한 글자 낱말로 시작하는 금지어가 같은 오탐을 내면 그 글자를 여기에 더한다.
-WORD_START_PREFIXES = ("판",)
+WORD_START_PREFIXES = ("판", "날")
 
 TABLE_HEADING = "## 어색한 말 매핑 표"
 SECTION_HEADING = re.compile(r"^## ")
