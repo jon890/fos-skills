@@ -129,6 +129,27 @@ class TestThresholdTerm(Base):
         self.assertPassed("임계값을 넘으면 기준값으로 되돌린다.\n")
 
 
+class TestDbContext(Base):
+    """DB 의 table 과 column 을 「표」, 「칸」 으로 옮긴 쓰임만 막는다."""
+
+    def test_db_phrases_are_caught(self):
+        for text in ("DB 표를 만든다.", "`sensor` DB 표 `raw_recipient` 를 본다.",
+                     "`orders` 표에 행을 넣는다.", "`care.registry` 칸을 바꾼다.",
+                     "`status` 칸은 null 이다."):
+            with self.subTest(text=text):
+                self.assertCaught(text + "\n", "금지어")
+
+    def test_document_table_words_pass(self):
+        for text in ("아래 표를 본다.", "결과를 표로 정리한다.", "표의 열을 맞춘다.",
+                     "표를 만들어 비교한다.", "DB 표준을 따른다.", "DB 표시 방식을 바꾼다.",
+                     "`a.md` 파일의 표시를 바꾼다.", "plan 디렉터리의 `remote.md` 표", "`run.py` 칸을 본다.", "빈 칸을 채운다."):
+            with self.subTest(text=text):
+                self.assertPassed(text + "\n")
+
+    def test_recommended_terms_pass(self):
+        self.assertPassed("`orders` 테이블의 `status` 컬럼을 바꾼다.\n")
+
+
 class TestRawElementTerm(Base):
     """raw element 를 옮긴 「날 요소」 계열은 막고, 「날짜」 같은 평범한 말은 막지 않는다."""
 
