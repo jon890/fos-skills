@@ -27,6 +27,24 @@ orca orchestration check --run "$RUN_ID" --ack "$DELIVERY_ID" --wait --types "wo
 
 대기는 `--timeout-ms` 가 지나면 메시지 없이 `timedOut: true` 로 끝난다. 실패가 아니므로 다시 건다.
 
+## 깨어날 때마다 정리와 보드 동기화
+
+**대기가 끝날 때마다, 그리고 기다리는 동안 5분마다 아래 두 명령을 돌린다.** 메시지를 읽기 전에 돈다.
+머지마다 손으로 정리하면 잊히고, 프로세스가 worktree 를 잡아 실패한 정리는 다시 돌아보지 않는다.
+두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 루프에서 다시 시도된다. 따로 기억하지 않는다.
+5분 주기는 백그라운드 대기와 별개로 하네스의 예약 기능이나 다음 깨어남에 붙인다.
+
+`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 와 `$ITEMS_FILE` 은 목표 항목과 추적 항목 파일이다. 저장소 오버레이가 정한다.
+보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 과 `--goal-items` 를 뺀다.
+
+```bash
+python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --apply
+python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --goal-items "$ITEMS_FILE"
+```
+
+`cleanup-sweep.py` 의 판정과 건너뛰는 조건은 그 파일 머리 주석이 소유한다.
+`건너뜀` 줄만 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 루프째 남으면 그 worker 를 확인한다.
+
 ## 받은 메시지 읽기
 
 **대기 결과는 `triage-messages.py` 로 읽는다.** 출력 파일을 눈으로 훑지 않는다.

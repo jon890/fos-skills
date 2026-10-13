@@ -29,6 +29,13 @@
 #   --require-up-to-date  머지 전에 PR 이 base 최신을 품지 않으면 update-branch 로 base 를 merge 하고
 #                         필수 체크를 다시 기다린 뒤 머지한다. 기본은 끔. 필수 체크 목록이 있어야 켤 수 있다
 #   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
+#   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.py 에 넘길 인자. 하나씩 준다
+#                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .omc/specs)
+#   --no-sweep            머지 뒤 cleanup-sweep.py --apply 를 부르지 않는다
+#
+# 모든 PR 이 머지되면 cleanup-sweep.py --apply 로 머지된 worktree, 브랜치, 터미널, 지시서를 정리한다.
+# 정리가 실패해도 머지 결과는 바뀌지 않으므로 경고만 찍고 종료 코드는 0 이다.
+# CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를 바꾼다.
 #
 # 머지 전 명령과 --threads-cmd 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치), OWNER, REPO 를 받는다.
 # 예: merge-queue.sh 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
@@ -45,9 +52,12 @@ CHECK_TIMEOUT=60
 REQUIRED=""
 UP_TO_DATE=0
 KEEP_BRANCH=0
+SWEEP=1
+SWEEP_BASE=""
+SWEEP_ARGS=()
 ITEMS=()
 
-usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 need() { [ -n "${2:-}" ] || { echo "$1 에 값이 없다" >&2; exit 2; }; }
 
 while [ $# -gt 0 ]; do
@@ -60,6 +70,8 @@ while [ $# -gt 0 ]; do
     --required) need "$1" "${2:-}"; REQUIRED=$2; shift 2 ;;
     --require-up-to-date) UP_TO_DATE=1; shift ;;
     --keep-branch) KEEP_BRANCH=1; shift ;;
+    --sweep-arg) need "$1" "${2:-}"; SWEEP_ARGS+=("$2"); shift 2 ;;
+    --no-sweep) SWEEP=0; shift ;;
     -h|--help) usage ;;
     -*) echo "모르는 옵션: $1" >&2; exit 2 ;;
     *) ITEMS+=("$1"); shift ;;
@@ -106,7 +118,7 @@ for item in "${ITEMS[@]}"; do
   [ "$n" != "$item" ] && before=${item#*:}
 
   st=$(field "$n" state .state)
-  [ "$st" = MERGED ] && { echo "$(now) $n 이미 MERGED"; continue; }
+  [ "$st" = MERGED ] && { echo "$(now) $n 이미 MERGED"; SWEEP_BASE=${SWEEP_BASE:-$(field "$n" baseRefName .baseRefName)}; continue; }
   [ "$st" = OPEN ] || stop "$n state=${st:-조회 실패}"
 
   # 검사 대상 HEAD 를 체크를 보기 전에 고정한다
@@ -123,6 +135,7 @@ for item in "${ITEMS[@]}"; do
   [ -n "$OWNER" ] && [ -n "$REPO" ] || stop "$n url 조회 실패"
   base=$(field "$n" baseRefName .baseRefName)
   [ -n "$base" ] || stop "$n baseRefName 조회 실패"
+  SWEEP_BASE=$base
 
   req=$REQUIRED
   if [ -z "$req" ]; then
@@ -227,3 +240,9 @@ for item in "${ITEMS[@]}"; do
   fi
 done
 echo QUEUE-DONE
+
+if [ "$SWEEP" = 1 ]; then
+  SWEEP_SCRIPT=${CLEANUP_SWEEP:-$SCRIPT_DIR/cleanup-sweep.py}
+  python3 "$SWEEP_SCRIPT" --repo "$PWD" --base "${SWEEP_BASE:-main}" --apply ${SWEEP_ARGS[@]+"${SWEEP_ARGS[@]}"} \
+    || echo "경고: cleanup-sweep.py 가 실패했다. 머지 결과는 그대로다"
+fi

@@ -56,6 +56,15 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 '102:./bin/backup-db
 
 ## 정리
 
+**정리는 `cleanup-sweep.py` 가 한다.** `merge-queue.sh` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
+판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
+
+```bash
+bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" 101 102
+```
+
+스크립트가 건너뛴 항목과, 스크립트가 다루지 않는 아래 일만 손으로 한다.
+
 **PR 을 머지한 직후 같은 흐름에서, 사용자 지시를 기다리지 않고 정리한다.**
 워크트리와 터미널이 쌓이면 다음 작업이 어느 것을 써야 할지 매번 판단해야 한다.
 같은 워크트리에서 후속 작업을 하는 worker 가 있으면 그 worker 가 끝날 때까지 남긴다.
@@ -98,6 +107,8 @@ macOS 의 zsh 와 `lsof`, git 2.31 이상을 전제한다.
 ```bash
 "$SKILL_DIR/scripts/remove-worktree.sh" "$WORKTREE" --delete-branch
 ```
+
+squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. 그 커밋의 조상은 원격에 있는 것으로 센다.
 
 - Orca 가 만든 워크트리를 `orca worktree rm` 으로 지울 때는 뒤에 `git -C "$REPO" worktree prune` 을 돌린다.
   디렉터리만 지우고 git 의 워크트리 기록이 남아, 그대로면 브랜치 삭제가 `used by worktree` 로 거절된다

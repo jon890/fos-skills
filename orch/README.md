@@ -19,6 +19,8 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/triage-messages.py`: orca 메시지를 종류별로 모으고 heartbeat 는 개수만 낸다
 - `scripts/remove-worktree.sh`: 쓰는 프로세스, 미커밋 변경, 원격에 없는 커밋이 있으면 지우지 않는다
 - `scripts/worker-ask.sh`: worker 가 코디네이터에게 묻는다. 끝난 Dispatch 에서는 Run 메일함으로 대신 보내고, 시간 제한과 대신 보내기를 종료 코드로 가른다
+- `scripts/cleanup-sweep.py`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서를 정리한다. 기본은 dry-run 이다
+- `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/goal-progress.py`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 

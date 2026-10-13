@@ -197,6 +197,10 @@ class MergeQueueTest(unittest.TestCase):
         self.log = self.tmp / "log.txt"
         self.env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
                         FAKE_LOG=str(self.log), FAKE_REMOTE_HEAD="abc")
+        self.sweep_log = self.tmp / "sweep.txt"
+        sweep = self.tmp / "sweep.py"
+        sweep.write_text(f"import sys\nopen({str(self.sweep_log)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
+        self.env["CLEANUP_SWEEP"] = str(sweep)
 
     def pr(self, **over):
         base = {"state": "OPEN", "statusCheckRollup": [{"status": "COMPLETED", "conclusion": "SUCCESS"}],
@@ -220,6 +224,19 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual("1 feat owner/repo\n", marker.read_text())
         self.assertIn("pr merge 1 --merge --match-head-commit abc", self.log.read_text())
         self.assertIn("git push -q origin --delete feat", self.log.read_text())
+
+    def test_calls_cleanup_sweep_after_merging_with_base_and_args(self):
+        r = self.run_queue({"1": self.pr(baseRefName="develop")}, "--sweep-arg", "--run", "--sweep-arg", "run x", "1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("--base develop --apply --run run x", self.sweep_log.read_text())
+
+    def test_no_sweep_and_stop_skip_cleanup(self):
+        r = self.run_queue({"1": self.pr()}, "--no-sweep", "1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(self.sweep_log.exists())
+        r = self.run_queue({"1": self.pr()}, "1", threads="2")
+        self.assertEqual(r.returncode, 1)
+        self.assertFalse(self.sweep_log.exists())
 
     def test_stops_on_unresolved_threads(self):
         r = self.run_queue({"1": self.pr()}, "1", threads="2")
