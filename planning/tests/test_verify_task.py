@@ -194,6 +194,20 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual(self.inspect("### 1. `tests/unit/test_a.py` 추가", "pytest tests/unit", entries), [])
         self.assertEqual(self.inspect("### 1. `tests/unit/test_a.py` 추가", "pytest tests", entries), [])
 
+    def test_package_manager_runner_bin_files_count_as_targeted(self):
+        # `pnpm jest <파일>` 의 파일이 targeted 에 들어가지 않아 fos-accountbook fe-plan16 계획서가 위반으로 막혔던 재현이다.
+        entries = [("frontend/src/a.ts", "수정"), ("frontend/src/__tests__/services/analytics/analytics-service.test.ts", "신규"),
+                   ("frontend/src/__tests__/app/analytics/page.test.tsx", "신규"), ("frontend/e2e/analytics-charts.spec.ts", "신규")]
+        work = ("### 1. `frontend/src/__tests__/services/analytics/analytics-service.test.ts`\n"
+                "### 2. `frontend/src/__tests__/app/analytics/page.test.tsx`\n### 3. `frontend/e2e/analytics-charts.spec.ts`")
+        tail = "cd frontend && pnpm tsc --noEmit && pnpm lint && pnpm test\ncd frontend && pnpm test:browser analytics-charts.spec.ts"
+        files = "src/__tests__/services/analytics/analytics-service.test.ts src/__tests__/app/analytics/page.test.tsx"
+        for runner in ("pnpm jest", "pnpm vitest", "npm exec jest", "yarn jest", "pnpm exec jest"):
+            with self.subTest(runner=runner):
+                self.assertEqual(self.inspect(work, f"cd frontend && {runner} {files}\n{tail}", entries), [])
+        # 지정하지 않은 파일은 여전히 위반이다.
+        self.assertTrue(self.inspect(work, f"cd frontend && pnpm jest src/__tests__/other.test.ts\n{tail}", entries))
+
     def test_package_script_names_are_not_directory_arguments(self):
         for command in (
             ["pnpm", "test"],

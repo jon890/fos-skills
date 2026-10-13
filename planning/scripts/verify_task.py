@@ -398,7 +398,10 @@ def classify(command, entries, repo):
         rest = positional(program, args)
         if rest[:1] in (["run"], ["run-script"]):
             rest = rest[1:]
-        found = bool(rest) and (rest[0] == "test" or rest[0].startswith("test:"))
+        elif program == "npm" and rest[:1] == ["exec"]:
+            rest = rest[1:]
+        # `pnpm jest <파일>` 처럼 패키지 관리자가 테스트 실행기 bin 을 바로 부르는 형태다.
+        found = bool(rest) and (rest[0] == "test" or rest[0].startswith("test:") or rest[0] in {"jest", "vitest"})
     elif program == "node" and node_test(args):
         found = True
     elif program in {"go", "cargo", "deno", "dotnet"}:
