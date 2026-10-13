@@ -8,6 +8,7 @@
 #      PR 을 연 직후에는 체크 목록이 비어 있어 「대기 0」이 「모두 끝남」이 아니기 때문이다
 #      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
 #   3. 실패한 체크, 미해결 리뷰 스레드, 충돌이 있으면 멈춘다. mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다
+#      --allow-fail 로 준 체크의 실패는 세지 않고 경고 줄만 찍는다
 #   4. 머지 전 명령이 있으면 돌리고, 0 이 아니면 멈춘다(DB 백업 같은 것)
 #   5. 체크를 보기 전에 읽어 둔 HEAD 와 지금 PR HEAD, 원격 브랜치 HEAD 가 모두 같은지 본다.
 #      검사나 머지 전 명령이 도는 사이에 push 된 커밋이 검사 없이 머지되는 것을 막는다
@@ -26,6 +27,10 @@
 #                         required_status_checks)에서 읽는다. 둘 다 비면 목록이 비었다는 경고를 찍고
 #                         지금 있는 체크만 기다린다(예전 동작). 규칙 조회가 실패하면 멈춘다.
 #                         예전 방식의 브랜치 보호 규칙은 규칙 조회에 나오지 않으므로 이 옵션으로 준다
+#   --allow-fail A,B      실패해도 멈추지 않을 비필수 체크 이름. 실패한 체크마다 `경고: PR 실패를 허용한 체크 이름` 을
+#                         찍고 머지한다. 코드와 무관한 이유(사용량 한도, 외부 장애)로 실패했고 그 대신 할 검증을
+#                         끝냈을 때만 쓴다. 진행 중인 체크는 이 옵션과 상관없이 끝날 때까지 기다린다.
+#                         필수 체크(--required 나 저장소 규칙)에 든 이름은 허용할 수 없다
 #   --require-up-to-date  머지 전에 PR 이 base 최신을 품지 않으면 update-branch 로 base 를 merge 하고
 #                         필수 체크를 다시 기다린 뒤 머지한다. 기본은 끔. 필수 체크 목록이 있어야 켤 수 있다
 #   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
@@ -50,6 +55,7 @@ METHOD=merge
 THREADS_CMD=""
 CHECK_TIMEOUT=60
 REQUIRED=""
+ALLOW_FAIL=""
 UP_TO_DATE=0
 KEEP_BRANCH=0
 SWEEP=1
@@ -57,7 +63,7 @@ SWEEP_BASE=""
 SWEEP_ARGS=()
 ITEMS=()
 
-usage() { sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 need() { [ -n "${2:-}" ] || { echo "$1 에 값이 없다" >&2; exit 2; }; }
 
 while [ $# -gt 0 ]; do
@@ -68,6 +74,7 @@ while [ $# -gt 0 ]; do
     --threads-cmd) need "$1" "${2:-}"; THREADS_CMD=$2; shift 2 ;;
     --check-timeout) need "$1" "${2:-}"; CHECK_TIMEOUT=$2; shift 2 ;;
     --required) need "$1" "${2:-}"; REQUIRED=$2; shift 2 ;;
+    --allow-fail) need "$1" "${2:-}"; ALLOW_FAIL=$2; shift 2 ;;
     --require-up-to-date) UP_TO_DATE=1; shift ;;
     --keep-branch) KEEP_BRANCH=1; shift ;;
     --sweep-arg) need "$1" "${2:-}"; SWEEP_ARGS+=("$2"); shift 2 ;;
@@ -81,6 +88,11 @@ done
 case "$METHOD" in merge|squash|rebase) ;; *) echo "--method 는 merge, squash, rebase 중 하나다" >&2; exit 2 ;; esac
 case "$CHECK_TIMEOUT" in ''|*[!0-9]*) echo "--check-timeout 은 분 단위 정수다" >&2; exit 2 ;; esac
 case "$REQUIRED" in *[\"\\]*) echo "--required 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
+case "$ALLOW_FAIL" in *[\"\\]*) echo "--allow-fail 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
+# --required 에 든 이름의 실패는 허용할 수 없다
+for x in ${ALLOW_FAIL//,/ }; do
+  case ",$REQUIRED," in *",$x,"*) echo "--allow-fail 의 $x 는 --required 에도 있다. 필수 체크의 실패는 허용할 수 없다" >&2; exit 2 ;; esac
+done
 for item in "${ITEMS[@]}"; do
   case "${item%%:*}" in ''|*[!0-9]*) echo "PR 번호가 아니다: $item" >&2; exit 2 ;; esac
 done
@@ -110,7 +122,11 @@ req_json() {
 ROLL_NAMES='[.statusCheckRollup[] | (.name // .context)]'
 
 PENDING='[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING" or (.state // "") == "EXPECTED")] | length'
-FAILED='[.statusCheckRollup[] | select(((.conclusion // "") | test("FAILURE|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE")) or ((.state // "") | test("FAILURE|ERROR")))] | length'
+FAIL_SEL='select(((.conclusion // "") | test("FAILURE|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE")) or ((.state // "") | test("FAILURE|ERROR")))'
+# 허용한 체크의 실패는 FAILED 에서 빼고 ALLOWED_FAILED 에 이름으로 모은다
+IS_ALLOWED="(.name // .context) as \$nm | ($(req_json "$ALLOW_FAIL") | any(. == \$nm))"
+FAILED="[.statusCheckRollup[] | $FAIL_SEL | select($IS_ALLOWED | not)] | length"
+ALLOWED_FAILED="[.statusCheckRollup[] | $FAIL_SEL | select($IS_ALLOWED) | (.name // .context)] | unique | .[]"
 
 for item in "${ITEMS[@]}"; do
   n=${item%%:*}
@@ -147,6 +163,9 @@ for item in "${ITEMS[@]}"; do
     [ "$UP_TO_DATE" = 0 ] || stop "$n 필수 체크 목록이 비어 있어 --require-up-to-date 를 쓸 수 없다. --required 로 준다"
     echo "$(now) $n 필수 체크 목록이 비어 있다. 지금 있는 체크만 기다린다"
   fi
+  for x in ${ALLOW_FAIL//,/ }; do
+    case ",$req," in *",$x,"*) stop "$n --allow-fail 의 $x 는 필수 체크다. 필수 체크의 실패는 허용할 수 없다" ;; esac
+  done
   MISSING="(($(req_json "$req")) - $ROLL_NAMES)"
 
   # 필수 체크가 모두 나타나고 끝날 때까지 기다린다. 실패가 보이면 바로 멈춘다
@@ -190,6 +209,9 @@ for item in "${ITEMS[@]}"; do
   done
 
   f=$(field "$n" statusCheckRollup "$FAILED")
+  while IFS= read -r x; do
+    [ -z "$x" ] || echo "경고: $n 실패를 허용한 체크 $x"
+  done < <(field "$n" statusCheckRollup "$ALLOWED_FAILED")
   export PR="$n" BRANCH OWNER REPO
   t=$(bash -c "$THREADS_CMD") || stop "$n 스레드 조회 실패"
 
