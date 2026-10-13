@@ -72,6 +72,66 @@ class TaskRulesTest(unittest.TestCase):
         work = "### 1. `src/app.py`\n### 2. `tests/test_app.py`\n정상과 실패 응답을 단언한다.\n### 3. 41종 평가 실행과 기록"
         self.assertEqual(self.inspect(work, "pytest tests/test_app.py", entries), [])
 
+    def test_hyphenated_python_test_skipped_by_module_runners_is_violation(self):
+        for rel, command in (
+            ("tests/test-app.py", "python3 -m unittest discover -s tests"),
+            ("tests/test-app.py", "pytest tests"),
+            ("scripts/test-app.py", "python3 -m unittest scripts.test-app"),
+        ):
+            with self.subTest(command=command):
+                entries = [("src/app.py", "신규"), (rel, "신규")]
+                work = f"### 1. `src/app.py`\n### 2. `{rel}`\n정상과 실패 응답을 단언한다."
+                out = self.inspect(work, command, entries)
+                self.assertTrue(any("모듈 이름이 될 수 없어" in issue and "test_app.py" in issue for issue in out), out)
+
+    def test_hyphenated_python_test_run_by_path_passes(self):
+        for command in ("python3 tests/test-app.py", "pytest tests/test-app.py", "python3 -m pytest ./tests/test-app.py::test_ok"):
+            with self.subTest(command=command):
+                entries = [("src/app.py", "신규"), ("tests/test-app.py", "신규")]
+                work = "### 1. `src/app.py`\n### 2. `tests/test-app.py`\n정상과 실패 응답을 단언한다."
+                self.assertFalse([i for i in self.inspect(work, command, entries) if "모듈 이름" in i])
+
+    def test_hyphenated_name_outside_test_dir_is_a_test(self):
+        self.assertTrue(verify.is_test("scripts/test-app.py"))
+        self.assertTrue(verify.runnable_test("tests/test-app.py"))
+        self.assertFalse(verify.python_module_name_problem("tests/test_app.py"))
+        self.assertFalse(verify.python_module_name_problem("tests/fixtures/data-set.json"))
+
+    def caller_repo(self):
+        self.file("src/repo.py", "def save(user):\n    pass\n")
+        self.file("src/api.py", "from src.repo import save\nsave(1)\n")
+        self.file("src/other.py", "x = 1\n")
+        self.file("docs/notes.md", "save() 를 설명한다\n")
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
+
+    def test_caller_missing_from_plan_is_warning(self):
+        self.caller_repo()
+        warnings = []
+        work = "### 1. `save(user, now)` 에 인자를 더한다"
+        verify.check_callers([(Path("phase-01.md"), work, [("src/repo.py", "수정")])], self.repo, "tasks", warnings)
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("src/api.py", warnings[0])
+        self.assertNotIn("docs/notes.md", warnings[0])
+        self.assertNotIn("src/other.py", warnings[0])
+
+    def test_caller_in_any_phase_of_plan_passes(self):
+        self.caller_repo()
+        warnings = []
+        phases = [
+            (Path("phase-01.md"), "### 1. `Repo.save()` 를 바꾼다", [("src/repo.py", "수정")]),
+            (Path("phase-02.md"), "### 1. 호출부", [("src/api.py", "수정")]),
+        ]
+        verify.check_callers(phases, self.repo, "tasks", warnings)
+        self.assertEqual(warnings, [])
+
+    def test_call_name_not_defined_in_modified_file_is_ignored(self):
+        self.caller_repo()
+        warnings = []
+        work = "### 1. `print()` 로 남긴다"
+        verify.check_callers([(Path("phase-01.md"), work, [("src/repo.py", "수정")])], self.repo, "tasks", warnings)
+        self.assertEqual(warnings, [])
+
     def test_title_change_does_not_make_lint_a_test(self):
         entries = [("src/app.py", "수정")]
         for title in ("확인", "테스트"):
