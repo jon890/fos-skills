@@ -6,7 +6,7 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.19.0"
+  version: "5.20.0"
 ---
 # build-with-teams
 
@@ -67,7 +67,7 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 | 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
 | 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
-| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, 팀원이 남지 않았다 | `references/step-finish.md` |
+| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, `pr_mergeable.sh` 가 0 으로 끝났고, 팀원이 남지 않았다 | `references/step-finish.md` |
 
 **팀원을 스폰하기 전에 [`references/team-spawn.md`](references/team-spawn.md)를 읽는다.**
 

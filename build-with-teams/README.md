@@ -51,6 +51,8 @@ planning 이 만들어 둔 task 를 실제로 구현할 때 쓴다.
 | `references/role-docs-verifier.md` | docs-verifier 가 읽는 계약. `docs/` 대조 축과 `PASS` / `UPDATE_NEEDED` / `VIOLATION` 판정 |
 | `references/step-finish.md` | 통합 검증 실패의 책임 구분, 계획서 삭제와 그 이유, create-pr에 넘길 값, 팀 종료와 작업 공간 정리, 보고 형식, 반복될 실패를 저장소 규칙으로 옮기는 조건 |
 | `scripts/plan_precheck.py` | 재실행 사고를 막는 사전 검증. 종료 코드 0 진행 가능, 1 사용자 결정 필요, 2 실행 불가 |
+| `scripts/pr_mergeable.sh` | PR 을 만든 직후 기준 브랜치와 충돌하는지 본다. UNKNOWN 이면 다시 묻는다. 종료 코드 0 충돌 없음, 1 충돌, 2 판정 불가 |
+| `tests/test_pr_mergeable.py` | `pr_mergeable.sh` 를 가짜 gh 로 검증한다 |
 | `tests/test_plan_precheck.py` | `plan_precheck.py` 판정 함수, 하위 프로젝트 경로, 지운 계획서 조회, push 전 로컬 브랜치 검사 |
 | `CHANGELOG.md` | 버전 이력 |
 

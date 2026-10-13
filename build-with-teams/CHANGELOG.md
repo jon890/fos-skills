@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.20.0
+
+PR 을 만들고 한참 뒤에야 기준 브랜치와의 충돌을 알던 문제를 생성 직후에 잡는다.
+
+- `scripts/pr_mergeable.sh <PR>` 를 더했다. `gh pr view --json mergeable,mergeStateStatus` 를 읽고, 생성 직후의 UNKNOWN 은 값이 정해질 때까지 다시 묻는다. 충돌(CONFLICTING, DIRTY)이면 종료 코드 1 이다
+- 6단계 통과 조건과 「PR」 절에 PR 생성 직후 이 스크립트를 돌리는 단계를 더했다
+- 가짜 gh 로 충돌, 재시도, 판정 불가를 테스트했다
+
 ## 5.19.0
 
 하네스 감사 결과로 뒤집힌 범위 지시와 낡은 문장을 바로잡고, 스크립트와 형제 문서가 소유한 내용을 줄인다.
