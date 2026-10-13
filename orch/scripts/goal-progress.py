@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""보드의 목표 항목 진행 표시줄을 추적 항목들의 상태로 다시 계산한다.
+"""보드의 목표 항목 진행 표시줄을 다시 계산한다.
 
 보드는 work-board 형식의 board.json 이다. 항목마다 id 와 status(goal, decide, doing, wait, done)가 있다.
-추적 항목 중 status 가 done 인 수를 세어 목표 항목에 `--progress 끝낸수/전체수` 로 넣는다.
+추적 항목을 주지 않으면 목표 항목 자신의 단계 줄을 센다. 단계 줄은 숫자로 시작하고(「1. …」),
+끝나면 「✓ 」 가 앞에 붙는다. 숫자로 시작하지 않는 줄은 참고 줄이라 세지 않는다.
+끝난 단계 수와 전체 단계 수를 목표 항목에 `--progress 끝낸수/전체수` 로 넣는다.
+추적 항목을 주면(하위 호환) 그 항목 중 status 가 done 인 수를 센다.
 
 사용법:
+    goal-progress.py GOAL_ID                        # 목표 항목의 단계 줄을 센다
     goal-progress.py GOAL_ID ITEM_ID [ITEM_ID ...]
     goal-progress.py GOAL_ID --items-file FILE      # 한 줄에 id 하나. 빈 줄과 # 줄은 건너뛴다
     옵션:
@@ -24,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -67,6 +72,15 @@ def progress(by_id: dict[str, dict], tracked: list[str]) -> tuple[int, list[str]
     return done, details, missing
 
 
+STEP = re.compile(r"^(✓ )?\d+")
+
+
+def step_progress(goal: dict) -> tuple[int, list[str]]:
+    """(끝낸 수, 단계 줄) 을 돌려준다. 숫자로 시작하지 않는 줄은 세지 않는다."""
+    steps = [d for d in goal.get("details") or [] if STEP.match(d)]
+    return sum(d.startswith(DONE_MARK) for d in steps), steps
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("goal")
@@ -84,8 +98,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"추적 항목 파일을 읽지 못했다: {e}\n")
         return 1
     tracked = list(dict.fromkeys(tracked))
-    if not tracked:
-        ap.error("추적 항목을 인자나 --items-file 로 준다")
     board_path = Path(a.board) if a.board else default_board()
     try:
         by_id = board_items(json.loads(board_path.read_text(encoding="utf-8")))
@@ -96,10 +108,19 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"목표 항목이 보드에 없다: {a.goal}\n")
         return 1
 
-    done, details, missing = progress(by_id, tracked)
+    if tracked:
+        done, details, missing = progress(by_id, tracked)
+        total = len(tracked)
+    else:
+        done, details = step_progress(by_id[a.goal])
+        total, missing = len(details), []
+        if not total:
+            print(f"{a.goal} 단계 줄이 없어 진행률을 건드리지 않았다")
+            return 0
+        a.details = False  # 단계 줄이 곧 하위 줄이라 다시 쓰지 않는다. 참고 줄을 지우지 않기 위해서다
     if missing:
         sys.stderr.write("보드에 없는 추적 항목(끝나지 않은 것으로 셈): " + ", ".join(missing) + "\n")
-    value = f"{done}/{len(tracked)}"
+    value = f"{done}/{total}"
     print(f"{a.goal} {value}")
     if a.details:
         for d in details:

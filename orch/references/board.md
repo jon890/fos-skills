@@ -7,7 +7,9 @@ work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 �
 진행 정도는 `--progress 끝낸단계수/전체단계수` 로 넣는다.
 PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단계와 섞이면 보드를 읽기 어렵다.
 
-**PR 머지 반영과 목표 진행률은 `board-sync.py` 에 맡긴다.** PR 이 MERGED 면 항목을 done 으로 바꾸고 남은 단계에 「✓ 」 를 붙인 뒤 `goal-progress.py` 를 부른다.
+**PR 머지 반영과 목표 진행률은 `board-sync.py` 에 맡긴다.** PR 이 MERGED 이고 끝나지 않은 단계가 1개 이하면 항목을 done 으로 바꾸고 남은 단계에 「✓ 」 를 붙인다.
+끝나지 않은 단계가 2개 이상이면(머지 뒤 검증, 후속 PR 이 남은 경우) done 으로 바꾸지 않고, 그 PR 번호(`#N`)가 적힌 단계에만 「✓ 」 를 붙이고 항목의 pr 칸을 비운다.
+그래서 머지 뒤 단계에는 PR 번호를 적지 않는다. `--goal` 을 주면 끝에 `goal-progress.py` 를 부른다.
 결정과 다음 할 일처럼 사람만 아는 단계는 코디네이터가 손으로 쓴다. 부르는 시점은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 정한다.
 
 **상태가 바뀔 때마다 보드를 고친다.** 띄울 때 `doing`, 사용자 결정을 기다리면 `decide`, 앞 PR 을 기다리면 `wait`, 머지하면 `done` 이다.
@@ -15,13 +17,16 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 
 ## 목표 진행 표시줄
 
-하루 목표처럼 여러 항목을 묶은 목표 항목은 `goal-progress.py` 로 진행 표시줄을 다시 계산한다.
-추적 항목 중 `done` 인 수를 세어 목표 항목에 `끝낸수/전체수` 로 넣는다.
-`$GOAL_ID` 는 목표 항목 id, `$ITEMS_FILE` 은 추적 항목 id 를 한 줄에 하나씩 적은 파일이다.
+하루 목표처럼 여러 단계를 묶은 목표 항목은 `goal-progress.py` 로 진행 표시줄을 다시 계산한다.
+목표 항목 자신의 단계 줄을 센다. 숫자로 시작하는 줄이 단계이고 끝나면 「✓ 」 가 붙는다. 숫자로 시작하지 않는 줄은 참고 줄이라 세지 않는다.
+`$GOAL_ID` 는 목표 항목 id 다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/goal-progress.py" "$GOAL_ID" --items-file "$ITEMS_FILE" --details
+python3 "$SKILL_DIR/scripts/goal-progress.py" "$GOAL_ID"
 ```
 
-머지한 항목을 보드에서 지우면 그 항목은 끝나지 않은 것으로 셈해진다. 지우지 말고 `done` 으로 두거나 추적 목록에서도 뺀다.
+예전 방식인 추적 항목 id 목록(`--items-file`)도 하위 호환으로 남아 있다. 이 경우 `done` 인 항목 수를 센다.
+머지한 항목을 보드에서 지우면 그 항목은 끝나지 않은 것으로 셈해지므로 지우지 말고 `done` 으로 두거나 추적 목록에서도 뺀다.
+
+**mod 가 단계로 세면 이 스크립트는 걷어 낸다.** work-board mod 가 진행률을 단계 줄에서 직접 세는 기능을 갖게 되면 `goal-progress.py` 와 `board-sync.py` 의 `--goal` 을 지운다.
 보드 파일과 도구 위치, 그 밖의 옵션은 스크립트 머리 주석이 소유한다.
