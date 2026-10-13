@@ -9,6 +9,12 @@ python3 scripts/review_threads.py list <owner> <repo> <N>
 python3 scripts/review_threads.py resolve --repo <owner>/<repo> <THREAD_ID> ...
 ```
 
+여러 ID 를 변수에 모았으면 표준 입력으로 넘긴다. zsh 는 따옴표 없는 `$IDS` 를 낱말로 나누지 않는다.
+
+```bash
+printf '%s\n' "$IDS" | python3 scripts/review_threads.py resolve --repo <owner>/<repo> -
+```
+
 resolve 는 「이 지적을 처리했다」 는 표시다.
 반영했거나 반영하지 않기로 판단하고 그 판단을 회신한 스레드만 resolve 한다.
 
