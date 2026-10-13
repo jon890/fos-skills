@@ -23,7 +23,6 @@
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
 | 지시서 폴더 | `cleanup-sweep.py --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서를 지운다 (예: `.omc/handoffs/specs/`) | 4, 7 |
-| worktree 루트 | `board-sync.py --worktree-root` 에 줄 디렉터리. 보드의 worktree 칸이 이름만 적혀 있을 때 붙인다 | 4 |
 | 진행 보드 | 보드 파일 위치, 목표 항목 id 와 추적 항목 파일(`board-sync.py --goal --goal-items`) | 4, 7 |
 
 서버 이름, 접속 설정 파일 경로처럼 공개되면 안 되는 값이 있으면 오버레이를 공개 저장소에 커밋하지 않는다.

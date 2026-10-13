@@ -34,12 +34,12 @@ orca orchestration check --run "$RUN_ID" --ack "$DELIVERY_ID" --wait --types "wo
 두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 루프에서 다시 시도된다. 따로 기억하지 않는다.
 5분 주기는 백그라운드 대기와 별개로 하네스의 예약 기능이나 다음 깨어남에 붙인다.
 
-`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$WORKTREE_ROOT` 는 worktree 를 두는 디렉터리다. 세 값은 저장소 오버레이가 정한다.
-보드가 없는 저장소는 `board-sync.py` 를 건너뛴다.
+`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 와 `$ITEMS_FILE` 은 목표 항목과 추적 항목 파일이다. 저장소 오버레이가 정한다.
+보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 과 `--goal-items` 를 뺀다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --apply
-python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --base "origin/$BASE" --worktree-root "$WORKTREE_ROOT" --run "$RUN_ID"
+python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --goal-items "$ITEMS_FILE"
 ```
 
 `cleanup-sweep.py` 의 판정과 건너뛰는 조건은 그 파일 머리 주석이 소유한다.
