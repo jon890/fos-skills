@@ -49,6 +49,20 @@ COMPOUND_ALLOW = ["시험적", "판이하"]
 # 다른 한 글자 낱말로 시작하는 금지어가 같은 오탐을 내면 그 글자를 여기에 더한다.
 WORD_START_PREFIXES = ("판", "날")
 
+CODE_PLACEHOLDER = "\x00"
+
+# 「표」 와 「칸」 은 문서 표를 가리킬 때도 쓰여 금지어 목록에 올릴 수 없다.
+# 그래서 DB 테이블과 컬럼을 가리키는 문맥만 패턴으로 막는다. 코드 스팬이 남은 줄에 건다.
+# 파일 이름 뒤의 「`remote.md` 표」 는 문서 표라서 확장자로 끝나는 코드 스팬은 뺀다.
+# 「DB 표준」, 「표시」 가 걸리지 않도록 뒤에 조사나 공백, 문장 부호가 올 때만 건다.
+_AFTER = r"(?=[을를이가는은의에로와과도만]|[\s.,;:)]|$)"
+_IDENT = r"`(?![^`]*\.(?:md|py|sh|json|ya?ml|txt|toml|[jt]sx?)`)[^`]+`"
+DB_CONTEXT_PATTERNS = [
+    ("DB 표", re.compile(r"DB 표" + _AFTER)),
+    ("`식별자` 표", re.compile(_IDENT + r" 표" + _AFTER)),
+    ("`식별자` 칸", re.compile(_IDENT + r" 칸" + _AFTER)),
+]
+
 TABLE_HEADING = "## 어색한 말 매핑 표"
 SECTION_HEADING = re.compile(r"^## ")
 TABLE_ROW = re.compile(r"^\| ")
@@ -73,7 +87,6 @@ LINK_DEFINITION = re.compile(r"^[ \t]*\[[^\]]+\]:")
 
 INLINE_PLUS = re.compile(r"(\S+) \+ (\S+)")
 # 코드 스팬이나 대문자 상수를 잇는 `+` 는 항목 나열이 아니라 값의 조합이다.
-CODE_PLACEHOLDER = "\x00"
 CONSTANT = re.compile(r"[A-Z][A-Z0-9_]*[,.;:)]*")
 
 
@@ -243,6 +256,7 @@ def scan(path, matchers):
 
         line = strip_link_targets(raw)  # 링크 문구는 남기고 URL 제외
         line = AUTO_LINK.sub("", line)  # 자동 링크 URL 제외
+        with_spans = line
         plus_line = CODE_SPAN.sub(CODE_PLACEHOLDER, line)  # + 판정은 코드 스팬 자리를 남긴다
         line = CODE_SPAN.sub("", line)  # 코드 스팬 제외
         for compound in COMPOUND_ALLOW:  # 정당한 합성어 제외
@@ -252,6 +266,11 @@ def scan(path, matchers):
             if matches(line):
                 found.append(
                     f'{path}:{n}: 금지어 "{term}" — korean-style 매핑 표의 권장 표현으로'
+                )
+        for term, pattern in DB_CONTEXT_PATTERNS:
+            if pattern.search(with_spans):
+                found.append(
+                    f'{path}:{n}: 금지어 "{term}" — DB 의 표는 테이블, 칸은 컬럼으로'
                 )
         if any(joins_items(m) for m in INLINE_PLUS.finditer(plus_line)):
             warnings.append(f"{path}:{n}: 경고: 인라인 + 연결 — 쉼표·와/과 또는 목록으로")
