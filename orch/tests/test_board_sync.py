@@ -51,11 +51,30 @@ class BoardSyncTest(unittest.TestCase):
 
     def test_merged_pr_marks_done_and_checks_remaining_steps(self):
         self.states["7"] = "MERGED"
-        items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. PR 리뷰 반영", "3. 머지"]}]
+        items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. PR 리뷰 반영", "✓ 3. 머지"]}]
         rc, calls = self.sync(items)
         self.assertEqual(rc, 0)
         self.assertEqual(calls[0][:3], ["set", "a", "done"])
+        self.assertNotIn("--pr", calls[0])
         self.assertEqual(self.details(calls[0]), ["✓ 1. 구현", "✓ 2. PR 리뷰 반영", "✓ 3. 머지"])
+
+    def test_merged_pr_with_two_open_steps_keeps_item_and_checks_only_its_step(self):
+        self.states["7"] = "MERGED"
+        items = [{"id": "a", "status": "doing", "pr": "#7",
+                  "details": ["1. PR #7 머지", "2. dev 테스트", "3. 후속 PR #70"]}]
+        rc, calls = self.sync(items)
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][:2], ["set", "a"])
+        self.assertNotIn("done", calls[0])
+        self.assertEqual(calls[0][calls[0].index("--pr") + 1], "")
+        self.assertEqual(self.details(calls[0]), ["✓ 1. PR #7 머지", "2. dev 테스트", "3. 후속 PR #70"])
+
+    def test_merged_pr_with_one_open_step_finishes_item(self):
+        self.states["7"] = "MERGED"
+        items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. 머지"]}]
+        rc, calls = self.sync(items)
+        self.assertEqual(calls[0][:3], ["set", "a", "done"])
+        self.assertEqual(self.details(calls[0]), ["✓ 1. 구현", "✓ 2. 머지"])
 
     def test_open_pr_leaves_steps_alone_and_writes_no_status_lines(self):
         self.states["8"] = "OPEN"
@@ -90,8 +109,16 @@ class BoardSyncTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(calls[-1][:2], ["set", "goal"])
 
-    def test_goal_needs_items(self):
-        self.assertEqual(bs.main(["--board", str(self.board), "--goal", "g"]), 2)
+    def test_goal_without_items_counts_goal_steps(self):
+        self.states["7"] = "MERGED"
+        items = [{"id": "g", "status": "goal", "details": ["✓ 1. a", "2. b"]},
+                 {"id": "a", "status": "doing", "pr": "7", "details": ["1. 구현"]}]
+        rc, calls = self.sync(items, "--goal", "g")
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[-1][:4], ["set", "g", "--progress", "1/2"])
+
+    def test_goal_items_needs_goal(self):
+        self.assertEqual(bs.main(["--board", str(self.board), "--goal-items", "x"]), 2)
 
     def test_unreadable_board_fails(self):
         self.assertEqual(bs.main(["--board", str(self.tmp / "none.json")]), 1)

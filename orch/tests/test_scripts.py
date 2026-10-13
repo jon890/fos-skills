@@ -106,6 +106,23 @@ class GoalProgressTest(unittest.TestCase):
         self.assertEqual(["set", "goal", "--progress", "1/2", "--file", str(self.board),
                           "--detail", "✓ A", "--detail", "B"], argv)
 
+    def write_goal(self, details):
+        self.board.write_text(json.dumps({"items": [{"id": "goal", "status": "goal", "details": details}]}),
+                              encoding="utf-8")
+
+    def test_counts_goal_own_steps_and_skips_reference_lines(self):
+        self.write_goal(["✓ 1. 구현", "2. 리뷰", "✓ 3. 머지", "참고: 메모", "✓ 완료한 참고"])
+        rc = gp.main(["goal", "--board", str(self.board), "--board-bin", str(self.bin), "--details"])
+        self.assertEqual(0, rc)
+        # 단계 줄이 곧 하위 줄이라 --details 를 줘도 하위 줄을 다시 쓰지 않는다
+        self.assertEqual(["set", "goal", "--progress", "2/3", "--file", str(self.board)],
+                         json.loads(self.calls.read_text()))
+
+    def test_no_step_lines_leaves_progress_alone(self):
+        self.write_goal(["참고: 메모"])
+        self.assertEqual(0, gp.main(["goal", "--board", str(self.board), "--board-bin", str(self.bin)]))
+        self.assertFalse(self.calls.exists())
+
     def test_dry_run_does_not_call_board(self):
         rc = gp.main(["goal", "a", "--board", str(self.board), "--board-bin", str(self.bin), "--dry-run"])
         self.assertEqual(0, rc)
