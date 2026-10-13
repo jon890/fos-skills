@@ -349,5 +349,83 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual(2, r.returncode)
 
 
+class WorkerAskTest(unittest.TestCase):
+    """가짜 orca 로 ask 의 성공, 시간 제한, 실패 뒤 대신 보내기를 본다."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.log = self.tmp / "calls.log"
+        self.orca = self.tmp / "orca"
+
+    def fake(self, ask_out, ask_rc, check_out='{"result":{"runId":"run_x"}}', send_rc=0):
+        self.orca.write_text(textwrap.dedent(f"""\
+            #!/usr/bin/env bash
+            for a in "$@"; do printf '[%s]' "$a" >> "{self.log}"; done; echo >> "{self.log}"
+            case "$2" in
+              ask) printf '%s\\n' '{ask_out}'; exit {ask_rc} ;;
+              check) printf '%s\\n' '{check_out}' ;;
+              send) exit {send_rc} ;;
+            esac
+        """))
+        self.orca.chmod(0o755)
+
+    def run_ask(self, *args):
+        env = dict(os.environ, ORCA=str(self.orca))
+        done = subprocess.run([str(SCRIPTS / "worker-ask.sh"), *args],
+                              capture_output=True, text=True, env=env)
+        calls = self.log.read_text().splitlines() if self.log.exists() else []
+        return done.returncode, done.stdout, calls
+
+    def test_answer_is_printed(self):
+        self.fake('{"result":{"reply":"그렇게 한다"}}', 0)
+        code, out, calls = self.run_ask("--from", "term_w", "--question", "두 단어 질문", "--options", "a,b")
+        self.assertEqual(code, 0)
+        self.assertIn("그렇게 한다", out)
+        self.assertIn("[--question][두 단어 질문]", calls[0])
+        self.assertIn("[--options][a,b]", calls[0])
+
+    def test_timeout_keeps_question_for_resume(self):
+        self.fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
+        code, _, calls = self.run_ask("--from", "term_w", "--question", "q", "--timeout-ms", "1000")
+        self.assertEqual((code, len(calls)), (4, 1))
+
+    def test_failed_ask_sends_to_run_mailbox(self):
+        self.fake('dispatch is not active', 1)
+        code, _, calls = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual(code, 3)
+        self.assertIn("[send]", calls[-1])
+        self.assertIn("[--to][run:run_x]", calls[-1])
+        self.assertIn("[--type][question]", calls[-1])
+
+    def test_explicit_run_skips_lookup(self):
+        self.fake('dispatch is not active', 1)
+        code, _, calls = self.run_ask("--from", "term_w", "--question", "q", "--run", "run_y")
+        self.assertEqual(code, 3)
+        self.assertFalse(any("[check]" in c for c in calls))
+        self.assertIn("[--to][run:run_y]", calls[-1])
+
+    def test_failed_resume_does_not_send(self):
+        self.fake('unknown message', 1)
+        code, _, calls = self.run_ask("--from", "term_w", "--resume", "m1")
+        self.assertEqual((code, len(calls)), (2, 1))
+
+    def test_usage_text_mentioning_timeout_is_not_a_timeout(self):
+        self.fake('Usage: ask [--timeout-ms <n>]', 1)
+        code, _, _ = self.run_ask("--from", "term_w", "--question", "q", "--run", "run_y")
+        self.assertEqual(code, 3)
+
+    def test_question_in_variable_from_zsh(self):
+        # 호출하는 셸이 zsh 여도 질문 변수를 따옴표로 넘기면 인자 하나로 간다
+        if not shutil.which("zsh"):
+            self.skipTest("zsh 없음")
+        self.fake('{"result":{"reply":"ok"}}', 0)
+        env = dict(os.environ, ORCA=str(self.orca), ASK=str(SCRIPTS / "worker-ask.sh"))
+        done = subprocess.run(["zsh", "-c", 'Q="두 단어 질문"; "$ASK" --from term_w --question "$Q"'],
+                              capture_output=True, text=True, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("[--question][두 단어 질문]", self.log.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
