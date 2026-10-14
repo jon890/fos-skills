@@ -28,7 +28,7 @@ GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/<N>/comments
 답글 경로에 **PR 번호가 들어간다.** `pulls/comments/{id}/replies` 는 404 다.
 삭제 경로에는 PR 번호가 없다. 둘이 달라서 헷갈린다.
 
-조회와 답글도 스크립트를 쓴다. 경로와 호스트를 매번 손으로 맞추지 않는다.
+조회와 답글도 스크립트를 쓴다. 경로와 호스트를 매번 직접 맞추지 않는다.
 인자는 `scripts/gh-review-list.sh` 와 `scripts/gh-review-post.sh` 의 머리 주석이 소유한다.
 
 ## 등록은 리뷰 단위로 한다
