@@ -168,6 +168,28 @@ class TestRawElementTerm(Base):
         self.assertPassed("HTML 기본 요소 대신 컴포넌트를 쓴다.\n")
 
 
+class TestManualAndFilterTerm(Base):
+    """「손으로」 와 filter 를 옮긴 「거르다」 활용형은 막고, 「근거를」 같은 합성어는 막지 않는다."""
+
+    def test_phrases_are_caught(self):
+        for text, term in (("파일을 손으로 옮겨 배포한다.", "손으로"),
+                           ("조건으로 거르는 방식이다.", "거르"),
+                           ("목록을 거른다.", "거른"),
+                           ("중복을 거를 수 있다.", "거를"),
+                           ("무효 항목을 걸러낸다.", "걸러")):
+            with self.subTest(text=text):
+                self.assertCaught(text + "\n", term)
+
+    def test_ordinary_words_pass(self):
+        for text in ("근거를 남긴다.", "증거를 모은다.", "판단 근거를 적는다.",
+                     "빈손으로 돌아왔다.", "맨손으로 만졌다.", "왼손으로 쓴다."):
+            with self.subTest(text=text):
+                self.assertPassed(text + "\n")
+
+    def test_recommended_terms_pass(self):
+        self.assertPassed("메일함 필터링 조건을 추가하고 직접 확인한다.\n")
+
+
 class TestVersionTerm(Base):
     """version 의 뜻으로 쓴 「판」 은 막고, 다른 낱말 속의 「판」 은 막지 않는다.
 

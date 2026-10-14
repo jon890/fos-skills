@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.7.1
+
+korean-check 새 금지어(손으로, 거르다)에 걸린 문구를 고친다.
+
+- `SKILL.md` 와 `references/posting.md` 의 「손으로」와 「거르다」 활용형을 권장 표현으로 바꿨다. 동작은 그대로다
+
 ## 1.7.0
 
 다른 PR 을 가리키는 표기를 하나로 정하고, `--batch` 에서 핵심 낱말을 두는 자리를 사용법에 적는다.

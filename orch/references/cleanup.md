@@ -78,7 +78,7 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 '102:./bin/backup-db
 bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" 101 102
 ```
 
-스크립트가 건너뛴 항목과, 스크립트가 다루지 않는 아래 일만 손으로 한다.
+스크립트가 건너뛴 항목과, 스크립트가 다루지 않는 아래 일만 직접 한다.
 
 **PR 을 머지한 직후 같은 흐름에서, 사용자 지시를 기다리지 않고 정리한다.**
 워크트리와 터미널이 쌓이면 다음 작업이 어느 것을 써야 할지 매번 판단해야 한다.
