@@ -54,6 +54,9 @@
 | `references/step-6-data-code.md` | 테이블과 컬럼과 키와 제약, cascade 범위, 새 코드가 앉을 레이어와 디렉터리 |
 | `references/step-7-docs.md` | 필수 다섯 전체의 영향 판정, ADR 로 남길 결정을 가르는 두 조건 |
 | `references/step-8-tasks.md` | phase 분할 기준, plan 을 나눌 조건, plan 번호를 원격과 git 이력까지 훑어 정하는 방법 |
+| `references/examples/code-architecture.md` | `docs/code-architecture.md` 의 다섯 절 뼈대와 이력 서술을 넣지 않는 이유. 6단계가 가리킨다 |
+| `references/examples/adr-parallel.md` | 병렬 PR 용 `ADR-YYYYMMDD-slug.md` 와 `INDEX.md`, 색인 일치 테스트, 번호 충돌 사례. 7단계가 가리킨다 |
+| `references/examples/test-boundaries.md` | `tests/` 의 목적 디렉터리와 이름 규칙, boundary 테스트, CI 순서와 concurrency. 6단계가 가리킨다 |
 | `references/task-create.md` | `index.json` 스키마, ADR 템플릿과 supersede 처리, phase 파일 구조와 작성 규칙 |
 | `references/rule-placement.md` | 반복될 실패를 저장소 규칙으로 옮길 때 넣을 곳 표, 규칙 문장 형식, 반복 함정 목록 처리. `build-with-teams` 와 `review-fix` 가 함께 쓴다 |
 | `references/monorepo.md` | 모노레포 판정, 대상 하위 프로젝트를 정하는 순서, 오버레이 탐색 순서, 오버레이가 지정하는 docs 경로와 tasks 경로와 plan 접두사. 네 스킬이 함께 쓴다 |
