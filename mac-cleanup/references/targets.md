@@ -58,13 +58,14 @@ rm -rf "$DIR"
 ## Docker
 
 - **Colima 에서 prune 해도 호스트 디스크는 바로 늘지 않는다.** VM 디스크 파일이 그대로라 `colima ssh -- sudo fstrim -av` 를 돌려야 반영된다(실측: 76GB 에서 13GB).
-- **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** **`docker volume prune` 을 쓰지 않는다.** 정리 도중 다른 세션이 시작한 테스트의 volume 까지 지울 수 있다(실측: 정리 중 `testcontainers/ryuk` 컨테이너가 떴다).
-  기본 등급은 확인 필요다. 하나를 열어 내용을 확인하고 등급을 정한다. 조사 때 열어 본 volume 만 이름을 지정해 `docker volume rm` 으로 지운다.
-  실행 직전에 ryuk 가 떠 있는지 보고, 떠 있으면 다른 세션이 테스트 중이니 사용자에게 알린다. 최근 몇 분 안에 생긴 volume 도 같다.
+- **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** `scripts/docker_volumes.py` 가 dangling 인 것을 골라 생성 시각과 크기를 붙이고, 후보 합계를 낸다.
+  **`docker volume prune` 을 쓰지 않는다.** 정리 도중 다른 세션이 시작한 테스트의 volume 까지 지울 수 있다(실측: 정리 중 `testcontainers/ryuk` 컨테이너가 떴다).
+  기본 등급은 확인 필요다. `--peek N` 으로 후보의 최상위 항목을 열어 내용을 확인하고 등급을 정한다(Postgres 의 `PG_VERSION`, `base` 처럼 테스트 DB 데이터면 안전에 가깝다).
+  조사 때 열어 본 volume 만 이름을 지정해 `docker volume rm` 으로 지운다.
+  스크립트는 기준 시간(기본 24시간) 안에 생긴 volume 을 후보에서 빼 "최근" 으로 따로 보이고, ryuk 가 떠 있으면 경고한다. 경고가 나면 다른 세션이 테스트 중이니 지우기 전에 사용자에게 알린다.
 
 ```bash
-docker ps --filter ancestor=testcontainers/ryuk:"$TAG"
-docker ps --format '{{.Image}}' | grep ryuk   # 태그를 모를 때
+python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek 3
 docker volume rm "$VOLUME"
 ```
 - 이미지는 `scripts/docker_images.py` 가 사용 중, 미사용, 최근 생성으로 나눈다.

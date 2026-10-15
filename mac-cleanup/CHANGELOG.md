@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.5.0
+
+즉석 셸 루프와 Python 으로 하던 두 단계를 스크립트로 옮겨, 기준(하루 이내 volume 제외, tip 대조)을 빠뜨리지 않게 했다.
+
+- `docker_volumes.py` 를 더했다. dangling 인 64자리 hex 익명 volume 에 생성 시각과 크기를 붙이고, 기준 시간(기본 24시간) 안에 생긴 것은 "최근" 으로 따로 보여 후보 합계에서 뺀다. ryuk 가 떠 있으면 경고하고, `--peek N` 이 이미 있는 이미지로 volume 을 읽기 전용으로 붙여 최상위 항목을 보인다. `--json` 이 있다. 읽기 전용이다
+- `delete_branches.py` 를 더했다. `survey_git.py --json` 결과를 읽어 `-d`, 거절 뒤 tip 과 `--is-ancestor` 확인을 거친 `-D`, 실행 직전 tip 이 같을 때만 쓰는 PR 머지됨 `-D` 를 수행한다. 기본은 dry-run 이고 `--apply` 가 있어야 지운다. 브랜치마다 결과를 내고 실패가 있으면 종료 코드 1 이다. 원격 브랜치는 지우지 않는다
+- `targets.md` 「Docker」 와 `git-and-sessions.md` 「브랜치」 가 새 스크립트를 쓰게 고쳤다. 스크립트가 소유하게 된 명령 나열은 걷어내고 판단 기준만 남겼다
+- SKILL.md 1단계 조사 목록과 4단계에 새 스크립트를 반영했다
+- `tests/` 에 두 스크립트의 테스트를 더했다. volume 쪽은 순수 함수로, 브랜치 쪽은 `tempfile` 임시 저장소로 확인한다
+
 ## 1.4.0
 
 지시끼리 어긋난 곳을 맞추고, reference 와 스크립트가 이미 소유한 문장을 걷어낸다.
