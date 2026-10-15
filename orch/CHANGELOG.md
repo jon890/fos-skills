@@ -3,11 +3,18 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.6.0
+
+지시서를 scratchpad 가 아니라 대상 저장소의 git 무시 폴더에 쓰게 한다. 코디네이터 세션이 다시 시작되면 scratchpad 가 정리돼 지시서가 사라지던 문제를 막는다.
+
+- `spec-writing.md`: 기본 폴더 `<repo>/.omc/orch/specs/`, 파일 이름 `spec-<worktree 이름>.md`, 공통 지시서 `spec-common.md` 를 정했다. 오버레이가 다른 폴더를 정하면 그것을 따른다
+- 쓰기 전에 `git check-ignore` 로 무시 여부를 보고, 무시되지 않으면 공유 `.gitignore` 가 아니라 `.git/info/exclude` 에 더한다
+
 ## 1.5.1
 
-korean-check 새 금지어(손으로, 거르다)에 걸린 문구를 고친다.
+korean-check 새 금지어에 걸린 문구를 고친다.
 
-- 보드, 정리, 검증, 대기 reference 의 「손으로」와 「거르다」 활용형을 권장 표현으로 바꿨다. 동작은 그대로다
+- 보드, 정리, 검증, 대기 reference 의 금지 표현 활용형을 권장 표현으로 바꿨다. 동작은 그대로다
 
 ## 1.5.0
 
