@@ -1,8 +1,14 @@
 # 2. 지시서 쓰기
 
-**지시 본문은 scratchpad 파일에 쓰고, `--spec` 에는 그 경로와 「끝까지 읽고, 못 읽으면 escalation」 만 적는다.**
+**지시 본문은 대상 저장소의 git 이 무시하는 폴더에 쓰고, `--spec` 에는 그 경로와 「끝까지 읽고, 못 읽으면 escalation」 만 적는다.**
 긴 지시는 앞부분도 중간도 잘려 도착한다.
 worker 는 되묻지 않으면 받은 만큼만 하고 완료로 보고한다. 후속 지시도 짧게 보내거나 새 파일로 준다.
+
+지시서 폴더의 기본은 `<repo>/.omc/orch/specs/` 다. 오버레이가 다른 폴더를 정하면 그것을 따른다.
+
+- 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.py --specs-dir` 가 이 이름을 보고 머지 뒤 지시서를 지운다.
+- 쓰기 전에 `git -C <repo> check-ignore -q <경로>` 로 무시되는지 본다. 무시되지 않으면 공유되는 `.gitignore` 를 고치지 않고 로컬 전용 `.git/info/exclude` 에 더한다.
+- scratchpad 에 쓰지 않는다. **실측으로** 코디네이터 세션이 다시 시작되면서 scratchpad 가 정리돼 전날 쓴 지시서가 사라졌다. worker 는 받은 경로를 계속 읽으므로, 도중에 사라지면 읽을 곳을 잃는다.
 
 **worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 첫 줄에서 그 파일을 가리킨다.**
 틀은 [`../templates/spec-common.md`](../templates/spec-common.md) 다. 저장소마다 한 번 복사해 `{{...}}` 를 채운다.
