@@ -30,6 +30,7 @@ orca orchestration check --run "$RUN_ID" --ack "$DELIVERY_ID" --wait --types "wo
 ## 깨어날 때마다 정리와 보드 동기화
 
 **대기가 끝날 때마다, 그리고 기다리는 동안 5분마다 아래 두 명령을 돌린다.** 메시지를 읽기 전에 돈다.
+**사용자가 정리하라고 말하지 않아도 돈다.** 끝난 워크트리, 세션(터미널과 Dispatch), 브랜치를 코디네이터가 직접 지우지 않고 이 루프가 지운다.
 머지마다 직접 정리하면 잊히고, 프로세스가 worktree 를 잡아 실패한 정리는 다시 돌아보지 않는다.
 두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 루프에서 다시 시도된다. 따로 기억하지 않는다.
 5분 주기는 백그라운드 대기와 별개로 하네스의 예약 기능이나 다음 깨어남에 붙인다.
@@ -42,8 +43,17 @@ python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --ru
 python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --goal-items "$ITEMS_FILE"
 ```
 
+**worker 를 띄운 저장소가 둘 이상이면 `--repo` 를 저장소마다 준다.** 한 번의 실행이 저장소를 차례로 돌고, 하나를 읽지 못해도 나머지는 돈다.
+`--base` 를 주지 않으면 저장소마다 `origin/HEAD` 가 가리키는 브랜치를 쓴다. 기준 브랜치가 저장소마다 다르면 `--base` 를 빼는 편이 맞다.
+`--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.
+
+```bash
+python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .omc/orch/specs --apply
+```
+
 `cleanup-sweep.py` 의 판정과 건너뛰는 조건은 그 파일 머리 주석이 소유한다.
 `건너뜀` 줄만 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 루프째 남으면 그 worker 를 확인한다.
+squash 머지, 로컬과 원격의 브랜치 이름이 다른 경우, worker 를 반납한 뒤 Orca 가 띄운 빈 셸 터미널은 스크립트가 처리하므로 코디네이터가 직접 지우지 않는다.
 
 ## 받은 메시지 읽기
 
