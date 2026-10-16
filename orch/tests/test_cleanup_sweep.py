@@ -200,7 +200,9 @@ class CleanupSweepTest(unittest.TestCase):
         sh("git", "-C", str(path), "commit", "-q", "-m", "later")
         out = self.run_sweep("--apply")
         self.assertTrue(path.exists())
-        self.assertIn("원격에 없는 커밋 1", out)
+        # 끝 커밋이 PR HEAD 의 조상이 아니므로 그 PR 의 브랜치로 보지 않고, base 에 없는 커밋이 있어 남긴다
+        self.assertIn("남김", out)
+        self.assertIn("feat-d", self.branches())
 
     def test_live_worker_is_skipped(self):
         path = self.worktree("feat-e")
@@ -480,6 +482,73 @@ class CleanupSweepTest(unittest.TestCase):
         out = self.run_sweep("--apply")
         self.assertIn("feat-u", self.branches(), out)
         self.assertIn("feat-u", self.remote_branches())
+
+    # 6. 예전에 머지된 PR 과 이름만 같은 새 브랜치
+    def old_merged_pr(self, name):
+        """그 이름의 PR 이 예전에 squash 머지되고 브랜치와 워크트리가 지워진 상태. 옛 PR HEAD 를 돌려준다."""
+        old = self.worktree(name)
+        head = self.squash_merge(name, old)
+        sh("git", "-C", str(self.repo), "worktree", "remove", str(old))
+        sh("git", "-C", str(self.repo), "branch", "-D", name)
+        main = self.tmp / "main-clone"
+        sh("git", "clone", "-q", str(self.tmp / "repo-origin.git"), str(main))
+        (main / "squash.txt").write_text(name)
+        sh("git", "-C", str(main), "add", "-A")
+        sh("git", "-C", str(main), "commit", "-q", "-m", f"squash {name}")
+        sh("git", "-C", str(main), "push", "-q", "origin", "main")
+        sh("git", "-C", str(self.repo), "fetch", "-q", "origin")
+        shutil.rmtree(main)
+        return head
+
+    def test_new_branch_with_the_name_of_an_old_merged_pr_is_kept(self):
+        self.old_merged_pr("feature/x")
+        path = self.worktree("feature/x", commits=0)
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("feature/x", self.branches())
+        self.assertIn("feature/x", self.remote_branches())
+        self.assertIn("이름만 같은 PR", out)
+        self.assertNotIn("--merged-head", self.calls())
+
+    def test_new_branch_with_own_commits_and_old_pr_name_is_kept(self):
+        self.old_merged_pr("feature/x")
+        path = self.worktree("feature/x", push=False)
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("이름만 같은 PR", out)
+
+    def test_new_branch_from_stale_base_with_old_pr_name_is_kept(self):
+        # 갱신하지 않은 base 에서 만든 브랜치의 끝 커밋은 옛 PR HEAD 의 조상이다. base 위 커밋이 0 개라 새 브랜치로 본다
+        stale = sh("git", "-C", str(self.repo), "rev-parse", "origin/main")
+        self.old_merged_pr("feature/x")
+        path = self.wts / "feature-x-new"
+        sh("git", "-C", str(self.repo), "worktree", "add", "-q", "-b", "feature/x", str(path), stale)
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("feature/x", self.branches())
+
+    def test_merge_commit_pr_whose_head_is_the_branch_tip_is_cleaned(self):
+        # 일반 merge 는 브랜치 커밋이 base 에 들어가 base 위 커밋이 0 개가 된다. 끝 커밋이 PR HEAD 와 같으면 머지로 본다
+        path = self.worktree("feat-v")
+        head = sh("git", "-C", str(path), "rev-parse", "HEAD")
+        sh("git", "-C", str(self.repo), "merge", "-q", "--no-ff", "-m", "merge v", "feat-v")
+        sh("git", "-C", str(self.repo), "push", "-q", "origin", "main")
+        self.prs["feat-v"] = ["MERGED", head]
+        out = self.run_sweep("--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertNotIn("feat-v", self.branches())
+
+    def test_remove_worktree_refuses_head_that_is_not_an_ancestor_of_merged_head(self):
+        head = self.old_merged_pr("feature/x")
+        path = self.worktree("feature/x", commits=0)
+        self.save_state()
+        env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}")
+        remove = SCRIPT.parent / "remove-worktree.sh"
+        done = subprocess.run(["zsh", str(remove), str(path), "--delete-branch", "--merged-head", head],
+                              capture_output=True, text=True, env=env)
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn("조상도 아니다", done.stdout)
+        self.assertTrue(path.exists())
 
 
 if __name__ == "__main__":

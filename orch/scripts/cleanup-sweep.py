@@ -22,8 +22,11 @@ PR 찾기 (브랜치마다):
       1. 브랜치의 upstream 에서 읽은 원격 브랜치 이름
       2. `git config branch.<b>.merge`
       3. 로컬 브랜치 이름
-      4. 이름 변형(사용자 접두 제거, 첫 하이픈을 슬래시로). 변형으로 찾은 PR 은 브랜치의 커밋이 모두
-         그 PR HEAD 의 조상일 때만 쓴다. 이름이 우연히 같은 다른 PR 을 내 것으로 읽지 않으려는 것이다
+      4. 이름 변형(사용자 접두 제거, 첫 하이픈을 슬래시로). 지시서의 브랜치 이름으로 만들지 않은 옛 워크트리용이다
+    어느 이름으로 찾았든 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 을 쓴다.
+    base 위 커밋이 0 개인 브랜치는 끝 커밋이 PR HEAD 와 정확히 같을 때만 쓴다.
+    예전에 머지된 PR 과 이름만 같은 새 브랜치를 「머지됨」 으로 읽어 일하는 워크트리를 지우지 않으려는 것이다.
+    이름은 맞는데 이 검사에 걸린 PR 만 있으면 「이름만 같은 PR」 로 보고 PR 없음과 같이 다룬다.
     조회 결과는 JSON 으로 읽는다. 빈 목록이면 「PR 없음」 이고, JSON 이 아니거나 필드가 없으면 「조회 실패」 다.
     둘 다 머지로 읽지 않는다. PR HEAD 가 로컬에 없으면(머지 큐의 update-branch 로 앞서 간 경우) `refs/pull/<번호>/head` 를 받아 온다.
 
@@ -180,10 +183,19 @@ def ensure_commit(repo, pr):
 
 
 def belongs_to(repo, ref, base, pr):
-    """이름 변형으로 찾은 PR 이 이 브랜치의 것인지. base 위에 커밋이 있고 전부 PR HEAD 의 조상이어야 한다."""
+    """그 PR 이 이 브랜치의 것인지. 끝 커밋이 PR HEAD 와 같거나 그 조상이어야 한다.
+
+    base 위 커밋이 0 개면 막 만든 브랜치일 수 있다. 그 끝 커밋은 옛 PR HEAD 의 조상(base 의 옛 커밋)이기도 하므로
+    PR HEAD 와 정확히 같을 때만 인정한다. 일반 merge 로 머지돼 커밋이 base 에 들어간 브랜치가 이 경우다.
+    """
     head = pr.get("headRefOid")
     if not head:
         return False
+    code, tip, _ = git(repo, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}")
+    if code != 0:
+        return False
+    if tip == head:
+        return True
     code, out, _ = git(repo, "rev-list", "--count", f"origin/{base}..{ref}")
     if code != 0 or out in ("", "0"):
         return False
@@ -191,9 +203,9 @@ def belongs_to(repo, ref, base, pr):
 
 
 def find_pr(repo, branch, base):
-    """그 브랜치의 PR. (PR dict 또는 None, 조회 실패가 있었는지)."""
-    failed = False
-    for name, exact in pr_candidates(repo, branch):
+    """그 브랜치의 PR. (PR dict 또는 None, 조회 실패가 있었는지, 이름만 같은 PR 이 있었는지)."""
+    failed = foreign = False
+    for name, _exact in pr_candidates(repo, branch):
         status, prs = pr_list(repo, name)
         if status == "error":
             failed = True
@@ -202,18 +214,18 @@ def find_pr(repo, branch, base):
             if pr.get("isCrossRepository"):
                 continue
             ensure_commit(repo, pr)
-            if exact or belongs_to(repo, f"refs/heads/{branch}", base, pr):
-                return pr, failed
-            break
-    return None, failed
+            if belongs_to(repo, f"refs/heads/{branch}", base, pr):
+                return pr, failed, foreign
+            foreign = True
+    return None, failed, foreign
 
 
 def merged(repo, branch, base):
     """(머지됐는지, 머지된 PR HEAD, 판정 근거, PR)."""
-    pr, failed = find_pr(repo, branch, base)
+    pr, failed, foreign = find_pr(repo, branch, base)
     if pr and pr["state"] == "MERGED":
         return True, pr.get("headRefOid"), BY_PR, pr
-    state = pr["state"] if pr else ("조회 실패" if failed else "없음")
+    state = pr["state"] if pr else ("조회 실패" if failed else "이름만 같은 PR(이 브랜치의 커밋이 아니다)" if foreign else "없음")
     _, track, _ = git(repo, "for-each-ref", "--format=%(upstream:track)", f"refs/heads/{branch}")
     if track != "[gone]":
         return False, None, f"PR {state}, upstream 이 남아 있다", pr
