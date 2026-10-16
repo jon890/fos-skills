@@ -6,8 +6,7 @@
 `orca orchestration run-use --id "$RUN_ID"` 로 옮겨 붙은 뒤 메시지를 읽는다.
 상태만 볼 때는 fenced 상태에서도 `worker-list --run "$RUN_ID"` 가 동작한다.
 
-**`--base-branch` 에는 `origin/<기준 브랜치>` 를 준다.** 로컬 브랜치 이름을 주면 대상 저장소의 로컬 브랜치를 기준으로 워크트리를 만든다.
-로컬 브랜치가 뒤처져 있어도 오류 없이 만들어져, worker 가 옛 코드 위에서 계획하고 구현한다.
+**워크트리는 `origin/<기준 브랜치>` 위에 만든다.** 로컬 브랜치를 기준으로 만들면 로컬 브랜치가 뒤처져 있어도 오류 없이 만들어져, worker 가 옛 코드 위에서 계획하고 구현한다.
 띄우기 전에 원격을 갱신하고, 로컬 기준 브랜치가 깨끗하면 fast-forward 로 맞춘다.
 `$REPO` 는 대상 저장소 경로, `$BASE` 는 기준 브랜치 이름이다.
 
@@ -20,18 +19,27 @@ git -C "$REPO" fetch origin
 
 codex 를 띄우기 전에 아래 「codex 준비 판정」 의 설정이 있는지 본다.
 
-**`--spec` 에는 지시서 경로를 담은 한 줄만 준다.** 새 worktree 를 만들 때는 `--name` 이 필수다.
+**새 worktree 는 `make-worktree.sh` 로 먼저 만들고 `--worktree path:` 로 띄운다.**
+Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<워크트리 이름>` 으로 정해 지시서의 `브랜치:` 줄과 어긋난다.
+어긋나면 worker 마다 이름을 바꾸거나 다른 원격 브랜치에 push 하고, 정리 스크립트는 이름을 추측해야 한다.
+스크립트는 지시서의 `브랜치:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 읽어 `origin/$BASE` 위에 그 이름으로 만들고,
+아래 「띄운 직후 확인」 의 exclude 와 로컬 설정 복사도 같이 한다. 표준 출력은 워크트리 경로 한 줄이다.
+
+**`--spec` 에는 지시서 경로를 담은 한 줄만 준다.**
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다.
 
 ```bash
 SPEC_LINE="지시서 $SPEC_FILE 를 끝까지 읽고 수행한다. 못 읽으면 escalation 으로 알린다."
-orca orchestration worker-start --run "$RUN_ID" --spec "$SPEC_LINE" \
-  --worktree new-top-level --name "$NAME" --repo "path:$REPO" --base-branch "origin/$BASE" \
+WORKTREE=$(bash "$SKILL_DIR/scripts/make-worktree.sh" --repo "$REPO" --spec "$SPEC_FILE" --name "$NAME" --base "$BASE") &&
+orca orchestration worker-start --run "$RUN_ID" --spec "$SPEC_LINE" --worktree "path:$WORKTREE" \
   --agent codex --model gpt-6.1-sol --effort low --json
 ```
 
+스크립트가 종료 코드 1 로 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
+새 일이면 지시서의 브랜치 이름을 바꾼다. 예전에 머지된 PR 과 같은 이름을 다시 쓰면 그 PR 의 기록과 섞인다.
+이어서 하는 일이면 이미 있는 worktree 에 띄운다.
+
 이미 있는 worktree 에 띄울 때는 `--worktree path:` 만 준다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
-`--name`, `--repo`, `--base-branch` 는 이때 주지 않는다.
 
 ```bash
 orca orchestration worker-start --run "$RUN_ID" --spec "$SPEC_LINE" --worktree "path:$WORKTREE" \
@@ -43,16 +51,11 @@ orca orchestration worker-start --run "$RUN_ID" --spec "$SPEC_LINE" --worktree "
 - `worker-start` 응답의 `launch.effective` 가 1단계에서 고른 모델, effort 와 같다
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
 
-`--worktree new-top-level` 은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
-그 경로가 ignore 되지 않아, 기준 브랜치에서 `git add -A` 를 하면 워크트리가 커밋될 수 있다.
-`worktrees/` 가 보이면 로컬 전용인 `.git/info/exclude` 에 `/worktrees/` 를 추가한다. 공유되는 `.gitignore` 는 고치지 않는다.
-
-**새 워크트리에 대상 저장소의 `.claude/settings.local.json` 을 복사한다.**
-이 파일은 추적되지 않아 워크트리에 따라오지 않는다. 없으면 사용자가 허용해 둔 `gh pr`, 리뷰 회신 같은 명령이 worker 세션에서 다시 막힌다.
-
-```bash
-[ -f "$REPO/.claude/settings.local.json" ] && mkdir -p "$WORKTREE/.claude" && cp "$REPO/.claude/settings.local.json" "$WORKTREE/.claude/"
-```
+`make-worktree.sh` 는 Orca 와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
+그 경로가 ignore 되지 않으면 기준 브랜치에서 `git add -A` 를 할 때 워크트리가 커밋될 수 있어, 스크립트가 로컬 전용인 `.git/info/exclude` 에 `/worktrees/` 를 더한다.
+공유되는 `.gitignore` 는 고치지 않는다.
+대상 저장소의 `.claude/settings.local.json` 도 스크립트가 복사한다. 추적되지 않는 파일이라 워크트리에 따라오지 않고,
+없으면 사용자가 허용해 둔 `gh pr`, 리뷰 회신 같은 명령이 worker 세션에서 다시 막힌다.
 
 Orca 가 남기는 `.orca-worktree-trash` 는 Orca 가 관리하므로 지우지 않는다.
 

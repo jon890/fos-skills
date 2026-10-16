@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "1.7.0"
+  version: "1.8.0"
 ---
 
 # orch
@@ -77,7 +77,8 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 
 ## 3. 띄우기
 
-원격을 갱신한 뒤 `origin/<기준 브랜치>` 위에 띄우고, 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
+원격을 갱신한 뒤 `make-worktree.sh` 로 지시서의 브랜치 이름과 `origin/<기준 브랜치>` 위에 워크트리를 만들고 `--worktree path:` 로 띄운다.
+띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
 
 ## 4. 기다리기
