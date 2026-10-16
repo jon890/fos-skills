@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.22.0
+
+여러 사용자 저장소가 공통으로 쓰는 관례를 예시 파일로 건넨다. 단계 본문은 예시를 가리키는 한 줄만 더했다.
+
+- `references/examples/code-architecture.md`: 디렉터리 책임, 의존 방향, 소유 경계, 검증 경계, 변경 규칙 다섯 절의 뼈대와 이력 서술을 넣지 않는 이유
+- `references/examples/adr-parallel.md`: 병렬 PR 용 `ADR-YYYYMMDD-slug.md` 와 `INDEX.md`, 색인 일치 테스트, 번호 충돌 사례 두 건
+- `references/examples/test-boundaries.md`: `tests/{unit,boundary,convention,service}`, 이름 규칙으로 찾는 진입점, `git ls-files` 기반 boundary 테스트, CI 순서와 concurrency
+- 6단계가 앞의 첫째와 셋째 예시를, 7단계가 둘째 예시를 가리킨다
+
 ## 2.21.0
 
 구현 중에야 드러나던 두 결함을 task 검사기가 계획 단계에서 잡는다.

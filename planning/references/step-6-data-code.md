@@ -24,3 +24,5 @@
 ## 남는 곳
 
 저장 모델은 `docs/data-schema.md`, 디렉터리와 모듈 책임은 `docs/code-architecture.md`.
+`docs/code-architecture.md` 를 만들거나 고칠 때는 [`examples/code-architecture.md`](examples/code-architecture.md) 를,
+새 검사가 앉을 디렉터리와 CI 순서를 정할 때는 [`examples/test-boundaries.md`](examples/test-boundaries.md) 를 읽는다.

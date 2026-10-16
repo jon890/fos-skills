@@ -15,6 +15,7 @@
 - 같은 정보를 두 문서에 쓰지 않는다. 필요하면 링크한다.
 
 ADR 형식과 supersede 처리는 `task-create.md` 가 소유한다.
+여러 에이전트가 동시에 PR 을 여는 저장소는 파일 이름과 색인을 [`examples/adr-parallel.md`](examples/adr-parallel.md) 로 정한다.
 
 ## 계획서를 가리키지 않는다
 
