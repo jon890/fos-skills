@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.8.0
+
+정리 스크립트가 예전에 머지된 PR 과 이름만 같은 새 브랜치의 워크트리를 「머지됨」 으로 지우던 문제와, 워크트리 브랜치 이름이 지시서와 어긋나던 문제를 구조로 막는다.
+
+- `cleanup-sweep.py`: 어느 이름으로 찾았든 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 본다. base 위 커밋이 0 개면 PR HEAD 와 정확히 같을 때만 인정한다. 걸린 PR 만 있으면 「이름만 같은 PR」 로 남긴다
+- `remove-worktree.sh --merged-head`: HEAD 가 그 커밋과 같거나 그 조상이 아니면 거부한다
+- 새 `make-worktree.sh`: 지시서의 `` 브랜치: `<이름>` `` 줄을 읽어 `origin/<기준 브랜치>` 위에 그 이름으로 워크트리를 만들고, exclude 와 로컬 설정 복사를 같이 한다. 같은 이름의 로컬, 원격 브랜치나 경로가 있으면 거부한다. `--check` 는 push 한 브랜치가 지시서 값과 같은지 본다
+- 띄우기 reference 를 `make-worktree.sh` 다음 `--worktree path:` 로 바꾸고, 완료 검증에 `--check` 를 더했다. 지시서 reference 에 `브랜치:` 줄 형식과 push 명령을 정했다
+- 이름 변형으로 PR 을 찾는 코드는 Orca 이름으로 만든 옛 워크트리를 위해 남긴다. 모든 후보에 커밋 검사를 하므로 이름이 우연히 맞아도 지우지 않는다
+- 「옛 머지 PR 과 같은 이름의 새 브랜치」 세 경우, 일반 merge PR, `remove-worktree.sh` 거부, `make-worktree.sh` 를 테스트했다
+
 ## 1.7.0
 
 끝난 워크트리, 세션, 브랜치가 말하지 않아도 정리되게 `cleanup-sweep.py` 가 건너뛰던 경우를 처리한다. 운영에서 코디네이터가 매번 직접 지우던 다섯 경우다.
