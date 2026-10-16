@@ -7,6 +7,7 @@
 # --delete-branch 를 주면 지운 뒤 그 worktree 의 로컬 브랜치도 지운다. 원격 브랜치는 건드리지 않는다.
 # --merged-head 는 머지된 PR 의 HEAD 다. 그 커밋의 조상은 원격에 있는 것으로 센다.
 #   squash 머지는 제목이 달라져 3 의 제목 대조로는 원격에 없는 커밋으로 남기 때문이다.
+#   HEAD 가 그 커밋과 같거나 그 조상이 아니면 거부한다. 옛 PR 과 이름만 같은 새 브랜치를 지우지 않기 위해서다.
 set -u
 p=${1:?worktree 경로}; p=${p:A}; shift
 delete_branch=0 merged_head=""
@@ -25,6 +26,9 @@ branch=$(git -C "$p" branch --show-current 2>/dev/null)
 users=$(lsof -d cwd -Fn 2>/dev/null | grep -c "^n${p}\(/\|$\)")
 if [ "$users" != 0 ]; then echo "거부: $p 를 쓰는 프로세스 $users 개"; exit 1; fi
 if [ -n "$(git -C "$p" status --porcelain)" ]; then echo "거부: $p 에 커밋 안 된 변경"; exit 1; fi
+if [ -n "$merged_head" ] && ! git -C "$p" merge-base --is-ancestor HEAD "$merged_head" 2>/dev/null; then
+  echo "거부: $p 의 HEAD 가 머지된 커밋 $merged_head 와 같지도 그 조상도 아니다"; exit 1
+fi
 lost=0
 for c in $(git -C "$p" rev-list HEAD --not --remotes 2>/dev/null); do
   [ -n "$merged_head" ] && git -C "$p" merge-base --is-ancestor "$c" "$merged_head" 2>/dev/null && continue
