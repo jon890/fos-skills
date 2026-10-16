@@ -1,18 +1,31 @@
 #!/usr/bin/env python3
 """머지가 끝난 worktree 와 로컬 브랜치, 그 worker 터미널과 지시서를 찾아 정리한다.
 
-머지마다 손으로 정리하면 잊히고, 프로세스가 worktree 를 잡고 있어 그 자리에서 실패한 것은 다시 돌아보지 않는다.
+머지마다 수동으로 정리하면 잊히고, 프로세스가 worktree 를 잡고 있어 그 자리에서 실패한 것은 다시 돌아보지 않는다.
 이 스크립트는 상태로만 판정하므로 몇 번을 돌려도 같다. 건너뛴 항목은 다음 실행에서 다시 판정된다.
+사용자가 말하지 않아도 깨어날 때마다 돈다. 코디네이터가 끝난 항목을 직접 지우지 않는다.
 
 사용법 (기본은 dry-run. 무엇을 할지만 낸다):
-    cleanup-sweep.py --repo DIR [--base main] [--run RUN_ID] [--specs-dir DIR] [--apply]
+    cleanup-sweep.py --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--apply]
 
-    --repo        대상 저장소의 기본 체크아웃. 여기서 git worktree 목록과 gh 를 읽는다
-    --base        기준 브랜치. 기본 main
+    --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
+                  하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
+    --base        기준 브랜치. 없으면 저장소마다 origin/HEAD 를 읽고, 그것도 없으면 main
     --run         worker 를 찾을 Orca Run. 없으면 worker 확인과 release 를 건너뛰고 터미널만 경로로 찾는다
     --specs-dir   지시서 폴더(저장소 기준 상대경로 또는 절대경로). worktree 이름과 같은
                   `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다
     --apply       실제로 정리한다
+
+PR 찾기 (브랜치마다):
+    로컬 브랜치 이름과 PR 의 head 브랜치 이름이 다르면(`<user>/<접두>-<주제>` 와 `<접두>/<주제>`) 이름 하나로는 못 찾는다.
+    아래 순서로 `gh pr list --head` 를 부르고 처음 나온 PR 을 쓴다. fork 에서 온 PR 은 건너뛴다.
+      1. 브랜치의 upstream 에서 읽은 원격 브랜치 이름
+      2. `git config branch.<b>.merge`
+      3. 로컬 브랜치 이름
+      4. 이름 변형(사용자 접두 제거, 첫 하이픈을 슬래시로). 변형으로 찾은 PR 은 브랜치의 커밋이 모두
+         그 PR HEAD 의 조상일 때만 쓴다. 이름이 우연히 같은 다른 PR 을 내 것으로 읽지 않으려는 것이다
+    조회 결과는 JSON 으로 읽는다. 빈 목록이면 「PR 없음」 이고, JSON 이 아니거나 필드가 없으면 「조회 실패」 다.
+    둘 다 머지로 읽지 않는다. PR HEAD 가 로컬에 없으면(머지 큐의 update-branch 로 앞서 간 경우) `refs/pull/<번호>/head` 를 받아 온다.
 
 정리 대상 (브랜치마다):
     - 그 브랜치의 PR 이 MERGED 다
@@ -25,13 +38,20 @@
       Dispatch 상태와 상관없이 그 worker 의 터미널이 `orca terminal list` 에 살아 있으면 살아 있다고 본다.
       Dispatch 가 succeeded 여도 같은 터미널에서 후속 일을 하는 worker 가 있고,
       그 브랜치가 막 만든 상태(base 와 같고 커밋 0)면 머지 판정을 통과해 일하는 worker 를 지우게 된다
-    - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다
+    - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다.
+      단, PR 이 MERGED 이고 남은 프로세스가 전부 자식 없는 로그인 셸(Orca 가 worker 를 반납한 뒤 띄운 빈 셸)이고
+      그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
 
 실행 순서 (worktree 마다):
     그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만), 끝난 Dispatch release, `remove-worktree.sh --delete-branch --merged-head`,
     원격 브랜치 삭제(이미 없으면 통과), 지시서 삭제.
     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다.
+
+원격 브랜치 삭제:
+    지울 이름은 PR 의 head 브랜치, upstream, `branch.<b>.merge`, 로컬 이름이다. 이름마다 기준 브랜치, `release/*`,
+    다른 열린 PR 의 base 는 지우지 않는다. 원격 끝점이 머지된 PR HEAD(PR 이 없으면 로컬 브랜치 끝점)와 다르면
+    그 뒤에 커밋이 더해진 것이므로 지우지 않는다. fork 에서 온 PR 의 head 이름은 쓰지 않는다.
 
 ORCA, GH 환경 변수로 실행 파일을 바꾼다. 기본 orca, gh.
 
@@ -53,9 +73,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REMOVE = HERE / "remove-worktree.sh"
 LIVE_STATES = {"working", "ready"}
+PR_STATES = {"MERGED", "OPEN", "CLOSED"}
+SHELLS = {"sh", "bash", "zsh", "fish", "dash", "ksh"}
 BY_PR = "PR MERGED"
 ORCA = os.environ.get("ORCA", "orca")
 GH = os.environ.get("GH", "gh")
+MAX_VARIANTS = 4
 
 
 def run(cmd, cwd=None):
@@ -87,34 +110,120 @@ def worktrees(repo):
     return items[1:]
 
 
-def pr_of(repo, branch):
-    """그 브랜치의 가장 최근 PR. (state, headRefOid) 이고 없으면 (None, None) 이다."""
-    code, out, _ = run([GH, "pr", "list", "--head", branch, "--state", "all", "--limit", "1",
-                        "--json", "number,state,headRefOid"], cwd=repo)
+def default_base(repo):
+    code, out, _ = git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    return out.removeprefix("origin/") if code == 0 and out.startswith("origin/") else "main"
+
+
+def pr_list(repo, head):
+    """`gh pr list --head` 를 JSON 으로 읽는다. (상태, PR 목록). 상태는 ok 나 error 다.
+
+    빈 목록은 ok 와 [] 다. JSON 이 아니거나 목록이 아니거나 state 가 모르는 값이면 error 다.
+    출력 문자열을 비교하지 않고 파싱한다. `null` 같은 문자열이 PR 로 읽히지 않게 한다.
+    """
+    code, out, _ = run([GH, "pr", "list", "--head", head, "--state", "all", "--limit", "5",
+                        "--json", "number,state,headRefOid,headRefName,isCrossRepository"], cwd=repo)
     if code != 0:
-        return None, None
+        return "error", []
     try:
-        prs = json.loads(out or "[]")
+        prs = json.loads(out) if out else []
     except json.JSONDecodeError:
-        return None, None
-    return (prs[0]["state"], prs[0].get("headRefOid")) if prs else (None, None)
+        return "error", []
+    if not isinstance(prs, list):
+        return "error", []
+    for pr in prs:
+        if not isinstance(pr, dict) or pr.get("state") not in PR_STATES or not isinstance(pr.get("number"), int):
+            return "error", []
+    return "ok", prs
+
+
+def name_variants(branch):
+    """로컬 브랜치 `<user>/<접두>-<주제>` 에 대응할 법한 PR head 이름. `<접두>/<주제>` 가 대표적이다."""
+    rest = branch.split("/", 1)[1] if "/" in branch else branch
+    names = [rest] if rest != branch else []
+    pos = -1
+    for _ in range(MAX_VARIANTS - len(names)):
+        pos = rest.find("-", pos + 1)
+        if pos <= 0:
+            break
+        names.append(rest[:pos] + "/" + rest[pos + 1:])
+    return names
+
+
+def pr_candidates(repo, branch):
+    """(PR head 이름, 이름이 확실한지). upstream, branch.<b>.merge, 로컬 이름이 확실하고 변형은 확인이 필요하다."""
+    names = []
+    _, remote, _ = git(repo, "config", "--get", f"branch.{branch}.remote")
+    _, upstream, _ = git(repo, "for-each-ref", "--format=%(upstream)", f"refs/heads/{branch}")
+    prefix = f"refs/remotes/{remote or 'origin'}/"
+    if upstream.startswith(prefix):
+        names.append((upstream[len(prefix):], True))
+    _, merge, _ = git(repo, "config", "--get", f"branch.{branch}.merge")
+    if merge.startswith("refs/heads/"):
+        names.append((merge[len("refs/heads/"):], True))
+    names.append((branch, True))
+    names += [(n, False) for n in name_variants(branch)]
+    seen, unique = set(), []
+    for name, exact in names:
+        if name and name not in seen:
+            seen.add(name)
+            unique.append((name, exact))
+    return unique
+
+
+def ensure_commit(repo, pr):
+    """PR HEAD 가 로컬에 없으면 `refs/pull/<번호>/head` 로 받아 온다. 머지 큐의 update-branch 로 앞서 간 HEAD 가 그런 경우다."""
+    head = pr.get("headRefOid")
+    if not head or git(repo, "cat-file", "-e", f"{head}^{{commit}}")[0] == 0:
+        return
+    git(repo, "fetch", "-q", "origin", f"refs/pull/{pr['number']}/head")
+
+
+def belongs_to(repo, ref, base, pr):
+    """이름 변형으로 찾은 PR 이 이 브랜치의 것인지. base 위에 커밋이 있고 전부 PR HEAD 의 조상이어야 한다."""
+    head = pr.get("headRefOid")
+    if not head:
+        return False
+    code, out, _ = git(repo, "rev-list", "--count", f"origin/{base}..{ref}")
+    if code != 0 or out in ("", "0"):
+        return False
+    return git(repo, "merge-base", "--is-ancestor", ref, head)[0] == 0
+
+
+def find_pr(repo, branch, base):
+    """그 브랜치의 PR. (PR dict 또는 None, 조회 실패가 있었는지)."""
+    failed = False
+    for name, exact in pr_candidates(repo, branch):
+        status, prs = pr_list(repo, name)
+        if status == "error":
+            failed = True
+            continue
+        for pr in prs:
+            if pr.get("isCrossRepository"):
+                continue
+            ensure_commit(repo, pr)
+            if exact or belongs_to(repo, f"refs/heads/{branch}", base, pr):
+                return pr, failed
+            break
+    return None, failed
 
 
 def merged(repo, branch, base):
-    """(머지됐는지, 머지된 PR HEAD, 판정 근거)."""
-    state, head = pr_of(repo, branch)
-    if state == "MERGED":
-        return True, head, BY_PR
+    """(머지됐는지, 머지된 PR HEAD, 판정 근거, PR)."""
+    pr, failed = find_pr(repo, branch, base)
+    if pr and pr["state"] == "MERGED":
+        return True, pr.get("headRefOid"), BY_PR, pr
+    state = pr["state"] if pr else ("조회 실패" if failed else "없음")
     _, track, _ = git(repo, "for-each-ref", "--format=%(upstream:track)", f"refs/heads/{branch}")
     if track != "[gone]":
-        return False, None, f"PR {state or '없음'}, upstream 이 남아 있다"
+        return False, None, f"PR {state}, upstream 이 남아 있다", pr
     code, out, _ = git(repo, "cherry", f"origin/{base}", branch)
     if code != 0:
-        return False, None, "git cherry 실패"
+        return False, None, "git cherry 실패", pr
     plus = sum(1 for line in out.splitlines() if line.startswith("+"))
     if plus:
-        return False, None, f"upstream gone 이지만 base 에 없는 커밋 {plus} 개"
-    return True, None, "upstream gone, base 에 없는 커밋 0 개"
+        return False, None, f"upstream gone 이지만 base 에 없는 커밋 {plus} 개", pr
+    return True, None, "upstream gone, base 에 없는 커밋 0 개", pr
 
 
 def unpushed(repo, ref, merged_head, by_cherry):
@@ -133,11 +242,38 @@ def dirty(path):
     return code != 0 or bool(out)
 
 
+def holder_pids(path):
+    """그 경로나 하위를 작업 디렉터리로 쓰는 프로세스 pid 목록."""
+    _, out, _ = run(["lsof", "-d", "cwd", "-Fpn"])
+    pids, pid = [], None
+    for line in out.splitlines():
+        if line.startswith("p"):
+            pid = line[1:]
+        elif line.startswith("n") and (line[1:] == path or line[1:].startswith(path + "/")):
+            pids.append(pid)
+    return pids
+
+
 def holders(path):
-    """그 경로나 하위를 작업 디렉터리로 쓰는 프로세스 수."""
-    _, out, _ = run(["lsof", "-d", "cwd", "-Fn"])
-    return sum(1 for line in out.splitlines()
-               if line.startswith("n") and (line[1:] == path or line[1:].startswith(path + "/")))
+    return len(holder_pids(path))
+
+
+def only_idle_shells(pids):
+    """그 프로세스가 모두 자식 없는 로그인 셸이면 True. 로그인 셸은 argv[0] 이 `-` 로 시작한다(`-/bin/zsh`)."""
+    if not pids:
+        return False
+    _, out, _ = run(["ps", "-axo", "pid=,ppid=,command="])
+    rows, parents = {}, set()
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) == 3:
+            rows[parts[0]] = parts[2]
+            parents.add(parts[1])
+    for pid in pids:
+        argv0 = rows.get(pid, "").split(None, 1)[0] if rows.get(pid) else ""
+        if not argv0.startswith("-") or Path(argv0[1:]).name not in SHELLS or pid in parents:
+            return False
+    return True
 
 
 def orca_json(*args):
@@ -164,6 +300,26 @@ def terminals_at(terminals, path):
     return [t["handle"] for t in terminals or [] if t.get("worktreePath") == path and t.get("handle")]
 
 
+def close_terminals(handles, apply, log, what="터미널"):
+    for handle in handles:
+        if apply:
+            code, _, _ = run([ORCA, "terminal", "close", "--terminal", handle, "--json"])
+            log(f"  {what} 닫음 {handle}" if code == 0 else f"  {what} 닫기 실패 {handle}")
+        else:
+            log(f"  {what}을 닫을 것 {handle}")
+
+
+def wait_free(path, seconds):
+    """그 경로를 쓰는 프로세스가 빠지기를 기다린다. 남은 pid 목록을 돌려준다."""
+    pids = holder_pids(path)
+    for _ in range(seconds):
+        if not pids:
+            break
+        time.sleep(1)
+        pids = holder_pids(path)
+    return pids
+
+
 def protected(repo, branch, base):
     if branch == base or branch.startswith("release/"):
         return "기준 브랜치나 release 브랜치"
@@ -173,19 +329,38 @@ def protected(repo, branch, base):
     return None
 
 
-def delete_remote(repo, branch, apply, log):
-    code, out, _ = git(repo, "ls-remote", "--heads", "origin", branch)
-    if code != 0:
-        log(f"  원격 브랜치 확인 실패 {branch}")
-        return
-    if not out:
-        log(f"  원격 브랜치 이미 없음 {branch}")
-        return
-    if apply:
-        code, _, err = git(repo, "push", "-q", "origin", "--delete", branch)
-        log(f"  원격 브랜치 삭제 {branch}" if code == 0 else f"  원격 브랜치 삭제 실패 {branch}: {err}")
-    else:
-        log(f"  원격 브랜치를 지울 것 {branch}")
+def remote_plan(repo, branch, pr):
+    """지울 원격 브랜치 이름과, 그 끝점이 가져야 할 커밋. 로컬 브랜치를 지우기 전에 만든다."""
+    names = [name for name, exact in pr_candidates(repo, branch) if exact]
+    if pr and not pr.get("isCrossRepository") and pr.get("headRefName"):
+        names.insert(0, pr["headRefName"])
+    expect = pr.get("headRefOid") if pr and pr.get("state") == "MERGED" else git(repo, "rev-parse", f"refs/heads/{branch}")[1]
+    return list(dict.fromkeys(names)), expect
+
+
+def delete_remote(repo, plan, base, apply, log):
+    names, expect = plan
+    for name in names:
+        reason = protected(repo, name, base)
+        if reason:
+            log(f"  원격 브랜치 남김 {name}: {reason}")
+            continue
+        code, out, _ = git(repo, "ls-remote", "--heads", "origin", f"refs/heads/{name}")
+        if code != 0:
+            log(f"  원격 브랜치 확인 실패 {name}")
+            continue
+        if not out:
+            log(f"  원격 브랜치 이미 없음 {name}")
+            continue
+        tip = out.split()[0]
+        if expect and tip != expect:
+            log(f"  원격 브랜치 남김 {name}: 끝점이 머지된 커밋과 다르다")
+            continue
+        if apply:
+            code, _, err = git(repo, "push", "-q", "origin", "--delete", name)
+            log(f"  원격 브랜치 삭제 {name}" if code == 0 else f"  원격 브랜치 삭제 실패 {name}: {err}")
+        else:
+            log(f"  원격 브랜치를 지울 것 {name}")
 
 
 def delete_specs(specs_dir, name, apply, log):
@@ -209,7 +384,7 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     if reason:
         log(f"건너뜀 {path}: {reason} ({branch})")
         return
-    ok, merged_head, why = merged(repo, branch, args.base)
+    ok, merged_head, why, pr = merged(repo, branch, args.base)
     if not ok:
         log(f"남김 {path}: {why}")
         return
@@ -232,13 +407,9 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         return
 
     log(f"정리 {path} ({branch}, {why})")
+    plan = remote_plan(repo, branch, pr)
     # 터미널은 PR 이 MERGED 일 때만 닫는다. cherry 로만 판정한 브랜치는 막 만든 브랜치일 수 있다
-    for handle in terminals_at(terminals, path) if by_pr else []:
-        if args.apply:
-            code, _, _ = run([ORCA, "terminal", "close", "--terminal", handle, "--json"])
-            log(f"  터미널 닫음 {handle}" if code == 0 else f"  터미널 닫기 실패 {handle}")
-        else:
-            log(f"  터미널을 닫을 것 {handle}")
+    close_terminals(terminals_at(terminals, path) if by_pr else [], args.apply, log)
     for w in mine:
         dispatch = w.get("dispatchId")
         if not dispatch or (w.get("resource") or {}).get("releaseState") == "released":
@@ -249,22 +420,26 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         else:
             log(f"  dispatch 를 release 할 것 {dispatch}")
     if not args.apply:
-        busy = holders(path)
-        if busy:
-            log(f"  터미널을 닫은 뒤에도 프로세스 {busy} 개가 남으면 다음 실행으로 미룬다")
+        pids = holder_pids(path)
+        if pids and by_pr and only_idle_shells(pids):
+            log(f"  남은 프로세스 {len(pids)} 개가 유휴 셸뿐이면 그 Orca 터미널을 닫고 다시 시도한다")
+        elif pids:
+            log(f"  터미널을 닫은 뒤에도 프로세스 {len(pids)} 개가 남으면 다음 실행으로 미룬다")
         log(f"  worktree 와 로컬 브랜치를 지울 것 {branch}")
-        delete_remote(repo, branch, False, log)
+        delete_remote(repo, plan, args.base, False, log)
         delete_specs(specs_dir, name, False, log)
         return
 
-    busy = 0
-    for _ in range(args.wait):
-        busy = holders(path)
-        if not busy:
-            break
-        time.sleep(1)
-    if busy:
-        log(f"  건너뜀: 그 경로를 쓰는 프로세스 {busy} 개. 다음 실행에서 다시 시도한다")
+    pids = wait_free(path, args.wait)
+    if pids and by_pr and only_idle_shells(pids):
+        # worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 목록을 다시 읽어 그 터미널을 닫는다
+        handles = terminals_at(live_terminals(), path)
+        if handles:
+            log(f"  남은 프로세스 {len(pids)} 개가 유휴 셸뿐이다. Orca 터미널을 닫고 다시 시도한다")
+            close_terminals(handles, True, log, "유휴 셸 터미널")
+            pids = wait_free(path, args.wait)
+    if pids:
+        log(f"  건너뜀: 그 경로를 쓰는 프로세스 {len(pids)} 개. 다음 실행에서 다시 시도한다")
         return
     cmd = ["zsh", str(REMOVE), path, "--delete-branch"]
     if merged_head:
@@ -273,7 +448,7 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     log("  " + (out or err).replace("\n", "\n  "))
     if code != 0:
         return
-    delete_remote(repo, branch, True, log)
+    delete_remote(repo, plan, args.base, True, log)
     delete_specs(specs_dir, name, True, log)
 
 
@@ -284,25 +459,43 @@ def sweep_branches(repo, args, checked_out, log):
     for branch in out.splitlines():
         if branch in checked_out or protected(repo, branch, args.base):
             continue
-        ok, merged_head, why = merged(repo, branch, args.base)
+        ok, merged_head, why, pr = merged(repo, branch, args.base)
         if not ok:
             continue
         lost = unpushed(repo, branch, merged_head, merged_head is None)
         if lost:
             log(f"건너뜀 브랜치 {branch}: 원격에 없는 커밋 {lost if lost > 0 else '확인 실패'}")
             continue
+        plan = remote_plan(repo, branch, pr)
         if args.apply:
             code, _, err = git(repo, "branch", "-D", branch)
             log(f"브랜치 삭제 {branch} ({why})" if code == 0 else f"브랜치 삭제 실패 {branch}: {err}")
         else:
             log(f"브랜치를 지울 것 {branch} ({why})")
-        delete_remote(repo, branch, args.apply, log)
+        delete_remote(repo, plan, args.base, args.apply, log)
+
+
+def sweep_repo(repo, args, workers, terminals, log):
+    base = args.base or default_base(repo)
+    args = argparse.Namespace(**{**vars(args), "base": base})
+    specs_dir = None
+    if args.specs_dir:
+        specs_dir = Path(args.specs_dir)
+        specs_dir = specs_dir if specs_dir.is_absolute() else repo / specs_dir
+    git(repo, "fetch", "-q", "--prune", "origin")
+    items = worktrees(repo)
+    log(f"cleanup-sweep {'apply' if args.apply else 'dry-run'}: {repo} (base {base})")
+    for path, branch in items:
+        sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
+    remaining = {branch for _, branch in worktrees(repo)}
+    _, main_branch, _ = git(repo, "branch", "--show-current")
+    sweep_branches(repo, args, remaining | {main_branch}, log)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--repo", required=True)
-    parser.add_argument("--base", default="main")
+    parser.add_argument("--repo", required=True, action="append")
+    parser.add_argument("--base")
     parser.add_argument("--run")
     parser.add_argument("--specs-dir")
     parser.add_argument("--apply", action="store_true")
@@ -311,35 +504,26 @@ def main(argv=None):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    repo = Path(args.repo).resolve()
-    specs_dir = None
-    if args.specs_dir:
-        specs_dir = Path(args.specs_dir)
-        specs_dir = specs_dir if specs_dir.is_absolute() else repo / specs_dir
+    repos = list(dict.fromkeys(Path(r).resolve() for r in args.repo))
 
     def log(line):
         print(line, flush=True)
 
-    try:
-        git(repo, "fetch", "-q", "--prune", "origin")
-        items = worktrees(repo)
-    except RuntimeError as exc:
-        print(f"cleanup-sweep: {exc}", file=sys.stderr)
-        return 2
-    workers = []
     terminals = live_terminals()
     if terminals is None:
         print("cleanup-sweep: orca terminal list 를 읽지 못해 살아 있는 worker 를 판정할 수 없다", file=sys.stderr)
         return 2
+    workers = []
     if args.run:
         workers = (orca_json("orchestration", "worker-list", "--run", args.run) or {}).get("workers", [])
-    log(f"cleanup-sweep {'apply' if args.apply else 'dry-run'}: {repo} (base {args.base})")
-    for path, branch in items:
-        sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
-    remaining = {branch for _, branch in worktrees(repo)}
-    _, main_branch, _ = git(repo, "branch", "--show-current")
-    sweep_branches(repo, args, remaining | {main_branch}, log)
-    return 0
+    code = 0
+    for repo in repos:
+        try:
+            sweep_repo(repo, args, workers, terminals, log)
+        except RuntimeError as exc:
+            print(f"cleanup-sweep: {exc}", file=sys.stderr)
+            code = 2
+    return code
 
 
 if __name__ == "__main__":

@@ -26,19 +26,24 @@ class CleanupSweepTest(unittest.TestCase):
         os.environ.update({k: self.env[k] for k in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
                                                       "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
                                                       "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL")})
-        self.origin = self.tmp / "origin.git"
-        self.repo = self.tmp / "repo"
-        sh("git", "init", "-q", "--bare", "-b", "main", str(self.origin))
-        sh("git", "clone", "-q", str(self.origin), str(self.repo))
-        sh("git", "-C", str(self.repo), "commit", "-q", "--allow-empty", "-m", "init")
-        sh("git", "-C", str(self.repo), "push", "-q", "-u", "origin", "main")
+        self.repo = self.make_repo("repo")
         self.wts = self.tmp / "wts"
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
         self.prs, self.workers, self.terminals, self.held = {}, [], [], []
-        self.orca_fail = False
+        self.processes, self.spawn_on_release, self.gh_raw, self.open_bases = [], None, {}, []
+        self.orca_fail = self.gh_fail = False
         self.log = self.tmp / "calls.log"
         self.write_fakes()
+
+    def make_repo(self, name):
+        origin = self.tmp / f"{name}-origin.git"
+        repo = self.tmp / name
+        sh("git", "init", "-q", "--bare", "-b", "main", str(origin))
+        sh("git", "clone", "-q", str(origin), str(repo))
+        sh("git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "init")
+        sh("git", "-C", str(repo), "push", "-q", "-u", "origin", "main")
+        return repo
 
     def write_fakes(self):
         state = self.tmp / "state.json"
@@ -50,40 +55,69 @@ class CleanupSweepTest(unittest.TestCase):
             open("{self.log}", "a").write(" ".join(["%s"] + a) + "\\n")
             """)
         gh = fake % "gh" + textwrap.dedent("""\
+            if st.get("gh_fail"):
+                sys.exit(1)
             if a[:2] == ["pr", "list"] and "--head" in a:
                 b = a[a.index("--head") + 1]
                 p = st["prs"].get(b)
-                print(json.dumps([{"number": 1, "state": p[0], "headRefOid": p[1]}] if p else []))
+                if b in st["gh_raw"]:
+                    print(st["gh_raw"][b])
+                else:
+                    print(json.dumps([{"number": 1, "state": p[0], "headRefOid": p[1], "headRefName": b,
+                                       "isCrossRepository": len(p) > 2 and p[2]}] if p else []))
             elif a[:2] == ["pr", "list"] and "--base" in a:
-                print(0)
+                print(1 if a[a.index("--base") + 1] in st["open_bases"] else 0)
             """)
-        orca = fake % "orca" + textwrap.dedent("""\
+        orca = fake % "orca" + textwrap.dedent(f"""\
             if st.get("orca_fail"):
                 sys.exit(1)
+            def save():
+                json.dump(st, open("{state}", "w"))
             if a[:2] == ["terminal", "list"]:
-                print(json.dumps({"result": {"terminals": st["terminals"]}}))
+                print(json.dumps({{"result": {{"terminals": st["terminals"]}}}}))
             elif a[:2] == ["orchestration", "worker-list"]:
-                print(json.dumps({"result": {"workers": st["workers"]}}))
+                print(json.dumps({{"result": {{"workers": st["workers"]}}}}))
+            elif a[:2] == ["terminal", "close"]:
+                h = a[a.index("--terminal") + 1]
+                st["terminals"] = [t for t in st["terminals"] if t["handle"] != h]
+                st["processes"] = [q for q in st["processes"] if q.get("terminal") != h]
+                save()
+                print(json.dumps({{"ok": True, "result": {{}}}}))
+            elif a[:2] == ["orchestration", "worker-release"] and st.get("spawn_on_release"):
+                # worker 를 반납하면 Orca 가 그 워크트리에 빈 셸 터미널을 띄운다
+                sp = st.pop("spawn_on_release")
+                st["terminals"].append({{"handle": sp["handle"], "worktreePath": sp["path"]}})
+                st["processes"].extend(sp["processes"])
+                save()
+                print(json.dumps({{"ok": True, "result": {{}}}}))
             else:
-                print(json.dumps({"ok": True, "result": {}}))
+                print(json.dumps({{"ok": True, "result": {{}}}}))
             """)
         lsof = fake % "lsof" + textwrap.dedent("""\
-            for p in st["held"]:
-                print("p1"); print("n" + p)
+            for q in st["processes"]:
+                print("p" + str(q["pid"])); print("n" + q["cwd"])
             """)
-        for name, body in (("gh", gh), ("orca", orca), ("lsof", lsof)):
+        ps = fake % "ps" + textwrap.dedent("""\
+            for q in st["processes"]:
+                print(q["pid"], q.get("ppid", 1), q["command"])
+            """)
+        for name, body in (("gh", gh), ("orca", orca), ("lsof", lsof), ("ps", ps)):
             path = self.bin / name
             path.write_text(body)
             path.chmod(0o755)
 
     def save_state(self):
         (self.tmp / "state.json").write_text(json.dumps(
-            {"prs": self.prs, "workers": self.workers, "terminals": self.terminals, "held": self.held,
-             "orca_fail": self.orca_fail}))
+            {"prs": self.prs, "workers": self.workers, "terminals": self.terminals,
+             "processes": self.processes + [{"pid": 900 + i, "cwd": p, "command": "node server.js"}
+                                            for i, p in enumerate(self.held)],
+             "spawn_on_release": self.spawn_on_release, "gh_raw": self.gh_raw, "open_bases": self.open_bases,
+             "orca_fail": self.orca_fail, "gh_fail": self.gh_fail}))
 
-    def worktree(self, name, push=True, commits=1):
+    def worktree(self, name, push=True, commits=1, repo=None):
+        repo = repo or self.repo
         path = self.wts / name
-        sh("git", "-C", str(self.repo), "worktree", "add", "-q", "-b", name, str(path), "origin/main")
+        sh("git", "-C", str(repo), "worktree", "add", "-q", "-b", name, str(path), "origin/main")
         for i in range(commits):
             (path / f"{name.replace('/', '-')}{i}.txt").write_text(name)
             sh("git", "-C", str(path), "add", "-A")
@@ -99,10 +133,11 @@ class CleanupSweepTest(unittest.TestCase):
         self.prs[name] = ["MERGED", head]
         return head
 
-    def run_sweep(self, *args, code=0):
+    def run_sweep(self, *args, code=0, repos=None):
         self.save_state()
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}", ORCA=str(self.bin / "orca"), GH=str(self.bin / "gh"))
-        done = subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo), "--wait", "1", *args],
+        flags = [f for r in (repos or [self.repo]) for f in ("--repo", str(r))]
+        done = subprocess.run(["python3", str(SCRIPT), *flags, "--wait", "1", *args],
                               capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, code, done.stderr)
         return done.stdout
@@ -261,6 +296,190 @@ class CleanupSweepTest(unittest.TestCase):
         self.orca_fail = True
         self.run_sweep("--apply", code=2)
         self.assertTrue(path.exists())
+
+    def renamed_worktree(self, local, remote, track=True, repo=None):
+        """로컬 브랜치 이름과 원격 브랜치 이름이 다른 worktree. 원격 브랜치는 그대로 둔다."""
+        path = self.worktree(local, push=False, repo=repo)
+        sh("git", "-C", str(path), "push", "-q", *(["-u"] if track else []), "origin", f"{local}:{remote}")
+        return path
+
+    def sweep_calls(self, needle):
+        return [line for line in self.calls().splitlines() if needle in line]
+
+    # 1. squash 머지, PR HEAD 가 워크트리 HEAD 보다 앞선 경우
+    def test_pr_head_ahead_of_worktree_is_fetched_and_passed_as_merged_head(self):
+        path = self.worktree("feat-j")
+        other = self.tmp / "other"
+        sh("git", "clone", "-q", "-b", "feat-j", str(self.tmp / "repo-origin.git"), str(other))
+        (other / "update.txt").write_text("x")
+        sh("git", "-C", str(other), "add", "-A")
+        sh("git", "-C", str(other), "commit", "-q", "-m", "Merge branch main into feat-j")
+        ahead = sh("git", "-C", str(other), "rev-parse", "HEAD")
+        sh("git", "-C", str(other), "push", "-q", "origin", f"{ahead}:refs/pull/1/head")
+        sh("git", "-C", str(other), "push", "-q", "origin", ":feat-j")
+        self.prs["feat-j"] = ["MERGED", ahead]
+        self.assertNotEqual(sh("git", "-C", str(path), "rev-parse", "HEAD"), ahead)
+        out = self.run_sweep("--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertNotIn("feat-j", self.branches())
+
+    # 2. 브랜치 이름 대응
+    def test_pr_is_found_by_upstream_name_and_remote_branch_is_deleted(self):
+        path = self.renamed_worktree("dev/proj-topic", "proj/topic")
+        head = sh("git", "-C", str(path), "rev-parse", "HEAD")
+        self.prs["proj/topic"] = ["MERGED", head]
+        out = self.run_sweep("--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertNotIn("dev/proj-topic", self.branches())
+        self.assertNotIn("proj/topic", self.remote_branches())
+        self.assertIn("--head proj/topic", self.calls())
+        self.assertNotIn("--head dev/proj-topic", self.calls())
+
+    def test_pr_is_found_by_name_variant_without_upstream(self):
+        path = self.renamed_worktree("dev/proj-topic", "proj/topic", track=False)
+        sh("git", "-C", str(self.repo), "push", "-q", "origin", "--delete", "proj/topic")
+        self.prs["proj/topic"] = ["MERGED", sh("git", "-C", str(path), "rev-parse", "HEAD")]
+        out = self.run_sweep("--apply")
+        self.assertFalse(path.exists(), out)
+
+    def test_name_variant_pr_that_does_not_contain_the_branch_is_ignored(self):
+        path = self.worktree("dev/topic")
+        self.prs["topic"] = ["MERGED", sh("git", "-C", str(self.repo), "rev-parse", "origin/main")]
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("남김", out)
+
+    def test_remote_branch_with_new_commits_is_kept(self):
+        path = self.renamed_worktree("dev/proj-b", "proj/b")
+        head = sh("git", "-C", str(path), "rev-parse", "HEAD")
+        sh("git", "-C", str(self.repo), "worktree", "remove", str(path))
+        other = self.tmp / "other"
+        sh("git", "clone", "-q", "-b", "proj/b", str(self.tmp / "repo-origin.git"), str(other))
+        (other / "more.txt").write_text("x")
+        sh("git", "-C", str(other), "add", "-A")
+        sh("git", "-C", str(other), "commit", "-q", "-m", "more")
+        sh("git", "-C", str(other), "push", "-q", "origin", "proj/b")
+        self.prs["proj/b"] = ["MERGED", head]
+        out = self.run_sweep("--apply")
+        self.assertNotIn("dev/proj-b", self.branches(), out)
+        self.assertIn("proj/b", self.remote_branches())
+        self.assertIn("끝점이 머지된 커밋과 다르다", out)
+
+    def test_fork_pr_is_not_a_match(self):
+        path = self.worktree("feat-k")
+        self.prs["feat-k"] = ["MERGED", sh("git", "-C", str(path), "rev-parse", "HEAD"), True]
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+
+    # PR 조회가 비거나 깨지면 머지로 읽지 않는다
+    def test_empty_pr_lookup_is_no_pr_and_keeps_worktree(self):
+        path = self.worktree("feat-l")
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("PR 없음", out)
+        self.assertIn("feat-l", self.remote_branches())
+
+    def test_null_text_lookup_is_not_merged(self):
+        path = self.worktree("feat-m")
+        for name in ("feat-m", "feat/m"):
+            self.gh_raw[name] = "null"
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("조회 실패", out)
+        self.assertIn("feat-m", self.branches())
+
+    def test_gh_failure_keeps_worktree_and_branches(self):
+        path = self.worktree("feat-n")
+        self.gh_fail = True
+        self.run_sweep("--apply")
+        self.assertTrue(path.exists())
+        self.assertIn("feat-n", self.branches())
+
+    # 3. Orca 가 worker 반납 뒤 띄운 빈 셸
+    def idle_shell(self, path, handle="term_shell", child=False):
+        shell = {"pid": 501, "ppid": 1, "cwd": str(path), "command": "-/bin/zsh -l", "terminal": handle}
+        rows = [shell] + ([{"pid": 502, "ppid": 501, "cwd": str(path), "command": "sleep 100"}] if child else [])
+        return {"handle": handle, "path": str(path), "processes": rows}
+
+    def released_worker_with_shell(self, name, **kw):
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        self.workers = [{"dispatchId": "ctx_w", "workerState": "succeeded",
+                         "resource": {"worktreeId": f"x::{path}", "releaseState": "retained"}}]
+        self.spawn_on_release = self.idle_shell(path, **kw)
+        return path
+
+    def test_idle_shell_terminal_left_after_release_is_closed_and_worktree_removed(self):
+        path = self.released_worker_with_shell("feat-o")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertNotIn("feat-o", self.branches())
+        self.assertIn("orca terminal close --terminal term_shell", self.calls())
+
+    def test_shell_with_a_running_child_is_not_closed(self):
+        path = self.released_worker_with_shell("feat-p", child=True)
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertNotIn("terminal close", self.calls())
+        self.assertIn("다음 실행에서 다시 시도", out)
+
+    def test_other_process_is_not_treated_as_idle_shell(self):
+        path = self.worktree("feat-q")
+        self.squash_merge("feat-q", path)
+        self.terminals = [{"handle": "term_q", "worktreePath": str(path)}]
+        self.processes = [{"pid": 601, "ppid": 1, "cwd": str(path), "command": "node server.js"}]
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertEqual(len(self.sweep_calls("terminal close")), 1)
+        self.assertIn("다음 실행에서 다시 시도", out)
+
+    def test_idle_shell_without_orca_terminal_is_left_alone(self):
+        path = self.worktree("feat-r")
+        self.squash_merge("feat-r", path)
+        self.processes = self.idle_shell(path)["processes"]
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertNotIn("terminal close", self.calls())
+
+    # 4. 저장소 여러 개
+    def test_several_repos_are_swept_in_one_run(self):
+        second = self.make_repo("second")
+        a = self.worktree("feat-s1")
+        b = self.worktree("feat-s2", repo=second)
+        self.squash_merge("feat-s1", a)
+        sh("git", "-C", str(second), "push", "-q", "origin", "--delete", "feat-s2")
+        self.prs["feat-s2"] = ["MERGED", sh("git", "-C", str(b), "rev-parse", "HEAD")]
+        out = self.run_sweep("--apply", repos=[self.repo, second])
+        self.assertFalse(a.exists(), out)
+        self.assertFalse(b.exists(), out)
+        self.assertIn(str(second), out)
+        self.assertEqual(self.calls().count("terminal list"), 1)
+
+    def test_unreadable_repo_does_not_stop_the_others(self):
+        a = self.worktree("feat-t")
+        self.squash_merge("feat-t", a)
+        out = self.run_sweep("--apply", repos=[self.tmp / "missing", self.repo], code=2)
+        self.assertFalse(a.exists(), out)
+
+    # 5. 워크트리 없는 로컬 브랜치와 원격 브랜치
+    def test_merged_local_branch_without_worktree_deletes_renamed_remote_branch(self):
+        path = self.renamed_worktree("dev/proj-c", "proj/c")
+        head = sh("git", "-C", str(path), "rev-parse", "HEAD")
+        sh("git", "-C", str(self.repo), "worktree", "remove", str(path))
+        self.prs["proj/c"] = ["MERGED", head]
+        out = self.run_sweep("--apply")
+        self.assertNotIn("dev/proj-c", self.branches(), out)
+        self.assertNotIn("proj/c", self.remote_branches())
+
+    def test_remote_branch_that_is_a_base_of_an_open_pr_is_kept(self):
+        path = self.worktree("feat-u")
+        head = sh("git", "-C", str(path), "rev-parse", "HEAD")
+        sh("git", "-C", str(self.repo), "worktree", "remove", str(path))
+        self.prs["feat-u"] = ["MERGED", head]
+        self.open_bases = ["feat-u"]
+        out = self.run_sweep("--apply")
+        self.assertIn("feat-u", self.branches(), out)
+        self.assertIn("feat-u", self.remote_branches())
 
 
 if __name__ == "__main__":

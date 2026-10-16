@@ -72,11 +72,20 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 '102:./bin/backup-db
 ## 정리
 
 **정리는 `cleanup-sweep.py` 가 한다.** `merge-queue.sh` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
+**사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬과 원격 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
 
 ```bash
 bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" 101 102
 ```
+
+스크립트가 다루는 것은 아래다. 이 경우를 코디네이터가 직접 지우지 않는다.
+
+- squash 머지된 PR. PR HEAD 를 `--merged-head` 로 넘긴다. 머지 큐의 update-branch 로 PR HEAD 가 워크트리보다 앞서 가도 `refs/pull/<번호>/head` 를 받아 와서 지운다
+- 로컬 브랜치 이름(`<user>/<접두>-<주제>`)과 PR 브랜치 이름(`<접두>/<주제>`)이 다른 경우. upstream, `branch.<b>.merge`, 이름 변형 순으로 PR 을 찾는다. PR 조회가 비거나 깨지면 머지로 읽지 않는다
+- worker 를 반납한 뒤 Orca 가 그 워크트리에 띄운 빈 셸 터미널. 폴더를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 그 터미널을 닫고 다시 시도한다. 다른 프로세스가 남아 있으면 건너뛴다
+- 워크트리 없이 남은 머지된 로컬 브랜치와, PR 이 머지된 뒤 남은 원격 브랜치
+- 저장소가 여럿인 경우. `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시)
 
 스크립트가 건너뛴 항목과, 스크립트가 다루지 않는 아래 일만 직접 한다.
 
@@ -123,7 +132,7 @@ macOS 의 zsh 와 `lsof`, git 2.31 이상을 전제한다.
 "$SKILL_DIR/scripts/remove-worktree.sh" "$WORKTREE" --delete-branch
 ```
 
-squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. 그 커밋의 조상은 원격에 있는 것으로 센다.
+squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. 그 커밋의 조상은 원격에 있는 것으로 센다. `cleanup-sweep.py` 는 이 값을 스스로 넘긴다.
 
 - Orca 가 만든 워크트리를 `orca worktree rm` 으로 지울 때는 뒤에 `git -C "$REPO" worktree prune` 을 돌린다.
   디렉터리만 지우고 git 의 워크트리 기록이 남아, 그대로면 브랜치 삭제가 `used by worktree` 로 거절된다
