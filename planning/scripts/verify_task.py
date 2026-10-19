@@ -67,7 +67,8 @@ BSD_SED = re.compile(r"sed\s.*\\b")
 # 모노레포는 하위 프로젝트마다 docs 를 둔다. 루트 기준 경로의 어느 조각이든 `docs` 면 근거 문서로 본다.
 DOC_PATH = re.compile(r"`((?:[A-Za-z0-9_.-]+/)*docs/[^`\s]+)`")
 TEST_DIRS = {"test", "tests", "__tests__"}
-TEST_NAME = re.compile(r"^test[_-]|(?:Test|Tests)\.[^.]+$|[._-](?:test|spec)\.[^.]+$")
+# `-spec.js` 는 테스트 이름이 아니다. `bottom-panel-spec.js` 같은 운영 코드의 이름이라 spec 은 `.spec.ts` 와 `_spec.rb` 처럼 `.` 나 `_` 로 이은 것만 본다.
+TEST_NAME = re.compile(r"^test[_-]|(?:Test|Tests)\.[^.]+$|[._-]test\.[^.]+$|[._]spec\.[^.]+$")
 # 테스트 디렉터리 안에서만 테스트로 보는 이름이다. `UserSpec.java`, `AppIT.java` 같은 JVM 규칙이다.
 RUNNABLE_NAME = re.compile(r"(?:Spec|IT)\.[^.]+$")
 BUNDLE = re.compile(r"\$(?:SKILL_DIR|\{SKILL_DIR\})|~/\.(?:claude|codex)/skills|\$HOME/\.(?:claude|codex)/skills")
@@ -943,7 +944,9 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     ]
     checked_script = any(any(arg.removeprefix("./") in changed_code and arg in work for arg in command) for command in runners)
     if changed_code and not declared_tests and not checked_script:
-        out.append(f"{path} — 코드 변경을 검증할 테스트 파일 또는 검증 스크립트 작업이 같은 phase 에 없다")
+        # 어느 변경 파일 때문에 걸렸는지 보여 준다. glob 이 코드로 잡혔는지 테스트로 안 잡혔는지 가려야 한다.
+        shown = ", ".join(changed_code[:CALLER_LIMIT]) + (f" 외 {len(changed_code) - CALLER_LIMIT}개" if len(changed_code) > CALLER_LIMIT else "")
+        out.append(f"{path} — 코드 변경을 검증할 테스트 파일 또는 검증 스크립트 작업이 같은 phase 에 없다 (코드로 센 변경 파일: {shown})")
     targeted = []
     for command in runners:
         unwrapped = unwrap(command)
@@ -990,6 +993,15 @@ def check_human_verification(path, text, out):
 # 작업 항목이 함수를 가리키는 형태다. `save()`, `save(user)`, `Repo.save()` 의 마지막 이름을 잡는다.
 CALL_REFERENCE = re.compile(r"`(?:[A-Za-z_][\w]*[.:#]+)*([A-Za-z_]\w*)\([^`]*\)`")
 CALLER_LIMIT = 5
+# 어느 저장소에나 있는 이름이라 호출자 경고가 거의 모든 파일을 가리킨다(실측: 경고 28건 중 23건).
+# 낱말로 grep 하는 한 어느 함수의 호출자인지 가릴 수 없어 건너뛴다. 저장소 고유 이름은 넣지 않는다.
+COMMON_CALL_NAMES = frozenset({
+    "print", "println", "printf", "len", "str", "int", "float", "bool", "list", "dict", "set", "get",
+    "map", "filter", "reduce", "forEach", "push", "pop", "append", "join", "split", "keys", "values",
+    "items", "open", "close", "read", "write", "log", "format", "init", "main", "run", "test",
+    "then", "catch", "parse", "toString", "equals", "hashCode", "size", "length", "min", "max",
+    "range", "sorted", "sort", "isinstance", "super", "require", "assert", "expect",
+})
 
 
 def git_grep_files(repo, name, exclude):
@@ -1020,7 +1032,7 @@ def check_callers(phase_entries, repo, tasks_dir, warnings):
                     if action in {"수정", "삭제"} and Path(rel).suffix in CODE_SUFFIXES and not is_glob(rel)]
         if not modified:
             continue
-        names = dict.fromkeys(CALL_REFERENCE.findall(work))
+        names = dict.fromkeys(n for n in CALL_REFERENCE.findall(work) if n not in COMMON_CALL_NAMES)
         for name in names:
             owners = [rel for rel in modified if (repo / rel).is_file()
                       and re.search(rf"\b{re.escape(name)}\b", (repo / rel).read_text(encoding="utf-8", errors="ignore"))]

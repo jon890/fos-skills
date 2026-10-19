@@ -125,12 +125,44 @@ class TaskRulesTest(unittest.TestCase):
         verify.check_callers(phases, self.repo, "tasks", warnings)
         self.assertEqual(warnings, [])
 
+    def test_common_call_name_is_not_reported_even_when_defined_in_modified_file(self):
+        self.file("src/repo.py", "def print(x):\n    pass\n")
+        self.file("src/api.py", "print(1)\n")
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
+        warnings = []
+        work = "### 1. `print(x, end)` 에 인자를 더한다"
+        verify.check_callers([(Path("phase-01.md"), work, [("src/repo.py", "수정")])], self.repo, "tasks", warnings)
+        self.assertEqual(warnings, [])
+
     def test_call_name_not_defined_in_modified_file_is_ignored(self):
         self.caller_repo()
         warnings = []
         work = "### 1. `print()` 로 남긴다"
         verify.check_callers([(Path("phase-01.md"), work, [("src/repo.py", "수정")])], self.repo, "tasks", warnings)
         self.assertEqual(warnings, [])
+
+    def test_spec_suffix_joined_by_hyphen_is_not_a_test_name(self):
+        for rel in ("frontend/src/bottom-panel-spec.js", "src/hud-spec.ts", "lib/panel-spec.rb"):
+            with self.subTest(rel=rel):
+                self.assertFalse(verify.is_test(rel))
+        for rel in ("src/a.spec.ts", "e2e/analytics-charts.spec.ts", "lib/a_spec.rb", "src/a.test.js",
+                    "src/bottom-panel-test.js", "src/__tests__/x.js", "tests/helper.js"):
+            with self.subTest(rel=rel):
+                self.assertTrue(verify.is_test(rel))
+
+    def test_hyphen_spec_file_does_not_satisfy_the_test_requirement(self):
+        """`-spec.js` 가 테스트로 세어지면 코드만 바꾸는 phase 가 검증 없이 통과한다."""
+        entries = [("src/panel.js", "수정"), ("src/bottom-panel-spec.js", "신규")]
+        work = "### 1. `src/panel.js` 를 고친다\n### 2. `src/bottom-panel-spec.js` 를 만든다"
+        out = self.inspect(work, "pnpm test", entries)
+        self.assertTrue([i for i in out if "코드 변경을 검증할 테스트" in i], out)
+
+    def test_missing_test_message_names_the_changed_code_files(self):
+        out = self.inspect("### 1. `src/app.py` 변경", "pytest", [("src/app.py", "수정"), ("src/*.py", "수정")])
+        message = next(i for i in out if "코드 변경을 검증할 테스트" in i)
+        self.assertIn("src/app.py", message)
+        self.assertIn("src/*.py", message)
 
     def test_title_change_does_not_make_lint_a_test(self):
         entries = [("src/app.py", "수정")]
