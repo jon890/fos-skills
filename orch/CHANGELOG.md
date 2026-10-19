@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.16.0
+
+하위 에이전트의 `pkill`, `browser-driver reset` 이 다른 worker 의 호스트와 탭을 닫던 문제를 워크트리 권한 규칙으로 막는다.
+
+- 새 `scripts/worktree-deny.py`: 워크트리의 `.claude/settings.local.json` 에 `Bash(pkill:*)`, `Bash(killall:*)`, `Bash(browser-driver reset:*)` deny 를 더한다. 추적되는 설정 파일은 고치지 않고, 무시되지 않으면 `.git/info/exclude` 에 더해 워크트리를 dirty 하게 만들지 않는다
+- `make-worktree.sh` 가 워크트리를 만든 뒤 이 스크립트를 부른다
+- 지시서 틀에 `BROWSER_EGO_SPACE` 를 워크트리 이름으로 주는 줄과 자기 PID 만 끄는 줄을 더했다
+- 새 워크트리의 deny 와 깨끗한 상태, 기존 설정 보존과 중복 없음, 추적되는 설정 파일 거부를 테스트했다
+
 ## 1.15.0
 
 `orca orchestration check --wait` 를 셸의 `&` 로 띄워 완료 알림을 받지 못하던 문제를, 산문 대신 PreToolUse hook 으로 막는다.

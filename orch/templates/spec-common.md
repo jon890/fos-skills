@@ -20,6 +20,8 @@
 - 비밀값이 든 파일을 읽지 않고 비밀값을 출력하지 않는다. 공유 DB 에 마이그레이션을 적용하지 않는다.
 - {{REMOTE_ACCESS_RULE}}
 - 다른 worker 가 동시에 다른 일을 한다. 지시서 범위 밖의 파일은 고치지 않는다.
+- 프로세스는 자기가 띄운 PID 로만 끈다. `pkill`, `killall`, `browser-driver reset` 은 다른 worker 의 호스트와 탭까지 닫아 쓰지 않는다(워크트리 권한 설정이 막는다). 스폰 프롬프트에 이 줄을 넣는다.
+- 브라우저는 `BROWSER_EGO_SPACE` 를 자기 워크트리 이름(`basename "$(git rev-parse --show-toplevel)"`)으로 주고 연다. 다른 worker 와 같은 공간을 쓰면 탭이 섞이고 공간 한도가 찬다.
 
 ## 판단이 필요할 때
 
