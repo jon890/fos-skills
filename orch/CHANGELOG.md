@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.9.0
+
+GitHub Enterprise 저장소에서 머지 큐가 멈추던 문제와, 끝난 worker 의 프로세스가 워크트리를 쥐어 정리가 매번 거부되던 문제를 스크립트로 막는다.
+
+- `merge-queue.sh`: `gh pr` 는 origin 으로 호스트를 찾지만 `gh api` 는 기본 호스트로 가서, GHE 저장소에서 필수 체크 규칙 조회와 `--require-up-to-date` 의 base 비교가 실패했다. PR URL 의 호스트(`GH_HOST` 가 있으면 그 값)를 모든 `gh api` 에 `--hostname` 으로 넘기고, 스레드 조회 명령과 머지 전 명령에는 `GH_HOST` 로 넘긴다
+- `cleanup-sweep.py --kill-holders`: PR 이 MERGED 이고, 그 경로의 worker 가 모두 succeeded 나 fenced 이고, Orca 터미널이 남지 않았을 때만 작업 디렉터리가 그 경로 아래인 프로세스를 TERM, HUP, KILL 순으로 끈다. 자기와 조상 프로세스는 뺀다. 열린 파일로만 쥔 프로세스는 다른 워크트리의 빌드도 맡을 수 있어 끄지 않는다
+- 기본은 끔이다. 코디네이터 흐름 밖에서 돌릴 때 사용자 셸을 끄지 않게 하고, 대기와 정리 reference 의 코디네이터 명령에 옵션을 넣었다
+- `remove-worktree.sh`: 거부 줄에 그 경로를 쓰는 pid 를 낸다
+- 가짜 gh 로 GHE URL 과 `GH_HOST` 의 호스트 전달을, 가짜 kill 로 TERM 을 무시하는 셸, KILL 까지 가는 경우, 옵션 없음, worker 를 모름, 끝나지 않은 dispatch, 남은 터미널, dry-run 을 테스트했다
+
 ## 1.8.0
 
 정리 스크립트가 예전에 머지된 PR 과 이름만 같은 새 브랜치의 워크트리를 「머지됨」 으로 지우던 문제와, 워크트리 브랜치 이름이 지시서와 어긋나던 문제를 구조로 막는다.
