@@ -46,6 +46,20 @@ class EtimeTest(unittest.TestCase):
         self.assertEqual((rows[0]["pid"], rows[0]["hours"]), (10, 1.0))
 
 
+class DockerRmiTargetTest(unittest.TestCase):
+    def test_tagged_image_uses_repo_tag(self):
+        self.assertEqual(di.rmi_target("gersang-lab", "latest", "sha256:" + "a" * 64), "gersang-lab:latest")
+
+    def test_none_tag_uses_image_id(self):
+        self.assertEqual(di.rmi_target("traefik", "<none>", "sha256:" + "b" * 64), "b" * 12)
+
+    def test_none_repository_uses_image_id(self):
+        self.assertEqual(di.rmi_target("<none>", "<none>", "sha256:" + "c" * 64), "c" * 12)
+
+    def test_short_id_accepts_id_without_prefix(self):
+        self.assertEqual(di.short_id("d" * 64), "d" * 12)
+
+
 def wt(**kw):
     base = {"prunable": False, "merged": False, "dirty": 0, "stash": 0, "in_use": False, "upstream_gone": False}
     return {**base, **kw}

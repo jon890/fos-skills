@@ -5,6 +5,7 @@
   docker_images.py [--recent-hours 24]
 
 종료 코드: 0 조사 완료, 1 docker 를 쓸 수 없음.
+각 줄 끝의 rmi= 값을 `docker rmi` 에 그대로 넘긴다. 태그가 있으면 repo:tag, 저장소나 태그가 <none> 이면 이미지 ID 다.
 컨테이너의 Image 값과 repo:tag 를 비교할 때 태그 생략(:latest)을 맞춘다.
 """
 
@@ -30,6 +31,18 @@ def classify_image(image, used_refs, used_ids, now, recent_hours):
     if now - image["created_ts"] < recent_hours * 3600:
         return "확인 필요(최근 생성)"
     return "미사용"
+
+
+def short_id(image_id):
+    """`sha256:` 접두사를 떼고 12자리로 줄인다. `docker images` 가 보이는 짧은 ID 와 같다."""
+    return image_id.removeprefix("sha256:")[:12]
+
+
+def rmi_target(repository, tag, image_id):
+    """`docker rmi` 에 그대로 넘길 값. 저장소나 태그가 <none> 이면 repo:<none> 이 invalid reference format 이라 이미지 ID 를 쓴다."""
+    if repository == "<none>" or tag == "<none>":
+        return short_id(image_id)
+    return f"{repository}:{tag}"
 
 
 def docker(*args):
@@ -60,7 +73,8 @@ def main(argv=None):
         created = inspected.get("Created", "")[:19]
         created_ts = time.mktime(time.strptime(created, "%Y-%m-%dT%H:%M:%S")) if created else 0
         cls = classify_image({"ref": ref, "id": inspected["Id"], "created_ts": created_ts}, used_refs, used_ids, now, args.recent_hours)
-        print(f"{cls:<22} {img['Size']:>9}  {ref}  ({img['CreatedSince']})")
+        target = rmi_target(img["Repository"], img["Tag"], img["ID"])
+        print(f"{cls:<22} {img['Size']:>9}  {ref}  ({img['CreatedSince']})  rmi={target} id={short_id(img['ID'])}")
     return 0
 
 
