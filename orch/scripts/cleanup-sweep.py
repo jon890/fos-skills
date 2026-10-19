@@ -43,6 +43,7 @@ PR 찾기 (브랜치마다):
       Dispatch 가 succeeded 여도 같은 터미널에서 후속 일을 하는 worker 가 있고,
       그 브랜치가 막 만든 상태(base 와 같고 커밋 0)면 머지 판정을 통과해 일하는 worker 를 지우게 된다
     - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다.
+      OMC session-end hook worker 는 세지 않는다. 스스로 끝나므로 `remove-worktree.sh` 가 끝날 때까지 기다린다
       단, PR 이 MERGED 이고 남은 프로세스가 전부 자식 없는 로그인 셸(Orca 가 worker 를 반납한 뒤 띄운 빈 셸)이고
       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
 
@@ -109,11 +110,14 @@ KILL = os.environ.get("ORCH_KILL", "kill")
 # 조상에 이 문자열이 든 실행 파일이 있으면 Orca 가 띄운 프로세스다
 ORCA_APP = "Orca.app/"
 MAX_VARIANTS = 4
+# OMC session-end hook worker 의 명령줄에 든 문자열. 끄지도 세지도 않고 remove-worktree.sh 가 기다린다
+REMOVE_TIMEOUT = int(os.environ.get("ORCH_HOOK_WAIT", "180")) + 60
+SESSION_END_MARKS = ("--omc-session-end-worker", "hooks/session-end/worker.js")
 
 
-def run(cmd, cwd=None):
+def run(cmd, cwd=None, timeout=120):
     try:
-        done = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=120)
+        done = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 1, "", str(exc)
     return done.returncode, done.stdout.strip(), done.stderr.strip()
@@ -317,6 +321,12 @@ def ps_rows():
     return rows
 
 
+def session_end_hooks(pids):
+    """그 pid 가운데 OMC session-end hook worker 인 것. 세션이 끝난 뒤 `.omc/` 를 쓰다 스스로 끝난다."""
+    rows = ps_rows()
+    return [pid for pid in pids if pid in rows and any(mark in rows[pid][1] for mark in SESSION_END_MARKS)]
+
+
 def only_idle_shells(pids):
     """그 프로세스가 모두 자식 없는 로그인 셸이면 True. 로그인 셸은 argv[0] 이 `-` 로 시작한다(`-/bin/zsh`)."""
     if not pids:
@@ -432,6 +442,7 @@ def targets(path, nested, log=None):
     """끌 pid 목록. 빼는 것은 머리 주석의 「남은 프로세스 끄기」 가 정한다."""
     cwds = holder_cwds(path)
     rows, keep = ps_rows(), own_ancestors()
+    keep |= set(session_end_hooks(cwds))
     chosen, skipped = [], []
     for pid, cwd in cwds.items():
         if pid in keep or any(under(cwd, other) for other in nested) or started_outside_orca(pid, rows, cwds):
@@ -588,13 +599,18 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         else:
             nested = [other for other, _ in worktrees(repo) if other.startswith(path + "/")]
             pids = stop_holders(path, nested, args.wait, log)
+    hooks = session_end_hooks(pids)
+    if hooks:
+        log(f"  OMC session-end hook {', '.join(hooks)} 은 끄지 않는다. remove-worktree.sh 가 끝날 때까지 기다린다")
+        pids = [pid for pid in pids if pid not in hooks]
     if pids:
         log(f"  건너뜀: 그 경로를 쓰는 프로세스 {len(pids)} 개({describe(pids)}). 다음 실행에서 다시 시도한다")
         return
     cmd = ["zsh", str(REMOVE), path, "--delete-branch"]
     if merged_head:
         cmd += ["--merged-head", merged_head]
-    code, out, err = run(cmd)
+    # remove-worktree.sh 는 OMC session-end hook 이 끝나기를 ORCH_HOOK_WAIT 초(기본 180)까지 기다린다
+    code, out, err = run(cmd, timeout=REMOVE_TIMEOUT)
     log("  " + (out or err).replace("\n", "\n  "))
     if code != 0:
         return
