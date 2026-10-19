@@ -150,6 +150,25 @@ class TestDbContext(Base):
         self.assertPassed("`orders` 테이블의 `status` 컬럼을 바꾼다.\n")
 
 
+class TestStandingMetaphorTerm(Base):
+    """생기다, 만들어지다를 「서다」 로 비유한 말은 막고, 「순서」, 「서지」, 줄이 서는 뜻은 막지 않는다."""
+
+    def test_phrases_are_caught(self):
+        for text in ("위험 카드가 선다.", "티켓이 서지 않는다.", "카드가 서야 한다.", "표시가 서야 통과다.",
+                     "알림이 선다고 본다.", "기록이 서지 않으면 실패다."):
+            with self.subTest(text=text):
+                self.assertCaught(text + "\n", "금지어")
+
+    def test_ordinary_words_pass(self):
+        for text in ("실행 순서가 중요하다.", "서지 정보를 읽는다.", "이 서지 정보는 따로 둔다.",
+                     "대기 줄이 선다.", "요청 줄이 서야 한다.", "서버가 서류를 읽는다.", "여기서지 않는다."):
+            with self.subTest(text=text):
+                self.assertPassed(text + "\n")
+
+    def test_recommended_terms_pass(self):
+        self.assertPassed("위험 카드가 만들어진다. 티켓이 생기지 않는다. 표시된다.\n")
+
+
 class TestStandingPlaceTerm(Base):
     """기획서 말투 「서는 화면」 계열은 막고, 「여기서는 화면」 처럼 「서는」 을 품은 말은 막지 않는다."""
 
