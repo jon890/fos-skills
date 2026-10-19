@@ -3,15 +3,18 @@
 
 사용법:
   colima_trim.py [--profile default] [--disk PATH] [--threshold-gib 4]
-                 [--max-attempts 4] [--interval 60]
+                 [--max-attempts 4] [--interval 60] [--max-seconds 100]
 
 VM 디스크 파일의 실제 점유 크기(`du -sk`)와 VM 안 `/mnt/lima-colima` 의 사용량을 비교한다.
 점유 크기가 사용량보다 기준값보다 더 크면 아직 비워지지 않은 블록이 남은 것으로 보고 잠시 기다렸다 다시 trim 한다.
 volume 을 지운 직후에는 한 번에 덜 비워지는 경우가 있어(실측: 8GiB 만 trim, 1분 뒤 43.8GiB) 결과를 재서 재시도한다.
 `--disk` 가 없으면 `~/.colima/_lima/_disks/colima/datadisk`(default 프로필) 나 `colima-<프로필>/datadisk` 를 쓴다.
+전체 시간이 `--max-seconds` 를 넘기지 않게 한다. 다음 시도(대기 + 직전 시도 소요 시간)가 그 안에 끝나지 않을 것 같으면
+재시도하지 않고 남은 차이를 출력한 채 종료 코드 2 로 끝낸다. 기본값 100초는 에이전트 도구의 명령 시간 한도(120초)보다 짧다.
+한도가 긴 환경에서는 `--max-seconds` 를 늘린다. 기본값 그대로 최악의 소요 시간은 첫 시도 소요 시간 + 대기와 시도 한 번씩이다.
 fstrim 은 데이터를 지우지 않는다.
 
-종료 코드: 0 차이가 기준값 이하, 1 Colima 가 떠 있지 않거나 측정 실패, 2 재시도 상한까지 차이가 남음.
+종료 코드: 0 차이가 기준값 이하, 1 Colima 가 떠 있지 않거나 측정 실패, 2 재시도 횟수나 시간 상한까지 차이가 남음.
 """
 
 import argparse
@@ -51,9 +54,11 @@ def gap_bytes(disk_file, vm_used):
     return disk_file - vm_used
 
 
-def should_retry(gap, threshold, attempt, max_attempts):
-    """차이가 기준값을 넘고 시도 횟수가 남았으면 다시 돈다."""
-    return gap > threshold and attempt < max_attempts
+def should_retry(gap, threshold, attempt, max_attempts, elapsed=0.0, interval=0.0, last_duration=0.0, max_seconds=None):
+    """차이가 기준값을 넘고, 시도 횟수가 남고, 다음 시도가 시간 상한 안에 끝날 것 같으면 다시 돈다."""
+    if gap <= threshold or attempt >= max_attempts:
+        return False
+    return max_seconds is None or elapsed + interval + last_duration <= max_seconds
 
 
 def disk_path(profile, override=None):
@@ -97,6 +102,24 @@ def trim(profile):
     return parse_trim_bytes(done.stdout + done.stderr)
 
 
+def trim_until_done(trim_fn, measure_fn, threshold, max_attempts, interval, max_seconds, clock=time.monotonic, sleep=time.sleep, out=print):
+    """gap 이 기준값 이하가 되거나 횟수와 시간 상한에 닿을 때까지 trim 한다. (시도 횟수, 마지막 측정)을 낸다."""
+    start = clock()
+    attempt = 0
+    while True:
+        began = clock()
+        attempt += 1
+        trimmed = trim_fn()
+        after = measure_fn()
+        out(f"시도 {attempt}: trim {fmt(trimmed)}")
+        out("  " + line("측정", *after))
+        gap = gap_bytes(after[0], after[1])
+        if not should_retry(gap, threshold, attempt, max_attempts, clock() - start, interval, clock() - began, max_seconds):
+            return attempt, after
+        out(f"  차이가 기준값 {fmt(threshold)} 보다 커 {interval:.0f}초 뒤 다시 돈다")
+        sleep(interval)
+
+
 def line(label, disk_file, used, free):
     return f"{label}: 디스크 파일 {fmt(disk_file)}, VM 사용량 {fmt(used)}, 차이 {fmt(gap_bytes(disk_file, used))}, 호스트 여유 {fmt(free)}"
 
@@ -108,6 +131,7 @@ def main(argv=None):
     ap.add_argument("--threshold-gib", type=float, default=4.0)
     ap.add_argument("--max-attempts", type=int, default=4)
     ap.add_argument("--interval", type=float, default=60.0, help="재시도 전 대기 초")
+    ap.add_argument("--max-seconds", type=float, default=100.0, help="전체 시간 상한 초(도구 한도 120초 안)")
     args = ap.parse_args(argv)
 
     if not colima_running(args.profile):
@@ -118,18 +142,10 @@ def main(argv=None):
     try:
         before = measure(args.profile, disk)
         print(line("전", *before))
-        attempt, after = 0, before
-        while True:
-            attempt += 1
-            trimmed = trim(args.profile)
-            after = measure(args.profile, disk)
-            print(f"시도 {attempt}: trim {fmt(trimmed)}")
-            print("  " + line("측정", *after))
-            gap = gap_bytes(after[0], after[1])
-            if not should_retry(gap, threshold, attempt, args.max_attempts):
-                break
-            print(f"  차이가 기준값 {fmt(threshold)} 보다 커 {args.interval:.0f}초 뒤 다시 돈다")
-            time.sleep(args.interval)
+        attempt, after = trim_until_done(
+            lambda: trim(args.profile), lambda: measure(args.profile, disk),
+            threshold, args.max_attempts, args.interval, args.max_seconds,
+        )
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -138,7 +154,7 @@ def main(argv=None):
     print(f"디스크 파일 {fmt(before[0])} -> {fmt(after[0])}, 호스트 확보 {fmt(after[2] - before[2])}")
     gap = gap_bytes(after[0], after[1])
     if gap > threshold:
-        print(f"시도 {attempt}회 뒤에도 차이 {fmt(gap)} 가 남았다(기준값 {fmt(threshold)})", file=sys.stderr)
+        print(f"시도 {attempt}회 뒤에도 차이 {fmt(gap)} 가 남았다(기준값 {fmt(threshold)}, 횟수 상한 {args.max_attempts}, 시간 상한 {args.max_seconds:.0f}초)", file=sys.stderr)
         return 2
     return 0
 
