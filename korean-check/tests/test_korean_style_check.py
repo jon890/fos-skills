@@ -150,6 +150,25 @@ class TestDbContext(Base):
         self.assertPassed("`orders` 테이블의 `status` 컬럼을 바꾼다.\n")
 
 
+class TestStandingPlaceTerm(Base):
+    """기획서 말투 「서는 화면」 계열은 막고, 「여기서는 화면」 처럼 「서는」 을 품은 말은 막지 않는다."""
+
+    def test_phrases_are_caught(self):
+        for text in ("결과가 서는 화면을 바꾼다.", "알림이 서는 곳을 정한다.", "버튼이 서는 자리에 둔다.",
+                     "서는 화면이 둘이다."):
+            with self.subTest(text=text):
+                self.assertCaught(text + "\n", "서는")
+
+    def test_ordinary_words_pass(self):
+        for text in ("여기서는 화면을 나눈다.", "문서는 곳곳에 예시를 둔다.", "목록에서는 자리를 비운다.",
+                     "이 계획서는 화면 설계를 다룬다.", "서버는 곳마다 다르다."):
+            with self.subTest(text=text):
+                self.assertPassed(text + "\n")
+
+    def test_recommended_term_passes(self):
+        self.assertPassed("결과가 보이는 화면을 바꾼다. 알림이 표시되는 곳을 정한다.\n")
+
+
 class TestRawElementTerm(Base):
     """raw element 를 옮긴 「날 요소」 계열은 막고, 「날짜」 같은 평범한 말은 막지 않는다."""
 
