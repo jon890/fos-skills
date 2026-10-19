@@ -29,11 +29,26 @@ COMMANDS = [
                  "2>&1 로 받지 않는다. 그 줄이 핸들에 섞여 다음 명령이 탭을 찾지 못한다"),
     Command("nav", ["<handle>", "<url>", "[ready_timeout_ms]"],
             "이미 열린 탭을 다른 주소로 보낸다"),
-    Command("js", ["<handle>", "<expression>"],
+    Command("js", ["<handle>", "<expression>", "[--timeout <ms>]"],
             "JS 표현식을 실행한다",
             returns="표현식의 값",
             note="숨은 요소나 겹침 화면은 이 명령으로 조작한다.\n"
-                 "인자는 작은따옴표로 감싼다. 큰따옴표는 셸이 $( 를 명령 치환으로 먹는다"),
+                 "인자는 작은따옴표로 감싼다. 큰따옴표는 셸이 $( 를 명령 치환으로 먹는다.\n"
+                 "ego 는 `a; b` 처럼 문장이 여럿이면 마지막 문장의 값을 낸다. 이때 await 는 쓸 수 없다.\n"
+                 "ego 는 기본으로 15초 안에 끝나지 않는 표현식을 실패로 끝낸다. 더 걸리는 비동기\n"
+                 "표현식은 --timeout 에 밀리초를 줘 그 시간까지 기다린다"),
+    Command("jsfile", ["<handle>", "<path>", "[--timeout <ms>]"],
+            "파일의 내용을 js 와 같은 방식으로 실행한다",
+            returns="js 와 같다",
+            note="셸 인용이 길어지는 여러 줄 스크립트에 쓴다"),
+    Command("click", ["<handle>", "<x>", "<y>", "[--button left|middle|right]"],
+            "CSS 픽셀 좌표를 실제 마우스 입력으로 누른다",
+            note="js 의 합성 이벤트로는 setPointerCapture 가 실패하고 자동 재생이 막힌다. 그때 쓴다.\n"
+                 "좌표는 뷰포트 기준이다. shot 으로 확인한 좌표를 넘긴다"),
+    Command("drag", ["<handle>", "<x1>", "<y1>", "<x2>", "<y2>", "[--button left|middle|right]"],
+            "한 좌표에서 눌러 다른 좌표까지 끌고 놓는다"),
+    Command("hover", ["<handle>", "<x>", "<y>"],
+            "마우스 포인터를 그 좌표로 옮긴다"),
     Command("waitjs", ["<handle>", "<condition>", "[timeout_ms]"],
             "JS 조건이 참이 될 때까지 기다린다",
             note=f"고정 대기 대신 이것을 쓴다. 기본 제한 시간 {WAIT_TIMEOUT_DEFAULT}ms"),

@@ -9,6 +9,8 @@ class Backend:
     supported = set()
     #: 실제로 돌려 확인했는지. 거짓이면 doctor 가 경고 표시를 붙인다.
     verified = True
+    #: js 의 --timeout 을 실제로 지키는지. 거짓이면 옵션을 받아 놓고 무시하지 않고 거절한다.
+    js_timeout = False
 
     @classmethod
     def available(cls):

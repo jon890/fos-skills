@@ -20,6 +20,7 @@ $B doctor
 | --- | --- |
 | `browser_driver.py` | 진입점. 명령을 나눠 보내고 예외를 종료 코드로 바꾼다 |
 | `driver/commands.py` | 명령 스펙과 `help` 렌더 |
+| `driver/args.py` | `--timeout`, `--button` 같은 옵션을 떼어 내고 좌표를 검증한다 |
 | `driver/config.py` | 설정 파일 경로와 기본 제한 시간 |
 | `driver/errors.py` | 예외와 종료 코드 |
 | `driver/shell.py` | 백엔드 프로세스 호출과 반환값 정규화 |
@@ -102,6 +103,25 @@ ln -s "$BROWSER_CONFIG" ~/.claude/browser.config.json
 `ego` 의 `evaluate` 는 `undefined` 를 `null` 로 바꿔 내보내 그 둘을 구분할 수 없으므로,
 드라이버가 표현식을 페이지 안에서 한 겹 감싸 어느 쪽인지를 따로 받는다 (실측).
 `agent-browser` 는 `undefined` 에 `null` 을 낸다.
+
+**`js` 는 ego 에서 코드 모양에 따라 두 방식으로 돈다.**
+표현식으로 읽히면 위와 같이 값을 낸다.
+`a; b` 처럼 표현식이 아니면 간접 `eval` 로 돌려 마지막 문장의 값을 낸다. 이 방식에서는 `await` 를 쓸 수 없다.
+판정은 페이지가 아니라 ego 의 Node 에서 `AsyncFunction` 으로 문법만 본다. 페이지에서 먼저 돌려 보고 되풀이하면 부수효과가 두 번 난다.
+긴 스크립트는 `jsfile <핸들> <경로>` 로 파일째 넘긴다. 셸 인용을 피할 수 있다.
+
+**`js --timeout <ms>` 는 ego 만 지킨다.** ego 의 `page.evaluate` 에는 시간 제한 옵션이 없고 15초에 실패한다 (실측).
+`--timeout` 을 주면 페이지 안에서 실행만 시작해 두고 `waitForFunction` 으로 그 시간까지 결과를 기다린다.
+시간이 지나도 페이지 안의 실행은 멈추지 않는다.
+다른 백엔드는 옵션을 받아 놓고 무시하지 않고 종료 코드 2 로 거절한다.
+
+**`click`, `drag`, `hover` 는 ego 의 `page.mouse` 로 보내는 실제 입력이다.**
+`js` 의 합성 이벤트는 `setPointerCapture` 에서 실패하고 자동 재생 제한에도 걸린다.
+좌표는 뷰포트 기준 CSS 픽셀이다. `drag` 는 눌러서 10단계로 옮긴 뒤 놓는다.
+다른 백엔드는 대응 명령을 확인하지 못해 종료 코드 2 로 거절한다.
+
+**ego 의 업데이트 알림(`[ego-browser:notice]`)은 반환값에서 떼어 stderr 로 보낸다.**
+ego 는 그 줄을 반환값 뒤에 줄바꿈 없이 붙이므로 그대로 두면 `grep -v` 로 알림을 빼려다 결과까지 잃는다.
 
 **`close` 뒤의 동작이 다르다.** `agent-browser` 는 핸들이 죽지 않아 다음 명령이 새 브라우저를 띄우고,
 `orca` 와 `ego` 는 없는 탭이라고 실패한다 (실측).
