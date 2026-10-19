@@ -535,6 +535,39 @@ def check_bun_dot_paths(path, commands, out):
                 out.append(f"{path} — bun test 는 `./` 로 시작하지 않는 인자를 이름 필터로 읽어 점 디렉터리 아래 테스트를 찾지 않는다. `./{arg}` 로 쓴다")
 
 
+# python -m unittest 에서 값을 따로 받는 옵션이다. 값은 테스트 이름 인자가 아니다.
+UNITTEST_VALUE_OPTIONS = {"-k", "--durations"}
+
+
+def check_unittest_dot_paths(path, commands, out):
+    """Python 3.14 실측이다. `python3 -m unittest` 는 파일 경로 인자를 모듈 이름으로 바꿔 import 한다.
+
+    `.github/tests/test_x.py` 는 `.github.tests.test_x` 가 되어 `ValueError: Empty module name` 으로 끝난다.
+    `./` 로 시작해도, 점 디렉터리가 중간에 있어도 같다. `discover -s` 는 디렉터리를 경로로 받아 이 변환을 거치지 않는다.
+    """
+    for command in commands:
+        command = unwrap(command)
+        if not command or Path(command[0]).name not in {"python", "python3"} or command[1:3] != ["-m", "unittest"]:
+            continue
+        args = command[3:]
+        if args[:1] == ["discover"]:
+            continue
+        skip = False
+        for arg in args:
+            if skip:
+                skip = False
+            elif arg in UNITTEST_VALUE_OPTIONS:
+                skip = True
+            elif arg.startswith("-") or "/" not in arg:
+                continue
+            elif any(part.startswith(".") and part not in {".", ".."} for part in arg.split("/")):
+                target = arg.removeprefix("./").rstrip("/")
+                directory, name = posixpath.split(target)
+                fix = f"discover -s {directory} -p {name}" if name.endswith(".py") else f"discover -s {target}"
+                out.append(f"{path} — python -m unittest 는 경로를 모듈 이름으로 바꿔 점 디렉터리가 든 경로에서 "
+                           f"`ValueError: Empty module name` 으로 실패한다: {arg}. `python3 -m unittest {fix}` 로 쓴다")
+
+
 def git_grep_paths(command):
     """`! git grep ...` 이면 (포함 pathspec, 제외 pathspec) 을, 아니면 None 을 낸다. 경로가 없으면 저장소 전체다."""
     if command[:1] != ["!"]:
@@ -877,6 +910,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
         else:
             out.append(f"{path} — 검증 절에 테스트 실행 명령이 없다 (lint/grep/echo 만으로 완료할 수 없다)")
     check_bun_dot_paths(path, commands, out)
+    check_unittest_dot_paths(path, commands, out)
     check_forbidden_grep_paths(path, commands, entries, warnings)
     check_python_test_names(path, commands, entries, out)
     check_remote_commands(path, commands, warnings)

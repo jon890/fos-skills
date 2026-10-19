@@ -318,6 +318,31 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual(self.inspect(work, safe, entries), [])
         self.assertTrue(any("점 디렉터리" in issue for issue in self.inspect(work, safe.replace("./.claude", ".claude"), entries)))
 
+    def test_unittest_path_with_dot_directory_is_rejected(self):
+        # `python3 -m unittest .github/...` 는 `ValueError: Empty module name` 으로 테스트를 하나도 돌리지 않는다
+        work = "### 1. `.github/scripts/tests/test_sync.py` 추가"
+        entries = [(".github/scripts/tests/test_sync.py", "신규")]
+        for command, fix in (
+            ("python3 -m unittest .github/scripts/tests/test_sync.py", "discover -s .github/scripts/tests -p test_sync.py"),
+            ("python3 -m unittest -v ./.github/scripts/tests/test_sync.py", "discover -s .github/scripts/tests -p test_sync.py"),
+            ("python -m unittest .github/scripts/tests", "discover -s .github/scripts/tests"),
+        ):
+            with self.subTest(command=command):
+                issues = self.inspect(work, command, entries)
+                self.assertTrue(any("Empty module name" in issue and fix in issue for issue in issues), issues)
+
+    def test_unittest_discover_and_plain_paths_pass_the_dot_check(self):
+        work = "### 1. `.github/scripts/tests/test_sync.py` 추가"
+        entries = [(".github/scripts/tests/test_sync.py", "신규")]
+        for command in (
+            "python3 -m unittest discover -s .github/scripts/tests -p test_sync.py",
+            "python3 -m unittest discover .github/scripts/tests",
+            "python3 -m unittest -k .github tests/test_sync.py",
+            "python3 -m unittest ./tests/test_sync.py ../shared/test_x.py",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(any("Empty module name" in issue for issue in self.inspect(work, command, entries)))
+
     def test_directory_argument_elsewhere_is_rejected(self):
         work = "### 1. `frontend/src/__tests__/components/calendar/X.test.tsx` 추가"
         entries = [("frontend/src/a.tsx", "수정"), ("frontend/src/__tests__/components/calendar/X.test.tsx", "신규")]
