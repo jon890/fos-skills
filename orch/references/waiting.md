@@ -54,6 +54,7 @@ python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO
 `cleanup-sweep.py` 의 판정과 건너뛰는 조건은 그 파일 머리 주석이 소유한다.
 `건너뜀` 줄만 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 루프째 남으면 그 worker 를 확인한다.
 squash 머지, 로컬과 원격의 브랜치 이름이 다른 경우, worker 를 반납한 뒤 Orca 가 띄운 빈 셸 터미널은 스크립트가 처리하므로 코디네이터가 직접 지우지 않는다.
+`--run` 을 주면 다른 Run(다른 코디네이터)의 worker 터미널이 붙은 경로는 건너뛴다. 그 경로는 그 Run 의 코디네이터가 정리한다.
 
 ## 받은 메시지 읽기
 
