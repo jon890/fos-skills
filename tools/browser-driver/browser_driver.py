@@ -24,11 +24,39 @@ from pathlib import Path
 # resolve() 로 실체 경로를 잡아 그 옆의 패키지를 찾게 한다.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from driver.args import parse_js_args, parse_pointer_args  # noqa: E402
 from driver.admin import cmd_doctor, cmd_install  # noqa: E402
 from driver.backends import BACKENDS, load_backend, resolve_backend_name  # noqa: E402
 from driver.commands import COMMAND_MAP, COMMANDS, META_COMMANDS, render_help  # noqa: E402
 from driver.config import CONFIG_PATH  # noqa: E402
 from driver.errors import EXIT_FAIL, EXIT_USAGE, DriverError, UsageError  # noqa: E402
+
+
+def normalize_args(cmd, args, backend):
+    """옵션을 떼어 위치 인자로 정규화한다. 백엔드는 옵션 문법을 알 필요가 없다."""
+    if cmd in ("js", "jsfile"):
+        args = parse_js_args(args)
+        if cmd == "jsfile":
+            try:
+                args[1] = Path(args[1]).read_text(encoding="utf-8")
+            except OSError as e:
+                raise UsageError(f"스크립트 파일을 읽지 못했다: {e}")
+        if args[2] is not None and not backend.js_timeout:
+            raise UsageError(f"{backend.name} 백엔드는 js 의 --timeout 을 지원하지 않는다.")
+        return args
+    if cmd in POINTER_SHAPES:
+        points, allow_button = POINTER_SHAPES[cmd]
+        return parse_pointer_args(cmd, args, points, allow_button)
+    return args
+
+
+def effective_commands(supported):
+    """jsfile 은 js 를 그대로 쓰므로 js 를 지원하면 함께 지원한다."""
+    return set(supported) | ({"jsfile"} if "js" in supported else set())
+
+
+#: 포인터 명령이 받는 좌표 쌍의 수와 --button 허용 여부.
+POINTER_SHAPES = {"click": (1, True), "drag": (2, True), "hover": (1, False)}
 
 
 def main(argv):
@@ -42,7 +70,7 @@ def main(argv):
             name, _ = resolve_backend_name()
             if name in BACKENDS:
                 backend_name = name
-                unsupported = {c.name for c in COMMANDS} - BACKENDS[name].supported
+                unsupported = {c.name for c in COMMANDS} - effective_commands(BACKENDS[name].supported)
         except UsageError:
             pass
         print(render_help(backend_name, unsupported))
@@ -78,12 +106,13 @@ def main(argv):
         raise UsageError(f"인자가 모자란다.\n사용법: {spec.usage}\n  {spec.summary}")
 
     backend = load_backend()
-    if cmd not in backend.supported:
+    if cmd not in effective_commands(backend.supported):
         raise UsageError(
             f"{backend.name} 백엔드에서 '{cmd}' 의 대응 명령을 확인하지 못했다. "
             "다른 백엔드를 쓰거나 doctor 로 상태를 본다.")
 
-    result = backend.dispatch(cmd, args)
+    args = normalize_args(cmd, args, backend)
+    result = backend.dispatch(cmd if cmd != "jsfile" else "js", args)
     if result is None:
         return 0
     if isinstance(result, (dict, list)):

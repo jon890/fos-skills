@@ -37,6 +37,10 @@ BLANK_URLS = ("about:blank", "chrome://new-tab-page/")
 #: 반환값을 다른 출력과 나누는 표식. ego 는 업데이트 알림 같은 줄을 같은 stdout 에 섞는다.
 MARKER = "<<<browser-driver-result>>>"
 
+#: ego 가 업데이트를 알리려고 stdout 끝에 줄바꿈 없이 붙이는 표식 (실측).
+#: 반환값에 섞이면 소비자가 결과를 못 읽으므로 떼어 stderr 로 보낸다.
+NOTICE = "[ego-browser:notice]"
+
 
 def resolve_space():
     """공간의 기준 이름을 검증한다. 없거나 빈 값이면 기존 이름을 쓴다."""
@@ -110,7 +114,8 @@ class EgoBackend(Backend):
     name = "ego"
     binary = "ego-browser"
     supported = {"open", "nav", "js", "waitjs", "ready", "url", "snap",
-                 "shot", "close", "pages", "reset"}
+                 "shot", "close", "pages", "reset", "click", "drag", "hover"}
+    js_timeout = True
 
     def prepare_note(self):
         head = ("사용자가 로그인해 둔 세션을 그대로 쓴다 (실측). 로그인 세션은 프로필 단위로 "
@@ -170,7 +175,18 @@ class EgoBackend(Backend):
             raise DriverError(
                 "ego 스크립트가 끝까지 돌지 않았다. 브라우저 서비스에 붙지 못했을 수 있다.\n"
                 + (out.strip() or "(출력이 없다)"))
-        return out.rsplit(MARKER + "\n", 1)[-1]
+        head, _, result = out.rpartition(MARKER + "\n")
+        # 알림은 반환값 뒤에 줄바꿈 없이 붙는다. 가르지 않으면 grep -v 로 알림을 빼는 호출이
+        # 결과까지 잃는다. 반환값 앞에 붙은 알림도 함께 stderr 로 보낸다.
+        notices = []
+        for part in (head, result):
+            if NOTICE in part:
+                notices.append(part[part.index(NOTICE):].strip())
+        if NOTICE in result:
+            result = result[:result.index(NOTICE)]
+        if notices:
+            print("\n".join(notices), file=sys.stderr)
+        return result
 
     def _page(self, handle):
         """핸들에서 TaskSpace 를 잡고 page 를 여는 스크립트 앞부분을 만든다."""
@@ -284,6 +300,7 @@ class EgoBackend(Backend):
             return None
 
         if cmd == "js":
+            code, timeout = args[1], args[2] if len(args) > 2 else None
             # 값을 JSON 으로 받아 js_value 로 넘긴다. orca 는 문자열을 따옴표 없이,
             # 객체는 여백 없는 JSON 으로 내므로 그 형식에 맞춘다.
             #
@@ -291,11 +308,48 @@ class EgoBackend(Backend):
             # orca 는 undefined 에 빈 줄을, null 에 `null` 을 내므로 구분이 필요하다.
             # 그래서 표현식을 페이지 안에서 한 겹 감싸 undefined 인지를 따로 받는다.
             # await 로 감싸므로 Promise 를 내는 표현식도 그대로 값이 온다 (실측).
-            wrapped = ("(async () => { const __v = await (" + args[1] + ");"
-                       " return __v === undefined ? { u: true } : { u: false, v: __v }; })()")
-            raw = self._run(self._page(args[0])
-                            + f"const r = await page.evaluate({json.dumps(wrapped)});\n"
-                            + "__out(r.u ? '' : JSON.stringify(r.v));\n")
+            #
+            # 감싸는 방식은 코드 모양으로 고른다. `a; b` 는 `await (a; b)` 가 되어 문법 오류라
+            # 표현식으로 읽히지 않으면 간접 eval 로 돌려 마지막 문장의 값을 얻는다.
+            # 판정은 이 Node 안에서 문법만 본다. 페이지에서 한 번 돌려 보고 되풀이하면 부수효과가 겹친다.
+            body = (
+                f"const code = {json.dumps(code)};\n"
+                "const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;\n"
+                "let asExpression = true;\n"
+                "try { new AsyncFunction('return (' + code + '\\n)'); } catch (e) { asExpression = false; }\n"
+                "const inner = asExpression ? '(' + code + '\\n)' : '(0, eval)(' + JSON.stringify(code) + ')';\n"
+                "const wrapped = '(async () => { const __v = await ' + inner + ';"
+                " return __v === undefined ? { u: true } : { u: false, v: __v }; })()';\n"
+            )
+            if timeout is None:
+                body += "const r = await page.evaluate(wrapped);\n"
+            else:
+                # evaluate 에는 시간 제한 옵션이 없어 15초에 끝난다 (실측). 페이지 안에서 시작만 해 두고
+                # 결과가 올 때까지 waitForFunction 으로 기다리면 제한을 우리가 정한다.
+                body += (
+                    "const key = '__bd_' + Date.now() + '_' + Math.random().toString(36).slice(2);\n"
+                    "await page.evaluate('(() => { window[' + JSON.stringify(key) + '] = null;"
+                    " Promise.resolve(' + wrapped + ').then("
+                    "(r) => { window[' + JSON.stringify(key) + '] = { ok: true, r: r }; },"
+                    " (e) => { window[' + JSON.stringify(key) + '] = { ok: false, e: String((e && e.stack) || e) }; });"
+                    " return 1; })()');\n"
+                    f"await page.waitForFunction('window[' + JSON.stringify(key) + '] !== null', undefined, "
+                    f"{{ timeout: {int(timeout)} }});\n"
+                    "const d = await page.evaluate('(() => { const d = window[' + JSON.stringify(key) + '];"
+                    " delete window[' + JSON.stringify(key) + ']; return d; })()');\n"
+                    "if (!d.ok) throw new Error(d.e);\n"
+                    "const r = d.r;\n"
+                )
+            try:
+                raw = self._run(self._page(args[0]) + body + "__out(r.u ? '' : JSON.stringify(r.v));\n")
+            except DriverError as e:
+                if timeout is None and "page.evaluate timed out" in str(e):
+                    raise DriverError("표현식이 15초 안에 끝나지 않았다. 더 걸리는 비동기 표현식은 "
+                                      "--timeout <ms> 를 준다.\n" + str(e))
+                if timeout is not None and "timed out" in str(e):
+                    raise DriverError(f"표현식이 --timeout {timeout}ms 안에 끝나지 않았다. "
+                                      "페이지 안에서는 계속 돌고 있을 수 있다.\n" + str(e))
+                raise
             raw = raw.rstrip("\n")
             if not raw:
                 return ""
@@ -303,6 +357,24 @@ class EgoBackend(Backend):
                 return js_value(json.loads(raw))
             except json.JSONDecodeError:
                 return raw
+
+        if cmd in ("click", "hover", "drag"):
+            # 합성 이벤트가 아니라 CDP 입력이라 setPointerCapture 와 자동 재생 제한이 그대로 통한다.
+            # 좌표는 CSS 픽셀이다.
+            *coords, button = args[1:]
+            if cmd == "click":
+                action = (f"await page.mouse.click({coords[0]}, {coords[1]}, "
+                          f"{{ button: {json.dumps(button)} }});\n")
+            elif cmd == "hover":
+                action = f"await page.mouse.move({coords[0]}, {coords[1]});\n"
+            else:
+                b = json.dumps(button)
+                action = (f"await page.mouse.move({coords[0]}, {coords[1]});\n"
+                          f"await page.mouse.down({{ button: {b} }});\n"
+                          f"await page.mouse.move({coords[2]}, {coords[3]}, {{ steps: 10 }});\n"
+                          f"await page.mouse.up({{ button: {b} }});\n")
+            self._run(self._page(args[0]) + action + "__out('');\n")
+            return None
 
         if cmd == "waitjs":
             timeout = int(args[2]) if len(args) > 2 else WAIT_TIMEOUT_DEFAULT
