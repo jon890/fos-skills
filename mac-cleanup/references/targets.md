@@ -57,7 +57,15 @@ rm -rf "$DIR"
 
 ## Docker
 
-- **Colima 에서 prune 해도 호스트 디스크는 바로 늘지 않는다.** VM 디스크 파일이 그대로라 `colima ssh -- sudo fstrim -av` 를 돌려야 반영된다(실측: 76GB 에서 13GB).
+- **Colima 에서 prune 해도 호스트 디스크는 바로 늘지 않는다.** VM 디스크 파일이 그대로라 `scripts/colima_trim.py` 로 trim 해야 반영된다.
+  **volume 을 지운 직후 이어서 돌리면 trim 이 덜 될 수 있다.** 스크립트는 `sync` 뒤에 `fstrim -v` 를 돌리고, 호스트 디스크 파일의 점유 크기와 VM 안 사용량의 차이가 기준값(기본 4GiB)보다 크면 기다렸다 다시 돈다.
+  근거(실측): 이미지와 빌드 캐시를 지운 뒤 따로 돌린 trim 은 48.5GiB 를 비워 디스크 파일이 68G 에서 40G 가 됐다. volume 을 지운 직후 돌린 trim 은 8GiB 만 비웠고, 1분 뒤 다시 돌리자 43.8GiB 를 비워 호스트 여유가 17GiB 늘었다.
+  전체 시간은 `--max-seconds`(기본 100초)로 제한해 도구의 명령 시간 한도(120초) 안에 끝난다.
+  종료 코드는 0 이 완료, 1 이 Colima 정지나 측정 실패, 2 가 횟수나 시간 상한까지 차이가 남은 경우다. 2 면 남은 차이를 사용자에게 보고한다.
+
+```bash
+python3 "$SKILL_DIR/scripts/colima_trim.py"
+```
 - **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** `scripts/docker_volumes.py` 가 dangling 인 것을 골라 생성 시각과 크기를 붙이고, 후보 합계를 낸다.
   **`docker volume prune` 을 쓰지 않는다.** 정리 도중 다른 세션이 시작한 테스트의 volume 까지 지울 수 있다(실측: 정리 중 `testcontainers/ryuk` 컨테이너가 떴다).
   기본 등급은 확인 필요다. `--peek N` 으로 후보의 최상위 항목을 열어 내용을 확인하고 등급을 정한다(Postgres 의 `PG_VERSION`, `base` 처럼 테스트 DB 데이터면 안전에 가깝다).
@@ -71,7 +79,7 @@ docker volume rm "$VOLUME"
 - 이미지는 `scripts/docker_images.py` 가 사용 중, 미사용, 최근 생성으로 나눈다.
 - 이미지는 각 줄 끝의 `rmi=` 값으로 지운다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. `traefik:<none>` 을 넘기면 `invalid reference format` 으로 실패한다. 태그가 여럿인 이미지를 ID 로 지우면 `-f` 없이는 거절되므로, 태그가 있는 줄은 ID 가 아니라 `repo:tag` 로 지운다.
 - 오래됐거나 같은 이미지의 이전 버전, `<none>` 태그는 안전에 가깝다. 최근 하루 안에 만든 로컬 테스트 이미지는 확인 필요다.
-- 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다(실측: `docker system df` 와 `docker_images.py` 의 미사용 합계는 5.1GB, `docker image prune -af` 의 확보량은 1.14GB). 호스트 디스크의 실제 확보는 `fstrim` 뒤에 잰다.
+- 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다(실측: `docker system df` 와 `docker_images.py` 의 미사용 합계는 5.1GB, `docker image prune -af` 의 확보량은 1.14GB). 호스트 디스크의 실제 확보는 `colima_trim.py` 뒤에 잰다.
 - 확인용으로 받은 이미지(`alpine` 등)는 끝나고 지운다.
 
 ## Gradle

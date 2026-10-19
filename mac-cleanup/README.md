@@ -13,6 +13,7 @@ macOS 개발 머신의 디스크, 메모리, 스왑을 조사해 정리하고, �
 ## 구성
 
 - `scripts/survey_*.sh`, `scripts/survey_*.py`, `scripts/docker_images.py`, `scripts/check_pr_branches.py`: 읽기 전용 조사. 지우거나 종료하지 않는다.
+- `scripts/colima_trim.py`: Colima VM 디스크를 trim 하고 호스트 확보량을 잰다. 부족하면 재시도한다. 데이터는 지우지 않는다.
 - `references/targets.md`: 정리 후보의 등급과 명령
 - `references/git-and-sessions.md`: 세션, 브랜치, 워크트리 정리 절차
 - `tests/`: 파싱과 분류 함수의 단위 테스트
