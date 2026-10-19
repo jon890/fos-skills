@@ -346,9 +346,39 @@ class MergeQueueTest(unittest.TestCase):
         r = self.run_queue({"1": pr, "_behind": 2}, "--required", "backend", "--require-up-to-date", "1")
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
         log = self.log.read_text()
-        self.assertIn("api -X PUT repos/owner/repo/pulls/1/update-branch", log)
+        self.assertIn("api --hostname git.example.com -X PUT repos/owner/repo/pulls/1/update-branch", log)
         self.assertIn("pr merge 1 --merge --match-head-commit new", log)
         self.assertLess(log.index("update-branch"), log.index("pr merge"))
+
+    def test_enterprise_host_from_pr_url_goes_to_every_api_call(self):
+        # `gh api` 는 origin 을 보지 않아 GitHub Enterprise 저장소에서 github.com 을 물어 실패한다
+        host_seen = self.tmp / "threads-host.txt"
+        pr = self.pr(url="https://ghe.example.com/owner/repo/pull/1", statusCheckRollup=[self.check("backend")],
+                     after_update=[self.check("backend")])
+        self.state.write_text(json.dumps({"1": pr, "_rules": self.rules("backend"), "_behind": 1}))
+        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.tmp), "--require-up-to-date",
+               "--threads-cmd", f'echo "$GH_HOST" > {host_seen}; echo 0', "1"]
+        env = {k: v for k, v in self.env.items() if k != "GH_HOST"}
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        api = [line for line in self.log.read_text().splitlines() if line.startswith("api ")]
+        # 규칙 조회, update-branch 앞뒤의 compare 두 번, update-branch
+        self.assertEqual(4, len(api), api)
+        for line in api:
+            self.assertTrue(line.startswith("api --hostname ghe.example.com "), line)
+        self.assertEqual("ghe.example.com\n", host_seen.read_text())
+
+    def test_global_gh_host_does_not_override_pr_url_host(self):
+        # 전역 GH_HOST 가 다른 호스트를 가리켜도 `gh pr` 가 origin 으로 정한 호스트를 따른다
+        host_seen = self.tmp / "threads-host.txt"
+        self.env["GH_HOST"] = "github.com"
+        self.state.write_text(json.dumps({"1": self.pr(), "_rules": self.rules()}))
+        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.tmp),
+               "--threads-cmd", f'echo "$GH_HOST" > {host_seen}; echo 0', "1"]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("api --hostname git.example.com repos/owner/repo/rules/branches/main", self.log.read_text())
+        self.assertEqual("git.example.com\n", host_seen.read_text())
 
     def test_up_to_date_is_off_by_default(self):
         r = self.run_queue({"1": self.pr(), "_behind": 2}, "--required", "backend", "1")

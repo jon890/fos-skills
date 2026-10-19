@@ -23,8 +23,12 @@ repo=$(git -C "$p" rev-parse --path-format=absolute --git-common-dir 2>/dev/null
 repo=${repo:h}
 branch=$(git -C "$p" branch --show-current 2>/dev/null)
 
-users=$(lsof -d cwd -Fn 2>/dev/null | grep -c "^n${p}\(/\|$\)")
-if [ "$users" != 0 ]; then echo "거부: $p 를 쓰는 프로세스 $users 개"; exit 1; fi
+# 그 경로나 하위를 작업 디렉터리로 쓰는 pid. 거부 줄에 남겨 무엇이 쥐고 있는지 다시 찾지 않게 한다
+holders=(${(f)"$(lsof -d cwd -Fpn 2>/dev/null | awk -v p="$p" '/^p/ { pid = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == p || index(n, p "/") == 1) print pid }' | sort -u)"})
+if [ ${#holders} != 0 ]; then
+  echo "거부: $p 를 쓰는 프로세스 ${#holders} 개 (pid ${(j:, :)holders}). 끝난 dispatch 의 프로세스면 cleanup-sweep.py --kill-holders 가 끈다"
+  exit 1
+fi
 if [ -n "$(git -C "$p" status --porcelain)" ]; then echo "거부: $p 에 커밋 안 된 변경"; exit 1; fi
 if [ -n "$merged_head" ] && ! git -C "$p" merge-base --is-ancestor HEAD "$merged_head" 2>/dev/null; then
   echo "거부: $p 의 HEAD 가 머지된 커밋 $merged_head 와 같지도 그 조상도 아니다"; exit 1

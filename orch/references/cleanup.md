@@ -76,7 +76,7 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 '102:./bin/backup-db
 판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
 
 ```bash
-bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" 101 102
+bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
 ```
 
 스크립트가 다루는 것은 아래다. 이 경우를 코디네이터가 직접 지우지 않는다.
@@ -85,6 +85,7 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --swee
 - 로컬 브랜치 이름(`<user>/<접두>-<주제>`)과 PR 브랜치 이름(`<접두>/<주제>`)이 다른 경우. upstream, `branch.<b>.merge`, 이름 변형 순으로 PR 을 찾는다. PR 조회가 비거나 깨지면 머지로 읽지 않는다
 - 예전에 머지된 PR 과 이름만 같은 새 브랜치. 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 보므로 지우지 않는다. `remove-worktree.sh --merged-head` 도 HEAD 가 그 커밋의 조상이 아니면 거부한다
 - worker 를 반납한 뒤 Orca 가 그 워크트리에 띄운 빈 셸 터미널. 폴더를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 그 터미널을 닫고 다시 시도한다. 다른 프로세스가 남아 있으면 건너뛴다
+- worker 가 끝난 뒤에도 claude 세션, 로그인 셸, 플러그인 node 같은 프로세스가 그 폴더를 작업 디렉터리로 쥔 경우. `worker-stop` 이 `process=none` 을 돌려줘도 남는다. `--kill-holders` 를 주면 PR 이 MERGED 이고 그 dispatch 가 끝났는지 확인한 뒤 TERM, HUP, KILL 순으로 끈다. 코디네이터 흐름의 명령에는 이 옵션을 넣는다
 - 워크트리 없이 남은 머지된 로컬 브랜치와, PR 이 머지된 뒤 남은 원격 브랜치
 - 저장소가 여럿인 경우. `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시)
 
@@ -128,6 +129,7 @@ gh pr view "$PR" --json state --jq .state
 원격에 같은 제목의 커밋이 있으면 rebase 된 것으로 보지만, squash 머지는 제목이 달라 원격에 없는 커밋으로 센다. 그때는 PR 이 `MERGED` 인 것을 확인한 뒤 사용자에게 알리고 지운다.
 macOS 의 zsh 와 `lsof`, git 2.31 이상을 전제한다.
 거부되면 먼저 그 worker 터미널을 닫고 잠시 뒤 다시 돌린다.
+거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.py --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
 "$SKILL_DIR/scripts/remove-worktree.sh" "$WORKTREE" --delete-branch

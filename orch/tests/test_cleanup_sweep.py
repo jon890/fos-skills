@@ -32,7 +32,7 @@ class CleanupSweepTest(unittest.TestCase):
         self.bin.mkdir()
         self.prs, self.workers, self.terminals, self.held = {}, [], [], []
         self.processes, self.spawn_on_release, self.gh_raw, self.open_bases = [], None, {}, []
-        self.orca_fail = self.gh_fail = False
+        self.orca_fail = self.gh_fail = self.orca_close_noop = False
         self.log = self.tmp / "calls.log"
         self.write_fakes()
 
@@ -77,6 +77,8 @@ class CleanupSweepTest(unittest.TestCase):
                 print(json.dumps({{"result": {{"terminals": st["terminals"]}}}}))
             elif a[:2] == ["orchestration", "worker-list"]:
                 print(json.dumps({{"result": {{"workers": st["workers"]}}}}))
+            elif a[:2] == ["terminal", "close"] and st.get("close_noop"):
+                print(json.dumps({{"ok": True, "result": {{}}}}))
             elif a[:2] == ["terminal", "close"]:
                 h = a[a.index("--terminal") + 1]
                 st["terminals"] = [t for t in st["terminals"] if t["handle"] != h]
@@ -93,15 +95,24 @@ class CleanupSweepTest(unittest.TestCase):
             else:
                 print(json.dumps({{"ok": True, "result": {{}}}}))
             """)
+        # pid 가 SWEEP 이면 cleanup-sweep.py 자신이다. 두 가짜는 그 스크립트가 바로 띄우므로 부모 pid 가 곧 그 pid 다
         lsof = fake % "lsof" + textwrap.dedent("""\
+            import os
             for q in st["processes"]:
-                print("p" + str(q["pid"])); print("n" + q["cwd"])
+                print("p" + str(os.getppid() if q["pid"] == "SWEEP" else q["pid"])); print("n" + q["cwd"])
             """)
         ps = fake % "ps" + textwrap.dedent("""\
+            import os
             for q in st["processes"]:
-                print(q["pid"], q.get("ppid", 1), q["command"])
+                print(os.getppid() if q["pid"] == "SWEEP" else q["pid"], q.get("ppid", 1), q["command"])
             """)
-        for name, body in (("gh", gh), ("orca", orca), ("lsof", lsof), ("ps", ps)):
+        # 신호를 받은 프로세스를 지운다. ignores 에 든 신호는 무시한다(로그인 셸은 TERM 을 무시한다)
+        kill = fake % "kill" + textwrap.dedent(f"""\
+            sig = a[0].lstrip("-")
+            st["processes"] = [q for q in st["processes"] if str(q["pid"]) not in a[1:] or sig in q.get("ignores", [])]
+            json.dump(st, open("{state}", "w"))
+            """)
+        for name, body in (("gh", gh), ("orca", orca), ("lsof", lsof), ("ps", ps), ("kill", kill)):
             path = self.bin / name
             path.write_text(body)
             path.chmod(0o755)
@@ -112,7 +123,7 @@ class CleanupSweepTest(unittest.TestCase):
              "processes": self.processes + [{"pid": 900 + i, "cwd": p, "command": "node server.js"}
                                             for i, p in enumerate(self.held)],
              "spawn_on_release": self.spawn_on_release, "gh_raw": self.gh_raw, "open_bases": self.open_bases,
-             "orca_fail": self.orca_fail, "gh_fail": self.gh_fail}))
+             "orca_fail": self.orca_fail, "gh_fail": self.gh_fail, "close_noop": self.orca_close_noop}))
 
     def worktree(self, name, push=True, commits=1, repo=None):
         repo = repo or self.repo
@@ -135,7 +146,8 @@ class CleanupSweepTest(unittest.TestCase):
 
     def run_sweep(self, *args, code=0, repos=None):
         self.save_state()
-        env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}", ORCA=str(self.bin / "orca"), GH=str(self.bin / "gh"))
+        env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}", ORCA=str(self.bin / "orca"), GH=str(self.bin / "gh"),
+                   ORCH_KILL=str(self.bin / "kill"))
         flags = [f for r in (repos or [self.repo]) for f in ("--repo", str(r))]
         done = subprocess.run(["python3", str(SCRIPT), *flags, "--wait", "1", *args],
                               capture_output=True, text=True, env=env)
@@ -442,6 +454,125 @@ class CleanupSweepTest(unittest.TestCase):
         out = self.run_sweep("--apply")
         self.assertTrue(path.exists(), out)
         self.assertNotIn("terminal close", self.calls())
+
+    # 3-1. worker 가 끝난 뒤에도 그 경로를 쥔 프로세스 (--kill-holders)
+    def finished_worker_with_holders(self, name, state="succeeded"):
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        self.workers = [{"dispatchId": "ctx_k", "workerState": state, "agentTerminalHandle": "term_gone",
+                         "resource": {"worktreeId": f"x::{path}", "releaseState": "released"}}]
+        (path / "sub").mkdir()
+        self.processes = [
+            {"pid": 701, "ppid": 1, "cwd": str(path), "command": "claude --resume"},
+            {"pid": 702, "ppid": 1, "cwd": str(path / "sub"), "command": "-/bin/zsh -l", "ignores": ["TERM"]},
+            {"pid": 703, "ppid": 1, "cwd": str(path), "command": "node plugin.js"},
+            {"pid": 709, "ppid": 1, "cwd": str(path) + "-other", "command": "-/bin/zsh -l"},
+        ]
+        return path
+
+    def kill_calls(self):
+        return [line for line in self.calls().splitlines() if line.startswith("kill ")]
+
+    def remaining_pids(self):
+        return {q["pid"] for q in json.loads((self.tmp / "state.json").read_text())["processes"]}
+
+    def test_kill_holders_stops_processes_of_a_finished_worker_and_removes_worktree(self):
+        path = self.finished_worker_with_holders("feat-k1")
+        out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertNotIn("feat-k1", self.branches())
+        # TERM 을 무시한 로그인 셸에만 HUP 을 보낸다. 이름이 비슷한 다른 경로의 셸은 건드리지 않는다
+        self.assertEqual(["kill -TERM 701 702 703", "kill -HUP 702"], self.kill_calls())
+        self.assertEqual({709}, self.remaining_pids())
+
+    def test_kill_holders_falls_back_to_kill_when_term_and_hup_are_ignored(self):
+        path = self.finished_worker_with_holders("feat-k2")
+        self.processes[0]["ignores"] = ["TERM", "HUP"]
+        out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertEqual(["kill -TERM 701 702 703", "kill -HUP 701 702", "kill -KILL 701"], self.kill_calls())
+
+    def test_only_processes_started_by_orca_are_killed(self):
+        path = self.finished_worker_with_holders("feat-k7")
+        orca = "/Applications/Orca.app/Contents/Frameworks/Orca Helper.app/Contents/MacOS/Orca Helper"
+        self.processes = [
+            # Orca 터미널: Orca Helper → login → 로그인 셸 → claude
+            {"pid": 800, "ppid": 1, "cwd": "/", "command": "/Applications/Orca.app/Contents/MacOS/Orca"},
+            {"pid": 801, "ppid": 800, "cwd": "/", "command": orca},
+            {"pid": 802, "ppid": 801, "cwd": "/", "command": "/usr/bin/login -fpl user /bin/zsh"},
+            {"pid": 803, "ppid": 802, "cwd": str(path), "command": "-/bin/zsh -l"},
+            {"pid": 804, "ppid": 803, "cwd": str(path), "command": "claude"},
+            # iTerm 에서 그 폴더로 들어간 사용자 셸과, 편집기가 띄운 language server
+            {"pid": 810, "ppid": 1, "cwd": "/", "command": "/Applications/iTerm.app/Contents/MacOS/iTerm2"},
+            {"pid": 811, "ppid": 810, "cwd": "/", "command": "/usr/bin/login -fpl user /bin/zsh"},
+            {"pid": 812, "ppid": 811, "cwd": str(path), "command": "-/bin/zsh -l"},
+            {"pid": 820, "ppid": 1, "cwd": "/", "command": "/Applications/Code.app/Contents/MacOS/Code"},
+            {"pid": 821, "ppid": 820, "cwd": str(path), "command": "node tsserver.js"},
+        ]
+        out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertEqual(["kill -TERM 803 804"], self.kill_calls())
+        self.assertIn("Orca 밖에서 띄웠거나", out)
+        self.assertTrue({812, 821} <= self.remaining_pids())
+
+    def test_sweep_itself_and_nested_worktree_users_are_not_killed(self):
+        path = self.worktree("feat-k8")
+        (path / ".gitignore").write_text("nested/\n")
+        sh("git", "-C", str(path), "add", "-A")
+        sh("git", "-C", str(path), "commit", "-q", "-m", "ignore nested")
+        sh("git", "-C", str(path), "push", "-q")
+        self.squash_merge("feat-k8", path)
+        sh("git", "-C", str(self.repo), "worktree", "add", "-q", "-b", "other-k8", str(path / "nested"), "origin/main")
+        self.workers = [{"dispatchId": "ctx_k", "workerState": "succeeded", "agentTerminalHandle": "term_gone",
+                         "resource": {"worktreeId": f"x::{path}", "releaseState": "released"}}]
+        self.processes = [
+            {"pid": "SWEEP", "ppid": 1, "cwd": str(path), "command": "python3 cleanup-sweep.py"},
+            {"pid": 851, "ppid": 1, "cwd": str(path / "nested"), "command": "claude"},
+            {"pid": 852, "ppid": 1, "cwd": str(path), "command": "node plugin.js"},
+        ]
+        out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertEqual(["kill -TERM 852"], self.kill_calls())
+        self.assertIn(851, self.remaining_pids())
+        self.assertIn("다음 실행에서 다시 시도", out)
+
+    def test_holders_are_not_killed_without_the_option(self):
+        path = self.finished_worker_with_holders("feat-k3")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertEqual([], self.kill_calls())
+        self.assertIn("다음 실행에서 다시 시도", out)
+
+    def test_holders_are_not_killed_without_a_known_finished_dispatch(self):
+        path = self.finished_worker_with_holders("feat-k4")
+        out = self.run_sweep("--kill-holders", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("그 경로의 worker 를 모른다", out)
+        for state in ("failed", "abandoned"):
+            self.workers[0]["workerState"] = state
+            out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+            self.assertTrue(path.exists(), out)
+            self.assertIn("끝나지 않은 dispatch ctx_k", out)
+        self.assertEqual([], self.kill_calls())
+
+    def test_holders_are_not_killed_while_an_orca_terminal_stays_at_the_path(self):
+        path = self.finished_worker_with_holders("feat-k5")
+        # 닫기 명령이 성공을 돌려줘도 터미널이 남은 경우를 흉내 낸다
+        self.terminals = [{"handle": "term_stuck", "worktreePath": str(path)}]
+        self.orca_close_noop = True
+        out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("Orca 터미널이 남아 있거나", out)
+        self.assertEqual([], self.kill_calls())
+
+    def test_kill_holders_dry_run_sends_no_signal(self):
+        path = self.finished_worker_with_holders("feat-k6")
+        # 실제 실행은 MERGED 면 이 터미널을 먼저 닫으므로 dry-run 도 끈다고 낸다
+        self.terminals = [{"handle": "term_k6", "worktreePath": str(path)}]
+        out = self.run_sweep("--run", "run_x", "--kill-holders")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("TERM, HUP, KILL 순으로 끈다", out)
+        self.assertEqual([], self.kill_calls())
 
     # 4. 저장소 여러 개
     def test_several_repos_are_swept_in_one_run(self):

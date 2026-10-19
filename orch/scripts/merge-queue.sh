@@ -19,6 +19,9 @@
 #
 # 옵션
 #   --repo DIR            대상 저장소 경로. 기본은 현재 디렉터리. gh 호스트와 저장소는 이 저장소의 origin 이 정한다
+#                         `gh pr` 는 origin 으로 호스트를 찾지만 `gh api` 는 찾지 않고 기본 호스트(보통 github.com)로 간다.
+#                         그래서 `gh api` 에는 PR URL 의 호스트(`gh pr` 가 origin 으로 정한 값)를 --hostname 으로 넘긴다.
+#                         GH_HOST 환경 변수는 보지 않는다. 전역 GH_HOST 가 다른 호스트를 가리켜도 `gh pr` 와 같은 호스트로 간다
 #   --before CMD          모든 PR 에 쓸 머지 전 명령. `PR:명령` 으로 준 PR 은 그 명령을 쓴다
 #   --method M            merge | squash | rebase. 기본 merge
 #   --threads-cmd CMD     미해결 스레드 수를 정수로 내는 명령. 기본은 형제 스킬 review-fix 의 review_threads.py
@@ -42,7 +45,8 @@
 # 정리가 실패해도 머지 결과는 바뀌지 않으므로 경고만 찍고 종료 코드는 0 이다.
 # CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를 바꾼다.
 #
-# 머지 전 명령과 --threads-cmd 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치), OWNER, REPO 를 받는다.
+# 머지 전 명령과 --threads-cmd 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치), OWNER, REPO,
+# GH_HOST(위 --hostname 과 같은 값)를 받는다.
 # 예: merge-queue.sh 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 #
 # 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤, 2 사용법 오류
@@ -63,7 +67,7 @@ SWEEP_BASE=""
 SWEEP_ARGS=()
 ITEMS=()
 
-usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 need() { [ -n "${2:-}" ] || { echo "$1 에 값이 없다" >&2; exit 2; }; }
 
 while [ $# -gt 0 ]; do
@@ -148,14 +152,15 @@ for item in "${ITEMS[@]}"; do
   url=$(field "$n" url .url)
   path_part=${url#*://*/}
   OWNER=${path_part%%/*}; rest=${path_part#*/}; REPO=${rest%%/*}
-  [ -n "$OWNER" ] && [ -n "$REPO" ] || stop "$n url 조회 실패"
+  host_part=${url#*://}; API_HOST=${host_part%%/*}
+  [ -n "$OWNER" ] && [ -n "$REPO" ] && [ -n "$API_HOST" ] || stop "$n url 조회 실패"
   base=$(field "$n" baseRefName .baseRefName)
   [ -n "$base" ] || stop "$n baseRefName 조회 실패"
   SWEEP_BASE=$base
 
   req=$REQUIRED
   if [ -z "$req" ]; then
-    req=$(gh api "repos/$OWNER/$REPO/rules/branches/$base" \
+    req=$(gh api --hostname "$API_HOST" "repos/$OWNER/$REPO/rules/branches/$base" \
       --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique | join(",")' 2>/dev/null) \
       || stop "$n 필수 체크 규칙 조회 실패. --required 로 준다"
   fi
@@ -192,13 +197,13 @@ for item in "${ITEMS[@]}"; do
   while :; do
     wait_checks
     [ "$UP_TO_DATE" = 1 ] || break
-    behind=$(gh api "repos/$OWNER/$REPO/compare/$base...$ph" --jq .behind_by 2>/dev/null)
+    behind=$(gh api --hostname "$API_HOST" "repos/$OWNER/$REPO/compare/$base...$ph" --jq .behind_by 2>/dev/null)
     case "$behind" in ''|*[!0-9]*) stop "$n base 와 비교 실패" ;; esac
     [ "$behind" = 0 ] && break
     rounds=$((rounds + 1))
     [ $rounds -le 3 ] || stop "$n base 를 3번 merge 해도 최신이 아니다. base 가 계속 움직인다"
     echo "$(now) $n base($base) 보다 $behind 커밋 뒤처졌다. update-branch 후 체크를 다시 기다린다"
-    gh api -X PUT "repos/$OWNER/$REPO/pulls/$n/update-branch" >/dev/null 2>&1 || stop "$n update-branch 실패(충돌 가능)"
+    gh api --hostname "$API_HOST" -X PUT "repos/$OWNER/$REPO/pulls/$n/update-branch" >/dev/null 2>&1 || stop "$n update-branch 실패(충돌 가능)"
     # update-branch 는 비동기라 PR HEAD 가 바뀔 때까지 기다린다
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
       sleep 5; nh=$(field "$n" headRefOid .headRefOid)
@@ -213,7 +218,7 @@ for item in "${ITEMS[@]}"; do
     [ -z "$x" ] || echo "경고: $n 실패를 허용한 체크 $x"
   done < <(field "$n" statusCheckRollup "$ALLOWED_FAILED")
   export PR="$n" BRANCH OWNER REPO
-  t=$(bash -c "$THREADS_CMD") || stop "$n 스레드 조회 실패"
+  t=$(GH_HOST="$API_HOST" bash -c "$THREADS_CMD") || stop "$n 스레드 조회 실패"
 
   m=$(field "$n" mergeable .mergeable)
   for _ in 1 2 3 4; do
@@ -226,7 +231,7 @@ for item in "${ITEMS[@]}"; do
 
   if [ -n "$before" ]; then
     echo "$(now) $n 머지 전 명령: $before"
-    bash -c "$before" || stop "$n 머지 전 명령 실패"
+    GH_HOST="$API_HOST" bash -c "$before" || stop "$n 머지 전 명령 실패"
   fi
 
   ph2=$(field "$n" headRefOid .headRefOid)

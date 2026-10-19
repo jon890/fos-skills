@@ -39,7 +39,7 @@ orca orchestration check --run "$RUN_ID" --ack "$DELIVERY_ID" --wait --types "wo
 보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 과 `--goal-items` 를 뺀다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --apply
+python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
 python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --goal-items "$ITEMS_FILE"
 ```
 
@@ -48,7 +48,7 @@ python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --go
 `--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .omc/orch/specs --apply
+python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .omc/orch/specs --kill-holders --apply
 ```
 
 `cleanup-sweep.py` 의 판정과 건너뛰는 조건은 그 파일 머리 주석이 소유한다.
