@@ -41,7 +41,7 @@ git -C "$REPO" worktree remove "$WT"
 
 - `--force` 는 쓰지 않는다. 미커밋 변경이 있으면 거절되는 것이 맞다.
 - "기록만 남음"(prunable)은 디렉터리가 이미 없는 기록이므로 `git -C "$REPO" worktree prune` 만 돌린다.
-- "PR 확인 필요"는 upstream 이 사라졌지만 머지 판정이 안 된 것이다. squash 머지일 수 있으므로 아래 브랜치 절차로 PR 상태를 확인한 뒤에만 제거한다.
+- "PR 확인 필요"는 upstream 이 사라졌지만 머지 판정이 안 된 것이다. squash 머지일 수 있으므로 아래 「PR 확인 필요 브랜치 점검」 으로 확인한 뒤에만 제거한다.
 - 워크트리에 체크아웃된 브랜치는 브랜치 후보에서 빠진다. 워크트리를 지운 뒤 `survey_git.py` 를 다시 돌려야 그 브랜치가 후보로 올라온다.
 
 ## 브랜치
@@ -79,12 +79,21 @@ python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged --apply
 
 **스크립트가 건드리지 않는 것.**
 
-- `PR 확인 필요(-D)`: 머지된 PR 은 있으나 커밋이 다르거나 upstream 만 사라진 브랜치다. 같은 이름을 다시 써서 PR 이후 커밋을 쌓았을 수 있다. 직접 PR 상태를 확인한 뒤 판단한다.
+- `PR 확인 필요(-D)`: 머지된 PR 은 있으나 커밋이 다르거나 upstream 만 사라진 브랜치다. 같은 이름을 다시 써서 PR 이후 커밋을 쌓았을 수 있다. 아래 「PR 확인 필요 브랜치 점검」 으로 확인한 뒤 사용자가 판단한다.
 - `gh 확인 실패`(JSON 의 `pr_state` 가 `error`): 분류가 "유지" 여도 지우지 않는다. `--gh-timeout` 을 늘려 다시 조사하거나, 보고에 확인하지 못했다고 적는다.
 
-직접 확인할 때 `gh` 는 cwd 저장소를 조회하므로 저장소로 옮겨서 부른다. 출력의 `headRefOid` 가 `git rev-parse` 값과 같은 PR 이 있어야 한다.
+### PR 확인 필요 브랜치 점검
+
+`scripts/check_pr_branches.py` 가 조사 JSON 에서 `PR 확인 필요(-D)` 인 브랜치마다 읽기 전용으로 확인한다. 브랜치를 지우지 않는다.
+브랜치마다 지금 `git rev-parse` 값이 조사 `tip` 과 같은지, 최근 PR(번호, 상태, head 가 tip 과 같은지, 머지 시각), 원격 어디에도 없는 로컬 커밋 수, 판정 한 줄을 낸다.
+`gh` 실패는 그 브랜치만 표시하고 계속한다. `--json` 이 있다.
 
 ```bash
-(cd "$REPO" && gh pr list --head "$BR" --state merged --json number,state,headRefOid)
-git -C "$REPO" rev-parse "$BR"
+python3 "$SKILL_DIR/scripts/check_pr_branches.py" "$SURVEY"
 ```
+
+판정은 원격에 없는 로컬 커밋 수로 가른다.
+
+- `잃는 커밋 없음`(0개): 지워도 잃는 커밋이 없다. PR 이 머지 없이 닫힌 브랜치(`CLOSED`, head 가 tip 과 같음)도 이 수로 판단한다. 사용자 승인 뒤 지운다.
+- `로컬 커밋 N개, 사용자 판단`: 지우면 그 커밋을 잃는다. 사용자가 정한다.
+- `tip 바뀜, 다시 조사`와 `브랜치 없음, 다시 조사`: 조사 뒤 브랜치가 움직였다. 지우지 않고 `survey_git.py` 를 다시 돌린다.
