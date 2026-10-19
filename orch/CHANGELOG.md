@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.12.0
+
+`worker-ask.sh` 를 쓰는 worker 가 이미 온 답을 놓치거나 같은 것을 다시 묻던 세 경우를 스크립트로 막는다.
+
+- 새 질문을 보내기 전에 `check --peek` 으로 읽지 않은 메시지를 본다. 자기가 보낸 것과 heartbeat 를 뺀 메시지가 있으면 그 메시지를 내고 묻지 않는다(종료 코드 5). 한 번 보여 준 메시지 ID 는 `ORCH_ASK_SEEN` 파일에 적어 다시 막지 않으므로, 읽고도 물어야 하면 같은 명령을 다시 부른다. worker 가 `check` 로 읽어도 ack 하지 않으면 `--peek` 에 계속 남기 때문이다(실측). `--force` 는 확인 없이 묻는다. 코디네이터가 이미 status 로 방향을 보냈는데 같은 것을 묻고 30분을 기다린 일이 있었다
+- 시간 제한으로 끝나면 `check --peek` 을 한 번 더 읽어, 그 질문 스레드나 이 Dispatch 로 온 status 가 있으면 첫 줄 `answer: <본문>` 으로 내고 종료 코드 3 으로 끝난다. 코디네이터가 ask 에 reply 하지 않고 status 로 답하면 600초 뒤 종료 코드 4 로만 끝났다
+- 답을 받으면 첫 줄이 `answer: <본문>` 이다. JSON 전체를 내서 `tail` 로 읽으면 `result.answer` 를 놓쳤다
+- 셸에 흩어진 JSON 해석을 새 `scripts/ask-json.py` 로 모았다
+- 지시서 틀의 ask 줄에 첫 줄 `answer:` 와 종료 코드 5 를 적었다
+- 가짜 orca 로 읽지 않은 메시지에서 멈춤, 한 번 보여 준 메시지로는 다시 막지 않음, `--force`, 자기 메시지와 heartbeat 는 막지 않음, 질문 스레드와 이 Dispatch 로 온 status 회수, 다른 스레드의 status 는 무시, 첫 줄 `answer:` 를 테스트했다
+
 ## 1.11.0
 
 `cleanup-sweep.py` 가 `--run` 을 줘도 터미널을 경로로 찾아, 같은 저장소의 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널까지 닫던 문제를 막는다.
