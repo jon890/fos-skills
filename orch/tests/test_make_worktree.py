@@ -1,5 +1,6 @@
 """make-worktree.sh 를 실제 git 저장소로 검증한다. 원격은 로컬 bare 저장소다."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -8,6 +9,8 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "make-worktree.sh"
+DENY_SCRIPT = SCRIPT.with_name("worktree-deny.py")
+DENY = ["Bash(pkill:*)", "Bash(killall:*)", "Bash(browser-driver reset:*)"]
 
 
 def sh(*cmd, cwd=None):
@@ -18,7 +21,8 @@ class MakeWorktreeTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1",
+        # 사용자의 전역 ignore(~/.config/git/ignore)가 설정 파일을 무시하면 결과가 머신마다 달라진다
+        self.env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", XDG_CONFIG_HOME=str(self.tmp),
                         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
         self.origin = self.tmp / "repo-origin.git"
@@ -63,6 +67,39 @@ class MakeWorktreeTest(unittest.TestCase):
         exclude.write_text(exclude.read_text() + "/.claude/\n")
         self.make()
         self.assertTrue((self.repo / "worktrees" / "repo" / "x" / ".claude" / "settings.local.json").is_file())
+
+    def settings(self):
+        return json.loads((self.repo / "worktrees" / "repo" / "x" / ".claude" / "settings.local.json").read_text())
+
+    def test_new_worktree_denies_commands_that_take_shared_resources(self):
+        self.make()
+        wt = self.repo / "worktrees" / "repo" / "x"
+        self.assertEqual(DENY, self.settings()["permissions"]["deny"])
+        # 새로 만든 설정 파일 때문에 워크트리가 dirty 해지면 remove-worktree.sh 가 거부한다
+        self.assertEqual(self.git("-C", str(wt), "status", "--porcelain"), "")
+
+    def test_copied_settings_keep_their_keys_and_get_missing_rules_once(self):
+        (self.repo / ".claude").mkdir()
+        (self.repo / ".claude" / "settings.local.json").write_text(json.dumps(
+            {"model": "opus", "permissions": {"allow": ["Bash(ls:*)"], "deny": ["Bash(pkill:*)"]}}))
+        exclude = self.repo / ".git" / "info" / "exclude"
+        exclude.write_text(exclude.read_text() + "/.claude/\n")
+        self.make()
+        wt = self.repo / "worktrees" / "repo" / "x"
+        subprocess.run(["python3", str(DENY_SCRIPT), str(wt)], check=True, env=self.env)
+        got = self.settings()
+        self.assertEqual("opus", got["model"])
+        self.assertEqual(["Bash(ls:*)"], got["permissions"]["allow"])
+        self.assertEqual(DENY, got["permissions"]["deny"])
+
+    def test_tracked_settings_file_is_not_rewritten(self):
+        (self.repo / ".claude").mkdir()
+        (self.repo / ".claude" / "settings.local.json").write_text("{}\n")
+        self.git("-C", str(self.repo), "add", ".claude/settings.local.json")
+        self.git("-C", str(self.repo), "commit", "-q", "-m", "track settings")
+        done = subprocess.run(["python3", str(DENY_SCRIPT), str(self.repo)], capture_output=True, text=True, env=self.env)
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertEqual("{}\n", (self.repo / ".claude" / "settings.local.json").read_text())
 
     def test_spec_without_branch_line_is_a_usage_error(self):
         self.spec.write_text("# 지시서\n\n브랜치 이름은 아직 없다.\n")
