@@ -11,7 +11,8 @@
 | 플러그인에 담는다 | `build-with-teams`, `docs-check`, `harness-cleanup`, `planning`, `pr-review`, `review-fix` |
 | 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
 | 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `scripts/`, `hooks/`, `docs/` |
-| 플러그인이 설치하지 않는다 | `PostToolUse` 훅, `~/.claude/rules/` 의 규칙 파일, `~/.claude/scripts/` 의 링크 |
+| 플러그인이 싣는 훅 | `orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 가 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
+| 플러그인이 설치하지 않는다 | 한국어 검사 `PostToolUse` 훅, `~/.claude/rules/` 의 규칙 파일, `~/.claude/scripts/` 의 링크 |
 
 플러그인은 통째로 설치된다. 스킬을 골라 설치하는 방법은 두지 않는다.
 
@@ -34,6 +35,7 @@ scripts/install-hooks.sh            hooks/ 의 git 훅을 건다
 scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 테스트한다
 scripts/tests/test_plugin_manifest.py   매니페스트와 루트의 스킬 디렉터리를 대조한다
 hooks/post-commit                   git 훅. Claude Code 훅이 아니다
+orch/hooks/hooks.json               플러그인이 싣는 Claude Code 훅 정의. plugin.json 의 hooks 가 가리킨다
 ```
 
 스킬을 `skills/` 아래로 옮기지 않은 근거는 [ADR-001](adr/001-plugin-from-repo-root.md) 이 소유한다.
@@ -87,6 +89,7 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 | --- | --- | --- |
 | `.claude-plugin/marketplace.json` | 마켓플레이스 이름과 플러그인 소스 | `claude plugin marketplace add` |
 | `.claude-plugin/plugin.json` | 플러그인 이름과 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
+| `orch/hooks/` | `check --wait` 를 셸의 `&` 로 띄우는 Bash 호출을 거부하는 PreToolUse 훅. 판정은 스크립트 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `content-preview/scripts/show-preview.sh` |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 없는지 확인한다 | 사람, 구현 검증 |
@@ -167,4 +170,4 @@ hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 플러그인이 `PostToolUse` 훅을 실어 설치만으로 한국어 검사가 켜지게 하는 일은 이번에 하지 않는다.
 플러그인 훅이 실제로 발화하는지는 세션을 띄워야 확인되는데 격리 환경에서 실측하지 못했다.
 그때까지 사외 머신에서 훅을 쓰려면 저장소를 clone 하고 `korean-check/README.md` 의 링크를 건다.
-훅을 실을 때는 훅 정의 파일을 git 훅이 있는 `hooks/` 와 다른 경로에 둔다.
+훅을 실을 때는 훅 정의 파일을 git 훅이 있는 `hooks/` 와 다른 경로에 둔다. 배치는 [ADR-005](adr/005-plugin-hooks-under-skill.md) 가 정한다.
