@@ -32,6 +32,7 @@
 
 `재시험` 처럼 금지어를 품은 합성어는 함께 걸린다. 테스트 뜻이면 그대로 고친다.
 다른 뜻의 합성어가 걸리면 `scripts/korean-style-check.py` 의 `COMPOUND_ALLOW` 에 더하고 테스트에 표본을 넣는다.
+**특정 저장소에만 있는 고유명사는 `COMPOUND_ALLOW` 에 더하지 않는다.** 그 저장소의 `.claude/korean-check-allow.txt` 에 적는다. 이 스킬은 공용이라 한 저장소의 이름을 알 수 없다.
 
 **금지어 앞에 글자가 붙은 합성어가 걸리면 금지어의 첫 글자를 `WORD_START_PREFIXES` 에 더한다.**
 `번호판`, `초판` 처럼 앞에 붙는 합성어는 끝없이 늘어 `COMPOUND_ALLOW` 로 하나씩 막을 수 없다.

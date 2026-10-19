@@ -444,6 +444,81 @@ class TestNonMarkdown(Base):
         self.assertNotIn("대상이 없다", done.stderr)
 
 
+class TestAllowFile(Base):
+    """저장소의 `.claude/korean-check-allow.txt` 는 그 문자열 안의 발견만 건너뛴다.
+
+    예외가 문자열 밖까지 번지거나 저장소 경계를 넘으면 검사가 조용히 꺼지므로 둘 다 표본으로 고정한다.
+    """
+
+    NAME = "시험 던전"
+
+    def make_repo(self, allow_text=None, repo="repo"):
+        repo_dir = self.root / repo
+        (repo_dir / ".git").mkdir(parents=True)
+        (repo_dir / "docs").mkdir()
+        if allow_text is not None:
+            (repo_dir / ".claude").mkdir()
+            (repo_dir / ".claude" / "korean-check-allow.txt").write_text(allow_text, encoding="utf-8")
+        return repo_dir
+
+    def run_in(self, repo_dir, text, env_extra=None):
+        doc = repo_dir / "docs" / "a.md"
+        doc.write_text(text, encoding="utf-8")
+        env = {"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin", **(env_extra or {})}
+        return subprocess.run(["python3", str(SCRIPT), str(doc)], capture_output=True, text=True, env=env)
+
+    def test_without_allow_file_the_name_is_caught(self):
+        repo = self.make_repo()
+        done = self.run_in(repo, f"{self.NAME} 입장 조건이다.\n")
+        self.assertEqual(done.returncode, 1)
+
+    def test_listed_name_is_skipped(self):
+        repo = self.make_repo(f"# 게임 콘텐츠 이름\n\n{self.NAME}\n")
+        done = self.run_in(repo, f"{self.NAME} 입장 조건이다.\n")
+        self.assertEqual((done.returncode, done.stdout), (0, ""))
+
+    def test_forbidden_word_outside_the_name_is_still_caught(self):
+        repo = self.make_repo(f"{self.NAME}\n")
+        done = self.run_in(repo, f"{self.NAME} 에서 시험 한다.\n")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn('"시험"', done.stdout)
+
+    def test_comments_are_not_entries(self):
+        repo = self.make_repo(f"# {self.NAME}\n")
+        self.assertEqual(self.run_in(repo, f"{self.NAME} 입장이다.\n").returncode, 1)
+
+    def test_single_character_entry_does_not_disable_the_check(self):
+        repo = self.make_repo("시\n")
+        done = self.run_in(repo, "시험 한다.\n")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("너무 짧아", done.stderr)
+
+    def test_allow_file_above_the_repository_boundary_is_not_used(self):
+        outer = self.root / "outer"
+        (outer / ".claude").mkdir(parents=True)
+        (outer / ".claude" / "korean-check-allow.txt").write_text(f"{self.NAME}\n", encoding="utf-8")
+        inner = outer / "inner"
+        (inner / ".git").mkdir(parents=True)
+        (inner / "docs").mkdir()
+        self.assertEqual(self.run_in(inner, f"{self.NAME} 입장이다.\n").returncode, 1)
+
+    def test_allow_file_in_a_parent_directory_of_the_same_repository_is_used(self):
+        repo = self.make_repo(f"{self.NAME}\n")
+        nested = repo / "docs" / "deep"
+        nested.mkdir()
+        doc = nested / "a.md"
+        doc.write_text(f"{self.NAME} 입장이다.\n", encoding="utf-8")
+        done = subprocess.run(["python3", str(SCRIPT), str(doc)], capture_output=True, text=True,
+                              env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"})
+        self.assertEqual(done.returncode, 0, done.stdout)
+
+    def test_env_override_points_at_a_specific_file(self):
+        repo = self.make_repo()
+        allow = self.write("elsewhere.txt", f"{self.NAME}\n")
+        done = self.run_in(repo, f"{self.NAME} 입장이다.\n", {"KOREAN_CHECK_ALLOW": str(allow)})
+        self.assertEqual(done.returncode, 0, done.stdout)
+
+
 class TestExitCode(Base):
     """종료 코드 규약. 0 통과, 1 금지어 발견, 2 돌지 못함이다."""
 
