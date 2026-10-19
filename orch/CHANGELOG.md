@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.11.0
+
+`cleanup-sweep.py` 가 `--run` 을 줘도 터미널을 경로로 찾아, 같은 저장소의 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널까지 닫던 문제를 막는다.
+
+- `--run` 을 주면 `orca orchestration worker-list --terminal-state active` 를 모든 Run 범위로 읽는다. 다른 Run 의 worker 가 쥔 터미널이 그 경로에 있으면 그 경로를 통째로 건너뛴다. 그 경로는 그 Run 의 코디네이터가 정리한다
+- worker-list 는 부른 터미널에 묶인 Run 으로 범위를 좁히므로 `ORCA_TERMINAL_HANDLE` 을 빼고 부른다. 그래도 범위가 `all` 이 아니거나 조회에 실패하면 이 Run worker 의 터미널만 닫고, 확인하지 못한 터미널이 있는 경로는 건너뛴다
+- worker 를 반납한 뒤 남은 빈 셸 터미널을 닫을 때도 다른 Run 의 터미널은 뺀다
+- `--run` 이 없으면 지금처럼 경로로만 찾는다
+- 다른 Run 터미널이 있는 경로는 남김, 다른 경로에 있는 다른 Run worker 는 이 경로를 막지 않음, 범위를 읽지 못하면 모르는 터미널을 남김, 묶인 터미널 handle 을 빼고 부름, `--run` 없이는 예전대로 닫음을 테스트했다
+
 ## 1.10.0
 
 worker 터미널을 닫은 직후 OMC session-end hook worker 가 워크트리를 작업 디렉터리로 1분 넘게 쥐어 `remove-worktree.sh` 가 「쓰는 프로세스 1 개」 로 거부하고, 코디네이터가 재시도를 되풀이하던 문제를 스크립트로 막는다.
