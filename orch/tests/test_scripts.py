@@ -464,37 +464,108 @@ class WorkerAskTest(unittest.TestCase):
         self.log = self.tmp / "calls.log"
         self.orca = self.tmp / "orca"
 
-    def fake(self, ask_out, ask_rc, check_out='{"result":{"runId":"run_x"}}', send_rc=0):
+    def fake(self, ask_out, ask_rc, check_out='{"result":{"runId":"run_x"}}', send_rc=0, checks=()):
+        """checks 를 주면 n 번째 check 가 그 n 번째 출력을 낸다. 다 쓰면 check_out 을 낸다."""
+        (self.tmp / "check.json").write_text(check_out)
+        for i, out in enumerate(checks, 1):
+            (self.tmp / f"check{i}.json").write_text(json.dumps(out))
         self.orca.write_text(textwrap.dedent(f"""\
             #!/usr/bin/env bash
             for a in "$@"; do printf '[%s]' "$a" >> "{self.log}"; done; echo >> "{self.log}"
             case "$2" in
               ask) printf '%s\\n' '{ask_out}'; exit {ask_rc} ;;
-              check) printf '%s\\n' '{check_out}' ;;
+              check)
+                n=$(($(cat "{self.tmp}/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "{self.tmp}/n"
+                f="{self.tmp}/check$n.json"; [ -f "$f" ] || f="{self.tmp}/check.json"; cat "$f"; echo ;;
               send) exit {send_rc} ;;
             esac
         """))
         self.orca.chmod(0o755)
 
+    @staticmethod
+    def inbox(*messages, dispatch="ctx_1"):
+        return {"result": {"runId": "run_x", "dispatchId": dispatch, "messages": list(messages)}}
+
+    @staticmethod
+    def message(kind="status", body="본문", who="term_c", thread=None, to="dispatch:ctx_1"):
+        return {"id": "msg_c", "type": kind, "subject": "s", "body": body, "from_handle": who,
+                "to_handle": to, "thread_id": thread, "created_at": "2026-10-19T10:00:00Z"}
+
     def run_ask(self, *args):
-        env = dict(os.environ, ORCA=str(self.orca))
+        env = dict(os.environ, ORCA=str(self.orca), ORCH_ASK_SEEN=str(self.tmp / "seen"))
         done = subprocess.run([str(SCRIPTS / "worker-ask.sh"), *args],
                               capture_output=True, text=True, env=env)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         return done.returncode, done.stdout, calls
 
-    def test_answer_is_printed(self):
-        self.fake('{"result":{"reply":"그렇게 한다"}}', 0)
+    def test_answer_is_the_first_line(self):
+        self.fake('{"result":{"answer":"그렇게 한다","messageId":"m1"}}', 0)
         code, out, calls = self.run_ask("--from", "term_w", "--question", "두 단어 질문", "--options", "a,b")
         self.assertEqual(code, 0)
-        self.assertIn("그렇게 한다", out)
-        self.assertIn("[--question][두 단어 질문]", calls[0])
-        self.assertIn("[--options][a,b]", calls[0])
+        self.assertEqual("answer: 그렇게 한다", out.splitlines()[0])
+        self.assertIn('"messageId":"m1"', out)
+        self.assertIn("[check][--terminal][term_w][--peek]", calls[0])
+        self.assertIn("[--question][두 단어 질문]", calls[1])
+        self.assertIn("[--options][a,b]", calls[1])
+
+    def test_reply_object_is_read_as_answer(self):
+        self.fake('{"result":{"reply":{"body":"B 로 간다"}}}', 0)
+        _, out, _ = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual("answer: B 로 간다", out.splitlines()[0])
+
+    def test_unread_coordinator_message_stops_before_asking(self):
+        self.fake('{"result":{"answer":"x"}}', 0, checks=[self.inbox(self.message(body="이미 정했다: A"))])
+        code, out, calls = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual(code, 5)
+        self.assertIn("이미 정했다: A", out)
+        self.assertFalse(any("[ask]" in c for c in calls))
+
+    def test_message_shown_once_does_not_stop_the_next_call(self):
+        # worker 가 check 로 읽어도 ack 하지 않으면 --peek 에 남는다. 같은 메시지로 두 번 막지 않는다
+        unread = self.inbox(self.message(body="이미 정했다: A"))
+        self.fake('{"result":{"answer":"x"}}', 0, checks=[unread, unread])
+        first, _, _ = self.run_ask("--from", "term_w", "--question", "q")
+        second, out, _ = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual((first, second), (5, 0))
+        self.assertEqual("answer: x", out.splitlines()[0])
+
+    def test_force_asks_despite_unread_message(self):
+        self.fake('{"result":{"answer":"x"}}', 0, checks=[self.inbox(self.message())])
+        code, _, calls = self.run_ask("--from", "term_w", "--question", "q", "--force")
+        self.assertEqual(code, 0)
+        self.assertIn("[ask]", calls[0])
+
+    def test_own_messages_and_heartbeats_do_not_stop_asking(self):
+        unread = self.inbox(self.message(who="term_w"), self.message(kind="heartbeat"))
+        self.fake('{"result":{"answer":"x"}}', 0, checks=[unread])
+        code, _, _ = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual(code, 0)
 
     def test_timeout_keeps_question_for_resume(self):
         self.fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
-        code, _, calls = self.run_ask("--from", "term_w", "--question", "q", "--timeout-ms", "1000")
-        self.assertEqual((code, len(calls)), (4, 1))
+        code, out, calls = self.run_ask("--from", "term_w", "--question", "q", "--timeout-ms", "1000")
+        self.assertEqual((code, len(calls)), (4, 3))
+        self.assertNotIn("answer:", out)
+
+    def test_timeout_returns_status_reply_in_the_question_thread(self):
+        reply = self.message(body="status 로 답한다: B", thread="m1", to="run:run_x")
+        self.fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, checks=[self.inbox(), self.inbox(reply)])
+        code, out, _ = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual(code, 3)
+        self.assertEqual("answer: status 로 답한다: B", out.splitlines()[0])
+
+    def test_timeout_returns_status_sent_to_this_dispatch(self):
+        reply = self.message(body="dispatch 로 답한다")
+        self.fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, checks=[self.inbox(), self.inbox(reply)])
+        code, out, _ = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual((code, out.splitlines()[0]), (3, "answer: dispatch 로 답한다"))
+
+    def test_timeout_ignores_status_of_another_thread_and_dispatch(self):
+        other = self.message(body="다른 질문의 답", thread="m9", to="dispatch:ctx_9")
+        self.fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, checks=[self.inbox(), self.inbox(other)])
+        code, out, _ = self.run_ask("--from", "term_w", "--question", "q")
+        self.assertEqual(code, 4)
+        self.assertNotIn("answer:", out)
 
     def test_failed_ask_sends_to_run_mailbox(self):
         self.fake('dispatch is not active', 1)
@@ -508,7 +579,8 @@ class WorkerAskTest(unittest.TestCase):
         self.fake('dispatch is not active', 1)
         code, _, calls = self.run_ask("--from", "term_w", "--question", "q", "--run", "run_y")
         self.assertEqual(code, 3)
-        self.assertFalse(any("[check]" in c for c in calls))
+        # check 는 묻기 전의 읽지 않은 메시지 확인 한 번뿐이다
+        self.assertEqual(1, sum("[check]" in c for c in calls))
         self.assertIn("[--to][run:run_y]", calls[-1])
 
     def test_failed_resume_does_not_send(self):
