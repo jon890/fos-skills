@@ -21,7 +21,7 @@
 #   --repo DIR            대상 저장소 경로. 기본은 현재 디렉터리. gh 호스트와 저장소는 이 저장소의 origin 이 정한다
 #                         `gh pr` 는 origin 으로 호스트를 찾지만 `gh api` 는 찾지 않고 기본 호스트(보통 github.com)로 간다.
 #                         그래서 `gh api` 에는 PR URL 의 호스트(`gh pr` 가 origin 으로 정한 값)를 --hostname 으로 넘긴다.
-#                         GH_HOST 환경 변수가 있으면 그것을 쓴다
+#                         GH_HOST 환경 변수는 보지 않는다. 전역 GH_HOST 가 다른 호스트를 가리켜도 `gh pr` 와 같은 호스트로 간다
 #   --before CMD          모든 PR 에 쓸 머지 전 명령. `PR:명령` 으로 준 PR 은 그 명령을 쓴다
 #   --method M            merge | squash | rebase. 기본 merge
 #   --threads-cmd CMD     미해결 스레드 수를 정수로 내는 명령. 기본은 형제 스킬 review-fix 의 review_threads.py
@@ -152,7 +152,7 @@ for item in "${ITEMS[@]}"; do
   url=$(field "$n" url .url)
   path_part=${url#*://*/}
   OWNER=${path_part%%/*}; rest=${path_part#*/}; REPO=${rest%%/*}
-  host_part=${url#*://}; API_HOST=${GH_HOST:-${host_part%%/*}}
+  host_part=${url#*://}; API_HOST=${host_part%%/*}
   [ -n "$OWNER" ] && [ -n "$REPO" ] && [ -n "$API_HOST" ] || stop "$n url 조회 실패"
   base=$(field "$n" baseRefName .baseRefName)
   [ -n "$base" ] || stop "$n baseRefName 조회 실패"

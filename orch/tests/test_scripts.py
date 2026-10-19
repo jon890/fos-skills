@@ -368,11 +368,17 @@ class MergeQueueTest(unittest.TestCase):
             self.assertTrue(line.startswith("api --hostname ghe.example.com "), line)
         self.assertEqual("ghe.example.com\n", host_seen.read_text())
 
-    def test_gh_host_env_overrides_pr_url_host(self):
-        self.env["GH_HOST"] = "other.example.com"
-        r = self.run_queue({"1": self.pr(), "_rules": self.rules()}, "1")
+    def test_global_gh_host_does_not_override_pr_url_host(self):
+        # 전역 GH_HOST 가 다른 호스트를 가리켜도 `gh pr` 가 origin 으로 정한 호스트를 따른다
+        host_seen = self.tmp / "threads-host.txt"
+        self.env["GH_HOST"] = "github.com"
+        self.state.write_text(json.dumps({"1": self.pr(), "_rules": self.rules()}))
+        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.tmp),
+               "--threads-cmd", f'echo "$GH_HOST" > {host_seen}; echo 0', "1"]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
-        self.assertIn("api --hostname other.example.com repos/owner/repo/rules/branches/main", self.log.read_text())
+        self.assertIn("api --hostname git.example.com repos/owner/repo/rules/branches/main", self.log.read_text())
+        self.assertEqual("git.example.com\n", host_seen.read_text())
 
     def test_up_to_date_is_off_by_default(self):
         r = self.run_queue({"1": self.pr(), "_behind": 2}, "--required", "backend", "1")
