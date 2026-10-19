@@ -272,6 +272,18 @@ class TestBaseBranch(unittest.TestCase):
             optional.assert_not_called()
             run.assert_called_once_with(["git", "check-ref-format", "--branch", "develop"], Path("."))
 
+    def test_origin_prefix_is_removed_from_explicit_base(self):
+        for given, expected in (("origin/main", "main"), ("refs/heads/main", "main"),
+                                ("refs/remotes/origin/develop", "develop"), ("origin/release/1.0", "release/1.0"),
+                                ("main", "main"), ("feature/origin", "feature/origin"), ("originals", "originals")):
+            with self.subTest(given=given), patch.object(pc, "try_run") as optional, patch.object(pc, "run") as run:
+                self.assertEqual(pc.resolve_base(Path("."), given), expected)
+                run.assert_called_once_with(["git", "check-ref-format", "--branch", expected], Path("."))
+
+    def test_origin_prefix_is_removed_from_git_setting(self):
+        with patch.object(pc, "try_run", return_value="origin/develop"), patch.object(pc, "run"):
+            self.assertEqual(pc.resolve_base(Path(".")), "develop")
+
     def test_git_setting_overrides_remote_default(self):
         with patch.object(pc, "try_run", return_value="develop"), patch.object(pc, "run") as run:
             self.assertEqual(pc.resolve_base(Path(".")), "develop")
@@ -438,6 +450,12 @@ class TestUnpushedBranch(unittest.TestCase):
 
     def test_unpushed_plan_branch_passes_with_note(self):
         code, out = self.run_main()
+        self.assertEqual(code, 0, out)
+        self.assertIn("로컬에만 있다", out)
+
+    def test_origin_prefixed_base_runs_like_the_plain_one(self):
+        """`--base origin/main` 이 `origin/origin/main` 을 fetch 하다 종료 코드 2 로 끝나던 문제."""
+        code, out = self.run_main("--base", "origin/main")
         self.assertEqual(code, 0, out)
         self.assertIn("로컬에만 있다", out)
 
