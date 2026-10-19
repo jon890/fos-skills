@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "cleanup-sweep.py"
+HOOK = "node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}"
 
 
 def sh(*cmd, cwd=None):
@@ -535,6 +536,27 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertEqual(["kill -TERM 852"], self.kill_calls())
         self.assertIn(851, self.remaining_pids())
         self.assertIn("다음 실행에서 다시 시도", out)
+
+    def test_session_end_hook_is_left_to_remove_worktree(self):
+        # OMC session-end hook 만 남으면 건너뛰지 않고 remove-worktree.sh 에 넘긴다. 그 스크립트가 끝날 때까지 기다린다
+        path = self.worktree("feat-h1")
+        self.squash_merge("feat-h1", path)
+        self.processes = [{"pid": 861, "ppid": 1, "cwd": str(path), "command": HOOK}]
+        self.env["ORCH_HOOK_WAIT"] = "0"
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("OMC session-end hook 861 은 끄지 않는다", out)
+        self.assertIn("session-end hook 861 는 스스로 끝난다", out)
+        self.assertNotIn("다음 실행에서 다시 시도", out)
+
+    def test_kill_holders_does_not_kill_session_end_hook(self):
+        path = self.finished_worker_with_holders("feat-h2")
+        self.processes.append({"pid": 862, "ppid": 1, "cwd": str(path), "command": HOOK})
+        self.env["ORCH_HOOK_WAIT"] = "0"
+        out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertTrue(all("862" not in call for call in self.kill_calls()), self.kill_calls())
+        self.assertIn(862, self.remaining_pids())
 
     def test_holders_are_not_killed_without_the_option(self):
         path = self.finished_worker_with_holders("feat-k3")

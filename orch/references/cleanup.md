@@ -128,7 +128,8 @@ gh pr view "$PR" --json state --jq .state
 스크립트는 그 경로를 쓰는 프로세스(살아 있는 worker), 커밋 안 된 변경, 원격 어디에도 없는 커밋이 있으면 지우지 않고 이유를 낸다.
 원격에 같은 제목의 커밋이 있으면 rebase 된 것으로 보지만, squash 머지는 제목이 달라 원격에 없는 커밋으로 센다. 그때는 PR 이 `MERGED` 인 것을 확인한 뒤 사용자에게 알리고 지운다.
 macOS 의 zsh 와 `lsof`, git 2.31 이상을 전제한다.
-거부되면 먼저 그 worker 터미널을 닫고 잠시 뒤 다시 돌린다.
+거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다. 그 초 동안 프로세스가 빠지기를 기다린다.
+OMC session-end hook worker 만 남은 경우는 옵션 없이도 끝날 때까지 기다린다(`ORCH_HOOK_WAIT`, 기본 180초).
 거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.py --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
