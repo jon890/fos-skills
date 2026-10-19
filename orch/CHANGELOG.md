@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.13.0
+
+공통 지시서 틀에 `planning`, `build-with-teams` 를 쓰라는 줄이 있어도 worker 는 사용자에게 묻지 못해, worker 마다 설계 문서 위치와 흐름을 다시 정하거나 ask 를 보내던 문제를 틀에서 막는다.
+
+- `templates/spec-common.md` 에 「설계와 구현을 맡길 때」 절을 더했다. 사용자 확인 단계는 「판단이 필요할 때」 기준으로 가르고, 설계는 `{{DESIGN_DIR}}` 에 두고 `tasks/` 는 만들지 않는다. PR 단계는 공통 규칙을 따르고, 하위 에이전트는 이름 없이 띄우고, 저장소의 두 스킬 오버레이가 있으면 그 경로를 따른다
+- `references/spec-writing.md` 의 채울 값에 `{{DESIGN_DIR}}` 를 더했다
+
 ## 1.12.0
 
 `worker-ask.sh` 를 쓰는 worker 가 이미 온 답을 놓치거나 같은 것을 다시 묻던 세 경우를 스크립트로 막는다.
