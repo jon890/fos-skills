@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.10.0
+
+worker 터미널을 닫은 직후 OMC session-end hook worker 가 워크트리를 작업 디렉터리로 1분 넘게 쥐어 `remove-worktree.sh` 가 「쓰는 프로세스 1 개」 로 거부하고, 코디네이터가 재시도를 되풀이하던 문제를 스크립트로 막는다.
+
+- `remove-worktree.sh --wait <초>`: 그 경로를 쓰는 프로세스가 빠지기를 그 초만큼 기다린 뒤 판정한다. 기본은 0 이라 지금처럼 바로 거부한다
+- 남은 프로세스가 모두 OMC session-end hook worker(`--omc-session-end-worker`)면 `ORCH_HOOK_WAIT` 초(기본 180)까지 기다린다. 그 hook 은 워크트리의 `.omc/` 를 쓰다 스스로 끝나므로, 빼고 지우면 지운 경로에 폴더가 다시 생긴다. 그래서 빼지 않고 기다린다
+- 거부 줄에 기다린 초와 hook pid 를 낸다
+- `cleanup-sweep.py`: 남은 프로세스가 hook 뿐이면 건너뛰지 않고 `remove-worktree.sh` 에 넘기고, `--kill-holders` 도 hook 은 끄지 않는다. `remove-worktree.sh` 호출의 시간 제한을 hook 대기보다 길게 잡았다
+- 가짜 lsof, ps, sleep 으로 hook 이 끝나면 지움, 끝나지 않으면 거부, 다른 프로세스는 바로 거부, hook 과 다른 프로세스가 함께면 기다리지 않음, `--wait` 로 다른 프로세스를 기다림을 테스트했다. 정리 스크립트는 hook 을 넘기는 경우와 끄지 않는 경우를 테스트했다
+
 ## 1.9.0
 
 GitHub Enterprise 저장소에서 머지 큐가 멈추던 문제와, 끝난 worker 의 프로세스가 워크트리를 쥐어 정리가 매번 거부되던 문제를 스크립트로 막는다.
