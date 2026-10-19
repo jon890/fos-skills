@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.6.0
+
+실제 정리에서 막힌 세 곳을 고쳤다.
+
+- `docker_images.py` 가 각 줄 끝에 `docker rmi` 에 그대로 넘길 `rmi=` 값과 짧은 이미지 ID `id=` 를 낸다. 이전에는 태그만 `<none>` 인 이미지가 `traefik:<none>` 으로 나와 `invalid reference format` 으로 실패했다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. 기존 컬럼의 순서와 의미는 그대로다
+- `check_pr_branches.py` 를 더했다. `survey_git.py --json` 의 `PR 확인 필요(-D)` 브랜치마다 지금 tip 이 조사 때와 같은지, 최근 PR 목록, 원격에 없는 로컬 커밋 수와 판정 한 줄을 낸다. `pr_state` 가 `null` 이어도 돌고, `gh` 실패는 항목별로 표시한다. `--json` 이 있고 읽기 전용이다. `git-and-sessions.md` 의 수동 확인 명령을 이 스크립트를 쓰는 절차로 바꿨다
+- `KEEP_BRANCHES` 에 `alpha`, `beta` 를 더했다. 배포용 장수 브랜치가 「PR 확인 필요」 후보로 올라오던 문제다
+- `targets.md` 「Docker」 가 이미지를 `rmi=` 값으로 지우게 하고, SKILL.md 4단계에 새 스크립트를 반영했다
+- `tests/` 에 `rmi_target`, `check_pr_branches.py`, `alpha` 와 `beta` 유지 분류의 테스트를 더했다
+
 ## 1.5.0
 
 즉석 셸 루프와 Python 으로 하던 두 단계를 스크립트로 옮겨, 기준(하루 이내 volume 제외, tip 대조)을 빠뜨리지 않게 했다.
