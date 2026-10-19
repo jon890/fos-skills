@@ -32,6 +32,7 @@ class CleanupSweepTest(unittest.TestCase):
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
         self.prs, self.workers, self.terminals, self.held = {}, [], [], []
+        self.all_workers, self.scope = [], "all"
         self.processes, self.spawn_on_release, self.gh_raw, self.open_bases = [], None, {}, []
         self.orca_fail = self.gh_fail = self.orca_close_noop = False
         self.log = self.tmp / "calls.log"
@@ -76,6 +77,13 @@ class CleanupSweepTest(unittest.TestCase):
                 json.dump(st, open("{state}", "w"))
             if a[:2] == ["terminal", "list"]:
                 print(json.dumps({{"result": {{"terminals": st["terminals"]}}}}))
+            elif a[:2] == ["orchestration", "worker-list"] and "--run" not in a:
+                # 모든 Run 범위 조회. 묶인 터미널 handle 이 넘어오면 범위가 그 Run 으로 좁혀진다
+                import os
+                bound = os.environ.get("ORCA_TERMINAL_HANDLE")
+                scope = "bound" if bound else st.get("scope", "all")
+                print(json.dumps({{"result": {{"workers": st["all_workers"], "scope": {{"source": scope}},
+                                               "page": {{"nextCursor": None}}}}}}))
             elif a[:2] == ["orchestration", "worker-list"]:
                 print(json.dumps({{"result": {{"workers": st["workers"]}}}}))
             elif a[:2] == ["terminal", "close"] and st.get("close_noop"):
@@ -124,6 +132,7 @@ class CleanupSweepTest(unittest.TestCase):
              "processes": self.processes + [{"pid": 900 + i, "cwd": p, "command": "node server.js"}
                                             for i, p in enumerate(self.held)],
              "spawn_on_release": self.spawn_on_release, "gh_raw": self.gh_raw, "open_bases": self.open_bases,
+             "all_workers": self.all_workers, "scope": self.scope,
              "orca_fail": self.orca_fail, "gh_fail": self.gh_fail, "close_noop": self.orca_close_noop}))
 
     def worktree(self, name, push=True, commits=1, repo=None):
@@ -296,6 +305,48 @@ class CleanupSweepTest(unittest.TestCase):
         out = self.run_sweep("--run", "run_x", "--apply")
         self.assertTrue(path.exists(), out)
         self.assertNotIn("terminal close", self.calls())
+
+    def foreign_terminal_at(self, name):
+        """머지된 워크트리에 다른 Run 의 worker 터미널이 붙어 있다. 이 Run 은 그 worker 를 모른다."""
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        self.terminals = [{"handle": "term_codex", "worktreePath": str(path)}]
+        self.all_workers = [{"runId": "run_other", "dispatchId": "ctx_o", "agentTerminalHandle": "term_codex"}]
+        return path
+
+    def test_terminal_of_another_run_is_not_closed(self):
+        path = self.foreign_terminal_at("feat-o1")
+        self.env["ORCA_TERMINAL_HANDLE"] = "term_coordinator"
+        out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("다른 Run 의 worker 터미널 term_codex", out)
+        self.assertNotIn("terminal close", self.calls())
+        self.assertIn("feat-o1", self.branches())
+
+    def test_worker_of_another_run_elsewhere_does_not_block_this_path(self):
+        path = self.foreign_terminal_at("feat-o2")
+        self.all_workers.append({"runId": "run_x", "dispatchId": "ctx_a", "agentTerminalHandle": "term_mine"})
+        self.terminals = [{"handle": "term_mine", "worktreePath": str(path)},
+                          {"handle": "term_codex", "worktreePath": str(self.tmp / "elsewhere")}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertIn("orca terminal close --terminal term_mine", self.calls())
+        self.assertNotIn("--terminal term_codex", self.calls())
+
+    def test_unknown_terminal_is_kept_when_runs_cannot_be_listed(self):
+        path = self.foreign_terminal_at("feat-o3")
+        self.scope = "bound"
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("확인하지 못한 터미널 term_codex", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_without_run_terminals_are_found_by_path_as_before(self):
+        path = self.foreign_terminal_at("feat-o5")
+        out = self.run_sweep("--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertIn("orca terminal close --terminal term_codex", self.calls())
+        self.assertNotIn("worker-list", self.calls())
 
     def test_terminal_is_not_closed_without_merged_pr(self):
         path = self.fresh_gone_branch("fresh")

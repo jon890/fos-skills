@@ -11,7 +11,8 @@
     --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
     --base        기준 브랜치. 없으면 저장소마다 origin/HEAD 를 읽고, 그것도 없으면 main
-    --run         worker 를 찾을 Orca Run. 없으면 worker 확인과 release 를 건너뛰고 터미널만 경로로 찾는다
+    --run         worker 를 찾을 Orca Run. 없으면 worker 확인과 release 를 건너뛰고 터미널만 경로로 찾는다.
+                  주면 다른 Run 의 worker 터미널이 있는 경로는 건너뛴다(아래 「다른 Run」)
     --specs-dir   지시서 폴더(저장소 기준 상대경로 또는 절대경로). worktree 이름과 같은
                   `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다
     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
@@ -42,10 +43,18 @@ PR 찾기 (브랜치마다):
       Dispatch 상태와 상관없이 그 worker 의 터미널이 `orca terminal list` 에 살아 있으면 살아 있다고 본다.
       Dispatch 가 succeeded 여도 같은 터미널에서 후속 일을 하는 worker 가 있고,
       그 브랜치가 막 만든 상태(base 와 같고 커밋 0)면 머지 판정을 통과해 일하는 worker 를 지우게 된다
+    - --run 을 줬고, 그 경로에 다른 Run 의 worker 터미널이 있다(아래 「다른 Run」)
     - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다.
       OMC session-end hook worker 는 세지 않는다. 스스로 끝나므로 `remove-worktree.sh` 가 끝날 때까지 기다린다
       단, PR 이 MERGED 이고 남은 프로세스가 전부 자식 없는 로그인 셸(Orca 가 worker 를 반납한 뒤 띄운 빈 셸)이고
       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
+
+다른 Run (--run 을 줬을 때):
+    터미널은 경로로 찾으므로, 같은 저장소에서 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널도 걸린다.
+    `orca orchestration worker-list --terminal-state active` 를 모든 Run 범위로 읽어
+    --run 과 다른 Run 의 worker 가 쥔 터미널이 그 경로에 있으면 그 경로를 통째로 건너뛴다. 그 Run 의 코디네이터가 정리한다.
+    모든 Run 범위로 읽지 못하면(조회 실패, 범위가 bound) 이 Run worker 의 터미널만 닫고, 다른 터미널이 있는 경로는 건너뛴다.
+    worker-list 는 부른 터미널에 묶인 Run 으로 범위를 좁히므로 ORCA_TERMINAL_HANDLE 을 빼고 부른다.
 
 남은 프로세스 끄기 (--kill-holders):
     `worker-stop` 이 `process=none` 을 돌려줘도 그 worker 의 claude 세션, 로그인 셸, 플러그인 node, Gradle 같은
@@ -115,9 +124,9 @@ REMOVE_TIMEOUT = int(os.environ.get("ORCH_HOOK_WAIT", "180")) + 60
 SESSION_END_MARKS = ("--omc-session-end-worker", "hooks/session-end/worker.js")
 
 
-def run(cmd, cwd=None, timeout=120):
+def run(cmd, cwd=None, timeout=120, env=None):
     try:
-        done = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        done = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 1, "", str(exc)
     return done.returncode, done.stdout.strip(), done.stderr.strip()
@@ -341,14 +350,44 @@ def only_idle_shells(pids):
     return True
 
 
-def orca_json(*args):
-    code, out, _ = run([ORCA, *args, "--json"])
+def orca_json(*args, env=None):
+    code, out, _ = run([ORCA, *args, "--json"], env=env)
     if code != 0:
         return None
     try:
         return json.loads(out)["result"]
     except (json.JSONDecodeError, KeyError, TypeError):
         return None
+
+
+def foreign_handles(run_id):
+    """다른 Run 의 worker 가 쥔 살아 있는 터미널 handle 집합. 모든 Run 범위로 읽지 못하면 None 이다."""
+    # 부른 터미널에 묶인 Run 이 있으면 worker-list 가 그 Run 으로 범위를 좁힌다
+    env = {k: v for k, v in os.environ.items() if k != "ORCA_TERMINAL_HANDLE"}
+    handles, cursor = set(), None
+    while True:
+        args = ["orchestration", "worker-list", "--terminal-state", "active", "--limit", "100"]
+        result = orca_json(*args, *(["--cursor", cursor] if cursor else []), env=env)
+        if result is None or (result.get("scope") or {}).get("source") != "all":
+            return None
+        for w in result.get("workers") or []:
+            handle = w.get("agentTerminalHandle") or (w.get("resource") or {}).get("terminalHandle")
+            if handle and w.get("runId") != run_id:
+                handles.add(handle)
+        cursor = (result.get("page") or {}).get("nextCursor")
+        if not cursor:
+            return handles
+
+
+def foreign_at(args, mine, terminals, path):
+    """그 경로에서 이 Run 이 닫으면 안 되는 터미널. --run 이 없으면 빈 목록이다."""
+    if not args.run:
+        return []
+    here = terminals_at(terminals, path)
+    if args.foreign is None:
+        own = {w.get("agentTerminalHandle") for w in mine}
+        return [h for h in here if h not in own]
+    return [h for h in here if h in args.foreign]
 
 
 def workers_at(workers, path):
@@ -551,6 +590,11 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     if live:
         log(f"건너뜀 {path}: 살아 있는 worker {', '.join(w.get('dispatchId', '?') for w in live)}")
         return
+    theirs = foreign_at(args, mine, terminals, path)
+    if theirs:
+        what = "다른 Run 의 worker 터미널" if args.foreign is not None else "다른 Run 의 것인지 확인하지 못한 터미널"
+        log(f"건너뜀 {path}: {what} {', '.join(theirs)}. 그 Run 의 코디네이터가 정리한다")
+        return
     by_pr = why == BY_PR
     if not by_pr and terminals_at(terminals, path):
         log(f"건너뜀 {path}: 살아 있는 터미널이 있다. PR 이 MERGED 가 아니면 터미널을 닫지 않는다")
@@ -587,7 +631,7 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     pids = wait_free(path, args.wait)
     if pids and by_pr and only_idle_shells(pids):
         # worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 목록을 다시 읽어 그 터미널을 닫는다
-        handles = terminals_at(live_terminals(), path)
+        handles = [h for h in terminals_at(live_terminals(), path) if h not in (args.foreign or set())]
         if handles:
             log(f"  남은 프로세스 {len(pids)} 개가 유휴 셸뿐이다. Orca 터미널을 닫고 다시 시도한다")
             close_terminals(handles, True, log, "유휴 셸 터미널")
@@ -680,9 +724,12 @@ def main(argv=None):
     if terminals is None:
         print("cleanup-sweep: orca terminal list 를 읽지 못해 살아 있는 worker 를 판정할 수 없다", file=sys.stderr)
         return 2
-    workers = []
+    workers, args.foreign = [], None
     if args.run:
         workers = (orca_json("orchestration", "worker-list", "--run", args.run) or {}).get("workers", [])
+        args.foreign = foreign_handles(args.run)
+        if args.foreign is None:
+            print("cleanup-sweep: 모든 Run 의 worker 를 읽지 못해 이 Run worker 의 터미널만 닫는다", file=sys.stderr)
     code = 0
     for repo in repos:
         try:
