@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.23.0
+
+검증 절의 `python3 -m unittest .github/...` 처럼 점 디렉터리가 든 경로를 `verify_task.py` 가 위반으로 막는다.
+
+- `python -m unittest` 는 파일 경로를 모듈 이름으로 바꿔 `.github.tests.test_x` 를 import 하므로 `ValueError: Empty module name` 으로 테스트를 하나도 돌리지 않는다. `./` 로 시작해도, 점 디렉터리가 중간에 있어도 같다 (Python 3.14 실측)
+- 위반 문구에 `python3 -m unittest discover -s <디렉터리> -p <파일>` 형태를 낸다. `discover` 와 점 디렉터리가 없는 경로, `-k` 의 값은 통과한다
+- 막는 명령 셋과 통과하는 명령 넷을 테스트에 더했다
+
 ## 2.22.0
 
 여러 사용자 저장소가 공통으로 쓰는 관례를 예시 파일로 건넨다. 단계 본문은 예시를 가리키는 한 줄만 더했다.

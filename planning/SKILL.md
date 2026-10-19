@@ -7,7 +7,7 @@ description: |
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
   만든 task 를 실행하는 일은 `build-with-teams` 가 맡는다.
 metadata:
-  version: "2.22.0"
+  version: "2.23.0"
 ---
 # planning
 
