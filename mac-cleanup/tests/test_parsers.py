@@ -105,6 +105,11 @@ class GitClassifyTest(unittest.TestCase):
             self.assertEqual(sg.classify_branch(br(name), "main", set()), "유지")
         self.assertEqual(sg.classify_branch(br("feat/a"), "develop", set()), "삭제 후보(-d)")
 
+    def test_branch_keeps_long_lived_deploy_branches(self):
+        for name in ("alpha", "beta"):
+            br = {"name": name, "merged": False, "upstream_gone": True}
+            self.assertEqual(sg.classify_branch(br, "main", set(), pr_state="diverged"), "유지")
+
     def test_judge_pr_error(self):
         self.assertEqual(sg.judge_pr("aaa", None), "error")
         self.assertIsNone(sg.judge_pr("aaa", []))

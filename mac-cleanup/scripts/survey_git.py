@@ -24,7 +24,8 @@ SKIP_DIRS = {"node_modules", "worktrees", ".orca-worktree-trash", ".git"}
 MAX_DEPTH = 3
 BASE_CANDIDATES = ("origin/main", "origin/master", "main", "master")
 # 기준 브랜치가 아니어도 기본 브랜치나 배포 브랜치로 쓰는 이름이라 지우면 사람이 헷갈린다.
-KEEP_BRANCHES = {"main", "master", "develop"}
+# alpha, beta 는 배포용 장수 브랜치다. PR 이 수십 개 머지돼 "PR 확인 필요" 후보로 올라오지만 지우면 안 된다.
+KEEP_BRANCHES = {"main", "master", "develop", "alpha", "beta"}
 DEFAULT_GH_TIMEOUT = 20
 
 
