@@ -43,6 +43,15 @@ from pathlib import Path
 # 검사 전에 이 낱말들을 줄에서 지우므로, 같은 줄에 맨 「시험」이 따로 있으면 그건 여전히 잡힌다.
 COMPOUND_ALLOW = ["시험적", "판이하", "줄이 선다", "줄이 서야"]
 
+# 저장소가 두는 예외 파일. 한 줄에 문자열 하나이고 `#` 으로 시작하는 줄과 빈 줄은 무시한다.
+# 금지어를 품은 고유명사(게임 콘텐츠 이름, 제품명, 인용한 원문 제목)는 이 스킬이 알 수 없어
+# 쓰는 저장소가 적는다. 줄에서 그 문자열을 지우고 검사하므로 문자열 밖의 금지어는 그대로 잡힌다.
+# 파일 하나가 이 파일의 COMPOUND_ALLOW 와 같은 효과를 낸다. 찾는 방법은 find_allow_file 이 소유한다.
+ALLOW_FILE = Path(".claude") / "korean-check-allow.txt"
+ALLOW_ENV = "KOREAN_CHECK_ALLOW"
+# 한 글자 항목은 줄의 거의 모든 곳을 지워 검사를 끄는 것과 같아 읽지 않는다.
+ALLOW_MIN_LENGTH = 2
+
 # 이 글자들로 시작하는 금지어는 앞 글자가 한글이면 다른 낱말의 일부라서 건너뛴다.
 # 「번호판 번호」, 「출판 번호」, 「초판을 올린다」 의 「판」 이 버전 뜻이 아니기 때문이다.
 # X판 합성어는 끝없이 늘어 COMPOUND_ALLOW 로 하나씩 막을 수 없다.
@@ -223,6 +232,48 @@ def strip_link_targets(line):
     return kept + line
 
 
+def find_allow_file(path):
+    """검사 대상 파일에 적용할 예외 파일을 찾는다. 없으면 None.
+
+    `KOREAN_CHECK_ALLOW` 가 있으면 그 경로만 본다. 없으면 대상 파일의 디렉터리에서 위로 올라가며
+    `.claude/korean-check-allow.txt` 를 찾고, `.git` 이 있는 디렉터리까지만 본다.
+    저장소 밖의 파일이 다른 저장소의 예외를 가져다 쓰지 않게 하려는 경계다.
+    """
+    override = os.environ.get(ALLOW_ENV)
+    if override:
+        return Path(override) if Path(override).is_file() else None
+    here = Path(path).resolve().parent
+    for directory in (here, *here.parents):
+        candidate = directory / ALLOW_FILE
+        if candidate.is_file():
+            return candidate
+        if (directory / ".git").exists():
+            return None
+    return None
+
+
+_ALLOW_CACHE = {}
+
+
+def load_allow(path):
+    """예외 파일의 문자열 목록을 읽는다. 긴 것을 먼저 지우도록 길이 내림차순으로 낸다."""
+    allow_file = find_allow_file(path)
+    if allow_file is None:
+        return []
+    if allow_file not in _ALLOW_CACHE:
+        entries = []
+        for raw in allow_file.read_text(encoding="utf-8").splitlines():
+            text = raw.strip()
+            if not text or text.startswith("#"):
+                continue
+            if len(text) < ALLOW_MIN_LENGTH:
+                print(f"korean-style-check: {allow_file}: 너무 짧아 읽지 않는다: {text!r}", file=sys.stderr)
+                continue
+            entries.append(text)
+        _ALLOW_CACHE[allow_file] = sorted(set(entries), key=len, reverse=True)
+    return _ALLOW_CACHE[allow_file]
+
+
 def scan(path, matchers):
     """한 파일을 검사해 (위반 줄 목록, 경고 줄 목록) 을 반환한다."""
     found = []
@@ -231,6 +282,7 @@ def scan(path, matchers):
     in_fence = False
 
     lines = Path(path).read_text(encoding="utf-8").splitlines()
+    allowed = COMPOUND_ALLOW + load_allow(path)
 
     for n, raw in enumerate(lines, 1):
         # YAML frontmatter 는 건너뛴다. description 은 트리거 예시를 담고,
@@ -257,9 +309,11 @@ def scan(path, matchers):
         line = strip_link_targets(raw)  # 링크 문구는 남기고 URL 제외
         line = AUTO_LINK.sub("", line)  # 자동 링크 URL 제외
         with_spans = line
+        for name in allowed:  # 저장소 예외 파일의 고유명사. DB 문맥 검사에도 같이 적용한다
+            with_spans = with_spans.replace(name, "")
         plus_line = CODE_SPAN.sub(CODE_PLACEHOLDER, line)  # + 판정은 코드 스팬 자리를 남긴다
         line = CODE_SPAN.sub("", line)  # 코드 스팬 제외
-        for compound in COMPOUND_ALLOW:  # 정당한 합성어 제외
+        for compound in allowed:  # 정당한 합성어와 저장소 예외 제외
             line = line.replace(compound, "")
 
         for term, matches in matchers:
