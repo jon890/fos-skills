@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.24.0
+
+`verify_task.py` 가 운영 코드를 테스트로 세던 오탐과 호출자 경고의 잡음을 줄인다.
+
+- `bottom-panel-spec.js`, `hud-spec.ts` 처럼 `-spec.` 으로 끝나는 운영 코드를 테스트로 보지 않는다. spec 은 `.spec.ts`, `_spec.rb` 처럼 `.` 나 `_` 로 이은 것만 테스트다. `-test.` 는 그대로 테스트다. 오탐이 있으면 코드만 바꾸는 phase 가 검증 없이 통과했다
+- `print`, `get`, `map` 같은 어느 저장소에나 있는 이름은 호출자 경고에서 뺐다. 낱말로 grep 하는 한 거의 모든 파일이 걸려 경고 28건 중 23건이 이 이름이었다
+- 「코드 변경을 검증할 테스트 파일 … 없다」 위반이 코드로 센 변경 파일을 함께 보여 준다. 어떤 항목 때문에 걸렸는지 찾으러 phase 를 다시 읽지 않는다
+- 걸리는 표본(`-spec.js` 만 신규인 phase)과 걸리지 않는 표본(`.spec.ts`, `_spec.rb`, `-test.js`)을 테스트에 더했다
+
 ## 2.23.0
 
 검증 절의 `python3 -m unittest .github/...` 처럼 점 디렉터리가 든 경로를 `verify_task.py` 가 위반으로 막는다.

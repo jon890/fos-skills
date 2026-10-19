@@ -104,9 +104,23 @@ def parse_index(path: Path) -> dict:
         raise PrecheckError(f"{path} 를 읽지 못했다: {exc}") from exc
 
 
+def normalize_base(base: str | None) -> str | None:
+    """`origin/main` 으로 준 기준 브랜치를 `main` 으로 맞춘다.
+
+    이후 코드가 `origin/{base}` 를 직접 만들어 쓴다. 접두사가 남으면 `origin/origin/main` 을 fetch 하다
+    종료 코드 2 로 끝난다. orch 의 띄우기 안내가 `origin/<base>` 를 쓰라고 해서 같은 값을 여기에 넘기기 쉽다.
+    """
+    if not base:
+        return base
+    for prefix in ("refs/remotes/origin/", "refs/heads/", "origin/"):
+        if base.startswith(prefix):
+            return base[len(prefix):]
+    return base
+
+
 def resolve_base(repo: Path, explicit: str | None = None) -> str:
     """명시 인자, 저장소 Git 설정, 원격 기본 브랜치 순으로 정한다."""
-    base = explicit or try_run(["git", "config", "--local", "--get", "build-with-teams.baseBranch"], repo)
+    base = normalize_base(explicit or try_run(["git", "config", "--local", "--get", "build-with-teams.baseBranch"], repo))
     if not base:
         remote = run(["git", "ls-remote", "--symref", "origin", "HEAD"], repo)
         for line in remote.splitlines():

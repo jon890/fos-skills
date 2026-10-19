@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.21.0
+
+`plan_precheck.py --base origin/main` 이 `origin/origin/main` 을 fetch 하다 종료 코드 2 로 끝나던 문제를 고친다.
+
+- `--base` 와 `build-with-teams.baseBranch` 의 값에서 `origin/`, `refs/heads/`, `refs/remotes/origin/` 접두사를 떼어 브랜치 이름으로 맞춘다. 뒤의 코드가 `origin/{base}` 를 직접 만들어 쓰므로 접두사가 남으면 이름이 겹쳤다
+- `origin/` 으로 시작하지 않는 `feature/origin` 과 `originals` 는 그대로 둔다
+- 접두사를 뗀 이름과 그대로 준 이름이 같은 결과를 내는 테스트를 더했다
+
 ## 5.20.0
 
 PR 을 만들고 한참 뒤에야 기준 브랜치와의 충돌을 알던 문제를 생성 직후에 잡는다.
