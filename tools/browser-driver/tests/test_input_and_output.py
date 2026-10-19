@@ -1,7 +1,7 @@
-"""출력 분리, js 의 여러 문장과 --timeout, jsfile, 마우스 명령을 시험한다. 실제 브라우저는 열지 않는다.
+"""출력 분리, js 의 여러 문장과 --timeout, jsfile, 마우스 명령을 테스트한다. 실제 브라우저는 열지 않는다.
 
-하위 프로세스 시험은 PATH 에 가짜 ego-browser 를 둬 stdout 과 stderr 의 경계를 확인한다.
-스크립트 실행 시험은 Node 로 ego 가 만든 스크립트를 가짜 page 에 대고 돌린다.
+하위 프로세스 테스트은 PATH 에 가짜 ego-browser 를 둬 stdout 과 stderr 의 경계를 확인한다.
+스크립트 실행 테스트은 Node 로 ego 가 만든 스크립트를 가짜 page 에 대고 돌린다.
 """
 
 import contextlib
@@ -168,7 +168,7 @@ class ArgsTest(unittest.TestCase):
                 parse_pointer_args(cmd, args, points, allow)
 
 
-@unittest.skipIf(NODE is None, "ego 스크립트 실행 시험에는 Node.js 가 필요하다")
+@unittest.skipIf(NODE is None, "ego 스크립트 실행 테스트에는 Node.js 가 필요하다")
 class EgoScriptTest(unittest.TestCase):
     """ego 가 만든 스크립트를 Node 에서 가짜 page 에 대고 돌려 결과를 본다."""
 
