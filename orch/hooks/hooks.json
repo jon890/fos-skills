@@ -1,0 +1,17 @@
+{
+  "description": "orch: orca orchestration check --wait 를 셸의 & 나 nohup 으로 띄우는 Bash 호출을 거부한다",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-background-wait.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
