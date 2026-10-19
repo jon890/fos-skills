@@ -6,7 +6,7 @@
 사용자가 말하지 않아도 깨어날 때마다 돈다. 코디네이터가 끝난 항목을 직접 지우지 않는다.
 
 사용법 (기본은 dry-run. 무엇을 할지만 낸다):
-    cleanup-sweep.py --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--apply]
+    cleanup-sweep.py --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--apply]
 
     --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
@@ -14,6 +14,7 @@
     --run         worker 를 찾을 Orca Run. 없으면 worker 확인과 release 를 건너뛰고 터미널만 경로로 찾는다
     --specs-dir   지시서 폴더(저장소 기준 상대경로 또는 절대경로). worktree 이름과 같은
                   `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다
+    --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
     --apply       실제로 정리한다
 
 PR 찾기 (브랜치마다):
@@ -45,6 +46,19 @@ PR 찾기 (브랜치마다):
       단, PR 이 MERGED 이고 남은 프로세스가 전부 자식 없는 로그인 셸(Orca 가 worker 를 반납한 뒤 띄운 빈 셸)이고
       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
 
+남은 프로세스 끄기 (--kill-holders):
+    `worker-stop` 이 `process=none` 을 돌려줘도 그 worker 의 claude 세션, 로그인 셸, 플러그인 node, Gradle 같은
+    프로세스가 그 경로를 작업 디렉터리로 쥐고 남아 `remove-worktree.sh` 가 매번 거부한다.
+    이 옵션은 아래가 모두 참일 때만 그 프로세스를 TERM, HUP, KILL 순으로 끈다. 신호마다 --wait 초 기다리고,
+    그때도 그 경로를 쓰는 pid 만 다시 골라 다음 신호를 보낸다. 로그인 셸은 TERM 을 무시해 HUP 이 필요하다.
+      - PR 이 MERGED 다
+      - --run 으로 찾은 그 경로의 worker 가 하나 이상이고, 모두 workerState 가 succeeded 나 fenced 다
+      - 그 경로에 Orca 터미널이 남아 있지 않다
+      - 프로세스의 작업 디렉터리가 그 경로이거나 그 아래다. 이 스크립트와 그 조상 프로세스는 빼고 끈다
+    하나라도 거짓이면 끄지 않고 이유를 낸다. 열린 파일로만 그 경로를 쥔 프로세스는 끄지 않는다.
+    워크트리 삭제를 막는 것은 작업 디렉터리이고, 작업 디렉터리가 밖에 있는 Gradle daemon 같은 프로세스는
+    다른 워크트리의 빌드도 맡을 수 있다.
+
 실행 순서 (worktree 마다):
     그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만), 끝난 Dispatch release, `remove-worktree.sh --delete-branch --merged-head`,
     원격 브랜치 삭제(이미 없으면 통과), 지시서 삭제.
@@ -56,7 +70,7 @@ PR 찾기 (브랜치마다):
     다른 열린 PR 의 base 는 지우지 않는다. 원격 끝점이 머지된 PR HEAD(PR 이 없으면 로컬 브랜치 끝점)와 다르면
     그 뒤에 커밋이 더해진 것이므로 지우지 않는다. fork 에서 온 PR 의 head 이름은 쓰지 않는다.
 
-ORCA, GH 환경 변수로 실행 파일을 바꾼다. 기본 orca, gh.
+ORCA, GH, KILL 환경 변수로 실행 파일을 바꾼다. 기본 orca, gh, kill.
 
 종료 코드:
     0  돌았다. 건너뛴 항목이 있어도 0 이다
@@ -76,11 +90,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REMOVE = HERE / "remove-worktree.sh"
 LIVE_STATES = {"working", "ready"}
+# 이 상태의 worker 만 남은 프로세스를 끌 수 있다. failed 나 abandoned 는 같은 워크트리로 다시 맡길 수 있어 뺀다
+FINISHED_STATES = {"succeeded", "fenced"}
+STOP_SIGNALS = ("TERM", "HUP", "KILL")
 PR_STATES = {"MERGED", "OPEN", "CLOSED"}
 SHELLS = {"sh", "bash", "zsh", "fish", "dash", "ksh"}
 BY_PR = "PR MERGED"
 ORCA = os.environ.get("ORCA", "orca")
 GH = os.environ.get("GH", "gh")
+KILL = os.environ.get("KILL", "kill")
 MAX_VARIANTS = 4
 
 
@@ -270,17 +288,24 @@ def holders(path):
     return len(holder_pids(path))
 
 
+def ps_rows():
+    """pid 마다 (ppid, command)."""
+    _, out, _ = run(["ps", "-axo", "pid=,ppid=,command="])
+    rows = {}
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) == 3:
+            rows[parts[0]] = (parts[1], parts[2])
+    return rows
+
+
 def only_idle_shells(pids):
     """그 프로세스가 모두 자식 없는 로그인 셸이면 True. 로그인 셸은 argv[0] 이 `-` 로 시작한다(`-/bin/zsh`)."""
     if not pids:
         return False
-    _, out, _ = run(["ps", "-axo", "pid=,ppid=,command="])
-    rows, parents = {}, set()
-    for line in out.splitlines():
-        parts = line.split(None, 2)
-        if len(parts) == 3:
-            rows[parts[0]] = parts[2]
-            parents.add(parts[1])
+    table = ps_rows()
+    rows = {pid: command for pid, (_, command) in table.items()}
+    parents = {ppid for ppid, _ in table.values()}
     for pid in pids:
         argv0 = rows.get(pid, "").split(None, 1)[0] if rows.get(pid) else ""
         if not argv0.startswith("-") or Path(argv0[1:]).name not in SHELLS or pid in parents:
@@ -330,6 +355,52 @@ def wait_free(path, seconds):
         time.sleep(1)
         pids = holder_pids(path)
     return pids
+
+
+def own_ancestors():
+    """이 스크립트와 그 조상의 pid. 이 스크립트를 부른 셸이 그 경로에 있어도 끄지 않는다."""
+    parent = {pid: ppid for pid, (ppid, _) in ps_rows().items()}
+    pid, seen = str(os.getpid()), set()
+    while pid and pid not in seen and pid not in ("0", "1"):
+        seen.add(pid)
+        pid = parent.get(pid)
+    return seen
+
+
+def kill_blocker(mine, path, by_pr):
+    """남은 프로세스를 끄면 안 되는 이유. 끌 수 있으면 None 이다."""
+    if not by_pr:
+        return "PR 이 MERGED 가 아니다"
+    if not mine:
+        return "그 경로의 worker 를 모른다(--run 이 없거나 그 Run 에 없다)"
+    unfinished = [w.get("dispatchId", "?") for w in mine if w.get("workerState") not in FINISHED_STATES]
+    if unfinished:
+        return f"끝나지 않은 dispatch {', '.join(unfinished)}"
+    terminals = live_terminals()
+    if terminals is None or terminals_at(terminals, path):
+        return "그 경로에 Orca 터미널이 남아 있거나 터미널 목록을 읽지 못했다"
+    return None
+
+
+def describe(pids):
+    rows = ps_rows()
+    return ", ".join(f"{pid} {Path(rows[pid][1].split(None, 1)[0].lstrip('-')).name}" if pid in rows else pid for pid in pids)
+
+
+def stop_holders(path, seconds, log):
+    """작업 디렉터리가 그 경로 아래인 프로세스를 TERM, HUP, KILL 순으로 끈다. 남은 pid 목록을 돌려준다.
+
+    신호마다 그 경로를 아직 쓰는 pid 를 다시 읽어 보낸다. 앞 신호로 빠진 pid 가 다른 프로세스로 재사용돼도 닿지 않는다.
+    """
+    keep = own_ancestors()
+    pids = [pid for pid in holder_pids(path) if pid not in keep]
+    for sig in STOP_SIGNALS:
+        if not pids:
+            break
+        log(f"  {sig} 를 보낸다: {describe(pids)}")
+        run([KILL, f"-{sig}", *pids])
+        pids = [pid for pid in wait_free(path, seconds) if pid not in keep]
+    return holder_pids(path)
 
 
 def protected(repo, branch, base):
@@ -435,6 +506,10 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         pids = holder_pids(path)
         if pids and by_pr and only_idle_shells(pids):
             log(f"  남은 프로세스 {len(pids)} 개가 유휴 셸뿐이면 그 Orca 터미널을 닫고 다시 시도한다")
+        elif pids and args.kill_holders:
+            blocker = kill_blocker(mine, path, by_pr)
+            log(f"  터미널을 닫은 뒤에도 프로세스 {len(pids)} 개가 남으면 "
+                + (f"다음 실행으로 미룬다. 끄지 않는 이유: {blocker}" if blocker else "TERM, HUP, KILL 순으로 끈다"))
         elif pids:
             log(f"  터미널을 닫은 뒤에도 프로세스 {len(pids)} 개가 남으면 다음 실행으로 미룬다")
         log(f"  worktree 와 로컬 브랜치를 지울 것 {branch}")
@@ -450,8 +525,14 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
             log(f"  남은 프로세스 {len(pids)} 개가 유휴 셸뿐이다. Orca 터미널을 닫고 다시 시도한다")
             close_terminals(handles, True, log, "유휴 셸 터미널")
             pids = wait_free(path, args.wait)
+    if pids and args.kill_holders:
+        blocker = kill_blocker(mine, path, by_pr)
+        if blocker:
+            log(f"  남은 프로세스를 끄지 않는다: {blocker}")
+        else:
+            pids = stop_holders(path, args.wait, log)
     if pids:
-        log(f"  건너뜀: 그 경로를 쓰는 프로세스 {len(pids)} 개. 다음 실행에서 다시 시도한다")
+        log(f"  건너뜀: 그 경로를 쓰는 프로세스 {len(pids)} 개({describe(pids)}). 다음 실행에서 다시 시도한다")
         return
     cmd = ["zsh", str(REMOVE), path, "--delete-branch"]
     if merged_head:
@@ -510,6 +591,7 @@ def main(argv=None):
     parser.add_argument("--base")
     parser.add_argument("--run")
     parser.add_argument("--specs-dir")
+    parser.add_argument("--kill-holders", action="store_true")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--wait", type=int, default=5, help="터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 기본 5")
     try:
