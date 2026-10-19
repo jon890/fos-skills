@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.7.0
+
+Colima 의 `fstrim` 을 결과를 재고 재시도하는 스크립트로 옮겼다.
+
+- `colima_trim.py` 를 더했다. `sync` 뒤에 `fstrim -v` 를 돌리고, 호스트 VM 디스크 파일의 점유 크기와 VM 안 사용량의 차이가 기준값(`--threshold-gib`, 기본 4)보다 크면 `--interval` 초(기본 60) 뒤 최대 `--max-attempts` 회(기본 4) 다시 돈다. 시도마다 trim 양과 세 수치를 내고 마지막에 전후 비교와 호스트 확보량을 낸다. 종료 코드는 0 완료, 1 Colima 정지나 측정 실패, 2 재시도 상한까지 차이가 남음이다. 실측에서 volume 을 지운 직후의 trim 이 8GiB 만 비우고 1분 뒤 43.8GiB 를 비웠기 때문이다
+- `targets.md` 「Docker」 와 SKILL.md 4, 5단계가 이 스크립트를 가리킨다
+- `tests/test_colima_trim.py` 를 더했다
+
 ## 1.6.0
 
 실제 정리에서 막힌 세 곳을 고쳤다.

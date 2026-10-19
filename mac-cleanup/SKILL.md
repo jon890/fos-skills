@@ -6,7 +6,7 @@ description: |
   "오래된 세션 정리", "머지된 브랜치 정리", "워크트리 정리", "disk cleanup" 같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, 스킬 문서) 정리는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 ---
 
 # mac-cleanup
@@ -70,13 +70,18 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py"
 
 승인한 묶음의 명령만 돌리고, 명령마다 종료 코드와 확보량을 기록한다.
 세션, 브랜치, 워크트리 정리는 `references/git-and-sessions.md` 의 절차를 따른다.
-브랜치 삭제는 `survey_git.py --json` 결과를 `delete_branches.py` 에 넘겨 먼저 dry-run 으로 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. `PR 확인 필요(-D)` 브랜치는 `check_pr_branches.py` 에 같은 조사 JSON 을 넘겨 판정을 보이고, 지울지는 사용자가 정한다. 익명 volume 은 `docker_volumes.py` 가 보인 후보 중 내용을 열어 확인한 것만 이름을 지정해 지운다.
+브랜치 삭제는 `survey_git.py --json` 결과를 `delete_branches.py` 에 넘겨 먼저 dry-run 으로 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. `PR 확인 필요(-D)` 브랜치는 `check_pr_branches.py` 에 같은 조사 JSON 을 넘겨 판정을 보이고, 지울지는 사용자가 정한다. 익명 volume 은 `docker_volumes.py` 가 보인 후보 중 내용을 열어 확인한 것만 이름을 지정해 지운다. Docker 를 지웠다면 마지막에 `colima_trim.py` 를 돈다. volume 을 지운 직후에는 trim 이 덜 될 수 있어 스크립트가 재시도한다.
 reference 가 처리 절차를 정한 거절(`branch -d` 의 `not fully merged`)을 빼고는, 명령이 실패하면 멈추고 원인을 보고한다.
 
 ## 5. 재측정과 보고
 
 1단계에서 적은 세 수치를 같은 방법으로 다시 읽고, 정리 전후 표로 보고한다.
-Docker 를 Colima 에서 정리했다면 `fstrim` 까지 돌아야 호스트 디스크가 늘어난다(`targets.md`).
+Docker 를 Colima 에서 정리했다면 `colima_trim.py` 까지 돌아야 호스트 디스크가 늘어난다(`targets.md`).
+이 스크립트가 trim 결과를 재서 부족하면 다시 돌고, 호스트 확보량을 출력한다. 종료 코드 2 면 남은 차이를 보고에 적는다.
+
+```bash
+python3 "$SKILL_DIR/scripts/colima_trim.py"
+```
 
 사용자가 직접 할 일을 따로 적는다.
 
