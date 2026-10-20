@@ -3,7 +3,7 @@
 #   make-worktree.sh --repo <저장소> --spec <지시서> --name <워크트리 이름> [--base <기준 브랜치>]
 #   make-worktree.sh --check <워크트리> --spec <지시서>
 #
-# 만들기: 지시서의 `브랜치: `<이름>`` 줄에서 브랜치 이름을 읽어
+# 만들기: 지시서의 줄 머리 `브랜치: `<이름>`` 줄에서 브랜치 이름을 읽어(본문 문장 안의 언급은 읽지 않고, 줄 머리 줄이 둘이면 종료 코드 2)
 #   `git worktree add -b <이름> <저장소>/worktrees/<저장소 이름>/<워크트리 이름> origin/<기준 브랜치>` 로 만든다.
 #   Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<워크트리 이름>` 으로 정해 지시서와 어긋난다.
 #   워크트리를 먼저 만들고 `worker-start --worktree path:<경로>` 로 띄우면 worker 가 이름을 바꾸지 않는다.
@@ -34,8 +34,15 @@ done
 
 [ -n "$spec" ] || { echo "--spec 이 필요하다" >&2; exit 2; }
 [ -f "$spec" ] || { echo "지시서가 없다: $spec" >&2; exit 2; }
-branch=$(sed -nE 's/.*브랜치:[[:space:]]*`([^`]+)`.*/\1/p' "$spec" | head -n 1)
-[ -n "$branch" ] || { echo "지시서에 \`브랜치: \`<이름>\`\` 줄이 없다: $spec" >&2; exit 2; }
+# 줄 머리의 `브랜치: `<이름>`` 줄만 읽는다. 앞 공백, `-` 목록 기호, `**` 강조는 허용한다. 본문 문장 안의 언급은 읽지 않는다
+branch_lines=$(grep -E '^[[:space:]]*(-[[:space:]]+)?(\*\*)?브랜치(\*\*)?:(\*\*)?[[:space:]]*`[^`]+`' "$spec")
+if [ -n "$branch_lines" ] && [ "$(printf '%s\n' "$branch_lines" | wc -l)" -gt 1 ]; then
+  echo "지시서에 줄 머리 \`브랜치:\` 줄이 둘 이상이다: $spec" >&2
+  printf '%s\n' "$branch_lines" | sed 's/^/  /' >&2
+  exit 2
+fi
+branch=$(printf '%s\n' "$branch_lines" | sed -nE 's/^[[:space:]]*(-[[:space:]]+)?(\*\*)?브랜치(\*\*)?:(\*\*)?[[:space:]]*`([^`]+)`.*/\5/p')
+[ -n "$branch" ] || { echo "지시서에 줄 머리 \`브랜치: \`<이름>\`\` 줄이 없다: $spec" >&2; exit 2; }
 git check-ref-format --branch "$branch" >/dev/null 2>&1 || { echo "브랜치 이름이 올바르지 않다: $branch" >&2; exit 2; }
 
 if [ -n "$check" ]; then

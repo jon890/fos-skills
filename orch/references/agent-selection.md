@@ -17,6 +17,7 @@
 | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | `medium`, 같은 Task 가 실패하면 `high` |
 | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium` 시작, sol `high` |
 | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델 | `medium` |
+| 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
 
 비교 근거다(2026-10-01 공식 자료 조사, Claude 행은 2026-10-12 재확인. 값이 바뀌면 아래 출처에서 다시 확인한다).
 
@@ -28,6 +29,7 @@
 | Claude Opus 5.5 | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
 | Claude Haiku 5.5 | 분류, 추출, 라우팅 같은 대량·저지연 작업 | `medium`(기본). 짧은 도구 작업은 `low`, 긴 에이전트 작업은 `high` | 0.10 / 0.50 (프롬프트 10만 토큰 초과 요청은 0.50 / 2.50) | Fastest |
 
+- 보안 리뷰 행의 근거: 2026-10-20 fos-home-infra PR #228 리뷰를 Codex worker 에 맡겼더니 symlink 덮어쓰기, 토큰 유출 경로, 컨테이너 권한 같은 공격 경로를 재현하는 내용에서 OpenAI 의 보안 요청 제한(「This content can't be shown」)에 걸려 리뷰가 끝나지 않았다. Claude Sonnet 하위 에이전트로 옮기자 끝났다. 구현한 쪽이 Claude 라서 다른 제공자 리뷰어가 필요하면, 공격 재현이 필요 없는 범위만 Codex 에 맡기고 나머지는 구현에 관여하지 않은 Claude 에이전트가 본다
 - worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
 - 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
 - effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 5.5 는 아래 실측에서 `low` 와 `medium` 의 품질과 걸린 시간이 같았다(토큰 사용량은 재지 않았다)
