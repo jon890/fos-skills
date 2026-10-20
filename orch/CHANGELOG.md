@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.20.0
+
+draft PR 로 CI 를 미루는 저장소에서, 파일이 겹치는 PR 을 함께 ready 로 바꿔 CI 를 두 번 돌리던 일을 스크립트로 막는다.
+gersang-lab 전용 `ci-ready.sh` 를 일반화한 것이다.
+
+- 새 `scripts/ci-ready.py`: draft PR 을 `gh pr ready` 로 바꾼다. 같은 base 로 가는 열린 ready PR 과 바뀐 파일이 겹치거나 base 와 충돌하면 보류하고 이유를 낸다. 이번 실행에서 앞서 바꾼 PR 도 ready 로 센다. `mergeable` 이 `UNKNOWN` 이면 다시 묻고, 파일이 100 개 이상이면 목록이 잘렸을 수 있어 보류한다
+- 저장소 이름과 경로를 박지 않고 `--repo` 의 origin 으로 찾는다
+- `references/overlay.md` 에 「draft 로 CI 미루기」 행, `references/cleanup.md` 에 그 저장소의 절, 지시서 틀에 `{{DRAFT_PR_RULE}}` 줄을 더했다
+- 가짜 gh 로 겹침 없음, ready PR 과 겹침, draft 나 다른 base 와의 겹침은 무시, 같은 실행 안의 겹침, dry-run, 충돌, `UNKNOWN` 재시도와 보류, 이미 ready 와 닫힌 PR, 파일 한도, 조회 실패, 사용법 오류를 테스트했다
+
 ## 1.19.0
 
 같은 파일을 고친 PR 을 차례로 머지할 때, 합친 상태의 검사를 `verification.md` 의 손 절차로만 하던 것을 머지 큐 옵션으로 옮긴다.

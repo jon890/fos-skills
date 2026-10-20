@@ -13,6 +13,7 @@ worker 는 되묻지 않으면 받은 만큼만 하고 완료로 보고한다. �
 **worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 첫 줄에서 그 파일을 가리킨다.**
 틀은 [`../templates/spec-common.md`](../templates/spec-common.md) 다. 저장소마다 한 번 복사해 `{{...}}` 를 채운다.
 `{{ORCH_SCRIPTS}}` 는 이 스킬의 `scripts/` 절대경로, `{{RUN_ID}}` 는 지금 Run 이다.
+`{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `planning` 으로 만든 설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
 worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask.sh` 가 두 경우를 종료 코드로 가른다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.

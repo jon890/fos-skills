@@ -21,6 +21,20 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 102 103
 - `mergeable` 이 `UNKNOWN` 이면 GitHub 이 아직 계산 중이다. 스크립트가 몇 번 다시 묻는다
 - 머지 결과를 `state` 로 확인한 뒤에만 원격 브랜치를 지운다. `gh pr merge` 가 보호 규칙으로 거절됐는데 브랜치를 지우면 PR 이 닫힌다
 
+### draft 로 CI 를 미루는 저장소
+
+**오버레이가 「draft PR 은 CI 를 돌리지 않는다」 고 정한 저장소에서만 쓴다.** 그 저장소의 worker 는 PR 을 draft 로 연다.
+코디네이터가 6단계 검증을 마친 PR 을 `ci-ready.py` 로 ready 로 바꿔 CI 를 시작한다. 그다음 머지 큐에 넣는다.
+겹친 PR 둘을 함께 ready 로 바꾸면 앞 PR 이 머지된 뒤 뒤 PR 의 CI 를 base 와 합쳐 다시 돌려야 한다.
+스크립트는 이미 ready 인 PR 과 파일이 겹치거나 base 와 충돌하는 PR 을 보류하고 이유를 낸다.
+판정과 종료 코드는 스크립트 머리 주석이 소유한다.
+
+```bash
+python3 "$SKILL_DIR/scripts/ci-ready.py" --repo "$REPO" 101 102
+```
+
+`보류` 줄의 PR 은 겹친 PR 이 머지된 뒤 다시 돌린다. base 와 충돌하는 PR 은 그 worker 에게 base 를 합치게 한다.
+
 ### 실패를 허용하는 체크
 
 **`--allow-fail A,B` 는 필수가 아닌 체크가 코드와 무관한 이유로 실패했고, 그 대신 할 검증을 끝냈을 때만 쓴다.**
