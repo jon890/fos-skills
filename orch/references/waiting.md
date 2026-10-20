@@ -1,31 +1,35 @@
 # 4. 기다리기
 
-**`check --wait` 는 하네스의 백그라운드 실행 기능으로 run 마다 하나만 건다.**
+**대기는 `wait-important.py` 를 하네스의 백그라운드 실행 기능으로 run 마다 하나만 건다.**
 앞에서 돌리면 그동안 코디네이터가 막힌다.
-셸의 `&` 나 `nohup` 으로 띄우면 끝나도 완료 알림이 오지 않고 고아 프로세스가 남는다. 이 플러그인의 PreToolUse 훅(`hooks/block-background-wait.py`)이 그런 Bash 호출을 거부한다.
-둘째 대기는 `waiter_exists` 로 바로 끝나고 거기 붙인 `--ack` 만 처리된다.
+셸의 `&` 나 `nohup` 으로 띄우면 끝나도 완료 알림이 오지 않고 고아 프로세스가 남는다. 이 플러그인의 PreToolUse 훅(`hooks/block-background-wait.py`)이 그런 Bash 호출을 거부한다. 이 스크립트와 `check --wait` 둘 다 막는다.
+스크립트 안의 `check --wait` 가 대기 자리를 쥐므로 둘째 대기는 `waiter_exists` 로 바로 끝난다.
 걸기 전에 이미 도는 대기가 있는지 본다.
 
 ```bash
-ps -eo pid,command | grep "orchestration check" | grep -- --wait | grep -v grep
+ps -eo pid,command | grep -E "orchestration check|wait-important" | grep -v grep
 ```
 
-**대기 시간은 하네스의 명령 한도보다 짧게 준다.**
-Claude Code 의 백그라운드 Bash 는 따로 정하지 않으면 30분 뒤 멈춘다.
-Bash 도구의 `timeout` 을 최대인 7200000 으로 주고 `--timeout-ms` 는 그보다 작은 7000000 으로 준다.
+**heartbeat 만 든 묶음은 스크립트가 ack 하고 계속 기다린다.**
+`check --wait` 의 `--types` 는 깨어나는 조건일 뿐이고, 돌려주는 delivery 는 그때 쌓인 묶음 전체다.
+묶인 run 은 ack 하지 않은 묶음을 `--types` 와 상관없이 다시 준다(`orca orchestration check --help`). `check --wait` 를 직접 걸면 heartbeat 만 든 묶음을 받을 때마다 읽을 것 없이 ack 하고 다시 거는 데 턴을 쓴다.
+스크립트는 `--types` 의 종류(기본 `worker_done,question,escalation,status`)가 든 묶음이 오면 ack 하지 않고 그대로 낸다.
 
 **처리한 delivery 는 다음 대기의 `--ack` 로 넘긴다.**
 묶인 run 은 ack 하기 전까지 같은 delivery 를 다시 준다.
-앞 대기가 돌려준 `result.deliveryId` 를 `$DELIVERY_ID` 에 넣는다. 첫 대기처럼 넘길 delivery 가 없으면 `--ack "$DELIVERY_ID"` 를 통째로 뺀다.
+출력의 마지막 줄 `LAST_DELIVERY <id>` 의 id 를 `$DELIVERY_ID` 에 넣는다. 첫 대기처럼 넘길 delivery 가 없거나 id 가 `-` 면 `--ack "$DELIVERY_ID"` 를 통째로 뺀다.
 
-keepalive 줄은 15초마다 stderr 로 나와 출력 파일에 섞인다. 그 줄을 빼고 받는다. 이때 파이프의 종료 코드는 `grep` 의 것이라, 대기 결과는 JSON 의 `timedOut` 과 `messages` 로 판단한다.
-worker 가 `ready:` 나 PR 본문 경로 같은 status 메시지를 보내기로 했으면 `--types` 에 `status` 를 더한다. `--types` 는 깨어나는 조건이다.
+**대기 시간은 하네스의 명령 한도보다 짧게 준다.**
+Claude Code 의 백그라운드 Bash 는 따로 정하지 않으면 30분 뒤 멈춘다.
+Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `--timeout-ms` 는 기본값 7000000 을 쓴다.
 
 ```bash
-orca orchestration check --run "$RUN_ID" --ack "$DELIVERY_ID" --wait --types "worker_done,escalation,question" --timeout-ms 7000000 --json 2>&1 | grep -v _keepalive
+python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID"
 ```
 
-대기는 `--timeout-ms` 가 지나면 메시지 없이 `timedOut: true` 로 끝난다. 실패가 아니므로 다시 건다.
+종료 코드는 스크립트 머리 주석이 소유한다.
+시간 한도로 끝나면 `TIMEOUT LAST_DELIVERY <id>` 를 낸다. 실패가 아니므로 그 id 로 다시 건다.
+orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바로 끝나거나 남음」 을 따른다.
 
 ## 깨어날 때마다 정리와 보드 동기화
 
@@ -59,7 +63,7 @@ squash 머지, 로컬과 원격의 브랜치 이름이 다른 경우, worker 를
 ## 받은 메시지 읽기
 
 **대기 결과는 `triage-messages.py` 로 읽는다.** 출력 파일을 눈으로 훑지 않는다.
-한 delivery 에 heartbeat 가 수십 건 섞이면 그 사이의 `worker_done` 하나를 놓친다.
+스크립트가 낸 묶음에도 heartbeat 가 함께 들어 있다. 한 delivery 에 heartbeat 가 수십 건 섞이면 그 사이의 `worker_done` 하나를 놓친다.
 스크립트는 `worker_done`, `escalation`, `question` 을 먼저 따로 모으고 heartbeat 는 보낸 쪽마다 개수만 낸다.
 백그라운드 출력 파일 끝에 하네스가 붙이는 종료 코드 줄과 keepalive 줄은 건너뛴다.
 `$OUT` 은 백그라운드 작업의 출력 파일 경로다.
@@ -86,11 +90,11 @@ Orca runtime 이 잠시 끊기면 `runtime_unavailable` 로 끝나기도 한다.
 ### 이전 세션의 대기
 
 세션을 다시 띄운 뒤 첫 대기가 `waiter_exists` 면 이것이다.
-이전 세션의 백그라운드 `check --wait` 는 세션이 끝나도 부모 없는 프로세스로 남는다.
+이전 세션의 백그라운드 대기(`wait-important.py` 와 그 안의 `check --wait`)는 세션이 끝나도 부모 없는 프로세스로 남는다.
 그 대기가 받은 메시지는 아무에게도 전달되지 않는다.
 
 ```bash
-ps -ax -o pid,ppid,lstart,command | grep "orchestration check" | grep "$RUN_ID"
+ps -ax -o pid,ppid,lstart,command | grep -E "orchestration check|wait-important" | grep "$RUN_ID"
 ```
 
 부모 PID 가 1 이고 시작 시각이 이 세션보다 앞선 것이 그것이다.
