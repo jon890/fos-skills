@@ -164,6 +164,8 @@ FAKE_GH = textwrap.dedent("""\
             sys.exit(0)
         if state.get("_api_fails"):
             sys.exit(1)
+        if "/rules/branches/" in path and state.get("_rules_error"):
+            sys.stderr.write(state["_rules_error"]); sys.exit(1)
         if "/rules/branches/" in path:
             data = state.get("_rules", [])
         else:
@@ -335,6 +337,22 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual(1, r.returncode)
         self.assertIn("필수 체크 규칙 조회 실패", r.stdout)
         self.assertNotIn("pr merge", self.log.read_text())
+
+    def test_plan_limited_rules_403_is_treated_as_empty_required_list(self):
+        msg = "gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)"
+        r = self.run_queue({"1": self.pr(), "_rules_error": msg}, "1")
+        self.assertEqual(0, r.returncode, r.stdout)
+        self.assertIn("저장소 규칙을 읽을 수 없다", r.stdout)
+        self.assertIn("필수 체크 목록이 비어 있다", r.stdout)
+        self.assertIn("pr merge", self.log.read_text())
+
+    def test_other_rules_failures_still_stop(self):
+        for msg in ("gh: Resource not accessible by integration (HTTP 403)", "gh: Not Found (HTTP 404)", "gh: Bad credentials (HTTP 401)"):
+            with self.subTest(msg=msg):
+                r = self.run_queue({"1": self.pr(), "_rules_error": msg}, "1")
+                self.assertEqual(1, r.returncode)
+                self.assertIn("필수 체크 규칙 조회 실패", r.stdout)
+                self.assertNotIn("pr merge", self.log.read_text())
 
     def test_empty_required_list_warns_and_keeps_old_behavior(self):
         r = self.run_queue({"1": self.pr()}, "1")
