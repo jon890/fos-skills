@@ -755,5 +755,105 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertTrue(path.exists())
 
 
+    # 5. 저장소 밖 detached 워크트리
+    def detached(self, name, push=True):
+        """임시 폴더에 만든 detached 워크트리. push=False 면 HEAD 가 원격에 없는 커밋이다."""
+        path = self.tmp / "scratch" / name
+        sh("git", "-C", str(self.repo), "worktree", "add", "-q", "--detach", str(path), "origin/main")
+        if not push:
+            sh("git", "-C", str(path), "commit", "-q", "--allow-empty", "-m", "local only")
+        return path
+
+    def test_detached_worktree_outside_repo_is_removed(self):
+        path = self.detached("baseline")
+        out = self.run_sweep("--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertIn("detached 워크트리 삭제", out)
+        self.assertNotIn(str(path), sh("git", "-C", str(self.repo), "worktree", "list"))
+
+    def test_detached_dry_run_keeps_it(self):
+        path = self.detached("baseline-dry")
+        out = self.run_sweep()
+        self.assertTrue(path.exists())
+        self.assertIn("detached 워크트리를 지울 것", out)
+
+    def test_detached_with_changes_process_terminal_or_local_commit_is_kept(self):
+        dirty = self.detached("d-dirty")
+        (dirty / "x.txt").write_text("x")
+        held = self.detached("d-held")
+        self.held = [str(held)]
+        term = self.detached("d-term")
+        self.terminals = [{"handle": "term_d", "worktreePath": str(term)}]
+        local = self.detached("d-local", push=False)
+        out = self.run_sweep("--apply")
+        for path in (dirty, held, term, local):
+            self.assertTrue(path.exists(), out)
+        self.assertIn(f"건너뜀 detached {dirty}: 커밋 안 된 변경", out)
+        self.assertIn(f"건너뜀 detached {held}: 그 경로를 쓰는 프로세스", out)
+        self.assertIn(f"건너뜀 detached {term}: Orca 터미널이 있다", out)
+        self.assertIn(f"건너뜀 detached {local}: HEAD 가 원격에 없다", out)
+
+    def test_detached_inside_repo_is_left_alone(self):
+        path = self.repo / "worktrees" / "repo" / "tmp-check"
+        sh("git", "-C", str(self.repo), "worktree", "add", "-q", "--detach", str(path), "origin/main")
+        out = self.run_sweep("--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("브랜치가 없다(detached)", out)
+
+    def test_registration_of_a_deleted_folder_is_pruned_first(self):
+        path = self.detached("gone")
+        shutil.rmtree(path)
+        dry = self.run_sweep()
+        self.assertIn("prune: Removing worktrees/gone", dry)
+        self.assertIn(str(path), sh("git", "-C", str(self.repo), "worktree", "list"))
+        out = self.run_sweep("--apply")
+        self.assertIn("prune: Removing worktrees/gone", out)
+        self.assertNotIn(str(path), sh("git", "-C", str(self.repo), "worktree", "list"))
+
+    # 6. 하위 에이전트 워크트리의 빈 셸 터미널
+    def agent_with_shell(self, name, child=False):
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        shell = self.idle_shell(path, handle="term_agent", child=child)
+        self.terminals = [{"handle": "term_agent", "worktreePath": str(path)}]
+        self.processes = shell["processes"]
+        # 모든 Run 범위를 읽지 못해 이 터미널이 누구 것인지 모른다
+        self.scope = "bound"
+        return path
+
+    def test_idle_shell_of_agent_worktree_is_closed_when_runs_cannot_be_listed(self):
+        path = self.agent_with_shell("agent-a1")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertIn("하위 에이전트 워크트리의 빈 셸 터미널", out)
+        self.assertIn("orca terminal close --terminal term_agent", self.calls())
+
+    def test_agent_terminal_with_a_running_child_is_kept(self):
+        path = self.agent_with_shell("agent-a2", child=True)
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("확인하지 못한 터미널 term_agent", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_idle_shell_outside_agent_glob_is_still_unknown(self):
+        path = self.agent_with_shell("feat-a3")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("확인하지 못한 터미널 term_agent", out)
+
+    def test_agent_glob_option_changes_the_pattern(self):
+        path = self.agent_with_shell("sub-a4")
+        out = self.run_sweep("--run", "run_x", "--agent-glob", "sub-*", "--apply")
+        self.assertFalse(path.exists(), out)
+
+    def test_agent_path_with_known_foreign_worker_terminal_is_kept(self):
+        path = self.agent_with_shell("agent-a5")
+        self.scope = "all"
+        self.all_workers = [{"runId": "run_other", "dispatchId": "ctx_o", "agentTerminalHandle": "term_agent"}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("다른 Run 의 worker 터미널 term_agent", out)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -121,6 +121,8 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --swee
 - worker 를 반납한 뒤 Orca 가 그 워크트리에 띄운 빈 셸 터미널. 폴더를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 그 터미널을 닫고 다시 시도한다. 다른 프로세스가 남아 있으면 건너뛴다
 - worker 가 끝난 뒤에도 claude 세션, 로그인 셸, 플러그인 node 같은 프로세스가 그 폴더를 작업 디렉터리로 쥔 경우. `worker-stop` 이 `process=none` 을 돌려줘도 남는다. `--kill-holders` 를 주면 PR 이 MERGED 이고 그 dispatch 가 끝났는지 확인한 뒤 TERM, HUP, KILL 순으로 끈다. 코디네이터 흐름의 명령에는 이 옵션을 넣는다
 - 워크트리 없이 남은 머지된 로컬 브랜치와, PR 이 머지된 뒤 남은 원격 브랜치
+- worker 가 기준선 비교로 저장소 밖에 만들고 남긴 detached 워크트리. 변경이 없고, 쓰는 프로세스와 터미널이 없고, HEAD 가 원격에 있으면 지운다. 폴더가 이미 없는 등록은 먼저 `git worktree prune` 으로 지운다
+- 하위 에이전트 워크트리(`agent-*`)에 Orca 가 띄운 빈 셸 터미널. 다른 Run 의 것인지 확인하지 못해도, 그 경로에 자식 없는 로그인 셸만 있으면 빈 셸로 보고 닫는다. 폴더 이름 규칙이 다르면 `--agent-glob` 로 준다
 - 저장소가 여럿인 경우. `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시)
 
 스크립트가 건너뛴 항목과, 스크립트가 다루지 않는 아래 일만 직접 한다.
