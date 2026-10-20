@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.22.0
+
+`check --wait` 가 heartbeat 만 든 묶음으로 깨어날 때마다 코디네이터가 읽을 것 없이 ack 하고 다시 걸던 일을 스크립트로 옮긴다.
+gersang-lab 전용 `wait-important.sh` 를 일반화한 것이다.
+
+- 새 `scripts/wait-important.py`: `--types`(기본 `worker_done,question,escalation,status`)가 든 묶음이 오면 ack 하지 않고 그 JSON 과 `LAST_DELIVERY <id>` 를 낸다. 그 밖의 묶음은 다음 호출의 `--ack` 로 넘기고 계속 기다린다. Run 은 `--run` 으로 받고, 전체 한도(`--timeout-ms`, 기본 7000000)가 지나면 `TIMEOUT LAST_DELIVERY <id>` 로 끝난다. 출력은 `triage-messages.py` 가 그대로 읽는다
+- `hooks/block-background-wait.py` 가 `wait-important` 를 셸의 `&` 나 `nohup` 으로 띄우는 호출도 거부한다. 스크립트 이름만 있는 호출에는 `orchestration check` 가 없어 1.15.0 규칙에 걸리지 않았다
+- `references/waiting.md` 의 대기 명령과 프로세스 찾기를 이 스크립트로 바꾸고, SKILL 4단계 통과 조건을 고쳤다
+- 가짜 orca 로 heartbeat ack 뒤 worker_done 에서 멈춤, 네 종류 각각에서 멈춤, `--types`, 시간 한도와 남은 ack, orca 오류, triage 로 읽기, 사용법 오류를 테스트했다. hook 에는 거부할 두 꼴과 통과할 두 꼴을 더했다
+
 ## 1.21.0
 
 `cleanup-sweep.py` 가 브랜치 없는 워크트리와 하위 에이전트 워크트리를 정리하지 못해 남던 두 경우를 다룬다.
