@@ -8,6 +8,7 @@
 #   Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<워크트리 이름>` 으로 정해 지시서와 어긋난다.
 #   워크트리를 먼저 만들고 `worker-start --worktree path:<경로>` 로 띄우면 worker 가 이름을 바꾸지 않는다.
 #   같은 자리에서 `/worktrees/` 를 `.git/info/exclude` 에 더하고 `.claude/settings.local.json` 을 복사한다.
+#   그 설정에 `worktree-deny.py` 로 pkill, killall, browser-driver reset 의 deny 규칙을 더한다.
 #   성공하면 표준 출력에 워크트리 경로 한 줄만 낸다. 거부 이유는 표준 오류로 낸다.
 #   --base 를 주지 않으면 origin/HEAD 가 가리키는 브랜치, 그것도 없으면 main 이다. `origin/` 접두는 떼어 읽는다.
 #   upstream 은 설정하지 않는다. push 전에 설정하면 원격 브랜치가 없어 upstream 이 gone 으로 보이고,
@@ -79,4 +80,6 @@ fi
 if [ -f "$repo/.claude/settings.local.json" ]; then
   mkdir -p "$wt/.claude" && cp "$repo/.claude/settings.local.json" "$wt/.claude/"
 fi
+# 하위 에이전트의 pkill 과 browser-driver reset 이 다른 worker 의 호스트와 탭을 닫았다. 지시서 문장은 하위 에이전트까지 닿지 않는다
+python3 "$(dirname "$0")/worktree-deny.py" "$wt" >&2 || echo "경고: deny 규칙을 더하지 못했다: $wt/.claude/settings.local.json" >&2
 echo "$wt"
