@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.17.0
+
+모델 표에 Claude Haiku 5.5 의 worker 실측(2026-10-20)을 반영한다.
+
+- `references/agent-selection.md`: 수정 위치와 검증 명령이 정해진 작은 수정 행을 따로 두고 Haiku 5.5 를 첫 후보로 올렸다. 단순 반영 행은 Haiku effort 를 지정하지 않고 지적 원문과의 대조를 조건으로 붙였다
+- 같은 파일에 실측 표와 한계를 더했다. effort 별 비용 줄은 Haiku `low` 와 `medium` 의 품질, 시간이 같았다는 결과로 보완했다
+- `references/verification.md`: 문구를 옮긴 작업은 diff 를 지적 원문과 한 줄씩 대조하는 줄을 더했다
+
 ## 1.16.0
 
 하위 에이전트의 `pkill`, `browser-driver reset` 이 다른 worker 의 호스트와 탭을 닫던 문제를 워크트리 권한 규칙으로 막는다.
