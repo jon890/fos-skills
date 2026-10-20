@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.24.0
+
+기다리기, 쉬는 worker 깨우기, Codex worker 의 PR 열기에서 반복된 세 가지 실패를 스크립트로 막는다.
+
+- `scripts/wait-important.py`: `waiter_exists`(`already has an active actionable waiter`)를 받으면 되풀이하지 않고 종료 코드 4 로 끝난다. 앞 세션이 남긴 `check --wait` 가 자리를 쥐면 새 대기가 매번 이 오류로 바로 끝나, 되풀이하는 대기가 몇 초 만에 시간 초과로 끝나고 worker 보고를 놓쳤다. 같은 사용자의 프로세스에서 그 Run 의 대기를 찾아 고아인지 부모가 살아 있는지와 함께 보여 주고, `--kill-stale` 이면 고아와 그 밑의 대기만 종료한다
+- 새 `scripts/nudge-worker.py`: 입력 대기인 worker 는 `send` 와 `reply` 를 다음 턴까지 읽지 않는다. 메시지를 보낸 뒤 화면 마지막 줄들로 Claude 와 Codex 의 입력 대기를 판정하고, 그때만 「check 로 읽어라」 를 넣고 `turn_started` 를 확인한다. 보이지 않으면 같은 request id 로 `--retry-request` 를 한 번 더 보낸다. 작업 중, 쓰다 만 입력, 권한 확인 창이면 입력하지 않는다
+- 새 `scripts/spec-line.py`: 지시서의 `허락:` 줄을 `--spec` 의 첫 지시 줄에 붙인다. PR 허락이 지시서 파일 안에만 있으면 Codex worker 일부가 GitHub 게시가 금지됐다며 PR 을 열지 않고 멈췄다. `--require-permission` 은 그 줄이 없으면 띄우기 전에 멈춘다
+- `references/launch.md` 의 `SPEC_LINE` 을 `spec-line.py` 로 만들게 바꾸고, `spec-writing.md` 에 `허락:` 줄 형식을 적었다. `templates/spec-common.md` 에 「끝내기」 절을 두고, 게시가 막히면 push 한 뒤 본문 파일 경로를 status 로 보내는 단계를 그 안으로 옮겼다
+- `references/waiting.md` 에 종료 코드 4, `references/replying.md` 에 보낸 직후 `nudge-worker.py` 를 부르는 것과 종료 코드별 다음 행동을 적었다
+- 남은 대기 목록과 판정, 메시지만으로 알아봄, 고아만 종료, Claude 와 Codex 화면의 네 상태 판정, 입력과 재확인 흐름, 허락 줄의 형식들을 테스트했다
+
 ## 1.23.0
 
 메모리에 두던 정리와 결정 보고 지시를 `references/` 로 옮긴다.

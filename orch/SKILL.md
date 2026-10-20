@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "1.23.0"
+  version: "1.24.0"
 ---
 
 # orch
@@ -78,6 +78,7 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 ## 3. 띄우기
 
 원격을 갱신한 뒤 `make-worktree.sh` 로 지시서의 브랜치 이름과 `origin/<기준 브랜치>` 위에 워크트리를 만들고 `--worktree path:` 로 띄운다.
+`--spec` 의 한 줄은 `spec-line.py` 로 만들어 지시서의 `허락:` 줄이 첫 지시에 들어가게 한다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
 
@@ -88,7 +89,8 @@ heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartb
 
 ## 5. 답하고 지시 보내기
 
-답은 마지막 메시지에 `reply` 로 단다. 입력 대기로 멈춘 worker, 끝난 worker, PR 생성과 회신이 막힌 worker 는 각각 reference 의 해당 절을 따른다.
+답은 마지막 메시지에 `reply` 로 단다. 보낸 직후 `nudge-worker.py` 로 입력 대기인 worker 를 깨운다.
+끝난 worker, PR 생성과 회신이 막힌 worker 는 각각 reference 의 해당 절을 따른다.
 
 ## 6. 완료 검증
 
