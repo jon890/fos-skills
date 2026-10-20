@@ -3,6 +3,18 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.19.0
+
+같은 파일을 고친 PR 을 차례로 머지할 때, 합친 상태의 검사를 `verification.md` 의 손 절차로만 하던 것을 머지 큐 옵션으로 옮긴다.
+gersang-lab 전용 `merge-ready.sh`, `merge-tested.sh` 를 일반화한 것이다.
+
+- `merge-queue.sh --stop-on-overlap`: PR 의 바뀐 파일이 PR 기준 이후 base 에서 바뀐 파일과 겹치면 겹친 파일을 찍고 멈춘다
+- `merge-queue.sh --verify-merged CMD`: 겹치면 `origin/<base>` 에 PR HEAD 를 merge 한 임시 사본에서 `CMD` 를 사본 경로를 인자로 돌려 0 이면 머지한다. 충돌, 검사 실패, 검사 중 base 이동은 멈춘다. 사본은 멈출 때도 지운다
+- `--copy-dir`: 사본 폴더. 기본은 `TMPDIR` 이고, 링크를 푼 실경로를 쓴다. macOS 의 `/var` 링크 때문에 실경로를 요구하는 검사가 사본 경로를 거부했다. 검사 명령의 `TMPDIR` 도 실경로로 준다
+- 사용법 출력이 머리 주석의 줄 번호를 박지 않고 주석 끝까지 읽는다
+- `references/cleanup.md` 에 「같은 파일을 고친 PR」 절, `references/overlay.md` 에 합친 사본 검사 행을 더하고, `references/verification.md` 의 손 절차를 이 옵션으로 바꿨다
+- 진짜 git 저장소로 겹침에서 멈춤, 겹치지 않으면 머지, 겹치지 않으면 검사를 건너뜀, 합친 실경로 사본에서 검사하고 머지, 검사 실패와 충돌에서 멈추고 사본을 지움, 상대경로 사본 폴더를 테스트했다
+
 ## 1.18.0
 
 지시서와 공통 틀에 「머지하지 않는다」 를 적어도 worker 가 자기 PR 을 직접 머지하던 문제(#141~#145)를 워크트리 권한 규칙으로 막는다.

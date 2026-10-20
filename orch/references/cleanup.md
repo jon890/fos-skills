@@ -51,6 +51,26 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --required test,browser 
 bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
 ```
 
+### 같은 파일을 고친 PR
+
+**PR 이 갈라진 뒤 base 에서도 바뀐 파일을 그 PR 이 고쳤으면, 체크가 통과해도 합친 상태는 아무도 검사하지 않았다.**
+체크는 PR HEAD 기준으로 돈다. 앞 PR 을 머지한 뒤 같은 파일을 고친 뒤 PR 을 그대로 머지하면 base 에서 처음 깨진다.
+`--require-up-to-date` 는 base 를 PR 에 merge 하고 CI 를 다시 돌려 이 틈을 닫지만 PR 마다 CI 를 한 번 더 기다린다.
+겹친 PR 만 로컬에서 다시 검사하려면 아래 둘 중 하나를 쓴다.
+
+| 옵션 | 겹치면 | 쓰는 때 |
+| --- | --- | --- |
+| `--stop-on-overlap` | `STOP <PR> 겹침: <파일>` 로 멈춘다 | 합친 상태를 코디네이터가 따로 확인한다 |
+| `--verify-merged CMD` | `origin/<base>` 에 PR HEAD 를 merge 한 임시 사본에서 `CMD` 를 돌려 0 이면 머지한다 | 오버레이가 검사 명령을 정해 두었다 |
+
+`CMD` 는 사본 경로를 `$1` 로 받고 그 사본 안에서 돈다. 사본은 끝나면 지운다.
+사본을 두는 폴더는 `--copy-dir` 로 준다. 기본은 `TMPDIR` 이다. 저장소 hook 이 `worktrees/` 밖의 워크트리를 막으면 오버레이가 허용된 폴더를 정한다.
+`$VERIFY_CMD` 와 `$COPY_DIR` 은 오버레이의 값이다.
+
+```bash
+bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --verify-merged "$VERIFY_CMD" --copy-dir "$COPY_DIR" 101 102
+```
+
 ### 머지 전 명령
 
 PR 마다 머지 직전에 돌릴 명령이 있으면 `PR번호:명령` 으로 준다. 모든 PR 에 같은 명령이면 `--before` 로 준다.
