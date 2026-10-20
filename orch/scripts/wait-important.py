@@ -11,23 +11,33 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
 
 사용법:
     wait-important.py --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]
-                      [--timeout-ms 7000000]
+                      [--timeout-ms 7000000] [--kill-stale]
 
     --run         기다릴 Run
     --ack         앞 대기가 낸 delivery id. 첫 대기처럼 넘길 것이 없으면 뺀다
     --types       깨어날 메시지 종류. 기본 worker_done,question,escalation,status
     --timeout-ms  전체 대기 한도(ms). 기본 7000000. 하네스의 명령 한도(Bash 최대 7200000)보다 짧게 준다
+    --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
 
 출력:
     처리할 묶음이 오면 그 `check --json` 결과를 한 줄 JSON 으로 내고, 마지막 줄에 `LAST_DELIVERY <id>` 를 낸다.
     시간 한도가 지나면 `TIMEOUT LAST_DELIVERY <id>` 를 낸다. id 는 ack 하지 못하고 남은 delivery 이고, 없으면 `-` 다.
 
-ORCA 환경 변수로 orca 실행 파일을 바꾼다.
+남은 대기:
+    Run 의 대기 자리는 하나다. 앞 세션이 띄운 `check --wait` 가 남아 있으면 새 대기는 매번 `waiter_exists` 로
+    바로 끝난다. 다시 걸어도 같은 오류만 받으므로, 이 오류를 받으면 되풀이하지 않고 같은 사용자의 프로세스 가운데
+    이 Run 의 `check --wait` 와 `wait-important` 를 찾아 stderr 로 보여 주고 종료 코드 4 로 끝난다.
+    부모가 init 인 것과 그 밑에 딸린 것은 세션이 끝나 고아가 된 대기라 그 메시지를 받을 쪽이 없다.
+    `--kill-stale` 을 주면 그것만 종료한다.
+    부모가 살아 있는 것은 다른 세션이 아직 기다리는 중일 수 있어 종료하지 않는다.
+
+ORCA 환경 변수로 orca 실행 파일을, PS 환경 변수로 ps 실행 파일을 바꾼다.
 
 종료 코드:
     0  처리할 묶음이 왔다
     3  시간 한도가 지났다. 실패가 아니므로 마지막 줄의 id 로 다시 건다
-    1  orca 가 오류를 냈다(waiter_exists, runtime_unavailable 같은 것). 그 JSON 을 그대로 낸다
+    4  이 Run 에 다른 대기가 있다(waiter_exists). 남은 프로세스를 정리한 뒤 다시 건다
+    1  orca 가 그 밖의 오류를 냈다(runtime_unavailable 같은 것). 그 JSON 을 그대로 낸다
     2  사용법 오류
 """
 
@@ -36,11 +46,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 
 ORCA = os.environ.get("ORCA", "orca")
+PS = os.environ.get("PS", "ps")
 DEFAULT_TYPES = "worker_done,question,escalation,status"
 
 
@@ -58,12 +70,86 @@ def check(run_id, types, ack, timeout_ms):
         return None, done.stdout
 
 
+def is_waiter_exists(data):
+    error = data.get("error") if isinstance(data, dict) else None
+    if not isinstance(error, dict):
+        return False
+    return error.get("code") == "waiter_exists" or "active actionable waiter" in str(error.get("message", ""))
+
+
+def waiter_processes(run_id):
+    """같은 사용자의 프로세스 가운데 이 Run 을 기다리는 것. [(pid, ppid, 시작 시각, 명령)]"""
+    done = subprocess.run([PS, "-U", str(os.getuid()), "-o", "pid=,ppid=,lstart=,command="],
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    rows = []
+    for line in done.stdout.splitlines():
+        # lstart 는 「Tue Oct 20 10:00:00 2026」 처럼 다섯 낱말이다
+        parts = line.split(None, 7)
+        if len(parts) == 8 and parts[0].isdigit() and parts[1].isdigit():
+            rows.append((int(parts[0]), int(parts[1]), " ".join(parts[2:7]), parts[7]))
+    # 이 스크립트와 이것을 띄운 셸은 명령에 Run id 가 들어 있어도 남은 대기가 아니다
+    parent = {pid: ppid for pid, ppid, _, _ in rows}
+    mine, pid = set(), os.getpid()
+    while pid > 1 and pid not in mine:
+        mine.add(pid)
+        pid = parent.get(pid, 0)
+    found = []
+    for pid, ppid, started, command in rows:
+        if pid in mine or run_id not in command:
+            continue
+        waiting = "orchestration check" in command and "--wait" in command
+        if waiting or "wait-important" in command:
+            found.append((pid, ppid, started, command))
+    return found
+
+
+def stale_pids(procs):
+    """부모가 init 인 대기와, 그 밑에 딸린 대기(셸 밑의 스크립트, 스크립트 밑의 check)"""
+    parent = {pid: ppid for pid, ppid, _, _ in procs}
+    stale = {pid for pid, ppid in parent.items() if ppid == 1}
+    grew = True
+    while grew:
+        more = {pid for pid, ppid in parent.items() if ppid in stale} - stale
+        stale |= more
+        grew = bool(more)
+    return stale
+
+
+def report_waiters(run_id, kill_stale):
+    procs = waiter_processes(run_id)
+    err = sys.stderr
+    print(f"wait-important: Run {run_id} 에 이미 다른 대기가 있다(waiter_exists). 다시 걸어도 같은 오류만 받는다", file=err)
+    if not procs:
+        print("  같은 사용자의 프로세스에서 찾지 못했다. 다른 사용자나 다른 머신의 대기일 수 있다", file=err)
+        return
+    stale = stale_pids(procs)
+    for pid, ppid, started, command in procs:
+        kind = "고아" if pid in stale else f"부모 {ppid} 살아 있음"
+        print(f"  PID {pid}  {kind}  시작 {started}  {command}", file=err)
+    live = [pid for pid, _, _, _ in procs if pid not in stale]
+    stale = [pid for pid, _, _, _ in procs if pid in stale]
+    if stale and kill_stale:
+        for pid in stale:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                print(f"  PID {pid} 를 종료했다", file=err)
+            except ProcessLookupError:
+                pass
+            except PermissionError as exc:
+                print(f"  PID {pid} 를 종료하지 못했다: {exc}", file=err)
+    elif stale:
+        print(f"  고아 대기는 받을 쪽이 없다. --kill-stale 을 더해 다시 걸거나 kill {' '.join(map(str, stale))}", file=err)
+    if live:
+        print("  부모가 살아 있는 대기는 다른 세션이 기다리는 중일 수 있다. 그 세션을 확인한 뒤 직접 종료한다", file=err)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run", required=True)
     parser.add_argument("--ack")
     parser.add_argument("--types", default=DEFAULT_TYPES)
     parser.add_argument("--timeout-ms", type=int, default=7000000)
+    parser.add_argument("--kill-stale", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -84,6 +170,9 @@ def main(argv=None):
         if not isinstance(data, dict) or not data.get("ok"):
             print(raw.strip() or "wait-important: orca 출력이 JSON 이 아니다")
             print(f"LAST_DELIVERY {ack or '-'}")
+            if is_waiter_exists(data):
+                report_waiters(args.run, args.kill_stale)
+                return 4
             return 1
         result = data.get("result") or {}
         # --ack 를 넘긴 호출이 성공했으면 그 delivery 는 처리됐다

@@ -30,6 +30,7 @@ python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_
 종료 코드는 스크립트 머리 주석이 소유한다.
 시간 한도로 끝나면 `TIMEOUT LAST_DELIVERY <id>` 를 낸다. 실패가 아니므로 그 id 로 다시 건다.
 orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바로 끝나거나 남음」 을 따른다.
+종료 코드 4 는 그 Run 에 다른 대기가 이미 있다는 뜻이다(`waiter_exists`). 다시 걸어도 같은 오류만 받으므로, 스크립트가 stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다.
 
 ## 깨어날 때마다 정리와 보드 동기화
 

@@ -44,6 +44,12 @@ class WaitImportantTest(unittest.TestCase):
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
         self.env = dict(os.environ, ORCA=str(orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log))
+        # ps 는 FAKE_PS 파일의 내용을 낸다. 파일이 없으면 아무것도 내지 않는다
+        ps = self.tmp / "ps"
+        ps.write_text('#!/bin/sh\ncat "$FAKE_PS" 2>/dev/null\n')
+        ps.chmod(ps.stat().st_mode | stat.S_IEXEC)
+        self.ps_rows = self.tmp / "ps.txt"
+        self.env.update(PS=str(ps), FAKE_PS=str(self.ps_rows))
 
     def wait(self, replies, *args):
         self.state.write_text(json.dumps({"replies": replies}))
@@ -96,11 +102,59 @@ class WaitImportantTest(unittest.TestCase):
         self.assertIn("TIMEOUT LAST_DELIVERY -", r.stdout)
 
     def test_orca_error_is_printed_and_keeps_the_pending_ack(self):
-        err = {"ok": False, "error": {"code": "waiter_exists"}}
+        err = {"ok": False, "error": {"code": "runtime_unavailable"}}
         r = self.wait([batch("d1", "heartbeat"), err])
         self.assertEqual(1, r.returncode)
-        self.assertIn("waiter_exists", r.stdout)
+        self.assertIn("runtime_unavailable", r.stdout)
         self.assertEqual("LAST_DELIVERY d1", r.stdout.splitlines()[-1])
+
+    WAITER_EXISTS = {"ok": False, "error": {"code": "waiter_exists",
+                                            "message": "Run run_x already has an active actionable waiter."}}
+
+    def ps_line(self, pid, ppid, command):
+        return f"{pid:>5} {ppid:>5} Tue Oct 20 10:00:00 2026     {command}"
+
+    def test_waiter_exists_stops_at_once_and_lists_leftover_waiters(self):
+        self.ps_rows.write_text("\n".join([
+            self.ps_line(101, 1, "/bin/zsh -c python3 wait-important.py --run run_x"),
+            self.ps_line(102, 101, "python3 wait-important.py --run run_x"),
+            self.ps_line(103, 102, "node orca orchestration check --run run_x --wait --json"),
+            self.ps_line(201, 900, "node orca orchestration check --run run_x --wait --json"),
+            self.ps_line(301, 1, "node orca orchestration check --run run_other --wait --json"),
+            self.ps_line(401, 1, "node orca orchestration check --run run_x --json"),
+        ]) + "\n")
+        r = self.wait([self.WAITER_EXISTS, batch("d1", "worker_done")], "--ack", "d0")
+        self.assertEqual(4, r.returncode, r.stderr)
+        self.assertEqual(1, len(self.calls()), "waiter_exists 를 받고 다시 걸었다")
+        self.assertEqual("LAST_DELIVERY d0", r.stdout.splitlines()[-1])
+        for pid in ("101", "102", "103", "201"):
+            self.assertIn(f"PID {pid}", r.stderr)
+        self.assertNotIn("PID 301", r.stderr)
+        self.assertNotIn("PID 401", r.stderr)
+        self.assertIn("kill 101 102 103", r.stderr)
+        self.assertIn("부모 900 살아 있음", r.stderr)
+
+    def test_waiter_exists_is_recognized_by_message_alone(self):
+        err = {"ok": False, "error": {"code": "conflict", "message": "Run run_x already has an active actionable waiter."}}
+        r = self.wait([err])
+        self.assertEqual(4, r.returncode)
+        self.assertIn("찾지 못했다", r.stderr)
+
+    def test_kill_stale_kills_only_orphaned_waiters(self):
+        orphan = subprocess.Popen(["sleep", "30"])
+        live = subprocess.Popen(["sleep", "30"])
+        for proc in (orphan, live):
+            self.addCleanup(proc.wait)
+            self.addCleanup(proc.kill)
+        self.ps_rows.write_text("\n".join([
+            self.ps_line(orphan.pid, 1, "node orca orchestration check --run run_x --wait --json"),
+            self.ps_line(live.pid, 900, "node orca orchestration check --run run_x --wait --json"),
+        ]) + "\n")
+        r = self.wait([self.WAITER_EXISTS], "--kill-stale")
+        self.assertEqual(4, r.returncode, r.stderr)
+        self.assertIsNotNone(orphan.wait(timeout=5))
+        self.assertIsNone(live.poll())
+        self.assertIn(f"PID {orphan.pid} 를 종료했다", r.stderr)
 
     def test_output_is_readable_by_triage(self):
         r = self.wait([batch("d1", "heartbeat", "worker_done")])
