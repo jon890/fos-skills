@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.17.0
+
+지시서와 공통 틀에 「머지하지 않는다」 를 적어도 worker 가 자기 PR 을 직접 머지하던 문제(#141~#145)를 워크트리 권한 규칙으로 막는다.
+
+- `scripts/worktree-deny.py` 의 deny 에 `Bash(gh pr merge:*)` 를 더했다. 코디네이터는 기본 체크아웃에서 `merge-queue.sh` 로 머지하므로 닿지 않는다
+- 공통 지시서 틀의 머지 줄에 권한 설정이 막는다는 사실을 적었다
+- 새 워크트리와 기존 설정에 넷째 규칙이 한 번만 들어가는지 테스트했다
+
 ## 1.16.0
 
 하위 에이전트의 `pkill`, `browser-driver reset` 이 다른 worker 의 호스트와 탭을 닫던 문제를 워크트리 권한 규칙으로 막는다.
