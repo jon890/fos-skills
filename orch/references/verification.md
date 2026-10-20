@@ -13,22 +13,12 @@ bash "$SKILL_DIR/scripts/make-worktree.sh" --check "$WORKTREE" --spec "$SPEC_FIL
 
 ## 차례로 머지할 때 최신 base 와 합쳐 다시 검사한다
 
-**같은 기준 브랜치로 가는 PR 여럿을 차례로 머지하면, 다음 PR 은 최신 base 와 합친 사본에서 검사를 다시 돌린 뒤 머지한다.**
+**같은 기준 브랜치로 가는 PR 여럿을 차례로 머지하면, 앞 PR 이 고친 파일을 뒤 PR 도 고쳤을 때 합친 상태에서 검사를 다시 돌린다.**
 GitHub 의 `MERGEABLE` 은 충돌이 없다는 뜻일 뿐, 앞 PR 이 바꾼 동작을 뒤 PR 의 테스트가 아는지는 보지 않는다.
-`$PR_NUMBER` 와 `$PR_BRANCH` 는 검사할 PR 의 번호와 head 브랜치다.
+이 검사는 `merge-queue.sh --verify-merged` 가 PR 마다 한다. 겹친 파일이 없으면 건너뛰고, 있으면 base 와 합친 임시 사본에서 검사 명령을 돌려 0 일 때만 머지한다.
+검사 명령과 사본 폴더는 저장소 오버레이가 정한다. 명령은 [`cleanup.md`](cleanup.md) 의 「같은 파일을 고친 PR」 에 있다.
 
-```bash
-TMP_COPY="$REPO/worktrees/$(basename "$REPO")/verify-$PR_NUMBER"
-git -C "$REPO" fetch origin
-git -C "$REPO" worktree add --detach "$TMP_COPY" "origin/$PR_BRANCH"
-git -C "$TMP_COPY" merge --no-edit "origin/$BASE"
-```
-
-`$TMP_COPY` 는 [`launch.md`](launch.md) 의 worktree 위치 규칙을 따라 `$REPO/worktrees/<repo>/<이름>` 으로 잡는다.
-worktree 위치를 막는 hook 이 있으면 scratchpad 같은 다른 경로는 거절된다.
-PR 브랜치가 이미 지워졌거나 fork 에서 온 PR 이면 `git fetch origin "pull/$PR_NUMBER/head:verify-$PR_NUMBER"` 로 받아 `origin/$PR_BRANCH` 자리에 `verify-$PR_NUMBER` 를 쓴다.
-그 사본에서 영향 받는 검사를 돌리고, 끝나면 `remove-worktree.sh` 로 지운다.
-실패하면 그 worker 의 worktree 에 새 dispatch 를 띄워 기준 브랜치를 merge 하고 고치게 한다. rebase 와 force push 는 쓰지 않는다.
+검사가 실패하면 그 worker 의 worktree 에 새 dispatch 를 띄워 기준 브랜치를 merge 하고 고치게 한다. rebase 와 force push 는 쓰지 않는다.
 
 ## 충돌을 직접 풀 때
 
