@@ -10,7 +10,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "make-worktree.sh"
 DENY_SCRIPT = SCRIPT.with_name("worktree-deny.py")
-DENY = ["Bash(pkill:*)", "Bash(killall:*)", "Bash(browser-driver reset:*)"]
+DENY = ["Bash(pkill:*)", "Bash(killall:*)", "Bash(browser-driver reset:*)", "Bash(gh pr merge:*)"]
 
 
 def sh(*cmd, cwd=None):
