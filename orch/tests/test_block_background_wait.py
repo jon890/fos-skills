@@ -28,6 +28,8 @@ class BlockBackgroundWaitTest(unittest.TestCase):
             "(orca orchestration check --wait --json > out.json) &",
             "orca orchestration check \\\n  --wait --json &",
             "orca orchestration check --wait --json & disown",
+            'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" > /tmp/w.out 2>&1 &',
+            'nohup python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID"',
         ):
             with self.subTest(command=command):
                 self.assertEqual("deny", decide(command))
@@ -39,6 +41,8 @@ class BlockBackgroundWaitTest(unittest.TestCase):
             "orca orchestration check --terminal T --json &",
             'echo "orchestration check --wait &"',
             "sleep 5 &",
+            'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID"',
+            'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" 2>/dev/null && echo woke',
         ):
             with self.subTest(command=command):
                 self.assertEqual("pass", decide(command))
