@@ -373,8 +373,11 @@ def positional(program, args):
     return rest
 
 
-def classify(command, entries, repo):
-    """test, other, unknown 중 하나를 낸다. unknown 은 판정하지 못한 실행기다."""
+def classify(command, entries, repo, cwd=""):
+    """test, other, unknown 중 하나를 낸다. unknown 은 판정하지 못한 실행기다.
+
+    cwd 는 같은 줄의 `cd <dir>` 가 가리키는 저장소 루트 기준 경로다. 스크립트 경로를 그 기준으로 풀어 파일 존재를 본다.
+    """
     command = unwrap(command)
     if not command:
         return "other"
@@ -422,12 +425,13 @@ def classify(command, entries, repo):
     if not script.startswith(("scripts/", "tests/", "test/")):
         return "other" if program in KNOWN or "/" in script else "unknown"
     named = is_test(script) or re.search(r"(?:^|/)(?:check|verify|test)[_.-]", script)
-    available = (repo / script).is_file() or any(matches(script, rel) and action != "삭제" for rel, action in entries)
+    rooted = posixpath.normpath(posixpath.join(cwd, script)) if cwd else script
+    available = (repo / rooted).is_file() or any(matches(rooted, rel) and action != "삭제" for rel, action in entries)
     return "test" if named and available else "other"
 
 
-def test_command(command, entries, repo):
-    return classify(command, entries, repo) == "test"
+def test_command(command, entries, repo, cwd=""):
+    return classify(command, entries, repo, cwd) == "test"
 
 
 # 디렉터리 인자를 하위 테스트 전체로 받는 실행기다. jest 와 vitest 의 위치 인자는 경로 패턴이라 디렉터리 아래를
@@ -901,7 +905,9 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     commands = [command for _, command in numbered_commands]
     line_numbers = [number for number, _ in numbered_commands]
     cwds = list(command_cwds(commands, line_numbers))
-    runners = [command for command in commands if test_command(command, entries, repo)]
+    runner_pairs = [(command, cwd) for command, cwd in zip(commands, cwds) if test_command(command, entries, repo, cwd)]
+    runners = [command for command, _ in runner_pairs]
+    runner_cwds = [cwd for _, cwd in runner_pairs]
     if not commands:
         out.append(f"{path} — 검증 절에 실행할 명령이 없다")
     elif not runners:
@@ -942,7 +948,14 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
         if any(ref == rel or Path(ref).name in {Path(rel).name, Path(rel).stem} for ref in references)
         or (is_glob(rel) and test_references)
     ]
-    checked_script = any(any(arg.removeprefix("./") in changed_code and arg in work for arg in command) for command in runners)
+    # 인자 경로는 같은 줄의 `cd <dir> &&` 를 반영한 저장소 루트 기준으로도 변경 파일과 대조한다.
+    checked_script = any(
+        any(
+            arg in work and (arg.removeprefix("./") in changed_code or posixpath.normpath(posixpath.join(cwd, arg)) in changed_code)
+            for arg in command if not arg.startswith(("/", "-"))
+        )
+        for command, cwd in zip(runners, runner_cwds)
+    )
     if changed_code and not declared_tests and not checked_script:
         # 어느 변경 파일 때문에 걸렸는지 보여 준다. glob 이 코드로 잡혔는지 테스트로 안 잡혔는지 가려야 한다.
         shown = ", ".join(changed_code[:CALLER_LIMIT]) + (f" 외 {len(changed_code) - CALLER_LIMIT}개" if len(changed_code) > CALLER_LIMIT else "")
