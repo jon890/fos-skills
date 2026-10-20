@@ -6,7 +6,8 @@
 사용자가 말하지 않아도 깨어날 때마다 돈다. 코디네이터가 끝난 항목을 직접 지우지 않는다.
 
 사용법 (기본은 dry-run. 무엇을 할지만 낸다):
-    cleanup-sweep.py --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--apply]
+    cleanup-sweep.py --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders]
+                     [--agent-glob 'agent-*'] [--apply]
 
     --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
@@ -16,6 +17,7 @@
     --specs-dir   지시서 폴더(저장소 기준 상대경로 또는 절대경로). worktree 이름과 같은
                   `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다
     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
+    --agent-glob  하위 에이전트 워크트리 폴더 이름의 glob. 기본 `agent-*`(아래 「하위 에이전트 워크트리」)
     --apply       실제로 정리한다
 
 PR 찾기 (브랜치마다):
@@ -48,6 +50,24 @@ PR 찾기 (브랜치마다):
       OMC session-end hook worker 는 세지 않는다. 스스로 끝나므로 `remove-worktree.sh` 가 끝날 때까지 기다린다
       단, PR 이 MERGED 이고 남은 프로세스가 전부 자식 없는 로그인 셸(Orca 가 worker 를 반납한 뒤 띄운 빈 셸)이고
       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
+
+저장소 밖 detached 워크트리:
+    worker 가 기준선 비교나 임시 검사로 저장소 밖(임시 폴더 같은 곳)에 만든 detached 워크트리는 끝나도
+    `git worktree remove` 를 하지 않아 남는다. 브랜치가 없어 위 판정에 걸리지 않는다.
+    먼저 `git worktree prune` 으로 폴더가 이미 없는 등록을 지운다(dry-run 은 `-n` 으로 무엇을 지울지만 낸다).
+    그다음 저장소 폴더 밖의 detached 워크트리마다 아래가 모두 참이면 `git worktree remove` 로 지운다.
+      - 커밋 안 된 변경이 없다
+      - 그 경로를 작업 디렉터리로 쓰는 프로세스가 없고, 그 경로에 Orca 터미널이 없다
+      - HEAD 가 원격 추적 브랜치 어딘가에 들어 있다. 아니면 그 커밋이 사라진다
+    저장소 폴더 안(`worktrees/` 아래 같은 곳)의 detached 워크트리는 코디네이터가 쓰는 것일 수 있어 건드리지 않는다.
+
+하위 에이전트 워크트리 (--agent-glob):
+    하위 에이전트가 만든 워크트리에는 Orca 가 빈 셸 터미널을 띄운다. 그 터미널은 어느 Run 의 worker 도 아니다.
+    --run 을 줬는데 모든 Run 범위를 읽지 못하면 그 터미널을 「다른 Run 의 것인지 확인하지 못한 터미널」 로 보고
+    경로를 건너뛰어, 하위 에이전트 워크트리가 머지된 뒤에도 남았다.
+    폴더 이름이 glob 에 맞고, 그 경로를 쓰는 프로세스가 모두 자식 없는 로그인 셸이면 그 터미널은 빈 셸로 보고
+    다른 Run 의 것으로 세지 않는다. claude 나 node 가 도는 worker 터미널은 이 조건에 걸리지 않는다.
+    다른 Run 의 worker 로 확인된 터미널은 그대로 건너뛴다. 터미널을 닫는 조건(PR 이 MERGED)은 같다.
 
 다른 Run (--run 을 줬을 때):
     터미널은 경로로 찾으므로, 같은 저장소에서 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널도 걸린다.
@@ -97,6 +117,7 @@ ORCA, GH, ORCH_KILL 환경 변수로 실행 파일을 바꾼다. 기본 orca, gh
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import subprocess
@@ -564,10 +585,47 @@ def delete_specs(specs_dir, name, apply, log):
                 log(f"  지시서를 지울 것 {candidate}")
 
 
+def on_remote(repo, commit):
+    """그 커밋이 원격 추적 브랜치 어딘가에 들어 있는지."""
+    code, out, _ = git(repo, "for-each-ref", "--contains", commit, "--format=%(refname)", "refs/remotes/")
+    return code == 0 and bool(out)
+
+
+def sweep_detached(repo, path, args, terminals, log):
+    """저장소 밖 detached 워크트리를 지운다. 조건은 머리 주석의 「저장소 밖 detached 워크트리」 가 정한다."""
+    if under(os.path.realpath(path), os.path.realpath(repo)):
+        log(f"건너뜀 {path}: 브랜치가 없다(detached)")
+        return
+    if dirty(path):
+        log(f"건너뜀 detached {path}: 커밋 안 된 변경")
+        return
+    pids = holder_pids(path)
+    if pids:
+        log(f"건너뜀 detached {path}: 그 경로를 쓰는 프로세스 {len(pids)} 개({describe(pids)})")
+        return
+    if terminals_at(terminals, path):
+        log(f"건너뜀 detached {path}: Orca 터미널이 있다")
+        return
+    code, head, _ = git(path, "rev-parse", "HEAD")
+    if code != 0 or not on_remote(repo, head):
+        log(f"건너뜀 detached {path}: HEAD 가 원격에 없다")
+        return
+    if not args.apply:
+        log(f"detached 워크트리를 지울 것 {path}")
+        return
+    code, _, err = git(repo, "worktree", "remove", path)
+    log(f"detached 워크트리 삭제 {path}" if code == 0 else f"detached 워크트리 삭제 실패 {path}: {err}")
+
+
+def idle_agent_path(args, path):
+    """하위 에이전트 워크트리이고 그 경로를 쓰는 프로세스가 빈 로그인 셸뿐인지."""
+    return fnmatch.fnmatch(Path(path).name, args.agent_glob) and only_idle_shells(holder_pids(path))
+
+
 def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log):
     name = Path(path).name
     if not branch:
-        log(f"건너뜀 {path}: 브랜치가 없다(detached)")
+        sweep_detached(repo, path, args, terminals, log)
         return
     reason = protected(repo, branch, args.base)
     if reason:
@@ -591,6 +649,9 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         log(f"건너뜀 {path}: 살아 있는 worker {', '.join(w.get('dispatchId', '?') for w in live)}")
         return
     theirs = foreign_at(args, mine, terminals, path)
+    if theirs and args.foreign is None and idle_agent_path(args, path):
+        log(f"  {path}: 하위 에이전트 워크트리의 빈 셸 터미널이라 다른 Run 의 것으로 세지 않는다")
+        theirs = []
     if theirs:
         what = "다른 Run 의 worker 터미널" if args.foreign is not None else "다른 Run 의 것인지 확인하지 못한 터미널"
         log(f"건너뜀 {path}: {what} {', '.join(theirs)}. 그 Run 의 코디네이터가 정리한다")
@@ -693,8 +754,13 @@ def sweep_repo(repo, args, workers, terminals, log):
         specs_dir = Path(args.specs_dir)
         specs_dir = specs_dir if specs_dir.is_absolute() else repo / specs_dir
     git(repo, "fetch", "-q", "--prune", "origin")
-    items = worktrees(repo)
     log(f"cleanup-sweep {'apply' if args.apply else 'dry-run'}: {repo} (base {base})")
+    # 폴더가 이미 없는 워크트리 등록을 먼저 지운다. 남으면 그 브랜치 삭제가 `used by worktree` 로 거절된다
+    # -v 의 목록은 stderr 로 나온다
+    _, _, pruned = git(repo, "worktree", "prune", "-v", *([] if args.apply else ["-n"]))
+    for line in pruned.splitlines():
+        log(f"prune: {line}")
+    items = worktrees(repo)
     for path, branch in items:
         sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     remaining = {branch for _, branch in worktrees(repo)}
@@ -709,6 +775,7 @@ def main(argv=None):
     parser.add_argument("--run")
     parser.add_argument("--specs-dir")
     parser.add_argument("--kill-holders", action="store_true")
+    parser.add_argument("--agent-glob", default="agent-*")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--wait", type=int, default=5, help="터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 기본 5")
     try:
