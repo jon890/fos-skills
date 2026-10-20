@@ -12,7 +12,8 @@
 | Task 성격 | 모델 | effort |
 | --- | --- | --- |
 | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `medium` |
-| 단순 반영(리뷰 지적, 문구, 설정 한 줄) | `gpt-6-luna`, Claude Haiku 5.5 | luna `high`(공식 시작점), Haiku `low`(짧은 작업) 또는 `medium` |
+| 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화, 작은 분기와 단위 테스트) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
+| 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
 | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | `medium`, 같은 Task 가 실패하면 `high` |
 | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium` 시작, sol `high` |
 | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델 | `medium` |
@@ -29,9 +30,28 @@
 
 - worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
 - 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
-- effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다
+- effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 5.5 는 아래 실측에서 `low` 와 `medium` 의 품질과 걸린 시간이 같았다(토큰 사용량은 재지 않았다)
+- worker 작업에서 Haiku 가 Sonnet 보다 빠르지 않았다. 공식 소개의 「가장 빠름」 은 이 작업에서 나타나지 않았다
 - 출처: [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
 - 출처: [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing), [Claude 모델 선택](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model), [Claude 모델 비교](https://platform.claude.com/docs/en/about-claude/models/overview)
+
+### Haiku 5.5 실측 (2026-10-20)
+
+작은 작업 3종을 Haiku 5.5 `low`, Haiku 5.5 `medium`, Sonnet 5.5 `medium` 으로 각자 한 번씩 돌렸다.
+구현하지 않은 Opus 리뷰어가 모델을 모르는 채 머지된 정답 diff 와 비교해 채점했다.
+
+| 작업 성격 | Haiku `low` | Haiku `medium` | Sonnet `medium` |
+| --- | --- | --- | --- |
+| 설정 값 한 줄, 주석, 문서 동기화 (8점) | 7 | 6 | 6 |
+| 리뷰 지적을 문서 한 줄로 반영 (8점) | 6 | 6 | 8 |
+| 작은 분기 수정과 단위 테스트, 수정 위치를 지시서가 줌 (10점) | 8 | 8 | 8 |
+| 합계 (26점) | 21 | 20 | 22 |
+| 걸린 시간 합계 | 16.7분 | 16.9분 | 12.5분 |
+
+- 품질은 거의 같았고 가격은 Haiku 가 Sonnet 의 1/20 이다
+- `low` 와 `medium` 은 품질과 시간 차이가 없어 Haiku effort 는 지정하지 않는다
+- 약점: 리뷰 지적이나 요구 문장을 해석해 옮길 때 지적에 없는 조건을 지어내거나 일부를 빠뜨렸다(두 조합 모두 한 번씩). Sonnet 은 정답과 같았다. 그래서 문구 반영 행에는 지적 원문과의 대조를 붙였다
+- 한계: 작업마다 한 번씩만 돌려 표본이 작다. PR 생성, 리뷰 회신, 스레드 정리까지 가는 긴 흐름은 재지 않았다
 
 ## effort
 
