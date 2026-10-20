@@ -35,21 +35,30 @@ def batch(delivery, *types):
 
 
 class WaitImportantTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # macOS 는 새로 만든 실행 파일을 처음 실행할 때 검사하느라 몇 초를 쓴다(부하가 높으면 더 길다).
+        # 테스트마다 가짜를 새로 만들면 첫 check 호출이 시간 한도 테스트의 한도를 넘긴다.
+        # 가짜는 클래스에서 한 번 만들고 한 번 실행해 둔다
+        cls.bin = Path(tempfile.mkdtemp())
+        cls.addClassCleanup(shutil.rmtree, cls.bin)
+        cls.orca = cls.bin / "orca"
+        cls.orca.write_text(FAKE_ORCA)
+        # ps 는 FAKE_PS 파일의 내용을 낸다. 파일이 없으면 아무것도 내지 않는다
+        cls.ps = cls.bin / "ps"
+        cls.ps.write_text('#!/bin/sh\ncat "$FAKE_PS" 2>/dev/null\n')
+        for fake in (cls.orca, cls.ps):
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            subprocess.run([str(fake)], capture_output=True, env={"PATH": os.environ.get("PATH", "")})
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp)
-        orca = self.tmp / "orca"
-        orca.write_text(FAKE_ORCA)
-        orca.chmod(orca.stat().st_mode | stat.S_IEXEC)
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
-        self.env = dict(os.environ, ORCA=str(orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log))
-        # ps 는 FAKE_PS 파일의 내용을 낸다. 파일이 없으면 아무것도 내지 않는다
-        ps = self.tmp / "ps"
-        ps.write_text('#!/bin/sh\ncat "$FAKE_PS" 2>/dev/null\n')
-        ps.chmod(ps.stat().st_mode | stat.S_IEXEC)
         self.ps_rows = self.tmp / "ps.txt"
-        self.env.update(PS=str(ps), FAKE_PS=str(self.ps_rows))
+        self.env = dict(os.environ, ORCA=str(self.orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log),
+                        PS=str(self.ps), FAKE_PS=str(self.ps_rows))
 
     def wait(self, replies, *args):
         self.state.write_text(json.dumps({"replies": replies}))
