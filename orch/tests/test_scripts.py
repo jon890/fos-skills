@@ -455,6 +455,135 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual(2, r.returncode)
 
 
+@unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "jq 와 bash 가 필요하다")
+class MergeQueueOverlapTest(unittest.TestCase):
+    """겹침 판정과 합친 사본 검사는 진짜 git 저장소로 본다. gh 와 sleep 만 가짜다."""
+
+    def setUp(self):
+        # mkdtemp 는 macOS 에서 /var 링크 아래라 실경로 처리를 그대로 겪는다
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        bindir = self.tmp / "bin"
+        bindir.mkdir()
+        for name, body in (("gh", FAKE_GH), ("sleep", "#!/bin/sh\nexit 0\n")):
+            f = bindir / name
+            f.write_text(body)
+            f.chmod(f.stat().st_mode | stat.S_IEXEC)
+        gitconfig = self.tmp / "gitconfig"
+        gitconfig.write_text("")
+        self.state = self.tmp / "state.json"
+        self.log = self.tmp / "log.txt"
+        self.env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
+                        FAKE_LOG=str(self.log), TMPDIR=str(self.tmp), GIT_CONFIG_GLOBAL=str(gitconfig),
+                        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x", GIT_COMMITTER_NAME="t",
+                        GIT_COMMITTER_EMAIL="t@x", CLEANUP_SWEEP=str(self.tmp / "sweep.py"))
+        (self.tmp / "sweep.py").write_text("")
+        self.git("init", "-q", "--bare", "-b", "main", str(self.tmp / "origin.git"), cwd=self.tmp)
+        self.repo = self.tmp / "repo"
+        self.git("clone", "-q", str(self.tmp / "origin.git"), str(self.repo), cwd=self.tmp)
+        self.write({"a.txt": "1\n2\n3\n4\n5\n", "b.txt": "b\n"}, "init")
+        self.git("push", "-q", "origin", "HEAD:main")
+        self.git("checkout", "-q", "-b", "feat")
+
+    def git(self, *args, cwd=None):
+        done = subprocess.run(["git", *args], cwd=cwd or self.repo, capture_output=True, text=True, env=self.env)
+        self.assertEqual(0, done.returncode, done.stderr)
+        return done.stdout.strip()
+
+    def write(self, files, message):
+        for name, text in files.items():
+            (self.repo / name).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", message)
+
+    def branches(self, feat, main):
+        """feat 와 main 에 각각 커밋을 올리고 PR 상태를 쓴다."""
+        self.write(feat, "feat")
+        self.git("push", "-q", "origin", "feat")
+        head = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.write(main, "main")
+        self.git("push", "-q", "origin", "main")
+        pr = {"state": "OPEN", "statusCheckRollup": [{"status": "COMPLETED", "conclusion": "SUCCESS"}],
+              "mergeable": "MERGEABLE", "url": "https://git.example.com/owner/repo/pull/1",
+              "headRefName": "feat", "baseRefName": "main", "headRefOid": head, "isCrossRepository": False}
+        self.state.write_text(json.dumps({"1": pr}))
+
+    def run_queue(self, *args):
+        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.repo), "--threads-cmd", "echo 0",
+               "--no-sweep", *args, "1"]
+        return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+
+    def merged(self):
+        return "pr merge 1" in (self.log.read_text() if self.log.exists() else "")
+
+    def worktree_count(self):
+        return len([x for x in self.git("worktree", "list", "--porcelain").splitlines() if x.startswith("worktree ")])
+
+    def test_overlap_stops_and_lists_files(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n", "c.txt": "c\n"}, {"a.txt": "main\n1\n2\n3\n4\n5\n"})
+        r = self.run_queue("--stop-on-overlap")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("STOP 1 겹침: a.txt", r.stdout)
+        self.assertNotIn("c.txt", r.stdout)
+        self.assertFalse(self.merged())
+
+    def test_no_overlap_merges(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--stop-on-overlap")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("겹침", r.stdout)
+        self.assertTrue(self.merged())
+
+    def test_no_overlap_skips_verify_command(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--verify-merged", "exit 1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertTrue(self.merged())
+
+    def test_verify_merged_runs_in_merged_real_path_copy(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"a.txt": "main\n1\n2\n3\n4\n5\n"})
+        seen = self.tmp / "seen.txt"
+        check = (f'grep -qx main "$1/a.txt" && grep -qx feat "$1/a.txt" && [ "$PWD" = "$1" ] '
+                 f'&& printf "%s\\n%s\\n" "$1" "$TMPDIR" > {seen}')
+        r = self.run_queue("--verify-merged", check)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 겹침: a.txt", r.stdout)
+        self.assertIn("합친 사본의 검사 통과", r.stdout)
+        self.assertTrue(self.merged())
+        copy, tmpdir = seen.read_text().splitlines()
+        real = os.path.realpath(self.tmp)
+        self.assertEqual(real, tmpdir)
+        self.assertEqual(real, str(Path(copy).parent))
+        self.assertFalse(Path(copy).exists())
+        self.assertEqual(1, self.worktree_count())
+
+    def test_verify_merged_failure_stops_and_removes_copy(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"a.txt": "main\n1\n2\n3\n4\n5\n"})
+        seen = self.tmp / "seen.txt"
+        r = self.run_queue("--verify-merged", f'echo "$1" > {seen}; exit 3')
+        self.assertEqual(1, r.returncode)
+        self.assertIn("합친 사본의 검사 실패(종료 코드 3)", r.stdout)
+        self.assertFalse(self.merged())
+        self.assertFalse(Path(seen.read_text().strip()).exists())
+        self.assertEqual(1, self.worktree_count())
+
+    def test_conflict_with_base_stops(self):
+        self.branches({"a.txt": "1\n2\nfeat\n4\n5\n"}, {"a.txt": "1\n2\nmain\n4\n5\n"})
+        r = self.run_queue("--verify-merged", "exit 0")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("합치면 충돌한다", r.stdout)
+        self.assertFalse(self.merged())
+        self.assertEqual(1, self.worktree_count())
+
+    def test_copy_dir_is_relative_to_repo(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"a.txt": "main\n1\n2\n3\n4\n5\n"})
+        seen = self.tmp / "seen.txt"
+        r = self.run_queue("--copy-dir", "worktrees/repo", "--verify-merged", f'echo "$1" > {seen}')
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(os.path.realpath(self.repo / "worktrees" / "repo"), str(Path(seen.read_text().strip()).parent))
+
+
 class WorkerAskTest(unittest.TestCase):
     """가짜 orca 로 ask 의 성공, 시간 제한, 실패 뒤 대신 보내기를 본다."""
 

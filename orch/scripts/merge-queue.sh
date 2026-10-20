@@ -9,6 +9,10 @@
 #      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
 #   3. 실패한 체크, 미해결 리뷰 스레드, 충돌이 있으면 멈춘다. mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다
 #      --allow-fail 로 준 체크의 실패는 세지 않고 경고 줄만 찍는다
+#   3-1. --stop-on-overlap 이나 --verify-merged 를 주면, PR 이 바꾼 파일과 PR 이 갈라진 뒤 base 에서 바뀐 파일이
+#      겹치는지 본다. 겹치면 --stop-on-overlap 은 겹친 파일을 찍고 멈추고, --verify-merged 는 base 와 합친
+#      임시 사본에서 그 명령을 돌려 0 일 때만 이어 간다. 체크는 PR 기준으로 돌아 같은 파일을 고친 base 와 합친
+#      상태는 아무도 검사하지 않았기 때문이다. 겹치지 않으면 그대로 이어 간다
 #   4. 머지 전 명령이 있으면 돌리고, 0 이 아니면 멈춘다(DB 백업 같은 것)
 #   5. 체크를 보기 전에 읽어 둔 HEAD 와 지금 PR HEAD, 원격 브랜치 HEAD 가 모두 같은지 본다.
 #      검사나 머지 전 명령이 도는 사이에 push 된 커밋이 검사 없이 머지되는 것을 막는다
@@ -36,6 +40,15 @@
 #                         필수 체크(--required 나 저장소 규칙)에 든 이름은 허용할 수 없다
 #   --require-up-to-date  머지 전에 PR 이 base 최신을 품지 않으면 update-branch 로 base 를 merge 하고
 #                         필수 체크를 다시 기다린 뒤 머지한다. 기본은 끔. 필수 체크 목록이 있어야 켤 수 있다
+#   --stop-on-overlap     PR 의 바뀐 파일이 PR 기준 이후 base 에서 바뀐 파일과 겹치면 `STOP PR 겹침: 파일...` 로 멈춘다
+#   --verify-merged CMD   겹치면 origin/BASE 에 PR HEAD 를 merge 한 임시 사본을 만들고, 그 안에서 CMD 를 bash -c 로
+#                         돌린다. 사본의 절대경로를 첫 인자($1)로 받는다. 0 이면 이어 가고 아니면 멈춘다.
+#                         합치다 충돌하거나, 검사하는 동안 원격 base 가 움직였으면 멈춘다. 사본은 끝나면 지운다.
+#                         검사 명령은 저장소마다 달라 오버레이가 정한다(예: --verify-merged 'cd "$1" && make test')
+#   --copy-dir DIR        임시 사본을 둘 폴더. 기본은 TMPDIR(없으면 /tmp). 상대경로는 --repo 기준이다.
+#                         저장소 hook 이 워크트리 위치를 막으면 오버레이가 허용된 폴더를 준다.
+#                         링크를 푼 실경로로 바꿔 쓴다. macOS 의 TMPDIR(/var/folders/...)는 /var 가 /private/var 를
+#                         가리키는 링크라, 실경로를 요구하는 검사가 사본 경로를 거부한다. 검사 명령의 TMPDIR 도 실경로로 준다
 #   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
 #   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.py 에 넘길 인자. 하나씩 준다
 #                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .omc/specs)
@@ -45,7 +58,7 @@
 # 정리가 실패해도 머지 결과는 바뀌지 않으므로 경고만 찍고 종료 코드는 0 이다.
 # CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를 바꾼다.
 #
-# 머지 전 명령과 --threads-cmd 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치), OWNER, REPO,
+# 머지 전 명령, --threads-cmd, --verify-merged 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치), OWNER, REPO,
 # GH_HOST(위 --hostname 과 같은 값)를 받는다.
 # 예: merge-queue.sh 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 #
@@ -65,9 +78,13 @@ KEEP_BRANCH=0
 SWEEP=1
 SWEEP_BASE=""
 SWEEP_ARGS=()
+OVERLAP=0
+VERIFY_MERGED=""
+COPY_DIR=""
+COPY=""
 ITEMS=()
 
-usage() { sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; exit 2; }
 need() { [ -n "${2:-}" ] || { echo "$1 에 값이 없다" >&2; exit 2; }; }
 
 while [ $# -gt 0 ]; do
@@ -80,6 +97,9 @@ while [ $# -gt 0 ]; do
     --required) need "$1" "${2:-}"; REQUIRED=$2; shift 2 ;;
     --allow-fail) need "$1" "${2:-}"; ALLOW_FAIL=$2; shift 2 ;;
     --require-up-to-date) UP_TO_DATE=1; shift ;;
+    --stop-on-overlap) OVERLAP=1; shift ;;
+    --verify-merged) need "$1" "${2:-}"; VERIFY_MERGED=$2; OVERLAP=1; shift 2 ;;
+    --copy-dir) need "$1" "${2:-}"; COPY_DIR=$2; shift 2 ;;
     --keep-branch) KEEP_BRANCH=1; shift ;;
     --sweep-arg) need "$1" "${2:-}"; SWEEP_ARGS+=("$2"); shift 2 ;;
     --no-sweep) SWEEP=0; shift ;;
@@ -101,6 +121,8 @@ for item in "${ITEMS[@]}"; do
   case "${item%%:*}" in ''|*[!0-9]*) echo "PR 번호가 아니다: $item" >&2; exit 2 ;; esac
 done
 cd "$REPO_DIR" || exit 2
+REAL_TMP=$(cd "${TMPDIR:-/tmp}" && pwd -P) || { echo "TMPDIR 를 읽지 못했다: ${TMPDIR:-/tmp}" >&2; exit 2; }
+COPY_DIR=${COPY_DIR:-$REAL_TMP}
 
 if [ -z "$THREADS_CMD" ]; then
   RT="$SCRIPT_DIR/../../review-fix/scripts/review_threads.py"
@@ -112,6 +134,48 @@ fi
 field() { gh pr view "$1" --json "$2" --jq "$3" 2>/dev/null; }
 stop() { echo "STOP $*"; exit 1; }
 now() { date +%H:%M; }
+# 멈추거나 끝날 때 남은 임시 사본을 지운다
+drop_copy() {
+  [ -n "$COPY" ] || return 0
+  git worktree remove --force "$COPY" >/dev/null 2>&1 || rm -rf "$COPY"
+  git worktree prune
+  COPY=""
+}
+trap drop_copy EXIT
+
+# PR 이 바꾼 파일 가운데 PR 이 갈라진 뒤 base 에서도 바뀐 파일. 한 줄에 하나다. 판정하지 못하면 1 로 끝난다
+overlap_files() {
+  local mb mine theirs
+  git fetch -q origin "$base" || return 1
+  if ! git cat-file -e "$ph^{commit}" 2>/dev/null; then
+    if [ "$cross" = false ]; then git fetch -q origin "$BRANCH"; else git fetch -q origin "refs/pull/$n/head"; fi
+  fi
+  git cat-file -e "$ph^{commit}" 2>/dev/null || return 1
+  mb=$(git merge-base "origin/$base" "$ph") || return 1
+  mine=$(git diff --name-only "$mb" "$ph") || return 1
+  theirs=$(git diff --name-only "$mb" "origin/$base") || return 1
+  comm -12 <(printf '%s\n' "$mine" | sort) <(printf '%s\n' "$theirs" | sort) | sed '/^$/d'
+}
+
+# origin/BASE 에 PR HEAD 를 merge 한 임시 사본에서 --verify-merged 명령을 돌린다. 실패하면 멈춘다
+verify_merged() {
+  local parent bh now_bh code
+  mkdir -p "$COPY_DIR" && parent=$(cd "$COPY_DIR" && pwd -P) || stop "$n 사본 폴더를 만들지 못했다: $COPY_DIR"
+  bh=$(git rev-parse -q --verify "origin/$base") || stop "$n origin/$base 를 읽지 못했다"
+  COPY="$parent/merge-queue-pr$n-$$"
+  git worktree add -q --detach "$COPY" "$bh" >/dev/null 2>&1 || stop "$n 사본을 만들지 못했다: $COPY"
+  git -C "$COPY" -c core.hooksPath=/dev/null -c user.name=merge-queue -c user.email=merge-queue@localhost \
+    merge -q --no-edit "$ph" >/dev/null 2>&1 || stop "$n base($base) 와 합치면 충돌한다"
+  echo "$(now) $n 합친 사본에서 검사: $VERIFY_MERGED"
+  (cd "$COPY" && TMPDIR="$REAL_TMP" GH_HOST="$API_HOST" bash -c "$VERIFY_MERGED" verify-merged "$COPY")
+  code=$?
+  drop_copy
+  [ "$code" = 0 ] || stop "$n 합친 사본의 검사 실패(종료 코드 $code)"
+  # 검사하는 동안 base 가 움직였으면 검사한 조합과 머지할 조합이 다르다
+  now_bh=$(git ls-remote origin "refs/heads/$base" | cut -f1)
+  [ "$now_bh" = "$bh" ] || stop "$n 검사하는 동안 base($base) 가 움직였다. 다시 돌린다"
+  echo "$(now) $n 합친 사본의 검사 통과"
+}
 
 # 쉼표로 이은 이름을 jq 배열 리터럴로 바꾼다
 req_json() {
@@ -228,6 +292,16 @@ for item in "${ITEMS[@]}"; do
 
   echo "$(now) $n fails=$f threads=$t mergeable=$m"
   if [ "$f" != 0 ] || [ "$t" != 0 ] || [ "$m" != MERGEABLE ]; then stop "$n"; fi
+
+  if [ "$OVERLAP" = 1 ]; then
+    ov=$(overlap_files) || stop "$n 겹침 판정 실패(PR HEAD 나 base 를 받지 못했다)"
+    if [ -n "$ov" ]; then
+      list=$(printf '%s' "$ov" | tr '\n' ' ')
+      [ -n "$VERIFY_MERGED" ] || stop "$n 겹침: $list"
+      echo "$(now) $n 겹침: $list"
+      verify_merged
+    fi
+  fi
 
   if [ -n "$before" ]; then
     echo "$(now) $n 머지 전 명령: $before"
