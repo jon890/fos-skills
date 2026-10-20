@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.21.0
+
+`cleanup-sweep.py` 가 브랜치 없는 워크트리와 하위 에이전트 워크트리를 정리하지 못해 남던 두 경우를 다룬다.
+gersang-lab 전용 `sweep-merged.sh` 의 두 부분을 일반화한 것이다.
+
+- 저장소 밖 detached 워크트리: worker 가 기준선 비교로 임시 폴더에 만들고 남긴 것이다. 커밋 안 된 변경, 쓰는 프로세스, Orca 터미널이 없고 HEAD 가 원격 추적 브랜치에 있으면 `git worktree remove` 로 지운다. 저장소 폴더 안의 detached 워크트리는 그대로 둔다
+- 목록을 읽기 전에 `git worktree prune` 을 돌린다. dry-run 은 `-n` 으로 지울 등록만 낸다
+- 하위 에이전트 워크트리(`--agent-glob`, 기본 `agent-*`): 모든 Run 범위를 읽지 못하면 Orca 가 띄운 빈 셸 터미널을 「확인하지 못한 터미널」 로 보고 경로를 건너뛰었다. 그 경로를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 다른 Run 의 것으로 세지 않는다. 다른 Run 의 worker 로 확인된 터미널은 그대로 건너뛴다
+- `references/cleanup.md` 의 「스크립트가 다루는 것」 에 두 경우를 더했다
+- 지움, dry-run, 변경과 프로세스와 터미널과 원격에 없는 HEAD 로 남김, 저장소 안은 남김, prune, 빈 셸 닫기, 자식 있는 셸과 glob 밖은 남김, glob 옵션, 확인된 다른 Run 터미널은 남김을 테스트했다
+
 ## 1.20.0
 
 draft PR 로 CI 를 미루는 저장소에서, 파일이 겹치는 PR 을 함께 ready 로 바꿔 CI 를 두 번 돌리던 일을 스크립트로 막는다.
