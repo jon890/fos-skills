@@ -224,9 +224,19 @@ for item in "${ITEMS[@]}"; do
 
   req=$REQUIRED
   if [ -z "$req" ]; then
-    req=$(gh api --hostname "$API_HOST" "repos/$OWNER/$REPO/rules/branches/$base" \
-      --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique | join(",")' 2>/dev/null) \
-      || stop "$n 필수 체크 규칙 조회 실패. --required 로 준다"
+    rules_err=$(mktemp)
+    if req=$(gh api --hostname "$API_HOST" "repos/$OWNER/$REPO/rules/branches/$base" \
+      --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique | join(",")' 2>"$rules_err"); then
+      :
+    elif grep -q 'HTTP 403' "$rules_err" && grep -q 'Upgrade to GitHub Pro' "$rules_err"; then
+      # 무료 플랜의 비공개 저장소는 규칙 API 를 읽을 수 없다. 필수 체크 목록이 없는 것으로 다룬다
+      echo "$(now) $n 경고: 이 플랜은 저장소 규칙을 읽을 수 없다(HTTP 403, 플랜 제한). 필수 체크 목록을 비어 있는 것으로 본다"
+      req=""
+    else
+      rm -f "$rules_err"
+      stop "$n 필수 체크 규칙 조회 실패. --required 로 준다"
+    fi
+    rm -f "$rules_err"
   fi
   if [ -z "$req" ]; then
     [ "$UP_TO_DATE" = 0 ] || stop "$n 필수 체크 목록이 비어 있어 --require-up-to-date 를 쓸 수 없다. --required 로 준다"

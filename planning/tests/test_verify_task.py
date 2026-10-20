@@ -67,6 +67,16 @@ class TaskRulesTest(unittest.TestCase):
         verify.check_phase_prompt(Path("phase.md"), self.prompt(work, command), out, entries, self.repo)
         return out
 
+    def test_cd_prefixed_script_matches_changed_file_in_subproject(self):
+        # financial-workbench phase-05: `cd <dir> && bash scripts/x.sh` 의 인자가 변경 파일 경로와 달라 위반으로 막혔던 재현이다.
+        entries = [("financial-workbench/scripts/check-compose.sh", "신규")]
+        work = "### 1. `financial-workbench/scripts/check-compose.sh` 추가\n실행: `scripts/check-compose.sh`"
+        command = "cd financial-workbench && bash scripts/check-compose.sh"
+        self.assertFalse([i for i in self.inspect(work, command, entries) if "검증할 테스트 파일" in i])
+        # 다른 줄의 cd 는 반영하지 않는다.
+        other = "cd financial-workbench\nbash scripts/check-compose.sh"
+        self.assertTrue([i for i in self.inspect(work, other, entries) if "검증할 테스트 파일" in i])
+
     def test_last_item_can_be_acceptance_evaluation(self):
         entries = [("src/app.py", "신규"), ("tests/test_app.py", "신규")]
         work = "### 1. `src/app.py`\n### 2. `tests/test_app.py`\n정상과 실패 응답을 단언한다.\n### 3. 41종 평가 실행과 기록"

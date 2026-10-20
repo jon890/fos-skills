@@ -3,7 +3,7 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 1.24.0
+## 1.25.0
 
 기다리기, 쉬는 worker 깨우기, Codex worker 의 PR 열기에서 반복된 세 가지 실패를 스크립트로 막는다.
 
@@ -13,6 +13,14 @@
 - `references/launch.md` 의 `SPEC_LINE` 을 `spec-line.py` 로 만들게 바꾸고, `spec-writing.md` 에 `허락:` 줄 형식을 적었다. `templates/spec-common.md` 에 「끝내기」 절을 두고, 게시가 막히면 push 한 뒤 본문 파일 경로를 status 로 보내는 단계를 그 안으로 옮겼다
 - `references/waiting.md` 에 종료 코드 4, `references/replying.md` 에 보낸 직후 `nudge-worker.py` 를 부르는 것과 종료 코드별 다음 행동을 적었다
 - 남은 대기 목록과 판정, 메시지만으로 알아봄, 고아만 종료, Claude 와 Codex 화면의 네 상태 판정, 입력과 재확인 흐름, 허락 줄의 형식들을 테스트했다
+
+## 1.24.0
+
+지시서 브랜치 줄 파싱, 규칙 API 플랜 제한, 보안 리뷰 에이전트 선택을 고친다.
+
+- `make-worktree.sh`: 본문 문장 안의 「브랜치: `x`」 언급을 브랜치로 읽던 문제를 고쳤다. 줄 머리(앞 공백, `-` 목록 기호, `**` 강조 허용)의 `브랜치:` 줄만 읽고, 그런 줄이 둘 이상이면 두 줄을 알리고 종료 코드 2 로 멈춘다
+- `merge-queue.sh`: 무료 플랜 비공개 저장소의 규칙 API 가 내는 403(「Upgrade to GitHub Pro」)을 경고로 알리고 필수 체크 목록을 빈 것으로 다룬다. 인증, 네트워크, 404 와 다른 403 은 지금처럼 멈춘다. 기존 출력 계약의 변경이며 코디네이터가 승인했다
+- `agent-selection.md`: 공격 경로를 재현하는 보안 리뷰는 Claude 에 맡기는 행과 근거(fos-home-infra PR #228 에서 Codex 가 보안 요청 제한으로 막힌 사례)를 더했다
 
 ## 1.23.0
 

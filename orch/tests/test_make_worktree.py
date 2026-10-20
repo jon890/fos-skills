@@ -32,7 +32,7 @@ class MakeWorktreeTest(unittest.TestCase):
         self.git("-C", str(self.repo), "commit", "-q", "--allow-empty", "-m", "init")
         self.git("-C", str(self.repo), "push", "-q", "-u", "origin", "main")
         self.spec = self.tmp / "spec-x.md"
-        self.spec.write_text("# 지시서\n\n대상 저장소: `owner/repo`. 브랜치: `feature/x`(최신 origin/main 에서).\n")
+        self.spec.write_text("# 지시서\n\n대상 저장소: `owner/repo`.\n브랜치: `feature/x`(최신 origin/main 에서).\n")
 
     def git(self, *args):
         return subprocess.run(["git", *args], check=True, capture_output=True, text=True, env=self.env).stdout.strip()
@@ -106,6 +106,22 @@ class MakeWorktreeTest(unittest.TestCase):
         out = self.make(code=2)
         self.assertIn("브랜치", out)
         self.assertFalse((self.repo / "worktrees").exists())
+
+    def test_mention_inside_a_sentence_is_not_the_branch_line(self):
+        self.spec.write_text("# 지시서\n\n배경: 앞 작업은 브랜치: `feature/old` 에서 했다.\n\n- **브랜치**: `feature/x`\n")
+        self.make()
+        self.assertEqual("feature/x", self.git("-C", str(self.repo / "worktrees" / "repo" / "x"), "branch", "--show-current"))
+
+    def test_two_line_head_branch_lines_are_a_usage_error(self):
+        self.spec.write_text("# 지시서\n\n브랜치: `feature/a`\n  - 브랜치: `feature/b`\n")
+        out = self.make(code=2)
+        self.assertIn("feature/a", out)
+        self.assertIn("feature/b", out)
+        self.assertFalse((self.repo / "worktrees").exists())
+
+    def test_only_a_mention_inside_a_sentence_is_a_usage_error(self):
+        self.spec.write_text("# 지시서\n\n앞 작업은 브랜치: `feature/old` 에서 했다.\n")
+        self.make(code=2)
 
     def test_existing_remote_branch_is_refused(self):
         self.git("-C", str(self.repo), "push", "-q", "origin", "main:feature/x")
