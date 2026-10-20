@@ -228,6 +228,26 @@ class TestManualAndFilterTerm(Base):
         self.assertPassed("메일함 필터링 조건을 추가하고 직접 확인한다.\n")
 
 
+class TestCompareTerm(Base):
+    """「견주다」 활용형은 막고, 「견」 이 든 다른 말은 막지 않는다."""
+
+    def test_phrases_are_caught(self):
+        for text, term in (("평가 세트로 다시 견준다.", "견준다"),
+                           ("기준선에 견줄 만한 값이 없다.", "견줄"),
+                           ("결과를 기준과 견주어 본다.", "견주"),
+                           ("두 값을 견주는 표를 만든다.", "견주")):
+            with self.subTest(text=text):
+                self.assertCaught(text + "\n", term)
+
+    def test_ordinary_words_pass(self):
+        for text in ("견적을 받는다.", "의견을 준다.", "의견 주세요.", "견본을 만든다.", "견고하게 짠다."):
+            with self.subTest(text=text):
+                self.assertPassed(text + "\n")
+
+    def test_recommended_terms_pass(self):
+        self.assertPassed("평가 세트로 다시 측정한다. 두 결과를 비교한다.\n")
+
+
 class TestVersionTerm(Base):
     """version 의 뜻으로 쓴 「판」 은 막고, 다른 낱말 속의 「판」 은 막지 않는다.
 
