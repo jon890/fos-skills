@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.15.0
+
+`orca orchestration check --wait` 를 셸의 `&` 로 띄워 완료 알림을 받지 못하던 문제를, 산문 대신 PreToolUse hook 으로 막는다.
+
+- 새 `hooks/block-background-wait.py`: 한 줄에 `orchestration check` 와 `--wait` 가 함께 있고 `nohup`, `setsid`, `disown` 이나 백그라운드 `&` 가 있으면 거부하고 `run_in_background` 를 안내한다
+- `hooks/hooks.json` 을 플러그인 매니페스트의 `hooks` 가 가리킨다. 근거는 저장소 ADR-005 가 소유한다
+- `references/waiting.md` 의 산문을 hook 이 막는다는 사실로 바꿨다
+- 백그라운드 대기 다섯 꼴과 통과해야 하는 일곱 꼴, 매니페스트 연결을 테스트했다
+
 ## 1.14.0
 
 지시서를 띄우기 전에 지시서끼리 담당 파일이 겹치는지, 코디네이터 소유 파일을 건드리는지, 가리킨 함수가 있는지, 금지 명령을 요구하는지를 잡지 못해 worker 가 ask 로 멈추거나 뒤 PR 이 충돌하던 문제를 검사기로 막는다.

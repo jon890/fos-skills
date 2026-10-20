@@ -24,6 +24,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/cleanup-sweep.py`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서를 정리한다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다
 - `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/goal-progress.py`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
+- `hooks/`: 플러그인이 싣는 PreToolUse 훅. `check --wait` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 
 ```bash
