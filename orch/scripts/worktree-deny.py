@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령의 deny 규칙을 더한다.
+"""워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령과 PR 머지의 deny 규칙을 더한다.
 
 한 머신에서 worker 여럿이 같은 이름의 프로세스와 같은 브라우저를 쓴다.
 하위 에이전트가 `pkill -f 'node server/local-host.cjs'` 로 자기 호스트를 끄다 다른 worker 의 호스트까지 껐고,
 `browser-driver reset` 이 다른 worker 의 탭을 닫았다(실측 5건). 지시서 문장으로는 하위 에이전트까지 닿지 않아
 권한 규칙으로 막는다. 자기가 띄운 프로세스는 PID 로 `kill` 한다.
+`gh pr merge` 도 막는다. 머지는 코디네이터가 하는데, 지시서에 「머지하지 않는다」 를 적어도 worker 가 PR 다섯 개를
+직접 머지했다(실측). 코디네이터는 기본 체크아웃에서 `merge-queue.sh` 로 머지하므로 이 규칙에 닿지 않는다.
 
 사용법:
     worktree-deny.py <워크트리>
@@ -22,7 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DENY = ("Bash(pkill:*)", "Bash(killall:*)", "Bash(browser-driver reset:*)")
+DENY = ("Bash(pkill:*)", "Bash(killall:*)", "Bash(browser-driver reset:*)", "Bash(gh pr merge:*)")
 REL = ".claude/settings.local.json"
 
 
