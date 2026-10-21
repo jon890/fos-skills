@@ -475,6 +475,41 @@ class MergeQueueTest(unittest.TestCase):
         r = self.run_queue({}, "--nope", "1")
         self.assertEqual(2, r.returncode)
 
+    def test_verify_when_and_docs_glob_need_verify_merged(self):
+        for args in (["--verify-merged-when", "code"], ["--verify-merged-when", "always"], ["--docs-glob", "*.md"]):
+            with self.subTest(args=args):
+                r = self.run_queue({}, *args, "1")
+                self.assertEqual(2, r.returncode)
+                self.assertIn("--verify-merged 와 함께 쓴다", r.stderr)
+        r = self.run_queue({}, "--verify-merged", "true", "--verify-merged-when", "sometimes", "1")
+        self.assertEqual(2, r.returncode)
+
+    def test_hold_stops_the_queue_by_default(self):
+        failed = [{"status": "COMPLETED", "conclusion": "FAILURE"}]
+        r = self.run_queue({"1": self.pr(statusCheckRollup=failed), "2": self.pr(headRefName="b")}, "1", "2")
+        self.assertEqual(1, r.returncode)
+        self.assertNotIn("pr merge 2", self.log.read_text())
+        self.assertFalse(self.sweep_log.exists())
+
+    def test_continue_on_hold_merges_the_rest_and_reports_held(self):
+        failed = [{"status": "COMPLETED", "conclusion": "FAILURE"}]
+        state = {"1": self.pr(statusCheckRollup=failed), "2": self.pr(headRefName="b", baseRefName="develop"),
+                 "3": self.pr(statusCheckRollup=failed)}
+        r = self.run_queue(state, "--continue-on-hold", "1", "2", "3")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("STOP 1 실패한 체크 1 개", r.stdout)
+        self.assertIn("1 보류. 다음 PR 로 간다", r.stdout)
+        self.assertIn("pr merge 2 --merge", self.log.read_text())
+        self.assertIn("QUEUE-HELD 1 3", r.stdout)
+        self.assertNotIn("QUEUE-DONE", r.stdout)
+        # 머지된 PR 이 있으니 정리는 돈다. base 는 마지막으로 읽은 PR(3) 의 것이다
+        self.assertIn("--base main --apply", self.sweep_log.read_text())
+
+    def test_continue_on_hold_with_nothing_held_is_done(self):
+        r = self.run_queue({"1": self.pr()}, "--continue-on-hold", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("QUEUE-DONE", r.stdout)
+
 
 @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "jq 와 bash 가 필요하다")
 class MergeQueueOverlapTest(unittest.TestCase):
@@ -516,6 +551,7 @@ class MergeQueueOverlapTest(unittest.TestCase):
 
     def write(self, files, message):
         for name, text in files.items():
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
             (self.repo / name).write_text(text)
         self.git("add", "-A")
         self.git("commit", "-q", "-m", message)
@@ -599,6 +635,56 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.assertIn("합치면 충돌한다", r.stdout)
         self.assertFalse(self.merged())
         self.assertEqual(1, self.worktree_count())
+
+    def test_verify_when_code_checks_code_pr_without_overlap(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--verify-merged", "exit 4", "--verify-merged-when", "code")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("합친 사본의 검사 실패(종료 코드 4)", r.stdout)
+        self.assertNotIn("겹침", r.stdout)
+        self.assertFalse(self.merged())
+        self.assertEqual(1, self.worktree_count())
+
+    def test_docs_only_pr_skips_verify_even_with_overlap(self):
+        self.branches({"docs/a.md": "feat\n"}, {"docs/a.md": "main\n"})
+        r = self.run_queue("--verify-merged", "exit 1", "--docs-glob", "docs/*,*.txt")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 겹침: docs/a.md", r.stdout)
+        self.assertIn("문서만 바꿨다", r.stdout)
+        self.assertTrue(self.merged())
+
+    def test_docs_glob_must_cover_every_changed_file(self):
+        self.branches({"docs/a.md": "feat\n", "c.py": "c\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--verify-merged", "exit 5", "--verify-merged-when", "code", "--docs-glob", "docs/*")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("검사 실패(종료 코드 5)", r.stdout)
+
+    def test_docs_only_pr_without_overlap_merges_in_code_mode(self):
+        self.branches({"README.md": "x\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--verify-merged", "exit 1", "--verify-merged-when", "code", "--docs-glob", "*.md")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertTrue(self.merged())
+
+    def test_verify_when_always_checks_docs_only_pr_too(self):
+        self.branches({"README.md": "x\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--verify-merged", "exit 6", "--verify-merged-when", "always", "--docs-glob", "*.md")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("검사 실패(종료 코드 6)", r.stdout)
+
+    def test_copies_left_by_dead_runs_are_removed_at_start(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"b.txt": "b2\n"})
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        real = Path(os.path.realpath(self.tmp))
+        dead, alive = real / f"merge-queue-pr9-{gone.pid}", real / f"merge-queue-pr8-{os.getpid()}"
+        for copy in (dead, alive):
+            self.git("worktree", "add", "-q", "--detach", str(copy), "main")
+        r = self.run_queue("--stop-on-overlap")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn(f"남긴 사본을 지웠다: {dead}", r.stdout)
+        self.assertFalse(dead.exists())
+        self.assertTrue(alive.exists())
+        self.assertEqual(2, self.worktree_count())
 
     def test_copy_dir_is_relative_to_repo(self):
         self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"a.txt": "main\n1\n2\n3\n4\n5\n"})
