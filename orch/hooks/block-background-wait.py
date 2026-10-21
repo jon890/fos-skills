@@ -19,12 +19,13 @@ import json
 import re
 import sys
 
+from shell_text import QUOTED, strip_heredocs
+
 # wait-important.py 는 안에서 check --wait 를 부르므로 같은 규칙으로 막는다
 CHECK_WAIT = re.compile(r"\borchestration\s+check\b.*\s--wait\b|\bwait-important\b")
 DETACH = re.compile(r"(^|[\s;|&(])(nohup|setsid|disown)\b")
 # 리다이렉션(`2>&1`, `>&2`, `&>`, `&>>`)과 `&&` 를 지운 뒤 남은 `&` 가 백그라운드 실행이다
 NOT_BACKGROUND = re.compile(r"\d*>&\d*-?|&>>?|&&|\|&")
-QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 
 REASON = (
     "orch: `orca orchestration check --wait` 와 `wait-important.py` 를 셸의 `&` 나 nohup 으로 띄우지 않는다. "
@@ -34,7 +35,8 @@ REASON = (
 
 
 def backgrounded_wait(command: str) -> bool:
-    for line in command.replace("\\\n", " ").splitlines():
+    # heredoc 본문은 명령이 아니라 입력이라 보지 않는다
+    for line in strip_heredocs(command.replace("\\\n", " ")).splitlines():
         if not CHECK_WAIT.search(line):
             continue
         # 따옴표 안의 `&` 는 인자라 백그라운드 실행이 아니다

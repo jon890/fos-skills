@@ -43,6 +43,8 @@ class BlockBackgroundWaitTest(unittest.TestCase):
             "sleep 5 &",
             'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID"',
             'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" 2>/dev/null && echo woke',
+            # heredoc 본문은 명령이 아니다. 문서를 고치는 스크립트에 이 문구가 든 일이 있었다
+            "python3 - <<'EOF'\ntext = 'check --wait 를 셸의 & 나 nohup 으로 띄우는 호출'\norchestration check --wait &\nEOF",
         ):
             with self.subTest(command=command):
                 self.assertEqual("pass", decide(command))
