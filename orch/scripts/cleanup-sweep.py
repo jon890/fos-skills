@@ -79,7 +79,7 @@ PR 찾기 (브랜치마다):
 남은 프로세스 끄기 (--kill-holders):
     `worker-stop` 이 `process=none` 을 돌려줘도 그 worker 의 claude 세션, 로그인 셸, 플러그인 node, Gradle 같은
     프로세스가 그 경로를 작업 디렉터리로 쥐고 남아 `remove-worktree.sh` 가 매번 거부한다.
-    이 옵션은 아래가 모두 참일 때만 그 프로세스를 TERM, HUP, KILL 순으로 끈다. 신호마다 --wait 초(최소 1초) 기다리고,
+    이 옵션은 아래가 모두 참일 때만 그 프로세스를 TERM, HUP, KILL 순으로 끈다. 신호마다 --wait 초(최소 --poll-interval 초) 기다리고,
     그때도 그 경로를 쓰는 pid 만 다시 골라 다음 신호를 보낸다. 로그인 셸은 TERM 을 무시해 HUP 이 필요하다.
       - PR 이 MERGED 다
       - --run 으로 찾은 그 경로의 worker 가 하나 이상이고, 모두 workerState 가 succeeded 나 fenced 다
@@ -434,13 +434,14 @@ def close_terminals(handles, apply, log, what="터미널"):
             log(f"  {what}을 닫을 것 {handle}")
 
 
-def wait_free(path, seconds):
+def wait_free(path, seconds, interval=1):
     """그 경로를 쓰는 프로세스가 빠지기를 기다린다. 남은 pid 목록을 돌려준다."""
     pids = holder_pids(path)
-    for _ in range(seconds):
-        if not pids:
-            break
-        time.sleep(1)
+    remaining = seconds
+    while pids and remaining > 0:
+        delay = min(interval, remaining)
+        time.sleep(delay)
+        remaining -= delay
         pids = holder_pids(path)
     return pids
 
@@ -514,7 +515,7 @@ def targets(path, nested, log=None):
     return chosen
 
 
-def stop_holders(path, nested, seconds, log):
+def stop_holders(path, nested, seconds, log, interval=1):
     """`targets` 가 고른 프로세스를 TERM, HUP, KILL 순으로 끈다. 그 경로를 아직 쓰는 pid 목록을 돌려준다.
 
     신호마다 대상을 다시 고른다. 앞 신호로 빠진 pid 가 다른 프로세스로 재사용돼도 닿지 않는다.
@@ -525,7 +526,7 @@ def stop_holders(path, nested, seconds, log):
             break
         log(f"  {sig} 를 보낸다: {describe(pids)}")
         run([KILL, f"-{sig}", *pids])
-        wait_free(path, max(seconds, 1))
+        wait_free(path, max(seconds, interval), interval)
         pids = targets(path, nested)
     return holder_pids(path)
 
@@ -689,21 +690,21 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         delete_specs(specs_dir, name, False, log)
         return
 
-    pids = wait_free(path, args.wait)
+    pids = wait_free(path, args.wait, args.poll_interval)
     if pids and by_pr and only_idle_shells(pids):
         # worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 목록을 다시 읽어 그 터미널을 닫는다
         handles = [h for h in terminals_at(live_terminals(), path) if h not in (args.foreign or set())]
         if handles:
             log(f"  남은 프로세스 {len(pids)} 개가 유휴 셸뿐이다. Orca 터미널을 닫고 다시 시도한다")
             close_terminals(handles, True, log, "유휴 셸 터미널")
-            pids = wait_free(path, args.wait)
+            pids = wait_free(path, args.wait, args.poll_interval)
     if pids and args.kill_holders:
         blocker = kill_blocker(mine, path, by_pr)
         if blocker:
             log(f"  남은 프로세스를 끄지 않는다: {blocker}")
         else:
             nested = [other for other, _ in worktrees(repo) if other.startswith(path + "/")]
-            pids = stop_holders(path, nested, args.wait, log)
+            pids = stop_holders(path, nested, args.wait, log, args.poll_interval)
     hooks = session_end_hooks(pids)
     if hooks:
         log(f"  OMC session-end hook {', '.join(hooks)} 은 끄지 않는다. remove-worktree.sh 가 끝날 때까지 기다린다")
@@ -777,11 +778,15 @@ def main(argv=None):
     parser.add_argument("--kill-holders", action="store_true")
     parser.add_argument("--agent-glob", default="agent-*")
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--wait", type=int, default=5, help="터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 기본 5")
+    parser.add_argument("--wait", type=float, default=5, help="터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 기본 5")
+    parser.add_argument("--poll-interval", type=float, default=1, help="프로세스 확인 간격(초). 기본 1")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
+    if not (0 <= args.wait < float("inf")) or not (0 < args.poll_interval < float("inf")):
+        print("cleanup-sweep: --wait 는 0 이상, --poll-interval 은 0 초과의 유한한 수다", file=sys.stderr)
+        return 2
     repos = list(dict.fromkeys(Path(r).resolve() for r in args.repo))
 
     def log(line):

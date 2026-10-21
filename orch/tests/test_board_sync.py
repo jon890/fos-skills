@@ -15,6 +15,24 @@ SPEC.loader.exec_module(bs)
 
 
 class BoardSyncTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.bin = Path(tempfile.mkdtemp()).resolve()
+        cls.addClassCleanup(shutil.rmtree, cls.bin, True)
+        cls.gh = cls.bin / "gh"
+        cls.gh.write_text(textwrap.dedent("""\
+            #!/usr/bin/env python3
+            import json, sys
+            # gh runs in the current test's --repo directory.
+            st = json.load(open("state.json"))
+            a = sys.argv[1:]
+            if a[:2] == ["pr", "view"] and a[2] in st:
+                print(st[a[2]])
+            else:
+                sys.exit(1)
+            """))
+        cls.gh.chmod(0o755)
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -23,19 +41,7 @@ class BoardSyncTest(unittest.TestCase):
         self.board_bin = self.tmp / "board.py"
         self.board_bin.write_text(f"import json,sys\nopen({str(self.calls)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n")
         self.state_file = self.tmp / "state.json"
-        gh = self.tmp / "gh"
-        gh.write_text(textwrap.dedent(f"""\
-            #!/usr/bin/env python3
-            import json, sys
-            st = json.load(open({str(self.state_file)!r}))
-            a = sys.argv[1:]
-            if a[:2] == ["pr", "view"] and a[2] in st:
-                print(st[a[2]])
-            else:
-                sys.exit(1)
-            """))
-        gh.chmod(0o755)
-        bs.GH = str(gh)
+        bs.GH = str(self.gh)
         self.board = self.tmp / "board.json"
 
     def sync(self, items, *extra):

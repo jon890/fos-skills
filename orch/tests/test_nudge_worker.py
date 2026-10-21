@@ -124,15 +124,20 @@ def receipt(*stages, observation="observed", request="req_1"):
 
 
 class NudgeFlowTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.bin = Path(tempfile.mkdtemp())
+        cls.addClassCleanup(shutil.rmtree, cls.bin)
+        cls.orca = cls.bin / "orca"
+        cls.orca.write_text(FAKE_ORCA)
+        cls.orca.chmod(cls.orca.stat().st_mode | stat.S_IEXEC)
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp)
-        orca = self.tmp / "orca"
-        orca.write_text(FAKE_ORCA)
-        orca.chmod(orca.stat().st_mode | stat.S_IEXEC)
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
-        self.env = dict(os.environ, ORCA=str(orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log))
+        self.env = dict(os.environ, ORCA=str(self.orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log))
 
     def run_nudge(self, replies):
         self.state.write_text(json.dumps({"replies": replies}))
