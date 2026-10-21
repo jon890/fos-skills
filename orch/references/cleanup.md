@@ -20,8 +20,10 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 102 103!
 ```
 
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.claude/orch-finish.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
+**머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
+`--continue-on-hold` 를 주면 보류한 PR 의 `STOP` 줄만 찍고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다. 서로 무관한 PR 여럿을 한 번에 걸 때 쓴다. 뒤 PR 이 앞 PR 에 기대면 쓰지 않는다.
 
 - 체크를 보기 전에 PR HEAD 를 고정하고, 머지 직전에 PR HEAD 와 원격 브랜치 HEAD 가 그 값과 같은지 본다. 검사나 머지 전 명령이 도는 사이에 push 된 커밋이 검사 없이 머지되는 것을 막는다
 - **체크가 끝나기를 기다리는 조건은 「대기 0」이 아니라 「필수 체크가 모두 나타났고 대기 0」이다.** PR 을 연 직후에는 체크 목록이 비어 있어, 대기 0 만 보면 체크가 시작도 하기 전에 머지를 시도한다. 필수 체크 이름은 `--required a,b,c` 로 주거나, 주지 않으면 저장소 규칙(`rules/branches/<base>` 의 `required_status_checks`)에서 읽는다. 예전 방식의 브랜치 보호 규칙은 규칙 조회에 나오지 않으므로 `--required` 로 준다. 목록을 끝내 알 수 없으면 경고를 찍고 지금 있는 체크만 기다린다. 무료 플랜의 비공개 저장소는 규칙 API 가 403(플랜 제한)을 내는데, 이때도 경고를 찍고 목록을 빈 것으로 다룬다. 인증, 네트워크, 404 는 멈춘다
@@ -34,6 +36,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 102 103!
 코디네이터가 6단계 검증을 마친 PR 을 `ci-ready.py` 로 ready 로 바꿔 CI 를 시작한다. 그다음 머지 큐에 넣는다.
 겹친 PR 둘을 함께 ready 로 바꾸면 앞 PR 이 머지된 뒤 뒤 PR 의 CI 를 base 와 합쳐 다시 돌려야 한다.
 스크립트는 이미 ready 인 PR 과 파일이 겹치거나 base 와 충돌하는 PR 을 보류하고 이유를 낸다.
+바뀐 파일은 GraphQL 이 아니라 REST 로 300 개까지 읽는다. PR 이 많은 저장소에서 GraphQL 은 2차 한도에 걸린다.
 판정과 종료 코드는 스크립트 머리 주석이 소유한다.
 
 ```bash
@@ -84,7 +87,12 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to
 | `--stop-on-overlap` | `STOP <PR> 겹침: <파일>` 로 멈춘다 | 합친 상태를 코디네이터가 따로 확인한다 |
 | `--verify-merged CMD` | `origin/<base>` 에 PR HEAD 를 merge 한 임시 사본에서 `CMD` 를 돌려 0 이면 머지한다 | 오버레이가 검사 명령을 정해 두었다 |
 
+**파일이 겹치지 않아도 합치면 깨질 수 있다.** 두 PR 이 각자 통과했지만 합치니 같은 상한을 함께 넘은 일이 있었다.
+그런 저장소는 오버레이가 `--verify-merged-when code` 를 정한다. 문서만 바꾼 PR 까지 검사하려면 `always` 다. 기본 `overlap` 은 겹칠 때만 검사한다.
+`--docs-glob 'docs/*,*.md'` 를 주면 바꾼 파일이 모두 그 glob 에 맞는 PR 은 `overlap` 과 `code` 에서 합친 사본 검사 없이 머지한다. 문서는 합쳐서 깨질 검사가 없고, 충돌은 `mergeable` 로 이미 걸렀다.
+
 `CMD` 는 사본 경로를 `$1` 로 받고 그 사본 안에서 돈다. 사본은 끝나면 지운다.
+KILL 로 끊겨 지우지 못한 사본(`merge-queue-pr<PR>-<pid>`)은 다음 실행이 시작할 때 그 pid 가 죽었으면 지운다.
 사본을 두는 폴더는 `--copy-dir` 로 준다. 기본은 `TMPDIR` 이다. 저장소 hook 이 `worktrees/` 밖의 워크트리를 막으면 오버레이가 허용된 폴더를 정한다.
 `$VERIFY_CMD` 와 `$COPY_DIR` 은 오버레이의 값이다.
 

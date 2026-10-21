@@ -3,6 +3,18 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.31.0 (2026-10-21)
+
+머지 줄에서 저장소 스크립트에만 있던 장치를 코어로 옮긴다.
+
+- `ci-ready.py`: PR 의 바뀐 파일을 `gh pr view --json files`(GraphQL) 대신 REST(`gh api repos/{owner}/{repo}/pulls/{n}/files --paginate`)로 읽는다. PR 이 많은 저장소에서 GraphQL 이 2차 한도에 걸려 오버레이가 이 조회를 금지했다. 호스트와 저장소는 PR URL 에서 읽고, 300 개까지 비교하며 넘으면 보류한다(전에는 100 개에서 잘려 보류)
+- `merge-queue.sh --verify-merged-when overlap|code|always`: 기본 `overlap` 은 지금처럼 겹칠 때만 합친 사본을 검사한다. `code` 는 문서만 바꾼 PR 이 아니면 늘, `always` 는 모든 PR 을 검사한다. 각자 통과한 두 PR 이 파일은 겹치지 않았는데 합치니 같은 상한을 넘은 일이 있었다
+- `merge-queue.sh --docs-glob`: 바꾼 파일이 모두 glob 에 맞는 PR 은 `overlap` 과 `code` 에서 합친 사본 검사 없이 머지한다
+- `merge-queue.sh --continue-on-hold`: 보류한 PR 의 `STOP` 줄을 찍고 다음 PR 로 간다. 끝 줄은 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다. 기본은 지금처럼 첫 보류에서 멈춘다. PR 하나의 처리를 서브셸로 옮겨 `stop` 이 그 PR 만 끝내게 했다
+- `merge-queue.sh` 가 시작할 때 `--copy-dir` 에서 pid 가 죽은 `merge-queue-pr<PR>-<pid>` 사본을 지운다. EXIT trap 은 KILL 로 끝나면 돌지 못해 사본이 남았다
+- `merge-with-finish.py` 가 `orch-finish.json` 의 `queue` 절(`before`, `required`, `verify_merged`, `verify_merged_when`, `docs_glob`, `method`)로 명령줄에 없는 머지 큐 옵션을 채운다. 명령줄이 우선하고, 모르는 키나 잘못된 값은 마무리를 걸기 전에 사용법 오류로 멈춘다
+- `references/cleanup.md`, `references/overlay.md`, README 에 새 옵션과 `queue` 절을 적었다. 위 동작마다 테스트를 더했다
+
 ## 1.30.0 (2026-10-21)
 
 `finish-pr.py` 가 업무의 중간 PR 이 머지될 때 지시서를 지우던 문제를 고친다.

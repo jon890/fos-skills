@@ -12,7 +12,8 @@
 #   3-1. --stop-on-overlap 이나 --verify-merged 를 주면, PR 이 바꾼 파일과 PR 이 갈라진 뒤 base 에서 바뀐 파일이
 #      겹치는지 본다. 겹치면 --stop-on-overlap 은 겹친 파일을 찍고 멈추고, --verify-merged 는 base 와 합친
 #      임시 사본에서 그 명령을 돌려 0 일 때만 이어 간다. 체크는 PR 기준으로 돌아 같은 파일을 고친 base 와 합친
-#      상태는 아무도 검사하지 않았기 때문이다. 겹치지 않으면 그대로 이어 간다
+#      상태는 아무도 검사하지 않았기 때문이다. 겹치지 않으면 그대로 이어 간다.
+#      --verify-merged-when 으로 겹치지 않아도 검사하게 하고, --docs-glob 에 맞는 문서 PR 은 검사 없이 머지한다
 #   4. 머지 전 명령이 있으면 돌리고, 0 이 아니면 멈춘다(DB 백업 같은 것)
 #   5. 체크를 보기 전에 읽어 둔 HEAD 와 지금 PR HEAD, 원격 브랜치 HEAD 가 모두 같은지 본다.
 #      검사나 머지 전 명령이 도는 사이에 push 된 커밋이 검사 없이 머지되는 것을 막는다
@@ -45,10 +46,20 @@
 #                         돌린다. 사본의 절대경로를 첫 인자($1)로 받는다. 0 이면 이어 가고 아니면 멈춘다.
 #                         합치다 충돌하거나, 검사하는 동안 원격 base 가 움직였으면 멈춘다. 사본은 끝나면 지운다.
 #                         검사 명령은 저장소마다 달라 오버레이가 정한다(예: --verify-merged 'cd "$1" && make test')
+#   --verify-merged-when W  합친 사본 검사를 언제 할지. overlap(기본, 겹칠 때만), code(문서만 바꾼 PR 이 아니면 늘),
+#                         always(모든 PR). 파일이 겹치지 않아도 합쳐서 깨질 수 있다(두 PR 이 각자 통과했지만 합치니
+#                         같은 상한을 함께 넘었다). code 와 always 는 --verify-merged 가 있어야 한다
+#   --docs-glob G1,G2     문서 파일의 glob. PR 이 바꾼 파일이 모두 이것에 맞으면 overlap 과 code 에서 합친 사본 검사 없이
+#                         머지한다. 충돌은 mergeable 로 이미 걸렀다. case 패턴이라 `*` 가 `/` 도 넘는다
+#                         (예: --docs-glob 'docs/*,*.md'). 여러 번 주면 이어 붙인다. --verify-merged 가 있어야 한다
 #   --copy-dir DIR        임시 사본을 둘 폴더. 기본은 TMPDIR(없으면 /tmp). 상대경로는 --repo 기준이다.
 #                         저장소 hook 이 워크트리 위치를 막으면 오버레이가 허용된 폴더를 준다.
 #                         링크를 푼 실경로로 바꿔 쓴다. macOS 의 TMPDIR(/var/folders/...)는 /var 가 /private/var 를
 #                         가리키는 링크라, 실경로를 요구하는 검사가 사본 경로를 거부한다. 검사 명령의 TMPDIR 도 실경로로 준다
+#                         사본 이름은 merge-queue-pr<PR>-<pid> 다. 시작할 때 이 폴더에서 pid 가 죽은 사본을 지운다.
+#                         EXIT trap 은 KILL 로 끝나면 돌지 못해 사본이 남기 때문이다
+#   --continue-on-hold    한 PR 이 조건에 못 미치면 멈추지 않고 STOP 줄을 찍은 뒤 다음 PR 로 간다. 끝에
+#                         `QUEUE-HELD 번호...` 를 찍고 정리를 부른 뒤 종료 코드 1 로 끝난다. 기본은 첫 보류에서 멈춘다
 #   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
 #   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.py 에 넘길 인자. 하나씩 준다
 #                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .omc/specs)
@@ -62,7 +73,7 @@
 # GH_HOST(위 --hostname 과 같은 값)를 받는다.
 # 예: merge-queue.sh 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 #
-# 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤, 2 사용법 오류
+# 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음), 2 사용법 오류
 set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -80,6 +91,10 @@ SWEEP_BASE=""
 SWEEP_ARGS=()
 OVERLAP=0
 VERIFY_MERGED=""
+VERIFY_WHEN=overlap
+DOCS_GLOB=""
+CONTINUE_ON_HOLD=0
+HELD=()
 COPY_DIR=""
 COPY=""
 ITEMS=()
@@ -99,7 +114,10 @@ while [ $# -gt 0 ]; do
     --require-up-to-date) UP_TO_DATE=1; shift ;;
     --stop-on-overlap) OVERLAP=1; shift ;;
     --verify-merged) need "$1" "${2:-}"; VERIFY_MERGED=$2; OVERLAP=1; shift 2 ;;
+    --verify-merged-when) need "$1" "${2:-}"; VERIFY_WHEN=$2; shift 2 ;;
+    --docs-glob) need "$1" "${2:-}"; DOCS_GLOB=${DOCS_GLOB:+$DOCS_GLOB,}$2; shift 2 ;;
     --copy-dir) need "$1" "${2:-}"; COPY_DIR=$2; shift 2 ;;
+    --continue-on-hold) CONTINUE_ON_HOLD=1; shift ;;
     --keep-branch) KEEP_BRANCH=1; shift ;;
     --sweep-arg) need "$1" "${2:-}"; SWEEP_ARGS+=("$2"); shift 2 ;;
     --no-sweep) SWEEP=0; shift ;;
@@ -111,6 +129,11 @@ done
 [ ${#ITEMS[@]} -gt 0 ] || usage
 case "$METHOD" in merge|squash|rebase) ;; *) echo "--method 는 merge, squash, rebase 중 하나다" >&2; exit 2 ;; esac
 case "$CHECK_TIMEOUT" in ''|*[!0-9]*) echo "--check-timeout 은 분 단위 정수다" >&2; exit 2 ;; esac
+case "$VERIFY_WHEN" in overlap|code|always) ;; *) echo "--verify-merged-when 은 overlap, code, always 중 하나다" >&2; exit 2 ;; esac
+if [ -z "$VERIFY_MERGED" ]; then
+  [ "$VERIFY_WHEN" = overlap ] || { echo "--verify-merged-when $VERIFY_WHEN 은 --verify-merged 와 함께 쓴다" >&2; exit 2; }
+  [ -z "$DOCS_GLOB" ] || { echo "--docs-glob 은 --verify-merged 와 함께 쓴다" >&2; exit 2; }
+fi
 case "$REQUIRED" in *[\"\\]*) echo "--required 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
 case "$ALLOW_FAIL" in *[\"\\]*) echo "--allow-fail 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
 # --required 에 든 이름의 실패는 허용할 수 없다
@@ -141,7 +164,19 @@ drop_copy() {
   git worktree prune
   COPY=""
 }
-trap drop_copy EXIT
+BASE_FILE=$(mktemp) || exit 2
+trap 'drop_copy; rm -f "$BASE_FILE"' EXIT
+
+# 앞 실행이 KILL 로 끝나 EXIT trap 이 돌지 못하고 남긴 사본을 지운다. 이름 끝의 pid 가 살아 있으면 다른 큐가 쓰는 중이다
+if [ -d "$COPY_DIR" ]; then
+  for old in "$COPY_DIR"/merge-queue-pr[0-9]*-[0-9]*; do
+    [ -d "$old" ] || continue
+    kill -0 "${old##*-}" 2>/dev/null && continue
+    git worktree remove --force "$old" >/dev/null 2>&1 || rm -rf "$old"
+    echo "$(now) 끝난 실행(pid ${old##*-})이 남긴 사본을 지웠다: $old"
+  done
+  git worktree prune
+fi
 
 # PR 이 바꾼 파일 가운데 PR 이 갈라진 뒤 base 에서도 바뀐 파일. 한 줄에 하나다. 판정하지 못하면 1 로 끝난다
 overlap_files() {
@@ -155,6 +190,23 @@ overlap_files() {
   mine=$(git diff --name-only "$mb" "$ph") || return 1
   theirs=$(git diff --name-only "$mb" "origin/$base") || return 1
   comm -12 <(printf '%s\n' "$mine" | sort) <(printf '%s\n' "$theirs" | sort) | sed '/^$/d'
+}
+
+# PR 이 바꾼 파일이 모두 --docs-glob 에 맞으면 0. 바꾼 파일이 없거나 판정하지 못하면 1
+docs_only() {
+  local mb f rest pat hit any=0
+  mb=$(git merge-base "origin/$base" "$ph") || return 1
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    any=1; hit=0; rest="$DOCS_GLOB,"
+    while [ -n "$rest" ]; do
+      pat=${rest%%,*}; rest=${rest#*,}
+      # shellcheck disable=SC2254
+      [ -n "$pat" ] && case "$f" in $pat) hit=1; break ;; esac
+    done
+    [ "$hit" = 1 ] || return 1
+  done < <(git diff --name-only "$mb" "$ph")
+  [ "$any" = 1 ]
 }
 
 # origin/BASE 에 PR HEAD 를 merge 한 임시 사본에서 --verify-merged 명령을 돌린다. 실패하면 멈춘다
@@ -196,13 +248,15 @@ IS_ALLOWED="(.name // .context) as \$nm | ($(req_json "$ALLOW_FAIL") | any(. == 
 FAILED="[.statusCheckRollup[] | $FAIL_SEL | select($IS_ALLOWED | not)] | length"
 ALLOWED_FAILED="[.statusCheckRollup[] | $FAIL_SEL | select($IS_ALLOWED) | (.name // .context)] | unique | .[]"
 
-for item in "${ITEMS[@]}"; do
+# PR 하나를 머지한다. 서브셸에서 돌아 stop 은 그 PR 만 끝낸다. 정리에 넘길 base 는 BASE_FILE 로 돌려준다
+process_pr() {
+  local item=$1
   n=${item%%:*}
   before=$BEFORE_ALL
   [ "$n" != "$item" ] && before=${item#*:}
 
   st=$(field "$n" state .state)
-  [ "$st" = MERGED ] && { echo "$(now) $n 이미 MERGED"; SWEEP_BASE=${SWEEP_BASE:-$(field "$n" baseRefName .baseRefName)}; continue; }
+  [ "$st" = MERGED ] && { echo "$(now) $n 이미 MERGED"; echo "${SWEEP_BASE:-$(field "$n" baseRefName .baseRefName)}" > "$BASE_FILE"; return 0; }
   [ "$st" = OPEN ] || stop "$n state=${st:-조회 실패}"
 
   # 검사 대상 HEAD 를 체크를 보기 전에 고정한다
@@ -220,7 +274,7 @@ for item in "${ITEMS[@]}"; do
   [ -n "$OWNER" ] && [ -n "$REPO" ] && [ -n "$API_HOST" ] || stop "$n url 조회 실패"
   base=$(field "$n" baseRefName .baseRefName)
   [ -n "$base" ] || stop "$n baseRefName 조회 실패"
-  SWEEP_BASE=$base
+  echo "$base" > "$BASE_FILE"
 
   req=$REQUIRED
   if [ -z "$req" ]; then
@@ -305,11 +359,18 @@ for item in "${ITEMS[@]}"; do
 
   if [ "$OVERLAP" = 1 ]; then
     ov=$(overlap_files) || stop "$n 겹침 판정 실패(PR HEAD 나 base 를 받지 못했다)"
-    if [ -n "$ov" ]; then
-      list=$(printf '%s' "$ov" | tr '\n' ' ')
-      [ -n "$VERIFY_MERGED" ] || stop "$n 겹침: $list"
-      echo "$(now) $n 겹침: $list"
-      verify_merged
+    list=$(printf '%s' "$ov" | tr '\n' ' ')
+    if [ -z "$VERIFY_MERGED" ]; then
+      [ -z "$ov" ] || stop "$n 겹침: $list"
+    else
+      [ -z "$ov" ] || echo "$(now) $n 겹침: $list"
+      if [ "$VERIFY_WHEN" != overlap ] || [ -n "$ov" ]; then
+        if [ "$VERIFY_WHEN" != always ] && [ -n "$DOCS_GLOB" ] && docs_only; then
+          echo "$(now) $n 문서만 바꿨다(--docs-glob). 합친 사본 검사 없이 머지한다"
+        else
+          verify_merged
+        fi
+      fi
     fi
   fi
 
@@ -349,11 +410,23 @@ for item in "${ITEMS[@]}"; do
         fi ;;
     esac
   fi
+}
+
+for item in "${ITEMS[@]}"; do
+  ( trap drop_copy EXIT; process_pr "$item" )
+  code=$?
+  [ -s "$BASE_FILE" ] && SWEEP_BASE=$(cat "$BASE_FILE")
+  [ "$code" = 0 ] && continue
+  # 1 은 그 PR 의 보류다. 그 밖(신호로 끊김 같은 것)은 이어 가지 않는다
+  [ "$CONTINUE_ON_HOLD" = 1 ] && [ "$code" = 1 ] || exit "$code"
+  HELD+=("${item%%:*}")
+  echo "$(now) ${item%%:*} 보류. 다음 PR 로 간다"
 done
-echo QUEUE-DONE
+if [ ${#HELD[@]} -gt 0 ]; then echo "QUEUE-HELD ${HELD[*]}"; else echo QUEUE-DONE; fi
 
 if [ "$SWEEP" = 1 ]; then
   SWEEP_SCRIPT=${CLEANUP_SWEEP:-$SCRIPT_DIR/cleanup-sweep.py}
   python3 "$SWEEP_SCRIPT" --repo "$PWD" --base "${SWEEP_BASE:-main}" --apply ${SWEEP_ARGS[@]+"${SWEEP_ARGS[@]}"} \
     || echo "경고: cleanup-sweep.py 가 실패했다. 머지 결과는 그대로다"
 fi
+[ ${#HELD[@]} -eq 0 ] || exit 1
