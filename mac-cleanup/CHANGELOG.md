@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.8.0
+
+`rmi=` 가 `repo:tag` 로 조회되지 않는 이미지를 이미지 ID 로 내도록 고쳤다.
+
+- 이름이 `repo:tag@digest` 로 저장된 이미지는 `docker images` 가 태그를 보여 줘도 `docker rmi repo:tag` 가 `No such image` 로 실패했다. 실측 사례는 `ghcr.io/actions/actions-runner:2.338.0` 이다. `docker_images.py` 가 `docker image inspect <repo:tag>` 의 종료 코드로 조회 여부를 확인하고, 조회되지 않으면 `rmi=` 에 짧은 이미지 ID 를 낸다
+- 시간 초과나 docker 실행 실패는 확인하지 못한 것이므로 기존처럼 `repo:tag` 를 낸다. 확인하지 못한 것을 ID 로 바꾸면 태그가 여럿인 이미지가 `-f` 없이 거절되기 때문이다
+- `rmi_target` 에 `resolves` 인자를 더했다(기본값 `True`). 기존 호출과 기존 테스트의 결과는 그대로다
+- `targets.md` 「Docker」 에 조회되지 않는 이미지의 처리와 실측 사례를 적었다
+- `tests/test_parsers.py` 에 조회 실패 시 ID, 시간 초과 시 `repo:tag` 테스트를 더했다
+
 ## 1.7.0
 
 Colima 의 `fstrim` 을 결과를 재고 재시도하는 스크립트로 옮겼다.
