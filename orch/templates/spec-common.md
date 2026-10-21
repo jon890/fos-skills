@@ -6,6 +6,7 @@
 - 브랜치 이름을 바꾸지 않는다. push 는 `git push -u origin HEAD` 로 한다.
 - 먼저 {{READ_FIRST}} 를 읽는다.
 - 커밋은 관심사별로 나눈다. 제목 형식은 {{COMMIT_FORMAT}} 이다. 코드를 고친 뒤 `{{FORMAT_CMD}}` 를 돌린다.
+- 커밋 메시지 끝에는 세션이 받은 attribution 지침(`Co-Authored-By` 줄)을 그대로 붙인다. 모델 이름은 이 파일에 적지 않는다. 지침이 없으면 그 줄을 붙이지 않는다.
 - 구현이 docs 계약과 달라지면 같은 커밋에서 그 문서를 고친다. 고치기 전에 ask 로 알린다.
 - 끝까지 진행하고 판단이 필요한 것만 ask 로 묻는다. 검증 명령(`{{VERIFY_CMD}}`)을 실제로 실행한다.
 - 파일 수정은 `sed -i` 대신 Edit 나 python 으로 한다.
