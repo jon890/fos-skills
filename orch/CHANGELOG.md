@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.28.0 (2026-10-21)
+
+공통 지시서 틀에 커밋 attribution 줄을 더한다.
+
+- `templates/spec-common.md`: 커밋 메시지 끝에 세션이 받은 attribution 지침의 `Co-Authored-By` 줄을 그대로 붙이고, 지시서에 모델 이름을 적지 않는다는 줄을 더했다. 사본을 만들 때 모델 이름을 직접 적으면 다른 모델로 띄운 worker 의 커밋에 틀린 이름이 남는다
+
 ## 1.27.0
 
 머지 뒤 마무리와 handoff 산출물 정리를 스크립트로 두고, 머지 큐를 걸 때 마무리를 함께 거는 것을 기본 절차로 한다.
