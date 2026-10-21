@@ -915,5 +915,56 @@ class TaskRulesTest(unittest.TestCase):
             self.assertTrue(out)
 
 
+class PlanNumberTest(unittest.TestCase):
+    """두 계획이 같은 번호를 쓰면 보고의 「phase 3」 이 어느 계획인지 갈리지 않는다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(dir="/tmp")
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name)
+        env = patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+                                      "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                      "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        env.start()
+        self.addCleanup(env.stop)
+        self.git("init", "-q", "-b", "main")
+        self.plan("plan12-login")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "plan12-login")
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
+
+    def plan(self, name, prefix=""):
+        path = self.repo / "tasks" / f"{prefix}{name}" / "index.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    def check(self, plan):
+        out = []
+        verify.check_plan_number(self.repo, "tasks", plan, out)
+        return out
+
+    def test_plan_on_other_branch_with_same_number_is_violation(self):
+        self.git("checkout", "-q", "-b", "other")
+        self.plan("plan012-board")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "plan012-board")
+        self.git("checkout", "-q", "main")
+        out = self.check("plan12-login")
+        self.assertEqual(1, len(out), out)
+        self.assertIn("계획 번호가 겹친다: plan012-board (other)", out[0])
+
+    def test_same_plan_and_other_numbers_and_prefixes_pass(self):
+        self.plan("plan13-board")
+        self.plan("plan12-board", prefix="fe-")
+        self.assertEqual([], self.check("plan12-login"))
+
+    def test_untracked_plan_in_work_tree_is_violation(self):
+        self.plan("plan12-board")
+        out = self.check("plan12-login")
+        self.assertTrue(any("plan12-board (작업 트리)" in issue for issue in out), out)
+
+
 if __name__ == "__main__":
     unittest.main()
