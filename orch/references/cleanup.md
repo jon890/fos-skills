@@ -131,7 +131,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 '102:./bin/
 옵션과 판정은 스크립트 머리 주석이 소유한다. 순서는 아래와 같다.
 
 1. PR 이 MERGED 가 될 때까지 기다린다. 머지 없이 닫히면 `FINISH-FAIL` 이다
-2. `cleanup-sweep.py --apply --kill-holders` 로 그 브랜치의 dispatch 해제, 터미널 닫기, 워크트리와 브랜치 삭제를 한다. 브랜치의 워크트리가 사라질 때까지 다시 시도한다. 지시서 폴더를 주면 그 브랜치의 지시서도 지운다
+2. `cleanup-sweep.py --apply --kill-holders` 로 그 브랜치의 dispatch 해제, 터미널 닫기, 워크트리와 브랜치 삭제를 한다. 브랜치의 워크트리가 사라질 때까지 다시 시도한다. `finish-pr.py` 에 지시서 폴더(`--specs-dir`)를 주면 업무의 마지막 PR(`--complete`)일 때만 그 브랜치의 지시서를 지운다. 중간 PR 에서는 남기고 로그에 한 줄 적는다
 3. 배포 워크플로를 정했으면 머지 커밋을 조상으로 가진 커밋의 실행이 성공할 때까지 기다린다. 머지 커밋의 실행이 뒤 커밋의 배포에 합쳐져 `skipped` 나 `cancelled` 로 끝나도 뒤 실행이 성공하면 성공이다. 성공도 진행 중도 없이 실패만 있으면 `FINISH-FAIL` 이다
 4. `!` 로 건 PR 이면 PR 제목에서 업무 번호를 뽑아 업무 완료 명령을 돌린다. 배포가 실패했으면 돌리지 않는다
 5. 보드 항목을 정했으면 done 으로 바꾼다
