@@ -72,10 +72,11 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 지시서끼리 담당 파일이 겹치거나, 가리킨 함수가 없거나, 금지 명령을 요구하는 것을 띄운 뒤에 알면 worker 가 ask 로 멈추거나 뒤 PR 이 충돌한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/spec-lint.py" --repo "$REPO" "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
+python3 "$SKILL_DIR/scripts/spec-lint.py" --repo "$REPO" --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 ```
 
 종료 코드 1 이면 발견 줄을 보고 지시서를 고친다. `경로` 경고는 새로 만들 파일이면 그대로 둔다.
+`오버레이` 발견은 오버레이나 `orch-finish.json` 이 `origin/<기준 브랜치>` 에 없는 파일을 가리킨다는 뜻이라 그 파일을 고친다. 기준 브랜치가 main 이 아니면 `--base` 로 준다.
 담당 범위는 지시서에 `` 담당: `src/a/**`, `docs/a.md` `` 줄로 적는다. 그 줄이 없으면 겹침 검사가 그 지시서를 건너뛴다.
 금지 문구가 든 줄이 정말 필요하면 그 줄을 `예외:` 로 시작한다.
 코디네이터 소유 경로, 소유 계약, 저장소의 금지 문구는 오버레이의 `## spec-lint` 절에 둔다. 형식은 스크립트 머리 주석이 소유한다.

@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.34.0 (2026-10-21)
+
+설치본이 낡았거나 문서와 오버레이가 없는 파일을 가리키는 것을 띄우기 전에 잡는다.
+
+- 새 `scripts/orch-doctor.py`: 설치 경로 `<plugins>/cache/<마켓플레이스>/<플러그인>/<sha>/orch` 의 sha 를 원본 main 과 `git ls-remote` 로 비교한다. 다르면 마켓플레이스 clone 에서 그 스킬 디렉터리의 diff 로 좁히고, 바뀌었으면 `STALE` 과 `claude plugin marketplace update`, `claude plugin update` 명령을 낸다. 문서의 `$SKILL_DIR/scripts/<이름>` 과 상대 링크가 가리키는 스크립트가 없으면 `MISSING` 을 낸다. 설치본이 옛 커밋이라 `spec-line.py` 를 쓰지 못한 일이 있었다. `SKILL.md` 머리에서 스킬을 열 때 돌린다
+- 저장소 테스트 `scripts/tests/test_doc_script_refs.py`: 모든 스킬에 `orch-doctor.py --skip-version` 을 돌려 문서가 부르는 스크립트가 있는지 본다
+- `spec-lint.py --check-overlay`: 오버레이의 백틱 값과 `orch-finish.json` 의 문자열 값에서 `/` 가 든 상대 경로를 읽어 `origin/<base>`(기본 main, `--base`)에 없으면 막는다. 파일 이름만 적은 것, 절대경로, `~`, `$`, glob, git 이 무시하는 경로는 보지 않는다. 이 옵션을 주면 지시서를 생략할 수 있다. 기존 `--overlay FILE` 은 오버레이 파일 위치라 그 뜻을 바꾸지 않으려고 새 이름을 썼다. `references/spec-writing.md` 의 띄우기 전 검사 명령에 붙였다
+- `templates/spec-common.md`: 보고에서 phase 를 가리킬 때 계획 이름을 붙인다는 줄을 더했다. 두 계획이 함께 돌 때 phase 번호만으로 어느 계획인지 갈리지 않았다
+
 ## 1.33.0 (2026-10-21)
 
 정리가 살아 있는 일을 지우지 않게 하고, 저장소 스크립트에만 있던 정리 두 가지를 옮긴다.
