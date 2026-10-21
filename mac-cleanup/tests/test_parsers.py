@@ -2,8 +2,10 @@
 
 import sys
 import time
+import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -55,6 +57,24 @@ class DockerRmiTargetTest(unittest.TestCase):
 
     def test_none_repository_uses_image_id(self):
         self.assertEqual(di.rmi_target("<none>", "<none>", "sha256:" + "c" * 64), "c" * 12)
+
+    def test_unresolvable_tag_uses_image_id(self):
+        # 이름이 repo:tag@digest 로 저장된 이미지는 태그가 있어도 repo:tag 로 조회되지 않는다.
+        self.assertEqual(di.rmi_target("ghcr.io/actions/actions-runner", "2.338.0", "sha256:" + "e" * 64, resolves=False), "e" * 12)
+
+    def test_resolvable_tag_keeps_repo_tag(self):
+        self.assertEqual(di.rmi_target("gersang-lab", "latest", "sha256:" + "a" * 64, resolves=True), "gersang-lab:latest")
+
+    def test_ref_resolves_timeout_keeps_repo_tag(self):
+        # 시간 초과는 조회 안 됨이 아니라 확인하지 못함이다. ID 로 바꾸지 않고 repo:tag 를 유지한다.
+        with mock.patch.object(di.subprocess, "run", side_effect=subprocess.TimeoutExpired("docker", 60)):
+            self.assertTrue(di.docker_ref_resolves("gersang-lab:latest"))
+
+    def test_ref_resolves_reports_inspect_exit_code(self):
+        with mock.patch.object(di.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)):
+            self.assertFalse(di.docker_ref_resolves("ghcr.io/actions/actions-runner:2.338.0"))
+        with mock.patch.object(di.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
+            self.assertTrue(di.docker_ref_resolves("gersang-lab:latest"))
 
     def test_short_id_accepts_id_without_prefix(self):
         self.assertEqual(di.short_id("d" * 64), "d" * 12)

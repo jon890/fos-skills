@@ -5,7 +5,7 @@
   docker_images.py [--recent-hours 24]
 
 종료 코드: 0 조사 완료, 1 docker 를 쓸 수 없음.
-각 줄 끝의 rmi= 값을 `docker rmi` 에 그대로 넘긴다. 태그가 있으면 repo:tag, 저장소나 태그가 <none> 이면 이미지 ID 다.
+각 줄 끝의 rmi= 값을 `docker rmi` 에 그대로 넘긴다. 태그가 있으면 repo:tag, 저장소나 태그가 <none> 이거나 repo:tag 로 조회되지 않으면(repo:tag@digest 로 저장된 이미지) 이미지 ID 다.
 컨테이너의 Image 값과 repo:tag 를 비교할 때 태그 생략(:latest)을 맞춘다.
 """
 
@@ -38,11 +38,21 @@ def short_id(image_id):
     return image_id.removeprefix("sha256:")[:12]
 
 
-def rmi_target(repository, tag, image_id):
-    """`docker rmi` 에 그대로 넘길 값. 저장소나 태그가 <none> 이면 repo:<none> 이 invalid reference format 이라 이미지 ID 를 쓴다."""
-    if repository == "<none>" or tag == "<none>":
+def rmi_target(repository, tag, image_id, resolves=True):
+    """`docker rmi` 에 그대로 넘길 값. 저장소나 태그가 <none> 이면 repo:<none> 이 invalid reference format 이라 이미지 ID 를 쓴다.
+    태그는 있어도 repo:tag 로 조회되지 않으면(이름이 repo:tag@digest 로 저장된 경우) 이미지 ID 를 쓴다. resolves 는 조회 결과다."""
+    if repository == "<none>" or tag == "<none>" or not resolves:
         return short_id(image_id)
     return f"{repository}:{tag}"
+
+
+def docker_ref_resolves(ref):
+    """`docker image inspect <ref>` 가 성공하면 True. 시간 초과나 실행 실패는 확인하지 못한 것이라 True 로 둔다. 확인하지 못했는데 ID 로 바꾸면 태그가 여럿인 이미지가 -f 없이 거절된다."""
+    try:
+        done = subprocess.run(["docker", "image", "inspect", ref], capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return done.returncode == 0
 
 
 def docker(*args):
@@ -73,7 +83,8 @@ def main(argv=None):
         created = inspected.get("Created", "")[:19]
         created_ts = time.mktime(time.strptime(created, "%Y-%m-%dT%H:%M:%S")) if created else 0
         cls = classify_image({"ref": ref, "id": inspected["Id"], "created_ts": created_ts}, used_refs, used_ids, now, args.recent_hours)
-        target = rmi_target(img["Repository"], img["Tag"], img["ID"])
+        resolves = img["Repository"] == "<none>" or img["Tag"] == "<none>" or docker_ref_resolves(ref)
+        target = rmi_target(img["Repository"], img["Tag"], img["ID"], resolves=resolves)
         print(f"{cls:<22} {img['Size']:>9}  {ref}  ({img['CreatedSince']})  rmi={target} id={short_id(img['ID'])}")
     return 0
 

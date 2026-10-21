@@ -77,7 +77,7 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek 3
 docker volume rm "$VOLUME"
 ```
 - 이미지는 `scripts/docker_images.py` 가 사용 중, 미사용, 최근 생성으로 나눈다.
-- 이미지는 각 줄 끝의 `rmi=` 값으로 지운다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. `traefik:<none>` 을 넘기면 `invalid reference format` 으로 실패한다. 태그가 여럿인 이미지를 ID 로 지우면 `-f` 없이는 거절되므로, 태그가 있는 줄은 ID 가 아니라 `repo:tag` 로 지운다.
+- 이미지는 각 줄 끝의 `rmi=` 값으로 지운다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. `traefik:<none>` 을 넘기면 `invalid reference format` 으로 실패한다. 태그가 여럿인 이미지를 ID 로 지우면 `-f` 없이는 거절되므로, 태그가 있는 줄은 `repo:tag` 로 지운다. 다만 `repo:tag` 로 조회되지 않는 이미지도 이미지 ID 다. 이름이 `repo:tag@digest` 로 저장된 이미지는 `docker images` 가 태그를 보여 줘도 `docker rmi repo:tag` 가 `No such image` 로 실패한다. 실측 사례는 `ghcr.io/actions/actions-runner:2.338.0` 이다. 이 줄은 `rmi=4ffadc0002b2` 로 지워졌다.
 - 오래됐거나 같은 이미지의 이전 버전, `<none>` 태그는 안전에 가깝다. 최근 하루 안에 만든 로컬 테스트 이미지는 확인 필요다.
 - 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다(실측: `docker system df` 와 `docker_images.py` 의 미사용 합계는 5.1GB, `docker image prune -af` 의 확보량은 1.14GB). 호스트 디스크의 실제 확보는 `colima_trim.py` 뒤에 잰다.
 - 확인용으로 받은 이미지(`alpine` 등)는 끝나고 지운다.
