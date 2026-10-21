@@ -394,6 +394,8 @@ def classify(command, entries, repo, cwd=""):
         found = True
     elif program in {"python", "python3"} and args[:2] in (["-m", "pytest"], ["-m", "unittest"]):
         found = True
+    elif program == "playwright":
+        found = args[:1] == ["test"]
     elif program in {"gradlew", "gradle"}:
         found = any(a.split(":")[-1] in {"test", "check", "build"} for a in args)
     elif program in {"mvn", "mvnw"}:
@@ -405,7 +407,7 @@ def classify(command, entries, repo, cwd=""):
         elif program == "npm" and rest[:1] == ["exec"]:
             rest = rest[1:]
         # `pnpm jest <파일>` 처럼 패키지 관리자가 테스트 실행기 bin 을 바로 부르는 형태다.
-        found = bool(rest) and (rest[0] == "test" or rest[0].startswith("test:") or rest[0] in {"jest", "vitest"})
+        found = bool(rest) and (rest[0] == "test" or rest[0].startswith("test:") or rest[0] in {"jest", "vitest"} or rest[:2] == ["playwright", "test"])
     elif program == "node" and node_test(args):
         found = True
     elif program in {"go", "cargo", "deno", "dotnet"}:
@@ -438,7 +440,7 @@ def test_command(command, entries, repo, cwd=""):
 # 모두 실행하고, pytest 는 디렉터리를 재귀로 모은다. 패키지 관리자의 `test` 스크립트는 jest 나 vitest 를 부른다고 본다.
 # bun test 의 위치 인자는 경로 필터라 디렉터리 이름을 주면 그 아래 테스트를 모두 실행한다. 점 디렉터리는 check_bun_dot_paths 가 따로 본다.
 # mocha 는 `--recursive` 가 있어야 해서, 확인하지 못한 실행기와 함께 뺀다.
-DIRECTORY_RUNNERS = {"jest", "vitest", "pytest", "pytest-3", "bun"}
+DIRECTORY_RUNNERS = {"jest", "vitest", "pytest", "pytest-3", "bun", "playwright"}
 DIRECTORY_PACKAGE_MANAGERS = {"npm", "pnpm", "yarn"}
 # 패키지 스크립트로 실행하는 Jest/Vitest 의 값 옵션이다. 값은 테스트 디렉터리가 아니다.
 PACKAGE_TEST_VALUE_OPTIONS = {
@@ -468,7 +470,8 @@ def directory_args(command):
         if args[:1] in (["run"], ["run-script"]):
             args = args[1:]
         rest, skip = [], False
-        for arg in args[1:]:
+        # `pnpm playwright test <경로>` 의 `test` 는 하위 명령이라 경로 필터가 아니다.
+        for arg in args[2:] if args[:2] == ["playwright", "test"] else args[1:]:
             if skip:
                 skip = False
             elif arg in PACKAGE_TEST_VALUE_OPTIONS:

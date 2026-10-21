@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.26.0
+
+`verify_task.py` 가 playwright 를 테스트 실행으로 세지 않던 문제를 고친다.
+
+- `playwright test` 를 테스트 실행으로 센다. `npx playwright test`, `pnpm exec playwright test`, `pnpm playwright test` 도 포함한다. 위치 인자는 jest, vitest 와 같이 경로 필터로 다뤄, `cd web && npx playwright test e2e/a.spec.ts` 가 `web/e2e/a.spec.ts` 선언을 실행한 것으로 인정된다. `playwright install` 처럼 테스트를 돌리지 않는 하위 명령은 세지 않는다
+- npm 스크립트 값을 읽는 구조가 없어(이름이 `test` 이거나 `test:` 로 시작할 때만 센다) `"e2e": "playwright test"` 스크립트 인식은 넣지 않았다
+- 테스트를 더했다. playwright 를 부르지 않는 줄은 그대로 위반이다
+
 ## 2.25.0
 
 `verify_task.py` 가 `cd <dir> && bash scripts/x.sh` 형태의 검증 스크립트를 인식하지 못하던 문제를 고친다.
