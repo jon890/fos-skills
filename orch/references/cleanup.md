@@ -158,6 +158,9 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
 - 로컬 브랜치 이름(`<user>/<접두>-<주제>`)과 PR 브랜치 이름(`<접두>/<주제>`)이 다른 경우. upstream, `branch.<b>.merge`, 이름 변형 순으로 PR 을 찾는다. PR 조회가 비거나 깨지면 머지로 읽지 않는다
 - 예전에 머지된 PR 과 이름만 같은 새 브랜치. 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 보므로 지우지 않는다. `remove-worktree.sh --merged-head` 도 HEAD 가 그 커밋의 조상이 아니면 거부한다
 - worker 를 반납한 뒤 Orca 가 그 워크트리에 띄운 빈 셸 터미널. 폴더를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 그 터미널을 닫고 다시 시도한다. 다른 프로세스가 남아 있으면 건너뛴다
+- 뒤처진 기준 브랜치. 기본 체크아웃이 기준 브랜치에 있으면 `--ff-only` 로 맞춘다. 로컬에만 있는 커밋이 있으면 건드리지 않는다
+- 머지된 PR 의 본문 파일. 지시서 폴더의 부모(`<specs-dir>/..`)에 둔 `pr-<이름>.md` 를 지시서와 함께 지운다
+- **살아 있는 dispatch 가 쓰는 지시서는 지우지 않는다.** 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서가 지워진 일이 있었다. Task 의 `--spec` 줄이 가리키는 경로를 모아 빼고, 그 목록을 읽지 못하면 그 실행에서는 지시서를 하나도 지우지 않는다. `handoff-cleanup.py` 도 같다
 - worker 가 끝난 뒤에도 claude 세션, 로그인 셸, 플러그인 node 같은 프로세스가 그 폴더를 작업 디렉터리로 쥔 경우. `worker-stop` 이 `process=none` 을 돌려줘도 남는다. `--kill-holders` 를 주면 PR 이 MERGED 이고 그 dispatch 가 끝났는지 확인한 뒤 TERM, HUP, KILL 순으로 끈다. 코디네이터 흐름의 명령에는 이 옵션을 넣는다
 - 워크트리 없이 남은 머지된 로컬 브랜치와, PR 이 머지된 뒤 남은 원격 브랜치
 - worker 가 기준선 비교로 저장소 밖에 만들고 남긴 detached 워크트리. 변경이 없고, 쓰는 프로세스와 터미널이 없고, HEAD 가 원격에 있으면 지운다. 폴더가 이미 없는 등록은 먼저 `git worktree prune` 으로 지운다
@@ -240,4 +243,5 @@ python3 "$SKILL_DIR/scripts/handoff-cleanup.py" --repo "$REPO" --apply
 
 - 지시서는 보드 항목이 done 이 아니면 남긴다. 띄우기 전이거나 PR 이 여럿인 일의 중간일 수 있다
 - 열린 PR 목록을 읽지 못하면 지시서를 옮기지 않는다
+- 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서는 옮기지 않는다. 그 목록을 읽지 못해도 옮기지 않는다
 - 미리보기와 handoff 폴더는 3일 넘게 바뀌지 않았고 보드 파일과 `<previews>/.keep` 에 이름이 없을 때만 옮긴다. 남길 미리보기는 `.keep` 에 한 줄에 하나씩 적는다

@@ -41,7 +41,8 @@ class CleanupSweepTest(unittest.TestCase):
         self.prs, self.workers, self.terminals, self.held = {}, [], [], []
         self.all_workers, self.scope = [], "all"
         self.processes, self.spawn_on_release, self.gh_raw, self.open_bases = [], None, {}, []
-        self.orca_fail = self.gh_fail = self.orca_close_noop = False
+        self.orca_fail = self.gh_fail = self.orca_close_noop = self.tasks_fail = False
+        self.tasks = []
         self.log = self.tmp / "calls.log"
 
     def make_repo(self, name):
@@ -91,6 +92,10 @@ class CleanupSweepTest(unittest.TestCase):
                 scope = "bound" if bound else st.get("scope", "all")
                 print(json.dumps({{"result": {{"workers": st["all_workers"], "scope": {{"source": scope}},
                                                "page": {{"nextCursor": None}}}}}}))
+            elif a[:2] == ["orchestration", "task-list"] and st.get("tasks_fail"):
+                sys.exit(1)
+            elif a[:2] == ["orchestration", "task-list"]:
+                print(json.dumps({{"result": {{"tasks": st.get("tasks", [])}}}}))
             elif a[:2] == ["orchestration", "worker-list"]:
                 print(json.dumps({{"result": {{"workers": st["workers"]}}}}))
             elif a[:2] == ["terminal", "close"] and st.get("close_noop"):
@@ -140,7 +145,8 @@ class CleanupSweepTest(unittest.TestCase):
                                             for i, p in enumerate(self.held)],
              "spawn_on_release": self.spawn_on_release, "gh_raw": self.gh_raw, "open_bases": self.open_bases,
              "all_workers": self.all_workers, "scope": self.scope,
-             "orca_fail": self.orca_fail, "gh_fail": self.gh_fail, "close_noop": self.orca_close_noop}))
+             "orca_fail": self.orca_fail, "gh_fail": self.gh_fail, "close_noop": self.orca_close_noop,
+             "tasks": self.tasks, "tasks_fail": self.tasks_fail}))
 
     def worktree(self, name, push=True, commits=1, repo=None):
         repo = repo or self.repo
@@ -881,6 +887,71 @@ class CleanupSweepTest(unittest.TestCase):
         out = self.run_sweep("--run", "run_x", "--apply")
         self.assertTrue(path.exists(), out)
         self.assertIn("다른 Run 의 worker 터미널 term_agent", out)
+
+    def merged_with_specs(self, name):
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        specs = self.repo / ".omc/orch/specs"
+        specs.mkdir(parents=True)
+        (specs / f"spec-{name}.md").write_text("x")
+        return path, specs
+
+    def test_spec_of_a_live_dispatch_is_kept(self):
+        # 브랜치가 머지돼도 그 지시서로 아직 일하는 worker 가 있다
+        path, specs = self.merged_with_specs("feat-live")
+        spec = specs / "spec-feat-live.md"
+        self.tasks = [{"id": "task_1", "status": "dispatched", "spec": f"지시서 {spec} 를 끝까지 읽고 수행한다."}]
+        out = self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertTrue(spec.exists(), out)
+        self.assertIn("살아 있는 dispatch 가 쓴다", out)
+
+    def test_spec_of_a_finished_task_is_deleted(self):
+        path, specs = self.merged_with_specs("feat-done")
+        spec = specs / "spec-feat-done.md"
+        self.tasks = [{"id": "task_1", "status": "completed", "spec": f"지시서 {spec} 를 끝까지 읽고 수행한다."}]
+        self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        self.assertFalse(spec.exists())
+
+    def test_specs_are_kept_when_live_dispatches_cannot_be_read(self):
+        path, specs = self.merged_with_specs("feat-unknown")
+        self.tasks_fail = True
+        out = self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertTrue((specs / "spec-feat-unknown.md").exists())
+        self.assertIn("목록을 읽지 못했다", out)
+
+    def test_pr_body_files_next_to_the_specs_dir_are_deleted(self):
+        path = self.worktree("mac/body")
+        self.squash_merge("mac/body", path)
+        orch = self.repo / ".omc/orch"
+        (orch / "specs").mkdir(parents=True)
+        for name in ("pr-body.md", "pr-mac-body.md", "pr-1.md", "pr-other.md"):
+            (orch / name).write_text("x")
+        out = self.run_sweep("--specs-dir", ".omc/orch/specs")
+        self.assertIn(f"PR 본문을 지울 것 {orch / 'pr-mac-body.md'}", out)
+        self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        self.assertEqual(["pr-other.md"], sorted(p.name for p in orch.glob("pr-*.md")))
+
+    def test_base_checkout_is_fast_forwarded(self):
+        other = self.tmp / "other"
+        sh("git", "clone", "-q", str(self.tmp / "repo-origin.git"), str(other))
+        sh("git", "-C", str(other), "commit", "-q", "--allow-empty", "-m", "ahead")
+        sh("git", "-C", str(other), "push", "-q", "origin", "main")
+        remote = sh("git", "-C", str(other), "rev-parse", "HEAD")
+        out = self.run_sweep()
+        self.assertIn("fast-forward 할 것 main", out)
+        self.assertNotEqual(remote, sh("git", "-C", str(self.repo), "rev-parse", "HEAD"))
+        out = self.run_sweep("--apply")
+        self.assertIn("기준 브랜치 fast-forward main", out)
+        self.assertEqual(remote, sh("git", "-C", str(self.repo), "rev-parse", "HEAD"))
+
+    def test_base_checkout_with_local_commits_is_left_alone(self):
+        sh("git", "-C", str(self.repo), "commit", "-q", "--allow-empty", "-m", "local")
+        head = sh("git", "-C", str(self.repo), "rev-parse", "HEAD")
+        out = self.run_sweep("--apply")
+        self.assertIn("origin/main 에 없는 커밋이 있다", out)
+        self.assertEqual(head, sh("git", "-C", str(self.repo), "rev-parse", "HEAD"))
 
 
 if __name__ == "__main__":
