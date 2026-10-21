@@ -9,6 +9,8 @@ worker 가 일하는 중에 터미널에 직접 쓰면 입력이 섞이고, disp
     `orca orchestration worker-list --terminal-state active` 의 `agentTerminalHandle` 에 그 값이 있을 때 거부한다.
 
 오탐을 피하는 기준:
+    - 따옴표 안, heredoc 본문, 주석에 든 `orca terminal send` 문구는 보지 않는다. 그런 명령에는 orca 를 조회하지 않는다
+    - `--terminal` 은 `orca terminal send` 와 같은 명령 조각에 있는 것만 본다(`terminal read --terminal` 은 아니다)
     - worker 가 아닌 터미널(코디네이터 자신의 셸, 개발 서버)은 worker-list 에 없어 통과한다
     - `--terminal "$T"` 처럼 값이 변수면 정적으로 알 수 없어 통과한다
     - orca 조회가 실패하거나 시간을 넘기면 통과한다. 이 hook 때문에 다른 명령이 막히지 않게 한다
@@ -26,8 +28,13 @@ import re
 import subprocess
 import sys
 
+# PYTHONSAFEPATH 가 켜져 있어도 같은 폴더의 shell_text 를 찾게 한다
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from shell_text import mask, pieces, strip_heredocs  # noqa: E402
+
 SEND = re.compile(r"\borca\s+terminal\s+send\b")
-TARGET = re.compile(r"--terminal(?:\s+|=)['\"]?(term_[\w-]+)")
+TARGET_FLAG = re.compile(r"--terminal(?:\s+|=)")
+TARGET_VALUE = re.compile(r"['\"]?(term_[\w-]+)")
 
 REASON = (
     "orch: worker 터미널({handle})에 `orca terminal send` 로 직접 쓰지 않는다. "
@@ -49,14 +56,27 @@ def worker_handles() -> set[str]:
     if done.returncode != 0:
         return set()
     result = data.get("result", data) if isinstance(data, dict) else {}
-    rows = result.get("workers", []) if isinstance(result, dict) else result
+    rows = (result.get("workers") if isinstance(result, dict) else result) or []
     return {w.get("agentTerminalHandle") for w in rows if isinstance(w, dict) and w.get("agentTerminalHandle")}
 
 
+def send_targets(command: str) -> set[str]:
+    """`orca terminal send` 조각의 --terminal 값. 가린 글에서 자리를 찾고 원문에서 값을 읽는다."""
+    text = strip_heredocs(command)
+    masked = mask(text)
+    targets = set()
+    for _, start, end in pieces(masked):
+        if not SEND.search(masked[start:end]):
+            continue
+        for flag in TARGET_FLAG.finditer(masked, start, end):
+            m = TARGET_VALUE.match(text, flag.end())
+            if m:
+                targets.add(m.group(1))
+    return targets
+
+
 def target_worker(command: str) -> str | None:
-    if not SEND.search(command):
-        return None
-    targets = set(TARGET.findall(command))
+    targets = send_targets(command)
     if not targets:
         return None
     hits = targets & worker_handles()

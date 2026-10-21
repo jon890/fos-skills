@@ -16,10 +16,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 
-from shell_text import QUOTED, strip_heredocs
+# PYTHONSAFEPATH 가 켜져 있어도 같은 폴더의 shell_text 를 찾게 한다
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from shell_text import QUOTED, strip_heredocs  # noqa: E402
 
 # wait-important.py 는 안에서 check --wait 를 부르므로 같은 규칙으로 막는다
 CHECK_WAIT = re.compile(r"\borchestration\s+check\b.*\s--wait\b|\bwait-important\b")

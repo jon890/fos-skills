@@ -36,6 +36,11 @@ class GitAfterCdTest(unittest.TestCase):
             "cd /repo || true; git reset --hard origin/main",
             "cd /repo & git rebase origin/main",
             "cd /repo; git -c core.editor=true rebase --continue",
+            "cd /r; (git commit -m x)",
+            "for d in a b; do cd $d; git commit -m x; done",
+            "pushd /r; git push",
+            "cd /r; git commit -m x; set -e",
+            "cd /r && make; git push",
         ):
             with self.subTest(command=command):
                 self.assertEqual("deny", decide(self.HOOK, command))
@@ -53,9 +58,29 @@ class GitAfterCdTest(unittest.TestCase):
             'git commit -m "$(cat <<\'EOF\'\nfix: cd a\ngit push\nEOF\n)"',
             "cat > /tmp/x.sh <<'EOF'\ncd /repo\ngit push\nEOF",
             "git push origin HEAD",
+            # 리뷰에서 재현한 오탐: 리다이렉션의 &, 연산자 뒤 줄바꿈, subshell, 중괄호 가드, 읽기 명령, 주석
+            "cd /r && make 2>&1 && git commit -m x",
+            "cd /r && npm test >/dev/null 2>&1 && git push",
+            "cd /r && make &> log && git commit -m x",
+            "cd /r &&\n  git add . &&\n  git commit -m x",
+            "(cd /r && make); git commit -m x",
+            "(cd /r && make)\ngit push",
+            "cd /r || { echo fail; exit 1; }\ngit commit -m x",
+            "cd /r || { exit 1; }\ngit push",
+            "cd /r; git merge-base --is-ancestor a b",
+            "cd /r; git merge-tree --write-tree a b",
+            "set -o errexit\ncd /r\ngit commit -m x",
+            "cd /r && git status  # check; git push later",
+            'cd "$WT" && git commit -m "$(cat <<\'EOF\'\nfix: x\nEOF\n)"',
+            "x=$((1<<2)); git -C /r push",
         ):
             with self.subTest(command=command):
                 self.assertEqual("pass", decide(self.HOOK, command))
+
+    def test_here_string_and_shift_do_not_hide_later_commands(self):
+        for command in ("echo $((1<<2))\ncd /r; git push", "grep x <<< word\ncd /r; git push"):
+            with self.subTest(command=command):
+                self.assertEqual("deny", decide(self.HOOK, command))
 
     def test_other_tools_and_broken_input_pass(self):
         self.assertEqual("pass", decide(self.HOOK, "cd x; git push", tool="Read"))
@@ -99,9 +124,19 @@ class WorkerTerminalSendTest(unittest.TestCase):
             'orca terminal send --terminal "$T" --text x',
             "orca terminal read --terminal term_worker-1",
             'python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch ctx_1 --body x',
+            "orca terminal read --terminal term_worker-1 --lines 20 && orca terminal send --terminal term_dev --text hi",
+            'orca terminal send --terminal term_dev --text "see --terminal term_worker-1"',
         ):
             with self.subTest(command=command):
                 self.assertEqual("pass", decide(self.HOOK, command, env=self.env()))
+        # 따옴표 안의 문구에는 orca 를 조회하지도 않는다
+        self.log.unlink(missing_ok=True)
+        self.assertEqual("pass", decide(self.HOOK, "git commit -m 'orca terminal send --terminal term_worker-1'",
+                                        env=self.env()))
+        self.assertFalse(self.log.exists())
+        self.fake('{"result": {"workers": null}}')
+        self.assertEqual("pass", decide(self.HOOK, "orca terminal send --terminal term_worker-1 --text x",
+                                        env=self.env()))
         self.fake("not json", code=1)
         self.assertEqual("pass", decide(self.HOOK, "orca terminal send --terminal term_worker-1 --text x",
                                         env=self.env()))
@@ -128,6 +163,9 @@ class RequireSpecLineTest(unittest.TestCase):
             'orca orchestration worker-start --task t1 --spec "$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC")"',
             'bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC" --repo /repo --name a -- --task t1',
             'orca orchestration task-create --spec "본문"',
+            "git commit -m 'orchestration worker-start --spec 본문 금지'",
+            "git commit -F - <<'EOF'\norchestration worker-start --spec 값을 검사한다\nEOF",
+            "rg -n 'orchestration worker-start' orch/ | grep -- '--spec x'",
         ):
             with self.subTest(command=command):
                 self.assertEqual("pass", decide(self.HOOK, command))
