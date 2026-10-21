@@ -42,15 +42,20 @@ FAKE_GH = textwrap.dedent("""\
 
 
 class CiReadyTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.bin = Path(tempfile.mkdtemp())
+        cls.addClassCleanup(shutil.rmtree, cls.bin)
+        cls.gh = cls.bin / "gh"
+        cls.gh.write_text(FAKE_GH)
+        cls.gh.chmod(cls.gh.stat().st_mode | stat.S_IEXEC)
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp)
-        gh = self.tmp / "gh"
-        gh.write_text(FAKE_GH)
-        gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
-        self.env = dict(os.environ, GH=str(gh), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log),
+        self.env = dict(os.environ, GH=str(self.gh), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log),
                         ORCH_READY_RETRY_SECONDS="0")
 
     def pr(self, number, files, draft=True, **over):

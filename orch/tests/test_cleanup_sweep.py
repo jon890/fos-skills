@@ -18,25 +18,31 @@ def sh(*cmd, cwd=None):
 
 
 class CleanupSweepTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Reuse executables to avoid macOS first-execution checks per test.
+        # Mutable state and logs still live in each test's own directory.
+        cls.bin = Path(tempfile.mkdtemp()).resolve()
+        cls.addClassCleanup(shutil.rmtree, cls.bin, True)
+        cls.write_fakes()
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1",
                         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
-                        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
+                        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com",
+                        FAKE_STATE=str(self.tmp / "state.json"), FAKE_LOG=str(self.tmp / "calls.log"))
         os.environ.update({k: self.env[k] for k in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
                                                       "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
                                                       "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL")})
         self.repo = self.make_repo("repo")
         self.wts = self.tmp / "wts"
-        self.bin = self.tmp / "bin"
-        self.bin.mkdir()
         self.prs, self.workers, self.terminals, self.held = {}, [], [], []
         self.all_workers, self.scope = [], "all"
         self.processes, self.spawn_on_release, self.gh_raw, self.open_bases = [], None, {}, []
         self.orca_fail = self.gh_fail = self.orca_close_noop = False
         self.log = self.tmp / "calls.log"
-        self.write_fakes()
 
     def make_repo(self, name):
         origin = self.tmp / f"{name}-origin.git"
@@ -47,14 +53,15 @@ class CleanupSweepTest(unittest.TestCase):
         sh("git", "-C", str(repo), "push", "-q", "-u", "origin", "main")
         return repo
 
-    def write_fakes(self):
-        state = self.tmp / "state.json"
+    @classmethod
+    def write_fakes(cls):
+        state = 'os.environ["FAKE_STATE"]'
         fake = textwrap.dedent(f"""\
             #!/usr/bin/env python3
-            import json, sys
-            st = json.load(open("{state}"))
+            import json, os, sys
+            st = json.load(open({state}))
             a = sys.argv[1:]
-            open("{self.log}", "a").write(" ".join(["%s"] + a) + "\\n")
+            open(os.environ["FAKE_LOG"], "a").write(" ".join(["%s"] + a) + "\\n")
             """)
         gh = fake % "gh" + textwrap.dedent("""\
             if st.get("gh_fail"):
@@ -74,7 +81,7 @@ class CleanupSweepTest(unittest.TestCase):
             if st.get("orca_fail"):
                 sys.exit(1)
             def save():
-                json.dump(st, open("{state}", "w"))
+                json.dump(st, open({state}, "w"))
             if a[:2] == ["terminal", "list"]:
                 print(json.dumps({{"result": {{"terminals": st["terminals"]}}}}))
             elif a[:2] == ["orchestration", "worker-list"] and "--run" not in a:
@@ -119,10 +126,10 @@ class CleanupSweepTest(unittest.TestCase):
         kill = fake % "kill" + textwrap.dedent(f"""\
             sig = a[0].lstrip("-")
             st["processes"] = [q for q in st["processes"] if str(q["pid"]) not in a[1:] or sig in q.get("ignores", [])]
-            json.dump(st, open("{state}", "w"))
+            json.dump(st, open({state}, "w"))
             """)
         for name, body in (("gh", gh), ("orca", orca), ("lsof", lsof), ("ps", ps), ("kill", kill)):
-            path = self.bin / name
+            path = cls.bin / name
             path.write_text(body)
             path.chmod(0o755)
 
@@ -159,7 +166,7 @@ class CleanupSweepTest(unittest.TestCase):
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}", ORCA=str(self.bin / "orca"), GH=str(self.bin / "gh"),
                    ORCH_KILL=str(self.bin / "kill"))
         flags = [f for r in (repos or [self.repo]) for f in ("--repo", str(r))]
-        done = subprocess.run(["python3", str(SCRIPT), *flags, "--wait", "1", *args],
+        done = subprocess.run(["python3", str(SCRIPT), *flags, "--wait", "0.01", "--poll-interval", "0.01", *args],
                               capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, code, done.stderr)
         return done.stdout

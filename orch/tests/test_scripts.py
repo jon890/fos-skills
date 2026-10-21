@@ -203,18 +203,21 @@ FAKE_GIT = textwrap.dedent("""\
 
 @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "jq 와 bash 가 필요하다")
 class MergeQueueTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.bindir = Path(tempfile.mkdtemp())
+        cls.addClassCleanup(shutil.rmtree, cls.bindir)
+        for name, body in (("gh", FAKE_GH), ("git", FAKE_GIT), ("sleep", "#!/bin/sh\nexit 0\n")):
+            p = cls.bindir / name
+            p.write_text(body)
+            p.chmod(p.stat().st_mode | stat.S_IEXEC)
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp)
-        bindir = self.tmp / "bin"
-        bindir.mkdir()
-        for name, body in (("gh", FAKE_GH), ("git", FAKE_GIT), ("sleep", "#!/bin/sh\nexit 0\n")):
-            p = bindir / name
-            p.write_text(body)
-            p.chmod(p.stat().st_mode | stat.S_IEXEC)
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
-        self.env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
+        self.env = dict(os.environ, PATH=f"{self.bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
                         FAKE_LOG=str(self.log), FAKE_REMOTE_HEAD="abc")
         self.sweep_log = self.tmp / "sweep.txt"
         sweep = self.tmp / "sweep.py"
@@ -477,21 +480,24 @@ class MergeQueueTest(unittest.TestCase):
 class MergeQueueOverlapTest(unittest.TestCase):
     """겹침 판정과 합친 사본 검사는 진짜 git 저장소로 본다. gh 와 sleep 만 가짜다."""
 
+    @classmethod
+    def setUpClass(cls):
+        cls.bindir = Path(tempfile.mkdtemp())
+        cls.addClassCleanup(shutil.rmtree, cls.bindir, True)
+        for name, body in (("gh", FAKE_GH), ("sleep", "#!/bin/sh\nexit 0\n")):
+            f = cls.bindir / name
+            f.write_text(body)
+            f.chmod(f.stat().st_mode | stat.S_IEXEC)
+
     def setUp(self):
         # mkdtemp 는 macOS 에서 /var 링크 아래라 실경로 처리를 그대로 겪는다
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        bindir = self.tmp / "bin"
-        bindir.mkdir()
-        for name, body in (("gh", FAKE_GH), ("sleep", "#!/bin/sh\nexit 0\n")):
-            f = bindir / name
-            f.write_text(body)
-            f.chmod(f.stat().st_mode | stat.S_IEXEC)
         gitconfig = self.tmp / "gitconfig"
         gitconfig.write_text("")
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
-        self.env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
+        self.env = dict(os.environ, PATH=f"{self.bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
                         FAKE_LOG=str(self.log), TMPDIR=str(self.tmp), GIT_CONFIG_GLOBAL=str(gitconfig),
                         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x", GIT_COMMITTER_NAME="t",
                         GIT_COMMITTER_EMAIL="t@x", CLEANUP_SWEEP=str(self.tmp / "sweep.py"))
@@ -605,29 +611,38 @@ class MergeQueueOverlapTest(unittest.TestCase):
 class WorkerAskTest(unittest.TestCase):
     """가짜 orca 로 ask 의 성공, 시간 제한, 실패 뒤 대신 보내기를 본다."""
 
+    @classmethod
+    def setUpClass(cls):
+        cls.bindir = Path(tempfile.mkdtemp())
+        cls.addClassCleanup(shutil.rmtree, cls.bindir)
+        cls.orca = cls.bindir / "orca"
+        cls.orca.write_text(textwrap.dedent("""\
+            #!/usr/bin/env bash
+            for a in "$@"; do printf '[%s]' "$a" >> "$FAKE_LOG"; done; echo >> "$FAKE_LOG"
+            case "$2" in
+              ask) cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
+              check)
+                n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
+                f="$FAKE_DIR/check$n.json"; [ -f "$f" ] || f="$FAKE_DIR/check.json"; cat "$f"; echo ;;
+              send) exit "$FAKE_SEND_RC" ;;
+            esac
+        """))
+        cls.orca.chmod(0o755)
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp)
         self.log = self.tmp / "calls.log"
-        self.orca = self.tmp / "orca"
 
     def fake(self, ask_out, ask_rc, check_out='{"result":{"runId":"run_x"}}', send_rc=0, checks=()):
         """checks 를 주면 n 번째 check 가 그 n 번째 출력을 낸다. 다 쓰면 check_out 을 낸다."""
         (self.tmp / "check.json").write_text(check_out)
+        (self.tmp / "ask.out").write_text(ask_out)
+        self.env = dict(os.environ, ORCA=str(self.orca), ORCH_ASK_SEEN=str(self.tmp / "seen"),
+                        FAKE_DIR=str(self.tmp), FAKE_LOG=str(self.log),
+                        FAKE_ASK_RC=str(ask_rc), FAKE_SEND_RC=str(send_rc))
         for i, out in enumerate(checks, 1):
             (self.tmp / f"check{i}.json").write_text(json.dumps(out))
-        self.orca.write_text(textwrap.dedent(f"""\
-            #!/usr/bin/env bash
-            for a in "$@"; do printf '[%s]' "$a" >> "{self.log}"; done; echo >> "{self.log}"
-            case "$2" in
-              ask) printf '%s\\n' '{ask_out}'; exit {ask_rc} ;;
-              check)
-                n=$(($(cat "{self.tmp}/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "{self.tmp}/n"
-                f="{self.tmp}/check$n.json"; [ -f "$f" ] || f="{self.tmp}/check.json"; cat "$f"; echo ;;
-              send) exit {send_rc} ;;
-            esac
-        """))
-        self.orca.chmod(0o755)
 
     @staticmethod
     def inbox(*messages, dispatch="ctx_1"):
@@ -639,9 +654,8 @@ class WorkerAskTest(unittest.TestCase):
                 "to_handle": to, "thread_id": thread, "created_at": "2026-10-19T10:00:00Z"}
 
     def run_ask(self, *args):
-        env = dict(os.environ, ORCA=str(self.orca), ORCH_ASK_SEEN=str(self.tmp / "seen"))
         done = subprocess.run([str(SCRIPTS / "worker-ask.sh"), *args],
-                              capture_output=True, text=True, env=env)
+                              capture_output=True, text=True, env=self.env)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         return done.returncode, done.stdout, calls
 
@@ -745,7 +759,7 @@ class WorkerAskTest(unittest.TestCase):
         if not shutil.which("zsh"):
             self.skipTest("zsh 없음")
         self.fake('{"result":{"reply":"ok"}}', 0)
-        env = dict(os.environ, ORCA=str(self.orca), ASK=str(SCRIPTS / "worker-ask.sh"))
+        env = dict(self.env, ASK=str(SCRIPTS / "worker-ask.sh"))
         done = subprocess.run(["zsh", "-c", 'Q="두 단어 질문"; "$ASK" --from term_w --question "$Q"'],
                               capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, 0, done.stderr)
