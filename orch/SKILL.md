@@ -62,7 +62,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 4 | 기다리기 | 이 세션의 백그라운드 `wait-important.py` 가 하나만 돌고, 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages.py` 로 읽었고, 깨어날 때마다 `cleanup-sweep.py` 와 `board-sync.py` 를 돌렸다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 worker 의 마지막 메시지에 `reply` 로 보냈고, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다. 앞 PR 이 머지된 뒤라면 최신 base 와 합친 사본에서 통과했다 | [`references/verification.md`](references/verification.md) |
-| 7 | 머지와 정리 | `merge-queue.sh` 가 `QUEUE-DONE` 으로 끝났고, 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
+| 7 | 머지와 정리 | `merge-with-finish.py` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
 
 진행 보드를 쓰는 환경이면 상태가 바뀌는 단계마다 보드를 고친다. 보드가 없으면 건너뛴다.
 
@@ -99,4 +99,5 @@ heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartb
 
 ## 7. 머지와 정리
 
-`merge-queue.sh` 로 머지하고, 머지 직후 같은 흐름에서 정리 목록을 모두 한다. 워크트리는 `remove-worktree.sh` 로만 지운다.
+`merge-with-finish.py` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다.
+업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.sh` 로만 지운다. 끝난 handoff 산출물은 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다.

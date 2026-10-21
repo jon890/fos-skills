@@ -3,11 +3,22 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 1.27.0
+## 1.28.0 (2026-10-21)
 
 공통 지시서 틀에 커밋 attribution 줄을 더한다.
 
 - `templates/spec-common.md`: 커밋 메시지 끝에 세션이 받은 attribution 지침의 `Co-Authored-By` 줄을 그대로 붙이고, 지시서에 모델 이름을 적지 않는다는 줄을 더했다. 사본을 만들 때 모델 이름을 직접 적으면 다른 모델로 띄운 worker 의 커밋에 틀린 이름이 남는다
+
+## 1.27.0
+
+머지 뒤 마무리와 handoff 산출물 정리를 스크립트로 두고, 머지 큐를 걸 때 마무리를 함께 거는 것을 기본 절차로 한다.
+
+- 새 `scripts/finish-pr.py`: PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤 `cleanup-sweep.py` 로 그 브랜치의 worker 를 정리한다. 머지 직후 정리가 GitHub 상태 반영보다 먼저 돌아 「살아 있는 터미널」 로 건너뛰고 워크트리를 남기던 문제를 막으려고, 브랜치의 워크트리가 사라질 때까지 다시 시도한다. 이어서 머지 커밋을 조상으로 가진 커밋의 배포 성공을 기다리고(`deploy_verdict`: 뒤 커밋 배포에 합쳐져 머지 커밋의 실행이 `skipped` 나 `cancelled` 여도 뒤 실행이 성공하면 성공), 업무를 완료 처리하고, 보드를 done 으로 바꾼다. 끝에 `FINISH-DONE` 이나 `FINISH-FAIL` 을 낸다
+- 새 `scripts/merge-with-finish.py`: PR 마다 `finish-pr.py` 를 백그라운드로 걸고 `merge-queue.sh` 를 같은 인자로 돌린다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이다. 같은 PR 의 마무리가 이미 돌면 pid 파일로 알아보고 다시 걸지 않는다. `merge-queue.sh` 의 출력 계약은 바꾸지 않았다
+- 새 `scripts/handoff-cleanup.py`: 끝난 큐 로그, 보드 항목이 done 이고 원격 브랜치·워크트리·열린 PR 이 없는 지시서, 3일 넘게 바뀌지 않은 미참조 handoff 폴더와 미리보기, 하루 지난 csv·tsv 를 휴지통 폴더로 옮긴다. 기본은 후보만 보이고 `--apply` 로 옮긴다. 열린 PR 목록을 읽지 못하면 지시서는 옮기지 않는다. 남길 미리보기는 `previews/.keep` 에 적는다
+- 저장소마다 다른 값(gh 호스트, Run id, 배포 워크플로와 브랜치, 업무 번호 정규식, 업무 완료 명령, 보드와 handoff 와 휴지통 경로)은 `<repo>/.claude/orch-finish.json` 이나 옵션으로 받는다. 키는 `references/overlay.md` 가 소유한다
+- `references/cleanup.md` 의 머지 절을 `merge-with-finish.py` 기준으로 고치고 「머지 뒤 마무리」 와 「handoff 산출물 정리」 를 더했다. `references/waiting.md` 에 `finish-*.out` 확인을, `references/overlay.md` 에 마무리 설정 파일을 더했다
+- 배포 판정, 업무 번호 추출, `!` 해석, 지시서 정리 조건, 미리보기 `.keep` 을 순수 함수로, 전체 흐름을 임시 git 저장소와 가짜 gh, sweep, 업무 명령, 보드 명령으로 테스트했다
 
 ## 1.26.0
 
