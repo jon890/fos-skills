@@ -25,7 +25,13 @@
 # ORCA, SPEC_LINE, MAKE_WORKTREE 환경 변수로 실행 파일과 스크립트 경로를 바꾼다. LAUNCH_POLL 은 확인 간격(초, 기본 5)이다.
 # LAUNCH_WT_WAIT 와 LAUNCH_WT_POLL 은 Orca 가 워크트리를 알아볼 때까지 기다리는 초와 간격(기본 30, 2)이다.
 #
-# 종료 코드: 0 띄웠다, 1 거부했거나 띄우지 못했다(이유를 낸다), 2 사용법 오류
+# --terminal 로 끝난 worker 의 터미널을 이어 쓸 때:
+#   - Orca 는 --terminal 과 --agent, --model, --effort 를 함께 받지 않는다(invalid_argument). 주면 부르기 전에 거부한다
+#   - 터미널이 에이전트를 인식하지 못하면(agent_unconfigured. Orca 가 잠깐 응답하지 않았거나 재부팅, 잠자기로 세션이
+#     바뀐 뒤에 난다) 종료 코드 3 과 다음 단계를 낸다. 터미널을 닫는 것은 이 스크립트가 하지 않는다. 그 터미널이
+#     이 세션이 띄운 worker 의 것인지 사람이 보고 닫는다. 다른 세션이나 사용자의 터미널은 닫지 않는다
+#
+# 종료 코드: 0 띄웠다, 1 거부했거나 띄우지 못했다(이유를 낸다), 2 사용법 오류, 3 --terminal 의 터미널이 에이전트를 인식하지 못했다
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -55,6 +61,17 @@ if [ -n "$worktree" ]; then
   [ -z "$name" ] && [ -z "$repo" ] || { echo "--worktree 와 --repo/--name 은 함께 쓰지 않는다" >&2; exit 2; }
 else
   [ -n "$repo" ] && [ -n "$name" ] || { echo "새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다" >&2; exit 2; }
+fi
+reuse_terminal=0 reuse_opts=""
+for arg in "$@"; do
+  case "$arg" in
+    --terminal) reuse_terminal=1 ;;
+    --agent|--model|--effort) reuse_opts="$reuse_opts $arg" ;;
+  esac
+done
+if [ "$reuse_terminal" = 1 ] && [ -n "$reuse_opts" ]; then
+  echo "거부: --terminal 은 이미 떠 있는 에이전트를 이어 쓰므로${reuse_opts} 와 함께 쓰지 못한다(Orca 가 invalid_argument 로 거절한다). 모델을 바꾸려면 --terminal 을 빼고 새 worker 로 띄운다" >&2
+  exit 1
 fi
 case "$watch" in ''|*[!0-9]*) echo "--watch 는 초 단위 정수다" >&2; exit 2 ;; esac
 
@@ -160,6 +177,10 @@ watch_stage() {
 wait_for_orca_worktree "$worktree" || exit 1
 start_worker ${run:+--run "$run"} --spec "$line" --worktree "path:$worktree" "$@"
 printf '%s\n' "$out"
+if [ "$code" != 0 ] && [ "$reuse_terminal" = 1 ] && printf '%s' "$out" | grep -q agent_unconfigured; then
+  echo "--terminal 의 터미널이 에이전트를 인식하지 못했다(agent_unconfigured). replying.md 「이어 쓸 수 없는 터미널」 을 따른다: 1) 앞 worker 의 작업이 push 됐는지 보고 2) 그 터미널이 이 세션이 띄운 worker 의 것이면 orca terminal close 로 닫고 3) --terminal 을 빼고 --agent, --model, --effort 를 줘 이 명령을 다시 부른다" >&2
+  exit 3
+fi
 [ "$code" = 0 ] || { echo "worker-start 가 종료 코드 $code 로 끝났다. launch.md 의 「첫 화면에서 멈춤」 과 「시작 직후 실패」 를 본다" >&2; exit 1; }
 dispatch=$(printf '%s' "$out" | jget "dispatch.id|dispatchId|worker.dispatchId")
 task=$(printf '%s' "$out" | jget "dispatch.taskId|taskId|task.id")

@@ -37,7 +37,7 @@ python3 "$SKILL_DIR/scripts/nudge-worker.py" --terminal "$TERMINAL_HANDLE" --msg
 종료 코드 1 이면 다시 확인해도 턴이 시작되지 않은 것이다. 화면을 보고 아래 「후속 지시가 전달되지 않음」 의 표로 판단한다.
 
 **끝난(settled) worker 에게 일을 더 주려면 같은 worktree 에 새 dispatch 를 띄운다.** 끝난 dispatch 에는 `reply` 가 가지 않는다.
-후속 지시서를 써서 `send-to-worker.py --spec` 으로 주면 남은 터미널을 이어 쓴다. 터미널이 없으면 [`launch.md`](launch.md) 의 기존 worktree 예시를 쓴다.
+후속 지시서를 써서 `send-to-worker.py --spec` 으로 주면 남은 터미널을 이어 쓴다. 이어 쓰지 못하면 아래 「이어 쓸 수 없는 터미널」 을 따른다. 터미널이 없으면 [`launch.md`](launch.md) 의 기존 worktree 예시를 쓴다.
 worker 가 보낸 `ready: <plan> <worktree> <지시서>` 도 그 예시로 띄운다.
 
 ### 후속 지시가 전달되지 않음
@@ -51,6 +51,27 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 도 그 예시로 띄�
 | 입력란이 비어 있고 새 턴이 없다 | 지시가 전달되지 않았다 | `worker-abandon` 으로 그 dispatch 를 닫고, `worker-show` 의 `taskId` 로 `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "path:$WORKTREE"` 를 다시 보낸다 |
 
 같은 지시를 `--spec` 으로 새로 보내지 않는다. Task 가 둘 생겨 어느 쪽이 유효한 시도인지 흐려진다.
+
+### 이어 쓸 수 없는 터미널
+
+**`worker-start --terminal` 은 떠 있는 에이전트를 이어 쓰므로 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다.** `launch-worker.sh` 는 이 조합을 Orca 에 보내기 전에 거부한다.
+
+| 오류 | 뜻 | 할 일 |
+| --- | --- | --- |
+| `invalid_argument: --model and --effort cannot be applied when reusing an existing terminal` | `--terminal` 에 `--model`, `--effort` 를 함께 줬다 | 둘을 뺀다. 모델을 바꿔야 하면 아래 새 worker 로 간다 |
+| `invalid_argument: --terminal reuses an existing agent and cannot combine with --agent` | `--terminal` 에 `--agent` 를 함께 줬다 | `--agent` 를 뺀다 |
+| `agent_unconfigured: Terminal ... is not running a recognized agent` | Orca 가 그 터미널의 에이전트를 인식하지 못한다. 화면에서 Claude 가 입력을 기다리고 있어도 난다. Orca 가 잠깐 응답하지 않았거나 재부팅, 잠자기로 세션이 바뀐 뒤에 생긴다 | 이어 쓰지 못한다. 아래 새 worker 로 간다 |
+
+`launch-worker.sh` 는 `agent_unconfigured` 를 받으면 종료 코드 3 으로 끝나고 다음 단계를 낸다. 터미널은 스크립트가 닫지 않는다.
+
+**새 worker 로 이어받는 순서**
+
+1. 앞 worker 의 작업이 push 됐는지 본다. `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD`, `git -C "$WORKTREE" status --short`, `git ls-remote origin "$BRANCH"` 를 본다. 커밋하지 않은 변경은 워크트리에 남아 있으니 버리지 않는다
+2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `orca terminal close --terminal "$OLD_TERMINAL_HANDLE"` 로 닫는다. 다른 세션이나 사용자의 터미널은 닫지 않는다
+3. 후속 지시서에 이어받는 상태를 적는다. 끝난 커밋, 커밋 안 된 변경, 앞 worker 의 마지막 status 다. 새 worker 는 앞 대화를 모른다
+4. 같은 워크트리에 `--terminal` 없이 `launch-worker.sh --worktree "$WORKTREE" ... -- --agent ... --model ... --effort ...` 로 띄운다
+
+worker 세션이 커밋 전에 끝나 dispatch 가 `failed`, liveness 가 `exited` 가 된 경우도 같은 순서다. 커밋하지 않은 변경이 워크트리에 남으므로 새 worker 가 이어받아 끝낸다.
 
 ## 권장안이 검사를 무력화하는지 본다
 
