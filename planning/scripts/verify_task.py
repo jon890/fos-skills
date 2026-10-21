@@ -378,10 +378,32 @@ def positional(program, args):
     return rest
 
 
-def classify(command, entries, repo, cwd=""):
+# npm 스크립트 본문이 다른 스크립트를 부를 때 따라가는 깊이다.
+SCRIPT_DEPTH = 3
+
+
+def package_script_is_test(script, entries, repo, cwd, depth):
+    """`<cwd>/package.json` 의 `scripts.<script>` 본문에 테스트 명령이 하나라도 있는지 본다.
+
+    파일이나 이름이 없으면 False 다. 구현 전 계획이라도 package.json 은 이미 있는 파일이라 읽는다.
+    """
+    if depth >= SCRIPT_DEPTH:
+        return False
+    try:
+        scripts = json.loads((repo / cwd / "package.json").read_text(encoding="utf-8")).get("scripts")
+        body = scripts[script]
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return False
+    if not isinstance(body, str):
+        return False
+    return any(classify(inner, entries, repo, cwd, depth + 1) == "test" for inner in shell_commands(f"```bash\n{body}\n```"))
+
+
+def classify(command, entries, repo, cwd="", depth=0):
     """test, other, unknown 중 하나를 낸다. unknown 은 판정하지 못한 실행기다.
 
     cwd 는 같은 줄의 `cd <dir>` 가 가리키는 저장소 루트 기준 경로다. 스크립트 경로를 그 기준으로 풀어 파일 존재를 본다.
+    npm 스크립트 이름이 test 로 보이지 않으면 cwd 의 package.json 본문을 읽어 한 번 더 판정한다. depth 는 그때 따라간 단계다.
     """
     command = unwrap(command)
     if not command:
@@ -407,12 +429,16 @@ def classify(command, entries, repo, cwd=""):
         found = any(a in {"test", "verify", "package", "install"} for a in args)
     elif program in VALUE_OPTIONS:
         rest = positional(program, args)
-        if rest[:1] in (["run"], ["run-script"]):
+        explicit_run = rest[:1] in (["run"], ["run-script"])
+        if explicit_run:
             rest = rest[1:]
         elif program == "npm" and rest[:1] == ["exec"]:
             rest = rest[1:]
         # `pnpm jest <파일>` 처럼 패키지 관리자가 테스트 실행기 bin 을 바로 부르는 형태다.
         found = bool(rest) and (rest[0] == "test" or rest[0].startswith("test:") or rest[0] in {"jest", "vitest"} or rest[:2] == ["playwright", "test"])
+        # npm 과 bun 은 `run` 이 있어야 사용자 스크립트다. `npm install` 같은 하위 명령을 스크립트로 읽지 않는다.
+        if not found and rest and (explicit_run or program in {"pnpm", "yarn"}):
+            found = package_script_is_test(rest[0], entries, repo, cwd, depth)
     elif program == "node" and node_test(args):
         found = True
     elif program in {"go", "cargo", "deno", "dotnet"}:

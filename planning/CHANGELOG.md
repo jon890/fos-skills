@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.28.0
+
+`verify_task.py` 가 이름이 test 가 아닌 npm 스크립트를 테스트 실행으로 세지 못하던 문제를 고친다.
+
+- `npm run <이름>`, `pnpm <이름>`, `pnpm run <이름>`, `yarn <이름>`, `yarn run <이름>`, `bun run <이름>` 이 이름으로 테스트로 판정되지 않으면, 같은 줄의 `cd <dir> &&` 를 반영한 폴더의 `package.json` `scripts.<이름>` 본문을 읽어 한 번 더 판정한다. 본문의 `&&` 로 이어진 명령은 하나라도 테스트면 테스트다. 스크립트가 다른 스크립트를 부르면 본문을 세 단계까지 따라간다. `package.json` 이나 이름이 없으면 전과 같이 테스트가 아니다. `"e2e": "playwright test"` 인 fos-graphrag `financial-workbench/web` 에서 `npm run e2e` 가 「테스트 실행 지시가 없다」 위반이 되던 문제다. 2.26.0 에서 미뤄 둔 것이다
+- `npm install` 처럼 `run` 없는 npm 하위 명령은 스크립트로 읽지 않는다
+- 테스트를 더했다(본문이 playwright, vitest 인 경우, eslint 인 경우, 하위 폴더 `package.json`, 스크립트 연쇄와 깊이 제한)
+
 ## 2.27.0
 
 `verify_task.py` 가 계획 번호 겹침을 알린다.

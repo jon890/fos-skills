@@ -266,6 +266,33 @@ class TaskRulesTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(self.inspect(work, command, entries))
 
+    def package(self, rel, scripts):
+        self.file(rel, json.dumps({"scripts": scripts}))
+
+    def classify(self, line, cwd=""):
+        command = next(verify.shell_commands(f"```bash\n{line}\n```"))
+        return verify.classify(command, [], self.repo, cwd)
+
+    def test_package_script_body_decides_when_the_name_is_not_test(self):
+        self.package("package.json", {
+            "e2e": "playwright test", "unit": "vitest run", "lint": "eslint .",
+            "ci": "eslint . && vitest run", "all": "npm run e2e", "l1": "npm run l2", "l2": "npm run l3", "l3": "npm run l4", "l4": "vitest run",
+            "loop": "npm run loop",
+        })
+        for line in ("npm run e2e", "pnpm e2e", "pnpm run e2e", "yarn e2e", "yarn run e2e", "bun run e2e", "npm run unit", "npm run ci", "npm run all"):
+            with self.subTest(line=line):
+                self.assertEqual(self.classify(line), "test")
+        for line in ("npm run lint", "npm run missing", "npm run l1", "npm run loop", "npm install", "bun e2e"):
+            with self.subTest(line=line):
+                self.assertEqual(self.classify(line), "other")
+
+    def test_package_script_is_read_from_the_cd_folder(self):
+        self.package("web/package.json", {"e2e": "playwright test"})
+        self.assertEqual(self.classify("npm run e2e", "web"), "test")
+        self.assertEqual(self.classify("npm run e2e"), "other")
+        entries = [("web/e2e/a.spec.ts", "신규")]
+        self.assertEqual(self.inspect("### 1. `web/e2e/a.spec.ts` 추가", "cd web && npm run e2e", entries), [])
+
     def test_package_script_names_are_not_directory_arguments(self):
         for command in (
             ["pnpm", "test"],
