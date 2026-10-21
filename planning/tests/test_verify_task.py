@@ -941,31 +941,35 @@ class PlanNumberTest(unittest.TestCase):
         path.write_text("{}", encoding="utf-8")
 
     def check(self, plan):
-        out = []
-        verify.check_plan_number(self.repo, "tasks", plan, out)
-        return out
+        out, warnings = [], []
+        verify.check_plan_number(self.repo, "tasks", plan, out, warnings)
+        return out, warnings
 
-    def test_plan_on_other_branch_with_same_number_is_violation(self):
+    def test_new_plan_reusing_a_committed_number_is_violation(self):
+        self.plan("plan012-board")
+        out, warnings = self.check("plan012-board")
+        self.assertEqual([], warnings)
+        self.assertEqual(1, len(out), out)
+        self.assertRegex(out[0], r"계획 번호가 겹친다: plan12-login \(main, 작업 트리, \d{4}-\d{2}-\d{2} 추가\)\. 이 계획은 커밋 전 추가")
+        self.assertIn("이 계획의 번호를", out[0])
+
+    def test_committed_plans_sharing_a_number_only_warn(self):
+        # 이미 phase 가 진행 중인 계획을 폴더 이름 때문에 막지 않는다
         self.git("checkout", "-q", "-b", "other")
         self.plan("plan012-board")
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "plan012-board")
         self.git("checkout", "-q", "main")
-        out = self.check("plan12-login")
-        self.assertEqual(1, len(out), out)
-        self.assertIn("계획 번호가 겹친다: plan012-board (other, ", out[0])
-        self.assertRegex(out[0], r"plan012-board \(other, \d{4}-\d{2}-\d{2} 추가\)\. 이 계획은 \d{4}-\d{2}-\d{2} 추가")
-        self.assertIn("나중에 만든 쪽의 번호를", out[0])
+        out, warnings = self.check("plan12-login")
+        self.assertEqual([], out)
+        self.assertEqual(1, len(warnings), warnings)
+        self.assertRegex(warnings[0], r"plan012-board \(other, \d{4}-\d{2}-\d{2} 추가\)\. 이 계획은 \d{4}-\d{2}-\d{2} 추가")
+        self.assertIn("보고에서 계획 이름을 붙인다", warnings[0])
 
     def test_same_plan_and_other_numbers_and_prefixes_pass(self):
         self.plan("plan13-board")
         self.plan("plan12-board", prefix="fe-")
-        self.assertEqual([], self.check("plan12-login"))
-
-    def test_untracked_plan_in_work_tree_is_violation(self):
-        self.plan("plan12-board")
-        out = self.check("plan12-login")
-        self.assertTrue(any("plan12-board (작업 트리, 커밋 전 추가)" in issue for issue in out), out)
+        self.assertEqual(([], []), self.check("plan12-login"))
 
 
 if __name__ == "__main__":
