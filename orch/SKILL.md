@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "1.31.0"
+  version: "1.32.0"
 ---
 
 # orch
@@ -58,9 +58,9 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | --- | --- | --- | --- |
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 고른 이유가 dispatch 보고에 한 줄로 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint.py` 가 0 으로 끝났다 | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
-| 3 | 띄우기 | `worker-start` 가 종료 코드 0 으로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
+| 3 | 띄우기 | `launch-worker.sh` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
 | 4 | 기다리기 | 이 세션의 백그라운드 `wait-important.py` 가 하나만 돌고, 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages.py` 로 읽었고, 깨어날 때마다 `cleanup-sweep.py` 와 `board-sync.py` 를 돌렸다 | [`references/waiting.md`](references/waiting.md) |
-| 5 | 답하고 지시 보내기 | 답과 지시를 worker 의 마지막 메시지에 `reply` 로 보냈고, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
+| 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker.py` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다. 앞 PR 이 머지된 뒤라면 최신 base 와 합친 사본에서 통과했다 | [`references/verification.md`](references/verification.md) |
 | 7 | 머지와 정리 | `merge-with-finish.py` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
 
@@ -77,8 +77,8 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 
 ## 3. 띄우기
 
-원격을 갱신한 뒤 `make-worktree.sh` 로 지시서의 브랜치 이름과 `origin/<기준 브랜치>` 위에 워크트리를 만들고 `--worktree path:` 로 띄운다.
-`--spec` 의 한 줄은 `spec-line.py` 로 만들어 지시서의 `허락:` 줄이 첫 지시에 들어가게 한다.
+원격을 갱신한 뒤 `launch-worker.sh` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
+`worker-start` 를 직접 부르지 않는다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
 
@@ -89,8 +89,8 @@ heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartb
 
 ## 5. 답하고 지시 보내기
 
-답은 마지막 메시지에 `reply` 로 단다. 보낸 직후 `nudge-worker.py` 로 입력 대기인 worker 를 깨운다.
-끝난 worker, PR 생성과 회신이 막힌 worker 는 각각 reference 의 해당 절을 따른다.
+답과 지시는 `send-to-worker.py` 로 보낸다. 살아 있는 dispatch 면 마지막 메시지에 `reply` 하고 깨우고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
+PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 
 ## 6. 완료 검증
 
@@ -100,4 +100,4 @@ heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartb
 ## 7. 머지와 정리
 
 `merge-with-finish.py` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다.
-업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.sh` 로만 지운다. 끝난 handoff 산출물은 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다.
+머지 큐가 끝나면 `notify-conflicts.py` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.sh` 로만 지운다. 끝난 handoff 산출물은 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다.

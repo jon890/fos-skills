@@ -1,9 +1,19 @@
 # 5. 답하고 지시 보내기
 
-**worker 에게 보내는 답과 후속 지시는 그 worker 가 보낸 마지막 메시지에 `reply` 로 단다.**
+**worker 에게 보내는 답과 후속 지시는 `send-to-worker.py` 로 보낸다.** worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
+작업 중인 worker 의 입력란에 글이 섞이고, 끝난 dispatch 의 터미널에 쓴 지시는 Task 기록 없이 사라진다.
+스크립트가 dispatch 상태를 보고 경로를 고른다. 경로와 종료 코드는 스크립트 머리 주석이 소유한다.
+
+| dispatch | 스크립트가 하는 일 |
+| --- | --- |
+| 살아 있다 | 그 worker 의 마지막 메시지에 `reply` 하고 `nudge-worker.py` 로 깨운다 |
+| 끝났고 터미널이 남았다 | `--spec` 의 후속 지시서로 그 터미널에 새 Task 를 띄운다. `--spec` 이 없으면 종료 코드 3 |
+| 끝났고 터미널도 없다 | 종료 코드 3. `launch-worker.sh --worktree` 로 새로 띄운다 |
+
+`$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
 
 ```bash
-orca orchestration reply --id "$MSG_ID" --body "$BODY" --json
+python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch "$DISPATCH_ID" --body "$BODY"
 ```
 
 `send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤에는 `recipient_run_mismatch`, 끝난 dispatch 에는 `dispatch_inactive` 로 거절된다.
@@ -14,7 +24,7 @@ orca orchestration reply --id "$MSG_ID" --body "$BODY" --json
 **worker 가 status 를 보내고 입력 대기로 멈춰 있으면 `reply` 와 `send` 가 그 worker 를 깨우지 않는다.**
 worker 는 메시지를 다음 턴의 `check` 에서 읽는데, 입력 대기인 worker 에게는 다음 턴이 오지 않는다.
 dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an active dispatch` 로 거절된다.
-**`reply` 나 `send` 를 보낸 직후에는 `nudge-worker.py` 를 부른다.** 화면 마지막 줄들로 입력 대기인지 보고, 그때만 「코디네이터 메시지를 check 로 읽어라」 를 넣고 턴 시작을 확인한다.
+**`send-to-worker.py` 가 아니라 `reply` 나 `send` 를 직접 보냈으면 그 직후에 `nudge-worker.py` 를 부른다.** 화면 마지막 줄들로 입력 대기인지 보고, 그때만 「코디네이터 메시지를 check 로 읽어라」 를 넣고 턴 시작을 확인한다.
 작업 중이면 입력하지 않는다. 턴 시작이 보이지 않으면 같은 request id 로 `--retry-request` 를 한 번 더 보낸다.
 `$MSG_ID` 는 방금 보낸 메시지 id 다.
 
@@ -26,7 +36,7 @@ python3 "$SKILL_DIR/scripts/nudge-worker.py" --terminal "$TERMINAL_HANDLE" --msg
 종료 코드 1 이면 다시 확인해도 턴이 시작되지 않은 것이다. 화면을 보고 아래 「후속 지시가 전달되지 않음」 의 표로 판단한다.
 
 **끝난(settled) worker 에게 일을 더 주려면 같은 worktree 에 새 dispatch 를 띄운다.** 끝난 dispatch 에는 `reply` 가 가지 않는다.
-[`launch.md`](launch.md) 의 기존 worktree 예시를 쓰고, 같은 터미널을 이어 쓰려면 `--terminal "$TERMINAL_HANDLE"` 을 더한다.
+후속 지시서를 써서 `send-to-worker.py --spec` 으로 주면 남은 터미널을 이어 쓴다. 터미널이 없으면 [`launch.md`](launch.md) 의 기존 worktree 예시를 쓴다.
 worker 가 보낸 `ready: <plan> <worktree> <지시서>` 도 그 예시로 띄운다.
 
 ### 후속 지시가 전달되지 않음

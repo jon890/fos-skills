@@ -28,26 +28,32 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 **`--spec` 에는 지시서 경로와 사용자가 허락한 외부 동작을 담은 한 줄만 준다.**
 `spec-line.py` 가 지시서의 `허락:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 그 줄에 붙인다.
 허락이 파일 안에만 있으면 Codex worker 가 그것을 사용자의 직접 요청으로 볼지 실행마다 달라, 일부는 GitHub 게시가 금지됐다며 PR 을 열지 않고 멈춘다.
-PR 을 열게 하는 지시서면 `--require-permission` 을 줘서 `허락:` 줄이 빠졌을 때 띄우기 전에 멈춘다.
-`$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다.
+
+**worker 는 `launch-worker.sh` 로 띄운다.** 첫 지시 줄 만들기(`spec-line.py --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
+`worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
+`$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
-SPEC_LINE=$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC_FILE" --require-permission) &&
-WORKTREE=$(bash "$SKILL_DIR/scripts/make-worktree.sh" --repo "$REPO" --spec "$SPEC_FILE" --name "$NAME" --base "$BASE") &&
-orca orchestration worker-start --run "$RUN_ID" --spec "$SPEC_LINE" --worktree "path:$WORKTREE" \
-  --agent codex --model gpt-6.1-sol --effort low --json
+bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
+  -- --agent codex --model gpt-6.1-sol --effort low
 ```
 
-스크립트가 종료 코드 1 로 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
+`make-worktree.sh` 가 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
 새 일이면 지시서의 브랜치 이름을 바꾼다. 예전에 머지된 PR 과 같은 이름을 다시 쓰면 그 PR 의 기록과 섞인다.
 이어서 하는 일이면 이미 있는 worktree 에 띄운다.
 
-이미 있는 worktree 에 띄울 때는 `--worktree path:` 만 준다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
+이미 있는 worktree 에 띄울 때는 `--worktree` 에 그 경로를 준다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
+**그 워크트리에 터미널이 남아 있으면 스크립트가 목록을 보여 주고 거부한다.** 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
+목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다. 같은 터미널을 이어 쓰려면 `--` 뒤에 `--terminal` 로 준다.
 
 ```bash
-orca orchestration worker-start --run "$RUN_ID" --spec "$SPEC_LINE" --worktree "path:$WORKTREE" \
-  --agent claude --model claude-sonnet-5-5 --effort medium --json
+bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
+  -- --agent claude --model claude-sonnet-5-5 --effort medium
 ```
+
+**띄운 뒤 `worktree_creating` 에서 넘어가지 않으면 스크립트가 abandon 하고 같은 Task 를 `--retry-of` 로 한 번 다시 띄운다.** 기본으로 90초를 본다(`--watch`).
+다시 띄워도 멈추면 종료 코드 1 이다. 그때는 아래 「첫 화면에서 멈춤」 처럼 `worker-show` 의 `lastFailure` 를 본다.
+`worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다.
 
 ## 띄운 직후 확인
 
