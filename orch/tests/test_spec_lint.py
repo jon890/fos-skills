@@ -125,19 +125,21 @@ class SpecLintTest(unittest.TestCase):
         (self.repo / ".gitignore").write_text(".omc/\n")
         (self.repo / ".claude").mkdir()
         (self.repo / ".claude" / "orch-finish.json").write_text(
-            '{"finish": {"verify": "bash scripts/gone.sh --fast"}, "queue": {"before": "node src/net/client.ts"}}\n')
+            '{"finish": {"verify": "bash src/gone.sh --fast"}, "queue": {"before": "node src/net/client.ts"}}\n')
         self.commit_as_origin()
         # 로컬에만 만든 파일은 origin/main 에 없으므로 지적한다
         (self.repo / "src" / "local.ts").write_text("")
         overlay = self.overlay(
-            "- 검증: `bash scripts/verify.sh --fast` 와 `src/local.ts`\n"
+            "- 검증: `bash src/net/verify.sh --fast` 와 `src/local.ts`\n"
             "- 문서: `docs/adr/001.md`, `$SKILL_DIR/scripts/x.py`, `merge-queue.sh`, `docs/<이름>.md`\n"
-            "- 로컬: `.omc/orch/scripts/start.sh`, `~/bin/x.sh`, `/abs/x.sh`\n")
+            "- 로컬: `.omc/orch/scripts/start.sh`, `~/bin/x.sh`, `/abs/x.sh`\n"
+            "- 바깥: `references/cleanup.md`, `scratchpad/aapi.sh`, `origin/release-1.2.x`, `github.com/o/r.git`\n"
+            "- 예외: `src/local-only.sh` 는 로컬에만 둔다\n")
         code, out = self.check_overlay(overlay)
         self.assertEqual(1, code, out)
-        self.assertIn("overlay.md:5: 오버레이: `scripts/verify.sh` 가 origin/main 에 없다", out)
+        self.assertIn("overlay.md:5: 오버레이: `src/net/verify.sh` 가 origin/main 에 없다", out)
         self.assertIn("overlay.md:5: 오버레이: `src/local.ts` 가 origin/main 에 없다", out)
-        self.assertIn("orch-finish.json:1: 오버레이: `scripts/gone.sh` 가 origin/main 에 없다", out)
+        self.assertIn("orch-finish.json:1: 오버레이: `src/gone.sh` 가 origin/main 에 없다", out)
         self.assertEqual(3, out.count("오버레이:"), out)
 
     def test_check_overlay_passes_without_specs_when_paths_exist(self):

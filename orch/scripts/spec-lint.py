@@ -34,6 +34,8 @@ worker 가 ask 로 멈추거나 먼저 머지된 쪽 때문에 뒤 PR 이 충돌
     오버레이    (--check-overlay) 오버레이의 백틱 값과 orch-finish.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
                 명령(`bash scripts/verify.sh --fast`)이면 낱말마다 본다. `/` 가 든 확장자 있는 낱말만 경로로 본다.
                 파일 이름만 적은 것(스킬 스크립트일 수 있다), 절대경로, `~`, `$`, glob, `<...>` 가 든 값, git 이 무시하는 경로(`.omc/` 같은 로컬 폴더)는 보지 않는다.
+                첫 마디가 origin/<base> 의 최상위 항목이 아닌 경로(다른 저장소, 스킬 문서, scratchpad, `origin/...`)도 보지 않는다.
+                오버레이에서 `예외:` 로 시작하는 줄은 건너뛴다.
                 로컬에만 있는 스크립트를 오버레이가 부르면 다른 워크트리와 worker 에서 그 단계가 「파일 없음」 으로 멈춘다
 
 종료 코드:
@@ -113,6 +115,8 @@ def overlay_refs(repo_root, overlay):
     refs = []
     if overlay and Path(overlay).is_file():
         for no, line in enumerate(Path(overlay).read_text(encoding="utf-8").splitlines(), 1):
+            if field(line, "예외") is not None:
+                continue
             for tok in ticks(line):
                 refs += [(Path(overlay), no, w) for w in path_words(tok)]
     finish = Path(repo_root) / ".claude" / "orch-finish.json"
@@ -145,8 +149,12 @@ def check_overlay(repo_root, overlay, base):
     if done.returncode != 0:
         raise RuntimeError(f"{ref} 를 읽지 못했다")
     files = set(done.stdout.splitlines())
+    top = {f.split("/", 1)[0] for f in files}
     errors = []
     for path, no, word in overlay_refs(repo_root, overlay):
+        if word.split("/", 1)[0] not in top:
+            # 다른 저장소나 스킬 쪽 경로일 수 있다. 이 저장소의 경로인지 알 수 없으면 막지 않는다
+            continue
         if word in files or any(f.startswith(word.rstrip("/") + "/") for f in files):
             continue
         ignored = subprocess.run(["git", "-C", str(repo_root), "check-ignore", "-q", "--no-index", word])
