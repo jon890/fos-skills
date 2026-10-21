@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.29.0 (2026-10-21)
+
+`cleanup-sweep.py` 가 머지된 워크트리를 끝난 worker 의 터미널 때문에 건너뛰던 문제를 고친다.
+
+- PR 이 MERGED 로 판정된 워크트리는 workerState 가 working, ready 가 아니면 남은 터미널만으로 「살아 있는 worker」 라 보지 않는다. worker 의 Claude 세션 터미널은 일이 끝나도 `orca terminal list` 에 남아, 기존 판정은 `close_terminals` 에 닿기 전에 건너뛰었다. 이제 그 터미널을 닫고 정리를 이어 간다
+- cherry 로만 판정한 브랜치는 지금처럼 터미널이 남아 있으면 건너뛴다. 막 만든 브랜치에서 일하는 worker 를 지우지 않으려는 보호다. working, ready 인 worker 도 그대로 건너뛴다
+- 머리 주석의 판정 설명을 바뀐 동작에 맞췄다. 테스트 세 건(MERGED 와 끝난 worker, MERGED 와 working, cherry 와 끝난 Dispatch)을 더했고, 옛 테스트 하나(MERGED 와 succeeded 의 터미널 유지)는 새 동작으로 바꿨다
+
 ## 1.28.0 (2026-10-21)
 
 공통 지시서 틀에 커밋 attribution 줄을 더한다.

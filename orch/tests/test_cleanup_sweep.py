@@ -303,14 +303,35 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertNotIn("terminal close", self.calls())
         self.assertNotIn("worker-release", self.calls())
 
-    def test_succeeded_worker_with_live_terminal_is_kept_even_when_pr_merged(self):
-        path = self.worktree("sensor-fail")
-        self.squash_merge("sensor-fail", path)
-        self.workers = [{"dispatchId": "ctx_s", "workerState": "succeeded", "agentTerminalHandle": "term_s",
-                         "resource": {"worktreeId": f"x::{path}"}}]
+    def merged_worker_with_terminal(self, name, state, status):
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        self.workers = [{"dispatchId": "ctx_s", "workerState": state, "dispatchStatus": status,
+                         "agentTerminalHandle": "term_s", "resource": {"worktreeId": f"x::{path}"}}]
+        self.terminals = [{"handle": "term_s", "worktreePath": str(path)}]
+        return path
+
+    def test_merged_pr_with_finished_worker_closes_leftover_terminal_and_sweeps(self):
+        path = self.merged_worker_with_terminal("sensor-fail", "succeeded", "completed")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertIn("terminal close --terminal term_s", self.calls())
+
+    def test_merged_pr_with_working_worker_is_kept(self):
+        path = self.merged_worker_with_terminal("sensor-busy", "working", "dispatched")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("살아 있는 worker ctx_s", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_cherry_judged_branch_with_completed_dispatch_and_terminal_is_kept(self):
+        path = self.fresh_gone_branch("fresh-done")
+        self.workers = [{"dispatchId": "ctx_s", "workerState": "succeeded", "dispatchStatus": "completed",
+                         "agentTerminalHandle": "term_s", "resource": {"worktreeId": f"x::{path}"}}]
         self.terminals = [{"handle": "term_s", "worktreePath": str(path)}]
         out = self.run_sweep("--run", "run_x", "--apply")
         self.assertTrue(path.exists(), out)
+        self.assertIn("살아 있는 worker ctx_s", out)
         self.assertNotIn("terminal close", self.calls())
 
     def foreign_terminal_at(self, name):

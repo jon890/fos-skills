@@ -41,10 +41,13 @@ PR 찾기 (브랜치마다):
 건너뜀 (이유를 낸다):
     - 커밋 안 된 변경이 있다
     - 원격에도 머지된 PR HEAD 에도 없는 커밋이 있다
-    - 살아 있는 worker 가 그 worktree 를 맡고 있다. workerState 가 working 이나 ready 이거나,
-      Dispatch 상태와 상관없이 그 worker 의 터미널이 `orca terminal list` 에 살아 있으면 살아 있다고 본다.
+    - 살아 있는 worker 가 그 worktree 를 맡고 있다. workerState 가 working 이나 ready 이면 살아 있다고 본다.
+      PR 이 MERGED 가 아닌 브랜치(cherry 판정)는 Dispatch 상태와 상관없이 그 worker 의 터미널이
+      `orca terminal list` 에 살아 있어도 살아 있다고 본다.
       Dispatch 가 succeeded 여도 같은 터미널에서 후속 일을 하는 worker 가 있고,
-      그 브랜치가 막 만든 상태(base 와 같고 커밋 0)면 머지 판정을 통과해 일하는 worker 를 지우게 된다
+      그 브랜치가 막 만든 상태(base 와 같고 커밋 0)면 머지 판정을 통과해 일하는 worker 를 지우게 된다.
+      PR 이 MERGED 인 브랜치는 workerState 가 working, ready 가 아니면 남은 터미널만으로 건너뛰지 않는다.
+      worker 의 Claude 세션 터미널은 일이 끝나도 목록에 남기 때문이다. 그 터미널은 아래에서 닫는다
     - --run 을 줬고, 그 경로에 다른 Run 의 worker 터미널이 있다(아래 「다른 Run」)
     - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다.
       OMC session-end hook worker 는 세지 않는다. 스스로 끝나므로 `remove-worktree.sh` 가 끝날 때까지 기다린다
@@ -645,7 +648,9 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         return
     mine = workers_at(workers, path)
     alive = {t.get("handle") for t in terminals or []}
-    live = [w for w in mine if w.get("workerState") in LIVE_STATES or w.get("agentTerminalHandle") in alive]
+    # PR 이 MERGED 면 끝난 worker 의 세션 터미널이 남아 있어도 살아 있다고 보지 않는다. 아래에서 그 터미널을 닫는다
+    by_pr = why == BY_PR
+    live = [w for w in mine if w.get("workerState") in LIVE_STATES or (not by_pr and w.get("agentTerminalHandle") in alive)]
     if live:
         log(f"건너뜀 {path}: 살아 있는 worker {', '.join(w.get('dispatchId', '?') for w in live)}")
         return
@@ -657,7 +662,6 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
         what = "다른 Run 의 worker 터미널" if args.foreign is not None else "다른 Run 의 것인지 확인하지 못한 터미널"
         log(f"건너뜀 {path}: {what} {', '.join(theirs)}. 그 Run 의 코디네이터가 정리한다")
         return
-    by_pr = why == BY_PR
     if not by_pr and terminals_at(terminals, path):
         log(f"건너뜀 {path}: 살아 있는 터미널이 있다. PR 이 MERGED 가 아니면 터미널을 닫지 않는다")
         return
