@@ -12,7 +12,8 @@
        반영되지 않아 「살아 있는 터미널」 로 건너뛰고 워크트리를 남긴 적이 있다
     2. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.py --apply` 가 dispatch 해제, 터미널 닫기,
        워크트리와 브랜치 삭제를 맡고, 이 스크립트는 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
-       --specs-dir 를 주면 `브랜치:` 줄이 그 브랜치인 지시서를 지운다
+       --specs-dir 와 --complete 를 함께 주면 `브랜치:` 줄이 그 브랜치인 지시서를 지운다.
+       --complete 가 없으면 지시서는 남긴다. 업무 하나가 PR 여럿이면 다음 PR 에도 지시서를 쓴다
     3. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 deploy_verdict 가 소유한다
@@ -27,7 +28,8 @@
     --run RUN_ID          worker 를 찾을 Orca Run. 없으면 dispatch 해제는 건너뛰고 터미널만 경로로 찾는다
     --base-branch NAME    cleanup-sweep.py 의 --base
     --sweep-arg ARG       cleanup-sweep.py 에 더 넘길 인자. 하나씩 준다
-    --specs-dir DIR       지시서 폴더. `브랜치:` 줄이 이 PR 의 브랜치인 spec-*.md 를 지운다
+    --specs-dir DIR       지시서 폴더. --complete 일 때만 `브랜치:` 줄이 이 PR 의 브랜치인 spec-*.md 를 지운다.
+                          중간 PR 에서는 지시서를 남기고 그 사실을 로그에 한 줄 남긴다
     --deploy-workflow F   배포 워크플로 파일 이름 (예: deploy.yml)
     --deploy-branch B     배포가 도는 브랜치 (예: develop)
     --task-pattern RE     PR 제목에서 업무 번호를 뽑는 정규식. 첫 번째 그룹이 번호다 (예: '^\\[?(PROJ-[0-9]+)')
@@ -366,7 +368,10 @@ def finish(args, repo):
     if not cleanup_worker(args, repo, branch):
         log(f"정리 남음: {branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.py 출력을 본다")
     if args.specs_dir:
-        delete_specs(args.specs_dir, repo, branch)
+        if args.complete:
+            delete_specs(args.specs_dir, repo, branch)
+        else:
+            log("지시서 유지: 업무의 마지막 PR(--complete)이 아니다")
 
     if args.deploy_workflow:
         verdict, sha = wait_deployed(args, repo, merge)

@@ -3,7 +3,7 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 1.32.0 (2026-10-21)
+## 1.33.0 (2026-10-21)
 
 정리가 살아 있는 일을 지우지 않게 하고, 저장소 스크립트에만 있던 정리 두 가지를 옮긴다.
 
@@ -12,7 +12,7 @@
 - `cleanup-sweep.py` 가 머지된 PR 의 본문 파일(`<specs-dir>/../pr-<이름>.md`)을 지시서와 함께 지운다. 이름은 worktree 이름, 브랜치의 `/` 를 `-` 로 바꾼 것, 첫 `/` 뒤, PR 번호다
 - `references/cleanup.md`, `references/overlay.md`, README 를 고치고, 위 동작마다 테스트를 더했다
 
-## 1.31.0 (2026-10-21)
+## 1.32.0 (2026-10-21)
 
 띄우기와 보내기를 스크립트로 묶어, 직접 부르다 단계를 빠뜨리는 길을 닫는다.
 
@@ -21,7 +21,7 @@
 - 새 `scripts/notify-conflicts.py`: 열린 PR 을 `git merge-tree` 로 origin/<base> 와 합쳐 충돌과 충돌 파일을 내고, (PR, base SHA) 마다 한 번만 그 브랜치 워크트리의 worker 에게 base 를 합치라고 보낸다. 보내지 못하면 기록하지 않아 다음 실행이 다시 본다
 - `SKILL.md` 3, 5, 7단계와 `references/launch.md`, `references/replying.md`, `references/cleanup.md` 를 새 스크립트 기준으로 고쳤다. 세 스크립트의 흐름을 가짜 orca, gh 와 임시 git 저장소로 테스트했다
 
-## 1.30.0 (2026-10-21)
+## 1.31.0 (2026-10-21)
 
 머지 줄에서 저장소 스크립트에만 있던 장치를 코어로 옮긴다.
 
@@ -32,6 +32,13 @@
 - `merge-queue.sh` 가 시작할 때 `--copy-dir` 에서 pid 가 죽은 `merge-queue-pr<PR>-<pid>` 사본을 지운다. EXIT trap 은 KILL 로 끝나면 돌지 못해 사본이 남았다
 - `merge-with-finish.py` 가 `orch-finish.json` 의 `queue` 절(`before`, `required`, `verify_merged`, `verify_merged_when`, `docs_glob`, `method`)로 명령줄에 없는 머지 큐 옵션을 채운다. 명령줄이 우선하고, 모르는 키나 잘못된 값은 마무리를 걸기 전에 사용법 오류로 멈춘다
 - `references/cleanup.md`, `references/overlay.md`, README 에 새 옵션과 `queue` 절을 적었다. 위 동작마다 테스트를 더했다
+
+## 1.30.0 (2026-10-21)
+
+`finish-pr.py` 가 업무의 중간 PR 이 머지될 때 지시서를 지우던 문제를 고친다.
+
+- `--specs-dir` 를 줘도 `--complete`(업무의 마지막 PR)일 때만 그 브랜치의 지시서를 지운다. 중간 PR 에서는 남기고 로그에 한 줄 적는다. 업무 하나가 PR 여럿이면 중간 PR 머지 때 다음 PR 에 쓸 지시서가 사라졌다
+- 머리 주석, `--specs-dir` 도움말, `references/cleanup.md` 「머지 뒤 마무리」 를 맞췄다. 테스트 두 건(중간 PR 은 지시서 유지, 마지막 PR 은 지시서 삭제)을 더했다
 
 ## 1.29.0 (2026-10-21)
 
