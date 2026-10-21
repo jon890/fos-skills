@@ -12,12 +12,18 @@ orca orchestration reply --id "$MSG_ID" --body "$BODY" --json
 ## 입력 대기로 멈춘 worker 를 깨운다
 
 **worker 가 status 를 보내고 입력 대기로 멈춰 있으면 `reply` 와 `send` 가 그 worker 를 깨우지 않는다.**
+worker 는 메시지를 다음 턴의 `check` 에서 읽는데, 입력 대기인 worker 에게는 다음 턴이 오지 않는다.
 dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an active dispatch` 로 거절된다.
-`worker-read` 의 마지막 출력이 입력 대기면 터미널에 직접 입력한다. 보낸 뒤 커밋이나 화면이 바뀌는지 본다.
+**`reply` 나 `send` 를 보낸 직후에는 `nudge-worker.py` 를 부른다.** 화면 마지막 줄들로 입력 대기인지 보고, 그때만 「코디네이터 메시지를 check 로 읽어라」 를 넣고 턴 시작을 확인한다.
+작업 중이면 입력하지 않는다. 턴 시작이 보이지 않으면 같은 request id 로 `--retry-request` 를 한 번 더 보낸다.
+`$MSG_ID` 는 방금 보낸 메시지 id 다.
 
 ```bash
-orca terminal send --terminal "$TERMINAL_HANDLE" --text "코디네이터 메시지 $MSG_ID 를 orca orchestration check 로 읽고 수행한다" --enter --wait-submit 10
+python3 "$SKILL_DIR/scripts/nudge-worker.py" --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
 ```
+
+종료 코드 4 는 입력란에 쓰다 만 글이 있거나 권한 확인 창이라 입력하지 않은 것이다. `terminal read --screen` 으로 화면을 보고, 권한 확인 창이면 4단계의 「권한 확인 창」 을 따른다.
+종료 코드 1 이면 다시 확인해도 턴이 시작되지 않은 것이다. 화면을 보고 아래 「후속 지시가 전달되지 않음」 의 표로 판단한다.
 
 **끝난(settled) worker 에게 일을 더 주려면 같은 worktree 에 새 dispatch 를 띄운다.** 끝난 dispatch 에는 `reply` 가 가지 않는다.
 [`launch.md`](launch.md) 의 기존 worktree 예시를 쓰고, 같은 터미널을 이어 쓰려면 `--terminal "$TERMINAL_HANDLE"` 을 더한다.

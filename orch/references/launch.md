@@ -25,11 +25,14 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 스크립트는 지시서의 `브랜치:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 읽어 `origin/$BASE` 위에 그 이름으로 만들고,
 아래 「띄운 직후 확인」 의 exclude 와 로컬 설정 복사도 같이 한다. 표준 출력은 워크트리 경로 한 줄이다.
 
-**`--spec` 에는 지시서 경로를 담은 한 줄만 준다.**
+**`--spec` 에는 지시서 경로와 사용자가 허락한 외부 동작을 담은 한 줄만 준다.**
+`spec-line.py` 가 지시서의 `허락:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 그 줄에 붙인다.
+허락이 파일 안에만 있으면 Codex worker 가 그것을 사용자의 직접 요청으로 볼지 실행마다 달라, 일부는 GitHub 게시가 금지됐다며 PR 을 열지 않고 멈춘다.
+PR 을 열게 하는 지시서면 `--require-permission` 을 줘서 `허락:` 줄이 빠졌을 때 띄우기 전에 멈춘다.
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다.
 
 ```bash
-SPEC_LINE="지시서 $SPEC_FILE 를 끝까지 읽고 수행한다. 못 읽으면 escalation 으로 알린다."
+SPEC_LINE=$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC_FILE" --require-permission) &&
 WORKTREE=$(bash "$SKILL_DIR/scripts/make-worktree.sh" --repo "$REPO" --spec "$SPEC_FILE" --name "$NAME" --base "$BASE") &&
 orca orchestration worker-start --run "$RUN_ID" --spec "$SPEC_LINE" --worktree "path:$WORKTREE" \
   --agent codex --model gpt-6.1-sol --effort low --json
