@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.32.0 (2026-10-21)
+
+정리가 살아 있는 일을 지우지 않게 하고, 저장소 스크립트에만 있던 정리 두 가지를 옮긴다.
+
+- `cleanup-sweep.py` 와 `handoff-cleanup.py` 는 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서를 지우거나 옮기지 않는다. 지시서의 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서가 지워진 일이 있었다. task-list 의 상태와 worker-list 의 dispatch 상태가 pending, dispatched, running 인 Task 의 spec 줄에서 `.md` 경로를 모으고, 그 목록을 읽지 못하면 그 실행에서는 지시서를 하나도 지우지 않는다. 경로 모으기는 새 `scripts/live_specs.py` 가 맡고 두 스크립트가 import 한다. `handoff-cleanup.py` 에 `--run` 을 더했다
+- `cleanup-sweep.py` 가 저장소마다 처음에 기본 체크아웃이 기준 브랜치에 있으면 origin 으로 `--ff-only` 한다. 로컬에만 있는 커밋이 있으면 건드리지 않는다
+- `cleanup-sweep.py` 가 머지된 PR 의 본문 파일(`<specs-dir>/../pr-<이름>.md`)을 지시서와 함께 지운다. 이름은 worktree 이름, 브랜치의 `/` 를 `-` 로 바꾼 것, 첫 `/` 뒤, PR 번호다
+- `references/cleanup.md`, `references/overlay.md`, README 를 고치고, 위 동작마다 테스트를 더했다
+
 ## 1.31.0 (2026-10-21)
 
 띄우기와 보내기를 스크립트로 묶어, 직접 부르다 단계를 빠뜨리는 길을 닫는다.
