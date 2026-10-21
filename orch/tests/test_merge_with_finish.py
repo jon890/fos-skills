@@ -50,7 +50,7 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(["--check-timeout", "30", "--sweep-arg", "5", "7"], queue)
 
     def test_errors(self):
-        for argv in (["--repo"], ["--finish-arg"], ["abc"]):
+        for argv in (["--repo"], ["--finish-arg"], ["abc"], ["--board-item", "x"], ["--board-item", "5="], ["--board-item"]):
             with self.subTest(argv=argv), self.assertRaises(ValueError):
                 mwf.split_args(argv)
 
@@ -121,6 +121,16 @@ class WrapperRunTest(unittest.TestCase):
         line = self.lines("finish")[0]
         self.assertIn("--config /c.json", line)
         self.assertIn("--run run_1", line)
+
+    def test_board_item_is_passed_to_that_pr_only(self):
+        self.wrap("--board-item", "449=item-1", "--board-item=450=item-2", "449", "450", "451")
+        deadline = time.time() + 5
+        while time.time() < deadline and len(self.lines("finish")) < 3:
+            time.sleep(0.05)
+        by_pr = {l.split()[1]: l for l in self.lines("finish")}
+        self.assertIn("--board-id item-1", by_pr["449"])
+        self.assertIn("--board-id item-2", by_pr["450"])
+        self.assertNotIn("--board-id", by_pr["451"])
 
     def test_running_finish_is_not_started_twice(self):
         self.wrap("449", FAKE_FINISH_SLEEP="30")

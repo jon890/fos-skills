@@ -20,6 +20,7 @@
 래퍼 옵션 (merge-queue.sh 에는 넘기지 않는다):
     --finish-config FILE    finish-pr.py 의 --config. 없으면 finish-pr.py 가 <repo>/.claude/orch-finish.json 을 찾는다
     --finish-arg ARG        finish-pr.py 에 더 넘길 인자. 하나씩 준다. 값이 `--` 로 시작하면 `--finish-arg=--run` 처럼 쓴다
+    --board-item PR=ID      그 PR 의 마무리가 done 으로 바꿀 보드 항목(`finish-pr.py --board-id`). PR 마다 준다
     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본 <repo>/.omc/handoffs/queue. handoff-cleanup.py 가 이 폴더의 끝난 로그를 옮긴다
     --no-finish             마무리를 걸지 않고 머지 큐만 돌린다
 
@@ -57,7 +58,7 @@ def parse_queue_spec(arg):
 
 def split_args(argv):
     """(래퍼 옵션 dict, merge-queue.sh 인자 목록, [(PR, 마지막 PR 인지)]). 모르는 래퍼 옵션이면 ValueError."""
-    wrapper = {"finish_config": None, "finish_arg": [], "log_dir": None, "no_finish": False}
+    wrapper = {"finish_config": None, "finish_arg": [], "log_dir": None, "no_finish": False, "board_items": {}}
     queue, prs, repo = [], [], "."
     i = 0
     while i < len(argv):
@@ -76,6 +77,13 @@ def split_args(argv):
                 wrapper[key].append(value)
             else:
                 wrapper[key] = value
+        elif name == "--board-item":
+            value = inline if eq else (argv[i + 1] if i + 1 < len(argv) else "")
+            i += 0 if eq else 1
+            number, sep, item = value.partition("=")
+            if not (number.isdigit() and sep and item):
+                raise ValueError("--board-item 은 PR번호=항목id 형식이다")
+            wrapper["board_items"][number] = item
         elif arg == "--no-finish":
             wrapper["no_finish"] = True
         elif arg in VALUE_OPTIONS:
@@ -118,6 +126,7 @@ def start_finish(wrapper, number, complete):
     cmd = [sys.executable, FINISH_PR, number, "--repo", str(repo), "--pid-file", str(pid_file)]
     cmd += ["--config", wrapper["finish_config"]] if wrapper["finish_config"] else []
     cmd += ["--complete"] if complete else []
+    cmd += ["--board-id", wrapper["board_items"][number]] if number in wrapper["board_items"] else []
     cmd += wrapper["finish_arg"]
     out = log_dir / f"finish-{number}.out"
     with open(out, "w") as sink:

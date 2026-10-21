@@ -187,9 +187,11 @@ def local_branch_exists(repo, branch):
 
 
 def cleanup_worker(args, repo, branch):
-    """sweep 를 돌려 그 브랜치의 워크트리와 로컬 브랜치가 사라질 때까지 다시 시도한다. 사라졌으면 True."""
-    if not worktree_path(repo, branch) and not local_branch_exists(repo, branch):
-        return True
+    """sweep 를 돌려 그 브랜치의 워크트리와 로컬 브랜치가 사라질 때까지 다시 시도한다. 사라졌으면 True.
+
+    로컬 브랜치 이름이 PR 의 head 브랜치 이름과 다르면 head 이름으로는 워크트리가 보이지 않는다.
+    그래서 보이지 않아도 sweep 를 한 번은 돌린다. sweep 가 PR 을 upstream 이름 등으로 찾아 정리한다.
+    """
     cmd = [sys.executable, SWEEP, "--repo", str(repo), "--apply", "--kill-holders"]
     cmd += ["--run", args.run] if args.run else []
     cmd += ["--base", args.base_branch] if args.base_branch else []

@@ -210,6 +210,13 @@ class FinishFlowTest(unittest.TestCase):
         self.assertTrue(any(c.startswith("board ") and "set item-1 done" in c for c in calls), calls)
         self.assertLess(calls.index("task-cli complete PROJ-123"), max(i for i, c in enumerate(calls) if c.startswith("board ")))
 
+    def test_sweep_runs_once_even_when_the_pr_head_name_has_no_local_worktree(self):
+        """로컬 브랜치 이름이 PR head 이름과 다르면 head 이름으로 워크트리를 찾지 못해도 sweep 가 찾아 정리한다."""
+        self.state["pr"]["branch"] = "other/name"
+        code, out = self.finish("--run", "run_1", FAKE_SWEEP_REMOVES="0")
+        self.assertEqual(0, code, out)
+        self.assertEqual(1, len([c for c in self.calls() if c.startswith("sweep")]))
+
     def test_without_complete_the_task_command_is_not_run(self):
         code, out = self.finish("--task-pattern", r"^\[?(PROJ-[0-9]+)", "--complete-cmd", "task-cli complete {number}")
         self.assertEqual(0, code, out)
