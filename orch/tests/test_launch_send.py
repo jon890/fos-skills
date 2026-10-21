@@ -44,6 +44,9 @@ FAKE_ORCA = textwrap.dedent("""\
     if args[:2] == ["orchestration", "inbox"]:
         out({"messages": state.get("inbox", [])})
     if args[:2] == ["orchestration", "reply"]:
+        if opt("--id") in state.get("answered", []):
+            print(json.dumps({"ok": False, "error": {"message": "Question " + opt("--id") + " already has a different answer"}}))
+            sys.exit(1)
         out({"message": {"id": "msg_new"}})
     if args[:2] == ["orchestration", "worker-list"]:
         out({"workers": state.get("workers", [])})
@@ -217,6 +220,32 @@ class SendToWorkerTest(FakeBase):
                          self.lines("orca orchestration reply"))
         self.assertEqual(["nudge --terminal term_w --msg-id msg_new"], self.lines("nudge"))
 
+    def test_answered_question_is_skipped_for_the_next_message(self):
+        # orca 가 「already has a different answer」 로 거부하면 다음 후보로 한 번 더 시도한다
+        inbox = [self.message("m_q", "dispatch:ctx_1", "question", 5), self.message("m_st", "term_w", "status", 3)]
+        self.state(dispatches=self.worker("dispatched"), inbox=inbox, answered=["m_q"])
+        r = self.send("--body", "x")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("skipped: m_q", r.stdout)
+        self.assertEqual(["--id m_q", "--id m_st"],
+                         [" ".join(line.split()[3:5]) for line in self.lines("orca orchestration reply")])
+        self.assertEqual(["nudge --terminal term_w --msg-id msg_new"], self.lines("nudge"))
+
+    def test_question_with_a_visible_answer_is_not_tried(self):
+        answer = dict(self.message("m_ans", "run:run_x", "status", 6), thread_id="m_q")
+        question = dict(self.message("m_q", "dispatch:ctx_1", "question", 5), thread_id="m_q")
+        self.state(dispatches=self.worker("dispatched"), inbox=[question, answer, self.message("m_st", "term_w", "status", 3)])
+        r = self.send("--body", "x")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(["orca orchestration reply --id m_st --body x --run run_x"], self.lines("orca orchestration reply"))
+
+    def test_second_answered_rejection_is_not_retried_again(self):
+        inbox = [self.message(m, "term_w", "question", s) for m, s in (("m_a", 5), ("m_b", 4), ("m_c", 3))]
+        self.state(dispatches=self.worker("dispatched"), inbox=inbox, answered=["m_a", "m_b"])
+        r = self.send("--body", "x")
+        self.assertEqual(5, r.returncode, r.stdout)
+        self.assertEqual(2, len(self.lines("orca orchestration reply")))
+
     def test_explicit_reply_to_and_nudge_exit_code_pass_through(self):
         self.state(dispatches=self.worker("dispatched"))
         self.env["FAKE_EXIT"] = "4"
@@ -238,6 +267,19 @@ class SendToWorkerTest(FakeBase):
         r = self.send("--body", "x")
         self.assertEqual(3, r.returncode)
         self.assertIn("--spec", r.stdout)
+        self.assertEqual([], self.lines("orca orchestration reply"))
+        self.assertEqual([], self.lines("launch"))
+
+    def test_settled_dispatch_whose_agent_still_works_gets_the_body_with_a_warning(self):
+        # worker 가 phase 중간에 worker_done 을 보내 dispatch 가 닫혔지만 계속 일하는 경우다
+        self.state(dispatches=self.worker("succeeded"), terminals=[{"handle": "term_w"}])
+        self.env["FAKE_OUT"] = "working"
+        r = self.send("--body", "main 을 합쳐라")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("Task 기록에 묶이지 않는다", r.stdout)
+        self.assertEqual(["nudge --terminal term_w --state",
+                          "nudge --terminal term_w --text 코디네이터(닫힌 dispatch ctx_1): main 을 합쳐라"],
+                         self.lines("nudge"))
         self.assertEqual([], self.lines("orca orchestration reply"))
         self.assertEqual([], self.lines("launch"))
 
