@@ -27,9 +27,15 @@ FAKE_ORCA = textwrap.dedent("""\
         return args[args.index(name) + 1] if name in args else None
     if state.get("fail"):
         print("boom"); sys.exit(1)
+    if args[:2] == ["worktree", "list"]:
+        lists = state.get("worktree_lists")
+        paths = lists.pop(0) if lists else [p for p in os.environ.get("FAKE_WT_DEFAULT", "").split(":") if p]
+        out({"worktrees": [{"path": p} for p in paths]})
     if args[:2] == ["terminal", "list"]:
         out({"terminals": state.get("terminals", [])})
     if args[:2] == ["orchestration", "worker-start"]:
+        if state.get("start_errors"):
+            out({"error": state["start_errors"].pop(0)}, 1)
         if state.get("start_fails"):
             out({"failedStage": "agent_readiness"}, 1)
         dispatch = state["next_ids"].pop(0)
@@ -102,6 +108,7 @@ class LaunchWorkerTest(FakeBase):
         self.make = self.tmp / "make-worktree.sh"
         self.make.write_text(f'echo "make $*" >> "$FAKE_LOG"; mkdir -p {self.tmp}/new; echo {self.tmp}/new\n')
         self.env["MAKE_WORKTREE"] = str(self.make)
+        self.env.update(LAUNCH_WT_POLL="0", LAUNCH_WT_WAIT="3", FAKE_WT_DEFAULT=f"{self.worktree}:{self.tmp}/new")
 
     def launch(self, *args):
         cmd = ["bash", str(SCRIPTS / "launch-worker.sh"), "--spec", str(self.spec), *args]
@@ -179,6 +186,40 @@ class LaunchWorkerTest(FakeBase):
         self.state(start_fails=True)
         r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
         self.assertEqual(1, r.returncode)
+        self.assertEqual(1, len(self.lines("orca orchestration worker-start")))
+
+    def test_waits_until_orca_lists_the_worktree(self):
+        self.state(next_ids=["ctx_1"], dispatches={"ctx_1": self.shown("input_accepted")},
+                   worktree_lists=[[], [], [str(self.worktree)]])
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(3, len(self.lines("orca worktree list")))
+        self.assertIn("알아보기까지 2초 기다렸다", r.stderr)
+
+    def test_worktree_never_listed_stops_without_starting(self):
+        self.state(next_ids=["ctx_1"], worktree_lists=[[]] * 20)
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("Orca 가 워크트리를 알아보지 못했다", r.stderr)
+        self.assertEqual([], self.lines("orca orchestration worker-start"))
+
+    def test_selector_not_found_is_retried_once(self):
+        self.state(next_ids=["ctx_1"], dispatches={"ctx_1": self.shown("input_accepted")},
+                   start_errors=["selector_not_found"])
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(2, len(self.lines("orca orchestration worker-start")))
+        self.assertIn("LAUNCHED ctx_1", r.stdout)
+
+    def test_selector_not_found_twice_fails_and_other_errors_are_not_retried(self):
+        self.state(next_ids=["ctx_1"], start_errors=["selector_not_found", "selector_not_found"])
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(2, len(self.lines("orca orchestration worker-start")))
+        self.log.unlink()
+        self.state(next_ids=["ctx_1"], start_errors=["agent_not_found"])
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
         self.assertEqual(1, len(self.lines("orca orchestration worker-start")))
 
     def test_usage_errors(self):

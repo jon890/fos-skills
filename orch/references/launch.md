@@ -51,6 +51,9 @@ bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --worktree "$WORK
   -- --agent claude --model claude-sonnet-5-5 --effort medium
 ```
 
+**`orca worktree list` 에 그 경로가 보일 때까지 스크립트가 기다린다.** Orca 가 새 워크트리를 늦게 알아봐 바로 부르면 `worker-start` 가 `selector_not_found` 로 실패한다.
+기본 30초를 2초 간격으로 보고, 넘기면 종료 코드 1 로 멈춘다. 그 뒤에도 `worker-start` 가 `selector_not_found` 로 끝나면 한 번만 다시 부른다. 다른 오류는 다시 부르지 않는다.
+
 **띄운 뒤 `worktree_creating` 에서 넘어가지 않으면 스크립트가 abandon 하고 같은 Task 를 `--retry-of` 로 한 번 다시 띄운다.** 기본으로 90초를 본다(`--watch`).
 다시 띄워도 멈추면 종료 코드 1 이다. 그때는 아래 「첫 화면에서 멈춤」 처럼 `worker-show` 의 `lastFailure` 를 본다.
 `worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다.
@@ -106,9 +109,38 @@ terminal_title = ["app-name", "run-state", "project-name"]
 ## 시작 직후 실패
 
 worker 가 `stage.detail: agent_readiness`, `outcome: failed` 로 아무 출력 없이 끝나면, codex 는 먼저 위 「codex 준비 판정」 의 설정을 본다.
-설정이 있는데도 실패하면 그 모델이 이 환경에서 뜨지 않는 것이므로 같은 Task 를 다른 모델로 다시 띄운다. `--retry-of` 는 `--spec` 이 아니라 `--task` 와 함께 쓴다.
+설정이 있는데도 실패하면 그 모델이 이 환경에서 뜨지 않는 것이므로 같은 Task 를 다른 모델로 다시 띄운다. `--retry-of` 는 `--spec` 이 아니라 `--task` 와 함께 쓰고, Task 가 `failed` 나 `blocked` 일 때만 받아들여진다. 터미널이 끊겨 `abandoned` 가 된 경우는 아래 「끊긴 worker 다시 띄우기」 의 표를 따른다.
 `$WORKTREE` 는 처음 띄운 워크트리 경로다.
 
 ```bash
 orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --agent codex --model gpt-6.1-sol --effort low --worktree "path:$WORKTREE"
 ```
+
+## 끊긴 worker 다시 띄우기
+
+기기가 재시작되어 worker 터미널이 사라지면 `worker-show` 가 `[abandoned] stage=terminal_missing` 으로 보인다.
+`wait-important.py` 는 이때 `WORKER_LOST <dispatch> stage=terminal_missing` 줄을 내고 종료 코드 5 로 끝난다.
+`$DISPATCH_ID` 는 그 줄의 dispatch, `$TASK_ID` 는 `worker-show` 의 `dispatch.taskId`, `$WORKTREE` 는 처음 띄운 워크트리 경로다.
+
+어느 상태에서 어느 명령을 쓰는지는 이 표가 소유한다. `--retry-of` 는 실패하거나 막힌 Task 의 가장 최근 settled dispatch 에만 받아들여진다.
+
+| Task 상태 | dispatch 상태 | 쓰는 명령 |
+| --- | --- | --- |
+| `failed` 또는 `blocked` | 가장 최근 settled dispatch 가 `agent_readiness` 같은 시작 실패 | `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID"` (위 「시작 직후 실패」) |
+| `ready` | `abandoned` (`terminal_missing`) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"` |
+| `dispatched` | 살아 있는 dispatch | 다시 띄우지 않는다. 같은 worker 에 `send-to-worker.py` 로 보낸다 |
+
+Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본다. 상태를 모르고 `--retry-of` 를 주면 `task_not_startable`(「--retry-of must name the latest settled Dispatch of a failed or blocked Task」)로 거절된다. 거절되면 표의 둘째 줄로 간다.
+
+1. `worker-show --dispatch "$DISPATCH_ID"` 로 dispatch 상태를 보고, `task-list` 로 Task 상태를 본다
+2. 워크트리에서 `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD` 와 `git -C "$WORKTREE" status --short` 로 끝난 커밋과 작업 트리의 변경을 확인한다. 커밋 안 된 변경은 버리지 않고 그대로 둔다
+3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다
+4. 표대로 띄운다. 워크트리를 `path:` 로 주면 같은 워크트리에 이어 붙는다
+5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 가 `identity_unproven` 으로 닫지 않으므로 `orca terminal close` 를 쓴다. 이 세션이 띄운 worker 의 터미널만 닫는다
+
+```bash
+orca orchestration worker-start --task "$TASK_ID" --worktree "path:$WORKTREE" --json
+orca terminal close --terminal "$OLD_TERMINAL_HANDLE"
+```
+
+`$OLD_TERMINAL_HANDLE` 은 `worker-show` 의 `worker.agentTerminalHandle` 이다. 새로 띄운 worker 의 터미널과 다른지 확인한 뒤 닫는다.

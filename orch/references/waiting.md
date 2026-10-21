@@ -32,6 +32,10 @@ python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_
 orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바로 끝나거나 남음」 을 따른다.
 종료 코드 4 는 그 Run 에 다른 대기가 이미 있다는 뜻이다(`waiter_exists`). 다시 걸어도 같은 오류만 받으므로, 스크립트가 stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다.
 
+종료 코드 5 는 대기를 시작할 때 살아 있던 worker 가 끊겼다는 뜻이다. 출력에 `WORKER_LOST ctx_... stage=terminal_missing` 줄이 있다.
+기기가 재시작되어 터미널이 사라지면 메시지가 오지 않아 대기가 끝나지 않으므로, 스크립트가 60초마다(`--lost-interval-sec`) `worker-list` 로 상태를 본다. 대기를 시작할 때 이미 끝나 있던 dispatch 는 보지 않는다.
+그 줄이 나오면 다시 대기를 걸기 전에 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 마지막 줄의 `LAST_DELIVERY` id 는 다음 대기의 `--ack` 로 넘긴다.
+
 ## 깨어날 때마다 정리와 보드 동기화
 
 **대기가 끝날 때마다, 그리고 기다리는 동안 5분마다 아래 두 명령을 돌린다.** 메시지를 읽기 전에 돈다.

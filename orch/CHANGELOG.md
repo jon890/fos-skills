@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.35.0 (2026-10-21)
+
+worker 를 띄우고 기다리다 막히는 세 곳을 고친다.
+
+- `launch-worker.sh`: `worker-start` 전에 `orca worktree list` 에 그 경로가 보일 때까지 기다린다(기본 30초, 2초 간격, 환경 변수 `LAUNCH_WT_WAIT`, `LAUNCH_WT_POLL`). 넘기면 「Orca 가 워크트리를 알아보지 못했다」 와 종료 코드 1 로 멈추고, 기다린 초는 표준 오류에 한 줄 낸다. 그래도 `worker-start` 가 `selector_not_found` 로 끝나면 한 번만 다시 부른다. 다른 오류는 그대로 멈춘다. `make-worktree.sh` 로 만든 워크트리를 Orca 가 늦게 알아봐 곧바로 띄우면 실패하던 문제다
+- `wait-important.py`: 대기하는 동안 `--lost-interval-sec`(기본 60, 0 이면 끔)마다 `worker-list --run` 으로 상태를 본다. 대기를 시작할 때 살아 있던 dispatch 가 abandoned, failed, stopped, `terminal_missing` 으로 바뀌면 `WORKER_LOST <dispatch> stage=<단계>` 줄과 `LAST_DELIVERY` 줄을 내고 종료 코드 5 로 끝난다. 시작할 때 이미 끝나 있던 dispatch 는 보지 않는다. 기기가 재시작되어 worker 터미널이 사라졌을 때 대기가 52분 동안 깨어나지 않던 문제다
+- `references/launch.md`: 「끊긴 worker 다시 띄우기」 절과, Task 상태별로 `--retry-of` 를 쓸지 정하는 표를 더했다. Task 가 `ready` 인 `abandoned` dispatch 에 `--retry-of` 를 주면 `task_not_startable` 로 거절되므로 `--task` 와 `--worktree path:` 로 띄운다. 「시작 직후 실패」 에 같은 조건을 적었다
+- `references/waiting.md`: 종료 코드 5 와 `WORKER_LOST` 줄, 그때 할 일을 적었다
+- 테스트를 더했다(워크트리가 늦게 보이는 경우, 끝까지 안 보이는 경우, `selector_not_found` 재시도, 대기 중 abandoned, 처음부터 끝나 있던 dispatch)
+
 ## 1.34.0 (2026-10-21)
 
 설치본이 낡았거나 문서와 오버레이가 없는 파일을 가리키는 것을 띄우기 전에 잡는다.
