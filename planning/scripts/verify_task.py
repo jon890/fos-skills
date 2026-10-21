@@ -8,6 +8,10 @@ index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시�
 plan 의 변경 파일에 없는 것을 git grep 으로 찾아 경고한다.
 Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 직접 실행하는지 본다.
 `bun test` 의 점 디렉터리 경로와 금지 문자열 검사가 같은 phase 의 테스트에 걸리는지도 본다.
+같은 접두사와 번호를 다른 계획 디렉터리가 쓰면(`plan12-a` 와 `plan12-b`) 알린다.
+검사하는 계획이 아직 커밋 전이면 위반이고, 이미 커밋된 계획끼리 겹치면 경고다.
+새 겹침만 막고, 이미 진행 중인 계획의 폴더 이름을 바꾸게 하지 않는다.
+작업 트리와 로컬, 원격 브랜치의 tasks 디렉터리를 본다. 보고에서 phase 번호가 어느 계획인지 갈리지 않게 된다.
 완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 build-with-teams 가 디렉터리째 지운다.
 계획에 적힌 명령은 실행하지 않는다.
 
@@ -62,6 +66,7 @@ VAGUE_SCOPE = re.compile(r"전체\s*(?:수정|변경|적용|교체|리팩토링|
 VAGUE_SCOPE_TAIL = re.compile(
     r"^(?:(?:[을를은는이가도만과와에]|으로|로|에서|및)|\s*(?:하|한|할|해|합|되|된|될|시키|시켜))"
 )
+PLAN_NUMBER = re.compile(r"^(.*?)plan(\d+)-")
 HUMAN_CHECK = re.compile(r"수동\s*(?:검토|확인|검증)|눈으로\s*확인|직접\s*확인|육안")
 BSD_SED = re.compile(r"sed\s.*\\b")
 # 모노레포는 하위 프로젝트마다 docs 를 둔다. 루트 기준 경로의 어느 조각이든 `docs` 면 근거 문서로 본다.
@@ -851,6 +856,56 @@ def check_index(path: Path, plan_name: str, phase_files: list, out: list) -> Non
         out.append(f"{path} — phases 목록과 실제 phase 파일이 일치하지 않는다")
 
 
+def check_plan_number(repo: Path, tasks_dir: str, plan: str, out: list, warnings: list) -> None:
+    """같은 접두사와 번호를 쓰는 다른 계획 디렉터리를 찾는다.
+
+    다른 브랜치에서 만든 계획은 작업 트리에 없으므로 브랜치마다 ls-tree 로 본다.
+    번호는 앞의 0 을 떼고 비교한다. `plan012` 와 `plan12` 는 같은 번호다.
+    검사하는 계획이 커밋 전이면 지금 만드는 중이라 번호를 바꿀 수 있어 위반으로 낸다.
+    이미 커밋된 계획이면 phase 가 진행 중일 수 있어 경고로만 낸다. 폴더 이름을 바꾸면 진행 중인 일이 깨진다.
+    """
+    mine = PLAN_NUMBER.match(plan)
+    if not mine:
+        return
+    where = {}
+    local = repo / tasks_dir
+    if local.is_dir():
+        for child in local.iterdir():
+            if child.is_dir():
+                where.setdefault(child.name, []).append("작업 트리")
+    # `refs/remotes/origin/HEAD` 는 짧은 이름이 `origin` 이라 전체 이름에서 HEAD 를 제외한 뒤 줄인다
+    refs = subprocess.run(["git", "-C", str(repo), "for-each-ref", "--format=%(refname)",
+                           "refs/heads", "refs/remotes"], capture_output=True, text=True)
+    for full in refs.stdout.split() if refs.returncode == 0 else []:
+        if full.endswith("/HEAD"):
+            continue
+        ref = full.removeprefix("refs/heads/").removeprefix("refs/remotes/")
+        tree = subprocess.run(["git", "-C", str(repo), "ls-tree", "-d", "--name-only", ref, f"{tasks_dir}/"],
+                              capture_output=True, text=True)
+        for name in tree.stdout.split():
+            where.setdefault(posixpath.basename(name), []).append(ref)
+
+    def added(name):
+        # 그 계획을 처음 더한 커밋의 날짜. 아직 커밋하지 않았으면 None 이다
+        log = subprocess.run(["git", "-C", str(repo), "log", "--all", "--diff-filter=A", "--format=%cs",
+                              "--", f"{tasks_dir}/{name}"], capture_output=True, text=True)
+        dates = log.stdout.split() if log.returncode == 0 else []
+        return dates[-1] if dates else None
+
+    for name, places in sorted(where.items()):
+        other = PLAN_NUMBER.match(name)
+        if name != plan and other and other.group(1) == mine.group(1) and int(other.group(2)) == int(mine.group(2)):
+            theirs, ours = added(name), added(plan)
+            shown = sorted(set(places))
+            where_text = ", ".join(shown[:3]) + (f" 외 {len(shown) - 3}곳" if len(shown) > 3 else "")
+            found = (f"{local / plan} — 계획 번호가 겹친다: {name} ({where_text}, "
+                     f"{theirs or '커밋 전'} 추가). 이 계획은 {ours or '커밋 전'} 추가")
+            if ours is None:
+                out.append(found + ". 이 계획의 번호를 plan_number.sh 의 다음 번호로 바꾼다")
+            else:
+                warnings.append(found + ". 이미 커밋된 계획이라 이름은 그대로 두고, 보고에서 계획 이름을 붙인다")
+
+
 def check_bash_cwd(path: Path, text: str, out: list) -> None:
     """번들 스크립트 경로와 실행할 저장소를 혼동하는 블록만 검사한다."""
     for start, language, body in code_blocks(text):
@@ -1088,6 +1143,7 @@ def main(argv: list) -> int:
             if not phases:
                 raise ValueError(f"phase 파일 없음: {plan_dir}")
             check_index(plan_dir / "index.json", args.plan, phases, out)
+            check_plan_number(repo, args.tasks_dir, args.plan, out, warnings)
             remote = plan_dir / "remote-verification.md"
             if remote.is_file():
                 check_remote_verification(remote, out, warnings)
