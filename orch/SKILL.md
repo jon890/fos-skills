@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "1.33.0"
+  version: "1.34.0"
 ---
 
 # orch
@@ -18,6 +18,14 @@ metadata:
 명령 문법과 lifecycle 은 Orca 의 `orchestration` 가이드(`orca skills get orchestration`)가 소유한다.
 이 스킬은 그 가이드에 없는 코디네이터의 판단과, 각 단계에서 같은 실패를 피하는 규칙을 담는다.
 `$SKILL_DIR` 은 이 스킬 번들 경로다.
+
+스킬을 열면 먼저 설치본을 점검한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
+`MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
+설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
+
+```bash
+python3 "$SKILL_DIR/scripts/orch-doctor.py"
+```
 
 ## 언제 쓰나
 

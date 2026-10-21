@@ -50,6 +50,7 @@
 - 구현만 맡겼으면 `build-with-teams` 의 PR 단계는 위 공통 규칙(PR 생성 승인, 본문 파일, 머지하지 않음)을 따른다.
 - 하위 에이전트는 `name` 없이 띄운다. 이름을 주면 팀원으로 등록되고 tmux pane 이 없는 worker 터미널에서 실패한다.
 - 저장소에 `.claude/planning-overlay.md` 나 `.claude/build-with-teams-overlay.md` 가 있으면 경로는 그 파일을 따른다.
+- 보고에서 phase 를 가리킬 때는 계획 이름을 붙인다(`plan12-login phase 3`). 계획이 둘 이상 돌면 phase 번호만으로는 어느 계획인지 알 수 없다.
 
 ## 스킬 개선 후보 보고
 
