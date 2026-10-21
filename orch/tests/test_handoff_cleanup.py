@@ -94,6 +94,19 @@ FAKE_GH = textwrap.dedent("""\
     """)
 
 
+# 살아 있는 Task 의 spec 줄을 FAKE_TASKS 로 받는다. FAKE_ORCA_FAILS=1 이면 실패한다
+FAKE_ORCA = textwrap.dedent("""\
+    #!/usr/bin/env python3
+    import json, os, sys
+    if os.environ.get("FAKE_ORCA_FAILS") == "1":
+        sys.exit(1)
+    if "task-list" in sys.argv:
+        print(json.dumps({"result": {"tasks": json.loads(os.environ.get("FAKE_TASKS", "[]"))}}))
+    else:
+        print(json.dumps({"result": {"workers": []}}))
+    """)
+
+
 def sh(*cmd, env=None):
     return subprocess.run(cmd, check=True, capture_output=True, text=True, env=env).stdout.strip()
 
@@ -106,13 +119,17 @@ class CleanupRunTest(unittest.TestCase):
         cls.gh = cls.bin / "gh"
         cls.gh.write_text(FAKE_GH)
         cls.gh.chmod(0o755 | stat.S_IEXEC)
+        cls.orca = cls.bin / "orca"
+        cls.orca.write_text(FAKE_ORCA)
+        cls.orca.chmod(0o755 | stat.S_IEXEC)
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1",
                         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
-                        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com", GH=str(self.gh))
+                        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com", GH=str(self.gh),
+                        ORCA=str(self.orca))
         origin, self.repo = self.tmp / "origin.git", self.tmp / "repo"
         sh("git", "init", "-q", "--bare", "-b", "main", str(origin))
         sh("git", "clone", "-q", str(origin), str(self.repo))
@@ -181,6 +198,19 @@ class CleanupRunTest(unittest.TestCase):
         sh("git", "-C", str(self.repo), "worktree", "add", "-q", "-b", "feat/wt", str(self.tmp / "wt"), env=self.env)
         self.clean("--apply")
         self.assertTrue((self.handoffs / "specs/spec-wt.md").exists())
+
+    def test_spec_of_a_live_dispatch_stays(self):
+        spec = self.make("handoffs/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
+        tasks = [{"id": "t1", "status": "dispatched", "spec": f"지시서 {spec} 를 끝까지 읽고 수행한다."}]
+        _, err = self.clean("--apply", FAKE_TASKS=json.dumps(tasks))
+        self.assertIn("살아 있는 dispatch 가 쓰는 지시서라 남긴다", err)
+        self.assertTrue(spec.exists())
+
+    def test_specs_are_not_moved_when_live_dispatches_cannot_be_read(self):
+        spec = self.make("handoffs/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
+        _, err = self.clean("--apply", FAKE_ORCA_FAILS="1")
+        self.assertIn("살아 있는 dispatch 의 지시서를 읽지 못해", err)
+        self.assertTrue(spec.exists())
 
     def test_specs_are_not_moved_when_open_prs_cannot_be_read(self):
         self.make("handoffs/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")

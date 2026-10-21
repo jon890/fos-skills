@@ -15,7 +15,11 @@
     --run         worker 를 찾을 Orca Run. 없으면 worker 확인과 release 를 건너뛰고 터미널만 경로로 찾는다.
                   주면 다른 Run 의 worker 터미널이 있는 경로는 건너뛴다(아래 「다른 Run」)
     --specs-dir   지시서 폴더(저장소 기준 상대경로 또는 절대경로). worktree 이름과 같은
-                  `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다
+                  `<이름>.md` 와 `spec-<이름>.md` 를 지운다. 없으면 지시서는 건드리지 않는다.
+                  살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서는 지우지 않는다(`live_specs.py`).
+                  그 목록을 읽지 못하면 이번 실행에서는 지시서를 하나도 지우지 않는다.
+                  같은 폴더의 부모(`<specs-dir>/..`)에 있는 그 PR 의 본문 파일 `pr-<이름>.md` 도 지운다.
+                  이름은 worktree 이름, 브랜치의 `/` 를 `-` 로 바꾼 것, 브랜치의 첫 `/` 뒤, PR 번호다
     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
     --agent-glob  하위 에이전트 워크트리 폴더 이름의 glob. 기본 `agent-*`(아래 「하위 에이전트 워크트리」)
     --apply       실제로 정리한다
@@ -99,9 +103,14 @@ PR 찾기 (브랜치마다):
     워크트리 삭제를 막는 것은 작업 디렉터리이고, 작업 디렉터리가 밖에 있는 Gradle daemon 같은 프로세스는
     다른 워크트리의 빌드도 맡을 수 있다.
 
+기준 브랜치 따라가기 (저장소마다 맨 처음):
+    기본 체크아웃이 기준 브랜치에 있고 origin/<기준> 의 조상이면 `git merge --ff-only` 로 맞춘다.
+    로컬에만 있는 커밋이 있거나 다른 브랜치가 체크아웃돼 있으면 건드리지 않고 이유를 낸다.
+    기준 브랜치가 뒤처지면 그 위에서 계획한 worker 가 옛 코드를 본다.
+
 실행 순서 (worktree 마다):
     그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만), 끝난 Dispatch release, `remove-worktree.sh --delete-branch --merged-head`,
-    원격 브랜치 삭제(이미 없으면 통과), 지시서 삭제.
+    원격 브랜치 삭제(이미 없으면 통과), 지시서와 PR 본문 파일 삭제.
     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다.
 
@@ -129,6 +138,8 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from live_specs import live_spec_paths  # noqa: E402
 REMOVE = HERE / "remove-worktree.sh"
 LIVE_STATES = {"working", "ready"}
 # 이 상태의 worker 만 남은 프로세스를 끌 수 있다. failed 나 abandoned 는 같은 워크트리로 다시 맡길 수 있어 뺀다
@@ -577,16 +588,53 @@ def delete_remote(repo, plan, base, apply, log):
             log(f"  원격 브랜치를 지울 것 {name}")
 
 
-def delete_specs(specs_dir, name, apply, log):
+def delete_specs(specs_dir, name, apply, log, live=None, branch=None, pr=None):
+    """지시서와 PR 본문 파일을 지운다. live 는 살아 있는 dispatch 의 지시서 실경로 집합이고 None 이면 지시서를 남긴다."""
     if not specs_dir:
         return
     for candidate in (specs_dir / f"{name}.md", specs_dir / f"spec-{name}.md"):
-        if candidate.is_file():
+        if not candidate.is_file():
+            continue
+        if live is None:
+            log(f"  지시서를 남긴다 {candidate}: 살아 있는 dispatch 의 지시서 목록을 읽지 못했다")
+        elif os.path.realpath(candidate) in live:
+            log(f"  지시서를 남긴다 {candidate}: 살아 있는 dispatch 가 쓴다")
+        elif apply:
+            candidate.unlink()
+            log(f"  지시서 삭제 {candidate}")
+        else:
+            log(f"  지시서를 지울 것 {candidate}")
+    names = [name]
+    if branch:
+        names += [branch.replace("/", "-"), branch.split("/", 1)[-1]]
+    if pr and pr.get("number"):
+        names.append(str(pr["number"]))
+    for body in dict.fromkeys(specs_dir.parent / f"pr-{n}.md" for n in names):
+        if body.is_file():
             if apply:
-                candidate.unlink()
-                log(f"  지시서 삭제 {candidate}")
+                body.unlink()
+                log(f"  PR 본문 삭제 {body}")
             else:
-                log(f"  지시서를 지울 것 {candidate}")
+                log(f"  PR 본문을 지울 것 {body}")
+
+
+def follow_base(repo, base, apply, log):
+    """기본 체크아웃이 기준 브랜치에 있으면 origin/<기준> 으로 fast-forward 한다."""
+    _, current, _ = git(repo, "branch", "--show-current")
+    if current != base:
+        return
+    code, head, _ = git(repo, "rev-parse", "HEAD")
+    code2, remote, _ = git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{base}")
+    if code or code2 or head == remote:
+        return
+    if git(repo, "merge-base", "--is-ancestor", head, remote)[0] != 0:
+        log(f"기준 브랜치를 맞추지 않는다: {base} 에 origin/{base} 에 없는 커밋이 있다")
+        return
+    if not apply:
+        log(f"기준 브랜치를 fast-forward 할 것 {base} {head[:8]}..{remote[:8]}")
+        return
+    code, _, err = git(repo, "merge", "--ff-only", "-q", f"origin/{base}")
+    log(f"기준 브랜치 fast-forward {base} {head[:8]}..{remote[:8]}" if code == 0 else f"기준 브랜치 fast-forward 실패 {base}: {err}")
 
 
 def on_remote(repo, commit):
@@ -691,7 +739,7 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
             log(f"  터미널을 닫은 뒤에도 프로세스 {len(pids)} 개가 남으면 다음 실행으로 미룬다")
         log(f"  worktree 와 로컬 브랜치를 지울 것 {branch}")
         delete_remote(repo, plan, args.base, False, log)
-        delete_specs(specs_dir, name, False, log)
+        delete_specs(specs_dir, name, False, log, args.live_specs, branch, pr)
         return
 
     pids = wait_free(path, args.wait, args.poll_interval)
@@ -725,7 +773,7 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     if code != 0:
         return
     delete_remote(repo, plan, args.base, True, log)
-    delete_specs(specs_dir, name, True, log)
+    delete_specs(specs_dir, name, True, log, args.live_specs, branch, pr)
 
 
 def sweep_branches(repo, args, checked_out, log):
@@ -760,6 +808,7 @@ def sweep_repo(repo, args, workers, terminals, log):
         specs_dir = specs_dir if specs_dir.is_absolute() else repo / specs_dir
     git(repo, "fetch", "-q", "--prune", "origin")
     log(f"cleanup-sweep {'apply' if args.apply else 'dry-run'}: {repo} (base {base})")
+    follow_base(repo, base, args.apply, log)
     # 폴더가 이미 없는 워크트리 등록을 먼저 지운다. 남으면 그 브랜치 삭제가 `used by worktree` 로 거절된다
     # -v 의 목록은 stderr 로 나온다
     _, _, pruned = git(repo, "worktree", "prune", "-v", *([] if args.apply else ["-n"]))
@@ -806,6 +855,9 @@ def main(argv=None):
         args.foreign = foreign_handles(args.run)
         if args.foreign is None:
             print("cleanup-sweep: 모든 Run 의 worker 를 읽지 못해 이 Run worker 의 터미널만 닫는다", file=sys.stderr)
+    args.live_specs = live_spec_paths(ORCA, args.run) if args.specs_dir else set()
+    if args.live_specs is None:
+        print("cleanup-sweep: 살아 있는 dispatch 의 지시서 목록을 읽지 못해 지시서는 지우지 않는다", file=sys.stderr)
     code = 0
     for repo in repos:
         try:

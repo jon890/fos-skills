@@ -13,6 +13,8 @@
           아직 쓰는 지시서다(띄우기 전, PR 이 여럿인 일의 중간). 그 줄이 없는 지시서는 이 조건을 건너뛴다
         · 지시서의 `브랜치:` 가 원격과 워크트리에 없고 그 브랜치의 열린 PR 도 없다
         · 열린 PR 목록을 읽지 못하면 아무것도 옮기지 않는다
+        · 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서가 아니다(`live_specs.py`). 그 목록을 읽지 못해도
+          아무것도 옮기지 않는다. 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 옮긴 일이 있었다
     - <handoffs>/<폴더>: --folder-days 일 넘게 바뀌지 않았고, 보드 파일에 이름이 없고 <previews>/.keep 에도 없는 폴더
       (bin, queue, specs 와 보드 파일은 건드리지 않는다)
     - <previews>/<폴더나 파일>: 위와 같은 조건
@@ -26,6 +28,7 @@
     --repo DIR         대상 저장소. 기본은 현재 디렉터리. git 과 gh 를 여기서 돌린다
     --config FILE      옵션 값을 담은 JSON. 「cleanup」 절을 읽는다. 없으면 <repo>/.claude/orch-finish.json 이 있을 때 쓴다. 명령줄이 우선한다
     --gh-host HOST     gh 에 줄 GH_HOST
+    --run RUN          살아 있는 dispatch 를 찾을 Orca Run. 없으면 코디네이터에 묶인 Run 이다
     --omc DIR          산출물 루트. 기본 <repo>/.omc
     --handoffs DIR     기본 <omc>/handoffs
     --previews DIR     기본 <omc>/previews
@@ -37,7 +40,7 @@
     --data-ext LIST    쉼표로 이은 확장자. 기본 csv,tsv
     --apply            실제로 옮긴다
 
-GH, GIT 환경 변수로 실행 파일을 바꾼다.
+GH, GIT, ORCA 환경 변수로 실행 파일을 바꾼다.
 
 종료 코드: 0 돌았다(후보가 없어도 0), 2 사용법 오류
 """
@@ -57,6 +60,9 @@ from pathlib import Path
 
 GH = os.environ.get("GH", "gh")
 GIT = os.environ.get("GIT", "git")
+ORCA = os.environ.get("ORCA", "orca")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from live_specs import live_spec_paths  # noqa: E402
 DEFAULT_CONFIG = ".claude/orch-finish.json"
 QUEUE_DONE = re.compile(r"QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL", re.M)
 BRANCH_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:\*\*)?브랜치:(?:\*\*)?\s*`([^`]+)`", re.M)
@@ -162,15 +168,20 @@ def candidates(args, repo, now):
     specs = sorted((handoffs / "specs").glob("spec-*.md")) if (handoffs / "specs").is_dir() else []
     specs = [s for s in specs if s.name != "spec-common.md"]
     heads = open_pr_heads(repo) if specs else set()
+    live = live_spec_paths(ORCA, args.run) if specs else set()
     if heads is None:
         print("gh 로 열린 PR 을 읽지 못해 지시서는 옮기지 않는다", file=sys.stderr)
+    elif live is None:
+        print("orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다", file=sys.stderr)
     elif specs:
         _, worktrees = run([GIT, "worktree", "list"], repo)
         for spec in specs:
             text = spec.read_text(encoding="utf-8", errors="replace")
             remote_has = lambda b: run([GIT, "ls-remote", "--exit-code", "--heads", "origin", b], repo)[0] == 0
             worktree_has = lambda b: f"[{b}]" in worktrees
-            if spec_finished(text, statuses, heads, remote_has, worktree_has):
+            if os.path.realpath(spec) in live:
+                print(f"살아 있는 dispatch 가 쓰는 지시서라 남긴다: {spec.relative_to(omc)}", file=sys.stderr)
+            elif spec_finished(text, statuses, heads, remote_has, worktree_has):
                 found.append(spec)
 
     keep_file = previews / ".keep"
@@ -209,6 +220,7 @@ def build_parser():
     p.add_argument("--repo", default=".")
     p.add_argument("--config")
     p.add_argument("--gh-host")
+    p.add_argument("--run")
     p.add_argument("--omc")
     p.add_argument("--handoffs")
     p.add_argument("--previews")
