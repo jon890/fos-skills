@@ -27,8 +27,50 @@
 | 지시서 폴더 | `cleanup-sweep.py --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서를 지운다 (예: `.omc/handoffs/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec-lint.py` 머리 주석 | 2 |
 | 진행 보드 | 보드 파일 위치, 목표 항목 id 와 추적 항목 파일(`board-sync.py --goal --goal-items`) | 4, 7 |
+| 머지 뒤 마무리 | `<repo>/.claude/orch-finish.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
+| handoff 산출물 정리 | 같은 파일의 `cleanup` 절. handoff 와 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
 
-서버 이름, 접속 설정 파일 경로처럼 공개되면 안 되는 값이 있으면 오버레이를 공개 저장소에 커밋하지 않는다.
+## 마무리 설정 파일
+
+`merge-with-finish.py`, `finish-pr.py`, `handoff-cleanup.py` 는 `<repo>/.claude/orch-finish.json` 이 있으면 읽는다.
+`--config FILE` 로 다른 파일을 줄 수 있고, 명령줄 옵션이 파일 값보다 우선한다. 파일에 없는 값은 옵션이나 기본값을 쓴다.
+스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.py` 가, `cleanup` 절은 `handoff-cleanup.py` 가 읽는다.
+절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다.
+
+| 절 | 키 | 담는 것 |
+| --- | --- | --- |
+| `finish` | `gh_host` | gh 에 줄 호스트. github.com 이 아닌 저장소에서만 |
+| `finish` | `run` | worker 를 찾을 Orca Run id |
+| `finish` | `base_branch` | `cleanup-sweep.py` 의 기준 브랜치. 없으면 origin/HEAD |
+| `finish` | `deploy_workflow`, `deploy_branch` | 배포 워크플로 파일 이름과 배포가 도는 브랜치. 둘 다 주면 배포 성공까지 기다린다 |
+| `finish` | `task_pattern` | PR 제목에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다 |
+| `finish` | `complete_cmd` | 업무 완료 명령 틀. `{number}` 가 업무 번호로 바뀌고 셸을 거치지 않는다 |
+| `finish` | `board`, `board_bin` | 보드 파일과 보드 명령. 보드 항목 id 는 PR 마다 다르므로 `merge-with-finish.py --board-item 101=ITEM` 으로 준다 |
+| `finish` | `specs_dir` | 지시서 폴더. 그 PR 브랜치의 지시서를 지운다 |
+| `cleanup` | `omc`, `handoffs`, `previews`, `board` | 산출물 루트, handoff 폴더, 미리보기 폴더, 보드 파일 |
+| `cleanup` | `trash` | 휴지통 폴더. 기본은 `~/.Trash/omc-cleanup-<날짜>` |
+| `cleanup` | `queue_days`, `folder_days`, `data_days`, `data_ext` | 큐 로그, 폴더, 데이터 파일의 기준 일수와 데이터 확장자 |
+
+```json
+{
+  "finish": {
+    "gh_host": "github.example.com",
+    "run": "run_0123456789ab",
+    "deploy_workflow": "deploy-dev.yml",
+    "deploy_branch": "develop",
+    "task_pattern": "^\\[?(PROJ-[0-9]+)",
+    "complete_cmd": "task-cli workflow PROJ {number} Done",
+    "board": ".omc/handoffs/board.json",
+    "specs_dir": ".omc/handoffs/specs"
+  },
+  "cleanup": {
+    "gh_host": "github.example.com",
+    "trash": "~/.Trash/omc-cleanup"
+  }
+}
+```
+
+서버 이름, 접속 설정 파일 경로, 호스트 이름, 프로젝트 코드처럼 공개되면 안 되는 값이 있으면 오버레이와 마무리 설정 파일을 공개 저장소에 커밋하지 않는다.
 로컬 전용 위치에 두고 `.git/info/exclude` 로 뺀다.
 
 ## 예시

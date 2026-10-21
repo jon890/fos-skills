@@ -48,6 +48,8 @@ python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --ru
 python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --goal-items "$ITEMS_FILE"
 ```
 
+머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.
+
 **worker 를 띄운 저장소가 둘 이상이면 `--repo` 를 저장소마다 준다.** 한 번의 실행이 저장소를 차례로 돌고, 하나를 읽지 못해도 나머지는 돈다.
 `--base` 를 주지 않으면 저장소마다 `origin/HEAD` 가 가리키는 브랜치를 쓴다. 기준 브랜치가 저장소마다 다르면 `--base` 를 빼는 편이 맞다.
 `--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.

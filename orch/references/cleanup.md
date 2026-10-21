@@ -5,14 +5,21 @@
 
 ## 머지
 
-**PR 머지는 `merge-queue.sh` 로 한다.** 여러 PR 이면 머지할 순서대로 준다.
-스크립트가 PR 마다 필수 체크가 모두 나타나고 끝나기를 기다리고, 실패한 체크, 미해결 리뷰 스레드, 충돌, 원격 HEAD 불일치 중 하나라도 있으면 멈춘다.
-옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
+**PR 머지는 `merge-with-finish.py` 로 건다. 사용자가 말하지 않아도 마무리까지 함께 건다.**
+이 스크립트가 PR 마다 `finish-pr.py`(아래 「머지 뒤 마무리」)를 백그라운드로 걸고, 같은 인자로 `merge-queue.sh` 를 돌린다.
+머지 큐만 걸면 worker 정리, 배포 확인, 업무 완료, 보드 갱신이 코디네이터의 기억에 달려 빠진다.
+마무리가 필요 없는 저장소만 `merge-queue.sh` 를 직접 걸거나 `merge-with-finish.py --no-finish` 를 쓴다.
+
+머지 큐는 오래 걸리므로 Bash 도구의 `run_in_background` 로 건다. 셸의 `&` 나 `nohup` 은 쓰지 않는다.
+`merge-queue.sh` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.py` 머리 주석이 소유한다.
 PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은 변수 하나로 넘기면 zsh 가 쪼개지 않아 사용법 오류로 끝난다.
+**PR 번호 뒤 `!` 는 그 PR 이 업무의 마지막 PR 이라는 뜻이다.** 업무 하나에 PR 이 여럿이면 마지막 PR 에만 붙인다. 배포가 성공한 뒤 업무가 완료 처리된다.
 
 ```bash
-bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 102 103
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 102 103!
 ```
+
+저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.claude/orch-finish.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
 
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
 
@@ -47,7 +54,7 @@ python3 "$SKILL_DIR/scripts/ci-ready.py" --repo "$REPO" 101 102
 - **실패를 허용하려면 그 이유를 사용자에게 먼저 알린다.** 어떤 체크가 왜 실패했고, 대신 어떤 검증을 끝냈는지 적는다
 
 ```bash
-bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --required test,browser --allow-fail claude-review 101
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --required test,browser --allow-fail claude-review 101
 ```
 
 ### base 최신 여부
@@ -62,7 +69,7 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --required test,browser 
 - 머지 큐에서 앞선 PR 이 머지되면 뒤 PR 은 base 가 달라진 것이므로 이 옵션이 뒤 PR 마다 다시 base 를 merge 한다. 시간이 더 걸리는 대신 base 가 깨지지 않는다
 
 ```bash
-bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
 ```
 
 ### 같은 파일을 고친 PR
@@ -82,7 +89,7 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --require-up-to-date --r
 `$VERIFY_CMD` 와 `$COPY_DIR` 은 오버레이의 값이다.
 
 ```bash
-bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --verify-merged "$VERIFY_CMD" --copy-dir "$COPY_DIR" 101 102
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --verify-merged "$VERIFY_CMD" --copy-dir "$COPY_DIR" 101 102
 ```
 
 ### 머지 전 명령
@@ -94,7 +101,7 @@ DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하�
 백업 스크립트는 저장소마다 서버와 DB 가 달라 이 스킬에 두지 않는다. 저장소의 오버레이가 경로와 인자를 정한다.
 
 ```bash
-bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 ```
 
 백업 스크립트를 저장소에 둘 때 지킬 것이다.
@@ -102,6 +109,21 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 '102:./bin/backup-db
 - 덤프가 끝났는지 종료 코드와 파일 크기로 판정하고, 실패하면 0 이 아닌 코드로 끝낸다. 머지 큐가 그 코드로 멈춘다
 - 보관 개수를 정하고 오래된 덤프를 지운다. 개발 단계에서는 DB 마다 최근 몇 개만 남겨도 된다
 - 비밀번호는 서버 쪽 환경 변수로 읽는다. 명령줄과 출력에 남기지 않는다
+
+### 머지 뒤 마무리
+
+**`finish-pr.py` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.py` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
+옵션과 판정은 스크립트 머리 주석이 소유한다. 순서는 아래와 같다.
+
+1. PR 이 MERGED 가 될 때까지 기다린다. 머지 없이 닫히면 `FINISH-FAIL` 이다
+2. `cleanup-sweep.py --apply --kill-holders` 로 그 브랜치의 dispatch 해제, 터미널 닫기, 워크트리와 브랜치 삭제를 한다. 브랜치의 워크트리가 사라질 때까지 다시 시도한다. 지시서 폴더를 주면 그 브랜치의 지시서도 지운다
+3. 배포 워크플로를 정했으면 머지 커밋을 조상으로 가진 커밋의 실행이 성공할 때까지 기다린다. 머지 커밋의 실행이 뒤 커밋의 배포에 합쳐져 `skipped` 나 `cancelled` 로 끝나도 뒤 실행이 성공하면 성공이다. 성공도 진행 중도 없이 실패만 있으면 `FINISH-FAIL` 이다
+4. `!` 로 건 PR 이면 PR 제목에서 업무 번호를 뽑아 업무 완료 명령을 돌린다. 배포가 실패했으면 돌리지 않는다
+5. 보드 항목을 정했으면 done 으로 바꾼다
+
+출력은 `<로그 폴더>/finish-<PR>.out` 에 쌓이고 마지막 줄이 `FINISH-DONE` 이나 `FINISH-FAIL` 이다. 깨어날 때마다 그 줄을 본다.
+`FINISH-FAIL` 이면 출력의 이유를 읽고 사용자에게 알린다. 배포 실패나 업무 번호 없음처럼 사람이 정해야 하는 것은 스크립트가 다시 시도하지 않는다.
+머지 큐가 `STOP` 으로 멈춘 뒤 남은 PR 만 다시 걸어도 같은 PR 의 마무리는 겹쳐 돌지 않는다. 이미 도는 마무리의 pid 파일을 본다.
 
 ## 정리
 
@@ -112,7 +134,7 @@ bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" 101 '102:./bin/backup-db
 판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
 
 ```bash
-bash "$SKILL_DIR/scripts/merge-queue.sh" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
 ```
 
 스크립트가 다루는 것은 아래다. 이 경우를 코디네이터가 직접 지우지 않는다.
@@ -190,3 +212,17 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. 그 커밋�
 
 - PR 이 열려 있는 워크트리. 리뷰 반영에 필요하고, 머지된 뒤에 지운다
 - `release/*` 브랜치. 머지 여부와 무관하게 릴리스 이력이다
+
+### handoff 산출물 정리
+
+끝난 작업의 큐 로그, 지시서, 오래된 handoff 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
+**기본은 옮길 후보만 보인다. 후보를 사용자에게 보인 뒤 `--apply` 로 옮긴다.** 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
+
+```bash
+python3 "$SKILL_DIR/scripts/handoff-cleanup.py" --repo "$REPO"
+python3 "$SKILL_DIR/scripts/handoff-cleanup.py" --repo "$REPO" --apply
+```
+
+- 지시서는 보드 항목이 done 이 아니면 남긴다. 띄우기 전이거나 PR 이 여럿인 일의 중간일 수 있다
+- 열린 PR 목록을 읽지 못하면 지시서를 옮기지 않는다
+- 미리보기와 handoff 폴더는 3일 넘게 바뀌지 않았고 보드 파일과 `<previews>/.keep` 에 이름이 없을 때만 옮긴다. 남길 미리보기는 `.keep` 에 한 줄에 하나씩 적는다
