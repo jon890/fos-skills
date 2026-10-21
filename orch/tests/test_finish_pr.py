@@ -210,6 +210,19 @@ class FinishFlowTest(unittest.TestCase):
         self.assertTrue(any(c.startswith("board ") and "set item-1 done" in c for c in calls), calls)
         self.assertLess(calls.index("task-cli complete PROJ-123"), max(i for i, c in enumerate(calls) if c.startswith("board ")))
 
+    def test_intermediate_pr_keeps_the_spec(self):
+        code, out = self.finish("--specs-dir", str(self.specs))
+        self.assertEqual(0, code, out)
+        self.assertTrue((self.specs / "spec-x.md").exists())
+        self.assertTrue((self.specs / "spec-y.md").exists())
+        self.assertIn("지시서 유지", out)
+
+    def test_last_pr_deletes_only_its_branch_spec(self):
+        code, out = self.finish("--specs-dir", str(self.specs), *self.COMPLETE)
+        self.assertEqual(0, code, out)
+        self.assertFalse((self.specs / "spec-x.md").exists())
+        self.assertTrue((self.specs / "spec-y.md").exists())
+
     def test_sweep_runs_once_even_when_the_pr_head_name_has_no_local_worktree(self):
         """로컬 브랜치 이름이 PR head 이름과 다르면 head 이름으로 워크트리를 찾지 못해도 sweep 가 찾아 정리한다."""
         self.state["pr"]["branch"] = "other/name"
