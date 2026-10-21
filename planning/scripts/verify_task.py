@@ -878,10 +878,20 @@ def check_plan_number(repo: Path, tasks_dir: str, plan: str, out: list) -> None:
                               capture_output=True, text=True)
         for name in tree.stdout.split():
             where.setdefault(posixpath.basename(name), []).append(ref)
+    def added(name):
+        # 그 계획을 처음 더한 커밋의 날짜. 아직 커밋하지 않았으면 None 이다
+        log = subprocess.run(["git", "-C", str(repo), "log", "--all", "--diff-filter=A", "--format=%cs",
+                              "--", f"{tasks_dir}/{name}"], capture_output=True, text=True)
+        dates = log.stdout.split() if log.returncode == 0 else []
+        return dates[-1] if dates else None
+
     for name, places in sorted(where.items()):
         other = PLAN_NUMBER.match(name)
         if name != plan and other and other.group(1) == mine.group(1) and int(other.group(2)) == int(mine.group(2)):
-            out.append(f"{local / plan} — 계획 번호가 겹친다: {name} ({', '.join(sorted(set(places)))})")
+            theirs, ours = added(name), added(plan)
+            out.append(f"{local / plan} — 계획 번호가 겹친다: {name} ({', '.join(sorted(set(places)))}, "
+                       f"{theirs or '커밋 전'} 추가). 이 계획은 {ours or '커밋 전'} 추가. "
+                       "나중에 만든 쪽의 번호를 plan_number.sh 의 다음 번호로 바꾼다")
 
 
 def check_bash_cwd(path: Path, text: str, out: list) -> None:

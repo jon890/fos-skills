@@ -953,7 +953,9 @@ class PlanNumberTest(unittest.TestCase):
         self.git("checkout", "-q", "main")
         out = self.check("plan12-login")
         self.assertEqual(1, len(out), out)
-        self.assertIn("계획 번호가 겹친다: plan012-board (other)", out[0])
+        self.assertIn("계획 번호가 겹친다: plan012-board (other, ", out[0])
+        self.assertRegex(out[0], r"plan012-board \(other, \d{4}-\d{2}-\d{2} 추가\)\. 이 계획은 \d{4}-\d{2}-\d{2} 추가")
+        self.assertIn("나중에 만든 쪽의 번호를", out[0])
 
     def test_same_plan_and_other_numbers_and_prefixes_pass(self):
         self.plan("plan13-board")
@@ -963,7 +965,7 @@ class PlanNumberTest(unittest.TestCase):
     def test_untracked_plan_in_work_tree_is_violation(self):
         self.plan("plan12-board")
         out = self.check("plan12-login")
-        self.assertTrue(any("plan12-board (작업 트리)" in issue for issue in out), out)
+        self.assertTrue(any("plan12-board (작업 트리, 커밋 전 추가)" in issue for issue in out), out)
 
 
 if __name__ == "__main__":
