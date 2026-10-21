@@ -20,6 +20,11 @@ FAKE_GH = textwrap.dedent("""\
     args = sys.argv[1:]
     open(os.environ["FAKE_LOG"], "a").write(" ".join(args) + "\\n")
     prs = state["prs"]
+    if args[0] == "api":
+        if state.get("api_fails"):
+            sys.exit(1)
+        number = [a for a in args if a.startswith("repos/")][0].split("/")[4]
+        print("\\n".join(prs[number]["_files"])); sys.exit(0)
     if args[:2] == ["pr", "view"]:
         pr = prs[args[2]]
         seq = pr.get("mergeable_seq")
@@ -60,7 +65,7 @@ class CiReadyTest(unittest.TestCase):
 
     def pr(self, number, files, draft=True, **over):
         base = {"number": number, "state": "OPEN", "isDraft": draft, "mergeable": "MERGEABLE",
-                "baseRefName": "main", "files": [{"path": f} for f in files]}
+                "baseRefName": "main", "url": f"https://ghe.example.com/owner/repo/pull/{number}", "_files": files}
         base.update(over)
         return base
 
@@ -127,10 +132,33 @@ class CiReadyTest(unittest.TestCase):
         self.assertIn("2 보류: state=MERGED", r.stdout)
         self.assertEqual([], self.readied())
 
-    def test_file_list_at_limit_is_held(self):
-        r = self.run_ready([self.pr(1, [f"f{i}.py" for i in range(100)])], "1")
+    def test_files_are_read_over_rest_not_graphql(self):
+        # 오버레이가 GraphQL 2차 한도 때문에 `--json files` 를 금지한다
+        r = self.run_ready([self.pr(1, ["a.py"]), self.pr(2, ["b.py"], draft=False)], "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        log = self.log.read_text().splitlines()
+        self.assertFalse([l for l in log if l.startswith("pr ") and "files" in l], log)
+        api = [l for l in log if l.startswith("api ")]
+        self.assertIn("api --hostname ghe.example.com repos/owner/repo/pulls/1/files?per_page=100 --paginate "
+                      "--jq .[].filename", api)
+        self.assertTrue(any("pulls/2/files" in l for l in api), api)
+
+    def test_up_to_300_files_are_compared(self):
+        many = [f"f{i}.py" for i in range(300)]
+        r = self.run_ready([self.pr(1, many), self.pr(2, ["f299.py"], draft=False)], "1")
         self.assertEqual(1, r.returncode)
-        self.assertIn("목록이 잘렸을 수 있다", r.stdout)
+        self.assertIn("1 보류: ready PR 과 겹친다 #2(f299.py)", r.stdout)
+
+    def test_more_than_300_files_is_held(self):
+        r = self.run_ready([self.pr(1, [f"f{i}.py" for i in range(301)])], "1")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("301 개로 300 개를 넘는다", r.stdout)
+
+    def test_file_lookup_failure_is_exit_2(self):
+        r = self.run_ready([self.pr(1, ["a.py"])], "1", api_fails=True)
+        self.assertEqual(2, r.returncode)
+        self.assertIn("파일을 읽지 못했다", r.stderr)
+        self.assertEqual([], self.readied())
 
     def test_lookup_failure_is_exit_2(self):
         r = self.run_ready([self.pr(1, ["a.py"])], "1", list_fails=True)

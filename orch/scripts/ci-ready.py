@@ -17,8 +17,12 @@ PR 마다 (받은 순서대로):
     - mergeable 이 CONFLICTING 이면 보류한다. UNKNOWN 이면 몇 번 다시 묻고, 그래도 모르면 보류한다
     - 같은 base 로 가는 열린 ready PR 과 바뀐 파일이 겹치면 보류하고 겹친 PR 과 파일을 낸다.
       이번 실행에서 앞서 ready 로 바꾼 PR 도 ready 로 센다. draft PR 끼리의 겹침은 세지 않는다
-    - 바뀐 파일이 100 개 이상이면 목록이 잘렸을 수 있어 보류한다(`gh pr view --json files` 의 한도)
+    - 바뀐 파일이 300 개를 넘으면 직접 확인하라고 보류한다
     - 나머지는 `gh pr ready` 로 바꾼다
+
+바뀐 파일은 REST(`gh api repos/{owner}/{repo}/pulls/{n}/files --paginate`)로 읽는다.
+`gh pr view --json files` 같은 GraphQL 조회는 PR 이 많으면 2차 한도에 걸리고 100 개에서 잘린다.
+호스트와 저장소는 PR URL 에서 읽는다. `gh api` 는 origin 을 보지 않고 기본 호스트로 가기 때문이다.
 
 GH 환경 변수로 gh 실행 파일을 바꾼다. ORCH_READY_RETRY_SECONDS 로 UNKNOWN 재시도 간격(기본 15초)을 바꾼다.
 
@@ -37,7 +41,7 @@ import time
 GH = os.environ.get("GH", "gh")
 RETRY_SECONDS = float(os.environ.get("ORCH_READY_RETRY_SECONDS", "15"))
 RETRIES = 4
-FILES_LIMIT = 100
+FILES_LIMIT = 300
 
 
 class LookupFailed(RuntimeError):
@@ -59,19 +63,33 @@ def gh_json(repo, *args):
         raise LookupFailed(f"gh {' '.join(args[:3])} 의 출력이 JSON 이 아니다") from exc
 
 
-def files_of(pr):
-    return {f["path"] for f in pr.get("files") or [] if f.get("path")}
+def api_target(url):
+    """PR URL 에서 (호스트, owner/repo). 읽지 못하면 LookupFailed."""
+    parts = (url or "").split("://", 1)[-1].split("/")
+    if len(parts) < 3 or not all(parts[:3]):
+        raise LookupFailed(f"PR URL 을 읽지 못했다: {url!r}")
+    return parts[0], f"{parts[1]}/{parts[2]}"
+
+
+def files_of(repo, pr):
+    """REST 로 읽은 PR 의 바뀐 파일 집합."""
+    host, slug = api_target(pr.get("url"))
+    code, out, err = gh(repo, "api", "--hostname", host, f"repos/{slug}/pulls/{pr['number']}/files?per_page=100",
+                        "--paginate", "--jq", ".[].filename")
+    if code != 0:
+        raise LookupFailed(f"gh api 로 PR {pr['number']} 의 파일을 읽지 못했다: {err}")
+    return {line for line in out.splitlines() if line}
 
 
 def view(repo, number):
-    return gh_json(repo, "pr", "view", str(number), "--json", "number,state,isDraft,mergeable,baseRefName,files")
+    return gh_json(repo, "pr", "view", str(number), "--json", "number,state,isDraft,mergeable,baseRefName,url")
 
 
 def ready_prs(repo, base):
     """같은 base 로 가는 열린 ready PR 의 {번호: 파일 집합}."""
     prs = gh_json(repo, "pr", "list", "--state", "open", "--base", base, "--limit", "200",
-                  "--json", "number,isDraft,files")
-    return {pr["number"]: files_of(pr) for pr in prs if not pr.get("isDraft")}
+                  "--json", "number,isDraft,url")
+    return {pr["number"]: files_of(repo, pr) for pr in prs if not pr.get("isDraft")}
 
 
 def mergeable(repo, number, state):
@@ -95,9 +113,9 @@ def judge(repo, number, readied):
         return "hold", "base 와 충돌한다. worker 가 base 를 합친 뒤 다시 돌린다"
     if state != "MERGEABLE":
         return "hold", f"충돌 여부를 아직 모른다(mergeable={state})"
-    mine = files_of(pr)
-    if len(mine) >= FILES_LIMIT:
-        return "hold", f"바뀐 파일이 {len(mine)} 개라 목록이 잘렸을 수 있다. 직접 확인한다"
+    mine = files_of(repo, pr)
+    if len(mine) > FILES_LIMIT:
+        return "hold", f"바뀐 파일이 {len(mine)} 개로 {FILES_LIMIT} 개를 넘는다. 직접 확인한다"
     others = ready_prs(repo, pr.get("baseRefName") or "")
     others.update({n: f for n, (base, f) in readied.items() if base == pr.get("baseRefName")})
     busy = []
