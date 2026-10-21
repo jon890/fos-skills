@@ -37,7 +37,12 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/live_specs.py`: 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서 경로를 모은다. `cleanup-sweep.py` 와 `handoff-cleanup.py` 가 import 한다
 - `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/goal-progress.py`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
-- `hooks/`: 플러그인이 싣는 PreToolUse 훅. `check --wait` 와 `wait-important.py` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다
+- `hooks/`: 플러그인이 싣는 PreToolUse 훅. 판정과 오탐 기준은 각 파일 머리 주석이 소유한다
+  - `block-background-wait.py`: `check --wait` 와 `wait-important.py` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다
+  - `block-git-after-cd.py`: `cd X;` 나 줄바꿈 뒤의 git 쓰기(merge, commit, push, reset, rebase)를 거부하고 `&&` 나 `git -C` 를 요구한다
+  - `block-worker-terminal-send.py`: worker 터미널에 직접 `orca terminal send` 하는 호출을 거부하고 `send-to-worker.py` 로 보내게 한다
+  - `require-spec-line.py`: `worker-start --spec` 값이 `spec-line.py` 가 만드는 한 줄 꼴이 아니면 거부한다
+- `scripts/mem-gate.sh`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 
 ```bash
