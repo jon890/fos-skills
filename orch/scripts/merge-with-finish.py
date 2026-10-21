@@ -25,6 +25,12 @@
     --no-finish             마무리를 걸지 않고 머지 큐만 돌린다
 
 merge-queue.sh 옵션은 그대로 쓴다(--repo, --required, --require-up-to-date 같은 것). --repo 는 마무리에도 넘어간다.
+
+머지 큐 기본값: --finish-config 파일(없으면 <repo>/.claude/orch-finish.json)의 `queue` 절을 읽어
+명령줄에 없는 머지 큐 옵션을 채운다. 키는 before, required, verify_merged, verify_merged_when, docs_glob, method 이고
+각각 --before, --required, --verify-merged, --verify-merged-when, --docs-glob, --method 가 된다.
+required 와 docs_glob 은 문자열 목록도 받아 쉼표로 잇는다. 명령줄에 준 옵션이 우선한다. 모르는 키가 있으면 사용법 오류다.
+저장소마다 같은 옵션을 매번 옮겨 적다 빠뜨리는 일을 막는다.
 MERGE_QUEUE, FINISH_PR 환경 변수로 두 스크립트 경로를 바꾼다.
 
 종료 코드: merge-queue.sh 의 종료 코드. 2 는 사용법 오류이기도 하다
@@ -32,6 +38,7 @@ MERGE_QUEUE, FINISH_PR 환경 변수로 두 스크립트 경로를 바꾼다.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -43,7 +50,11 @@ MERGE_QUEUE = os.environ.get("MERGE_QUEUE", str(HERE / "merge-queue.sh"))
 FINISH_PR = os.environ.get("FINISH_PR", str(HERE / "finish-pr.py"))
 # merge-queue.sh 가 값을 받는 옵션. 값이 숫자여도 PR 번호로 읽지 않으려고 안다. tests 가 merge-queue.sh 와 맞는지 본다
 VALUE_OPTIONS = {"--repo", "--before", "--method", "--threads-cmd", "--check-timeout", "--required", "--allow-fail",
-                 "--verify-merged", "--copy-dir", "--sweep-arg"}
+                 "--verify-merged", "--verify-merged-when", "--docs-glob", "--copy-dir", "--sweep-arg"}
+DEFAULT_CONFIG = ".claude/orch-finish.json"
+# orch-finish.json 의 queue 절 키와 머지 큐 옵션
+QUEUE_KEYS = {"before": "--before", "required": "--required", "verify_merged": "--verify-merged",
+              "verify_merged_when": "--verify-merged-when", "docs_glob": "--docs-glob", "method": "--method"}
 SPEC = re.compile(r"(\d+)(!?)(:.*)?$", re.S)
 
 
@@ -106,6 +117,46 @@ def split_args(argv):
     return wrapper, queue, prs
 
 
+def given_options(queue):
+    """머지 큐 인자 가운데 명령줄에 준 옵션 이름. 값 자리는 세지 않는다."""
+    given, skip = set(), False
+    for arg in queue:
+        if skip:
+            skip = False
+        elif arg.startswith("-"):
+            given.add(arg)
+            skip = arg in VALUE_OPTIONS
+    return given
+
+
+def queue_defaults(wrapper, queue):
+    """설정 파일의 queue 절에서 명령줄에 없는 머지 큐 옵션을 만든다. 파일이나 절이 잘못됐으면 ValueError."""
+    path = Path(wrapper["finish_config"]) if wrapper["finish_config"] else Path(wrapper["repo"]) / DEFAULT_CONFIG
+    if not path.is_file():
+        return []
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"설정 파일을 읽지 못했다: {path}: {exc}") from exc
+    section = config.get("queue", {}) if isinstance(config, dict) else None
+    if not isinstance(section, dict):
+        raise ValueError(f"{path} 의 \"queue\" 절은 객체여야 한다")
+    unknown = sorted(set(section) - set(QUEUE_KEYS))
+    if unknown:
+        raise ValueError(f"{path} 의 queue 절에 모르는 키가 있다: {', '.join(unknown)}")
+    given, extra = given_options(queue), []
+    for key, option in QUEUE_KEYS.items():
+        if key not in section or option in given:
+            continue
+        value = section[key]
+        if isinstance(value, list) and key in ("required", "docs_glob") and all(isinstance(v, str) for v in value):
+            value = ",".join(value)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{path} 의 queue.{key} 는 비지 않은 문자열이어야 한다")
+        extra += [option, value]
+    return extra
+
+
 def finish_running(pid_file):
     try:
         pid = int(pid_file.read_text().strip())
@@ -142,6 +193,11 @@ def main(argv=None):
         return 2
     if not prs:
         print(__doc__)
+        return 2
+    try:
+        queue = queue_defaults(wrapper, queue) + queue
+    except ValueError as exc:
+        print(f"merge-with-finish: {exc}", file=sys.stderr)
         return 2
     if not wrapper["no_finish"]:
         for number, complete in prs:

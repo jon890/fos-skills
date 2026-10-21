@@ -161,6 +161,44 @@ class WrapperRunTest(unittest.TestCase):
     def test_exit_code_of_the_queue_is_returned(self):
         self.assertEqual(1, self.wrap("449", FAKE_QUEUE_EXIT="1")[0])
 
+    def write_config(self, queue):
+        (self.tmp / ".claude").mkdir(exist_ok=True)
+        (self.tmp / ".claude" / "orch-finish.json").write_text(json.dumps({"finish": {}, "queue": queue}))
+
+    def test_queue_section_fills_missing_queue_options(self):
+        self.write_config({"required": ["ci", "lint"], "verify_merged": 'cd "$1" && make test',
+                           "verify_merged_when": "code", "docs_glob": ["docs/*", "*.md"], "method": "squash",
+                           "before": "true"})
+        code, out = self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        line = self.lines("queue")[0]
+        for part in ("--required ci,lint", '--verify-merged cd "$1" && make test', "--verify-merged-when code",
+                     "--docs-glob docs/*,*.md", "--method squash", "--before true"):
+            self.assertIn(part, line)
+        self.assertTrue(line.endswith(f"--repo {self.tmp} 449"), line)
+
+    def test_command_line_wins_over_queue_section(self):
+        self.write_config({"required": "ci", "method": "squash"})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--method", "merge", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--required ci", line)
+        self.assertNotIn("squash", line)
+
+    def test_finish_config_option_picks_the_file(self):
+        other = self.tmp / "other.json"
+        other.write_text(json.dumps({"queue": {"method": "rebase"}}))
+        self.write_config({"method": "squash"})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--finish-config", str(other), "449")
+        self.assertIn("--method rebase", self.lines("queue")[0])
+
+    def test_bad_queue_section_is_usage_error_before_anything_starts(self):
+        for queue in ({"verify": "x"}, {"method": 3}, {"required": ""}, []):
+            with self.subTest(queue=queue):
+                self.write_config(queue)
+                code, out = self.wrap("--repo", str(self.tmp), "449")
+                self.assertEqual(2, code, out)
+                self.assertFalse(self.log.exists())
+
     def test_usage_errors(self):
         self.assertEqual(2, self.wrap()[0])
         self.assertEqual(2, self.wrap("abc")[0])
