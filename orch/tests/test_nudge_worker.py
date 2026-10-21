@@ -191,6 +191,31 @@ class NudgeFlowTest(unittest.TestCase):
             self.assertEqual(4, r.returncode, text)
             self.assertEqual([], self.sends())
 
+    def run_with(self, replies, *args):
+        self.state.write_text(json.dumps({"replies": replies}))
+        return subprocess.run(["python3", str(SCRIPT), "--terminal", "term_w", *args],
+                              capture_output=True, text=True, env=self.env)
+
+    def test_text_is_queued_into_a_working_terminal_without_waiting_for_a_turn(self):
+        # 닫힌 dispatch 의 worker 가 아직 일할 때 send-to-worker.py 가 이 길로 본문을 넣는다
+        r = self.run_with([screen(CODEX_WORKING), receipt("input_accepted")], "--text", "main 을 합쳐라")
+        self.assertEqual(0, r.returncode, r.stdout)
+        self.assertTrue(r.stdout.startswith("queued"))
+        [call] = self.sends()
+        self.assertIn("main 을 합쳐라", call)
+        self.assertNotIn("--wait-submit", call)
+
+    def test_text_into_an_idle_terminal_waits_for_the_turn(self):
+        r = self.run_with([screen(CLAUDE_IDLE), receipt("input_accepted", "turn_started")], "--text", "본문")
+        self.assertEqual(0, r.returncode, r.stdout)
+        self.assertTrue(r.stdout.startswith("nudged"))
+        self.assertIn("--wait-submit", self.sends()[0])
+
+    def test_state_prints_the_screen_state_only(self):
+        r = self.run_with([screen(CODEX_WORKING)], "--state")
+        self.assertEqual((0, "working\n"), (r.returncode, r.stdout))
+        self.assertEqual([], self.sends())
+
     def test_orca_error_is_printed(self):
         r = self.run_nudge([{"ok": False, "error": {"code": "terminal_not_found"}}])
         self.assertEqual(5, r.returncode)
@@ -199,6 +224,8 @@ class NudgeFlowTest(unittest.TestCase):
     def test_usage_errors(self):
         self.assertEqual(2, subprocess.run(["python3", str(SCRIPT)], capture_output=True).returncode)
         self.assertEqual(2, subprocess.run(["python3", str(SCRIPT), "--terminal", "t"], capture_output=True).returncode)
+        both = ["python3", str(SCRIPT), "--terminal", "t", "--msg-id", "m", "--text", "x"]
+        self.assertEqual(2, subprocess.run(both, capture_output=True).returncode)
 
 
 if __name__ == "__main__":

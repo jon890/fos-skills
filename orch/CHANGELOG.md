@@ -3,6 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.35.0 (2026-10-21)
+
+코디네이터가 되풀이한 명령 실수를 문서 대신 PreToolUse hook 으로 막고, 메모리 대기 스크립트를 옮긴다.
+
+- 새 `hooks/block-git-after-cd.py`: `cd X;` 나 줄바꿈, `||`, `&` 뒤에 오는 git 쓰기(merge, commit, push, reset, rebase)를 거부하고 `&&` 나 `git -C` 를 요구한다. 워크트리 만들기가 실패해 cd 가 실패했는데 다음 줄의 `git merge` 가 메인 체크아웃에서 돈 일이 있었다. 따옴표 안, heredoc 본문, 주석, `2>&1` 같은 리다이렉션, 연산자 뒤 줄바꿈, `cd X || exit`, `cd X || { ...; exit 1; }`, cd 앞의 `set -e`, subshell 안의 cd, `git merge-base` 같은 읽기 명령, `git -C` 는 통과한다. 셸 글자를 가리고 명령 조각으로 나누는 일은 새 `hooks/shell_text.py` 가 맡는다
+- 새 `hooks/block-worker-terminal-send.py`: `orca terminal send --terminal term_...` 의 대상이 `worker-list` 의 worker 터미널이면 거부하고 `send-to-worker.py` 를 쓰게 한다. `orca terminal send` 조각의 `--terminal` 만 보고, worker 가 아닌 터미널, 변수로 준 대상, 따옴표 안의 문구, orca 조회 실패는 통과한다
+- 새 `hooks/require-spec-line.py`: `worker-start --spec` 의 글자 그대로인 값이 `spec-line.py` 출력 꼴(`지시서 <경로> 를 끝까지 읽고 수행한다. ... 못 읽으면 escalation 으로 알린다.`)이 아니면 거부한다. `worker-start` 조각의 `--spec` 만 보고, `$` 가 든 값과 커밋 메시지나 heredoc 에 든 문구는 통과한다. 지시서 경로만 주던 옛 형식도 거부한다
+- 새 `scripts/mem-gate.sh`: macOS 의 `memory_pressure` free 와 swap 사용량이 기준 안에 들 때까지 기다린 뒤 `--` 뒤 명령을 실행한다. 저장소 값 없이 환경 변수로 기준을 바꾼다. `references/verification.md` 에 무거운 검사를 이것으로 감싼다는 줄을 더했다
+- `send-to-worker.py`: hook 이 직접 `orca terminal send` 를 막으므로, 그 길로만 보내던 두 경우를 스크립트가 맡는다. (1) reply 대상에서 같은 thread 에 답이 보이는 question 을 빼고, orca 가 「already has a different answer」 로 거부하면 다음 후보 메시지로 한 번 더 시도한다(하루에 세 번 거부된 일이 있었다). (2) dispatch 가 끝났는데 `--spec` 이 없고 그 터미널 화면이 작업 중이면 `nudge-worker.py --text` 로 본문을 넣고 Task 기록에 묶이지 않는다고 경고한다. worker 가 phase 중간에 worker_done 을 보내 dispatch 가 닫혔지만 계속 일한 일이 있었다
+- `nudge-worker.py`: `--text` 로 메시지 안내 대신 글을 그대로 넣는다. 작업 중이면 턴 시작을 기다리지 않고 넣고 `queued` 를 낸다. `--state` 는 그 터미널 화면 상태만 낸다
+- `block-background-wait.py` 가 heredoc 본문의 글자로 거부하던 오탐을 고쳤다(here-string 과 `<<` 시프트는 heredoc 으로 보지 않는다)
+- hook 마다 거부 사례와 오탐 기준별 통과 사례를, `mem-gate.sh` 는 가짜 `memory_pressure`, `sysctl`, `sleep` 으로 판정과 시간 초과와 종료 코드 전달을 테스트했다
+
 ## 1.34.0 (2026-10-21)
 
 설치본이 낡았거나 문서와 오버레이가 없는 파일을 가리키는 것을 띄우기 전에 잡는다.

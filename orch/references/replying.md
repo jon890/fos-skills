@@ -6,8 +6,9 @@
 
 | dispatch | 스크립트가 하는 일 |
 | --- | --- |
-| 살아 있다 | 그 worker 의 마지막 메시지에 `reply` 하고 `nudge-worker.py` 로 깨운다 |
+| 살아 있다 | 그 worker 의 마지막 메시지에 `reply` 하고 `nudge-worker.py` 로 깨운다. 이미 답한 question 은 건너뛴다 |
 | 끝났고 터미널이 남았다 | `--spec` 의 후속 지시서로 그 터미널에 새 Task 를 띄운다. `--spec` 이 없으면 종료 코드 3 |
+| 끝났는데 아직 일한다 | `--spec` 이 없고 화면이 작업 중이면 `--body` 를 그 터미널에 넣고, Task 기록에 묶이지 않는다고 경고한다 |
 | 끝났고 터미널도 없다 | 종료 코드 3. `launch-worker.sh --worktree` 로 새로 띄운다 |
 
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
