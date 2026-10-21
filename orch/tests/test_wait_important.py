@@ -20,6 +20,20 @@ FAKE_ORCA = textwrap.dedent("""\
     st = json.load(open(path))
     open(os.environ["FAKE_LOG"], "a").write(json.dumps(sys.argv[1:]) + "\\n")
     print('{"_keepalive":true}', file=sys.stderr)
+    if "worker-list" in sys.argv:
+        lists = st.get("workers", [])
+        rows = lists.pop(0) if len(lists) > 1 else (lists[0] if lists else [])
+        json.dump(st, open(path, "w"))
+        print(json.dumps({"ok": True, "result": {"workers": rows}}))
+        sys.exit(0)
+    if "task-list" in sys.argv or "dispatch-show" in sys.argv:
+        if "task-list" in sys.argv:
+            result = {"tasks": st.get("tasks", [])}
+        else:
+            latest = st.get("latest", {}).get(sys.argv[sys.argv.index("--task") + 1])
+            result = {"dispatch": {"id": latest}} if latest else {}
+        print(json.dumps({"ok": True, "result": result}))
+        sys.exit(0)
     reply = st["replies"].pop(0) if st["replies"] else {"ok": True, "result": {"deliveryId": None, "messages": [], "timedOut": True}}
     json.dump(st, open(path, "w"))
     if reply.get("sleep"):
@@ -60,16 +74,80 @@ class WaitImportantTest(unittest.TestCase):
         self.env = dict(os.environ, ORCA=str(self.orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log),
                         PS=str(self.ps), FAKE_PS=str(self.ps_rows))
 
-    def wait(self, replies, *args):
-        self.state.write_text(json.dumps({"replies": replies}))
+    def wait(self, replies, *args, workers=None, tasks=None, latest=None):
+        self.state.write_text(json.dumps({"replies": replies, "workers": workers or [], "tasks": tasks or [],
+                                          "latest": latest or {}}))
         return subprocess.run(["python3", str(SCRIPT), "--run", "run_x", *args],
                               capture_output=True, text=True, env=self.env)
 
     def calls(self):
-        return [json.loads(line) for line in self.log.read_text().splitlines()]
+        # worker-list 호출은 대기 호출이 아니다
+        skip = ("worker-list", "task-list", "dispatch-show")
+        return [c for c in (json.loads(line) for line in self.log.read_text().splitlines()) if not set(skip) & set(c)]
 
     def ack_of(self, call):
         return call[call.index("--ack") + 1] if "--ack" in call else None
+
+    @staticmethod
+    def worker(dispatch, state, status, detail, task="t1"):
+        return {"dispatchId": dispatch, "taskId": task, "workerState": state, "dispatchStatus": status,
+                "projection": {"stage": {"detail": detail}}}
+
+    def lost_at_start(self, *args, task_status="dispatched", result=None, latest="ctx_bad"):
+        """시작할 때 이미 failed/abandoned 인 ctx_bad 하나가 있는 Run 에 대기를 건다"""
+        rows = [self.worker("ctx_bad", "abandoned", "failed", "terminal_missing")]
+        tasks = [{"id": "t1", "status": task_status, "result": result}]
+        return self.wait([batch("d1", "worker_done")], "--lost-interval-sec", "0.3", *args, workers=[rows],
+                         tasks=tasks, latest={"t1": latest})
+
+    def test_worker_that_was_live_and_becomes_abandoned_ends_the_wait(self):
+        live = [self.worker("ctx_a", "ready", "dispatched", "input_accepted"), self.worker("ctx_done", "succeeded", "completed", "settled")]
+        gone = [self.worker("ctx_a", "abandoned", "failed", "terminal_missing"), self.worker("ctx_done", "succeeded", "completed", "settled")]
+        r = self.wait([dict(batch("d9", "worker_done"), sleep=5)], "--lost-interval-sec", "0.3", "--ack", "d0",
+                      workers=[live, live, gone])
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+        lines = r.stdout.splitlines()
+        self.assertEqual(["WORKER_LOST ctx_a stage=terminal_missing", "LAST_DELIVERY d0"], lines)
+
+    def test_only_finished_dispatches_do_not_end_the_wait(self):
+        done = [self.worker("ctx_old", "succeeded", "completed", "settled")]
+        r = self.wait([dict(batch("d1", "worker_done"), sleep=1)], "--lost-interval-sec", "0.3", workers=[done])
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual("LAST_DELIVERY d1", r.stdout.splitlines()[-1])
+        self.assertNotIn("WORKER_LOST", r.stdout)
+
+    def test_unhandled_lost_dispatch_at_start_ends_the_wait_without_checking(self):
+        r = self.lost_at_start("--ack", "d0")
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(["WORKER_LOST ctx_bad stage=terminal_missing", "LAST_DELIVERY d0"], r.stdout.splitlines())
+        self.assertEqual([], self.calls())
+
+    def test_lost_dispatch_with_a_later_dispatch_is_ignored(self):
+        r = self.lost_at_start(latest="ctx_new")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+
+    def test_ignore_lost_skips_the_dispatch(self):
+        r = self.lost_at_start("--ignore-lost", "ctx_other", "--ignore-lost", "ctx_bad")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+
+    def test_lost_dispatch_of_completed_or_cancelled_task_is_ignored(self):
+        for status, result in (("completed", "{}"), ("failed", "cancelled")):
+            r = self.lost_at_start(task_status=status, result=result)
+            self.assertEqual(0, r.returncode, status + r.stdout + r.stderr)
+        r = self.lost_at_start(task_status="failed", result="circuit broken")
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+
+    def test_unreadable_latest_dispatch_keeps_the_old_behavior(self):
+        r = self.lost_at_start(latest=None)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+
+    def test_zero_interval_never_looks_at_workers(self):
+        live = [self.worker("ctx_a", "ready", "dispatched", "input_accepted")]
+        r = self.wait([batch("d1", "worker_done")], "--lost-interval-sec", "0", workers=[live])
+        self.assertEqual(0, r.returncode)
+        self.assertEqual([], [l for l in self.log.read_text().splitlines() if "worker-list" in l])
 
     def test_heartbeats_are_acked_until_a_worker_done_arrives(self):
         r = self.wait([batch("d1", "heartbeat", "heartbeat"), batch("d2", "heartbeat"), batch("d3", "heartbeat", "worker_done")])

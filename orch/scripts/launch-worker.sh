@@ -3,13 +3,16 @@
 #   launch-worker.sh --spec <지시서> --repo <저장소> --name <워크트리 이름> [--base <기준 브랜치>] [옵션] -- <worker-start 인자...>
 #   launch-worker.sh --spec <지시서> --worktree <기존 워크트리 경로> [옵션] -- <worker-start 인자...>
 #
-# worker 를 띄우는 세 단계를 한 명령으로 묶는다. 하나라도 빠지면 오늘 겪은 실패가 다시 난다.
+# worker 를 띄우는 네 단계를 한 명령으로 묶는다. 하나라도 빠지면 오늘 겪은 실패가 다시 난다.
 #   1. `spec-line.py --require-permission` 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 띄우지 않는다.
 #      허락이 지시서 파일 안에만 있으면 Codex worker 일부가 GitHub 게시가 금지됐다며 PR 을 열지 않는다
 #   2. 새 워크트리(--name)는 `make-worktree.sh` 로 만든다. 기존 워크트리(--worktree)는 그 경로에 붙은 터미널이
 #      남아 있으면 목록을 보여 주고 거부한다. 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓인다.
 #      worker-start 인자에 --terminal 로 준 터미널은 이어 쓰는 것이라 세지 않는다
-#   3. `worker-start --worktree path:<경로>` 로 띄운 뒤 `worker-show` 의 단계를 --watch 초 동안 본다.
+#   3. `orca worktree list` 에 그 경로가 보일 때까지 기다린다(기본 30초, 2초 간격). Orca 가 새 워크트리를 늦게 알아봐
+#      바로 부르면 `selector_not_found` 로 실패한다. 시간을 넘기면 멈춘다. 그래도 worker-start 가 `selector_not_found` 로
+#      끝나면 한 번만 다시 부른다. 다른 오류는 그대로 멈춘다
+#   4. `worker-start --worktree path:<경로>` 로 띄운 뒤 `worker-show` 의 단계를 --watch 초 동안 본다.
 #      `worktree_creating` 에서 넘어가지 않으면 그 dispatch 를 `worker-abandon` 하고 같은 Task 를
 #      `--retry-of` 로 한 번 다시 띄운다. 다시 띄워도 멈추면 종료 코드 1 이다
 #
@@ -20,6 +23,7 @@
 #
 # 표준 출력: 진행 줄과, 마지막 줄 `LAUNCHED <dispatch id> <워크트리 경로>`.
 # ORCA, SPEC_LINE, MAKE_WORKTREE 환경 변수로 실행 파일과 스크립트 경로를 바꾼다. LAUNCH_POLL 은 확인 간격(초, 기본 5)이다.
+# LAUNCH_WT_WAIT 와 LAUNCH_WT_POLL 은 Orca 가 워크트리를 알아볼 때까지 기다리는 초와 간격(기본 30, 2)이다.
 #
 # 종료 코드: 0 띄웠다, 1 거부했거나 띄우지 못했다(이유를 낸다), 2 사용법 오류
 set -u
@@ -29,6 +33,8 @@ ORCA=${ORCA:-orca}
 SPEC_LINE=${SPEC_LINE:-$HERE/spec-line.py}
 MAKE_WORKTREE=${MAKE_WORKTREE:-$HERE/make-worktree.sh}
 POLL=${LAUNCH_POLL:-5}
+WT_WAIT=${LAUNCH_WT_WAIT:-30}
+WT_POLL=${LAUNCH_WT_POLL:-2}
 spec="" repo="" name="" base="" worktree="" run="" watch=90
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -99,6 +105,44 @@ for t in rows:
   fi
 fi
 
+# Orca 가 이 경로를 워크트리로 알고 있으면 0 이다. 경로는 realpath 로 비교한다
+orca_knows_worktree() {
+  "$ORCA" worktree list --limit 1000 --json 2>/dev/null | python3 -c '
+import json, os, sys
+try:
+    rows = (json.load(sys.stdin).get("result") or {}).get("worktrees") or []
+except (ValueError, AttributeError):
+    sys.exit(1)
+want = os.path.realpath(sys.argv[1])
+sys.exit(0 if any(os.path.realpath(r.get("path") or "/nonexistent") == want for r in rows) else 1)
+' "$1"
+}
+
+wait_for_orca_worktree() {
+  local waited=0
+  until orca_knows_worktree "$1"; do
+    if [ "$waited" -ge "$WT_WAIT" ]; then
+      echo "Orca 가 워크트리를 알아보지 못했다. \`orca worktree list\` 로 확인한다: $1 (${waited}초 기다림)" >&2
+      return 1
+    fi
+    sleep "$WT_POLL"; waited=$((waited + WT_POLL))
+    [ "$WT_POLL" = 0 ] && waited=$((waited + 1))
+  done
+  echo "Orca 가 워크트리를 알아보기까지 ${waited}초 기다렸다" >&2
+}
+
+# worker-start 를 부른다. selector_not_found 로 끝나면 한 번만 다시 부른다. 출력은 out, 종료 코드는 code 에 둔다
+start_worker() {
+  out=$("$ORCA" orchestration worker-start "$@" --json 2>&1)
+  code=$?
+  if [ "$code" != 0 ] && printf '%s' "$out" | grep -q selector_not_found; then
+    echo "worker-start 가 selector_not_found 로 끝나 ${WT_POLL}초 뒤 한 번 다시 부른다" >&2
+    sleep "$WT_POLL"
+    out=$("$ORCA" orchestration worker-start "$@" --json 2>&1)
+    code=$?
+  fi
+}
+
 # --watch 초 동안 worker-show 의 단계를 본다. 단계를 내고, worktree_creating 에서 넘어가지 못하면 1 이다
 watch_stage() {
   local dispatch=$1 waited=0 stage=""
@@ -113,8 +157,8 @@ watch_stage() {
   return 1
 }
 
-out=$("$ORCA" orchestration worker-start ${run:+--run "$run"} --spec "$line" --worktree "path:$worktree" "$@" --json 2>&1)
-code=$?
+wait_for_orca_worktree "$worktree" || exit 1
+start_worker ${run:+--run "$run"} --spec "$line" --worktree "path:$worktree" "$@"
 printf '%s\n' "$out"
 [ "$code" = 0 ] || { echo "worker-start 가 종료 코드 $code 로 끝났다. launch.md 의 「첫 화면에서 멈춤」 과 「시작 직후 실패」 를 본다" >&2; exit 1; }
 dispatch=$(printf '%s' "$out" | jget "dispatch.id|dispatchId|worker.dispatchId")
@@ -125,8 +169,7 @@ if [ "$watch" -gt 0 ] && ! watch_stage "$dispatch"; then
   [ -n "$task" ] || { echo "task id 를 몰라 다시 띄우지 못한다: $dispatch" >&2; exit 1; }
   "$ORCA" orchestration worker-abandon --dispatch "$dispatch" --json >/dev/null 2>&1 || { echo "worker-abandon 실패: $dispatch" >&2; exit 1; }
   echo "$dispatch 를 abandon 하고 같은 Task 를 path:$worktree 로 다시 띄운다"
-  out=$("$ORCA" orchestration worker-start ${run:+--run "$run"} --task "$task" --retry-of "$dispatch" --worktree "path:$worktree" "$@" --json 2>&1)
-  code=$?
+  start_worker ${run:+--run "$run"} --task "$task" --retry-of "$dispatch" --worktree "path:$worktree" "$@"
   printf '%s\n' "$out"
   [ "$code" = 0 ] || { echo "다시 띄우기가 종료 코드 $code 로 끝났다" >&2; exit 1; }
   dispatch=$(printf '%s' "$out" | jget "dispatch.id|dispatchId|worker.dispatchId")

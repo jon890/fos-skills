@@ -11,17 +11,34 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
 
 사용법:
     wait-important.py --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]
-                      [--timeout-ms 7000000] [--kill-stale]
+                      [--timeout-ms 7000000] [--kill-stale] [--lost-interval-sec 60] [--ignore-lost ctx_...]
 
     --run         기다릴 Run
     --ack         앞 대기가 낸 delivery id. 첫 대기처럼 넘길 것이 없으면 뺀다
     --types       깨어날 메시지 종류. 기본 worker_done,question,escalation,status
     --timeout-ms  전체 대기 한도(ms). 기본 7000000. 하네스의 명령 한도(Bash 최대 7200000)보다 짧게 준다
+    --lost-interval-sec  대기하는 동안 Run 의 worker 상태를 볼 간격(초). 기본 60. 0 이면 보지 않는다. 아래 「끊긴 worker」
+    --ignore-lost  끊긴 worker 로 보지 않을 dispatch id. 여러 번 줄 수 있다. 아래 「끊긴 worker」
     --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
 
 출력:
     처리할 묶음이 오면 그 `check --json` 결과를 한 줄 JSON 으로 내고, 마지막 줄에 `LAST_DELIVERY <id>` 를 낸다.
     시간 한도가 지나면 `TIMEOUT LAST_DELIVERY <id>` 를 낸다. id 는 ack 하지 못하고 남은 delivery 이고, 없으면 `-` 다.
+
+끊긴 worker:
+    기기가 재시작되어 worker 터미널이 사라져도 메시지는 오지 않아 대기가 끝나지 않는다.
+    그래서 대기하는 동안 `--lost-interval-sec` 마다 `orca orchestration worker-list --run <id> --json` 으로 상태를 본다.
+    「끊김」 은 workerState 가 abandoned, failed, stopped 이거나 dispatchStatus 가 failed 이거나 단계가 terminal_missing 인 것이다.
+    끊긴 dispatch 를 찾으면 메시지를 기다리지 않고 `WORKER_LOST ctx_... stage=terminal_missing` 줄과
+    `LAST_DELIVERY <id>` 줄을 내고 종료 코드 5 로 끝난다. 지켜보는 대상은 둘이다.
+    1) 대기를 시작할 때 살아 있던(dispatchStatus 가 pending, dispatched, running) dispatch 가 대기하는 동안 끊긴 경우
+    2) 대기를 시작할 때 이미 끊겨 있는데 아직 처리하지 않은 dispatch. 재시작 뒤 새로 건 대기가 이 경우다.
+       이때는 `check` 를 부르지 않고 바로 5 로 끝난다
+    「처리했다」 고 보아 뺀다: 같은 task 에 그보다 나중에 만든 dispatch 가 있으면(다시 띄웠으므로),
+    task 가 completed 이거나 취소(failed 에 result 가 cancelled)면, `--ignore-lost` 로 준 id 면.
+    worker-list 행에는 만든 시각이 없어 나중 dispatch 는 `dispatch-show --task` 의 최신 dispatch id 로 판정한다.
+    그것이나 task-list 를 읽지 못하면 그 dispatch 는 시작할 때 지켜보지 않는다(이전 동작).
+    worker-list 를 읽지 못하면 그 번의 확인만 건너뛴다.
 
 남은 대기:
     Run 의 대기 자리는 하나다. 앞 세션이 띄운 `check --wait` 가 남아 있으면 새 대기는 매번 `waiter_exists` 로
@@ -37,6 +54,7 @@ ORCA 환경 변수로 orca 실행 파일을, PS 환경 변수로 ps 실행 파�
     0  처리할 묶음이 왔다
     3  시간 한도가 지났다. 실패가 아니므로 마지막 줄의 id 로 다시 건다
     4  이 Run 에 다른 대기가 있다(waiter_exists). 남은 프로세스를 정리한 뒤 다시 건다
+    5  처리하지 않은 끊긴 worker 가 있다(WORKER_LOST). references/launch.md 의 「끊긴 worker 다시 띄우기」 를 따른다
     1  orca 가 그 밖의 오류를 냈다(runtime_unavailable 같은 것). 그 JSON 을 그대로 낸다
     2  사용법 오류
 """
@@ -56,18 +74,114 @@ PS = os.environ.get("PS", "ps")
 DEFAULT_TYPES = "worker_done,question,escalation,status"
 
 
-def check(run_id, types, ack, timeout_ms):
-    """`check --wait --json` 한 번. (stdout 의 JSON, 원문). JSON 이 아니면 None 이다."""
+LIVE_STATUSES = {"pending", "dispatched", "running"}
+LOST_WORKER_STATES = {"abandoned", "failed", "stopped"}
+
+
+def worker_rows(run_id):
+    """worker-list 의 workers. 읽지 못하면 None 이다."""
+    done = subprocess.run([ORCA, "orchestration", "worker-list", "--run", run_id, "--json"],
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        data = json.loads(done.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not data.get("ok"):
+        return None
+    return (data.get("result") or {}).get("workers") or []
+
+
+def live_dispatches(rows):
+    return {w["dispatchId"] for w in rows if w.get("dispatchId") and w.get("dispatchStatus") in LIVE_STATUSES}
+
+
+def lost_workers(rows, watched):
+    """watched 에 든 dispatch 가운데 끊긴 것. [(dispatch id, 단계)]"""
+    lost = []
+    for w in rows:
+        if w.get("dispatchId") not in watched:
+            continue
+        detail = (((w.get("projection") or {}).get("stage") or {}).get("detail"))
+        if w.get("workerState") in LOST_WORKER_STATES or w.get("dispatchStatus") == "failed" or detail == "terminal_missing":
+            lost.append((w["dispatchId"], detail or w.get("workerState")))
+    return lost
+
+
+def run_json(*cmd):
+    """orca 명령 한 번의 result. 읽지 못하면 None 이다."""
+    done = subprocess.run([ORCA, "orchestration", *cmd, "--json"],
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        data = json.loads(done.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not data.get("ok"):
+        return None
+    return data.get("result") or {}
+
+
+def task_closed(task):
+    """다시 띄울 일이 없는 task. completed 이거나, 취소(failed 에 result 가 cancelled)한 것"""
+    status = task.get("status")
+    return status == "completed" or (status == "failed" and "cancel" in str(task.get("result") or "").lower())
+
+
+def unhandled_lost(run_id, rows, ignore):
+    """대기를 시작할 때 이미 끊겨 있고 아직 처리하지 않은 dispatch. [(dispatch id, 단계)]
+
+    처리한 것은 뺀다: --ignore-lost, 끝난 task, 같은 task 에 더 나중 dispatch 가 있는 것.
+    판정에 필요한 목록을 읽지 못하면 그 dispatch 는 지켜보지 않는다.
+    """
+    candidates = [(d, stage) for d, stage in lost_workers(rows, {w.get("dispatchId") for w in rows}) if d not in ignore]
+    if not candidates:
+        return []
+    tasks = (run_json("task-list", "--run", run_id) or {}).get("tasks")
+    if tasks is None:
+        return []
+    by_task = {t.get("id"): t for t in tasks}
+    task_of = {w.get("dispatchId"): w.get("taskId") for w in rows}
+    found = []
+    for dispatch, stage in candidates:
+        task_id = task_of.get(dispatch)
+        if task_id not in by_task or task_closed(by_task[task_id]):
+            continue
+        latest = ((run_json("dispatch-show", "--task", task_id) or {}).get("dispatch") or {}).get("id")
+        if latest == dispatch:
+            found.append((dispatch, stage))
+    return found
+
+
+def check(run_id, types, ack, timeout_ms, watched=None, interval=0):
+    """`check --wait --json` 한 번. (stdout 의 JSON, 원문). JSON 이 아니면 None 이다.
+
+    watched 가 있으면 interval 초마다 worker 상태를 보고, 끊긴 worker 가 있으면 check 를 멈추고
+    ("lost", [(dispatch id, 단계)]) 를 낸다.
+    """
     cmd = [ORCA, "orchestration", "check", "--run", run_id, "--wait", "--types", types,
            "--timeout-ms", str(timeout_ms), "--json"]
     if ack:
         cmd[3:3] = ["--ack", ack]
     # keepalive 줄은 stderr 로 나온다. stdout 만 읽는다
-    done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    if not watched or interval <= 0:
+        done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        stdout = done.stdout
+    else:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        while True:
+            try:
+                stdout, _ = proc.communicate(timeout=interval)
+                break
+            except subprocess.TimeoutExpired:
+                rows = worker_rows(run_id)
+                lost = lost_workers(rows, watched) if rows else []
+                if lost:
+                    proc.kill()
+                    proc.communicate()
+                    return "lost", lost
     try:
-        return json.loads(done.stdout), done.stdout
+        return json.loads(stdout), stdout
     except json.JSONDecodeError:
-        return None, done.stdout
+        return None, stdout
 
 
 def is_waiter_exists(data):
@@ -150,14 +264,28 @@ def main(argv=None):
     parser.add_argument("--types", default=DEFAULT_TYPES)
     parser.add_argument("--timeout-ms", type=int, default=7000000)
     parser.add_argument("--kill-stale", action="store_true")
+    parser.add_argument("--lost-interval-sec", type=float, default=60)
+    parser.add_argument("--ignore-lost", action="append", default=[])
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
     wanted = {t.strip() for t in args.types.split(",") if t.strip()}
-    if not wanted or args.timeout_ms <= 0:
-        print("wait-important: --types 와 --timeout-ms 는 비어 있거나 0 일 수 없다", file=sys.stderr)
+    if not wanted or args.timeout_ms <= 0 or args.lost_interval_sec < 0:
+        print("wait-important: --types 와 --timeout-ms 는 비어 있거나 0 일 수 없고 --lost-interval-sec 는 음수일 수 없다", file=sys.stderr)
         return 2
+    # 대기를 시작할 때 살아 있던 dispatch 와 처리하지 않은 끊긴 dispatch 를 지켜본다. 읽지 못하면 지켜보지 않는다
+    watched = set()
+    if args.lost_interval_sec > 0:
+        rows = worker_rows(args.run) or []
+        # 이미 끊겨 있는데 처리하지 않은 dispatch 가 있으면 기다리지 않고 알린다
+        lost = unhandled_lost(args.run, rows, set(args.ignore_lost))
+        if lost:
+            for dispatch, stage in lost:
+                print(f"WORKER_LOST {dispatch} stage={stage}")
+            print(f"LAST_DELIVERY {args.ack or '-'}")
+            return 5
+        watched = live_dispatches(rows) - set(args.ignore_lost)
 
     deadline = time.monotonic() + args.timeout_ms / 1000
     ack, skipped = args.ack, 0
@@ -166,7 +294,12 @@ def main(argv=None):
         if remaining <= 0:
             print(f"TIMEOUT LAST_DELIVERY {ack or '-'}")
             return 3
-        data, raw = check(args.run, args.types, ack, remaining)
+        data, raw = check(args.run, args.types, ack, remaining, watched, args.lost_interval_sec)
+        if data == "lost":
+            for dispatch, stage in raw:
+                print(f"WORKER_LOST {dispatch} stage={stage}")
+            print(f"LAST_DELIVERY {ack or '-'}")
+            return 5
         if not isinstance(data, dict) or not data.get("ok"):
             print(raw.strip() or "wait-important: orca 출력이 JSON 이 아니다")
             print(f"LAST_DELIVERY {ack or '-'}")
