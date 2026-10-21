@@ -250,6 +250,22 @@ class TaskRulesTest(unittest.TestCase):
         # 지정하지 않은 파일은 여전히 위반이다.
         self.assertTrue(self.inspect(work, f"cd frontend && pnpm jest src/__tests__/other.test.ts\n{tail}", entries))
 
+    def test_playwright_test_counts_as_running_declared_e2e_tests(self):
+        entries = [("web/src/a.ts", "수정"), ("web/e2e/a.spec.ts", "신규")]
+        work = "### 1. `web/e2e/a.spec.ts` 추가"
+        for command in (
+            "cd web && npx playwright test e2e/a.spec.ts",
+            "cd web && pnpm exec playwright test e2e/a.spec.ts",
+            "cd web && pnpm playwright test e2e/a.spec.ts",
+            "cd web && playwright test e2e/a.spec.ts",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.inspect(work, command, entries), [])
+        # playwright 를 부르지 않거나 테스트를 돌리지 않는 줄은 그대로 위반이다.
+        for command in ("cd web && npx tsc --noEmit", "cd web && npx playwright install", "cd web && npx playwright test e2e/other.spec.ts"):
+            with self.subTest(command=command):
+                self.assertTrue(self.inspect(work, command, entries))
+
     def test_package_script_names_are_not_directory_arguments(self):
         for command in (
             ["pnpm", "test"],
