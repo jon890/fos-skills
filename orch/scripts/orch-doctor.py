@@ -16,12 +16,17 @@
 설치본 판정:
     설치 경로는 `<plugins>/cache/<마켓플레이스>/<플러그인>/<sha>/<스킬>` 이다. `<sha>` 가 설치한 커밋이다.
     원본 브랜치의 커밋을 `git ls-remote` 로 읽어 앞자리가 같으면 최신이다.
-    다르면 마켓플레이스 clone 에 두 커밋이 모두 있을 때만 그 스킬 디렉터리의 diff 로 좁힌다.
-    스킬 디렉터리가 바뀌지 않았으면 최신으로 본다. 다른 스킬만 바뀐 커밋에 갱신하라고 하지 않기 위해서다.
+    다르면 설치본 스킬 디렉터리의 tree hash 를 마켓플레이스 clone 의 `<원본 커밋>:<스킬>` 과 비교한다.
+    같으면 최신으로 본다. 다른 스킬만 바뀐 커밋에 갱신하라고 하지 않기 위해서다.
+    마켓플레이스 clone 은 커밋 하나뿐인 shallow clone 이라 커밋끼리 diff 하지 못한다. 그래서 tree 를 비교한다.
+    clone 에 원본 커밋이 없거나(마켓플레이스를 아직 갱신하지 않았다) 그 경로가 없으면 판정할 수 없어 낡은 것으로 본다.
     설치 경로가 이 꼴이 아니면(`--plugin-dir` 로 체크아웃을 실은 경우) 비교하지 않는다.
+    원본을 읽지 못하면(오프라인) 비교하지 않고 SKIP-VERSION 을 낸다. 스킬을 여는 일을 막지 않는다.
 
 스크립트 판정:
     SKILL.md 와 그 아래 .md 에서 `$SKILL_DIR/scripts/<이름>` 과 상대 링크 `](scripts/<이름>)`, `](../scripts/<이름>)` 를 읽는다.
+    형제 번들 변수 `$PLANNING_SKILL_DIR/scripts/<이름>` 은 같은 플러그인의 `planning/scripts/<이름>` 으로 본다
+    (변수 이름의 `_SKILL_DIR` 앞을 소문자로 바꾸고 `_` 를 `-` 로 바꾼 디렉터리).
     백틱 안의 `scripts/verify.sh` 처럼 앞에 아무것도 없는 경로는 저장소 쪽 예시일 수 있어 보지 않는다.
 
 출력 (한 줄에 하나):
@@ -34,7 +39,7 @@
 종료 코드:
     0  STALE 도 MISSING 도 없다(SKIP-VERSION 은 있을 수 있다)
     1  STALE 이나 MISSING 이 있다
-    2  사용법 오류, 또는 원본 커밋을 읽지 못했다
+    2  사용법 오류
 """
 
 from __future__ import annotations
@@ -42,17 +47,39 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SHA = re.compile(r"^[0-9a-f]{7,40}$")
-REF = re.compile(r"(?:\$SKILL_DIR/|\]\((?P<up>(?:\.\./)*))scripts/(?P<name>[A-Za-z0-9_.-]+)")
+REF = re.compile(r"(?:\$(?:(?P<sibling>[A-Z][A-Z0-9_]*)_)?SKILL_DIR/|\]\((?P<up>(?:\.\./)*))scripts/(?P<name>[A-Za-z0-9_.-]+)")
 
 
-def git(*args, cwd=None):
-    done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+def git(*args, cwd=None, env=None):
+    # ls-remote 가 ssh 나 인증을 표준 입력으로 물으면 스킬을 열 때 멈춘다. 입력을 막고 시간을 제한한다
+    env = dict(env or os.environ, GIT_TERMINAL_PROMPT="0", GIT_SSH_COMMAND=os.environ.get("GIT_SSH_COMMAND", "ssh -o BatchMode=yes"))
+    try:
+        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=env,
+                              stdin=subprocess.DEVNULL, timeout=20)
+    except subprocess.TimeoutExpired:
+        return 124, ""
     return done.returncode, done.stdout.strip()
+
+
+def tree_hash(directory, excludes):
+    """디렉터리 내용의 git tree hash. 임시 저장소에 쓰므로 원본과 clone 을 건드리지 않는다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        env = dict(os.environ, GIT_DIR=os.path.join(tmp, "git"), GIT_INDEX_FILE=os.path.join(tmp, "index"),
+                   GIT_WORK_TREE=str(directory))
+        git("init", "-q", env=env)
+        config = ["-c", f"core.excludesFile={excludes}"] if excludes and Path(excludes).is_file() else []
+        code, _ = git(*config, "add", "-A", ".", env=env, cwd=str(directory))
+        if code != 0:
+            return None
+        code, out = git("write-tree", env=env)
+        return out if code == 0 else None
 
 
 def install_layout(skill_dir):
@@ -87,16 +114,13 @@ def check_version(skill_dir, remote, branch):
         return [f"SKIP-VERSION 마켓플레이스 clone 을 찾지 못했다: {marketplace}"], 0
     latest = out.split()[0] if code == 0 and out else ""
     if not latest:
-        print(f"orch-doctor: 원본 {branch} 의 커밋을 읽지 못했다", file=sys.stderr)
-        return [], 2
+        return [f"SKIP-VERSION 원본 {branch} 의 커밋을 읽지 못했다(오프라인이면 그대로 진행한다)"], 0
     if latest.startswith(installed) or installed.startswith(latest):
         return [f"OK-VERSION {installed}"], 0
     if clone:
-        have = all(git("-C", str(clone), "cat-file", "-e", f"{sha}^{{commit}}")[0] == 0 for sha in (installed, latest))
-        if have:
-            code, _ = git("-C", str(clone), "diff", "--quiet", installed, latest, "--", skill_dir.name)
-            if code == 0:
-                return [f"OK-VERSION {installed}"], 0
+        code, upstream = git("-C", str(clone), "rev-parse", "--verify", "-q", f"{latest}:{skill_dir.name}")
+        if code == 0 and upstream == tree_hash(skill_dir, clone / ".gitignore"):
+            return [f"OK-VERSION {installed}"], 0
     return [
         f"STALE {installed} {latest[:12]}",
         f"  claude plugin marketplace update {marketplace}",
@@ -110,13 +134,17 @@ def check_scripts(skill_dir):
     for doc in docs:
         for no, text in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
             for m in REF.finditer(text):
-                if m.group("up") is None:
+                if m.group("sibling"):
+                    bundle = m.group("sibling").lower().replace("_", "-")
+                    target = skill_dir.parent / bundle / "scripts" / m.group("name")
+                elif m.group("up") is None:
                     target = skill_dir / "scripts" / m.group("name")
                 else:
                     target = (doc.parent / m.group("up") / "scripts" / m.group("name")).resolve()
                 seen.add(target)
                 if not target.exists():
-                    lines.append(f"MISSING {doc.relative_to(skill_dir)}:{no} scripts/{m.group('name')}")
+                    shown = target.relative_to(skill_dir.parent) if m.group("sibling") else f"scripts/{m.group('name')}"
+                    lines.append(f"MISSING {doc.relative_to(skill_dir)}:{no} {shown}")
     if not lines:
         lines.append(f"OK-SCRIPTS {len(seen)}")
     return lines, 1 if any(line.startswith("MISSING") for line in lines) else 0
@@ -141,8 +169,6 @@ def main(argv=None):
         out, code = check_version(skill_dir, args.remote, args.branch)
     script_lines, script_code = check_scripts(skill_dir)
     print("\n".join(out + script_lines))
-    if code == 2:
-        return 2
     return max(code, script_code)
 
 
