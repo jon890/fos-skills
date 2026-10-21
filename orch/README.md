@@ -24,6 +24,9 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/wait-important.py`: worker_done, question, escalation, status 가 든 묶음이 올 때까지 기다린다. heartbeat 만 든 묶음은 ack 하고 계속 기다리고, 마지막 줄에 다음 `--ack` 로 넘길 delivery id 를 낸다. 다른 대기가 자리를 쥐고 있으면(`waiter_exists`) 되풀이하지 않고 남은 대기 프로세스를 보여 준다
 - `scripts/nudge-worker.py`: 메시지를 보낸 뒤 worker 화면이 입력 대기면 「check 로 읽어라」 를 넣고 턴 시작을 확인한다. 보이지 않으면 `--retry-request` 로 한 번 더 확인한다
 - `scripts/spec-line.py`: 지시서의 `허락:` 줄을 붙여 `worker-start --spec` 에 넘길 첫 지시 줄을 만든다
+- `scripts/launch-worker.sh`: `spec-line.py` 로 첫 지시 줄을 만들고 새 워크트리는 `make-worktree.sh` 로 만든 뒤 띄운다. 기존 워크트리에 터미널이 남아 있으면 거부하고, 띄운 뒤 `worktree_creating` 에서 멈추면 abandon 하고 한 번 다시 띄운다
+- `scripts/send-to-worker.py`: dispatch 가 살아 있으면 `reply` 와 `nudge-worker.py`, 끝났으면 남은 터미널에 후속 지시서로 띄우고, 터미널도 없으면 새로 띄우라고 알린다
+- `scripts/notify-conflicts.py`: 머지 직후 열린 PR 가운데 base 와 충돌하는 것과 충돌 파일을 내고, (PR, base SHA) 마다 한 번만 그 worker 에게 base 를 합치라고 보낸다
 - `scripts/triage-messages.py`: orca 메시지를 종류별로 모으고 heartbeat 는 개수만 낸다
 - `scripts/make-worktree.sh`: 지시서의 `브랜치:` 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고 exclude 와 로컬 설정 복사, `worktree-deny.py` 의 deny 규칙 추가를 한다. `--check` 는 push 한 브랜치가 지시서 값과 같은지 본다
 - `scripts/worktree-deny.py`: 워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령(pkill, killall, browser-driver reset)과 `gh pr merge` 의 deny 규칙을 더한다

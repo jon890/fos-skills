@@ -47,8 +47,8 @@ git diff "origin/$BASE" -- "$FILE"
 1. `worker-show --dispatch "$DISPATCH_ID"` 의 `terminal.title` 이 `Working` 이면 해제하지 않고 기다린다. 커밋 목록과 원격 HEAD 가 바뀌는지 본다
 2. 제목이 `Ready` 인데 완료 기준에 못 미치면 같은 터미널에 남은 일을 새 dispatch 로 준다
 
-`$SPEC_LINE` 은 남은 일만 적은 지시서의 경로를 담은 한 줄이다. 형식은 [`launch.md`](launch.md) 예시와 같다.
+`$SPEC_FILE` 은 남은 일만 적은 지시서다. `send-to-worker.py` 가 끝난 dispatch 의 남은 터미널에 새 Task 로 띄운다.
 
 ```bash
-orca orchestration worker-start --spec "$SPEC_LINE" --terminal "$TERMINAL_HANDLE" --worktree "path:$WORKTREE"
+python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
 ```

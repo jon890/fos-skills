@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.31.0 (2026-10-21)
+
+띄우기와 보내기를 스크립트로 묶어, 직접 부르다 단계를 빠뜨리는 길을 닫는다.
+
+- 새 `scripts/launch-worker.sh`: `spec-line.py --require-permission` 으로 첫 지시 줄을 만들고, 새 워크트리는 `make-worktree.sh` 로 만든 뒤 `worker-start --worktree path:` 로 띄운다. 기존 워크트리는 그 경로에 붙은 터미널이 남아 있으면 목록을 보여 주고 거부한다(한 워크트리에 세션이 셋 쌓인 일이 있었다). `--terminal` 로 이어 쓰는 터미널은 세지 않는다. 띄운 뒤 `worker-show` 의 단계를 `--watch` 초(기본 90) 보고, `worktree_creating` 에서 넘어가지 않으면 abandon 하고 같은 Task 를 `--retry-of` 로 한 번 다시 띄운다. `worker-start` 자체가 실패하면 다시 띄우지 않는다
+- 새 `scripts/send-to-worker.py`: dispatch 가 살아 있으면 그 worker 의 마지막 메시지에 `reply` 하고 `nudge-worker.py` 로 깨운다. 끝났고 터미널이 남았으면 `--spec` 의 후속 지시서로 그 터미널에 새 Task 를 띄우고, 터미널도 없으면 새로 띄우라고 알린다. 닫힌 dispatch 에 `reply` 해 전달되지 않던 일과 worker 터미널에 직접 `orca terminal send` 하던 길을 이것으로 바꾼다
+- 새 `scripts/notify-conflicts.py`: 열린 PR 을 `git merge-tree` 로 origin/<base> 와 합쳐 충돌과 충돌 파일을 내고, (PR, base SHA) 마다 한 번만 그 브랜치 워크트리의 worker 에게 base 를 합치라고 보낸다. 보내지 못하면 기록하지 않아 다음 실행이 다시 본다
+- `SKILL.md` 3, 5, 7단계와 `references/launch.md`, `references/replying.md`, `references/cleanup.md` 를 새 스크립트 기준으로 고쳤다. 세 스크립트의 흐름을 가짜 orca, gh 와 임시 git 저장소로 테스트했다
+
 ## 1.30.0 (2026-10-21)
 
 머지 줄에서 저장소 스크립트에만 있던 장치를 코어로 옮긴다.
