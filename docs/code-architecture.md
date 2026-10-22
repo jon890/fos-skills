@@ -13,6 +13,7 @@
 | 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `scripts/`, `hooks/`, `docs/` |
 | 플러그인이 싣는 훅 | `orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 배열이 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
 | 플러그인이 싣는 mod | `work-board/hooks/hooks.json` 의 hooks 모듈. 작업 현황 창 `/board` 를 그린다. `hooks` 배열이 가리킨다([ADR-006](adr/006-work-board-in-plugin.md)) |
+| Codex 가 싣는 것 | `.codex-plugin/plugin.json` 의 `skills` 배열뿐이다. 훅과 mod 는 Claude Code 전용이라 싣지 않는다([ADR-007](adr/007-codex-manifest-without-hooks.md)) |
 | 플러그인이 설치하지 않는다 | 한국어 검사 `PostToolUse` 훅, `~/.claude/rules/` 의 규칙 파일, `~/.claude/scripts/` 의 링크 |
 
 플러그인은 통째로 설치된다. 스킬을 골라 설치하는 방법은 두지 않는다.
@@ -22,6 +23,7 @@
 ```
 .claude-plugin/marketplace.json     마켓플레이스 목록. 플러그인 하나를 소스 "./" 로 가리킨다
 .claude-plugin/plugin.json          플러그인 이름과 skills 배열. version 은 쓰지 않는다
+.codex-plugin/plugin.json           Codex 용 매니페스트. 같은 skills 배열만 담고 hooks 는 없다
 build-with-teams/                   스킬. 루트에 그대로 둔다
 content-preview/
 docs-check/

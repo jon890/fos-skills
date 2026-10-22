@@ -219,6 +219,9 @@ if [ "$code" != 0 ] && [ "$reuse_terminal" = 1 ] && printf '%s' "$out" | grep -q
   echo "--terminal 의 터미널이 에이전트를 인식하지 못했다(agent_unconfigured). replying.md 「이어 쓸 수 없는 터미널」 을 따른다: 1) 앞 worker 의 작업이 push 됐는지 보고 2) 그 터미널이 이 세션이 띄운 worker 의 것이면 orca terminal close 로 닫고 3) --terminal 을 빼고 --agent, --model, --effort 를 줘 이 명령을 다시 부른다" >&2
   exit 3
 fi
+if [ "$code" != 0 ] && printf '%s' "$out" | grep -q agent-hooks-review-prompt; then
+  echo "에이전트가 hook 신뢰 확인 화면에서 멈췄다(agent-hooks-review-prompt). Codex 가 fos-skills 의 Claude 전용 hook 을 읽은 것이면 Codex 설치본이 .codex-plugin 매니페스트가 없는 옛 버전이다: codex plugin marketplace upgrade fos-skills 로 갱신한다(docs/adr/007). 남은 터미널은 launch.md 「첫 화면에서 멈춤」 을 따른다" >&2
+fi
 [ "$code" = 0 ] || { echo "worker-start 가 종료 코드 $code 로 끝났다. launch.md 의 「첫 화면에서 멈춤」 과 「시작 직후 실패」 를 본다" >&2; exit 1; }
 dispatch=$(printf '%s' "$out" | jget "dispatch.id|dispatchId|worker.dispatchId")
 task=$(printf '%s' "$out" | jget "dispatch.taskId|taskId|task.id")

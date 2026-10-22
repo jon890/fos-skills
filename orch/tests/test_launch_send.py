@@ -170,6 +170,12 @@ class LaunchWorkerTest(FakeBase):
         self.assertEqual([], self.lines("orca terminal close"))
         self.assertEqual(1, len(self.lines("orca orchestration worker-start")))
 
+    def test_hooks_review_prompt_names_the_codex_manifest_fix(self):
+        self.state(next_ids=["ctx_1"], start_errors=["Agent startup blocked: agent-hooks-review-prompt"])
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "codex")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("codex plugin marketplace upgrade fos-skills", r.stderr)
+
     def test_agent_unconfigured_without_terminal_option_is_a_plain_failure(self):
         self.state(next_ids=["ctx_1"], start_errors=["agent_unconfigured: x"])
         r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")

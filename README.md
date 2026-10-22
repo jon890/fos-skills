@@ -85,13 +85,14 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)"
 
 ### 스킬을 더할 때
 
-고칠 곳은 셋이다.
+고칠 곳은 넷이다.
 
 - `.claude-plugin/plugin.json` 의 `skills` 배열
+- `.codex-plugin/plugin.json` 의 `skills` 배열. Codex 가 읽는 매니페스트라 hook 은 싣지 않는다([ADR-007](docs/adr/007-codex-manifest-without-hooks.md))
 - 이 README 의 스킬 목록 표
 - 팀에도 내보낼 스킬이면 `scripts/export-to-team.sh` 의 `SHARED_SKILLS`
 
-`skills` 배열을 빠뜨리면 `python3 -m unittest discover -s scripts/tests` 가 실패한다.
+두 `skills` 배열 가운데 하나라도 빠뜨리면 `python3 -m unittest discover -s scripts/tests` 가 실패한다.
 내보내기 전용 원본은 [`scripts/export-only-skills.json`](scripts/export-only-skills.json) 에 명시하고 배열에서 제외한다.
 
 ### 링크로 설치

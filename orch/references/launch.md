@@ -95,6 +95,7 @@ terminal_title = ["app-name", "run-state", "project-name"]
 원인은 `worker-show --dispatch "$DISPATCH_ID"` 의 `lastFailure` 에 나온다.
 알려진 원인은 claude 의 폴더 신뢰 확인, codex 의 업데이트 안내(`agent-update-prompt`), hook 신뢰 확인(`agent-hooks-review-prompt`),
 작업 폴더 신뢰 확인(`agent-trust-workspace`)이다.
+codex 의 hook 신뢰 확인이 fos-skills 의 orch hook 때문이면 Codex 설치본이 `.codex-plugin` 매니페스트가 없는 옛 버전이다. `codex plugin marketplace upgrade fos-skills` 로 갱신한다. 근거는 저장소의 `docs/adr/007-codex-manifest-without-hooks.md` 가 소유한다.
 
 터미널과 워크트리는 이미 만들어져 있으므로 새로 띄우지 않고 이어 붙인다.
 
