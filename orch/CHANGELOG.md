@@ -11,6 +11,7 @@
 - `references/replying.md`: 「이어 쓸 수 없는 터미널」 절을 더했다. 세 오류의 뜻과, 새 worker 로 이어받는 순서, 커밋 전에 끝난 worker 의 처리를 적었다. `references/launch.md` 는 그 절을 가리킨다
 - `templates/spec-common.md`: `{{ORCH_SCRIPTS}}` 를 없애고, worker 가 자기 세션의 `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `orch/scripts` 를 푸는 명령을 넣었다. `user` 범위 항목을 먼저 쓴다. 캐시 폴더 이름이 해시라 `tail -1` 이나 `ls -t` 는 설치되지 않은 번들을 골랐다. `references/spec-writing.md` 는 경로를 채우지 않는다고 적는다
 - 테스트를 더했다(`--terminal` 조합 거부, `agent_unconfigured` 종료 코드 3, 경로 해석)
+- `templates/spec-common.md`: 틀의 ask 명령은 `FROM`, `QUESTION` 변수로 바꿔 `<…>` 플레이스홀더가 리다이렉션으로 읽히지 않게 했고, 틀의 bash 블록에 `<` 연산자가 없는지 테스트가 본다
 
 ## 1.36.0 (2026-10-22)
 

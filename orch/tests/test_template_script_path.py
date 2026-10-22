@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -36,6 +37,17 @@ class TemplateScriptPathTest(unittest.TestCase):
 
     def test_no_fixed_path_placeholder_remains(self):
         self.assertNotIn("{{ORCH_SCRIPTS}}", TEMPLATE.read_text())
+
+    def test_bash_blocks_have_no_input_redirect_from_placeholder(self):
+        # `<머리말의 --from 값>` 같은 플레이스홀더는 셸이 입력 리다이렉션으로 읽는다. 틀의 명령 블록에 `<` 연산자가 없어야 한다. `>` 출력 리다이렉션은 정상 명령이라 막지 않는다
+        blocks = re.findall(r"```bash\n(.*?)```", TEMPLATE.read_text(), re.S)
+        self.assertTrue(blocks, "틀에 bash 블록이 없다")
+        for block in blocks:
+            for line in block.splitlines():
+                lex = shlex.shlex(line, posix=True, punctuation_chars=True)
+                lex.whitespace_split = True
+                ops = [t for t in lex if t == "<"]
+                self.assertEqual([], ops, f"플레이스홀더가 입력 리다이렉션으로 읽힌다: {line}")
 
     def test_uses_claude_config_dir_and_prefers_user_scope(self):
         cfg = self.tmp / "profile with space" / "home"
