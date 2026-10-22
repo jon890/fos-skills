@@ -7,7 +7,7 @@
 | dispatch | 스크립트가 하는 일 |
 | --- | --- |
 | 살아 있다 | 그 worker 의 마지막 메시지에 `reply` 하고 `nudge-worker.py` 로 깨운다. 이미 답한 question 은 건너뛴다 |
-| 끝났고 터미널이 남았다 | `--spec` 의 후속 지시서로 그 터미널에 새 Task 를 띄운다. `--spec` 이 없으면 종료 코드 3 |
+| 끝났고 터미널이 남았다 | `--spec` 의 후속 지시서로 그 터미널에 새 Task 를 띄운다. 끝난 터미널은 대개 이어 쓰지 못해 `agent_unconfigured` 로 실패한다(종료 코드 3). `--spec` 이 없으면 종료 코드 3 |
 | 끝났는데 아직 일한다 | `--spec` 이 없고 화면이 작업 중이면 `--body` 를 그 터미널에 넣고, Task 기록에 묶이지 않는다고 경고한다 |
 | 끝났고 터미널도 없다 | 종료 코드 3. `launch-worker.sh --worktree` 로 새로 띄운다 |
 
@@ -36,8 +36,8 @@ python3 "$SKILL_DIR/scripts/nudge-worker.py" --terminal "$TERMINAL_HANDLE" --msg
 종료 코드 4 는 입력란에 쓰다 만 글이 있거나 권한 확인 창이라 입력하지 않은 것이다. `terminal read --screen` 으로 화면을 보고, 권한 확인 창이면 4단계의 「권한 확인 창」 을 따른다.
 종료 코드 1 이면 다시 확인해도 턴이 시작되지 않은 것이다. 화면을 보고 아래 「후속 지시가 전달되지 않음」 의 표로 판단한다.
 
-**끝난(settled) worker 에게 일을 더 주려면 같은 worktree 에 새 dispatch 를 띄운다.** 끝난 dispatch 에는 `reply` 가 가지 않는다.
-후속 지시서를 써서 `send-to-worker.py --spec` 으로 주면 남은 터미널을 이어 쓴다. 이어 쓰지 못하면 아래 「이어 쓸 수 없는 터미널」 을 따른다. 터미널이 없으면 [`launch.md`](launch.md) 의 기존 worktree 예시를 쓴다.
+**끝난(settled) worker 에게 일을 더 주려면 같은 worktree 에 새 worker 를 띄우는 것을 기본으로 한다.** 끝난 dispatch 에는 `reply` 가 가지 않는다. 끝난 worker 의 터미널은 대개 이어 쓸 수 없다(아래 「이어 쓸 수 없는 터미널」 의 `agent_unconfigured`). 재부팅 없이 PR #167 의 worker 터미널에서도 났다.
+그래서 처음부터 [`launch.md`](launch.md) 의 기존 worktree 예시로 새 worker 를 띄운다. 후속 지시서를 `send-to-worker.py --spec` 으로 주면 남은 터미널에 이어 쓰기를 한 번 시도하고, 실패하면 「이어 쓸 수 없는 터미널」 을 따른다.
 worker 가 보낸 `ready: <plan> <worktree> <지시서>` 도 그 예시로 띄운다.
 
 ### 후속 지시가 전달되지 않음
@@ -60,7 +60,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 도 그 예시로 띄�
 | --- | --- | --- |
 | `invalid_argument: --model and --effort cannot be applied when reusing an existing terminal` | `--terminal` 에 `--model`, `--effort` 를 함께 줬다 | 둘을 뺀다. 모델을 바꿔야 하면 아래 새 worker 로 간다 |
 | `invalid_argument: --terminal reuses an existing agent and cannot combine with --agent` | `--terminal` 에 `--agent` 를 함께 줬다 | `--agent` 를 뺀다 |
-| `agent_unconfigured: Terminal ... is not running a recognized agent` | Orca 가 그 터미널의 에이전트를 인식하지 못한다. 화면에서 Claude 가 입력을 기다리고 있어도 난다. Orca 가 잠깐 응답하지 않았거나 재부팅, 잠자기로 세션이 바뀐 뒤에 생긴다 | 이어 쓰지 못한다. 아래 새 worker 로 간다 |
+| `agent_unconfigured: Terminal ... is not running a recognized agent` | Orca 가 그 터미널의 에이전트를 인식하지 못한다. 화면에서 Claude 가 입력을 기다리고 있어도 난다. 끝난 dispatch 의 터미널은 대개 재부팅 없이도 이 오류가 난다. Orca 가 잠깐 응답하지 않았거나 재부팅, 잠자기로 세션이 바뀐 뒤에도 난다 | 이어 쓰지 못한다. 아래 새 worker 로 간다 |
 
 `launch-worker.sh` 는 `agent_unconfigured` 를 받으면 종료 코드 3 으로 끝나고 다음 단계를 낸다. 터미널은 스크립트가 닫지 않는다.
 
