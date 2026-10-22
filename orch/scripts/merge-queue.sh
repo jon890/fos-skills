@@ -170,6 +170,7 @@ fi
 
 GH_RETRIES=${MERGE_QUEUE_GH_RETRIES:-3}
 GH_RETRY_SECONDS=${MERGE_QUEUE_GH_RETRY_SECONDS:-10}
+case "$GH_RETRIES$GH_RETRY_SECONDS" in ''|*[!0-9]*) echo "MERGE_QUEUE_GH_RETRIES 와 MERGE_QUEUE_GH_RETRY_SECONDS 는 정수다" >&2; exit 2 ;; esac
 # PR 하나의 필드를 읽는다. 호출이 실패하면 GH_RETRIES 번까지 다시 부르고, 그래도 실패하면 빈 문자열이다
 field() {
   local i=1 out

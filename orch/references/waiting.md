@@ -38,6 +38,7 @@ orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바�
 일부러 끝낸 dispatch 도 끊긴 것으로 보지 않는다. 터미널을 닫아 끝난 것(`operator_close`)과 worker 가 `worker_done --outcome failed` 로 알린 것이다.
 **한 번 알린 dispatch 는 다음 대기에서 다시 알리지 않는다.** 스크립트가 `<git 루트>/.omc/state/wait-important-lost.json` 에 Run 별로 적는다.
 worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 31개씩 다시 깨운 일이 있었다. 그러므로 `WORKER_LOST` 줄은 받은 그 자리에서 처리한다.
+알렸는데 아직 끊긴 채인 dispatch 는 다음 대기가 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남긴다.
 그 줄이 나오면 다시 대기를 걸기 전에 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 마지막 줄의 `LAST_DELIVERY` id 는 다음 대기의 `--ack` 로 넘긴다.
 
 ## 깨어날 때마다 정리와 보드 동기화

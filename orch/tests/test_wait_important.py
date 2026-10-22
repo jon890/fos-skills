@@ -145,9 +145,12 @@ class WaitImportantTest(unittest.TestCase):
         r = self.lost_at_start()
         self.assertEqual(5, r.returncode, r.stdout + r.stderr)
         self.assertEqual(["ctx_bad"], list(json.loads(self.lost_state.read_text())["run_x"]))
+        self.assertTrue(json.loads(self.lost_state.read_text())["run_x"]["ctx_bad"].startswith("lost "))
         r = self.lost_at_start()
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
         self.assertNotIn("WORKER_LOST", r.stdout)
+        # 깨우지는 않지만 아직 끊긴 채라는 것은 남긴다
+        self.assertIn("아직 처리되지 않았다: ctx_bad", r.stderr)
 
     def test_reported_dispatches_are_kept_per_run(self):
         self.lost_state.write_text(json.dumps({"run_other": {"ctx_bad": "2026-10-22T00:00:00Z"}}))
@@ -166,10 +169,19 @@ class WaitImportantTest(unittest.TestCase):
         closed = {"id": "ctx_bad", "termination_reason": "operator_close"}
         reported = {"id": "ctx_bad", "termination_reason": None,
                     "last_failure": json.dumps({"provenance": "worker_report", "outcome": "failed"})}
-        for latest in (closed, reported):
+        for latest, reason in ((closed, "operator_close"), (reported, "worker_report")):
+            self.lost_state.unlink(missing_ok=True)
             r = self.lost_at_start(task_status="ready", latest=latest)
             self.assertEqual(0, r.returncode, r.stdout + r.stderr)
             self.assertNotIn("WORKER_LOST", r.stdout)
+            self.assertTrue(json.loads(self.lost_state.read_text())["run_x"]["ctx_bad"].startswith(reason + " "))
+        # 판정을 적어 두었으므로 다음 대기는 다시 조회하지도, 알리지도 않는다
+        self.log.unlink()
+        r = self.lost_at_start(task_status="ready", latest=reported)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual([], [l for l in self.log.read_text().splitlines() if "dispatch-show" in l])
+        self.assertNotIn("아직 처리되지 않았다", r.stderr)
+        self.lost_state.unlink()
         missing = {"id": "ctx_bad", "termination_reason": None,
                    "last_failure": "The assigned worker terminal is no longer live"}
         r = self.lost_at_start(task_status="ready", latest=missing)

@@ -223,6 +223,8 @@ if [ "$code" != 0 ] && printf '%s' "$out" | grep -q agent-hooks-review-prompt; t
   echo "에이전트가 hook 신뢰 확인 화면에서 멈췄다(agent-hooks-review-prompt). Codex 가 fos-skills 의 Claude 전용 hook 을 읽은 것이면 Codex 설치본이 .codex-plugin 매니페스트가 없는 옛 버전이다: codex plugin marketplace upgrade fos-skills 로 갱신한다(docs/adr/007). 남은 터미널은 launch.md 「첫 화면에서 멈춤」 을 따른다" >&2
 fi
 [ "$code" = 0 ] || { echo "worker-start 가 종료 코드 $code 로 끝났다. launch.md 의 「첫 화면에서 멈춤」 과 「시작 직후 실패」 를 본다" >&2; exit 1; }
+# 여기부터는 dispatch 가 떠 있다. --worktree 로 다시 띄우면 같은 일의 task 가 하나 더 생기므로 이어 띄우기 안내를 끈다
+trap - EXIT
 dispatch=$(printf '%s' "$out" | jget "dispatch.id|dispatchId|worker.dispatchId")
 task=$(printf '%s' "$out" | jget "dispatch.taskId|taskId|task.id")
 [ -n "$dispatch" ] || { echo "worker-start 출력에서 dispatch id 를 읽지 못했다" >&2; exit 1; }

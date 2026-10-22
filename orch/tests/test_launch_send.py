@@ -118,6 +118,8 @@ class LaunchWorkerTest(FakeBase):
         self.env.update(LAUNCH_WT_POLL="0", LAUNCH_WT_WAIT="3", FAKE_WT_DEFAULT=f"{self.worktree}:{self.tmp}/new")
 
     def launch(self, *args, shell="bash"):
+        if not shutil.which(shell):
+            self.skipTest(f"{shell} 가 없다")
         cmd = [shell, str(SCRIPTS / "launch-worker.sh"), "--spec", str(self.spec), *args]
         return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
 
@@ -238,6 +240,14 @@ class LaunchWorkerTest(FakeBase):
                 self.assertIn(f"워크트리는 남아 있다: {self.tmp}/new", r.stderr)
                 self.assertIn(f"--worktree {self.tmp}/new --run run_x -- --agent codex --model gpt\\ 6", r.stderr)
                 self.assertIn("term_left codex hooks review", r.stderr)
+
+    def test_failure_after_worker_start_succeeded_gives_no_resume_hint(self):
+        """dispatch 가 이미 떠 있으면 --worktree 로 다시 띄우라고 하지 않는다. 같은 일의 task 가 하나 더 생긴다"""
+        self.state(next_ids=["ctx_1", "ctx_2"],
+                   dispatches={"ctx_1": self.shown("worktree_creating"), "ctx_2": self.shown("worktree_creating")})
+        r = self.launch("--repo", str(self.tmp), "--name", "feat", "--watch", "1", "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("워크트리는 남아 있다", r.stderr)
 
     def test_existing_worktree_or_success_gives_no_resume_hint(self):
         self.state(start_fails=True)

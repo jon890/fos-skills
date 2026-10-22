@@ -44,8 +44,9 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
     두 경우 모두 일부러 끝낸 dispatch 는 끊긴 것으로 보지 않는다. `dispatch-show` 의 termination_reason 이
     operator_close(코디네이터나 정리 스크립트가 터미널을 닫았다)이거나, last_failure 의 provenance 가
     worker_report(worker 가 `worker_done --outcome failed` 로 알렸다)인 것이다.
-    알린 dispatch 는 `--lost-state` 파일에 Run 별로 적고 다음 대기부터 다시 알리지 않는다.
-    worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 다시 깨우지 않게 하기 위해서다.
+    알린 dispatch 와 일부러 끝냈다고 판정한 dispatch 는 `--lost-state` 파일에 Run 별로 적고 다음 대기부터 다시
+    알리거나 조회하지 않는다. worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 다시
+    깨우지 않게 하기 위해서다. 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 에 한 줄로 남긴다.
     다시 알리게 하려면 그 파일에서 Run 의 항목을 지운다.
 
 남은 대기:
@@ -163,33 +164,41 @@ def default_state_path():
     return root / ".omc/state/wait-important-lost.json"
 
 
-def load_reported(path, run_id):
-    """이 Run 에서 이미 알린 dispatch id. 파일이 없거나 읽지 못하면 빈 집합이다"""
+def load_state(path):
     try:
         data = json.loads(Path(path).read_text())
     except (OSError, ValueError):
-        return set()
-    return set((data.get(run_id) or {}) if isinstance(data, dict) else ())
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
-def save_reported(path, run_id, dispatches):
-    """알린 dispatch 를 Run 별로 적는다. 쓰지 못하면 stderr 로 알리고 넘어간다(다음 대기가 다시 알릴 뿐이다)"""
+def load_reported(path, run_id):
+    """이 Run 에서 이미 판정한 dispatch. {dispatch id: 「lost 시각」 이나 「operator_close 시각」}.
+    파일이 없거나 읽지 못하면 빈 dict 다"""
+    entry = load_state(path).get(run_id)
+    return entry if isinstance(entry, dict) else {}
+
+
+def save_reported(path, run_id, kinds):
+    """판정한 dispatch 를 Run 별로 적는다. kinds 는 {dispatch id: lost 나 일부러 끝낸 이유} 다.
+    쓰지 못하면 stderr 로 알리고 넘어간다(다음 대기가 다시 판정할 뿐이다)"""
+    if not kinds:
+        return
     path = Path(path)
-    try:
-        data = json.loads(path.read_text())
-        if not isinstance(data, dict):
-            data = {}
-    except (OSError, ValueError):
-        data = {}
+    data = load_state(path)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    entry = data.setdefault(run_id, {})
-    for dispatch in dispatches:
-        entry.setdefault(dispatch, now)
+    entry = data.get(run_id) if isinstance(data.get(run_id), dict) else {}
+    data[run_id] = entry
+    for dispatch, kind in kinds.items():
+        entry.setdefault(dispatch, f"{kind} {now}")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
+        # 쓰는 도중에 끊겨도 앞 내용이 깨지지 않게 옆 파일에 쓰고 바꾼다
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
+        os.replace(tmp, path)
     except OSError as exc:
-        print(f"wait-important: 알린 dispatch 를 {path} 에 적지 못했다: {exc}", file=sys.stderr)
+        print(f"wait-important: 판정한 dispatch 를 {path} 에 적지 못했다: {exc}", file=sys.stderr)
 
 
 def task_closed(task):
@@ -199,28 +208,37 @@ def task_closed(task):
 
 
 def unhandled_lost(run_id, rows, ignore):
-    """대기를 시작할 때 이미 끊겨 있고 아직 처리하지 않은 dispatch. [(dispatch id, 단계)]
+    """대기를 시작할 때 이미 끊겨 있고 아직 처리하지 않은 dispatch.
+    ([(dispatch id, 단계)], {일부러 끝낸 dispatch id: 이유})
 
-    처리한 것은 뺀다: --ignore-lost(이미 알린 것 포함), 끝난 task, 같은 task 에 더 나중 dispatch 가 있는 것,
+    처리한 것은 뺀다: --ignore-lost(이미 판정한 것 포함), 끝난 task, 같은 task 에 더 나중 dispatch 가 있는 것,
     일부러 끝낸 것. 판정에 필요한 목록을 읽지 못하면 그 dispatch 는 지켜보지 않는다.
+    일부러 끝낸 것은 따로 돌려줘 기록하게 한다. 다음 대기가 같은 dispatch 를 다시 조회하지 않게 하기 위해서다.
     """
     candidates = [(d, stage) for d, stage in lost_workers(rows, {w.get("dispatchId") for w in rows}) if d not in ignore]
     if not candidates:
-        return []
+        return [], {}
     tasks = (run_json("task-list", "--run", run_id) or {}).get("tasks")
     if tasks is None:
-        return []
+        return [], {}
     by_task = {t.get("id"): t for t in tasks}
     task_of = {w.get("dispatchId"): w.get("taskId") for w in rows}
-    found = []
+    found, deliberate, latest_of = [], {}, {}
     for dispatch, stage in candidates:
         task_id = task_of.get(dispatch)
         if task_id not in by_task or task_closed(by_task[task_id]):
             continue
-        latest = latest_dispatch(task_id)
-        if latest.get("id") == dispatch and not deliberate_end(latest):
+        if task_id not in latest_of:
+            latest_of[task_id] = latest_dispatch(task_id)
+        latest = latest_of[task_id]
+        if latest.get("id") != dispatch:
+            continue
+        reason = deliberate_end(latest)
+        if reason:
+            deliberate[dispatch] = reason
+        else:
             found.append((dispatch, stage))
-    return found
+    return found, deliberate
 
 
 def drop_deliberate(rows, lost, watched):
@@ -366,14 +384,22 @@ def main(argv=None):
     watched = set()
     if args.lost_interval_sec > 0:
         rows = worker_rows(args.run) or []
-        ignore = set(args.ignore_lost) | load_reported(state, args.run)
+        judged = load_reported(state, args.run)
+        ignore = set(args.ignore_lost) | set(judged)
+        # 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 로만 남긴다
+        still = sorted(d for d, _ in lost_workers(rows, {d for d, v in judged.items() if str(v).startswith("lost")})
+                       if d not in args.ignore_lost)
+        if still:
+            print(f"wait-important: 앞 대기가 알린 끊긴 dispatch {len(still)}개가 아직 처리되지 않았다: {' '.join(still)}",
+                  file=sys.stderr)
         # 이미 끊겨 있는데 처리하지 않은 dispatch 가 있으면 기다리지 않고 알린다
-        lost = unhandled_lost(args.run, rows, ignore)
+        lost, deliberate = unhandled_lost(args.run, rows, ignore)
+        save_reported(state, args.run, deliberate)
         if lost:
             for dispatch, stage in lost:
                 print(f"WORKER_LOST {dispatch} stage={stage}")
             print(f"LAST_DELIVERY {args.ack or '-'}")
-            save_reported(state, args.run, [d for d, _ in lost])
+            save_reported(state, args.run, {d: "lost" for d, _ in lost})
             return 5
         watched = live_dispatches(rows) - ignore
 
@@ -389,7 +415,7 @@ def main(argv=None):
             for dispatch, stage in raw:
                 print(f"WORKER_LOST {dispatch} stage={stage}")
             print(f"LAST_DELIVERY {ack or '-'}")
-            save_reported(state, args.run, [d for d, _ in raw])
+            save_reported(state, args.run, {d: "lost" for d, _ in raw})
             return 5
         if not isinstance(data, dict) or not data.get("ok"):
             print(raw.strip() or "wait-important: orca 출력이 JSON 이 아니다")
