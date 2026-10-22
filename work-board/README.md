@@ -12,7 +12,7 @@
 - 진행률: 하위 항목(details)의 단계 줄을 세고, details 에 단계가 없으면 다음 할 일(next)의 줄을 센다. `progress` 필드(「7/10」)가 있으면 그 값이 우선한다. 단계로 나타낼 수 없을 때만 쓴다
 - 진행률 표시: 창 맨 위에 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 막대로 그린다. 완료가 아닌 항목마다 막대를 그리고, 진행률이 없는 옛 항목은 「진행률 없음」 으로 보인다. `board.py list` 도 항목마다 「n/m (p%)」 를 붙인다
 - 진행률 필수: `board.py set` 은 doing 항목에 단계 줄이나 `--progress N/M` 이 없으면 거절하고 보드를 고치지 않는다. `--next` 를 여러 번 주면 줄로 이어 단계 줄을 적을 수 있다
-- 단계 끝내기: `board.py step <id> <n>` 이 진행률을 세는 줄에서 n 번 단계를 끝낸다. 「[ ]」 는 「[x]」 로 바꾸고 그 밖의 줄은 앞에 「✓ 」 를 붙인다(`--undo` 로 되돌린다). `set --progress auto` 는 `progress` 값을 지워 단계 수로 세게 한다
+- 단계 끝내기: `board.py step <id> <n>` 이 진행률을 세는 줄에서 n 번 단계를 끝낸다. 「[ ]」 는 「[x]」 로 바꾸고 그 밖의 줄은 앞에 「✓ 」 를 붙인다(`--undo` 로 되돌린다). `set --progress auto` 는 `progress` 값을 지워 단계 수로 세게 한다. `board.py steps <id>` 는 진행률을 세는 단계 줄을 JSON 으로 낸다. orch 의 `board-sync.py` 가 이것으로 단계를 판정한다
 - 갱신: `python3 "$BOARD_BIN" set <id> doing --title "..." --next "..."`. `$BOARD_BIN` 은 이 디렉터리의 `bin/board.py` 다
 
 ## 설치와 갱신

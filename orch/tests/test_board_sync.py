@@ -48,91 +48,117 @@ class BoardSyncTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.states = {}
-        self.calls = self.tmp / "calls.jsonl"
-        self.board_bin = self.tmp / "board.py"
-        self.board_bin.write_text(f"import json,sys\nopen({str(self.calls)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n")
         self.state_file = self.tmp / "state.json"
         bs.GH = str(self.gh)
         self.board = self.tmp / "board.json"
 
-    def sync(self, items, *extra):
+    def sync(self, items, *extra, board_bin=None):
+        """실제 board.py 로 동기화하고 (종료 코드, id 별 항목) 을 돌려준다."""
         self.state_file.write_text(json.dumps(self.states))
-        self.board.write_text(json.dumps({"items": items}), encoding="utf-8")
-        rc = bs.main(["--board", str(self.board), "--board-bin", str(self.board_bin), "--repo", str(self.tmp), *extra])
-        calls = [json.loads(l) for l in self.calls.read_text().splitlines()] if self.calls.exists() else []
-        return rc, calls
-
-    @staticmethod
-    def details(argv):
-        return [argv[i + 1] for i, x in enumerate(argv) if x == "--detail"]
+        self.board.write_text(json.dumps({"items": items}, ensure_ascii=False), encoding="utf-8")
+        argv = ["--board", str(self.board), "--repo", str(self.tmp), *extra]
+        rc = bs.main(argv + (["--board-bin", str(board_bin)] if board_bin else []))
+        return rc, {i["id"]: i for i in json.loads(self.board.read_text(encoding="utf-8"))["items"]}
 
     def test_merged_pr_marks_done_and_checks_remaining_steps(self):
         self.states["7"] = "MERGED"
         items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. PR 리뷰 반영", "✓ 3. 머지"]}]
-        rc, calls = self.sync(items)
+        rc, board = self.sync(items)
         self.assertEqual(rc, 0)
-        self.assertEqual(calls[0][:3], ["set", "a", "done"])
-        self.assertNotIn("--pr", calls[0])
-        self.assertEqual(self.details(calls[0]), ["✓ 1. 구현", "✓ 2. PR 리뷰 반영", "✓ 3. 머지"])
+        self.assertEqual("done", board["a"]["status"])
+        self.assertEqual("#7", board["a"]["pr"])
+        self.assertEqual(["✓ 1. 구현", "✓ 2. PR 리뷰 반영", "✓ 3. 머지"], board["a"]["details"])
 
     def test_merged_pr_with_two_open_steps_keeps_item_and_checks_only_its_step(self):
         self.states["7"] = "MERGED"
         items = [{"id": "a", "status": "doing", "pr": "#7",
                   "details": ["1. PR #7 머지", "2. dev 테스트", "3. 후속 PR #70"]}]
-        rc, calls = self.sync(items)
+        rc, board = self.sync(items)
         self.assertEqual(rc, 0)
-        self.assertEqual(calls[0][:2], ["set", "a"])
-        self.assertNotIn("done", calls[0])
-        self.assertEqual(calls[0][calls[0].index("--pr") + 1], "")
-        self.assertEqual(self.details(calls[0]), ["✓ 1. PR #7 머지", "2. dev 테스트", "3. 후속 PR #70"])
+        self.assertEqual("doing", board["a"]["status"])
+        self.assertNotIn("pr", board["a"])
+        self.assertEqual(["✓ 1. PR #7 머지", "2. dev 테스트", "3. 후속 PR #70"], board["a"]["details"])
 
     def test_merged_pr_with_one_open_step_finishes_item(self):
         self.states["7"] = "MERGED"
         items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. 머지"]}]
-        rc, calls = self.sync(items)
-        self.assertEqual(calls[0][:3], ["set", "a", "done"])
-        self.assertEqual(self.details(calls[0]), ["✓ 1. 구현", "✓ 2. 머지"])
+        rc, board = self.sync(items)
+        self.assertEqual("done", board["a"]["status"])
+        self.assertEqual(["✓ 1. 구현", "✓ 2. 머지"], board["a"]["details"])
+
+    def test_checkbox_steps_are_finished_by_board_command(self):
+        """[ ] 줄은 「✓ [ ] …」 가 아니라 [x] 로 끝나 단계로 계속 세어진다."""
+        self.states["7"] = "MERGED"
+        items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["[x] 1. 구현", "[ ] 2. 머지 #7", "[ ] 3. 배포"]},
+                 {"id": "b", "status": "doing", "pr": "#7", "next": "[x] 1. 구현\n[ ] 2. 머지"}]
+        rc, board = self.sync(items)
+        self.assertEqual(rc, 0)
+        self.assertEqual(["[x] 1. 구현", "[x] 2. 머지 #7", "[ ] 3. 배포"], board["a"]["details"])
+        self.assertEqual("doing", board["a"]["status"])
+        self.assertEqual("[x] 1. 구현\n[x] 2. 머지", board["b"]["next"])
+        self.assertEqual("done", board["b"]["status"])
+
+    def test_reference_lines_are_not_counted_as_open_steps(self):
+        self.states["7"] = "MERGED"
+        items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. 머지", "참고: 후속 검토"]}]
+        rc, board = self.sync(items)
+        self.assertEqual("done", board["a"]["status"])
+        self.assertEqual(["✓ 1. 구현", "✓ 2. 머지", "참고: 후속 검토"], board["a"]["details"])
 
     def test_open_pr_leaves_steps_alone_and_writes_no_status_lines(self):
         self.states["8"] = "OPEN"
-        rc, calls = self.sync([{"id": "a", "status": "doing", "pr": "8", "details": ["1. 구현", "2. 리뷰"]}])
-        self.assertEqual((rc, calls), (0, []))
+        items = [{"id": "a", "status": "doing", "pr": "8", "details": ["1. 구현", "2. 리뷰"]}]
+        before = json.dumps({"items": items}, ensure_ascii=False)
+        rc, _ = self.sync(items)
+        self.assertEqual((rc, before), (0, self.board.read_text(encoding="utf-8")))
 
     def test_legacy_auto_lines_are_removed(self):
         self.states["8"] = "OPEN"
-        rc, calls = self.sync([{"id": "a", "status": "doing", "pr": "8",
+        rc, board = self.sync([{"id": "a", "status": "doing", "pr": "8",
                                 "details": ["1. 구현", "자동: PR #8 OPEN CLEAN"]}])
-        self.assertEqual(self.details(calls[0]), ["1. 구현"])
-        self.assertNotIn("done", calls[0])
+        self.assertEqual(["1. 구현"], board["a"]["details"])
+        self.assertEqual("doing", board["a"]["status"])
 
     def test_done_goal_and_failed_lookup_are_skipped(self):
         self.states["7"] = "MERGED"
         items = [{"id": "g", "status": "goal"}, {"id": "d", "status": "done", "pr": "7"},
                  {"id": "x", "status": "doing", "pr": "99", "details": ["1. 구현"]}]
-        rc, calls = self.sync(items)
-        self.assertEqual((rc, calls), (0, []))
+        before = json.dumps({"items": items}, ensure_ascii=False)
+        rc, _ = self.sync(items)
+        self.assertEqual((rc, before), (0, self.board.read_text(encoding="utf-8")))
 
-    def test_dry_run_does_not_call_board(self):
+    def test_dry_run_does_not_change_board(self):
         self.states["7"] = "MERGED"
-        rc, calls = self.sync([{"id": "a", "status": "doing", "pr": "7", "details": ["1. 구현"]}], "--dry-run")
-        self.assertEqual((rc, calls), (0, []))
+        items = [{"id": "a", "status": "doing", "pr": "7", "details": ["1. 구현"]}]
+        before = json.dumps({"items": items}, ensure_ascii=False)
+        rc, _ = self.sync(items, "--dry-run")
+        self.assertEqual((rc, before), (0, self.board.read_text(encoding="utf-8")))
+
+    def test_board_command_without_steps_fails(self):
+        """steps 를 모르는 옛 보드 명령이면 고치지 않고 종료 코드 1 로 멈춘다."""
+        old_bin = self.tmp / "old-board.py"
+        old_bin.write_text("import sys\nsys.exit(2)\n")
+        self.states["7"] = "MERGED"
+        rc, board = self.sync([{"id": "a", "status": "doing", "pr": "7", "details": ["1. 구현"]}], board_bin=old_bin)
+        self.assertEqual(1, rc)
+        self.assertEqual("doing", board["a"]["status"])
 
     def test_goal_progress_is_called_after_sync(self):
         items_file = self.tmp / "items.txt"
         items_file.write_text("a\n")
         self.states["7"] = "MERGED"
-        rc, calls = self.sync([{"id": "goal", "status": "goal"}, {"id": "a", "status": "doing", "pr": "7"}],
+        rc, board = self.sync([{"id": "goal", "status": "goal"}, {"id": "a", "status": "doing", "pr": "7", "next": "1. 구현"}],
                               "--goal", "goal", "--goal-items", str(items_file))
         self.assertEqual(rc, 0)
-        self.assertEqual(calls[-1][:2], ["set", "goal"])
+        self.assertEqual("1/1", board["goal"]["progress"])
 
     def test_goal_without_items_counts_goal_steps(self):
         self.states["7"] = "MERGED"
         items = [{"id": "g", "status": "goal", "details": ["✓ 1. a", "2. b"]},
                  {"id": "a", "status": "doing", "pr": "7", "details": ["1. 구현"]}]
-        rc, calls = self.sync(items, "--goal", "g")
+        rc, board = self.sync(items, "--goal", "g")
         self.assertEqual(rc, 0)
-        self.assertEqual(calls[-1][:4], ["set", "g", "--progress", "1/2"])
+        self.assertEqual("1/2", board["g"]["progress"])
 
     def test_goal_items_needs_goal(self):
         self.assertEqual(bs.main(["--board", str(self.board), "--goal-items", "x"]), 2)

@@ -8,6 +8,7 @@
 보드 도구(work-board)가 이 저장소로 옮겨 와, orch 스크립트가 홈 폴더 경로 대신 저장소 안의 board.py 를 부른다(ADR-006).
 
 - `board-sync.py`, `finish-pr.py`, `goal-progress.py`: `--board-bin` 기본값을 `~/.claude/mods/work-board/bin/board.py` 에서 저장소의 `work-board/bin/board.py` 로 바꿨다. `BOARD_BIN` 환경 변수는 그대로 우선한다. 세 스크립트의 기본 경로에 파일이 있는지 확인하는 테스트를 더했다
+- `board-sync.py`: 단계 끝내기를 직접 하지 않고 board.py 의 `steps` 로 단계 목록을 받아 `step <id> <n>` 으로 끝낸다. 「✓ 」 접두사만 보던 탓에 `[ ]` 줄을 끝내면 「✓ [ ] 1 …」 이 되어 단계로 세지 않던 문제와, 번호 없는 참고 줄을 끝나지 않은 단계로 세던 문제가 사라진다. `steps` 를 모르는 옛 보드 명령이면 고치지 않고 종료 코드 1 로 멈춘다. 테스트는 가짜 보드 명령 대신 실제 board.py 로 보드 파일 결과를 확인한다
 - `references/board.md`: 보드 명령의 자리와 단계 줄 형식(번호 점, `✓`, `[x]`), doing 항목의 진행률 필수 규칙을 적었다
 
 ## 1.37.0 (2026-10-22)
