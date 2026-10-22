@@ -42,7 +42,9 @@ bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --repo "$REPO" --
 새 일이면 지시서의 브랜치 이름을 바꾼다. 예전에 머지된 PR 과 같은 이름을 다시 쓰면 그 PR 의 기록과 섞인다.
 이어서 하는 일이면 이미 있는 worktree 에 띄운다.
 
-이미 있는 worktree 에 띄울 때는 `--worktree` 에 그 경로를 준다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
+이미 있는 worktree 에 띄울 때는 `--worktree` 에 그 경로를 준다. 맨 경로와 `path:` 를 붙인 경로를 모두 받는다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
+**`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree.sh` 가 「경로가 이미 있다」 로 거부한다.
+스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다. 실패한 띄우기가 그 워크트리에 터미널을 남겼으면 그 목록도 함께 낸다. 이 세션이 띄운 것인지 보고 닫은 뒤 부른다.
 **그 워크트리에 터미널이 남아 있으면 스크립트가 목록을 보여 주고 거부한다.** 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
 목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다. 끝난 worker 의 터미널은 대개 이어 쓰지 못하므로 닫고 새 worker 로 띄운다. 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
