@@ -7,6 +7,7 @@
 //      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, 끝나면 「✓ 1 …」 나 「[x] 1. …」)을 세어 그린다.
 //      details 에 단계 줄이 있으면 그것을, 없으면 next 의 줄을 센다. 참고 줄은 세지 않는다.
 //      progress(「끝낸 단계/전체 단계」, 예: 7/10)가 있으면 그 값을 우선한다.
+//      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
 // 파일은 FILE_MS, 명령은 LIVE_MS 마다 다시 읽는다. 창에서 r 을 누르면 명령을 바로 다시 읽는다.
 
@@ -176,14 +177,34 @@ export function stepProgress(lines) {
   return steps.filter((step) => step.done).length + '/' + steps.length
 }
 
-// details 에 단계가 있으면 그것을, 없으면 next 의 줄을 센다
+const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
+
+// progress 가 「N/M」 이면 그 값을, 아니면 details 의 단계, 그것도 없으면 next 의 줄을 센다. 없으면 null
 export function itemProgress(item) {
-  return item.progress || stepProgress(item.details) || stepProgress(String(item.next || '').split('\n'))
+  const match = PROGRESS.exec(String(item.progress || ''))
+  if (match && Number(match[2]) > 0) return Math.min(Number(match[1]), Number(match[2])) + '/' + Number(match[2])
+  return stepProgress(item.details) || stepProgress(String(item.next || '').split('\n'))
+}
+
+// 진행 중 항목들의 끝낸 단계 합과 전체 단계 합. missing 은 진행률이 없는 진행 중 항목 수다
+export function overallProgress(items) {
+  let done = 0
+  let total = 0
+  let missing = 0
+  for (const item of items.filter((row) => row.status === 'doing')) {
+    const match = PROGRESS.exec(itemProgress(item) || '')
+    if (!match) missing += 1
+    else {
+      done += Number(match[1])
+      total += Number(match[2])
+    }
+  }
+  return { done, total, missing }
 }
 
 // 「7/10」 을 진행 표시줄 한 줄로 바꾼다. 형식이 틀리면 null.
 export function progressBar(progress, width = 20) {
-  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(String(progress || ''))
+  const match = PROGRESS.exec(String(progress || ''))
   if (!match) return null
   const total = Number(match[2])
   const done = Math.min(Number(match[1]), total)
@@ -424,7 +445,9 @@ export function register(on) {
             ],
           }),
           ...(meta.length ? [Text({ dimColor: true, wrap: 'wrap', children: ['  ' + meta.join('  ·  ')] })] : []),
-          ...(progressBar(itemProgress(item)) ? [Text({ key: 'bar', color: section.color, children: ['  ' + progressBar(itemProgress(item))] })] : []),
+          ...(done ? [] : [progressBar(itemProgress(item))
+            ? Text({ key: 'bar', color: section.color, children: ['  ' + progressBar(itemProgress(item))] })
+            : Text({ key: 'bar', dimColor: true, children: ['  진행률 없음'] })]),
           ...(!done && item.worktree ? [workerFor(item, live.workers)
             ? Text({ key: 'w', color: 'yellow', wrap: 'wrap', children: ['  ⚙ worker ' + workerLine(workerFor(item, live.workers), live.prs)] })
             : Text({ key: 'w', dimColor: true, wrap: 'wrap', children: ['  ⚙ worker 없음 (' + item.worktree + ')'] })] : []),
@@ -522,11 +545,27 @@ export function register(on) {
         collapsed ? [dim('fold', 'd 를 누르면 펼쳐요')] : rows.map((item) => itemView(item, section)))]
     }
 
+    // 전체 진행률: 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합
+    const overall = overallProgress(items)
+    const overallView = Box({
+      key: 'overall',
+      flexDirection: 'row',
+      columnGap: 1,
+      children: [
+        Text({ bold: true, children: ['전체 진행률'] }),
+        overall.total > 0
+          ? Text({ color: 'yellow', children: [progressBar(overall.done + '/' + overall.total, 30)] })
+          : Text({ dimColor: true, children: ['진행률 없음'] }),
+        ...(overall.missing > 0 ? [Text({ dimColor: true, children: ['· 진행률 없는 항목 ' + overall.missing] })] : []),
+      ],
+    })
+
     const nothing = !board && live.workers === null && live.prs === null
     return Box({
       flexDirection: 'column',
       gap: 1,
       children: [
+        overallView,
         Box({
           flexDirection: 'row',
           columnGap: 2,

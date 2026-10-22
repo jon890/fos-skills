@@ -7,9 +7,11 @@
   board.py set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--progress N/M] [--detail D ...]
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
+  (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
+  doing 항목은 진행률이 있어야 한다. 단계 줄이나 --progress N/M 이 없으면 set 을 거절하고 보드를 고치지 않는다
   board.py step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
   board.py del <id>
-  board.py list
+  board.py list   (항목마다 진행률 「n/m (p%)」 를 붙인다)
 status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
@@ -41,6 +43,28 @@ def step_source(item):
         return 'next', lines
     return None, []
 
+PROGRESS = re.compile(r'^\s*(\d+)\s*/\s*(\d+)\s*$')
+
+def progress_of(item):
+    """(끝낸 단계, 전체 단계). progress 가 N/M 이면 그 값을, 아니면 단계 줄을 센다. 없으면 None"""
+    m = PROGRESS.match(str(item.get('progress') or ''))
+    if m and int(m.group(2)) > 0:
+        return min(int(m.group(1)), int(m.group(2))), int(m.group(2))
+    steps = [parse_step(line) for line in step_source(item)[1]]
+    steps = [step for step in steps if step]
+    return (sum(1 for step in steps if step[1]), len(steps)) if steps else None
+
+def progress_text(item):
+    progress = progress_of(item)
+    if progress is None:
+        return '진행률 없음'
+    done, total = progress
+    return '%d/%d (%d%%)' % (done, total, round(done * 100 / total))
+
+MISSING_PROGRESS = '''doing 항목에는 진행률이 필요하다: %s
+  단계 줄을 적는다: --next '1. 구현' --next '2. 리뷰 반영' --next '3. 머지' (끝낸 단계는 앞에 ✓ 나 [x])
+  단계로 나타낼 수 없으면 --progress 끝낸단계/전체단계 (예: --progress 2/5) 를 준다'''
+
 def mark_step(line, done):
     number, finished, mark = parse_step(line)
     if finished == done:
@@ -66,16 +90,21 @@ def main():
     ap.add_argument('id', nargs='?')
     ap.add_argument('status', nargs='?')
     ap.add_argument('--undo', action='store_true')
-    for key in ('title', 'owner', 'pr', 'next', 'worktree', 'progress'):
+    for key in ('title', 'owner', 'pr', 'worktree', 'progress'):
         ap.add_argument('--' + key)
     ap.add_argument('--detail', action='append')
+    ap.add_argument('--next', action='append')
     ap.add_argument('--file')
     a = ap.parse_args()
+    if a.next is not None:
+        a.next = '\n'.join(line for line in a.next if line)
+    if a.progress not in (None, '', 'auto') and not PROGRESS.match(a.progress):
+        sys.exit('--progress 는 끝낸단계/전체단계 (예: 2/5) 나 auto 다: ' + a.progress)
     path = board_path(a.file)
     board = json.load(open(path)) if os.path.exists(path) else {'items': []}
     if a.cmd == 'list':
         for item in board['items']:
-            print(item.get('status', '?').ljust(7), item['id'].ljust(16), item.get('title', ''))
+            print(item.get('status', '?').ljust(7), item['id'].ljust(16), item.get('title', ''), ' ', progress_text(item))
         return
     if not a.id:
         sys.exit('id 가 필요하다')
@@ -120,6 +149,8 @@ def main():
                 item['details'] = lines
             else:
                 item.pop('details', None)
+        if item.get('status') == 'doing' and progress_of(item) is None:
+            sys.exit(MISSING_PROGRESS % a.id)
     board['updatedAt'] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'

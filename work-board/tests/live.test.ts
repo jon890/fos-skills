@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, detailLines, parseStep, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, detailLines, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
 
 test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
   const stdout = JSON.stringify({ result: { workers: [
@@ -77,6 +77,8 @@ test('details 에 단계가 없으면 next 의 번호 줄을 센다', () => {
 
 test('progress 가 있으면 단계 수보다 우선한다', () => {
   expect(itemProgress({ progress: '7/10', details: ['✓ 1 a', '2 b'] })).toBe('7/10')
+  expect(itemProgress({ progress: '거의 완료', details: ['✓ 1 a', '2 b'] })).toBe('1/2')
+  expect(itemProgress({ progress: '거의 완료' })).toBe(null)
   expect(itemProgress({ details: ['✓ 1 a', '2 b'] })).toBe('1/2')
   expect(itemProgress({ title: 'x' })).toBe(null)
 })
@@ -127,4 +129,18 @@ test('오늘 시작 요청은 board 갱신, 완료 비우기, 정리, 감시, �
   expect(START_PROMPT).not.toMatch(/fos-|세 저장소/)
   expect(START_PROMPT).toContain('orch-watch')
   expect(START_PROMPT).toContain('정할 것은 바로 물어본다')
+})
+
+test('전체 진행률은 진행 중 항목의 끝낸 단계 합과 전체 단계 합이다', () => {
+  const items = [
+    { status: 'doing', next: '✓ 1. a\n2. b' },
+    { status: 'doing', details: ['[x] 1 a', '[x] 2 b', '3 c'] },
+    { status: 'doing', progress: '1/5' },
+    { status: 'doing', title: '옛 항목' },
+    { status: 'wait', details: ['1 a', '2 b'] },
+    { status: 'done', progress: '3/3' },
+  ]
+  expect(overallProgress(items)).toEqual({ done: 4, total: 10, missing: 1 })
+  expect(progressBar('4/10', 10)).toBe('████░░░░░░ 4/10 (40%)')
+  expect(overallProgress([{ status: 'wait' }])).toEqual({ done: 0, total: 0, missing: 0 })
 })
