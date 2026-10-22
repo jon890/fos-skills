@@ -14,7 +14,7 @@ PR 상태나 커밋 같은 자동 줄은 읽기 어렵고 단계와 섞여 보�
     board-sync.py [--board PATH] [--repo DIR] [--goal GOAL_ID --goal-items FILE] [--dry-run]
 
     --board       board.json. 기본은 git 루트의 .omc/handoffs/board.json, 없으면 .omc/board.json
-    --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 ~/.claude/mods/work-board/bin/board.py
+    --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
     --goal, --goal-items
                   --goal 을 주면 끝에 goal-progress.py 로 목표 진행률을 다시 센다.
@@ -37,6 +37,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+BOARD_BIN = HERE.parents[1] / "work-board/bin/board.py"
 LEGACY_AUTO = "자동: "
 DONE_MARK = "✓ "
 SKIP_STATUS = {"done", "goal"}
@@ -86,7 +87,7 @@ def next_details(details, merged, pr=""):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--board")
-    parser.add_argument("--board-bin", default=os.environ.get("BOARD_BIN", str(Path.home() / ".claude/mods/work-board/bin/board.py")))
+    parser.add_argument("--board-bin", default=os.environ.get("BOARD_BIN", str(BOARD_BIN)))
     parser.add_argument("--repo", default=".")
     parser.add_argument("--goal")
     parser.add_argument("--goal-items")

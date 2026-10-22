@@ -38,7 +38,7 @@
                           (예: 'task-cli complete {number}')
     --board FILE          보드 파일. 기본은 <repo>/.omc/board.json, 있으면 <repo>/.omc/handoffs/board.json
     --board-id ID         done 으로 바꿀 보드 항목
-    --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 ~/.claude/mods/work-board/bin/board.py
+    --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
     --merge-timeout MIN   머지 대기 한도(분). 기본 180
     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
     --poll-interval SEC   확인 간격(초). 기본 30
@@ -68,6 +68,7 @@ HERE = Path(__file__).resolve().parent
 GH = os.environ.get("GH", "gh")
 GIT = os.environ.get("GIT", "git")
 SWEEP = os.environ.get("CLEANUP_SWEEP", str(HERE / "cleanup-sweep.py"))
+BOARD_BIN = HERE.parents[1] / "work-board/bin/board.py"
 NUMBER_OK = re.compile(r"[A-Za-z0-9._/-]+$")
 BRANCH_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:\*\*)?브랜치:(?:\*\*)?\s*`([^`]+)`")
 CLEANUP_TRIES = 5
@@ -283,7 +284,7 @@ def build_parser():
     p.add_argument("--complete-cmd")
     p.add_argument("--board")
     p.add_argument("--board-id")
-    p.add_argument("--board-bin", default=os.environ.get("BOARD_BIN", str(Path.home() / ".claude/mods/work-board/bin/board.py")))
+    p.add_argument("--board-bin", default=os.environ.get("BOARD_BIN", str(BOARD_BIN)))
     p.add_argument("--merge-timeout", type=float, default=180)
     p.add_argument("--deploy-timeout", type=float, default=120)
     p.add_argument("--poll-interval", type=float, default=30)

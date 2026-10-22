@@ -13,7 +13,8 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 결정과 다음 할 일처럼 사람만 아는 단계는 코디네이터가 직접 쓴다. 부르는 시점은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 정한다.
 
 **상태가 바뀔 때마다 보드를 고친다.** 띄울 때 `doing`, 사용자 결정을 기다리면 `decide`, 앞 PR 을 기다리면 `wait`, 머지하면 `done` 이다.
-보드를 고치는 명령은 보드 도구가 소유한다.
+보드를 고치는 명령은 `$SKILL_DIR/../work-board/bin/board.py` 이고, 사용법과 단계 줄 형식은 그 머리 주석과 [`work-board/README.md`](../../work-board/README.md) 가 소유한다.
+`doing` 으로 둘 때는 단계 줄(`--next '1. 구현' --next '2. 머지'`)이나 `--progress N/M` 을 함께 준다. 없으면 board.py 가 거절한다.
 
 **보드에 `decide` 항목이 생기거나 남아 있으면 사용자가 묻지 않아도 정리해 알린다.**
 각 항목이 무엇을 정해야 하는지와 권장안을 적고, `AskUserQuestion` 으로 결정을 받는다.

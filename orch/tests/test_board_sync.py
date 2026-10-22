@@ -14,6 +14,17 @@ bs = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bs)
 
 
+class DefaultBoardBinTest(unittest.TestCase):
+    def test_default_board_bin_is_in_this_repo(self):
+        """BOARD_BIN 이 없을 때 세 스크립트가 부르는 board.py 가 저장소 안에 있다."""
+        for name in ("board-sync.py", "goal-progress.py", "finish-pr.py"):
+            spec = importlib.util.spec_from_file_location(name.replace("-", "_")[:-3], SCRIPTS / name)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            self.assertTrue(module.BOARD_BIN.is_file(), name)
+            self.assertEqual("work-board", module.BOARD_BIN.parents[1].name, name)
+
+
 class BoardSyncTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

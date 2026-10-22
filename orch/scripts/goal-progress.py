@@ -13,7 +13,7 @@
     goal-progress.py GOAL_ID --items-file FILE      # 한 줄에 id 하나. 빈 줄과 # 줄은 건너뛴다
     옵션:
       --board PATH       board.json 경로. 기본은 git 루트의 .omc/handoffs/board.json, 없으면 .omc/board.json
-      --board-bin PATH   항목을 고치는 명령. 기본은 환경 변수 BOARD_BIN, 없으면 ~/.claude/mods/work-board/bin/board.py
+      --board-bin PATH   항목을 고치는 명령. 기본은 환경 변수 BOARD_BIN, 없으면 이 저장소의 work-board/bin/board.py
       --details          목표 항목의 하위 줄도 추적 항목마다 하나씩 다시 쓴다. 끝난 항목은 「✓ 」 를 앞에 붙인다
       --dry-run          보드를 고치지 않고 계산 결과만 낸다
 
@@ -34,6 +34,7 @@ import sys
 from pathlib import Path
 
 DONE_MARK = "✓ "
+BOARD_BIN = Path(__file__).resolve().parents[2] / "work-board/bin/board.py"
 
 
 def default_board() -> Path:
@@ -128,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.dry_run:
         return 0
 
-    bin_path = a.board_bin or os.environ.get("BOARD_BIN") or str(Path.home() / ".claude/mods/work-board/bin/board.py")
+    bin_path = a.board_bin or os.environ.get("BOARD_BIN") or str(BOARD_BIN)
     cmd = [sys.executable, bin_path, "set", a.goal, "--progress", value, "--file", str(board_path)]
     if a.details:
         for d in details:

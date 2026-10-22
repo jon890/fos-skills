@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.38.0 (2026-10-22)
+
+보드 도구(work-board)가 이 저장소로 옮겨 와, orch 스크립트가 홈 폴더 경로 대신 저장소 안의 board.py 를 부른다(ADR-006).
+
+- `board-sync.py`, `finish-pr.py`, `goal-progress.py`: `--board-bin` 기본값을 `~/.claude/mods/work-board/bin/board.py` 에서 저장소의 `work-board/bin/board.py` 로 바꿨다. `BOARD_BIN` 환경 변수는 그대로 우선한다. 세 스크립트의 기본 경로에 파일이 있는지 확인하는 테스트를 더했다
+- `references/board.md`: 보드 명령의 자리와 단계 줄 형식(번호 점, `✓`, `[x]`), doing 항목의 진행률 필수 규칙을 적었다
+
 ## 1.37.0 (2026-10-22)
 
 끝난 worker 터미널에 새 dispatch 가 붙지 않던 문제와, 지시서에 박힌 스킬 스크립트 경로가 옛 번들을 가리키던 문제를 고친다.
