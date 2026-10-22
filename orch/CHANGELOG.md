@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.37.0 (2026-10-22)
+
+끝난 worker 터미널에 새 dispatch 가 붙지 않던 문제와, 지시서에 박힌 스킬 스크립트 경로가 옛 번들을 가리키던 문제를 고친다.
+
+- `launch-worker.sh`: `--terminal` 과 `--agent`, `--model`, `--effort` 를 함께 주면 Orca 를 부르기 전에 거부한다(Orca 는 `invalid_argument` 로 거절한다). `--terminal` 로 이어 쓰려던 터미널이 `agent_unconfigured` 면 종료 코드 3 과 다음 단계(push 확인, 이 세션이 띄운 터미널이면 닫기, `--terminal` 없이 새 worker)를 낸다. 터미널은 스크립트가 닫지 않는다. 다른 세션이나 사용자의 터미널을 닫지 않기 위해서다
+- `references/replying.md`: 「이어 쓸 수 없는 터미널」 절을 더했다. 세 오류의 뜻과, 새 worker 로 이어받는 순서, 커밋 전에 끝난 worker 의 처리를 적었다. `references/launch.md` 는 그 절을 가리킨다
+- `templates/spec-common.md`: `{{ORCH_SCRIPTS}}` 를 없애고, worker 가 자기 세션의 `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `orch/scripts` 를 푸는 명령을 넣었다. `user` 범위 항목을 먼저 쓴다. 캐시 폴더 이름이 해시라 `tail -1` 이나 `ls -t` 는 설치되지 않은 번들을 골랐다. `references/spec-writing.md` 는 경로를 채우지 않는다고 적는다
+- 테스트를 더했다(`--terminal` 조합 거부, `agent_unconfigured` 종료 코드 3, 경로 해석)
+- 끝난 worker 의 터미널은 재부팅 없이도 대개 `agent_unconfigured` 로 이어 쓰지 못하므로, 후속 일은 새 worker 로 띄우는 것을 기본으로 적었다(`replying.md`, `launch.md`, `launch-worker.sh` 주석).
+- `templates/spec-common.md`: 틀의 ask 명령은 `FROM`, `QUESTION` 변수로 바꿔 `<…>` 플레이스홀더가 리다이렉션으로 읽히지 않게 했고, 틀의 bash 블록에 `<` 연산자가 없는지 테스트가 본다
+
 ## 1.36.0 (2026-10-22)
 
 worker 를 띄우고 기다리다 막히는 세 곳을 고친다.

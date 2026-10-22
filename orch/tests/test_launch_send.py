@@ -147,6 +147,30 @@ class LaunchWorkerTest(FakeBase):
         start = self.lines("orca orchestration worker-start")[0]
         self.assertIn(f"--worktree path:{self.worktree} --terminal term_old", start)
 
+    def test_terminal_with_agent_model_or_effort_is_refused_before_orca(self):
+        self.state(next_ids=["ctx_1"])
+        for opt in ("--agent", "--model", "--effort"):
+            r = self.launch("--worktree", str(self.worktree), "--", "--terminal", "term_old", opt, "x")
+            self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+            self.assertIn("함께 쓰지 못한다", r.stderr)
+            self.assertIn(opt, r.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_agent_unconfigured_on_reused_terminal_exits_3_without_closing_it(self):
+        self.state(next_ids=["ctx_1"], terminals=[{"handle": "term_old", "worktreePath": str(self.worktree)}],
+                   start_errors=["agent_unconfigured: Terminal term_old is not running a recognized agent"])
+        r = self.launch("--worktree", str(self.worktree), "--", "--terminal", "term_old")
+        self.assertEqual(3, r.returncode, r.stdout + r.stderr)
+        self.assertIn("agent_unconfigured", r.stderr)
+        self.assertIn("orca terminal close", r.stderr)
+        self.assertEqual([], self.lines("orca terminal close"))
+        self.assertEqual(1, len(self.lines("orca orchestration worker-start")))
+
+    def test_agent_unconfigured_without_terminal_option_is_a_plain_failure(self):
+        self.state(next_ids=["ctx_1"], start_errors=["agent_unconfigured: x"])
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+
     def test_new_worktree_is_made_and_spec_line_carries_permission(self):
         self.state(next_ids=["ctx_1"], dispatches={"ctx_1": self.shown("input_accepted")})
         r = self.launch("--repo", str(self.tmp), "--name", "feat", "--base", "develop", "--run", "run_x",

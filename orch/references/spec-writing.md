@@ -12,7 +12,9 @@ worker 는 되묻지 않으면 받은 만큼만 하고 완료로 보고한다. �
 
 **worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 첫 줄에서 그 파일을 가리킨다.**
 틀은 [`../templates/spec-common.md`](../templates/spec-common.md) 다. 저장소마다 한 번 복사해 `{{...}}` 를 채운다.
-`{{ORCH_SCRIPTS}}` 는 이 스킬의 `scripts/` 절대경로, `{{RUN_ID}}` 는 지금 Run 이다.
+`{{RUN_ID}}` 는 지금 Run 이다.
+**스크립트 경로는 채우지 않는다.** 틀의 명령이 worker 세션의 `CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `orch/scripts` 를 푼다. 캐시 폴더 이름은 해시라 `ls | tail -1` 이나 `ls -t` 로 고르면 설치되지 않은 번들을 집는다. 코디네이터가 그때의 캐시 경로를 박으면 번들이 갱신되거나 worker 가 다른 프로필에서 돌 때 옛 스크립트를 가리킨다. 저장소 체크아웃 경로도 박지 않는다. 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
+같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `planning` 으로 만든 설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
 worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask.sh` 가 두 경우를 종료 코드로 가른다.
