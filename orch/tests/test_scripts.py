@@ -763,6 +763,18 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.assertEqual(os.path.realpath(self.repo / "worktrees" / "repo"), str(Path(seen.read_text().strip()).parent))
 
 
+class CiLookupTest(unittest.TestCase):
+    def test_no_script_filters_run_list_by_commit(self):
+        """`gh run list --commit` 은 최근 실행 N 개를 받은 뒤 커밋으로 거른다. CI 가 몰리면 그 PR 의 실행이 밀려나
+        「실행 없음」 으로 머지를 보류한다(2026-10-23 gersang-lab). 커밋의 실행은 actions/runs?head_sha= 로 읽는다"""
+        import re
+        found = []
+        for f in sorted(SCRIPTS.iterdir()):
+            if f.suffix in (".py", ".sh") and re.search(r"run[\"', ]+list[^\n]*--commit", f.read_text(encoding="utf-8")):
+                found.append(f.name)
+        self.assertEqual([], found)
+
+
 class WorkerAskTest(unittest.TestCase):
     """가짜 orca 로 ask 의 성공, 시간 제한, 실패 뒤 대신 보내기를 본다."""
 
