@@ -177,6 +177,17 @@ class WrapperRunTest(unittest.TestCase):
             self.assertIn(part, line)
         self.assertTrue(line.endswith(f"--repo {self.tmp} 449"), line)
 
+    def test_queue_section_after_merged_and_skipped_flag(self):
+        self.write_config({"after_merged": "bash deploy.sh", "skipped_is_missing": True})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--after-merged bash deploy.sh", line)
+        self.assertIn("--skipped-is-missing", line)
+        self.log.unlink()
+        self.write_config({"skipped_is_missing": False})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertNotIn("--skipped-is-missing", self.lines("queue")[0])
+
     def test_command_line_wins_over_queue_section(self):
         self.write_config({"required": "ci", "method": "squash"})
         self.wrap("--repo", str(self.tmp), "--no-finish", "--method", "merge", "449")
@@ -192,7 +203,7 @@ class WrapperRunTest(unittest.TestCase):
         self.assertIn("--method rebase", self.lines("queue")[0])
 
     def test_bad_queue_section_is_usage_error_before_anything_starts(self):
-        for queue in ({"verify": "x"}, {"method": 3}, {"required": ""}, []):
+        for queue in ({"verify": "x"}, {"method": 3}, {"required": ""}, [], {"skipped_is_missing": "yes"}):
             with self.subTest(queue=queue):
                 self.write_config(queue)
                 code, out = self.wrap("--repo", str(self.tmp), "449")

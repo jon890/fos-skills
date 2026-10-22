@@ -175,6 +175,11 @@ FAKE_GH = textwrap.dedent("""\
         sys.stdout.write(out.stdout)
         sys.exit(out.returncode)
     if args[:2] == ["pr", "view"]:
+        # 앞의 몇 번은 일시 실패를 흉내 낸다
+        if state.get("_view_fails"):
+            state["_view_fails"] -= 1
+            json.dump(state, open(os.environ["FAKE_STATE"], "w"))
+            sys.exit(1)
         pr = state[args[2]]
         # 체크가 나중에 나타나는 PR 을 흉내 낸다. 조회할 때마다 left 가 줄고 0 이 되면 체크가 붙는다
         if "appear" in pr:
@@ -270,6 +275,55 @@ class MergeQueueTest(unittest.TestCase):
         r = self.run_queue({"1": self.pr(statusCheckRollup=[{"status": "COMPLETED", "conclusion": "FAILURE"}])}, "1")
         self.assertEqual(1, r.returncode)
         self.assertIn("실패한 체크 1 개", r.stdout)
+
+    def test_failed_pr_lookup_is_retried(self):
+        self.env.update(MERGE_QUEUE_GH_RETRIES="3", MERGE_QUEUE_GH_RETRY_SECONDS="0")
+        r = self.run_queue({"1": self.pr(), "_view_fails": 2}, "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 MERGED", r.stdout)
+        r = self.run_queue({"1": self.pr(), "_view_fails": 3}, "1")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("STOP 1 state=조회 실패", r.stdout)
+
+    def test_skipped_required_check_counts_only_with_the_option(self):
+        skipped = [{"name": "verify", "status": "COMPLETED", "conclusion": "SKIPPED"}]
+        r = self.run_queue({"1": self.pr(statusCheckRollup=skipped)}, "--required", "verify", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        r = self.run_queue({"1": self.pr(statusCheckRollup=skipped)}, "--required", "verify", "--skipped-is-missing",
+                           "--check-timeout", "0", "1")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("나타나지 않은 필수 체크 verify", r.stdout)
+        ran = {"left": 3, "checks": [{"name": "verify", "status": "COMPLETED", "conclusion": "SUCCESS"}]}
+        r = self.run_queue({"1": self.pr(statusCheckRollup=skipped, appear=ran)}, "--required", "verify",
+                           "--skipped-is-missing", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 MERGED", r.stdout)
+
+    def test_after_merged_runs_once_with_merged_prs(self):
+        seen = self.tmp / "after.txt"
+        after = f'echo "$MERGED_PRS|$CODE_PRS" >> {seen}'
+        r = self.run_queue({"1": self.pr(), "2": self.pr(), "3": self.pr(state="MERGED")}, "--after-merged", after,
+                           "1", "2", "3")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual("1 2|1 2\n", seen.read_text())
+
+    def test_after_merged_runs_when_a_later_pr_holds(self):
+        seen = self.tmp / "after.txt"
+        failed = [{"status": "COMPLETED", "conclusion": "FAILURE"}]
+        r = self.run_queue({"1": self.pr(), "2": self.pr(statusCheckRollup=failed)},
+                           "--after-merged", f'echo "$MERGED_PRS" > {seen}', "1", "2")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertEqual("1\n", seen.read_text())
+
+    def test_after_merged_is_skipped_without_merges_and_its_failure_is_exit_3(self):
+        seen = self.tmp / "after.txt"
+        r = self.run_queue({"1": self.pr(state="MERGED")}, "--after-merged", f"touch {seen}", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertFalse(seen.exists())
+        r = self.run_queue({"1": self.pr()}, "--after-merged", "exit 7", "1")
+        self.assertEqual(3, r.returncode, r.stdout + r.stderr)
+        self.assertIn("AFTER-MERGED-FAILED 7", r.stdout)
+        self.assertIn("1 MERGED", r.stdout)
 
     def test_stops_on_head_mismatch(self):
         self.env["FAKE_REMOTE_HEAD"] = "def"
@@ -664,6 +718,21 @@ class MergeQueueOverlapTest(unittest.TestCase):
         r = self.run_queue("--verify-merged", "exit 1", "--verify-merged-when", "code", "--docs-glob", "*.md")
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
         self.assertTrue(self.merged())
+
+    def test_after_merged_leaves_docs_prs_out_of_code_prs(self):
+        seen = self.tmp / "after.txt"
+        after = f'echo "$MERGED_PRS|$CODE_PRS" > {seen}'
+        self.branches({"docs/a.md": "x\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--after-merged", after, "--docs-glob", "docs/*")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual("1|\n", seen.read_text())
+
+    def test_after_merged_counts_code_prs(self):
+        seen = self.tmp / "after.txt"
+        self.branches({"docs/a.md": "x\n", "c.py": "c\n"}, {"b.txt": "b2\n"})
+        r = self.run_queue("--after-merged", f'echo "$MERGED_PRS|$CODE_PRS" > {seen}', "--docs-glob", "docs/*")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual("1|1\n", seen.read_text())
 
     def test_verify_when_always_checks_docs_only_pr_too(self):
         self.branches({"README.md": "x\n"}, {"b.txt": "b2\n"})
