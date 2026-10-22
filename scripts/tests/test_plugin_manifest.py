@@ -67,6 +67,12 @@ class PluginManifestTest(unittest.TestCase):
                 (root / name / "SKILL.md").write_text("")
             self.assertEqual(([], ["./c"]), skill_diff(["./a", "./b", "./c"], root))
 
+    def test_hook_files_exist(self):
+        hooks = load(PLUGIN)["hooks"]
+        self.assertIn("./work-board/hooks/hooks.json", hooks)
+        for path in hooks:
+            self.assertTrue((ROOT / path).is_file(), path)
+
     def test_no_version_key(self):
         marketplace = load(MARKETPLACE)
         self.assertNotIn("version", load(PLUGIN))

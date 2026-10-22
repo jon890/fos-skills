@@ -56,7 +56,7 @@ class BlockBackgroundWaitTest(unittest.TestCase):
 
     def test_plugin_manifest_points_to_the_hook(self):
         manifest = json.loads(PLUGIN.read_text())
-        self.assertEqual("./orch/hooks/hooks.json", manifest["hooks"])
+        self.assertIn("./orch/hooks/hooks.json", manifest["hooks"])
         hooks = json.loads(HOOKS_JSON.read_text())["hooks"]["PreToolUse"]
         commands = [h["command"] for entry in hooks if entry["matcher"] == "Bash" for h in entry["hooks"]]
         self.assertTrue(any("${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-background-wait.py" in c for c in commands))

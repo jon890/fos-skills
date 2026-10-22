@@ -1,6 +1,6 @@
 {
   "name": "fos-skills",
-  "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리, 맥 정리, worker 조율 스킬",
+  "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리, 맥 정리, worker 조율 스킬과 작업 현황 창(/board)",
   "author": { "name": "jon890" },
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
@@ -14,5 +14,8 @@
     "./pr-review",
     "./review-fix"
   ],
-  "hooks": "./orch/hooks/hooks.json"
+  "hooks": [
+    "./orch/hooks/hooks.json",
+    "./work-board/hooks/hooks.json"
+  ]
 }
