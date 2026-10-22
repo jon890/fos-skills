@@ -541,6 +541,51 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertTrue(path.exists(), out)
         self.assertNotIn("terminal close", self.calls())
 
+    def reopened_shell(self, name, child=False, agent=None, scope="bound"):
+        """코디네이터가 끝난 worker 터미널을 닫자 Orca 가 그 탭에 빈 셸을 다시 열었다. 모든 Run 범위는 읽지 못한다."""
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        self.workers = [{"dispatchId": "ctx_w", "workerState": "succeeded", "dispatchStatus": "completed",
+                         "agentTerminalHandle": "term_gone", "resource": {"worktreeId": f"x::{path}"}}]
+        shell = self.idle_shell(path)
+        self.terminals = [{"handle": "term_shell", "worktreePath": str(path), **({"agentIdentity": agent} if agent else {})}]
+        self.processes = shell["processes"] + ([{"pid": 502, "ppid": 501, "cwd": str(path), "command": "sleep 100"}] if child else [])
+        self.scope = scope
+        return path
+
+    def test_reopened_empty_shell_is_closed_and_merged_worktree_is_swept(self):
+        path = self.reopened_shell("feat-s1")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertIn("빈 셸을 닫았다: term_shell", out)
+        self.assertEqual(self.calls().count("terminal close --terminal term_shell"), 1)
+
+    def test_reopened_shell_with_a_child_process_is_skipped(self):
+        path = self.reopened_shell("feat-s2", child=True)
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("확인하지 못한 터미널 term_shell", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_terminal_with_an_agent_or_of_another_run_is_skipped(self):
+        path = self.reopened_shell("feat-s3", agent="claude")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertNotIn("terminal close", self.calls())
+        other = self.reopened_shell("feat-s4", scope="all")
+        self.all_workers = [{"runId": "run_other", "dispatchId": "ctx_o", "agentTerminalHandle": "term_shell"}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(other.exists(), out)
+        self.assertIn("다른 Run 의 worker 터미널 term_shell", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_reopened_shell_is_not_closed_without_apply(self):
+        path = self.reopened_shell("feat-s5")
+        out = self.run_sweep("--run", "run_x")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("빈 셸을 닫을 것: term_shell", out)
+        self.assertNotIn("terminal close", self.calls())
+
     # 3-1. worker 가 끝난 뒤에도 그 경로를 쥔 프로세스 (--kill-holders)
     def finished_worker_with_holders(self, name, state="succeeded"):
         path = self.worktree(name)

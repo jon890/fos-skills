@@ -142,6 +142,61 @@ class WorkerTerminalSendTest(unittest.TestCase):
                                         env=self.env()))
 
 
+class WorkerFirstScreenSendTest(unittest.TestCase):
+    """첫 화면 승인(`--enter` 만 보냄)은 그 dispatch 가 첫 화면 대기일 때만 통과한다."""
+    HOOK = "block-worker-terminal-send.py"
+    ENTER = "orca terminal send --terminal term_worker-1 --enter"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.orca = self.tmp / "orca"
+
+    def fake(self, show, show_code=0):
+        listing = '{"result": {"workers": [{"agentTerminalHandle": "term_worker-1", "dispatchId": "ctx_1"}]}}'
+        self.orca.write_text(
+            "#!/bin/sh\n"
+            'case "$2" in\n'
+            f"worker-show) cat <<'JSON'\n{show}\nJSON\nexit {show_code};;\n"
+            f"*) cat <<'JSON'\n{listing}\nJSON\n;;\n"
+            "esac\n")
+        self.orca.chmod(0o755)
+
+    def decide(self, command):
+        return decide(self.HOOK, command, env=dict(os.environ, ORCA=str(self.orca), ORCA_TERMINAL_HANDLE="term_c"))
+
+    def test_enter_only_on_first_screen_passes(self):
+        for show in (
+            '{"result": {"observation": {"agentWait": {"reason": "agent-trust-workspace"}}}}',
+            '{"result": {"projection": {"stage": {"detail": "agent-trust-workspace"}}}}',
+        ):
+            with self.subTest(show=show):
+                self.fake(show)
+                self.assertEqual("pass", self.decide(self.ENTER))
+                self.assertEqual("pass", self.decide("orca terminal send --enter --terminal=term_worker-1"))
+
+    def test_body_on_first_screen_is_denied(self):
+        self.fake('{"result": {"observation": {"agentWait": {"reason": "agent-trust-workspace"}}}}')
+        for command in (
+            'orca terminal send --terminal term_worker-1 --text "1" --enter',
+            "orca terminal send --terminal term_worker-1 --interrupt --enter",
+            "orca terminal send --terminal term_worker-1 --enter && orca terminal send --terminal term_worker-1 --text x",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("deny", self.decide(command))
+
+    def test_enter_while_working_or_unreadable_is_denied(self):
+        for show, code in (
+            ('{"result": {"observation": {"agentWait": null}, "projection": {"stage": {"detail": "input_accepted"}}}}', 0),
+            ('{"result": {"observation": {"status": "live"}}}', 0),
+            ("not json", 1),
+            ('{"result": null}', 0),
+        ):
+            with self.subTest(show=show):
+                self.fake(show, code)
+                self.assertEqual("deny", self.decide(self.ENTER))
+
+
 class RequireSpecLineTest(unittest.TestCase):
     HOOK = "require-spec-line.py"
     LINE = "지시서 /repo/.omc/specs/spec-a.md 를 끝까지 읽고 수행한다. push 는 허락했다. 못 읽으면 escalation 으로 알린다."

@@ -99,7 +99,8 @@ terminal_title = ["app-name", "run-state", "project-name"]
 1. `terminal read` 로 화면을 본다. 신뢰나 업데이트를 대신 승인하지 않는다.
    건너뛰는 선택지를 고르고 사용자에게 알린다.
    codex 의 `agent-trust-workspace` 는 선택지가 신뢰와 종료 둘뿐이고, 고른 값이 저장소 루트 단위로 저장된다.
-   건너뛸 수 없으므로 사용자에게 묻는다. 승인을 받으면 `terminal send --enter` 로 첫 선택지를 고른다.
+   건너뛸 수 없으므로 사용자에게 묻는다. 승인을 받으면 `terminal send --terminal "$TERMINAL_HANDLE" --enter` 로 첫 선택지를 고른다.
+   본문 없이 `--enter` 만 보내고, `worker-show` 가 첫 화면 대기(`agent-trust-workspace` 같은)를 보일 때만 `block-worker-terminal-send.py` 가 통과시킨다.
    거절하면 그 터미널을 `worker-release` 로 닫고 claude worker 로 다시 띄운다
 2. `terminal wait --for tui-idle` 로 입력 대기 상태를 확인한다
 3. `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "id:$WORKTREE_ID"` 로 붙인다.
