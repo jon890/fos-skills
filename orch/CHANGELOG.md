@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.38.0 (2026-10-22)
+
+워크벤치 진행에서 막힌 두 곳을 고친다. 첫 화면 승인이 hook 에 거부되던 문제와, Orca 가 다시 연 빈 셸이 머지된 워크트리의 정리를 막던 문제다.
+
+- `hooks/block-worker-terminal-send.py`: 본문 없이 `--enter` 만 보내는 `orca terminal send` 는, 그 worker 의 `worker-show --dispatch` 가 첫 화면 대기(`agent-trust-workspace`, `agent-update-prompt`, `agent-cwd-prompt`, `agent-hooks-review-prompt`)를 보일 때 통과시킨다. `--text` 나 `--interrupt` 가 있거나, 일하는 단계이거나, 단계를 읽지 못하면 지금처럼 거부한다. `launch.md` 「첫 화면에서 멈춤」 의 승인 명령이 그동안 이 hook 에 막혔다
+- `scripts/cleanup-sweep.py`: 모든 Run 범위를 읽지 못해 건너뛰던 「다른 Run 의 것인지 확인하지 못한 터미널」 이 이 Run 의 머지된 워크트리에서 빈 셸이면 닫고 정리를 이어 간다. 빈 셸은 `agentIdentity` 가 없고, 그 경로의 프로세스가 자식 없는 로그인 셸뿐이며 터미널마다 셸이 하나씩 있는 것이다. `--apply` 없이는 닫지 않는다. `references/cleanup.md` 에 한 줄을 더했다
+- 테스트를 더했다(첫 화면 `--enter` 통과와 거부 사례, 빈 셸 닫기와 건너뛰기 사례)
+
 ## 1.37.0 (2026-10-22)
 
 끝난 worker 터미널에 새 dispatch 가 붙지 않던 문제와, 지시서에 박힌 스킬 스크립트 경로가 옛 번들을 가리키던 문제를 고친다.

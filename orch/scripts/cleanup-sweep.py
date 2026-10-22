@@ -76,6 +76,12 @@ PR 찾기 (브랜치마다):
     다른 Run 의 것으로 세지 않는다. claude 나 node 가 도는 worker 터미널은 이 조건에 걸리지 않는다.
     다른 Run 의 worker 로 확인된 터미널은 그대로 건너뛴다. 터미널을 닫는 조건(PR 이 MERGED)은 같다.
 
+빈 셸 (--run 을 줬는데 모든 Run 범위를 읽지 못하고, 이 Run 의 dispatch 가 쓴 워크트리의 PR 이 MERGED 일 때):
+    코디네이터가 끝난 worker 터미널을 닫으면 Orca 가 그 탭에 에이전트 없는 셸(「Terminal 1」)을 다시 연다.
+    남은 터미널이 모두 `agentIdentity` 가 없고, 그 경로를 쓰는 프로세스가 모두 자식 없는 로그인 셸이며
+    터미널마다 셸이 하나씩 있으면 빈 셸로 보고 `빈 셸을 닫았다: term_…` 를 남긴 뒤 정리를 이어 간다.
+    하나라도 확인하지 못하면 건너뛴다. --apply 가 없으면 닫지 않고 닫을 것만 낸다.
+
 다른 Run (--run 을 줬을 때):
     터미널은 경로로 찾으므로, 같은 저장소에서 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널도 걸린다.
     `orca orchestration worker-list --terminal-state active` 를 모든 Run 범위로 읽어
@@ -674,6 +680,21 @@ def idle_agent_path(args, path):
     return fnmatch.fnmatch(Path(path).name, args.agent_glob) and only_idle_shells(holder_pids(path))
 
 
+def empty_shells(path, mine, theirs, terminals):
+    """theirs 가 모두 Orca 가 다시 연 빈 셸이면 True. 하나라도 확인하지 못하면 False.
+    Orca 는 PTY pid 를 주지 않아 `agentIdentity` 와 그 경로를 쓰는 프로세스로 판정한다.
+      - 이 Run 의 dispatch 가 쓴 워크트리다(mine). 그 터미널에 에이전트가 없다(`agentIdentity` 없음)
+      - 그 경로를 작업 디렉터리로 쓰는 프로세스가 모두 자식 없는 로그인 셸이고, 터미널마다 셸이 하나씩 있다
+    터미널 수보다 셸이 적으면 작업 폴더를 옮긴 터미널이 있다는 뜻이라 닫지 않는다."""
+    if not mine or not theirs:
+        return False
+    entries = {t.get("handle"): t for t in terminals or []}
+    if any(h not in entries or entries[h].get("agentIdentity") or entries[h].get("worktreePath") != path for h in theirs):
+        return False
+    pids = holder_pids(path)
+    return len(pids) >= len(theirs) and only_idle_shells(pids)
+
+
 def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log):
     name = Path(path).name
     if not branch:
@@ -705,6 +726,16 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     theirs = foreign_at(args, mine, terminals, path)
     if theirs and args.foreign is None and idle_agent_path(args, path):
         log(f"  {path}: 하위 에이전트 워크트리의 빈 셸 터미널이라 다른 Run 의 것으로 세지 않는다")
+        theirs = []
+    if theirs and args.foreign is None and by_pr and empty_shells(path, mine, theirs, terminals):
+        # 코디네이터가 worker 터미널을 닫으면 Orca 가 그 탭에 빈 셸을 다시 연다. 어느 Run 의 것도 아니다
+        for handle in theirs:
+            if args.apply:
+                code, _, _ = run([ORCA, "terminal", "close", "--terminal", handle, "--json"])
+                log(f"  빈 셸을 닫았다: {handle}" if code == 0 else f"  빈 셸 닫기 실패 {handle}")
+            else:
+                log(f"  빈 셸을 닫을 것: {handle}")
+        terminals = [t for t in terminals if t.get("handle") not in theirs]
         theirs = []
     if theirs:
         what = "다른 Run 의 worker 터미널" if args.foreign is not None else "다른 Run 의 것인지 확인하지 못한 터미널"
