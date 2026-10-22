@@ -3,6 +3,28 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.40.0 (2026-10-23)
+
+gersang-lab 코디네이터가 저장소 로컬 스크립트를 스킬 것으로 바꾸지 못하게 막던 결함 넷을 고치고, 로컬 스크립트에만 있던 머지 기능을 옮긴다.
+
+- `wait-important.py`: 2026-10-22 에 대기를 걸자마자 옛 dispatch 31개를 `WORKER_LOST` 로 내고 끝났다. worker_done 없이 같은 터미널에 일을 이어 준 dispatch 라 task 가 열린 채였다.
+  - 일부러 끝낸 dispatch 를 빼고 본다. `dispatch-show` 의 termination_reason 이 operator_close 이거나 last_failure 의 provenance 가 worker_report 인 것이다. 실제 Run 의 30개 가운데 24개가 여기 해당했다
+  - 한 번 알린 dispatch 는 `<git 루트>/.omc/state/wait-important-lost.json` 에 Run 별로 적고 다시 알리지 않는다. 경로는 `--lost-state` 로 바꾼다
+  - 일부러 끝냈다고 판정한 dispatch 도 같은 파일에 적어, 다음 대기가 `dispatch-show` 를 다시 부르지 않는다. task 마다 한 번만 조회한다
+  - 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 에 한 줄로 남긴다
+- `launch-worker.sh`
+  - `${run:+--run "$run"}` 와 `${base:+--base "$base"}` 가 zsh 에서 한 낱말로 넘어가 `Unknown flag --run run_x` 로 실패했다. 배열로 두고 `${a[@]+"${a[@]}"}` 로 펼친다. 테스트가 bash 와 zsh 로 함께 돈다
+  - `--worktree` 가 `path:` 를 붙인 경로도 받는다
+  - `--repo/--name` 으로 워크트리를 만든 뒤 띄우지 못하면, `--worktree <만든 경로>` 로 이어 띄우는 명령과 남은 터미널 목록을 낸다. 같은 `--name` 으로 다시 부르면 make-worktree 가 거부했다. worker-start 가 성공한 뒤의 실패에는 내지 않는다. 다시 띄우면 같은 일의 task 가 하나 더 생긴다
+  - `worker-start` 가 `agent-hooks-review-prompt` 로 실패하면 Codex 설치본 갱신 명령을 알린다
+- Codex hook 신뢰 확인: Codex 는 `.codex-plugin/plugin.json` 이 없으면 `.claude-plugin/plugin.json` 의 hook 을 싣는다. fdf53e1 이 더한 orch hook 3개가 Codex 설치본 갱신(316ea9e)과 함께 나타나 Codex worker 가 「3 hooks are new or changed」 화면에서 멈췄다. hooks 를 배열로 바꾼 #169 가 원인은 아니다. 저장소에 hooks 없는 `.codex-plugin/plugin.json` 을 더해 Codex 가 hook 을 싣지 않게 했다(ADR-007). 머지 뒤 `codex plugin marketplace upgrade fos-skills` 로 갱신해야 반영된다
+- `merge-queue.sh`: gersang-lab `merge-ready.sh` 에만 있던 기능을 옮긴다. 기본값은 지금 동작이다
+  - `--after-merged CMD`: 이번 실행에서 머지한 PR 이 있으면 끝에 한 번 돌린다. `MERGED_PRS` 와 문서 PR 을 뺀 `CODE_PRS` 를 받는다. 실패하면 종료 코드 3 이다
+  - `--skipped-is-missing`: 결론이 SKIPPED 인 체크를 아직 돌지 않은 것으로 본다
+  - PR 조회가 실패하면 10초 간격으로 세 번까지 부른다. CI 를 통과한 PR 이 일시 실패로 보류되던 문제다
+  - `merge-with-finish.py` 와 `orch-finish.json` 의 queue 절이 두 옵션을 받는다
+- 테스트를 더했다(일부러 끝낸 dispatch, 한 번만 알림, zsh 낱말 분리, `path:` 경로, 이어 띄우기 안내, 머지 뒤 명령, SKIPPED 판정, 조회 재시도, Codex 매니페스트)
+
 ## 1.39.0 (2026-10-22)
 
 보드 도구(work-board)가 이 저장소로 옮겨 와, orch 스크립트가 홈 폴더 경로 대신 저장소 안의 board.py 를 부른다(ADR-006).

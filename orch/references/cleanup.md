@@ -107,6 +107,27 @@ KILL 로 끊겨 지우지 못한 사본(`merge-queue-pr<PR>-<pid>`)은 다음 �
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --verify-merged "$VERIFY_CMD" --copy-dir "$COPY_DIR" 101 102
 ```
 
+### draft 때 건너뛴 필수 체크
+
+draft 에서 CI 를 건너뛰게 둔 저장소는 같은 HEAD 에 결론이 `SKIPPED` 인 실행이 남는다. GitHub 는 `SKIPPED` 를 통과로 본다.
+ready 로 바꾼 직후 새 실행이 붙기 전에 머지 큐가 그 체크를 보면 CI 없이 머지한다.
+그런 저장소는 오버레이가 `--skipped-is-missing` 을 정한다. `SKIPPED` 인 체크를 나타나지 않은 것으로 보아, 필수 체크가 실제로 돌 때까지 기다린다.
+필수 체크 목록(`--required` 나 저장소 규칙)이 있어야 뜻이 있다.
+
+PR 조회(`gh pr view`)가 일시로 실패하면 머지 큐가 10초 간격으로 세 번까지 부른다. 그래도 실패하면 `체크 조회 실패` 로 멈춘다.
+
+### 머지 뒤 명령
+
+머지한 뒤 한 번 돌릴 명령이 있으면 `--after-merged CMD` 로 준다. 머지 뒤 배포를 Actions 가 아니라 로컬 스크립트로 하는 저장소가 예다.
+이번 실행에서 PR 을 하나라도 머지했을 때만, 큐가 끝나거나 보류로 멈춘 뒤에 한 번 돈다.
+`MERGED_PRS` 는 머지한 PR 번호를, `CODE_PRS` 는 그 가운데 `--docs-glob` 에 맞는 문서 PR 을 뺀 번호를 받는다. 문서 PR 만 머지했을 때 배포를 건너뛰려면 명령이 `CODE_PRS` 를 본다.
+실패하면 `AFTER-MERGED-FAILED <종료 코드>` 를 찍고, 모두 머지했으면 종료 코드 3 으로 끝난다. 머지는 되돌리지 않는다.
+`$AFTER_CMD` 는 오버레이의 값이다.
+
+```bash
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --docs-glob 'docs/*,*.md' --after-merged "$AFTER_CMD" 101 102
+```
+
 ### 머지 전 명령
 
 PR 마다 머지 직전에 돌릴 명령이 있으면 `PR번호:명령` 으로 준다. 모든 PR 에 같은 명령이면 `--before` 로 준다.

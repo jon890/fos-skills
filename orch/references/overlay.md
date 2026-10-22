@@ -18,6 +18,8 @@
 | 합친 사본 검사 | 같은 파일을 고친 PR 을 base 와 합친 사본에서 돌릴 명령(`--verify-merged`)과 사본 폴더(`--copy-dir`), 겹치지 않아도 검사할지(`--verify-merged-when`), 검사 없이 머지할 문서 glob(`--docs-glob`). 폴더는 저장소 hook 이 워크트리를 허용하는 곳이다 | 6, 7 |
 | draft 로 CI 미루기 | draft PR 에서 CI 를 돌리지 않는 저장소인지. 켜면 worker 는 PR 을 draft 로 열고, 코디네이터가 검증 뒤 `ci-ready.py` 로 ready 로 바꾼다 | 2, 7 |
 | 머지 전 명령 | DB 마이그레이션이 든 PR 앞의 백업 명령과 인자, 보관 개수 | 7 |
+| 머지 뒤 명령 | 머지 뒤 한 번 돌릴 배포 명령(`--after-merged`). 문서 PR 만 머지했을 때 건너뛸지(`CODE_PRS`) | 7 |
+| draft 때 건너뛴 체크 | draft 에서 CI 를 건너뛰게 둔 저장소면 `--skipped-is-missing` | 7 |
 | 마이그레이션 순서 | 마이그레이션 PR 끼리의 머지 순서, 모듈별 선후, 공유 DB 에 적용하지 않는 규칙 | 2, 7 |
 | CI runner 장애 대응 | runner 가 offline 이 됐을 때 누가 무엇을 하는지, 끊긴 실행을 다시 돌리는 명령 | 4, 7 |
 | 원격 접속 규칙 | 개발 서버 조회에 쓸 접속 설정, 읽기만 허용하는지 | 2 |
@@ -53,6 +55,7 @@
 | `cleanup` | `queue_days`, `folder_days`, `data_days`, `data_ext` | 큐 로그, 폴더, 데이터 파일의 기준 일수와 데이터 확장자 |
 | `queue` | `required`, `before`, `method` | `merge-queue.sh` 의 `--required`, `--before`, `--method`. `required` 는 문자열 목록도 받는다 |
 | `queue` | `verify_merged`, `verify_merged_when`, `docs_glob` | `--verify-merged`, `--verify-merged-when`, `--docs-glob`. `docs_glob` 은 문자열 목록도 받는다 |
+| `queue` | `after_merged`, `skipped_is_missing` | `--after-merged` 와 `--skipped-is-missing`. `skipped_is_missing` 은 true 나 false 다 |
 
 ```json
 {

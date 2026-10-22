@@ -3,6 +3,10 @@
 #   launch-worker.sh --spec <지시서> --repo <저장소> --name <워크트리 이름> [--base <기준 브랜치>] [옵션] -- <worker-start 인자...>
 #   launch-worker.sh --spec <지시서> --worktree <기존 워크트리 경로> [옵션] -- <worker-start 인자...>
 #
+# --worktree 는 맨 경로와 worker-start 처럼 `path:` 를 붙인 경로를 모두 받는다.
+# --repo/--name 으로 워크트리를 만든 뒤 띄우지 못하면, 같은 --name 으로 다시 부를 때 make-worktree 가
+# 「경로가 이미 있다」 로 거부한다. 그때는 끝에 내는 안내대로 --worktree <만든 경로> 로 이어 띄운다.
+#
 # worker 를 띄우는 네 단계를 한 명령으로 묶는다. 하나라도 빠지면 오늘 겪은 실패가 다시 난다.
 #   1. `spec-line.py --require-permission` 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 띄우지 않는다.
 #      허락이 지시서 파일 안에만 있으면 Codex worker 일부가 GitHub 게시가 금지됐다며 PR 을 열지 않는다
@@ -49,7 +53,7 @@ while [ $# -gt 0 ]; do
     --repo) repo=${2:?--repo 에 경로가 필요하다}; shift 2 ;;
     --name) name=${2:?--name 에 이름이 필요하다}; shift 2 ;;
     --base) base=${2:?--base 에 브랜치가 필요하다}; shift 2 ;;
-    --worktree) worktree=${2:?--worktree 에 경로가 필요하다}; shift 2 ;;
+    --worktree) worktree=${2:?--worktree 에 경로가 필요하다}; worktree=${worktree#path:}; shift 2 ;;
     --run) run=${2:?--run 에 Run id 가 필요하다}; shift 2 ;;
     --watch) watch=${2:?--watch 에 초가 필요하다}; shift 2 ;;
     --) shift; break ;;
@@ -75,6 +79,15 @@ if [ "$reuse_terminal" = 1 ] && [ -n "$reuse_opts" ]; then
   exit 1
 fi
 case "$watch" in ''|*[!0-9]*) echo "--watch 는 초 단위 정수다" >&2; exit 2 ;; esac
+# 값이 있을 때만 붙는 인자는 배열로 둔다. `${run:+--run "$run"}` 는 zsh 에서 낱말이 나뉘지 않아
+# `--run run_x` 한 낱말로 넘어가 worker-start 가 Unknown flag 로 실패한다.
+# 빈 배열은 `${a[@]+"${a[@]}"}` 로 펼친다. bash 3.2 의 set -u 가 빈 "${a[@]}" 를 unbound 로 본다
+run_args=() base_args=()
+[ -n "$run" ] && run_args=(--run "$run")
+[ -n "$base" ] && base_args=(--base "$base")
+# 이어 띄우는 안내에 그대로 붙일 worker-start 인자
+passthru=""
+for arg in "$@"; do passthru="$passthru $(printf '%q' "$arg")"; done
 
 # 표준 입력의 orca JSON 에서 result 아래 점으로 이은 경로의 값을 낸다. `|` 로 이은 경로는 앞에서부터 찾는다. 없으면 빈 줄이다
 jget() {
@@ -94,11 +107,43 @@ for path in sys.argv[1].split("|"):
 ' "$1"
 }
 
+# 그 워크트리 경로에 붙은 터미널을 「handle 제목」 줄로 낸다. 두 번째 인자의 handle 은 뺀다
+left_terminals() {
+  local terminals
+  terminals=$("$ORCA" terminal list --json 2>/dev/null) || { echo "거부: orca terminal list 를 읽지 못해 남은 터미널을 확인할 수 없다" >&2; return 1; }
+  printf '%s' "$terminals" | python3 -c '
+import json, sys
+path, reuse = sys.argv[1], sys.argv[2]
+rows = (json.load(sys.stdin).get("result") or {}).get("terminals") or []
+for t in rows:
+    if t.get("worktreePath") == path and t.get("handle") != reuse:
+        print(t.get("handle"), (t.get("title") or "")[:60])
+' "$1" "$2" || { echo "거부: 터미널 목록을 해석하지 못했다" >&2; return 1; }
+}
+
+# --repo/--name 으로 만든 워크트리에 띄우지 못하고 끝날 때 이어 띄우는 명령을 stderr 로 낸다
+resume_hint() {
+  [ "$1" = 0 ] && return 0
+  {
+    echo "워크트리는 남아 있다: $worktree"
+    echo "같은 --name 으로 다시 부르면 make-worktree 가 거부한다. 이어 띄우려면 --repo/--name/--base 대신 --worktree 를 준다:"
+    echo "  launch-worker.sh --spec $(printf '%q' "$spec") --worktree $(printf '%q' "$worktree")${run:+ --run $run} --$passthru"
+    local left
+    left=$(left_terminals "$worktree" "" 2>/dev/null)
+    if [ -n "$left" ]; then
+      echo "실패한 띄우기가 남긴 터미널이 있으면 --worktree 가 거부한다. 이 세션이 띄운 worker 의 것인지 보고 orca terminal close --terminal <handle> 로 닫는다:"
+      printf '%s\n' "$left" | sed 's/^/  /'
+    fi
+  } >&2
+}
+
 line=$(python3 "$SPEC_LINE" "$spec" --require-permission) || { echo "거부: 첫 지시 줄을 만들지 못했다(지시서에 \`허락:\` 줄을 적는다)" >&2; exit 1; }
 
 if [ -z "$worktree" ]; then
-  worktree=$(bash "$MAKE_WORKTREE" --repo "$repo" --spec "$spec" --name "$name" ${base:+--base "$base"}) || exit 1
+  worktree=$(bash "$MAKE_WORKTREE" --repo "$repo" --spec "$spec" --name "$name" ${base_args[@]+"${base_args[@]}"}) || exit 1
   echo "워크트리를 만들었다: $worktree"
+  # 이 뒤에서 띄우지 못하고 끝나면 만든 워크트리를 이어 쓰는 명령을 알린다
+  trap 'resume_hint $?' EXIT
 else
   worktree=$(cd "$worktree" 2>/dev/null && pwd -P) || { echo "워크트리가 없다: $worktree" >&2; exit 1; }
   reuse=""
@@ -107,15 +152,7 @@ else
     [ "$prev" = --terminal ] && reuse=$arg
     prev=$arg
   done
-  terminals=$("$ORCA" terminal list --json 2>/dev/null) || { echo "거부: orca terminal list 를 읽지 못해 남은 터미널을 확인할 수 없다" >&2; exit 1; }
-  left=$(printf '%s' "$terminals" | python3 -c '
-import json, sys
-path, reuse = sys.argv[1], sys.argv[2]
-rows = (json.load(sys.stdin).get("result") or {}).get("terminals") or []
-for t in rows:
-    if t.get("worktreePath") == path and t.get("handle") != reuse:
-        print(t.get("handle"), (t.get("title") or "")[:60])
-' "$worktree" "$reuse") || { echo "거부: 터미널 목록을 해석하지 못했다" >&2; exit 1; }
+  left=$(left_terminals "$worktree" "$reuse") || exit 1
   if [ -n "$left" ]; then
     echo "거부: 이 워크트리에 터미널이 남아 있다. 끝났는지 보고 orca terminal close --terminal <handle> 로 닫은 뒤 다시 띄운다"
     printf '%s\n' "$left" | sed 's/^/  /'
@@ -176,13 +213,18 @@ watch_stage() {
 }
 
 wait_for_orca_worktree "$worktree" || exit 1
-start_worker ${run:+--run "$run"} --spec "$line" --worktree "path:$worktree" "$@"
+start_worker ${run_args[@]+"${run_args[@]}"} --spec "$line" --worktree "path:$worktree" "$@"
 printf '%s\n' "$out"
 if [ "$code" != 0 ] && [ "$reuse_terminal" = 1 ] && printf '%s' "$out" | grep -q agent_unconfigured; then
   echo "--terminal 의 터미널이 에이전트를 인식하지 못했다(agent_unconfigured). replying.md 「이어 쓸 수 없는 터미널」 을 따른다: 1) 앞 worker 의 작업이 push 됐는지 보고 2) 그 터미널이 이 세션이 띄운 worker 의 것이면 orca terminal close 로 닫고 3) --terminal 을 빼고 --agent, --model, --effort 를 줘 이 명령을 다시 부른다" >&2
   exit 3
 fi
+if [ "$code" != 0 ] && printf '%s' "$out" | grep -q agent-hooks-review-prompt; then
+  echo "에이전트가 hook 신뢰 확인 화면에서 멈췄다(agent-hooks-review-prompt). Codex 가 fos-skills 의 Claude 전용 hook 을 읽은 것이면 Codex 설치본이 .codex-plugin 매니페스트가 없는 옛 버전이다: codex plugin marketplace upgrade fos-skills 로 갱신한다(docs/adr/007). 남은 터미널은 launch.md 「첫 화면에서 멈춤」 을 따른다" >&2
+fi
 [ "$code" = 0 ] || { echo "worker-start 가 종료 코드 $code 로 끝났다. launch.md 의 「첫 화면에서 멈춤」 과 「시작 직후 실패」 를 본다" >&2; exit 1; }
+# 여기부터는 dispatch 가 떠 있다. --worktree 로 다시 띄우면 같은 일의 task 가 하나 더 생기므로 이어 띄우기 안내를 끈다
+trap - EXIT
 dispatch=$(printf '%s' "$out" | jget "dispatch.id|dispatchId|worker.dispatchId")
 task=$(printf '%s' "$out" | jget "dispatch.taskId|taskId|task.id")
 [ -n "$dispatch" ] || { echo "worker-start 출력에서 dispatch id 를 읽지 못했다" >&2; exit 1; }
@@ -191,7 +233,7 @@ if [ "$watch" -gt 0 ] && ! watch_stage "$dispatch"; then
   [ -n "$task" ] || { echo "task id 를 몰라 다시 띄우지 못한다: $dispatch" >&2; exit 1; }
   "$ORCA" orchestration worker-abandon --dispatch "$dispatch" --json >/dev/null 2>&1 || { echo "worker-abandon 실패: $dispatch" >&2; exit 1; }
   echo "$dispatch 를 abandon 하고 같은 Task 를 path:$worktree 로 다시 띄운다"
-  start_worker ${run:+--run "$run"} --task "$task" --retry-of "$dispatch" --worktree "path:$worktree" "$@"
+  start_worker ${run_args[@]+"${run_args[@]}"} --task "$task" --retry-of "$dispatch" --worktree "path:$worktree" "$@"
   printf '%s\n' "$out"
   [ "$code" = 0 ] || { echo "다시 띄우기가 종료 코드 $code 로 끝났다" >&2; exit 1; }
   dispatch=$(printf '%s' "$out" | jget "dispatch.id|dispatchId|worker.dispatchId")

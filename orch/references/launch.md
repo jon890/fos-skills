@@ -42,7 +42,9 @@ bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --repo "$REPO" --
 새 일이면 지시서의 브랜치 이름을 바꾼다. 예전에 머지된 PR 과 같은 이름을 다시 쓰면 그 PR 의 기록과 섞인다.
 이어서 하는 일이면 이미 있는 worktree 에 띄운다.
 
-이미 있는 worktree 에 띄울 때는 `--worktree` 에 그 경로를 준다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
+이미 있는 worktree 에 띄울 때는 `--worktree` 에 그 경로를 준다. 맨 경로와 `path:` 를 붙인 경로를 모두 받는다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
+**`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree.sh` 가 「경로가 이미 있다」 로 거부한다.
+스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다. 실패한 띄우기가 그 워크트리에 터미널을 남겼으면 그 목록도 함께 낸다. 이 세션이 띄운 것인지 보고 닫은 뒤 부른다.
 **그 워크트리에 터미널이 남아 있으면 스크립트가 목록을 보여 주고 거부한다.** 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
 목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다. 끝난 worker 의 터미널은 대개 이어 쓰지 못하므로 닫고 새 worker 로 띄운다. 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
@@ -93,6 +95,7 @@ terminal_title = ["app-name", "run-state", "project-name"]
 원인은 `worker-show --dispatch "$DISPATCH_ID"` 의 `lastFailure` 에 나온다.
 알려진 원인은 claude 의 폴더 신뢰 확인, codex 의 업데이트 안내(`agent-update-prompt`), hook 신뢰 확인(`agent-hooks-review-prompt`),
 작업 폴더 신뢰 확인(`agent-trust-workspace`)이다.
+codex 의 hook 신뢰 확인이 fos-skills 의 orch hook 때문이면 Codex 설치본이 `.codex-plugin` 매니페스트가 없는 옛 버전이다. `codex plugin marketplace upgrade fos-skills` 로 갱신한다. 근거는 저장소의 `docs/adr/007-codex-manifest-without-hooks.md` 가 소유한다.
 
 터미널과 워크트리는 이미 만들어져 있으므로 새로 띄우지 않고 이어 붙인다.
 
@@ -121,7 +124,8 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 
 기기가 재시작되어 worker 터미널이 사라지면 `worker-show` 가 `[abandoned] stage=terminal_missing` 으로 보인다.
 `wait-important.py` 는 이때 `WORKER_LOST <dispatch> stage=terminal_missing` 줄을 내고 종료 코드 5 로 끝난다.
-다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소하거나 다음 대기에 `--ignore-lost <dispatch>` 를 준다. 그렇지 않으면 대기가 계속 바로 5 로 끝난다.
+같은 dispatch 는 다음 대기에서 다시 알리지 않으므로 이 줄을 받은 자리에서 처리한다.
+다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소해 기록을 남긴다.
 `$DISPATCH_ID` 는 그 줄의 dispatch, `$TASK_ID` 는 `worker-show` 의 `dispatch.taskId`, `$WORKTREE` 는 처음 띄운 워크트리 경로다.
 
 어느 상태에서 어느 명령을 쓰는지는 이 표가 소유한다. `--retry-of` 는 실패하거나 막힌 Task 의 가장 최근 settled dispatch 에만 받아들여진다.

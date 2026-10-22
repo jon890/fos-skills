@@ -6,3 +6,4 @@
 - [ADR-004](004-no-plugin-bin.md): 공용 도구의 PATH 명령은 이 플러그인에 두지 않는다 (`accepted`)
 - [ADR-005](005-plugin-hooks-under-skill.md): 플러그인 훅 정의는 그 훅을 소유한 스킬 아래에 두고 매니페스트로 가리킨다 (`accepted`)
 - [ADR-006](006-work-board-in-plugin.md): 작업 현황 창(work-board)을 이 플러그인의 구성 요소로 싣는다 (`accepted`)
+- [ADR-007](007-codex-manifest-without-hooks.md): Codex 용 매니페스트를 따로 두고 hook 을 싣지 않는다 (`accepted`)

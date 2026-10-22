@@ -29,8 +29,10 @@
 
 ```bash
 # cwd: 타깃 레포 root
-bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir "${TASKS_DIR:-tasks}" ${PLAN_PREFIX:+--prefix "$PLAN_PREFIX"}
+bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir "${TASKS_DIR:-tasks}" ${PLAN_PREFIX:+--prefix} ${PLAN_PREFIX:+"$PLAN_PREFIX"}
 ```
+
+`--prefix` 와 값을 따로 펼친다. `${PLAN_PREFIX:+--prefix "$PLAN_PREFIX"}` 로 묶으면 zsh 가 낱말을 나누지 않아 `--prefix plan` 한 낱말로 넘어간다.
 
 마지막 줄이 다음 번호다. 접두사가 있으면 그 접두사의 번호만 센다.
 `origin/main 밖에만 있다` 로 나온 번호는 머지되지 않은 브랜치가 쥔 것이고 그 번호도 쓰지 않는다.

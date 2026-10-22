@@ -60,6 +60,13 @@
 #                         EXIT trap 은 KILL 로 끝나면 돌지 못해 사본이 남기 때문이다
 #   --continue-on-hold    한 PR 이 조건에 못 미치면 멈추지 않고 STOP 줄을 찍은 뒤 다음 PR 로 간다. 끝에
 #                         `QUEUE-HELD 번호...` 를 찍고 정리를 부른 뒤 종료 코드 1 로 끝난다. 기본은 첫 보류에서 멈춘다
+#   --skipped-is-missing  결론이 SKIPPED 인 체크는 나타나지 않은 것으로 본다. 필수 체크가 SKIPPED 로만 있으면
+#                         실제로 돌 때까지 기다린다. draft 에서는 CI 를 건너뛰게 둔 저장소용이다. 기본은 끔
+#                         (GitHub 처럼 SKIPPED 를 통과로 본다). 필수 체크 목록이 있어야 뜻이 있다
+#   --after-merged CMD    이번 실행에서 PR 을 하나라도 머지했으면, 큐가 끝나거나 보류로 멈춘 뒤 CMD 를 한 번 bash -c 로
+#                         돌린다(배포 같은 것). 환경 변수 MERGED_PRS(머지한 PR 번호, 공백으로 이음)와 CODE_PRS(그 가운데
+#                         --docs-glob 에 맞는 문서 PR 을 뺀 것. --docs-glob 이 없으면 MERGED_PRS 와 같다)를 받는다.
+#                         실패하면 `AFTER-MERGED-FAILED 종료코드` 를 찍는다. 머지 결과는 바뀌지 않는다
 #   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
 #   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.py 에 넘길 인자. 하나씩 준다
 #                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .omc/specs)
@@ -69,11 +76,15 @@
 # 정리가 실패해도 머지 결과는 바뀌지 않으므로 경고만 찍고 종료 코드는 0 이다.
 # CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를 바꾼다.
 #
+# PR 조회(gh pr view)가 실패하면 MERGE_QUEUE_GH_RETRIES 번(기본 3)까지 MERGE_QUEUE_GH_RETRY_SECONDS 초(기본 10)
+# 간격으로 다시 부른다. 일시 실패로 CI 를 통과한 PR 이 「체크 조회 실패」 로 보류되지 않게 하기 위해서다.
+#
 # 머지 전 명령, --threads-cmd, --verify-merged 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치), OWNER, REPO,
 # GH_HOST(위 --hostname 과 같은 값)를 받는다.
 # 예: merge-queue.sh 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 #
-# 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음), 2 사용법 오류
+# 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음), 2 사용법 오류,
+#           3 모두 머지했지만 --after-merged 명령이 실패했다
 set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -94,6 +105,8 @@ VERIFY_MERGED=""
 VERIFY_WHEN=overlap
 DOCS_GLOB=""
 CONTINUE_ON_HOLD=0
+SKIPPED_MISSING=0
+AFTER_MERGED=""
 HELD=()
 COPY_DIR=""
 COPY=""
@@ -118,6 +131,8 @@ while [ $# -gt 0 ]; do
     --docs-glob) need "$1" "${2:-}"; DOCS_GLOB=${DOCS_GLOB:+$DOCS_GLOB,}$2; shift 2 ;;
     --copy-dir) need "$1" "${2:-}"; COPY_DIR=$2; shift 2 ;;
     --continue-on-hold) CONTINUE_ON_HOLD=1; shift ;;
+    --skipped-is-missing) SKIPPED_MISSING=1; shift ;;
+    --after-merged) need "$1" "${2:-}"; AFTER_MERGED=$2; shift 2 ;;
     --keep-branch) KEEP_BRANCH=1; shift ;;
     --sweep-arg) need "$1" "${2:-}"; SWEEP_ARGS+=("$2"); shift 2 ;;
     --no-sweep) SWEEP=0; shift ;;
@@ -132,7 +147,7 @@ case "$CHECK_TIMEOUT" in ''|*[!0-9]*) echo "--check-timeout 은 분 단위 정�
 case "$VERIFY_WHEN" in overlap|code|always) ;; *) echo "--verify-merged-when 은 overlap, code, always 중 하나다" >&2; exit 2 ;; esac
 if [ -z "$VERIFY_MERGED" ]; then
   [ "$VERIFY_WHEN" = overlap ] || { echo "--verify-merged-when $VERIFY_WHEN 은 --verify-merged 와 함께 쓴다" >&2; exit 2; }
-  [ -z "$DOCS_GLOB" ] || { echo "--docs-glob 은 --verify-merged 와 함께 쓴다" >&2; exit 2; }
+  [ -z "$DOCS_GLOB" ] || [ -n "$AFTER_MERGED" ] || { echo "--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다" >&2; exit 2; }
 fi
 case "$REQUIRED" in *[\"\\]*) echo "--required 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
 case "$ALLOW_FAIL" in *[\"\\]*) echo "--allow-fail 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
@@ -153,8 +168,22 @@ if [ -z "$THREADS_CMD" ]; then
   THREADS_CMD="python3 '$RT' list --count \"\$OWNER\" \"\$REPO\" \"\$PR\""
 fi
 
-# PR 하나의 필드를 읽는다. 호출이 실패하면 빈 문자열이다
-field() { gh pr view "$1" --json "$2" --jq "$3" 2>/dev/null; }
+GH_RETRIES=${MERGE_QUEUE_GH_RETRIES:-3}
+GH_RETRY_SECONDS=${MERGE_QUEUE_GH_RETRY_SECONDS:-10}
+case "$GH_RETRIES$GH_RETRY_SECONDS" in ''|*[!0-9]*) echo "MERGE_QUEUE_GH_RETRIES 와 MERGE_QUEUE_GH_RETRY_SECONDS 는 정수다" >&2; exit 2 ;; esac
+# PR 하나의 필드를 읽는다. 호출이 실패하면 GH_RETRIES 번까지 다시 부르고, 그래도 실패하면 빈 문자열이다
+field() {
+  local i=1 out
+  while :; do
+    if out=$(gh pr view "$1" --json "$2" --jq "$3" 2>/dev/null); then
+      [ -z "$out" ] || printf '%s\n' "$out"
+      return 0
+    fi
+    [ "$i" -ge "$GH_RETRIES" ] && return 1
+    i=$((i + 1))
+    sleep "$GH_RETRY_SECONDS"
+  done
+}
 stop() { echo "STOP $*"; exit 1; }
 now() { date +%H:%M; }
 # 멈추거나 끝날 때 남은 임시 사본을 지운다
@@ -165,7 +194,9 @@ drop_copy() {
   COPY=""
 }
 BASE_FILE=$(mktemp) || exit 2
-trap 'drop_copy; rm -f "$BASE_FILE"' EXIT
+# 이번 실행에서 머지한 PR 을 「번호 code|docs」 줄로 모은다. --after-merged 가 읽는다
+MERGED_FILE=$(mktemp) || exit 2
+trap 'drop_copy; rm -f "$BASE_FILE" "$MERGED_FILE"' EXIT
 
 # 앞 실행이 KILL 로 끝나 EXIT trap 이 돌지 못하고 남긴 사본을 지운다. 이름 끝의 pid 가 살아 있으면 다른 큐가 쓰는 중이다
 if [ -d "$COPY_DIR" ]; then
@@ -240,6 +271,8 @@ req_json() {
 }
 # 롤업에 나타난 체크 이름(체크 실행은 name, 커밋 상태는 context)
 ROLL_NAMES='[.statusCheckRollup[] | (.name // .context)]'
+# draft 때 건너뛴 실행만 있는 필수 체크는 아직 돌지 않은 것이다
+[ "$SKIPPED_MISSING" = 1 ] && ROLL_NAMES='[.statusCheckRollup[] | select((.conclusion // "") != "SKIPPED") | (.name // .context)]'
 
 PENDING='[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING" or (.state // "") == "EXPECTED")] | length'
 FAIL_SEL='select(((.conclusion // "") | test("FAILURE|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE")) or ((.state // "") | test("FAILURE|ERROR")))'
@@ -387,6 +420,9 @@ process_pr() {
     [ "$ph" = "$rh" ] || stop "$n head 불일치 pr=${ph:0:8} remote=${rh:0:8}"
   fi
 
+  # 머지 뒤에는 merge-base 가 바뀌어 문서 PR 인지 다시 판정할 수 없다. 머지 전에 정한다
+  kind=code
+  [ -n "$DOCS_GLOB" ] && docs_only && kind=docs
   gh pr merge "$n" "--$METHOD" --match-head-commit "$ph" 2>&1 | tail -1
   merged=0
   for _ in 1 2 3; do
@@ -395,6 +431,7 @@ process_pr() {
   done
   [ $merged = 1 ] || stop "$n 머지 실패"
   echo "$(now) $n MERGED"
+  echo "$n $kind" >> "$MERGED_FILE"
   # 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.sh 가 워크트리 커밋을 원격에 있다고 본다
   git fetch -q origin
   if [ "$KEEP_BRANCH" = 0 ] && [ "$cross" = false ]; then
@@ -412,17 +449,38 @@ process_pr() {
   fi
 }
 
+# 이번 실행에서 머지한 PR 이 있으면 --after-merged 를 한 번 돌린다. 실패하면 1 이다
+AFTER_FAILED=0
+run_after_merged() {
+  [ -n "$AFTER_MERGED" ] && [ -s "$MERGED_FILE" ] || return 0
+  MERGED_PRS=$(awk '{ print $1 }' "$MERGED_FILE" | tr '\n' ' ' | sed 's/ $//')
+  CODE_PRS=$(awk '$2 == "code" { print $1 }' "$MERGED_FILE" | tr '\n' ' ' | sed 's/ $//')
+  echo "$(now) 머지 뒤 명령(머지 $MERGED_PRS, 코드 ${CODE_PRS:-없음}): $AFTER_MERGED"
+  MERGED_PRS="$MERGED_PRS" CODE_PRS="$CODE_PRS" bash -c "$AFTER_MERGED"
+  local code=$?
+  : > "$MERGED_FILE"
+  [ "$code" = 0 ] && return 0
+  echo "AFTER-MERGED-FAILED $code"
+  AFTER_FAILED=1
+  return 1
+}
+
 for item in "${ITEMS[@]}"; do
   ( trap drop_copy EXIT; process_pr "$item" )
   code=$?
   [ -s "$BASE_FILE" ] && SWEEP_BASE=$(cat "$BASE_FILE")
   [ "$code" = 0 ] && continue
   # 1 은 그 PR 의 보류다. 그 밖(신호로 끊김 같은 것)은 이어 가지 않는다
-  [ "$CONTINUE_ON_HOLD" = 1 ] && [ "$code" = 1 ] || exit "$code"
+  if [ "$CONTINUE_ON_HOLD" != 1 ] || [ "$code" != 1 ]; then
+    # 보류로 멈춰도 앞에서 머지한 PR 의 머지 뒤 명령은 돌린다
+    [ "$code" = 1 ] && run_after_merged
+    exit "$code"
+  fi
   HELD+=("${item%%:*}")
   echo "$(now) ${item%%:*} 보류. 다음 PR 로 간다"
 done
 if [ ${#HELD[@]} -gt 0 ]; then echo "QUEUE-HELD ${HELD[*]}"; else echo QUEUE-DONE; fi
+run_after_merged
 
 if [ "$SWEEP" = 1 ]; then
   SWEEP_SCRIPT=${CLEANUP_SWEEP:-$SCRIPT_DIR/cleanup-sweep.py}
@@ -430,3 +488,4 @@ if [ "$SWEEP" = 1 ]; then
     || echo "경고: cleanup-sweep.py 가 실패했다. 머지 결과는 그대로다"
 fi
 [ ${#HELD[@]} -eq 0 ] || exit 1
+[ "$AFTER_FAILED" = 0 ] || exit 3

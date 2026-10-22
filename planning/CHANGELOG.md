@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.28.1
+
+`references/step-8-tasks.md` 의 계획 번호 명령이 zsh 에서 `--prefix` 와 값을 한 낱말로 넘기던 문제를 고친다.
+
+- `${PLAN_PREFIX:+--prefix "$PLAN_PREFIX"}` 를 `${PLAN_PREFIX:+--prefix} ${PLAN_PREFIX:+"$PLAN_PREFIX"}` 로 나눴다. zsh 는 따옴표 없는 펼침을 낱말로 나누지 않아 `plan_number.sh` 가 `--prefix plan` 한 낱말을 받았다. bash 와 zsh 에서 값이 있으면 두 낱말, 없으면 0 낱말이 된다. orch `launch-worker.sh` 의 같은 문제(`--run run_x`)를 고치며 찾았다
+
 ## 2.28.0
 
 `verify_task.py` 가 이름이 test 가 아닌 npm 스크립트를 테스트 실행으로 세지 못하던 문제를 고친다.

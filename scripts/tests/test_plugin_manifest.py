@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / ".claude-plugin" / "plugin.json"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
+CODEX_PLUGIN = ROOT / ".codex-plugin" / "plugin.json"
 EXPORT_ONLY = set(json.loads((ROOT / "scripts" / "export-only-skills.json").read_text(encoding="utf-8")))
 
 
@@ -72,6 +73,21 @@ class PluginManifestTest(unittest.TestCase):
         self.assertIn("./work-board/hooks/hooks.json", hooks)
         for path in hooks:
             self.assertTrue((ROOT / path).is_file(), path)
+
+    def test_codex_manifest_carries_the_same_skills_without_hooks(self):
+        """Codex 는 .codex-plugin 이 있으면 .claude-plugin 을 읽지 않는다. hook 은 Claude 전용이라 싣지 않는다.
+
+        .claude-plugin 의 hook 을 Codex 가 읽으면 hook 이 바뀔 때마다 Codex worker 가 신뢰 확인 화면에서 멈춘다.
+        """
+        codex = load(CODEX_PLUGIN)
+        self.assertEqual(load(PLUGIN)["name"], codex["name"])
+        self.assertEqual(load(PLUGIN)["skills"], codex["skills"])
+        self.assertNotIn("hooks", codex)
+        self.assertNotIn("version", codex)
+
+    def test_no_default_codex_hook_file_at_root(self):
+        """Codex 는 manifest 에 hooks 가 없어도 플러그인 루트의 hooks/hooks.json 을 읽는다"""
+        self.assertFalse((ROOT / "hooks" / "hooks.json").exists())
 
     def test_no_version_key(self):
         marketplace = load(MARKETPLACE)

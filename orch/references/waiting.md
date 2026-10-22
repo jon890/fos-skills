@@ -35,6 +35,10 @@ orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바�
 종료 코드 5 는 처리하지 않은 끊긴 worker 가 있다는 뜻이다. 출력에 `WORKER_LOST ctx_... stage=terminal_missing` 줄이 있다.
 기기가 재시작되어 터미널이 사라지면 메시지가 오지 않아 대기가 끝나지 않으므로, 스크립트가 60초마다(`--lost-interval-sec`) `worker-list` 로 상태를 본다. 대기를 시작할 때 살아 있던 dispatch 가 끊기는 것과, 시작할 때 이미 끊겨 있는데 처리하지 않은 dispatch 를 모두 본다. 재시작 뒤 새로 건 대기는 후자라 `check` 를 부르지 않고 바로 5 로 끝난다.
 처리한 dispatch 는 본다고 치지 않는다. 같은 task 에 나중 dispatch 가 있는 것(다시 띄웠다), 끝난 task(completed, 취소), `--ignore-lost ctx_...` 로 뺀 것이다.
+일부러 끝낸 dispatch 도 끊긴 것으로 보지 않는다. 터미널을 닫아 끝난 것(`operator_close`)과 worker 가 `worker_done --outcome failed` 로 알린 것이다.
+**한 번 알린 dispatch 는 다음 대기에서 다시 알리지 않는다.** 스크립트가 `<git 루트>/.omc/state/wait-important-lost.json` 에 Run 별로 적는다.
+worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 31개씩 다시 깨운 일이 있었다. 그러므로 `WORKER_LOST` 줄은 받은 그 자리에서 처리한다.
+알렸는데 아직 끊긴 채인 dispatch 는 다음 대기가 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남긴다.
 그 줄이 나오면 다시 대기를 걸기 전에 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 마지막 줄의 `LAST_DELIVERY` id 는 다음 대기의 `--ack` 로 넘긴다.
 
 ## 깨어날 때마다 정리와 보드 동기화

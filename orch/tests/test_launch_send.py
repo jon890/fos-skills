@@ -27,6 +27,10 @@ FAKE_ORCA = textwrap.dedent("""\
         return args[args.index(name) + 1] if name in args else None
     if state.get("fail"):
         print("boom"); sys.exit(1)
+    # 실제 orca 처럼 「--run run_x」 같은 한 낱말 플래그를 거부한다(zsh 가 ${run:+--run "$run"} 를 나누지 않은 경우)
+    joined = [a for a in args if a.startswith("--") and " " in a]
+    if joined:
+        print("Unknown flag " + joined[0]); sys.exit(1)
     if args[:2] == ["worktree", "list"]:
         lists = state.get("worktree_lists")
         paths = lists.pop(0) if lists else [p for p in os.environ.get("FAKE_WT_DEFAULT", "").split(":") if p]
@@ -113,8 +117,10 @@ class LaunchWorkerTest(FakeBase):
         self.env["MAKE_WORKTREE"] = str(self.make)
         self.env.update(LAUNCH_WT_POLL="0", LAUNCH_WT_WAIT="3", FAKE_WT_DEFAULT=f"{self.worktree}:{self.tmp}/new")
 
-    def launch(self, *args):
-        cmd = ["bash", str(SCRIPTS / "launch-worker.sh"), "--spec", str(self.spec), *args]
+    def launch(self, *args, shell="bash"):
+        if not shutil.which(shell):
+            self.skipTest(f"{shell} 가 없다")
+        cmd = [shell, str(SCRIPTS / "launch-worker.sh"), "--spec", str(self.spec), *args]
         return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
 
     def shown(self, *stages):
@@ -166,6 +172,12 @@ class LaunchWorkerTest(FakeBase):
         self.assertEqual([], self.lines("orca terminal close"))
         self.assertEqual(1, len(self.lines("orca orchestration worker-start")))
 
+    def test_hooks_review_prompt_names_the_codex_manifest_fix(self):
+        self.state(next_ids=["ctx_1"], start_errors=["Agent startup blocked: agent-hooks-review-prompt"])
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "codex")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("codex plugin marketplace upgrade fos-skills", r.stderr)
+
     def test_agent_unconfigured_without_terminal_option_is_a_plain_failure(self):
         self.state(next_ids=["ctx_1"], start_errors=["agent_unconfigured: x"])
         r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
@@ -182,6 +194,70 @@ class LaunchWorkerTest(FakeBase):
         self.assertIn("push 와 draft PR 생성은 사용자가 허락했다.", start)
         self.assertIn(f"--worktree path:{self.tmp}/new --agent codex --model m", start)
         self.assertTrue(r.stdout.rstrip().endswith(f"LAUNCHED ctx_1 {self.tmp}/new"), r.stdout)
+
+    def test_optional_flags_are_separate_words_in_bash_and_zsh(self):
+        """zsh 는 ${run:+--run "$run"} 를 나누지 않아 worker-start 가 Unknown flag --run run_x 로 실패했다"""
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                if self.log.exists():
+                    self.log.unlink()
+                self.state(next_ids=["ctx_1", "ctx_2"],
+                           dispatches={"ctx_1": self.shown("worktree_creating"), "ctx_2": self.shown("input_accepted")})
+                r = self.launch("--repo", str(self.tmp), "--name", "feat", "--base", "develop", "--run", "run_x",
+                                "--watch", "1", "--", "--agent", "codex", shell=shell)
+                self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+                self.assertEqual([f"make --repo {self.tmp} --spec {self.spec} --name feat --base develop"], self.lines("make"))
+                first, retry = self.lines("orca orchestration worker-start")
+                self.assertTrue(first.startswith("orca orchestration worker-start --run run_x --spec "), first)
+                self.assertIn("--run run_x --task task_1 --retry-of ctx_1", retry)
+
+    def test_without_run_and_base_no_empty_words_are_passed(self):
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                if self.log.exists():
+                    self.log.unlink()
+                self.state(next_ids=["ctx_1"], dispatches={"ctx_1": self.shown("input_accepted")})
+                r = self.launch("--repo", str(self.tmp), "--name", "feat", "--", "--agent", "codex", shell=shell)
+                self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+                self.assertEqual([f"make --repo {self.tmp} --spec {self.spec} --name feat"], self.lines("make"))
+                self.assertTrue(self.lines("orca orchestration worker-start")[0].startswith("orca orchestration worker-start --spec "))
+
+    def test_worktree_accepts_the_path_prefix(self):
+        self.state(next_ids=["ctx_1"], dispatches={"ctx_1": self.shown("input_accepted")})
+        r = self.launch("--worktree", f"path:{self.worktree}", "--", "--agent", "claude")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn(f"--worktree path:{self.worktree} --agent claude", self.lines("orca orchestration worker-start")[0])
+        self.assertTrue(r.stdout.rstrip().endswith(f"LAUNCHED ctx_1 {self.worktree}"), r.stdout)
+
+    def test_failure_after_making_the_worktree_says_how_to_resume(self):
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                self.state(start_fails=True,
+                           terminals=[{"handle": "term_left", "title": "codex hooks review", "worktreePath": f"{self.tmp}/new"}])
+                r = self.launch("--repo", str(self.tmp), "--name", "feat", "--run", "run_x", "--",
+                                "--agent", "codex", "--model", "gpt 6", shell=shell)
+                self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+                self.assertIn(f"워크트리는 남아 있다: {self.tmp}/new", r.stderr)
+                self.assertIn(f"--worktree {self.tmp}/new --run run_x -- --agent codex --model gpt\\ 6", r.stderr)
+                self.assertIn("term_left codex hooks review", r.stderr)
+
+    def test_failure_after_worker_start_succeeded_gives_no_resume_hint(self):
+        """dispatch 가 이미 떠 있으면 --worktree 로 다시 띄우라고 하지 않는다. 같은 일의 task 가 하나 더 생긴다"""
+        self.state(next_ids=["ctx_1", "ctx_2"],
+                   dispatches={"ctx_1": self.shown("worktree_creating"), "ctx_2": self.shown("worktree_creating")})
+        r = self.launch("--repo", str(self.tmp), "--name", "feat", "--watch", "1", "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("워크트리는 남아 있다", r.stderr)
+
+    def test_existing_worktree_or_success_gives_no_resume_hint(self):
+        self.state(start_fails=True)
+        r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode)
+        self.assertNotIn("워크트리는 남아 있다", r.stderr)
+        self.state(next_ids=["ctx_1"], dispatches={"ctx_1": self.shown("input_accepted")})
+        r = self.launch("--repo", str(self.tmp), "--name", "feat", "--", "--agent", "claude")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("워크트리는 남아 있다", r.stderr)
 
     def test_stuck_in_worktree_creating_is_abandoned_and_retried_once(self):
         self.state(next_ids=["ctx_1", "ctx_2"],
