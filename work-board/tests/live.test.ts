@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, detailLines, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, detailLines, parseStep, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
 
 test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
   const stdout = JSON.stringify({ result: { workers: [
@@ -58,6 +58,23 @@ test('진행률은 숫자로 시작하는 단계 줄에서 센다', () => {
   expect(stepProgress(undefined)).toBe(null)
 })
 
+test('번호 점, 괄호, ✓, [x] 를 단계 줄로 알아본다', () => {
+  expect(parseStep('1. 구현')).toEqual({ number: 1, done: false })
+  expect(parseStep('✓ 2. 리뷰')).toEqual({ number: 2, done: true })
+  expect(parseStep('[x] 3) 머지')).toEqual({ number: 3, done: true })
+  expect(parseStep('[ ] 4 검증')).toEqual({ number: 4, done: false })
+  expect(parseStep('▶ 5 진행')).toEqual({ number: 5, done: false })
+  expect(parseStep('2026-10-16 결정')).toBe(null)
+  expect(parseStep('참고: 1. x')).toBe(null)
+  expect(stepProgress(['✓ 1. a', '[x] 2. b', '[ ] 3. c', '4) d'])).toBe('2/4')
+})
+
+test('details 에 단계가 없으면 next 의 번호 줄을 센다', () => {
+  expect(itemProgress({ next: '✓ 1. 구현\n2. 리뷰\n3. 머지' })).toBe('1/3')
+  expect(itemProgress({ next: '1. 할 일', details: ['✓ 1 a', '2 b'] })).toBe('1/2')
+  expect(itemProgress({ next: '다음은 머지' })).toBe(null)
+})
+
 test('progress 가 있으면 단계 수보다 우선한다', () => {
   expect(itemProgress({ progress: '7/10', details: ['✓ 1 a', '2 b'] })).toBe('7/10')
   expect(itemProgress({ details: ['✓ 1 a', '2 b'] })).toBe('1/2')
@@ -69,6 +86,7 @@ test('접으면 끝난 단계를 수 한 줄로 줄이고 펼치면 그대로 �
   expect(detailLines(details, false)).toEqual([{ folded: 2 }, { text: '▶ 3 c' }, { text: '◇ 4 d' }])
   expect(detailLines(details, true)).toEqual([{ text: '▶ 3 c' }, { text: '◇ 4 d' }, { text: '✓ 1 a', done: true }, { text: '✓ 2 b', done: true }])
   expect(detailLines(['◇ 1 a'], false)).toEqual([{ text: '◇ 1 a' }])
+  expect(detailLines(['[x] 1. a', '[ ] 2. b'], false)).toEqual([{ folded: 1 }, { text: '[ ] 2. b' }])
 })
 
 test('git 공통 디렉터리에서 주 checkout 의 root 를 꺼낸다', () => {

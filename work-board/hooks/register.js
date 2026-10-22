@@ -4,7 +4,8 @@
 //      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?, details?: string[] }] }
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
 //      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
-//      진행 표시줄은 details 에서 숫자로 시작하는 단계(「1 …」, 끝나면 「✓ 1 …」)를 세어 그린다. 참고 줄은 세지 않는다.
+//      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, 끝나면 「✓ 1 …」 나 「[x] 1. …」)을 세어 그린다.
+//      details 에 단계 줄이 있으면 그것을, 없으면 next 의 줄을 센다. 참고 줄은 세지 않는다.
 //      progress(「끝낸 단계/전체 단계」, 예: 7/10)가 있으면 그 값을 우선한다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
 // 파일은 FILE_MS, 명령은 LIVE_MS 마다 다시 읽는다. 창에서 r 을 누르면 명령을 바로 다시 읽는다.
@@ -142,28 +143,45 @@ export function workerLine(worker, prs) {
     + (worker.state && worker.state !== 'ready' ? '  ' + worker.state : '')
 }
 
-// 「7/10」 을 진행 표시줄 한 줄로 바꾼다. 형식이 틀리면 null.
-// 하위 항목 중 '✓' 로 시작하는 끝난 단계를 접는다. 접으면 끝난 단계 수를 한 줄로 앞에 둔다
+// 단계 줄: 앞 표시(끝냄 ✓ [x], 안 끝냄 [ ] ▶ ◇)와 번호. bin/board.py 의 STEP 과 같은 규칙이다
+const STEP = /^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s/
+const DONE_MARKS = ['✓', '[x]', '[X]']
+
+// 단계 줄이면 { number, done } 을, 아니면 null 을 돌려준다
+export function parseStep(line) {
+  const match = STEP.exec(String(line))
+  return match ? { number: Number(match[2]), done: DONE_MARKS.includes(match[1]) } : null
+}
+
+// 끝난 줄인지. 단계 줄이 아닌 참고 줄도 「✓」 로 시작하면 끝난 줄로 본다
+function finishedLine(text) {
+  const step = parseStep(text)
+  return step ? step.done : text.startsWith('✓')
+}
+
+// 하위 항목 중 끝난 줄을 접는다. 접으면 끝난 단계 수를 한 줄로 앞에 둔다
 // 펼치면 진행 중인 하위 항목을 앞에, 끝난 단계를 흐리게 뒤에 둔다
 export function detailLines(details, expanded) {
-  const finished = details.filter((text) => text.startsWith('✓'))
-  const rest = details.filter((text) => !text.startsWith('✓')).map((text) => ({ text }))
+  const finished = details.filter(finishedLine)
+  const rest = details.filter((text) => !finishedLine(text)).map((text) => ({ text }))
   if (expanded) return [...rest, ...finished.map((text) => ({ text, done: true }))]
   return finished.length ? [{ folded: finished.length }, ...rest] : rest
 }
 
-// 하위 줄 가운데 숫자로 시작하는 단계를 세어 「끝낸/전체」 문자열로 돌려준다. 단계가 없으면 null
-export function stepProgress(details) {
-  if (!Array.isArray(details)) return null
-  const steps = details.filter((text) => /^(✓ )?\d+ /.test(text))
+// 줄 가운데 단계 줄을 세어 「끝낸/전체」 문자열로 돌려준다. 단계가 없으면 null
+export function stepProgress(lines) {
+  if (!Array.isArray(lines)) return null
+  const steps = lines.map(parseStep).filter(Boolean)
   if (steps.length === 0) return null
-  return steps.filter((text) => text.startsWith('✓')).length + '/' + steps.length
+  return steps.filter((step) => step.done).length + '/' + steps.length
 }
 
+// details 에 단계가 있으면 그것을, 없으면 next 의 줄을 센다
 export function itemProgress(item) {
-  return item.progress || stepProgress(item.details)
+  return item.progress || stepProgress(item.details) || stepProgress(String(item.next || '').split('\n'))
 }
 
+// 「7/10」 을 진행 표시줄 한 줄로 바꾼다. 형식이 틀리면 null.
 export function progressBar(progress, width = 20) {
   const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(String(progress || ''))
   if (!match) return null

@@ -7,18 +7,48 @@
   board.py set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--progress N/M] [--detail D ...]
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
-  board.py step <id> <n> [--undo]   (n 번 단계 줄 앞에 「✓ 」 를 붙인다. --undo 는 뗀다)
+  board.py step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
   board.py del <id>
   board.py list
 status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
-  하위 줄을 「1 …」, 끝나면 「✓ 1 …」 로 쓰면 창이 숫자로 시작하는 줄을 세어 진행 표시줄을 그린다. 참고 줄은 세지 않는다
+  단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
+  줄 앞의 「✓」 나 「[x]」 는 끝낸 단계, 「[ ]」, 「▶」, 「◇」 는 끝나지 않은 단계다
+  하위 항목(--detail)에 단계 줄이 있으면 그것을 세고, 없으면 --next 의 줄을 센다
+  step 은 「[ ]」 로 적은 줄은 「[x]」 로, 그 밖의 줄은 앞에 「✓ 」 를 붙여 끝낸다
   --progress N/M 은 「끝낸 단계/전체 단계」 (예: 7/10) 를 직접 적고 단계 수보다 앞선다. 주지 않으면 기존 값을 지우지 않는다
   --progress auto 는 값을 지워 단계 수로 세게 한다
 """
 import argparse, datetime, json, os, re, subprocess, sys
 
 STATUSES = ('goal', 'decide', 'doing', 'wait', 'done')
+# 단계 줄: 앞 표시(끝냄 ✓ [x], 안 끝냄 [ ] ▶ ◇)와 번호. hooks/register.js 의 STEP 과 같은 규칙이다
+STEP = re.compile(r'^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s')
+DONE_MARKS = ('✓', '[x]', '[X]')
+
+def parse_step(line):
+    """단계 줄이면 (번호, 끝냈는지, 앞 표시)를, 아니면 None 을 돌려준다"""
+    m = STEP.match(line)
+    return (int(m.group(2)), m.group(1) in DONE_MARKS, m.group(1)) if m else None
+
+def step_source(item):
+    """단계를 세는 곳과 그 줄들. 하위 항목에 단계가 있으면 그것을, 없으면 next 의 줄을 쓴다"""
+    details = item.get('details') or []
+    if any(parse_step(line) for line in details):
+        return 'details', list(details)
+    lines = str(item.get('next') or '').split('\n')
+    if any(parse_step(line) for line in lines):
+        return 'next', lines
+    return None, []
+
+def mark_step(line, done):
+    number, finished, mark = parse_step(line)
+    if finished == done:
+        return line
+    if mark in ('[ ]', '[x]', '[X]'):
+        return line.replace(mark, '[x]' if done else '[ ]', 1)
+    body = re.sub(r'^\s*(✓|▶|◇)\s*', '', line)
+    return '✓ ' + body if done else body
 
 def board_path(explicit):
     if explicit:
@@ -56,15 +86,15 @@ def main():
         if not (a.status or '').isdigit():
             sys.exit('step 에는 단계 번호가 필요하다')
         number = int(a.status)
-        details = item.get('details') or []
-        for index, line in enumerate(details):
-            m = re.match(r'^(✓ )?(\d+) ', line)
-            if m and int(m.group(2)) == number:
-                body = line[len('✓ '):] if m.group(1) else line
-                details[index] = body if a.undo else '✓ ' + body
+        source, lines = step_source(item)
+        for index, line in enumerate(lines):
+            step = parse_step(line)
+            if step and step[0] == number:
+                lines[index] = mark_step(line, not a.undo)
                 break
         else:
-            sys.exit('%d 번 단계 줄이 없다' % number)
+            sys.exit('%d 번 단계 줄이 없다. 단계 줄은 --detail 이나 --next 의 「%d …」, 「%d. …」 로 시작하는 줄이다' % (number, number, number))
+        item[source] = lines if source == 'details' else '\n'.join(lines)
     elif a.cmd == 'del':
         board['items'] = [i for i in board['items'] if i['id'] != a.id]
     else:
