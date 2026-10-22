@@ -11,7 +11,8 @@
 | 플러그인에 담는다 | `build-with-teams`, `docs-check`, `harness-cleanup`, `planning`, `pr-review`, `review-fix` |
 | 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
 | 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `scripts/`, `hooks/`, `docs/` |
-| 플러그인이 싣는 훅 | `orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 가 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
+| 플러그인이 싣는 훅 | `orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 배열이 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
+| 플러그인이 싣는 mod | `work-board/hooks/hooks.json` 의 hooks 모듈. 작업 현황 창 `/board` 를 그린다. `hooks` 배열이 가리킨다([ADR-006](adr/006-work-board-in-plugin.md)) |
 | 플러그인이 설치하지 않는다 | 한국어 검사 `PostToolUse` 훅, `~/.claude/rules/` 의 규칙 파일, `~/.claude/scripts/` 의 링크 |
 
 플러그인은 통째로 설치된다. 스킬을 골라 설치하는 방법은 두지 않는다.
@@ -35,7 +36,8 @@ scripts/install-hooks.sh            hooks/ 의 git 훅을 건다
 scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 테스트한다
 scripts/tests/test_plugin_manifest.py   매니페스트와 루트의 스킬 디렉터리를 대조한다
 hooks/post-commit                   git 훅. Claude Code 훅이 아니다
-orch/hooks/hooks.json               플러그인이 싣는 Claude Code 훅 정의. plugin.json 의 hooks 가 가리킨다
+orch/hooks/hooks.json               플러그인이 싣는 Claude Code 훅 정의. plugin.json 의 hooks 배열이 가리킨다
+work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모듈, bin/board.py 는 보드 편집 명령이다
 ```
 
 스킬을 `skills/` 아래로 옮기지 않은 근거는 [ADR-001](adr/001-plugin-from-repo-root.md) 이 소유한다.
