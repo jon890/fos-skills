@@ -10,6 +10,7 @@
   (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
   doing 항목은 진행률이 있어야 한다. 단계 줄이나 --progress N/M 이 없으면 set 을 거절하고 보드를 고치지 않는다
   board.py step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
+  board.py steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
   board.py del <id>
   board.py list   (항목마다 진행률 「n/m (p%)」 를 붙인다)
 status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
@@ -86,7 +87,7 @@ def board_path(explicit):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=('set', 'step', 'del', 'list'))
+    ap.add_argument('cmd', choices=('set', 'step', 'steps', 'del', 'list'))
     ap.add_argument('id', nargs='?')
     ap.add_argument('status', nargs='?')
     ap.add_argument('--undo', action='store_true')
@@ -108,6 +109,14 @@ def main():
         return
     if not a.id:
         sys.exit('id 가 필요하다')
+    if a.cmd == 'steps':
+        item = next((i for i in board['items'] if i['id'] == a.id), None)
+        if item is None:
+            sys.exit('항목이 없다: ' + a.id)
+        steps = [(parse_step(line), line) for line in step_source(item)[1]]
+        print(json.dumps([{'number': step[0], 'done': step[1], 'text': line} for step, line in steps if step],
+                         ensure_ascii=False))
+        return
     if a.cmd == 'step':
         item = next((i for i in board['items'] if i['id'] == a.id), None)
         if item is None:

@@ -64,6 +64,16 @@ class BoardTest(unittest.TestCase):
         self.assertIn("4 번 단계 줄이 없다", done.stderr)
         self.assertIn("「4. …」", done.stderr)
 
+    def test_steps_lists_counted_lines_without_writing(self):
+        self.write({"id": "s", "status": "doing", "details": ["참고: x", "✓ 1 a", "[ ] 2. b #7"]})
+        before = self.file.read_text(encoding="utf-8")
+        done = self.run_board("steps", "s")
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual([{"number": 1, "done": True, "text": "✓ 1 a"}, {"number": 2, "done": False, "text": "[ ] 2. b #7"}],
+                         json.loads(done.stdout))
+        self.assertEqual(before, self.file.read_text(encoding="utf-8"))
+        self.assertNotEqual(0, self.run_board("steps", "none").returncode)
+
     def test_set_doing_without_progress_is_refused(self):
         self.write({"id": "old", "status": "wait", "title": "옛 항목"})
         done = self.run_board("set", "old", "doing")
