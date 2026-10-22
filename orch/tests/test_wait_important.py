@@ -31,7 +31,8 @@ FAKE_ORCA = textwrap.dedent("""\
             result = {"tasks": st.get("tasks", [])}
         else:
             latest = st.get("latest", {}).get(sys.argv[sys.argv.index("--task") + 1])
-            result = {"dispatch": {"id": latest}} if latest else {}
+            # 값은 dispatch id 이거나 dispatch-show 의 dispatch 그대로다
+            result = {"dispatch": latest if isinstance(latest, dict) else {"id": latest}} if latest else {}
         print(json.dumps({"ok": True, "result": result}))
         sys.exit(0)
     reply = st["replies"].pop(0) if st["replies"] else {"ok": True, "result": {"deliveryId": None, "messages": [], "timedOut": True}}
@@ -71,13 +72,14 @@ class WaitImportantTest(unittest.TestCase):
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
         self.ps_rows = self.tmp / "ps.txt"
+        self.lost_state = self.tmp / "lost.json"
         self.env = dict(os.environ, ORCA=str(self.orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log),
                         PS=str(self.ps), FAKE_PS=str(self.ps_rows))
 
     def wait(self, replies, *args, workers=None, tasks=None, latest=None):
         self.state.write_text(json.dumps({"replies": replies, "workers": workers or [], "tasks": tasks or [],
                                           "latest": latest or {}}))
-        return subprocess.run(["python3", str(SCRIPT), "--run", "run_x", *args],
+        return subprocess.run(["python3", str(SCRIPT), "--run", "run_x", "--lost-state", str(self.lost_state), *args],
                               capture_output=True, text=True, env=self.env)
 
     def calls(self):
@@ -138,6 +140,61 @@ class WaitImportantTest(unittest.TestCase):
             self.assertEqual(0, r.returncode, status + r.stdout + r.stderr)
         r = self.lost_at_start(task_status="failed", result="circuit broken")
         self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+
+    def test_lost_dispatch_is_reported_only_once(self):
+        r = self.lost_at_start()
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(["ctx_bad"], list(json.loads(self.lost_state.read_text())["run_x"]))
+        r = self.lost_at_start()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+
+    def test_reported_dispatches_are_kept_per_run(self):
+        self.lost_state.write_text(json.dumps({"run_other": {"ctx_bad": "2026-10-22T00:00:00Z"}}))
+        r = self.lost_at_start()
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+        self.assertEqual({"run_other", "run_x"}, set(json.loads(self.lost_state.read_text())))
+
+    def test_unreadable_lost_state_reports_again(self):
+        self.lost_state.write_text("not json")
+        r = self.lost_at_start()
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+        self.assertIn("ctx_bad", json.loads(self.lost_state.read_text())["run_x"])
+
+    def test_deliberately_ended_dispatch_at_start_is_ignored(self):
+        """코디네이터가 터미널을 닫았거나 worker 가 실패를 알린 dispatch 는 끊긴 것이 아니다(2026-10-22 옛 dispatch 31개)"""
+        closed = {"id": "ctx_bad", "termination_reason": "operator_close"}
+        reported = {"id": "ctx_bad", "termination_reason": None,
+                    "last_failure": json.dumps({"provenance": "worker_report", "outcome": "failed"})}
+        for latest in (closed, reported):
+            r = self.lost_at_start(task_status="ready", latest=latest)
+            self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+            self.assertNotIn("WORKER_LOST", r.stdout)
+        missing = {"id": "ctx_bad", "termination_reason": None,
+                   "last_failure": "The assigned worker terminal is no longer live"}
+        r = self.lost_at_start(task_status="ready", latest=missing)
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+
+    def test_worker_closed_by_operator_during_the_wait_does_not_end_it(self):
+        live = [self.worker("ctx_a", "ready", "dispatched", "input_accepted")]
+        closed = [self.worker("ctx_a", "failed", "failed", "process_exited")]
+        r = self.wait([dict(batch("d9", "worker_done"), sleep=2)], "--lost-interval-sec", "0.3",
+                      workers=[live, live, closed], tasks=[{"id": "t1", "status": "ready"}],
+                      latest={"t1": {"id": "ctx_a", "termination_reason": "operator_close"}})
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+        self.assertEqual("LAST_DELIVERY d9", r.stdout.splitlines()[-1])
+        # 한 번 뺀 dispatch 는 다시 묻지 않는다
+        shows = [l for l in self.log.read_text().splitlines() if "dispatch-show" in l]
+        self.assertEqual(1, len(shows), shows)
+
+    def test_lost_during_wait_is_recorded(self):
+        live = [self.worker("ctx_a", "ready", "dispatched", "input_accepted")]
+        gone = [self.worker("ctx_a", "abandoned", "failed", "terminal_missing")]
+        r = self.wait([dict(batch("d9", "worker_done"), sleep=5)], "--lost-interval-sec", "0.3",
+                      workers=[live, live, gone])
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(["ctx_a"], list(json.loads(self.lost_state.read_text())["run_x"]))
 
     def test_unreadable_latest_dispatch_keeps_the_old_behavior(self):
         r = self.lost_at_start(latest=None)

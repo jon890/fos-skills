@@ -121,7 +121,8 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 
 기기가 재시작되어 worker 터미널이 사라지면 `worker-show` 가 `[abandoned] stage=terminal_missing` 으로 보인다.
 `wait-important.py` 는 이때 `WORKER_LOST <dispatch> stage=terminal_missing` 줄을 내고 종료 코드 5 로 끝난다.
-다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소하거나 다음 대기에 `--ignore-lost <dispatch>` 를 준다. 그렇지 않으면 대기가 계속 바로 5 로 끝난다.
+같은 dispatch 는 다음 대기에서 다시 알리지 않으므로 이 줄을 받은 자리에서 처리한다.
+다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소해 기록을 남긴다.
 `$DISPATCH_ID` 는 그 줄의 dispatch, `$TASK_ID` 는 `worker-show` 의 `dispatch.taskId`, `$WORKTREE` 는 처음 띄운 워크트리 경로다.
 
 어느 상태에서 어느 명령을 쓰는지는 이 표가 소유한다. `--retry-of` 는 실패하거나 막힌 Task 의 가장 최근 settled dispatch 에만 받아들여진다.
