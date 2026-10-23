@@ -31,6 +31,7 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
     기기가 재시작되어 worker 터미널이 사라져도 메시지는 오지 않아 대기가 끝나지 않는다.
     그래서 대기하는 동안 `--lost-interval-sec` 마다 `orca orchestration worker-list --run <id> --json` 으로 상태를 본다.
     「끊김」 은 workerState 가 abandoned, failed, stopped 이거나 dispatchStatus 가 failed 이거나 단계가 terminal_missing 인 것이다.
+    단, completed/abandoned dispatch 와 성공·취소 결과는 터미널이 사라져도 제외한다.
     끊긴 dispatch 를 찾으면 메시지를 기다리지 않고 `WORKER_LOST ctx_... stage=terminal_missing` 줄과
     `LAST_DELIVERY <id>` 줄을 내고 종료 코드 5 로 끝난다. 지켜보는 대상은 둘이다.
     1) 대기를 시작할 때 살아 있던(dispatchStatus 가 pending, dispatched, running) dispatch 가 대기하는 동안 끊긴 경우
@@ -44,6 +45,7 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
     두 경우 모두 일부러 끝낸 dispatch 는 끊긴 것으로 보지 않는다. `dispatch-show` 의 termination_reason 이
     operator_close(코디네이터나 정리 스크립트가 터미널을 닫았다)이거나, last_failure 의 provenance 가
     worker_report(worker 가 `worker_done --outcome failed` 로 알렸다)인 것이다.
+    camelCase 필드도 읽으며, 실패 이유가 abandoned 인 명시적 포기도 제외한다.
     알린 dispatch 와 일부러 끝냈다고 판정한 dispatch 는 `--lost-state` 파일에 Run 별로 적고 다음 대기부터 다시
     알리거나 조회하지 않는다. worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 다시
     깨우지 않게 하기 위해서다. 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 에 한 줄로 남긴다.
@@ -113,6 +115,11 @@ def lost_workers(rows, watched):
     for w in rows:
         if w.get("dispatchId") not in watched:
             continue
+        # 정리로 터미널이 사라져도 이미 끝난 dispatch 는 끊김이 아니다.
+        if w.get("dispatchStatus") in {"completed", "abandoned"}:
+            continue
+        if (w.get("projection") or {}).get("outcome") in {"succeeded", "cancelled"}:
+            continue
         detail = (((w.get("projection") or {}).get("stage") or {}).get("detail"))
         if w.get("workerState") in LOST_WORKER_STATES or w.get("dispatchStatus") == "failed" or detail == "terminal_missing":
             lost.append((w["dispatchId"], detail or w.get("workerState")))
@@ -138,9 +145,12 @@ def deliberate_end(dispatch):
     operator_close 는 코디네이터나 정리 스크립트가 터미널을 닫은 것이고,
     worker_report 는 worker 가 실패를 메시지로 알린 것이다. 둘 다 코디네이터가 이미 안다.
     """
-    if dispatch.get("termination_reason") == "operator_close":
-        return "operator_close"
-    failure = dispatch.get("last_failure")
+    termination = dispatch.get("terminationReason") or dispatch.get("termination_reason")
+    if termination in {"operator_close", "worker_report"}:
+        return termination
+    failure = dispatch.get("lastFailure") or dispatch.get("last_failure")
+    if failure == "abandoned":
+        return "abandoned"
     if isinstance(failure, str):
         try:
             failure = json.loads(failure)

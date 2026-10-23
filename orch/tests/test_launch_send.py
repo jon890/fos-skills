@@ -37,6 +37,8 @@ FAKE_ORCA = textwrap.dedent("""\
         out({"worktrees": [{"path": p} for p in paths]})
     if args[:2] == ["terminal", "list"]:
         out({"terminals": state.get("terminals", [])})
+    if args[:2] == ["terminal", "close"]:
+        out({}, 1 if state.get("close_fails") else 0)
     if args[:2] == ["orchestration", "worker-start"]:
         if state.get("start_errors"):
             out({"error": state["start_errors"].pop(0)}, 1)
@@ -48,7 +50,8 @@ FAKE_ORCA = textwrap.dedent("""\
         d = state["dispatches"][opt("--dispatch")]
         stages = d.get("stages") or []
         stage = stages.pop(0) if len(stages) > 1 else (stages[0] if stages else "input_accepted")
-        out({"dispatch": d["dispatch"], "worker": dict(d.get("worker", {}), stage=stage)})
+        out({"dispatch": d["dispatch"], "worker": dict(d.get("worker", {}), stage=stage),
+             "terminalResource": d.get("terminalResource", {})})
     if args[:2] == ["orchestration", "worker-abandon"]:
         out({})
     if args[:2] == ["orchestration", "inbox"]:
@@ -59,6 +62,8 @@ FAKE_ORCA = textwrap.dedent("""\
             sys.exit(1)
         out({"message": {"id": "msg_new"}})
     if args[:2] == ["orchestration", "worker-list"]:
+        if state.get("worker_pages"):
+            out(state["worker_pages"].pop(0))
         out({"workers": state.get("workers", [])})
     sys.exit(3)
     """)
@@ -437,6 +442,79 @@ class SendToWorkerTest(FakeBase):
         self.assertEqual(3, r.returncode)
         self.assertIn("launch-worker.sh --spec <지시서> --worktree /w/feat", r.stdout)
         self.assertEqual([], self.lines("launch"))
+
+    def restart_setup(self, **state):
+        workers = self.worker("completed")
+        workers["ctx_1"]["worker"]["startOptions"] = {
+            "launch": {"effective": {"agent": "codex", "model": "original-model", "effort": "high"}}}
+        self.state(dispatches=workers, terminals=[{"handle": "term_w"}], **state)
+        (self.tmp / "launch.sh").write_text(
+            'echo "launch $*" >> "$FAKE_LOG"\n'
+            'case " $* " in *" --terminal "*) exit 3 ;; esac\n')
+
+    def test_shell_only_terminal_is_closed_and_restarted_with_original_settings(self):
+        self.restart_setup()
+        r = self.send("--body", "x", "--spec", "/s/next.md")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(["orca terminal close --terminal term_w"], self.lines("orca terminal close"))
+        self.assertEqual("launch --spec /s/next.md --worktree /w/feat --run run_x -- --agent codex --model original-model --effort high",
+                         self.lines("launch")[-1])
+        self.assertLess(self.log.read_text().index("orca terminal close"), self.log.read_text().rindex("launch --spec"))
+
+    def test_restart_settings_can_be_overridden(self):
+        self.restart_setup()
+        r = self.send("--body", "x", "--spec", "/s/next.md", "--agent", "claude", "--model", "new-model", "--effort", "low")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("--agent claude --model new-model --effort low", self.lines("launch")[-1])
+
+    def test_restart_does_not_close_terminal_reused_by_an_active_dispatch(self):
+        self.restart_setup(workers=[{"dispatchStatus": "dispatched", "agentTerminalHandle": "term_w"}])
+        self.assertEqual(1, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        self.assertEqual([], self.lines("orca terminal close"))
+        self.assertEqual(1, len(self.lines("launch")))
+
+    def test_restart_close_failure_does_not_launch_a_replacement(self):
+        self.restart_setup(close_fails=True)
+        self.assertEqual(5, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        self.assertEqual(1, len(self.lines("launch")))
+
+    def test_other_launch_failure_is_not_retried(self):
+        self.restart_setup()
+        (self.tmp / "launch.sh").write_text('echo "launch $*" >> "$FAKE_LOG"\nexit 1\n')
+        self.assertEqual(1, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        self.assertEqual([], self.lines("orca terminal close"))
+
+    def test_missing_original_settings_preserves_the_terminal(self):
+        self.restart_setup()
+        data = json.loads(self.state_file.read_text())
+        data["dispatches"]["ctx_1"]["worker"].pop("startOptions")
+        self.state(**data)
+        self.assertEqual(1, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        self.assertEqual([], self.lines("orca terminal close"))
+
+    def test_changed_terminal_owner_is_preserved(self):
+        self.restart_setup()
+        data = json.loads(self.state_file.read_text())
+        data["dispatches"]["ctx_1"]["terminalResource"] = {"ownerDispatchId": "ctx_other"}
+        self.state(**data)
+        self.assertEqual(1, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        self.assertEqual([], self.lines("orca terminal close"))
+
+    def test_active_dispatch_on_later_page_prevents_close(self):
+        self.restart_setup(worker_pages=[
+            {"workers": [], "page": {"hasMore": True, "nextCursor": "page2"}},
+            {"workers": [{"agentTerminalHandle": "term_w", "dispatchStatus": "running"}]}])
+        self.assertEqual(1, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        self.assertEqual([], self.lines("orca terminal close"))
+        self.assertIn("--cursor page2", self.lines("orca orchestration worker-list")[-1])
+
+    def test_user_retained_terminal_is_not_closed(self):
+        self.restart_setup()
+        data = json.loads(self.state_file.read_text())
+        data["dispatches"]["ctx_1"]["terminalResource"] = {"ownerDispatchId": "ctx_1", "ownershipState": "user_owned"}
+        self.state(**data)
+        self.assertEqual(1, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        self.assertEqual([], self.lines("orca terminal close"))
 
     def test_orca_failure_is_exit_5(self):
         self.state(fail=True)

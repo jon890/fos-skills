@@ -36,6 +36,7 @@ orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바�
 기기가 재시작되어 터미널이 사라지면 메시지가 오지 않아 대기가 끝나지 않으므로, 스크립트가 60초마다(`--lost-interval-sec`) `worker-list` 로 상태를 본다. 대기를 시작할 때 살아 있던 dispatch 가 끊기는 것과, 시작할 때 이미 끊겨 있는데 처리하지 않은 dispatch 를 모두 본다. 재시작 뒤 새로 건 대기는 후자라 `check` 를 부르지 않고 바로 5 로 끝난다.
 처리한 dispatch 는 본다고 치지 않는다. 같은 task 에 나중 dispatch 가 있는 것(다시 띄웠다), 끝난 task(completed, 취소), `--ignore-lost ctx_...` 로 뺀 것이다.
 일부러 끝낸 dispatch 도 끊긴 것으로 보지 않는다. 터미널을 닫아 끝난 것(`operator_close`)과 worker 가 `worker_done --outcome failed` 로 알린 것이다.
+dispatch 가 `completed`, `abandoned` 이거나 성공·취소 결과가 기록됐으면 `terminal_missing` 이어도 끊김에서 제외한다. `dispatch-show` 의 종료 이유와 실패 기록은 camelCase 와 기존 snake_case 를 모두 읽는다. 실패 이유가 `abandoned` 라고 기록된 명시적 포기도 제외하며, 복구 과정에서 터미널을 잃은 abandoned worker 는 계속 끊김으로 본다.
 **한 번 알린 dispatch 는 다음 대기에서 다시 알리지 않는다.** 스크립트가 `<git 루트>/.omc/state/wait-important-lost.json` 에 Run 별로 적는다.
 worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 31개씩 다시 깨운 일이 있었다. 그러므로 `WORKER_LOST` 줄은 받은 그 자리에서 처리한다.
 알렸는데 아직 끊긴 채인 dispatch 는 다음 대기가 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남긴다.
