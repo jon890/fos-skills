@@ -19,7 +19,7 @@ git -C "$REPO" fetch origin
 
 codex 를 띄우기 전에 아래 「codex 준비 판정」 의 설정이 있는지 본다.
 
-**새 worktree 는 `make-worktree.sh` 로 먼저 만들고 `--worktree path:` 로 띄운다.**
+**새 worktree 는 `make-worktree.py` 로 먼저 만들고 `--worktree path:` 로 띄운다.**
 Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<워크트리 이름>` 으로 정해 지시서의 `브랜치:` 줄과 어긋난다.
 어긋나면 worker 마다 이름을 바꾸거나 다른 원격 브랜치에 push 하고, 정리 스크립트는 이름을 추측해야 한다.
 스크립트는 지시서의 `브랜치:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 읽어 `origin/$BASE` 위에 그 이름으로 만들고,
@@ -29,27 +29,39 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 `spec-line.py` 가 지시서의 `허락:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 그 줄에 붙인다.
 허락이 파일 안에만 있으면 Codex worker 가 그것을 사용자의 직접 요청으로 볼지 실행마다 달라, 일부는 GitHub 게시가 금지됐다며 PR 을 열지 않고 멈춘다.
 
-**worker 는 `launch-worker.sh` 로 띄운다.** 첫 지시 줄 만들기(`spec-line.py --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
+**worker 는 `launch-worker.py` 로 띄운다.** 첫 지시 줄 만들기(`spec-line.py --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
 `worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
-bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
+python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
   -- --agent codex --model gpt-6.1-sol --effort low
 ```
 
-`make-worktree.sh` 가 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
+`make-worktree.py` 가 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
 새 일이면 지시서의 브랜치 이름을 바꾼다. 예전에 머지된 PR 과 같은 이름을 다시 쓰면 그 PR 의 기록과 섞인다.
 이어서 하는 일이면 이미 있는 worktree 에 띄운다.
 
 이미 있는 worktree 에 띄울 때는 `--worktree` 에 그 경로를 준다. 맨 경로와 `path:` 를 붙인 경로를 모두 받는다. 5단계의 후속 일과 worker 가 보낸 `ready:` 가 여기 해당한다.
-**`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree.sh` 가 「경로가 이미 있다」 로 거부한다.
+### 원격 PR 브랜치를 이어 받을 때
+
+지시서의 `브랜치:` 가 이미 origin 에 있으면 `--resume-remote` 를 더한다.
+새 워크트리를 그 원격 브랜치의 최신 커밋에서 만들고 upstream 을 연결한다.
+이 옵션을 빼면 기존처럼 원격 브랜치가 있는 작업을 거부한다.
+로컬 브랜치나 경로가 있으면 덮어쓰지 않으며 기존 워크트리는 `--worktree` 로 이어 쓴다.
+
+```bash
+python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --resume-remote --run "$RUN_ID" \
+  -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
+```
+
+**`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree.py` 가 「경로가 이미 있다」 로 거부한다.
 스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다. 실패한 띄우기가 그 워크트리에 터미널을 남겼으면 그 목록도 함께 낸다. 이 세션이 띄운 것인지 보고 닫은 뒤 부른다.
 **그 워크트리에 터미널이 남아 있으면 스크립트가 목록을 보여 주고 거부한다.** 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
 목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다. 끝난 worker 의 터미널은 대개 이어 쓰지 못하므로 닫고 새 worker 로 띄운다. 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
 ```bash
-bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
+python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
   -- --agent claude --model claude-sonnet-5-5 --effort medium
 ```
 
@@ -65,7 +77,7 @@ bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC_FILE" --worktree "$WORK
 - `worker-start` 응답의 `launch.effective` 가 1단계에서 고른 모델, effort 와 같다
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
 
-`make-worktree.sh` 는 Orca 와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
+`make-worktree.py` 는 Orca 와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
 그 경로가 ignore 되지 않으면 기준 브랜치에서 `git add -A` 를 할 때 워크트리가 커밋될 수 있어, 스크립트가 로컬 전용인 `.git/info/exclude` 에 `/worktrees/` 를 더한다.
 공유되는 `.gitignore` 는 고치지 않는다.
 대상 저장소의 `.claude/settings.local.json` 도 스크립트가 복사한다. 추적되지 않는 파일이라 워크트리에 따라오지 않고,

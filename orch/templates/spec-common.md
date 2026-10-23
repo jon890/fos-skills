@@ -29,15 +29,15 @@
 
 - **기술 판단은 묻지 않고 권장안으로 진행한다.** 파일 위치, 테스트 방식, 마이그레이션 방식, 리뷰 하위 등급 지적의 반영 여부와 이유, PR 분할과 순서, 지시서 범위 안의 리팩터링 방식이 여기 해당한다. 고른 안과 이유를 status 메시지 한 줄과 PR 본문 「결정」 절에 남긴다.
 - **아래만 ask 로 묻는다.** 화면이나 외부 API 계약 변경, 기록된 팀 결정을 뒤집는 것, 외부에 보이는 글, 공유 서버나 DB 에 쓰기, 비용이 드는 작업, 지시서 범위를 넘는 변경, 데이터 삭제.
-- **ask 는 설치된 스킬의 `worker-ask.sh` 로 보낸다.** 경로는 이 세션의 `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)에 설치된 `fos-skills@fos-skills` 에서 푼다. 코디네이터와 worker 의 프로필이 다를 수 있고 번들은 갱신되므로 경로를 지시서에 박지 않는다. Bash 호출마다 셸이 새로 뜨니 같은 호출 안에서 푼다.
+- **ask 는 설치된 스킬의 `worker-ask.py` 로 보낸다.** 경로는 이 세션의 `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)에 설치된 `fos-skills@fos-skills` 에서 푼다. 코디네이터와 worker 의 프로필이 다를 수 있고 번들은 갱신되므로 경로를 지시서에 박지 않는다. Bash 호출마다 셸이 새로 뜨니 같은 호출 안에서 푼다.
 
   ```bash
   FROM=""
   QUESTION=""
-  ORCH_SCRIPTS=$(python3 -c 'import json,os;d=os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude");e=sorted(json.load(open(d+"/plugins/installed_plugins.json"))["plugins"]["fos-skills@fos-skills"],key=lambda x:x.get("scope")!="user")[0];print(e["installPath"]+"/orch/scripts")') && bash "$ORCH_SCRIPTS/worker-ask.sh" --from "$FROM" --question "$QUESTION" --run {{RUN_ID}}
+  ORCH_SCRIPTS=$(python3 -c 'import json,os;d=os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude");e=sorted(json.load(open(d+"/plugins/installed_plugins.json"))["plugins"]["fos-skills@fos-skills"],key=lambda x:x.get("scope")!="user")[0];print(e["installPath"]+"/orch/scripts")') && python3 "$ORCH_SCRIPTS/worker-ask.py" --from "$FROM" --question "$QUESTION" --run {{RUN_ID}}
   ```
 
-  위 블록은 `FROM` 과 `QUESTION` 을 채운 뒤 한 번에 붙여 넣는다. `FROM` 은 머리말의 `--from` 값이고 `QUESTION` 은 질문 문장이다. 값을 채우지 않고 돌리면 `worker-ask.sh` 가 사용법 오류(종료 코드 2)로 끝난다. Claude 는 Bash 의 `run_in_background` 로 돌리고 완료 알림을 기다린다. 백그라운드 실행이 없으면 `--timeout-ms` 를 도구 시간 제한보다 짧게 준다. 답은 출력 첫 줄의 `answer: ` 뒤에 있다. 종료 코드 5 면 읽지 않은 코디네이터 메시지가 출력에 있으니 먼저 읽고, 그래도 물어야 하면 같은 명령을 다시 부른다(한 번 보여 준 메시지로는 다시 막지 않는다). 3 이면 첫 줄이 `answer: ` 일 때는 코디네이터가 status 로 보낸 답이고, 아니면 Run 메일함으로 대신 보낸 것이니 `orca orchestration check` 로 답을 읽는다. 4 면 출력의 메시지 ID 로 `--resume` 한다.
+  위 블록은 `FROM` 과 `QUESTION` 을 채운 뒤 한 번에 붙여 넣는다. `FROM` 은 머리말의 `--from` 값이고 `QUESTION` 은 질문 문장이다. 값을 채우지 않고 돌리면 `worker-ask.py` 가 사용법 오류(종료 코드 2)로 끝난다. Claude 는 Bash 의 `run_in_background` 로 돌리고 완료 알림을 기다린다. 백그라운드 실행이 없으면 `--timeout-ms` 를 도구 시간 제한보다 짧게 준다. 답은 출력 첫 줄의 `answer: ` 뒤에 있다. 종료 코드 5 면 읽지 않은 코디네이터 메시지가 출력에 있으니 먼저 읽고, 그래도 물어야 하면 같은 명령을 다시 부른다(한 번 보여 준 메시지로는 다시 막지 않는다). 3 이면 첫 줄이 `answer: ` 일 때는 코디네이터가 status 로 보낸 답이고, 아니면 Run 메일함으로 대신 보낸 것이니 `orca orchestration check` 로 답을 읽는다. 4 면 출력의 메시지 ID 로 `--resume` 한다.
 - 기준 브랜치와의 문서 충돌은 코디네이터가 푼다. push 전에 원격 브랜치를 pull 해 코디네이터 커밋을 먼저 받는다.
 
 ## 끝내기
@@ -53,7 +53,7 @@
 <!-- 지시서가 planning 이나 build-with-teams 를 쓰라고 하면 남긴다. 둘 다 쓰지 않으면 이 절을 지운다. -->
 
 - `planning` 과 `build-with-teams` 는 사용자와 대화하는 세션을 전제로 한다. worker 는 사용자에게 묻지 못하므로 아래로 바꿔 읽는다.
-- 사용자에게 확인하라는 단계는 위 「판단이 필요할 때」 의 기준으로 가른다. 기술 판단은 권장안으로 진행하고, ask 대상만 `worker-ask.sh` 로 묻는다. `AskUserQuestion` 은 쓰지 않는다.
+- 사용자에게 확인하라는 단계는 위 「판단이 필요할 때」 의 기준으로 가른다. 기술 판단은 권장안으로 진행하고, ask 대상만 `worker-ask.py` 로 묻는다. `AskUserQuestion` 은 쓰지 않는다.
 - 설계와 근거 문서는 `{{DESIGN_DIR}}` 에 둔다. `tasks/` 는 만들지 않는다. 설계부터 구현까지 같은 worker 가 하므로 task 파일을 읽을 다음 실행자가 없고, 남기면 머지 뒤 지울 파일만 는다.
 - 구현만 맡겼으면 `build-with-teams` 의 PR 단계는 위 공통 규칙(PR 생성 승인, 본문 파일, 머지하지 않음)을 따른다.
 - 하위 에이전트는 `name` 없이 띄운다. 이름을 주면 팀원으로 등록되고 tmux pane 이 없는 worker 터미널에서 실패한다.

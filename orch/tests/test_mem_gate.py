@@ -1,4 +1,4 @@
-"""mem-gate.sh 를 가짜 memory_pressure, sysctl, sleep 으로 본다."""
+"""mem-gate.py 를 가짜 memory_pressure, sysctl, sleep 으로 본다."""
 
 import os
 import shutil
@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "mem-gate.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "mem-gate.py"
 
 
 class MemGateTest(unittest.TestCase):
@@ -32,7 +32,7 @@ class MemGateTest(unittest.TestCase):
         self.state.write_text("\n".join(str(f) for f in frees) + "\n")
         self.tool("sysctl", f'echo "total = 20480.00M  used = {swap_mb}.25M  free = 100.00M  (encrypted)"')
         full = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", POLL="1", **env)
-        done = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=full)
+        done = subprocess.run(["python3", str(SCRIPT), *args], capture_output=True, text=True, env=full)
         sleeps = (self.tmp / "sleeps").read_text().count("slept") if (self.tmp / "sleeps").exists() else 0
         return done.returncode, done.stdout, done.stderr, sleeps
 
@@ -56,6 +56,27 @@ class MemGateTest(unittest.TestCase):
     def test_command_runs_after_gate_and_keeps_its_exit_code(self):
         code, out, _, _ = self.run_gate([50], 0, "--", "sh", "-c", "echo hi; exit 7")
         self.assertEqual((7, "hi\n"), (code, out))
+
+    def test_missing_command_keeps_shell_exit_status(self):
+        code, _, _, _ = self.run_gate([50], 0, "--", str(self.tmp / "missing"))
+        self.assertEqual(127, code)
+
+    def test_nonexecutable_command_keeps_shell_exit_status(self):
+        command = self.tmp / "no-exec"
+        command.write_text("#!/bin/sh\nexit 0\n")
+        code, _, _, _ = self.run_gate([50], 0, "--", str(command))
+        self.assertEqual(126, code)
+
+    def test_missing_probe_output_refuses_command(self):
+        self.tool("memory_pressure", "exit 1")
+        self.tool("sysctl", "echo invalid")
+        marker = self.tmp / "ran"
+        result = subprocess.run(["python3", str(SCRIPT), "--", "touch", str(marker)],
+                                env=dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}"),
+                                text=True, capture_output=True)
+        self.assertEqual(1, result.returncode)
+        self.assertIn("memory probe failed", result.stderr)
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":

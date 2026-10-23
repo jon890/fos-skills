@@ -1,4 +1,4 @@
-"""make-worktree.sh 를 실제 git 저장소로 검증한다. 원격은 로컬 bare 저장소다."""
+"""make-worktree.py 를 실제 git 저장소로 검증한다. 원격은 로컬 bare 저장소다."""
 
 import json
 import os
@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "make-worktree.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "make-worktree.py"
 DENY_SCRIPT = SCRIPT.with_name("worktree-deny.py")
 DENY = ["Bash(pkill:*)", "Bash(killall:*)", "Bash(browser-driver reset:*)", "Bash(gh pr merge:*)"]
 
@@ -38,7 +38,7 @@ class MakeWorktreeTest(unittest.TestCase):
         return subprocess.run(["git", *args], check=True, capture_output=True, text=True, env=self.env).stdout.strip()
 
     def run_script(self, *args, code=0):
-        done = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=self.env)
+        done = subprocess.run(["python3", str(SCRIPT), *args], capture_output=True, text=True, env=self.env)
         self.assertEqual(done.returncode, code, done.stdout + done.stderr)
         return done.stdout + done.stderr
 
@@ -60,6 +60,38 @@ class MakeWorktreeTest(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0)
         self.assertEqual(self.git("-C", str(self.repo), "status", "--porcelain"), "")
 
+    def test_resume_remote_uses_remote_tip_and_sets_upstream(self):
+        self.git("-C", str(self.repo), "commit", "-q", "--allow-empty", "-m", "PR latest")
+        self.git("-C", str(self.repo), "push", "-q", "origin", "HEAD:feature/x")
+        self.make("--resume-remote")
+        wt = self.repo / "worktrees/repo/x"
+        self.assertEqual(self.git("-C", str(wt), "rev-parse", "HEAD"),
+                         self.git("-C", str(self.repo), "rev-parse", "origin/feature/x"))
+        self.assertNotEqual(self.git("-C", str(wt), "rev-parse", "HEAD"),
+                            self.git("-C", str(self.repo), "rev-parse", "origin/main"))
+        self.assertEqual("origin/feature/x", self.git("-C", str(wt), "rev-parse", "--abbrev-ref", "@{u}"))
+        self.assertEqual("", self.git("-C", str(self.repo), "status", "--porcelain"))
+
+    def test_resume_remote_refuses_missing_remote(self):
+        self.assertIn("이어 받을 원격 브랜치", self.make("--resume-remote", code=1))
+        self.assertFalse((self.repo / "worktrees/repo/x").exists())
+
+    def test_resume_remote_does_not_rewrite_local_branch(self):
+        self.git("-C", str(self.repo), "push", "-q", "origin", "HEAD:feature/x")
+        self.git("-C", str(self.repo), "branch", "feature/x")
+        self.assertIn("로컬 브랜치", self.make("--resume-remote", code=1))
+
+    def test_resume_remote_refuses_deleted_branch_with_stale_tracking_ref(self):
+        self.git("-C", str(self.repo), "push", "-q", "origin", "HEAD:feature/x")
+        self.git("-C", str(self.repo), "fetch", "origin")
+        self.git("--git-dir", str(self.origin), "update-ref", "-d", "refs/heads/feature/x")
+        self.git("-C", str(self.repo), "rev-parse", "--verify", "origin/feature/x")
+        self.assertIn("이어 받을 원격 브랜치", self.make("--resume-remote", code=1))
+        self.assertFalse((self.repo / "worktrees/repo/x").exists())
+        remaining = subprocess.run(["git", "-C", str(self.repo), "rev-parse", "--verify", "feature/x"],
+                                   capture_output=True, env=self.env)
+        self.assertNotEqual(remaining.returncode, 0)
+
     def test_local_settings_are_copied(self):
         (self.repo / ".claude").mkdir()
         (self.repo / ".claude" / "settings.local.json").write_text("{}")
@@ -75,7 +107,7 @@ class MakeWorktreeTest(unittest.TestCase):
         self.make()
         wt = self.repo / "worktrees" / "repo" / "x"
         self.assertEqual(DENY, self.settings()["permissions"]["deny"])
-        # 새로 만든 설정 파일 때문에 워크트리가 dirty 해지면 remove-worktree.sh 가 거부한다
+        # 새로 만든 설정 파일 때문에 워크트리가 dirty 해지면 remove-worktree.py 가 거부한다
         self.assertEqual(self.git("-C", str(wt), "status", "--porcelain"), "")
 
     def test_copied_settings_keep_their_keys_and_get_missing_rules_once(self):

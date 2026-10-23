@@ -595,7 +595,7 @@ class Queue:
             stop(f"{n} 머지 실패")
         log(f"{n} MERGED")
         self.merged.append((n, kind))
-        # 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.sh 가 워크트리 커밋을 원격에 있다고 본다
+        # 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.py 가 워크트리 커밋을 원격에 있다고 본다
         git("fetch", "-q", "origin")
         if not o.keep_branch and not p.cross:
             self.delete_branch()

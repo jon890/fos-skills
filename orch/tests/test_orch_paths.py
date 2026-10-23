@@ -157,7 +157,7 @@ class LegacyTest(RepoCase):
     def test_launch_and_cleanup_entry_points_stop_on_legacy(self):
         (self.repo / ".omc/orch/specs").mkdir(parents=True)
         (self.repo / ".omc/orch/specs/spec-a.md").write_text("브랜치: `feat/a`\n허락: push\n")
-        done = subprocess.run(["bash", str(SCRIPTS / "launch-worker.sh"), "--spec", str(self.repo / ".omc/orch/specs/spec-a.md"),
+        done = subprocess.run(["python3", str(SCRIPTS / "launch-worker.py"), "--spec", str(self.repo / ".omc/orch/specs/spec-a.md"),
                                "--repo", str(self.repo), "--name", "a", "--", "--agent", "claude"],
                               capture_output=True, text=True, env=dict(ENV, ORCA="/nonexistent/orca"))
         self.assertEqual(2, done.returncode, done.stdout + done.stderr)
@@ -220,7 +220,7 @@ class LaunchPrepWithoutOmcTest(RepoCase):
         self.assertIn(str(self.spec), line)
         self.assertIn("push 를 허락했다", line)
 
-        wt = sh("bash", str(SCRIPTS / "make-worktree.sh"), "--repo", str(self.repo), "--spec", str(self.spec),
+        wt = sh("python3", str(SCRIPTS / "make-worktree.py"), "--repo", str(self.repo), "--spec", str(self.spec),
                 "--name", "feat-a")
         self.assertEqual("feat/a", sh("git", "-C", wt, "branch", "--show-current"))
         self.assertEqual(self.repo / ".orch", op.orch_dir(wt))

@@ -216,7 +216,7 @@ class RequireSpecLineTest(unittest.TestCase):
             f"orca orchestration worker-start --task t1 --spec='{self.LINE}'",
             'orca orchestration worker-start --task t1 --spec "$LINE"',
             'orca orchestration worker-start --task t1 --spec "$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC")"',
-            'bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC" --repo /repo --name a -- --task t1',
+            'python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC" --repo /repo --name a -- --task t1',
             'orca orchestration task-create --spec "본문"',
             "git commit -m 'orchestration worker-start --spec 본문 금지'",
             "git commit -F - <<'EOF'\norchestration worker-start --spec 값을 검사한다\nEOF",

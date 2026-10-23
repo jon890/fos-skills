@@ -110,9 +110,46 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(7, subprocess.run(cmd, env=env).returncode)
         self.assertEqual([], list(Path(self.tmp.name).glob('*.json')))
 
+    def test_missing_command_returns_127_and_releases_slot(self):
+        gate = Path(self.tmp.name) / 'gate.sh'
+        gate.write_text('exit 0\n')
+        result = subprocess.run([sys.executable, str(SCRIPT), '--exclusive', '--', str(Path(self.tmp.name) / 'missing')],
+                                env=dict(os.environ, MEM_GATE=str(gate), HEAVY_SLOT_DIR=self.tmp.name),
+                                capture_output=True, text=True)
+        self.assertEqual(127, result.returncode)
+        self.assertEqual([], list(Path(self.tmp.name).glob('*.json')))
+
     def test_nested_call_skips_gate(self):
         env = dict(os.environ, HEAVY_SLOT_HELD='parent', MEM_GATE='/missing')
         self.assertEqual(7, subprocess.run([sys.executable, str(SCRIPT), '--', sys.executable, '-c', 'raise SystemExit(7)'], env=env).returncode)
+
+    def test_nested_signal_stops_payload_before_releasing_slot(self):
+        gate = Path(self.tmp.name) / 'gate.sh'
+        gate.write_text('exit 0\n')
+        marker = Path(self.tmp.name) / 'nested-child'
+        env = dict(os.environ, HEAVY_SLOT_DIR=self.tmp.name, MEM_GATE=str(gate))
+        proc = subprocess.Popen([sys.executable, str(SCRIPT), '--exclusive', '--',
+                                 sys.executable, str(SCRIPT), '--', sys.executable, '-c',
+                                 f'from pathlib import Path; import os,time; Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)'], env=env)
+        try:
+            for _ in range(100):
+                if marker.exists():
+                    break
+                time.sleep(.02)
+            self.assertTrue(marker.exists())
+            proc.terminate()
+            self.assertEqual(143, proc.wait(timeout=5))
+            self.assertFalse(heavy.alive(int(marker.read_text())))
+            self.assertEqual([], list(Path(self.tmp.name).glob('*.json')))
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            if marker.exists():
+                try:
+                    os.kill(int(marker.read_text()), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
 
     def test_signal_stops_child_before_releasing_slot(self):
         gate = Path(self.tmp.name) / 'gate.sh'
