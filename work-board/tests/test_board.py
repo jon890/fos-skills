@@ -13,6 +13,10 @@ from pathlib import Path
 BOARD = Path(__file__).resolve().parents[1] / "bin" / "board.py"
 
 
+def rows(*values):
+    return [{"text": text, "done": done} for text, done in values]
+
+
 class BoardTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -35,27 +39,27 @@ class BoardTest(unittest.TestCase):
         self.write({"id": "up", "status": "doing", "next": "1. 구현\n2. 리뷰 반영\n3. 머지"})
         done = self.run_board("step", "up", "1")
         self.assertEqual(0, done.returncode, done.stderr)
-        self.assertEqual("✓ 1. 구현\n2. 리뷰 반영\n3. 머지", self.item("up")["next"])
+        self.assertEqual(rows(("1. 구현", True), ("2. 리뷰 반영", False), ("3. 머지", False)), self.item("up")["next"])
         self.run_board("step", "up", "1", "--undo")
-        self.assertEqual("1. 구현\n2. 리뷰 반영\n3. 머지", self.item("up")["next"])
+        self.assertEqual(rows(("1. 구현", False), ("2. 리뷰 반영", False), ("3. 머지", False)), self.item("up")["next"])
 
     def test_step_prefers_detail_steps_over_next(self):
         self.write({"id": "g", "status": "doing", "next": "1. 할 일 목록", "details": ["1 a", "2 b"]})
         self.run_board("step", "g", "1")
-        self.assertEqual(["✓ 1 a", "2 b"], self.item("g")["details"])
-        self.assertEqual("1. 할 일 목록", self.item("g")["next"])
+        self.assertEqual(rows(("1 a", True), ("2 b", False)), self.item("g")["details"])
+        self.assertEqual(rows(("1. 할 일 목록", False)), self.item("g")["next"])
 
-    def test_step_turns_checkbox_into_x(self):
+    def test_step_updates_checkbox_done_value(self):
         self.write({"id": "c", "status": "doing", "details": ["[ ] 1. a", "[ ] 2) b"]})
         self.run_board("step", "c", "2")
-        self.assertEqual(["[ ] 1. a", "[x] 2) b"], self.item("c")["details"])
+        self.assertEqual(rows(("1. a", False), ("2) b", True)), self.item("c")["details"])
         self.run_board("step", "c", "2", "--undo")
-        self.assertEqual(["[ ] 1. a", "[ ] 2) b"], self.item("c")["details"])
+        self.assertEqual(rows(("1. a", False), ("2) b", False)), self.item("c")["details"])
 
     def test_step_replaces_in_progress_mark(self):
         self.write({"id": "m", "status": "doing", "details": ["▶ 1 a", "◇ 2 b"]})
         self.run_board("step", "m", "1")
-        self.assertEqual(["✓ 1 a", "◇ 2 b"], self.item("m")["details"])
+        self.assertEqual(rows(("1 a", True), ("2 b", False)), self.item("m")["details"])
 
     def test_step_missing_number_says_how_to_write_steps(self):
         self.write({"id": "x", "status": "doing", "next": "1. a"})
@@ -69,7 +73,7 @@ class BoardTest(unittest.TestCase):
         before = self.file.read_text(encoding="utf-8")
         done = self.run_board("steps", "s")
         self.assertEqual(0, done.returncode, done.stderr)
-        self.assertEqual([{"number": 1, "done": True, "text": "✓ 1 a"}, {"number": 2, "done": False, "text": "[ ] 2. b #7"}],
+        self.assertEqual([{"number": 1, "done": True, "text": "1 a"}, {"number": 2, "done": False, "text": "2. b #7"}],
                          json.loads(done.stdout))
         self.assertEqual(before, self.file.read_text(encoding="utf-8"))
         self.assertNotEqual(0, self.run_board("steps", "none").returncode)
@@ -90,9 +94,35 @@ class BoardTest(unittest.TestCase):
         self.write()
         done = self.run_board("set", "a", "doing", "--next", "1. 구현", "--next", "2. 머지")
         self.assertEqual(0, done.returncode, done.stderr)
-        self.assertEqual("1. 구현\n2. 머지", self.item("a")["next"])
+        self.assertEqual(rows(("1. 구현", False), ("2. 머지", False)), self.item("a")["next"])
         self.assertEqual(0, self.run_board("set", "b", "doing", "--progress", "2/5").returncode)
         self.assertEqual(0, self.run_board("set", "c", "doing", "--detail", "✓ 1 a", "--detail", "2 b").returncode)
+
+    def test_set_normalizes_marks_and_clears_fields(self):
+        result = self.run_board("set", "a", "doing", "--next", "[X] 1. 구현\n[ ] 2. 머지",
+                                "--detail", "✓ 참고", "--detail", "▶ 3 검증", "--detail", "◇ 4 배포")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(rows(("1. 구현", True), ("2. 머지", False)), self.item("a")["next"])
+        self.assertEqual(rows(("참고", True), ("3 검증", False), ("4 배포", False)), self.item("a")["details"])
+        result = self.run_board("set", "a", "wait", "--next", "", "--detail", "")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("next", self.item("a"))
+        self.assertNotIn("details", self.item("a"))
+
+    def test_mixed_formats_migrate_on_write_and_objects_keep_done(self):
+        self.write({"id": "a", "status": "doing", "details": ["[x] 1 a", {"text": "2 b", "done": False},
+                    {"text": "3 c", "done": True}, "참고"]},
+                   {"id": "b", "status": "wait", "next": "✓ 1 d"})
+        before = self.file.read_bytes()
+        self.assertTrue(self.run_board("list").stdout.splitlines()[0].endswith("2/3 (67%)"))
+        self.assertEqual(before, self.file.read_bytes())
+        result = self.run_board("step", "a", "2")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(rows(("1 a", True), ("2 b", True), ("3 c", True), ("참고", False)), self.item("a")["details"])
+        self.assertEqual(rows(("1 d", True)), self.item("b")["next"])
+        before = self.file.read_bytes()
+        self.assertNotEqual(0, self.run_board("step", "a", "9").returncode)
+        self.assertEqual(before, self.file.read_bytes())
 
     def test_progress_must_be_a_fraction(self):
         self.write()

@@ -260,6 +260,14 @@ class FinishFlowTest(unittest.TestCase):
         self.assertIn("FINISH-FAIL", out)
         self.assertTrue(self.wt.exists())
 
+    def test_relative_board_is_resolved_against_repo_not_cwd(self):
+        code, out = self.finish("--board", "boards/main.json", "--board-id", "item-1",
+                                "--board-bin", str(self.bin / "board"))
+        self.assertEqual(0, code, out)
+        board_calls = [c for c in self.calls() if c.startswith("board ")]
+        self.assertEqual(1, len(board_calls), board_calls)
+        self.assertTrue(board_calls[0].endswith(f"--file {self.repo}/boards/main.json"), board_calls)
+
     def test_failed_deploy_does_not_complete_the_task_or_touch_the_board(self):
         self.state["runs"] = run_for((self.merge, "completed", "failure"))
         code, out = self.finish("--deploy-workflow", "deploy.yml", "--deploy-branch", "main", *self.COMPLETE,
@@ -296,7 +304,7 @@ class FinishFlowTest(unittest.TestCase):
         self.assertTrue(self.wt.exists())
 
     def test_config_file_supplies_options_and_command_line_wins(self):
-        cfg = self.tmp / "orch-finish.json"
+        cfg = self.tmp / "config.json"
         cfg.write_text(json.dumps({"finish": {"run": "run_cfg", "deploy_workflow": "deploy.yml", "deploy_branch": "main"},
                                    "cleanup": {"trash": "/nowhere"}}))
         code, out = self.finish("--config", str(cfg), "--run", "run_cli")
@@ -306,8 +314,8 @@ class FinishFlowTest(unittest.TestCase):
         self.assertTrue(any(c.startswith("gh run list --branch main --workflow deploy.yml") for c in self.calls()))
 
     def test_default_config_is_read_from_the_repo(self):
-        (self.repo / ".claude").mkdir()
-        (self.repo / ".claude/orch-finish.json").write_text(json.dumps({"finish": {"run": "run_default"}}))
+        (self.repo / ".orch").mkdir()
+        (self.repo / ".orch/config.json").write_text(json.dumps({"finish": {"run": "run_default"}}))
         code, out = self.finish()
         self.assertEqual(0, code, out)
         self.assertIn("--run run_default", [c for c in self.calls() if c.startswith("sweep ")][0])

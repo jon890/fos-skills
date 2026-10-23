@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "1.47.0"
+  version: "2.2.0"
 ---
 
 # orch
@@ -53,7 +53,8 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
 
 ## 레포 오버레이
 
-`<repo-root>/.claude/orch-overlay.md` 가 있으면 그 저장소의 worker 를 띄우기 전에 **먼저 읽고** 코어보다 우선한다.
+`<repo-root>/.orch/overlay.md` 가 있으면 그 저장소의 worker 를 띄우기 전에 **먼저 읽고** 코어보다 우선한다.
+옛 위치(`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/specs/`)가 남아 있으면 먼저 옮긴다. 방법은 [`references/overlay.md`](references/overlay.md) 의 「옛 구조에서 옮기기」 가 소유한다.
 오버레이는 기준 브랜치, 검증 명령, 머지 전 명령, CI runner 장애 대응, 원격 접속 규칙, 마이그레이션 순서를 소유한다.
 무엇을 적는지는 [`references/overlay.md`](references/overlay.md) 가 소유한다. 없으면 코어 기본값으로 동작한다.
 
@@ -66,7 +67,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | --- | --- | --- | --- |
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 고른 이유가 dispatch 보고에 한 줄로 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint.py` 가 0 으로 끝났다 | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
-| 3 | 띄우기 | `launch-worker.sh` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
+| 3 | 띄우기 | `launch-worker.py` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
 | 4 | 기다리기 | 이 세션의 백그라운드 `wait-important.py` 가 하나만 돌고, 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages.py` 로 읽었고, 깨어날 때마다 `cleanup-sweep.py` 와 `board-sync.py` 를 돌렸다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker.py` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다. 앞 PR 이 머지된 뒤라면 최신 base 와 합친 사본에서 통과했다 | [`references/verification.md`](references/verification.md) |
@@ -85,7 +86,7 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 
 ## 3. 띄우기
 
-원격을 갱신한 뒤 `launch-worker.sh` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
+원격을 갱신한 뒤 `launch-worker.py` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
 `worker-start` 를 직접 부르지 않는다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
@@ -110,4 +111,6 @@ PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 ## 7. 머지와 정리
 
 `merge-with-finish.py` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다.
-머지 큐가 끝나면 `notify-conflicts.py` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.sh` 로만 지운다. 끝난 handoff 산출물은 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다.
+앞 PR 머지마다 뒤 PR 을 최신화하느라 CI 를 다시 기다리는 저장소는 `--up-to-date-when overlap` 으로 겹치지 않는 PR 의 최신화를 생략한다. 쓸 수 있는 저장소와 규칙은 `references/cleanup.md` 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다.
+머지 큐가 끝나면 `notify-conflicts.py` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.py` 로만 지운다. 끝난 handoff 산출물은 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다.
+맡긴 작업은 다른 저장소의 것이어도 머지한 자리에서 정리하고, 다른 세션이 띄운 것은 건드리지 않는다. 원칙과 직접 머지했을 때의 명령은 `references/cleanup.md` 의 「정리」 가 소유한다.

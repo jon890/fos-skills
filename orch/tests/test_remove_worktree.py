@@ -1,4 +1,4 @@
-"""remove-worktree.sh 가 경로를 쥔 프로세스를 기다리는지 실제 git 저장소와 가짜 lsof, ps, sleep 으로 본다."""
+"""remove-worktree.py 가 경로를 쥔 프로세스를 기다리는지 실제 git 저장소와 가짜 lsof, ps, sleep 으로 본다."""
 
 import json
 import os
@@ -9,7 +9,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "remove-worktree.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "remove-worktree.py"
 HOOK = "node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}"
 
 
@@ -58,7 +58,7 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}")
         if hook_wait is not None:
             env["ORCH_HOOK_WAIT"] = str(hook_wait)
-        done = subprocess.run(["zsh", str(SCRIPT), str(self.path), *args], capture_output=True, text=True, env=env)
+        done = subprocess.run(["python3", str(SCRIPT), str(self.path), *args], capture_output=True, text=True, env=env)
         return done.returncode, done.stdout + done.stderr, json.loads(self.state.read_text())["slept"]
 
     def proc(self, pid, command, gone=None, ppid=1):

@@ -44,6 +44,8 @@ def is_target(path: Path, root: Path, include_readme: bool = False) -> bool:
         return True
     if path.name.endswith("-overlay.md") and ".claude" in path.parts:
         return True
+    if path.name == "overlay.md" and ".orch" in path.parts:
+        return True
     if path.name == "SKILL.md":
         return True
     if path.suffix == ".toml" and _inside(path, ".codex", "agents"):

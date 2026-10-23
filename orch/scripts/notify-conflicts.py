@@ -10,7 +10,7 @@
     --repo     대상 저장소 체크아웃. 기본은 현재 디렉터리
     --base     열린 PR 의 base. 기본은 origin/HEAD 가 가리키는 브랜치, 없으면 main
     --run      worker 를 찾을 Orca Run. 없으면 코디네이터에 묶인 Run 이다
-    --state    이미 알린 (PR, base SHA) 를 적는 파일. 기본 <repo>/.omc/state/notify-conflicts.json
+    --state    이미 알린 (PR, base SHA) 를 적는 파일. 기본 <orch 작업 폴더>/state/notify-conflicts.json
     --dry-run  알리지 않고 충돌만 낸다
 
 PR 마다:
@@ -34,6 +34,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import orch_paths  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 GH = os.environ.get("GH", "gh")
@@ -141,8 +144,10 @@ def main(argv=None):
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
     repo = Path(args.repo).resolve()
+    if not args.state:
+        orch_paths.warn_legacy(repo, "notify-conflicts")
     base = (args.base or default_base(repo)).removeprefix("origin/")
-    state_path = Path(args.state) if args.state else repo / ".omc/state/notify-conflicts.json"
+    state_path = Path(args.state) if args.state else orch_paths.path("state", repo) / "notify-conflicts.json"
 
     if git(repo, "fetch", "-q", "origin")[0] != 0:
         print("notify-conflicts: git fetch origin 실패", file=sys.stderr)
@@ -188,7 +193,7 @@ def main(argv=None):
         print("  " + (sent.stdout + sent.stderr).strip().replace("\n", "\n  "))
         if sent.returncode in DELIVERED:
             state[key] = dispatch
-            state_path.parent.mkdir(parents=True, exist_ok=True)
+            orch_paths.make_parent(state_path, repo)
             state_path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             print(f"  {dispatch} 에 알렸다")
         else:

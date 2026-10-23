@@ -1,10 +1,10 @@
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
 //   1. 수동 항목: 저장소의 board.json(BOARD_PATHS 순서로 찾는다). 갱신은 플러그인의 bin/board.py 가 한다.
-//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?, details?: string[] }] }
+//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[] }] }
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
 //      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
-//      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, 끝나면 「✓ 1 …」 나 「[x] 1. …」)을 세어 그린다.
+//      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, done 값이 true 면 완료)을 세어 그린다.
 //      details 에 단계 줄이 있으면 그것을, 없으면 next 의 줄을 센다. 참고 줄은 세지 않는다.
 //      progress(「끝낸 단계/전체 단계」, 예: 7/10)가 있으면 그 값을 우선한다.
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
@@ -148,17 +148,26 @@ export function workerLine(worker, prs) {
 // 단계 줄: 앞 표시(끝냄 ✓ [x], 안 끝냄 [ ] ▶ ◇)와 번호. bin/board.py 의 STEP 과 같은 규칙이다
 const STEP = /^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s/
 const DONE_MARKS = ['✓', '[x]', '[X]']
+const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 
-// 단계 줄이면 { number, done } 을, 아니면 null 을 돌려준다
-export function parseStep(line) {
-  const match = STEP.exec(String(line))
-  return match ? { number: Number(match[2]), done: DONE_MARKS.includes(match[1]) } : null
+// 옛 문자열의 앞 표시를 떼고 객체의 done 값은 그대로 쓴다.
+function normalizeLine(line) {
+  const object = line && typeof line === 'object'
+  const text = object ? String(line.text || '') : String(line)
+  const mark = LEAD_MARK.exec(text)
+  return { text: text.replace(LEAD_MARK, ''),
+    done: object ? line.done === true : Boolean(mark && DONE_MARKS.includes(mark[1])) }
 }
 
-// 끝난 줄인지. 단계 줄이 아닌 참고 줄도 「✓」 로 시작하면 끝난 줄로 본다
-function finishedLine(text) {
-  const step = parseStep(text)
-  return step ? step.done : text.startsWith('✓')
+function normalizeLines(value) {
+  return (Array.isArray(value) ? value : String(value || '').split('\n')).map(normalizeLine)
+}
+
+// 단계 줄이면 { number, done } 을, 아니면 null 을 돌려준다.
+export function parseStep(line) {
+  const normalized = normalizeLine(line)
+  const match = STEP.exec(normalized.text)
+  return match ? { number: Number(match[2]), done: normalized.done } : null
 }
 
 // 항목의 details 와 next 를 줄마다 나눠 상태를 붙인다. 빈 줄은 뺀다
@@ -168,17 +177,17 @@ function finishedLine(text) {
 // 거기 없으면 다른 쪽의 끝나지 않은 첫 단계, 단계 줄이 하나도 없으면 첫 참고 줄을 지금 단계로 둔다
 // 단계가 모두 끝났으면 지금 단계는 없다
 export function stepRows(item) {
-  const details = Array.isArray(item.details) ? item.details.map(String) : []
+  const details = normalizeLines(item.details)
   const counted = stepProgress(details) ? 'details' : 'next'
   const rows = [
-    ...details.map((text) => ({ text, from: 'details' })),
-    ...String(item.next || '').split('\n').map((text) => ({ text, from: 'next' })),
+    ...details.map((line) => ({ ...line, from: 'details' })),
+    ...normalizeLines(item.next).map((line) => ({ ...line, from: 'next' })),
   ]
     .filter((row) => row.text.trim())
     .map((row) => {
       const text = row.text.trim()
       const step = Boolean(parseStep(text))
-      return { text, state: finishedLine(text) ? 'done' : step ? 'todo' : 'note', step, counted: row.from === counted }
+      return { text, state: row.done ? 'done' : step ? 'todo' : 'note', step, counted: row.from === counted }
     })
   let current = rows.findIndex((row) => row.state === 'todo' && row.counted)
   if (current < 0) current = rows.findIndex((row) => row.state === 'todo')
@@ -207,7 +216,6 @@ export function stepSummary(rows, progress) {
 
 // 단계 줄의 표시 칸 폭과 그 칸에 그릴 표시. 본문의 앞 표시(✓ [x] [ ] ▶ ◇)는 이 칸으로 옮긴다
 export const STEP_MARK_WIDTH = 2
-const LEAD_MARK = /^(?:✓|\[[xX ]\]|▶|◇)\s*/
 export function stepMark(row) {
   return row.state === 'done' ? '✓' : row.state === 'now' ? '▶' : ' '
 }
@@ -229,7 +237,7 @@ const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
 export function itemProgress(item) {
   const match = PROGRESS.exec(String(item.progress || ''))
   if (match && Number(match[2]) > 0) return Math.min(Number(match[1]), Number(match[2])) + '/' + Number(match[2])
-  return stepProgress(item.details) || stepProgress(String(item.next || '').split('\n'))
+  return stepProgress(item.details) || stepProgress(normalizeLines(item.next))
 }
 
 // 진행 중 항목들의 끝낸 단계 합과 전체 단계 합. missing 은 진행률이 없는 진행 중 항목 수다
@@ -425,7 +433,7 @@ function ago(at) {
 export const START_PROMPT = [
   '오늘 작업을 시작하자.',
   '1. .omc/board.json 을 오늘 기준으로 갱신하고 완료(done) 항목은 비운다.',
-  '2. 현재 저장소의 남은 워크트리, 세션, 머지된 브랜치를 그 저장소 .claude/orch-overlay.md 의 정리 규칙대로 정리한다.',
+  '2. 현재 저장소의 남은 워크트리, 세션, 머지된 브랜치를 그 저장소 .orch/overlay.md 의 정리 규칙대로 정리한다.',
   '3. orchestration 감시(orch-watch)가 꺼져 있으면 다시 띄우고, 쌓인 worker 보고를 처리한다.',
   '4. 열린 PR 의 CI 와 리뷰 상태, 막힌 것, 내가 정해야 할 것을 짧게 정리해 보고하고, 정할 것은 바로 물어본다.',
 ].join('\n')

@@ -8,7 +8,7 @@
     dispatch 가 살아 있다   그 worker 의 마지막 메시지(없으면 --reply-to)에 `reply` 하고 `nudge-worker.py` 로 깨운다.
                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」 로 거부하면
                             다음 후보 메시지로 한 번 더 시도한다
-    끝났고 터미널이 남았다  `--spec` 의 지시서로 `launch-worker.sh --worktree <그 워크트리> -- --terminal <그 터미널>` 을 부른다.
+    끝났고 터미널이 남았다  `--spec` 의 지시서로 `launch-worker.py --worktree <그 워크트리> -- --terminal <그 터미널>` 을 부른다.
                             agent_unconfigured(종료 코드 3)이면 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다
     끝났는데 아직 일한다    `--spec` 이 없고 그 터미널 화면이 작업 중이면 `nudge-worker.py --text` 로 본문을 넣고,
                             Task 기록에 묶이지 않는다고 경고한다. worker 가 중간에 worker_done 을 보내 dispatch 가
@@ -45,13 +45,14 @@ import argparse
 import json
 import os
 import subprocess
+from orch_process import script_command
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ORCA = os.environ.get("ORCA", "orca")
 NUDGE_WORKER = os.environ.get("NUDGE_WORKER", str(HERE / "nudge-worker.py"))
-LAUNCH_WORKER = os.environ.get("LAUNCH_WORKER", str(HERE / "launch-worker.sh"))
+LAUNCH_WORKER = os.environ.get("LAUNCH_WORKER", str(HERE / "launch-worker.py"))
 # 이 상태의 dispatch 는 reply 를 받는다. 나머지(completed, failed 같은 것)는 끝난 것이다
 ACTIVE = {"pending", "dispatched", "running"}
 # 이미 답한 question 에 다시 reply 하면 orca 가 이 문구로 거부한다
@@ -191,7 +192,7 @@ def main(argv=None):
 
     if not alive:
         print(f"ended: {args.dispatch} 가 끝났고({status}) 터미널도 없다. "
-              f"후속 지시서를 써서 launch-worker.sh --spec <지시서> --worktree {worktree or '<워크트리>'} 로 새로 띄운다")
+              f"후속 지시서를 써서 launch-worker.py --spec <지시서> --worktree {worktree or '<워크트리>'} 로 새로 띄운다")
         return 3
     if not args.spec and not body:
         print("send-to-worker: 끝난 dispatch 에 보낼 글이 없다. --body 나 --body-file 을 주거나, 이어 쓸 후속 지시서를 --spec 으로 준다",
@@ -212,7 +213,7 @@ def main(argv=None):
     if not worktree:
         print(f"send-to-worker: {args.dispatch} 의 워크트리를 몰라 이어 띄우지 못한다")
         return 1
-    cmd = ["bash", LAUNCH_WORKER, "--spec", args.spec, "--worktree", worktree, *(["--run", run] if run else []),
+    cmd = [*script_command(LAUNCH_WORKER), "--spec", args.spec, "--worktree", worktree, *(["--run", run] if run else []),
            "--", "--terminal", handle]
     print(f"relaunch: 끝난 {args.dispatch} 의 터미널 {handle} 에 새 Task 로 띄운다", flush=True)
     code = subprocess.run(cmd).returncode
@@ -232,7 +233,7 @@ def main(argv=None):
             print(f"send-to-worker: 사용자가 보유하거나 해제한 터미널({resource.get('ownershipState')})은 닫지 않는다. "
                   f"이 세션이 띄운 worker 의 터미널이 맞으면 화면을 확인한 뒤 코디네이터가 직접 닫고 새로 띄운다: "
                   f"orca terminal read --terminal {handle} 로 확인, orca terminal close --terminal {handle} 로 닫기, "
-                  f"launch-worker.sh --spec {args.spec} --worktree {worktree} (--terminal 없이) 로 띄우기")
+                  f"launch-worker.py --spec {args.spec} --worktree {worktree} (--terminal 없이) 로 띄우기")
             return 1
         owner = resource.get("ownerDispatchId")
         if owner and owner != args.dispatch:
@@ -257,7 +258,7 @@ def main(argv=None):
     except OrcaFailed as exc:
         print(f"send-to-worker: {exc}")
         return 5
-    fresh = ["bash", LAUNCH_WORKER, "--spec", args.spec, "--worktree", worktree,
+    fresh = [*script_command(LAUNCH_WORKER), "--spec", args.spec, "--worktree", worktree,
              *(["--run", run] if run else []), "--"]
     for key in ("agent", "model", "effort"):
         if settings.get(key):

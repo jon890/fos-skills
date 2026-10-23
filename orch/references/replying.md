@@ -9,7 +9,7 @@
 | 살아 있다 | 그 worker 의 마지막 메시지에 `reply` 하고 `nudge-worker.py` 로 깨운다. 이미 답한 question 은 건너뛴다 |
 | 끝났고 터미널이 남았다 | `--spec` 의 후속 지시서로 그 터미널에 새 Task 를 띄운다. `agent_unconfigured` 이면 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. `--spec` 이 없으면 종료 코드 3 |
 | 끝났는데 아직 일한다 | `--spec` 이 없고 화면이 작업 중이면 `--body` 를 그 터미널에 넣고, Task 기록에 묶이지 않는다고 경고한다 |
-| 끝났고 터미널도 없다 | 종료 코드 3. `launch-worker.sh --worktree` 로 새로 띄운다 |
+| 끝났고 터미널도 없다 | 종료 코드 3. `launch-worker.py --worktree` 로 새로 띄운다 |
 
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
 
@@ -53,7 +53,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 
 ### 이어 쓸 수 없는 터미널
 
-**`worker-start --terminal` 은 떠 있는 에이전트를 이어 쓰므로 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다.** `launch-worker.sh` 는 이 조합을 Orca 에 보내기 전에 거부한다.
+**`worker-start --terminal` 은 떠 있는 에이전트를 이어 쓰므로 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다.** `launch-worker.py` 는 이 조합을 Orca 에 보내기 전에 거부한다.
 
 | 오류 | 뜻 | 할 일 |
 | --- | --- | --- |
@@ -70,20 +70,20 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 1. `orca orchestration worker-show --dispatch <끝난 dispatch> --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
 2. `orca terminal read --terminal <handle>` 로 화면이 비어 있고 입력을 기다리는지 본다. 사용자가 쓰는 중이면 닫지 않는다
 3. 이 세션이 띄운 것이 맞으면 `orca terminal close --terminal <handle>` 로 닫는다
-4. `launch-worker.sh --spec <후속 지시서> --worktree <워크트리>` 를 `--terminal` 없이 부른다
+4. `launch-worker.py --spec <후속 지시서> --worktree <워크트리>` 를 `--terminal` 없이 부른다
 
-`send-to-worker.py --spec` 은 `launch-worker.sh` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 `startOptions.launch.effective` 설정으로 새 worker 를 띄운다. effective 에 없는 값은 requested 에서 읽는다. `--agent`, `--model`, `--effort` 로 새 실행의 설정을 바꿀 수 있다.
+`send-to-worker.py --spec` 은 `launch-worker.py` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 `startOptions.launch.effective` 설정으로 새 worker 를 띄운다. effective 에 없는 값은 requested 에서 읽는다. `--agent`, `--model`, `--effort` 로 새 실행의 설정을 바꿀 수 있다.
 
 에이전트나 모델을 모르면 터미널을 남기고 해당 인자를 요구한다. 터미널 소유 dispatch 가 바뀌었거나 활성 dispatch 가 붙었으면 닫지 않는다. 닫기 실패나 다른 실행 오류는 자동 재시도하지 않는다. 워크트리 파일은 보존되지만 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
 
-`launch-worker.sh` 를 직접 부르면 종료 코드 3 과 안내만 낸다. 그 경우 아래 순서로 복구한다.
+`launch-worker.py` 를 직접 부르면 종료 코드 3 과 안내만 낸다. 그 경우 아래 순서로 복구한다.
 
 **새 worker 로 이어받는 순서**
 
 1. 앞 worker 의 작업이 push 됐는지 본다. `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD`, `git -C "$WORKTREE" status --short`, `git ls-remote origin "$BRANCH"` 를 본다. 커밋하지 않은 변경은 워크트리에 남아 있으니 버리지 않는다
 2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `orca terminal close --terminal "$OLD_TERMINAL_HANDLE"` 로 닫는다. 다른 세션이나 사용자의 터미널은 닫지 않는다
 3. 후속 지시서에 이어받는 상태를 적는다. 끝난 커밋, 커밋 안 된 변경, 앞 worker 의 마지막 status 다. 새 worker 는 앞 대화를 모른다
-4. 같은 워크트리에 `--terminal` 없이 `launch-worker.sh --worktree "$WORKTREE" ... -- --agent ... --model ... --effort ...` 로 띄운다
+4. 같은 워크트리에 `--terminal` 없이 `launch-worker.py --worktree "$WORKTREE" ... -- --agent ... --model ... --effort ...` 로 띄운다
 
 worker 세션이 커밋 전에 끝나 dispatch 가 `failed`, liveness 가 `exited` 가 된 경우도 같은 순서다. 커밋하지 않은 변경이 워크트리에 남으므로 새 worker 가 이어받아 끝낸다.
 

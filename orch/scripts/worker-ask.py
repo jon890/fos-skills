@@ -75,6 +75,7 @@ def main(argv=None):
     result = run(orca, 'orchestration', 'send', '--from', a.sender, '--to', f'run:{run_id}',
                  '--type', 'question', '--subject', '질문 (ask 대신 보냄)', '--body', body, '--json')
     print(result.stdout, end='')
+    print(result.stderr, end='', file=sys.stderr)
     if result.returncode:
         print('worker-ask: 대신 보내기도 실패했다', file=sys.stderr)
         return 2

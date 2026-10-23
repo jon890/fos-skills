@@ -4,10 +4,10 @@
 긴 지시는 앞부분도 중간도 잘려 도착한다.
 worker 는 되묻지 않으면 받은 만큼만 하고 완료로 보고한다. 후속 지시도 짧게 보내거나 새 파일로 준다.
 
-지시서 폴더의 기본은 `<repo>/.omc/orch/specs/` 다. 오버레이가 다른 폴더를 정하면 그것을 따른다.
+지시서 폴더의 기본은 `<repo>/.orch/specs/` 다(`orch_paths.py specs`). 오버레이가 다른 폴더를 정하면 그것을 따른다.
 
 - 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.py --specs-dir` 가 이 이름을 보고 머지 뒤 지시서를 지운다.
-- 쓰기 전에 `git -C <repo> check-ignore -q <경로>` 로 무시되는지 본다. 무시되지 않으면 공유되는 `.gitignore` 를 고치지 않고 로컬 전용 `.git/info/exclude` 에 더한다.
+- 폴더는 `python3 "$SKILL_DIR/scripts/orch_paths.py" --repo "$REPO" --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
 - scratchpad 에 쓰지 않는다. **실측으로** 코디네이터 세션이 다시 시작되면서 scratchpad 가 정리돼 전날 쓴 지시서가 사라졌다. worker 는 받은 경로를 계속 읽으므로, 도중에 사라지면 읽을 곳을 잃는다.
 
 **worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 첫 줄에서 그 파일을 가리킨다.**
@@ -23,7 +23,7 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 ## 넣을 것
 
 - 브랜치 이름을 `` 브랜치: `feature/x` `` 형식의 줄로 적는다. 백틱 안이 이름이고, 같은 줄에 다른 말이 있어도 된다.
-  `make-worktree.sh` 가 이 줄을 읽어 워크트리를 만들고, 6단계가 push 한 원격 브랜치를 이 값과 대조한다.
+  `make-worktree.py` 가 이 줄을 읽어 워크트리를 만들고, 6단계가 push 한 원격 브랜치를 이 값과 대조한다.
   예전에 머지된 PR 의 브랜치 이름은 다시 쓰지 않는다. 스크립트가 원격에 남은 같은 이름은 거부하지만, 지워진 옛 이름은 알지 못한다
 - 「push 는 `git push -u origin HEAD` 로 한다. 브랜치 이름을 바꾸지 않는다」.
   워크트리는 지시서의 이름으로 만들어져 있고, 다른 이름으로 올리면 6단계 대조에서 걸린다
@@ -78,7 +78,7 @@ python3 "$SKILL_DIR/scripts/spec-lint.py" --repo "$REPO" --check-overlay "$SPECS
 ```
 
 종료 코드 1 이면 발견 줄을 보고 지시서를 고친다. `경로` 경고는 새로 만들 파일이면 그대로 둔다.
-`오버레이` 발견은 오버레이나 `orch-finish.json` 이 `origin/<기준 브랜치>` 에 없는 파일을 가리킨다는 뜻이라 그 파일을 고친다. 기준 브랜치가 main 이 아니면 `--base` 로 준다.
+`오버레이` 발견은 오버레이나 `.orch/config.json` 이 `origin/<기준 브랜치>` 에 없는 파일을 가리킨다는 뜻이라 그 파일을 고친다. 기준 브랜치가 main 이 아니면 `--base` 로 준다.
 담당 범위는 지시서에 `` 담당: `src/a/**`, `docs/a.md` `` 줄로 적는다. 그 줄이 없으면 겹침 검사가 그 지시서를 건너뛴다.
 금지 문구가 든 줄이 정말 필요하면 그 줄을 `예외:` 로 시작한다.
 코디네이터 소유 경로, 소유 계약, 저장소의 금지 문구는 오버레이의 `## spec-lint` 절에 둔다. 형식은 스크립트 머리 주석이 소유한다.

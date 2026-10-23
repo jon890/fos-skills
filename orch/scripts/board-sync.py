@@ -8,14 +8,14 @@ PR 상태나 커밋 같은 자동 줄은 읽기 어렵고 단계와 섞여 보�
     - MERGED 여도 끝나지 않은 단계가 2개 이상이면 done 으로 바꾸지 않는다. 그 PR 번호(#N)가 적힌 단계만
       끝내고 pr 칸을 비운다. 머지 뒤 검증이나 후속 PR 이 남은 항목을 끝난 것으로 보지 않기 위해서다
     - 단계 줄 판정과 끝내기는 보드 명령에 맡긴다. `steps` 로 단계 목록을 받고 `step <id> <n>` 으로 끝낸다.
-      이 스크립트는 단계 줄 형식(번호 점, ✓, [x], [ ])을 알지 못한다
+      단계 줄 판정은 이 스크립트에서 하지 않는다. 옛 자동 줄을 지울 때만 완료 값을 CLI 입력 표시로 전달한다
     - 예전 버전이 남긴 「자동: 」 줄은 지운다
     - --goal 을 주면 끝에 goal-progress.py 로 목표 진행률을 다시 센다
 
 사용법:
     board-sync.py [--board PATH] [--repo DIR] [--goal GOAL_ID --goal-items FILE] [--dry-run]
 
-    --board       board.json. 기본은 git 루트의 .omc/handoffs/board.json, 없으면 .omc/board.json
+    --board       board.json. 기본은 work-board 의 board.py 가 정한 위치
     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
     --goal, --goal-items
@@ -38,6 +38,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import orch_paths  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 BOARD_BIN = HERE.parents[1] / "work-board/bin/board.py"
 LEGACY_AUTO = "자동: "
@@ -54,9 +57,7 @@ def sh(*cmd, cwd=None):
 
 
 def default_board():
-    root = Path(sh("git", "rev-parse", "--show-toplevel") or Path.cwd())
-    legacy = root / ".omc/handoffs/board.json"
-    return legacy if legacy.exists() else root / ".omc/board.json"
+    return orch_paths.board_path()
 
 
 def pr_merged(pr, repo):
@@ -92,6 +93,13 @@ def finish_plan(steps, pr=""):
     return [step["number"] for step in left], True
 
 
+def detail_argument(line):
+    """CLI 입력으로 돌려줄 때 완료 값을 옛 입력 표시로 전달한다."""
+    if isinstance(line, dict):
+        return ("✓ " if line.get("done") is True else "") + line["text"]
+    return line
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--board")
@@ -122,12 +130,12 @@ def main(argv=None):
             continue
         merged = pr_merged(item["pr"], repo) if item.get("pr") else False
         old = item.get("details") or []
-        kept = [d for d in old if not d.startswith(LEGACY_AUTO)]
+        kept = [d for d in old if not (d["text"] if isinstance(d, dict) else d).startswith(LEGACY_AUTO)]
         if kept == old and not merged:
             continue
         cmds = []
         if kept != old:
-            cmds.append(["set", item["id"]] + [arg for d in kept or [""] for arg in ("--detail", d)])
+            cmds.append(["set", item["id"]] + [arg for d in kept or [""] for arg in ("--detail", detail_argument(d))])
         finish = False
         if merged:
             steps = board_steps(args.board_bin, item["id"], board)

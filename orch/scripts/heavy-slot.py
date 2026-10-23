@@ -2,7 +2,7 @@
 """같은 PC의 무거운 검사를 FIFO 대기열에서 실행한다.
 
 사용: heavy-slot.py [--exclusive] [--slot-dir DIR] [--slots N] -- 명령...
-HEAVY_SLOT_DIR의 기본값은 TMPDIR/orch-heavy-UID, HEAVY_SLOTS는 3이다.
+HEAVY_SLOT_DIR의 기본값은 주 checkout의 .orch/state/heavy-slot, HEAVY_SLOTS는 3이다.
 HEAVY_EXCLUSIVE=1이면 혼자 실행하며 HEAVY_POLL은 재확인 간격(기본 5초)이다.
 가벼운 검사는 대기열을 거치지 않고 중첩 호출은 HEAVY_SLOT_HELD를 물려받는다.
 자리를 잡은 뒤 형제 mem-gate.py를 실행한다. MEM_GATE로 경로를 바꾼다.
@@ -18,9 +18,9 @@ import re
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from orch_process import script_command
+import orch_paths
 
 LIGHT = [
     r'^(pnpm( -s)?( exec)? )?(tsc|oxlint|oxfmt)\b',
@@ -70,11 +70,14 @@ class Queue:
     def rows(self):
         rows = []
         for entry in self.root.glob('*.json'):
-            row = json.loads(entry.read_text())
-            if not alive(row['pid']):
+            pid = int(entry.stem)
+            if not alive(pid):
                 entry.unlink()
-            else:
-                rows.append(row)
+                continue
+            row = json.loads(entry.read_text())
+            if row['pid'] != pid:
+                raise ValueError(f'queue PID mismatch: {entry}')
+            rows.append(row)
         return sorted(rows, key=lambda r: (r['ticket'], r['pid']))
 
     def register(self, exclusive):
@@ -108,6 +111,18 @@ class Queue:
             self.entry.unlink(missing_ok=True)
 
 
+def exec_command(cmd):
+    """대기열을 다시 잡지 않는 호출은 같은 프로세스로 명령을 이어받는다."""
+    try:
+        os.execvp(cmd[0], cmd)
+    except FileNotFoundError:
+        print(f'heavy-slot: command not found: {cmd[0]}', file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f'heavy-slot: command is not executable: {cmd[0]}', file=sys.stderr)
+        return 126
+
+
 def run_command(cmd, env=None):
     try:
         child = subprocess.Popen(cmd, env=env, start_new_session=True)
@@ -121,11 +136,17 @@ def run_command(cmd, env=None):
         code = child.wait()
     except BaseException:
         # Keep the slot until the command has really stopped.
-        os.killpg(child.pid, signal.SIGTERM)
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         try:
             child.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            os.killpg(child.pid, signal.SIGKILL)
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             child.wait()
         raise
     return code if code >= 0 else 128 - code
@@ -138,7 +159,7 @@ def interrupted(signum, _frame):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--exclusive', action='store_true')
-    parser.add_argument('--slot-dir', default=os.environ.get('HEAVY_SLOT_DIR', str(Path(tempfile.gettempdir()) / f'orch-heavy-{os.getuid()}')))
+    parser.add_argument('--slot-dir', default=os.environ.get('HEAVY_SLOT_DIR'))
     parser.add_argument('--slots', type=int, default=os.environ.get('HEAVY_SLOTS', '3'))
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -148,11 +169,13 @@ def main(argv=None):
     if sys.platform == 'darwin':
         os.environ['TMPDIR'] = str(Path(os.environ.get('TMPDIR', '/tmp')).resolve()) + '/'
     if os.environ.get('HEAVY_SLOT_HELD'):
-        return run_command(cmd)
+        return exec_command(cmd)
     exclusive = args.exclusive or os.environ.get('HEAVY_EXCLUSIVE') == '1' or classify(cmd) == 'exclusive'
     if not exclusive and classify(cmd) == 'light':
-        return run_command(cmd)
-    queue = Queue(args.slot_dir, args.slots)
+        return exec_command(cmd)
+    if not args.slot_dir and not orch_paths.require_migrated(script='heavy-slot', bypass='--slot-dir 로 공유할 대기열을 직접 준다'):
+        return 2
+    queue = Queue(args.slot_dir or orch_paths.ensure('heavy-slot'), args.slots)
     signal.signal(signal.SIGINT, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
     try:

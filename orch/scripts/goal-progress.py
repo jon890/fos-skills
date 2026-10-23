@@ -3,7 +3,7 @@
 
 보드는 work-board 형식의 board.json 이다. 항목마다 id 와 status(goal, decide, doing, wait, done)가 있다.
 추적 항목을 주지 않으면 목표 항목 자신의 단계 줄을 센다. 단계 줄은 숫자로 시작하고(「1. …」),
-끝나면 「✓ 」 가 앞에 붙는다. 숫자로 시작하지 않는 줄은 참고 줄이라 세지 않는다.
+객체의 done 이 true 면 끝난 단계다. 옛 문자열의 「✓ 」 도 읽는다. 숫자로 시작하지 않는 줄은 참고 줄이라 세지 않는다.
 끝난 단계 수와 전체 단계 수를 목표 항목에 `--progress 끝낸수/전체수` 로 넣는다.
 추적 항목을 주면(하위 호환) 그 항목 중 status 가 done 인 수를 센다.
 
@@ -12,7 +12,7 @@
     goal-progress.py GOAL_ID ITEM_ID [ITEM_ID ...]
     goal-progress.py GOAL_ID --items-file FILE      # 한 줄에 id 하나. 빈 줄과 # 줄은 건너뛴다
     옵션:
-      --board PATH       board.json 경로. 기본은 git 루트의 .omc/handoffs/board.json, 없으면 .omc/board.json
+      --board PATH       board.json 경로. 기본은 work-board 의 board.py 가 정한 위치
       --board-bin PATH   항목을 고치는 명령. 기본은 환경 변수 BOARD_BIN, 없으면 이 저장소의 work-board/bin/board.py
       --details          목표 항목의 하위 줄도 추적 항목마다 하나씩 다시 쓴다. 끝난 항목은 「✓ 」 를 앞에 붙인다
       --dry-run          보드를 고치지 않고 계산 결과만 낸다
@@ -33,18 +33,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import orch_paths  # noqa: E402
+
 DONE_MARK = "✓ "
 BOARD_BIN = Path(__file__).resolve().parents[2] / "work-board/bin/board.py"
 
 
 def default_board() -> Path:
-    try:
-        root = Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True,
-                                            stderr=subprocess.DEVNULL).strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        root = Path.cwd()
-    legacy = root / ".omc/handoffs/board.json"
-    return legacy if legacy.exists() else root / ".omc/board.json"
+    return orch_paths.board_path()
 
 
 def read_items_file(path: str) -> list[str]:
@@ -76,10 +73,12 @@ def progress(by_id: dict[str, dict], tracked: list[str]) -> tuple[int, list[str]
 STEP = re.compile(r"^(✓ )?\d+")
 
 
-def step_progress(goal: dict) -> tuple[int, list[str]]:
+def step_progress(goal: dict) -> tuple[int, list[str | dict]]:
     """(끝낸 수, 단계 줄) 을 돌려준다. 숫자로 시작하지 않는 줄은 세지 않는다."""
-    steps = [d for d in goal.get("details") or [] if STEP.match(d)]
-    return sum(d.startswith(DONE_MARK) for d in steps), steps
+    steps = [d for d in goal.get("details") or []
+             if STEP.match(d["text"] if isinstance(d, dict) else d)]
+    return sum(d.get("done") is True if isinstance(d, dict) else d.startswith(DONE_MARK)
+               for d in steps), steps
 
 
 def main(argv: list[str] | None = None) -> int:

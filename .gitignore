@@ -1,6 +1,10 @@
 # OMC 세션 상태
 .omc/
 
+# orch 작업 폴더 — 저장소 오버레이만 추적한다
+/.orch/*
+!/.orch/overlay.md
+
 # Python 바이트코드 캐시 — 테스트 실행 부산물
 __pycache__/
 *.pyc

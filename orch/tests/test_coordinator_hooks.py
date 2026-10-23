@@ -199,12 +199,12 @@ class WorkerFirstScreenSendTest(unittest.TestCase):
 
 class RequireSpecLineTest(unittest.TestCase):
     HOOK = "require-spec-line.py"
-    LINE = "지시서 /repo/.omc/specs/spec-a.md 를 끝까지 읽고 수행한다. push 는 허락했다. 못 읽으면 escalation 으로 알린다."
+    LINE = "지시서 /repo/.orch/specs/spec-a.md 를 끝까지 읽고 수행한다. push 는 허락했다. 못 읽으면 escalation 으로 알린다."
 
     def test_raw_spec_values_are_denied(self):
         for command in (
             'orca orchestration worker-start --task t1 --spec "a.ts 를 고치고 PR 을 연다"',
-            "orca orchestration worker-start --task t1 --spec /repo/.omc/specs/spec-a.md",
+            "orca orchestration worker-start --task t1 --spec /repo/.orch/specs/spec-a.md",
             "orca orchestration worker-start --task t1 --spec '지시서 /repo/spec-a.md 를 읽는다'",
         ):
             with self.subTest(command=command):
@@ -216,7 +216,7 @@ class RequireSpecLineTest(unittest.TestCase):
             f"orca orchestration worker-start --task t1 --spec='{self.LINE}'",
             'orca orchestration worker-start --task t1 --spec "$LINE"',
             'orca orchestration worker-start --task t1 --spec "$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC")"',
-            'bash "$SKILL_DIR/scripts/launch-worker.sh" --spec "$SPEC" --repo /repo --name a -- --task t1',
+            'python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC" --repo /repo --name a -- --task t1',
             'orca orchestration task-create --spec "본문"',
             "git commit -m 'orchestration worker-start --spec 본문 금지'",
             "git commit -F - <<'EOF'\norchestration worker-start --spec 값을 검사한다\nEOF",

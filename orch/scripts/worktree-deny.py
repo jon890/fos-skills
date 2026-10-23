@@ -6,7 +6,7 @@
 `browser-driver reset` 이 다른 worker 의 탭을 닫았다(실측 5건). 지시서 문장으로는 하위 에이전트까지 닿지 않아
 권한 규칙으로 막는다. 자기가 띄운 프로세스는 PID 로 `kill` 한다.
 `gh pr merge` 도 막는다. 머지는 코디네이터가 하는데, 지시서에 「머지하지 않는다」 를 적어도 worker 가 PR 다섯 개를
-직접 머지했다(실측). 코디네이터는 기본 체크아웃에서 `merge-queue.sh` 로 머지하므로 이 규칙에 닿지 않는다.
+직접 머지했다(실측). 코디네이터는 기본 체크아웃에서 `merge_queue.py` 로 머지하므로 이 규칙에 닿지 않는다.
 
 사용법:
     worktree-deny.py <워크트리>
@@ -50,7 +50,7 @@ def main(argv=None):
         deny.extend(added)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    # 새로 만든 설정 파일이 untracked 로 남으면 remove-worktree.sh 가 커밋 안 된 변경으로 거부한다
+    # 새로 만든 설정 파일이 untracked 로 남으면 remove-worktree.py 가 커밋 안 된 변경으로 거부한다
     ignored = subprocess.run(["git", "-C", str(wt), "check-ignore", "-q", REL])
     if ignored.returncode != 0:
         common = subprocess.run(["git", "-C", str(wt), "rev-parse", "--path-format=absolute", "--git-common-dir"],

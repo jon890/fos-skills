@@ -1,6 +1,6 @@
 # 6. 완료 검증
 
-머지 큐(`merge-queue.sh`, `merge-with-finish.py`)는 PR 의 `statusCheckRollup` 으로 CI 를 판정한다. 최근 실행 목록을 가져온 뒤 커밋을 찾는 `gh run list --commit` 은 사용하지 않는다. 별도 스크립트에서 커밋의 Actions 실행을 조회할 때는 `gh api repos/OWNER/REPO/actions/runs?head_sha=SHA` 로 서버에서 필터링한다.
+머지 큐(`merge_queue.py`, `merge-with-finish.py`)는 PR 의 `statusCheckRollup` 으로 CI 를 판정한다. 최근 실행 목록을 가져온 뒤 커밋을 찾는 `gh run list --commit` 은 사용하지 않는다. 별도 스크립트에서 커밋의 Actions 실행을 조회할 때는 `gh api repos/OWNER/REPO/actions/runs?head_sha=SHA` 로 서버에서 필터링한다.
 
 - `worker_done` 을 확인 처리하기 전에 지시서의 완료 기준을 git 으로 대조한다. 커밋 목록, 미커밋 변경, 원격 브랜치 HEAD 다.
   어긋나면 그 보고는 완료가 아니다. 해제하지 않고 아래 「완료 전에 온 worker_done」 을 따른다
@@ -8,7 +8,7 @@
   다른 이름으로 올렸으면 PR 과 정리 스크립트가 그 브랜치를 찾지 못한다. 지시서 이름으로 다시 push 하게 하고, 잘못 만든 원격 브랜치는 지우게 한다
 
 ```bash
-bash "$SKILL_DIR/scripts/make-worktree.sh" --check "$WORKTREE" --spec "$SPEC_FILE"
+python3 "$SKILL_DIR/scripts/make-worktree.py" --check "$WORKTREE" --spec "$SPEC_FILE"
 ```
 - diff 를 직접 읽고 검사를 다시 돌린다. 완료 보고는 근거가 아니다
 - 무거운 검사(로컬 CI, 브라우저, 큰 테스트)는 `python3 "$SKILL_DIR/scripts/mem-gate.py" -- 명령` 으로 감싸 Bash 의 run_in_background 로 돌린다. worker 여럿이 함께 돌리다 머신이 꺼진 일이 있었다. 기준값은 스크립트 머리 주석이 소유한다
@@ -19,7 +19,7 @@ bash "$SKILL_DIR/scripts/make-worktree.sh" --check "$WORKTREE" --spec "$SPEC_FIL
 
 **같은 기준 브랜치로 가는 PR 여럿을 차례로 머지하면, 앞 PR 이 고친 파일을 뒤 PR 도 고쳤을 때 합친 상태에서 검사를 다시 돌린다.**
 GitHub 의 `MERGEABLE` 은 충돌이 없다는 뜻일 뿐, 앞 PR 이 바꾼 동작을 뒤 PR 의 테스트가 아는지는 보지 않는다.
-이 검사는 `merge-queue.sh --verify-merged` 가 PR 마다 한다. 겹친 파일이 없으면 건너뛰고, 있으면 base 와 합친 임시 사본에서 검사 명령을 돌려 0 일 때만 머지한다.
+이 검사는 `merge_queue.py --verify-merged` 가 PR 마다 한다. 겹친 파일이 없으면 건너뛰고, 있으면 base 와 합친 임시 사본에서 검사 명령을 돌려 0 일 때만 머지한다.
 검사 명령과 사본 폴더는 저장소 오버레이가 정한다. 명령은 [`cleanup.md`](cleanup.md) 의 「같은 파일을 고친 PR」 에 있다.
 
 검사가 실패하면 그 worker 의 worktree 에 새 dispatch 를 띄워 기준 브랜치를 merge 하고 고치게 한다. rebase 와 force push 는 쓰지 않는다.

@@ -135,19 +135,18 @@ class CleanupRunTest(unittest.TestCase):
         sh("git", "clone", "-q", str(origin), str(self.repo))
         sh("git", "-C", str(self.repo), "commit", "-q", "--allow-empty", "-m", "init", env=self.env)
         sh("git", "-C", str(self.repo), "push", "-q", "-u", "origin", "main", env=self.env)
-        self.omc = self.repo / ".omc"
-        self.handoffs = self.omc / "handoffs"
-        self.previews = self.omc / "previews"
-        for d in ("queue", "specs", "bin"):
-            (self.handoffs / d).mkdir(parents=True)
+        self.orch = self.repo / ".orch"
+        self.previews = self.repo / "previews"
+        for d in ("queue", "specs", "bin", "state"):
+            (self.orch / d).mkdir(parents=True)
         self.previews.mkdir()
         self.trash = self.tmp / "trash"
-        self.board = self.handoffs / "board.json"
+        self.board = self.repo / "board.json"
         self.board.write_text(json.dumps({"items": [{"id": "item-done", "status": "done"},
                                                     {"id": "item-doing", "status": "doing", "details": ["keep-me"]}]}))
 
     def make(self, rel, text="x", age_days=0):
-        path = self.omc / rel
+        path = self.repo / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         if text is None:
             path.mkdir()
@@ -158,118 +157,148 @@ class CleanupRunTest(unittest.TestCase):
         return path
 
     def clean(self, *args, **env):
-        done = subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo), "--trash", str(self.trash), *args],
+        done = subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo), "--trash", str(self.trash),
+                               "--board", "board.json", *args],
                               capture_output=True, text=True, env=dict(self.env, **env))
         self.assertEqual(0, done.returncode, done.stderr)
         return done.stdout, done.stderr
 
     def test_dry_run_lists_candidates_and_moves_nothing(self):
-        old = self.make("handoffs/queue/q.out", "QUEUE-DONE\n", age_days=2)
+        old = self.make(".orch/queue/q.out", "QUEUE-DONE\n", age_days=2)
         out, _ = self.clean()
-        self.assertIn("후보 handoffs/queue/q.out", out)
+        self.assertIn("후보 .orch/queue/q.out", out)
         self.assertTrue(old.exists())
         self.assertFalse(self.trash.exists())
 
+    def test_repo_without_omc_runs_and_creates_no_omc(self):
+        self.make(".orch/queue/q.out", "QUEUE-DONE\n", age_days=2)
+        self.make(".orch/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
+        out, _ = self.clean()
+        self.assertEqual({"후보 .orch/queue/q.out", "후보 .orch/specs/spec-finished.md"}, set(out.splitlines()))
+        self.assertFalse((self.repo / ".omc").exists())
+
+    def test_other_tools_files_under_omc_are_not_touched_by_default(self):
+        self.make(".omc/previews/old.html", "<html>", age_days=9)
+        self.make(".omc/state/session.json", "{}", age_days=9)
+        self.make(".omc/raw.csv", "a,b\n", age_days=9)
+        self.make(".omc/handoffs/queue/q.out", "QUEUE-DONE\n", age_days=9)
+        out, _ = self.clean()
+        self.assertEqual("", out)
+
     def test_queue_logs(self):
-        self.make("handoffs/queue/done.out", "a\nQUEUE-DONE\n", age_days=2)
-        self.make("handoffs/queue/finish-7.out", "FINISH-FAIL\n", age_days=2)
-        self.make("handoffs/queue/recent.out", "QUEUE-DONE\n", age_days=0)
-        self.make("handoffs/queue/running.out", "진행 중\n", age_days=5)
+        self.make(".orch/queue/done.out", "a\nQUEUE-DONE\n", age_days=2)
+        self.make(".orch/queue/finish-7.out", "FINISH-FAIL\n", age_days=2)
+        self.make(".orch/queue/recent.out", "QUEUE-DONE\n", age_days=0)
+        self.make(".orch/queue/running.out", "진행 중\n", age_days=5)
         self.clean("--apply")
-        self.assertTrue((self.trash / "handoffs/queue/done.out").exists())
-        self.assertTrue((self.trash / "handoffs/queue/finish-7.out").exists())
-        self.assertTrue((self.handoffs / "queue/recent.out").exists())
-        self.assertTrue((self.handoffs / "queue/running.out").exists())
+        self.assertTrue((self.trash / ".orch/queue/done.out").exists())
+        self.assertTrue((self.trash / ".orch/queue/finish-7.out").exists())
+        self.assertTrue((self.orch / "queue/recent.out").exists())
+        self.assertTrue((self.orch / "queue/running.out").exists())
 
     def test_specs_keep_unless_board_done_and_branch_gone(self):
-        self.make("handoffs/specs/spec-common.md", "공통\n", age_days=9)
-        self.make("handoffs/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
-        self.make("handoffs/specs/spec-not-yet.md", "브랜치: `feat/not-yet`\n보드 항목 id: `item-doing`\n")
-        self.make("handoffs/specs/spec-open-pr.md", "브랜치: `feat/open`\n보드 항목 id: `item-done`\n")
-        self.make("handoffs/specs/spec-remote.md", "브랜치: `feat/remote`\n보드 항목 id: `item-done`\n")
+        self.make(".orch/specs/spec-common.md", "공통\n", age_days=9)
+        self.make(".orch/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
+        self.make(".orch/specs/spec-not-yet.md", "브랜치: `feat/not-yet`\n보드 항목 id: `item-doing`\n")
+        self.make(".orch/specs/spec-open-pr.md", "브랜치: `feat/open`\n보드 항목 id: `item-done`\n")
+        self.make(".orch/specs/spec-remote.md", "브랜치: `feat/remote`\n보드 항목 id: `item-done`\n")
         sh("git", "-C", str(self.repo), "push", "-q", "origin", "main:refs/heads/feat/remote", env=self.env)
         self.clean("--apply", FAKE_OPEN=json.dumps(["feat/open"]))
-        self.assertTrue((self.trash / "handoffs/specs/spec-finished.md").exists())
+        self.assertTrue((self.trash / ".orch/specs/spec-finished.md").exists())
         for name in ("spec-common.md", "spec-not-yet.md", "spec-open-pr.md", "spec-remote.md"):
-            self.assertTrue((self.handoffs / "specs" / name).exists(), name)
+            self.assertTrue((self.orch / "specs" / name).exists(), name)
 
     def test_spec_with_live_worktree_stays(self):
-        self.make("handoffs/specs/spec-wt.md", "브랜치: `feat/wt`\n보드 항목 id: `item-done`\n")
+        self.make(".orch/specs/spec-wt.md", "브랜치: `feat/wt`\n보드 항목 id: `item-done`\n")
         sh("git", "-C", str(self.repo), "worktree", "add", "-q", "-b", "feat/wt", str(self.tmp / "wt"), env=self.env)
         self.clean("--apply")
-        self.assertTrue((self.handoffs / "specs/spec-wt.md").exists())
+        self.assertTrue((self.orch / "specs/spec-wt.md").exists())
 
     def test_spec_of_a_live_dispatch_stays(self):
-        spec = self.make("handoffs/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
+        spec = self.make(".orch/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
         tasks = [{"id": "t1", "status": "dispatched", "spec": f"지시서 {spec} 를 끝까지 읽고 수행한다."}]
         _, err = self.clean("--apply", FAKE_TASKS=json.dumps(tasks))
         self.assertIn("살아 있는 dispatch 가 쓰는 지시서라 남긴다", err)
         self.assertTrue(spec.exists())
 
     def test_specs_are_not_moved_when_live_dispatches_cannot_be_read(self):
-        spec = self.make("handoffs/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
+        spec = self.make(".orch/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
         _, err = self.clean("--apply", FAKE_ORCA_FAILS="1")
         self.assertIn("살아 있는 dispatch 의 지시서를 읽지 못해", err)
         self.assertTrue(spec.exists())
 
     def test_specs_are_not_moved_when_open_prs_cannot_be_read(self):
-        self.make("handoffs/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
+        self.make(".orch/specs/spec-finished.md", "브랜치: `feat/finished`\n보드 항목 id: `item-done`\n")
         _, err = self.clean("--apply", FAKE_GH_FAILS="1")
         self.assertIn("열린 PR 을 읽지 못해", err)
-        self.assertTrue((self.handoffs / "specs/spec-finished.md").exists())
+        self.assertTrue((self.orch / "specs/spec-finished.md").exists())
 
-    def test_old_handoff_folders_and_previews_respect_board_and_keep(self):
-        self.make("handoffs/old-report", None, age_days=4)
-        self.make("handoffs/keep-me", None, age_days=4)  # 보드 details 에 이름이 있다
-        self.make("handoffs/fresh", None, age_days=1)
+    def test_old_folders_and_previews_respect_board_and_keep(self):
+        self.make(".orch/old-report", None, age_days=4)
+        self.make(".orch/keep-me", None, age_days=4)  # 보드 details 에 이름이 있다
+        self.make(".orch/pinned-note", None, age_days=4)
+        self.make(".orch/.keep", "pinned-note\n", age_days=9)
+        self.make(".orch/fresh", None, age_days=1)
         self.make("previews/old.html", "<html>", age_days=4)
         self.make("previews/pinned.html", "<html>", age_days=9)
         self.make("previews/pinned-too", None, age_days=9)
         self.make("previews/.keep", "pinned.html\n pinned-too \n", age_days=9)
-        self.clean("--apply")
-        self.assertTrue((self.trash / "handoffs/old-report").exists())
+        for d in ("bin", "queue", "specs", "state"):
+            os.utime(self.orch / d, (time.time() - 9 * DAY,) * 2)
+        self.clean("--apply", "--previews", "previews")
+        self.assertTrue((self.trash / ".orch/old-report").exists())
         self.assertTrue((self.trash / "previews/old.html").exists())
-        for rel in ("handoffs/keep-me", "handoffs/fresh", "previews/pinned.html", "previews/pinned-too",
-                    "previews/.keep", "handoffs/bin", "handoffs/queue", "handoffs/specs", "handoffs/board.json"):
-            self.assertTrue((self.omc / rel).exists(), rel)
+        for rel in (".orch/keep-me", ".orch/pinned-note", ".orch/fresh", "previews/pinned.html", "previews/pinned-too",
+                    "previews/.keep", ".orch/bin", ".orch/queue", ".orch/specs", ".orch/state", "board.json"):
+            self.assertTrue((self.repo / rel).exists(), rel)
+
+    def test_previews_are_not_touched_without_the_option(self):
+        self.make("previews/old.html", "<html>", age_days=9)
+        out, _ = self.clean()
+        self.assertEqual("", out)
 
     def test_csv_and_tsv_older_than_a_day_except_under_bin(self):
-        self.make("handoffs/data/raw.csv", "a,b\n", age_days=2)
-        self.make("scratch/raw.TSV", "a\tb\n", age_days=2)
-        self.make("scratch/new.csv", "a,b\n", age_days=0)
-        self.make("handoffs/bin/lookup.csv", "a,b\n", age_days=30)
-        self.make("scratch/notes.txt", "n", age_days=30)
+        self.make(".orch/data/raw.csv", "a,b\n", age_days=2)
+        self.make(".orch/scratch/raw.TSV", "a\tb\n", age_days=2)
+        self.make(".orch/scratch/new.csv", "a,b\n", age_days=0)
+        self.make(".orch/bin/lookup.csv", "a,b\n", age_days=30)
+        self.make(".orch/scratch/notes.txt", "n", age_days=30)
         self.clean("--apply", "--folder-days", "100")
-        self.assertTrue((self.trash / "handoffs/data/raw.csv").exists())
-        self.assertTrue((self.trash / "scratch/raw.TSV").exists())
-        for rel in ("scratch/new.csv", "handoffs/bin/lookup.csv", "scratch/notes.txt"):
-            self.assertTrue((self.omc / rel).exists(), rel)
+        self.assertTrue((self.trash / ".orch/data/raw.csv").exists())
+        self.assertTrue((self.trash / ".orch/scratch/raw.TSV").exists())
+        for rel in (".orch/scratch/new.csv", ".orch/bin/lookup.csv", ".orch/scratch/notes.txt"):
+            self.assertTrue((self.repo / rel).exists(), rel)
 
     def test_file_inside_a_moved_folder_is_listed_once(self):
         self.make("previews/old-dir/data.csv", "a,b\n", age_days=5)
         os.utime(self.previews / "old-dir", (time.time() - 5 * DAY,) * 2)
-        out, _ = self.clean()
+        out, _ = self.clean("--previews", "previews")
         self.assertEqual(["후보 previews/old-dir"], out.splitlines())
 
     def test_existing_trash_entry_is_not_overwritten(self):
-        self.make("handoffs/queue/q.out", "QUEUE-DONE\n", age_days=2)
-        (self.trash / "handoffs/queue").mkdir(parents=True)
-        (self.trash / "handoffs/queue/q.out").write_text("older")
+        self.make(".orch/queue/q.out", "QUEUE-DONE\n", age_days=2)
+        (self.trash / ".orch/queue").mkdir(parents=True)
+        (self.trash / ".orch/queue/q.out").write_text("older")
         self.clean("--apply")
-        self.assertEqual("older", (self.trash / "handoffs/queue/q.out").read_text())
-        self.assertEqual("QUEUE-DONE\n", (self.trash / "handoffs/queue/q.out.2").read_text())
+        self.assertEqual("older", (self.trash / ".orch/queue/q.out").read_text())
+        self.assertEqual("QUEUE-DONE\n", (self.trash / ".orch/queue/q.out.2").read_text())
 
     def test_options_and_config_supply_paths_and_thresholds(self):
         self.make("previews/mid.html", "<html>", age_days=2)
-        self.clean("--apply", "--folder-days", "1")
+        self.clean("--apply", "--folder-days", "1", "--previews", "previews")
         self.assertTrue((self.trash / "previews/mid.html").exists())
 
         self.make("previews/cfg.html", "<html>", age_days=2)
-        cfg = self.tmp / "cfg.json"
-        cfg.write_text(json.dumps({"cleanup": {"folder_days": 1, "trash": str(self.tmp / "trash2")}, "finish": {"run": "r"}}))
-        subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo), "--config", str(cfg), "--apply"],
+        cfg = {"cleanup": {"folder_days": 1, "previews": "previews", "trash": str(self.tmp / "trash2")}, "finish": {"run": "r"}}
+        (self.orch / "config.json").write_text(json.dumps(cfg))
+        subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo), "--board", "board.json", "--apply"],
                        check=True, capture_output=True, env=self.env)
         self.assertTrue((self.tmp / "trash2/previews/cfg.html").exists())
+
+    def test_orch_dir_env_moves_the_root(self):
+        self.make("work/orch/queue/q.out", "QUEUE-DONE\n", age_days=2)
+        out, _ = self.clean(ORCH_DIR="work/orch")
+        self.assertEqual(["후보 orch/queue/q.out"], out.splitlines())
 
     def test_unknown_config_key_is_a_usage_error(self):
         cfg = self.tmp / "bad.json"

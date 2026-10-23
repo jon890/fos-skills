@@ -55,10 +55,11 @@ class ParseTest(unittest.TestCase):
                 mwf.split_args(argv)
 
     def test_value_options_match_merge_queue(self):
-        """merge-queue.sh 가 값을 받는 옵션이 바뀌면 이 목록도 바꿔야 PR 번호 해석이 어긋나지 않는다."""
-        script = (SCRIPTS / "merge-queue.sh").read_text(encoding="utf-8")
-        valued = set(re.findall(r'^\s+(--[a-z-]+)\) need "\$1"', script, re.M))
-        self.assertEqual(valued, mwf.VALUE_OPTIONS)
+        """merge_queue.py 가 값을 받는 옵션이 바뀌면 이 목록도 바꿔야 PR 번호 해석이 어긋나지 않는다."""
+        spec = importlib.util.spec_from_file_location("merge_queue", SCRIPTS / "merge_queue.py")
+        queue = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(queue)
+        self.assertEqual(queue.VALUE_OPTIONS, mwf.VALUE_OPTIONS)
 
 
 FAKE_QUEUE_SH = """\
@@ -86,7 +87,7 @@ class WrapperRunTest(unittest.TestCase):
                         FAKE_LOG=str(self.log))
 
     def wrap(self, *args, **env):
-        done = subprocess.run(["python3", str(WRAPPER), "--finish-log-dir", str(self.logs), *args],
+        done = subprocess.run(["python3", str(WRAPPER), "--finish-log-dir", str(self.logs), *args], cwd=self.tmp,
                               capture_output=True, text=True, env=dict(self.env, **env))
         return done.returncode, done.stdout + done.stderr
 
@@ -162,8 +163,8 @@ class WrapperRunTest(unittest.TestCase):
         self.assertEqual(1, self.wrap("449", FAKE_QUEUE_EXIT="1")[0])
 
     def write_config(self, queue):
-        (self.tmp / ".claude").mkdir(exist_ok=True)
-        (self.tmp / ".claude" / "orch-finish.json").write_text(json.dumps({"finish": {}, "queue": queue}))
+        (self.tmp / ".orch").mkdir(exist_ok=True)
+        (self.tmp / ".orch" / "config.json").write_text(json.dumps({"finish": {}, "queue": queue}))
 
     def test_queue_section_fills_missing_queue_options(self):
         self.write_config({"required": ["ci", "lint"], "verify_merged": 'cd "$1" && make test',
@@ -204,6 +205,170 @@ class WrapperRunTest(unittest.TestCase):
         self.write_config({"update_docs_on_overlap": False})
         self.wrap("--repo", str(self.tmp), "--no-finish", "449")
         self.assertNotIn("--update-docs-on-overlap", self.lines("queue")[0])
+
+    def test_queue_section_passes_overlap_options(self):
+        self.write_config({"require_up_to_date": True, "up_to_date_when": "overlap", "unit_prefix": "apps/",
+                           "shared_paths": ["^apps/common/", r"^build\.gradle$"], "required": "ci"})
+        code, out = self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        line = self.lines("queue")[0]
+        for part in ("--require-up-to-date", "--up-to-date-when overlap", "--unit-prefix apps/",
+                     r"--shared-paths ^apps/common/|^build\.gradle$"):
+            self.assertIn(part, line)
+        self.log.unlink()
+        self.write_config({"shared_paths": "^lib/", "require_up_to_date": False})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--shared-paths ^lib/", line)
+        self.assertNotIn("--require-up-to-date", line)
+
+    def test_queue_section_unit_groups_become_repeated_options(self):
+        self.write_config({"unit_groups": [["web", "bff"], ["a", "b", "c"]]})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertIn("--unit-group web,bff --unit-group a,b,c", self.lines("queue")[0])
+        self.log.unlink()
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--unit-group", "x,y", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--unit-group x,y", line)
+        self.assertNotIn("web", line)
+
+    def test_command_line_wins_over_overlap_keys(self):
+        self.write_config({"up_to_date_when": "overlap", "unit_prefix": "apps/"})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--up-to-date-when", "always", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--up-to-date-when always", line)
+        self.assertNotIn("overlap", line)
+        self.assertIn("--unit-prefix apps/", line)
+
+    def test_sweep_args_become_repeated_sweep_arg_options(self):
+        self.write_config({"sweep_args": ["--run", "run_x", "--specs-dir", ".orch/specs"]})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertIn("--sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs",
+                      self.lines("queue")[0])
+
+    def test_sweep_arg_on_the_command_line_replaces_the_list(self):
+        self.write_config({"sweep_args": ["--run", "run_x"]})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--sweep-arg", "--kill-holders", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--sweep-arg --kill-holders", line)
+        self.assertNotIn("run_x", line)
+
+    def test_bad_overlap_and_sweep_values_are_usage_errors(self):
+        for queue in ({"sweep_args": "--run"}, {"sweep_args": [1]}, {"sweep_args": [""]}, {"up_to_date_when": ""},
+                      {"shared_paths": []}, {"require_up_to_date": "yes"}, {"unit_groups": []},
+                      {"unit_groups": ["web,bff"]}, {"unit_groups": [["web"]]}, {"unit_groups": [["a,b", "c"]]}):
+            with self.subTest(queue=queue):
+                self.write_config(queue)
+                code, out = self.wrap("--repo", str(self.tmp), "449")
+                self.assertEqual(2, code, out)
+                self.assertFalse(self.log.exists())
+
+    def write_board(self, items, name=".omc/board.json"):
+        target = self.tmp / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({"items": items}))
+
+    def finish_lines(self, count):
+        deadline = time.time() + 5
+        while time.time() < deadline and len(self.lines("finish")) < count:
+            time.sleep(0.05)
+        return {l.split()[1]: l for l in self.lines("finish")}
+
+    def test_board_item_is_found_by_pr_and_used_only_for_the_last_pr(self):
+        self.write_board([{"id": "task-a", "pr": "#492, #495"}, {"id": "task-b", "pr": "500"}, {"id": "none"}])
+        code, out = self.wrap("--repo", str(self.tmp), "492", "495!", "500!", "501!")
+        self.assertEqual(0, code, out)
+        by_pr = self.finish_lines(4)
+        self.assertNotIn("--board-id", by_pr["492"])
+        self.assertIn("--board-id task-a", by_pr["495"])
+        self.assertIn("--board-id task-b", by_pr["500"])
+        self.assertNotIn("--board-id", by_pr["501"])
+        self.assertIn("보드 항목 task-a 는 PR 492 가 업무의 마지막 PR(!)이 아니라", out)
+
+    def test_numeric_board_ids_are_passed_as_strings(self):
+        self.write_board([{"id": 7, "pr": "492"}, {"id": 8, "pr": "495"}, {"id": 9, "pr": "495"}])
+        code, out = self.wrap("--repo", str(self.tmp), "492!", "495!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("--board-id 7", self.finish_lines(2)["492"])
+        # 항목이 둘 이상이라 건너뛸 때 안내 줄이 숫자 id 로 깨지지 않는다
+        self.assertIn("보드 항목이 둘 이상이라 건너뛴다: PR 495 -> 8, 9", out)
+
+    def test_pr_field_numbers_are_not_glued_together(self):
+        for field, expected in (("#492 495", {"492", "495"}), ("492/495", {"492", "495"}), ("#492 (v2)", {"492"}),
+                                ("492, #495", {"492", "495"}), ("", set()), (None, set())):
+            with self.subTest(field=field):
+                self.assertEqual(expected, mwf.pr_numbers(field))
+
+    def test_explicit_board_item_wins_and_ignores_the_bang(self):
+        self.write_board([{"id": "found", "pr": "492"}])
+        self.wrap("--repo", str(self.tmp), "--board-item", "492=explicit", "492", "493")
+        by_pr = self.finish_lines(2)
+        self.assertIn("--board-id explicit", by_pr["492"])
+
+    def test_ambiguous_board_items_are_skipped(self):
+        self.write_board([{"id": "a", "pr": "7"}, {"id": "b", "pr": "#7"}])
+        code, out = self.wrap("--repo", str(self.tmp), "7!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("--board-id", self.finish_lines(1)["7"])
+        self.assertIn("보드 항목이 둘 이상이라 건너뛴다: PR 7 -> a, b", out)
+
+    def test_board_file_follows_finish_arg_then_finish_section_then_nested_default(self):
+        self.write_board([{"id": "plain", "pr": "9"}])
+        self.write_board([{"id": "nested", "pr": "9"}], ".omc/handoffs/board.json")
+        self.wrap("--repo", str(self.tmp), "9!")
+        self.assertIn("--board-id nested", self.finish_lines(1)["9"])
+        self.log.unlink()
+        shutil.rmtree(self.logs)
+        self.write_board([{"id": "configured", "pr": "9"}], "boards/main.json")
+        (self.tmp / ".orch").mkdir(exist_ok=True)
+        (self.tmp / ".orch" / "config.json").write_text(json.dumps({"finish": {"board": "boards/main.json"}}))
+        self.wrap("--repo", str(self.tmp), "9!")
+        self.assertIn("--board-id configured", self.finish_lines(1)["9"])
+        self.log.unlink()
+        shutil.rmtree(self.logs)
+        self.write_board([{"id": "arg", "pr": "9"}], "boards/other.json")
+        self.wrap("--repo", str(self.tmp), "--finish-arg=--board=boards/other.json", "9!")
+        self.assertIn("--board-id arg", self.finish_lines(1)["9"])
+
+    def test_repo_without_omc_reads_orch_config_and_logs_to_orch_queue(self):
+        repo = self.tmp / "repo"
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".orch").mkdir()
+        (repo / ".orch/config.json").write_text(json.dumps({"queue": {"required": ["ci"], "before": "true"}}))
+        done = subprocess.run(["python3", str(WRAPPER), "--repo", str(repo), "449!"],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        line = self.lines("queue")[0]
+        self.assertIn("--required ci", line)
+        self.assertIn("--before true", line)
+        self.assertTrue((repo / ".orch/queue/finish-449.out").exists())
+        self.assertIn("/.orch/", (repo / ".git/info/exclude").read_text().splitlines())
+        self.assertFalse((repo / ".omc").exists())
+
+    def test_old_layout_stops_before_the_queue_unless_the_config_is_given(self):
+        (self.tmp / ".claude").mkdir()
+        old = self.tmp / ".claude/orch-finish.json"
+        old.write_text(json.dumps({"queue": {"before": "./backup.sh"}}))
+        code, out = self.wrap("--repo", str(self.tmp), "449")
+        self.assertEqual(2, code, out)
+        self.assertIn("migrate-orch-dir.py", out)
+        self.assertFalse(self.log.exists())
+        code, out = self.wrap("--repo", str(self.tmp), "--finish-config", str(old), "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        self.assertIn("--before ./backup.sh", self.lines("queue")[0])
+
+    def test_missing_or_broken_board_is_not_an_error(self):
+        code, out = self.wrap("--repo", str(self.tmp), "9!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("--board-id", self.finish_lines(1)["9"])
+        self.log.unlink()
+        shutil.rmtree(self.logs)
+        (self.tmp / ".omc").mkdir(exist_ok=True)
+        (self.tmp / ".omc" / "board.json").write_text("{broken")
+        code, out = self.wrap("--repo", str(self.tmp), "9!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("--board-id", self.finish_lines(1)["9"])
 
     def test_finish_config_option_picks_the_file(self):
         other = self.tmp / "other.json"
