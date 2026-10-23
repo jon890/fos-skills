@@ -15,16 +15,18 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import defaultdict
 
 HOME = os.path.expanduser("~")
 DU_TIMEOUT = 600
 
 
-def run(cmd, timeout=60):
-    """명령을 돌려 표준 출력을 문자열로 돌려준다. 없거나 실패하거나 시간이 넘으면 None."""
+def run(cmd, timeout=60, merge_stderr=False):
+    """명령을 돌려 표준 출력을 문자열로 돌려준다. 없거나 실패하거나 시간이 넘으면 None. merge_stderr 면 표준 오류도 합친다."""
     try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
+                              text=True, timeout=timeout, stdin=subprocess.DEVNULL)
     except (subprocess.TimeoutExpired, OSError):
         return None
     return done.stdout if done.returncode == 0 else None
@@ -139,6 +141,79 @@ def updater_verdict(marks):
     """대기 표시가 없을 때만 안전이고, 하나라도 있으면 유지다. 지우면 아직 설치하지 않은 업데이트가 사라진다."""
     return "유지(설치 대기 업데이트)" if marks else "안전(대기 표시 없음)"
 
+# ~/.cache 하위 디렉터리를 보이는 기준. 이 크기(KiB) 이상이면 나열한다.
+CACHE_MIN_KB = 100 * 1024
+NEWEST_MTIME_MAX_ENTRIES = 200_000
+CODEX_RELEASES = "~/.codex/packages/standalone/releases"
+CODEX_CURRENT = "~/.codex/packages/standalone/current"
+CURSOR_SNAPSHOTS = "~/Library/Application Support/Cursor/snapshots"
+PRUNABLE_RE = re.compile(r"^\s*(?:mise\s+)?(\S+?)@(\S+) is prunable: (.*)$")
+CURSOR_APP_RE = re.compile(r"/Cursor\.app/")
+
+
+def parse_mise_prunable(output):
+    """`mise prune --dry-run` 출력에서 지울 수 있다고 본 (도구, 버전, 이유) 목록을 뽑는다. 다른 줄은 건너뛴다."""
+    rows = []
+    for line in output.splitlines():
+        m = PRUNABLE_RE.match(line)
+        if m:
+            rows.append((m.group(1), m.group(2), m.group(3).strip()))
+    return rows
+
+
+def group_by_tool(rows):
+    """(도구, 버전, 이유) 목록을 도구별 버전 목록으로 묶는다. 도구 이름순이다."""
+    grouped = {}
+    for tool, version, _ in rows:
+        grouped.setdefault(tool, []).append(version)
+    return dict(sorted(grouped.items()))
+
+
+def commands_using(ps_output, needle):
+    """ps 의 명령줄 중 needle 경로를 포함한 줄의 수."""
+    return sum(1 for line in ps_output.splitlines() if needle in line)
+
+
+def cursor_running(ps_output):
+    """Cursor 앱 번들 안에서 도는 프로세스가 있는지."""
+    return any(CURSOR_APP_RE.search(line) for line in ps_output.splitlines())
+
+
+def age_days(newest_ts, now):
+    """마지막 수정 시각(epoch)을 경과 일수로 바꾼다. 시각을 모르면 None."""
+    return None if newest_ts is None else max(0, int((now - newest_ts) // 86400))
+
+
+def newest_mtime(root, max_entries=NEWEST_MTIME_MAX_ENTRIES):
+    """root 아래에서 가장 늦은 수정 시각. 디렉터리 자신의 mtime 은 직속 항목이 바뀔 때만 변해, 안쪽 파일까지 본다.
+    항목이 max_entries 를 넘으면 거기까지 본 값을 쓴다. 비어 있거나 읽지 못하면 root 자신의 mtime 이다."""
+    try:
+        newest = os.lstat(root).st_mtime
+    except OSError:
+        return None
+    seen = 0
+    for cur, dirs, files in os.walk(root, followlinks=False):
+        for name in files + dirs:
+            seen += 1
+            if seen > max_entries:
+                return newest
+            try:
+                newest = max(newest, os.lstat(os.path.join(cur, name)).st_mtime)
+            except OSError:
+                continue
+    return newest
+
+
+def codex_release_rows(sizes, current, ps_output):
+    """Codex 릴리스 디렉터리별 행을 만든다. sizes 는 {경로: KiB}, current 는 `current` 가 가리키는 경로(없으면 None).
+    행은 dict(path, kb, current, running) 이고 경로순이다. running 은 그 경로를 명령줄에 가진 프로세스가 있다는 뜻이다."""
+    rows = []
+    real_current = os.path.realpath(current) if current else None
+    for path, kb in sorted(sizes.items()):
+        # macOS 의 /var 와 /private/var 처럼 같은 디렉터리의 다른 표기를 같게 본다.
+        rows.append({"path": path, "kb": kb, "current": os.path.realpath(path) == real_current, "running": commands_using(ps_output, path) > 0})
+    return rows
+
 
 def section(title):
     print(f"\n## {title}")
@@ -234,6 +309,70 @@ def survey_updaters():
         print(f"{size:>6}  {path}  {updater_verdict(marks)}" + (f"  대기={','.join(marks)}" if marks else ""))
 
 
+def survey_codex_releases():
+    section("Codex 이전 버전")
+    releases = os.path.expanduser(CODEX_RELEASES)
+    if not os.path.isdir(releases):
+        print("해당 디렉터리 없음")
+        return
+    sizes = {p: kb for kb, p in du_kb(["-d1", releases]) if p != releases}
+    current = os.path.realpath(os.path.expanduser(CODEX_CURRENT)) if os.path.islink(os.path.expanduser(CODEX_CURRENT)) else None
+    rows = codex_release_rows(sizes, current, run(["ps", "-axo", "command="]) or "")
+    for row in rows:
+        marks = (" current" if row["current"] else "") + (" 실행중" if row["running"] else "")
+        print(f"{human_kb(row['kb']):>6}  {os.path.basename(row['path'])}{marks}")
+    keep = [r for r in rows if r["current"] or r["running"]]
+    print(f"버전 {len(rows)}개, 합계 {human_kb(sum(r['kb'] for r in rows))}, 남길 것(current 또는 실행중) {len(keep)}개")
+    if not any(r["running"] for r in rows):
+        print("이 경로를 실행 중인 프로세스 없음(실행 중 codex 는 다른 경로를 쓴다)")
+
+
+def survey_cursor_snapshots():
+    section("Cursor snapshots")
+    snapshots = os.path.expanduser(CURSOR_SNAPSHOTS)
+    if not os.path.isdir(snapshots):
+        print("해당 디렉터리 없음")
+        return
+    size_of(snapshots)
+    print("Cursor 실행 중: " + ("예" if cursor_running(run(["ps", "-axo", "command="]) or "") else "아니오"))
+
+
+def survey_mise_prune():
+    section("mise prune --dry-run")
+    if not shutil.which("mise"):
+        print("mise 가 없어 건너뛴다")
+        return
+    out = run(["mise", "prune", "--dry-run"], timeout=120, merge_stderr=True)
+    if out is None:
+        print("mise prune --dry-run 을 읽지 못했다")
+        return
+    grouped = group_by_tool(parse_mise_prunable(out))
+    if not grouped:
+        print("지울 수 있다고 본 버전 없음")
+    for tool, versions in grouped.items():
+        print(f"{tool}  {len(versions)}개  {' '.join(versions)}")
+    if grouped:
+        print("mise prune 을 그대로 돌리지 않는다. 사용자가 고른 도구만 `mise uninstall 도구@버전` 으로 지운다")
+
+
+def survey_dot_cache():
+    section("~/.cache 하위 (큰 것)")
+    root = os.path.join(HOME, ".cache")
+    if not os.path.isdir(root):
+        print("해당 디렉터리 없음")
+        return
+    ps_output = run(["ps", "-axo", "command="]) or ""
+    now = time.time()
+    big = [(kb, p) for kb, p in du_kb(["-d1", root]) if p != root and kb >= CACHE_MIN_KB]
+    for kb, path in top_dirs(big, 15):
+        days = age_days(newest_mtime(path), now)
+        age = "?" if days is None else f"{days}일"
+        used = "사용중" if commands_using(ps_output, path) else "프로세스 없음"
+        print(f"{human_kb(kb):>6}  마지막 수정 {age:>6} 전  {used}  {path}")
+    if not big:
+        print(f"{human_kb(CACHE_MIN_KB)} 이상인 하위 디렉터리 없음")
+
+
 def survey_snapshots():
     section("로컬 스냅샷과 휴지통")
     sys.stdout.write(run(["tmutil", "listlocalsnapshots", "/"]) or "")
@@ -243,7 +382,8 @@ def survey_snapshots():
 def main(argv=None):
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
     for step in (survey_disk, survey_memory, survey_rss, survey_big_dirs, survey_docker,
-                 survey_tool_caches, survey_updaters, survey_snapshots):
+                 survey_tool_caches, survey_updaters, survey_dot_cache,
+                 survey_codex_releases, survey_cursor_snapshots, survey_mise_prune, survey_snapshots):
         step()
         sys.stdout.flush()
     return 0

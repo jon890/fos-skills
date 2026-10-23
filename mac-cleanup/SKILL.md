@@ -44,6 +44,7 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py"
 - `survey_git.py` 는 기본으로 `git fetch --prune` 과 `gh` 의 머지된 PR 조회(`--check-prs`)를 한다. 묻지 않고 켠 채로 돈다. 승인 뒤에 옵션을 바꿔 다시 돌리면 후보가 새로 나와 승인을 다시 받아야 하기 때문이다.
   `--json-out "$SURVEY"` 는 텍스트를 출력하면서 같은 조사 결과를 JSON 파일에도 쓴다. 사용자에게 보인 목록과 `delete_branches.py` 에 넘길 목록이 한 번의 조사에서 나오므로, 따로 `--json` 을 돌리지 않는다.
   끄는 옵션은 `--no-fetch`(네트워크가 없을 때)와 `--no-check-prs`(브랜치가 많아 빨리 보고 싶을 때)뿐이다. 끄면 마지막 fetch 이후의 머지와 squash 머지가 보이지 않는다.
+- `survey_system.py` 는 기본 절 말고 설치 대기 업데이트가 든 updater 캐시, `~/.cache` 의 큰 하위 디렉터리, Codex 이전 버전, Cursor snapshots, `mise prune --dry-run` 후보를 절로 보인다. 등급과 지우는 조건은 `targets.md` 가 소유한다.
 - `docker_images.py` 와 `docker_volumes.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌리고, 떠 있지 않을 때만 Docker 항목을 건너뛴다.
 - `docker_volumes.py` 는 후보를 정하는 기준 시간 안에 생긴 volume 을 "최근" 으로 따로 보인다. 내용을 열어 보려면 `--peek N` 으로 다시 돌린다.
 - `survey_system.py` 의 Docker 절이 같은 이유로 건너뛰었다면 Colima 가 올라온 뒤 그 절만 다시 보면 된다.

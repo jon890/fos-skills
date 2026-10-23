@@ -23,6 +23,25 @@
 | `~/Library/Application Support/Claude/vm_bundles` | 확인 필요 | Claude 데스크톱 Cowork VM 이미지다. 앱 본체가 꺼져 있을 때만 지운다. `chrome-native-host` 와 `crashpad_handler` 만 떠 있으면 본체는 꺼진 것이다. 다시 쓰면 앱이 받는다 |
 | `~/.codex/.tmp/marketplaces/.staging/marketplace-upgrade-*` | 하루 지난 것은 안전 | codex 플러그인 업그레이드 임시 사본이다. `~/.codex/.tmp` 전체를 임시 파일로 보지 않는다 |
 
+## 큰 영역 후보
+
+`survey_system.py` 가 절로 보이는 후보다. 모두 확인 필요 등급이고, 되살릴 수 있는지와 확보량을 승인 질문에 적는다.
+`$RELEASE` 는 지울 Codex 릴리스 디렉터리, `$TOOL` 과 `$VERSION` 은 사용자가 고른 mise 도구와 버전, `$DIR` 은 지울 `~/.cache` 하위 디렉터리다.
+
+| 대상 | 등급 | 지우는 조건 | 이유 |
+| --- | --- | --- | --- |
+| `~/.codex/packages/standalone/releases/*` 이전 버전 | 확인 필요 | `current` 가 가리키는 버전과 명령줄에 그 경로가 든 프로세스가 있는 버전은 남긴다 | 실측: 22개 5.9GB. 실행 중이던 codex 는 Orca 계정 디렉터리의 다른 경로를 썼다. 「Codex 이전 버전」 절의 `current`, `실행중` 표시를 따른다 |
+| `~/Library/Application Support/Cursor/snapshots` | 확인 필요 | 절이 「Cursor 실행 중: 아니오」 라고 할 때만 | 실측 8.5GB. Cursor 가 켜져 있으면 쓰는 중일 수 있다 |
+| mise 가 지울 수 있다고 본 버전 | 확인 필요 | 사용자가 고른 도구만 | 실측: node 3개, java 1개, gradle 3개 등. `mise prune` 은 사용자가 고르지 않은 도구(gradle 등)까지 지우므로 돌리지 않는다 |
+| 오래된 `~/.cache` 하위 디렉터리 | 확인 필요 | 절의 「프로세스 없음」 이고 마지막 수정이 사용자가 정한 기준보다 오래됐을 때만 | 실측: `codex-runtimes` 1.8GB 는 4개월, `puppeteer` 1GB 는 3개월 동안 바뀌지 않았다. 프로세스 확인은 명령줄에 그 경로가 있는지만 보므로 열린 파일은 못 잡는다 |
+
+```bash
+rm -rf "$RELEASE"
+mise uninstall "$TOOL@$VERSION"
+rm -rf "$HOME/Library/Application Support/Cursor/snapshots"
+rm -rf "$DIR"
+```
+
 ## 도구 캐시 명령
 
 | 대상 | 등급 | 명령 |
