@@ -9,6 +9,7 @@
 - `launch-worker.py` 가 Orca 가 워크트리를 알아보지 못해 멈출 때 만든 경로, 그 저장소의 `externalWorktreeVisibility`, 사용자가 할 조치를 stderr 에 낸다. 설정은 바꾸지 않는다.
 - 경로 계산은 바꾸지 않는다. Orca 가 직접 만드는 경로와 같다는 확인을 `references/launch.md` 에 적었다.
 - Orca 에 묻는 `orca_repo.py` 를 더했다.
+
 ## 2.5.0 (2026-10-23)
 
 - `watch-questions.py` 를 Monitor 의 질문 이벤트 소스로 추가했다. Run 별 알림 시각을 orch 작업 폴더에 남기고 미답변 질문을 기본 10분마다 다시 알린다.
