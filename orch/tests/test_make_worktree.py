@@ -25,6 +25,7 @@ class MakeWorktreeTest(unittest.TestCase):
         self.env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", XDG_CONFIG_HOME=str(self.tmp),
                         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
+        self.env["ORCA"] = str(self.tmp / "no-orca")  # 실제 Orca 를 부르지 않는다
         self.origin = self.tmp / "repo-origin.git"
         self.repo = self.tmp / "repo"
         self.git("init", "-q", "--bare", "-b", "main", str(self.origin))
@@ -59,6 +60,25 @@ class MakeWorktreeTest(unittest.TestCase):
         done = subprocess.run(["git", "-C", str(wt), "rev-parse", "@{u}"], capture_output=True, env=self.env)
         self.assertNotEqual(done.returncode, 0)
         self.assertEqual(self.git("-C", str(self.repo), "status", "--porcelain"), "")
+
+    def fake_orca(self, visibility):
+        fake = self.tmp / "fake-orca"
+        fake.write_text('#!/bin/sh\necho \'{"result":{"repo":{"externalWorktreeVisibility":"%s"}}}\'\n' % visibility)
+        fake.chmod(0o755)
+        self.env["ORCA"] = str(fake)
+
+    def test_hidden_external_worktrees_refuse_before_creating(self):
+        self.fake_orca("hide")
+        out = self.make(code=1)
+        self.assertIn("externalWorktreeVisibility 가 hide", out)
+        self.assertIn(f"orca repo set --repo path:{self.repo} --external-worktree-visibility show", out)
+        self.assertFalse((self.repo / "worktrees").exists())
+        self.assertEqual("", self.git("-C", str(self.repo), "branch", "--list", "feature/x"))
+
+    def test_shown_or_unreadable_visibility_proceeds(self):
+        self.fake_orca("show")
+        self.make()
+        self.assertTrue((self.repo / "worktrees" / "repo" / "x").is_dir())
 
     def test_resume_remote_uses_remote_tip_and_sets_upstream(self):
         self.git("-C", str(self.repo), "commit", "-q", "--allow-empty", "-m", "PR latest")
