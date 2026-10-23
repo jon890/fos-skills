@@ -2,7 +2,7 @@
 
 코디네이터가 스킬 1.43.0 이상을 설치한 뒤 오버레이에 적용할 예시다.
 이 문서의 명령은 예시이며 실제 Run 에 자동으로 실행하지 않는다.
-`$SKILL_DIR` 은 설치한 orch 번들, `$REPO` 는 gersang-lab 경로다.
+`$SKILL_DIR` 은 설치한 orch 번들, `$REPO` 는 gersang-lab 의 주 checkout 경로다. 주지 않으면 지금 폴더를 쓴다.
 `$RUN_ID`, `$DELIVERY_ID`, `$SPEC_FILE`, `$WORKTREE_NAME`, `$AGENT`, `$MODEL`, `$EFFORT` 는 현재 코디네이터의 값으로 채운다.
 `PR_NUMBERS` 는 머지 순서의 배열이며 PR 번호마다 인자 하나를 넘긴다.
 
@@ -14,9 +14,9 @@ Vitest 인자는 8개씩 나누고 삭제된 테스트는 제외한다. 파일 �
 반복해서 쓸 때는 `VERIFY_BODY` 본문을 저장소의 검증 스크립트에 두고 `VERIFY_CMD` 에 그 경로만 적는다.
 
 ```bash
-REPO=/Users/nhn/personal/gersang-lab
+REPO=${REPO:-$PWD}
 REQUIRED_CHECKS=ci
-export HEAVY_SLOT="$REPO/.omc/orch/scripts/with-heavy-slot.sh"
+export HEAVY_SLOT="$REPO/.orch/bin/with-heavy-slot.sh"
 export VERIFY_BODY='
 set -euo pipefail
 pnpm install --frozen-lockfile
@@ -64,7 +64,7 @@ bash "$SKILL_DIR/scripts/launch-worker.sh" --run "$RUN_ID" --spec "$SPEC_FILE" -
 python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID" --kill-stale
 ```
 
-머지 옵션을 매번 옮겨 적지 않으려면 `.claude/orch-finish.json` 의 `queue` 절에 둔다([`overlay.md`](overlay.md)).
+머지 옵션을 매번 옮겨 적지 않으려면 `.orch/config.json` 의 `queue` 절에 둔다([`overlay.md`](overlay.md)).
 `update_docs_on_overlap: true` 를 포함할 수 있으며 필수 체크 목록도 함께 정한다.
 문서가 base 와 겹쳐도 GitHub CLEAN 이면 base 를 합치고 새 CI 를 기다린다. CLEAN 이 아니면 멈춰 worker 에게 넘긴다.
 코드 PR 은 겹침이 없어도 합친 사본을 검사하며, 큐에서 코드 PR 을 하나라도 머지했을 때만 배포한다.

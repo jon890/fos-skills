@@ -25,7 +25,7 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --run "$RUN_ID" 101 102 103!
 ```
 
-저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.claude/orch-finish.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
+저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
 **머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식, 최신화 규칙, 정리 인자)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.py` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
@@ -153,7 +153,7 @@ PR HEAD 는 다시 판정하는 동안에도 `--match-head-commit` 으로 지킨
     "shared_paths": ["^modules/common/", "^(settings|build)\\.gradle(\\.kts)?$", "^(gradle|buildSrc)/", "^\\.github/"],
     "unit_groups": [["web", "bff"]],
     "docs_glob": ["docs/*", "*.md"],
-    "sweep_args": ["--run", "run_0123456789ab", "--specs-dir", ".omc/handoffs/specs"]
+    "sweep_args": ["--run", "run_0123456789ab", "--specs-dir", ".orch/specs"]
   }
 }
 ```
@@ -262,7 +262,11 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 '102:./bin/
 **정리는 `cleanup-sweep.py` 가 한다.** `merge_queue.py` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
 **사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬과 원격 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
-이 세션이 일을 맡긴 다른 저장소의 worker 도 같다. 다른 세션이 띄운 작업은 건드리지 않는다.
+
+**코디네이터가 worker 에게 맡긴 작업은 그 PR 이 머지되면 그 자리에서 정리한다.** 작업을 맡긴 저장소가 코디네이터의 저장소가 아니어도 같다.
+대상은 worker 터미널, 워크트리, 로컬과 원격 브랜치다. 지시한 쪽이 정리하지 않으면 아무도 정리하지 않는다.
+절차는 아래 「다른 저장소에 맡긴 PR 을 직접 머지했을 때」 가 소유한다.
+**다른 세션이 띄운 작업은 건드리지 않는다.** 그 세션이나 사용자가 하던 작업이 끊긴다.
 판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
 
 ```bash
@@ -300,9 +304,9 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
 3. 워크트리를 `remove-worktree.sh` 로 지운다(아래)
 4. 로컬과 원격 브랜치를 지운다. `merge_queue.py` 가 원격 브랜치를 지웠으면 로컬만 남는다
 5. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
-   `.omc/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다.
+   `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다(`handoff-cleanup.py`).
    공통 지시서, 결정 기록, 인수인계 문서, 진행 중 작업의 문서는 남긴다.
-   사용자 미리보기 폴더(`.omc/previews/`)는 사용자가 지우라고 말할 때만 지운다
+   사용자 미리보기 폴더는 content-preview 의 것이라 사용자가 지우라고 말하거나 설정의 `cleanup.previews` 로 맡겼을 때만 지운다
 6. 진행 보드를 쓰면 그 항목을 done 으로 바꾼다. [`board.md`](board.md)
 
 `merge --ff-only` 는 지금 체크아웃된 브랜치에 들어가므로, 기준 브랜치가 체크아웃돼 있을 때만 돌린다.
@@ -317,6 +321,31 @@ git -C "$REPO" fetch --prune origin
 
 ```bash
 gh pr view "$PR" --json state --jq .state
+```
+
+### 다른 저장소에 맡긴 PR 을 직접 머지했을 때
+
+`merge-with-finish.py` 의 마무리는 머지 큐를 건 저장소만 정리한다. 다른 저장소에 맡긴 PR 을 코디네이터가 `gh pr merge` 로 머지했으면 바로 이어서 정리한다.
+값을 채운다: `$OTHER_REPO` 는 그 저장소의 주 checkout, `$RUN_ID` 는 worker 를 띄운 Run, `$PR` 은 PR 번호, `$WORKER_TERM` 은 그 worker 의 터미널 handle(`worker-show`), `$WORKTREE` 는 그 워크트리 경로다.
+먼저 `cleanup-sweep.py` 로 정리한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
+
+```bash
+python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
+```
+
+스크립트가 건너뛴 것만 아래 묶음으로 직접 지운다. 묶음은 PR 이 `MERGED` 일 때만 돈다.
+돌리기 전에 그 터미널이 이 세션이 띄운 worker 의 것인지 `worker-list` 의 `ownershipState` 로 본다. `owned` 가 아니면 `orca terminal close` 줄을 빼고 돌린다.
+
+```bash
+if [ "$(cd "$OTHER_REPO" && gh pr view "$PR" --json state --jq .state)" = MERGED ]; then
+  BRANCH=$(git -C "$WORKTREE" branch --show-current)
+  PR_HEAD=$(cd "$OTHER_REPO" && gh pr view "$PR" --json headRefOid --jq .headRefOid)
+  orca terminal close --terminal "$WORKER_TERM"
+  "$SKILL_DIR/scripts/remove-worktree.sh" "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
+  if git -C "$OTHER_REPO" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+    git -C "$OTHER_REPO" push origin --delete "$BRANCH"
+  fi
+fi
 ```
 
 ### 워크트리 지우기

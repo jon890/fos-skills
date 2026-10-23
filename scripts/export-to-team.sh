@@ -106,6 +106,7 @@ def is_junk(rel: str) -> bool:
         "__pycache__" in parts
         or ".git" in parts
         or ".omc" in parts
+        or ".orch" in parts
         or ".DS_Store" in parts
         or rel.endswith((".pyc", ".pyo"))
     )

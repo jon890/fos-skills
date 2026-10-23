@@ -36,7 +36,7 @@
 #     터미널을 닫는 것은 이 스크립트가 하지 않는다. 그 터미널이 이 세션이 띄운 worker 의 것인지 사람이 보고 닫는다.
 #     다른 세션이나 사용자의 터미널은 닫지 않는다
 #
-# 종료 코드: 0 띄웠다, 1 거부했거나 띄우지 못했다(이유를 낸다), 2 사용법 오류, 3 --terminal 의 터미널이 에이전트를 인식하지 못했다
+# 종료 코드: 0 띄웠다, 1 거부했거나 띄우지 못했다(이유를 낸다), 2 사용법 오류이거나 orch 작업 폴더를 옮기기 전이다(orch_paths.py check), 3 --terminal 의 터미널이 에이전트를 인식하지 못했다
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -79,6 +79,8 @@ if [ "$reuse_terminal" = 1 ] && [ -n "$reuse_opts" ]; then
   exit 1
 fi
 case "$watch" in ''|*[!0-9]*) echo "--watch 는 초 단위 정수다" >&2; exit 2 ;; esac
+# orch 작업 폴더를 옮기기 전이면 띄우지 않는다. 지시서와 오버레이를 새 위치에서만 읽어 저장소 값 없이 시작하게 된다
+python3 "$HERE/orch_paths.py" --repo "${repo:-$worktree}" check || exit 2
 # 값이 있을 때만 붙는 인자는 배열로 둔다. `${run:+--run "$run"}` 는 zsh 에서 낱말이 나뉘지 않아
 # `--run run_x` 한 낱말로 넘어가 worker-start 가 Unknown flag 로 실패한다.
 # 빈 배열은 `${a[@]+"${a[@]}"}` 로 펼친다. bash 3.2 의 set -u 가 빈 "${a[@]}" 를 unbound 로 본다

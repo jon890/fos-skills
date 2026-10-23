@@ -19,19 +19,19 @@
     `!` 와 `:명령` 은 PR 번호 바로 뒤에 `번호[!][:명령]` 순서로 쓴다. 머지 큐에는 `!` 를 뗀 인자가 넘어간다.
 
 래퍼 옵션 (merge_queue.py 에는 넘기지 않는다):
-    --finish-config FILE    finish-pr.py 의 --config. 없으면 finish-pr.py 가 <repo>/.claude/orch-finish.json 을 찾는다
+    --finish-config FILE    finish-pr.py 의 --config. 없으면 finish-pr.py 가 orch 작업 폴더의 config.json 을 찾는다
     --finish-arg ARG        finish-pr.py 에 더 넘길 인자. 하나씩 준다. 값이 `--` 로 시작하면 `--finish-arg=--run` 처럼 쓴다
     --run RUN_ID            worker 를 찾을 Orca Run. finish-pr.py 에 `--run` 을 넘기고, 머지 큐의 정리 단계에도
                             `--sweep-arg --run --sweep-arg RUN_ID` 를 넘겨 다른 Run 의 worker 터미널을 건너뛰게 한다.
                             `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 어디에도 없으면 경고 한 줄을 낸다
     --board-item PR=ID      그 PR 의 마무리가 done 으로 바꿀 보드 항목(`finish-pr.py --board-id`). PR 마다 준다.
                             주지 않으면 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾아 쓴다(아래 「보드 항목」)
-    --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본 <repo>/.omc/handoffs/queue. handoff-cleanup.py 가 이 폴더의 끝난 로그를 옮긴다
+    --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(orch_paths.py queue). handoff-cleanup.py 가 이 폴더의 끝난 로그를 옮긴다
     --no-finish             마무리를 걸지 않고 머지 큐만 돌린다
 
 merge_queue.py 옵션은 그대로 쓴다(--repo, --required, --require-up-to-date 같은 것). --repo 는 마무리에도 넘어간다.
 
-머지 큐 기본값: --finish-config 파일(없으면 <repo>/.claude/orch-finish.json)의 `queue` 절을 읽어
+머지 큐 기본값: --finish-config 파일(없으면 orch 작업 폴더의 config.json)의 `queue` 절을 읽어
 명령줄에 없는 머지 큐 옵션을 채운다. 키는 before, required, verify_merged, verify_merged_when, docs_glob, method,
 after_merged, up_to_date_when, shared_paths, unit_prefix 이고 각각 --before, --required, --verify-merged,
 --verify-merged-when, --docs-glob, --method, --after-merged, --up-to-date-when, --shared-paths, --unit-prefix 가 된다.
@@ -44,12 +44,15 @@ sweep_args 는 문자열 목록이고 항목마다 `--sweep-arg` 로 넘어간�
 MERGE_QUEUE, FINISH_PR 환경 변수로 두 스크립트 경로를 바꾼다.
 
 보드 항목: 보드 파일은 --finish-arg 의 `--board`, 없으면 설정 파일 `finish` 절의 `board`, 없으면 finish-pr.py 와 같은 기본
-(<repo>/.omc/handoffs/board.json, 없으면 <repo>/.omc/board.json) 이다. 항목의 `pr` 필드에서 단어에 붙지 않은 숫자(`#492`, `492, 495`, `492/495`)를 PR 번호로 읽고, 그 PR 이 든 항목을 찾는다.
+(work-board 의 board.py 가 정한 위치) 이다. 상대경로는 주 checkout 기준이다. 항목의 `pr` 필드에서 단어에 붙지 않은 숫자(`#492`, `492, 495`, `492/495`)를 PR 번호로 읽고, 그 PR 이 든 항목을 찾는다.
 (`#492 (v2)` 의 `2` 처럼 글자에 붙은 숫자는 읽지 않는다.)
 **업무의 마지막 PR(`!`)일 때만 그 항목을 done 으로 바꾼다.** 중간 PR 이 항목을 끝내지 않도록 `!` 가 없으면 찾은 항목을 알리기만 한다.
 같은 PR 이 든 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다. `--board-item` 으로 준 항목은 `!` 와 상관없이 쓴다.
 
-종료 코드: merge_queue.py 의 종료 코드. 2 는 사용법 오류이기도 하다
+--finish-config 없이 orch 작업 폴더를 옮기기 전인 저장소에서 부르면 옮기는 명령을 알리고 머지 큐를 걸지 않는다(종료 코드 2).
+옛 설정을 읽지 않으므로 그대로 걸면 머지 전 명령(DB 백업 같은 것)과 필수 체크가 경고 없이 빠진다.
+
+종료 코드: merge_queue.py 의 종료 코드. 2 는 사용법 오류이거나 옮기기 전이라는 뜻이기도 하다
 """
 
 from __future__ import annotations
@@ -62,14 +65,15 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import orch_paths  # noqa: E402
 MERGE_QUEUE = os.environ.get("MERGE_QUEUE", str(HERE / "merge_queue.py"))
 FINISH_PR = os.environ.get("FINISH_PR", str(HERE / "finish-pr.py"))
 # merge_queue.py 가 값을 받는 옵션. 값이 숫자여도 PR 번호로 읽지 않으려고 안다. tests 가 merge_queue.py 와 맞는지 본다
 VALUE_OPTIONS = {"--repo", "--before", "--method", "--threads-cmd", "--check-timeout", "--required", "--allow-fail",
                  "--verify-merged", "--verify-merged-when", "--docs-glob", "--copy-dir", "--sweep-arg", "--after-merged",
                  "--up-to-date-when", "--shared-paths", "--unit-prefix", "--unit-group"}
-DEFAULT_CONFIG = ".claude/orch-finish.json"
-# orch-finish.json 의 queue 절 키와 머지 큐 옵션
+# config.json 의 queue 절 키와 머지 큐 옵션
 QUEUE_KEYS = {"before": "--before", "required": "--required", "verify_merged": "--verify-merged",
               "verify_merged_when": "--verify-merged-when", "docs_glob": "--docs-glob", "method": "--method",
               "after_merged": "--after-merged", "up_to_date_when": "--up-to-date-when", "shared_paths": "--shared-paths",
@@ -192,7 +196,7 @@ def given_options(queue):
 
 def load_config(wrapper):
     """설정 파일 전체. 파일이 없으면 빈 객체이고, 읽지 못했거나 객체가 아니면 ValueError."""
-    path = Path(wrapper["finish_config"]) if wrapper["finish_config"] else Path(wrapper["repo"]) / DEFAULT_CONFIG
+    path = Path(wrapper["finish_config"]) if wrapper["finish_config"] else orch_paths.path("config", wrapper["repo"])
     if not path.is_file():
         return {}
     try:
@@ -256,7 +260,7 @@ def queue_defaults(wrapper, queue, config):
 
 def board_file(wrapper, config):
     """마무리가 보드를 고칠 때 쓰는 파일. finish-pr.py 와 같은 순서(--board, 설정의 finish.board, 기본 경로)로 정하고,
-    상대경로는 둘 다 --repo 기준으로 푼다."""
+    상대경로는 주 checkout 기준으로 푼다."""
     repo = Path(wrapper["repo"])
     given = None
     for i, arg in enumerate(wrapper["finish_arg"]):
@@ -267,10 +271,7 @@ def board_file(wrapper, config):
     finish = config.get("finish")
     configured = finish.get("board") if isinstance(finish, dict) else None
     given = given or (configured if isinstance(configured, str) else None)
-    if given:
-        return repo / given
-    nested = repo / ".omc/handoffs/board.json"
-    return nested if nested.exists() else repo / ".omc/board.json"
+    return orch_paths.board_path(repo, given)
 
 
 def pr_numbers(field):
@@ -312,8 +313,8 @@ def finish_running(pid_file):
 
 def start_finish(wrapper, number, complete, config):
     repo = Path(wrapper["repo"]).resolve()
-    log_dir = Path(wrapper["log_dir"]) if wrapper["log_dir"] else repo / ".omc/handoffs/queue"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = Path(wrapper["log_dir"]) if wrapper["log_dir"] else orch_paths.path("queue", repo)
+    orch_paths.make_parent(log_dir / "x", repo)
     pid_file = log_dir / f"finish-{number}.pid"
     if finish_running(pid_file):
         print(f"마무리는 이미 돌고 있다: PR {number} ({pid_file})", flush=True)
@@ -338,6 +339,9 @@ def main(argv=None):
         return 2
     if not prs:
         print(__doc__)
+        return 2
+    if not wrapper["finish_config"] and not orch_paths.require_migrated(
+            wrapper["repo"], "merge-with-finish", "설정 파일을 --finish-config 로 직접 준다"):
         return 2
     try:
         config = load_config(wrapper)
