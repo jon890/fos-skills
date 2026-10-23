@@ -592,6 +592,32 @@ class MergeQueueTest(unittest.TestCase):
         self.assertNotIn("update-branch", log)
         self.assertIn("pr merge 1 --merge --match-head-commit abc", log)
 
+    def test_rejudges_when_base_moves_after_the_branch_was_found_current(self):
+        # 이미 최신이라 판정 없이 지나갔어도, 그 뒤 머지 전 명령이 base 를 바꾸면 다시 판정한다
+        self.fake_overlap_units("바로 머지", 0)
+        pr = self.pr(statusCheckRollup=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 0}, "--required", "backend", "--require-up-to-date",
+                           "--up-to-date-when", "overlap", "--before",
+                           self.move_base_cmd(_base_head="moved", _behind=3), "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정한 뒤 base(main) 가 움직였다. 새로 들어온 변경으로 다시 판정한다", r.stdout)
+        self.assertEqual(1, self.judged_count())
+        self.assertEqual(1, r.stdout.count("1 판정: 바로 머지"), r.stdout)
+        log = self.log.read_text()
+        self.assertNotIn("update-branch", log)
+        self.assertIn("pr merge 1 --merge --match-head-commit abc", log)
+
+    def test_updates_when_base_moves_after_the_branch_was_found_current_and_overlaps(self):
+        self.fake_overlap_units("갱신 필요(단위 겹침: api)", 1, then=[("바로 머지", 0)])
+        pr = self.pr(statusCheckRollup=[self.check("backend")], after_update=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 0}, "--required", "backend", "--require-up-to-date",
+                           "--up-to-date-when", "overlap", "--before",
+                           self.move_base_cmd(_base_head="moved", _behind=3), "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        log = self.log.read_text()
+        self.assertEqual(1, log.count("update-branch"), log)
+        self.assertIn("pr merge 1 --merge --match-head-commit new", log)
+
     def test_stops_instead_of_rejudging_when_the_base_lookup_fails(self):
         # ls-remote 가 실패하면 빈 값을 「base 가 움직였다」 로 읽어 다시 판정하지 않는다. 조회 실패로 멈춘다
         self.fake_overlap_units("바로 머지", 0)

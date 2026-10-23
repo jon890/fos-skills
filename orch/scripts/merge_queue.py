@@ -740,11 +740,17 @@ class Queue:
                     update_docs = True
             if not (o.up_to_date or update_docs):
                 return
+            # 비교보다 먼저 읽는다. 그 사이 base 가 움직였으면 나중에 다른 값으로 보여 다시 판정한다
+            base_at_compare = self.remote_base() if o.up_to_date_when == "overlap" else None
             behind = self.api(f"repos/{p.owner}/{p.repo}/compare/{p.base}...{p.ph}", "--jq", ".behind_by")
             behind = behind.stdout.rstrip("\n") if behind.returncode == 0 else ""
             if not behind.isdigit():
                 stop(f"{n} base 와 비교 실패")
             if behind == "0":
+                # 최신이라 판정은 거치지 않는다. 이 뒤(스레드 조회, mergeable 재시도, 머지 전 명령)에 base 가
+                # 움직이면 ready_to_merge 가 다시 판정하도록 지금 base 를 적어 둔다
+                if o.up_to_date_when == "overlap":
+                    p.judged_base = base_at_compare
                 return
             # 문서 PR 갱신(update_docs)은 겹침을 이미 확인한 뒤의 결정이라 판정을 거치지 않는다
             if o.up_to_date_when == "overlap" and not update_docs:
