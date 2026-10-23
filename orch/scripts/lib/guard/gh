@@ -1,0 +1,16 @@
+#!/usr/bin/env -S node --disable-warning=ExperimentalWarning
+// 이벤트 핸들러의 PATH 맨 앞에 두는 gh shim 이다. 거부 규칙과 종료 코드는 guard.ts 머리 주석이 소유한다.
+// 확장자가 없어 node 가 CommonJS 로 읽고 타입 문법을 지우지 않는다. 그래서 타입 문법 없이 import() 로 guard.ts 를 부른다.
+'use strict'
+const { join } = require('node:path')
+const { pathToFileURL } = require('node:url')
+
+import(pathToFileURL(join(__dirname, 'guard.ts')).href).then(
+  (guard) => {
+    process.exitCode = guard.main('gh', process.argv.slice(2))
+  },
+  (err) => {
+    process.stderr.write('gh 가드를 읽지 못했다: ' + (err && err.message ? err.message : String(err)) + '\n')
+    process.exitCode = 126
+  },
+)
