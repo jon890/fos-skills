@@ -183,6 +183,28 @@ class GitIntegrationTest(unittest.TestCase):
         git(self.repo, "merge", "-q", "--no-edit", "main")
         self.assertEqual((0, "바로 머지", ""), self.cli())
 
+    def update_pr_then_move_base(self, second_base_file):
+        """PR 을 갱신(base 를 merge)한 뒤 base 가 또 움직인 상태. 첫 base 변경은 PR 과 겹쳤다."""
+        self.diverge("modules/api/B.java", "modules/api/C.java")
+        git(self.repo, "checkout", "-q", "feature")
+        git(self.repo, "merge", "-q", "--no-edit", "main")
+        git(self.repo, "checkout", "-q", "main")
+        self.write(second_base_file, "second")
+        self.commit("base again")
+
+    def test_rejudge_after_update_sees_only_the_changes_that_came_in_since(self):
+        # 갱신한 PR 의 새 merge-base 는 이미 품은 base 다. 앞서 겹쳤던 api 변경은 다시 세지 않는다
+        self.update_pr_then_move_base("docs/guide.txt")
+        self.assertEqual((0, "바로 머지", ""), self.cli())
+        git(self.repo, "checkout", "-q", "main")
+        self.write("modules/web/W.java", "web again")
+        self.commit("base web")
+        self.assertEqual((0, "바로 머지", ""), self.cli())
+
+    def test_rejudge_after_update_updates_again_when_the_new_changes_overlap(self):
+        self.update_pr_then_move_base("modules/api/D.java")
+        self.assertEqual((1, "갱신 필요(단위 겹침: api)", ""), self.cli())
+
     def test_base_has_no_new_commit(self):
         self.diverge("modules/api/B.java", None)
         self.assertEqual((0, "바로 머지", ""), self.cli())

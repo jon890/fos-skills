@@ -49,7 +49,10 @@ origin 은 PR 이 속한 저장소를 가리켜야 한다. fork 를 origin 으�
                         단위는 --unit-prefix 아래 폴더 하나이고 그 밖의 파일은 경로 자체다. --shared-paths 에 맞는 파일과
                         --docs-glob 에 맞는 문서 파일은 각각 겹친 것으로 보거나 세지 않는다.
                         판정하지 못하면 갱신 필요로 다룬다. --require-up-to-date 가 있어야 한다.
-                        바로 머지로 판정한 뒤 머지 직전에 base 가 움직였으면 `STOP <PR> 판정한 뒤 base 가 움직였다` 로 멈춘다
+                        판정은 한 번으로 끝나지 않는다. 갱신하고 CI 를 기다리는 사이나, 바로 머지로 판정한 뒤 머지 직전에
+                        base 가 또 움직이면 새로 들어온 변경(PR 의 새 merge-base 기준)만 놓고 다시 판정한다.
+                        겹치지 않으면 다시 갱신하지 않고 머지하고, 겹칠 때만 또 갱신한다. PR HEAD 는 --match-head-commit 으로 계속 지킨다.
+                        다시 판정하는 횟수는 PR 하나에 5번까지이고 넘으면 `STOP <PR> 다시 판정을 5번 했는데도 base 가 계속 움직인다` 로 멈춘다
                         GitHub 의 「브랜치를 최신으로 유지」 보호 규칙이 켜진 저장소는 머지가 거부되므로 쓰지 않는다
   --shared-paths RE     overlap 에서 어느 쪽에 있든 겹친 것으로 보는 공용 경로의 정규식(grep -E 처럼 경로 어디든 맞는다).
                         모든 모듈에 영향을 주는 경로(공용 모듈, 루트 빌드 파일, 계약, CI 설정)를 적는다
@@ -132,6 +135,7 @@ from overlap_units import group_map  # noqa: E402
 VALUE_OPTIONS = {"--repo", "--before", "--method", "--threads-cmd", "--check-timeout", "--required", "--allow-fail",
                  "--up-to-date-when", "--shared-paths", "--unit-prefix", "--unit-group", "--verify-merged",
                  "--verify-merged-when", "--docs-glob", "--copy-dir", "--after-merged", "--sweep-arg"}
+REJUDGE_LIMIT = 5  # 첫 판정 뒤에 base 가 움직여 다시 판정하는 횟수의 상한. 넘으면 멈춘다
 SLEEP_SCALE = float(os.environ.get("MERGE_QUEUE_SLEEP_SCALE", "1"))
 DOCS_ONLY_NOTE = "--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다(--up-to-date-when overlap 과도 쓴다)"
 
@@ -452,6 +456,7 @@ class Queue:
         if not self.fetch_pr_refs():
             log(f"{p.n} 판정: 갱신 필요(판정 실패: PR HEAD 나 base 를 받지 못했다)")
             return True
+        judged_base = git("rev-parse", "-q", "--verify", f"origin/{p.base}").stdout.strip()
         done = subprocess.run(
             [sys.executable, self.overlap_units, "--base", f"origin/{p.base}", "--head", p.ph,
              "--shared-paths", o.shared_paths, "--unit-prefix", o.unit_prefix, "--docs-glob", o.docs_glob,
@@ -460,7 +465,7 @@ class Queue:
         if done.returncode == 0:
             log(f"{p.n} 판정: {verdict}")
             # 판정한 base 를 적어 둔다. 머지 직전에 base 가 움직였는지 다시 본다
-            p.judged_base = git("rev-parse", "-q", "--verify", f"origin/{p.base}").stdout.strip()
+            p.judged_base = judged_base
             return False
         if done.returncode == 1:
             log(f"{p.n} 판정: {verdict}")
@@ -565,67 +570,9 @@ class Queue:
                               "| unique | .[]",
         }
 
-        self.bring_up_to_date()
-
-        f = self.field(n, "statusCheckRollup", self.q["failed"])
-        for name in self.field(n, "statusCheckRollup", self.q["allowed_failed"]).split("\n"):
-            if name:
-                print(f"경고: {n} 실패를 허용한 체크 {name}", flush=True)
-        done = subprocess.run(["bash", "-c", o.threads_cmd], stdout=subprocess.PIPE, text=True,
-                              env=dict(self.pr_env(), GH_HOST=p.api_host))
-        if done.returncode != 0:
-            stop(f"{n} 스레드 조회 실패")
-        t = done.stdout.rstrip("\n")
-
-        m = self.field(n, "mergeable", ".mergeable")
-        for _ in range(4):
-            if m != "UNKNOWN":
-                break
-            nap(20)
-            m = self.field(n, "mergeable", ".mergeable")
-
-        log(f"{n} fails={f} threads={t} mergeable={m}")
-        if f != "0" or t != "0" or m != "MERGEABLE":
-            stop(n)
-
-        p.ov = []
-        if o.overlap:
-            ov = self.overlap_files()
-            if ov is None:
-                stop(f"{n} 겹침 판정 실패(PR HEAD 나 base 를 받지 못했다)")
-            p.ov = ov
-            listing = " ".join(ov) + (" " if ov else "")
-            if not o.verify_merged:
-                if ov:
-                    stop(f"{n} 겹침: {listing}")
-            else:
-                if ov:
-                    log(f"{n} 겹침: {listing}")
-                if o.verify_when != "overlap" or ov:
-                    if o.verify_when != "always" and o.docs_glob and self.docs_only():
-                        log(f"{n} 문서만 바꿨다(--docs-glob). 합친 사본 검사 없이 머지한다")
-                    else:
-                        self.verify_merged()
-
-        if before:
-            log(f"{n} 머지 전 명령: {before}")
-            if subprocess.run(["bash", "-c", before], env=dict(self.pr_env(), GH_HOST=p.api_host)).returncode != 0:
-                stop(f"{n} 머지 전 명령 실패")
-
-        ph2 = self.field(n, "headRefOid", ".headRefOid")
-        if p.ph != ph2:
-            stop(f"{n} 검사 뒤 HEAD 가 바뀌었다 checked={p.ph[:8]} now={ph2[:8]}")
-        if not p.cross:
-            if git("fetch", "-q", "origin", p.branch).returncode != 0:
-                stop(f"{n} 원격 브랜치 fetch 실패")
-            rh = git("rev-parse", "-q", "--verify", f"origin/{p.branch}").stdout.strip()
-            if p.ph != rh:
-                stop(f"{n} head 불일치 pr={p.ph[:8]} remote={rh[:8]}")
-
-        if p.judged_base:
-            current = git("ls-remote", "origin", f"refs/heads/{p.base}").stdout.split("\t")[0]
-            if current != p.judged_base:
-                stop(f"{n} 판정한 뒤 base({p.base}) 가 움직였다. 다시 돌린다")
+        p.before_head = None
+        p.judgments = 0
+        self.ready_to_merge(before)
 
         # 머지 뒤에는 merge-base 가 바뀌어 문서 PR 인지 다시 판정할 수 없다. 머지 전에 정한다
         kind = "docs" if o.docs_glob and self.docs_only() else "code"
@@ -648,6 +595,75 @@ class Queue:
         git("fetch", "-q", "origin")
         if not o.keep_branch and not p.cross:
             self.delete_branch()
+
+    def ready_to_merge(self, before):
+        """머지 직전까지의 확인을 끝낸다. 바로 머지로 판정한 뒤 base 가 움직였으면 새로 들어온 변경으로 다시 판정한다."""
+        o, p = self.o, self.pr
+        n = p.n
+        while True:
+            self.bring_up_to_date()
+
+            f = self.field(n, "statusCheckRollup", self.q["failed"])
+            for name in self.field(n, "statusCheckRollup", self.q["allowed_failed"]).split("\n"):
+                if name:
+                    print(f"경고: {n} 실패를 허용한 체크 {name}", flush=True)
+            done = subprocess.run(["bash", "-c", o.threads_cmd], stdout=subprocess.PIPE, text=True,
+                                  env=dict(self.pr_env(), GH_HOST=p.api_host))
+            if done.returncode != 0:
+                stop(f"{n} 스레드 조회 실패")
+            t = done.stdout.rstrip("\n")
+
+            m = self.field(n, "mergeable", ".mergeable")
+            for _ in range(4):
+                if m != "UNKNOWN":
+                    break
+                nap(20)
+                m = self.field(n, "mergeable", ".mergeable")
+
+            log(f"{n} fails={f} threads={t} mergeable={m}")
+            if f != "0" or t != "0" or m != "MERGEABLE":
+                stop(n)
+
+            p.ov = []
+            if o.overlap:
+                ov = self.overlap_files()
+                if ov is None:
+                    stop(f"{n} 겹침 판정 실패(PR HEAD 나 base 를 받지 못했다)")
+                p.ov = ov
+                listing = " ".join(ov) + (" " if ov else "")
+                if not o.verify_merged:
+                    if ov:
+                        stop(f"{n} 겹침: {listing}")
+                else:
+                    if ov:
+                        log(f"{n} 겹침: {listing}")
+                    if o.verify_when != "overlap" or ov:
+                        if o.verify_when != "always" and o.docs_glob and self.docs_only():
+                            log(f"{n} 문서만 바꿨다(--docs-glob). 합친 사본 검사 없이 머지한다")
+                        else:
+                            self.verify_merged()
+
+            if before and p.before_head != p.ph:
+                p.before_head = p.ph
+                log(f"{n} 머지 전 명령: {before}")
+                if subprocess.run(["bash", "-c", before], env=dict(self.pr_env(), GH_HOST=p.api_host)).returncode != 0:
+                    stop(f"{n} 머지 전 명령 실패")
+
+            ph2 = self.field(n, "headRefOid", ".headRefOid")
+            if p.ph != ph2:
+                stop(f"{n} 검사 뒤 HEAD 가 바뀌었다 checked={p.ph[:8]} now={ph2[:8]}")
+            if not p.cross:
+                if git("fetch", "-q", "origin", p.branch).returncode != 0:
+                    stop(f"{n} 원격 브랜치 fetch 실패")
+                rh = git("rev-parse", "-q", "--verify", f"origin/{p.branch}").stdout.strip()
+                if p.ph != rh:
+                    stop(f"{n} head 불일치 pr={p.ph[:8]} remote={rh[:8]}")
+            if not p.judged_base:
+                return
+            current = git("ls-remote", "origin", f"refs/heads/{p.base}").stdout.split("\t")[0]
+            if current == p.judged_base:
+                return
+            log(f"{n} 판정한 뒤 base({p.base}) 가 움직였다. 새로 들어온 변경으로 다시 판정한다")
 
     def required_checks(self):
         o, p = self.o, self.pr
@@ -724,11 +740,16 @@ class Queue:
             if behind == "0":
                 return
             # 문서 PR 갱신(update_docs)은 겹침을 이미 확인한 뒤의 결정이라 판정을 거치지 않는다
-            if o.up_to_date_when == "overlap" and not update_docs and not self.needs_update():
-                return
+            if o.up_to_date_when == "overlap" and not update_docs:
+                # 갱신하고 CI 를 기다리는 사이 base 가 또 움직였을 수 있어, 이 자리에 올 때마다 새로 판정한다
+                p.judgments += 1
+                if p.judgments > REJUDGE_LIMIT + 1:
+                    stop(f"{n} 다시 판정을 {REJUDGE_LIMIT}번 했는데도 base({p.base}) 가 계속 움직인다")
+                if not self.needs_update():
+                    return
             rounds += 1
-            if rounds > 3:
-                stop(f"{n} base 를 3번 merge 해도 최신이 아니다. base 가 계속 움직인다")
+            if rounds > (REJUDGE_LIMIT + 1 if o.up_to_date_when == "overlap" else 3):
+                stop(f"{n} base 를 {rounds - 1}번 merge 해도 최신이 아니다. base 가 계속 움직인다")
             log(f"{n} base({p.base}) 보다 {behind} 커밋 뒤처졌다. update-branch 후 체크를 다시 기다린다")
             updated = self.api("-X", "PUT", f"repos/{p.owner}/{p.repo}/pulls/{n}/update-branch",
                                "-f", f"expected_head_sha={p.ph}")

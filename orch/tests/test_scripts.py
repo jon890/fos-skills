@@ -170,7 +170,7 @@ FAKE_GH = textwrap.dedent("""\
             pr["headRefOid"] = pr.get("after_update_head", "new")
             pr["statusCheckRollup"] = []
             pr["appear"] = {"left": 2, "checks": pr.get("after_update", [])}
-            state["_behind"] = 0
+            state["_behind"] = state.get("_behind_after_update", 0)
             state["_remote_head"] = "new"
             json.dump(state, open(os.environ["FAKE_STATE"], "w"))
             sys.exit(0)
@@ -214,7 +214,9 @@ FAKE_GIT = textwrap.dedent("""\
     if args[:1] in (["rev-parse"], ["ls-remote"]):
         state = json.load(open(os.environ["FAKE_STATE"]))
         head = state.get("_remote_head", os.environ.get("FAKE_REMOTE_HEAD", ""))
-        print(state.get("_base_head", head) + "\trefs/heads/main" if args[0] == "ls-remote" else head)
+        base_ref = args[0] == "ls-remote" or any(a.endswith("origin/main") for a in args)
+        print(state.get("_base_head", head) + "\trefs/heads/main" if args[0] == "ls-remote"
+              else state.get("_base_head", head) if base_ref else head)
     sys.exit(0)
     """)
 
@@ -490,11 +492,24 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual(1, r.returncode)
         self.assertIn("--required 로 준다", r.stdout)
 
-    def fake_overlap_units(self, verdict, code):
-        """overlap_units.py 대신 받은 인자를 적고 정해 둔 판정을 내는 가짜. 실제 판정은 test_overlap_units.py 가 본다."""
+    def fake_overlap_units(self, verdict, code, then=(), move_base=False):
+        """overlap_units.py 대신 받은 인자를 적고 정해 둔 판정을 내는 가짜. 실제 판정은 test_overlap_units.py 가 본다.
+
+        then 은 두 번째 호출부터 차례로 낼 (판정, 종료 코드) 이고 다 쓰면 마지막 것을 되풀이한다.
+        move_base 이면 판정하는 사이 원격 base 가 움직인 것으로 본다.
+        """
         script = self.tmp / "overlap_units.py"
-        script.write_text(f"import sys\nopen({str(self.tmp / 'judge-args.txt')!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
-                          f"print({verdict!r}, file=sys.stderr if {code} == 2 else sys.stdout)\nsys.exit({code})\n")
+        verdicts = [(verdict, code), *then]
+        script.write_text(
+            "import json, sys\n"
+            f"open({str(self.tmp / 'judge-args.txt')!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+            f"calls = len(open({str(self.tmp / 'judge-args.txt')!r}).read().splitlines())\n"
+            f"verdict, code = {verdicts!r}[min(calls, {len(verdicts)}) - 1]\n"
+            f"if {move_base!r}:\n"
+            f"    d = json.load(open({str(self.state)!r}))\n"
+            "    d['_base_head'] = f'base{calls}'\n"
+            f"    json.dump(d, open({str(self.state)!r}, 'w'))\n"
+            "print(verdict, file=sys.stderr if code == 2 else sys.stdout)\nsys.exit(code)\n")
         self.env["OVERLAP_UNITS"] = str(script)
 
     def overlap_queue(self, verdict, code, *extra, behind=2):
@@ -554,12 +569,66 @@ class MergeQueueTest(unittest.TestCase):
                 self.assertEqual(2, r.returncode, r.stdout + r.stderr)
                 self.assertIn(message, r.stderr)
 
-    def test_stops_when_base_moves_after_a_direct_merge_judgement(self):
-        move = (f"python3 -c \"import json; p='{self.state}'; d=json.load(open(p)); "
-                f"d['_base_head']='moved'; json.dump(d, open(p, 'w'))\"")
-        r = self.overlap_queue("바로 머지", 0, "--before", move)
+    def move_base_cmd(self, **fields):
+        sets = "; ".join(f"d[{k!r}]={v!r}" for k, v in fields.items())
+        return f"python3 -c \"import json; p='{self.state}'; d=json.load(open(p)); {sets}; json.dump(d, open(p, 'w'))\""
+
+    def judged_count(self):
+        return len((self.tmp / "judge-args.txt").read_text().splitlines())
+
+    def test_rejudges_instead_of_stopping_when_base_moves_after_a_direct_merge_judgement(self):
+        # 바로 머지로 판정한 뒤 머지 직전에 base 가 움직였다. 새 변경이 겹치지 않으면 멈추지 않고 머지한다
+        self.fake_overlap_units("바로 머지", 0)
+        pr = self.pr(statusCheckRollup=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 2}, "--required", "backend", "--require-up-to-date",
+                           "--up-to-date-when", "overlap", "--before",
+                           self.move_base_cmd(_base_head="moved", _behind=3), "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정한 뒤 base(main) 가 움직였다. 새로 들어온 변경으로 다시 판정한다", r.stdout)
+        self.assertEqual(2, r.stdout.count("1 판정: 바로 머지"), r.stdout)
+        log = self.log.read_text()
+        self.assertNotIn("update-branch", log)
+        self.assertIn("pr merge 1 --merge --match-head-commit abc", log)
+
+    def test_updates_after_a_pre_merge_base_move_that_overlaps(self):
+        # 머지 직전에 움직인 base 가 PR 과 겹치면 그때 갱신하고, 새 HEAD 로 머지한다
+        self.fake_overlap_units("바로 머지", 0, then=[("갱신 필요(단위 겹침: api)", 1), ("바로 머지", 0)])
+        pr = self.pr(statusCheckRollup=[self.check("backend")], after_update=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 2}, "--required", "backend", "--require-up-to-date",
+                           "--up-to-date-when", "overlap", "--before",
+                           self.move_base_cmd(_base_head="moved", _behind=3), "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        log = self.log.read_text()
+        self.assertEqual(1, log.count("update-branch"))
+        self.assertIn("pr merge 1 --merge --match-head-commit new", log)
+        # 갱신으로 base 를 모두 품으면 더 판정하지 않는다
+        self.assertEqual(2, self.judged_count())
+
+    def test_rejudges_after_update_when_base_moves_again_and_merges_without_second_update(self):
+        # 실제 사례: PR 을 갱신한 지 1분 뒤 base 에 문서만 바꾼 PR 이 머지됐다.
+        # 예전에는 다시 갱신하고 CI 를 처음부터 기다렸다. 새로 들어온 변경만 보면 겹치지 않아 바로 머지한다
+        self.fake_overlap_units("갱신 필요(단위 겹침: api)", 1, then=[("바로 머지", 0)])
+        pr = self.pr(statusCheckRollup=[self.check("backend")], after_update=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 2, "_behind_after_update": 1}, "--required", "backend",
+                           "--require-up-to-date", "--up-to-date-when", "overlap", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정: 갱신 필요(단위 겹침: api)", r.stdout)
+        self.assertIn("1 판정: 바로 머지", r.stdout)
+        self.assertLess(r.stdout.index("갱신 필요"), r.stdout.index("1 판정: 바로 머지"))
+        log = self.log.read_text()
+        self.assertEqual(1, log.count("update-branch"), log)
+        self.assertIn("pr merge 1 --merge --match-head-commit new", log)
+        self.assertEqual(2, self.judged_count())
+
+    def test_rejudge_limit_stops_when_base_keeps_moving(self):
+        self.fake_overlap_units("바로 머지", 0, move_base=True)
+        pr = self.pr(statusCheckRollup=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 2}, "--required", "backend", "--require-up-to-date",
+                           "--up-to-date-when", "overlap", "1")
         self.assertEqual(1, r.returncode, r.stdout + r.stderr)
-        self.assertIn("STOP 1 판정한 뒤 base(main) 가 움직였다", r.stdout)
+        self.assertIn("STOP 1 다시 판정을 5번 했는데도 base(main) 가 계속 움직인다", r.stdout)
+        # 처음 한 번과 다시 판정 5번
+        self.assertEqual(6, self.judged_count())
         self.assertNotIn("pr merge", self.log.read_text())
 
     def test_conflicting_unit_groups_are_a_usage_error_at_start(self):
