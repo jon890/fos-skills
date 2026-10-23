@@ -218,7 +218,8 @@ def queue_defaults(wrapper, queue, config):
 
 
 def board_file(wrapper, config):
-    """마무리가 보드를 고칠 때 쓰는 파일. finish-pr.py 와 같은 순서로 정한다."""
+    """마무리가 보드를 고칠 때 쓰는 파일. finish-pr.py 와 같은 순서(--board, 설정의 finish.board, 기본 경로)로 정하고,
+    상대경로는 둘 다 --repo 기준으로 푼다."""
     repo = Path(wrapper["repo"])
     given = None
     for i, arg in enumerate(wrapper["finish_arg"]):

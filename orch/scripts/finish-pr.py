@@ -38,7 +38,7 @@
     --complete            이 PR 이 업무의 마지막 PR 이다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
     --complete-cmd CMD    업무 완료 명령 틀. 공백으로 나뉘고 {number} 가 업무 번호로 바뀐다. 셸을 거치지 않는다
                           (예: 'task-cli complete {number}')
-    --board FILE          보드 파일. 기본은 <repo>/.omc/board.json, 있으면 <repo>/.omc/handoffs/board.json
+    --board FILE          보드 파일. 상대경로는 --repo 기준이다. 기본은 <repo>/.omc/board.json, 있으면 <repo>/.omc/handoffs/board.json
     --board-id ID         done 으로 바꿀 보드 항목
     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
     --merge-timeout MIN   머지 대기 한도(분). 기본 180
@@ -258,7 +258,8 @@ def default_board(repo):
 
 
 def set_board_done(args, repo, item):
-    board = Path(args.board) if args.board else default_board(repo)
+    # 상대경로는 이 프로세스의 cwd 가 아니라 --repo 기준이다. merge-with-finish.py 가 보드를 찾는 방식과 같다
+    board = repo / args.board if args.board else default_board(repo)
     cmd = ["python3", args.board_bin, "set", item, "done", "--worktree", "", "--pr", "", "--next", "",
            "--file", str(board)]
     code, _, err = run(cmd, cwd=repo)
