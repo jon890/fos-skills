@@ -1,6 +1,8 @@
 # 7. 머지와 정리
 
 `cleanup-sweep.py` 와 `remove-worktree.py` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
+소유 상태는 모든 Run 의 worker 행에서 읽는다. 코디네이터 터미널에서 부르면 범위 없는 `worker-list` 가 그 Run 만 주므로(scope `bound`), `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다.
+정리 한 번에 한 번만 읽고, 범위를 읽는 방법과 이유는 `terminal_ownership.py` 머리 주석이 소유한다.
 터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 
 끝난 dispatch 의 터미널은 `worker-list` 의 `resource` 로 아래처럼 나뉜다.
@@ -307,7 +309,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
 - 워크트리 없이 남은 머지된 로컬 브랜치와, PR 이 머지된 뒤 남은 원격 브랜치
 - worker 가 기준선 비교로 저장소 밖에 만들고 남긴 detached 워크트리. 변경이 없고, 쓰는 프로세스와 터미널이 없고, HEAD 가 원격에 있으면 지운다. 폴더가 이미 없는 등록은 먼저 `git worktree prune` 으로 지운다
 - 하위 에이전트 워크트리(`agent-*`)에 Orca 가 띄운 빈 셸 터미널. 다른 Run 의 것인지 확인하지 못해도, 그 경로에 자식 없는 로그인 셸만 있으면 빈 셸로 보고 닫는다. 폴더 이름 규칙이 다르면 `--agent-glob` 로 준다
-- 끝난 worker 터미널을 닫자 Orca 가 다시 연 빈 셸(「Terminal 1」). 모든 Run 범위를 읽지 못해 「다른 Run 의 것인지 확인하지 못한 터미널」 로 건너뛰던 것을, 이 Run 의 머지된 워크트리에서 `agentIdentity` 가 없고 그 경로의 프로세스가 자식 없는 로그인 셸뿐이며 터미널마다 셸이 하나씩 있으면 `빈 셸을 닫았다: term_…` 를 남기고 닫는다. `--apply` 가 없으면 닫을 것만 보인다
+- 끝난 worker 터미널을 닫자 Orca 가 다시 연 빈 셸(「Terminal 1」). 모든 Run 의 worker 를 읽지 못해 「다른 Run 의 것인지 확인하지 못한 터미널」 로 건너뛰던 것을, 이 Run 의 머지된 워크트리에서 `agentIdentity` 가 없고 그 경로의 프로세스가 자식 없는 로그인 셸뿐이며 터미널마다 셸이 하나씩 있으면 `빈 셸을 닫았다: term_…` 를 남기고 닫는다. `--apply` 가 없으면 닫을 것만 보인다
 - 저장소가 여럿인 경우. `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시)
 
 스크립트가 건너뛴 항목과, 스크립트가 다루지 않는 아래 일만 직접 한다.
