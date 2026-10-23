@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # orch
@@ -102,6 +102,8 @@ heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartb
 PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 
 ## 6. 완료 검증
+
+여러 worker 가 같은 PC 에서 무거운 검사를 실행하면 [`references/heavy-checks.md`](references/heavy-checks.md)의 대기열로 감싼다.
 
 `worker_done` 은 근거가 아니다. git 으로 완료 기준을 대조하고, diff 를 읽고, 검사를 다시 돌린다.
 충돌을 직접 풀었으면 reference 의 「충돌을 직접 풀 때」 를 따른다.

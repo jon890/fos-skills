@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.1.0 (2026-10-23)
+
+- `heavy-slot.py` 로 여러 worker 의 무거운 검사를 FIFO 대기열과 기본 3개 자리로 제한한다. 독점 실행, 중첩 호출, 죽은 PID 회수와 `mem-gate.sh` 대기를 지원하며 경로와 자리 수를 인자나 환경 변수로 받는다.
+- 대기열 사용법과 실행 수명 검사를 추가했다. 특정 저장소의 우선 검사 파일과 전역 Docker 프로세스 감시는 포함하지 않는다.
+- 대기열 기본 경로를 `orch_paths.py` 의 `heavy-slot` 으로 받는다. 워크트리끼리 주 checkout 의 `.orch/state/heavy-slot/` 을 공유하며 `ORCH_DIR` 로 루트를 바꾼다.
+
 ## 2.0.0 (2026-10-23)
 
 orch 의 파일을 oh-my-claudecode 의 `.omc/` 에서 떼어 주 checkout 의 `.orch/` 로 옮긴다. 쓰던 저장소는 한 번 옮겨야 하므로 major 로 올린다. 결정은 ADR-008 이 소유한다.
