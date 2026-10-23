@@ -29,6 +29,8 @@ FAKE_ORCA = textwrap.dedent("""\
 FAKE_PGREP = textwrap.dedent("""\
     #!/usr/bin/env python3
     import os, sys
+    if os.environ.get("FAKE_PGREP_FAILS") == "1":
+        sys.exit(3)
     busy = os.environ.get("FAKE_BUSY")
     if busy:
         print(busy)
@@ -96,7 +98,7 @@ class MigrateTest(unittest.TestCase):
         self.assertIn("옮길 것 .omc/handoffs/queue -> .orch/queue", out)
         self.assertIn("옮길 것 .omc/state/wait-important-lost.json -> .orch/state/wait-important-lost.json", out)
         self.assertIn("바꿀 옛 경로 .omc/handoffs/specs/spec-a.md:1:", out)
-        self.assertIn("옛 경로 참조 .omc/handoffs/bin/merge.sh:1:", out)
+        self.assertIn("옛 경로 참조(스크립트. 옛 폴더를 다시 만들 수 있어 옮긴 뒤 고친다) .omc/handoffs/bin/merge.sh:1:", out)
         self.assertNotIn("session.json", out)
         self.assertNotIn("q.out:", out)
         after = sorted(p.relative_to(self.repo) for p in self.repo.rglob("*") if ".git" not in p.parts)
@@ -120,7 +122,7 @@ class MigrateTest(unittest.TestCase):
         self.assertFalse((self.repo / ".claude/orch-overlay.md").exists())
         self.assertIn("/.orch/", (self.repo / ".git/info/exclude").read_text().splitlines())
         self.assertEqual("", sh("git", "-C", str(self.repo), "status", "--porcelain", "--", ".orch", env=self.env))
-        self.assertIn("설정 cleanup.omc 를 지웠다", out)
+        self.assertIn("설정 cleanup.omc 를 지운다", out)
 
         out, _ = self.migrate("--apply")
         self.assertEqual("옮길 것이 없다", out.strip().splitlines()[-1])
@@ -172,10 +174,22 @@ class MigrateTest(unittest.TestCase):
         sh("git", "-C", str(self.repo), "commit", "-q", "-m", "overlay", env=self.env)
         self.write(".omc/handoffs/specs/spec-a.md", "x\n")
         out, _ = self.migrate("--apply", code=1)
-        self.assertIn(f"추적 파일 git -C {self.repo} mv .claude/orch-overlay.md .orch/overlay.md", out)
+        command = f"mkdir -p {self.repo / '.orch'} && git -C {self.repo} mv .claude/orch-overlay.md .orch/overlay.md"
+        self.assertIn(f"추적 파일 {command}", out)
         self.assertTrue((self.repo / ".claude/orch-overlay.md").exists())
         self.assertTrue((self.repo / ".orch/specs/spec-a.md").exists())
         self.assertEqual("", sh("git", "-C", str(self.repo), "status", "--porcelain", env=self.env))
+        sh("bash", "-c", command, env=self.env)
+        self.assertIn("R  .claude/orch-overlay.md -> .orch/overlay.md",
+                      sh("git", "-C", str(self.repo), "status", "--porcelain", env=self.env))
+
+    def test_tracked_only_creates_the_target_folder_so_the_command_runs(self):
+        self.write(".claude/orch-overlay.md", "# 오버레이\n")
+        sh("git", "-C", str(self.repo), "add", ".claude/orch-overlay.md", env=self.env)
+        sh("git", "-C", str(self.repo), "commit", "-q", "-m", "overlay", env=self.env)
+        out, _ = self.migrate("--apply", code=1)
+        self.assertTrue((self.repo / ".orch").is_dir())
+        sh("git", "-C", str(self.repo), "mv", ".claude/orch-overlay.md", ".orch/overlay.md", env=self.env)
 
     def test_live_work_blocks_apply(self):
         self.write(".omc/handoffs/specs/spec-a.md", "x\n")
@@ -205,6 +219,89 @@ class MigrateTest(unittest.TestCase):
         self.assertIn("옛 경로 참조 docs/plan.md:1: bash .omc/orch/scripts/gate.sh", out)
         self.assertEqual("bash .omc/orch/scripts/gate.sh\n", doc.read_text())
 
+    def test_empty_old_folders_are_removed_and_create_no_new_folders(self):
+        (self.repo / ".omc/orch/specs").mkdir(parents=True)
+        (self.repo / ".omc/handoffs/queue").mkdir(parents=True)
+        out, _ = self.migrate()
+        self.assertIn("지울 빈 폴더 .omc/orch/specs", out)
+        self.migrate("--apply")
+        self.assertFalse((self.repo / ".omc/orch").exists())
+        self.assertFalse((self.repo / ".omc/handoffs/queue").exists())
+        self.assertFalse((self.repo / ".orch").exists())
+        out, _ = self.migrate("--apply")
+        self.assertEqual("옮길 것이 없다\n", out)
+
+    def test_empty_old_folder_next_to_an_existing_orch_does_not_block(self):
+        self.write(".orch/specs/spec-a.md", "x\n")
+        (self.repo / ".omc/orch").mkdir(parents=True)
+        self.migrate("--apply")
+        self.assertFalse((self.repo / ".omc/orch").exists())
+        done = subprocess.run(["python3", str(SCRIPT.parent / "orch_paths.py"), "--repo", str(self.repo), "check"],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(0, done.returncode, done.stderr)
+
+    def test_previews_alone_create_a_config_that_keeps_cleaning_them(self):
+        self.write(".omc/previews/a.html", "<html>")
+        out, _ = self.migrate("--apply")
+        self.assertEqual({"cleanup": {"previews": ".omc/previews"}},
+                         json.loads((self.repo / ".orch/config.json").read_text()))
+        self.assertIn("설정 파일을 새로 만든다", out)
+
+    def test_a_failed_move_stops_and_a_rerun_finishes_the_rest(self):
+        self.write(".omc/handoffs/specs/spec-a.md", "`.omc/handoffs/queue/q.out` 를 본다\n")
+        self.write(".omc/handoffs/queue/q.out", "x\n")
+        self.write(".omc/state/wait-important-lost.json", "{}")
+        state = self.repo / ".omc/state"
+        state.chmod(0o500)
+        try:
+            _, err = self.migrate("--apply", code=1)
+        finally:
+            state.chmod(0o700)
+        self.assertIn("옮기다 실패했다 .omc/state/wait-important-lost.json", err)
+        self.assertTrue((self.repo / ".orch/specs/spec-a.md").exists())
+        self.assertIn(".omc/handoffs/queue", (self.repo / ".orch/specs/spec-a.md").read_text())
+        self.migrate("--apply")
+        self.assertEqual("`.orch/queue/q.out` 를 본다\n", (self.repo / ".orch/specs/spec-a.md").read_text())
+        self.assertTrue((self.repo / ".orch/state/wait-important-lost.json").exists())
+
+    def test_a_worktree_repo_argument_moves_the_main_checkout(self):
+        self.write(".omc/handoffs/specs/spec-a.md", "x\n")
+        wt = self.tmp / "wt"
+        sh("git", "-C", str(self.repo), "worktree", "add", "-q", "-b", "feat/x", str(wt), env=self.env)
+        done = subprocess.run(["python3", str(SCRIPT), "--repo", str(wt), "--apply"],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        self.assertTrue((self.repo / ".orch/specs/spec-a.md").exists())
+        self.assertFalse((wt / ".orch").exists())
+
+    def test_relative_symlinks_keep_their_target(self):
+        self.write("docs/shared.md", "공유\n")
+        self.write(".omc/orch/specs/spec-a.md", "x\n")
+        (self.repo / ".omc/orch/specs/shared.md").symlink_to("../../../docs/shared.md")
+        (self.repo / ".omc/orch/specs/alias.md").symlink_to("spec-a.md")
+        self.migrate("--apply")
+        self.assertEqual("공유\n", (self.repo / ".orch/specs/shared.md").read_text())
+        self.assertEqual("x\n", (self.repo / ".orch/specs/alias.md").read_text())
+        self.assertEqual("spec-a.md", os.readlink(self.repo / ".orch/specs/alias.md"))
+
+    def test_untracked_claude_files_are_reported_except_worktrees(self):
+        self.write(".claude/settings.local.json", '{"allow": ["Bash(.omc/orch/scripts/gate.sh)"]}')
+        self.write(".claude/worktrees/x/notes.md", ".omc/orch/scripts/gate.sh\n")
+        self.write(".omc/orch/scripts/gate.sh", "x\n")
+        out, _ = self.migrate()
+        self.assertIn("옛 경로 참조 .claude/settings.local.json:1:", out)
+        self.assertNotIn("worktrees", out)
+
+    def test_pgrep_failure_blocks_apply(self):
+        self.write(".omc/handoffs/specs/spec-a.md", "x\n")
+        _, err = self.migrate("--apply", code=3, FAKE_PGREP_FAILS="1")
+        self.assertIn("pgrep 으로 머지 큐와 마무리 프로세스를 확인하지 못했다", err)
+
+    def test_orch_dir_inside_an_old_location_is_refused(self):
+        self.write(".omc/orch/specs/spec-a.md", "x\n")
+        _, err = self.migrate("--apply", code=2, ORCH_DIR=".omc/orch/new")
+        self.assertIn("옛 위치 .omc/orch 안이다", err)
+
     def test_nothing_to_move(self):
         out, _ = self.migrate()
         self.assertEqual("옮길 것이 없다\n", out)
@@ -212,6 +309,10 @@ class MigrateTest(unittest.TestCase):
     def test_bad_move_pair_is_a_usage_error(self):
         self.migrate("--move", "no-equals", code=2)
         self.migrate("--move", "/abs=.orch/x", code=2)
+        self.migrate("--move", ".git/x=.orch/x", code=2)
+        self.migrate("--move", ".=.orch/x", code=2)
+        self.migrate("--move", ".omc/a=.omc/a/b", code=2)
+        self.migrate("--move", " =.orch/x", code=2)
 
 
 if __name__ == "__main__":
