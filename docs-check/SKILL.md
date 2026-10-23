@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "3.3.0"
+  version: "3.4.0"
 ---
 # docs-check
 
@@ -83,6 +83,10 @@ python3 "$SKILL_DIR/scripts/static_check.py" "$ADR_DIR" "$SCOPE"
 
 `PLAN_REF` 로 걸린 자리는 유형을 가려야 처리가 정해진다.
 분류표와 예외는 `references/six-axis.md` 가 소유한다.
+
+`WARN` 이 붙은 줄은 종료 코드를 바꾸지 않지만 리포트의 `Warning` 후보로 올린다.
+`LISTED_ITEMS` 는 `docs/code-architecture.md` 의 책임 설명에 늘어놓은 목록이다.
+고칠지는 [planning 예시의 「디렉터리 책임」](../planning/references/examples/code-architecture.md#디렉터리-책임) 절로 판정한다.
 
 ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에 합친다.
 

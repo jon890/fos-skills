@@ -9,9 +9,11 @@
 검사 대상 저장소 루트에서 실행한다.
 
 종료 코드:
-    0  위반 없음
+    0  위반 없음. 경고만 있으면 0 이고 경고 라인을 표준 출력으로 낸다
     1  위반 있음. 위반 라인을 표준 출력으로 낸다
     2  검사가 돌지 못함
+
+경고 라인은 `: WARN ` 을 담는다. 종료 코드를 바꾸지 않는다.
 
 검사 파일 수를 표준 오류로 낸다. 0 이면 통과가 아니라 종료 코드 2 다.
 """
@@ -56,6 +58,19 @@ ADR_INDEX = re.compile(r"^\s*(?:[-*]\s+|\|\s*)\[?(ADR-\d+)")
 PLAN_REF = re.compile(r"(?<![A-Za-z0-9_])plan[-_]?\d{2,}")
 # 계획서 디렉터리 이름. 모노레포는 `fe-plan027-login` 처럼 하위 프로젝트 접두사를 붙인다.
 PLAN_DIR = re.compile(r"(?:[A-Za-z0-9]+-)?plan[-_]?\d{2,}(?:-.*)?")
+
+# `docs/code-architecture.md` 의 책임 설명에 괄호로 늘어놓은 목록을 찾는다.
+#   설정 항목과 기능 목록은 설정 파일 주석이나 ADR 이 소유한다. 이 문서에 다시 쓰면
+#   항목을 더하는 사람이 앞줄의 형식을 따라 덧붙여, 같은 사실이 두 곳 이상에 생긴다.
+#   판정 기준은 planning 의 `references/examples/code-architecture.md` 「디렉터리 책임」 이 소유한다.
+#   쉼표로 셋 이상일 때만 잡는다. `(기본값 3, 최대 10)` 같은 둘짜리 부연은 목록이 아니다.
+#   처음에는 경고로 낸다. 오탐률을 실측한 뒤 위반으로 올릴지 정한다.
+PAREN = re.compile(r"[(（]([^()（）]*)[)）]")
+LIST_SEP = re.compile(r"[,，、]")
+# 표의 셀 구분자. `\|` 는 셀 안의 문자다.
+CELL_SEP = re.compile(r"(?<!\\)\|")
+# 트리를 그리는 코드 블록. 언어를 붙인 블록은 코드라 함수 호출의 인자 목록을 잡게 된다.
+TREE_FENCE_LANGS = {"", "text", "txt", "plain", "plaintext", "tree"}
 
 
 def git(*args):
@@ -195,6 +210,57 @@ def check_plan_ref(path, lines):
     return out
 
 
+def fence_lines(lines):
+    """코드 블록 안의 (줄번호, 줄, 여는 펜스의 언어) 만 낸다."""
+    lang = None
+    for lineno, line in enumerate(lines, 1):
+        if FENCE.match(line):
+            lang = line.strip()[3:].strip().lower() if lang is None else None
+            continue
+        if lang is not None:
+            yield lineno, line, lang
+
+
+def listed_items(text):
+    """괄호 안에 쉼표로 셋 이상 늘어놓은 첫 괄호. 없으면 None 이다."""
+    for m in PAREN.finditer(text):
+        items = [i for i in LIST_SEP.split(m.group(1)) if i.strip()]
+        if len(items) >= 3:
+            return m.group(0)
+    return None
+
+
+def is_code_architecture(path):
+    """planning 이 관리하는 `docs/code-architecture.md` 인가.
+
+    상위 디렉터리를 `docs` 로 한정한다. 모노레포의 `frontend/docs/` 도 여기 든다.
+    한정하지 않으면 그 규칙을 설명하는 예시 문서가 나쁜 예를 담고 있어 걸린다.
+    """
+    return path.name == "code-architecture.md" and path.parent.name == "docs"
+
+
+def check_listed_items(path, lines):
+    """책임 설명에 목록을 늘어놓았는가. 표는 첫 열을 뺀 칸을, 트리는 줄 전체를 본다."""
+    if not is_code_architecture(path):
+        return []
+    found = []
+    for lineno, line in outside_fence(lines):
+        if TABLE_ROW.match(line) and not TABLE_SEP.match(line):
+            cells = CELL_SEP.split(line.strip())[1:-1]
+            hit = listed_items("|".join(cells[1:]))
+            if hit:
+                found.append((lineno, hit))
+    for lineno, line, lang in fence_lines(lines):
+        if lang in TREE_FENCE_LANGS:
+            hit = listed_items(line)
+            if hit:
+                found.append((lineno, hit))
+    return [
+        f"{path}:{lineno}: WARN LISTED_ITEMS 책임 설명에 목록을 늘어놓았다 → {hit}"
+        for lineno, hit in sorted(found)
+    ]
+
+
 def links_of(lines):
     """코드 블록과 코드 스팬 밖의 (줄번호, 대상) 목록."""
     for lineno, line in outside_fence(lines):
@@ -279,6 +345,7 @@ def main(argv):
         return 2
 
     results = []
+    warnings = []
     if adr_dir:
         results += check_index(Path(adr_dir))
 
@@ -292,13 +359,14 @@ def main(argv):
         results += check_markdown(path, lines)
         results += check_links(path, lines, cache)
         results += check_plan_ref(path, lines)
+        warnings += check_listed_items(path, lines)
 
     print(f"검사한 Markdown: {checked}개 (scope: {scope})", file=sys.stderr)
     if checked == 0:
         print("검사 오류: 범위 안에서 Markdown 파일을 찾지 못했다.", file=sys.stderr)
         return 2
 
-    for line in results:
+    for line in results + warnings:
         print(line)
     return 1 if results else 0
 
