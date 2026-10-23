@@ -100,6 +100,15 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(7, subprocess.run(cmd, env=env).returncode)
         self.assertEqual([], list(Path(self.tmp.name).glob('*.json')))
 
+    def test_missing_command_returns_127_and_releases_slot(self):
+        gate = Path(self.tmp.name) / 'gate.sh'
+        gate.write_text('exit 0\n')
+        result = subprocess.run([sys.executable, str(SCRIPT), '--exclusive', '--', str(Path(self.tmp.name) / 'missing')],
+                                env=dict(os.environ, MEM_GATE=str(gate), HEAVY_SLOT_DIR=self.tmp.name),
+                                capture_output=True, text=True)
+        self.assertEqual(127, result.returncode)
+        self.assertEqual([], list(Path(self.tmp.name).glob('*.json')))
+
     def test_nested_call_skips_gate(self):
         env = dict(os.environ, HEAVY_SLOT_HELD='parent', MEM_GATE='/missing')
         self.assertEqual(7, subprocess.run([sys.executable, str(SCRIPT), '--', sys.executable, '-c', 'raise SystemExit(7)'], env=env).returncode)

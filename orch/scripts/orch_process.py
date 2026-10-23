@@ -1,11 +1,12 @@
-"""Small process helpers shared by orch command-line scripts."""
+"""orch 명령줄 도구가 함께 쓰는 프로세스 실행 함수.
+"""
 from pathlib import Path
 import subprocess
 import sys
 
 
 def script_command(script, *args):
-    """Keep explicit shell overrides usable while bundled tools use Python."""
+    """번들 도구는 Python으로 실행하고 명시적으로 지정한 셸 스크립트도 받는다."""
     suffix = Path(script).suffix
     interpreter = 'zsh' if suffix == '.zsh' else 'bash' if suffix == '.sh' else sys.executable
     return [interpreter, str(script), *map(str, args)]

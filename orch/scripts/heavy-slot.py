@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Run a heavy check in a machine-wide FIFO queue.
+"""같은 PC의 무거운 검사를 FIFO 대기열에서 실행한다.
 
-Usage: heavy-slot.py [--exclusive] [--slot-dir DIR] [--slots N] -- COMMAND...
-HEAVY_SLOT_DIR defaults to TMPDIR/orch-heavy-UID; HEAVY_SLOTS defaults to 3.
-HEAVY_EXCLUSIVE=1 requests all slots. HEAVY_POLL defaults to 5 seconds.
-Light checks bypass the queue. Nested calls inherit HEAVY_SLOT_HELD.
-The adjacent mem-gate.py runs after admission (MEM_GATE overrides its path).
-Exit: command status, 2 invalid arguments, 1 queue/gate failure, 128+signal.
+사용: heavy-slot.py [--exclusive] [--slot-dir DIR] [--slots N] -- 명령...
+HEAVY_SLOT_DIR의 기본값은 TMPDIR/orch-heavy-UID, HEAVY_SLOTS는 3이다.
+HEAVY_EXCLUSIVE=1이면 혼자 실행하며 HEAVY_POLL은 재확인 간격(기본 5초)이다.
+가벼운 검사는 대기열을 거치지 않고 중첩 호출은 HEAVY_SLOT_HELD를 물려받는다.
+자리를 잡은 뒤 형제 mem-gate.py를 실행한다. MEM_GATE로 경로를 바꾼다.
+종료: 명령의 종료 코드, 2 인자 오류, 1 대기열·메모리 검사 실패, 128+신호 번호.
 """
 import argparse
 from contextlib import contextmanager
@@ -54,7 +54,7 @@ def alive(pid):
 
 
 class Queue:
-    """All queue changes happen under one advisory lock; no partial PID files."""
+    """하나의 파일 잠금 아래 등록과 선점을 처리해 PID 기록이 중간에 노출되지 않는다."""
     def __init__(self, root, slots):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -109,7 +109,14 @@ class Queue:
 
 
 def run_command(cmd, env=None):
-    child = subprocess.Popen(cmd, env=env, start_new_session=True)
+    try:
+        child = subprocess.Popen(cmd, env=env, start_new_session=True)
+    except FileNotFoundError:
+        print(f'heavy-slot: command not found: {cmd[0]}', file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f'heavy-slot: command is not executable: {cmd[0]}', file=sys.stderr)
+        return 126
     try:
         code = child.wait()
     except BaseException:

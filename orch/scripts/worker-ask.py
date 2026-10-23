@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Ask a coordinator, preserving resumable questions and unread-message checks.
+"""읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문한다.
 
-Usage: worker-ask.py --from HANDLE (--question TEXT | --resume ID)
-                    [--options CSV] [--run ID] [--timeout-ms N] [--force]
-Exit: 0 answer, 2 usage/failure, 3 status answer or Run fallback,
-4 timeout (resume the printed ID), 5 unread coordinator messages.
-ORCA overrides the CLI; ORCH_ASK_SEEN overrides the seen-message file.
+사용: worker-ask.py --from HANDLE (--question TEXT | --resume ID)
+                   [--options CSV] [--run ID] [--timeout-ms N] [--force]
+종료: 0 답 수신, 2 사용법·실행 오류, 3 status 답 또는 Run 메일함으로 대신 보냄,
+4 시간 초과(출력의 ID로 재개), 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
+ORCA로 CLI, ORCH_ASK_SEEN으로 읽은 메시지 기록 경로를 바꾼다.
 """
 import argparse
 import os

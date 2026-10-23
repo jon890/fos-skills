@@ -57,6 +57,16 @@ class MemGateTest(unittest.TestCase):
         code, out, _, _ = self.run_gate([50], 0, "--", "sh", "-c", "echo hi; exit 7")
         self.assertEqual((7, "hi\n"), (code, out))
 
+    def test_missing_command_keeps_shell_exit_status(self):
+        code, _, _, _ = self.run_gate([50], 0, "--", str(self.tmp / "missing"))
+        self.assertEqual(127, code)
+
+    def test_nonexecutable_command_keeps_shell_exit_status(self):
+        command = self.tmp / "no-exec"
+        command.write_text("#!/bin/sh\nexit 0\n")
+        code, _, _, _ = self.run_gate([50], 0, "--", str(command))
+        self.assertEqual(126, code)
+
     def test_missing_probe_output_refuses_command(self):
         self.tool("memory_pressure", "exit 1")
         self.tool("sysctl", "echo invalid")
