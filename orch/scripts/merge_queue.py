@@ -54,7 +54,7 @@ origin 은 PR 이 속한 저장소를 가리켜야 한다. fork 를 origin 으�
                         겹치지 않으면 다시 갱신하지 않고 머지하고, 겹칠 때만 또 갱신한다. PR HEAD 는 --match-head-commit 으로 계속 지킨다.
                         다시 판정하는 횟수는 PR 하나에 5번까지이고 넘으면 `STOP <PR> 다시 판정을 5번 했는데도 base 가 계속 움직인다` 로 멈춘다
                         GitHub 의 「브랜치를 최신으로 유지」 보호 규칙이 켜진 저장소는 머지가 거부되므로 쓰지 않는다
-  --shared-paths RE     overlap 에서 어느 쪽에 있든 겹친 것으로 보는 공용 경로의 정규식(grep -E 처럼 경로 어디든 맞는다).
+  --shared-paths RE     overlap 에서 어느 쪽에 있든 겹친 것으로 보는 공용 경로의 정규식(Python 정규식, re.search 라 경로 어디든 맞는다).
                         모든 모듈에 영향을 주는 경로(공용 모듈, 루트 빌드 파일, 계약, CI 설정)를 적는다
   --unit-prefix P       overlap 에서 폴더 하나를 단위로 보는 접두. 기본 modules/
   --unit-group A,B      overlap 에서 한 단위로 세는 단위 묶음. 여러 번 줄 수 있다. 계약 파일 없이 서로의 응답 모양에
@@ -461,8 +461,10 @@ class Queue:
         judged_base = git("rev-parse", "-q", "--verify", f"origin/{p.base}").stdout.strip()
         done = subprocess.run(
             [sys.executable, self.overlap_units, "--base", f"origin/{p.base}", "--head", p.ph,
-             "--shared-paths", o.shared_paths, "--unit-prefix", o.unit_prefix, "--docs-glob", o.docs_glob,
-             *o.unit_groups], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+             # 값이 `-` 로 시작해도 옵션으로 읽히지 않도록 `=` 로 붙여 넘긴다
+             f"--shared-paths={o.shared_paths}", f"--unit-prefix={o.unit_prefix}", f"--docs-glob={o.docs_glob}",
+             *[f"--unit-group={g}" for g in o.unit_groups[1::2]]],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         verdict = done.stdout.rstrip("\n")
         if done.returncode == 0:
             log(f"{p.n} 판정: {verdict}")

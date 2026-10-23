@@ -238,6 +238,15 @@ class GitIntegrationTest(unittest.TestCase):
         self.assertEqual("", out)
         self.assertTrue(err.startswith("오류:"), err)
 
+    def test_shared_paths_starting_with_a_dash_are_read_as_a_value_with_equals(self):
+        self.diverge("modules/api/B.java", "yarn-lock")
+        code, out, _ = self.cli("--shared-paths=-lock$")
+        self.assertEqual(1, code)
+        self.assertIn("공용 경로: yarn-lock", out)
+        # 띄워 넘기면 argparse 가 값을 옵션으로 읽어 판정하지 못한다
+        code, _, err = self.cli("--shared-paths", "-lock$")
+        self.assertEqual(2, code, err)
+
     def test_invalid_shared_paths_cannot_be_judged(self):
         self.diverge("modules/api/B.java", "modules/web/C.java")
         code, _, err = self.cli("--shared-paths", "(")

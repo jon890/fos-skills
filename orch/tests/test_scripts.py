@@ -550,8 +550,17 @@ class MergeQueueTest(unittest.TestCase):
         log = self.log.read_text()
         self.assertNotIn("update-branch", log)
         self.assertIn("pr merge 1 --merge --match-head-commit abc", log)
-        self.assertEqual("--base origin/main --head abc --shared-paths ^modules/common/ --unit-prefix apps/ "
-                         "--docs-glob docs/*,*.md --unit-group web,bff --unit-group a,b\n", (self.tmp / "judge-args.txt").read_text())
+        self.assertEqual("--base origin/main --head abc --shared-paths=^modules/common/ --unit-prefix=apps/ "
+                         "--docs-glob=docs/*,*.md --unit-group=web,bff --unit-group=a,b\n",
+                         (self.tmp / "judge-args.txt").read_text())
+
+    def test_option_values_starting_with_a_dash_reach_the_judge_as_values(self):
+        # `--shared-paths -lock$` 처럼 띄워 넘기면 argparse 가 값을 옵션으로 읽는다. `=` 로 붙여 넘긴다
+        r = self.overlap_queue("바로 머지", 0, "--shared-paths", "-lock$", "--docs-glob", "-x/*", "--unit-prefix", "-m/",
+                               "--unit-group", "-a,-b")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual("--base origin/main --head abc --shared-paths=-lock$ --unit-prefix=-m/ --docs-glob=-x/* "
+                         "--unit-group=-a,-b\n", (self.tmp / "judge-args.txt").read_text())
 
     def test_up_to_date_when_overlap_updates_branch_when_units_overlap(self):
         r = self.overlap_queue("갱신 필요(단위 겹침: api)", 1)
