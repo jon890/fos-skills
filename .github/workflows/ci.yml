@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugin:
+    name: Plugin tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Claude Code CLI
+        run: npm install --global @anthropic-ai/claude-code@2.1.309
+      - name: Run plugin tests from repository root
+        run: claude plugin test .
+
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install shell test dependencies
+        run: sudo apt-get update && sudo apt-get install --yes jq zsh
+      - name: Run Python suites including korean-check
+        shell: bash
+        run: |
+          for suite in */tests tools/*/tests; do
+            if [[ "$suite" == "orch/tests" ]]; then
+              continue
+            fi
+            echo "Testing $suite"
+            python3 -m unittest discover -s "$suite"
+          done
+      - name: Run isolated orch tests
+        run: python3 scripts/run-orch-tests.py --jobs 4
