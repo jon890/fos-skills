@@ -7,7 +7,7 @@
 
 사용법 (기본은 dry-run. 무엇을 할지만 낸다):
     cleanup-sweep.py --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders]
-                     [--agent-glob 'agent-*'] [--apply]
+                     [--agent-glob 'agent-*'] [--close-own-taken-over] [--apply]
 
     --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
@@ -22,6 +22,9 @@
                   이름은 worktree 이름, 브랜치의 `/` 를 `-` 로 바꾼 것, 브랜치의 첫 `/` 뒤, PR 번호다
     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
     --agent-glob  하위 에이전트 워크트리 폴더 이름의 glob. 기본 `agent-*`(아래 「하위 에이전트 워크트리」)
+    --close-own-taken-over
+                  --run 과 함께 줄 때만 쓴다. 이 Run 의 끝난 dispatch 가 쓴 터미널이 `user_takeover` 로 남았어도
+                  아래 「넘겨받은 터미널」 조건을 모두 채우면 닫고 정리한다. 없으면 예전처럼 남긴다
     --apply       실제로 정리한다
 
 PR 찾기 (브랜치마다):
@@ -81,6 +84,16 @@ PR 찾기 (브랜치마다):
     남은 터미널이 모두 `agentIdentity` 가 없고, 그 경로를 쓰는 프로세스가 모두 자식 없는 로그인 셸이며
     터미널마다 셸이 하나씩 있으면 빈 셸로 보고 `빈 셸을 닫았다: term_…` 를 남긴 뒤 정리를 이어 간다.
     하나라도 확인하지 못하면 건너뛴다. --apply 가 없으면 닫지 않고 닫을 것만 낸다.
+
+넘겨받은 터미널 (--close-own-taken-over 와 --run):
+    worker 가 끝나 claude 가 빠진 뒤 그 터미널에 입력이 들어가면 Orca 가 `user_owned` / `user_takeover` 로 기록한다.
+    사용자가 의도해 넘겨받은 것과 이 자동 기록은 Orca 의 필드로 가를 수 없어, 기본은 남긴다.
+    코디네이터가 그 워크트리가 자기 worker 것임을 알고 옵션을 켰을 때만, 아래가 모두 참인 터미널을 소유 확인에서 뺀다.
+      - --run 으로 찾은 dispatch 이고 `dispatchStatus` 가 completed 다(workerState 는 succeeded)
+      - 그 터미널의 `ownershipState` 가 user_owned, `retainedReason` 이 user_takeover 다
+      - `orca terminal list` 의 그 터미널에 `agentIdentity` 가 없다
+      - 그 경로를 쓰는 프로세스가 모두 자식 없는 로그인 셸이다
+    하나라도 아니면 예전처럼 「남김: 사용자 보유 터미널」 이다. 닫는 시점은 PR 이 MERGED 일 때뿐이다.
 
 다른 Run (--run 을 줬을 때):
     터미널은 경로로 찾으므로, 같은 저장소에서 다른 코디네이터(Codex run 같은 것)가 띄운 worker 터미널도 걸린다.
@@ -720,9 +733,30 @@ def empty_shells(path, mine, theirs, terminals):
     return len(pids) >= len(theirs) and only_idle_shells(pids)
 
 
+def taken_over_own(args, mine, terminals, path):
+    """--close-own-taken-over 로 소유 확인에서 뺄 터미널 handle 집합. 조건 하나라도 어긋나면 빈 집합이다."""
+    if not (args.close_own_taken_over and args.run):
+        return frozenset()
+    entries = {t.get("handle"): t for t in terminals or []}
+    handles = set()
+    for w in mine:
+        resource = w.get("resource") or {}
+        handle = resource.get("terminalHandle") or w.get("agentTerminalHandle")
+        entry = entries.get(handle)
+        if (w.get("runId", args.run) == args.run and w.get("dispatchStatus") == "completed"
+                and resource.get("ownershipState") == "user_owned"
+                and resource.get("retainedReason") == "user_takeover"
+                and entry and entry.get("worktreePath") == path and not entry.get("agentIdentity")):
+            handles.add(handle)
+    if handles and not only_idle_shells(holder_pids(path)):
+        return frozenset()
+    return frozenset(handles)
+
+
 def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log):
     name = Path(path).name
-    reason = ownership_blocker(path)
+    taken = taken_over_own(args, workers_at(workers, path), terminals, path)
+    reason = ownership_blocker(path, taken)
     if reason:
         log(f"남김: {reason} ({path})")
         return
@@ -805,7 +839,7 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     pids = wait_free(path, args.wait, args.poll_interval)
     if pids and by_pr and only_idle_shells(pids):
         # worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 목록을 다시 읽어 그 터미널을 닫는다
-        reason = ownership_blocker(path)
+        reason = ownership_blocker(path, taken)
         if reason:
             log(f"남김: {reason} ({path})")
             return
@@ -896,6 +930,7 @@ def main(argv=None):
     parser.add_argument("--specs-dir")
     parser.add_argument("--kill-holders", action="store_true")
     parser.add_argument("--agent-glob", default="agent-*")
+    parser.add_argument("--close-own-taken-over", action="store_true")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--wait", type=float, default=5, help="터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 기본 5")
     parser.add_argument("--poll-interval", type=float, default=1, help="프로세스 확인 간격(초). 기본 1")
@@ -905,6 +940,9 @@ def main(argv=None):
         return 0 if exc.code == 0 else 2
     if not (0 <= args.wait < float("inf")) or not (0 < args.poll_interval < float("inf")):
         print("cleanup-sweep: --wait 는 0 이상, --poll-interval 은 0 초과의 유한한 수다", file=sys.stderr)
+        return 2
+    if args.close_own_taken_over and not args.run:
+        print("cleanup-sweep: --close-own-taken-over 는 --run 과 함께 쓴다", file=sys.stderr)
         return 2
     repos = list(dict.fromkeys(Path(r).resolve() for r in args.repo))
 

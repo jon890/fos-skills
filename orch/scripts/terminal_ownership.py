@@ -18,8 +18,9 @@ def query(*args):
     return data["result"]
 
 
-def blocker(worktree):
-    """안전하면 빈 문자열, 사용자 보유 또는 조회 실패면 남길 이유를 돌려준다."""
+def blocker(worktree, ignore=frozenset()):
+    """안전하면 빈 문자열, 사용자 보유 또는 조회 실패면 남길 이유를 돌려준다.
+    ignore 에 든 handle 은 호출자가 닫아도 된다고 판정한 터미널이라 소유 상태를 보지 않는다."""
     try:
         target = Path(worktree).resolve()
         terminals = query("terminal", "list")["terminals"]
@@ -38,7 +39,7 @@ def blocker(worktree):
             for row in result["workers"]:
                 resource = row.get("resource") or {}
                 handle = resource.get("terminalHandle") or row.get("agentTerminalHandle")
-                if handle in handles:
+                if handle in handles and handle not in ignore:
                     state = resource.get("ownershipState")
                     if state in {"user_owned", "released"}:
                         return "사용자 보유 터미널"

@@ -993,6 +993,65 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertNotIn("terminal close", self.calls())
         self.assertNotIn("worker-release", self.calls())
 
+    # 5. 끝난 dispatch 의 user_takeover 터미널 (--close-own-taken-over)
+    def taken_over(self, name, row=None, entry=None, child=False, other_run=False):
+        path = self.worktree(name)
+        self.squash_merge(name, path)
+        resource = {"worktreeId": f"x::{path}", "terminalHandle": "term_t", "releaseState": "retained",
+                    "ownershipState": "user_owned", "retainedReason": "user_takeover"}
+        worker = {"runId": "run_x", "dispatchId": "ctx_t", "dispatchStatus": "completed",
+                  "workerState": "succeeded", "agentTerminalHandle": "term_t", "resource": resource}
+        worker.update(row or {})
+        worker["resource"].update((row or {}).get("resource", {}))
+        self.terminals = [{"handle": "term_t", "worktreePath": str(path), **(entry or {})}]
+        self.processes = self.idle_shell(path, "term_t", child=child)["processes"]
+        self.all_workers = [worker]
+        self.workers = [] if other_run else [worker]
+        return path
+
+    def test_taken_over_terminal_of_finished_dispatch_is_closed_with_option(self):
+        path = self.taken_over("feat-t1")
+        out = self.run_sweep("--run", "run_x", "--close-own-taken-over", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertNotIn("feat-t1", self.branches())
+        self.assertIn("orca terminal close --terminal term_t", self.calls())
+        self.assertIn("orca orchestration worker-release --dispatch ctx_t", self.calls())
+
+    def test_taken_over_terminal_is_kept_without_option(self):
+        path = self.taken_over("feat-t2")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("남김: 사용자 보유 터미널", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_option_without_run_is_a_usage_error(self):
+        path = self.taken_over("feat-t3")
+        self.run_sweep("--close-own-taken-over", "--apply", code=2)
+        self.assertTrue(path.exists())
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_taken_over_terminal_is_kept_when_one_condition_fails(self):
+        cases = {
+            "other-run": dict(other_run=True),
+            "running": dict(row={"dispatchStatus": "dispatched", "workerState": "ready"}),
+            "other-reason": dict(row={"resource": {"retainedReason": "external_terminal"}}),
+            "agent": dict(entry={"agentIdentity": "claude"}),
+            "child": dict(child=True),
+        }
+        for label, kw in cases.items():
+            with self.subTest(label), tempfile.TemporaryDirectory():
+                path = self.taken_over(f"feat-t4-{label}", **kw)
+                out = self.run_sweep("--run", "run_x", "--close-own-taken-over", "--apply")
+                self.assertTrue(path.exists(), out)
+                self.assertNotIn("terminal close", self.calls())
+
+    def test_taken_over_terminal_is_not_closed_in_dry_run(self):
+        path = self.taken_over("feat-t5")
+        out = self.run_sweep("--run", "run_x", "--close-own-taken-over")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("터미널을 닫을 것 term_t", out)
+        self.assertNotIn("terminal close", self.calls())
+
     def test_direct_remove_also_keeps_user_owned_terminal(self):
         path = self.worktree("direct-user")
         self.terminals = [{"handle": "term_user", "worktreePath": str(path)}]
