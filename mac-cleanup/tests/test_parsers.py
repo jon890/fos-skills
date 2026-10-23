@@ -1,5 +1,6 @@
 """조사 스크립트의 순수 함수(파싱, 분류)를 검증한다. 시스템 상태에 의존하지 않는다."""
 
+import json
 import sys
 import time
 import subprocess
@@ -202,3 +203,75 @@ class DockerImageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SurveyGitOptionsTest(unittest.TestCase):
+    def test_fetch_and_check_prs_default_on(self):
+        args = sg.parse_args([])
+        self.assertTrue(args.fetch)
+        self.assertTrue(args.check_prs)
+
+    def test_no_flags_turn_them_off_independently(self):
+        args = sg.parse_args(["--no-fetch"])
+        self.assertEqual((args.fetch, args.check_prs), (False, True))
+        args = sg.parse_args(["--no-check-prs"])
+        self.assertEqual((args.fetch, args.check_prs), (True, False))
+
+    def test_legacy_flags_are_accepted_and_change_nothing(self):
+        args = sg.parse_args(["--fetch", "--check-prs"])
+        self.assertEqual((args.fetch, args.check_prs), (True, True))
+        args = sg.parse_args(["--fetch", "--check-prs", "--no-fetch", "--no-check-prs"])
+        self.assertEqual((args.fetch, args.check_prs), (False, False))
+
+
+class SurveyGitJsonOutTest(unittest.TestCase):
+    SHOWN = [{
+        "repo": "/r", "base": "origin/main", "gh_errors": [],
+        "worktrees": [],
+        "branches": [{"name": "feat/a", "class": "삭제 후보(-d)", "tip": "a" * 40, "pr_state": None}],
+    }]
+
+    def test_json_out_option_parsed(self):
+        self.assertIsNone(sg.parse_args([]).json_out)
+        self.assertEqual(sg.parse_args(["--json-out", "/x.json"]).json_out, "/x.json")
+
+    def test_format_report_has_candidates_and_totals(self):
+        text = sg.format_report(self.SHOWN, 3, True)
+        self.assertIn("[브랜치 삭제 후보(-d)] feat/a  끝=aaaaaaaa", text)
+        self.assertIn("저장소 3개 조사, 후보가 있는 저장소 1개", text)
+        self.assertIn("gh 확인 실패", text)
+
+    def test_format_report_without_check_prs_omits_gh_line(self):
+        self.assertNotIn("gh 확인 실패", sg.format_report(self.SHOWN, 1, False))
+
+    def test_write_json_round_trips(self):
+        import io
+        buf = io.StringIO()
+        sg.write_json(self.SHOWN, buf)
+        self.assertEqual(json.loads(buf.getvalue()), self.SHOWN)
+
+    def test_main_writes_text_and_file_from_one_survey(self):
+        import io
+        import contextlib
+        import json as _json
+        import tempfile
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "survey.json"
+            result = [dict(self.SHOWN[0])]
+
+            def fake_survey(*a, **k):
+                calls.append(a)
+                return dict(result[0])
+
+            buf = io.StringIO()
+            with mock.patch.object(sg, "find_repos", return_value=["/r"]), \
+                    mock.patch.object(sg, "collect_cwds", return_value=set()), \
+                    mock.patch.object(sg, "orca_paths", return_value=None), \
+                    mock.patch.object(sg, "survey_repo", side_effect=fake_survey), \
+                    contextlib.redirect_stdout(buf):
+                code = sg.main(["--no-fetch", "--json-out", str(out)])
+            self.assertEqual(code, 0)
+            self.assertEqual(len(calls), 1)
+            self.assertIn("[브랜치 삭제 후보(-d)] feat/a", buf.getvalue())
+            self.assertEqual(_json.loads(out.read_text())[0]["branches"][0]["name"], "feat/a")
