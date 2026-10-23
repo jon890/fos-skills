@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.45.0 (2026-10-23)
+
+- `remove-worktree.sh` 가 OMC session-end hook worker 의 자손 프로세스도 hook 으로 센다. 대기 도중 hook 의 자식이 생겨 대기 시간이 `--wait` 로 줄고 첫 정리가 거부되던 문제를 고쳤다.
+- `send-to-worker.py` 가 끝난 dispatch 에는 `--spec` 만으로 이어 쓴다. 살아 있는 dispatch 에 `--spec` 만 주면 보낼 글이 없다고 거부한다. 사용자 보유 터미널 거부 메시지에 화면 확인과 닫기, 새로 띄우기 명령을 적었고 `replying.md` 에 `worker_done` 뒤 터미널이 `owned` 로 남는다는 실측을 더했다.
+- `finish-pr.py --complete` 가 `--complete-cmd` 없이도 동작한다. 업무 완료 단계만 건너뛰고 지시서는 지운다. `--complete-cmd` 를 주면 `--task-pattern` 이 필요하다.
+
 ## 1.44.0 (2026-10-23)
 
 - 대기와 메시지 분류에서 `worker_done` 을 같은 Task·Dispatch·발신자의 앞선 `준비됨 #N, head <전체 SHA>` 상태와 대조한다. 근거가 없으면 `의심스러운 worker_done` 으로 분리하고 대기는 자동 ack 없이 종료 코드 6 을 반환한다. 이미 ack 한 상태는 읽기 전용 이력으로 확인하며, 이력을 읽지 못해도 완료로 간주하지 않는다.
