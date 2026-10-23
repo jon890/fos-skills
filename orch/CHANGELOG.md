@@ -5,12 +5,13 @@
 
 ## 1.46.0 (2026-10-23)
 
-- `merge-queue.sh --up-to-date-when overlap`: `--require-up-to-date` 가 뒤처진 PR 마다 base 를 합치고 CI 를 다시 기다리던 것을, PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹칠 때만 하게 한다. 기본은 `always` 라 동작이 달라지지 않는다. 판정은 PR 차례마다 하고 `<PR> 판정: 바로 머지` 또는 `<PR> 판정: 갱신 필요(이유)` 를 찍는다. 판정하지 못하면 갱신 필요로 다룬다.
-  - 단위는 `--unit-prefix`(기본 `modules/`) 아래 폴더 하나이고 그 밖의 파일은 경로 자체다. `--shared-paths` 정규식에 맞는 공용 경로는 어느 쪽에 있든 겹친 것으로 본다. `--docs-glob` 에 맞는 문서는 세지 않는다.
-  - 판정 로직은 Python 모듈 `scripts/overlap_units.py` 에 두고 단위 테스트를 붙였다. 셸은 PR 차례마다 이 모듈을 부르고 결과로 최신화 여부만 정한다.
-- `merge-with-finish.py`: `queue` 절이 `up_to_date_when`, `shared_paths`, `unit_prefix`, `require_up_to_date`, `sweep_args` 를 받는다. `sweep_args` 는 항목마다 `--sweep-arg` 가 된다.
+- `merge-queue.sh` 를 Python(`scripts/merge_queue.py`)으로 옮기고 옛 `.sh` 를 지웠다. 옵션, 종료 코드, 출력 줄(`STOP`, `QUEUE-DONE`, `QUEUE-HELD`, `AFTER-MERGED-FAILED` 등)은 그대로고 기존 머지 큐 테스트를 호출 경로만 바꿔 그대로 돌려 통과시켰다. `merge-with-finish.py` 의 `MERGE_QUEUE` 기본값이 새 파일이다. 환경 변수 `MERGE_QUEUE_SLEEP_SCALE` 로 모든 대기 시간에 배율을 곱한다(테스트용, 기본 1). 이식하면서 `--verify-merged` 의 `bash -c` 실행, 사본 이름, 정리 인자 등 동작은 바꾸지 않았다.
+- `merge_queue.py --up-to-date-when overlap`: `--require-up-to-date` 가 뒤처진 PR 마다 base 를 합치고 CI 를 다시 기다리던 것을, PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹칠 때만 하게 한다. 기본은 `always` 라 동작이 달라지지 않는다. 판정은 PR 차례마다 하고 `<PR> 판정: 바로 머지` 또는 `<PR> 판정: 갱신 필요(이유)` 를 찍는다. 판정하지 못하면 갱신 필요로 다룬다. 바로 머지로 판정한 뒤 머지 직전에 base 가 움직였으면 `STOP` 으로 멈춘다.
+  - 단위는 `--unit-prefix`(기본 `modules/`) 아래 폴더 하나이고 그 밖의 파일은 경로 자체다. `--shared-paths` 정규식에 맞는 공용 경로는 어느 쪽에 있든 겹친 것으로 본다. `--docs-glob` 에 맞는 문서는 세지 않는다. `--unit-group a,b` 로 준 단위는 한 단위로 센다(계약 없이 서로의 응답 모양에 기대는 모듈 쌍). 묶음 설정 오류는 큐를 시작할 때 종료 코드 2 로 알린다.
+  - 판정 로직은 Python 모듈 `scripts/overlap_units.py` 에 두고 단위 테스트를 붙였다. 머지 큐는 PR 차례마다 이 모듈을 부르고 결과로 최신화 여부만 정한다.
+- `merge-with-finish.py`: `queue` 절이 `up_to_date_when`, `shared_paths`, `unit_prefix`, `unit_groups`, `require_up_to_date`, `sweep_args` 를 받는다. `sweep_args` 는 항목마다 `--sweep-arg` 가 된다.
 - `merge-with-finish.py`: `--board-item` 을 주지 않아도 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾는다. **업무의 마지막 PR(`!`)일 때만** 그 항목을 done 으로 바꿔, 중간 PR 이 항목을 끝내던 문제를 막는다. 같은 PR 이 든 항목이 둘 이상이면 건너뛴다. 이제 저장소별 래퍼 스크립트 없이 `merge-with-finish.py --repo <저장소> 492 '495!:<머지 전 명령>'` 한 줄로 부를 수 있다.
-- `references/cleanup.md` 에 「겹치지 않는 PR 은 최신화하지 않기」 를 더했다. 쓸 수 있는 저장소(공용 경로가 잘 정의된 모노레포)와 위험, 호출 예를 적었다.
+- `references/cleanup.md` 에 「겹치지 않는 PR 은 최신화하지 않기」 를 더했다. 언제 쓰는가, 놓치는 경우와 대응, 머지 뒤 안전망, 호출 예를 적었다.
 
 ## 1.45.0 (2026-10-23)
 

@@ -10,12 +10,12 @@
 ## 머지
 
 **PR 머지는 `merge-with-finish.py` 로 건다. 사용자가 말하지 않아도 마무리까지 함께 건다.**
-이 스크립트가 PR 마다 `finish-pr.py`(아래 「머지 뒤 마무리」)를 백그라운드로 걸고, 같은 인자로 `merge-queue.sh` 를 돌린다.
+이 스크립트가 PR 마다 `finish-pr.py`(아래 「머지 뒤 마무리」)를 백그라운드로 걸고, 같은 인자로 `merge_queue.py` 를 돌린다.
 머지 큐만 걸면 worker 정리, 배포 확인, 업무 완료, 보드 갱신이 코디네이터의 기억에 달려 빠진다.
-마무리가 필요 없는 저장소만 `merge-queue.sh` 를 직접 걸거나 `merge-with-finish.py --no-finish` 를 쓴다.
+마무리가 필요 없는 저장소만 `merge_queue.py` 를 직접 걸거나 `merge-with-finish.py --no-finish` 를 쓴다.
 
 머지 큐는 오래 걸리므로 Bash 도구의 `run_in_background` 로 건다. 셸의 `&` 나 `nohup` 은 쓰지 않는다.
-`merge-queue.sh` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.py` 머리 주석이 소유한다.
+`merge_queue.py` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.py` 머리 주석이 소유한다.
 PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은 변수 하나로 넘기면 zsh 가 쪼개지 않아 사용법 오류로 끝난다.
 **PR 번호 뒤 `!` 는 그 PR 이 업무의 마지막 PR 이라는 뜻이다.** 업무 하나에 PR 이 여럿이면 마지막 PR 에만 붙인다. 배포가 성공한 뒤 업무가 완료 처리된다.
 
@@ -104,10 +104,29 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to
 이유는 `단위 겹침: api` 나 `공용 경로: modules/common/Util.java` 꼴이다. 판정하지 못하면(`git` 실패, 잘못된 정규식) 갱신 필요로 다룬다. 안전한 쪽이 기존 동작이다.
 `--require-up-to-date` 가 있어야 한다. 이름을 바꾼 파일은 옛 경로와 새 경로를 모두 센다.
 
-**공용 경로가 잘 정의된 모노레포에서만 쓴다.** 모듈이 서로의 내부를 읽는 일이 없고, 모든 모듈에 영향을 주는 경로를 `--shared-paths` 로 빠짐없이 적을 수 있어야 한다.
-이 규칙은 단위가 겹치지 않으면 합친 상태를 아무도 검사하지 않는다. 정규식에서 빠진 공용 경로가 있으면 그 틈으로 깨진 조합이 머지된다.
-`--shared-paths` 를 주지 않으면 같은 폴더(또는 같은 파일)를 고쳤을 때만 겹친 것으로 본다. 의존 관계를 모르는 저장소는 기본 `always` 를 둔다.
-GitHub 의 「브랜치를 최신으로 유지」 보호 규칙이 켜진 저장소는 뒤처진 PR 의 머지를 거부하므로 쓰지 않는다.
+**바로 머지로 판정하고 머지하기 직전에 base 가 움직였으면 `STOP <PR> 판정한 뒤 base 가 움직였다` 로 멈춘다.** 판정한 base 로 머지할 조합을 지키기 위해서다. 같은 인자로 다시 걸면 새 base 로 다시 판정한다.
+
+#### 언제 overlap 을 쓰는가
+
+**공용 경로가 잘 정의된 모노레포에서만 쓴다.** 아래 조건을 모두 확인할 수 있어야 한다.
+
+- 다른 모듈의 코드에 컴파일 의존이 있는 모듈 쌍은 `--unit-group a,b` 로 묶었다. 한 단위가 두 묶음에 들 수 없으므로 의존이 사슬(`web` → `bff` → `billing`)이면 사슬 전체를 한 묶음으로 쓴다. 묶음 설정이 틀리면 큐를 시작할 때 종료 코드 2 로 멈춘다
+- 모든 모듈에 영향을 주는 경로를 `--shared-paths` 로 빠짐없이 적었다. 공용 모듈, 루트 빌드 파일과 버전 카탈로그(`settings.gradle`, `gradle/`, `buildSrc/`), 계약, CI 설정, 공용 테스트 설정, 저장소 전체에서 번호가 하나로 이어지는 마이그레이션이 후보다
+- 머지 뒤 검사가 따로 있다(아래 「머지 뒤 안전망」)
+
+**이 규칙이 놓치는 경우.** 단위가 겹치지 않으면 합친 상태를 아무도 검사하지 않는다.
+
+| 놓치는 경우 | 대응 |
+| --- | --- |
+| 계약 없이 런타임에 호출하는 모듈 쌍(화면 모듈과 그 BFF) | `--unit-group` 으로 묶는다 |
+| 공개 API 를 바꾸고 호출처를 같이 고친 base 변경과, 옛 시그니처를 새로 호출하는 PR | 폴더가 달라 못 잡는다. 모듈 의존을 `--unit-group` 으로 묶거나 `verify_merged_when: code` 를 함께 쓴다 |
+| 같은 이름 공간을 쓰는 자원(마이그레이션 버전 번호, 빈 이름, 라우트, 번역 키) | 경로를 `--shared-paths` 에 넣거나 `verify_merged_when: code` 를 함께 쓴다 |
+| `--shared-paths` 에서 빠진 루트 파일 | 접두 밖 파일은 파일 경로 자체가 단위라 같은 파일을 고칠 때만 겹친다. 루트에서 모듈이 함께 쓰는 파일을 모두 적는다 |
+| 너무 넓은 `--docs-glob`(`*.md` 가 문서 빌드나 doctest 가 읽는 파일일 때) | 문서 glob 은 코드가 읽지 않는 경로로 좁힌다 |
+
+**머지 뒤 안전망.** `overlap` 으로 합친 상태가 깨져도 PR 쪽 CI 는 알 수 없다. 이미 있는 확인은 `finish-pr.py` 의 배포 워크플로 성공 대기(`--deploy-workflow`)뿐이다. 머지 커밋의 배포 실행이 실패하면 `FINISH-FAIL` 로 알린다. 배포 워크플로가 없는 저장소에는 머지 뒤 base CI 를 보는 단계가 없다.
+깨진 조합을 막으려면 `verify_merged_when: code` 를 `overlap` 과 함께 둬 합친 사본에서 컴파일과 영향받는 모듈의 테스트를 돌린다. 이 경우 CI 재대기는 줄지만 로컬 검사 시간은 든다.
+깨진 base 가 나오면 그 PR 을 되돌리는 PR 로 복구한다.
 
 옵션을 매번 적지 않도록 `queue` 절에 둔다. 코디네이터는 `merge-with-finish.py` 만 부르면 된다.
 
@@ -117,7 +136,8 @@ GitHub 의 「브랜치를 최신으로 유지」 보호 규칙이 켜진 저장
     "required": ["backend", "frontend"],
     "require_up_to_date": true,
     "up_to_date_when": "overlap",
-    "shared_paths": ["^modules/common/", "^build\\.gradle$", "^\\.github/"],
+    "shared_paths": ["^modules/common/", "^(settings|build)\\.gradle(\\.kts)?$", "^(gradle|buildSrc)/", "^\\.github/"],
+    "unit_groups": [["web", "bff"]],
     "docs_glob": ["docs/*", "*.md"],
     "sweep_args": ["--run", "run_0123456789ab", "--specs-dir", ".omc/handoffs/specs"]
   }
@@ -225,7 +245,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 '102:./bin/
 
 ## 정리
 
-**정리는 `cleanup-sweep.py` 가 한다.** `merge-queue.sh` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
+**정리는 `cleanup-sweep.py` 가 한다.** `merge_queue.py` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
 **사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬과 원격 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
 이 세션이 일을 맡긴 다른 저장소의 worker 도 같다. 다른 세션이 띄운 작업은 건드리지 않는다.
@@ -264,7 +284,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
    워크트리를 지우기 전에 한다. 원격 추적 브랜치가 낡으면 `remove-worktree.sh` 가 머지된 커밋을 원격에 없는 커밋으로 센다.
    백그라운드 동기화 루프는 compact 나 세션 재시작으로 끊기므로 머지마다 직접 한다
 3. 워크트리를 `remove-worktree.sh` 로 지운다(아래)
-4. 로컬과 원격 브랜치를 지운다. `merge-queue.sh` 가 원격 브랜치를 지웠으면 로컬만 남는다
+4. 로컬과 원격 브랜치를 지운다. `merge_queue.py` 가 원격 브랜치를 지웠으면 로컬만 남는다
 5. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
    `.omc/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다.
    공통 지시서, 결정 기록, 인수인계 문서, 진행 중 작업의 문서는 남긴다.

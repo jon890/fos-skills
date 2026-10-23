@@ -16,7 +16,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `SKILL.md`: 목표, 원칙, 7단계 개요 표
 - `references/`: 단계마다 하나씩 규칙과 복구 절차. `overlay.md` 는 저장소 오버레이에 적을 항목, `board.md` 는 진행 보드 연동
 - `templates/spec-common.md`: 저장소와 무관한 공통 지시서 틀
-- `scripts/merge-queue.sh`: PR 을 순서대로 확인하고 머지한다. 머지 전 명령을 PR 마다 받는다. PR 이 고친 파일을 base 도 고쳤으면 멈추거나(`--stop-on-overlap`) base 와 합친 임시 사본에서 검사 명령을 돌린 뒤 머지한다(`--verify-merged`). 겹치지 않은 코드 PR 도 검사하게 하거나(`--verify-merged-when`) 문서 PR 은 검사 없이 머지하고(`--docs-glob`), 보류한 PR 을 건너뛰고 다음 PR 로 갈 수 있다(`--continue-on-hold`). `--up-to-date-when overlap` 은 PR 이 바꾼 단위(모듈 폴더)와 base 의 새 변경이 겹치지 않으면 base 최신화와 CI 재대기 없이 머지한다(판정은 `scripts/overlap_units.py`)
+- `scripts/merge_queue.py`: PR 을 순서대로 확인하고 머지한다. 머지 전 명령을 PR 마다 받는다. PR 이 고친 파일을 base 도 고쳤으면 멈추거나(`--stop-on-overlap`) base 와 합친 임시 사본에서 검사 명령을 돌린 뒤 머지한다(`--verify-merged`). 겹치지 않은 코드 PR 도 검사하게 하거나(`--verify-merged-when`) 문서 PR 은 검사 없이 머지하고(`--docs-glob`), 보류한 PR 을 건너뛰고 다음 PR 로 갈 수 있다(`--continue-on-hold`). `--up-to-date-when overlap` 은 PR 이 바꾼 단위(모듈 폴더)와 base 의 새 변경이 겹치지 않으면 base 최신화와 CI 재대기 없이 머지한다(판정은 `scripts/overlap_units.py`)
 - `scripts/merge-with-finish.py`: 머지 큐를 걸면서 PR 마다 `finish-pr.py` 를 함께 건다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이다. 같은 PR 의 마무리가 이미 돌면 다시 걸지 않는다. 명령줄에 없는 머지 큐 옵션은 `orch-finish.json` 의 `queue` 절에서 채운다. 보드 항목은 `pr` 필드으로 찾아 업무의 마지막 PR 에서만 done 으로 바꾸고, 정리 인자(`sweep_args`)도 그 절에서 받는다. 머지 큐는 기본으로 이 스크립트로 건다
 - `scripts/finish-pr.py`: 머지를 `gh` 로 확인한 뒤 그 브랜치의 worker 를 정리하고, 머지 커밋이 들어간 배포의 성공을 기다리고, 업무를 완료 처리하고, 보드를 done 으로 바꾼다. 끝에 `FINISH-DONE` 이나 `FINISH-FAIL` 을 낸다
 - `scripts/handoff-cleanup.py`: 끝난 큐 로그, 끝난 지시서, 오래된 handoff 폴더와 미리보기, 지난 csv·tsv 를 휴지통 폴더로 옮긴다. 기본은 후보만 보이고 `--apply` 로 옮긴다
@@ -59,5 +59,5 @@ python3 scripts/run-orch-tests.py --report /tmp/orch-tests.json
 `cleanup-sweep.py` 테스트는 `--wait 0.01 --poll-interval 0.01`로 대기를 줄인다.
 운영 기본값은 대기 5초, 확인 간격 1초이며, 신호를 보낸 뒤에는 최소 한 간격을 기다린다.
 
-`merge-queue.sh` 는 미해결 스레드 수를 형제 스킬 `review-fix` 의 `review_threads.py` 로 센다.
+`merge_queue.py` 는 미해결 스레드 수를 형제 스킬 `review-fix` 의 `review_threads.py` 로 센다.
 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 맡는다.
