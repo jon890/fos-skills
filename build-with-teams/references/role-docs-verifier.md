@@ -27,6 +27,9 @@
 이번 변경이 `docs/` 나 코드에 계획서 번호를 새로 남겼는지 본다.
 계획서는 구현 PR 에서 지우므로, 그 자리는 머지와 함께 깨진 참조가 된다.
 기존 파일과 식별자의 이름, 측정 기록에 남은 실행 경로는 대상이 아니다.
+- **code-architecture 에 늘어놓은 목록.** → `UPDATE_NEEDED`
+이번 변경이 `code-architecture.md` 에서 고친 줄을 planning 예시의 [「디렉터리 책임」](../../planning/references/examples/code-architecture.md#디렉터리-책임) 절과 대조한다.
+executor 가 앞줄의 형식을 따라 목록을 덧붙인 경우와 team-lead 가 `UPDATE_NEEDED` 를 반영한 경우가 모두 대상이다.
 
 ## 회신 형식
 
@@ -39,7 +42,7 @@ worker 를 띄우는 조율 도구의 보고 명령(예: `orca orchestration` �
 판정: PASS | UPDATE_NEEDED | VIOLATION
 
 발견 목록:
-- <문서:줄> ↔ <코드 파일:줄> [축: 결정 위반 | docs 에 남은 옛 내용 | docs 에 없는 새 결정 | 계획서를 가리키는 참조]
+- <문서:줄> ↔ <코드 파일:줄> [축: 결정 위반 | docs 에 남은 옛 내용 | docs 에 없는 새 결정 | 계획서를 가리키는 참조 | code-architecture 에 늘어놓은 목록]
   문제: <무엇이 어긋나는지 한 줄>
   고칠 것: <어느 문서의 어느 절을 어떤 내용으로. `VIOLATION` 이면 코드를 어떻게>
 - 없음

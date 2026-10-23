@@ -129,6 +129,35 @@ class TestUnit(unittest.TestCase):
         # `test_plan032` 는 식별자다. 계획서 디렉터리로 보면 그 아래 문서의 참조를 놓친다.
         self.assertEqual(len(sc.check_plan_ref(Path("docs/test_plan032/a.md"), lines("plan051 을 본다."))), 1)
 
+    def test_listed_items_catch_table_cell_and_tree_line(self):
+        """실측 형식. 설정을 하나 더하는 사람이 앞줄을 따라 괄호 안에 덧붙였다."""
+        arch = Path("docs/code-architecture.md")
+        for body in (
+            "| 경로 | 소유하는 것 |\n| --- | --- |\n| `config.yaml` | 런타임 설정 (기능 플래그, 캐시 크기, 외부 API 주소) |",
+            "```\nsrc/\n  config.yaml  런타임 설정 (기능 플래그, 캐시 크기, 외부 API 주소)\n```",
+            "```text\n├── config.yaml   런타임 설정（플래그、캐시、주소）\n```",
+        ):
+            found = sc.check_listed_items(arch, lines(body))
+            self.assertEqual(len(found), 1, body)
+            self.assertIn("WARN LISTED_ITEMS", found[0])
+
+    def test_listed_items_skip_short_aside_first_column_and_code(self):
+        arch = Path("docs/code-architecture.md")
+        for body in (
+            "| 경로 | 소유하는 것 |\n| --- | --- |\n| `a/` | 재시도 (기본값 3, 최대 10) |",
+            "| 경로 (a, b, c) | 소유하는 것 |\n| --- | --- |\n| `a/` | 업무 규칙 |",
+            "```python\nconfig = load(a, b, c)\n```",
+            "```markdown\n| `a/` | 설정 (가, 나, 다) |\n```",
+            "런타임 설정 (기능 플래그, 캐시 크기, 외부 API 주소) 을 본문에 적었다.",
+        ):
+            self.assertEqual(sc.check_listed_items(arch, lines(body)), [], body)
+
+    def test_listed_items_only_in_docs_code_architecture(self):
+        row = "| 경로 | 소유하는 것 |\n| --- | --- |\n| `a/` | 설정 (가, 나, 다) |"
+        for path in ("docs/flow.md", "references/examples/code-architecture.md"):
+            self.assertEqual(sc.check_listed_items(Path(path), lines(row)), [], path)
+        self.assertEqual(len(sc.check_listed_items(Path("frontend/docs/code-architecture.md"), lines(row))), 1)
+
 
 class TestRepo(unittest.TestCase):
     """실제 git 저장소에서 파일 수집과 종료 코드를 본다."""
@@ -241,6 +270,25 @@ class TestRepo(unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertIn("b.md#없다", done.stdout)
         self.assertNotIn("b.md#비-절", done.stdout)
+
+    def test_listed_items_warn_without_failing(self):
+        self.write(
+            "docs/code-architecture.md",
+            "# 구조\n\n| 경로 | 소유하는 것 |\n| --- | --- |\n| `a/` | 설정 (가, 나, 다) |\n",
+        )
+        done = self.invoke()
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertIn("WARN LISTED_ITEMS", done.stdout)
+
+    def test_listed_items_warn_alongside_violation(self):
+        self.write(
+            "docs/code-architecture.md",
+            "# 구조\n\n| 경로 | 소유하는 것 |\n| --- | --- |\n| `a/` | 설정 (가, 나, 다) |\n\n[깨짐](없다.md)\n",
+        )
+        done = self.invoke()
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("깨진 링크", done.stdout)
+        self.assertIn("WARN LISTED_ITEMS", done.stdout)
 
 
 if __name__ == "__main__":

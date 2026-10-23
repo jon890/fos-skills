@@ -35,6 +35,6 @@
 | --- | --- |
 | `SKILL.md` | 목표와 5단계 실행 절차, 단계별 통과 조건, 조사를 나눠 맡기는 방식, 문서 역할 기본값, 리포트 형식 |
 | `references/six-axis.md` | 여섯 축의 세부 판정 기준, `superseded` ADR 의 예외, 완료된 plan 의 제거 판정 |
-| `scripts/static_check.py` | 결정적으로 판정되는 위반만 검출한다. ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와 앵커 |
+| `scripts/static_check.py` | 결정적으로 판정되는 위반만 검출한다. ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와 앵커, 계획서 번호 참조. `code-architecture.md` 에 늘어놓은 목록은 경고로 낸다 |
 | `tests/test_static_check.py` | 검사마다 걸리는 표본과 걸리지 않는 표본을 함께 둔 검출력 검사 |
 | `CHANGELOG.md` | 버전 이력 |

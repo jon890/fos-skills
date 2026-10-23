@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.22.0
+
+docs-verifier 에 「code-architecture 에 늘어놓은 목록」 축을 더한다.
+
+- 이번 변경이 `code-architecture.md` 에서 고친 줄을 planning 예시의 「디렉터리 책임」 절과 대조하고, 어긋나면 `UPDATE_NEEDED` 로 낸다. 규칙은 다시 쓰지 않고 그 절을 가리킨다
+- executor 가 phase 에서 고친 줄과 team-lead 가 `UPDATE_NEEDED` 를 반영한 줄이 모두 이 검토를 지나므로 한 곳에만 넣었다
+- 설정을 하나 더한 executor 가 앞줄을 따라 괄호 안에 덧붙여 같은 사실이 세 곳에 생긴 실측 사례가 근거다
+
 ## 5.21.0
 
 `plan_precheck.py --base origin/main` 이 `origin/origin/main` 을 fetch 하다 종료 코드 2 로 끝나던 문제를 고친다.

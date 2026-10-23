@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.29.0
+
+`references/examples/code-architecture.md` 의 「디렉터리 책임」 에 책임 칸과 트리 블록의 설명에 설정 값, 항목 목록, 기능 목록을 늘어놓지 않는다는 금지를 더한다.
+
+- 그 목록은 설정 파일 주석이나 ADR 이 소유하고, 이 칸은 역할만 쓴다. 나쁜 예와 고친 예를 붙였다
+- 설정을 하나 더하는 구현 단계가 앞줄의 형식을 따라 괄호 안에 덧붙여, 같은 사실이 세 곳에 생긴 실측 사례가 근거다
+- 뼈대 표의 「담지 않는 것」 에 설정 항목과 기능 목록을 더했다
+- `build-with-teams` 의 docs-verifier 와 `docs-check` 의 정적 검사가 이 절을 기준으로 삼는다
+
 ## 2.28.1
 
 `references/step-8-tasks.md` 의 계획 번호 명령이 zsh 에서 `--prefix` 와 값을 한 낱말로 넘기던 문제를 고친다.
