@@ -177,7 +177,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
 
 - squash 머지된 PR. PR HEAD 를 `--merged-head` 로 넘긴다. 머지 큐의 update-branch 로 PR HEAD 가 워크트리보다 앞서 가도 `refs/pull/<번호>/head` 를 받아 와서 지운다
 - 로컬 브랜치 이름(`<user>/<접두>-<주제>`)과 PR 브랜치 이름(`<접두>/<주제>`)이 다른 경우. upstream, `branch.<b>.merge`, 이름 변형 순으로 PR 을 찾는다. PR 조회가 비거나 깨지면 머지로 읽지 않는다
-- 예전에 머지된 PR 과 이름만 같은 새 브랜치. 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 보므로 지우지 않는다. `remove-worktree.sh --merged-head` 도 HEAD 가 그 커밋의 조상이 아니면 거부한다
+- 예전에 머지된 PR 과 이름만 같은 새 브랜치. 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 보므로 지우지 않는다. 머지 큐의 update-branch 뒤 merge commit 으로 머지돼 base 위 커밋이 0 개가 된 브랜치는 끝 커밋이 `gh pr view --json commits` 의 커밋 목록에 있을 때 그 PR 의 브랜치로 본다. 막 만든 브랜치의 끝 커밋은 base 의 옛 커밋이라 목록에 없고, 목록을 읽지 못해도 인정하지 않는다. `remove-worktree.sh --merged-head` 도 HEAD 가 그 커밋의 조상이 아니면 거부한다
 - worker 를 반납한 뒤 Orca 가 그 워크트리에 띄운 빈 셸 터미널. 폴더를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 그 터미널을 닫고 다시 시도한다. 다른 프로세스가 남아 있으면 건너뛴다
 - 뒤처진 기준 브랜치. 기본 체크아웃이 기준 브랜치에 있으면 `--ff-only` 로 맞춘다. 로컬에만 있는 커밋이 있으면 건드리지 않는다
 - 머지된 PR 의 본문 파일. 지시서 폴더의 부모(`<specs-dir>/..`)에 둔 `pr-<이름>.md` 를 지시서와 함께 지운다

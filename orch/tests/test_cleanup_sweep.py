@@ -43,6 +43,7 @@ class CleanupSweepTest(unittest.TestCase):
         self.processes, self.spawn_on_release, self.gh_raw, self.open_bases = [], None, {}, []
         self.orca_fail = self.gh_fail = self.orca_close_noop = self.tasks_fail = False
         self.tasks = []
+        self.pr_commits = {}
         self.log = self.tmp / "calls.log"
 
     def make_repo(self, name):
@@ -77,6 +78,8 @@ class CleanupSweepTest(unittest.TestCase):
                                        "isCrossRepository": len(p) > 2 and p[2]}] if p else []))
             elif a[:2] == ["pr", "list"] and "--base" in a:
                 print(1 if a[a.index("--base") + 1] in st["open_bases"] else 0)
+            elif a[:2] == ["pr", "view"] and a[2] in st["pr_commits"]:
+                print(json.dumps({"commits": [{"oid": o} for o in st["pr_commits"][a[2]]]}))
             """)
         orca = fake % "orca" + textwrap.dedent(f"""\
             if st.get("orca_fail"):
@@ -146,7 +149,7 @@ class CleanupSweepTest(unittest.TestCase):
              "spawn_on_release": self.spawn_on_release, "gh_raw": self.gh_raw, "open_bases": self.open_bases,
              "all_workers": self.all_workers, "scope": self.scope,
              "orca_fail": self.orca_fail, "gh_fail": self.gh_fail, "close_noop": self.orca_close_noop,
-             "tasks": self.tasks, "tasks_fail": self.tasks_fail}))
+             "tasks": self.tasks, "tasks_fail": self.tasks_fail, "pr_commits": self.pr_commits}))
 
     def worktree(self, name, push=True, commits=1, repo=None):
         repo = repo or self.repo
@@ -339,6 +342,74 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertTrue(path.exists(), out)
         self.assertIn("살아 있는 worker ctx_s", out)
         self.assertNotIn("terminal close", self.calls())
+
+    def update_branch_then_merge_commit(self, name, path):
+        """머지 큐가 원격 PR 에 base 를 합치고(update-branch), 저장소가 merge commit 으로 머지한 상태를 만든다.
+
+        PR HEAD 는 원격의 머지 커밋이라 로컬 브랜치 끝 커밋보다 앞서 가고, 머지 뒤 로컬 커밋은 모두 base 에 들어간다.
+        (PR HEAD, 로컬 끝 커밋) 을 돌려준다.
+        """
+        tip = sh("git", "-C", str(path), "rev-parse", "HEAD")
+        (self.repo / "other.txt").write_text("x")
+        sh("git", "-C", str(self.repo), "add", "-A")
+        sh("git", "-C", str(self.repo), "commit", "-q", "-m", "base moved")
+        sh("git", "-C", str(self.repo), "push", "-q", "origin", "main")
+        other = self.tmp / "queue-clone"
+        sh("git", "clone", "-q", "-b", name, str(self.tmp / "repo-origin.git"), str(other))
+        sh("git", "-C", str(other), "merge", "-q", "--no-ff", "-m", "update branch", "origin/main")
+        sh("git", "-C", str(other), "push", "-q", "origin", name)
+        head = sh("git", "-C", str(other), "rev-parse", "HEAD")
+        sh("git", "-C", str(self.repo), "fetch", "-q", "origin")
+        sh("git", "-C", str(self.repo), "merge", "-q", "--no-ff", "-m", "merge pr", f"origin/{name}")
+        sh("git", "-C", str(self.repo), "push", "-q", "origin", "main")
+        sh("git", "-C", str(self.repo), "push", "-q", "origin", "--delete", name)
+        self.prs[name] = ["MERGED", head]
+        self.pr_commits["1"] = [tip, head]
+        self.assertEqual(sh("git", "-C", str(self.repo), "rev-list", "--count", f"origin/main..{name}"), "0")
+        return head, tip
+
+    def test_merge_commit_merged_branch_after_update_branch_is_recognized_by_pr_commits(self):
+        path = self.worktree("feat-um")
+        self.update_branch_then_merge_commit("feat-um", path)
+        self.workers = [{"dispatchId": "ctx_s", "workerState": "succeeded", "dispatchStatus": "completed",
+                         "agentTerminalHandle": "term_s", "resource": {"worktreeId": f"x::{path}"}}]
+        self.terminals = [{"handle": "term_s", "worktreePath": str(path)}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertIn("PR MERGED", out)
+        self.assertFalse(path.exists(), out)
+        self.assertIn("terminal close --terminal term_s", self.calls())
+        self.assertNotIn("feat-um", self.branches())
+
+    def test_fresh_branch_with_old_same_name_pr_is_not_recognized(self):
+        path = self.fresh_gone_branch("feat-fresh")
+        old_head = "0" * 40
+        self.prs["feat-fresh"] = ["MERGED", old_head]
+        self.pr_commits["1"] = [old_head]
+        self.workers = [{"dispatchId": "ctx_s", "workerState": "succeeded", "dispatchStatus": "completed",
+                         "agentTerminalHandle": "term_s", "resource": {"worktreeId": f"x::{path}"}}]
+        self.terminals = [{"handle": "term_s", "worktreePath": str(path)}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("살아 있는 worker ctx_s", out)
+        self.assertIn("pr view 1 --json commits", self.calls())
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_fresh_branch_is_kept_when_pr_commits_cannot_be_read(self):
+        path = self.fresh_gone_branch("feat-fresh2")
+        self.prs["feat-fresh2"] = ["MERGED", "0" * 40]
+        self.workers = [{"dispatchId": "ctx_s", "workerState": "succeeded", "dispatchStatus": "completed",
+                         "agentTerminalHandle": "term_s", "resource": {"worktreeId": f"x::{path}"}}]
+        self.terminals = [{"handle": "term_s", "worktreePath": str(path)}]
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_tip_equal_to_pr_head_is_recognized_without_commit_lookup(self):
+        path = self.merged_worker_with_terminal("feat-same", "succeeded", "completed")
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertIn("terminal close --terminal term_s", self.calls())
+        self.assertNotIn("pr view", self.calls())
 
     def foreign_terminal_at(self, name):
         """머지된 워크트리에 다른 Run 의 worker 터미널이 붙어 있다. 이 Run 은 그 worker 를 모른다."""

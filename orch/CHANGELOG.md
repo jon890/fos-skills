@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.41.0 (2026-10-23)
+
+머지 큐의 update-branch 뒤 merge commit 으로 머지된 브랜치를 `cleanup-sweep.py` 가 그 PR 의 것으로 알아보지 못해 정리가 남던 문제를 고친다.
+
+- `scripts/cleanup-sweep.py`: `belongs_to` 가 base 위 커밋이 0 개인 브랜치를 끝 커밋이 PR HEAD 와 정확히 같을 때만 인정했다. update-branch 로 원격 PR HEAD 가 앞서 가고 merge commit 으로 머지되면 둘이 달라 `find_pr` 가 PR 을 못 찾았다. 그러면 `merged()` 가 `PR MERGED` 대신 `upstream gone, base 에 없는 커밋 0 개` 로 판정해 `sweep_worktree` 가 끝난 worker 의 남은 세션 터미널을 살아 있는 worker 로 세고, `--kill-holders` 도 폴더를 쥔 프로세스를 끄지 않았다. 이제 그 경우에 한해 `gh pr view --json commits` 의 커밋 목록에 끝 커밋이 있으면 그 PR 의 브랜치로 본다. 막 만든 브랜치와 목록을 읽지 못한 경우는 지금처럼 인정하지 않는다. 끝 커밋이 PR HEAD 와 같으면 목록을 조회하지 않는다
+- `references/cleanup.md`: 같은 이름 새 브랜치 줄에 이 판정을 적었다
+- 테스트를 더했다(update-branch 뒤 merge commit 으로 머지된 브랜치 인정, 막 만든 브랜치와 목록을 읽지 못한 경우 불인정, 끝 커밋이 PR HEAD 와 같은 경우 조회 없이 인정)
+
 ## 1.40.0 (2026-10-23)
 
 gersang-lab 코디네이터가 저장소 로컬 스크립트를 스킬 것으로 바꾸지 못하게 막던 결함 넷을 고치고, 로컬 스크립트에만 있던 머지 기능을 옮긴다.
