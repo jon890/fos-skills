@@ -1,5 +1,34 @@
 # 4. 기다리기
 
+## 질문 감시와 압축 뒤 복구
+
+**`watch-questions.py` 를 Monitor 의 이벤트 소스로 Run 마다 하나씩 띄운다.**
+Monitor 의 `command` 에 아래 명령을 넣는다. `$SKILL_DIR` 과 `$REPO` 는 절대경로로, `$RUN_ID` 는 현재 Run 으로 바꾼다.
+Monitor 가 없는 하네스에서는 같은 명령을 하네스의 백그라운드 실행 기능으로 띄우고 출력 알림을 받는다.
+
+```bash
+python3 "$SKILL_DIR/scripts/watch-questions.py" --run "$RUN_ID" --repo "$REPO"
+```
+
+새 question/escalation 은 `QUESTION`, 답이 없는 채로 다시 알릴 시간이 되면 `REMINDER` 한 줄을 낸다.
+기본 재알림은 10분이며 `--remind-after 300` 처럼 초 단위로 바꾼다. 조회 간격은 `--interval` 로 바꾼다.
+알린 시각은 `orch_paths.py` 가 정한 `state/questions-seen.json` 에 Run 별로 남는다.
+다시 띄워도 재알림 시간이 되기 전에는 같은 질문을 알리지 않는다.
+`inbox` 의 양방향 thread 로 답변을 확인하므로 ack 여부와 관계없이 답한 질문은 감시와 보드에서 빠진다.
+조회 실패와 기록 한도 도달은 stderr 로 알리고 다음 조회에서 다시 시도한다.
+
+**압축이나 세션 재시작 뒤 첫 작업은 감시 복구다.** Monitor 목록과 아래 프로세스 목록에서 현재 Run 의 질문 감시와 완료 대기를 확인한다.
+꺼진 질문 감시는 위 명령으로 다시 띄우고, 완료 대기는 이 문서의 「이전 세션의 대기」 절차로 복구한다.
+이미 켜진 감시는 두 번째로 띄우지 않는다.
+
+```bash
+ps -eo pid,command | grep -E "watch-questions.py|wait-important.py|orchestration check" | grep "$RUN_ID"
+python3 "$SKILL_DIR/scripts/orch-doctor.py" --run "$RUN_ID"
+```
+
+doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
+알림을 받으면 [`replying.md`](replying.md) 의 분류 기준으로 처리한다. 감시는 delivery 를 소비하거나 ack 하지 않으므로 아래 완료 대기와 함께 쓴다.
+
 **대기는 `wait-important.py` 를 하네스의 백그라운드 실행 기능으로 run 마다 하나만 건다.**
 앞에서 돌리면 그동안 코디네이터가 막힌다.
 셸의 `&` 나 `nohup` 으로 띄우면 끝나도 완료 알림이 오지 않고 고아 프로세스가 남는다. 이 플러그인의 PreToolUse 훅(`hooks/block-background-wait.py`)이 그런 Bash 호출을 거부한다. 이 스크립트와 `check --wait` 둘 다 막는다.

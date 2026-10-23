@@ -11,7 +11,7 @@ test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
 })
 
 test('질문과 escalation 만 세고 heartbeat 는 세지 않는다', () => {
-  const stdout = '{"messages":[{"type": "question"},{"type":"heartbeat"},{"type":"escalation"},{"type":"status"}]}'
+  const stdout = JSON.stringify({ messages: ['question', 'heartbeat', 'escalation', 'status'].map((type, i) => ({ id: 'm' + i, type, run_id: 'r', to_handle: 'run:r' })) })
   expect(countQuestions(stdout)).toBe(2)
 })
 
@@ -31,6 +31,7 @@ test('상태 줄은 질문과 수동 decide 를 합쳐 결정 필요로 센다',
     { questions: 2, workers: [{}, {}], prs: [{ fail: 1 }, { fail: 0 }] })
   expect(line).toBe('결정 필요 3 · worker 2 · PR 2(CI 실패 1) · 진행 1   /board')
   expect(statusLine([], { questions: null, workers: null, prs: null })).toBe('')
+  expect(statusLine([], { questions: null, errors: { questions: 'offline' } })).toContain('결정 필요 확인 불가')
 })
 
 test('항목의 worktree 로 worker 를 붙이고, 안 붙은 worker 만 따로 고른다', () => {
@@ -150,13 +151,13 @@ test('Ready 이고 필수 검사가 통과한 PR 을 머지 가능으로 보고 
 })
 
 test('답을 기다리는 질문의 본문과 보낸 worker 를 꺼낸다', () => {
-  const stdout = '{"ok":true,"result":{"messages":[{"id":"m1","type":"question","from_handle":"dispatch:ctx_a","body":"둘 중\n무엇으로 할까요?","payload":"{\\"dispatchId\\":\\"ctx_a\\",\\"question\\":\\"A 와 B 중 무엇으로 할까요?\\"}","created_at":"2026-10-12T10:00:00Z"},{"id":"m2","type":"status","body":"x"}]}}'
+  const stdout = JSON.stringify({ result: { messages: [{ id: 'm1', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:ctx_a', body: '둘 중 무엇으로 할까요?', payload: JSON.stringify({ dispatchId: 'ctx_a', question: 'A 와 B 중 무엇으로 할까요?' }), created_at: '2026-10-12T10:00:00Z' }] } })
   const questions = parseQuestions(stdout)
   expect(questions.length).toBe(1)
   expect(questions[0].dispatch).toBe('ctx_a')
   expect(questions[0].text).toBe('A 와 B 중 무엇으로 할까요?')
   expect(questionText('가'.repeat(10), 5)).toBe('가가가가…')
-  expect(parseQuestions('깨진 {"type": "question"').length).toBe(1)
+  expect(() => parseQuestions('깨진 {"type": "question"')).toThrow()
 })
 
 test('오늘 시작 요청은 board 갱신, 완료 비우기, 정리, 감시, 보고를 모두 담는다', () => {
@@ -195,4 +196,17 @@ test('객체의 done 으로 진행률과 지금 단계, 표시를 정하고 혼�
   ])
   expect(itemProgress({ next: [{ text: '1 a', done: true }, { text: '2 b', done: false }] })).toBe('1/2')
   expect(stepSummary(rows)).toMatchObject({ done: 2, todo: 0 })
+})
+
+
+test('답변은 ack 전에 질문을 지우고 worker 후속 글은 답변으로 세지 않는다', () => {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d', thread_id: 'q', read: 1 }
+  const follow = { ...q, id: 'follow', type: 'status' }
+  const other = { ...q, id: 'other', run_id: 'other', to_handle: 'run:other' }
+  expect(countQuestions(JSON.stringify({ messages: [q, follow, other] }), 'r')).toBe(1)
+  const reply = { ...follow, id: 'answer', from_handle: 'run:r', to_handle: 'dispatch:d' }
+  expect(countQuestions(JSON.stringify({ messages: [q, reply] }), 'r')).toBe(0)
+  expect(countQuestions(JSON.stringify({ messages: [{ ...q, type: 'escalation' }, reply] }), 'r')).toBe(0)
+  expect(() => parseQuestions('broken')).toThrow()
+  expect(() => parseQuestions('{"ok":false}')).toThrow()
 })

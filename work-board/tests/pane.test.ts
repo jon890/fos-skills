@@ -14,14 +14,14 @@ const PANE = {
   props: { title: '작업 현황', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
-async function start($, on) {
+async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' })) {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('process.run', (_, e) => ({ value: e.argv[0] === 'git'
     ? { exitCode: 0, stdout: '/repo/.git\n', stderr: '' }
-    : { exitCode: 1, stdout: '', stderr: '없음' } }))
+    : processResult(e.argv) }))
   on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
   on('fs.read', () => ({ value: BOARD }))
   on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
@@ -114,5 +114,15 @@ test('새로 읽기 버튼은 없고 오늘 시작과 펼치기 버튼만 남는
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Button', text: /새로 읽기|읽는 중/ })).toBeFalsy()
   expect(await ui.find({ type: 'Button', text: /오늘 시작/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('질문 조회 실패를 결정 필요 0 대신 확인 불가로 표시한다', async ($, on) => {
+  await start($, on, (argv) => argv.includes('run-current')
+    ? { exitCode: 0, stdout: JSON.stringify({ result: { run: { id: 'r' } } }), stderr: '' }
+    : { exitCode: 1, stdout: '', stderr: 'offline' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /결정 필요  확인 불가/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /읽지 못했어요: offline/ })).toBeTruthy()
   await ui.unmount()
 })
