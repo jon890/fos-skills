@@ -436,6 +436,32 @@ class SendToWorkerTest(FakeBase):
         self.assertEqual(["launch --spec /s/next.md --worktree /w/feat --run run_x -- --terminal term_w"],
                          self.lines("launch"))
 
+    def test_settled_dispatch_with_spec_only_relaunches_without_a_body(self):
+        self.state(dispatches=self.worker("completed"), terminals=[{"handle": "term_w"}])
+        r = self.send("--spec", "/s/next.md")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(["launch --spec /s/next.md --worktree /w/feat --run run_x -- --terminal term_w"],
+                         self.lines("launch"))
+        self.assertNotIn("note:", r.stdout)
+
+    def test_settled_dispatch_with_spec_and_body_says_the_body_is_not_sent(self):
+        self.state(dispatches=self.worker("completed"), terminals=[{"handle": "term_w"}])
+        r = self.send("--body", "x", "--spec", "/s/next.md")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("--body 가 가지 않는다", r.stdout)
+
+    def test_active_dispatch_with_spec_only_is_refused_with_its_own_message(self):
+        self.state(dispatches=self.worker("dispatched"), inbox=[self.message("m_st", "term_w")])
+        r = self.send("--spec", "/s/next.md")
+        self.assertEqual(2, r.returncode)
+        self.assertIn("아직 살아 있어", r.stderr)
+        self.assertEqual([], self.lines("orca orchestration reply"))
+        self.assertEqual([], self.lines("launch"))
+
+    def test_settled_dispatch_without_body_or_spec_is_a_usage_error(self):
+        self.state(dispatches=self.worker("completed"), terminals=[{"handle": "term_w"}])
+        self.assertEqual(2, self.send().returncode)
+
     def test_settled_dispatch_without_terminal_says_to_launch_anew(self):
         self.state(dispatches=self.worker("failed"), terminals=[{"handle": "term_other"}])
         r = self.send("--body", "x", "--spec", "/s/next.md")
@@ -513,7 +539,10 @@ class SendToWorkerTest(FakeBase):
         data = json.loads(self.state_file.read_text())
         data["dispatches"]["ctx_1"]["terminalResource"] = {"ownerDispatchId": "ctx_1", "ownershipState": "user_owned"}
         self.state(**data)
-        self.assertEqual(1, self.send("--body", "x", "--spec", "/s/next.md").returncode)
+        r = self.send("--body", "x", "--spec", "/s/next.md")
+        self.assertEqual(1, r.returncode)
+        self.assertIn("orca terminal close --terminal term_w", r.stdout)
+        self.assertIn("orca terminal read --terminal term_w", r.stdout)
         self.assertEqual([], self.lines("orca terminal close"))
 
     def test_orca_failure_is_exit_5(self):
@@ -524,6 +553,7 @@ class SendToWorkerTest(FakeBase):
         self.state()
         self.assertEqual(2, self.send().returncode)
         self.assertEqual(2, self.send("--body", "a", "--body-file", "b").returncode)
+        self.assertEqual(2, self.send("--body-file", "/nonexistent/b").returncode)
 
 
 class NotifyConflictsTest(FakeBase):

@@ -2,7 +2,8 @@
 # 사용: remove-worktree.sh <worktree 경로> [--delete-branch] [--merged-head <커밋>] [--wait <초>]
 # 작업이 끝난 git worktree 를 안전하게 지운다. 아래 중 하나라도 걸리면 지우지 않고 종료 코드 1 을 낸다.
 #   1. 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다(살아 있는 worker 나 셸). --wait 초 동안 빠지기를 기다린다
-#      OMC session-end hook worker(`--omc-session-end-worker`)만 남았으면 ORCH_HOOK_WAIT 초(기본 180)까지 기다린다.
+#      OMC session-end hook worker(`--omc-session-end-worker`)와 그 자손 프로세스만 남았으면 ORCH_HOOK_WAIT 초(기본 180)까지 기다린다.
+#      자손은 `ps` 의 부모 pid 를 따라 찾는다. hook 이 띄운 자식이 중간에 생겨도 대기가 --wait 로 줄지 않게 하기 위해서다.
 #      그 worker 는 세션이 끝난 뒤 워크트리의 `.omc/` 를 1분 넘게 쓰다 스스로 끝난다(실측).
 #      빼고 지우면 그 쓰기가 지운 경로에 폴더를 다시 만들므로 빼지 않고 기다린다
 #   2. 커밋 안 된 변경이 있다
@@ -35,9 +36,17 @@ python3 "${0:A:h}/terminal_ownership.py" "$p" || exit 1
 holder_pids() {
   lsof -d cwd -Fpn 2>/dev/null | awk -v p="$p" '/^p/ { pid = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == p || index(n, p "/") == 1) print pid }' | sort -u
 }
-# 인자로 준 pid 가운데 OMC session-end hook worker 인 것
+# 인자로 준 pid 가운데 OMC session-end hook worker 이거나 그 자손인 것. hook worker 가 띄운 자식도 hook 이 끝나면 함께 끝난다
 hook_pids() {
-  ps -axo pid=,ppid=,command= 2>/dev/null | awk -v want=" $* " 'index(want, " " $1 " ") && /--omc-session-end-worker|hooks\/session-end\/worker\.js/ { print $1 }'
+  ps -axo pid=,ppid=,command= 2>/dev/null | awk -v want=" $* " '
+    { pid = $1; parent[pid] = $2; $1 = $2 = ""; if ($0 ~ /--omc-session-end-worker|hooks\/session-end\/worker\.js/) isHook[pid] = 1 }
+    END {
+      n = split(want, w, " ")
+      for (i = 1; i <= n; i++) {
+        for (q = w[i]; q != "" && q != 0 && depth < 50; q = parent[q]) { depth++; if (isHook[q]) { print w[i]; break } }
+        depth = 0
+      }
+    }'
 }
 waited=0
 while :; do
