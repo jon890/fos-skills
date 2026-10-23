@@ -17,7 +17,7 @@ worker 는 되묻지 않으면 받은 만큼만 하고 완료로 보고한다. �
 같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `planning` 으로 만든 설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
-worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask.sh` 가 두 경우를 종료 코드로 가른다.
+worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask.py` 가 두 경우를 종료 코드로 가른다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.
 
 ## 넣을 것

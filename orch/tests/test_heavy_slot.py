@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/heavy-slot.py'
+sys.path.insert(0, str(SCRIPT.parent))
 spec = importlib.util.spec_from_file_location('heavy_slot', SCRIPT)
 heavy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(heavy)

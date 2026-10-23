@@ -11,7 +11,7 @@ python3 "$SKILL_DIR/scripts/heavy-slot.py" --exclusive -- pnpm verify
 
 타입 검사, lint, 파일을 지정한 단위 검사는 대기열을 거치지 않는다. 시나리오 검사와
 빌드는 자리를 사용한다. 자동 분류가 맞지 않는 전체 검사는 `--exclusive` 로 지정한다.
-명령 인자와 종료 코드는 그대로 전달한다. 자리를 잡은 뒤 형제 `mem-gate.sh` 로
+명령 인자와 종료 코드는 그대로 전달한다. 자리를 잡은 뒤 형제 `mem-gate.py` 로
 메모리 여유를 기다리므로, 메모리를 기다리는 작업도 자리를 사용한다.
 
 | 설정 | 기본값 | 용도 |
@@ -20,7 +20,7 @@ python3 "$SKILL_DIR/scripts/heavy-slot.py" --exclusive -- pnpm verify
 | `HEAVY_SLOTS`, `--slots` | `3` | 동시에 실행할 자리 수. 같은 대기열은 같은 수를 쓴다 |
 | `HEAVY_EXCLUSIVE` | `0` | `1` 이면 모든 자리를 혼자 사용 |
 | `HEAVY_POLL` | `5`초 | 자리 재확인 간격 |
-| `MEM_GATE` | 형제 `mem-gate.sh` | 메모리 검사 경로 |
+| `MEM_GATE` | 형제 `mem-gate.py` | 메모리 검사 경로 |
 
 저장소마다 대기열 폴더를 달리하면 서로 제한하지 않는다. PC 전체 사용량을 제한하려면
 여러 저장소에서 같은 폴더를 쓴다. 경로를 지정할 때 macOS 의 심볼릭 링크는 실경로로 푼다.

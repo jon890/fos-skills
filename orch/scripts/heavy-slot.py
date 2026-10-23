@@ -5,7 +5,7 @@ Usage: heavy-slot.py [--exclusive] [--slot-dir DIR] [--slots N] -- COMMAND...
 HEAVY_SLOT_DIR defaults to TMPDIR/orch-heavy-UID; HEAVY_SLOTS defaults to 3.
 HEAVY_EXCLUSIVE=1 requests all slots. HEAVY_POLL defaults to 5 seconds.
 Light checks bypass the queue. Nested calls inherit HEAVY_SLOT_HELD.
-The adjacent mem-gate.sh runs after admission (MEM_GATE overrides its path).
+The adjacent mem-gate.py runs after admission (MEM_GATE overrides its path).
 Exit: command status, 2 invalid arguments, 1 queue/gate failure, 128+signal.
 """
 import argparse
@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from orch_process import script_command
 
 LIGHT = [
     r'^(pnpm( -s)?( exec)? )?(tsc|oxlint|oxfmt)\b',
@@ -152,8 +153,8 @@ def main(argv=None):
         while not queue.claim():
             print('heavy-slot: waiting', file=sys.stderr)
             time.sleep(float(os.environ.get('HEAVY_POLL', '5')))
-        gate = Path(os.environ.get('MEM_GATE', str(Path(__file__).with_name('mem-gate.sh'))))
-        gate_code = run_command(['bash', str(gate)])
+        gate = Path(os.environ.get('MEM_GATE', str(Path(__file__).with_name('mem-gate.py'))))
+        gate_code = run_command(script_command(gate))
         if gate_code:
             return gate_code
         return run_command(cmd, dict(os.environ, HEAVY_SLOT_HELD=str(os.getpid())))

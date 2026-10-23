@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""worker-ask.sh 가 orca 의 JSON 출력에서 값을 꺼낸다. stdin 으로 JSON 을 받는다.
+"""worker-ask.py 가 orca 의 JSON 출력에서 값을 꺼낸다. stdin 으로 JSON 을 받는다.
 
 사용법:
     ask-json.py answer                      ask 결과에서 답 본문. 없으면 빈 줄

@@ -899,7 +899,7 @@ class WorkerAskTest(unittest.TestCase):
                 "to_handle": to, "thread_id": thread, "created_at": "2026-10-19T10:00:00Z"}
 
     def run_ask(self, *args):
-        done = subprocess.run([str(SCRIPTS / "worker-ask.sh"), *args],
+        done = subprocess.run([str(SCRIPTS / "worker-ask.py"), *args],
                               capture_output=True, text=True, env=self.env)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         return done.returncode, done.stdout, calls
@@ -1004,7 +1004,7 @@ class WorkerAskTest(unittest.TestCase):
         if not shutil.which("zsh"):
             self.skipTest("zsh 없음")
         self.fake('{"result":{"reply":"ok"}}', 0)
-        env = dict(self.env, ASK=str(SCRIPTS / "worker-ask.sh"))
+        env = dict(self.env, ASK=str(SCRIPTS / "worker-ask.py"))
         done = subprocess.run(["zsh", "-c", 'Q="두 단어 질문"; "$ASK" --from term_w --question "$Q"'],
                               capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, 0, done.stderr)
