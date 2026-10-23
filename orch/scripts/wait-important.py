@@ -12,7 +12,7 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
 사용법:
     wait-important.py --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]
                       [--timeout-ms 7000000] [--kill-stale] [--lost-interval-sec 60] [--ignore-lost ctx_...]
-                      [--lost-state FILE]
+                      [--lost-state FILE] [--ack-lost ctx_...]
 
     --run         기다릴 Run
     --ack         앞 대기가 낸 delivery id. 첫 대기처럼 넘길 것이 없으면 뺀다
@@ -21,6 +21,7 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
     --lost-interval-sec  대기하는 동안 Run 의 worker 상태를 볼 간격(초). 기본 60. 0 이면 보지 않는다. 아래 「끊긴 worker」
     --ignore-lost  끊긴 worker 로 보지 않을 dispatch id. 여러 번 줄 수 있다. 아래 「끊긴 worker」
     --lost-state  이미 알린 끊긴 dispatch 를 적는 파일. 기본 <git 루트>/.omc/state/wait-important-lost.json. 아래 「끊긴 worker」
+    --ack-lost    확인한 끊긴 dispatch 를 처리함으로 기록하고 대기 없이 끝낸다. 여러 번 줄 수 있다
     --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
 
 출력:
@@ -76,6 +77,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -191,7 +193,7 @@ def load_reported(path, run_id):
 
 def save_reported(path, run_id, kinds):
     """판정한 dispatch 를 Run 별로 적는다. kinds 는 {dispatch id: lost 나 일부러 끝낸 이유} 다.
-    쓰지 못하면 stderr 로 알리고 넘어간다(다음 대기가 다시 판정할 뿐이다)"""
+    쓰지 못하면 stderr 로 알리고 False 를 돌려준다. --ack-lost 는 이때 실패로 끝낸다."""
     if not kinds:
         return
     path = Path(path)
@@ -200,15 +202,18 @@ def save_reported(path, run_id, kinds):
     entry = data.get(run_id) if isinstance(data.get(run_id), dict) else {}
     data[run_id] = entry
     for dispatch, kind in kinds.items():
-        entry.setdefault(dispatch, f"{kind} {now}")
+        if kind == "handled" or dispatch not in entry:
+            entry[dispatch] = f"{kind} {now}"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         # 쓰는 도중에 끊겨도 앞 내용이 깨지지 않게 옆 파일에 쓰고 바꾼다
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
         os.replace(tmp, path)
+        return True
     except OSError as exc:
         print(f"wait-important: 판정한 dispatch 를 {path} 에 적지 못했다: {exc}", file=sys.stderr)
+        return False
 
 
 def task_closed(task):
@@ -305,8 +310,8 @@ def is_waiter_exists(data):
     return error.get("code") == "waiter_exists" or "active actionable waiter" in str(error.get("message", ""))
 
 
-def waiter_processes(run_id):
-    """같은 사용자의 프로세스 가운데 이 Run 을 기다리는 것. [(pid, ppid, 시작 시각, 명령)]"""
+def user_processes():
+    """같은 사용자의 프로세스 전체. 대기의 조상인 일반 셸도 포함한다."""
     done = subprocess.run([PS, "-U", str(os.getuid()), "-o", "pid=,ppid=,lstart=,command="],
                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     rows = []
@@ -315,6 +320,12 @@ def waiter_processes(run_id):
         parts = line.split(None, 7)
         if len(parts) == 8 and parts[0].isdigit() and parts[1].isdigit():
             rows.append((int(parts[0]), int(parts[1]), " ".join(parts[2:7]), parts[7]))
+    return rows
+
+
+def waiter_processes(run_id, rows=None):
+    """같은 사용자의 프로세스 가운데 이 Run 을 기다리는 것. [(pid, ppid, 시작 시각, 명령)]"""
+    rows = user_processes() if rows is None else rows
     # 이 스크립트와 이것을 띄운 셸은 명령에 Run id 가 들어 있어도 남은 대기가 아니다
     parent = {pid: ppid for pid, ppid, _, _ in rows}
     mine, pid = set(), os.getpid()
@@ -323,7 +334,7 @@ def waiter_processes(run_id):
         pid = parent.get(pid, 0)
     found = []
     for pid, ppid, started, command in rows:
-        if pid in mine or run_id not in command:
+        if pid in mine or not re.search(r"(?<![\w-])" + re.escape(run_id) + r"(?![\w-])", command):
             continue
         waiting = "orchestration check" in command and "--wait" in command
         if waiting or "wait-important" in command:
@@ -331,26 +342,30 @@ def waiter_processes(run_id):
     return found
 
 
-def stale_pids(procs):
+def stale_pids(procs, all_procs=None):
     """부모가 init 인 대기와, 그 밑에 딸린 대기(셸 밑의 스크립트, 스크립트 밑의 check)"""
-    parent = {pid: ppid for pid, ppid, _, _ in procs}
+    waiters = {pid for pid, _, _, _ in procs}
+    # 앱도 init 의 자식이다. 일반 셸과 해당 Run 의 대기만 따라가 앱의 살아 있는 세션은 보존한다.
+    parent = {pid: ppid for pid, ppid, _, command in (procs if all_procs is None else all_procs)
+              if pid in waiters or Path(command.split()[0]).name.lstrip("-") in {"sh", "bash", "zsh", "dash", "fish"}}
     stale = {pid for pid, ppid in parent.items() if ppid == 1}
     grew = True
     while grew:
         more = {pid for pid, ppid in parent.items() if ppid in stale} - stale
         stale |= more
         grew = bool(more)
-    return stale
+    return stale & waiters
 
 
 def report_waiters(run_id, kill_stale):
-    procs = waiter_processes(run_id)
+    rows = user_processes()
+    procs = waiter_processes(run_id, rows)
     err = sys.stderr
     print(f"wait-important: Run {run_id} 에 이미 다른 대기가 있다(waiter_exists). 다시 걸어도 같은 오류만 받는다", file=err)
     if not procs:
         print("  같은 사용자의 프로세스에서 찾지 못했다. 다른 사용자나 다른 머신의 대기일 수 있다", file=err)
         return
-    stale = stale_pids(procs)
+    stale = stale_pids(procs, rows)
     for pid, ppid, started, command in procs:
         kind = "고아" if pid in stale else f"부모 {ppid} 살아 있음"
         print(f"  PID {pid}  {kind}  시작 {started}  {command}", file=err)
@@ -381,6 +396,7 @@ def main(argv=None):
     parser.add_argument("--lost-interval-sec", type=float, default=60)
     parser.add_argument("--ignore-lost", action="append", default=[])
     parser.add_argument("--lost-state")
+    parser.add_argument("--ack-lost", action="append", default=[])
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -390,6 +406,11 @@ def main(argv=None):
         print("wait-important: --types 와 --timeout-ms 는 비어 있거나 0 일 수 없고 --lost-interval-sec 는 음수일 수 없다", file=sys.stderr)
         return 2
     state = args.lost_state or default_state_path()
+    if args.ack_lost:
+        if not save_reported(state, args.run, {d: "handled" for d in args.ack_lost}):
+            return 1
+        print("ACK_LOST " + " ".join(args.ack_lost))
+        return 0
     # 대기를 시작할 때 살아 있던 dispatch 와 처리하지 않은 끊긴 dispatch 를 지켜본다. 읽지 못하면 지켜보지 않는다
     watched = set()
     if args.lost_interval_sec > 0:

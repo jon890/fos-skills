@@ -188,6 +188,34 @@ class WaitImportantTest(unittest.TestCase):
         self.assertEqual(5, r.returncode, r.stdout + r.stderr)
         self.assertEqual({"run_other", "run_x"}, set(json.loads(self.lost_state.read_text())))
 
+    def test_ack_lost_persists_without_waiting_or_warning(self):
+        self.assertEqual(5, self.lost_at_start().returncode)
+        self.log.unlink()
+        r = self.wait([], "--ack-lost", "ctx_bad", "--ack-lost", "ctx_other")
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertFalse(self.log.exists(), "확인 기록만 할 때 Orca 를 호출했다")
+        entry = json.loads(self.lost_state.read_text())["run_x"]
+        self.assertTrue(all(entry[d].startswith("handled ") for d in ("ctx_bad", "ctx_other")))
+        r = self.lost_at_start()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("아직 처리되지 않았다", r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+
+    def test_ack_lost_does_not_change_other_runs_or_unhandled_dispatches(self):
+        self.lost_state.write_text(json.dumps({"run_other": {"ctx_bad": "lost old"},
+                                               "run_x": {"ctx_unhandled": "lost old"}}))
+        r = self.wait([], "--ack-lost", "ctx_bad")
+        self.assertEqual(0, r.returncode, r.stderr)
+        data = json.loads(self.lost_state.read_text())
+        self.assertEqual("lost old", data["run_other"]["ctx_bad"])
+        self.assertEqual("lost old", data["run_x"]["ctx_unhandled"])
+
+    def test_ack_lost_write_failure_is_not_success(self):
+        self.lost_state.mkdir()
+        r = self.wait([], "--ack-lost", "ctx_bad")
+        self.assertEqual(1, r.returncode, r.stderr)
+        self.assertNotIn("ACK_LOST", r.stdout)
+
     def test_unreadable_lost_state_reports_again(self):
         self.lost_state.write_text("not json")
         r = self.lost_at_start()
@@ -307,6 +335,7 @@ class WaitImportantTest(unittest.TestCase):
             self.ps_line(103, 102, "node orca orchestration check --run run_x --wait --json"),
             self.ps_line(201, 900, "node orca orchestration check --run run_x --wait --json"),
             self.ps_line(301, 1, "node orca orchestration check --run run_other --wait --json"),
+            self.ps_line(302, 1, "node orca orchestration check --run run_x_extra --wait --json"),
             self.ps_line(401, 1, "node orca orchestration check --run run_x --json"),
         ]) + "\n")
         r = self.wait([self.WAITER_EXISTS, batch("d1", "worker_done")], "--ack", "d0")
@@ -316,6 +345,7 @@ class WaitImportantTest(unittest.TestCase):
         for pid in ("101", "102", "103", "201"):
             self.assertIn(f"PID {pid}", r.stderr)
         self.assertNotIn("PID 301", r.stderr)
+        self.assertNotIn("PID 302", r.stderr)
         self.assertNotIn("PID 401", r.stderr)
         self.assertIn("kill 101 102 103", r.stderr)
         self.assertIn("부모 900 살아 있음", r.stderr)
@@ -341,6 +371,35 @@ class WaitImportantTest(unittest.TestCase):
         self.assertIsNotNone(orphan.wait(timeout=5))
         self.assertIsNone(live.poll())
         self.assertIn(f"PID {orphan.pid} 를 종료했다", r.stderr)
+
+    def test_kill_stale_follows_non_waiting_orphan_shell_ancestors(self):
+        orphan = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(orphan.wait)
+        self.addCleanup(orphan.kill)
+        self.ps_rows.write_text("\n".join([
+            self.ps_line(501, 1, "/bin/zsh"),
+            self.ps_line(502, 501, "/bin/bash -c runner"),
+            self.ps_line(orphan.pid, 502, "node orca orchestration check --run run_x --wait --json"),
+        ]) + "\n")
+        r = self.wait([self.WAITER_EXISTS], "--kill-stale")
+        self.assertEqual(4, r.returncode, r.stderr)
+        self.assertIsNotNone(orphan.wait(timeout=5))
+        self.assertIn(f"PID {orphan.pid} 를 종료했다", r.stderr)
+        self.assertNotIn("PID 501 를 종료했다", r.stderr)
+
+    def test_kill_stale_preserves_waiters_under_live_app(self):
+        live = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(live.wait)
+        self.addCleanup(live.kill)
+        self.ps_rows.write_text("\n".join([
+            self.ps_line(501, 1, "/Applications/Orca.app/Contents/MacOS/Orca"),
+            self.ps_line(502, 501, "/bin/zsh"),
+            self.ps_line(live.pid, 502, "node orca orchestration check --run run_x --wait --json"),
+        ]) + "\n")
+        r = self.wait([self.WAITER_EXISTS], "--kill-stale")
+        self.assertEqual(4, r.returncode, r.stderr)
+        self.assertIsNone(live.poll())
+        self.assertNotIn("를 종료했다", r.stderr)
 
     def test_output_is_readable_by_triage(self):
         r = self.wait([batch("d1", "heartbeat", "worker_done")])
