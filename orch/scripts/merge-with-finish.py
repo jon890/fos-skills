@@ -247,7 +247,7 @@ def board_items_for(board, number):
         items = json.loads(board.read_text(encoding="utf-8")).get("items", [])
     except (OSError, ValueError, AttributeError):
         return []
-    return [i["id"] for i in items if isinstance(i, dict) and i.get("id") and number in pr_numbers(i.get("pr"))]
+    return [str(i["id"]) for i in items if isinstance(i, dict) and i.get("id") and number in pr_numbers(i.get("pr"))]
 
 
 def pick_board_item(wrapper, config, number, complete):

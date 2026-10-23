@@ -285,6 +285,15 @@ class WrapperRunTest(unittest.TestCase):
         self.assertNotIn("--board-id", by_pr["501"])
         self.assertIn("보드 항목 task-a 는 PR 492 가 업무의 마지막 PR(!)이 아니라", out)
 
+    def test_numeric_board_ids_are_passed_as_strings(self):
+        self.write_board([{"id": 7, "pr": "492"}, {"id": 8, "pr": "495"}, {"id": 9, "pr": "495"}])
+        code, out = self.wrap("--repo", str(self.tmp), "492!", "495!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("--board-id 7", self.finish_lines(2)["492"])
+        # 항목이 둘 이상이라 건너뛸 때 안내 줄이 숫자 id 로 깨지지 않는다
+        self.assertIn("보드 항목이 둘 이상이라 건너뛴다: PR 495 -> 8, 9", out)
+
     def test_pr_field_numbers_are_not_glued_together(self):
         for field, expected in (("#492 495", {"492", "495"}), ("492/495", {"492", "495"}), ("#492 (v2)", {"492"}),
                                 ("492, #495", {"492", "495"}), ("", set()), (None, set())):
