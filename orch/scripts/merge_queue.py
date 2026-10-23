@@ -93,7 +93,7 @@ origin 은 PR 이 속한 저장소를 가리켜야 한다. fork 를 origin 으�
                         실패하면 `AFTER-MERGED-FAILED 종료코드` 를 찍는다. 머지 결과는 바뀌지 않는다
   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.py 에 넘길 인자. 하나씩 준다
-                        (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .omc/specs)
+                        (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs)
   --no-sweep            머지 뒤 cleanup-sweep.py --apply 를 부르지 않는다
 
 모든 PR 이 머지되면 cleanup-sweep.py --apply 로 머지된 worktree, 브랜치, 터미널, 지시서를 정리한다.

@@ -62,7 +62,7 @@ from live_specs import ACTIVE, _orca, live_spec_paths  # noqa: E402
 GIT = os.environ.get("GIT", "git")
 ORCA = os.environ.get("ORCA", "orca")
 PGREP = os.environ.get("PGREP", "pgrep")
-BUSY = r"merge-queue\.sh|merge-with-finish\.py|finish-pr\.py"
+BUSY = r"merge-queue\.sh|merge_queue\.py|merge-with-finish\.py|finish-pr\.py"
 REWRITE_SUFFIXES = {".md", ".json"}
 LOG_SUFFIXES = {".out", ".pid", ".log", ".tmp"}
 SCRIPT_SUFFIXES = {".sh", ".py", ".ts", ".js", ".cjs", ".mjs"}
