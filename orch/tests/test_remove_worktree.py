@@ -53,12 +53,15 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
             (self.bin / name).write_text(head + body)
             (self.bin / name).chmod(0o755)
 
-    def run_remove(self, procs, *args, hook_wait=None):
+    def run_remove(self, procs, *args, hook_wait=None, shell=None):
         self.state.write_text(json.dumps({"slept": 0, "procs": procs}))
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}")
         if hook_wait is not None:
             env["ORCH_HOOK_WAIT"] = str(hook_wait)
-        done = subprocess.run(["python3", str(SCRIPT), str(self.path), *args], capture_output=True, text=True, env=env)
+        command = ["python3", str(SCRIPT), str(self.path), *args]
+        if shell:
+            command = [shell, "-c", 'exec "$@"', "remove-worktree", *command]
+        done = subprocess.run(command, capture_output=True, text=True, env=env)
         return done.returncode, done.stdout + done.stderr, json.loads(self.state.read_text())["slept"]
 
     def proc(self, pid, command, gone=None, ppid=1):
@@ -119,6 +122,27 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         code, _, _ = self.run_remove([], "--wait", "soon")
         self.assertEqual(code, 2)
         self.assertTrue(self.path.exists())
+
+    def test_bash_launch_has_the_same_usage_error_as_python(self):
+        zsh_code, zsh_out, _ = self.run_remove([], "--wait", "soon")
+        bash_code, bash_out, _ = self.run_remove([], "--wait", "soon", shell="bash")
+        self.assertEqual(2, bash_code, bash_out)
+        self.assertEqual(zsh_code, bash_code)
+        self.assertEqual(zsh_out, bash_out)
+        self.assertNotIn("unbound variable", bash_out)
+
+    def test_bash_launch_removes_the_worktree(self):
+        code, out, _ = self.run_remove([], shell="bash")
+        self.assertEqual(0, code, out)
+        self.assertIn(f"removed {self.path}", out)
+        self.assertNotIn("unbound variable", out)
+        self.assertFalse(self.path.exists())
+
+    def test_bash_launch_waits_for_a_holder(self):
+        code, out, slept = self.run_remove([self.proc(42, "node server.js", gone=2)], "--wait", "5", shell="bash")
+        self.assertEqual(0, code, out)
+        self.assertEqual(2, slept)
+        self.assertFalse(self.path.exists())
 
 
 if __name__ == "__main__":

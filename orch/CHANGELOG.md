@@ -3,12 +3,18 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 2.2.0 (2026-10-23)
+## 2.3.0 (2026-10-23)
 
 - `mem-gate.py`, `worker-ask.py`, `make-worktree.py`, `launch-worker.py`, `remove-worktree.py` 로 기존 셸 스크립트 5개를 옮기고 문서·템플릿·내부 호출을 바꿨다. 명령줄 인자와 종료 코드는 유지한다.
 - `launch-worker.py` 와 `make-worktree.py` 의 `--resume-remote` 로 원격 PR 브랜치의 최신 커밋을 새 워크트리에서 이어 받는다. 기존 로컬 브랜치와 경로는 덮어쓰지 않는다.
 - worker 실행 전에 `orch_paths.py` 의 마이그레이션 확인을 유지한다. 메모리 조회가 실패하면 명령을 실행하지 않으며 명령 파일이 없거나 실행할 수 없으면 종료 코드 127·126 을 유지한다.
 - 중첩 대기열 호출은 `exec` 로 명령을 이어받아 바깥 작업 종료 시 실제 명령도 함께 종료되고 자리가 반납되게 했다.
+
+## 2.2.0 (2026-10-23)
+
+- `merge-with-finish.py --run RUN_ID` 을 더했다. `finish-pr.py` 에 `--run` 을 넘기고, 머지 큐의 정리 단계에 `--sweep-arg --run --sweep-arg RUN_ID` 를 넘겨 다른 Run 의 worker 터미널을 건너뛰게 한다. 이전에는 `--finish-arg=--run` 으로 준 Run 이 정리 단계에 넘어가지 않아, 머지 뒤 정리가 다른 코디네이터의 워크트리 `board-steps-done` 을 지우고 터미널을 닫았다. `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 정리 인자에 `--run` 이 이미 있으면 두 번 넘기지 않는다. Run 이 어디에도 없으면 「정리 단계가 Run 으로 한정되지 않는다」 경고 한 줄을 낸다(`--no-sweep` 이면 내지 않는다). 값이 서로 다른 곳에 있으면 종료 코드 2 다.
+- `references/cleanup.md` 의 `merge-with-finish.py` 예시에 `--run "$RUN_ID"` 를 더하고 이유를 한 줄 적었다.
+- `remove-worktree.sh` 를 `bash` 나 `sh` 로 불러도 동작하게 했다. 첫머리에서 zsh 가 아니면 `exec zsh "$0" "$@"` 로 같은 인자를 넘겨 다시 실행한다. 이전에는 `bash remove-worktree.sh ...` 가 `${p:A}` 에서 `A: unbound variable` 로 끝났다. 사용법 오류와 정상 동작이 zsh 로 부른 것과 같은지 테스트를 더했다.
 
 ## 2.1.0 (2026-10-23)
 
