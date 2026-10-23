@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.46.0 (2026-10-23)
+
+- `merge-queue.sh --up-to-date-when overlap`: `--require-up-to-date` 가 뒤처진 PR 마다 base 를 합치고 CI 를 다시 기다리던 것을, PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹칠 때만 하게 한다. 기본은 `always` 라 동작이 달라지지 않는다. 판정은 PR 차례마다 하고 `<PR> 판정: 바로 머지` 또는 `<PR> 판정: 갱신 필요(이유)` 를 찍는다. 판정하지 못하면 갱신 필요로 다룬다.
+  - 단위는 `--unit-prefix`(기본 `modules/`) 아래 폴더 하나이고 그 밖의 파일은 경로 자체다. `--shared-paths` 정규식에 맞는 공용 경로는 어느 쪽에 있든 겹친 것으로 본다. `--docs-glob` 에 맞는 문서는 세지 않는다.
+  - 판정 로직은 Python 모듈 `scripts/overlap_units.py` 에 두고 단위 테스트를 붙였다. 셸은 PR 차례마다 이 모듈을 부르고 결과로 최신화 여부만 정한다.
+- `merge-with-finish.py`: `queue` 절이 `up_to_date_when`, `shared_paths`, `unit_prefix`, `require_up_to_date`, `sweep_args` 를 받는다. `sweep_args` 는 항목마다 `--sweep-arg` 가 된다.
+- `merge-with-finish.py`: `--board-item` 을 주지 않아도 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾는다. **업무의 마지막 PR(`!`)일 때만** 그 항목을 done 으로 바꿔, 중간 PR 이 항목을 끝내던 문제를 막는다. 같은 PR 이 든 항목이 둘 이상이면 건너뛴다. 이제 저장소별 래퍼 스크립트 없이 `merge-with-finish.py --repo <저장소> 492 '495!:<머지 전 명령>'` 한 줄로 부를 수 있다.
+- `references/cleanup.md` 에 「겹치지 않는 PR 은 최신화하지 않기」 를 더했다. 쓸 수 있는 저장소(공용 경로가 잘 정의된 모노레포)와 위험, 호출 예를 적었다.
+
 ## 1.45.0 (2026-10-23)
 
 - `remove-worktree.sh` 가 OMC session-end hook worker 의 자손 프로세스도 hook 으로 센다. 대기 도중 hook 의 자식이 생겨 대기 시간이 `--wait` 로 줄고 첫 정리가 거부되던 문제를 고쳤다.
