@@ -5,8 +5,8 @@
 모든 자리가 빌 때 혼자 실행한다. 명시적으로 혼자 실행하려면 `--exclusive` 를 준다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/heavy-slot.py" -- pnpm build
-python3 "$SKILL_DIR/scripts/heavy-slot.py" --exclusive -- pnpm verify
+python3 "$SKILL_DIR/scripts/heavy-slot.py" -- ./bin/build.sh
+python3 "$SKILL_DIR/scripts/heavy-slot.py" --exclusive -- ./bin/ci.sh
 ```
 
 타입 검사, lint, 파일을 지정한 단위 검사는 대기열을 거치지 않는다. 시나리오 검사와

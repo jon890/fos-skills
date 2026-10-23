@@ -81,7 +81,7 @@ python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --worktree "$W
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
 
 `make-worktree.py` 는 Orca 가 직접 만드는 경로와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
-2026-10-23 dooray-cli 에서 `orca worktree create` 가 만든 경로로 확인했다. Orca 전역 설정은 `workspaceDir: "worktrees"`, `nestWorkspaces: true` 이고, 저장소별 `worktreeBasePath` 로 덮어쓸 수 있다.
+2026-10-23 다른 저장소에서 `orca worktree create` 가 만든 경로로 확인했다. Orca 전역 설정은 `workspaceDir: "worktrees"`, `nestWorkspaces: true` 이고, 저장소별 `worktreeBasePath` 로 덮어쓸 수 있다.
 그래서 경로 계산은 바꾸지 않는다. 경로가 맞아도 `git worktree add` 로 만든 워크트리는 Orca 에게 외부 워크트리라서, 저장소의 `externalWorktreeVisibility` 가 `hide` 면 Orca 가 숨기고 `launch-worker.py` 가 30초 대기 끝에 멈춘다.
 `make-worktree.py` 는 만들기 전에 `orca repo show` 로 그 값을 읽고 `hide` 면 만들지 않고 종료 코드 1 로 멈춘다. `show`, `inherit`, 읽지 못한 경우는 그대로 진행한다.
 `hide` 일 때 사용자가 고를 조치는 둘이다. 스크립트는 Orca 설정을 바꾸지 않는다.
