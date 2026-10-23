@@ -42,7 +42,7 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         fakes = {
             "orca": 'print(json.dumps({"result": {"terminals": st.get("terminals", [])}}))\n',
             "lsof": 'for q in st["procs"]:\n    print("p%s" % q["pid"]); print("n" + q["cwd"])\n',
-            "ps": 'for q in st["procs"]:\n    print(q["pid"], 1, q["command"])\n',
+            "ps": 'for q in st["procs"]:\n    print(q["pid"], q.get("ppid", 1), q["command"])\n',
             "sleep": textwrap.dedent(f"""\
                 st["slept"] += 1
                 st["procs"] = [q for q in st["procs"] if q.get("gone") is None or q["gone"] > st["slept"]]
@@ -61,8 +61,8 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         done = subprocess.run(["zsh", str(SCRIPT), str(self.path), *args], capture_output=True, text=True, env=env)
         return done.returncode, done.stdout + done.stderr, json.loads(self.state.read_text())["slept"]
 
-    def proc(self, pid, command, gone=None):
-        return {"pid": pid, "cwd": str(self.path), "command": command, "gone": gone}
+    def proc(self, pid, command, gone=None, ppid=1):
+        return {"pid": pid, "cwd": str(self.path), "command": command, "gone": gone, "ppid": ppid}
 
     def test_waits_for_session_end_hook_and_removes(self):
         code, out, slept = self.run_remove([self.proc(41, HOOK, gone=3)])
@@ -92,6 +92,22 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(slept, 0)
         self.assertIn("pid 41, 42", out)
+
+    def test_hook_and_its_child_wait_for_hook_wait(self):
+        # 대기 도중 hook 의 자식(42)이 생겨도 --wait 가 아니라 hook 대기 시간까지 기다린다
+        procs = [self.proc(41, HOOK, gone=5), self.proc(42, "node child.js", gone=4, ppid=41)]
+        code, out, slept = self.run_remove(procs, "--wait", "1", hook_wait=10)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(slept, 5)
+        self.assertFalse(self.path.exists())
+
+    def test_unrelated_process_beside_hook_is_refused_after_wait(self):
+        procs = [self.proc(41, HOOK, gone=5), self.proc(50, "node other.js", ppid=7)]
+        code, out, slept = self.run_remove(procs, "--wait", "1", hook_wait=10)
+        self.assertEqual(code, 1)
+        self.assertEqual(slept, 1)
+        self.assertIn("pid 41, 50", out)
+        self.assertTrue(self.path.exists())
 
     def test_wait_option_waits_for_other_holder(self):
         code, out, slept = self.run_remove([self.proc(42, "node server.js", gone=2)], "--wait", "5")
