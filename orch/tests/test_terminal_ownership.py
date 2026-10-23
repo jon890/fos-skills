@@ -39,6 +39,19 @@ class OwnershipTest(unittest.TestCase):
         with patch.object(guard, "query", side_effect=pages):
             self.assertEqual(guard.blocker("/tmp/wt"), "사용자 보유 터미널")
 
+    def test_ignored_handle_skips_ownership_check_but_others_still_block(self):
+        pages = [{"terminals": [{"handle": "a", "worktreePath": "/tmp/wt"}, {"handle": "b", "worktreePath": "/tmp/wt"}]},
+                 {"scope": {"source": "all"}, "workers": [
+                     {"resource": {"terminalHandle": "a", "ownershipState": "user_owned"}},
+                     {"resource": {"terminalHandle": "b", "ownershipState": "owned"}}]}]
+        with patch.object(guard, "query", side_effect=pages):
+            self.assertEqual(guard.blocker("/tmp/wt", {"a"}), "")
+        with patch.object(guard, "query", side_effect=pages):
+            self.assertEqual(guard.blocker("/tmp/wt"), "사용자 보유 터미널")
+        pages[1]["workers"][1]["resource"]["ownershipState"] = "user_owned"
+        with patch.object(guard, "query", side_effect=pages):
+            self.assertEqual(guard.blocker("/tmp/wt", {"a"}), "사용자 보유 터미널")
+
 
 if __name__ == "__main__":
     unittest.main()
