@@ -99,12 +99,12 @@ python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_
 두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 루프에서 다시 시도된다. 따로 기억하지 않는다.
 5분 주기는 백그라운드 대기와 별개로 하네스의 예약 기능이나 다음 깨어남에 붙인다.
 
-`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 와 `$ITEMS_FILE` 은 목표 항목과 추적 항목 파일이다. 저장소 오버레이가 정한다.
-보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 과 `--goal-items` 를 뺀다.
+`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 는 목표 항목 id 다. 저장소 오버레이가 정한다.
+보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
-python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --goal-items "$ITEMS_FILE"
+python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID"
 ```
 
 머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.
@@ -195,10 +195,11 @@ heartbeat 와 liveness 는 `live` 로 남아 대기만으로는 알 수 없다. 
 
 `worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝나고, 이 상태의 Task 에 `--retry-of` 를 주면 `task_not_startable` 로 거절된다.
 `worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
+`$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다. `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker.py` 를 쓰지 않는 3단계의 예외다.
 
 ```bash
 orca orchestration worker-abandon --dispatch "$DISPATCH_ID" --json
-orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --worktree "id:$WORKTREE_ID" --agent claude --model claude-sonnet-5-5 --effort medium --json
+orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --worktree "id:$WORKTREE_ID" --agent "$AGENT" --model "$MODEL" --effort "$EFFORT" --json
 ```
 
 ## 기다리는 동안 worker 워크트리를 고치지 않는다

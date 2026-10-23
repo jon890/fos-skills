@@ -19,23 +19,22 @@ git -C "$REPO" fetch origin
 
 codex 를 띄우기 전에 아래 「codex 준비 판정」 의 설정이 있는지 본다.
 
-**새 worktree 는 `make-worktree.py` 로 먼저 만들고 `--worktree path:` 로 띄운다.**
+**새 워크트리와 원격 브랜치 이어 받기(`--resume-remote`)는 `launch-worker.py` 가 만든다. `make-worktree.py` 를 직접 부르는 것은 6단계의 `--check` 뿐이다.**
 Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<워크트리 이름>` 으로 정해 지시서의 `브랜치:` 줄과 어긋난다.
 어긋나면 worker 마다 이름을 바꾸거나 다른 원격 브랜치에 push 하고, 정리 스크립트는 이름을 추측해야 한다.
-스크립트는 지시서의 `브랜치:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 읽어 `origin/$BASE` 위에 그 이름으로 만들고,
-아래 「띄운 직후 확인」 의 exclude 와 로컬 설정 복사도 같이 한다. 표준 출력은 워크트리 경로 한 줄이다.
+`launch-worker.py` 는 `make-worktree.py` 로 지시서의 `브랜치:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 읽어 `origin/$BASE` 위에 그 이름으로 만들고,
+아래 「띄운 직후 확인」 의 exclude 와 로컬 설정 복사도 같이 한다.
 
-**`--spec` 에는 지시서 경로와 사용자가 허락한 외부 동작을 담은 한 줄만 준다.**
-`spec-line.py` 가 지시서의 `허락:` 줄(형식은 [`spec-writing.md`](spec-writing.md))을 그 줄에 붙인다.
-허락이 파일 안에만 있으면 Codex worker 가 그것을 사용자의 직접 요청으로 볼지 실행마다 달라, 일부는 GitHub 게시가 금지됐다며 PR 을 열지 않고 멈춘다.
+**`--spec` 의 첫 지시 줄은 `spec-line.py` 가 지시서의 경로와 `허락:` 줄(형식은 [`spec-writing.md`](spec-writing.md))로 만든다.**
 
 **worker 는 `launch-worker.py` 로 띄운다.** 첫 지시 줄 만들기(`spec-line.py --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
-`worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
-`$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `--` 뒤는 `worker-start` 에 그대로 간다.
+`worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. `launch-worker.py` 는 `--spec` 이 필수라 늘 Task 를 새로 만들므로, `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다.
+옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
+`$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
-  -- --agent codex --model gpt-6.1-sol --effort low
+  -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
 `make-worktree.py` 가 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
@@ -58,11 +57,15 @@ python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --repo "$REPO"
 **`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree.py` 가 「경로가 이미 있다」 로 거부한다.
 스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다. 실패한 띄우기가 그 워크트리에 터미널을 남겼으면 그 목록도 함께 낸다. 이 세션이 띄운 것인지 보고 닫은 뒤 부른다.
 **그 워크트리에 터미널이 남아 있으면 스크립트가 목록을 보여 주고 거부한다.** 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
-목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다. 끝난 worker 의 터미널은 대개 이어 쓰지 못하므로 닫고 새 worker 로 띄운다. 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
+목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다.
+끝난 dispatch 의 터미널을 이어 쓰는 일은 `send-to-worker.py --dispatch <끝난 dispatch> --spec <후속 지시서>` 가 한다.
+터미널이 남았으면 그 터미널을 이어 쓴다. 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. 터미널도 없으면 종료 코드 3 이다. 판정은 `send-to-worker.py` 머리 주석이 소유한다.
+**충돌과 리뷰 반영에는 닫고 새로 띄우지 않고 [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 를 따른다.**
+떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
-  -- --agent claude --model claude-sonnet-5-5 --effort medium
+  -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
 **`orca worktree list` 에 그 경로가 보일 때까지 스크립트가 기다린다.** Orca 가 새 워크트리를 늦게 알아봐 바로 부르면 `worker-start` 가 `selector_not_found` 로 실패한다.
@@ -128,7 +131,7 @@ codex 의 hook 신뢰 확인이 fos-skills 의 orch hook 때문이면 Codex 설�
    본문 없이 `--enter` 만 보내고, `worker-show` 가 첫 화면 대기(`agent-trust-workspace` 같은)를 보일 때만 `block-worker-terminal-send.py` 가 통과시킨다.
    거절하면 그 터미널을 `worker-release` 로 닫고 claude worker 로 다시 띄운다
 2. `terminal wait --for tui-idle` 로 입력 대기 상태를 확인한다
-3. `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "id:$WORKTREE_ID"` 로 붙인다.
+3. `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "id:$WORKTREE_ID"` 로 붙인다(`--task` 로 기존 Task 를 다시 띄우는 호출이라 3단계의 예외다).
    기존 worktree 에 띄웠던 worker 는 `worker-start` 응답에 worktree id 가 없다. `--worktree "path:$WORKTREE"` 로 준다.
    `--model` 은 줄 수 없지만 처음 띄울 때 준 모델이 그 터미널에 남아 있다
 
@@ -136,10 +139,11 @@ codex 의 hook 신뢰 확인이 fos-skills 의 orch hook 때문이면 Codex 설�
 
 worker 가 `stage.detail: agent_readiness`, `outcome: failed` 로 아무 출력 없이 끝나면, codex 는 먼저 위 「codex 준비 판정」 의 설정을 본다.
 설정이 있는데도 실패하면 그 모델이 이 환경에서 뜨지 않는 것이므로 같은 Task 를 다른 모델로 다시 띄운다. `--retry-of` 는 `--spec` 이 아니라 `--task` 와 함께 쓰고, Task 가 `failed` 나 `blocked` 일 때만 받아들여진다. 터미널이 끊겨 `abandoned` 가 된 경우는 아래 「끊긴 worker 다시 띄우기」 의 표를 따른다.
-`$WORKTREE` 는 처음 띄운 워크트리 경로다.
+`$WORKTREE` 는 처음 띄운 워크트리 경로다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다.
+이 `worker-start` 는 `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker.py` 를 쓰지 않는 예외다.
 
 ```bash
-orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --agent codex --model gpt-6.1-sol --effort low --worktree "path:$WORKTREE"
+orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --agent "$AGENT" --model "$MODEL" --effort "$EFFORT" --worktree "path:$WORKTREE"
 ```
 
 ## 끊긴 worker 다시 띄우기
@@ -149,6 +153,8 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 같은 dispatch 는 다음 대기에서 다시 알리지 않으므로 이 줄을 받은 자리에서 처리한다.
 다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소해 기록을 남긴다.
 `$DISPATCH_ID` 는 그 줄의 dispatch, `$TASK_ID` 는 `worker-show` 의 `dispatch.taskId`, `$WORKTREE` 는 처음 띄운 워크트리 경로다.
+이 절의 `worker-start` 도 모두 `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker.py` 를 쓰지 않는 예외다.
+이 절은 일하던 worker 가 끊긴 경우다. 이미 `worker_done` 을 보낸 worker 의 PR 에 충돌이나 리뷰가 달렸는데 터미널이 없으면, 이 절의 새 worker 띄우기보다 [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 가 우선한다.
 
 어느 상태에서 어느 명령을 쓰는지는 이 표가 소유한다. `--retry-of` 는 실패하거나 막힌 Task 의 가장 최근 settled dispatch 에만 받아들여진다.
 

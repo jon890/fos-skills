@@ -4,7 +4,7 @@ work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 �
 보드 파일은 work-board 소유다. 기본 위치는 [`work-board/README.md`](../../work-board/README.md) 가 정하고, 다른 곳이면 `.orch/config.json` 의 `finish.board` 로 준다.
 
 **하위 줄은 코디네이터가 쓰는 번호 붙은 단계만 둔다.** 형식은 `1. 구현`, `2. 리뷰 반영`, `3. 머지` 처럼 단계 1, 2, 3… 이고, 저장할 때는 줄마다 `{"text": "1. 구현", "done": false}` 객체를 쓴다. 끝낸 단계는 `board.py step` 으로 `done: true` 로 바꾼다.
-진행 정도는 `--progress 끝낸단계수/전체단계수` 로 넣는다.
+진행률은 단계 줄에서 센다. `--progress 끝낸단계수/전체단계수` 는 단계로 나타낼 수 없을 때만 쓴다.
 PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단계와 섞이면 보드를 읽기 어렵다.
 
 **PR 머지 반영과 목표 진행률은 `board-sync.py` 에 맡긴다.** PR 이 MERGED 이고 끝나지 않은 단계가 1개 이하면 남은 단계를 끝내고 항목을 done 으로 바꾼다.

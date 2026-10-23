@@ -64,7 +64,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 | 화면 | 판단 | 할 일 |
 | --- | --- | --- |
 | `Working` 이 보이거나 새 턴이 진행 중이다 | 늦게 시작한 것이다 | 그대로 두고 4단계 대기를 건다 |
-| 입력란이 비어 있고 새 턴이 없다 | 지시가 전달되지 않았다 | `worker-abandon` 으로 그 dispatch 를 닫고, `worker-show` 의 `taskId` 로 `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "path:$WORKTREE"` 를 다시 보낸다 |
+| 입력란이 비어 있고 새 턴이 없다 | 지시가 전달되지 않았다 | `worker-abandon` 으로 그 dispatch 를 닫고, `worker-show` 의 `taskId` 로 `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "path:$WORKTREE"` 를 다시 보낸다(`--task` 로 기존 Task 를 다시 띄우는 호출이라 3단계의 예외다) |
 
 같은 지시를 `--spec` 으로 새로 보내지 않는다. Task 가 둘 생겨 어느 쪽이 유효한 시도인지 흐려진다.
 
@@ -97,6 +97,8 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 
 **새 worker 로 이어받는 순서**
 
+충돌과 리뷰 반영에는 이 순서를 쓰지 않는다. 아래 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 가 우선한다.
+
 1. 앞 worker 의 작업이 push 됐는지 본다. `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD`, `git -C "$WORKTREE" status --short`, `git ls-remote origin "$BRANCH"` 를 본다. 커밋하지 않은 변경은 워크트리에 남아 있으니 버리지 않는다
 2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `orca terminal close --terminal "$OLD_TERMINAL_HANDLE"` 로 닫는다. 다른 세션이나 사용자의 터미널은 닫지 않는다
 3. 후속 지시서에 이어받는 상태를 적는다. 끝난 커밋, 커밋 안 된 변경, 앞 worker 의 마지막 status 다. 새 worker 는 앞 대화를 모른다
@@ -123,9 +125,21 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 - 리뷰 회신은 스레드 id 와 회신 파일을 받아 `review-fix` 스킬의 `review_threads.py reply` 로 달고, 반영한 스레드만 `resolve` 한다.
   `reply` 와 `resolve` 는 스레드 id 만 받으므로 대상 저장소 밖에서 돌릴 때는 `--repo "$OWNER/$REPO"` 를 준다
 
-## 리뷰 반영을 맡긴다
+## 충돌과 리뷰 반영은 만든 worker 가 이어 받는다
 
-PR 에 리뷰가 달리면 PR 을 연 worker 에게 `review-fix` 스킬로 반영하게 한다.
-그 worker 가 끝났으면 같은 worktree 에 새 dispatch 를 띄우고, 지시서에 PR 번호와 「반영하지 않을 지적은 회신 전에 ask 로 묻는다」 를 적는다.
-리뷰 반영은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 모델을 고른다.
+**충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받는다.** 새 worker 를 띄우면 워크트리와 터미널이 늘어 로컬 자원을 쓴다.
+그래서 worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다. 터미널을 닫는 때는 [`cleanup.md`](cleanup.md) 의 「정리」 가 소유한다.
+
+충돌하거나 리뷰가 달리면 끝난 dispatch 로 후속 지시서를 보낸다.
+`$DISPATCH_ID` 는 PR 을 만든 worker 의 끝난 dispatch, `$SPEC_FILE` 은 후속 지시서다.
+
+```bash
+python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE" --run "$RUN_ID"
+```
+
+- 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다
+- 종료 코드 3(터미널이 없다)이면 새 worker 를 띄우지 않고 사용자에게 알린다
+- 리뷰 반영 지시서에는 PR 번호와 「반영하지 않을 지적은 회신 전에 ask 로 묻는다」 를 적는다. 모델은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 고른다
+- 이 규칙이 위 「새 worker 로 이어받는 순서」 나 [`launch.md`](launch.md) 가 남은 터미널을 닫고 새 worker 로 띄우라고 한 곳과 어긋나면 충돌과 리뷰 반영에는 이 규칙이 우선한다
+
 회신과 resolve 가 막히면 위 「PR 생성과 리뷰 회신을 대신 한다」 를 따라 코디네이터가 단다.
