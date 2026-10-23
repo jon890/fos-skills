@@ -106,9 +106,19 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 
 ## 옛 구조에서 옮기기
 
-`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/specs/` 가 남은 저장소에서는
-`finish-pr.py`, `merge-with-finish.py`, `handoff-cleanup.py`, `spec-lint.py` 가 옮기는 명령을 알리고 종료 코드 2 로 멈춘다.
-옛 위치를 읽지 않으므로 그대로 돌면 저장소 값이 빠지기 때문이다. `wait-important.py` 와 `notify-conflicts.py` 는 알리기만 한다.
+`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/specs/` 에 파일이 남은 저장소에서는
+설정, 오버레이, 지시서 폴더를 읽는 진입점이 옮기는 명령을 알리고 종료 코드 2 로 멈춘다.
+옛 위치를 읽지 않으므로 그대로 돌면 저장소 값이 빠지거나 빈 새 폴더에서 조용히 시작하기 때문이다.
+
+| 진입점 | 멈추는 때 |
+| --- | --- |
+| `finish-pr.py`, `merge-with-finish.py`, `handoff-cleanup.py` | 설정을 `--config` 로 주지 않았을 때 |
+| `spec-lint.py` | `--overlay` 를 주지 않았을 때 |
+| `cleanup-sweep.py` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
+| `launch-worker.sh` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
+| `orch_paths.py --ensure` | 늘 |
+
+`wait-important.py` 와 `notify-conflicts.py` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
 
 머지 큐와 worker 가 모두 끝난 때에 옮긴다. 먼저 미리보기로 옮길 것과 옛 경로를 적은 파일을 본다.
 `$REPO` 는 대상 저장소의 주 checkout 이다.
@@ -121,7 +131,9 @@ python3 "$SKILL_DIR/scripts/migrate-orch-dir.py" --repo "$REPO" --apply
 - 기본으로 옮기는 쌍과 판정은 스크립트 머리 주석과 `orch_paths.py` 의 `DEFAULT_MOVES` 가 소유한다. 다른 곳에 둔 파일은 `--move 옛=새` 로 더한다
 - 살아 있는 dispatch, 터미널을 쥔 worker, 돌고 있는 머지 큐나 마무리가 있으면 `--apply` 를 거부한다(종료 코드 3). worker 는 지시서를 절대경로로 읽으므로 그 사이에 옮기면 끊긴다
 - 「옛 경로 참조」 로 나온 파일(포장 스크립트, 추적 문서, 로컬 설정)은 바꾸지 않는다. 그 저장소가 고친다
-- 「추적 파일」 로 나온 것은 보인 `git mv` 명령으로 옮겨 커밋한다
+- 「추적 파일」 로 나온 것은 보인 `git mv` 명령으로 옮겨 커밋한다. 대상 폴더는 `--apply` 가 만들어 둔다
+- 「스크립트」 가 붙은 옛 경로 참조는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 위 진입점이 다시 멈춘다
+- 옮기다 실패하면 그때까지 옮긴 것을 보이고 멈춘다. 원인을 고친 뒤 다시 돌리면 남은 것을 옮기고, 옮긴 뒤 고치는 단계는 `.orch` 전체를 다시 본다
 
 ## 예시
 

@@ -54,7 +54,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
 ## 레포 오버레이
 
 `<repo-root>/.orch/overlay.md` 가 있으면 그 저장소의 worker 를 띄우기 전에 **먼저 읽고** 코어보다 우선한다.
-옛 위치(`.claude/orch-overlay.md`, `.omc/orch/`, `.omc/handoffs/specs/`)가 남아 있으면 먼저 옮긴다. 방법은 [`references/overlay.md`](references/overlay.md) 의 「옛 구조에서 옮기기」 가 소유한다.
+옛 위치(`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/specs/`)가 남아 있으면 먼저 옮긴다. 방법은 [`references/overlay.md`](references/overlay.md) 의 「옛 구조에서 옮기기」 가 소유한다.
 오버레이는 기준 브랜치, 검증 명령, 머지 전 명령, CI runner 장애 대응, 원격 접속 규칙, 마이그레이션 순서를 소유한다.
 무엇을 적는지는 [`references/overlay.md`](references/overlay.md) 가 소유한다. 없으면 코어 기본값으로 동작한다.
 

@@ -1,7 +1,7 @@
 # ADR-008: orch 는 자기 작업 폴더 `.orch/` 를 갖고 `.omc` 에 기대지 않는다
 
 - **status**: `accepted`
-- **결정**: orch 스킬의 지시서, 머지 큐 출력, 대기 기록, 저장소 포장 스크립트, 저장소 설정을 `<git 루트>/.orch/` 아래에 둔다.
+- **결정**: orch 스킬의 지시서, 머지 큐 출력, 대기 기록, 저장소 포장 스크립트, 저장소 설정을 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
   경로는 `orch/scripts/orch_paths.py` 한 곳이 정하고, 루트는 `ORCH_DIR` 환경 변수로 바꾼다.
   옛 위치(`.omc/handoffs/`, `.omc/orch/`, `.claude/orch-overlay.md`, `.claude/orch-finish.json`)는 `orch/scripts/migrate-orch-dir.py` 가 한 번 옮기고, 스크립트는 옛 위치를 찾지 않는다.
   사용자 결정 2026-10-23.
