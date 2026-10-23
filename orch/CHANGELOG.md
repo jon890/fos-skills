@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.45.1 (2026-10-23)
+
+- 보드의 `next` 와 `details` 를 `{text, done}` 객체 목록으로 저장하도록 형식 설명을 고쳤다. PR 동기화와 목표 진행률 계산은 새 객체와 옛 문자열을 모두 읽는다.
+
 ## 1.45.0 (2026-10-23)
 
 - `remove-worktree.sh` 가 OMC session-end hook worker 의 자손 프로세스도 hook 으로 센다. 대기 도중 hook 의 자식이 생겨 대기 시간이 `--wait` 로 줄고 첫 정리가 거부되던 문제를 고쳤다.
