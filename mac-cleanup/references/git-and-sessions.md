@@ -1,8 +1,8 @@
 # 세션, 브랜치, 워크트리 정리
 
 `survey_sessions.py` 와 `survey_git.py` 의 결과를 실행할 때 읽는다.
-실행할 목록은 `survey_git.py --json` 으로 만든다. 항목마다 `repo`, 브랜치 이름, 끝 커밋 전체 해시 `tip`, 분류 `class` 가 있다.
-텍스트 출력은 사람이 읽는 용도다. 맨 끝 `## 합계` 줄이 저장소 줄(`## 경로`)과 같은 모양이라 줄 단위로 파싱하면 저장소로 잘못 잡힌다.
+실행할 목록은 1단계에서 `survey_git.py --json-out "$SURVEY"` 로 이미 남겼다. 항목마다 `repo`, 브랜치 이름, 끝 커밋 전체 해시 `tip`, 분류 `class` 가 있다.
+텍스트 출력은 사람이 읽는 용도다. 텍스트와 JSON 이 한 번의 조사에서 나오므로 사용자에게 보인 목록과 실행 목록이 같다. 따로 `--json` 으로 다시 돌리면 그 사이 결과가 바뀔 수 있다. 맨 끝 `## 합계` 줄이 저장소 줄(`## 경로`)과 같은 모양이라 줄 단위로 파싱하면 저장소로 잘못 잡힌다.
 
 `$REPO` 는 저장소 경로, `$WT` 는 워크트리 경로, `$BR` 는 브랜치 이름, `$BASE` 는 조사 JSON 의 `base`, `$SURVEY` 는 조사 JSON 을 저장한 파일, `$PIDS` 는 사용자가 지정한 PID 다.
 
@@ -46,13 +46,13 @@ git -C "$REPO" worktree remove "$WT"
 
 ## 브랜치
 
-실행은 `scripts/delete_branches.py` 가 한다. 입력은 `survey_git.py --json` 을 저장한 파일이다.
+실행은 `scripts/delete_branches.py` 가 한다. 입력은 `survey_git.py --json-out` 으로 저장한 파일이다.
 기본은 dry-run 이라 아무것도 바꾸지 않고, 브랜치마다 무엇을 할지(삭제 예정, 유지와 이유, 건드리지 않음)만 보인다. 사용자 승인 뒤에 `--apply` 를 붙여 돈다.
 `--only` 로 지울 분류를 고른다. `merged`(삭제 후보 `-d`, 기본)와 `pr-merged`(PR 머지됨 `-D`)가 있고, 승인받은 묶음에 맞춰 고른다.
 브랜치마다 결과를 내고 실패가 하나라도 있으면 종료 코드가 1 이다. 원격 브랜치는 이 스킬에서 지우지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/survey_git.py" --json > "$SURVEY"
+python3 "$SKILL_DIR/scripts/survey_git.py" --json-out "$SURVEY"
 python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged
 python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged --apply
 ```

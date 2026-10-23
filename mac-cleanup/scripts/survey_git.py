@@ -2,11 +2,12 @@
 """저장소별 워크트리와 브랜치의 정리 후보를 분류한다. 읽기 전용이다.
 
 사용법:
-  survey_git.py [--roots DIR...] [--no-fetch] [--no-check-prs] [--gh-timeout SEC] [--json]
+  survey_git.py [--roots DIR...] [--no-fetch] [--no-check-prs] [--gh-timeout SEC] [--json] [--json-out FILE]
 
 기본으로 저장소마다 `git fetch --prune origin` 으로 원격 ref 만 갱신한다. 네트워크가 없을 때 --no-fetch 로 끈다.
 기본으로 머지 판정이 안 됐고 upstream 이 있는 브랜치마다 `gh pr list` 로 머지된 PR 이 있는지 묻는다.
 원격 호출이 브랜치 수만큼 생긴다. squash 머지를 알아보는 용도다. 브랜치가 많아 빨리 보고 싶으면 --no-check-prs 로 끈다.
+--json-out 은 텍스트를 표준 출력에 내면서 같은 조사 결과를 JSON 으로 그 파일에도 쓴다. 한 번 조사로 사람이 읽는 목록과 delete_branches.py 입력을 함께 남겨, 두 목록이 어긋나지 않게 한다.
 --fetch, --check-prs 는 예전 호출을 깨지 않으려고 받기만 하고 효과가 없다.
 gh 호출이 실패하면 그 브랜치의 pr_state 가 "error" 가 되고 분류는 gh 없이 낸 결과 그대로다. 실패 수는 합계에 따로 나온다.
 --json 은 브랜치와 워크트리마다 끝 커밋 전체 해시(tip)를 담는다. 지우기 직전 `git rev-parse` 값과 대조하는 용도다.
@@ -273,6 +274,7 @@ def parse_args(argv=None):
     ap.add_argument("--no-check-prs", action="store_true")
     ap.add_argument("--gh-timeout", type=int, default=DEFAULT_GH_TIMEOUT, metavar="SEC")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--json-out", metavar="FILE")
     args = ap.parse_args(argv)
     args.fetch = not args.no_fetch
     args.check_prs = not args.no_check_prs
@@ -299,34 +301,47 @@ def main(argv=None):
         if r["worktrees"] or r["branches"]:
             shown.append(r)
 
+    if args.json_out:
+        with open(os.path.expanduser(args.json_out), "w", encoding="utf-8") as fh:
+            write_json(shown, fh)
     if args.json:
-        json.dump(shown, sys.stdout, ensure_ascii=False, indent=2)
-        print()
+        write_json(shown, sys.stdout)
         return 0
+    print(format_report(shown, len(repos), args.check_prs))
+    return 0
 
+
+def write_json(shown, fh):
+    json.dump(shown, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+
+
+def format_report(shown, repo_count, check_prs):
+    """조사 결과(shown)를 사람이 읽는 텍스트로 만든다. 줄 끝 개행은 붙이지 않는다."""
+    lines = []
     totals = {}
     gh_failed = sum(len(r["gh_errors"]) for r in shown)
     for r in shown:
-        print(f"## {r['repo']}  (기준 {r['base']})")
+        lines.append(f"## {r['repo']}  (기준 {r['base']})")
         for w in r["worktrees"]:
             if w["class"] != "유지":
                 totals[f"워크트리 {w['class']}"] = totals.get(f"워크트리 {w['class']}", 0) + 1
             orca_mark = "" if w["orca"] is None else (" orca" if w["orca"] else " 비-orca")
-            print(f"  [워크트리 {w['class']}]{orca_mark} {w['path']}  브랜치={w['branch']} 변경={w['dirty']} stash={w['stash']} "
-                  f"앞섬={w['ahead']} 경과={w['age_days']}일 사용중={w['in_use']} 끝={short(w['tip'])}"
-                  f"{' gh확인실패' if w['pr_state'] == 'error' else ''}")
+            lines.append(f"  [워크트리 {w['class']}]{orca_mark} {w['path']}  브랜치={w['branch']} 변경={w['dirty']} stash={w['stash']} "
+                         f"앞섬={w['ahead']} 경과={w['age_days']}일 사용중={w['in_use']} 끝={short(w['tip'])}"
+                         f"{' gh확인실패' if w['pr_state'] == 'error' else ''}")
         for b in r["branches"]:
             if b["class"] != "유지":
                 totals[f"브랜치 {b['class']}"] = totals.get(f"브랜치 {b['class']}", 0) + 1
-            print(f"  [브랜치 {b['class']}] {b['name']}  끝={short(b['tip'])}{' gh확인실패' if b['pr_state'] == 'error' else ''}")
-    print(f"\n## 합계 (저장소 {len(repos)}개 조사, 후보가 있는 저장소 {len(shown)}개)")
+            lines.append(f"  [브랜치 {b['class']}] {b['name']}  끝={short(b['tip'])}{' gh확인실패' if b['pr_state'] == 'error' else ''}")
+    lines.append(f"\n## 합계 (저장소 {repo_count}개 조사, 후보가 있는 저장소 {len(shown)}개)")
     for key, count in sorted(totals.items()):
-        print(f"{count:>4}  {key}")
-    if args.check_prs:
-        print(f"{gh_failed:>4}  gh 확인 실패")
+        lines.append(f"{count:>4}  {key}")
+    if check_prs:
+        lines.append(f"{gh_failed:>4}  gh 확인 실패")
     if not totals:
-        print("후보 없음")
-    return 0
+        lines.append("후보 없음")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

@@ -29,19 +29,20 @@ metadata:
 
 ## 1. 조사
 
-`$SKILL_DIR` 은 이 스킬 번들 경로다. 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
+`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$SURVEY` 는 조사 JSON 을 저장할 파일 경로다. 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
 `survey_system.sh` 는 `du` 때문에 1분에서 5분 걸리므로 백그라운드로 돌리고, 나머지를 그동안 돌린다.
 
 ```bash
 bash "$SKILL_DIR/scripts/survey_system.sh"
 python3 "$SKILL_DIR/scripts/survey_sessions.py"
-python3 "$SKILL_DIR/scripts/survey_git.py"
+python3 "$SKILL_DIR/scripts/survey_git.py" --json-out "$SURVEY"
 bash "$SKILL_DIR/scripts/survey_gradle.sh"
 python3 "$SKILL_DIR/scripts/docker_images.py"
 python3 "$SKILL_DIR/scripts/docker_volumes.py"
 ```
 
 - `survey_git.py` 는 기본으로 `git fetch --prune` 과 `gh` 의 머지된 PR 조회(`--check-prs`)를 한다. 묻지 않고 켠 채로 돈다. 승인 뒤에 옵션을 바꿔 다시 돌리면 후보가 새로 나와 승인을 다시 받아야 하기 때문이다.
+  `--json-out "$SURVEY"` 는 텍스트를 출력하면서 같은 조사 결과를 JSON 파일에도 쓴다. 사용자에게 보인 목록과 `delete_branches.py` 에 넘길 목록이 한 번의 조사에서 나오므로, 따로 `--json` 을 돌리지 않는다.
   끄는 옵션은 `--no-fetch`(네트워크가 없을 때)와 `--no-check-prs`(브랜치가 많아 빨리 보고 싶을 때)뿐이다. 끄면 마지막 fetch 이후의 머지와 squash 머지가 보이지 않는다.
 - `docker_images.py` 와 `docker_volumes.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌리고, 떠 있지 않을 때만 Docker 항목을 건너뛴다.
 - `docker_volumes.py` 는 후보를 정하는 기준 시간 안에 생긴 volume 을 "최근" 으로 따로 보인다. 내용을 열어 보려면 `--peek N` 으로 다시 돌린다.
@@ -66,7 +67,7 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py"
 
 승인한 묶음의 명령만 돌리고, 명령마다 종료 코드와 확보량을 기록한다.
 세션, 브랜치, 워크트리 정리는 `references/git-and-sessions.md` 의 절차를 따른다.
-브랜치 삭제는 `survey_git.py --json` 결과를 `delete_branches.py` 에 넘겨 먼저 dry-run 으로 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. `PR 확인 필요(-D)` 브랜치는 `check_pr_branches.py` 에 같은 조사 JSON 을 넘겨 판정을 보이고, 지울지는 사용자가 정한다. 익명 volume 은 `docker_volumes.py` 가 보인 후보 중 내용을 열어 확인한 것만 이름을 지정해 지운다. Docker 를 지웠다면 마지막에 `colima_trim.py` 를 돈다. volume 을 지운 직후에는 trim 이 덜 될 수 있어 스크립트가 재시도한다.
+브랜치 삭제는 1단계의 `--json-out` 파일을 `delete_branches.py` 에 넘겨 먼저 dry-run 으로 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. `PR 확인 필요(-D)` 브랜치는 `check_pr_branches.py` 에 같은 조사 JSON 을 넘겨 판정을 보이고, 지울지는 사용자가 정한다. 익명 volume 은 `docker_volumes.py` 가 보인 후보 중 내용을 열어 확인한 것만 이름을 지정해 지운다. Docker 를 지웠다면 마지막에 `colima_trim.py` 를 돈다. volume 을 지운 직후에는 trim 이 덜 될 수 있어 스크립트가 재시도한다.
 reference 가 처리 절차를 정한 거절(`branch -d` 의 `not fully merged`)을 빼고는, 명령이 실패하면 멈추고 원인을 보고한다.
 
 ## 5. 재측정과 보고
