@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, detailLines, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
 
 test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
   const stdout = JSON.stringify({ result: { workers: [
@@ -83,12 +83,49 @@ test('progress 가 있으면 단계 수보다 우선한다', () => {
   expect(itemProgress({ title: 'x' })).toBe(null)
 })
 
-test('접으면 끝난 단계를 수 한 줄로 줄이고 펼치면 그대로 둔다', () => {
-  const details = ['✓ 1 a', '✓ 2 b', '▶ 3 c', '◇ 4 d']
-  expect(detailLines(details, false)).toEqual([{ folded: 2 }, { text: '▶ 3 c' }, { text: '◇ 4 d' }])
-  expect(detailLines(details, true)).toEqual([{ text: '▶ 3 c' }, { text: '◇ 4 d' }, { text: '✓ 1 a', done: true }, { text: '✓ 2 b', done: true }])
-  expect(detailLines(['◇ 1 a'], false)).toEqual([{ text: '◇ 1 a' }])
-  expect(detailLines(['[x] 1. a', '[ ] 2. b'], false)).toEqual([{ folded: 1 }, { text: '[ ] 2. b' }])
+test('details 와 next 를 줄마다 나눠 끝낸 줄, 지금 단계, 남은 단계, 참고 줄로 가른다', () => {
+  const rows = stepRows({ details: ['✓ 1 a', '[x] 2 b', '▶ 3 c', '◇ 4 d', '참고: x'], next: '머지 뒤 갱신' })
+  expect(rows).toEqual([
+    { text: '✓ 1 a', state: 'done', step: true, counted: true },
+    { text: '[x] 2 b', state: 'done', step: true, counted: true },
+    { text: '▶ 3 c', state: 'now', step: true, counted: true },
+    { text: '◇ 4 d', state: 'todo', step: true, counted: true },
+    { text: '참고: x', state: 'note', step: false, counted: true },
+    { text: '머지 뒤 갱신', state: 'note', step: false, counted: false },
+  ])
+  expect(stepSummary(rows)).toEqual({ now: rows[2], done: 2, todo: 1 })
+})
+
+test('지금 단계는 진행률을 세는 쪽에서 고르고, 단계가 없으면 첫 참고 줄을 쓴다', () => {
+  const states = (item) => stepRows(item).map((row) => row.state)
+  // details 에 단계가 없으면 next 의 단계를 센다
+  expect(states({ details: ['메모'], next: '✓ 1. 구현\n2. 리뷰\n\n3. 머지' })).toEqual(['note', 'done', 'now', 'todo'])
+  expect(states({ details: ['✓ 1 a'], next: '2 b' })).toEqual(['done', 'now'])
+  expect(states({ next: 'PR 리뷰 기다림' })).toEqual(['now'])
+  expect(states({ next: '✓ 1 a' })).toEqual(['done'])
+  // 단계가 모두 끝났으면 참고 줄을 지금 단계로 올리지 않는다
+  expect(states({ next: '✓ 1 a\n머지 뒤 갱신' })).toEqual(['done', 'note'])
+  expect(stepRows({})).toEqual([])
+})
+
+test('접힌 보기의 수는 막대와 같은 쪽의 단계 줄만 센다', () => {
+  // 막대는 details 의 단계로 1/3 이다. next 의 단계와 「✓」 참고 줄은 수에 넣지 않는다
+  const item = { details: ['✓ 1 a', '2 b', '3 c', '✓ 메모'], next: '✓ 1. x\n2. y\n3. z' }
+  expect(itemProgress(item)).toBe('1/3')
+  expect(stepSummary(stepRows(item))).toMatchObject({ now: { text: '2 b' }, done: 1, todo: 1 })
+  // progress 필드가 있으면 막대가 그 값을 쓰므로 수도 그 값에서 낸다
+  const fixed = { progress: '7/10', next: '✓ 1 a\n2 b\n3 c' }
+  expect(itemProgress(fixed)).toBe('7/10')
+  expect(stepSummary(stepRows(fixed), fixed.progress)).toMatchObject({ now: { text: '2 b' }, done: 7, todo: 2 })
+  expect(stepSummary(stepRows({ next: '메모' }), '3/3')).toMatchObject({ done: 3, todo: 0 })
+  // 세는 쪽이 다 끝나 다른 쪽에서 지금 단계를 고르면 남은 단계도 그쪽에서 센다
+  expect(stepSummary(stepRows({ details: ['✓ 1 a'], next: '2 b\n3 c\n4 d' }))).toMatchObject({ now: { text: '2 b' }, done: 1, todo: 2 })
+})
+
+test('단계 줄의 앞 표시는 표시 칸으로 옮기고 본문은 번호부터 시작한다', () => {
+  expect(['✓ 1. a', '[x] 2 b', '[ ] 3 c', '▶ 4 d', '◇ 5 e', '6) f', '✓ 메모'].map(stepBody))
+    .toEqual(['1. a', '2 b', '3 c', '4 d', '5 e', '6) f', '메모'])
+  expect(['done', 'now', 'todo', 'note'].map((state) => stepMark({ state }))).toEqual(['✓', '▶', ' ', ' '])
 })
 
 test('git 공통 디렉터리에서 주 checkout 의 root 를 꺼낸다', () => {
