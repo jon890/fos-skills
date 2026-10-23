@@ -43,7 +43,6 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/watch-questions.py`: Monitor 의 이벤트 소스. 미답변 질문과 재알림을 한 줄씩 낸다
 - `scripts/questions.py`: 모듈. 현재 Run 의 미답변 질문을 읽는다. `watch-questions.py` 와 `orch-doctor.py` 가 import 한다
-- `scripts/completion_evidence.py`: 모듈. worker_done 을 앞선 준비 상태와 대조해 분류한다. `wait-important.py` 와 `triage-messages.py` 가 import 한다
 - `scripts/goal-progress.py`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
 - `hooks/`: 플러그인이 싣는 PreToolUse 훅. `hooks.json` 이 각 hook 을 PATH 의 `node` 로 부른다. 판정과 오탐 기준은 각 파일 머리 주석이 소유한다
   - `block-background-wait.ts`: `check --wait` 와 `wait-important.py` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다

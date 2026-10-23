@@ -3,15 +3,24 @@
 마켓플레이스 clone 은 실제처럼 커밋 하나뿐인 shallow clone 으로 만든다.
 """
 
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "orch-doctor.py"
+sys.path.insert(0, str(SCRIPT.parent))
+import questions  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("orch_doctor", SCRIPT)
+doctor = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(doctor)
 ENV = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1",
            GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
 
@@ -120,6 +129,33 @@ class OrchDoctorTest(unittest.TestCase):
         code, out = self.run_doctor("--remote", str(self.tmp / "nowhere.git"))
         self.assertEqual(0, code, out)
         self.assertIn("SKIP-VERSION", out)
+
+
+def question(mid="q"):
+    return dict(id=mid, type="question", run_id="r", to_handle="run:r", from_handle="dispatch:d",
+                thread_id=mid, body="질문", created_at="2026-01-01T00:00:00Z")
+
+
+class CheckQuestionsTest(unittest.TestCase):
+    """미답변 질문 확인. 질문 조회는 questions.snapshot 을 대역으로 바꾼다."""
+
+    START = 1767225600  # 2026-01-01T00:00:00Z
+
+    def test_warns_only_for_overdue_unanswered(self):
+        with patch.object(questions, "snapshot", return_value=("r", [question()])):
+            self.assertEqual(([], False), doctor.check_questions("r", self.START + 599))
+            lines, code = doctor.check_questions("r", self.START + 600)
+            self.assertEqual(1, code)
+            self.assertIn("UNANSWERED q", lines[0])
+        with patch.object(questions, "snapshot", return_value=("r", [])):
+            self.assertEqual(([], False), doctor.check_questions("r", self.START + 900))
+
+    def test_query_failure_or_timeout_skips_without_failing(self):
+        for error in (RuntimeError("offline"), subprocess.TimeoutExpired("orca", 30)):
+            with self.subTest(error=type(error).__name__), patch.object(questions, "snapshot", side_effect=error):
+                lines, code = doctor.check_questions("r")
+                self.assertEqual(0, code)
+                self.assertTrue(lines[0].startswith("SKIP-QUESTIONS"), lines)
 
 
 if __name__ == "__main__":

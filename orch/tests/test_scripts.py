@@ -1,6 +1,5 @@
 """orch 스크립트를 검증한다. orca 와 GitHub 에는 닿지 않는다. gh, git, sleep 은 가짜를 PATH 앞에 둔다."""
 
-import datetime as dt
 import importlib.util
 import json
 import os
@@ -23,68 +22,7 @@ def load(name):
     return mod
 
 
-tm = load("triage-messages")
 gp = load("goal-progress")
-
-
-def msg(i, kind, created="2026-10-12T15:00:00Z", who="term_a", body="본문"):
-    return {"id": i, "type": kind, "subject": f"s{i}", "body": body, "payload": None,
-            "created_at": created, "from_handle": who}
-
-
-class TriageTest(unittest.TestCase):
-    def test_read_only_contract_does_not_require_pr(self):
-        result = tm.triage([msg("1", "worker_done")], completion_contract="none")
-        self.assertIn("worker_done", result["groups"])
-
-    def test_ready_before_since_still_proves_completion(self):
-        ids = {"task_id": "task_a", "dispatch_id": "ctx_a"}
-        status = dict(msg("s", "status", "2026-10-12T14:00:00Z"), **ids,
-                      subject="준비됨 #12, head " + "a" * 40)
-        done = dict(msg("d", "worker_done", "2026-10-12T16:00:00Z"), **ids)
-        result = tm.triage([status, done], tm.parse_since("2026-10-12T15:00:00Z"))
-        self.assertEqual(list(result["groups"]), ["worker_done"])
-
-    def test_parses_objects_mixed_with_noise(self):
-        text = '{"_keepalive":true}\n{"result":{"deliveryId":"d1","messages":[]}}\nexit code 0\n{"result":{}}'
-        objs = tm.parse_objects(text)
-        self.assertEqual(3, len(objs))
-        self.assertEqual(["d1"], tm.collect(objs)[0])
-
-    def test_groups_priority_first_and_counts_heartbeats(self):
-        msgs = [msg("1", "heartbeat"), msg("2", "status"), msg("3", "worker_done"),
-                msg("4", "heartbeat", who="term_b"), msg("5", "question"), msg("6", "heartbeat")]
-        r = tm.triage(msgs)
-        self.assertEqual(["suspicious_worker_done", "question", "status"], list(r["groups"]))
-        self.assertEqual({"term_a": 2, "term_b": 1}, r["heartbeats"])
-
-    def test_dedups_by_id_across_deliveries(self):
-        obj = {"result": {"deliveryId": "d", "messages": [msg("1", "worker_done")]}}
-        _, messages = tm.collect([obj, obj])
-        self.assertEqual(1, len(messages))
-
-    def test_since_filters_old_messages(self):
-        msgs = [msg("1", "worker_done", "2026-10-12T14:00:00Z"), msg("2", "worker_done", "2026-10-12T16:00:00Z")]
-        r = tm.triage(msgs, tm.parse_since("2026-10-12T15:00:00Z"))
-        self.assertEqual(["2"], [m["id"] for m in r["groups"]["suspicious_worker_done"]])
-
-    def test_relative_since(self):
-        now = dt.datetime(2026, 10, 12, 16, tzinfo=dt.timezone.utc)
-        self.assertEqual(dt.datetime(2026, 10, 12, 14, 30, tzinfo=dt.timezone.utc), tm.parse_since("90m", now))
-        self.assertEqual(dt.datetime(2026, 10, 11, 16, tzinfo=dt.timezone.utc), tm.parse_since("1d", now))
-
-    def test_render_truncates_body(self):
-        r = tm.triage([msg("1", "escalation", body="가" * 20)])
-        out = tm.render(["d"], r, 5)
-        self.assertIn("가" * 5 + " …(잘림)", out)
-
-    def test_file_without_result_fails(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-            f.write("nothing here")
-        try:
-            self.assertEqual(1, tm.main([f.name]))
-        finally:
-            os.unlink(f.name)
 
 
 class GoalProgressTest(unittest.TestCase):

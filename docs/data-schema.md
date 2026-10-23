@@ -52,7 +52,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | --- | --- |
 | `before-launch`, `worker-launched` | `worker`, `branch`, `agent`, `model`, `effort` |
 | `worker-question` | `worker`, `message`(`id`, `type`, `subject`, `body`), `reminder`(bool), `age_sec` |
-| `worker-done` | `worker`, `outcome`, `evidence`(`ready` 또는 `suspicious`), `pr`(있으면) |
+| `worker-done` | `worker`, `outcome`, `evidence`(`ready` 또는 `suspicious`), `pr`(있으면). `worker_done --outcome failed` 같은 실패 보고와 `--completion-contract none` 의 대기에서는 내지 않는다 |
 | `worker-lost` | `worker`, `stage` |
 | `before-ready`, `pr-ready` | `pr`, `ready_count`(이미 ready 인 내 PR 수), `slots` |
 | `ci-passed`, `ci-failed`, `ci-missing` | `pr`, `checks`(이름, 상태, 결론, URL 의 목록), `required`(이름 목록) |

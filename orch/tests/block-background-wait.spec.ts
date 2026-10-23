@@ -32,9 +32,17 @@ describe('block-background-wait', () => {
       'orca orchestration check --wait --json & disown',
       'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" > /tmp/w.out 2>&1 &',
       'nohup python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID"',
+      'node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts" --run r &',
     ]) {
       assert.equal(decide(command), 'deny', command)
     }
+  })
+
+  test('거부 이유는 확장자 없는 명령 이름을 쓴다', () => {
+    const r = runHook(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'wait-important --run r &' } }))
+    const reason: string = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason
+    assert.match(reason, /`wait-important`/)
+    assert.doesNotMatch(reason, /wait-important\.py/)
   })
 
   test('앞에서 기다리거나 하네스 백그라운드로 도는 대기는 통과한다', () => {

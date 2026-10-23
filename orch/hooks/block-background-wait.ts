@@ -24,7 +24,7 @@ const NOT_BACKGROUND = /\d*>&\d*-?|&>>?|&&|\|&/g
 const LINE_BREAK = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/
 
 const REASON =
-  'orch: `orca orchestration check --wait` 와 `wait-important.py` 를 셸의 `&` 나 nohup 으로 띄우지 않는다. ' +
+  'orch: `orca orchestration check --wait` 와 `wait-important` 를 셸의 `&` 나 nohup 으로 띄우지 않는다. ' +
   '끝나도 완료 알림이 오지 않고 고아 프로세스가 남는다. ' +
   'Bash 도구의 run_in_background 로 `&` 없이 돌린다. 근거와 명령은 orch 스킬의 references/waiting.md 에 있다.'
 
