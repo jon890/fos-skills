@@ -29,6 +29,7 @@ repo=${repo:h}
 branch=$(git -C "$p" branch --show-current 2>/dev/null)
 
 [[ $wait_s == <-> && $hook_wait == <-> ]] || { echo "--wait 와 ORCH_HOOK_WAIT 는 0 이상의 정수다"; exit 2; }
+python3 "${0:A:h}/terminal_ownership.py" "$p" || exit 1
 
 # 그 경로나 하위를 작업 디렉터리로 쓰는 pid. 거부 줄에 남겨 무엇이 쥐고 있는지 다시 찾지 않게 한다
 holder_pids() {
@@ -67,6 +68,7 @@ for c in $(git -C "$p" rev-list HEAD --not --remotes 2>/dev/null); do
 done
 if [ "$lost" != 0 ]; then echo "거부: $p 에 원격에 없는 커밋 $lost 개"; exit 1; fi
 
+python3 "${0:A:h}/terminal_ownership.py" "$p" || exit 1
 git -C "$repo" worktree remove "$p" || exit 1
 git -C "$repo" worktree prune
 echo "removed $p"

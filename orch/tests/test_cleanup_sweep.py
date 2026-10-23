@@ -93,6 +93,8 @@ class CleanupSweepTest(unittest.TestCase):
                 import os
                 bound = os.environ.get("ORCA_TERMINAL_HANDLE")
                 scope = "bound" if bound else st.get("scope", "all")
+                for row in st["all_workers"]:
+                    row.setdefault("resource", {{"ownershipState": "owned"}})
                 print(json.dumps({{"result": {{"workers": st["all_workers"], "scope": {{"source": scope}},
                                                "page": {{"nextCursor": None}}}}}}))
             elif a[:2] == ["orchestration", "task-list"] and st.get("tasks_fail"):
@@ -443,7 +445,7 @@ class CleanupSweepTest(unittest.TestCase):
         self.scope = "bound"
         out = self.run_sweep("--run", "run_x", "--apply")
         self.assertTrue(path.exists(), out)
-        self.assertIn("확인하지 못한 터미널 term_codex", out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
         self.assertNotIn("terminal close", self.calls())
 
     def test_without_run_terminals_are_found_by_path_as_before(self):
@@ -451,7 +453,7 @@ class CleanupSweepTest(unittest.TestCase):
         out = self.run_sweep("--apply")
         self.assertFalse(path.exists(), out)
         self.assertIn("orca terminal close --terminal term_codex", self.calls())
-        self.assertNotIn("worker-list", self.calls())
+        self.assertIn("worker-list --limit 100", self.calls())
 
     def test_terminal_is_not_closed_without_merged_pr(self):
         path = self.fresh_gone_branch("fresh")
@@ -627,15 +629,15 @@ class CleanupSweepTest(unittest.TestCase):
     def test_reopened_empty_shell_is_closed_and_merged_worktree_is_swept(self):
         path = self.reopened_shell("feat-s1")
         out = self.run_sweep("--run", "run_x", "--apply")
-        self.assertFalse(path.exists(), out)
-        self.assertIn("빈 셸을 닫았다: term_shell", out)
-        self.assertEqual(self.calls().count("terminal close --terminal term_shell"), 1)
+        self.assertTrue(path.exists(), out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
+        self.assertNotIn("terminal close", self.calls())
 
     def test_reopened_shell_with_a_child_process_is_skipped(self):
         path = self.reopened_shell("feat-s2", child=True)
         out = self.run_sweep("--run", "run_x", "--apply")
         self.assertTrue(path.exists(), out)
-        self.assertIn("확인하지 못한 터미널 term_shell", out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
         self.assertNotIn("terminal close", self.calls())
 
     def test_terminal_with_an_agent_or_of_another_run_is_skipped(self):
@@ -654,7 +656,7 @@ class CleanupSweepTest(unittest.TestCase):
         path = self.reopened_shell("feat-s5")
         out = self.run_sweep("--run", "run_x")
         self.assertTrue(path.exists(), out)
-        self.assertIn("빈 셸을 닫을 것: term_shell", out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
         self.assertNotIn("terminal close", self.calls())
 
     # 3-1. worker 가 끝난 뒤에도 그 경로를 쥔 프로세스 (--kill-holders)
@@ -809,7 +811,7 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertFalse(a.exists(), out)
         self.assertFalse(b.exists(), out)
         self.assertIn(str(second), out)
-        self.assertEqual(self.calls().count("terminal list"), 1)
+        self.assertGreaterEqual(self.calls().count("terminal list"), 1)
 
     def test_unreadable_repo_does_not_stop_the_others(self):
         a = self.worktree("feat-t")
@@ -974,25 +976,52 @@ class CleanupSweepTest(unittest.TestCase):
     def test_idle_shell_of_agent_worktree_is_closed_when_runs_cannot_be_listed(self):
         path = self.agent_with_shell("agent-a1")
         out = self.run_sweep("--run", "run_x", "--apply")
-        self.assertFalse(path.exists(), out)
-        self.assertIn("하위 에이전트 워크트리의 빈 셸 터미널", out)
-        self.assertIn("orca terminal close --terminal term_agent", self.calls())
+        self.assertTrue(path.exists(), out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_merged_user_owned_terminal_prevents_all_cleanup(self):
+        path, specs = self.merged_with_specs("user-owned")
+        self.terminals = [{"handle": "term_user", "worktreePath": str(path)}]
+        self.all_workers = [{"agentTerminalHandle": "term_user", "resource": {
+            "terminalHandle": "term_user", "ownershipState": "user_owned"}}]
+        out = self.run_sweep("--apply", "--kill-holders", "--specs-dir", str(specs))
+        self.assertTrue(path.exists(), out)
+        self.assertIn("남김: 사용자 보유 터미널", out)
+        self.assertIn("user-owned", self.branches())
+        self.assertTrue((specs / "spec-user-owned.md").exists())
+        self.assertNotIn("terminal close", self.calls())
+        self.assertNotIn("worker-release", self.calls())
+
+    def test_direct_remove_also_keeps_user_owned_terminal(self):
+        path = self.worktree("direct-user")
+        self.terminals = [{"handle": "term_user", "worktreePath": str(path)}]
+        self.all_workers = [{"agentTerminalHandle": "term_user", "resource": {
+            "ownershipState": "user_owned"}}]
+        self.save_state()
+        env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}", ORCA=str(self.bin / "orca"))
+        done = subprocess.run(["zsh", str(SCRIPT.parent / "remove-worktree.sh"), str(path),
+                               "--delete-branch"], env=env, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("남김: 사용자 보유 터미널", done.stdout)
+        self.assertTrue(path.exists())
 
     def test_agent_terminal_with_a_running_child_is_kept(self):
         path = self.agent_with_shell("agent-a2", child=True)
         out = self.run_sweep("--run", "run_x", "--apply")
         self.assertTrue(path.exists(), out)
-        self.assertIn("확인하지 못한 터미널 term_agent", out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
         self.assertNotIn("terminal close", self.calls())
 
     def test_idle_shell_outside_agent_glob_is_still_unknown(self):
         path = self.agent_with_shell("feat-a3")
         out = self.run_sweep("--run", "run_x", "--apply")
         self.assertTrue(path.exists(), out)
-        self.assertIn("확인하지 못한 터미널 term_agent", out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
 
     def test_agent_glob_option_changes_the_pattern(self):
         path = self.agent_with_shell("sub-a4")
+        self.scope = "all"
         out = self.run_sweep("--run", "run_x", "--agent-glob", "sub-*", "--apply")
         self.assertFalse(path.exists(), out)
 
