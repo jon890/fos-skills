@@ -123,6 +123,7 @@ class LegacyTest(RepoCase):
         (self.repo / ".claude").mkdir()
         (self.repo / ".claude/orch-finish.json").write_text("{}")
         (self.repo / ".omc/orch").mkdir(parents=True)
+        (self.repo / ".omc/orch/wait.json").write_text("{}")
         self.assertEqual([".claude/orch-finish.json", ".omc/orch"], op.legacy_paths(self.repo))
 
     def test_scripts_that_read_settings_stop_with_the_migrate_command(self):
@@ -137,6 +138,51 @@ class LegacyTest(RepoCase):
             done = subprocess.run(["python3", str(SCRIPTS / script), *args], capture_output=True, text=True, env=ENV)
             self.assertEqual(2, done.returncode, (script, done.stdout, done.stderr))
             self.assertIn("migrate-orch-dir.py", done.stderr, script)
+
+    def test_empty_legacy_folder_is_not_legacy(self):
+        (self.repo / ".omc/orch/specs").mkdir(parents=True)
+        self.assertEqual([], op.legacy_paths(self.repo))
+
+    def test_cli_check_and_ensure_stop_on_legacy(self):
+        (self.repo / ".omc/handoffs/specs").mkdir(parents=True)
+        (self.repo / ".omc/handoffs/specs/spec-a.md").write_text("x")
+        cli = ["python3", str(SCRIPTS / "orch_paths.py"), "--repo", str(self.repo)]
+        for args in (["check"], ["--ensure", "specs"]):
+            done = subprocess.run(cli + args, capture_output=True, text=True, env=ENV)
+            self.assertEqual(2, done.returncode, args)
+            self.assertIn("migrate-orch-dir.py", done.stderr)
+        self.assertFalse((self.repo / ".orch").exists())
+        self.assertEqual(str(self.repo / ".orch/specs"), sh(*cli, "specs"))
+
+    def test_launch_and_cleanup_entry_points_stop_on_legacy(self):
+        (self.repo / ".omc/orch/specs").mkdir(parents=True)
+        (self.repo / ".omc/orch/specs/spec-a.md").write_text("브랜치: `feat/a`\n허락: push\n")
+        done = subprocess.run(["bash", str(SCRIPTS / "launch-worker.sh"), "--spec", str(self.repo / ".omc/orch/specs/spec-a.md"),
+                               "--repo", str(self.repo), "--name", "a", "--", "--agent", "claude"],
+                              capture_output=True, text=True, env=dict(ENV, ORCA="/nonexistent/orca"))
+        self.assertEqual(2, done.returncode, done.stdout + done.stderr)
+        self.assertIn("migrate-orch-dir.py", done.stderr)
+        fake = self.tmp / "orca"
+        fake.write_text("#!/bin/sh\necho '{\"result\": {\"terminals\": [], \"tasks\": [], \"workers\": []}}'\n")
+        fake.chmod(0o755)
+        done = subprocess.run(["python3", str(SCRIPTS / "cleanup-sweep.py"), "--repo", str(self.repo)],
+                              capture_output=True, text=True, env=dict(ENV, ORCA=str(fake)))
+        self.assertEqual(2, done.returncode, done.stdout + done.stderr)
+        self.assertIn("옮기기 전이라 건너뛴다", done.stderr)
+
+    def test_wait_and_conflict_scripts_only_warn(self):
+        (self.repo / ".claude").mkdir()
+        (self.repo / ".claude/orch-finish.json").write_text("{}")
+        done = subprocess.run(["python3", str(SCRIPTS / "wait-important.py"), "--run", "run_x", "--ack-lost", "ctx_1"],
+                              cwd=self.repo, capture_output=True, text=True, env=ENV)
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn("ACK_LOST ctx_1", done.stdout)
+        self.assertIn("wait-important: 옛 위치가 남아 있다", done.stderr)
+        self.assertTrue((self.repo / ".orch/state/wait-important-lost.json").is_file())
+        done = subprocess.run(["python3", str(SCRIPTS / "notify-conflicts.py"), "--repo", str(self.repo), "--base", "main"],
+                              capture_output=True, text=True, env=ENV)
+        self.assertIn("notify-conflicts: 옛 위치가 남아 있다", done.stderr)
+        self.assertIn("git fetch origin 실패", done.stderr)
 
     def test_explicit_config_or_overlay_skips_the_check(self):
         (self.repo / ".claude").mkdir()

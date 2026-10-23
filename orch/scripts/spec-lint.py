@@ -268,7 +268,7 @@ def main(argv=None):
     except RuntimeError as exc:
         print(f"spec-lint: {exc}", file=sys.stderr)
         return 2
-    if not args.overlay and not orch_paths.require_migrated(args.repo, "spec-lint"):
+    if not args.overlay and not orch_paths.require_migrated(args.repo, "spec-lint", "오버레이를 --overlay 로 직접 준다"):
         return 2
     overlay = args.overlay or orch_paths.path("overlay", args.repo)
     errors, warnings = lint(repo, args.specs, overlay) if args.specs else ([], [])

@@ -18,18 +18,22 @@
 보드는 work-board 소유라 여기 없다. `board_path` 는 work-board 의 `bin/board.py` 규칙을 그대로 쓴다.
 
 옛 구조: `.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/specs/` 가 남아 있으면
+(폴더는 안에 파일이 있을 때만 센다)
 `require_migrated` 가 옮기는 명령(`migrate-orch-dir.py`)을 알린다. 옛 위치를 읽는 분기는 두지 않는다.
 옮길 쌍의 기본 표 `DEFAULT_MOVES` 도 여기 둔다.
 
 사용법 (셸과 문서에서 같은 값을 받는다):
     orch_paths.py [--repo DIR] [--ensure] NAME
+    orch_paths.py [--repo DIR] check
     NAME 은 위 이름이나 root, board 다. 절대경로 한 줄을 낸다.
-    --ensure  폴더를 만들고 git 이 루트를 무시하게 한다. 파일 이름이면 그 부모 폴더를 만든다
+    --ensure  폴더를 만들고 git 이 루트를 무시하게 한다. 파일 이름이면 그 부모 폴더를 만든다.
+              옛 구조가 남아 있으면 만들지 않고 종료 코드 2 다. 빈 새 폴더에서 조용히 시작하지 않게 한다
+    check     옛 구조가 남아 있으면 옮기는 명령을 알리고 종료 코드 2 다. 셸 스크립트가 시작할 때 부른다
 
 git 무시: 루트가 저장소 안에 있고 git 이 아직 무시하지 않으면 `git rev-parse --git-path info/exclude` 파일에
 `/<루트>/` 한 줄을 더한다. 저장소의 .gitignore 는 바꾸지 않는다. 그 파일은 워크트리끼리 함께 쓴다.
 
-종료 코드: 0 냈다, 2 사용법 오류
+종료 코드: 0 냈다, 2 사용법 오류이거나 옛 구조가 남아 있다(check, --ensure)
 """
 
 from __future__ import annotations
@@ -159,21 +163,35 @@ def make_parent(target, repo=None):
         ensure_ignored(repo)
 
 
+def has_files(path):
+    """파일이거나, 안에 파일이 하나라도 있는 폴더인지. 빈 폴더만 남은 옛 위치는 옮길 것이 없다."""
+    if path.is_symlink() or path.is_file():
+        return True
+    return path.is_dir() and any(p.is_file() or p.is_symlink() for p in path.rglob("*"))
+
+
 def legacy_paths(repo=None):
     """남아 있는 옛 위치 목록(주 checkout 기준 상대경로)."""
     root = git_root(repo)
-    return [rel for rel in LEGACY_MARKERS if (root / rel).exists()]
+    return [rel for rel in LEGACY_MARKERS if has_files(root / rel)]
 
 
-def require_migrated(repo=None, script="orch"):
-    """옛 구조가 남아 있으면 옮기는 명령을 stderr 로 알리고 False 를 돌려준다. 부르는 쪽은 종료 코드 2 로 끝난다."""
+def require_migrated(repo=None, script="orch", bypass="설정 파일을 --config 로 직접 준다"):
+    """옛 구조가 남아 있으면 옮기는 명령을 stderr 로 알리고 False 를 돌려준다. 부르는 쪽은 종료 코드 2 로 끝난다.
+
+    bypass 는 옮기기 전에 그 스크립트를 돌리는 방법이다. 없으면 그 줄을 쓰지 않는다.
+    """
     left = legacy_paths(repo)
     if not left:
         return True
-    print(f"{script}: orch 작업 폴더를 옮기기 전이다. 옛 위치가 남아 있다: {', '.join(left)}\n"
-          f"  새 위치({orch_dir(repo)})의 설정과 지시서만 읽으므로 이대로 돌면 저장소 값이 빠진다.\n"
-          f"  머지 큐와 worker 가 돌지 않을 때 옮긴다: python3 {MIGRATE} --repo {git_root(repo)} --apply\n"
-          f"  옮기기 전에 꼭 돌려야 하면 설정 파일을 --config 로 직접 준다.", file=sys.stderr)
+    lines = [f"{script}: orch 작업 폴더를 옮기기 전이다. 옛 위치가 남아 있다: {', '.join(left)}",
+             f"  새 위치({orch_dir(repo)})의 설정과 지시서만 읽으므로 이대로 돌면 저장소 값이 빠진다.",
+             f"  머지 큐와 worker 가 돌지 않을 때 옮긴다: python3 {MIGRATE} --repo {git_root(repo)} --apply",
+             "  이미 옮겼는데 다시 나오면 옮긴 포장 스크립트(bin)나 다른 도구가 옛 폴더를 다시 만든 것이다. "
+             "그 스크립트의 옛 경로를 고친 뒤 다시 옮긴다."]
+    if bypass:
+        lines.append(f"  옮기기 전에 꼭 돌려야 하면 {bypass}.")
+    print("\n".join(lines), file=sys.stderr)
     return False
 
 
@@ -187,13 +205,17 @@ def warn_legacy(repo=None, script="orch"):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("name", choices=["root", "board", *NAMES])
+    parser.add_argument("name", choices=["root", "board", "check", *NAMES])
     parser.add_argument("--repo", default=".")
     parser.add_argument("--ensure", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
+    if args.name == "check":
+        return 0 if require_migrated(args.repo, "orch_paths", bypass=None) else 2
+    if args.ensure and not require_migrated(args.repo, "orch_paths", bypass=None):
+        return 2
     if args.name == "board":
         print(board_path(args.repo))
     elif args.name == "root":

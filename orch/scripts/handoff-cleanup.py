@@ -30,9 +30,9 @@
     --config FILE      옵션 값을 담은 JSON. 「cleanup」 절을 읽는다. 없으면 <orch>/config.json 이 있을 때 쓴다. 명령줄이 우선한다
     --gh-host HOST     gh 에 줄 GH_HOST
     --run RUN          살아 있는 dispatch 를 찾을 Orca Run. 없으면 코디네이터에 묶인 Run 이다
-    --orch-dir DIR     orch 작업 폴더. 기본은 orch_paths.py 가 정한 곳(<git 루트>/.orch)
-    --previews DIR     미리보기 폴더. 주지 않으면 보지 않는다. 상대경로면 <repo> 기준
-    --board FILE       보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 <repo> 기준
+    --orch-dir DIR     orch 작업 폴더. 기본은 orch_paths.py 가 정한 곳(<주 checkout>/.orch). 상대경로면 주 checkout 기준
+    --previews DIR     미리보기 폴더. 주지 않으면 보지 않는다. 상대경로면 주 checkout 기준
+    --board FILE       보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 주 checkout 기준
     --trash DIR        휴지통 폴더. 기본 ~/.Trash/orch-cleanup-<날짜>
     --queue-days N     기본 1
     --folder-days N    기본 3
@@ -261,11 +261,12 @@ def main(argv=None, now=None):
         args = load_config(parser, sys.argv[1:] if argv is None else argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    if not args.config and not orch_paths.require_migrated(args.repo, "handoff-cleanup"):
+    if not (args.config or args.orch_dir) and not orch_paths.require_migrated(args.repo, "handoff-cleanup", "설정 파일을 --config 로 직접 주거나 --orch-dir 로 폴더를 준다"):
         return 2
     repo = Path(args.repo).resolve()
-    args.orch_dir = (repo / Path(args.orch_dir).expanduser()).resolve() if args.orch_dir else orch_paths.orch_dir(repo)
-    args.previews = (repo / Path(args.previews).expanduser()).resolve() if args.previews else None
+    main_root = orch_paths.git_root(repo)
+    args.orch_dir = (main_root / Path(args.orch_dir).expanduser()).resolve() if args.orch_dir else orch_paths.orch_dir(repo)
+    args.previews = (main_root / Path(args.previews).expanduser()).resolve() if args.previews else None
     args.board = orch_paths.board_path(repo, args.board)
     now = time.time() if now is None else now
     trash = Path(args.trash).expanduser() if args.trash else Path.home() / ".Trash" / f"orch-cleanup-{datetime.fromtimestamp(now):%Y%m%d}"
