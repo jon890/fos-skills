@@ -10,7 +10,7 @@
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
 //      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. d 로 펼치면 끝낸 줄을 취소선으로 보인다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
-// 파일은 FILE_MS, 명령은 LIVE_MS 마다 다시 읽는다. 창에서 r 을 누르면 명령을 바로 다시 읽는다.
+// 파일은 FILE_MS, 명령은 LIVE_MS 마다 다시 읽는다. 창을 열 때도 명령을 한 번 읽는다.
 
 const PANE = 'work-board'
 const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
@@ -657,13 +657,6 @@ export function register(on) {
               '실제 상태 ' + (live.at ? ago(live.at) : '읽는 중') + (live.runId ? '  ·  ' + live.runId : '')
                 + (board ? '  ·  수동 ' + ago(board.updatedAt) : ''),
             ] }),
-            Button({
-              key: 'refresh',
-              label: liveBusy ? '읽는 중' : '새로 읽기',
-              hotkey: 'r',
-              plain: true,
-              onPress: () => { loadLive($) },
-            }),
             Button({
               key: 'start-today',
               label: '오늘 시작',
