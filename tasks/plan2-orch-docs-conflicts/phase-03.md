@@ -13,6 +13,8 @@ reference 문서가 스크립트 머리 주석을 옮겨 적은 부분을 지우
 
 시작 조건: 이 plan 의 phase 02 가 커밋됐다.
 
+`heavy-checks.md` 에서 「자리를 잡은 뒤 `mem-gate.py` 로 메모리를 기다린다」 같은 스크립트 동작은 `heavy-slot.py` 머리 주석이 소유한다. 이 phase 는 그 문장을 지우고 언제 대기열을 쓰는지만 남긴다.
+
 반복이 많은 문서는 `orch/references/cleanup.md`, `waiting.md`, `replying.md`, `board.md`, `heavy-checks.md` 다.
 예를 들어 `cleanup.md` 「정리」 절의 스크립트가 다루는 경우 목록과 「머지」 절의 판정 설명은 `orch/scripts/cleanup-sweep.py`, `merge_queue.py` 머리 주석과 같은 내용이다.
 `waiting.md` 의 `wait-important.py` 종료 코드와 끊긴 worker 판정 설명도 그 스크립트 머리 주석과 겹친다.
@@ -20,7 +22,7 @@ reference 문서가 스크립트 머리 주석을 옮겨 적은 부분을 지우
 모델 행동 관측을 이유로 단 문장의 예: `spec-writing.md` 「worker 는 되묻지 않으면 받은 만큼만 하고 완료로 보고한다」, `verification.md` 「작은 모델일수록 이런 어긋남이 났다」, `agent-selection.md` 의 「Haiku 5.5 실측」 절과 그 결론 문장.
 규칙은 남기고 이유만 바꾼다. 이유가 관측뿐이면 규칙이 막는 실패로 적는다.
 
-`orch/README.md` 의 스크립트 목록에는 `heavy-slot.py`, `questions.py`, `watch-questions.py`, `orca_repo.py`, `orch_process.py`, `completion_evidence.py`, `terminal_ownership.py` 가 빠져 있다. 목록을 다시 대조할 때는 이 이름을 그대로 믿지 말고 `ls orch/scripts` 와 비교한다.
+`orch/README.md` 의 스크립트 목록에는 `completion_evidence.py`, `heavy-slot.py`, `merge-queue.sh`, `orca_repo.py`, `orch_process.py`, `questions.py`, `terminal_ownership.py`, `watch-questions.py` 가 빠져 있다. 목록을 다시 대조할 때는 이 이름을 그대로 믿지 말고 `ls orch/scripts` 와 비교한다.
 
 **근거 문서**: `docs/code-architecture.md` 의 「orch 문서가 소유하는 것」
 
@@ -52,7 +54,7 @@ reference 문서가 스크립트 머리 주석을 옮겨 적은 부분을 지우
 
 ### 5. `orch/CHANGELOG.md` 와 `orch/SKILL.md` 의 `metadata.version`
 
-이 plan 의 phase 들을 한 항목으로 적고 그때 main 의 버전에서 minor 를 올린다. 지시를 바꿨으므로 minor 다(README 「버전과 변경 이력」).
+이 plan 의 phase 들을 한 항목으로 적고 그때 main 의 버전에서 minor 를 올린다. 지시를 바꿨으므로 minor 다(저장소 루트 `README.md` 「버전과 변경 이력」). 다른 PR 이 먼저 머지해 같은 번호를 썼으면 그 위로 올린다.
 
 ## 검증
 

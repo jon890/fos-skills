@@ -11,7 +11,7 @@ worker 와 코디네이터가 어느 쪽을 따를지 매번 판단하지 않게
 
 ## 컨텍스트
 
-시작 조건: PR #190(`fix/orch-sweep-bound-scope`)이 main 에 머지됐다. 그 PR 이 `orch/references/cleanup.md` 와 `orch/scripts/cleanup-sweep.py` 를 고친다. 머지 전이면 `PHASE_BLOCKED: #190 머지 전` 을 내고 멈춘다.
+시작 조건: 없음. PR #190(`fix/orch-sweep-bound-scope`)은 다른 세션 것이고 이 plan 은 그 머지를 기다리지 않는다(사용자 결정 2026-10-24, 코디네이터 경유). #190 이 `orch/references/cleanup.md`, `orch/SKILL.md`, `orch/CHANGELOG.md` 를 몇 줄 고치므로 나중에 머지되는 쪽이 그 충돌을 푼다. #190 의 파일과 브랜치는 건드리지 않는다.
 
 문서 소유 규칙은 `docs/code-architecture.md` 의 「orch 문서가 소유하는 것」 표가 정한다. 요약하면 SKILL.md 는 단계와 통과 조건, reference 는 언제 어떤 옵션을 쓰는가, 스크립트 머리 주석은 동작과 옵션과 종료 코드를 소유한다.
 스킬 문서를 고치기 전에 `~/.claude/references/skill-structure.md` 와 `~/.claude/references/skill-sync.md` 를 읽는다. 없는 환경이면 이 저장소의 `harness-cleanup/` 기준을 따른다.
@@ -20,7 +20,7 @@ worker 와 코디네이터가 어느 쪽을 따를지 매번 판단하지 않게
 
 ## 의도 메모
 
-- 줄 번호는 #190 머지로 밀릴 수 있다. 아래 표의 「찾을 문구」 로 위치를 찾는다.
+- 줄 번호는 다른 PR 의 머지로 밀릴 수 있다. 아래 표의 「찾을 문구」 로 위치를 찾는다.
 - 한쪽을 지울 때 다른 쪽이 그 내용을 이미 가졌는지 먼저 확인한다. 둘 다 지우면 지시가 사라진다.
 
 ## 작업 항목
@@ -31,15 +31,15 @@ worker 와 코디네이터가 어느 쪽을 따를지 매번 판단하지 않게
 | --- | --- | --- |
 | `orch/references/spec-writing.md` 「넣을 것」, `orch/scripts/launch-worker.py` | `허락:` 줄을 PR 을 열게 할 때만 적는다는 문장 | 스크립트가 늘 요구하므로 문서도 필수로 적는다. 허락이 없으면 `허락: 없음. push 까지만 한다.` 를 적게 한다 |
 | `orch/SKILL.md` 2단계, `spec-writing.md` 첫 절, `launch.md` | `--spec` 에 들어갈 내용 | `spec-line.py` 가 만든다는 한 문장만 `launch.md` 에 두고, 나머지 두 곳은 그 절을 가리킨다 |
-| `SKILL.md` 6단계, `verification.md` | 무거운 검사를 heavy-slot 으로 / mem-gate 로 감싸라 | `heavy-slot.py` 하나로 맞춘다. 그 스크립트가 자리를 잡은 뒤 mem-gate 를 부른다는 사실은 `heavy-checks.md` 가 소유한다 |
-| `launch.md` | 워크트리를 따로 만든다 / launch-worker 가 한 번에 만든다 | `launch-worker.py` 가 만든다로 맞추고, `make-worktree.py` 는 원격 PR 브랜치를 이어 받을 때만 쓴다고 적는다 |
+| `SKILL.md` 6단계, `verification.md` | 무거운 검사를 heavy-slot 으로 / mem-gate 로 감싸라 | `heavy-slot.py` 하나로 맞춘다. 두 문서는 `heavy-checks.md` 를 가리킨다. 그 스크립트가 자리를 잡은 뒤 mem-gate 를 부른다는 동작은 `heavy-slot.py` 머리 주석이 소유한다. 머리 주석에 없으면 옮긴다 |
+| `launch.md` | 워크트리를 따로 만든다 / launch-worker 가 한 번에 만든다 | 「새 워크트리와 원격 브랜치 이어 받기(`--resume-remote`)는 `launch-worker.py` 가 만든다. `make-worktree.py` 를 직접 부르는 것은 6단계의 `--check` 뿐이다」 로 맞춘다 |
 | `spec-writing.md` 머지 순서, `templates/spec-common.md` | 머지 순서를 지시서에 적어라 / PR 분할과 순서는 worker 가 정한다 | PR 분할은 worker 판단, 머지 순서는 코디네이터가 정해 지시서에 적는다로 나눈다 |
-| `spec-writing.md`, `templates/spec-common.md` | 공통 지시서에 `{{RUN_ID}}` 를 채운다 | 공통 지시서에서 `{{RUN_ID}}` 를 뺀다. Run id 는 개별 지시서나 launch 가 넘긴다 |
-| `templates/spec-common.md` | `**PR 생성은 승인돼 있다.**` | 「PR 생성은 지시서의 `허락:` 줄이 허락한 경우에만 한다. 허락이 없으면 push 까지만 하고 status 로 알린다」 로 바꾼다. `SKILL.md` 원칙과 맞춘다 |
-| `SKILL.md` 6단계 통과 조건, `verification.md` | 합친 사본 검증 | 6단계 통과 조건에서 빼고 「7단계 머지 큐가 `queue.verify_merged` 가 있을 때 한다」 로 `cleanup.md` 가 소유한다 |
-| `SKILL.md` 5단계, `launch.md` 「끊긴 worker 다시 띄우기」 | 끝난 dispatch 터미널을 이어 쓴다 / 닫고 새로 띄운다 | `send-to-worker.py` 의 동작으로 맞춘다. 끝난 dispatch 의 터미널이 남았으면 후속 지시서로 이어 쓰고, 에이전트를 다시 띄울 수 없으면(종료 코드 3) 그 터미널을 닫고 새로 띄운다. 판정은 그 스크립트 머리 주석이 소유한다 |
-| `agent-selection.md` 첫 절, `launch.md` 예시 | 기본값을 두지 않는다 / 예시가 모델과 effort 를 고정한다 | 예시의 값을 `"$MODEL"`, `"$EFFORT"` 변수로 바꾸고 1단계에서 고른 값이라고 적는다 |
-| `SKILL.md` 3단계, `waiting.md`, `replying.md` | `worker-start` 를 직접 부르지 않는다 / 직접 부르게 한다 | 직접 부르는 예시를 `launch-worker.py` 나 `send-to-worker.py` 로 바꾼다 |
+| `spec-writing.md`, `templates/spec-common.md` | 공통 지시서에 `{{RUN_ID}}` 를 채운다 | 공통 지시서의 `worker-ask.py` 호출에서 `--run {{RUN_ID}}` 쌍을 지우고, `spec-writing.md` 에서 `{{RUN_ID}}` 를 채우라는 문장을 지운다. `worker-ask.py` 는 `--run` 이 없으면 peek 결과에서 Run id 를 찾는다(그 스크립트의 `--run` 처리). 개별 지시서에 Run 줄을 새로 더하지 않는다. Run 마다 바뀌는 값은 공통 틀에 두지 않는다(`docs/code-architecture.md` 「orch 문서가 소유하는 것」) |
+| `templates/spec-common.md` | `**PR 생성은 승인돼 있다.**`, `(PR 생성 승인, 본문 파일, 머지하지 않음)`, 「끝내기」 의 조건 없는 「그 파일로 PR 을 연다」 | 세 곳 모두 「PR 생성은 지시서의 `허락:` 줄이 허락한 경우에만 한다. 허락이 없으면 push 까지만 하고 status 로 알린다」 에 맞춘다. 굵은 문장은 그 문장으로 바꾸고, 괄호 안 항목은 「PR 생성은 허락 줄을 따름」 으로, 「끝내기」 의 문장은 「허락 줄이 PR 을 허락했으면 그 파일로 PR 을 연다」 로 바꾼다. `SKILL.md` 원칙과 맞춘다 |
+| `SKILL.md` 6단계 통과 조건, `verification.md` 「차례로 머지할 때 최신 base 와 합쳐 다시 검사한다」 절 | 합친 사본 검증 | 6단계 통과 조건에서 뺀다. `verification.md` 의 그 절은 지우고 「합친 사본 검증은 7단계 머지 큐가 `queue.verify_merged` 가 있을 때 한다. `cleanup.md` 의 그 절을 본다」 한 줄로 바꾼다. 내용은 `cleanup.md` 가 소유한다 |
+| `SKILL.md` 5단계, `launch.md` 「끊긴 worker 다시 띄우기」 | 끝난 dispatch 터미널을 이어 쓴다 / 닫고 새로 띄운다 | `send-to-worker.py` 의 동작으로 맞춘다. 끝난 dispatch 의 터미널이 남았으면 `--spec` 후속 지시서로 그 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. 터미널도 없으면 종료 코드 3 이다. 판정은 그 스크립트 머리 주석이 소유한다 |
+| `agent-selection.md` 첫 절, `launch.md` 예시, `waiting.md` 의 `worker-start --retry-of` 예시 | 기본값을 두지 않는다 / 예시가 모델과 effort 를 고정한다 | 예시의 `--model`, `--effort` 값을 `"$MODEL"`, `"$EFFORT"` 변수로 바꾸고 1단계에서 고른 값이라고 적는다 |
+| `SKILL.md` 3단계, `launch.md`, `waiting.md`, `replying.md` | `worker-start` 를 직접 부르지 않는다 / 직접 부르게 한다 | 「새로 띄우기는 `launch-worker.py`, 후속 지시는 `send-to-worker.py` 로 한다. 기존 Task 를 `--task --retry-of` 로 다시 띄우는 것만 예외로 `worker-start` 를 직접 부른다(두 스크립트가 `--retry-of` 를 받지 않는다)」 로 맞춘다. `SKILL.md` 3단계 문장에 이 예외를 적고, 네 문서의 `--retry-of` 예시는 그대로 두되 그 예외라고 밝힌다. `--retry-of` 가 아닌 직접 호출 예시가 있으면 두 스크립트로 바꾼다 |
 | `cleanup.md` 「정리」 | 스크립트가 안 하는 일만 직접 한다 / 스크립트가 하는 1~4단계를 다시 시킨다 | 1~4단계 목록을 지우고, 스크립트가 건너뛴 항목을 읽는 법과 5, 6단계(작업 문서, 보드)만 남긴다 |
 | `cleanup.md` 「워크트리 지우기」, 「정리」 | squash 머지 워크트리를 사용자에게 알리고 지운다 / 묻지 않고 정리한다 | 묻지 않고 정리한다로 맞춘다. `--merged-head` 가 squash 를 다룬다 |
 | `cleanup.md` 「handoff 산출물 정리」, `SKILL.md` 7단계 | 후보를 보인 뒤 `--apply` / 바로 옮긴다 | 사용자 결정(2026-10-24)대로 묻지 않고 `--apply` 로 옮긴다. 휴지통 폴더라 되살릴 수 있다고 적는다 |
@@ -47,7 +47,7 @@ worker 와 코디네이터가 어느 쪽을 따를지 매번 판단하지 않게
 | `board.md`, `work-board/bin/board.py` 머리 주석 | 진행 정도는 `--progress` 로 넣는다 | 「진행률은 단계 줄에서 센다. `--progress` 는 단계로 나타낼 수 없을 때만 쓴다」 로 board.py 머리 주석과 맞춘다 |
 | `waiting.md`, `board.md` | `--goal-items` 를 기본 예시로 쓴다 | 예시에서 빼고 하위 호환 옵션이라고만 적는다 |
 | `cleanup.md` 「정리」 | 원격 브랜치를 지운다 | 「로컬 브랜치가 있을 때만 원격도 지운다. 직접 머지한 PR 의 원격 브랜치는 남을 수 있다」 로 지금 동작을 적는다 |
-| `cleanup.md` 「정리」, `replying.md` | (새 규칙, 사용자 결정 2026-10-24) | 「충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받는다. worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다. 충돌하면 `send-to-worker.py --spec` 로 후속 지시서를 보낸다. 이어 받지 못하면 새 worker 를 띄우지 않고 사용자에게 알린다. 로컬 자원을 아끼기 위해서다. 머지 뒤에는 그 터미널을 바로 정리한다」 를 적는다 |
+| `cleanup.md` 「정리」, `replying.md`, `launch.md` 「끊긴 worker 다시 띄우기」 | (새 규칙, 사용자 결정 2026-10-24) | 「충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받는다. worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다. 충돌하면 `send-to-worker.py --dispatch <끝난 dispatch> --spec <후속 지시서>` 로 보낸다. 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것은 이어 받기로 본다(워크트리와 터미널 수가 늘지 않는다). 종료 코드 3(터미널이 없다)이면 새 worker 를 띄우지 않고 사용자에게 알린다. 로컬 자원을 아끼기 위해서다. 머지 뒤에는 그 터미널을 바로 정리한다(`cleanup-sweep.py` 가 MERGED 일 때 닫는다). 머지 없이 닫힌 PR 의 터미널은 스크립트가 닫지 않으므로 코디네이터가 화면을 확인하고 `orca terminal close` 로 닫는다」 를 적는다. `replying.md` 「새 worker 로 이어받는 순서」 와 `launch.md` 의 「닫고 새 worker 로 띄운다」 가 이 규칙과 어긋나면 충돌과 리뷰 반영에는 이 규칙이 우선한다고 그 자리에 적는다 |
 | `SKILL.md` 4단계 통과 조건 | 질문 감시 | 통과 조건에 「질문 감시(`watch-questions.py`)가 Run 마다 하나 돈다」 를 더한다 |
 
 ### 2. `orch/tests/test_template_script_path.py` 가 계속 통과하는지 본다
@@ -62,7 +62,7 @@ python3 -m unittest orch/tests/test_template_script_path.py
 python3 -m unittest discover -s scripts/tests
 python3 scripts/run-orch-tests.py --jobs 4
 python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/references/*.md orch/templates/spec-common.md
-! grep -n "PR 생성은 승인돼 있다" orch/templates/spec-common.md
+! grep -n "PR 생성은 승인돼 있다\|PR 생성 승인" orch/templates/spec-common.md
 ! grep -n "{{RUN_ID}}" orch/templates/spec-common.md orch/references/spec-writing.md
 ```
 
@@ -80,4 +80,5 @@ python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/references
 | `orch/references/board.md` | 수정 |
 | `orch/references/agent-selection.md` | 수정 |
 | `orch/templates/spec-common.md` | 수정 |
+| `orch/scripts/heavy-slot.py` | 수정 |
 | `orch/tests/test_template_script_path.py` | 수정 |

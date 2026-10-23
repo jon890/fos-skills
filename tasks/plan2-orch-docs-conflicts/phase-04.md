@@ -36,11 +36,11 @@ worker 와 코디네이터가 사용자에게 묻는 결정을 한 형식으로 
 
 ### 1. `orch/scripts/worker-ask.py` 의 `--decision`
 
-`--decision` 을 주면 `--question` 본문을 `docs/data-schema.md` 의 규칙으로 본다. 어긋나면 묻지 않고 빠진 줄(`결정:`, `배경:`, 선택지 둘 이상, `권장:`)을 stderr 에 내고 종료 코드 2 다. 머리 주석의 사용법과 종료 코드에 더한다.
+`--decision` 을 주면 `--question` 본문을 `docs/data-schema.md` 「사용자 결정 질문 형식」 의 규칙 표로 본다. 검사하는 것은 그 표의 세 줄뿐이다: 첫 줄이 `결정:` 으로 시작한다, `- ` 로 시작하는 줄이 둘 이상이다, `권장:` 으로 시작하는 줄이 정확히 하나다. `배경:` 과 `선택지:` 머리 줄은 형식 예시에 있지만 검사하지 않는다. 어긋나면 묻지 않고 어긋난 규칙마다 한 줄(빠진 `결정:` 첫 줄, 선택지 수, `권장:` 줄 수)을 stderr 에 내고 종료 코드 2 다. 머리 주석의 사용법과 종료 코드에 더한다.
 
 ### 2. 지시서 틀과 코디네이터 지침
 
-- `orch/templates/spec-common.md` 「판단이 필요할 때」: 사용자 결정은 형식대로 쓰고 `--decision` 을 붙인다. 형식 예시 한 벌을 둔다
+- `orch/templates/spec-common.md` 「판단이 필요할 때」: 사용자 결정은 형식대로 쓰고 `--decision` 을 붙인다. 형식 예시 한 벌을 ```text 블록에 둔다. `<...>` 자리 표시가 든 여러 줄 예시를 ```bash 블록에 넣으면 `orch/tests/test_template_script_path.py` 의 자리 표시 리다이렉트 검사가 실패한다
 - `orch/references/replying.md`: 위 「의도 메모」 의 코디네이터 규칙과, 사용자에게 보일 때 `결정:` 줄과 `권장:` 줄을 그대로 옮긴다는 것
 - `orch/SKILL.md` 「원칙」: 「사용자가 정할 질문은 코디네이터가 대신 답하지 않는다」 한 줄
 
@@ -53,6 +53,7 @@ worker 와 코디네이터가 사용자에게 묻는 결정을 한 형식으로 
 
 - `orch/tests/test_scripts.py` 의 `WorkerAskTest` 에 사례를 더한다: 형식을 갖춘 `--decision` 질문이 가짜 orca 의 ask 로 간다. `권장:` 이 빠진 질문은 ask 를 부르지 않고 종료 코드 2. `--decision` 없는 짧은 질문은 지금처럼 간다
 - `work-board/tests/live.test.ts` 에 사례를 더한다. 저장소 루트의 `claude plugin test .` 가 이 파일을 돌린다: `decisionOf` 가 제목과 권장을 낸다. 형식이 없으면 null. 권장 줄이 없으면 `recommend` 가 null
+- `work-board/tests/pane.test.ts` 에 사례 둘을 더한다. 기존 「질문 조회 실패를 결정 필요 0 대신 확인 불가로 표시한다」 처럼 가짜 `orca` 응답으로 미답변 질문 하나를 주고 창을 mount 한다: 형식을 갖춘 질문이면 `결정:` 뒤 제목이 `bold` 인 Text 로, `권장:` 줄이 그 아래 Text 로 나온다. 형식이 없는 질문이면 지금처럼 본문 앞부분이 Text 로 나온다. `questionView` 는 `register()` 안의 클로저라 파서 테스트만으로는 렌더링 변경을 되돌려도 실패하지 않는다
 
 ### 5. `orch/CHANGELOG.md`
 
@@ -77,5 +78,6 @@ python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/references
 | `orch/SKILL.md` | 수정 |
 | `work-board/hooks/register.js` | 수정 |
 | `work-board/tests/live.test.ts` | 수정 |
+| `work-board/tests/pane.test.ts` | 수정 |
 | `orch/tests/test_scripts.py` | 수정 |
 | `orch/CHANGELOG.md` | 수정 |

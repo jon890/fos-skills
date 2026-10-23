@@ -35,6 +35,18 @@
 - `--update-docs-on-overlap` 설명: 「문서 겹침에서 큐가 멈추던 저장소의 오버레이에서 켠다」
 - 「머지 뒤 명령」 절 끝의 포인터 줄: 지운다. 저장소의 검증과 배포 명령은 그 저장소의 오버레이가 소유한다는 한 줄로 바꾼다
 
+### 2-1. 다른 저장소 이름과 그 저장소의 명령을 일반 이름으로 바꾼다
+
+| 위치 | 지금 | 바꿀 것 |
+| --- | --- | --- |
+| `orch/references/cleanup.md` 「같은 파일을 고친 PR」 근처의 `merge-tested.sh` 문장 | 한 저장소의 로컬 스크립트 이름 | 「사본 생성과 머지까지 하는 저장소 스크립트가 이미 있으면 그 전체를 넘기지 않는다」 로 쓴다. 뒤 문장(검증 부분만 넘긴다)은 그대로 둔다 |
+| `orch/references/heavy-checks.md` 예시 블록의 `pnpm build`, `pnpm verify` | 한 저장소의 명령 | `./bin/build.sh`, `./bin/ci.sh` 처럼 일반 이름으로 바꾼다. 자동 분류 정규식(`heavy-slot.py` 의 `classify`)이 그 저장소 명령만 알아보는 것은 이 plan 의 범위 외이고, 그 사실은 이 문서에 적지 않는다 |
+| `orch/references/agent-selection.md` 보안 리뷰 행의 근거 줄 | 저장소 이름과 PR 번호 | 「2026-10-20 인프라 저장소의 PR 리뷰를」 로 저장소 이름과 PR 번호를 뺀다. 나머지 사실은 그대로 둔다 |
+| `orch/references/launch.md` 「2026-10-23 dooray-cli 에서」 | 저장소 이름 | 「2026-10-23 다른 저장소에서」 로 바꾼다 |
+| `orch/tests/test_scripts.py` `CiLookupTest` docstring 의 「(2026-10-23 gersang-lab)」 | 저장소 이름 | 「(2026-10-23 실측)」 으로 바꾼다. 테스트 동작은 바꾸지 않는다 |
+
+`spec-writing.md` 의 `pnpm install --frozen-lockfile` 은 일반 패키지 관리자 예시라 그대로 둔다. `orch/tests/test_heavy_slot.py` 의 pnpm 사례는 범위 외인 `classify` 를 검사하므로 그대로 둔다.
+
 ### 3. `orch/references/overlay.md` 「적을 것」 표에 두 항목을 더한다
 
 | 항목 | 담는 것 | 쓰는 단계 |
@@ -49,10 +61,12 @@
 ## 검증
 
 ```bash
+python3 -m unittest orch/tests/test_scripts.py
 python3 scripts/run-orch-tests.py --jobs 4
 python3 -m unittest discover -s scripts/tests
-python3 korean-check/scripts/korean-style-check.py orch/references/cleanup.md orch/references/overlay.md
-! git grep -n -i "gersang" -- orch/references orch/SKILL.md orch/templates orch/tests
+python3 korean-check/scripts/korean-style-check.py orch/references/cleanup.md orch/references/overlay.md orch/references/heavy-checks.md orch/references/agent-selection.md orch/references/launch.md
+! git grep -n -i "gersang\|fos-home-infra\|dooray-cli\|merge-tested" -- orch/references orch/SKILL.md orch/templates orch/tests
+! git grep -n "pnpm build\|pnpm verify" -- orch/references
 ```
 
 ## 변경 파일
@@ -63,3 +77,7 @@ python3 korean-check/scripts/korean-style-check.py orch/references/cleanup.md or
 | `orch/tests/test_gersang_overlay.py` | 삭제 |
 | `orch/references/cleanup.md` | 수정 |
 | `orch/references/overlay.md` | 수정 |
+| `orch/references/heavy-checks.md` | 수정 |
+| `orch/references/agent-selection.md` | 수정 |
+| `orch/references/launch.md` | 수정 |
+| `orch/tests/test_scripts.py` | 수정 |
