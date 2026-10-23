@@ -155,7 +155,7 @@ FAKE_GH = textwrap.dedent("""\
             pr = state[path.split("/")[-2]]
             if pr.get("update_fails"):
                 sys.exit(1)
-            pr["headRefOid"] = "new"
+            pr["headRefOid"] = pr.get("after_update_head", "new")
             pr["statusCheckRollup"] = []
             pr["appear"] = {"left": 2, "checks": pr.get("after_update", [])}
             state["_behind"] = 0
@@ -681,6 +681,72 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.assertFalse(self.merged())
         self.assertFalse(Path(seen.read_text().strip()).exists())
         self.assertEqual(1, self.worktree_count())
+
+    def test_verify_environment_contains_pr_files_overlap_and_commit_ids(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n", "tests/new file.test.ts": "test\n"},
+                      {"a.txt": "main\n1\n2\n3\n4\n5\n"})
+        seen = self.tmp / "environment.json"
+        check = ("python3 -c 'import json,os; "
+                 f'json.dump(dict(os.environ),open("{seen}","w"))' + "'")
+        r = self.run_queue("--verify-merged", check)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        env = json.loads(seen.read_text())
+        self.assertEqual("1", env["PR"])
+        self.assertEqual("a.txt\ntests/new file.test.ts", env["CHANGED_FILES"])
+        self.assertEqual("a.txt", env["OVERLAP_FILES"])
+        self.assertEqual(self.git("rev-parse", "feat"), env["PR_HEAD"])
+        self.assertEqual(self.git("rev-parse", "main"), env["BASE_HEAD"])
+        self.assertEqual(env["PWD"], env["MERGE_COPY"])
+        self.assertFalse(Path(env["MERGE_COPY"]).exists())
+
+    def docs_overlap(self, clean="CLEAN"):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"a.txt": "main\n1\n2\n3\n4\n5\n"})
+        # update-branch 가 돌려줄 실제 커밋을 준비한다. 처음 조회하는 PR HEAD 는 갱신 전 값이다
+        self.git("checkout", "-q", "feat")
+        self.git("merge", "-q", "--no-edit", "main")
+        self.git("push", "-q", "origin", "feat")
+        state = json.loads(self.state.read_text())
+        state["1"].update(mergeStateStatus=clean, after_update_head=self.git("rev-parse", "HEAD"),
+                          statusCheckRollup=[{"name": "CI", "status": "COMPLETED", "conclusion": "SUCCESS"}],
+                          after_update=[{"name": "CI", "status": "COMPLETED", "conclusion": "SUCCESS"}])
+        state["_behind"] = 1
+        self.state.write_text(json.dumps(state))
+
+    def test_docs_overlap_updates_clean_branch_and_waits_for_new_ci(self):
+        self.docs_overlap()
+        old = json.loads(self.state.read_text())["1"]["headRefOid"]
+        r = self.run_queue("--update-docs-on-overlap", "--docs-glob", "*.txt", "--required", "CI",
+                           "--stop-on-overlap")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("update-branch 후 체크를 다시 기다린다", r.stdout)
+        self.assertIn(f"expected_head_sha={old}", self.log.read_text())
+        self.assertEqual(1, self.log.read_text().count("-X PUT"))
+        self.assertTrue(self.merged())
+
+    def test_docs_overlap_requires_clean_status(self):
+        self.docs_overlap("BLOCKED")
+        r = self.run_queue("--update-docs-on-overlap", "--docs-glob", "*.txt", "--required", "CI")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("GitHub CLEAN 이 필요하다", r.stdout)
+        self.assertNotIn("-X PUT", self.log.read_text())
+        self.assertFalse(self.merged())
+
+    def test_docs_overlap_update_requires_required_checks(self):
+        self.docs_overlap()
+        r = self.run_queue("--update-docs-on-overlap", "--docs-glob", "*.txt")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("필수 체크 목록이 필요하다", r.stdout)
+        self.assertFalse(self.merged())
+
+    def test_docs_overlap_update_waits_and_stops_if_new_ci_fails(self):
+        self.docs_overlap()
+        state = json.loads(self.state.read_text())
+        state["1"]["after_update"][0]["conclusion"] = "FAILURE"
+        self.state.write_text(json.dumps(state))
+        r = self.run_queue("--update-docs-on-overlap", "--docs-glob", "*.txt", "--required", "CI")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("실패한 체크", r.stdout)
+        self.assertFalse(self.merged())
 
     def test_conflict_with_base_stops(self):
         self.branches({"a.txt": "1\n2\nfeat\n4\n5\n"}, {"a.txt": "1\n2\nmain\n4\n5\n"})

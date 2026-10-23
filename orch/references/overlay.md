@@ -56,6 +56,7 @@
 | `queue` | `required`, `before`, `method` | `merge-queue.sh` 의 `--required`, `--before`, `--method`. `required` 는 문자열 목록도 받는다 |
 | `queue` | `verify_merged`, `verify_merged_when`, `docs_glob` | `--verify-merged`, `--verify-merged-when`, `--docs-glob`. `docs_glob` 은 문자열 목록도 받는다 |
 | `queue` | `after_merged`, `skipped_is_missing` | `--after-merged` 와 `--skipped-is-missing`. `skipped_is_missing` 은 true 나 false 다 |
+| `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |
 
 ```json
 {

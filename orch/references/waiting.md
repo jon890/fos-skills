@@ -42,6 +42,16 @@ worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기
 알렸는데 아직 끊긴 채인 dispatch 는 다음 대기가 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남긴다.
 그 줄이 나오면 다시 대기를 걸기 전에 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 마지막 줄의 `LAST_DELIVERY` id 는 다음 대기의 `--ack` 로 넘긴다.
 
+**복구하거나 더 처리할 일이 없다고 확인한 dispatch 는 `--ack-lost` 로 기록한다.**
+`--ignore-lost` 는 해당 실행에서만 제외한다. `--ack-lost` 는 같은 상태 파일에 `handled` 로 덮어써 다음 실행부터 경고도 생략한다.
+여러 dispatch 를 한 번에 기록할 수 있고, 기록만 쓴 뒤 종료 코드 0 으로 끝나므로 대기는 따로 건다.
+파일을 쓰지 못하면 종료 코드 1 이며 확인한 것으로 처리하지 않는다. 다른 Run 의 기록과 아직 확인하지 않은 dispatch 는 유지한다.
+
+```bash
+python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack-lost "$DISPATCH_ID"
+python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID" --kill-stale
+```
+
 ## 깨어날 때마다 정리와 보드 동기화
 
 **대기가 끝날 때마다, 그리고 기다리는 동안 5분마다 아래 두 명령을 돌린다.** 메시지를 읽기 전에 돈다.
@@ -110,8 +120,9 @@ Orca runtime 이 잠시 끊기면 `runtime_unavailable` 로 끝나기도 한다.
 ps -ax -o pid,ppid,lstart,command | grep -E "orchestration check|wait-important" | grep "$RUN_ID"
 ```
 
-부모 PID 가 1 이고 시작 시각이 이 세션보다 앞선 것이 그것이다.
-그 프로세스와 부모 셸을 `kill` 하고 대기를 다시 건다.
+부모 PID 가 1 이거나 일반 셸을 거쳐 PID 1 에 연결된 같은 사용자의 대기가 고아 대기다.
+`--kill-stale` 은 그런 대기 프로세스만 종료한다. 조상인 일반 셸 자체와 다른 Run 의 대기는 종료하지 않는다.
+종료 뒤에는 대기를 다시 건다. 프로세스 목록을 읽지 못하거나 살아 있는 세션에 연결된 대기면 종료하지 않고 종료 코드 4 로 끝난다.
 다른 run 의 대기는 다른 세션의 것이므로 건드리지 않는다.
 그 대기가 이미 받아 간 메시지는 위 `--live --since` 로 다시 본다.
 

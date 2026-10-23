@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.43.0 (2026-10-23)
+
+- `wait-important.py`: `--ack-lost` 로 확인한 끊긴 dispatch 를 Run 별로 기록한다. 다음 대기에서 같은 dispatch 의 경고를 생략하며, 확인 기록만 쓰고 대기 없이 끝난다. `--kill-stale` 은 일반 셸을 거쳐 PID 1 에 연결된 같은 사용자의 고아 대기도 종료한다.
+- `merge-queue.sh`: 합친 사본의 검증 명령에 사본 경로, PR 번호, 양쪽 커밋과 변경·겹침 파일 목록을 환경 변수로 넘긴다. `--update-docs-on-overlap` 은 GitHub CLEAN 인 문서 PR 에 base 를 합치고 필수 CI 를 다시 기다린다. update-branch 요청에도 검사한 HEAD 를 지정한다.
+- 기존 `--after-merged` 의 배포 기능을 재사용하고, 대기와 머지 문서에 gersang-lab 의 로컬 스크립트를 대신할 명령과 Vitest 검증 예시를 추가한다. 실제 Run 과 다른 저장소의 파일은 바꾸지 않는다.
+
 ## 1.42.0 (2026-10-23)
 
 - `wait-important.py`: 완료·포기된 dispatch 의 터미널이 사라져도 `WORKER_LOST` 로 보고하지 않는다. worker 의 실패 보고와 코디네이터의 종료 기록은 camelCase 와 snake_case 를 모두 읽는다.
