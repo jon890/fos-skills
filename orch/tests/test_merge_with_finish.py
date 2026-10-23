@@ -55,10 +55,11 @@ class ParseTest(unittest.TestCase):
                 mwf.split_args(argv)
 
     def test_value_options_match_merge_queue(self):
-        """merge-queue.sh 가 값을 받는 옵션이 바뀌면 이 목록도 바꿔야 PR 번호 해석이 어긋나지 않는다."""
-        script = (SCRIPTS / "merge-queue.sh").read_text(encoding="utf-8")
-        valued = set(re.findall(r'^\s+(--[a-z-]+)\) need "\$1"', script, re.M))
-        self.assertEqual(valued, mwf.VALUE_OPTIONS)
+        """merge_queue.py 가 값을 받는 옵션이 바뀌면 이 목록도 바꿔야 PR 번호 해석이 어긋나지 않는다."""
+        spec = importlib.util.spec_from_file_location("merge_queue", SCRIPTS / "merge_queue.py")
+        queue = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(queue)
+        self.assertEqual(queue.VALUE_OPTIONS, mwf.VALUE_OPTIONS)
 
 
 FAKE_QUEUE_SH = """\

@@ -5,12 +5,12 @@
 이 스크립트가 그 일을 기본 절차로 만든다. 사용자가 말하지 않아도 머지 큐는 이 스크립트로 건다.
 
 사용법:
-    merge-with-finish.py [래퍼 옵션] [merge-queue.sh 옵션] PR[!][:머지 전 명령] ...
+    merge-with-finish.py [래퍼 옵션] [merge_queue.py 옵션] PR[!][:머지 전 명령] ...
 
     1. PR 마다 `finish-pr.py` 를 백그라운드로 시작한다. 출력은 <로그 폴더>/finish-<PR>.out 이다.
        그 PR 의 마무리가 이미 돌고 있으면(<로그 폴더>/finish-<PR>.pid 의 프로세스가 살아 있으면) 새로 시작하지 않는다.
        머지 큐가 STOP 으로 멈춘 뒤 남은 PR 만 다시 걸어도 마무리가 겹치지 않는다
-    2. `merge-queue.sh` 를 같은 인자로 이 프로세스 안에서 돌리고 그 종료 코드로 끝난다.
+    2. `merge_queue.py` 를 같은 인자로 이 프로세스 안에서 돌리고 그 종료 코드로 끝난다.
        오래 걸리므로 Bash 도구의 run_in_background 로 건다. 셸의 `&` 나 nohup 은 쓰지 않는다
 
     PR 번호 뒤의 `!` 는 그 PR 이 업무의 마지막 PR 이라는 뜻이다. 그 PR 의 마무리는 배포가 성공한 뒤
@@ -18,7 +18,7 @@
     업무 완료 명령(`complete_cmd`)이 설정에 없는 저장소에서는 업무 완료만 건너뛰고 그 PR 의 지시서를 지운다.
     `!` 와 `:명령` 은 PR 번호 바로 뒤에 `번호[!][:명령]` 순서로 쓴다. 머지 큐에는 `!` 를 뗀 인자가 넘어간다.
 
-래퍼 옵션 (merge-queue.sh 에는 넘기지 않는다):
+래퍼 옵션 (merge_queue.py 에는 넘기지 않는다):
     --finish-config FILE    finish-pr.py 의 --config. 없으면 finish-pr.py 가 <repo>/.claude/orch-finish.json 을 찾는다
     --finish-arg ARG        finish-pr.py 에 더 넘길 인자. 하나씩 준다. 값이 `--` 로 시작하면 `--finish-arg=--run` 처럼 쓴다
     --board-item PR=ID      그 PR 의 마무리가 done 으로 바꿀 보드 항목(`finish-pr.py --board-id`). PR 마다 준다.
@@ -26,7 +26,7 @@
     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본 <repo>/.omc/handoffs/queue. handoff-cleanup.py 가 이 폴더의 끝난 로그를 옮긴다
     --no-finish             마무리를 걸지 않고 머지 큐만 돌린다
 
-merge-queue.sh 옵션은 그대로 쓴다(--repo, --required, --require-up-to-date 같은 것). --repo 는 마무리에도 넘어간다.
+merge_queue.py 옵션은 그대로 쓴다(--repo, --required, --require-up-to-date 같은 것). --repo 는 마무리에도 넘어간다.
 
 머지 큐 기본값: --finish-config 파일(없으면 <repo>/.claude/orch-finish.json)의 `queue` 절을 읽어
 명령줄에 없는 머지 큐 옵션을 채운다. 키는 before, required, verify_merged, verify_merged_when, docs_glob, method,
@@ -45,7 +45,7 @@ MERGE_QUEUE, FINISH_PR 환경 변수로 두 스크립트 경로를 바꾼다.
 **업무의 마지막 PR(`!`)일 때만 그 항목을 done 으로 바꾼다.** 중간 PR 이 항목을 끝내지 않도록 `!` 가 없으면 찾은 항목을 알리기만 한다.
 같은 PR 이 든 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다. `--board-item` 으로 준 항목은 `!` 와 상관없이 쓴다.
 
-종료 코드: merge-queue.sh 의 종료 코드. 2 는 사용법 오류이기도 하다
+종료 코드: merge_queue.py 의 종료 코드. 2 는 사용법 오류이기도 하다
 """
 
 from __future__ import annotations
@@ -58,9 +58,9 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-MERGE_QUEUE = os.environ.get("MERGE_QUEUE", str(HERE / "merge-queue.sh"))
+MERGE_QUEUE = os.environ.get("MERGE_QUEUE", str(HERE / "merge_queue.py"))
 FINISH_PR = os.environ.get("FINISH_PR", str(HERE / "finish-pr.py"))
-# merge-queue.sh 가 값을 받는 옵션. 값이 숫자여도 PR 번호로 읽지 않으려고 안다. tests 가 merge-queue.sh 와 맞는지 본다
+# merge_queue.py 가 값을 받는 옵션. 값이 숫자여도 PR 번호로 읽지 않으려고 안다. tests 가 merge_queue.py 와 맞는지 본다
 VALUE_OPTIONS = {"--repo", "--before", "--method", "--threads-cmd", "--check-timeout", "--required", "--allow-fail",
                  "--verify-merged", "--verify-merged-when", "--docs-glob", "--copy-dir", "--sweep-arg", "--after-merged",
                  "--up-to-date-when", "--shared-paths", "--unit-prefix", "--unit-group"}
@@ -92,7 +92,7 @@ def parse_queue_spec(arg):
 
 
 def split_args(argv):
-    """(래퍼 옵션 dict, merge-queue.sh 인자 목록, [(PR, 마지막 PR 인지)]). 모르는 래퍼 옵션이면 ValueError."""
+    """(래퍼 옵션 dict, merge_queue.py 인자 목록, [(PR, 마지막 PR 인지)]). 모르는 래퍼 옵션이면 ValueError."""
     wrapper = {"finish_config": None, "finish_arg": [], "log_dir": None, "no_finish": False, "board_items": {}}
     queue, prs, repo = [], [], "."
     i = 0
@@ -310,7 +310,8 @@ def main(argv=None):
     if not wrapper["no_finish"]:
         for number, complete in prs:
             start_finish(wrapper, number, complete, config)
-    return subprocess.run(["bash", MERGE_QUEUE, *queue]).returncode
+    runner = [sys.executable] if MERGE_QUEUE.endswith(".py") else ["bash"]
+    return subprocess.run([*runner, MERGE_QUEUE, *queue]).returncode
 
 
 if __name__ == "__main__":

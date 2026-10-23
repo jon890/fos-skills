@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PR 하나의 머지 뒤 마무리를 끝까지 한다: worker 정리, 배포 확인, 업무 완료, 보드 done.
 
-머지 큐(`merge-queue.sh`)를 건 자리에서 PR 마다 함께 건다. 보통은 `merge-with-finish.py` 가 대신 건다.
+머지 큐(`merge_queue.py`)를 건 자리에서 PR 마다 함께 건다. 보통은 `merge-with-finish.py` 가 대신 건다.
 코디네이터가 머지 뒤 단계를 잊거나, 정리가 GitHub 상태 반영보다 먼저 돌아 워크트리가 남는 일을 막는다.
 
 사용법:

@@ -211,9 +211,10 @@ FAKE_GIT = textwrap.dedent("""\
     import json, os, sys
     args = sys.argv[1:]
     open(os.environ["FAKE_LOG"], "a").write("git " + " ".join(args) + "\\n")
-    if args[:1] == ["rev-parse"]:
+    if args[:1] in (["rev-parse"], ["ls-remote"]):
         state = json.load(open(os.environ["FAKE_STATE"]))
-        print(state.get("_remote_head", os.environ.get("FAKE_REMOTE_HEAD", "")))
+        head = state.get("_remote_head", os.environ.get("FAKE_REMOTE_HEAD", ""))
+        print(state.get("_base_head", head) + "\trefs/heads/main" if args[0] == "ls-remote" else head)
     sys.exit(0)
     """)
 
@@ -235,7 +236,7 @@ class MergeQueueTest(unittest.TestCase):
         self.state = self.tmp / "state.json"
         self.log = self.tmp / "log.txt"
         self.env = dict(os.environ, PATH=f"{self.bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
-                        FAKE_LOG=str(self.log), FAKE_REMOTE_HEAD="abc")
+                        FAKE_LOG=str(self.log), FAKE_REMOTE_HEAD="abc", MERGE_QUEUE_SLEEP_SCALE="0")
         self.sweep_log = self.tmp / "sweep.txt"
         sweep = self.tmp / "sweep.py"
         sweep.write_text(f"import sys\nopen({str(self.sweep_log)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
@@ -251,7 +252,7 @@ class MergeQueueTest(unittest.TestCase):
 
     def run_queue(self, state, *args, threads="0"):
         self.state.write_text(json.dumps(state))
-        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.tmp),
+        cmd = [sys.executable, str(SCRIPTS / "merge_queue.py"), "--repo", str(self.tmp),
                "--threads-cmd", f"echo {threads}", *args]
         return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
 
@@ -443,7 +444,7 @@ class MergeQueueTest(unittest.TestCase):
         pr = self.pr(url="https://ghe.example.com/owner/repo/pull/1", statusCheckRollup=[self.check("backend")],
                      after_update=[self.check("backend")])
         self.state.write_text(json.dumps({"1": pr, "_rules": self.rules("backend"), "_behind": 1}))
-        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.tmp), "--require-up-to-date",
+        cmd = [sys.executable, str(SCRIPTS / "merge_queue.py"), "--repo", str(self.tmp), "--require-up-to-date",
                "--threads-cmd", f'echo "$GH_HOST" > {host_seen}; echo 0', "1"]
         env = {k: v for k, v in self.env.items() if k != "GH_HOST"}
         r = subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -460,7 +461,7 @@ class MergeQueueTest(unittest.TestCase):
         host_seen = self.tmp / "threads-host.txt"
         self.env["GH_HOST"] = "github.com"
         self.state.write_text(json.dumps({"1": self.pr(), "_rules": self.rules()}))
-        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.tmp),
+        cmd = [sys.executable, str(SCRIPTS / "merge_queue.py"), "--repo", str(self.tmp),
                "--threads-cmd", f'echo "$GH_HOST" > {host_seen}; echo 0', "1"]
         r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
@@ -552,6 +553,21 @@ class MergeQueueTest(unittest.TestCase):
                 r = self.run_queue({"1": self.pr()}, *args, "1")
                 self.assertEqual(2, r.returncode, r.stdout + r.stderr)
                 self.assertIn(message, r.stderr)
+
+    def test_stops_when_base_moves_after_a_direct_merge_judgement(self):
+        move = (f"python3 -c \"import json; p='{self.state}'; d=json.load(open(p)); "
+                f"d['_base_head']='moved'; json.dump(d, open(p, 'w'))\"")
+        r = self.overlap_queue("바로 머지", 0, "--before", move)
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("STOP 1 판정한 뒤 base(main) 가 움직였다", r.stdout)
+        self.assertNotIn("pr merge", self.log.read_text())
+
+    def test_conflicting_unit_groups_are_a_usage_error_at_start(self):
+        r = self.overlap_queue("바로 머지", 0, "--unit-group", "a,b", "--unit-group", "b,c")
+        self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+        self.assertIn("--unit-group", r.stderr)
+        self.assertIn("묶음 둘에 들어 있다", r.stderr)
+        self.assertFalse((self.log).exists() and "pr view" in self.log.read_text())
 
     def test_docs_glob_is_accepted_with_up_to_date_when_overlap_alone(self):
         r = self.overlap_queue("바로 머지", 0, "--docs-glob", "*.md")
@@ -668,6 +684,7 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.log = self.tmp / "log.txt"
         self.env = dict(os.environ, PATH=f"{self.bindir}:{os.environ['PATH']}", FAKE_STATE=str(self.state),
                         FAKE_LOG=str(self.log), TMPDIR=str(self.tmp), GIT_CONFIG_GLOBAL=str(gitconfig),
+                        MERGE_QUEUE_SLEEP_SCALE="0",
                         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x", GIT_COMMITTER_NAME="t",
                         GIT_COMMITTER_EMAIL="t@x", CLEANUP_SWEEP=str(self.tmp / "sweep.py"))
         (self.tmp / "sweep.py").write_text("")
@@ -704,7 +721,7 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.state.write_text(json.dumps({"1": pr}))
 
     def run_queue(self, *args):
-        cmd = ["bash", str(SCRIPTS / "merge-queue.sh"), "--repo", str(self.repo), "--threads-cmd", "echo 0",
+        cmd = [sys.executable, str(SCRIPTS / "merge_queue.py"), "--repo", str(self.repo), "--threads-cmd", "echo 0",
                "--no-sweep", *args, "1"]
         return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
 
