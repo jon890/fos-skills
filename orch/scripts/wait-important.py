@@ -7,7 +7,7 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
 코디네이터는 그 묶음을 `triage-messages.py` 로 읽은 뒤 마지막 줄의 delivery id 를 다음 대기의 `--ack` 로 넘긴다.
 
 **Bash 도구의 `run_in_background` 로만 띄운다.** 셸의 `&` 나 `nohup` 으로 띄우면 끝나도 완료 알림이 오지 않는다.
-플러그인 hook(`hooks/block-background-wait.py`)이 그런 호출을 막는다.
+플러그인 hook(`hooks/block-background-wait.ts`)이 그런 호출을 막는다.
 
 사용법:
     wait-important.py --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]

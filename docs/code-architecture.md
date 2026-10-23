@@ -93,7 +93,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | --- | --- | --- |
 | `.claude-plugin/marketplace.json` | 마켓플레이스 이름과 플러그인 소스 | `claude plugin marketplace add` |
 | `.claude-plugin/plugin.json` | 플러그인 이름과 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
-| `orch/hooks/` | `check --wait` 를 셸의 `&` 로 띄우는 Bash 호출을 거부하는 PreToolUse 훅. 판정은 스크립트 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
+| `orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 node 로 부른다. `check --wait` 의 셸 백그라운드 실행, cd 뒤 `;` 나 줄바꿈으로 이은 git 쓰기, `spec-line` 이 아닌 `worker-start --spec` 을 거부한다. worker 터미널 직접 `orca terminal send` 는 모든 Run 의 worker 를 보고, 대상을 확인하지 못하면 거부한다. 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `content-preview/scripts/show-preview.sh` |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 없는지 확인한다 | 사람, 구현 검증 |

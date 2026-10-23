@@ -45,11 +45,12 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/questions.py`: 모듈. 현재 Run 의 미답변 질문을 읽는다. `watch-questions.py` 와 `orch-doctor.py` 가 import 한다
 - `scripts/completion_evidence.py`: 모듈. worker_done 을 앞선 준비 상태와 대조해 분류한다. `wait-important.py` 와 `triage-messages.py` 가 import 한다
 - `scripts/goal-progress.py`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
-- `hooks/`: 플러그인이 싣는 PreToolUse 훅. 판정과 오탐 기준은 각 파일 머리 주석이 소유한다
-  - `block-background-wait.py`: `check --wait` 와 `wait-important.py` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다
-  - `block-git-after-cd.py`: `cd X;` 나 줄바꿈 뒤의 git 쓰기(merge, commit, push, reset, rebase)를 거부하고 `&&` 나 `git -C` 를 요구한다
-  - `block-worker-terminal-send.py`: worker 터미널에 직접 `orca terminal send` 하는 호출을 거부하고 `send-to-worker.py` 로 보내게 한다
-  - `require-spec-line.py`: `worker-start --spec` 값이 `spec-line.py` 가 만드는 한 줄 꼴이 아니면 거부한다
+- `hooks/`: 플러그인이 싣는 PreToolUse 훅. `hooks.json` 이 각 hook 을 PATH 의 `node` 로 부른다. 판정과 오탐 기준은 각 파일 머리 주석이 소유한다
+  - `block-background-wait.ts`: `check --wait` 와 `wait-important.py` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다
+  - `block-git-after-cd.ts`: `cd X;` 나 줄바꿈 뒤의 git 쓰기(merge, commit, push, reset, rebase)를 거부하고 `&&` 나 `git -C` 를 요구한다
+  - `block-worker-terminal-send.ts`: 모든 Run 의 worker 터미널에 직접 `orca terminal send` 하는 호출을 거부하고 `send-to-worker.py` 로 보내게 한다. 대상이 변수이거나, `--terminal` 이 없거나, 원격 서버이거나, orca 조회가 실패하거나 시간 한도를 넘겨도 거부한다
+  - `require-spec-line.ts`: `worker-start --spec` 값이 `spec-line.py` 가 만드는 한 줄 꼴이 아니면 거부한다
+  - `shell-text.ts`: 모듈. hook 이 명령이 아닌 글자(따옴표 안, heredoc 본문, 주석)를 가리고 명령 조각으로 나눈다
 - `scripts/heavy-slot.py`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.py` 를 부른다
 - `scripts/orch_process.py`: 모듈. 스크립트가 함께 쓰는 프로세스 실행 함수다
 - `scripts/orca_repo.py`: 모듈. Orca 에 등록된 저장소의 외부 워크트리 표시 설정을 읽는다. `make-worktree.py` 와 `launch-worker.py` 가 import 한다
