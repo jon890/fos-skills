@@ -208,6 +208,7 @@ orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 
 orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
 orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
 orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할
+orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록. notify-conflicts 와 상주 루프가 쓴다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
@@ -264,9 +265,9 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py
 
 | 장치 | 위치 | 판정 |
 | --- | --- | --- |
-| worker 터미널 직접 입력 금지 | PreToolUse hook, 가드 shim | 대상이 worker 터미널이면 거부한다. 대상이 변수이거나 조회가 실패해도 거부한다 |
+| worker 터미널 직접 입력 금지 | PreToolUse hook, 가드 shim | PreToolUse hook 은 대상이 worker 터미널이면 거부한다. 대상이 변수이거나 조회가 실패해도 거부한다. 가드 shim 은 핸들러의 `orca terminal send` 를 대상과 무관하게 거부한다. 핸들러는 worker 에게 쓸 일이 없고, 보내는 일은 `send-to-worker` 가 한다 |
 | 다른 사람 PR 제외 | `lib/gh.ts` | 루프, 원격 브랜치 정리, 충돌 알림, ready 전환은 `pipeline.authors` 의 PR 만 본다 |
-| 머지와 base 합치기는 코어만 | 가드 shim, `lib/gh.ts` | 핸들러의 `gh pr merge`, `gh pr update-branch`, update-branch API 호출을 거부한다. 코어는 머지 차례가 온 PR 과 뒤처진 draft 에만 base 를 합친다 |
+| 머지와 base 합치기는 코어만 | 가드 shim, `lib/gh.ts` | 핸들러의 코어 전용 머지와 base 합치기 호출(CLI, REST, GraphQL)을 거부한다. 거부 목록은 `lib/guard/guard.ts` 머리 주석이 소유한다. 가드는 실수 방지 장치이고 보안 경계가 아니다. 코어는 머지 차례가 온 PR 과 뒤처진 draft 에만 base 를 합친다 |
 | 무거운 검사 대기열 | `heavy-slot.ts` | 같은 PC 의 무거운 검사를 자리 수로 제한한다 |
 | 지시서 삭제 | `lib/spec.ts` 한 경로 | 살아 있는 dispatch 의 지시서와, 그 목록을 읽지 못한 실행에서는 지우지 않는다 |
 

@@ -14,10 +14,10 @@
 | 이벤트당 파일 | 하나다. 한 이벤트에 여러 일을 하려면 그 파일이 모듈을 import 해 순서를 정한다 |
 | 실행 | `node --disable-warning=ExperimentalWarning <파일>`. 작업 디렉터리는 주 checkout 이다. `verify-merged` 만 합친 사본이다 |
 | 입력 | stdin 의 JSON 객체 하나 |
-| 환경 | `ORCH_EVENT`, `ORCH_REPO`, `ORCH_DIR`. `PATH` 앞에 가드 shim 폴더를 두고 `ORCA`, `GH` 도 그 shim 을 가리킨다 |
-| 출력 | stdout 과 stderr 를 코어 출력에 `[hook <이벤트>] ` 를 붙여 옮긴다. 거부 이유는 stdout 의 마지막 줄이다 |
-| 시간 제한 | 기본 120초. `before-merge`, `verify-merged`, `after-queue`, `after-deploy` 는 1800초. `config.json` 의 `hooks.timeouts.<이벤트>` 로 바꾼다. 넘으면 TERM, 10초 뒤 KILL 이다 |
-| 동시 실행 | 같은 저장소의 같은 이벤트는 `<orch 루트>/state/hooks/<이벤트>.lock` 을 잡고 하나씩 돈다 |
+| 환경 | `ORCH_EVENT`, `ORCH_REPO`, `ORCH_DIR`. `PATH` 앞에 가드 shim 폴더를 두고 `ORCA`, `GH` 도 그 shim 을 가리킨다. `ORCH_REAL_ORCA`, `ORCH_REAL_GH` 는 가드 shim 이 부를 진짜 실행 파일의 절대경로이고, 찾지 못하면 넘기지 않는다. 가드는 보안 경계가 아니다 |
+| 출력 | stdout 과 stderr 를 코어 출력에 `[hook <이벤트>] ` 를 붙여 옮긴다. 거부 이유는 stdout 의 마지막 빈 줄 아닌 줄이고, 없으면 `(이유 없음)` 이다 |
+| 시간 제한 | 기본 120초. `before-merge`, `verify-merged`, `after-queue`, `after-deploy` 는 1800초. `config.json` 의 `hooks.timeouts.<이벤트>` 로 바꾼다. 넘으면 TERM, 10초 뒤 KILL 이다. 핸들러가 끝난 뒤 출력 파이프를 쥔 프로세스가 남으면 2초 뒤 그룹에 TERM, 다시 2초 뒤 KILL 이고, 판정은 핸들러의 종료 코드로 한다. 핸들러보다 오래 돌 일은 stdout 과 stderr 를 넘기지 않고 띄운다 |
+| 동시 실행 | 같은 저장소의 같은 이벤트는 `<orch 루트>/state/hooks/<이벤트>.lock` 을 잡고 하나씩 돈다. 잠금 파일은 배타 생성(`wx`)으로 만들고 pid 를 적는다. 다른 실행이 쥐고 있으면 0.5초 간격으로 다시 보며 그 이벤트의 시간 제한에 15초를 더한 만큼 기다린다. 쥔 쪽은 시간 제한과 KILL 유예 10초 안에 끝나기 때문이다. 넘으면 실패로 보고 `HOOK-FAIL <이벤트> lock` 이다. 같은 이벤트가 셋 이상 겹쳐 앞의 실행들이 시간 제한 가까이 돌면 뒤 실행이 이 실패로 끝나는 것은 의도한 동작이다. 죽은 pid 의 잠금은 고유 이름으로 옮긴 뒤 내용을 대조해 회수한다. 보장 범위와 남긴 경합은 `lib/events.ts` 머리 주석의 「잠금」 이 소유한다 |
 
 ### 종료 코드
 
@@ -101,12 +101,12 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 
 ## config.json 에 더하는 절
 
-`.orch/config.json` 의 지금 절(`finish`, `cleanup`, `queue`)은 그대로 읽는다. 모르는 키에 사용법 오류로 멈추는 규칙도 그대로다.
+`.orch/config.json` 의 지금 절(`finish`, `cleanup`, `queue`)은 그대로 읽는다. 모르는 키에 사용법 오류로 멈추는 규칙도 그대로다. 모르는 최상위 절도 같은 사용법 오류다.
 아래 절을 더한다.
 
 | 절 | 키 | 타입 | 기본값 | 담는 것 |
 | --- | --- | --- | --- | --- |
-| `hooks` | `timeouts` | 이벤트 이름에서 초로 | 위 「위치와 실행」 | 핸들러 시간 제한 |
+| `hooks` | `timeouts` | 이벤트 이름에서 초로. 모르는 이벤트 이름이나 양수가 아닌 값은 사용법 오류다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
 | `pipeline` | `enabled` | bool | false | 상주 루프의 자동 진행(ready 슬롯, 문서 PR 바로 머지, 배포 묶기)을 켠다. 질문 확인과 원격 브랜치 정리는 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | number | 300 | 틱 간격 |
 | `pipeline` | `ready_slots` | number | 1 | 동시에 ready 로 둘 내 PR 수. CI runner 수에 맞춘다 |
@@ -132,7 +132,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
 | `hooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
-| `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason` | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
+| `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. 옛 설정 칸 실행의 `handler` 는 `legacy:<키>` 다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
 | `state/hooks/<이벤트>.lock` | 핸들러 잠금 | 실행이 끝나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다 |
 | `state/loop.json` | 상주 루프의 pid, 시작 시각, 마지막 틱, PR 마다 마지막으로 본 체크 상태와 알린 이벤트 | 루프가 덮어쓴다. 같은 상태를 두 번 알리지 않는 데 쓴다 |
 | `state/order.json` | 머지 순서. PR 번호 목록 | 머지되거나 닫힌 PR 은 루프가 뺀다 |

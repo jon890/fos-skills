@@ -24,10 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          check-latest: true
       - name: Install Claude Code CLI
         run: npm install --global @anthropic-ai/claude-code@2.1.309
       - name: Run plugin tests from repository root
         run: claude plugin test .
+      - name: Run orch node tests
+        run: node --test --test-concurrency=4 "orch/tests/*.spec.ts"
 
   python:
     name: Python tests

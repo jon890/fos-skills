@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.6.1 (2026-10-24)
+
+- 명령을 TypeScript 로 옮길 공용 모듈을 `scripts/lib/` 에 더했다. 자식 프로세스 실행(`proc.ts`), orca, gh, git 호출, pid 생존 판정(`process.ts`), 경로(`paths.ts`), 설정(`config.ts`), 지시서(`spec.ts`)다. 지시서 삭제는 살아 있는 dispatch 를 확인하는 한 경로로 모았다.
+- 이벤트 실행기 `scripts/lib/events.ts` 를 더했다. 저장소의 `<orch 루트>/hooks/<이벤트>.ts` 를 찾아 잠금, 시간 제한(그룹 TERM, 10초 뒤 KILL), 실행 기록(`state/hooks.jsonl`), 종료 코드 해석(0 통과, 10 거부)을 맡는다. 옛 설정 칸을 argv 로 받아 핸들러처럼 돌리는 `legacy` 어댑터를 함께 두었다. 죽은 pid 의 잠금은 고유 이름으로 옮겨 내용을 대조해 회수하고, 그 사이 다른 실행이 만든 새 잠금이면 덮어쓰지 않는 `link` 로 되돌린다.
+- 핸들러는 끝났는데 백그라운드 손자 프로세스가 출력 파이프를 쥐고 있어도 시간 제한까지 기다리지 않는다. 2초 안에 파이프가 닫히지 않으면 그룹에 TERM, 다시 2초 뒤에도 닫히지 않으면 KILL 을 보내고 핸들러의 종료 코드로 판정한다. `runAsync` 도 자식이 끝나고 2초 뒤 파이프를 닫고 자식의 종료 코드를 낸다.
+- 거부한 핸들러가 이유 줄을 내지 않으면 `HOOK-REJECT <이벤트> (이유 없음)` 으로 알린다.
+- 실행 기록(`state/hooks.jsonl`)을 쓰지 못하면 예외로 멈추지 않고 stderr 에 경고 한 줄을 낸다. 결과와 `HOOK-*` 줄은 그대로 낸다.
+- 핸들러 PATH 앞에 두는 가드 shim `scripts/lib/guard/orca`, `scripts/lib/guard/gh` 를 더했다. 핸들러의 `orca terminal send`, `gh pr merge`, `gh pr update-branch`, PR 머지와 브랜치 갱신 API, GraphQL 의 머지 mutation 을 126 으로 거부한다. GraphQL 의 `--input` 과 `@` 로 파일에서 읽는 필드는 내용을 확인할 수 없어 거부하고, orca 는 플래그를 건너뛴 낱말 열에서 `terminal` 뒤에 `send` 가 있으면 거부한다. 실수 방지 장치이고 보안 경계가 아니다.
+- `node:test` 테스트(`tests/*.spec.ts`)를 더하고 CI 의 `Plugin tests` job 에서 돌린다.
+- 명령은 아직 바꾸지 않았다. 코디네이터 지시도 그대로다.
+
 ## 2.6.0 (2026-10-24)
 
 - 지시서의 `허락:` 줄을 PR 을 열게 하는지와 관계없이 모든 지시서에 필수로 정했다. 공통 지시서 틀에서 Run id 를 빼고, PR 생성은 지시서의 허락 줄을 따르게 했다.
