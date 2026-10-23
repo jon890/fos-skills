@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.46.0 (2026-10-23)
+
+- `heavy-slot.py` 로 여러 worker 의 무거운 검사를 FIFO 대기열과 기본 3개 자리로 제한한다. 독점 실행, 중첩 호출, 죽은 PID 회수와 `mem-gate.sh` 대기를 지원하며 경로와 자리 수를 인자나 환경 변수로 받는다.
+- 대기열 사용법과 실행 수명 검사를 추가했다. 특정 저장소의 우선 검사 파일과 전역 Docker 프로세스 감시는 포함하지 않는다.
+
 ## 1.45.0 (2026-10-23)
 
 - `remove-worktree.sh` 가 OMC session-end hook worker 의 자손 프로세스도 hook 으로 센다. 대기 도중 hook 의 자식이 생겨 대기 시간이 `--wait` 로 줄고 첫 정리가 거부되던 문제를 고쳤다.
