@@ -53,6 +53,8 @@
 #   --shared-paths RE     overlap 에서 어느 쪽에 있든 겹친 것으로 보는 공용 경로의 정규식(grep -E 처럼 경로 어디든 맞는다).
 #                         모든 모듈에 영향을 주는 경로(공용 모듈, 루트 빌드 파일, 계약, CI 설정)를 적는다
 #   --unit-prefix P       overlap 에서 폴더 하나를 단위로 보는 접두. 기본 modules/
+#   --unit-group A,B      overlap 에서 한 단위로 세는 단위 묶음. 여러 번 줄 수 있다. 계약 파일 없이 서로의 응답 모양에
+#                         기대는 모듈 쌍(화면 모듈과 그 BFF)은 폴더가 달라도 묶음 안 어느 쪽이 바뀌든 겹친 것으로 본다
 #   --stop-on-overlap     PR 의 바뀐 파일이 PR 기준 이후 base 에서 바뀐 파일과 겹치면 `STOP PR 겹침: 파일...` 로 멈춘다
 #   --verify-merged CMD   겹치면 origin/BASE 에 PR HEAD 를 merge 한 임시 사본을 만들고, 그 안에서 CMD 를 bash -c 로
 #                         돌린다. 사본의 절대경로를 첫 인자($1)로 받는다. 0 이면 이어 가고 아니면 멈춘다.
@@ -121,6 +123,7 @@ OVERLAP=0
 UP_TO_DATE_WHEN=always
 SHARED_PATHS=""
 UNIT_PREFIX="modules/"
+UNIT_GROUPS=()
 OVERLAP_UNITS=${OVERLAP_UNITS:-$SCRIPT_DIR/overlap_units.py}
 VERIFY_MERGED=""
 VERIFY_WHEN=overlap
@@ -150,6 +153,7 @@ while [ $# -gt 0 ]; do
     --up-to-date-when) need "$1" "${2:-}"; UP_TO_DATE_WHEN=$2; shift 2 ;;
     --shared-paths) need "$1" "${2:-}"; SHARED_PATHS=$2; shift 2 ;;
     --unit-prefix) need "$1" "${2:-}"; UNIT_PREFIX=$2; shift 2 ;;
+    --unit-group) need "$1" "${2:-}"; UNIT_GROUPS+=(--unit-group "$2"); shift 2 ;;
     --stop-on-overlap) OVERLAP=1; shift ;;
     --verify-merged) need "$1" "${2:-}"; VERIFY_MERGED=$2; OVERLAP=1; shift 2 ;;
     --verify-merged-when) need "$1" "${2:-}"; VERIFY_WHEN=$2; shift 2 ;;
@@ -175,12 +179,13 @@ case "$UP_TO_DATE_WHEN" in always|overlap) ;; *) echo "--up-to-date-when 은 alw
 if [ "$UP_TO_DATE_WHEN" = overlap ]; then
   [ "$UP_TO_DATE" = 1 ] || { echo "--up-to-date-when overlap 은 --require-up-to-date 와 함께 쓴다" >&2; exit 2; }
 else
-  [ -z "$SHARED_PATHS" ] || { echo "--shared-paths 는 --up-to-date-when overlap 과 함께 쓴다" >&2; exit 2; }
+  [ -z "$SHARED_PATHS" ] && [ ${#UNIT_GROUPS[@]} -eq 0 ] \
+    || { echo "--shared-paths 와 --unit-group 은 --up-to-date-when overlap 과 함께 쓴다" >&2; exit 2; }
 fi
 if [ -z "$VERIFY_MERGED" ]; then
   [ "$VERIFY_WHEN" = overlap ] || { echo "--verify-merged-when $VERIFY_WHEN 은 --verify-merged 와 함께 쓴다" >&2; exit 2; }
   [ -z "$DOCS_GLOB" ] || [ -n "$AFTER_MERGED" ] || [ "$UPDATE_DOCS" = 1 ] || [ "$UP_TO_DATE_WHEN" = overlap ] \
-    || { echo "--docs-glob 은 --after-merged, --verify-merged, --up-to-date-when overlap 과 함께 쓴다" >&2; exit 2; }
+    || { echo "--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다(--up-to-date-when overlap 과도 쓴다)" >&2; exit 2; }
 fi
 [ "$UPDATE_DOCS" = 0 ] || [ -n "$DOCS_GLOB" ] || { echo "--update-docs-on-overlap 은 --docs-glob 이 필요하다" >&2; exit 2; }
 case "$REQUIRED" in *[\"\\]*) echo "--required 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
@@ -311,7 +316,7 @@ needs_update() {
     return 0
   fi
   verdict=$(python3 "$OVERLAP_UNITS" --base "origin/$base" --head "$ph" --shared-paths "$SHARED_PATHS" \
-    --unit-prefix "$UNIT_PREFIX" --docs-glob "$DOCS_GLOB" 2>&1)
+    --unit-prefix "$UNIT_PREFIX" --docs-glob "$DOCS_GLOB" ${UNIT_GROUPS[@]+"${UNIT_GROUPS[@]}"} 2>&1)
   code=$?
   case "$code" in
     0) echo "$(now) $n 판정: $verdict"; return 1 ;;

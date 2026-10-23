@@ -221,6 +221,16 @@ class WrapperRunTest(unittest.TestCase):
         self.assertIn("--shared-paths ^lib/", line)
         self.assertNotIn("--require-up-to-date", line)
 
+    def test_queue_section_unit_groups_become_repeated_options(self):
+        self.write_config({"unit_groups": [["web", "bff"], ["a", "b", "c"]]})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertIn("--unit-group web,bff --unit-group a,b,c", self.lines("queue")[0])
+        self.log.unlink()
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--unit-group", "x,y", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--unit-group x,y", line)
+        self.assertNotIn("web", line)
+
     def test_command_line_wins_over_overlap_keys(self):
         self.write_config({"up_to_date_when": "overlap", "unit_prefix": "apps/"})
         self.wrap("--repo", str(self.tmp), "--no-finish", "--up-to-date-when", "always", "449")
@@ -244,7 +254,8 @@ class WrapperRunTest(unittest.TestCase):
 
     def test_bad_overlap_and_sweep_values_are_usage_errors(self):
         for queue in ({"sweep_args": "--run"}, {"sweep_args": [1]}, {"sweep_args": [""]}, {"up_to_date_when": ""},
-                      {"shared_paths": []}, {"require_up_to_date": "yes"}):
+                      {"shared_paths": []}, {"require_up_to_date": "yes"}, {"unit_groups": []},
+                      {"unit_groups": ["web,bff"]}, {"unit_groups": [["web"]]}, {"unit_groups": [["a,b", "c"]]}):
             with self.subTest(queue=queue):
                 self.write_config(queue)
                 code, out = self.wrap("--repo", str(self.tmp), "449")

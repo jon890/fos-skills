@@ -88,6 +88,25 @@ class JudgeTest(unittest.TestCase):
         v = ou.judge(["modules/common/Util.java"], ["modules/web/C.java"], shared_paths="")
         self.assertFalse(v.update)
 
+    def test_grouped_units_count_as_one_unit(self):
+        groups = [["web", "bff"]]
+        v = judge(["modules/web/A.ts"], ["modules/bff/B.java"], groups=groups)
+        self.assertEqual("갱신 필요(단위 겹침: web+bff)", str(v))
+        self.assertTrue(judge(["modules/bff/B.java"], ["modules/web/A.ts"], groups=groups).update)
+        self.assertFalse(judge(["modules/web/A.ts"], ["modules/bff/B.java"]).update)
+
+    def test_group_does_not_pull_in_other_units(self):
+        self.assertFalse(judge(["modules/web/A.ts"], ["modules/api/B.java"], groups=[["web", "bff"]]).update)
+
+    def test_group_members_may_be_plain_file_units(self):
+        self.assertTrue(judge(["scripts/a.sh"], ["scripts/b.sh"], groups=[["scripts/a.sh", "scripts/b.sh"]]).update)
+
+    def test_unit_in_two_groups_is_an_error(self):
+        with self.assertRaises(ValueError):
+            ou.group_map([["a", "b"], ["b", "c"]])
+        # 같은 묶음을 두 번 적은 것은 모호하지 않다
+        self.assertEqual({"a": "a+b", "b": "a+b"}, ou.group_map([["a", "b"], ["a", "b"]]))
+
     def test_long_name_lists_are_shortened(self):
         v = judge([f"modules/m{i}/a" for i in range(6)], [f"modules/m{i}/b" for i in range(6)])
         self.assertEqual("갱신 필요(단위 겹침: m0, m1, m2 외 3)", str(v))
@@ -178,6 +197,17 @@ class GitIntegrationTest(unittest.TestCase):
         code, out, _ = self.cli()
         self.assertEqual(1, code)
         self.assertIn("api", out)
+
+    def test_unit_group_option(self):
+        self.diverge("modules/api/B.java", "modules/web/C.java")
+        self.assertEqual((1, "갱신 필요(단위 겹침: api+web)", ""), self.cli("--unit-group", "api,web"))
+        self.assertEqual((0, "바로 머지", ""), self.cli("--unit-group", "api,db", "--unit-group", "web,x"))
+
+    def test_conflicting_unit_groups_cannot_be_judged(self):
+        self.diverge("modules/api/B.java", "modules/web/C.java")
+        code, _, err = self.cli("--unit-group", "api,web", "--unit-group", "web,db")
+        self.assertEqual(2, code)
+        self.assertTrue(err.startswith("오류:"), err)
 
     def test_unknown_ref_cannot_be_judged(self):
         self.diverge("modules/api/B.java", "modules/web/C.java")

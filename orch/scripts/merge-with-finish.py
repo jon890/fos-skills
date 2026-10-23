@@ -34,6 +34,7 @@ after_merged, up_to_date_when, shared_paths, unit_prefix 이고 각각 --before,
 --verify-merged-when, --docs-glob, --method, --after-merged, --up-to-date-when, --shared-paths, --unit-prefix 가 된다.
 required 와 docs_glob 은 문자열 목록도 받아 쉼표로 잇고, shared_paths 는 정규식 목록도 받아 `|` 로 잇는다.
 skipped_is_missing, update_docs_on_overlap, require_up_to_date 는 true 면 같은 이름의 옵션을 붙이는 참거짓 값이다.
+unit_groups 는 단위 이름 목록의 목록이고 안쪽 목록마다 `--unit-group a,b` 가 된다.
 sweep_args 는 문자열 목록이고 항목마다 `--sweep-arg` 로 넘어간다. 명령줄에 `--sweep-arg` 가 하나라도 있으면 목록은 쓰지 않는다.
 명령줄에 준 옵션이 우선한다. 모르는 키가 있으면 사용법 오류다.
 저장소마다 같은 옵션을 매번 옮겨 적다 빠뜨리는 일을 막는다.
@@ -62,7 +63,7 @@ FINISH_PR = os.environ.get("FINISH_PR", str(HERE / "finish-pr.py"))
 # merge-queue.sh 가 값을 받는 옵션. 값이 숫자여도 PR 번호로 읽지 않으려고 안다. tests 가 merge-queue.sh 와 맞는지 본다
 VALUE_OPTIONS = {"--repo", "--before", "--method", "--threads-cmd", "--check-timeout", "--required", "--allow-fail",
                  "--verify-merged", "--verify-merged-when", "--docs-glob", "--copy-dir", "--sweep-arg", "--after-merged",
-                 "--up-to-date-when", "--shared-paths", "--unit-prefix"}
+                 "--up-to-date-when", "--shared-paths", "--unit-prefix", "--unit-group"}
 DEFAULT_CONFIG = ".claude/orch-finish.json"
 # orch-finish.json 의 queue 절 키와 머지 큐 옵션
 QUEUE_KEYS = {"before": "--before", "required": "--required", "verify_merged": "--verify-merged",
@@ -76,6 +77,8 @@ QUEUE_FLAGS = {"skipped_is_missing": "--skipped-is-missing", "update_docs_on_ove
                "require_up_to_date": "--require-up-to-date"}
 # queue 절의 문자열 목록 키. 항목마다 같은 옵션을 한 번씩 붙인다
 QUEUE_REPEATED = {"sweep_args": "--sweep-arg"}
+# queue 절의 묶음 목록 키. 안쪽 목록 하나가 `--unit-group a,b` 하나가 된다
+QUEUE_GROUPS = {"unit_groups": "--unit-group"}
 SPEC = re.compile(r"(\d+)(!?)(:.*)?$", re.S)
 
 
@@ -171,7 +174,7 @@ def queue_defaults(wrapper, queue, config):
     section = config.get("queue", {})
     if not isinstance(section, dict):
         raise ValueError(f"{path} 의 \"queue\" 절은 객체여야 한다")
-    unknown = sorted(set(section) - set(QUEUE_KEYS) - set(QUEUE_FLAGS) - set(QUEUE_REPEATED))
+    unknown = sorted(set(section) - set(QUEUE_KEYS) - set(QUEUE_FLAGS) - set(QUEUE_REPEATED) - set(QUEUE_GROUPS))
     if unknown:
         raise ValueError(f"{path} 의 queue 절에 모르는 키가 있다: {', '.join(unknown)}")
     given, extra = given_options(queue), []
@@ -200,6 +203,17 @@ def queue_defaults(wrapper, queue, config):
         if option not in given:
             for value in values:
                 extra += [option, value]
+    for key, option in QUEUE_GROUPS.items():
+        if key not in section:
+            continue
+        groups = section[key]
+        if not (isinstance(groups, list) and groups and all(
+                isinstance(g, list) and len(g) >= 2 and all(isinstance(m, str) and m and "," not in m for m in g)
+                for g in groups)):
+            raise ValueError(f"{path} 의 queue.{key} 는 단위 이름이 둘 이상인 문자열 목록의 목록이어야 한다")
+        if option not in given:
+            for members in groups:
+                extra += [option, ",".join(members)]
     return extra
 
 

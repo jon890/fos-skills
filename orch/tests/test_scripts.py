@@ -504,14 +504,14 @@ class MergeQueueTest(unittest.TestCase):
 
     def test_up_to_date_when_overlap_merges_without_update_when_units_do_not_overlap(self):
         r = self.overlap_queue("바로 머지", 0, "--shared-paths", "^modules/common/", "--unit-prefix", "apps/",
-                               "--docs-glob", "docs/*,*.md")
+                               "--docs-glob", "docs/*,*.md", "--unit-group", "web,bff", "--unit-group", "a,b")
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
         self.assertIn("1 판정: 바로 머지", r.stdout)
         log = self.log.read_text()
         self.assertNotIn("update-branch", log)
         self.assertIn("pr merge 1 --merge --match-head-commit abc", log)
         self.assertEqual("--base origin/main --head abc --shared-paths ^modules/common/ --unit-prefix apps/ "
-                         "--docs-glob docs/*,*.md\n", (self.tmp / "judge-args.txt").read_text())
+                         "--docs-glob docs/*,*.md --unit-group web,bff --unit-group a,b\n", (self.tmp / "judge-args.txt").read_text())
 
     def test_up_to_date_when_overlap_updates_branch_when_units_overlap(self):
         r = self.overlap_queue("갱신 필요(단위 겹침: api)", 1)
@@ -546,7 +546,8 @@ class MergeQueueTest(unittest.TestCase):
         for args, message in (
                 (["--up-to-date-when", "overlap"], "--require-up-to-date 와 함께"),
                 (["--require-up-to-date", "--up-to-date-when", "never"], "always, overlap 중 하나"),
-                (["--shared-paths", "^x/"], "--up-to-date-when overlap 과 함께")):
+                (["--shared-paths", "^x/"], "--up-to-date-when overlap 과 함께"),
+                (["--unit-group", "a,b"], "--up-to-date-when overlap 과 함께")):
             with self.subTest(args=args):
                 r = self.run_queue({"1": self.pr()}, *args, "1")
                 self.assertEqual(2, r.returncode, r.stdout + r.stderr)
