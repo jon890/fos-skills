@@ -31,7 +31,7 @@ worker 와 코디네이터가 어느 쪽을 따를지 매번 판단하지 않게
 | --- | --- | --- |
 | `orch/references/spec-writing.md` 「넣을 것」, `orch/scripts/launch-worker.py` | `허락:` 줄을 PR 을 열게 할 때만 적는다는 문장 | 스크립트가 늘 요구하므로 문서도 필수로 적는다. 허락이 없으면 `허락: 없음. push 까지만 한다.` 를 적게 한다 |
 | `orch/SKILL.md` 2단계, `spec-writing.md` 첫 절, `launch.md` | `--spec` 에 들어갈 내용 | `spec-line.py` 가 만든다는 한 문장만 `launch.md` 에 두고, 나머지 두 곳은 그 절을 가리킨다 |
-| `SKILL.md` 6단계, `verification.md` | 무거운 검사를 heavy-slot 으로 / mem-gate 로 감싸라 | `heavy-slot.py` 하나로 맞춘다. 두 문서는 `heavy-checks.md` 를 가리킨다. 그 스크립트가 자리를 잡은 뒤 mem-gate 를 부른다는 동작은 `heavy-slot.py` 머리 주석이 소유한다. 머리 주석에 없으면 옮긴다 |
+| `SKILL.md` 6단계, `verification.md` | 무거운 검사를 heavy-slot 으로 / mem-gate 로 감싸라 | `heavy-slot.py` 하나로 맞춘다. 두 문서는 `heavy-checks.md` 를 가리킨다. 그 스크립트가 자리를 잡은 뒤 mem-gate 를 부른다는 동작은 `heavy-slot.py` 머리 주석이 소유한다(이미 적혀 있다) |
 | `launch.md` | 워크트리를 따로 만든다 / launch-worker 가 한 번에 만든다 | 「새 워크트리와 원격 브랜치 이어 받기(`--resume-remote`)는 `launch-worker.py` 가 만든다. `make-worktree.py` 를 직접 부르는 것은 6단계의 `--check` 뿐이다」 로 맞춘다 |
 | `spec-writing.md` 머지 순서, `templates/spec-common.md` | 머지 순서를 지시서에 적어라 / PR 분할과 순서는 worker 가 정한다 | PR 분할은 worker 판단, 머지 순서는 코디네이터가 정해 지시서에 적는다로 나눈다 |
 | `spec-writing.md`, `templates/spec-common.md` | 공통 지시서에 `{{RUN_ID}}` 를 채운다 | 공통 지시서의 `worker-ask.py` 호출에서 `--run {{RUN_ID}}` 쌍을 지우고, `spec-writing.md` 에서 `{{RUN_ID}}` 를 채우라는 문장을 지운다. `worker-ask.py` 는 `--run` 이 없으면 peek 결과에서 Run id 를 찾는다(그 스크립트의 `--run` 처리). 개별 지시서에 Run 줄을 새로 더하지 않는다. Run 마다 바뀌는 값은 공통 틀에 두지 않는다(`docs/code-architecture.md` 「orch 문서가 소유하는 것」) |
@@ -39,7 +39,7 @@ worker 와 코디네이터가 어느 쪽을 따를지 매번 판단하지 않게
 | `SKILL.md` 6단계 통과 조건, `verification.md` 「차례로 머지할 때 최신 base 와 합쳐 다시 검사한다」 절 | 합친 사본 검증 | 6단계 통과 조건에서 뺀다. `verification.md` 의 그 절은 지우고 「합친 사본 검증은 7단계 머지 큐가 `queue.verify_merged` 가 있을 때 한다. `cleanup.md` 의 그 절을 본다」 한 줄로 바꾼다. 내용은 `cleanup.md` 가 소유한다 |
 | `SKILL.md` 5단계, `launch.md` 「끊긴 worker 다시 띄우기」 | 끝난 dispatch 터미널을 이어 쓴다 / 닫고 새로 띄운다 | `send-to-worker.py` 의 동작으로 맞춘다. 끝난 dispatch 의 터미널이 남았으면 `--spec` 후속 지시서로 그 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. 터미널도 없으면 종료 코드 3 이다. 판정은 그 스크립트 머리 주석이 소유한다 |
 | `agent-selection.md` 첫 절, `launch.md` 예시, `waiting.md` 의 `worker-start --retry-of` 예시 | 기본값을 두지 않는다 / 예시가 모델과 effort 를 고정한다 | 예시의 `--model`, `--effort` 값을 `"$MODEL"`, `"$EFFORT"` 변수로 바꾸고 1단계에서 고른 값이라고 적는다 |
-| `SKILL.md` 3단계, `launch.md`, `waiting.md`, `replying.md` | `worker-start` 를 직접 부르지 않는다 / 직접 부르게 한다 | 「새로 띄우기는 `launch-worker.py`, 후속 지시는 `send-to-worker.py` 로 한다. 기존 Task 를 `--task --retry-of` 로 다시 띄우는 것만 예외로 `worker-start` 를 직접 부른다(두 스크립트가 `--retry-of` 를 받지 않는다)」 로 맞춘다. `SKILL.md` 3단계 문장에 이 예외를 적고, 네 문서의 `--retry-of` 예시는 그대로 두되 그 예외라고 밝힌다. `--retry-of` 가 아닌 직접 호출 예시가 있으면 두 스크립트로 바꾼다 |
+| `SKILL.md` 3단계, `launch.md`, `waiting.md`, `replying.md` | `worker-start` 를 직접 부르지 않는다 / 직접 부르게 한다 | 「새로 띄우기는 `launch-worker.py`, 후속 지시는 `send-to-worker.py` 로 한다. `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다(`launch-worker.py` 는 `--spec` 이 필수라 늘 Task 를 새로 만든다)」 로 맞춘다. `SKILL.md` 3단계 문장에 이 예외를 적고, 네 문서의 `--task` 예시는 그대로 두되 그 예외라고 밝힌다. `--task` 없이 `worker-start` 를 부르는 예시가 있으면 두 스크립트로 바꾼다 |
 | `cleanup.md` 「정리」 | 스크립트가 안 하는 일만 직접 한다 / 스크립트가 하는 1~4단계를 다시 시킨다 | 1~4단계 목록을 지우고, 스크립트가 건너뛴 항목을 읽는 법과 5, 6단계(작업 문서, 보드)만 남긴다 |
 | `cleanup.md` 「워크트리 지우기」, 「정리」 | squash 머지 워크트리를 사용자에게 알리고 지운다 / 묻지 않고 정리한다 | 묻지 않고 정리한다로 맞춘다. `--merged-head` 가 squash 를 다룬다 |
 | `cleanup.md` 「handoff 산출물 정리」, `SKILL.md` 7단계 | 후보를 보인 뒤 `--apply` / 바로 옮긴다 | 사용자 결정(2026-10-24)대로 묻지 않고 `--apply` 로 옮긴다. 휴지통 폴더라 되살릴 수 있다고 적는다 |
@@ -80,5 +80,4 @@ python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/references
 | `orch/references/board.md` | 수정 |
 | `orch/references/agent-selection.md` | 수정 |
 | `orch/templates/spec-common.md` | 수정 |
-| `orch/scripts/heavy-slot.py` | 수정 |
 | `orch/tests/test_template_script_path.py` | 수정 |
