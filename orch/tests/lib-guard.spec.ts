@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -65,8 +65,9 @@ describe('통과하는 호출은 진짜 실행 파일로 간다', () => {
   }
 
   test('stdin 을 진짜 실행 파일에 넘긴다', () => {
+    // /bin/cat 을 다른 이름으로 링크하면 다중 호출 coreutils(ubuntu 의 uutils)가 이름이 다르다고 거부한다
     const cat = join(tmp, 'cat-gh')
-    symlinkSync('/bin/cat', cat)
+    writeFileSync(cat, '#!/bin/sh\nexec cat\n', { mode: 0o755 })
     const r = shim('gh', [], { ORCH_REAL_GH: cat }, '입력 한 줄\n')
     assert.equal(r.code, 0, r.stderr)
     assert.equal(r.stdout, '입력 한 줄\n')
