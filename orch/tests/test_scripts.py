@@ -302,6 +302,28 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual(1, r.returncode, r.stdout + r.stderr)
         self.assertIn("STOP 1 state=조회 실패", r.stdout)
 
+    def test_empty_retry_variables_use_the_defaults(self):
+        self.env.update(MERGE_QUEUE_GH_RETRIES="", MERGE_QUEUE_GH_RETRY_SECONDS="")
+        r = self.run_queue({"1": self.pr(), "_view_fails": 2}, "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        # 한쪽만 비어도 다른 쪽 값은 그대로 쓴다
+        self.env.update(MERGE_QUEUE_GH_RETRIES="", MERGE_QUEUE_GH_RETRY_SECONDS="0")
+        r = self.run_queue({"1": self.pr(), "_view_fails": 3}, "1")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("STOP 1 state=조회 실패", r.stdout)
+
+    def test_non_integer_retry_variables_are_checked_one_by_one(self):
+        for name, other in (("MERGE_QUEUE_GH_RETRIES", "MERGE_QUEUE_GH_RETRY_SECONDS"),
+                            ("MERGE_QUEUE_GH_RETRY_SECONDS", "MERGE_QUEUE_GH_RETRIES")):
+            for bad in ("x", "-1", "1.5", "²"):
+                with self.subTest(name=name, bad=bad):
+                    self.env.update({name: bad, other: "1"})
+                    r = self.run_queue({"1": self.pr()}, "1")
+                    self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+                    self.assertIn(f"{name} 는 정수다", r.stderr)
+                    self.assertNotIn("Traceback", r.stderr)
+
     def test_skipped_required_check_counts_only_with_the_option(self):
         skipped = [{"name": "verify", "status": "COMPLETED", "conclusion": "SKIPPED"}]
         r = self.run_queue({"1": self.pr(statusCheckRollup=skipped)}, "--required", "verify", "1")

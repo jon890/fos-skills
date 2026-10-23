@@ -361,10 +361,12 @@ class Queue:
             if not rt.is_file():
                 raise Usage(f"review_threads.py 를 찾지 못했다: {rt}. --threads-cmd 로 준다")
             o.threads_cmd = f"python3 '{rt}' list --count \"$OWNER\" \"$REPO\" \"$PR\""
-        retries = os.environ.get("MERGE_QUEUE_GH_RETRIES", "3")
-        seconds = os.environ.get("MERGE_QUEUE_GH_RETRY_SECONDS", "10")
-        if not (retries + seconds).isdigit():
-            raise Usage("MERGE_QUEUE_GH_RETRIES 와 MERGE_QUEUE_GH_RETRY_SECONDS 는 정수다")
+        # 빈 값은 설정하지 않은 것으로 보고 기본값을 쓴다
+        retries = os.environ.get("MERGE_QUEUE_GH_RETRIES") or "3"
+        seconds = os.environ.get("MERGE_QUEUE_GH_RETRY_SECONDS") or "10"
+        for name, value in (("MERGE_QUEUE_GH_RETRIES", retries), ("MERGE_QUEUE_GH_RETRY_SECONDS", seconds)):
+            if not (value.isascii() and value.isdigit()):
+                raise Usage(f"{name} 는 정수다: {value!r}")
         self.gh_retries, self.gh_retry_seconds = int(retries), int(seconds)
         self.drop_stale_copies()
 
