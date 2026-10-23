@@ -2,7 +2,7 @@
 """Run a heavy check in a machine-wide FIFO queue.
 
 Usage: heavy-slot.py [--exclusive] [--slot-dir DIR] [--slots N] -- COMMAND...
-HEAVY_SLOT_DIR defaults to TMPDIR/orch-heavy-UID; HEAVY_SLOTS defaults to 3.
+HEAVY_SLOT_DIR defaults to orch_paths heavy-slot; HEAVY_SLOTS defaults to 3.
 HEAVY_EXCLUSIVE=1 requests all slots. HEAVY_POLL defaults to 5 seconds.
 Light checks bypass the queue. Nested calls inherit HEAVY_SLOT_HELD.
 The adjacent mem-gate.sh runs after admission (MEM_GATE overrides its path).
@@ -18,8 +18,8 @@ import re
 import signal
 import subprocess
 import sys
-import tempfile
 import time
+import orch_paths
 
 LIGHT = [
     r'^(pnpm( -s)?( exec)? )?(tsc|oxlint|oxfmt)\b',
@@ -69,11 +69,14 @@ class Queue:
     def rows(self):
         rows = []
         for entry in self.root.glob('*.json'):
-            row = json.loads(entry.read_text())
-            if not alive(row['pid']):
+            pid = int(entry.stem)
+            if not alive(pid):
                 entry.unlink()
-            else:
-                rows.append(row)
+                continue
+            row = json.loads(entry.read_text())
+            if row['pid'] != pid:
+                raise ValueError(f'queue PID mismatch: {entry}')
+            rows.append(row)
         return sorted(rows, key=lambda r: (r['ticket'], r['pid']))
 
     def register(self, exclusive):
@@ -130,7 +133,7 @@ def interrupted(signum, _frame):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--exclusive', action='store_true')
-    parser.add_argument('--slot-dir', default=os.environ.get('HEAVY_SLOT_DIR', str(Path(tempfile.gettempdir()) / f'orch-heavy-{os.getuid()}')))
+    parser.add_argument('--slot-dir', default=os.environ.get('HEAVY_SLOT_DIR'))
     parser.add_argument('--slots', type=int, default=os.environ.get('HEAVY_SLOTS', '3'))
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -144,7 +147,9 @@ def main(argv=None):
     exclusive = args.exclusive or os.environ.get('HEAVY_EXCLUSIVE') == '1' or classify(cmd) == 'exclusive'
     if not exclusive and classify(cmd) == 'light':
         return run_command(cmd)
-    queue = Queue(args.slot_dir, args.slots)
+    if not args.slot_dir and not orch_paths.require_migrated(script='heavy-slot', bypass='--slot-dir 로 공유할 대기열을 직접 준다'):
+        return 2
+    queue = Queue(args.slot_dir or orch_paths.ensure('heavy-slot'), args.slots)
     signal.signal(signal.SIGINT, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
     try:

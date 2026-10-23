@@ -16,7 +16,7 @@ python3 "$SKILL_DIR/scripts/heavy-slot.py" --exclusive -- pnpm verify
 
 | 설정 | 기본값 | 용도 |
 | --- | --- | --- |
-| `HEAVY_SLOT_DIR`, `--slot-dir` | `TMPDIR/orch-heavy-UID` | 같은 PC 의 worker 가 공유할 대기열 폴더 |
+| `HEAVY_SLOT_DIR`, `--slot-dir` | `orch_paths.py` 의 `heavy-slot` (`.orch/state/heavy-slot/`) | 같은 PC 의 worker 가 공유할 대기열 폴더 |
 | `HEAVY_SLOTS`, `--slots` | `3` | 동시에 실행할 자리 수. 같은 대기열은 같은 수를 쓴다 |
 | `HEAVY_EXCLUSIVE` | `0` | `1` 이면 모든 자리를 혼자 사용 |
 | `HEAVY_POLL` | `5`초 | 자리 재확인 간격 |
@@ -30,3 +30,6 @@ macOS 에서 자식 명령의 `TMPDIR` 도 실경로로 전달한다.
 끝난 뒤 자리를 반납한다. 자식이 다시 대기열을 호출하면 `HEAVY_SLOT_HELD` 를 물려받아
 바깥 자리를 사용하므로 중첩 호출이 서로 기다리지 않는다. 이 변수는 수동으로 설정하지 않는다.
 다른 폴더를 쓰는 옛 대기열이나 대기열 밖에서 실행한 명령은 여기서 제한하지 않는다.
+
+기본 경로는 주 checkout 기준이라 다른 워크트리에서도 같은 대기열을 쓴다. `ORCH_DIR` 로 orch 루트를 바꾼다.
+옛 orch 설정과 지시서가 남아 있으면 기본 경로로 실행하지 않고 옮기는 명령을 알린다. 명시한 대기열 폴더는 그대로 받는다.
