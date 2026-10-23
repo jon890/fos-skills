@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "1.46.0"
+  version: "1.47.0"
 ---
 
 # orch
@@ -110,4 +110,5 @@ PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 ## 7. 머지와 정리
 
 `merge-with-finish.py` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다.
+앞 PR 머지마다 뒤 PR 을 최신화하느라 CI 를 다시 기다리는 저장소는 `--up-to-date-when overlap` 으로 겹치지 않는 PR 의 최신화를 생략한다. 쓸 수 있는 저장소와 규칙은 `references/cleanup.md` 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다.
 머지 큐가 끝나면 `notify-conflicts.py` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.sh` 로만 지운다. 끝난 handoff 산출물은 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다.

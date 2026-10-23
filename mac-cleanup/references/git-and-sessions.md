@@ -1,8 +1,8 @@
 # 세션, 브랜치, 워크트리 정리
 
 `survey_sessions.py` 와 `survey_git.py` 의 결과를 실행할 때 읽는다.
-실행할 목록은 `survey_git.py --json` 으로 만든다. 항목마다 `repo`, 브랜치 이름, 끝 커밋 전체 해시 `tip`, 분류 `class` 가 있다.
-텍스트 출력은 사람이 읽는 용도다. 맨 끝 `## 합계` 줄이 저장소 줄(`## 경로`)과 같은 모양이라 줄 단위로 파싱하면 저장소로 잘못 잡힌다.
+실행할 목록은 1단계에서 `survey_git.py --json-out "$SURVEY"` 로 이미 남겼다. 항목마다 `repo`, 브랜치 이름, 끝 커밋 전체 해시 `tip`, 분류 `class` 가 있다.
+텍스트 출력은 사람이 읽는 용도다. 텍스트와 JSON 이 한 번의 조사에서 나오므로 사용자에게 보인 목록과 실행 목록이 같다. 따로 `--json` 으로 다시 돌리면 그 사이 결과가 바뀔 수 있다. 맨 끝 `## 합계` 줄이 저장소 줄(`## 경로`)과 같은 모양이라 줄 단위로 파싱하면 저장소로 잘못 잡힌다.
 
 `$REPO` 는 저장소 경로, `$WT` 는 워크트리 경로, `$BR` 는 브랜치 이름, `$BASE` 는 조사 JSON 의 `base`, `$SURVEY` 는 조사 JSON 을 저장한 파일, `$PIDS` 는 사용자가 지정한 PID 다.
 
@@ -25,7 +25,7 @@ kill -TERM $PIDS
 ## 워크트리
 
 "제거 후보" 는 머지됨, 미커밋 변경 0, 그 브랜치의 stash 0, 사용 중 아님을 모두 만족한 것이다.
-`--check-prs` 로 나온 "제거 후보(PR 머지됨)" 는 머지됨 대신 머지된 PR 이 있는 것이고, 나머지 조건은 같다.
+`survey_git.py` 가 기본으로 도는 PR 조회(`--no-check-prs` 로 끈다)로 나온 "제거 후보(PR 머지됨)" 는 머지됨 대신 머지된 PR 이 있는 것이고, 나머지 조건은 같다.
 기준 브랜치와 같은 커밋에서 막 만든 워크트리도 머지됨으로 잡히므로, 경과 일수가 짧은 것은 사용자에게 한 번 더 확인한다.
 
 Orca 관리 워크트리는 Orca 명령으로 지우고 기록을 정리한다. 그 밖은 git 으로 지운다.
@@ -46,13 +46,13 @@ git -C "$REPO" worktree remove "$WT"
 
 ## 브랜치
 
-실행은 `scripts/delete_branches.py` 가 한다. 입력은 `survey_git.py --json` 을 저장한 파일이다.
+실행은 `scripts/delete_branches.py` 가 한다. 입력은 `survey_git.py --json-out` 으로 저장한 파일이다.
 기본은 dry-run 이라 아무것도 바꾸지 않고, 브랜치마다 무엇을 할지(삭제 예정, 유지와 이유, 건드리지 않음)만 보인다. 사용자 승인 뒤에 `--apply` 를 붙여 돈다.
 `--only` 로 지울 분류를 고른다. `merged`(삭제 후보 `-d`, 기본)와 `pr-merged`(PR 머지됨 `-D`)가 있고, 승인받은 묶음에 맞춰 고른다.
 브랜치마다 결과를 내고 실패가 하나라도 있으면 종료 코드가 1 이다. 원격 브랜치는 이 스킬에서 지우지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/survey_git.py" --json > "$SURVEY"
+python3 "$SKILL_DIR/scripts/survey_git.py" --json-out "$SURVEY"
 python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged
 python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged --apply
 ```
@@ -74,7 +74,7 @@ python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged --apply
 사용자 체크아웃(로컬 main pull 등)은 이 때문에 바꾸지 않는다.
 
 **PR 머지됨(`-D`)은 squash 머지처럼 `--is-ancestor` 로 보이지 않는 머지다.**
-`--check-prs` 가 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조해 낸 분류다.
+PR 조회(`--check-prs`, 기본값)가 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조해 낸 분류다.
 조사와 실행 사이에 커밋이 생길 수 있으므로, 실행 직전 `git rev-parse` 값이 조사 JSON 의 `tip` 과 같을 때만 `-D` 를 쓴다. 다르면 지우지 않는다.
 
 **스크립트가 건드리지 않는 것.**

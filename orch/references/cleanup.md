@@ -10,12 +10,12 @@
 ## 머지
 
 **PR 머지는 `merge-with-finish.py` 로 건다. 사용자가 말하지 않아도 마무리까지 함께 건다.**
-이 스크립트가 PR 마다 `finish-pr.py`(아래 「머지 뒤 마무리」)를 백그라운드로 걸고, 같은 인자로 `merge-queue.sh` 를 돌린다.
+이 스크립트가 PR 마다 `finish-pr.py`(아래 「머지 뒤 마무리」)를 백그라운드로 걸고, 같은 인자로 `merge_queue.py` 를 돌린다.
 머지 큐만 걸면 worker 정리, 배포 확인, 업무 완료, 보드 갱신이 코디네이터의 기억에 달려 빠진다.
-마무리가 필요 없는 저장소만 `merge-queue.sh` 를 직접 걸거나 `merge-with-finish.py --no-finish` 를 쓴다.
+마무리가 필요 없는 저장소만 `merge_queue.py` 를 직접 걸거나 `merge-with-finish.py --no-finish` 를 쓴다.
 
 머지 큐는 오래 걸리므로 Bash 도구의 `run_in_background` 로 건다. 셸의 `&` 나 `nohup` 은 쓰지 않는다.
-`merge-queue.sh` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.py` 머리 주석이 소유한다.
+`merge_queue.py` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.py` 머리 주석이 소유한다.
 PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은 변수 하나로 넘기면 zsh 가 쪼개지 않아 사용법 오류로 끝난다.
 **PR 번호 뒤 `!` 는 그 PR 이 업무의 마지막 PR 이라는 뜻이다.** 업무 하나에 PR 이 여럿이면 마지막 PR 에만 붙인다. 배포가 성공한 뒤 업무가 완료 처리된다.
 
@@ -24,7 +24,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 102 103!
 ```
 
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.claude/orch-finish.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
-**머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
+**머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식, 최신화 규칙, 정리 인자)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.py` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
 스크립트가 충돌 파일을 내고 (PR, base SHA) 마다 한 번만 그 worker 에게 base 를 합치라고 보낸다. 같은 base 로 다시 돌려도 또 보내지 않는다.
@@ -84,6 +84,83 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --required test
 
 ```bash
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
+```
+
+### 겹치지 않는 PR 은 최신화하지 않기
+
+**`--up-to-date-when overlap` 은 `--require-up-to-date` 가 base 를 합치는 때를 줄인다. 기본은 `always`(뒤처졌으면 늘 합친다)이고, 바꾸지 않으면 동작이 달라지지 않는다.**
+`--require-up-to-date` 만 쓰면 앞 PR 이 머지될 때마다 뒤 PR 이 base 를 합치고 필수 CI 를 다시 기다려, PR 하나에 CI 한 번 분량이 더 든다.
+`overlap` 은 PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹치지 않으면 최신화 없이 머지하고, 겹치면 지금처럼 합치고 CI 를 다시 기다린다.
+
+| 규칙 | 내용 |
+| --- | --- |
+| 단위 | `--unit-prefix`(기본 `modules/`) 아래 폴더 하나다. `modules/api/` 아래 파일은 `api` 이고, 그 밖의 파일은 경로 자체가 단위다 |
+| 공용 경로 | `--shared-paths` 정규식에 맞는 파일은 어느 쪽에 있든 겹친 것으로 본다. 공용 모듈, 루트 빌드 파일, 계약, CI 설정처럼 모든 모듈에 영향을 주는 경로다 |
+| 문서 | `--docs-glob` 에 맞는 파일은 양쪽 모두 세지 않는다 |
+| 합칠 것이 없는 경우 | base 에 문서 밖 변경이 없거나(이미 최신이거나 문서만 들어왔다), PR 이 문서만 바꿨으면 겹침을 따지지 않고 바로 머지한다 |
+| 판정 시점 | 큐를 걸 때가 아니라 그 PR 차례가 왔을 때 한다. 앞 PR 이 머지되면 base 가 바뀌기 때문이다 |
+
+판정은 `scripts/overlap_units.py` 가 하고, PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이유)` 한 줄을 찍는다.
+이유는 `단위 겹침: api` 나 `공용 경로: modules/common/Util.java` 꼴이다. 판정하지 못하면(`git` 실패, 잘못된 정규식) 갱신 필요로 다룬다. 안전한 쪽이 기존 동작이다.
+`--require-up-to-date` 가 있어야 한다. 이름을 바꾼 파일은 옛 경로와 새 경로를 모두 센다.
+
+**판정은 처음 한 번으로 끝나지 않는다.** 갱신하고 CI 를 기다리는 사이에 base 가 또 움직이거나, 바로 머지로 판정한 뒤 머지 직전에 base 가 움직이면 다시 판정한다.
+다시 판정할 때 보는 변경은 PR 이 어디서 갈라졌느냐로 정해진다. 갱신을 마친 PR 은 이미 합친 base 를 품어서 새로 들어온 변경만 보지만, 갱신하지 않고 바로 머지로 판정한 PR 은 처음 갈라진 뒤 base 에 들어온 변경을 모두 다시 본다.
+
+| 상황 | 동작 |
+| --- | --- |
+| 갱신한 뒤 base 가 또 움직였다 | PR 의 새 merge-base(이미 합친 base) 이후 변경만 판정한다. 겹치지 않으면 다시 갱신하지 않고 머지하고, 겹칠 때만 또 갱신한다 |
+| 바로 머지로 판정한 뒤 머지 직전에 base 가 움직였다 | `<PR> 판정한 뒤 base(<브랜치>) 가 움직였다. 새로 들어온 변경으로 다시 판정한다` 를 찍고 다시 판정한다. 갱신하지 않은 PR 이라 처음 갈라진 뒤 base 의 변경을 모두 본다. 겹치지 않으면 머지하고, 겹치면 갱신한다 |
+| 다시 판정이 5번을 넘었다 | `STOP <PR> 다시 판정을 5번 했는데도 base(<브랜치>) 가 계속 움직인다` 로 멈춘다. 같은 인자로 다시 걸면 새 base 로 처음부터 판정한다 |
+
+PR HEAD 는 다시 판정하는 동안에도 `--match-head-commit` 으로 지킨다. 머지 전 명령은 PR HEAD 가 바뀐 경우에만 다시 돈다.
+예: 갱신한 지 1분 뒤 base 에 문서만 바꾼 PR 이 머지되면, 예전에는 다시 갱신하고 CI 를 처음부터 기다렸다(15분). 이제는 문서 변경이 겹치지 않는다고 판정해 바로 머지한다.
+
+#### 언제 overlap 을 쓰는가
+
+**공용 경로가 잘 정의된 모노레포에서만 쓴다.** 아래 조건을 모두 확인할 수 있어야 한다.
+
+- 다른 모듈의 코드에 컴파일 의존이 있는 모듈 쌍은 `--unit-group a,b` 로 묶었다. 한 단위가 두 묶음에 들 수 없으므로 의존이 사슬(`web` → `bff` → `billing`)이면 사슬 전체를 한 묶음으로 쓴다. 묶음 설정이 틀리면 큐를 시작할 때 종료 코드 2 로 멈춘다
+- 모든 모듈에 영향을 주는 경로를 `--shared-paths` 로 빠짐없이 적었다. 공용 모듈, 루트 빌드 파일과 버전 카탈로그(`settings.gradle`, `gradle/`, `buildSrc/`), 계약, CI 설정, 공용 테스트 설정, 저장소 전체에서 번호가 하나로 이어지는 마이그레이션이 후보다
+- 머지 뒤 검사가 따로 있다(아래 「머지 뒤 안전망」)
+
+**이 규칙이 놓치는 경우.** 단위가 겹치지 않으면 합친 상태를 아무도 검사하지 않는다.
+
+| 놓치는 경우 | 대응 |
+| --- | --- |
+| 계약 없이 런타임에 호출하는 모듈 쌍(화면 모듈과 그 BFF) | `--unit-group` 으로 묶는다 |
+| 공개 API 를 바꾸고 호출처를 같이 고친 base 변경과, 옛 시그니처를 새로 호출하는 PR | 폴더가 달라 못 잡는다. 모듈 의존을 `--unit-group` 으로 묶거나 `verify_merged_when: code` 를 함께 쓴다 |
+| 같은 이름 공간을 쓰는 자원(마이그레이션 버전 번호, 빈 이름, 라우트, 번역 키) | 경로를 `--shared-paths` 에 넣거나 `verify_merged_when: code` 를 함께 쓴다 |
+| `--shared-paths` 에서 빠진 루트 파일 | 접두 밖 파일은 파일 경로 자체가 단위라 같은 파일을 고칠 때만 겹친다. 루트에서 모듈이 함께 쓰는 파일을 모두 적는다 |
+| 너무 넓은 `--docs-glob`(`*.md` 가 문서 빌드나 doctest 가 읽는 파일일 때) | 문서 glob 은 코드가 읽지 않는 경로로 좁힌다 |
+| 판정한 base 를 마지막으로 확인한 때와 머지 API 를 부르는 때 사이의 짧은 틈 | 막을 수 없다. `--match-head-commit` 은 PR HEAD 만 지키고 base 는 지키지 않는다. 이 틈에 들어온 변경은 머지 뒤 안전망으로 잡는다 |
+| 합친 사본 검사(`--verify-merged`)를 도는 사이 base 가 움직였다 | 놓치지 않고 `STOP <PR> 검사하는 동안 base(<브랜치>) 가 움직였다. 다시 돌린다` 로 멈춘다. 같은 인자로 다시 걸면 새 base 로 검사한다 |
+
+**머지 뒤 안전망.** `overlap` 으로 합친 상태가 깨져도 PR 쪽 CI 는 알 수 없다. 이미 있는 확인은 `finish-pr.py` 의 배포 워크플로 성공 대기(`--deploy-workflow`)뿐이다. 머지 커밋의 배포 실행이 실패하면 `FINISH-FAIL` 로 알린다. 배포 워크플로가 없는 저장소에는 머지 뒤 base CI 를 보는 단계가 없다.
+깨진 조합을 막으려면 `verify_merged_when: code` 를 `overlap` 과 함께 둬 합친 사본에서 컴파일과 영향받는 모듈의 테스트를 돌린다. 이 경우 CI 재대기는 줄지만 로컬 검사 시간은 든다.
+깨진 base 가 나오면 그 PR 을 되돌리는 PR 로 복구한다.
+
+옵션을 매번 적지 않도록 `queue` 절에 둔다. 코디네이터는 `merge-with-finish.py` 만 부르면 된다.
+
+```json
+{
+  "queue": {
+    "required": ["backend", "frontend"],
+    "require_up_to_date": true,
+    "up_to_date_when": "overlap",
+    "shared_paths": ["^modules/common/", "^(settings|build)\\.gradle(\\.kts)?$", "^(gradle|buildSrc)/", "^\\.github/"],
+    "unit_groups": [["web", "bff"]],
+    "docs_glob": ["docs/*", "*.md"],
+    "sweep_args": ["--run", "run_0123456789ab", "--specs-dir", ".omc/handoffs/specs"]
+  }
+}
+```
+
+그러면 호출은 다음 한 줄이다. 마지막 PR 에는 `!` 를 붙이고, 그 PR 의 보드 항목은 보드 파일에서 `pr` 필드로 찾아 done 으로 바꾼다.
+`!` 가 없는 PR 은 보드 항목을 바꾸지 않는다. 같은 PR 이 든 항목이 둘 이상이면 건너뛴다. `--board-item PR=ID` 로 직접 줄 수도 있다.
+
+```bash
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 492 '495!:./bin/backup-db.sh orders "before-pr-$PR"'
 ```
 
 ### 같은 파일을 고친 PR
@@ -180,7 +257,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 '102:./bin/
 
 ## 정리
 
-**정리는 `cleanup-sweep.py` 가 한다.** `merge-queue.sh` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
+**정리는 `cleanup-sweep.py` 가 한다.** `merge_queue.py` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
 **사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬과 원격 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
 이 세션이 일을 맡긴 다른 저장소의 worker 도 같다. 다른 세션이 띄운 작업은 건드리지 않는다.
@@ -219,7 +296,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
    워크트리를 지우기 전에 한다. 원격 추적 브랜치가 낡으면 `remove-worktree.sh` 가 머지된 커밋을 원격에 없는 커밋으로 센다.
    백그라운드 동기화 루프는 compact 나 세션 재시작으로 끊기므로 머지마다 직접 한다
 3. 워크트리를 `remove-worktree.sh` 로 지운다(아래)
-4. 로컬과 원격 브랜치를 지운다. `merge-queue.sh` 가 원격 브랜치를 지웠으면 로컬만 남는다
+4. 로컬과 원격 브랜치를 지운다. `merge_queue.py` 가 원격 브랜치를 지웠으면 로컬만 남는다
 5. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
    `.omc/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다.
    공통 지시서, 결정 기록, 인수인계 문서, 진행 중 작업의 문서는 남긴다.
