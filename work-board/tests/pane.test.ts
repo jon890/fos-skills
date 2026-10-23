@@ -107,3 +107,12 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   expect(await lines(ui, 'a')).toBe(3)
   await ui.unmount()
 })
+
+test('새로 읽기 버튼은 없고 오늘 시작과 펼치기 버튼만 남는다', async ($, on) => {
+  await start($, on)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Button', text: /새로 읽기|읽는 중/ })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', text: /오늘 시작/ })).toBeTruthy()
+  await ui.unmount()
+})
