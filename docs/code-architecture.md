@@ -2,7 +2,7 @@
 
 이 저장소는 스킬을 두 가지 방식으로 제공한다.
 하나는 저장소를 Claude Code 플러그인 `fos-skills` 로 설치하는 것이고, 다른 하나는 스킬 디렉터리를 `~/.claude/skills/<이름>` 에 심볼릭 링크로 거는 것이다.
-이 문서는 플러그인 배포의 구조를 소유한다. 스킬 각각의 절차는 그 스킬의 `SKILL.md` 가 소유한다.
+이 문서는 플러그인 배포의 구조와 orch 의 코어와 핸들러 경계를 소유한다. 스킬 각각의 절차는 그 스킬의 `SKILL.md` 가 소유한다.
 
 ## 범위
 
@@ -175,3 +175,110 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 플러그인 훅이 실제로 발화하는지는 세션을 띄워야 확인되는데 격리 환경에서 실측하지 못했다.
 그때까지 사외 머신에서 훅을 쓰려면 저장소를 clone 하고 `korean-check/README.md` 의 링크를 건다.
 훅을 실을 때는 훅 정의 파일을 git 훅이 있는 `hooks/` 와 다른 경로에 둔다. 배치는 [ADR-005](adr/005-plugin-hooks-under-skill.md) 가 정한다.
+
+## orch 코어와 핸들러
+
+이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)). 구현 PR 이 모두 머지되기 전의 실제 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
+
+### 사용자 결정 (2026-10-24)
+
+| 항목 | 결정 |
+| --- | --- |
+| 확장 방식 | 단계마다 이벤트를 내고, 저장소 고유 정리와 그 저장소에 필요한 일은 저장소의 핸들러가 맡는다 |
+| 스크립트 언어 | 기존 Python 과 sh 스크립트 전부를 TypeScript 로 한 차례에 옮긴다. 모듈 단위의 단계적 전환은 하지 않는다 |
+| 진행 순서 | 설계 문서를 먼저 합의하고 구현한다 |
+| handoff 산출물 정리 | 묻지 않고 `--apply` 로 휴지통 폴더에 옮긴다. 지우지 않으므로 되살릴 수 있다 |
+| 옛 `.py` 명령 경로 | node 로 넘기는 shim 을 3.x 동안 두고 다음 major 에서 지운다 |
+| 핸들러 언어 | `.orch/hooks/<이벤트>.ts` 만 받는다. 다른 언어는 그 핸들러가 자식 프로세스로 부른다 |
+| 충돌한 PR | 그 PR 을 만든 기존 worker 가 푼다. worker 터미널은 `worker_done` 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남기고, 충돌이 나면 같은 worker 에게 후속 지시서를 보낸다. 이어 받지 못하면 새 worker 를 띄우지 않고 코디네이터에게 알린다. 새 worker 자동 띄우기 설정은 두지 않는다. 로컬 자원을 아끼기 위해서다. 머지 뒤에는 그 터미널을 바로 정리한다. 처음 답(설정으로 자동 띄우기)을 같은 날 바꿨다 |
+| 사용자 결정 질문 | worker 와 코디네이터가 사용자에게 묻는 결정은 첫 줄 `결정: <무엇을 정하는지>` 와 배경, 선택지별 결과, 권장안과 이유를 갖춘다. 보드는 결정 필요 항목마다 그 첫 줄과 권장안을 보인다. 코디네이터는 사용자가 정할 질문에 대신 답하지 않고 권장안을 보여 사용자가 고르게 한다 |
+| 터미널 직접 입력 금지 hook | 대상이 변수이거나 orca 조회가 실패하면 막는다. `send-to-worker` 를 안내한다 |
+| 상주 루프의 자동 진행 | 코어에 두되 `pipeline.enabled` 를 켠 저장소에서만 돈다. 원격 브랜치 정리와 미답변 질문 알림은 늘 돈다 |
+| 핸들러의 `orca`, `gh` | 가드 shim 으로 감싼다 |
+
+### 배치
+
+```
+orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
+orch/scripts/<명령>.py            node 로 넘기는 shim. 다음 major 에서 지운다
+orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돌며 틱마다 질문 확인, 정리, ready 슬롯, 순서, CI 감시를 한다
+orch/scripts/lib/proc.ts          자식 프로세스 실행. timeout 과 반환 형태 { code, stdout, stderr, timedOut } 한 벌
+orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
+orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
+orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
+orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할
+orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
+orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록. notify-conflicts 와 상주 루프가 쓴다
+orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
+orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
+orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경
+orch/scripts/lib/guard/orca       핸들러 PATH 앞에 두는 shim. 확장자가 없어 CommonJS 로 읽히므로 타입 문법 없이 guard.ts 를 import() 한다
+orch/scripts/lib/guard/gh
+orch/scripts/lib/guard/guard.ts   거부 규칙
+orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node 로 부른다
+orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
+orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
+work-board/bin/board.ts           보드 편집 명령. 옛 board.py
+```
+
+`orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
+옛 코드는 하이픈이 든 파일을 `importlib` 로 읽어 함수를 빌려 썼다. 그 함수는 `lib/` 로 옮긴다.
+
+### 실행 규칙
+
+| 항목 | 규칙 |
+| --- | --- |
+| Node 버전 | 22.18 이상. 타입 제거가 플래그 없이 켜지는 첫 22.x 다. `orch-doctor` 가 버전을 보고 낮으면 `NODE-TOO-OLD` 로 멈춘다 |
+| 실행 | `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/<명령>.ts"`. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다 |
+| 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
+| 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
+| 테스트 | `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"`. 파일마다 프로세스가 나뉘어 격리 러너가 필요 없다. CI 는 `Plugin tests` job 에 이 단계를 더한다. 필수 체크 이름이 바뀌지 않는다 |
+| 오류 출력 | 조회 실패처럼 코디네이터가 알아야 하는 것은 stdout 에 대문자 접두 줄(`WATCH-ERROR`, `HOOK-FAIL`)로 낸다. 하네스는 stderr 를 알림으로 보내지 않는다 |
+| 주석 | 한국어로 쓴다. 함정에는 이유 주석을 단다. 머리 주석이 사용법, 옵션, 종료 코드를 소유하고 문서는 그것을 옮겨 적지 않는다 |
+
+### 코어와 저장소의 경계
+
+저장소 로컬 스크립트가 대신하던 기능을 아래처럼 나눈다. 일반 기능은 코어로, 저장소 고유 값은 설정과 핸들러로 간다.
+
+| 기능 | 코어 | 저장소 |
+| --- | --- | --- |
+| 상주 루프와 주기 실행 | `orch-loop.ts` 의 틱 | `tick.ts`, `pipeline.tick_sec` |
+| runner 수만큼 draft 를 ready 로 | ready 슬롯 | `pipeline.ready_slots`, `before-ready.ts` |
+| 머지 순서 | `state/order.json` | 없음 |
+| 바로 머지 판정 | 머지 큐의 단위 겹침 판정 | `queue.*` |
+| 문서 PR 바로 머지 | 루프 | `pipeline.docs_merge`, `queue.docs_glob` |
+| 원격 브랜치 삭제, 쌓인 PR 의 base 옮기기 | `after-merge` 코어 동작, 틱 | 없음 |
+| 배포를 간격으로 묶기 | `after-queue` 묶기 | `pipeline.after_queue_interval_sec`, `after-queue.ts` |
+| CI 없음 알림 | `ci-missing` | `pipeline.ci_missing_after_sec`, `ci-missing.ts` |
+| 로컬 검증 뒤 머지 | 합친 사본 만들기와 HEAD 대조 | `verify-merged.ts` |
+| 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. `ci-ready` 와 `notify-conflicts` 가 같이 쓴다 | 없음 |
+| 충돌한 PR | 기존 worker 에게 base 를 합치라는 지시. 끝난 dispatch 는 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 알림 | 없음 |
+| 뒤처진 draft 최신화 | 틱 | `pipeline.update_behind_drafts` |
+| 질문 감시 | 루프의 틱과 `watch-questions.ts` | `worker-question.ts` |
+| 무거운 검사 대기열 | `heavy-slot.ts` | `heavy.*` 분류 정규식과 `wait_idle` |
+| 큐 옵션 | `queue` 절 | 검증 본문은 `verify-merged.ts` |
+| Run id | `finish.run` 한 곳과 명령줄 `--run` | 로컬 스크립트에 박지 않는다 |
+
+### 공통 안전 장치
+
+| 장치 | 위치 | 판정 |
+| --- | --- | --- |
+| worker 터미널 직접 입력 금지 | PreToolUse hook, 가드 shim | 대상이 worker 터미널이면 거부한다. 대상이 변수이거나 조회가 실패해도 거부한다 |
+| 다른 사람 PR 제외 | `lib/gh.ts` | 루프, 원격 브랜치 정리, 충돌 알림, ready 전환은 `pipeline.authors` 의 PR 만 본다 |
+| 머지와 base 합치기는 코어만 | 가드 shim, `lib/gh.ts` | 핸들러의 `gh pr merge`, `gh pr update-branch`, update-branch API 호출을 거부한다. 코어는 머지 차례가 온 PR 과 뒤처진 draft 에만 base 를 합친다 |
+| 무거운 검사 대기열 | `heavy-slot.ts` | 같은 PC 의 무거운 검사를 자리 수로 제한한다 |
+| 지시서 삭제 | `lib/spec.ts` 한 경로 | 살아 있는 dispatch 의 지시서와, 그 목록을 읽지 못한 실행에서는 지우지 않는다 |
+
+### orch 문서가 소유하는 것
+
+| 문서 | 소유하는 것 | 두지 않는 것 |
+| --- | --- | --- |
+| `orch/SKILL.md` | 단계, 통과 조건, 원칙 | 옵션 설명, 스크립트 동작 |
+| `orch/references/<단계>.md` | 언제 어떤 명령과 옵션을 쓰는가, 사용자에게 알릴 것, 스크립트가 다루지 않는 수동 경로 | 머리 주석의 반복, 모델 행동 관측을 이유로 단 문장 |
+| `orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. 이 저장소의 data-schema.md 가 계약이고, 구현 뒤에는 `lib/events.ts` 머리 주석이 소유한다 |
+| 스크립트 머리 주석 | 사용법, 옵션, 판정, 종료 코드 | 다른 스크립트의 동작 |
+| `orch/templates/spec-common.md` | 모든 worker 에게 같은 규칙. `{{...}}` 는 저장소마다 한 번 채우는 값만 | Run 마다 바뀌는 값, 허락. 허락은 지시서의 `허락:` 줄이 소유한다 |
+| 저장소의 `.orch/overlay.md`, `config.json`, `hooks/` | 저장소 고유 값과 일 | 코어 규칙의 사본 |
+
+한 저장소의 명령 이름, CI job 이름, 배포 스크립트는 공용 스킬에 두지 않는다. 예시가 필요하면 `example.com` 과 일반 이름으로 쓴다.
