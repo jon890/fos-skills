@@ -237,7 +237,7 @@ def board_file(wrapper, config):
 
 def pr_numbers(field):
     """보드 항목의 pr 필드(`#492`, `492, 495`)에 든 PR 번호들."""
-    return {digits for part in str(field or "").split(",") if (digits := re.sub(r"\D", "", part))}
+    return set(re.findall(r"(?<!\w)#?(\d+)(?!\w)", str(field or "")))
 
 
 def board_items_for(board, number):

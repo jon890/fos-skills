@@ -285,6 +285,12 @@ class WrapperRunTest(unittest.TestCase):
         self.assertNotIn("--board-id", by_pr["501"])
         self.assertIn("보드 항목 task-a 는 PR 492 가 업무의 마지막 PR(!)이 아니라", out)
 
+    def test_pr_field_numbers_are_not_glued_together(self):
+        for field, expected in (("#492 495", {"492", "495"}), ("492/495", {"492", "495"}), ("#492 (v2)", {"492"}),
+                                ("492, #495", {"492", "495"}), ("", set()), (None, set())):
+            with self.subTest(field=field):
+                self.assertEqual(expected, mwf.pr_numbers(field))
+
     def test_explicit_board_item_wins_and_ignores_the_bang(self):
         self.write_board([{"id": "found", "pr": "492"}])
         self.wrap("--repo", str(self.tmp), "--board-item", "492=explicit", "492", "493")
