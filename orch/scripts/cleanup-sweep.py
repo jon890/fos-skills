@@ -100,7 +100,7 @@ PR 찾기 (브랜치마다):
     모든 Run 의 worker 행(`terminal_ownership.all_workers`)에서 terminalState 가 active 인 행을 골라
     --run 과 다른 Run 의 worker 가 쥔 터미널이 그 경로에 있으면 그 경로를 통째로 건너뛴다. 그 Run 의 코디네이터가 정리한다.
     범위 없는 worker-list 가 부른 터미널에 묶인 Run 만 주면(scope bound, 코디네이터에서 부르면 늘 그렇다)
-    `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다. 터미널 소유 확인과 같은 행을 정리 한 번에 한 번만 읽는다.
+    `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다. 터미널 소유 확인과 같은 행을 쓰고, 읽은 지 60초가 지나면 다시 읽는다.
     그 조회가 실패하면 이 Run worker 의 터미널만 닫고, 다른 터미널이 있는 경로는 건너뛴다.
 
 남은 프로세스 끄기 (--kill-holders):
@@ -162,7 +162,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from live_specs import live_spec_paths  # noqa: E402
 import orch_paths  # noqa: E402
-from terminal_ownership import LOOKUP_ERRORS, all_workers, blocker as ownership_blocker, once, row_handle, run_workers  # noqa: E402
+from terminal_ownership import LOOKUP_ERRORS, all_workers, blocker as ownership_blocker, cached, row_handles, run_workers  # noqa: E402
 REMOVE = HERE / "remove-worktree.py"
 LIVE_STATES = {"working", "ready"}
 # 이 상태의 worker 만 남은 프로세스를 끌 수 있다. failed 나 abandoned 는 같은 워크트리로 다시 맡길 수 있어 뺀다
@@ -443,8 +443,8 @@ def orca_json(*args):
 def foreign_handles(run_id, workers):
     """다른 Run 의 worker 가 쥔 살아 있는 터미널 handle 집합. 모든 Run 의 worker 를 읽지 못하면 None 이다."""
     try:
-        return {row_handle(w) for w in workers()
-                if row_handle(w) and w.get("runId") != run_id and w.get("terminalState") == "active"}
+        return {h for w in workers() if w.get("runId") != run_id and w.get("terminalState") == "active"
+                for h in row_handles(w)}
     except LOOKUP_ERRORS:
         return None
 
@@ -829,8 +829,8 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
 
     pids = wait_free(path, args.wait, args.poll_interval)
     if pids and by_pr and only_idle_shells(pids):
-        # worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 목록을 다시 읽어 그 터미널을 닫는다
-        reason = ownership_blocker(path, taken, args.all_workers)
+        # worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 터미널과 worker 를 다시 읽어 그 터미널을 닫는다
+        reason = ownership_blocker(path, taken, all_workers)
         if reason:
             log(f"남김: {reason} ({path})")
             return
@@ -945,7 +945,7 @@ def main(argv=None):
         print("cleanup-sweep: orca terminal list 를 읽지 못해 살아 있는 worker 를 판정할 수 없다", file=sys.stderr)
         return 2
     workers, args.foreign = [], None
-    args.all_workers = once(all_workers)
+    args.all_workers = cached(all_workers)
     if args.run:
         try:
             workers = run_workers(args.run)

@@ -80,7 +80,7 @@ class OwnershipTest(unittest.TestCase):
     def test_every_run_is_read_once_for_many_paths(self):
         orca = FakeOrca([{"handle": "t1", "worktreePath": "/tmp/wt1"}, {"handle": "t2", "worktreePath": "/tmp/wt2"}],
                         {"run_a": [row("t1")], "run_b": [row("t2", run="run_b")]})
-        workers = guard.once(guard.all_workers)
+        workers = guard.cached(guard.all_workers)
         with patch.object(guard, "query", orca):
             self.assertEqual(guard.blocker("/tmp/wt1", workers=workers), "")
             self.assertEqual(guard.blocker("/tmp/wt2", workers=workers), "")
@@ -88,11 +88,25 @@ class OwnershipTest(unittest.TestCase):
 
     def test_failure_is_remembered_and_not_retried(self):
         orca = FakeOrca([{"handle": "t", "worktreePath": "/tmp/wt"}], {"run_a": [row("x")]}, fail_run="run_a")
-        workers = guard.once(guard.all_workers)
+        workers = guard.cached(guard.all_workers)
         with patch.object(guard, "query", orca):
             for _ in range(2):
                 self.assertEqual(guard.blocker("/tmp/wt", workers=workers), "터미널 소유 상태 조회 실패")
         self.assertEqual(len([c for c in orca.calls if "--run" in c]), 1)
+
+    def test_rows_are_read_again_after_max_age(self):
+        orca = FakeOrca([{"handle": "t", "worktreePath": "/tmp/wt"}], {"run_a": [row("t")]})
+        workers = guard.cached(guard.all_workers, max_age=0)
+        with patch.object(guard, "query", orca):
+            self.assertEqual(guard.blocker("/tmp/wt", workers=workers), "")
+            orca.runs["run_a"][0]["resource"]["ownershipState"] = "user_owned"
+            self.assertEqual(guard.blocker("/tmp/wt", workers=workers), "사용자 보유 터미널")
+
+    def test_agent_handle_differing_from_resource_handle_is_checked(self):
+        stale = {"agentTerminalHandle": "t", "resource": {"terminalHandle": "old", "ownershipState": "user_owned"}}
+        orca = FakeOrca([{"handle": "t", "worktreePath": "/tmp/wt"}], {"run_a": [stale]})
+        with patch.object(guard, "query", orca):
+            self.assertEqual(guard.blocker("/tmp/wt"), "사용자 보유 터미널")
 
     def test_released_resource_is_preserved(self):
         pages = [{"terminals": [{"handle": "t", "worktreePath": "/tmp/wt"}]},

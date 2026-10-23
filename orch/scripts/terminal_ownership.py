@@ -14,9 +14,12 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 # Run 마다 읽을 때 동시에 띄우는 orca 수. Run 251개 실측: 8 이면 30초, 16 이면 18초
 JOBS = 16
+# 정리 한 번 안에서 읽은 행을 다시 쓰는 시간(초). 워크트리 삭제가 길어져도 그사이 넘겨받은 터미널을 놓치지 않게 다시 읽는다
+MAX_AGE = 60
 LOOKUP_ERRORS = (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired)
 
 
@@ -79,31 +82,32 @@ def all_workers():
         return [row for rows in pool.map(run_workers, run_ids()) for row in rows]
 
 
-def once(fn):
-    """fn 을 한 번만 부르고 그 결과나 예외를 되풀이한다. 정리 한 번에 모든 Run 을 한 번만 읽는다."""
+def cached(fn, max_age=MAX_AGE):
+    """fn 의 결과나 예외를 max_age 초 동안 되풀이한다. 여러 경로를 볼 때 모든 Run 을 경로마다 다시 읽지 않는다."""
     box = []
 
     def call():
-        if not box:
+        if not box or time.monotonic() - box[0][0] > max_age:
             try:
-                box.append((fn(), None))
+                box[:] = [(time.monotonic(), fn(), None)]
             except LOOKUP_ERRORS as exc:
-                box.append((None, exc))
-        rows, exc = box[0]
+                box[:] = [(time.monotonic(), None, exc)]
+        _, rows, exc = box[0]
         if exc:
             raise exc
         return rows
     return call
 
 
-def row_handle(row):
-    return (row.get("resource") or {}).get("terminalHandle") or row.get("agentTerminalHandle")
+def row_handles(row):
+    """그 행이 가리키는 터미널 handle. resource 와 agent 의 handle 이 다르면 둘 다다."""
+    return {h for h in ((row.get("resource") or {}).get("terminalHandle"), row.get("agentTerminalHandle")) if h}
 
 
 def blocker(worktree, ignore=frozenset(), workers=all_workers):
     """안전하면 빈 문자열, 사용자 보유 또는 조회 실패면 남길 이유를 돌려준다.
     ignore 에 든 handle 은 호출자가 닫아도 된다고 판정한 터미널이라 소유 상태를 보지 않는다.
-    workers 는 모든 Run 의 worker 행을 돌려주는 함수다. 여러 경로를 볼 때는 once(all_workers) 를 넘긴다."""
+    workers 는 모든 Run 의 worker 행을 돌려주는 함수다. 여러 경로를 볼 때는 cached(all_workers) 를 넘긴다."""
     try:
         target = Path(worktree).resolve()
         terminals = query("terminal", "list")["terminals"]
@@ -114,8 +118,7 @@ def blocker(worktree, ignore=frozenset(), workers=all_workers):
         if not handles:
             return ""
         for row in workers():
-            handle = row_handle(row)
-            if handle in handles and handle not in ignore:
+            if (row_handles(row) & handles) - ignore:
                 state = (row.get("resource") or {}).get("ownershipState")
                 if state in {"user_owned", "released"}:
                     return "사용자 보유 터미널"
