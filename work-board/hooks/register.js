@@ -17,6 +17,8 @@ const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
 const FILE_MS = 5000
 const LIVE_MS = 45000
 const COMMAND_TIMEOUT_MS = 20000
+const QUESTION_HISTORY_LIMIT = 100 // Orca check --all/--peek 의 고정 상한
+const REPLY_LIMIT = 200
 const SECTIONS = [
   { status: 'goal', label: '목표', color: 'magenta', mark: '★' },
   { status: 'decide', label: '결정 필요', color: 'red', mark: '◆' },
@@ -60,7 +62,7 @@ export function parseQuestions(stdout, runId) {
   const data = JSON.parse(String(stdout).replace(/[\u0000-\u001f]/g, ' '))
   if (data.ok === false) throw new Error('질문 기록 조회 실패')
   const rows = (data.result || data).messages
-  if (!Array.isArray(rows) || rows.length >= 100000) throw new Error('질문 기록 전체를 읽지 못했어요')
+  if (!Array.isArray(rows) || rows.some((m) => !m || typeof m !== 'object')) throw new Error('질문 기록을 읽지 못했어요')
   const messages = rows.filter((m) => !runId || m.run_id === runId)
   const answered = new Set(messages.filter((m) => m.thread_id && m.id !== m.thread_id
     && m.from_handle === (runId ? 'run:' + runId : 'run:' + m.run_id)).map((m) => m.thread_id))
@@ -77,6 +79,45 @@ export function parseQuestions(stdout, runId) {
       } catch {}
       return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '' }
     })
+}
+
+function messageRows(stdout) {
+  const data = JSON.parse(stdout)
+  if (data.ok === false) throw new Error('질문 기록 조회 실패')
+  const rows = (data.result || data).messages
+  if (!Array.isArray(rows) || rows.some((m) => !m || typeof m !== 'object')) throw new Error('질문 기록을 읽지 못했어요')
+  return rows
+}
+
+// 전체 inbox 대신 Run 의 질문 후보와 그 발신자의 수신 기록만 읽는다.
+export async function queryQuestions($, runId) {
+  const history = messageRows(await run($, ['orca', 'orchestration', 'check', '--run', runId,
+    '--all', '--types', 'question,escalation', '--json']))
+  const unread = messageRows(await run($, ['orca', 'orchestration', 'check', '--run', runId,
+    '--peek', '--types', 'question,escalation', '--json']))
+  const candidates = [...new Map([...history, ...unread]
+    .filter((m) => m.id && m.run_id === runId && m.to_handle === 'run:' + runId
+      && (m.type === 'question' || m.type === 'escalation')).map((m) => [m.id, m])).values()]
+  const replies = []
+  // 같은 worker 의 질문은 한 번에 확인한다. 네 명씩 조회해 프로세스 수를 제한한다.
+  const senders = [...new Set(candidates.map((m) => m.from_handle))]
+  for (let i = 0; i < senders.length; i += 4) {
+    const batches = await Promise.all(senders.slice(i, i + 4).map(async (sender) => {
+      if (!sender) throw new Error('질문 발신자가 없어요')
+      const rows = messageRows(await run($, ['orca', 'orchestration', 'inbox',
+        '--terminal', sender, '--limit', String(REPLY_LIMIT), '--json']))
+      const own = candidates.filter((m) => m.from_handle === sender)
+      if (rows.length >= REPLY_LIMIT && parseQuestions(JSON.stringify({ messages: [...own, ...rows] }), runId).length) {
+        throw new Error('답변 기록 한도에 닿아 답변 여부를 확인할 수 없어요')
+      }
+      return rows.filter((m) => m.from_handle === 'run:' + runId)
+    }))
+    replies.push(...batches.flat())
+  }
+  return {
+    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId),
+    limited: history.length >= QUESTION_HISTORY_LIMIT || unread.length >= QUESTION_HISTORY_LIMIT,
+  }
 }
 
 // 질문 본문을 창에 맞게 줄인다
@@ -302,7 +343,7 @@ export function statusLine(items, state) {
   const parts = []
   const decide = count('decide') + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
   if (state.errors && state.errors.questions) parts.push('결정 필요 확인 불가')
-  else if (decide > 0) parts.push('결정 필요 ' + decide)
+  else if (decide > 0 || state.questionsLimited) parts.push('결정 필요 ' + decide + (state.questionsLimited ? '(최근 질문 기준)' : ''))
   if (Array.isArray(state.workers)) parts.push('worker ' + state.workers.length)
   if (Array.isArray(state.prs)) {
     const failing = state.prs.filter((pr) => pr.fail > 0).length
@@ -316,8 +357,9 @@ export function statusLine(items, state) {
 // ---- 읽기 ----
 
 async function run($, argv) {
-  const { exitCode, stdout, stderr } = await $.process.run(argv, { timeoutMs: COMMAND_TIMEOUT_MS })
+  const { exitCode, stdout, stderr, isStdoutTruncated } = await $.process.run(argv, { timeoutMs: COMMAND_TIMEOUT_MS })
   if (exitCode !== 0) throw new Error((stderr || stdout || '종료 코드 ' + exitCode).trim().split('\n')[0])
+  if (isStdoutTruncated) throw new Error('명령 출력이 4 MiB 한도에서 잘렸어요')
   return stdout
 }
 
@@ -395,8 +437,9 @@ async function loadLive($) {
         next.errors.workers = String(failure.message || failure)
       }
       try {
-        next.questions = parseQuestions(await run($, ['orca', 'orchestration', 'inbox',
-          '--limit', '100000', '--json']), next.runId)
+        const result = await queryQuestions($, next.runId)
+        next.questions = result.questions
+        next.questionsLimited = result.limited
       } catch (failure) {
         next.errors.questions = String(failure.message || failure)
       }
@@ -575,9 +618,10 @@ export function register(on) {
       })
     }
     const questionError = live.errors.questions
-    const decideView = decideRows.length + asked.length === 0 && !questionError ? [] : [box('live-decide', 'red',
+    const decideView = decideRows.length + asked.length === 0 && !questionError && !live.questionsLimited ? [] : [box('live-decide', 'red',
       questionError ? '결정 필요  확인 불가' : '결정 필요  ' + (decideRows.length + asked.length), [
         ...(questionError ? [dim('qe', '읽지 못했어요: ' + questionError)] : []),
+        ...(live.questionsLimited ? [dim('ql', '최근 질문 100건과 읽지 않은 질문 최대 100건 기준이에요. 더 오래된 미답변은 빠질 수 있어요.')] : []),
         ...asked.map(questionView),
         ...decideRows.map((item) => itemView(item, SECTIONS[1])),
       ])]

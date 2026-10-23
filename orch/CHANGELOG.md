@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.5.2 (2026-10-24)
+
+- work-board, 질문 감시와 doctor 가 전체 inbox 대신 현재 Run 의 질문 기록과 각 발신자의 수신함만 읽는다. 답변은 코디네이터가 보낸 thread 메시지로 판정하므로 읽음·ack 만 된 질문은 남는다. `board-sync.py` 는 질문을 직접 조회하지 않아 변경하지 않았다.
+- Orca 의 `check --all` 과 `--peek` 는 각각 100건까지 반환한다. 두 결과를 합쳐 읽지 않은 과거 질문도 확인하고, 상한에 닿으면 보드와 stderr 에 조회 범위를 알린다. 범위 밖 미답변이 빠질 수 있으며, 발신자 수신함의 200건 상한 때문에 답변 여부를 판단할 수 없으면 조회 오류로 처리한다.
+- Claude Code 2.1.309 의 `$.process.run` 출력 한도는 stdout·stderr 각각 4MiB다. 보드가 `isStdoutTruncated` 를 확인해 잘린 JSON 을 파싱하기 전에 원인을 표시한다.
+- 3만 건·40MB 이상의 전체 inbox 를 요청하지 않는 회귀 테스트와 조회 상한·잘린 출력 검사를 추가했다.
+
 ## 2.5.1 (2026-10-23)
 
 - `make-worktree.py` 가 워크트리를 만들기 전에 `orca repo show` 로 저장소의 `externalWorktreeVisibility` 를 읽고, `hide` 면 만들지 않고 종료 코드 1 로 멈춘다. 안내에 사용자가 고를 두 조치(Orca 화면에서 등록, `orca repo set --repo path:<repo> --external-worktree-visibility show`)를 낸다. `show`, `inherit`, 읽지 못한 경우는 이전처럼 진행한다. 이전에는 `hide` 인 저장소에서 워크트리를 만든 뒤 Orca 가 숨겨 `launch-worker.py` 가 30초 대기 끝에 멈췄다.

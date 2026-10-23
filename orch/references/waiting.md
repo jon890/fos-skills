@@ -14,7 +14,10 @@ python3 "$SKILL_DIR/scripts/watch-questions.py" --run "$RUN_ID" --repo "$REPO"
 기본 재알림은 10분이며 `--remind-after 300` 처럼 초 단위로 바꾼다. 조회 간격은 `--interval` 로 바꾼다.
 알린 시각은 `orch_paths.py` 가 정한 `state/questions-seen.json` 에 Run 별로 남는다.
 다시 띄워도 재알림 시간이 되기 전에는 같은 질문을 알리지 않는다.
-`inbox` 의 양방향 thread 로 답변을 확인하므로 ack 여부와 관계없이 답한 질문은 감시와 보드에서 빠진다.
+현재 Run 의 `check --all --types question,escalation` 과 `--peek --types question,escalation` 을 합쳐 질문을 찾는다.
+그 발신자의 `inbox --terminal` 에서 코디네이터 답변 thread 를 확인하므로 ack 여부와 관계없이 답한 질문은 감시와 보드에서 빠진다.
+전체 inbox 는 읽지 않는다. Orca 의 두 `check` 조회는 각각 100건 상한이 있어 그 밖의 미답변은 빠질 수 있다.
+상한에 닿으면 stderr 와 보드에 조회 범위를 표시한다. 발신자별 답변 조회도 200건으로 제한하며, 답변 여부가 불확실하면 조회 오류로 처리한다.
 조회 실패와 기록 한도 도달은 stderr 로 알리고 다음 조회에서 다시 시도한다.
 
 **압축이나 세션 재시작 뒤 첫 작업은 감시 복구다.** Monitor 목록과 아래 프로세스 목록에서 현재 Run 의 질문 감시와 완료 대기를 확인한다.

@@ -126,3 +126,17 @@ test('질문 조회 실패를 결정 필요 0 대신 확인 불가로 표시한�
   expect(await ui.find({ type: 'Text', text: /읽지 못했어요: offline/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('최근 질문 상한이면 답변이 모두 끝났어도 조회 범위를 표시한다', async ($, on) => {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
+  await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
+    argv.includes('run-current') ? { run: { id: 'r' } }
+      : argv.includes('check') ? { messages: Array(100).fill(q) }
+        : argv.includes('inbox') ? { messages: [{ id: 'answer', thread_id: 'q', run_id: 'r', from_handle: 'run:r' }] }
+          : { workers: [] },
+  }) }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^결정 필요  0$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /최근 질문 100건과 읽지 않은 질문/ })).toBeTruthy()
+  await ui.unmount()
+})

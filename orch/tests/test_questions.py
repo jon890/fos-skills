@@ -43,15 +43,63 @@ class QuestionsTest(unittest.TestCase):
         self.assertEqual([], questions.unanswered([e, dict(reply, thread_id='e')], 'r'))
 
     def test_snapshot_uses_read_only_inbox_and_run(self):
-        with patch.object(questions, 'orca', side_effect=[{'run': {'id': 'r'}}, {'messages': [message()]}]) as cli:
-            self.assertEqual(('r', [message()]), questions.snapshot())
-        self.assertEqual([('run-current',), ('inbox', '--limit', str(questions.LIMIT))],
+        with patch.object(questions, 'orca', side_effect=[{'run': {'id': 'r'}},
+                          {'messages': [message(read=1)]}, {'messages': [message(read=1)]},
+                          {'messages': []}]) as cli:
+            self.assertEqual(('r', [message(read=1)]), questions.snapshot())
+        self.assertEqual([('run-current',),
+                          ('check', '--run', 'r', '--all', '--types', 'question,escalation'),
+                          ('check', '--run', 'r', '--peek', '--types', 'question,escalation'),
+                          ('inbox', '--terminal', 'dispatch:d', '--limit', str(questions.REPLY_LIMIT))],
                          [call.args for call in cli.call_args_list])
 
-    def test_invalid_or_full_snapshot_is_not_empty_success(self):
-        for data in ({}, {'messages': None}, {'messages': [None]}, {'messages': [message()] * questions.LIMIT}):
+    def test_invalid_snapshot_is_not_empty_success(self):
+        for data in ({}, {'messages': None}, {'messages': [None]}):
             with patch.object(questions, 'orca', return_value=data), self.assertRaises(RuntimeError):
                 questions.snapshot('r')
+
+    def test_run_questions_match_replies_and_keep_old_unread(self):
+        q = message(read=1)
+        old = message('old')
+        answer = dict(q, id='answer', from_handle='run:r', to_handle='dispatch:d')
+        with patch.object(questions, 'orca', side_effect=[{'messages': [q]}, {'messages': [old]},
+                          {'messages': [answer]}]) as cli:
+            self.assertEqual(('r', [old]), questions.snapshot('r'))
+            self.assertEqual(3, cli.call_count)  # one reply query per sender
+
+    def test_full_reply_window_is_an_error_unless_all_candidates_answered(self):
+        q = message()
+        unrelated = dict(q, id='follow', type='status', to_handle='dispatch:d')
+        rows = [unrelated] * questions.REPLY_LIMIT
+        with patch.object(questions, 'orca', side_effect=[{'messages': [q]}, {'messages': []},
+                          {'messages': rows}]), self.assertRaisesRegex(RuntimeError, '답변 기록 한도'):
+            questions.snapshot('r')
+        answer = dict(unrelated, id='answer', from_handle='run:r')
+        with patch.object(questions, 'orca', side_effect=[{'messages': [q]}, {'messages': []},
+                          {'messages': [answer, *rows[1:]]}]):
+            self.assertEqual(('r', []), questions.snapshot('r'))
+
+    def test_large_global_history_is_never_requested(self):
+        # 30,000 messages exceed 40 MB; only scoped questions/replies reach the client.
+        global_rows = [dict(message(str(i)), body='x' * 1500) for i in range(30000)]
+        self.assertGreater(len(json.dumps(global_rows)), 40_000_000)
+        q = message(read=1)
+        answer = dict(q, id='answer', from_handle='run:r', to_handle='dispatch:d')
+
+        def scoped(*args):
+            if args[0] == 'inbox' and '--terminal' not in args:
+                self.fail('global inbox requested')
+            return {'messages': [answer] if args[0] == 'inbox' else [q]}
+
+        with patch.object(questions, 'orca', side_effect=scoped):
+            self.assertEqual(('r', []), questions.snapshot('r'))
+
+    def test_full_question_history_warns_about_coverage(self):
+        q = message()
+        with patch.object(questions, 'orca', side_effect=[{'messages': [q] * questions.HISTORY_LIMIT},
+                          {'messages': []}, {'messages': []}]), patch('sys.stderr') as err:
+            self.assertEqual(('r', [q]), questions.snapshot('r'))
+            self.assertIn('더 오래된 미답변', ''.join(c.args[0] for c in err.write.call_args_list))
 
     def test_restart_reminder_run_isolation_and_answer(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,8 +164,12 @@ class QuestionsTest(unittest.TestCase):
             fixture = root / 'inbox.json'
             fixture.write_text(json.dumps({'result': {'messages': [message()]}}))
             cli = root / 'orca'
-            cli.write_text('#!' + sys.executable + '\nimport os\nfrom pathlib import Path\n'
-                           'print(Path(os.environ["QUESTION_FIXTURE"]).read_text())\n')
+            cli.write_text('#!' + sys.executable + '\nimport os, sys, json\nfrom pathlib import Path\n'
+                           'data = json.loads(Path(os.environ["QUESTION_FIXTURE"]).read_text())\n'
+                           'rows = data["result"]["messages"]\n'
+                           'data["result"]["messages"] = [m for m in rows if '
+                           '(m["from_handle"] == "run:r") == ("inbox" in sys.argv)]\n'
+                           'print(json.dumps(data))\n')
             cli.chmod(0o755)
             env = dict(os.environ, ORCA_CLI_COMMAND=str(cli), ORCH_DIR=str(root / 'orch'),
                        QUESTION_FIXTURE=str(fixture))
