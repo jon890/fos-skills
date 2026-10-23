@@ -2,7 +2,7 @@
 // 대상이 worker 인지 확인하지 못하면 거부한다(fail-closed).
 //
 // worker 가 일하는 중에 터미널에 직접 쓰면 입력이 섞이고, dispatch 가 끝났으면 그 지시는 어느 Task 에도 묶이지 않는다.
-// `send-to-worker.py` 가 dispatch 상태를 보고 reply 와 `nudge-worker.py`, 또는 후속 지시서로 나눠 보낸다.
+// `send-to-worker` 가 dispatch 상태를 보고 reply 와 `nudge-worker`, 또는 후속 지시서로 나눠 보낸다.
 //
 // 판정(`orca terminal send` 조각마다):
 //     - `--environment` 나 `--pairing-code` 가 있으면 거부한다. 원격 서버의 터미널은 이 hook 이 확인할 수 없다
@@ -41,7 +41,7 @@
 //       `agent-trust-workspace` 같은 첫 화면 대기(`observation.agentWait`, `projection.stage.detail`)를 보이면 거부하지 않는다.
 //       `launch.md` 「첫 화면에서 멈춤」 이 사용자 승인 뒤 이 명령으로 첫 선택지를 고르라고 한다.
 //       단계를 읽지 못하면 거부한다
-//     - `send-to-worker.py`, `nudge-worker.py` 는 스크립트 안에서 orca 를 부르므로 이 hook 을 거치지 않는다
+//     - `send-to-worker`, `nudge-worker` 는 스크립트 안에서 orca 를 부르므로 이 hook 을 거치지 않는다
 //
 // 입력은 stdin 의 hook JSON 이다. 거부할 때만 deny 결정을 stdout 으로 낸다. 읽지 못한 입력은 통과시킨다.
 // hooks.json 은 이 파일을 PATH 의 `node` 로 부른다. node 를 찾지 못하면 Claude Code 는 오류를 보이고 막지 않는다.
@@ -66,13 +66,13 @@ const DEFAULT_BUDGET_MS = 7_000
 const PAGE_LIMIT = '100'
 const RUN_CONCURRENCY = 16
 
-const SEND_TO_WORKER = '`python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch <id> --body ...` 로 보낸다.'
+const SEND_TO_WORKER = '`node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts" --dispatch <id> --body ...` 로 보낸다.'
 const RESEND = 'worker 가 아니면 `--terminal term_...` 처럼 handle 을 그대로 적어 다시 부른다.'
 const REASON = {
   worker: (handle: string) =>
     `orch: worker 터미널(${handle})에 \`orca terminal send\` 로 직접 쓰지 않는다. ` +
     '작업 중이면 입력이 섞이고, 끝난 dispatch 면 지시가 어느 Task 에도 묶이지 않는다. ' +
-    `${SEND_TO_WORKER} 깨우기만 하려면 \`nudge-worker.py\` 를 쓴다.`,
+    `${SEND_TO_WORKER} 깨우기만 하려면 \`nudge-worker\` 를 쓴다.`,
   firstScreen: (handle: string, why: string) =>
     `orch: worker 터미널(${handle})이 첫 화면 대기가 아니라 \`--enter\` 를 보내지 않는다(${why}). ` +
     `${SEND_TO_WORKER} 첫 화면 승인이면 handle 을 그대로 적어 다시 부른다.`,

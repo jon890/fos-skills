@@ -1,0 +1,70 @@
+# 이벤트 핸들러
+
+orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts` 를 부른다. orch 루트는 기본 `.orch/` 이고 `ORCH_DIR` 로 옮긴다.
+저장소 고유의 검사와 알림을 코어 명령을 고치지 않고 더하는 자리다.
+핸들러 찾기, 잠금, 시간 제한, 실행 기록, 종료 코드 해석은 `scripts/lib/events.ts` 머리 주석이 소유한다.
+
+## 이벤트 고르기
+
+이벤트 이름, 내는 명령, 시점, 거부할 수 있는지는 저장소의 `docs/flow.md` 「이벤트 목록」 표가 소유한다. 이름 목록의 원본은 `scripts/lib/events.ts` 의 `EVENTS` 다.
+
+- **동작을 막아야 하면 거부할 수 있는 이벤트를 고른다.** `before-` 로 시작하는 이벤트와 `verify-merged` 다. 핸들러가 종료 코드 10 으로 끝나면 명령이 그 동작을 하지 않는다.
+- **알리거나 기록만 하면 나머지 이벤트를 고른다.** 핸들러가 실패해도 코어 동작은 이어 간다.
+- 「내는 명령」 이 아직 Python 인 이벤트는 그 명령을 TypeScript 로 옮기기 전까지 나지 않는다. 핸들러를 두어도 불리지 않는다.
+- 파일 이름이 이벤트 이름과 한 글자라도 다르면 불리지 않는다. `orch-doctor` 가 그런 파일을 `UNKNOWN-HOOK <파일>` 로 알린다.
+  `hooks/` 바로 아래만 본다. 핸들러가 import 하는 모듈은 `hooks/lib/` 같은 하위 폴더에 둔다.
+
+핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `docs/data-schema.md` 의 「공통 필드」 와 「이벤트별 필드」 표가 소유한다.
+환경 변수(`ORCH_EVENT`, `ORCH_REPO`, `ORCH_DIR`, `ORCA`, `GH`)와 작업 디렉터리는 `scripts/lib/events.ts` 머리 주석의 「핸들러」 와 「환경」 이 소유한다.
+
+## 핸들러 예시
+
+동시에 도는 worker 가 상한에 닿았으면 새 worker 를 띄우지 않는 `before-launch` 핸들러다. `.orch/hooks/before-launch.ts` 에 둔다.
+
+```ts
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+
+const LIMIT = 4
+const input = JSON.parse(readFileSync(0, 'utf8'))
+if (!input.run) process.exit(0)
+
+const out = execFileSync(process.env.ORCA ?? 'orca', ['orchestration', 'worker-list', '--run', input.run, '--limit', '100', '--json'], { encoding: 'utf8' })
+const workers: { dispatchStatus?: string }[] = JSON.parse(out).result.workers ?? []
+const live = workers.filter((w) => ['pending', 'dispatched', 'running'].includes(w.dispatchStatus ?? ''))
+if (live.length >= LIMIT) {
+  console.log(`동시 worker ${live.length}개가 상한 ${LIMIT}개에 닿아 ${input.branch} 를 띄우지 않는다`)
+  process.exit(10)
+}
+```
+
+- **거부는 종료 코드 10 이다.** 1 은 node 가 잡지 않은 예외에 내는 값이라 거부로 읽지 않는다.
+- **거부 이유는 stdout 의 마지막 줄이다.** 명령이 그 줄을 `HOOK-REJECT before-launch <이유>` 로 옮겨 낸다.
+- **타입 제거가 지우는 문법만 쓴다.** 핸들러도 `node --disable-warning=ExperimentalWarning` 으로 뜬다. 문법 규칙은 `docs/code-architecture.md` 「실행 규칙」 이 소유한다.
+- **`orca` 와 `gh` 는 `ORCA`, `GH` 환경 변수로 부른다.** 그 값이 아래 「가드가 막는 호출」 의 shim 이다.
+
+## 실패 줄 읽기
+
+핸들러의 stdout 과 stderr 는 줄마다 `[hook <이벤트>] ` 를 붙여 명령의 stdout 에 섞인다. 결과는 아래 줄 하나로 낸다. 통과면 줄이 없다.
+
+| 줄 | 뜻 | 할 일 |
+| --- | --- | --- |
+| `HOOK-REJECT <이벤트> <이유>` | 핸들러가 10 으로 거부했다 | 이유를 읽고 조건을 고친 뒤 같은 명령을 다시 부른다 |
+| `HOOK-FAIL <이벤트> <종료 코드>` | 핸들러가 10 이 아닌 값으로 끝났다. 시그널로 죽으면 128 더하기 신호 번호다 | 바로 위의 `[hook <이벤트>]` 줄에서 예외를 찾아 핸들러를 고친다 |
+| `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
+| `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
+| `DEPRECATED <절>.<키> → hooks/<이벤트>.ts` | 옛 설정 칸을 핸들러처럼 돌렸다 | 그 칸의 명령을 핸들러로 옮기고 칸을 지운다. `orch-doctor` 가 남은 칸을 `DEPRECATED-CONFIG` 로 알린다 |
+
+거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
+나머지 이벤트에서 명령의 종료 코드에 반영하는지는 `docs/flow.md` 「갈래」 표가 소유한다.
+지난 실행은 `<orch 루트>/state/hooks.jsonl` 에 한 줄씩 남는다.
+
+## 가드가 막는 호출
+
+핸들러의 PATH 맨 앞에는 `scripts/lib/guard/` 의 `orca`, `gh` shim 이 있다. 코어 명령만 해야 하는 호출을 핸들러가 모르고 쓰는 실수를 막는다.
+
+- `orca terminal send`. worker 에게 보내는 일은 `send-to-worker` 가 한다
+- `gh pr merge`, `gh pr update-branch`, PR 머지와 브랜치 갱신 API, GraphQL 의 머지 mutation. 머지는 머지 큐가, base 합치기는 차례가 온 PR 에만 코어가 한다
+
+막히면 stderr 에 이유를 내고 종료 코드 126 으로 끝난다. 판정의 원본은 `scripts/lib/guard/guard.ts` 머리 주석이다.
+가드는 보안 경계가 아니다. 진짜 실행 파일 경로(`ORCH_REAL_ORCA`, `ORCH_REAL_GH`)가 환경에 보이므로 일부러 부르면 우회된다.

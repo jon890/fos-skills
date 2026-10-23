@@ -29,7 +29,7 @@
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
 | 지시서 폴더 | `cleanup-sweep.py --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더의 PR 본문 파일 `pr-<이름>.md` 를 지운다 (예: `.orch/specs/`) | 4, 7 |
-| spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec-lint.py` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
+| spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
 | 진행 보드 | 보드 파일 위치, 목표 항목 id(`board-sync.py --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
 | 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
 | 산출물 정리 | 같은 파일의 `cleanup` 절. 함께 정리할 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
@@ -101,7 +101,8 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | `config.json` | 위 「마무리 설정 파일」 |
 | `specs/` | 지시서와 `spec-common.md`. PR 본문 `pr-<이름>.md` 는 그 부모인 `.orch/` 에 둔다 |
 | `queue/` | 머지 큐와 마무리(`finish-<PR>.out`, `.pid`) 출력 |
-| `state/` | `wait-important.py`, `notify-conflicts.py` 가 기억하는 것. 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
+| `state/` | `wait-important`, `notify-conflicts.py` 가 기억하는 것. 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
+| `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |
 | `bin/` | 저장소 포장 스크립트 |
 
 보드(`board.json`)는 work-board 소유라 여기 두지 않는다. 위치는 `work-board/README.md` 가 정하고, 다른 곳이면 `finish.board` 로 준다.
@@ -120,12 +121,12 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | --- | --- |
 | `finish-pr.py`, `handoff-cleanup.py` | 설정을 `--config` 로 주지 않았을 때 |
 | `merge-with-finish.py` | 설정을 `--finish-config` 로 주지 않았을 때. 머지 큐를 걸지 않는다 |
-| `spec-lint.py` | `--overlay` 를 주지 않았을 때 |
+| `spec-lint` | `--overlay` 를 주지 않았을 때 |
 | `cleanup-sweep.py` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
-| `launch-worker.py` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
+| `launch-worker` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
 | `orch_paths.py --ensure` | 늘 |
 
-`wait-important.py` 와 `notify-conflicts.py` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
+`wait-important` 와 `notify-conflicts.py` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
 
 머지 큐와 worker 가 모두 끝난 때에 옮긴다. 먼저 미리보기로 옮길 것과 옛 경로를 적은 파일을 본다.
 `$REPO` 는 대상 저장소의 주 checkout 이다.

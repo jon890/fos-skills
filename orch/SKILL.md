@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "2.6.1"
+  version: "3.0.0"
 ---
 
 # orch
@@ -21,6 +21,8 @@ metadata:
 
 스킬을 열면 먼저 설치본을 점검한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
+`NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 22.18 이상을 PATH 에 둔 뒤 다시 점검한다.
+`UNKNOWN-HOOK`, `DEPRECATED-CONFIG` 는 작업 디렉터리 저장소의 핸들러와 설정 경고라 진행을 막지 않는다. 고치는 법은 [`references/hooks.md`](references/hooks.md) 가 소유한다.
 설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
 
 ```bash
@@ -67,10 +69,10 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 고른 이유가 dispatch 보고에 한 줄로 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
-| 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint.py` 가 0 으로 끝났다 | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
-| 3 | 띄우기 | `launch-worker.py` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
-| 4 | 기다리기 | 이 세션의 백그라운드 `wait-important.py` 가 하나만 돌고, 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages.py` 로 읽었고, 깨어날 때마다 `cleanup-sweep.py` 와 `board-sync.py` 를 돌렸다. 질문 감시(`watch-questions.py`)가 Run 마다 하나 돈다 | [`references/waiting.md`](references/waiting.md) |
-| 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker.py` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
+| 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다 | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
+| 3 | 띄우기 | `launch-worker` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
+| 4 | 기다리기 | 이 세션의 백그라운드 `wait-important` 가 하나만 돌고, 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages` 로 읽었고, 깨어날 때마다 `cleanup-sweep.py` 와 `board-sync.py` 를 돌렸다. 질문 감시(`watch-questions`)가 Run 마다 하나 돈다 | [`references/waiting.md`](references/waiting.md) |
+| 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
 | 7 | 머지와 정리 | `merge-with-finish.py` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
 
@@ -87,20 +89,20 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 
 ## 3. 띄우기
 
-원격을 갱신한 뒤 `launch-worker.py` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
-새로 띄우기는 `launch-worker.py`, 후속 지시는 `send-to-worker.py` 로 한다. `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다. `launch-worker.py` 는 `--spec` 이 필수라 늘 Task 를 새로 만들기 때문이다.
+원격을 갱신한 뒤 `launch-worker` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
+새로 띄우기는 `launch-worker`, 후속 지시는 `send-to-worker` 로 한다. `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다. `launch-worker` 는 `--spec` 이 필수라 늘 Task 를 새로 만들기 때문이다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
 
 ## 4. 기다리기
 
-`wait-important.py` 를 백그라운드로 하나만 걸고, 깨어나면 `triage-messages.py` 로 `worker_done`, `escalation`, `question` 을 먼저 본다.
-질문 감시 `watch-questions.py` 도 reference 의 Monitor 명령으로 띄운다. 압축 뒤에는 두 감시가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
+`wait-important` 를 백그라운드로 하나만 걸고, 깨어나면 `triage-messages` 로 `worker_done`, `escalation`, `question` 을 먼저 본다.
+질문 감시 `watch-questions` 도 reference 의 Monitor 명령으로 띄운다. 압축 뒤에는 두 감시가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
 heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.
 
 ## 5. 답하고 지시 보내기
 
-답과 지시는 `send-to-worker.py` 로 보낸다. 살아 있는 dispatch 면 마지막 메시지에 `reply` 하고 깨우고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄우고, 터미널도 없으면 종료 코드 3 이다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
+답과 지시는 `send-to-worker` 로 보낸다. 살아 있는 dispatch 면 마지막 메시지에 `reply` 하고 깨우고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄우고, 터미널도 없으면 종료 코드 3 이다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
 충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받고, 종료 코드 3 이면 새 worker 를 띄우지 않고 사용자에게 알린다.
 PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 

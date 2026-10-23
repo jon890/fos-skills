@@ -181,6 +181,9 @@ describe('block-worker-terminal-send', () => {
       assert.match(v.reason, /term_worker-1/)
       assert.match(v.reason, /send-to-worker/)
       assert.match(v.reason, /nudge-worker/)
+      // 안내하는 호출은 옮긴 .ts 를 node 로 부르는 꼴이다
+      assert.ok(v.reason.includes('node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts"'), v.reason)
+      assert.doesNotMatch(v.reason, /\.py\b/)
     }
     // 범위를 바꾸려고 ORCA_TERMINAL_HANDLE 을 빼지 않는다
     const handles = fake.calls().map((c) => c.env.ORCA_TERMINAL_HANDLE)
@@ -194,6 +197,7 @@ describe('block-worker-terminal-send', () => {
       "orca terminal send --terminal term_dev-server --text 'npm run dev' --enter",
       'orca terminal read --terminal term_worker-1',
       'python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch ctx_1 --body x',
+      'node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts" --dispatch ctx_1 --body x',
       'orca terminal read --terminal term_worker-1 --lines 20 && orca terminal send --terminal term_dev --text hi',
       'orca terminal send --terminal term_dev --text "see --terminal term_worker-1"',
     ]) {
@@ -426,12 +430,20 @@ describe('require-spec-line', () => {
     }
   })
 
+  test('거부 이유는 spec-line.ts 를 node 로 부르는 꼴을 안내한다', () => {
+    const v = verdict(HOOK, 'orca orchestration worker-start --task t1 --spec "본문"')
+    assert.equal(v.decision, 'deny')
+    assert.ok(v.reason.includes('"$(node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-line.ts" "$SPEC" --require-permission)"'), v.reason)
+    assert.doesNotMatch(v.reason, /\.py\b/)
+  })
+
   test('spec-line 꼴과 실행해야 알 수 있는 값은 통과한다', () => {
     for (const command of [
       `orca orchestration worker-start --task t1 --spec "${LINE}"`,
       `orca orchestration worker-start --task t1 --spec='${LINE}'`,
       'orca orchestration worker-start --task t1 --spec "$LINE"',
       'orca orchestration worker-start --task t1 --spec "$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC")"',
+      'orca orchestration worker-start --task t1 --spec "$(node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-line.ts" "$SPEC")"',
       'python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC" --repo /repo --name a -- --task t1',
       'orca orchestration task-create --spec "본문"',
       "git commit -m 'orchestration worker-start --spec 본문 금지'",

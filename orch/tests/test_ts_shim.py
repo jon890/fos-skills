@@ -64,6 +64,16 @@ class ExecTest(unittest.TestCase):
         self.assertIn(f"DEPRECATED python3 launch-worker.py → node --disable-warning=ExperimentalWarning {TARGET}",
                       done.stderr)
 
+    def test_doctor_entry_stops_old_node_without_deprecated_line(self):
+        # SKILL.md 가 doctor 를 옛 진입점으로 부른다. 버전 판정은 하되 공식 진입점이라 DEPRECATED 를 내지 않는다
+        self.fake_node("v22.17.0")
+        env = dict(os.environ, PATH=f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}")
+        done = subprocess.run([sys.executable, str(SCRIPTS / "orch-doctor.py"), "--skip-version", "--skip-questions"],
+                              capture_output=True, text=True, env=env)
+        self.assertEqual(127, done.returncode, done.stdout + done.stderr)
+        self.assertTrue(done.stdout.startswith("NODE-TOO-OLD v22.17.0"), done.stdout)
+        self.assertNotIn("DEPRECATED", done.stderr)
+
     def test_missing_node_is_127(self):
         done = self.shim(str(self.bin))
         self.assertEqual(127, done.returncode, done.stdout + done.stderr)

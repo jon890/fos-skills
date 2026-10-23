@@ -1,6 +1,6 @@
 # 2. 지시서 쓰기
 
-**지시 본문은 대상 저장소의 git 이 무시하는 폴더에 쓰고, `--spec` 에는 그 경로만 준다.** `--spec` 에 들어갈 한 줄은 `spec-line.py` 가 만든다([`launch.md`](launch.md) 의 `--spec` 절).
+**지시 본문은 대상 저장소의 git 이 무시하는 폴더에 쓰고, `--spec` 에는 그 경로만 준다.** `--spec` 에 들어갈 한 줄은 `spec-line` 이 만든다([`launch.md`](launch.md) 의 `--spec` 절).
 긴 지시는 앞부분도 중간도 잘려 도착한다.
 지시서에 적지 않은 일이 빠진 채 완료로 보고되는 것을 막으려면 해야 할 일과 완료 기준을 지시서에 적는다. 후속 지시도 짧게 보내거나 새 파일로 준다.
 
@@ -16,13 +16,13 @@
 같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `planning` 으로 만든 설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
-worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask.py` 가 두 경우를 종료 코드로 가른다.
+worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask` 가 두 경우를 종료 코드로 가른다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.
 
 ## 넣을 것
 
 - 브랜치 이름을 `` 브랜치: `feature/x` `` 형식의 줄로 적는다. 백틱 안이 이름이고, 같은 줄에 다른 말이 있어도 된다.
-  `make-worktree.py` 가 이 줄을 읽어 워크트리를 만들고, 6단계가 push 한 원격 브랜치를 이 값과 대조한다.
+  `make-worktree` 가 이 줄을 읽어 워크트리를 만들고, 6단계가 push 한 원격 브랜치를 이 값과 대조한다.
   예전에 머지된 PR 의 브랜치 이름은 다시 쓰지 않는다. 스크립트가 원격에 남은 같은 이름은 거부하지만, 지워진 옛 이름은 알지 못한다
 - 「push 는 `git push -u origin HEAD` 로 한다. 브랜치 이름을 바꾸지 않는다」.
   워크트리는 지시서의 이름으로 만들어져 있고, 다른 이름으로 올리면 6단계 대조에서 걸린다
@@ -33,10 +33,10 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 - 승인이 필요한 작업이면 「발견 목록을 먼저 내고 멈춘다」.
   그 회신이 `worker_done` 으로 바로 오면 절차 위반으로 본다
 - 사용자가 허락한 외부 동작을 `허락:` 으로 시작하는 줄에 적는다. PR 을 열게 하는지와 관계없이 모든 지시서에 필수다.
-  `launch-worker.py` 가 이 줄이 없으면 거부한다. 예: 「허락: push 와 draft PR 생성(base main)은 사용자가 허락했다.」
+  `launch-worker` 가 이 줄이 없으면 거부한다. 예: 「허락: push 와 draft PR 생성(base main)은 사용자가 허락했다.」
   허락한 것이 없으면 「허락: 없음. push 까지만 한다.」 를 적는다.
   codex worker 의 기본 지침은 GitHub 게시를 막아, 지시서에 「PR 을 연다」 만 있으면 승인을 다시 묻는다.
-  `spec-line.py` 가 이 줄을 `--spec` 의 첫 지시 줄에 붙인다
+  `spec-line` 이 이 줄을 `--spec` 의 첫 지시 줄에 붙인다
 - PR 을 열게 하면 「`gh pr create` 나 리뷰 회신이 거부되면 push 한 뒤 본문 파일 경로(회신이면 스레드 id 와 회신 파일)를 status 로 보낸다. 묻지 않고 다음 일을 계속한다」 도 적는다.
   지시서의 승인은 worker 세션의 권한 분류기에 전달되지 않아, 같은 요청이 세션마다 허용되기도 하고 거부되기도 한다.
   받은 뒤의 처리는 [`replying.md`](replying.md) 의 「PR 생성과 리뷰 회신을 대신 한다」 가 정한다
@@ -71,11 +71,11 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 
 ## 띄우기 전 검사
 
-**지시서를 다 쓰면 띄우기 전에 `spec-lint.py` 로 한 번에 검사한다.** 이번에 띄울 지시서를 모두 넘긴다. 공통 지시서는 넘기지 않는다.
+**지시서를 다 쓰면 띄우기 전에 `spec-lint` 로 한 번에 검사한다.** 이번에 띄울 지시서를 모두 넘긴다. 공통 지시서는 넘기지 않는다.
 지시서끼리 담당 파일이 겹치거나, 가리킨 함수가 없거나, 금지 명령을 요구하는 것을 띄운 뒤에 알면 worker 가 ask 로 멈추거나 뒤 PR 이 충돌한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/spec-lint.py" --repo "$REPO" --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-lint.ts" --repo "$REPO" --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 ```
 
 종료 코드 1 이면 발견 줄을 보고 지시서를 고친다. `경로` 경고는 새로 만들 파일이면 그대로 둔다.

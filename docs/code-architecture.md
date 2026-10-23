@@ -231,7 +231,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py
 
 | 항목 | 규칙 |
 | --- | --- |
-| Node 버전 | 22.18 이상. 타입 제거가 플래그 없이 켜지는 첫 22.x 다. `orch-doctor` 가 버전을 보고 낮으면 `NODE-TOO-OLD` 로 멈춘다 |
+| Node 버전 | 22.18 이상. 타입 제거가 플래그 없이 켜지는 첫 22.x 다. 버전은 옛 `.py` 진입점의 `ts_shim.py` 가 `node --version` 으로 본다. 낮으면 `.ts` 로 넘기지 않고 stdout 에 `NODE-TOO-OLD` 줄을 내고 종료 코드 127 로 끝난다. `SKILL.md` 는 doctor 를 그 진입점(`orch-doctor.py`)으로 불러 스킬을 열 때 이 판정을 거친다. `.ts` 안에서는 판정하지 않는다. 낮은 node 는 `.ts` 를 읽지 못해 `ERR_UNKNOWN_FILE_EXTENSION` 으로 죽어 그 판정에 닿지 못한다 |
 | 실행 | `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/<명령>.ts"`. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다 |
 | 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
 | 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
