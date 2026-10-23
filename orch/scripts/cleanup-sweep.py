@@ -263,11 +263,31 @@ def ensure_commit(repo, pr):
     git(repo, "fetch", "-q", "origin", f"refs/pull/{pr['number']}/head")
 
 
+def pr_commit_oids(repo, pr):
+    """`gh pr view --json commits` 가 돌려주는 PR 의 커밋 해시 집합. 조회가 실패하거나 모양이 다르면 None 이다.
+
+    update-branch 로 합친 머지 커밋도 목록에 든다. gh 는 커밋을 앞쪽 100 개까지만 준다.
+    """
+    code, out, _ = run([GH, "pr", "view", str(pr["number"]), "--json", "commits"], cwd=repo)
+    if code != 0:
+        return None
+    try:
+        commits = json.loads(out).get("commits")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    if not isinstance(commits, list):
+        return None
+    return {c["oid"] for c in commits if isinstance(c, dict) and isinstance(c.get("oid"), str)}
+
+
 def belongs_to(repo, ref, base, pr):
     """그 PR 이 이 브랜치의 것인지. 끝 커밋이 PR HEAD 와 같거나 그 조상이어야 한다.
 
     base 위 커밋이 0 개면 막 만든 브랜치일 수 있다. 그 끝 커밋은 옛 PR HEAD 의 조상(base 의 옛 커밋)이기도 하므로
-    PR HEAD 와 정확히 같을 때만 인정한다. 일반 merge 로 머지돼 커밋이 base 에 들어간 브랜치가 이 경우다.
+    PR HEAD 와 정확히 같을 때만 인정하는 것이 기본이다. 다만 머지 큐의 update-branch 로 PR HEAD 가 앞서 가고
+    저장소가 merge commit 으로 머지하면, 머지 뒤 브랜치의 커밋이 모두 base 에 들어가 0 개이면서 끝 커밋이 PR HEAD 와 다르다.
+    이때는 끝 커밋이 그 PR 의 커밋 목록에 있을 때만 인정한다. 막 만든 브랜치의 끝 커밋은 base 의 옛 커밋이라 목록에 없다.
+    목록을 읽지 못하면 인정하지 않는다.
     """
     head = pr.get("headRefOid")
     if not head:
@@ -278,8 +298,10 @@ def belongs_to(repo, ref, base, pr):
     if tip == head:
         return True
     code, out, _ = git(repo, "rev-list", "--count", f"origin/{base}..{ref}")
-    if code != 0 or out in ("", "0"):
+    if code != 0:
         return False
+    if out in ("", "0"):
+        return tip in (pr_commit_oids(repo, pr) or set())
     return git(repo, "merge-base", "--is-ancestor", ref, head)[0] == 0
 
 
