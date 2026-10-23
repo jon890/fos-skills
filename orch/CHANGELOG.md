@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.6.0 (2026-10-24)
+
+- 지시서의 `허락:` 줄을 PR 을 열게 하는지와 관계없이 모든 지시서에 필수로 정했다. 공통 지시서 틀에서 Run id 를 빼고, PR 생성은 지시서의 허락 줄을 따르게 했다.
+- 충돌과 리뷰 반영은 PR 을 만든 worker 가 이어 받는다는 규칙을 문서끼리 맞췄다. `worker-start` 직접 호출은 `--task` 로 기존 Task 를 다시 띄울 때만 쓴다고 정리했다.
+- 한 저장소 전용 오버레이 예시 문서와 그 테스트를 지우고, 무거운 검사 분류와 문서 PR 의 CI 를 오버레이에 적을 항목으로 더했다.
+- reference 문서가 스크립트 머리 주석을 옮겨 적은 부분을 지우고 머리 주석이 소유하게 했다. 머리 주석에 없던 내용은 `wait-important.py`, `send-to-worker.py`, `heavy-slot.py`, `remove-worktree.py`, `terminal_ownership.py` 같은 스크립트의 머리 주석으로 옮겼다. 스크립트 동작은 바꾸지 않았다.
+- 모델 행동 관측을 이유로 단 문장을 지우고, 규칙이 막는 실패로 이유를 다시 적었다. `agent-selection.md` 는 실측 절을 없애고 선택 기준만 남겼다.
+- `README.md` 의 스크립트 목록에 빠진 파일을 더하고, 목록과 `scripts/` 를 대조하는 `tests/test_readme_script_list.py` 를 추가했다.
+
 ## 2.5.2 (2026-10-24)
 
 - work-board, 질문 감시와 doctor 가 전체 inbox 대신 현재 Run 의 질문 기록과 각 발신자의 수신함만 읽는다. 답변은 코디네이터가 보낸 thread 메시지로 판정하므로 읽음·ack 만 된 질문은 남는다. `board-sync.py` 는 질문을 직접 조회하지 않아 변경하지 않았다.

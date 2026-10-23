@@ -17,6 +17,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `references/`: 단계마다 하나씩 규칙과 복구 절차. `overlay.md` 는 저장소 오버레이에 적을 항목, `board.md` 는 진행 보드 연동
 - `templates/spec-common.md`: 저장소와 무관한 공통 지시서 틀
 - `scripts/merge_queue.py`: PR 을 순서대로 확인하고 머지한다. 머지 전 명령을 PR 마다 받는다. PR 이 고친 파일을 base 도 고쳤으면 멈추거나(`--stop-on-overlap`) base 와 합친 임시 사본에서 검사 명령을 돌린 뒤 머지한다(`--verify-merged`). 겹치지 않은 코드 PR 도 검사하게 하거나(`--verify-merged-when`) 문서 PR 은 검사 없이 머지하고(`--docs-glob`), 보류한 PR 을 건너뛰고 다음 PR 로 갈 수 있다(`--continue-on-hold`). `--up-to-date-when overlap` 은 PR 이 바꾼 단위(모듈 폴더)와 base 의 새 변경이 겹치지 않으면 base 최신화와 CI 재대기 없이 머지한다(판정은 `scripts/overlap_units.py`)
+- `scripts/merge-queue.sh`: 옛 경로. 한 버전 동안 `merge_queue.py` 로 넘기기만 한다
 - `scripts/merge-with-finish.py`: 머지 큐를 걸면서 PR 마다 `finish-pr.py` 를 함께 건다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이다. 같은 PR 의 마무리가 이미 돌면 다시 걸지 않는다. 명령줄에 없는 머지 큐 옵션은 `.orch/config.json` 의 `queue` 절에서 채운다. 보드 항목은 `pr` 필드로 찾아 업무의 마지막 PR 에서만 done 으로 바꾸고, 정리 인자(`sweep_args`)도 그 절에서 받는다. 머지 큐는 기본으로 이 스크립트로 건다
 - `scripts/finish-pr.py`: 머지를 `gh` 로 확인한 뒤 그 브랜치의 worker 를 정리하고, 머지 커밋이 들어간 배포의 성공을 기다리고, 업무를 완료 처리하고, 보드를 done 으로 바꾼다. 끝에 `FINISH-DONE` 이나 `FINISH-FAIL` 을 낸다
 - `scripts/handoff-cleanup.py`: `.orch/` 의 끝난 큐 로그, 끝난 지시서, 오래된 폴더, 지난 csv·tsv 를 휴지통 폴더로 옮긴다. 미리보기 폴더는 설정으로 줄 때만 본다. 기본은 후보만 보이고 `--apply` 로 옮긴다
@@ -37,14 +38,21 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/orch-doctor.py`: 스킬을 열 때 설치 캐시의 커밋이 원본 main 보다 낡았는지 보고 갱신 명령을 보여 주고, 문서가 부르는 `$SKILL_DIR/scripts/*` 가 모두 있는지 본다. 저장소 테스트 `scripts/tests/test_doc_script_refs.py` 가 스킬마다 이 검사를 부른다
 - `scripts/worker-ask.py`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다. JSON 해석은 `scripts/ask-json.py` 가 맡는다
 - `scripts/cleanup-sweep.py`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다
+- `scripts/terminal_ownership.py`: 워크트리 경로를 쓰는 터미널의 사용자 소유 상태를 확인한다. `cleanup-sweep.py` 가 import 하고 `remove-worktree.py` 가 삭제 전에 실행한다
 - `scripts/live_specs.py`: 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서 경로를 모은다. `cleanup-sweep.py` 와 `handoff-cleanup.py` 가 import 한다
 - `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
+- `scripts/watch-questions.py`: Monitor 의 이벤트 소스. 미답변 질문과 재알림을 한 줄씩 낸다
+- `scripts/questions.py`: 모듈. 현재 Run 의 미답변 질문을 읽는다. `watch-questions.py` 와 `orch-doctor.py` 가 import 한다
+- `scripts/completion_evidence.py`: 모듈. worker_done 을 앞선 준비 상태와 대조해 분류한다. `wait-important.py` 와 `triage-messages.py` 가 import 한다
 - `scripts/goal-progress.py`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
 - `hooks/`: 플러그인이 싣는 PreToolUse 훅. 판정과 오탐 기준은 각 파일 머리 주석이 소유한다
   - `block-background-wait.py`: `check --wait` 와 `wait-important.py` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다
   - `block-git-after-cd.py`: `cd X;` 나 줄바꿈 뒤의 git 쓰기(merge, commit, push, reset, rebase)를 거부하고 `&&` 나 `git -C` 를 요구한다
   - `block-worker-terminal-send.py`: worker 터미널에 직접 `orca terminal send` 하는 호출을 거부하고 `send-to-worker.py` 로 보내게 한다
   - `require-spec-line.py`: `worker-start --spec` 값이 `spec-line.py` 가 만드는 한 줄 꼴이 아니면 거부한다
+- `scripts/heavy-slot.py`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.py` 를 부른다
+- `scripts/orch_process.py`: 모듈. 스크립트가 함께 쓰는 프로세스 실행 함수다
+- `scripts/orca_repo.py`: 모듈. Orca 에 등록된 저장소의 외부 워크트리 표시 설정을 읽는다. `make-worktree.py` 와 `launch-worker.py` 가 import 한다
 - `scripts/mem-gate.py`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 

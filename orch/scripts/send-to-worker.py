@@ -15,6 +15,12 @@
                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
 
+agent_unconfigured 로 새 worker 를 띄울 때 실행 설정은 원래 dispatch 의 `startOptions.launch` 에서 읽는다.
+effective 를 우선하고 없는 값은 requested 에서 읽으며, --agent, --model, --effort 로 바꿀 수 있다.
+에이전트나 모델을 모르면 터미널을 남기고 그 인자를 요구한다. 터미널이 사용자 보유나 해제 상태이거나
+소유 dispatch 가 바뀌었거나 활성 dispatch 가 붙었으면 닫지 않는다. 닫기 실패나 다른 실행 오류는 자동 재시도하지 않는다.
+워크트리 파일은 보존되지만 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
+
 사용법:
     send-to-worker.py --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID] [--spec FILE] [--run RUN]
     send-to-worker.py --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]

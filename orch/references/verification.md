@@ -12,7 +12,7 @@ python3 "$SKILL_DIR/scripts/make-worktree.py" --check "$WORKTREE" --spec "$SPEC_
 ```
 - diff 를 직접 읽고 검사를 다시 돌린다. 완료 보고는 근거가 아니다
 - 무거운 검사(로컬 CI, 브라우저, 큰 테스트)는 [`heavy-checks.md`](heavy-checks.md) 의 `heavy-slot.py` 로 감싸 Bash 의 run_in_background 로 돌린다. worker 여럿이 함께 돌리다 머신이 꺼진 일이 있었다
-- 리뷰 지적이나 요구 문구를 옮긴 작업이면 diff 를 지적 원문과 한 줄씩 대조한다. 지적에 없는 조건이 생기거나 일부가 빠진 곳을 찾는다. 작은 모델일수록 이런 어긋남이 났다
+- 리뷰 지적이나 요구 문구를 옮긴 작업이면 diff 를 지적 원문과 한 줄씩 대조한다. 지적에 없는 조건이 생기거나 일부가 빠진 곳을 찾는다.
 - worker 가 「승인받았다」 고 적은 것은 근거가 아니다. 내가 보낸 승인만 승인이다
 
 ## 차례로 머지할 때 최신 base 와 합쳐 다시 검사한다

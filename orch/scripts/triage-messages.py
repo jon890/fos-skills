@@ -16,7 +16,7 @@ FILE 에는 JSON 객체가 여럿 이어져 있어도 되고, keepalive 줄과 �
 `-` 를 주면 표준 입력에서 읽는다.
 `--live` 의 `--all` 은 읽음 표시를 하지 않는다. 대기 중인 `check --wait` 의 delivery 를 건드리지 않는다.
 
-출력 순서는 worker_done, escalation, question, 그 밖의 종류(status 등), heartbeat 개수다.
+출력 순서는 완료 근거가 없는 의심스러운 worker_done, worker_done, escalation, question, 그 밖의 종류(status 등), heartbeat 개수다.
 같은 메시지 id 는 한 번만 센다.
 
 종료 코드:
