@@ -12,7 +12,9 @@ from pathlib import Path
 import re
 import shutil
 import sys
+import os
 from orch_process import run
+import orca_repo
 
 
 def main(argv=None):
@@ -54,6 +56,10 @@ def main(argv=None):
     repo = Path(root.stdout.strip()).resolve()
     def git(*args):
         return run('git', '-C', repo, *args)
+    if orca_repo.visibility(os.environ.get('ORCA', 'orca'), repo) == 'hide':
+        print(f'거부: 이 저장소는 externalWorktreeVisibility 가 hide 라 git worktree add 로 만든 워크트리를 Orca 가 숨긴다. '
+              f'워크트리를 만들기 전에 사용자가 아래 중 하나를 한다(스크립트는 설정을 바꾸지 않는다)\n{orca_repo.user_actions(repo)}', file=sys.stderr)
+        return 1
     if git('fetch', '-q', 'origin').returncode:
         print('git fetch origin 실패', file=sys.stderr)
         return 1
