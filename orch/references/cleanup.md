@@ -23,7 +23,7 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 102 103!
 ```
 
-저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.claude/orch-finish.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
+저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
 **머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.py` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
@@ -221,9 +221,9 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
 3. 워크트리를 `remove-worktree.sh` 로 지운다(아래)
 4. 로컬과 원격 브랜치를 지운다. `merge-queue.sh` 가 원격 브랜치를 지웠으면 로컬만 남는다
 5. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
-   `.omc/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다.
+   `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다(`handoff-cleanup.py`).
    공통 지시서, 결정 기록, 인수인계 문서, 진행 중 작업의 문서는 남긴다.
-   사용자 미리보기 폴더(`.omc/previews/`)는 사용자가 지우라고 말할 때만 지운다
+   사용자 미리보기 폴더는 content-preview 의 것이라 사용자가 지우라고 말하거나 설정의 `cleanup.previews` 로 맡겼을 때만 지운다
 6. 진행 보드를 쓰면 그 항목을 done 으로 바꾼다. [`board.md`](board.md)
 
 `merge --ff-only` 는 지금 체크아웃된 브랜치에 들어가므로, 기준 브랜치가 체크아웃돼 있을 때만 돌린다.

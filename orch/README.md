@@ -17,9 +17,11 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `references/`: 단계마다 하나씩 규칙과 복구 절차. `overlay.md` 는 저장소 오버레이에 적을 항목, `board.md` 는 진행 보드 연동
 - `templates/spec-common.md`: 저장소와 무관한 공통 지시서 틀
 - `scripts/merge-queue.sh`: PR 을 순서대로 확인하고 머지한다. 머지 전 명령을 PR 마다 받는다. PR 이 고친 파일을 base 도 고쳤으면 멈추거나(`--stop-on-overlap`) base 와 합친 임시 사본에서 검사 명령을 돌린 뒤 머지한다(`--verify-merged`). 겹치지 않은 코드 PR 도 검사하게 하거나(`--verify-merged-when`) 문서 PR 은 검사 없이 머지하고(`--docs-glob`), 보류한 PR 을 건너뛰고 다음 PR 로 갈 수 있다(`--continue-on-hold`)
-- `scripts/merge-with-finish.py`: 머지 큐를 걸면서 PR 마다 `finish-pr.py` 를 함께 건다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이다. 같은 PR 의 마무리가 이미 돌면 다시 걸지 않는다. 명령줄에 없는 머지 큐 옵션은 `orch-finish.json` 의 `queue` 절에서 채운다. 머지 큐는 기본으로 이 스크립트로 건다
+- `scripts/merge-with-finish.py`: 머지 큐를 걸면서 PR 마다 `finish-pr.py` 를 함께 건다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이다. 같은 PR 의 마무리가 이미 돌면 다시 걸지 않는다. 명령줄에 없는 머지 큐 옵션은 `.orch/config.json` 의 `queue` 절에서 채운다. 머지 큐는 기본으로 이 스크립트로 건다
 - `scripts/finish-pr.py`: 머지를 `gh` 로 확인한 뒤 그 브랜치의 worker 를 정리하고, 머지 커밋이 들어간 배포의 성공을 기다리고, 업무를 완료 처리하고, 보드를 done 으로 바꾼다. 끝에 `FINISH-DONE` 이나 `FINISH-FAIL` 을 낸다
-- `scripts/handoff-cleanup.py`: 끝난 큐 로그, 끝난 지시서, 오래된 handoff 폴더와 미리보기, 지난 csv·tsv 를 휴지통 폴더로 옮긴다. 기본은 후보만 보이고 `--apply` 로 옮긴다
+- `scripts/handoff-cleanup.py`: `.orch/` 의 끝난 큐 로그, 끝난 지시서, 오래된 폴더, 지난 csv·tsv 를 휴지통 폴더로 옮긴다. 미리보기 폴더는 설정으로 줄 때만 본다. 기본은 후보만 보이고 `--apply` 로 옮긴다
+- `scripts/orch_paths.py`: orch 작업 폴더(`.orch/`)의 경로를 한 곳에서 정한다. 스크립트가 import 하고, 셸에서는 `orch_paths.py specs` 처럼 이름으로 경로를 받는다
+- `scripts/migrate-orch-dir.py`: 옛 위치(`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/`)의 orch 파일을 `.orch/` 로 옮긴다. 기본은 미리보기이고 `--apply` 로 옮긴다
 - `scripts/ci-ready.py`: draft PR 을 ready 로 바꿔 CI 를 시작한다. 이미 ready 인 PR 과 파일이 겹치거나 base 와 충돌하면 보류한다. 바뀐 파일은 REST 로 읽는다. draft 로 CI 를 미루는 저장소에서만 쓴다
 - `scripts/wait-important.py`: worker_done, question, escalation, status 가 든 묶음이 올 때까지 기다린다. heartbeat 만 든 묶음은 ack 하고 계속 기다리고, 마지막 줄에 다음 `--ack` 로 넘길 delivery id 를 낸다. 다른 대기가 자리를 쥐고 있으면(`waiter_exists`) 되풀이하지 않고 남은 대기 프로세스를 보여 준다
 - `scripts/nudge-worker.py`: 메시지를 보낸 뒤 worker 화면이 입력 대기면 「check 로 읽어라」 를 넣고 턴 시작을 확인한다. 보이지 않으면 `--retry-request` 로 한 번 더 확인한다
@@ -31,7 +33,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/make-worktree.sh`: 지시서의 `브랜치:` 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고 exclude 와 로컬 설정 복사, `worktree-deny.py` 의 deny 규칙 추가를 한다. `--check` 는 push 한 브랜치가 지시서 값과 같은지 본다
 - `scripts/worktree-deny.py`: 워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령(pkill, killall, browser-driver reset)과 `gh pr merge` 의 deny 규칙을 더한다
 - `scripts/remove-worktree.sh`: 쓰는 프로세스, 미커밋 변경, 원격에 없는 커밋이 있거나 HEAD 가 `--merged-head` 의 조상이 아니면 지우지 않는다. 쓰는 프로세스는 `--wait` 초 동안, OMC session-end hook 만 남았으면 그 hook 이 끝날 때까지 기다린다
-- `scripts/spec-lint.py`: 띄우기 전에 지시서끼리 담당 경로 겹침, 코디네이터 소유와 소유 계약, 없는 함수, 금지 문구를 막고 없는 파일 경로는 경고한다. 저장소 값은 오버레이의 `## spec-lint` 절에서 읽는다. `--check-overlay` 는 오버레이와 `orch-finish.json` 이 가리키는 경로가 `origin/<base>` 에 있는지 본다
+- `scripts/spec-lint.py`: 띄우기 전에 지시서끼리 담당 경로 겹침, 코디네이터 소유와 소유 계약, 없는 함수, 금지 문구를 막고 없는 파일 경로는 경고한다. 저장소 값은 오버레이의 `## spec-lint` 절에서 읽는다. `--check-overlay` 는 오버레이와 `.orch/config.json` 이 가리키는 경로가 `origin/<base>` 에 있는지 본다
 - `scripts/orch-doctor.py`: 스킬을 열 때 설치 캐시의 커밋이 원본 main 보다 낡았는지 보고 갱신 명령을 보여 주고, 문서가 부르는 `$SKILL_DIR/scripts/*` 가 모두 있는지 본다. 저장소 테스트 `scripts/tests/test_doc_script_refs.py` 가 스킬마다 이 검사를 부른다
 - `scripts/worker-ask.sh`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다. JSON 해석은 `scripts/ask-json.py` 가 맡는다
 - `scripts/cleanup-sweep.py`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다
