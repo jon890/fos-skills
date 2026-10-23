@@ -358,6 +358,61 @@ class WrapperRunTest(unittest.TestCase):
                 self.assertEqual(2, code, out)
                 self.assertFalse(self.log.exists())
 
+    def test_run_option_reaches_finish_and_the_queue_sweep(self):
+        code, out = self.wrap("--run", "run_x", "--repo", str(self.tmp), "449")
+        self.assertEqual(0, code, out)
+        self.assertIn("--sweep-arg --run --sweep-arg run_x", self.lines("queue")[0])
+        self.assertIn("--run run_x", self.finish_lines(1)["449"])
+        self.assertNotIn("정리 단계가 Run 으로 한정되지 않는다", out)
+
+    def test_run_equals_form_is_the_same_option(self):
+        self.wrap("--run=run_z", "--no-finish", "449")
+        self.assertIn("--sweep-arg --run --sweep-arg run_z", self.lines("queue")[0])
+
+    def test_run_is_not_passed_twice_when_the_sweep_arg_already_has_it(self):
+        self.wrap("--run", "run_x", "--no-finish", "--sweep-arg", "--run", "--sweep-arg", "run_x", "449")
+        line = self.lines("queue")[0]
+        self.assertEqual(1, line.count("--sweep-arg --run"), line)
+
+    def test_run_in_config_sweep_args_is_not_passed_twice(self):
+        self.write_config({"sweep_args": ["--run", "run_x"]})
+        self.wrap("--run", "run_x", "--no-finish", "449")
+        self.assertEqual(1, self.lines("queue")[0].count("--sweep-arg --run"))
+
+    def test_finish_arg_run_alone_is_also_passed_to_the_queue_sweep(self):
+        code, out = self.wrap("--finish-arg=--run", "--finish-arg", "run_1", "--repo", str(self.tmp), "449")
+        self.assertEqual(0, code, out)
+        line = self.lines("queue")[0]
+        self.assertIn("--sweep-arg --run --sweep-arg run_1", line)
+        self.assertEqual(1, line.count("--sweep-arg --run"))
+        self.assertNotIn("정리 단계가 Run 으로 한정되지 않는다", out)
+        self.assertEqual(1, self.finish_lines(1)["449"].count("--run run_1"))
+
+    def test_without_run_the_queue_is_unchanged_and_a_warning_is_printed(self):
+        code, out = self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        self.assertEqual(["queue --repo " + str(self.tmp) + " 449"], self.lines("queue"))
+        self.assertEqual(1, out.count("경고: 정리 단계가 Run 으로 한정되지 않는다"), out)
+
+    def test_no_sweep_suppresses_the_warning(self):
+        code, out = self.wrap("--no-sweep", "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("한정되지 않는다", out)
+
+    def test_conflicting_run_values_are_usage_errors(self):
+        for argv in (["--run", "a", "--finish-arg=--run", "--finish-arg", "b", "449"],
+                     ["--run", "a", "--sweep-arg", "--run", "--sweep-arg", "b", "449"],
+                     ["--finish-arg=--run", "--finish-arg", "a", "--sweep-arg", "--run", "--sweep-arg", "b", "449"]):
+            with self.subTest(argv=argv):
+                code, out = self.wrap("--repo", str(self.tmp), *argv)
+                self.assertEqual(2, code, out)
+                self.assertFalse(self.log.exists())
+
+    def test_run_without_value_is_usage_error(self):
+        self.assertEqual(2, self.wrap("--run")[0])
+        self.assertEqual(2, self.wrap("--run=", "449")[0])
+        self.assertFalse(self.log.exists())
+
     def test_usage_errors(self):
         self.assertEqual(2, self.wrap()[0])
         self.assertEqual(2, self.wrap("abc")[0])
