@@ -7,6 +7,8 @@
 | 코디네이터 | 겹치는 파일의 최소 수정 범위, 이미 내려진 결정의 적용, 규칙 안의 검증 방법, 이미 끝난 질문의 정리 |
 | 사용자 | 저장 형식이나 사용자 데이터 변경, 근거 없는 임시 값을 쓰는 범위 확장, 사용자 규칙의 예외, 비용이나 규모 결정 |
 
+**사용자가 정할 질문은 코디네이터가 권장안으로 대신 답하지 않는다.** 권장안을 보여 사용자가 고르게 하고, 고른 답을 worker 에게 보낸다. 대신 답하면 사용자가 정할 일을 코디네이터가 정한 것이 된다.
+worker 가 `--decision` 으로 보낸 질문은 `결정:` 줄과 `권장:` 줄을 그대로 옮겨 사용자에게 보인다. 코디네이터가 사용자에게 직접 묻는 결정도 같은 형식으로 쓴다. 형식과 검사 규칙은 저장소의 `docs/data-schema.md` 「사용자 결정 질문 형식」 이, 형식 예시는 `templates/spec-common.md` 가 소유한다.
 사용자 결정은 배경과 권장안을 붙여 `AskUserQuestion` 하나에 최대 4개까지 묶는다.
 Codex 에서는 같은 내용을 사용 가능한 구조화 질문 도구로 묻는다.
 답을 받으면 각 질문의 원래 메시지 ID 에 `send-to-worker.py --reply-to` 로 전달한다.
@@ -19,14 +21,8 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 
 **worker 에게 보내는 답과 후속 지시는 `send-to-worker.py` 로 보낸다.** worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
 작업 중인 worker 의 입력란에 글이 섞이고, 끝난 dispatch 의 터미널에 쓴 지시는 Task 기록 없이 사라진다.
-스크립트가 dispatch 상태를 보고 경로를 고른다. 경로와 종료 코드는 스크립트 머리 주석이 소유한다.
-
-| dispatch | 스크립트가 하는 일 |
-| --- | --- |
-| 살아 있다 | 그 worker 의 마지막 메시지에 `reply` 하고 `nudge-worker.py` 로 깨운다. 이미 답한 question 은 건너뛴다 |
-| 끝났고 터미널이 남았다 | `--spec` 의 후속 지시서로 그 터미널에 새 Task 를 띄운다. `agent_unconfigured` 이면 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. `--spec` 이 없으면 종료 코드 3 |
-| 끝났는데 아직 일한다 | `--spec` 이 없고 화면이 작업 중이면 `--body` 를 그 터미널에 넣고, Task 기록에 묶이지 않는다고 경고한다 |
-| 끝났고 터미널도 없다 | 종료 코드 3. `launch-worker.py --worktree` 로 새로 띄운다 |
+스크립트가 dispatch 상태를 보고 경로를 고른다. 상태별 경로와 종료 코드는 스크립트 머리 주석이 소유한다.
+종료 코드 3 이면 표준 출력이 다음에 할 일을 말한다. 끝난 dispatch 에 `--spec` 을 주지 않았거나 터미널이 없는 경우다.
 
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
 
@@ -42,8 +38,7 @@ python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch "$DISPATCH_ID" --body 
 **worker 가 status 를 보내고 입력 대기로 멈춰 있으면 `reply` 와 `send` 가 그 worker 를 깨우지 않는다.**
 worker 는 메시지를 다음 턴의 `check` 에서 읽는데, 입력 대기인 worker 에게는 다음 턴이 오지 않는다.
 dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an active dispatch` 로 거절된다.
-**`send-to-worker.py` 가 아니라 `reply` 나 `send` 를 직접 보냈으면 그 직후에 `nudge-worker.py` 를 부른다.** 화면 마지막 줄들로 입력 대기인지 보고, 그때만 「코디네이터 메시지를 check 로 읽어라」 를 넣고 턴 시작을 확인한다.
-작업 중이면 입력하지 않는다. 턴 시작이 보이지 않으면 같은 request id 로 `--retry-request` 를 한 번 더 보낸다.
+**`send-to-worker.py` 가 아니라 `reply` 나 `send` 를 직접 보냈으면 그 직후에 `nudge-worker.py` 를 부른다.** 화면 판정과 재시도는 스크립트 머리 주석이 소유한다.
 `$MSG_ID` 는 방금 보낸 메시지 id 다.
 
 ```bash
@@ -64,7 +59,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 | 화면 | 판단 | 할 일 |
 | --- | --- | --- |
 | `Working` 이 보이거나 새 턴이 진행 중이다 | 늦게 시작한 것이다 | 그대로 두고 4단계 대기를 건다 |
-| 입력란이 비어 있고 새 턴이 없다 | 지시가 전달되지 않았다 | `worker-abandon` 으로 그 dispatch 를 닫고, `worker-show` 의 `taskId` 로 `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "path:$WORKTREE"` 를 다시 보낸다 |
+| 입력란이 비어 있고 새 턴이 없다 | 지시가 전달되지 않았다 | `worker-abandon` 으로 그 dispatch 를 닫고, `worker-show` 의 `taskId` 로 `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "path:$WORKTREE"` 를 다시 보낸다(`--task` 로 기존 Task 를 다시 띄우는 호출이라 3단계의 예외다) |
 
 같은 지시를 `--spec` 으로 새로 보내지 않는다. Task 가 둘 생겨 어느 쪽이 유효한 시도인지 흐려진다.
 
@@ -89,13 +84,13 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 3. 이 세션이 띄운 것이 맞으면 `orca terminal close --terminal <handle>` 로 닫는다
 4. `launch-worker.py --spec <후속 지시서> --worktree <워크트리>` 를 `--terminal` 없이 부른다
 
-`send-to-worker.py --spec` 은 `launch-worker.py` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 `startOptions.launch.effective` 설정으로 새 worker 를 띄운다. effective 에 없는 값은 requested 에서 읽는다. `--agent`, `--model`, `--effort` 로 새 실행의 설정을 바꿀 수 있다.
-
-에이전트나 모델을 모르면 터미널을 남기고 해당 인자를 요구한다. 터미널 소유 dispatch 가 바뀌었거나 활성 dispatch 가 붙었으면 닫지 않는다. 닫기 실패나 다른 실행 오류는 자동 재시도하지 않는다. 워크트리 파일은 보존되지만 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
+`send-to-worker.py --spec` 은 `launch-worker.py` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 설정으로 새 worker 를 띄운다. 설정을 읽는 법과 닫지 않는 조건은 `send-to-worker.py` 머리 주석이 소유한다. 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
 
 `launch-worker.py` 를 직접 부르면 종료 코드 3 과 안내만 낸다. 그 경우 아래 순서로 복구한다.
 
 **새 worker 로 이어받는 순서**
+
+충돌과 리뷰 반영에는 이 순서를 쓰지 않는다. 아래 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 가 우선한다.
 
 1. 앞 worker 의 작업이 push 됐는지 본다. `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD`, `git -C "$WORKTREE" status --short`, `git ls-remote origin "$BRANCH"` 를 본다. 커밋하지 않은 변경은 워크트리에 남아 있으니 버리지 않는다
 2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `orca terminal close --terminal "$OLD_TERMINAL_HANDLE"` 로 닫는다. 다른 세션이나 사용자의 터미널은 닫지 않는다
@@ -123,9 +118,21 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 - 리뷰 회신은 스레드 id 와 회신 파일을 받아 `review-fix` 스킬의 `review_threads.py reply` 로 달고, 반영한 스레드만 `resolve` 한다.
   `reply` 와 `resolve` 는 스레드 id 만 받으므로 대상 저장소 밖에서 돌릴 때는 `--repo "$OWNER/$REPO"` 를 준다
 
-## 리뷰 반영을 맡긴다
+## 충돌과 리뷰 반영은 만든 worker 가 이어 받는다
 
-PR 에 리뷰가 달리면 PR 을 연 worker 에게 `review-fix` 스킬로 반영하게 한다.
-그 worker 가 끝났으면 같은 worktree 에 새 dispatch 를 띄우고, 지시서에 PR 번호와 「반영하지 않을 지적은 회신 전에 ask 로 묻는다」 를 적는다.
-리뷰 반영은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 모델을 고른다.
+**충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받는다.** 새 worker 를 띄우면 워크트리와 터미널이 늘어 로컬 자원을 쓴다.
+그래서 worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다. 터미널을 닫는 때는 [`cleanup.md`](cleanup.md) 의 「정리」 가 소유한다.
+
+충돌하거나 리뷰가 달리면 끝난 dispatch 로 후속 지시서를 보낸다.
+`$DISPATCH_ID` 는 PR 을 만든 worker 의 끝난 dispatch, `$SPEC_FILE` 은 후속 지시서다.
+
+```bash
+python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE" --run "$RUN_ID"
+```
+
+- 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다
+- 종료 코드 3(터미널이 없다)이면 새 worker 를 띄우지 않고 사용자에게 알린다
+- 리뷰 반영 지시서에는 PR 번호와 「반영하지 않을 지적은 회신 전에 ask 로 묻는다」 를 적는다. 모델은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 고른다
+- 이 규칙이 위 「새 worker 로 이어받는 순서」 나 [`launch.md`](launch.md) 가 남은 터미널을 닫고 새 worker 로 띄우라고 한 곳과 어긋나면 충돌과 리뷰 반영에는 이 규칙이 우선한다
+
 회신과 resolve 가 막히면 위 「PR 생성과 리뷰 회신을 대신 한다」 를 따라 코디네이터가 단다.

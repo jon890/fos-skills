@@ -4,6 +4,11 @@
 사용: remove-worktree.py DIR [--delete-branch] [--merged-head SHA] [--wait SEC]
 OMC session-end hook과 자손은 ORCH_HOOK_WAIT초(기본 180초)까지 기다린다.
 원격 브랜치는 지우지 않는다. 종료: 0 삭제, 1 거부, 2 인자 오류.
+거부하는 경우: 그 경로를 쓰는 프로세스가 --wait 초 뒤에도 남았다, 커밋 안 된 변경이 있다,
+원격 어디에도 없는 커밋이 있다, HEAD 가 --merged-head 의 조상이 아니다. 이유를 출력한다.
+원격에 같은 제목의 커밋이 있으면 rebase 된 것으로 보지만 squash 머지는 제목이 달라 원격에 없는 커밋으로 센다.
+그때 --merged-head 를 주면 그 커밋의 조상은 원격에 있는 것으로 센다.
+Python 3.10 이상, lsof, git 2.31 이상이 필요하다.
 """
 import argparse
 import os

@@ -14,11 +14,8 @@ python3 "$SKILL_DIR/scripts/watch-questions.py" --run "$RUN_ID" --repo "$REPO"
 기본 재알림은 10분이며 `--remind-after 300` 처럼 초 단위로 바꾼다. 조회 간격은 `--interval` 로 바꾼다.
 알린 시각은 `orch_paths.py` 가 정한 `state/questions-seen.json` 에 Run 별로 남는다.
 다시 띄워도 재알림 시간이 되기 전에는 같은 질문을 알리지 않는다.
-현재 Run 의 `check --all --types question,escalation` 과 `--peek --types question,escalation` 을 합쳐 질문을 찾는다.
-그 발신자의 `inbox --terminal` 에서 코디네이터 답변 thread 를 확인하므로 ack 여부와 관계없이 답한 질문은 감시와 보드에서 빠진다.
-전체 inbox 는 읽지 않는다. Orca 의 두 `check` 조회는 각각 100건 상한이 있어 그 밖의 미답변은 빠질 수 있다.
-상한에 닿으면 stderr 와 보드에 조회 범위를 표시한다. 발신자별 답변 조회도 200건으로 제한하며, 답변 여부가 불확실하면 조회 오류로 처리한다.
-조회 실패와 기록 한도 도달은 stderr 로 알리고 다음 조회에서 다시 시도한다.
+질문을 찾는 범위와 조회 한도는 `questions.py`, 알림 형식은 `watch-questions.py` 머리 주석이 소유한다.
+조회 실패와 기록 한도 도달은 stderr 로 알리고 다음 조회에서 다시 시도한다. stderr 와 보드에 조회 범위가 표시되면 그 밖의 미답변은 빠질 수 있다.
 
 **압축이나 세션 재시작 뒤 첫 작업은 감시 복구다.** Monitor 목록과 아래 프로세스 목록에서 현재 Run 의 질문 감시와 완료 대기를 확인한다.
 꺼진 질문 감시는 위 명령으로 다시 띄우고, 완료 대기는 이 문서의 「이전 세션의 대기」 절차로 복구한다.
@@ -42,10 +39,7 @@ doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. `SKIP-QUEST
 ps -eo pid,command | grep -E "orchestration check|wait-important" | grep -v grep
 ```
 
-**heartbeat 만 든 묶음은 스크립트가 ack 하고 계속 기다린다.**
-`check --wait` 의 `--types` 는 깨어나는 조건일 뿐이고, 돌려주는 delivery 는 그때 쌓인 묶음 전체다.
-묶인 run 은 ack 하지 않은 묶음을 `--types` 와 상관없이 다시 준다(`orca orchestration check --help`). `check --wait` 를 직접 걸면 heartbeat 만 든 묶음을 받을 때마다 읽을 것 없이 ack 하고 다시 거는 데 턴을 쓴다.
-스크립트는 `--types` 의 종류(기본 `worker_done,question,escalation,status`)가 든 묶음이 오면 ack 하지 않고 그대로 낸다.
+**`check --wait` 를 직접 걸지 않는다.** heartbeat 만 든 묶음을 받을 때마다 읽을 것 없이 ack 하고 다시 거는 데 턴을 쓴다. 스크립트가 그 묶음은 ack 하고 계속 기다린다.
 
 **처리한 delivery 는 다음 대기의 `--ack` 로 넘긴다.**
 묶인 run 은 ack 하기 전까지 같은 delivery 를 다시 준다.
@@ -59,32 +53,17 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID"
 ```
 
-종료 코드는 스크립트 머리 주석이 소유한다.
-기본 `--completion-contract ready` 는 완료 보고 전에 같은 Task·Dispatch·발신자가
-`준비됨 #N, head <전체 40자리 SHA>` 상태를 보냈는지 검사한다.
-이미 ack 한 준비 상태도 `check --all` 로 읽으며 delivery 는 소비하지 않는다.
-근거가 없거나 이력을 읽지 못하면 `의심스러운 worker_done` 으로 따로 표시하고 종료 코드 6 으로 끝난다.
-자동 ack 하지 않으므로 [`verification.md`](verification.md) 의 「완료 전에 온 worker_done」 을 먼저 따른다.
-PR 이 없는 읽기 전용 작업은 대기와 분류 양쪽에 `--completion-contract none` 을 준다.
-명시적인 실패 보고는 PR 준비 상태 없이도 처리할 묶음으로 낸다.
-시간 한도로 끝나면 `TIMEOUT LAST_DELIVERY <id>` 를 낸다. 실패가 아니므로 그 id 로 다시 건다.
-orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바로 끝나거나 남음」 을 따른다.
-종료 코드 4 는 그 Run 에 다른 대기가 이미 있다는 뜻이다(`waiter_exists`). 다시 걸어도 같은 오류만 받으므로, 스크립트가 stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다.
+종료 코드와 `TIMEOUT` 줄은 스크립트 머리 주석이 소유한다. 아래는 코디네이터가 할 일이다.
 
-종료 코드 5 는 처리하지 않은 끊긴 worker 가 있다는 뜻이다. 출력에 `WORKER_LOST ctx_... stage=terminal_missing` 줄이 있다.
-기기가 재시작되어 터미널이 사라지면 메시지가 오지 않아 대기가 끝나지 않으므로, 스크립트가 60초마다(`--lost-interval-sec`) `worker-list` 로 상태를 본다. 대기를 시작할 때 살아 있던 dispatch 가 끊기는 것과, 시작할 때 이미 끊겨 있는데 처리하지 않은 dispatch 를 모두 본다. 재시작 뒤 새로 건 대기는 후자라 `check` 를 부르지 않고 바로 5 로 끝난다.
-처리한 dispatch 는 본다고 치지 않는다. 같은 task 에 나중 dispatch 가 있는 것(다시 띄웠다), 끝난 task(completed, 취소), `--ignore-lost ctx_...` 로 뺀 것이다.
-일부러 끝낸 dispatch 도 끊긴 것으로 보지 않는다. 터미널을 닫아 끝난 것(`operator_close`)과 worker 가 `worker_done --outcome failed` 로 알린 것이다.
-dispatch 가 `completed`, `abandoned` 이거나 성공·취소 결과가 기록됐으면 `terminal_missing` 이어도 끊김에서 제외한다. `dispatch-show` 의 종료 이유와 실패 기록은 camelCase 와 기존 snake_case 를 모두 읽는다. 실패 이유가 `abandoned` 라고 기록된 명시적 포기도 제외하며, 복구 과정에서 터미널을 잃은 abandoned worker 는 계속 끊김으로 본다.
-**한 번 알린 dispatch 는 다음 대기에서 다시 알리지 않는다.** 스크립트가 `.orch/state/wait-important-lost.json` 에 Run 별로 적는다.
-worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 31개씩 다시 깨운 일이 있었다. 그러므로 `WORKER_LOST` 줄은 받은 그 자리에서 처리한다.
-알렸는데 아직 끊긴 채인 dispatch 는 다음 대기가 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남긴다.
-그 줄이 나오면 다시 대기를 걸기 전에 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 마지막 줄의 `LAST_DELIVERY` id 는 다음 대기의 `--ack` 로 넘긴다.
+- 종료 코드 6(`의심스러운 worker_done`)은 자동 ack 하지 않는다. [`verification.md`](verification.md) 의 「완료 전에 온 worker_done」 을 먼저 따른다
+- PR 이 없는 읽기 전용 작업은 대기와 분류 양쪽에 `--completion-contract none` 을 준다
+- `TIMEOUT LAST_DELIVERY <id>` 는 실패가 아니다. 그 id 로 다시 건다
+- orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
+- 종료 코드 4(`waiter_exists`)는 다시 걸어도 같은 오류만 받는다. stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다
+- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다
 
 **복구하거나 더 처리할 일이 없다고 확인한 dispatch 는 `--ack-lost` 로 기록한다.**
-`--ignore-lost` 는 해당 실행에서만 제외한다. `--ack-lost` 는 같은 상태 파일에 `handled` 로 덮어써 다음 실행부터 경고도 생략한다.
-여러 dispatch 를 한 번에 기록할 수 있고, 기록만 쓴 뒤 종료 코드 0 으로 끝나므로 대기는 따로 건다.
-파일을 쓰지 못하면 종료 코드 1 이며 확인한 것으로 처리하지 않는다. 다른 Run 의 기록과 아직 확인하지 않은 dispatch 는 유지한다.
+`--ack-lost` 는 기록만 쓴 뒤 종료 코드 0 으로 끝나므로 대기는 따로 건다. `--ignore-lost` 와의 차이와 실패 처리는 스크립트 머리 주석이 소유한다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack-lost "$DISPATCH_ID"
@@ -99,12 +78,12 @@ python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_
 두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 루프에서 다시 시도된다. 따로 기억하지 않는다.
 5분 주기는 백그라운드 대기와 별개로 하네스의 예약 기능이나 다음 깨어남에 붙인다.
 
-`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 와 `$ITEMS_FILE` 은 목표 항목과 추적 항목 파일이다. 저장소 오버레이가 정한다.
-보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 과 `--goal-items` 를 뺀다.
+`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 는 목표 항목 id 다. 저장소 오버레이가 정한다.
+보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
-python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --goal-items "$ITEMS_FILE"
+python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID"
 ```
 
 머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.
@@ -117,18 +96,13 @@ python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --go
 python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .orch/specs --kill-holders --apply
 ```
 
-`cleanup-sweep.py` 의 판정과 건너뛰는 조건은 그 파일 머리 주석이 소유한다.
+`cleanup-sweep.py` 가 다루는 경우와 건너뛰는 조건은 그 파일 머리 주석이 소유한다. 스크립트가 다루는 경우를 코디네이터가 직접 지우지 않는다.
 `건너뜀` 줄만 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 루프째 남으면 그 worker 를 확인한다.
-squash 머지, 로컬과 원격의 브랜치 이름이 다른 경우, worker 를 반납한 뒤 Orca 가 띄운 빈 셸 터미널은 스크립트가 처리하므로 코디네이터가 직접 지우지 않는다.
-`--run` 을 주면 다른 Run(다른 코디네이터)의 worker 터미널이 붙은 경로는 건너뛴다. 그 경로는 그 Run 의 코디네이터가 정리한다.
 
 ## 받은 메시지 읽기
 
 **대기 결과는 `triage-messages.py` 로 읽는다.** 출력 파일을 눈으로 훑지 않는다.
-스크립트가 낸 묶음에도 heartbeat 가 함께 들어 있다. 한 delivery 에 heartbeat 가 수십 건 섞이면 그 사이의 `worker_done` 하나를 놓친다.
-스크립트는 `worker_done`, `escalation`, `question` 을 먼저 따로 모으고 heartbeat 는 보낸 쪽마다 개수만 낸다.
-준비 근거가 없는 보고는 `의심스러운 worker_done` 묶음으로 맨 먼저 낸다.
-백그라운드 출력 파일 끝에 하네스가 붙이는 종료 코드 줄과 keepalive 줄은 건너뛴다.
+한 delivery 에 heartbeat 가 수십 건 섞이면 그 사이의 `worker_done` 하나를 놓친다. 출력 순서와 입력 형식은 스크립트 머리 주석이 소유한다.
 `$OUT` 은 백그라운드 작업의 출력 파일 경로다.
 
 ```bash
@@ -136,7 +110,7 @@ python3 "$SKILL_DIR/scripts/triage-messages.py" "$OUT"
 ```
 
 **놓친 보고가 의심되면 지난 시각부터 다시 본다.** compact 나 세션 재시작 뒤, ack 를 먼저 하고 읽지 못한 경우가 여기 해당한다.
-`--live` 는 `check --all` 을 부르므로 읽음 표시를 하지 않고, 도는 대기의 delivery 를 건드리지 않는다.
+`--live` 는 읽음 표시를 하지 않으므로 도는 대기의 delivery 를 건드리지 않는다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/triage-messages.py" --live --run "$RUN_ID" --since 3h
@@ -160,11 +134,8 @@ Orca runtime 이 잠시 끊기면 `runtime_unavailable` 로 끝나기도 한다.
 ps -ax -o pid,ppid,lstart,command | grep -E "orchestration check|wait-important" | grep "$RUN_ID"
 ```
 
-부모 PID 가 1 이거나 일반 셸을 거쳐 PID 1 에 연결된 같은 사용자의 대기가 고아 대기다.
-`--kill-stale` 은 그런 대기 프로세스만 종료한다. 조상인 일반 셸 자체와 다른 Run 의 대기는 종료하지 않는다.
-종료 뒤에는 대기를 다시 건다. 프로세스 목록을 읽지 못하거나 살아 있는 세션에 연결된 대기면 종료하지 않고 종료 코드 4 로 끝난다.
-다른 run 의 대기는 다른 세션의 것이므로 건드리지 않는다.
-그 대기가 이미 받아 간 메시지는 위 `--live --since` 로 다시 본다.
+고아 대기의 판정과 `--kill-stale` 이 종료하는 범위는 `wait-important.py` 머리 주석이 소유한다. 다른 run 의 대기는 다른 세션의 것이므로 직접 건드리지 않는다.
+종료 뒤에는 대기를 다시 건다. 그 대기가 이미 받아 간 메시지는 위 `--live --since` 로 다시 본다.
 
 ## heartbeat 만 올 때
 
@@ -195,10 +166,11 @@ heartbeat 와 liveness 는 `live` 로 남아 대기만으로는 알 수 없다. 
 
 `worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝나고, 이 상태의 Task 에 `--retry-of` 를 주면 `task_not_startable` 로 거절된다.
 `worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
+`$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다. `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker.py` 를 쓰지 않는 3단계의 예외다.
 
 ```bash
 orca orchestration worker-abandon --dispatch "$DISPATCH_ID" --json
-orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --worktree "id:$WORKTREE_ID" --agent claude --model claude-sonnet-5-5 --effort medium --json
+orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --worktree "id:$WORKTREE_ID" --agent "$AGENT" --model "$MODEL" --effort "$EFFORT" --json
 ```
 
 ## 기다리는 동안 worker 워크트리를 고치지 않는다

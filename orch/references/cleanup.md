@@ -1,29 +1,15 @@
 # 7. 머지와 정리
 
 `cleanup-sweep.py` 와 `remove-worktree.py` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
-터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 
-끝난 dispatch 의 터미널은 `worker-list` 의 `resource` 로 아래처럼 나뉜다.
-
-| 상태 | `ownershipState` / `retainedReason` | 정리 |
-| --- | --- | --- |
-| 회수 가능 | `owned`, 이유 없음 | PR 이 MERGED 면 터미널을 닫고 dispatch 를 release 한다 |
-| 사용자가 넘겨받음 | `user_owned` / `user_takeover` | `남김: 사용자 보유 터미널` (아래 옵션을 켠 때만 예외) |
-| 이미 release | `released` | `남김: 사용자 보유 터미널` |
-| 외부 터미널 | `external` / `external_terminal` | 소유 상태가 `owned` 가 아니라 `터미널 소유 상태 조회 실패` 로 남긴다 |
-| 신원 미확인 | `owned` / `identity_unproven` | `owned` 라 막지 않는다. Orca 의 release 는 닫지 않으므로 sweep 이 경로로 찾아 닫는다 |
+끝난 dispatch 의 터미널을 상태별로 어떻게 정리하는지(`ownershipState` / `retainedReason` 별 `남김` 사유)는 `terminal_ownership.py` 머리 주석이 소유한다.
 
 `user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 가르지 못한다. Orca 의 필드에 시각과 주체가 없다.
 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.py --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
-옵션은 `--run` 과 함께 줄 때만 동작하고, 아래가 모두 참인 터미널만 소유 확인에서 뺀다. 하나라도 아니면 예전처럼 남긴다.
+옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.py` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
 `finish-pr.py` 와 `merge-with-finish.py` 는 이 옵션을 넘기지 않는다.
-
-- 그 Run 의 dispatch 이고 `dispatchStatus` 가 completed 다
-- `user_owned` 이고 `retainedReason` 이 `user_takeover` 다
-- `orca terminal list` 의 그 터미널에 `agentIdentity` 가 없다
-- 그 경로를 쓰는 프로세스가 모두 자식 없는 로그인 셸이다
 
 머지는 worker 에게 맡기지 않는다.
 사용자가 머지까지 맡겼으면 코디네이터가 6단계 검증 뒤 머지한다. 맡기지 않았으면 6단계 검증 뒤 사용자에게 확인받고 머지한다.
@@ -50,7 +36,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --run "$RUN_ID"
 **머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식, 최신화 규칙, 정리 인자)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.py` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
-스크립트가 충돌 파일을 내고 (PR, base SHA) 마다 한 번만 그 worker 에게 base 를 합치라고 보낸다. 같은 base 로 다시 돌려도 또 보내지 않는다.
+충돌 파일 출력과 알림 중복 방지는 스크립트 머리 주석이 소유한다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/notify-conflicts.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID"
@@ -59,18 +45,13 @@ python3 "$SKILL_DIR/scripts/notify-conflicts.py" --repo "$REPO" --base "$BASE" -
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
 `--continue-on-hold` 를 주면 보류한 PR 의 `STOP` 줄만 찍고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다. 서로 무관한 PR 여럿을 한 번에 걸 때 쓴다. 뒤 PR 이 앞 PR 에 기대면 쓰지 않는다.
 
-- 체크를 보기 전에 PR HEAD 를 고정하고, 머지 직전에 PR HEAD 와 원격 브랜치 HEAD 가 그 값과 같은지 본다. 검사나 머지 전 명령이 도는 사이에 push 된 커밋이 검사 없이 머지되는 것을 막는다
-- **체크가 끝나기를 기다리는 조건은 「대기 0」이 아니라 「필수 체크가 모두 나타났고 대기 0」이다.** PR 을 연 직후에는 체크 목록이 비어 있어, 대기 0 만 보면 체크가 시작도 하기 전에 머지를 시도한다. 필수 체크 이름은 `--required a,b,c` 로 주거나, 주지 않으면 저장소 규칙(`rules/branches/<base>` 의 `required_status_checks`)에서 읽는다. 예전 방식의 브랜치 보호 규칙은 규칙 조회에 나오지 않으므로 `--required` 로 준다. 목록을 끝내 알 수 없으면 경고를 찍고 지금 있는 체크만 기다린다. 무료 플랜의 비공개 저장소는 규칙 API 가 403(플랜 제한)을 내는데, 이때도 경고를 찍고 목록을 빈 것으로 다룬다. 인증, 네트워크, 404 는 멈춘다
-- `mergeable` 이 `UNKNOWN` 이면 GitHub 이 아직 계산 중이다. 스크립트가 몇 번 다시 묻는다
-- 머지 결과를 `state` 로 확인한 뒤에만 원격 브랜치를 지운다. `gh pr merge` 가 보호 규칙으로 거절됐는데 브랜치를 지우면 PR 이 닫힌다
+PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대기, 충돌과 미해결 스레드, 머지 결과 확인)의 순서와 종료 코드는 `merge_queue.py` 머리 주석이 소유한다.
 
 ### draft 로 CI 를 미루는 저장소
 
 **오버레이가 「draft PR 은 CI 를 돌리지 않는다」 고 정한 저장소에서만 쓴다.** 그 저장소의 worker 는 PR 을 draft 로 연다.
 코디네이터가 6단계 검증을 마친 PR 을 `ci-ready.py` 로 ready 로 바꿔 CI 를 시작한다. 그다음 머지 큐에 넣는다.
-겹친 PR 둘을 함께 ready 로 바꾸면 앞 PR 이 머지된 뒤 뒤 PR 의 CI 를 base 와 합쳐 다시 돌려야 한다.
-스크립트는 이미 ready 인 PR 과 파일이 겹치거나 base 와 충돌하는 PR 을 보류하고 이유를 낸다.
-바뀐 파일은 GraphQL 이 아니라 REST 로 300 개까지 읽는다. PR 이 많은 저장소에서 GraphQL 은 2차 한도에 걸린다.
+겹친 PR 둘을 함께 ready 로 바꾸면 앞 PR 이 머지된 뒤 뒤 PR 의 CI 를 다시 돌려야 하므로, 스크립트가 겹치거나 충돌하는 PR 을 보류한다.
 판정과 종료 코드는 스크립트 머리 주석이 소유한다.
 
 ```bash
@@ -84,11 +65,8 @@ python3 "$SKILL_DIR/scripts/ci-ready.py" --repo "$REPO" 101 102
 **`--allow-fail A,B` 는 필수가 아닌 체크가 코드와 무관한 이유로 실패했고, 그 대신 할 검증을 끝냈을 때만 쓴다.**
 사용량 한도나 외부 장애로 리뷰 봇이 실패한 경우가 예다. 그 체크가 하던 일을 독립 리뷰 같은 다른 방법으로 끝낸 뒤에 쓴다.
 기본은 실패한 체크가 하나라도 있으면 멈추는 것이다. 모르는 실패를 조용히 넘기지 않으려고 이름을 하나씩 적어 준 체크만 넘긴다.
-
-- 이름이 든 체크의 실패는 세지 않고 머지 전에 `경고: <PR> 실패를 허용한 체크 <이름>` 줄을 찍는다. 목록에 없는 체크가 실패하면 그대로 멈춘다
-- `--required` 나 저장소 규칙의 필수 체크에 든 이름은 허용할 수 없다. 옵션 값이 겹치면 종료 코드 2, 규칙에서 읽은 필수 체크와 겹치면 `STOP` 이다
-- 진행 중인 체크는 이 옵션과 상관없이 끝날 때까지 기다린다
-- **실패를 허용하려면 그 이유를 사용자에게 먼저 알린다.** 어떤 체크가 왜 실패했고, 대신 어떤 검증을 끝냈는지 적는다
+**실패를 허용하려면 그 이유를 사용자에게 먼저 알린다.** 어떤 체크가 왜 실패했고, 대신 어떤 검증을 끝냈는지 적는다.
+필수 체크는 허용할 수 없고, 목록에 없는 체크가 실패하면 멈춘다. 판정은 스크립트 머리 주석이 소유한다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --required test,browser --allow-fail claude-review 101
@@ -101,7 +79,6 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --required test
 오래된 base 위에서 각각 통과한 PR 둘이 머지돼 base 빌드가 깨진 일이 있었다. 한 PR 은 계약 칸이 서로 일치하는지 보는 테스트를 더했고, 다른 PR 은 계약 칸을 더했다. 둘 다 서로를 모른 채 통과했고, 머지된 base 에서 테스트가 실패했다.
 체크는 PR HEAD 기준으로 도는 것이라 base 가 움직였는지는 모른다. 이 옵션이 그 틈을 닫는다.
 
-- base 를 merge 하면 PR HEAD 가 바뀌고 체크가 새로 시작한다. 새 체크는 한동안 목록에 없으므로 필수 체크 목록이 있어야 이 옵션을 켤 수 있다
 - 충돌이 나면 `update-branch` 가 실패해 멈춘다. 충돌을 푸는 일은 그 PR 의 worker 가 한다
 - 머지 큐에서 앞선 PR 이 머지되면 뒤 PR 은 base 가 달라진 것이므로 이 옵션이 뒤 PR 마다 다시 base 를 merge 한다. 시간이 더 걸리는 대신 base 가 깨지지 않는다
 
@@ -115,29 +92,9 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to
 `--require-up-to-date` 만 쓰면 앞 PR 이 머지될 때마다 뒤 PR 이 base 를 합치고 필수 CI 를 다시 기다려, PR 하나에 CI 한 번 분량이 더 든다.
 `overlap` 은 PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹치지 않으면 최신화 없이 머지하고, 겹치면 지금처럼 합치고 CI 를 다시 기다린다.
 
-| 규칙 | 내용 |
-| --- | --- |
-| 단위 | `--unit-prefix`(기본 `modules/`) 아래 폴더 하나다. `modules/api/` 아래 파일은 `api` 이고, 그 밖의 파일은 경로 자체가 단위다 |
-| 공용 경로 | `--shared-paths` 정규식에 맞는 파일은 어느 쪽에 있든 겹친 것으로 본다. 공용 모듈, 루트 빌드 파일, 계약, CI 설정처럼 모든 모듈에 영향을 주는 경로다 |
-| 문서 | `--docs-glob` 에 맞는 파일은 양쪽 모두 세지 않는다 |
-| 합칠 것이 없는 경우 | base 에 문서 밖 변경이 없거나(이미 최신이거나 문서만 들어왔다), PR 이 문서만 바꿨으면 겹침을 따지지 않고 바로 머지한다 |
-| 판정 시점 | 큐를 걸 때가 아니라 그 PR 차례가 왔을 때 한다. 앞 PR 이 머지되면 base 가 바뀌기 때문이다 |
-
-판정은 `scripts/overlap_units.py` 가 하고, PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이유)` 한 줄을 찍는다.
-이유는 `단위 겹침: api` 나 `공용 경로: modules/common/Util.java` 꼴이다. 판정하지 못하면(`git` 실패, 잘못된 정규식) 갱신 필요로 다룬다. 안전한 쪽이 기존 동작이다.
-`--require-up-to-date` 가 있어야 한다. 이름을 바꾼 파일은 옛 경로와 새 경로를 모두 센다.
-
-**판정은 처음 한 번으로 끝나지 않는다.** 갱신하고 CI 를 기다리는 사이에 base 가 또 움직이거나, 바로 머지로 판정한 뒤 머지 직전에 base 가 움직이면 다시 판정한다.
-다시 판정할 때 보는 변경은 PR 이 어디서 갈라졌느냐로 정해진다. 갱신을 마친 PR 은 이미 합친 base 를 품어서 새로 들어온 변경만 보지만, 갱신하지 않고 바로 머지로 판정한 PR 은 처음 갈라진 뒤 base 에 들어온 변경을 모두 다시 본다.
-
-| 상황 | 동작 |
-| --- | --- |
-| 갱신한 뒤 base 가 또 움직였다 | PR 의 새 merge-base(이미 합친 base) 이후 변경만 판정한다. 겹치지 않으면 다시 갱신하지 않고 머지하고, 겹칠 때만 또 갱신한다 |
-| 바로 머지로 판정한 뒤 머지 직전에 base 가 움직였다 | `<PR> 판정한 뒤 base(<브랜치>) 가 움직였다. 새로 들어온 변경으로 다시 판정한다` 를 찍고 다시 판정한다. 갱신하지 않은 PR 이라 처음 갈라진 뒤 base 의 변경을 모두 본다. 겹치지 않으면 머지하고, 겹치면 갱신한다 |
-| 다시 판정이 5번을 넘었다 | `STOP <PR> 다시 판정을 5번 했는데도 base(<브랜치>) 가 계속 움직인다` 로 멈춘다. 같은 인자로 다시 걸면 새 base 로 처음부터 판정한다 |
-
-PR HEAD 는 다시 판정하는 동안에도 `--match-head-commit` 으로 지킨다. 머지 전 명령은 PR HEAD 가 바뀐 경우에만 다시 돈다.
-예: 갱신한 지 1분 뒤 base 에 문서만 바꾼 PR 이 머지되면, 예전에는 다시 갱신하고 CI 를 처음부터 기다렸다(15분). 이제는 문서 변경이 겹치지 않는다고 판정해 바로 머지한다.
+단위, 공용 경로, 문서 파일, 판정 시점, 다시 판정하는 조건과 횟수 한도는 `merge_queue.py` 와 `overlap_units.py` 머리 주석이 소유한다.
+PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이유)` 한 줄이 찍힌다. 판정하지 못하면 안전한 쪽인 갱신 필요로 다룬다.
+`--require-up-to-date` 가 있어야 한다.
 
 #### 언제 overlap 을 쓰는가
 
@@ -174,10 +131,12 @@ PR HEAD 는 다시 판정하는 동안에도 `--match-head-commit` 으로 지킨
     "shared_paths": ["^modules/common/", "^(settings|build)\\.gradle(\\.kts)?$", "^(gradle|buildSrc)/", "^\\.github/"],
     "unit_groups": [["web", "bff"]],
     "docs_glob": ["docs/*", "*.md"],
-    "sweep_args": ["--run", "run_0123456789ab", "--specs-dir", ".orch/specs"]
+    "sweep_args": ["--specs-dir", ".orch/specs"]
   }
 }
 ```
+
+`sweep_args` 에 `--run` 을 고정하지 않는다. Run 은 명령줄의 `--run` 으로 준다. 둘이 다르면 `merge-with-finish.py` 가 멈춘다.
 
 그러면 호출은 다음 한 줄이다. 마지막 PR 에는 `!` 를 붙이고, 그 PR 의 보드 항목은 보드 파일에서 `pr` 필드로 찾아 done 으로 바꾼다.
 `!` 가 없는 PR 은 보드 항목을 바꾸지 않는다. 같은 PR 이 든 항목이 둘 이상이면 건너뛴다. `--board-item PR=ID` 로 직접 줄 수도 있다.
@@ -200,22 +159,17 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 492 '495!:./bin
 
 **파일이 겹치지 않아도 합치면 깨질 수 있다.** 두 PR 이 각자 통과했지만 합치니 같은 상한을 함께 넘은 일이 있었다.
 그런 저장소는 오버레이가 `--verify-merged-when code` 를 정한다. 문서만 바꾼 PR 까지 검사하려면 `always` 다. 기본 `overlap` 은 겹칠 때만 검사한다.
-`--docs-glob 'docs/*,*.md'` 를 주면 바꾼 파일이 모두 그 glob 에 맞는 PR 은 `overlap` 과 `code` 에서 합친 사본 검사를 생략한다. GitHub 의 충돌 확인과 CI 검사는 그대로 한다. `always` 는 문서 PR 도 검사한다.
-`--stop-on-overlap` 만 쓰면 문서 PR 도 겹침에서 멈춘다.
+`--docs-glob` 을 주면 문서 PR 은 `overlap` 과 `code` 에서 합친 사본 검사를 생략한다. `--stop-on-overlap` 만 쓰면 문서 PR 도 겹침에서 멈춘다.
 
-문서 PR 도 최신 base 와 합친 CI 를 확인해야 하면 **`--update-docs-on-overlap` 을 더한다.**
-파일이 겹치고 GitHub `mergeStateStatus` 가 `CLEAN` 인 문서 PR 에 `update-branch` 로 base 를 합친 뒤 새 HEAD 의 필수 CI 를 기다린다.
-단순 겹침은 충돌이 아니므로 이 방식으로 진행할 수 있다. `CLEAN` 이 아니거나 합치기·새 CI 가 실패하면 멈춘다.
-새 CI 가 아직 나타나지 않은 동안 머지하지 않도록 `--required` 나 저장소 규칙의 필수 체크 목록이 필요하다.
-기존의 검사 생략 방식을 유지할 수 있도록 기본은 꺼져 있으며, gersang-lab 처럼 문서 겹침에서 큐가 멈추던 오버레이에서 켠다.
+문서 PR 도 최신 base 와 합친 CI 를 확인해야 하면 **`--update-docs-on-overlap` 을 더한다.** 조건은 스크립트 머리 주석이 소유한다.
+기존의 검사 생략 방식을 유지할 수 있도록 기본은 꺼져 있으며, 문서 겹침에서 큐가 멈추던 저장소의 오버레이에서 켠다.
 
-`CMD` 는 사본 경로를 `$1` 로 받고 그 사본 안에서 돈다. 사본은 끝나면 지운다.
-`MERGE_COPY` 도 사본의 절대경로이며 `PR` 은 PR 번호다.
-`PR_HEAD`, `BASE_HEAD` 는 검사할 양쪽 커밋이고 `CHANGED_FILES`, `OVERLAP_FILES` 는 각각 PR 의 변경 파일과 base 와 겹친 파일 목록이다.
-목록은 줄바꿈으로 잇고 삭제 파일도 포함한다. 검증 명령은 실행할 테스트 파일이 실제로 있는지 확인해야 한다.
-기존 `merge-tested.sh` 전체는 자체 사본 생성과 머지까지 하므로 그대로 넘기지 않는다. 검증 부분만 넘기며 사본 생성, 충돌 검사, HEAD 대조와 머지는 큐가 한다.
-KILL 로 끊겨 지우지 못한 사본(`merge-queue-pr<PR>-<pid>`)은 다음 실행이 시작할 때 그 pid 가 죽었으면 지운다.
-사본을 두는 폴더는 `--copy-dir` 로 준다. 기본은 `TMPDIR` 이다. 저장소 hook 이 `worktrees/` 밖의 워크트리를 막으면 오버레이가 허용된 폴더를 정한다.
+합친 사본 검사가 실패하면 그 PR 을 만든 worker 가 이어 받아 기준 브랜치를 merge 하고 고친다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」). rebase 와 force push 는 쓰지 않는다.
+
+`CMD` 가 받는 인자와 환경 변수, 사본을 두는 폴더(`--copy-dir`)는 `merge_queue.py` 머리 주석이 소유한다.
+검증 명령은 실행할 테스트 파일이 실제로 있는지 확인해야 한다.
+사본 생성과 머지까지 하는 저장소 스크립트가 이미 있으면 그 전체를 넘기지 않는다. 검증 부분만 넘기며 사본 생성, 충돌 검사, HEAD 대조와 머지는 큐가 한다.
+저장소 hook 이 `worktrees/` 밖의 워크트리를 막으면 오버레이가 허용된 폴더를 정한다.
 `$VERIFY_CMD` 와 `$COPY_DIR` 은 오버레이의 값이다.
 
 ```bash
@@ -226,29 +180,24 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --verify-merged
 
 draft 에서 CI 를 건너뛰게 둔 저장소는 같은 HEAD 에 결론이 `SKIPPED` 인 실행이 남는다. GitHub 는 `SKIPPED` 를 통과로 본다.
 ready 로 바꾼 직후 새 실행이 붙기 전에 머지 큐가 그 체크를 보면 CI 없이 머지한다.
-그런 저장소는 오버레이가 `--skipped-is-missing` 을 정한다. `SKIPPED` 인 체크를 나타나지 않은 것으로 보아, 필수 체크가 실제로 돌 때까지 기다린다.
-필수 체크 목록(`--required` 나 저장소 규칙)이 있어야 뜻이 있다.
-
-PR 조회(`gh pr view`)가 일시로 실패하면 머지 큐가 10초 간격으로 세 번까지 부른다. 그래도 실패하면 `체크 조회 실패` 로 멈춘다.
+그런 저장소는 오버레이가 `--skipped-is-missing` 을 정한다. 조건은 스크립트 머리 주석이 소유한다.
 
 ### 머지 뒤 명령
 
 머지한 뒤 한 번 돌릴 명령이 있으면 `--after-merged CMD` 로 준다. 머지 뒤 배포를 Actions 가 아니라 로컬 스크립트로 하는 저장소가 예다.
-이번 실행에서 PR 을 하나라도 머지했을 때만, 큐가 끝나거나 보류로 멈춘 뒤에 한 번 돈다.
-`MERGED_PRS` 는 머지한 PR 번호를, `CODE_PRS` 는 그 가운데 `--docs-glob` 에 맞는 문서 PR 을 뺀 번호를 받는다. 문서 PR 만 머지했을 때 배포를 건너뛰려면 명령이 `CODE_PRS` 를 본다.
-실패하면 `AFTER-MERGED-FAILED <종료 코드>` 를 찍고, 모두 머지했으면 종료 코드 3 으로 끝난다. 머지는 되돌리지 않는다.
+문서 PR 만 머지했을 때 배포를 건너뛰려면 명령이 `CODE_PRS` 를 본다. 환경 변수와 실패 처리는 `merge_queue.py` 머리 주석이 소유한다.
 `$AFTER_CMD` 는 오버레이의 값이다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --docs-glob 'docs/*,*.md' --after-merged "$AFTER_CMD" 101 102
 ```
 
-gersang-lab 의 검증·무거운 작업·배포 명령 예시는 [`gersang-overlay.md`](gersang-overlay.md) 에 있다.
+저장소의 검증과 배포 명령은 그 저장소의 오버레이가 소유한다.
 
 ### 머지 전 명령
 
 PR 마다 머지 직전에 돌릴 명령이 있으면 `PR번호:명령` 으로 준다. 모든 PR 에 같은 명령이면 `--before` 로 준다.
-명령은 `bash -c` 로 돌고 환경 변수 `PR`, `BRANCH`, `OWNER`, `REPO` 를 받는다. 0 이 아니면 그 PR 을 머지하지 않고 멈춘다.
+환경 변수와 종료 코드는 `merge_queue.py` 머리 주석이 소유한다.
 
 DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하는 것이 대표적인 예다.
 백업 스크립트는 저장소마다 서버와 DB 가 달라 이 스킬에 두지 않는다. 저장소의 오버레이가 경로와 인자를 정한다.
@@ -266,26 +215,21 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 '102:./bin/
 ### 머지 뒤 마무리
 
 **`finish-pr.py` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.py` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
-옵션과 판정은 스크립트 머리 주석이 소유한다. 순서는 아래와 같다.
-
-1. PR 이 MERGED 가 될 때까지 기다린다. 머지 없이 닫히면 `FINISH-FAIL` 이다
-2. `cleanup-sweep.py --apply --kill-holders` 로 그 브랜치의 dispatch 해제, 터미널 닫기, 워크트리와 브랜치 삭제를 한다. 브랜치의 워크트리가 사라질 때까지 다시 시도한다. `finish-pr.py` 에 지시서 폴더(`--specs-dir`)를 주면 업무의 마지막 PR(`--complete`)일 때만 그 브랜치의 지시서를 지운다. 중간 PR 에서는 남기고 로그에 한 줄 적는다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 된다. `--complete-cmd` 가 없으면 업무 완료 단계만 건너뛰고 지시서는 지운다(`--complete-cmd` 를 주면 `--task-pattern` 도 필요하다). `merge-with-finish.py` 의 `PR!` 도 같은 뜻이다
-3. 배포 워크플로를 정했으면 머지 커밋을 조상으로 가진 커밋의 실행이 성공할 때까지 기다린다. 머지 커밋의 실행이 뒤 커밋의 배포에 합쳐져 `skipped` 나 `cancelled` 로 끝나도 뒤 실행이 성공하면 성공이다. 성공도 진행 중도 없이 실패만 있으면 `FINISH-FAIL` 이다
-4. `!` 로 건 PR 이면 PR 제목에서 업무 번호를 뽑아 업무 완료 명령을 돌린다. 배포가 실패했으면 돌리지 않는다
-5. 보드 항목을 정했으면 done 으로 바꾼다
+순서(머지 확인, worker 정리, 배포 확인, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.py` 의 `PR!` 도 같은 뜻이다.
 
 출력은 `<로그 폴더>/finish-<PR>.out` 에 쌓이고 마지막 줄이 `FINISH-DONE` 이나 `FINISH-FAIL` 이다. 깨어날 때마다 그 줄을 본다.
 `FINISH-FAIL` 이면 출력의 이유를 읽고 사용자에게 알린다. 배포 실패나 업무 번호 없음처럼 사람이 정해야 하는 것은 스크립트가 다시 시도하지 않는다.
-머지 큐가 `STOP` 으로 멈춘 뒤 남은 PR 만 다시 걸어도 같은 PR 의 마무리는 겹쳐 돌지 않는다. 이미 도는 마무리의 pid 파일을 본다.
+머지 큐가 `STOP` 으로 멈춘 뒤 남은 PR 만 다시 걸어도 같은 PR 의 마무리는 겹쳐 돌지 않는다.
 
 ## 정리
 
 **정리는 `cleanup-sweep.py` 가 한다.** `merge_queue.py` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
-**사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬과 원격 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
+**사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
+로컬 브랜치가 있을 때만 원격 브랜치도 지운다. 직접 머지한 PR 의 원격 브랜치는 남을 수 있고, 상세 판정은 `cleanup-sweep.py` 머리 주석이 소유한다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
 
 **코디네이터가 worker 에게 맡긴 작업은 그 PR 이 머지되면 그 자리에서 정리한다.** 작업을 맡긴 저장소가 코디네이터의 저장소가 아니어도 같다.
-대상은 worker 터미널, 워크트리, 로컬과 원격 브랜치다. 지시한 쪽이 정리하지 않으면 아무도 정리하지 않는다.
+대상은 worker 터미널, 워크트리, 로컬 브랜치다(원격 브랜치는 위 조건을 따른다). 지시한 쪽이 정리하지 않으면 아무도 정리하지 않는다.
 절차는 아래 「다른 저장소에 맡긴 PR 을 직접 머지했을 때」 가 소유한다.
 **다른 세션이 띄운 작업은 건드리지 않는다.** 그 세션이나 사용자가 하던 작업이 끊긴다.
 판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
@@ -294,48 +238,26 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 '102:./bin/
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
 ```
 
-스크립트가 다루는 것은 아래다. 이 경우를 코디네이터가 직접 지우지 않는다.
+**스크립트 머리 주석이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
+저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시).
 
-- squash 머지된 PR. PR HEAD 를 `--merged-head` 로 넘긴다. 머지 큐의 update-branch 로 PR HEAD 가 워크트리보다 앞서 가도 `refs/pull/<번호>/head` 를 받아 와서 지운다
-- 로컬 브랜치 이름(`<user>/<접두>-<주제>`)과 PR 브랜치 이름(`<접두>/<주제>`)이 다른 경우. upstream, `branch.<b>.merge`, 이름 변형 순으로 PR 을 찾는다. PR 조회가 비거나 깨지면 머지로 읽지 않는다
-- 예전에 머지된 PR 과 이름만 같은 새 브랜치. 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 보므로 지우지 않는다. 머지 큐의 update-branch 뒤 merge commit 으로 머지돼 base 위 커밋이 0 개가 된 브랜치는 끝 커밋이 `gh pr view --json commits` 의 커밋 목록에 있을 때 그 PR 의 브랜치로 본다. 막 만든 브랜치의 끝 커밋은 base 의 옛 커밋이라 목록에 없고, 목록을 읽지 못해도 인정하지 않는다. `remove-worktree.py --merged-head` 도 HEAD 가 그 커밋의 조상이 아니면 거부한다
-- worker 를 반납한 뒤 Orca 가 그 워크트리에 띄운 빈 셸 터미널. 폴더를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 그 터미널을 닫고 다시 시도한다. 다른 프로세스가 남아 있으면 건너뛴다
-- 뒤처진 기준 브랜치. 기본 체크아웃이 기준 브랜치에 있으면 `--ff-only` 로 맞춘다. 로컬에만 있는 커밋이 있으면 건드리지 않는다
-- 머지된 PR 의 본문 파일. 지시서 폴더의 부모(`<specs-dir>/..`)에 둔 `pr-<이름>.md` 를 지시서와 함께 지운다
-- **살아 있는 dispatch 가 쓰는 지시서는 지우지 않는다.** 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서가 지워진 일이 있었다. Task 의 `--spec` 줄이 가리키는 경로를 모아 빼고, 그 목록을 읽지 못하면 그 실행에서는 지시서를 하나도 지우지 않는다. `handoff-cleanup.py` 도 같다
-- worker 가 끝난 뒤에도 claude 세션, 로그인 셸, 플러그인 node 같은 프로세스가 그 폴더를 작업 디렉터리로 쥔 경우. `worker-stop` 이 `process=none` 을 돌려줘도 남는다. `--kill-holders` 를 주면 PR 이 MERGED 이고 그 dispatch 가 끝났는지 확인한 뒤 TERM, HUP, KILL 순으로 끈다. 코디네이터 흐름의 명령에는 이 옵션을 넣는다
-- 워크트리 없이 남은 머지된 로컬 브랜치와, PR 이 머지된 뒤 남은 원격 브랜치
-- worker 가 기준선 비교로 저장소 밖에 만들고 남긴 detached 워크트리. 변경이 없고, 쓰는 프로세스와 터미널이 없고, HEAD 가 원격에 있으면 지운다. 폴더가 이미 없는 등록은 먼저 `git worktree prune` 으로 지운다
-- 하위 에이전트 워크트리(`agent-*`)에 Orca 가 띄운 빈 셸 터미널. 다른 Run 의 것인지 확인하지 못해도, 그 경로에 자식 없는 로그인 셸만 있으면 빈 셸로 보고 닫는다. 폴더 이름 규칙이 다르면 `--agent-glob` 로 준다
-- 끝난 worker 터미널을 닫자 Orca 가 다시 연 빈 셸(「Terminal 1」). 모든 Run 범위를 읽지 못해 「다른 Run 의 것인지 확인하지 못한 터미널」 로 건너뛰던 것을, 이 Run 의 머지된 워크트리에서 `agentIdentity` 가 없고 그 경로의 프로세스가 자식 없는 로그인 셸뿐이며 터미널마다 셸이 하나씩 있으면 `빈 셸을 닫았다: term_…` 를 남기고 닫는다. `--apply` 가 없으면 닫을 것만 보인다
-- 저장소가 여럿인 경우. `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시)
-
-스크립트가 건너뛴 항목과, 스크립트가 다루지 않는 아래 일만 직접 한다.
+스크립트가 건너뛴 항목은 `건너뜀` 줄의 이유로 읽는다. 읽는 법은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 소유한다.
 
 **PR 을 머지한 직후 같은 흐름에서, 사용자 지시를 기다리지 않고 정리한다.**
 워크트리와 터미널이 쌓이면 다음 작업이 어느 것을 써야 할지 매번 판단해야 한다.
 같은 워크트리에서 후속 작업을 하는 worker 가 있으면 그 worker 가 끝날 때까지 남긴다.
 
-머지마다 아래를 모두 한다.
+**worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다.** 충돌과 리뷰 반영을 그 PR 을 만든 worker 가 이어 받기 때문이다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」).
+머지 뒤에는 그 터미널을 바로 정리한다. `cleanup-sweep.py` 가 PR 이 MERGED 일 때 닫는다.
+머지 없이 닫힌 PR 의 터미널은 스크립트가 닫지 않는다. 코디네이터가 화면을 확인하고 이 세션이 띄운 worker 의 터미널만 `orca terminal close` 로 닫는다.
 
-1. 그 PR 의 dispatch 를 반납하고 worker 터미널을 닫는다. 반납 명령과 잔여 확인 방법은 Orca 가이드를 따른다
-2. 원격을 갱신하고 로컬 기준 브랜치를 fast-forward 로 맞춘다(아래 명령).
-   워크트리를 지우기 전에 한다. 원격 추적 브랜치가 낡으면 `remove-worktree.py` 가 머지된 커밋을 원격에 없는 커밋으로 센다.
-   백그라운드 동기화 루프는 compact 나 세션 재시작으로 끊기므로 머지마다 직접 한다
-3. 워크트리를 `remove-worktree.py` 로 지운다(아래)
-4. 로컬과 원격 브랜치를 지운다. `merge_queue.py` 가 원격 브랜치를 지웠으면 로컬만 남는다
-5. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
+스크립트가 하지 않아 직접 하는 일은 아래 둘이다.
+
+1. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
    `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다(`handoff-cleanup.py`).
    공통 지시서, 결정 기록, 인수인계 문서, 진행 중 작업의 문서는 남긴다.
    사용자 미리보기 폴더는 content-preview 의 것이라 사용자가 지우라고 말하거나 설정의 `cleanup.previews` 로 맡겼을 때만 지운다
-6. 진행 보드를 쓰면 그 항목을 done 으로 바꾼다. [`board.md`](board.md)
-
-`merge --ff-only` 는 지금 체크아웃된 브랜치에 들어가므로, 기준 브랜치가 체크아웃돼 있을 때만 돌린다.
-
-```bash
-git -C "$REPO" fetch --prune origin
-[ "$(git -C "$REPO" branch --show-current)" = "$BASE" ] && git -C "$REPO" merge --ff-only "origin/$BASE"
-```
+2. 진행 보드를 쓰면 그 항목을 done 으로 바꾼다. [`board.md`](board.md)
 
 **머지 직전과 지우기 직전에 `gh pr view --json state` 를 본다.** 머지는 `OPEN` 일 때만 하고, 브랜치와 워크트리는 `MERGED` 일 때만 지운다.
 다른 세션이나 사용자가 같은 PR 을 먼저 머지하기도 한다.
@@ -373,18 +295,15 @@ fi
 
 **작업이 끝난 워크트리는 `remove-worktree.py` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
 활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
-스크립트는 그 경로를 쓰는 프로세스(살아 있는 worker), 커밋 안 된 변경, 원격 어디에도 없는 커밋이 있으면 지우지 않고 이유를 낸다.
-원격에 같은 제목의 커밋이 있으면 rebase 된 것으로 보지만, squash 머지는 제목이 달라 원격에 없는 커밋으로 센다. 그때는 PR 이 `MERGED` 인 것을 확인한 뒤 사용자에게 알리고 지운다.
-Python 3.10 이상과 `lsof`, git 2.31 이상을 전제한다.
-거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다. 그 초 동안 프로세스가 빠지기를 기다린다.
-OMC session-end hook worker 만 남은 경우는 옵션 없이도 끝날 때까지 기다린다(`ORCH_HOOK_WAIT`, 기본 180초).
+거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
+거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
 거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.py --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/remove-worktree.py" "$WORKTREE" --delete-branch
 ```
 
-squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. 그 커밋의 조상은 원격에 있는 것으로 센다. `cleanup-sweep.py` 는 이 값을 스스로 넘긴다.
+squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sweep.py` 는 이 값을 스스로 넘긴다.
 
 - Orca 가 만든 워크트리를 `orca worktree rm` 으로 지울 때는 뒤에 `git -C "$REPO" worktree prune` 을 돌린다.
   디렉터리만 지우고 git 의 워크트리 기록이 남아, 그대로면 브랜치 삭제가 `used by worktree` 로 거절된다
@@ -402,14 +321,8 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. 그 커밋�
 ### handoff 산출물 정리
 
 끝난 작업의 큐 로그, 지시서, 오래된 handoff 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
-**기본은 옮길 후보만 보인다. 후보를 사용자에게 보인 뒤 `--apply` 로 옮긴다.** 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
+**사용자에게 묻지 않고 `--apply` 로 옮긴다.** 휴지통 폴더라 되살릴 수 있다. 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/handoff-cleanup.py" --repo "$REPO"
 python3 "$SKILL_DIR/scripts/handoff-cleanup.py" --repo "$REPO" --apply
 ```
-
-- 지시서는 보드 항목이 done 이 아니면 남긴다. 띄우기 전이거나 PR 이 여럿인 일의 중간일 수 있다
-- 열린 PR 목록을 읽지 못하면 지시서를 옮기지 않는다
-- 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서는 옮기지 않는다. 그 목록을 읽지 못해도 옮기지 않는다
-- 미리보기와 handoff 폴더는 3일 넘게 바뀌지 않았고 보드 파일과 `<previews>/.keep` 에 이름이 없을 때만 옮긴다. 남길 미리보기는 `.keep` 에 한 줄에 하나씩 적는다

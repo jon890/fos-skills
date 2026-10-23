@@ -2,6 +2,9 @@
 
 Read only this Run's questions, then each sender's replies. Never read the global inbox.
 Orca caps check history and peek at 100 rows; report that coverage explicitly.
+A question is answered once the coordinator replied in its thread, whether or not the question was acked.
+Replies are read from each sender's inbox (limit 200); when that limit is reached and the answer
+cannot be proven, it raises instead of guessing.
 """
 import json
 import os

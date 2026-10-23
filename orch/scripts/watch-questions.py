@@ -2,6 +2,8 @@
 """Monitor event source: new unanswered questions and reminders, one line per event.
 
 Usage: watch-questions.py [--run ID] [--repo DIR] [--interval 60] [--remind-after 600] [--once]
+Prints QUESTION for a new unanswered question and REMINDER once --remind-after seconds pass without an answer
+(default 600). --interval sets the poll seconds. Questions come from questions.snapshot().
 Notification timestamps are stored per Run under orch_paths' state directory.
 Read/query failures go to stderr and never erase notification history. --once exits 1
 on failure; the monitor loop retries on the next interval. No messages are acknowledged.
