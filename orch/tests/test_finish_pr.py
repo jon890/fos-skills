@@ -260,6 +260,14 @@ class FinishFlowTest(unittest.TestCase):
         self.assertIn("FINISH-FAIL", out)
         self.assertTrue(self.wt.exists())
 
+    def test_relative_board_is_resolved_against_repo_not_cwd(self):
+        code, out = self.finish("--board", "boards/main.json", "--board-id", "item-1",
+                                "--board-bin", str(self.bin / "board"))
+        self.assertEqual(0, code, out)
+        board_calls = [c for c in self.calls() if c.startswith("board ")]
+        self.assertEqual(1, len(board_calls), board_calls)
+        self.assertTrue(board_calls[0].endswith(f"--file {self.repo}/boards/main.json"), board_calls)
+
     def test_failed_deploy_does_not_complete_the_task_or_touch_the_board(self):
         self.state["runs"] = run_for((self.merge, "completed", "failure"))
         code, out = self.finish("--deploy-workflow", "deploy.yml", "--deploy-branch", "main", *self.COMPLETE,

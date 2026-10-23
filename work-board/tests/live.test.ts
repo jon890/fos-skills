@@ -86,10 +86,10 @@ test('progress 가 있으면 단계 수보다 우선한다', () => {
 test('details 와 next 를 줄마다 나눠 끝낸 줄, 지금 단계, 남은 단계, 참고 줄로 가른다', () => {
   const rows = stepRows({ details: ['✓ 1 a', '[x] 2 b', '▶ 3 c', '◇ 4 d', '참고: x'], next: '머지 뒤 갱신' })
   expect(rows).toEqual([
-    { text: '✓ 1 a', state: 'done', step: true, counted: true },
-    { text: '[x] 2 b', state: 'done', step: true, counted: true },
-    { text: '▶ 3 c', state: 'now', step: true, counted: true },
-    { text: '◇ 4 d', state: 'todo', step: true, counted: true },
+    { text: '1 a', state: 'done', step: true, counted: true },
+    { text: '2 b', state: 'done', step: true, counted: true },
+    { text: '3 c', state: 'now', step: true, counted: true },
+    { text: '4 d', state: 'todo', step: true, counted: true },
     { text: '참고: x', state: 'note', step: false, counted: true },
     { text: '머지 뒤 갱신', state: 'note', step: false, counted: false },
   ])
@@ -180,4 +180,19 @@ test('전체 진행률은 진행 중 항목의 끝낸 단계 합과 전체 단�
   expect(overallProgress(items)).toEqual({ done: 4, total: 10, missing: 1 })
   expect(progressBar('4/10', 10)).toBe('████░░░░░░ 4/10 (40%)')
   expect(overallProgress([{ status: 'wait' }])).toEqual({ done: 0, total: 0, missing: 0 })
+})
+
+
+test('객체의 done 으로 진행률과 지금 단계, 표시를 정하고 혼합 형식도 읽는다', () => {
+  const item = { details: [{ text: '1 a', done: true }, { text: '2 b', done: false }, '✓ 3 c',
+    { text: '참고', done: false }], next: [{ text: '4 d', done: false }] }
+  expect(itemProgress(item)).toBe('2/3')
+  expect(parseStep({ text: '✓ 1 a', done: false })).toEqual({ number: 1, done: false })
+  const rows = stepRows(item)
+  expect(rows.map((row) => [row.text, row.state, stepMark(row)])).toEqual([
+    ['1 a', 'done', '✓'], ['2 b', 'now', '▶'], ['3 c', 'done', '✓'],
+    ['참고', 'note', ' '], ['4 d', 'todo', ' '],
+  ])
+  expect(itemProgress({ next: [{ text: '1 a', done: true }, { text: '2 b', done: false }] })).toBe('1/2')
+  expect(stepSummary(rows)).toMatchObject({ done: 2, todo: 0 })
 })

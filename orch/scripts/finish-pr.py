@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PR 하나의 머지 뒤 마무리를 끝까지 한다: worker 정리, 배포 확인, 업무 완료, 보드 done.
 
-머지 큐(`merge-queue.sh`)를 건 자리에서 PR 마다 함께 건다. 보통은 `merge-with-finish.py` 가 대신 건다.
+머지 큐(`merge_queue.py`)를 건 자리에서 PR 마다 함께 건다. 보통은 `merge-with-finish.py` 가 대신 건다.
 코디네이터가 머지 뒤 단계를 잊거나, 정리가 GitHub 상태 반영보다 먼저 돌아 워크트리가 남는 일을 막는다.
 
 사용법:
@@ -38,7 +38,7 @@
     --complete            이 PR 이 업무의 마지막 PR 이다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
     --complete-cmd CMD    업무 완료 명령 틀. 공백으로 나뉘고 {number} 가 업무 번호로 바뀐다. 셸을 거치지 않는다
                           (예: 'task-cli complete {number}')
-    --board FILE          보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 <repo> 기준
+    --board FILE          보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 주 checkout 기준
     --board-id ID         done 으로 바꿀 보드 항목
     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
     --merge-timeout MIN   머지 대기 한도(분). 기본 180

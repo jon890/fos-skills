@@ -10,13 +10,30 @@ orch 의 파일을 oh-my-claudecode 의 `.omc/` 에서 떼어 주 checkout 의 `
 - `scripts/orch_paths.py`: 경로를 한 곳에서 정한다. `overlay.md`, `config.json`, `specs/`, `queue/`, `state/`(무거운 검사 대기열 자리 `state/heavy-slot/`), `bin/`. 루트는 `ORCH_DIR` 로 바꾸고, 처음 만들 때 `.git/info/exclude` 에 `/.orch/` 를 더한다. 워크트리에서 불러도 주 checkout 의 폴더를 쓴다
 - 저장소 설정을 `.claude/orch-overlay.md` 에서 `.orch/overlay.md` 로, `.claude/orch-finish.json` 에서 `.orch/config.json` 으로 옮긴다
 - `scripts/migrate-orch-dir.py`: 옛 위치의 파일을 옮긴다. 기본은 미리보기이고 `--apply` 로 옮긴다. `--move 옛=새` 로 저장소마다 다른 위치를 더한다. 살아 있는 dispatch, 터미널을 쥔 worker, 돌고 있는 머지 큐나 마무리가 있으면 거부한다. 옮긴 지시서, PR 본문, 설정, 오버레이 안의 옛 경로를 바꾸고, 바꾸지 않는 파일의 옛 경로는 보이기만 한다. board.json 은 옮기지 않는다
-- 설정, 오버레이, 지시서 폴더를 읽는 진입점은 옛 위치에 파일이 남아 있으면 옮기는 명령을 알리고 종료 코드 2 로 멈춘다. `finish-pr.py`, `handoff-cleanup.py`(`--config` 나 `--orch-dir` 를 주면 막지 않음), `spec-lint.py`(`--overlay`), `cleanup-sweep.py`(`--specs-dir`), `launch-worker.sh`, `orch_paths.py --ensure` 가 여기 해당한다. 셸 스크립트용으로 `orch_paths.py check` 를 둔다. `wait-important.py`, `notify-conflicts.py` 는 알리기만 한다
+- 설정, 오버레이, 지시서 폴더를 읽는 진입점은 옛 위치에 파일이 남아 있으면 옮기는 명령을 알리고 종료 코드 2 로 멈춘다. `finish-pr.py`, `merge-with-finish.py`(`--finish-config`), `handoff-cleanup.py`(`--config` 나 `--orch-dir` 를 주면 막지 않음), `spec-lint.py`(`--overlay`), `cleanup-sweep.py`(`--specs-dir`), `launch-worker.sh`, `orch_paths.py --ensure` 가 여기 해당한다. 셸 스크립트용으로 `orch_paths.py check` 를 둔다. `wait-important.py`, `notify-conflicts.py` 는 알리기만 한다
 - 스크립트마다 따로 두던 보드 탐색(`.omc/handoffs/board.json`, `.omc/board.json`)을 지우고 work-board 의 `board.py` 규칙을 쓴다. 보드는 work-board 소유라 옮기지 않는다
 - `migrate-orch-dir.py` 는 빈 옛 폴더를 옮기지 않고 지운다. 옮긴 뒤 고치는 단계(옛 경로 문자열, 설정, git 무시, 빈 폴더)는 `.orch` 전체를 보고 옮길 것이 없어도 돈다. 옮기다 실패하면 남은 사본을 거두고 멈춘다. 상대경로 심볼릭 링크는 같은 대상을 가리키게 다시 만든다. `.omc/previews` 만 있고 설정이 없으면 `cleanup.previews` 만 담은 설정을 만든다
 - `.omc/orch/` 에 있던 다른 폴더(예: 피드백 메모)는 `.orch/` 로 옮겨 가 `handoff-cleanup.py` 의 오래된 폴더 정리 후보가 된다. 남길 것은 `.orch/.keep` 에 적는다
 - `handoff-cleanup.py`: `.orch/` 만 정리한다. 미리보기 폴더는 content-preview 의 것이라 `--previews`(설정 `cleanup.previews`)로 줄 때만 본다. `.omc` 의 다른 파일은 보지 않는다. `--omc`, `--handoffs` 를 지우고 `--orch-dir` 를 둔다. 휴지통 기본 이름은 `orch-cleanup-<날짜>` 다
 - `wait-important.py` 와 `notify-conflicts.py` 의 기록은 `.orch/state/` 에 둔다
+- `merge-with-finish.py`: 설정은 `.orch/config.json`, 마무리 출력과 pid 는 `.orch/queue/` 가 기본이다. 보드 기본 위치는 `finish-pr.py` 와 같이 work-board 규칙을 쓴다
+- `references/cleanup.md`: 맡긴 작업은 다른 저장소의 것이어도 머지한 자리에서 정리한다는 원칙과 이유를 두고, 다른 저장소에 맡긴 PR 을 직접 머지했을 때의 정리 명령을 한 묶음으로 적었다. SKILL.md 7단계는 그 절을 가리킨다(사용자 결정 2026-10-23)
 - `references/overlay.md` 에 폴더 구조와 옮기는 방법을 적고, 다른 문서의 경로 예시를 `.orch` 로 바꿨다
+## 1.46.0 (2026-10-23)
+
+- **경로 변경: `scripts/merge-queue.sh` 가 `scripts/merge_queue.py` 로 바뀌었다.** `merge-queue.sh` 를 Python 으로 옮겼다. 옛 경로를 직접 부르는 곳이 깨지지 않도록 `merge-queue.sh` 는 `exec python3 "$(dirname "$0")/merge_queue.py" "$@"` 한 줄만 남기고 이번 한 버전 동안 둔다. 다음 버전에서 지우니 호출하는 곳을 `merge_queue.py` 로 바꾼다. 옵션, 종료 코드, 출력 줄(`STOP`, `QUEUE-DONE`, `QUEUE-HELD`, `AFTER-MERGED-FAILED` 등)은 그대로고 기존 머지 큐 테스트를 호출 경로만 바꿔 그대로 돌려 통과시켰다. `merge-with-finish.py` 의 `MERGE_QUEUE` 기본값이 새 파일이다. 환경 변수 `MERGE_QUEUE_SLEEP_SCALE` 로 모든 대기 시간에 배율을 곱한다(테스트용, 기본 1). 이식하면서 `--verify-merged` 의 `bash -c` 실행, 사본 이름, 정리 인자 등 동작은 바꾸지 않았다.
+- `merge_queue.py --up-to-date-when overlap`: `--require-up-to-date` 가 뒤처진 PR 마다 base 를 합치고 CI 를 다시 기다리던 것을, PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹칠 때만 하게 한다. 기본은 `always` 라 동작이 달라지지 않는다. 판정은 PR 차례마다 하고 `<PR> 판정: 바로 머지` 또는 `<PR> 판정: 갱신 필요(이유)` 를 찍는다. 판정하지 못하면 갱신 필요로 다룬다. 판정은 처음 한 번으로 끝나지 않는다. 갱신하고 CI 를 기다리는 사이나 바로 머지로 판정한 뒤 머지 직전에 base 가 또 움직이면 다시 판정한다. 갱신을 마친 PR 은 새로 들어온 변경(PR 의 새 merge-base 기준)만 보고, 갱신하지 않은 PR 은 처음 갈라진 뒤 base 의 변경을 모두 다시 본다. 겹치지 않으면 다시 갱신하지 않고 머지하고, 겹칠 때만 또 갱신한다. PR HEAD 는 `--match-head-commit` 으로 계속 지킨다. 다시 판정하는 횟수는 PR 하나에 5번까지이고 넘으면 `STOP <PR> 다시 판정을 5번 했는데도 base(main) 가 계속 움직인다` 로 멈춘다(괄호 안은 base 브랜치 이름).
+  - 단위는 `--unit-prefix`(기본 `modules/`) 아래 폴더 하나이고 그 밖의 파일은 경로 자체다. `--shared-paths` 정규식에 맞는 공용 경로는 어느 쪽에 있든 겹친 것으로 본다. `--docs-glob` 에 맞는 문서는 세지 않는다. `--unit-group a,b` 로 준 단위는 한 단위로 센다(계약 없이 서로의 응답 모양에 기대는 모듈 쌍). 묶음 설정 오류는 큐를 시작할 때 종료 코드 2 로 알린다.
+  - 판정 로직은 Python 모듈 `scripts/overlap_units.py` 에 두고 단위 테스트를 붙였다. 머지 큐는 PR 차례마다 이 모듈을 부르고 결과로 최신화 여부만 정한다.
+- `merge_queue.py`: 머지 전 명령은 PR HEAD 마다 한 번 돈다. 다시 판정하다 갱신해 PR HEAD 가 바뀌면 새 HEAD 로 한 번 더 돌고, HEAD 가 같으면 다시 돌지 않는다. `--up-to-date-when overlap` 이 아니면 갱신 뒤에도 한 번만 돈다. 옛 `.sh` 는 PR 하나에 한 번만 돌았다.
+- `merge_queue.py`: 남은 임시 사본을 지울 때 pid 를 `kill -0` 으로 확인하다 권한 오류(EPERM)가 나면 그 프로세스가 살아 있는 것으로 보고 사본을 지우지 않는다. 옛 `.sh` 는 이 경우를 죽은 프로세스로 보고 다른 사용자의 사본을 지웠다.
+- `merge-with-finish.py`: `queue` 절이 `up_to_date_when`, `shared_paths`, `unit_prefix`, `unit_groups`, `require_up_to_date`, `sweep_args` 를 받는다. `sweep_args` 는 항목마다 `--sweep-arg` 가 된다.
+- `merge-with-finish.py`: `--board-item` 을 주지 않아도 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾는다. **업무의 마지막 PR(`!`)일 때만** 그 항목을 done 으로 바꿔, 중간 PR 이 항목을 끝내던 문제를 막는다. 같은 PR 이 든 항목이 둘 이상이면 건너뛴다. 이제 저장소별 래퍼 스크립트 없이 `merge-with-finish.py --repo <저장소> 492 '495!:<머지 전 명령>'` 한 줄로 부를 수 있다.
+- `references/cleanup.md` 에 「겹치지 않는 PR 은 최신화하지 않기」 를 더했다. 언제 쓰는가, 놓치는 경우와 대응, 머지 뒤 안전망, 호출 예를 적었다.
+
+## 1.45.1 (2026-10-23)
+
+- 보드의 `next` 와 `details` 를 `{text, done}` 객체 목록으로 저장하도록 형식 설명을 고쳤다. PR 동기화와 목표 진행률 계산은 새 객체와 옛 문자열을 모두 읽는다.
 
 ## 1.45.0 (2026-10-23)
 

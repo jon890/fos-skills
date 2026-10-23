@@ -18,7 +18,8 @@ status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) 
   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
   줄 앞의 「✓」 나 「[x]」 는 끝낸 단계, 「[ ]」, 「▶」, 「◇」 는 끝나지 않은 단계다
   하위 항목(--detail)에 단계 줄이 있으면 그것을 세고, 없으면 --next 의 줄을 센다
-  step 은 「[ ]」 로 적은 줄은 「[x]」 로, 그 밖의 줄은 앞에 「✓ 」 를 붙여 끝낸다
+  next 와 details 는 줄마다 {"text": "1. 구현", "done": false} 객체로 저장한다
+  step 은 done 값만 바꾸고, 창이 체크 표시와 취소선을 그린다. 옛 문자열은 읽을 때 변환하고 다음 쓰기 때 저장한다
   --progress N/M 은 「끝낸 단계/전체 단계」 (예: 7/10) 를 직접 적고 단계 수보다 앞선다. 주지 않으면 기존 값을 지우지 않는다
   --progress auto 는 값을 지워 단계 수로 세게 한다
 """
@@ -29,19 +30,40 @@ STATUSES = ('goal', 'decide', 'doing', 'wait', 'done')
 STEP = re.compile(r'^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s')
 DONE_MARKS = ('✓', '[x]', '[X]')
 
+LEAD_MARK = re.compile(r'^\s*(✓|\[[xX ]\]|▶|◇)\s*')
+
+def normalize_line(line):
+    """옛 문자열을 {text, done} 으로 바꾼다. 객체의 done 값이 앞 표시보다 우선한다."""
+    if isinstance(line, dict):
+        text = line['text']
+        done = line.get('done', False) is True
+    else:
+        text = line
+        mark = LEAD_MARK.match(text)
+        done = bool(mark and mark.group(1) in DONE_MARKS)
+    return {'text': LEAD_MARK.sub('', text), 'done': done}
+
+def normalize_lines(value):
+    lines = value if isinstance(value, list) else str(value or '').split('\n')
+    return [normalize_line(line) for line in lines]
+
+def normalize_item(item):
+    for key in ('details', 'next'):
+        if key in item:
+            item[key] = normalize_lines(item[key])
+
 def parse_step(line):
-    """단계 줄이면 (번호, 끝냈는지, 앞 표시)를, 아니면 None 을 돌려준다"""
-    m = STEP.match(line)
-    return (int(m.group(2)), m.group(1) in DONE_MARKS, m.group(1)) if m else None
+    """단계 줄이면 (번호, 끝냈는지)를, 아니면 None 을 돌려준다."""
+    line = normalize_line(line)
+    m = STEP.match(line['text'])
+    return (int(m.group(2)), line['done']) if m else None
 
 def step_source(item):
-    """단계를 세는 곳과 그 줄들. 하위 항목에 단계가 있으면 그것을, 없으면 next 의 줄을 쓴다"""
-    details = item.get('details') or []
-    if any(parse_step(line) for line in details):
-        return 'details', list(details)
-    lines = str(item.get('next') or '').split('\n')
-    if any(parse_step(line) for line in lines):
-        return 'next', lines
+    """하위 항목에 단계가 있으면 그것을, 없으면 next 의 줄을 쓴다."""
+    for key in ('details', 'next'):
+        lines = normalize_lines(item.get(key) or [])
+        if any(parse_step(line) for line in lines):
+            return key, lines
     return None, []
 
 PROGRESS = re.compile(r'^\s*(\d+)\s*/\s*(\d+)\s*$')
@@ -66,15 +88,6 @@ MISSING_PROGRESS = '''doing 항목에는 진행률이 필요하다: %s
   단계 줄을 적는다: --next '1. 구현' --next '2. 리뷰 반영' --next '3. 머지' (끝낸 단계는 앞에 ✓ 나 [x])
   단계로 나타낼 수 없으면 --progress 끝낸단계/전체단계 (예: --progress 2/5) 를 준다'''
 
-def mark_step(line, done):
-    number, finished, mark = parse_step(line)
-    if finished == done:
-        return line
-    if mark in ('[ ]', '[x]', '[X]'):
-        return line.replace(mark, '[x]' if done else '[ ]', 1)
-    body = re.sub(r'^\s*(✓|▶|◇)\s*', '', line)
-    return '✓ ' + body if done else body
-
 def board_path(explicit, cwd=None):
     """보드 파일 경로. orch 의 orch_paths.py 도 이 함수로 기본 위치를 받는다."""
     if explicit:
@@ -98,12 +111,12 @@ def main():
     ap.add_argument('--next', action='append')
     ap.add_argument('--file')
     a = ap.parse_args()
-    if a.next is not None:
-        a.next = '\n'.join(line for line in a.next if line)
     if a.progress not in (None, '', 'auto') and not PROGRESS.match(a.progress):
         sys.exit('--progress 는 끝낸단계/전체단계 (예: 2/5) 나 auto 다: ' + a.progress)
     path = board_path(a.file)
     board = json.load(open(path)) if os.path.exists(path) else {'items': []}
+    for item in board['items']:
+        normalize_item(item)
     if a.cmd == 'list':
         for item in board['items']:
             print(item.get('status', '?').ljust(7), item['id'].ljust(16), item.get('title', ''), ' ', progress_text(item))
@@ -115,7 +128,7 @@ def main():
         if item is None:
             sys.exit('항목이 없다: ' + a.id)
         steps = [(parse_step(line), line) for line in step_source(item)[1]]
-        print(json.dumps([{'number': step[0], 'done': step[1], 'text': line} for step, line in steps if step],
+        print(json.dumps([{'number': step[0], 'done': step[1], 'text': line['text']} for step, line in steps if step],
                          ensure_ascii=False))
         return
     if a.cmd == 'step':
@@ -129,11 +142,11 @@ def main():
         for index, line in enumerate(lines):
             step = parse_step(line)
             if step and step[0] == number:
-                lines[index] = mark_step(line, not a.undo)
+                lines[index]['done'] = not a.undo
                 break
         else:
             sys.exit('%d 번 단계 줄이 없다. 단계 줄은 --detail 이나 --next 의 「%d …」, 「%d. …」 로 시작하는 줄이다' % (number, number, number))
-        item[source] = lines if source == 'details' else '\n'.join(lines)
+        item[source] = lines
     elif a.cmd == 'del':
         board['items'] = [i for i in board['items'] if i['id'] != a.id]
     else:
@@ -147,18 +160,19 @@ def main():
             if a.status not in STATUSES:
                 sys.exit('status 는 %s 중 하나다' % '|'.join(STATUSES))
             item['status'] = a.status
-        for key in ('title', 'owner', 'pr', 'next', 'worktree', 'progress'):
+        for key in ('title', 'owner', 'pr', 'worktree', 'progress'):
             value = getattr(a, key)
             if value == '' or (key == 'progress' and value == 'auto'):
                 item.pop(key, None)
             elif value is not None:
                 item[key] = value
-        if a.detail is not None:
-            lines = [d for d in a.detail if d]
-            if lines:
-                item['details'] = lines
-            else:
-                item.pop('details', None)
+        for key, values in (('details', a.detail), ('next', a.next)):
+            if values is not None:
+                lines = [line for value in values for line in value.split('\n') if line]
+                if lines:
+                    item[key] = normalize_lines(lines)
+                else:
+                    item.pop(key, None)
         if item.get('status') == 'doing' and progress_of(item) is None:
             sys.exit(MISSING_PROGRESS % a.id)
     board['updatedAt'] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
