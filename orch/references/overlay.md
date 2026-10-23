@@ -116,7 +116,8 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 
 | 진입점 | 멈추는 때 |
 | --- | --- |
-| `finish-pr.py`, `merge-with-finish.py`, `handoff-cleanup.py` | 설정을 `--config` 로 주지 않았을 때 |
+| `finish-pr.py`, `handoff-cleanup.py` | 설정을 `--config` 로 주지 않았을 때 |
+| `merge-with-finish.py` | 설정을 `--finish-config` 로 주지 않았을 때. 머지 큐를 걸지 않는다 |
 | `spec-lint.py` | `--overlay` 를 주지 않았을 때 |
 | `cleanup-sweep.py` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
 | `launch-worker.sh` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
