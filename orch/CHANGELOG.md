@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.4.1 (2026-10-23)
+
+- `make-worktree.py` 가 워크트리를 만들기 전에 `orca repo show` 로 저장소의 `externalWorktreeVisibility` 를 읽고, `hide` 면 만들지 않고 종료 코드 1 로 멈춘다. 안내에 사용자가 고를 두 조치(Orca 화면에서 등록, `orca repo set --repo path:<repo> --external-worktree-visibility show`)를 낸다. `show`, `inherit`, 읽지 못한 경우는 이전처럼 진행한다. 이전에는 `hide` 인 저장소에서 워크트리를 만든 뒤 Orca 가 숨겨 `launch-worker.py` 가 30초 대기 끝에 멈췄다.
+- `launch-worker.py` 가 Orca 가 워크트리를 알아보지 못해 멈출 때 만든 경로, 그 저장소의 `externalWorktreeVisibility`, 사용자가 할 조치를 stderr 에 낸다. 설정은 바꾸지 않는다.
+- 경로 계산은 바꾸지 않는다. Orca 가 직접 만드는 경로와 같다는 확인을 `references/launch.md` 에 적었다.
+- Orca 에 묻는 `orca_repo.py` 를 더했다.
+
 ## 2.4.0 (2026-10-23)
 
 - `cleanup-sweep.py --close-own-taken-over` 를 더했다. `--run` 과 함께 줄 때, 그 Run 의 completed dispatch 터미널이 `user_owned` / `user_takeover` 로 남았어도 `agentIdentity` 가 없고 그 경로를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 소유 확인에서 빼고 닫는다. 이전에는 worker 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 `user_takeover` 가 기록되면, 정리 단계가 매번 `남김: 사용자 보유 터미널` 로 건너뛰어 코디네이터가 터미널을 직접 닫아야 했다. Orca 필드로는 사용자가 의도해 넘겨받은 터미널과 가를 수 없어 기본은 꺼 두고, `--run` 없이 주면 종료 코드 2 다.

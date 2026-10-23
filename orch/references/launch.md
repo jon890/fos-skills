@@ -77,8 +77,18 @@ python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC_FILE" --worktree "$W
 - `worker-start` 응답의 `launch.effective` 가 1단계에서 고른 모델, effort 와 같다
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
 
-`make-worktree.py` 는 Orca 와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
-그 경로가 ignore 되지 않으면 기준 브랜치에서 `git add -A` 를 할 때 워크트리가 커밋될 수 있어, 스크립트가 로컬 전용인 `.git/info/exclude` 에 `/worktrees/` 를 더한다.
+`make-worktree.py` 는 Orca 가 직접 만드는 경로와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
+2026-10-23 dooray-cli 에서 `orca worktree create` 가 만든 경로로 확인했다. Orca 전역 설정은 `workspaceDir: "worktrees"`, `nestWorkspaces: true` 이고, 저장소별 `worktreeBasePath` 로 덮어쓸 수 있다.
+그래서 경로 계산은 바꾸지 않는다. 경로가 맞아도 `git worktree add` 로 만든 워크트리는 Orca 에게 외부 워크트리라서, 저장소의 `externalWorktreeVisibility` 가 `hide` 면 Orca 가 숨기고 `launch-worker.py` 가 30초 대기 끝에 멈춘다.
+`make-worktree.py` 는 만들기 전에 `orca repo show` 로 그 값을 읽고 `hide` 면 만들지 않고 종료 코드 1 로 멈춘다. `show`, `inherit`, 읽지 못한 경우는 그대로 진행한다.
+`hide` 일 때 사용자가 고를 조치는 둘이다. 스크립트는 Orca 설정을 바꾸지 않는다.
+
+- Orca 화면에서 그 워크트리를 등록한다
+- `orca repo set --repo path:<repo> --external-worktree-visibility show`
+
+`launch-worker.py` 가 「Orca 가 워크트리를 알아보지 못했다」 로 멈출 때도 만든 경로, 그 저장소의 `externalWorktreeVisibility`, 위 조치를 stderr 에 낸다. 조치한 뒤에는 `--worktree` 로 이어 띄운다.
+
+만든 경로가 ignore 되지 않으면 기준 브랜치에서 `git add -A` 를 할 때 워크트리가 커밋될 수 있어, 스크립트가 로컬 전용인 `.git/info/exclude` 에 `/worktrees/` 를 더한다.
 공유되는 `.gitignore` 는 고치지 않는다.
 대상 저장소의 `.claude/settings.local.json` 도 스크립트가 복사한다. 추적되지 않는 파일이라 워크트리에 따라오지 않고,
 없으면 사용자가 허용해 둔 `gh pr`, 리뷰 회신 같은 명령이 worker 세션에서 다시 막힌다.
