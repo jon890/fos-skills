@@ -24,7 +24,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 102 103!
 ```
 
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.claude/orch-finish.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
-**머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
+**머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식, 최신화 규칙, 정리 인자)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.py` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.py` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
 스크립트가 충돌 파일을 내고 (PR, base SHA) 마다 한 번만 그 worker 에게 base 를 합치라고 보낸다. 같은 base 로 다시 돌려도 또 보내지 않는다.
@@ -84,6 +84,51 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --required test
 
 ```bash
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
+```
+
+### 겹치지 않는 PR 은 최신화하지 않기
+
+**`--up-to-date-when overlap` 은 `--require-up-to-date` 가 base 를 합치는 때를 줄인다. 기본은 `always`(뒤처졌으면 늘 합친다)이고, 바꾸지 않으면 동작이 달라지지 않는다.**
+`--require-up-to-date` 만 쓰면 앞 PR 이 머지될 때마다 뒤 PR 이 base 를 합치고 필수 CI 를 다시 기다려, PR 하나에 CI 한 번 분량이 더 든다.
+`overlap` 은 PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹치지 않으면 최신화 없이 머지하고, 겹치면 지금처럼 합치고 CI 를 다시 기다린다.
+
+| 규칙 | 내용 |
+| --- | --- |
+| 단위 | `--unit-prefix`(기본 `modules/`) 아래 폴더 하나다. `modules/api/` 아래 파일은 `api` 이고, 그 밖의 파일은 경로 자체가 단위다 |
+| 공용 경로 | `--shared-paths` 정규식에 맞는 파일은 어느 쪽에 있든 겹친 것으로 본다. 공용 모듈, 루트 빌드 파일, 계약, CI 설정처럼 모든 모듈에 영향을 주는 경로다 |
+| 문서 | `--docs-glob` 에 맞는 파일은 양쪽 모두 세지 않는다 |
+| 합칠 것이 없는 경우 | base 에 문서 밖 변경이 없거나(이미 최신이거나 문서만 들어왔다), PR 이 문서만 바꿨으면 겹침을 따지지 않고 바로 머지한다 |
+| 판정 시점 | 큐를 걸 때가 아니라 그 PR 차례가 왔을 때 한다. 앞 PR 이 머지되면 base 가 바뀌기 때문이다 |
+
+판정은 `scripts/overlap_units.py` 가 하고, PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이유)` 한 줄을 찍는다.
+이유는 `단위 겹침: api` 나 `공용 경로: modules/common/Util.java` 꼴이다. 판정하지 못하면(`git` 실패, 잘못된 정규식) 갱신 필요로 다룬다. 안전한 쪽이 기존 동작이다.
+`--require-up-to-date` 가 있어야 한다. 이름을 바꾼 파일은 옛 경로와 새 경로를 모두 센다.
+
+**공용 경로가 잘 정의된 모노레포에서만 쓴다.** 모듈이 서로의 내부를 읽는 일이 없고, 모든 모듈에 영향을 주는 경로를 `--shared-paths` 로 빠짐없이 적을 수 있어야 한다.
+이 규칙은 단위가 겹치지 않으면 합친 상태를 아무도 검사하지 않는다. 정규식에서 빠진 공용 경로가 있으면 그 틈으로 깨진 조합이 머지된다.
+`--shared-paths` 를 주지 않으면 같은 폴더(또는 같은 파일)를 고쳤을 때만 겹친 것으로 본다. 의존 관계를 모르는 저장소는 기본 `always` 를 둔다.
+GitHub 의 「브랜치를 최신으로 유지」 보호 규칙이 켜진 저장소는 뒤처진 PR 의 머지를 거부하므로 쓰지 않는다.
+
+옵션을 매번 적지 않도록 `queue` 절에 둔다. 코디네이터는 `merge-with-finish.py` 만 부르면 된다.
+
+```json
+{
+  "queue": {
+    "required": ["backend", "frontend"],
+    "require_up_to_date": true,
+    "up_to_date_when": "overlap",
+    "shared_paths": ["^modules/common/", "^build\\.gradle$", "^\\.github/"],
+    "docs_glob": ["docs/*", "*.md"],
+    "sweep_args": ["--run", "run_0123456789ab", "--specs-dir", ".omc/handoffs/specs"]
+  }
+}
+```
+
+그러면 호출은 다음 한 줄이다. 마지막 PR 에는 `!` 를 붙이고, 그 PR 의 보드 항목은 보드 파일에서 `pr` 필드으로 찾아 done 으로 바꾼다.
+`!` 가 없는 PR 은 보드 항목을 바꾸지 않는다. 같은 PR 이 든 항목이 둘 이상이면 건너뛴다. `--board-item PR=ID` 로 직접 줄 수도 있다.
+
+```bash
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 492 '495!:./bin/backup-db.sh orders "before-pr-$PR"'
 ```
 
 ### 같은 파일을 고친 PR

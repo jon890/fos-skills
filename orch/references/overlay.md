@@ -48,7 +48,7 @@
 | `finish` | `deploy_workflow`, `deploy_branch` | 배포 워크플로 파일 이름과 배포가 도는 브랜치. 둘 다 주면 배포 성공까지 기다린다 |
 | `finish` | `task_pattern` | PR 제목에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다 |
 | `finish` | `complete_cmd` | 업무 완료 명령 틀. `{number}` 가 업무 번호로 바뀌고 셸을 거치지 않는다 |
-| `finish` | `board`, `board_bin` | 보드 파일과 보드 명령. 보드 항목 id 는 PR 마다 다르므로 `merge-with-finish.py --board-item 101=ITEM` 으로 준다 |
+| `finish` | `board`, `board_bin` | 보드 파일과 보드 명령. 보드 항목은 `pr` 필드에 그 PR 이 든 항목을 `merge-with-finish.py` 가 찾아 업무의 마지막 PR(`!`)에서만 done 으로 바꾼다. 직접 줄 때는 `--board-item 101=ITEM` 이다 |
 | `finish` | `specs_dir` | 지시서 폴더. 그 PR 브랜치의 지시서를 지운다 |
 | `cleanup` | `omc`, `handoffs`, `previews`, `board` | 산출물 루트, handoff 폴더, 미리보기 폴더, 보드 파일 |
 | `cleanup` | `trash` | 휴지통 폴더. 기본은 `~/.Trash/omc-cleanup-<날짜>` |
@@ -56,6 +56,9 @@
 | `queue` | `required`, `before`, `method` | `merge-queue.sh` 의 `--required`, `--before`, `--method`. `required` 는 문자열 목록도 받는다 |
 | `queue` | `verify_merged`, `verify_merged_when`, `docs_glob` | `--verify-merged`, `--verify-merged-when`, `--docs-glob`. `docs_glob` 은 문자열 목록도 받는다 |
 | `queue` | `after_merged`, `skipped_is_missing` | `--after-merged` 와 `--skipped-is-missing`. `skipped_is_missing` 은 true 나 false 다 |
+| `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
+| `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `shared_paths` 는 정규식 목록도 받아 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
+| `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.py`)에 넘길 인자의 문자열 목록. 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
 | `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |
 
 ```json
