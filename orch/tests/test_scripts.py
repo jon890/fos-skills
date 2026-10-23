@@ -848,6 +848,21 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.assertNotIn("c.txt", r.stdout)
         self.assertFalse(self.merged())
 
+    def two_file_overlap(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n", "b.txt": "feat\n"},
+                      {"a.txt": "main\n1\n2\n3\n4\n5\n", "b.txt": "main\n"})
+
+    def test_stop_line_lists_overlap_files_with_one_space_and_no_trailing_space(self):
+        # 옛 merge-queue.sh 는 파일을 공백 하나로 이어 끝 공백 없이 찍었다
+        self.two_file_overlap()
+        r = self.run_queue("--stop-on-overlap")
+        self.assertIn("\nSTOP 1 겹침: a.txt b.txt\n", "\n" + r.stdout)
+
+    def test_overlap_log_line_has_no_trailing_space(self):
+        self.two_file_overlap()
+        r = self.run_queue("--verify-merged", "true")
+        self.assertRegex(r.stdout, r"(?m)^\d\d:\d\d 1 겹침: a\.txt b\.txt$")
+
     def test_no_overlap_merges(self):
         self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"b.txt": "b2\n"})
         r = self.run_queue("--stop-on-overlap")

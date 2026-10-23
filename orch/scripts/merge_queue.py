@@ -629,7 +629,7 @@ class Queue:
                 if ov is None:
                     stop(f"{n} 겹침 판정 실패(PR HEAD 나 base 를 받지 못했다)")
                 p.ov = ov
-                listing = " ".join(ov) + (" " if ov else "")
+                listing = " ".join(ov)
                 if not o.verify_merged:
                     if ov:
                         stop(f"{n} 겹침: {listing}")
