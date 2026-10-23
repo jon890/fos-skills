@@ -118,6 +118,36 @@ class WaitImportantTest(unittest.TestCase):
         self.assertEqual("LAST_DELIVERY d1", r.stdout.splitlines()[-1])
         self.assertNotIn("WORKER_LOST", r.stdout)
 
+    def test_settled_dispatch_with_missing_terminal_is_not_lost(self):
+        for status in ("completed", "abandoned"):
+            with self.subTest(status=status):
+                rows = [self.worker("ctx_old", "abandoned", status, "terminal_missing")]
+                r = self.wait([batch("d1", "status")], workers=[rows],
+                              tasks=[{"id": "t1", "status": "dispatched"}], latest={"t1": "ctx_old"})
+                self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+                self.assertNotIn("WORKER_LOST", r.stdout)
+
+    def test_failed_worker_report_camel_case_is_not_lost(self):
+        r = self.lost_at_start(latest={"id": "ctx_bad", "lastFailure": {"provenance": "worker_report"}})
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+
+    def test_explicit_abandon_is_not_lost_but_recovery_loss_still_is(self):
+        r = self.lost_at_start(latest={"id": "ctx_bad", "lastFailure": "abandoned"})
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+        self.lost_state.unlink()
+        r = self.lost_at_start(latest={"id": "ctx_bad", "lastFailure": "The assigned worker terminal is no longer live after orchestration recovery."})
+        self.assertEqual(5, r.returncode, r.stdout + r.stderr)
+
+    def test_completion_while_waiting_does_not_become_lost(self):
+        live = [self.worker("ctx_a", "ready", "dispatched", "input_accepted")]
+        done = [self.worker("ctx_a", "abandoned", "completed", "terminal_missing")]
+        r = self.wait([dict(batch("d1", "worker_done"), sleep=1)], "--lost-interval-sec", "0.3",
+                      workers=[live, live, done])
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("WORKER_LOST", r.stdout)
+
     def test_unhandled_lost_dispatch_at_start_ends_the_wait_without_checking(self):
         r = self.lost_at_start("--ack", "d0")
         self.assertEqual(5, r.returncode, r.stdout + r.stderr)
