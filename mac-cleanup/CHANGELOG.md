@@ -12,6 +12,7 @@
 - `survey_system.sh` 를 `survey_system.py` 로 옮겼다. 기존 절과 출력 의미는 같다. 큰 디렉터리는 `du -xkd1` 한 번으로 읽어 셸 glob 실패로 디렉터리가 빠지는 문제가 없다
 - `survey_system.py` 에 「업데이트 캐시」 절을 더했다. `*-updater`, `*.ShipIt` 마다 크기와 대기 표시(`pending`, `update.zip`, `update-info.json`)를 보인다. `targets.md` 는 대기 표시가 없을 때만 안전으로 둔다. 실측에서 `orca-updater` 에 설치 전 업데이트 268MB 가 있었다
 - `survey_system.py` 에 Codex 이전 버전, Cursor snapshots, `mise prune --dry-run` 후보, 오래된 `~/.cache` 하위 절을 더했다. `targets.md` 「큰 영역 후보」 가 등급(확인 필요)과 지우는 조건을 정한다. `mise prune` 은 그대로 돌리지 않고 사용자가 고른 도구만 `mise uninstall` 로 지운다
+- SKILL.md 에 「개인 오버레이」 절을 더했다. `~/.claude/mac-cleanup-overlay.md` 가 있으면 먼저 읽고 코어보다 우선하며, 오버레이가 뺀 항목은 2단계 분류와 3단계 승인 질문에 올리지 않는다. 없으면 코어 기본값이다
 - `tests/test_parsers.py` 에 기본값 반전과 `--json-out` 테스트를, `tests/test_survey_system.py` 를 새로 더했다
 
 ## 1.8.0

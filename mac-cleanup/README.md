@@ -16,6 +16,7 @@ macOS 개발 머신의 디스크, 메모리, 스왑을 조사해 정리하고, �
 - `scripts/colima_trim.py`: Colima VM 디스크를 trim 하고 호스트 확보량을 잰다. 부족하면 재시도한다. 데이터는 지우지 않는다.
 - `references/targets.md`: 정리 후보의 등급과 명령
 - `references/git-and-sessions.md`: 세션, 브랜치, 워크트리 정리 절차
+- `~/.claude/mac-cleanup-overlay.md`: 이 머신에만 해당하는 개인 오버레이(저장소 밖). 정리 후보에서 뺄 앱과 이유를 적는다. 없으면 코어 기본값이다
 - `tests/`: 파싱과 분류 함수의 단위 테스트
 
 ```bash
