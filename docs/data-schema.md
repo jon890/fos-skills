@@ -39,7 +39,7 @@
 | `version` | number | 계약 버전. 지금은 `1`. 필드를 빼거나 뜻을 바꾸면 올린다 |
 | `event` | string | 이벤트 이름 |
 | `repo` | string | 주 checkout 의 절대경로 |
-| `base` | string | 기준 브랜치 |
+| `base` | string | 기준 브랜치. 명령이 `--base` 를 받지 않았고 `origin/HEAD` 도 읽지 못하면 빈 문자열이다 |
 | `run` | string 또는 null | Orca Run id. 모르면 null |
 | `time` | string | ISO 8601 UTC |
 

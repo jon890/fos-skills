@@ -202,6 +202,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 ```
 orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
 orch/scripts/<명령>.py            node 로 넘기는 shim. 다음 major 에서 지운다
+orch/scripts/ts_shim.py           shim 의 node 버전 확인과 exec 한 벌
 orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돌며 틱마다 질문 확인, 정리, ready 슬롯, 순서, CI 감시를 한다
 orch/scripts/lib/proc.ts          자식 프로세스 실행. timeout 과 반환 형태 { code, stdout, stderr, timedOut } 한 벌
 orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다

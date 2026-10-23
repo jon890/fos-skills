@@ -53,7 +53,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
   - `shell-text.ts`: 모듈. hook 이 명령이 아닌 글자(따옴표 안, heredoc 본문, 주석)를 가리고 명령 조각으로 나눈다
 - `scripts/heavy-slot.py`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.py` 를 부른다
 - `scripts/orch_process.py`: 모듈. 스크립트가 함께 쓰는 프로세스 실행 함수다
-- `scripts/orca_repo.py`: 모듈. Orca 에 등록된 저장소의 외부 워크트리 표시 설정을 읽는다. `make-worktree.py` 와 `launch-worker.py` 가 import 한다
+- `scripts/ts_shim.py`: 모듈. TypeScript 로 옮긴 명령의 옛 `.py` 경로가 import 한다. node 22.18 이상인지 보고 같은 이름의 `.ts` 로 넘긴다
 - `scripts/mem-gate.py`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 
