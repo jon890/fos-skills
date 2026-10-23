@@ -56,7 +56,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `worker-lost` | `worker`, `stage` |
 | `before-ready`, `pr-ready` | `pr`, `ready_count`(이미 ready 인 내 PR 수), `slots` |
 | `ci-passed`, `ci-failed`, `ci-missing` | `pr`, `checks`(이름, 상태, 결론, URL 의 목록), `required`(이름 목록) |
-| `pr-conflict` | `pr`, `base_head`, `files`, `worker`(담당이 끝났으면 null), `action`(`notified`, `orphan`, `launched`) |
+| `pr-conflict` | `pr`, `base_head`, `files`, `worker`(터미널이 없으면 null), `action`(`notified` 살아 있는 dispatch 에 보냄, `resumed` 남은 터미널에 후속 지시서로 이어 씀, `orphan` 이어 쓰지 못함) |
 | `before-merge` | `pr`, `owner`, `name`(GitHub 저장소 이름), `last_of_task`(bool) |
 | `verify-merged` | `pr`, `copy`(사본 절대경로), `base_head`, `changed_files`, `overlap_files` |
 | `after-merge` | `pr`, `merge_commit`, `remote_branch_deleted`(bool), `retargeted`(base 를 옮긴 PR 번호 목록) |
@@ -78,6 +78,27 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 
 명령줄의 `PR번호:명령` 형식은 그대로 둔다. 그 PR 하나에만 붙이는 일회성 명령이라 핸들러로 옮기지 않는다. `before-merge` 핸들러 다음에 돈다.
 
+## 사용자 결정 질문 형식
+
+worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 질문의 본문 형식이다. 보드가 이 형식을 읽어 결정 필요 항목을 그린다.
+
+```text
+결정: <무엇을 정하는지 한 줄>
+배경: <왜 지금 정해야 하는지>
+선택지:
+- <선택지 이름>: <고르면 생기는 결과>
+- <선택지 이름>: <고르면 생기는 결과>
+권장: <선택지 이름>. <이유>
+```
+
+| 규칙 | 값 |
+| --- | --- |
+| 첫 줄 | `결정:` 으로 시작한다. 보드가 이 줄을 항목 제목으로 쓴다 |
+| 선택지 | `- ` 로 시작하는 줄이 둘 이상이다 |
+| 권장 | `권장:` 으로 시작하는 줄이 하나다. 보드가 제목 아래에 이 줄을 보인다 |
+| 검사 | `worker-ask --decision` 이 형식을 보고, 어긋나면 묻지 않고 빠진 줄을 알리며 종료 코드 2 로 끝난다 |
+| 형식이 없는 질문 | 기술 질문이나 막힘 보고다. 보드는 지금처럼 본문 앞부분을 보인다 |
+
 ## config.json 에 더하는 절
 
 `.orch/config.json` 의 지금 절(`finish`, `cleanup`, `queue`)은 그대로 읽는다. 모르는 키에 사용법 오류로 멈추는 규칙도 그대로다.
@@ -94,8 +115,6 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `pipeline` | `ci_missing_after_sec` | number | 600 | ready 뒤 필수 체크가 나타나지 않으면 `ci-missing` 을 내는 시간 |
 | `pipeline` | `update_behind_drafts` | bool | false | base 에 뒤처진 내 draft PR 에 틱마다 base 를 합친다. ready PR 은 합치지 않는다 |
 | `pipeline` | `authors` | 문자열 목록 | gh 의 현재 사용자 | 「내 PR」 로 볼 작성자. 루프, 원격 브랜치 정리, 충돌 알림이 이 PR 만 본다 |
-| `pipeline.conflict` | `auto_launch` | bool | false | 담당이 끝난 충돌 PR 에 새 worker 를 띄운다 |
-| `pipeline.conflict` | `agent`, `model`, `effort` | string | 없음 | 그 worker 의 에이전트, 모델, effort. `auto_launch` 가 true 면 이 키가 모두 있어야 한다. 값은 `orch/references/agent-selection.md` 기준으로 저장소가 고른다 |
 | `heavy` | `exclusive`, `normal`, `light` | 정규식 목록 | 빈 목록 | 무거운 검사 분류. 앞의 목록부터 맞춰 본다. 어디에도 맞지 않으면 `normal` 이다 |
 | `heavy` | `wait_idle` | 정규식 목록 | 빈 목록 | 자리를 잡기 전에, 명령줄이 이 정규식에 맞는 프로세스가 없을 때까지 기다린다. 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 대상이다 |
 
@@ -118,4 +137,4 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `state/loop.json` | 상주 루프의 pid, 시작 시각, 마지막 틱, PR 마다 마지막으로 본 체크 상태와 알린 이벤트 | 루프가 덮어쓴다. 같은 상태를 두 번 알리지 않는 데 쓴다 |
 | `state/order.json` | 머지 순서. PR 번호 목록 | 머지되거나 닫힌 PR 은 루프가 뺀다 |
 | `state/loop.log` | 상주 루프의 출력 | 1MB 를 넘으면 `loop.log.1` 로 돌리고 하나만 남긴다 |
-| `state/loop-events.jsonl` | 코디네이터를 깨워야 하는 루프의 알림. 한 줄에 `time`, `kind`(`REMINDER`, `WATCH-ERROR`, `CI-FAILED`, `CI-MISSING`, `CONFLICT-ORPHAN`, `CONFLICT-LAUNCHED`, `HOOK-FAIL`), `pr`, `text` | `wait-important` 가 읽은 위치를 `state/loop-events.cursor` 에 적는다. 읽은 줄이 1000 줄을 넘으면 루프가 앞부분을 잘라 낸다 |
+| `state/loop-events.jsonl` | 코디네이터를 깨워야 하는 루프의 알림. 한 줄에 `time`, `kind`(`REMINDER`, `WATCH-ERROR`, `CI-FAILED`, `CI-MISSING`, `CONFLICT-ORPHAN`, `HOOK-FAIL`), `pr`, `text` | `wait-important` 가 읽은 위치를 `state/loop-events.cursor` 에 적는다. 읽은 줄이 1000 줄을 넘으면 루프가 앞부분을 잘라 낸다 |

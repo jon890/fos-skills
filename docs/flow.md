@@ -201,7 +201,7 @@ flowchart TD
 | `ci-passed` | `orch-loop` | 필수 체크가 모두 통과한 것을 처음 본 때 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
 | `ci-failed` | `orch-loop` | 필수 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 그 worker 에게 알림 | runner 장애면 다시 실행 |
 | `ci-missing` | `orch-loop` | ready 뒤 `pipeline.ci_missing_after_sec` 안에 필수 체크가 나타나지 않을 때 | 아니오 | `CI-MISSING` 줄 | runner 재시작 |
-| `pr-conflict` | `notify-conflicts`, `orch-loop` | base 와 충돌하는 내 PR 을 (PR, base SHA) 마다 처음 본 때 | 아니오 | 살아 있는 worker 에게 base 를 합치라고 알림. 담당이 끝났으면 `CONFLICT-ORPHAN` 줄. `pipeline.conflict.auto_launch` 를 켠 저장소는 새 worker 를 띄운다 | 없음 |
+| `pr-conflict` | `notify-conflicts`, `orch-loop` | base 와 충돌하는 내 PR 을 (PR, base SHA) 마다 처음 본 때 | 아니오 | 그 PR 을 만든 worker 에게 base 를 합치라고 보낸다. dispatch 가 끝났으면 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 `CONFLICT-ORPHAN` 줄. 새 worker 는 띄우지 않는다 | 없음 |
 | `before-merge` | `merge_queue` | PR 마다 머지 직전, HEAD 를 고정한 뒤 | 예 | 머지 조건 확인 | DB 마이그레이션 PR 앞의 백업 |
 | `verify-merged` | `merge_queue` | `queue.verify_merged_when` 이 맞는 PR 의 합친 사본을 만든 뒤 | 예 | 사본 생성, HEAD 대조, 사본 삭제 | 사본에서 로컬 CI 실행 |
 | `after-merge` | `merge_queue` | PR 하나가 MERGED 인 것을 확인한 뒤 | 아니오 | 원격 브랜치 삭제, 그 브랜치를 base 로 둔 내 PR 의 base 옮기기 | 없음 |
@@ -234,5 +234,6 @@ flowchart TD
 | worker 를 띄운 저장소가 둘 이상이다 | 이벤트는 그 PR 이나 워크트리의 저장소에서 나고, 그 저장소의 핸들러만 돈다 |
 | `config.json` 에 옛 셸 명령 칸이 있고 같은 이벤트의 핸들러가 없다 | 다음 major 까지는 옛 칸을 그 이벤트의 핸들러처럼 돌리고 `DEPRECATED` 줄로 옮기는 명령을 알린다 |
 | 옛 셸 명령 칸과 핸들러가 함께 있다 | 사용법 오류(종료 코드 2)로 멈춘다. 어느 쪽이 맞는지 정할 수 없다 |
+| worker 가 `worker_done` 을 보냈는데 PR 이 아직 열려 있다 | 그 worker 터미널을 남긴다. 충돌이나 리뷰 반영을 같은 worker 가 이어 받는다. PR 이 머지되거나 닫히면 정리가 바로 닫는다 |
 | 상주 루프가 죽었거나 틱이 멈췄다 | 마지막 틱이 `pipeline.tick_sec` 의 세 배보다 오래되면 `wait-important` 가 `LOOP-DEAD` 로 깨어난다. 코디네이터가 루프를 다시 띄운다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다 |
 | 같은 저장소에 루프를 둘 띄운다 | 둘째는 `state/loop.json` 의 살아 있는 pid 를 보고 종료 코드 4 로 끝난다 |

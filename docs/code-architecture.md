@@ -191,7 +191,8 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | handoff 산출물 정리 | 묻지 않고 `--apply` 로 휴지통 폴더에 옮긴다. 지우지 않으므로 되살릴 수 있다 |
 | 옛 `.py` 명령 경로 | node 로 넘기는 shim 을 3.x 동안 두고 다음 major 에서 지운다 |
 | 핸들러 언어 | `.orch/hooks/<이벤트>.ts` 만 받는다. 다른 언어는 그 핸들러가 자식 프로세스로 부른다 |
-| 담당이 끝난 충돌 PR | 코어 기본은 `pr-conflict` 이벤트와 코디네이터 알림만 낸다. `config.json` 의 `pipeline.conflict.auto_launch` 를 켠 저장소는 새 worker 를 자동으로 띄운다. 에이전트, 모델, effort 는 같은 절의 값이다 |
+| 충돌한 PR | 그 PR 을 만든 기존 worker 가 푼다. worker 터미널은 `worker_done` 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남기고, 충돌이 나면 같은 worker 에게 후속 지시서를 보낸다. 이어 받지 못하면 새 worker 를 띄우지 않고 코디네이터에게 알린다. 새 worker 자동 띄우기 설정은 두지 않는다. 로컬 자원을 아끼기 위해서다. 머지 뒤에는 그 터미널을 바로 정리한다. 처음 답(설정으로 자동 띄우기)을 같은 날 바꿨다 |
+| 사용자 결정 질문 | worker 와 코디네이터가 사용자에게 묻는 결정은 첫 줄 `결정: <무엇을 정하는지>` 와 배경, 선택지별 결과, 권장안과 이유를 갖춘다. 보드는 결정 필요 항목마다 그 첫 줄과 권장안을 보인다. 코디네이터는 사용자가 정할 질문에 대신 답하지 않고 권장안을 보여 사용자가 고르게 한다 |
 | 터미널 직접 입력 금지 hook | 대상이 변수이거나 orca 조회가 실패하면 막는다. `send-to-worker` 를 안내한다 |
 | 상주 루프의 자동 진행 | 코어에 두되 `pipeline.enabled` 를 켠 저장소에서만 돈다. 원격 브랜치 정리와 미답변 질문 알림은 늘 돈다 |
 | 핸들러의 `orca`, `gh` | 가드 shim 으로 감싼다 |
@@ -252,7 +253,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py
 | CI 없음 알림 | `ci-missing` | `pipeline.ci_missing_after_sec`, `ci-missing.ts` |
 | 로컬 검증 뒤 머지 | 합친 사본 만들기와 HEAD 대조 | `verify-merged.ts` |
 | 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. `ci-ready` 와 `notify-conflicts` 가 같이 쓴다 | 없음 |
-| 담당이 끝난 충돌 PR | 알림. 켜면 새 worker 띄우기 | `pipeline.conflict.*` |
+| 충돌한 PR | 기존 worker 에게 base 를 합치라는 지시. 끝난 dispatch 는 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 알림 | 없음 |
 | 뒤처진 draft 최신화 | 틱 | `pipeline.update_behind_drafts` |
 | 질문 감시 | 루프의 틱과 `watch-questions.ts` | `worker-question.ts` |
 | 무거운 검사 대기열 | `heavy-slot.ts` | `heavy.*` 분류 정규식과 `wait_idle` |
