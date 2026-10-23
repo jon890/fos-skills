@@ -120,6 +120,26 @@ def parse_vm_stat(output):
     return (int(page.group(1)) if page else None, int(comp.group(1)) if comp else None)
 
 
+# 설치를 기다리는 업데이트가 있다는 표시. Electron 계열 updater 는 내려받은 압축 파일을 `update.zip` 으로,
+# 풀어 둔 설치본을 `pending` 디렉터리에 두고 앱이 다음 실행에서 설치한다.
+PENDING_NAMES = frozenset({"pending", "update.zip", "update-info.json"})
+
+
+def is_updater_dir(name):
+    """`*-updater` 또는 `*.ShipIt` 이름의 캐시 디렉터리인지."""
+    return name.endswith("-updater") or name.endswith(".ShipIt")
+
+
+def pending_marks(entry_names):
+    """디렉터리 직속 항목 이름에서 대기 중인 업데이트 표시를 골라 정렬해 돌려준다. 없으면 빈 목록."""
+    return sorted(n for n in entry_names if n in PENDING_NAMES)
+
+
+def updater_verdict(marks):
+    """대기 표시가 없을 때만 안전이고, 하나라도 있으면 유지다. 지우면 아직 설치하지 않은 업데이트가 사라진다."""
+    return "유지(설치 대기 업데이트)" if marks else "안전(대기 표시 없음)"
+
+
 def section(title):
     print(f"\n## {title}")
 
@@ -194,6 +214,26 @@ def survey_tool_caches():
                 size_of(os.path.join(caches, name))
 
 
+def survey_updaters():
+    section("업데이트 캐시 (*-updater, *.ShipIt)")
+    caches = os.path.join(HOME, "Library/Caches")
+    try:
+        names = sorted(n for n in os.listdir(caches) if is_updater_dir(n))
+    except OSError:
+        names = []
+    if not names:
+        print("해당 디렉터리 없음")
+    for name in names:
+        path = os.path.join(caches, name)
+        try:
+            marks = pending_marks(os.listdir(path))
+        except OSError:
+            marks = []
+        rows = du_kb(["-s", path])
+        size = human_kb(rows[0][0]) if rows else "?"
+        print(f"{size:>6}  {path}  {updater_verdict(marks)}" + (f"  대기={','.join(marks)}" if marks else ""))
+
+
 def survey_snapshots():
     section("로컬 스냅샷과 휴지통")
     sys.stdout.write(run(["tmutil", "listlocalsnapshots", "/"]) or "")
@@ -203,7 +243,7 @@ def survey_snapshots():
 def main(argv=None):
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
     for step in (survey_disk, survey_memory, survey_rss, survey_big_dirs, survey_docker,
-                 survey_tool_caches, survey_snapshots):
+                 survey_tool_caches, survey_updaters, survey_snapshots):
         step()
         sys.stdout.flush()
     return 0

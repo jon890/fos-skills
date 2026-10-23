@@ -53,5 +53,47 @@ class VmStatTest(unittest.TestCase):
         self.assertEqual(sy.parse_vm_stat(""), (None, None))
 
 
+class UpdaterTest(unittest.TestCase):
+    def test_is_updater_dir(self):
+        for name in ("orca-updater", "com.stablyai.orca.ShipIt", "x-updater"):
+            self.assertTrue(sy.is_updater_dir(name), name)
+        for name in ("com.google.GoogleUpdater", "updater-cache", "ShipIt.old", "orca"):
+            self.assertFalse(sy.is_updater_dir(name), name)
+
+    def test_pending_marks_found(self):
+        self.assertEqual(sy.pending_marks(["update.zip", "pending", "other.log"]), ["pending", "update.zip"])
+
+    def test_no_marks_for_log_only_dir(self):
+        self.assertEqual(sy.pending_marks(["ShipIt_stderr.log", "ShipIt_stdout.log"]), [])
+        self.assertEqual(sy.pending_marks([]), [])
+
+    def test_verdict(self):
+        self.assertTrue(sy.updater_verdict([]).startswith("안전"))
+        self.assertTrue(sy.updater_verdict(["pending"]).startswith("유지"))
+
+    def test_survey_updaters_reads_marks_from_temp_home(self):
+        import contextlib
+        import io
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as home:
+            caches = Path(home) / "Library/Caches"
+            (caches / "app-updater/pending").mkdir(parents=True)
+            (caches / "app-updater/update.zip").write_bytes(b"x" * 2048)
+            (caches / "other.ShipIt").mkdir()
+            (caches / "other.ShipIt/ShipIt_stderr.log").write_text("log")
+            (caches / "unrelated").mkdir()
+            buf = io.StringIO()
+            with mock.patch.object(sy, "HOME", home), contextlib.redirect_stdout(buf):
+                sy.survey_updaters()
+            lines = buf.getvalue().splitlines()
+            pending = [l for l in lines if "app-updater" in l][0]
+            clean = [l for l in lines if "other.ShipIt" in l][0]
+            self.assertIn("유지", pending)
+            self.assertIn("대기=pending,update.zip", pending)
+            self.assertIn("안전", clean)
+            self.assertFalse(any("unrelated" in l for l in lines))
+
+
 if __name__ == "__main__":
     unittest.main()

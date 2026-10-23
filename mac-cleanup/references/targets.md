@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 실행 중인 앱의 캐시(IntelliJ, Chrome, 브라우저 앱) | 유지 | 인덱스가 깨지거나 앱이 비정상 동작한다. 앱을 닫은 뒤에만 지운다 |
 | 설치본이 없는 이전 버전 디렉터리(`JetBrains/DataGrip2025.3` 등) | 안전 | 실행 중인 앱이 쓰지 않는다 |
-| `*.ShipIt`, `*-updater` | 안전 | 업데이트 설치 파일 캐시다 |
+| `*.ShipIt`, `*-updater` | 대기 표시가 없을 때만 안전, 있으면 유지 | 업데이트 설치 파일 캐시다. `survey_system.py` 의 「업데이트 캐시」 절이 디렉터리마다 크기와 대기 표시(`pending`, `update.zip`, `update-info.json`)를 보인다. 표시가 있으면 아직 설치하지 않은 업데이트라 지우면 그 업데이트가 사라진다(실측: `orca-updater` 에 `pending` 과 `update.zip` 268MB). 앱이 업데이트를 설치한 뒤에 지운다 |
 | `~/Library/Application Support/Claude/vm_bundles` | 확인 필요 | Claude 데스크톱 Cowork VM 이미지다. 앱 본체가 꺼져 있을 때만 지운다. `chrome-native-host` 와 `crashpad_handler` 만 떠 있으면 본체는 꺼진 것이다. 다시 쓰면 앱이 받는다 |
 | `~/.codex/.tmp/marketplaces/.staging/marketplace-upgrade-*` | 하루 지난 것은 안전 | codex 플러그인 업그레이드 임시 사본이다. `~/.codex/.tmp` 전체를 임시 파일로 보지 않는다 |
 
