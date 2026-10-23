@@ -36,7 +36,7 @@ else
   trap 'rm -rf "$T"' EXIT
 fi
 
-# git 이 추적하거나 추적 후보인 파일만 복사한다. 무시되는 worktrees/ 와 .omc/ 는 빠지고
+# git 이 추적하거나 추적 후보인 파일만 복사한다. 무시되는 worktrees/, .omc/, .orch/ 의 로컬 파일은 빠지고
 # 아직 커밋하지 않은 새 파일은 들어간다. 작업 트리에서 지운 파일은 목록에서 뺀다.
 mkdir -p "$T/src"
 (

@@ -1,7 +1,7 @@
 # 진행 보드
 
 work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 환경에서만 쓴다. 보드가 없으면 이 절차를 건너뛴다.
-보드 파일은 기본으로 git 루트의 `.omc/board.json` 이고, 위치는 오버레이가 바꿀 수 있다.
+보드 파일은 work-board 소유다. 기본 위치는 [`work-board/README.md`](../../work-board/README.md) 가 정하고, 다른 곳이면 `.orch/config.json` 의 `finish.board` 로 준다.
 
 **하위 줄은 코디네이터가 쓰는 번호 붙은 단계만 둔다.** 형식은 `1. 구현`, `2. 리뷰 반영`, `3. 머지` 처럼 단계 1, 2, 3… 이고, 저장할 때는 줄마다 `{"text": "1. 구현", "done": false}` 객체를 쓴다. 끝낸 단계는 `board.py step` 으로 `done: true` 로 바꾼다.
 진행 정도는 `--progress 끝낸단계수/전체단계수` 로 넣는다.

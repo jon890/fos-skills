@@ -129,7 +129,8 @@ ORCA, GH, ORCH_KILL 환경 변수로 실행 파일을 바꾼다. 기본 orca, gh
 
 종료 코드:
     0  돌았다. 건너뛴 항목이 있어도 0 이다
-    2  사용법 오류, 또는 저장소를 읽지 못했다
+    2  사용법 오류, 또는 저장소를 읽지 못했다. --specs-dir 없이 orch 작업 폴더를 옮기기 전인 저장소를 만나도
+       그 저장소를 건너뛰고 2 다(orch_paths.py 「옛 구조」)
 """
 
 from __future__ import annotations
@@ -146,6 +147,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from live_specs import live_spec_paths  # noqa: E402
+import orch_paths  # noqa: E402
 from terminal_ownership import blocker as ownership_blocker  # noqa: E402
 REMOVE = HERE / "remove-worktree.sh"
 LIVE_STATES = {"working", "ready"}
@@ -865,6 +867,8 @@ def sweep_repo(repo, args, workers, terminals, log):
     base = args.base or default_base(repo)
     args = argparse.Namespace(**{**vars(args), "base": base})
     specs_dir = None
+    if not args.specs_dir and not orch_paths.require_migrated(repo, "cleanup-sweep", "지시서 폴더를 --specs-dir 로 직접 준다"):
+        raise RuntimeError(f"{repo}: orch 작업 폴더를 옮기기 전이라 건너뛴다")
     if args.specs_dir:
         specs_dir = Path(args.specs_dir)
         specs_dir = specs_dir if specs_dir.is_absolute() else repo / specs_dir

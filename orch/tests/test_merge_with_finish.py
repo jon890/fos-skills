@@ -87,7 +87,7 @@ class WrapperRunTest(unittest.TestCase):
                         FAKE_LOG=str(self.log))
 
     def wrap(self, *args, **env):
-        done = subprocess.run(["python3", str(WRAPPER), "--finish-log-dir", str(self.logs), *args],
+        done = subprocess.run(["python3", str(WRAPPER), "--finish-log-dir", str(self.logs), *args], cwd=self.tmp,
                               capture_output=True, text=True, env=dict(self.env, **env))
         return done.returncode, done.stdout + done.stderr
 
@@ -163,8 +163,8 @@ class WrapperRunTest(unittest.TestCase):
         self.assertEqual(1, self.wrap("449", FAKE_QUEUE_EXIT="1")[0])
 
     def write_config(self, queue):
-        (self.tmp / ".claude").mkdir(exist_ok=True)
-        (self.tmp / ".claude" / "orch-finish.json").write_text(json.dumps({"finish": {}, "queue": queue}))
+        (self.tmp / ".orch").mkdir(exist_ok=True)
+        (self.tmp / ".orch" / "config.json").write_text(json.dumps({"finish": {}, "queue": queue}))
 
     def test_queue_section_fills_missing_queue_options(self):
         self.write_config({"required": ["ci", "lint"], "verify_merged": 'cd "$1" && make test',
@@ -241,9 +241,9 @@ class WrapperRunTest(unittest.TestCase):
         self.assertIn("--unit-prefix apps/", line)
 
     def test_sweep_args_become_repeated_sweep_arg_options(self):
-        self.write_config({"sweep_args": ["--run", "run_x", "--specs-dir", ".omc/specs"]})
+        self.write_config({"sweep_args": ["--run", "run_x", "--specs-dir", ".orch/specs"]})
         self.wrap("--repo", str(self.tmp), "--no-finish", "449")
-        self.assertIn("--sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .omc/specs",
+        self.assertIn("--sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs",
                       self.lines("queue")[0])
 
     def test_sweep_arg_on_the_command_line_replaces_the_list(self):
@@ -321,8 +321,8 @@ class WrapperRunTest(unittest.TestCase):
         self.log.unlink()
         shutil.rmtree(self.logs)
         self.write_board([{"id": "configured", "pr": "9"}], "boards/main.json")
-        (self.tmp / ".claude").mkdir(exist_ok=True)
-        (self.tmp / ".claude" / "orch-finish.json").write_text(json.dumps({"finish": {"board": "boards/main.json"}}))
+        (self.tmp / ".orch").mkdir(exist_ok=True)
+        (self.tmp / ".orch" / "config.json").write_text(json.dumps({"finish": {"board": "boards/main.json"}}))
         self.wrap("--repo", str(self.tmp), "9!")
         self.assertIn("--board-id configured", self.finish_lines(1)["9"])
         self.log.unlink()
@@ -330,6 +330,33 @@ class WrapperRunTest(unittest.TestCase):
         self.write_board([{"id": "arg", "pr": "9"}], "boards/other.json")
         self.wrap("--repo", str(self.tmp), "--finish-arg=--board=boards/other.json", "9!")
         self.assertIn("--board-id arg", self.finish_lines(1)["9"])
+
+    def test_repo_without_omc_reads_orch_config_and_logs_to_orch_queue(self):
+        repo = self.tmp / "repo"
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".orch").mkdir()
+        (repo / ".orch/config.json").write_text(json.dumps({"queue": {"required": ["ci"], "before": "true"}}))
+        done = subprocess.run(["python3", str(WRAPPER), "--repo", str(repo), "449!"],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        line = self.lines("queue")[0]
+        self.assertIn("--required ci", line)
+        self.assertIn("--before true", line)
+        self.assertTrue((repo / ".orch/queue/finish-449.out").exists())
+        self.assertIn("/.orch/", (repo / ".git/info/exclude").read_text().splitlines())
+        self.assertFalse((repo / ".omc").exists())
+
+    def test_old_layout_stops_before_the_queue_unless_the_config_is_given(self):
+        (self.tmp / ".claude").mkdir()
+        old = self.tmp / ".claude/orch-finish.json"
+        old.write_text(json.dumps({"queue": {"before": "./backup.sh"}}))
+        code, out = self.wrap("--repo", str(self.tmp), "449")
+        self.assertEqual(2, code, out)
+        self.assertIn("migrate-orch-dir.py", out)
+        self.assertFalse(self.log.exists())
+        code, out = self.wrap("--repo", str(self.tmp), "--finish-config", str(old), "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        self.assertIn("--before ./backup.sh", self.lines("queue")[0])
 
     def test_missing_or_broken_board_is_not_an_error(self):
         code, out = self.wrap("--repo", str(self.tmp), "9!")
