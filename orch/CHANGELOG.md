@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.5.0 (2026-10-23)
+
+- `watch-questions.py` 를 Monitor 의 질문 이벤트 소스로 추가했다. Run 별 알림 시각을 orch 작업 폴더에 남기고 미답변 질문을 기본 10분마다 다시 알린다.
+- 질문 감시, doctor 와 work-board 는 `inbox` 의 양방향 thread 로 답변을 판정한다. 보드의 자동 결정 수는 ack 여부와 관계없이 답변 뒤 다음 조회에서 줄어든다. 깨진 응답이나 기록 한도 도달은 조회 오류로 표시한다.
+- doctor 는 10분 이상 답이 없는 질문을 경고한다. 기다리기 문서에 압축 뒤 감시 복구를, 답하기 문서에 코디네이터 판단과 사용자 결정의 분류 기준을 추가했다.
+
 ## 2.4.0 (2026-10-23)
 
 - `cleanup-sweep.py --close-own-taken-over` 를 더했다. `--run` 과 함께 줄 때, 그 Run 의 completed dispatch 터미널이 `user_owned` / `user_takeover` 로 남았어도 `agentIdentity` 가 없고 그 경로를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 소유 확인에서 빼고 닫는다. 이전에는 worker 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 `user_takeover` 가 기록되면, 정리 단계가 매번 `남김: 사용자 보유 터미널` 로 건너뛰어 코디네이터가 터미널을 직접 닫아야 했다. Orca 필드로는 사용자가 의도해 넘겨받은 터미널과 가를 수 없어 기본은 꺼 두고, `--run` 없이 주면 종료 코드 2 다.
