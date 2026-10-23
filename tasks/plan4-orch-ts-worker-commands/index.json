@@ -8,7 +8,7 @@
   "phases": [
     { "number": 1, "file": "phase-01.md", "execution_profile": "deep" },
     { "number": 2, "file": "phase-02.md", "execution_profile": "deep" },
-    { "number": 3, "file": "phase-03.md", "execution_profile": "standard" },
+    { "number": 3, "file": "phase-03.md", "execution_profile": "deep" },
     { "number": 4, "file": "phase-04.md", "execution_profile": "deep" },
     { "number": 5, "file": "phase-05.md", "execution_profile": "deep" }
   ]
