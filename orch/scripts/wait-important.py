@@ -22,6 +22,7 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
     --ignore-lost  끊긴 worker 로 보지 않을 dispatch id. 여러 번 줄 수 있다. 아래 「끊긴 worker」
     --lost-state  이미 알린 끊긴 dispatch 를 적는 파일. 기본 <git 루트>/.omc/state/wait-important-lost.json. 아래 「끊긴 worker」
     --ack-lost    확인한 끊긴 dispatch 를 처리함으로 기록하고 대기 없이 끝낸다. 여러 번 줄 수 있다
+    --completion-contract  ready(기본)는 앞선 PR 준비 상태를 검사한다. PR 없는 작업만 none 으로 끈다
     --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
 
 출력:
@@ -68,6 +69,7 @@ ORCA 환경 변수로 orca 실행 파일을, PS 환경 변수로 ps 실행 파�
     4  이 Run 에 다른 대기가 있다(waiter_exists). 남은 프로세스를 정리한 뒤 다시 건다
     5  처리하지 않은 끊긴 worker 가 있다(WORKER_LOST). references/launch.md 의 「끊긴 worker 다시 띄우기」 를 따른다.
        같은 dispatch 는 다음 대기에서 다시 알리지 않는다
+    6  의심스러운 worker_done 이 있다. 자동 ack 하지 않으며 완료 검증 전에는 해제하지 않는다
     1  orca 가 그 밖의 오류를 냈다(runtime_unavailable 같은 것). 그 JSON 을 그대로 낸다
     2  사용법 오류
 """
@@ -84,6 +86,8 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from completion_evidence import classify
 
 ORCA = os.environ.get("ORCA", "orca")
 PS = os.environ.get("PS", "ps")
@@ -128,10 +132,10 @@ def lost_workers(rows, watched):
     return lost
 
 
-def run_json(*cmd):
+def run_json(*cmd, timeout=None):
     """orca 명령 한 번의 result. 읽지 못하면 None 이다."""
     done = subprocess.run([ORCA, "orchestration", *cmd, "--json"],
-                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=timeout)
     try:
         data = json.loads(done.stdout)
     except json.JSONDecodeError:
@@ -397,6 +401,7 @@ def main(argv=None):
     parser.add_argument("--ignore-lost", action="append", default=[])
     parser.add_argument("--lost-state")
     parser.add_argument("--ack-lost", action="append", default=[])
+    parser.add_argument("--completion-contract", choices=("ready", "none"), default="ready")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -461,9 +466,22 @@ def main(argv=None):
         messages = result.get("messages") or []
         delivery = result.get("deliveryId")
         if any(m.get("type") in wanted for m in messages):
+            suspicious = False
+            if args.completion_contract == "ready" and any(m.get("type") == "worker_done" for m in messages):
+                # 이미 ack 한 준비 상태도 읽는다. --all 은 delivery 를 소비하거나 ack 하지 않는다.
+                try:
+                    history = run_json("check", "--run", args.run, "--all", timeout=30)
+                except (OSError, subprocess.TimeoutExpired):
+                    history = None
+                earlier = history.get("messages") if isinstance(history, dict) else None
+                earlier = earlier if isinstance(earlier, list) else []
+                result["messages"] = classify(messages, earlier)
+                suspicious = any(m.get("type") == "suspicious_worker_done" for m in result["messages"])
             print(json.dumps(data, ensure_ascii=False))
+            if suspicious:
+                print("의심스러운 worker_done: 앞선 PR 준비 상태를 확인하지 못했다. 완료 검증 전에 해제하지 않는다")
             print(f"LAST_DELIVERY {delivery or '-'}")
-            return 0
+            return 6 if suspicious else 0
         if messages:
             skipped += len(messages)
             print(f"heartbeat 같은 메시지 {skipped} 개를 ack 하고 계속 기다린다", file=sys.stderr)

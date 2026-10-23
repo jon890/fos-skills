@@ -43,6 +43,16 @@ git diff "origin/$BASE" -- "$FILE"
 
 ## 완료 전에 온 worker_done
 
+`wait-important.py` 와 `triage-messages.py` 는 PR 준비 상태가 없는 성공 보고를
+`의심스러운 worker_done` 으로 분류한다. 대기는 종료 코드 6 을 내며 자동 ack 하지 않는다.
+같은 Task·Dispatch·발신자의 앞선 준비 상태에 PR 번호와 전체 HEAD SHA 가 있어야 정상 분류한다.
+읽기 전용 파일에 이력이 빠졌으면 `triage-messages.py --live` 로 다시 확인한다.
+
+이 검사는 발신 프로세스 인증이나 지시서 전체의 완료 증명이 아니다.
+하위 세션은 부모의 환경 변수뿐 아니라 지시문에 복사된 ID 로도 같은 터미널에서 명령을 보낼 수 있다.
+따라서 launch 의 환경 변수 제거만으로는 막을 수 없으며, 이 저장소는 소비 단계의 근거 검사를 적용한다.
+이미 전송된 `worker_done` 은 Orca 에서 settled 로 기록된다. 분류 결과만으로 worker 를 해제하지 않고 아래 절차로 검증한다.
+
 첫 `worker_done` 이 오면 dispatch 는 settled 로 바뀐다.
 같은 핸들에서 오는 뒤의 보고는 Orca 버전에 따라 `capability is revoked` 로 거절되기도 하고 전달되기도 한다. 뒤의 보고가 온다고 가정하지 않는다.
 판단은 터미널과 git 으로 한다.

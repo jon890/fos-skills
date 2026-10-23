@@ -34,8 +34,10 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from completion_evidence import classify
 
-PRIORITY = ("worker_done", "escalation", "question")
+PRIORITY = ("suspicious_worker_done", "worker_done", "escalation", "question")
 RELATIVE = re.compile(r"^(\d+)([mhd])$")
 UNIT = {"m": "minutes", "h": "hours", "d": "days"}
 
@@ -92,10 +94,11 @@ def collect(objects: list[dict]) -> tuple[list[str], list[dict]]:
     return deliveries, messages
 
 
-def triage(messages: list[dict], since: dt.datetime | None = None) -> dict:
+def triage(messages: list[dict], since: dt.datetime | None = None, completion_contract="ready") -> dict:
     groups: dict[str, list[dict]] = {}
     heartbeats: dict[str, int] = {}
-    for m in messages:
+    checked = classify(messages) if completion_contract == "ready" else messages
+    for m in checked:
         created = m.get("created_at")
         if since and created:
             try:
@@ -124,7 +127,8 @@ def render(deliveries: list[str], result: dict, width: int) -> str:
     if deliveries:
         lines.append("delivery " + " ".join(deliveries))
     for kind, items in result["groups"].items():
-        lines.append(f"\n== {kind} {len(items)}건")
+        label = "의심스러운 worker_done" if kind == "suspicious_worker_done" else kind
+        lines.append(f"\n== {label} {len(items)}건")
         for m in items:
             body = payload_text(m.get("body"))
             if width and len(body) > width:
@@ -165,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--since")
     ap.add_argument("--width", type=int, default=3000)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--completion-contract", choices=("ready", "none"), default="ready",
+                    help="기본 ready: 앞선 PR 준비 상태 검사. PR 없는 작업만 none 사용")
     a = ap.parse_args(argv)
     if bool(a.files) == a.live:
         ap.error("FILE 과 --live 중 하나만 준다")
@@ -182,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     if not deliveries and not messages and not any("result" in o for o in objects):
         sys.stderr.write("읽을 orca 결과 JSON 이 없다\n")
         return 1
-    result = triage(messages, since)
+    result = triage(messages, since, a.completion_contract)
     if a.json:
         print(json.dumps({"deliveries": deliveries, **result}, ensure_ascii=False, indent=1))
     else:
