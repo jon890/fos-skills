@@ -205,6 +205,117 @@ class WrapperRunTest(unittest.TestCase):
         self.wrap("--repo", str(self.tmp), "--no-finish", "449")
         self.assertNotIn("--update-docs-on-overlap", self.lines("queue")[0])
 
+    def test_queue_section_passes_overlap_options(self):
+        self.write_config({"require_up_to_date": True, "up_to_date_when": "overlap", "unit_prefix": "apps/",
+                           "shared_paths": ["^apps/common/", r"^build\.gradle$"], "required": "ci"})
+        code, out = self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        line = self.lines("queue")[0]
+        for part in ("--require-up-to-date", "--up-to-date-when overlap", "--unit-prefix apps/",
+                     r"--shared-paths ^apps/common/|^build\.gradle$"):
+            self.assertIn(part, line)
+        self.log.unlink()
+        self.write_config({"shared_paths": "^lib/", "require_up_to_date": False})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--shared-paths ^lib/", line)
+        self.assertNotIn("--require-up-to-date", line)
+
+    def test_command_line_wins_over_overlap_keys(self):
+        self.write_config({"up_to_date_when": "overlap", "unit_prefix": "apps/"})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--up-to-date-when", "always", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--up-to-date-when always", line)
+        self.assertNotIn("overlap", line)
+        self.assertIn("--unit-prefix apps/", line)
+
+    def test_sweep_args_become_repeated_sweep_arg_options(self):
+        self.write_config({"sweep_args": ["--run", "run_x", "--specs-dir", ".omc/specs"]})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertIn("--sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .omc/specs",
+                      self.lines("queue")[0])
+
+    def test_sweep_arg_on_the_command_line_replaces_the_list(self):
+        self.write_config({"sweep_args": ["--run", "run_x"]})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "--sweep-arg", "--kill-holders", "449")
+        line = self.lines("queue")[0]
+        self.assertIn("--sweep-arg --kill-holders", line)
+        self.assertNotIn("run_x", line)
+
+    def test_bad_overlap_and_sweep_values_are_usage_errors(self):
+        for queue in ({"sweep_args": "--run"}, {"sweep_args": [1]}, {"sweep_args": [""]}, {"up_to_date_when": ""},
+                      {"shared_paths": []}, {"require_up_to_date": "yes"}):
+            with self.subTest(queue=queue):
+                self.write_config(queue)
+                code, out = self.wrap("--repo", str(self.tmp), "449")
+                self.assertEqual(2, code, out)
+                self.assertFalse(self.log.exists())
+
+    def write_board(self, items, name=".omc/board.json"):
+        target = self.tmp / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({"items": items}))
+
+    def finish_lines(self, count):
+        deadline = time.time() + 5
+        while time.time() < deadline and len(self.lines("finish")) < count:
+            time.sleep(0.05)
+        return {l.split()[1]: l for l in self.lines("finish")}
+
+    def test_board_item_is_found_by_pr_and_used_only_for_the_last_pr(self):
+        self.write_board([{"id": "task-a", "pr": "#492, #495"}, {"id": "task-b", "pr": "500"}, {"id": "none"}])
+        code, out = self.wrap("--repo", str(self.tmp), "492", "495!", "500!", "501!")
+        self.assertEqual(0, code, out)
+        by_pr = self.finish_lines(4)
+        self.assertNotIn("--board-id", by_pr["492"])
+        self.assertIn("--board-id task-a", by_pr["495"])
+        self.assertIn("--board-id task-b", by_pr["500"])
+        self.assertNotIn("--board-id", by_pr["501"])
+        self.assertIn("보드 항목 task-a 는 PR 492 가 업무의 마지막 PR(!)이 아니라", out)
+
+    def test_explicit_board_item_wins_and_ignores_the_bang(self):
+        self.write_board([{"id": "found", "pr": "492"}])
+        self.wrap("--repo", str(self.tmp), "--board-item", "492=explicit", "492", "493")
+        by_pr = self.finish_lines(2)
+        self.assertIn("--board-id explicit", by_pr["492"])
+
+    def test_ambiguous_board_items_are_skipped(self):
+        self.write_board([{"id": "a", "pr": "7"}, {"id": "b", "pr": "#7"}])
+        code, out = self.wrap("--repo", str(self.tmp), "7!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("--board-id", self.finish_lines(1)["7"])
+        self.assertIn("보드 항목이 둘 이상이라 건너뛴다: PR 7 -> a, b", out)
+
+    def test_board_file_follows_finish_arg_then_finish_section_then_nested_default(self):
+        self.write_board([{"id": "plain", "pr": "9"}])
+        self.write_board([{"id": "nested", "pr": "9"}], ".omc/handoffs/board.json")
+        self.wrap("--repo", str(self.tmp), "9!")
+        self.assertIn("--board-id nested", self.finish_lines(1)["9"])
+        self.log.unlink()
+        shutil.rmtree(self.logs)
+        self.write_board([{"id": "configured", "pr": "9"}], "boards/main.json")
+        (self.tmp / ".claude").mkdir(exist_ok=True)
+        (self.tmp / ".claude" / "orch-finish.json").write_text(json.dumps({"finish": {"board": "boards/main.json"}}))
+        self.wrap("--repo", str(self.tmp), "9!")
+        self.assertIn("--board-id configured", self.finish_lines(1)["9"])
+        self.log.unlink()
+        shutil.rmtree(self.logs)
+        self.write_board([{"id": "arg", "pr": "9"}], "boards/other.json")
+        self.wrap("--repo", str(self.tmp), "--finish-arg=--board=boards/other.json", "9!")
+        self.assertIn("--board-id arg", self.finish_lines(1)["9"])
+
+    def test_missing_or_broken_board_is_not_an_error(self):
+        code, out = self.wrap("--repo", str(self.tmp), "9!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("--board-id", self.finish_lines(1)["9"])
+        self.log.unlink()
+        shutil.rmtree(self.logs)
+        (self.tmp / ".omc").mkdir(exist_ok=True)
+        (self.tmp / ".omc" / "board.json").write_text("{broken")
+        code, out = self.wrap("--repo", str(self.tmp), "9!")
+        self.assertEqual(0, code, out)
+        self.assertNotIn("--board-id", self.finish_lines(1)["9"])
+
     def test_finish_config_option_picks_the_file(self):
         other = self.tmp / "other.json"
         other.write_text(json.dumps({"queue": {"method": "rebase"}}))
