@@ -127,6 +127,14 @@ export function questionText(text, limit = 400) {
   return flat.length > limit ? flat.slice(0, limit - 1) + '…' : flat
 }
 
+// 사용자 결정 질문 형식(첫 줄 `결정:`, 줄 머리 `권장:`)이면 제목과 권장안을 꺼낸다. 아니면 null 이다.
+export function decisionOf(text) {
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim())
+  if (!lines[0] || !lines[0].startsWith('결정:')) return null
+  const recommend = lines.find((line) => line.startsWith('권장:'))
+  return { title: lines[0].slice('결정:'.length).trim(), recommend: recommend ? recommend.slice('권장:'.length).trim() : null }
+}
+
 // gh pr list --json 의 결과를 PR 한 줄씩으로 바꾼다.
 export function parsePullRequests(stdout) {
   const rows = JSON.parse(stdout)
@@ -601,6 +609,7 @@ export function register(on) {
     const questionView = (q) => {
       const worker = Array.isArray(live.workers) ? live.workers.find((w) => w.id === q.dispatch) : null
       const who = worker && worker.worktree ? worker.worktree : q.dispatch || 'worker'
+      const decision = decisionOf(q.text)
       return Box({
         key: 'q-' + q.id,
         flexDirection: 'column',
@@ -613,7 +622,10 @@ export function register(on) {
               Text({ bold: true, wrap: 'wrap', children: [(q.type === 'escalation' ? '막힘 · ' : '질문 · ') + who] }),
             ],
           }),
-          Text({ wrap: 'wrap', children: ['  ' + questionText(q.text)] }),
+          ...(decision ? [
+            Text({ bold: true, wrap: 'wrap', children: ['  ' + questionText(decision.title)] }),
+            ...(decision.recommend ? [Text({ wrap: 'wrap', children: ['  권장: ' + questionText(decision.recommend)] })] : []),
+          ] : [Text({ wrap: 'wrap', children: ['  ' + questionText(q.text)] })]),
         ],
       })
     }

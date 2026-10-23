@@ -1241,6 +1241,37 @@ class WorkerAskTest(unittest.TestCase):
         self.assertIn("[--question][두 단어 질문]", calls[1])
         self.assertIn("[--options][a,b]", calls[1])
 
+    DECISION = "결정: 저장 형식을 바꿀까요\n배경: 마이그레이션이 필요하다\n선택지:\n- 바꾼다: 빠르다\n- 둔다: 안전하다\n권장: 둔다. 사용자 데이터가 있다"
+
+    def test_decision_question_in_the_format_is_asked(self):
+        self.fake('{"result":{"answer":"둔다"}}', 0)
+        code, out, calls = self.run_ask("--from", "term_w", "--question", self.DECISION, "--decision")
+        self.assertEqual((code, out.splitlines()[0]), (0, "answer: 둔다"))
+        # 로그는 줄 단위라 여러 줄 본문이 나뉜다. 이어 붙여 본문 전체가 ask 로 갔는지 본다
+        self.assertIn(f"[--question][{self.DECISION}]", "\n".join(calls))
+
+    def test_decision_question_without_a_recommendation_is_not_asked(self):
+        self.fake('{"result":{"answer":"x"}}', 0)
+        body = self.DECISION.rsplit("\n", 1)[0]
+        done = subprocess.run([str(SCRIPTS / "worker-ask.py"), "--from", "term_w", "--question", body, "--decision"],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("`권장:` 줄이 정확히 하나여야 한다(지금 0개)", done.stderr)
+        self.assertFalse(self.log.exists(), "형식이 어긋난 질문은 orca 를 부르지 않는다")
+
+    def test_decision_question_reports_every_broken_rule(self):
+        self.fake('{"result":{"answer":"x"}}', 0)
+        done = subprocess.run([str(SCRIPTS / "worker-ask.py"), "--from", "term_w", "--question", "배경: 첫 줄이 다르다\n- 하나\n권장: a\n권장: b", "--decision"],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(done.returncode, 2)
+        self.assertEqual(len(done.stderr.strip().splitlines()), 3, done.stderr)
+
+    def test_short_question_without_decision_flag_is_asked_as_before(self):
+        self.fake('{"result":{"answer":"x"}}', 0)
+        code, _, calls = self.run_ask("--from", "term_w", "--question", "이 경로가 맞나")
+        self.assertEqual(code, 0)
+        self.assertIn("[ask]", calls[1])
+
     def test_reply_object_is_read_as_answer(self):
         self.fake('{"result":{"reply":{"body":"B 로 간다"}}}', 0)
         _, out, _ = self.run_ask("--from", "term_w", "--question", "q")

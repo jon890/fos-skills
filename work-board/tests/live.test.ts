@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, decisionOf, START_PROMPT } from '../hooks/register.js'
 import { queryQuestions } from '../hooks/register.js'
 
 test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
@@ -205,6 +205,15 @@ test('답을 기다리는 질문의 본문과 보낸 worker 를 꺼낸다', () =
   expect(questions[0].text).toBe('A 와 B 중 무엇으로 할까요?')
   expect(questionText('가'.repeat(10), 5)).toBe('가가가가…')
   expect(() => parseQuestions('깨진 {"type": "question"')).toThrow()
+})
+
+test('결정 질문 형식이면 제목과 권장안을 꺼내고 형식이 없으면 null 이다', () => {
+  const body = '결정: 저장 형식을 바꿀까요\n배경: 마이그레이션이 필요해요\n선택지:\n- 바꾼다: 빠르다\n- 둔다: 안전하다\n권장: 둔다. 사용자 데이터가 있다'
+  expect(decisionOf(body)).toEqual({ title: '저장 형식을 바꿀까요', recommend: '둔다. 사용자 데이터가 있다' })
+  expect(decisionOf('결정: 제목만\n- a\n- b')).toEqual({ title: '제목만', recommend: null })
+  expect(decisionOf('A 와 B 중 무엇으로 할까요?')).toBeNull()
+  expect(decisionOf('배경: 첫 줄이 결정이 아니다\n결정: x\n권장: y')).toBeNull()
+  expect(decisionOf('')).toBeNull()
 })
 
 test('오늘 시작 요청은 board 갱신, 완료 비우기, 정리, 감시, 보고를 모두 담는다', () => {

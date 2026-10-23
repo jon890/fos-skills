@@ -44,6 +44,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
 
 - **사용자 요청을 바로 worker 에게 넘기지 않는다.** 코드와 운영 상태로 사실을 먼저 확인하고, 사용자가 정할 것은 배경과 권장안을 붙여 묻고 나서 맡긴다.
   요청 문장 그대로 넘기면 worker 가 사실과 다른 전제로 구현하거나, 사용자가 정해야 할 것을 worker 가 대신 정한다
+- **사용자가 정할 질문은 코디네이터가 대신 답하지 않는다.** 권장안을 붙여 사용자에게 올리고 고른 답을 worker 에게 보낸다. 형식은 `references/replying.md` 가 소유한다
 - **worker 는 모두 코디네이터가 띄운다.** worker 는 다시 worker 를 띄우지 못한다(`nested_worker_depth_exceeded`).
   일을 나눠야 하면 worker 에게는 계획서와 worktree 준비까지만 맡기고, 소계획마다 `ready: <plan> <worktree 절대경로> <지시서 절대경로>` status 를 받아 코디네이터가 띄운다
 - **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다

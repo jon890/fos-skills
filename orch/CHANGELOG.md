@@ -11,6 +11,8 @@
 - reference 문서가 스크립트 머리 주석을 옮겨 적은 부분을 지우고 머리 주석이 소유하게 했다. 머리 주석에 없던 내용은 `wait-important.py`, `send-to-worker.py`, `heavy-slot.py`, `remove-worktree.py`, `terminal_ownership.py` 같은 스크립트의 머리 주석으로 옮겼다. 스크립트 동작은 바꾸지 않았다.
 - 모델 행동 관측을 이유로 단 문장을 지우고, 규칙이 막는 실패로 이유를 다시 적었다. `agent-selection.md` 는 실측 절을 없애고 선택 기준만 남겼다.
 - `README.md` 의 스크립트 목록에 빠진 파일을 더하고, 목록과 `scripts/` 를 대조하는 `tests/test_readme_script_list.py` 를 추가했다.
+- 사용자 결정 질문의 형식(`결정:` 첫 줄, `- ` 선택지 둘 이상, `권장:` 줄 하나)을 정했다. `worker-ask.py --decision` 이 형식을 검사해 어긋나면 묻지 않고 종료 코드 2 로 끝난다. 형식이 없는 기술 질문과 막힘 보고는 그대로 묻는다. work-board 의 결정 필요 항목은 형식이 있으면 `결정:` 제목을 굵게, `권장:` 줄을 그 아래에 보이고 없으면 본문 앞부분을 보인다.
+- 사용자가 정할 질문은 코디네이터가 대신 답하지 않는다는 규칙을 `SKILL.md` 와 `references/replying.md` 에 더했다.
 
 ## 2.5.2 (2026-10-24)
 
