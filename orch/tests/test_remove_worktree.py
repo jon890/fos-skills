@@ -40,6 +40,7 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         # 가짜 sleep 은 부를 때마다 시계를 1 올리고, gone 에 이른 프로세스를 지운다
         head = f'#!/usr/bin/env python3\nimport json\nst = json.load(open("{self.state}"))\n'
         fakes = {
+            "orca": 'print(json.dumps({"result": {"terminals": st.get("terminals", [])}}))\n',
             "lsof": 'for q in st["procs"]:\n    print("p%s" % q["pid"]); print("n" + q["cwd"])\n',
             "ps": 'for q in st["procs"]:\n    print(q["pid"], 1, q["command"])\n',
             "sleep": textwrap.dedent(f"""\

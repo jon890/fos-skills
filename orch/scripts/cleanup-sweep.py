@@ -146,6 +146,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from live_specs import live_spec_paths  # noqa: E402
+from terminal_ownership import blocker as ownership_blocker  # noqa: E402
 REMOVE = HERE / "remove-worktree.sh"
 LIVE_STATES = {"working", "ready"}
 # 이 상태의 worker 만 남은 프로세스를 끌 수 있다. failed 나 abandoned 는 같은 워크트리로 다시 맡길 수 있어 뺀다
@@ -719,6 +720,10 @@ def empty_shells(path, mine, theirs, terminals):
 
 def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log):
     name = Path(path).name
+    reason = ownership_blocker(path)
+    if reason:
+        log(f"남김: {reason} ({path})")
+        return
     if not branch:
         sweep_detached(repo, path, args, terminals, log)
         return
@@ -798,6 +803,10 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
     pids = wait_free(path, args.wait, args.poll_interval)
     if pids and by_pr and only_idle_shells(pids):
         # worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 목록을 다시 읽어 그 터미널을 닫는다
+        reason = ownership_blocker(path)
+        if reason:
+            log(f"남김: {reason} ({path})")
+            return
         handles = [h for h in terminals_at(live_terminals(), path) if h not in (args.foreign or set())]
         if handles:
             log(f"  남은 프로세스 {len(pids)} 개가 유휴 셸뿐이다. Orca 터미널을 닫고 다시 시도한다")
