@@ -208,6 +208,7 @@ orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 
 orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
 orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
 orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할
+orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록. notify-conflicts 와 상주 루프가 쓴다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
