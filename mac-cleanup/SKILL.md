@@ -30,10 +30,10 @@ metadata:
 ## 1. 조사
 
 `$SKILL_DIR` 은 이 스킬 번들 경로이고, `$SURVEY` 는 조사 JSON 을 저장할 파일 경로다. 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
-`survey_system.sh` 는 `du` 때문에 1분에서 5분 걸리므로 백그라운드로 돌리고, 나머지를 그동안 돌린다.
+`survey_system.py` 는 `du` 때문에 1분에서 5분 걸리므로 백그라운드로 돌리고, 나머지를 그동안 돌린다.
 
 ```bash
-bash "$SKILL_DIR/scripts/survey_system.sh"
+python3 "$SKILL_DIR/scripts/survey_system.py"
 python3 "$SKILL_DIR/scripts/survey_sessions.py"
 python3 "$SKILL_DIR/scripts/survey_git.py" --json-out "$SURVEY"
 bash "$SKILL_DIR/scripts/survey_gradle.sh"
@@ -46,8 +46,8 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py"
   끄는 옵션은 `--no-fetch`(네트워크가 없을 때)와 `--no-check-prs`(브랜치가 많아 빨리 보고 싶을 때)뿐이다. 끄면 마지막 fetch 이후의 머지와 squash 머지가 보이지 않는다.
 - `docker_images.py` 와 `docker_volumes.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌리고, 떠 있지 않을 때만 Docker 항목을 건너뛴다.
 - `docker_volumes.py` 는 후보를 정하는 기준 시간 안에 생긴 volume 을 "최근" 으로 따로 보인다. 내용을 열어 보려면 `--peek N` 으로 다시 돌린다.
-- `survey_system.sh` 의 Docker 절이 같은 이유로 건너뛰었다면 Colima 가 올라온 뒤 그 절만 다시 보면 된다.
-- 정리 전 수치는 `survey_system.sh` 첫 절의 디스크 여유, 스왑 사용량, `memory_pressure` 의 여유 비율이다.
+- `survey_system.py` 의 Docker 절이 같은 이유로 건너뛰었다면 Colima 가 올라온 뒤 그 절만 다시 보면 된다.
+- 정리 전 수치는 `survey_system.py` 첫 절의 디스크 여유, 스왑 사용량, `memory_pressure` 의 여유 비율이다.
   5단계에서 같은 값을 다시 읽으므로 지금 적어 둔다.
 
 ## 2. 후보 분류
