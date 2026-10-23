@@ -1,6 +1,6 @@
 # 흐름
 
-플러그인 `fos-skills` 를 설치하고, 갱신하고, 스킬을 고치는 동안 확인하는 흐름이다.
+플러그인 `fos-skills` 를 설치하고, 갱신하고, 스킬을 고치는 동안 확인하는 흐름과 orch 의 이벤트 흐름이다.
 배치와 경로 참조는 [code-architecture.md](code-architecture.md) 가 소유한다.
 
 ## 설치
@@ -132,3 +132,107 @@ flowchart TD
 | 링크를 지우기 전에 열어 둔 세션 | 옛 목록을 그대로 쓴다. 세션을 새로 연다 |
 | 링크를 먼저 지우고 설치한다 | 설치가 실패하면 스킬이 하나도 없는 상태가 된다. 그래서 설치를 먼저 한다 |
 | 4번 때문에 링크가 하나 남는다 | 그 스킬만 둘로 뜬다. 내용은 체크아웃과 설치본이 같은 저장소에서 온 것이다 |
+
+## orch 이벤트
+
+이 절은 orch 개편 뒤의 흐름이다([ADR-009](adr/009-orch-event-handlers.md)). 구현 PR 이 모두 머지되기 전의 실제 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+핸들러의 입력과 종료 코드는 [data-schema.md](data-schema.md) 의 「orch 이벤트 핸들러 입력」, 코어와 핸들러의 경계는 [code-architecture.md](code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
+
+orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"'Noto Sans KR', sans-serif","fontSize":"14px","lineColor":"#7A8594","primaryTextColor":"#1D1F23","edgeLabelBackground":"#FFFFFF","clusterBkg":"#FAFAFA"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":60,"padding":14}}}%%
+flowchart TD
+    subgraph W[worker]
+        L[before-launch] --> LA[worker-launched]
+        LA --> Q[worker-question]
+        LA --> D[worker-done]
+        LA --> LO[worker-lost]
+    end
+    subgraph P[PR 과 CI]
+        D --> BR[before-ready] --> R[pr-ready]
+        R --> CP[ci-passed]
+        R --> CF[ci-failed]
+        R --> CM[ci-missing]
+        R --> CO[pr-conflict]
+    end
+    subgraph M[머지 큐]
+        CP --> BM[before-merge] --> VM[verify-merged] --> AM[after-merge]
+        AM --> AQ[after-queue]
+        AM --> AD[after-deploy]
+    end
+    subgraph C[정리]
+        AD --> BC[before-cleanup] --> AC[after-cleanup]
+    end
+    subgraph T[상주 루프]
+        TK[tick]
+        SR[session-resume]
+    end
+    class L,LA,Q,D,LO c1
+    class BR,R,CP,CF,CM,CO c2
+    class BM,VM,AM,AQ,AD c3
+    class BC,AC c4
+    class TK,SR c5
+    classDef c1 fill:#E8F1FB,stroke:#3B7DD8,stroke-width:1.5px,color:#0B2545
+    classDef c2 fill:#E9F7EF,stroke:#2E9E5B,stroke-width:1.5px,color:#0E3B22
+    classDef c3 fill:#FFF4E0,stroke:#E09A1A,stroke-width:1.5px,color:#4A3000
+    classDef c4 fill:#F3EAFB,stroke:#8E4EC6,stroke-width:1.5px,color:#2E1145
+    classDef c5 fill:#FDECEC,stroke:#D64545,stroke-width:1.5px,color:#4A0F0F
+    style W fill:#F6FAFE,stroke:#3B7DD8,stroke-dasharray:4 3
+    style P fill:#F5FBF7,stroke:#2E9E5B,stroke-dasharray:4 3
+    style M fill:#FFFAF0,stroke:#E09A1A,stroke-dasharray:4 3
+    style C fill:#FAF5FD,stroke:#8E4EC6,stroke-dasharray:4 3
+    style T fill:#FEF6F6,stroke:#D64545,stroke-dasharray:4 3
+```
+
+### 이벤트 목록
+
+`거부` 가 예인 이벤트는 핸들러가 다음 동작을 막을 수 있다. 코어 동작과 핸들러의 순서는 거부할 수 있는 이벤트면 핸들러가 먼저, 나머지는 코어 동작 뒤다.
+
+| 이벤트 | 내는 명령 | 시점 | 거부 | 코어 동작 | 핸들러가 맡을 일의 예 |
+| --- | --- | --- | --- | --- | --- |
+| `before-launch` | `launch-worker` | 워크트리를 만든 뒤, `worker-start` 전 | 예 | 지시서 검사, 허락 줄, deny 규칙 | 저장소의 동시 worker 상한, 준비되지 않은 개발 환경 거부 |
+| `worker-launched` | `launch-worker` | `LAUNCHED` 를 낸 뒤 | 아니오 | `LAUNCHED` 줄과 `launch.effective` | 개발 서버 접속 설정을 워크트리에 복사 |
+| `worker-question` | `orch-loop`, `watch-questions` | 새 question 이나 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄, 보드 결정 필요 | 메신저 알림 |
+| `worker-done` | `wait-important` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
+| `worker-lost` | `wait-important` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER_LOST` 줄과 상태 기록 | runner 호스트 상태 확인 |
+| `before-ready` | `ci-ready`, `orch-loop` | draft 를 ready 로 바꾸기 전 | 예 | 겹침과 충돌 보류, ready 슬롯 | 이 저장소에서 CI 를 돌릴 수 없는 시간대 거부 |
+| `pr-ready` | `ci-ready`, `orch-loop` | ready 로 바꾼 뒤 | 아니오 | 없음 | 리뷰 요청 |
+| `ci-passed` | `orch-loop` | 필수 체크가 모두 통과한 것을 처음 본 때 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
+| `ci-failed` | `orch-loop` | 필수 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 그 worker 에게 알림 | runner 장애면 다시 실행 |
+| `ci-missing` | `orch-loop` | ready 뒤 `pipeline.ci_missing_after_sec` 안에 필수 체크가 나타나지 않을 때 | 아니오 | `CI-MISSING` 줄 | runner 재시작 |
+| `pr-conflict` | `notify-conflicts`, `orch-loop` | base 와 충돌하는 내 PR 을 (PR, base SHA) 마다 처음 본 때 | 아니오 | 살아 있는 worker 에게 base 를 합치라고 알림. 담당이 끝났으면 `CONFLICT-ORPHAN` 줄. `pipeline.conflict.auto_launch` 를 켠 저장소는 새 worker 를 띄운다 | 없음 |
+| `before-merge` | `merge_queue` | PR 마다 머지 직전, HEAD 를 고정한 뒤 | 예 | 머지 조건 확인 | DB 마이그레이션 PR 앞의 백업 |
+| `verify-merged` | `merge_queue` | `queue.verify_merged_when` 이 맞는 PR 의 합친 사본을 만든 뒤 | 예 | 사본 생성, HEAD 대조, 사본 삭제 | 사본에서 로컬 CI 실행 |
+| `after-merge` | `merge_queue` | PR 하나가 MERGED 인 것을 확인한 뒤 | 아니오 | 원격 브랜치 삭제, 그 브랜치를 base 로 둔 내 PR 의 base 옮기기 | 없음 |
+| `after-queue` | `merge_queue`, `orch-loop` | 큐가 끝나거나 보류로 멈춘 뒤, 하나라도 머지했을 때 | 아니오 | `pipeline.after_queue_interval_sec` 로 묶기 | 로컬 배포. `code_prs` 가 비면 건너뛴다 |
+| `after-deploy` | `finish-pr` | 배포 확인이 끝난 뒤. 배포 워크플로가 없으면 정리 직후 | 아니오 | 보드 done | 업무의 마지막 PR 이면 업무 완료 처리 |
+| `before-cleanup` | `cleanup-sweep` | 워크트리 하나를 지우기 직전 | 예 | 소유와 머지 확인 | 저장소가 남길 워크트리 거부 |
+| `after-cleanup` | `cleanup-sweep` | 정리 한 차례가 끝난 뒤 | 아니오 | 지운 것과 남긴 것 출력 | 저장소 캐시 폴더 정리 |
+| `tick` | `orch-loop` | `pipeline.tick_sec` 마다 | 아니오 | 질문 확인, 원격 브랜치 정리, 정리, 보드 동기화 | 뒤처진 저장소 고유 상태 점검 |
+| `session-resume` | `orch-doctor --run` | 압축이나 재시작 뒤 코디네이터가 doctor 를 부를 때 | 아니오 | 루프와 대기 생존 확인, 미답변 질문 | 저장소 상태 요약 |
+
+### 운영 공백을 막는 곳
+
+| 공백 | 막는 곳 | 방법 |
+| --- | --- | --- |
+| 질문 감시가 꺼진다. Monitor 는 시간이 지나면 끝나고, 조회 실패를 stderr 로만 내 알림이 없다 | `orch-loop` 의 `tick`, `wait-important`, `session-resume` | 질문 확인을 루프의 틱에 넣어 Monitor 에 기대지 않는다. 루프는 하네스의 백그라운드 명령이 아니라 스스로 분리된 프로세스로 돌아 하네스의 시간 한도에 묶이지 않는다. 코디네이터를 깨워야 하는 일은 알림 파일에 적고, 코디네이터가 늘 다시 거는 `wait-important` 가 그 파일을 읽어 깨어난다. 조회 실패도 `WATCH-ERROR` 로 같은 파일에 간다. 루프가 죽으면 `wait-important` 가 `LOOP-DEAD` 로 깨어나고, doctor 가 다시 띄울 명령을 낸다 |
+| 미답변 질문이 쌓인다 | `tick`, `worker-question` | 틱마다 미답변을 세고 재알림 시간이 지난 것을 `REMINDER` 로 알림 파일에 적는다. 대기(`wait-important`)가 그 줄에 깨어난다. 저장소는 `worker-question` 으로 외부에 알린다 |
+| 원격 브랜치가 쌓인다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 브랜치가 남는다 | `after-merge`, `tick` | 머지를 확인한 자리에서 원격 브랜치를 지운다. 틱마다 내 PR 가운데 MERGED 이거나, CLOSED 이고 head 커밋이 base 에 들어간 PR 의 원격 브랜치를 지운다 |
+| ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에만, 그리고 `pipeline.update_behind_drafts` 가 draft 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
+
+### 갈래
+
+| 상황 | 동작 |
+| --- | --- |
+| 핸들러 파일이 없다 | 코어 동작만 한다. 기록도 남기지 않는다 |
+| 모르는 이름의 핸들러 파일이 있다 | `orch-doctor` 가 `UNKNOWN-HOOK <파일>` 로 경고한다. 실행하지 않는다 |
+| 거부할 수 있는 이벤트의 핸들러가 거부한다 | `HOOK-REJECT <이벤트> <이유>` 를 내고 그 동작을 하지 않는다. 머지 큐는 그 PR 에서 `STOP` 이다 |
+| 거부할 수 있는 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | 거부처럼 멈춘다. 줄은 `HOOK-FAIL <이벤트> <종료 코드>` 다. 모르는 실패로 머지하거나 지우지 않는다 |
+| 나머지 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | `HOOK-FAIL` 을 내고 코어 동작은 이어 간다. 명령의 종료 코드에 반영한다. 코어는 핸들러를 다시 돌리지 않는다. `tick` 만 다음 틱에 다시 돈다 |
+| 같은 저장소의 같은 이벤트가 동시에 난다(PR 여럿의 `after-deploy`) | 이벤트마다 잠금을 잡아 하나씩 실행한다 |
+| worker 를 띄운 저장소가 둘 이상이다 | 이벤트는 그 PR 이나 워크트리의 저장소에서 나고, 그 저장소의 핸들러만 돈다 |
+| `config.json` 에 옛 셸 명령 칸이 있고 같은 이벤트의 핸들러가 없다 | 다음 major 까지는 옛 칸을 그 이벤트의 핸들러처럼 돌리고 `DEPRECATED` 줄로 옮기는 명령을 알린다 |
+| 옛 셸 명령 칸과 핸들러가 함께 있다 | 사용법 오류(종료 코드 2)로 멈춘다. 어느 쪽이 맞는지 정할 수 없다 |
+| 상주 루프가 죽었거나 틱이 멈췄다 | 마지막 틱이 `pipeline.tick_sec` 의 세 배보다 오래되면 `wait-important` 가 `LOOP-DEAD` 로 깨어난다. 코디네이터가 루프를 다시 띄운다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다 |
+| 같은 저장소에 루프를 둘 띄운다 | 둘째는 `state/loop.json` 의 살아 있는 pid 를 보고 종료 코드 4 로 끝난다 |
