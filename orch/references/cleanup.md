@@ -1,8 +1,29 @@
 # 7. 머지와 정리
 
 `cleanup-sweep.py` 와 `remove-worktree.sh` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
-`user_owned` 또는 `released` 터미널이 있으면 `남김: 사용자 보유 터미널` 로 건너뛴다.
 터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
+
+끝난 dispatch 의 터미널은 `worker-list` 의 `resource` 로 아래처럼 나뉜다.
+
+| 상태 | `ownershipState` / `retainedReason` | 정리 |
+| --- | --- | --- |
+| 회수 가능 | `owned`, 이유 없음 | PR 이 MERGED 면 터미널을 닫고 dispatch 를 release 한다 |
+| 사용자가 넘겨받음 | `user_owned` / `user_takeover` | `남김: 사용자 보유 터미널` (아래 옵션을 켠 때만 예외) |
+| 이미 release | `released` | `남김: 사용자 보유 터미널` |
+| 외부 터미널 | `external` / `external_terminal` | 소유 상태가 `owned` 가 아니라 `터미널 소유 상태 조회 실패` 로 남긴다 |
+| 신원 미확인 | `owned` / `identity_unproven` | `owned` 라 막지 않는다. Orca 의 release 는 닫지 않으므로 sweep 이 경로로 찾아 닫는다 |
+
+`user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 가르지 못한다. Orca 의 필드에 시각과 주체가 없다.
+사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
+
+**코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.py --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
+옵션은 `--run` 과 함께 줄 때만 동작하고, 아래가 모두 참인 터미널만 소유 확인에서 뺀다. 하나라도 아니면 예전처럼 남긴다.
+`finish-pr.py` 와 `merge-with-finish.py` 는 이 옵션을 넘기지 않는다.
+
+- 그 Run 의 dispatch 이고 `dispatchStatus` 가 completed 다
+- `user_owned` 이고 `retainedReason` 이 `user_takeover` 다
+- `orca terminal list` 의 그 터미널에 `agentIdentity` 가 없다
+- 그 경로를 쓰는 프로세스가 모두 자식 없는 로그인 셸이다
 
 머지는 worker 에게 맡기지 않는다.
 사용자가 머지까지 맡겼으면 코디네이터가 6단계 검증 뒤 머지한다. 맡기지 않았으면 6단계 검증 뒤 사용자에게 확인받고 머지한다.

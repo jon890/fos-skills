@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.3.0 (2026-10-23)
+
+- `cleanup-sweep.py --close-own-taken-over` 를 더했다. `--run` 과 함께 줄 때, 그 Run 의 completed dispatch 터미널이 `user_owned` / `user_takeover` 로 남았어도 `agentIdentity` 가 없고 그 경로를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 소유 확인에서 빼고 닫는다. 이전에는 worker 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 `user_takeover` 가 기록되면, 정리 단계가 매번 `남김: 사용자 보유 터미널` 로 건너뛰어 코디네이터가 터미널을 직접 닫아야 했다. Orca 필드로는 사용자가 의도해 넘겨받은 터미널과 가를 수 없어 기본은 꺼 두고, `--run` 없이 주면 종료 코드 2 다.
+- `terminal_ownership.py` 의 `blocker()` 가 소유 확인에서 뺄 handle 집합을 받는다.
+- `references/cleanup.md` 첫머리에 끝난 dispatch 터미널의 상태별 정리 표와 위 옵션을 쓰는 때를 적었다.
+
 ## 2.2.0 (2026-10-23)
 
 - `merge-with-finish.py --run RUN_ID` 을 더했다. `finish-pr.py` 에 `--run` 을 넘기고, 머지 큐의 정리 단계에 `--sweep-arg --run --sweep-arg RUN_ID` 를 넘겨 다른 Run 의 worker 터미널을 건너뛰게 한다. 이전에는 `--finish-arg=--run` 으로 준 Run 이 정리 단계에 넘어가지 않아, 머지 뒤 정리가 다른 코디네이터의 워크트리 `board-steps-done` 을 지우고 터미널을 닫았다. `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 정리 인자에 `--run` 이 이미 있으면 두 번 넘기지 않는다. Run 이 어디에도 없으면 「정리 단계가 Run 으로 한정되지 않는다」 경고 한 줄을 낸다(`--no-sweep` 이면 내지 않는다). 값이 서로 다른 곳에 있으면 종료 코드 2 다.
