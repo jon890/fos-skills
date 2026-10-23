@@ -28,6 +28,13 @@ python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_
 ```
 
 종료 코드는 스크립트 머리 주석이 소유한다.
+기본 `--completion-contract ready` 는 완료 보고 전에 같은 Task·Dispatch·발신자가
+`준비됨 #N, head <전체 40자리 SHA>` 상태를 보냈는지 검사한다.
+이미 ack 한 준비 상태도 `check --all` 로 읽으며 delivery 는 소비하지 않는다.
+근거가 없거나 이력을 읽지 못하면 `의심스러운 worker_done` 으로 따로 표시하고 종료 코드 6 으로 끝난다.
+자동 ack 하지 않으므로 [`verification.md`](verification.md) 의 「완료 전에 온 worker_done」 을 먼저 따른다.
+PR 이 없는 읽기 전용 작업은 대기와 분류 양쪽에 `--completion-contract none` 을 준다.
+명시적인 실패 보고는 PR 준비 상태 없이도 처리할 묶음으로 낸다.
 시간 한도로 끝나면 `TIMEOUT LAST_DELIVERY <id>` 를 낸다. 실패가 아니므로 그 id 로 다시 건다.
 orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바로 끝나거나 남음」 을 따른다.
 종료 코드 4 는 그 Run 에 다른 대기가 이미 있다는 뜻이다(`waiter_exists`). 다시 걸어도 같은 오류만 받으므로, 스크립트가 stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다.
@@ -88,6 +95,7 @@ squash 머지, 로컬과 원격의 브랜치 이름이 다른 경우, worker 를
 **대기 결과는 `triage-messages.py` 로 읽는다.** 출력 파일을 눈으로 훑지 않는다.
 스크립트가 낸 묶음에도 heartbeat 가 함께 들어 있다. 한 delivery 에 heartbeat 가 수십 건 섞이면 그 사이의 `worker_done` 하나를 놓친다.
 스크립트는 `worker_done`, `escalation`, `question` 을 먼저 따로 모으고 heartbeat 는 보낸 쪽마다 개수만 낸다.
+준비 근거가 없는 보고는 `의심스러운 worker_done` 묶음으로 맨 먼저 낸다.
 백그라운드 출력 파일 끝에 하네스가 붙이는 종료 코드 줄과 keepalive 줄은 건너뛴다.
 `$OUT` 은 백그라운드 작업의 출력 파일 경로다.
 

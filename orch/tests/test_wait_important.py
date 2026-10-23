@@ -35,6 +35,9 @@ FAKE_ORCA = textwrap.dedent("""\
             result = {"dispatch": latest if isinstance(latest, dict) else {"id": latest}} if latest else {}
         print(json.dumps({"ok": True, "result": result}))
         sys.exit(0)
+    if "--all" in sys.argv:
+        print(json.dumps({"ok": not st.get("history_fail"), "result": {"messages": st.get("history", [])}}))
+        sys.exit(0)
     reply = st["replies"].pop(0) if st["replies"] else {"ok": True, "result": {"deliveryId": None, "messages": [], "timedOut": True}}
     json.dump(st, open(path, "w"))
     if reply.get("sleep"):
@@ -76,10 +79,11 @@ class WaitImportantTest(unittest.TestCase):
         self.env = dict(os.environ, ORCA=str(self.orca), FAKE_STATE=str(self.state), FAKE_LOG=str(self.log),
                         PS=str(self.ps), FAKE_PS=str(self.ps_rows))
 
-    def wait(self, replies, *args, workers=None, tasks=None, latest=None):
+    def wait(self, replies, *args, workers=None, tasks=None, latest=None, history=None, contract="none", history_fail=False):
         self.state.write_text(json.dumps({"replies": replies, "workers": workers or [], "tasks": tasks or [],
-                                          "latest": latest or {}}))
-        return subprocess.run(["python3", str(SCRIPT), "--run", "run_x", "--lost-state", str(self.lost_state), *args],
+                                          "latest": latest or {}, "history": history or [], "history_fail": history_fail}))
+        return subprocess.run(["python3", str(SCRIPT), "--run", "run_x", "--lost-state", str(self.lost_state),
+                               "--completion-contract", contract, *args],
                               capture_output=True, text=True, env=self.env)
 
     def calls(self):
@@ -413,6 +417,26 @@ class WaitImportantTest(unittest.TestCase):
     def test_usage_errors(self):
         self.assertEqual(2, subprocess.run(["python3", str(SCRIPT)], capture_output=True, env=self.env).returncode)
         self.assertEqual(2, self.wait([], "--types", "").returncode)
+
+    def test_suspicious_completion_is_not_acked_and_returns_six(self):
+        reply = batch("d_child", "worker_done")
+        done = self.wait([reply], "--lost-interval-sec", "0", contract="ready", history_fail=True)
+        self.assertEqual(done.returncode, 6, done.stdout + done.stderr)
+        self.assertIn("의심스러운 worker_done", done.stdout)
+        self.assertIn("suspicious_worker_done", done.stdout)
+        self.assertEqual(done.stdout.splitlines()[-1], "LAST_DELIVERY d_child")
+        self.assertTrue(all("--ack" not in call for call in self.calls()))
+
+    def test_previous_acked_ready_status_is_read_from_history(self):
+        ids = {"task_id": "task_a", "dispatch_id": "ctx_a", "from_handle": "term_a"}
+        ready = {"type": "status", "subject": "준비됨 #123, head " + "a" * 40,
+                 "created_at": "2026-10-23T00:00:00Z", **ids}
+        reply = batch("d_done", "worker_done")
+        reply["result"]["messages"][0].update(ids, created_at="2026-10-23T00:00:01Z")
+        done = self.wait([reply], "--lost-interval-sec", "0", contract="ready", history=[ready])
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn('"status": "ready"', done.stdout)
+        self.assertTrue(any("--all" in call and "--wait" not in call for call in self.calls()))
 
 
 if __name__ == "__main__":
