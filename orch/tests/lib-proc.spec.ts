@@ -1,0 +1,129 @@
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+import { run, runAsync, scriptCommand } from '../scripts/lib/proc.ts'
+
+const NODE = process.execPath
+
+function node(code: string): string[] {
+  return [NODE, '-e', code]
+}
+
+describe('run', () => {
+  test('자식의 종료 코드와 stdout, stderr 를 낸다', () => {
+    const r = run(node('process.stdout.write("out"); process.stderr.write("err"); process.exit(3)'))
+    assert.deepEqual(r, { code: 3, stdout: 'out', stderr: 'err', timedOut: false })
+  })
+
+  test('input 을 자식의 stdin 으로 넘긴다', () => {
+    const r = run(node('process.stdin.pipe(process.stdout)'), { input: '입력' })
+    assert.equal(r.stdout, '입력')
+    assert.equal(r.code, 0)
+  })
+
+  test('env 는 process.env 위에 덮이고 undefined 인 키는 자식 환경에서 빠진다', () => {
+    const saved = { keep: process.env.ORCH_SPEC_KEEP, drop: process.env.ORCH_SPEC_DROP }
+    process.env.ORCH_SPEC_KEEP = 'keep'
+    process.env.ORCH_SPEC_DROP = 'drop'
+    try {
+      const r = run(
+        node('const e = process.env; process.stdout.write(JSON.stringify({ keep: e.ORCH_SPEC_KEEP, drop: "ORCH_SPEC_DROP" in e, add: e.ORCH_SPEC_ADD }))'),
+        { env: { ORCH_SPEC_ADD: 'add', ORCH_SPEC_DROP: undefined } },
+      )
+      assert.deepEqual(JSON.parse(r.stdout), { keep: 'keep', drop: false, add: 'add' })
+    } finally {
+      for (const [key, value] of [['ORCH_SPEC_KEEP', saved.keep], ['ORCH_SPEC_DROP', saved.drop]] as const) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+  })
+
+  test('없는 실행 파일은 127 이고 이유가 stderr 에 있다', () => {
+    const r = run(['/nonexistent-orch-spec/missing-bin'])
+    assert.equal(r.code, 127)
+    assert.match(r.stderr, /ENOENT/)
+    assert.equal(r.timedOut, false)
+  })
+
+  test('시간을 넘기면 124 와 timedOut 이다', () => {
+    const r = run(node('setTimeout(() => {}, 10000)'), { timeoutMs: 200 })
+    assert.equal(r.code, 124)
+    assert.equal(r.timedOut, true)
+  })
+
+  test('자기에게 SIGKILL 을 보낸 자식은 128 + 9 인 137 이다', () => {
+    const r = run(node('process.kill(process.pid, "SIGKILL")'))
+    assert.equal(r.code, 137)
+    assert.equal(r.timedOut, false)
+  })
+
+  test('출력이 maxBuffer 와 같으면 정상이고 넘으면 1 과 ENOBUFS 이유다', () => {
+    const exact = run(node('process.stdout.write("x".repeat(1024))'), { maxBuffer: 1024 })
+    assert.equal(exact.code, 0)
+    assert.equal(exact.stdout.length, 1024)
+    const over = run(node('process.stdout.write("x".repeat(1025))'), { maxBuffer: 1024 })
+    assert.equal(over.code, 1)
+    assert.match(over.stderr, /ENOBUFS/)
+    assert.equal(over.timedOut, false)
+  })
+})
+
+describe('runAsync', () => {
+  test('자식의 종료 코드와 출력을 낸다', async () => {
+    const r = await runAsync(node('process.stdout.write("out"); process.stderr.write("err"); process.exit(4)'))
+    assert.deepEqual(r, { code: 4, stdout: 'out', stderr: 'err', timedOut: false })
+  })
+
+  test('없는 실행 파일은 127 이다', async () => {
+    const r = await runAsync(['/nonexistent-orch-spec/missing-bin'])
+    assert.equal(r.code, 127)
+    assert.match(r.stderr, /ENOENT/)
+  })
+
+  test('시그널로 죽은 자식은 128 + 신호 번호다', async () => {
+    const r = await runAsync(node('process.kill(process.pid, "SIGKILL")'))
+    assert.equal(r.code, 137)
+  })
+
+  test('출력이 maxBuffer 를 넘으면 1 과 ENOBUFS 이유다', async () => {
+    const exact = await runAsync(node('process.stdout.write("x".repeat(1024))'), { maxBuffer: 1024 })
+    assert.equal(exact.code, 0)
+    const over = await runAsync(node('process.stdout.write("x".repeat(1025)); setTimeout(() => {}, 10000)'), { maxBuffer: 1024 })
+    assert.equal(over.code, 1)
+    assert.match(over.stderr, /ENOBUFS/)
+  })
+
+  test('시간을 넘기면 TERM 으로 끝내고 124 와 timedOut 이다', async () => {
+    const r = await runAsync(node('setTimeout(() => {}, 10000)'), { timeoutMs: 200 })
+    assert.equal(r.code, 124)
+    assert.equal(r.timedOut, true)
+  })
+
+  test('TERM 을 무시하는 자식은 10초 뒤 KILL 로 끝난다', { timeout: 30_000 }, async () => {
+    const started = Date.now()
+    const r = await runAsync(
+      node('process.on("SIGTERM", () => {}); process.stdout.write("ready"); setInterval(() => {}, 1000)'),
+      { timeoutMs: 500 },
+    )
+    const elapsed = Date.now() - started
+    assert.equal(r.code, 124)
+    assert.equal(r.timedOut, true)
+    assert.equal(r.stdout, 'ready')
+    assert.ok(elapsed >= 10_000, `KILL 전에 10초를 기다려야 하는데 ${elapsed}ms 만에 끝났다`)
+    assert.ok(elapsed < 20_000, `KILL 뒤 바로 끝나야 하는데 ${elapsed}ms 걸렸다`)
+  })
+})
+
+describe('scriptCommand', () => {
+  test('확장자로 인터프리터를 고른다', () => {
+    assert.deepEqual(scriptCommand('/s/a.ts', ['x']), ['node', '--disable-warning=ExperimentalWarning', '/s/a.ts', 'x'])
+    assert.deepEqual(scriptCommand('/s/a.py', ['x']), ['python3', '/s/a.py', 'x'])
+    assert.deepEqual(scriptCommand('/s/a.sh', []), ['bash', '/s/a.sh'])
+    assert.deepEqual(scriptCommand('/s/a.zsh', ['x', 'y']), ['zsh', '/s/a.zsh', 'x', 'y'])
+  })
+
+  test('모르는 확장자나 확장자 없는 파일은 감싸지 않는다', () => {
+    assert.deepEqual(scriptCommand('/s/tool', ['x']), ['/s/tool', 'x'])
+    assert.deepEqual(scriptCommand('/s/a.rb', []), ['/s/a.rb'])
+  })
+})
