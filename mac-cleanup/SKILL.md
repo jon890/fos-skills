@@ -21,7 +21,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 조사 | `--fetch`, `--check-prs` 사용 여부를 사용자에게 물어 정했고, 조사 스크립트가 그 옵션으로 모두 종료 코드 0 으로 끝났고, 정리 전 수치(디스크 여유, 스왑 사용량, 메모리 여유 비율)를 적어 두었다. Colima 가 꺼져 `docker_images.py` 와 `docker_volumes.py` 만 1 이면 Docker 항목을 건너뛰었다고 적었다 | |
+| 1 | 조사 | 조사 스크립트가 모두 종료 코드 0 으로 끝났고, 정리 전 수치(디스크 여유, 스왑 사용량, 메모리 여유 비율)를 적어 두었다. Colima 가 꺼져 `docker_images.py` 와 `docker_volumes.py` 만 1 이면 Docker 항목을 건너뛰었다고 적었다 | |
 | 2 | 후보 분류 | 모든 후보에 크기와 등급(안전 / 확인 필요 / 유지)이 붙었다 | `references/targets.md` |
 | 3 | 승인 | 사용자가 묶음별로 고른 답이 있다 | |
 | 4 | 실행 | 승인한 묶음의 명령만 돌렸고 각 명령의 종료 코드와 확보량을 기록했다 | `references/targets.md`, `references/git-and-sessions.md` |
@@ -32,10 +32,6 @@ metadata:
 `$SKILL_DIR` 은 이 스킬 번들 경로다. 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
 `survey_system.sh` 는 `du` 때문에 1분에서 5분 걸리므로 백그라운드로 돌리고, 나머지를 그동안 돌린다.
 
-조사를 돌리기 전에 아래 두 옵션을 사용자에게 먼저 묻는다.
-승인 뒤에 옵션을 바꿔 다시 돌리면 후보가 새로 나와 승인을 다시 받아야 한다.
-고른 옵션으로 돌린 결과로 2단계 분류를 한다.
-
 ```bash
 bash "$SKILL_DIR/scripts/survey_system.sh"
 python3 "$SKILL_DIR/scripts/survey_sessions.py"
@@ -45,8 +41,8 @@ python3 "$SKILL_DIR/scripts/docker_images.py"
 python3 "$SKILL_DIR/scripts/docker_volumes.py"
 ```
 
-- `survey_git.py` 는 기본으로 원격 ref 를 갱신하지 않는다. 마지막 fetch 이후의 머지는 보이지 않으므로, 후보를 믿기 전에 `--fetch` 로 돌릴지 이 단계에서 묻는다.
-- squash 머지는 `--is-ancestor` 로 보이지 않는다. `--check-prs` 를 함께 쓸지도 이 단계에서 묻는다. 머지 판정이 안 된 브랜치마다 `gh` 원격 호출이 생기므로 브랜치가 많으면 오래 걸린다.
+- `survey_git.py` 는 기본으로 `git fetch --prune` 과 `gh` 의 머지된 PR 조회(`--check-prs`)를 한다. 묻지 않고 켠 채로 돈다. 승인 뒤에 옵션을 바꿔 다시 돌리면 후보가 새로 나와 승인을 다시 받아야 하기 때문이다.
+  끄는 옵션은 `--no-fetch`(네트워크가 없을 때)와 `--no-check-prs`(브랜치가 많아 빨리 보고 싶을 때)뿐이다. 끄면 마지막 fetch 이후의 머지와 squash 머지가 보이지 않는다.
 - `docker_images.py` 와 `docker_volumes.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌리고, 떠 있지 않을 때만 Docker 항목을 건너뛴다.
 - `docker_volumes.py` 는 후보를 정하는 기준 시간 안에 생긴 volume 을 "최근" 으로 따로 보인다. 내용을 열어 보려면 `--peek N` 으로 다시 돌린다.
 - `survey_system.sh` 의 Docker 절이 같은 이유로 건너뛰었다면 Colima 가 올라온 뒤 그 절만 다시 보면 된다.

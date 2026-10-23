@@ -202,3 +202,22 @@ class DockerImageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SurveyGitOptionsTest(unittest.TestCase):
+    def test_fetch_and_check_prs_default_on(self):
+        args = sg.parse_args([])
+        self.assertTrue(args.fetch)
+        self.assertTrue(args.check_prs)
+
+    def test_no_flags_turn_them_off_independently(self):
+        args = sg.parse_args(["--no-fetch"])
+        self.assertEqual((args.fetch, args.check_prs), (False, True))
+        args = sg.parse_args(["--no-check-prs"])
+        self.assertEqual((args.fetch, args.check_prs), (True, False))
+
+    def test_legacy_flags_are_accepted_and_change_nothing(self):
+        args = sg.parse_args(["--fetch", "--check-prs"])
+        self.assertEqual((args.fetch, args.check_prs), (True, True))
+        args = sg.parse_args(["--fetch", "--check-prs", "--no-fetch", "--no-check-prs"])
+        self.assertEqual((args.fetch, args.check_prs), (False, False))

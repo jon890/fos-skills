@@ -2,11 +2,12 @@
 """저장소별 워크트리와 브랜치의 정리 후보를 분류한다. 읽기 전용이다.
 
 사용법:
-  survey_git.py [--roots DIR...] [--fetch] [--check-prs] [--gh-timeout SEC] [--json]
+  survey_git.py [--roots DIR...] [--no-fetch] [--no-check-prs] [--gh-timeout SEC] [--json]
 
---fetch 를 주면 저장소마다 `git fetch --prune origin` 으로 원격 ref 만 갱신한다.
---check-prs 를 주면 머지 판정이 안 됐고 upstream 이 있는 브랜치마다 `gh pr list` 로 머지된 PR 이 있는지 묻는다.
-원격 호출이 브랜치 수만큼 생긴다. squash 머지를 알아보는 용도다.
+기본으로 저장소마다 `git fetch --prune origin` 으로 원격 ref 만 갱신한다. 네트워크가 없을 때 --no-fetch 로 끈다.
+기본으로 머지 판정이 안 됐고 upstream 이 있는 브랜치마다 `gh pr list` 로 머지된 PR 이 있는지 묻는다.
+원격 호출이 브랜치 수만큼 생긴다. squash 머지를 알아보는 용도다. 브랜치가 많아 빨리 보고 싶으면 --no-check-prs 로 끈다.
+--fetch, --check-prs 는 예전 호출을 깨지 않으려고 받기만 하고 효과가 없다.
 gh 호출이 실패하면 그 브랜치의 pr_state 가 "error" 가 되고 분류는 gh 없이 낸 결과 그대로다. 실패 수는 합계에 따로 나온다.
 --json 은 브랜치와 워크트리마다 끝 커밋 전체 해시(tip)를 담는다. 지우기 직전 `git rev-parse` 값과 대조하는 용도다.
 종료 코드: 0 조사 완료, 2 인자 오류.
@@ -262,14 +263,24 @@ def short(tip):
     return tip[:8] if tip else "-"
 
 
-def main(argv=None):
+def parse_args(argv=None):
+    """인자를 읽고 fetch, check_prs 를 기본 켬으로 정한다. --fetch, --check-prs 는 호환용이라 값을 바꾸지 않는다."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--roots", nargs="+", default=["~/projects", "~/personal"])
-    ap.add_argument("--fetch", action="store_true")
-    ap.add_argument("--check-prs", action="store_true")
+    ap.add_argument("--fetch", action="store_true", help="기본값이라 효과 없음. 예전 호출 호환용")
+    ap.add_argument("--check-prs", action="store_true", help="기본값이라 효과 없음. 예전 호출 호환용")
+    ap.add_argument("--no-fetch", action="store_true")
+    ap.add_argument("--no-check-prs", action="store_true")
     ap.add_argument("--gh-timeout", type=int, default=DEFAULT_GH_TIMEOUT, metavar="SEC")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
+    args.fetch = not args.no_fetch
+    args.check_prs = not args.no_check_prs
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
 
     repos = find_repos(args.roots)
     if args.fetch:
