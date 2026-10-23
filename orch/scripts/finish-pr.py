@@ -25,7 +25,7 @@
 
 옵션 (저장소마다 다른 값이다. --config 의 JSON 키는 옵션 이름의 하이픈을 밑줄로 바꾼 것이다):
     --repo DIR            대상 저장소. 기본은 현재 디렉터리
-    --config FILE         옵션 값을 담은 JSON. 「finish」 절을 읽는다. 없으면 <repo>/.claude/orch-finish.json 이 있을 때 쓴다. 명령줄이 우선한다
+    --config FILE         옵션 값을 담은 JSON. 「finish」 절을 읽는다. 없으면 <orch 작업 폴더>/config.json 이 있을 때 쓴다. 명령줄이 우선한다
     --gh-host HOST        gh 와 git 에 줄 GH_HOST (예: github.example.com). 없으면 gh 가 정한다
     --run RUN_ID          worker 를 찾을 Orca Run. 없으면 dispatch 해제는 건너뛰고 터미널만 경로로 찾는다
     --base-branch NAME    cleanup-sweep.py 의 --base
@@ -38,7 +38,7 @@
     --complete            이 PR 이 업무의 마지막 PR 이다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
     --complete-cmd CMD    업무 완료 명령 틀. 공백으로 나뉘고 {number} 가 업무 번호로 바뀐다. 셸을 거치지 않는다
                           (예: 'task-cli complete {number}')
-    --board FILE          보드 파일. 기본은 <repo>/.omc/board.json, 있으면 <repo>/.omc/handoffs/board.json
+    --board FILE          보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 <repo> 기준
     --board-id ID         done 으로 바꿀 보드 항목
     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
     --merge-timeout MIN   머지 대기 한도(분). 기본 180
@@ -50,7 +50,7 @@ CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, GH 와 GIT 로 실
 
 출력의 마지막 줄은 FINISH-DONE 이나 FINISH-FAIL 이다. 그 줄이 없으면 아직 돌고 있거나 죽은 것이다.
 
-종료 코드: 0 FINISH-DONE, 1 FINISH-FAIL, 2 사용법 오류
+종료 코드: 0 FINISH-DONE, 1 FINISH-FAIL, 2 사용법 오류이거나 orch 작업 폴더를 옮기기 전이다(orch_paths.py 「옛 구조」)
 """
 
 from __future__ import annotations
@@ -67,6 +67,8 @@ from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import orch_paths  # noqa: E402
 GH = os.environ.get("GH", "gh")
 GIT = os.environ.get("GIT", "git")
 SWEEP = os.environ.get("CLEANUP_SWEEP", str(HERE / "cleanup-sweep.py"))
@@ -74,7 +76,6 @@ BOARD_BIN = HERE.parents[1] / "work-board/bin/board.py"
 NUMBER_OK = re.compile(r"[A-Za-z0-9._/-]+$")
 BRANCH_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:\*\*)?브랜치:(?:\*\*)?\s*`([^`]+)`")
 CLEANUP_TRIES = 5
-DEFAULT_CONFIG = ".claude/orch-finish.json"
 
 
 def log(line):
@@ -252,13 +253,8 @@ def wait_deployed(args, repo, merge):
         time.sleep(args.poll_interval)
 
 
-def default_board(repo):
-    nested = repo / ".omc/handoffs/board.json"
-    return nested if nested.exists() else repo / ".omc/board.json"
-
-
 def set_board_done(args, repo, item):
-    board = Path(args.board) if args.board else default_board(repo)
+    board = orch_paths.board_path(repo, args.board)
     cmd = ["python3", args.board_bin, "set", item, "done", "--worktree", "", "--pr", "", "--next", "",
            "--file", str(board)]
     code, _, err = run(cmd, cwd=repo)
@@ -295,9 +291,9 @@ def build_parser():
 
 
 def load_config(parser, argv):
-    """--config 파일(없으면 <repo>/.claude/orch-finish.json)의 값을 기본값으로 깔고 다시 읽는다. 명령줄이 우선한다."""
+    """--config 파일(없으면 <orch 작업 폴더>/config.json)의 값을 기본값으로 깔고 다시 읽는다. 명령줄이 우선한다."""
     first, _ = parser.parse_known_args(argv)
-    path = Path(first.config) if first.config else Path(first.repo) / DEFAULT_CONFIG
+    path = Path(first.config) if first.config else orch_paths.path("config", first.repo)
     if path.is_file():
         try:
             config = json.loads(path.read_text(encoding="utf-8"))
@@ -340,6 +336,8 @@ def main(argv=None):
         validate(parser, args)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
+    if not args.config and not orch_paths.require_migrated(args.repo, "finish-pr"):
+        return 2
     if args.gh_host:
         os.environ["GH_HOST"] = args.gh_host
     repo = Path(args.repo).resolve()

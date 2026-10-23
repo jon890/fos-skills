@@ -20,7 +20,7 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
     --timeout-ms  전체 대기 한도(ms). 기본 7000000. 하네스의 명령 한도(Bash 최대 7200000)보다 짧게 준다
     --lost-interval-sec  대기하는 동안 Run 의 worker 상태를 볼 간격(초). 기본 60. 0 이면 보지 않는다. 아래 「끊긴 worker」
     --ignore-lost  끊긴 worker 로 보지 않을 dispatch id. 여러 번 줄 수 있다. 아래 「끊긴 worker」
-    --lost-state  이미 알린 끊긴 dispatch 를 적는 파일. 기본 <git 루트>/.omc/state/wait-important-lost.json. 아래 「끊긴 worker」
+    --lost-state  이미 알린 끊긴 dispatch 를 적는 파일. 기본 <orch 작업 폴더>/state/wait-important-lost.json. 아래 「끊긴 worker」
     --ack-lost    확인한 끊긴 dispatch 를 처리함으로 기록하고 대기 없이 끝낸다. 여러 번 줄 수 있다
     --completion-contract  ready(기본)는 앞선 PR 준비 상태를 검사한다. PR 없는 작업만 none 으로 끈다
     --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
@@ -88,6 +88,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from completion_evidence import classify
+import orch_paths
 
 ORCA = os.environ.get("ORCA", "orca")
 PS = os.environ.get("PS", "ps")
@@ -173,11 +174,8 @@ def latest_dispatch(task_id):
 
 
 def default_state_path():
-    """<git 루트>/.omc/state/wait-important-lost.json. git 밖이면 현재 폴더 기준이다"""
-    done = subprocess.run(["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE,
-                          stderr=subprocess.DEVNULL, text=True)
-    root = Path(done.stdout.strip()) if done.returncode == 0 and done.stdout.strip() else Path.cwd()
-    return root / ".omc/state/wait-important-lost.json"
+    """orch 작업 폴더의 state/wait-important-lost.json. git 밖이면 현재 폴더 기준이다"""
+    return orch_paths.path("state") / "wait-important-lost.json"
 
 
 def load_state(path):
@@ -209,7 +207,7 @@ def save_reported(path, run_id, kinds):
         if kind == "handled" or dispatch not in entry:
             entry[dispatch] = f"{kind} {now}"
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        orch_paths.make_parent(path)
         # 쓰는 도중에 끊겨도 앞 내용이 깨지지 않게 옆 파일에 쓰고 바꾼다
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
@@ -410,6 +408,8 @@ def main(argv=None):
     if not wanted or args.timeout_ms <= 0 or args.lost_interval_sec < 0:
         print("wait-important: --types 와 --timeout-ms 는 비어 있거나 0 일 수 없고 --lost-interval-sec 는 음수일 수 없다", file=sys.stderr)
         return 2
+    if not args.lost_state:
+        orch_paths.warn_legacy(script="wait-important")
     state = args.lost_state or default_state_path()
     if args.ack_lost:
         if not save_reported(state, args.run, {d: "handled" for d in args.ack_lost}):

@@ -1,39 +1,39 @@
 #!/usr/bin/env python3
-"""끝난 작업의 handoff 산출물을 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
+"""orch 작업 폴더에 남은 끝난 산출물을 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
 
 기본은 옮길 후보만 보인다. `--apply` 를 주면 옮긴다. 몇 번을 돌려도 같은 상태에서는 같은 결과다.
 
 사용법:
     handoff-cleanup.py [--repo DIR] [--config FILE] [--apply] [옵션...]
 
-옮기는 것 (경로는 모두 .omc 폴더 기준이다):
-    - <handoffs>/queue/*.out: QUEUE-DONE, STOP, FINISH-DONE, FINISH-FAIL 중 하나로 끝났고 --queue-days 일 넘게 지난 로그
-    - <handoffs>/specs/spec-*.md: 아래가 모두 참인 지시서. spec-common.md 는 남긴다
+옮기는 것 (<orch> 는 orch 작업 폴더다. orch_paths.py 가 정한다):
+    - <orch>/queue/*.out: QUEUE-DONE, STOP, FINISH-DONE, FINISH-FAIL 중 하나로 끝났고 --queue-days 일 넘게 지난 로그
+    - <orch>/specs/spec-*.md: 아래가 모두 참인 지시서. spec-common.md 는 남긴다
         · 지시서의 `보드 항목 id: \\`x\\`` 항목이 보드에서 done 이다. 보드에 항목이 없거나 done 이 아니면
           아직 쓰는 지시서다(띄우기 전, PR 이 여럿인 일의 중간). 그 줄이 없는 지시서는 이 조건을 건너뛴다
         · 지시서의 `브랜치:` 가 원격과 워크트리에 없고 그 브랜치의 열린 PR 도 없다
         · 열린 PR 목록을 읽지 못하면 아무것도 옮기지 않는다
         · 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서가 아니다(`live_specs.py`). 그 목록을 읽지 못해도
           아무것도 옮기지 않는다. 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 옮긴 일이 있었다
-    - <handoffs>/<폴더>: --folder-days 일 넘게 바뀌지 않았고, 보드 파일에 이름이 없고 <previews>/.keep 에도 없는 폴더
-      (bin, queue, specs 와 보드 파일은 건드리지 않는다)
-    - <previews>/<폴더나 파일>: 위와 같은 조건
-    - .omc 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. bin 폴더 안은 뺀다
+    - <orch>/<폴더>: --folder-days 일 넘게 바뀌지 않았고, 보드 파일에 이름이 없고 <orch>/.keep 에도 없는 폴더
+      (bin, queue, specs, state 는 건드리지 않는다)
+    - <previews>/<폴더나 파일>: --previews 를 줄 때만 본다. 조건은 위와 같고 남길 이름은 <previews>/.keep 에 적는다.
+      미리보기는 content-preview 의 산출물이라 기본으로는 보지 않는다
+    - <orch> 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. bin 폴더 안은 뺀다
       (DB 에서 뽑은 원본은 쓰고 나서 지운다)
 
-남길 미리보기는 <previews>/.keep 에 한 줄에 하나씩 이름을 적는다.
-휴지통 안에서는 .omc 기준 상대 경로를 그대로 두고, 같은 이름이 있으면 번호를 붙여 덮어쓰지 않는다.
+남길 폴더는 .keep 에 한 줄에 하나씩 이름을 적는다.
+휴지통 안에서는 <휴지통>/<그 폴더 이름>/<상대 경로> 로 두고, 같은 이름이 있으면 번호를 붙여 덮어쓰지 않는다.
 
 옵션 (저장소마다 다른 값이다. --config 의 JSON 키는 옵션 이름의 하이픈을 밑줄로 바꾼 것이다):
     --repo DIR         대상 저장소. 기본은 현재 디렉터리. git 과 gh 를 여기서 돌린다
-    --config FILE      옵션 값을 담은 JSON. 「cleanup」 절을 읽는다. 없으면 <repo>/.claude/orch-finish.json 이 있을 때 쓴다. 명령줄이 우선한다
+    --config FILE      옵션 값을 담은 JSON. 「cleanup」 절을 읽는다. 없으면 <orch>/config.json 이 있을 때 쓴다. 명령줄이 우선한다
     --gh-host HOST     gh 에 줄 GH_HOST
     --run RUN          살아 있는 dispatch 를 찾을 Orca Run. 없으면 코디네이터에 묶인 Run 이다
-    --omc DIR          산출물 루트. 기본 <repo>/.omc
-    --handoffs DIR     기본 <omc>/handoffs
-    --previews DIR     기본 <omc>/previews
-    --board FILE       보드 파일. 기본 <handoffs>/board.json
-    --trash DIR        휴지통 폴더. 기본 ~/.Trash/omc-cleanup-<날짜>
+    --orch-dir DIR     orch 작업 폴더. 기본은 orch_paths.py 가 정한 곳(<git 루트>/.orch)
+    --previews DIR     미리보기 폴더. 주지 않으면 보지 않는다. 상대경로면 <repo> 기준
+    --board FILE       보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 <repo> 기준
+    --trash DIR        휴지통 폴더. 기본 ~/.Trash/orch-cleanup-<날짜>
     --queue-days N     기본 1
     --folder-days N    기본 3
     --data-days N      기본 1
@@ -42,7 +42,7 @@
 
 GH, GIT, ORCA 환경 변수로 실행 파일을 바꾼다.
 
-종료 코드: 0 돌았다(후보가 없어도 0), 2 사용법 오류
+종료 코드: 0 돌았다(후보가 없어도 0), 2 사용법 오류이거나 orch 작업 폴더를 옮기기 전이다(orch_paths.py 「옛 구조」)
 """
 
 from __future__ import annotations
@@ -63,11 +63,11 @@ GIT = os.environ.get("GIT", "git")
 ORCA = os.environ.get("ORCA", "orca")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from live_specs import live_spec_paths  # noqa: E402
-DEFAULT_CONFIG = ".claude/orch-finish.json"
+import orch_paths  # noqa: E402
 QUEUE_DONE = re.compile(r"QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL", re.M)
 BRANCH_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:\*\*)?브랜치:(?:\*\*)?\s*`([^`]+)`", re.M)
 BOARD_ID_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:\*\*)?보드 항목 id:(?:\*\*)?\s*`([^`]+)`", re.M)
-HANDOFF_SKIP = {"bin", "queue", "specs", "board.json", ".keep"}
+RESERVED = {"bin", "queue", "specs", "state"}
 DAY = 86400
 
 
@@ -151,10 +151,15 @@ def open_pr_heads(repo):
         return None
 
 
+def keep_names(folder):
+    keep_file = folder / ".keep"
+    return {l.strip() for l in keep_file.read_text(encoding="utf-8").splitlines()} if keep_file.is_file() else set()
+
+
 def candidates(args, repo, now):
-    omc, handoffs, previews = args.omc, args.handoffs, args.previews
+    orch, previews = args.orch_dir, args.previews
     found = []
-    queue = handoffs / "queue"
+    queue = orch / "queue"
     for log in sorted(queue.glob("*.out")) if queue.is_dir() else []:
         try:
             if is_old(log.stat().st_mtime, now, args.queue_days) and queue_log_finished(
@@ -165,7 +170,7 @@ def candidates(args, repo, now):
 
     board_text = args.board.read_text(encoding="utf-8") if args.board.is_file() else ""
     statuses = board_statuses(board_text)
-    specs = sorted((handoffs / "specs").glob("spec-*.md")) if (handoffs / "specs").is_dir() else []
+    specs = sorted((orch / "specs").glob("spec-*.md")) if (orch / "specs").is_dir() else []
     specs = [s for s in specs if s.name != "spec-common.md"]
     heads = open_pr_heads(repo) if specs else set()
     live = live_spec_paths(ORCA, args.run) if specs else set()
@@ -180,30 +185,28 @@ def candidates(args, repo, now):
             remote_has = lambda b: run([GIT, "ls-remote", "--exit-code", "--heads", "origin", b], repo)[0] == 0
             worktree_has = lambda b: f"[{b}]" in worktrees
             if os.path.realpath(spec) in live:
-                print(f"살아 있는 dispatch 가 쓰는 지시서라 남긴다: {spec.relative_to(omc)}", file=sys.stderr)
+                print(f"살아 있는 dispatch 가 쓰는 지시서라 남긴다: {spec.relative_to(orch)}", file=sys.stderr)
             elif spec_finished(text, statuses, heads, remote_has, worktree_has):
                 found.append(spec)
 
-    keep_file = previews / ".keep"
-    keep = {l.strip() for l in keep_file.read_text(encoding="utf-8").splitlines()} if keep_file.is_file() else set()
-    entries = [p for p in sorted(handoffs.iterdir()) if p.is_dir()] if handoffs.is_dir() else []
-    entries += sorted(previews.iterdir()) if previews.is_dir() else []
-    for entry in entries:
-        if entry.name in HANDOFF_SKIP:
-            continue
-        if is_old(entry.stat().st_mtime, now, args.folder_days) and not referenced(entry.name, board_text, keep):
+    entries = [(p, orch) for p in sorted(orch.iterdir()) if p.is_dir() and p.name not in RESERVED] if orch.is_dir() else []
+    if previews and previews.is_dir():
+        entries += [(p, previews) for p in sorted(previews.iterdir()) if p.name != ".keep"]
+    keep = {root: keep_names(root) for root in {orch, previews} if root}
+    for entry, root in entries:
+        if is_old(entry.stat().st_mtime, now, args.folder_days) and not referenced(entry.name, board_text, keep[root]):
             found.append(entry)
 
-    if omc.is_dir():
-        for path in sorted(omc.rglob("*")):
-            if path.is_file() and path.suffix.lower().lstrip(".") in args.data_ext and "bin" not in path.relative_to(omc).parts[:-1]:
+    if orch.is_dir():
+        for path in sorted(orch.rglob("*")):
+            if path.is_file() and path.suffix.lower().lstrip(".") in args.data_ext and "bin" not in path.relative_to(orch).parts[:-1]:
                 if is_old(path.stat().st_mtime, now, args.data_days):
                     found.append(path)
     return drop_nested(found)
 
 
-def move(path, omc, trash, apply):
-    rel = path.relative_to(omc)
+def move(path, root, trash, apply):
+    rel = Path(root.name) / path.relative_to(root)
     if not apply:
         print(f"후보 {rel}")
         return
@@ -221,8 +224,7 @@ def build_parser():
     p.add_argument("--config")
     p.add_argument("--gh-host")
     p.add_argument("--run")
-    p.add_argument("--omc")
-    p.add_argument("--handoffs")
+    p.add_argument("--orch-dir")
     p.add_argument("--previews")
     p.add_argument("--board")
     p.add_argument("--trash")
@@ -236,7 +238,7 @@ def build_parser():
 
 def load_config(parser, argv):
     first, _ = parser.parse_known_args(argv)
-    path = Path(first.config) if first.config else Path(first.repo) / DEFAULT_CONFIG
+    path = Path(first.config) if first.config else orch_paths.path("config", first.repo)
     if path.is_file():
         try:
             config = json.loads(path.read_text(encoding="utf-8"))
@@ -259,23 +261,24 @@ def main(argv=None, now=None):
         args = load_config(parser, sys.argv[1:] if argv is None else argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
+    if not args.config and not orch_paths.require_migrated(args.repo, "handoff-cleanup"):
+        return 2
     repo = Path(args.repo).resolve()
-    args.omc = Path(args.omc).resolve() if args.omc else repo / ".omc"
-    args.handoffs = Path(args.handoffs).resolve() if args.handoffs else args.omc / "handoffs"
-    args.previews = Path(args.previews).resolve() if args.previews else args.omc / "previews"
-    args.board = Path(args.board).resolve() if args.board else args.handoffs / "board.json"
+    args.orch_dir = (repo / Path(args.orch_dir).expanduser()).resolve() if args.orch_dir else orch_paths.orch_dir(repo)
+    args.previews = (repo / Path(args.previews).expanduser()).resolve() if args.previews else None
+    args.board = orch_paths.board_path(repo, args.board)
     now = time.time() if now is None else now
-    trash = Path(args.trash).expanduser() if args.trash else Path.home() / ".Trash" / f"omc-cleanup-{datetime.fromtimestamp(now):%Y%m%d}"
+    trash = Path(args.trash).expanduser() if args.trash else Path.home() / ".Trash" / f"orch-cleanup-{datetime.fromtimestamp(now):%Y%m%d}"
     args.data_ext = {e.strip().lower().lstrip(".") for e in args.data_ext.split(",") if e.strip()}
     if args.gh_host:
         os.environ["GH_HOST"] = args.gh_host
+    roots = [r for r in (args.orch_dir, args.previews) if r]
     for path in candidates(args, repo, now):
-        try:
-            path.relative_to(args.omc)
-        except ValueError:
-            print(f"산출물 루트({args.omc}) 밖이라 건너뛴다: {path}", file=sys.stderr)
+        root = next((r for r in roots if r in path.parents), None)
+        if root is None:
+            print(f"정리 대상 폴더({', '.join(map(str, roots))}) 밖이라 건너뛴다: {path}", file=sys.stderr)
             continue
-        move(path, args.omc, trash, args.apply)
+        move(path, root, trash, args.apply)
     if args.apply:
         print(f"휴지통 폴더: {trash}")
     return 0

@@ -195,11 +195,11 @@ class CleanupSweepTest(unittest.TestCase):
         self.terminals = [{"handle": "term_a", "worktreePath": str(path)}]
         self.workers = [{"dispatchId": "ctx_a", "workerState": "succeeded",
                          "resource": {"worktreeId": f"x::{path}", "releaseState": "retained"}}]
-        specs = self.repo / ".omc/specs"
+        specs = self.repo / ".orch/specs"
         specs.mkdir(parents=True)
         (specs / "spec-feat-a.md").write_text("x")
         (specs / "spec-other.md").write_text("x")
-        out = self.run_sweep("--run", "run_x", "--specs-dir", ".omc/specs", "--apply")
+        out = self.run_sweep("--run", "run_x", "--specs-dir", ".orch/specs", "--apply")
         self.assertFalse(path.exists(), out)
         self.assertNotIn("feat-a", self.branches())
         self.assertFalse((specs / "spec-feat-a.md").exists())
@@ -1036,7 +1036,7 @@ class CleanupSweepTest(unittest.TestCase):
     def merged_with_specs(self, name):
         path = self.worktree(name)
         self.squash_merge(name, path)
-        specs = self.repo / ".omc/orch/specs"
+        specs = self.repo / ".orch/specs"
         specs.mkdir(parents=True)
         (specs / f"spec-{name}.md").write_text("x")
         return path, specs
@@ -1046,7 +1046,7 @@ class CleanupSweepTest(unittest.TestCase):
         path, specs = self.merged_with_specs("feat-live")
         spec = specs / "spec-feat-live.md"
         self.tasks = [{"id": "task_1", "status": "dispatched", "spec": f"지시서 {spec} 를 끝까지 읽고 수행한다."}]
-        out = self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        out = self.run_sweep("--specs-dir", ".orch/specs", "--apply")
         self.assertFalse(path.exists(), out)
         self.assertTrue(spec.exists(), out)
         self.assertIn("살아 있는 dispatch 가 쓴다", out)
@@ -1055,13 +1055,13 @@ class CleanupSweepTest(unittest.TestCase):
         path, specs = self.merged_with_specs("feat-done")
         spec = specs / "spec-feat-done.md"
         self.tasks = [{"id": "task_1", "status": "completed", "spec": f"지시서 {spec} 를 끝까지 읽고 수행한다."}]
-        self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        self.run_sweep("--specs-dir", ".orch/specs", "--apply")
         self.assertFalse(spec.exists())
 
     def test_specs_are_kept_when_live_dispatches_cannot_be_read(self):
         path, specs = self.merged_with_specs("feat-unknown")
         self.tasks_fail = True
-        out = self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        out = self.run_sweep("--specs-dir", ".orch/specs", "--apply")
         self.assertFalse(path.exists(), out)
         self.assertTrue((specs / "spec-feat-unknown.md").exists())
         self.assertIn("목록을 읽지 못했다", out)
@@ -1069,13 +1069,13 @@ class CleanupSweepTest(unittest.TestCase):
     def test_pr_body_files_next_to_the_specs_dir_are_deleted(self):
         path = self.worktree("mac/body")
         self.squash_merge("mac/body", path)
-        orch = self.repo / ".omc/orch"
+        orch = self.repo / ".orch"
         (orch / "specs").mkdir(parents=True)
         for name in ("pr-body.md", "pr-mac-body.md", "pr-1.md", "pr-other.md"):
             (orch / name).write_text("x")
-        out = self.run_sweep("--specs-dir", ".omc/orch/specs")
+        out = self.run_sweep("--specs-dir", ".orch/specs")
         self.assertIn(f"PR 본문을 지울 것 {orch / 'pr-mac-body.md'}", out)
-        self.run_sweep("--specs-dir", ".omc/orch/specs", "--apply")
+        self.run_sweep("--specs-dir", ".orch/specs", "--apply")
         self.assertEqual(["pr-other.md"], sorted(p.name for p in orch.glob("pr-*.md")))
 
     def test_base_checkout_is_fast_forwarded(self):

@@ -9,9 +9,9 @@ worker 가 ask 로 멈추거나 먼저 머지된 쪽 때문에 뒤 PR 이 충돌
     spec-lint.py --repo DIR [--overlay FILE] --check-overlay [--base main] [SPEC ...]
 
     --repo     대상 저장소. 존재 확인과 담당 경로 확장을 이 저장소의 git 으로 한다
-    --overlay  저장소 값을 읽을 파일. 없으면 <repo>/.claude/orch-overlay.md 를 읽고, 그것도 없으면 저장소 값 없이 돈다
+    --overlay  저장소 값을 읽을 파일. 없으면 <orch 작업 폴더>/overlay.md 를 읽고, 그것도 없으면 저장소 값 없이 돈다
     SPEC       검사할 지시서. 공통 지시서(spec-common.md)는 넘기지 않는다
-    --check-overlay  오버레이와 <repo>/.claude/orch-finish.json 이 가리키는 경로가 origin/<base> 에 있는지도 본다.
+    --check-overlay  오버레이와 <orch 작업 폴더>/config.json 이 가리키는 경로가 origin/<base> 에 있는지도 본다.
                      이 옵션을 주면 SPEC 을 생략할 수 있다. `--overlay` 는 지금처럼 오버레이 파일 위치다
     --base     --check-overlay 가 대조할 기준 브랜치. 기본 main. fetch 하지 않고 지금 있는 origin/<base> 를 본다
 
@@ -31,9 +31,9 @@ worker 가 ask 로 멈추거나 먼저 머지된 쪽 때문에 뒤 PR 이 충돌
     없음        백틱 안의 함수 호출 꼴(`name()`, `Class.method()`)이 저장소에 없다(`git grep -w`)
     금지        금지 문구가 든 줄인데 그 줄에 부정 표현(않, 말고, 대신, 금지, 없이)이 없다
     경로        백틱 안의 파일 경로(확장자가 있는 것)가 저장소에 없다. 파일 이름만 적었으면 어느 폴더에든 있으면 된다. 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다
-    오버레이    (--check-overlay) 오버레이의 백틱 값과 orch-finish.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
+    오버레이    (--check-overlay) 오버레이의 백틱 값과 config.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
                 명령(`bash scripts/verify.sh --fast`)이면 낱말마다 본다. `/` 가 든 확장자 있는 낱말만 경로로 본다.
-                파일 이름만 적은 것(스킬 스크립트일 수 있다), 절대경로, `~`, `$`, glob, `<...>` 가 든 값, git 이 무시하는 경로(`.omc/` 같은 로컬 폴더)는 보지 않는다.
+                파일 이름만 적은 것(스킬 스크립트일 수 있다), 절대경로, `~`, `$`, glob, `<...>` 가 든 값, git 이 무시하는 경로(`.orch/` 같은 로컬 폴더)는 보지 않는다.
                 첫 마디가 origin/<base> 의 최상위 항목이 아닌 경로(다른 저장소, 스킬 문서, scratchpad, `origin/...`)도 보지 않는다.
                 오버레이에서 `예외:` 로 시작하는 줄은 건너뛴다.
                 로컬에만 있는 스크립트를 오버레이가 부르면 다른 워크트리와 worker 에서 그 단계가 「파일 없음」 으로 멈춘다
@@ -41,7 +41,7 @@ worker 가 ask 로 멈추거나 먼저 머지된 쪽 때문에 뒤 PR 이 충돌
 종료 코드:
     0  막을 발견이 없다(경로 경고는 있을 수 있다)
     1  겹침, 코디네이터, 소유, 없음, 금지, 오버레이 중 하나 이상
-    2  사용법 오류, 또는 저장소, 지시서, origin/<base> 를 읽지 못했다
+    2  사용법 오류, 또는 저장소, 지시서, origin/<base> 를 읽지 못했다. --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(orch_paths.py 「옛 구조」)
 """
 
 from __future__ import annotations
@@ -53,6 +53,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import orch_paths  # noqa: E402
 
 DEFAULT_FORBIDDEN = ("--no-verify", "push --force", "push -f ", "reset --hard", "pkill", "killall")
 NEGATION = ("않", "말고", "대신", "금지", "없이")
@@ -111,7 +114,7 @@ def path_words(value):
 
 
 def overlay_refs(repo_root, overlay):
-    """(파일, 줄, 경로) 목록. 오버레이는 백틱 값, orch-finish.json 은 문자열 값에서 읽는다."""
+    """(파일, 줄, 경로) 목록. 오버레이는 백틱 값, config.json 은 문자열 값에서 읽는다."""
     refs = []
     if overlay and Path(overlay).is_file():
         for no, line in enumerate(Path(overlay).read_text(encoding="utf-8").splitlines(), 1):
@@ -119,7 +122,7 @@ def overlay_refs(repo_root, overlay):
                 continue
             for tok in ticks(line):
                 refs += [(Path(overlay), no, w) for w in path_words(tok)]
-    finish = Path(repo_root) / ".claude" / "orch-finish.json"
+    finish = orch_paths.path("config", repo_root)
     if finish.is_file():
         text = finish.read_text(encoding="utf-8")
         lines = text.splitlines()
@@ -265,7 +268,9 @@ def main(argv=None):
     except RuntimeError as exc:
         print(f"spec-lint: {exc}", file=sys.stderr)
         return 2
-    overlay = args.overlay or Path(args.repo) / ".claude" / "orch-overlay.md"
+    if not args.overlay and not orch_paths.require_migrated(args.repo, "spec-lint"):
+        return 2
+    overlay = args.overlay or orch_paths.path("overlay", args.repo)
     errors, warnings = lint(repo, args.specs, overlay) if args.specs else ([], [])
     if args.check_overlay:
         try:

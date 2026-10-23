@@ -75,13 +75,14 @@ def mark_step(line, done):
     body = re.sub(r'^\s*(✓|▶|◇)\s*', '', line)
     return '✓ ' + body if done else body
 
-def board_path(explicit):
+def board_path(explicit, cwd=None):
+    """보드 파일 경로. orch 의 orch_paths.py 도 이 함수로 기본 위치를 받는다."""
     if explicit:
         return explicit
     try:
-        root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True, stderr=subprocess.DEVNULL).strip()
+        root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True, stderr=subprocess.DEVNULL, cwd=cwd).strip()
     except Exception:
-        root = os.getcwd()
+        root = cwd or os.getcwd()
     legacy = os.path.join(root, '.omc/handoffs/board.json')
     return legacy if os.path.exists(legacy) else os.path.join(root, '.omc/board.json')
 
