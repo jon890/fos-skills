@@ -269,6 +269,18 @@ class MergeQueueTest(unittest.TestCase):
         self.assertIn("pr merge 1 --merge --match-head-commit abc", self.log.read_text())
         self.assertIn("git push -q origin --delete feat", self.log.read_text())
 
+    def test_old_merge_queue_sh_path_still_runs_the_python_queue(self):
+        # 한 버전 동안 옛 경로를 남긴다. 다른 디렉터리에서 불러도 같은 폴더의 merge_queue.py 를 부른다
+        old = SCRIPTS / "merge-queue.sh"
+        self.assertTrue(os.access(old, os.X_OK))
+        self.assertIn('exec python3 "$(dirname "$0")/merge_queue.py" "$@"', old.read_text())
+        self.state.write_text(json.dumps({"1": self.pr()}))
+        r = subprocess.run([str(old), "--repo", str(self.tmp), "--threads-cmd", "echo 0", "--no-sweep", "1"],
+                           capture_output=True, text=True, env=self.env, cwd="/")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("QUEUE-DONE", r.stdout)
+        self.assertEqual(2, subprocess.run([str(old)], capture_output=True, text=True).returncode)
+
     def test_calls_cleanup_sweep_after_merging_with_base_and_args(self):
         r = self.run_queue({"1": self.pr(baseRefName="develop")}, "--sweep-arg", "--run", "--sweep-arg", "run x", "1")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
