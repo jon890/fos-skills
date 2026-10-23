@@ -21,6 +21,9 @@
 래퍼 옵션 (merge_queue.py 에는 넘기지 않는다):
     --finish-config FILE    finish-pr.py 의 --config. 없으면 finish-pr.py 가 orch 작업 폴더의 config.json 을 찾는다
     --finish-arg ARG        finish-pr.py 에 더 넘길 인자. 하나씩 준다. 값이 `--` 로 시작하면 `--finish-arg=--run` 처럼 쓴다
+    --run RUN_ID            worker 를 찾을 Orca Run. finish-pr.py 에 `--run` 을 넘기고, 머지 큐의 정리 단계에도
+                            `--sweep-arg --run --sweep-arg RUN_ID` 를 넘겨 다른 Run 의 worker 터미널을 건너뛰게 한다.
+                            `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 어디에도 없으면 경고 한 줄을 낸다
     --board-item PR=ID      그 PR 의 마무리가 done 으로 바꿀 보드 항목(`finish-pr.py --board-id`). PR 마다 준다.
                             주지 않으면 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾아 쓴다(아래 「보드 항목」)
     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(orch_paths.py queue). handoff-cleanup.py 가 이 폴더의 끝난 로그를 옮긴다
@@ -96,9 +99,36 @@ def parse_queue_spec(arg):
     return number, bool(bang), number + (rest or "")
 
 
+def pair_value(args, name):
+    """`name VALUE` 쌍의 VALUE. 없으면 None 이고, 쌍의 값이 서로 다르면 ValueError 다."""
+    values = {args[i + 1] for i, arg in enumerate(args[:-1]) if arg == name}
+    if len(values) > 1:
+        raise ValueError(f"{name} 의 값이 서로 다르다: {', '.join(sorted(values))}")
+    return values.pop() if values else None
+
+
+def scope_sweep(wrapper, queue):
+    """머지 큐의 정리 단계를 Run 으로 한정하는 인자를 더한 머지 큐 인자. Run 이 어디에도 없으면 경고만 내고 그대로 돌려준다.
+    Run 이 서로 다른 곳에 있으면 ValueError 다."""
+    if "--no-sweep" in queue:
+        return queue
+    sweep = [queue[i + 1] for i, arg in enumerate(queue[:-1]) if arg == "--sweep-arg"]
+    runs = {v for v in (wrapper["run"], pair_value(wrapper["finish_arg"], "--run"), pair_value(sweep, "--run")) if v}
+    if len(runs) > 1:
+        raise ValueError(f"--run 의 값이 서로 다르다: {', '.join(sorted(runs))}")
+    if not runs:
+        print("경고: 정리 단계가 Run 으로 한정되지 않는다. --run RUN_ID 를 주면 다른 Run 의 worker 터미널을 건너뛴다",
+              file=sys.stderr, flush=True)
+        return queue
+    if pair_value(sweep, "--run") is None:
+        return ["--sweep-arg", "--run", "--sweep-arg", runs.pop()] + queue
+    return queue
+
+
 def split_args(argv):
     """(래퍼 옵션 dict, merge_queue.py 인자 목록, [(PR, 마지막 PR 인지)]). 모르는 래퍼 옵션이면 ValueError."""
-    wrapper = {"finish_config": None, "finish_arg": [], "log_dir": None, "no_finish": False, "board_items": {}}
+    wrapper = {"finish_config": None, "finish_arg": [], "log_dir": None, "no_finish": False, "board_items": {},
+               "run": None}
     queue, prs, repo = [], [], "."
     i = 0
     while i < len(argv):
@@ -117,6 +147,12 @@ def split_args(argv):
                 wrapper[key].append(value)
             else:
                 wrapper[key] = value
+        elif name == "--run":
+            value = inline if eq else (argv[i + 1] if i + 1 < len(argv) else "")
+            i += 0 if eq else 1
+            if not value:
+                raise ValueError("--run 에 값이 없다")
+            wrapper["run"] = value
         elif name == "--board-item":
             value = inline if eq else (argv[i + 1] if i + 1 < len(argv) else "")
             i += 0 if eq else 1
@@ -309,7 +345,9 @@ def main(argv=None):
         return 2
     try:
         config = load_config(wrapper)
-        queue = queue_defaults(wrapper, queue, config) + queue
+        queue = scope_sweep(wrapper, queue_defaults(wrapper, queue, config) + queue)
+        if wrapper["run"] and pair_value(wrapper["finish_arg"], "--run") is None:
+            wrapper["finish_arg"] += ["--run", wrapper["run"]]
     except ValueError as exc:
         print(f"merge-with-finish: {exc}", file=sys.stderr)
         return 2

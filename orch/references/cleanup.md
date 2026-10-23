@@ -19,8 +19,10 @@
 PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은 변수 하나로 넘기면 zsh 가 쪼개지 않아 사용법 오류로 끝난다.
 **PR 번호 뒤 `!` 는 그 PR 이 업무의 마지막 PR 이라는 뜻이다.** 업무 하나에 PR 이 여럿이면 마지막 PR 에만 붙인다. 배포가 성공한 뒤 업무가 완료 처리된다.
 
+`--run "$RUN_ID"` 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록 한정한다. 빠지면 정리 단계가 Run 으로 한정되지 않는다는 경고가 난다.
+
 ```bash
-python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" 101 102 103!
+python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --run "$RUN_ID" 101 102 103!
 ```
 
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
