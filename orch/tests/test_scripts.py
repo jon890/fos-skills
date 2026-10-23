@@ -859,8 +859,10 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", message)
 
-    def branches(self, feat, main):
-        """feat 와 main 에 각각 커밋을 올리고 PR 상태를 쓴다."""
+    def branches(self, feat, main, feat_deletes=()):
+        """feat 와 main 에 각각 커밋을 올리고 PR 상태를 쓴다. feat_deletes 는 feat 가 지우는 파일이다."""
+        for name in feat_deletes:
+            (self.repo / name).unlink()
         self.write(feat, "feat")
         self.git("push", "-q", "origin", "feat")
         head = self.git("rev-parse", "HEAD")
@@ -890,6 +892,73 @@ class MergeQueueOverlapTest(unittest.TestCase):
         self.assertIn("STOP 1 겹침: a.txt", r.stdout)
         self.assertNotIn("c.txt", r.stdout)
         self.assertFalse(self.merged())
+
+    def test_deleted_file_counts_as_overlap_and_is_listed_as_changed(self):
+        # PR 이 지운 파일을 base 도 고쳤다. 삭제도 바뀐 파일로 센다
+        self.branches({}, {"b.txt": "main\n"}, feat_deletes=["b.txt"])
+        r = self.run_queue("--stop-on-overlap")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("STOP 1 겹침: b.txt", r.stdout)
+        self.assertFalse(self.merged())
+
+    def test_verify_environment_lists_deleted_files_as_changed(self):
+        self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n"}, {"a.txt": "main\n1\n2\n3\n4\n5\n"},
+                      feat_deletes=["b.txt"])
+        seen = self.tmp / "environment.json"
+        r = self.run_queue("--verify-merged", f'python3 -c \'import json,os; json.dump(dict(os.environ),open("{seen}","w"))\'')
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        env = json.loads(seen.read_text())
+        self.assertEqual("a.txt\nb.txt", env["CHANGED_FILES"])
+        self.assertEqual("a.txt", env["OVERLAP_FILES"])
+
+    def overlap_state(self, **fields):
+        state = json.loads(self.state.read_text())
+        state["1"].update(statusCheckRollup=[{"name": "CI", "status": "COMPLETED", "conclusion": "SUCCESS"}], **fields)
+        state["_behind"] = 1
+        self.state.write_text(json.dumps(state))
+
+    def push_from_another_clone(self, name, text):
+        """다른 사람이 origin/main 에 커밋을 올리는 것을 흉내 내는 셸 명령."""
+        other = self.tmp / "other"
+        return (f"git clone -q {self.tmp / 'origin.git'} {other} && cd {other} && mkdir -p $(dirname {name}) "
+                f"&& echo {text} > {name} && git add -A && git commit -q -m moved && git push -q origin HEAD:main")
+
+    def judge_queue(self, *extra):
+        return self.run_queue("--required", "CI", "--require-up-to-date", "--up-to-date-when", "overlap", *extra)
+
+    def test_queue_with_real_judge_and_origin_merges_without_update_when_units_differ(self):
+        self.branches({"modules/api/A.java": "a\n"}, {"modules/web/W.java": "w\n"})
+        self.overlap_state()
+        r = self.judge_queue()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정: 바로 머지", r.stdout)
+        self.assertNotIn("update-branch", self.log.read_text())
+        self.assertTrue(self.merged())
+
+    def test_queue_with_real_judge_and_origin_rejudges_when_origin_moves_before_the_merge(self):
+        self.branches({"modules/api/A.java": "a\n"}, {"modules/web/W.java": "w\n"})
+        self.overlap_state()
+        r = self.judge_queue("--before", self.push_from_another_clone("modules/db/D.java", "d"))
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정한 뒤 base(main) 가 움직였다. 새로 들어온 변경으로 다시 판정한다", r.stdout)
+        self.assertEqual(2, r.stdout.count("1 판정: 바로 머지"), r.stdout)
+        self.assertNotIn("update-branch", self.log.read_text())
+        self.assertTrue(self.merged())
+
+    def test_queue_with_real_judge_updates_when_units_overlap_and_merges_the_new_head(self):
+        self.branches({"modules/api/A.java": "a\n"}, {"modules/api/B.java": "b\n"})
+        # update-branch 가 돌려줄 실제 커밋을 준비한다
+        self.git("checkout", "-q", "feat")
+        self.git("merge", "-q", "--no-edit", "main")
+        self.git("push", "-q", "origin", "feat")
+        new = self.git("rev-parse", "HEAD")
+        self.overlap_state(after_update_head=new,
+                           after_update=[{"name": "CI", "status": "COMPLETED", "conclusion": "SUCCESS"}])
+        r = self.judge_queue()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정: 갱신 필요(단위 겹침: api)", r.stdout)
+        self.assertEqual(1, self.log.read_text().count("update-branch"))
+        self.assertIn(f"pr merge 1 --merge --match-head-commit {new}", self.log.read_text())
 
     def two_file_overlap(self):
         self.branches({"a.txt": "1\n2\n3\n4\n5\nfeat\n", "b.txt": "feat\n"},

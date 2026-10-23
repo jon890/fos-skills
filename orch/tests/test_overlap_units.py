@@ -238,6 +238,43 @@ class GitIntegrationTest(unittest.TestCase):
         self.assertEqual("", out)
         self.assertTrue(err.startswith("오류:"), err)
 
+    def delete_on_branch(self, name):
+        git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / name).unlink()
+        self.commit("pr deletes")
+        git(self.repo, "checkout", "-q", "main")
+
+    def test_file_deleted_by_the_pr_counts_as_its_unit(self):
+        self.delete_on_branch("modules/api/A.java")
+        self.write("modules/api/C.java", "base")
+        self.commit("base")
+        self.assertEqual((1, "갱신 필요(단위 겹침: api)", ""), self.cli())
+
+    def test_file_deleted_in_another_unit_does_not_overlap(self):
+        self.delete_on_branch("modules/web/W.java")
+        self.write("modules/api/C.java", "base")
+        self.commit("base")
+        self.assertEqual((0, "바로 머지", ""), self.cli())
+
+    def test_file_deleted_on_the_base_side_counts_as_its_unit(self):
+        git(self.repo, "checkout", "-q", "-b", "feature")
+        self.write("modules/api/B.java", "pr")
+        self.commit("pr")
+        git(self.repo, "checkout", "-q", "main")
+        (self.repo / "modules/api/A.java").unlink()
+        self.commit("base deletes")
+        self.assertEqual((1, "갱신 필요(단위 겹침: api)", ""), self.cli())
+
+    def test_shared_path_deleted_by_the_pr_is_a_shared_path_overlap(self):
+        self.write("build.gradle", "g")
+        self.commit("gradle")
+        self.delete_on_branch("build.gradle")
+        self.write("modules/web/C.java", "base")
+        self.commit("base")
+        code, out, _ = self.cli()
+        self.assertEqual(1, code)
+        self.assertIn("공용 경로: build.gradle", out)
+
     def test_shared_paths_starting_with_a_dash_are_read_as_a_value_with_equals(self):
         self.diverge("modules/api/B.java", "yarn-lock")
         code, out, _ = self.cli("--shared-paths=-lock$")
