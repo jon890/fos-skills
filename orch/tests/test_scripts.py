@@ -130,6 +130,12 @@ class GoalProgressTest(unittest.TestCase):
         self.assertEqual(["set", "goal", "--progress", "2/3", "--file", str(self.board)],
                          json.loads(self.calls.read_text()))
 
+    def test_counts_object_and_legacy_steps_together(self):
+        self.write_goal([{"text": "1. 구현", "done": True}, {"text": "2. 리뷰", "done": False},
+                         "✓ 3. 머지", {"text": "참고", "done": True}])
+        self.assertEqual(0, gp.main(["goal", "--board", str(self.board), "--board-bin", str(self.bin)]))
+        self.assertIn("2/3", json.loads(self.calls.read_text()))
+
     def test_no_step_lines_leaves_progress_alone(self):
         self.write_goal(["참고: 메모"])
         self.assertEqual(0, gp.main(["goal", "--board", str(self.board), "--board-bin", str(self.bin)]))
