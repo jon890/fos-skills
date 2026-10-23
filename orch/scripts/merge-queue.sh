@@ -7,6 +7,7 @@
 #   2. 필수 체크가 모두 나타나고 끝날 때까지 기다린다(--check-timeout 분까지).
 #      PR 을 연 직후에는 체크 목록이 비어 있어 「대기 0」이 「모두 끝남」이 아니기 때문이다
 #      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
+#      (--up-to-date-when overlap 이면 base 최신을 품지 않아도 단위가 겹치지 않으면 merge 없이 3 으로 간다)
 #   3. 실패한 체크, 미해결 리뷰 스레드, 충돌이 있으면 멈춘다. mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다
 #      --allow-fail 로 준 체크의 실패는 세지 않고 경고 줄만 찍는다
 #   3-1. --stop-on-overlap 이나 --verify-merged 를 주면, PR 이 바꾼 파일과 PR 이 갈라진 뒤 base 에서 바뀐 파일이
@@ -41,6 +42,17 @@
 #                         필수 체크(--required 나 저장소 규칙)에 든 이름은 허용할 수 없다
 #   --require-up-to-date  머지 전에 PR 이 base 최신을 품지 않으면 update-branch 로 base 를 merge 하고
 #                         필수 체크를 다시 기다린 뒤 머지한다. 기본은 끔. 필수 체크 목록이 있어야 켤 수 있다
+#   --up-to-date-when W   --require-up-to-date 가 base 를 merge 하는 때. always(기본, 뒤처졌으면 늘) 또는 overlap.
+#                         overlap 은 PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹치지 않으면
+#                         최신화와 CI 재대기 없이 머지한다. 판정은 PR 차례마다 하고 `<PR> 판정: 바로 머지` 나
+#                         `<PR> 판정: 갱신 필요(이유)` 한 줄을 찍는다. 판정은 overlap_units.py 가 소유한다.
+#                         단위는 --unit-prefix 아래 폴더 하나이고 그 밖의 파일은 경로 자체다. --shared-paths 에 맞는 파일과
+#                         --docs-glob 에 맞는 문서 파일은 각각 겹친 것으로 보거나 세지 않는다.
+#                         판정하지 못하면 갱신 필요로 다룬다. --require-up-to-date 가 있어야 한다.
+#                         GitHub 의 「브랜치를 최신으로 유지」 보호 규칙이 켜진 저장소는 머지가 거부되므로 쓰지 않는다
+#   --shared-paths RE     overlap 에서 어느 쪽에 있든 겹친 것으로 보는 공용 경로의 정규식(grep -E 처럼 경로 어디든 맞는다).
+#                         모든 모듈에 영향을 주는 경로(공용 모듈, 루트 빌드 파일, 계약, CI 설정)를 적는다
+#   --unit-prefix P       overlap 에서 폴더 하나를 단위로 보는 접두. 기본 modules/
 #   --stop-on-overlap     PR 의 바뀐 파일이 PR 기준 이후 base 에서 바뀐 파일과 겹치면 `STOP PR 겹침: 파일...` 로 멈춘다
 #   --verify-merged CMD   겹치면 origin/BASE 에 PR HEAD 를 merge 한 임시 사본을 만들고, 그 안에서 CMD 를 bash -c 로
 #                         돌린다. 사본의 절대경로를 첫 인자($1)로 받는다. 0 이면 이어 가고 아니면 멈춘다.
@@ -106,6 +118,10 @@ SWEEP=1
 SWEEP_BASE=""
 SWEEP_ARGS=()
 OVERLAP=0
+UP_TO_DATE_WHEN=always
+SHARED_PATHS=""
+UNIT_PREFIX="modules/"
+OVERLAP_UNITS=${OVERLAP_UNITS:-$SCRIPT_DIR/overlap_units.py}
 VERIFY_MERGED=""
 VERIFY_WHEN=overlap
 DOCS_GLOB=""
@@ -131,6 +147,9 @@ while [ $# -gt 0 ]; do
     --required) need "$1" "${2:-}"; REQUIRED=$2; shift 2 ;;
     --allow-fail) need "$1" "${2:-}"; ALLOW_FAIL=$2; shift 2 ;;
     --require-up-to-date) UP_TO_DATE=1; shift ;;
+    --up-to-date-when) need "$1" "${2:-}"; UP_TO_DATE_WHEN=$2; shift 2 ;;
+    --shared-paths) need "$1" "${2:-}"; SHARED_PATHS=$2; shift 2 ;;
+    --unit-prefix) need "$1" "${2:-}"; UNIT_PREFIX=$2; shift 2 ;;
     --stop-on-overlap) OVERLAP=1; shift ;;
     --verify-merged) need "$1" "${2:-}"; VERIFY_MERGED=$2; OVERLAP=1; shift 2 ;;
     --verify-merged-when) need "$1" "${2:-}"; VERIFY_WHEN=$2; shift 2 ;;
@@ -152,9 +171,16 @@ done
 case "$METHOD" in merge|squash|rebase) ;; *) echo "--method 는 merge, squash, rebase 중 하나다" >&2; exit 2 ;; esac
 case "$CHECK_TIMEOUT" in ''|*[!0-9]*) echo "--check-timeout 은 분 단위 정수다" >&2; exit 2 ;; esac
 case "$VERIFY_WHEN" in overlap|code|always) ;; *) echo "--verify-merged-when 은 overlap, code, always 중 하나다" >&2; exit 2 ;; esac
+case "$UP_TO_DATE_WHEN" in always|overlap) ;; *) echo "--up-to-date-when 은 always, overlap 중 하나다" >&2; exit 2 ;; esac
+if [ "$UP_TO_DATE_WHEN" = overlap ]; then
+  [ "$UP_TO_DATE" = 1 ] || { echo "--up-to-date-when overlap 은 --require-up-to-date 와 함께 쓴다" >&2; exit 2; }
+else
+  [ -z "$SHARED_PATHS" ] || { echo "--shared-paths 는 --up-to-date-when overlap 과 함께 쓴다" >&2; exit 2; }
+fi
 if [ -z "$VERIFY_MERGED" ]; then
   [ "$VERIFY_WHEN" = overlap ] || { echo "--verify-merged-when $VERIFY_WHEN 은 --verify-merged 와 함께 쓴다" >&2; exit 2; }
-  [ -z "$DOCS_GLOB" ] || [ -n "$AFTER_MERGED" ] || [ "$UPDATE_DOCS" = 1 ] || { echo "--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다" >&2; exit 2; }
+  [ -z "$DOCS_GLOB" ] || [ -n "$AFTER_MERGED" ] || [ "$UPDATE_DOCS" = 1 ] || [ "$UP_TO_DATE_WHEN" = overlap ] \
+    || { echo "--docs-glob 은 --after-merged, --verify-merged, --up-to-date-when overlap 과 함께 쓴다" >&2; exit 2; }
 fi
 [ "$UPDATE_DOCS" = 0 ] || [ -n "$DOCS_GLOB" ] || { echo "--update-docs-on-overlap 은 --docs-glob 이 필요하다" >&2; exit 2; }
 case "$REQUIRED" in *[\"\\]*) echo "--required 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
@@ -217,14 +243,19 @@ if [ -d "$COPY_DIR" ]; then
   git worktree prune
 fi
 
-# PR 이 바꾼 파일 가운데 PR 이 갈라진 뒤 base 에서도 바뀐 파일. 한 줄에 하나다. 판정하지 못하면 1 로 끝난다
-overlap_files() {
-  local mb mine theirs
+# origin/BASE 와 PR HEAD 커밋을 로컬에 둔다. 받지 못하면 1 로 끝난다
+fetch_pr_refs() {
   git fetch -q origin "$base" || return 1
   if ! git cat-file -e "$ph^{commit}" 2>/dev/null; then
     if [ "$cross" = false ]; then git fetch -q origin "$BRANCH"; else git fetch -q origin "refs/pull/$n/head"; fi
   fi
-  git cat-file -e "$ph^{commit}" 2>/dev/null || return 1
+  git cat-file -e "$ph^{commit}" 2>/dev/null
+}
+
+# PR 이 바꾼 파일 가운데 PR 이 갈라진 뒤 base 에서도 바뀐 파일. 한 줄에 하나다. 판정하지 못하면 1 로 끝난다
+overlap_files() {
+  local mb mine theirs
+  fetch_pr_refs || return 1
   mb=$(git merge-base "origin/$base" "$ph") || return 1
   mine=$(git diff --name-only "$mb" "$ph") || return 1
   theirs=$(git diff --name-only "$mb" "origin/$base") || return 1
@@ -269,6 +300,24 @@ verify_merged() {
   now_bh=$(git ls-remote origin "refs/heads/$base" | cut -f1)
   [ "$now_bh" = "$bh" ] || stop "$n 검사하는 동안 base($base) 가 움직였다. 다시 돌린다"
   echo "$(now) $n 합친 사본의 검사 통과"
+}
+
+# --up-to-date-when overlap: PR 이 base 최신을 품지 않을 때 최신화가 필요한지 overlap_units.py 로 판정한다.
+# 최신화가 필요하면(판정하지 못한 경우 포함) 0, 바로 머지해도 되면 1 이다. 판정 한 줄은 여기서 찍는다
+needs_update() {
+  local verdict code
+  if ! fetch_pr_refs; then
+    echo "$(now) $n 판정: 갱신 필요(판정 실패: PR HEAD 나 base 를 받지 못했다)"
+    return 0
+  fi
+  verdict=$(python3 "$OVERLAP_UNITS" --base "origin/$base" --head "$ph" --shared-paths "$SHARED_PATHS" \
+    --unit-prefix "$UNIT_PREFIX" --docs-glob "$DOCS_GLOB" 2>&1)
+  code=$?
+  case "$code" in
+    0) echo "$(now) $n 판정: $verdict"; return 1 ;;
+    1) echo "$(now) $n 판정: $verdict"; return 0 ;;
+    *) echo "$(now) $n 판정: 갱신 필요(판정 실패: $(printf '%s' "$verdict" | tr '\n' ' '))"; return 0 ;;
+  esac
 }
 
 # 쉼표로 이은 이름을 jq 배열 리터럴로 바꾼다
@@ -382,6 +431,8 @@ process_pr() {
     behind=$(gh api --hostname "$API_HOST" "repos/$OWNER/$REPO/compare/$base...$ph" --jq .behind_by 2>/dev/null)
     case "$behind" in ''|*[!0-9]*) stop "$n base 와 비교 실패" ;; esac
     [ "$behind" = 0 ] && break
+    # 문서 PR 갱신(update_docs)은 겹침을 이미 확인한 뒤의 결정이라 판정을 거치지 않는다
+    if [ "$UP_TO_DATE_WHEN" = overlap ] && [ "$update_docs" != 1 ] && ! needs_update; then break; fi
     rounds=$((rounds + 1))
     [ $rounds -le 3 ] || stop "$n base 를 3번 merge 해도 최신이 아니다. base 가 계속 움직인다"
     echo "$(now) $n base($base) 보다 $behind 커밋 뒤처졌다. update-branch 후 체크를 다시 기다린다"

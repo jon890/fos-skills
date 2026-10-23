@@ -489,6 +489,73 @@ class MergeQueueTest(unittest.TestCase):
         self.assertEqual(1, r.returncode)
         self.assertIn("--required 로 준다", r.stdout)
 
+    def fake_overlap_units(self, verdict, code):
+        """overlap_units.py 대신 받은 인자를 적고 정해 둔 판정을 내는 가짜. 실제 판정은 test_overlap_units.py 가 본다."""
+        script = self.tmp / "overlap_units.py"
+        script.write_text(f"import sys\nopen({str(self.tmp / 'judge-args.txt')!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                          f"print({verdict!r}, file=sys.stderr if {code} == 2 else sys.stdout)\nsys.exit({code})\n")
+        self.env["OVERLAP_UNITS"] = str(script)
+
+    def overlap_queue(self, verdict, code, *extra, behind=2):
+        self.fake_overlap_units(verdict, code)
+        pr = self.pr(statusCheckRollup=[self.check("backend")], after_update=[self.check("backend")])
+        return self.run_queue({"1": pr, "_behind": behind}, "--required", "backend", "--require-up-to-date",
+                              "--up-to-date-when", "overlap", *extra, "1")
+
+    def test_up_to_date_when_overlap_merges_without_update_when_units_do_not_overlap(self):
+        r = self.overlap_queue("바로 머지", 0, "--shared-paths", "^modules/common/", "--unit-prefix", "apps/",
+                               "--docs-glob", "docs/*,*.md")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정: 바로 머지", r.stdout)
+        log = self.log.read_text()
+        self.assertNotIn("update-branch", log)
+        self.assertIn("pr merge 1 --merge --match-head-commit abc", log)
+        self.assertEqual("--base origin/main --head abc --shared-paths ^modules/common/ --unit-prefix apps/ "
+                         "--docs-glob docs/*,*.md\n", (self.tmp / "judge-args.txt").read_text())
+
+    def test_up_to_date_when_overlap_updates_branch_when_units_overlap(self):
+        r = self.overlap_queue("갱신 필요(단위 겹침: api)", 1)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정: 갱신 필요(단위 겹침: api)", r.stdout)
+        log = self.log.read_text()
+        self.assertIn("pulls/1/update-branch", log)
+        self.assertIn("pr merge 1 --merge --match-head-commit new", log)
+
+    def test_up_to_date_when_overlap_treats_a_failed_judgement_as_needing_update(self):
+        r = self.overlap_queue("오류: git diff 실패", 2)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("1 판정: 갱신 필요(판정 실패: 오류: git diff 실패)", r.stdout)
+        self.assertIn("pulls/1/update-branch", self.log.read_text())
+
+    def test_up_to_date_when_overlap_does_not_judge_a_branch_that_is_current(self):
+        r = self.overlap_queue("바로 머지", 0, behind=0)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("판정", r.stdout)
+        self.assertFalse((self.tmp / "judge-args.txt").exists())
+
+    def test_up_to_date_when_always_keeps_updating_without_judging(self):
+        self.fake_overlap_units("바로 머지", 0)
+        pr = self.pr(statusCheckRollup=[self.check("backend")], after_update=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 2}, "--required", "backend", "--require-up-to-date",
+                           "--up-to-date-when", "always", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("pulls/1/update-branch", self.log.read_text())
+        self.assertFalse((self.tmp / "judge-args.txt").exists())
+
+    def test_up_to_date_when_options_are_checked(self):
+        for args, message in (
+                (["--up-to-date-when", "overlap"], "--require-up-to-date 와 함께"),
+                (["--require-up-to-date", "--up-to-date-when", "never"], "always, overlap 중 하나"),
+                (["--shared-paths", "^x/"], "--up-to-date-when overlap 과 함께")):
+            with self.subTest(args=args):
+                r = self.run_queue({"1": self.pr()}, *args, "1")
+                self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+                self.assertIn(message, r.stderr)
+
+    def test_docs_glob_is_accepted_with_up_to_date_when_overlap_alone(self):
+        r = self.overlap_queue("바로 머지", 0, "--docs-glob", "*.md")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+
     def allow_fail_state(self, *failed):
         checks = [self.check("backend")] + [dict(self.check(n), conclusion="FAILURE") for n in failed]
         return {"1": self.pr(statusCheckRollup=checks)}
