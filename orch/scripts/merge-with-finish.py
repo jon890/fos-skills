@@ -41,7 +41,8 @@ sweep_args 는 문자열 목록이고 항목마다 `--sweep-arg` 로 넘어간�
 MERGE_QUEUE, FINISH_PR 환경 변수로 두 스크립트 경로를 바꾼다.
 
 보드 항목: 보드 파일은 --finish-arg 의 `--board`, 없으면 설정 파일 `finish` 절의 `board`, 없으면 finish-pr.py 와 같은 기본
-(<repo>/.omc/handoffs/board.json, 없으면 <repo>/.omc/board.json) 이다. 항목의 `pr` 필드을 쉼표로 나눠 숫자만 보고 그 PR 과 같은 항목을 찾는다.
+(<repo>/.omc/handoffs/board.json, 없으면 <repo>/.omc/board.json) 이다. 항목의 `pr` 필드에서 단어에 붙지 않은 숫자(`#492`, `492, 495`, `492/495`)를 PR 번호로 읽고, 그 PR 이 든 항목을 찾는다.
+(`#492 (v2)` 의 `2` 처럼 글자에 붙은 숫자는 읽지 않는다.)
 **업무의 마지막 PR(`!`)일 때만 그 항목을 done 으로 바꾼다.** 중간 PR 이 항목을 끝내지 않도록 `!` 가 없으면 찾은 항목을 알리기만 한다.
 같은 PR 이 든 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다. `--board-item` 으로 준 항목은 `!` 와 상관없이 쓴다.
 
