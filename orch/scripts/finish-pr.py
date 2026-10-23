@@ -18,7 +18,9 @@
        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 deploy_verdict 가 소유한다
     4. --complete 면 PR 제목에서 --task-pattern 으로 업무 번호를 뽑아 --complete-cmd 를 돌린다.
-       업무의 마지막 PR 일 때만 준다. 배포가 실패하면 돌리지 않는다
+       업무의 마지막 PR 일 때만 준다. 배포가 실패하면 돌리지 않는다.
+       --complete-cmd 가 없으면(업무 시스템이 없는 저장소) 이 단계만 건너뛰고 로그에 남긴다. 지시서는 지운다.
+       --complete-cmd 를 주면 --task-pattern 도 있어야 한다
     5. --board-id 를 주면 그 보드 항목을 done 으로 바꾼다
 
 옵션 (저장소마다 다른 값이다. --config 의 JSON 키는 옵션 이름의 하이픈을 밑줄로 바꾼 것이다):
@@ -33,7 +35,7 @@
     --deploy-workflow F   배포 워크플로 파일 이름 (예: deploy.yml)
     --deploy-branch B     배포가 도는 브랜치 (예: develop)
     --task-pattern RE     PR 제목에서 업무 번호를 뽑는 정규식. 첫 번째 그룹이 번호다 (예: '^\\[?(PROJ-[0-9]+)')
-    --complete            이 PR 이 업무의 마지막 PR 이다
+    --complete            이 PR 이 업무의 마지막 PR 이다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
     --complete-cmd CMD    업무 완료 명령 틀. 공백으로 나뉘고 {number} 가 업무 번호로 바뀐다. 셸을 거치지 않는다
                           (예: 'task-cli complete {number}')
     --board FILE          보드 파일. 기본은 <repo>/.omc/board.json, 있으면 <repo>/.omc/handoffs/board.json
@@ -317,8 +319,8 @@ def load_config(parser, argv):
 def validate(parser, args):
     if bool(args.deploy_workflow) != bool(args.deploy_branch):
         parser.error("--deploy-workflow 와 --deploy-branch 는 함께 준다")
-    if args.complete and not (args.complete_cmd and args.task_pattern):
-        parser.error("--complete 는 --complete-cmd 와 --task-pattern 이 있어야 한다")
+    if args.complete and args.complete_cmd and not args.task_pattern:
+        parser.error("--complete-cmd 를 주면 --task-pattern 도 있어야 한다")
     if args.complete_cmd and "{number}" not in args.complete_cmd:
         parser.error("--complete-cmd 에 {number} 가 없다")
     if args.task_pattern:
@@ -383,7 +385,9 @@ def finish(args, repo):
         log(f"배포 성공 {sha[:9]}")
 
     problems = []
-    if args.complete:
+    if args.complete and not args.complete_cmd:
+        log("업무 완료 단계 건너뜀: --complete-cmd 가 없다")
+    elif args.complete:
         number = extract_task_number(title, args.task_pattern)
         if number is None:
             problems.append(f"PR 제목에서 업무 번호를 찾지 못했다: {title}")

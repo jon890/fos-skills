@@ -230,6 +230,16 @@ class FinishFlowTest(unittest.TestCase):
         self.assertEqual(0, code, out)
         self.assertEqual(1, len([c for c in self.calls() if c.startswith("sweep")]))
 
+    def test_complete_without_a_task_command_deletes_the_spec_and_skips_completion(self):
+        code, out = self.finish("--specs-dir", str(self.specs), "--complete")
+        self.assertEqual(0, code, out)
+        self.assertTrue(out.rstrip().endswith("FINISH-DONE"), out)
+        self.assertIn("업무 완료 단계 건너뜀", out)
+        self.assertNotIn("지시서 유지", out)
+        self.assertFalse((self.specs / "spec-x.md").exists())
+        self.assertTrue((self.specs / "spec-y.md").exists())
+        self.assertFalse(any(c.startswith("task-cli") for c in self.calls()))
+
     def test_without_complete_the_task_command_is_not_run(self):
         code, out = self.finish("--task-pattern", r"^\[?(PROJ-[0-9]+)", "--complete-cmd", "task-cli complete {number}")
         self.assertEqual(0, code, out)
@@ -303,7 +313,8 @@ class FinishFlowTest(unittest.TestCase):
         self.assertIn("--run run_default", [c for c in self.calls() if c.startswith("sweep ")][0])
 
     def test_usage_errors_exit_2_before_waiting(self):
-        for extra in (["--complete"], ["--deploy-workflow", "deploy.yml"],
+        for extra in (["--deploy-workflow", "deploy.yml"],
+                      ["--complete", "--complete-cmd", "task-cli complete {number}"],
                       ["--complete", "--complete-cmd", "task-cli complete", "--task-pattern", "(a)"],
                       ["--complete", "--complete-cmd", "task-cli complete {number}", "--task-pattern", "a"],
                       ["--task-pattern", "("]):
