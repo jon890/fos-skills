@@ -8,6 +8,7 @@
 //      details 에 단계 줄이 있으면 그것을, 없으면 next 의 줄을 센다. 참고 줄은 세지 않는다.
 //      progress(「끝낸 단계/전체 단계」, 예: 7/10)가 있으면 그 값을 우선한다.
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
+//      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. d 로 펼치면 끝낸 줄을 취소선으로 보인다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
 // 파일은 FILE_MS, 명령은 LIVE_MS 마다 다시 읽는다. 창에서 r 을 누르면 명령을 바로 다시 읽는다.
 
@@ -28,7 +29,7 @@ let board = null
 let boardPath = ''
 let raw = ''
 let now = 0
-let showDone = false
+let expanded = false // d: 항목의 모든 단계와 완료 칸을 펼친다
 
 // 실제 상태. 읽지 못한 원천은 error 에 이유를 남기고 나머지는 그린다.
 let live = { at: 0, runId: '', workers: null, questions: null, prs: null, errors: {} }
@@ -160,13 +161,58 @@ function finishedLine(text) {
   return step ? step.done : text.startsWith('✓')
 }
 
-// 하위 항목 중 끝난 줄을 접는다. 접으면 끝난 단계 수를 한 줄로 앞에 둔다
-// 펼치면 진행 중인 하위 항목을 앞에, 끝난 단계를 흐리게 뒤에 둔다
-export function detailLines(details, expanded) {
-  const finished = details.filter(finishedLine)
-  const rest = details.filter((text) => !finishedLine(text)).map((text) => ({ text }))
-  if (expanded) return [...rest, ...finished.map((text) => ({ text, done: true }))]
-  return finished.length ? [{ folded: finished.length }, ...rest] : rest
+// 항목의 details 와 next 를 줄마다 나눠 상태를 붙인다. 빈 줄은 뺀다
+// state: done(끝낸 줄), now(지금 단계), todo(남은 단계), note(번호 없는 참고 줄)
+// step 은 단계 줄인지, counted 는 진행률을 세는 쪽(details 에 단계가 있으면 details, 아니면 next)의 줄인지다
+// 지금 단계는 세는 쪽의 끝나지 않은 첫 단계다
+// 거기 없으면 다른 쪽의 끝나지 않은 첫 단계, 단계 줄이 하나도 없으면 첫 참고 줄을 지금 단계로 둔다
+// 단계가 모두 끝났으면 지금 단계는 없다
+export function stepRows(item) {
+  const details = Array.isArray(item.details) ? item.details.map(String) : []
+  const counted = stepProgress(details) ? 'details' : 'next'
+  const rows = [
+    ...details.map((text) => ({ text, from: 'details' })),
+    ...String(item.next || '').split('\n').map((text) => ({ text, from: 'next' })),
+  ]
+    .filter((row) => row.text.trim())
+    .map((row) => {
+      const text = row.text.trim()
+      const step = Boolean(parseStep(text))
+      return { text, state: finishedLine(text) ? 'done' : step ? 'todo' : 'note', step, counted: row.from === counted }
+    })
+  let current = rows.findIndex((row) => row.state === 'todo' && row.counted)
+  if (current < 0) current = rows.findIndex((row) => row.state === 'todo')
+  if (current < 0 && !rows.some((row) => row.step)) current = rows.findIndex((row) => row.state === 'note')
+  return rows.map((row, i) => (i === current ? { ...row, state: 'now' } : row))
+}
+
+// 접힌 보기에 쓸 요약: 지금 단계 줄, 끝낸 단계 수, 지금 단계 뒤에 남은 단계 수
+// 막대와 수가 맞도록 진행률을 세는 쪽의 단계 줄만 센다. 지금 단계가 다른 쪽에서 왔으면 남은 단계는 그쪽에서 센다
+// progress(「N/M」, 항목의 progress 필드)를 주면 막대가 그 값을 쓰므로 수도 그 값에서 낸다
+export function stepSummary(rows, progress) {
+  const current = rows.find((row) => row.state === 'now') || null
+  const match = PROGRESS.exec(String(progress || ''))
+  if (match && Number(match[2]) > 0) {
+    const total = Number(match[2])
+    const done = Math.min(Number(match[1]), total)
+    return { now: current, done, todo: Math.max(0, total - done - (current && current.step ? 1 : 0)) }
+  }
+  const side = current ? current.counted : true
+  return {
+    now: current,
+    done: rows.filter((row) => row.counted && row.step && row.state === 'done').length,
+    todo: rows.filter((row) => row.counted === side && row.state === 'todo').length,
+  }
+}
+
+// 단계 줄의 표시 칸 폭과 그 칸에 그릴 표시. 본문의 앞 표시(✓ [x] [ ] ▶ ◇)는 이 칸으로 옮긴다
+export const STEP_MARK_WIDTH = 2
+const LEAD_MARK = /^(?:✓|\[[xX ]\]|▶|◇)\s*/
+export function stepMark(row) {
+  return row.state === 'done' ? '✓' : row.state === 'now' ? '▶' : ' '
+}
+export function stepBody(text) {
+  return String(text).replace(LEAD_MARK, '')
 }
 
 // 줄 가운데 단계 줄을 세어 「끝낸/전체」 문자열로 돌려준다. 단계가 없으면 null
@@ -427,37 +473,74 @@ export function register(on) {
     })
     const dim = (key, text) => Text({ key, dimColor: true, wrap: 'wrap', children: [text] })
 
+    // 들여 쓴 한 줄. 공백 대신 Box 의 왼쪽 여백으로 들여 써서 줄바꿈된 뒷줄도 같은 자리에서 시작한다
+    const indent = (key, left, child) => Box({ key, paddingLeft: left, children: [child] })
+
+    // 단계 한 줄: 표시 칸(끝냄 ✓, 지금 ▶, 남음과 참고 줄은 빈칸)과 본문. 모든 줄의 번호와 본문이 같은 열에서 시작하고,
+    // 본문이 줄바꿈되면 뒷줄도 본문 열에서 시작한다. 끝낸 줄은 취소선과 흐림, 지금 단계는 굵게, 참고 줄은 흐리게 그린다
+    // extra 는 본문 뒤에 흐리게 붙일 글이다(접힌 보기의 단계 수)
+    const stepLine = (key, row, extra) => {
+      const look = row.state === 'done' ? { dimColor: true, strikethrough: true }
+        : row.state === 'now' ? { bold: true }
+          : row.state === 'note' ? { dimColor: true } : {}
+      return Box({
+        key,
+        flexDirection: 'row',
+        paddingLeft: 2,
+        children: [
+          Box({ width: STEP_MARK_WIDTH, flexShrink: 0, children: [Text({ ...look, children: [stepMark(row)] })] }),
+          Text({ wrap: 'wrap', children: [
+            Text({ ...look, children: [stepBody(row.text)] }),
+            ...(extra ? [Text({ dimColor: true, children: ['  ' + extra] })] : []),
+          ] }),
+        ],
+      })
+    }
+
+    // 접힌 보기의 단계 한 줄: 지금 단계 뒤에 끝낸 단계와 남은 단계의 수를 붙인다
+    // 수 하나(「✓ 2개」)가 두 줄로 갈리지 않도록 그 안의 띄어쓰기는 줄바꿈하지 않는 공백(U+00A0)으로 쓴다
+    const foldedSteps = (rows, progress) => {
+      const summary = stepSummary(rows, progress)
+      const counts = [
+        ...(summary.done ? ['✓ ' + summary.done + '개'] : []),
+        ...(summary.todo ? ['남은 단계 ' + summary.todo + '개'] : []),
+      ].map((part) => part.replace(/ /g, '\u00a0')).join('  ·  ')
+      if (summary.now) return [stepLine('steps', summary.now, counts)]
+      return counts ? [indent('steps', 2 + STEP_MARK_WIDTH, dim('counts', counts))] : []
+    }
+
+    // 접힌 보기는 「표시 제목 막대」, 「▶ 지금 단계」, worker 줄만 그린다
+    // 펼친 보기(d)는 담당·PR 과 모든 줄을 적힌 순서대로 그린다
     const itemView = (item, section) => {
       const meta = [item.owner, item.pr].filter(Boolean)
       const done = section.status === 'done'
+      const bar = progressBar(itemProgress(item), 10)
+      const rows = done ? [] : stepRows(item)
+      const worker = workerFor(item, live.workers)
       return Box({
         key: 'item-' + item.id,
         flexDirection: 'column',
         children: [
           Box({
+            key: 'head',
             flexDirection: 'row',
+            flexWrap: 'wrap',
             columnGap: 1,
             children: [
-              Text({ color: section.color, children: [section.mark] }),
+              Text({ key: 'mark', color: section.color, children: [section.mark] }),
               done
-                ? Text({ dimColor: true, wrap: 'wrap', children: [item.title || item.id] })
-                : Text({ bold: true, wrap: 'wrap', children: [item.title || item.id] }),
+                ? Text({ key: 'title', dimColor: true, strikethrough: true, wrap: 'wrap', children: [item.title || item.id] })
+                : Text({ key: 'title', bold: true, wrap: 'wrap', children: [item.title || item.id] }),
+              ...(done ? [] : [bar
+                ? Text({ key: 'bar', color: section.color, wrap: 'truncate', children: [bar] })
+                : Text({ key: 'bar', dimColor: true, children: ['진행률 없음'] })]),
             ],
           }),
-          ...(meta.length ? [Text({ dimColor: true, wrap: 'wrap', children: ['  ' + meta.join('  ·  ')] })] : []),
-          ...(done ? [] : [progressBar(itemProgress(item))
-            ? Text({ key: 'bar', color: section.color, children: ['  ' + progressBar(itemProgress(item))] })
-            : Text({ key: 'bar', dimColor: true, children: ['  진행률 없음'] })]),
-          ...(!done && item.worktree ? [workerFor(item, live.workers)
-            ? Text({ key: 'w', color: 'yellow', wrap: 'wrap', children: ['  ⚙ worker ' + workerLine(workerFor(item, live.workers), live.prs)] })
-            : Text({ key: 'w', dimColor: true, wrap: 'wrap', children: ['  ⚙ worker 없음 (' + item.worktree + ')'] })] : []),
-          ...(!done && Array.isArray(item.details) ? detailLines(item.details, showDone).map((line, i) =>
-            line.folded
-              ? dim('d-' + i, '  ✓ 끝난 단계 ' + line.folded + '개 (d 를 누르면 펼쳐요)')
-              : line.done
-                ? dim('d-' + i, '  ' + line.text)
-                : Text({ key: 'd-' + i, wrap: 'wrap', children: ['  • ' + line.text] })) : []),
-          ...(item.next && !done ? [Text({ wrap: 'wrap', children: ['  → ' + item.next] })] : []),
+          ...(expanded && meta.length ? [indent('meta', 2, dim('meta', meta.join('  ·  ')))] : []),
+          ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(rows, item.progress)),
+          ...(!done && item.worktree ? [indent('w', 2, worker
+            ? Text({ color: 'yellow', wrap: 'wrap', children: ['⚙ worker ' + workerLine(worker, live.prs)] })
+            : Text({ dimColor: true, wrap: 'wrap', children: ['⚙ worker 없음 (' + item.worktree + ')'] }))] : []),
         ],
       })
     }
@@ -540,7 +623,7 @@ export function register(on) {
     const manualView = (section) => {
       const rows = items.filter((item) => item.status === section.status)
       if (rows.length === 0) return []
-      const collapsed = section.status === 'done' && !showDone
+      const collapsed = section.status === 'done' && !expanded
       return [box('section-' + section.status, section.color, section.label + '  ' + rows.length,
         collapsed ? [dim('fold', 'd 를 누르면 펼쳐요')] : rows.map((item) => itemView(item, section)))]
     }
@@ -590,11 +673,11 @@ export function register(on) {
             }),
             Button({
               key: 'toggle-done',
-              label: showDone ? '완료 접기' : '완료 펼치기',
+              label: expanded ? '접기' : '단계와 완료 펼치기',
               hotkey: 'd',
               plain: true,
               onPress: () => {
-                showDone = !showDone
+                expanded = !expanded
                 $.ui.invalidate('ui.render')
               },
             }),
