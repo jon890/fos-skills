@@ -1259,6 +1259,15 @@ class WorkerAskTest(unittest.TestCase):
         self.assertIn("`권장:` 줄이 정확히 하나여야 한다(지금 0개)", done.stderr)
         self.assertFalse(self.log.exists(), "형식이 어긋난 질문은 orca 를 부르지 않는다")
 
+    def test_decision_question_with_an_empty_title_is_not_asked(self):
+        self.fake('{"result":{"answer":"x"}}', 0)
+        body = self.DECISION.replace("결정: 저장 형식을 바꿀까요", "결정:   ", 1)
+        done = subprocess.run([str(SCRIPTS / "worker-ask.py"), "--from", "term_w", "--question", body, "--decision"],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(done.returncode, 2)
+        self.assertEqual(len(done.stderr.strip().splitlines()), 1, done.stderr)
+        self.assertFalse(self.log.exists(), "제목이 빈 질문은 orca 를 부르지 않는다")
+
     def test_decision_question_reports_every_broken_rule(self):
         self.fake('{"result":{"answer":"x"}}', 0)
         done = subprocess.run([str(SCRIPTS / "worker-ask.py"), "--from", "term_w", "--question", "배경: 첫 줄이 다르다\n- 하나\n권장: a\n권장: b", "--decision"],

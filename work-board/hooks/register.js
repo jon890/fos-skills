@@ -132,7 +132,9 @@ export function decisionOf(text) {
   const lines = String(text || '').split(/\r?\n/).map((line) => line.trim())
   if (!lines[0] || !lines[0].startsWith('결정:')) return null
   const recommend = lines.find((line) => line.startsWith('권장:'))
-  return { title: lines[0].slice('결정:'.length).trim(), recommend: recommend ? recommend.slice('권장:'.length).trim() : null }
+  const title = lines[0].slice('결정:'.length).trim()
+  if (!title) return null
+  return { title, recommend: recommend ? recommend.slice('권장:'.length).trim() : null }
 }
 
 // gh pr list --json 의 결과를 PR 한 줄씩으로 바꾼다.

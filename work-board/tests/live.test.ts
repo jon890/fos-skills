@@ -214,6 +214,7 @@ test('결정 질문 형식이면 제목과 권장안을 꺼내고 형식이 없�
   expect(decisionOf('A 와 B 중 무엇으로 할까요?')).toBeNull()
   expect(decisionOf('배경: 첫 줄이 결정이 아니다\n결정: x\n권장: y')).toBeNull()
   expect(decisionOf('')).toBeNull()
+  expect(decisionOf('결정:  \n- a\n- b\n권장: a')).toBeNull()
 })
 
 test('오늘 시작 요청은 board 갱신, 완료 비우기, 정리, 감시, 보고를 모두 담는다', () => {
