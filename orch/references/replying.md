@@ -61,6 +61,17 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 | `invalid_argument: --terminal reuses an existing agent and cannot combine with --agent` | `--terminal` 에 `--agent` 를 함께 줬다 | `--agent` 를 뺀다 |
 | `agent_unconfigured: Terminal ... is not running a recognized agent` | Orca 가 그 터미널의 에이전트를 인식하지 못한다. 화면에서 Claude 가 입력을 기다리고 있어도 난다. 끝난 dispatch 의 터미널은 대개 재부팅 없이도 이 오류가 난다. Orca 가 잠깐 응답하지 않았거나 재부팅, 잠자기로 세션이 바뀐 뒤에도 난다 | 이어 쓰지 못한다. 아래 새 worker 로 간다 |
 
+**끝난 dispatch 를 이어 쓸 때는 `--spec` 만 준다.** `send-to-worker.py --dispatch <끝난 dispatch> --spec <후속 지시서> --run ...` 이면 된다. `--body` 는 끝난 dispatch 로 가지 않으므로 줘도 무시한다. 살아 있는 dispatch 에 `--spec` 만 주면 보낼 글이 없어 종료 코드 2 로 거부한다.
+
+**`worker_done` 만으로는 터미널이 사용자 보유가 되지 않는다.** 실측(2026-10-23, `worker-list --terminal-state reclaimable`)에서 `worker_done` 뒤의 터미널은 `terminalState: reclaimable`, `ownershipState: owned`, `releaseState: not_requested` 였다. 이 상태는 닫고 새로 띄울 수 있다.
+`user_owned`(`retainedReason: user_takeover`)는 사용자가 그 터미널에 직접 입력했을 때, `released` 는 `worker-release` 로 넘겼을 때 생긴다. 둘 다 사용자에게 넘어간 터미널이라 `send-to-worker.py` 는 닫지 않고 종료 코드 1 로 끝난다.
+이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다.
+
+1. `orca orchestration worker-show --dispatch <끝난 dispatch> --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
+2. `orca terminal read --terminal <handle>` 로 화면이 비어 있고 입력을 기다리는지 본다. 사용자가 쓰는 중이면 닫지 않는다
+3. 이 세션이 띄운 것이 맞으면 `orca terminal close --terminal <handle>` 로 닫는다
+4. `launch-worker.sh --spec <후속 지시서> --worktree <워크트리>` 를 `--terminal` 없이 부른다
+
 `send-to-worker.py --spec` 은 `launch-worker.sh` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 `startOptions.launch.effective` 설정으로 새 worker 를 띄운다. effective 에 없는 값은 requested 에서 읽는다. `--agent`, `--model`, `--effort` 로 새 실행의 설정을 바꿀 수 있다.
 
 에이전트나 모델을 모르면 터미널을 남기고 해당 인자를 요구한다. 터미널 소유 dispatch 가 바뀌었거나 활성 dispatch 가 붙었으면 닫지 않는다. 닫기 실패나 다른 실행 오류는 자동 재시도하지 않는다. 워크트리 파일은 보존되지만 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.

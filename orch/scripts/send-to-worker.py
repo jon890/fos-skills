@@ -17,12 +17,14 @@
 
 사용법:
     send-to-worker.py --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID] [--spec FILE] [--run RUN]
+    send-to-worker.py --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]
 
     --dispatch   worker 의 dispatch id
-    --body       보낼 글. --body-file 로 파일에서 읽을 수 있다
+    --body       보낼 글. --body-file 로 파일에서 읽을 수 있다. 끝난 dispatch 를 --spec 으로 이어 쓸 때는 필요 없다
     --reply-to   답을 달 메시지 id. 없으면 inbox 에서 그 worker 가 보낸 마지막 메시지(heartbeat 는 뒤로 미룬다)를 쓴다
     --spec       dispatch 가 끝났을 때 이어 쓸 후속 지시서. `허락:` 줄이 있어야 한다.
-                 끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 이 지시서에 적는다
+                 끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 이 지시서에 적는다. 그래서 --spec 만 주면 된다
+                 (--body 를 함께 주면 무시한다고 알린다). 살아 있는 dispatch 에 --spec 만 주면 보낼 글이 없어 거부한다
     --run        reply 와 다시 띄우기에 줄 Run id
     --agent, --model, --effort  새 worker 실행 설정. 생략하면 원래 dispatch 설정을 쓴다
 
@@ -140,19 +142,28 @@ def main(argv=None):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    if bool(args.body) == bool(args.body_file):
-        print("send-to-worker: --body 와 --body-file 중 하나를 준다", file=sys.stderr)
+    if args.body and args.body_file:
+        print("send-to-worker: --body 와 --body-file 은 함께 주지 않는다", file=sys.stderr)
         return 2
-    try:
-        body = args.body or Path(args.body_file).read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        print(f"send-to-worker: 본문 파일을 읽지 못했다: {exc}", file=sys.stderr)
+    if not (args.body or args.body_file or args.spec):
+        print("send-to-worker: --body 나 --body-file 을 준다. 끝난 dispatch 를 이어 쓸 때만 --spec 으로 대신한다", file=sys.stderr)
         return 2
+    body = args.body
+    if args.body_file:
+        try:
+            body = Path(args.body_file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"send-to-worker: 본문 파일을 읽지 못했다: {exc}", file=sys.stderr)
+            return 2
 
     try:
         status, handle, worktree, run_id, settings = describe(args.dispatch)
         run = args.run or run_id
         if status in ACTIVE:
+            if not body:
+                print(f"send-to-worker: {args.dispatch} 는 아직 살아 있어({status}) --spec 만으로는 보낼 글이 없다. "
+                      "--body 나 --body-file 을 준다. --spec 은 끝난 dispatch 를 이어 쓸 때만 쓴다", file=sys.stderr)
+                return 2
             targets = [args.reply_to] if args.reply_to else []
             targets += [t for t in candidates(args.dispatch, handle) if t not in targets]
             if not targets:
@@ -182,6 +193,10 @@ def main(argv=None):
         print(f"ended: {args.dispatch} 가 끝났고({status}) 터미널도 없다. "
               f"후속 지시서를 써서 launch-worker.sh --spec <지시서> --worktree {worktree or '<워크트리>'} 로 새로 띄운다")
         return 3
+    if not args.spec and not body:
+        print("send-to-worker: 끝난 dispatch 에 보낼 글이 없다. --body 나 --body-file 을 주거나, 이어 쓸 후속 지시서를 --spec 으로 준다",
+              file=sys.stderr)
+        return 2
     if not args.spec:
         if screen_state(handle) == "working":
             print(f"warning: {args.dispatch} 가 닫혀({status}) 이 지시는 Task 기록에 묶이지 않는다. "
@@ -192,6 +207,8 @@ def main(argv=None):
         print(f"ended: {args.dispatch} 가 끝났다({status}). 닫힌 dispatch 에는 reply 가 가지 않는다. "
               f"후속 지시를 지시서로 써서 --spec 으로 다시 부르면 터미널 {handle} 을 이어 쓴다")
         return 3
+    if body:
+        print("note: 끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 --spec 지시서에 적어야 한다")
     if not worktree:
         print(f"send-to-worker: {args.dispatch} 의 워크트리를 몰라 이어 띄우지 못한다")
         return 1
@@ -212,7 +229,10 @@ def main(argv=None):
         current = orca_json("orchestration", "worker-show", "--dispatch", args.dispatch)
         resource = current.get("terminalResource") or {}
         if resource.get("ownershipState") in {"user_owned", "released"}:
-            print("send-to-worker: 사용자가 보유하거나 해제한 터미널은 닫지 않는다")
+            print(f"send-to-worker: 사용자가 보유하거나 해제한 터미널({resource.get('ownershipState')})은 닫지 않는다. "
+                  f"이 세션이 띄운 worker 의 터미널이 맞으면 화면을 확인한 뒤 코디네이터가 직접 닫고 새로 띄운다: "
+                  f"orca terminal read --terminal {handle} 로 확인, orca terminal close --terminal {handle} 로 닫기, "
+                  f"launch-worker.sh --spec {args.spec} --worktree {worktree} (--terminal 없이) 로 띄우기")
             return 1
         owner = resource.get("ownerDispatchId")
         if owner and owner != args.dispatch:
