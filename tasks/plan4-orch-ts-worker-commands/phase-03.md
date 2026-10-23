@@ -18,7 +18,7 @@
 | `orch/scripts/nudge-worker.py` | `orch/scripts/nudge-worker.ts` | `orch/tests/test_nudge_worker.py` → `orch/tests/nudge-worker.spec.ts` |
 | `orch/scripts/worker-ask.py`, `orch/scripts/ask-json.py` | `orch/scripts/worker-ask.ts` | `orch/tests/test_scripts.py` 의 `WorkerAskTest` → `orch/tests/worker-ask.spec.ts` |
 
-명령 이름, 옵션, 종료 코드, 출력 줄(`worker-ask` 의 첫 줄 `answer:`)은 원본 머리 주석과 같다.
+명령 이름, 옵션, 종료 코드, 출력 줄(`worker-ask` 의 첫 줄 `answer:`)은 원본 머리 주석과 같다. `worker-ask` 의 `--decision` 형식 검사(`docs/data-schema.md` 의 「사용자 결정 질문 형식」)도 옮긴다.
 `send-to-worker.ts` 는 `launch-worker.ts` 와 `nudge-worker.ts` 를 `scriptCommand` 로 부른다.
 
 옮긴 명령의 `.py` 는 지우지 않고 shim 으로 바꾼다. shim 은 stderr 에 `DEPRECATED python3 <이름>.py → node <절대경로>/<이름>.ts` 한 줄을 내고 `os.execvp` 로 `node --disable-warning=ExperimentalWarning <같은 폴더의 이름>.ts <인자...>` 를 실행한다. 아직 Python 인 다른 명령이 `script_command` 로 이 경로를 부르므로 shim 이 없으면 그 명령이 깨진다. 다음 major 에서 지운다([ADR-010](../../docs/adr/010-orch-typescript.md)).

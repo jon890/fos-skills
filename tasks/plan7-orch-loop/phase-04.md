@@ -19,8 +19,8 @@
 | --- | --- |
 | `orch/SKILL.md` 4단계 | 통과 조건을 「저장소마다 `orch-loop.ts --start` 가 살아 있고, 백그라운드 `wait-important.ts` 가 `--loop-repo` 와 함께 하나 돈다」 로 바꾼다. Monitor 와 5분 주기 문장을 지운다 |
 | `orch/references/waiting.md` | 「질문 감시와 압축 뒤 복구」 와 「깨어날 때마다 정리와 보드 동기화」 를 루프 기준으로 다시 쓴다. 종료 코드 7(`LOOP-EVENT`)과 8(`LOOP-DEAD`)을 받았을 때 할 일을 적는다. Monitor 로 `watch-questions.ts` 를 띄우는 것은 루프를 쓸 수 없는 때의 대안으로 한 줄만 남긴다 |
-| `orch/references/hooks.md` | `tick`, `ci-passed`, `ci-failed`, `ci-missing`, `session-resume`, `pr-conflict` 의 `launched` 를 더한다 |
-| `orch/references/overlay.md` | 「마무리 설정 파일」 에 `pipeline`, `pipeline.conflict`, `heavy` 절을 더한다. 키 표는 `docs/data-schema.md` 의 표를 옮기고, 그 뒤로는 이 문서가 사용법을 소유한다 |
+| `orch/references/hooks.md` | `tick`, `ci-passed`, `ci-failed`, `ci-missing`, `session-resume`, 루프가 `pr-conflict` 를 내는 경우를 더한다 |
+| `orch/references/overlay.md` | 「마무리 설정 파일」 에 `pipeline`, `heavy` 절을 더한다. 키 표는 `docs/data-schema.md` 의 표를 옮기고, 그 뒤로는 이 문서가 사용법을 소유한다 |
 | `orch/references/cleanup.md` | 머지 큐를 직접 거는 경우와 루프가 순서 파일로 거는 경우를 나눈다. `orch-loop.ts --order` 사용법 |
 | `docs/flow.md`, `docs/data-schema.md`, `docs/code-architecture.md` | 「구현 PR 이 모두 머지되기 전…」 문장을 지운다. `docs/data-schema.md` 의 「orch 이벤트 핸들러 입력」 은 계약 표만 남기고 사용법 문장은 `orch/references/hooks.md` 로 옮긴다 |
 | `orch/scripts/lib/events.ts` 머리 주석 | 이벤트 목록, 입력 필드, 종료 코드를 적는다. `docs/data-schema.md` 와 같은 값이다 |

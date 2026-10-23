@@ -31,6 +31,7 @@ shim 은 `cleanup-sweep.py` 에 둔다.
 
 - `--remote-branches` 가 지우는 조건: 작성자가 내 목록에 있는 PR 이고, MERGED 이거나, CLOSED 이면서 head 커밋이 base 에 들어 있다. 열린 PR 의 base 인 브랜치, `release/*`, fork 의 브랜치는 지우지 않는다. 머지 큐가 원격 브랜치를 지우는 조건과 같은 보호를 쓴다.
 - CLOSED 이고 head 가 base 에 없으면 버린 작업일 수 있어 지우지 않는다.
+- worker 터미널은 `worker_done` 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남긴다(사용자 결정 2026-10-24). 충돌과 리뷰 반영을 같은 worker 가 이어 받기 위해서다. 원본은 머지된 PR 만 정리한다. 새 명령은 머지 없이 CLOSED 가 된 내 PR 의 worker 터미널도 닫고 dispatch 를 반납한다. 그 워크트리는 원본의 지우기 조건(미커밋 변경, 원격에 없는 커밋)을 그대로 따른다.
 - `before-cleanup` 이 거부한 워크트리는 `남김: 저장소 핸들러 거부` 로 남기고 다음 항목으로 간다.
 
 ## 작업 항목
@@ -49,7 +50,7 @@ shim 은 `cleanup-sweep.py` 에 둔다.
 ### 3. 테스트를 옮긴다
 
 `orch/tests/cleanup-sweep.spec.ts`, `orch/tests/cleanup-wait.spec.ts` 를 만들고 원본 사례를 모두 옮긴 뒤 원본과 `test_terminal_ownership.py` 를 지운다.
-더할 사례: `--remote-branches` 가 내 MERGED PR 의 원격 브랜치를 지운다. 다른 작성자의 PR, 열린 PR 의 base 인 브랜치, head 가 base 에 없는 CLOSED PR 은 남긴다. `hooks/before-cleanup.ts` 가 10 이면 그 워크트리가 남는다.
+더할 사례: 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널을 닫는다. 열린 PR 의 끝난 dispatch 터미널은 남긴다. `--remote-branches` 가 내 MERGED PR 의 원격 브랜치를 지운다. 다른 작성자의 PR, 열린 PR 의 base 인 브랜치, head 가 base 에 없는 CLOSED PR 은 남긴다. `hooks/before-cleanup.ts` 가 10 이면 그 워크트리가 남는다.
 
 ## 검증
 

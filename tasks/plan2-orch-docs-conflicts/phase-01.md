@@ -47,6 +47,7 @@ worker 와 코디네이터가 어느 쪽을 따를지 매번 판단하지 않게
 | `board.md`, `work-board/bin/board.py` 머리 주석 | 진행 정도는 `--progress` 로 넣는다 | 「진행률은 단계 줄에서 센다. `--progress` 는 단계로 나타낼 수 없을 때만 쓴다」 로 board.py 머리 주석과 맞춘다 |
 | `waiting.md`, `board.md` | `--goal-items` 를 기본 예시로 쓴다 | 예시에서 빼고 하위 호환 옵션이라고만 적는다 |
 | `cleanup.md` 「정리」 | 원격 브랜치를 지운다 | 「로컬 브랜치가 있을 때만 원격도 지운다. 직접 머지한 PR 의 원격 브랜치는 남을 수 있다」 로 지금 동작을 적는다 |
+| `cleanup.md` 「정리」, `replying.md` | (새 규칙, 사용자 결정 2026-10-24) | 「충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받는다. worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다. 충돌하면 `send-to-worker.py --spec` 로 후속 지시서를 보낸다. 이어 받지 못하면 새 worker 를 띄우지 않고 사용자에게 알린다. 로컬 자원을 아끼기 위해서다. 머지 뒤에는 그 터미널을 바로 정리한다」 를 적는다 |
 | `SKILL.md` 4단계 통과 조건 | 질문 감시 | 통과 조건에 「질문 감시(`watch-questions.py`)가 Run 마다 하나 돈다」 를 더한다 |
 
 ### 2. `orch/tests/test_template_script_path.py` 가 계속 통과하는지 본다

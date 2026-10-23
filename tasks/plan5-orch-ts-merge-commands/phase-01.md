@@ -6,7 +6,7 @@
 
 `overlap_units`, `ci-ready`, `notify-conflicts` 를 TypeScript 로 옮긴다. 충돌 판정을 `lib/git.ts` 의 merge-tree 한 벌로 합치고 `before-ready`, `pr-ready`, `pr-conflict` 를 낸다.
 
-**범위 외**: 담당이 끝난 충돌 PR 에 새 worker 를 자동으로 띄우는 일(`pipeline.conflict.auto_launch`). 상주 루프 plan 이 한다. 이 phase 의 `pr-conflict` 는 `action` 이 `notified` 나 `orphan` 이다.
+**범위 외**: 상주 루프가 틱마다 충돌을 보는 일. 상주 루프 plan 이 한다. 충돌 PR 에 새 worker 를 띄우는 일은 어디서도 하지 않는다(사용자 결정 2026-10-24).
 
 ## 컨텍스트
 
@@ -32,6 +32,8 @@ shim 은 `ci-ready.py`, `notify-conflicts.py` 에 둔다.
 - GitHub `mergeable` 은 계산이 늦어 `UNKNOWN` 이 나오고, 두 명령이 같은 PR 을 다르게 판정하는 일이 생겼다. 로컬 merge-tree 는 원격을 fetch 한 뒤 바로 답한다.
 - `before-ready` 가 거부하면 그 PR 은 `보류` 줄로 남고 종료 코드는 원본의 보류와 같다.
 - `notify-conflicts` 는 (PR, base SHA) 마다 한 번만 알리는 기록(`state/notify-conflicts.json`)을 그대로 쓴다. `pr-conflict` 도 그 기록으로 한 번만 낸다.
+- 충돌은 그 PR 을 만든 기존 worker 가 푼다(사용자 결정 2026-10-24). 원본은 dispatch 가 끝났으면 보내지 못했다고만 냈다. 새 명령은 후속 지시서를 써서 `send-to-worker.ts --dispatch <끝난 dispatch> --spec <지시서>` 로 남은 터미널에 이어 쓴다. `send-to-worker` 가 종료 코드 3(터미널이 없거나 이어 쓸 수 없음)이면 `CONFLICT-ORPHAN` 이고 새 worker 는 띄우지 않는다.
+- 후속 지시서는 지시서 폴더의 `conflict-<PR>-<base 앞 8자리>.md` 다. 첫 줄은 공통 지시서(`<지시서 폴더>/spec-common.md`)를 가리키고, `브랜치:` 는 그 PR 의 브랜치, `허락:` 은 「push 는 허락됐다. PR 은 이미 있으므로 새로 열지 않는다」 다. 할 일은 base 를 합쳐 충돌을 풀고, 저장소 검증 명령을 돌리고, push 하는 것이다.
 
 ## 작업 항목
 
@@ -43,13 +45,13 @@ shim 은 `ci-ready.py`, `notify-conflicts.py` 에 둔다.
 | --- | --- | --- |
 | `before-ready` | `ci-ready.ts` | 겹침과 충돌 보류를 통과한 PR 을 ready 로 바꾸기 직전 |
 | `pr-ready` | `ci-ready.ts` | ready 로 바꾼 뒤 |
-| `pr-conflict` | `notify-conflicts.ts` | 새 (PR, base SHA) 를 처음 본 때. 살아 있는 worker 에게 알렸으면 `action: notified`, 담당이 끝났으면 `CONFLICT-ORPHAN <PR>` 줄과 `action: orphan` |
+| `pr-conflict` | `notify-conflicts.ts` | 새 (PR, base SHA) 를 처음 본 때. 살아 있는 dispatch 에 보냈으면 `action: notified`, 끝난 dispatch 의 남은 터미널에 후속 지시서로 이어 썼으면 `action: resumed`, 이어 쓰지 못했으면 `CONFLICT-ORPHAN <PR>` 줄과 `action: orphan` |
 
 ### 3. 테스트를 옮긴다
 
 `orch/tests/overlap-units.spec.ts`, `orch/tests/ci-ready.spec.ts`, `orch/tests/notify-conflicts.spec.ts` 를 만든다.
 표의 사례를 모두 옮기고 원본 테스트를 지운다(`test_launch_send.py` 는 앞 plan 에서 다른 클래스를 옮겨 `NotifyConflictsTest` 와 그 바탕 클래스만 남았으므로 파일째 지운다).
-더할 사례: 다른 작성자의 PR 은 알리지 않는다. 담당이 끝난 PR 은 `CONFLICT-ORPHAN` 과 `action: orphan`. `before-ready.ts` 가 10 이면 ready 로 바꾸는 gh 호출이 없다.
+더할 사례: 다른 작성자의 PR 은 알리지 않는다. 끝난 dispatch 의 터미널이 남았으면 후속 지시서 파일이 생기고 send-to-worker 대역이 `--spec` 과 함께 불리며 `action: resumed`. send-to-worker 대역이 3 이면 `CONFLICT-ORPHAN` 과 `action: orphan` 이고 launch 대역은 불리지 않는다. `before-ready.ts` 가 10 이면 ready 로 바꾸는 gh 호출이 없다.
 
 ## 검증
 
