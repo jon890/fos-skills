@@ -7,6 +7,7 @@
 
 - `merge-with-finish.py --run RUN_ID` 을 더했다. `finish-pr.py` 에 `--run` 을 넘기고, 머지 큐의 정리 단계에 `--sweep-arg --run --sweep-arg RUN_ID` 를 넘겨 다른 Run 의 worker 터미널을 건너뛰게 한다. 이전에는 `--finish-arg=--run` 으로 준 Run 이 정리 단계에 넘어가지 않아, 머지 뒤 정리가 다른 코디네이터의 워크트리 `board-steps-done` 을 지우고 터미널을 닫았다. `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 정리 인자에 `--run` 이 이미 있으면 두 번 넘기지 않는다. Run 이 어디에도 없으면 「정리 단계가 Run 으로 한정되지 않는다」 경고 한 줄을 낸다(`--no-sweep` 이면 내지 않는다). 값이 서로 다른 곳에 있으면 종료 코드 2 다.
 - `references/cleanup.md` 의 `merge-with-finish.py` 예시에 `--run "$RUN_ID"` 를 더하고 이유를 한 줄 적었다.
+- `remove-worktree.sh` 를 `bash` 나 `sh` 로 불러도 동작하게 했다. 첫머리에서 zsh 가 아니면 `exec zsh "$0" "$@"` 로 같은 인자를 넘겨 다시 실행한다. 이전에는 `bash remove-worktree.sh ...` 가 `${p:A}` 에서 `A: unbound variable` 로 끝났다. 사용법 오류와 정상 동작이 zsh 로 부른 것과 같은지 테스트를 더했다.
 
 ## 1.46.0 (2026-10-23)
 

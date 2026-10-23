@@ -12,6 +12,8 @@
 # --merged-head 는 머지된 PR 의 HEAD 다. 그 커밋의 조상은 원격에 있는 것으로 센다.
 #   squash 머지는 제목이 달라져 3 의 제목 대조로는 원격에 없는 커밋으로 남기 때문이다.
 #   HEAD 가 그 커밋과 같거나 그 조상이 아니면 거부한다. 옛 PR 과 이름만 같은 새 브랜치를 지우지 않기 위해서다.
+# bash 나 sh 로 불러도 zsh 로 같은 인자를 넘겨 다시 실행한다. 아래의 ${p:A} 같은 zsh 문법을 bash 가 읽지 못하기 때문이다.
+if [ -z "${ZSH_VERSION:-}" ]; then exec zsh "$0" "$@"; fi
 set -u
 p=${1:?worktree 경로}; p=${p:A}; shift
 delete_branch=0 merged_head="" wait_s=0
