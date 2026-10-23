@@ -3,7 +3,7 @@
 
 보드는 work-board 형식의 board.json 이다. 항목마다 id 와 status(goal, decide, doing, wait, done)가 있다.
 추적 항목을 주지 않으면 목표 항목 자신의 단계 줄을 센다. 단계 줄은 숫자로 시작하고(「1. …」),
-끝나면 「✓ 」 가 앞에 붙는다. 숫자로 시작하지 않는 줄은 참고 줄이라 세지 않는다.
+객체의 done 이 true 면 끝난 단계다. 옛 문자열의 「✓ 」 도 읽는다. 숫자로 시작하지 않는 줄은 참고 줄이라 세지 않는다.
 끝난 단계 수와 전체 단계 수를 목표 항목에 `--progress 끝낸수/전체수` 로 넣는다.
 추적 항목을 주면(하위 호환) 그 항목 중 status 가 done 인 수를 센다.
 
@@ -76,10 +76,12 @@ def progress(by_id: dict[str, dict], tracked: list[str]) -> tuple[int, list[str]
 STEP = re.compile(r"^(✓ )?\d+")
 
 
-def step_progress(goal: dict) -> tuple[int, list[str]]:
+def step_progress(goal: dict) -> tuple[int, list[str | dict]]:
     """(끝낸 수, 단계 줄) 을 돌려준다. 숫자로 시작하지 않는 줄은 세지 않는다."""
-    steps = [d for d in goal.get("details") or [] if STEP.match(d)]
-    return sum(d.startswith(DONE_MARK) for d in steps), steps
+    steps = [d for d in goal.get("details") or []
+             if STEP.match(d["text"] if isinstance(d, dict) else d)]
+    return sum(d.get("done") is True if isinstance(d, dict) else d.startswith(DONE_MARK)
+               for d in steps), steps
 
 
 def main(argv: list[str] | None = None) -> int:

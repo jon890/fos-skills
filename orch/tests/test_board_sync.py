@@ -67,7 +67,7 @@ class BoardSyncTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual("done", board["a"]["status"])
         self.assertEqual("#7", board["a"]["pr"])
-        self.assertEqual(["✓ 1. 구현", "✓ 2. PR 리뷰 반영", "✓ 3. 머지"], board["a"]["details"])
+        self.assertEqual([{'text': '1. 구현', 'done': True}, {'text': '2. PR 리뷰 반영', 'done': True}, {'text': '3. 머지', 'done': True}], board["a"]["details"])
 
     def test_merged_pr_with_two_open_steps_keeps_item_and_checks_only_its_step(self):
         self.states["7"] = "MERGED"
@@ -77,25 +77,25 @@ class BoardSyncTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual("doing", board["a"]["status"])
         self.assertNotIn("pr", board["a"])
-        self.assertEqual(["✓ 1. PR #7 머지", "2. dev 테스트", "3. 후속 PR #70"], board["a"]["details"])
+        self.assertEqual([{'text': '1. PR #7 머지', 'done': True}, {'text': '2. dev 테스트', 'done': False}, {'text': '3. 후속 PR #70', 'done': False}], board["a"]["details"])
 
     def test_merged_pr_with_one_open_step_finishes_item(self):
         self.states["7"] = "MERGED"
         items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. 머지"]}]
         rc, board = self.sync(items)
         self.assertEqual("done", board["a"]["status"])
-        self.assertEqual(["✓ 1. 구현", "✓ 2. 머지"], board["a"]["details"])
+        self.assertEqual([{'text': '1. 구현', 'done': True}, {'text': '2. 머지', 'done': True}], board["a"]["details"])
 
     def test_checkbox_steps_are_finished_by_board_command(self):
-        """[ ] 줄은 「✓ [ ] …」 가 아니라 [x] 로 끝나 단계로 계속 세어진다."""
+        """[ ] 입력은 done 값으로 완료 처리하고 본문에 표시를 저장하지 않는다."""
         self.states["7"] = "MERGED"
         items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["[x] 1. 구현", "[ ] 2. 머지 #7", "[ ] 3. 배포"]},
                  {"id": "b", "status": "doing", "pr": "#7", "next": "[x] 1. 구현\n[ ] 2. 머지"}]
         rc, board = self.sync(items)
         self.assertEqual(rc, 0)
-        self.assertEqual(["[x] 1. 구현", "[x] 2. 머지 #7", "[ ] 3. 배포"], board["a"]["details"])
+        self.assertEqual([{'text': '1. 구현', 'done': True}, {'text': '2. 머지 #7', 'done': True}, {'text': '3. 배포', 'done': False}], board["a"]["details"])
         self.assertEqual("doing", board["a"]["status"])
-        self.assertEqual("[x] 1. 구현\n[x] 2. 머지", board["b"]["next"])
+        self.assertEqual([{'text': '1. 구현', 'done': True}, {'text': '2. 머지', 'done': True}], board["b"]["next"])
         self.assertEqual("done", board["b"]["status"])
 
     def test_reference_lines_are_not_counted_as_open_steps(self):
@@ -103,7 +103,7 @@ class BoardSyncTest(unittest.TestCase):
         items = [{"id": "a", "status": "doing", "pr": "#7", "details": ["✓ 1. 구현", "2. 머지", "참고: 후속 검토"]}]
         rc, board = self.sync(items)
         self.assertEqual("done", board["a"]["status"])
-        self.assertEqual(["✓ 1. 구현", "✓ 2. 머지", "참고: 후속 검토"], board["a"]["details"])
+        self.assertEqual([{'text': '1. 구현', 'done': True}, {'text': '2. 머지', 'done': True}, {'text': '참고: 후속 검토', 'done': False}], board["a"]["details"])
 
     def test_open_pr_leaves_steps_alone_and_writes_no_status_lines(self):
         self.states["8"] = "OPEN"
@@ -116,8 +116,20 @@ class BoardSyncTest(unittest.TestCase):
         self.states["8"] = "OPEN"
         rc, board = self.sync([{"id": "a", "status": "doing", "pr": "8",
                                 "details": ["1. 구현", "자동: PR #8 OPEN CLEAN"]}])
-        self.assertEqual(["1. 구현"], board["a"]["details"])
+        self.assertEqual([{'text': '1. 구현', 'done': False}], board["a"]["details"])
         self.assertEqual("doing", board["a"]["status"])
+
+    def test_object_steps_survive_legacy_cleanup_and_repeated_sync(self):
+        self.states["7"] = "MERGED"
+        items = [{"id": "a", "status": "doing", "pr": "7", "details": [
+            {"text": "1. 구현", "done": True}, {"text": "2. 머지 #7", "done": False},
+            {"text": "3. 배포", "done": False}, {"text": "자동: PR #7 OPEN", "done": False}]}]
+        rc, board = self.sync(items)
+        self.assertEqual(0, rc)
+        self.assertEqual([{"text": "1. 구현", "done": True}, {"text": "2. 머지 #7", "done": True},
+                          {"text": "3. 배포", "done": False}], board["a"]["details"])
+        rc, repeated = self.sync(list(board.values()))
+        self.assertEqual((0, board), (rc, repeated))
 
     def test_done_goal_and_failed_lookup_are_skipped(self):
         self.states["7"] = "MERGED"
