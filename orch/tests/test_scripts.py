@@ -213,6 +213,8 @@ FAKE_GIT = textwrap.dedent("""\
     open(os.environ["FAKE_LOG"], "a").write("git " + " ".join(args) + "\\n")
     if args[:1] in (["rev-parse"], ["ls-remote"]):
         state = json.load(open(os.environ["FAKE_STATE"]))
+        if args[0] == "ls-remote" and state.get("_ls_remote_fails"):
+            sys.exit(2)
         head = state.get("_remote_head", os.environ.get("FAKE_REMOTE_HEAD", ""))
         base_ref = args[0] == "ls-remote" or any(a.endswith("origin/main") for a in args)
         print(state.get("_base_head", head) + "\trefs/heads/main" if args[0] == "ls-remote"
@@ -589,6 +591,18 @@ class MergeQueueTest(unittest.TestCase):
         log = self.log.read_text()
         self.assertNotIn("update-branch", log)
         self.assertIn("pr merge 1 --merge --match-head-commit abc", log)
+
+    def test_stops_instead_of_rejudging_when_the_base_lookup_fails(self):
+        # ls-remote 가 실패하면 빈 값을 「base 가 움직였다」 로 읽어 다시 판정하지 않는다. 조회 실패로 멈춘다
+        self.fake_overlap_units("바로 머지", 0)
+        pr = self.pr(statusCheckRollup=[self.check("backend")])
+        r = self.run_queue({"1": pr, "_behind": 2}, "--required", "backend", "--require-up-to-date",
+                           "--up-to-date-when", "overlap", "--before", self.move_base_cmd(_ls_remote_fails=True), "1")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("STOP 1 base 조회 실패", r.stdout)
+        self.assertNotIn("다시 판정한다", r.stdout)
+        self.assertEqual(1, self.judged_count())
+        self.assertNotIn("pr merge", self.log.read_text())
 
     def test_updates_after_a_pre_merge_base_move_that_overlaps(self):
         # 머지 직전에 움직인 base 가 PR 과 겹치면 그때 갱신하고, 새 HEAD 로 머지한다

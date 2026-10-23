@@ -507,8 +507,7 @@ class Queue:
         if code != 0:
             stop(f"{p.n} 합친 사본의 검사 실패(종료 코드 {code})")
         # 검사하는 동안 base 가 움직였으면 검사한 조합과 머지할 조합이 다르다
-        current = git("ls-remote", "origin", f"refs/heads/{p.base}").stdout.split("\t")[0]
-        if current != bh:
+        if self.remote_base() != bh:
             stop(f"{p.n} 검사하는 동안 base({p.base}) 가 움직였다. 다시 돌린다")
         log(f"{p.n} 합친 사본의 검사 통과")
 
@@ -660,10 +659,18 @@ class Queue:
                     stop(f"{n} head 불일치 pr={p.ph[:8]} remote={rh[:8]}")
             if not p.judged_base:
                 return
-            current = git("ls-remote", "origin", f"refs/heads/{p.base}").stdout.split("\t")[0]
-            if current == p.judged_base:
+            if self.remote_base() == p.judged_base:
                 return
             log(f"{n} 판정한 뒤 base({p.base}) 가 움직였다. 새로 들어온 변경으로 다시 판정한다")
+
+    def remote_base(self):
+        """원격 base 의 지금 SHA. 조회하지 못하면 base 가 움직인 것으로 읽지 않고 멈춘다."""
+        p = self.pr
+        done = git("ls-remote", "origin", f"refs/heads/{p.base}")
+        sha = done.stdout.split("\t")[0].strip() if done.returncode == 0 else ""
+        if not sha:
+            stop(f"{p.n} base 조회 실패")
+        return sha
 
     def required_checks(self):
         o, p = self.o, self.pr
