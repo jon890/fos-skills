@@ -3,11 +3,28 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 1.47.0 (2026-10-23)
+## 2.1.0 (2026-10-23)
 
 - `heavy-slot.py` 로 여러 worker 의 무거운 검사를 FIFO 대기열과 기본 3개 자리로 제한한다. 독점 실행, 중첩 호출, 죽은 PID 회수와 `mem-gate.sh` 대기를 지원하며 경로와 자리 수를 인자나 환경 변수로 받는다.
 - 대기열 사용법과 실행 수명 검사를 추가했다. 특정 저장소의 우선 검사 파일과 전역 Docker 프로세스 감시는 포함하지 않는다.
+- 대기열 기본 경로를 `orch_paths.py` 의 `heavy-slot` 으로 받는다. 워크트리끼리 주 checkout 의 `.orch/state/heavy-slot/` 을 공유하며 `ORCH_DIR` 로 루트를 바꾼다.
 
+## 2.0.0 (2026-10-23)
+
+orch 의 파일을 oh-my-claudecode 의 `.omc/` 에서 떼어 주 checkout 의 `.orch/` 로 옮긴다. 쓰던 저장소는 한 번 옮겨야 하므로 major 로 올린다. 결정은 ADR-008 이 소유한다.
+
+- `scripts/orch_paths.py`: 경로를 한 곳에서 정한다. `overlay.md`, `config.json`, `specs/`, `queue/`, `state/`(무거운 검사 대기열 자리 `state/heavy-slot/`), `bin/`. 루트는 `ORCH_DIR` 로 바꾸고, 처음 만들 때 `.git/info/exclude` 에 `/.orch/` 를 더한다. 워크트리에서 불러도 주 checkout 의 폴더를 쓴다
+- 저장소 설정을 `.claude/orch-overlay.md` 에서 `.orch/overlay.md` 로, `.claude/orch-finish.json` 에서 `.orch/config.json` 으로 옮긴다
+- `scripts/migrate-orch-dir.py`: 옛 위치의 파일을 옮긴다. 기본은 미리보기이고 `--apply` 로 옮긴다. `--move 옛=새` 로 저장소마다 다른 위치를 더한다. 살아 있는 dispatch, 터미널을 쥔 worker, 돌고 있는 머지 큐나 마무리가 있으면 거부한다. 옮긴 지시서, PR 본문, 설정, 오버레이 안의 옛 경로를 바꾸고, 바꾸지 않는 파일의 옛 경로는 보이기만 한다. board.json 은 옮기지 않는다
+- 설정, 오버레이, 지시서 폴더를 읽는 진입점은 옛 위치에 파일이 남아 있으면 옮기는 명령을 알리고 종료 코드 2 로 멈춘다. `finish-pr.py`, `merge-with-finish.py`(`--finish-config`), `handoff-cleanup.py`(`--config` 나 `--orch-dir` 를 주면 막지 않음), `spec-lint.py`(`--overlay`), `cleanup-sweep.py`(`--specs-dir`), `launch-worker.sh`, `orch_paths.py --ensure` 가 여기 해당한다. 셸 스크립트용으로 `orch_paths.py check` 를 둔다. `wait-important.py`, `notify-conflicts.py` 는 알리기만 한다
+- 스크립트마다 따로 두던 보드 탐색(`.omc/handoffs/board.json`, `.omc/board.json`)을 지우고 work-board 의 `board.py` 규칙을 쓴다. 보드는 work-board 소유라 옮기지 않는다
+- `migrate-orch-dir.py` 는 빈 옛 폴더를 옮기지 않고 지운다. 옮긴 뒤 고치는 단계(옛 경로 문자열, 설정, git 무시, 빈 폴더)는 `.orch` 전체를 보고 옮길 것이 없어도 돈다. 옮기다 실패하면 남은 사본을 거두고 멈춘다. 상대경로 심볼릭 링크는 같은 대상을 가리키게 다시 만든다. `.omc/previews` 만 있고 설정이 없으면 `cleanup.previews` 만 담은 설정을 만든다
+- `.omc/orch/` 에 있던 다른 폴더(예: 피드백 메모)는 `.orch/` 로 옮겨 가 `handoff-cleanup.py` 의 오래된 폴더 정리 후보가 된다. 남길 것은 `.orch/.keep` 에 적는다
+- `handoff-cleanup.py`: `.orch/` 만 정리한다. 미리보기 폴더는 content-preview 의 것이라 `--previews`(설정 `cleanup.previews`)로 줄 때만 본다. `.omc` 의 다른 파일은 보지 않는다. `--omc`, `--handoffs` 를 지우고 `--orch-dir` 를 둔다. 휴지통 기본 이름은 `orch-cleanup-<날짜>` 다
+- `wait-important.py` 와 `notify-conflicts.py` 의 기록은 `.orch/state/` 에 둔다
+- `merge-with-finish.py`: 설정은 `.orch/config.json`, 마무리 출력과 pid 는 `.orch/queue/` 가 기본이다. 보드 기본 위치는 `finish-pr.py` 와 같이 work-board 규칙을 쓴다
+- `references/cleanup.md`: 맡긴 작업은 다른 저장소의 것이어도 머지한 자리에서 정리한다는 원칙과 이유를 두고, 다른 저장소에 맡긴 PR 을 직접 머지했을 때의 정리 명령을 한 묶음으로 적었다. SKILL.md 7단계는 그 절을 가리킨다(사용자 결정 2026-10-23)
+- `references/overlay.md` 에 폴더 구조와 옮기는 방법을 적고, 다른 문서의 경로 예시를 `.orch` 로 바꿨다
 ## 1.46.0 (2026-10-23)
 
 - **경로 변경: `scripts/merge-queue.sh` 가 `scripts/merge_queue.py` 로 바뀌었다.** `merge-queue.sh` 를 Python 으로 옮겼다. 옛 경로를 직접 부르는 곳이 깨지지 않도록 `merge-queue.sh` 는 `exec python3 "$(dirname "$0")/merge_queue.py" "$@"` 한 줄만 남기고 이번 한 버전 동안 둔다. 다음 버전에서 지우니 호출하는 곳을 `merge_queue.py` 로 바꾼다. 옵션, 종료 코드, 출력 줄(`STOP`, `QUEUE-DONE`, `QUEUE-HELD`, `AFTER-MERGED-FAILED` 등)은 그대로고 기존 머지 큐 테스트를 호출 경로만 바꿔 그대로 돌려 통과시켰다. `merge-with-finish.py` 의 `MERGE_QUEUE` 기본값이 새 파일이다. 환경 변수 `MERGE_QUEUE_SLEEP_SCALE` 로 모든 대기 시간에 배율을 곱한다(테스트용, 기본 1). 이식하면서 `--verify-merged` 의 `bash -c` 실행, 사본 이름, 정리 인자 등 동작은 바꾸지 않았다.

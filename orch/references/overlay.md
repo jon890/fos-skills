@@ -1,8 +1,8 @@
 # 저장소 오버레이
 
-`<repo-root>/.claude/orch-overlay.md` 는 이 스킬의 코어가 모르는 저장소 고유 사정을 담는다.
+`<repo-root>/.orch/overlay.md` 는 이 스킬의 코어가 모르는 저장소 고유 사정을 담는다.
 코디네이터가 그 저장소의 worker 를 띄우기 전에 먼저 읽고, 코어와 어긋나면 오버레이를 따른다.
-없으면 코어 기본값으로 동작한다.
+없으면 코어 기본값으로 동작한다. `.orch/` 폴더의 구조는 아래 「orch 작업 폴더」 가 소유한다.
 
 **오버레이에는 저장소마다 달라지는 값과 절차만 둔다.** 코어의 단계와 규칙을 옮겨 적지 않는다.
 옮겨 적으면 코어가 바뀔 때 오버레이의 사본이 낡는다.
@@ -26,16 +26,16 @@
 | 비밀값 규칙 | 읽지 않을 파일, 비밀값을 넘기는 방법 | 2 |
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
-| 지시서 폴더 | `cleanup-sweep.py --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더의 PR 본문 파일 `pr-<이름>.md` 를 지운다 (예: `.omc/handoffs/specs/`) | 4, 7 |
+| 지시서 폴더 | `cleanup-sweep.py --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더의 PR 본문 파일 `pr-<이름>.md` 를 지운다 (예: `.orch/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec-lint.py` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
 | 진행 보드 | 보드 파일 위치, 목표 항목 id 와 추적 항목 파일(`board-sync.py --goal --goal-items`) | 4, 7 |
-| 머지 뒤 마무리 | `<repo>/.claude/orch-finish.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
-| handoff 산출물 정리 | 같은 파일의 `cleanup` 절. handoff 와 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
+| 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
+| 산출물 정리 | 같은 파일의 `cleanup` 절. 함께 정리할 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
 | 머지 큐 기본 옵션 | 같은 파일의 `queue` 절. 머지 큐에 매번 붙일 필수 체크, 머지 전 명령, 합친 사본 검사, 문서 glob, 머지 방식 | 7 |
 
 ## 마무리 설정 파일
 
-`merge-with-finish.py`, `finish-pr.py`, `handoff-cleanup.py` 는 `<repo>/.claude/orch-finish.json` 이 있으면 읽는다.
+`merge-with-finish.py`, `finish-pr.py`, `handoff-cleanup.py` 는 `<repo>/.orch/config.json` 이 있으면 읽는다.
 `--config FILE` 로 다른 파일을 줄 수 있고, 명령줄 옵션이 파일 값보다 우선한다. 파일에 없는 값은 옵션이나 기본값을 쓴다.
 스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.py` 가, `cleanup` 절은 `handoff-cleanup.py` 가, `queue` 절은 `merge-with-finish.py` 가 읽는다.
 절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다.
@@ -50,8 +50,8 @@
 | `finish` | `complete_cmd` | 업무 완료 명령 틀. `{number}` 가 업무 번호로 바뀌고 셸을 거치지 않는다 |
 | `finish` | `board`, `board_bin` | 보드 파일과 보드 명령. 보드 항목은 `pr` 필드에 그 PR 이 든 항목을 `merge-with-finish.py` 가 찾아 업무의 마지막 PR(`!`)에서만 done 으로 바꾼다. 직접 줄 때는 `--board-item 101=ITEM` 이다 |
 | `finish` | `specs_dir` | 지시서 폴더. 그 PR 브랜치의 지시서를 지운다 |
-| `cleanup` | `omc`, `handoffs`, `previews`, `board` | 산출물 루트, handoff 폴더, 미리보기 폴더, 보드 파일 |
-| `cleanup` | `trash` | 휴지통 폴더. 기본은 `~/.Trash/omc-cleanup-<날짜>` |
+| `cleanup` | `orch_dir`, `previews`, `board` | orch 작업 폴더, 함께 정리할 미리보기 폴더, 보드 파일. 미리보기는 content-preview 의 산출물이라 주지 않으면 보지 않는다 |
+| `cleanup` | `trash` | 휴지통 폴더. 기본은 `~/.Trash/orch-cleanup-<날짜>` |
 | `cleanup` | `queue_days`, `folder_days`, `data_days`, `data_ext` | 큐 로그, 폴더, 데이터 파일의 기준 일수와 데이터 확장자 |
 | `queue` | `required`, `before`, `method` | `merge_queue.py` 의 `--required`, `--before`, `--method`. `required` 는 문자열 목록도 받는다 |
 | `queue` | `verify_merged`, `verify_merged_when`, `docs_glob` | `--verify-merged`, `--verify-merged-when`, `--docs-glob`. `docs_glob` 은 문자열 목록도 받는다 |
@@ -71,12 +71,12 @@
     "deploy_branch": "develop",
     "task_pattern": "^\\[?(PROJ-[0-9]+)",
     "complete_cmd": "task-cli workflow PROJ {number} Done",
-    "board": ".omc/handoffs/board.json",
-    "specs_dir": ".omc/handoffs/specs"
+    "specs_dir": ".orch/specs"
   },
   "cleanup": {
     "gh_host": "github.example.com",
-    "trash": "~/.Trash/omc-cleanup"
+    "previews": ".omc/previews",
+    "trash": "~/.Trash/orch-cleanup"
   },
   "queue": {
     "required": ["backend", "frontend"],
@@ -87,8 +87,58 @@
 }
 ```
 
-서버 이름, 접속 설정 파일 경로, 호스트 이름, 프로젝트 코드처럼 공개되면 안 되는 값이 있으면 오버레이와 마무리 설정 파일을 공개 저장소에 커밋하지 않는다.
-로컬 전용 위치에 두고 `.git/info/exclude` 로 뺀다.
+## orch 작업 폴더
+
+orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
+경로는 `scripts/orch_paths.py` 가 정하고, 셸과 문서에서는 `python3 "$SKILL_DIR/scripts/orch_paths.py" specs` 처럼 이름으로 받는다.
+루트를 옮기려면 `ORCH_DIR` 을 orch 스크립트를 부르는 모든 환경(코디네이터 셸, 훅)에 같은 값으로 둔다.
+
+| 경로 | 담는 것 |
+| --- | --- |
+| `overlay.md` | 이 문서가 다루는 저장소 규칙 |
+| `config.json` | 위 「마무리 설정 파일」 |
+| `specs/` | 지시서와 `spec-common.md`. PR 본문 `pr-<이름>.md` 는 그 부모인 `.orch/` 에 둔다 |
+| `queue/` | 머지 큐와 마무리(`finish-<PR>.out`, `.pid`) 출력 |
+| `state/` | `wait-important.py`, `notify-conflicts.py` 가 기억하는 것. 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
+| `bin/` | 저장소 포장 스크립트 |
+
+보드(`board.json`)는 work-board 소유라 여기 두지 않는다. 위치는 `work-board/README.md` 가 정하고, 다른 곳이면 `finish.board` 로 준다.
+
+스크립트가 `.orch/` 아래를 처음 만들 때 `.git/info/exclude` 에 `/.orch/` 를 더해 git 이 무시하게 한다. 저장소의 `.gitignore` 는 바꾸지 않는다.
+오버레이와 설정을 저장소에 커밋해 함께 쓰려면 `git add -f .orch/overlay.md` 로 추적한다.
+공개 저장소에 올리면 안 되는 값(서버 이름, 접속 설정 경로, 호스트 이름, 프로젝트 코드)이 있으면 추적하지 않는다.
+
+## 옛 구조에서 옮기기
+
+`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/specs/` 에 파일이 남은 저장소에서는
+설정, 오버레이, 지시서 폴더를 읽는 진입점이 옮기는 명령을 알리고 종료 코드 2 로 멈춘다.
+옛 위치를 읽지 않으므로 그대로 돌면 저장소 값이 빠지거나 빈 새 폴더에서 조용히 시작하기 때문이다.
+
+| 진입점 | 멈추는 때 |
+| --- | --- |
+| `finish-pr.py`, `handoff-cleanup.py` | 설정을 `--config` 로 주지 않았을 때 |
+| `merge-with-finish.py` | 설정을 `--finish-config` 로 주지 않았을 때. 머지 큐를 걸지 않는다 |
+| `spec-lint.py` | `--overlay` 를 주지 않았을 때 |
+| `cleanup-sweep.py` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
+| `launch-worker.sh` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
+| `orch_paths.py --ensure` | 늘 |
+
+`wait-important.py` 와 `notify-conflicts.py` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
+
+머지 큐와 worker 가 모두 끝난 때에 옮긴다. 먼저 미리보기로 옮길 것과 옛 경로를 적은 파일을 본다.
+`$REPO` 는 대상 저장소의 주 checkout 이다.
+
+```bash
+python3 "$SKILL_DIR/scripts/migrate-orch-dir.py" --repo "$REPO"
+python3 "$SKILL_DIR/scripts/migrate-orch-dir.py" --repo "$REPO" --apply
+```
+
+- 기본으로 옮기는 쌍과 판정은 스크립트 머리 주석과 `orch_paths.py` 의 `DEFAULT_MOVES` 가 소유한다. 다른 곳에 둔 파일은 `--move 옛=새` 로 더한다
+- 살아 있는 dispatch, 터미널을 쥔 worker, 돌고 있는 머지 큐나 마무리가 있으면 `--apply` 를 거부한다(종료 코드 3). worker 는 지시서를 절대경로로 읽으므로 그 사이에 옮기면 끊긴다
+- 「옛 경로 참조」 로 나온 파일(포장 스크립트, 추적 문서, 로컬 설정)은 바꾸지 않는다. 그 저장소가 고친다
+- 「추적 파일」 로 나온 것은 보인 `git mv` 명령으로 옮겨 커밋한다. 대상 폴더는 `--apply` 가 만들어 둔다
+- 「스크립트」 가 붙은 옛 경로 참조는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 위 진입점이 다시 멈춘다
+- 옮기다 실패하면 그때까지 옮긴 것을 보이고 멈춘다. 원인을 고친 뒤 다시 돌리면 남은 것을 옮기고, 옮긴 뒤 고치는 단계는 `.orch` 전체를 다시 본다
 
 ## 예시
 
@@ -98,7 +148,7 @@
 - 기준 브랜치: develop. 필수 체크 `backend`, 관리자 우회 불가
 - 머지 큐는 `--require-up-to-date --required backend` 로 돌린다
 - 같은 파일을 고친 PR 은 `--verify-merged 'cd "$1" && ./gradlew test' --copy-dir worktrees/repo` 로 머지한다
-- 공통 지시서: `.omc/handoffs/spec-common.md`
+- 공통 지시서: `.orch/specs/spec-common.md`
 - 검증: `scripts/verify.sh format`, `scripts/verify.sh test`
 - draft PR 은 CI 를 돌리지 않는다. worker 는 `gh pr create --draft` 로 열고, 코디네이터가 `ci-ready.py` 로 ready 로 바꾼다
 - 머지 전 명령: DB 마이그레이션이 든 PR 은 `PR:./bin/backup-db.sh <db> "before-pr-$PR"`. DB 마다 최근 2개만 보관

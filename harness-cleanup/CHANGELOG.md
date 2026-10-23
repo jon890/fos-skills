@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.20.0
+
+orch 의 저장소 오버레이가 `.orch/overlay.md` 로 옮겨 가, `target_files.py` 가 그 파일도 감사 대상으로 고른다. `.claude/*-overlay.md` 는 그대로 고른다.
+
 ## 3.19.1
 
 korean-check 새 금지어(손으로, 거르다)에 걸린 문구를 고친다.

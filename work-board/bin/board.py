@@ -88,13 +88,14 @@ MISSING_PROGRESS = '''doing 항목에는 진행률이 필요하다: %s
   단계 줄을 적는다: --next '1. 구현' --next '2. 리뷰 반영' --next '3. 머지' (끝낸 단계는 앞에 ✓ 나 [x])
   단계로 나타낼 수 없으면 --progress 끝낸단계/전체단계 (예: --progress 2/5) 를 준다'''
 
-def board_path(explicit):
+def board_path(explicit, cwd=None):
+    """보드 파일 경로. orch 의 orch_paths.py 도 이 함수로 기본 위치를 받는다."""
     if explicit:
         return explicit
     try:
-        root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True, stderr=subprocess.DEVNULL).strip()
+        root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True, stderr=subprocess.DEVNULL, cwd=cwd).strip()
     except Exception:
-        root = os.getcwd()
+        root = cwd or os.getcwd()
     legacy = os.path.join(root, '.omc/handoffs/board.json')
     return legacy if os.path.exists(legacy) else os.path.join(root, '.omc/board.json')
 

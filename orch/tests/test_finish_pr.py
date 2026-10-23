@@ -304,7 +304,7 @@ class FinishFlowTest(unittest.TestCase):
         self.assertTrue(self.wt.exists())
 
     def test_config_file_supplies_options_and_command_line_wins(self):
-        cfg = self.tmp / "orch-finish.json"
+        cfg = self.tmp / "config.json"
         cfg.write_text(json.dumps({"finish": {"run": "run_cfg", "deploy_workflow": "deploy.yml", "deploy_branch": "main"},
                                    "cleanup": {"trash": "/nowhere"}}))
         code, out = self.finish("--config", str(cfg), "--run", "run_cli")
@@ -314,8 +314,8 @@ class FinishFlowTest(unittest.TestCase):
         self.assertTrue(any(c.startswith("gh run list --branch main --workflow deploy.yml") for c in self.calls()))
 
     def test_default_config_is_read_from_the_repo(self):
-        (self.repo / ".claude").mkdir()
-        (self.repo / ".claude/orch-finish.json").write_text(json.dumps({"finish": {"run": "run_default"}}))
+        (self.repo / ".orch").mkdir()
+        (self.repo / ".orch/config.json").write_text(json.dumps({"finish": {"run": "run_default"}}))
         code, out = self.finish()
         self.assertEqual(0, code, out)
         self.assertIn("--run run_default", [c for c in self.calls() if c.startswith("sweep ")][0])

@@ -44,7 +44,7 @@ orca 오류로 끝나면 그 JSON 을 그대로 낸다. 아래 「대기가 바�
 처리한 dispatch 는 본다고 치지 않는다. 같은 task 에 나중 dispatch 가 있는 것(다시 띄웠다), 끝난 task(completed, 취소), `--ignore-lost ctx_...` 로 뺀 것이다.
 일부러 끝낸 dispatch 도 끊긴 것으로 보지 않는다. 터미널을 닫아 끝난 것(`operator_close`)과 worker 가 `worker_done --outcome failed` 로 알린 것이다.
 dispatch 가 `completed`, `abandoned` 이거나 성공·취소 결과가 기록됐으면 `terminal_missing` 이어도 끊김에서 제외한다. `dispatch-show` 의 종료 이유와 실패 기록은 camelCase 와 기존 snake_case 를 모두 읽는다. 실패 이유가 `abandoned` 라고 기록된 명시적 포기도 제외하며, 복구 과정에서 터미널을 잃은 abandoned worker 는 계속 끊김으로 본다.
-**한 번 알린 dispatch 는 다음 대기에서 다시 알리지 않는다.** 스크립트가 `<git 루트>/.omc/state/wait-important-lost.json` 에 Run 별로 적는다.
+**한 번 알린 dispatch 는 다음 대기에서 다시 알리지 않는다.** 스크립트가 `.orch/state/wait-important-lost.json` 에 Run 별로 적는다.
 worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 31개씩 다시 깨운 일이 있었다. 그러므로 `WORKER_LOST` 줄은 받은 그 자리에서 처리한다.
 알렸는데 아직 끊긴 채인 dispatch 는 다음 대기가 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남긴다.
 그 줄이 나오면 다시 대기를 걸기 전에 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 마지막 줄의 `LAST_DELIVERY` id 는 다음 대기의 `--ack` 로 넘긴다.
@@ -82,7 +82,7 @@ python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID" --go
 `--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .omc/orch/specs --kill-holders --apply
+python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .orch/specs --kill-holders --apply
 ```
 
 `cleanup-sweep.py` 의 판정과 건너뛰는 조건은 그 파일 머리 주석이 소유한다.
