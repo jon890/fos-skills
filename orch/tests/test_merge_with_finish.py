@@ -195,6 +195,16 @@ class WrapperRunTest(unittest.TestCase):
         self.assertIn("--required ci", line)
         self.assertNotIn("squash", line)
 
+    def test_queue_section_can_enable_docs_overlap_update(self):
+        self.write_config({"required": "ci", "docs_glob": ["docs/*", "*.md"], "update_docs_on_overlap": True})
+        code, out = self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertEqual(0, code, out)
+        self.assertIn("--update-docs-on-overlap", self.lines("queue")[0])
+        self.log.unlink()
+        self.write_config({"update_docs_on_overlap": False})
+        self.wrap("--repo", str(self.tmp), "--no-finish", "449")
+        self.assertNotIn("--update-docs-on-overlap", self.lines("queue")[0])
+
     def test_finish_config_option_picks_the_file(self):
         other = self.tmp / "other.json"
         other.write_text(json.dumps({"queue": {"method": "rebase"}}))

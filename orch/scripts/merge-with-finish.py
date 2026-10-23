@@ -30,7 +30,7 @@ merge-queue.sh 옵션은 그대로 쓴다(--repo, --required, --require-up-to-da
 명령줄에 없는 머지 큐 옵션을 채운다. 키는 before, required, verify_merged, verify_merged_when, docs_glob, method,
 after_merged 이고 각각 --before, --required, --verify-merged, --verify-merged-when, --docs-glob, --method,
 --after-merged 가 된다. required 와 docs_glob 은 문자열 목록도 받아 쉼표로 잇는다.
-skipped_is_missing 은 true 면 --skipped-is-missing 을 붙이는 참거짓 값이다.
+skipped_is_missing 과 update_docs_on_overlap 은 true 면 같은 이름의 옵션을 붙이는 참거짓 값이다.
 명령줄에 준 옵션이 우선한다. 모르는 키가 있으면 사용법 오류다.
 저장소마다 같은 옵션을 매번 옮겨 적다 빠뜨리는 일을 막는다.
 MERGE_QUEUE, FINISH_PR 환경 변수로 두 스크립트 경로를 바꾼다.
@@ -59,7 +59,7 @@ QUEUE_KEYS = {"before": "--before", "required": "--required", "verify_merged": "
               "verify_merged_when": "--verify-merged-when", "docs_glob": "--docs-glob", "method": "--method",
               "after_merged": "--after-merged"}
 # queue 절의 참거짓 키와 값 없는 머지 큐 옵션
-QUEUE_FLAGS = {"skipped_is_missing": "--skipped-is-missing"}
+QUEUE_FLAGS = {"skipped_is_missing": "--skipped-is-missing", "update_docs_on_overlap": "--update-docs-on-overlap"}
 SPEC = re.compile(r"(\d+)(!?)(:.*)?$", re.S)
 
 

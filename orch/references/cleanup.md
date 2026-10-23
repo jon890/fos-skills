@@ -96,9 +96,20 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to
 
 **파일이 겹치지 않아도 합치면 깨질 수 있다.** 두 PR 이 각자 통과했지만 합치니 같은 상한을 함께 넘은 일이 있었다.
 그런 저장소는 오버레이가 `--verify-merged-when code` 를 정한다. 문서만 바꾼 PR 까지 검사하려면 `always` 다. 기본 `overlap` 은 겹칠 때만 검사한다.
-`--docs-glob 'docs/*,*.md'` 를 주면 바꾼 파일이 모두 그 glob 에 맞는 PR 은 `overlap` 과 `code` 에서 합친 사본 검사 없이 머지한다. 문서는 합쳐서 깨질 검사가 없고, 충돌은 `mergeable` 로 이미 걸렀다.
+`--docs-glob 'docs/*,*.md'` 를 주면 바꾼 파일이 모두 그 glob 에 맞는 PR 은 `overlap` 과 `code` 에서 합친 사본 검사를 생략한다. GitHub 의 충돌 확인과 CI 검사는 그대로 한다. `always` 는 문서 PR 도 검사한다.
+`--stop-on-overlap` 만 쓰면 문서 PR 도 겹침에서 멈춘다.
+
+문서 PR 도 최신 base 와 합친 CI 를 확인해야 하면 **`--update-docs-on-overlap` 을 더한다.**
+파일이 겹치고 GitHub `mergeStateStatus` 가 `CLEAN` 인 문서 PR 에 `update-branch` 로 base 를 합친 뒤 새 HEAD 의 필수 CI 를 기다린다.
+단순 겹침은 충돌이 아니므로 이 방식으로 진행할 수 있다. `CLEAN` 이 아니거나 합치기·새 CI 가 실패하면 멈춘다.
+새 CI 가 아직 나타나지 않은 동안 머지하지 않도록 `--required` 나 저장소 규칙의 필수 체크 목록이 필요하다.
+기존의 검사 생략 방식을 유지할 수 있도록 기본은 꺼져 있으며, gersang-lab 처럼 문서 겹침에서 큐가 멈추던 오버레이에서 켠다.
 
 `CMD` 는 사본 경로를 `$1` 로 받고 그 사본 안에서 돈다. 사본은 끝나면 지운다.
+`MERGE_COPY` 도 사본의 절대경로이며 `PR` 은 PR 번호다.
+`PR_HEAD`, `BASE_HEAD` 는 검사할 양쪽 커밋이고 `CHANGED_FILES`, `OVERLAP_FILES` 는 각각 PR 의 변경 파일과 base 와 겹친 파일 목록이다.
+목록은 줄바꿈으로 잇고 삭제 파일도 포함한다. 검증 명령은 실행할 테스트 파일이 실제로 있는지 확인해야 한다.
+기존 `merge-tested.sh` 전체는 자체 사본 생성과 머지까지 하므로 그대로 넘기지 않는다. 검증 부분만 넘기며 사본 생성, 충돌 검사, HEAD 대조와 머지는 큐가 한다.
 KILL 로 끊겨 지우지 못한 사본(`merge-queue-pr<PR>-<pid>`)은 다음 실행이 시작할 때 그 pid 가 죽었으면 지운다.
 사본을 두는 폴더는 `--copy-dir` 로 준다. 기본은 `TMPDIR` 이다. 저장소 hook 이 `worktrees/` 밖의 워크트리를 막으면 오버레이가 허용된 폴더를 정한다.
 `$VERIFY_CMD` 와 `$COPY_DIR` 은 오버레이의 값이다.
@@ -127,6 +138,8 @@ PR 조회(`gh pr view`)가 일시로 실패하면 머지 큐가 10초 간격으�
 ```bash
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --docs-glob 'docs/*,*.md' --after-merged "$AFTER_CMD" 101 102
 ```
+
+gersang-lab 의 검증·무거운 작업·배포 명령 예시는 [`gersang-overlay.md`](gersang-overlay.md) 에 있다.
 
 ### 머지 전 명령
 

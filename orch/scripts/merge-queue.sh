@@ -46,12 +46,17 @@
 #                         돌린다. 사본의 절대경로를 첫 인자($1)로 받는다. 0 이면 이어 가고 아니면 멈춘다.
 #                         합치다 충돌하거나, 검사하는 동안 원격 base 가 움직였으면 멈춘다. 사본은 끝나면 지운다.
 #                         검사 명령은 저장소마다 달라 오버레이가 정한다(예: --verify-merged 'cd "$1" && make test')
+#                         MERGE_COPY(사본), PR(번호), PR_HEAD, BASE_HEAD, CHANGED_FILES, OVERLAP_FILES 를 환경 변수로
+#                         받는다. 파일 목록은 줄바꿈으로 이으며 삭제된 파일도 포함한다. $1 도 사본 경로다
 #   --verify-merged-when W  합친 사본 검사를 언제 할지. overlap(기본, 겹칠 때만), code(문서만 바꾼 PR 이 아니면 늘),
 #                         always(모든 PR). 파일이 겹치지 않아도 합쳐서 깨질 수 있다(두 PR 이 각자 통과했지만 합치니
 #                         같은 상한을 함께 넘었다). code 와 always 는 --verify-merged 가 있어야 한다
 #   --docs-glob G1,G2     문서 파일의 glob. PR 이 바꾼 파일이 모두 이것에 맞으면 overlap 과 code 에서 합친 사본 검사 없이
 #                         머지한다. 충돌은 mergeable 로 이미 걸렀다. case 패턴이라 `*` 가 `/` 도 넘는다
-#                         (예: --docs-glob 'docs/*,*.md'). 여러 번 주면 이어 붙인다. --verify-merged 가 있어야 한다
+#                         (예: --docs-glob 'docs/*,*.md'). 여러 번 주면 이어 붙인다.
+#                         --verify-merged, --after-merged, --update-docs-on-overlap 가운데 하나와 함께 쓴다
+#   --update-docs-on-overlap  문서 PR 의 파일이 base 와 겹치면 GitHub mergeStateStatus 가 CLEAN 일 때 base 를 합치고
+#                         필수 CI 를 다시 기다린다. --docs-glob 과 필수 체크 목록이 필요하다. --stop-on-overlap 과도 쓴다
 #   --copy-dir DIR        임시 사본을 둘 폴더. 기본은 TMPDIR(없으면 /tmp). 상대경로는 --repo 기준이다.
 #                         저장소 hook 이 워크트리 위치를 막으면 오버레이가 허용된 폴더를 준다.
 #                         링크를 푼 실경로로 바꿔 쓴다. macOS 의 TMPDIR(/var/folders/...)는 /var 가 /private/var 를
@@ -104,6 +109,7 @@ OVERLAP=0
 VERIFY_MERGED=""
 VERIFY_WHEN=overlap
 DOCS_GLOB=""
+UPDATE_DOCS=0
 CONTINUE_ON_HOLD=0
 SKIPPED_MISSING=0
 AFTER_MERGED=""
@@ -129,6 +135,7 @@ while [ $# -gt 0 ]; do
     --verify-merged) need "$1" "${2:-}"; VERIFY_MERGED=$2; OVERLAP=1; shift 2 ;;
     --verify-merged-when) need "$1" "${2:-}"; VERIFY_WHEN=$2; shift 2 ;;
     --docs-glob) need "$1" "${2:-}"; DOCS_GLOB=${DOCS_GLOB:+$DOCS_GLOB,}$2; shift 2 ;;
+    --update-docs-on-overlap) UPDATE_DOCS=1; OVERLAP=1; shift ;;
     --copy-dir) need "$1" "${2:-}"; COPY_DIR=$2; shift 2 ;;
     --continue-on-hold) CONTINUE_ON_HOLD=1; shift ;;
     --skipped-is-missing) SKIPPED_MISSING=1; shift ;;
@@ -147,8 +154,9 @@ case "$CHECK_TIMEOUT" in ''|*[!0-9]*) echo "--check-timeout 은 분 단위 정�
 case "$VERIFY_WHEN" in overlap|code|always) ;; *) echo "--verify-merged-when 은 overlap, code, always 중 하나다" >&2; exit 2 ;; esac
 if [ -z "$VERIFY_MERGED" ]; then
   [ "$VERIFY_WHEN" = overlap ] || { echo "--verify-merged-when $VERIFY_WHEN 은 --verify-merged 와 함께 쓴다" >&2; exit 2; }
-  [ -z "$DOCS_GLOB" ] || [ -n "$AFTER_MERGED" ] || { echo "--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다" >&2; exit 2; }
+  [ -z "$DOCS_GLOB" ] || [ -n "$AFTER_MERGED" ] || [ "$UPDATE_DOCS" = 1 ] || { echo "--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다" >&2; exit 2; }
 fi
+[ "$UPDATE_DOCS" = 0 ] || [ -n "$DOCS_GLOB" ] || { echo "--update-docs-on-overlap 은 --docs-glob 이 필요하다" >&2; exit 2; }
 case "$REQUIRED" in *[\"\\]*) echo "--required 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
 case "$ALLOW_FAIL" in *[\"\\]*) echo "--allow-fail 에 따옴표나 역슬래시를 넣을 수 없다" >&2; exit 2 ;; esac
 # --required 에 든 이름의 실패는 허용할 수 없다
@@ -242,15 +250,18 @@ docs_only() {
 
 # origin/BASE 에 PR HEAD 를 merge 한 임시 사본에서 --verify-merged 명령을 돌린다. 실패하면 멈춘다
 verify_merged() {
-  local parent bh now_bh code
+  local parent bh now_bh code mb changed
   mkdir -p "$COPY_DIR" && parent=$(cd "$COPY_DIR" && pwd -P) || stop "$n 사본 폴더를 만들지 못했다: $COPY_DIR"
   bh=$(git rev-parse -q --verify "origin/$base") || stop "$n origin/$base 를 읽지 못했다"
+  mb=$(git merge-base "$bh" "$ph") || stop "$n 파일 목록의 기준을 읽지 못했다"
+  changed=$(git diff --name-only "$mb" "$ph") || stop "$n 바뀐 파일 목록을 읽지 못했다"
   COPY="$parent/merge-queue-pr$n-$$"
   git worktree add -q --detach "$COPY" "$bh" >/dev/null 2>&1 || stop "$n 사본을 만들지 못했다: $COPY"
   git -C "$COPY" -c core.hooksPath=/dev/null -c user.name=merge-queue -c user.email=merge-queue@localhost \
     merge -q --no-edit "$ph" >/dev/null 2>&1 || stop "$n base($base) 와 합치면 충돌한다"
   echo "$(now) $n 합친 사본에서 검사: $VERIFY_MERGED"
-  (cd "$COPY" && TMPDIR="$REAL_TMP" GH_HOST="$API_HOST" bash -c "$VERIFY_MERGED" verify-merged "$COPY")
+  (cd "$COPY" && TMPDIR="$REAL_TMP" GH_HOST="$API_HOST" MERGE_COPY="$COPY" PR_HEAD="$ph" BASE_HEAD="$bh" \
+    CHANGED_FILES="$changed" OVERLAP_FILES="$ov" bash -c "$VERIFY_MERGED" verify-merged "$COPY")
   code=$?
   drop_copy
   [ "$code" = 0 ] || stop "$n 합친 사본의 검사 실패(종료 코드 $code)"
@@ -327,6 +338,7 @@ process_pr() {
   fi
   if [ -z "$req" ]; then
     [ "$UP_TO_DATE" = 0 ] || stop "$n 필수 체크 목록이 비어 있어 --require-up-to-date 를 쓸 수 없다. --required 로 준다"
+    [ "$UPDATE_DOCS" = 0 ] || stop "$n 문서 PR 갱신에는 필수 체크 목록이 필요하다. --required 로 준다"
     echo "$(now) $n 필수 체크 목록이 비어 있다. 지금 있는 체크만 기다린다"
   fi
   for x in ${ALLOW_FAIL//,/ }; do
@@ -357,14 +369,24 @@ process_pr() {
   rounds=0
   while :; do
     wait_checks
-    [ "$UP_TO_DATE" = 1 ] || break
+    update_docs=0
+    if [ "$UPDATE_DOCS" = 1 ]; then
+      ov=$(overlap_files) || stop "$n 문서 PR 의 겹침 판정 실패"
+      if [ -n "$ov" ] && docs_only; then
+        ms=$(field "$n" mergeStateStatus .mergeStateStatus)
+        [ "$ms" = CLEAN ] || stop "$n 문서 PR 을 갱신하려면 GitHub CLEAN 이 필요하다(현재 $ms)"
+        update_docs=1
+      fi
+    fi
+    [ "$UP_TO_DATE" = 1 ] || [ "$update_docs" = 1 ] || break
     behind=$(gh api --hostname "$API_HOST" "repos/$OWNER/$REPO/compare/$base...$ph" --jq .behind_by 2>/dev/null)
     case "$behind" in ''|*[!0-9]*) stop "$n base 와 비교 실패" ;; esac
     [ "$behind" = 0 ] && break
     rounds=$((rounds + 1))
     [ $rounds -le 3 ] || stop "$n base 를 3번 merge 해도 최신이 아니다. base 가 계속 움직인다"
     echo "$(now) $n base($base) 보다 $behind 커밋 뒤처졌다. update-branch 후 체크를 다시 기다린다"
-    gh api --hostname "$API_HOST" -X PUT "repos/$OWNER/$REPO/pulls/$n/update-branch" >/dev/null 2>&1 || stop "$n update-branch 실패(충돌 가능)"
+    gh api --hostname "$API_HOST" -X PUT "repos/$OWNER/$REPO/pulls/$n/update-branch" \
+      -f "expected_head_sha=$ph" >/dev/null 2>&1 || stop "$n update-branch 실패(충돌 가능)"
     # update-branch 는 비동기라 PR HEAD 가 바뀔 때까지 기다린다
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
       sleep 5; nh=$(field "$n" headRefOid .headRefOid)
