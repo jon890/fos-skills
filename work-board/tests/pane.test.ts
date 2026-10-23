@@ -4,7 +4,7 @@ const BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
   { id: 'a', title: '단계 항목', status: 'doing', owner: 'worker', pr: '#9', worktree: 'wt-a',
     next: '✓ 1. 구현\n2. 리뷰\n3. 머지\n참고: 머지 뒤 갱신' },
   { id: 'b', title: '옛 항목', status: 'doing' },
-  { id: 'c', title: '대기 항목', status: 'wait', details: ['[x] 1 a', '2 b'] },
+  { id: 'c', title: '대기 항목', status: 'wait', details: [{ text: '1 a', done: true }, { text: '2 b', done: false }] },
 ] })
 
 const PANE = {
