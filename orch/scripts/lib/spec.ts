@@ -6,8 +6,9 @@
 //     live 가 null(목록을 읽지 못했다)이면 지시서와 PR 본문 모두 지우지 않는다. 남은 파일은 다음 정리가 지운다
 // 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 지운 일이 있어, 부르는 쪽이 이 확인을 건너뛸 수 없게 했다.
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, renameSync, unlinkSync } from 'node:fs'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+import { inside, isFile, realPath } from './fs.ts'
 import { orcaJson } from './orca.ts'
 
 // 줄 머리의 `브랜치: \`x\``. 목록 기호(-, *)와 굵은 글씨(**브랜치:**, **브랜치**:)를 모두 받는다.
@@ -53,17 +54,6 @@ export function permissionsOf(text: string): string[] {
   return found
 }
 
-// 없는 경로도 실경로로 바꾼다. 있는 앞부분까지 실경로로 풀고 나머지를 붙인다. Python 의 os.path.realpath 와 같다.
-function realPath(target: string): string {
-  const full = resolve(target)
-  try {
-    return realpathSync(full)
-  } catch {
-    const parent = dirname(full)
-    return parent === full ? full : join(realPath(parent), basename(full))
-  }
-}
-
 type Page<K extends string> = { [P in K]?: unknown } & { page?: { nextCursor?: unknown }; scope?: { source?: unknown } }
 
 // 한 조회를 page.nextCursor 가 없을 때까지 이어 읽는다. 한 페이지라도 실패하면 null 이다.
@@ -100,8 +90,12 @@ function readAll<K extends string>(args: string[], key: K): { rows: Record<strin
 //
 // worker-list 는 100행씩 나뉘므로 --limit 100 과 --cursor 로 끝까지 읽는다(lib/orca.ts 머리 주석). task-list 도
 // 응답에 page.nextCursor 가 있으면 같은 방식으로 읽는다.
-// run 이 null 이면 범위 없이 부르고, worker-list 의 scope.source 가 all 이 아니면 null 이다. 지시서 폴더는 저장소마다
-// 하나라, 부른 터미널에 묶인 Run 만 본 결과로는 다른 Run 의 살아 있는 지시서를 지켜 주지 못한다.
+// run 이 null 이면 범위 없이 부르고, 아래 가운데 하나라도 맞으면 null 이다. 지시서 폴더는 저장소마다 하나라,
+// 부른 터미널에 묶인 Run 만 본 결과로는 다른 Run 의 살아 있는 지시서를 지켜 주지 못한다.
+//   - worker-list 의 scope.source 가 all 이 아니다
+//   - task-list 응답에 scope.source 가 있는데 all 이 아니다
+//   - 살아 있는 dispatch 의 taskId 가 task-list 행에 없다. task-list 가 묶인 Run 의 Task 만 주었을 수 있어서다.
+//     task-list 가 scope 를 알리지 않아도 이것으로 범위가 좁았던 응답을 알아챈다
 // run 을 주면 그 Run 만 본다. 그 run 이 옛 Run 을 가리키면 새 Run 의 worker 가 쓰는 지시서가 이 목록에 없어 지워질 수 있다.
 // 옮기기 전 live_specs.py 도 같았다.
 // 조회가 하나라도 실패하면(중간 페이지 실패 포함) null 이다.
@@ -113,6 +107,11 @@ export function liveSpecPaths(run: string | null): Set<string> | null {
   const tasks = readAll(['orchestration', 'task-list', ...scope], 'tasks')
   if (tasks === null) return null
   const activeTasks = new Set(workers.rows.filter((w) => ACTIVE.has(String(w.dispatchStatus))).map((w) => w.taskId))
+  if (run === null) {
+    if (tasks.source !== undefined && tasks.source !== 'all') return null
+    const known = new Set(tasks.rows.map((task) => task.id))
+    for (const id of activeTasks) if (!known.has(id)) return null
+  }
   const paths = new Set<string>()
   for (const task of tasks.rows) {
     if (!ACTIVE.has(String(task.status)) && !activeTasks.has(task.id)) continue
@@ -141,19 +140,6 @@ export function specCandidates(opts: { specsDir: string; name: string; branch?: 
   const parent = dirname(resolve(specsDir))
   const prBodies = [...new Set(names.map((n) => join(parent, `pr-${n}.md`)))]
   return { specs, prBodies }
-}
-
-function isFile(target: string): boolean {
-  try {
-    return statSync(target).isFile()
-  } catch {
-    return false
-  }
-}
-
-// root 자신은 안으로 치지 않는다. 지울 대상은 root 아래의 파일이다.
-function inside(target: string, root: string): boolean {
-  return target.startsWith(root.endsWith(sep) ? root : root + sep)
 }
 
 // 같은 이름이 있으면 <이름>.2, <이름>.3 처럼 번호를 붙인다. 휴지통의 파일을 덮어쓰지 않는다.
@@ -229,7 +215,8 @@ export function deleteSpecs(opts: {
       keep(target, kind, '살아 있는 dispatch 가 쓴다')
       continue
     }
-    if (!inside(real, rootReal)) {
+    // root 자신은 안으로 치지 않는다. 지울 대상은 root 아래의 파일이다.
+    if (real === rootReal || !inside(real, rootReal)) {
       keep(target, kind, 'orch 루트 밖이다')
       continue
     }

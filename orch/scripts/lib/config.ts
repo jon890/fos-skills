@@ -13,8 +13,9 @@
 //
 // DEPRECATED_KEYS 의 키는 다음 major 에서 지운다. 그때까지 그 절을 읽는 명령이 값을 읽되 DEPRECATED 줄을 낸다.
 
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { isFile } from './fs.ts'
 import { pathOf } from './paths.ts'
 
 export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy'
@@ -38,14 +39,6 @@ export const DEPRECATED_KEYS: ReadonlyArray<{ section: Section; key: string; eve
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isFile(file: string): boolean {
-  try {
-    return statSync(file).isFile()
-  } catch {
-    return false
-  }
 }
 
 // opts.file 이 없으면 <orch 루트>/config.json 이다. 상대경로 file 은 작업 디렉터리 기준이다.

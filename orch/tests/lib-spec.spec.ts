@@ -296,6 +296,49 @@ describe('liveSpecPaths', () => {
     assert.deepEqual(liveSpecPaths(null), new Set(['/s/one.md', '/s/common.md', '/s/three.md']))
   })
 
+  test('run 이 null 이고 worker-list 가 all 이어도 task-list 의 scope.source 가 all 이 아니면 null 이다', () => {
+    rules(
+      { args: ['task-list'], stdout: envelope({ tasks, scope: { source: 'bound' } }) },
+      { args: ['worker-list'], stdout: envelope({ workers: [{ taskId: 't3', dispatchStatus: 'running' }], scope: { source: 'all' } }) },
+    )
+    assert.equal(liveSpecPaths(null), null)
+  })
+
+  test('run 이 null 이고 살아 있는 dispatch 의 taskId 가 task-list 행에 없으면 null 이다', () => {
+    // task-list 가 scope 를 알리지 않고 묶인 Run 의 Task 만 준 경우다. t7 은 다른 Run 의 살아 있는 dispatch 다.
+    rules(
+      { args: ['task-list'], stdout: envelope({ tasks }) },
+      {
+        args: ['worker-list'],
+        stdout: envelope({
+          workers: [
+            { taskId: 't3', dispatchStatus: 'running' },
+            { taskId: 't7', dispatchStatus: 'dispatched' },
+          ],
+          scope: { source: 'all' },
+        }),
+      },
+    )
+    assert.equal(liveSpecPaths(null), null)
+  })
+
+  test('run 이 null 이어도 task-list 행에 없는 taskId 가 끝난 dispatch 의 것이면 판정에 쓰지 않는다', () => {
+    rules(
+      { args: ['task-list'], stdout: envelope({ tasks, scope: { source: 'all' } }) },
+      {
+        args: ['worker-list'],
+        stdout: envelope({
+          workers: [
+            { taskId: 't3', dispatchStatus: 'running' },
+            { taskId: 't7', dispatchStatus: 'completed' },
+          ],
+          scope: { source: 'all' },
+        }),
+      },
+    )
+    assert.deepEqual(liveSpecPaths(null), new Set(['/s/one.md', '/s/common.md', '/s/three.md']))
+  })
+
   test('지시서 경로를 실경로로 바꾼다', () => {
     const spec = join(base, 'specs-real', 'spec-x.md')
     mkdirSync(join(spec, '..'), { recursive: true })

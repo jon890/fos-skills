@@ -10,6 +10,8 @@
 // run 은 동기(spawnSync)다. 시간을 넘긴 자식이 TERM 을 무시하면 그 자식이 스스로 끝날 때까지 돌아오지 않는다
 // (Node 22.18 실측: 500ms 제한에 4초 넘게 걸렸다). 병렬이 필요하거나 TERM 을 무시할 수 있는 자식은 runAsync 로 부른다.
 // runAsync 는 시간을 넘기면 TERM 을 보내고, 10초 뒤에도 살아 있으면 KILL 을 보낸다.
+// runAsync 는 자식이 끝난 뒤 2초 안에 출력 파이프가 닫히지 않으면(백그라운드 손자가 쥐고 있다) 파이프를 닫고 자식의 종료 코드를 낸다.
+// 손자가 그 뒤에 쓴 출력은 버린다. 끝난 자식에는 시간 제한을 적용하지 않으므로 이때 124 가 아니다.
 
 import { spawn, spawnSync } from 'node:child_process'
 import { constants } from 'node:os'
@@ -30,6 +32,7 @@ const DEFAULT_TIMEOUT_MS = 60_000
 // spawnSync 의 기본 1MB 를 넘으면 자식이 SIGTERM 으로 죽는다. orca 조회 출력이 수십 MB 까지 간 기록이 있다.
 const DEFAULT_MAX_BUFFER = 256 * 1024 * 1024
 const KILL_GRACE_MS = 10_000
+const PIPE_GRACE_MS = 2_000
 
 function childEnv(env: RunOptions['env']): NodeJS.ProcessEnv | undefined {
   if (!env) return undefined
@@ -41,7 +44,8 @@ function childEnv(env: RunOptions['env']): NodeJS.ProcessEnv | undefined {
   return merged
 }
 
-function signalCode(signal: NodeJS.Signals): number {
+// 시그널로 죽은 자식의 종료 코드. 셸과 같이 128 + 신호 번호이고, 모르는 신호는 128 이다.
+export function signalCode(signal: NodeJS.Signals): number {
   const number = (constants.signals as Record<string, number>)[signal]
   return 128 + (number ?? 0)
 }
@@ -93,6 +97,7 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
     let terminating = false
     let timer: NodeJS.Timeout | undefined
     let killTimer: NodeJS.Timeout | undefined
+    let pipeTimer: NodeJS.Timeout | undefined
 
     const text = () => ({ stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') })
     const finish = (result: RunResult) => {
@@ -100,6 +105,7 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
       settled = true
       clearTimeout(timer)
       clearTimeout(killTimer)
+      clearTimeout(pipeTimer)
       resolve(result)
     }
 
@@ -138,19 +144,27 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
         finish(spawnFailure(argv, e, stdout, stderr))
       }
     })
-    // 자식이 끝났는데 손자가 출력 파이프를 쥐고 있으면 close 가 오지 않는다. 시간 초과나 한도 초과로 끝낸 경우에는 파이프를 닫아 close 를 부른다.
-    child.on('exit', () => {
-      if (timedOut || overflowed) {
-        child.stdout.destroy()
-        child.stderr.destroy()
-      }
+    // 자식이 끝났는데 손자가 출력 파이프를 쥐고 있으면 close 가 오지 않는다. 시간 초과나 한도 초과로 끝낸 경우에는 바로,
+    // 스스로 끝난 경우에는 PIPE_GRACE_MS 뒤에 파이프를 닫아 close 를 부른다. 바로 닫지 않는 것은 파이프에 남은 출력을 받기 위해서다.
+    // 끝난 자식에 시간 제한 타이머가 뒤늦게 돌아 124 를 내지 않게 여기서 지운다.
+    let exited: { status: number | null; signal: NodeJS.Signals | null } | null = null
+    const closePipes = () => {
+      child.stdout.destroy()
+      child.stderr.destroy()
+    }
+    child.on('exit', (status: number | null, signal: NodeJS.Signals | null) => {
+      exited = { status, signal }
+      clearTimeout(timer)
+      if (timedOut || overflowed) closePipes()
+      else pipeTimer = setTimeout(closePipes, PIPE_GRACE_MS)
     })
     child.on('close', (status: number | null, signal: NodeJS.Signals | null) => {
       const { stdout, stderr } = text()
       if (timedOut) return finish({ code: 124, stdout, stderr, timedOut: true })
       if (overflowed) return finish(overflow(stdout, stderr, maxBuffer))
-      if (signal) return finish({ code: signalCode(signal), stdout, stderr, timedOut: false })
-      finish({ code: status ?? 1, stdout, stderr, timedOut: false })
+      const end = exited ?? { status, signal }
+      if (end.signal) return finish({ code: signalCode(end.signal), stdout, stderr, timedOut: false })
+      finish({ code: end.status ?? 1, stdout, stderr, timedOut: false })
     })
 
     timer = setTimeout(() => {

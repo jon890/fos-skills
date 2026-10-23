@@ -180,3 +180,10 @@ python3 scripts/run-orch-tests.py --jobs 4
 | `.github/workflows/ci.yml` | 수정 |
 | `README.md` | 수정 |
 | `.orch/overlay.md` | 수정 |
+
+## 구현 중 정한 것
+
+- `RunOptions` 에 테스트용 내부 칸 `maxBuffer` 를 둔다. 256MB 출력을 테스트가 실제로 만들지 않게 하기 위해서다.
+- `runAsync` 는 자식이 끝난 뒤 손자가 파이프를 쥐면 짧은 유예 뒤 파이프를 닫고 자식의 종료 코드를 낸다.
+- 파일 helper(실경로, 파일 여부, 하위 경로 판정)는 `lib/fs.ts`, 128+신호 번호 계산은 `proc.ts` 한 곳에 둔다.
+- `cwdHolders` 의 실제 lsof 사례는 lsof 가 없으면 건너뛰지 않고 실패한다.

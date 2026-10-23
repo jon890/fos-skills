@@ -1,7 +1,6 @@
 // pid 생존 확인과 작업 디렉터리 점유 프로세스 찾기의 한 벌이다.
 
-import { realpathSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { inside, real } from './fs.ts'
 import { run } from './proc.ts'
 
 // EPERM 은 그 pid 의 프로세스가 있지만 신호를 보낼 권한이 없다는 뜻이라 살아 있다고 본다.
@@ -23,12 +22,7 @@ export function alive(pid: number): boolean {
 // 빈 목록으로 내면 쓰는 중인 워크트리를 지울 수 있어서다.
 export function cwdHolders(dir: string): { ok: true; holders: { pid: number; cwd: string }[] } | { ok: false; error: string } {
   // macOS 의 임시 폴더는 /var 와 /private/var 로 갈리고 lsof 는 실경로를 내므로 dir 을 실경로로 바꿔 비교한다.
-  let target: string
-  try {
-    target = realpathSync(dir)
-  } catch {
-    target = resolve(dir)
-  }
+  const target = real(dir)
   const done = run(['lsof', '-d', 'cwd', '-Fpn'])
   // lsof 는 맞는 프로세스가 없으면 1 로 끝난다. 그 밖의 종료 코드는 안전을 증명하지 못한다.
   if (done.code !== 0 && done.code !== 1) {
@@ -41,7 +35,7 @@ export function cwdHolders(dir: string): { ok: true; holders: { pid: number; cwd
       pid = Number(line.slice(1))
     } else if (line.startsWith('n') && pid !== null && Number.isInteger(pid)) {
       const cwd = line.slice(1)
-      if (cwd === target || cwd.startsWith(`${target}/`)) holders.push({ pid, cwd })
+      if (inside(cwd, target)) holders.push({ pid, cwd })
     }
   }
   return { ok: true, holders }

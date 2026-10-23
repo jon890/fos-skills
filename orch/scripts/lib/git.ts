@@ -1,20 +1,12 @@
 // git 호출의 한 벌이다. 주 checkout 찾기, 기준 브랜치 판정, merge-tree 충돌 판정을 한 곳에 둔다.
 
-import { realpathSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { basename, dirname } from 'node:path'
+import { real } from './fs.ts'
 import { run } from './proc.ts'
 import type { RunOptions, RunResult } from './proc.ts'
 
 export function git(repo: string, args: string[], opts?: RunOptions): RunResult {
   return run(['git', '-C', repo, ...args], opts)
-}
-
-function real(dir: string): string {
-  try {
-    return realpathSync(dir)
-  } catch {
-    return resolve(dir)
-  }
 }
 
 // repo 의 주 checkout. git 밖이거나 bare 저장소면 받은 폴더(realpath)다.

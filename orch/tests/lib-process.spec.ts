@@ -105,23 +105,22 @@ describe('cwdHolders', () => {
     }
   })
 
-  const hasLsof = spawnSync('lsof', ['-v']).error === undefined
-  test(
-    '실제 lsof 로 임시 폴더를 작업 디렉터리로 띄운 자식을 찾는다',
-    { skip: hasLsof ? false : 'lsof 가 PATH 에 없어 실제 lsof 사례를 건너뛴다' },
-    async () => {
-      const dir = join(tmp, 'real')
-      mkdirSync(dir)
-      const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready"); setInterval(() => {}, 1000)'], { cwd: dir })
-      try {
-        await new Promise((resolve) => child.stdout.once('data', resolve))
-        const r = cwdHolders(dir)
-        assert.equal(r.ok, true, !r.ok ? r.error : '')
-        const found = r.ok ? r.holders.filter((h) => h.pid === child.pid) : []
-        assert.deepEqual(found, [{ pid: child.pid, cwd: realpathSync(dir) }])
-      } finally {
-        child.kill('SIGKILL')
-      }
-    },
-  )
+  // 건너뛰지 않는다. lsof 가 없는 환경에서 이 사례가 빠지면 실제 출력 형식을 읽는지 아무도 확인하지 않게 된다.
+  // CI 의 ubuntu 이미지와 macOS 에는 lsof 가 있다.
+  test('실제 lsof 로 임시 폴더를 작업 디렉터리로 띄운 자식을 찾는다', async () => {
+    const lsof = spawnSync('lsof', ['-v'])
+    assert.equal(lsof.error, undefined, `lsof 가 PATH 에 없다(PATH=${process.env.PATH}). 이 테스트는 실제 lsof 가 있어야 한다: ${lsof.error?.message}`)
+    const dir = join(tmp, 'real')
+    mkdirSync(dir)
+    const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready"); setInterval(() => {}, 1000)'], { cwd: dir })
+    try {
+      await new Promise((resolve) => child.stdout.once('data', resolve))
+      const r = cwdHolders(dir)
+      assert.equal(r.ok, true, !r.ok ? r.error : '')
+      const found = r.ok ? r.holders.filter((h) => h.pid === child.pid) : []
+      assert.deepEqual(found, [{ pid: child.pid, cwd: realpathSync(dir) }])
+    } finally {
+      child.kill('SIGKILL')
+    }
+  })
 })

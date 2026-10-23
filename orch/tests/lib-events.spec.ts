@@ -150,6 +150,19 @@ writeFileSync('received.json', JSON.stringify({ input: JSON.parse(readFileSync(0
     assert.equal(log(repo)[0].result, 'reject')
   })
 
+  test('거부한 핸들러가 빈 줄만 냈거나 아무것도 내지 않았으면 이유는 (이유 없음) 이다', async () => {
+    for (const body of [`process.exit(10)\n`, `console.log('')\nconsole.log('   ')\nprocess.exit(10)\n`]) {
+      const repo = makeRepo()
+      handler(repo, 'before-merge', body)
+      const { ctx: c, lines } = ctx(repo)
+      const r = await fire('before-merge', {}, c)
+      assert.equal(r.result, 'reject', `핸들러 ${JSON.stringify(body)} 가 reject 가 아니다`)
+      assert.equal(r.reason, '(이유 없음)')
+      assert.equal(lines.at(-1), 'HOOK-REJECT before-merge (이유 없음)')
+      assert.equal(log(repo)[0].reason, '(이유 없음)')
+    }
+  })
+
   test('거부할 수 없는 이벤트의 10 은 fail 이다', async () => {
     const repo = makeRepo()
     handler(repo, 'after-merge', `console.log('이유')\nprocess.exit(10)\n`)
@@ -355,6 +368,71 @@ setInterval(() => {}, 1000)
   })
 })
 
+describe('출력 파이프를 쥔 손자', { concurrency: true }, () => {
+  async function gone(pid: number): Promise<boolean> {
+    // 그룹 신호 직후에는 손자가 아직 거둬지지 않은 좀비라 alive 가 잠시 true 일 수 있다.
+    const deadline = Date.now() + 5000
+    while (alive(pid) && Date.now() < deadline) await sleep(100)
+    return !alive(pid)
+  }
+
+  test('핸들러가 끝났는데 손자가 stdout 을 쥐면 시간 제한까지 기다리지 않고 그룹에 TERM 을 보내며 결과는 핸들러의 종료 코드다', { timeout: 30_000 }, async () => {
+    const repo = makeRepo()
+    timeouts(repo, { 'before-cleanup': 60 })
+    handler(
+      repo,
+      'before-cleanup',
+      `import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+const child = spawn('sleep', ['60'], { stdio: ['ignore', 'inherit', 'inherit'] })
+writeFileSync('grandchild.pid', String(child.pid))
+child.unref()
+console.log('백업이 아직 돈다')
+process.exitCode = 10
+`,
+    )
+    const { ctx: c, lines } = ctx(repo)
+    let grandchild = 0
+    try {
+      const r = await fire('before-cleanup', {}, c)
+      grandchild = Number(readFileSync(join(repo, 'grandchild.pid'), 'utf8'))
+      assert.equal(r.result, 'reject', `핸들러의 종료 코드 10 으로 판정하지 않았다: ${JSON.stringify(r)} ${lines.join('\n')}`)
+      assert.equal(r.reason, '백업이 아직 돈다')
+      assert.ok(r.durationMs < 10_000, `시간 제한 쪽으로 기다렸다: ${r.durationMs}ms`)
+      assert.equal(await gone(grandchild), true, `손자 프로세스 ${grandchild} 가 TERM 뒤에도 살아 있다`)
+    } finally {
+      if (grandchild && alive(grandchild)) process.kill(grandchild, 'SIGKILL')
+    }
+  })
+
+  test('TERM 을 무시하는 손자가 파이프를 쥐면 KILL 로 끝내고 0 은 pass 다', { timeout: 30_000 }, async () => {
+    const repo = makeRepo()
+    timeouts(repo, { 'worker-done': 60 })
+    handler(
+      repo,
+      'worker-done',
+      `import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+const child = spawn('sh', ['-c', 'trap "" TERM; sleep 60'], { stdio: ['ignore', 'inherit', 'inherit'] })
+writeFileSync('grandchild.pid', String(child.pid))
+child.unref()
+`,
+    )
+    const { ctx: c, lines } = ctx(repo)
+    let grandchild = 0
+    try {
+      const r = await fire('worker-done', {}, c)
+      grandchild = Number(readFileSync(join(repo, 'grandchild.pid'), 'utf8'))
+      assert.equal(r.result, 'pass', `${JSON.stringify(r)} ${lines.join('\n')}`)
+      assert.equal(r.code, 0)
+      assert.ok(r.durationMs < 10_000, `시간 제한 쪽으로 기다렸다: ${r.durationMs}ms`)
+      assert.equal(await gone(grandchild), true, `TERM 을 무시하는 손자 프로세스 ${grandchild} 가 살아 있다`)
+    } finally {
+      if (grandchild && alive(grandchild)) process.kill(grandchild, 'SIGKILL')
+    }
+  })
+})
+
 describe('잠금', { concurrency: true }, () => {
   test('죽은 pid 나 깨진 내용의 잠금은 회수하고 바로 돌며 실행 뒤 잠금 파일이 없다', async () => {
     for (const content of [String(deadPid()), 'garbage']) {
@@ -445,6 +523,28 @@ describe('출력과 기록', () => {
       [...lines].sort(),
       [PREFIXED('worker-lost', '첫 줄'), PREFIXED('worker-lost', '둘째 줄'), PREFIXED('worker-lost', '오류 줄'), PREFIXED('worker-lost', '끝 줄바꿈 없음')].sort(),
     )
+  })
+
+  test('기록을 쓰지 못하면 예외 없이 stderr 에 경고 한 줄을 내고 결과와 HOOK 줄은 그대로다', async (t) => {
+    const repo = makeRepo()
+    handler(repo, 'before-merge', `console.log('막는다')\nprocess.exit(10)\n`)
+    // 기록 파일 자리에 폴더를 두어 쓰기가 EISDIR 로 실패하게 한다. 권한을 빼는 방식은 root 로 돌면 막히지 않는다.
+    const file = join(repo, '.orch/state/hooks.jsonl')
+    mkdirSync(file, { recursive: true })
+    const warned: string[] = []
+    t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => {
+      warned.push(String(chunk))
+      return true
+    })
+    const { ctx: c, lines } = ctx(repo)
+    const r = await fire('before-merge', {}, c)
+    t.mock.restoreAll()
+    assert.deepEqual([r.result, r.code, r.reason], ['reject', 10, '막는다'])
+    assert.equal(lines.at(-1), 'HOOK-REJECT before-merge 막는다')
+    assert.equal(warned.length, 1, `경고가 한 줄이 아니다: ${JSON.stringify(warned)}`)
+    assert.match(warned[0], /기록을 쓰지 못했다/)
+    assert.ok(warned[0].includes(file), `경고에 기록 파일 경로가 없다: ${warned[0]}`)
+    assert.ok(warned[0].endsWith('\n') && warned[0].indexOf('\n') === warned[0].length - 1, `경고가 한 줄이 아니다: ${JSON.stringify(warned[0])}`)
   })
 
   test('1MB 를 넘은 기록은 hooks.jsonl.1 로 옮기고 새 파일에 한 줄만 있다. 1MB 와 같으면 옮기지 않는다', async () => {

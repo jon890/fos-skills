@@ -266,7 +266,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py
 | --- | --- | --- |
 | worker 터미널 직접 입력 금지 | PreToolUse hook, 가드 shim | PreToolUse hook 은 대상이 worker 터미널이면 거부한다. 대상이 변수이거나 조회가 실패해도 거부한다. 가드 shim 은 핸들러의 `orca terminal send` 를 대상과 무관하게 거부한다. 핸들러는 worker 에게 쓸 일이 없고, 보내는 일은 `send-to-worker` 가 한다 |
 | 다른 사람 PR 제외 | `lib/gh.ts` | 루프, 원격 브랜치 정리, 충돌 알림, ready 전환은 `pipeline.authors` 의 PR 만 본다 |
-| 머지와 base 합치기는 코어만 | 가드 shim, `lib/gh.ts` | 핸들러의 `gh pr merge`, `gh pr update-branch`, update-branch API, PR 머지 API(`pulls/<번호>/merge` 의 GET 이 아닌 호출), 브랜치 merge API, GraphQL 의 머지(`mergePullRequest`), 브랜치 갱신(`updatePullRequestBranch`), 자동 머지(`enablePullRequestAutoMerge`) mutation 호출을 거부한다. 가드는 실수 방지 장치이고 보안 경계가 아니다. 코어는 머지 차례가 온 PR 과 뒤처진 draft 에만 base 를 합친다 |
+| 머지와 base 합치기는 코어만 | 가드 shim, `lib/gh.ts` | 핸들러의 코어 전용 머지와 base 합치기 호출(CLI, REST, GraphQL)을 거부한다. 거부 목록은 `lib/guard/guard.ts` 머리 주석이 소유한다. 가드는 실수 방지 장치이고 보안 경계가 아니다. 코어는 머지 차례가 온 PR 과 뒤처진 draft 에만 base 를 합친다 |
 | 무거운 검사 대기열 | `heavy-slot.ts` | 같은 PC 의 무거운 검사를 자리 수로 제한한다 |
 | 지시서 삭제 | `lib/spec.ts` 한 경로 | 살아 있는 dispatch 의 지시서와, 그 목록을 읽지 못한 실행에서는 지우지 않는다 |
 

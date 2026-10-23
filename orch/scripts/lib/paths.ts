@@ -25,10 +25,11 @@
 // git 무시: 루트가 저장소 안에 있고 git 이 아직 무시하지 않으면 `git rev-parse --git-path info/exclude` 파일에
 // /<루트>/ 한 줄을 더한다. 저장소의 .gitignore 는 바꾸지 않는다. 그 파일은 워크트리끼리 함께 쓴다.
 
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { inside, real } from './fs.ts'
 import { git, mainCheckout } from './git.ts'
 
 const DEFAULT_ROOT = '.orch'
@@ -66,21 +67,9 @@ export const LEGACY_MARKERS: readonly string[] = ['.claude/orch-overlay.md', '.c
 const MIGRATE = fileURLToPath(new URL('../migrate-orch-dir.py', import.meta.url))
 const DEFAULT_BYPASS = '설정 파일을 --config 로 직접 준다'
 
-function real(dir: string): string {
-  try {
-    return realpathSync(dir)
-  } catch {
-    return resolve(dir)
-  }
-}
-
 function expandUser(value: string): string {
   if (value === '~') return homedir()
   return value.startsWith('~/') ? join(homedir(), value.slice(2)) : value
-}
-
-function inside(target: string, root: string): boolean {
-  return target === root || target.startsWith(root.endsWith(sep) ? root : root + sep)
 }
 
 export function orchDir(repo: string): string {

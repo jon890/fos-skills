@@ -26,10 +26,10 @@
 // 통과면 진짜 실행 파일을 같은 인자와 stdin 으로 실행하고 그 종료 코드를 낸다. 시그널로 죽으면 128 + 신호 번호다.
 
 import { spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
-import { constants } from 'node:os'
-import { dirname, isAbsolute, resolve, sep } from 'node:path'
+import { dirname, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { inside, real } from '../fs.ts'
+import { signalCode } from '../proc.ts'
 
 export type Tool = 'orca' | 'gh'
 
@@ -157,23 +157,13 @@ export function check(tool: Tool, argv: string[]): string | null {
   return tool === 'orca' ? checkOrca(argv) : checkGh(argv)
 }
 
-function real(target: string): string {
-  try {
-    return realpathSync(target)
-  } catch {
-    return resolve(target)
-  }
-}
-
 // 진짜 실행 파일의 경로나 거부 이유.
 function realBin(tool: Tool): { ok: true; path: string } | { ok: false; error: string } {
   const key = tool === 'orca' ? 'ORCH_REAL_ORCA' : 'ORCH_REAL_GH'
   const value = process.env[key]
   if (!value) return { ok: false, error: `${key} 가 없어 진짜 ${tool} 를 찾지 못했다` }
   if (!isAbsolute(value)) return { ok: false, error: `${key} 가 절대경로가 아니다: ${value}` }
-  const root = real(GUARD_DIR)
-  const full = real(value)
-  if (full === root || full.startsWith(root + sep)) return { ok: false, error: `${key} 가 가드 폴더 안을 가리킨다: ${value}` }
+  if (inside(real(value), real(GUARD_DIR))) return { ok: false, error: `${key} 가 가드 폴더 안을 가리킨다: ${value}` }
   return { ok: true, path: value }
 }
 
@@ -193,6 +183,6 @@ export function main(tool: Tool, argv: string[]): number {
     process.stderr.write(`${tool} 가드: ${bin.path} 를 실행하지 못했다: ${done.error.message}\n`)
     return (done.error as NodeJS.ErrnoException).code === 'ENOENT' ? 127 : 1
   }
-  if (done.signal) return 128 + ((constants.signals as Record<string, number>)[done.signal] ?? 0)
+  if (done.signal) return signalCode(done.signal)
   return done.status ?? 1
 }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { run, runAsync, scriptCommand } from '../scripts/lib/proc.ts'
+import type { RunResult } from '../scripts/lib/proc.ts'
+import { alive } from '../scripts/lib/process.ts'
 
 const NODE = process.execPath
 
@@ -111,6 +113,35 @@ describe('runAsync', () => {
     assert.equal(r.stdout, 'ready')
     assert.ok(elapsed >= 10_000, `KILL 전에 10초를 기다려야 하는데 ${elapsed}ms 만에 끝났다`)
     assert.ok(elapsed < 20_000, `KILL 뒤 바로 끝나야 하는데 ${elapsed}ms 걸렸다`)
+  })
+})
+
+describe('runAsync 와 출력 파이프를 쥔 손자', () => {
+  // 자식(sh)은 바로 3 으로 끝나고, 백그라운드 sleep 이 stdout 과 stderr 를 물려받아 30초 동안 쥔다. 첫 줄은 그 sleep 의 pid 다.
+  const HOLDER = ['sh', '-c', 'sleep 30 & echo $!; exit 3']
+
+  async function withHolder(timeoutMs: number | undefined): Promise<{ r: RunResult; elapsed: number }> {
+    const started = Date.now()
+    const r = await runAsync(HOLDER, timeoutMs === undefined ? {} : { timeoutMs })
+    const elapsed = Date.now() - started
+    const grandchild = Number(r.stdout.split('\n')[0])
+    if (Number.isInteger(grandchild) && grandchild > 0 && alive(grandchild)) process.kill(grandchild, 'SIGKILL')
+    return { r, elapsed }
+  }
+
+  test('자식이 끝나면 손자가 파이프를 쥐어도 짧은 유예 뒤 자식의 종료 코드로 돌아온다', { timeout: 30_000 }, async () => {
+    const { r, elapsed } = await withHolder(undefined)
+    assert.equal(r.code, 3, `자식의 종료 코드 3 이 아니다: ${JSON.stringify(r)}`)
+    assert.equal(r.timedOut, false)
+    assert.match(r.stdout, /^\d+\n/, `유예 안에 온 출력(손자 pid)을 잃었다: ${JSON.stringify(r.stdout)}`)
+    assert.ok(elapsed < 8000, `손자가 끝날 때까지 기다렸다: ${elapsed}ms`)
+  })
+
+  test('시간 제한이 유예보다 짧아도 이미 끝난 자식은 124 가 아니라 자식의 종료 코드다', { timeout: 30_000 }, async () => {
+    const { r, elapsed } = await withHolder(500)
+    assert.equal(r.code, 3, `끝난 자식에 시간 초과를 냈다: ${JSON.stringify(r)}`)
+    assert.equal(r.timedOut, false)
+    assert.ok(elapsed < 8000, `손자가 끝날 때까지 기다렸다: ${elapsed}ms`)
   })
 })
 
