@@ -3,12 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 2.4.1 (2026-10-23)
+## 2.5.1 (2026-10-23)
 
 - `make-worktree.py` 가 워크트리를 만들기 전에 `orca repo show` 로 저장소의 `externalWorktreeVisibility` 를 읽고, `hide` 면 만들지 않고 종료 코드 1 로 멈춘다. 안내에 사용자가 고를 두 조치(Orca 화면에서 등록, `orca repo set --repo path:<repo> --external-worktree-visibility show`)를 낸다. `show`, `inherit`, 읽지 못한 경우는 이전처럼 진행한다. 이전에는 `hide` 인 저장소에서 워크트리를 만든 뒤 Orca 가 숨겨 `launch-worker.py` 가 30초 대기 끝에 멈췄다.
 - `launch-worker.py` 가 Orca 가 워크트리를 알아보지 못해 멈출 때 만든 경로, 그 저장소의 `externalWorktreeVisibility`, 사용자가 할 조치를 stderr 에 낸다. 설정은 바꾸지 않는다.
 - 경로 계산은 바꾸지 않는다. Orca 가 직접 만드는 경로와 같다는 확인을 `references/launch.md` 에 적었다.
 - Orca 에 묻는 `orca_repo.py` 를 더했다.
+## 2.5.0 (2026-10-23)
+
+- `watch-questions.py` 를 Monitor 의 질문 이벤트 소스로 추가했다. Run 별 알림 시각을 orch 작업 폴더에 남기고 미답변 질문을 기본 10분마다 다시 알린다.
+- 질문 감시, doctor 와 work-board 는 `inbox` 의 양방향 thread 로 답변을 판정한다. 보드의 자동 결정 수는 ack 여부와 관계없이 답변 뒤 다음 조회에서 줄어든다. 깨진 응답이나 기록 한도 도달은 조회 오류로 표시한다.
+- doctor 는 10분 이상 답이 없는 질문을 경고한다. 기다리기 문서에 압축 뒤 감시 복구를, 답하기 문서에 코디네이터 판단과 사용자 결정의 분류 기준을 추가했다.
 
 ## 2.4.0 (2026-10-23)
 

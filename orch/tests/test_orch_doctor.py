@@ -59,7 +59,7 @@ class OrchDoctorTest(unittest.TestCase):
         git("-C", str(self.clone), "reset", "-q", "--hard", "FETCH_HEAD")
 
     def run_doctor(self, *args, skill=None):
-        done = subprocess.run(["python3", str(SCRIPT), "--skill-dir", str(skill or self.skill), *args],
+        done = subprocess.run(["python3", str(SCRIPT), "--skip-questions", "--skill-dir", str(skill or self.skill), *args],
                               capture_output=True, text=True, env=ENV)
         return done.returncode, done.stdout
 

@@ -6,7 +6,7 @@
 갱신 명령을 보여 주는 것까지만 하고 갱신은 하지 않는다. 다른 세션이 같은 캐시를 쓰고 있을 수 있다.
 
 사용법:
-    orch-doctor.py [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version]
+    orch-doctor.py [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions]
 
     --skill-dir     볼 스킬 디렉터리. 기본은 이 스크립트의 상위 디렉터리($SKILL_DIR)
     --remote        원본 저장소. 주지 않으면 설치 경로의 마켓플레이스 clone 의 origin 을 쓴다
@@ -35,10 +35,12 @@
     SKIP-VERSION <이유>            비교하지 않았다
     MISSING <문서>:<줄> <경로>     문서가 부르는 스크립트가 없다
     OK-SCRIPTS <개수>              문서가 부르는 스크립트가 모두 있다
+    UNANSWERED <id> <설명>        10분 이상 답이 없는 질문이 있다
+    SKIP-QUESTIONS <이유>         질문 상태를 조회하지 못했다
 
 종료 코드:
-    0  STALE 도 MISSING 도 없다(SKIP-VERSION 은 있을 수 있다)
-    1  STALE 이나 MISSING 이 있다
+    0  STALE, MISSING, UNANSWERED 가 없다(SKIP 출력은 있을 수 있다)
+    1  STALE, MISSING 이나 UNANSWERED 가 있다
     2  사용법 오류
 """
 
@@ -51,7 +53,10 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+
+import questions
 
 SHA = re.compile(r"^[0-9a-f]{7,40}$")
 REF = re.compile(r"(?:\$(?:(?P<sibling>[A-Z][A-Z0-9_]*)_)?SKILL_DIR/|\]\((?P<up>(?:\.\./)*))scripts/(?P<name>[A-Za-z0-9_.-]+)")
@@ -150,12 +155,24 @@ def check_scripts(skill_dir):
     return lines, 1 if any(line.startswith("MISSING") for line in lines) else 0
 
 
+def check_questions(run=None, now=None):
+    try:
+        run, pending = questions.snapshot(run)
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        return [f"SKIP-QUESTIONS {exc}"], 0
+    now = time.time() if now is None else now
+    overdue = [m for m in pending if questions.age_seconds(m, now) >= 600]
+    return [f"UNANSWERED {m['id']} 10분 이상 답이 없다 (Run {run})" for m in overdue], bool(overdue)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skill-dir", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--remote")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--skip-version", action="store_true")
+    parser.add_argument("--run", help="미답변 질문을 확인할 Run")
+    parser.add_argument("--skip-questions", action="store_true", help="질문 상태 조회를 건너뛴다")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -168,8 +185,9 @@ def main(argv=None):
     if not args.skip_version:
         out, code = check_version(skill_dir, args.remote, args.branch)
     script_lines, script_code = check_scripts(skill_dir)
-    print("\n".join(out + script_lines))
-    return max(code, script_code)
+    question_lines, question_code = ([], 0) if args.skip_questions else check_questions(args.run)
+    print("\n".join(out + script_lines + question_lines))
+    return max(code, script_code, question_code)
 
 
 if __name__ == "__main__":

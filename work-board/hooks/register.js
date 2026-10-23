@@ -50,35 +50,33 @@ export function parseWorkers(stdout) {
     })
 }
 
-// check --peek 의 출력에서 답을 기다리는 질문과 escalation 의 수를 센다.
-// 본문에 제어 문자가 섞이면 JSON 으로 읽히지 않으므로 type 칸만 센다.
-export function countQuestions(stdout) {
-  const found = stdout.match(/"type"\s*:\s*"(question|escalation)"/g)
-  return found ? found.length : 0
+// inbox 의 양방향 thread 기록으로 미답변 질문을 센다. read/ack 는 답변 여부가 아니다.
+export function countQuestions(stdout, runId) {
+  return parseQuestions(stdout, runId).length
 }
 
-// check --peek 의 출력에서 답을 기다리는 질문과 escalation 을 꺼낸다.
-// 본문의 줄바꿈 같은 제어 문자는 JSON 문자열 밖에서는 공백과 같으므로 공백으로 바꿔 읽는다.
-// 그래도 읽히지 않으면 type 칸 수만큼 본문 없는 질문을 돌려준다.
-export function parseQuestions(stdout) {
-  try {
-    const data = JSON.parse(String(stdout).replace(/[\u0000-\u001f]/g, ' '))
-    const messages = (data && data.result && data.result.messages) || []
-    return messages
-      .filter((m) => m.type === 'question' || m.type === 'escalation')
-      .map((m) => {
-        let dispatch = String(m.from_handle || '').replace(/^dispatch:/, '')
-        let text = String(m.body || '')
-        try {
-          const payload = JSON.parse(m.payload || '{}')
-          dispatch = payload.dispatchId || dispatch
-          text = payload.question || text
-        } catch {}
-        return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '' }
-      })
-  } catch {
-    return Array.from({ length: countQuestions(stdout) }, (_, i) => ({ id: 'q' + i, type: 'question', dispatch: '', text: '', at: '' }))
-  }
+// 깨진 JSON 이나 잘린 기록은 조회 오류로 보인다. 임의의 질문 수로 바꾸지 않는다.
+export function parseQuestions(stdout, runId) {
+  const data = JSON.parse(String(stdout).replace(/[\u0000-\u001f]/g, ' '))
+  if (data.ok === false) throw new Error('질문 기록 조회 실패')
+  const rows = (data.result || data).messages
+  if (!Array.isArray(rows) || rows.length >= 100000) throw new Error('질문 기록 전체를 읽지 못했어요')
+  const messages = rows.filter((m) => !runId || m.run_id === runId)
+  const answered = new Set(messages.filter((m) => m.thread_id && m.id !== m.thread_id
+    && m.from_handle === (runId ? 'run:' + runId : 'run:' + m.run_id)).map((m) => m.thread_id))
+  return messages
+    .filter((m) => (m.type === 'question' || m.type === 'escalation') && m.id
+      && m.to_handle === 'run:' + (runId || m.run_id) && !answered.has(m.id))
+    .map((m) => {
+      let dispatch = String(m.from_handle || '').replace(/^dispatch:/, '')
+      let text = String(m.body || '')
+      try {
+        const payload = JSON.parse(m.payload || '{}')
+        dispatch = payload.dispatchId || dispatch
+        text = payload.question || text
+      } catch {}
+      return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '' }
+    })
 }
 
 // 질문 본문을 창에 맞게 줄인다
@@ -303,7 +301,8 @@ export function statusLine(items, state) {
   const count = (status) => items.filter((item) => item.status === status).length
   const parts = []
   const decide = count('decide') + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
-  if (decide > 0) parts.push('결정 필요 ' + decide)
+  if (state.errors && state.errors.questions) parts.push('결정 필요 확인 불가')
+  else if (decide > 0) parts.push('결정 필요 ' + decide)
   if (Array.isArray(state.workers)) parts.push('worker ' + state.workers.length)
   if (Array.isArray(state.prs)) {
     const failing = state.prs.filter((pr) => pr.fail > 0).length
@@ -396,8 +395,8 @@ async function loadLive($) {
         next.errors.workers = String(failure.message || failure)
       }
       try {
-        next.questions = parseQuestions(await run($, ['orca', 'orchestration', 'check', '--run', next.runId,
-          '--peek', '--types', 'question,escalation', '--json']))
+        next.questions = parseQuestions(await run($, ['orca', 'orchestration', 'inbox',
+          '--limit', '100000', '--json']), next.runId)
       } catch (failure) {
         next.errors.questions = String(failure.message || failure)
       }
@@ -575,8 +574,10 @@ export function register(on) {
         ],
       })
     }
-    const decideView = decideRows.length + asked.length === 0 ? [] : [box('live-decide', 'red',
-      '결정 필요  ' + (decideRows.length + asked.length), [
+    const questionError = live.errors.questions
+    const decideView = decideRows.length + asked.length === 0 && !questionError ? [] : [box('live-decide', 'red',
+      questionError ? '결정 필요  확인 불가' : '결정 필요  ' + (decideRows.length + asked.length), [
+        ...(questionError ? [dim('qe', '읽지 못했어요: ' + questionError)] : []),
         ...asked.map(questionView),
         ...decideRows.map((item) => itemView(item, SECTIONS[1])),
       ])]

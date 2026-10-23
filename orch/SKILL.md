@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "2.4.1"
+  version: "2.5.1"
 ---
 
 # orch
@@ -94,6 +94,7 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 ## 4. 기다리기
 
 `wait-important.py` 를 백그라운드로 하나만 걸고, 깨어나면 `triage-messages.py` 로 `worker_done`, `escalation`, `question` 을 먼저 본다.
+질문 감시 `watch-questions.py` 도 reference 의 Monitor 명령으로 띄운다. 압축 뒤에는 두 감시가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
 heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.
 
 ## 5. 답하고 지시 보내기
