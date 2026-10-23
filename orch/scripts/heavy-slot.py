@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Run a heavy check in a machine-wide FIFO queue.
+"""같은 PC의 무거운 검사를 FIFO 대기열에서 실행한다.
 
-Usage: heavy-slot.py [--exclusive] [--slot-dir DIR] [--slots N] -- COMMAND...
-HEAVY_SLOT_DIR defaults to orch_paths heavy-slot; HEAVY_SLOTS defaults to 3.
-HEAVY_EXCLUSIVE=1 requests all slots. HEAVY_POLL defaults to 5 seconds.
-Light checks bypass the queue. Nested calls inherit HEAVY_SLOT_HELD.
-The adjacent mem-gate.sh runs after admission (MEM_GATE overrides its path).
-Exit: command status, 2 invalid arguments, 1 queue/gate failure, 128+signal.
+사용: heavy-slot.py [--exclusive] [--slot-dir DIR] [--slots N] -- 명령...
+HEAVY_SLOT_DIR의 기본값은 주 checkout의 .orch/state/heavy-slot, HEAVY_SLOTS는 3이다.
+HEAVY_EXCLUSIVE=1이면 혼자 실행하며 HEAVY_POLL은 재확인 간격(기본 5초)이다.
+가벼운 검사는 대기열을 거치지 않고 중첩 호출은 HEAVY_SLOT_HELD를 물려받는다.
+자리를 잡은 뒤 형제 mem-gate.py를 실행한다. MEM_GATE로 경로를 바꾼다.
+종료: 명령의 종료 코드, 2 인자 오류, 1 대기열·메모리 검사 실패, 128+신호 번호.
 """
 import argparse
 from contextlib import contextmanager
@@ -19,6 +19,7 @@ import signal
 import subprocess
 import sys
 import time
+from orch_process import script_command
 import orch_paths
 
 LIGHT = [
@@ -53,7 +54,7 @@ def alive(pid):
 
 
 class Queue:
-    """All queue changes happen under one advisory lock; no partial PID files."""
+    """하나의 파일 잠금 아래 등록과 선점을 처리해 PID 기록이 중간에 노출되지 않는다."""
     def __init__(self, root, slots):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -110,17 +111,42 @@ class Queue:
             self.entry.unlink(missing_ok=True)
 
 
+def exec_command(cmd):
+    """대기열을 다시 잡지 않는 호출은 같은 프로세스로 명령을 이어받는다."""
+    try:
+        os.execvp(cmd[0], cmd)
+    except FileNotFoundError:
+        print(f'heavy-slot: command not found: {cmd[0]}', file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f'heavy-slot: command is not executable: {cmd[0]}', file=sys.stderr)
+        return 126
+
+
 def run_command(cmd, env=None):
-    child = subprocess.Popen(cmd, env=env, start_new_session=True)
+    try:
+        child = subprocess.Popen(cmd, env=env, start_new_session=True)
+    except FileNotFoundError:
+        print(f'heavy-slot: command not found: {cmd[0]}', file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f'heavy-slot: command is not executable: {cmd[0]}', file=sys.stderr)
+        return 126
     try:
         code = child.wait()
     except BaseException:
         # Keep the slot until the command has really stopped.
-        os.killpg(child.pid, signal.SIGTERM)
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         try:
             child.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            os.killpg(child.pid, signal.SIGKILL)
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             child.wait()
         raise
     return code if code >= 0 else 128 - code
@@ -143,10 +169,10 @@ def main(argv=None):
     if sys.platform == 'darwin':
         os.environ['TMPDIR'] = str(Path(os.environ.get('TMPDIR', '/tmp')).resolve()) + '/'
     if os.environ.get('HEAVY_SLOT_HELD'):
-        return run_command(cmd)
+        return exec_command(cmd)
     exclusive = args.exclusive or os.environ.get('HEAVY_EXCLUSIVE') == '1' or classify(cmd) == 'exclusive'
     if not exclusive and classify(cmd) == 'light':
-        return run_command(cmd)
+        return exec_command(cmd)
     if not args.slot_dir and not orch_paths.require_migrated(script='heavy-slot', bypass='--slot-dir 로 공유할 대기열을 직접 준다'):
         return 2
     queue = Queue(args.slot_dir or orch_paths.ensure('heavy-slot'), args.slots)
@@ -157,8 +183,8 @@ def main(argv=None):
         while not queue.claim():
             print('heavy-slot: waiting', file=sys.stderr)
             time.sleep(float(os.environ.get('HEAVY_POLL', '5')))
-        gate = Path(os.environ.get('MEM_GATE', str(Path(__file__).with_name('mem-gate.sh'))))
-        gate_code = run_command(['bash', str(gate)])
+        gate = Path(os.environ.get('MEM_GATE', str(Path(__file__).with_name('mem-gate.py'))))
+        gate_code = run_command(script_command(gate))
         if gate_code:
             return gate_code
         return run_command(cmd, dict(os.environ, HEAVY_SLOT_HELD=str(os.getpid())))

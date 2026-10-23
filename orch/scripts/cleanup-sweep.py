@@ -54,7 +54,7 @@ PR 찾기 (브랜치마다):
       worker 의 Claude 세션 터미널은 일이 끝나도 목록에 남기 때문이다. 그 터미널은 아래에서 닫는다
     - --run 을 줬고, 그 경로에 다른 Run 의 worker 터미널이 있다(아래 「다른 Run」)
     - 터미널을 닫은 뒤에도 그 경로를 작업 디렉터리로 쓰는 프로세스가 있다. 다음 실행에서 다시 시도한다.
-      OMC session-end hook worker 는 세지 않는다. 스스로 끝나므로 `remove-worktree.sh` 가 끝날 때까지 기다린다
+      OMC session-end hook worker 는 세지 않는다. 스스로 끝나므로 `remove-worktree.py` 가 끝날 때까지 기다린다
       단, PR 이 MERGED 이고 남은 프로세스가 전부 자식 없는 로그인 셸(Orca 가 worker 를 반납한 뒤 띄운 빈 셸)이고
       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
 
@@ -91,7 +91,7 @@ PR 찾기 (브랜치마다):
 
 남은 프로세스 끄기 (--kill-holders):
     `worker-stop` 이 `process=none` 을 돌려줘도 그 worker 의 claude 세션, 로그인 셸, 플러그인 node, Gradle 같은
-    프로세스가 그 경로를 작업 디렉터리로 쥐고 남아 `remove-worktree.sh` 가 매번 거부한다.
+    프로세스가 그 경로를 작업 디렉터리로 쥐고 남아 `remove-worktree.py` 가 매번 거부한다.
     이 옵션은 아래가 모두 참일 때만 그 프로세스를 TERM, HUP, KILL 순으로 끈다. 신호마다 --wait 초(최소 --poll-interval 초) 기다리고,
     그때도 그 경로를 쓰는 pid 만 다시 골라 다음 신호를 보낸다. 로그인 셸은 TERM 을 무시해 HUP 이 필요하다.
       - PR 이 MERGED 다
@@ -115,7 +115,7 @@ PR 찾기 (브랜치마다):
     기준 브랜치가 뒤처지면 그 위에서 계획한 worker 가 옛 코드를 본다.
 
 실행 순서 (worktree 마다):
-    그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만), 끝난 Dispatch release, `remove-worktree.sh --delete-branch --merged-head`,
+    그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만), 끝난 Dispatch release, `remove-worktree.py --delete-branch --merged-head`,
     원격 브랜치 삭제(이미 없으면 통과), 지시서와 PR 본문 파일 삭제.
     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다.
@@ -149,7 +149,7 @@ sys.path.insert(0, str(HERE))
 from live_specs import live_spec_paths  # noqa: E402
 import orch_paths  # noqa: E402
 from terminal_ownership import blocker as ownership_blocker  # noqa: E402
-REMOVE = HERE / "remove-worktree.sh"
+REMOVE = HERE / "remove-worktree.py"
 LIVE_STATES = {"working", "ready"}
 # 이 상태의 worker 만 남은 프로세스를 끌 수 있다. failed 나 abandoned 는 같은 워크트리로 다시 맡길 수 있어 뺀다
 FINISHED_STATES = {"succeeded", "fenced"}
@@ -163,7 +163,7 @@ KILL = os.environ.get("ORCH_KILL", "kill")
 # 조상에 이 문자열이 든 실행 파일이 있으면 Orca 가 띄운 프로세스다
 ORCA_APP = "Orca.app/"
 MAX_VARIANTS = 4
-# OMC session-end hook worker 의 명령줄에 든 문자열. 끄지도 세지도 않고 remove-worktree.sh 가 기다린다
+# OMC session-end hook worker 의 명령줄에 든 문자열. 끄지도 세지도 않고 remove-worktree.py 가 기다린다
 REMOVE_TIMEOUT = int(os.environ.get("ORCH_HOOK_WAIT", "180")) + 60
 SESSION_END_MARKS = ("--omc-session-end-worker", "hooks/session-end/worker.js")
 
@@ -823,15 +823,15 @@ def sweep_worktree(repo, path, branch, args, workers, terminals, specs_dir, log)
             pids = stop_holders(path, nested, args.wait, log, args.poll_interval)
     hooks = session_end_hooks(pids)
     if hooks:
-        log(f"  OMC session-end hook {', '.join(hooks)} 은 끄지 않는다. remove-worktree.sh 가 끝날 때까지 기다린다")
+        log(f"  OMC session-end hook {', '.join(hooks)} 은 끄지 않는다. remove-worktree.py 가 끝날 때까지 기다린다")
         pids = [pid for pid in pids if pid not in hooks]
     if pids:
         log(f"  건너뜀: 그 경로를 쓰는 프로세스 {len(pids)} 개({describe(pids)}). 다음 실행에서 다시 시도한다")
         return
-    cmd = ["zsh", str(REMOVE), path, "--delete-branch"]
+    cmd = [sys.executable, str(REMOVE), path, "--delete-branch"]
     if merged_head:
         cmd += ["--merged-head", merged_head]
-    # remove-worktree.sh 는 OMC session-end hook 이 끝나기를 ORCH_HOOK_WAIT 초(기본 180)까지 기다린다
+    # remove-worktree.py 는 OMC session-end hook 이 끝나기를 ORCH_HOOK_WAIT 초(기본 180)까지 기다린다
     code, out, err = run(cmd, timeout=REMOVE_TIMEOUT)
     log("  " + (out or err).replace("\n", "\n  "))
     if code != 0:

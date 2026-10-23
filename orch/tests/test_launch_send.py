@@ -1,4 +1,4 @@
-"""launch-worker.sh, send-to-worker.py, notify-conflicts.py 를 가짜 orca 와 gh 로 검증한다. Orca 와 GitHub 에는 닿지 않는다."""
+"""launch-worker.py, send-to-worker.py, notify-conflicts.py 를 가짜 orca 와 gh 로 검증한다. Orca 와 GitHub 에는 닿지 않는다."""
 
 import json
 import os
@@ -125,7 +125,7 @@ class LaunchWorkerTest(FakeBase):
     def launch(self, *args, shell="bash"):
         if not shutil.which(shell):
             self.skipTest(f"{shell} 가 없다")
-        cmd = [shell, str(SCRIPTS / "launch-worker.sh"), "--spec", str(self.spec), *args]
+        cmd = [shell, "-c", 'exec python3 "$@"', "launch", str(SCRIPTS / "launch-worker.py"), "--spec", str(self.spec), *args]
         return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
 
     def shown(self, *stages):
@@ -200,6 +200,21 @@ class LaunchWorkerTest(FakeBase):
         self.assertIn(f"--worktree path:{self.tmp}/new --agent codex --model m", start)
         self.assertTrue(r.stdout.rstrip().endswith(f"LAUNCHED ctx_1 {self.tmp}/new"), r.stdout)
 
+    def test_resume_remote_is_passed_to_worktree_creation(self):
+        self.state(next_ids=["ctx_1"], dispatches={"ctx_1": self.shown("input_accepted")})
+        r = self.launch("--repo", str(self.tmp), "--name", "feat", "--resume-remote", "--", "--agent", "codex")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("--resume-remote", self.lines("make")[0])
+
+    def test_unmigrated_orch_state_refuses_launch_before_orca(self):
+        legacy = self.worktree / ".omc/orch"
+        legacy.mkdir(parents=True)
+        (legacy / "old.json").write_text("{}")
+        r = self.launch("--worktree", "path:" + str(self.worktree), "--", "--agent", "codex")
+        self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+        self.assertIn("옮기기 전", r.stderr)
+        self.assertEqual([], self.lines("orca orchestration worker-start"))
+
     def test_optional_flags_are_separate_words_in_bash_and_zsh(self):
         """zsh 는 ${run:+--run "$run"} 를 나누지 않아 worker-start 가 Unknown flag --run run_x 로 실패했다"""
         for shell in ("bash", "zsh"):
@@ -243,7 +258,7 @@ class LaunchWorkerTest(FakeBase):
                                 "--agent", "codex", "--model", "gpt 6", shell=shell)
                 self.assertEqual(1, r.returncode, r.stdout + r.stderr)
                 self.assertIn(f"워크트리는 남아 있다: {self.tmp}/new", r.stderr)
-                self.assertIn(f"--worktree {self.tmp}/new --run run_x -- --agent codex --model gpt\\ 6", r.stderr)
+                self.assertIn(f"--worktree {self.tmp}/new --run run_x -- --agent codex --model 'gpt 6'", r.stderr)
                 self.assertIn("term_left codex hooks review", r.stderr)
 
     def test_failure_after_worker_start_succeeded_gives_no_resume_hint(self):
@@ -466,7 +481,7 @@ class SendToWorkerTest(FakeBase):
         self.state(dispatches=self.worker("failed"), terminals=[{"handle": "term_other"}])
         r = self.send("--body", "x", "--spec", "/s/next.md")
         self.assertEqual(3, r.returncode)
-        self.assertIn("launch-worker.sh --spec <지시서> --worktree /w/feat", r.stdout)
+        self.assertIn("launch-worker.py --spec <지시서> --worktree /w/feat", r.stdout)
         self.assertEqual([], self.lines("launch"))
 
     def restart_setup(self, **state):

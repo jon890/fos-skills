@@ -26,16 +26,16 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/wait-important.py`: worker_done, question, escalation, status 가 든 묶음이 올 때까지 기다린다. heartbeat 만 든 묶음은 ack 하고 계속 기다리고, 마지막 줄에 다음 `--ack` 로 넘길 delivery id 를 낸다. 다른 대기가 자리를 쥐고 있으면(`waiter_exists`) 되풀이하지 않고 남은 대기 프로세스를 보여 준다
 - `scripts/nudge-worker.py`: 메시지를 보낸 뒤 worker 화면이 입력 대기면 「check 로 읽어라」 를 넣고 턴 시작을 확인한다. 보이지 않으면 `--retry-request` 로 한 번 더 확인한다
 - `scripts/spec-line.py`: 지시서의 `허락:` 줄을 붙여 `worker-start --spec` 에 넘길 첫 지시 줄을 만든다
-- `scripts/launch-worker.sh`: `spec-line.py` 로 첫 지시 줄을 만들고 새 워크트리는 `make-worktree.sh` 로 만든 뒤 띄운다. 기존 워크트리에 터미널이 남아 있으면 거부하고, 띄운 뒤 `worktree_creating` 에서 멈추면 abandon 하고 한 번 다시 띄운다
+- `scripts/launch-worker.py`: `spec-line.py` 로 첫 지시 줄을 만들고 새 워크트리는 `make-worktree.py` 로 만든 뒤 띄운다. 기존 워크트리에 터미널이 남아 있으면 거부하고, 띄운 뒤 `worktree_creating` 에서 멈추면 abandon 하고 한 번 다시 띄운다
 - `scripts/send-to-worker.py`: dispatch 가 살아 있으면 `reply`(이미 답한 question 은 건너뜀)와 `nudge-worker.py`, 끝났으면 남은 터미널에 후속 지시서로 띄우고, 끝났는데 아직 일하는 터미널에는 본문을 넣고, 터미널도 없으면 새로 띄우라고 알린다
 - `scripts/notify-conflicts.py`: 머지 직후 열린 PR 가운데 base 와 충돌하는 것과 충돌 파일을 내고, (PR, base SHA) 마다 한 번만 그 worker 에게 base 를 합치라고 보낸다
 - `scripts/triage-messages.py`: orca 메시지를 종류별로 모으고 heartbeat 는 개수만 낸다
-- `scripts/make-worktree.sh`: 지시서의 `브랜치:` 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고 exclude 와 로컬 설정 복사, `worktree-deny.py` 의 deny 규칙 추가를 한다. `--check` 는 push 한 브랜치가 지시서 값과 같은지 본다
+- `scripts/make-worktree.py`: 지시서의 `브랜치:` 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고 exclude 와 로컬 설정 복사, `worktree-deny.py` 의 deny 규칙 추가를 한다. `--check` 는 push 한 브랜치가 지시서 값과 같은지 본다
 - `scripts/worktree-deny.py`: 워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령(pkill, killall, browser-driver reset)과 `gh pr merge` 의 deny 규칙을 더한다
-- `scripts/remove-worktree.sh`: 쓰는 프로세스, 미커밋 변경, 원격에 없는 커밋이 있거나 HEAD 가 `--merged-head` 의 조상이 아니면 지우지 않는다. 쓰는 프로세스는 `--wait` 초 동안, OMC session-end hook 만 남았으면 그 hook 이 끝날 때까지 기다린다
+- `scripts/remove-worktree.py`: 쓰는 프로세스, 미커밋 변경, 원격에 없는 커밋이 있거나 HEAD 가 `--merged-head` 의 조상이 아니면 지우지 않는다. 쓰는 프로세스는 `--wait` 초 동안, OMC session-end hook 만 남았으면 그 hook 이 끝날 때까지 기다린다
 - `scripts/spec-lint.py`: 띄우기 전에 지시서끼리 담당 경로 겹침, 코디네이터 소유와 소유 계약, 없는 함수, 금지 문구를 막고 없는 파일 경로는 경고한다. 저장소 값은 오버레이의 `## spec-lint` 절에서 읽는다. `--check-overlay` 는 오버레이와 `.orch/config.json` 이 가리키는 경로가 `origin/<base>` 에 있는지 본다
 - `scripts/orch-doctor.py`: 스킬을 열 때 설치 캐시의 커밋이 원본 main 보다 낡았는지 보고 갱신 명령을 보여 주고, 문서가 부르는 `$SKILL_DIR/scripts/*` 가 모두 있는지 본다. 저장소 테스트 `scripts/tests/test_doc_script_refs.py` 가 스킬마다 이 검사를 부른다
-- `scripts/worker-ask.sh`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다. JSON 해석은 `scripts/ask-json.py` 가 맡는다
+- `scripts/worker-ask.py`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다. JSON 해석은 `scripts/ask-json.py` 가 맡는다
 - `scripts/cleanup-sweep.py`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다
 - `scripts/live_specs.py`: 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서 경로를 모은다. `cleanup-sweep.py` 와 `handoff-cleanup.py` 가 import 한다
 - `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
@@ -45,7 +45,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
   - `block-git-after-cd.py`: `cd X;` 나 줄바꿈 뒤의 git 쓰기(merge, commit, push, reset, rebase)를 거부하고 `&&` 나 `git -C` 를 요구한다
   - `block-worker-terminal-send.py`: worker 터미널에 직접 `orca terminal send` 하는 호출을 거부하고 `send-to-worker.py` 로 보내게 한다
   - `require-spec-line.py`: `worker-start --spec` 값이 `spec-line.py` 가 만드는 한 줄 꼴이 아니면 거부한다
-- `scripts/mem-gate.sh`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
+- `scripts/mem-gate.py`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 
 ```bash

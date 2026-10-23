@@ -60,7 +60,7 @@ AFTER_CMD='if [ -n "$CODE_PRS" ] && [ "${SKIP_PUBLISH:-0}" != 1 ]; then bash "$H
 python3 "$SKILL_DIR/scripts/ci-ready.py" --repo "$REPO" "${PR_NUMBERS[@]}"
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --method squash --required "$REQUIRED_CHECKS" --skipped-is-missing --verify-merged "$VERIFY_CMD" --verify-merged-when code --docs-glob 'docs/*,*.md' --update-docs-on-overlap --after-merged "$AFTER_CMD" "${PR_NUMBERS[@]}"
 python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --method squash --required "$REQUIRED_CHECKS" --skipped-is-missing --verify-merged "$VERIFY_CMD" --verify-merged-when code --docs-glob 'docs/*,*.md' --update-docs-on-overlap --after-merged "$AFTER_CMD" "${PR_NUMBERS[@]}"
-bash "$SKILL_DIR/scripts/launch-worker.sh" --run "$RUN_ID" --spec "$SPEC_FILE" --repo "$REPO" --name "$WORKTREE_NAME" --base origin/main -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
+python3 "$SKILL_DIR/scripts/launch-worker.py" --run "$RUN_ID" --spec "$SPEC_FILE" --repo "$REPO" --name "$WORKTREE_NAME" --base origin/main -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID" --kill-stale
 ```
 

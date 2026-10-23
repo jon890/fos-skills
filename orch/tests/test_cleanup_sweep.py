@@ -741,7 +741,7 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertIn("다음 실행에서 다시 시도", out)
 
     def test_session_end_hook_is_left_to_remove_worktree(self):
-        # OMC session-end hook 만 남으면 건너뛰지 않고 remove-worktree.sh 에 넘긴다. 그 스크립트가 끝날 때까지 기다린다
+        # OMC session-end hook 만 남으면 건너뛰지 않고 remove-worktree.py 에 넘긴다. 그 스크립트가 끝날 때까지 기다린다
         path = self.worktree("feat-h1")
         self.squash_merge("feat-h1", path)
         self.processes = [{"pid": 861, "ppid": 1, "cwd": str(path), "command": HOOK}]
@@ -899,8 +899,8 @@ class CleanupSweepTest(unittest.TestCase):
         path = self.worktree("feature/x", commits=0)
         self.save_state()
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}")
-        remove = SCRIPT.parent / "remove-worktree.sh"
-        done = subprocess.run(["zsh", str(remove), str(path), "--delete-branch", "--merged-head", head],
+        remove = SCRIPT.parent / "remove-worktree.py"
+        done = subprocess.run(["python3", str(remove), str(path), "--delete-branch", "--merged-head", head],
                               capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
         self.assertIn("조상도 아니다", done.stdout)
@@ -1000,7 +1000,7 @@ class CleanupSweepTest(unittest.TestCase):
             "ownershipState": "user_owned"}}]
         self.save_state()
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}", ORCA=str(self.bin / "orca"))
-        done = subprocess.run(["zsh", str(SCRIPT.parent / "remove-worktree.sh"), str(path),
+        done = subprocess.run(["python3", str(SCRIPT.parent / "remove-worktree.py"), str(path),
                                "--delete-branch"], env=env, capture_output=True, text=True)
         self.assertEqual(done.returncode, 1, done.stderr)
         self.assertIn("남김: 사용자 보유 터미널", done.stdout)

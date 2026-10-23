@@ -50,7 +50,7 @@ def main(argv=None):
         deny.extend(added)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    # 새로 만든 설정 파일이 untracked 로 남으면 remove-worktree.sh 가 커밋 안 된 변경으로 거부한다
+    # 새로 만든 설정 파일이 untracked 로 남으면 remove-worktree.py 가 커밋 안 된 변경으로 거부한다
     ignored = subprocess.run(["git", "-C", str(wt), "check-ignore", "-q", REL])
     if ignored.returncode != 0:
         common = subprocess.run(["git", "-C", str(wt), "rev-parse", "--path-format=absolute", "--git-common-dir"],

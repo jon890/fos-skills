@@ -1,4 +1,4 @@
-"""remove-worktree.sh 가 경로를 쥔 프로세스를 기다리는지 실제 git 저장소와 가짜 lsof, ps, sleep 으로 본다."""
+"""remove-worktree.py 가 경로를 쥔 프로세스를 기다리는지 실제 git 저장소와 가짜 lsof, ps, sleep 으로 본다."""
 
 import json
 import os
@@ -9,7 +9,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "remove-worktree.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "remove-worktree.py"
 HOOK = "node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}"
 
 
@@ -53,12 +53,15 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
             (self.bin / name).write_text(head + body)
             (self.bin / name).chmod(0o755)
 
-    def run_remove(self, procs, *args, hook_wait=None, shell="zsh"):
+    def run_remove(self, procs, *args, hook_wait=None, shell=None):
         self.state.write_text(json.dumps({"slept": 0, "procs": procs}))
         env = dict(self.env, PATH=f"{self.bin}:{os.environ['PATH']}")
         if hook_wait is not None:
             env["ORCH_HOOK_WAIT"] = str(hook_wait)
-        done = subprocess.run([shell, str(SCRIPT), str(self.path), *args], capture_output=True, text=True, env=env)
+        command = ["python3", str(SCRIPT), str(self.path), *args]
+        if shell:
+            command = [shell, "-c", 'exec "$@"', "remove-worktree", *command]
+        done = subprocess.run(command, capture_output=True, text=True, env=env)
         return done.returncode, done.stdout + done.stderr, json.loads(self.state.read_text())["slept"]
 
     def proc(self, pid, command, gone=None, ppid=1):
@@ -120,7 +123,7 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertTrue(self.path.exists())
 
-    def test_bash_usage_error_is_the_same_as_zsh(self):
+    def test_bash_launch_has_the_same_usage_error_as_python(self):
         zsh_code, zsh_out, _ = self.run_remove([], "--wait", "soon")
         bash_code, bash_out, _ = self.run_remove([], "--wait", "soon", shell="bash")
         self.assertEqual(2, bash_code, bash_out)
@@ -128,14 +131,14 @@ class RemoveWorktreeWaitTest(unittest.TestCase):
         self.assertEqual(zsh_out, bash_out)
         self.assertNotIn("unbound variable", bash_out)
 
-    def test_bash_removes_the_worktree_like_zsh(self):
+    def test_bash_launch_removes_the_worktree(self):
         code, out, _ = self.run_remove([], shell="bash")
         self.assertEqual(0, code, out)
         self.assertIn(f"removed {self.path}", out)
         self.assertNotIn("unbound variable", out)
         self.assertFalse(self.path.exists())
 
-    def test_bash_waits_for_a_holder_like_zsh(self):
+    def test_bash_launch_waits_for_a_holder(self):
         code, out, slept = self.run_remove([self.proc(42, "node server.js", gone=2)], "--wait", "5", shell="bash")
         self.assertEqual(0, code, out)
         self.assertEqual(2, slept)

@@ -120,7 +120,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | `merge-with-finish.py` | 설정을 `--finish-config` 로 주지 않았을 때. 머지 큐를 걸지 않는다 |
 | `spec-lint.py` | `--overlay` 를 주지 않았을 때 |
 | `cleanup-sweep.py` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
-| `launch-worker.sh` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
+| `launch-worker.py` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
 | `orch_paths.py --ensure` | 늘 |
 
 `wait-important.py` 와 `notify-conflicts.py` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.

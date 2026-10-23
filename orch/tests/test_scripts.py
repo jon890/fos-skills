@@ -1196,7 +1196,7 @@ class WorkerAskTest(unittest.TestCase):
               check)
                 n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
                 f="$FAKE_DIR/check$n.json"; [ -f "$f" ] || f="$FAKE_DIR/check.json"; cat "$f"; echo ;;
-              send) exit "$FAKE_SEND_RC" ;;
+              send) echo "${FAKE_SEND_STDERR:-}" >&2; exit "$FAKE_SEND_RC" ;;
             esac
         """))
         cls.orca.chmod(0o755)
@@ -1226,7 +1226,7 @@ class WorkerAskTest(unittest.TestCase):
                 "to_handle": to, "thread_id": thread, "created_at": "2026-10-19T10:00:00Z"}
 
     def run_ask(self, *args):
-        done = subprocess.run([str(SCRIPTS / "worker-ask.sh"), *args],
+        done = subprocess.run([str(SCRIPTS / "worker-ask.py"), *args],
                               capture_output=True, text=True, env=self.env)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         return done.returncode, done.stdout, calls
@@ -1316,6 +1316,16 @@ class WorkerAskTest(unittest.TestCase):
         self.assertEqual(1, sum("[check]" in c for c in calls))
         self.assertIn("[--to][run:run_y]", calls[-1])
 
+    def test_fallback_preserves_send_stderr_on_success_and_failure(self):
+        for send_rc, expected in ((0, 3), (1, 2)):
+            with self.subTest(send_rc=send_rc):
+                self.fake('dispatch is not active', 1, send_rc=send_rc)
+                self.env['FAKE_SEND_STDERR'] = 'send diagnostic'
+                done = subprocess.run([str(SCRIPTS / 'worker-ask.py'), '--from', 'term_w',
+                                       '--question', 'q'], capture_output=True, text=True, env=self.env)
+                self.assertEqual(done.returncode, expected)
+                self.assertIn('send diagnostic', done.stderr)
+
     def test_failed_resume_does_not_send(self):
         self.fake('unknown message', 1)
         code, _, calls = self.run_ask("--from", "term_w", "--resume", "m1")
@@ -1331,7 +1341,7 @@ class WorkerAskTest(unittest.TestCase):
         if not shutil.which("zsh"):
             self.skipTest("zsh 없음")
         self.fake('{"result":{"reply":"ok"}}', 0)
-        env = dict(self.env, ASK=str(SCRIPTS / "worker-ask.sh"))
+        env = dict(self.env, ASK=str(SCRIPTS / "worker-ask.py"))
         done = subprocess.run(["zsh", "-c", 'Q="두 단어 질문"; "$ASK" --from term_w --question "$Q"'],
                               capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, 0, done.stderr)

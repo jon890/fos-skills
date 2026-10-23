@@ -1,6 +1,6 @@
 # 7. 머지와 정리
 
-`cleanup-sweep.py` 와 `remove-worktree.sh` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
+`cleanup-sweep.py` 와 `remove-worktree.py` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
 `user_owned` 또는 `released` 터미널이 있으면 `남김: 사용자 보유 터미널` 로 건너뛴다.
 터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 
@@ -277,7 +277,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
 
 - squash 머지된 PR. PR HEAD 를 `--merged-head` 로 넘긴다. 머지 큐의 update-branch 로 PR HEAD 가 워크트리보다 앞서 가도 `refs/pull/<번호>/head` 를 받아 와서 지운다
 - 로컬 브랜치 이름(`<user>/<접두>-<주제>`)과 PR 브랜치 이름(`<접두>/<주제>`)이 다른 경우. upstream, `branch.<b>.merge`, 이름 변형 순으로 PR 을 찾는다. PR 조회가 비거나 깨지면 머지로 읽지 않는다
-- 예전에 머지된 PR 과 이름만 같은 새 브랜치. 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 보므로 지우지 않는다. 머지 큐의 update-branch 뒤 merge commit 으로 머지돼 base 위 커밋이 0 개가 된 브랜치는 끝 커밋이 `gh pr view --json commits` 의 커밋 목록에 있을 때 그 PR 의 브랜치로 본다. 막 만든 브랜치의 끝 커밋은 base 의 옛 커밋이라 목록에 없고, 목록을 읽지 못해도 인정하지 않는다. `remove-worktree.sh --merged-head` 도 HEAD 가 그 커밋의 조상이 아니면 거부한다
+- 예전에 머지된 PR 과 이름만 같은 새 브랜치. 브랜치 끝 커밋이 PR HEAD 와 같거나 그 조상일 때만 그 PR 로 보므로 지우지 않는다. 머지 큐의 update-branch 뒤 merge commit 으로 머지돼 base 위 커밋이 0 개가 된 브랜치는 끝 커밋이 `gh pr view --json commits` 의 커밋 목록에 있을 때 그 PR 의 브랜치로 본다. 막 만든 브랜치의 끝 커밋은 base 의 옛 커밋이라 목록에 없고, 목록을 읽지 못해도 인정하지 않는다. `remove-worktree.py --merged-head` 도 HEAD 가 그 커밋의 조상이 아니면 거부한다
 - worker 를 반납한 뒤 Orca 가 그 워크트리에 띄운 빈 셸 터미널. 폴더를 쓰는 프로세스가 자식 없는 로그인 셸뿐이면 그 터미널을 닫고 다시 시도한다. 다른 프로세스가 남아 있으면 건너뛴다
 - 뒤처진 기준 브랜치. 기본 체크아웃이 기준 브랜치에 있으면 `--ff-only` 로 맞춘다. 로컬에만 있는 커밋이 있으면 건드리지 않는다
 - 머지된 PR 의 본문 파일. 지시서 폴더의 부모(`<specs-dir>/..`)에 둔 `pr-<이름>.md` 를 지시서와 함께 지운다
@@ -299,9 +299,9 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --sweep-arg --r
 
 1. 그 PR 의 dispatch 를 반납하고 worker 터미널을 닫는다. 반납 명령과 잔여 확인 방법은 Orca 가이드를 따른다
 2. 원격을 갱신하고 로컬 기준 브랜치를 fast-forward 로 맞춘다(아래 명령).
-   워크트리를 지우기 전에 한다. 원격 추적 브랜치가 낡으면 `remove-worktree.sh` 가 머지된 커밋을 원격에 없는 커밋으로 센다.
+   워크트리를 지우기 전에 한다. 원격 추적 브랜치가 낡으면 `remove-worktree.py` 가 머지된 커밋을 원격에 없는 커밋으로 센다.
    백그라운드 동기화 루프는 compact 나 세션 재시작으로 끊기므로 머지마다 직접 한다
-3. 워크트리를 `remove-worktree.sh` 로 지운다(아래)
+3. 워크트리를 `remove-worktree.py` 로 지운다(아래)
 4. 로컬과 원격 브랜치를 지운다. `merge_queue.py` 가 원격 브랜치를 지웠으면 로컬만 남는다
 5. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
    `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다(`handoff-cleanup.py`).
@@ -341,7 +341,7 @@ if [ "$(cd "$OTHER_REPO" && gh pr view "$PR" --json state --jq .state)" = MERGED
   BRANCH=$(git -C "$WORKTREE" branch --show-current)
   PR_HEAD=$(cd "$OTHER_REPO" && gh pr view "$PR" --json headRefOid --jq .headRefOid)
   orca terminal close --terminal "$WORKER_TERM"
-  "$SKILL_DIR/scripts/remove-worktree.sh" "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
+  python3 "$SKILL_DIR/scripts/remove-worktree.py" "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
   if git -C "$OTHER_REPO" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
     git -C "$OTHER_REPO" push origin --delete "$BRANCH"
   fi
@@ -350,17 +350,17 @@ fi
 
 ### 워크트리 지우기
 
-**작업이 끝난 워크트리는 `remove-worktree.sh` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
+**작업이 끝난 워크트리는 `remove-worktree.py` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
 활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
 스크립트는 그 경로를 쓰는 프로세스(살아 있는 worker), 커밋 안 된 변경, 원격 어디에도 없는 커밋이 있으면 지우지 않고 이유를 낸다.
 원격에 같은 제목의 커밋이 있으면 rebase 된 것으로 보지만, squash 머지는 제목이 달라 원격에 없는 커밋으로 센다. 그때는 PR 이 `MERGED` 인 것을 확인한 뒤 사용자에게 알리고 지운다.
-macOS 의 zsh 와 `lsof`, git 2.31 이상을 전제한다.
+Python 3.10 이상과 `lsof`, git 2.31 이상을 전제한다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다. 그 초 동안 프로세스가 빠지기를 기다린다.
 OMC session-end hook worker 만 남은 경우는 옵션 없이도 끝날 때까지 기다린다(`ORCH_HOOK_WAIT`, 기본 180초).
 거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.py --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
-"$SKILL_DIR/scripts/remove-worktree.sh" "$WORKTREE" --delete-branch
+python3 "$SKILL_DIR/scripts/remove-worktree.py" "$WORKTREE" --delete-branch
 ```
 
 squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. 그 커밋의 조상은 원격에 있는 것으로 센다. `cleanup-sweep.py` 는 이 값을 스스로 넘긴다.
