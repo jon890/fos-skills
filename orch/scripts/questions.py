@@ -1,14 +1,16 @@
 """Read unanswered coordinator questions from Orca without consuming deliveries.
 
-inbox includes both directions of a reply thread; check --peek does not.
-Fail on a full snapshot instead of treating a potentially missing reply as pending.
+Read only this Run's questions, then each sender's replies. Never read the global inbox.
+Orca caps check history and peek at 100 rows; report that coverage explicitly.
 """
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 
-LIMIT = 100000
+HISTORY_LIMIT = 100
+REPLY_LIMIT = 200
 
 
 def orca(*args):
@@ -50,11 +52,32 @@ def snapshot(run=None):
         run = current.get("id")
     if not run:
         raise RuntimeError("현재 Run 이 없다. --run 으로 지정한다")
-    data = orca("inbox", "--limit", str(LIMIT))
+    history = messages(orca("check", "--run", run, "--all", "--types", "question,escalation"))
+    unread = messages(orca("check", "--run", run, "--peek", "--types", "question,escalation"))
+    if len(history) >= HISTORY_LIMIT or len(unread) >= HISTORY_LIMIT:
+        print("질문 조회 범위: 최근 질문 100건과 읽지 않은 질문 최대 100건; 더 오래된 미답변은 빠질 수 있다", file=sys.stderr)
+    candidates = {m["id"]: m for m in history + unread
+                  if m.get("id") and m.get("run_id") == run
+                  and m.get("type") in {"question", "escalation"}
+                  and m.get("to_handle") == f"run:{run}"}
+    replies = []
+    for sender in dict.fromkeys(m.get("from_handle") for m in candidates.values()):
+        if not sender:
+            raise RuntimeError("질문 발신자가 없다")
+        rows = messages(orca("inbox", "--terminal", sender, "--limit", str(REPLY_LIMIT)))
+        answers = [m for m in rows if m.get("from_handle") == f"run:{run}"]
+        pending = unanswered([*candidates.values(), *answers], run)
+        if len(rows) >= REPLY_LIMIT and any(m.get("from_handle") == sender for m in pending):
+            raise RuntimeError("답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다")
+        replies.extend(answers)
+    return run, unanswered([*candidates.values(), *replies], run)
+
+
+def messages(data):
     rows = data.get("messages")
-    if not isinstance(rows, list) or len(rows) >= LIMIT or not all(isinstance(m, dict) for m in rows):
-        raise RuntimeError("질문 기록 전체를 읽지 못했다")
-    return run, unanswered(rows, run)
+    if not isinstance(rows, list) or not all(isinstance(m, dict) for m in rows):
+        raise RuntimeError("질문 기록을 읽지 못했다")
+    return rows
 
 
 def age_seconds(message, now):
