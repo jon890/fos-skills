@@ -9,7 +9,7 @@
                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」 로 거부하면
                             다음 후보 메시지로 한 번 더 시도한다
     끝났고 터미널이 남았다  `--spec` 의 지시서로 `launch-worker.sh --worktree <그 워크트리> -- --terminal <그 터미널>` 을 부른다.
-                            새 Task 로 같은 터미널을 이어 쓴다
+                            agent_unconfigured(종료 코드 3)이면 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다
     끝났는데 아직 일한다    `--spec` 이 없고 그 터미널 화면이 작업 중이면 `nudge-worker.py --text` 로 본문을 넣고,
                             Task 기록에 묶이지 않는다고 경고한다. worker 가 중간에 worker_done 을 보내 dispatch 가
                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
@@ -24,6 +24,7 @@
     --spec       dispatch 가 끝났을 때 이어 쓸 후속 지시서. `허락:` 줄이 있어야 한다.
                  끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 이 지시서에 적는다
     --run        reply 와 다시 띄우기에 줄 Run id
+    --agent, --model, --effort  새 worker 실행 설정. 생략하면 원래 dispatch 설정을 쓴다
 
 ORCA, NUDGE_WORKER, LAUNCH_WORKER 환경 변수로 실행 파일과 스크립트 경로를 바꾼다.
 
@@ -71,12 +72,18 @@ def orca_json(*args):
 
 
 def describe(dispatch_id):
-    """(상태, 터미널 handle, 워크트리 경로, Run id)."""
+    """(상태, 터미널 handle, 워크트리 경로, Run id, 실행 설정)."""
     shown = orca_json("orchestration", "worker-show", "--dispatch", dispatch_id)
     dispatch, worker = shown.get("dispatch") or {}, shown.get("worker") or {}
     worktree = str(worker.get("worktreeId") or "").split("::", 1)[-1] or None
     handle = worker.get("agentTerminalHandle") or dispatch.get("assigneeHandle")
-    return dispatch.get("status"), handle, worktree, dispatch.get("runId")
+    options = worker.get("startOptions") or {}
+    launch = options.get("launch") or {}
+    settings = dict(launch.get("requested") or {})
+    settings.update({k: v for k, v in (launch.get("effective") or {}).items() if v})
+    if not settings.get("agent"):
+        settings["agent"] = options.get("agent")
+    return dispatch.get("status"), handle, worktree, dispatch.get("runId"), settings
 
 
 def candidates(dispatch_id, handle):
@@ -127,6 +134,8 @@ def main(argv=None):
     parser.add_argument("--reply-to")
     parser.add_argument("--spec")
     parser.add_argument("--run")
+    for option in ("agent", "model", "effort"):
+        parser.add_argument(f"--{option}", help="새 worker 실행 설정. 생략하면 원래 dispatch 값을 쓴다")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -141,7 +150,7 @@ def main(argv=None):
         return 2
 
     try:
-        status, handle, worktree, run_id = describe(args.dispatch)
+        status, handle, worktree, run_id, settings = describe(args.dispatch)
         run = args.run or run_id
         if status in ACTIVE:
             targets = [args.reply_to] if args.reply_to else []
@@ -189,7 +198,52 @@ def main(argv=None):
     cmd = ["bash", LAUNCH_WORKER, "--spec", args.spec, "--worktree", worktree, *(["--run", run] if run else []),
            "--", "--terminal", handle]
     print(f"relaunch: 끝난 {args.dispatch} 의 터미널 {handle} 에 새 Task 로 띄운다", flush=True)
-    return 0 if subprocess.run(cmd).returncode == 0 else 1
+    code = subprocess.run(cmd).returncode
+    if code != 3:
+        return 0 if code == 0 else 1
+    # launch-worker 의 3 은 재사용 터미널의 agent_unconfigured 에만 쓴다.
+    # 설정을 모르면 기존 터미널을 보존한다. 기본 모델로 바뀌는 일을 막는다.
+    settings.update({key: getattr(args, key) for key in ("agent", "model", "effort") if getattr(args, key)})
+    if not settings.get("agent") or not settings.get("model"):
+        print("send-to-worker: 원래 실행 설정이 없다. --agent 와 --model 을 주면 새로 띄운다")
+        return 1
+    try:
+        # 그 사이 같은 터미널에 다른 dispatch 가 붙었으면 닫지 않는다.
+        current = orca_json("orchestration", "worker-show", "--dispatch", args.dispatch)
+        resource = current.get("terminalResource") or {}
+        if resource.get("ownershipState") in {"user_owned", "released"}:
+            print("send-to-worker: 사용자가 보유하거나 해제한 터미널은 닫지 않는다")
+            return 1
+        owner = resource.get("ownerDispatchId")
+        if owner and owner != args.dispatch:
+            print("send-to-worker: 터미널 소유 dispatch 가 바뀌어 닫지 않는다")
+            return 1
+        cursor, seen = None, set()
+        while True:
+            fleet = orca_json("orchestration", "worker-list", *(["--run", run] if run else []),
+                              *(["--cursor", cursor] if cursor else []))
+            if any(row.get("agentTerminalHandle") == handle and row.get("dispatchStatus") in ACTIVE
+                   for row in fleet.get("workers") or []):
+                print("send-to-worker: 터미널에 활성 dispatch 가 있어 닫지 않는다")
+                return 1
+            page = fleet.get("page") or {}
+            if not page.get("hasMore"):
+                break
+            cursor = page.get("nextCursor")
+            if not cursor or cursor in seen:
+                raise OrcaFailed("worker-list 의 다음 페이지를 확인하지 못했다")
+            seen.add(cursor)
+        orca_json("terminal", "close", "--terminal", handle)
+    except OrcaFailed as exc:
+        print(f"send-to-worker: {exc}")
+        return 5
+    fresh = ["bash", LAUNCH_WORKER, "--spec", args.spec, "--worktree", worktree,
+             *(["--run", run] if run else []), "--"]
+    for key in ("agent", "model", "effort"):
+        if settings.get(key):
+            fresh += [f"--{key}", settings[key]]
+    print(f"restart: {handle} 을 닫고 같은 워크트리에 새 worker 를 띄운다", flush=True)
+    return 0 if subprocess.run(fresh).returncode == 0 else 1
 
 
 if __name__ == "__main__":

@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.42.0 (2026-10-23)
+
+- `wait-important.py`: 완료·포기된 dispatch 의 터미널이 사라져도 `WORKER_LOST` 로 보고하지 않는다. worker 의 실패 보고와 코디네이터의 종료 기록은 camelCase 와 snake_case 를 모두 읽는다.
+- `send-to-worker.py`: `--spec` 으로 터미널을 이어 쓰다가 `agent_unconfigured` 로 끝나면 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. 원래 에이전트·모델·effort 를 유지하며 인자로 바꿀 수 있다. 설정 누락, 소유권 변경, 활성 dispatch, 닫기 실패 시에는 멈춘다.
+- 머지 스크립트 두 개의 CI 조회는 `statusCheckRollup` 을 사용하므로 최근 실행 목록의 검색 한도에 영향을 받지 않는다. 회귀 검사와 references 문서에 이 기준을 남긴다.
+
 ## 1.41.0 (2026-10-23)
 
 머지 큐의 update-branch 뒤 merge commit 으로 머지된 브랜치를 `cleanup-sweep.py` 가 그 PR 의 것으로 알아보지 못해 정리가 남던 문제를 고친다.
