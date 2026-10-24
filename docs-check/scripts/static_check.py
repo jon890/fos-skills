@@ -129,7 +129,7 @@ def check_index(adr_dir):
         return []
 
     body = set()
-    for path in sorted(adr_dir.glob("*.md")):
+    for path in sorted(adr_dir.rglob("*.md")):
         for line in read_lines(path):
             m = ADR_BODY.match(line)
             if m:

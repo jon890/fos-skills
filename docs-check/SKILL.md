@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "3.4.0"
+  version: "3.5.0"
 ---
 # docs-check
 
@@ -132,7 +132,7 @@ ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에
 - 현재 사실은 책임 문서 한곳에만 남기고 나머지는 그것을 가리킨다.
 - ADR 에는 코드로 자명하지 않은 장기 결정, 맥락, 기각한 대안만 남긴다.
 - 구현 경로와 실행 명령은 책임 문서나 코드로 옮기고 ADR 은 그 위치를 짧게 가리킨다.
-- 대체된 ADR 은 지우지 않는다. 표기 규약은 [planning 의 task-create.md](../planning/references/task-create.md) 가 소유한다.
+- 대체된 ADR 은 지우지 않는다. 표기와 위치, 링크·색인 갱신 규약은 [planning 의 task-create.md](../planning/references/task-create.md) 가 소유한다.
 - ADR 파일과 `INDEX.md` 를 함께 고친다.
 - 고친 Markdown 에 그 저장소의 표현과 가독성 검사를 실행한다.
 
