@@ -20,4 +20,5 @@ export const QUEUE_VALUE_OPTIONS: readonly string[] = [
   '--copy-dir',
   '--after-merged',
   '--sweep-arg',
+  '--last-of-task',
 ]

@@ -66,6 +66,8 @@ function setup(t: TestContext): Ctx {
     CLEANUP_SWEEP: join(tmp, 'sweep.py'),
   }
   delete env.GH
+  // 핸들러는 clone 의 .orch/hooks 에 둔다. 바깥 환경의 ORCH_DIR 이 그 위치를 바꾸지 않게 한다
+  delete env.ORCH_DIR
   delete env.OVERLAP_UNITS
   const repo = join(tmp, 'repo')
   const git = (args: string[], cwd = repo): string => {
@@ -248,6 +250,44 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
     assert.equal(dirname(copy), real)
     assert.match(copy, /\/merge-queue-pr1-\d+$/)
     assert.equal(existsSync(copy), false)
+    assert.equal(c.worktreeCount(), 1)
+  })
+
+  test('hooks/verify-merged.ts 만 있어도 겹친 PR 의 사본에서 그 핸들러가 돈다', async (t) => {
+    const c = setup(t)
+    c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'a.txt': `main\n${FIVE}` })
+    const seen = join(c.tmp, 'verify.json')
+    mkdirSync(join(c.repo, '.orch', 'hooks'), { recursive: true })
+    writeFileSync(
+      join(c.repo, '.orch', 'hooks', 'verify-merged.ts'),
+      [
+        "import { readFileSync, writeFileSync } from 'node:fs'",
+        `writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ input: JSON.parse(readFileSync(0, 'utf8')), cwd: process.cwd() }))`,
+      ].join('\n'),
+    )
+    const r = await c.runQueue([])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '1 겹침: a.txt')
+    has(r.stdout, '합친 사본의 검사 통과')
+    assert.equal(c.merged(), true)
+    const { input, cwd } = JSON.parse(readFileSync(seen, 'utf8')) as { input: Json; cwd: string }
+    assert.equal(cwd, input.copy)
+    assert.match(String(input.copy), /\/merge-queue-pr1-\d+$/)
+    assert.deepEqual(input.overlap_files, ['a.txt'])
+    assert.equal(input.base_head, c.git(['rev-parse', 'main']))
+    assert.equal(existsSync(String(input.copy)), false)
+  })
+
+  test('hooks/verify-merged.ts 만 있어도 --verify-merged-when code 를 받고, 그 실패는 검사 실패다', async (t) => {
+    const c = setup(t)
+    c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'b.txt': 'b2\n' })
+    mkdirSync(join(c.repo, '.orch', 'hooks'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch', 'hooks', 'verify-merged.ts'), 'process.exit(4)\n')
+    const r = await c.runQueue(['--verify-merged-when', 'code'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'HOOK-FAIL verify-merged 4')
+    has(r.stdout, 'STOP 1 합친 사본의 검사 실패(종료 코드 4)')
+    assert.equal(c.merged(), false)
     assert.equal(c.worktreeCount(), 1)
   })
 

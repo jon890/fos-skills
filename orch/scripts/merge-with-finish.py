@@ -72,7 +72,7 @@ FINISH_PR = os.environ.get("FINISH_PR", str(HERE / "finish-pr.py"))
 # merge_queue.py 가 값을 받는 옵션. 값이 숫자여도 PR 번호로 읽지 않으려고 안다. tests 가 merge_queue.py 와 맞는지 본다
 VALUE_OPTIONS = {"--repo", "--before", "--method", "--threads-cmd", "--check-timeout", "--required", "--allow-fail",
                  "--verify-merged", "--verify-merged-when", "--docs-glob", "--copy-dir", "--sweep-arg", "--after-merged",
-                 "--up-to-date-when", "--shared-paths", "--unit-prefix", "--unit-group"}
+                 "--up-to-date-when", "--shared-paths", "--unit-prefix", "--unit-group", "--last-of-task"}
 # config.json 의 queue 절 키와 머지 큐 옵션
 QUEUE_KEYS = {"before": "--before", "required": "--required", "verify_merged": "--verify-merged",
               "verify_merged_when": "--verify-merged-when", "docs_glob": "--docs-glob", "method": "--method",

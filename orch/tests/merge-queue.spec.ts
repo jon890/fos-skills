@@ -3,7 +3,7 @@
 // 판정 명령(OVERLAP_UNITS)과 정리 명령(CLEANUP_SWEEP)의 가짜는 `.py` 라 확장자대로 python3 로 돈다.
 
 import assert from 'node:assert/strict'
-import { accessSync, constants, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -55,6 +55,8 @@ function setup(t: TestContext): Ctx {
     CLEANUP_SWEEP: sweep,
   }
   delete env.GH
+  // 핸들러는 --repo 의 .orch/hooks 에 둔다. 바깥 환경의 ORCH_DIR 이 그 위치를 바꾸지 않게 한다
+  delete env.ORCH_DIR
   const writeState = (state: Json) => writeFileSync(stateFile, JSON.stringify(state))
   return {
     tmp,
@@ -285,7 +287,13 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
 
   test('머지 전 명령이 실패하면 멈춘다', async (t) => {
     const c = setup(t)
-    const r = await c.runQueue({ '1': pr() }, ['--before', 'exit 3', '1'])
+    // --before 는 before-merge 의 옛 칸이라 실패가 HOOK-FAIL 이다
+    let r = await c.runQueue({ '1': pr() }, ['--before', 'exit 3', '1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'HOOK-FAIL before-merge 3')
+    has(r.stdout, 'STOP 1 HOOK-FAIL')
+    lacks(c.log(), 'pr merge')
+    r = await c.runQueue({ '1': pr() }, ['1:exit 3'])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'STOP 1 머지 전 명령 실패')
     lacks(c.log(), 'pr merge')
@@ -312,8 +320,7 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     const c = setup(t)
     const r = await c.runQueue({ '1': pr({ headRefName: 'release/1.0' }) }, ['1'])
     assert.equal(r.code, 0, both(r))
-    c.env.FAKE_BASED = '1'
-    const r2 = await c.runQueue({ '2': pr() }, ['2'])
+    const r2 = await c.runQueue({ '2': pr(), _based: [{ number: 9, author: { login: 'other' }, url: 'https://git.example.com/owner/repo/pull/9' }] }, ['2'])
     assert.equal(r2.code, 0, both(r2))
     lacks(c.log(), '--delete')
   })
@@ -828,6 +835,219 @@ describe('merge_queue 보류', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
     const r = await c.runQueue({ '1': pr() }, ['--continue-on-hold', '1'])
     assert.equal(r.code, 0, both(r))
     has(r.stdout, 'QUEUE-DONE')
+  })
+})
+
+// 핸들러 파일 <--repo>/.orch/hooks/<이벤트>.ts 를 쓴다
+function hook(c: Ctx, event: string, body: string): void {
+  const dir = join(c.tmp, '.orch', 'hooks')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${event}.ts`), body)
+}
+
+// 받은 입력을 file 에 한 줄씩 덧붙이고 code 로 끝나는 핸들러 본문
+function recorder(file: string, code = 0, reason = ''): string {
+  return [
+    "import { appendFileSync, readFileSync } from 'node:fs'",
+    `appendFileSync(${JSON.stringify(file)}, JSON.stringify(JSON.parse(readFileSync(0, 'utf8'))) + '\\n')`,
+    reason ? `console.log(${JSON.stringify(reason)})` : '',
+    `process.exit(${code})`,
+  ].join('\n')
+}
+
+function inputs(file: string): Json[] {
+  return existsSync(file)
+    ? readFileSync(file, 'utf8')
+        .split('\n')
+        .filter((line) => line)
+        .map((line) => JSON.parse(line) as Json)
+    : []
+}
+
+function config(c: Ctx, body: Json): void {
+  mkdirSync(join(c.tmp, '.orch'), { recursive: true })
+  writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify(body))
+}
+
+const MINE = { number: 7, author: { login: 'me' }, url: 'https://git.example.com/owner/repo/pull/7' }
+const THEIRS = { number: 8, author: { login: 'other' }, url: 'https://git.example.com/owner/repo/pull/8' }
+
+describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  test('before-merge 가 10 이면 그 PR 은 HOOK-REJECT 로 멈추고 머지하지 않는다', async (t) => {
+    const c = setup(t)
+    hook(c, 'before-merge', recorder(join(c.tmp, 'in.jsonl'), 10, '백업이 없다'))
+    const r = await c.runQueue({ '1': pr() }, ['1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'HOOK-REJECT before-merge 백업이 없다')
+    has(r.stdout, 'STOP 1 HOOK-REJECT')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('before-merge 입력은 pr, owner, name 과 --last-of-task 로 정한 last_of_task 다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'in.jsonl')
+    hook(c, 'before-merge', recorder(file))
+    const first = pr({ title: '첫 PR', author: { login: 'me' }, isDraft: false })
+    const r = await c.runQueue({ '1': first, '2': pr({ headRefName: 'b' }) }, ['--last-of-task', '1', '1', '2'])
+    assert.equal(r.code, 0, both(r))
+    const seen = inputs(file)
+    assert.deepEqual(
+      seen.map((input) => [(input.pr as Json).number, input.last_of_task]),
+      [
+        [1, true],
+        [2, false],
+      ],
+    )
+    assert.deepEqual(seen[0].pr, { number: 1, title: '첫 PR', branch: 'feat', head: 'abc', author: 'me', draft: false, url: 'https://git.example.com/owner/repo/pull/1' })
+    assert.equal(seen[0].owner, 'owner')
+    assert.equal(seen[0].name, 'repo')
+    assert.equal(seen[0].event, 'before-merge')
+    assert.equal(seen[0].base, 'main')
+    assert.equal(seen[0].run, null)
+  })
+
+  test('큐에 없는 --last-of-task 는 사용법 오류다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr() }, ['--last-of-task', '3', '1'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '--last-of-task 3')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('--before 와 hooks/before-merge.ts 가 함께 있으면 머지하지 않고 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    hook(c, 'before-merge', recorder(join(c.tmp, 'in.jsonl')))
+    const r = await c.runQueue({ '1': pr() }, ['--before', 'true', '1'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'before-merge 의 핸들러')
+    has(r.stderr, '옛 설정 칸 --before 가 함께 있다')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('--after-merged 와 hooks/after-queue.ts 가 함께 있으면 첫 PR 을 머지하기 전에 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    hook(c, 'after-queue', recorder(join(c.tmp, 'in.jsonl')))
+    const r = await c.runQueue({ '1': pr() }, ['--after-merged', 'true', '1'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '옛 설정 칸 --after-merged 가 함께 있다')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('pipeline.authors 가 문자열이면 머지하지 않고 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    config(c, { pipeline: { authors: 'me' } })
+    const r = await c.runQueue({ '1': pr() }, ['1'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'pipeline.authors')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('옛 칸 --before 는 DEPRECATED 줄과 함께 PR, BRANCH, OWNER, REPO, GH_HOST 를 받는다', async (t) => {
+    const c = setup(t)
+    const seen = join(c.tmp, 'before.txt')
+    const r = await c.runQueue({ '1': pr() }, ['--before', `echo "$PR $BRANCH $OWNER $REPO $GH_HOST" > ${seen}`, '1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'DEPRECATED --before → hooks/before-merge.ts')
+    assert.equal(readFileSync(seen, 'utf8'), '1 feat owner repo git.example.com\n')
+  })
+
+  test('PR:명령 은 그 PR 에서 --before 를 대신한다', async (t) => {
+    const c = setup(t)
+    const seen = join(c.tmp, 'before.txt')
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, ['--before', `echo "X $PR" >> ${seen}`, `1:echo "Y $PR" >> ${seen}`, '2'])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(readFileSync(seen, 'utf8'), 'Y 1\nX 2\n')
+  })
+
+  test('hooks/before-merge.ts 와 PR:명령 이 있으면 핸들러 다음에 그 명령이 돈다', async (t) => {
+    const c = setup(t)
+    const seen = join(c.tmp, 'order.txt')
+    hook(c, 'before-merge', `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(seen)}, 'H\\n')\n`)
+    const r = await c.runQueue({ '1': pr() }, [`1:echo Y >> ${seen}`])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(readFileSync(seen, 'utf8'), 'H\nY\n')
+  })
+
+  test('hooks.timeouts.before-merge 를 넘긴 옛 칸 --before 는 HOOK-FAIL timeout 으로 멈춘다', async (t) => {
+    const c = setup(t)
+    config(c, { hooks: { timeouts: { 'before-merge': 1 } } })
+    const r = await c.runQueue({ '1': pr() }, ['--before', 'sleep 5', '1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'HOOK-FAIL before-merge timeout')
+    has(r.stdout, 'STOP 1 HOOK-FAIL')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('내 PR 이 머지한 브랜치를 base 로 두면 base 를 옮긴 뒤 원격 브랜치를 지운다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'in.jsonl')
+    hook(c, 'after-merge', recorder(file))
+    const r = await c.runQueue({ '1': pr(), _based: [MINE] }, ['1'])
+    assert.equal(r.code, 0, both(r))
+    const log = c.log()
+    const edit = log.indexOf('pr edit 7 --base main')
+    const push = log.indexOf('git push -q origin --delete feat')
+    assert.ok(edit >= 0 && push > edit, `base 를 옮긴 뒤 지워야 한다:\n${log}`)
+    const [input] = inputs(file)
+    assert.deepEqual(input.retargeted, [7])
+    assert.equal(input.remote_branch_deleted, true)
+    assert.equal((input.pr as Json).number, 1)
+  })
+
+  test('다른 사람의 PR 이 머지한 브랜치를 base 로 두면 옮기지도 지우지도 않는다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'in.jsonl')
+    hook(c, 'after-merge', recorder(file))
+    const r = await c.runQueue({ '1': pr(), _based: [MINE, THEIRS] }, ['1'])
+    assert.equal(r.code, 0, both(r))
+    lacks(c.log(), 'pr edit')
+    lacks(c.log(), '--delete')
+    const [input] = inputs(file)
+    assert.deepEqual(input.retargeted, [])
+    assert.equal(input.remote_branch_deleted, false)
+  })
+
+  test('쌓인 PR 조회나 base 옮기기가 실패하면 원격 브랜치를 남긴다', async (t) => {
+    const c = setup(t)
+    let r = await c.runQueue({ '1': pr(), _based: [MINE], _list_fails: true }, ['1'])
+    assert.equal(r.code, 0, both(r))
+    lacks(c.log(), '--delete')
+    r = await c.runQueue({ '1': pr(), _based: [MINE], _edit_fails: true }, ['1'])
+    assert.equal(r.code, 0, both(r))
+    has(c.log(), 'pr edit 7 --base main')
+    lacks(c.log(), '--delete')
+  })
+
+  test('hooks/after-merge.ts 가 1 이면 HOOK-FAIL 을 남기고 다음 PR 도 머지하며 3 으로 끝난다', async (t) => {
+    const c = setup(t)
+    hook(c, 'after-merge', recorder(join(c.tmp, 'in.jsonl'), 1))
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, ['1', '2'])
+    assert.equal(r.code, 3, both(r))
+    assert.equal(count(r.stdout, 'HOOK-FAIL after-merge 1'), 2, r.stdout)
+    has(c.log(), 'pr merge 1')
+    has(c.log(), 'pr merge 2')
+    has(r.stdout, 'QUEUE-DONE')
+  })
+
+  test('보류가 있으면 after-merge 가 실패해도 종료 코드는 1 이다', async (t) => {
+    const c = setup(t)
+    hook(c, 'after-merge', recorder(join(c.tmp, 'in.jsonl'), 1))
+    const r = await c.runQueue({ '1': pr(), '2': pr({ statusCheckRollup: FAILED }) }, ['--continue-on-hold', '1', '2'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'HOOK-FAIL after-merge 1')
+    has(r.stdout, 'QUEUE-HELD 2')
+  })
+
+  test('hooks/after-queue.ts 가 1 이면 AFTER-MERGED-FAILED 1 과 3 으로 끝난다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'in.jsonl')
+    hook(c, 'after-queue', recorder(file, 1))
+    const r = await c.runQueue({ '1': pr(), '2': pr({ state: 'MERGED' }) }, ['1', '2'])
+    assert.equal(r.code, 3, both(r))
+    has(r.stdout, 'HOOK-FAIL after-queue 1')
+    has(r.stdout, 'AFTER-MERGED-FAILED 1')
+    const [input] = inputs(file)
+    assert.deepEqual([input.merged_prs, input.code_prs, input.held_prs], [[1], [1], []])
   })
 })
 

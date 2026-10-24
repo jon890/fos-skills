@@ -77,6 +77,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `finish.complete_cmd`, `finish.task_pattern` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다 |
 
 명령줄의 `PR번호:명령` 형식은 그대로 둔다. 그 PR 하나에만 붙이는 일회성 명령이라 핸들러로 옮기지 않는다. `before-merge` 핸들러 다음에 돈다.
+명령줄 `--before` 가 있으면 그 PR 에서는 `PR번호:명령` 이 대신한다.
 
 ## 사용자 결정 질문 형식
 

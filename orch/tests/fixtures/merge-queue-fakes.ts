@@ -5,7 +5,10 @@
 // 상태 키: <번호> 마다 PR 필드(state, statusCheckRollup, mergeable, url, headRefName, baseRefName, headRefOid,
 //   isCrossRepository, mergeStateStatus)와 흉내 칸(appear, update_fails, after_update, after_update_head),
 //   그리고 _behind, _behind_after_update, _api_fails, _rules, _rules_error, _view_fails, _remote_head, _base_head, _ls_remote_fails.
-// 가짜 git 은 rev-parse 와 ls-remote 만 상태로 답하고 나머지는 0 으로 끝난다. merge-queue.spec.ts 만 쓰고,
+//   쌓인 PR 칸: _based(`pr list --base` 가 내는 열린 PR 목록. `pr edit <n> --base` 가 그 PR 을 뺀다), _list_fails,
+//   _edit_fails, _user(`api user` 의 login. 기본 me).
+// 가짜 git 은 rev-parse --verify 와 ls-remote 만 상태로 답하고 나머지는 0 으로 끝난다. 그 밖의 rev-parse 는 저장소 밖처럼
+// 128 로 끝난다. 이벤트 실행기가 주 checkout 을 찾을 때 --repo 를 그대로 쓰게 하기 위해서다. merge-queue.spec.ts 만 쓰고,
 // merge-queue-overlap.spec.ts 는 진짜 git 과 임시 저장소를 쓴다.
 // 확장자 없는 실행 파일은 타입 제거 대상이 아니라 타입 문법을 쓰지 않는다. 출력은 파이프가 비동기인 macOS 에서도
 // 끝나기 전에 다 나가도록 fs.writeSync 로 쓴다.
@@ -41,8 +44,19 @@ if (args[0] === 'pr' && args[1] === 'merge') {
   process.exit(1)
 }
 if (args[0] === 'pr' && args[1] === 'list') {
-  say(process.env.FAKE_BASED ?? '0')
+  if (state._list_fails) process.exit(1)
+  say(JSON.stringify(state._based ?? []))
   process.exit(0)
+}
+if (args[0] === 'pr' && args[1] === 'edit') {
+  if (state._edit_fails) process.exit(1)
+  state._based = (state._based ?? []).filter((pr) => String(pr.number) !== args[2])
+  save()
+  process.exit(0)
+}
+if (args[0] === 'api' && args[1] === 'user') {
+  const at = args.indexOf('--jq')
+  jq(at >= 0 ? args[at + 1] : '.', { login: state._user ?? 'me' })
 }
 if (args[0] === 'api') {
   const path = args.slice(1).find((a) => a.startsWith('repos/'))
@@ -92,6 +106,7 @@ process.exit(3)
 export const FAKE_GIT = `const fs = require('node:fs')
 const args = process.argv.slice(2)
 fs.appendFileSync(process.env.FAKE_LOG, 'git ' + args.join(' ') + '\\n')
+if (args[0] === 'rev-parse' && !args.includes('--verify')) process.exit(128)
 if (args[0] === 'rev-parse' || args[0] === 'ls-remote') {
   const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
   if (args[0] === 'ls-remote' && state._ls_remote_fails) process.exit(2)
