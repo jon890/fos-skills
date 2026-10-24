@@ -69,3 +69,32 @@ describe('README 스크립트 목록', () => {
     assert.deepEqual(missingFromReadme(join(tmp, 'README.md'), join(tmp, 'scripts')), ['a.ts'])
   })
 })
+
+// ts_shim.py 를 뺀 .py 가운데 shim 이 아닌 파일 이름을 정렬해 돌려준다.
+// shim 은 ts_shim.exec_ts(__file__ 를 부르고 같은 폴더에 같은 이름의 .ts 가 있는 .py 다.
+function nonShimPython(scriptsDir: string): string[] {
+  const names = new Set(readdirSync(scriptsDir))
+  return [...names]
+    .filter((name) => extname(name) === '.py' && name !== 'ts_shim.py')
+    .filter((name) => !(names.has(`${name.slice(0, -3)}.ts`) && readFileSync(join(scriptsDir, name), 'utf8').includes('ts_shim.exec_ts(__file__')))
+    .sort()
+}
+
+describe('남은 Python', () => {
+  test('orch/scripts 의 .py 는 ts_shim.py 를 빼고 모두 shim 이다', () => {
+    const left = nonShimPython(join(ORCH, 'scripts'))
+    assert.deepEqual(left, [], `shim 이 아닌 Python: ${left.join(', ')}`)
+  })
+
+  test('.ts 가 없거나 exec_ts 를 부르지 않는 .py 는 shim 이 아니라고 알린다', () => {
+    const shim = 'import ts_shim\nif __name__ == "__main__":\n    ts_shim.exec_ts(__file__)\n'
+    const dir = join(tmp, 'scripts')
+    writeFileSync(join(dir, 'a.py'), shim)
+    writeFileSync(join(dir, 'b.py'), 'print("x")\n')
+    writeFileSync(join(dir, 'b.ts'), '')
+    writeFileSync(join(dir, 'c.py'), shim)
+    writeFileSync(join(dir, 'c.ts'), '')
+    writeFileSync(join(dir, 'ts_shim.py'), 'def exec_ts(): pass\n')
+    assert.deepEqual(nonShimPython(dir), ['a.py', 'b.py'])
+  })
+})

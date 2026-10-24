@@ -95,6 +95,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | `.claude-plugin/plugin.json` | 플러그인 이름과 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
 | `orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
+| `work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 의 `board-sync`, `goal-progress`, `finish-pr` 와 `lib/paths.ts` |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `content-preview/scripts/show-preview.sh` |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 없는지 확인한다 | 사람, 구현 검증 |
 | `scripts/test-plugin-install.sh` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
@@ -164,6 +165,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | 명령 | 확인하는 것 |
 | --- | --- |
 | `python3 -m unittest discover -s scripts/tests` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `test_export_to_team.py` 가 `export-to-team.sh` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
+| `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` | orch 와 work-board 의 node:test. 파일마다 프로세스가 나뉜다 |
 | `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 스킬 여섯 개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
 `claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.

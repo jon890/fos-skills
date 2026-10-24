@@ -56,14 +56,10 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 
 ```bash
-python3 scripts/run-orch-tests.py --report /tmp/orch-tests.json
+node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
 ```
 
-파일마다 별도 프로세스를 띄워 최대 4개를 동시에 실행한다. `--jobs`로 동시 실행 수를 지정한다.
-각 테스트의 상태와 로그, 저장소는 임시 디렉터리를 따로 쓴다.
-정리, 머지 큐, 질문, 보드, CI ready, worker 깨우기 테스트는 가짜 실행 파일만 클래스마다 재사용한다.
-실패한 파일의 출력과 파일별 시간, 느린 테스트 상위 10개를 보여 주고, 실패가 하나라도 있으면 종료 코드 1을 낸다.
-`--report` 는 전체 측정값을 JSON으로 저장한다. 순차 실행과 비교하려면 `--jobs 1`을 붙인다.
+`node --test` 는 파일마다 프로세스가 나뉜다. 각 테스트의 상태와 로그, 저장소는 임시 디렉터리를 따로 쓴다.
 
 `cleanup-sweep.spec.ts` 는 `--wait 0.01 --poll-interval 0.01`로 대기를 줄인다.
 운영 기본값은 대기 5초, 확인 간격 1초이며, 신호를 보낸 뒤에는 최소 한 간격을 기다린다.

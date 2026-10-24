@@ -1283,7 +1283,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   }
   const hooks = sessionEndHooks(pids, REAL_HOST)
   if (hooks.length) {
-    log(`  OMC session-end hook ${hooks.join(', ')} 은 끄지 않는다. remove-worktree.py 가 끝날 때까지 기다린다`)
+    log(`  OMC session-end hook ${hooks.join(', ')} 은 끄지 않는다. remove-worktree.ts 가 끝날 때까지 기다린다`)
     pids = pids.filter((pid) => !hooks.includes(pid))
   }
   if (pids.length) {
@@ -1470,7 +1470,7 @@ export async function main(argv: string[]): Promise<number> {
     if (args.foreign === null) err('cleanup-sweep: 모든 Run 의 worker 를 읽지 못해 이 Run worker 의 터미널만 닫는다')
   }
   args.liveSpecs = specsDir ? liveSpecPaths(run) : new Set()
-  if (args.liveSpecs === null) err('cleanup-sweep: 살아 있는 dispatch 의 지시서 목록을 읽지 못해 지시서는 지우지 않는다')
+  if (args.liveSpecs === null) err('cleanup-sweep: 살아 있는 dispatch 의 지시서 목록을 읽지 못해 지시서와 PR 본문은 지우지 않는다')
   let code = 0
   for (const repo of repos) {
     try {

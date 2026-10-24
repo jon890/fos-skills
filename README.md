@@ -39,7 +39,7 @@
 이 플러그인은 `bin/` 을 두지 않아 `browser-driver` 를 PATH 명령으로 싣지 않는다. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 가 소유한다.
 
 `work-board/` 는 스킬이 아니라 작업 현황 창 `/board` 를 그리는 mod 다.
-orch 스킬이 보드를 고치는 `work-board/bin/board.py` 도 여기 있다. 동작은 [`work-board/README.md`](work-board/README.md) 가 소유한다.
+orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있다. 동작은 [`work-board/README.md`](work-board/README.md) 가 소유한다.
 
 `scripts/` 에는 이 저장소를 관리하는 명령과, 어느 스킬도 소유하지 않는 검사기를 둔다.
 
@@ -119,8 +119,7 @@ PR 은 draft 없이 연다. CI 가 PR 과 main push 에서 돈다.
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행한다.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않다.
 Python 테스트는 각 `tests/` 폴더에서 `python3 -m unittest discover -s 경로` 로 실행한다.
-orch 는 파일별 격리가 필요하므로 `python3 scripts/run-orch-tests.py --jobs 4` 로 실행한다.
-orch 의 TypeScript 테스트는 Node 22.18 이상에서 `node --test --test-concurrency=4 "orch/tests/*.spec.ts"` 로 실행한다.
+orch 와 work-board 의 TypeScript 테스트는 Node 22.18 이상에서 `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` 로 실행한다.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둔다.
 
 ## 코어와 오버레이

@@ -28,18 +28,18 @@
 | 비밀값 규칙 | 읽지 않을 파일, 비밀값을 넘기는 방법 | 2 |
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
-| 지시서 폴더 | `cleanup-sweep.py --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더의 PR 본문 파일 `pr-<이름>.md` 를 지운다 (예: `.orch/specs/`) | 4, 7 |
+| 지시서 폴더 | `cleanup-sweep.ts --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더의 PR 본문 파일 `pr-<이름>.md` 를 지운다 (예: `.orch/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
-| 진행 보드 | 보드 파일 위치, 목표 항목 id(`board-sync.py --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
+| 진행 보드 | 보드 파일 위치, 목표 항목 id(`board-sync.ts --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
 | 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
 | 산출물 정리 | 같은 파일의 `cleanup` 절. 함께 정리할 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
 | 머지 큐 기본 옵션 | 같은 파일의 `queue` 절. 머지 큐에 매번 붙일 필수 체크, 머지 전 명령, 합친 사본 검사, 문서 glob, 머지 방식 | 7 |
 
 ## 마무리 설정 파일
 
-`merge-with-finish.ts`, `finish-pr.ts`, `handoff-cleanup.py` 는 `<repo>/.orch/config.json` 이 있으면 읽는다.
+`merge-with-finish.ts`, `finish-pr.ts`, `handoff-cleanup.ts` 는 `<repo>/.orch/config.json` 이 있으면 읽는다.
 `--config FILE` 로 다른 파일을 줄 수 있고, 명령줄 옵션이 파일 값보다 우선한다. 파일에 없는 값은 옵션이나 기본값을 쓴다.
-스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.ts` 가, `cleanup` 절은 `handoff-cleanup.py` 가, `queue` 절은 `merge-with-finish.ts` 가 읽는다.
+스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.ts` 가, `cleanup` 절은 `handoff-cleanup.ts` 가, `queue` 절은 `merge-with-finish.ts` 가 읽는다.
 `hooks` 절은 이벤트를 내는 모든 명령이, `pipeline` 절은 아래 표의 명령이 읽는다.
 절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다.
 
@@ -47,7 +47,7 @@
 | --- | --- | --- |
 | `finish` | `gh_host` | gh 에 줄 호스트. github.com 이 아닌 저장소에서만 |
 | `finish` | `run` | worker 를 찾을 Orca Run id |
-| `finish` | `base_branch` | `cleanup-sweep.py` 의 기준 브랜치. 없으면 origin/HEAD |
+| `finish` | `base_branch` | `cleanup-sweep.ts` 의 기준 브랜치. 없으면 origin/HEAD |
 | `finish` | `deploy_workflow`, `deploy_branch` | 배포 워크플로 파일 이름과 배포가 도는 브랜치. 둘 다 주면 배포 성공까지 기다린다 |
 | `finish` | `task_pattern` | PR 제목에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
 | `finish` | `complete_cmd` | 업무 완료 명령 틀. `{number}` 가 업무 번호로 바뀌고 셸을 거치지 않는다. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
@@ -65,7 +65,7 @@
 | `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
 | `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `shared_paths` 는 정규식 목록도 받아 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
 | `queue` | `unit_groups` | 한 단위로 세는 단위 이름의 목록의 목록(`[["web", "bff"]]`). 안쪽 목록마다 `--unit-group a,b` 가 된다 |
-| `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.py`)에 넘길 인자의 문자열 목록. 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
+| `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 문자열 목록. 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
 | `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 초(양수)로 가는 객체. 핸들러와 옛 칸의 시간 제한을 바꾼다. 기본값과 모르는 이벤트 처리는 `scripts/lib/events.ts` 머리 주석이 소유한다 |
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 문자열 목록. 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts` 가 이 PR 만 본다 |
@@ -102,7 +102,7 @@
 ## orch 작업 폴더
 
 orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
-경로는 `scripts/orch_paths.py` 가 정하고, 셸과 문서에서는 `python3 "$SKILL_DIR/scripts/orch_paths.py" specs` 처럼 이름으로 받는다.
+경로는 `scripts/orch_paths.ts` 가 정하고, 셸과 문서에서는 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch_paths.ts" specs` 처럼 이름으로 받는다.
 루트를 옮기려면 `ORCH_DIR` 을 orch 스크립트를 부르는 모든 환경(코디네이터 셸, 훅)에 같은 값으로 둔다.
 
 | 경로 | 담는 것 |
@@ -129,12 +129,12 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 
 | 진입점 | 멈추는 때 |
 | --- | --- |
-| `finish-pr.ts`, `handoff-cleanup.py` | 설정을 `--config` 로 주지 않았을 때 |
+| `finish-pr.ts`, `handoff-cleanup.ts` | 설정을 `--config` 로 주지 않았을 때 |
 | `merge-with-finish.ts` | 설정을 `--finish-config` 로 주지 않았을 때. 머지 큐를 걸지 않는다 |
 | `spec-lint` | `--overlay` 를 주지 않았을 때 |
-| `cleanup-sweep.py` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
-| `launch-worker` | 늘. 셸 스크립트는 `orch_paths.py check` 로 같은 검사를 한다 |
-| `orch_paths.py --ensure` | 늘 |
+| `cleanup-sweep.ts` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
+| `launch-worker` | 늘. 셸 스크립트는 `orch_paths.ts check` 로 같은 검사를 한다 |
+| `orch_paths.ts --ensure` | 늘 |
 
 `wait-important` 와 `notify-conflicts.ts` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
 

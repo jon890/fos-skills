@@ -154,7 +154,7 @@ async function main(argv: string[]): Promise<number> {
       const note = hooks.length ? ` 그중 OMC session-end hook ${hooks.join(', ')} 는 스스로 끝난다.` : ''
       out(
         `거부: ${target} 를 쓰는 프로세스 ${holders.length} 개 (pid ${joined}), ${waited}초 기다림.${note} ` +
-          '끝난 dispatch 의 프로세스면 cleanup-sweep.py --kill-holders 가 끈다',
+          '끝난 dispatch 의 프로세스면 cleanup-sweep.ts --kill-holders 가 끈다',
       )
       return 1
     }

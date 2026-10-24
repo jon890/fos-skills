@@ -1,7 +1,7 @@
 # ADR-010: orch 와 work-board 의 Python 스크립트를 빌드 없는 TypeScript 로 한 번에 옮긴다
 
 - **status**: `accepted`
-- **결정**: `orch/scripts/`, `orch/hooks/`, `work-board/bin/` 의 Python 과 sh 스크립트, 그 테스트, `scripts/run-orch-tests.py` 를 TypeScript 로 옮긴다.
+- **결정**: `orch/scripts/`, `orch/hooks/`, `work-board/bin/` 의 Python 과 sh 스크립트, 그 테스트를 TypeScript 로 옮긴다. `node --test` 가 파일마다 프로세스를 나누므로 `scripts/run-orch-tests.py` 는 옮기지 않고 지운다.
   Node 의 타입 제거 실행으로 `.ts` 를 바로 돌린다. 빌드 단계와 npm 의존을 두지 않는다. Node 22.18 이상을 요구한다.
   테스트는 `node:test` 로 옮긴다. 옮기는 동안 Python 과 TypeScript 를 오래 함께 두지 않고, 이어지는 PR 들로 한 차례에 끝낸다.
   명령의 이름과 옵션은 그대로 두고 확장자만 바꾼다. 옛 `.py` 경로는 다음 major 까지 node 로 넘기는 얇은 shim 으로 남긴다.
