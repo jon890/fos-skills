@@ -48,7 +48,7 @@ PR #190 의 판정(모든 Run 의 소유 상태를 한 번 정리에 한 번만 
 
 ## 의도 메모
 
-- `before-cleanup` 은 그 워크트리가 지울 대상으로 판정되고(소유, 미커밋 변경, 원격에 없는 커밋 확인을 통과) 그 워크트리를 처음 바꾸기 전에, 곧 터미널 닫기 앞에서 낸다. 터미널을 닫고 dispatch 를 반납한 뒤에 거부되면 터미널 없는 워크트리가 남는다.
+- `before-cleanup` 은 그 워크트리가 지울 대상으로 판정되고(소유, 미커밋 변경, 원격에 없는 커밋 확인을 통과) `정리` 줄 직후, 그 dispatch 의 터미널을 닫기(원본 `close_terminals`) 앞에서 낸다. 원본은 그보다 앞에서 빈 셸 터미널을 닫는데(`빈 셸을 닫았다`), 그 순서는 바꾸지 않는다. 터미널을 닫고 dispatch 를 반납한 뒤에 거부되면 터미널 없는 워크트리가 남는다. 입력의 `worker` 는 그 경로의 worker 행 가운데 `dispatchId` 가 있는 첫 행이고, 없으면 넣지 않는다(`docs/data-schema.md` 의 「있으면」).
 - `before-cleanup` 이 거부(10)하면 `HOOK-REJECT` 줄에 더해 `남김 <경로>: 저장소 핸들러 거부` 를 내고 다음 항목으로 간다. 실패나 시간 초과도 `HOOK-FAIL` 줄과 같은 `남김` 줄로 그 워크트리를 남긴다(`docs/flow.md` 「갈래」 의 거부할 수 있는 이벤트 줄).
 - 브랜치가 없는 저장소 밖 detached 워크트리와 워크트리 없는 로컬 브랜치에는 `before-cleanup` 을 내지 않는다. 입력의 `worktree` 와 `branch` 를 채울 수 없다.
 - `after-cleanup` 핸들러의 실패와 시간 초과는 `HOOK-FAIL` 줄만 내고 종료 코드에 반영하지 않는다. cleanup-sweep 의 종료 코드는 0 과 2(사용법 오류)뿐이라, 알림 실패를 2 로 내면 부르는 쪽(머지 큐, finish-pr)이 사용법 오류로 읽는다. `docs/flow.md` 「갈래」 의 반영하지 않는 명령 목록에 정리 명령을 더한다.
@@ -76,7 +76,7 @@ PR #190 의 판정(모든 Run 의 소유 상태를 한 번 정리에 한 번만 
 
 - `docs/flow.md` 「갈래」 의 「나머지 이벤트의 핸들러가 실패하거나 시간을 넘긴다」 줄: 반영하지 않는 명령 목록에 정리 명령(`cleanup-sweep`)을 더하고 위 의도 메모의 이유를 한 문장으로 적는다
 - `orch/README.md`: `scripts/cleanup-sweep.py` 줄을 `scripts/cleanup-sweep.ts` 로 바꾸고 `before-cleanup`, `after-cleanup` 을 낸다는 문장을 더한다. `scripts/terminal_ownership.py` 줄을 지운다. `scripts/live_specs.py` 줄의 「`cleanup-sweep.py` 와 `handoff-cleanup.py` 가 import 한다」 를 「`handoff-cleanup.py` 가 import 한다」 로 바꾼다. 「옛 경로. 다음 major 에서 지운다」 줄에 `scripts/cleanup-sweep.py` 를 더한다. 테스트 절의 「`cleanup-sweep.py` 테스트는 …」 를 `cleanup-sweep.spec.ts` 로 바꾼다
-- `orch/references/cleanup.md`: 「`terminal_ownership.py` 머리 주석이 소유한다」 두 곳(5, 8행)을 `scripts/lib/ownership.ts` 로 바꾼다. `cleanup-sweep.py` 머리 주석을 소유자로 가리키는 두 문장(14, 231행)을 `cleanup-sweep.ts` 로 바꾼다. 그 밖의 명령 이름과 실행 예시는 phase 06 이 바꾼다
+- `orch/references/cleanup.md`: 「`terminal_ownership.py` 머리 주석이 소유한다」 두 곳(5, 8행)을 `scripts/lib/ownership.ts` 로 바꾼다. `cleanup-sweep.py` 머리 주석을 소유자로 가리키는 두 문장(13행의 「넘겨받은 터미널」 문장과 231행)을 `cleanup-sweep.ts` 로 바꾼다. 그 밖의 명령 이름과 실행 예시는 phase 06 이 바꾼다
 
 ### 5. 테스트
 

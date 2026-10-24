@@ -57,10 +57,10 @@ CI 의 `Python tests` job 은 `*/tests` 와 `tools/*/tests` 를 돌며 `python3 
 - 남은 곳은 아래로 찾는다. CHANGELOG 의 지난 항목은 이력이라 고치지 않는다
 
   ```bash
-  git grep -nE 'python3 [^`]*scripts/|scripts/[a-z_-]+\.py|`[a-z_-]+\.py`|board\.py' -- orch work-board README.md .orch/overlay.md ':!orch/CHANGELOG.md'
+  git grep -nE 'python3 [^`]*scripts/|scripts/[a-z_-]+\.py|`[a-z_-]+\.py`|board\.py' -- '*.md' .orch/overlay.md ':!*CHANGELOG.md'
   ```
 
-  남아도 되는 것은 `orch-doctor.py`(공식 진입점), `ts_shim.py`, `orch/README.md` 의 「옛 경로. 다음 major 에서 지운다」 줄과 각 shim 의 설명, 다른 스킬의 `review_threads.py`, 저장소 루트 `scripts/` 의 Python 도구(`check-shell-korean.py` 같은 것)와 `tools/` 의 것이다
+  문서만 찾는다. 테스트와 코드가 shim 호환을 위해 일부러 적은 옛 `.py` 경로(옛 경로를 부르는 테스트, `lib/paths.ts` 의 안내, `merge-queue.sh`)는 이 phase 에서 고치지 않는다. 남아도 되는 것은 `orch-doctor.py`(공식 진입점), `ts_shim.py`, `orch/README.md` 의 「옛 경로. 다음 major 에서 지운다」 줄과 각 shim 의 설명, 다른 스킬의 `review_threads.py`, 저장소 루트 `scripts/` 의 Python 도구(`check-shell-korean.py` 같은 것)와 `tools/` 의 것이다
 - `orch/references/heavy-checks.md`: 실행 예시를 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/heavy-slot.ts"` 로 바꾸고, `.orch/config.json` 의 `heavy` 절 예시 하나(아래 CHANGELOG 의 예시와 같은 값)를 둔다
 - `docs/adr/010-orch-typescript.md` 결정 줄의 「`scripts/run-orch-tests.py` 를 TypeScript 로 옮긴다」 를 「`node --test` 가 파일마다 프로세스를 나누므로 `scripts/run-orch-tests.py` 는 옮기지 않고 지운다」 로 고친다(`docs/code-architecture.md` 「실행 규칙」 과 맞춘다)
 - `docs/code-architecture.md` 「검증」 표에 node 테스트 명령 줄(orch 와 work-board 의 `*.spec.ts`)을 더한다. 「모듈 책임」 표에 `work-board/bin/board.ts` 줄(보드 편집 명령과 기본 보드 위치. 부르는 쪽은 orch 의 `board-sync`, `goal-progress`, `finish-pr` 와 `lib/paths.ts`)을 더한다

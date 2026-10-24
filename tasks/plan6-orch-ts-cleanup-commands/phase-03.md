@@ -13,7 +13,7 @@
 
 시작 조건: `orch/scripts/cleanup-sweep.ts` 가 있고 `orch/scripts/terminal_ownership.py` 가 없다. 아니면 `PHASE_BLOCKED: phase 02 커밋 전` 을 내고 멈춘다.
 
-「내 PR」 판정은 `lib/gh.ts` 의 `ownAuthors(repo, host)` 와 `isOwnPr` 이다. 작성자 목록은 `config.json` 의 `pipeline.authors`, 없으면 그 호스트의 gh 현재 사용자다. host 는 `gh repo view --json url` 의 URL 을 `apiTarget` 으로 읽은 값이다. 목록이 null 이거나 ConfigError 면 그 저장소에서 이 phase 의 두 동작을 하지 않고, stderr 에 이유를 내고, 종료 코드를 2 로 둔다. 누가 내 PR 인지 모른 채 지우거나 닫지 않는다.
+「내 PR」 판정은 `lib/gh.ts` 의 `ownAuthors(repo, host)` 와 `isOwnPr` 이다. 작성자 목록은 `config.json` 의 `pipeline.authors`, 없으면 그 호스트의 gh 현재 사용자다. host 는 `gh repo view --json url` 의 URL 을 `apiTarget` 으로 읽은 값이다. 목록은 `--remote-branches` 를 받았거나 CLOSED PR 을 처음 만났을 때 저장소마다 한 번 읽는다. 무조건 읽으면 `pipeline.authors` 가 없는 저장소의 모든 정리가 gh 현재 사용자를 조회하고, 그 조회가 실패하면 CLOSED PR 이 없어도 2 로 끝난다. 목록이 null 이거나 ConfigError 면 그 저장소에서 이 phase 의 두 동작을 하지 않고, stderr 에 이유를 내고, 종료 코드를 2 로 둔다. 누가 내 PR 인지 모른 채 지우거나 닫지 않는다.
 
 머지 큐의 `merge_queue.ts` 의 `deleteBranch` 는 머지한 브랜치를 base 로 둔 열린 PR 이 모두 내 PR 이면 그 PR 의 base 를 옮긴 뒤 지운다. `--remote-branches` 는 base 를 옮기지 않는다. 열린 PR 의 base 인 브랜치는 남긴다. 머지 직후가 아닌 뒤늦은 정리라 열린 PR 의 base 를 바꾸는 판단을 하지 않는다.
 
@@ -63,7 +63,10 @@
 - 그 터미널이 `lib/ownership.ts` 의 소유 확인을 통과한다. 사용자 보유 터미널이면 원본처럼 `남김: 사용자 보유 터미널` 이다
 
 닫는 터미널은 그 worker 행의 `terminalHandle` 과 `agentTerminalHandle` 이다. 같은 경로의 다른 터미널은 닫지 않는다. `--apply` 가 없으면 `닫을 것: <터미널> (CLOSED #<PR>)` 만 낸다.
-워크트리도 지우기 판정을 통과하면 phase 02 의 자리(터미널 닫기 앞)에서 `before-cleanup` 을 내고, 거부되면 터미널도 닫지 않는다. 통과하지 못하면 터미널만 닫고 원본의 `건너뜀` 줄로 워크트리를 남긴다.
+끼워 넣을 자리는 `sweep_worktree`(phase 02 가 옮긴 `cleanup-sweep.ts` 의 같은 함수)에서 소유 확인과 PR 찾기 뒤, `merged` 판정이 `남김` 으로 일찍 끝내기 전이다. 위 조건을 채우면 둘로 나눈다.
+
+- 워크트리가 지우기 대상이 아니다(`merged` 가 「PR CLOSED, upstream 이 남아 있다」 를 낸다): 터미널을 닫고 dispatch 를 반납한 뒤 원본의 `남김 <경로>: PR CLOSED, upstream 이 남아 있다` 줄을 낸다.
+- 워크트리가 지우기 대상이다(upstream 이 없고 cherry 가 0): 뒤따르는 살아 있는 worker 와 살아 있는 터미널 판정에서 이 PR 을 MERGED PR(`by_pr`)과 같게 다뤄, 그 dispatch 의 터미널 때문에 `건너뜀` 이 되지 않게 한다. 그다음 phase 02 의 자리(`정리` 줄 직후, 터미널 닫기 앞)에서 `before-cleanup` 을 내고, 거부되면 터미널도 닫지 않는다.
 `--run` 이 없으면 이 동작을 하지 않는다. 열린 PR 의 끝난 dispatch 터미널은 지금처럼 남긴다.
 
 ### 3. 머리 주석과 문서
@@ -88,6 +91,7 @@
 - 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널을 닫고 dispatch 를 반납한다. 그 워크트리에 원격에 없는 커밋이 있으면 워크트리는 남는다
 - 열린 PR 의 끝난 dispatch 터미널은 남긴다
 - 다른 작성자의 CLOSED PR 이면 터미널을 남긴다
+- cherry 판정을 통과한 CLOSED PR 은 한 번 실행에 끝난 dispatch 의 터미널을 닫고 워크트리를 지운다. upstream 이 남은 CLOSED PR 은 터미널만 닫고 `남김 … upstream 이 남아 있다` 로 워크트리를 남긴다
 
 ## 검증
 
