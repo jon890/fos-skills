@@ -24,7 +24,7 @@
 //      다른 사람의 PR 이 하나라도 있거나, 조회나 옮기기가 하나라도 실패하면 지우지 않는다
 //   7. after-merge 이벤트를 낸다. 실패하면 HOOK-FAIL 줄만 남기고 다음 PR 로 간다
 //
-// 이벤트: <orch 루트>/hooks/<이벤트>.ts 핸들러를 lib/events.ts 의 fire 로 부른다. 입력 필드는 docs/data-schema.md 의 「이벤트별 필드」 다.
+// 이벤트: <orch 루트>/hooks/<이벤트>.ts 핸들러를 lib/events.ts 의 fire 로 부른다. 입력 필드는 lib/events.ts 머리 주석의 「이벤트별 필드」 다.
 //   before-merge   4 의 자리. 거부면 `STOP <PR> HOOK-REJECT`, 실패와 시간 초과면 `STOP <PR> HOOK-FAIL`
 //   verify-merged  합친 사본 검사의 자리. 작업 디렉터리는 사본이다. 거부, 실패, 시간 초과는 검사 실패와 같은 STOP 이다.
 //                  hooks/verify-merged.ts 가 있으면 --verify-merged 를 준 것과 같이 겹침 판정을 켠다
@@ -734,7 +734,7 @@ class Queue {
     return { PR: p.n, BRANCH: p.branch, OWNER: p.owner, REPO: p.repo }
   }
 
-  // 이벤트 입력의 pr 객체(docs/data-schema.md 의 「이벤트별 필드」)
+  // 이벤트 입력의 pr 객체(lib/events.ts 머리 주석의 「이벤트별 필드」)
   prInput(): Record<string, unknown> {
     const p = this.p
     return { number: Number(p.n), title: p.title, branch: p.branch, head: p.ph, author: p.author, draft: p.draft, url: p.url }

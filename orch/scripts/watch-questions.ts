@@ -22,7 +22,7 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). 명령으로 실행했을 때만 main 을 부른다.
 // 질문 조회, 알릴 줄 판정, 이벤트는 lib/questions.ts 의 poll 과 notifyQuestion 이다. ORCA 환경 변수로 orca 실행 파일을 바꾼다.
 //
-// 이벤트: QUESTION 이나 REMINDER 줄을 낸 직후 worker-question 을 낸다(docs/data-schema.md 「이벤트별 필드」).
+// 이벤트: QUESTION 이나 REMINDER 줄을 낸 직후 worker-question 을 낸다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     worker.task, worker.dispatch 는 질문 메시지에서, worker.terminal 은 보낸 쪽이다. 핸들러의 실패는 종료 코드를 바꾸지 않는다.
 //
 // 종료 코드: 0 --once 조회 성공, 1 --once 조회 실패, 2 사용법 오류. 반복 모드는 실패해도 다음 간격에 다시 조회한다.

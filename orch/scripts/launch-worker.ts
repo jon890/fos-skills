@@ -27,7 +27,7 @@
 //     그때 stderr 에 `--worktree` 로 이어 띄우는 명령(`node --disable-warning=ExperimentalWarning <이 파일의 절대경로> ...`)을 낸다.
 //     worker-start 가 이미 성공했으면 내지 않는다(같은 일의 Task 가 하나 더 생긴다)
 //
-// 이벤트 입력(docs/data-schema.md 「이벤트별 필드」):
+// 이벤트 입력(lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     repo     --repo, --worktree 로 불렀으면 그 경로의 주 checkout
 //     base     --base, 없으면 origin/HEAD 의 브랜치, 그것도 없으면 빈 문자열. 앞의 `origin/` 은 뗀다(--base origin/main 도 main)
 //     run      --run, 없으면 null

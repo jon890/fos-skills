@@ -180,7 +180,9 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 
 ## orch 코어와 핸들러
 
-이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)). 구현 PR 이 모두 머지되기 전의 실제 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
+상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 
 ### 사용자 결정 (2026-10-24)
@@ -292,7 +294,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py. 기본 보
 | --- | --- | --- |
 | `orch/SKILL.md` | 단계, 통과 조건, 원칙 | 옵션 설명, 스크립트 동작 |
 | `orch/references/<단계>.md` | 언제 어떤 명령과 옵션을 쓰는가, 사용자에게 알릴 것, 스크립트가 다루지 않는 수동 경로 | 머리 주석의 반복, 모델 행동 관측을 이유로 단 문장 |
-| `orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. 이 저장소의 data-schema.md 가 계약이고, 구현 뒤에는 `lib/events.ts` 머리 주석이 소유한다 |
+| `orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. `lib/events.ts` 머리 주석이 소유한다 |
 | 스크립트 머리 주석 | 사용법, 옵션, 판정, 종료 코드 | 다른 스크립트의 동작 |
 | `orch/templates/spec-common.md` | 모든 worker 에게 같은 규칙. `{{...}}` 는 저장소마다 한 번 채우는 값만 | Run 마다 바뀌는 값, 허락. 허락은 지시서의 `허락:` 줄이 소유한다 |
 | 저장소의 `.orch/overlay.md`, `config.json`, `hooks/` | 저장소 고유 값과 일 | 코어 규칙의 사본 |

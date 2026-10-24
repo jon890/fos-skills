@@ -3,6 +3,29 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.4.0 (2026-10-25)
+
+- 저장소마다 하나 도는 상주 루프 `orch-loop.ts` 를 더했다. `--start`, `--stop`, `--status` 로 다루고, 틱(`pipeline.tick_sec`, 기본 300초)마다 질문 확인, 정리와 원격 브랜치 정리, 보드 동기화, 내 열린 PR 의 CI 감시, `tick` 이벤트, 충돌 PR 처리를 한다. 코디네이터를 깨워야 하는 일은 알림 파일(`state/loop-events.jsonl`)에 쓴다.
+- CI 감시는 내 열린 PR 의 체크가 통과로 바뀌면 `ci-passed` 를, 실패로 바뀌면 그 PR 의 worker 에게 알리고 `ci-failed` 를 낸다. 같은 HEAD 의 같은 상태는 다시 알리지 않는다. 루프는 CI 를 보고 알리기만 하고 머지하지 않는다.
+- 충돌 처리는 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리고 `pr-conflict` 를 낸다. 머지 큐 뒤의 `notify-conflicts` 와 같은 함수, 같은 기록(`state/notify-conflicts.json`)을 쓰므로 같은 (PR, base SHA) 를 두 번 보내지 않는다.
+- `wait-important --loop-repo DIR` 를 더했다. 루프의 알림에는 `LOOP-EVENT <kind> <PR 또는 -> <내용>` 줄과 종료 코드 7로, 루프의 죽음에는 `LOOP-DEAD <repo> <이유>` 줄과 종료 코드 8로 깨어난다.
+- `orch-doctor` 의 `session-resume` 이벤트가 `loop_alive` 를 실제로 판정한다. `--run` 을 주면 루프가 죽었을 때 `LOOP-DEAD` 줄과 다시 띄울 `orch-loop.ts --start` 명령을 낸다.
+- 새 모듈 `lib/loop.ts`(루프 상태, 생존 판정, 알림 파일과 커서)와 `lib/workers.ts`(브랜치의 워크트리와 worker 행 찾기)를 더했다. 질문 조회와 알릴 줄 판정은 `lib/questions.ts` 의 `poll` 한 벌을 `watch-questions` 와 루프가 함께 쓴다.
+- 기다리기 문서(`SKILL.md` 의 4단계와 `references/waiting.md`)를 상주 루프 기준으로 바꿨다. 저장소마다 루프 하나와 `--loop-repo` 를 준 대기 하나로 일하고, Monitor 로 띄우는 `watch-questions` 와 깨어날 때마다 돌리는 정리는 루프를 쓸 수 없는 저장소의 대안으로 남겼다.
+- 이벤트 입력 필드 표(「공통 필드」, 「이벤트별 필드」)의 소유자가 `docs/data-schema.md` 에서 `lib/events.ts` 머리 주석으로 옮겨졌다. `orch/tests/events-doc.spec.ts` 가 `EVENTS` 의 이름과 `docs/flow.md`, 그 머리 주석, `references/hooks.md` 의 이름이 같은지 본다.
+
+호환성:
+
+- `wait-important` 의 종료 코드 7과 8은 `--loop-repo` 를 줄 때만 나온다. 주지 않으면 이전과 같다. 7을 받으면 `LOOP-EVENT` 줄을 처리한 뒤 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 8을 받으면 루프를 다시 띄운 뒤 건다.
+- `--loop-repo` 를 쓰는 대기는 `state/loop-events.cursor` 에 읽은 `seq` 를 적는다. 커서를 쓰지 못하면 같은 알림 줄이 다음 대기에 다시 나올 수 있다.
+- 루프의 질문 확인은 `watch-questions` 와 같은 `state/questions-seen.json` 을 쓴다. 루프를 쓰는 저장소는 `watch-questions` 를 따로 띄우지 않는다.
+- `watch-questions.ts` 가 더는 `poll` 을 export 하지 않는다. `lib/questions.ts` 의 `poll` 과 `notifyQuestion` 을 쓴다. 명령줄 사용법과 출력은 같다.
+- 루프의 CI 판정은 머지 큐의 기본 판정(`--allow-fail` 없음)이다. 필수 체크가 아닌 체크의 실패도 `failed` 이고, 루프는 `--allow-fail` 을 모른다. 그 옵션을 주고 머지 큐를 거는 저장소에서는 루프가 실패로 알린 PR 도 큐가 머지할 수 있다.
+- `tick` 이벤트의 `open_prs` 는 내 열린 PR 을 읽지 못하면 null 이다. 핸들러가 배열로 가정하면 안 된다.
+- `session-resume` 의 `loop_alive` 가 실제 판정이다. 이전에는 늘 false 였다.
+- `ci-passed`, `ci-failed`, `pr-conflict`, `tick` 이벤트는 이제 루프가 낸다. `pr-conflict` 는 `notify-conflicts` 도 낸다.
+- 아직 없다: 상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 이벤트다. `pipeline.enabled`, `docs_merge`, `after_queue_interval_sec`, `ci_missing_after_sec`, `update_behind_drafts` 키는 받지만 읽는 명령이 없다. `ci-missing` 핸들러를 두어도 불리지 않는다.
+
 ## 3.3.0 (2026-10-25)
 
 - 정리와 대기열 명령(`remove-worktree`, `cleanup-sweep`, `handoff-cleanup`, `board-sync`, `goal-progress`, `heavy-slot`, `mem-gate`, `orch_paths`)과 work-board 의 `board` 를 TypeScript 로 옮겼다. 옛 `.py` 경로는 shim 으로 남아 `DEPRECATED` 줄을 내고 `.ts` 로 넘긴다.

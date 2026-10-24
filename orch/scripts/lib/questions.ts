@@ -147,7 +147,7 @@ export function poll(run: string | null, state: string, now: number, remindAfter
   return { run: found.run, notices }
 }
 
-// 알릴 줄 하나에 worker-question 이벤트를 낸다(docs/data-schema.md 「이벤트별 필드」).
+// 알릴 줄 하나에 worker-question 이벤트를 낸다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 // worker.task, worker.dispatch 는 질문 메시지에서, worker.terminal 은 보낸 쪽이다.
 // command 는 stderr 줄의 접두로 쓰는 부른 명령 이름이다(watch-questions, orch-loop).
 export async function notifyQuestion(notice: Notice, repo: string, run: string | null, command: string): Promise<void> {

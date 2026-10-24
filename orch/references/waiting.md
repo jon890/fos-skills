@@ -1,36 +1,44 @@
 # 4. 기다리기
 
-## 질문 감시와 압축 뒤 복구
+## 상주 루프와 압축 뒤 복구
 
-**`watch-questions` 를 Monitor 의 이벤트 소스로 Run 마다 하나씩 띄운다.**
-Monitor 의 `command` 에 아래 명령을 넣는다. `$SKILL_DIR` 과 `$REPO` 는 절대경로로, `$RUN_ID` 는 현재 Run 으로 바꾼다.
-Monitor 가 없는 하네스에서는 같은 명령을 하네스의 백그라운드 실행 기능으로 띄우고 출력 알림을 받는다.
+**저장소마다 상주 루프 `orch-loop.ts` 를 하나 띄운다.** 루프는 하네스의 백그라운드 명령이 아니라 분리된 프로세스라 시간 한도에 묶이지 않고, 세션이 끝나도 살아 있다.
+`$SKILL_DIR` 과 `$REPO` 는 절대경로로, `$RUN_ID` 는 현재 Run 으로 바꾼다. `--run` 과 `--specs-dir` 은 `.orch/config.json` 의 `finish.run`, `finish.specs_dir` 로 대신할 수 있다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/watch-questions.ts" --run "$RUN_ID" --repo "$REPO"
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --start
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --status
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --stop
 ```
 
-새 question/escalation 은 `QUESTION`, 답이 없는 채로 다시 알릴 시간이 되면 `REMINDER` 한 줄을 낸다.
-기본 재알림은 10분이며 `--remind-after 300` 처럼 초 단위로 바꾼다. 조회 간격은 `--interval` 로 바꾼다.
-알린 시각은 `orch_paths.ts` 가 정한 `state/questions-seen.json` 에 Run 별로 남는다.
-다시 띄워도 재알림 시간이 되기 전에는 같은 질문을 알리지 않는다.
-질문을 찾는 범위와 조회 한도는 `lib/questions.ts`, 알림 형식은 `watch-questions` 머리 주석이 소유한다.
-조회 실패(답변 기록 한도 도달 포함)는 stdout 의 `WATCH-ERROR` 줄로 알리고 다음 조회에서 다시 시도한다. 같은 이유는 이유가 바뀌거나 조회가 한 번 성공할 때까지 다시 내지 않는다.
-`WATCH-ERROR` 를 받았는데 다음 조회도 같은 이유로 실패하면 아래 doctor 명령으로 질문 상태를 본다. `SKIP-QUESTIONS` 에 같은 이유가 나오면 질문을 조회하지 못하는 상태이므로 그 이유(Orca 가 꺼짐, Run id 가 틀림)부터 고친다.
-조회 범위 안내는 stderr 로만 나온다. stderr 와 보드에 조회 범위가 표시되면 그 밖의 미답변은 빠질 수 있다.
+`--start` 는 `LOOP-STARTED` 와 0 으로 끝난다. 살아 있는 루프가 이미 있으면 띄우지 않고 `LOOP-RUNNING <pid> run=<Run id>` 와 4 로 끝난다.
+**4 로 끝나면 출력의 Run id 를 현재 Run 과 비교한다.** 다른 Run 이면 그 루프는 이 Run 의 질문을 확인하지 않으므로 `--stop` 뒤 다시 `--start` 한다.
 
-**압축이나 세션 재시작 뒤 첫 작업은 감시 복구다.** Monitor 목록과 아래 프로세스 목록에서 현재 Run 의 질문 감시와 완료 대기를 확인한다.
-꺼진 질문 감시는 위 명령으로 다시 띄우고, 완료 대기는 이 문서의 「이전 세션의 대기」 절차로 복구한다.
-이미 켜진 감시는 두 번째로 띄우지 않는다.
+루프는 `pipeline.tick_sec`(기본 300초)마다 아래를 차례로 한다. 판정과 순서는 `orch-loop.ts` 머리 주석이 소유한다.
+
+- 질문 확인. 답이 없는 질문을 다시 알릴 시간이 되면 알림 파일에 `REMINDER` 를 쓴다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
+- 정리와 원격 브랜치 정리(`cleanup-sweep`), 보드 동기화(`board-sync`)
+- 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 그 PR 의 worker 에게 알리고, 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알리기만 하고 머지하지 않는다
+- 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기
+- `tick` 이벤트
+
+CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체크의 실패도 `failed` 로 본다. 루프는 `--allow-fail` 을 모르므로, 그 옵션을 주고 머지 큐를 거는 저장소에서는 루프가 실패로 알린 PR 도 큐가 머지할 수 있다.
+알림은 `<orch 루트>/state/loop-events.jsonl` 에 쌓이고, 아래 대기가 `--loop-repo` 로 읽는다. 루프의 출력은 `state/loop.log` 에 남는다.
+조회 실패는 이유가 바뀔 때만 알림 파일에 쓰므로 틱마다 코디네이터를 깨우지 않는다.
+
+**Monitor 로 `watch-questions.ts` 를 띄우는 것은 루프를 쓸 수 없을 때의 대안이다.** `--run "$RUN_ID" --repo "$REPO"` 를 주고, 질문과 재알림을 한 줄씩 받는다. 이때는 아래 「깨어날 때마다 정리와 보드 동기화」 의 수동 명령도 돌려야 한다.
+
+**압축이나 세션 재시작 뒤 첫 작업은 루프와 대기 복구다.** doctor 에 `--repo` 와 `--run` 을 주면 루프가 죽었을 때 `LOOP-DEAD <repo> <이유>` 줄과 다시 띄울 명령을 낸다. 꺼진 루프는 그 명령으로 다시 띄운다.
+완료 대기는 이 문서의 「이전 세션의 대기」 절차로 복구한다. 이미 켜진 루프와 대기는 두 번째로 띄우지 않는다.
 
 ```bash
-ps -eo pid,command | grep -E "watch-questions|wait-important|orchestration check" | grep "$RUN_ID"
-python3 "$SKILL_DIR/scripts/orch-doctor.py" --run "$RUN_ID"
+ps -eo pid,command | grep -E "orch-loop|wait-important|orchestration check" | grep -v grep
+python3 "$SKILL_DIR/scripts/orch-doctor.py" --repo "$REPO" --run "$RUN_ID"
 ```
 
 doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
-`--run` 을 주면 저장소의 `session-resume` 핸들러에 살아 있는 대기 pid 와 미답변 질문 id 를 넘긴다([`hooks.md`](hooks.md)).
-알림을 받으면 [`replying.md`](replying.md) 의 분류 기준으로 처리한다. 감시는 delivery 를 소비하거나 ack 하지 않으므로 아래 완료 대기와 함께 쓴다.
+`--run` 을 주면 저장소의 `session-resume` 핸들러에 루프 생존과 살아 있는 대기 pid, 미답변 질문 id 를 넘긴다([`hooks.md`](hooks.md)).
+알림을 받으면 [`replying.md`](replying.md) 의 분류 기준으로 처리한다. 루프는 delivery 를 소비하거나 ack 하지 않으므로 아래 완료 대기와 함께 쓴다.
 
 **대기는 `wait-important` 를 하네스의 백그라운드 실행 기능으로 run 마다 하나만 건다.**
 앞에서 돌리면 그동안 코디네이터가 막힌다.
@@ -53,9 +61,10 @@ Claude Code 의 백그라운드 Bash 는 따로 정하지 않으면 30분 뒤 �
 Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `--timeout-ms` 는 기본값 7000000 을 쓴다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts" --run "$RUN_ID" --ack "$DELIVERY_ID"
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts" --run "$RUN_ID" --ack "$DELIVERY_ID" --loop-repo "$REPO"
 ```
 
+저장소가 둘 이상이면 `--loop-repo` 를 저장소마다 준다. 루프가 없는 저장소는 주지 않는다.
 종료 코드와 `TIMEOUT` 줄은 스크립트 머리 주석이 소유한다. 아래는 코디네이터가 할 일이다.
 
 - 종료 코드 6(`의심스러운 worker_done`)은 자동 ack 하지 않는다. [`verification.md`](verification.md) 의 「완료 전에 온 worker_done」 을 먼저 따른다
@@ -64,6 +73,13 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
 - orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
 - 종료 코드 4(`waiter_exists`)는 다시 걸어도 같은 오류만 받는다. stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다
 - 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다
+- 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
+  - `REMINDER`: 답이 없는 질문의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다
+  - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다
+  - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
+  - `WATCH-ERROR`, `HOOK-FAIL`: 루프가 무엇을 하지 못했다는 알림이다. 내용의 이유(Orca 꺼짐, 핸들러 오류)를 고친다. 같은 이유는 한 번만 오고, 한 번 성공한 뒤 다시 실패하면 다시 온다
+  - `GAP`: 알림 파일이 1000 줄을 넘어 잘려 일부를 잃었다. `<orch 루트>/state/loop.log` 를 읽어 놓친 일을 찾는다
+- 종료 코드 8(`LOOP-DEAD <repo> <이유>`)은 그 저장소의 루프가 죽었다. 알림 줄이 있으면 그 줄이 먼저 오고 죽음은 다음 대기가 낸다. doctor 가 낸 명령(`orch-loop.ts --start`)으로 다시 띄운 뒤 다시 건다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 본다
 
 **복구하거나 더 처리할 일이 없다고 확인한 dispatch 는 `--ack-lost` 로 기록한다.**
 `--ack-lost` 는 기록만 쓴 뒤 종료 코드 0 으로 끝나므로 대기는 따로 건다. `--ignore-lost` 와의 차이와 실패 처리는 스크립트 머리 주석이 소유한다.
@@ -75,14 +91,16 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
 
 ## 깨어날 때마다 정리와 보드 동기화
 
-**대기가 끝날 때마다, 그리고 기다리는 동안 5분마다 아래 두 명령을 돌린다.** 메시지를 읽기 전에 돈다.
-**사용자가 정리하라고 말하지 않아도 돈다.** 끝난 워크트리, 세션(터미널과 Dispatch), 브랜치를 코디네이터가 직접 지우지 않고 이 루프가 지운다.
+**정리와 보드 동기화는 상주 루프의 틱이 한다.** 사용자가 정리하라고 말하지 않아도 돈다. 끝난 워크트리, 세션(터미널과 Dispatch), 브랜치를 코디네이터가 직접 지우지 않고 루프가 지운다.
 머지마다 직접 정리하면 잊히고, 프로세스가 worktree 를 잡아 실패한 정리는 다시 돌아보지 않는다.
-두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 루프에서 다시 시도된다. 따로 기억하지 않는다.
-5분 주기는 백그라운드 대기와 별개로 하네스의 예약 기능이나 다음 깨어남에 붙인다.
+두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 틱에서 다시 시도된다. 따로 기억하지 않는다.
 
-`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 는 목표 항목 id 다. 저장소 오버레이가 정한다.
-보드가 없는 저장소는 `board-sync.ts` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다.
+루프가 하지 않는 수동 경로는 둘이다.
+
+- **목표 진행률은 코디네이터가 목표 항목을 고친 뒤 직접 돌린다.** 루프는 `--goal` 을 넘기지 않는다. `$GOAL_ID` 는 목표 항목 id 이고 저장소 오버레이가 정한다
+- **루프가 없는 저장소는 대기가 끝날 때마다, 기다리는 동안 5분마다 아래 두 명령을 돌린다.** 5분 주기는 하네스의 예약 기능이나 다음 깨어남에 붙인다. 보드가 없는 저장소는 `board-sync.ts` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다
+
+`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더다.
 
 ```bash
 node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
@@ -91,7 +109,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-sync.ts" --
 
 머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.
 
-**worker 를 띄운 저장소가 둘 이상이면 `--repo` 를 저장소마다 준다.** 한 번의 실행이 저장소를 차례로 돌고, 하나를 읽지 못해도 나머지는 돈다.
+**worker 를 띄운 저장소가 둘 이상이면 `--repo` 를 저장소마다 준다.** 한 번의 실행이 저장소를 차례로 돌고, 하나를 읽지 못해도 나머지는 돈다. 루프를 쓰면 저장소마다 루프를 하나씩 띄운다.
 `--base` 를 주지 않으면 저장소마다 `origin/HEAD` 가 가리키는 브랜치를 쓴다. 기준 브랜치가 저장소마다 다르면 `--base` 를 빼는 편이 맞다.
 `--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.
 
@@ -100,7 +118,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts"
 ```
 
 `cleanup-sweep.ts` 가 다루는 경우와 건너뛰는 조건은 그 파일 머리 주석이 소유한다. 스크립트가 다루는 경우를 코디네이터가 직접 지우지 않는다.
-`건너뜀` 줄만 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 루프째 남으면 그 worker 를 확인한다.
+`건너뜀` 줄은 `<orch 루트>/state/loop.log` 에서 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 틱째 남으면 그 worker 를 확인한다.
 
 ## 받은 메시지 읽기
 

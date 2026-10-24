@@ -2,7 +2,9 @@
 
 이 저장소는 데이터베이스를 쓰지 않는다. 이 문서는 orch 가 저장소와 주고받는 파일 계약을 소유한다.
 지금 쓰는 `.orch/` 폴더 구조와 설정 키는 [`orch/references/overlay.md`](../orch/references/overlay.md) 가 소유하고, 이 문서는 개편으로 바뀌는 부분만 적는다.
-아래는 개편 뒤의 계약이다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)). 구현 PR 이 머지되면 사용법은 `orch/references/` 로 옮기고 이 문서에는 계약만 남긴다.
+아래는 개편 뒤의 계약이다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
+상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 
 ## orch 이벤트 핸들러 입력
 
@@ -30,42 +32,9 @@
 거부할 수 있는 이벤트는 `before-launch`, `before-ready`, `before-merge`, `verify-merged`, `before-cleanup` 이다.
 거부를 1 이 아니라 10 으로 둔 것은 의도한 거부와 예외로 죽은 핸들러를 가르기 위해서다. node 는 잡지 않은 예외에 1 을 낸다.
 
-### 공통 필드
+### 공통 필드와 이벤트별 필드
 
-모든 입력에 아래 필드가 있다. 이벤트별 필드는 그 위에 더한다.
-
-| 필드 | 타입 | 뜻 |
-| --- | --- | --- |
-| `version` | number | 계약 버전. 지금은 `1`. 필드를 빼거나 뜻을 바꾸면 올린다 |
-| `event` | string | 이벤트 이름 |
-| `repo` | string | 주 checkout 의 절대경로 |
-| `base` | string | 기준 브랜치. 명령이 `--base` 를 받지 않았고 `origin/HEAD` 도 읽지 못하면 빈 문자열이다 |
-| `run` | string 또는 null | Orca Run id. 모르면 null |
-| `time` | string | ISO 8601 UTC |
-
-### 이벤트별 필드
-
-PR 을 다루는 이벤트는 `pr` 객체를 받는다. 필드는 `number`, `title`, `branch`, `head`(40자리 SHA), `author`, `draft`, `url` 이다.
-worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`, `dispatch`, `terminal`, `worktree`, `spec` 이고, 모르는 값은 null 이다.
-
-| 이벤트 | 더하는 필드 |
-| --- | --- |
-| `before-launch`, `worker-launched` | `worker`, `branch`, `agent`, `model`, `effort` |
-| `worker-question` | `worker`, `message`(`id`, `type`, `subject`, `body`), `reminder`(bool), `age_sec` |
-| `worker-done` | `worker`, `outcome`, `evidence`(`ready` 또는 `suspicious`), `pr`(있으면). `worker_done --outcome failed` 같은 실패 보고와 `--completion-contract none` 의 대기에서는 내지 않는다 |
-| `worker-lost` | `worker`, `stage` |
-| `before-ready`, `pr-ready` | `pr`, `ready_count`(이미 ready 인 내 PR 수), `slots` |
-| `ci-passed`, `ci-failed`, `ci-missing` | `pr`, `checks`(이름, 상태, 결론, URL 의 목록), `required`(이름 목록) |
-| `pr-conflict` | `pr`, `base_head`, `files`, `worker`(터미널이 없으면 null), `action`(`notified` 살아 있는 dispatch 에 보냄, `resumed` 남은 터미널에 후속 지시서로 이어 씀, `orphan` 이어 쓰지 못함) |
-| `before-merge` | `pr`, `owner`, `name`(GitHub 저장소 이름), `last_of_task`(bool) |
-| `verify-merged` | `pr`, `copy`(사본 절대경로), `base_head`, `changed_files`, `overlap_files` |
-| `after-merge` | `pr`, `merge_commit`, `remote_branch_deleted`(bool), `retargeted`(base 를 옮긴 PR 번호 목록) |
-| `after-queue` | `merged_prs`, `code_prs`, `held_prs` |
-| `after-deploy` | `pr`, `merge_commit`, `deploy`(`success`, `failure`, `timeout`, `none`), `last_of_task`(bool) |
-| `before-cleanup` | `worktree`, `branch`, `pr`(있으면), `worker`(있으면) |
-| `after-cleanup` | `removed`(경로 목록), `skipped`(경로와 이유의 목록) |
-| `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록. 읽지 못하면 null) |
-| `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 `wait-important` 대기와 `watch-questions` 질문 감시의 pid 목록. 그 자식인 `orchestration check` 와 셸 행은 세지 않는다), `unanswered`(질문 id 목록) |
+입력 필드의 표는 `orch/scripts/lib/events.ts` 머리 주석이 소유한다. 「공통 필드」 와 「이벤트별 필드」 가 그것이다.
 
 옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령(`migrate-orch-dir.ts --hooks`)이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
 

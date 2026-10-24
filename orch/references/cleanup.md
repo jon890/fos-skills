@@ -226,8 +226,8 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 
 ## 정리
 
-**정리는 `cleanup-sweep.ts` 가 한다.** `merge_queue.ts` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
-**사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
+**정리는 `cleanup-sweep.ts` 가 한다.** `merge_queue.ts` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 상주 루프(`orch-loop.ts`)가 틱마다 `--remote-branches` 와 함께 부른다.
+**사용자가 정리하라고 말하지 않아도 상주 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 로컬 브랜치가 없는 원격 브랜치는 `--remote-branches` 로 지운다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치가 여기 든다.
 상세 판정은 `cleanup-sweep.ts` 머리 주석이 소유한다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.

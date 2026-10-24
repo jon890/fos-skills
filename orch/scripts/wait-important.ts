@@ -41,7 +41,7 @@
 //         같은 이유는 이유가 바뀌거나 조회가 한 번 성공할 때까지 다시 내지 않는다. `LAST_DELIVERY` 줄보다 늘 앞이다.
 //         `waiter_exists`(종료 코드 4 와 stderr 의 프로세스 목록이 맡는다)와 완료 근거용 `check --all` 의 실패(종료 코드 6)는 내지 않는다.
 //
-// 이벤트(docs/data-schema.md 「이벤트별 필드」). 둘 다 거부할 수 없고 핸들러의 실패는 `HOOK-FAIL` 줄만 남기고 종료 코드를 바꾸지 않는다.
+// 이벤트(lib/events.ts 머리 주석의 「이벤트별 필드」). 둘 다 거부할 수 없고 핸들러의 실패는 `HOOK-FAIL` 줄만 남기고 종료 코드를 바꾸지 않는다.
 //     worker-done  묶음 안의 worker_done 마다, 완료 근거를 판정한 뒤 JSON 줄을 내기 전. 근거가 있으면 evidence 가 ready 이고
 //                  pr 은 준비 상태의 PR 번호로 `gh pr view` 를 읽어 채운다(읽지 못하면 null). 없으면 suspicious 이고 pr 은 null 이다.
 //                  실패 보고와 `--completion-contract none` 의 대기에서는 내지 않는다

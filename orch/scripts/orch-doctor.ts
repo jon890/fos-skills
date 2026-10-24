@@ -41,7 +41,7 @@
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
 //     둘 다 경고라 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
-// session-resume 이벤트(--run 을 줄 때, docs/data-schema.md 「이벤트별 필드」):
+// session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
 //                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다
 //     waiters     `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 나 `watch-questions` 와 Run id(낱말)가 든 것의 pid.

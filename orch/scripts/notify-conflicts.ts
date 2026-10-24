@@ -48,7 +48,7 @@
 // 후속 지시서: 첫 줄은 공통 지시서 <지시서 폴더>/spec-common.md 의 절대경로를 먼저 읽으라는 줄이다. 그 파일이 없으면 이 줄 없이 쓰고
 //     stderr 에 경고를 낸다. 브랜치 줄, 허락 줄(push 는 허락, PR 은 새로 열지 않는다), 할 일과 충돌 파일 목록을 둔다.
 //
-// pr-conflict 입력(docs/data-schema.md 「이벤트별 필드」): pr, base_head, files, worker, action.
+// pr-conflict 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, base_head, files, worker, action.
 //     worker 는 찾은 dispatch 의 worker-list 행에서 채우고(spec 은 후속 지시서 경로, 없으면 null) 워크트리나 dispatch 가 없으면 null 이다.
 //     핸들러의 실패는 HOOK-FAIL 줄만 남긴다. 이 이벤트는 충돌한 PR 이 있을 때만 나서 종료 코드가 이미 1 이다.
 //

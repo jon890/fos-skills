@@ -40,7 +40,7 @@
 //     2. 정리. cleanup-sweep --repo <repo> --kill-holders --remote-branches --apply [--run <run>] [--specs-dir <dir>]
 //     3. 보드 동기화. 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 board-sync --repo <repo>
 //     4. CI 감시. 아래 「CI 감시」
-//     5. tick 이벤트. 입력은 tick(틱 번호)과 open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)다(docs/data-schema.md 「이벤트별 필드」).
+//     5. tick 이벤트. 입력은 tick(틱 번호)과 open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     6. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
 //     열린 PR 은 틱마다 gh pr list 한 번으로 읽어 4, 5, 6 이 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors 와 ci 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
@@ -54,7 +54,7 @@
 //     failed 이고, passed 는 실패가 없고 필수 체크가 모두 나타났고 롤업의 체크가 모두 끝난 때다. 필수 체크 목록이 비면 나타난 체크 전부로
 //     판정한다. 루프는 --allow-fail 을 모른다. 머지 큐에 --allow-fail 을 주는 저장소에서는 루프가 실패로 알린 PR 도 큐는 머지할 수 있다.
 //     loop.json 의 ci[<PR>] 와 HEAD 와 상태가 같으면 넘어간다. 다르면 새 값을 결과의 ci 에 담고, passed 로 바뀌었으면 ci-passed 를,
-//     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 알림 파일에 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 docs/data-schema.md
+//     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 알림 파일에 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 lib/events.ts 머리 주석의
 //     「이벤트별 필드」). 같은 HEAD 에서 다시 돌린 체크가 통과로 바뀌면 ci-passed 를 낸다. 새 HEAD 는 새로 판정한다.
 //     결과의 ci 는 이번 틱에 본 내 열린 PR 의 값이라 닫힌 PR 의 항목은 빠진다. draft 와 규칙을 읽지 못한 base 의 PR 처럼 이번 틱에
 //     판정하지 않은 PR 은 이전 값을 그대로 옮긴다. 지우면 다음 틱에 같은 HEAD 의 실패를 다시 알린다.

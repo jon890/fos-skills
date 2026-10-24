@@ -29,7 +29,7 @@
 //     업무의 마지막 PR 일 때만 --complete 를 준다. --complete-cmd 가 없으면(업무 시스템이 없는 저장소) 이 단계만 건너뛰고
 //     로그에 남긴다. 지시서는 지운다. --complete 와 --complete-cmd 를 함께 주면 --task-pattern 도 있어야 한다
 //
-// 이벤트 입력(docs/data-schema.md 「이벤트별 필드」): pr, merge_commit, deploy(success, failure, timeout, none),
+// 이벤트 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, merge_commit, deploy(success, failure, timeout, none),
 //     last_of_task(--complete). base 는 PR 의 base, run 은 --run(없으면 null)이다.
 //     업무 완료 명령과 <orch 루트>/hooks/after-deploy.ts 가 함께 있으면 머지를 기다리기 전에 사용법 오류로 끝난다.
 //     업무 완료 명령이나 핸들러가 있으면 config.json 의 hooks.timeouts.after-deploy 값도 머지를 기다리기 전에 본다. 틀리면 사용법 오류다.
