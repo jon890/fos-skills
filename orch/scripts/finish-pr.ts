@@ -25,12 +25,14 @@
 //     업무 완료(--complete-cmd, --task-pattern)는 after-deploy 의 옛 칸이다. 다음 major 에서 지운다.
 //     --complete 이고, 배포가 성공했거나 배포 워크플로가 없고, PR 제목에서 --task-pattern 으로 업무 번호를 뽑았을 때만
 //     `DEPRECATED --complete-cmd → hooks/after-deploy.ts` 줄과 함께 그 명령을 핸들러 자리에서 돌린다.
+//     작업 디렉터리는 옛 명령과 같이 --repo 로 준 경로다. 연결된 워크트리를 주면 그 워크트리다(lib/events.ts 의 legacy).
 //     업무의 마지막 PR 일 때만 --complete 를 준다. --complete-cmd 가 없으면(업무 시스템이 없는 저장소) 이 단계만 건너뛰고
 //     로그에 남긴다. 지시서는 지운다. --complete 와 --complete-cmd 를 함께 주면 --task-pattern 도 있어야 한다
 //
 // 이벤트 입력(docs/data-schema.md 「이벤트별 필드」): pr, merge_commit, deploy(success, failure, timeout, none),
 //     last_of_task(--complete). base 는 PR 의 base, run 은 --run(없으면 null)이다.
 //     업무 완료 명령과 <orch 루트>/hooks/after-deploy.ts 가 함께 있으면 머지를 기다리기 전에 사용법 오류로 끝난다.
+//     업무 완료 명령이나 핸들러가 있으면 config.json 의 hooks.timeouts.after-deploy 값도 머지를 기다리기 전에 본다. 틀리면 사용법 오류다.
 //     이벤트 실행기는 배포를 기다린 뒤에야 이 충돌을 알아채는데, 그때는 이미 머지와 정리가 끝났기 때문이다
 //
 // 실패로 남기는 것(이것들이 있어도 보드 done 은 돌고 마지막 줄이 FINISH-FAIL 이다):
@@ -78,8 +80,9 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
-import { fire, handlerFile } from './lib/events.ts'
+import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireResult } from './lib/events.ts'
+import { FINISH_OPTIONS as OPTIONS } from './lib/finish-options.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { ghBin } from './lib/gh.ts'
 import { boardPath, requireMigrated } from './lib/paths.ts'
@@ -97,29 +100,6 @@ const SWEEP_TIMEOUT_MS = 600_000
 const LEGACY_KEY = '--complete-cmd'
 const HOOK_PREFIX = '[hook after-deploy] '
 const PR_FIELDS = 'state,mergeCommit,headRefName,title,number,headRefOid,author,isDraft,url,baseRefName'
-
-const OPTIONS = {
-  repo: { type: 'string' },
-  config: { type: 'string' },
-  'gh-host': { type: 'string' },
-  run: { type: 'string' },
-  'base-branch': { type: 'string' },
-  'sweep-arg': { type: 'string', multiple: true },
-  'specs-dir': { type: 'string' },
-  'deploy-workflow': { type: 'string' },
-  'deploy-branch': { type: 'string' },
-  'task-pattern': { type: 'string' },
-  complete: { type: 'boolean' },
-  'complete-cmd': { type: 'string' },
-  board: { type: 'string' },
-  'board-id': { type: 'string' },
-  'board-bin': { type: 'string' },
-  'merge-timeout': { type: 'string' },
-  'deploy-timeout': { type: 'string' },
-  'poll-interval': { type: 'string' },
-  'pid-file': { type: 'string' },
-  help: { type: 'boolean', short: 'h' },
-} as const
 
 // 설정 절의 키. 옵션 이름의 하이픈을 밑줄로 바꾼 것이고 config 와 help 는 뺀다
 const FINISH_KEYS: readonly string[] = Object.keys(OPTIONS)
@@ -555,9 +535,13 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   if (!args.config && !requireMigrated(args.repo, 'finish-pr')) return 2
-  const handler = args.completeCmd ? handlerFile('after-deploy', args.repo) : null
-  if (handler) {
-    process.stderr.write(`finish-pr: after-deploy 의 핸들러 ${handler} 와 옛 설정 칸 ${LEGACY_KEY} 가 함께 있다. 어느 쪽이 맞는지 정할 수 없어 하나만 둔다\n`)
+  try {
+    if (args.completeCmd) checkLegacy('after-deploy', args.repo, LEGACY_KEY)
+    // after-deploy 는 머지와 배포를 기다린 뒤에 난다. 시간 제한 값이 틀린 것을 그때 알면 정리와 배포가 이미 끝났다
+    if (args.completeCmd || handlerFile('after-deploy', args.repo)) eventTimeoutSec('after-deploy', args.repo)
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
+    process.stderr.write(`finish-pr: ${e.message}\n`)
     return 2
   }
   if (args.ghHost) process.env.GH_HOST = args.ghHost

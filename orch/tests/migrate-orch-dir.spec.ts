@@ -482,6 +482,30 @@ describe('migrate-orch-dir --hooks', { concurrency: 4 }, () => {
     assert.equal(readFileSync(got, 'utf8'), '101|feat/x|owner|repo|github.example.com\n')
   })
 
+  test('만든 핸들러는 연결된 워크트리를 repo 로 받으면 옛 명령을 그 워크트리에서 부른다', async (t) => {
+    const c = setup(t)
+    const wt = join(c.tmp, 'wt')
+    c.sh('git', '-C', c.repo, 'worktree', 'add', '-q', '-b', 'wt', wt)
+    const before = join(c.tmp, 'before.txt')
+    const after = join(c.tmp, 'after.txt')
+    const deploy = join(c.tmp, 'deploy.txt')
+    // 업무 완료 명령은 셸 없이 돌아 pwd 를 쓸 수 없다. 작업 디렉터리를 적는 명령으로 본다
+    const cwdCli = writeNodeBin(c.tmp, 'cwd-cli', `require('node:fs').writeFileSync(${JSON.stringify(deploy)}, process.cwd())\n`)
+    writeConfig(c, {
+      queue: { before: `pwd -P > '${before}'`, after_merged: `pwd -P > '${after}'` },
+      finish: { task_pattern: '(PROJ-[0-9]+)', complete_cmd: `${cwdCli} {number}` },
+    })
+    await c.migrate(['--hooks', '--apply'])
+    // 핸들러는 주 checkout 의 .orch/hooks 에 있다. 머지 큐와 finish-pr 이 --repo 로 받은 워크트리를 repo 로 넘기는 경우다
+    const fireWt = (event: string, input: Record<string, unknown>) => fire(event, input, { repo: wt, base: 'main', run: null, out: () => {} })
+    assert.equal((await fireWt('before-merge', { pr: PR, owner: 'owner', name: 'repo', last_of_task: false })).result, 'pass')
+    assert.equal((await fireWt('after-queue', { merged_prs: [101], code_prs: [101], held_prs: [] })).result, 'pass')
+    assert.equal((await fireWt('after-deploy', { pr: PR, merge_commit: 'c'.repeat(40), deploy: 'success', last_of_task: true })).result, 'pass')
+    assert.equal(readFileSync(before, 'utf8').trim(), wt)
+    assert.equal(readFileSync(after, 'utf8').trim(), wt)
+    assert.equal(readFileSync(deploy, 'utf8'), wt)
+  })
+
   test('옛 명령의 종료 코드를 그대로 낸다', async (t) => {
     const c = setup(t)
     writeConfig(c, { queue: { before: 'echo 백업할 DB 가 없다; exit 10' } })

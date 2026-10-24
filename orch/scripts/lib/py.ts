@@ -6,10 +6,10 @@
 //              정수 값의 실수(1.0)는 1 로, 지수 꼴의 경계가 다른 수(1e16)는 JS 의 꼴로 나온다. orca 와 orch 의 기록에는 그런 수가 없다
 //     shQuote  shlex.quote. 사람이 그대로 붙여 넣을 명령을 낸다
 //     shSplit  POSIX 모드 shlex.split 의 꼴로 나눈다. 옛 설정 칸(finish.complete_cmd)의 명령 틀을 셸 없이 argv 로 나누려는 것이다.
-//              공백(스페이스, 탭, 줄바꿈)으로 나누고, 작은따옴표 안은 글자 그대로 둔다. 큰따옴표 안은 \" \\ \` \$ 와 줄바꿈 앞의
-//              역슬래시만 떼고 뒤 글자를 남기며, 나머지 역슬래시는 그대로 둔다. 따옴표 밖의 역슬래시는 떼고 다음 글자를 그대로 둔다.
-//              빈 따옴표('')는 빈 인자다. 닫히지 않은 따옴표와 끝의 역슬래시는 Error 다. # 은 주석으로 보지 않는다(shlex.split 의 기본).
-//              shlex.split 과 다른 곳: 큰따옴표 안의 \` \$ 와 줄바꿈 앞 역슬래시를 shlex 는 남기고, 이 함수는 POSIX 셸처럼 뗀다
+//              공백(스페이스, 탭, 줄바꿈)으로 나누고, 작은따옴표 안은 글자 그대로 둔다. 큰따옴표 안은 \" 와 \\ 의
+//              역슬래시만 떼고 뒤 글자를 남기며, 나머지 역슬래시(\` \$ 와 줄바꿈 앞 포함)는 그대로 둔다. POSIX 셸과 다르지만
+//              shlex 가 그렇게 나눠, 옛 명령이 나누던 argv 와 바이트까지 같게 한다. 따옴표 밖의 역슬래시는 떼고 다음 글자를 그대로 둔다.
+//              빈 따옴표('')는 빈 인자다. 닫히지 않은 따옴표와 끝의 역슬래시는 Error 다. # 은 주석으로 보지 않는다(shlex.split 의 기본)
 //     pyRegExp Python re 의 정규식 글자를 같은 뜻의 JS RegExp 로 바꾼다. 옛 명령의 옵션(--shared-paths 같은 것)에 적힌
 //              정규식을 그대로 받으려는 것이다. 바꾸는 글자는 (?P<이름> → (?<이름>, (?P=이름) → \k<이름>, \A → ^, \Z → $ 다.
 //              역슬래시는 바로 뒤 한 글자와 짝으로 읽는다. 그래서 앞의 역슬래시가 짝수 개인 \\A 는 이스케이프된 역슬래시와 A 라 바꾸지 않는다.
@@ -40,7 +40,8 @@ export function shQuote(word: string): string {
 }
 
 const SPLIT_SPACE = new Set([' ', '\t', '\r', '\n'])
-const DOUBLE_ESCAPES = new Set(['"', '\\', '`', '$', '\n'])
+// shlex 의 escapedquotes 와 escape 다
+const DOUBLE_ESCAPES = new Set(['"', '\\'])
 
 export function shSplit(text: string): string[] {
   const words: string[] = []

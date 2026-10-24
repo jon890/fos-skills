@@ -124,3 +124,8 @@ python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/README.md 
 | `orch/README.md` | 수정 |
 | `orch/CHANGELOG.md` | 수정 |
 | `orch/scripts/lib/paths.ts` | 수정 |
+
+## 구현 중 정한 것
+
+- 막는 조건은 `lib/spec.ts` 의 `liveSpecPaths` 를 쓴다. `--run` 도 `finish.run` 도 없으면 모든 Run 의 목록(`scope.source` 가 `all`)을 읽어야 통과한다. 지시서 폴더는 저장소마다 하나라 묶인 Run 만 보면 다른 Run 의 worker 를 지켜 주지 못한다. 원본보다 엄격하고 CHANGELOG 호환성 절에 적는다.
+- 공개 저장소 규칙에 따라 `orch/CHANGELOG.md` 의 지난 항목에 남은 다른 저장소의 이름을 「한 저장소」 로 바꾼다.

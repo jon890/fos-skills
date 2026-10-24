@@ -54,7 +54,9 @@
 //          finish.complete_cmd, task_pattern     hooks/after-deploy.ts   last_of_task 이고 deploy 가 success 나 none 일 때만 돈다.
 //                                                                        pr.title 에서 번호를 뽑아 NUMBER_OK 로 검사하고, 셸 없이 인자 목록으로 돌린다
 //        만든 핸들러는 머지 큐와 finish-pr 이 옛 칸을 돌리던 것과 같은 argv, 환경 변수, 작업 디렉터리, stdin 으로 옛 명령을 부르고
-//        그 종료 코드로 끝난다. 사용자 저장소에 남고 설치 캐시의 경로가 바뀌므로 이 스킬의 lib/ 를 import 하지 않는다.
+//        그 종료 코드로 끝난다. 작업 디렉터리는 verify-merged 가 사본이고, 나머지는 부른 명령이 --repo 로 받은 경로(ORCH_CHECKOUT)다.
+//        핸들러 자신은 주 checkout 에서 돌지만, 옛 칸은 연결된 워크트리를 --repo 로 주면 그 워크트리에서 돌았기 때문이다.
+//        사용자 저장소에 남고 설치 캐시의 경로가 바뀌므로 이 스킬의 lib/ 를 import 하지 않는다.
 //        after-deploy.ts 의 정규식은 lib/py.ts 의 pyRegExp 로 바꾼 결과를, 인자 목록은 shSplit 으로 나눈 결과를 파일에 적는다
 //     3. --apply 이고 옮길 것이 있으면 위 막는 조건을 본다. 하나라도 있으면 `막음 <이유>` 를 stderr 에 내고 3 이다
 //     4. 핸들러 파일을 쓰고 쓴 키만 설정에서 지운다. 설정의 나머지 키와 순서는 그대로 둔다. 비게 된 절도 남긴다.
@@ -780,6 +782,10 @@ function handlerHead(keys: string[], what: string, fsNames: string[] = ['readFil
   ].join('\n')
 }
 
+// 옛 칸이 돌던 작업 디렉터리. 이벤트 실행기가 부른 명령의 --repo 경로를 ORCH_CHECKOUT 으로 준다(lib/events.ts 머리 주석)
+const CHECKOUT = `// 옛 명령은 --repo 로 준 경로에서 돌았다. 이벤트 실행기가 그 경로를 ORCH_CHECKOUT 으로 준다
+const checkout = process.env.ORCH_CHECKOUT || undefined`
+
 // PR URL(https://<호스트>/<owner>/<repo>/pull/<번호>)에서 호스트, owner, 저장소 이름을 뽑는다. 머지 큐와 같은 규칙이다
 const URL_PARTS = `const url = String(pr.url ?? '')
 const scheme = url.indexOf('://')
@@ -789,8 +795,9 @@ function beforeMergeBody(command: string): string {
   return `${handlerHead(['queue.before'], '머지 큐의 --before 와 같이 PR 마다 머지 직전에 bash -c 로 돈다. 10 으로 끝나면 거부, 그 밖의 실패도 멈춘다.')}
 const COMMAND = ${JSON.stringify(command)}
 ${URL_PARTS}
+${CHECKOUT}
 const env = { ...process.env, PR: String(pr.number ?? ''), BRANCH: String(pr.branch ?? ''), OWNER: String(input.owner ?? owner), REPO: String(input.name ?? name), GH_HOST: host }
-process.exitCode = runOld(['bash', '-c', COMMAND], { env })
+process.exitCode = runOld(['bash', '-c', COMMAND], { env, cwd: checkout })
 `
 }
 
@@ -828,9 +835,10 @@ process.exitCode = runOld(['bash', '-c', COMMAND, 'verify-merged', copy], { env,
 function afterQueueBody(command: string): string {
   return `${handlerHead(['queue.after_merged'], '머지 큐의 --after-merged 와 같이 PR 을 하나라도 머지한 큐가 끝난 뒤 한 번 bash -c 로 돈다.')}
 const COMMAND = ${JSON.stringify(command)}
+${CHECKOUT}
 const join = (value: unknown): string => (Array.isArray(value) ? value.map(String).join(' ') : '')
 const env = { ...process.env, MERGED_PRS: join(input.merged_prs), CODE_PRS: join(input.code_prs) }
-process.exitCode = runOld(['bash', '-c', COMMAND], { env })
+process.exitCode = runOld(['bash', '-c', COMMAND], { env, cwd: checkout })
 `
 }
 
@@ -842,6 +850,7 @@ const ARGV: string[] = ${JSON.stringify(argv)}
 const PATTERN = /${pattern.source}/
 // 번호에 셸이나 경로를 바꾸는 글자가 들어가지 않게 막는다
 const NUMBER_OK = /${NUMBER_OK}/
+${CHECKOUT}
 
 function main(): number {
   if (input.last_of_task !== true || !['success', 'none'].includes(String(input.deploy))) return 0
@@ -855,7 +864,7 @@ function main(): number {
     process.stderr.write(\`업무 번호에 쓸 수 없는 글자가 있다: \${number}\\n\`)
     return 1
   }
-  return runOld(ARGV.map((part) => part.replaceAll('{number}', number)))
+  return runOld(ARGV.map((part) => part.replaceAll('{number}', number)), { cwd: checkout })
 }
 
 process.exitCode = main()

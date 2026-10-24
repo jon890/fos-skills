@@ -203,3 +203,8 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md docs/flow.md d
 | `orch/README.md` | 수정 |
 | `docs/flow.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
+
+## 구현 중 정한 것
+
+- 끝난 dispatch 에서 send-to-worker 가 1 을 내도 stdout 에 `LAUNCHED <id>` 줄이 있으면 worker-start 가 성공한 것이라 resumed 로 기록한다. `restart:` 줄은 다시 띄우기 전에 찍히므로 근거로 쓰지 않는다.
+- `worker-list` 조회가 실패하면 orphan 으로 기록하지 않고 다음 실행에 넘긴다. 일시적인 실패 하나로 그 (PR, base SHA) 가 영구히 orphan 으로 남지 않게 하기 위해서다.

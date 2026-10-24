@@ -462,6 +462,26 @@ describe('finish-pr 사용법 오류', { concurrency: 4 }, () => {
   })
 })
 
+describe('finish-pr 시간 제한 설정', { concurrency: 4 }, () => {
+  test('hooks.timeouts.after-deploy 가 틀리면 머지를 기다리지 않고 2 로 끝나고, 핸들러도 업무 완료 명령도 없으면 보지 않는다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.repo, '.orch'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch', 'config.json'), JSON.stringify({ hooks: { timeouts: { 'after-deploy': 0 } } }))
+    // after-deploy 를 낼 것이 없으면 값을 읽지 않는다. 옛 명령처럼 머지를 기다린다
+    const none = await c.finish([])
+    assert.notEqual(none.code, 2, both(none))
+    lacks(none.stderr, 'hooks.timeouts.after-deploy')
+    for (const args of [COMPLETE, []]) {
+      if (args.length === 0) hook(c, recorder(join(c.tmp, 'in.jsonl')))
+      const before = c.calls().length
+      const r = await c.finish(args)
+      assert.equal(r.code, 2, `${args.join(' ')}\n${both(r)}`)
+      has(r.stderr, 'hooks.timeouts.after-deploy 는 양수(초)여야 한다')
+      assert.deepEqual(c.calls().slice(before), [], '머지를 기다리면 안 된다')
+    }
+  })
+})
+
 describe('finish-pr 배포 판정', { concurrency: 4 }, () => {
   // 머지 커밋(merge), 그 뒤 커밋(later), 머지 커밋보다 앞 커밋(init), 저장소에 없는 커밋(x)의 실행으로 판정을 본다
   const cases: { name: string; runs: (c: Ctx) => Json[]; want: (c: Ctx) => string; deploy: string }[] = [

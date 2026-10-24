@@ -121,3 +121,10 @@ python3 korean-check/scripts/korean-style-check.py docs/data-schema.md
 | `docs/data-schema.md` | 수정 |
 | `orch/tests/merge-queue-overlap.spec.ts` | 수정 |
 | `orch/tests/fixtures/merge-queue-fakes.ts` | 수정 |
+
+## 구현 중 정한 것
+
+- `PR:` 처럼 콜론 뒤가 빈 인자는 원본처럼 그 PR 의 legacy `--before` 를 끈다.
+- preflight 가 핸들러와 옛 칸의 충돌에 더해 `hooks.timeouts` 값까지 시작 전에 본다. 충돌 판정은 `lib/events.ts` 한 벌이다.
+- 큐 도중 설정 오류로 멈추면 원본의 보류 경로처럼 앞에서 머지한 PR 의 `after-queue` 만 돌리고 2 로 끝난다. 정리는 돌리지 않는다.
+- 옛 셸 명령 칸은 원본처럼 `--repo` 로 준 경로에서 돈다. 이벤트 실행기는 그 경로를 핸들러에도 `ORCH_CHECKOUT` 으로 주고, `migrate-orch-dir.ts --hooks` 가 만든 핸들러는 옛 명령을 그 경로에서 부른다.

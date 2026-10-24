@@ -32,8 +32,13 @@
 //   after-queue    --after-merged 의 자리. 실패와 시간 초과면 HOOK-FAIL 줄에 더해 `AFTER-MERGED-FAILED <종료 코드|timeout>` 이다
 //   --before, --verify-merged, --after-merged 는 옛 칸이라 그 이벤트의 핸들러처럼 돌고 `DEPRECATED <옵션> → hooks/<이벤트>.ts` 줄을 낸다.
 //   시간 제한도 핸들러와 같다(기본값은 lib/events.ts 의 EVENTS, config.json 의 hooks.timeouts.<이벤트> 가 덮는다).
+//   옛 칸의 작업 디렉터리는 --repo 로 준 경로다(--verify-merged 는 사본). 옛 명령과 같아, 연결된 워크트리를 --repo 로 주면
+//   상대경로 명령이 그 워크트리에서 돈다. 핸들러의 작업 디렉터리는 주 checkout 이다(lib/events.ts 머리 주석).
 //   같은 이벤트의 핸들러 파일과 옛 칸이 함께 있으면 큐를 시작하기 전에 사용법 오류로 끝난다. config.json 이 깨졌거나
-//   pipeline.authors 의 타입이 틀려도 첫 머지 전에 사용법 오류로 끝난다
+//   pipeline.authors 의 타입이 틀리거나, 큐가 낼 이벤트의 hooks.timeouts 값이 틀려도 첫 머지 전에 사용법 오류로 끝난다.
+//   큐 도중에 설정 오류가 나면(핸들러 파일을 그 사이에 더했다 같은 것) 그 자리에서 멈추고 종료 코드 2 다.
+//   이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue(--after-merged 포함)만 돌리고 정리(cleanup-sweep)는 부르지 않는다.
+//   보류로 멈출 때, 큐 끝의 after-queue 가 설정 오류를 낼 때와 같은 규칙이다
 //
 // origin 은 PR 이 속한 저장소를 가리켜야 한다. fork 를 origin 으로 둔 체크아웃에서는 HEAD 대조가 STOP 으로 끝난다.
 //
@@ -45,7 +50,8 @@
 //                         그래서 `gh api` 에는 PR URL 의 호스트(`gh pr` 가 origin 으로 정한 값)를 --hostname 으로 넘긴다.
 //                         GH_HOST 환경 변수는 보지 않는다. 전역 GH_HOST 가 다른 호스트를 가리켜도 `gh pr` 와 같은 호스트로 간다
 //   --before CMD          모든 PR 에 쓸 머지 전 명령. before-merge 의 옛 칸이다. `PR:명령` 으로 준 PR 에서는 그 명령이 대신한다.
-//                         `PR:명령` 은 이벤트가 아니라 시간 제한 없이 bash -c 로 돌고, before-merge 핸들러가 있으면 그 다음에 돈다
+//                         `PR:명령` 은 이벤트가 아니라 시간 제한 없이 bash -c 로 돌고, before-merge 핸들러가 있으면 그 다음에 돈다.
+//                         콜론 뒤가 빈 `PR:` 는 그 PR 에서 --before 를 끈다(핸들러는 그대로 돈다)
 //   --last-of-task PR     그 PR 이 task 의 마지막 PR 이다. before-merge 입력의 last_of_task 가 true 다. 여러 번 준다.
 //                         큐에 없는 번호면 사용법 오류다
 //   --method M            merge | squash | rebase. 기본 merge
@@ -103,7 +109,7 @@
 //                         링크를 푼 실경로로 바꿔 쓴다. macOS 의 TMPDIR(/var/folders/...)는 /var 가 /private/var 를
 //                         가리키는 링크라, 실경로를 요구하는 검사가 사본 경로를 거부한다. 검사 명령의 TMPDIR 도 실경로로 준다
 //                         사본 이름은 merge-queue-pr<PR>-<pid> 다. 시작할 때 이 폴더에서 pid 가 죽은 사본을 지운다.
-//                         SIGTERM 으로 끝나면 사본을 지우고 종료 코드 143 으로 끝나지만, KILL 로 끝나면 사본이 남기 때문이다
+//                         SIGTERM 이나 SIGINT 로 끝나면 사본을 지우지만, KILL 로 끝나면 사본이 남기 때문이다
 //   --continue-on-hold    한 PR 이 조건에 못 미치면 멈추지 않고 STOP 줄을 찍은 뒤 다음 PR 로 간다. 끝에
 //                         `QUEUE-HELD 번호...` 를 찍고 정리를 부른 뒤 종료 코드 1 로 끝난다. 기본은 첫 보류에서 멈춘다
 //   --skipped-is-missing  결론이 SKIPPED 인 체크는 나타나지 않은 것으로 본다. 필수 체크가 SKIPPED 로만 있으면
@@ -126,6 +132,14 @@
 // PR 조회(gh pr view)가 실패하면 MERGE_QUEUE_GH_RETRIES 번(기본 3)까지 MERGE_QUEUE_GH_RETRY_SECONDS 초(기본 10)
 // 간격으로 다시 부른다. 일시 실패로 CI 를 통과한 PR 이 「체크 조회 실패」 로 보류되지 않게 하기 위해서다.
 //
+// 신호: SIGTERM 이나 SIGINT 를 받으면 진행 중인 자식(`PR:명령`, --threads-cmd, 정리, 이벤트의 핸들러와 옛 칸)에 TERM 을 보내고,
+// 2초 뒤에도 살아 있으면 KILL 을 보낸다. 핸들러와 옛 칸은 프로세스 그룹 전체에 보낸다(lib/proc.ts 의 stopChildren).
+// 그 뒤 사본을 지우고 128 + 신호 번호로 끝난다. 그 사이에는 새 자식을 띄우지 않고, 머지와 base 합치기, base 옮기기,
+// 원격 브랜치 삭제도 하지 않는다. git, gh 처럼 동기로 부르는 호출(머지 포함) 중에 받은 신호는 그 호출이 끝난 뒤 처리된다.
+// `PR:명령`, --threads-cmd, 정리는 새 그룹(detached) 없이 띄우므로 TERM 과 KILL 이 그 자식에게만 간다. 복합 명령
+// (`a; b`, 파이프)이 띄운 손자 프로세스는 남을 수 있다. 옛 명령은 이 자식도 끊지 않고 끝났다.
+// 쓰는 gh 호출(머지, update-branch, base 옮기기)과 원격 브랜치 삭제는 옛 명령처럼 시간 제한이 없다. 읽는 gh 호출은 60초다.
+//
 // 머지 전 명령(--before, `PR:명령`), --threads-cmd, --verify-merged 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치),
 // OWNER, REPO, GH_HOST(위 --hostname 과 같은 값)를 받는다.
 // 예: merge_queue.ts 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
@@ -133,7 +147,7 @@
 // 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음. 3 보다 우선한다),
 //           2 사용법 오류(설정 파일 오류, 핸들러와 옛 칸이 함께 있음, 큐에 없는 --last-of-task 포함),
 //           3 모두 머지했지만 after-merge 나 after-queue(--after-merged 포함)가 하나라도 실패하거나 시간을 넘겼다,
-//           143 SIGTERM 을 받았다
+//           143 SIGTERM 을 받았다, 130 SIGINT 를 받았다
 //
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
 
@@ -141,11 +155,11 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
-import { fire, handlerFile } from './lib/events.ts'
+import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
 import { apiTarget, gh, ghJson, isOwnPr, ownAuthors, updateBranch } from './lib/gh.ts'
 import { groupMap, isDoc } from './lib/overlap.ts'
-import { run, runAsync, runInherit, scriptCommand } from './lib/proc.ts'
+import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { pyJson } from './lib/py.ts'
@@ -157,8 +171,7 @@ const HERE = dirname(SCRIPT)
 const REJUDGE_LIMIT = 5
 const DOCS_ONLY_NOTE = '--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다(--up-to-date-when overlap 과도 쓴다)'
 // 옛 명령은 git, 판정, 사용자 명령에 시간 제한을 두지 않았다. lib/proc.ts 의 기본 60초로 끊으면 큰 저장소의 fetch 나
-// 검사 명령이 실패로 읽힌다. setTimeout 이 받는 최댓값(약 24.8일)이고, 넘기면 Node 가 1ms 로 바꾼다
-const NO_LIMIT_MS = 2 ** 31 - 1
+// 검사 명령이 실패로 읽혀, 그 호출에는 NO_LIMIT_MS(lib/proc.ts)를 준다
 // 사본 이름(merge-queue-pr<PR>-<pid>)을 찾는 glob `merge-queue-pr[0-9]*-[0-9]*` 와 같다
 const COPY_NAME = /^merge-queue-pr[0-9].*-[0-9].*$/s
 // 머지 큐가 내는 이벤트. 옛 칸(--before, --verify-merged, --after-merged)은 옵션 이름을 legacy 의 key 로 넘긴다
@@ -508,9 +521,7 @@ class Queue {
       ['--after-merged', o.afterMerged, 'after-queue'],
     ]
     for (const [key, value, event] of legacy) {
-      const file = value ? handlerFile(event, repo) : null
-      // lib/events.ts 의 fire 가 내는 문구와 같다
-      if (file) throw new ConfigError(`${event} 의 핸들러 ${file} 와 옛 설정 칸 ${key} 가 함께 있다. 어느 쪽이 맞는지 정할 수 없어 하나만 둔다`)
+      if (value) checkLegacy(event, repo, key)
     }
     // 핸들러만 있고 옵션이 없어도 사본 검사가 빠지지 않게 겹침 판정을 켠다
     this.verify = Boolean(o.verifyMerged) || this.hooks.has('verify-merged')
@@ -520,6 +531,14 @@ class Queue {
       if (o.verifyWhen !== 'overlap') throw new Usage(`--verify-merged-when ${o.verifyWhen} 은 --verify-merged 와 함께 쓴다`)
       if (o.docsGlob && !(afterQueue || o.updateDocs || o.upToDateWhen === 'overlap')) throw new Usage(DOCS_ONLY_NOTE)
     }
+    // 큐가 낼 이벤트의 시간 제한 값을 본다. after-merge 와 after-queue 는 머지 뒤에 나므로 fire 에만 맡기면 머지한 뒤에야 멈춘다
+    const firing: [QueueEvent, boolean][] = [
+      ['before-merge', Boolean(o.beforeAll) || this.hooks.has('before-merge')],
+      ['verify-merged', this.verify],
+      ['after-merge', this.hooks.has('after-merge')],
+      ['after-queue', afterQueue],
+    ]
+    for (const [event, fires] of firing) if (fires) eventTimeoutSec(event, repo)
   }
 
   // 앞 실행이 KILL 로 끝나 남긴 사본을 지운다. 이름 끝의 pid 가 살아 있으면 다른 큐가 쓰는 중이다
@@ -733,8 +752,9 @@ class Queue {
     const o = this.o
     const colon = item.indexOf(':')
     const n = colon >= 0 ? item.slice(0, colon) : item
-    // `PR:명령` 은 그 PR 에서 --before 를 대신한다. 이벤트가 아니라 before-merge 다음에 따로 돈다
-    const prCommand = colon >= 0 ? item.slice(colon + 1) : ''
+    // `PR:명령` 은 그 PR 에서 --before 를 대신한다. 이벤트가 아니라 before-merge 다음에 따로 돈다.
+    // 콜론이 있으면 명령이 비어도 --before 를 끈다(옛 명령과 같이 콜론 유무로 가른다). 콜론이 없으면 null 이다
+    const prCommand = colon >= 0 ? item.slice(colon + 1) : null
     const p: Pr = (this.pr = {
       n,
       ph: '',
@@ -813,7 +833,8 @@ class Queue {
 
     // 머지 뒤에는 merge-base 가 바뀌어 문서 PR 인지 다시 판정할 수 없다. 머지 전에 정한다
     const kind = o.docsGlob && this.docsOnly() ? 'docs' : 'code'
-    const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph])
+    refuseWhenStopping(n)
+    const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
     // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
     const last = chomp(merge.stdout + merge.stderr).split('\n').pop() ?? ''
     if (last) out(last)
@@ -852,7 +873,7 @@ class Queue {
   }
 
   // 머지 직전까지의 확인을 끝낸다. 바로 머지로 판정한 뒤 base 가 움직였으면 다시 판정한다
-  async readyToMerge(prCommand: string): Promise<void> {
+  async readyToMerge(prCommand: string | null): Promise<void> {
     const o = this.o
     const p = this.p
     const n = p.n
@@ -918,13 +939,13 @@ class Queue {
     }
   }
 
-  // before-merge 를 내고 `PR:명령` 을 돌린다. 옛 칸 --before 는 `PR:명령` 이 없는 PR 에서만 넘긴다
-  async beforeMerge(prCommand: string): Promise<void> {
+  // before-merge 를 내고 `PR:명령` 을 돌린다. 옛 칸 --before 는 콜론 없이 준 PR 에서만 넘긴다
+  async beforeMerge(prCommand: string | null): Promise<void> {
     const o = this.o
     const p = this.p
     const n = p.n
     const env = { ...this.prEnv(), GH_HOST: p.apiHost }
-    const legacy = prCommand ? '' : o.beforeAll
+    const legacy = prCommand === null ? o.beforeAll : ''
     if (legacy || this.hooks.has('before-merge')) {
       if (legacy) log(`${n} 머지 전 명령: ${legacy}`)
       const ctx = this.ctx()
@@ -1047,6 +1068,7 @@ class Queue {
       log(`${n} base(${p.base}) 보다 ${behind} 커밋 뒤처졌다. update-branch 후 체크를 다시 기다린다`)
       // 차례가 온 이 PR 에만 base 를 합친다. 검사한 HEAD 를 넘겨, 그 뒤에 push 된 커밋이 있으면 GitHub 가 거부하게 한다.
       // merge-turn 은 draft 여부를 보지 않는다
+      refuseWhenStopping(n)
       const updated = updateBranch(`${p.owner}/${p.repo}`, { number: Number(n), isDraft: false }, 'merge-turn', {
         host: p.apiHost,
         expectedHead: p.ph,
@@ -1101,7 +1123,10 @@ class Queue {
       const others = based.filter((_, i) => !owns[i]).map((pr) => pr.number)
       if (others.length > 0) return kept(`다른 사람의 열린 PR(${others.join(' ')}) 의 base 라 남긴다`)
       for (const pr of based) {
-        if (gh(['pr', 'edit', String(pr.number), '--base', p.base]).code !== 0) return kept(`쌓인 PR ${pr.number} 의 base 를 옮기지 못해 남긴다`)
+        if (stopping()) return kept(`${stopping()} 를 받아 끝내는 중이라 남긴다`)
+        if (gh(['pr', 'edit', String(pr.number), '--base', p.base], { timeoutMs: NO_LIMIT_MS }).code !== 0) {
+          return kept(`쌓인 PR ${pr.number} 의 base 를 옮기지 못해 남긴다`)
+        }
         retargeted.push(pr.number)
         log(`${p.n} 쌓인 PR ${pr.number} 의 base 를 ${p.base} 로 옮겼다`)
       }
@@ -1109,6 +1134,7 @@ class Queue {
       const left = this.basedOn()
       if (left === null || left.length > 0) return kept('다른 열린 PR 의 base 이거나 조회 실패라 남긴다')
     }
+    if (stopping()) return kept(`${stopping()} 를 받아 끝내는 중이라 남긴다`)
     const deleted = git('push', '-q', 'origin', '--delete', p.branch).code === 0
     if (deleted) log(`${p.n} 원격 브랜치 삭제 ${p.branch}`)
     git('fetch', '-q', '--prune', 'origin')
@@ -1147,6 +1173,31 @@ class Queue {
     }
   }
 
+  // 머지가 끝난 뒤 cleanup-sweep --apply 로 정리한다. 실패해도 머지 결과는 그대로라 경고만 찍는다
+  async sweep(): Promise<void> {
+    const sweep = process.env.CLEANUP_SWEEP ?? `${HERE}/cleanup-sweep.py`
+    const done = await runInherit(
+      scriptCommand(sweep, ['--repo', process.cwd(), '--base', this.sweepBase || 'main', '--apply', ...this.o.sweepArgs]),
+      { timeoutMs: NO_LIMIT_MS },
+    )
+    if (done.code !== 0) out('경고: cleanup-sweep.py 가 실패했다. 머지 결과는 그대로다')
+  }
+
+  // 큐 도중의 설정 오류로 멈춘다. 종료 코드 2 다. 이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue 만 돌린다.
+  // 옛 명령은 보류로 멈춘 자리에서도 앞에서 머지한 PR 의 머지 뒤 명령을 돌리고 정리는 부르지 않았다. 그 규칙을 따른다
+  async stopOnConfig(e: ConfigError): Promise<number> {
+    process.stderr.write(`${e.message}\n`)
+    if (this.merged.length === 0) return 2
+    try {
+      await this.runAfterMerged()
+    } catch (again) {
+      if (!(again instanceof ConfigError)) throw again
+      process.stderr.write(`${again.message}\n`)
+      out('AFTER-MERGED-FAILED error')
+    }
+    return 2
+  }
+
   async run(): Promise<number> {
     const o = this.o
     for (const item of o.items) {
@@ -1155,8 +1206,11 @@ class Queue {
       try {
         await this.processPr(item)
       } catch (e) {
-        // 설정 오류는 그 PR 의 보류가 아니라 사용법 오류다. 큐를 멈추고 main 이 종료 코드 2 로 바꾼다
-        if (e instanceof ConfigError) throw e
+        // 설정 오류는 그 PR 의 보류가 아니라 사용법 오류다. --continue-on-hold 여도 큐를 멈춘다
+        if (e instanceof ConfigError) {
+          this.dropCopy()
+          return await this.stopOnConfig(e)
+        }
         if (e instanceof Stop) {
           out(`STOP ${e.message}`)
         } else {
@@ -1179,14 +1233,7 @@ class Queue {
     }
     out(this.held.length > 0 ? `QUEUE-HELD ${this.held.join(' ')}` : 'QUEUE-DONE')
     await this.runAfterMerged()
-    if (o.sweep) {
-      const sweep = process.env.CLEANUP_SWEEP ?? `${HERE}/cleanup-sweep.py`
-      const done = await runInherit(
-        scriptCommand(sweep, ['--repo', process.cwd(), '--base', this.sweepBase || 'main', '--apply', ...o.sweepArgs]),
-        { timeoutMs: NO_LIMIT_MS },
-      )
-      if (done.code !== 0) out('경고: cleanup-sweep.py 가 실패했다. 머지 결과는 그대로다')
-    }
+    if (o.sweep) await this.sweep()
     if (this.held.length > 0) return 1
     return this.afterFailed || this.notifyFailed ? 3 : 0
   }
@@ -1194,12 +1241,27 @@ class Queue {
 
 let active: Queue | null = null
 
+// 신호를 받아 끝내는 중이면 쓰는 호출을 하지 않고 그 PR 을 멈춘다. 처리기가 자식을 끊는 유예 동안에도 큐는 이어 돌아,
+// TERM 을 받고 0 으로 끝난 핸들러 뒤에 머지가 나갈 수 있기 때문이다
+function refuseWhenStopping(n: string): void {
+  const signal = stopping()
+  if (signal) stop(`${n} ${signal} 를 받아 끝내는 중이라 멈춘다`)
+}
+
 // 동기 자식 실행(spawnSync) 중에는 신호 처리기가 돌지 않는다. 오래 걸리는 사용자 명령과 대기는 비동기로 부르므로
-// 그동안 받은 SIGTERM 은 바로 처리되고, 짧은 git, gh 조회 중에 받은 것은 그 호출이 끝난 뒤 처리된다
-process.on('SIGTERM', () => {
-  active?.dropCopy()
-  process.exit(143)
-})
+// 그동안 받은 신호는 바로 처리되고, 짧은 git, gh 조회 중에 받은 것은 그 호출이 끝난 뒤 처리된다.
+// 진행 중인 자식을 끊은 뒤에 끝낸다. 그냥 끝내면 핸들러의 프로세스 그룹(detached)과 bash -c 자식이 남는다
+let exiting = false
+function onSignal(signal: NodeJS.Signals): void {
+  if (exiting) return
+  exiting = true
+  void stopChildren(signal).finally(() => {
+    active?.dropCopy()
+    process.exit(signalCode(signal))
+  })
+}
+process.on('SIGTERM', onSignal)
+process.on('SIGINT', onSignal)
 
 async function main(argv: string[]): Promise<number> {
   let queue: Queue

@@ -112,3 +112,8 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md orch/reference
 | `orch/README.md` | 수정 |
 | `orch/references/cleanup.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
+
+## 구현 중 정한 것
+
+- 머지 큐는 SIGTERM, SIGINT 를 받으면 진행 중인 자식과 핸들러 그룹에 TERM, 2초 뒤 KILL 을 보내고 사본을 지운 뒤 128+n 으로 끝난다. 끊는 사이에는 머지, update-branch, base 옮기기, 브랜치 삭제를 하지 않는다. detached 없이 띄운 자식의 손자는 남을 수 있다. 원본은 자식도 끊지 않았다.
+- 쓰는 gh 호출(머지, update-branch, base 옮기기)과 원격 브랜치 삭제에는 원본처럼 시간 제한을 두지 않는다. 읽는 호출만 제한이 있다.

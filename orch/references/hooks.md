@@ -26,7 +26,7 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 | `finish-pr.ts` | `after-deploy` |
 
 핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `docs/data-schema.md` 의 「공통 필드」 와 「이벤트별 필드」 표가 소유한다.
-환경 변수(`ORCH_EVENT`, `ORCH_REPO`, `ORCH_DIR`, `ORCA`, `GH`)와 작업 디렉터리는 `scripts/lib/events.ts` 머리 주석의 「핸들러」 와 「환경」 이 소유한다.
+환경 변수와 작업 디렉터리는 `scripts/lib/events.ts` 머리 주석의 「핸들러」 와 「환경」 이 소유한다.
 
 ## 핸들러 예시
 

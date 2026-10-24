@@ -8,6 +8,8 @@
 //
 // 환경: process.env 위에 아래를 둔다.
 //   ORCH_EVENT, ORCH_REPO(주 checkout), ORCH_DIR(orch 루트 절대경로)
+//   ORCH_CHECKOUT  ctx.repo 로 받은 경로의 실경로. 부른 명령이 --repo 로 받은 checkout 이고, 연결된 워크트리면 그 워크트리다.
+//                  legacy 의 기본 작업 디렉터리와 같다. migrate-orch-dir --hooks 가 만든 핸들러가 옛 명령을 이 경로에서 부른다
 //   PATH        맨 앞에 가드 폴더(lib/guard)
 //   ORCA, GH    가드 폴더의 shim 절대경로
 //   ORCH_REAL_ORCA, ORCH_REAL_GH  진짜 실행 파일의 절대경로. 찾지 못하면 넘기지 않는다
@@ -27,7 +29,8 @@
 //   거부를 1 이 아니라 10 으로 둔 것은 node 가 잡지 않은 예외에 1 을 내기 때문이다. 1 을 거부로 읽으면 죽은 핸들러가 의도한 거부가 된다.
 //   거부할 수 있는 이벤트에서 fail 과 timeout 을 거부처럼 멈출지는 부르는 명령이 정한다(docs/flow.md 의 「갈래」).
 //
-// 시간 제한: EVENTS 의 기본값을 config.json 의 hooks.timeouts.<이벤트>(초, 양수)가 덮는다.
+// 시간 제한: EVENTS 의 기본값을 config.json 의 hooks.timeouts.<이벤트>(초, 양수)가 덮는다. 값이 틀리면 ConfigError 다.
+//   eventTimeoutSec 가 fire 와 같은 값과 검사를 낸다. 머지 뒤에 나는 이벤트의 설정 오류를 시작하기 전에 알리려는 명령이 부른다.
 //   넘으면 프로세스 그룹에 TERM, 10초 뒤에도 그룹이 살아 있으면 KILL 이다. 자식은 detached 로 띄워 새 그룹을 만든다.
 //   그래서 핸들러가 띄운 bash -c 의 손자 프로세스도 함께 끝난다.
 //   핸들러는 끝났는데 백그라운드 손자가 stdout 이나 stderr 를 쥐고 있으면 파이프가 닫히지 않는다. 그때는 시간 제한까지
@@ -35,6 +38,9 @@
 //   그룹이 살아 있을 때 KILL 을 보내고 파이프를 닫는다. 결과는 핸들러의 종료 코드로 판정한다. 손자가 그 뒤에 쓴 출력은 버린다.
 //   spawnSync 를 쓰지 않는 이유: TERM 을 무시하는 자식이면 시간이 지나도 돌아오지 않아 KILL 을 보낼 수 없고,
 //   출력 한도(maxBuffer)를 넘으면 자식이 죽으며, 줄을 그때그때 out 으로 옮길 수 없다(Node 22.18 실측).
+//
+// 신호: 띄운 그룹은 lib/proc.ts 의 trackChild 로 기억한다. 부른 명령이 신호를 받아 stopChildren 을 부르면 그룹에 TERM,
+//   유예 뒤 KILL 이 간다. 그 뒤의 fire 는 띄우지 않고 fail 이다(종료 코드는 128 + 받은 신호 번호).
 //
 // 출력: 핸들러의 stdout 과 stderr 를 줄 단위로 나눠 `[hook <이벤트>] ` 를 붙여 바로 out 으로 보낸다. 메모리에 모으지 않고
 //   크기 한도도 없다. out 의 기본은 process.stdout 에 한 줄씩 쓰는 것이다.
@@ -58,9 +64,12 @@
 // legacy: 옛 설정 칸(queue.before 등)을 핸들러처럼 돌리는 어댑터다. 다음 major 에서 지운다.
 //   argv 를 셸 없이 그대로 띄운다. 셸이 필요한 옛 칸은 부르는 쪽이 ['bash', '-c', 명령] 을, finish.complete_cmd 는
 //   shlex 식으로 나눈 argv 를 넘긴다. PR 제목에서 뽑은 값이 셸에 들어가지 않게 하기 위해서다.
+//   작업 디렉터리는 ctx.cwd, 없으면 ctx.repo 로 받은 경로(ORCH_CHECKOUT)다. 주 checkout 이 아니다. 옛 명령은 --repo 로 chdir 한 뒤
+//   옛 칸을 돌렸으므로, 연결된 워크트리를 --repo 로 주면 상대경로 명령이 그 워크트리에서 돌아야 한다.
 //   legacy.env 는 process.env 위에 덮고, ORCH_* 와 가드 PATH, ORCA, GH 는 핸들러와 같게 그 위에 다시 둔다.
 //   실행 전에 `DEPRECATED <key> → hooks/<이벤트>.ts` 줄을 낸다. 시간 제한, 잠금, 기록, 종료 코드 해석, 출력 접두는 핸들러와 같다.
 //   핸들러 파일과 legacy 가 함께 있으면 ConfigError 다. 명령은 사용법 오류(종료 코드 2)로 바꾼다.
+//   checkLegacy 가 같은 판정과 문구를 낸다. 이벤트가 머지나 배포 뒤에 나는 명령이 시작하기 전에 부른다.
 
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -89,7 +98,7 @@ import { mainCheckout } from './git.ts'
 import { ghBin } from './gh.ts'
 import { orcaBin } from './orca.ts'
 import { ensureIgnored, NAMES, orchDir, pathOf } from './paths.ts'
-import { signalCode } from './proc.ts'
+import { groupAlive, killGroup, signalCode, stoppedReason, stopping, trackChild } from './proc.ts'
 import { alive } from './process.ts'
 
 type EventSpec = { rejectable: boolean; timeoutSec: number }
@@ -178,7 +187,7 @@ function realBin(value: string, name: string): string | null {
   return null
 }
 
-function handlerEnv(event: string, repo: string, root: string, legacyEnv: Record<string, string> | undefined): NodeJS.ProcessEnv {
+function handlerEnv(event: string, repo: string, root: string, checkout: string, legacyEnv: Record<string, string> | undefined): NodeJS.ProcessEnv {
   const realOrca = realBin(orcaBin(), 'orca')
   const realGh = realBin(ghBin(), 'gh')
   const env: NodeJS.ProcessEnv = { ...process.env, ...(legacyEnv ?? {}) }
@@ -189,6 +198,7 @@ function handlerEnv(event: string, repo: string, root: string, legacyEnv: Record
   env.ORCH_EVENT = event
   env.ORCH_REPO = repo
   env.ORCH_DIR = root
+  env.ORCH_CHECKOUT = checkout
   env.PATH = process.env.PATH ? `${GUARD_DIR}${delimiter}${process.env.PATH}` : GUARD_DIR
   env.ORCA = join(GUARD_DIR, 'orca')
   env.GH = join(GUARD_DIR, 'gh')
@@ -213,6 +223,13 @@ function timeoutSec(event: string, repo: string, root: string): number {
     throw new ConfigError(`설정 파일의 hooks.timeouts.${event} 는 양수(초)여야 한다`)
   }
   return value
+}
+
+// 이벤트의 시간 제한(초). fire 가 쓰는 값과 같고, config.json 의 hooks.timeouts 가 틀리면 같은 ConfigError 다
+export function eventTimeoutSec(event: string, repo: string): number {
+  if (!Object.hasOwn(EVENTS, event)) throw new Error(`모르는 이벤트: ${event}. ${Object.keys(EVENTS).join(', ')} 중 하나다`)
+  const main = mainCheckout(repo)
+  return timeoutSec(event, main, orchDir(main))
 }
 
 // 잠금 ------------------------------------------------------------------
@@ -367,26 +384,11 @@ function lines(emit: (line: string) => void): { push: (chunk: Buffer) => void; e
   }
 }
 
-function killGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, signal)
-  } catch {
-    // ESRCH: 그룹에 남은 프로세스가 없다.
-  }
-}
-
-function groupAlive(pid: number): boolean {
-  try {
-    process.kill(-pid, 0)
-    return true
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
-
 type Outcome = { timedOut: boolean; code: number | null; error: string | null; lastLine: string }
 
 function execute(argv: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; input: string; timeoutMs: number; prefix: string; out: (line: string) => void }): Promise<Outcome> {
+  const signal = stopping()
+  if (signal) return Promise.resolve({ timedOut: false, code: signalCode(signal), error: stoppedReason(argv, signal), lastLine: '' })
   return new Promise((done) => {
     let settled = false
     let timedOut = false
@@ -396,6 +398,7 @@ function execute(argv: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; in
     let pipeTimer: NodeJS.Timeout | undefined
     let exited: { status: number | null; signal: NodeJS.Signals | null } | null = null
     const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
+    trackChild(child, true)
     const outLines = lines((line) => {
       if (line.trim()) lastLine = line
       opts.out(`${opts.prefix}${line}`)
@@ -475,6 +478,16 @@ function handlerPath(event: string, root: string): string {
   return join(root, NAMES.hooks, `${event}.ts`)
 }
 
+function conflictError(event: string, file: string, key: string): ConfigError {
+  return new ConfigError(`${event} 의 핸들러 ${file} 와 옛 설정 칸 ${key} 가 함께 있다. 어느 쪽이 맞는지 정할 수 없어 하나만 둔다`)
+}
+
+// 그 이벤트의 핸들러 파일이 있으면 옛 설정 칸 key 와 함께 있다는 ConfigError 를 던진다. fire 와 같은 판정과 문구다
+export function checkLegacy(event: string, repo: string, key: string): void {
+  const file = handlerFile(event, repo)
+  if (file) throw conflictError(event, file, key)
+}
+
 function emptyResult(): FireResult {
   return { result: 'none', code: null, reason: '', durationMs: 0 }
 }
@@ -487,9 +500,7 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
   const file = handlerPath(event, root)
   const hasHandler = isFile(file)
   const legacy = ctx.legacy
-  if (hasHandler && legacy) {
-    throw new ConfigError(`${event} 의 핸들러 ${file} 와 옛 설정 칸 ${legacy.key} 가 함께 있다. 어느 쪽이 맞는지 정할 수 없어 하나만 둔다`)
-  }
+  if (hasHandler && legacy) throw conflictError(event, file, legacy.key)
   if (!hasHandler && !legacy) return emptyResult()
 
   const spec = EVENTS[event]
@@ -510,6 +521,7 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
 
   if (legacy) out(`DEPRECATED ${legacy.key} → hooks/${event}.ts`)
 
+  const checkout = real(ctx.repo)
   const lockDir = join(root, NAMES['hooks-state'])
   mkdirSync(lockDir, { recursive: true })
   ensureIgnored(repo)
@@ -522,14 +534,14 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
       if (!(await acquire(lock, deadline))) {
         return finish('fail', null, `잠금을 얻지 못했다: ${lock} 를 쥔 실행이 ${seconds + LOCK_EXTRA_MS / 1000}초 안에 끝나지 않았다`)
       }
-      env = handlerEnv(event, repo, root, legacy?.env)
+      env = handlerEnv(event, repo, root, checkout, legacy?.env)
       payload = { ...input, version: CONTRACT_VERSION, event, repo, base: ctx.base, run: ctx.run, time: new Date().toISOString() }
       // 띄우기 직전에 잠금이 아직 내 것인지 다시 읽는다. 죽은 잠금을 다른 실행이 회수하다 내 새 잠금을 떼어 냈으면
       // 그 사이 또 다른 실행이 잠금을 만들었을 수 있다. 내 것이 아니면 다시 기다린다(머리 주석의 「잠금」).
       if (owns(lock)) break
     }
     const outcome = await execute(argv, {
-      cwd: ctx.cwd ?? repo,
+      cwd: ctx.cwd ?? (legacy ? checkout : repo),
       env,
       input: JSON.stringify(payload),
       timeoutMs: seconds * 1000,

@@ -187,7 +187,7 @@ flowchart TD
 
 ### 이벤트 목록
 
-`거부` 가 예인 이벤트는 핸들러가 다음 동작을 막을 수 있다. 코어 동작과 핸들러의 순서는 거부할 수 있는 이벤트면 핸들러가 먼저, 나머지는 코어 동작 뒤다.
+`거부` 가 예인 이벤트는 핸들러가 다음 동작을 막을 수 있다. 코어 동작과 핸들러의 순서는 거부할 수 있는 이벤트면 핸들러가 먼저, 나머지는 코어 동작 뒤다. `after-deploy` 만 예외로 보드 done 앞에 낸다. 옛 업무 완료 명령이 보드 done 앞에 돌던 순서를 지키기 위해서다.
 
 | 이벤트 | 내는 명령 | 시점 | 거부 | 코어 동작 | 핸들러가 맡을 일의 예 |
 | --- | --- | --- | --- | --- | --- |
@@ -205,8 +205,8 @@ flowchart TD
 | `before-merge` | `merge_queue` | PR 마다 머지 직전, HEAD 를 고정한 뒤 | 예 | 머지 조건 확인 | DB 마이그레이션 PR 앞의 백업 |
 | `verify-merged` | `merge_queue` | `queue.verify_merged_when` 이 맞는 PR 의 합친 사본을 만든 뒤 | 예 | 사본 생성, HEAD 대조, 사본 삭제 | 사본에서 로컬 CI 실행 |
 | `after-merge` | `merge_queue` | PR 하나가 MERGED 인 것을 확인한 뒤 | 아니오 | 원격 브랜치 삭제, 그 브랜치를 base 로 둔 내 PR 의 base 옮기기 | 없음 |
-| `after-queue` | `merge_queue`, `orch-loop` | 큐가 끝나거나 보류로 멈춘 뒤, 하나라도 머지했을 때 | 아니오 | `pipeline.after_queue_interval_sec` 로 묶기 | 로컬 배포. `code_prs` 가 비면 건너뛴다 |
-| `after-deploy` | `finish-pr` | 배포 확인이 끝난 뒤. 배포 워크플로가 없으면 정리 직후 | 아니오 | 보드 done | 업무의 마지막 PR 이면 업무 완료 처리 |
+| `after-queue` | `merge_queue`, `orch-loop` | 큐가 끝나거나 보류나 큐 도중의 설정 오류로 멈춘 뒤, 하나라도 머지했을 때 | 아니오 | `pipeline.after_queue_interval_sec` 로 묶기 | 로컬 배포. `code_prs` 가 비면 건너뛴다 |
+| `after-deploy` | `finish-pr` | 배포 판정 뒤, 보드 done 앞. 배포 워크플로가 없으면 정리 직후. `deploy` 가 `failure` 나 `timeout` 이어도 내고, 그때는 보드 done 을 하지 않는다 | 아니오 | 보드 done | 업무의 마지막 PR 이면 업무 완료 처리 |
 | `before-cleanup` | `cleanup-sweep` | 워크트리 하나를 지우기 직전 | 예 | 소유와 머지 확인 | 저장소가 남길 워크트리 거부 |
 | `after-cleanup` | `cleanup-sweep` | 정리 한 차례가 끝난 뒤 | 아니오 | 지운 것과 남긴 것 출력 | 저장소 캐시 폴더 정리 |
 | `tick` | `orch-loop` | `pipeline.tick_sec` 마다 | 아니오 | 질문 확인, 원격 브랜치 정리, 정리, 보드 동기화 | 뒤처진 저장소 고유 상태 점검 |
@@ -232,8 +232,9 @@ flowchart TD
 | 나머지 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | `HOOK-FAIL` 을 내고 코어 동작은 이어 간다. 명령의 종료 코드에 반영한다. 띄우기, 대기, 질문 감시, doctor, ready 전환, 충돌 알림 명령은 알림 이벤트의 실패를 종료 코드에 반영하지 않는다. 대기의 종료 코드는 코디네이터의 다음 동작을 고르는 계약이고, 질문 감시는 질문 줄을 이미 냈으며 멈추면 다음 질문을 알리지 못하기 때문이다. ready 전환(`ci-ready`)의 종료 코드는 코디네이터의 ready 판정 계약이라, 0 을 다른 값으로 바꾸면 이미 ready 로 바뀐 PR 을 보류로 읽는다. 충돌 알림(`notify-conflicts`)의 `pr-conflict` 는 충돌한 PR 이 있을 때만 나서 종료 코드가 이미 1 이고, 실패를 따로 나타낼 값이 없다. 코어는 핸들러를 다시 돌리지 않는다. `tick` 만 다음 틱에 다시 돈다 |
 | 같은 저장소의 같은 이벤트가 동시에 난다(PR 여럿의 `after-deploy`) | 이벤트마다 잠금을 잡아 하나씩 실행한다 |
 | worker 를 띄운 저장소가 둘 이상이다 | 이벤트는 그 PR 이나 워크트리의 저장소에서 나고, 그 저장소의 핸들러만 돈다 |
-| `config.json` 에 옛 셸 명령 칸이 있고 같은 이벤트의 핸들러가 없다 | 다음 major 까지는 옛 칸을 그 이벤트의 핸들러처럼 돌리고 `DEPRECATED` 줄로 옮기는 명령을 알린다 |
-| 옛 셸 명령 칸과 핸들러가 함께 있다 | 사용법 오류(종료 코드 2)로 멈춘다. 어느 쪽이 맞는지 정할 수 없다 |
+| `config.json` 에 옛 셸 명령 칸이 있고 같은 이벤트의 핸들러가 없다 | 다음 major 까지는 옛 칸을 그 이벤트의 핸들러처럼 돌리고 `DEPRECATED <키> → hooks/<이벤트>.ts` 줄로 옮길 곳을 알린다. 옮기는 명령은 `migrate-orch-dir.ts --hooks` 다 |
+| 머지한 브랜치를 base 로 둔 열린 PR 가운데 내 PR 이 아닌 것이 있거나, 그 조회 또는 base 옮기기가 실패한다 | 원격 브랜치를 남기고 `after-merge` 의 `remote_branch_deleted` 를 false 로 낸다 |
+| 옛 셸 명령 칸과 핸들러가 함께 있다 | 사용법 오류(종료 코드 2)로 멈춘다. 어느 쪽이 맞는지 정할 수 없다. 머지 큐가 시작한 뒤에 알게 되면 그 전에 머지한 PR 이 있을 때 `after-queue` 만 돌린 뒤 2 로 끝난다 |
 | worker 가 `worker_done` 을 보냈는데 PR 이 아직 열려 있다 | 그 worker 터미널을 남긴다. 충돌이나 리뷰 반영을 같은 worker 가 이어 받는다. PR 이 머지되거나 닫히면 정리가 바로 닫는다 |
 | 상주 루프가 죽었거나 틱이 멈췄다 | 마지막 틱이 `pipeline.tick_sec` 의 세 배보다 오래되면 `wait-important` 가 `LOOP-DEAD` 로 깨어난다. 코디네이터가 루프를 다시 띄운다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다 |
 | 같은 저장소에 루프를 둘 띄운다 | 둘째는 `state/loop.json` 의 살아 있는 pid 를 보고 종료 코드 4 로 끝난다 |

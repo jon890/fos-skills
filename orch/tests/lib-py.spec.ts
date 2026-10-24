@@ -47,8 +47,13 @@ describe('shSplit', () => {
     assert.deepEqual(shSplit(`a 'b c\\d"e' f`), ['a', 'b c\\d"e', 'f'])
   })
 
-  test('큰따옴표 안은 \\" \\\\ \\` \\$ 의 역슬래시만 떼고 나머지 역슬래시는 남긴다', () => {
-    assert.deepEqual(shSplit('"a b\\" \\\\ \\` \\$ \\n"'), ['a b" \\ ` $ \\n'])
+  test('큰따옴표 안은 shlex 처럼 \\" 와 \\\\ 의 역슬래시만 떼고 \\` \\$ \\n 의 역슬래시는 남긴다', () => {
+    // 기대값은 Python shlex.split('"a b\\" \\\\ \\` \\$ \\n"') 의 결과다
+    assert.deepEqual(shSplit('"a b\\" \\\\ \\` \\$ \\n"'), ['a b" \\ \\` \\$ \\n'])
+  })
+
+  test('큰따옴표 안의 줄바꿈 앞 역슬래시는 shlex 처럼 남긴다', () => {
+    assert.deepEqual(shSplit('"a\\\nb"'), ['a\\\nb'])
   })
 
   test('따옴표 밖의 역슬래시는 다음 글자를 그대로 둔다', () => {

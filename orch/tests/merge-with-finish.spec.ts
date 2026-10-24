@@ -276,6 +276,45 @@ describe('merge-with-finish 마무리', { skip: !HAS_BASH && 'bash 가 필요하
     const c = setup(t)
     assert.equal((await c.wrap(['449'], { FAKE_QUEUE_EXIT: '1' })).code, 1)
   })
+
+  test('마무리 스크립트가 없거나 띄우지 못하면 마무리 시작 줄 없이 머지 큐를 걸지 않고 1 로 끝난다', async (t) => {
+    const c = setup(t)
+    const missing = join(c.tmp, 'no-such-finish.py')
+    let r = await c.wrap(['449'], { FINISH_PR: missing })
+    assert.equal(r.code, 1, both(r))
+    has(r.stderr, `마무리를 띄우지 못했다: PR 449: 마무리 스크립트가 없다: ${missing}`)
+    lacks(r.stdout, '마무리 시작')
+    // 인터프리터(python3)를 PATH 에서 찾지 못하면 띄우기가 실패한다. 스크립트 파일은 있다
+    r = await c.wrap(['449'], { PATH: join(c.tmp, 'empty-path') })
+    assert.equal(r.code, 1, both(r))
+    has(r.stderr, '마무리를 띄우지 못했다: PR 449: python3 를 실행하지 못했다')
+    lacks(r.stdout, '마무리 시작')
+    await sleep(300)
+    assert.equal(existsSync(c.logFile), false, '머지 큐도 마무리도 돌면 안 된다')
+  })
+})
+
+describe('merge-with-finish MERGE_QUEUE 인터프리터', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
+  test('MERGE_QUEUE 는 .ts 를 node, .py 를 python3, 그 밖을 bash 로 띄운다', async (t) => {
+    const c = setup(t)
+    // 각 가짜는 자기 언어로만 읽히는 문법으로 FAKE_LOG 에 적는다. 다른 인터프리터로 띄우면 문법 오류로 적지 못한다
+    const ts = join(c.tmp, 'queue.ts')
+    writeFileSync(ts, "import { appendFileSync } from 'node:fs'\nconst who: string = 'ts'\nappendFileSync(process.env.FAKE_LOG as string, `queue ${who} ${process.argv.slice(2).join(' ')}\\n`)\n")
+    const py = join(c.tmp, 'queue.py')
+    writeFileSync(py, 'import os, sys\nopen(os.environ["FAKE_LOG"], "a").write("queue py " + " ".join(sys.argv[1:]) + "\\n")\n')
+    const sh = join(c.tmp, 'queue-old')
+    writeFileSync(sh, 'echo "queue sh $*" >> "$FAKE_LOG"\n')
+    for (const [script, label] of [
+      [ts, 'ts'],
+      [py, 'py'],
+      [sh, 'sh'],
+    ]) {
+      c.reset()
+      const r = await c.wrap(['--no-finish', '449'], { MERGE_QUEUE: script })
+      assert.equal(r.code, 0, `${script}\n${both(r)}`)
+      assert.deepEqual(await c.lines('queue'), [`queue ${label} 449`], script)
+    }
+  })
 })
 
 describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
@@ -460,6 +499,53 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     await sleep(300)
     assert.equal(existsSync(c.logFile), false)
     assert.equal(existsSync(c.logs), false)
+  })
+
+  test('--no-finish 면 업무 완료 명령과 hooks/after-deploy.ts 가 함께 있어도 머지 큐를 건다', async (t) => {
+    const c = setup(t)
+    hook(c.tmp, 'after-deploy')
+    c.writeConfig({ finish: { complete_cmd: 'task-cli complete {number}', task_pattern: '(PROJ-[0-9]+)' } })
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449!'])
+    assert.equal(r.code, 0, both(r))
+    lacks(r.stderr, '함께 있다')
+    assert.deepEqual(await c.lines('queue'), [`queue --last-of-task 449 --repo ${c.tmp} 449`])
+    await sleep(300)
+    assert.deepEqual(await c.lines('finish ', 0), [])
+  })
+
+  test('hooks.timeouts.after-deploy 가 틀리면 마무리도 머지 큐도 걸지 않고 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    hook(c.tmp, 'after-deploy')
+    c.writeConfig({ hooks: { timeouts: { 'after-deploy': 'long' } } })
+    const r = await c.wrap(['--repo', c.tmp, '449!'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'hooks.timeouts.after-deploy 는 양수(초)여야 한다')
+    lacks(r.stdout, '마무리 시작')
+    await sleep(300)
+    assert.equal(existsSync(c.logFile), false, '머지 큐도 마무리도 돌면 안 된다')
+  })
+
+  test('--finish-arg 의 줄여 쓴 --complete-cmd 도 hooks/after-deploy.ts 와 함께 있으면 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    hook(c.tmp, 'after-deploy')
+    // finish-pr 은 고유 접두를 온 이름으로 읽으므로 이것들도 업무 완료 명령이다
+    for (const given of [
+      ['--finish-arg=--complete-c', '--finish-arg', 'task-cli complete {number}'],
+      ['--finish-arg=--complete-c=task-cli complete {number}'],
+    ]) {
+      const r = await c.wrap(['--repo', c.tmp, ...given, '449!'])
+      assert.equal(r.code, 2, `${given.join(' ')}\n${both(r)}`)
+      has(r.stderr, '옛 설정 칸 --finish-arg 의 --complete-cmd 가 함께 있다')
+    }
+    // 여러 옵션의 접두인 --comp 는 사용법 오류이고, --complete 는 온 이름이라 업무 완료 명령이 아니다
+    let r = await c.wrap(['--repo', c.tmp, '--finish-arg=--comp', '449'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '--comp 이 여러 옵션의 접두다')
+    await sleep(300)
+    assert.equal(existsSync(c.logFile), false, '사용법 오류에서는 머지 큐도 마무리도 돌면 안 된다')
+    r = await c.wrap(['--repo', c.tmp, '--finish-arg=--complete', '449'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), ['queue --repo ' + c.tmp + ' 449'])
   })
 })
 

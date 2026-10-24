@@ -536,3 +536,39 @@ describe('merge_queue 와 진짜 판정 명령', { skip: !HAS_TOOLS && 'jq 와 b
     has(c.log(), `pr merge 1 --merge --match-head-commit ${next}`)
   })
 })
+
+describe('merge_queue 옛 칸의 작업 디렉터리', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다' }, () => {
+  test('연결된 워크트리를 --repo 로 주면 상대경로 --before 와 --after-merged 가 그 워크트리에서 돈다', async (t) => {
+    const c = setup(t)
+    c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'b.txt': 'b2\n' })
+    const wt = join(c.tmp, 'wt')
+    c.git(['worktree', 'add', '-q', '-b', 'wt', wt, 'main'])
+    // 워크트리에만 있는 스크립트다. 주 checkout 에서 돌면 찾지 못해 멈춘다
+    const before = join(c.tmp, 'before.txt')
+    const after = join(c.tmp, 'after.txt')
+    writeFileSync(join(wt, 'mark-before.sh'), `pwd -P > '${before}'\n`, { mode: 0o755 })
+    writeFileSync(join(wt, 'mark-after.sh'), `pwd -P > '${after}'\n`, { mode: 0o755 })
+    const r = await spawnDone(
+      [
+        process.execPath,
+        '--disable-warning=ExperimentalWarning',
+        SCRIPT,
+        '--repo',
+        wt,
+        '--threads-cmd',
+        'echo 0',
+        '--no-sweep',
+        '--before',
+        './mark-before.sh',
+        '--after-merged',
+        './mark-after.sh',
+        '1',
+      ],
+      { env: c.env },
+    )
+    assert.equal(r.code, 0, both(r))
+    assert.equal(c.merged(), true)
+    assert.equal(readFileSync(before, 'utf8').trim(), realpathSync(wt))
+    assert.equal(readFileSync(after, 'utf8').trim(), realpathSync(wt))
+  })
+})

@@ -18,7 +18,7 @@
 | `orch/scripts/finish-pr.py` | `orch/scripts/finish-pr.ts` | `orch/tests/test_finish_pr.py` → `orch/tests/finish-pr.spec.ts` |
 
 옵션, 종료 코드, 출력 줄(`FINISH-DONE`, `FINISH-FAIL`), `finish-<PR>.out` 과 `.pid` 파일은 원본 머리 주석과 같다. 설정 읽기는 `lib/config.ts` 다.
-`MERGE_QUEUE`, `FINISH_PR`, `CLEANUP_SWEEP`, `BOARD_BIN` 환경 변수와 기본 경로(`merge_queue.ts`, `finish-pr.ts`, `cleanup-sweep.py`, `work-board/bin/board.py`)는 `lib/proc.ts` 의 `scriptCommand` 로 부른다.
+`MERGE_QUEUE`, `FINISH_PR`, `CLEANUP_SWEEP`, `BOARD_BIN` 환경 변수와 기본 경로(`merge_queue.ts`, `finish-pr.ts`, `cleanup-sweep.py`, `work-board/bin/board.py`)는 `lib/proc.ts` 의 `scriptCommand` 로 부른다. `MERGE_QUEUE` 만 원본 규칙(`.ts` 는 node, `.py` 는 python3, 그 밖은 bash)을 따르는 `queueCommand` 로 부른다.
 
 고칠 결함(원본 위치는 `grep -n` 으로 찾는다):
 
@@ -129,3 +129,12 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md docs/data-sche
 | `orch/README.md` | 수정 |
 | `docs/data-schema.md` | 수정 |
 | `orch/scripts/lib/queue-options.ts` | 수정 |
+| `orch/scripts/lib/finish-options.ts` | 신규 |
+| `orch/scripts/lib/events.ts` | 수정 |
+| `orch/scripts/lib/proc.ts` | 수정 |
+
+## 구현 중 정한 것
+
+- finish-pr 의 옵션 목록은 `lib/finish-options.ts` 한 벌이다. merge-with-finish 는 `--finish-arg` 를 이 목록으로 펼쳐 줄여 쓴 `--complete-cmd` 도 알아본다.
+- 마무리 스크립트를 띄우지 못하면 `마무리 시작` 줄을 내지 않고 머지 큐도 걸지 않은 채 1 로 끝난다. 원본 Popen 이 그 자리에서 멈춘 것과 같다.
+- 업무 완료 명령과 핸들러의 충돌, `after-deploy` 의 시간 제한 값은 마무리를 걸 때(`--no-finish` 가 아닐 때) 시작 전에 본다. 값이 틀리면 배포를 기다리기 전에 2 로 끝난다.

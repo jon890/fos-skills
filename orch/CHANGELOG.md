@@ -12,14 +12,17 @@
 - `migrate-orch-dir --hooks` 를 더했다. `config.json` 의 옛 셸 명령 칸(`queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 와 `finish.task_pattern`)을 같은 일을 하는 `hooks/<이벤트>.ts` 로 바꾸고 그 칸을 지운다. 기본은 미리보기이고, 핸들러 파일이 이미 있거나 정규식을 옮길 수 없는 칸은 남긴다. 옮기는 순서는 `references/hooks.md` 의 「옛 설정 칸 옮기기」 에 두었다.
 - `migrate-orch-dir` 가 막는 조건으로 찾는 머지 큐와 마무리 프로세스에 옮긴 명령의 `.ts` 명령줄을 더했다. 옛 `.py` 경로로 띄워도 명령줄은 `node … <이름>.ts` 라 옛 이름만 찾으면 돌고 있는 머지 큐를 놓친다.
 - 문서가 옮긴 명령을 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/<명령>.ts"` 로 부른다. `references/overlay.md` 의 설정 표에 지울 키를 적고 `hooks` 절과 `pipeline` 절을 더했다.
+- 핸들러 환경에 `ORCH_CHECKOUT` 을 더했다. 부른 명령이 `--repo` 로 받은 checkout 의 실경로이고, 연결된 워크트리면 그 워크트리다. `migrate-orch-dir --hooks` 가 만든 핸들러는 옛 명령을 이 경로에서 부른다.
 
 호환성:
 
 - `ci-ready` 는 GitHub `mergeable` 대신 로컬 merge-tree 로 충돌을 본다. `--repo` 의 origin 을 fetch 하고, `ORCH_READY_RETRY_SECONDS` 는 읽지 않는다. 다른 사람의 PR 은 보류한다.
 - `notify-conflicts` 는 내 PR 만 보고, 끝난 dispatch 는 후속 지시서(`spec-conflict-<PR>-<base>.md`)로 남은 터미널에 이어 쓴다. send-to-worker 의 종료 코드 3 과 워크트리나 dispatch 를 찾지 못한 경우는 `CONFLICT-ORPHAN` 줄을 내고 기록해, 같은 (PR, base) 로 다시 알리지 않는다. 원본 테스트 `test_undelivered_message_is_not_recorded` 는 이 규칙으로 바뀌었고, 「기록하지 않는다」 는 종료 코드 5 와 끝난 dispatch 의 1 이 이어 받는다.
+- 끝난 dispatch 에 보낸 `send-to-worker` 가 1 로 끝나면, 그 출력에 `LAUNCHED <id>` 줄이 있을 때만 worker 가 다시 뜬 것으로 보고 `resumed` 로 기록한다. `restart:` 줄만 있으면 다시 띄우기가 성공했는지 알 수 없어 기록하지 않고, 다음 실행이 다시 보낸다.
 - `--shared-paths` 와 `finish.task_pattern` 은 JS 정규식으로 읽는다. `(?P<이름>`, `(?P=이름)`, `\A`, `\Z` 는 같은 뜻으로 바꾼다. 인라인 플래그(`(?i)`)처럼 JS 가 받지 않는 문법은 사용법 오류다.
 - 옛 칸(`queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`, 같은 이름의 명령줄 옵션)도 이벤트 실행기로 돈다. 옛 칸도 1800초 제한을 받는다. 더 길면 `hooks.timeouts.<이벤트>` 로 늘린다. 핸들러와 같은 가드 PATH 를 거치고, `DEPRECATED <옵션> → hooks/<이벤트>.ts` 줄을 낸다. `PR:명령` 은 시간 제한 없이 지금처럼 돈다.
 - 머지 큐는 `after-merge` 나 `after-queue` 가 실패하면 모두 머지했어도 종료 코드 3 이다.
+- 머지 큐는 SIGTERM 이나 SIGINT 를 받으면 진행 중인 자식(`PR:명령`, 정리, 핸들러와 옛 칸)에 TERM 을 보내고, 2초 뒤에도 남은 것에 KILL 을 보낸 뒤 사본을 지우고 끝난다. 핸들러와 옛 칸은 프로세스 그룹 전체에 보낸다. 종료 코드는 128 에 신호 번호를 더한 값(SIGTERM 143, SIGINT 130)이다. 그 사이에는 새 자식을 띄우지 않고 머지, base 합치기, base 옮기기, 원격 브랜치 삭제도 하지 않는다. 이전에는 핸들러의 프로세스 그룹이 머지 큐가 끝난 뒤에도 남았다.
 - 머지한 브랜치를 base 로 둔 열린 PR 이 모두 내 PR 이면 머지 큐가 base 를 옮긴 뒤 원격 브랜치를 지운다.
 - `finish-pr` 의 지시서 삭제는 살아 있는 dispatch 가 쓰는 지시서와 그 목록을 읽지 못한 실행에서는 지우지 않는다. 배포 대기 시간 초과는 `after-deploy` 의 `deploy: timeout` 이다.
 - `merge-queue.sh` 는 한 버전 뒤 지운다고 했던 것을 바꿔 다음 major 까지 남긴다. 다른 저장소의 포장 스크립트가 이 경로를 부를 수 있어서다.

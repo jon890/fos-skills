@@ -1,21 +1,25 @@
 // gh 호출의 한 벌이다. 실행 파일은 GH 환경 변수, 없으면 gh 다.
 // 내 PR 판정(작성자)과 update-branch 를 부를 수 있는 경우를 이 모듈 한 곳에서 정한다.
 //
+// 시간 제한: 읽는 호출은 lib/proc.ts 의 기본(60초)이다. 쓰는 호출(머지, update-branch, base 옮기기)은 부르는 쪽이
+// timeoutMs 로 NO_LIMIT_MS 를 준다. 옛 명령은 쓰는 호출에 시간 제한을 두지 않았고, 끊으면 GitHub 에서는 끝난 쓰기를
+// 실패로 읽는다. updateBranch 는 늘 NO_LIMIT_MS 다.
+//
 // 호스트: `gh api` 는 origin 을 보지 않고 기본 호스트로 간다. 그래서 GitHub Enterprise 저장소에서 `api user` 를 그냥 부르면
 // 다른 호스트의 사용자가 오거나 null 이 된다. 호스트는 PR URL 에서 읽어(apiTarget) GH_HOST 나 --hostname 으로 준다.
 
 import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './config.ts'
-import { run } from './proc.ts'
+import { NO_LIMIT_MS, run } from './proc.ts'
 import type { RunResult } from './proc.ts'
 
-type GhOptions = { host?: string; cwd?: string }
+type GhOptions = { host?: string; cwd?: string; timeoutMs?: number }
 
 export function ghBin(): string {
   return process.env.GH || 'gh'
 }
 
 export function gh(args: string[], opts: GhOptions = {}): RunResult {
-  return run([ghBin(), ...args], { cwd: opts.cwd, env: opts.host ? { GH_HOST: opts.host } : undefined })
+  return run([ghBin(), ...args], { cwd: opts.cwd, env: opts.host ? { GH_HOST: opts.host } : undefined, timeoutMs: opts.timeoutMs })
 }
 
 export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T } | { ok: false; error: string } {
@@ -82,5 +86,5 @@ export function updateBranch(
   process.stderr.write(`update-branch ${repo}#${pr.number} 이유: ${reason}\n`)
   const args = ['api', ...(opts.host ? ['--hostname', opts.host] : []), '-X', 'PUT', `repos/${repo}/pulls/${pr.number}/update-branch`]
   if (opts.expectedHead) args.push('-f', `expected_head_sha=${opts.expectedHead}`)
-  return gh(args)
+  return gh(args, { timeoutMs: NO_LIMIT_MS })
 }

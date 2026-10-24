@@ -9,6 +9,8 @@ import { dirname, extname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { spawn } from 'node:child_process'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
@@ -933,6 +935,41 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     lacks(c.log(), 'pr merge')
   })
 
+  test('큐가 낼 이벤트의 hooks.timeouts 값이 틀리면 첫 머지 전에 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    hook(c, 'after-merge', recorder(join(c.tmp, 'in.jsonl')))
+    config(c, { hooks: { timeouts: { 'after-merge': -1 } } })
+    const r = await c.runQueue({ '1': pr() }, ['1'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'hooks.timeouts.after-merge 는 양수(초)여야 한다')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('큐 도중 설정 오류로 멈추면 앞에서 머지한 PR 의 머지 뒤 명령만 돌리고 정리는 부르지 않고 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    const after = join(c.tmp, 'after.txt')
+    // 첫 PR 을 머지한 뒤 before-merge 핸들러를 만든다. 둘째 PR 의 --before 와 함께 있어 설정 오류가 된다
+    const handler = join(c.tmp, '.orch', 'hooks', 'before-merge.ts')
+    hook(c, 'after-merge', `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(handler)}, 'process.exit(0)\\n')\n`)
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, [
+      '--before',
+      'true',
+      '--after-merged',
+      `echo "$MERGED_PRS" > ${after}`,
+      '--continue-on-hold',
+      '1',
+      '2',
+    ])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '옛 설정 칸 --before 가 함께 있다')
+    has(c.log(), 'pr merge 1')
+    lacks(c.log(), 'pr merge 2')
+    assert.equal(readFileSync(after, 'utf8'), '1\n')
+    // 보류로 멈출 때와 같이 정리는 부르지 않는다
+    assert.equal(existsSync(c.sweepLog), false)
+    lacks(r.stdout, 'QUEUE-')
+  })
+
   test('pipeline.authors 가 문자열이면 머지하지 않고 2 로 끝난다', async (t) => {
     const c = setup(t)
     config(c, { pipeline: { authors: 'me' } })
@@ -949,6 +986,17 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     assert.equal(r.code, 0, both(r))
     has(r.stdout, 'DEPRECATED --before → hooks/before-merge.ts')
     assert.equal(readFileSync(seen, 'utf8'), '1 feat owner repo git.example.com\n')
+  })
+
+  test('콜론 뒤가 빈 PR: 는 그 PR 에서 --before 를 끄고 다른 PR 에는 --before 가 돈다', async (t) => {
+    const c = setup(t)
+    const seen = join(c.tmp, 'before.txt')
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, ['--before', `echo "X $PR" >> ${seen}`, '1:', '2'])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(readFileSync(seen, 'utf8'), 'X 2\n')
+    assert.equal(count(r.stdout, 'DEPRECATED --before'), 1, r.stdout)
+    has(c.log(), 'pr merge 1')
+    has(c.log(), 'pr merge 2')
   })
 
   test('PR:명령 은 그 PR 에서 --before 를 대신한다', async (t) => {
@@ -1048,6 +1096,89 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     has(r.stdout, 'AFTER-MERGED-FAILED 1')
     const [input] = inputs(file)
     assert.deepEqual([input.merged_prs, input.code_prs, input.held_prs], [[1], [1], []])
+  })
+})
+
+function alivePid(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+describe('merge_queue 신호', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 2 }, () => {
+  for (const [signal, code] of [
+    ['SIGTERM', 143],
+    ['SIGINT', 130],
+  ] as const) {
+    test(`${signal} 를 받으면 핸들러의 프로세스 그룹과 PR:명령 을 끊고 ${code} 로 끝나며 머지하지 않는다`, async (t) => {
+      const c = setup(t)
+      const pids = join(c.tmp, 'pids.txt')
+      // 핸들러는 손자(sleep)를 띄우고 TERM 을 무시한 채 기다린다. 그룹 KILL 이 아니면 둘 다 남는다
+      hook(
+        c,
+        'before-merge',
+        [
+          "import { spawn } from 'node:child_process'",
+          "import { appendFileSync } from 'node:fs'",
+          "process.on('SIGTERM', () => {})",
+          "const child = spawn('sleep', ['300'], { stdio: 'ignore' })",
+          `appendFileSync(${JSON.stringify(pids)}, \`\${process.pid} \${child.pid}\\n\`)`,
+          'setInterval(() => {}, 1000)',
+        ].join('\n'),
+      )
+      c.writeState({ '1': pr() })
+      const queue = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', c.tmp, '--threads-cmd', 'echo 0', '1'], {
+        env: c.env,
+        stdio: 'ignore',
+      })
+      const exited = new Promise<number | null>((resolve) => queue.on('exit', (status) => resolve(status)))
+      const seen: number[] = []
+      t.after(() => {
+        for (const pid of seen) if (alivePid(pid)) process.kill(pid, 'SIGKILL')
+      })
+      const deadline = Date.now() + 10_000
+      while (!existsSync(pids) && Date.now() < deadline) await sleep(50)
+      assert.ok(existsSync(pids), '핸들러가 시작되지 않았다')
+      seen.push(...readFileSync(pids, 'utf8').trim().split(' ').map(Number))
+      queue.kill(signal)
+      assert.equal(await exited, code)
+      // 끊긴 프로세스가 거둬지기까지 잠시 걸린다
+      const gone = Date.now() + 3000
+      while (seen.some(alivePid) && Date.now() < gone) await sleep(50)
+      assert.deepEqual(
+        seen.filter(alivePid),
+        [],
+        `남은 프로세스가 있다(핸들러 ${seen[0]}, 손자 ${seen[1]})`,
+      )
+      lacks(c.log(), 'pr merge')
+    })
+  }
+
+  test('SIGTERM 을 받으면 PR:명령 으로 띄운 자식을 끊는다', async (t) => {
+    const c = setup(t)
+    const pidFile = join(c.tmp, 'cmd.pid')
+    c.writeState({ '1': pr() })
+    const queue = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', c.tmp, '--threads-cmd', 'echo 0', `1:echo $$ > ${pidFile}; exec sleep 300`], {
+      env: c.env,
+      stdio: 'ignore',
+    })
+    const exited = new Promise<number | null>((resolve) => queue.on('exit', (status) => resolve(status)))
+    let pid = 0
+    t.after(() => {
+      if (pid && alivePid(pid)) process.kill(pid, 'SIGKILL')
+    })
+    const deadline = Date.now() + 10_000
+    while (!(existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim()) && Date.now() < deadline) await sleep(50)
+    pid = Number(readFileSync(pidFile, 'utf8').trim())
+    queue.kill('SIGTERM')
+    assert.equal(await exited, 143)
+    const gone = Date.now() + 3000
+    while (alivePid(pid) && Date.now() < gone) await sleep(50)
+    assert.equal(alivePid(pid), false, `PR:명령 의 자식 ${pid} 가 남았다`)
+    lacks(c.log(), 'pr merge')
   })
 })
 

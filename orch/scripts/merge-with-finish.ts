@@ -7,6 +7,9 @@
 //     merge-with-finish.ts [래퍼 옵션] [merge_queue.ts 옵션] PR[!][:머지 전 명령] ...
 //
 //     1. PR 마다 `finish-pr.ts` 를 백그라운드로 시작한다. 출력은 <로그 폴더>/finish-<PR>.out 이다.
+//        띄우기 전에 마무리 스크립트 파일이 있는지 보고, 띄운 프로세스가 시작된 것을 확인한 뒤에 `마무리 시작` 줄을 낸다.
+//        스크립트가 없거나 띄우지 못하면(인터프리터가 없다 같은 것) 이유를 stderr 에 내고 머지 큐를 걸지 않고 1 로 끝난다.
+//        마무리 없이 머지하면 머지 뒤 정리와 업무 완료가 빠지기 때문이다. 앞 PR 의 마무리는 이미 떠 있으면 그대로 돈다
 //        그 PR 의 마무리가 이미 돌고 있으면(<로그 폴더>/finish-<PR>.pid 의 프로세스가 살아 있으면) 새로 시작하지 않는다.
 //        신호를 보낼 권한이 없는 pid(EPERM)도 살아 있는 것으로 본다(lib/process.ts 의 alive).
 //        머지 큐가 STOP 으로 멈춘 뒤 남은 PR 만 다시 걸어도 마무리가 겹치지 않는다
@@ -45,11 +48,17 @@
 // sweep_args 는 문자열 목록이고 항목마다 `--sweep-arg` 로 넘어간다. 명령줄에 `--sweep-arg` 가 하나라도 있으면 목록은 쓰지 않는다.
 // 명령줄에 준 옵션이 우선한다. 모르는 키가 있으면 사용법 오류다.
 // 저장소마다 같은 옵션을 매번 옮겨 적다 빠뜨리는 일을 막는다.
-// MERGE_QUEUE, FINISH_PR 환경 변수로 두 명령 경로를 바꾼다. 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
+// MERGE_QUEUE, FINISH_PR 환경 변수로 두 명령 경로를 바꾼다. 확장자로 인터프리터를 고른다.
+// FINISH_PR 은 lib/proc.ts 의 scriptCommand 다. MERGE_QUEUE 는 옛 명령의 규칙에 `.ts` 를 더한 것이다.
+// `.ts` 는 이 프로세스의 node, `.py` 는 python3, 그 밖(옛 merge-queue.sh 같은 것)은 bash 다
 //
 // 업무 완료 명령과 핸들러: 설정 `finish.complete_cmd` 나 --finish-arg 의 `--complete-cmd` 와 <orch 루트>/hooks/after-deploy.ts 가
-// 함께 있으면 사용법 오류로 멈춘다. 마무리도 머지 큐도 걸지 않는다. 마무리는 배포를 기다린 뒤에야 이 충돌을 알아채는데,
+// 함께 있으면 사용법 오류로 멈추고, 마무리도 머지 큐도 걸지 않는다. 마무리는 배포를 기다린 뒤에야 이 충돌을 알아채는데,
 // 그때는 이미 머지와 정리가 끝났기 때문이다.
+// 업무 완료 명령이나 핸들러가 있으면 config.json 의 hooks.timeouts.after-deploy 값도 머지 큐를 걸기 전에 본다. 틀리면 사용법 오류다.
+// 두 검사(충돌, hooks.timeouts.after-deploy)는 --no-finish 면 하지 않는다. 마무리를 걸지 않으면 after-deploy 가 나지 않기 때문이다.
+// --finish-arg 는 finish-pr.ts 의 옵션 목록(lib/finish-options.ts)으로 펼쳐 본다. 그래서 finish-pr 이 받아들이는
+// 고유 접두(`--complete-c`)와 `--complete-cmd=값` 도 알아본다. 접두가 여러 옵션에 맞으면 사용법 오류다.
 //
 // 보드 항목: 보드 파일은 --finish-arg 의 `--board`, 없으면 설정 파일 `finish` 절의 `board`, 없으면 finish-pr.ts 와 같은 기본
 // (work-board 의 board.py 가 정한 위치) 이다. 상대경로는 주 checkout 기준이다. 항목의 `pr` 필드에서 단어에 붙지 않은 숫자(`#492`, `492, 495`, `492/495`)를 PR 번호로 읽고, 그 PR 이 든 항목을 찾는다.
@@ -61,26 +70,26 @@
 // 옛 설정을 읽지 않으므로 그대로 걸면 머지 전 명령(DB 백업 같은 것)과 필수 체크가 경고 없이 빠진다.
 //
 // 종료 코드: merge_queue.ts 의 종료 코드. 2 는 사용법 오류(설정 파일 오류, 업무 완료 명령과 핸들러가 함께 있음 포함)이거나
-//           옮기기 전이라는 뜻이기도 하다
+//           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다
 
 import { spawn } from 'node:child_process'
 import { closeSync, openSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import type { Config } from './lib/config.ts'
-import { handlerFile } from './lib/events.ts'
-import { real } from './lib/fs.ts'
+import { checkLegacy, eventTimeoutSec, handlerFile } from './lib/events.ts'
+import { FINISH_OPTIONS } from './lib/finish-options.ts'
+import { isFile, real } from './lib/fs.ts'
 import { boardPath, makeParent, pathOf, requireMigrated } from './lib/paths.ts'
-import { runInherit, scriptCommand } from './lib/proc.ts'
+import { NO_LIMIT_MS, runInherit, scriptCommand } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { pyStr } from './lib/py.ts'
 import { QUEUE_VALUE_OPTIONS } from './lib/queue-options.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
-// 머지 큐는 오래 돈다. setTimeout 이 받는 최댓값(약 24.8일)이고, 넘기면 Node 가 1ms 로 바꾼다
-const NO_LIMIT_MS = 2 ** 31 - 1
 // config.json 의 queue 절 키와 머지 큐 옵션
 const QUEUE_KEYS: Readonly<Record<string, string>> = {
   before: '--before',
@@ -277,9 +286,18 @@ function queueDefaults(path: string, queue: string[], config: Config): string[] 
   return extra
 }
 
-// 마무리에 업무 완료 명령이 가는가. 설정의 finish.complete_cmd 나 --finish-arg 의 --complete-cmd 다. 없으면 null
+// 마무리에 업무 완료 명령이 가는가. 설정의 finish.complete_cmd 나 --finish-arg 의 --complete-cmd 다. 없으면 null.
+// --finish-arg 는 finish-pr 이 읽는 대로 옵션 이름을 펼친 뒤 본다. `--` 뒤는 finish-pr 이 옵션으로 읽지 않으므로 보지 않는다
 function completeCommandSource(wrapper: Wrapper, config: Config): string | null {
-  if (wrapper.finishArg.some((arg) => arg === LEGACY_KEY || arg.startsWith(`${LEGACY_KEY}=`))) return `--finish-arg 의 ${LEGACY_KEY}`
+  let expanded: string[]
+  try {
+    expanded = expandArgs(wrapper.finishArg, FINISH_OPTIONS)
+  } catch (e) {
+    throw new Usage(`--finish-arg: ${(e as Error).message}`)
+  }
+  const end = expanded.indexOf('--')
+  const options = end >= 0 ? expanded.slice(0, end) : expanded
+  if (options.some((arg) => arg === LEGACY_KEY || arg.startsWith(`${LEGACY_KEY}=`))) return `--finish-arg 의 ${LEGACY_KEY}`
   const value = config.finish?.complete_cmd
   return typeof value === 'string' && value ? 'finish.complete_cmd' : null
 }
@@ -340,14 +358,33 @@ function finishRunning(pidFile: string): boolean {
   return /^\d+$/.test(text) && alive(Number(text))
 }
 
-function startFinish(wrapper: Wrapper, pr: PrArg, config: Config): void {
+// 새 세션으로 띄워 이 명령이 끝나도 마무리가 이어 돌게 한다. 프로세스가 시작되면 null, 띄우지 못하면 이유다
+function launch(cmd: string[], fd: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', fd, fd], detached: true })
+    child.once('error', (e) => resolve(`${cmd[0]} 를 실행하지 못했다: ${e.message}`))
+    child.once('spawn', () => {
+      child.unref()
+      resolve(null)
+    })
+  })
+}
+
+// 마무리를 걸었거나 이미 돌고 있으면 true. 띄우지 못하면 이유를 stderr 에 내고 false 다
+async function startFinish(wrapper: Wrapper, pr: PrArg, config: Config): Promise<boolean> {
   const repo = real(wrapper.repo)
   const logDir = wrapper.logDir ?? pathOf('queue', repo)
   makeParent(join(logDir, 'x'), repo)
   const pidFile = join(logDir, `finish-${pr.number}.pid`)
   if (finishRunning(pidFile)) {
     out(`마무리는 이미 돌고 있다: PR ${pr.number} (${pidFile})`)
-    return
+    return true
+  }
+  const script = process.env.FINISH_PR || join(HERE, 'finish-pr.ts')
+  // 인터프리터는 없는 스크립트도 띄운 뒤 실패로 끝나, 띄우기 결과만으로는 알 수 없다
+  if (!isFile(script)) {
+    process.stderr.write(`merge-with-finish: 마무리를 띄우지 못했다: PR ${pr.number}: 마무리 스크립트가 없다: ${script}\n`)
+    return false
   }
   const args = [pr.number, '--repo', repo, '--pid-file', pidFile]
   if (wrapper.finishConfig) args.push('--config', wrapper.finishConfig)
@@ -355,18 +392,27 @@ function startFinish(wrapper: Wrapper, pr: PrArg, config: Config): void {
   const boardId = pickBoardItem(wrapper, config, pr.number, pr.complete)
   if (boardId) args.push('--board-id', boardId)
   args.push(...wrapper.finishArg)
-  const cmd = scriptCommand(process.env.FINISH_PR || join(HERE, 'finish-pr.ts'), args)
   const outFile = join(logDir, `finish-${pr.number}.out`)
   const fd = openSync(outFile, 'w')
+  let failure: string | null
   try {
-    // 새 세션으로 띄워 이 명령이 끝나도 마무리가 이어 돈다
-    const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', fd, fd], detached: true })
-    child.on('error', (e) => process.stderr.write(`마무리를 띄우지 못했다: PR ${pr.number}: ${e.message}\n`))
-    child.unref()
+    failure = await launch(scriptCommand(script, args), fd)
   } finally {
     closeSync(fd)
   }
+  if (failure) {
+    process.stderr.write(`merge-with-finish: 마무리를 띄우지 못했다: PR ${pr.number}: ${failure}\n`)
+    return false
+  }
   out(`마무리 시작: PR ${pr.number}${pr.complete ? ' (업무의 마지막 PR)' : ''} -> ${outFile}`)
+  return true
+}
+
+// MERGE_QUEUE 의 명령줄. 옛 명령은 `.py` 면 python3, 그 밖은 bash 로 띄웠고 여기에 `.ts` 를 더했다(머리 주석)
+function queueCommand(script: string, args: string[]): string[] {
+  if (extname(script) === '.ts') return [process.execPath, '--disable-warning=ExperimentalWarning', script, ...args]
+  if (extname(script) === '.py') return ['python3', script, ...args]
+  return ['bash', script, ...args]
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -389,10 +435,11 @@ async function main(argv: string[]): Promise<number> {
   try {
     const path = configPath(wrapper)
     config = loadConfig(wrapper.repo, wrapper.finishConfig ? { file: wrapper.finishConfig } : {})
-    const source = completeCommandSource(wrapper, config)
-    const handler = source ? handlerFile('after-deploy', wrapper.repo) : null
-    if (handler) {
-      throw new ConfigError(`after-deploy 의 핸들러 ${handler} 와 옛 설정 칸 ${source} 가 함께 있다. 어느 쪽이 맞는지 정할 수 없어 하나만 둔다`)
+    if (!wrapper.noFinish) {
+      const source = completeCommandSource(wrapper, config)
+      if (source) checkLegacy('after-deploy', wrapper.repo, source)
+      // 마무리는 배포를 기다린 뒤에야 after-deploy 를 낸다. 시간 제한 값이 틀린 것을 머지 큐를 걸기 전에 알린다
+      if (source || handlerFile('after-deploy', wrapper.repo)) eventTimeoutSec('after-deploy', wrapper.repo)
     }
     const lastOfTask = prs.filter((pr) => pr.complete).flatMap((pr) => ['--last-of-task', pr.number])
     queue = [...lastOfTask, ...scopeSweep(wrapper, [...queueDefaults(path, parsed.queue, config), ...parsed.queue])]
@@ -402,8 +449,10 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(`merge-with-finish: ${e.message}\n`)
     return 2
   }
-  if (!wrapper.noFinish) for (const pr of prs) startFinish(wrapper, pr, config)
-  const done = await runInherit(scriptCommand(process.env.MERGE_QUEUE || join(HERE, 'merge_queue.ts'), queue), { timeoutMs: NO_LIMIT_MS })
+  if (!wrapper.noFinish) {
+    for (const pr of prs) if (!(await startFinish(wrapper, pr, config))) return 1
+  }
+  const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || join(HERE, 'merge_queue.ts'), queue), { timeoutMs: NO_LIMIT_MS })
   return done.code
 }
 
