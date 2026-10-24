@@ -110,3 +110,11 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md orch/reference
 | `orch/tests/cleanup-sweep.spec.ts` | 수정 |
 | `orch/README.md` | 수정 |
 | `orch/references/cleanup.md` | 수정 |
+
+## 구현 중 정한 것
+
+- 열린 PR 의 head 인 브랜치도 남긴다. 지우면 그 열린 PR 이 닫힌다. 그래서 열린 PR 조회가 `baseRefName` 과 `headRefName` 을 함께 읽는다.
+- 원격 삭제는 `--force-with-lease=refs/heads/<이름>:<판정한 끝점>` 을 붙여, 판정한 뒤 그사이 push 된 브랜치를 지우지 않는다.
+- fork 판정은 그 이름의 PR 가운데 `isCrossRepository` 가 true 인 것이 하나라도 있으면 남긴다.
+- 작성자 목록은 CLOSED PR 이면서 이 Run 의 worker 가 모두 끝난 경우에만 읽는다.
+- 모든 Run 의 worker 를 읽지 못했으면 CLOSED PR 의 터미널 가운데 `agentTerminalHandle` 만 이 Run 의 것으로 보고 닫는다.
