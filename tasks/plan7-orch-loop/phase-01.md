@@ -237,3 +237,11 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md docs/data-sche
 | `docs/data-schema.md` | 수정 |
 | `docs/flow.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
+
+## 구현 중 정한 것
+
+- `--stop` 은 pid 의 명령줄(`ps -o command= -p <pid>`)에 `orch-loop` 가 있을 때만 TERM 을 보낸다. 루프가 죽은 뒤 같은 pid 를 받은 다른 프로세스를 끝내지 않기 위해서다.
+- 열린 PR 조회는 `--limit 200` 을 붙인다. gh 의 기본 한도 30건을 넘는 PR 이 조용히 빠지지 않게 한다(`lib/conflicts.ts`, `ci-ready.ts` 와 같다).
+- `--foreground` 는 시작할 때 앞 `loop.json` 의 `errors` 를 이어받는다. 다시 띄운 루프는 계속되는 같은 실패를 다시 알리지 않는다.
+- `lib/loop.ts` 는 `writeLoop`(옆 파일에 쓰고 rename)와 `readCursor` 도 export 한다. `appendEvent` 와 `readEvents` 는 상태 폴더를 한 번만 구한다.
+- 알림 파일의 `text` 는 `REMINDER`, `WATCH-ERROR`, `HOOK-FAIL` 에서 줄 전체를 담는다. 꼴을 하나로 맞출지는 phase 03 에서 정한다.
