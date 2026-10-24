@@ -33,6 +33,8 @@ class CleanupSweepTest(unittest.TestCase):
                         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com",
                         FAKE_STATE=str(self.tmp / "state.json"), FAKE_LOG=str(self.tmp / "calls.log"))
+        # Orca 터미널에서 돌려도 가짜 orca 가 bound 범위로 답하지 않게 한다. bound 는 테스트가 직접 켠다
+        self.env.pop("ORCA_TERMINAL_HANDLE", None)
         os.environ.update({k: self.env[k] for k in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
                                                       "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
                                                       "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL")})
@@ -44,6 +46,8 @@ class CleanupSweepTest(unittest.TestCase):
         self.orca_fail = self.gh_fail = self.orca_close_noop = self.tasks_fail = False
         self.tasks = []
         self.pr_commits = {}
+        # Run 마다 worker 행. None 이면 run-list 가 실패하고 worker-list --run 은 self.workers 를 준다
+        self.runs, self.page_size = None, 100
         self.log = self.tmp / "calls.log"
 
     def make_repo(self, name):
@@ -95,14 +99,34 @@ class CleanupSweepTest(unittest.TestCase):
                 scope = "bound" if bound else st.get("scope", "all")
                 for row in st["all_workers"]:
                     row.setdefault("resource", {{"ownershipState": "owned"}})
+                    row.setdefault("terminalState", "active")
                 print(json.dumps({{"result": {{"workers": st["all_workers"], "scope": {{"source": scope}},
                                                "page": {{"nextCursor": None}}}}}}))
+            elif a[:2] == ["orchestration", "run-list"] and st.get("runs") is not None:
+                # st["page_size"] 개씩 나눠 cursor 로 잇는다
+                at, size = int(a[a.index("--cursor") + 1]) if "--cursor" in a else 0, st["page_size"]
+                ids = list(st["runs"])
+                more = at + size < len(ids)
+                print(json.dumps({{"result": {{"runs": [{{"id": i}} for i in ids[at:at + size]],
+                                               "nextCursor": str(at + size) if more else None}}}}))
             elif a[:2] == ["orchestration", "task-list"] and st.get("tasks_fail"):
                 sys.exit(1)
             elif a[:2] == ["orchestration", "task-list"]:
                 print(json.dumps({{"result": {{"tasks": st.get("tasks", [])}}}}))
             elif a[:2] == ["orchestration", "worker-list"]:
-                print(json.dumps({{"result": {{"workers": st["workers"]}}}}))
+                run = a[a.index("--run") + 1]
+                if st.get("runs") is not None and st["runs"].get(run) is None:
+                    sys.exit(1)
+                rows = st["workers"] if st.get("runs") is None else st["runs"][run]
+                for row in rows:
+                    row.setdefault("runId", run)
+                    row.setdefault("resource", {{}}).setdefault("ownershipState", "owned")
+                    row.setdefault("terminalState", "active")
+                at, size = int(a[a.index("--cursor") + 1]) if "--cursor" in a else 0, st["page_size"]
+                more = at + size < len(rows)
+                print(json.dumps({{"result": {{"workers": rows[at:at + size], "scope": {{"source": "flag", "run": run}},
+                                               "page": {{"nextCursor": str(at + size) if more else None,
+                                                         "hasMore": more}}}}}}))
             elif a[:2] == ["terminal", "close"] and st.get("close_noop"):
                 print(json.dumps({{"ok": True, "result": {{}}}}))
             elif a[:2] == ["terminal", "close"]:
@@ -151,7 +175,8 @@ class CleanupSweepTest(unittest.TestCase):
              "spawn_on_release": self.spawn_on_release, "gh_raw": self.gh_raw, "open_bases": self.open_bases,
              "all_workers": self.all_workers, "scope": self.scope,
              "orca_fail": self.orca_fail, "gh_fail": self.gh_fail, "close_noop": self.orca_close_noop,
-             "tasks": self.tasks, "tasks_fail": self.tasks_fail, "pr_commits": self.pr_commits}))
+             "tasks": self.tasks, "tasks_fail": self.tasks_fail, "pr_commits": self.pr_commits,
+             "runs": self.runs, "page_size": self.page_size}))
 
     def worktree(self, name, push=True, commits=1, repo=None):
         repo = repo or self.repo
@@ -423,7 +448,6 @@ class CleanupSweepTest(unittest.TestCase):
 
     def test_terminal_of_another_run_is_not_closed(self):
         path = self.foreign_terminal_at("feat-o1")
-        self.env["ORCA_TERMINAL_HANDLE"] = "term_coordinator"
         out = self.run_sweep("--run", "run_x", "--kill-holders", "--apply")
         self.assertTrue(path.exists(), out)
         self.assertIn("다른 Run 의 worker 터미널 term_codex", out)
@@ -439,6 +463,62 @@ class CleanupSweepTest(unittest.TestCase):
         self.assertFalse(path.exists(), out)
         self.assertIn("orca terminal close --terminal term_mine", self.calls())
         self.assertNotIn("--terminal term_codex", self.calls())
+
+    def bound_to_coordinator(self, own_path, other=None):
+        """코디네이터 터미널에서 부른다. 범위 없는 worker-list 는 bound 만 주고, Run 은 run-list 로 하나씩 읽는다."""
+        self.env["ORCA_TERMINAL_HANDLE"] = "term_coordinator"
+        self.page_size = 1
+        own = {"dispatchId": "ctx_a", "workerState": "succeeded", "agentTerminalHandle": "term_mine",
+               "resource": {"worktreeId": f"x::{own_path}", "terminalHandle": "term_mine"}}
+        self.workers = [own]
+        self.runs = {"run_x": [own, {"dispatchId": "ctx_old", "workerState": "succeeded"}],
+                     "run_other": other or [], "run_idle": []}
+
+    def test_bound_scope_reads_every_run_and_sweeps(self):
+        path = self.worktree("feat-b1")
+        self.squash_merge("feat-b1", path)
+        self.terminals = [{"handle": "term_mine", "worktreePath": str(path)},
+                          {"handle": "term_codex", "worktreePath": str(self.tmp / "elsewhere")}]
+        self.bound_to_coordinator(path, [{"dispatchId": "ctx_o", "agentTerminalHandle": "term_codex"}])
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertFalse(path.exists(), out)
+        self.assertNotIn("터미널 소유 상태 조회 실패", out)
+        self.assertIn("orca terminal close --terminal term_mine", self.calls())
+        # Run 목록과 Run 마다의 페이지를 끝까지 따라가되, 정리 한 번에 한 번만 읽는다
+        self.assertEqual(len(self.sweep_calls("run-list")), 3)
+        self.assertEqual(len(self.sweep_calls("--run run_other")), 1)
+
+    def test_bound_scope_keeps_terminal_of_another_run(self):
+        path = self.worktree("feat-b2")
+        self.squash_merge("feat-b2", path)
+        self.terminals = [{"handle": "term_codex", "worktreePath": str(path)}]
+        self.bound_to_coordinator(path, [{"dispatchId": "ctx_o", "agentTerminalHandle": "term_codex"}])
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("다른 Run 의 worker 터미널 term_codex", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_bound_scope_keeps_user_owned_terminal_of_another_run(self):
+        path = self.worktree("feat-b3")
+        self.squash_merge("feat-b3", path)
+        self.terminals = [{"handle": "term_user", "worktreePath": str(path)}]
+        self.bound_to_coordinator(path, [{"dispatchId": "ctx_o", "agentTerminalHandle": "term_user", "terminalState": "retained",
+                                          "resource": {"terminalHandle": "term_user", "ownershipState": "user_owned"}}])
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("남김: 사용자 보유 터미널", out)
+        self.assertNotIn("terminal close", self.calls())
+
+    def test_bound_scope_keeps_path_when_a_run_cannot_be_read(self):
+        path = self.worktree("feat-b4")
+        self.squash_merge("feat-b4", path)
+        self.terminals = [{"handle": "term_mine", "worktreePath": str(path)}]
+        self.bound_to_coordinator(path)
+        self.runs["run_other"] = None
+        out = self.run_sweep("--run", "run_x", "--apply")
+        self.assertTrue(path.exists(), out)
+        self.assertIn("터미널 소유 상태 조회 실패", out)
+        self.assertNotIn("terminal close", self.calls())
 
     def test_unknown_terminal_is_kept_when_runs_cannot_be_listed(self):
         path = self.foreign_terminal_at("feat-o3")

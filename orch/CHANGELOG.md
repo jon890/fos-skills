@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.6.2 (2026-10-24)
+
+- 코디네이터 터미널에서 돌린 `cleanup-sweep.py` 와 `remove-worktree.py` 가 모든 워크트리를 `남김: 터미널 소유 상태 조회 실패` 로 건너뛰던 것을 고쳤다. 범위 없는 `worker-list` 는 부른 터미널에 묶인 Run 만 주는데(scope `bound`), Orca CLI 는 `ORCA_TERMINAL_HANDLE` 이 없으면 작업 디렉터리의 활성 터미널로 호출자를 정해 환경 변수를 빼도 범위가 넓어지지 않았다. 이제 범위가 `all` 이 아니면 `run-list` 를 끝까지 따라 Run 마다 `worker-list --run` 을 병렬로 읽어 합친다. 조회 자체가 실패할 때만 실패로 남긴다.
+- `terminal_ownership.py` 의 `all_workers()` 가 모든 Run 의 worker 행을 읽고, `blocker()` 와 `cleanup-sweep.py` 의 `foreign_handles()` 가 그 결과를 함께 쓴다. 정리 한 번 안에서는 읽은 지 60초가 지나야 다시 읽고, 유휴 셸을 닫기 직전 확인은 늘 새로 읽는다. 이전에는 `blocker()` 가 워크트리마다 모든 Run 을 다시 읽었다. 한 행의 `resource.terminalHandle` 과 `agentTerminalHandle` 이 다르면 둘 다 본다.
+- `cleanup-sweep.py --run` 의 이 Run worker 목록을 첫 100행만 읽던 것을 끝 페이지까지 읽는다.
+
 ## 2.6.1 (2026-10-24)
 
 - 명령을 TypeScript 로 옮길 공용 모듈을 `scripts/lib/` 에 더했다. 자식 프로세스 실행(`proc.ts`), orca, gh, git 호출, pid 생존 판정(`process.ts`), 경로(`paths.ts`), 설정(`config.ts`), 지시서(`spec.ts`)다. 지시서 삭제는 살아 있는 dispatch 를 확인하는 한 경로로 모았다.
