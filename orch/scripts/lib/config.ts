@@ -8,7 +8,9 @@
 //   - 파일이 없으면 빈 객체다
 //   - JSON 이 깨졌거나, 최상위가 객체가 아니거나, 모르는 최상위 절이 있거나, 절이 객체가 아니면 ConfigError 다
 //     모르는 최상위 절도 막는 것은 절 이름의 오타(queu)가 조용히 무시되지 않게 하려는 것이다
-//   - section 은 known 에 없는 키가 있으면 ConfigError 다. known 은 그 절을 읽는 명령이 넘긴다. hooks 절만 HOOKS_KEYS 를 쓴다
+//   - section 은 known 에 없는 키가 있으면 ConfigError 다. known 은 그 절을 읽는 명령이 넘긴다.
+//     hooks 절은 HOOKS_KEYS, pipeline 절은 PIPELINE_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
+//     자기가 읽는 키만 넘기면 다른 명령의 키(pipeline.enabled 같은 것)를 둔 저장소에서 사용법 오류로 멈춘다
 // 명령은 ConfigError 를 사용법 오류(종료 코드 2)로 바꾼다.
 //
 // DEPRECATED_KEYS 의 키는 다음 major 에서 지운다. 그때까지 그 절을 읽는 명령이 값을 읽되 DEPRECATED 줄을 낸다.
@@ -27,6 +29,18 @@ export class ConfigError extends Error {}
 
 // hooks 절의 아는 키. timeouts 는 이벤트 이름에서 초로 가는 객체이고 이벤트 실행기가 읽는다.
 export const HOOKS_KEYS: readonly string[] = ['timeouts']
+
+// pipeline 절의 아는 키 전부. docs/data-schema.md 「config.json 에 더하는 절」 표의 pipeline 행이다.
+export const PIPELINE_KEYS: readonly string[] = [
+  'enabled',
+  'tick_sec',
+  'ready_slots',
+  'docs_merge',
+  'after_queue_interval_sec',
+  'ci_missing_after_sec',
+  'update_behind_drafts',
+  'authors',
+]
 
 // event 는 그 키가 하던 일을 옮겨 받을 핸들러의 이벤트 이름이다(<orch 루트>/hooks/<event>.ts).
 export const DEPRECATED_KEYS: ReadonlyArray<{ section: Section; key: string; event: string }> = [

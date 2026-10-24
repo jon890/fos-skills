@@ -213,6 +213,7 @@ orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
 orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
 orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
+orch/scripts/lib/overlap.ts       단위 겹침 판정. overlap_units 와 머지 큐가 쓴다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록. notify-conflicts 와 상주 루프가 쓴다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다

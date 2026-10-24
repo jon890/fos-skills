@@ -1,6 +1,10 @@
 // gh 호출의 한 벌이다. 실행 파일은 GH 환경 변수, 없으면 gh 다.
 // 내 PR 판정(작성자)과 update-branch 를 부를 수 있는 경우를 이 모듈 한 곳에서 정한다.
+//
+// 호스트: `gh api` 는 origin 을 보지 않고 기본 호스트로 간다. 그래서 GitHub Enterprise 저장소에서 `api user` 를 그냥 부르면
+// 다른 호스트의 사용자가 오거나 null 이 된다. 호스트는 PR URL 에서 읽어(apiTarget) GH_HOST 나 --hostname 으로 준다.
 
+import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './config.ts'
 import { run } from './proc.ts'
 import type { RunResult } from './proc.ts'
 
@@ -29,6 +33,31 @@ export function currentUser(host?: string): string | null {
   const done = gh(['api', 'user', '--jq', '.login'], { host })
   const login = done.stdout.trim()
   return done.code === 0 && login ? login : null
+}
+
+// PR URL(https://<호스트>/<owner>/<repo>/pull/<번호>)의 호스트와 owner/repo. 앞 세 조각 중 빈 것이 있으면 null 이다.
+export function apiTarget(url: string): { host: string; slug: string } | null {
+  const at = (url || '').indexOf('://')
+  const parts = (at >= 0 ? url.slice(at + 3) : url || '').split('/')
+  if (parts.length < 3 || !parts.slice(0, 3).every((part) => part)) return null
+  return { host: parts[0], slug: `${parts[1]}/${parts[2]}` }
+}
+
+// 「내 PR」 로 볼 작성자 목록. config.json 의 pipeline.authors 가 비지 않은 문자열 목록이면 그것이고 gh 를 부르지 않는다.
+// 없거나 빈 목록이면 그 호스트의 gh 현재 사용자 하나다. 그것도 읽지 못하면 null 이다.
+// 부르는 쪽은 null 을 조회 실패로 다룬다. 누가 내 PR 인지 모른 채 다른 사람 PR 에 알리거나 ready 로 바꾸지 않는다.
+// authors 의 타입이 틀리면 ConfigError 다.
+export function ownAuthors(repo: string, host: string): string[] | null {
+  const pipeline = section<{ authors?: unknown }>(loadConfig(repo), 'pipeline', PIPELINE_KEYS)
+  const authors = pipeline.authors
+  if (authors !== undefined) {
+    if (!Array.isArray(authors) || !authors.every((author) => typeof author === 'string' && author)) {
+      throw new ConfigError('설정 파일의 pipeline.authors 는 빈 값이 없는 문자열 목록이어야 한다')
+    }
+    if (authors.length > 0) return authors as string[]
+  }
+  const login = currentUser(host)
+  return login ? [login] : null
 }
 
 // GitHub 로그인은 대소문자를 가리지 않으므로 소문자로 맞춰 비교한다.

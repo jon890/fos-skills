@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { currentUser, gh, ghBin, ghJson, isOwnPr, updateBranch } from '../scripts/lib/gh.ts'
+import { ConfigError } from '../scripts/lib/config.ts'
+import { apiTarget, currentUser, gh, ghBin, ghJson, isOwnPr, ownAuthors, updateBranch } from '../scripts/lib/gh.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
 let dir: string
 let fake: FakeBin
-const saved = { GH: process.env.GH, GH_HOST: process.env.GH_HOST }
+const saved = { GH: process.env.GH, GH_HOST: process.env.GH_HOST, ORCH_DIR: process.env.ORCH_DIR, GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES }
 const RULES = [
   { args: ['api', 'user'], stdout: 'octo\n' },
   { args: ['pr', 'list'], stdout: JSON.stringify([{ number: 7 }]) },
@@ -17,10 +18,13 @@ const RULES = [
 ]
 
 before(() => {
-  dir = mkdtempSync(join(tmpdir(), 'lib-gh-'))
+  dir = realpathSync(mkdtempSync(join(tmpdir(), 'lib-gh-')))
   fake = fakeBin(dir, 'gh', RULES, { recordEnv: ['GH_HOST'] })
   process.env.GH = fake.path
   delete process.env.GH_HOST
+  // ownAuthors 가 읽는 저장소는 git 밖 폴더라 주 checkout 이 그 폴더 자신이다. 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
+  process.env.GIT_CEILING_DIRECTORIES = dir
+  delete process.env.ORCH_DIR
 })
 
 after(() => {
@@ -68,6 +72,59 @@ describe('currentUser', () => {
     } finally {
       fake.setRules(RULES)
     }
+  })
+})
+
+describe('apiTarget', () => {
+  test('GHE URL 에서 호스트와 owner/repo 를 읽는다', () => {
+    assert.deepEqual(apiTarget('https://ghe.example.com/owner/repo/pull/7'), { host: 'ghe.example.com', slug: 'owner/repo' })
+  })
+
+  test('조각이 모자라거나 빈 URL 은 null 이다', () => {
+    assert.equal(apiTarget('https://ghe.example.com/owner'), null)
+    assert.equal(apiTarget('https:///owner/repo/pull/7'), null)
+    assert.equal(apiTarget(''), null)
+  })
+})
+
+describe('ownAuthors', () => {
+  function repoWith(config: unknown): string {
+    const repo = mkdtempSync(join(dir, 'repo-'))
+    if (config !== undefined) {
+      mkdirSync(join(repo, '.orch'))
+      writeFileSync(join(repo, '.orch/config.json'), JSON.stringify(config))
+    }
+    return repo
+  }
+
+  test('pipeline.authors 가 있으면 그 목록이고 gh 를 부르지 않는다. 다른 pipeline 키가 함께 있어도 된다', () => {
+    const repo = repoWith({ pipeline: { enabled: true, authors: ['alice', 'bob'] } })
+    const calls = newCalls(() => assert.deepEqual(ownAuthors(repo, 'ghe.example.com'), ['alice', 'bob']))
+    assert.deepEqual(calls, [])
+  })
+
+  test('pipeline.authors 가 없으면 GH_HOST=<host> 로 api user 를 부른다', () => {
+    const repo = repoWith(undefined)
+    const calls = newCalls(() => assert.deepEqual(ownAuthors(repo, 'ghe.example.com'), ['octo']))
+    assert.deepEqual(
+      calls.map((c) => [c.argv.slice(0, 2), c.env.GH_HOST]),
+      [[['api', 'user'], 'ghe.example.com']],
+    )
+  })
+
+  test('현재 사용자도 읽지 못하면 null 이다', () => {
+    const repo = repoWith({ pipeline: { enabled: true } })
+    fake.setRules([{ code: 1, stderr: 'auth' }])
+    try {
+      assert.equal(ownAuthors(repo, 'ghe.example.com'), null)
+    } finally {
+      fake.setRules(RULES)
+    }
+  })
+
+  test('authors 가 문자열 목록이 아니면 ConfigError 다', () => {
+    const repo = repoWith({ pipeline: { authors: 'alice' } })
+    assert.throws(() => ownAuthors(repo, 'ghe.example.com'), ConfigError)
   })
 })
 
