@@ -128,3 +128,4 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md docs/data-sche
 | `orch/tests/test_board_sync.py` | 수정 |
 | `orch/README.md` | 수정 |
 | `docs/data-schema.md` | 수정 |
+| `orch/scripts/lib/queue-options.ts` | 수정 |
