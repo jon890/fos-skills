@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.30.0
+
+- 대체된 ADR 의 위치와 파일 이름 유지, 상대 링크 갱신, 색인 구분 규약을 `task-create.md` 에 더했다. 일부만 대체된 `accepted` ADR 은 현행 위치에 둔다
+- 병렬 PR 예시와 7단계를 새 규약에 맞추고, 대체 뒤 `check_adr_layout.py` 를 실행하게 했다
+- 임시 폴더 테스트로 ADR 위치, 설명이 붙은 status, Markdown 상대 링크와 종료 코드를 검사한다
+
 ## 2.29.0
 
 `references/examples/code-architecture.md` 의 「디렉터리 책임」 에 책임 칸과 트리 블록의 설명에 설정 값, 항목 목록, 기능 목록을 늘어놓지 않는다는 금지를 더한다.
