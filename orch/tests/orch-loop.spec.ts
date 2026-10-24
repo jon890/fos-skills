@@ -309,7 +309,12 @@ describe('tick 이벤트', () => {
     assert.equal(input.tick, 1)
     assert.deepEqual(input.open_prs, [1])
     const list = gh.calls().find((call) => call.argv.includes('list'))?.argv ?? []
-    assert.deepEqual(list.slice(list.indexOf('--json')), ['--json', 'number,author,url'], JSON.stringify(list))
+    // CI 감시가 같은 조회를 함께 쓰므로 그 필드도 한 번에 읽는다
+    assert.deepEqual(
+      list.slice(list.indexOf('--json')),
+      ['--json', 'number,author,url,title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup'],
+      JSON.stringify(list),
+    )
     prs([], 1)
     once()
     assert.equal(received('tick')[1].open_prs, null)
@@ -324,7 +329,8 @@ describe('tick 이벤트', () => {
     const r = loop(['--run', 'r', '--tick', '--tick-number', '5'])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     const last = JSON.parse(r.stdout.trim().split('\n').at(-1) ?? '') as Json
-    assert.deepEqual(Object.keys(last).sort(), ['errors', 'open_prs', 'tick_at'])
+    // 열린 PR 을 읽은 틱은 CI 감시의 ci 도 낸다
+    assert.deepEqual(Object.keys(last).sort(), ['ci', 'errors', 'open_prs', 'tick_at'])
     assert.ok(!Number.isNaN(Date.parse(String(last.tick_at))), String(last.tick_at))
     assert.deepEqual(last.open_prs, [1])
     assert.equal(received('tick')[0].tick, 5)

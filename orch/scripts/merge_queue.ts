@@ -157,7 +157,7 @@ import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
-import { apiTarget, gh, ghJson, isOwnPr, ownAuthors, updateBranch } from './lib/gh.ts'
+import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
 import { groupMap, isDoc } from './lib/overlap.ts'
 import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
@@ -185,11 +185,9 @@ const ROLL_NAMES_NO_SKIPPED = '[.statusCheckRollup[] | select((.conclusion // ""
 const PENDING =
   '[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING" ' +
   'or (.state // "") == "EXPECTED")] | length'
+// 실패 판정의 목록은 상주 루프와 한 벌이다(lib/gh.ts 머리 주석의 「필수 체크 판정」)
 const FAIL_SEL =
-  'select(((.conclusion // "") | test("FAILURE|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE")) ' +
-  'or ((.state // "") | test("FAILURE|ERROR")))'
-const RULES_JQ =
-  '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] ' + '| unique | join(",")'
+  `select(((.conclusion // "") | test("${FAILED_CONCLUSIONS.join('|')}")) ` + `or ((.state // "") | test("${FAILED_STATES.join('|')}")))`
 
 // 사용법 오류. 종료 코드 2 로 끝난다. 메시지가 비면 머리 주석을 찍는다
 class Usage extends Error {}
@@ -978,7 +976,7 @@ class Queue {
       const done = this.api(`repos/${p.owner}/${p.repo}/rules/branches/${p.base}`, '--jq', RULES_JQ)
       if (done.code === 0) {
         req = chomp(done.stdout)
-      } else if (done.stderr.includes('HTTP 403') && done.stderr.includes('Upgrade to GitHub Pro')) {
+      } else if (rulesPlanLimited(done.stderr)) {
         // 무료 플랜의 비공개 저장소는 규칙 API 를 읽을 수 없다. 필수 체크 목록이 없는 것으로 다룬다
         log(`${p.n} 경고: 이 플랜은 저장소 규칙을 읽을 수 없다(HTTP 403, 플랜 제한). 필수 체크 목록을 비어 있는 것으로 본다`)
         req = ''

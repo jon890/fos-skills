@@ -15,7 +15,7 @@
 //     --dry-run  알리지 않고 충돌과 할 일만 낸다. 후속 지시서를 쓰지 않고, 보내지 않고, 이벤트를 내지 않고, 기록하지 않는다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
-// 충돌 찾기와 알린 기록은 lib/conflicts.ts 가 맡는다. 충돌 여부와 파일은 merge-tree 로 origin/<base> 와 PR HEAD 를 합쳐 본다.
+// 충돌 찾기와 알린 기록은 lib/conflicts.ts 가, 브랜치의 워크트리와 worker 행 찾기는 lib/workers.ts 가 맡는다. 충돌 여부와 파일은 merge-tree 로 origin/<base> 와 PR HEAD 를 합쳐 본다.
 // 다른 사람 PR 은 줄도 내지 않고 종료 코드에도 세지 않는다. 작성자 목록은 config.json 의 pipeline.authors,
 // 없으면 PR URL 호스트의 gh 현재 사용자다(lib/gh.ts 의 ownAuthors). 그 목록을 정하지 못하면 조회 실패다.
 //
@@ -66,15 +66,14 @@ import type { OpenPr } from './lib/conflicts.ts'
 import { fire } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { apiTarget, isOwnPr, ownAuthors } from './lib/gh.ts'
-import { defaultBase, git } from './lib/git.ts'
-import { orcaJson } from './lib/orca.ts'
+import { defaultBase } from './lib/git.ts'
 import { makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { runAsync, scriptCommand } from './lib/proc.ts'
+import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
 
 const USAGE = '사용법: notify-conflicts.ts [--repo DIR] [--base BRANCH] [--run RUN] [--state FILE] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SEND_TO_WORKER = process.env.SEND_TO_WORKER || `${HERE}/send-to-worker.ts`
-const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 // send-to-worker 는 끝난 dispatch 를 이어 쓸 때 launch-worker 를 1시간까지, 살아 있는 worker 를 깨울 때 5분까지 기다린다
 const SEND_MS = 3_900_000
 // 본문에 이름을 적는 충돌 파일 수
@@ -91,48 +90,6 @@ function out(line: string): void {
 
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
-}
-
-function obj(value: unknown): Json {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : {}
-}
-
-// {브랜치: 워크트리 경로}.
-function worktreePaths(repo: string): Map<string, string> {
-  const done = git(repo, ['worktree', 'list', '--porcelain'])
-  const paths = new Map<string, string>()
-  let path: string | null = null
-  for (const line of done.code === 0 ? done.stdout.split('\n') : []) {
-    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-    else if (line.startsWith('branch refs/heads/') && path) paths.set(line.slice('branch refs/heads/'.length), path)
-  }
-  return paths
-}
-
-// worker-list 의 행을 모든 페이지에 걸쳐 읽는다. 첫 페이지만 읽으면 다른 worker 를 놓친다(lib/orca.ts 머리 주석).
-function workerRows(run: string): { ok: true; rows: Json[] } | { ok: false; error: string } {
-  const rows: Json[] = []
-  const seen = new Set<string>()
-  let cursor = ''
-  for (;;) {
-    const got = orcaJson<unknown>(['orchestration', 'worker-list', ...(run ? ['--run', run] : []), '--limit', '100', ...(cursor ? ['--cursor', cursor] : [])])
-    if (!got.ok) return got
-    const result = obj(got.data)
-    rows.push(...(Array.isArray(result.workers) ? result.workers.map(obj) : []))
-    const next = obj(result.page).nextCursor
-    cursor = typeof next === 'string' ? next : ''
-    if (!cursor) return { ok: true, rows }
-    if (seen.has(cursor)) return { ok: false, error: 'worker-list 의 다음 페이지가 앞 페이지와 같다' }
-    seen.add(cursor)
-  }
-}
-
-// 그 워크트리의 worker-list 행. 살아 있는 dispatch 를 먼저 고르고, 같은 상태끼리는 목록의 뒤쪽이다. 없으면 null.
-function workerFor(rows: Json[], path: string): Json | null {
-  const here = rows.filter((row) => String(obj(row.resource).worktreeId ?? '').endsWith(`::${path}`) && row.dispatchId)
-  const live = here.filter((row) => ACTIVE.has(String(row.dispatchStatus)))
-  const pick = live.length > 0 ? live : here
-  return pick.length > 0 ? pick[pick.length - 1] : null
 }
 
 function message(number: number, base: string, baseSha: string, files: string[]): string {
@@ -291,7 +248,7 @@ async function main(argv: string[]): Promise<number> {
       continue
     }
     const dispatch = String(row.dispatchId)
-    const live = ACTIVE.has(String(row.dispatchStatus))
+    const live = LIVE_DISPATCH.has(String(row.dispatchStatus))
     const worker: Worker = { task: row.taskId ?? null, dispatch, terminal: row.agentTerminalHandle ?? null, worktree: path, spec: null }
     const sendArgs = ['--dispatch', dispatch]
     if (live) {
