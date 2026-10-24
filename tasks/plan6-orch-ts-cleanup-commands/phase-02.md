@@ -119,3 +119,4 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md orch/reference
 | `orch/README.md` | 수정 |
 | `orch/references/cleanup.md` | 수정 |
 | `docs/flow.md` | 수정 |
+| `orch/scripts/lib/ownership.ts` | 수정 |
