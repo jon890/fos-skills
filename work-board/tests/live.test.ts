@@ -25,6 +25,24 @@ test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한
   ])
 })
 
+test('끝난 dispatch 의 질문은 세지 않고 그 발신자의 inbox 도 읽지 않는다', async () => {
+  const ask = (id, from, type = 'question') => ({ id, type, run_id: 'r', to_handle: 'run:r', from_handle: from })
+  const rows = [ask('old-q', 'dispatch:closed'), ask('old-e', 'dispatch:closed', 'escalation'), ask('live-q', 'dispatch:open')]
+  const calls: string[][] = []
+  const $ = { process: { run: async (argv) => {
+    calls.push(argv)
+    return { exitCode: 0, stderr: '', stdout: JSON.stringify({ messages: argv.includes('check') ? rows : [] }) }
+  } } }
+  const result = await queryQuestions($, 'r', ['open'])
+  expect(result.questions.map((m) => m.id)).toEqual(['live-q'])
+  const inboxed = calls.filter((argv) => argv.includes('inbox')).map((argv) => argv[argv.indexOf('--terminal') + 1])
+  expect(inboxed).toEqual(['dispatch:open'])
+  // 살아 있는 dispatch 가 없으면 모두 닫힌 것이다
+  expect((await queryQuestions($, 'r', [])).questions).toEqual([])
+  // 목록을 주지 않으면 거르지 않는다
+  expect((await queryQuestions($, 'r')).questions.length).toBe(3)
+})
+
 test('질문 100건 상한은 조회 범위를 표시하고 답변 기록 상한은 오류로 표시한다', async () => {
   const q = { id: 'q', type: 'escalation', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
   let replies = []

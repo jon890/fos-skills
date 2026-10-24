@@ -133,7 +133,7 @@ test('최근 질문 상한이면 답변이 모두 끝났어도 조회 범위를 
     argv.includes('run-current') ? { run: { id: 'r' } }
       : argv.includes('check') ? { messages: Array(100).fill(q) }
         : argv.includes('inbox') ? { messages: [{ id: 'answer', thread_id: 'q', run_id: 'r', from_handle: 'run:r' }] }
-          : { workers: [] },
+          : { workers: [{ dispatchId: 'd', dispatchStatus: 'dispatched', workerState: 'ready' }] },
   }) }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /^결정 필요  0$/ })).toBeTruthy()
@@ -148,7 +148,7 @@ async function mountWithQuestion($, on, body) {
     argv.includes('run-current') ? { run: { id: 'r' } }
       : argv.includes('check') ? { messages: [q] }
         : argv.includes('inbox') ? { messages: [] }
-          : { workers: [] },
+          : { workers: [{ dispatchId: 'd', dispatchStatus: 'dispatched', workerState: 'ready' }] },
   }) }))
   return $.ui.mount({ ...PANE, surface: 'terminal' })
 }
