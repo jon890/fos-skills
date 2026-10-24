@@ -123,3 +123,4 @@ python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/README.md 
 | `orch/SKILL.md` | 수정 |
 | `orch/README.md` | 수정 |
 | `orch/CHANGELOG.md` | 수정 |
+| `orch/scripts/lib/paths.ts` | 수정 |
