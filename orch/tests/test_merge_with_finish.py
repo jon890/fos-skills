@@ -55,11 +55,19 @@ class ParseTest(unittest.TestCase):
                 mwf.split_args(argv)
 
     def test_value_options_match_merge_queue(self):
-        """merge_queue.py 가 값을 받는 옵션이 바뀌면 이 목록도 바꿔야 PR 번호 해석이 어긋나지 않는다."""
-        spec = importlib.util.spec_from_file_location("merge_queue", SCRIPTS / "merge_queue.py")
-        queue = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(queue)
-        self.assertEqual(queue.VALUE_OPTIONS, mwf.VALUE_OPTIONS)
+        """머지 큐가 값을 받는 옵션(lib/queue-options.ts)이 바뀌면 이 목록도 바꿔야 PR 번호 해석이 어긋나지 않는다.
+        node 가 없으면 건너뛰지 않고 실패한다. 건너뛰면 두 목록이 어긋나도 아무도 모른다"""
+        node = shutil.which("node")
+        if not node:
+            self.fail("node 가 PATH 에 없어 lib/queue-options.ts 를 읽지 못했다")
+        module = (SCRIPTS / "lib" / "queue-options.ts").as_uri()
+        done = subprocess.run(
+            [node, "--disable-warning=ExperimentalWarning", "--input-type=module", "-e",
+             f"import {{ QUEUE_VALUE_OPTIONS }} from {json.dumps(module)}; "
+             "process.stdout.write(JSON.stringify(QUEUE_VALUE_OPTIONS))"],
+            capture_output=True, text=True)
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(set(json.loads(done.stdout)), mwf.VALUE_OPTIONS)
 
 
 FAKE_QUEUE_SH = """\

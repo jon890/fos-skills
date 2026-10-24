@@ -95,7 +95,7 @@ python3 "$SKILL_DIR/scripts/merge-with-finish.py" --repo "$REPO" --require-up-to
 `--require-up-to-date` 만 쓰면 앞 PR 이 머지될 때마다 뒤 PR 이 base 를 합치고 필수 CI 를 다시 기다려, PR 하나에 CI 한 번 분량이 더 든다.
 `overlap` 은 PR 이 바꾼 단위와 PR 이 갈라진 뒤 base 에 들어온 변경의 단위가 겹치지 않으면 최신화 없이 머지하고, 겹치면 지금처럼 합치고 CI 를 다시 기다린다.
 
-단위, 공용 경로, 문서 파일, 판정 시점, 다시 판정하는 조건과 횟수 한도는 `merge_queue.py` 와 `overlap_units.py` 머리 주석이 소유한다.
+단위, 공용 경로, 문서 파일, 판정 시점, 다시 판정하는 조건과 횟수 한도는 `merge_queue.ts` 와 `overlap_units.ts` 머리 주석이 소유한다.
 PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이유)` 한 줄이 찍힌다. 판정하지 못하면 안전한 쪽인 갱신 필요로 다룬다.
 `--require-up-to-date` 가 있어야 한다.
 

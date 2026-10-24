@@ -145,6 +145,20 @@ describe('updateBranch', () => {
     assert.deepEqual(calls.map((c) => c.argv), [['api', '-X', 'PUT', 'repos/o/r/pulls/7/update-branch']])
   })
 
+  test('host 와 expectedHead 를 주면 --hostname 을 앞에, expected_head_sha 를 끝에 붙인다', () => {
+    const calls = newCalls(() => updateBranch('o/r', { number: 7, isDraft: false }, 'merge-turn', { host: 'ghe.example.com', expectedHead: 'abc123' }))
+    assert.deepEqual(calls.map((c) => c.argv), [
+      ['api', '--hostname', 'ghe.example.com', '-X', 'PUT', 'repos/o/r/pulls/7/update-branch', '-f', 'expected_head_sha=abc123'],
+    ])
+  })
+
+  test('host 만 주면 expected_head_sha 가 없고, expectedHead 만 주면 --hostname 이 없다', () => {
+    const hostOnly = newCalls(() => updateBranch('o/r', { number: 7, isDraft: false }, 'merge-turn', { host: 'ghe.example.com' }))
+    assert.deepEqual(hostOnly.map((c) => c.argv), [['api', '--hostname', 'ghe.example.com', '-X', 'PUT', 'repos/o/r/pulls/7/update-branch']])
+    const headOnly = newCalls(() => updateBranch('o/r', { number: 7, isDraft: false }, 'merge-turn', { expectedHead: 'abc123' }))
+    assert.deepEqual(headOnly.map((c) => c.argv), [['api', '-X', 'PUT', 'repos/o/r/pulls/7/update-branch', '-f', 'expected_head_sha=abc123']])
+  })
+
   test('draft 인 PR 은 behind-draft 로 부를 수 있다', () => {
     const calls = newCalls(() => updateBranch('o/r', { number: 8, isDraft: true }, 'behind-draft'))
     assert.deepEqual(calls.map((c) => c.argv), [['api', '-X', 'PUT', 'repos/o/r/pulls/8/update-branch']])
