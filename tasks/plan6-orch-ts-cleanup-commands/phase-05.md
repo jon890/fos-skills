@@ -172,3 +172,11 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md orch/reference
 | `orch/README.md` | 수정 |
 | `orch/references/heavy-checks.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
+| `orch/scripts/lib/proc.ts` | 수정 |
+
+## 구현 중 정한 것
+
+- heavy-slot 과 mem-gate 가 함께 쓰는 execvp 대체 `execCommand` 를 `lib/proc.ts` 에 둔다. 실패한 `process.execve` 는 abort 하므로 PATH 에서 먼저 찾고 실행 권한을 확인해 127 과 126 을 낸다.
+- `queue.lock` 잠금은 perl 자식이 flock 을 쥐게 한다. Node 에는 flock 이 없다. 옛 heavy-slot.py 와 같은 파일에 같은 종류의 잠금을 걸어, 옮기는 동안 두 버전이 같은 slot 폴더를 써도 서로를 막는다.
+- `wait_idle` 은 등록한 뒤 자리를 잡으려 할 때마다 먼저 본다. 시간 초과는 맞는 프로세스를 기다린 시간의 합이다. `HEAVY_POLL` 과 `HEAVY_IDLE_WAIT` 값은 등록 전에 검사해 틀리면 1 이다.
+- board.ts 의 단계 번호는 ASCII 숫자만 받는다(register.js 의 STEP 과 같다).
