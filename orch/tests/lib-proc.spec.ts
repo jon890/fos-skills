@@ -16,6 +16,12 @@ describe('run', () => {
     assert.deepEqual(r, { code: 3, stdout: 'out', stderr: 'err', timedOut: false })
   })
 
+  test('자식이 stdin 을 읽지 않고 끝나도 EPIPE 가 아니라 자식의 종료 코드다', () => {
+    // 파이프 버퍼보다 큰 입력이라 자식이 먼저 끝나면 쓰기가 반드시 EPIPE 를 만난다
+    const r = run(node('process.exit(3)'), { input: 'x'.repeat(1 << 20) })
+    assert.equal(r.code, 3, r.stderr)
+  })
+
   test('input 을 자식의 stdin 으로 넘긴다', () => {
     const r = run(node('process.stdin.pipe(process.stdout)'), { input: '입력' })
     assert.equal(r.stdout, '입력')

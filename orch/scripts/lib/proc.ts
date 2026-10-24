@@ -164,8 +164,9 @@ export function run(argv: string[], opts: RunOptions = {}): RunResult {
   const stderr = done.stderr ?? ''
   // 판정 순서: error.code 를 signal 보다 먼저 본다. spawnSync 는 ETIMEDOUT 과 ENOBUFS 에서도 signal: SIGTERM 을 함께 내므로
   // signal 을 먼저 보면 124 와 1 이 143 으로 바뀐다(Node 22.18 실측).
+  // 자식이 stdin 을 읽기 전에 끝나면 EPIPE 가 붙지만 status 는 채워진다. 결과는 종료 코드로 판정하므로 무시한다(runAsync 와 같다).
   const err = done.error as NodeJS.ErrnoException | undefined
-  if (err) {
+  if (err && err.code !== 'EPIPE') {
     if (err.code === 'ETIMEDOUT') return { code: 124, stdout, stderr, timedOut: true }
     if (err.code === 'ENOBUFS') return overflow(stdout, stderr, maxBuffer)
     return spawnFailure(argv, err, stdout, stderr)

@@ -751,10 +751,11 @@ function migrateFolders(repo: string, runId: string | null, extra: Pair[], apply
 type HookWrite = { event: string; keys: [string, string][]; file: string; body: string }
 
 // 만든 핸들러가 옛 명령을 띄우고 그 종료 코드로 끝나는 부분. 이벤트 실행기(lib/events.ts)가 옛 칸을 돌릴 때와 같게
-// stdin 의 입력을 옛 명령에 그대로 넘기고, 시그널로 죽으면 128 + 신호 번호, 띄우지 못하면 127(없음)이나 1 이다
+// stdin 의 입력을 옛 명령에 그대로 넘기고, 시그널로 죽으면 128 + 신호 번호, 띄우지 못하면 127(없음)이나 1 이다.
+// 옛 명령이 stdin 을 읽기 전에 끝나면 EPIPE 가 붙지만 종료 코드는 채워지므로 실패로 보지 않는다
 const HANDLER_RUN = `function runOld(argv: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): number {
   const done = spawnSync(argv[0], argv.slice(1), { input: raw, stdio: ['pipe', 'inherit', 'inherit'], env: opts.env ?? process.env, cwd: opts.cwd })
-  if (done.error) {
+  if (done.error && (done.error as NodeJS.ErrnoException).code !== 'EPIPE') {
     process.stderr.write(\`\${argv[0]} 를 실행하지 못했다: \${done.error.message}\\n\`)
     return (done.error as NodeJS.ErrnoException).code === 'ENOENT' ? 127 : 1
   }

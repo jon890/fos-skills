@@ -478,7 +478,7 @@ describe('migrate-orch-dir --hooks', { concurrency: 4 }, () => {
     assert.deepEqual(readJson(config), { queue: { required: ['test'], verify_merged_when: 'code' }, finish: { run: 'run_x' } })
 
     const { result } = await fireIn(c, 'before-merge', { pr: PR, owner: 'owner', name: 'repo', last_of_task: false })
-    assert.equal(result.result, 'pass')
+    assert.equal(result.result, 'pass', result.reason)
     assert.equal(readFileSync(got, 'utf8'), '101|feat/x|owner|repo|github.example.com\n')
   })
 
@@ -504,6 +504,16 @@ describe('migrate-orch-dir --hooks', { concurrency: 4 }, () => {
     assert.equal(readFileSync(before, 'utf8').trim(), wt)
     assert.equal(readFileSync(after, 'utf8').trim(), wt)
     assert.equal(readFileSync(deploy, 'utf8'), wt)
+  })
+
+  test('옛 명령이 stdin 을 읽지 않고 끝나도 그 종료 코드로 끝난다', async (t) => {
+    const c = setup(t)
+    writeConfig(c, { queue: { before: 'exit 0' } })
+    await c.migrate(['--hooks', '--apply'])
+    // 입력이 파이프 버퍼보다 커서 옛 명령이 먼저 끝나면 핸들러의 쓰기가 반드시 EPIPE 를 만난다
+    const pr = { ...PR, title: 'x'.repeat(1 << 20) }
+    const { result } = await fireIn(c, 'before-merge', { pr, owner: 'owner', name: 'repo', last_of_task: false })
+    assert.equal(result.result, 'pass', result.reason)
   })
 
   test('옛 명령의 종료 코드를 그대로 낸다', async (t) => {
