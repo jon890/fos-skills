@@ -30,7 +30,7 @@
 //                             `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 어디에도 없으면 경고 한 줄을 낸다
 //     --board-item PR=ID      그 PR 의 마무리가 done 으로 바꿀 보드 항목(`finish-pr.ts --board-id`). PR 마다 준다.
 //                             주지 않으면 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾아 쓴다(아래 「보드 항목」)
-//     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(lib/paths.ts 의 queue). handoff-cleanup.py 가 이 폴더의 끝난 로그를 옮긴다
+//     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(lib/paths.ts 의 queue). handoff-cleanup.ts 가 이 폴더의 끝난 로그를 옮긴다
 //     --no-finish             마무리를 걸지 않고 머지 큐만 돌린다
 //     래퍼 옵션은 `--옵션 값` 과 `--옵션=값` 을 받는다. 고유 접두로 줄여 쓸 수 없다
 //
