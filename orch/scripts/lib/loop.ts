@@ -4,7 +4,7 @@
 //
 //   loop.json            루프 상태. 루프의 부모 프로세스만 쓴다(옆 파일에 쓰고 rename)
 //   loop.lock            한 저장소에 루프 하나. orch-loop.ts --foreground 가 쥔다
-//   loop-events.jsonl    코디네이터를 깨워야 하는 알림. 한 줄에 {"seq", "time", "kind", "pr", "text"}
+//   loop-events.jsonl    코디네이터를 깨워야 하는 알림. 한 줄에 {"seq", "time", "kind", "pr", "text"}. text 는 kind 를 뺀 나머지다
 //   loop-events.cursor   읽는 쪽이 마지막으로 읽은 seq 하나
 //
 // 생존(loopStatus): loop.json 이 있고, pid 가 살아 있고(lib/process.ts 의 alive), alive_at 이 now 에서 max(3 × tick_sec, 120) 초 안이면

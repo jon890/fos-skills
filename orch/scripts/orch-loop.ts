@@ -1,4 +1,4 @@
-// 저장소마다 하나 도는 상주 루프다. 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트를 한다.
+// 저장소마다 하나 도는 상주 루프다. 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 충돌 PR 처리를 한다.
 // 코디네이터를 깨워야 하는 일은 알림 파일(state/loop-events.jsonl)에 적고, 코디네이터의 wait-important --loop-repo 가 그 파일로 깨어난다.
 // 루프는 상태로만 판정한다. 루프가 없던 동안 생긴 일은 다음 틱이 다시 보므로, 죽으면 다시 띄우기만 하면 된다.
 // 상태 파일의 읽기, 생존 판정, 알림 파일과 커서는 lib/loop.ts 가 소유한다. 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이다.
@@ -41,7 +41,8 @@
 //     3. 보드 동기화. 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 board-sync --repo <repo>
 //     4. CI 감시. 아래 「CI 감시」
 //     5. tick 이벤트. 입력은 tick(틱 번호)과 open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)다(docs/data-schema.md 「이벤트별 필드」).
-//     열린 PR 은 틱마다 gh pr list 한 번으로 읽어 4 와 5 가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
+//     6. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
+//     열린 PR 은 틱마다 gh pr list 한 번으로 읽어 4, 5, 6 이 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors 와 ci 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
 //     ci(결과에 있을 때만 통째로 바꾼다)를 쓴다.
 //     결과 줄 앞의 출력과 stderr 는 부모가 로그로 옮긴다. 틱 자식이 0 이 아니거나 결과 줄 없이 끝나면 last_tick 은 그대로 두고
@@ -64,6 +65,21 @@
 //     `보냈다 <dispatch>`, `깨우지 못했다(종료 코드 4)`, `보내지 못했다(종료 코드 <n>)`, `살아 있는 dispatch 없음`, `Run id 없음`,
 //     `worker 목록을 읽지 못했다` 가운데 하나다.
 //
+// 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
+//     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
+//     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 같은 (PR, base SHA) 를 두 번 보내지 않는다. 새 worker 는 띄우지 않는다.
+//     내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛴다.
+//     1. lib/conflicts.ts 의 findConflicts(base 는 origin/HEAD 가 가리키는 브랜치, 없으면 main). 실패하면 `WATCH-ERROR conflicts: …`
+//     2. 내 PR 만 남긴다. 작성자를 정하지 못하면 `WATCH-ERROR conflicts: …` 를 쓰고 그 틱의 충돌 처리를 끝낸다
+//     3. 기록에 있는 (PR, base SHA) 는 넘어간다. 아니면 브랜치의 워크트리와 worker 행(lib/workers.ts)을 찾아 resolveConflict 와
+//        concludeConflict 를 부른다. 워크트리나 dispatch 가 없으면 orphan 이다. worker-list 를 읽지 못하면 그 PR 은 기록하지 않고
+//        `WATCH-ERROR conflicts: worker 목록을 읽지 못했다: …` 를 쓴다
+//     4. orphan 이면 알림 파일에 CONFLICT-ORPHAN(pr 은 PR 번호, text 는 이유)을 쓴다
+//     5. send-to-worker 가 2(사용법 오류)로 끝나면 그 틱의 충돌 처리를 멈추고 `WATCH-ERROR conflicts: send-to-worker 사용법 오류` 를 쓴다.
+//        notify-conflicts 는 2 로 끝나지만 루프는 끝내지 않는다. 끝내면 질문 확인도 멈춘다
+//     resolveConflict 의 줄(`<dispatch> 에 알렸다` 따위)은 로그에 쓴다. send-to-worker 를 틱 자식 안에서 기다리는 동안에도
+//     부모의 생존 타이머가 alive_at 을 쓴다.
+//
 // 생존 타이머: 부모가 틱과 따로 ORCH_LOOP_ALIVE_SEC(양수 초, 기본 30)마다 loop.json 의 alive_at 을 쓴다. 시작할 때도 한 번 쓴다.
 //     그래서 긴 틱(정리의 대기, 끝난 dispatch 이어 쓰기)도 죽은 것으로 보이지 않는다.
 //
@@ -71,10 +87,11 @@
 //     시작할 때 앞 loop.json 의 errors 와 ci 를 이어받는다. 다시 띄운 루프가 같은 실패를 다시 알리지 않게 한다.
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
-//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러),
+//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), conflicts(충돌 처리),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
-//     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 한 번 성공하면 이유를 지우고, 다시 실패하면 다시 쓴다. loop.log 에는 실패할 때마다 쓴다.
+//     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 알림 파일의 text 는 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
+//     REMINDER 의 text 도 줄에서 `REMINDER ` 를 뺀 나머지다. 한 번 성공하면 이유를 지우고, 다시 실패하면 다시 쓴다. loop.log 에는 실패할 때마다 쓴다.
 //     하네스는 백그라운드 명령의 stderr 를 알리지 않으므로 실패도 알림 파일로 보낸다. 틱마다 같은 실패로 코디네이터를 깨우지 않으려고 억제한다.
 //     알림 파일의 HOOK-FAIL 은 tick 핸들러의 것만이다. worker-question 핸들러의 실패는 loop.log 의 HOOK-FAIL 줄로만 남는다.
 //
@@ -88,8 +105,8 @@
 //     pipeline.enabled 는 읽지 않는다. 이 루프가 하는 일은 모두 그 값과 무관하게 돈다.
 //
 // 환경 변수: ORCA(orca 실행 파일), GH(gh 실행 파일), CLEANUP_SWEEP(정리 명령. 기본은 이 폴더의 cleanup-sweep.ts),
-//     BOARD_SYNC(보드 동기화 명령. 기본은 이 폴더의 board-sync.ts), SEND_TO_WORKER(worker 에게 보내는 명령. 기본은 이 폴더의
-//     send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격)
+//     BOARD_SYNC(보드 동기화 명령. 기본은 이 폴더의 board-sync.ts), SEND_TO_WORKER(worker 에게 보내는 명령. CI 감시와 충돌 처리가
+//     쓴다. 기본은 이 폴더의 send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격)
 //
 // 종료 코드:
 //     0  성공. --start 가 띄웠다, --stop 이 멈췄거나 루프가 없다, --status 가 살아 있다, --once 와 --tick 이 끝났다
@@ -106,6 +123,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './lib/config.ts'
+import { concludeConflict, findConflicts, loadNotified, notifiedFile, notifiedKey, resolveConflict, SEND_MS } from './lib/conflicts.ts'
+import type { OpenPr, WorkerFound } from './lib/conflicts.ts'
 import { fire, reclaim } from './lib/events.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
 import { isFile } from './lib/fs.ts'
@@ -136,8 +155,6 @@ const POLL_MS = 100
 const LOG_LIMIT = 1_048_576
 // finish-pr 이 정리 명령에 주는 시간 제한과 같다
 const SWEEP_TIMEOUT_MS = 600_000
-// notify-conflicts 의 SEND_MS 와 같다. send-to-worker 는 살아 있는 worker 를 깨울 때 5분까지, 이어 쓸 때 1시간까지 기다린다
-const SEND_MS = 3_900_000
 // wx 로 만든 직후 pid 를 쓰기 전의 빈 잠금을 깨진 잠금으로 회수하지 않게, 이 시간 안의 빈 파일은 쥔 것으로 본다(lib/events.ts 와 같다)
 const EMPTY_LOCK_GRACE_MS = 2_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
@@ -469,11 +486,10 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
       }
       state.ticks = n
       if (reason !== null) {
-        const line = `WATCH-ERROR tick: ${reason}`
-        log(line)
+        log(`WATCH-ERROR tick: ${reason}`)
         if (state.errors.tick !== reason) {
           try {
-            appendEvent(ctx.repo, 'WATCH-ERROR', null, line)
+            appendEvent(ctx.repo, 'WATCH-ERROR', null, `tick: ${reason}`)
           } catch (e) {
             log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
           }
@@ -603,11 +619,10 @@ async function fireCi(event: 'ci-passed' | 'ci-failed', ctx: Context, pr: OwnPr,
 }
 
 // CI 감시(머리 주석의 「CI 감시」). ci 는 결과 줄에 담을 값, error 는 errors.ci 에 둘 이유다
-async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiEntry>): Promise<{ ci: Record<string, CiEntry>; error: string | null }> {
+async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiEntry>, lookup: Lookup): Promise<{ ci: Record<string, CiEntry>; error: string | null }> {
   const ci: Record<string, CiEntry> = {}
   const rules = new Map<string, Names>()
   const errors: string[] = []
-  const lookup: Lookup = {}
   for (const pr of mine) {
     const key = String(pr.number)
     const before = previous[key]
@@ -658,6 +673,64 @@ async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiE
   return { ci, error: errors.length > 0 ? errors.join('; ') : null }
 }
 
+// 충돌 처리(머리 주석의 「충돌 처리」). 결과는 errors.conflicts 에 둘 이유다
+async function handleConflicts(ctx: Context, lookup: Lookup): Promise<string | null> {
+  const base = defaultBase(ctx.repo) ?? 'main'
+  const found = findConflicts(ctx.repo, base)
+  if (!found.ok) return oneLine(found.error)
+  const { baseSha } = found
+  const authors = new Map<string, string[]>()
+  const mine: { pr: OpenPr; files: string[] }[] = []
+  for (const item of found.found) {
+    const host = apiTarget(item.pr.url)?.host
+    if (!host) return `#${item.pr.number} 의 PR URL 을 읽지 못했다: ${JSON.stringify(item.pr.url ?? null)}`
+    if (!authors.has(host)) {
+      const own = ownAuthors(ctx.repo, host)
+      if (!own) return `내 PR 의 작성자를 정하지 못했다(${host} 의 gh api user 실패). config.json 의 pipeline.authors 로 준다`
+      authors.set(host, own)
+    }
+    if (isOwnPr({ author: { login: item.pr.author?.login ?? '' } }, authors.get(host) ?? [])) mine.push(item)
+  }
+  const statePath = notifiedFile(ctx.repo)
+  const state = loadNotified(statePath)
+  const fireCtx = { repo: ctx.repo, base, run: ctx.run }
+  const errors = new Set<string>()
+  for (const { pr, files } of mine) {
+    if (Object.hasOwn(state, notifiedKey(pr.number, baseSha))) continue
+    log(`#${pr.number} CONFLICTING ${pr.headRefName}: ${files.join(' ')}`)
+    lookup.paths ??= worktreePaths(ctx.repo)
+    const path = lookup.paths.get(pr.headRefName)
+    let target: WorkerFound
+    if (!path) {
+      target = { orphan: '워크트리 없음. 새 worker 는 띄우지 않는다' }
+    } else {
+      lookup.rows ??= workerRows(ctx.run ?? '')
+      if (!lookup.rows.ok) {
+        // 알리지도 기록하지도 않는다. 다음 틱이 다시 본다
+        errors.add(`worker 목록을 읽지 못했다: ${oneLine(lookup.rows.error)}`)
+        continue
+      }
+      const row = workerFor(lookup.rows.rows, path)
+      target = row ? { path, row } : { orphan: '그 워크트리의 dispatch 없음. 새 worker 는 띄우지 않는다' }
+    }
+    const outcome = await resolveConflict({ repo: ctx.repo, base, baseSha, pr, files, found: target, run: ctx.run, dryRun: false, out: log })
+    if (outcome.kind === 'usage') {
+      errors.add('send-to-worker 사용법 오류')
+      break
+    }
+    if (outcome.kind !== 'record') continue
+    await concludeConflict(statePath, ctx.repo, fireCtx, pr, files, baseSha, outcome)
+    if (outcome.action === 'orphan') {
+      try {
+        appendEvent(ctx.repo, 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '')
+      } catch (e) {
+        log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+      }
+    }
+  }
+  return errors.size > 0 ? [...errors].join('; ') : null
+}
+
 function relay(done: RunResult): void {
   for (const line of [...lines(done.stdout), ...lines(done.stderr)]) log(line)
 }
@@ -668,14 +741,14 @@ async function tick(ctx: Context, n: number): Promise<number> {
   const previous = isObject(before) ? before : {}
   const errors: Record<string, string | null> = {}
   // 출처의 실패를 기록한다. 이유가 이전과 다를 때만 알림 파일에 쓴다(머리 주석의 「오류 줄 억제」).
-  // logged 면 그 줄은 이미 stdout 에 나갔다(fire 의 HOOK-FAIL 줄)
-  const report = (source: string, reason: string | null, kind = 'WATCH-ERROR', line = `WATCH-ERROR ${source}: ${reason}`, logged = false) => {
+  // 로그 줄은 `<kind> <text>` 이고 알림 파일의 text 는 kind 를 뺀 나머지다. logged 면 그 줄은 이미 stdout 에 나갔다(fire 의 HOOK-FAIL 줄)
+  const report = (source: string, reason: string | null, kind = 'WATCH-ERROR', text = `${source}: ${reason}`, logged = false) => {
     errors[source] = reason
     if (reason === null) return
-    if (!logged) log(line)
+    if (!logged) log(`${kind} ${text}`)
     if (previous[source] === reason) return
     try {
-      appendEvent(ctx.repo, kind, null, line)
+      appendEvent(ctx.repo, kind, null, text)
     } catch (e) {
       log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
     }
@@ -694,7 +767,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
       log(notice.line)
       if (notice.reminder) {
         try {
-          appendEvent(ctx.repo, 'REMINDER', null, notice.line)
+          appendEvent(ctx.repo, 'REMINDER', null, notice.line.replace(/^REMINDER /, ''))
         } catch (e) {
           log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
         }
@@ -744,9 +817,11 @@ async function tick(ctx: Context, n: number): Promise<number> {
 
   // 4. CI 감시. 열린 PR 을 읽지 못한 틱은 결과에 ci 를 넣지 않아 부모가 이전 값을 둔다
   let ci: Record<string, CiEntry> | undefined
+  // CI 감시와 충돌 처리가 함께 쓴다
+  const lookup: Lookup = {}
   if (prs.ok) {
     try {
-      const watched = await watchCi(ctx, prs.mine, ciEntries(loaded?.ci))
+      const watched = await watchCi(ctx, prs.mine, ciEntries(loaded?.ci), lookup)
       ci = watched.ci
       report('ci', watched.error)
     } catch (e) {
@@ -759,12 +834,21 @@ async function tick(ctx: Context, n: number): Promise<number> {
     const fired = await fire('tick', { tick: n, open_prs: openPrNumbers }, { repo: ctx.repo, base: defaultBase(ctx.repo) ?? '', run: ctx.run })
     if (fired.result === 'fail' || fired.result === 'timeout') {
       const reason = fired.result === 'timeout' ? 'timeout' : String(fired.code ?? 'lock')
-      report('hook', reason, 'HOOK-FAIL', `HOOK-FAIL tick ${reason}`, true)
+      report('hook', reason, 'HOOK-FAIL', `tick ${reason}`, true)
     } else {
       report('hook', null)
     }
   } catch (e) {
     report('hook', oneLine(e))
+  }
+
+  // 6. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다
+  if (prs.ok) {
+    try {
+      report('conflicts', prs.mine.length > 0 ? await handleConflicts(ctx, lookup) : null)
+    } catch (e) {
+      report('conflicts', oneLine(e))
+    }
   }
 
   const result: TickResult = { tick_at: iso(), errors, open_prs: openPrNumbers, ...(ci ? { ci } : {}) }

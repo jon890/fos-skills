@@ -1,5 +1,6 @@
-// 열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록의 한 벌이다. notify-conflicts 와 상주 루프가 쓰고,
-// PR HEAD 받기(fetchPrHead)와 base 받기(baseHead)는 ci-ready 도 쓴다. 충돌 판정은 lib/git.ts 의 conflicts(merge-tree) 한 벌이다.
+// 열린 PR 의 충돌 찾기, PR 하나의 처리, (PR, base SHA) 마다 한 번 알린 기록의 한 벌이다.
+// 사용처: notify-conflicts.ts(머지 직후 한 번 보기), orch-loop.ts(틱의 마지막 단계). PR HEAD 받기(fetchPrHead)와
+// base 받기(baseHead)는 ci-ready 도 쓴다. 충돌 판정은 lib/git.ts 의 conflicts(merge-tree) 한 벌이다.
 // GitHub 의 mergeable 은 머지 직후 한동안 UNKNOWN 이라 쓰지 않는다.
 //
 // 실패는 예외 대신 { ok: false, error } 로 낸다. 부르는 쪽이 조회 실패(종료 코드 2)나 보류로 바꾼다.
@@ -7,12 +8,25 @@
 // 알린 기록: <orch 루트>/state/notify-conflicts.json. 옛 notify-conflicts.py 와 같은 파일과 키(`<PR>@<base SHA>`)다.
 //   값은 notified 와 resumed 면 dispatch id, orphan 이면 `orphan` 이다. base 가 움직이면 키가 달라져 다시 알린다.
 //   파일이 없거나 깨졌으면 빈 기록이다. 쓰기는 lib/paths.ts 의 makeParent 로 부모 폴더를 만들고 git 이 무시하게 한 뒤 한다.
+//   notify-conflicts 와 루프가 같은 파일을 쓰므로, 머지 큐 뒤의 notify-conflicts 와 틱이 같은 충돌을 두 번 보내지 않는다.
+//
+// PR 하나의 처리: 부르는 쪽이 기록을 보고, 브랜치의 워크트리와 worker 행을 찾은 뒤(lib/workers.ts) 두 함수를 이 순서로 부른다.
+//   resolveConflict   찾은 worker 에게 보내고 결과를 낸다. 보내는 방법과 send-to-worker 종료 코드의 분류는
+//                     notify-conflicts.ts 머리 주석의 표가 원본이다. 그 명령의 줄은 out 으로, 이유 줄은 stderr 로 같은 문구로 낸다.
+//                     결과가 record 면 기록하고, skip 이면 기록하지 않고(다음 실행이 다시 본다), usage 면 부르는 쪽이 충돌 처리를 멈춘다
+//   concludeConflict  기록한 뒤 pr-conflict 를 낸다. 이벤트를 내지 못한 오류는 stderr 에 한 줄 남기고 넘어간다
+//   SEND_TO_WORKER 환경 변수가 send-to-worker 의 경로를 바꾼다. 기본은 이 폴더의 부모 폴더의 send-to-worker.ts 다.
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { fire } from './events.ts'
+import type { FireContext } from './events.ts'
 import { conflicts, git } from './git.ts'
 import { ghJson } from './gh.ts'
 import { makeParent, pathOf } from './paths.ts'
+import { runAsync, scriptCommand } from './proc.ts'
+import { LIVE_DISPATCH } from './workers.ts'
 
 export type OpenPr = {
   number: number
@@ -94,4 +108,153 @@ export function recordNotified(file: string, repo: string, key: string, value: s
   const sorted = Object.fromEntries(Object.keys(state).sort().map((name) => [name, state[name]]))
   makeParent(file, repo)
   writeFileSync(file, `${JSON.stringify(sorted, null, 2)}\n`, 'utf8')
+}
+
+// send-to-worker 는 끝난 dispatch 를 이어 쓸 때 launch-worker 를 1시간까지, 살아 있는 worker 를 깨울 때 5분까지 기다린다
+export const SEND_MS = 3_900_000
+// 본문에 이름을 적는 충돌 파일 수
+const SHOWN_FILES = 10
+// 끝난 dispatch 의 send-to-worker 1 에서 worker-start 가 성공했다는 표시(notify-conflicts.ts 머리 주석의 「끝난 dispatch 의 1」)
+const RELAUNCHED = /^LAUNCHED \S/m
+
+export type Worker = { task: unknown; dispatch: string; terminal: unknown; worktree: string; spec: string | null }
+export type WorkerRow = Record<string, unknown>
+// 찾은 워크트리와 worker 행, 또는 orphan 이유
+export type WorkerFound = { path: string; row: WorkerRow } | { orphan: string }
+export type ConflictOutcome =
+  | { kind: 'record'; value: string; action: 'notified' | 'resumed' | 'orphan'; worker: Worker | null; reason: string | null }
+  | { kind: 'skip' }
+  | { kind: 'usage' }
+
+function err(line: string): void {
+  process.stderr.write(`${line}\n`)
+}
+
+function message(number: number, base: string, baseSha: string, files: string[]): string {
+  const shown = files.slice(0, SHOWN_FILES).join(', ') + (files.length > SHOWN_FILES ? ` 외 ${files.length - SHOWN_FILES}개` : '')
+  return (
+    `PR #${number} 이 base ${base}(${baseSha.slice(0, 8)}) 와 충돌한다. 충돌 파일: ${shown}. ` +
+    `origin/${base} 를 합쳐 충돌을 풀고 검사를 다시 돌린 뒤 push 한다. 끝나면 status 로 알린다.`
+  )
+}
+
+function followUp(repo: string, pr: OpenPr, base: string, baseSha: string, files: string[], file: string): void {
+  const common = join(pathOf('specs', repo), 'spec-common.md')
+  const lines: string[] = []
+  if (existsSync(common)) lines.push(`먼저 공통 지시서 ${common} 를 읽는다.`, '')
+  else err(`notify-conflicts: 공통 지시서가 없어(${common}) 후속 지시서에 그 줄을 넣지 않는다`)
+  lines.push(
+    `# PR #${pr.number} 의 base 충돌 풀기`,
+    '',
+    `브랜치: \`${pr.headRefName}\``,
+    '허락: push 는 허락됐다. PR 은 이미 있으므로 새로 열지 않는다',
+    '',
+    `PR #${pr.number}(${pr.url}) 이 base ${base}(${baseSha.slice(0, 8)}) 와 충돌한다. 같은 워크트리에서 이어 받는다.`,
+    '',
+    '## 할 일',
+    '',
+    `1. \`origin/${base}\` 를 합쳐 아래 충돌 파일을 푼다`,
+    '2. 저장소 검증 명령을 돌린다',
+    '3. push 한 뒤 status 로 알린다',
+    '',
+    '## 충돌 파일',
+    '',
+    ...files.map((name) => `- ${name}`),
+  )
+  makeParent(file, repo)
+  writeFileSync(file, `${lines.join('\n')}\n`, 'utf8')
+}
+
+function prInput(pr: OpenPr): Record<string, unknown> {
+  return {
+    number: pr.number,
+    title: pr.title ?? null,
+    branch: pr.headRefName ?? null,
+    head: pr.headRefOid ?? null,
+    author: pr.author?.login ?? null,
+    draft: pr.isDraft ?? null,
+    url: pr.url ?? null,
+  }
+}
+
+function orphaned(out: (line: string) => void, number: number, reason: string, worker: Worker | null, dryRun: boolean): ConflictOutcome {
+  out(`CONFLICT-ORPHAN ${number} ${reason}`)
+  return dryRun ? { kind: 'skip' } : { kind: 'record', value: ORPHAN, action: 'orphan', worker, reason }
+}
+
+// 충돌한 PR 하나를 찾은 worker 에게 보낸다(머리 주석의 「PR 하나의 처리」). found 는 찾은 워크트리와 worker 행, 또는 orphan 이유다.
+// dryRun 이면 할 일만 out 으로 내고 skip 이다. 후속 지시서를 쓰지 않고 보내지 않는다.
+export async function resolveConflict(args: {
+  repo: string
+  base: string
+  baseSha: string
+  pr: OpenPr
+  files: string[]
+  found: WorkerFound
+  run: string | null
+  dryRun: boolean
+  out: (line: string) => void
+}): Promise<ConflictOutcome> {
+  const { repo, base, baseSha, pr, files, found, run, dryRun, out } = args
+  const number = pr.number
+  if ('orphan' in found) return orphaned(out, number, found.orphan, null, dryRun)
+  const { path, row } = found
+  const dispatch = String(row.dispatchId)
+  const live = LIVE_DISPATCH.has(String(row.dispatchStatus))
+  const worker: Worker = { task: row.taskId ?? null, dispatch, terminal: row.agentTerminalHandle ?? null, worktree: path, spec: null }
+  const sendArgs = ['--dispatch', dispatch]
+  if (live) {
+    const body = message(number, base, baseSha, files)
+    if (dryRun) {
+      out(`  ${dispatch} 에 알릴 것: ${body}`)
+      return { kind: 'skip' }
+    }
+    sendArgs.push('--body', body)
+  } else {
+    worker.spec = join(pathOf('specs', repo), `spec-conflict-${number}-${baseSha.slice(0, 8)}.md`)
+    if (dryRun) {
+      out(`  ${dispatch} 에 이어 쓸 것: ${worker.spec}`)
+      return { kind: 'skip' }
+    }
+    followUp(repo, pr, base, baseSha, files, worker.spec)
+    sendArgs.push('--spec', worker.spec)
+  }
+  if (run) sendArgs.push('--run', run)
+  const send = process.env.SEND_TO_WORKER || join(dirname(dirname(fileURLToPath(import.meta.url))), 'send-to-worker.ts')
+  const sent = await runAsync(scriptCommand(send, sendArgs), { timeoutMs: SEND_MS })
+  const shown = (sent.stdout + sent.stderr).trim()
+  if (shown) out(`  ${shown.replaceAll('\n', '\n  ')}`)
+  if (sent.code === 2) {
+    err('notify-conflicts: send-to-worker 가 사용법 오류(종료 코드 2)로 끝나 멈춘다')
+    return { kind: 'usage' }
+  }
+  if (sent.code === 3) return orphaned(out, number, `${dispatch} 에 보낼 수 없다(send-to-worker 종료 코드 3). 새 worker 는 띄우지 않는다`, worker, false)
+  const delivered = sent.code === 0 || sent.code === 4 || (sent.code === 1 && (live || RELAUNCHED.test(sent.stdout)))
+  if (!delivered) {
+    out(`  ${dispatch} 에 보내지 못했다(send-to-worker 종료 코드 ${sent.code})`)
+    err(`notify-conflicts: #${number} 를 ${dispatch} 에 보내지 못해 기록하지 않는다. 다음 실행이 다시 본다`)
+    return { kind: 'skip' }
+  }
+  const note = sent.code === 0 ? '' : live || sent.code === 4 ? `(깨우지 못했다, 종료 코드 ${sent.code})` : '(다시 띄운 뒤 종료 코드 1 로 끝났다)'
+  out(`  ${dispatch} 에 알렸다${note}`)
+  return { kind: 'record', value: dispatch, action: live ? 'notified' : 'resumed', worker, reason: null }
+}
+
+// resolveConflict 의 record 를 기록하고 pr-conflict 를 낸다(머리 주석의 「PR 하나의 처리」).
+export async function concludeConflict(
+  statePath: string,
+  repo: string,
+  ctx: FireContext,
+  pr: OpenPr,
+  files: string[],
+  baseSha: string,
+  outcome: Extract<ConflictOutcome, { kind: 'record' }>,
+): Promise<void> {
+  recordNotified(statePath, repo, notifiedKey(pr.number, baseSha), outcome.value)
+  try {
+    await fire('pr-conflict', { pr: prInput(pr), base_head: baseSha, files, worker: outcome.worker, action: outcome.action }, ctx)
+  } catch (e) {
+    // 알림과 기록은 이미 끝났다. 이벤트를 내지 못한 것은 결과를 바꾸지 않는다
+    err(`notify-conflicts: pr-conflict 를 내지 못했다: ${(e as Error)?.message ?? String(e)}`)
+  }
 }

@@ -248,7 +248,7 @@ describe('질문 확인', () => {
     const lines = events()
     assert.equal(lines.length, 1, JSON.stringify(lines))
     assert.equal(lines[0].kind, 'REMINDER')
-    assert.match(String(lines[0].text), /^REMINDER q question from=dispatch:d: 질문$/)
+    assert.match(String(lines[0].text), /^q question from=dispatch:d: 질문$/)
     assert.equal(lines[0].pr, null)
     const inputs = received('worker-question')
     assert.equal(inputs.length, 1)
@@ -270,7 +270,7 @@ describe('질문 확인', () => {
     const first = events()
     assert.equal(first.length, 1, JSON.stringify(first))
     assert.equal(first[0].kind, 'WATCH-ERROR')
-    assert.match(String(first[0].text), /^WATCH-ERROR questions: .*offline/)
+    assert.match(String(first[0].text), /^questions: .*offline/)
     // 정리와 보드 동기화는 그래도 불린다
     assert.equal(argsOf('sweep').length, 1)
     assert.equal(argsOf('board').length, 1)
@@ -295,7 +295,7 @@ describe('tick 이벤트', () => {
     const lines = events()
     assert.deepEqual(
       lines.map((line) => [line.kind, line.text]),
-      [['HOOK-FAIL', 'HOOK-FAIL tick 1']],
+      [['HOOK-FAIL', 'tick 1']],
     )
     assert.equal(received('tick').length, 2)
   })
@@ -318,7 +318,7 @@ describe('tick 이벤트', () => {
     prs([], 1)
     once()
     assert.equal(received('tick')[1].open_prs, null)
-    assert.ok(events().some((line) => String(line.text).startsWith('WATCH-ERROR prs: ')), JSON.stringify(events()))
+    assert.ok(events().some((line) => line.kind === 'WATCH-ERROR' && String(line.text).startsWith('prs: ')), JSON.stringify(events()))
   })
 
   test('--tick --tick-number 5 는 마지막 줄에 결과 JSON 을 내고 loop.json 을 바꾸지 않는다', () => {
@@ -374,7 +374,7 @@ describe('정리와 보드 동기화', () => {
     once()
     assert.deepEqual(
       events().map((line) => line.text),
-      ['WATCH-ERROR cleanup: 종료 코드 2'],
+      ['cleanup: 종료 코드 2'],
     )
     assert.equal((loopState()?.errors as Json).cleanup, '종료 코드 2')
   })
@@ -429,7 +429,7 @@ describe('틱 자식의 실패', () => {
     // 같은 이유로 두 번 끝났지만 알림은 한 줄이다
     assert.deepEqual(
       events().map((line) => line.text),
-      ['WATCH-ERROR tick: 종료 코드 3'],
+      ['tick: 종료 코드 3'],
     )
     // 세 번째 틱은 성공했다
     assert.equal((third.errors as Json).tick, null)

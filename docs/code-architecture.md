@@ -218,7 +218,7 @@ orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 �
 orch/scripts/lib/overlap.ts       단위 겹침 판정 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/queue-options.ts 머지 큐가 값을 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기, PR 하나의 처리(resolveConflict, concludeConflict), (PR, base SHA) 마다 한 번 알린 기록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/questions.ts     미답변 질문 조회, 재알림 판정과 알린 기록 한 벌

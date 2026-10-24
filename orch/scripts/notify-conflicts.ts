@@ -15,7 +15,8 @@
 //     --dry-run  알리지 않고 충돌과 할 일만 낸다. 후속 지시서를 쓰지 않고, 보내지 않고, 이벤트를 내지 않고, 기록하지 않는다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
-// 충돌 찾기와 알린 기록은 lib/conflicts.ts 가, 브랜치의 워크트리와 worker 행 찾기는 lib/workers.ts 가 맡는다. 충돌 여부와 파일은 merge-tree 로 origin/<base> 와 PR HEAD 를 합쳐 본다.
+// 충돌 찾기, PR 하나의 처리(resolveConflict, concludeConflict), 알린 기록은 lib/conflicts.ts 가, 브랜치의 워크트리와 worker 행 찾기는
+// lib/workers.ts 가 맡는다. 상주 루프(orch-loop.ts)도 같은 함수와 같은 기록, 아래 종료 코드 분류를 쓴다. 충돌 여부와 파일은 merge-tree 로 origin/<base> 와 PR HEAD 를 합쳐 본다.
 // 다른 사람 PR 은 줄도 내지 않고 종료 코드에도 세지 않는다. 작성자 목록은 config.json 의 pipeline.authors,
 // 없으면 PR URL 호스트의 gh 현재 사용자다(lib/gh.ts 의 ownAuthors). 그 목록을 정하지 못하면 조회 실패다.
 //
@@ -55,34 +56,19 @@
 //
 // 종료 코드: 0 충돌한 내 PR 이 없다, 1 충돌한 내 PR 이 있다(알렸든 못 알렸든), 2 사용법 오류(설정 파일 오류 포함)나 조회 실패
 
-import { existsSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
-import { findConflicts, loadNotified, notifiedFile, notifiedKey, ORPHAN, recordNotified } from './lib/conflicts.ts'
-import type { OpenPr } from './lib/conflicts.ts'
-import { fire } from './lib/events.ts'
+import { concludeConflict, findConflicts, loadNotified, notifiedFile, notifiedKey, resolveConflict } from './lib/conflicts.ts'
+import type { OpenPr, WorkerFound } from './lib/conflicts.ts'
 import type { FireContext } from './lib/events.ts'
 import { apiTarget, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { defaultBase } from './lib/git.ts'
-import { makeParent, pathOf, warnLegacy } from './lib/paths.ts'
-import { runAsync, scriptCommand } from './lib/proc.ts'
-import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
+import { warnLegacy } from './lib/paths.ts'
+import { workerFor, workerRows, worktreePaths } from './lib/workers.ts'
 
 const USAGE = '사용법: notify-conflicts.ts [--repo DIR] [--base BRANCH] [--run RUN] [--state FILE] [--dry-run]'
-const HERE = dirname(fileURLToPath(import.meta.url))
-const SEND_TO_WORKER = process.env.SEND_TO_WORKER || `${HERE}/send-to-worker.ts`
-// send-to-worker 는 끝난 dispatch 를 이어 쓸 때 launch-worker 를 1시간까지, 살아 있는 worker 를 깨울 때 5분까지 기다린다
-const SEND_MS = 3_900_000
-// 본문에 이름을 적는 충돌 파일 수
-const SHOWN_FILES = 10
-// 끝난 dispatch 의 send-to-worker 1 에서 worker-start 가 성공했다는 표시(머리 주석의 「끝난 dispatch 의 1」)
-const RELAUNCHED = /^LAUNCHED \S/m
-
-type Json = Record<string, unknown>
-type Worker = { task: unknown; dispatch: string; terminal: unknown; worktree: string; spec: string | null }
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`)
@@ -90,53 +76,6 @@ function out(line: string): void {
 
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
-}
-
-function message(number: number, base: string, baseSha: string, files: string[]): string {
-  const shown = files.slice(0, SHOWN_FILES).join(', ') + (files.length > SHOWN_FILES ? ` 외 ${files.length - SHOWN_FILES}개` : '')
-  return (
-    `PR #${number} 이 base ${base}(${baseSha.slice(0, 8)}) 와 충돌한다. 충돌 파일: ${shown}. ` +
-    `origin/${base} 를 합쳐 충돌을 풀고 검사를 다시 돌린 뒤 push 한다. 끝나면 status 로 알린다.`
-  )
-}
-
-function followUp(repo: string, pr: OpenPr, base: string, baseSha: string, files: string[], file: string): void {
-  const common = join(pathOf('specs', repo), 'spec-common.md')
-  const lines: string[] = []
-  if (existsSync(common)) lines.push(`먼저 공통 지시서 ${common} 를 읽는다.`, '')
-  else err(`notify-conflicts: 공통 지시서가 없어(${common}) 후속 지시서에 그 줄을 넣지 않는다`)
-  lines.push(
-    `# PR #${pr.number} 의 base 충돌 풀기`,
-    '',
-    `브랜치: \`${pr.headRefName}\``,
-    '허락: push 는 허락됐다. PR 은 이미 있으므로 새로 열지 않는다',
-    '',
-    `PR #${pr.number}(${pr.url}) 이 base ${base}(${baseSha.slice(0, 8)}) 와 충돌한다. 같은 워크트리에서 이어 받는다.`,
-    '',
-    '## 할 일',
-    '',
-    `1. \`origin/${base}\` 를 합쳐 아래 충돌 파일을 푼다`,
-    '2. 저장소 검증 명령을 돌린다',
-    '3. push 한 뒤 status 로 알린다',
-    '',
-    '## 충돌 파일',
-    '',
-    ...files.map((name) => `- ${name}`),
-  )
-  makeParent(file, repo)
-  writeFileSync(file, `${lines.join('\n')}\n`, 'utf8')
-}
-
-function prInput(pr: OpenPr): Json {
-  return {
-    number: pr.number,
-    title: pr.title ?? null,
-    branch: pr.headRefName ?? null,
-    head: pr.headRefOid ?? null,
-    author: pr.author?.login ?? null,
-    draft: pr.isDraft ?? null,
-    url: pr.url ?? null,
-  }
 }
 
 type Args = { repo: string; base: string; run: string; state: string; dryRun: boolean }
@@ -209,20 +148,6 @@ async function main(argv: string[]): Promise<number> {
   const ctx: FireContext = { repo, base, run: a.run || null }
   let workers: ReturnType<typeof workerRows> | null = null
 
-  const conclude = async (pr: OpenPr, files: string[], key: string, value: string, action: string, worker: Worker | null): Promise<void> => {
-    recordNotified(statePath, repo, key, value)
-    try {
-      await fire('pr-conflict', { pr: prInput(pr), base_head: baseSha, files, worker, action }, ctx)
-    } catch (e) {
-      // 알림과 기록은 이미 끝났다. 이벤트를 내지 못한 것은 종료 코드를 바꾸지 않는다
-      err(`notify-conflicts: pr-conflict 를 내지 못했다: ${(e as Error)?.message ?? String(e)}`)
-    }
-  }
-  const orphan = async (pr: OpenPr, files: string[], key: string, reason: string, worker: Worker | null): Promise<void> => {
-    out(`CONFLICT-ORPHAN ${pr.number} ${reason}`)
-    if (!a.dryRun) await conclude(pr, files, key, ORPHAN, 'orphan', worker)
-  }
-
   for (const { pr, files } of mine) {
     const number = pr.number
     out(`#${number} CONFLICTING ${pr.headRefName}: ${files.join(' ')}`)
@@ -231,64 +156,23 @@ async function main(argv: string[]): Promise<number> {
       out(`  이미 알렸다(${state[key]})`)
       continue
     }
+    let target: WorkerFound
     const path = paths.get(pr.headRefName)
     if (!path) {
-      await orphan(pr, files, key, '워크트리 없음. 새 worker 는 띄우지 않는다', null)
-      continue
-    }
-    workers ??= workerRows(a.run)
-    if (!workers.ok) {
-      out(`  worker 목록을 읽지 못해 알리지 않았다: ${workers.error}`)
-      err(`notify-conflicts: #${number} 는 기록하지 않는다. 다음 실행이 다시 본다`)
-      continue
-    }
-    const row = workerFor(workers.rows, path)
-    if (!row) {
-      await orphan(pr, files, key, '그 워크트리의 dispatch 없음. 새 worker 는 띄우지 않는다', null)
-      continue
-    }
-    const dispatch = String(row.dispatchId)
-    const live = LIVE_DISPATCH.has(String(row.dispatchStatus))
-    const worker: Worker = { task: row.taskId ?? null, dispatch, terminal: row.agentTerminalHandle ?? null, worktree: path, spec: null }
-    const sendArgs = ['--dispatch', dispatch]
-    if (live) {
-      const body = message(number, base, baseSha, files)
-      if (a.dryRun) {
-        out(`  ${dispatch} 에 알릴 것: ${body}`)
-        continue
-      }
-      sendArgs.push('--body', body)
+      target = { orphan: '워크트리 없음. 새 worker 는 띄우지 않는다' }
     } else {
-      worker.spec = join(pathOf('specs', repo), `spec-conflict-${number}-${baseSha.slice(0, 8)}.md`)
-      if (a.dryRun) {
-        out(`  ${dispatch} 에 이어 쓸 것: ${worker.spec}`)
+      workers ??= workerRows(a.run)
+      if (!workers.ok) {
+        out(`  worker 목록을 읽지 못해 알리지 않았다: ${workers.error}`)
+        err(`notify-conflicts: #${number} 는 기록하지 않는다. 다음 실행이 다시 본다`)
         continue
       }
-      followUp(repo, pr, base, baseSha, files, worker.spec)
-      sendArgs.push('--spec', worker.spec)
+      const row = workerFor(workers.rows, path)
+      target = row ? { path, row } : { orphan: '그 워크트리의 dispatch 없음. 새 worker 는 띄우지 않는다' }
     }
-    if (a.run) sendArgs.push('--run', a.run)
-    const sent = await runAsync(scriptCommand(SEND_TO_WORKER, sendArgs), { timeoutMs: SEND_MS })
-    const shown = (sent.stdout + sent.stderr).trim()
-    if (shown) out(`  ${shown.replaceAll('\n', '\n  ')}`)
-    const action = live ? 'notified' : 'resumed'
-    if (sent.code === 2) {
-      err('notify-conflicts: send-to-worker 가 사용법 오류(종료 코드 2)로 끝나 멈춘다')
-      return 2
-    }
-    if (sent.code === 3) {
-      await orphan(pr, files, key, `${dispatch} 에 보낼 수 없다(send-to-worker 종료 코드 3). 새 worker 는 띄우지 않는다`, worker)
-      continue
-    }
-    const delivered = sent.code === 0 || sent.code === 4 || (sent.code === 1 && (live || RELAUNCHED.test(sent.stdout)))
-    if (!delivered) {
-      out(`  ${dispatch} 에 보내지 못했다(send-to-worker 종료 코드 ${sent.code})`)
-      err(`notify-conflicts: #${number} 를 ${dispatch} 에 보내지 못해 기록하지 않는다. 다음 실행이 다시 본다`)
-      continue
-    }
-    const note = sent.code === 0 ? '' : live || sent.code === 4 ? `(깨우지 못했다, 종료 코드 ${sent.code})` : '(다시 띄운 뒤 종료 코드 1 로 끝났다)'
-    out(`  ${dispatch} 에 알렸다${note}`)
-    await conclude(pr, files, key, dispatch, action, worker)
+    const outcome = await resolveConflict({ repo, base, baseSha, pr, files, found: target, run: a.run || null, dryRun: a.dryRun, out })
+    if (outcome.kind === 'usage') return 2
+    if (outcome.kind === 'record') await concludeConflict(statePath, repo, ctx, pr, files, baseSha, outcome)
   }
   return 1
 }

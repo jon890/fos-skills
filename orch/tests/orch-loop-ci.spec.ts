@@ -97,6 +97,10 @@ beforeEach(() => {
   delete env.NODE_OPTIONS
   git(['init', '-q', '-b', 'main'])
   git(['commit', '-q', '--allow-empty', '-m', 'init'])
+  // 틱의 충돌 처리가 git fetch origin 을 하므로 origin 을 둔다. 충돌을 보는 gh pr list --base 는 빈 목록이다(github())
+  git(['init', '-q', '--bare', '-b', 'main', join(tmp, 'origin.git')], tmp)
+  git(['remote', 'add', 'origin', join(tmp, 'origin.git')])
+  git(['push', '-q', 'origin', 'main'])
   writeFileSync(join(tmp, 'orca.json'), JSON.stringify({}))
   hook('ci-passed')
   hook('ci-failed')
@@ -143,6 +147,7 @@ function pr(number: number, rollup: Json[], extra: Json = {}): Json {
 // 이번 실행의 gh 답. rules 는 저장소 규칙 API 의 답이다(기본은 필수 체크 test 하나)
 function github(rows: Json[], rules: FakeRule = { stdout: 'test\n' }, listCode = 0): void {
   gh.setRules([
+    { args: ['pr', 'list', '--base'], stdout: '[]\n' },
     { args: ['pr', 'list'], stdout: `${JSON.stringify(rows)}\n`, stderr: listCode ? 'gh offline\n' : '', code: listCode },
     { args: ['api', 'user'], stdout: 'me\n' },
     { ...rules, args: [RULES_PATH] },
@@ -323,7 +328,7 @@ describe('필수 체크 이름', () => {
     assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'failed' } })
     const errors = events().filter((line) => line.kind === 'WATCH-ERROR')
     assert.equal(errors.length, 1, JSON.stringify(events()))
-    assert.match(String(errors[0].text), /^WATCH-ERROR ci: main 의 필수 체크 규칙을 읽지 못했다: .*HTTP 502/)
+    assert.match(String(errors[0].text), /^ci: main 의 필수 체크 규칙을 읽지 못했다: .*HTTP 502/)
     // 열린 PR 을 읽지 못한 틱도 이전 값을 둔다
     github([], { stdout: 'test\n' }, 1)
     once()

@@ -821,10 +821,10 @@ describe('상주 루프', () => {
 
   test('커서 뒤의 두 줄을 LOOP-EVENT 로 내고 커서를 옮긴 뒤 7 이고, 다시 걸면 그 줄을 내지 않는다', () => {
     loopJson()
-    loopEvents([event(1, 'REMINDER', null, '읽은 줄'), event(2, 'WATCH-ERROR', null, 'WATCH-ERROR questions: offline'), event(3, 'CI-FAILED', 7, 'ci 실패')], 1)
+    loopEvents([event(1, 'REMINDER', null, '읽은 줄'), event(2, 'WATCH-ERROR', null, 'questions: offline'), event(3, 'CI-FAILED', 7, 'ci 실패')], 1)
     const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0.2', '--loop-repo', tmp])
     assert.equal(r.code, 7, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['LOOP-EVENT WATCH-ERROR - WATCH-ERROR questions: offline', 'LOOP-EVENT CI-FAILED 7 ci 실패', 'LAST_DELIVERY d0'])
+    assert.deepEqual(lines(r.stdout), ['LOOP-EVENT WATCH-ERROR - questions: offline', 'LOOP-EVENT CI-FAILED 7 ci 실패', 'LAST_DELIVERY d0'])
     assert.equal(cursor(), '3')
     // 시작할 때 깨어났으므로 check 를 부르지 않았다. 넘긴 ack 는 그대로 남는다
     assert.deepEqual(calls(), [])
@@ -858,9 +858,9 @@ describe('상주 루프', () => {
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     const orcaPid = Number(readFileSync(pidFile, 'utf8').trim())
-    loopEvents([event(1, 'HOOK-FAIL', null, 'HOOK-FAIL tick 1')])
+    loopEvents([event(1, 'HOOK-FAIL', null, 'tick 1')])
     assert.equal(await closed, 7, stdout)
-    assert.deepEqual(lines(stdout), ['LOOP-EVENT HOOK-FAIL - HOOK-FAIL tick 1', 'LAST_DELIVERY -'])
+    assert.deepEqual(lines(stdout), ['LOOP-EVENT HOOK-FAIL - tick 1', 'LAST_DELIVERY -'])
     assert.equal(cursor(), '1')
     const gone = () => {
       try {
