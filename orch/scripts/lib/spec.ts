@@ -13,6 +13,7 @@ import { orcaJson } from './orca.ts'
 
 // 줄 머리의 `브랜치: \`x\``. 목록 기호(-, *)와 굵은 글씨(**브랜치:**, **브랜치**:)를 모두 받는다.
 // 어느 꼴이라도 놓치면 그 지시서가 지워지지 않거나 워크트리가 만들어지지 않는다.
+// 옛 make-worktree 는 `- ` 목록만 받았다. 이 한 벌로 모으며 `* ` 목록도 받게 넓어졌다(CHANGELOG 3.0.0).
 // g 플래그를 두지 않는다. g 가 있으면 lastIndex 가 남아 같은 줄을 두 번 검사할 때 결과가 달라진다.
 export const BRANCH_LINE: RegExp = /^\s*(?:[-*]\s+)?(?:\*\*)?브랜치(?:\*\*)?:(?:\*\*)?\s*`([^`]+)`/
 
@@ -23,11 +24,14 @@ const PERMISSION = /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?\s*(.+?)\s*$/
 // u 플래그로 글자를 유니코드로 본다. 옮기기 전 Python 의 \w 가 한글도 글자로 보았다.
 const SPEC_PATH = /(\/[^\s`'"]+?\.md)(?![\p{L}\p{N}\p{M}_.])/gu
 
+// Python 의 str.splitlines 가 나누는 줄 경계. 지시서의 줄을 옛 명령(spec-line, spec-lint)과 같게 나눈다. spec-lint 가 줄 번호를 셀 때도 쓴다
+export const LINE_BREAK: RegExp = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/
+
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 const PAGE_LIMIT = '100'
 
 function lines(text: string): string[] {
-  return text.split(/\r\n|\r|\n/)
+  return text.split(LINE_BREAK)
 }
 
 // 브랜치 줄들이 가리키는 브랜치 이름. 지시서에 나온 순서이고 겹쳐도 그대로 낸다.

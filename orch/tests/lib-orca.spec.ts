@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { orca, orcaBin, orcaJson } from '../scripts/lib/orca.ts'
+import { orca, orcaBin, orcaJson, repoVisibility, repoVisibilityActions } from '../scripts/lib/orca.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
@@ -84,5 +84,35 @@ describe('orcaJson', () => {
     const r = orcaJson(['noresult'])
     assert.equal(r.ok, false)
     assert.match(!r.ok ? r.error : '', /result/)
+  })
+})
+
+describe('repoVisibility', () => {
+  test('orca repo show 의 externalWorktreeVisibility 를 낸다', () => {
+    fake.setRules([{ args: ['repo', 'show'], stdout: JSON.stringify({ ok: true, result: { repo: { externalWorktreeVisibility: 'hide' } } }) }])
+    const before = fake.calls().length
+    assert.equal(repoVisibility('/r/proj'), 'hide')
+    assert.deepEqual(fake.calls().slice(before).map((c) => c.argv), [['repo', 'show', '--repo', 'path:/r/proj', '--json']])
+  })
+
+  test('조회 실패, 깨진 JSON, 값이 없거나 문자열이 아니면 빈 문자열이다', () => {
+    for (const rule of [
+      { stdout: '', code: 1 },
+      { stdout: '{not json' },
+      { stdout: JSON.stringify({ ok: true, result: { repo: {} } }) },
+      { stdout: JSON.stringify({ ok: true, result: null }) },
+      { stdout: JSON.stringify({ ok: true, result: { repo: { externalWorktreeVisibility: 1 } } }) },
+    ]) {
+      fake.setRules([rule])
+      assert.equal(repoVisibility('/r/proj'), '', JSON.stringify(rule))
+    }
+  })
+})
+
+describe('repoVisibilityActions', () => {
+  test('사용자가 고를 두 조치에 저장소 경로를 넣는다', () => {
+    const text = repoVisibilityActions('/r/proj')
+    assert.match(text, /Orca 화면에서 그 워크트리를 등록한다/)
+    assert.match(text, /orca repo set --repo path:\/r\/proj --external-worktree-visibility show/)
   })
 })

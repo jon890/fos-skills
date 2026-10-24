@@ -1,5 +1,5 @@
 {
-  "description": "orch: check --wait 를 셸의 & 나 nohup 으로 띄우는 호출, cd 뒤 ; 나 줄바꿈으로 이은 git 쓰기, worker 터미널 직접 orca terminal send, spec-line 이 아닌 worker-start --spec 을 거부한다",
+  "description": "orch: check --wait 를 셸의 & 나 nohup 으로 띄우는 호출, cd 뒤 ; 나 줄바꿈으로 이은 git 쓰기, worker 터미널이거나 worker 인지 확인하지 못한 터미널로의 직접 orca terminal send, spec-line 이 아닌 worker-start --spec 을 거부한다",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,22 +7,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-background-wait.py\"",
+            "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-background-wait.ts\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-git-after-cd.py\"",
+            "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-git-after-cd.ts\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-worker-terminal-send.py\"",
+            "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/block-worker-terminal-send.ts\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/require-spec-line.py\"",
+            "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/orch/hooks/require-spec-line.ts\"",
             "timeout": 10
           }
         ]

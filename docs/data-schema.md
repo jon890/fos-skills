@@ -39,7 +39,7 @@
 | `version` | number | 계약 버전. 지금은 `1`. 필드를 빼거나 뜻을 바꾸면 올린다 |
 | `event` | string | 이벤트 이름 |
 | `repo` | string | 주 checkout 의 절대경로 |
-| `base` | string | 기준 브랜치 |
+| `base` | string | 기준 브랜치. 명령이 `--base` 를 받지 않았고 `origin/HEAD` 도 읽지 못하면 빈 문자열이다 |
 | `run` | string 또는 null | Orca Run id. 모르면 null |
 | `time` | string | ISO 8601 UTC |
 
@@ -52,7 +52,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | --- | --- |
 | `before-launch`, `worker-launched` | `worker`, `branch`, `agent`, `model`, `effort` |
 | `worker-question` | `worker`, `message`(`id`, `type`, `subject`, `body`), `reminder`(bool), `age_sec` |
-| `worker-done` | `worker`, `outcome`, `evidence`(`ready` 또는 `suspicious`), `pr`(있으면) |
+| `worker-done` | `worker`, `outcome`, `evidence`(`ready` 또는 `suspicious`), `pr`(있으면). `worker_done --outcome failed` 같은 실패 보고와 `--completion-contract none` 의 대기에서는 내지 않는다 |
 | `worker-lost` | `worker`, `stage` |
 | `before-ready`, `pr-ready` | `pr`, `ready_count`(이미 ready 인 내 PR 수), `slots` |
 | `ci-passed`, `ci-failed`, `ci-missing` | `pr`, `checks`(이름, 상태, 결론, URL 의 목록), `required`(이름 목록) |
@@ -65,7 +65,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `before-cleanup` | `worktree`, `branch`, `pr`(있으면), `worker`(있으면) |
 | `after-cleanup` | `removed`(경로 목록), `skipped`(경로와 이유의 목록) |
 | `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록) |
-| `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 대기 pid 목록), `unanswered`(질문 id 목록) |
+| `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 `wait-important` 대기와 `watch-questions` 질문 감시의 pid 목록. 그 자식인 `orchestration check` 와 셸 행은 세지 않는다), `unanswered`(질문 id 목록) |
 
 옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
 

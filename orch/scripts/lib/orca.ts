@@ -43,3 +43,20 @@ export function orcaJson<T>(args: string[], opts?: RunOptions): { ok: true; data
   if (!('result' in body)) return { ok: false, error: `${command} 의 응답에 result 가 없다` }
   return { ok: true, data: body.result as T }
 }
+
+// Orca 에 등록된 저장소의 외부 워크트리 표시 설정(`orca repo show` 의 externalWorktreeVisibility). 못 읽으면 빈 문자열이다.
+// `git worktree add` 로 만든 워크트리는 Orca 에게 외부 워크트리다. 이 값이 hide 면 Orca 가 숨겨 worker-start 가 그 경로를 찾지 못한다.
+export function repoVisibility(repo: string): string {
+  const got = orcaJson<{ repo?: { externalWorktreeVisibility?: unknown } } | null>(['repo', 'show', '--repo', `path:${repo}`])
+  if (!got.ok) return ''
+  const value = got.data?.repo?.externalWorktreeVisibility
+  return typeof value === 'string' ? value : ''
+}
+
+// hide 일 때 사용자가 고를 조치. 설정은 사용자가 바꾼다. 명령이 스스로 바꾸면 사용자가 숨겨 둔 다른 워크트리까지 드러난다.
+export function repoVisibilityActions(repo: string): string {
+  return [
+    '  1) Orca 화면에서 그 워크트리를 등록한다',
+    `  2) orca repo set --repo path:${repo} --external-worktree-visibility show`,
+  ].join('\n')
+}

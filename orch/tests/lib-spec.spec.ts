@@ -66,6 +66,10 @@ describe('BRANCH_LINE 과 branchesOf', () => {
     assert.deepEqual(branchesOf('브랜치: `a`\r\n브랜치: `a`\n'), ['a', 'a'])
     assert.deepEqual(branchesOf(''), [])
   })
+
+  test('줄은 옛 명령의 splitlines 처럼 \\u2028 같은 경계에서도 나눈다', () => {
+    assert.deepEqual(branchesOf('설명\u2028브랜치: `a`\u000c브랜치: `b`'), ['a', 'b'])
+  })
 })
 
 describe('permissionsOf', () => {

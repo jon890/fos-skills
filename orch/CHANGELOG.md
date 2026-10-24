@@ -3,6 +3,28 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.0.0 (2026-10-24)
+
+- PreToolUse hook 과 `shell_text.py` 를 TypeScript 로 옮기고 `hooks.json` 이 node 로 부르게 했다. worker 터미널 직접 입력 금지 hook 은 모든 Run 의 worker 를 보고, 대상이 변수이거나 orca 조회가 실패하거나 7초를 넘기면 통과시키지 않고 거부한다.
+- 띄우기(`spec-line`, `spec-lint`, `make-worktree`, `worktree-deny`, `launch-worker`), 답하기(`send-to-worker`, `nudge-worker`, `worker-ask`), 기다리기(`wait-important`, `triage-messages`, `watch-questions`)와 `orch-doctor` 를 TypeScript 로 옮겼다. 옵션과 종료 코드는 그대로다. `ask-json.py` 는 `worker-ask.ts` 안으로, `questions.py` 와 완료 근거 판정은 `scripts/lib/` 로 합쳤다.
+- 옮긴 명령이 이벤트를 낸다. `launch-worker` 는 `before-launch` 와 `worker-launched`, `watch-questions` 는 `worker-question`, `wait-important` 는 `worker-done` 과 `worker-lost`, `orch-doctor --run` 은 `session-resume` 이다. 핸들러 쓰는 법은 `references/hooks.md` 에 두었다.
+- 코디네이터가 알아야 하는 조회 실패를 stderr 가 아니라 stdout 의 `WATCH-ERROR` 줄로 낸다. 하네스는 stderr 를 알림으로 보내지 않아 질문 감시가 계속 실패해도 코디네이터가 몰랐다.
+- `orch-doctor` 가 저장소의 이름이 틀린 핸들러를 `UNKNOWN-HOOK`, 다음 major 에서 지울 설정 칸을 `DEPRECATED-CONFIG` 로 알린다. 둘 다 경고라 종료 코드를 바꾸지 않는다. `--repo` 로 볼 저장소를 준다.
+- 문서, 공통 지시서 틀, hook 의 거부 이유가 옮긴 명령을 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/<명령>.ts"` 로 부른다. 공통 지시서 틀의 설치 경로 풀이도 `python3 -c` 에서 `node -e` 로 바꿔 worker 환경에 Python 이 없어도 돈다. doctor 는 버전을 보는 진입점 `orch-doctor.py` 로 그대로 부른다.
+
+호환성:
+
+- 옛 `.py` 경로(`scripts/launch-worker.py` 같은 것)는 남아 같은 이름의 `.ts` 로 넘긴다. stderr 에 `DEPRECATED` 줄을 내고, 다음 major 에서 지운다. `orch-doctor.py` 는 진입점이라, `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 그 줄이 섞이지 않게 `DEPRECATED` 줄을 내지 않는다.
+- 옛 `.py` 경로도 PATH 에 node 22.18 이상이 있어야 돈다. node 가 없거나 낮으면 넘기지 않고 종료 코드 127 로 끝난다. 낮으면 stdout 에 `NODE-TOO-OLD <버전>` 줄을 낸다.
+- stdout 에 `WATCH-ERROR`, `HOOK-FAIL`, `[hook ...]` 줄이 새로 섞인다. 출력을 줄 단위로 읽는 도구는 이 접두를 건너뛰거나 따로 다룬다.
+- 옮긴 명령의 ps 명령줄이 `python3 ... <이름>.py` 에서 `node ... <이름>.ts` 로 바뀐다. 옛 `.py` 경로로 띄워도 그렇다. `.py` 이름으로 프로세스를 찾는 도구는 확장자 없는 이름(`wait-important`)으로 찾는다.
+- `watch-questions` 는 `ORCA_CLI_COMMAND` 를 읽지 않는다. 가짜 orca 는 `ORCA` 환경 변수로 넣는다.
+- 옮긴 명령도 옛 argparse 처럼 옵션의 고유 접두를 받는다(`--work` 는 `--worktree`). 여러 옵션에 맞는 접두는 종료 코드 2 다.
+- `send-to-worker --body`, `nudge-worker --text`, `worker-ask --question` 같은 값 옵션이 `-` 로 시작하는 값(`--body "-x"`)을 받는다. 옛 명령은 종료 코드 2 로 거부했다.
+- 지시서의 브랜치 줄을 `- ` 목록에 더해 `* ` 목록 꼴(`` * 브랜치: `x` ``)로 적어도 읽는다. 옛 `make-worktree.py` 는 `- ` 만 받았다.
+- `SPEC_LINE`, `MAKE_WORKTREE`, `NUDGE_WORKER`, `LAUNCH_WORKER` 로 바꾼 도구는 옛 명령처럼 확장자로 고른다. `.sh` 는 bash, `.zsh` 는 zsh, `.ts` 는 지금 도는 node 이고 `.py` 와 확장자 없는 파일을 포함한 나머지는 python3 이다.
+- `wait-important` 는 SIGTERM, SIGINT, SIGHUP 을 받으면 띄운 `check --wait` 를 끝내고 128 에 신호 번호를 더한 종료 코드로 끝난다. `watch-questions` 의 stderr 줄은 `wait-important` 와 같은 `WATCH-ERROR <이유>` 꼴이다.
+
 ## 2.6.2 (2026-10-24)
 
 - 코디네이터 터미널에서 돌린 `cleanup-sweep.py` 와 `remove-worktree.py` 가 모든 워크트리를 `남김: 터미널 소유 상태 조회 실패` 로 건너뛰던 것을 고쳤다. 범위 없는 `worker-list` 는 부른 터미널에 묶인 Run 만 주는데(scope `bound`), Orca CLI 는 `ORCA_TERMINAL_HANDLE` 이 없으면 작업 디렉터리의 활성 터미널로 호출자를 정해 환경 변수를 빼도 범위가 넓어지지 않았다. 이제 범위가 `all` 이 아니면 `run-list` 를 끝까지 따라 Run 마다 `worker-list --run` 을 병렬로 읽어 합친다. 조회 자체가 실패할 때만 실패로 남긴다.

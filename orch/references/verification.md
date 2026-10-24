@@ -8,7 +8,7 @@
   다른 이름으로 올렸으면 PR 과 정리 스크립트가 그 브랜치를 찾지 못한다. 지시서 이름으로 다시 push 하게 하고, 잘못 만든 원격 브랜치는 지우게 한다
 
 ```bash
-python3 "$SKILL_DIR/scripts/make-worktree.py" --check "$WORKTREE" --spec "$SPEC_FILE"
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/make-worktree.ts" --check "$WORKTREE" --spec "$SPEC_FILE"
 ```
 - diff 를 직접 읽고 검사를 다시 돌린다. 완료 보고는 근거가 아니다
 - 무거운 검사(로컬 CI, 브라우저, 큰 테스트)는 [`heavy-checks.md`](heavy-checks.md) 의 `heavy-slot.py` 로 감싸 Bash 의 run_in_background 로 돌린다. worker 여럿이 함께 돌리다 머신이 꺼진 일이 있었다
@@ -37,10 +37,10 @@ git diff "origin/$BASE" -- "$FILE"
 
 ## 완료 전에 온 worker_done
 
-`wait-important.py` 와 `triage-messages.py` 는 PR 준비 상태가 없는 성공 보고를
+`wait-important` 와 `triage-messages` 는 PR 준비 상태가 없는 성공 보고를
 `의심스러운 worker_done` 으로 분류한다. 대기는 종료 코드 6 을 내며 자동 ack 하지 않는다.
 같은 Task·Dispatch·발신자의 앞선 준비 상태에 PR 번호와 전체 HEAD SHA 가 있어야 정상 분류한다.
-읽기 전용 파일에 이력이 빠졌으면 `triage-messages.py --live` 로 다시 확인한다.
+읽기 전용 파일에 이력이 빠졌으면 `triage-messages --live` 로 다시 확인한다.
 
 이 검사는 발신 프로세스 인증이나 지시서 전체의 완료 증명이 아니다.
 하위 세션은 부모의 환경 변수뿐 아니라 지시문에 복사된 ID 로도 같은 터미널에서 명령을 보낼 수 있다.
@@ -54,8 +54,8 @@ git diff "origin/$BASE" -- "$FILE"
 1. `worker-show --dispatch "$DISPATCH_ID"` 의 `terminal.title` 이 `Working` 이면 해제하지 않고 기다린다. 커밋 목록과 원격 HEAD 가 바뀌는지 본다
 2. 제목이 `Ready` 인데 완료 기준에 못 미치면 같은 터미널에 남은 일을 새 dispatch 로 준다
 
-`$SPEC_FILE` 은 남은 일만 적은 지시서다. `send-to-worker.py` 가 끝난 dispatch 의 남은 터미널에 새 Task 로 띄운다.
+`$SPEC_FILE` 은 남은 일만 적은 지시서다. `send-to-worker` 가 끝난 dispatch 의 남은 터미널에 새 Task 로 띄운다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/send-to-worker.py" --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts" --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
 ```
