@@ -2,14 +2,16 @@
 """이름이 64자리 hex 인 dangling 익명 volume 을 후보와 최근 생성으로 나눈다. 읽기 전용이다.
 
 사용법:
-  docker_volumes.py [--recent-hours 24] [--peek N] [--peek-image IMAGE] [--json]
+  docker_volumes.py [--recent-hours 24] [--peek N|all] [--peek-image IMAGE] [--json] [--json-out FILE]
 
---peek N 은 후보 중 큰 순서로 N개의 최상위 항목을 보인다. 이미 있는 이미지로 컨테이너를 잠깐 띄워
+--peek N 은 후보 중 큰 순서로 N개의 최상위 항목을 보인다. `all` 이면 후보를 모두 연다. 이미 있는 이미지로 컨테이너를 잠깐 띄워
 volume 을 읽기 전용으로 붙여 `ls -A` 만 돌리고, 이미지를 pull 하지 않으며 네트워크를 끊는다.
 --peek-image 가 없으면 로컬 이미지 중 alpine, busybox, debian, ubuntu 를 고른다.
 기준 시간 안에 생긴 volume 은 "최근" 으로 따로 보이고 후보 합계에 넣지 않는다.
 ryuk 컨테이너가 떠 있으면 다른 세션이 테스트 중이라는 경고를 먼저 낸다.
 크기는 `docker system df -v` 의 VOLUME 표에서 얻는다. 단위는 Docker 와 같은 10진수다.
+열어 본 volume 에는 내용 종류(kind)를 붙인다: postgres, mysql, other. 열지 않은 volume 의 kind 는 JSON 에서 null 이다.
+--json-out FILE 은 텍스트를 출력하면서 같은 조사 결과를 JSON 으로 파일에 쓴다. 지우기는 `delete_volumes.py` 가 이 파일을 읽는다.
 
 종료 코드: 0 조사 완료, 1 docker 를 쓸 수 없음.
 """
@@ -26,6 +28,8 @@ ANON_RE = re.compile(r"^[0-9a-f]{64}$")
 UNITS = {"B": 1, "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4}
 SIZE_RE = re.compile(r"^([0-9.]+)\s*([kKMGT]?B)$")
 PEEK_PREFERENCE = ("alpine", "busybox", "debian", "ubuntu")
+MYSQL_MARKERS = ("ibdata1", "#innodb_redo", "mysql", "auto.cnf")
+KINDS = ("postgres", "mysql", "other")
 
 
 def is_anonymous(name):
@@ -86,6 +90,38 @@ def build_volumes(names, created, sizes, now, recent_hours):
     return items
 
 
+def classify_kind(entries):
+    """최상위 항목 이름 목록으로 내용 종류를 정한다. PG_VERSION 이 있으면 postgres, MySQL 표지가 있으면 mysql, 아니면 other 다."""
+    names = set(entries)
+    if "PG_VERSION" in names:
+        return "postgres"
+    if names & set(MYSQL_MARKERS):
+        return "mysql"
+    return "other"
+
+
+def summarize_kinds(items):
+    """열어 본(kind 가 있는) 후보의 종류별 개수와 크기를 더한다."""
+    out = {}
+    for vol in items:
+        if vol["class"] != "후보" or vol.get("kind") is None:
+            continue
+        slot = out.setdefault(vol["kind"], {"count": 0, "size_bytes": 0})
+        slot["count"] += 1
+        slot["size_bytes"] += vol["size_bytes"] or 0
+    return out
+
+
+def peek_count(text):
+    """`--peek` 값. 정수 또는 `all` 이다."""
+    if text == "all":
+        return sys.maxsize
+    try:
+        return int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("정수 또는 all 이어야 한다")
+
+
 def summarize(items):
     out = {}
     for cls in ("후보", "최근"):
@@ -126,9 +162,10 @@ def peek(name, image):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--recent-hours", type=float, default=24)
-    ap.add_argument("--peek", type=int, default=0, metavar="N")
+    ap.add_argument("--peek", type=peek_count, default=0, metavar="N|all")
     ap.add_argument("--peek-image")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--json-out", metavar="FILE")
     args = ap.parse_args(argv)
     try:
         names = docker("volume", "ls", "-f", "dangling=true", "-q").split()
@@ -158,12 +195,24 @@ def main(argv=None):
             for vol in [v for v in items if v["class"] == "후보"][: args.peek]:
                 peeks[vol["name"]] = peek(vol["name"], image)
 
+    for vol in items:
+        vol["kind"] = None
+        if vol["name"] in peeks:
+            vol["top_entries"], vol["peek_error"] = peeks[vol["name"]]
+            if vol["top_entries"] is not None:
+                vol["kind"] = classify_kind(vol["top_entries"])
+    payload = {"ryuk_running": ryuk, "recent_hours": args.recent_hours, "peek_image": image if peeks else None,
+               "totals": totals, "kind_totals": summarize_kinds(items), "volumes": items}
+    if args.json_out:
+        try:
+            with open(args.json_out, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
+                fh.write("\n")
+        except OSError as exc:
+            print(f"--json-out 파일을 쓸 수 없다: {exc}", file=sys.stderr)
+            return 1
     if args.json:
-        for vol in items:
-            if vol["name"] in peeks:
-                vol["top_entries"], vol["peek_error"] = peeks[vol["name"]]
-        json.dump({"ryuk_running": ryuk, "recent_hours": args.recent_hours, "peek_image": image if peeks else None,
-                   "totals": totals, "volumes": items}, sys.stdout, ensure_ascii=False, indent=2)
+        json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
         print()
         return 0
 
@@ -178,10 +227,17 @@ def main(argv=None):
             print(f"{size:>9}  {made}  {vol['name']}")
             if vol["name"] in peeks:
                 entries, err = peeks[vol["name"]]
-                print(f"           내용: {' '.join(entries[:12]) if entries is not None else '열지 못함: ' + err}")
+                shown = f"[{vol['kind']}] {' '.join(entries[:12])}" if entries is not None else "열지 못함: " + err
+                print(f"           내용: {shown}")
     print("\n## 합계")
     for cls in ("후보", "최근"):
         print(f"{totals[cls]['count']:>4}개 {format_size(totals[cls]['size_bytes']):>9}  {cls}")
+    kinds = payload["kind_totals"]
+    if kinds:
+        print("\n## 열어 본 후보의 종류별 합계")
+        for kind in KINDS:
+            if kind in kinds:
+                print(f"{kinds[kind]['count']:>4}개 {format_size(kinds[kind]['size_bytes']):>9}  {kind}")
     return 0
 
 

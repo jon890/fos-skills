@@ -3,6 +3,16 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.10.0
+
+실제 정리(2026-10-25)에서 막힌 두 곳을 고쳤다.
+
+- 익명 volume 삭제에 스크립트가 없었다. 후보 101개를 코디네이터가 텍스트 출력에서 정규식으로 이름을 뽑아 파일에 쓰고 `while read` 로 지웠는데, 파일 끝에 줄바꿈이 없어 마지막 하나가 빠졌다(100개 삭제, 1개 남음). 종류별 집계(Postgres 77개, MySQL 2개, 그 밖 22개)도 직접 짰고, 그 밖 22개는 에이전트 홈과 SQLite 파일이라 테스트 DB 와 따로 물어야 했다
+- `docker_volumes.py` 가 열어 본 volume 에 내용 종류(`postgres`, `mysql`, `other`)를 붙이고 종류별 합계를 낸다. `--json` 항목에 `kind` 를 더했다(열지 않으면 `null`). `--json-out FILE` 은 텍스트를 출력하면서 같은 결과를 파일에 쓴다. `--peek all` 은 후보를 모두 연다. 기존 필드와 정수 `--peek` 동작은 그대로다
+- `delete_volumes.py` 를 더했다. `--json-out` 파일을 읽어 기본은 dry-run 으로 보이고 `--apply` 일 때만 이름마다 `docker volume rm` 을 부른다. 후보이고 열어 본 결과가 있으며 `--kind`(기본 `postgres`, `mysql`)에 드는 것만 지우고, 실행 직전 dangling 목록을 다시 읽는다. ryuk 가 떠 있으면 `--apply` 를 거부한다
+- `delete_branches.py` 의 `merged` 경로가 이미 없는 브랜치를 dry-run 에서 `삭제 예정` 으로 보였다. 조사 뒤 다른 곳에서 지워진 브랜치가 `[삭제 예정] ... -d (거절되면 유지: 브랜치가 없다)` 로 보였다. `pr-merged` 경로처럼 dry-run 과 `--apply` 모두 `유지`, 「브랜치가 없다」 로 보인다
+- `tests/test_delete_volumes.py` 를 새로 더하고 `test_docker_volumes.py`, `test_delete_branches.py` 에 종류 판정과 없는 브랜치 테스트를 더했다
+
 ## 1.9.0
 
 실제 정리에서 막힌 네 곳을 고쳤다.
