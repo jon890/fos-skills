@@ -3,11 +3,47 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 2.6.0 (2026-10-23)
+## 2.6.2 (2026-10-24)
 
 - 코디네이터 터미널에서 돌린 `cleanup-sweep.py` 와 `remove-worktree.py` 가 모든 워크트리를 `남김: 터미널 소유 상태 조회 실패` 로 건너뛰던 것을 고쳤다. 범위 없는 `worker-list` 는 부른 터미널에 묶인 Run 만 주는데(scope `bound`), Orca CLI 는 `ORCA_TERMINAL_HANDLE` 이 없으면 작업 디렉터리의 활성 터미널로 호출자를 정해 환경 변수를 빼도 범위가 넓어지지 않았다. 이제 범위가 `all` 이 아니면 `run-list` 를 끝까지 따라 Run 마다 `worker-list --run` 을 병렬로 읽어 합친다. 조회 자체가 실패할 때만 실패로 남긴다.
 - `terminal_ownership.py` 의 `all_workers()` 가 모든 Run 의 worker 행을 읽고, `blocker()` 와 `cleanup-sweep.py` 의 `foreign_handles()` 가 그 결과를 함께 쓴다. 정리 한 번 안에서는 읽은 지 60초가 지나야 다시 읽고, 유휴 셸을 닫기 직전 확인은 늘 새로 읽는다. 이전에는 `blocker()` 가 워크트리마다 모든 Run 을 다시 읽었다. 한 행의 `resource.terminalHandle` 과 `agentTerminalHandle` 이 다르면 둘 다 본다.
 - `cleanup-sweep.py --run` 의 이 Run worker 목록을 첫 100행만 읽던 것을 끝 페이지까지 읽는다.
+
+## 2.6.1 (2026-10-24)
+
+- 명령을 TypeScript 로 옮길 공용 모듈을 `scripts/lib/` 에 더했다. 자식 프로세스 실행(`proc.ts`), orca, gh, git 호출, pid 생존 판정(`process.ts`), 경로(`paths.ts`), 설정(`config.ts`), 지시서(`spec.ts`)다. 지시서 삭제는 살아 있는 dispatch 를 확인하는 한 경로로 모았다.
+- 이벤트 실행기 `scripts/lib/events.ts` 를 더했다. 저장소의 `<orch 루트>/hooks/<이벤트>.ts` 를 찾아 잠금, 시간 제한(그룹 TERM, 10초 뒤 KILL), 실행 기록(`state/hooks.jsonl`), 종료 코드 해석(0 통과, 10 거부)을 맡는다. 옛 설정 칸을 argv 로 받아 핸들러처럼 돌리는 `legacy` 어댑터를 함께 두었다. 죽은 pid 의 잠금은 고유 이름으로 옮겨 내용을 대조해 회수하고, 그 사이 다른 실행이 만든 새 잠금이면 덮어쓰지 않는 `link` 로 되돌린다.
+- 핸들러는 끝났는데 백그라운드 손자 프로세스가 출력 파이프를 쥐고 있어도 시간 제한까지 기다리지 않는다. 2초 안에 파이프가 닫히지 않으면 그룹에 TERM, 다시 2초 뒤에도 닫히지 않으면 KILL 을 보내고 핸들러의 종료 코드로 판정한다. `runAsync` 도 자식이 끝나고 2초 뒤 파이프를 닫고 자식의 종료 코드를 낸다.
+- 거부한 핸들러가 이유 줄을 내지 않으면 `HOOK-REJECT <이벤트> (이유 없음)` 으로 알린다.
+- 실행 기록(`state/hooks.jsonl`)을 쓰지 못하면 예외로 멈추지 않고 stderr 에 경고 한 줄을 낸다. 결과와 `HOOK-*` 줄은 그대로 낸다.
+- 핸들러 PATH 앞에 두는 가드 shim `scripts/lib/guard/orca`, `scripts/lib/guard/gh` 를 더했다. 핸들러의 `orca terminal send`, `gh pr merge`, `gh pr update-branch`, PR 머지와 브랜치 갱신 API, GraphQL 의 머지 mutation 을 126 으로 거부한다. GraphQL 의 `--input` 과 `@` 로 파일에서 읽는 필드는 내용을 확인할 수 없어 거부하고, orca 는 플래그를 건너뛴 낱말 열에서 `terminal` 뒤에 `send` 가 있으면 거부한다. 실수 방지 장치이고 보안 경계가 아니다.
+- `node:test` 테스트(`tests/*.spec.ts`)를 더하고 CI 의 `Plugin tests` job 에서 돌린다.
+- 명령은 아직 바꾸지 않았다. 코디네이터 지시도 그대로다.
+
+## 2.6.0 (2026-10-24)
+
+- 지시서의 `허락:` 줄을 PR 을 열게 하는지와 관계없이 모든 지시서에 필수로 정했다. 공통 지시서 틀에서 Run id 를 빼고, PR 생성은 지시서의 허락 줄을 따르게 했다.
+- 충돌과 리뷰 반영은 PR 을 만든 worker 가 이어 받는다는 규칙을 문서끼리 맞췄다. `worker-start` 직접 호출은 `--task` 로 기존 Task 를 다시 띄울 때만 쓴다고 정리했다.
+- 한 저장소 전용 오버레이 예시 문서와 그 테스트를 지우고, 무거운 검사 분류와 문서 PR 의 CI 를 오버레이에 적을 항목으로 더했다.
+- reference 문서가 스크립트 머리 주석을 옮겨 적은 부분을 지우고 머리 주석이 소유하게 했다. 머리 주석에 없던 내용은 `wait-important.py`, `send-to-worker.py`, `heavy-slot.py`, `remove-worktree.py`, `terminal_ownership.py` 같은 스크립트의 머리 주석으로 옮겼다. 스크립트 동작은 바꾸지 않았다.
+- 모델 행동 관측을 이유로 단 문장을 지우고, 규칙이 막는 실패로 이유를 다시 적었다. `agent-selection.md` 는 실측 절을 없애고 선택 기준만 남겼다.
+- `README.md` 의 스크립트 목록에 빠진 파일을 더하고, 목록과 `scripts/` 를 대조하는 `tests/test_readme_script_list.py` 를 추가했다.
+- 사용자 결정 질문의 형식(`결정:` 첫 줄, `- ` 선택지 둘 이상, `권장:` 줄 하나)을 정했다. `worker-ask.py --decision` 이 형식을 검사해 어긋나면 묻지 않고 종료 코드 2 로 끝난다. 형식이 없는 기술 질문과 막힘 보고는 그대로 묻는다. `결정:` 뒤가 비면 형식 위반이고 보드도 형식 없음으로 본다. work-board 의 결정 필요 항목은 형식이 있으면 `결정:` 제목을 굵게, `권장:` 줄을 그 아래에 보이고 없으면 본문 앞부분을 보인다.
+- 사용자가 정할 질문은 코디네이터가 대신 답하지 않는다는 규칙을 `SKILL.md` 와 `references/replying.md` 에 더했다.
+
+## 2.5.2 (2026-10-24)
+
+- work-board, 질문 감시와 doctor 가 전체 inbox 대신 현재 Run 의 질문 기록과 각 발신자의 수신함만 읽는다. 답변은 코디네이터가 보낸 thread 메시지로 판정하므로 읽음·ack 만 된 질문은 남는다. `board-sync.py` 는 질문을 직접 조회하지 않아 변경하지 않았다.
+- Orca 의 `check --all` 과 `--peek` 는 각각 100건까지 반환한다. 두 결과를 합쳐 읽지 않은 과거 질문도 확인하고, 상한에 닿으면 보드와 stderr 에 조회 범위를 알린다. 범위 밖 미답변이 빠질 수 있으며, 발신자 수신함의 200건 상한 때문에 답변 여부를 판단할 수 없으면 조회 오류로 처리한다.
+- Claude Code 2.1.309 의 `$.process.run` 출력 한도는 stdout·stderr 각각 4MiB다. 보드가 `isStdoutTruncated` 를 확인해 잘린 JSON 을 파싱하기 전에 원인을 표시한다.
+- 3만 건·40MB 이상의 전체 inbox 를 요청하지 않는 회귀 테스트와 조회 상한·잘린 출력 검사를 추가했다.
+
+## 2.5.1 (2026-10-23)
+
+- `make-worktree.py` 가 워크트리를 만들기 전에 `orca repo show` 로 저장소의 `externalWorktreeVisibility` 를 읽고, `hide` 면 만들지 않고 종료 코드 1 로 멈춘다. 안내에 사용자가 고를 두 조치(Orca 화면에서 등록, `orca repo set --repo path:<repo> --external-worktree-visibility show`)를 낸다. `show`, `inherit`, 읽지 못한 경우는 이전처럼 진행한다. 이전에는 `hide` 인 저장소에서 워크트리를 만든 뒤 Orca 가 숨겨 `launch-worker.py` 가 30초 대기 끝에 멈췄다.
+- `launch-worker.py` 가 Orca 가 워크트리를 알아보지 못해 멈출 때 만든 경로, 그 저장소의 `externalWorktreeVisibility`, 사용자가 할 조치를 stderr 에 낸다. 설정은 바꾸지 않는다.
+- 경로 계산은 바꾸지 않는다. Orca 가 직접 만드는 경로와 같다는 확인을 `references/launch.md` 에 적었다.
+- Orca 에 묻는 `orca_repo.py` 를 더했다.
 
 ## 2.5.0 (2026-10-23)
 

@@ -16,6 +16,7 @@ import shlex
 import sys
 from orch_process import pause, run, script_command
 import orch_paths
+import orca_repo
 
 HERE = Path(__file__).resolve().parent
 
@@ -32,6 +33,22 @@ def jget(text, keys):
         if value not in (None, ''):
             return value
     return ''
+
+
+def unrecognized_help(worktree, waited):
+    """Orca 가 워크트리를 알아보지 못했을 때 원인을 짐작할 근거와 사용자 조치를 만든다. 설정은 바꾸지 않는다."""
+    common = run('git', '-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    repo = Path(common.stdout.strip()).parent if common.returncode == 0 and common.stdout.strip() else None
+    value = orca_repo.visibility(os.environ.get('ORCA', 'orca'), repo) if repo else ''
+    lines = [f'Orca 가 워크트리를 알아보지 못했다. `orca worktree list` 로 확인한다: {worktree} ({waited:g}초 기다림)',
+             f'  만든 경로: {worktree}',
+             f'  저장소의 externalWorktreeVisibility: {value or "(읽지 못함)"}']
+    if value == 'hide':
+        lines.append('  hide 면 git worktree add 로 만든 워크트리를 Orca 가 외부 워크트리로 보고 숨긴다. 사용자가 아래 중 하나를 한다(스크립트는 설정을 바꾸지 않는다)')
+        lines.append(orca_repo.user_actions(repo))
+    elif repo:
+        lines.append('  hide 가 아니면 Orca 가 아직 알아보지 못한 것일 수 있다. 잠시 뒤 `orca worktree list` 를 다시 보고, 계속 안 보이면 Orca 화면에서 등록한다')
+    return '\n'.join(lines)
 
 
 def main(argv=None):
@@ -113,7 +130,7 @@ def main(argv=None):
             if result.returncode == 0 and any(Path(r.get('path') or '/nonexistent').resolve() == Path(worktree).resolve() for r in rows):
                 break
             if waited >= wt_wait:
-                print(f'Orca 가 워크트리를 알아보지 못했다. `orca worktree list` 로 확인한다: {worktree} ({waited:g}초 기다림)', file=sys.stderr)
+                print(unrecognized_help(worktree, waited), file=sys.stderr)
                 return 1
             pause(wt_poll)
             waited += wt_poll or 1

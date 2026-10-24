@@ -17,6 +17,8 @@
 | 머지 조건 | 필수 체크 이름(`--required` 로 넘길 값), base 최신을 품게 할지(`--require-up-to-date`), 관리자 우회 가능 여부, 머지 방식(merge, squash) | 7 |
 | 합친 사본 검사 | 같은 파일을 고친 PR 을 base 와 합친 사본에서 돌릴 명령(`--verify-merged`)과 사본 폴더(`--copy-dir`), 겹치지 않아도 검사할지(`--verify-merged-when`), 검사 없이 머지할 문서 glob(`--docs-glob`). 폴더는 저장소 hook 이 워크트리를 허용하는 곳이다 | 6, 7 |
 | draft 로 CI 미루기 | draft PR 에서 CI 를 돌리지 않는 저장소인지. 켜면 worker 는 PR 을 draft 로 열고, 코디네이터가 검증 뒤 `ci-ready.py` 로 ready 로 바꾼다 | 2, 7 |
+| 무거운 검사 분류 | 같은 PC 에서 혼자 돌아야 하는 전체 검사와 브라우저 검사 명령, 대기열을 거치지 않아도 되는 가벼운 명령 | 6 |
+| 문서 PR 의 CI | 문서만 바꾼 PR 이 CI 를 생략하는지, 그때 머지 큐에 줄 `--docs-glob` | 7 |
 | 머지 전 명령 | DB 마이그레이션이 든 PR 앞의 백업 명령과 인자, 보관 개수 | 7 |
 | 머지 뒤 명령 | 머지 뒤 한 번 돌릴 배포 명령(`--after-merged`). 문서 PR 만 머지했을 때 건너뛸지(`CODE_PRS`) | 7 |
 | draft 때 건너뛴 체크 | draft 에서 CI 를 건너뛰게 둔 저장소면 `--skipped-is-missing` | 7 |
@@ -28,7 +30,7 @@
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
 | 지시서 폴더 | `cleanup-sweep.py --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더의 PR 본문 파일 `pr-<이름>.md` 를 지운다 (예: `.orch/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec-lint.py` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
-| 진행 보드 | 보드 파일 위치, 목표 항목 id 와 추적 항목 파일(`board-sync.py --goal --goal-items`) | 4, 7 |
+| 진행 보드 | 보드 파일 위치, 목표 항목 id(`board-sync.py --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
 | 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
 | 산출물 정리 | 같은 파일의 `cleanup` 절. 함께 정리할 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
 | 머지 큐 기본 옵션 | 같은 파일의 `queue` 절. 머지 큐에 매번 붙일 필수 체크, 머지 전 명령, 합친 사본 검사, 문서 glob, 머지 방식 | 7 |

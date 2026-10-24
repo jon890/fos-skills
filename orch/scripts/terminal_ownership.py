@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """워크트리 정리 전에 살아 있는 터미널의 사용자 소유 상태를 확인한다.
 
+터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
+끝난 dispatch 의 터미널은 `worker-list` 의 `resource` 로 아래처럼 나뉜다.
+
+    owned, 이유 없음                      PR 이 MERGED 면 터미널을 닫고 dispatch 를 release 한다
+    user_owned / user_takeover            `남김: 사용자 보유 터미널` (cleanup-sweep.py --close-own-taken-over 를 켠 때만 예외)
+    released                              `남김: 사용자 보유 터미널`
+    external / external_terminal          소유 상태가 owned 가 아니라 `터미널 소유 상태 조회 실패` 로 남긴다
+    owned / identity_unproven             owned 라 막지 않는다. Orca 의 release 는 닫지 않으므로 sweep 이 경로로 찾아 닫는다
+
 소유 상태는 모든 Run 의 worker 행(`all_workers`)에서 읽는다. 범위 없는 `worker-list` 는 부른 터미널에 Run 이
 묶여 있으면 그 Run 만 준다(scope.source bound). 코디네이터와 그 자식 프로세스에서 부르면 늘 그렇다.
 Orca CLI 는 `ORCA_TERMINAL_HANDLE` 이 없으면 작업 디렉터리가 든 워크트리의 활성 터미널로 호출자를 정해,

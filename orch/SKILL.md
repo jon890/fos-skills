@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "2.6.0"
+  version: "2.6.2"
 ---
 
 # orch
@@ -44,6 +44,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
 
 - **사용자 요청을 바로 worker 에게 넘기지 않는다.** 코드와 운영 상태로 사실을 먼저 확인하고, 사용자가 정할 것은 배경과 권장안을 붙여 묻고 나서 맡긴다.
   요청 문장 그대로 넘기면 worker 가 사실과 다른 전제로 구현하거나, 사용자가 정해야 할 것을 worker 가 대신 정한다
+- **사용자가 정할 질문은 코디네이터가 대신 답하지 않는다.** 권장안을 붙여 사용자에게 올리고 고른 답을 worker 에게 보낸다. 형식과 검사 규칙은 저장소의 `../docs/data-schema.md` 「사용자 결정 질문 형식」 이 소유한다
 - **worker 는 모두 코디네이터가 띄운다.** worker 는 다시 worker 를 띄우지 못한다(`nested_worker_depth_exceeded`).
   일을 나눠야 하면 worker 에게는 계획서와 worktree 준비까지만 맡기고, 소계획마다 `ready: <plan> <worktree 절대경로> <지시서 절대경로>` status 를 받아 코디네이터가 띄운다
 - **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다
@@ -68,9 +69,9 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 고른 이유가 dispatch 보고에 한 줄로 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint.py` 가 0 으로 끝났다 | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
 | 3 | 띄우기 | `launch-worker.py` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
-| 4 | 기다리기 | 이 세션의 백그라운드 `wait-important.py` 가 하나만 돌고, 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages.py` 로 읽었고, 깨어날 때마다 `cleanup-sweep.py` 와 `board-sync.py` 를 돌렸다 | [`references/waiting.md`](references/waiting.md) |
+| 4 | 기다리기 | 이 세션의 백그라운드 `wait-important.py` 가 하나만 돌고, 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고, 받은 delivery 를 `triage-messages.py` 로 읽었고, 깨어날 때마다 `cleanup-sweep.py` 와 `board-sync.py` 를 돌렸다. 질문 감시(`watch-questions.py`)가 Run 마다 하나 돈다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker.py` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
-| 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다. 앞 PR 이 머지된 뒤라면 최신 base 와 합친 사본에서 통과했다 | [`references/verification.md`](references/verification.md) |
+| 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
 | 7 | 머지와 정리 | `merge-with-finish.py` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
 
 진행 보드를 쓰는 환경이면 상태가 바뀌는 단계마다 보드를 고친다. 보드가 없으면 건너뛴다.
@@ -82,12 +83,12 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 ## 2. 지시서 쓰기
 
 저장소마다 공통 지시서를 한 번 만들고, 개별 지시서는 담당 범위와 완료 기준만 적는다.
-넣을 항목과 그 이유는 reference 가 소유한다.
+넣을 항목과 그 이유는 reference 가 소유한다. `--spec` 에 들어갈 한 줄은 [`references/launch.md`](references/launch.md) 가 소유한다.
 
 ## 3. 띄우기
 
 원격을 갱신한 뒤 `launch-worker.py` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
-`worker-start` 를 직접 부르지 않는다.
+새로 띄우기는 `launch-worker.py`, 후속 지시는 `send-to-worker.py` 로 한다. `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다. `launch-worker.py` 는 `--spec` 이 필수라 늘 Task 를 새로 만들기 때문이다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
 
@@ -99,7 +100,8 @@ heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartb
 
 ## 5. 답하고 지시 보내기
 
-답과 지시는 `send-to-worker.py` 로 보낸다. 살아 있는 dispatch 면 마지막 메시지에 `reply` 하고 깨우고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
+답과 지시는 `send-to-worker.py` 로 보낸다. 살아 있는 dispatch 면 마지막 메시지에 `reply` 하고 깨우고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄우고, 터미널도 없으면 종료 코드 3 이다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
+충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받고, 종료 코드 3 이면 새 worker 를 띄우지 않고 사용자에게 알린다.
 PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 
 ## 6. 완료 검증
@@ -107,11 +109,11 @@ PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 여러 worker 가 같은 PC 에서 무거운 검사를 실행하면 [`references/heavy-checks.md`](references/heavy-checks.md)의 대기열로 감싼다.
 
 `worker_done` 은 근거가 아니다. git 으로 완료 기준을 대조하고, diff 를 읽고, 검사를 다시 돌린다.
-충돌을 직접 풀었으면 reference 의 「충돌을 직접 풀 때」 를 따른다.
+충돌은 그 PR 을 만든 worker 가 풀고, 푸는 규칙은 reference 의 「충돌을 풀 때」 를 따른다.
 
 ## 7. 머지와 정리
 
 `merge-with-finish.py` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다.
 앞 PR 머지마다 뒤 PR 을 최신화하느라 CI 를 다시 기다리는 저장소는 `--up-to-date-when overlap` 으로 겹치지 않는 PR 의 최신화를 생략한다. 쓸 수 있는 저장소와 규칙은 `references/cleanup.md` 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다.
-머지 큐가 끝나면 `notify-conflicts.py` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.py` 로만 지운다. 끝난 handoff 산출물은 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다.
+머지 큐가 끝나면 `notify-conflicts.py` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 번호 뒤에 `!` 를 붙인다. 워크트리는 `remove-worktree.py` 로만 지운다. 끝난 handoff 산출물은 묻지 않고 `handoff-cleanup.py --apply` 로 휴지통 폴더에 옮긴다.
 맡긴 작업은 다른 저장소의 것이어도 머지한 자리에서 정리하고, 다른 세션이 띄운 것은 건드리지 않는다. 원칙과 직접 머지했을 때의 명령은 `references/cleanup.md` 의 「정리」 가 소유한다.

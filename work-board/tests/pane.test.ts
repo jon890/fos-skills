@@ -126,3 +126,52 @@ test('질문 조회 실패를 결정 필요 0 대신 확인 불가로 표시한�
   expect(await ui.find({ type: 'Text', text: /읽지 못했어요: offline/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('최근 질문 상한이면 답변이 모두 끝났어도 조회 범위를 표시한다', async ($, on) => {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
+  await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
+    argv.includes('run-current') ? { run: { id: 'r' } }
+      : argv.includes('check') ? { messages: Array(100).fill(q) }
+        : argv.includes('inbox') ? { messages: [{ id: 'answer', thread_id: 'q', run_id: 'r', from_handle: 'run:r' }] }
+          : { workers: [] },
+  }) }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^결정 필요  0$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /최근 질문 100건과 읽지 않은 질문/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+// 미답변 질문 하나를 주고 창을 mount 한다
+async function mountWithQuestion($, on, body) {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d', body }
+  await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
+    argv.includes('run-current') ? { run: { id: 'r' } }
+      : argv.includes('check') ? { messages: [q] }
+        : argv.includes('inbox') ? { messages: [] }
+          : { workers: [] },
+  }) }))
+  return $.ui.mount({ ...PANE, surface: 'terminal' })
+}
+
+test('결정 형식의 질문은 제목을 굵게, 권장안을 그 아래 줄로 보인다', async ($, on) => {
+  const ui = await mountWithQuestion($, on,
+    '결정: 저장 형식을 바꿀까요\n배경: 마이그레이션이 필요해요\n선택지:\n- 바꾼다: 빠르다\n- 둔다: 안전하다\n권장: 둔다. 사용자 데이터가 있다')
+  const box = await ui.find({ type: 'Box', key: 'q-q' })
+  const [, title, recommend, ...rest] = box.children as Drawn[]
+  expect(textOf(title)).toBe('  저장 형식을 바꿀까요')
+  expect(title.props.bold).toBe(true)
+  expect(textOf(recommend)).toBe('  권장: 둔다. 사용자 데이터가 있다')
+  expect(rest).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /마이그레이션이 필요해요/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('결정 형식이 없는 질문은 본문 앞부분을 그대로 보인다', async ($, on) => {
+  const ui = await mountWithQuestion($, on, 'A 와 B 중 무엇으로 할까요?')
+  const box = await ui.find({ type: 'Box', key: 'q-q' })
+  const [, body, ...rest] = box.children as Drawn[]
+  expect(textOf(body)).toBe('  A 와 B 중 무엇으로 할까요?')
+  expect(body.props.bold).toBeUndefined()
+  expect(rest).toEqual([])
+  await ui.unmount()
+})

@@ -1,5 +1,51 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, START_PROMPT } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, decisionOf, START_PROMPT } from '../hooks/register.js'
+import { queryQuestions } from '../hooks/register.js'
+
+test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d', thread_id: 'q', read: 1 }
+  const old = { ...q, id: 'old', thread_id: 'old', read: 0 }
+  const reply = { ...q, id: 'reply', type: 'status', from_handle: 'run:r', to_handle: 'dispatch:d' }
+  const globalInbox = JSON.stringify({ messages: Array.from({ length: 30000 }, (_, i) => ({ ...q, id: String(i), body: 'x'.repeat(1500) })) })
+  expect(globalInbox.length).toBeGreaterThan(40_000_000)
+  const calls: string[][] = []
+  const $ = { process: { run: async (argv) => {
+    calls.push(argv)
+    const messages = argv.includes('check') ? (argv.includes('--peek') ? [old] : [q])
+      : argv.includes('--terminal') ? [reply] : null
+    return { exitCode: 0, stdout: messages ? JSON.stringify({ messages }) : globalInbox, stderr: '' }
+  } } }
+  const result = await queryQuestions($, 'r')
+  expect(result.questions.map((m) => m.id)).toEqual(['old'])
+  expect(result.limited).toBe(false)
+  expect(calls).toEqual([
+    ['orca', 'orchestration', 'check', '--run', 'r', '--all', '--types', 'question,escalation', '--json'],
+    ['orca', 'orchestration', 'check', '--run', 'r', '--peek', '--types', 'question,escalation', '--json'],
+    ['orca', 'orchestration', 'inbox', '--terminal', 'dispatch:d', '--limit', '200', '--json'],
+  ])
+})
+
+test('질문 100건 상한은 조회 범위를 표시하고 답변 기록 상한은 오류로 표시한다', async () => {
+  const q = { id: 'q', type: 'escalation', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
+  let replies = []
+  const $ = { process: { run: async (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({
+    messages: argv.includes('check') ? Array(100).fill(q) : replies,
+  }) }) } }
+  expect((await queryQuestions($, 'r')).limited).toBe(true)
+  replies = Array(200).fill({ id: 'follow', type: 'status', from_handle: 'dispatch:other', run_id: 'r' })
+  let failure = ''
+  try { await queryQuestions($, 'r') } catch (error) { failure = error.message }
+  expect(failure).toContain('답변 기록 한도')
+  replies[0] = { id: 'answer', thread_id: 'q', from_handle: 'run:r', run_id: 'r' }
+  expect((await queryQuestions($, 'r')).questions).toEqual([])
+})
+
+test('프로세스 출력이 잘렸으면 JSON 파싱 전에 한도 오류로 표시한다', async () => {
+  const $ = { process: { run: async () => ({ exitCode: 0, stdout: '{"messages":[', stderr: '', isStdoutTruncated: true }) } }
+  let failure = ''
+  try { await queryQuestions($, 'r') } catch (error) { failure = error.message }
+  expect(failure).toContain('4 MiB')
+})
 
 test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
   const stdout = JSON.stringify({ result: { workers: [
@@ -32,6 +78,7 @@ test('상태 줄은 질문과 수동 decide 를 합쳐 결정 필요로 센다',
   expect(line).toBe('결정 필요 3 · worker 2 · PR 2(CI 실패 1) · 진행 1   /board')
   expect(statusLine([], { questions: null, workers: null, prs: null })).toBe('')
   expect(statusLine([], { questions: null, errors: { questions: 'offline' } })).toContain('결정 필요 확인 불가')
+  expect(statusLine([], { questions: [], questionsLimited: true })).toContain('결정 필요 0(최근 질문 기준)')
 })
 
 test('항목의 worktree 로 worker 를 붙이고, 안 붙은 worker 만 따로 고른다', () => {
@@ -158,6 +205,16 @@ test('답을 기다리는 질문의 본문과 보낸 worker 를 꺼낸다', () =
   expect(questions[0].text).toBe('A 와 B 중 무엇으로 할까요?')
   expect(questionText('가'.repeat(10), 5)).toBe('가가가가…')
   expect(() => parseQuestions('깨진 {"type": "question"')).toThrow()
+})
+
+test('결정 질문 형식이면 제목과 권장안을 꺼내고 형식이 없으면 null 이다', () => {
+  const body = '결정: 저장 형식을 바꿀까요\n배경: 마이그레이션이 필요해요\n선택지:\n- 바꾼다: 빠르다\n- 둔다: 안전하다\n권장: 둔다. 사용자 데이터가 있다'
+  expect(decisionOf(body)).toEqual({ title: '저장 형식을 바꿀까요', recommend: '둔다. 사용자 데이터가 있다' })
+  expect(decisionOf('결정: 제목만\n- a\n- b')).toEqual({ title: '제목만', recommend: null })
+  expect(decisionOf('A 와 B 중 무엇으로 할까요?')).toBeNull()
+  expect(decisionOf('배경: 첫 줄이 결정이 아니다\n결정: x\n권장: y')).toBeNull()
+  expect(decisionOf('')).toBeNull()
+  expect(decisionOf('결정:  \n- a\n- b\n권장: a')).toBeNull()
 })
 
 test('오늘 시작 요청은 board 갱신, 완료 비우기, 정리, 감시, 보고를 모두 담는다', () => {

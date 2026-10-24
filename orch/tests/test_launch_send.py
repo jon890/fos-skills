@@ -35,6 +35,8 @@ FAKE_ORCA = textwrap.dedent("""\
         lists = state.get("worktree_lists")
         paths = lists.pop(0) if lists else [p for p in os.environ.get("FAKE_WT_DEFAULT", "").split(":") if p]
         out({"worktrees": [{"path": p} for p in paths]})
+    if args[:2] == ["repo", "show"]:
+        out({"repo": {"externalWorktreeVisibility": state.get("visibility", "hide")}})
     if args[:2] == ["terminal", "list"]:
         out({"terminals": state.get("terminals", [])})
     if args[:2] == ["terminal", "close"]:
@@ -324,6 +326,21 @@ class LaunchWorkerTest(FakeBase):
         r = self.launch("--worktree", str(self.worktree), "--", "--agent", "claude")
         self.assertEqual(1, r.returncode, r.stdout + r.stderr)
         self.assertIn("Orca 가 워크트리를 알아보지 못했다", r.stderr)
+        self.assertEqual([], self.lines("orca orchestration worker-start"))
+
+    def test_unrecognized_worktree_explains_visibility_and_user_actions(self):
+        repo = self.tmp / "proj"
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@e.com", "commit", "-q", "--allow-empty", "-m", "i"], check=True)
+        wt = self.tmp / "elsewhere" / "x"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "b", str(wt)], check=True)
+        self.state(next_ids=["ctx_1"], worktree_lists=[[]] * 20, visibility="hide")
+        r = self.launch("--worktree", str(wt), "--", "--agent", "claude")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn(f"만든 경로: {wt}", r.stderr)
+        self.assertIn("externalWorktreeVisibility: hide", r.stderr)
+        self.assertIn(f"orca repo set --repo path:{repo} --external-worktree-visibility show", r.stderr)
+        self.assertEqual([], self.lines("orca repo set"))
         self.assertEqual([], self.lines("orca orchestration worker-start"))
 
     def test_selector_not_found_is_retried_once(self):

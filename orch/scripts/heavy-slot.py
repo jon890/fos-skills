@@ -5,7 +5,11 @@
 HEAVY_SLOT_DIR의 기본값은 주 checkout의 .orch/state/heavy-slot, HEAVY_SLOTS는 3이다.
 HEAVY_EXCLUSIVE=1이면 혼자 실행하며 HEAVY_POLL은 재확인 간격(기본 5초)이다.
 가벼운 검사는 대기열을 거치지 않고 중첩 호출은 HEAVY_SLOT_HELD를 물려받는다.
-자리를 잡은 뒤 형제 mem-gate.py를 실행한다. MEM_GATE로 경로를 바꾼다.
+자리를 잡은 뒤 형제 mem-gate.py를 실행한다. MEM_GATE로 경로를 바꾼다. 메모리를 기다리는 작업도 자리를 쓴다.
+같은 slot 폴더는 같은 HEAVY_SLOTS를 써야 한다. 끝난 PID의 등록은 다음 검사에서 회수하고,
+정상 종료와 INT·TERM 때는 자식 명령이 끝난 뒤 자리를 반납한다. HEAVY_SLOT_HELD는 수동으로 설정하지 않는다.
+macOS에서는 slot 폴더와 자식 명령의 TMPDIR를 실경로로 푼다. 기본 slot 폴더는 주 checkout 기준이고,
+옛 orch 설정이 남아 있고 --slot-dir도 없으면 실행하지 않고 옮기는 명령을 알린다(종료 코드 2).
 종료: 명령의 종료 코드, 2 인자 오류, 1 대기열·메모리 검사 실패, 128+신호 번호.
 """
 import argparse

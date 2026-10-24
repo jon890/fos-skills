@@ -1,0 +1,128 @@
+import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { after, before, describe, test } from 'node:test'
+import { ConfigError, DEPRECATED_KEYS, HOOKS_KEYS, loadConfig, section } from '../scripts/lib/config.ts'
+import type { Section } from '../scripts/lib/config.ts'
+
+const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy']
+const saved = { ORCH_DIR: process.env.ORCH_DIR, GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES }
+
+let tmp: string
+let repo: string
+let n = 0
+
+// 테스트마다 다른 파일에 써서 서로 겹치지 않게 한다.
+function file(body: string): string {
+  n += 1
+  const target = join(tmp, `config-${n}.json`)
+  writeFileSync(target, body)
+  return target
+}
+
+before(() => {
+  tmp = realpathSync(mkdtempSync(join(tmpdir(), 'lib-config-')))
+  repo = join(tmp, 'repo')
+  mkdirSync(repo)
+  // repo 는 git 밖 폴더라 주 checkout 이 repo 자신이다. 임시 폴더 위에 git 저장소가 있어도 올라가 찾지 않게 막는다.
+  process.env.GIT_CEILING_DIRECTORIES = tmp
+  delete process.env.ORCH_DIR
+})
+
+after(() => {
+  for (const [key, value] of Object.entries(saved)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+  rmSync(tmp, { recursive: true, force: true })
+})
+
+describe('loadConfig', () => {
+  test('지금 절과 새 절을 읽는다', () => {
+    const body = {
+      finish: { run: 'run_1', specs_dir: 'specs' },
+      cleanup: { queue_days: 2 },
+      queue: { required: ['test'] },
+      hooks: { timeouts: { 'before-merge': 900 } },
+      pipeline: { enabled: true, ready_slots: 2 },
+      heavy: { exclusive: ['docker build'] },
+    }
+    assert.deepEqual(loadConfig(repo, { file: file(JSON.stringify(body)) }), body)
+  })
+
+  test('file 을 주지 않으면 <orch 루트>/config.json 을 읽는다', () => {
+    mkdirSync(join(repo, '.orch'), { recursive: true })
+    writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ queue: { method: 'squash' } }))
+    try {
+      assert.deepEqual(loadConfig(repo), { queue: { method: 'squash' } })
+    } finally {
+      rmSync(join(repo, '.orch'), { recursive: true, force: true })
+    }
+  })
+
+  test('파일이 없으면 빈 객체다', () => {
+    assert.deepEqual(loadConfig(repo), {})
+    assert.deepEqual(loadConfig(repo, { file: join(tmp, 'missing.json') }), {})
+  })
+
+  test('빈 객체 파일은 빈 객체다', () => {
+    assert.deepEqual(loadConfig(repo, { file: file('{}') }), {})
+  })
+
+  test('깨진 JSON 은 ConfigError 다', () => {
+    const target = file('{"finish": ')
+    assert.throws(() => loadConfig(repo, { file: target }), (e: unknown) => e instanceof ConfigError && e.message.includes(target))
+  })
+
+  test('최상위가 객체가 아니면 ConfigError 다', () => {
+    assert.throws(() => loadConfig(repo, { file: file('[]') }), ConfigError)
+  })
+
+  test('모르는 최상위 절은 ConfigError 다', () => {
+    assert.throws(
+      () => loadConfig(repo, { file: file(JSON.stringify({ queu: { method: 'squash' } })) }),
+      (e: unknown) => e instanceof ConfigError && /모르는 절.*queu/.test(e.message),
+    )
+  })
+
+  test('절이 객체가 아니면 ConfigError 다', () => {
+    assert.throws(
+      () => loadConfig(repo, { file: file(JSON.stringify({ finish: ['run'] })) }),
+      (e: unknown) => e instanceof ConfigError && e.message.includes('"finish" 절은 객체여야 한다'),
+    )
+  })
+})
+
+describe('section', () => {
+  test('아는 키만 있으면 그 절을 낸다', () => {
+    const config = loadConfig(repo, { file: file(JSON.stringify({ cleanup: { trash: '/t', queue_days: 1 } })) })
+    assert.deepEqual(section(config, 'cleanup', ['trash', 'queue_days', 'folder_days']), { trash: '/t', queue_days: 1 })
+  })
+
+  test('절이 없으면 빈 객체다', () => {
+    assert.deepEqual(section({}, 'pipeline', ['enabled']), {})
+  })
+
+  test('hooks.timeouts 는 HOOKS_KEYS 로 통과한다', () => {
+    const config = loadConfig(repo, { file: file(JSON.stringify({ hooks: { timeouts: { 'after-deploy': 60 } } })) })
+    assert.deepEqual(section(config, 'hooks', HOOKS_KEYS), { timeouts: { 'after-deploy': 60 } })
+  })
+
+  test('모르는 키는 ConfigError 이고 그 키 이름을 알린다', () => {
+    const config = loadConfig(repo, { file: file(JSON.stringify({ hooks: { timeout: {} }, finish: { run: 'r', bogus: 1 } })) })
+    assert.throws(() => section(config, 'hooks', HOOKS_KEYS), (e: unknown) => e instanceof ConfigError && /hooks 절에 모르는 키.*timeout/.test(e.message))
+    assert.throws(() => section(config, 'finish', ['run']), (e: unknown) => e instanceof ConfigError && /finish 절에 모르는 키가 있다: bogus$/.test(e.message))
+  })
+})
+
+describe('DEPRECATED_KEYS', () => {
+  test('항목마다 아는 절, 밑줄 키 이름, 핸들러 이벤트 이름을 갖는다', () => {
+    assert.ok(DEPRECATED_KEYS.length > 0)
+    for (const entry of DEPRECATED_KEYS) {
+      assert.ok(SECTIONS.includes(entry.section), `모르는 절: ${entry.section}`)
+      assert.match(entry.key, /^[a-z]+(?:_[a-z]+)*$/, `키 이름이 밑줄 꼴이 아니다: ${entry.key}`)
+      assert.match(entry.event, /^[a-z]+(?:-[a-z]+)*$/, `이벤트 이름이 하이픈 꼴이 아니다: ${entry.event}`)
+    }
+  })
+})

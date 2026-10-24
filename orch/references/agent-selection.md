@@ -2,6 +2,7 @@
 
 **모델과 effort 는 Task 마다 성능과 가격을 비교해 고르고, 고른 이유를 dispatch 보고에 한 줄로 남긴다.**
 기본값을 두지 않는다. 사용자가 지정하면 그것을 따른다.
+문서의 명령 예시는 이 단계에서 고른 값을 `$AGENT`, `$MODEL`, `$EFFORT` 변수로 받는다.
 쓰지 않을 모델은 사용자 지침이나 오버레이가 정한다.
 
 ## 모델
@@ -29,31 +30,12 @@
 | Claude Opus 5.5 | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
 | Claude Haiku 5.5 | 분류, 추출, 라우팅 같은 대량·저지연 작업 | `medium`(기본). 짧은 도구 작업은 `low`, 긴 에이전트 작업은 `high` | 0.10 / 0.50 (프롬프트 10만 토큰 초과 요청은 0.50 / 2.50) | Fastest |
 
-- 보안 리뷰 행의 근거: 2026-10-20 fos-home-infra PR #228 리뷰를 Codex worker 에 맡겼더니 symlink 덮어쓰기, 토큰 유출 경로, 컨테이너 권한 같은 공격 경로를 재현하는 내용에서 OpenAI 의 보안 요청 제한(「This content can't be shown」)에 걸려 리뷰가 끝나지 않았다. Claude Sonnet 하위 에이전트로 옮기자 끝났다. 구현한 쪽이 Claude 라서 다른 제공자 리뷰어가 필요하면, 공격 재현이 필요 없는 범위만 Codex 에 맡기고 나머지는 구현에 관여하지 않은 Claude 에이전트가 본다
+- 보안 리뷰 행의 근거: 2026-10-20 인프라 저장소의 PR 리뷰를 Codex worker 에 맡겼더니 symlink 덮어쓰기, 토큰 유출 경로, 컨테이너 권한 같은 공격 경로를 재현하는 내용에서 OpenAI 의 보안 요청 제한(「This content can't be shown」)에 걸려 리뷰가 끝나지 않았다. Claude Sonnet 하위 에이전트로 옮기자 끝났다. 구현한 쪽이 Claude 라서 다른 제공자 리뷰어가 필요하면, 공격 재현이 필요 없는 범위만 Codex 에 맡기고 나머지는 구현에 관여하지 않은 Claude 에이전트가 본다
 - worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
 - 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
-- effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 5.5 는 아래 실측에서 `low` 와 `medium` 의 품질과 걸린 시간이 같았다(토큰 사용량은 재지 않았다)
-- worker 작업에서 Haiku 가 Sonnet 보다 빠르지 않았다. 공식 소개의 「가장 빠름」 은 이 작업에서 나타나지 않았다
+- effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 는 effort 를 지정하지 않고 공식 기본값 `medium` 을 쓴다
 - 출처: [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
 - 출처: [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing), [Claude 모델 선택](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model), [Claude 모델 비교](https://platform.claude.com/docs/en/about-claude/models/overview)
-
-### Haiku 5.5 실측 (2026-10-20)
-
-작은 작업 3종을 Haiku 5.5 `low`, Haiku 5.5 `medium`, Sonnet 5.5 `medium` 으로 각자 한 번씩 돌렸다.
-구현하지 않은 Opus 리뷰어가 모델을 모르는 채 머지된 정답 diff 와 비교해 채점했다.
-
-| 작업 성격 | Haiku `low` | Haiku `medium` | Sonnet `medium` |
-| --- | --- | --- | --- |
-| 설정 값 한 줄, 주석, 문서 동기화 (8점) | 7 | 6 | 6 |
-| 리뷰 지적을 문서 한 줄로 반영 (8점) | 6 | 6 | 8 |
-| 작은 분기 수정과 단위 테스트, 수정 위치를 지시서가 줌 (10점) | 8 | 8 | 8 |
-| 합계 (26점) | 21 | 20 | 22 |
-| 걸린 시간 합계 | 16.7분 | 16.9분 | 12.5분 |
-
-- 품질은 거의 같았고 가격은 Haiku 가 Sonnet 의 1/20 이다
-- `low` 와 `medium` 은 품질과 시간 차이가 없어 Haiku effort 는 지정하지 않는다
-- 약점: 리뷰 지적이나 요구 문장을 해석해 옮길 때 지적에 없는 조건을 지어내거나 일부를 빠뜨렸다(두 조합 모두 한 번씩). Sonnet 은 정답과 같았다. 그래서 문구 반영 행에는 지적 원문과의 대조를 붙였다
-- 한계: 작업마다 한 번씩만 돌려 표본이 작다. PR 생성, 리뷰 회신, 스레드 정리까지 가는 긴 흐름은 재지 않았다
 
 ## effort
 

@@ -21,9 +21,17 @@ heartbeat 만 든 묶음으로 깨어나면 코디네이터가 읽을 것 없이
     --lost-interval-sec  대기하는 동안 Run 의 worker 상태를 볼 간격(초). 기본 60. 0 이면 보지 않는다. 아래 「끊긴 worker」
     --ignore-lost  끊긴 worker 로 보지 않을 dispatch id. 여러 번 줄 수 있다. 아래 「끊긴 worker」
     --lost-state  이미 알린 끊긴 dispatch 를 적는 파일. 기본 <orch 작업 폴더>/state/wait-important-lost.json. 아래 「끊긴 worker」
-    --ack-lost    확인한 끊긴 dispatch 를 처리함으로 기록하고 대기 없이 끝낸다. 여러 번 줄 수 있다
+    --ack-lost    확인한 끊긴 dispatch 를 처리함으로 기록하고 대기 없이 끝낸다. 여러 번 줄 수 있다.
+                  --ignore-lost 는 그 실행에서만 빼지만 이 옵션은 --lost-state 파일에 handled 로 덮어써 다음 실행부터 경고도 생략한다.
+                  파일을 쓰지 못하면 종료 코드 1 이고 확인한 것으로 처리하지 않는다. 다른 Run 의 기록과 아직 확인하지 않은 dispatch 는 유지한다
     --completion-contract  ready(기본)는 앞선 PR 준비 상태를 검사한다. PR 없는 작업만 none 으로 끈다
     --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
+
+완료 계약 (--completion-contract ready):
+    worker_done 이 오면 같은 Task·Dispatch·발신자가 앞서 `준비됨 #N, head <전체 40자리 SHA>` 상태를 보냈는지
+    `check --all` 로 읽어 대조한다. 이미 ack 한 준비 상태도 읽으며 delivery 는 소비하지 않는다.
+    근거가 없거나 이력을 읽지 못하면 `의심스러운 worker_done` 으로 따로 표시하고 자동 ack 하지 않은 채 종료 코드 6 으로 끝난다.
+    `worker_done --outcome failed` 같은 명시적인 실패 보고는 준비 상태 없이도 처리할 묶음으로 낸다.
 
 출력:
     처리할 묶음이 오면 그 `check --json` 결과를 한 줄 JSON 으로 내고, 마지막 줄에 `LAST_DELIVERY <id>` 를 낸다.
