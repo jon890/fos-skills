@@ -68,5 +68,33 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(totals["최근"], {"count": 1, "size_bytes": 7})
 
 
+class KindTest(unittest.TestCase):
+    def test_classify_kind(self):
+        self.assertEqual(dv.classify_kind(["PG_VERSION", "base", "global"]), "postgres")
+        self.assertEqual(dv.classify_kind(["ibdata1", "mysql"]), "mysql")
+        self.assertEqual(dv.classify_kind(["#innodb_redo"]), "mysql")
+        self.assertEqual(dv.classify_kind(["auto.cnf"]), "mysql")
+        self.assertEqual(dv.classify_kind(["SOUL.md", "auth.json"]), "other")
+        self.assertEqual(dv.classify_kind(["gersang.db"]), "other")
+        self.assertEqual(dv.classify_kind([]), "other")
+
+    def test_summarize_kinds_counts_only_opened_candidates(self):
+        items = [
+            {"class": "후보", "kind": "postgres", "size_bytes": 10},
+            {"class": "후보", "kind": "postgres", "size_bytes": 5},
+            {"class": "후보", "kind": "other", "size_bytes": None},
+            {"class": "후보", "kind": None, "size_bytes": 99},
+            {"class": "최근", "kind": "mysql", "size_bytes": 7},
+        ]
+        self.assertEqual(dv.summarize_kinds(items), {"postgres": {"count": 2, "size_bytes": 15},
+                                                     "other": {"count": 1, "size_bytes": 0}})
+
+    def test_peek_count(self):
+        self.assertEqual(dv.peek_count("3"), 3)
+        self.assertGreater(dv.peek_count("all"), 10**6)
+        with self.assertRaises(Exception):
+            dv.peek_count("many")
+
+
 if __name__ == "__main__":
     unittest.main()
