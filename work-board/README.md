@@ -12,7 +12,7 @@
 - 파일: git 루트의 `.omc/board.json` (예전 위치 `.omc/handoffs/board.json` 도 읽는다)
 - 항목: 제목, 담당·PR, 하위 항목(details), 다음 할 일(next), 워크트리(worktree)
 - 워커: `orca orchestration worker-list` 를 주기적으로 읽어 항목의 worktree 와 같은 이름의 워커 상태를 붙인다. 이 저장소에서 돌지만 어느 항목에도 없는 워커는 「항목에 없는 워커」 로 모은다
-- 결정 필요: 현재 Run 의 `check --all` 과 `--peek` 에 `--types question,escalation` 을 붙여 질문 후보를 모으고, 살아 있는 발신자별 `inbox --terminal` 에서 코디네이터 답변 thread 를 확인한다. `worker-list` 에서 `dispatched` 가 아닌 dispatch 가 보낸 질문은 후보에서 뺀다. 그 질문은 다른 경로로 처리됐고, 닫힌 dispatch 의 inbox 에는 답변이 남지 않아 답해도 줄지 않기 때문이다. `worker-list` 를 읽지 못하면 질문도 「확인 불가」 로 보인다. 답하면 다음 조회에서 줄고, ack 만 하면 남는다. 수동 `decide` 항목도 더한다. 전체 inbox 는 읽지 않는다
+- 결정 필요: 현재 Run 의 `check --all` 과 `--peek` 에 `--types question,escalation` 을 붙여 질문 후보를 모으고, 살아 있는 발신자별 `inbox --terminal` 에서 코디네이터 답변 thread 를 확인한다. 질문의 dispatch 는 `payload.dispatchId`, 없으면 발신자 handle 의 `dispatch:` 접두사로 정하고, 둘 다 없으면 발신 터미널 handle 을 `worker-list` 의 `agentTerminalHandle` 과 대조한다. `dispatched` 인 worker 에 속하지 않는 질문은 후보에서 뺀다. 그 질문은 다른 경로로 처리됐고, 닫힌 dispatch 의 inbox 에는 답변이 남지 않아 답해도 줄지 않기 때문이다. `worker-list` 를 읽지 못하면 질문도 「확인 불가」 로 보인다. 답하면 다음 조회에서 줄고, ack 만 하면 남는다. 수동 `decide` 항목도 더한다. 전체 inbox 는 읽지 않는다
 - 질문 조회 범위: Orca 의 `--all` 과 `--peek` 는 각각 100건까지 반환한다. 상한에 닿으면 「최근 질문 기준」 을 표시하며, 그 밖의 미답변은 빠질 수 있다. 발신자의 수신 기록은 200건까지 조회하고, 상한 때문에 답변 여부를 판단할 수 없으면 조회 오류를 표시한다
 - 명령 출력 한도: Claude Code 2.1.309 의 `$.process.run` 은 stdout 과 stderr 를 각각 4MiB(4,194,304바이트)에서 자른다. 설치 실행 파일의 `Hat=4194304`, `Bat` 수집기와 `VQr` 반환값으로 확인했다. 보드는 `isStdoutTruncated` 를 검사해 잘린 JSON 대신 출력 한도 오류를 표시한다
 - 단계 줄: 번호로 시작하는 줄이다(「1 …」, 「1. …」, 「1) …」). `done: true` 는 끝낸 단계, `done: false` 는 끝나지 않은 단계다. 번호로 시작하지 않는 참고 줄은 세지 않는다
