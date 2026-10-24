@@ -1,6 +1,9 @@
 # 7. 머지와 정리
 
 `cleanup-sweep.py` 와 `remove-worktree.py` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
+소유 상태는 모든 Run 의 worker 행에서 읽는다. 코디네이터 터미널에서 부르면 범위 없는 `worker-list` 가 그 Run 만 주므로(scope `bound`), `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다.
+정리 한 번 안에서는 읽은 지 60초가 지나기 전까지 다시 읽지 않고, 범위를 읽는 방법과 이유는 `terminal_ownership.py` 머리 주석이 소유한다.
+터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 
 끝난 dispatch 의 터미널을 상태별로 어떻게 정리하는지(`ownershipState` / `retainedReason` 별 `남김` 사유)는 `terminal_ownership.py` 머리 주석이 소유한다.
 
