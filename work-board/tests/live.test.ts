@@ -33,7 +33,7 @@ test('끝난 dispatch 의 질문은 세지 않고 그 발신자의 inbox 도 읽
     calls.push(argv)
     return { exitCode: 0, stderr: '', stdout: JSON.stringify({ messages: argv.includes('check') ? rows : [] }) }
   } } }
-  const result = await queryQuestions($, 'r', ['open'])
+  const result = await queryQuestions($, 'r', [{ id: 'open', terminal: '' }])
   expect(result.questions.map((m) => m.id)).toEqual(['live-q'])
   const inboxed = calls.filter((argv) => argv.includes('inbox')).map((argv) => argv[argv.indexOf('--terminal') + 1])
   expect(inboxed).toEqual(['dispatch:open'])
@@ -41,6 +41,20 @@ test('끝난 dispatch 의 질문은 세지 않고 그 발신자의 inbox 도 읽
   expect((await queryQuestions($, 'r', [])).questions).toEqual([])
   // 목록을 주지 않으면 거르지 않는다
   expect((await queryQuestions($, 'r')).questions.length).toBe(3)
+})
+
+test('터미널 handle 로 온 질문은 payload 의 dispatch 나 살아 있는 worker 의 터미널로 판정한다', async () => {
+  const ask = (id, from, dispatchId?) => ({ id, type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: from,
+    ...(dispatchId ? { payload: JSON.stringify({ dispatchId }) } : {}) })
+  const rows = [
+    ask('payload-closed', 'term_x', 'closed'),
+    ask('term-live', 'term_live'),
+    ask('term-closed', 'term_closed'),
+  ]
+  const $ = { process: { run: async (argv) => ({ exitCode: 0, stderr: '',
+    stdout: JSON.stringify({ messages: argv.includes('check') ? rows : [] }) }) } }
+  const result = await queryQuestions($, 'r', [{ id: 'open', terminal: 'term_live' }])
+  expect(result.questions.map((m) => m.id)).toEqual(['term-live'])
 })
 
 test('질문 100건 상한은 조회 범위를 표시하고 답변 기록 상한은 오류로 표시한다', async () => {
@@ -67,11 +81,11 @@ test('프로세스 출력이 잘렸으면 JSON 파싱 전에 한도 오류로 �
 
 test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
   const stdout = JSON.stringify({ result: { workers: [
-    { dispatchId: 'a', dispatchStatus: 'dispatched', workerState: 'ready',
+    { dispatchId: 'a', agentTerminalHandle: 'term_a', dispatchStatus: 'dispatched', workerState: 'ready',
       resource: { worktreeId: 'x::/repo/worktrees/repo/ci-path-filter' } },
     { dispatchId: 'b', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: 'x::/repo/w/old' } },
   ] } })
-  expect(parseWorkers(stdout)).toEqual([{ id: 'a', state: 'ready', worktree: 'ci-path-filter' }])
+  expect(parseWorkers(stdout)).toEqual([{ id: 'a', terminal: 'term_a', state: 'ready', worktree: 'ci-path-filter' }])
 })
 
 test('질문과 escalation 만 세고 heartbeat 는 세지 않는다', () => {
@@ -100,7 +114,7 @@ test('상태 줄은 질문과 수동 decide 를 합쳐 결정 필요로 센다',
 })
 
 test('항목의 worktree 로 worker 를 붙이고, 안 붙은 worker 만 따로 고른다', () => {
-  const workers = [{ id: 'a', state: 'ready', worktree: 'ci-path-filter' }, { id: 'b', state: 'busy', worktree: 'other' }]
+  const workers = [{ id: 'a', terminal: 'term_a', state: 'ready', worktree: 'ci-path-filter' }, { id: 'b', state: 'busy', worktree: 'other' }]
   const items = [{ id: 'x', status: 'doing', worktree: 'ci-path-filter' }, { id: 'y', status: 'done', worktree: 'other' }]
   expect(workerFor(items[0], workers)?.id).toBe('a')
   expect(unmappedWorkers(items, workers).map((w) => w.id)).toEqual(['b'])

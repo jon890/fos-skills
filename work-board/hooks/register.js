@@ -48,7 +48,7 @@ export function parseWorkers(stdout) {
     .map((w) => {
       const tree = (w.resource && w.resource.worktreeId) || ''
       const path = tree.includes('::') ? tree.split('::').pop() : tree
-      return { id: w.dispatchId, state: w.workerState || '', worktree: path.split('/').filter(Boolean).pop() || '' }
+      return { id: w.dispatchId, terminal: w.agentTerminalHandle || '', state: w.workerState || '', worktree: path.split('/').filter(Boolean).pop() || '' }
     })
 }
 
@@ -89,19 +89,37 @@ function messageRows(stdout) {
   return rows
 }
 
+// 질문이 속한 dispatch id 는 payload.dispatchId, 없으면 from_handle 의 `dispatch:` 접두사다. 둘 다 없으면 null 이다.
+function dispatchOf(m) {
+  let payload = m.payload
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload) } catch { payload = null }
+  }
+  if (payload && payload.dispatchId) return String(payload.dispatchId)
+  const from = String(m.from_handle || '')
+  return from.startsWith('dispatch:') ? from.slice('dispatch:'.length) : null
+}
+
 // 끝난 dispatch(worker-list 에서 dispatched 가 아닌 것)가 보낸 질문은 다른 경로로 처리됐으므로 세지 않는다.
-// 닫힌 dispatch 는 inbox 에 답변이 남지 않아 답해도 줄지 않는다. active 는 살아 있는 dispatch id 목록이고, null 이면 거르지 않는다.
+// 닫힌 dispatch 는 inbox 에 답변이 남지 않아 답해도 줄지 않는다. active 는 살아 있는 worker 의 {id, terminal} 목록이고, null 이면 거르지 않는다.
+// dispatch id 를 알 수 없는 질문은 발신 터미널 handle 이 살아 있는 worker 의 것일 때만 센다.
 // 전체 inbox 대신 Run 의 질문 후보와 살아 있는 발신자의 수신 기록만 읽는다.
 export async function queryQuestions($, runId, active = null) {
   const history = messageRows(await run($, ['orca', 'orchestration', 'check', '--run', runId,
     '--all', '--types', 'question,escalation', '--json']))
   const unread = messageRows(await run($, ['orca', 'orchestration', 'check', '--run', runId,
     '--peek', '--types', 'question,escalation', '--json']))
-  const alive = active && new Set(active)
+  const ids = active && new Set(active.map((w) => w.id))
+  const terminals = active && new Set(active.map((w) => w.terminal).filter(Boolean))
+  const alive = (m) => {
+    if (!active) return true
+    const dispatch = dispatchOf(m)
+    return dispatch ? ids.has(dispatch) : terminals.has(m.from_handle)
+  }
   const candidates = [...new Map([...history, ...unread]
     .filter((m) => m.id && m.run_id === runId && m.to_handle === 'run:' + runId
       && (m.type === 'question' || m.type === 'escalation')
-      && (!alive || !String(m.from_handle).startsWith('dispatch:') || alive.has(String(m.from_handle).slice('dispatch:'.length))))
+      && alive(m))
     .map((m) => [m.id, m])).values()]
   const replies = []
   // 같은 worker 의 질문은 한 번에 확인한다. 네 명씩 조회해 프로세스 수를 제한한다.
@@ -454,7 +472,7 @@ async function loadLive($) {
       try {
         // 끝난 dispatch 의 질문을 거르려면 살아 있는 dispatch 목록이 있어야 한다
         if (!next.workers) throw new Error('worker 목록을 읽지 못해 질문을 가릴 수 없어요')
-        const result = await queryQuestions($, next.runId, next.workers.map((w) => w.id))
+        const result = await queryQuestions($, next.runId, next.workers)
         next.questions = result.questions
         next.questionsLimited = result.limited
       } catch (failure) {
