@@ -105,6 +105,7 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md orch/reference
 | `orch/tests/lib-gh.spec.ts` | 수정 |
 | `orch/tests/merge-queue.spec.ts` | 신규 |
 | `orch/tests/merge-queue-overlap.spec.ts` | 신규 |
+| `orch/tests/fixtures/merge-queue-fakes.ts` | 신규 |
 | `orch/tests/test_scripts.py` | 수정 |
 | `orch/tests/test_overlap_units.py` | 삭제 |
 | `orch/tests/test_merge_with_finish.py` | 수정 |
