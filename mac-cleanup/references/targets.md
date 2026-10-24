@@ -87,13 +87,16 @@ python3 "$SKILL_DIR/scripts/colima_trim.py"
 ```
 - **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** `scripts/docker_volumes.py` 가 dangling 인 것을 골라 생성 시각과 크기를 붙이고, 후보 합계를 낸다.
   **`docker volume prune` 을 쓰지 않는다.** 정리 도중 다른 세션이 시작한 테스트의 volume 까지 지울 수 있다(실측: 정리 중 `testcontainers/ryuk` 컨테이너가 떴다).
-  기본 등급은 확인 필요다. `--peek N` 으로 후보의 최상위 항목을 열어 내용을 확인하고 등급을 정한다(Postgres 의 `PG_VERSION`, `base` 처럼 테스트 DB 데이터면 안전에 가깝다).
-  조사 때 열어 본 volume 만 이름을 지정해 `docker volume rm` 으로 지운다.
+  기본 등급은 확인 필요다. `--peek all` 로 후보의 최상위 항목을 열어 내용 종류를 붙이고 등급을 정한다. `postgres`(`PG_VERSION`)와 `mysql`(`ibdata1`, `#innodb_redo`, `mysql`, `auto.cnf`) 같은 테스트 DB 데이터는 안전에 가깝다.
+  `other` 는 에이전트 홈(`SOUL.md`, `auth.json`)이나 SQLite 파일(`gersang.db`)일 수 있어 테스트 DB 와 따로 묻는다. 실측: 후보 101개 중 Postgres 77개, MySQL 2개, `other` 22개였다.
+  조사 때 열어 본 volume 만 `delete_volumes.py` 로 지운다. 이름마다 `docker volume rm` 을 따로 부르고, 열지 않은 volume 과 최근 volume 은 건드리지 않는다. 기본 `--kind` 는 `postgres`, `mysql` 이고 `other` 는 승인 뒤 `--kind other` 로만 지운다.
   스크립트는 기준 시간(기본 24시간) 안에 생긴 volume 을 후보에서 빼 "최근" 으로 따로 보이고, ryuk 가 떠 있으면 경고한다. 경고가 나면 다른 세션이 테스트 중이니 지우기 전에 사용자에게 알린다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek 3
-docker volume rm "$VOLUME"
+python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek all --json-out "$VOLUMES"
+python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES"                    # dry-run
+python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES" --apply            # 테스트 DB
+python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES" --apply --kind other   # 따로 승인받은 other
 ```
 - 이미지는 `scripts/docker_images.py` 가 사용 중, 미사용, 최근 생성으로 나눈다.
 - 이미지는 각 줄 끝의 `rmi=` 값으로 지운다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. `traefik:<none>` 을 넘기면 `invalid reference format` 으로 실패한다. 태그가 여럿인 이미지를 ID 로 지우면 `-f` 없이는 거절되므로, 태그가 있는 줄은 `repo:tag` 로 지운다. 다만 `repo:tag` 로 조회되지 않는 이미지도 이미지 ID 다. 이름이 `repo:tag@digest` 로 저장된 이미지는 `docker images` 가 태그를 보여 줘도 `docker rmi repo:tag` 가 `No such image` 로 실패한다. 실측 사례는 `ghcr.io/actions/actions-runner:2.338.0` 이다. 이 줄은 `rmi=4ffadc0002b2` 로 지워졌다.

@@ -6,7 +6,7 @@ description: |
   "오래된 세션 정리", "머지된 브랜치 정리", "워크트리 정리", "disk cleanup" 같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, 스킬 문서) 정리는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "1.9.0"
+  version: "1.10.0"
 ---
 
 # mac-cleanup
@@ -36,7 +36,7 @@ metadata:
 
 ## 1. 조사
 
-`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$SURVEY` 는 조사 JSON 을 저장할 파일 경로다. 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
+`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$SURVEY` 와 `$VOLUMES` 는 브랜치와 익명 volume 조사 JSON 을 저장할 파일 경로다. 아래 조사 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
 `survey_system.py` 는 `du` 때문에 1분에서 5분 걸리므로 백그라운드로 돌리고, 나머지를 그동안 돌린다.
 
 ```bash
@@ -45,7 +45,7 @@ python3 "$SKILL_DIR/scripts/survey_sessions.py"
 python3 "$SKILL_DIR/scripts/survey_git.py" --json-out "$SURVEY"
 bash "$SKILL_DIR/scripts/survey_gradle.sh"
 python3 "$SKILL_DIR/scripts/docker_images.py"
-python3 "$SKILL_DIR/scripts/docker_volumes.py"
+python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek all --json-out "$VOLUMES"
 ```
 
 - `survey_git.py` 는 기본으로 `git fetch --prune` 과 `gh` 의 머지된 PR 조회(`--check-prs`)를 한다. 묻지 않고 켠 채로 돈다. 승인 뒤에 옵션을 바꿔 다시 돌리면 후보가 새로 나와 승인을 다시 받아야 하기 때문이다.
@@ -53,7 +53,7 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py"
   끄는 옵션은 `--no-fetch`(네트워크가 없을 때)와 `--no-check-prs`(브랜치가 많아 빨리 보고 싶을 때)뿐이다. 끄면 마지막 fetch 이후의 머지와 squash 머지가 보이지 않는다.
 - `survey_system.py` 는 기본 절 말고 설치 대기 업데이트가 든 updater 캐시, `~/.cache` 의 큰 하위 디렉터리, Codex 이전 버전, Cursor snapshots, `mise prune --dry-run` 후보를 절로 보인다. 등급과 지우는 조건은 `targets.md` 가 소유한다.
 - `docker_images.py` 와 `docker_volumes.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌리고, 떠 있지 않을 때만 Docker 항목을 건너뛴다.
-- `docker_volumes.py` 는 후보를 정하는 기준 시간 안에 생긴 volume 을 "최근" 으로 따로 보인다. 내용을 열어 보려면 `--peek N` 으로 다시 돌린다.
+- `docker_volumes.py` 는 후보를 정하는 기준 시간 안에 생긴 volume 을 "최근" 으로 따로 보인다. `--peek all` 은 후보를 모두 열어 내용 종류(`postgres`, `mysql`, `other`)를 붙이고, `--json-out "$VOLUMES"` 는 텍스트를 출력하면서 같은 결과를 파일에 쓴다. 사용자에게 보인 목록과 `delete_volumes.py` 에 넘길 목록이 한 번의 조사에서 나오므로 따로 `--json` 을 돌리지 않는다. 후보가 많아 느리면 `--peek N` 으로 줄이되, 열지 않은 volume 은 지워지지 않는다.
 - `survey_system.py` 의 Docker 절이 같은 이유로 건너뛰었다면 Colima 가 올라온 뒤 그 절만 다시 보면 된다.
 - 정리 전 수치는 `survey_system.py` 첫 절의 디스크 여유, 스왑 사용량, `memory_pressure` 의 여유 비율이다.
   5단계에서 같은 값을 다시 읽으므로 지금 적어 둔다.
@@ -75,7 +75,7 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py"
 
 승인한 묶음의 명령만 돌리고, 명령마다 종료 코드와 확보량을 기록한다.
 세션, 브랜치, 워크트리 정리는 `references/git-and-sessions.md` 의 절차를 따른다.
-브랜치 삭제는 1단계의 `--json-out` 파일을 `delete_branches.py` 에 넘겨 먼저 dry-run 으로 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. `PR 확인 필요(-D)` 브랜치는 `check_pr_branches.py` 에 같은 조사 JSON 을 넘겨 판정을 보이고, 지울지는 사용자가 정한다. 익명 volume 은 `docker_volumes.py` 가 보인 후보 중 내용을 열어 확인한 것만 이름을 지정해 지운다. Docker 를 지웠다면 마지막에 `colima_trim.py` 를 돈다. volume 을 지운 직후에는 trim 이 덜 될 수 있어 스크립트가 재시도한다.
+브랜치 삭제는 1단계의 `--json-out` 파일을 `delete_branches.py` 에 넘겨 먼저 dry-run 으로 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. `PR 확인 필요(-D)` 브랜치는 `check_pr_branches.py` 에 같은 조사 JSON 을 넘겨 판정을 보이고, 지울지는 사용자가 정한다. 익명 volume 은 1단계의 `--json-out` 파일을 `delete_volumes.py` 에 넘겨 먼저 dry-run 으로 보인 뒤, 종류별로 승인받은 묶음만 `--kind` 를 골라 `--apply` 로 지운다. 테스트 DB(`postgres`, `mysql`)와 `other` 는 따로 묻는다. `other` 에는 에이전트 홈과 SQLite 파일이 든다. Docker 를 지웠다면 마지막에 `colima_trim.py` 를 돈다. volume 을 지운 직후에는 trim 이 덜 될 수 있어 스크립트가 재시도한다.
 reference 가 처리 절차를 정한 거절(`branch -d` 의 `not fully merged`)을 빼고는, 명령이 실패하면 멈추고 원인을 보고한다.
 
 ## 5. 재측정과 보고
