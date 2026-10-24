@@ -126,3 +126,11 @@ python3 korean-check/scripts/korean-style-check.py docs/data-schema.md docs/code
 | `orch/tests/lib-config.spec.ts` | 수정 |
 | `docs/data-schema.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
+| `orch/tests/orch-loop.spec.ts` | 수정 |
+
+## 구현 중 정한 것
+
+- CI 판정은 머지 큐의 기본 판정(--allow-fail 없음)에 맞춘다. 롤업의 체크 하나라도 실패면 필수 체크가 아니어도 `failed` 다. 실패가 없고, 필수 체크가 모두 나타났고, 롤업의 체크가 모두 끝났으면 `passed` 다. 그 밖과 체크가 없을 때는 `pending` 이다. 루프는 --allow-fail 을 모르므로, 그 옵션을 쓰는 저장소에서는 루프가 실패로 알린 PR 도 큐가 머지할 수 있다. 그래서 worker 에게 보내는 본문은 「필수 체크」 가 아니라 「체크가 실패했다」 다.
+- 함께 쓰는 것은 실패 상수, 규칙 jq, 403 판정이다. 머지 큐의 jq 판정 흐름은 바꾸지 않았다.
+- 결과의 `ci` 는 `pending` 도 남긴다. 같은 HEAD 에서 failed, pending, failed 로 가면 두 번째 실패도 알린다. 판정하지 못한 PR(draft, 규칙을 읽지 못한 base)은 이전 값을 그대로 옮긴다.
+- `CI-FAILED` 의 text 는 `<실패한 체크 이름, …>: <worker 결과>` 다. `ci-*` 핸들러의 실패는 loop.log 의 HOOK-FAIL 줄로만 남는다.
