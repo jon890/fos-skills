@@ -34,7 +34,7 @@ class CheckAdrLayoutTests(unittest.TestCase):
         self.write("docs/adr/001.md", "- **status**: `superseded`. explanation\n")
         done = self.run_check()
         self.assertEqual(done.returncode, 1)
-        self.assertIn("001.md: superseded ADR must be moved", done.stdout)
+        self.assertIn("001.md: 대체된 ADR 은", done.stdout)
 
     def test_archive_rejects_accepted_and_missing_status_recursively(self):
         for status in ("- **status**: `accepted`", "# Legacy"):
@@ -42,7 +42,7 @@ class CheckAdrLayoutTests(unittest.TestCase):
                 self.write("docs/adr/superseded/nested/001.md", status)
                 done = self.run_check()
                 self.assertEqual(done.returncode, 1)
-                self.assertIn("requires status superseded", done.stdout)
+                self.assertIn("status 는 superseded 여야 한다", done.stdout)
 
     def test_markdown_links_across_repo_and_reference_definitions(self):
         self.write("README.md", "[old](docs/adr/old.md#decision)\n")
@@ -72,7 +72,7 @@ class CheckAdrLayoutTests(unittest.TestCase):
         self.write("README.md", "[old](design/decisions/old.md)\n")
         done = self.run_check(str(self.root / "design/decisions"), "--repo-root", str(self.root))
         self.assertEqual(done.returncode, 1)
-        self.assertIn("missing ADR link target", done.stdout)
+        self.assertIn("ADR 링크 대상이 없다", done.stdout)
 
     def test_absolute_adr_path_discovers_git_worktree_root(self):
         self.write(".git", "gitdir: unused\n")
@@ -86,6 +86,20 @@ class CheckAdrLayoutTests(unittest.TestCase):
         for args in (("missing",), ("--unknown",), ("--repo-root", str(self.root / "docs/adr/superseded"))):
             with self.subTest(args=args):
                 self.assertEqual(self.run_check(*args).returncode, 2)
+
+    def test_git_ignores_other_worktrees_and_dependencies_but_checks_visible_files(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        self.write(".gitignore", "worktrees/\nnode_modules/\n")
+        for folder in ("worktrees/other", "node_modules/dependency"):
+            self.write(f"{folder}/README.md", "[old](../../docs/adr/missing.md)\n")
+        self.assertEqual(self.run_check().returncode, 0)
+        self.write("README.md", "[old](docs/adr/missing.md)\n")
+        self.assertEqual(self.run_check().returncode, 1)
+        subprocess.run(["git", "-C", str(self.root), "add", "-f",
+                        "node_modules/dependency/README.md"], check=True)
+        done = self.run_check()
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("node_modules/dependency/README.md", done.stdout)
 
 
 if __name__ == "__main__":
