@@ -65,7 +65,7 @@ worker 찾기는 `notify-conflicts.ts` 안에서 `lib/workers.ts` 로 옮겨 루
 phase 01 의 틱 3단계(보드 동기화)와 `tick` 이벤트 사이에 넣는다. phase 01 의 열린 PR 조회 필드에 `title,headRefName,headRefOid,isDraft,baseRefName,statusCheckRollup` 을 더해 한 번만 읽는다.
 
 1. 내 PR 가운데 draft 가 아닌 것마다 `requiredNames` 와 `ciState` 로 상태를 정한다. 같은 base 의 규칙은 틱마다 한 번 읽는다. 규칙을 읽지 못하면 그 base 의 PR 은 건너뛰고 `errors.ci` 로 `WATCH-ERROR ci: …` 를 쓴다(phase 01 의 「오류 줄 억제」)
-2. `loop.json` 의 `ci[<PR>]` 가 같은 HEAD 의 같은 상태면 넘어간다. 아니면 `{ head, state }` 로 바꾼다. 열린 목록에 없는 PR 의 항목은 지운다
+2. 틱 자식은 `loop.json` 의 `ci[<PR>]` 를 읽기만 한다. 같은 HEAD 의 같은 상태면 넘어간다. 아니면 그 PR 의 새 `{ head, state }` 를 결과 JSON 의 `ci` 에 담는다. 결과의 `ci` 는 이번 틱에 본 열린 PR 전부의 값이고, 부모가 그것으로 `loop.json` 의 `ci` 를 바꿔 쓴다(phase 01 의 「틱」). 그래서 열린 목록에 없는 PR 의 항목은 빠진다. 열린 PR 을 읽지 못한 틱은 결과에 `ci` 를 넣지 않고 부모는 이전 값을 둔다
 3. `passed` 로 바뀌면 `ci-passed` 를 낸다
 4. `failed` 로 바뀌면 그 PR 의 worker 에게 보내고(아래), `appendEvent(repo, 'CI-FAILED', <PR>, <text>)` 를 한 뒤 `ci-failed` 를 낸다
 

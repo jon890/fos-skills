@@ -50,7 +50,7 @@
 - 새 질문(`QUESTION`)은 알림 파일에 쓰지 않는다. 코디네이터의 `wait-important` 가 `question`, `escalation` 메시지로 이미 깨어난다. 메시지가 다시 오지 않는 재알림(`REMINDER`)만 알림 파일로 깨운다.
 - 생존 판정은 틱 길이와 떼어 낸다(아래 「생존」). 틱 하나는 같은 스크립트를 `--tick` 자식 프로세스로 `runAsync` 로 띄워 돌리고, 부모 프로세스는 일정, 생존 타이머, `loop.json` 쓰기만 맡는다. lib 의 조회(`lib/questions.ts` 의 `snapshot`, `lib/gh.ts` 의 `ghJson`, `lib/conflicts.ts` 의 `findConflicts`)가 동기라 같은 프로세스에서 틱을 돌리면 그동안 타이머가 돌지 못하기 때문이다(team-lead 결정 2026-10-25). 정리 명령의 `--wait` 나 phase 03 의 `send-to-worker` 이어 쓰기(최대 65분)가 틱을 길게 만들어도 죽은 것으로 보지 않는다.
 - `loop.json` 은 부모 프로세스만 쓴다(옆 파일에 쓴 뒤 rename). 틱 자식은 `loop.json` 을 읽기만 하고(이전 `errors` 를 보려고), 틱 결과(`last_tick` 에 쓸 시각, 바뀐 `errors`, `open_prs`)를 stdout 마지막 줄의 JSON 한 줄로 낸다. 부모가 그 값을 합쳐 쓴다. 자식의 나머지 출력은 부모가 `log()` 로 옮긴다. 자식이 JSON 줄 없이 끝나면 `errors.tick` 에 그 종료 코드를 이유로 둔다.
-- 알림 파일(`loop-events.jsonl`)은 틱 자식만 append 한다. 틱은 한 번에 하나만 돌므로 `seq` 를 쓰는 쪽이 하나다. 읽는 쪽(`--status`, `wait-important`, `orch-doctor`)은 `lib/loop.ts` 로만 읽는다.
+- 알림 파일(`loop-events.jsonl`)은 틱 자식이 쓰고, 부모는 틱 자식이 끝난 뒤에만 쓴다(틱 자식의 실패를 알릴 때). 틱은 한 번에 하나만 돌므로 한 때에 쓰는 쪽은 하나다. 그래서 잠금 없이 `seq` 가 겹치지 않는다. 읽는 쪽(`--status`, `wait-important`, `orch-doctor`)은 `lib/loop.ts` 로만 읽는다.
 
 ## 작업 항목
 
@@ -83,7 +83,7 @@
 
 **알림 파일과 커서**: `loop-events.jsonl` 의 한 줄은 `{"seq": <정수>, "time": <ISO 8601 UTC>, "kind": ..., "pr": <번호 또는 null>, "text": ...}` 다. `seq` 는 1 부터 단조 증가한다. 커서 파일에는 마지막으로 읽은 `seq` 하나를 적는다.
 
-- 쓰는 쪽은 루프 하나다. 루프는 시작할 때 알림 파일 마지막 줄의 `seq` 와 커서 값 가운데 큰 것 다음부터 센다. 파일을 잘라 낸 뒤 루프가 다시 떠도 `seq` 가 되돌아가 새 알림이 커서 뒤에 숨지 않게 하기 위해서다
+- 한 때에 쓰는 쪽은 하나다(틱 자식, 또는 틱 자식이 끝난 뒤의 부모). 쓰는 프로세스가 틱마다 바뀌므로 `appendEvent` 는 부를 때마다 알림 파일 마지막 줄의 `seq` 와 커서 값 가운데 큰 것 다음 값을 새 `seq` 로 쓴다. 파일을 잘라 내거나 지운 뒤에도 `seq` 가 되돌아가 새 알림이 커서 뒤에 숨지 않게 하기 위해서다
 - 더한 뒤 줄이 1000 줄을 넘으면 마지막 1000 줄만 옆 파일에 써서 rename 으로 바꾼다. 쓰는 쪽이 하나라 잠금이 필요 없고, 읽는 쪽은 rename 전이나 뒤의 온전한 파일 하나를 읽는다
 - 읽는 쪽은 `seq` 가 커서보다 큰 줄만 낸다. 파일의 첫 `seq` 가 커서의 다음 값보다 크면 그 사이를 `gap` 으로 낸다. 읽지 않은 줄이 1000 줄을 넘어 잘린 경우다
 - 커서가 없으면 0 이다
@@ -92,6 +92,7 @@
 
 ```
 orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop | --status | --foreground) [--once]
+orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N      (내부용. 부모가 띄운다)
 ```
 
 | 옵션 | 동작 | 출력과 종료 코드 |
@@ -102,6 +103,7 @@ orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop | --statu
 | `--status` | `loopStatus` | `LOOP-ALIVE <pid> run=<…> last_tick=<…> alive_at=<…>` 와 0, `LOOP-DEAD <repo> <이유>` 와 1 |
 | `--foreground` | 지금 프로세스에서 틱을 돈다. `--start` 의 자식과 테스트가 쓴다 | 신호를 받으면 `stopChildren` 뒤 128 + 신호 번호 |
 | `--once` | `--foreground` 와 함께 틱 한 번만 돌고 끝난다 | 0 |
+| `--tick`(내부용) | 틱 하나를 돌고 끝난다. `--foreground` 의 부모가 틱마다 `scriptCommand(<이 파일>, [...])` 를 `runAsync` 로 띄운다. 부모가 넘기는 인자는 `--repo`, 부모가 정한 Run id 의 `--run`(있을 때), 지시서 폴더의 `--specs-dir`(있을 때), 틱 번호 `--tick-number N`(1 부터) 이다. 자식은 `loop.json` 을 읽기만 한다(이전 `errors` 를 보려고) | stdout 마지막 줄에 JSON 한 줄 `{"tick_at": <ISO 8601 UTC>, "errors": {<출처>: <이유 또는 null>}, "open_prs": <번호 목록 또는 null>}` 를 내고 0. phase 02 가 `ci` 를 더한다. 그 앞의 줄은 부모가 `log()` 로 옮긴다. 0 이 아니거나 마지막 줄이 JSON 이 아니면 부모가 `errors.tick` 에 그 이유(`종료 코드 <n>`, `결과 줄 없음`)를 둔다 |
 
 사용법 오류와 설정 오류(`ConfigError`)는 2 다. `pipeline.tick_sec` 이 양수가 아니면 설정 오류다. 기본은 300 이다.
 
@@ -109,27 +111,29 @@ orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop | --statu
 
 **Run id**: `--run`, 없으면 `config.json` 의 `finish.run` 이다. 둘 다 없으면 질문 확인을 건너뛰고, 시작할 때 `경고: Run id 가 없어 질문 확인을 건너뛴다. --run 이나 finish.run 으로 준다` 한 줄을 로그에 낸다. `loop.json` 의 `run` 은 null 이다. 지시서 폴더는 `--specs-dir`, 없으면 `finish.specs_dir` 이고, 둘 다 없으면 정리에 `--specs-dir` 를 넘기지 않는다.
 
-**로그**: 루프의 모든 줄은 `log()` 한 함수로 `loop.log` 에 붙이고 stdout 에도 쓴다. 붙이기 전에 1MB 를 넘으면 `loop.log.1` 로 돌린다. `--start` 의 자식은 `stdio: 'ignore'` 라 stdout 은 버려진다. 파일 서술자를 자식에 넘기지 않는 것은 돌린 뒤에도 자식이 `loop.log.1` 에 쓰게 되기 때문이다. 잡지 않은 예외와 거부된 promise 는 `log()` 로 스택을 남기고 1 로 끝난다.
+**로그**: 루프의 모든 줄은 `log()` 한 함수로 `loop.log` 에 붙이고 stdout 에도 쓴다. 붙이기 전에 1MB 를 넘으면 `loop.log.1` 로 돌린다. `--start` 의 자식은 `stdio: 'ignore'` 라 stdout 은 버려진다. 파일 서술자를 자식에 넘기지 않는 것은 돌린 뒤에도 자식이 `loop.log.1` 에 쓰게 되기 때문이다. 잡지 않은 예외와 거부된 promise 는 `log()` 로 스택을 남기고 1 로 끝난다. `--tick` 자식의 `log()` 는 `loop.log` 에 쓰지 않고 stdout 에만 쓴다. 부모가 그 줄을 `loop.log` 로 옮기므로 두 번 쓰이지 않는다.
 
-**틱**: 하나가 끝나면 `tick_sec` 을 기다린 뒤 다음 틱을 돈다. 겹치지 않는다. 한 틱이 하는 일(순서대로, 하나가 실패해도 다음을 한다):
+**틱**: 부모는 틱 자식 하나가 끝나면 `tick_sec` 을 기다린 뒤 다음 틱 자식을 띄운다. 겹치지 않는다. 틱 자식이 하는 일(순서대로, 하나가 실패해도 다음을 한다):
 
 1. 질문 확인. Run id 가 있을 때만. `poll(run, questions-seen.json, now, 600, repo)` 를 부르고 알릴 줄마다 `log()` 로 `QUESTION` 이나 `REMINDER` 줄을 쓰고 `notifyQuestion` 을 부른다. `REMINDER` 는 `appendEvent(repo, 'REMINDER', null, <줄>)` 도 한다. 재알림 간격 600초는 `watch-questions.ts` 의 기본과 같다
 2. 정리. `scriptCommand(CLEANUP_SWEEP 또는 <이 폴더>/cleanup-sweep.ts, ['--repo', repo, '--kill-holders', '--remote-branches', '--apply', ...(run ? ['--run', run] : []), ...(specsDir ? ['--specs-dir', specsDir] : [])])` 를 `runAsync` 로 부르고 출력을 `log()` 로 옮긴다
 3. 보드 동기화. `boardPath(repo)` 파일이 없으면 건너뛴다. 있으면 `scriptCommand(BOARD_SYNC 또는 <이 폴더>/board-sync.ts, ['--repo', repo])` 를 `runAsync` 로 부른다
-4. `tick` 이벤트. 입력은 `tick`(이 프로세스가 돈 틱 수, 1 부터)과 `open_prs`(내 열린 PR 번호 목록)다. 열린 PR 은 `gh pr list --state open --json number,author,url` 로 읽고 `ownAuthors`, `isOwnPr` 로 내 PR 만 남긴다. 읽지 못하거나 작성자를 정하지 못하면 `open_prs` 는 null 이다
+4. `tick` 이벤트. 입력은 `tick`(부모가 넘긴 `--tick-number`)과 `open_prs`(내 열린 PR 번호 목록)다. 열린 PR 은 `gh pr list --state open --json number,author,url` 로 읽고 `ownAuthors`, `isOwnPr` 로 내 PR 만 남긴다. 읽지 못하거나 작성자를 정하지 못하면 `open_prs` 는 null 이다
 
-각 틱 끝에 `loop.json` 의 `last_tick`, `ticks` 를 쓴다.
+틱 자식이 끝나면 부모가 결과 JSON 을 합쳐 `loop.json` 의 `last_tick`(결과의 `tick_at`), `ticks`(넘긴 틱 번호), `errors` 를 쓴다. 결과가 없으면 `last_tick` 은 그대로 두고 `errors.tick` 만 고친다.
 
 **생존 타이머**: 부모 프로세스가 틱 자식과 따로 `setInterval` 로 30초마다 `loop.json` 의 `alive_at` 을 쓴다. 시작할 때도 한 번 쓴다. 간격은 `ORCH_LOOP_ALIVE_SEC` 환경 변수(양수 초)로 바꾼다. 테스트가 줄여 쓰는 값이다.
 
 **`loop.json`**: `pid`, `run`, `repo`, `tick_sec`, `started_at`, `alive_at`, `last_tick`, `ticks`, `errors` 다. 시각은 ISO 8601 UTC 다. phase 02 가 `ci` 를 더한다.
 
-**오류 줄 억제**: `errors` 는 출처마다 마지막 오류 이유다. 출처는 `questions`(질문 조회), `cleanup`(정리 명령이 0 이 아닌 종료), `board`(보드 동기화가 0 이 아닌 종료), `prs`(열린 PR 조회), `hook`(tick 핸들러)이다.
+**오류 줄 억제**: `errors` 는 출처마다 마지막 오류 이유다. 출처는 `questions`(질문 조회), `cleanup`(정리 명령이 0 이 아닌 종료), `board`(보드 동기화가 0 이 아닌 종료), `prs`(열린 PR 조회), `hook`(tick 핸들러), `tick`(틱 자식이 0 이 아니거나 결과 줄 없이 끝남)이다. `tick` 만 부모가 판정하고 쓴다. 나머지는 틱 자식이 판정해 알림 파일에 쓰고 결과 JSON 의 `errors` 로 부모에 넘긴다.
 
-- 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. `hook` 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`, 나머지는 `WATCH-ERROR <출처>: <이유>` 다
+- 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. `hook` 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`, 나머지는 `WATCH-ERROR <출처>: <이유>` 다. `tick` 은 부모가 틱 자식이 끝난 뒤 `WATCH-ERROR tick: <이유>` 로 쓴다
 - 그 출처가 한 번 성공하면 이유를 지운다. 다시 실패하면 다시 쓴다
 - 알림 파일에 쓰는 `HOOK-FAIL` 은 `tick` 핸들러의 것만이다. `worker-question` 핸들러의 실패는 `loop.log` 의 `HOOK-FAIL` 줄로만 남는다
 - `loop.log` 에는 실패할 때마다 쓴다
+
+`--foreground` 의 잠금이 죽은 pid 의 잠금을 `lib/events.ts` 의 `reclaim` 으로 회수하므로, 그 함수 위의 「테스트용 export 다. 명령은 부르지 않는다」 주석을 사용처(이벤트 실행기의 잠금과 `orch-loop.ts` 의 `loop.lock`)와 내보내는 이유로 고친다. 함수 동작은 바꾸지 않는다.
 
 머리 주석은 사용법, 옵션, 위 판정, 환경 변수(`ORCA`, `GH`, `CLEANUP_SWEEP`, `BOARD_SYNC`, `ORCH_LOOP_ALIVE_SEC`), 종료 코드를 소유한다. 이벤트 입력은 `docs/data-schema.md` 「이벤트별 필드」 를 가리킨다.
 
@@ -187,7 +191,8 @@ orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop | --statu
 | `tick` 핸들러의 입력 | `tick` 이 1, `open_prs` 가 가짜 gh 의 내 PR 번호만이다. gh 가 실패하면 `open_prs` 는 null |
 | 정리 가짜가 1.5초 자고 `ORCH_LOOP_ALIVE_SEC=0.2` | 정리가 도는 동안 `alive_at` 이 두 번 이상 바뀌고 `last_tick` 은 그대로다 |
 | 틱 자식 안의 동기 조회가 막힌다(가짜 orca 가 2초 자고 `ORCH_LOOP_ALIVE_SEC=0.2`) | 그동안에도 부모가 `alive_at` 을 쓴다 |
-| 틱 자식이 JSON 줄 없이 3 으로 끝난다 | `errors.tick` 이 그 종료 코드를 담고, 다음 틱은 그대로 돈다 |
+| 틱 자식이 JSON 줄 없이 3 으로 끝난다 | `errors.tick` 이 그 종료 코드를 담고, 알림 파일에 `WATCH-ERROR tick: …` 한 줄이 생긴다. 같은 이유로 다시 끝나면 줄이 늘지 않는다. 다음 틱은 그대로 돈다 |
+| `--tick --tick-number 5` 를 직접 돌린다 | stdout 마지막 줄이 `tick_at`, `errors`, `open_prs` 를 가진 JSON 이고 `tick` 핸들러가 `tick: 5` 를 받는다. `loop.json` 은 바뀌지 않는다 |
 | `--start`, `--status`, `--stop` 을 차례로 | `LOOP-STARTED <pid>`, `LOOP-ALIVE <pid>`, `LOOP-STOPPED <pid>`. 그 뒤 pid 가 죽어 있다. `tick_sec` 은 설정으로 크게 둔다 |
 | 살아 있는 루프가 있는데 다른 `--run` 으로 `--start` | 종료 코드 4 와 `LOOP-RUNNING <pid> run=<기존 Run id>` |
 | `pipeline.tick_sec` 이 0 | 종료 코드 2 |
@@ -205,7 +210,7 @@ orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop | --statu
 ## 검증
 
 ```bash
-node --test --test-concurrency=4 orch/tests/lib-loop.spec.ts orch/tests/orch-loop.spec.ts orch/tests/wait-important.spec.ts orch/tests/orch-doctor.spec.ts orch/tests/questions.spec.ts orch/tests/finish-pr.spec.ts orch/tests/readme-script-list.spec.ts
+node --test --test-concurrency=4 orch/tests/lib-loop.spec.ts orch/tests/lib-events.spec.ts orch/tests/orch-loop.spec.ts orch/tests/wait-important.spec.ts orch/tests/orch-doctor.spec.ts orch/tests/questions.spec.ts orch/tests/finish-pr.spec.ts orch/tests/readme-script-list.spec.ts
 node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
 python3 korean-check/scripts/korean-style-check.py orch/README.md docs/data-schema.md docs/flow.md docs/code-architecture.md
 ```
@@ -216,6 +221,7 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md docs/data-sche
 |---|---|
 | `orch/scripts/orch-loop.ts` | 신규 |
 | `orch/scripts/lib/loop.ts` | 신규 |
+| `orch/scripts/lib/events.ts` | 수정 |
 | `orch/scripts/lib/questions.ts` | 수정 |
 | `orch/scripts/watch-questions.ts` | 수정 |
 | `orch/scripts/lib/finish-options.ts` | 수정 |

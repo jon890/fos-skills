@@ -46,7 +46,9 @@
 
 - 같은 (PR, base SHA) 에는 한 번만 보낸다. 기록을 명령과 루프가 함께 쓰므로 머지 큐 뒤 `notify-conflicts` 와 틱이 같은 충돌을 두 번 보내지 않는다.
 - 루프도 위 표를 그대로 따른다. 다른 점은 2 다. 명령은 종료 코드 2 로 끝나지만 루프는 그 틱의 충돌 처리만 멈추고 `errors.conflicts` 로 `WATCH-ERROR conflicts: send-to-worker 사용법 오류` 를 쓴다(phase 01 의 「오류 줄 억제」). 루프를 끝내면 질문 확인도 멈춘다.
-- `send-to-worker` 이어 쓰기는 65분까지 걸린다. `runAsync` 로 부르므로 그동안 생존 타이머가 `alive_at` 을 쓴다.
+- `send-to-worker` 이어 쓰기는 65분까지 걸린다. 틱 자식 안에서 `runAsync` 로 부르고, 생존 타이머는 부모에 있으므로 그동안에도 `alive_at` 이 쓰인다.
+- 끝난 dispatch 에 이어 쓰는 동안(최대 65분) 그 틱이 끝나지 않아, 다음 틱의 질문 재알림, CI 감시, 정리가 그만큼 밀린다. 이것을 받아들인다. 이어 쓰기를 틱과 떼어 내면 `state/notify-conflicts.json` 을 두 프로세스가 함께 쓰게 되어 잠금 설계가 더 필요하다. 떼어 내는 일은 `index.json` 의 `deferred` 다.
+- 충돌 처리는 틱의 마지막 단계다. 같은 틱의 질문 확인, 정리, 보드 동기화, CI 감시, `tick` 이벤트는 그보다 먼저 돈다. 밀리는 것은 다음 틱뿐이다.
 
 ## 작업 항목
 
@@ -69,7 +71,7 @@ resolveConflict(args: {
 
 ### 2. 루프의 충돌 처리
 
-phase 02 의 CI 감시 뒤, `tick` 이벤트 앞에 넣는다.
+틱의 마지막 단계로, `tick` 이벤트 뒤에 넣는다(위 「의도 메모」).
 
 1. `findConflicts(repo, base)`. base 는 `defaultBase(repo)`, 없으면 `main` 이다. 실패하면 `WATCH-ERROR conflicts: …`
 2. 내 PR 만 남긴다(`notify-conflicts.ts` 와 같은 `ownAuthors` 판정. 작성자를 정하지 못하면 `WATCH-ERROR conflicts: …` 를 쓰고 그 틱의 충돌 처리를 끝낸다)
@@ -79,7 +81,11 @@ phase 02 의 CI 감시 뒤, `tick` 이벤트 앞에 넣는다.
 
 `out` 은 `log()` 다. 머리 주석에 충돌 처리와 `SEND_TO_WORKER` 의 쓰임을 더한다.
 
-### 3. 테스트
+### 3. `docs/code-architecture.md` 「배치」
+
+`orch/scripts/lib/conflicts.ts` 줄을 「열린 PR 의 충돌 찾기, PR 하나의 처리(`resolveConflict`, `concludeConflict`), (PR, base SHA) 마다 한 번 알린 기록 한 벌. 사용처는 머리 주석이 소유한다」 로 고친다.
+
+### 4. 테스트
 
 `orch/tests/orch-loop-conflict.spec.ts` 를 만든다. 임시 bare origin 과 clone 으로 충돌하는 PR 브랜치를 만들고, 가짜 gh 가 그 PR 을 열린 내 PR 로 낸다. `SEND_TO_WORKER` 가짜가 정한 종료 코드와 stdout 으로 끝난다. `notify-conflicts.spec.ts` 의 helper 를 그대로 빌려 쓰지 말고 같은 방식으로 만든다(테스트 파일끼리 import 하지 않는다).
 
@@ -92,7 +98,7 @@ phase 02 의 CI 감시 뒤, `tick` 이벤트 앞에 넣는다.
 | 가짜가 3 | `CONFLICT-ORPHAN` 이 알림 파일에 한 줄, `action: orphan` 으로 기록 |
 | 워크트리가 없는 충돌 PR | `CONFLICT-ORPHAN`, send-to-worker 호출 없음 |
 | worker-list 실패 | 기록과 `pr-conflict` 가 없고 `WATCH-ERROR conflicts:` 한 줄 |
-| 가짜가 2 | 그 틱의 다음 충돌 PR 을 보내지 않고 `WATCH-ERROR conflicts:` 한 줄. 루프는 다음 단계(`tick` 이벤트)를 한다 |
+| 가짜가 2 | 그 틱의 다음 충돌 PR 을 보내지 않고 `WATCH-ERROR conflicts:` 한 줄. 틱 자식은 결과 JSON 을 내고 0 으로 끝나며 루프는 다음 틱을 돈다 |
 | 같은 (PR, base SHA) 를 다음 틱이나 `notify-conflicts.ts` 가 다시 본다 | 다시 보내지 않는다 |
 | 가짜가 3초 자고 0, `ORCH_LOOP_ALIVE_SEC=0.2` | 보내는 동안 `alive_at` 이 바뀌고 `lib/loop.ts` 의 `loopStatus` 가 살아 있다고 낸다 |
 
@@ -104,6 +110,7 @@ phase 02 의 CI 감시 뒤, `tick` 이벤트 앞에 넣는다.
 node --test --test-concurrency=4 orch/tests/orch-loop-conflict.spec.ts orch/tests/notify-conflicts.spec.ts orch/tests/orch-loop.spec.ts orch/tests/orch-loop-ci.spec.ts orch/tests/ci-ready.spec.ts
 node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
 ! git grep -n "^function followUp\|^function message\|^const RELAUNCHED" -- orch/scripts/notify-conflicts.ts
+python3 korean-check/scripts/korean-style-check.py docs/code-architecture.md
 ```
 
 ## 변경 파일
@@ -113,4 +120,5 @@ node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec
 | `orch/scripts/lib/conflicts.ts` | 수정 |
 | `orch/scripts/notify-conflicts.ts` | 수정 |
 | `orch/scripts/orch-loop.ts` | 수정 |
+| `docs/code-architecture.md` | 수정 |
 | `orch/tests/orch-loop-conflict.spec.ts` | 신규 |
