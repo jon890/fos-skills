@@ -120,11 +120,11 @@
 //                         --docs-glob 에 맞는 문서 PR 을 뺀 것. --docs-glob 이 없으면 MERGED_PRS 와 같다)를 받는다.
 //                         실패하면 `AFTER-MERGED-FAILED 종료코드` 를 찍는다. 머지 결과는 바뀌지 않는다
 //   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
-//   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.py 에 넘길 인자. 하나씩 준다
+//   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.ts 에 넘길 인자. 하나씩 준다
 //                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs)
-//   --no-sweep            머지 뒤 cleanup-sweep.py --apply 를 부르지 않는다
+//   --no-sweep            머지 뒤 cleanup-sweep.ts --apply 를 부르지 않는다
 //
-// 모든 PR 이 머지되면 cleanup-sweep.py --apply 로 머지된 worktree, 브랜치, 터미널, 지시서를 정리한다.
+// 모든 PR 이 머지되면 cleanup-sweep.ts --apply 로 머지된 worktree, 브랜치, 터미널, 지시서를 정리한다.
 // 정리가 실패해도 머지 결과는 바뀌지 않으므로 경고만 찍고 종료 코드는 0 이다.
 // CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, OVERLAP_UNITS 로 판정 명령 경로를, GH 로 gh 실행 파일을 바꾼다.
 // 두 스크립트는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
@@ -849,7 +849,7 @@ class Queue {
     if (!merged) stop(`${n} 머지 실패`)
     log(`${n} MERGED`)
     this.merged.push([n, kind])
-    // 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.py 가 워크트리 커밋을 원격에 있다고 본다
+    // 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.ts 가 워크트리 커밋을 원격에 있다고 본다
     git('fetch', '-q', 'origin')
     const branch = !o.keepBranch && !p.cross ? this.deleteBranch() : { retargeted: [], deleted: false }
     await this.afterMerge(branch)
@@ -1175,12 +1175,12 @@ class Queue {
 
   // 머지가 끝난 뒤 cleanup-sweep --apply 로 정리한다. 실패해도 머지 결과는 그대로라 경고만 찍는다
   async sweep(): Promise<void> {
-    const sweep = process.env.CLEANUP_SWEEP ?? `${HERE}/cleanup-sweep.py`
+    const sweep = process.env.CLEANUP_SWEEP ?? `${HERE}/cleanup-sweep.ts`
     const done = await runInherit(
       scriptCommand(sweep, ['--repo', process.cwd(), '--base', this.sweepBase || 'main', '--apply', ...this.o.sweepArgs]),
       { timeoutMs: NO_LIMIT_MS },
     )
-    if (done.code !== 0) out('경고: cleanup-sweep.py 가 실패했다. 머지 결과는 그대로다')
+    if (done.code !== 0) out('경고: cleanup-sweep.ts 가 실패했다. 머지 결과는 그대로다')
   }
 
   // 큐 도중의 설정 오류로 멈춘다. 종료 코드 2 다. 이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue 만 돌린다.

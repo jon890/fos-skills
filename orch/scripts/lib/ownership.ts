@@ -1,7 +1,7 @@
 // 워크트리 정리 전에 그 경로의 살아 있는 터미널이 사용자 소유인지 확인하는 판정 한 벌이다.
 //
-// 사용처: remove-worktree.ts 가 삭제 전에 blocker 를 부른다. 같은 판정의 Python 원본 terminal_ownership.py 는
-// 아직 Python 인 cleanup-sweep.py 가 import 한다.
+// 사용처: remove-worktree.ts 와 cleanup-sweep.ts 가 삭제 전에 blocker 를 부른다. cleanup-sweep.ts 는 allWorkers 를 cached 로 감싸
+// 소유 확인과 다른 Run 판정에 함께 쓴다.
 //
 // 터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 // 끝난 dispatch 의 터미널은 `worker-list` 의 `resource` 로 아래처럼 나뉜다.

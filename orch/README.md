@@ -39,9 +39,8 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/orch-doctor.ts`: 스킬을 열 때 설치 캐시의 커밋이 원본 main 보다 낡았는지 보고 갱신 명령을 보여 주고, 문서가 부르는 `$SKILL_DIR/scripts/*` 가 모두 있는지 본다. 저장소의 이름이 틀린 핸들러(`UNKNOWN-HOOK`)와 옛 설정 칸(`DEPRECATED-CONFIG`)을 알리고, `--run` 이면 `session-resume` 이벤트를 낸다
 - `scripts/orch-doctor.py`: doctor 의 진입점. node 가 22.18 보다 낮으면 `NODE-TOO-OLD` 로 멈추고, 아니면 `orch-doctor.ts` 로 넘긴다. `SKILL.md` 가 이 경로로 부르고, 저장소 테스트 `scripts/tests/test_doc_script_refs.py` 가 스킬마다 이 검사를 부른다. 다음 major 에서 shim 을 지울 때 이 진입점을 어떻게 둘지 따로 정한다
 - `scripts/worker-ask.ts`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다
-- `scripts/cleanup-sweep.py`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다
-- `scripts/terminal_ownership.py`: 워크트리 경로를 쓰는 터미널의 사용자 소유 상태를 확인한다. `cleanup-sweep.py` 가 import 하고 같은 판정의 TypeScript 는 `lib/ownership.ts` 다
-- `scripts/live_specs.py`: 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서 경로를 모은다. `cleanup-sweep.py` 와 `handoff-cleanup.py` 가 import 한다
+- `scripts/cleanup-sweep.ts`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다. `--apply` 이면 워크트리를 지우기 직전에 `before-cleanup`, 저장소 하나의 정리가 끝나면 `after-cleanup` 이벤트를 낸다
+- `scripts/live_specs.py`: 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서 경로를 모은다. `handoff-cleanup.py` 가 import 한다
 - `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/watch-questions.ts`: Monitor 의 이벤트 소스. 미답변 질문과 재알림을 한 줄씩 낸다
 - `scripts/goal-progress.py`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
@@ -54,7 +53,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/heavy-slot.py`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.py` 를 부른다
 - `scripts/orch_process.py`: 모듈. 스크립트가 함께 쓰는 프로세스 실행 함수다
 - `scripts/ts_shim.py`: 모듈. TypeScript 로 옮긴 명령의 옛 `.py` 경로가 import 한다. node 22.18 이상인지 보고 같은 이름의 `.ts` 로 넘긴다
-- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`, `scripts/merge-with-finish.py`, `scripts/finish-pr.py`, `scripts/migrate-orch-dir.py`, `scripts/remove-worktree.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
+- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`, `scripts/merge-with-finish.py`, `scripts/finish-pr.py`, `scripts/migrate-orch-dir.py`, `scripts/remove-worktree.py`, `scripts/cleanup-sweep.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
 - `scripts/mem-gate.py`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 
@@ -68,7 +67,7 @@ python3 scripts/run-orch-tests.py --report /tmp/orch-tests.json
 실패한 파일의 출력과 파일별 시간, 느린 테스트 상위 10개를 보여 주고, 실패가 하나라도 있으면 종료 코드 1을 낸다.
 `--report` 는 전체 측정값을 JSON으로 저장한다. 순차 실행과 비교하려면 `--jobs 1`을 붙인다.
 
-`cleanup-sweep.py` 테스트는 `--wait 0.01 --poll-interval 0.01`로 대기를 줄인다.
+`cleanup-sweep.spec.ts` 는 `--wait 0.01 --poll-interval 0.01`로 대기를 줄인다.
 운영 기본값은 대기 5초, 확인 간격 1초이며, 신호를 보낸 뒤에는 최소 한 간격을 기다린다.
 
 `merge_queue.ts` 는 미해결 스레드 수를 형제 스킬 `review-fix` 의 `review_threads.py` 로 센다.

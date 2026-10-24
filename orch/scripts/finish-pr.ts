@@ -7,9 +7,9 @@
 //     finish-pr.ts PR [--complete] [--repo DIR] [--config FILE] [옵션...]
 //
 //     1. PR 이 MERGED 가 될 때까지 기다린다(--merge-timeout). 머지 없이 닫히면 FINISH-FAIL 이다
-//        머지된 것을 gh 로 직접 확인한 뒤에야 정리한다. 머지 직후 `cleanup-sweep.py` 는 GitHub 상태가 아직
+//        머지된 것을 gh 로 직접 확인한 뒤에야 정리한다. 머지 직후 `cleanup-sweep.ts` 는 GitHub 상태가 아직
 //        반영되지 않아 「살아 있는 터미널」 로 건너뛰고 워크트리를 남긴 적이 있다
-//     2. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.py --apply` 가 dispatch 해제, 터미널 닫기,
+//     2. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
 //        --specs-dir 와 --complete 를 함께 주면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
 //        지우기는 lib/spec.ts 의 deleteSpecs 한 경로다. 살아 있는 dispatch(--run 의 Run, 없으면 모든 Run)가 쓰는 지시서와,
@@ -45,8 +45,8 @@
 //                           sweep_arg 는 설정의 목록 뒤에 명령줄의 값을 잇는다
 //     --gh-host HOST        gh 와 git 에 줄 GH_HOST (예: github.example.com). 없으면 gh 가 정한다
 //     --run RUN_ID          worker 를 찾을 Orca Run. 없으면 dispatch 해제는 건너뛰고 터미널만 경로로 찾는다
-//     --base-branch NAME    cleanup-sweep.py 의 --base
-//     --sweep-arg ARG       cleanup-sweep.py 에 더 넘길 인자. 하나씩 준다. 값이 `-` 로 시작하면 `--sweep-arg=--x` 로 쓴다
+//     --base-branch NAME    cleanup-sweep.ts 의 --base
+//     --sweep-arg ARG       cleanup-sweep.ts 에 더 넘길 인자. 하나씩 준다. 값이 `-` 로 시작하면 `--sweep-arg=--x` 로 쓴다
 //     --specs-dir DIR       지시서 폴더. 상대경로는 --repo 기준이다. --complete 일 때만 `브랜치:` 줄이 이 PR 의 브랜치인
 //                           spec-*.md 를 지운다. 중간 PR 에서는 지시서를 남기고 그 사실을 로그에 한 줄 남긴다
 //     --deploy-workflow F   배포 워크플로 파일 이름 (예: deploy.yml)
@@ -365,7 +365,7 @@ function localBranchExists(repo: string, branch: string): boolean {
 // 로컬 브랜치 이름이 PR 의 head 브랜치 이름과 다르면 head 이름으로는 워크트리가 보이지 않는다.
 // 그래서 보이지 않아도 정리 스크립트를 한 번은 돌린다. 그 스크립트가 PR 을 upstream 이름 등으로 찾아 정리한다
 async function cleanupWorker(args: Args, repo: string, branch: string): Promise<boolean> {
-  const sweep = process.env.CLEANUP_SWEEP || join(HERE, 'cleanup-sweep.py')
+  const sweep = process.env.CLEANUP_SWEEP || join(HERE, 'cleanup-sweep.ts')
   const sweepArgs = ['--repo', repo, '--apply', '--kill-holders']
   if (args.run) sweepArgs.push('--run', args.run)
   if (args.baseBranch) sweepArgs.push('--base', args.baseBranch)
@@ -457,7 +457,7 @@ async function finish(args: Args, repo: string): Promise<number> {
   log(`PR ${args.pr} 머지됨 ${merge.slice(0, 9)} (${branch})`)
 
   if (!(await cleanupWorker(args, repo, branch))) {
-    log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.py 출력을 본다`)
+    log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
   }
   if (args.specsDir) {
     if (args.complete) deleteBranchSpecs(args, repo, branch)
