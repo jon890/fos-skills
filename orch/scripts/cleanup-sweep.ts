@@ -6,7 +6,7 @@
 //
 // 사용법 (기본은 dry-run. 무엇을 할지만 낸다):
 //     cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders]
-//                      [--agent-glob 'agent-*'] [--close-own-taken-over] [--wait SEC] [--poll-interval SEC] [--apply]
+//                      [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--wait SEC] [--poll-interval SEC] [--apply]
 //
 //     --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
 //                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
@@ -25,6 +25,9 @@
 //     --close-own-taken-over
 //                   --run 과 함께 줄 때만 쓴다. 이 Run 의 끝난 dispatch 가 쓴 터미널이 `user_takeover` 로 남았어도
 //                   아래 「넘겨받은 터미널」 조건을 모두 채우면 닫고 정리한다. 없으면 예전처럼 남긴다
+//     --remote-branches
+//                   저장소마다 워크트리와 로컬 브랜치 정리가 끝난 뒤, 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다
+//                   (아래 「원격 브랜치 삭제」 의 --remote-branches). 없으면 하지 않는다
 //     --wait        터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 0 이상의 유한한 수. 기본 5
 //     --poll-interval  프로세스 확인 간격(초). 0 초과의 유한한 수. 기본 1
 //     --apply       실제로 정리한다
@@ -46,11 +49,37 @@
 //     이름은 맞는데 이 검사에 걸린 PR 만 있으면 「이름만 같은 PR」 로 보고 PR 없음과 같이 다룬다.
 //     조회 결과는 JSON 으로 읽는다. 빈 목록이면 「PR 없음」 이고, JSON 이 아니거나 필드가 없으면 「조회 실패」 다.
 //     둘 다 머지로 읽지 않는다. PR HEAD 가 로컬에 없으면(머지 큐의 update-branch 로 앞서 간 경우) `refs/pull/<번호>/head` 를 받아 온다.
-//     조회 필드의 title, author, isDraft, url 은 before-cleanup 의 pr 입력을 채우는 데만 쓰고 판정에는 쓰지 않는다.
+//     조회 필드의 title, isDraft, url 은 before-cleanup 의 pr 입력을 채우는 데만 쓰고 판정에는 쓰지 않는다.
+//     author 는 그 입력과, CLOSED PR 이 내 PR 인지 가리는 데 쓴다(아래 「내 PR」).
 //
 // 정리 대상 (브랜치마다):
 //     - 그 브랜치의 PR 이 MERGED 다
 //     - PR 이 없거나 MERGED 가 아니면, upstream 이 gone 이고 `git cherry` 로 base 에 없는 커밋이 0 개다
+//     - 머지 없이 CLOSED 가 된 PR 의 터미널(아래 「머지 없이 CLOSED 가 된 PR 의 터미널」). 워크트리는 위 판정을 따른다
+//
+// 내 PR:
+//     lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다. 작성자는 config.json 의 pipeline.authors, 없으면 그 호스트의 gh 현재 사용자다.
+//     호스트는 `gh repo view --json url` 의 URL 을 apiTarget 으로 읽는다.
+//     목록은 --remote-branches 를 받았거나, 이 Run 의 끝난 worker 가 있는 CLOSED PR 을 처음 만났을 때 저장소마다 한 번 읽는다.
+//     무조건 읽으면 pipeline.authors 가 없는 저장소의 모든 정리가 gh 현재 사용자를 조회하고, 그 조회가 실패하면 2 로 끝난다.
+//     읽지 못하면(null 이거나 ConfigError) 그 저장소에서 원격 브랜치 정리와 CLOSED PR 의 터미널 정리를 하지 않고
+//     stderr 에 이유를 내고 종료 코드를 2 로 둔다. 누가 내 PR 인지 모른 채 지우거나 닫지 않는다.
+//
+// 머지 없이 CLOSED 가 된 PR 의 터미널 (--run 을 줬을 때만):
+//     worker 터미널은 worker_done 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남긴다. 충돌과 리뷰 반영을 같은 worker 가 이어 받는다.
+//     PR 찾기로 찾은 PR 이 아래를 모두 채우면 그 dispatch 가 쓴 터미널을 닫고 dispatch 를 반납한다.
+//       - state 가 CLOSED 다(MERGED 가 아니다)
+//       - 내 PR 이다
+//       - --run 으로 찾은 그 경로의 worker 가 하나 이상이고 모두 workerState 가 succeeded 나 fenced 다
+//       - 터미널 소유 확인(lib/ownership.ts)을 통과한다. 사용자 보유 터미널이면 `남김: 사용자 보유 터미널` 이다
+//     닫는 터미널은 그 worker 행의 terminalHandle 과 agentTerminalHandle 가운데 그 경로에 살아 있는 것이다.
+//     모든 Run 의 worker 를 읽지 못했으면 agentTerminalHandle 만 닫는다.
+//     같은 경로의 다른 터미널과 다른 Run 의 worker 가 쥔 터미널은 닫지 않는다. --apply 가 없으면 `닫을 것: <터미널> (CLOSED #<PR>)` 만 낸다.
+//       - 워크트리가 지우기 대상이 아니면 터미널을 닫고 dispatch 를 반납한 뒤 `남김 <경로>: <이유>` 를 낸다
+//       - 지우기 대상(upstream 이 없고 cherry 가 0)이면 살아 있는 worker 와 살아 있는 터미널 판정에서 MERGED PR 과 같게 다루고,
+//         `정리` 줄과 before-cleanup 뒤에 터미널을 닫는다. before-cleanup 이 거부하면 터미널도 닫지 않는다
+//     --kill-holders 와 --merged-head 는 MERGED 일 때만이다. CLOSED PR 의 head 는 머지된 커밋이 아니다.
+//     열린 PR 의 끝난 dispatch 터미널은 그대로 남긴다.
 //
 // 건너뜀 (이유를 낸다):
 //     - 커밋 안 된 변경이 있다
@@ -138,17 +167,43 @@
 //     기준 브랜치가 뒤처지면 그 위에서 계획한 worker 가 옛 코드를 본다.
 //
 // 실행 순서 (worktree 마다):
-//     그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만), 끝난 Dispatch release, `remove-worktree.ts --delete-branch --merged-head`,
+//     그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만. 머지 없이 CLOSED 가 된 내 PR 이면 그 dispatch 의 터미널만), 끝난 Dispatch release, `remove-worktree.ts --delete-branch --merged-head`,
 //     원격 브랜치 삭제(이미 없으면 통과), 지시서와 PR 본문 파일 삭제.
 //     remove-worktree.ts 는 lib/proc.ts 의 scriptCommand 로 같은 폴더의 것을 부른다.
 //     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
-//     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다. 로컬 브랜치가 있을 때만 원격도 지우므로
-//     로컬 브랜치 없이 직접 머지한 PR 의 원격 브랜치는 남을 수 있다.
+//     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다. 로컬 브랜치 없이 직접 머지한 PR 과
+//     다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치는 `--remote-branches` 가 지운다.
 //
 // 원격 브랜치 삭제:
 //     지울 이름은 PR 의 head 브랜치, upstream, `branch.<b>.merge`, 로컬 이름이다. 이름마다 기준 브랜치, `release/*`,
 //     다른 열린 PR 의 base 는 지우지 않는다. 원격 끝점이 머지된 PR HEAD(PR 이 없으면 로컬 브랜치 끝점)와 다르면
 //     그 뒤에 커밋이 더해진 것이므로 지우지 않는다. fork 에서 온 PR 의 head 이름은 쓰지 않는다.
+//
+//     --remote-branches 는 로컬 브랜치와 상관없이 내 PR 의 원격 브랜치를 판정한다. 기본은 지울 것만 보이고,
+//     --apply 이면 `git push origin --delete` 로 지운다. 판정한 끝점을 --force-with-lease 로 걸어, 그사이 push 된 브랜치는 지우지 않는다.
+//     후보는 작성자마다 `gh pr list --state closed --author <작성자> --limit 100`(MERGED 와 CLOSED 가 함께 온다),
+//     `git ls-remote --heads origin` 한 번, 열린 PR 의 base 와 head(`gh pr list --state open --limit 1000`) 한 번으로 읽는다.
+//     하나라도 읽지 못하면 그 저장소의 원격 브랜치를 지우지 않고 `원격 브랜치 정리 건너뜀: <이유>` 를 내고 종료 코드를 2 로 둔다.
+//     원격에 있는 이름마다 한 번 판정한다. 그 이름을 head 로 둔 PR 가운데 headRefOid 가 원격 끝점과 같은 PR 을 쓴다.
+//     원격에 없는 이름은 줄을 내지 않는다. 위에서부터 처음 걸린 줄로 정한다.
+//
+//       차례  조건                                                         걸리면
+//       1     그 이름의 PR 가운데 isCrossRepository 가 true 인 것이 있다   `fork 의 브랜치다` 로 남긴다
+//       2     이름이 기준 브랜치이거나 `release/` 로 시작한다              `보호 브랜치다` 로 남긴다
+//       3     끝점이 같은 PR 이 없다                                       `원격 끝점이 PR head 와 다르다` 로 남긴다
+//       4     열린 PR 의 base 다                                           `열린 PR 의 base 다` 로 남긴다
+//       5     열린 PR 의 head 다(지우면 그 PR 이 닫힌다)                   `열린 PR 의 head 다` 로 남긴다
+//       6     MERGED 다                                                    지운다
+//       7     CLOSED 이고 `git merge-base --is-ancestor <headRefOid>        지운다. head 커밋이 로컬에 없으면 먼저 `git fetch -q origin <headRefName>`
+//             origin/<baseRefName>` 가 0 이다(다른 PR 에 합쳐 닫혔다)        로 받는다. 받지 못하면 `head 커밋을 받지 못했다`,
+//                                                                          origin/<baseRefName> 이 없으면 `base 를 찾지 못했다` 로 남긴다
+//       8     그 밖(CLOSED 이고 head 가 base 에 없다. 버린 작업일 수 있다)  `CLOSED 이고 head 가 base 에 없다` 로 남긴다
+//
+//     origin/<baseRefName> 은 저장소마다 처음에 하는 `git fetch -q --prune origin` 이 갱신한 원격 추적 브랜치다.
+//     출력은 `원격 브랜치 남김 <이름>: <이유>`, `원격 브랜치를 지울 것 <이름> (#<PR> <state>)`,
+//     `원격 브랜치 삭제 <이름> (#<PR> <state>)`, `원격 브랜치 삭제 실패 <이름>: <오류>` 다.
+//     열린 PR 의 base 인 브랜치는 base 를 옮기지 않고 남긴다. 머지 큐의 deleteBranch 는 머지 직후에 그 브랜치를 base 로 둔
+//     내 PR 의 base 를 옮기지만, 이 정리는 머지 직후가 아닌 뒤늦은 정리라 열린 PR 의 base 를 바꾸는 판단을 하지 않는다.
 //
 // 이벤트 (--apply 일 때만. 핸들러가 바깥에 부작용을 낼 수 있어 dry-run 에서는 내지 않는다):
 //     before-cleanup  워크트리 하나가 지울 대상으로 판정되고(소유, 미커밋 변경, 원격에 없는 커밋 확인을 통과)
@@ -172,7 +227,8 @@
 //     0  돌았다. 건너뛴 항목이 있어도 0 이다
 //     2  사용법 오류, 또는 저장소를 읽지 못했다. --specs-dir 없이 orch 작업 폴더를 옮기기 전인 저장소를 만나도
 //        그 저장소를 건너뛰고 2 다(lib/paths.ts 의 requireMigrated). 설정 파일 오류(lib/config.ts 의 ConfigError)도
-//        그 저장소를 거기서 멈추고 2 다
+//        그 저장소를 거기서 멈추고 2 다. 내 PR 의 작성자나 --remote-branches 의 후보를 읽지 못해도
+//        그 동작만 하지 않고 2 다
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
@@ -184,7 +240,7 @@ import { expandArgs } from './lib/args.ts'
 import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import { realPath } from './lib/fs.ts'
-import { ghBin } from './lib/gh.ts'
+import { apiTarget, ghBin, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { defaultBase } from './lib/git.ts'
 import { orcaBin } from './lib/orca.ts'
 import { allWorkers, blocker as ownershipBlocker, cached, LookupError, rowHandles, runWorkers } from './lib/ownership.ts'
@@ -194,7 +250,7 @@ import { run as runProcess, scriptCommand } from './lib/proc.ts'
 import { deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates } from './lib/spec.ts'
 
 const USAGE =
-  "사용법: cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--agent-glob 'agent-*'] [--close-own-taken-over] [--wait SEC] [--poll-interval SEC] [--apply]"
+  "사용법: cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--wait SEC] [--poll-interval SEC] [--apply]"
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REMOVE = join(HERE, 'remove-worktree.ts')
 const LIVE_STATES = new Set(['working', 'ready'])
@@ -210,9 +266,11 @@ const MAX_VARIANTS = 4
 // OMC session-end hook worker 의 명령줄에 든 문자열. 끄지도 세지도 않고 remove-worktree.ts 가 기다린다
 const SESSION_END_MARKS = ['--omc-session-end-worker', 'hooks/session-end/worker.js']
 const RUN_TIMEOUT_SEC = 120
-// title, author, isDraft, url 은 before-cleanup 의 pr 입력용이다. 판정에는 쓰지 않는다
+// title, isDraft, url 은 before-cleanup 의 pr 입력용이다. author 는 그 입력과 CLOSED PR 의 내 PR 판정에 쓴다
 const PR_FIELDS = 'number,state,headRefOid,headRefName,isCrossRepository,title,author,isDraft,url'
 const KEPT_BY_HOOK = '저장소 핸들러 거부'
+// --remote-branches 가 읽는 닫힌 PR 의 필드. --state closed 는 MERGED 와 CLOSED 를 함께 준다
+const CLOSED_FIELDS = 'number,state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt'
 
 type Json = Record<string, unknown>
 type Terminal = Json
@@ -227,6 +285,7 @@ type Args = {
   killHolders: boolean
   agentGlob: string
   closeOwnTakenOver: boolean
+  remoteBranches: boolean
   apply: boolean
   wait: number
   pollInterval: number
@@ -891,7 +950,209 @@ function workerInput(row: WorkerRow, path: string): Json {
   }
 }
 
-type Sweep = { repo: string; args: Args; workers: WorkerRow[]; specsDir: string | null; log: Log; report: Report }
+// 「내 PR」 의 작성자 목록. 읽지 못했으면 null 이다
+type Owners = () => string[] | null
+
+// 작성자 목록을 저장소마다 처음 쓸 때 한 번 읽는다. 머리 주석의 「내 PR」 이 정한다.
+// 읽지 못하면(null 이거나 ConfigError) onFail 을 한 번 부르고, 그 뒤로도 null 을 돌려준다
+function ownersOf(repo: string, onFail: (why: string) => void): Owners {
+  let read = false
+  let found: string[] | null = null
+  return () => {
+    if (read) return found
+    read = true
+    try {
+      const view = ghJson<unknown>(['repo', 'view', '--json', 'url'], { cwd: repo })
+      const url = view.ok && isObject(view.data) && typeof view.data.url === 'string' ? view.data.url : ''
+      const host = apiTarget(url)?.host
+      if (!view.ok) onFail(view.error)
+      else if (!host) onFail(`gh repo view 의 URL 을 읽지 못했다: ${JSON.stringify(url)}`)
+      else {
+        found = ownAuthors(repo, host)
+        if (!found) onFail(`${host} 의 gh api user 실패. config.json 의 pipeline.authors 로 준다`)
+      }
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e
+      onFail(e.message)
+    }
+    return found
+  }
+}
+
+// 작성자를 읽지 못한 PR 은 내 PR 로 보지 않는다
+function ownPr(pr: Pr, authors: string[]): boolean {
+  const login = isObject(pr.author) && typeof pr.author.login === 'string' ? pr.author.login : ''
+  return login !== '' && isOwnPr({ author: { login } }, authors)
+}
+
+// 머리 주석의 「머지 없이 CLOSED 가 된 PR 의 터미널」 조건을 채우면 닫을 터미널 목록, 아니면 null 이다.
+// 닫는 것은 그 경로의 이 Run worker 행이 가리키는 살아 있는 터미널뿐이다. 다른 Run 의 worker 가 쥔 handle 은 뺀다.
+// 모든 Run 의 worker 를 읽지 못했으면(foreign 이 null) foreignAt 처럼 agentTerminalHandle 만 이 Run 의 것으로 본다.
+// 작성자 목록은 이 Run 의 끝난 worker 가 있는 CLOSED PR 을 만났을 때만 읽는다
+function closedOwnTerminals(s: Sweep, pr: Pr | null, mine: WorkerRow[], terminals: Terminal[], path: string): string[] | null {
+  if (!s.args.run || !pr || pr.state !== 'CLOSED') return null
+  if (mine.length === 0 || !mine.every((w) => FINISHED_STATES.has(w.workerState as string))) return null
+  const authors = s.owners()
+  if (!authors || !ownPr(pr, authors)) return null
+  const foreign = s.args.foreign
+  const own = new Set<unknown>(
+    mine.flatMap((w) => (foreign === null ? [w.agentTerminalHandle] : [resourceOf(w).terminalHandle, w.agentTerminalHandle])).filter(truthy),
+  )
+  return terminalsAt(terminals, path).filter((h) => own.has(h) && !foreign?.has(h))
+}
+
+function closeForClosedPr(handles: string[], pr: Pr, apply: boolean, log: Log, indent: string): void {
+  const tag = `(CLOSED #${pr.number})`
+  for (const handle of handles) {
+    if (apply) log(closeTerminal(handle) ? `${indent}터미널 닫음 ${handle} ${tag}` : `${indent}터미널 닫기 실패 ${handle} ${tag}`)
+    else log(`${indent}닫을 것: ${handle} ${tag}`)
+  }
+}
+
+function releaseDispatches(mine: WorkerRow[], apply: boolean, log: Log, indent: string): void {
+  for (const w of mine) {
+    const dispatch = w.dispatchId
+    if (!truthy(dispatch) || resourceOf(w).releaseState === 'released') continue
+    if (apply) {
+      const done = run([orcaBin(), 'orchestration', 'worker-release', '--dispatch', String(dispatch), '--json'])
+      log(done.code === 0 ? `${indent}dispatch release ${dispatch}` : `${indent}dispatch release 실패 ${dispatch}`)
+    } else {
+      log(`${indent}dispatch 를 release 할 것 ${dispatch}`)
+    }
+  }
+}
+
+type ClosedPr = { number: number; state: string; headRefName: string; headRefOid: string; baseRefName: string; isCrossRepository: boolean }
+
+// `gh pr list` 의 JSON 목록. 실패하거나 목록이 아니면 이유 문자열이다
+function ghList(repo: string, args: string[]): unknown[] | string {
+  const done = ghJson<unknown>(args, { cwd: repo })
+  if (!done.ok) return done.error
+  return Array.isArray(done.data) ? done.data : `gh ${args.join(' ')} 의 출력이 목록이 아니다`
+}
+
+function isClosedPr(pr: unknown): pr is ClosedPr {
+  return (
+    isObject(pr) &&
+    Number.isInteger(pr.number) &&
+    (pr.state === 'MERGED' || pr.state === 'CLOSED') &&
+    typeof pr.headRefName === 'string' &&
+    pr.headRefName !== '' &&
+    typeof pr.headRefOid === 'string' &&
+    pr.headRefOid !== '' &&
+    typeof pr.baseRefName === 'string' &&
+    typeof pr.isCrossRepository === 'boolean'
+  )
+}
+
+// 작성자마다 닫힌 PR 을 읽는다. 하나라도 실패하거나 형식이 다르면 이유 문자열이다
+function closedPrs(repo: string, authors: string[]): ClosedPr[] | string {
+  const prs: ClosedPr[] = []
+  for (const author of authors) {
+    const listed = ghList(repo, ['pr', 'list', '--state', 'closed', '--author', author, '--limit', '100', '--json', CLOSED_FIELDS])
+    if (typeof listed === 'string') return listed
+    for (const pr of listed) {
+      if (!isClosedPr(pr)) return `gh pr list --author ${author} 의 PR 형식이 다르다`
+      prs.push(pr)
+    }
+  }
+  return prs
+}
+
+// 원격 브랜치 이름에서 끝점으로
+function remoteHeads(repo: string): Map<string, string> | string {
+  const done = git(repo, 'ls-remote', '--heads', 'origin')
+  if (done.code !== 0) return `git ls-remote 실패: ${done.err}`
+  const heads = new Map<string, string>()
+  for (const line of lines(done.out)) {
+    const [oid, ref] = line.split(/\s+/)
+    if (oid && ref?.startsWith('refs/heads/')) heads.set(ref.slice('refs/heads/'.length), oid)
+  }
+  return heads
+}
+
+// 열린 PR 의 base 와 head 이름. 열린 PR 의 head 는 지우면 그 PR 이 닫히므로 함께 남긴다
+function openRefs(repo: string): { bases: Set<string>; heads: Set<string> } | string {
+  const listed = ghList(repo, ['pr', 'list', '--state', 'open', '--limit', '1000', '--json', 'baseRefName,headRefName'])
+  if (typeof listed === 'string') return listed
+  const bases = new Set<string>()
+  const heads = new Set<string>()
+  for (const pr of listed) {
+    if (!isObject(pr) || typeof pr.baseRefName !== 'string' || typeof pr.headRefName !== 'string') return '열린 PR 목록의 형식이 다르다'
+    bases.add(pr.baseRefName)
+    heads.add(pr.headRefName)
+  }
+  return { bases, heads }
+}
+
+function hasCommit(repo: string, oid: string): boolean {
+  return git(repo, 'cat-file', '-e', `${oid}^{commit}`).code === 0
+}
+
+// 원격 브랜치 하나의 판정. 지울 PR 이나 남길 이유다. 차례는 머리 주석의 「원격 브랜치 정리」 표다
+function remoteVerdict(
+  repo: string,
+  name: string,
+  tip: string,
+  prs: ClosedPr[],
+  base: string,
+  open: { bases: Set<string>; heads: Set<string> },
+): { pr: ClosedPr } | { keep: string } {
+  if (prs.some((pr) => pr.isCrossRepository)) return { keep: 'fork 의 브랜치다' }
+  if (name === base || name.startsWith('release/')) return { keep: '보호 브랜치다' }
+  const same = prs.filter((pr) => pr.headRefOid === tip)
+  const pr = same.find((p) => p.state === 'MERGED') ?? same[0]
+  if (!pr) return { keep: '원격 끝점이 PR head 와 다르다' }
+  if (open.bases.has(name)) return { keep: '열린 PR 의 base 다' }
+  if (open.heads.has(name)) return { keep: '열린 PR 의 head 다' }
+  if (pr.state === 'MERGED') return { pr }
+  if (!hasCommit(repo, tip)) {
+    git(repo, 'fetch', '-q', 'origin', pr.headRefName)
+    if (!hasCommit(repo, tip)) return { keep: 'head 커밋을 받지 못했다' }
+  }
+  const target = `refs/remotes/origin/${pr.baseRefName}`
+  if (!pr.baseRefName || git(repo, 'rev-parse', '--verify', '-q', target).code !== 0) return { keep: 'base 를 찾지 못했다' }
+  if (git(repo, 'merge-base', '--is-ancestor', tip, target).code === 0) return { pr }
+  return { keep: 'CLOSED 이고 head 가 base 에 없다' }
+}
+
+// --remote-branches. 후보를 모두 읽은 뒤에 지운다. 하나라도 읽지 못하면 아무것도 지우지 않고 false 다
+function sweepRemoteBranches(repo: string, base: string, apply: boolean, owners: Owners, log: Log): boolean {
+  const skipped = (why: string): boolean => {
+    log(`원격 브랜치 정리 건너뜀: ${why}`)
+    return false
+  }
+  const authors = owners()
+  if (!authors) return skipped('내 PR 의 작성자를 정하지 못했다')
+  const prs = closedPrs(repo, authors)
+  if (typeof prs === 'string') return skipped(prs)
+  const heads = remoteHeads(repo)
+  if (typeof heads === 'string') return skipped(heads)
+  const open = openRefs(repo)
+  if (typeof open === 'string') return skipped(open)
+  const byName = new Map<string, ClosedPr[]>()
+  for (const pr of prs) byName.set(pr.headRefName, [...(byName.get(pr.headRefName) ?? []), pr])
+  for (const [name, group] of byName) {
+    const tip = heads.get(name)
+    if (tip === undefined) continue
+    const verdict = remoteVerdict(repo, name, tip, group, base, open)
+    if ('keep' in verdict) {
+      log(`원격 브랜치 남김 ${name}: ${verdict.keep}`)
+      continue
+    }
+    const tag = `(#${verdict.pr.number} ${verdict.pr.state})`
+    if (!apply) {
+      log(`원격 브랜치를 지울 것 ${name} ${tag}`)
+      continue
+    }
+    // 판정한 끝점일 때만 지운다. 그사이 push 된 커밋이 있으면 거부된다
+    const done = git(repo, 'push', '-q', `--force-with-lease=refs/heads/${name}:${tip}`, 'origin', '--delete', name)
+    log(done.code === 0 ? `원격 브랜치 삭제 ${name} ${tag}` : `원격 브랜치 삭제 실패 ${name}: ${done.err}`)
+  }
+  return true
+}
+
+type Sweep = { repo: string; args: Args; workers: WorkerRow[]; specsDir: string | null; log: Log; report: Report; owners: Owners }
 
 async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Terminal[]): Promise<void> {
   const { repo, args, workers, specsDir, log, report } = s
@@ -901,25 +1162,36 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     log(line)
     report.skipped.push({ path, reason })
   }
-  const taken = takenOverOwn(args, workersAt(workers, path), terminals, path)
+  const mine = workersAt(workers, path)
+  const taken = takenOverOwn(args, mine, terminals, path)
   const owner = await ownershipBlocker(path, taken, args.allWorkers)
   if (owner) return keep(owner, `남김: ${owner} (${path})`)
   if (!branch) return sweepDetached(repo, path, args, terminals, log, report)
   const prot = protectedReason(repo, branch, args.base)
   if (prot) return keep(`${prot} (${branch})`, `건너뜀 ${path}: ${prot} (${branch})`)
   const m = merged(repo, branch, args.base)
-  if (!m.ok) return keep(m.why, `남김 ${path}: ${m.why}`)
+  // 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널. 워크트리를 남기더라도 터미널은 닫고 dispatch 를 반납한다
+  const closing = closedOwnTerminals(s, m.pr, mine, terminals, path)
+  if (!m.ok) {
+    if (closing && m.pr) {
+      closeForClosedPr(closing, m.pr, args.apply, log, '')
+      releaseDispatches(mine, args.apply, log, '')
+    }
+    return keep(m.why, `남김 ${path}: ${m.why}`)
+  }
   if (dirty(path)) return keep('커밋 안 된 변경', `건너뜀 ${path}: 커밋 안 된 변경`)
   const lost = unpushed(path, 'HEAD', m.mergedHead, m.mergedHead === null)
   if (lost) {
     const reason = `원격에 없는 커밋 ${lost > 0 ? lost : '확인 실패'}`
     return keep(reason, `건너뜀 ${path}: ${reason}`)
   }
-  const mine = workersAt(workers, path)
   const alive = new Set(terminals.map((t) => t.handle ?? null))
-  // PR 이 MERGED 면 끝난 worker 의 세션 터미널이 남아 있어도 살아 있다고 보지 않는다. 아래에서 그 터미널을 닫는다
+  // PR 이 MERGED 면 끝난 worker 의 세션 터미널이 남아 있어도 살아 있다고 보지 않는다. 아래에서 그 터미널을 닫는다.
+  // 머지 없이 CLOSED 가 된 내 PR(closing)도 그 dispatch 의 터미널을 아래에서 닫으므로 같게 다룬다
   const byPr = m.why === BY_PR
-  const live = mine.filter((w) => LIVE_STATES.has(w.workerState as string) || (!byPr && alive.has(w.agentTerminalHandle ?? null)))
+  const live = mine.filter(
+    (w) => LIVE_STATES.has(w.workerState as string) || (!byPr && closing === null && alive.has(w.agentTerminalHandle ?? null)),
+  )
   if (live.length) {
     const reason = `살아 있는 worker ${live.map((w) => String(w.dispatchId ?? '?')).join(', ')}`
     return keep(reason, `건너뜀 ${path}: ${reason}`)
@@ -944,7 +1216,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     const reason = `${what} ${theirs.join(', ')}`
     return keep(reason, `건너뜀 ${path}: ${reason}. 그 Run 의 코디네이터가 정리한다`)
   }
-  if (!byPr && terminalsAt(terminals, path).length) {
+  if (!byPr && terminalsAt(terminals, path).some((h) => !(closing ?? []).includes(h))) {
     const reason = '살아 있는 터미널이 있다. PR 이 MERGED 가 아니면 터미널을 닫지 않는다'
     return keep(reason, `건너뜀 ${path}: ${reason}`)
   }
@@ -960,18 +1232,11 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     if (verdict.result !== 'pass' && verdict.result !== 'none') return keep(KEPT_BY_HOOK, `남김 ${path}: ${KEPT_BY_HOOK}`)
   }
   const plan = remotePlan(repo, branch, m.pr)
-  // 터미널은 PR 이 MERGED 일 때만 닫는다. cherry 로만 판정한 브랜치는 막 만든 브랜치일 수 있다
-  closeTerminals(byPr ? terminalsAt(terminals, path) : [], args.apply, log)
-  for (const w of mine) {
-    const dispatch = w.dispatchId
-    if (!truthy(dispatch) || resourceOf(w).releaseState === 'released') continue
-    if (args.apply) {
-      const done = run([orcaBin(), 'orchestration', 'worker-release', '--dispatch', String(dispatch), '--json'])
-      log(done.code === 0 ? `  dispatch release ${dispatch}` : `  dispatch release 실패 ${dispatch}`)
-    } else {
-      log(`  dispatch 를 release 할 것 ${dispatch}`)
-    }
-  }
+  // 경로의 터미널은 PR 이 MERGED 일 때만 모두 닫는다. cherry 로만 판정한 브랜치는 막 만든 브랜치일 수 있다.
+  // 머지 없이 CLOSED 가 된 내 PR 이면 그 dispatch 가 쓴 터미널만 닫는다
+  if (byPr) closeTerminals(terminalsAt(terminals, path), args.apply, log)
+  else if (closing && m.pr) closeForClosedPr(closing, m.pr, args.apply, log, '  ')
+  releaseDispatches(mine, args.apply, log, '  ')
   if (!args.apply) {
     const pids = holderPids(path, REAL_HOST)
     if (pids.length && byPr && onlyIdleShells(pids, REAL_HOST)) {
@@ -1064,7 +1329,8 @@ function sweepBranches(repo: string, args: Args, checkedOut: Set<string>, log: L
   }
 }
 
-async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], terminals: Terminal[], log: Log): Promise<void> {
+// 종료 코드를 돌려준다. 내 PR 의 작성자나 원격 브랜치 후보를 읽지 못하면 그 동작만 하지 않고 2 다
+async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], terminals: Terminal[], log: Log): Promise<number> {
   const base = given.base || (defaultBase(repo) ?? 'main')
   const args: Args = { ...given, base }
   if (!args.specsDir && !requireMigrated(repo, 'cleanup-sweep', '지시서 폴더를 --specs-dir 로 직접 준다')) {
@@ -1079,18 +1345,25 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   const pruned = git(repo, 'worktree', 'prune', '-v', ...(args.apply ? [] : ['-n'])).err
   for (const line of lines(pruned)) log(`prune: ${line}`)
   const report: Report = { removed: [], skipped: [] }
-  const s: Sweep = { repo, args, workers, specsDir, log, report }
+  let code = 0
+  const owners = ownersOf(repo, (why) => {
+    err(`cleanup-sweep: ${repo}: 내 PR 의 작성자를 정하지 못해 원격 브랜치 정리와 CLOSED PR 의 터미널 정리를 하지 않는다: ${why}`)
+    code = 2
+  })
+  const s: Sweep = { repo, args, workers, specsDir, log, report, owners }
   for (const [path, branch] of worktrees(repo)) await sweepWorktree(s, path, branch, terminals)
   const remaining = new Set(worktrees(repo).map(([, branch]) => branch))
   remaining.add(git(repo, 'branch', '--show-current').out)
   sweepBranches(repo, args, remaining, log)
-  if (!args.apply) return
+  if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, log)) code = 2
+  if (!args.apply) return code
   try {
     // 실패와 시간 초과는 HOOK-FAIL 줄만 남긴다. 종료 코드는 0 과 2(사용법 오류)뿐이라 부르는 쪽이 사용법 오류로 읽는다
     await fire('after-cleanup', { removed: report.removed, skipped: report.skipped }, { repo, base, run: args.run, out: log })
   } catch (e) {
     process.stderr.write(`cleanup-sweep: after-cleanup 을 내지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
   }
+  return code
 }
 
 // argparse 의 float 와 같은 꼴만 받는다. 무한대와 NaN 도 받아 범위 검사가 거부하게 한다. 수가 아니면 null 이다
@@ -1116,6 +1389,7 @@ export async function main(argv: string[]): Promise<number> {
     'kill-holders': { type: 'boolean', default: false },
     'agent-glob': { type: 'string', default: 'agent-*' },
     'close-own-taken-over': { type: 'boolean', default: false },
+    'remote-branches': { type: 'boolean', default: false },
     apply: { type: 'boolean', default: false },
     wait: { type: 'string', default: '5' },
     'poll-interval': { type: 'string', default: '1' },
@@ -1175,6 +1449,7 @@ export async function main(argv: string[]): Promise<number> {
     killHolders: values['kill-holders'],
     agentGlob: values['agent-glob'],
     closeOwnTakenOver: values['close-own-taken-over'],
+    remoteBranches: values['remote-branches'],
     apply: values.apply,
     wait,
     pollInterval,
@@ -1199,7 +1474,7 @@ export async function main(argv: string[]): Promise<number> {
   let code = 0
   for (const repo of repos) {
     try {
-      await sweepRepo(repo, args, workers, terminals, log)
+      if ((await sweepRepo(repo, args, workers, terminals, log)) !== 0) code = 2
     } catch (e) {
       if (!(e instanceof RepoError || e instanceof ConfigError)) throw e
       err(`cleanup-sweep: ${e.message}`)
