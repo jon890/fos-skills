@@ -10,9 +10,20 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 
 - **동작을 막아야 하면 거부할 수 있는 이벤트를 고른다.** `before-` 로 시작하는 이벤트와 `verify-merged` 다. 핸들러가 종료 코드 10 으로 끝나면 명령이 그 동작을 하지 않는다.
 - **알리거나 기록만 하면 나머지 이벤트를 고른다.** 핸들러가 실패해도 코어 동작은 이어 간다.
-- 「내는 명령」 이 아직 Python 인 이벤트는 그 명령을 TypeScript 로 옮기기 전까지 나지 않는다. 핸들러를 두어도 불리지 않는다.
+- 「내는 명령」 이 아직 Python 인 이벤트는 그 명령을 TypeScript 로 옮기기 전까지 나지 않는다. 핸들러를 두어도 불리지 않는다. 지금 이벤트를 내는 명령은 아래 표다.
 - 파일 이름이 이벤트 이름과 한 글자라도 다르면 불리지 않는다. `orch-doctor` 가 그런 파일을 `UNKNOWN-HOOK <파일>` 로 알린다.
   `hooks/` 바로 아래만 본다. 핸들러가 import 하는 모듈은 `hooks/lib/` 같은 하위 폴더에 둔다.
+
+| 내는 명령 | 이벤트 |
+| --- | --- |
+| `launch-worker.ts` | `before-launch`, `worker-launched` |
+| `watch-questions.ts` | `worker-question` |
+| `wait-important.ts` | `worker-done`, `worker-lost` |
+| `orch-doctor.ts --run` | `session-resume` |
+| `ci-ready.ts` | `before-ready`, `pr-ready` |
+| `notify-conflicts.ts` | `pr-conflict` |
+| `merge_queue.ts`(`merge-with-finish.ts` 가 건 것 포함) | `before-merge`, `verify-merged`, `after-merge`, `after-queue` |
+| `finish-pr.ts` | `after-deploy` |
 
 핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `docs/data-schema.md` 의 「공통 필드」 와 「이벤트별 필드」 표가 소유한다.
 환경 변수(`ORCH_EVENT`, `ORCH_REPO`, `ORCH_DIR`, `ORCA`, `GH`)와 작업 디렉터리는 `scripts/lib/events.ts` 머리 주석의 「핸들러」 와 「환경」 이 소유한다.
@@ -53,11 +64,39 @@ if (live.length >= LIMIT) {
 | `HOOK-FAIL <이벤트> <종료 코드>` | 핸들러가 10 이 아닌 값으로 끝났다. 시그널로 죽으면 128 더하기 신호 번호다 | 바로 위의 `[hook <이벤트>]` 줄에서 예외를 찾아 핸들러를 고친다 |
 | `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
-| `DEPRECATED <절>.<키> → hooks/<이벤트>.ts` | 옛 설정 칸을 핸들러처럼 돌렸다 | 그 칸의 명령을 핸들러로 옮기고 칸을 지운다. `orch-doctor` 가 남은 칸을 `DEPRECATED-CONFIG` 로 알린다 |
+| `DEPRECATED <옵션> → hooks/<이벤트>.ts` | 옛 설정 칸이나 같은 이름의 명령줄 옵션(`--before`, `--complete-cmd` 같은 것)을 핸들러처럼 돌렸다 | 아래 「옛 설정 칸 옮기기」 로 핸들러로 바꾼다. `orch-doctor` 가 남은 칸을 `DEPRECATED-CONFIG` 로 알린다 |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
 나머지 이벤트에서 명령의 종료 코드에 반영하는지는 `docs/flow.md` 「갈래」 표가 소유한다.
 지난 실행은 `<orch 루트>/state/hooks.jsonl` 에 한 줄씩 남는다.
+
+## 옛 설정 칸 옮기기
+
+`config.json` 의 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 와 `finish.task_pattern` 은 다음 major 에서 지운다.
+그때까지 명령이 그 칸을 핸들러처럼 돌리고 `DEPRECATED` 줄을 낸다.
+`migrate-orch-dir.ts --hooks` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다. 만든 핸들러는 옛 칸을 돌리던 것과 같은 인자, 환경 변수, 작업 디렉터리로 옛 명령을 부른다.
+
+머지 큐와 worker 가 돌지 않을 때 옮긴다. `$REPO` 는 대상 저장소의 주 checkout 이다.
+
+1. 미리보기로 만들 핸들러와 지울 키를 본다. `옮기지 못함` 이나 `겹침` 줄이 있으면 그 이유를 먼저 푼다
+
+   ```bash
+   node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.ts" --repo "$REPO" --hooks
+   ```
+
+2. 핸들러를 쓰고 설정에서 그 키를 지운다
+
+   ```bash
+   node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.ts" --repo "$REPO" --hooks --apply
+   ```
+
+3. 만든 `.orch/hooks/<이벤트>.ts` 를 열어 옛 명령이 그대로 들었는지 본다. 그 파일은 저장소의 것이라 고쳐 써도 된다.
+   `추적 파일` 줄이 나왔으면 공개 저장소에 올리면 안 되는 값이 없는지 본 뒤 그 `git add -f` 명령으로 더해 커밋한다
+
+- 폴더를 옮기기 전이면 `--hooks` 는 아무것도 바꾸지 않고 종료 코드 2 로 멈춘다. 먼저 [`overlay.md`](overlay.md) 의 「옛 구조에서 옮기기」 를 한다
+- 명령줄로 준 옛 옵션(`--before`, `--verify-merged`, `--after-merged`, `--complete-cmd`)은 옮기지 않는다. 오버레이에 적힌 호출에서 그 옵션을 빼고 같은 일을 하는 핸들러를 둔다
+- `PR번호:명령` 은 그 PR 하나에만 붙이는 명령이라 옮기지 않는다
+- 판정과 종료 코드는 `scripts/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다
 
 ## 가드가 막는 호출
 

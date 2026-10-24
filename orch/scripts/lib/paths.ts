@@ -140,7 +140,8 @@ export function makeParent(target: string, repo: string): void {
 }
 
 // 파일이거나, 안에 파일이 하나라도 있는 폴더인지. 빈 폴더만 남은 옛 위치는 옮길 것이 없다.
-function hasFiles(target: string): boolean {
+// 심볼릭 링크는 따라가지 않고 파일로 센다. migrate-orch-dir.ts 도 옮길지 판정할 때 쓴다.
+export function hasFiles(target: string): boolean {
   let stat
   try {
     stat = lstatSync(target)

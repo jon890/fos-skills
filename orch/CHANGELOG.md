@@ -3,6 +3,29 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.1.0 (2026-10-24)
+
+- 머지 단계의 명령(`overlap_units`, `ci-ready`, `notify-conflicts`, `merge_queue`, `merge-with-finish`, `finish-pr`)과 `migrate-orch-dir` 를 TypeScript 로 옮겼다. 충돌 판정은 `scripts/lib/git.ts` 의 merge-tree 한 벌로, 열린 PR 의 충돌 찾기와 알린 기록은 `scripts/lib/conflicts.ts` 로 모았다.
+- 옮긴 명령이 이벤트를 낸다. `ci-ready` 는 `before-ready` 와 `pr-ready`, `notify-conflicts` 는 `pr-conflict`, 머지 큐는 `before-merge`, `verify-merged`, `after-merge`, `after-queue`, `finish-pr` 는 `after-deploy` 다. 내는 명령의 표는 `references/hooks.md` 의 「이벤트 고르기」 에 두었다.
+- `merge-with-finish` 의 `PR!` 를 머지 큐에 `--last-of-task` 로도 넘긴다. `before-merge` 입력의 `last_of_task` 가 이 값이다.
+- 업무 완료를 `after-deploy` 이벤트로 바꿨다. 핸들러는 배포가 실패하거나 시간을 넘겨도 불리고 입력의 `deploy` 로 스스로 판단한다.
+- `migrate-orch-dir --hooks` 를 더했다. `config.json` 의 옛 셸 명령 칸(`queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 와 `finish.task_pattern`)을 같은 일을 하는 `hooks/<이벤트>.ts` 로 바꾸고 그 칸을 지운다. 기본은 미리보기이고, 핸들러 파일이 이미 있거나 정규식을 옮길 수 없는 칸은 남긴다. 옮기는 순서는 `references/hooks.md` 의 「옛 설정 칸 옮기기」 에 두었다.
+- `migrate-orch-dir` 가 막는 조건으로 찾는 머지 큐와 마무리 프로세스에 옮긴 명령의 `.ts` 명령줄을 더했다. 옛 `.py` 경로로 띄워도 명령줄은 `node … <이름>.ts` 라 옛 이름만 찾으면 돌고 있는 머지 큐를 놓친다.
+- 문서가 옮긴 명령을 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/<명령>.ts"` 로 부른다. `references/overlay.md` 의 설정 표에 지울 키를 적고 `hooks` 절과 `pipeline` 절을 더했다.
+
+호환성:
+
+- `ci-ready` 는 GitHub `mergeable` 대신 로컬 merge-tree 로 충돌을 본다. `--repo` 의 origin 을 fetch 하고, `ORCH_READY_RETRY_SECONDS` 는 읽지 않는다. 다른 사람의 PR 은 보류한다.
+- `notify-conflicts` 는 내 PR 만 보고, 끝난 dispatch 는 후속 지시서(`spec-conflict-<PR>-<base>.md`)로 남은 터미널에 이어 쓴다. send-to-worker 의 종료 코드 3 과 워크트리나 dispatch 를 찾지 못한 경우는 `CONFLICT-ORPHAN` 줄을 내고 기록해, 같은 (PR, base) 로 다시 알리지 않는다. 원본 테스트 `test_undelivered_message_is_not_recorded` 는 이 규칙으로 바뀌었고, 「기록하지 않는다」 는 종료 코드 5 와 끝난 dispatch 의 1 이 이어 받는다.
+- `--shared-paths` 와 `finish.task_pattern` 은 JS 정규식으로 읽는다. `(?P<이름>`, `(?P=이름)`, `\A`, `\Z` 는 같은 뜻으로 바꾼다. 인라인 플래그(`(?i)`)처럼 JS 가 받지 않는 문법은 사용법 오류다.
+- 옛 칸(`queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`, 같은 이름의 명령줄 옵션)도 이벤트 실행기로 돈다. 옛 칸도 1800초 제한을 받는다. 더 길면 `hooks.timeouts.<이벤트>` 로 늘린다. 핸들러와 같은 가드 PATH 를 거치고, `DEPRECATED <옵션> → hooks/<이벤트>.ts` 줄을 낸다. `PR:명령` 은 시간 제한 없이 지금처럼 돈다.
+- 머지 큐는 `after-merge` 나 `after-queue` 가 실패하면 모두 머지했어도 종료 코드 3 이다.
+- 머지한 브랜치를 base 로 둔 열린 PR 이 모두 내 PR 이면 머지 큐가 base 를 옮긴 뒤 원격 브랜치를 지운다.
+- `finish-pr` 의 지시서 삭제는 살아 있는 dispatch 가 쓰는 지시서와 그 목록을 읽지 못한 실행에서는 지우지 않는다. 배포 대기 시간 초과는 `after-deploy` 의 `deploy: timeout` 이다.
+- `merge-queue.sh` 는 한 버전 뒤 지운다고 했던 것을 바꿔 다음 major 까지 남긴다. 다른 저장소의 포장 스크립트가 이 경로를 부를 수 있어서다.
+- 옮긴 명령의 옛 `.py` 경로는 남아 `DEPRECATED` 줄을 내고 `.ts` 로 넘긴다. ps 의 명령줄은 `node … <이름>.ts` 다.
+- `migrate-orch-dir` 는 `--run` 도 설정의 `finish.run` 도 없으면 범위 없이 읽은 orca 목록이 모든 Run 의 것일 때만 옮긴다. 코디네이터 터미널처럼 한 Run 에 묶인 곳에서는 「orca 로 살아 있는 dispatch 와 worker 를 읽지 못했다」 로 막으므로 `--run` 을 준다. 지시서 폴더는 저장소마다 하나라 묶인 Run 만 본 결과로는 다른 Run 의 worker 를 지켜 주지 못한다.
+
 ## 3.0.0 (2026-10-24)
 
 - PreToolUse hook 과 `shell_text.py` 를 TypeScript 로 옮기고 `hooks.json` 이 node 로 부르게 했다. worker 터미널 직접 입력 금지 hook 은 모든 Run 의 worker 를 보고, 대상이 변수이거나 orca 조회가 실패하거나 7초를 넘기면 통과시키지 않고 거부한다.
@@ -149,7 +172,7 @@ orch 의 파일을 oh-my-claudecode 의 `.omc/` 에서 떼어 주 checkout 의 `
 
 - `wait-important.py`: `--ack-lost` 로 확인한 끊긴 dispatch 를 Run 별로 기록한다. 다음 대기에서 같은 dispatch 의 경고를 생략하며, 확인 기록만 쓰고 대기 없이 끝난다. `--kill-stale` 은 일반 셸을 거쳐 PID 1 에 연결된 같은 사용자의 고아 대기도 종료한다.
 - `merge-queue.sh`: 합친 사본의 검증 명령에 사본 경로, PR 번호, 양쪽 커밋과 변경·겹침 파일 목록을 환경 변수로 넘긴다. `--update-docs-on-overlap` 은 GitHub CLEAN 인 문서 PR 에 base 를 합치고 필수 CI 를 다시 기다린다. update-branch 요청에도 검사한 HEAD 를 지정한다.
-- 기존 `--after-merged` 의 배포 기능을 재사용하고, 대기와 머지 문서에 gersang-lab 의 로컬 스크립트를 대신할 명령과 Vitest 검증 예시를 추가한다. 실제 Run 과 다른 저장소의 파일은 바꾸지 않는다.
+- 기존 `--after-merged` 의 배포 기능을 재사용하고, 대기와 머지 문서에 한 저장소의 로컬 스크립트를 대신할 명령과 Vitest 검증 예시를 추가한다. 실제 Run 과 다른 저장소의 파일은 바꾸지 않는다.
 
 ## 1.42.0 (2026-10-23)
 
@@ -167,7 +190,7 @@ orch 의 파일을 oh-my-claudecode 의 `.omc/` 에서 떼어 주 checkout 의 `
 
 ## 1.40.0 (2026-10-23)
 
-gersang-lab 코디네이터가 저장소 로컬 스크립트를 스킬 것으로 바꾸지 못하게 막던 결함 넷을 고치고, 로컬 스크립트에만 있던 머지 기능을 옮긴다.
+한 저장소의 코디네이터가 저장소 로컬 스크립트를 스킬 것으로 바꾸지 못하게 막던 결함 넷을 고치고, 로컬 스크립트에만 있던 머지 기능을 옮긴다.
 
 - `wait-important.py`: 2026-10-22 에 대기를 걸자마자 옛 dispatch 31개를 `WORKER_LOST` 로 내고 끝났다. worker_done 없이 같은 터미널에 일을 이어 준 dispatch 라 task 가 열린 채였다.
   - 일부러 끝낸 dispatch 를 빼고 본다. `dispatch-show` 의 termination_reason 이 operator_close 이거나 last_failure 의 provenance 가 worker_report 인 것이다. 실제 Run 의 30개 가운데 24개가 여기 해당했다
@@ -180,7 +203,7 @@ gersang-lab 코디네이터가 저장소 로컬 스크립트를 스킬 것으로
   - `--repo/--name` 으로 워크트리를 만든 뒤 띄우지 못하면, `--worktree <만든 경로>` 로 이어 띄우는 명령과 남은 터미널 목록을 낸다. 같은 `--name` 으로 다시 부르면 make-worktree 가 거부했다. worker-start 가 성공한 뒤의 실패에는 내지 않는다. 다시 띄우면 같은 일의 task 가 하나 더 생긴다
   - `worker-start` 가 `agent-hooks-review-prompt` 로 실패하면 Codex 설치본 갱신 명령을 알린다
 - Codex hook 신뢰 확인: Codex 는 `.codex-plugin/plugin.json` 이 없으면 `.claude-plugin/plugin.json` 의 hook 을 싣는다. fdf53e1 이 더한 orch hook 3개가 Codex 설치본 갱신(316ea9e)과 함께 나타나 Codex worker 가 「3 hooks are new or changed」 화면에서 멈췄다. hooks 를 배열로 바꾼 #169 가 원인은 아니다. 저장소에 hooks 없는 `.codex-plugin/plugin.json` 을 더해 Codex 가 hook 을 싣지 않게 했다(ADR-007). 머지 뒤 `codex plugin marketplace upgrade fos-skills` 로 갱신해야 반영된다
-- `merge-queue.sh`: gersang-lab `merge-ready.sh` 에만 있던 기능을 옮긴다. 기본값은 지금 동작이다
+- `merge-queue.sh`: 한 저장소의 `merge-ready.sh` 에만 있던 기능을 옮긴다. 기본값은 지금 동작이다
   - `--after-merged CMD`: 이번 실행에서 머지한 PR 이 있으면 끝에 한 번 돌린다. `MERGED_PRS` 와 문서 PR 을 뺀 `CODE_PRS` 를 받는다. 실패하면 종료 코드 3 이다
   - `--skipped-is-missing`: 결론이 SKIPPED 인 체크를 아직 돌지 않은 것으로 본다
   - PR 조회가 실패하면 10초 간격으로 세 번까지 부른다. CI 를 통과한 PR 이 일시 실패로 보류되던 문제다
@@ -349,7 +372,7 @@ worker 를 띄우고 기다리다 막히는 세 곳을 고친다.
 ## 1.22.0
 
 `check --wait` 가 heartbeat 만 든 묶음으로 깨어날 때마다 코디네이터가 읽을 것 없이 ack 하고 다시 걸던 일을 스크립트로 옮긴다.
-gersang-lab 전용 `wait-important.sh` 를 일반화한 것이다.
+한 저장소 전용 `wait-important.sh` 를 일반화한 것이다.
 
 - 새 `scripts/wait-important.py`: `--types`(기본 `worker_done,question,escalation,status`)가 든 묶음이 오면 ack 하지 않고 그 JSON 과 `LAST_DELIVERY <id>` 를 낸다. 그 밖의 묶음은 다음 호출의 `--ack` 로 넘기고 계속 기다린다. Run 은 `--run` 으로 받고, 전체 한도(`--timeout-ms`, 기본 7000000)가 지나면 `TIMEOUT LAST_DELIVERY <id>` 로 끝난다. 출력은 `triage-messages.py` 가 그대로 읽는다
 - `hooks/block-background-wait.py` 가 `wait-important` 를 셸의 `&` 나 `nohup` 으로 띄우는 호출도 거부한다. 스크립트 이름만 있는 호출에는 `orchestration check` 가 없어 1.15.0 규칙에 걸리지 않았다
@@ -359,7 +382,7 @@ gersang-lab 전용 `wait-important.sh` 를 일반화한 것이다.
 ## 1.21.0
 
 `cleanup-sweep.py` 가 브랜치 없는 워크트리와 하위 에이전트 워크트리를 정리하지 못해 남던 두 경우를 다룬다.
-gersang-lab 전용 `sweep-merged.sh` 의 두 부분을 일반화한 것이다.
+한 저장소 전용 `sweep-merged.sh` 의 두 부분을 일반화한 것이다.
 
 - 저장소 밖 detached 워크트리: worker 가 기준선 비교로 임시 폴더에 만들고 남긴 것이다. 커밋 안 된 변경, 쓰는 프로세스, Orca 터미널이 없고 HEAD 가 원격 추적 브랜치에 있으면 `git worktree remove` 로 지운다. 저장소 폴더 안의 detached 워크트리는 그대로 둔다
 - 목록을 읽기 전에 `git worktree prune` 을 돌린다. dry-run 은 `-n` 으로 지울 등록만 낸다
@@ -370,7 +393,7 @@ gersang-lab 전용 `sweep-merged.sh` 의 두 부분을 일반화한 것이다.
 ## 1.20.0
 
 draft PR 로 CI 를 미루는 저장소에서, 파일이 겹치는 PR 을 함께 ready 로 바꿔 CI 를 두 번 돌리던 일을 스크립트로 막는다.
-gersang-lab 전용 `ci-ready.sh` 를 일반화한 것이다.
+한 저장소 전용 `ci-ready.sh` 를 일반화한 것이다.
 
 - 새 `scripts/ci-ready.py`: draft PR 을 `gh pr ready` 로 바꾼다. 같은 base 로 가는 열린 ready PR 과 바뀐 파일이 겹치거나 base 와 충돌하면 보류하고 이유를 낸다. 이번 실행에서 앞서 바꾼 PR 도 ready 로 센다. `mergeable` 이 `UNKNOWN` 이면 다시 묻고, 파일이 100 개 이상이면 목록이 잘렸을 수 있어 보류한다
 - 저장소 이름과 경로를 박지 않고 `--repo` 의 origin 으로 찾는다
@@ -380,7 +403,7 @@ gersang-lab 전용 `ci-ready.sh` 를 일반화한 것이다.
 ## 1.19.0
 
 같은 파일을 고친 PR 을 차례로 머지할 때, 합친 상태의 검사를 `verification.md` 의 손 절차로만 하던 것을 머지 큐 옵션으로 옮긴다.
-gersang-lab 전용 `merge-ready.sh`, `merge-tested.sh` 를 일반화한 것이다.
+한 저장소 전용 `merge-ready.sh`, `merge-tested.sh` 를 일반화한 것이다.
 
 - `merge-queue.sh --stop-on-overlap`: PR 의 바뀐 파일이 PR 기준 이후 base 에서 바뀐 파일과 겹치면 겹친 파일을 찍고 멈춘다
 - `merge-queue.sh --verify-merged CMD`: 겹치면 `origin/<base>` 에 PR HEAD 를 merge 한 임시 사본에서 `CMD` 를 사본 경로를 인자로 돌려 0 이면 머지한다. 충돌, 검사 실패, 검사 중 base 이동은 멈춘다. 사본은 멈출 때도 지운다
