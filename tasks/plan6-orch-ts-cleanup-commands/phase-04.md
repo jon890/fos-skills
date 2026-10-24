@@ -89,3 +89,8 @@ python3 korean-check/scripts/korean-style-check.py orch/README.md
 | `orch/tests/test_board_sync.py` | 삭제 |
 | `orch/tests/test_scripts.py` | 삭제 |
 | `orch/README.md` | 수정 |
+
+## 구현 중 정한 것
+
+- 지시서 줄은 `lib/spec.ts` 의 `deleteSpecs` 가 내는 꼴로 바뀐다(절대경로, `지시서를 휴지통으로 옮길 것`, `지시서 옮김 … -> …`, `지시서를 남긴다 …: <이유>`). 끝나지 않은 지시서는 `deleteSpecs` 로 넘기지 않아 「남긴다」 줄이 나지 않는다. 마지막 phase 의 CHANGELOG 호환성 절에 이 차이를 적는다.
+- `drop_nested` 는 지시서가 아닌 후보에만 쓴다. 지시서는 예약 폴더 안이라 다른 후보와 겹치지 않는다.
