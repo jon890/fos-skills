@@ -17,9 +17,12 @@
 //                    Run 이 다르면 --stop 뒤 다시 --start 한다
 //     --stop         loop.json 의 pid 에 TERM 을 보내고 20초까지 끝나기를 기다린다. LOOP-STOPPED <pid> 와 0,
 //                    루프가 없으면 LOOP-NOT-RUNNING 과 0, 20초 뒤에도 살아 있으면 LOOP-STOP-TIMEOUT <pid> 와 1.
-//                    pid 가 살아 있어도 그 명령줄에 orch-loop 가 없으면 루프가 아니다. 죽은 루프의 pid 를 다른 프로세스가 다시 받았을 수 있다
+//                    pid 가 살아 있어도 그 명령줄에 orch-loop 가 없으면 루프가 아니다. 죽은 루프의 pid 를 다른 프로세스가 다시 받았을 수 있다.
+//                    ps 로 판정할 수 없으면(lib/loop.ts 의 isLoopProcess 가 null) 신호를 보내지 않고 LOOP-STOP-UNKNOWN <pid> <이유> 와 1.
+//                    루프가 아닌 프로세스에 TERM 을 보내지 않으려는 것이다
 //     --status       LOOP-ALIVE <pid> run=<…> last_tick=<…> alive_at=<…> 와 0, LOOP-DEAD <repo> <이유> 와 1. 판정은 lib/loop.ts 의 loopStatus
-//     --foreground   지금 프로세스에서 틱을 돈다. --start 의 자식과 테스트가 쓴다. 신호를 받으면 진행 중인 자식을 끝내고 128 + 신호 번호
+//     --foreground   지금 프로세스에서 틱을 돈다. --start 의 자식과 테스트가 쓴다. 신호를 받으면 진행 중인 틱 자식을 끝내고(아래 「틱」)
+//                    128 + 신호 번호
 //     --once         --foreground 와 함께 틱 한 번만 돌고 0 으로 끝난다
 //     --tick, --tick-number N
 //                    틱 하나를 돌고 끝난다. --foreground 의 부모가 틱마다 띄운다. N 은 1 부터다.
@@ -28,11 +31,20 @@
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // 한 저장소에 하나: --foreground 는 시작할 때 state/loop.lock 을 wx 로 만들어 자기 pid 를 적고, 끝날 때 자기 pid 가 든 잠금만 지운다.
-//     죽은 pid 의 잠금은 lib/events.ts 의 reclaim 으로 회수한다. 살아 있는 pid 가 쥐고 있으면 LOOP-RUNNING 과 4 다.
+//     죽은 pid 의 잠금은 lib/events.ts 의 reclaim 으로 회수한다. pid 가 살아 있어도 루프 프로세스(lib/loop.ts 의 isLoopProcess)가
+//     아니면 죽은 잠금으로 보고 회수한다. 죽은 루프의 pid 를 다른 프로세스가 다시 받았을 수 있다.
+//     pid 가 살아 있는데 ps 로 판정할 수 없으면(isLoopProcess 가 null) 루프가 쥔 것으로 보고 회수하지 않는다. 잘못 회수하면 루프가 둘이 된다.
+//     살아 있는 루프가 쥐고 있으면 LOOP-RUNNING 과 4 다.
 //     --start 는 loopStatus 와 이 잠금을 함께 본다.
 //
 // 틱: 부모는 틱 자식 하나가 끝나면 pipeline.tick_sec 을 기다린 뒤 다음 틱 자식을 띄운다. 겹치지 않는다.
 //     틱을 자식 프로세스로 떼어 낸 것은 lib 의 조회(질문 조회, gh)가 동기라, 같은 프로세스에서 돌면 그동안 생존 타이머가 돌지 못해서다.
+//     틱 자식은 자기 프로세스 그룹으로 띄운다(lib/proc.ts runAsync 의 group). 부모가 신호를 받으면 그 그룹 전체에 TERM 을 보내고,
+//     TICK_STOP_GRACE_MS 뒤에도 그룹이 남아 있으면 KILL 을 보낸다. 이 유예는 틱 자식이 자기 자식을 끝내는 유예(lib/proc.ts 의
+//     STOP_GRACE_MS)보다 길다. 같으면 틱 자식이 손자(정리 명령 같은 것)에 KILL 을 보내기 전에 부모의 KILL 이 틱 자식에 닿아 손자가 남는다.
+//     부모가 KILL 로 죽으면 신호를 전하지 못한다. 그래서 틱 자식은 PARENT_POLL_MS(2초)마다 시작할 때의 부모 pid 를 보고, process.ppid 가
+//     바뀌었거나 그 pid 가 죽었으면 SIGHUP 을 받은 것처럼 자기 자식을 끝내고 129 로 끝난다. 동기 조회(질문 조회, gh) 중에는 그 조회가
+//     끝난 뒤에 본다. 부모가 없으면 stdout 을 읽는 쪽도 없으므로 그 뒤의 쓰기 오류(EPIPE)는 버린다.
 //     틱 자식이 하는 일(순서대로, 하나가 실패해도 다음을 한다):
 //     1. 질문 확인. Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
 //        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓰고 worker-question 을 낸다. REMINDER 는 알림 파일에도 쓴다.
@@ -45,8 +57,9 @@
 //     열린 PR 은 틱마다 gh pr list 한 번으로 읽어 4, 5, 6 이 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors 와 ci 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
 //     ci(결과에 있을 때만 통째로 바꾼다)를 쓴다.
-//     결과 줄 앞의 출력과 stderr 는 부모가 로그로 옮긴다. 틱 자식이 0 이 아니거나 결과 줄 없이 끝나면 last_tick 은 그대로 두고
-//     errors.tick 에 그 이유(`종료 코드 <n>`, `결과 줄 없음`)를 둔다.
+//     결과 줄 앞의 출력과 stderr 는 부모가 로그로 옮긴다. 결과 줄을 읽었으면 종료 코드와 상관없이 합친다. 버리면 그 틱이 이미 알린
+//     CI 상태가 loop.json 에 남지 않아 다음 틱이 같은 실패를 다시 알린다. 틱 자식이 0 이 아니면 errors.tick 에 `종료 코드 <n>` 을 둔다.
+//     결과 줄 없이 끝나면 last_tick 은 그대로 두고 errors.tick 에 `종료 코드 <n>`(0 이 아닐 때)이나 `결과 줄 없음` 을 둔다.
 //
 // CI 감시: 내 열린 PR 가운데 draft 가 아닌 것마다 필수 체크 상태를 정한다. 다른 사람의 PR 과 draft 는 보지 않는다.
 //     필수 체크 이름은 lib/gh.ts 의 requiredNames(queue.required, 없으면 base 의 저장소 규칙. 같은 base 의 규칙은 틱마다 한 번 읽는다),
@@ -56,6 +69,7 @@
 //     loop.json 의 ci[<PR>] 와 HEAD 와 상태가 같으면 넘어간다. 다르면 새 값을 결과의 ci 에 담고, passed 로 바뀌었으면 ci-passed 를,
 //     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 알림 파일에 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 lib/events.ts 머리 주석의
 //     「이벤트별 필드」). 같은 HEAD 에서 다시 돌린 체크가 통과로 바뀌면 ci-passed 를 낸다. 새 HEAD 는 새로 판정한다.
+//     처음 본 PR(이전 값이 없는 PR)은 지금 상태를 한 번 알린다. 루프를 처음 띄운 때 이미 실패해 있던 PR 도 알리려는 의도다.
 //     결과의 ci 는 이번 틱에 본 내 열린 PR 의 값이라 닫힌 PR 의 항목은 빠진다. draft 와 규칙을 읽지 못한 base 의 PR 처럼 이번 틱에
 //     판정하지 않은 PR 은 이전 값을 그대로 옮긴다. 지우면 다음 틱에 같은 HEAD 의 실패를 다시 알린다.
 //     규칙을 읽지 못한 base 는 errors.ci 로 `WATCH-ERROR ci: …` 를 쓴다(아래 「오류 줄 억제」).
@@ -67,7 +81,8 @@
 //
 // 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
 //     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
-//     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 같은 (PR, base SHA) 를 두 번 보내지 않는다. 새 worker 는 띄우지 않는다.
+//     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 (PR, base SHA) 를 두 번 보내지 않는다. 둘이 겹쳐 돌면
+//     둘 다 기록을 읽은 뒤 보내므로 두 번 보낼 수 있다(기록 파일에 잠금이 없다). 새 worker 는 띄우지 않는다.
 //     내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛴다.
 //     1. lib/conflicts.ts 의 findConflicts(base 는 origin/HEAD 가 가리키는 브랜치, 없으면 main). 실패하면 `WATCH-ERROR conflicts: …`
 //     2. 내 PR 만 남긴다. 작성자를 정하지 못하면 `WATCH-ERROR conflicts: …` 를 쓰고 그 틱의 충돌 처리를 끝낸다
@@ -110,10 +125,10 @@
 //
 // 종료 코드:
 //     0  성공. --start 가 띄웠다, --stop 이 멈췄거나 루프가 없다, --status 가 살아 있다, --once 와 --tick 이 끝났다
-//     1  --start 실패, --stop 시간 초과, --status 가 죽었다, 잡지 않은 예외
+//     1  --start 실패, --stop 시간 초과나 루프 프로세스인지 판정하지 못함, --status 가 죽었다, 잡지 않은 예외
 //     2  사용법 오류와 설정 오류(ConfigError, ORCH_LOOP_ALIVE_SEC 가 양수가 아님)
 //     4  살아 있는 루프가 있다(LOOP-RUNNING)
-//     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다
+//     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
 import { spawn } from 'node:child_process'
 import { appendFileSync, closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs'
@@ -131,10 +146,10 @@ import { isFile } from './lib/fs.ts'
 import { apiTarget, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { appendEvent, lockFile, loopStatus, readLoop, writeLoop } from './lib/loop.ts'
+import { appendEvent, DEFAULT_ALIVE_SEC, isLoopProcess, lockFile, loopStatus, readLoop, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
 import { boardPath, makeParent, pathOf } from './lib/paths.ts'
-import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
+import { NO_LIMIT_MS, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { notifyQuestion, poll } from './lib/questions.ts'
@@ -147,7 +162,6 @@ const USAGE = [
 const SELF = fileURLToPath(import.meta.url)
 const HERE = dirname(SELF)
 const DEFAULT_TICK_SEC = 300
-const DEFAULT_ALIVE_SEC = 30
 const REMIND_AFTER_SEC = 600
 const START_WAIT_MS = 10_000
 const STOP_WAIT_MS = 20_000
@@ -157,6 +171,10 @@ const LOG_LIMIT = 1_048_576
 const SWEEP_TIMEOUT_MS = 600_000
 // wx 로 만든 직후 pid 를 쓰기 전의 빈 잠금을 깨진 잠금으로 회수하지 않게, 이 시간 안의 빈 파일은 쥔 것으로 본다(lib/events.ts 와 같다)
 const EMPTY_LOCK_GRACE_MS = 2_000
+// 부모가 틱 자식 그룹에 TERM 을 보낸 뒤 KILL 까지 기다리는 시간. 틱 자식의 STOP_GRACE_MS 보다 길다(머리 주석의 「틱」)
+const TICK_STOP_GRACE_MS = STOP_GRACE_MS + 3_000
+// 틱 자식이 부모가 살아 있는지 보는 간격(머리 주석의 「틱」)
+const PARENT_POLL_MS = 2_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 
 type Mode = (typeof MODES)[number]
@@ -262,10 +280,16 @@ function createLock(lock: string): boolean {
   return true
 }
 
-// 잠금을 쥔 살아 있는 pid. 없거나 죽었으면 null
-function lockHolder(lock: string): number | null {
+// 잠금에 적힌 pid. 없거나 정수가 아니면 NaN
+function lockPid(lock: string): number {
   const text = (readText(lock) ?? '').trim()
-  return /^\d+$/.test(text) && alive(Number(text)) ? Number(text) : null
+  return /^\d+$/.test(text) ? Number(text) : Number.NaN
+}
+
+// 잠금을 쥔 살아 있는 루프의 pid. 없거나, 죽었거나, 루프 프로세스가 아니면 null. 판정할 수 없으면 루프로 본다(머리 주석의 「한 저장소에 하나」)
+function lockHolder(lock: string): number | null {
+  const pid = lockPid(lock)
+  return isLoopProcess(pid) !== false ? pid : null
 }
 
 function freshEmpty(lock: string): boolean {
@@ -285,7 +309,8 @@ async function takeLock(lock: string, repo: string): Promise<number | null> {
     const seen = readText(lock)
     if (seen === null) continue
     const text = seen.trim()
-    if (/^\d+$/.test(text) && alive(Number(text))) return Number(text)
+    // 루프 프로세스가 아닌 pid 는 죽은 잠금이다. 아래 reclaim 으로 회수한다. 판정할 수 없으면(null) 회수하지 않는다
+    if (/^\d+$/.test(text) && isLoopProcess(Number(text)) !== false) return Number(text)
     if (text === '' && freshEmpty(lock)) {
       await sleep(POLL_MS)
       continue
@@ -307,13 +332,6 @@ function releaseLock(lock: string): void {
 
 function runOf(state: LoopState | null, pid: number): string {
   return state && Number(state.pid) === pid && state.run ? state.run : '-'
-}
-
-// pid 의 명령줄에 orch-loop 가 들어 있는지. 죽은 루프의 pid 를 다른 프로세스가 받았으면 그 프로세스에 신호를 보내지 않는다
-function isLoopProcess(pid: number): boolean {
-  if (!alive(pid)) return false
-  const done = runSync(['ps', '-o', 'command=', '-p', String(pid)], { env: { LC_ALL: 'C' } })
-  return done.code === 0 && done.stdout.includes('orch-loop')
 }
 
 function running(repo: string): { pid: number; run: string } | null {
@@ -374,9 +392,16 @@ async function start(ctx: Context): Promise<number> {
 }
 
 async function stop(repo: string): Promise<number> {
-  const candidates = [Number(readLoop(repo)?.pid), lockHolder(lockFile(repo)) ?? Number.NaN]
-  const pid = candidates.find((p) => isLoopProcess(p))
+  const candidates = [Number(readLoop(repo)?.pid), lockPid(lockFile(repo))]
+  const verdicts = candidates.map((p) => ({ pid: p, loop: isLoopProcess(p) }))
+  const pid = verdicts.find((v) => v.loop === true)?.pid
   if (pid === undefined) {
+    // 루프가 아닌 프로세스에 TERM 을 보내지 않는다(머리 주석의 --stop)
+    const unknown = verdicts.find((v) => v.loop === null)
+    if (unknown) {
+      log(`LOOP-STOP-UNKNOWN ${unknown.pid} ps 로 루프 프로세스인지 판정하지 못해 신호를 보내지 않았다`)
+      return 1
+    }
     log('LOOP-NOT-RUNNING')
     return 0
   }
@@ -431,7 +456,8 @@ function tickResult(done: RunResult): { result: TickResult | null; reason: strin
     }
   }
   for (const line of [...out, ...lines(done.stderr)]) log(line)
-  if (done.code !== 0) return { result: null, reason: `종료 코드 ${done.code}` }
+  // 결과 줄이 있으면 종료 코드와 상관없이 낸다(머리 주석의 「틱」)
+  if (done.code !== 0) return { result, reason: `종료 코드 ${done.code}` }
   if (!result) return { result: null, reason: '결과 줄 없음' }
   return { result, reason: null }
 }
@@ -473,7 +499,11 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
   try {
     for (let n = 1; ; n++) {
       log(`tick ${n} ${iso()}`)
-      const done = await runAsync(scriptCommand(SELF, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), { cwd: ctx.repo, timeoutMs: NO_LIMIT_MS })
+      const done = await runAsync(scriptCommand(SELF, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), {
+        cwd: ctx.repo,
+        timeoutMs: NO_LIMIT_MS,
+        group: true,
+      })
       // 신호로 끝내는 중이면 끊긴 틱을 실패로 알리지 않는다
       const signal = stopping()
       if (signal) return signalCode(signal)
@@ -859,18 +889,32 @@ async function tick(ctx: Context, n: number): Promise<number> {
 // 본체 ------------------------------------------------------------------
 
 let exiting = false
+// 신호를 받았을 때 자식에 TERM 뒤 KILL 까지 주는 유예. --foreground 의 부모만 늘린다(머리 주석의 「틱」)
+let stopGraceMs = STOP_GRACE_MS
 function onSignal(signal: NodeJS.Signals): void {
   if (exiting) return
   exiting = true
-  // 진행 중인 자식(틱 자식, 정리 명령, 핸들러 그룹)을 끊은 뒤에 끝낸다. 그냥 끝내면 자식이 남는다
-  void stopChildren(signal).finally(() => process.exit(signalCode(signal)))
+  // 진행 중인 자식(틱 자식 그룹, 정리 명령, 핸들러 그룹)을 끊은 뒤에 끝낸다. 그냥 끝내면 자식이 남는다
+  void stopChildren(signal, stopGraceMs).finally(() => process.exit(signalCode(signal)))
+}
+
+// 틱 자식이 부모(--foreground)가 사라졌는지 본다(머리 주석의 「틱」)
+function watchParent(): void {
+  const parent = process.ppid
+  setInterval(() => {
+    if (process.ppid === parent && alive(parent)) return
+    // stdout 을 읽던 부모가 없다. 쓰기 오류가 잡지 않은 예외가 되어 끝내기를 방해하지 않게 버린다
+    process.stdout.on('error', () => {})
+    process.stderr.on('error', () => {})
+    onSignal('SIGHUP')
+  }, PARENT_POLL_MS).unref()
 }
 
 function fatal(e: unknown): void {
   log(`orch-loop: ${(e as Error)?.stack ?? String(e)}`)
   if (exiting) return
   exiting = true
-  void stopChildren('SIGTERM').finally(() => process.exit(1))
+  void stopChildren('SIGTERM', stopGraceMs).finally(() => process.exit(1))
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -931,7 +975,11 @@ async function main(argv: string[]): Promise<number> {
   process.on('SIGHUP', onSignal)
   process.on('uncaughtException', fatal)
   process.on('unhandledRejection', fatal)
-  if (mode === 'tick') return tick(ctx, tickNumber)
+  if (mode === 'tick') {
+    watchParent()
+    return tick(ctx, tickNumber)
+  }
+  stopGraceMs = TICK_STOP_GRACE_MS
   logFile = join(pathOf('state', repo), 'loop.log')
   makeParent(logFile, repo)
   return foreground(ctx, values.once as boolean, interval)

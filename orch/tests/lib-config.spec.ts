@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, DEPRECATED_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from '../scripts/lib/config.ts'
+import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
 const OVERLAY = fileURLToPath(new URL('../references/overlay.md', import.meta.url))
@@ -159,6 +160,13 @@ describe('QUEUE_KEYS', () => {
     }
     assert.ok(documented.size > 0, 'queue 행을 찾지 못했다')
     assert.deepEqual([...QUEUE_KEYS].sort(), [...documented].sort())
+  })
+
+  test('merge-with-finish 가 머지 큐 옵션으로 바꾸는 표들의 키를 합치면 QUEUE_KEYS 와 같은 집합이고 표끼리 겹치지 않는다', () => {
+    const tables = [QUEUE_VALUES, QUEUE_FLAGS, QUEUE_REPEATED, QUEUE_GROUPS].map((table) => Object.keys(table))
+    const union = tables.flat()
+    assert.equal(new Set(union).size, union.length, `두 표에 든 키가 있다: ${union.join(', ')}`)
+    assert.deepEqual([...union].sort(), [...QUEUE_KEYS].sort())
   })
 
   test('queue 절은 QUEUE_KEYS 로 required, method, docs_glob 이 함께 통과하고 모르는 키(requird)는 ConfigError 다', () => {

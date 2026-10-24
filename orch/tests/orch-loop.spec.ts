@@ -10,6 +10,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
+import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
@@ -37,12 +38,15 @@ else if (sub === 'inbox') reply({ messages: [] })
 else reply({})
 `
 
-// 정리와 보드 동기화 가짜. 받은 인자를 <이름>.jsonl 에 적고, <이름>.json 의 sleep(초)만큼 잔 뒤 code 로 끝난다
+// 정리와 보드 동기화 가짜. 받은 인자를 <이름>.jsonl 에 적고, <이름>.json 의 sleep(초)만큼 잔 뒤 code 로 끝난다.
+// ignore_term 이면 TERM 을 무시하고, pid_file 이 있으면 자기 pid 와 부모 pid 를 그 파일에 적은 뒤 잔다
 function fakeScript(name: string): string {
-  return `import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+  return `import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 const dir = process.env.FAKE_DIR
 appendFileSync(dir + '/${name}.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n')
 const st = existsSync(dir + '/${name}.json') ? JSON.parse(readFileSync(dir + '/${name}.json', 'utf8')) : {}
+if (st.ignore_term) process.on('SIGTERM', () => {})
+if (st.pid_file) writeFileSync(st.pid_file, process.pid + ' ' + process.ppid + '\\n')
 if (st.sleep) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.sleep * 1000)
 console.log('${name} 돌았다')
 process.exitCode = st.code ?? 0
@@ -221,6 +225,35 @@ function logText(): string {
 
 function question(id = 'q', created = '2026-01-01T00:00:00Z'): Json {
   return { id, type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d', thread_id: id, body: '질문', created_at: created }
+}
+
+// 명령줄에 orch-loop 가 든 살아 있는 프로세스다. 그 pid 는 루프 프로세스로 보인다. 테스트가 끝나면 끝낸다
+async function fakeLoop(t: TestContext): Promise<number> {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'orch-loop'], { stdio: 'ignore' })
+  t.after(() => child.kill('SIGKILL'))
+  await new Promise((resolve) => child.once('spawn', resolve))
+  return child.pid as number
+}
+
+// 명령줄에 orch-loop 가 없는 살아 있는 프로세스다. 테스트가 끝나면 afterEach 가 끝낸다
+async function otherProcess(): Promise<number> {
+  const other = spawn('sleep', ['60'], { stdio: 'ignore' })
+  spawned.push(other)
+  await new Promise((resolve) => other.once('spawn', resolve))
+  return other.pid as number
+}
+
+// 늘 1 로 끝나는 가짜 ps 를 PATH 앞에 둔 환경. 루프 프로세스인지 판정할 수 없는 경우다
+function failingPs(): NodeJS.ProcessEnv {
+  const dir = join(tmp, 'ps-bin')
+  mkdirSync(dir)
+  fakeBin(dir, 'ps', [{ code: 1, stderr: 'ps: 실패\n' }])
+  return { PATH: `${dir}${delimiter}${env.PATH ?? ''}` }
+}
+
+async function waitDead(pids: number[], ms: number): Promise<void> {
+  const until = Date.now() + ms
+  while (pids.some(pidAlive) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50))
 }
 
 // 루프를 띄우고 끝날 때까지 loop.json 을 50ms 마다 읽어 둔다
@@ -439,6 +472,60 @@ describe('틱 자식의 실패', () => {
   })
 })
 
+describe('신호', () => {
+  test('정리 가짜가 TERM 을 무시하고 오래 잘 때 부모에 TERM 을 보내면, 부모가 끝난 뒤 틱 자식과 정리 가짜가 남지 않는다', { timeout: 60_000 }, async (t) => {
+    const pidFile = join(tmp, 'sweep.pid')
+    fake('sweep', { sleep: 60, ignore_term: true, pid_file: pidFile })
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], { env, cwd: tmp })
+    spawned.push(child)
+    const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)))
+    const deadline = Date.now() + 20_000
+    while (!(existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('\n'))) {
+      assert.ok(Date.now() < deadline, '정리 가짜가 뜨지 않았다')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    // 정리 가짜의 부모가 틱 자식이다
+    const [sweepPid, tickPid] = readFileSync(pidFile, 'utf8').trim().split(' ').map(Number)
+    // 실패해도 남기지 않는다
+    t.after(() => {
+      for (const pid of [sweepPid, tickPid]) if (pidAlive(pid)) process.kill(pid, 'SIGKILL')
+    })
+    assert.notEqual(tickPid, child.pid)
+    child.kill('SIGTERM')
+    assert.equal(await closed, 143)
+    // 끝난 프로세스를 init 이 거둘 시간만 준다
+    const until = Date.now() + 1_000
+    while ((pidAlive(sweepPid) || pidAlive(tickPid)) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(pidAlive(tickPid), false, `틱 자식(pid ${tickPid})이 남았다`)
+    assert.equal(pidAlive(sweepPid), false, `정리 가짜(pid ${sweepPid})가 남았다`)
+  })
+
+  test('부모를 KILL 하면 틱 자식이 스스로 정리 가짜를 끝내고 끝난다', { timeout: 60_000 }, async (t) => {
+    const pidFile = join(tmp, 'sweep.pid')
+    // TERM 을 무시하므로 틱 자식이 유예 뒤 KILL 까지 보내야 끝난다
+    fake('sweep', { sleep: 60, ignore_term: true, pid_file: pidFile })
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], { env, cwd: tmp })
+    spawned.push(child)
+    const closed = new Promise((resolve) => child.on('close', resolve))
+    const deadline = Date.now() + 20_000
+    while (!(existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('\n'))) {
+      assert.ok(Date.now() < deadline, '정리 가짜가 뜨지 않았다')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    const [sweepPid, tickPid] = readFileSync(pidFile, 'utf8').trim().split(' ').map(Number)
+    t.after(() => {
+      for (const pid of [sweepPid, tickPid]) if (pidAlive(pid)) process.kill(pid, 'SIGKILL')
+    })
+    // KILL 은 처리기를 거치지 않아 부모가 틱 자식에 신호를 전하지 못한다
+    child.kill('SIGKILL')
+    await closed
+    // 부모 확인 간격 2초와 TERM 뒤 KILL 까지의 유예 2초에 여유를 더한다
+    await waitDead([sweepPid, tickPid], 10_000)
+    assert.equal(pidAlive(tickPid), false, `틱 자식(pid ${tickPid})이 남았다`)
+    assert.equal(pidAlive(sweepPid), false, `정리 가짜(pid ${sweepPid})가 남았다`)
+  })
+})
+
 describe('--start, --status, --stop', () => {
   test('띄우고, 살아 있음을 보고, 다른 Run 의 --start 는 4 이고, 멈춘 뒤 pid 가 죽어 있다', async () => {
     config({ pipeline: { tick_sec: 3600 } })
@@ -465,13 +552,45 @@ describe('--start, --status, --stop', () => {
     assert.equal(loop(['--stop']).stdout.trim(), 'LOOP-NOT-RUNNING')
   })
 
-  test('살아 있는 루프의 잠금이 있으면 --foreground 도 4 다', () => {
-    // 테스트 프로세스가 쥔 잠금은 살아 있는 pid 의 잠금이다
-    write(orchFile('state', 'loop.lock'), String(process.pid))
+  test('살아 있는 루프의 잠금이 있으면 --foreground 도 4 다', async (t) => {
+    const pid = await fakeLoop(t)
+    write(orchFile('state', 'loop.lock'), String(pid))
     const r = loop(['--run', 'r', '--foreground', '--once'])
     assert.equal(r.code, 4, r.stdout + r.stderr)
-    assert.equal(r.stdout.trim(), `LOOP-RUNNING ${process.pid} run=-`)
+    assert.equal(r.stdout.trim(), `LOOP-RUNNING ${pid} run=-`)
     assert.equal(argsOf('sweep').length, 0)
+  })
+
+  test('잠금의 pid 가 살아 있어도 루프 프로세스가 아니면 회수하고 돈다', async () => {
+    // 죽은 루프의 pid 를 다른 프로세스가 받은 경우다. sleep 의 명령줄에는 orch-loop 가 없다
+    const other = await otherProcess()
+    write(orchFile('state', 'loop.lock'), String(other))
+    const r = once()
+    assert.doesNotMatch(r.stdout, /LOOP-RUNNING/)
+    assert.equal(argsOf('sweep').length, 1)
+    assert.ok(!existsSync(orchFile('state', 'loop.lock')), '잠금을 풀지 않았다')
+    // 다른 프로세스에는 손대지 않는다
+    assert.equal(pidAlive(other), true)
+  })
+
+  test('잠금의 pid 가 살아 있고 ps 가 실패하면 판정할 수 없어 회수하지 않고 4 다', async () => {
+    // ps 가 성공하면 위 테스트처럼 회수되는 프로세스다
+    const other = await otherProcess()
+    write(orchFile('state', 'loop.lock'), String(other))
+    const r = loop(['--run', 'r', '--foreground', '--once'], failingPs())
+    assert.equal(r.code, 4, r.stdout + r.stderr)
+    assert.equal(r.stdout.trim(), `LOOP-RUNNING ${other} run=-`)
+    assert.equal(argsOf('sweep').length, 0)
+    assert.equal(readFileSync(orchFile('state', 'loop.lock'), 'utf8'), String(other), '잠금을 회수했다')
+  })
+
+  test('loop.json 의 pid 가 살아 있고 ps 가 실패하면 --stop 은 신호를 보내지 않고 1 이다', async () => {
+    const other = await otherProcess()
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid: other, run: 'r' }))
+    const r = loop(['--stop'], failingPs())
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout.trim(), new RegExp(`^LOOP-STOP-UNKNOWN ${other} `))
+    assert.equal(pidAlive(other), true, '판정하지 못한 프로세스에 신호를 보냈다')
   })
 
   test('죽은 pid 의 잠금은 회수하고 돈다', () => {

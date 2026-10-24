@@ -12,6 +12,8 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --r
 ```
 
 `--start` 는 `LOOP-STARTED` 와 0 으로 끝난다. 살아 있는 루프가 이미 있으면 띄우지 않고 `LOOP-RUNNING <pid> run=<Run id>` 와 4 로 끝난다.
+**`--stop` 이 1 로 끝나면(`LOOP-STOP-UNKNOWN`, `LOOP-STOP-TIMEOUT`) 그 pid 가 루프인지 `ps -o command= -p <pid>` 로 직접 확인한다.** 루프면 끝낸 뒤 다시 `--start` 한다. 다른 프로세스면 끝내지 않는다.
+
 **4 로 끝나면 출력의 Run id 를 현재 Run 과 비교한다.** 다른 Run 이면 그 루프는 이 Run 의 질문을 확인하지 않으므로 `--stop` 뒤 다시 `--start` 한다.
 
 루프는 `pipeline.tick_sec`(기본 300초)마다 아래를 차례로 한다. 판정과 순서는 `orch-loop.ts` 머리 주석이 소유한다.
@@ -19,8 +21,8 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --r
 - 질문 확인. 답이 없는 질문을 다시 알릴 시간이 되면 알림 파일에 `REMINDER` 를 쓴다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
 - 정리와 원격 브랜치 정리(`cleanup-sweep`), 보드 동기화(`board-sync`)
 - 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 그 PR 의 worker 에게 알리고, 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알리기만 하고 머지하지 않는다
-- 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기
 - `tick` 이벤트
+- 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기. 끝난 dispatch 에 이어 쓰는 동안(최대 65분)은 다음 틱이 밀린다
 
 CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체크의 실패도 `failed` 로 본다. 루프는 `--allow-fail` 을 모르므로, 그 옵션을 주고 머지 큐를 거는 저장소에서는 루프가 실패로 알린 PR 도 큐가 머지할 수 있다.
 알림은 `<orch 루트>/state/loop-events.jsonl` 에 쌓이고, 아래 대기가 `--loop-repo` 로 읽는다. 루프의 출력은 `state/loop.log` 에 남는다.

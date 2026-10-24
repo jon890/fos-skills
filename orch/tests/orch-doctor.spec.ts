@@ -3,7 +3,7 @@
 // 핸들러와 설정은 작업 디렉터리(임시 폴더)의 .orch/ 에 둔다.
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
@@ -381,6 +381,29 @@ describe('session-resume', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile, RECEIVED: received } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.doesNotMatch(r.stdout, /LOOP-DEAD/)
+    assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, true)
+  })
+
+  test('루프 pid 가 살아 있고 alive_at 이 오래됐어도 다시 보기 전에 새로 써지면 LOOP-DEAD 를 내지 않고 loop_alive 는 true 다', { timeout: 60_000 }, async (t) => {
+    handler("import { readFileSync, writeFileSync } from 'node:fs'\nwriteFileSync(process.env.RECEIVED, readFileSync(0, 'utf8'))\n")
+    // 명령줄에 orch-loop 가 든 살아 있는 프로세스다
+    const fakeLoop = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'orch-loop'], { stdio: 'ignore' })
+    t.after(() => fakeLoop.kill('SIGKILL'))
+    await new Promise((resolve) => fakeLoop.once('spawn', resolve))
+    loopJson(fakeLoop.pid as number, new Date(Date.now() - 3600_000).toISOString())
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], {
+      cwd: tmp,
+      // 생존 타이머 간격 1초에 여유 5초를 기다린 뒤 다시 본다
+      env: { ...env, FAKE_PS: psFile, RECEIVED: received, ORCH_LOOP_ALIVE_SEC: '1' },
+    })
+    t.after(() => child.kill('SIGKILL'))
+    let stdout = ''
+    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))
+    const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)))
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    loopJson(fakeLoop.pid as number, new Date().toISOString())
+    assert.equal(await closed, 0, stdout)
+    assert.doesNotMatch(stdout, /LOOP-DEAD/)
     assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, true)
   })
 

@@ -20,7 +20,7 @@
     },
     {
       "what": "끝난 dispatch 이어 쓰기를 틱과 떼어 내기: 충돌 PR 의 send-to-worker --spec 이어 쓰기(최대 65분)를 틱 밖에서 돌려 다음 틱의 질문 재알림, CI 감시, 정리가 밀리지 않게 한다",
-      "why": "떼어 내면 state/notify-conflicts.json 을 틱과 이어 쓰기 프로세스가 함께 써서 잠금 설계가 더 필요하다. plan7 은 충돌 처리를 틱의 마지막 단계로 두고 밀림을 받아들인다(phase 03 의도 메모)",
+      "why": "떼어 내면 state/notify-conflicts.json 을 틱과 이어 쓰기 프로세스가 함께 써서 잠금 설계가 더 필요하다. plan7 은 충돌 처리를 틱의 마지막 단계로 두고 밀림을 받아들인다(phase 03 의도 메모). 같은 까닭으로 루프와 notify-conflicts 가 겹쳐 돌면 같은 (PR, base SHA) 를 두 번 보낼 수 있다. 보내기 전 기록이나 잠금을 그때 함께 설계한다.",
       "after": "plan7 이 머지된 뒤 planning 으로 사용자와 다시 계획"
     }
   ],

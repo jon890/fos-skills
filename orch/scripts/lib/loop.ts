@@ -11,6 +11,17 @@
 //   살아 있다. tick_sec 은 loop.json 에 루프가 적은 값이다. last_tick 은 상태 보고용이고 판정에 쓰지 않는다.
 //   틱 하나가 길어도(정리의 --wait, 끝난 dispatch 이어 쓰기) 부모가 틱과 따로 alive_at 을 쓰므로 죽은 것으로 보지 않는다.
 //   죽은 이유는 `없음`(파일이 없거나 깨졌다), `pid <n> 종료`, `alive_at <시각> 이후 응답 없음` 가운데 하나다.
+//   alive_at 만 오래됐고 pid 가 살아 있는 루프 프로세스(isLoopProcess 가 true 나 null)면 recheck: true 를 붙인다. 잠들었다 깬 macOS 에서는
+//   루프의 생존 타이머가 아직 alive_at 을 쓰지 못했을 수 있다. 판정은 동기라 기다리지 않는다. 부르는 쪽(wait-important, doctor)이
+//   recheckMs() 를 기다린 뒤 한 번 더 부르고, 그때도 죽었으면 죽음으로 낸다.
+//   recheckMs 는 생존 타이머 간격(ORCH_LOOP_ALIVE_SEC, 양수 초, 기본 30. 양수가 아니면 기본값)에 여유 5초를 더한 값이다.
+//   간격은 부르는 쪽의 환경 변수로 읽는다. 루프는 그 값을 loop.json 에 적지 않는다.
+//
+// 루프 프로세스(isLoopProcess): pid 가 살아 있고 `ps -o command=` 의 명령줄에 orch-loop 가 들어 있으면 true 다.
+//   죽은 루프의 pid 를 다른 프로세스가 다시 받았으면 그 프로세스를 루프로 보지 않는다(false).
+//   pid 가 살아 있는데 ps 가 0 이 아닌 코드로 끝나거나 실행되지 않으면 판정할 수 없어 null 이다. 부르는 쪽은 null 을 루프 프로세스로
+//   다룬다(잠금을 회수하지 않고, recheck 를 붙인다). 루프가 아니라고 잘못 보면 살아 있는 루프의 잠금을 빼앗아 루프가 둘이 된다.
+//   ps 가 실패한 사이 pid 가 죽었으면 false 다.
 //
 // 알림 파일(appendEvent, readEvents):
 //   - 한 때에 쓰는 쪽은 하나다(틱 자식, 또는 틱 자식이 끝난 뒤의 부모). 그래서 잠금이 없다.
@@ -25,11 +36,14 @@
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeParent, pathOf } from './paths.ts'
+import { run } from './proc.ts'
 import { alive } from './process.ts'
 
 export const EVENTS_LIMIT = 1000
 const DEFAULT_TICK_SEC = 300
 const MIN_DEAD_SEC = 120
+export const DEFAULT_ALIVE_SEC = 30
+const RECHECK_MARGIN_SEC = 5
 
 export type LoopState = {
   pid: number
@@ -43,7 +57,7 @@ export type LoopState = {
   errors: Record<string, string | null>
   [key: string]: unknown
 }
-export type LoopStatus = { alive: true; state: LoopState } | { alive: false; reason: string }
+export type LoopStatus = { alive: true; state: LoopState } | { alive: false; reason: string; recheck?: true }
 export type LoopEvent = { seq: number; time: string; kind: string; pr: number | null; text: string }
 
 export function loopFile(repo: string): string {
@@ -98,6 +112,21 @@ export function writeLoop(repo: string, state: LoopState): void {
   replace(loopFile(repo), `${JSON.stringify(state, null, 1)}\n`, repo)
 }
 
+// 머리 주석의 「루프 프로세스」
+export function isLoopProcess(pid: number): boolean | null {
+  if (!alive(pid)) return false
+  const done = run(['ps', '-o', 'command=', '-p', String(pid)], { env: { LC_ALL: 'C' } })
+  if (done.code !== 0) return alive(pid) ? null : false
+  return done.stdout.includes('orch-loop')
+}
+
+// 머리 주석의 「생존」. 다시 판정하기 전에 기다릴 ms
+export function recheckMs(): number {
+  const raw = Number(process.env.ORCH_LOOP_ALIVE_SEC)
+  const sec = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_ALIVE_SEC
+  return (sec + RECHECK_MARGIN_SEC) * 1000
+}
+
 // now 는 epoch ms 다.
 export function loopStatus(repo: string, now: number): LoopStatus {
   const state = readLoop(repo)
@@ -107,7 +136,8 @@ export function loopStatus(repo: string, now: number): LoopStatus {
   const tick = typeof state.tick_sec === 'number' && Number.isFinite(state.tick_sec) && state.tick_sec > 0 ? state.tick_sec : DEFAULT_TICK_SEC
   const at = typeof state.alive_at === 'string' ? Date.parse(state.alive_at) : Number.NaN
   if (!Number.isFinite(at) || now - at > Math.max(3 * tick, MIN_DEAD_SEC) * 1000) {
-    return { alive: false, reason: `alive_at ${String(state.alive_at ?? '-')} 이후 응답 없음` }
+    const reason = `alive_at ${String(state.alive_at ?? '-')} 이후 응답 없음`
+    return isLoopProcess(pid) !== false ? { alive: false, reason, recheck: true } : { alive: false, reason }
   }
   return { alive: true, state }
 }

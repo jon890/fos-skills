@@ -80,7 +80,11 @@
 //       그 앞에 `LOOP-EVENT GAP - seq <a>..<b> 를 잃었다` 를 낸다. 그다음 마지막 seq 로 커서를 쓰고, check --wait 그룹을 끝낸 뒤
 //       `LAST_DELIVERY <id>` 와 종료 코드 7 로 끝난다. 커서를 쓰지 못하면 WATCH-ERROR 줄을 더 내고 그래도 7 이다.
 //       줄은 이미 냈으므로 다음 대기가 같은 줄을 다시 낼 수 있다
-//     - 루프가 죽었으면 `LOOP-DEAD <repo> <이유>`, `LAST_DELIVERY <id>` 와 종료 코드 8 로 끝난다
+//     - 루프가 죽었으면 `LOOP-DEAD <repo> <이유>`, `LAST_DELIVERY <id>` 와 종료 코드 8 로 끝난다.
+//       pid 가 살아 있는 루프 프로세스인데 alive_at 만 오래됐으면(loopStatus 의 recheck) 바로 죽음으로 내지 않는다.
+//       lib/loop.ts 의 recheckMs(생존 타이머 간격 ORCH_LOOP_ALIVE_SEC, 기본 30초에 5초를 더한 값)를 기다린 뒤 한 번 더 보고,
+//       그때도 죽었으면 LOOP-DEAD 다. 잠들었다 깬 macOS 에서 루프의 타이머가 아직 alive_at 을 쓰지 못한 것을 죽음으로 보지 않으려는 것이다.
+//       기다리는 동안에도 check --wait 와 끊긴 worker, 알림 파일은 지금처럼 본다. 간격이 0 이어도 다시 보는 확인 한 번은 한다
 //     한 번 깨어나면 끝난다. 알림 줄이 있으면 그 저장소의 죽음보다 먼저 낸다. 다음 대기가 죽음을 낸다.
 //     <repo> 는 --loop-repo 의 주 checkout 이다.
 //
@@ -126,7 +130,7 @@ import { fire, handlerFile } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { ghJson } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { loopStatus, readEvents, writeCursor } from './lib/loop.ts'
+import { loopStatus, readEvents, recheckMs, writeCursor } from './lib/loop.ts'
 import { orcaBin, orcaJson } from './lib/orca.ts'
 import { makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
@@ -347,6 +351,9 @@ function oneLine(value: string): string {
   return value.replace(/\r?\n|\r/g, ' ')
 }
 
+// 죽음을 다시 볼 저장소와 그 시각(epoch ms). 머리 주석의 「상주 루프」
+const recheckAt = new Map<string, number>()
+
 // 깨어날 일이 있는 첫 저장소의 줄과 종료 코드. 없으면 null 이다. 머리 주석의 「상주 루프」
 function loopWake(repos: string[]): LoopWake | null {
   for (const repo of repos) {
@@ -361,10 +368,28 @@ function loopWake(repos: string[]): LoopWake | null {
       for (const event of found.events) lines.push(`LOOP-EVENT ${oneLine(String(event.kind))} ${event.pr ?? '-'} ${oneLine(String(event.text))}`)
       return { code: 7, lines, cursor: { repo, seq: found.events.reduce((max, event) => Math.max(max, event.seq), 0) } }
     }
-    const status = loopStatus(repo, Date.now())
-    if (!status.alive) return { code: 8, lines: [`LOOP-DEAD ${repo} ${status.reason}`], cursor: null }
+    const now = Date.now()
+    const status = loopStatus(repo, now)
+    if (status.alive) {
+      recheckAt.delete(repo)
+      continue
+    }
+    if (status.recheck) {
+      const at = recheckAt.get(repo)
+      if (at === undefined) recheckAt.set(repo, now + recheckMs())
+      if (at === undefined || now < at) continue
+    }
+    return { code: 8, lines: [`LOOP-DEAD ${repo} ${status.reason}`], cursor: null }
   }
   return null
+}
+
+// 다음 확인까지의 ms. 간격 확인이 없고 다시 볼 루프도 없으면 null 이다
+function nextLook(interval: number, periodic: boolean): number | null {
+  const every = periodic && interval > 0 ? interval * 1000 : null
+  if (recheckAt.size === 0) return every
+  const due = Math.max(0, Math.min(...recheckAt.values()) - Date.now())
+  return every === null ? due : Math.min(every, due)
 }
 
 // 루프의 줄을 내고 커서를 옮긴다. LAST_DELIVERY 줄은 부르는 쪽이 check --wait 그룹을 끝낸 뒤 낸다
@@ -450,10 +475,15 @@ function check(
       settle({ kind: 'done', data, raw })
     })
     const watchWorkers = watched.size > 0
-    if ((!watchWorkers && loopRepos.length === 0) || interval <= 0) return
+    const periodic = watchWorkers || loopRepos.length > 0
+    // 간격이 0 이면 worker 는 시작할 때만 본다. 다시 볼 루프가 있으면 그 시각에 루프만 본다
+    const schedule = () => {
+      const delay = nextLook(interval, periodic)
+      if (delay !== null) timer = setTimeout(look, delay)
+    }
     const look = () => {
       if (stopped) return
-      if (watchWorkers) {
+      if (watchWorkers && interval > 0) {
         const rows = workerRows(runId)
         let lost = rows && rows.length ? lostWorkers(rows, watched) : []
         lost = lost.length && rows ? dropDeliberate(rows, lost, watched) : []
@@ -470,9 +500,9 @@ function check(
         settle({ kind: 'loop', code: wake.code })
         return
       }
-      timer = setTimeout(look, interval * 1000)
+      schedule()
     }
-    timer = setTimeout(look, interval * 1000)
+    schedule()
   })
 }
 

@@ -8,6 +8,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
+import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
@@ -112,7 +113,7 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 type WaitOptions = { workers?: unknown[]; tasks?: Json[]; latest?: Json; history?: Json[]; contract?: string; historyFail?: boolean }
 
-function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}): Result {
+function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extraEnv: NodeJS.ProcessEnv = {}): Result {
   writeFileSync(
     stateFile,
     JSON.stringify({
@@ -125,7 +126,7 @@ function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}): Res
     }),
   )
   const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', opts.contract ?? 'none', ...args]
-  const done = spawnSync(process.execPath, argv, { env, cwd: tmp, encoding: 'utf8', timeout: 120_000 })
+  const done = spawnSync(process.execPath, argv, { env: { ...env, ...extraEnv }, cwd: tmp, encoding: 'utf8', timeout: 120_000 })
   return { code: done.status, stdout: done.stdout, stderr: done.stderr }
 }
 
@@ -878,12 +879,55 @@ describe('상주 루프', () => {
   })
 
   test('alive_at 이 오래된 루프는 LOOP-DEAD 와 8 이다', () => {
+    // pid 는 이 테스트 프로세스라 루프 프로세스가 아니다. 다시 보지 않고 바로 죽음이다
     loopJson({ alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
     const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0', '--loop-repo', tmp])
     assert.equal(r.code, 8, r.stdout + r.stderr)
     const out = lines(r.stdout)
     assert.match(out[0], new RegExp(`^LOOP-DEAD ${tmp} alive_at \\S+ 이후 응답 없음$`))
     assert.deepEqual(out.slice(1), ['LAST_DELIVERY d0'])
+  })
+
+  // 명령줄에 orch-loop 가 든 살아 있는 프로세스다. loop.json 의 pid 로 쓰면 루프 프로세스로 보인다
+  async function fakeLoop(t: TestContext): Promise<number> {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'orch-loop'], { stdio: 'ignore' })
+    t.after(() => child.kill('SIGKILL'))
+    await new Promise((resolve) => child.once('spawn', resolve))
+    return child.pid as number
+  }
+
+  // 생존 타이머 간격 1초에 여유 5초다
+  const RECHECK_MS = 6_000
+
+  test('루프 pid 가 살아 있으면 오래된 alive_at 은 다시 본 뒤에야 LOOP-DEAD 와 8 이다. 간격이 0 이어도 다시 본다', { timeout: 60_000 }, async (t) => {
+    loopJson({ pid: await fakeLoop(t), alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
+    const started = Date.now()
+    const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0', '--loop-repo', tmp], {}, { ORCH_LOOP_ALIVE_SEC: '1' })
+    const elapsed = Date.now() - started
+    assert.equal(r.code, 8, r.stdout + r.stderr)
+    assert.ok(elapsed >= RECHECK_MS, `다시 보기 전에 끝났다: ${elapsed}ms`)
+    const out = lines(r.stdout)
+    assert.match(out[0], new RegExp(`^LOOP-DEAD ${tmp} alive_at \\S+ 이후 응답 없음$`))
+    assert.deepEqual(out.slice(1), ['LAST_DELIVERY d0'])
+  })
+
+  test('오래된 alive_at 이지만 루프 pid 가 살아 있고 기다리는 사이 alive_at 이 새로 써지면 LOOP-DEAD 가 아니다', { timeout: 60_000 }, async (t) => {
+    loopJson({ pid: await fakeLoop(t), alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
+    const pid = JSON.parse(readFileSync(join(stateDir(), 'loop.json'), 'utf8')).pid as number
+    // 다시 보는 시각 뒤에 묶음이 온다
+    writeFileSync(stateFile, JSON.stringify({ replies: [sleeping(batch('d1', 'status'), RECHECK_MS / 1000 + 3)], workers: [], tasks: [], latest: {}, history: [] }))
+    const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', 'none', '--lost-interval-sec', '0.2', '--loop-repo', tmp]
+    const child = spawn(process.execPath, argv, { env: { ...env, ORCH_LOOP_ALIVE_SEC: '1' }, cwd: tmp })
+    t.after(() => child.kill('SIGKILL'))
+    let stdout = ''
+    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))
+    const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)))
+    // 잠들었다 깬 루프의 생존 타이머가 다시 쓴 것이다
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    loopJson({ pid })
+    assert.equal(await closed, 0, stdout)
+    assert.doesNotMatch(stdout, /LOOP-DEAD/)
+    assert.equal(lastLine(stdout), 'LAST_DELIVERY d1')
   })
 
   test('알림 줄이 있으면 죽음보다 먼저 내고, 다음 대기가 죽음을 낸다', () => {

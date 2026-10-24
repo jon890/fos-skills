@@ -8,7 +8,8 @@
 // 알린 기록: <orch 루트>/state/notify-conflicts.json. 옛 notify-conflicts.py 와 같은 파일과 키(`<PR>@<base SHA>`)다.
 //   값은 notified 와 resumed 면 dispatch id, orphan 이면 `orphan` 이다. base 가 움직이면 키가 달라져 다시 알린다.
 //   파일이 없거나 깨졌으면 빈 기록이다. 쓰기는 lib/paths.ts 의 makeParent 로 부모 폴더를 만들고 git 이 무시하게 한 뒤 한다.
-//   notify-conflicts 와 루프가 같은 파일을 쓰므로, 머지 큐 뒤의 notify-conflicts 와 틱이 같은 충돌을 두 번 보내지 않는다.
+//   notify-conflicts 와 루프가 같은 파일을 쓰므로, 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 충돌을 두 번 보내지 않는다.
+//   둘이 겹쳐 돌면 둘 다 기록을 읽은 뒤 보내므로 두 번 보낼 수 있다. 기록 파일에는 잠금이 없다.
 //
 // PR 하나의 처리: 부르는 쪽이 기록을 보고, 브랜치의 워크트리와 worker 행을 찾은 뒤(lib/workers.ts) 두 함수를 이 순서로 부른다.
 //   resolveConflict   찾은 worker 에게 보내고 결과를 낸다. 보내는 방법과 send-to-worker 종료 코드의 분류는

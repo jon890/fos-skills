@@ -43,7 +43,9 @@
 //
 // session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
-//                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다
+//                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다.
+//                 pid 가 살아 있는 루프 프로세스인데 alive_at 만 오래됐으면(loopStatus 의 recheck) lib/loop.ts 의 recheckMs 를
+//                 기다린 뒤 한 번 더 판정한다. 잠들었다 깬 macOS 에서 루프의 타이머가 아직 alive_at 을 쓰지 못했을 수 있다
 //     waiters     `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 나 `watch-questions` 와 Run id(낱말)가 든 것의 pid.
 //                 살아 있는 대기와 질문 감시다. 다음 행은 뺀다.
 //                   - `orchestration check` 행. wait-important 가 띄운 자식이라 대기 하나를 두 번 세게 된다
@@ -77,6 +79,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
@@ -84,7 +87,7 @@ import { ConfigError, DEPRECATED_KEYS, loadConfig } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { loopStatus } from './lib/loop.ts'
+import { loopStatus, recheckMs } from './lib/loop.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
@@ -332,7 +335,11 @@ async function main(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const repoLines = checkRepo(repo)
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId)
-  const loop = runId ? loopStatus(repo, Date.now()) : null
+  let loop = runId ? loopStatus(repo, Date.now()) : null
+  if (loop && !loop.alive && loop.recheck) {
+    await sleep(recheckMs())
+    loop = loopStatus(repo, Date.now())
+  }
   const loopLines =
     loop && !loop.alive
       ? [

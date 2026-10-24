@@ -48,6 +48,14 @@ appendFileSync(process.env.RECEIVED_DIR + '/${event}.jsonl', readFileSync(0, 'ut
 `
 }
 
+// 틱 자식(--tick)이 결과 줄을 다 낸 뒤 TICK_EXIT_CODE 로 끝나게 하는 preload. exit 리스너에서 바꾼 종료 코드가 프로세스의 종료 코드가 된다
+const PRELOAD = `if (process.argv.some((a) => a.endsWith('orch-loop.ts')) && process.argv.includes('--tick')) {
+  process.on('exit', () => {
+    process.exitCode = Number(process.env.TICK_EXIT_CODE)
+  })
+}
+`
+
 type Json = Record<string, unknown>
 
 let binDir: string
@@ -62,6 +70,7 @@ before(() => {
   chmodSync(join(binDir, 'orca'), 0o755)
   writeFileSync(join(binDir, 'sweep.ts'), fakeScript('sweep'))
   writeFileSync(join(binDir, 'send.ts'), fakeScript('send'))
+  writeFileSync(join(binDir, 'preload.mjs'), PRELOAD)
 })
 after(() => rmSync(binDir, { recursive: true, force: true }))
 
@@ -154,9 +163,9 @@ function github(rows: Json[], rules: FakeRule = { stdout: 'test\n' }, listCode =
   ])
 }
 
-function once(): void {
+function once(extra: NodeJS.ProcessEnv = {}): void {
   const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], {
-    env,
+    env: { ...env, ...extra },
     cwd: tmp,
     encoding: 'utf8',
     timeout: 60_000,
@@ -216,6 +225,25 @@ describe('알림 한 번', () => {
       [['CI-FAILED', 1]],
     )
     assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'failed' } })
+  })
+
+  test('틱 자식이 결과 줄을 낸 뒤 3 으로 끝나도 ci 가 남고 다음 틱이 같은 실패를 다시 알리지 않는다', () => {
+    github([pr(1, [check('test', 'FAILURE')])])
+    once({ NODE_OPTIONS: `--import=${join(binDir, 'preload.mjs')}`, TICK_EXIT_CODE: '3' })
+    const first = JSON.parse(readFileSync(orchFile('state', 'loop.json'), 'utf8')) as Json
+    assert.deepEqual(first.ci, { 1: { head: HEAD_A, state: 'failed' } })
+    assert.equal((first.errors as Json).tick, '종료 코드 3')
+    assert.ok(!Number.isNaN(Date.parse(String(first.last_tick))), String(first.last_tick))
+    once()
+    assert.equal(received('ci-failed').length, 1)
+    assert.deepEqual(
+      events().map((line) => [line.kind, line.text]),
+      [
+        ['CI-FAILED', 'test: 살아 있는 dispatch 없음'],
+        ['WATCH-ERROR', 'tick: 종료 코드 3'],
+      ],
+    )
+    assert.equal(((JSON.parse(readFileSync(orchFile('state', 'loop.json'), 'utf8')) as Json).errors as Json).tick, null)
   })
 
   test('실패한 PR 에 새 HEAD 가 와서 다시 실패하면 한 번 더 알린다', () => {

@@ -1,16 +1,22 @@
 // lib/loop.ts 의 생존 판정과 알림 파일, 커서를 임시 orch 루트(ORCH_DIR)로 본다. loop.json 은 테스트가 직접 쓴다.
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { appendEvent, eventsFile, loopFile, loopStatus, readEvents, writeCursor } from '../scripts/lib/loop.ts'
+import { appendEvent, eventsFile, isLoopProcess, loopFile, loopStatus, readEvents, recheckMs, writeCursor } from '../scripts/lib/loop.ts'
+import { fakeBin } from './fixtures/fake-bin.ts'
 
 let tmp: string
 let repo: string
-const saved = { ORCH_DIR: process.env.ORCH_DIR, GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES }
+const saved = {
+  ORCH_DIR: process.env.ORCH_DIR,
+  GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES,
+  ORCH_LOOP_ALIVE_SEC: process.env.ORCH_LOOP_ALIVE_SEC,
+  PATH: process.env.PATH,
+}
 
 beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'lib-loop-')))
@@ -85,6 +91,41 @@ describe('loopStatus', () => {
     const pid = Number(done.stdout)
     writeState({ pid, alive_at: ago(1) })
     assert.deepEqual(loopStatus(repo, NOW), { alive: false, reason: `pid ${pid} 종료` })
+  })
+
+  test('alive_at 만 오래됐고 pid 가 살아 있는 루프 프로세스면 recheck 를 붙이고, 루프가 아닌 프로세스면 붙이지 않는다', async (t) => {
+    // 명령줄에 orch-loop 가 든 살아 있는 프로세스다
+    const fakeLoop = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'orch-loop'], { stdio: 'ignore' })
+    t.after(() => fakeLoop.kill('SIGKILL'))
+    await new Promise((resolve) => fakeLoop.once('spawn', resolve))
+    writeState({ pid: fakeLoop.pid, tick_sec: 10, alive_at: ago(121) })
+    assert.deepEqual(loopStatus(repo, NOW), { alive: false, reason: `alive_at ${ago(121)} 이후 응답 없음`, recheck: true })
+    // 이 테스트 프로세스의 명령줄(lib-loop.spec.ts)에는 orch-loop 가 없다
+    writeState({ tick_sec: 10, alive_at: ago(121) })
+    assert.deepEqual(loopStatus(repo, NOW), { alive: false, reason: `alive_at ${ago(121)} 이후 응답 없음` })
+  })
+
+  test('ps 가 실패하면 살아 있는 pid 는 판정할 수 없어(null) recheck 를 붙이고, 죽은 pid 는 루프가 아니다', async (t) => {
+    // 명령줄에 orch-loop 가 없는 프로세스다. ps 가 성공하면 recheck 가 붙지 않는다
+    const other = spawn('sleep', ['60'], { stdio: 'ignore' })
+    t.after(() => other.kill('SIGKILL'))
+    await new Promise((resolve) => other.once('spawn', resolve))
+    const done = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' })
+    fakeBin(tmp, 'ps', [{ code: 1, stderr: 'ps: 실패\n' }])
+    process.env.PATH = `${tmp}${delimiter}${dirname(process.execPath)}${delimiter}${saved.PATH ?? ''}`
+    assert.equal(isLoopProcess(other.pid as number), null)
+    assert.equal(isLoopProcess(Number(done.stdout)), false)
+    writeState({ pid: other.pid, tick_sec: 10, alive_at: ago(121) })
+    assert.deepEqual(loopStatus(repo, NOW), { alive: false, reason: `alive_at ${ago(121)} 이후 응답 없음`, recheck: true })
+  })
+
+  test('recheckMs 는 ORCH_LOOP_ALIVE_SEC 에 5초를 더하고, 값이 없거나 양수가 아니면 30초에 더한다', () => {
+    process.env.ORCH_LOOP_ALIVE_SEC = '0.5'
+    assert.equal(recheckMs(), 5_500)
+    process.env.ORCH_LOOP_ALIVE_SEC = '0'
+    assert.equal(recheckMs(), 35_000)
+    delete process.env.ORCH_LOOP_ALIVE_SEC
+    assert.equal(recheckMs(), 35_000)
   })
 
   test('loop.json 이 없거나 깨졌으면 죽었고 이유는 없음이다', () => {
