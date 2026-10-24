@@ -12,7 +12,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/watch-questions.t
 
 새 question/escalation 은 `QUESTION`, 답이 없는 채로 다시 알릴 시간이 되면 `REMINDER` 한 줄을 낸다.
 기본 재알림은 10분이며 `--remind-after 300` 처럼 초 단위로 바꾼다. 조회 간격은 `--interval` 로 바꾼다.
-알린 시각은 `orch_paths.py` 가 정한 `state/questions-seen.json` 에 Run 별로 남는다.
+알린 시각은 `orch_paths.ts` 가 정한 `state/questions-seen.json` 에 Run 별로 남는다.
 다시 띄워도 재알림 시간이 되기 전에는 같은 질문을 알리지 않는다.
 질문을 찾는 범위와 조회 한도는 `lib/questions.ts`, 알림 형식은 `watch-questions` 머리 주석이 소유한다.
 조회 실패(답변 기록 한도 도달 포함)는 stdout 의 `WATCH-ERROR` 줄로 알리고 다음 조회에서 다시 시도한다. 같은 이유는 이유가 바뀌거나 조회가 한 번 성공할 때까지 다시 내지 않는다.
@@ -82,11 +82,11 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
 5분 주기는 백그라운드 대기와 별개로 하네스의 예약 기능이나 다음 깨어남에 붙인다.
 
 `$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더, `$GOAL_ID` 는 목표 항목 id 다. 저장소 오버레이가 정한다.
-보드가 없는 저장소는 `board-sync.py` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다.
+보드가 없는 저장소는 `board-sync.ts` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
-python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID"
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-sync.ts" --repo "$REPO" --goal "$GOAL_ID"
 ```
 
 머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.
@@ -96,10 +96,10 @@ python3 "$SKILL_DIR/scripts/board-sync.py" --repo "$REPO" --goal "$GOAL_ID"
 `--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .orch/specs --kill-holders --apply
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .orch/specs --kill-holders --apply
 ```
 
-`cleanup-sweep.py` 가 다루는 경우와 건너뛰는 조건은 그 파일 머리 주석이 소유한다. 스크립트가 다루는 경우를 코디네이터가 직접 지우지 않는다.
+`cleanup-sweep.ts` 가 다루는 경우와 건너뛰는 조건은 그 파일 머리 주석이 소유한다. 스크립트가 다루는 경우를 코디네이터가 직접 지우지 않는다.
 `건너뜀` 줄만 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 루프째 남으면 그 worker 를 확인한다.
 
 ## 받은 메시지 읽기

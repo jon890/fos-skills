@@ -1,17 +1,17 @@
 # 7. 머지와 정리
 
-`cleanup-sweep.py` 와 `remove-worktree.py` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
+`cleanup-sweep.ts` 와 `remove-worktree.ts` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
 소유 상태는 모든 Run 의 worker 행에서 읽는다. 코디네이터 터미널에서 부르면 범위 없는 `worker-list` 가 그 Run 만 주므로(scope `bound`), `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다.
-정리 한 번 안에서는 읽은 지 60초가 지나기 전까지 다시 읽지 않고, 범위를 읽는 방법과 이유는 `terminal_ownership.py` 머리 주석이 소유한다.
+정리 한 번 안에서는 읽은 지 60초가 지나기 전까지 다시 읽지 않고, 범위를 읽는 방법과 이유는 `scripts/lib/ownership.ts` 머리 주석이 소유한다.
 터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 
-끝난 dispatch 의 터미널을 상태별로 어떻게 정리하는지(`ownershipState` / `retainedReason` 별 `남김` 사유)는 `terminal_ownership.py` 머리 주석이 소유한다.
+끝난 dispatch 의 터미널을 상태별로 어떻게 정리하는지(`ownershipState` / `retainedReason` 별 `남김` 사유)는 `scripts/lib/ownership.ts` 머리 주석이 소유한다.
 
 `user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 가르지 못한다. Orca 의 필드에 시각과 주체가 없다.
 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
-**코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.py --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
-옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.py` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
+**코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.ts --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
+옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
 `finish-pr.ts` 와 `merge-with-finish.ts` 는 이 옵션을 넘기지 않는다.
 
 머지는 worker 에게 맡기지 않는다.
@@ -217,7 +217,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 
 ### 머지 뒤 마무리
 
-**`finish-pr.ts` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.py` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
+**`finish-pr.ts` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.ts` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
 순서(머지 확인, worker 정리, 배포 확인, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.ts` 의 `PR!` 도 같은 뜻이다.
 
 출력은 `<로그 폴더>/finish-<PR>.out` 에 쌓이고 마지막 줄이 `FINISH-DONE` 이나 `FINISH-FAIL` 이다. 깨어날 때마다 그 줄을 본다.
@@ -226,9 +226,10 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 
 ## 정리
 
-**정리는 `cleanup-sweep.py` 가 한다.** `merge_queue.ts` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
+**정리는 `cleanup-sweep.ts` 가 한다.** `merge_queue.ts` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 기다리기 단계의 감시 루프도 깨어날 때마다 부른다.
 **사용자가 정리하라고 말하지 않아도 이 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
-로컬 브랜치가 있을 때만 원격 브랜치도 지운다. 직접 머지한 PR 의 원격 브랜치는 남을 수 있고, 상세 판정은 `cleanup-sweep.py` 머리 주석이 소유한다.
+로컬 브랜치가 없는 원격 브랜치는 `--remote-branches` 로 지운다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치가 여기 든다.
+상세 판정은 `cleanup-sweep.ts` 머리 주석이 소유한다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
 
 **코디네이터가 worker 에게 맡긴 작업은 그 PR 이 머지되면 그 자리에서 정리한다.** 작업을 맡긴 저장소가 코디네이터의 저장소가 아니어도 같다.
@@ -251,13 +252,14 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 같은 워크트리에서 후속 작업을 하는 worker 가 있으면 그 worker 가 끝날 때까지 남긴다.
 
 **worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다.** 충돌과 리뷰 반영을 그 PR 을 만든 worker 가 이어 받기 때문이다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」).
-머지 뒤에는 그 터미널을 바로 정리한다. `cleanup-sweep.py` 가 PR 이 MERGED 일 때 닫는다.
-머지 없이 닫힌 PR 의 터미널은 스크립트가 닫지 않는다. 코디네이터가 화면을 확인하고 이 세션이 띄운 worker 의 터미널만 `orca terminal close` 로 닫는다.
+머지 뒤에는 그 터미널을 바로 정리한다. `cleanup-sweep.ts` 가 PR 이 MERGED 일 때 닫는다.
+머지 없이 닫힌 PR 의 터미널도 `--run` 을 주면 `cleanup-sweep.ts` 가 닫는다. 대상은 내 PR 의 끝난 dispatch 터미널이다.
+다른 사람의 PR 이거나 `--run` 이 없으면 코디네이터가 화면을 확인하고 이 세션이 띄운 worker 의 터미널만 `orca terminal close` 로 닫는다.
 
 스크립트가 하지 않아 직접 하는 일은 아래 둘이다.
 
 1. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
-   `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다(`handoff-cleanup.py`).
+   `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다(`handoff-cleanup.ts`).
    공통 지시서, 결정 기록, 인수인계 문서, 진행 중 작업의 문서는 남긴다.
    사용자 미리보기 폴더는 content-preview 의 것이라 사용자가 지우라고 말하거나 설정의 `cleanup.previews` 로 맡겼을 때만 지운다
 2. 진행 보드를 쓰면 그 항목을 done 으로 바꾼다. [`board.md`](board.md)
@@ -273,10 +275,10 @@ gh pr view "$PR" --json state --jq .state
 
 `merge-with-finish.ts` 의 마무리는 머지 큐를 건 저장소만 정리한다. 다른 저장소에 맡긴 PR 을 코디네이터가 `gh pr merge` 로 머지했으면 바로 이어서 정리한다.
 값을 채운다: `$OTHER_REPO` 는 그 저장소의 주 checkout, `$RUN_ID` 는 worker 를 띄운 Run, `$PR` 은 PR 번호, `$WORKER_TERM` 은 그 worker 의 터미널 handle(`worker-show`), `$WORKTREE` 는 그 워크트리 경로다.
-먼저 `cleanup-sweep.py` 로 정리한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
+먼저 `cleanup-sweep.ts` 로 정리한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/cleanup-sweep.py" --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts" --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
 ```
 
 스크립트가 건너뛴 것만 아래 묶음으로 직접 지운다. 묶음은 PR 이 `MERGED` 일 때만 돈다.
@@ -287,7 +289,7 @@ if [ "$(cd "$OTHER_REPO" && gh pr view "$PR" --json state --jq .state)" = MERGED
   BRANCH=$(git -C "$WORKTREE" branch --show-current)
   PR_HEAD=$(cd "$OTHER_REPO" && gh pr view "$PR" --json headRefOid --jq .headRefOid)
   orca terminal close --terminal "$WORKER_TERM"
-  python3 "$SKILL_DIR/scripts/remove-worktree.py" "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
+  node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/remove-worktree.ts" "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
   if git -C "$OTHER_REPO" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
     git -C "$OTHER_REPO" push origin --delete "$BRANCH"
   fi
@@ -296,17 +298,17 @@ fi
 
 ### 워크트리 지우기
 
-**작업이 끝난 워크트리는 `remove-worktree.py` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
+**작업이 끝난 워크트리는 `remove-worktree.ts` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
 활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
 거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
-거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.py --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
+거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/remove-worktree.py" "$WORKTREE" --delete-branch
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/remove-worktree.ts" "$WORKTREE" --delete-branch
 ```
 
-squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sweep.py` 는 이 값을 스스로 넘긴다.
+squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sweep.ts` 는 이 값을 스스로 넘긴다.
 
 - Orca 가 만든 워크트리를 `orca worktree rm` 으로 지울 때는 뒤에 `git -C "$REPO" worktree prune` 을 돌린다.
   디렉터리만 지우고 git 의 워크트리 기록이 남아, 그대로면 브랜치 삭제가 `used by worktree` 로 거절된다
@@ -323,9 +325,9 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sw
 
 ### handoff 산출물 정리
 
-끝난 작업의 큐 로그, 지시서, 오래된 handoff 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.py` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
+끝난 작업의 큐 로그, 지시서, 오래된 handoff 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
 **사용자에게 묻지 않고 `--apply` 로 옮긴다.** 휴지통 폴더라 되살릴 수 있다. 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/handoff-cleanup.py" --repo "$REPO" --apply
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/handoff-cleanup.ts" --repo "$REPO" --apply
 ```

@@ -29,8 +29,8 @@ jobs:
         run: npm install --global @anthropic-ai/claude-code@2.1.309
       - name: Run plugin tests from repository root
         run: claude plugin test .
-      - name: Run orch node tests
-        run: node --test --test-concurrency=4 "orch/tests/*.spec.ts"
+      - name: Run orch and work-board node tests
+        run: node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
 
   python:
     name: Python tests
@@ -53,11 +53,11 @@ jobs:
         shell: bash
         run: |
           for suite in */tests tools/*/tests; do
-            if [[ "$suite" == "orch/tests" ]]; then
+            # orch 와 work-board 의 테스트는 node:test 라 Plugin tests job 이 돌린다.
+            # 두 폴더에 Python 테스트가 없고, 빈 폴더에서 unittest 는 종료 코드 5 로 실패한다
+            if [[ "$suite" == "orch/tests" || "$suite" == "work-board/tests" ]]; then
               continue
             fi
             echo "Testing $suite"
             python3 -m unittest discover -s "$suite"
           done
-      - name: Run isolated orch tests
-        run: python3 scripts/run-orch-tests.py --jobs 4

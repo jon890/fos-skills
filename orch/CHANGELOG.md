@@ -3,6 +3,44 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.3.0 (2026-10-25)
+
+- 정리와 대기열 명령(`remove-worktree`, `cleanup-sweep`, `handoff-cleanup`, `board-sync`, `goal-progress`, `heavy-slot`, `mem-gate`, `orch_paths`)과 work-board 의 `board` 를 TypeScript 로 옮겼다. 옛 `.py` 경로는 shim 으로 남아 `DEPRECATED` 줄을 내고 `.ts` 로 넘긴다.
+- `cleanup-sweep` 이 `before-cleanup` 과 `after-cleanup` 이벤트를 낸다. `--apply` 정리에서 `before-cleanup` 핸들러가 거부하거나 실패하면 그 워크트리를 남긴다.
+- `cleanup-sweep --remote-branches` 를 더했다. 머지된 브랜치의 원격 삭제는 판정한 끝점을 `--force-with-lease` 로 붙여, 판정한 뒤 push 된 브랜치를 지우지 않는다. 열린 PR 의 head 인 브랜치와 fork 의 PR 이 있는 브랜치는 남긴다.
+- `heavy` 절과 `heavy.wait_idle` 을 더했다. `wait_idle` 은 대기열 밖에서 도는 무거운 프로세스(이미지 빌드 같은 것)가 끝날 때까지 자리를 잡지 않고 기다린다.
+- 쓰지 않는 모듈 `terminal_ownership.py`, `live_specs.py`, `orch_process.py` 를 지웠다. 소유 판정과 살아 있는 지시서 목록은 `scripts/lib/` 가 맡는다.
+- 마지막 Python 테스트를 node:test 로 옮기고 `scripts/run-orch-tests.py` 를 지웠다. `node --test` 하나로 orch 와 work-board 테스트를 돌린다. CI 의 node 단계가 work-board 테스트를 함께 돌린다.
+- 문서가 옮긴 명령을 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/<명령>.ts"` 로 부른다. `orch-doctor.py` 는 스킬을 열 때 node 버전을 보는 공식 진입점이라 그대로 둔다.
+
+호환성:
+
+- 무거운 검사의 자동 분류를 지웠다. `heavy-slot` 은 명령 이름을 보고 혼자 실행(`exclusive`)이나 대기열 건너뛰기(`light`)를 정하지 않는다. `.orch/config.json` 에 `heavy` 절이 없으면 모든 명령이 자리를 기다린다(`normal`). 옛 동작에 가까운 설정 예시는 아래와 같다. 명령 이름은 저장소에 맞게 바꾼다.
+
+  ```json
+  {
+    "heavy": {
+      "exclusive": ["local-ci", "playwright", "browser"],
+      "light": ["^(pnpm( -s)?( exec)? )?(tsc|oxlint)\\b", "^pnpm( -s)? (type-check|lint)\\b", "^(echo|cd|git|ls|cat|true|test)(\\s|$)"]
+    }
+  }
+  ```
+
+- `wait_idle` 대기가 `HEAVY_IDLE_WAIT`(기본 1800초)를 넘으면 `heavy-slot` 이 종료 코드 124 로 끝난다. `HEAVY_POLL` 과 `HEAVY_IDLE_WAIT` 값은 등록 전에 검사해 틀리면 1 로 끝난다.
+- `heavy-slot` 의 `queue.lock` 은 perl 자식이 flock 으로 쥔다. 옛 `heavy-slot.py` 와 같은 파일에 같은 종류의 잠금을 걸어, 옮기는 동안 두 버전이 같은 slot 폴더를 써도 서로를 막는다. perl 이 PATH 에 필요하다.
+- `heavy-slot` 은 `queue.lock` 을 기다리는 중에 INT 나 TERM 을 받으면 기다림을 멈추고 128 에 신호 번호를 더한 값으로 끝난다.
+- `cleanup-sweep` 의 지시서를 남기는 줄이 `살아 있는 지시서 목록을 읽지 못했다` 로 바뀌었다. 그 목록을 읽지 못하면 PR 본문 파일도 지우지 않는다.
+  stderr 의 알림 줄도 `… 읽지 못해 지시서와 PR 본문은 지우지 않는다` 로 바뀌었다.
+- `handoff-cleanup` 의 지시서 줄이 `지시서를 휴지통으로 옮길 것 …`, `지시서 옮김 … -> …`, `지시서를 남긴다 …` 로 바뀌었다. 경로는 절대경로다. 큐 로그, 폴더, 데이터 파일의 `후보`, `옮김` 줄은 그대로다.
+  살아 있는 dispatch 가 쓰는 지시서는 끝난 지시서일 때만 `지시서를 남긴다` 줄을 낸다. 옛 명령은 끝나지 않은 지시서에도 남긴다 줄을 냈다.
+- `handoff-cleanup` 은 `**보드 항목 id**:` 꼴도 보드 항목 줄로 읽는다. 그 꼴로 쓴 지시서는 보드 항목이 done 이 아니면 남는다.
+- `handoff-cleanup` 은 원격 브랜치 조회(`git ls-remote --exit-code`)가 「그 브랜치가 없다」(2) 말고 다른 이유로 실패하면 지시서를 남긴다. 옛 명령은 네트워크 실패도 원격에 없다고 읽었다.
+- `cleanup-sweep --remote-branches` 는 남은 워크트리의 브랜치나 그 upstream 인 원격 브랜치를 `원격 브랜치 남김 <이름>: 워크트리가 쓴다` 로, 워크트리 없는 로컬 브랜치의 upstream 을 `원격 브랜치 남김 <이름>: 로컬 브랜치가 쓴다` 로 남긴다.
+  열린 PR 목록이 limit(1000)만큼 읽히면 잘렸을 수 있어 `원격 브랜치 정리 건너뜀: 열린 PR 이 1000 개 이상이라 …` 를 내고 종료 코드를 2 로 둔다.
+- `cleanup-sweep` 은 `--run` 을 주면 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널을 닫고 dispatch 를 반납한다. 워크트리를 지우는 조건은 바뀌지 않았다.
+- 보드 명령의 기본(`BOARD_BIN` 이 없을 때)이 `work-board/bin/board.ts` 다. `board.py` 는 shim 으로 남는다.
+- `--apply` 정리에서 `before-cleanup` 핸들러가 거부하거나 실패하면 그 워크트리를 남긴다.
+
 ## 3.2.0 (2026-10-24)
 
 worker 가 PR 이 머지될 때까지 맡는다. `planning` 2.31.0 의 「plan 하나는 PR 하나」 와 이어진다.
