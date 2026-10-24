@@ -82,7 +82,7 @@ import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireResult } from './lib/events.ts'
-import { FINISH_OPTIONS as OPTIONS } from './lib/finish-options.ts'
+import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from './lib/finish-options.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { ghBin } from './lib/gh.ts'
 import { boardPath, requireMigrated } from './lib/paths.ts'
@@ -100,11 +100,6 @@ const SWEEP_TIMEOUT_MS = 600_000
 const LEGACY_KEY = '--complete-cmd'
 const HOOK_PREFIX = '[hook after-deploy] '
 const PR_FIELDS = 'state,mergeCommit,headRefName,title,number,headRefOid,author,isDraft,url,baseRefName'
-
-// 설정 절의 키. 옵션 이름의 하이픈을 밑줄로 바꾼 것이고 config 와 help 는 뺀다
-const FINISH_KEYS: readonly string[] = Object.keys(OPTIONS)
-  .filter((name) => name !== 'config' && name !== 'help')
-  .map((name) => name.replaceAll('-', '_'))
 
 type Args = {
   pr: string

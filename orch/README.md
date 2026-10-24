@@ -42,6 +42,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/cleanup-sweep.ts`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다. `--remote-branches` 는 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다. 대상은 MERGED PR 과, 다른 PR 에 합쳐 닫혀 head 커밋이 base 에 든 CLOSED PR 이다. `--run` 을 주면 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널을 닫고 dispatch 를 반납한다. `--apply` 이면 워크트리를 지우기 직전에 `before-cleanup`, 저장소 하나의 정리가 끝나면 `after-cleanup` 이벤트를 낸다
 - `scripts/board-sync.ts`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/watch-questions.ts`: Monitor 의 이벤트 소스. 미답변 질문과 재알림을 한 줄씩 낸다
+- `scripts/orch-loop.ts`: 저장소마다 하나 도는 상주 루프이고, 틱마다 질문 확인, 정리, 보드 동기화, `tick` 이벤트를 한다
 - `scripts/goal-progress.ts`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
 - `hooks/`: 플러그인이 싣는 PreToolUse 훅. `hooks.json` 이 각 hook 을 PATH 의 `node` 로 부른다. 판정과 오탐 기준은 각 파일 머리 주석이 소유한다
   - `block-background-wait.ts`: `check --wait` 와 `wait-important` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다

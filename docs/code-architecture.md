@@ -221,7 +221,8 @@ orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. �
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/questions.ts     미답변 질문 조회 한 벌
+orch/scripts/lib/questions.ts     미답변 질문 조회, 재알림 판정과 알린 기록 한 벌
+orch/scripts/lib/loop.ts          루프 상태, 생존 판정, 알림 파일과 커서 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
 orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경

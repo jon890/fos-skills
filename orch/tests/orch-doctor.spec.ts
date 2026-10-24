@@ -357,6 +357,33 @@ describe('session-resume', () => {
     assert.doesNotMatch(r.stdout, /^UNANSWERED /m)
   })
 
+  function loopJson(pid: number, aliveAt: string): void {
+    write(join(tmp, '.orch', 'state', 'loop.json'), JSON.stringify({ pid, run: 'r', repo: tmp, tick_sec: 300, started_at: aliveAt, alive_at: aliveAt, last_tick: null, ticks: 0, errors: {} }))
+  }
+
+  test('죽은 pid 의 loop.json 이면 LOOP-DEAD 와 다시 띄울 명령을 내고 loop_alive 는 false 다', () => {
+    handler("import { readFileSync, writeFileSync } from 'node:fs'\nwriteFileSync(process.env.RECEIVED, readFileSync(0, 'utf8'))\n")
+    const ended = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' })
+    loopJson(Number(ended.stdout), new Date().toISOString())
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile, RECEIVED: received } })
+    // 종료 코드는 바꾸지 않는다
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = r.stdout.split('\n')
+    const at = out.indexOf(`LOOP-DEAD ${tmp} pid ${ended.stdout} 종료`)
+    assert.ok(at >= 0, r.stdout)
+    assert.equal(out[at + 1], `  node --disable-warning=ExperimentalWarning "${join(skill, 'scripts', 'orch-loop.ts')}" --repo ${tmp} --run r --start`)
+    assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, false)
+  })
+
+  test('살아 있는 loop.json 이면 loop_alive 는 true 이고 LOOP-DEAD 를 내지 않는다', () => {
+    handler("import { readFileSync, writeFileSync } from 'node:fs'\nwriteFileSync(process.env.RECEIVED, readFileSync(0, 'utf8'))\n")
+    loopJson(process.pid, new Date().toISOString())
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile, RECEIVED: received } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /LOOP-DEAD/)
+    assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, true)
+  })
+
   test('--run 이 없으면 이벤트를 내지 않는다', () => {
     handler("import { writeFileSync } from 'node:fs'\nwriteFileSync(process.env.RECEIVED, 'called')\n")
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, RECEIVED: received } })

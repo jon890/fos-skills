@@ -788,6 +788,121 @@ describe('worker-lost', () => {
   })
 })
 
+describe('상주 루프', () => {
+  function stateDir(): string {
+    return join(tmp, '.orch', 'state')
+  }
+
+  // 살아 있는 루프다. pid 는 이 테스트 프로세스이고 alive_at 은 방금이다
+  function loopJson(fields: Json = {}): void {
+    mkdirSync(stateDir(), { recursive: true })
+    const now = new Date().toISOString()
+    writeFileSync(
+      join(stateDir(), 'loop.json'),
+      JSON.stringify({ pid: process.pid, run: 'run_x', repo: tmp, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {}, ...fields }),
+    )
+  }
+
+  function loopEvents(rows: Json[], cursor?: number): void {
+    mkdirSync(stateDir(), { recursive: true })
+    writeFileSync(join(stateDir(), 'loop-events.jsonl'), rows.map((row) => `${JSON.stringify(row)}\n`).join(''))
+    if (cursor !== undefined) writeFileSync(join(stateDir(), 'loop-events.cursor'), `${cursor}\n`)
+  }
+
+  function event(seq: number, kind: string, pr: number | null, text: string): Json {
+    return { seq, time: '2026-10-25T00:00:00.000Z', kind, pr, text }
+  }
+
+  function cursor(): string {
+    return readFileSync(join(stateDir(), 'loop-events.cursor'), 'utf8').trim()
+  }
+
+  const NEVER = () => [sleeping(batch('d9', 'worker_done'), 60)]
+
+  test('커서 뒤의 두 줄을 LOOP-EVENT 로 내고 커서를 옮긴 뒤 7 이고, 다시 걸면 그 줄을 내지 않는다', () => {
+    loopJson()
+    loopEvents([event(1, 'REMINDER', null, '읽은 줄'), event(2, 'WATCH-ERROR', null, 'WATCH-ERROR questions: offline'), event(3, 'CI-FAILED', 7, 'ci 실패')], 1)
+    const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0.2', '--loop-repo', tmp])
+    assert.equal(r.code, 7, r.stdout + r.stderr)
+    assert.deepEqual(lines(r.stdout), ['LOOP-EVENT WATCH-ERROR - WATCH-ERROR questions: offline', 'LOOP-EVENT CI-FAILED 7 ci 실패', 'LAST_DELIVERY d0'])
+    assert.equal(cursor(), '3')
+    // 시작할 때 깨어났으므로 check 를 부르지 않았다. 넘긴 ack 는 그대로 남는다
+    assert.deepEqual(calls(), [])
+    const again = wait([batch('d1', 'status')], ['--lost-interval-sec', '0.2', '--loop-repo', tmp])
+    assert.equal(again.code, 0, again.stdout + again.stderr)
+    assert.ok(!again.stdout.includes('LOOP-EVENT'), again.stdout)
+    assert.equal(lastLine(again.stdout), 'LAST_DELIVERY d1')
+  })
+
+  test('잘려 잃은 구간은 GAP 줄로 먼저 낸다', () => {
+    loopJson()
+    loopEvents([event(6, 'REMINDER', null, 'r')], 2)
+    const r = wait(NEVER(), ['--lost-interval-sec', '0', '--loop-repo', tmp])
+    assert.equal(r.code, 7, r.stdout + r.stderr)
+    assert.deepEqual(lines(r.stdout), ['LOOP-EVENT GAP - seq 3..5 를 잃었다', 'LOOP-EVENT REMINDER - r', 'LAST_DELIVERY -'])
+    assert.equal(cursor(), '6')
+  })
+
+  test('대기 중에 알림이 생기면 check --wait 를 끝내고 7 이다', { timeout: 60_000 }, async () => {
+    loopJson()
+    const pidFile = join(tmp, 'check.pid')
+    writeFileSync(stateFile, JSON.stringify({ replies: NEVER(), workers: [], tasks: [], latest: {}, history: [] }))
+    const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', 'none', '--lost-interval-sec', '0.2', '--loop-repo', tmp]
+    const child = spawn(process.execPath, argv, { env: { ...env, FAKE_PID: pidFile }, cwd: tmp })
+    let stdout = ''
+    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))
+    const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)))
+    const deadline = Date.now() + 20_000
+    while (!(existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('\n'))) {
+      assert.ok(Date.now() < deadline, 'check --wait 가 뜨지 않았다')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    const orcaPid = Number(readFileSync(pidFile, 'utf8').trim())
+    loopEvents([event(1, 'HOOK-FAIL', null, 'HOOK-FAIL tick 1')])
+    assert.equal(await closed, 7, stdout)
+    assert.deepEqual(lines(stdout), ['LOOP-EVENT HOOK-FAIL - HOOK-FAIL tick 1', 'LAST_DELIVERY -'])
+    assert.equal(cursor(), '1')
+    const gone = () => {
+      try {
+        process.kill(orcaPid, 0)
+        return false
+      } catch {
+        return true
+      }
+    }
+    const until = Date.now() + 20_000
+    while (!gone()) {
+      assert.ok(Date.now() < until, `check --wait(pid ${orcaPid})가 남았다`)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  })
+
+  test('alive_at 이 오래된 루프는 LOOP-DEAD 와 8 이다', () => {
+    loopJson({ alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
+    const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0', '--loop-repo', tmp])
+    assert.equal(r.code, 8, r.stdout + r.stderr)
+    const out = lines(r.stdout)
+    assert.match(out[0], new RegExp(`^LOOP-DEAD ${tmp} alive_at \\S+ 이후 응답 없음$`))
+    assert.deepEqual(out.slice(1), ['LAST_DELIVERY d0'])
+  })
+
+  test('알림 줄이 있으면 죽음보다 먼저 내고, 다음 대기가 죽음을 낸다', () => {
+    loopEvents([event(1, 'REMINDER', null, 'r')])
+    assert.equal(wait(NEVER(), ['--lost-interval-sec', '0', '--loop-repo', tmp]).code, 7)
+    const r = wait(NEVER(), ['--lost-interval-sec', '0', '--loop-repo', tmp])
+    assert.equal(r.code, 8, r.stdout + r.stderr)
+    assert.deepEqual(lines(r.stdout), [`LOOP-DEAD ${tmp} 없음`, 'LAST_DELIVERY -'])
+  })
+
+  test('--loop-repo 가 없으면 알림 파일과 루프 상태를 보지 않는다', () => {
+    loopEvents([event(1, 'REMINDER', null, 'r')])
+    const r = wait([batch('d1', 'status')], ['--lost-interval-sec', '0.2'])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.ok(!r.stdout.includes('LOOP-'), r.stdout)
+    assert.ok(!existsSync(join(stateDir(), 'loop-events.cursor')))
+  })
+})
+
 describe('wait-important.py shim', () => {
   test('옛 경로가 같은 줄과 종료 코드로 넘긴다', () => {
     const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim()

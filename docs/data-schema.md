@@ -64,7 +64,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `after-deploy` | `pr`, `merge_commit`, `deploy`(`success`, `failure`, `timeout`, `none`), `last_of_task`(bool) |
 | `before-cleanup` | `worktree`, `branch`, `pr`(있으면), `worker`(있으면) |
 | `after-cleanup` | `removed`(경로 목록), `skipped`(경로와 이유의 목록) |
-| `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록) |
+| `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록. 읽지 못하면 null) |
 | `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 `wait-important` 대기와 `watch-questions` 질문 감시의 pid 목록. 그 자식인 `orchestration check` 와 셸 행은 세지 않는다), `unanswered`(질문 id 목록) |
 
 옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령(`migrate-orch-dir.ts --hooks`)이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
@@ -135,7 +135,8 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `hooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
 | `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. 옛 설정 칸 실행의 `handler` 는 `legacy:<키>` 다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
 | `state/hooks/<이벤트>.lock` | 핸들러 잠금 | 실행이 끝나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다 |
-| `state/loop.json` | 상주 루프의 pid, 시작 시각, 마지막 틱, PR 마다 마지막으로 본 체크 상태와 알린 이벤트 | 루프가 덮어쓴다. 같은 상태를 두 번 알리지 않는 데 쓴다 |
+| `state/loop.json` | 상주 루프의 상태. `pid`, `run`(Run id 또는 null), `repo`, `tick_sec`, `started_at`, `alive_at`(생존 타이머가 쓴 마지막 시각), `last_tick`(마지막으로 끝난 틱의 시각 또는 null), `ticks`, `errors`(출처마다 마지막 오류 이유 또는 null). 시각은 ISO 8601 UTC 다 | 루프의 부모 프로세스만 옆 파일에 쓴 뒤 rename 으로 덮어쓴다. 같은 실패를 두 번 알리지 않는 데 쓴다 |
+| `state/loop.lock` | 한 저장소에 루프 하나. 쥔 루프의 pid | 루프가 끝나면 푼다. 죽은 pid 의 잠금은 다음 루프가 회수한다 |
 | `state/order.json` | 머지 순서. PR 번호 목록 | 머지되거나 닫힌 PR 은 루프가 뺀다 |
 | `state/loop.log` | 상주 루프의 출력 | 1MB 를 넘으면 `loop.log.1` 로 돌리고 하나만 남긴다 |
-| `state/loop-events.jsonl` | 코디네이터를 깨워야 하는 루프의 알림. 한 줄에 `time`, `kind`(`REMINDER`, `WATCH-ERROR`, `CI-FAILED`, `CI-MISSING`, `CONFLICT-ORPHAN`, `HOOK-FAIL`), `pr`, `text` | `wait-important` 가 읽은 위치를 `state/loop-events.cursor` 에 적는다. 읽은 줄이 1000 줄을 넘으면 루프가 앞부분을 잘라 낸다 |
+| `state/loop-events.jsonl` | 코디네이터를 깨워야 하는 루프의 알림. 한 줄에 `seq`(1 부터 단조 증가하는 정수), `time`(ISO 8601 UTC), `kind`(`REMINDER`, `WATCH-ERROR`, `HOOK-FAIL`, `CI-FAILED`, `CONFLICT-ORPHAN`. `CI-MISSING` 은 `ci-missing` 을 낼 때 더한다), `pr`(번호 또는 null), `text` | 더한 뒤 1000 줄을 넘으면 쓰는 쪽이 마지막 1000 줄만 남긴다. 새 `seq` 는 파일의 마지막 `seq` 와 커서 가운데 큰 것의 다음 값이다. `wait-important` 가 마지막으로 읽은 `seq` 하나를 `state/loop-events.cursor` 에 적고, 커서보다 큰 `seq` 만 읽는다. 커서가 없으면 0 이다 |

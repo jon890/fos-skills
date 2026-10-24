@@ -285,7 +285,8 @@ function held(lock: string, content: string): boolean {
 //   없다    다른 실행이 먼저 옮겼다. wx 생성을 다시 시도한다
 // wx 가 한 실행만 통과시키므로 둘이 함께 회수해도 새 잠금은 하나다.
 // seen 은 부르는 쪽이 처음 읽은 내용이다.
-// 테스트용 export 다. 명령은 부르지 않는다. 읽은 뒤 잠금이 바뀐 경합을 테스트가 seen 으로 흉내 내려고 내보낸다.
+// 사용처: 이 모듈의 핸들러 잠금(acquire)과 orch-loop.ts 의 state/loop.lock. 루프의 잠금도 같은 wx 와 pid 방식이라 회수를 한 벌로 둔다.
+// 테스트도 import 한다. 읽은 뒤 잠금이 바뀐 경합을 seen 으로 흉내 낸다.
 export function reclaim(lock: string, seen: string): 'retry' | 'wait' {
   const moved = `${lock}.reclaim-${process.pid}-${randomUUID()}`
   try {
