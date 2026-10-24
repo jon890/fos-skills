@@ -23,7 +23,12 @@
 //   step 은 done 값만 바꾸고, 창이 체크 표시와 취소선을 그린다. 옛 문자열은 읽을 때 변환하고 다음 쓰기 때 저장한다
 //   --progress N/M 은 「끝낸 단계/전체 단계」 (예: 7/10) 를 직접 적고 단계 수보다 앞선다. 주지 않으면 기존 값을 지우지 않는다
 //   --progress auto 는 값을 지워 단계 수로 세게 한다
-// 옵션은 고유 접두로 줄여 쓸 수 있다(옛 board.py 의 argparse 와 같다).
+// 옵션은 고유 접두로 줄여 쓸 수 있다(옛 board.py 의 argparse 와 같다). --help 나 -h 는 사용법을 stdout 에 내고 0 이다.
+// 항목은 id 의 값과 타입이 모두 같을 때만 맞는다. 명령줄의 id 는 문자열이라 숫자 id(1)는 「1」 로 찾지 못한다(옛 board.py 와 같다).
+//
+// 파일은 json.dump(indent=1, ensure_ascii=False) 의 꼴로 쓴다. 한 칸 들여쓰기, 한글 그대로, 끝 줄바꿈 없음이다.
+// 숫자는 JS 의 number 로 읽고 쓰므로 옛 board.py 와 다르게 바뀌는 값이 있다. 소수점 아래가 0 인 실수(1.0)는 1 이 되고,
+// 2^53 을 넘는 정수는 가까운 double 로 바뀐다. 이 명령이 쓰는 칸은 모두 문자열이라, 손대지 않은 칸에 그런 숫자가 있을 때만 바뀐다.
 //
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
@@ -43,6 +48,30 @@ const COMMANDS = ['set', 'step', 'steps', 'del', 'list']
 const USAGE =
   '사용법: board.ts {set,step,steps,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] ' +
   '[--progress N/M] [--detail D] [--next N] [--file F]'
+// --help 가 내는 글. 옛 board.py 의 argparse 도움말처럼 사용법 줄 뒤에 머리 설명을 붙인다
+const HELP = `${USAGE}
+
+저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
+
+파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
+
+사용:
+  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--progress N/M] [--detail D ...]
+  (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
+  (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
+  (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
+  doing 항목은 진행률이 있어야 한다. 단계 줄이나 --progress N/M 이 없으면 set 을 거절하고 보드를 고치지 않는다
+  board.ts step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
+  board.ts steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
+  board.ts del <id>
+  board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙인다)
+status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
+진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
+  단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
+  줄 앞의 「✓」 나 「[x]」 는 끝낸 단계, 「[ ]」, 「▶」, 「◇」 는 끝나지 않은 단계다
+  하위 항목(--detail)에 단계 줄이 있으면 그것을 세고, 없으면 --next 의 줄을 센다
+  --progress N/M 은 「끝낸 단계/전체 단계」 (예: 7/10) 를 직접 적고 단계 수보다 앞선다. 주지 않으면 기존 값을 지우지 않는다
+  --progress auto 는 값을 지워 단계 수로 세게 한다`
 
 const MISSING_PROGRESS = (id: string) => `doing 항목에는 진행률이 필요하다: ${id}
   단계 줄을 적는다: --next '1. 구현' --next '2. 리뷰 반영' --next '3. 머지' (끝낸 단계는 앞에 ✓ 나 [x])
@@ -154,7 +183,9 @@ function localIso(now: Date): string {
   )
 }
 
-// json.dumps(ensure_ascii=False) 의 꼴. 구분자가 `, ` 와 `: ` 다. steps 출력을 읽는 쪽과 바이트를 맞춘다
+// json.dumps(ensure_ascii=False) 의 꼴. 구분자가 `, ` 와 `: ` 다. steps 출력을 읽는 쪽과 바이트를 맞춘다.
+// orch/scripts/lib/py.ts 의 pyJson 과 같다. work-board 는 orch 를 import 하지 않아(의존은 orch 에서 work-board 쪽 하나다) 복사해 두었다.
+// 바꾸면 함께 고친다
 function pyJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(pyJson).join(', ')}]`
   if (typeof value === 'object' && value !== null) {
@@ -165,8 +196,10 @@ function pyJson(value: unknown): string {
   return JSON.stringify(value) ?? 'null'
 }
 
-// 고유 접두로 줄인 긴 옵션을 온 이름으로 펼친다. `--` 뒤는 건드리지 않는다
-function expand(argv: string[], names: string[]): string[] {
+// 고유 접두로 줄인 긴 옵션을 온 이름으로 펼친다. `--` 뒤는 건드리지 않는다.
+// orch/scripts/lib/args.ts 의 expandArgs 에 문자열 옵션을 모두 join 으로 준 것과 같다. 복사한 까닭은 pyJson 과 같다.
+// 바꾸면 함께 고친다. flags 는 값을 받지 않는 옵션이다
+function expand(argv: string[], names: string[], flags: string[]): string[] {
   const out: string[] = []
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
@@ -184,7 +217,7 @@ function expand(argv: string[], names: string[]): string[] {
     if (matches.length > 1) throw new Error(`--${given} 이 여러 옵션의 접두다: ${matches.map((name) => `--${name}`).join(', ')}`)
     const name = matches[0] ?? given
     // 값을 받는 옵션은 바로 뒤 인자를 값으로 붙인다. `--next '-x'` 처럼 - 로 시작하는 값도 받는다
-    if (eq < 0 && name !== 'undo' && names.includes(name) && i + 1 < argv.length) {
+    if (eq < 0 && !flags.includes(name) && names.includes(name) && i + 1 < argv.length) {
       out.push(`--${name}=${argv[++i]}`)
       continue
     }
@@ -204,7 +237,7 @@ type Args = {
   file?: string
 }
 
-function parse(argv: string[]): Args {
+function parse(argv: string[]): Args | 'help' {
   const options = {
     undo: { type: 'boolean' },
     title: { type: 'string' },
@@ -216,7 +249,12 @@ function parse(argv: string[]): Args {
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const { values, positionals } = parseArgs({ args: expand(argv, Object.keys(options)), options, allowPositionals: true, strict: true })
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'help'])
+  // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
+  const end = args.indexOf('--')
+  const head = end < 0 ? args : args.slice(0, end)
+  if (head.includes('-h') || head.includes('--help')) return 'help'
+  const { values, positionals } = parseArgs({ args, options, allowPositionals: true, strict: true })
   if (positionals.length === 0) throw new Error('cmd 가 필요하다')
   if (positionals.length > 3) throw new Error(`모르는 인자: ${positionals.slice(3).join(' ')}`)
   const [cmd, id, status] = positionals
@@ -226,6 +264,7 @@ function parse(argv: string[]): Args {
   return { cmd, id, status, undo: values.undo ?? false, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
+// === 라 문자열 id 만 맞는다. 옛 board.py 의 `i['id'] == a.id` 도 문자열과 숫자를 같게 보지 않았다
 function find(board: Board, id: string): Item | undefined {
   return board.items.find((item) => item.id === id)
 }
@@ -298,13 +337,18 @@ function apply(a: Args, board: Board): boolean {
 }
 
 function main(argv: string[]): number {
-  let a: Args
+  let parsed: Args | 'help'
   try {
-    a = parse(argv)
+    parsed = parse(argv)
   } catch (e) {
     process.stderr.write(`${USAGE}\nboard.ts: error: ${(e as Error).message}\n`)
     return 2
   }
+  if (parsed === 'help') {
+    process.stdout.write(`${HELP}\n`)
+    return 0
+  }
+  const a = parsed
   const progress = a.fields.progress
   if (progress !== undefined && progress !== '' && progress !== 'auto' && !PROGRESS.test(progress)) {
     process.stderr.write(`--progress 는 끝낸단계/전체단계 (예: 2/5) 나 auto 다: ${progress}\n`)

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
@@ -43,7 +43,8 @@ beforeEach(() => {
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 function run(args: string[], opts: { script?: string; env?: Record<string, string> } = {}): Result {
-  const env: NodeJS.ProcessEnv = { ...process.env, GH: join(bindir, 'gh'), ...opts.env }
+  // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH ?? ''].join(delimiter), GH: join(bindir, 'gh'), ...opts.env }
   if (!opts.env?.BOARD_BIN) delete env.BOARD_BIN
   const argv = opts.script ? ['python3', opts.script] : [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
   const done = spawnSync(argv[0], [...argv.slice(1), ...args], { env, cwd: tmp, encoding: 'utf8' })

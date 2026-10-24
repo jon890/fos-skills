@@ -28,8 +28,15 @@
 
 - `wait_idle` 대기가 `HEAVY_IDLE_WAIT`(기본 1800초)를 넘으면 `heavy-slot` 이 종료 코드 124 로 끝난다. `HEAVY_POLL` 과 `HEAVY_IDLE_WAIT` 값은 등록 전에 검사해 틀리면 1 로 끝난다.
 - `heavy-slot` 의 `queue.lock` 은 perl 자식이 flock 으로 쥔다. 옛 `heavy-slot.py` 와 같은 파일에 같은 종류의 잠금을 걸어, 옮기는 동안 두 버전이 같은 slot 폴더를 써도 서로를 막는다. perl 이 PATH 에 필요하다.
+- `heavy-slot` 은 `queue.lock` 을 기다리는 중에 INT 나 TERM 을 받으면 기다림을 멈추고 128 에 신호 번호를 더한 값으로 끝난다.
 - `cleanup-sweep` 의 지시서를 남기는 줄이 `살아 있는 지시서 목록을 읽지 못했다` 로 바뀌었다. 그 목록을 읽지 못하면 PR 본문 파일도 지우지 않는다.
+  stderr 의 알림 줄도 `… 읽지 못해 지시서와 PR 본문은 지우지 않는다` 로 바뀌었다.
 - `handoff-cleanup` 의 지시서 줄이 `지시서를 휴지통으로 옮길 것 …`, `지시서 옮김 … -> …`, `지시서를 남긴다 …` 로 바뀌었다. 경로는 절대경로다. 큐 로그, 폴더, 데이터 파일의 `후보`, `옮김` 줄은 그대로다.
+  살아 있는 dispatch 가 쓰는 지시서는 끝난 지시서일 때만 `지시서를 남긴다` 줄을 낸다. 옛 명령은 끝나지 않은 지시서에도 남긴다 줄을 냈다.
+- `handoff-cleanup` 은 `**보드 항목 id**:` 꼴도 보드 항목 줄로 읽는다. 그 꼴로 쓴 지시서는 보드 항목이 done 이 아니면 남는다.
+- `handoff-cleanup` 은 원격 브랜치 조회(`git ls-remote --exit-code`)가 「그 브랜치가 없다」(2) 말고 다른 이유로 실패하면 지시서를 남긴다. 옛 명령은 네트워크 실패도 원격에 없다고 읽었다.
+- `cleanup-sweep --remote-branches` 는 남은 워크트리의 브랜치나 그 upstream 인 원격 브랜치를 `원격 브랜치 남김 <이름>: 워크트리가 쓴다` 로, 워크트리 없는 로컬 브랜치의 upstream 을 `원격 브랜치 남김 <이름>: 로컬 브랜치가 쓴다` 로 남긴다.
+  열린 PR 목록이 limit(1000)만큼 읽히면 잘렸을 수 있어 `원격 브랜치 정리 건너뜀: 열린 PR 이 1000 개 이상이라 …` 를 내고 종료 코드를 2 로 둔다.
 - `cleanup-sweep` 은 `--run` 을 주면 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널을 닫고 dispatch 를 반납한다. 워크트리를 지우는 조건은 바뀌지 않았다.
 - 보드 명령의 기본(`BOARD_BIN` 이 없을 때)이 `work-board/bin/board.ts` 다. `board.py` 는 shim 으로 남는다.
 - `--apply` 정리에서 `before-cleanup` 핸들러가 거부하거나 실패하면 그 워크트리를 남긴다.

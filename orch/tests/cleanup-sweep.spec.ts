@@ -1754,6 +1754,34 @@ describe('원격 브랜치 정리 (--remote-branches)', () => {
     assert.ok(remoteBranches().has('feat-m2'), out)
   })
 
+  test('남은 워크트리와 로컬 브랜치가 쓰는 원격 브랜치는 남긴다', () => {
+    // 열린 PR 이 없어 남는 워크트리. 그 브랜치 이름의 옛 PR 이 MERGED 로 닫혀 있다
+    const path = worktree('feat-wt')
+    closedPr('feat-wt', git('-C', path, 'rev-parse', 'HEAD'), 'MERGED', { number: 11 })
+    // 워크트리 없이 원격 브랜치를 upstream 으로 둔 로컬 브랜치
+    closedPr('feat-lb', remoteOnly('feat-lb'), 'MERGED', { number: 12 })
+    git('-C', repo, 'fetch', '-q', 'origin')
+    git('-C', repo, 'branch', '-q', '--track', 'feat-lb', 'origin/feat-lb')
+    const out = runSweep(['--remote-branches', '--apply'])
+    exists(path, out)
+    has(out, '원격 브랜치 남김 feat-wt: 워크트리가 쓴다')
+    has(out, '원격 브랜치 남김 feat-lb: 로컬 브랜치가 쓴다')
+    assert.ok(remoteBranches().has('feat-wt'), out)
+    assert.ok(remoteBranches().has('feat-lb'), out)
+  })
+
+  test('열린 PR 이 limit 만큼 읽히면 목록이 잘렸을 수 있어 건너뛰고 2 로 끝난다', () => {
+    closedPr('feat-many', remoteOnly('feat-many'), 'MERGED', { number: 9 })
+    openHeads = Array.from({ length: 1000 }, (_, i) => `open-${i}`)
+    const out = runSweep(['--remote-branches', '--apply'], { code: 2 })
+    has(out, '원격 브랜치 정리 건너뜀: 열린 PR 이 1000 개 이상이라')
+    assert.ok(remoteBranches().has('feat-many'), out)
+    // 하나 적으면 다 읽은 목록이다
+    openHeads = openHeads.slice(1)
+    has(runSweep(['--remote-branches', '--apply']), '원격 브랜치 삭제 feat-many (#9 MERGED)')
+    assert.ok(!remoteBranches().has('feat-many'))
+  })
+
   test('내 PR 의 작성자를 정하지 못하면 아무것도 지우지 않고 2 로 끝난다', () => {
     ghUser = ''
     closedPr('feat-m3', remoteOnly('feat-m3'), 'MERGED')

@@ -192,9 +192,26 @@ describe('Queue', () => {
     await assert.rejects(new Queue(slots, 3).claim(), /queue entry is missing/)
   })
 
-  test('명령의 따옴표가 기다리는 등록을 숨기지 않는다', async () => {
-    rows([10, 1, false, true], [100, 2, false, false])
-    assert.equal(await claim(100), false)
+  test('명령의 따옴표가 등록을 깨거나 기다리는 등록을 숨기지 않고, 명령은 인자를 그대로 받는다', async () => {
+    // 앞에 기다리는 exclusive 등록. 살아 있는 pid 여야 회수되지 않으므로 이 테스트 프로세스의 pid 를 쓴다
+    rows([process.pid, 1, false, true])
+    const out = join(tmp, 'argv.json')
+    const quoted = [`a'b`, 'c"d', `'; echo injected; '`, '"$(touch x)"', '\\"']
+    const run = launch(['--', NODE, '-e', `require('node:fs').writeFileSync(${JSON.stringify(out)}, JSON.stringify(process.argv.slice(1)))`, ...quoted], {
+      env: slotEnv({ HEAVY_POLL: '0.1' }),
+    })
+    await until(() => run.stderr().includes('heavy-slot: waiting'), '앞의 exclusive 를 기다림')
+    const own = entries().filter((name) => name !== `${process.pid}.json`)
+    assert.equal(own.length, 1, `등록이 하나가 아니다: ${entries().join(', ')}`)
+    const row = JSON.parse(readFileSync(join(slots, own[0]), 'utf8')) as { held: boolean; exclusive: boolean }
+    assert.deepEqual([row.held, row.exclusive], [false, false])
+    assert.equal(existsSync(out), false, '앞에 exclusive 가 기다리는데 명령을 실행했다')
+    unlinkSync(join(slots, `${process.pid}.json`))
+    const r = await run.done
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')), quoted)
+    assert.equal(existsSync(join(tmp, 'x')), false, '따옴표 안의 명령이 셸로 실행됐다')
+    assert.deepEqual(entries(), [])
   })
 
   test('다른 HEAVY_SLOTS 로 쓰는 대기열에는 등록하지 않는다', async () => {
@@ -275,6 +292,33 @@ describe('설정', () => {
     assert.deepEqual(entries(), [])
   })
 
+  for (const [name, value] of [
+    ['HEAVY_POLL', 'soon'],
+    ['HEAVY_IDLE_WAIT', '-1'],
+  ] as const) {
+    test(`${name}=${value} 처럼 0 이상의 초가 아니면 등록하지 않고 1 로 끝난다`, async () => {
+      const marker = markingGate()
+      const r = await slot(['--', 'true'], { env: slotEnv({ [name]: value }) })
+      assert.equal(r.code, 1, r.stderr)
+      assert.ok(r.stderr.includes(`heavy-slot: ${name} 는 0 이상의 초여야 한다: ${value}`), r.stderr)
+      assert.equal(existsSync(marker), false, '틀린 값인데 메모리 대기를 거쳤다')
+      assert.deepEqual(entries(), [])
+    })
+  }
+
+  test('heavy.light 에 맞는 명령이 없으면 127, 실행할 수 없으면 126 이다', async () => {
+    const noExec = join(tmp, 'light-no-exec')
+    writeFileSync(noExec, '#!/bin/sh\nexit 0\n', { mode: 0o644 })
+    config(tmp, { light: ['light-'] })
+    let r = await slot(['--', join(tmp, 'light-missing')], { env: slotEnv() })
+    assert.equal(r.code, 127, r.stderr)
+    assert.ok(r.stderr.includes(`heavy-slot: command not found: ${join(tmp, 'light-missing')}`), r.stderr)
+    r = await slot(['--', noExec], { env: slotEnv() })
+    assert.equal(r.code, 126, r.stderr)
+    assert.ok(r.stderr.includes(`heavy-slot: command is not executable: ${noExec}`), r.stderr)
+    assert.equal(existsSync(slots), false, '가벼운 명령인데 대기열 폴더를 만들었다')
+  })
+
   test('heavy 의 값이 문자열 목록이 아니면 2 다', async () => {
     config(tmp, { wait_idle: 'image-build' })
     const r = await slot(['--exclusive', '--', 'true'], { env: slotEnv() })
@@ -318,6 +362,96 @@ describe('명령 수명', () => {
       assert.equal(r.code, 143, r.stderr)
       assert.equal(isAlive(Number(readFileSync(marker, 'utf8'))), false, '명령이 아직 살아 있다')
       assert.deepEqual(entries(), [])
+    })
+  }
+})
+
+describe('신호', () => {
+  test('명령을 돌리는 중에 SIGINT 를 받으면 명령을 끝내고 130 으로 끝난다', async () => {
+    const marker = join(tmp, 'child-pid')
+    const run = launch(
+      ['--exclusive', '--', NODE, '-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000)`],
+      { env: slotEnv() },
+    )
+    await until(() => existsSync(marker) && readFileSync(marker, 'utf8') !== '', '명령 시작')
+    run.child.kill('SIGINT')
+    const r = await run.done
+    assert.equal(r.code, 130, r.stderr)
+    assert.equal(isAlive(Number(readFileSync(marker, 'utf8'))), false, '명령이 아직 살아 있다')
+    assert.deepEqual(entries(), [])
+  })
+
+  test('ps 가 신호로 죽고 heavy-slot 도 TERM 을 받았으면 1 이 아니라 143 이다', { timeout: 30_000 }, async () => {
+    const bin = join(tmp, 'bin')
+    mkdirSync(bin)
+    // 터미널의 신호가 그룹 전체에 간 것처럼 부모(heavy-slot)와 자기에게 TERM 을 보낸다
+    writeFileSync(join(bin, 'ps'), '#!/bin/sh\nkill -TERM $PPID\nkill -TERM $$\n', { mode: 0o755 })
+    config(tmp, { wait_idle: ['anything'] })
+    const r = await slot(['--', NODE, '-e', ''], { env: slotEnv({ PATH: `${bin}:${process.env.PATH ?? ''}` }) })
+    assert.equal(r.code, 143, r.stdout + r.stderr)
+    assert.deepEqual(entries(), [])
+  })
+
+  // queue.lock 을 먼저 쥐는 도우미. 옛 heavy-slot.py 의 fcntl.flock 과 새 heavy-slot.ts 의 perl 도우미 둘 다로 쥔다
+  const holders: Record<string, (lock: string) => string[]> = {
+    perl: (lock) => ['perl', '-e', 'use Fcntl qw(:flock); open(my $f, ">>", $ARGV[0]) or die; flock($f, LOCK_EX) or die; $| = 1; print "locked\\n"; <STDIN>;', lock],
+    'python3 fcntl': (lock) => [
+      'python3',
+      '-c',
+      'import fcntl, sys\nf = open(sys.argv[1], "a")\nfcntl.flock(f, fcntl.LOCK_EX)\nprint("locked", flush=True)\nsys.stdin.read()',
+      lock,
+    ],
+  }
+
+  // heavy-slot 의 자식 가운데 perl(잠금 도우미)이 있는지. 있으면 잠금을 기다리는 중이다
+  function lockHelperOf(pid: number): boolean {
+    const done = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' })
+    return done.stdout.split('\n').some((line) => {
+      const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+      return m !== null && Number(m[2]) === pid && m[3].startsWith('perl ')
+    })
+  }
+
+  async function holdLock(kind: string): Promise<ChildProcess> {
+    mkdirSync(slots, { recursive: true })
+    const [cmd, ...args] = holders[kind](join(slots, 'queue.lock'))
+    const holder = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'inherit'] })
+    started.push(holder)
+    let out = ''
+    holder.stdout?.on('data', (chunk: Buffer) => (out += chunk.toString('utf8')))
+    await until(() => out.includes('locked'), `${kind} 가 queue.lock 을 쥠`)
+    return holder
+  }
+
+  for (const kind of Object.keys(holders)) {
+    test(`${kind} 가 queue.lock 을 쥐면 등록을 기다리고, 놓으면 명령을 실행한다`, { timeout: 30_000 }, async () => {
+      const holder = await holdLock(kind)
+      const out = join(tmp, 'ran')
+      const run = launch(['--exclusive', '--', NODE, '-e', `require('node:fs').writeFileSync(${JSON.stringify(out)}, 'x')`], { env: slotEnv() })
+      await until(() => lockHelperOf(run.child.pid as number), '잠금 기다림')
+      assert.deepEqual(entries(), [], '잠금을 잡지 않고 등록했다')
+      assert.equal(existsSync(out), false)
+      holder.stdin?.end()
+      const r = await run.done
+      assert.equal(r.code, 0, r.stderr)
+      assert.equal(existsSync(out), true)
+      assert.deepEqual(entries(), [])
+    })
+
+    test(`${kind} 가 queue.lock 을 쥔 동안 SIGTERM 을 받으면 기다림을 멈추고 143 으로 끝난다`, { timeout: 30_000 }, async () => {
+      const holder = await holdLock(kind)
+      const out = join(tmp, 'ran')
+      const run = launch(['--exclusive', '--', NODE, '-e', `require('node:fs').writeFileSync(${JSON.stringify(out)}, 'x')`], { env: slotEnv() })
+      const pid = run.child.pid as number
+      await until(() => lockHelperOf(pid), '잠금 기다림')
+      run.child.kill('SIGTERM')
+      const r = await run.done
+      assert.equal(r.code, 143, r.stderr)
+      assert.equal(lockHelperOf(pid), false, '잠금 도우미가 남았다')
+      assert.equal(existsSync(out), false)
+      assert.deepEqual(entries(), [])
+      assert.equal(holder.exitCode, null, '잠금을 쥔 쪽이 먼저 끝나 판정을 보지 못했다')
+      holder.stdin?.end()
     })
   }
 })
@@ -373,13 +507,40 @@ describe('wait_idle', () => {
     assert.equal((await holder.done).code, 143)
   })
 
+  test('등록된 heavy-slot 의 조상만 명령줄이 맞아도 기다리지 않는다', { timeout: 30_000 }, async () => {
+    const marker = `idle-${randomUUID()}`
+    const holderDir = join(tmp, 'holder')
+    mkdirSync(holderDir)
+    const startedFile = join(tmp, 'holder-started')
+    // 표지는 상위 프로세스(heavy-slot 을 띄운 node)의 명령줄에만 있다. heavy-slot 과 그 명령의 명령줄에는 없다
+    const inner = [SCRIPT, '--', NODE, '-e', `require('node:fs').writeFileSync(${JSON.stringify(startedFile)}, 'x'); setInterval(() => {}, 1000)`]
+    const parentCode = `const c = require('node:child_process').spawn(process.execPath, ['--disable-warning=ExperimentalWarning', ...${JSON.stringify(inner)}], { stdio: 'inherit' }); process.on('SIGTERM', () => c.kill('SIGTERM')); c.on('exit', (code) => process.exit(code ?? 1))`
+    // afterEach 의 SIGKILL 은 안쪽 heavy-slot 에 전해지지 않아 고아가 남는다. 실패해도 TERM 으로 넘겨 끝내도록 여기서 끝낸다
+    const parent = spawn(NODE, ['-e', parentCode, marker], { env: slotEnv(), cwd: holderDir, stdio: 'ignore' })
+    const exited = new Promise<number | null>((resolve) => parent.once('exit', (code) => resolve(code)))
+    try {
+      await until(() => existsSync(startedFile), '자리를 쥔 명령 시작')
+      config(tmp, { wait_idle: [marker] })
+      const r = await slot(['--', NODE, '-e', ''], { env: slotEnv({ HEAVY_POLL: '0.1', HEAVY_IDLE_WAIT: '1' }) })
+      assert.equal(r.code, 0, r.stdout + r.stderr)
+      assert.doesNotMatch(r.stderr, /waiting for idle/)
+      assert.equal(parent.exitCode, null, '상위 프로세스가 먼저 끝나 판정을 보지 못했다')
+    } finally {
+      parent.kill('SIGTERM')
+      await exited
+    }
+    assert.equal(await exited, 143)
+    await until(() => entries().length === 0, '자리를 쥔 검사의 반납')
+  })
+
   test('HEAVY_IDLE_WAIT 를 넘으면 대기 초과 줄을 내고 등록을 지운 뒤 124 로 끝난다', async () => {
     const marker = `idle-${randomUUID()}`
     config(tmp, { wait_idle: [marker] })
     busy(marker)
     const out = join(tmp, 'ran')
+    // 초 자리는 원문(` 1.0`)이 아니라 읽은 값이다
     const r = await slot(['--', NODE, '-e', `require('node:fs').writeFileSync(${JSON.stringify(out)}, 'x')`], {
-      env: slotEnv({ HEAVY_POLL: '0.1', HEAVY_IDLE_WAIT: '1' }),
+      env: slotEnv({ HEAVY_POLL: '0.1', HEAVY_IDLE_WAIT: ' 1.0' }),
     })
     assert.equal(r.code, 124, r.stdout + r.stderr)
     assert.match(r.stdout, new RegExp(`^heavy-slot: wait_idle 대기가 1초를 넘었다: .*${marker}$`, 'm'))

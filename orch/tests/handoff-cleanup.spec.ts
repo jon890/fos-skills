@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { after, before, beforeEach, afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
@@ -21,6 +21,15 @@ const FAKE_GH = `const fs = require('node:fs')
 if (process.env.FAKE_GH_FAILS === '1') process.exit(1)
 const heads = JSON.parse(process.env.FAKE_OPEN || '[]')
 fs.writeSync(1, JSON.stringify(heads.map((headRefName) => ({ headRefName }))) + '\\n')
+`
+// git 을 부를 때마다 인자를 FAKE_GIT_LOG 에 한 줄로 남기고 PATH 의 git 으로 넘긴다.
+// FAKE_LS_REMOTE_CODE 가 있으면 ls-remote 는 git 을 부르지 않고 그 코드로 끝난다
+const FAKE_GIT = `const fs = require('node:fs')
+const { spawnSync } = require('node:child_process')
+const args = process.argv.slice(2)
+fs.appendFileSync(process.env.FAKE_GIT_LOG, args.join(' ') + '\\n')
+if (args[0] === 'ls-remote' && process.env.FAKE_LS_REMOTE_CODE) process.exit(Number(process.env.FAKE_LS_REMOTE_CODE))
+process.exit(spawnSync('git', args, { stdio: 'inherit' }).status ?? 1)
 `
 // 살아 있는 Task 는 FAKE_TASKS(JSON 목록)다. FAKE_ORCA_FAILS=1 이면 실패한다
 const FAKE_ORCA = `const fs = require('node:fs')
@@ -36,6 +45,7 @@ before(() => {
   bindir = realpathSync(mkdtempSync(join(tmpdir(), 'handoff-cleanup-bin-')))
   writeNodeBin(bindir, 'gh', FAKE_GH)
   writeNodeBin(bindir, 'orca', FAKE_ORCA)
+  writeNodeBin(bindir, 'git', FAKE_GIT)
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
 
@@ -67,7 +77,7 @@ beforeEach(() => {
     GH: join(bindir, 'gh'),
     ORCA: join(bindir, 'orca'),
   }
-  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS']) delete env[key]
+  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS', 'FAKE_LS_REMOTE_CODE']) delete env[key]
   const origin = join(tmp, 'origin.git')
   repo = join(tmp, 'repo')
   sh('git', 'init', '-q', '--bare', '-b', 'main', origin)
@@ -115,6 +125,14 @@ function ok(args: string[] = [], extra: Record<string, string> = {}): Result {
 }
 
 const spec = (branch: string, item: string): string => `브랜치: \`${branch}\`\n보드 항목 id: \`${item}\`\n`
+
+// git 호출을 기록하는 가짜 git 으로 돌린다. 기록한 인자 줄을 함께 돌려준다
+function withGitLog(args: string[], extra: Record<string, string> = {}): Result & { gitCalls: string[] } {
+  const gitLog = join(tmp, 'git.log')
+  const done = ok(args, { GIT: join(bindir, 'git'), FAKE_GIT_LOG: gitLog, ...extra })
+  const gitCalls = existsSync(gitLog) ? readFileSync(gitLog, 'utf8').split('\n').filter((line) => line) : []
+  return { ...done, gitCalls }
+}
 
 describe('handoff-cleanup', () => {
   test('기본은 후보만 보이고 아무것도 옮기지 않는다', () => {
@@ -210,6 +228,30 @@ describe('handoff-cleanup', () => {
     assert.equal(existsSync(join(orch, 'specs/spec-finished.md')), true)
   })
 
+  test('보드 파일이 비어 있으면 보드 항목 줄이 있는 지시서는 옮기지 않는다', () => {
+    writeFileSync(join(repo, 'board.json'), '')
+    const target = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
+    ok(['--apply'])
+    assert.equal(existsSync(target), true)
+  })
+
+  test('브랜치 줄과 보드 항목 줄이 모두 **이름**: 꼴이어도 보드 조건을 본다', () => {
+    const bold = (branch: string, item: string) => `- **브랜치**: \`${branch}\`\n- **보드 항목 id**: \`${item}\`\n`
+    const doing = make('.orch/specs/spec-bold-doing.md', bold('feat/bold-doing', 'item-doing'))
+    make('.orch/specs/spec-bold-done.md', bold('feat/bold-done', 'item-done'))
+    ok(['--apply'])
+    assert.equal(existsSync(doing), true, 'doing 항목의 지시서가 옮겨졌다')
+    // 같은 꼴이라도 done 이면 옮긴다. 두 줄을 모두 읽었다는 뜻이다
+    assert.equal(existsSync(join(trash, '.orch/specs/spec-bold-done.md')), true)
+  })
+
+  test('원격 브랜치 조회가 「없음」 말고 다른 이유로 실패하면 지시서를 남긴다', () => {
+    const target = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
+    const r = withGitLog(['--apply'], { FAKE_LS_REMOTE_CODE: '128' })
+    assert.ok(r.gitCalls.some((line) => line.startsWith('ls-remote --exit-code --heads origin feat/finished')), r.gitCalls.join('\n'))
+    assert.equal(existsSync(target), true)
+  })
+
   test('끝난 지시서는 휴지통에 orch 폴더 이름 아래로 옮기고 같은 이름이 있으면 .2 를 붙인다', () => {
     make('.orch/specs/spec-x.md', spec('feat/x', 'item-done') + 'first\n')
     mkdirSync(join(trash, '.orch/specs'), { recursive: true })
@@ -238,10 +280,13 @@ describe('handoff-cleanup', () => {
   test('살아 있는 지시서 목록을 읽지 못하면 지시서는 하나도 옮기지 않고 큐 로그는 옮긴다', () => {
     const target = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
     make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
-    const r = ok(['--apply'], { FAKE_ORCA_FAILS: '1' })
+    const r = withGitLog(['--apply'], { FAKE_ORCA_FAILS: '1' })
     assert.match(r.stderr, /살아 있는 dispatch 의 지시서를 읽지 못해/)
     assert.equal(existsSync(target), true)
     assert.equal(existsSync(join(trash, '.orch/queue/q.out')), true)
+    // 지시서마다 판정하지 않는다. 원격 조회도 지시서 줄도 없다
+    assert.deepEqual(r.gitCalls.filter((line) => line.startsWith('ls-remote')), [])
+    assert.doesNotMatch(r.stderr, /지시서를 남긴다/)
   })
 
   test('열린 PR 을 읽지 못하면 지시서는 옮기지 않는다', () => {
@@ -302,6 +347,46 @@ describe('handoff-cleanup', () => {
     assert.equal(readFileSync(join(trash, '.orch/queue/q.out.2'), 'utf8'), 'QUEUE-DONE\n')
   })
 
+  test('휴지통에 q.out 과 q.out.2 가 있으면 q.out.3 으로 옮긴다', () => {
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    mkdirSync(join(trash, '.orch/queue'), { recursive: true })
+    writeFileSync(join(trash, '.orch/queue/q.out'), 'first')
+    writeFileSync(join(trash, '.orch/queue/q.out.2'), 'second')
+    ok(['--apply'])
+    assert.equal(readFileSync(join(trash, '.orch/queue/q.out'), 'utf8'), 'first')
+    assert.equal(readFileSync(join(trash, '.orch/queue/q.out.2'), 'utf8'), 'second')
+    assert.equal(readFileSync(join(trash, '.orch/queue/q.out.3'), 'utf8'), 'QUEUE-DONE\n')
+  })
+
+  test('.keep 에 이름이 앞부분만 같은 줄이 있어도 그 폴더는 옮긴다', () => {
+    make('.orch/old-report', null, 4)
+    make('.orch/.keep', 'old-report2\nold\n', 9)
+    for (const dir of ['bin', 'queue', 'specs', 'state']) age(join(orch, dir), 9)
+    ok(['--apply'])
+    assert.equal(existsSync(join(trash, '.orch/old-report')), true)
+  })
+
+  test('후보 줄은 지시서 줄까지 깊이 순으로 낸다', () => {
+    make('.orch/raw.csv', 'a,b\n', 2)
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    const finished = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
+    make('.orch/zz/raw.csv', 'a,b\n', 2)
+    const lines = ok(['--folder-days', '100']).stdout.split('\n').filter((line) => line)
+    assert.deepEqual(lines, ['후보 .orch/raw.csv', '후보 .orch/queue/q.out', `지시서를 휴지통으로 옮길 것 ${finished}`, '후보 .orch/zz/raw.csv'])
+  })
+
+  test('휴지통 폴더 줄은 --trash 로 준 상대경로를 그대로 낸다', () => {
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    const done = spawnSync(
+      process.execPath,
+      ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--board', 'board.json', '--trash', 'rel-trash', '--apply'],
+      { env, cwd: tmp, encoding: 'utf8' },
+    )
+    assert.equal(done.status, 0, done.stderr)
+    assert.match(done.stdout, /^휴지통 폴더: rel-trash$/m)
+    assert.equal(existsSync(join(tmp, 'rel-trash/.orch/queue/q.out')), true)
+  })
+
   test('옵션이 경로와 기준을 정하고 설정 파일은 명령줄보다 약하다', () => {
     make('previews/mid.html', '<html>', 2)
     ok(['--apply', '--folder-days', '1', '--previews', 'previews'])
@@ -342,7 +427,9 @@ describe('handoff-cleanup', () => {
 
   test('옛 .py 경로는 같은 결과를 내는 shim 이다', () => {
     make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
-    const done = spawnSync('python3', [SHIM, '--repo', repo, '--trash', trash, '--board', 'board.json'], { env, encoding: 'utf8' })
+    // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
+    const shimEnv = { ...env, PATH: [dirname(process.execPath), env.PATH ?? ''].join(delimiter) }
+    const done = spawnSync('python3', [SHIM, '--repo', repo, '--trash', trash, '--board', 'board.json'], { env: shimEnv, encoding: 'utf8' })
     assert.equal(done.status, 0, done.stderr)
     assert.match(done.stderr, /DEPRECATED/)
     assert.match(done.stdout, /^후보 \.orch\/queue\/q\.out$/m)

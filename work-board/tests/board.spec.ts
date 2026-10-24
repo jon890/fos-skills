@@ -4,15 +4,17 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { defaultBoardPath } from '../bin/board.ts'
 
 const BOARD = fileURLToPath(new URL('../bin/board.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../bin/board.py', import.meta.url))
+// shim 이 PATH 의 node 를 부르므로 이 테스트를 돌리는 node(22.18 이상)를 앞에 둔다
+const SHIM_ENV = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}` }
 
 type Json = Record<string, unknown>
 type Result = { code: number | null; stdout: string; stderr: string }
@@ -82,7 +84,7 @@ describe('step 과 steps', () => {
   test('없는 번호는 단계 줄 쓰는 법을 알린다', () => {
     write({ id: 'x', status: 'doing', next: '1. a' })
     const r = board('step', 'x', '4')
-    assert.notEqual(r.code, 0)
+    assert.equal(r.code, 1, r.stderr)
     assert.ok(r.stderr.includes('4 번 단계 줄이 없다'), r.stderr)
     assert.ok(r.stderr.includes('「4. …」'), r.stderr)
   })
@@ -94,7 +96,7 @@ describe('step 과 steps', () => {
     assert.equal(r.code, 0, r.stderr)
     assert.equal(r.stdout, '[{"number": 1, "done": true, "text": "1 a"}, {"number": 2, "done": false, "text": "2. b #7"}]\n')
     assert.equal(readFileSync(file, 'utf8'), before)
-    assert.notEqual(board('steps', 'none').code, 0)
+    assert.equal(board('steps', 'none').code, 1)
   })
 })
 
@@ -102,13 +104,13 @@ describe('set', () => {
   test('진행률 없는 doing 은 거절하고 보드를 고치지 않는다', () => {
     write({ id: 'old', status: 'wait', title: '옛 항목' })
     let r = board('set', 'old', 'doing')
-    assert.notEqual(r.code, 0)
+    assert.equal(r.code, 1, r.stderr)
     assert.ok(r.stderr.includes('진행률이 필요하다'), r.stderr)
     assert.ok(r.stderr.includes("--next '1. 구현'"), r.stderr)
     assert.ok(r.stderr.includes('--progress'), r.stderr)
     assert.equal(item('old').status, 'wait')
     r = board('set', 'new', 'doing', '--title', '새 항목')
-    assert.notEqual(r.code, 0)
+    assert.equal(r.code, 1, r.stderr)
     assert.deepEqual(
       items().map((row) => row.id),
       ['old'],
@@ -148,14 +150,14 @@ describe('set', () => {
     assert.deepEqual(item('a').details, rows(['1 a', true], ['2 b', true], ['3 c', true], ['참고', false]))
     assert.deepEqual(item('b').next, rows(['1 d', true]))
     before = readFileSync(file)
-    assert.notEqual(board('step', 'a', '9').code, 0)
+    assert.equal(board('step', 'a', '9').code, 1)
     assert.deepEqual(readFileSync(file), before)
   })
 
   test('--progress 는 분수여야 한다', () => {
     write()
     const r = board('set', 'a', 'doing', '--progress', '거의 완료')
-    assert.notEqual(r.code, 0)
+    assert.equal(r.code, 1, r.stderr)
     assert.ok(r.stderr.includes('끝낸단계/전체단계'), r.stderr)
   })
 
@@ -163,8 +165,60 @@ describe('set', () => {
     write({ id: 'old', status: 'doing', progress: '거의 완료' }, { id: 'w', status: 'wait' })
     assert.equal(board('set', 'w', '--title', '대기').code, 0)
     assert.equal(item('old').status, 'doing')
-    assert.notEqual(board('set', 'old', '--pr', '#1').code, 0)
+    assert.equal(board('set', 'old', '--pr', '#1').code, 1)
     assert.equal(board('set', 'old', 'done').code, 0)
+  })
+
+  test('쓴 파일은 옛 board.py 의 json.dump(indent=1) 꼴이다', () => {
+    write({ id: 'old', status: 'wait', title: '옛 항목', note: { tags: [], n: 2 } })
+    const r = board('set', 'a', 'doing', '--next', '1. 구현', '--pr', '#1')
+    assert.equal(r.code, 0, r.stderr)
+    const text = readFileSync(file, 'utf8')
+    const at = /"updatedAt": "([^"]+)"/.exec(text)
+    assert.ok(at, text)
+    assert.match(at[1], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+    // 한 칸 들여쓰기, 빈 목록은 [], 한글은 그대로, 끝 줄바꿈 없음
+    const expected = [
+      '{',
+      ' "items": [',
+      '  {',
+      '   "id": "old",',
+      '   "status": "wait",',
+      '   "title": "옛 항목",',
+      '   "note": {',
+      '    "tags": [],',
+      '    "n": 2',
+      '   }',
+      '  },',
+      '  {',
+      '   "id": "a",',
+      '   "title": "a",',
+      '   "status": "doing",',
+      '   "pr": "#1",',
+      '   "next": [',
+      '    {',
+      '     "text": "1. 구현",',
+      '     "done": false',
+      '    }',
+      '   ]',
+      '  }',
+      ' ],',
+      ' "updatedAt": "<at>"',
+      '}',
+    ].join('\n')
+    assert.equal(text.replace(at[1], '<at>'), expected)
+  })
+
+  test('id 는 타입까지 같을 때만 맞는다', () => {
+    write({ id: 1, status: 'wait', title: '숫자 id' })
+    const r = board('steps', '1')
+    assert.equal(r.code, 1, r.stderr)
+    assert.ok(r.stderr.includes('항목이 없다: 1'), r.stderr)
+    assert.equal(board('del', '1').code, 0)
+    assert.deepEqual(
+      items().map((row) => row.id),
+      [1],
+    )
   })
 
   test('옵션은 고유 접두로 줄여 쓸 수 있다', () => {
@@ -172,6 +226,27 @@ describe('set', () => {
     const r = board('set', 'a', 'wait', '--tit', '줄임')
     assert.equal(r.code, 0, r.stderr)
     assert.equal(item('a').title, '줄임')
+  })
+})
+
+describe('사용법', () => {
+  for (const flag of ['--help', '-h', '--he']) {
+    test(`${flag} 는 사용법을 stdout 에 내고 0 이다`, () => {
+      const r = board('set', flag)
+      assert.equal(r.code, 0, r.stderr)
+      assert.ok(r.stdout.startsWith('사용법: board.ts {set,step,steps,del,list}'), r.stdout)
+      assert.ok(r.stdout.includes('board.ts steps <id>'), r.stdout)
+      assert.equal(existsSync(file), false, '도움말인데 보드를 만들었다')
+    })
+  }
+
+  test('모르는 명령과 옵션은 사용법 오류 2 이고 보드를 만들지 않는다', () => {
+    for (const args of [['show'], ['list', '--bogus'], ['set', 'a', 'wait', '--p', 'x']]) {
+      const r = board(...args)
+      assert.equal(r.code, 2, `${args.join(' ')}: ${r.stderr}`)
+      assert.ok(r.stderr.startsWith('사용법: board.ts'), r.stderr)
+    }
+    assert.equal(existsSync(file), false)
   })
 })
 
@@ -249,9 +324,19 @@ describe('기본 보드 위치', () => {
 describe('옛 경로', () => {
   test('board.py 는 board.ts 로 넘긴다', () => {
     write({ id: 'a', status: 'wait' })
-    const done = spawnSync('python3', [SHIM, 'list', '--file', file], { encoding: 'utf8' })
+    const done = spawnSync('python3', [SHIM, 'list', '--file', file], { encoding: 'utf8', env: SHIM_ENV })
     assert.equal(done.status, 0, done.stderr)
     assert.ok(done.stdout.startsWith('wait    a'), done.stdout)
     assert.match(done.stderr, /^DEPRECATED python3 board\.py → /m)
+  })
+
+  test('board.py 를 다른 폴더의 symlink 로 불러도 board.ts 로 넘긴다', () => {
+    write({ id: 'a', status: 'wait' })
+    const link = join(tmp, 'link', 'board.py')
+    mkdirSync(dirname(link))
+    symlinkSync(SHIM, link)
+    const done = spawnSync('python3', [link, 'list', '--file', file], { encoding: 'utf8', env: SHIM_ENV })
+    assert.equal(done.status, 0, done.stderr)
+    assert.ok(done.stdout.startsWith('wait    a'), done.stdout)
   })
 })

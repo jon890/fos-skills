@@ -17,7 +17,7 @@
 // 값은 JS 정규식 문자열 목록이다(플래그 없음). 설정이 없으면 모든 명령이 normal 이다.
 //     1. 명령줄이 `bash -c` 나 `sh -c` 면 그 본문을, 아니면 인자를 공백으로 이은 글자를 본다
 //     2. `&&`, `||`, `;`, `|` 로 조각을 나누고, 조각마다 앞의 `time`, `/usr/bin/time`, `/usr/bin/time -l` 과 앞뒤 괄호를 뗀다.
-//        공백뿐인 조각은 버린다
+//        공백뿐인 조각은 버린다. 괄호를 뗀 뒤에야 비는 조각(`()` 같은 것)은 남아 light 에 맞지 않는다(옛 heavy-slot.py 와 같다)
 //     3. 조각 하나라도 heavy.exclusive 에 맞으면 exclusive. 모든 자리가 빌 때 혼자 실행한다
 //     4. 아니면 조각 하나라도 heavy.normal 에 맞으면 normal
 //     5. 아니면 모든 조각이 heavy.light 의 정규식 가운데 하나에 맞을 때만 light. 대기열을 거치지 않고 바로 실행한다
@@ -29,20 +29,23 @@
 // 명령줄이 heavy.wait_idle 의 정규식 가운데 하나에 맞는 프로세스가 있으면 자리를 잡지 않고 HEAVY_POLL 뒤에 다시 본다.
 // 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스를 기다리려는 것이다. 목록이 비어 있으면 ps 를 읽지 않는다.
 // 등록한 뒤에 기다리므로 뒤에 온 검사가 앞질러 자리를 잡지 않는다(FIFO).
-// 대상에서 빼는 것: 자기 pid 와 그 조상, slot 폴더에 등록된 heavy-slot 프로세스와 그 자손.
-// 자기 명령줄이나 이미 자리를 쥔 검사가 정규식에 맞아 서로를 기다리지 않게 한다.
+// 대상에서 빼는 것: 자기 pid 와 그 조상, slot 폴더에 등록된 heavy-slot 프로세스와 그 조상, 그 자손.
+// 자기 명령줄이나 이미 자리를 쥔 검사가 정규식에 맞아 서로를 기다리지 않게 한다. 등록된 것의 조상도 빼는 것은
+// 두 heavy-slot 을 띄운 상위 셸의 명령줄이 정규식에 맞을 때 둘이 서로의 조상을 기다리며 멈추지 않게 하려는 것이다.
 // 맞는 프로세스를 기다린 시간이 모두 HEAVY_IDLE_WAIT 초를 넘으면 stdout 에
 // `heavy-slot: wait_idle 대기가 <초>초를 넘었다: <맞은 명령줄 하나>` 를 내고 등록을 지운 뒤 124 로 끝난다.
-// ps 를 읽지 못하면 등록을 지우고 1 로 끝난다.
+// ps 를 읽지 못하면 등록을 지우고 1 로 끝난다. ps 가 신호로 죽었고 이 프로세스도 INT 나 TERM 을 받았으면 128+신호 번호다.
 //
 // 대기열: slot 폴더의 <pid>.json 이 등록 하나다. 등록과 자리 잡기, 반납은 queue.lock 의 flock 아래에서 한다.
+// 등록이나 자리 잡기에서 잠금을 기다리는 중에 INT 나 TERM 을 받으면 기다림을 멈추고 128+신호 번호로 끝난다.
+// 등록 전이면 지울 등록이 없고, 등록 뒤면 반납할 때 잠금을 다시 기다려 등록을 지운다.
 // 끝난 pid 의 등록은 다음 검사에서 회수하고, 정상 종료와 INT, TERM 때는 명령이 끝난 뒤 자리를 반납한다.
 // 신호를 받으면 명령의 프로세스 그룹에 TERM 을 보내고 10초 뒤에도 살아 있으면 KILL 을 보낸다.
 // macOS 에서는 slot 폴더와 명령의 TMPDIR 를 실경로로 푼다. 기본 slot 폴더는 주 checkout 기준이라 워크트리끼리 함께 쓴다.
 // 옛 orch 설정이 남아 있고 --slot-dir 도 HEAVY_SLOT_DIR 도 없으면 실행하지 않고 옮기는 명령을 알린다(종료 코드 2).
 //
 // 종료: 명령의 종료 코드, 2 인자·설정 오류, 1 대기열·메모리 검사 실패, 124 wait_idle 대기 초과, 128+신호 번호,
-//       127 명령이 없다, 126 명령을 실행할 수 없다
+//       127 명령이 없다, 126 명령을 실행할 수 없다. 대기열을 건너뛰는 명령이 실행 파일 형식이 아니면 1 이다(lib/proc.ts 의 execCommand)
 //
 // 테스트가 Queue, classify, compileHeavy 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
@@ -82,6 +85,16 @@ export type Heavy = Record<'exclusive' | 'normal' | 'light' | 'wait_idle', RegEx
 type Row = { pid: number; ticket: number; exclusive: boolean; held: boolean; slots: number }
 
 class Usage extends Error {}
+// 잠금을 기다리는 중에 INT 나 TERM 을 받았다. main 이 128+신호 번호로 바꾼다
+class Stopped extends Error {}
+// ps 가 0 이 아닌 코드로 끝났다. 신호로 죽었는지(128 초과) 보려고 코드를 함께 둔다
+class PsFailed extends Error {
+  code: number
+  constructor(code: number, message: string) {
+    super(message)
+    this.code = code
+  }
+}
 
 // heavy 절을 정규식으로 바꾼다. 값이 문자열 목록이 아니면 ConfigError, 정규식이 틀리면 Usage 다(둘 다 종료 코드 2).
 export function compileHeavy(body: Record<string, unknown>): Heavy {
@@ -104,6 +117,7 @@ export function compileHeavy(body: Record<string, unknown>): Heavy {
 }
 
 // 명령을 조각으로 나눈다. 옛 heavy-slot.py 의 classify 와 같은 꼴이다.
+// 공백뿐인 조각은 괄호를 떼기 전에 버린다. `()` 처럼 괄호를 뗀 뒤에야 비는 조각은 남는다(옛 classify 와 같다).
 function parts(argv: string[]): string[] {
   const body = (argv[0] === 'bash' || argv[0] === 'sh') && argv[1] === '-c' ? argv.slice(2).join(' ') : argv.join(' ')
   return body
@@ -128,17 +142,31 @@ export function classify(argv: string[], heavy: Heavy): Kind {
 }
 
 // queue.lock 을 잡은 채로 fn 을 부른다. fn 은 동기여야 한다. 도중에 다른 이벤트가 끼어들지 않게 하려는 것이다.
+// 기다리는 중에 INT 나 TERM 을 받으면 도우미를 끝내고 Stopped 를 던진다. 신호를 받은 뒤에 부른 잠금(반납)은 끝까지 기다린다.
 async function locked<T>(lockFile: string, fn: () => T): Promise<T> {
   const helper = spawn('perl', ['-e', LOCK_HELPER, lockFile], { stdio: ['pipe', 'pipe', 'pipe'], detached: true })
   const closed = new Promise<void>((resolve) => helper.once('close', () => resolve()))
   helper.stdin.on('error', () => {})
+  let acquired = false
+  let stop: (() => void) | undefined
   try {
     await new Promise<void>((resolve, reject) => {
       let out = ''
       let err = ''
+      if (!stopSignal) {
+        stop = () => {
+          if (acquired) return
+          reject(new Stopped('queue.lock 을 기다리는 중에 멈췄다'))
+          helper.kill('SIGTERM')
+        }
+        wakers.add(stop)
+      }
       helper.stdout.on('data', (chunk: Buffer) => {
         out += chunk.toString('utf8')
-        if (out.includes('locked\n')) resolve()
+        if (out.includes('locked\n')) {
+          acquired = true
+          resolve()
+        }
       })
       helper.stderr.on('data', (chunk: Buffer) => {
         err += chunk.toString('utf8')
@@ -148,6 +176,7 @@ async function locked<T>(lockFile: string, fn: () => T): Promise<T> {
     })
     return fn()
   } finally {
+    if (stop) wakers.delete(stop)
     helper.stdin.end()
     if (helper.pid !== undefined) await closed
   }
@@ -160,6 +189,8 @@ export class Queue {
   readonly pid: number
   readonly entry: string
   private readonly isAlive: (pid: number) => boolean
+  // 등록 파일을 쓰려 했는지. 쓰기 전에 멈췄으면 반납할 때 잠금을 기다리지 않는다
+  private written = false
 
   constructor(root: string, slots: number, opts: { pid?: number; alive?: (pid: number) => boolean } = {}) {
     mkdirSync(root, { recursive: true, mode: 0o700 })
@@ -212,9 +243,11 @@ export class Queue {
   register(exclusive: boolean): Promise<void> {
     return this.lock(() => {
       if (this.rows().some((row) => row.slots !== this.slots)) throw new Error('active queue uses a different HEAVY_SLOTS value')
-      // 옛 heavy-slot.py 의 time.time_ns() 와 같은 단위(ns)다. 같은 폴더의 옛 등록과 순서를 비교한다
+      // 옛 heavy-slot.py 의 time.time_ns() 와 같은 단위(ns)다. 같은 폴더의 옛 등록과 순서를 비교한다.
+      // 값이 2^53 을 넘어 double 로는 수백 ns 단위로만 갈린다. 같은 값이 되면 rows 가 pid 로 순서를 다시 정한다
       const ticket = Math.round((performance.timeOrigin + performance.now()) * 1e6)
       const row: Row = { pid: this.pid, ticket, exclusive, held: false, slots: this.slots }
+      this.written = true
       writeFileSync(this.entry, JSON.stringify(row))
     })
   }
@@ -243,6 +276,7 @@ export class Queue {
 
   // 잠금을 잡지 못해도 자기 등록은 지운다. 남겨 두면 이 pid 가 끝날 때까지 뒤의 검사가 기다린다
   async cleanup(): Promise<void> {
+    if (!this.written) return
     try {
       await this.lock(() => rmSync(this.entry, { force: true }))
     } catch {
@@ -251,10 +285,10 @@ export class Queue {
   }
 }
 
-// 명령줄이 patterns 에 맞는 프로세스 하나의 명령줄. 없으면 null. ps 를 읽지 못하면 Error 다.
+// 명령줄이 patterns 에 맞는 프로세스 하나의 명령줄. 없으면 null. ps 를 읽지 못하면 PsFailed 다.
 function busyProcess(patterns: RegExp[], registered: number[]): string | null {
   const done = run(['ps', '-axo', 'pid=,ppid=,command='])
-  if (done.code !== 0) throw new Error(`프로세스 목록을 읽지 못했다(ps 종료 코드 ${done.code}): ${done.stderr.trim()}`)
+  if (done.code !== 0) throw new PsFailed(done.code, `프로세스 목록을 읽지 못했다(ps 종료 코드 ${done.code}): ${done.stderr.trim()}`)
   const rows: { pid: number; ppid: number; command: string }[] = []
   for (const line of done.stdout.split('\n')) {
     const m = /^\s*(\d+)\s+(\d+)\s?(.*)$/.exec(line)
@@ -264,8 +298,14 @@ function busyProcess(patterns: RegExp[], registered: number[]): string | null {
   const children = new Map<number, number[]>()
   for (const row of rows) children.set(row.ppid, [...(children.get(row.ppid) ?? []), row.pid])
   const skip = new Set<number>()
-  // 자기와 조상. 이미 본 pid 에서 멈춰 ppid 가 고리를 이루어도 끝난다
-  for (let pid: number | undefined = process.pid; pid !== undefined && !skip.has(pid); pid = parent.get(pid)) skip.add(pid)
+  // 자기와 등록된 heavy-slot 의 조상. 이미 본 pid 에서 멈춰 ppid 가 고리를 이루어도 끝난다
+  const up = new Set<number>()
+  for (const start of [process.pid, ...registered]) {
+    for (let pid: number | undefined = start; pid !== undefined && !up.has(pid); pid = parent.get(pid)) {
+      up.add(pid)
+      skip.add(pid)
+    }
+  }
   // 등록된 heavy-slot 과 그 자손. 자기도 등록돼 있으므로 ps 같은 자기 자식도 여기서 빠진다
   const seen = new Set<number>()
   const stack = [...registered]
@@ -400,10 +440,22 @@ async function waitAndRun(queue: Queue, exclusive: boolean, heavy: Heavy, comman
   let busyMs = 0
   for (;;) {
     if (stopSignal) return stopCode()
-    const busy = heavy.wait_idle.length > 0 ? busyProcess(heavy.wait_idle, queue.registeredPids()) : null
+    let busy: string | null = null
+    if (heavy.wait_idle.length > 0) {
+      try {
+        busy = busyProcess(heavy.wait_idle, queue.registeredPids())
+      } catch (e) {
+        if (!(e instanceof PsFailed) || e.code <= 128) throw e
+        // 터미널의 Ctrl-C 는 ps 를 포함한 그룹 전체에 간다. ps 를 동기로 기다리는 동안은 신호 처리기가 돌지 못하므로
+        // 처리기가 돌 틈을 준 뒤 이 프로세스도 신호를 받았는지 본다. 받았으면 pause 가 바로 깬다
+        await pause(100)
+        if (stopSignal) return stopCode()
+        throw e
+      }
+    }
     if (busy !== null) {
       if (busyMs >= idleLimit * 1000) {
-        process.stdout.write(`heavy-slot: wait_idle 대기가 ${process.env.HEAVY_IDLE_WAIT ?? IDLE_WAIT_SEC}초를 넘었다: ${busy}\n`)
+        process.stdout.write(`heavy-slot: wait_idle 대기가 ${idleLimit}초를 넘었다: ${busy}\n`)
         return 124
       }
       process.stderr.write(`heavy-slot: waiting for idle: ${busy}\n`)
@@ -458,6 +510,9 @@ async function main(argv: string[]): Promise<number> {
   process.on('SIGTERM', onSignal)
   try {
     return await waitAndRun(queue, exclusive, heavy, args.command)
+  } catch (e) {
+    if (e instanceof Stopped) return stopCode()
+    throw e
   } finally {
     await queue.cleanup()
   }

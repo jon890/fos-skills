@@ -78,6 +78,23 @@ describe('mem-gate', () => {
     assert.equal(existsSync(marker), false)
   })
 
+  // 기본값(EASY_FREE_PCT=37, MIN_FREE_PCT=35, MAX_SWAP_MB=10240)의 경계. 기대값은 옛 mem-gate.py 의
+  // `f >= easy or (f >= minimum and s <= maximum)` 판정이다. 가짜 sysctl 은 swap 을 `<n>.25M` 로 내고 정수 부분만 본다.
+  // 통과하지 못하는 사례는 MAX_WAIT=0 으로 기다리지 않고 바로 시간 초과 줄을 보게 한다
+  for (const [free, swap, pass] of [
+    [37, 30000, true],
+    [36, 10240, true],
+    [36, 10241, false],
+    [34, 0, false],
+  ] as const) {
+    test(`기본값에서 free ${free}% 와 swap ${swap}MB 는 ${pass ? '통과한다' : '통과하지 못한다'}`, () => {
+      const r = gate([free], swap, [], { MAX_WAIT: '0' })
+      const line = `mem-gate: ${pass ? 'ok' : 'timeout'} free=${free}% swap=${swap}MB`
+      assert.deepEqual([r.code, r.sleeps], [pass ? 0 : 1, 0], r.stderr)
+      assert.ok(r.stderr.includes(line), `${line} 가 없다: ${r.stderr}`)
+    })
+  }
+
   test('통과하면 명령을 실행하고 그 종료 코드와 출력을 낸다', () => {
     const r = gate([50], 0, ['--', 'sh', '-c', 'echo hi; exit 7'])
     assert.deepEqual([r.code, r.stdout], [7, 'hi\n'], r.stderr)

@@ -1,10 +1,11 @@
 // goal-progress.ts 를 임시 보드와 인자를 기록하는 가짜 보드 명령으로 돌려 본다. orca 와 GitHub 에는 닿지 않는다.
+// 기본 보드 명령(work-board/bin/board.ts)을 쓰는 사례 하나만 실제 보드 명령으로 임시 보드를 고친다.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -30,7 +31,8 @@ beforeEach(() => {
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 function goal(args: string[], opts: { script?: string; env?: Record<string, string> } = {}): { code: number | null; stdout: string; stderr: string } {
-  const env = { ...process.env, ...opts.env }
+  // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
+  const env = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH ?? ''].join(delimiter), ...opts.env }
   delete env.BOARD_BIN
   if (opts.env?.BOARD_BIN) env.BOARD_BIN = opts.env.BOARD_BIN
   const argv = opts.script ? ['python3', opts.script] : [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
@@ -98,6 +100,14 @@ describe('goal-progress', () => {
     const r = goal(['goal', 'a', '--board', board], { env: { BOARD_BIN: fakeBin } })
     assert.equal(r.code, 0, r.stderr)
     assert.deepEqual(recorded(), ['set', 'goal', '--progress', '1/1', '--file', board])
+  })
+
+  test('--board-bin 과 BOARD_BIN 이 없으면 work-board/bin/board.ts 로 보드 파일을 고친다', () => {
+    const r = goal(['goal', 'a', 'b', '--board', board])
+    assert.equal(r.code, 0, r.stderr)
+    const saved = JSON.parse(readFileSync(board, 'utf8')) as { items: { id: string; progress?: string }[] }
+    assert.equal(saved.items.find((item) => item.id === 'goal')?.progress, '1/2', readFileSync(board, 'utf8'))
+    assert.equal(existsSync(calls), false, '가짜 보드 명령이 불렸다')
   })
 
   test('보드 명령이 실패하면 1 이다', () => {

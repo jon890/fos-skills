@@ -78,6 +78,8 @@
 //       - 워크트리가 지우기 대상이 아니면 터미널을 닫고 dispatch 를 반납한 뒤 `남김 <경로>: <이유>` 를 낸다
 //       - 지우기 대상(upstream 이 없고 cherry 가 0)이면 살아 있는 worker 와 살아 있는 터미널 판정에서 MERGED PR 과 같게 다루고,
 //         `정리` 줄과 before-cleanup 뒤에 터미널을 닫는다. before-cleanup 이 거부하면 터미널도 닫지 않는다
+//       - cherry 판정은 통과했는데 커밋 안 된 변경이나 원격에 없는 커밋으로 `건너뜀` 이 되면 터미널을 닫지 않고 dispatch 도 반납하지 않는다.
+//         그 변경과 커밋은 그 터미널의 worker 가 만든 것일 수 있어, 워크트리와 함께 남겨 다음 실행이 다시 판정한다
 //     --kill-holders 와 --merged-head 는 MERGED 일 때만이다. CLOSED PR 의 head 는 머지된 커밋이 아니다.
 //     열린 PR 의 끝난 dispatch 터미널은 그대로 남긴다.
 //
@@ -182,22 +184,30 @@
 //     --remote-branches 는 로컬 브랜치와 상관없이 내 PR 의 원격 브랜치를 판정한다. 기본은 지울 것만 보이고,
 //     --apply 이면 `git push origin --delete` 로 지운다. 판정한 끝점을 --force-with-lease 로 걸어, 그사이 push 된 브랜치는 지우지 않는다.
 //     후보는 작성자마다 `gh pr list --state closed --author <작성자> --limit 100`(MERGED 와 CLOSED 가 함께 온다),
-//     `git ls-remote --heads origin` 한 번, 열린 PR 의 base 와 head(`gh pr list --state open --limit 1000`) 한 번으로 읽는다.
+//     `git ls-remote --heads origin` 한 번, 열린 PR 의 base 와 head(`gh pr list --state open --limit 1000`) 한 번,
+//     로컬 브랜치와 그 upstream(`git for-each-ref refs/heads/`) 한 번으로 읽는다.
 //     하나라도 읽지 못하면 그 저장소의 원격 브랜치를 지우지 않고 `원격 브랜치 정리 건너뜀: <이유>` 를 내고 종료 코드를 2 로 둔다.
+//     열린 PR 이 limit 과 같은 1000 개 읽혔으면 목록이 잘렸을 수 있어 읽지 못한 것과 같게 다룬다.
 //     원격에 있는 이름마다 한 번 판정한다. 그 이름을 head 로 둔 PR 가운데 headRefOid 가 원격 끝점과 같은 PR 을 쓴다.
 //     원격에 없는 이름은 줄을 내지 않는다. 위에서부터 처음 걸린 줄로 정한다.
 //
 //       차례  조건                                                         걸리면
 //       1     그 이름의 PR 가운데 isCrossRepository 가 true 인 것이 있다   `fork 의 브랜치다` 로 남긴다
 //       2     이름이 기준 브랜치이거나 `release/` 로 시작한다              `보호 브랜치다` 로 남긴다
-//       3     끝점이 같은 PR 이 없다                                       `원격 끝점이 PR head 와 다르다` 로 남긴다
-//       4     열린 PR 의 base 다                                           `열린 PR 의 base 다` 로 남긴다
-//       5     열린 PR 의 head 다(지우면 그 PR 이 닫힌다)                   `열린 PR 의 head 다` 로 남긴다
-//       6     MERGED 다                                                    지운다
-//       7     CLOSED 이고 `git merge-base --is-ancestor <headRefOid>        지운다. head 커밋이 로컬에 없으면 먼저 `git fetch -q origin <headRefName>`
+//       3     남은 워크트리의 브랜치이거나 그 upstream 이다                `워크트리가 쓴다` 로 남긴다
+//       4     워크트리 없는 남은 로컬 브랜치의 upstream 이다               `로컬 브랜치가 쓴다` 로 남긴다
+//       5     끝점이 같은 PR 이 없다                                       `원격 끝점이 PR head 와 다르다` 로 남긴다
+//       6     열린 PR 의 base 다                                           `열린 PR 의 base 다` 로 남긴다
+//       7     열린 PR 의 head 다(지우면 그 PR 이 닫힌다)                   `열린 PR 의 head 다` 로 남긴다
+//       8     MERGED 다                                                    지운다
+//       9     CLOSED 이고 `git merge-base --is-ancestor <headRefOid>        지운다. head 커밋이 로컬에 없으면 먼저 `git fetch -q origin <headRefName>`
 //             origin/<baseRefName>` 가 0 이다(다른 PR 에 합쳐 닫혔다)        로 받는다. 받지 못하면 `head 커밋을 받지 못했다`,
 //                                                                          origin/<baseRefName> 이 없으면 `base 를 찾지 못했다` 로 남긴다
-//       8     그 밖(CLOSED 이고 head 가 base 에 없다. 버린 작업일 수 있다)  `CLOSED 이고 head 가 base 에 없다` 로 남긴다
+//       10    그 밖(CLOSED 이고 head 가 base 에 없다. 버린 작업일 수 있다)  `CLOSED 이고 head 가 base 에 없다` 로 남긴다
+//
+//     3 과 4 는 워크트리와 로컬 브랜치 정리가 끝난 뒤의 목록으로 본다. 남은 브랜치는 아직 그 원격 브랜치로 push 할 수 있다.
+//     dry-run 은 워크트리를 지우지 않으므로, 이번에 지울 워크트리의 원격 브랜치도 3 으로 남긴다고 낸다.
+//     그 원격 브랜치는 워크트리 정리의 「원격 브랜치 삭제」 가 지운다
 //
 //     origin/<baseRefName> 은 저장소마다 처음에 하는 `git fetch -q --prune origin` 이 갱신한 원격 추적 브랜치다.
 //     출력은 `원격 브랜치 남김 <이름>: <이유>`, `원격 브랜치를 지울 것 <이름> (#<PR> <state>)`,
@@ -217,7 +227,8 @@
 //     after-cleanup   --repo 하나의 정리가 끝난 뒤 낸다. 입력은 removed(그 저장소에서 지운 워크트리 경로 목록)와
 //                     skipped(그 저장소에서 남기거나 건너뛴 워크트리의 { path, reason } 목록)다.
 //                     핸들러의 실패와 시간 초과는 `HOOK-FAIL` 줄만 내고 종료 코드에 반영하지 않는다.
-//                     종료 코드는 0 과 2(사용법 오류)뿐이라, 알림 실패를 2 로 내면 부르는 쪽(머지 큐, finish-pr)이 사용법 오류로 읽는다
+//                     정리의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(아래 「종료 코드」). after-cleanup 의 실패를 2 에 섞으면
+//                     정리 자체가 실패한 경우와 구별할 수 없다
 //     ctx 는 { repo: --repo 의 체크아웃, base: 그 저장소의 기준 브랜치, run: --run 값 또는 null } 이다.
 //
 // ORCA, GH, ORCH_KILL 환경 변수로 실행 파일을 바꾼다. 기본 orca, gh, kill.
@@ -271,6 +282,7 @@ const PR_FIELDS = 'number,state,headRefOid,headRefName,isCrossRepository,title,a
 const KEPT_BY_HOOK = '저장소 핸들러 거부'
 // --remote-branches 가 읽는 닫힌 PR 의 필드. --state closed 는 MERGED 와 CLOSED 를 함께 준다
 const CLOSED_FIELDS = 'number,state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt'
+const OPEN_PR_LIMIT = 1000
 
 type Json = Record<string, unknown>
 type Terminal = Json
@@ -1072,9 +1084,11 @@ function remoteHeads(repo: string): Map<string, string> | string {
 }
 
 // 열린 PR 의 base 와 head 이름. 열린 PR 의 head 는 지우면 그 PR 이 닫히므로 함께 남긴다
+// limit 만큼 읽혔으면 뒤가 잘렸을 수 있다. 잘린 목록으로는 열린 PR 의 base 와 head 를 지켜 주지 못한다
 function openRefs(repo: string): { bases: Set<string>; heads: Set<string> } | string {
-  const listed = ghList(repo, ['pr', 'list', '--state', 'open', '--limit', '1000', '--json', 'baseRefName,headRefName'])
+  const listed = ghList(repo, ['pr', 'list', '--state', 'open', '--limit', String(OPEN_PR_LIMIT), '--json', 'baseRefName,headRefName'])
   if (typeof listed === 'string') return listed
+  if (listed.length >= OPEN_PR_LIMIT) return `열린 PR 이 ${OPEN_PR_LIMIT} 개 이상이라 목록을 다 읽었는지 알 수 없다`
   const bases = new Set<string>()
   const heads = new Set<string>()
   for (const pr of listed) {
@@ -1083,6 +1097,26 @@ function openRefs(repo: string): { bases: Set<string>; heads: Set<string> } | st
     heads.add(pr.headRefName)
   }
   return { bases, heads }
+}
+
+// 남은 로컬 브랜치가 쓰는 원격 브랜치 이름에서 남길 이유로. worktreeBranches 는 정리 뒤 남은 워크트리의 브랜치다.
+// 워크트리의 브랜치는 이름 자체와 upstream 을, 워크트리 없는 로컬 브랜치는 upstream 만 본다. 읽지 못하면 이유 문자열이다
+function usedRemoteNames(repo: string, worktreeBranches: Set<string>): Map<string, string> | string {
+  const listed = git(repo, 'for-each-ref', '--format=%(refname:short)%00%(upstream)', 'refs/heads/')
+  if (listed.code !== 0) return `로컬 브랜치를 읽지 못했다: ${listed.err}`
+  const used = new Map<string, string>()
+  const remote = 'refs/remotes/origin/'
+  for (const line of lines(listed.out)) {
+    const [branch, upstream = ''] = line.split('\0')
+    const name = upstream.startsWith(remote) ? upstream.slice(remote.length) : ''
+    if (worktreeBranches.has(branch)) {
+      used.set(branch, '워크트리가 쓴다')
+      if (name) used.set(name, '워크트리가 쓴다')
+    } else if (name && !used.has(name)) {
+      used.set(name, '로컬 브랜치가 쓴다')
+    }
+  }
+  return used
 }
 
 function hasCommit(repo: string, oid: string): boolean {
@@ -1097,9 +1131,12 @@ function remoteVerdict(
   prs: ClosedPr[],
   base: string,
   open: { bases: Set<string>; heads: Set<string> },
+  used: Map<string, string>,
 ): { pr: ClosedPr } | { keep: string } {
   if (prs.some((pr) => pr.isCrossRepository)) return { keep: 'fork 의 브랜치다' }
   if (name === base || name.startsWith('release/')) return { keep: '보호 브랜치다' }
+  const user = used.get(name)
+  if (user) return { keep: user }
   const same = prs.filter((pr) => pr.headRefOid === tip)
   const pr = same.find((p) => p.state === 'MERGED') ?? same[0]
   if (!pr) return { keep: '원격 끝점이 PR head 와 다르다' }
@@ -1117,7 +1154,8 @@ function remoteVerdict(
 }
 
 // --remote-branches. 후보를 모두 읽은 뒤에 지운다. 하나라도 읽지 못하면 아무것도 지우지 않고 false 다
-function sweepRemoteBranches(repo: string, base: string, apply: boolean, owners: Owners, log: Log): boolean {
+// worktreeBranches 는 워크트리 정리 뒤 남은 워크트리의 브랜치다
+function sweepRemoteBranches(repo: string, base: string, apply: boolean, owners: Owners, worktreeBranches: Set<string>, log: Log): boolean {
   const skipped = (why: string): boolean => {
     log(`원격 브랜치 정리 건너뜀: ${why}`)
     return false
@@ -1130,12 +1168,14 @@ function sweepRemoteBranches(repo: string, base: string, apply: boolean, owners:
   if (typeof heads === 'string') return skipped(heads)
   const open = openRefs(repo)
   if (typeof open === 'string') return skipped(open)
+  const used = usedRemoteNames(repo, worktreeBranches)
+  if (typeof used === 'string') return skipped(used)
   const byName = new Map<string, ClosedPr[]>()
   for (const pr of prs) byName.set(pr.headRefName, [...(byName.get(pr.headRefName) ?? []), pr])
   for (const [name, group] of byName) {
     const tip = heads.get(name)
     if (tip === undefined) continue
-    const verdict = remoteVerdict(repo, name, tip, group, base, open)
+    const verdict = remoteVerdict(repo, name, tip, group, base, open, used)
     if ('keep' in verdict) {
       log(`원격 브랜치 남김 ${name}: ${verdict.keep}`)
       continue
@@ -1355,10 +1395,11 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   const remaining = new Set(worktrees(repo).map(([, branch]) => branch))
   remaining.add(git(repo, 'branch', '--show-current').out)
   sweepBranches(repo, args, remaining, log)
-  if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, log)) code = 2
+  if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, remaining, log)) code = 2
   if (!args.apply) return code
   try {
-    // 실패와 시간 초과는 HOOK-FAIL 줄만 남긴다. 종료 코드는 0 과 2(사용법 오류)뿐이라 부르는 쪽이 사용법 오류로 읽는다
+    // 실패와 시간 초과는 HOOK-FAIL 줄만 남긴다. 정리의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(머리 주석의 「종료 코드」).
+    // after-cleanup 의 실패를 2 에 섞으면 정리 자체가 실패한 경우와 구별할 수 없다
     await fire('after-cleanup', { removed: report.removed, skipped: report.skipped }, { repo, base, run: args.run, out: log })
   } catch (e) {
     process.stderr.write(`cleanup-sweep: after-cleanup 을 내지 못했다: ${(e as Error)?.message ?? String(e)}\n`)

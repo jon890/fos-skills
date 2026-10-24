@@ -35,7 +35,7 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { accessSync, constants as fsConstants, statSync } from 'node:fs'
+import { accessSync, closeSync, constants as fsConstants, openSync, readSync, statSync } from 'node:fs'
 import { constants } from 'node:os'
 import { delimiter, extname, join } from 'node:path'
 
@@ -338,12 +338,37 @@ export function scriptCommand(script: string, args: string[]): string[] {
   }
 }
 
-// argv[0] 을 execvp 처럼 찾는다. `/` 가 있으면 그 경로만, 없으면 PATH 의 폴더를 앞에서부터 본다(빈 칸은 현재 폴더).
-// 실행할 수 없는 파일만 찾았으면 126, 아무것도 없으면 127 이다. 실행할 수 없는 파일 뒤에 실행할 수 있는 것이 있으면 그것을 쓴다.
-function findExecutable(name: string): { path: string } | { code: 126 | 127 } {
+// execve 가 받는 실행 파일 형식의 앞 4바이트(big-endian). Mach-O 32/64비트와 그 반대 바이트 순서, fat(universal), ELF 다
+const EXEC_MAGIC = [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0x7f454c46]
+
+// 앞 바이트가 `#!` 이거나 EXEC_MAGIC 이면 true. `#!` 없는 셸 스크립트처럼 execve 가 ENOEXEC 로 거절할 파일은 false 다.
+// 파일을 읽지 못하면 true 다. 읽기 권한 없이 실행 권한만 있는 바이너리는 execve 가 실행한다.
+function execFormat(path: string): boolean {
+  const head = Buffer.alloc(4)
+  let size: number
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      size = readSync(fd, head, 0, 4, 0)
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    return true
+  }
+  if (size >= 2 && head[0] === 0x23 && head[1] === 0x21) return true
+  return size === 4 && EXEC_MAGIC.includes(head.readUInt32BE(0))
+}
+
+// argv[0] 을 옛 명령의 os.execvp 처럼 찾는다. `/` 가 있으면 그 경로만, 없으면 PATH 의 폴더를 앞에서부터 본다(빈 칸은 현재 폴더).
+// 실행할 수 없거나 형식이 틀린 파일은 건너뛰고 다음 폴더를 본다. 쓸 것이 없으면 처음 만난 실패로 판정한다.
+//     126  실행할 수 없는 파일(실행 권한이 없거나 파일이 아니다)
+//     1    형식이 틀린 파일(os.execvp 의 OSError ENOEXEC 를 옛 명령이 1 로 끝냈다)
+//     127  아무것도 없다
+function findExecutable(name: string): { path: string } | { code: 1 | 126 | 127 } {
   // PATH 가 없을 때 execvp 가 쓰는 기본값이다
   const dirs = name.includes('/') ? [''] : (process.env.PATH ?? '/usr/bin:/bin').split(delimiter)
-  let denied = false
+  let failed: 1 | 126 | undefined
   for (const dir of dirs) {
     const candidate = name.includes('/') ? name : join(dir || '.', name)
     let stat
@@ -355,24 +380,27 @@ function findExecutable(name: string): { path: string } | { code: 126 | 127 } {
     try {
       if (!stat.isFile()) throw new Error('not a file')
       accessSync(candidate, fsConstants.X_OK)
-      return { path: candidate }
     } catch {
-      denied = true
+      failed ??= 126
+      continue
     }
+    if (execFormat(candidate)) return { path: candidate }
+    failed ??= 1
   }
-  return { code: denied ? 126 : 127 }
+  return { code: failed ?? 127 }
 }
 
 // 이 프로세스를 argv 의 명령으로 바꾼다. 바꾸면 돌아오지 않는다. 돌아오면 바꾸지 못한 것이고 종료 코드를 낸다.
 //     127  명령이 없다. stderr 에 `<label>: command not found: <명령>`
 //     126  실행할 수 없다. stderr 에 `<label>: command is not executable: <명령>`
+//     1    실행 파일 형식이 아니다(`#!` 없는 스크립트 같은 것). stderr 에 `<label>: exec format error: <명령>`
 // 실행 파일은 먼저 찾아 확인한 뒤 넘긴다. process.execve 는 실패하면 예외를 던지지 않고 프로세스를 abort(종료 코드 134)한다
 // (Node 24.15 실측: 없는 경로에 ENOENT 와 네이티브 스택을 내고 죽었다). PATH 도 찾지 않으므로 경로를 풀어 넘긴다.
 // 넘기기 전에 쓴 출력은 동기로 써야 한다. 파이프로 가는 비동기 쓰기는 exec 와 함께 사라진다.
 export function execCommand(argv: string[], label: string): number {
   const found = findExecutable(argv[0])
   if ('code' in found) {
-    const reason = found.code === 127 ? 'command not found' : 'command is not executable'
+    const reason = { 1: 'exec format error', 126: 'command is not executable', 127: 'command not found' }[found.code]
     process.stderr.write(`${label}: ${reason}: ${argv[0]}\n`)
     return found.code
   }

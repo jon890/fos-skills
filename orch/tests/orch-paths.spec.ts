@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -99,7 +99,9 @@ describe('orch_paths.ts', () => {
   })
 
   test('옛 경로 orch_paths.py 도 같은 경로를 낸다', () => {
-    const done = spawnSync('python3', [join(SCRIPTS, 'orch_paths.py'), '--repo', repo, 'specs'], { env: ENV, encoding: 'utf8' })
+    // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
+    const env = { ...ENV, PATH: [dirname(process.execPath), ENV.PATH ?? ''].join(delimiter) }
+    const done = spawnSync('python3', [join(SCRIPTS, 'orch_paths.py'), '--repo', repo, 'specs'], { env, encoding: 'utf8' })
     assert.equal(done.status, 0, done.stderr)
     assert.equal(done.stdout, `${join(repo, '.orch/specs')}\n`)
     assert.match(done.stderr, /^DEPRECATED python3 orch_paths\.py → /m)

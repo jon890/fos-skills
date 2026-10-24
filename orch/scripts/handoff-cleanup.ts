@@ -10,10 +10,12 @@
 //     - <orch>/specs/spec-*.md: 아래가 모두 참인 지시서. spec-common.md 는 남긴다
 //         · 지시서의 `보드 항목 id: \`x\`` 항목이 보드에서 done 이다. 보드에 항목이 없거나 done 이 아니면
 //           아직 쓰는 지시서다(띄우기 전, PR 이 여럿인 일의 중간). 그 줄이 없는 지시서는 이 조건을 건너뛴다
-//         · 지시서의 `브랜치:` 가 원격과 워크트리에 없고 그 브랜치의 열린 PR 도 없다
+//           `**보드 항목 id**:` 처럼 굵은 꼴도 같은 줄로 본다. 브랜치 줄은 굵은 꼴을 받는데 이 줄만 놓치면 보드 조건 없이 옮긴다
+//         · 지시서의 `브랜치:` 가 원격과 워크트리에 없고 그 브랜치의 열린 PR 도 없다.
+//           `git ls-remote --exit-code` 의 2(그 이름의 브랜치가 없다)만 원격에 없다고 본다. 그 밖의 실패는 원격에 있다고 보고 남긴다
 //         · 열린 PR 목록을 읽지 못하면 아무것도 옮기지 않는다
 //         · 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서가 아니다. 그 판정과 옮기기는 lib/spec.ts 의 deleteSpecs 한 곳이 맡는다.
-//           살아 있는 지시서 목록(liveSpecPaths)을 읽지 못하면 아무것도 옮기지 않는다.
+//           살아 있는 지시서 목록(liveSpecPaths)을 읽지 못하면 지시서마다 판정하지 않고 아무것도 옮기지 않는다.
 //           브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 옮긴 일이 있었다
 //     - <orch>/<폴더>: --folder-days 일 넘게 바뀌지 않았고, 보드 파일에 이름이 없고 <orch>/.keep 에도 없는 폴더
 //       (bin, queue, specs, state 는 건드리지 않는다)
@@ -26,7 +28,8 @@
 // 휴지통 안에서는 <휴지통>/<그 폴더 이름>/<상대 경로> 로 두고, 같은 이름이 있으면 번호를 붙여 덮어쓰지 않는다.
 //
 // 출력: 지시서가 아닌 후보는 `후보 <상대경로>`, 옮긴 뒤에는 `옮김 <상대경로>` 다. 지시서는 deleteSpecs 의 문구를 그대로 낸다
-//     (`지시서를 휴지통으로 옮길 것 …`, `지시서 옮김 … -> …`, `지시서를 남긴다 …: <이유>`. 남긴다 줄은 stderr 다)
+//     (`지시서를 휴지통으로 옮길 것 …`, `지시서 옮김 … -> …`, `지시서를 남긴다 …: <이유>`. 남긴다 줄은 stderr 다).
+//     줄은 후보의 깊이 순이고 지시서 줄도 그 차례에 섞인다. --apply 이면 끝에 `휴지통 폴더: <--trash 에 준 경로>` 를 낸다
 //
 // 옵션 (저장소마다 다른 값이다. --config 의 JSON 키는 옵션 이름의 하이픈을 밑줄로 바꾼 것이다. 옵션은 고유 접두로 줄여 쓸 수 있다):
 //     --repo DIR         대상 저장소. 기본은 현재 디렉터리. git 과 gh 를 여기서 돌린다
@@ -49,7 +52,7 @@
 
 import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
@@ -62,7 +65,7 @@ import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths } from './lib/spec.t
 
 const USAGE = '사용법: handoff-cleanup.ts [--repo DIR] [--config FILE] [--apply] [--gh-host HOST] [--run RUN] [--orch-dir DIR] [--previews DIR] [--board FILE] [--trash DIR] [--queue-days N] [--folder-days N] [--data-days N] [--data-ext LIST]'
 const QUEUE_DONE = /QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL/m
-const BOARD_ID_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?보드 항목 id:(?:\*\*)?\s*`([^`]+)`/m
+const BOARD_ID_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?보드 항목 id(?:\*\*)?:(?:\*\*)?\s*`([^`]+)`/m
 const RESERVED = new Set(['bin', 'queue', 'specs', 'state'])
 const DAY = 86400
 const RUN_TIMEOUT_MS = 120_000
@@ -276,8 +279,9 @@ function dataFiles(dir: string, dataExt: Set<string>): string[] {
   return found
 }
 
-// specs 는 끝난 지시서이고 live 는 살아 있는 지시서 목록이다(읽지 못했으면 null). 옮길지는 deleteSpecs 가 정한다
-type Found = { others: string[]; specs: string[]; live: Set<string> | null }
+// targets 는 깊이 순으로 늘어놓은 후보이고, 그 가운데 끝난 지시서가 specs 다. live 는 살아 있는 지시서 목록이다
+// (읽지 못했으면 null). 지시서를 옮길지는 deleteSpecs 가 정한다
+type Found = { targets: string[]; specs: Set<string>; live: Set<string> | null }
 
 function candidates(args: Args, repo: string, orch: string, previews: string | null, board: string, now: number): Found {
   const found: string[] = []
@@ -307,13 +311,17 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
       err('gh 로 열린 PR 을 읽지 못해 지시서는 옮기지 않는다')
     } else {
       live = liveSpecPaths(args.run)
-      if (live === null) err('orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다')
-      const worktrees = runOut([gitBin(), 'worktree', 'list'], repo).out
-      const remoteHas = (b: string) => runOut([gitBin(), 'ls-remote', '--exit-code', '--heads', 'origin', b], repo).code === 0
-      const worktreeHas = (b: string) => worktrees.includes(`[${b}]`)
-      for (const spec of specFiles) {
-        const text = readFileSync(spec, 'utf8')
-        if (specFinished(text, statuses, heads, remoteHas, worktreeHas)) finished.push(spec)
+      if (live === null) {
+        err('orca 로 살아 있는 dispatch 의 지시서를 읽지 못해 지시서는 옮기지 않는다')
+      } else {
+        const worktrees = runOut([gitBin(), 'worktree', 'list'], repo).out
+        // --exit-code 는 그 이름의 브랜치가 없을 때만 2 다. 네트워크나 인증 실패를 원격에 없다고 읽으면 쓰는 지시서를 옮긴다
+        const remoteHas = (b: string) => runOut([gitBin(), 'ls-remote', '--exit-code', '--heads', 'origin', b], repo).code !== 2
+        const worktreeHas = (b: string) => worktrees.includes(`[${b}]`)
+        for (const spec of specFiles) {
+          const text = readFileSync(spec, 'utf8')
+          if (specFinished(text, statuses, heads, remoteHas, worktreeHas)) finished.push(spec)
+        }
       }
     }
   }
@@ -333,7 +341,7 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
   if (isDir(orch)) {
     for (const file of dataFiles(orch, args.dataExt)) if (isOld(mtimeSec(file), now, args.dataDays)) found.push(file)
   }
-  return { others: dropNested(found), specs: finished, live }
+  return { targets: dropNested([...found, ...finished]), specs: new Set(finished), live }
 }
 
 // ---- 진입점 --------------------------------------------------------------------------------------------
@@ -404,11 +412,20 @@ function main(argv: string[]): number {
   const nowMs = Date.now()
   const day = new Date(nowMs)
   const stamp = `${day.getFullYear()}${String(day.getMonth() + 1).padStart(2, '0')}${String(day.getDate()).padStart(2, '0')}`
-  const trash = resolve(args.trash ? expandUser(args.trash) : join(homedir(), '.Trash', `orch-cleanup-${stamp}`))
+  // 알릴 때는 받은 꼴 그대로다(옛 명령처럼 상대경로를 절대경로로 바꾸지 않는다). 옮길 때는 cwd 기준으로 푼다
+  const shownTrash = args.trash ? normalize(expandUser(args.trash)).replace(/(.)\/+$/, '$1') : join(homedir(), '.Trash', `orch-cleanup-${stamp}`)
+  const trash = resolve(shownTrash)
   if (args.ghHost) process.env.GH_HOST = args.ghHost
   const roots = [orch, previews].filter((r): r is string => Boolean(r))
   const found = candidates(args, repo, orch, previews, board, nowMs / 1000)
-  for (const target of found.others) {
+  // 남긴다 줄은 옛 명령처럼 stderr 로 낸다. prBodies 는 주지 않으므로 지시서 줄만 온다
+  const log = (line: string) => (line.startsWith('지시서를 남긴다') ? err(line) : out(line))
+  for (const target of found.targets) {
+    // 지시서는 deleteSpecs 한 경로로만 옮긴다. 후보 차례를 지키려고 지시서마다 부른다
+    if (found.specs.has(target)) {
+      deleteSpecs({ root: orch, specs: [target], prBodies: [], live: found.live, mode: { trash }, apply: args.apply, log })
+      continue
+    }
     const root = roots.find((r) => target.startsWith(r + sep))
     if (root === undefined) {
       err(`정리 대상 폴더(${roots.join(', ')}) 밖이라 건너뛴다: ${target}`)
@@ -424,12 +441,7 @@ function main(argv: string[]): number {
     movePath(target, dest)
     out(`옮김 ${rel}`)
   }
-  if (found.specs.length > 0) {
-    // 남긴다 줄은 옛 명령처럼 stderr 로 낸다
-    const log = (line: string) => (line.startsWith('지시서를 남긴다') || line.startsWith('PR 본문을 남긴다') ? err(line) : out(line))
-    deleteSpecs({ root: orch, specs: found.specs, prBodies: [], live: found.live, mode: { trash }, apply: args.apply, log })
-  }
-  if (args.apply) out(`휴지통 폴더: ${trash}`)
+  if (args.apply) out(`휴지통 폴더: ${shownTrash}`)
   return 0
 }
 

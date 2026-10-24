@@ -3,7 +3,8 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "orch", "scripts"))
+# symlink 로 불러도 플러그인 안의 orch/scripts 를 찾도록 실경로 기준으로 올라간다
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "orch", "scripts"))
 import ts_shim  # noqa: E402
 
 if __name__ == "__main__":

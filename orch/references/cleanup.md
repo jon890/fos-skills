@@ -253,7 +253,8 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 
 **worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다.** 충돌과 리뷰 반영을 그 PR 을 만든 worker 가 이어 받기 때문이다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」).
 머지 뒤에는 그 터미널을 바로 정리한다. `cleanup-sweep.ts` 가 PR 이 MERGED 일 때 닫는다.
-머지 없이 닫힌 PR 의 터미널은 스크립트가 닫지 않는다. 코디네이터가 화면을 확인하고 이 세션이 띄운 worker 의 터미널만 `orca terminal close` 로 닫는다.
+머지 없이 닫힌 PR 의 터미널도 `--run` 을 주면 `cleanup-sweep.ts` 가 닫는다. 대상은 내 PR 의 끝난 dispatch 터미널이다.
+다른 사람의 PR 이거나 `--run` 이 없으면 코디네이터가 화면을 확인하고 이 세션이 띄운 worker 의 터미널만 `orca terminal close` 로 닫는다.
 
 스크립트가 하지 않아 직접 하는 일은 아래 둘이다.
 
