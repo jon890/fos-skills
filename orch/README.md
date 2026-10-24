@@ -34,13 +34,13 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/triage-messages.ts`: orca 메시지를 종류별로 모으고 heartbeat 는 개수만 낸다
 - `scripts/make-worktree.ts`: 지시서의 `브랜치:` 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고 exclude 와 로컬 설정 복사, `worktree-deny` 의 deny 규칙 추가를 한다. `--check` 는 push 한 브랜치가 지시서 값과 같은지 본다
 - `scripts/worktree-deny.ts`: 워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령(pkill, killall, browser-driver reset)과 `gh pr merge` 의 deny 규칙을 더한다
-- `scripts/remove-worktree.py`: 쓰는 프로세스, 미커밋 변경, 원격에 없는 커밋이 있거나 HEAD 가 `--merged-head` 의 조상이 아니면 지우지 않는다. 쓰는 프로세스는 `--wait` 초 동안, OMC session-end hook 만 남았으면 그 hook 이 끝날 때까지 기다린다
+- `scripts/remove-worktree.ts`: 쓰는 프로세스, 미커밋 변경, 원격에 없는 커밋이 있거나 HEAD 가 `--merged-head` 의 조상이 아니면 지우지 않는다. 쓰는 프로세스는 `--wait` 초 동안, OMC session-end hook 만 남았으면 그 hook 이 끝날 때까지 기다린다
 - `scripts/spec-lint.ts`: 띄우기 전에 지시서끼리 담당 경로 겹침, 코디네이터 소유와 소유 계약, 없는 함수, 금지 문구를 막고 없는 파일 경로는 경고한다. 저장소 값은 오버레이의 `## spec-lint` 절에서 읽는다. `--check-overlay` 는 오버레이와 `.orch/config.json` 이 가리키는 경로가 `origin/<base>` 에 있는지 본다
 - `scripts/orch-doctor.ts`: 스킬을 열 때 설치 캐시의 커밋이 원본 main 보다 낡았는지 보고 갱신 명령을 보여 주고, 문서가 부르는 `$SKILL_DIR/scripts/*` 가 모두 있는지 본다. 저장소의 이름이 틀린 핸들러(`UNKNOWN-HOOK`)와 옛 설정 칸(`DEPRECATED-CONFIG`)을 알리고, `--run` 이면 `session-resume` 이벤트를 낸다
 - `scripts/orch-doctor.py`: doctor 의 진입점. node 가 22.18 보다 낮으면 `NODE-TOO-OLD` 로 멈추고, 아니면 `orch-doctor.ts` 로 넘긴다. `SKILL.md` 가 이 경로로 부르고, 저장소 테스트 `scripts/tests/test_doc_script_refs.py` 가 스킬마다 이 검사를 부른다. 다음 major 에서 shim 을 지울 때 이 진입점을 어떻게 둘지 따로 정한다
 - `scripts/worker-ask.ts`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다
 - `scripts/cleanup-sweep.py`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다
-- `scripts/terminal_ownership.py`: 워크트리 경로를 쓰는 터미널의 사용자 소유 상태를 확인한다. `cleanup-sweep.py` 가 import 하고 `remove-worktree.py` 가 삭제 전에 실행한다
+- `scripts/terminal_ownership.py`: 워크트리 경로를 쓰는 터미널의 사용자 소유 상태를 확인한다. `cleanup-sweep.py` 가 import 하고 같은 판정의 TypeScript 는 `lib/ownership.ts` 다
 - `scripts/live_specs.py`: 살아 있는 dispatch 의 `--spec` 줄이 가리키는 지시서 경로를 모은다. `cleanup-sweep.py` 와 `handoff-cleanup.py` 가 import 한다
 - `scripts/board-sync.py`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/watch-questions.ts`: Monitor 의 이벤트 소스. 미답변 질문과 재알림을 한 줄씩 낸다
@@ -54,7 +54,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/heavy-slot.py`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.py` 를 부른다
 - `scripts/orch_process.py`: 모듈. 스크립트가 함께 쓰는 프로세스 실행 함수다
 - `scripts/ts_shim.py`: 모듈. TypeScript 로 옮긴 명령의 옛 `.py` 경로가 import 한다. node 22.18 이상인지 보고 같은 이름의 `.ts` 로 넘긴다
-- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`, `scripts/merge-with-finish.py`, `scripts/finish-pr.py`, `scripts/migrate-orch-dir.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
+- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`, `scripts/merge-with-finish.py`, `scripts/finish-pr.py`, `scripts/migrate-orch-dir.py`, `scripts/remove-worktree.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
 - `scripts/mem-gate.py`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 

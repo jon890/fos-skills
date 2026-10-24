@@ -221,6 +221,7 @@ orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살�
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/questions.ts     미답변 질문 조회 한 벌
 orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
+orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경
 orch/scripts/lib/guard/orca       핸들러 PATH 앞에 두는 shim. 확장자가 없어 CommonJS 로 읽히므로 타입 문법 없이 guard.ts 를 import() 한다
 orch/scripts/lib/guard/gh
