@@ -56,9 +56,9 @@
 //     --complete            이 PR 이 업무의 마지막 PR 이다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
 //     --complete-cmd CMD    업무 완료 명령 틀. shlex 처럼 나누고(lib/py.ts 의 shSplit) 조각마다 {number} 를 업무 번호로 바꾼다.
 //                           셸을 거치지 않는다 (예: 'task-cli complete {number}')
-//     --board FILE          보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 주 checkout 기준
+//     --board FILE          보드 파일. 기본은 work-board 의 board.ts 가 정한 위치. 상대경로면 주 checkout 기준
 //     --board-id ID         done 으로 바꿀 보드 항목
-//     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
+//     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
 //     --merge-timeout MIN   머지 대기 한도(분). 기본 180
 //     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
 //     --poll-interval SEC   확인 간격(초). 기본 30
@@ -286,7 +286,7 @@ function parse(argv: string[]): Args | null {
     completeCmd: pick('complete-cmd'),
     board: pick('board'),
     boardId: pick('board-id'),
-    boardBin: pick('board-bin') ?? (process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.py')),
+    boardBin: pick('board-bin') ?? (process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.ts')),
     mergeTimeout: num('merge-timeout', 180),
     deployTimeout: num('deploy-timeout', 120),
     pollInterval: num('poll-interval', 30),

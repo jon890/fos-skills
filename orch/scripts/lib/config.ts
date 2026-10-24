@@ -9,7 +9,7 @@
 //   - JSON 이 깨졌거나, 최상위가 객체가 아니거나, 모르는 최상위 절이 있거나, 절이 객체가 아니면 ConfigError 다
 //     모르는 최상위 절도 막는 것은 절 이름의 오타(queu)가 조용히 무시되지 않게 하려는 것이다
 //   - section 은 known 에 없는 키가 있으면 ConfigError 다. known 은 그 절을 읽는 명령이 넘긴다.
-//     hooks 절은 HOOKS_KEYS, pipeline 절은 PIPELINE_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
+//     hooks 절은 HOOKS_KEYS, pipeline 절은 PIPELINE_KEYS, heavy 절은 HEAVY_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
 //     자기가 읽는 키만 넘기면 다른 명령의 키(pipeline.enabled 같은 것)를 둔 저장소에서 사용법 오류로 멈춘다
 // 명령은 ConfigError 를 사용법 오류(종료 코드 2)로 바꾼다.
 //
@@ -41,6 +41,9 @@ export const PIPELINE_KEYS: readonly string[] = [
   'update_behind_drafts',
   'authors',
 ]
+
+// heavy 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 heavy 행이다. 값은 정규식 문자열 목록이고 heavy-slot.ts 가 읽는다.
+export const HEAVY_KEYS: readonly string[] = ['exclusive', 'normal', 'light', 'wait_idle']
 
 // event 는 그 키가 하던 일을 옮겨 받을 핸들러의 이벤트 이름이다(<orch 루트>/hooks/<event>.ts).
 export const DEPRECATED_KEYS: ReadonlyArray<{ section: Section; key: string; event: string }> = [

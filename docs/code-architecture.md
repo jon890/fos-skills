@@ -39,7 +39,7 @@ scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 테�
 scripts/tests/test_plugin_manifest.py   매니페스트와 루트의 스킬 디렉터리를 대조한다
 hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 orch/hooks/hooks.json               플러그인이 싣는 Claude Code 훅 정의. plugin.json 의 hooks 배열이 가리킨다
-work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모듈, bin/board.py 는 보드 편집 명령이다
+work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모듈, bin/board.ts 는 보드 편집 명령이다
 ```
 
 스킬을 `skills/` 아래로 옮기지 않은 근거는 [ADR-001](adr/001-plugin-from-repo-root.md) 이 소유한다.
@@ -208,7 +208,7 @@ orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호를 받�
 orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
 orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
 orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
-orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할
+orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할. 셸에서 부르는 명령은 orch_paths.ts
 orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
 orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
@@ -230,10 +230,11 @@ orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node 로 부�
 orch/hooks/shell-text.ts          hook 이 함께 쓰는 셸 글자 처리 모듈. hook 이 아니다
 orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
 orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
-work-board/bin/board.ts           보드 편집 명령. 옛 board.py
+work-board/bin/board.ts           보드 편집 명령. 옛 board.py. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
 ```
 
 `orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
+예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `work-board/bin/board.ts` 에서 import 한다. 의존 방향은 orch 에서 work-board 로 하나다.
 옛 코드는 하이픈이 든 파일을 `importlib` 로 읽어 함수를 빌려 썼다. 그 함수는 `lib/` 로 옮긴다.
 
 ### 실행 규칙

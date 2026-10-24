@@ -35,7 +35,7 @@
 //     --run RUN          살아 있는 dispatch 를 찾을 Orca Run. 없으면 코디네이터에 묶인 Run 이다
 //     --orch-dir DIR     orch 작업 폴더. 기본은 lib/paths.ts 가 정한 곳(<주 checkout>/.orch). 상대경로면 주 checkout 기준
 //     --previews DIR     미리보기 폴더. 주지 않으면 보지 않는다. 상대경로면 주 checkout 기준
-//     --board FILE       보드 파일. 기본은 work-board 의 board.py 가 정한 위치. 상대경로면 주 checkout 기준
+//     --board FILE       보드 파일. 기본은 work-board 의 board.ts 가 정한 위치. 상대경로면 주 checkout 기준
 //     --trash DIR        휴지통 폴더. 기본 ~/.Trash/orch-cleanup-<날짜>
 //     --queue-days N     기본 1
 //     --folder-days N    기본 3

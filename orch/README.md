@@ -22,7 +22,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/merge-with-finish.ts`: 머지 큐를 걸면서 PR 마다 `finish-pr.ts` 를 함께 건다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이고, 머지 큐에 `--last-of-task` 로도 넘긴다. 같은 PR 의 마무리가 이미 돌면 다시 걸지 않는다. 명령줄에 없는 머지 큐 옵션은 `.orch/config.json` 의 `queue` 절에서 채운다. 보드 항목은 `pr` 필드로 찾아 업무의 마지막 PR 에서만 done 으로 바꾸고, 정리 인자(`sweep_args`)도 그 절에서 받는다. 머지 큐는 기본으로 이 스크립트로 건다
 - `scripts/finish-pr.ts`: 머지를 `gh` 로 확인한 뒤 그 브랜치의 worker 를 정리하고, 머지 커밋이 들어간 배포의 성공을 기다리고, `after-deploy` 이벤트를 내고, 보드를 done 으로 바꾼다. 업무 완료 명령(`--complete-cmd`)은 `after-deploy` 의 옛 칸으로 돈다. 지시서는 살아 있는 dispatch 가 쓰지 않을 때만 지운다. 끝에 `FINISH-DONE` 이나 `FINISH-FAIL` 을 낸다
 - `scripts/handoff-cleanup.ts`: `.orch/` 의 끝난 큐 로그, 끝난 지시서, 오래된 폴더, 지난 csv·tsv 를 휴지통 폴더로 옮긴다. 미리보기 폴더는 설정으로 줄 때만 본다. 기본은 후보만 보이고 `--apply` 로 옮긴다
-- `scripts/orch_paths.py`: orch 작업 폴더(`.orch/`)의 경로를 한 곳에서 정한다. 스크립트가 import 하고, 셸에서는 `orch_paths.py specs` 처럼 이름으로 경로를 받는다
+- `scripts/orch_paths.ts`: orch 작업 폴더(`.orch/`)의 경로를 낸다. 셸에서 `orch_paths.ts specs` 처럼 이름으로 경로를 받는다. 경로 규칙은 `lib/paths.ts` 가 소유한다
 - `scripts/migrate-orch-dir.ts`: 옛 위치(`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/`)의 orch 파일을 `.orch/` 로 옮긴다. `--hooks` 는 `.orch/config.json` 의 옛 셸 명령 칸(`queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`)을 같은 일을 하는 `.orch/hooks/<이벤트>.ts` 로 바꾼다. 둘 다 기본은 미리보기이고 `--apply` 로 바꾼다
 - `scripts/ci-ready.ts`: 내 draft PR 을 ready 로 바꿔 CI 를 시작한다. 이미 ready 인 PR 과 파일이 겹치거나 merge-tree 로 합쳐 본 base 와 충돌하면 보류한다. 바뀐 파일은 REST 로 읽는다. ready 로 바꾸기 전에 `before-ready`, 바꾼 뒤에 `pr-ready` 이벤트를 낸다. draft 로 CI 를 미루는 저장소에서만 쓴다
 - `scripts/wait-important.ts`: worker_done, question, escalation, status 가 든 묶음이 올 때까지 기다린다. heartbeat 만 든 묶음은 ack 하고 계속 기다리고, 마지막 줄에 다음 `--ack` 로 넘길 delivery id 를 낸다. 다른 대기가 자리를 쥐고 있으면(`waiter_exists`) 되풀이하지 않고 남은 대기 프로세스를 보여 준다
@@ -40,7 +40,6 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/orch-doctor.py`: doctor 의 진입점. node 가 22.18 보다 낮으면 `NODE-TOO-OLD` 로 멈추고, 아니면 `orch-doctor.ts` 로 넘긴다. `SKILL.md` 가 이 경로로 부르고, 저장소 테스트 `scripts/tests/test_doc_script_refs.py` 가 스킬마다 이 검사를 부른다. 다음 major 에서 shim 을 지울 때 이 진입점을 어떻게 둘지 따로 정한다
 - `scripts/worker-ask.ts`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다
 - `scripts/cleanup-sweep.ts`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다. `--remote-branches` 는 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다. 대상은 MERGED PR 과, 다른 PR 에 합쳐 닫혀 head 커밋이 base 에 든 CLOSED PR 이다. `--run` 을 주면 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널을 닫고 dispatch 를 반납한다. `--apply` 이면 워크트리를 지우기 직전에 `before-cleanup`, 저장소 하나의 정리가 끝나면 `after-cleanup` 이벤트를 낸다
-- `scripts/live_specs.py`: 모듈. 같은 판정은 `lib/spec.ts` 의 `liveSpecPaths` 다. import 하는 명령이 없다
 - `scripts/board-sync.ts`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
 - `scripts/watch-questions.ts`: Monitor 의 이벤트 소스. 미답변 질문과 재알림을 한 줄씩 낸다
 - `scripts/goal-progress.ts`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
@@ -50,11 +49,10 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
   - `block-worker-terminal-send.ts`: 모든 Run 의 worker 터미널에 직접 `orca terminal send` 하는 호출을 거부하고 `send-to-worker` 로 보내게 한다. 대상이 변수이거나, `--terminal` 이 없거나, 원격 서버이거나, orca 조회가 실패하거나 시간 한도를 넘겨도 거부한다
   - `require-spec-line.ts`: `worker-start --spec` 값이 `spec-line` 이 만드는 한 줄 꼴이 아니면 거부한다
   - `shell-text.ts`: 모듈. hook 이 명령이 아닌 글자(따옴표 안, heredoc 본문, 주석)를 가리고 명령 조각으로 나눈다. stdin 의 hook 입력에서 Bash 명령을 읽는 일도 맡는다
-- `scripts/heavy-slot.py`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.py` 를 부른다
-- `scripts/orch_process.py`: 모듈. 스크립트가 함께 쓰는 프로세스 실행 함수다
+- `scripts/heavy-slot.ts`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.ts` 를 부른다. 분류는 `.orch/config.json` 의 `heavy` 절에서 읽고, `wait_idle` 로 대기열 밖의 무거운 프로세스가 끝날 때까지 기다린다
 - `scripts/ts_shim.py`: 모듈. TypeScript 로 옮긴 명령의 옛 `.py` 경로가 import 한다. node 22.18 이상인지 보고 같은 이름의 `.ts` 로 넘긴다
-- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`, `scripts/merge-with-finish.py`, `scripts/finish-pr.py`, `scripts/migrate-orch-dir.py`, `scripts/remove-worktree.py`, `scripts/cleanup-sweep.py`, `scripts/handoff-cleanup.py`, `scripts/board-sync.py`, `scripts/goal-progress.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
-- `scripts/mem-gate.py`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
+- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`, `scripts/merge-with-finish.py`, `scripts/finish-pr.py`, `scripts/migrate-orch-dir.py`, `scripts/remove-worktree.py`, `scripts/cleanup-sweep.py`, `scripts/handoff-cleanup.py`, `scripts/board-sync.py`, `scripts/goal-progress.py`, `scripts/heavy-slot.py`, `scripts/mem-gate.py`, `scripts/orch_paths.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
+- `scripts/mem-gate.ts`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 
 ```bash

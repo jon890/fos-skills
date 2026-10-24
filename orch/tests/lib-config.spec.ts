@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { ConfigError, DEPRECATED_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../scripts/lib/config.ts'
+import { ConfigError, DEPRECATED_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../scripts/lib/config.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
 const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy']
@@ -114,6 +114,14 @@ describe('section', () => {
     assert.deepEqual(section(config, 'pipeline', PIPELINE_KEYS), { enabled: true, authors: ['octo'] })
     const typo = loadConfig(repo, { file: file(JSON.stringify({ pipeline: { enabled: true, authorz: ['octo'] } })) })
     assert.throws(() => section(typo, 'pipeline', PIPELINE_KEYS), (e: unknown) => e instanceof ConfigError && /pipeline 절에 모르는 키가 있다: authorz$/.test(e.message))
+  })
+
+  test('heavy 절은 HEAVY_KEYS 로 네 키가 함께 통과하고 모르는 키(exclusiv)는 ConfigError 다', () => {
+    const body = { exclusive: ['local-ci'], normal: ['scenario'], light: ['^git(\\s|$)'], wait_idle: ['image-build'] }
+    const config = loadConfig(repo, { file: file(JSON.stringify({ heavy: body })) })
+    assert.deepEqual(section(config, 'heavy', HEAVY_KEYS), body)
+    const typo = loadConfig(repo, { file: file(JSON.stringify({ heavy: { exclusiv: ['local-ci'] } })) })
+    assert.throws(() => section(typo, 'heavy', HEAVY_KEYS), (e: unknown) => e instanceof ConfigError && /heavy 절에 모르는 키가 있다: exclusiv$/.test(e.message))
   })
 
   test('모르는 키는 ConfigError 이고 그 키 이름을 알린다', () => {

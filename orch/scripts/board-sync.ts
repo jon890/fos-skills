@@ -14,8 +14,8 @@
 // 사용법:
 //     board-sync.ts [--board PATH] [--repo DIR] [--goal GOAL_ID --goal-items FILE] [--dry-run]
 //
-//     --board       board.json. 기본은 work-board 의 board.py 가 정한 위치
-//     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.py
+//     --board       board.json. 기본은 work-board 의 board.ts 가 정한 위치
+//     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
 //     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
 //     --goal, --goal-items
 //                   --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다.
@@ -128,7 +128,7 @@ function main(argv: string[]): number {
     err('board-sync: --goal-items 는 --goal 과 함께 준다')
     return 2
   }
-  const boardBin = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.py')
+  const boardBin = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.ts')
   const board = values.board ? resolve(values.board) : boardPath(process.cwd())
   const repo = resolve(values.repo ?? '.')
   const dryRun = values['dry-run'] === true

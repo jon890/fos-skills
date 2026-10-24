@@ -11,8 +11,8 @@
 //     goal-progress.ts GOAL_ID ITEM_ID [ITEM_ID ...]
 //     goal-progress.ts GOAL_ID --items-file FILE      # 한 줄에 id 하나. 빈 줄과 # 줄은 건너뛴다
 //     옵션 (고유 접두로 줄여 쓸 수 있다. lib/args.ts):
-//       --board PATH       board.json 경로. 기본은 work-board 의 board.py 가 정한 위치
-//       --board-bin PATH   항목을 고치는 명령. 기본은 환경 변수 BOARD_BIN, 없으면 이 저장소의 work-board/bin/board.py
+//       --board PATH       board.json 경로. 기본은 work-board 의 board.ts 가 정한 위치
+//       --board-bin PATH   항목을 고치는 명령. 기본은 환경 변수 BOARD_BIN, 없으면 이 저장소의 work-board/bin/board.ts
 //       --details          목표 항목의 하위 줄도 추적 항목마다 하나씩 다시 쓴다. 끝난 항목은 「✓ 」 를 앞에 붙인다
 //       --dry-run          보드를 고치지 않고 계산 결과만 낸다
 //
@@ -174,7 +174,7 @@ function main(argv: string[]): number {
   if (withDetails) for (const detail of details) out(`  ${textOf(detail)}`)
   if (values['dry-run']) return 0
 
-  const binPath = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.py')
+  const binPath = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.ts')
   const cmd = ['set', goal, '--progress', value, '--file', board]
   if (withDetails) for (const detail of details) cmd.push('--detail', textOf(detail))
   const result = run(scriptCommand(binPath, cmd), { timeoutMs: NO_LIMIT_MS })

@@ -1,7 +1,7 @@
-// board-sync.ts 를 임시 보드, 가짜 gh, 저장소의 실제 work-board/bin/board.py 로 돌려 본다. GitHub 에는 닿지 않는다.
+// board-sync.ts 를 임시 보드, 가짜 gh, 저장소의 실제 work-board/bin/board.ts 로 돌려 본다. GitHub 에는 닿지 않는다.
 //
 // 가짜 gh 는 --repo 로 준 폴더의 state.json 에서 PR 번호의 상태를 읽는다. 없는 번호는 조회 실패다.
-// BOARD_BIN 을 주지 않으므로 기본 보드 명령(work-board/bin/board.py)이 항목을 고친다.
+// BOARD_BIN 을 주지 않으므로 기본 보드 명령(work-board/bin/board.ts)이 항목을 고친다.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -66,7 +66,7 @@ function load(): Record<string, Json> {
 const step = (text: string, done: boolean): Json => ({ text, done })
 
 describe('board-sync', () => {
-  test('BOARD_BIN 이 없으면 저장소의 work-board/bin/board.py 가 보드 항목을 done 으로 바꾼다', () => {
+  test('BOARD_BIN 이 없으면 저장소의 work-board/bin/board.ts 가 보드 항목을 done 으로 바꾼다', () => {
     states['7'] = 'MERGED'
     const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
     assert.equal(r.code, 0, r.result.stderr)

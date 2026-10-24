@@ -22,6 +22,10 @@
 // 띄우기 전에 이 프로세스의 stdout 과 stderr 를 비운다. macOS 에서 파이프로 가는 쓰기는 비동기라,
 // 비우지 않으면 앞서 쓴 줄이 자식의 출력보다 뒤에 나온다.
 //
+// execCommand 는 이 프로세스를 다른 명령으로 바꾼다(execvp). 옛 명령이 os.execvp 로 명령을 이어받던 자리
+// (heavy-slot 의 가벼운 검사와 중첩 호출, mem-gate 의 명령)에 쓴다. pid, 신호, 표준 입출력이 그대로 명령에 넘어간다.
+// 판정과 함정은 그 함수 위 주석이 소유한다.
+//
 // 진행 중인 자식: runAsync, runInherit 와 lib/events.ts 의 핸들러 실행이 띄운 자식을 끝날 때까지 기억한다(trackChild).
 // 신호를 받은 명령은 끝내기 전에 stopChildren 을 불러 자식을 남기지 않는다. 기억한 자식에 TERM 을 보내고,
 // STOP_GRACE_MS(2초) 뒤에도 살아 있으면 KILL 을 보낸다. 그룹으로 띄운 자식(핸들러)은 그룹 전체에 보낸다.
@@ -31,8 +35,9 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 import { constants } from 'node:os'
-import { extname } from 'node:path'
+import { delimiter, extname, join } from 'node:path'
 
 export type RunResult = { code: number; stdout: string; stderr: string; timedOut: boolean }
 export type RunOptions = {
@@ -331,4 +336,46 @@ export function scriptCommand(script: string, args: string[]): string[] {
     default:
       return ['python3', script, ...args]
   }
+}
+
+// argv[0] 을 execvp 처럼 찾는다. `/` 가 있으면 그 경로만, 없으면 PATH 의 폴더를 앞에서부터 본다(빈 칸은 현재 폴더).
+// 실행할 수 없는 파일만 찾았으면 126, 아무것도 없으면 127 이다. 실행할 수 없는 파일 뒤에 실행할 수 있는 것이 있으면 그것을 쓴다.
+function findExecutable(name: string): { path: string } | { code: 126 | 127 } {
+  // PATH 가 없을 때 execvp 가 쓰는 기본값이다
+  const dirs = name.includes('/') ? [''] : (process.env.PATH ?? '/usr/bin:/bin').split(delimiter)
+  let denied = false
+  for (const dir of dirs) {
+    const candidate = name.includes('/') ? name : join(dir || '.', name)
+    let stat
+    try {
+      stat = statSync(candidate)
+    } catch {
+      continue
+    }
+    try {
+      if (!stat.isFile()) throw new Error('not a file')
+      accessSync(candidate, fsConstants.X_OK)
+      return { path: candidate }
+    } catch {
+      denied = true
+    }
+  }
+  return { code: denied ? 126 : 127 }
+}
+
+// 이 프로세스를 argv 의 명령으로 바꾼다. 바꾸면 돌아오지 않는다. 돌아오면 바꾸지 못한 것이고 종료 코드를 낸다.
+//     127  명령이 없다. stderr 에 `<label>: command not found: <명령>`
+//     126  실행할 수 없다. stderr 에 `<label>: command is not executable: <명령>`
+// 실행 파일은 먼저 찾아 확인한 뒤 넘긴다. process.execve 는 실패하면 예외를 던지지 않고 프로세스를 abort(종료 코드 134)한다
+// (Node 24.15 실측: 없는 경로에 ENOENT 와 네이티브 스택을 내고 죽었다). PATH 도 찾지 않으므로 경로를 풀어 넘긴다.
+// 넘기기 전에 쓴 출력은 동기로 써야 한다. 파이프로 가는 비동기 쓰기는 exec 와 함께 사라진다.
+export function execCommand(argv: string[], label: string): number {
+  const found = findExecutable(argv[0])
+  if ('code' in found) {
+    const reason = found.code === 127 ? 'command not found' : 'command is not executable'
+    process.stderr.write(`${label}: ${reason}: ${argv[0]}\n`)
+    return found.code
+  }
+  process.execve(found.path, argv, process.env as Record<string, string>)
+  return 1
 }

@@ -356,7 +356,7 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.ok(board[0].endsWith(`--file ${c.repo}/boards/main.json`), board[0])
   })
 
-  test('BOARD_BIN 이 없으면 저장소의 work-board/bin/board.py 가 보드 항목을 done 으로 바꾼다', async (t) => {
+  test('BOARD_BIN 이 없으면 저장소의 work-board/bin/board.ts 가 보드 항목을 done 으로 바꾼다', async (t) => {
     const c = setup(t)
     const file = join(c.tmp, 'board.json')
     writeFileSync(file, JSON.stringify({ items: [{ id: 'item-1', status: 'wait', title: '로그인', pr: '#77' }, { id: 'item-2', status: 'wait', title: '다른 일' }] }))
