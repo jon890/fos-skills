@@ -57,7 +57,7 @@ CI 의 `Python tests` job 은 `*/tests` 와 `tools/*/tests` 를 돌며 `python3 
 - 남은 곳은 아래로 찾는다. CHANGELOG 의 지난 항목은 이력이라 고치지 않는다
 
   ```bash
-  git grep -nE 'python3 [^`]*scripts/|scripts/[a-z_-]+\.py|`[a-z_-]+\.py`|board\.py' -- '*.md' .orch/overlay.md ':!*CHANGELOG.md'
+  git grep -nE 'python3 [^`]*scripts/|scripts/[a-z_-]+\.py|`[a-z_-]+\.py`|board\.py' -- 'orch/*.md' 'work-board/*.md' README.md .orch/overlay.md docs/code-architecture.md ':!*CHANGELOG.md'
   ```
 
   문서만 찾는다. 테스트와 코드가 shim 호환을 위해 일부러 적은 옛 `.py` 경로(옛 경로를 부르는 테스트, `lib/paths.ts` 의 안내, `merge-queue.sh`)는 이 phase 에서 고치지 않는다. 남아도 되는 것은 `orch-doctor.py`(공식 진입점), `ts_shim.py`, `orch/README.md` 의 「옛 경로. 다음 major 에서 지운다」 줄과 각 shim 의 설명, 다른 스킬의 `review_threads.py`, 저장소 루트 `scripts/` 의 Python 도구(`check-shell-korean.py` 같은 것)와 `tools/` 의 것이다
