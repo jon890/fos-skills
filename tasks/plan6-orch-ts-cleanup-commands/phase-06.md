@@ -129,3 +129,5 @@ python3 korean-check/scripts/korean-style-check.py README.md orch/SKILL.md orch/
 | `docs/code-architecture.md` | 수정 |
 | `orch/tests/readme-script-list.spec.ts` | 수정 |
 | `docs/adr/010-orch-typescript.md` | 수정 |
+| `orch/scripts/cleanup-sweep.ts` | 수정 |
+| `orch/scripts/remove-worktree.ts` | 수정 |
