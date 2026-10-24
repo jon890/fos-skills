@@ -247,6 +247,21 @@ class TestRepo(unittest.TestCase):
         done = self.invoke("docs/adr")
         self.assertEqual(done.returncode, 0, done.stdout)
 
+    def test_index_includes_archived_adrs(self):
+        self.write("docs/adr/current.md", "## ADR-001 current\n")
+        self.write("docs/adr/superseded/old.md", "## ADR-002 old\n- **status**: `superseded`\n")
+        self.write("docs/adr/INDEX.md", "# INDEX\n\n## 현행\n\n- [ADR-001](current.md)\n\n"
+                   "## 대체됨\n\n- [ADR-002](superseded/old.md)\n")
+        done = self.invoke("docs/adr")
+        self.assertEqual(done.returncode, 0, done.stdout)
+
+    def test_unlisted_archived_adr_is_detected(self):
+        self.write("docs/adr/superseded/old.md", "## ADR-002 old\n")
+        self.write("docs/adr/INDEX.md", "# INDEX\n")
+        done = self.invoke("docs/adr")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("본문에만 있다: ADR-002", done.stdout)
+
     def test_missing_adr_dir_is_usage_error(self):
         self.write("a.md", "# 제목\n")
         self.assertEqual(self.invoke("없는디렉터리").returncode, 2)

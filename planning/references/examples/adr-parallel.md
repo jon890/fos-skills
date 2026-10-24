@@ -26,11 +26,13 @@ docs/adr/
   INDEX.md
   ADR-20261007-cache-key-scheme.md
   ADR-20261009-queue-per-tenant.md
+  superseded/
+    ADR-20261001-shared-queue.md
 ```
 
 - 파일 이름은 `ADR-YYYYMMDD-slug.md` 다. 날짜는 결정한 날이고 파일 안의 `Date` 와 같다.
 - 슬러그는 내용을 나타내는 짧은 소문자 영문, 숫자, 하이픈이다.
-- 파일을 옮기거나 `superseded` 로 바꿔도 파일 이름과 식별자는 바꾸지 않는다. 코드 주석과 다른 ADR 이 식별자로 가리키기 때문이다.
+- `superseded` 가 되면 기본 템플릿의 위치 규약에 따라 옮기고 링크를 고친다. 파일 이름과 식별자는 유지한다.
 - 머리는 `task-create.md` 와 같은 불릿형이다. 결정, 맥락, 대안 기각, 결과가 한 화면에 들어와야 한다.
 
 ```markdown
@@ -55,16 +57,22 @@ docs/adr/
 ```markdown
 # ADR 목록
 
-## 결정 목록
+## 현행
 
 | ADR | 요약 | status |
 | --- | --- | --- |
-| ADR-20261007 / cache-key-scheme | 캐시 키에 테넌트 id 를 접두사로 둔다 | accepted |
-| ADR-20261009 / queue-per-tenant | 큐를 테넌트마다 나눈다 | accepted |
+| [ADR-20261007 / cache-key-scheme](ADR-20261007-cache-key-scheme.md) | 캐시 키에 테넌트 id 를 접두사로 둔다 | accepted |
+| [ADR-20261009 / queue-per-tenant](ADR-20261009-queue-per-tenant.md) | 큐를 테넌트마다 나눈다 | accepted |
+
+## 대체됨
+
+| ADR | 요약 | status |
+| --- | --- | --- |
+| [ADR-20261001 / shared-queue](superseded/ADR-20261001-shared-queue.md) | 공유 큐를 쓴다 | superseded |
 ```
 
-- 정렬은 날짜 오름차순, 같은 날짜는 슬러그 사전순이다. 정렬을 정해 두면 두 PR 이 서로 다른 행을 더해도 같은 줄을 고치지 않는다.
-- 색인은 여러 PR 이 함께 고치는 파일이므로 새 행은 정렬 순서의 자리에 한 줄만 더한다. 기존 행을 건드리는 정리는 같은 PR 에 섞지 않는다.
+- 각 절 안의 정렬은 날짜 오름차순, 같은 날짜는 슬러그 사전순이다. 정렬을 정해 두면 두 PR 이 서로 다른 행을 더해도 같은 줄을 고치지 않는다.
+- 색인은 여러 PR 이 함께 고치는 파일이므로 새 행은 정렬 순서의 자리에 한 줄만 더한다. 대체할 때는 해당 행을 옮기고 링크와 status 를 고친다. 그 밖의 기존 행 정리는 같은 PR 에 섞지 않는다.
 - 이 파일이 있어도 두 PR 이 같은 위치에 행을 더하면 충돌할 수 있다. 충돌이 나면 실제 ADR 파일과 대조해 합친다.
 
 ## 색인 일치 테스트
@@ -73,11 +81,12 @@ docs/adr/
 
 | 검사 | 어긋남의 증상 |
 | --- | --- |
-| `docs/adr/` 의 모든 `ADR-*.md` 가 색인에 한 행씩 있다 | 목록에서 빠진 ADR |
+| ADR 폴더와 하위 폴더의 모든 `ADR-*.md` 가 색인에 한 행씩 있다 | 목록에서 빠진 ADR |
 | 색인의 모든 링크가 실제 파일을 가리킨다 | 깨진 링크 |
 | 링크 글과 제목 머리의 식별자가 파일 이름에서 나온 값과 같다 | 이름을 바꾸다 어긋난 링크 글과 머리 |
 | 행이 정렬 규칙대로 놓였다 | 같은 위치를 고쳐 충돌하는 PR |
 | 파일 안의 status 와 색인의 status 가 같다 | 대체된 ADR 이 accepted 로 남음 |
+| 파일 안의 status 와 색인의 「현행」·「대체됨」 구분이 같다 | 대체된 ADR 이 현행 목록에 남음 |
 
 테스트는 새 파일을 읽어야 하므로 [`test-boundaries.md`](test-boundaries.md) 의 `convention` 디렉터리에 둔다.
 파일 이름에서 식별자를 얻는 함수 하나만 정확하면 나머지 검사는 그 함수의 결과를 비교하는 일이다.

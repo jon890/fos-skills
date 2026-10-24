@@ -3,7 +3,7 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
-## 2.30.0
+## 2.31.0
 
 plan 하나를 PR 하나로 끝나는 크기로 자르게 하고, `verify_task.py` 가 구조로 막는다.
 
@@ -13,6 +13,13 @@ plan 하나를 PR 하나로 끝나는 크기로 자르게 하고, `verify_task.p
 - `verify_task.py` 가 `pr_scope` 와 `deferred` 가 없거나 비면, phase 가 6개를 넘으면 위반으로 센다. 변경 파일(`docs/`, `tasks/` 제외)이 40개를 넘으면 경고한다. 기준은 저장소 7곳의 plan 517개 분포(phase 수 p95 가 6, 변경 파일 수 p90 이 50)로 정했다
 - `created_at` 이 2026-10-25 보다 이르거나 없는 옛 plan 은 같은 검사를 경고로만 낸다. 진행 중인 계획서를 다시 쓰게 하지 않는다
 - 테스트를 더했다(`PrScopeTest`)
+
+## 2.30.0
+
+- ADR 링크 검사는 Git 추적 파일과 무시되지 않은 미추적 파일만 읽는다. Git 밖에서는 모든 Markdown을 읽으며 도움말과 진단은 한국어로 낸다
+- 대체된 ADR 의 위치와 파일 이름 유지, 상대 링크 갱신, 색인 구분 규약을 `task-create.md` 에 더했다. 일부만 대체된 `accepted` ADR 은 현행 위치에 둔다
+- 병렬 PR 예시와 7단계를 새 규약에 맞추고, 대체 뒤 `check_adr_layout.py` 를 실행하게 했다
+- 임시 폴더 테스트로 ADR 위치, 설명이 붙은 status, Markdown 상대 링크와 종료 코드를 검사한다
 
 ## 2.29.0
 

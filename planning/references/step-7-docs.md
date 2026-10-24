@@ -14,8 +14,18 @@
 - 레포 설정이 지정한 추가 문서의 영향 판정과 갱신 diff.
 - 같은 정보를 두 문서에 쓰지 않는다. 필요하면 링크한다.
 
-ADR 형식과 supersede 처리는 `task-create.md` 가 소유한다.
+ADR 형식과 대체 표기, 파일 이동과 링크·색인 갱신 규약은 [`task-create.md`](task-create.md) 가 소유한다.
 여러 에이전트가 동시에 PR 을 여는 저장소는 파일 이름과 색인을 [`examples/adr-parallel.md`](examples/adr-parallel.md) 로 정한다.
+
+ADR 을 대체한 뒤 위치와 저장소 Markdown 의 ADR 상대 링크를 검사한다. 종료 코드 0 이어야 한다.
+`$SKILL_DIR` 은 planning 스킬 번들 경로이고, `$ADR_DIR` 은 오버레이가 정한 ADR 경로다. 지정이 없으면 `docs/adr` 다.
+
+```bash
+# cwd: 타깃 레포 root
+python3 "$SKILL_DIR/scripts/check_adr_layout.py" "${ADR_DIR:-docs/adr}"
+```
+
+코드 주석의 링크와 색인의 「현행」·「대체됨」 구분은 변경 diff 에서 확인한다.
 
 ## 계획서를 가리키지 않는다
 

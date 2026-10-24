@@ -5,7 +5,7 @@
 
 ## 5.23.0
 
-plan 하나를 PR 하나로 끝내는 규칙을 `planning` 2.30.0 과 맞춘다.
+plan 하나를 PR 하나로 끝내는 규칙을 `planning` 2.31.0 과 맞춘다.
 
 - critic 의 `REVISE` 기준에 「plan 이 PR 하나에 들어가는가」 를 더한다. `pr_scope` 와 `deferred` 가 있는지, phase 수가 planning 의 plan 크기 기준 안인지, `pr_scope` 밖의 일이 섞이지 않았는지, 앞 phase 의 결과를 보고서야 정해질 내용을 미리 확정해 적지 않았는지 본다
 - PR 본문에 「뒤로 미룬 일」 을 넘긴다. 계획서가 같은 PR 에서 지워지면 `deferred` 도 함께 사라지기 때문이다
