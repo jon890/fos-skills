@@ -999,5 +999,69 @@ class PlanNumberTest(unittest.TestCase):
         self.assertEqual(([], []), self.check("plan12-login"))
 
 
+class PrScopeTest(unittest.TestCase):
+    """plan 하나는 PR 하나다. index.json 의 pr_scope, deferred 와 크기 상한을 본다."""
+
+    def index(self, **kw):
+        data = {"created_at": "2026-10-25", "pr_scope": "로그인 화면을 만든다",
+                "deferred": [{"what": "소셜 로그인", "why": "화면이 먼저 필요하다", "after": "이 PR 의 머지"}],
+                "phases": [{"number": 1, "file": "phase-01.md"}]}
+        data.update(kw)
+        return {k: v for k, v in data.items() if v is not None}
+
+    def check(self, data):
+        out, warnings = [], []
+        verify.check_pr_scope(Path("tasks/plan1-a/index.json"), data, out, warnings)
+        return out, warnings
+
+    def test_complete_new_plan_passes(self):
+        self.assertEqual(([], []), self.check(self.index()))
+
+    def test_empty_deferred_list_is_allowed(self):
+        self.assertEqual(([], []), self.check(self.index(deferred=[])))
+
+    def test_new_plan_without_pr_scope_or_deferred_fails(self):
+        out, warnings = self.check(self.index(pr_scope=None, deferred=None))
+        self.assertEqual([], warnings)
+        self.assertEqual(2, len(out), out)
+        self.assertTrue(any("pr_scope" in line for line in out))
+        self.assertTrue(any("deferred 칸이 없다" in line for line in out))
+
+    def test_blank_pr_scope_and_incomplete_deferred_item_fail(self):
+        out, _ = self.check(self.index(pr_scope="  ", deferred=[{"what": "소셜 로그인", "why": "", "after": "x"}]))
+        self.assertTrue(any("pr_scope" in line for line in out))
+        self.assertTrue(any("deferred[0] 에 why 가 비었다" in line for line in out))
+
+    def test_multiline_pr_scope_fails(self):
+        out, _ = self.check(self.index(pr_scope="하나\n둘"))
+        self.assertTrue(any("한 문장" in line for line in out))
+
+    def test_phase_count_over_limit_fails_for_new_plan(self):
+        phases = [{"number": n, "file": f"phase-{n:02d}.md"} for n in range(1, verify.MAX_PHASES + 2)]
+        out, _ = self.check(self.index(phases=phases))
+        self.assertEqual(1, len(out), out)
+        self.assertIn("plan 을 나누고", out[0])
+
+    def test_phase_count_at_limit_passes(self):
+        phases = [{"number": n, "file": f"phase-{n:02d}.md"} for n in range(1, verify.MAX_PHASES + 1)]
+        self.assertEqual(([], []), self.check(self.index(phases=phases)))
+
+    def test_old_plan_only_warns(self):
+        phases = [{"number": n, "file": f"phase-{n:02d}.md"} for n in range(1, verify.MAX_PHASES + 2)]
+        for created in ("2026-10-24", None):
+            with self.subTest(created=created):
+                out, warnings = self.check(self.index(created_at=created, pr_scope=None, deferred=None, phases=phases))
+                self.assertEqual([], out)
+                self.assertEqual(3, len(warnings), warnings)
+
+    def test_changed_file_count_over_limit_warns_and_ignores_docs(self):
+        files = {f"src/f{n}.py" for n in range(verify.MAX_CHANGED_FILES)} | {"docs/a.md", "tasks/p/index.json"}
+        warnings = []
+        verify.check_changed_file_count(Path("index.json"), files, warnings)
+        self.assertEqual([], warnings)
+        verify.check_changed_file_count(Path("index.json"), files | {"src/extra.py"}, warnings)
+        self.assertEqual(1, len(warnings), warnings)
+
+
 if __name__ == "__main__":
     unittest.main()

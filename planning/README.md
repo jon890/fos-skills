@@ -16,8 +16,9 @@
 
 `docs/` 는 구현이 끝난 뒤에도 읽는 문서이고, `tasks/` 는 구현 PR 에서 지운다.
 
-규모가 크면 plan 을 여러 디렉터리로 나눈다.
-한 plan 은 한 번에 검토할 수 있는 크기이고 PR 하나에 대응한다.
+plan 하나는 PR 하나로 끝나는 크기이고, 대략 하루 안에 구현하고 머지한다.
+더 크면 plan 을 여럿으로 나누고 지금 할 plan 만 자세히 쓴다. 뒤의 일은 `index.json` 의 `deferred` 에 한 줄로 남기고 앞 PR 이 머지된 뒤 계획한다.
+`verify_task.py` 가 `pr_scope` 와 `deferred` 필드, phase 수 상한을 검사한다. 기준은 `references/plan-size.md` 가 소유한다.
 
 ## 사용 시점
 
@@ -57,6 +58,7 @@
 | `references/examples/code-architecture.md` | `docs/code-architecture.md` 의 다섯 절 뼈대, 책임 칸에 목록을 늘어놓지 않는 이유, 이력 서술을 넣지 않는 이유. 6단계가 가리킨다 |
 | `references/examples/adr-parallel.md` | 병렬 PR 용 `ADR-YYYYMMDD-slug.md` 와 `INDEX.md`, 색인 일치 테스트, 번호 충돌 사례. 7단계가 가리킨다 |
 | `references/examples/test-boundaries.md` | `tests/` 의 목적 디렉터리와 이름 규칙, boundary 테스트, CI 순서와 concurrency. 6단계가 가리킨다 |
+| `references/plan-size.md` | plan 하나를 PR 하나 크기로 자르는 규칙, 뒤로 미룬 일을 남기는 칸, `verify_task.py` 가 쓰는 phase 수와 변경 파일 수 기준 |
 | `references/task-create.md` | `index.json` 스키마, ADR 템플릿과 supersede 처리, phase 파일 구조와 작성 규칙 |
 | `references/rule-placement.md` | 반복될 실패를 저장소 규칙으로 옮길 때 넣을 곳 표, 규칙 문장 형식, 반복 함정 목록 처리. `build-with-teams` 와 `review-fix` 가 함께 쓴다 |
 | `references/monorepo.md` | 모노레포 판정, 대상 하위 프로젝트를 정하는 순서, 오버레이 탐색 순서, 오버레이가 지정하는 docs 경로와 tasks 경로와 plan 접두사. 네 스킬이 함께 쓴다 |
