@@ -65,7 +65,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `before-cleanup` | `worktree`, `branch`, `pr`(있으면), `worker`(있으면) |
 | `after-cleanup` | `removed`(경로 목록), `skipped`(경로와 이유의 목록) |
 | `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록) |
-| `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 대기 pid 목록), `unanswered`(질문 id 목록) |
+| `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 `wait-important` 대기와 `watch-questions` 질문 감시의 pid 목록. 그 자식인 `orchestration check` 와 셸 행은 세지 않는다), `unanswered`(질문 id 목록) |
 
 옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
 

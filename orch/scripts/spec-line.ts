@@ -21,9 +21,12 @@
 //     0  만들었다
 //     1  --require-permission 인데 `허락:` 줄이 없다
 //     2  사용법 오류, 지시서를 읽지 못했다
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { real } from './lib/fs.ts'
 import { permissionsOf } from './lib/spec.ts'
 
@@ -32,11 +35,8 @@ const USAGE = '사용법: spec-line.ts SPEC_FILE [--require-permission]'
 function main(argv: string[]): number {
   let parsed
   try {
-    parsed = parseArgs({
-      args: argv,
-      options: { 'require-permission': { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
-      allowPositionals: true,
-    })
+    const options = { 'require-permission': { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } as const
+    parsed = parseArgs({ args: expandArgs(argv, options), options, allowPositionals: true })
   } catch (e) {
     process.stderr.write(`${USAGE}\nspec-line: ${(e as Error).message}\n`)
     return 2

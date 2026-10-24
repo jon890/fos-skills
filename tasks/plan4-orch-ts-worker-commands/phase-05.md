@@ -144,3 +144,7 @@ doctor 를 부르는 줄은 종료 코드 0 이고 `OK-SCRIPTS` 줄이 있어야
 | `orch/references/*.md` | 수정 |
 | `orch/templates/spec-common.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
+
+## 구현 중 정한 것
+
+- doctor 의 `waiters` 는 `wait-important` 와 `watch-questions` 의 pid 다. 그 자식인 `orchestration check --wait` 은 대기 하나를 둘로 세므로 빼고, 셸(`sh`, `bash`, `zsh`, `dash`, `fish`) 행과 doctor 자신도 뺀다. `docs/data-schema.md` 의 `session-resume` 줄이 이 정의를 소유한다.

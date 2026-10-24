@@ -3,7 +3,7 @@
 
 SKILL.md 가 doctor 를 이 경로로 부른다. 넘기기 전에 ts_shim 이 node 버전을 보고 22.18 보다 낮으면
 NODE-TOO-OLD 줄과 종료 코드 127 로 멈춘다. 낮은 node 는 .ts 를 읽지 못해 .ts 안에서는 판정할 수 없다.
-공식 진입점이라 DEPRECATED 줄을 내지 않는다. 다른 shim 과 달리 다음 major 에서 함께 지우지 않는다.
+공식 진입점이라 DEPRECATED 줄을 내지 않는다. 다음 major 에서 shim 을 지울 때 이 진입점을 어떻게 둘지 따로 정한다.
 """
 import os
 import sys

@@ -19,7 +19,9 @@
 // ORCA 환경 변수로 orca 실행 파일을 바꾼다.
 //
 // 출력 순서는 완료 근거가 없는 의심스러운 worker_done, worker_done, escalation, question, 그 밖의 종류(status 등), heartbeat 개수다.
-// 같은 메시지 id 는 한 번만 센다.
+// 같은 메시지 id 는 한 번만 센다. 사람이 읽는 출력의 payload 줄은 옛 명령의 json.dumps 꼴(lib/py.ts 의 pyJson)로 앞 200자를 낸다.
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
+// 테스트가 parseObjects 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 //
 // 종료 코드:
 //     0  읽었다. 메시지가 없어도 0 이다
@@ -28,8 +30,10 @@
 
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { classify, isoTime } from './lib/completion.ts'
 import { orca } from './lib/orca.ts'
+import { pyJson, pyStr as text } from './lib/py.ts'
 
 type Json = Record<string, unknown>
 type Triage = { groups: Record<string, Json[]>; heartbeats: Record<string, number> }
@@ -73,7 +77,7 @@ function objectEnd(text: string, start: number): number {
 }
 
 // 문자열에 이어 붙은 JSON 객체를 모두 꺼낸다. 객체가 아닌 줄은 건너뛴다.
-function parseObjects(text: string): Json[] {
+export function parseObjects(text: string): Json[] {
   const found: Json[] = []
   let i = 0
   for (;;) {
@@ -103,7 +107,7 @@ function parseSince(value: string): number {
 }
 
 // delivery id 목록과, id 로 겹친 것을 뺀 메시지 목록
-function collect(objects: Json[]): { deliveries: string[]; messages: Json[] } {
+export function collect(objects: Json[]): { deliveries: string[]; messages: Json[] } {
   const deliveries: string[] = []
   const messages: Json[] = []
   const seen = new Set<unknown>()
@@ -144,18 +148,13 @@ function triage(messages: Json[], since: number | null, contract: string): Triag
   return { groups: Object.fromEntries(order.map((k) => [k, groups[k]])), heartbeats }
 }
 
-// Python 의 str() 처럼 null 을 None 으로 쓴다. 옛 명령과 같은 줄을 낸다
-function text(value: unknown): string {
-  return value === null ? 'None' : String(value)
-}
-
 function field(m: Json, key: string, fallback = ''): string {
   return m[key] === undefined ? fallback : text(m[key])
 }
 
 function payloadText(value: unknown): string {
   if (value === undefined || value === null) return ''
-  return typeof value === 'string' ? value : JSON.stringify(value)
+  return typeof value === 'string' ? value : pyJson(value)
 }
 
 function splitLines(body: string): string[] {
@@ -211,20 +210,17 @@ function main(argv: string[]): number {
   let since: number | null = null
   let width: number
   try {
-    const parsed = parseArgs({
-      args: argv,
-      allowPositionals: true,
-      options: {
-        live: { type: 'boolean', default: false },
-        run: { type: 'string' },
-        terminal: { type: 'string' },
-        since: { type: 'string' },
-        width: { type: 'string', default: '3000' },
-        json: { type: 'boolean', default: false },
-        'completion-contract': { type: 'string', default: 'ready' },
-        help: { type: 'boolean', short: 'h' },
-      },
-    })
+    const options = {
+      live: { type: 'boolean', default: false },
+      run: { type: 'string' },
+      terminal: { type: 'string' },
+      since: { type: 'string' },
+      width: { type: 'string', default: '3000' },
+      json: { type: 'boolean', default: false },
+      'completion-contract': { type: 'string', default: 'ready' },
+      help: { type: 'boolean', short: 'h' },
+    } as const
+    const parsed = parseArgs({ args: expandArgs(argv, options), allowPositionals: true, options })
     values = parsed.values
     files = parsed.positionals
     if (values.help) {
@@ -267,9 +263,11 @@ function main(argv: string[]): number {
   return 0
 }
 
-try {
-  process.exitCode = main(process.argv.slice(2))
-} catch (e) {
-  process.stderr.write(`triage-messages: ${(e as Error)?.stack ?? String(e)}\n`)
-  process.exitCode = 1
+if (import.meta.main) {
+  try {
+    process.exitCode = main(process.argv.slice(2))
+  } catch (e) {
+    process.stderr.write(`triage-messages: ${(e as Error)?.stack ?? String(e)}\n`)
+    process.exitCode = 1
+  }
 }

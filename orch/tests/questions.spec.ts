@@ -9,6 +9,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ageSeconds, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
+import { poll } from '../scripts/watch-questions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/watch-questions.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../scripts/watch-questions.py', import.meta.url))
@@ -224,6 +225,30 @@ describe('watch-questions', () => {
     writeFileSync(seenFile(), JSON.stringify({ r: { q: now - 601 } }))
     const reminded = watch('--run', 'r', '--once')
     assert.match(reminded.stdout, /^REMINDER q question from=dispatch:d: /m)
+  })
+
+  test('재알림은 알린 뒤 --remind-after 초가 되는 때부터다', () => {
+    // 옛 명령의 테스트와 같은 시각이다. 1000 에 알리고 600 초 뒤인 1600 에 다시 알린다. 1599 는 조용하다
+    fake({ all: { messages: [message()] } })
+    const state = seenFile()
+    assert.deepEqual(poll('r', state, 1000, 600, tmp).notices.map((n) => n.line), ['QUESTION q question from=dispatch:d: 두 줄 질문'])
+    assert.deepEqual(poll('r', state, 1599, 600, tmp).notices, [])
+    const reminded = poll('r', state, 1600, 600, tmp).notices
+    assert.deepEqual(reminded.map((n) => [n.line, n.reminder]), [['REMINDER q question from=dispatch:d: 두 줄 질문', true]])
+    // 파일은 옛 명령의 json.dumps 꼴이다
+    assert.equal(readFileSync(state, 'utf8'), '{"r": {"q": 1600}}\n')
+  })
+
+  test('알린 시각이 수가 아니면 형식 오류로 WATCH-ERROR 이고 기록을 바꾸지 않는다', () => {
+    fake({ all: { messages: [message()] } })
+    mkdirSync(dirname(seenFile()), { recursive: true })
+    writeFileSync(seenFile(), '{"r": {"q": "1000"}}')
+    const r = watch('--run', 'r', '--once')
+    assert.equal(r.code, 1, r.stderr)
+    assert.match(r.stdout, /^WATCH-ERROR 알림 기록 형식이 잘못됐다: /m)
+    // stderr 도 wait-important 와 같은 WATCH-ERROR 줄이다
+    assert.match(r.stderr, /^WATCH-ERROR 알림 기록 형식이 잘못됐다: /m)
+    assert.equal(readFileSync(seenFile(), 'utf8'), '{"r": {"q": "1000"}}')
   })
 
   test('알림 기록은 Run 별이고 답한 질문은 다시 알리지 않는다', () => {

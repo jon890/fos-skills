@@ -18,6 +18,7 @@ const SHA = 'a'.repeat(40)
 
 // 차례로 응답을 하나씩 낸다. 부를 때마다 인자를 기록한다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.
 // workers 는 worker-list 응답의 차례다. 마지막 것은 되풀이하고, 값이 "fail" 이면 실패로 답한다.
+// 값이 { workers, nextCursor } 이면 그 행과 page.nextCursor 를 낸다. FAKE_PID 가 있으면 check --wait 의 pid 를 그 파일에 적는다.
 // latest 의 값은 dispatch id 이거나 dispatch-show 의 dispatch 그대로다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -36,7 +37,8 @@ if (argv.includes('worker-list')) {
     print({ ok: false, error: { code: 'runtime_unavailable' } })
     process.exit(1)
   }
-  print({ ok: true, result: { workers: rows } })
+  if (Array.isArray(rows)) print({ ok: true, result: { workers: rows } })
+  else print({ ok: true, result: { workers: rows.workers, page: { nextCursor: rows.nextCursor } } })
 } else if (argv.includes('task-list')) {
   print({ ok: true, result: { tasks: st.tasks || [] } })
 } else if (argv.includes('dispatch-show')) {
@@ -45,6 +47,7 @@ if (argv.includes('worker-list')) {
 } else if (argv.includes('--all')) {
   print({ ok: !st.history_fail, result: { messages: st.history || [] } })
 } else {
+  if (process.env.FAKE_PID) fs.appendFileSync(process.env.FAKE_PID, process.pid + '\\n')
   const reply = st.replies.length ? st.replies.shift() : { ok: true, result: { deliveryId: null, messages: [], timedOut: true } }
   save()
   const wait = reply.sleep || 0
@@ -388,6 +391,21 @@ describe('끊긴 worker', () => {
     const list = allCalls().find((c) => c.includes('worker-list')) ?? []
     assert.equal(list[list.indexOf('--limit') + 1], '100', JSON.stringify(list))
   })
+
+  test('nextCursor 를 둘째 호출의 --cursor 로 넘기고 둘째 페이지의 끊긴 worker 도 알린다', () => {
+    const bad = worker('ctx_bad', 'abandoned', 'failed', 'terminal_missing')
+    const r = wait([batch('d1', 'worker_done')], ['--lost-interval-sec', '0.3'], {
+      workers: [{ workers: LIVE, nextCursor: 'c2' }, [bad]],
+      tasks: [{ id: 't1', status: 'dispatched', result: null }],
+      latest: { t1: 'ctx_bad' },
+    })
+    assert.equal(r.code, 5, r.stdout + r.stderr)
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', 'LAST_DELIVERY -'])
+    const pages = allCalls().filter((c) => c.includes('worker-list'))
+    assert.equal(pages.length, 2, JSON.stringify(pages))
+    assert.ok(!pages[0].includes('--cursor'), JSON.stringify(pages[0]))
+    assert.equal(pages[1][pages[1].indexOf('--cursor') + 1], 'c2', JSON.stringify(pages[1]))
+  })
 })
 
 describe('WATCH-ERROR', () => {
@@ -399,6 +417,15 @@ describe('WATCH-ERROR', () => {
     assert.ok(error >= 0 && error < out.indexOf('LAST_DELIVERY d1'), r.stdout)
     assert.equal(lastLine(r.stdout), 'LAST_DELIVERY d1')
     assert.match(r.stderr, /WATCH-ERROR /)
+  })
+
+  test('worker-list 의 nextCursor 가 되풀이되면 WATCH-ERROR 를 내고 대기는 이어 간다', () => {
+    const page = { workers: LIVE, nextCursor: 'c2' }
+    const r = wait([batch('d1', 'status')], ['--lost-interval-sec', '0.3'], { workers: [page, page] })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = lines(r.stdout)
+    const error = out.indexOf('WATCH-ERROR 끊긴 worker 를 확인하지 못했다: worker-list 의 다음 페이지가 앞 페이지와 같다')
+    assert.ok(error >= 0 && error < out.indexOf('LAST_DELIVERY d1'), r.stdout)
   })
 
   test('대기 중 worker-list 실패는 같은 이유를 한 번만 낸다', () => {
@@ -485,6 +512,39 @@ describe('대기', () => {
     assert.equal(wait([], ['--types', '']).code, 2)
     assert.equal(wait([], ['--timeout-ms', '1.5']).code, 2)
     assert.equal(wait([], ['--completion-contract', 'maybe']).code, 2)
+  })
+})
+
+describe('신호', () => {
+  test('SIGTERM 을 받으면 check --wait 자식을 끝내고 143 으로 나간다', { timeout: 60_000 }, async () => {
+    const pidFile = join(tmp, 'check.pid')
+    writeFileSync(stateFile, JSON.stringify({ replies: [sleeping(batch('d1', 'worker_done'), 30)], workers: [], tasks: [], latest: {}, history: [] }))
+    const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', 'none', '--lost-interval-sec', '0']
+    const child = spawn(process.execPath, argv, { env: { ...env, FAKE_PID: pidFile }, cwd: tmp })
+    let stderr = ''
+    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')))
+    const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)))
+    const until = async (done: () => boolean, what: string) => {
+      const deadline = Date.now() + 20_000
+      while (!done()) {
+        assert.ok(Date.now() < deadline, what)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    }
+    await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('\n'), 'check --wait 가 뜨지 않았다')
+    const orcaPid = Number(readFileSync(pidFile, 'utf8').trim())
+    child.kill('SIGTERM')
+    assert.equal(await closed, 143, stderr)
+    assert.match(stderr, /SIGTERM 를 받아 check --wait 를 끝내고 나간다/)
+    const gone = () => {
+      try {
+        process.kill(orcaPid, 0)
+        return false
+      } catch {
+        return true
+      }
+    }
+    await until(gone, `check --wait(pid ${orcaPid})가 남았다`)
   })
 })
 

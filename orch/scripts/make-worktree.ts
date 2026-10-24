@@ -17,11 +17,14 @@
 //       맞으면 `일치: <브랜치> (HEAD <sha>)`, 아니면 어긋난 것마다 `불일치: <항목> <실제>, 지시서 <기대>` 를 stdout 에 낸다.
 //
 // 종료 코드: 0 성공, 1 거부, 불일치, git 실패, 2 사용법 오류, 지시서 오류
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { isFile, real } from './lib/fs.ts'
 import { defaultBase, git } from './lib/git.ts'
 import { repoVisibility, repoVisibilityActions } from './lib/orca.ts'
@@ -136,18 +139,16 @@ function create(opts: { repo: string; name: string; base: string; resumeRemote: 
 function main(argv: string[]): number {
   let values
   try {
-    values = parseArgs({
-      args: argv,
-      options: {
-        repo: { type: 'string', default: '' },
-        name: { type: 'string', default: '' },
-        base: { type: 'string', default: '' },
-        check: { type: 'string', default: '' },
-        spec: { type: 'string' },
-        'resume-remote': { type: 'boolean', default: false },
-        help: { type: 'boolean', short: 'h' },
-      },
-    }).values
+    const options = {
+      repo: { type: 'string', default: '' },
+      name: { type: 'string', default: '' },
+      base: { type: 'string', default: '' },
+      check: { type: 'string', default: '' },
+      spec: { type: 'string' },
+      'resume-remote': { type: 'boolean', default: false },
+      help: { type: 'boolean', short: 'h' },
+    } as const
+    values = parseArgs({ args: expandArgs(argv, options), options }).values
   } catch (e) {
     err(`${USAGE}\nmake-worktree: ${(e as Error).message}`)
     return 2

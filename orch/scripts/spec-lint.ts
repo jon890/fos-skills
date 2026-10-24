@@ -46,13 +46,17 @@
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname, join, normalize } from 'node:path'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { isFile } from './lib/fs.ts'
 import { git } from './lib/git.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
+import { LINE_BREAK } from './lib/spec.ts'
 
 const USAGE = [
   '사용법: spec-lint.ts --repo DIR [--overlay FILE] SPEC [SPEC ...]',
@@ -67,8 +71,6 @@ const W = '\\p{L}\\p{N}_'
 const CALL = new RegExp(`^(?:[A-Za-z_][${W}]*\\.)*([A-Za-z_][${W}]*)\\(\\)$`, 'u')
 // 마지막 마디에 확장자가 있는 것만 경로로 본다. `mac/battle-join` 같은 브랜치 이름과 `feature/` 같은 접두를 빼려는 것이다
 const PATHLIKE = new RegExp(`^(?:[${W}.\\-]+/)*[${W}\\-]+(?:\\.[${W}\\-]+)*\\.[A-Za-z]{1,5}$`, 'u')
-// Python 의 str.splitlines 가 나누는 줄 경계. 줄 번호를 옮기기 전과 같게 센다
-const LINE_BREAK = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/
 
 class UsageError extends Error {}
 
@@ -347,17 +349,14 @@ function lint(repo: Repo, specs: string[], overlay: string | null): { errors: st
 function main(argv: string[]): number {
   let parsed
   try {
-    parsed = parseArgs({
-      args: argv,
-      options: {
-        repo: { type: 'string' },
-        overlay: { type: 'string' },
-        'check-overlay': { type: 'boolean' },
-        base: { type: 'string', default: 'main' },
-        help: { type: 'boolean', short: 'h' },
-      },
-      allowPositionals: true,
-    })
+    const options = {
+      repo: { type: 'string' },
+      overlay: { type: 'string' },
+      'check-overlay': { type: 'boolean' },
+      base: { type: 'string', default: 'main' },
+      help: { type: 'boolean', short: 'h' },
+    } as const
+    parsed = parseArgs({ args: expandArgs(argv, options), options, allowPositionals: true })
   } catch (e) {
     process.stderr.write(`${USAGE}\nspec-lint: ${(e as Error).message}\n`)
     return 2

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { collect, parseObjects } from '../scripts/triage-messages.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/triage-messages.ts', import.meta.url))
@@ -69,6 +70,10 @@ describe('분류', () => {
     const out = json([file(text)])
     assert.deepEqual(out.deliveries, ['d1'])
     assert.deepEqual(out.groups, {})
+    // keepalive 도 객체라 셋을 꺼낸다. result 가 있는 것만 delivery 가 된다
+    const objects = parseObjects(text)
+    assert.equal(objects.length, 3, JSON.stringify(objects))
+    assert.deepEqual(collect(objects).deliveries, ['d1'])
   })
 
   test('우선 종류를 앞에 두고 heartbeat 는 보낸 쪽마다 센다', () => {
@@ -113,6 +118,15 @@ describe('분류', () => {
     assert.ok(r.stdout.includes(`${'가'.repeat(5)} …(잘림)`), r.stdout)
     assert.match(r.stdout, /^delivery d1$/m)
     assert.match(r.stdout, /^== escalation 1건$/m)
+  })
+
+  test('payload 줄은 옛 명령의 json.dumps 꼴로 앞 200자를 낸다', () => {
+    const payload = { kind: '준비', list: [1, 'a'], long: 'x'.repeat(300) }
+    const r = triage([file(batch([{ ...msg('1', 'status'), payload }]))])
+    assert.equal(r.code, 0, r.stderr)
+    const line = r.stdout.split('\n').find((l) => l.startsWith('  payload: ')) ?? ''
+    const expected = `{"kind": "준비", "list": [1, "a"], "long": "${'x'.repeat(300)}"}`
+    assert.equal(line, `  payload: ${Array.from(expected).slice(0, 200).join('')}`)
   })
 
   test('표준 입력을 - 로 읽는다', () => {

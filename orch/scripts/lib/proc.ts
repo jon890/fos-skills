@@ -12,6 +12,15 @@
 // runAsync 는 시간을 넘기면 TERM 을 보내고, 10초 뒤에도 살아 있으면 KILL 을 보낸다.
 // runAsync 는 자식이 끝난 뒤 2초 안에 출력 파이프가 닫히지 않으면(백그라운드 손자가 쥐고 있다) 파이프를 닫고 자식의 종료 코드를 낸다.
 // 손자가 그 뒤에 쓴 출력은 버린다. 끝난 자식에는 시간 제한을 적용하지 않으므로 이때 124 가 아니다.
+//
+// scriptCommand 는 명령끼리 부를 때 확장자로 인터프리터를 고른다. 규칙은 그 함수 위 주석이 소유한다.
+//
+// runInherit 는 자식의 stdin, stdout, stderr 를 이 프로세스의 것으로 물려준다. 출력을 모으지 않아 자식이 쓰는 대로 바로 나간다.
+// 옛 명령이 subprocess.run 을 캡처 없이 부르던 자리(send-to-worker 의 nudge-worker, launch-worker)에 쓴다.
+// 진행 줄이 자식이 끝난 뒤에 몰려 나오면 코디네이터가 그동안 멈춘 것으로 본다.
+// 반환은 { code, timedOut } 이고 code 와 시간 제한, TERM 뒤 KILL 은 runAsync 와 같다. 출력 한도는 없다.
+// 띄우기 전에 이 프로세스의 stdout 과 stderr 를 비운다. macOS 에서 파이프로 가는 쓰기는 비동기라,
+// 비우지 않으면 앞서 쓴 줄이 자식의 출력보다 뒤에 나온다.
 
 import { spawn, spawnSync } from 'node:child_process'
 import { constants } from 'node:os'
@@ -174,18 +183,64 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
   })
 }
 
-// 명령끼리 서로 부를 때 쓴다. 확장자로 인터프리터를 고르고, 모르는 확장자는 그대로 실행한다.
+function flush(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    stream.write('', () => resolve())
+  })
+}
+
+export async function runInherit(argv: string[], opts: Omit<RunOptions, 'input' | 'maxBuffer'> = {}): Promise<{ code: number; timedOut: boolean }> {
+  await Promise.all([flush(process.stdout), flush(process.stderr)])
+  return new Promise((resolve) => {
+    let timedOut = false
+    let settled = false
+    let timer: NodeJS.Timeout | undefined
+    let killTimer: NodeJS.Timeout | undefined
+    const finish = (code: number) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      clearTimeout(killTimer)
+      resolve({ code, timedOut })
+    }
+    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: 'inherit' })
+    child.on('error', (e: NodeJS.ErrnoException) => {
+      if (child.pid !== undefined) return
+      process.stderr.write(`${spawnFailure(argv, e, '', '').stderr}\n`)
+      finish(e.code === 'ENOENT' ? 127 : 1)
+    })
+    // 파이프가 없어 손자가 출력을 쥐어도 기다릴 것이 없다. 자식이 끝나면 바로 판정한다
+    child.on('exit', (status: number | null, signal: NodeJS.Signals | null) => {
+      if (timedOut) return finish(124)
+      if (signal) return finish(signalCode(signal))
+      finish(status ?? 1)
+    })
+    timer = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGTERM')
+      killTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+      }, KILL_GRACE_MS)
+    }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  })
+}
+
+// 명령끼리 서로 부를 때 쓴다. 확장자로 인터프리터를 고른다.
+//     .ts    이 프로세스의 node(process.execPath). PATH 의 node 가 22.18 보다 낮아도 지금 도는 node 로 띄운다
+//     .sh    bash
+//     .zsh   zsh
+//     그 밖  python3. `.py` 와 확장자 없는 파일, 모르는 확장자가 모두 여기다.
+//            옛 Python 명령의 script_command 가 .sh 와 .zsh 가 아니면 모두 Python 으로 띄웠다.
+//            SPEC_LINE, MAKE_WORKTREE, NUDGE_WORKER, LAUNCH_WORKER 로 바꾼 도구를 옛 명령과 같게 실행하려는 것이다
 export function scriptCommand(script: string, args: string[]): string[] {
   switch (extname(script)) {
     case '.ts':
-      return ['node', '--disable-warning=ExperimentalWarning', script, ...args]
-    case '.py':
-      return ['python3', script, ...args]
+      return [process.execPath, '--disable-warning=ExperimentalWarning', script, ...args]
     case '.sh':
       return ['bash', script, ...args]
     case '.zsh':
       return ['zsh', script, ...args]
     default:
-      return [script, ...args]
+      return ['python3', script, ...args]
   }
 }

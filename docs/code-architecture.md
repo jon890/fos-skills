@@ -93,7 +93,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | --- | --- | --- |
 | `.claude-plugin/marketplace.json` | 마켓플레이스 이름과 플러그인 소스 | `claude plugin marketplace add` |
 | `.claude-plugin/plugin.json` | 플러그인 이름과 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
-| `orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 node 로 부른다. `check --wait` 의 셸 백그라운드 실행, cd 뒤 `;` 나 줄바꿈으로 이은 git 쓰기, `spec-line` 이 아닌 `worker-start --spec` 을 거부한다. worker 터미널 직접 `orca terminal send` 는 모든 Run 의 worker 를 보고, 대상을 확인하지 못하면 거부한다. 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
+| `orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `content-preview/scripts/show-preview.sh` |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 없는지 확인한다 | 사람, 구현 검증 |
@@ -204,21 +204,26 @@ orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 
 orch/scripts/<명령>.py            node 로 넘기는 shim. 다음 major 에서 지운다
 orch/scripts/ts_shim.py           shim 의 node 버전 확인과 exec 한 벌
 orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돌며 틱마다 질문 확인, 정리, ready 슬롯, 순서, CI 감시를 한다
-orch/scripts/lib/proc.ts          자식 프로세스 실행. timeout 과 반환 형태 { code, stdout, stderr, timedOut } 한 벌
+orch/scripts/lib/proc.ts          자식 프로세스 실행. timeout 과 반환 형태 { code, stdout, stderr, timedOut } 한 벌. 출력을 그대로 흘릴 때는 { code, timedOut } 을 내는 runInherit
 orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
 orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
 orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
 orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할
 orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
+orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
+orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
 orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록. notify-conflicts 와 상주 루프가 쓴다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
+orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/questions.ts     미답변 질문 조회 한 벌
 orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
 orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경
 orch/scripts/lib/guard/orca       핸들러 PATH 앞에 두는 shim. 확장자가 없어 CommonJS 로 읽히므로 타입 문법 없이 guard.ts 를 import() 한다
 orch/scripts/lib/guard/gh
 orch/scripts/lib/guard/guard.ts   거부 규칙
 orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node 로 부른다
+orch/hooks/shell-text.ts          hook 이 함께 쓰는 셸 글자 처리 모듈. hook 이 아니다
 orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
 orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
 work-board/bin/board.ts           보드 편집 명령. 옛 board.py

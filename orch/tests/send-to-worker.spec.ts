@@ -1,7 +1,7 @@
 // send-to-worker.ts 를 가짜 orca, 가짜 nudge-worker, 가짜 launch-worker 로 본다. Orca 에는 닿지 않는다.
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
@@ -9,6 +9,8 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/send-to-worker.ts', import.meta.url))
+// 다시 띄우라는 안내 줄이 가리키는 명령. 실행 규칙의 꼴이다
+const LAUNCH_HINT = `node --disable-warning=ExperimentalWarning ${fileURLToPath(new URL('../scripts/launch-worker.ts', import.meta.url))}`
 
 // 상태 파일로 움직이는 가짜 orca. 받은 인자를 한 줄씩 기록한다. 확장자가 없어 타입 문법 없이 쓴다.
 // macOS 에서 파이프로 가는 process.stdout 쓰기는 비동기라 process.exit 가 출력을 자를 수 있어 writeSync 로 쓴다.
@@ -270,8 +272,17 @@ describe('끝난 dispatch', () => {
     state({ dispatches: worker('failed'), terminals: [{ handle: 'term_other' }] })
     const r = send('--body', 'x', '--spec', '/s/next.md')
     assert.equal(r.code, 3, both(r))
-    assert.match(r.stdout, /launch-worker\.ts --spec <지시서> --worktree \/w\/feat/)
+    assert.ok(r.stdout.includes(`${LAUNCH_HINT} --spec <지시서> --worktree /w/feat 로 새로 띄운다`), r.stdout)
     assert.deepEqual(lines('launch'), [])
+  })
+
+  test('상태가 없는 dispatch 는 옛 명령처럼 (None) 으로 보인다', () => {
+    const dispatches = worker('completed')
+    delete dispatches.ctx_1.dispatch.status
+    state({ dispatches, terminals: [] })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 3, both(r))
+    assert.match(r.stdout, /^ended: ctx_1 가 끝났고\(None\) 터미널도 없다/m)
   })
 })
 
@@ -374,7 +385,53 @@ describe('agent_unconfigured 뒤 다시 띄우기', () => {
     assert.equal(r.code, 1, both(r))
     assert.match(r.stdout, /orca terminal close --terminal term_w/)
     assert.match(r.stdout, /orca terminal read --terminal term_w/)
+    assert.ok(r.stdout.includes(`${LAUNCH_HINT} --spec /s/next.md --worktree /w/feat (--terminal 없이) 로 띄우기`), r.stdout)
     assert.deepEqual(lines('orca terminal close'), [])
+  })
+})
+
+describe('자식 출력', () => {
+  test('nudge-worker 의 줄을 모으지 않고 낸 차례대로 바로 흘린다', { timeout: 60_000 }, async () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_st', 'term_w')] })
+    writeFileSync(join(tmp, 'nudge.sh'), 'echo "nudge $*" >> "$FAKE_LOG"\necho NUDGE-START\nsleep 2\necho NUDGE-END\n')
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--dispatch', 'ctx_1', '--body', 'x'], { env })
+    const seen: { line: string; at: number }[] = []
+    let rest = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      const parts = (rest + chunk.toString('utf8')).split('\n')
+      rest = parts.pop() ?? ''
+      for (const line of parts) seen.push({ line, at: Date.now() })
+    })
+    const code = await new Promise((resolve) => child.on('close', resolve))
+    assert.equal(code, 0)
+    assert.deepEqual(
+      seen.map((s) => s.line),
+      ['replied: m_st 에 답했다 (msg_new)', 'NUDGE-START', 'NUDGE-END'],
+    )
+    // 모아서 냈다면 두 표지 줄이 자식이 끝난 뒤 함께 온다. 잠든 2초 가운데 대부분이 둘 사이에 있어야 한다
+    const gap = seen[2].at - seen[1].at
+    assert.ok(gap >= 1000, `NUDGE-START 와 NUDGE-END 가 ${gap}ms 차이로 왔다`)
+  })
+
+  test('nudge-worker 가 제한 시간에 끊기면 124 가 아니라 1 이다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_st', 'term_w')] })
+    writeFileSync(join(tmp, 'nudge.sh'), 'exec sleep 20\n')
+    env.ORCH_NUDGE_TIMEOUT_MS = '500'
+    const r = send('--body', 'x')
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /nudge-worker 가 0\.5초 안에 끝나지 않아 끊었다/)
+  })
+})
+
+describe('옵션 접두', () => {
+  test('고유 접두는 펼치고 여러 옵션에 맞는 접두는 사용법 오류 2 다', () => {
+    state({ dispatches: worker('dispatched') })
+    const r = send('--body', 'x', '--rep', 'm_given')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_given --body x --run run_x'])
+    const ambiguous = send('--bo', 'x')
+    assert.equal(ambiguous.code, 2, both(ambiguous))
+    assert.match(ambiguous.stderr, /--bo 이 여러 옵션의 접두다: --body, --body-file/)
   })
 })
 

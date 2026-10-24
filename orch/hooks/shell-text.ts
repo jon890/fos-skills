@@ -8,6 +8,10 @@
 //                    위치가 그대로라 가린 글에서 찾은 자리로 원문의 값을 읽을 수 있다
 //     pieces         가린 글을 `&&`, `||`, `;`, `|`, `&`, 줄바꿈으로 나눈 { join, start, end } 목록.
 //                    join 은 앞 연결자이고 첫 조각은 null 이다. 연산자 뒤 줄바꿈은 이어 쓰기라 나누지 않는다
+//     hookCommand    stdin 의 hook JSON 에서 Bash 명령을 읽는다. 읽지 못한 입력이나 Bash 가 아닌 도구는 null 이다.
+//                    command 가 문자열이 아니면 빈 문자열이다. hook 은 null 이면 통과시킨다
+
+import { readFileSync } from 'node:fs'
 
 // `<<<` here-string, `$((1<<2))` 같은 시프트는 heredoc 이 아니다
 const HEREDOC = /(?<![<\w])<<(?!<)-?\s*(['"]?)([A-Za-z_]\w*)\1/
@@ -56,4 +60,18 @@ export function pieces(masked: string): Piece[] {
   }
   out.push({ join, start, end: masked.length })
   return out
+}
+
+export function hookCommand(): string | null {
+  let data: unknown
+  try {
+    data = JSON.parse(readFileSync(0, 'utf8'))
+  } catch {
+    return null
+  }
+  if (typeof data !== 'object' || data === null) return null
+  const hook = data as { tool_name?: unknown; tool_input?: { command?: unknown } | null }
+  if (hook.tool_name !== 'Bash') return null
+  const command = hook.tool_input?.command
+  return typeof command === 'string' ? command : ''
 }

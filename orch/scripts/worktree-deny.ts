@@ -16,9 +16,12 @@
 //     untracked 로 남으면 remove-worktree 가 커밋 안 된 변경으로 거부하기 때문이다.
 //
 // 종료 코드: 0 썼거나 이미 있다, 1 추적되는 파일이라 쓰지 않았다, 2 사용법 오류나 JSON 을 읽지 못했다
+//
+// `--help` 는 고유 접두(`--he`)로 줄여 쓸 수 있다(lib/args.ts).
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { expandArgs } from './lib/args.ts'
 import { isFile } from './lib/fs.ts'
 import { git } from './lib/git.ts'
 
@@ -30,7 +33,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function main(argv: string[]): number {
+function main(raw: string[]): number {
+  // 옵션이 --help 하나라 접두가 겹칠 일이 없다
+  const argv = expandArgs(raw, { help: { type: 'boolean' } })
   if (argv.length === 1 && (argv[0] === '--help' || argv[0] === '-h')) {
     process.stdout.write(`${USAGE}\n`)
     return 0

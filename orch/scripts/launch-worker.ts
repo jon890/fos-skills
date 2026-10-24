@@ -21,13 +21,15 @@
 //     4. `orca worktree list` 에 그 경로가 보일 때까지 기다린다
 //     5. worker-start 로 띄우고 --watch 초 동안 단계를 본다
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
-//        worker 가 이미 떠 있어 코디네이터는 LAUNCHED 를 믿고 다음 단계로 가야 한다
+//        핸들러의 실패와 이벤트 실행기의 예외(설정 파일 오류, state 폴더를 쓰지 못함 같은 것)가 모두 그렇다.
+//        stderr 에 `worker-launched 를 내지 못했다: <이유>` 를 남긴다. worker 가 이미 떠 있어 코디네이터는 LAUNCHED 를 믿고 다음 단계로 가야 한다
 //     새로 만든 워크트리는 띄우지 못하고 멈춰도 남긴다. 지시서의 브랜치 이름을 다시 쓸 때 사람이 판단할 근거라서다.
-//     그때 stderr 에 `--worktree` 로 이어 띄우는 명령을 낸다. worker-start 가 이미 성공했으면 내지 않는다(같은 일의 Task 가 하나 더 생긴다)
+//     그때 stderr 에 `--worktree` 로 이어 띄우는 명령(`node --disable-warning=ExperimentalWarning <이 파일의 절대경로> ...`)을 낸다.
+//     worker-start 가 이미 성공했으면 내지 않는다(같은 일의 Task 가 하나 더 생긴다)
 //
 // 이벤트 입력(docs/data-schema.md 「이벤트별 필드」):
 //     repo     --repo, --worktree 로 불렀으면 그 경로의 주 checkout
-//     base     --base, 없으면 origin/HEAD 의 브랜치, 그것도 없으면 빈 문자열
+//     base     --base, 없으면 origin/HEAD 의 브랜치, 그것도 없으면 빈 문자열. 앞의 `origin/` 은 뗀다(--base origin/main 도 main)
 //     run      --run, 없으면 null
 //     worker   task, dispatch, terminal, worktree(절대경로), spec(절대경로). before-launch 의 task 와 terminal 은 WORKER_ARGS 의
 //              --task, --terminal 이고 dispatch 는 null 이다. worker-launched 의 task 는 worker-start 결과, dispatch 는 LAUNCHED 의 id,
@@ -38,14 +40,17 @@
 // 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
 //            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured)
 //
-// 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. 확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30,
-//            LAUNCH_WT_POLL=2 가 기본값이다.
+// 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
+//            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2 가 기본값이다. 소수도 받는다.
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
 
 import { statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
@@ -55,6 +60,7 @@ import { orca, orcaBin, repoVisibility, repoVisibilityActions } from './lib/orca
 import { requireMigrated } from './lib/paths.ts'
 import { runAsync, scriptCommand } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
+import { shQuote } from './lib/py.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)',
@@ -86,11 +92,16 @@ function seconds(name: string, fallback: string): number {
   return value
 }
 
-// Python 의 shlex.quote 와 같다. 이어 띄우는 명령을 사람이 그대로 붙여 넣게 한다.
-function quote(word: string): string {
-  if (word === '') return "''"
-  if (!/[^\w@%+=:,./-]/.test(word)) return word
-  return `'${word.replaceAll("'", `'"'"'`)}'`
+// Python 의 `{초:g}` 와 같은 꼴. 유효 숫자 여섯 자리이고 끝의 0 을 지운다. 0.1 을 세 번 더한 값이 0.30000000000000004 가 아니라 0.3 이다
+function secondsText(value: number): string {
+  const [mantissa, exponent] = value.toExponential(5).split('e')
+  const power = Number(exponent)
+  if (power < -4 || power >= 6) {
+    const digits = mantissa.replace(/\.?0+$/, '')
+    return `${digits}e${power < 0 ? '-' : '+'}${String(Math.abs(power)).padStart(2, '0')}`
+  }
+  const fixed = value.toFixed(Math.max(0, 5 - power))
+  return fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed
 }
 
 // 결과 JSON 의 result 에서 key 후보를 | 로 나눠 차례로 읽는다. 처음 나온 빈 값 아닌 것을 문자열로 낸다. 없으면 빈 문자열.
@@ -144,7 +155,7 @@ function unrecognizedHelp(worktree: string, waited: number): string {
   const repo = common.code === 0 && commonDir ? dirname(commonDir) : null
   const value = repo ? repoVisibility(repo) : ''
   const lines = [
-    `Orca 가 워크트리를 알아보지 못했다. \`orca worktree list\` 로 확인한다: ${worktree} (${waited}초 기다림)`,
+    `Orca 가 워크트리를 알아보지 못했다. \`orca worktree list\` 로 확인한다: ${worktree} (${secondsText(waited)}초 기다림)`,
     `  만든 경로: ${worktree}`,
     `  저장소의 externalWorktreeVisibility: ${value || '(읽지 못함)'}`,
   ]
@@ -194,22 +205,20 @@ type Args = {
 function parse(argv: string[]): Args | 'help' {
   const split = argv.includes('--') ? argv.indexOf('--') : argv.length
   const passthru = argv.slice(split + 1)
+  const options = {
+    spec: { type: 'string' },
+    repo: { type: 'string', default: '' },
+    name: { type: 'string', default: '' },
+    base: { type: 'string', default: '' },
+    worktree: { type: 'string', default: '' },
+    run: { type: 'string', default: '' },
+    watch: { type: 'string', default: '90' },
+    'resume-remote': { type: 'boolean', default: false },
+    help: { type: 'boolean', short: 'h' },
+  } as const
   let values
   try {
-    values = parseArgs({
-      args: argv.slice(0, split),
-      options: {
-        spec: { type: 'string' },
-        repo: { type: 'string', default: '' },
-        name: { type: 'string', default: '' },
-        base: { type: 'string', default: '' },
-        worktree: { type: 'string', default: '' },
-        run: { type: 'string', default: '' },
-        watch: { type: 'string', default: '90' },
-        'resume-remote': { type: 'boolean', default: false },
-        help: { type: 'boolean', short: 'h' },
-      },
-    }).values
+    values = parseArgs({ args: expandArgs(argv.slice(0, split), options), options }).values
   } catch (e) {
     throw new Stop(`${USAGE}\nlaunch-worker: ${(e as Error).message}`, 2)
   }
@@ -286,7 +295,8 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const repo = a.repo || mainCheckout(worktree)
-  const ctx: FireContext = { repo, base: a.base || defaultBase(repo) || '', run: a.run || null }
+  // 핸들러는 base 를 브랜치 이름으로 받는다. --base origin/main 으로 불러도 defaultBase 와 같은 꼴(main)로 넘긴다
+  const ctx: FireContext = { repo, base: (a.base || defaultBase(repo) || '').replace(/^origin\//, ''), run: a.run || null }
   const branchOut = git(worktree, ['branch', '--show-current'])
   const common = {
     branch: (branchOut.code === 0 && branchOut.stdout.trim()) || null,
@@ -317,14 +327,14 @@ async function main(argv: string[]): Promise<number> {
       await sleep(wtPoll * 1000)
       waited += wtPoll || 1
     }
-    err(`Orca 가 워크트리를 알아보기까지 ${waited}초 기다렸다`)
+    err(`Orca 가 워크트리를 알아보기까지 ${secondsText(waited)}초 기다렸다`)
 
     const start = async (args: string[]): Promise<RunResult> => {
       let result = await call(['orchestration', 'worker-start', ...args, '--json'], LONG_MS)
       // worktree list 에 보인 직후에도 Orca 가 그 워크트리를 아직 고르지 못해 selector_not_found 로 끝나는 일이 있다.
       // 그 오류만 한 번 다시 부른다. 다른 오류는 다시 불러도 같은 결과라 그대로 멈춘다.
       if (result.code !== 0 && (result.stdout + result.stderr).includes('selector_not_found')) {
-        err(`worker-start 가 selector_not_found 로 끝나 ${wtPoll}초 뒤 한 번 다시 부른다`)
+        err(`worker-start 가 selector_not_found 로 끝나 ${secondsText(wtPoll)}초 뒤 한 번 다시 부른다`)
         await sleep(wtPoll * 1000)
         result = await call(['orchestration', 'worker-start', ...args, '--json'], LONG_MS)
       }
@@ -398,17 +408,17 @@ async function main(argv: string[]): Promise<number> {
     try {
       await fire('worker-launched', { worker: { task: task || null, dispatch, terminal, ...worker }, ...common }, ctx)
     } catch (e) {
-      if (!(e instanceof ConfigError)) throw e
-      // worker 는 이미 떴다. 설정 오류로 종료 코드를 바꾸면 코디네이터가 띄우기 실패로 읽고 같은 일을 다시 띄운다
-      err(`launch-worker: worker-launched 를 내지 못했다: ${e.message}`)
+      // worker 는 이미 떴다. 어떤 예외로든 종료 코드를 바꾸면 코디네이터가 띄우기 실패로 읽고 같은 일을 다시 띄운다
+      err(`launch-worker: worker-launched 를 내지 못했다: ${(e as Error)?.message ?? String(e)}`)
     }
     return 0
   } finally {
     if (created && !started) {
-      const hint = ['launch-worker.ts', '--spec', a.spec, '--worktree', worktree, ...(a.run ? ['--run', a.run] : []), '--', ...passthru]
+      const hint = ['node', '--disable-warning=ExperimentalWarning', `${HERE}/launch-worker.ts`, '--spec', a.spec, '--worktree', worktree]
+      hint.push(...(a.run ? ['--run', a.run] : []), '--', ...passthru)
       err(
         `워크트리는 남아 있다: ${worktree}\n같은 --name 으로 다시 부르면 make-worktree 가 거부한다. ` +
-          `이어 띄우려면 --repo/--name/--base 대신 --worktree 를 준다:\n  ${hint.map(quote).join(' ')}`,
+          `이어 띄우려면 --repo/--name/--base 대신 --worktree 를 준다:\n  ${hint.map(shQuote).join(' ')}`,
       )
       try {
         const left = leftTerminals(worktree)

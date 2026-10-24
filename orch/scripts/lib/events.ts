@@ -464,6 +464,17 @@ function execute(argv: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; in
   })
 }
 
+// 이벤트의 핸들러 파일 <orch 루트>/hooks/<이벤트>.ts. 없으면 null 이다. fire 가 부르는 파일과 같다.
+// 핸들러가 없으면 입력을 만들 필요가 없어, 입력에 비싼 조회가 드는 쪽(wait-important 의 gh)이 먼저 본다.
+export function handlerFile(event: string, repo: string): string | null {
+  const file = handlerPath(event, orchDir(repo))
+  return isFile(file) ? file : null
+}
+
+function handlerPath(event: string, root: string): string {
+  return join(root, NAMES.hooks, `${event}.ts`)
+}
+
 function emptyResult(): FireResult {
   return { result: 'none', code: null, reason: '', durationMs: 0 }
 }
@@ -473,7 +484,7 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
   // 주 checkout 과 orch 루트를 한 번만 구해 아래에 넘긴다. pathOf, ensure, loadConfig 가 저마다 구하면 git 을 여러 번 부른다.
   const repo = mainCheckout(ctx.repo)
   const root = orchDir(repo)
-  const file = join(root, NAMES.hooks, `${event}.ts`)
+  const file = handlerPath(event, root)
   const hasHandler = isFile(file)
   const legacy = ctx.legacy
   if (hasHandler && legacy) {

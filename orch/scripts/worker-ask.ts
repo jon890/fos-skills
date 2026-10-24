@@ -11,6 +11,11 @@
 //
 // 출력: 답을 받으면 첫 줄이 `answer: <답 본문>` 이고 그 뒤에 ask 의 출력이 온다.
 //
+// 시간 초과: ask 출력의 timedOut 이나 `timed out` 말고도, ask 가 --timeout-ms 에 여유(2분)를 더한 시간 안에 끝나지 않아
+// 이 명령이 끊은 경우도 시간 초과(4, status 답이 있으면 3)다. 실패로 보고 Run 메일함으로 대신 보내면 같은 질문이 두 번 간다.
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있고 `--question "- 선택지"` 처럼 값이 - 로 시작해도 받는다(lib/args.ts).
+//
 // orca 의 JSON 출력에서 값을 꺼내는 규칙:
 //     답 본문       ask 결과의 answer, reply, response 차례. 값이 객체면 그 안의 answer, body, text 차례
 //     질문 메시지 ID ask 결과의 messageId, 없으면 id
@@ -24,15 +29,18 @@
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { orcaBin } from './lib/orca.ts'
 import { run, runAsync } from './lib/proc.ts'
+import { pyStr as text } from './lib/py.ts'
 
 const USAGE = [
   '사용: worker-ask.ts --from HANDLE (--question TEXT | --resume ID)',
   '                   [--options CSV] [--run ID] [--timeout-ms N] [--force] [--decision]',
 ].join('\n')
-// ask 는 --timeout-ms 만큼 기다린다. 그 위에 orca 자체의 여유를 더해, orca 가 시간 초과를 알리기 전에 끊지 않게 한다
-const ASK_SLACK_MS = 120_000
+// ask 는 --timeout-ms 만큼 기다린다. 그 위에 orca 자체의 여유를 더해, orca 가 시간 초과를 알리기 전에 끊지 않게 한다.
+// ORCH_ASK_SLACK_MS 는 이 여유를 바꾼다. 테스트만 쓴다
+const ASK_SLACK_MS = Number(process.env.ORCH_ASK_SLACK_MS) || 120_000
 const DEFAULT_TIMEOUT_MS = '600000'
 // Python 의 str.splitlines 와 같은 줄 경계다. 결정 질문 형식 판정이 옛 명령과 같게 한다
 const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/u
@@ -71,11 +79,6 @@ function bodyOf(value: unknown): string {
 function messages(result: Json): Json[] {
   const list = Array.isArray(result.messages) ? result.messages : []
   return list.map(obj).filter((m): m is Json => m !== null && m.type !== 'heartbeat')
-}
-
-// Python 의 str() 처럼 없는 값을 None 으로 쓴다. 옛 명령과 같은 줄을 낸다
-function text(value: unknown): string {
-  return value === undefined || value === null ? 'None' : String(value)
 }
 
 function answerOf(output: string): string {
@@ -147,16 +150,6 @@ function decisionProblems(question: string): string[] {
   return problems
 }
 
-// `--question "- 선택지"` 처럼 값이 - 로 시작해도 값으로 받는다. parseArgs 는 그런 값을 옵션으로 보고 거부한다
-function joinValues(argv: string[], names: string[]): string[] {
-  const joined: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    if (names.includes(argv[i]) && i + 1 < argv.length) joined.push(`${argv[i]}=${argv[++i]}`)
-    else joined.push(argv[i])
-  }
-  return joined
-}
-
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
 }
@@ -164,20 +157,20 @@ function err(line: string): void {
 async function main(argv: string[]): Promise<number> {
   let values
   try {
-    values = parseArgs({
-      args: joinValues(argv, ['--from', '--question', '--resume', '--options', '--run', '--timeout-ms']),
-      options: {
-        from: { type: 'string' },
-        question: { type: 'string', default: '' },
-        resume: { type: 'string', default: '' },
-        options: { type: 'string', default: '' },
-        run: { type: 'string', default: '' },
-        'timeout-ms': { type: 'string', default: DEFAULT_TIMEOUT_MS },
-        force: { type: 'boolean', default: false },
-        decision: { type: 'boolean', default: false },
-        help: { type: 'boolean', short: 'h' },
-      },
-    }).values
+    const optionSpec = {
+      from: { type: 'string' },
+      question: { type: 'string', default: '' },
+      resume: { type: 'string', default: '' },
+      options: { type: 'string', default: '' },
+      run: { type: 'string', default: '' },
+      'timeout-ms': { type: 'string', default: DEFAULT_TIMEOUT_MS },
+      force: { type: 'boolean', default: false },
+      decision: { type: 'boolean', default: false },
+      help: { type: 'boolean', short: 'h' },
+    } as const
+    // `--question "- 선택지"` 처럼 값이 - 로 시작해도 값으로 받는다
+    const joined = ['from', 'question', 'resume', 'options', 'run', 'timeout-ms']
+    values = parseArgs({ args: expandArgs(argv, optionSpec, joined), options: optionSpec }).values
   } catch (e) {
     err(`${USAGE}\nworker-ask: ${(e as Error).message}`)
     return 2
@@ -220,9 +213,12 @@ async function main(argv: string[]): Promise<number> {
   const args = [orca, 'orchestration', 'ask', '--from', sender, '--timeout-ms', timeoutMs, '--json']
   args.push(...(resume ? ['--resume', resume] : ['--question', question]))
   if (options && !resume) args.push('--options', options)
-  const asked = await runAsync(args, { timeoutMs: (Number(timeoutMs) || Number(DEFAULT_TIMEOUT_MS)) + ASK_SLACK_MS })
+  const limitMs = (Number(timeoutMs) || Number(DEFAULT_TIMEOUT_MS)) + ASK_SLACK_MS
+  const asked = await runAsync(args, { timeoutMs: limitMs })
   const output = asked.stdout + asked.stderr
-  if (/"timedOut"\s*:\s*true|timed out/.test(output)) {
+  // 끊은 ask 는 질문을 이미 보냈을 수 있다. 아래 실패 경로(Run 메일함으로 대신 보내기)로 가지 않게 시간 초과를 먼저 본다
+  if (asked.timedOut) err(`worker-ask: ask 가 ${limitMs}ms 안에 끝나지 않아 끊었다`)
+  if (asked.timedOut || /"timedOut"\s*:\s*true|timed out/.test(output)) {
     const reply = replyOf(peek(), sender, messageIdOf(output) || resume)
     if (reply) {
       process.stdout.write(`answer: ${reply}\n${output}\n`)

@@ -9,6 +9,7 @@ shim 파일은 이 모듈을 import 하고 `if __name__ == "__main__":` 안에�
 exec_ts 의 차례:
     1. 대상은 shim 과 같은 폴더의 같은 이름 `.ts` 다
     2. `node --version` 을 10초 제한으로 부른다. node 가 없으면 stderr 에 `node 22.18 이상이 PATH 에 필요하다` 를 내고 127 이다
+       5 의 exec 가 OSError 로 실패해도 같은 줄과 127 이다
     3. 버전이 22.18 보다 낮거나 읽지 못하면 exec 하지 않는다. stdout 에 `NODE-TOO-OLD <버전> 22.18 이상이 필요하다` 를 내고 127 이다
        22.18 보다 낮은 node 는 `.ts` 를 플래그 없이 실행하지 못해 ERR_UNKNOWN_FILE_EXTENSION 으로 죽는다
     4. deprecated 면 stderr 에 `DEPRECATED python3 <이름>.py → node --disable-warning=ExperimentalWarning <대상>` 을 낸다
@@ -70,3 +71,6 @@ def exec_ts(shim_file: str, deprecated: bool = True) -> None:
         os.execvp("node", ["node", NODE_FLAG, str(target), *sys.argv[1:]])
     except FileNotFoundError:
         _no_node()
+    except OSError as exc:
+        # 실행 권한이 없거나 형식이 틀린 node 도 exec 하지 못한다. 띄우지 못한 것은 node 가 없을 때와 같이 127 로 끝낸다
+        _no_node(str(exc))

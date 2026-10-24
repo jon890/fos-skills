@@ -43,14 +43,15 @@
 //       단계를 읽지 못하면 거부한다
 //     - `send-to-worker`, `nudge-worker` 는 스크립트 안에서 orca 를 부르므로 이 hook 을 거치지 않는다
 //
+// 판정 중의 예상 밖 예외(조회 실패로 분류하지 못한 것)도 거부한다. hook 이 예외로 죽으면 Claude Code 는 막지 않고 명령을 실행한다.
+//
 // 입력은 stdin 의 hook JSON 이다. 거부할 때만 deny 결정을 stdout 으로 낸다. 읽지 못한 입력은 통과시킨다.
 // hooks.json 은 이 파일을 PATH 의 `node` 로 부른다. node 를 찾지 못하면 Claude Code 는 오류를 보이고 막지 않는다.
 
-import { readFileSync } from 'node:fs'
 import { orcaBin } from '../scripts/lib/orca.ts'
 import { runAsync } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
-import { mask, pieces, stripHeredocs } from './shell-text.ts'
+import { hookCommand, mask, pieces, stripHeredocs } from './shell-text.ts'
 
 const SEND = /\borca\s+terminal\s+send\b/
 const TARGET_FLAG = /--terminal(?:\s+|=)/g
@@ -87,6 +88,7 @@ const REASON = {
     `이 hook 이 worker 터미널인지 확인할 수 없다. worker 면 ${SEND_TO_WORKER} 아니면 그 서버의 셸에서 보낸다.`,
   failed: (why: string) => `orch: worker 터미널인지 확인하는 orca 조회가 실패했다: ${why}. ${RESEND}`,
   timeout: (ms: number) => `orch: worker 터미널인지 확인하는 orca 조회가 ${ms}ms 안에 끝나지 않았다(시간 초과). ${RESEND}`,
+  unexpected: (why: string) => `orch: worker 터미널인지 판정하다 예상 밖 오류가 났다: ${why}. ${RESEND}`,
 }
 
 type Target = { handle: string; keyOnly: boolean }
@@ -313,22 +315,17 @@ async function decide(command: string): Promise<string | null> {
   }
 }
 
-function hookCommand(): string | null {
-  let data: unknown
+// decide 가 던지면 hook 이 죽어 명령이 그대로 실행된다(fail-open). 무엇이 던져지든 거부로 바꾼다
+async function decideClosed(command: string): Promise<string | null> {
   try {
-    data = JSON.parse(readFileSync(0, 'utf8'))
-  } catch {
-    return null
+    return await decide(command)
+  } catch (err) {
+    return REASON.unexpected(err instanceof Error ? err.message : String(err))
   }
-  if (typeof data !== 'object' || data === null) return null
-  const hook = data as { tool_name?: unknown; tool_input?: { command?: unknown } | null }
-  if (hook.tool_name !== 'Bash') return null
-  const command = hook.tool_input?.command
-  return typeof command === 'string' ? command : ''
 }
 
 const command = hookCommand()
-const reason = command === null ? null : await decide(command)
+const reason = command === null ? null : await decideClosed(command)
 const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason }
 // 아직 도는 조회(마감 시각에 끊고 기다리지 않은 자식)가 이벤트 루프를 붙잡지 않게 출력을 비운 뒤 바로 끝낸다
 process.stdout.write(reason === null ? '' : JSON.stringify({ hookSpecificOutput: decision }) + '\n', () => process.exit(0))

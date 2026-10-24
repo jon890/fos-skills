@@ -80,7 +80,16 @@
 //     `--kill-stale` 을 주면 그것만 종료한다.
 //     부모가 살아 있는 것은 다른 세션이 아직 기다리는 중일 수 있어 종료하지 않는다.
 //
+// 끝내기:
+//     `check --wait` 는 자기 프로세스 그룹으로 띄운다. SIGTERM, SIGINT, SIGHUP 을 받으면 그 그룹에 SIGTERM 을 보내고
+//     stderr 에 한 줄을 남긴 뒤 128 + 신호 번호로 끝난다. 그 check 가 남으면 Run 의 대기 자리를 쥔 채 남아
+//     다음 대기가 waiter_exists 로 막힌다. 그룹을 나눈 것은 끊긴 worker 를 찾았을 때 orca 와 그 자식을 함께 끝내기 위해서다.
+//     그룹이 다르면 터미널이 앞 그룹에 보내는 신호가 check 에 닿지 않으므로 이 명령이 대신 전한다.
+//     orca 가 --timeout-ms 가 지나도 끝나지 않으면 30초를 더 기다린 뒤 그룹을 끝내고 check 실패(WATCH-ERROR, 종료 코드 1)로 다룬다.
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 // ORCA 환경 변수로 orca 실행 파일을, PS 환경 변수로 ps 실행 파일을, GH 환경 변수로 gh 실행 파일을 바꾼다.
+// ps 는 LC_ALL=C 로 부른다. 한국어 locale 의 lstart(「금 10/23 10:00:00 2026」)는 낱말 수가 달라 행을 읽지 못한다.
 //
 // 종료 코드:
 //     0  처리할 묶음이 왔다
@@ -93,18 +102,20 @@
 //     2  사용법 오류
 
 import { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { classify, context, payload } from './lib/completion.ts'
-import { fire } from './lib/events.ts'
+import { fire, handlerFile } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
-import { isFile } from './lib/fs.ts'
 import { ghJson } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { orcaBin, orcaJson } from './lib/orca.ts'
 import { makeParent, pathOf, warnLegacy } from './lib/paths.ts'
-import { run } from './lib/proc.ts'
+import { run, signalCode } from './lib/proc.ts'
+import { pyJson, pyStr as text } from './lib/py.ts'
 
 const USAGE = [
   '사용법: wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]',
@@ -116,6 +127,8 @@ const LIVE_STATUSES = new Set(['pending', 'dispatched', 'running'])
 const LOST_WORKER_STATES = new Set(['abandoned', 'failed', 'stopped'])
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish'])
 const HISTORY_TIMEOUT_MS = 30_000
+// orca 는 --timeout-ms 에 끝난다. 그 뒤에도 남은 check 를 끝내기까지 더 기다리는 시간
+const CHECK_GRACE_MS = 30_000
 
 type Json = Record<string, unknown>
 type Lost = [string, unknown]
@@ -130,22 +143,6 @@ function out(line: string): void {
 
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
-}
-
-// Python 의 str() 처럼 없는 값을 None 으로 쓴다. 옛 명령과 같은 줄을 낸다
-function text(value: unknown): string {
-  return value === undefined || value === null ? 'None' : String(value)
-}
-
-// 옛 명령의 json.dumps 와 같은 꼴(`, ` 와 `: ` 구분)로 한 줄을 낸다. 묶음 줄의 꼴을 옛 명령과 맞춘다
-function pyJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(pyJson).join(', ')}]`
-  if (typeof value === 'object' && value !== null) {
-    return `{${Object.entries(value)
-      .map(([key, item]) => `${JSON.stringify(key)}: ${pyJson(item)}`)
-      .join(', ')}}`
-  }
-  return JSON.stringify(value) ?? 'null'
 }
 
 // 같은 이유의 WATCH-ERROR 는 이유가 바뀌거나 조회가 한 번 성공할 때까지 다시 내지 않는다
@@ -329,28 +326,57 @@ function dropDeliberate(rows: Json[], lost: Lost[], watched: Set<unknown>): Lost
 
 type Checked = { kind: 'lost'; lost: Lost[]; rows: Json[] } | { kind: 'done'; data: unknown; raw: string }
 
+// 도는 check --wait 자식. 신호를 받으면 그 그룹을 끝낸다
+let waiting: ChildProcess | null = null
+
+function stopGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid === undefined) return
+  try {
+    process.kill(-child.pid, signal)
+  } catch {
+    // 이미 끝났다
+  }
+}
+
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+  process.on(signal, () => {
+    if (waiting) stopGroup(waiting, 'SIGTERM')
+    err(`wait-important: ${signal} 를 받아 check --wait 를 끝내고 나간다`)
+    process.exit(signalCode(signal))
+  })
+}
+
 // `check --wait --json` 한 번. 결과 JSON 과 원문을 낸다. JSON 이 아니면 data 가 null 이다.
 // watched 가 있으면 interval 초마다 worker 상태를 보고, 끊긴 worker 가 있으면 check 를 멈추고 lost 를 낸다.
 // lib/proc 의 runAsync 는 도는 자식을 도중에 끝낼 수 없어 직접 띄운다. 끝내지 못하고 나가면 그 check 가 대기 자리를 쥔 채 남는다.
-// 시간 제한은 두지 않는다. --timeout-ms 를 orca 에 넘기므로 orca 가 그 시간에 끝낸다(옛 명령과 같다).
+// --timeout-ms 를 orca 에 넘기므로 orca 가 그 시간에 끝낸다(옛 명령과 같다). 그래도 끝나지 않으면 CHECK_GRACE_MS 뒤에 끝낸다.
 function check(runId: string, types: string, ack: string | null, timeoutMs: number, watched: Set<unknown>, interval: number): Promise<Checked> {
   const args = ['orchestration', 'check', '--run', runId, ...(ack ? ['--ack', ack] : []), '--wait', '--types', types, '--timeout-ms', String(timeoutMs), '--json']
   return new Promise((resolve) => {
     const chunks: Buffer[] = []
     let timer: NodeJS.Timeout | undefined
     let stopped = false
-    // keepalive 줄은 stderr 로 나온다. stdout 만 읽는다
-    const child = spawn(orcaBin(), args, { stdio: ['ignore', 'pipe', 'ignore'] })
+    // keepalive 줄은 stderr 로 나온다. stdout 만 읽는다. 자기 그룹으로 띄워 끊을 때 orca 의 자식까지 함께 끝낸다
+    const child = spawn(orcaBin(), args, { stdio: ['ignore', 'pipe', 'ignore'], detached: true })
+    waiting = child
+    const settle = (value: Checked) => {
+      clearTimeout(timer)
+      clearTimeout(guard)
+      waiting = null
+      stopped = true
+      resolve(value)
+    }
+    const guard = setTimeout(() => {
+      if (stopped) return
+      stopGroup(child, 'SIGKILL')
+      settle({ kind: 'done', data: null, raw: `wait-important: check --wait 가 ${timeoutMs + CHECK_GRACE_MS}ms 안에 끝나지 않아 끝냈다` })
+    }, timeoutMs + CHECK_GRACE_MS)
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
     child.on('error', (e: Error) => {
-      clearTimeout(timer)
-      if (!stopped) resolve({ kind: 'done', data: null, raw: `wait-important: orca 를 실행하지 못했다: ${e.message}` })
-      stopped = true
+      if (!stopped) settle({ kind: 'done', data: null, raw: `wait-important: orca 를 실행하지 못했다: ${e.message}` })
     })
     child.on('close', () => {
-      clearTimeout(timer)
       if (stopped) return
-      stopped = true
       const raw = Buffer.concat(chunks).toString('utf8')
       let data: unknown = null
       try {
@@ -358,7 +384,7 @@ function check(runId: string, types: string, ack: string | null, timeoutMs: numb
       } catch {
         data = null
       }
-      resolve({ kind: 'done', data, raw })
+      settle({ kind: 'done', data, raw })
     })
     if (watched.size === 0 || interval <= 0) return
     const look = () => {
@@ -367,9 +393,8 @@ function check(runId: string, types: string, ack: string | null, timeoutMs: numb
       let lost = rows && rows.length ? lostWorkers(rows, watched) : []
       lost = lost.length && rows ? dropDeliberate(rows, lost, watched) : []
       if (lost.length && rows) {
-        stopped = true
-        child.kill('SIGKILL')
-        resolve({ kind: 'lost', lost, rows })
+        stopGroup(child, 'SIGKILL')
+        settle({ kind: 'lost', lost, rows })
         return
       }
       timer = setTimeout(look, interval * 1000)
@@ -389,7 +414,7 @@ type Proc = [number, number, string, string]
 
 // 같은 사용자의 프로세스 전체. 대기의 조상인 일반 셸도 포함한다.
 function userProcesses(): Proc[] {
-  const done = run([process.env.PS || 'ps', '-U', String(process.getuid?.() ?? ''), '-o', 'pid=,ppid=,lstart=,command='])
+  const done = run([process.env.PS || 'ps', '-U', String(process.getuid?.() ?? ''), '-o', 'pid=,ppid=,lstart=,command='], { env: { LC_ALL: 'C' } })
   const rows: Proc[] = []
   for (const line of done.stdout.split('\n')) {
     // lstart 는 「Tue Oct 20 10:00:00 2026」 처럼 다섯 낱말이다
@@ -508,10 +533,10 @@ async function notify(event: string, input: Json, runId: string): Promise<void> 
   }
 }
 
-// 핸들러가 있는지. 위치는 lib/events.ts 의 fire 가 찾는 <orch 루트>/hooks/<이벤트>.ts 와 같다.
-// 핸들러가 없으면 fire 가 입력을 쓰지 않으므로 gh 조회를 건너뛴다. worker_done 마다 GitHub 를 부르지 않게 한다
+// 핸들러가 있는지(lib/events.ts 의 handlerFile). 없으면 fire 가 입력을 쓰지 않으므로 gh 조회를 건너뛴다.
+// worker_done 마다 GitHub 를 부르지 않게 한다
 function hasHandler(event: string, runId: string): boolean {
-  return isFile(join(pathOf('hooks', contextFor(runId).repo), `${event}.ts`))
+  return handlerFile(event, contextFor(runId).repo) !== null
 }
 
 // gh 로 준비 상태의 PR 을 읽어 이벤트의 pr 필드로 옮긴다. 읽지 못하면 null
@@ -578,22 +603,20 @@ async function main(argv: string[]): Promise<number> {
   let timeoutMs: number
   let interval: number
   try {
-    values = parseArgs({
-      args: argv,
-      options: {
-        run: { type: 'string' },
-        ack: { type: 'string' },
-        types: { type: 'string', default: DEFAULT_TYPES },
-        'timeout-ms': { type: 'string', default: '7000000' },
-        'kill-stale': { type: 'boolean', default: false },
-        'lost-interval-sec': { type: 'string', default: '60' },
-        'ignore-lost': { type: 'string', multiple: true, default: [] },
-        'lost-state': { type: 'string' },
-        'ack-lost': { type: 'string', multiple: true, default: [] },
-        'completion-contract': { type: 'string', default: 'ready' },
-        help: { type: 'boolean', short: 'h' },
-      },
-    }).values
+    const options = {
+      run: { type: 'string' },
+      ack: { type: 'string' },
+      types: { type: 'string', default: DEFAULT_TYPES },
+      'timeout-ms': { type: 'string', default: '7000000' },
+      'kill-stale': { type: 'boolean', default: false },
+      'lost-interval-sec': { type: 'string', default: '60' },
+      'ignore-lost': { type: 'string', multiple: true, default: [] },
+      'lost-state': { type: 'string' },
+      'ack-lost': { type: 'string', multiple: true, default: [] },
+      'completion-contract': { type: 'string', default: 'ready' },
+      help: { type: 'boolean', short: 'h' },
+    } as const
+    values = parseArgs({ args: expandArgs(argv, options), options }).values
     if (values.help) {
       out(USAGE)
       return 0

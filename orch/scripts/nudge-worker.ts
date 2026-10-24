@@ -39,9 +39,12 @@
 //     4  입력란에 글이 있거나 권한 확인 창이거나 화면을 판정하지 못해 입력하지 않았다
 //     5  orca 가 오류를 냈다. 그 출력을 그대로 낸다
 //     2  사용법 오류
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있고 `--text "-x"` 처럼 값이 - 로 시작해도 받는다(lib/args.ts).
 
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { orca } from './lib/orca.ts'
 
 const USAGE = [
@@ -173,31 +176,20 @@ function nudge(terminal: string, msgId: string | undefined, waitSubmit: number, 
   return 1
 }
 
-// `--text "-x"` 처럼 값이 - 로 시작해도 값으로 받는다. parseArgs 는 그런 값을 옵션으로 보고 거부한다
-function joinValues(argv: string[], names: string[]): string[] {
-  const joined: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    if (names.includes(argv[i]) && i + 1 < argv.length) joined.push(`${argv[i]}=${argv[++i]}`)
-    else joined.push(argv[i])
-  }
-  return joined
-}
-
 function main(argv: string[]): number {
   let values
   try {
-    values = parseArgs({
-      args: joinValues(argv, ['--terminal', '--msg-id', '--text', '--wait-submit']),
-      options: {
-        terminal: { type: 'string' },
-        'msg-id': { type: 'string' },
-        text: { type: 'string' },
-        'wait-submit': { type: 'string', default: '15' },
-        state: { type: 'boolean', default: false },
-        classify: { type: 'boolean', default: false },
-        help: { type: 'boolean', short: 'h' },
-      },
-    }).values
+    const options = {
+      terminal: { type: 'string' },
+      'msg-id': { type: 'string' },
+      text: { type: 'string' },
+      'wait-submit': { type: 'string', default: '15' },
+      state: { type: 'boolean', default: false },
+      classify: { type: 'boolean', default: false },
+      help: { type: 'boolean', short: 'h' },
+    } as const
+    // `--text "-x"` 처럼 값이 - 로 시작해도 값으로 받는다
+    values = parseArgs({ args: expandArgs(argv, options, ['terminal', 'msg-id', 'text', 'wait-submit']), options }).values
   } catch (e) {
     process.stderr.write(`${USAGE}\nnudge-worker: ${(e as Error).message}\n`)
     return 2

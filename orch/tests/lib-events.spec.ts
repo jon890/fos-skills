@@ -8,7 +8,7 @@ import { after, before, describe, test } from 'node:test'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { ConfigError } from '../scripts/lib/config.ts'
-import { EVENTS, fire, reclaim, unknownHandlers } from '../scripts/lib/events.ts'
+import { EVENTS, fire, handlerFile, reclaim, unknownHandlers } from '../scripts/lib/events.ts'
 import type { FireContext } from '../scripts/lib/events.ts'
 import { alive } from '../scripts/lib/process.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
@@ -203,6 +203,17 @@ writeFileSync('received.json', JSON.stringify({ input: JSON.parse(readFileSync(0
 
   test('모르는 이벤트 이름으로 부르면 예외다', async () => {
     await assert.rejects(fire('before-merg', {}, ctx(makeRepo()).ctx), /모르는 이벤트/)
+  })
+})
+
+describe('handlerFile', () => {
+  test('fire 가 부를 핸들러 파일을 내고 없거나 폴더면 null 이다', () => {
+    const repo = makeRepo()
+    assert.equal(handlerFile('worker-done', repo), null)
+    const file = handler(repo, 'worker-done', '')
+    assert.equal(handlerFile('worker-done', repo), file)
+    mkdirSync(join(repo, '.orch/hooks/worker-lost.ts'))
+    assert.equal(handlerFile('worker-lost', repo), null)
   })
 })
 

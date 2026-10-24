@@ -13,12 +13,16 @@ import { isDeepStrictEqual } from 'node:util'
 
 type Json = Record<string, unknown>
 
-const READY = /^준비됨[ \t]+#([1-9][0-9]*),[ \t]*head[ \t]+([0-9a-f]{40})[ \t]*$/im
+// 줄 경계는 \n 만이다. 옛 명령(Python re.M)의 ^ 와 $ 는 \n 에서만 줄을 나눴다. JS 의 m 플래그는 \r 과 \u2028 에서도 나눠
+// `준비됨 #1, head <SHA>\r\n` 처럼 옛 명령이 근거로 보지 않던 줄을 근거로 보게 된다
+const READY = /(?<=^|\n)준비됨[ \t]+#([1-9][0-9]*),[ \t]*head[ \t]+([0-9a-f]{40})[ \t]*(?=\n|$)/i
 // Python 의 datetime.fromisoformat 이 읽던 꼴이다. 날짜만, 공백 구분, 콜론 없는 시간대도 받는다
 const ISO = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?)(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/i
 
 // ISO 시각을 epoch ms 로 읽는다. 시간대가 없으면 UTC 로 본다. orca 는 UTC 로 낸다.
 // Date.parse 에 그대로 넘기지 않는 것은 시간대 없는 시각을 지역 시각으로 읽기 때문이다. 읽지 못하면 null.
+// 정밀도는 ms 다. 옛 명령(datetime)은 µs 까지 보아, 1ms 안에서만 다른 두 시각을 옛 명령은 앞뒤로, 여기서는 같다고 본다.
+// orca 의 시각은 JS 의 toISOString 이라 ms 까지만 있어 실제로는 갈리지 않는다. Date 가 ms 까지만 담아 맞추지 않았다.
 export function isoTime(value: unknown): number | null {
   if (typeof value !== 'string') return null
   const m = ISO.exec(value.trim())

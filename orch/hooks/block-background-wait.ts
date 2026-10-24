@@ -1,4 +1,4 @@
-// PreToolUse(Bash) hook: `orca orchestration check --wait` 나 `wait-important.py` 를 셸의 `&` 나 `nohup` 으로 띄우면 거부한다.
+// PreToolUse(Bash) hook: `orca orchestration check --wait` 나 `wait-important` 를 셸의 `&` 나 `nohup` 으로 띄우면 거부한다.
 //
 // 셸의 `&` 로 띄운 대기는 끝나도 하네스가 완료 알림을 주지 않아 코디네이터가 깨어나지 못하고, 고아 프로세스로 남는다.
 // 둘째 대기는 `waiter_exists` 로 바로 끝나 그 뒤의 대기까지 망가진다(코디네이터 2회).
@@ -12,10 +12,9 @@
 // 입력은 stdin 의 hook JSON 이다. 거부할 때만 deny 결정을 stdout 으로 낸다. 읽지 못한 입력은 통과시킨다.
 // hooks.json 은 이 파일을 PATH 의 `node` 로 부른다. node 를 찾지 못하면 Claude Code 는 오류를 보이고 막지 않는다.
 
-import { readFileSync } from 'node:fs'
-import { QUOTED, stripHeredocs } from './shell-text.ts'
+import { hookCommand, QUOTED, stripHeredocs } from './shell-text.ts'
 
-// wait-important.py 는 안에서 check --wait 를 부르므로 같은 규칙으로 막는다
+// wait-important 는 안에서 check --wait 를 부르므로 같은 규칙으로 막는다
 const CHECK_WAIT = /\borchestration\s+check\b.*\s--wait\b|\bwait-important\b/
 const DETACH = /(^|[\s;|&(])(nohup|setsid|disown)\b/
 // 리다이렉션(`2>&1`, `>&2`, `&>`, `&>>`)과 `&&` 를 지운 뒤 남은 `&` 가 백그라운드 실행이다
@@ -37,20 +36,6 @@ function backgroundedWait(command: string): boolean {
     if (DETACH.test(bare) || bare.replace(NOT_BACKGROUND, ' ').includes('&')) return true
   }
   return false
-}
-
-function hookCommand(): string | null {
-  let data: unknown
-  try {
-    data = JSON.parse(readFileSync(0, 'utf8'))
-  } catch {
-    return null
-  }
-  if (typeof data !== 'object' || data === null) return null
-  const hook = data as { tool_name?: unknown; tool_input?: { command?: unknown } | null }
-  if (hook.tool_name !== 'Bash') return null
-  const command = hook.tool_input?.command
-  return typeof command === 'string' ? command : ''
 }
 
 const command = hookCommand()

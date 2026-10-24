@@ -12,12 +12,12 @@ import { fileURLToPath } from 'node:url'
 const SCRIPT = fileURLToPath(new URL('../scripts/worker-ask.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../scripts/worker-ask.py', import.meta.url))
 
-// ask 는 ask.out 을 내고 FAKE_ASK_RC 로 끝난다. check 는 n 번째 호출에 checkN.json, 없으면 check.json 을 낸다.
+// ask 는 FAKE_ASK_SLEEP 초 잔 뒤 ask.out 을 내고 FAKE_ASK_RC 로 끝난다. check 는 n 번째 호출에 checkN.json, 없으면 check.json 을 낸다.
 // 받은 인자는 [인자] 를 이어 한 줄로 기록한다. 여러 줄 인자는 로그에서 줄이 나뉜다.
 const FAKE_ORCA = `#!/usr/bin/env bash
 for a in "$@"; do printf '[%s]' "$a" >> "$FAKE_LOG"; done; echo >> "$FAKE_LOG"
 case "$2" in
-  ask) cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
+  ask) sleep "\${FAKE_ASK_SLEEP:-0}"; cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
   check)
     n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
     f="$FAKE_DIR/check$n.json"; [ -f "$f" ] || f="$FAKE_DIR/check.json"; cat "$f"; echo ;;
@@ -240,6 +240,17 @@ describe('시간 제한', () => {
     assert.doesNotMatch(r.stdout, /answer:/)
   })
 
+  test('ask 가 제한 시간 안에 끝나지 않아 끊으면 시간 초과 4 이고 대신 보내지 않는다', () => {
+    fake('', 1)
+    env.FAKE_ASK_SLEEP = '5'
+    env.ORCH_ASK_SLACK_MS = '300'
+    const r = ask('--from', 'term_w', '--question', 'q', '--timeout-ms', '1')
+    assert.equal(r.code, 4, r.stderr)
+    assert.match(r.stderr, /ask 가 301ms 안에 끝나지 않아 끊었다/)
+    assert.ok(!r.calls.some((c) => c.includes('[send]')), r.calls.join('\n'))
+    assert.doesNotMatch(r.stdout, /^answer:/m)
+  })
+
   test('사용법 문구의 timeout 은 시간 초과가 아니다', () => {
     fake('Usage: ask [--timeout-ms <n>]', 1)
     assert.equal(ask('--from', 'term_w', '--question', 'q', '--run', 'run_y').code, 3)
@@ -249,11 +260,19 @@ describe('시간 제한', () => {
 describe('ask 실패 뒤 대신 보내기', () => {
   test('Run 메일함으로 question 을 보내고 3 이다', () => {
     fake('dispatch is not active', 1)
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 3, r.stderr)
+    const last = r.calls.at(-1) ?? ''
+    assert.ok(last.includes('[send]') && last.includes('[--to][run:run_x]') && last.includes('[--type][question]'), last)
+  })
+
+  test('대신 보내는 본문에 선택지를 붙인다', () => {
+    fake('dispatch is not active', 1)
     const r = ask('--from', 'term_w', '--question', 'q', '--options', 'a,b')
     assert.equal(r.code, 3, r.stderr)
-    const last = r.calls.join('\n')
-    assert.ok(last.includes('[send]') && last.includes('[--to][run:run_x]') && last.includes('[--type][question]'), last)
-    assert.ok(last.includes('[--body][q\n선택지: a,b]'), last)
+    // 여러 줄 본문은 로그에서 줄이 나뉘어 이어 붙여 본다
+    const sent = r.calls.join('\n')
+    assert.ok(sent.includes('[send]') && sent.includes('[--body][q\n선택지: a,b]'), sent)
   })
 
   test('--run 을 주면 Run 을 찾지 않는다', () => {

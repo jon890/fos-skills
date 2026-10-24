@@ -402,6 +402,16 @@ describe('block-worker-terminal-send 의 첫 화면 승인', () => {
     }
   })
 
+  test('판정 중 예상 밖 예외가 나도 hook 이 죽지 않고 거부한다', () => {
+    // 아주 깊게 중첩된 agentWait 는 JSON.parse 는 읽지만 판정의 JSON.stringify 가 호출 스택을 넘겨 RangeError 를 던진다.
+    // 조회 실패(LookupFailure)로 분류되지 않는 예외다
+    const depth = 200_000
+    const deep = `{"ok":true,"result":{"observation":{"agentWait":${'['.repeat(depth)}${']'.repeat(depth)}}}}`
+    const v = verdict(HOOK, ENTER, sendEnv(withShow(deep).path))
+    assert.equal(v.decision, 'deny')
+    assert.match(v.reason, /예상 밖 오류가 났다: Maximum call stack size exceeded/)
+  })
+
   test('일하는 단계이거나 단계를 읽지 못하면 거부한다', () => {
     for (const [show, code] of [
       [envelope({ observation: { agentWait: null }, projection: { stage: { detail: 'input_accepted' } } }), 0],

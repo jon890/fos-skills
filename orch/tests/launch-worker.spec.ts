@@ -243,6 +243,17 @@ describe('거부와 사용법', () => {
       assert.equal(launch(args).code, 2, JSON.stringify(args))
     }
   })
+
+  test('옵션의 고유 접두는 펼치고 여러 옵션에 맞는 접두는 2 다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--work', worktree, '--wat=0', '--', '--agent', 'claude'])
+    assert.equal(r.code, 0, both(r))
+    assert.ok(lines('orca orchestration worker-start')[0].includes(`--worktree path:${worktree} --agent claude`), lines('').join('\n'))
+    // --re 는 --repo 와 --resume-remote 에 맞는다
+    const ambiguous = launch(['--re', tmp, '--name', 'x', '--', '--agent', 'claude'])
+    assert.equal(ambiguous.code, 2, both(ambiguous))
+    assert.match(ambiguous.stderr, /--re 이 여러 옵션의 접두다: --repo, --resume-remote/)
+  })
 })
 
 describe('띄우기', () => {
@@ -308,7 +319,9 @@ describe('띄우기', () => {
       const r = launch(['--repo', tmp, '--name', 'feat', '--run', 'run_x', '--', '--agent', 'codex', '--model', 'gpt 6'], shell)
       assert.equal(r.code, 1, both(r))
       assert.ok(r.stderr.includes(`워크트리는 남아 있다: ${tmp}/new`), r.stderr)
-      assert.ok(r.stderr.includes(`--worktree ${tmp}/new --run run_x -- --agent codex --model 'gpt 6'`), r.stderr)
+      // 사람이 그대로 붙여 넣는 명령이라 실행 규칙의 꼴(node 와 경고 끄기, 이 파일의 절대경로)이다
+      const hint = `  node --disable-warning=ExperimentalWarning ${SCRIPT} --spec ${spec} --worktree ${tmp}/new --run run_x -- --agent codex --model 'gpt 6'`
+      assert.ok(r.stderr.split('\n').includes(hint), r.stderr)
       assert.match(r.stderr, /term_left codex hooks review/)
     }
   })
@@ -374,6 +387,15 @@ describe('Orca 의 워크트리 인식', () => {
     assert.equal(r.code, 0, both(r))
     assert.equal(lines('orca worktree list').length, 3)
     assert.match(r.stderr, /알아보기까지 2초 기다렸다/)
+  })
+
+  test('기다린 초는 옛 명령의 :g 꼴로 낸다', () => {
+    // 0.1 을 세 번 더하면 0.30000000000000004 다. 옛 명령은 0.3 으로 냈다
+    env.LAUNCH_WT_POLL = '0.1'
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, worktree_lists: [[], [], [], [worktree]] })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /^Orca 가 워크트리를 알아보기까지 0\.3초 기다렸다$/m)
   })
 
   test('끝까지 보이지 않으면 띄우지 않고 멈춘다', () => {
@@ -544,6 +566,25 @@ describe('before-launch 와 worker-launched', () => {
     assert.deepEqual(input.worker, { task: 'task_1', dispatch: 'ctx_1', terminal: 'term_w', worktree: hookWt, spec })
     assert.equal(input.event, 'worker-launched')
     assert.equal(input.branch, 'feature/hook')
+  })
+
+  test('--base 의 origin/ 은 떼고 핸들러에 넘긴다', () => {
+    const file = capture('before-launch', 0)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launchNew(['--base', 'origin/develop'])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).base, 'develop')
+  })
+
+  test('worker-launched 를 내다 예외가 나도 LAUNCHED 뒤라 0 이고 이유를 stderr 에 남긴다', () => {
+    // state 자리에 파일이 있어 이벤트 실행기가 기록과 잠금을 쓰지 못한다. 설정 오류가 아닌 예외다
+    handler('worker-launched', 'process.exitCode = 0\n')
+    writeFileSync(join(proj, '.orch/state'), '')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launchNew()
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^LAUNCHED ctx_1 /m)
+    assert.match(r.stderr, /^launch-worker: worker-launched 를 내지 못했다: .+/m)
   })
 
   test('--base 가 없고 origin/HEAD 도 없으면 base 는 빈 문자열이다', () => {

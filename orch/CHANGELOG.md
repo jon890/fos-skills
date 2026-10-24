@@ -14,11 +14,16 @@
 
 호환성:
 
-- 옛 `.py` 경로(`scripts/launch-worker.py` 같은 것)는 남아 같은 이름의 `.ts` 로 넘긴다. stderr 에 `DEPRECATED` 줄을 내고, 다음 major 에서 지운다. `orch-doctor.py` 는 진입점이라 `DEPRECATED` 줄을 내지 않는다.
+- 옛 `.py` 경로(`scripts/launch-worker.py` 같은 것)는 남아 같은 이름의 `.ts` 로 넘긴다. stderr 에 `DEPRECATED` 줄을 내고, 다음 major 에서 지운다. `orch-doctor.py` 는 진입점이라, `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 그 줄이 섞이지 않게 `DEPRECATED` 줄을 내지 않는다.
 - 옛 `.py` 경로도 PATH 에 node 22.18 이상이 있어야 돈다. node 가 없거나 낮으면 넘기지 않고 종료 코드 127 로 끝난다. 낮으면 stdout 에 `NODE-TOO-OLD <버전>` 줄을 낸다.
 - stdout 에 `WATCH-ERROR`, `HOOK-FAIL`, `[hook ...]` 줄이 새로 섞인다. 출력을 줄 단위로 읽는 도구는 이 접두를 건너뛰거나 따로 다룬다.
 - 옮긴 명령의 ps 명령줄이 `python3 ... <이름>.py` 에서 `node ... <이름>.ts` 로 바뀐다. 옛 `.py` 경로로 띄워도 그렇다. `.py` 이름으로 프로세스를 찾는 도구는 확장자 없는 이름(`wait-important`)으로 찾는다.
 - `watch-questions` 는 `ORCA_CLI_COMMAND` 를 읽지 않는다. 가짜 orca 는 `ORCA` 환경 변수로 넣는다.
+- 옮긴 명령도 옛 argparse 처럼 옵션의 고유 접두를 받는다(`--work` 는 `--worktree`). 여러 옵션에 맞는 접두는 종료 코드 2 다.
+- `send-to-worker --body`, `nudge-worker --text`, `worker-ask --question` 같은 값 옵션이 `-` 로 시작하는 값(`--body "-x"`)을 받는다. 옛 명령은 종료 코드 2 로 거부했다.
+- 지시서의 브랜치 줄을 `- ` 목록에 더해 `* ` 목록 꼴(`` * 브랜치: `x` ``)로 적어도 읽는다. 옛 `make-worktree.py` 는 `- ` 만 받았다.
+- `SPEC_LINE`, `MAKE_WORKTREE`, `NUDGE_WORKER`, `LAUNCH_WORKER` 로 바꾼 도구는 옛 명령처럼 확장자로 고른다. `.sh` 는 bash, `.zsh` 는 zsh, `.ts` 는 지금 도는 node 이고 `.py` 와 확장자 없는 파일을 포함한 나머지는 python3 이다.
+- `wait-important` 는 SIGTERM, SIGINT, SIGHUP 을 받으면 띄운 `check --wait` 를 끝내고 128 에 신호 번호를 더한 종료 코드로 끝난다. `watch-questions` 의 stderr 줄은 `wait-important` 와 같은 `WATCH-ERROR <이유>` 꼴이다.
 
 ## 2.6.1 (2026-10-24)
 

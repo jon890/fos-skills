@@ -23,11 +23,12 @@ const GIT_ENV = {
 
 // 질문 조회에 답하는 가짜 orca. 질문 하나를 FAKE_AGE 초 전에 만든 것으로 낸다. 시각은 불린 때 정한다.
 // doctor 가 조회를 마친 뒤에 시각을 재므로 테스트가 느려도 나이가 경계를 넘지 않는다.
-// FAKE_FAIL 이 있으면 실패로 끝난다. 확장자가 없어 타입 문법 없이 쓴다.
+// FAKE_FAIL 이 있으면 실패로 끝난다. FAKE_SLEEP 이 있으면 그 초만큼 잔다. 확장자가 없어 타입 문법 없이 쓴다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
 const argv = process.argv.slice(2)
 const print = (value) => fs.writeSync(1, JSON.stringify(value) + '\\n')
+if (process.env.FAKE_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_SLEEP) * 1000)
 if (process.env.FAKE_FAIL) {
   fs.writeSync(2, 'orca offline\\n')
   process.exit(1)
@@ -308,6 +309,8 @@ describe('session-resume', () => {
         '  333 node --disable-warning=ExperimentalWarning /x/orch/scripts/wait-important.ts --run r2',
         '  444 node --disable-warning=ExperimentalWarning /x/orch/scripts/watch-questions.ts --run r',
         '  555 orca orchestration check --run r --wait',
+        '  666 /usr/bin/env node /tmp/wait-important-bin-x/orca orchestration check --run r --wait --json',
+        '  777 /bin/bash -c node --disable-warning=ExperimentalWarning /x/orch/scripts/watch-questions.ts --run r',
         '',
       ].join('\n'),
     )
@@ -326,7 +329,8 @@ describe('session-resume', () => {
     assert.equal(input.run, 'r')
     assert.equal(input.repo, tmp)
     assert.equal(input.base, '')
-    assert.deepEqual(input.waiters, [111])
+    // 대기(111)와 질문 감시(444)만 센다. 다른 Run(333), 셸(222, 777), 자식 check(555, 666)는 뺀다
+    assert.deepEqual(input.waiters, [111, 444])
     assert.deepEqual(input.unanswered, ['q1'])
     assert.equal(input.loop_alive, false)
   })
@@ -343,6 +347,14 @@ describe('session-resume', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.match(r.stdout, /^HOOK-FAIL session-resume 3$/m)
+  })
+
+  test('질문 조회가 시간 초과면 SKIP-QUESTIONS 이고 종료 코드는 0 이다', { timeout: 120_000 }, () => {
+    // 질문 조회는 orca 호출마다 30초 제한이다(lib/questions.ts). 가짜 orca 는 그보다 오래 잔다
+    const r = doctor(['--skip-version', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_SLEEP: '40', FAKE_PS: psFile } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^SKIP-QUESTIONS .+/m)
+    assert.doesNotMatch(r.stdout, /^UNANSWERED /m)
   })
 
   test('--run 이 없으면 이벤트를 내지 않는다', () => {

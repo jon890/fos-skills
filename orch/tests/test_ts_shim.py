@@ -1,6 +1,7 @@
 """옛 .py 경로를 같은 이름의 .ts 로 넘기는 shim(ts_shim.py)을 가짜 node 로 본다."""
 
 import importlib.util
+import io
 import os
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -73,6 +75,28 @@ class ExecTest(unittest.TestCase):
         self.assertEqual(127, done.returncode, done.stdout + done.stderr)
         self.assertTrue(done.stdout.startswith("NODE-TOO-OLD v22.17.0"), done.stdout)
         self.assertNotIn("DEPRECATED", done.stderr)
+
+    def test_worker_ask_entry_has_no_deprecated_line(self):
+        # worker 는 답의 첫 줄 answer: 를 읽는다. stderr 를 합쳐 읽어도 그 앞에 DEPRECATED 줄이 끼지 않아야 한다
+        self.fake_node("v22.18.0")
+        env = dict(os.environ, PATH=f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}")
+        done = subprocess.run([sys.executable, str(SCRIPTS / "worker-ask.py"), "--help"],
+                              capture_output=True, text=True, env=env)
+        self.assertEqual(7, done.returncode, done.stderr)
+        self.assertEqual(["--disable-warning=ExperimentalWarning", str(SCRIPTS / "worker-ask.ts"), "--help"],
+                         done.stdout.splitlines())
+        self.assertNotIn("DEPRECATED", done.stderr)
+
+    def test_exec_os_error_is_127(self):
+        # 버전은 읽었지만 exec 가 권한 오류로 실패한 경우다. 예외가 새지 않고 127 로 끝나야 한다
+        version = subprocess.CompletedProcess(["node", "--version"], 0, stdout="v22.18.0\n", stderr="")
+        with mock.patch.object(ts_shim.subprocess, "run", return_value=version), \
+                mock.patch.object(ts_shim.os, "execvp", side_effect=PermissionError(13, "Permission denied")), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            with self.assertRaises(SystemExit) as raised:
+                ts_shim.exec_ts(str(SHIM), deprecated=False)
+        self.assertEqual(127, raised.exception.code)
+        self.assertIn("node 22.18 이상이 PATH 에 필요하다", err.getvalue())
 
     def test_missing_node_is_127(self):
         done = self.shim(str(self.bin))

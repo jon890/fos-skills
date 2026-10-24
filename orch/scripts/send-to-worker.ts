@@ -35,10 +35,12 @@
 //
 // ORCA, NUDGE_WORKER, LAUNCH_WORKER 환경 변수로 실행 파일과 스크립트 경로를 바꾼다.
 // 스크립트는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
+// 깨우기와 다시 띄우기의 nudge-worker, launch-worker 출력은 모으지 않고 그대로 흘린다(lib/proc.ts 의 runInherit).
+// 옵션은 고유 접두로 줄여 쓸 수 있고 값이 - 로 시작해도 받는다(lib/args.ts).
 //
 // 종료 코드:
 //     0  보냈다. 살아 있는 worker 면 깨웠거나 작업 중이다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다
-//     1  보냈지만 턴 시작을 보지 못했거나, 다시 띄우기가 실패했다
+//     1  보냈지만 턴 시작을 보지 못했거나, 다시 띄우기가 실패했다. nudge-worker 가 제한 시간(5분)에 끊겨도 1 이다
 //     3  dispatch 가 끝나 보낼 수 없다. 표준 출력이 다음에 할 일을 말한다
 //     4  보냈지만 입력란에 글이 있거나 권한 확인 창이라 깨우지 않았다(nudge-worker 의 4)
 //     5  orca 가 오류를 냈다
@@ -48,8 +50,10 @@ import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { orca } from './lib/orca.ts'
-import { runAsync, scriptCommand } from './lib/proc.ts'
+import { runAsync, runInherit, scriptCommand } from './lib/proc.ts'
+import { pyStr, shQuote } from './lib/py.ts'
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID] [--spec FILE] [--run RUN]',
@@ -62,11 +66,13 @@ const LAUNCH_WORKER = process.env.LAUNCH_WORKER || `${HERE}/launch-worker.ts`
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 // 이미 답한 question 에 다시 reply 하면 orca 가 이 문구로 거부한다
 const ANSWERED = 'already has a different answer'
-// nudge-worker 는 턴 시작을 기본 15초씩 두 번 기다린다
-const NUDGE_MS = 300_000
+// nudge-worker 는 턴 시작을 기본 15초씩 두 번 기다린다. ORCH_NUDGE_TIMEOUT_MS 는 이 한도를 바꾼다. 테스트만 쓴다
+const NUDGE_MS = Number(process.env.ORCH_NUDGE_TIMEOUT_MS) || 300_000
 // launch-worker 는 make-worktree 와 worker-start 를 각각 10분까지 기다리고, 멈춘 dispatch 를 한 번 다시 띄운다
 const LAUNCH_MS = 3_600_000
 const SETTING_KEYS = ['agent', 'model', 'effort'] as const
+// 사람에게 다시 띄우라고 안내하는 명령. 실행 규칙의 꼴(node 와 경고 끄기, 절대경로)로 낸다
+const LAUNCH_HINT = `node --disable-warning=ExperimentalWarning ${shQuote(`${HERE}/launch-worker.ts`)}`
 
 type Json = Record<string, unknown>
 type Settings = Record<string, unknown>
@@ -160,27 +166,24 @@ function reply(msgId: string, body: string, run: string): string {
   return String(obj(result.message).id || result.messageId || result.id || '')
 }
 
-// 자식의 출력을 그대로 넘기고 종료 코드를 낸다
+// 자식의 출력을 그대로 흘리고 종료 코드를 낸다
 async function passThrough(argv: string[], timeoutMs: number): Promise<number> {
-  const done = await runAsync(argv, { timeoutMs })
-  process.stdout.write(done.stdout)
-  process.stderr.write(done.stderr)
+  return (await runInherit(argv, { timeoutMs })).code
+}
+
+// nudge-worker 로 깨운다. 제한 시간에 끊기면 124 대신 1 이다. 종료 코드 계약에 124 가 없고, 보냈지만 턴 시작을 보지 못한 경우다
+async function nudge(args: string[]): Promise<number> {
+  const done = await runInherit(scriptCommand(NUDGE_WORKER, args), { timeoutMs: NUDGE_MS })
+  if (done.timedOut) {
+    out(`send-to-worker: nudge-worker 가 ${NUDGE_MS / 1000}초 안에 끝나지 않아 끊었다`)
+    return 1
+  }
   return done.code
 }
 
 async function screenState(handle: string): Promise<string> {
   const done = await runAsync(scriptCommand(NUDGE_WORKER, ['--terminal', handle, '--state']), { timeoutMs: NUDGE_MS })
   return done.code === 0 ? done.stdout.trim() : 'unknown'
-}
-
-// `--body "-x"` 처럼 값이 - 로 시작해도 값으로 받는다. parseArgs 는 그런 값을 옵션으로 보고 거부한다
-function joinValues(argv: string[], names: string[]): string[] {
-  const joined: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    if (names.includes(argv[i]) && i + 1 < argv.length) joined.push(`${argv[i]}=${argv[++i]}`)
-    else joined.push(argv[i])
-  }
-  return joined
 }
 
 type Args = {
@@ -197,12 +200,11 @@ type Args = {
 
 function parse(argv: string[]): Args | 'help' | null {
   const names = ['dispatch', 'body', 'body-file', 'reply-to', 'spec', 'run', ...SETTING_KEYS]
+  const options = { ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), help: { type: 'boolean' as const, short: 'h' } }
   let values
   try {
-    values = parseArgs({
-      args: joinValues(argv, names.map((name) => `--${name}`)),
-      options: { ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), help: { type: 'boolean', short: 'h' } },
-    }).values as Record<string, string | boolean | undefined>
+    // `--body "-x"` 처럼 값이 - 로 시작해도 값으로 받는다
+    values = parseArgs({ args: expandArgs(argv, options, names), options }).values as Record<string, string | boolean | undefined>
   } catch (e) {
     err(`${USAGE}\nsend-to-worker: ${(e as Error).message}`)
     return null
@@ -261,7 +263,7 @@ async function main(argv: string[]): Promise<number> {
     if (ACTIVE.has(String(status))) {
       if (!body) {
         err(
-          `send-to-worker: ${a.dispatch} 는 아직 살아 있어(${status}) --spec 만으로는 보낼 글이 없다. ` +
+          `send-to-worker: ${a.dispatch} 는 아직 살아 있어(${pyStr(status)}) --spec 만으로는 보낼 글이 없다. ` +
             '--body 나 --body-file 을 준다. --spec 은 끝난 dispatch 를 이어 쓸 때만 쓴다',
         )
         return 2
@@ -290,7 +292,7 @@ async function main(argv: string[]): Promise<number> {
         out('send-to-worker: 터미널 handle 을 몰라 깨우지 못했다')
         return 1
       }
-      return await passThrough(scriptCommand(NUDGE_WORKER, ['--terminal', handle, '--msg-id', sent || target]), NUDGE_MS)
+      return await nudge(['--terminal', handle, '--msg-id', sent || target])
     }
     alive = handle ? liveHandles().has(handle) : false
   } catch (e) {
@@ -302,8 +304,8 @@ async function main(argv: string[]): Promise<number> {
   const { status, handle, worktree, settings } = described
   if (!alive) {
     out(
-      `ended: ${a.dispatch} 가 끝났고(${status}) 터미널도 없다. ` +
-        `후속 지시서를 써서 launch-worker.ts --spec <지시서> --worktree ${worktree || '<워크트리>'} 로 새로 띄운다`,
+      `ended: ${a.dispatch} 가 끝났고(${pyStr(status)}) 터미널도 없다. ` +
+        `후속 지시서를 써서 ${LAUNCH_HINT} --spec <지시서> --worktree ${worktree ? shQuote(worktree) : '<워크트리>'} 로 새로 띄운다`,
     )
     return 3
   }
@@ -313,12 +315,12 @@ async function main(argv: string[]): Promise<number> {
   }
   if (!a.spec) {
     if ((await screenState(handle)) === 'working') {
-      out(`warning: ${a.dispatch} 가 닫혀(${status}) 이 지시는 Task 기록에 묶이지 않는다. 작업 중인 터미널 ${handle} 에 직접 넣는다`)
+      out(`warning: ${a.dispatch} 가 닫혀(${pyStr(status)}) 이 지시는 Task 기록에 묶이지 않는다. 작업 중인 터미널 ${handle} 에 직접 넣는다`)
       const text = `코디네이터(닫힌 dispatch ${a.dispatch}): ${body}`
-      return await passThrough(scriptCommand(NUDGE_WORKER, ['--terminal', handle, '--text', text]), NUDGE_MS)
+      return await nudge(['--terminal', handle, '--text', text])
     }
     out(
-      `ended: ${a.dispatch} 가 끝났다(${status}). 닫힌 dispatch 에는 reply 가 가지 않는다. ` +
+      `ended: ${a.dispatch} 가 끝났다(${pyStr(status)}). 닫힌 dispatch 에는 reply 가 가지 않는다. ` +
         `후속 지시를 지시서로 써서 --spec 으로 다시 부르면 터미널 ${handle} 을 이어 쓴다`,
     )
     return 3
@@ -351,7 +353,7 @@ async function main(argv: string[]): Promise<number> {
         `send-to-worker: 사용자가 보유하거나 해제한 터미널(${resource.ownershipState})은 닫지 않는다. ` +
           '이 세션이 띄운 worker 의 터미널이 맞으면 화면을 확인한 뒤 코디네이터가 직접 닫고 새로 띄운다: ' +
           `orca terminal read --terminal ${handle} 로 확인, orca terminal close --terminal ${handle} 로 닫기, ` +
-          `launch-worker.ts --spec ${a.spec} --worktree ${worktree} (--terminal 없이) 로 띄우기`,
+          `${LAUNCH_HINT} --spec ${shQuote(a.spec)} --worktree ${shQuote(worktree)} (--terminal 없이) 로 띄우기`,
       )
       return 1
     }

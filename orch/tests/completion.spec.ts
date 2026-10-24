@@ -42,6 +42,15 @@ describe('classify', () => {
     assert.deepEqual(result.completionVerification, { status: 'ready', pr: 123, head: SHA, statusMessageId: 'm1' })
   })
 
+  test('줄은 \\n 에서만 나눈다. 옛 명령처럼 \\r 이나 \\u2028 앞의 준비됨 줄은 근거가 아니다', () => {
+    for (const subject of [`준비됨 #123, head ${SHA}\r`, `준비됨 #123, head ${SHA}\u2028설명`, `설명\r준비됨 #123, head ${SHA}`]) {
+      const result = classify([message('worker_done', 2)], [ready({ subject })])[0]
+      assert.equal(result.type, 'suspicious_worker_done', JSON.stringify(subject))
+    }
+    const body = classify([message('worker_done', 2)], [ready({ subject: '보고', body: `설명\n준비됨 #123, head ${SHA}\n끝` })])[0]
+    assert.equal(body.type, 'worker_done')
+  })
+
   test('다른 Task, Dispatch, 발신자, 나중 상태, 짧은 해시, 줄 중간의 준비됨, 깨진 시각은 근거가 아니다', () => {
     const candidates = [
       ready({ task_id: 'task_old' }),

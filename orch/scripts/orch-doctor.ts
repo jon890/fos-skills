@@ -43,9 +43,12 @@
 //
 // session-resume 이벤트(--run 을 줄 때, docs/data-schema.md 「이벤트별 필드」):
 //     loop_alive  늘 false 다. 상주 루프는 아직 없다
-//     waiters     `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 와 Run id(낱말)가 든 것의 pid.
-//                 doctor 자신과 셸 행(sh, bash, zsh, dash, fish 가 띄운 `-c` 명령)은 뺀다. 셸 행은 대기 자신이 아니라 그것을 띄운 셸이다.
-//                 PS 환경 변수로 ps 실행 파일을 바꾼다
+//     waiters     `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 나 `watch-questions` 와 Run id(낱말)가 든 것의 pid.
+//                 살아 있는 대기와 질문 감시다. 다음 행은 뺀다.
+//                   - `orchestration check` 행. wait-important 가 띄운 자식이라 대기 하나를 두 번 세게 된다
+//                   - 셸 행(sh, bash, zsh, dash, fish 가 띄운 `-c` 명령). 대기 자신이 아니라 그것을 띄운 셸이다
+//                   - doctor 자신
+//                 PS 환경 변수로 ps 실행 파일을 바꾼다. ps 는 LC_ALL=C 로 부른다(wait-important 와 같다)
 //     unanswered  질문 조회가 낸 미답변 질문 id 전부. 조회하지 못했거나 --skip-questions 면 빈 목록
 //     repo 는 --repo, base 는 그 저장소의 origin/HEAD 브랜치(없으면 빈 문자열), run 은 --run 이다.
 //     핸들러의 실패는 `HOOK-FAIL` 줄만 남기고 종료 코드를 바꾸지 않는다.
@@ -59,19 +62,22 @@
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
 //     DEPRECATED-CONFIG <절>.<키> → hooks/<이벤트>.ts   옛 설정 칸
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
-//     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다
+//     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초 안에 답하지 않은 경우도 여기다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
 //     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING 이나 UNANSWERED 가 있다
 //     2  사용법 오류
+//
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { expandArgs } from './lib/args.ts'
 import { ConfigError, DEPRECATED_KEYS, loadConfig } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
@@ -264,9 +270,9 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// 이 Run 의 살아 있는 대기(wait-important) pid. ps 를 읽지 못하면 빈 목록이다.
+// 이 Run 의 살아 있는 대기(wait-important)와 질문 감시(watch-questions) pid. ps 를 읽지 못하면 빈 목록이다.
 function waiterPids(runId: string): number[] {
-  const done = run([process.env.PS || 'ps', '-axo', 'pid=,command='])
+  const done = run([process.env.PS || 'ps', '-axo', 'pid=,command='], { env: { LC_ALL: 'C' } })
   if (done.code !== 0) {
     process.stderr.write(`orch-doctor: 프로세스 목록을 읽지 못했다(ps 종료 코드 ${done.code}): ${done.stderr.trim()}\n`)
     return []
@@ -278,7 +284,10 @@ function waiterPids(runId: string): number[] {
     if (!m) continue
     const pid = Number(m[1])
     const command = m[2]
-    if (pid === process.pid || !command.includes('wait-important') || !word.test(command)) continue
+    if (pid === process.pid || !word.test(command)) continue
+    if (!command.includes('wait-important') && !command.includes('watch-questions')) continue
+    // 가짜 orca 의 경로처럼 `wait-important` 가 든 orca 명령줄도 자식 check 다
+    if (/\borchestration\s+check\b/.test(command)) continue
     if (SHELLS.has(basename(command.split(/\s+/)[0]).replace(/^-+/, ''))) continue
     pids.push(pid)
   }
@@ -288,19 +297,17 @@ function waiterPids(runId: string): number[] {
 async function main(argv: string[]): Promise<number> {
   let values
   try {
-    values = parseArgs({
-      args: argv,
-      options: {
-        'skill-dir': { type: 'string' },
-        remote: { type: 'string' },
-        branch: { type: 'string', default: 'main' },
-        'skip-version': { type: 'boolean', default: false },
-        run: { type: 'string' },
-        'skip-questions': { type: 'boolean', default: false },
-        repo: { type: 'string' },
-        help: { type: 'boolean', short: 'h' },
-      },
-    }).values
+    const options = {
+      'skill-dir': { type: 'string' },
+      remote: { type: 'string' },
+      branch: { type: 'string', default: 'main' },
+      'skip-version': { type: 'boolean', default: false },
+      run: { type: 'string' },
+      'skip-questions': { type: 'boolean', default: false },
+      repo: { type: 'string' },
+      help: { type: 'boolean', short: 'h' },
+    } as const
+    values = parseArgs({ args: expandArgs(argv, options), options }).values
   } catch (e) {
     process.stderr.write(`${USAGE}\norch-doctor: ${(e as Error).message}\n`)
     return 2

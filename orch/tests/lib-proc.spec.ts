@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { run, runAsync, scriptCommand } from '../scripts/lib/proc.ts'
+import { run, runAsync, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { alive } from '../scripts/lib/process.ts'
 
@@ -145,16 +145,32 @@ describe('runAsync 와 출력 파이프를 쥔 손자', () => {
   })
 })
 
+describe('runInherit', () => {
+  // 출력을 물려주므로 자식은 아무것도 쓰지 않는다. 쓰면 테스트 러너의 출력에 섞인다
+  test('자식의 종료 코드를 낸다', async () => {
+    assert.deepEqual(await runInherit(node('process.exit(3)')), { code: 3, timedOut: false })
+  })
+
+  test('시간을 넘기면 124 와 timedOut 이다', { timeout: 30_000 }, async () => {
+    assert.deepEqual(await runInherit(node('setTimeout(() => {}, 20000)'), { timeoutMs: 300 }), { code: 124, timedOut: true })
+  })
+
+  test('시그널로 죽으면 128 + 신호 번호이고, 실행 파일이 없으면 127 이다', async () => {
+    assert.deepEqual(await runInherit(node('process.kill(process.pid, "SIGTERM")')), { code: 143, timedOut: false })
+    assert.deepEqual(await runInherit(['/nonexistent/orch-spec-tool']), { code: 127, timedOut: false })
+  })
+})
+
 describe('scriptCommand', () => {
-  test('확장자로 인터프리터를 고른다', () => {
-    assert.deepEqual(scriptCommand('/s/a.ts', ['x']), ['node', '--disable-warning=ExperimentalWarning', '/s/a.ts', 'x'])
+  test('확장자로 인터프리터를 고르고 .ts 는 이 프로세스의 node 로 띄운다', () => {
+    assert.deepEqual(scriptCommand('/s/a.ts', ['x']), [process.execPath, '--disable-warning=ExperimentalWarning', '/s/a.ts', 'x'])
     assert.deepEqual(scriptCommand('/s/a.py', ['x']), ['python3', '/s/a.py', 'x'])
     assert.deepEqual(scriptCommand('/s/a.sh', []), ['bash', '/s/a.sh'])
     assert.deepEqual(scriptCommand('/s/a.zsh', ['x', 'y']), ['zsh', '/s/a.zsh', 'x', 'y'])
   })
 
-  test('모르는 확장자나 확장자 없는 파일은 감싸지 않는다', () => {
-    assert.deepEqual(scriptCommand('/s/tool', ['x']), ['/s/tool', 'x'])
-    assert.deepEqual(scriptCommand('/s/a.rb', []), ['/s/a.rb'])
+  test('확장자 없는 파일과 모르는 확장자는 옛 명령처럼 python3 으로 띄운다', () => {
+    assert.deepEqual(scriptCommand('/s/tool', ['x']), ['python3', '/s/tool', 'x'])
+    assert.deepEqual(scriptCommand('/s/a.rb', []), ['python3', '/s/a.rb'])
   })
 })
