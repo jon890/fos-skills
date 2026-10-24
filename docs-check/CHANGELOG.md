@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.5.0
+
+- 대체된 ADR 의 위치와 링크·색인 갱신 규약도 planning 의 `task-create.md` 를 가리키게 했다
+- 색인 검사가 ADR 하위 폴더까지 읽게 고쳤다. 대체된 ADR 을 옮겨도 색인에만 남았다고 판정하지 않는다
+- 하위 폴더 ADR 의 색인 등재와 누락을 임시 폴더에서 검사한다
+
 ## 3.4.0
 
 `static_check.py` 가 `docs/code-architecture.md` 의 책임 설명에 늘어놓은 목록을 경고로 낸다.
