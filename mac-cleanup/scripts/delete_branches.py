@@ -6,7 +6,7 @@
 
 SURVEY_JSON 은 `survey_git.py --json` 을 저장한 파일이고, `-` 이면 표준 입력을 읽는다.
 --only 로 지울 분류를 고른다. 기본은 merged 다.
-  merged     "삭제 후보(-d)". `git branch -d` 를 쓰고, `not fully merged` 로 거절되면
+  merged     "삭제 후보(-d)". 브랜치가 이미 없으면 `유지` 로 보인다. 있으면 `git branch -d` 를 쓰고, `not fully merged` 로 거절되면
              조사 JSON 의 tip 과 `git rev-parse` 가 같고 `merge-base --is-ancestor <브랜치> <base>` 가 0 일 때만 -D 를 쓴다.
   pr-merged  "PR 머지됨(-D)". 실행 직전 `git rev-parse` 가 조사 JSON 의 tip 과 같을 때만 -D 를 쓴다.
 그 밖의 분류와 `gh 확인 실패`(pr_state 가 error) 는 건드리지 않는다. 원격 브랜치는 지우지 않는다.
@@ -70,6 +70,8 @@ def process_branch(repo, base, br, only, apply):
         return result(repo, name, "삭제" if done.returncode == 0 else "실패", "-D" if done.returncode == 0 else done.stderr.strip())
 
     # 삭제 후보(-d)
+    if git(repo, "rev-parse", f"refs/heads/{name}").returncode != 0:
+        return result(repo, name, "유지", "브랜치가 없다")
     if not apply:
         ok, why = can_force(repo, base, br)
         return result(repo, name, "삭제 예정", "-d" + ("" if ok else f" (거절되면 유지: {why})"))

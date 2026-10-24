@@ -107,6 +107,13 @@ class DeleteBranchesTest(unittest.TestCase):
         self.assertTrue(res["detail"])
         self.assertTrue(self.exists("main"))
 
+    def test_missing_branch_is_kept_in_both_paths_and_modes(self):
+        for cls, only in (("삭제 후보(-d)", ["merged"]), ("PR 머지됨(-D)", ["pr-merged"])):
+            for apply in (False, True):
+                res = self.process(self.br("gone", self.a, cls), only, apply=apply)
+                self.assertEqual(res["status"], "유지")
+                self.assertEqual(res["detail"], "브랜치가 없다")
+
     def test_main_exit_code_on_failure(self):
         import json
         import os
