@@ -1,85 +1,91 @@
-# Phase 04. 무거운 검사 대기열, 경로 명령, 보드 명령을 옮기고 남은 Python 모듈을 지운다
+# Phase 04. 산출물 정리와 보드 동기화 명령을 옮긴다
 
-**Execution profile**: deep
+**Execution profile**: standard
 
 ## 목표
 
-`heavy-slot`, `mem-gate`, `orch_paths` 명령, `work-board/bin/board.py` 를 TypeScript 로 옮긴다.
-무거운 검사 분류 정규식을 코드에서 빼 `config.json` 의 `heavy` 절로 옮긴다. 더는 import 하는 쪽이 없는 Python 모듈을 지운다.
+`handoff-cleanup`, `board-sync`, `goal-progress` 를 TypeScript 로 옮긴다.
 
-**범위 외**: 테스트 러너와 CI 정리, 문서(phase 05).
+**범위 외**: `work-board/bin/board.py`(phase 05). 이 phase 의 명령은 보드를 고칠 때 `BOARD_BIN`, 없으면 `work-board/bin/board.py` 를 `lib/proc.ts` 의 `scriptCommand` 로 부른다. phase 05 가 board 를 옮기면서 기본 경로를 `.ts` 로 바꾼다.
 
 ## 컨텍스트
 
-시작 조건: 이 plan 의 phase 03 이 커밋됐다.
+시작 조건: `orch/scripts/cleanup-sweep.ts` 머리 주석에 `--remote-branches` 가 있다. 없으면 `PHASE_BLOCKED: phase 03 커밋 전` 을 내고 멈춘다.
 
 | 원본 | 새 파일 | 테스트 원본 → 새 테스트 |
 | --- | --- | --- |
-| `orch/scripts/heavy-slot.py` | `orch/scripts/heavy-slot.ts` | `orch/tests/test_heavy_slot.py` → `orch/tests/heavy-slot.spec.ts` |
-| `orch/scripts/mem-gate.py` | `orch/scripts/mem-gate.ts` | `orch/tests/test_mem_gate.py` → `orch/tests/mem-gate.spec.ts` |
-| `orch/scripts/orch_paths.py` | 명령 `orch/scripts/orch_paths.ts`. 판정은 `lib/paths.ts` | `orch/tests/test_orch_paths.py` → `orch/tests/orch-paths.spec.ts` |
-| `orch/scripts/live_specs.py` | 지운다. `lib/spec.ts` 가 대신한다 | `orch/tests/test_live_specs.py` 를 지운다. `lib-spec.spec.ts` 가 다룬다 |
-| `orch/scripts/orch_process.py` | 지운다. `lib/proc.ts` 가 대신한다 | |
-| `work-board/bin/board.py` | `work-board/bin/board.ts` | `work-board/tests/test_board.py` → `work-board/tests/board.spec.ts` |
+| `orch/scripts/handoff-cleanup.py` | `orch/scripts/handoff-cleanup.ts` | `orch/tests/test_handoff_cleanup.py` → `orch/tests/handoff-cleanup.spec.ts` |
+| `orch/scripts/board-sync.py` | `orch/scripts/board-sync.ts` | `orch/tests/test_board_sync.py` → `orch/tests/board-sync.spec.ts` |
+| `orch/scripts/goal-progress.py` | `orch/scripts/goal-progress.ts` | `orch/tests/test_scripts.py` 의 `GoalProgressTest` → `orch/tests/goal-progress.spec.ts`. 이 클래스가 마지막이라 `test_scripts.py` 를 지운다 |
 
-`orch_paths.py` 는 `work-board/bin/board.py` 를 import 하므로, `orch_paths.py` 를 먼저 지운 뒤 board 를 옮긴다. 이 phase 가 끝나면 `orch/scripts/` 의 `.py` 는 모두 shim 이다.
-`heavy-slot.py` 의 `classify` 와 `LIGHT` 정규식은 한 저장소의 명령 이름을 담는다. 그 값은 코드에 남기지 않는다. 새 분류는 `config.json` 의 `heavy.exclusive`, `heavy.normal`, `heavy.light` 를 앞에서부터 맞춰 보고, 어디에도 맞지 않으면 `normal` 이다(`docs/data-schema.md`). `--exclusive` 와 `HEAVY_EXCLUSIVE` 는 그대로다.
-`heavy.wait_idle` 은 자리를 잡기 전에 명령줄이 그 정규식에 맞는 프로세스가 없을 때까지 `HEAVY_POLL` 간격으로 기다린다.
-보드 명령을 부르던 `board-sync.ts`, `goal-progress.ts`, `finish-pr.ts` 의 기본 `BOARD_BIN` 을 `work-board/bin/board.ts` 로 바꾼다.
+옵션, 종료 코드, 판정은 원본 머리 주석과 같다. 경로는 `lib/paths.ts`(`orchDir`, `pathOf`, `boardPath`, `requireMigrated`), 설정은 `lib/config.ts` 의 `loadConfig` 와 `section` 이다. `cleanup` 절은 원본처럼 옵션 이름의 하이픈을 밑줄로 바꾼 키를 받는다. 그 키 목록을 `section` 의 `known` 으로 넘긴다.
+`board-sync.ts` 는 `--goal` 이면 같은 폴더의 `goal-progress.ts` 를 `scriptCommand` 로 부른다. 명령끼리 import 하지 않는다.
 
-옮긴 명령의 `.py` 는 지우지 않고 shim 으로 바꾼다. shim 은 stderr 에 `DEPRECATED python3 <이름>.py → node <절대경로>/<이름>.ts` 한 줄을 내고 `os.execvp` 로 `node --disable-warning=ExperimentalWarning <같은 폴더의 이름>.ts <인자...>` 를 실행한다. 아직 Python 인 다른 명령이 `script_command` 로 이 경로를 부르므로 shim 이 없으면 그 명령이 깨진다. 다음 major 에서 지운다([ADR-010](../../docs/adr/010-orch-typescript.md)).
-shim 은 `heavy-slot.py`, `mem-gate.py`, `orch_paths.py`, `work-board/bin/board.py` 에 둔다. 다른 저장소의 포장 스크립트와 문서가 `orch_paths.py specs` 와 `heavy-slot.py --` 를 부른다.
+지시서 옮기기는 `lib/spec.ts` 의 `deleteSpecs` 를 `mode: { trash }` 로 부른다. `root` 는 orch 작업 폴더, `prBodies` 는 빈 목록, `live` 는 `liveSpecPaths(--run)` 이다. `deleteSpecs` 는 휴지통 안에 `<휴지통>/<root 의 폴더 이름>/<root 기준 상대경로>` 로 두고 같은 이름이 있으면 번호를 붙인다. 원본 `def move` 와 같은 자리다. 그래서 `lib/spec.ts` 는 고치지 않는다.
+어느 지시서를 옮길지(보드 항목이 done, 브랜치가 원격과 워크트리에 없고 열린 PR 도 없음)는 원본 `def spec_finished` 를 `handoff-cleanup.ts` 에 옮긴다. 열린 PR 목록을 읽지 못하면 원본처럼 지시서를 하나도 넘기지 않는다. 큐 로그, 폴더, 데이터 파일은 원본처럼 `handoff-cleanup.ts` 가 옮긴다.
+지시서 줄은 `deleteSpecs` 의 문구(`지시서를 휴지통으로 옮길 것 …`, `지시서 옮김 … -> …`, `지시서를 남긴다 …: 살아 있는 dispatch 가 쓴다`)로 바뀐다. 원본은 `후보 <상대경로>`, `옮김 <상대경로>` 와 stderr 의 `살아 있는 dispatch 가 쓰는 지시서라 남긴다` 였다. phase 06 의 CHANGELOG 호환성 절이 적는다.
+`handoff-cleanup` 의 기본(미리보기)은 바꾸지 않는다. 사용자 결정(2026-10-24)은 코디네이터가 묻지 않고 `--apply` 로 부르는 것이고, 문서가 그렇게 지시한다.
 
-**근거 문서**: `docs/data-schema.md` 의 「config.json 에 더하는 절」 의 `heavy` 줄, `docs/code-architecture.md` 의 「코어와 저장소의 경계」 의 무거운 검사 줄, `docs/adr/006-work-board-in-plugin.md`
+옮긴 명령의 `.py` 는 지우지 않고 shim 으로 바꾼다. shim 은 `orch/scripts/ci-ready.py` 와 같은 꼴이다. `ts_shim` 을 import 하고 `if __name__ == "__main__":` 안에서 `ts_shim.exec_ts(__file__)` 를 부른다. node 22.18 미만이면 `NODE-TOO-OLD` 줄과 종료 코드 127 로 멈추고, 아니면 stderr 에 `DEPRECATED` 줄을 내고 같은 이름의 `.ts` 로 exec 한다(`orch/scripts/ts_shim.py` 머리 주석). `ts_shim.py` 는 고치지 않는다.
+아직 Python 인 다른 명령과 다른 저장소가 옛 `.py` 경로를 부르므로 shim 이 없으면 그쪽이 깨진다. 다음 major 에서 지운다([ADR-010](../../docs/adr/010-orch-typescript.md)).
+이 phase 의 shim 은 `handoff-cleanup.py`, `board-sync.py`, `goal-progress.py` 다.
+
+`orch/tests/readme-script-list.spec.ts` 는 `orch/scripts/` 의 `.ts` 가 모두 `orch/README.md` 에 `` `scripts/<이름>.ts` `` 로 적혀 있어야 통과한다. 같은 이름의 `.ts` 가 있는 `.py` 는 대조하지 않는다.
+
+**근거 문서**: `docs/code-architecture.md` 의 「사용자 결정 (2026-10-24)」 의 handoff 줄과 「공통 안전 장치」 의 지시서 삭제 줄
 
 ## 의도 메모
 
-- 분류 설정이 없는 저장소는 모든 명령이 `normal` 이다. 가벼운 명령까지 자리를 기다리지만 잘못 분류해 전체 검사를 동시에 돌리는 것보다 안전하다.
-- `mem-gate` 의 기본값(메모리와 swap 기준)에 이유 주석이 없다. 옮기면서 그 값을 고른 이유를 `git log -S` 로 찾아 주석으로 단다.
+- 지시서 삭제와 옮기기의 판정이 세 벌로 갈라져 하나만 확인을 빠뜨린 것이 이 전환의 이유 가운데 하나다. 살아 있는 지시서 판정을 `handoff-cleanup.ts` 에 다시 쓰지 않는다.
+- 원본 `test_board_sync.py` 의 `DefaultBoardBinTest` 는 importlib 로 `BOARD_BIN` 속성을 읽었다. shim 에는 그 속성이 없다. `board-sync.spec.ts` 는 `finish-pr.spec.ts` 의 `BOARD_BIN 이 없으면 …` 사례처럼 `BOARD_BIN` 없이 실제 보드 명령이 항목을 done 으로 바꾸는지로 본다.
 
 ## 작업 항목
 
-### 1. 위 표의 명령을 옮기고 원본 모듈을 지운다
+### 1. 위 표의 명령과 shim
 
-### 2. `heavy-slot.ts` 의 설정 분류와 `wait_idle`
+세 명령을 위 「컨텍스트」 대로 옮기고 세 `.py` 를 shim 으로 바꾼다. 기본 `BOARD_BIN` 은 이 phase 에서는 `work-board/bin/board.py` 그대로다.
 
-### 3. 테스트를 옮긴다
+### 2. 문서
 
-`orch/tests/heavy-slot.spec.ts`, `orch/tests/mem-gate.spec.ts`, `orch/tests/orch-paths.spec.ts`, `work-board/tests/board.spec.ts` 를 만들고 원본 사례를 모두 옮긴 뒤 원본을 지운다. 원본의 분류 사례는 한 저장소의 명령 이름을 쓰므로, 같은 꼴의 일반 명령과 그 사례를 담은 `heavy` 설정으로 바꿔 옮긴다.
-더할 사례: `heavy` 설정이 없으면 `normal`. `exclusive` 와 `light` 둘 다 맞으면 앞의 `exclusive`. `wait_idle` 에 맞는 가짜 프로세스가 끝날 때까지 자리를 잡지 않는다.
+- `orch/README.md`: `scripts/handoff-cleanup.py`, `scripts/board-sync.py`, `scripts/goal-progress.py` 줄을 `.ts` 로 바꾼다. 「옛 경로. 다음 major 에서 지운다」 줄에 세 `.py` 를 더한다. `scripts/live_specs.py` 줄을 「모듈. 같은 판정은 `lib/spec.ts` 의 `liveSpecPaths` 다. import 하는 명령이 없다」 로 바꾼다
+- `merge-with-finish.ts` 33행 머리 주석의 `handoff-cleanup.py` 를 `handoff-cleanup.ts` 로 바꾼다
+
+### 3. 테스트
+
+`orch/tests/handoff-cleanup.spec.ts`, `orch/tests/board-sync.spec.ts`, `orch/tests/goal-progress.spec.ts` 를 만들고 원본 사례를 모두 옮긴 뒤 원본 테스트를 지운다.
+
+`handoff-cleanup.spec.ts` 에 더한다:
+
+- 끝난 지시서가 `--apply` 로 `<휴지통>/<orch 폴더 이름>/specs/spec-x.md` 로 옮겨진다. 휴지통에 같은 이름이 있으면 `.2` 가 붙는다
+- 살아 있는 dispatch 가 쓰는 지시서는 남고 `지시서를 남긴다` 줄이 난다
+- 살아 있는 지시서 목록을 읽지 못하면 지시서는 하나도 옮기지 않고 큐 로그는 옮긴다
+
+`board-sync.spec.ts` 에 더한다: `BOARD_BIN` 이 없으면 `work-board/bin/board.py` 가 보드 항목을 done 으로 바꾼다.
 
 ## 검증
 
 ```bash
-node --test --test-concurrency=4 orch/tests/heavy-slot.spec.ts orch/tests/mem-gate.spec.ts orch/tests/orch-paths.spec.ts work-board/tests/board.spec.ts
-node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
-claude plugin test .
+node --test --test-concurrency=4 orch/tests/handoff-cleanup.spec.ts orch/tests/board-sync.spec.ts orch/tests/goal-progress.spec.ts orch/tests/lib-spec.spec.ts orch/tests/readme-script-list.spec.ts
+node --test --test-concurrency=4 "orch/tests/*.spec.ts"
 python3 scripts/run-orch-tests.py --jobs 4
+python3 korean-check/scripts/korean-style-check.py orch/README.md
 ```
 
 ## 변경 파일
 
 | 파일 | 변경 |
 |---|---|
-| `orch/scripts/heavy-slot.ts` | 신규 |
-| `orch/scripts/mem-gate.ts` | 신규 |
-| `orch/scripts/orch_paths.ts` | 신규 |
-| `orch/scripts/heavy-slot.py` | 수정 |
-| `orch/scripts/mem-gate.py` | 수정 |
-| `orch/scripts/orch_paths.py` | 수정 |
-| `orch/scripts/live_specs.py` | 삭제 |
-| `orch/scripts/orch_process.py` | 삭제 |
-| `orch/scripts/board-sync.ts` | 수정 |
-| `orch/scripts/goal-progress.ts` | 수정 |
-| `orch/scripts/finish-pr.ts` | 수정 |
-| `work-board/bin/board.ts` | 신규 |
-| `work-board/bin/board.py` | 수정 |
-| `orch/tests/heavy-slot.spec.ts` | 신규 |
-| `orch/tests/mem-gate.spec.ts` | 신규 |
-| `orch/tests/orch-paths.spec.ts` | 신규 |
-| `work-board/tests/board.spec.ts` | 신규 |
-| `orch/tests/test_heavy_slot.py` | 삭제 |
-| `orch/tests/test_mem_gate.py` | 삭제 |
-| `orch/tests/test_orch_paths.py` | 삭제 |
-| `orch/tests/test_live_specs.py` | 삭제 |
-| `work-board/tests/test_board.py` | 삭제 |
+| `orch/scripts/handoff-cleanup.ts` | 신규 |
+| `orch/scripts/board-sync.ts` | 신규 |
+| `orch/scripts/goal-progress.ts` | 신규 |
+| `orch/scripts/handoff-cleanup.py` | 수정 |
+| `orch/scripts/board-sync.py` | 수정 |
+| `orch/scripts/goal-progress.py` | 수정 |
+| `orch/scripts/merge-with-finish.ts` | 수정 |
+| `orch/tests/handoff-cleanup.spec.ts` | 신규 |
+| `orch/tests/board-sync.spec.ts` | 신규 |
+| `orch/tests/goal-progress.spec.ts` | 신규 |
+| `orch/tests/test_handoff_cleanup.py` | 삭제 |
+| `orch/tests/test_board_sync.py` | 삭제 |
+| `orch/tests/test_scripts.py` | 삭제 |
+| `orch/README.md` | 수정 |
