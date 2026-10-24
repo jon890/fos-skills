@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "3.1.0"
+  version: "3.2.0"
 ---
 
 # orch
@@ -49,6 +49,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
 - **사용자가 정할 질문은 코디네이터가 대신 답하지 않는다.** 권장안을 붙여 사용자에게 올리고 고른 답을 worker 에게 보낸다. 형식과 검사 규칙은 저장소의 `../docs/data-schema.md` 「사용자 결정 질문 형식」 이 소유한다
 - **worker 는 모두 코디네이터가 띄운다.** worker 는 다시 worker 를 띄우지 못한다(`nested_worker_depth_exceeded`).
   일을 나눠야 하면 worker 에게는 계획서와 worktree 준비까지만 맡기고, 소계획마다 `ready: <plan> <worktree 절대경로> <지시서 절대경로>` status 를 받아 코디네이터가 띄운다
+- **worker 는 PR 이 머지될 때까지 맡는다.** 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 가 직접 처리하고 `worker_done` 은 MERGED 뒤에 보낸다. 지시서 하나는 PR 하나로 끝나는 크기로 쓴다. 더 큰 일은 나눠 앞 PR 이 머지된 뒤 다음 지시서를 쓴다
 - **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다
 - **범위가 큰 일은 지시서에 「`planning` 으로 설계를 확정한 뒤 `build-with-teams` 로 구현한다」 를 적는다.** 보안 경계, 저장 구조, 여러 화면에 걸친 변경이 여기 해당한다
 - **worker 보고서의 사용자 안내(누를 단추, 순서, 화면 문구)는 코드나 화면으로 확인한 뒤 사용자에게 전한다.** 계획한 화면과 실제 화면이 다를 수 있다

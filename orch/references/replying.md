@@ -120,6 +120,8 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 
 ## 충돌과 리뷰 반영은 만든 worker 가 이어 받는다
 
+**기본은 worker 가 머지될 때까지 스스로 처리한다.** 공통 지시서가 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 에게 맡기고, `worker_done` 은 MERGED 뒤에 온다. 아래는 worker 가 이미 `worker_done` 으로 끝났거나 멈춘 PR 의 절차다.
+
 **충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받는다.** 새 worker 를 띄우면 워크트리와 터미널이 늘어 로컬 자원을 쓴다.
 그래서 worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다. 터미널을 닫는 때는 [`cleanup.md`](cleanup.md) 의 「정리」 가 소유한다.
 

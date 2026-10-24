@@ -2,6 +2,7 @@
 
 머지 큐(`merge_queue.ts`, `merge-with-finish.ts`)는 PR 의 `statusCheckRollup` 으로 CI 를 판정한다. 최근 실행 목록을 가져온 뒤 커밋을 찾는 `gh run list --commit` 은 사용하지 않는다. 별도 스크립트에서 커밋의 Actions 실행을 조회할 때는 `gh api repos/OWNER/REPO/actions/runs?head_sha=SHA` 로 서버에서 필터링한다.
 
+- **diff 검증은 `준비됨 #PR, head SHA` status 를 받은 때 한다.** `worker_done` 은 머지 뒤에 오므로 그때는 머지 결과를 대조한다.
 - `worker_done` 을 확인 처리하기 전에 지시서의 완료 기준을 git 으로 대조한다. 커밋 목록, 미커밋 변경, 원격 브랜치 HEAD 다.
   어긋나면 그 보고는 완료가 아니다. 해제하지 않고 아래 「완료 전에 온 worker_done」 을 따른다
 - push 한 원격 브랜치가 지시서의 `브랜치:` 값과 같은지 아래 명령으로 본다. 브랜치, upstream, 원격 끝 커밋 중 하나라도 다르면 종료 코드 1 과 함께 다른 곳을 낸다.
