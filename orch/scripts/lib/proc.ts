@@ -21,8 +21,16 @@
 // 반환은 { code, timedOut } 이고 code 와 시간 제한, TERM 뒤 KILL 은 runAsync 와 같다. 출력 한도는 없다.
 // 띄우기 전에 이 프로세스의 stdout 과 stderr 를 비운다. macOS 에서 파이프로 가는 쓰기는 비동기라,
 // 비우지 않으면 앞서 쓴 줄이 자식의 출력보다 뒤에 나온다.
+//
+// 진행 중인 자식: runAsync, runInherit 와 lib/events.ts 의 핸들러 실행이 띄운 자식을 끝날 때까지 기억한다(trackChild).
+// 신호를 받은 명령은 끝내기 전에 stopChildren 을 불러 자식을 남기지 않는다. 기억한 자식에 TERM 을 보내고,
+// STOP_GRACE_MS(2초) 뒤에도 살아 있으면 KILL 을 보낸다. 그룹으로 띄운 자식(핸들러)은 그룹 전체에 보낸다.
+// stopChildren 을 부른 뒤에는 runAsync, runInherit, 핸들러 실행이 새 자식을 띄우지 않고 128 + 받은 신호 번호로 끝난다.
+// 유예 동안에도 부른 쪽의 흐름은 이어 돌기 때문이다. 동기 실행(run)은 막지 않는다. 신호 처리기가 기다리는 동안 부른 쪽이
+// run 으로 쓰기 호출(머지 같은 것)을 할 수 있으므로, 그 자리는 부르는 쪽이 stopping() 을 보고 막는다.
 
 import { spawn, spawnSync } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { constants } from 'node:os'
 import { extname } from 'node:path'
 
@@ -42,6 +50,10 @@ const DEFAULT_TIMEOUT_MS = 60_000
 const DEFAULT_MAX_BUFFER = 256 * 1024 * 1024
 const KILL_GRACE_MS = 10_000
 const PIPE_GRACE_MS = 2_000
+const STOP_GRACE_MS = 2_000
+const STOP_POLL_MS = 50
+// 옛 명령이 시간 제한을 두지 않던 호출에 준다. setTimeout 이 받는 최댓값(약 24.8일)이고, 넘기면 Node 가 1ms 로 바꾼다
+export const NO_LIMIT_MS = 2 ** 31 - 1
 
 function childEnv(env: RunOptions['env']): NodeJS.ProcessEnv | undefined {
   if (!env) return undefined
@@ -57,6 +69,74 @@ function childEnv(env: RunOptions['env']): NodeJS.ProcessEnv | undefined {
 export function signalCode(signal: NodeJS.Signals): number {
   const number = (constants.signals as Record<string, number>)[signal]
   return 128 + (number ?? 0)
+}
+
+// 진행 중인 자식 ---------------------------------------------------------------
+
+type Tracked = { child: ChildProcess; group: boolean }
+const tracked = new Set<Tracked>()
+let stopSignal: NodeJS.Signals | null = null
+
+// 그룹 전체에 신호를 보낸다. 그룹에 남은 프로세스가 없으면(ESRCH) 넘긴다
+export function killGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal)
+  } catch {
+    // ESRCH: 그룹에 남은 프로세스가 없다.
+  }
+}
+
+export function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0)
+    return true
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+// 띄운 자식을 끝날 때까지(close) 기억한다. group 은 detached 로 띄워 자식의 pid 가 그룹 번호인 경우다.
+// 띄우지 못한 자식(pid 없음)은 기억할 것이 없다
+export function trackChild(child: ChildProcess, group: boolean): void {
+  if (child.pid === undefined) return
+  const entry = { child, group }
+  tracked.add(entry)
+  child.once('close', () => tracked.delete(entry))
+}
+
+// stopChildren 이 받은 신호. 부르기 전이면 null 이다. 띄우기 전과 쓰기 호출 전에 본다
+export function stopping(): NodeJS.Signals | null {
+  return stopSignal
+}
+
+function trackedAlive(entry: Tracked): boolean {
+  const pid = entry.child.pid as number
+  if (entry.group) return groupAlive(pid)
+  return entry.child.exitCode === null && entry.child.signalCode === null
+}
+
+function signalTracked(entry: Tracked, signal: NodeJS.Signals): void {
+  const pid = entry.child.pid as number
+  if (entry.group) killGroup(pid, signal)
+  else entry.child.kill(signal)
+}
+
+// 기억한 자식에 TERM 을 보내고 모두 끝나거나 STOP_GRACE_MS 가 지나기를 기다린 뒤, 남은 것에 KILL 을 보낸다.
+// 이 뒤로는 새 자식을 띄우지 않는다(머리 주석의 「진행 중인 자식」)
+export async function stopChildren(signal: NodeJS.Signals): Promise<void> {
+  stopSignal ??= signal
+  const targets = [...tracked]
+  for (const entry of targets) signalTracked(entry, 'SIGTERM')
+  const deadline = Date.now() + STOP_GRACE_MS
+  while (targets.some(trackedAlive) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS))
+  }
+  for (const entry of targets) if (trackedAlive(entry)) signalTracked(entry, 'SIGKILL')
+}
+
+// stopChildren 뒤에 띄우지 않은 자식의 이유. lib/events.ts 도 같은 문구를 낸다
+export function stoppedReason(argv: string[], signal: NodeJS.Signals): string {
+  return `${argv[0]} 를 띄우지 않았다: ${signal} 를 받아 끝내는 중이다`
 }
 
 function spawnFailure(argv: string[], err: NodeJS.ErrnoException, stdout: string, stderr: string): RunResult {
@@ -84,8 +164,9 @@ export function run(argv: string[], opts: RunOptions = {}): RunResult {
   const stderr = done.stderr ?? ''
   // 판정 순서: error.code 를 signal 보다 먼저 본다. spawnSync 는 ETIMEDOUT 과 ENOBUFS 에서도 signal: SIGTERM 을 함께 내므로
   // signal 을 먼저 보면 124 와 1 이 143 으로 바뀐다(Node 22.18 실측).
+  // 자식이 stdin 을 읽기 전에 끝나면 EPIPE 가 붙지만 status 는 채워진다. 결과는 종료 코드로 판정하므로 무시한다(runAsync 와 같다).
   const err = done.error as NodeJS.ErrnoException | undefined
-  if (err) {
+  if (err && err.code !== 'EPIPE') {
     if (err.code === 'ETIMEDOUT') return { code: 124, stdout, stderr, timedOut: true }
     if (err.code === 'ENOBUFS') return overflow(stdout, stderr, maxBuffer)
     return spawnFailure(argv, err, stdout, stderr)
@@ -96,6 +177,7 @@ export function run(argv: string[], opts: RunOptions = {}): RunResult {
 
 export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
   const maxBuffer = opts.maxBuffer ?? DEFAULT_MAX_BUFFER
+  if (stopSignal) return Promise.resolve({ code: signalCode(stopSignal), stdout: '', stderr: stoppedReason(argv, stopSignal), timedOut: false })
   return new Promise((resolve) => {
     const out: Buffer[] = []
     const err: Buffer[] = []
@@ -119,6 +201,7 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
     }
 
     const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'] })
+    trackChild(child, false)
 
     // TERM 을 보내고 10초 뒤에도 끝나지 않았으면 KILL 을 보낸다.
     const terminate = () => {
@@ -191,6 +274,10 @@ function flush(stream: NodeJS.WriteStream): Promise<void> {
 
 export async function runInherit(argv: string[], opts: Omit<RunOptions, 'input' | 'maxBuffer'> = {}): Promise<{ code: number; timedOut: boolean }> {
   await Promise.all([flush(process.stdout), flush(process.stderr)])
+  if (stopSignal) {
+    process.stderr.write(`${stoppedReason(argv, stopSignal)}\n`)
+    return { code: signalCode(stopSignal), timedOut: false }
+  }
   return new Promise((resolve) => {
     let timedOut = false
     let settled = false
@@ -204,6 +291,7 @@ export async function runInherit(argv: string[], opts: Omit<RunOptions, 'input' 
       resolve({ code, timedOut })
     }
     const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: 'inherit' })
+    trackChild(child, false)
     child.on('error', (e: NodeJS.ErrnoException) => {
       if (child.pid !== undefined) return
       process.stderr.write(`${spawnFailure(argv, e, '', '').stderr}\n`)

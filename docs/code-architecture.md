@@ -204,7 +204,7 @@ orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 
 orch/scripts/<명령>.py            node 로 넘기는 shim. 다음 major 에서 지운다
 orch/scripts/ts_shim.py           shim 의 node 버전 확인과 exec 한 벌
 orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돌며 틱마다 질문 확인, 정리, ready 슬롯, 순서, CI 감시를 한다
-orch/scripts/lib/proc.ts          자식 프로세스 실행. timeout 과 반환 형태 { code, stdout, stderr, timedOut } 한 벌. 출력을 그대로 흘릴 때는 { code, timedOut } 을 내는 runInherit
+orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호를 받은 명령이 진행 중인 자식을 끊는 일 한 벌. 함수와 반환 형태는 머리 주석이 소유한다
 orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
 orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
 orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
@@ -213,7 +213,10 @@ orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
 orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
 orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
-orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록. notify-conflicts 와 상주 루프가 쓴다
+orch/scripts/lib/overlap.ts       단위 겹침 판정 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/queue-options.ts 머지 큐가 값을 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/questions.ts     미답변 질문 조회 한 벌

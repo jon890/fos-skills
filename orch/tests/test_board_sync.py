@@ -16,8 +16,9 @@ SPEC.loader.exec_module(bs)
 
 class DefaultBoardBinTest(unittest.TestCase):
     def test_default_board_bin_is_in_this_repo(self):
-        """BOARD_BIN 이 없을 때 세 스크립트가 부르는 board.py 가 저장소 안에 있다."""
-        for name in ("board-sync.py", "goal-progress.py", "finish-pr.py"):
+        """BOARD_BIN 이 없을 때 Python 스크립트가 부르는 board.py 가 저장소 안에 있다.
+        finish-pr 의 기본값은 finish-pr.spec.ts 가 실제 board.py 로 보드를 바꿔 본다."""
+        for name in ("board-sync.py", "goal-progress.py"):
             spec = importlib.util.spec_from_file_location(name.replace("-", "_")[:-3], SCRIPTS / name)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)

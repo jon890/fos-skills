@@ -12,9 +12,9 @@
 | --- | --- |
 | 위치 | `<orch 루트>/hooks/<이벤트>.ts`. orch 루트는 `ORCH_DIR` 이 없으면 주 checkout 의 `.orch/` 다 |
 | 이벤트당 파일 | 하나다. 한 이벤트에 여러 일을 하려면 그 파일이 모듈을 import 해 순서를 정한다 |
-| 실행 | `node --disable-warning=ExperimentalWarning <파일>`. 작업 디렉터리는 주 checkout 이다. `verify-merged` 만 합친 사본이다 |
+| 실행 | `node --disable-warning=ExperimentalWarning <파일>`. 작업 디렉터리는 주 checkout 이다. `verify-merged` 만 합친 사본이다. 옛 셸 명령 칸은 `ORCH_CHECKOUT` 에서 돈다(`verify-merged` 는 사본) |
 | 입력 | stdin 의 JSON 객체 하나 |
-| 환경 | `ORCH_EVENT`, `ORCH_REPO`, `ORCH_DIR`. `PATH` 앞에 가드 shim 폴더를 두고 `ORCA`, `GH` 도 그 shim 을 가리킨다. `ORCH_REAL_ORCA`, `ORCH_REAL_GH` 는 가드 shim 이 부를 진짜 실행 파일의 절대경로이고, 찾지 못하면 넘기지 않는다. 가드는 보안 경계가 아니다 |
+| 환경 | `ORCH_EVENT`, `ORCH_REPO`, `ORCH_DIR`, `ORCH_CHECKOUT`. `ORCH_CHECKOUT` 은 이벤트를 낸 명령이 `--repo` 로 받은 경로의 실경로이고, 연결된 워크트리면 그 워크트리다. 옮기는 명령이 만든 핸들러가 옛 명령을 이 경로에서 부른다. `PATH` 앞에 가드 shim 폴더를 두고 `ORCA`, `GH` 도 그 shim 을 가리킨다. `ORCH_REAL_ORCA`, `ORCH_REAL_GH` 는 가드 shim 이 부를 진짜 실행 파일의 절대경로이고, 찾지 못하면 넘기지 않는다. 가드는 보안 경계가 아니다 |
 | 출력 | stdout 과 stderr 를 코어 출력에 `[hook <이벤트>] ` 를 붙여 옮긴다. 거부 이유는 stdout 의 마지막 빈 줄 아닌 줄이고, 없으면 `(이유 없음)` 이다 |
 | 시간 제한 | 기본 120초. `before-merge`, `verify-merged`, `after-queue`, `after-deploy` 는 1800초. `config.json` 의 `hooks.timeouts.<이벤트>` 로 바꾼다. 넘으면 TERM, 10초 뒤 KILL 이다. 핸들러가 끝난 뒤 출력 파이프를 쥔 프로세스가 남으면 2초 뒤 그룹에 TERM, 다시 2초 뒤 KILL 이고, 판정은 핸들러의 종료 코드로 한다. 핸들러보다 오래 돌 일은 stdout 과 stderr 를 넘기지 않고 띄운다 |
 | 동시 실행 | 같은 저장소의 같은 이벤트는 `<orch 루트>/state/hooks/<이벤트>.lock` 을 잡고 하나씩 돈다. 잠금 파일은 배타 생성(`wx`)으로 만들고 pid 를 적는다. 다른 실행이 쥐고 있으면 0.5초 간격으로 다시 보며 그 이벤트의 시간 제한에 15초를 더한 만큼 기다린다. 쥔 쪽은 시간 제한과 KILL 유예 10초 안에 끝나기 때문이다. 넘으면 실패로 보고 `HOOK-FAIL <이벤트> lock` 이다. 같은 이벤트가 셋 이상 겹쳐 앞의 실행들이 시간 제한 가까이 돌면 뒤 실행이 이 실패로 끝나는 것은 의도한 동작이다. 죽은 pid 의 잠금은 고유 이름으로 옮긴 뒤 내용을 대조해 회수한다. 보장 범위와 남긴 경합은 `lib/events.ts` 머리 주석의 「잠금」 이 소유한다 |
@@ -61,22 +61,23 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `verify-merged` | `pr`, `copy`(사본 절대경로), `base_head`, `changed_files`, `overlap_files` |
 | `after-merge` | `pr`, `merge_commit`, `remote_branch_deleted`(bool), `retargeted`(base 를 옮긴 PR 번호 목록) |
 | `after-queue` | `merged_prs`, `code_prs`, `held_prs` |
-| `after-deploy` | `pr`, `merge_commit`, `deploy`(`success`, `failure`, `none`), `last_of_task`(bool) |
+| `after-deploy` | `pr`, `merge_commit`, `deploy`(`success`, `failure`, `timeout`, `none`), `last_of_task`(bool) |
 | `before-cleanup` | `worktree`, `branch`, `pr`(있으면), `worker`(있으면) |
 | `after-cleanup` | `removed`(경로 목록), `skipped`(경로와 이유의 목록) |
 | `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록) |
 | `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 `wait-important` 대기와 `watch-questions` 질문 감시의 pid 목록. 그 자식인 `orchestration check` 와 셸 행은 세지 않는다), `unanswered`(질문 id 목록) |
 
-옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
+옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령(`migrate-orch-dir.ts --hooks`)이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
 
 | 옛 칸 | 이벤트 | 옛 환경 변수 → 입력 필드 |
 | --- | --- | --- |
 | `queue.before`, 명령줄 `--before` | `before-merge` | `PR` → `pr.number`, `BRANCH` → `pr.branch`, `OWNER` → `owner`, `REPO` → `name` |
 | `queue.verify_merged`, 명령줄 `--verify-merged` | `verify-merged` | `$1`, `MERGE_COPY` → `copy`, `PR_HEAD` → `pr.head`, `BASE_HEAD` → `base_head`, `CHANGED_FILES` → `changed_files`, `OVERLAP_FILES` → `overlap_files` |
 | `queue.after_merged`, 명령줄 `--after-merged` | `after-queue` | `MERGED_PRS` → `merged_prs`, `CODE_PRS` → `code_prs` |
-| `finish.complete_cmd`, `finish.task_pattern` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다 |
+| `finish.complete_cmd`, `finish.task_pattern`, 명령줄 `--complete-cmd`, `--task-pattern` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다 |
 
 명령줄의 `PR번호:명령` 형식은 그대로 둔다. 그 PR 하나에만 붙이는 일회성 명령이라 핸들러로 옮기지 않는다. `before-merge` 핸들러 다음에 돈다.
+명령줄 `--before` 가 있으면 그 PR 에서는 `PR번호:명령` 이 대신한다.
 
 ## 사용자 결정 질문 형식
 
