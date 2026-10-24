@@ -12,6 +12,10 @@
 {
   "name": "plan{N}-{kebab-slug}",       // 디렉터리명과 일치. 접두사가 있으면 "fe-plan{N}-{kebab-slug}"
   "description": "한 줄 요약 — 무엇을 / 왜",
+  "pr_scope": "이 plan 의 PR 이 끝내는 것 한 문장",
+  "deferred": [                           // 뒤로 미룬 일. 없으면 빈 배열
+    { "what": "무엇을", "why": "왜 이 plan 에 넣지 않나", "after": "앞 plan 의 무엇이 머지된 뒤" }
+  ],
   "status": "pending",                    // 새 계획은 pending. 뒤의 값(completed, cancelled, failed)은 build-with-teams 가 정한다
   "created_at": "2026-01-01",             // YYYY-MM-DD
   "total_phases": 3,                      // phases 배열 길이와 일치
@@ -25,6 +29,8 @@
   ]
 }
 ```
+
+`pr_scope` 와 `deferred` 는 [`plan-size.md`](plan-size.md) 가 소유한다. 2026-10-25 이후에 만든 plan 은 둘이 없으면 `verify_task.py` 가 위반으로 센다.
 
 ---
 

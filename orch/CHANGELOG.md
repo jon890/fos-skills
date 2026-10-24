@@ -3,6 +3,15 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.2.0 (2026-10-24)
+
+worker 가 PR 이 머지될 때까지 맡는다. `planning` 2.31.0 의 「plan 하나는 PR 하나」 와 이어진다.
+
+- 공통 지시서 틀의 끝내기를 바꿨다. PR 이 열리면 `준비됨 #PR, head SHA` 를 보내고, 머지될 때까지 CI 실패, 충돌, 기준 브랜치 변경, 리뷰를 직접 처리하고, MERGED 를 확인한 뒤 `worker_done` 을 보낸다. PR 이 없는 일은 전과 같이 완료 기준을 채운 뒤 보낸다
+- 지시서 하나는 PR 하나로 끝나는 크기로 쓰고, 더 큰 일은 나눠 앞 PR 이 머지된 뒤 다음 지시서를 쓴다
+- 검증은 `준비됨` 을 받은 때 한다. `worker_done` 이 오기 전에 코디네이터가 diff 를 읽고 머지 큐에 넣는다는 순서를 `verification.md` 에 적었다
+- 스크립트는 바꾸지 않았다. `준비됨` status 는 이미 `worker_done` 의 근거로 쓰이고(`lib/completion.ts`), 머지 뒤 터미널 정리는 `cleanup-sweep.py` 가 이미 한다
+
 ## 3.1.0 (2026-10-24)
 
 - 머지 단계의 명령(`overlap_units`, `ci-ready`, `notify-conflicts`, `merge_queue`, `merge-with-finish`, `finish-pr`)과 `migrate-orch-dir` 를 TypeScript 로 옮겼다. 충돌 판정은 `scripts/lib/git.ts` 의 merge-tree 한 벌로, 열린 PR 의 충돌 찾기와 알린 기록은 `scripts/lib/conflicts.ts` 로 모았다.

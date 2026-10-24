@@ -13,14 +13,14 @@
 - `index.json` 과 phase 파일.
 - push, 배포, 원격 호스트 접속이 있어야 끝나는 검증. phase 의 「검증」 절에 넣지 않고 `remote-verification.md` 에 모은다.
   형식은 `task-create.md` 의 「원격 검증 목록」 이 소유한다.
-- 규모가 크면 여러 plan 디렉터리로 나눈다. 각 plan 은 자체 검증 단위이고 실행 순서는 사용자 보고로 전달한다.
+- plan 하나는 PR 하나에 들어가는 크기다. 넘으면 plan 을 나누고 지금 할 plan 만 phase 로 쓴다. 뒤의 plan 은 phase 를 쓰지 않고 `index.json` 의 `deferred` 에 한 줄로 남긴다. 기준은 [`plan-size.md`](plan-size.md) 가 소유한다.
 
 ## 물어서 확정할 것
 
 - phase 분할. 순서 의존이 있는가 병렬로 되는가.
 - 앞 단계 결정과 phase 내용이 어긋나는 곳. 식별자, 스키마, 경로 이름이 같은가.
 - 다른 plan 이 같은 파일을 건드려 충돌할 phase.
-- 한 plan 이 너무 커서 나눠야 하는 기능 경계.
+- phase 를 쓰기 전에 범위가 PR 하나에 들어가는지, 넘으면 어디서 자를지.
 
 ## 번호를 정하는 방법
 

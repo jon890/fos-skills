@@ -3,6 +3,17 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 2.31.0
+
+plan 하나를 PR 하나로 끝나는 크기로 자르게 하고, `verify_task.py` 가 구조로 막는다.
+
+- `references/plan-size.md` 를 더한다. plan 은 대략 하루 안에 구현하고 머지하는 크기다. 더 크면 plan 을 나누고 지금 할 plan 만 자세히 쓴다. 뒤의 일은 목표 표나 할 일 목록에 한 줄(무엇을, 왜, 앞 plan 의 무엇 뒤에)로 두고 앞 PR 이 머지된 뒤 계획한다. 미리 써 둔 phase 는 앞 phase 를 하는 사이 낡는다(phase 14개 plan 의 뒤 일곱 phase 가 경로 이동으로 모두 틀렸다)
+- 1단계 「이 변경이 어디까지 손대나」 에서 이번 PR 의 범위를 한 문장으로 정하고, 8단계에서 phase 를 쓰기 전에 PR 하나에 들어가는지 본다. README 의 「한 plan 은 한 번에 검토할 수 있는 크기」 문장을 이 규칙으로 바꾼다
+- `index.json` 에 `pr_scope`(한 문장)와 `deferred`(`what`, `why`, `after`, 없으면 빈 배열)를 더한다
+- `verify_task.py` 가 `pr_scope` 와 `deferred` 가 없거나 비면, phase 가 6개를 넘으면 위반으로 센다. 변경 파일(`docs/`, `tasks/` 제외)이 40개를 넘으면 경고한다. 기준은 저장소 7곳의 plan 517개 분포(phase 수 p95 가 6, 변경 파일 수 p90 이 50)로 정했다
+- `created_at` 이 2026-10-25 보다 이르거나 없는 옛 plan 은 같은 검사를 경고로만 낸다. 진행 중인 계획서를 다시 쓰게 하지 않는다
+- 테스트를 더했다(`PrScopeTest`)
+
 ## 2.30.0
 
 - ADR 링크 검사는 Git 추적 파일과 무시되지 않은 미추적 파일만 읽는다. Git 밖에서는 모든 Markdown을 읽으며 도움말과 진단은 한국어로 낸다

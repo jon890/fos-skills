@@ -7,7 +7,7 @@ description: |
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
   만든 task 를 실행하는 일은 `build-with-teams` 가 맡는다.
 metadata:
-  version: "2.30.0"
+  version: "2.31.0"
 ---
 # planning
 
@@ -16,6 +16,7 @@ metadata:
 - 의사결정과 서비스의 흐름은 `docs/` 에 남는다. 구현이 끝난 뒤에도 읽는다.
 - `tasks/plan{N}-{slug}/phase-*.md` 는 구현자가 이 대화를 보지 못해도 실행할 수 있어야 한다.
 - 구현된 것이 합의한 것과 같아야 한다.
+- **plan 하나는 PR 하나로 끝나는 크기다.** 더 크면 plan 을 나누고 지금 할 plan 만 자세히 쓴다. 뒤의 일은 한 줄로 두고 앞 PR 이 머지된 뒤 계획한다. 기준과 검사는 [`references/plan-size.md`](references/plan-size.md) 가 소유한다.
 - `docs/` 와 `tasks/` 는 계획서를 번호로 가리키지 않는다. 근거는 [`references/step-7-docs.md`](references/step-7-docs.md) 의 「계획서를 가리키지 않는다」 가 소유한다.
 
 이 워크플로가 관리하는 문서는 다섯이다. 파일 이름이 담을 것을 정한다.
@@ -52,14 +53,14 @@ python3 "$SKILL_DIR/scripts/overlay_paths.py" --skill planning
 
 | 단계  | 이름                 | 통과 조건                                                         | reference                                                 |
 | --- | ------------------ | ------------------------------------------------------------- | --------------------------------------------------------- |
-| 1   | 구현 가능성             | 가능 판단과 근거, 재사용 지점의 파일 경로, 리스크가 적혔다                            | `references/step-1-feasibility.md`                        |
+| 1   | 구현 가능성             | 가능 판단과 근거, 재사용 지점의 파일 경로, 리스크가 적혔고, 이번 PR 의 범위가 한 문장으로 정해졌다 | `references/step-1-feasibility.md`                        |
 | 2   | 기술 스택              | 새 의존이 없거나, 새 의존마다 대안 둘 이상을 비교해 사용자가 확정했다                      | `references/step-2-tech-stack.md`                         |
 | 3   | 호출·사용자 흐름          | 정상 흐름과 실패, 빈 상태, 동시 요청 갈래 각각에 답이 있다                           | `references/step-3-flow.md`                               |
 | 4   | 인터페이스 설계           | 경로, 라벨, 필드명 가운데 「나중에 정한다」 로 남은 것이 없다                          | `references/step-4-interface.md`                          |
 | 5   | API·함수 설계          | 응답 스키마의 필드, 옵셔널, 에러 코드가 채워졌다                                  | `references/step-5-api.md`                                |
 | 6   | 데이터·코드 구조          | 스키마의 키와 제약, 삭제 범위, 새 코드의 디렉터리가 정해졌다                           | `references/step-6-data-code.md`                          |
 | 7   | docs 영향과 기술 결정 기록 | `git diff -- docs/` 에 갱신이 있고, 영향이 없는 문서는 근거가 단계 결과에 있다           | `references/step-7-docs.md`                               |
-| 8   | task 파일 생성과 커밋     | `verify_task.py` 종료 코드가 0 이고, phase 가 인용한 식별자와 스키마와 경로가 `docs/` 와 같다 | `references/step-8-tasks.md`, `references/task-create.md` |
+| 8   | task 파일 생성과 커밋     | 범위가 PR 하나에 들어가고(넘으면 plan 을 나누고 뒤의 일은 `deferred` 에 한 줄), `verify_task.py` 종료 코드가 0 이고, phase 가 인용한 식별자와 스키마와 경로가 `docs/` 와 같다 | `references/step-8-tasks.md`, `references/task-create.md`, `references/plan-size.md` |
 
 
 ### 단계는 하나씩 순차로 진행한다

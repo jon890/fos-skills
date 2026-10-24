@@ -12,6 +12,8 @@ Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 �
 검사하는 계획이 아직 커밋 전이면 위반이고, 이미 커밋된 계획끼리 겹치면 경고다.
 새 겹침만 막고, 이미 진행 중인 계획의 폴더 이름을 바꾸게 하지 않는다.
 작업 트리와 로컬, 원격 브랜치의 tasks 디렉터리를 본다. 보고에서 phase 번호가 어느 계획인지 갈리지 않게 된다.
+index.json 의 pr_scope(한 문장)와 deferred(뒤로 미룬 일) 칸을 보고, phase 가 6개를 넘으면 plan 을 나누게 한다.
+변경 파일이 40개를 넘으면 경고한다. 기준은 references/plan-size.md 가 소유한다.
 완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 build-with-teams 가 디렉터리째 지운다.
 계획에 적힌 명령은 실행하지 않는다.
 
@@ -56,6 +58,13 @@ REQUIRED_SECTIONS = [
 
 # 스키마에 없는 키. 실행 순서는 사용자 보고로 전달하고 task 파일에 넣지 않는다.
 FORBIDDEN_KEYS = ("depends_on", "related_docs", "prerequisites")
+
+# plan 하나는 PR 하나로 끝나는 크기다. 기준은 references/plan-size.md 가 소유한다.
+MAX_PHASES = 6
+MAX_CHANGED_FILES = 40
+# 이 날짜 이후에 만든 plan 만 pr_scope, deferred 칸과 phase 수 상한을 위반으로 센다.
+PR_SCOPE_FROM = "2026-10-25"
+DEFERRED_KEYS = ("what", "why", "after")
 
 PROFILES = {"fast", "standard", "deep"}
 MODELS = {"haiku", "sonnet", "opus"}
@@ -882,6 +891,45 @@ def check_index(path: Path, plan_name: str, phase_files: list, out: list) -> Non
         out.append(f"{path} — phases 목록과 실제 phase 파일이 일치하지 않는다")
 
 
+def check_pr_scope(path: Path, data: dict, out: list, warnings: list) -> None:
+    """index.json 에 이 plan 의 PR 범위와 뒤로 미룬 일이 있는지, phase 수가 PR 하나의 크기인지 본다.
+
+    created_at 이 PR_SCOPE_FROM 보다 이르거나 없는 옛 plan 은 같은 검사를 경고로만 낸다.
+    """
+    created = data.get("created_at")
+    legacy = not (isinstance(created, str) and created >= PR_SCOPE_FROM)
+    sink = warnings if legacy else out
+    note = " (옛 plan 이라 경고만 낸다)" if legacy else ""
+
+    scope = data.get("pr_scope")
+    if not isinstance(scope, str) or not scope.strip():
+        sink.append(f"{path} — pr_scope 가 없거나 비었다. 이 plan 의 PR 이 끝내는 것을 한 문장으로 적는다{note}")
+    elif "\n" in scope.strip():
+        sink.append(f"{path} — pr_scope 는 한 문장이어야 한다{note}")
+
+    deferred = data.get("deferred")
+    if not isinstance(deferred, list):
+        sink.append(f"{path} — deferred 칸이 없다. 뒤로 미룬 일을 적고, 없으면 빈 배열로 둔다{note}")
+    else:
+        for i, item in enumerate(deferred):
+            missing = [k for k in DEFERRED_KEYS if not isinstance(item, dict) or not str(item.get(k, "")).strip()]
+            if missing:
+                sink.append(f"{path} — deferred[{i}] 에 {', '.join(missing)} 가 비었다{note}")
+
+    phases = data.get("phases")
+    if isinstance(phases, list) and len(phases) > MAX_PHASES:
+        sink.append(f"{path} — phase 가 {len(phases)}개로 PR 하나의 크기({MAX_PHASES}개)를 넘는다. "
+                    f"plan 을 나누고 지금 할 plan 만 쓴다. 뒤의 일은 deferred 에 한 줄로 둔다{note}")
+
+
+def check_changed_file_count(path: Path, entries: set, warnings: list) -> None:
+    """docs/ 와 tasks/ 를 뺀 변경 파일이 PR 하나의 크기를 넘으면 경고한다."""
+    files = {rel for rel in entries if not rel.startswith(("docs/", "tasks/")) and "/docs/" not in rel}
+    if len(files) > MAX_CHANGED_FILES:
+        warnings.append(f"{path} — 변경 파일이 {len(files)}개로 PR 하나의 크기({MAX_CHANGED_FILES}개)를 넘는다. "
+                        "디렉터리 이동 같은 일괄 이동이 아니면 plan 을 나눈다. 일괄 이동이면 pr_scope 에 그렇게 적는다")
+
+
 def check_plan_number(repo: Path, tasks_dir: str, plan: str, out: list, warnings: list) -> None:
     """같은 접두사와 번호를 쓰는 다른 계획 디렉터리를 찾는다.
 
@@ -1169,11 +1217,15 @@ def main(argv: list) -> int:
             if not phases:
                 raise ValueError(f"phase 파일 없음: {plan_dir}")
             check_index(plan_dir / "index.json", args.plan, phases, out)
+            index = json.loads((plan_dir / "index.json").read_text(encoding="utf-8"))
+            if isinstance(index, dict):
+                check_pr_scope(plan_dir / "index.json", index, out, warnings)
             check_plan_number(repo, args.tasks_dir, args.plan, out, warnings)
             remote = plan_dir / "remote-verification.md"
             if remote.is_file():
                 check_remote_verification(remote, out, warnings)
             virtual, created, phase_entries = {}, [], []
+            all_files = set()
             if args.audit:
                 warnings.append("구현 후 문서 검사: 신규/수정/삭제 파일의 구현 전 존재 조건은 대조하지 않는다")
             for path in phases:
@@ -1182,6 +1234,7 @@ def main(argv: list) -> int:
                     if marker not in text:
                         out.append(f"{path} — 필수 섹션 누락: {marker}")
                 entries = manifest(path, text, out, warnings)
+                all_files.update(rel for rel, _ in entries)
                 if not args.audit:
                     check_file_state(path, entries, repo, virtual, out, warnings, legacy_manifest(text), created)
                 check_bash_cwd(path, text, out)
@@ -1196,6 +1249,7 @@ def main(argv: list) -> int:
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
                 phase_entries.append((path, section(text, "작업 항목"), entries))
+            check_changed_file_count(plan_dir / "index.json", all_files, warnings)
             if not args.audit:
                 check_callers(phase_entries, repo, args.tasks_dir, warnings)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
