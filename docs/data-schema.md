@@ -61,7 +61,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `verify-merged` | `pr`, `copy`(사본 절대경로), `base_head`, `changed_files`, `overlap_files` |
 | `after-merge` | `pr`, `merge_commit`, `remote_branch_deleted`(bool), `retargeted`(base 를 옮긴 PR 번호 목록) |
 | `after-queue` | `merged_prs`, `code_prs`, `held_prs` |
-| `after-deploy` | `pr`, `merge_commit`, `deploy`(`success`, `failure`, `none`), `last_of_task`(bool) |
+| `after-deploy` | `pr`, `merge_commit`, `deploy`(`success`, `failure`, `timeout`, `none`), `last_of_task`(bool) |
 | `before-cleanup` | `worktree`, `branch`, `pr`(있으면), `worker`(있으면) |
 | `after-cleanup` | `removed`(경로 목록), `skipped`(경로와 이유의 목록) |
 | `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록) |
@@ -74,7 +74,7 @@ worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`
 | `queue.before`, 명령줄 `--before` | `before-merge` | `PR` → `pr.number`, `BRANCH` → `pr.branch`, `OWNER` → `owner`, `REPO` → `name` |
 | `queue.verify_merged`, 명령줄 `--verify-merged` | `verify-merged` | `$1`, `MERGE_COPY` → `copy`, `PR_HEAD` → `pr.head`, `BASE_HEAD` → `base_head`, `CHANGED_FILES` → `changed_files`, `OVERLAP_FILES` → `overlap_files` |
 | `queue.after_merged`, 명령줄 `--after-merged` | `after-queue` | `MERGED_PRS` → `merged_prs`, `CODE_PRS` → `code_prs` |
-| `finish.complete_cmd`, `finish.task_pattern` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다 |
+| `finish.complete_cmd`, `finish.task_pattern`, 명령줄 `--complete-cmd`, `--task-pattern` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다 |
 
 명령줄의 `PR번호:명령` 형식은 그대로 둔다. 그 PR 하나에만 붙이는 일회성 명령이라 핸들러로 옮기지 않는다. `before-merge` 핸들러 다음에 돈다.
 명령줄 `--before` 가 있으면 그 PR 에서는 `PR번호:명령` 이 대신한다.

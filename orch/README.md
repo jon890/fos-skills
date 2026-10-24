@@ -19,8 +19,8 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/merge_queue.ts`: PR 을 순서대로 확인하고 머지한다. 머지 전 명령을 PR 마다 받는다. PR 이 고친 파일을 base 도 고쳤으면 멈추거나(`--stop-on-overlap`) base 와 합친 임시 사본에서 검사 명령을 돌린 뒤 머지한다(`--verify-merged`). 겹치지 않은 코드 PR 도 검사하게 하거나(`--verify-merged-when`) 문서 PR 은 검사 없이 머지하고(`--docs-glob`), 보류한 PR 을 건너뛰고 다음 PR 로 갈 수 있다(`--continue-on-hold`). `--up-to-date-when overlap` 은 PR 이 바꾼 단위(모듈 폴더)와 base 의 새 변경이 겹치지 않으면 base 최신화와 CI 재대기 없이 머지한다(판정은 `scripts/overlap_units.ts`)
 - `scripts/overlap_units.ts`: `overlap_units.py` 의 단위 겹침 판정을 옮긴 명령이다. 옵션, 출력 한 줄, 종료 코드가 같다. 판정은 `lib/overlap.ts` 에 있다. 머지 큐가 PR 차례마다 이 명령을 부른다
 - `scripts/merge-queue.sh`: 옛 경로. 다음 major 에서 지운다. `merge_queue.py` 를 거쳐 `merge_queue.ts` 로 넘긴다
-- `scripts/merge-with-finish.py`: 머지 큐를 걸면서 PR 마다 `finish-pr.py` 를 함께 건다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이다. 같은 PR 의 마무리가 이미 돌면 다시 걸지 않는다. 명령줄에 없는 머지 큐 옵션은 `.orch/config.json` 의 `queue` 절에서 채운다. 보드 항목은 `pr` 필드로 찾아 업무의 마지막 PR 에서만 done 으로 바꾸고, 정리 인자(`sweep_args`)도 그 절에서 받는다. 머지 큐는 기본으로 이 스크립트로 건다
-- `scripts/finish-pr.py`: 머지를 `gh` 로 확인한 뒤 그 브랜치의 worker 를 정리하고, 머지 커밋이 들어간 배포의 성공을 기다리고, 업무를 완료 처리하고, 보드를 done 으로 바꾼다. 끝에 `FINISH-DONE` 이나 `FINISH-FAIL` 을 낸다
+- `scripts/merge-with-finish.ts`: 머지 큐를 걸면서 PR 마다 `finish-pr.ts` 를 함께 건다. PR 번호 뒤 `!` 는 업무의 마지막 PR 이고, 머지 큐에 `--last-of-task` 로도 넘긴다. 같은 PR 의 마무리가 이미 돌면 다시 걸지 않는다. 명령줄에 없는 머지 큐 옵션은 `.orch/config.json` 의 `queue` 절에서 채운다. 보드 항목은 `pr` 필드로 찾아 업무의 마지막 PR 에서만 done 으로 바꾸고, 정리 인자(`sweep_args`)도 그 절에서 받는다. 머지 큐는 기본으로 이 스크립트로 건다
+- `scripts/finish-pr.ts`: 머지를 `gh` 로 확인한 뒤 그 브랜치의 worker 를 정리하고, 머지 커밋이 들어간 배포의 성공을 기다리고, `after-deploy` 이벤트를 내고, 보드를 done 으로 바꾼다. 업무 완료 명령(`--complete-cmd`)은 `after-deploy` 의 옛 칸으로 돈다. 지시서는 살아 있는 dispatch 가 쓰지 않을 때만 지운다. 끝에 `FINISH-DONE` 이나 `FINISH-FAIL` 을 낸다
 - `scripts/handoff-cleanup.py`: `.orch/` 의 끝난 큐 로그, 끝난 지시서, 오래된 폴더, 지난 csv·tsv 를 휴지통 폴더로 옮긴다. 미리보기 폴더는 설정으로 줄 때만 본다. 기본은 후보만 보이고 `--apply` 로 옮긴다
 - `scripts/orch_paths.py`: orch 작업 폴더(`.orch/`)의 경로를 한 곳에서 정한다. 스크립트가 import 하고, 셸에서는 `orch_paths.py specs` 처럼 이름으로 경로를 받는다
 - `scripts/migrate-orch-dir.py`: 옛 위치(`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/`)의 orch 파일을 `.orch/` 로 옮긴다. 기본은 미리보기이고 `--apply` 로 옮긴다
@@ -54,7 +54,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/heavy-slot.py`: 같은 PC 의 무거운 검사를 대기열에서 실행한다. 자리를 잡은 뒤 `mem-gate.py` 를 부른다
 - `scripts/orch_process.py`: 모듈. 스크립트가 함께 쓰는 프로세스 실행 함수다
 - `scripts/ts_shim.py`: 모듈. TypeScript 로 옮긴 명령의 옛 `.py` 경로가 import 한다. node 22.18 이상인지 보고 같은 이름의 `.ts` 로 넘긴다
-- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
+- 옛 경로. 다음 major 에서 지운다: `scripts/spec-line.py`, `scripts/spec-lint.py`, `scripts/make-worktree.py`, `scripts/worktree-deny.py`, `scripts/launch-worker.py`, `scripts/send-to-worker.py`, `scripts/nudge-worker.py`, `scripts/worker-ask.py`, `scripts/wait-important.py`, `scripts/triage-messages.py`, `scripts/watch-questions.py`, `scripts/ci-ready.py`, `scripts/notify-conflicts.py`, `scripts/merge_queue.py`, `scripts/overlap_units.py`, `scripts/merge-with-finish.py`, `scripts/finish-pr.py`. 같은 이름의 `.ts` 로 넘기고 stderr 에 `DEPRECATED` 줄을 낸다. `worker-ask.py` 는 답의 첫 줄 `answer:` 앞에 섞이지 않게 내지 않는다
 - `scripts/mem-gate.py`: macOS 의 free 메모리와 swap 이 기준 안에 들 때까지 기다린 뒤 명령을 실행한다. 무거운 검사 앞에 둔다
 - `tests/`: 스크립트 테스트. gh, git, sleep 은 가짜를 PATH 앞에 두고 돈다
 

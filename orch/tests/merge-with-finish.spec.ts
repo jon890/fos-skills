@@ -1,0 +1,687 @@
+// merge-with-finish.ts 가 PR 인자를 해석하고, 마무리를 PR 마다 한 번만 걸고, 머지 큐에 `!` 를 뗀 인자를 넘기는지 본다.
+//
+// 머지 큐와 마무리는 대개 인자를 기록하는 가짜 스크립트(queue.sh, finish.py)로 바꾼다. 확장자대로 bash 와 python3 로 돈다.
+// 옛 칸이 머지 큐의 이벤트로 이어지는지는 MERGE_QUEUE 를 바꾸지 않고 진짜 merge_queue.ts 를 가짜 gh, git 으로 돌려 본다
+// (tests/fixtures/merge-queue-fakes.ts). GitHub 와 Orca 에는 닿지 않는다.
+
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { after, before, describe, test } from 'node:test'
+import type { TestContext } from 'node:test'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
+import { QUEUE_VALUE_OPTIONS } from '../scripts/lib/queue-options.ts'
+import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
+import type { Done } from './fixtures/merge-queue-fakes.ts'
+
+const SCRIPT = fileURLToPath(new URL('../scripts/merge-with-finish.ts', import.meta.url))
+const NODE = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
+const HAS_BASH = spawnSync('sh', ['-c', 'command -v bash']).status === 0
+
+const FAKE_QUEUE_SH = `echo "queue $*" >> "$FAKE_LOG"
+exit "\${FAKE_QUEUE_EXIT:-0}"
+`
+const FAKE_FINISH = `import os, sys, time
+open(os.environ["FAKE_LOG"], "a").write("finish " + " ".join(sys.argv[1:]) + "\\n")
+pid = sys.argv[sys.argv.index("--pid-file") + 1]
+open(pid, "w").write(str(os.getpid()))
+time.sleep(float(os.environ.get("FAKE_FINISH_SLEEP", "0")))
+`
+
+type Json = Record<string, unknown>
+type Ctx = {
+  tmp: string
+  logs: string
+  logFile: string
+  env: NodeJS.ProcessEnv
+  wrap: (args: string[], env?: Record<string, string>, opts?: { logDir?: boolean }) => Promise<Done>
+  lines: (prefix: string, count?: number) => Promise<string[]>
+  finishes: (count: number) => Promise<Record<string, string>>
+  writeConfig: (body: Json) => void
+  writeBoard: (items: unknown[], name?: string) => void
+  reset: () => void
+}
+
+function setup(t: TestContext): Ctx {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'merge-with-finish-')))
+  // 백그라운드로 띄운 가짜 마무리가 지우는 사이에 pid 파일을 쓸 수 있어 ENOTEMPTY 면 다시 지운다
+  t.after(() => rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
+  writeFileSync(join(tmp, 'queue.sh'), FAKE_QUEUE_SH)
+  writeFileSync(join(tmp, 'finish.py'), FAKE_FINISH)
+  const logFile = join(tmp, 'log.txt')
+  const logs = join(tmp, 'logs')
+  const env: NodeJS.ProcessEnv = { ...process.env, MERGE_QUEUE: join(tmp, 'queue.sh'), FINISH_PR: join(tmp, 'finish.py'), FAKE_LOG: logFile }
+  // 설정과 핸들러는 --repo 의 .orch 에 둔다. 바깥 환경의 ORCH_DIR 이 그 위치를 바꾸지 않게 한다
+  delete env.ORCH_DIR
+  const read = () => (existsSync(logFile) ? readFileSync(logFile, 'utf8').split('\n').filter((line) => line) : [])
+  // 마무리는 백그라운드로 돌아 명령이 끝난 뒤에 적을 수 있다. count 줄이 모이거나 5초가 지날 때까지 다시 본다
+  const lines = async (prefix: string, count = 1) => {
+    const deadline = Date.now() + 5000
+    let found = read().filter((line) => line.startsWith(prefix))
+    while (found.length < count && Date.now() < deadline) {
+      await sleep(50)
+      found = read().filter((line) => line.startsWith(prefix))
+    }
+    return found
+  }
+  return {
+    tmp,
+    logs,
+    logFile,
+    env,
+    wrap: (args, extra = {}, opts = {}) =>
+      spawnDone([...NODE, ...(opts.logDir === false ? [] : ['--finish-log-dir', logs]), ...args], { cwd: tmp, env: { ...env, ...extra } }),
+    lines,
+    finishes: async (count) => Object.fromEntries((await lines('finish ', count)).map((line) => [line.split(' ')[1], line])),
+    writeConfig: (body) => {
+      mkdirSync(join(tmp, '.orch'), { recursive: true })
+      writeFileSync(join(tmp, '.orch', 'config.json'), JSON.stringify(body))
+    },
+    writeBoard: (items, name = '.omc/board.json') => {
+      const target = join(tmp, name)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, JSON.stringify({ items }))
+    },
+    reset: () => {
+      rmSync(logFile, { force: true })
+      rmSync(logs, { recursive: true, force: true })
+    },
+  }
+}
+
+function both(r: Done): string {
+  return `종료 코드 ${r.code}\n--- stdout\n${r.stdout}\n--- stderr\n${r.stderr}`
+}
+
+function has(text: string, part: string, detail = text): void {
+  assert.ok(text.includes(part), `${JSON.stringify(part)} 가 없다:\n${detail}`)
+}
+
+function lacks(text: string, part: string, detail = text): void {
+  assert.ok(!text.includes(part), `${JSON.stringify(part)} 가 있으면 안 된다:\n${detail}`)
+}
+
+function count(text: string, part: string): number {
+  return text.split(part).length - 1
+}
+
+function hook(tmp: string, event: string, body = 'process.exit(0)\n'): void {
+  mkdirSync(join(tmp, '.orch', 'hooks'), { recursive: true })
+  writeFileSync(join(tmp, '.orch', 'hooks', `${event}.ts`), body)
+}
+
+describe('merge-with-finish PR 인자 해석', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
+  test('PR, PR!, PR:명령, PR!:명령 을 나눠 머지 큐에는 ! 를 뗀 인자를, 마무리에는 --complete 를 넘긴다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--no-sweep', '449', '450!', '102:./bin/backup.sh a:b', '446!:./backup.sh "pre-446"'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), [
+      'queue --last-of-task 450 --last-of-task 446 --no-sweep 449 450 102:./bin/backup.sh a:b 446:./backup.sh "pre-446"',
+    ])
+    const by = await c.finishes(4)
+    assert.deepEqual(Object.keys(by).sort(), ['102', '446', '449', '450'])
+    lacks(by['449'], '--complete')
+    has(by['450'], '--complete')
+    lacks(by['102'], '--complete')
+    has(by['446'], '--complete')
+  })
+
+  test('PR 번호가 아닌 인자는 사용법 오류이고 아무것도 걸지 않는다', async (t) => {
+    const c = setup(t)
+    for (const arg of ['abc', '12a', '!449', '449!!', '']) {
+      const r = await c.wrap([arg])
+      assert.equal(r.code, 2, `${JSON.stringify(arg)}: ${both(r)}`)
+      has(r.stderr, 'PR 번호가 아니다')
+    }
+    assert.equal(existsSync(c.logFile), false)
+  })
+
+  test('래퍼 옵션과 머지 큐 옵션을 가른다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap([
+      '--repo',
+      c.tmp,
+      '--check-timeout',
+      '30',
+      '--finish-arg=--run',
+      '--finish-arg',
+      'run_1',
+      '--require-up-to-date',
+      '--finish-config',
+      '/nowhere/c.json',
+      '101',
+      '102!',
+    ])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), [`queue --last-of-task 102 --sweep-arg --run --sweep-arg run_1 --repo ${c.tmp} --check-timeout 30 --require-up-to-date 101 102`])
+    const by = await c.finishes(2)
+    for (const n of ['101', '102']) {
+      has(by[n], `--repo ${c.tmp}`)
+      has(by[n], `--pid-file ${c.logs}/finish-${n}.pid`)
+      has(by[n], '--config /nowhere/c.json')
+      has(by[n], '--run run_1')
+    }
+  })
+
+  test('449! 면 머지 큐가 --last-of-task 449 와 449 를 받는다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--no-finish', '--no-sweep', '449!'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), ['queue --last-of-task 449 --no-sweep 449'])
+  })
+
+  test('값을 받는 머지 큐 옵션의 숫자 값은 PR 로 읽지 않고 그대로 넘긴다', async (t) => {
+    const c = setup(t)
+    for (const option of QUEUE_VALUE_OPTIONS) {
+      c.reset()
+      const r = await c.wrap(['--no-finish', '--no-sweep', option, '5', '7'])
+      assert.equal(r.code, 0, `${option}: ${both(r)}`)
+      assert.deepEqual(await c.lines('queue'), [`queue --no-sweep ${option} 5 7`], option)
+    }
+  })
+
+  test('래퍼 옵션의 값이 없거나 형식이 틀리면 사용법 오류다', async (t) => {
+    const c = setup(t)
+    for (const argv of [['--repo'], ['--finish-arg'], ['--board-item', 'x'], ['--board-item', '5='], ['--board-item'], ['--run'], ['--run=', '449']]) {
+      const r = await c.wrap(argv)
+      assert.equal(r.code, 2, `${argv.join(' ')}: ${both(r)}`)
+    }
+    assert.equal(existsSync(c.logFile), false)
+  })
+
+  test('PR 이 없으면 사용법을 찍고 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap([])
+    assert.equal(r.code, 2, both(r))
+    has(r.stdout, '사용법:')
+    assert.equal(existsSync(c.logFile), false)
+  })
+})
+
+describe('merge-with-finish 마무리', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
+  test('PR 마다 마무리를 걸고 출력 파일을 알린다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--repo', c.tmp, '--required', 'ci', '449!', '450'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), [`queue --last-of-task 449 --repo ${c.tmp} --required ci 449 450`])
+    const by = await c.finishes(2)
+    has(by['449'], '--complete')
+    lacks(by['450'], '--complete')
+    has(by['449'], `--repo ${c.tmp}`)
+    has(by['449'], `--pid-file ${c.logs}/finish-449.pid`)
+    has(r.stdout, `마무리 시작: PR 449 (업무의 마지막 PR) -> ${c.logs}/finish-449.out`)
+  })
+
+  test('--board-item 은 그 PR 의 마무리에만 넘어간다', async (t) => {
+    const c = setup(t)
+    await c.wrap(['--board-item', '449=item-1', '--board-item=450=item-2', '449', '450', '451'])
+    const by = await c.finishes(3)
+    has(by['449'], '--board-id item-1')
+    has(by['450'], '--board-id item-2')
+    lacks(by['451'], '--board-id')
+  })
+
+  test('돌고 있는 마무리는 다시 걸지 않는다', async (t) => {
+    const c = setup(t)
+    await c.wrap(['449'], { FAKE_FINISH_SLEEP: '30' })
+    assert.equal((await c.lines('finish ')).length, 1)
+    const pidFile = join(c.logs, 'finish-449.pid')
+    const deadline = Date.now() + 5000
+    while (!existsSync(pidFile) && Date.now() < deadline) await sleep(50)
+    const pid = Number(readFileSync(pidFile, 'utf8'))
+    try {
+      const r = await c.wrap(['449'])
+      assert.equal(r.code, 0, both(r))
+      has(r.stdout, '이미 돌고 있다')
+      await sleep(300)
+      assert.equal((await c.lines('finish ')).length, 1)
+    } finally {
+      process.kill(pid, 'SIGTERM')
+    }
+  })
+
+  test('신호를 보낼 권한이 없는(EPERM) pid 의 마무리는 살아 있는 것으로 보고 다시 걸지 않는다', async (t) => {
+    const c = setup(t)
+    mkdirSync(c.logs)
+    // pid 1 은 늘 살아 있고, root 가 아니면 신호를 보낼 권한이 없어 EPERM 이다. root 면 신호가 닿아 살아 있다
+    writeFileSync(join(c.logs, 'finish-449.pid'), '1')
+    const r = await c.wrap(['449'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마무리는 이미 돌고 있다: PR 449')
+    await sleep(300)
+    assert.deepEqual(await c.lines('finish ', 0), [])
+  })
+
+  test('죽은 pid 가 든 pid 파일은 새 마무리를 막지 않는다', async (t) => {
+    const c = setup(t)
+    mkdirSync(c.logs)
+    writeFileSync(join(c.logs, 'finish-449.pid'), '999999')
+    await c.wrap(['449'])
+    assert.equal((await c.lines('finish ')).length, 1)
+  })
+
+  test('--no-finish 는 머지 큐만 돌린다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--no-finish', '449!'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), ['queue --last-of-task 449 449'])
+    await sleep(300)
+    assert.deepEqual(readFileSync(c.logFile, 'utf8').split('\n').filter((line) => line), ['queue --last-of-task 449 449'])
+  })
+
+  test('머지 큐의 종료 코드로 끝난다', async (t) => {
+    const c = setup(t)
+    assert.equal((await c.wrap(['449'], { FAKE_QUEUE_EXIT: '1' })).code, 1)
+  })
+})
+
+describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
+  test('queue 절이 명령줄에 없는 머지 큐 옵션을 채운다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({
+      finish: {},
+      queue: { required: ['ci', 'lint'], verify_merged: 'cd "$1" && make test', verify_merged_when: 'code', docs_glob: ['docs/*', '*.md'], method: 'squash', before: 'true' },
+    })
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    const [line] = await c.lines('queue')
+    for (const part of ['--required ci,lint', '--verify-merged cd "$1" && make test', '--verify-merged-when code', '--docs-glob docs/*,*.md', '--method squash', '--before true']) {
+      has(line, part)
+    }
+    assert.ok(line.endsWith(`--repo ${c.tmp} 449`), line)
+  })
+
+  test('after_merged 와 참거짓 키', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { after_merged: 'bash deploy.sh', skipped_is_missing: true } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    let [line] = await c.lines('queue')
+    has(line, '--after-merged bash deploy.sh')
+    has(line, '--skipped-is-missing')
+    c.reset()
+    c.writeConfig({ queue: { skipped_is_missing: false } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    ;[line] = await c.lines('queue')
+    lacks(line, '--skipped-is-missing')
+  })
+
+  test('명령줄이 queue 절보다 우선한다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { required: 'ci', method: 'squash' } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '--method', 'merge', '449'])
+    const [line] = await c.lines('queue')
+    has(line, '--required ci')
+    lacks(line, 'squash')
+  })
+
+  test('update_docs_on_overlap 를 켜고 끈다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { required: 'ci', docs_glob: ['docs/*', '*.md'], update_docs_on_overlap: true } })
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    has((await c.lines('queue'))[0], '--update-docs-on-overlap')
+    c.reset()
+    c.writeConfig({ queue: { update_docs_on_overlap: false } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    lacks((await c.lines('queue'))[0], '--update-docs-on-overlap')
+  })
+
+  test('겹침 판정 옵션을 넘긴다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { require_up_to_date: true, up_to_date_when: 'overlap', unit_prefix: 'apps/', shared_paths: ['^apps/common/', '^build\\.gradle$'], required: 'ci' } })
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    let [line] = await c.lines('queue')
+    for (const part of ['--require-up-to-date', '--up-to-date-when overlap', '--unit-prefix apps/', '--shared-paths ^apps/common/|^build\\.gradle$']) has(line, part)
+    c.reset()
+    c.writeConfig({ queue: { shared_paths: '^lib/', require_up_to_date: false } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    ;[line] = await c.lines('queue')
+    has(line, '--shared-paths ^lib/')
+    lacks(line, '--require-up-to-date')
+  })
+
+  test('unit_groups 는 묶음마다 --unit-group 이 되고 명령줄의 --unit-group 이 대신한다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { unit_groups: [['web', 'bff'], ['a', 'b', 'c']] } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    has((await c.lines('queue'))[0], '--unit-group web,bff --unit-group a,b,c')
+    c.reset()
+    await c.wrap(['--repo', c.tmp, '--no-finish', '--unit-group', 'x,y', '449'])
+    const [line] = await c.lines('queue')
+    has(line, '--unit-group x,y')
+    lacks(line, 'web')
+  })
+
+  test('명령줄 겹침 옵션이 queue 절보다 우선한다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { up_to_date_when: 'overlap', unit_prefix: 'apps/' } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '--up-to-date-when', 'always', '449'])
+    const [line] = await c.lines('queue')
+    has(line, '--up-to-date-when always')
+    lacks(line, 'overlap')
+    has(line, '--unit-prefix apps/')
+  })
+
+  test('sweep_args 는 항목마다 --sweep-arg 가 되고 명령줄의 --sweep-arg 가 대신한다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { sweep_args: ['--run', 'run_x', '--specs-dir', '.orch/specs'] } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    has((await c.lines('queue'))[0], '--sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs')
+    c.reset()
+    c.writeConfig({ queue: { sweep_args: ['--run', 'run_x'] } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '--sweep-arg', '--kill-holders', '449'])
+    const [line] = await c.lines('queue')
+    has(line, '--sweep-arg --kill-holders')
+    lacks(line, 'run_x')
+  })
+
+  test('queue 절의 값이 틀리면 아무것도 걸기 전에 사용법 오류다', async (t) => {
+    const c = setup(t)
+    const bad: unknown[] = [
+      { sweep_args: '--run' },
+      { sweep_args: [1] },
+      { sweep_args: [''] },
+      { up_to_date_when: '' },
+      { shared_paths: [] },
+      { require_up_to_date: 'yes' },
+      { unit_groups: [] },
+      { unit_groups: ['web,bff'] },
+      { unit_groups: [['web']] },
+      { unit_groups: [['a,b', 'c']] },
+      { verify: 'x' },
+      { method: 3 },
+      { required: '' },
+      [],
+      { skipped_is_missing: 'yes' },
+    ]
+    for (const queue of bad) {
+      c.writeConfig({ queue } as Json)
+      const r = await c.wrap(['--repo', c.tmp, '449'])
+      assert.equal(r.code, 2, `${JSON.stringify(queue)}: ${both(r)}`)
+      assert.equal(existsSync(c.logFile), false, JSON.stringify(queue))
+    }
+  })
+
+  test('--finish-config 가 읽을 파일을 정한다', async (t) => {
+    const c = setup(t)
+    const other = join(c.tmp, 'other.json')
+    writeFileSync(other, JSON.stringify({ queue: { method: 'rebase' } }))
+    c.writeConfig({ queue: { method: 'squash' } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '--finish-config', other, '449'])
+    has((await c.lines('queue'))[0], '--method rebase')
+  })
+
+  test('.omc 가 없는 저장소는 .orch/config.json 을 읽고 마무리 출력을 .orch/queue 에 둔다', async (t) => {
+    const c = setup(t)
+    const repo = join(c.tmp, 'repo')
+    assert.equal(spawnSync('git', ['init', '-q', repo]).status, 0)
+    mkdirSync(join(repo, '.orch'))
+    writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ queue: { required: ['ci'], before: 'true' } }))
+    const r = await c.wrap(['--repo', repo, '449!'], {}, { logDir: false })
+    assert.equal(r.code, 0, both(r))
+    const [line] = await c.lines('queue')
+    has(line, '--required ci')
+    has(line, '--before true')
+    assert.equal(existsSync(join(repo, '.orch', 'queue', 'finish-449.out')), true)
+    assert.ok(readFileSync(join(repo, '.git', 'info', 'exclude'), 'utf8').split('\n').includes('/.orch/'))
+    assert.equal(existsSync(join(repo, '.omc')), false)
+  })
+
+  test('옛 구조가 남아 있으면 --finish-config 를 주지 않는 한 머지 큐를 걸지 않는다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.tmp, '.claude'))
+    const old = join(c.tmp, '.claude', 'orch-finish.json')
+    writeFileSync(old, JSON.stringify({ queue: { before: './backup.sh' } }))
+    let r = await c.wrap(['--repo', c.tmp, '449'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'migrate-orch-dir.py')
+    assert.equal(existsSync(c.logFile), false)
+    r = await c.wrap(['--repo', c.tmp, '--finish-config', old, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    has((await c.lines('queue'))[0], '--before ./backup.sh')
+  })
+
+  test('finish.complete_cmd 와 hooks/after-deploy.ts 가 함께 있으면 마무리도 머지 큐도 걸지 않고 2 로 끝난다', async (t) => {
+    const c = setup(t)
+    hook(c.tmp, 'after-deploy')
+    c.writeConfig({ finish: { complete_cmd: 'task-cli complete {number}', task_pattern: '(PROJ-[0-9]+)' } })
+    let r = await c.wrap(['--repo', c.tmp, '449!'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'after-deploy 의 핸들러')
+    has(r.stderr, '옛 설정 칸 finish.complete_cmd 가 함께 있다')
+    c.writeConfig({})
+    r = await c.wrap(['--repo', c.tmp, '--finish-arg=--complete-cmd', '--finish-arg', 'task-cli complete {number}', '449!'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '옛 설정 칸 --finish-arg 의 --complete-cmd 가 함께 있다')
+    await sleep(300)
+    assert.equal(existsSync(c.logFile), false)
+    assert.equal(existsSync(c.logs), false)
+  })
+})
+
+describe('merge-with-finish 보드 항목', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
+  test('pr 필드로 찾은 항목은 업무의 마지막 PR 에만 넘긴다', async (t) => {
+    const c = setup(t)
+    c.writeBoard([{ id: 'task-a', pr: '#492, #495' }, { id: 'task-b', pr: '500' }, { id: 'none' }])
+    const r = await c.wrap(['--repo', c.tmp, '492', '495!', '500!', '501!'])
+    assert.equal(r.code, 0, both(r))
+    const by = await c.finishes(4)
+    lacks(by['492'], '--board-id')
+    has(by['495'], '--board-id task-a')
+    has(by['500'], '--board-id task-b')
+    lacks(by['501'], '--board-id')
+    has(r.stdout, '보드 항목 task-a 는 PR 492 가 업무의 마지막 PR(!)이 아니라')
+  })
+
+  test('숫자 id 는 문자열로 넘기고, 둘 이상이면 건너뛴다고 알린다', async (t) => {
+    const c = setup(t)
+    c.writeBoard([{ id: 7, pr: '492' }, { id: 8, pr: '495' }, { id: 9, pr: '495' }])
+    const r = await c.wrap(['--repo', c.tmp, '492!', '495!'])
+    assert.equal(r.code, 0, both(r))
+    has((await c.finishes(2))['492'], '--board-id 7')
+    has(r.stdout, '보드 항목이 둘 이상이라 건너뛴다: PR 495 -> 8, 9')
+  })
+
+  test('pr 필드의 숫자는 글자에 붙지 않은 것만 PR 번호로 읽는다', async (t) => {
+    const c = setup(t)
+    const cases: [unknown, string[]][] = [
+      ['#492 495', ['492', '495']],
+      ['492/495', ['492', '495']],
+      ['#492 (v2)', ['492']],
+      ['492, #495', ['492', '495']],
+      ['PR한2', []],
+      ['', []],
+      [null, []],
+    ]
+    const items = cases.map(([pr], i) => ({ id: `case-${i}`, pr }))
+    c.writeBoard(items)
+    const r = await c.wrap(['--repo', c.tmp, '492!', '495!', '2!'])
+    assert.equal(r.code, 0, both(r))
+    const by = await c.finishes(3)
+    const want = (n: string) => cases.flatMap(([, numbers], i) => (numbers.includes(n) ? [`case-${i}`] : []))
+    // 492 와 495 는 여러 항목에 들어 건너뛰고, 2 는 어느 항목에도 없다
+    assert.deepEqual(want('492'), ['case-0', 'case-1', 'case-2', 'case-3'])
+    has(r.stdout, `보드 항목이 둘 이상이라 건너뛴다: PR 492 -> ${want('492').join(', ')}`)
+    has(r.stdout, `보드 항목이 둘 이상이라 건너뛴다: PR 495 -> ${want('495').join(', ')}`)
+    assert.deepEqual(want('2'), [])
+    lacks(by['2'], '--board-id')
+  })
+
+  test('--board-item 이 찾은 항목보다 우선하고 ! 와 상관없이 쓴다', async (t) => {
+    const c = setup(t)
+    c.writeBoard([{ id: 'found', pr: '492' }])
+    await c.wrap(['--repo', c.tmp, '--board-item', '492=explicit', '492', '493'])
+    has((await c.finishes(2))['492'], '--board-id explicit')
+  })
+
+  test('같은 PR 이 든 항목이 둘이면 건너뛴다', async (t) => {
+    const c = setup(t)
+    c.writeBoard([{ id: 'a', pr: '7' }, { id: 'b', pr: '#7' }])
+    const r = await c.wrap(['--repo', c.tmp, '7!'])
+    assert.equal(r.code, 0, both(r))
+    lacks((await c.finishes(1))['7'], '--board-id')
+    has(r.stdout, '보드 항목이 둘 이상이라 건너뛴다: PR 7 -> a, b')
+  })
+
+  test('보드 파일은 --finish-arg 의 --board, finish.board, 옛 기본 위치 순서로 정한다', async (t) => {
+    const c = setup(t)
+    c.writeBoard([{ id: 'plain', pr: '9' }])
+    c.writeBoard([{ id: 'nested', pr: '9' }], '.omc/handoffs/board.json')
+    await c.wrap(['--repo', c.tmp, '9!'])
+    has((await c.finishes(1))['9'], '--board-id nested')
+    c.reset()
+    c.writeBoard([{ id: 'configured', pr: '9' }], 'boards/main.json')
+    c.writeConfig({ finish: { board: 'boards/main.json' } })
+    await c.wrap(['--repo', c.tmp, '9!'])
+    has((await c.finishes(1))['9'], '--board-id configured')
+    c.reset()
+    c.writeBoard([{ id: 'arg', pr: '9' }], 'boards/other.json')
+    await c.wrap(['--repo', c.tmp, '--finish-arg=--board=boards/other.json', '9!'])
+    has((await c.finishes(1))['9'], '--board-id arg')
+  })
+
+  test('보드가 없거나 깨져도 오류가 아니다', async (t) => {
+    const c = setup(t)
+    let r = await c.wrap(['--repo', c.tmp, '9!'])
+    assert.equal(r.code, 0, both(r))
+    lacks((await c.finishes(1))['9'], '--board-id')
+    c.reset()
+    mkdirSync(join(c.tmp, '.omc'), { recursive: true })
+    writeFileSync(join(c.tmp, '.omc', 'board.json'), '{broken')
+    r = await c.wrap(['--repo', c.tmp, '9!'])
+    assert.equal(r.code, 0, both(r))
+    lacks((await c.finishes(1))['9'], '--board-id')
+  })
+})
+
+describe('merge-with-finish --run', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
+  test('--run 은 마무리와 머지 큐의 정리 단계에 간다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--run', 'run_x', '--repo', c.tmp, '449'])
+    assert.equal(r.code, 0, both(r))
+    has((await c.lines('queue'))[0], '--sweep-arg --run --sweep-arg run_x')
+    has((await c.finishes(1))['449'], '--run run_x')
+    lacks(r.stderr, '정리 단계가 Run 으로 한정되지 않는다')
+  })
+
+  test('--run=값 도 같은 옵션이다', async (t) => {
+    const c = setup(t)
+    await c.wrap(['--run=run_z', '--no-finish', '449'])
+    has((await c.lines('queue'))[0], '--sweep-arg --run --sweep-arg run_z')
+  })
+
+  test('정리 인자에 이미 --run 이 있으면 두 번 넘기지 않는다', async (t) => {
+    const c = setup(t)
+    await c.wrap(['--run', 'run_x', '--no-finish', '--sweep-arg', '--run', '--sweep-arg', 'run_x', '449'])
+    const [line] = await c.lines('queue')
+    assert.equal(count(line, '--sweep-arg --run'), 1, line)
+    c.reset()
+    c.writeConfig({ queue: { sweep_args: ['--run', 'run_x'] } })
+    await c.wrap(['--run', 'run_x', '--no-finish', '449'])
+    assert.equal(count((await c.lines('queue'))[0], '--sweep-arg --run'), 1)
+  })
+
+  test('--finish-arg 로만 준 --run 도 정리 단계에 간다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--finish-arg=--run', '--finish-arg', 'run_1', '--repo', c.tmp, '449'])
+    assert.equal(r.code, 0, both(r))
+    const [line] = await c.lines('queue')
+    has(line, '--sweep-arg --run --sweep-arg run_1')
+    assert.equal(count(line, '--sweep-arg --run'), 1)
+    lacks(r.stderr, '정리 단계가 Run 으로 한정되지 않는다')
+    assert.equal(count((await c.finishes(1))['449'], '--run run_1'), 1)
+  })
+
+  test('Run 이 없으면 머지 큐 인자는 그대로이고 경고 한 줄을 낸다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), [`queue --repo ${c.tmp} 449`])
+    assert.equal(count(r.stderr, '경고: 정리 단계가 Run 으로 한정되지 않는다'), 1, both(r))
+  })
+
+  test('--no-sweep 이면 경고하지 않는다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--no-sweep', '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    lacks(r.stderr, '한정되지 않는다')
+  })
+
+  test('Run 값이 서로 다르면 사용법 오류다', async (t) => {
+    const c = setup(t)
+    for (const argv of [
+      ['--run', 'a', '--finish-arg=--run', '--finish-arg', 'b', '449'],
+      ['--run', 'a', '--sweep-arg', '--run', '--sweep-arg', 'b', '449'],
+      ['--finish-arg=--run', '--finish-arg', 'a', '--sweep-arg', '--run', '--sweep-arg', 'b', '449'],
+    ]) {
+      const r = await c.wrap(['--repo', c.tmp, ...argv])
+      assert.equal(r.code, 2, `${argv.join(' ')}: ${both(r)}`)
+      assert.equal(existsSync(c.logFile), false)
+    }
+  })
+})
+
+// 진짜 merge_queue.ts 를 가짜 gh, git 으로 돌린다. 옛 칸이 머지 큐의 이벤트로 이어지는지 본다
+describe('merge-with-finish 와 머지 큐 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  let bindir = ''
+  before(() => {
+    bindir = mkdtempSync(join(tmpdir(), 'merge-with-finish-bin-'))
+    writeNodeBin(bindir, 'gh', FAKE_GH)
+    writeNodeBin(bindir, 'git', FAKE_GIT)
+  })
+  after(() => rmSync(bindir, { recursive: true, force: true }))
+
+  function realQueue(c: Ctx): NodeJS.ProcessEnv {
+    const sweep = join(c.tmp, 'sweep.py')
+    writeFileSync(sweep, 'pass\n')
+    const pr = {
+      state: 'OPEN',
+      statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'SUCCESS' }],
+      mergeable: 'MERGEABLE',
+      url: 'https://git.example.com/owner/repo/pull/1',
+      headRefName: 'feat',
+      baseRefName: 'main',
+      headRefOid: 'abc',
+      isCrossRepository: false,
+    }
+    writeFileSync(join(c.tmp, 'state.json'), JSON.stringify({ '1': pr }))
+    const env: NodeJS.ProcessEnv = {
+      ...c.env,
+      PATH: `${bindir}:${process.env.PATH}`,
+      FAKE_STATE: join(c.tmp, 'state.json'),
+      FAKE_REMOTE_HEAD: 'abc',
+      MERGE_QUEUE_SLEEP_SCALE: '0',
+      CLEANUP_SWEEP: sweep,
+    }
+    delete env.MERGE_QUEUE
+    delete env.GH
+    return env
+  }
+
+  test('queue.before 와 hooks/before-merge.ts 가 함께 있으면 2 로 끝나고 머지하지 않는다', async (t) => {
+    const c = setup(t)
+    const env = realQueue(c)
+    c.writeConfig({ queue: { before: 'true' } })
+    hook(c.tmp, 'before-merge')
+    const r = await spawnDone([...NODE, '--repo', c.tmp, '--no-finish', '--threads-cmd', 'echo 0', '1'], { cwd: c.tmp, env })
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '옛 설정 칸 --before 가 함께 있다')
+    lacks(readFileSync(c.logFile, 'utf8'), 'pr merge')
+  })
+
+  test('queue.after_merged 만 있으면 DEPRECATED 줄과 함께 옛 명령이 MERGED_PRS 를 받는다', async (t) => {
+    const c = setup(t)
+    const env = realQueue(c)
+    const seen = join(c.tmp, 'after.txt')
+    c.writeConfig({ queue: { after_merged: `echo "$MERGED_PRS" > ${seen}` } })
+    const r = await spawnDone([...NODE, '--repo', c.tmp, '--no-finish', '--threads-cmd', 'echo 0', '1'], { cwd: c.tmp, env })
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'DEPRECATED --after-merged → hooks/after-queue.ts')
+    assert.equal(readFileSync(seen, 'utf8'), '1\n')
+    has(readFileSync(c.logFile, 'utf8'), 'pr merge 1')
+  })
+})

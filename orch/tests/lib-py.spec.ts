@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { pyRegExp } from '../scripts/lib/py.ts'
+import { pyRegExp, shSplit } from '../scripts/lib/py.ts'
 
 describe('pyRegExp', () => {
   test('(?P<이름> 은 JS 의 이름 붙은 묶음이 된다', () => {
@@ -35,5 +35,38 @@ describe('pyRegExp', () => {
 
   test('JS 가 읽지 못하는 인라인 플래그 (?i)abc 는 원문을 담은 Error 다', () => {
     assert.throws(() => pyRegExp('(?i)abc'), (e: unknown) => e instanceof Error && e.message.includes('"(?i)abc"'))
+  })
+})
+
+describe('shSplit', () => {
+  test('업무 완료 명령 틀을 셸 없이 나누고 작은따옴표를 벗긴다', () => {
+    assert.deepEqual(shSplit("task-cli complete {number} --state 'Done'"), ['task-cli', 'complete', '{number}', '--state', 'Done'])
+  })
+
+  test('작은따옴표 안은 공백, 역슬래시, 큰따옴표를 글자 그대로 둔다', () => {
+    assert.deepEqual(shSplit(`a 'b c\\d"e' f`), ['a', 'b c\\d"e', 'f'])
+  })
+
+  test('큰따옴표 안은 \\" \\\\ \\` \\$ 의 역슬래시만 떼고 나머지 역슬래시는 남긴다', () => {
+    assert.deepEqual(shSplit('"a b\\" \\\\ \\` \\$ \\n"'), ['a b" \\ ` $ \\n'])
+  })
+
+  test('따옴표 밖의 역슬래시는 다음 글자를 그대로 둔다', () => {
+    assert.deepEqual(shSplit('a\\ b c\\\'d'), ['a b', "c'd"])
+  })
+
+  test('빈 따옴표는 빈 인자이고 이어 붙은 따옴표는 한 인자다', () => {
+    assert.deepEqual(shSplit(`x '' "" a'b'"c"`), ['x', '', '', 'abc'])
+  })
+
+  test('공백, 탭, 줄바꿈이 겹쳐도 빈 인자를 만들지 않는다', () => {
+    assert.deepEqual(shSplit('  a\t\tb\n c  '), ['a', 'b', 'c'])
+    assert.deepEqual(shSplit(''), [])
+  })
+
+  test('닫히지 않은 따옴표와 끝의 역슬래시는 Error 다', () => {
+    assert.throws(() => shSplit("task-cli 'complete {number}"), /닫히지 않은 따옴표/)
+    assert.throws(() => shSplit('task-cli "complete {number}'), /닫히지 않은 따옴표/)
+    assert.throws(() => shSplit('task-cli {number} \\'), /끝의 역슬래시/)
   })
 })
