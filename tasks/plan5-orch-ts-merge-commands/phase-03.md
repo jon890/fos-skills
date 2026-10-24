@@ -119,3 +119,5 @@ python3 korean-check/scripts/korean-style-check.py docs/data-schema.md
 | `orch/scripts/merge-with-finish.py` | 수정 |
 | `orch/tests/merge-queue.spec.ts` | 수정 |
 | `docs/data-schema.md` | 수정 |
+| `orch/tests/merge-queue-overlap.spec.ts` | 수정 |
+| `orch/tests/fixtures/merge-queue-fakes.ts` | 수정 |
