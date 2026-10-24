@@ -122,3 +122,15 @@ python3 korean-check/scripts/korean-style-check.py docs/code-architecture.md
 | `orch/scripts/orch-loop.ts` | 수정 |
 | `docs/code-architecture.md` | 수정 |
 | `orch/tests/orch-loop-conflict.spec.ts` | 신규 |
+| `orch/scripts/lib/loop.ts` | 수정 |
+| `docs/data-schema.md` | 수정 |
+| `orch/tests/orch-loop.spec.ts` | 수정 |
+| `orch/tests/wait-important.spec.ts` | 수정 |
+| `orch/tests/orch-loop-ci.spec.ts` | 수정 |
+
+## 구현 중 정한 것
+
+- 알림 파일의 `text` 는 줄에서 kind 를 뺀 나머지다(예: `questions: offline`, `tick: 종료 코드 3`, CONFLICT-ORPHAN 은 이유). wait-important 는 `LOOP-EVENT WATCH-ERROR - questions: offline` 꼴을 낸다. phase 01 의 쓰는 곳과 테스트를 같이 맞췄다.
+- 그 틱의 열린 PR 에 내 PR 이 없으면 충돌 처리(git fetch)를 하지 않고 `errors.conflicts` 를 비운다. 열린 PR 조회가 실패한 틱은 충돌 처리를 건너뛰고 `errors.conflicts` 를 그대로 둔다.
+- CI 감시와 충돌 처리는 한 틱 안에서 워크트리 목록과 worker 행 조회 결과를 함께 쓴다. worker-list 는 틱마다 한 번이다. 그 실패 이유는 PR 번호 없이 하나로 둔다.
+- `resolveConflict` 의 stderr 줄은 notify-conflicts 출력을 바꾸지 않으려고 `notify-conflicts:` 접두를 그대로 둔다.
