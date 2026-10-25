@@ -1,59 +1,63 @@
 # build-with-teams
 
-planning 이 만든 `tasks/` 를 읽어 구현하고, 검토를 거쳐 PR 을 만든다.
+`planning` 이 만든 task 를 구현할 때, phase 마다 구현을 지시하고 커밋하고 검토자를 붙이는 수고를 덜어 준다.
+team-lead 가 팀원 넷을 부려 plan 하나를 브랜치 하나와 PR 하나로 끝낸다.
+critic 이 구현 전에 계획을 검토하고, executor 가 phase 마다 구현하고, code-reviewer 와 docs-verifier 가 모든 phase 뒤에 코드와 `docs/` 를 검토한다.
 
-## 산출물
+같은 plan 을 두 번 구현하지 않도록 시작 전에 재실행 여부를 검사한다.
+되돌리기 어렵거나 사용자 의도에 따라 갈리는 결정, plan 범위를 벗어나는 결정은 선택지를 붙여 묻는다.
 
-plan 하나를 브랜치 하나와 PR 하나로 끝낸다.
+## 이럴 때 쓴다
 
-| 산출물 | 내용 |
-| --- | --- |
-| plan 브랜치의 커밋 | phase 하나마다 커밋 하나. 다른 plan 의 변경이 섞이지 않는다 |
-| `tasks/plan{N}-<slug>/` 삭제 커밋 | 구현을 마친 계획서를 PR 안에서 지운다. 현재 사실은 `docs/` 와 코드가 소유하고 계획서는 곧 낡기 때문이다 |
-| PR | base는 사전 검사에서 정한 기준 브랜치, head는 plan 브랜치. 제목과 본문 형식은 create-pr이 소유한다 |
-| 완료 보고 | PR 번호와 리뷰 반영 명령, pre-existing 과 미검증과 범위 외 발견, code-reviewer 지적 중 고치지 않은 것과 그 이유 |
-| 저장소 규칙 | 반복될 실패만 그 저장소의 검사, 코드 구조, 규칙 문장으로 일반화해 들어간다. 사건 기록은 남기지 않는다 |
+- `planning` 으로 만든 `tasks/plan{N}-<slug>/` 를 구현까지 끝내고 PR 을 만들고 싶다
+- 구현한 코드가 계획과 같은지, `docs/` 의 결정과 어긋나지 않는지 별도 검토자에게 맡기고 싶다
+- 중간에 멈춘 plan 을 남은 phase 부터 이어 가고 싶다
 
-정리된 작업 공간도 결과에 포함된다. PR 생성과 원격 push 가 끝난 뒤에 팀원을 종료하고 작업 공간을 정리한다.
+"task 실행해줘", "phase 실행", "agent team 으로 빌드", "/build-with-teams" 처럼 말하면 이 스킬이 뜬다.
 
-## 사용 시점
+## 사용 예시
 
-planning 이 만들어 둔 task 를 실제로 구현할 때 쓴다.
-"task 실행해줘", "phase 실행", "agent team 으로 빌드" 같은 요청이 여기 해당한다.
+plan 이름, phase 수, PR 번호는 예시다.
 
-| 하려는 일 | 쓰는 스킬 |
-| --- | --- |
-| 만들어진 task 를 구현하고 PR 까지 만든다 | `build-with-teams` |
-| 구현할 task 를 먼저 만든다 | `planning` |
-| 이미 열린 PR 에 달린 리뷰 댓글을 반영한다 | `review-fix` |
-| 남의 PR 에 리뷰를 새로 쓴다 | `pr-review` |
+```text
+나:   /build-with-teams plan12-order-retry
 
-## 전제
+스킬: 재실행 검사를 통과했습니다. 작업 공간을 plan12-order-retry 브랜치에 만들었습니다.
+      critic 이 계획을 승인했습니다. phase 셋을 순서대로 구현합니다.
+        phase 1  재시도 정책 값 객체      커밋함
+        phase 2  주문 서비스에 적용        커밋함
+        phase 3  설정 문서 갱신            커밋함
+      code-reviewer 지적 하나를 검토 반영 커밋으로 고쳤고, 두 검토자 모두 PASS 입니다.
+      통합 검증을 통과했고, 계획서 삭제 커밋을 담아 PR 을 만들었습니다.
 
-- **planning 의 산출물.** `tasks/plan{N}-<slug>/index.json` 과 `phase-*.md`,
-  그리고 그 phase 가 인용하는 `docs/` 가 있어야 한다.
-- **하위 에이전트를 띄우고 결과를 받는 하네스.** 이것이 없으면 스킬이 돌지 않는다.
-  결과 회수와 재투입 수단이 없을 때의 대응은 `references/team-spawn.md` 가 정한다.
-- **대상 저장소의 레포 설정.** 탐색 순서와 항목은 `SKILL.md` 의 「레포 설정」 이 소유한다.
-  오버레이는 필수가 아니다.
-- **`python3` 과 git 원격 접근.** 1단계에서 `scripts/plan_precheck.py` 를 돌리고, PR 을 만들 때 plan 브랜치를 push 한다.
+      PR #345 생성 완료: 리뷰 반영은 /review-fix 345
+      특이사항:
+      - 미검증: 스테이징 배포 뒤 재시도 로그 확인. PR 본문의 원격 검증 목록에 넣었습니다
+      code-reviewer 발견 중 고치지 않은 것:
+      - OrderRetryPolicy.java:42 범위 밖 후속. 다른 서비스도 같은 값을 쓰고 있어 별도 plan 이 필요합니다
+```
 
-## 구성
+## 받는 것
 
-| 파일 | 소유하는 것 |
-| --- | --- |
-| `SKILL.md` | 팀 구성과 파이프라인, 레포 설정 탐색 순서, 6단계 표와 통과 조건, 단계별 team-lead 행동 |
-| `references/team-spawn.md` | 하네스 요구 조건과 하네스별 대응, 팀원 이름, 스폰 프롬프트에 넣을 문구, 무응답과 스폰 실패 처리 |
-| `references/role-critic.md` | critic 이 읽는 계약. `REVISE` 판정 기준과 회신 형식 |
-| `references/executor-routing.md` | 실행 형태 `BOUNDED` 와 `HIGH_RISK` 의 판정, 실행 등급 선택과 승격 규칙, phase 마다 남길 기록, phase 를 나란히 돌리는 조건 |
-| `references/role-executor.md` | executor 가 읽는 계약. 구현 범위와 품질 기준, 계획이 틀렸을 때의 보고 |
-| `references/role-code-reviewer.md` | code-reviewer 가 읽는 계약. 3-dot 으로 잡는 검사 범위와 `PASS` / `FIX_NEEDED` 판정 |
-| `references/role-docs-verifier.md` | docs-verifier 가 읽는 계약. `docs/` 대조 축과 `PASS` / `UPDATE_NEEDED` / `VIOLATION` 판정 |
-| `references/step-finish.md` | 통합 검증 실패의 책임 구분, 계획서 삭제와 그 이유, create-pr에 넘길 값, 팀 종료와 작업 공간 정리, 보고 형식, 반복될 실패를 저장소 규칙으로 옮기는 조건 |
-| `scripts/plan_precheck.py` | 재실행 사고를 막는 사전 검증. 종료 코드 0 진행 가능, 1 사용자 결정 필요, 2 실행 불가 |
-| `scripts/pr_mergeable.sh` | PR 을 만든 직후 기준 브랜치와 충돌하는지 본다. UNKNOWN 이면 다시 묻는다. 종료 코드 0 충돌 없음, 1 충돌, 2 판정 불가 |
-| `tests/test_pr_mergeable.py` | `pr_mergeable.sh` 를 가짜 gh 로 검증한다 |
-| `tests/test_plan_precheck.py` | `plan_precheck.py` 판정 함수, 하위 프로젝트 경로, 지운 계획서 조회, push 전 로컬 브랜치 검사 |
-| `CHANGELOG.md` | 버전 이력 |
+- plan 브랜치와 PR. phase 하나마다 커밋 하나이고, 검토 반영은 따로 커밋 하나로 묶는다
+- PR 안의 계획서 삭제 커밋. 레포 설정이 남기라고 정했으면 지우지 않고 `completed` 로 표시한다
+- PR 본문의 원격 검증 목록. push, 배포, 원격 호스트 접속이 있어야 끝나는 검증을 체크박스로 남긴다
+- PR 을 만든 직후의 충돌 확인 결과. 기준 브랜치와 충돌하면 풀고 다시 검증한다
+- 완료 보고. PR 번호와 리뷰 반영 명령, pre-existing 문제와 미검증 범위, 범위 외 발견, 고치지 않은 리뷰 지적과 그 이유를 담는다
+- 반복될 실패를 옮긴 저장소 규칙. 다른 plan 에서도 다시 일어날 실패만 그 저장소의 검사, 코드 구조, 규칙 문장으로 넣는다
 
-실행 절차는 `SKILL.md` 가 소유한다.
+PR 을 만들고 원격에 push 한 뒤에 팀원을 종료하고 작업 공간을 정리한다.
+
+## 준비
+
+- `planning` 이 만든 `tasks/plan{N}-<slug>/index.json` 과 `phase-*.md`, 그 phase 가 인용하는 `docs/` 가 있어야 한다
+- 하위 에이전트를 띄우고 결과를 돌려받는 하네스가 필요하다. Claude Code 에서 이름을 가진 팀원으로 띄우려면 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 이 `settings.json` 의 `env` 나 셸 환경에 있어야 한다
+- `python3`, git 원격 접근, 로그인한 `gh` 가 필요하다. 재실행 검사와 충돌 확인이 `gh` 로 PR 을 조회한다
+- 검증 명령, 기준 브랜치, 작업 공간을 만드는 방법은 대상 저장소의 `.claude/build-with-teams-overlay.md` 에 적는다. 오버레이가 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 보고, 거기에도 없으면 묻는다
+
+## 함께 쓰는 스킬
+
+- 구현할 task 를 만드는 일은 `planning` 이 맡는다
+- PR 제목과 본문 형식은 `create-pr` 이 맡는다. 이 스킬은 브랜치와 커밋 맥락, 검증 결과를 넘긴다
+- 이미 열린 PR 에 달린 리뷰 반영은 `review-fix` 가 맡는다
+- 남의 PR 에 리뷰를 새로 쓰는 일은 `pr-review` 가 맡는다
