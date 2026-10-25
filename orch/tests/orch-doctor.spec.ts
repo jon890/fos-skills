@@ -350,8 +350,8 @@ describe('session-resume', () => {
   })
 
   test('질문 조회가 시간 초과면 SKIP-QUESTIONS 이고 종료 코드는 0 이다', { timeout: 120_000 }, () => {
-    // 질문 조회는 orca 호출마다 30초 제한이다(lib/questions.ts). 가짜 orca 는 그보다 오래 잔다
-    const r = doctor(['--skip-version', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_SLEEP: '40', FAKE_PS: psFile } })
+    // 질문 조회는 orca 호출마다 시간 제한이 있다(운영 30초, lib/questions.ts). 테스트는 1초로 줄이고 가짜 orca 는 그보다 오래 잔다
+    const r = doctor(['--skip-version', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_SLEEP: '3', FAKE_PS: psFile, ORCH_QUESTIONS_TIMEOUT_SEC: '1' } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.match(r.stdout, /^SKIP-QUESTIONS .+/m)
     assert.doesNotMatch(r.stdout, /^UNANSWERED /m)
@@ -393,8 +393,8 @@ describe('session-resume', () => {
     loopJson(fakeLoop.pid as number, new Date(Date.now() - 3600_000).toISOString())
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], {
       cwd: tmp,
-      // 생존 타이머 간격 1초에 여유 5초를 기다린 뒤 다시 본다
-      env: { ...env, FAKE_PS: psFile, RECEIVED: received, ORCH_LOOP_ALIVE_SEC: '1' },
+      // 생존 타이머 간격 1초에 여유 1.5초를 기다린 뒤 다시 본다. 그 전인 1초에 alive_at 을 새로 쓴다
+      env: { ...env, FAKE_PS: psFile, RECEIVED: received, ORCH_LOOP_ALIVE_SEC: '1', ORCH_LOOP_RECHECK_MARGIN_SEC: '1.5' },
     })
     t.after(() => child.kill('SIGKILL'))
     let stdout = ''

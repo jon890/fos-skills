@@ -112,7 +112,10 @@ describe('runAsync', () => {
     assert.equal(r.timedOut, true)
   })
 
-  test('TERM 을 무시하는 자식은 10초 뒤 KILL 로 끝난다', { timeout: 30_000 }, async () => {
+  test('TERM 을 무시하는 자식은 KILL 유예 뒤 KILL 로 끝난다', { timeout: 30_000 }, async (t) => {
+    // 운영 기본 유예는 10초다. 테스트는 1초로 줄여 같은 동작을 본다
+    process.env.ORCH_KILL_GRACE_SEC = '1'
+    t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
     const started = Date.now()
     const r = await runAsync(
       node('process.on("SIGTERM", () => {}); process.stdout.write("ready"); setInterval(() => {}, 1000)'),
@@ -122,8 +125,8 @@ describe('runAsync', () => {
     assert.equal(r.code, 124)
     assert.equal(r.timedOut, true)
     assert.equal(r.stdout, 'ready')
-    assert.ok(elapsed >= 10_000, `KILL 전에 10초를 기다려야 하는데 ${elapsed}ms 만에 끝났다`)
-    assert.ok(elapsed < 20_000, `KILL 뒤 바로 끝나야 하는데 ${elapsed}ms 걸렸다`)
+    assert.ok(elapsed >= 1_500, `KILL 전에 시간 제한과 유예 1초를 기다려야 하는데 ${elapsed}ms 만에 끝났다`)
+    assert.ok(elapsed < 10_000, `KILL 뒤 바로 끝나야 하는데 ${elapsed}ms 걸렸다`)
   })
 })
 
