@@ -26,7 +26,6 @@ PENDING_README = {
     "docs-check",
     "harness-cleanup",
     "korean-check",
-    "mac-cleanup",
     "orch",
     "planning",
     "pr-review",
