@@ -119,7 +119,7 @@ PR 은 draft 없이 연다. CI 가 PR 과 main push 에서 돈다.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행한다.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않다.
-Python 테스트는 각 `tests/` 폴더에서 `python3 -m unittest discover -s 경로` 로 실행한다.
+Python 테스트는 저장소 루트에서 `python3 -m unittest discover -s mac-cleanup/tests` 처럼 각 `tests/` 폴더를 주어 실행한다. 다른 위치에서 상대 경로로 부르면 `ImportError` 로 끝나는 스킬이 있다.
 orch 는 파일별 격리가 필요하므로 `python3 scripts/run-orch-tests.py --jobs 4` 로 실행한다.
 orch 의 TypeScript 테스트는 Node 22.18 이상에서 `node --test --test-concurrency=4 "orch/tests/*.spec.ts"` 로 실행한다.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둔다.
