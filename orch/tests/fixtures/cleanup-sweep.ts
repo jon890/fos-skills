@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, before, beforeEach, afterEach } from 'node:test'
@@ -245,13 +245,23 @@ export function git(...args: string[]): string {
   return sh('git', ...args)
 }
 
+// 처음 부를 때 origin 과 clone 을 한 벌 만들어 두고, 그 뒤로는 복사해 origin 주소만 바꾼다.
+// git init, clone, commit, push 를 테스트마다 치르지 않는다. 템플릿은 가짜 폴더와 함께 지워진다.
+let template: { origin: string; dir: string } | null = null
+
 export function makeRepo(name: string): string {
+  if (!template) {
+    template = { origin: join(fx.bin, 'template-origin.git'), dir: join(fx.bin, 'template') }
+    git('init', '-q', '--bare', '-b', 'main', template.origin)
+    git('clone', '-q', template.origin, template.dir)
+    git('-C', template.dir, 'commit', '-q', '--allow-empty', '-m', 'init')
+    git('-C', template.dir, 'push', '-q', '-u', 'origin', 'main')
+  }
   const origin = join(fx.tmp, `${name}-origin.git`)
   const dir = join(fx.tmp, name)
-  git('init', '-q', '--bare', '-b', 'main', origin)
-  git('clone', '-q', origin, dir)
-  git('-C', dir, 'commit', '-q', '--allow-empty', '-m', 'init')
-  git('-C', dir, 'push', '-q', '-u', 'origin', 'main')
+  cpSync(template.origin, origin, { recursive: true })
+  cpSync(template.dir, dir, { recursive: true })
+  git('-C', dir, 'remote', 'set-url', 'origin', origin)
   return dir
 }
 
