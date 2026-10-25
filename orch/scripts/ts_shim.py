@@ -8,14 +8,12 @@ shim 파일은 이 모듈을 import 하고 `if __name__ == "__main__":` 안에�
 
 exec_ts 의 차례:
     1. 대상은 shim 과 같은 폴더의 같은 이름 `.ts` 다
-    2. `node --version` 을 10초 제한으로 부른다. node 가 없으면 stderr 에 `node 22.18 이상이 PATH 에 필요하다` 를 내고 127 이다
+    2. `node --version` 을 10초 제한으로 부른다. node 가 없으면 stderr 에 `node 24 이상이 PATH 에 필요하다` 를 내고 127 이다
        5 의 exec 가 OSError 로 실패해도 같은 줄과 127 이다
-    3. 버전이 22.18 보다 낮거나 읽지 못하면 exec 하지 않는다. stdout 에 `NODE-TOO-OLD <버전> 22.18 이상이 필요하다` 를 내고 127 이다
-       22.18 보다 낮은 node 는 `.ts` 를 플래그 없이 실행하지 못해 ERR_UNKNOWN_FILE_EXTENSION 으로 죽는다
+    3. 버전이 24 보다 낮거나 읽지 못하면 exec 하지 않는다. stdout 에 `NODE-TOO-OLD <버전> 24 이상이 필요하다` 를 내고 127 이다
+       최소 버전을 24 로 둔 이유는 docs/adr/011-node-24-minimum.md 가 소유한다
     4. deprecated 면 stderr 에 `DEPRECATED python3 <이름>.py → node --disable-warning=ExperimentalWarning <대상>` 을 낸다
     5. `node --disable-warning=ExperimentalWarning <대상> <받은 인자>` 로 exec 한다. 종료 코드는 node 의 것이다
-
-23.0 부터 23.5 까지는 22.18 보다 크지만 타입 제거가 플래그 뒤에 있다. 지원이 끝난 홀수 버전이라 판정에 넣지 않는다.
 """
 
 from __future__ import annotations
@@ -26,15 +24,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-MIN_NODE = (22, 18)
+MIN_NODE = (24, 0)
 VERSION = re.compile(r"^v(\d+)\.(\d+)\.\d+")
-NO_NODE = "node 22.18 이상이 PATH 에 필요하다"
-# 실행 규칙(docs/code-architecture.md 「실행 규칙」)과 같은 플래그다. 22.x 의 타입 제거 실험 경고가 명령 출력에 섞이지 않게 한다
+NO_NODE = "node 24 이상이 PATH 에 필요하다"
+# 실행 규칙(docs/code-architecture.md 「실행 규칙」)과 같은 플래그다. 타입 제거 실험 경고가 명령 출력에 섞이지 않게 한다
 NODE_FLAG = "--disable-warning=ExperimentalWarning"
 
 
 def node_too_old(text: str) -> bool:
-    """`node --version` 출력의 (major, minor) 가 22.18 보다 작으면 True. 읽지 못하는 문자열도 True."""
+    """`node --version` 출력의 (major, minor) 가 24.0 보다 작으면 True. 읽지 못하는 문자열도 True."""
     m = VERSION.match(text.strip())
     if not m:
         return True
@@ -60,7 +58,7 @@ def exec_ts(shim_file: str, deprecated: bool = True) -> None:
     except OSError as exc:
         _no_node(str(exc))
     if node_too_old(version):
-        print(f"NODE-TOO-OLD {version or '(읽지 못함)'} 22.18 이상이 필요하다")
+        print(f"NODE-TOO-OLD {version or '(읽지 못함)'} 24 이상이 필요하다")
         sys.stdout.flush()
         sys.exit(127)
     if deprecated:

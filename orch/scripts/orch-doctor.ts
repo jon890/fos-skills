@@ -4,7 +4,7 @@
 // 문서가 부르는 스크립트(`spec-line.ts` 같은 것)가 없어 그 단계를 건너뛰게 된다.
 // 갱신 명령을 보여 주는 것까지만 하고 갱신은 하지 않는다. 다른 세션이 같은 캐시를 쓰고 있을 수 있다.
 //
-// Node 버전은 여기서 보지 않는다. 22.18 보다 낮은 node 는 이 파일을 읽지 못하고 ERR_UNKNOWN_FILE_EXTENSION 으로 죽는다.
+// Node 버전은 여기서 보지 않는다. 타입 제거를 지원하지 않는 낮은 node 는 이 파일을 읽지 못하고 ERR_UNKNOWN_FILE_EXTENSION 으로 죽는다.
 // 그래서 SKILL.md 는 옛 진입점 orch-doctor.py 로 부르고, 그 진입점(ts_shim.py)이 버전을 보고 낮으면 NODE-TOO-OLD 로 멈춘다.
 //
 // 사용법:
