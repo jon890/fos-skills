@@ -24,14 +24,13 @@
 | `orch/references/cleanup.md` | 머지 큐를 직접 거는 경우와 루프가 순서 파일로 거는 경우를 나눈다. `orch-loop.ts --order` 사용법 |
 | `docs/flow.md`, `docs/data-schema.md`, `docs/code-architecture.md` | 「구현 PR 이 모두 머지되기 전…」 문장을 지운다. `docs/data-schema.md` 의 「orch 이벤트 핸들러 입력」 은 계약 표만 남기고 사용법 문장은 `orch/references/hooks.md` 로 옮긴다 |
 | `orch/scripts/lib/events.ts` 머리 주석 | 이벤트 목록, 입력 필드, 종료 코드를 적는다. `docs/data-schema.md` 와 같은 값이다 |
-| `orch/README.md` | 스크립트 목록에 `orch-loop.ts` 를 더한다 |
 | `orch/CHANGELOG.md`, `orch/SKILL.md` `metadata.version` | 이 plan 을 한 항목으로 적고 minor 를 올린다 |
 
 **근거 문서**: `docs/code-architecture.md` 의 「orch 문서가 소유하는 것」, `docs/flow.md` 의 「orch 이벤트」, `docs/adr/009-orch-event-handlers.md`
 
 ## 의도 메모
 
-- 같은 값을 두 문서가 가지면 한쪽이 낡는다. 입력 필드 표는 `lib/events.ts` 머리 주석과 `docs/data-schema.md` 둘에만 두고, `readme-script-list.spec.ts` 처럼 테스트로 두 표의 이벤트 이름이 `EVENTS` 와 같은지 본다.
+- 같은 값을 두 문서가 가지면 한쪽이 낡는다. 입력 필드 표는 `lib/events.ts` 머리 주석과 `docs/data-schema.md` 둘에만 두고, 테스트로 두 표의 이벤트 이름이 `EVENTS` 와 같은지 본다.
 
 ## 작업 항목
 
@@ -49,7 +48,7 @@ node --test --test-concurrency=4 orch/tests/events-doc.spec.ts
 node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
 python3 -m unittest discover -s scripts/tests
 claude plugin test .
-python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/README.md orch/references/*.md docs/flow.md docs/data-schema.md docs/code-architecture.md
+python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/references/*.md docs/flow.md docs/data-schema.md docs/code-architecture.md
 ! grep -n "구현 PR 이 모두 머지되기 전" docs/flow.md docs/data-schema.md docs/code-architecture.md
 ```
 
@@ -58,7 +57,6 @@ python3 korean-check/scripts/korean-style-check.py orch/SKILL.md orch/README.md 
 | 파일 | 변경 |
 |---|---|
 | `orch/SKILL.md` | 수정 |
-| `orch/README.md` | 수정 |
 | `orch/CHANGELOG.md` | 수정 |
 | `orch/references/waiting.md` | 수정 |
 | `orch/references/hooks.md` | 수정 |

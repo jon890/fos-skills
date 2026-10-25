@@ -37,7 +37,7 @@ CI 의 `Python tests` job 은 `*/tests` 와 `tools/*/tests` 를 돌며 `python3 
 
 ### 3. 문서
 
-- `README.md` 「기여」, `.orch/overlay.md`, `orch/README.md` 의 테스트 명령을 `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` 로 바꾼다
+- `README.md` 「기여」, `.orch/overlay.md` 의 테스트 명령을 `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` 로 바꾼다
 - `orch/SKILL.md`, `orch/references/*.md`, `work-board/README.md` 에서 남은 `python3 "$SKILL_DIR/scripts/<이름>.py"` 와 `board.py` 호출을 `.ts` 로 바꾼다. `git grep -n "python3 .*orch/scripts\|scripts/[a-z_-]*\.py\|board\.py" -- orch work-board README.md` 로 남은 곳을 찾는다. CHANGELOG 의 지난 항목은 이력이라 고치지 않는다
 - `orch/references/heavy-checks.md` 에 `heavy` 절 분류와 `wait_idle` 을 적는다. 기본값 표에서 자동 분류 설명을 지운다
 - `docs/code-architecture.md` 의 「디렉터리 배치」 의 `work-board/` 줄, 「검증」 표, 「모듈 책임」 표를 실제 파일에 맞춘다
@@ -45,17 +45,17 @@ CI 의 `Python tests` job 은 `*/tests` 와 `tools/*/tests` 를 돌며 `python3 
 
 ### 4. 남은 Python 을 확인하는 검사
 
-`orch/tests/readme-script-list.spec.ts` 에 사례를 더한다: `orch/scripts/` 의 `.py` 파일은 모두 shim 이다. shim 판정은 파일이 `os.execvp` 와 같은 이름의 `.ts` 를 가리키는지로 한다.
+`orch/tests/py-shims.spec.ts` 를 더한다: `orch/scripts/` 의 `.py` 파일은 모두 shim 이다. shim 판정은 파일이 `os.execvp` 와 같은 이름의 `.ts` 를 가리키는지로 한다.
 
 ## 검증
 
 ```bash
-node --test --test-concurrency=4 orch/tests/readme-script-list.spec.ts
+node --test --test-concurrency=4 orch/tests/py-shims.spec.ts
 node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
 python3 -m unittest discover -s scripts/tests
 claude plugin test .
 ! test -e scripts/run-orch-tests.py
-python3 korean-check/scripts/korean-style-check.py README.md orch/SKILL.md orch/README.md orch/references/*.md docs/code-architecture.md
+python3 korean-check/scripts/korean-style-check.py README.md orch/SKILL.md orch/references/*.md docs/code-architecture.md
 ```
 
 ## 변경 파일
@@ -67,10 +67,9 @@ python3 korean-check/scripts/korean-style-check.py README.md orch/SKILL.md orch/
 | `.github/workflows/ci.yml` | 수정 |
 | `README.md` | 수정 |
 | `.orch/overlay.md` | 수정 |
-| `orch/README.md` | 수정 |
 | `orch/SKILL.md` | 수정 |
 | `orch/references/*.md` | 수정 |
 | `orch/CHANGELOG.md` | 수정 |
 | `work-board/README.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
-| `orch/tests/readme-script-list.spec.ts` | 수정 |
+| `orch/tests/py-shims.spec.ts` | 추가 |
