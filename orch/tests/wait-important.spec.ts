@@ -896,13 +896,14 @@ describe('상주 루프', () => {
     return child.pid as number
   }
 
-  // 생존 타이머 간격 1초에 여유 5초다
-  const RECHECK_MS = 6_000
+  // 생존 타이머 간격 1초에 여유 1.5초다. 운영 기본은 30초에 5초다
+  const RECHECK_MS = 2_500
+  const LOOP_ENV = { ORCH_LOOP_ALIVE_SEC: '1', ORCH_LOOP_RECHECK_MARGIN_SEC: '1.5' }
 
   test('루프 pid 가 살아 있으면 오래된 alive_at 은 다시 본 뒤에야 LOOP-DEAD 와 8 이다. 간격이 0 이어도 다시 본다', { timeout: 60_000 }, async (t) => {
     loopJson({ pid: await fakeLoop(t), alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
     const started = Date.now()
-    const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0', '--loop-repo', tmp], {}, { ORCH_LOOP_ALIVE_SEC: '1' })
+    const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0', '--loop-repo', tmp], {}, LOOP_ENV)
     const elapsed = Date.now() - started
     assert.equal(r.code, 8, r.stdout + r.stderr)
     assert.ok(elapsed >= RECHECK_MS, `다시 보기 전에 끝났다: ${elapsed}ms`)
@@ -917,7 +918,7 @@ describe('상주 루프', () => {
     // 다시 보는 시각 뒤에 묶음이 온다
     writeFileSync(stateFile, JSON.stringify({ replies: [sleeping(batch('d1', 'status'), RECHECK_MS / 1000 + 3)], workers: [], tasks: [], latest: {}, history: [] }))
     const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', 'none', '--lost-interval-sec', '0.2', '--loop-repo', tmp]
-    const child = spawn(process.execPath, argv, { env: { ...env, ORCH_LOOP_ALIVE_SEC: '1' }, cwd: tmp })
+    const child = spawn(process.execPath, argv, { env: { ...env, ...LOOP_ENV }, cwd: tmp })
     t.after(() => child.kill('SIGKILL'))
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))

@@ -347,7 +347,10 @@ describe('시간 제한', { concurrency: true }, () => {
     assert.equal(lines.at(-1), 'HOOK-FAIL worker-done timeout')
   })
 
-  test('TERM 을 무시하는 핸들러는 KILL 로 끝나 timeout 이고 그 손자 프로세스도 끝난다', { timeout: 30_000 }, async () => {
+  test('TERM 을 무시하는 핸들러는 KILL 로 끝나 timeout 이고 그 손자 프로세스도 끝난다', { timeout: 30_000 }, async (t) => {
+    // 운영 기본 KILL 유예는 10초다. 테스트는 1초로 줄여 같은 동작을 본다
+    process.env.ORCH_KILL_GRACE_SEC = '1'
+    t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
     const repo = makeRepo()
     timeouts(repo, { 'before-ready': 1 })
     handler(
@@ -368,7 +371,7 @@ setInterval(() => {}, 1000)
       grandchild = Number(readFileSync(join(repo, 'grandchild.pid'), 'utf8'))
       assert.equal(r.result, 'timeout')
       assert.equal(r.code, null)
-      assert.ok(r.durationMs >= 10_000, `KILL 유예 10초를 기다리지 않았다: ${r.durationMs}ms`)
+      assert.ok(r.durationMs >= 2_000, `시간 제한 1초와 KILL 유예 1초를 기다리지 않았다: ${r.durationMs}ms`)
       // 그룹 KILL 직후에는 손자가 아직 거둬지지 않은 좀비라 alive 가 잠시 true 일 수 있다.
       const deadline = Date.now() + 5000
       while (alive(grandchild) && Date.now() < deadline) await sleep(100)
@@ -499,7 +502,10 @@ describe('잠금', { concurrency: true }, () => {
     }
   })
 
-  test('시간 제한 + 15초 안에 잠금을 얻지 못하면 fail 과 HOOK-FAIL lock 이고 남의 잠금은 지우지 않는다', { timeout: 30_000 }, async () => {
+  test('시간 제한과 KILL 유예의 1.5배 안에 잠금을 얻지 못하면 fail 과 HOOK-FAIL lock 이고 남의 잠금은 지우지 않는다', { timeout: 30_000 }, async (t) => {
+    // 운영 기본은 시간 제한에 15초(유예 10초의 1.5배)를 더한다. 테스트는 유예를 1초로 줄여 1.5초를 더한다
+    process.env.ORCH_KILL_GRACE_SEC = '1'
+    t.after(() => delete process.env.ORCH_KILL_GRACE_SEC)
     const repo = makeRepo()
     timeouts(repo, { 'ci-failed': 1 })
     handler(repo, 'ci-failed', `require('node:fs').writeFileSync('started', '')\n`)
@@ -512,7 +518,7 @@ describe('잠금', { concurrency: true }, () => {
       const r = await fire('ci-failed', {}, c)
       assert.equal(r.result, 'fail')
       assert.equal(r.code, null)
-      assert.ok(r.durationMs >= 16_000, `16초를 기다리지 않았다: ${r.durationMs}ms`)
+      assert.ok(r.durationMs >= 2_500, `2.5초를 기다리지 않았다: ${r.durationMs}ms`)
       assert.equal(lines.at(-1), 'HOOK-FAIL ci-failed lock')
       assert.equal(existsSync(join(repo, 'started')), false)
       assert.equal(readFileSync(lock, 'utf8'), String(other.pid))

@@ -64,7 +64,7 @@
 //
 // 시간 제한: EVENTS 의 기본값을 config.json 의 hooks.timeouts.<이벤트>(초, 양수)가 덮는다. 값이 틀리면 ConfigError 다.
 //   eventTimeoutSec 가 fire 와 같은 값과 검사를 낸다. 머지 뒤에 나는 이벤트의 설정 오류를 시작하기 전에 알리려는 명령이 부른다.
-//   넘으면 프로세스 그룹에 TERM, 10초 뒤에도 그룹이 살아 있으면 KILL 이다. 자식은 detached 로 띄워 새 그룹을 만든다.
+//   넘으면 프로세스 그룹에 TERM, KILL 유예(기본 10초, ORCH_KILL_GRACE_SEC) 뒤에도 그룹이 살아 있으면 KILL 이다. 자식은 detached 로 띄워 새 그룹을 만든다.
 //   그래서 핸들러가 띄운 bash -c 의 손자 프로세스도 함께 끝난다.
 //   핸들러는 끝났는데 백그라운드 손자가 stdout 이나 stderr 를 쥐고 있으면 파이프가 닫히지 않는다. 그때는 시간 제한까지
 //   기다리지 않는다. 핸들러가 끝나고 2초 안에 파이프가 닫히지 않으면 그룹에 TERM, 다시 2초 뒤에도 닫히지 않으면
@@ -79,7 +79,7 @@
 //   크기 한도도 없다. out 의 기본은 process.stdout 에 한 줄씩 쓰는 것이다.
 //
 // 잠금: <orch 루트>/state/hooks/<이벤트>.lock. 배타 생성(wx)하고 자기 pid 를 쓴다. 다른 살아 있는 pid 가 쥐고 있으면
-//   0.5초 간격으로 다시 보며 그 이벤트의 시간 제한 + 15초를 기다린다. 쥔 쪽은 시간 제한과 KILL 유예 10초 안에 끝나기 때문이다.
+//   0.5초 간격으로 다시 보며 그 이벤트의 시간 제한에 KILL 유예의 1.5배(기본 15초)를 더해 기다린다. 쥔 쪽은 시간 제한과 KILL 유예 안에 끝나기 때문이다.
 //   셋 이상 겹쳐 앞의 실행들이 시간 제한 가까이 돌면 뒤 실행이 lock 실패로 끝나는 것은 의도한 동작이다.
 //   잠금을 얻으면 핸들러를 띄우기 직전에 잠금 파일이 아직 자기 pid 인지 다시 읽는다. 아니면 다시 기다린다.
 //   끝나면(예외 포함) 자기 pid 가 든 잠금만 지운다.
@@ -131,6 +131,7 @@ import { mainCheckout } from './git.ts'
 import { ghBin } from './gh.ts'
 import { orcaBin } from './orca.ts'
 import { ensureIgnored, NAMES, orchDir, pathOf } from './paths.ts'
+import { killGraceMs } from './env.ts'
 import { groupAlive, killGroup, signalCode, stoppedReason, stopping, trackChild } from './proc.ts'
 import { alive } from './process.ts'
 
@@ -178,11 +179,9 @@ export type FireContext = {
 
 const CONTRACT_VERSION = 1
 const REJECT_CODE = 10
-const KILL_GRACE_MS = 10_000
 // 핸들러가 끝난 뒤 출력 파이프가 닫히기를 기다리는 시간. 넘으면 그룹에 TERM, 같은 시간을 더 기다려 KILL 이다.
 const PIPE_GRACE_MS = 2_000
 const NO_REASON = '(이유 없음)'
-const LOCK_EXTRA_MS = 15_000
 const LOCK_POLL_MS = 500
 // wx 로 만든 직후 pid 를 쓰기 전의 빈 파일을 깨진 잠금으로 회수하지 않게, 이 시간 안의 빈 파일은 쥔 것으로 본다.
 const EMPTY_LOCK_GRACE_MS = 2_000
@@ -496,7 +495,7 @@ function execute(argv: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; in
         if (groupAlive(pid)) killGroup(pid, 'SIGKILL')
         child.stdout.destroy()
         child.stderr.destroy()
-      }, KILL_GRACE_MS)
+      }, killGraceMs())
     }, opts.timeoutMs)
   })
 }
@@ -560,13 +559,15 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
   mkdirSync(lockDir, { recursive: true })
   ensureIgnored(repo)
   const lock = join(lockDir, `${event}.lock`)
-  const deadline = Date.now() + seconds * 1000 + LOCK_EXTRA_MS
+  // 쥔 쪽은 시간 제한과 KILL 유예 안에 끝나므로, 유예의 1.5배(기본 15초)를 더 기다린다
+  const lockExtraMs = killGraceMs() * 1.5
+  const deadline = Date.now() + seconds * 1000 + lockExtraMs
   try {
     let env: NodeJS.ProcessEnv
     let payload: Record<string, unknown>
     for (;;) {
       if (!(await acquire(lock, deadline))) {
-        return finish('fail', null, `잠금을 얻지 못했다: ${lock} 를 쥔 실행이 ${seconds + LOCK_EXTRA_MS / 1000}초 안에 끝나지 않았다`)
+        return finish('fail', null, `잠금을 얻지 못했다: ${lock} 를 쥔 실행이 ${seconds + lockExtraMs / 1000}초 안에 끝나지 않았다`)
       }
       env = handlerEnv(event, repo, root, checkout, legacy?.env)
       payload = { ...input, version: CONTRACT_VERSION, event, repo, base: ctx.base, run: ctx.run, time: new Date().toISOString() }

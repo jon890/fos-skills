@@ -40,7 +40,7 @@
 // 등록이나 자리 잡기에서 잠금을 기다리는 중에 INT 나 TERM 을 받으면 기다림을 멈추고 128+신호 번호로 끝난다.
 // 등록 전이면 지울 등록이 없고, 등록 뒤면 반납할 때 잠금을 다시 기다려 등록을 지운다.
 // 끝난 pid 의 등록은 다음 검사에서 회수하고, 정상 종료와 INT, TERM 때는 명령이 끝난 뒤 자리를 반납한다.
-// 신호를 받으면 명령의 프로세스 그룹에 TERM 을 보내고 10초 뒤에도 살아 있으면 KILL 을 보낸다.
+// 신호를 받으면 명령의 프로세스 그룹에 TERM 을 보내고 KILL 유예(기본 10초, ORCH_KILL_GRACE_SEC) 뒤에도 살아 있으면 KILL 을 보낸다.
 // macOS 에서는 slot 폴더와 명령의 TMPDIR 를 실경로로 푼다. 기본 slot 폴더는 주 checkout 기준이라 워크트리끼리 함께 쓴다.
 // 옛 orch 설정이 남아 있고 --slot-dir 도 HEAVY_SLOT_DIR 도 없으면 실행하지 않고 옮기는 명령을 알린다(종료 코드 2).
 //
@@ -56,6 +56,7 @@ import { constants } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HEAVY_KEYS, loadConfig, section } from './lib/config.ts'
+import { killGraceMs } from './lib/env.ts'
 import { real, realPath } from './lib/fs.ts'
 import { ensure, requireMigrated } from './lib/paths.ts'
 import { execCommand, killGroup, run, scriptCommand, signalCode } from './lib/proc.ts'
@@ -64,7 +65,6 @@ import { alive } from './lib/process.ts'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const USAGE = '사용법: heavy-slot.ts [--exclusive] [--slot-dir DIR] [--slots N] -- 명령...'
 const OPTION_NAMES = ['exclusive', 'slot-dir', 'slots', 'help']
-const KILL_GRACE_MS = 10_000
 const IDLE_WAIT_SEC = '1800'
 const POLL_SEC = '5'
 
@@ -380,11 +380,11 @@ function onSignal(signal: NodeJS.Signals): void {
   if (stopSignal) return
   stopSignal = signal
   for (const wake of wakers) wake()
-  // 명령이 정말 멈출 때까지 자리를 쥔다. 그룹 전체에 TERM 을 보내고 10초 뒤에도 남았으면 KILL 을 보낸다
+  // 명령이 정말 멈출 때까지 자리를 쥔다. 그룹 전체에 TERM 을 보내고 KILL 유예 뒤에도 남았으면 KILL 을 보낸다
   const pid = running?.pid
   if (pid !== undefined) {
     killGroup(pid, 'SIGTERM')
-    killTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), KILL_GRACE_MS)
+    killTimer = setTimeout(() => killGroup(pid, 'SIGKILL'), killGraceMs())
   }
 }
 
