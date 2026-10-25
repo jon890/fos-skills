@@ -175,7 +175,6 @@ orch 의 TypeScript 테스트는 Node 22.18 이상에서 `node --test --test-con
 - major 를 올리면 이전 major 의 버전들을 `## N.x` 한 절로 줄인다.
 
 항목 수와 줄 길이의 상한은 `scripts/check-skill-docs.py` 가 소유하고, `python3 -m unittest discover -s scripts/tests` 가 README 형식과 함께 검사한다.
-아직 새 형식으로 옮기지 않은 스킬은 그 파일의 `PENDING_README`, `PENDING_CHANGELOG` 에 있다.
 
 이력을 두는 자리와 태그는 아래를 따른다.
 

@@ -3,9 +3,6 @@
 
 사용: python3 scripts/check-skill-docs.py [스킬 이름 ...]
 인자가 없으면 SKILL.md 가 있는 모든 디렉터리를 본다. 위반을 한 줄씩 내고, 하나라도 있으면 종료 코드 1 이다.
-
-PENDING_README, PENDING_CHANGELOG 는 아직 새 형식으로 옮기지 않은 스킬이다. 옮기면 목록에서 뺀다.
-목록에 남은 스킬이 이미 형식을 지키면 그것도 위반으로 낸다. 옮긴 뒤 목록에 남아 검사를 피하지 않게 하려는 것이다.
 """
 
 import re
@@ -19,10 +16,6 @@ README_FORBIDDEN = ("구성",)
 MAX_VERSION_BULLETS = 5
 MAX_SUMMARY_BULLETS = 8
 MAX_BULLET_CHARS = 160
-
-PENDING_README = {
-}
-PENDING_CHANGELOG = set(PENDING_README)
 
 VERSION_HEADING = re.compile(r"(\d+)\.(\d+)\.(\d+) \(\d{4}-\d{2}-\d{2}\)")
 SUMMARY_HEADING = re.compile(r"(\d+)\.x")
@@ -104,27 +97,15 @@ def check_changelog(name, text, skill_version):
     return problems
 
 
-def judge(label, problems, pending, pending_name):
-    if not pending:
-        return [f"{label}: {problem}" for problem in problems]
-    if not problems:
-        return [f"{label}: 새 형식을 지킨다. {pending_name} 에서 뺀다"]
-    return []
-
-
 def check_skill(name, root=ROOT):
     skill_dir = root / name
     match = SKILL_VERSION.search((skill_dir / "SKILL.md").read_text(encoding="utf-8"))
     readme = (skill_dir / "README.md").read_text(encoding="utf-8")
     changelog = (skill_dir / "CHANGELOG.md").read_text(encoding="utf-8")
-    return judge(
-        f"{name}/README.md", check_readme(name, readme), name in PENDING_README, "PENDING_README"
-    ) + judge(
-        f"{name}/CHANGELOG.md",
-        check_changelog(name, changelog, match.group(1) if match else ""),
-        name in PENDING_CHANGELOG,
-        "PENDING_CHANGELOG",
-    )
+    return [f"{name}/README.md: {problem}" for problem in check_readme(name, readme)] + [
+        f"{name}/CHANGELOG.md: {problem}"
+        for problem in check_changelog(name, changelog, match.group(1) if match else "")
+    ]
 
 
 def skill_names(root=ROOT):

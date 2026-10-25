@@ -57,12 +57,18 @@ CHANGELOG = """# CHANGELOG: demo
 
 
 class RepositorySkillsTest(unittest.TestCase):
-    def test_every_skill_follows_the_format_or_is_pending(self):
+    def test_every_skill_follows_the_format(self):
         self.assertEqual([], [problem for name in docs.skill_names() for problem in docs.check_skill(name)])
 
-    def test_pending_names_are_skills(self):
-        names = set(docs.skill_names())
-        self.assertLessEqual(docs.PENDING_README | docs.PENDING_CHANGELOG, names)
+    def test_violation_is_reported_with_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "demo"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text('---\nmetadata:\n  version: "2.1.0"\n---\n', encoding="utf-8")
+            (skill / "README.md").write_text(README + "\n## 구성\n", encoding="utf-8")
+            (skill / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+            problems = docs.check_skill("demo", Path(tmp))
+        self.assertTrue(problems and all(problem.startswith("demo/README.md: ") for problem in problems), problems)
 
 
 class ReadmeTest(unittest.TestCase):
@@ -121,35 +127,6 @@ class ChangelogTest(unittest.TestCase):
     def test_prose_line_in_version_is_reported(self):
         text = CHANGELOG.replace("- 단계를 줄였다", "단계를 줄였다.")
         self.assertTrue(any("목록 항목이 아닌" in problem for problem in docs.check_changelog("demo", text, "2.1.0")))
-
-
-class PendingTest(unittest.TestCase):
-    def make_skill(self, root, readme):
-        (root / "demo").mkdir()
-        (root / "demo" / "SKILL.md").write_text('---\nmetadata:\n  version: "2.1.0"\n---\n', encoding="utf-8")
-        (root / "demo" / "README.md").write_text(readme, encoding="utf-8")
-        (root / "demo" / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
-
-    def test_pending_skill_with_old_format_passes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self.make_skill(Path(tmp), "# demo\n\n## 구성\n")
-            old = docs.PENDING_README
-            docs.PENDING_README = {"demo"}
-            try:
-                self.assertEqual([], docs.check_skill("demo", Path(tmp)))
-            finally:
-                docs.PENDING_README = old
-
-    def test_pending_skill_that_follows_the_format_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self.make_skill(Path(tmp), README)
-            old = docs.PENDING_README
-            docs.PENDING_README = {"demo"}
-            try:
-                problems = docs.check_skill("demo", Path(tmp))
-            finally:
-                docs.PENDING_README = old
-            self.assertTrue(any("PENDING_README" in problem for problem in problems), problems)
 
 
 if __name__ == "__main__":
