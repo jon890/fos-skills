@@ -21,7 +21,6 @@ MAX_SUMMARY_BULLETS = 8
 MAX_BULLET_CHARS = 160
 
 PENDING_README = {
-    "docs-check",
     "harness-cleanup",
     "korean-check",
     "orch",
