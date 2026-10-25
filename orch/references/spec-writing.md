@@ -4,10 +4,10 @@
 긴 지시는 앞부분도 중간도 잘려 도착한다.
 지시서에 적지 않은 일이 빠진 채 완료로 보고되는 것을 막으려면 해야 할 일과 완료 기준을 지시서에 적는다. 후속 지시도 짧게 보내거나 새 파일로 준다.
 
-지시서 폴더의 기본은 `<repo>/.orch/specs/` 다(`orch_paths.py specs`). 오버레이가 다른 폴더를 정하면 그것을 따른다.
+지시서 폴더의 기본은 `<repo>/.orch/specs/` 다(`orch_paths.ts specs`). 오버레이가 다른 폴더를 정하면 그것을 따른다.
 
-- 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.py --specs-dir` 가 이 이름을 보고 머지 뒤 지시서를 지운다.
-- 폴더는 `python3 "$SKILL_DIR/scripts/orch_paths.py" --repo "$REPO" --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
+- 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.ts --specs-dir` 가 이 이름을 보고 머지 뒤 지시서를 지운다.
+- 폴더는 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch_paths.ts" --repo "$REPO" --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
 - scratchpad 에 쓰지 않는다. **실측으로** 코디네이터 세션이 다시 시작되면서 scratchpad 가 정리돼 전날 쓴 지시서가 사라졌다. worker 는 받은 경로를 계속 읽으므로, 도중에 사라지면 읽을 곳을 잃는다.
 
 **worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 첫 줄에서 그 파일을 가리킨다.**

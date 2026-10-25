@@ -27,7 +27,7 @@
 //     7. `gh pr ready` 로 바꾸고 pr-ready 이벤트를 낸다. pr-ready 의 실패는 HOOK-FAIL 줄만 남기고 종료 코드에 반영하지 않는다.
 //        종료 코드가 코디네이터의 ready 판정 계약이라, 이미 ready 로 바뀐 PR 을 보류로 읽게 하면 안 된다
 //
-// 이벤트 입력(docs/data-schema.md 「이벤트별 필드」): pr, ready_count(같은 base 의 이미 ready 인 내 PR 수. 이번 실행에서 바꾼 PR 포함),
+// 이벤트 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, ready_count(같은 base 의 이미 ready 인 내 PR 수. 이번 실행에서 바꾼 PR 포함),
 //     slots(config.json 의 pipeline.ready_slots, 없으면 1). base 는 PR 의 base, run 은 null 이다.
 //     pr-ready 의 pr.draft 는 false 이고 ready_count 는 바꾼 그 PR 을 더한 수다.
 //

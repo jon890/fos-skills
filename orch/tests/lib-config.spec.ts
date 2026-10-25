@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { ConfigError, DEPRECATED_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../scripts/lib/config.ts'
+import { fileURLToPath } from 'node:url'
+import { ConfigError, DEPRECATED_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from '../scripts/lib/config.ts'
+import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
+const OVERLAY = fileURLToPath(new URL('../references/overlay.md', import.meta.url))
 const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy']
 const saved = { ORCH_DIR: process.env.ORCH_DIR, GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES }
 
@@ -116,6 +119,14 @@ describe('section', () => {
     assert.throws(() => section(typo, 'pipeline', PIPELINE_KEYS), (e: unknown) => e instanceof ConfigError && /pipeline 절에 모르는 키가 있다: authorz$/.test(e.message))
   })
 
+  test('heavy 절은 HEAVY_KEYS 로 네 키가 함께 통과하고 모르는 키(exclusiv)는 ConfigError 다', () => {
+    const body = { exclusive: ['local-ci'], normal: ['scenario'], light: ['^git(\\s|$)'], wait_idle: ['image-build'] }
+    const config = loadConfig(repo, { file: file(JSON.stringify({ heavy: body })) })
+    assert.deepEqual(section(config, 'heavy', HEAVY_KEYS), body)
+    const typo = loadConfig(repo, { file: file(JSON.stringify({ heavy: { exclusiv: ['local-ci'] } })) })
+    assert.throws(() => section(typo, 'heavy', HEAVY_KEYS), (e: unknown) => e instanceof ConfigError && /heavy 절에 모르는 키가 있다: exclusiv$/.test(e.message))
+  })
+
   test('모르는 키는 ConfigError 이고 그 키 이름을 알린다', () => {
     const config = loadConfig(repo, { file: file(JSON.stringify({ hooks: { timeout: {} }, finish: { run: 'r', bogus: 1 } })) })
     assert.throws(() => section(config, 'hooks', HOOKS_KEYS), (e: unknown) => e instanceof ConfigError && /hooks 절에 모르는 키.*timeout/.test(e.message))
@@ -131,5 +142,37 @@ describe('DEPRECATED_KEYS', () => {
       assert.match(entry.key, /^[a-z]+(?:_[a-z]+)*$/, `키 이름이 밑줄 꼴이 아니다: ${entry.key}`)
       assert.match(entry.event, /^[a-z]+(?:-[a-z]+)*$/, `이벤트 이름이 하이픈 꼴이 아니다: ${entry.event}`)
     }
+  })
+})
+
+describe('QUEUE_KEYS', () => {
+  test('overlay.md 「마무리 설정 파일」 표의 queue 행 둘째 열의 키 집합과 같다', () => {
+    const text = readFileSync(OVERLAY, 'utf8')
+    const start = text.indexOf('## 마무리 설정 파일')
+    assert.ok(start >= 0, 'overlay.md 에 「마무리 설정 파일」 절이 없다')
+    const body = text.slice(start + 1)
+    const end = body.search(/^## /m)
+    const documented = new Set<string>()
+    for (const line of (end >= 0 ? body.slice(0, end) : body).split('\n')) {
+      const cells = line.split(/(?<!\\)\|/).map((cell) => cell.trim())
+      if (cells[1] !== '`queue`') continue
+      for (const match of cells[2].matchAll(/`([a-z_]+)`/g)) documented.add(match[1])
+    }
+    assert.ok(documented.size > 0, 'queue 행을 찾지 못했다')
+    assert.deepEqual([...QUEUE_KEYS].sort(), [...documented].sort())
+  })
+
+  test('merge-with-finish 가 머지 큐 옵션으로 바꾸는 표들의 키를 합치면 QUEUE_KEYS 와 같은 집합이고 표끼리 겹치지 않는다', () => {
+    const tables = [QUEUE_VALUES, QUEUE_FLAGS, QUEUE_REPEATED, QUEUE_GROUPS].map((table) => Object.keys(table))
+    const union = tables.flat()
+    assert.equal(new Set(union).size, union.length, `두 표에 든 키가 있다: ${union.join(', ')}`)
+    assert.deepEqual([...union].sort(), [...QUEUE_KEYS].sort())
+  })
+
+  test('queue 절은 QUEUE_KEYS 로 required, method, docs_glob 이 함께 통과하고 모르는 키(requird)는 ConfigError 다', () => {
+    const config = loadConfig(repo, { file: file(JSON.stringify({ queue: { required: ['test'], method: 'squash', docs_glob: 'docs/**' } })) })
+    assert.deepEqual(section(config, 'queue', QUEUE_KEYS), { required: ['test'], method: 'squash', docs_glob: 'docs/**' })
+    const typo = loadConfig(repo, { file: file(JSON.stringify({ queue: { requird: 'test' } })) })
+    assert.throws(() => section(typo, 'queue', QUEUE_KEYS), (e: unknown) => e instanceof ConfigError && /queue 절에 모르는 키가 있다: requird$/.test(e.message))
   })
 })

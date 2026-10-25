@@ -2,7 +2,9 @@
 
 이 저장소는 데이터베이스를 쓰지 않는다. 이 문서는 orch 가 저장소와 주고받는 파일 계약을 소유한다.
 지금 쓰는 `.orch/` 폴더 구조와 설정 키는 [`orch/references/overlay.md`](../orch/references/overlay.md) 가 소유하고, 이 문서는 개편으로 바뀌는 부분만 적는다.
-아래는 개편 뒤의 계약이다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)). 구현 PR 이 머지되면 사용법은 `orch/references/` 로 옮기고 이 문서에는 계약만 남긴다.
+아래는 개편 뒤의 계약이다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
+상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 
 ## orch 이벤트 핸들러 입력
 
@@ -30,42 +32,9 @@
 거부할 수 있는 이벤트는 `before-launch`, `before-ready`, `before-merge`, `verify-merged`, `before-cleanup` 이다.
 거부를 1 이 아니라 10 으로 둔 것은 의도한 거부와 예외로 죽은 핸들러를 가르기 위해서다. node 는 잡지 않은 예외에 1 을 낸다.
 
-### 공통 필드
+### 공통 필드와 이벤트별 필드
 
-모든 입력에 아래 필드가 있다. 이벤트별 필드는 그 위에 더한다.
-
-| 필드 | 타입 | 뜻 |
-| --- | --- | --- |
-| `version` | number | 계약 버전. 지금은 `1`. 필드를 빼거나 뜻을 바꾸면 올린다 |
-| `event` | string | 이벤트 이름 |
-| `repo` | string | 주 checkout 의 절대경로 |
-| `base` | string | 기준 브랜치. 명령이 `--base` 를 받지 않았고 `origin/HEAD` 도 읽지 못하면 빈 문자열이다 |
-| `run` | string 또는 null | Orca Run id. 모르면 null |
-| `time` | string | ISO 8601 UTC |
-
-### 이벤트별 필드
-
-PR 을 다루는 이벤트는 `pr` 객체를 받는다. 필드는 `number`, `title`, `branch`, `head`(40자리 SHA), `author`, `draft`, `url` 이다.
-worker 를 다루는 이벤트는 `worker` 객체를 받는다. 필드는 `task`, `dispatch`, `terminal`, `worktree`, `spec` 이고, 모르는 값은 null 이다.
-
-| 이벤트 | 더하는 필드 |
-| --- | --- |
-| `before-launch`, `worker-launched` | `worker`, `branch`, `agent`, `model`, `effort` |
-| `worker-question` | `worker`, `message`(`id`, `type`, `subject`, `body`), `reminder`(bool), `age_sec` |
-| `worker-done` | `worker`, `outcome`, `evidence`(`ready` 또는 `suspicious`), `pr`(있으면). `worker_done --outcome failed` 같은 실패 보고와 `--completion-contract none` 의 대기에서는 내지 않는다 |
-| `worker-lost` | `worker`, `stage` |
-| `before-ready`, `pr-ready` | `pr`, `ready_count`(이미 ready 인 내 PR 수), `slots` |
-| `ci-passed`, `ci-failed`, `ci-missing` | `pr`, `checks`(이름, 상태, 결론, URL 의 목록), `required`(이름 목록) |
-| `pr-conflict` | `pr`, `base_head`, `files`, `worker`(터미널이 없으면 null), `action`(`notified` 살아 있는 dispatch 에 보냄, `resumed` 남은 터미널에 후속 지시서로 이어 씀, `orphan` 이어 쓰지 못함) |
-| `before-merge` | `pr`, `owner`, `name`(GitHub 저장소 이름), `last_of_task`(bool) |
-| `verify-merged` | `pr`, `copy`(사본 절대경로), `base_head`, `changed_files`, `overlap_files` |
-| `after-merge` | `pr`, `merge_commit`, `remote_branch_deleted`(bool), `retargeted`(base 를 옮긴 PR 번호 목록) |
-| `after-queue` | `merged_prs`, `code_prs`, `held_prs` |
-| `after-deploy` | `pr`, `merge_commit`, `deploy`(`success`, `failure`, `timeout`, `none`), `last_of_task`(bool) |
-| `before-cleanup` | `worktree`, `branch`, `pr`(있으면), `worker`(있으면) |
-| `after-cleanup` | `removed`(경로 목록), `skipped`(경로와 이유의 목록) |
-| `tick` | `tick`(루프 시작 뒤 몇 번째인지), `open_prs`(내 열린 PR 번호 목록) |
-| `session-resume` | `loop_alive`(bool), `waiters`(살아 있는 `wait-important` 대기와 `watch-questions` 질문 감시의 pid 목록. 그 자식인 `orchestration check` 와 셸 행은 세지 않는다), `unanswered`(질문 id 목록) |
+입력 필드의 표는 `orch/scripts/lib/events.ts` 머리 주석이 소유한다. 「공통 필드」 와 「이벤트별 필드」 가 그것이다.
 
 옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령(`migrate-orch-dir.ts --hooks`)이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
 
@@ -135,7 +104,8 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `hooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
 | `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. 옛 설정 칸 실행의 `handler` 는 `legacy:<키>` 다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
 | `state/hooks/<이벤트>.lock` | 핸들러 잠금 | 실행이 끝나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다 |
-| `state/loop.json` | 상주 루프의 pid, 시작 시각, 마지막 틱, PR 마다 마지막으로 본 체크 상태와 알린 이벤트 | 루프가 덮어쓴다. 같은 상태를 두 번 알리지 않는 데 쓴다 |
+| `state/loop.json` | 상주 루프의 상태. `pid`, `run`(Run id 또는 null), `repo`, `tick_sec`, `started_at`, `alive_at`(생존 타이머가 쓴 마지막 시각), `last_tick`(마지막으로 끝난 틱의 시각 또는 null), `ticks`, `errors`(출처마다 마지막 오류 이유 또는 null), `ci`(PR 번호에서 `{ head, state }`. `head` 는 판정한 HEAD SHA, `state` 는 `passed`, `failed`, `pending`). 시각은 ISO 8601 UTC 다 | 루프의 부모 프로세스만 옆 파일에 쓴 뒤 rename 으로 덮어쓴다. 같은 실패를 두 번 알리지 않는 데 쓴다. `ci` 는 같은 HEAD 의 같은 상태를 두 번 알리지 않는 데 쓴다 |
+| `state/loop.lock` | 한 저장소에 루프 하나. 쥔 루프의 pid | 루프가 끝나면 푼다. 죽은 pid 와 루프가 아닌 프로세스의 pid 가 든 잠금은 다음 루프가 회수한다 |
 | `state/order.json` | 머지 순서. PR 번호 목록 | 머지되거나 닫힌 PR 은 루프가 뺀다 |
 | `state/loop.log` | 상주 루프의 출력 | 1MB 를 넘으면 `loop.log.1` 로 돌리고 하나만 남긴다 |
-| `state/loop-events.jsonl` | 코디네이터를 깨워야 하는 루프의 알림. 한 줄에 `time`, `kind`(`REMINDER`, `WATCH-ERROR`, `CI-FAILED`, `CI-MISSING`, `CONFLICT-ORPHAN`, `HOOK-FAIL`), `pr`, `text` | `wait-important` 가 읽은 위치를 `state/loop-events.cursor` 에 적는다. 읽은 줄이 1000 줄을 넘으면 루프가 앞부분을 잘라 낸다 |
+| `state/loop-events.jsonl` | 코디네이터를 깨워야 하는 루프의 알림. 한 줄에 `seq`(1 부터 단조 증가하는 정수), `time`(ISO 8601 UTC), `kind`(`REMINDER`, `WATCH-ERROR`, `HOOK-FAIL`, `CI-FAILED`, `CONFLICT-ORPHAN`. `CI-MISSING` 은 `ci-missing` 을 낼 때 더한다), `pr`(번호 또는 null), `text`(줄에서 `kind` 를 뺀 나머지. `WATCH-ERROR` 는 `questions: offline`, `HOOK-FAIL` 은 `tick 1`, `CONFLICT-ORPHAN` 은 이유) | 더한 뒤 1000 줄을 넘으면 쓰는 쪽이 마지막 1000 줄만 남긴다. 새 `seq` 는 파일의 마지막 `seq` 와 커서 가운데 큰 것의 다음 값이다. `wait-important` 가 마지막으로 읽은 `seq` 하나를 `state/loop-events.cursor` 에 적고, 커서보다 큰 `seq` 만 읽는다. 커서가 없으면 0 이다 |

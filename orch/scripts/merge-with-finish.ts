@@ -30,7 +30,7 @@
 //                             `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 어디에도 없으면 경고 한 줄을 낸다
 //     --board-item PR=ID      그 PR 의 마무리가 done 으로 바꿀 보드 항목(`finish-pr.ts --board-id`). PR 마다 준다.
 //                             주지 않으면 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾아 쓴다(아래 「보드 항목」)
-//     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(lib/paths.ts 의 queue). handoff-cleanup.py 가 이 폴더의 끝난 로그를 옮긴다
+//     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(lib/paths.ts 의 queue). handoff-cleanup.ts 가 이 폴더의 끝난 로그를 옮긴다
 //     --no-finish             마무리를 걸지 않고 머지 큐만 돌린다
 //     래퍼 옵션은 `--옵션 값` 과 `--옵션=값` 을 받는다. 고유 접두로 줄여 쓸 수 없다
 //
@@ -61,7 +61,7 @@
 // 고유 접두(`--complete-c`)와 `--complete-cmd=값` 도 알아본다. 접두가 여러 옵션에 맞으면 사용법 오류다.
 //
 // 보드 항목: 보드 파일은 --finish-arg 의 `--board`, 없으면 설정 파일 `finish` 절의 `board`, 없으면 finish-pr.ts 와 같은 기본
-// (work-board 의 board.py 가 정한 위치) 이다. 상대경로는 주 checkout 기준이다. 항목의 `pr` 필드에서 단어에 붙지 않은 숫자(`#492`, `492, 495`, `492/495`)를 PR 번호로 읽고, 그 PR 이 든 항목을 찾는다.
+// (work-board 의 board.ts 가 정한 위치) 이다. 상대경로는 주 checkout 기준이다. 항목의 `pr` 필드에서 단어에 붙지 않은 숫자(`#492`, `492, 495`, `492/495`)를 PR 번호로 읽고, 그 PR 이 든 항목을 찾는다.
 // (`#492 (v2)` 의 `2` 처럼 글자에 붙은 숫자는 읽지 않는다.)
 // **업무의 마지막 PR(`!`)일 때만 그 항목을 done 으로 바꾼다.** 중간 PR 이 항목을 끝내지 않도록 `!` 가 없으면 찾은 항목을 알리기만 한다.
 // 같은 PR 이 든 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다. `--board-item` 으로 준 항목은 `!` 와 상관없이 쓴다.
@@ -77,7 +77,7 @@ import { closeSync, openSync, readFileSync } from 'node:fs'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expandArgs } from './lib/args.ts'
-import { ConfigError, loadConfig, section } from './lib/config.ts'
+import { ConfigError, loadConfig, QUEUE_KEYS, section } from './lib/config.ts'
 import type { Config } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, handlerFile } from './lib/events.ts'
 import { FINISH_OPTIONS } from './lib/finish-options.ts'
@@ -86,36 +86,12 @@ import { boardPath, makeParent, pathOf, requireMigrated } from './lib/paths.ts'
 import { NO_LIMIT_MS, runInherit, scriptCommand } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { pyStr } from './lib/py.ts'
-import { QUEUE_VALUE_OPTIONS } from './lib/queue-options.ts'
+import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './lib/queue-options.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
-// config.json 의 queue 절 키와 머지 큐 옵션
-const QUEUE_KEYS: Readonly<Record<string, string>> = {
-  before: '--before',
-  required: '--required',
-  verify_merged: '--verify-merged',
-  verify_merged_when: '--verify-merged-when',
-  docs_glob: '--docs-glob',
-  method: '--method',
-  after_merged: '--after-merged',
-  up_to_date_when: '--up-to-date-when',
-  shared_paths: '--shared-paths',
-  unit_prefix: '--unit-prefix',
-}
-// 문자열 목록도 받는 키와 목록을 잇는 구분자
+// 문자열 목록도 받는 queue 키와 목록을 잇는 구분자. 키와 옵션의 대응은 lib/queue-options.ts 의 QUEUE_VALUES 들이다
 const QUEUE_LISTS: Readonly<Record<string, string>> = { required: ',', docs_glob: ',', shared_paths: '|' }
-// queue 절의 참거짓 키와 값 없는 머지 큐 옵션
-const QUEUE_FLAGS: Readonly<Record<string, string>> = {
-  skipped_is_missing: '--skipped-is-missing',
-  update_docs_on_overlap: '--update-docs-on-overlap',
-  require_up_to_date: '--require-up-to-date',
-}
-// queue 절의 문자열 목록 키. 항목마다 같은 옵션을 한 번씩 붙인다
-const QUEUE_REPEATED: Readonly<Record<string, string>> = { sweep_args: '--sweep-arg' }
-// queue 절의 묶음 목록 키. 안쪽 목록 하나가 `--unit-group a,b` 하나가 된다
-const QUEUE_GROUPS: Readonly<Record<string, string>> = { unit_groups: '--unit-group' }
-const QUEUE_SECTION_KEYS = [...Object.keys(QUEUE_KEYS), ...Object.keys(QUEUE_FLAGS), ...Object.keys(QUEUE_REPEATED), ...Object.keys(QUEUE_GROUPS)]
 const PR_SPEC = /^(\d+)(!?)(:.*)?$/s
 const LEGACY_KEY = '--complete-cmd'
 
@@ -250,10 +226,10 @@ function configPath(wrapper: Wrapper): string {
 
 // 설정의 queue 절에서 명령줄에 없는 머지 큐 옵션을 만든다. 절이 잘못됐으면 ConfigError
 function queueDefaults(path: string, queue: string[], config: Config): string[] {
-  const body = section<Record<string, unknown>>(config, 'queue', QUEUE_SECTION_KEYS)
+  const body = section<Record<string, unknown>>(config, 'queue', QUEUE_KEYS)
   const given = givenOptions(queue)
   const extra: string[] = []
-  for (const [key, option] of Object.entries(QUEUE_KEYS)) {
+  for (const [key, option] of Object.entries(QUEUE_VALUES)) {
     if (!(key in body) || given.has(option)) continue
     let value = body[key]
     if (Array.isArray(value) && key in QUEUE_LISTS && value.every((v) => typeof v === 'string')) value = value.join(QUEUE_LISTS[key])

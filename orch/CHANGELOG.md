@@ -3,9 +3,25 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 3.2.1 (2026-10-25)
+## 3.4.1 (2026-10-25)
 
 - README 를 스킬을 쓰는 사람 관점으로 다시 쓰고, 이 CHANGELOG 를 버전마다 핵심만 남기도록 줄였다. 동작은 바뀌지 않았다
+
+## 3.4.0 (2026-10-25)
+
+- 저장소마다 하나 도는 상주 루프 `orch-loop.ts` 를 더했다. 틱마다 질문 확인, 정리, 보드 동기화, 내 PR 의 CI 감시, 충돌 PR 알림을 하고 머지는 하지 않는다
+- `wait-important --loop-repo` 가 루프의 알림(`LOOP-EVENT`, 종료 코드 7)과 루프의 죽음(`LOOP-DEAD`, 8)에도 깨어난다
+- 루프가 `ci-passed`, `ci-failed`, `tick`, `pr-conflict` 이벤트를 낸다. `orch-doctor --run` 은 죽은 루프와 다시 띄울 명령을 알린다
+- 기다리기 절차를 루프 기준으로 바꿨다. Monitor 로 띄우는 `watch-questions` 는 루프를 쓸 수 없을 때의 대안이다
+- 호환성: 루프를 쓰는 저장소는 `watch-questions` 를 따로 띄우지 않는다. `watch-questions.ts` 는 `poll` 을 export 하지 않는다
+
+## 3.3.0 (2026-10-25)
+
+- 정리와 대기열 명령(`cleanup-sweep`, `remove-worktree`, `handoff-cleanup`, `heavy-slot` 등)과 보드 명령이 TypeScript 로 돈다. 옛 `.py` 는 shim 으로 남는다
+- `cleanup-sweep` 이 `before-cleanup`, `after-cleanup` 이벤트를 내고, `--remote-branches` 로 머지된 원격 브랜치를 지운다
+- `.orch/config.json` 의 `heavy` 절로 무거운 검사를 분류하고, `wait_idle` 로 대기열 밖의 무거운 프로세스가 끝나길 기다린다
+- 호환성: `heavy-slot` 의 자동 분류를 지웠다. `heavy` 절이 없으면 모든 명령이 자리를 기다리고, perl 이 PATH 에 필요하다
+- 호환성: `cleanup-sweep`, `handoff-cleanup` 의 출력 줄 일부가 바뀌었다. `scripts/run-orch-tests.py` 를 지우고 `node --test` 하나로 돌린다
 
 ## 3.2.0 (2026-10-24)
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { ConfigError } from '../scripts/lib/config.ts'
-import { apiTarget, currentUser, gh, ghBin, ghJson, isOwnPr, ownAuthors, updateBranch } from '../scripts/lib/gh.ts'
+import { apiTarget, ciState, currentUser, gh, ghBin, ghJson, isOwnPr, ownAuthors, requiredNames, ruleChecks, updateBranch } from '../scripts/lib/gh.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
@@ -175,5 +175,120 @@ describe('updateBranch', () => {
     assert.equal(code, 2)
     assert.match(stderr, /draft/)
     assert.deepEqual(calls, [])
+  })
+})
+
+// 롤업 행. 체크 실행은 name, status, conclusion, detailsUrl 을, 커밋 상태는 context, state, targetUrl 을 갖는다
+function run(name: string, conclusion: string | null, status = 'COMPLETED') {
+  return { __typename: 'CheckRun', name, status, conclusion, detailsUrl: `https://ci.example.com/${name}` }
+}
+function commitStatus(context: string, state: string) {
+  return { __typename: 'StatusContext', context, state, targetUrl: `https://status.example.com/${context}` }
+}
+
+describe('ciState', () => {
+  test('필수 체크가 모두 나타나 성공으로 끝나고 실패가 없으면 passed 이고 checks 는 나타난 체크 전부다', () => {
+    const got = ciState([run('test', 'SUCCESS'), run('lint', 'SUCCESS'), run('extra', 'NEUTRAL')], ['test', 'lint'], false)
+    assert.equal(got.state, 'passed')
+    assert.deepEqual(
+      got.checks.map((c) => c.name),
+      ['test', 'lint', 'extra'],
+    )
+  })
+
+  test('필수가 아닌 체크가 실패하면 failed 다(머지 큐의 기본 판정과 같다)', () => {
+    assert.equal(ciState([run('test', 'SUCCESS'), run('extra', 'FAILURE')], ['test'], false).state, 'failed')
+    assert.equal(ciState([run('test', 'SUCCESS'), commitStatus('ci/extra', 'ERROR')], ['test'], false).state, 'failed')
+  })
+
+  test('필수가 아닌 체크가 아직 돌면 머지 큐처럼 기다리므로 pending 이다', () => {
+    assert.equal(ciState([run('test', 'SUCCESS'), run('extra', null, 'IN_PROGRESS')], ['test'], false).state, 'pending')
+  })
+
+  test('체크 실행의 실패 결론마다 failed 다', () => {
+    for (const conclusion of ['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']) {
+      assert.equal(ciState([run('test', conclusion), run('lint', null, 'IN_PROGRESS')], ['test', 'lint'], false).state, 'failed', conclusion)
+    }
+  })
+
+  test('커밋 상태는 name 이 없어 context 로 찾고, state 가 FAILURE 나 ERROR 면 failed 다', () => {
+    for (const state of ['FAILURE', 'ERROR']) {
+      const got = ciState([commitStatus('ci/legacy', state)], ['ci/legacy'], false)
+      assert.equal(got.state, 'failed', state)
+      assert.deepEqual(got.checks, [{ name: 'ci/legacy', status: state, conclusion: null, url: 'https://status.example.com/ci/legacy' }])
+    }
+    assert.equal(ciState([commitStatus('ci/legacy', 'SUCCESS')], ['ci/legacy'], false).state, 'passed')
+    assert.equal(ciState([commitStatus('ci/legacy', 'PENDING')], ['ci/legacy'], false).state, 'pending')
+  })
+
+  test('필수 체크 하나가 아직 나타나지 않았거나 끝나지 않았으면 pending 이다', () => {
+    assert.equal(ciState([run('test', 'SUCCESS')], ['test', 'lint'], false).state, 'pending')
+    assert.equal(ciState([run('test', 'SUCCESS'), run('lint', null, 'IN_PROGRESS')], ['test', 'lint'], false).state, 'pending')
+  })
+
+  test('필수 목록이 비면 나타난 체크 전부로 판정하고, 체크가 하나도 없으면 pending 이다', () => {
+    assert.equal(ciState([run('a', 'SUCCESS'), run('b', 'SUCCESS')], [], false).state, 'passed')
+    assert.equal(ciState([run('a', 'SUCCESS'), run('b', 'FAILURE')], [], false).state, 'failed')
+    assert.equal(ciState([], [], false).state, 'pending')
+    assert.equal(ciState(null, [], false).state, 'pending')
+  })
+
+  test('skippedIsMissing 이면 SKIPPED 인 필수 체크는 나타나지 않은 것이고, 아니면 통과로 본다', () => {
+    assert.equal(ciState([run('test', 'SKIPPED')], ['test'], true).state, 'pending')
+    assert.equal(ciState([run('test', 'SKIPPED')], ['test'], false).state, 'passed')
+  })
+})
+
+describe('requiredNames', () => {
+  function repoWith(config: unknown): string {
+    const repo = mkdtempSync(join(dir, 'req-'))
+    mkdirSync(join(repo, '.orch'))
+    writeFileSync(join(repo, '.orch/config.json'), JSON.stringify(config))
+    return repo
+  }
+
+  test('queue.required 문자열은 쉼표로 나누고 규칙 API 를 부르지 않는다. 다른 queue 키가 있어도 된다', () => {
+    const repo = repoWith({ queue: { required: 'test,lint', method: 'squash', docs_glob: ['docs/**'] } })
+    const calls = newCalls(() => assert.deepEqual(requiredNames(repo, 'ghe.example.com', 'o/r', 'main'), { ok: true, names: ['test', 'lint'] }))
+    assert.deepEqual(calls, [])
+  })
+
+  test('queue.required 목록은 그대로다', () => {
+    const repo = repoWith({ queue: { required: ['test', 'lint'] } })
+    assert.deepEqual(requiredNames(repo, 'ghe.example.com', 'o/r', 'main'), { ok: true, names: ['test', 'lint'] })
+  })
+
+  test('queue.required 가 문자열이나 문자열 목록이 아니면 ConfigError 다', () => {
+    const repo = repoWith({ queue: { required: 3 } })
+    assert.throws(() => requiredNames(repo, 'ghe.example.com', 'o/r', 'main'), ConfigError)
+  })
+
+  test('queue.required 가 없으면 --hostname 과 함께 base 의 규칙을 읽는다', () => {
+    const repo = repoWith({ queue: { method: 'squash' } })
+    fake.setRules([{ args: ['repos/o/r/rules/branches/main'], stdout: 'lint,test\n' }])
+    try {
+      const calls = newCalls(() => assert.deepEqual(requiredNames(repo, 'ghe.example.com', 'o/r', 'main'), { ok: true, names: ['lint', 'test'] }))
+      assert.deepEqual(
+        calls.map((c) => c.argv.slice(0, 4)),
+        [['api', '--hostname', 'ghe.example.com', 'repos/o/r/rules/branches/main']],
+      )
+    } finally {
+      fake.setRules(RULES)
+    }
+  })
+})
+
+describe('ruleChecks', () => {
+  test('플랜 제한(HTTP 403 과 Upgrade to GitHub Pro)은 빈 목록이고 그 밖의 실패는 ok: false 다', () => {
+    fake.setRules([{ args: ['repos/o/r/rules/branches/main'], code: 1, stderr: 'Upgrade to GitHub Pro or make this repository public (HTTP 403)\n' }])
+    try {
+      assert.deepEqual(ruleChecks('github.com', 'o/r', 'main'), { ok: true, names: [] })
+      fake.setRules([{ args: ['repos/o/r/rules/branches/main'], code: 1, stderr: 'HTTP 404: Not Found\n' }])
+      const got = ruleChecks('github.com', 'o/r', 'main')
+      assert.equal(got.ok, false)
+      assert.match(got.ok ? '' : got.error, /HTTP 404/)
+    } finally {
+      fake.setRules(RULES)
+    }
   })
 })

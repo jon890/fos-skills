@@ -1,6 +1,6 @@
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
-//   1. 수동 항목: 저장소의 board.json(BOARD_PATHS 순서로 찾는다). 갱신은 플러그인의 bin/board.py 가 한다.
+//   1. 수동 항목: 저장소의 board.json(BOARD_PATHS 순서로 찾는다). 갱신은 플러그인의 bin/board.ts 가 한다.
 //      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[] }] }
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
 //      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
@@ -217,7 +217,7 @@ export function workerLine(worker, prs) {
     + (worker.state && worker.state !== 'ready' ? '  ' + worker.state : '')
 }
 
-// 단계 줄: 앞 표시(끝냄 ✓ [x], 안 끝냄 [ ] ▶ ◇)와 번호. bin/board.py 의 STEP 과 같은 규칙이다
+// 단계 줄: 앞 표시(끝냄 ✓ [x], 안 끝냄 [ ] ▶ ◇)와 번호. bin/board.ts 의 STEP 과 같은 규칙이다
 const STEP = /^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s/
 const DONE_MARKS = ['✓', '[x]', '[X]']
 const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/

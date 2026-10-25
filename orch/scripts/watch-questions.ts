@@ -18,84 +18,24 @@
 //                         --once 는 한 번만 조회하므로 실패하면 늘 낸다
 //     질문이 100건 이상인 Run 의 조회 범위 안내는 stderr 로만 낸다(lib/questions.ts 머리 주석).
 //
-// 알린 시각은 Run 별로 <orch 작업 폴더>/state/questions-seen.json 에 적는다. 조회가 실패하면 그 파일을 지우거나 바꾸지 않는다.
-// 파일의 바이트 꼴은 옛 명령의 json.dumps(ensure_ascii=False) 와 같다(lib/py.ts 의 pyJson). 값은 epoch 초다.
-// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). 테스트가 poll 을 import 한다. 명령으로 실행했을 때만 main 을 부른다.
-// 질문은 lib/questions.ts 의 snapshot 으로 읽는다. ORCA 환경 변수로 orca 실행 파일을 바꾼다.
+// 알린 시각은 Run 별로 <orch 작업 폴더>/state/questions-seen.json 에 적는다. 형식과 판정은 lib/questions.ts 머리 주석이 소유한다.
+// 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). 명령으로 실행했을 때만 main 을 부른다.
+// 질문 조회, 알릴 줄 판정, 이벤트는 lib/questions.ts 의 poll 과 notifyQuestion 이다. ORCA 환경 변수로 orca 실행 파일을 바꾼다.
 //
-// 이벤트: QUESTION 이나 REMINDER 줄을 낸 직후 worker-question 을 낸다(docs/data-schema.md 「이벤트별 필드」).
+// 이벤트: QUESTION 이나 REMINDER 줄을 낸 직후 worker-question 을 낸다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     worker.task, worker.dispatch 는 질문 메시지에서, worker.terminal 은 보낸 쪽이다. 핸들러의 실패는 종료 코드를 바꾸지 않는다.
 //
 // 종료 코드: 0 --once 조회 성공, 1 --once 조회 실패, 2 사용법 오류. 반복 모드는 실패해도 다음 간격에 다시 조회한다.
 
-import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { context } from './lib/completion.ts'
-import { fire } from './lib/events.ts'
-import { defaultBase, mainCheckout } from './lib/git.ts'
-import { makeParent, pathOf } from './lib/paths.ts'
-import { pyJson, pyStr as text } from './lib/py.ts'
-import { ageSeconds, snapshot } from './lib/questions.ts'
-import type { Message } from './lib/questions.ts'
+import { pathOf } from './lib/paths.ts'
+import { notifyQuestion, poll } from './lib/questions.ts'
+import type { Notice } from './lib/questions.ts'
 
 const USAGE = '사용법: watch-questions.ts [--run ID] [--repo DIR] [--interval 60] [--remind-after 600] [--once]'
-
-type Seen = Record<string, Record<string, number>>
-type Notice = { line: string; message: Message; reminder: boolean }
-
-function exists(file: string): boolean {
-  try {
-    statSync(file)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// Python 의 str.split() 처럼 공백 덩어리로 나눠 한 칸으로 잇고 앞 160자(코드 포인트)만 남긴다
-function brief(body: unknown): string {
-  const flat = String(body || '').split(/\s+/).filter(Boolean).join(' ')
-  return Array.from(flat).slice(0, 160).join('')
-}
-
-// now 는 epoch 초다. 알릴 줄을 정하고 알린 시각을 state 에 적는다.
-export function poll(run: string | null, state: string, now: number, remindAfter: number, repo: string): { run: string; notices: Notice[] } {
-  const found = snapshot(run)
-  const seen = (exists(state) ? JSON.parse(readFileSync(state, 'utf8')) : {}) as Seen
-  const isMap = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value)
-  const malformed = () => new Error(`알림 기록 형식이 잘못됐다: ${state}`)
-  if (!isMap(seen) || (Object.hasOwn(seen, found.run) && !isMap(seen[found.run]))) throw malformed()
-  const notified = (seen[found.run] ??= {})
-  const key = (m: Message): [string, string] => [String(m.created_at ?? ''), String(m.id)]
-  const ordered = [...found.pending].sort((a, b) => {
-    const [x, y] = [key(a), key(b)]
-    return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0
-  })
-  const notices: Notice[] = []
-  for (const message of ordered) {
-    const id = String(message.id)
-    const previous: unknown = notified[id]
-    // 옛 명령은 수가 아닌 값에서 뺄셈이 TypeError 로 실패해 조회 실패로 끝났다. 문자열 "1000" 을 수로 읽어 넘기지 않는다
-    if (previous !== undefined && previous !== null && (typeof previous !== 'number' || !Number.isFinite(previous))) throw malformed()
-    if (typeof previous === 'number' && now - previous < remindAfter) continue
-    const reminder = previous !== undefined && previous !== null
-    notices.push({
-      line: `${reminder ? 'REMINDER' : 'QUESTION'} ${id} ${text(message.type)} from=${text(message.from_handle)}: ${brief(message.body)}`,
-      message,
-      reminder,
-    })
-    notified[id] = now
-  }
-  makeParent(state, repo)
-  // 쓰는 도중에 끊겨도 앞 기록이 깨지지 않게 옆 파일에 쓰고 바꾼다
-  const temporary = state.replace(/\.json$/, '') + '.tmp'
-  writeFileSync(temporary, `${pyJson(seen)}\n`)
-  renameSync(temporary, state)
-  return { run: found.run, notices }
-}
 
 function positive(name: string, value: string): number {
   const number = value.trim() === '' ? Number.NaN : Number(value)
@@ -150,31 +90,10 @@ async function main(argv: string[]): Promise<number> {
     }
     for (const notice of notices) {
       process.stdout.write(`${notice.line}\n`)
-      await notify(notice, repo, run)
+      await notifyQuestion(notice, repo, run, 'watch-questions')
     }
     if (values.once) return 0
     await sleep(interval * 1000)
-  }
-}
-
-async function notify(notice: Notice, repo: string, run: string | null): Promise<void> {
-  const { message } = notice
-  const [task, dispatch] = context(message)
-  const root = mainCheckout(repo)
-  try {
-    await fire(
-      'worker-question',
-      {
-        worker: { task, dispatch, terminal: message.from_handle ?? null, worktree: null, spec: null },
-        message: { id: message.id ?? null, type: message.type ?? null, subject: message.subject ?? null, body: message.body ?? null },
-        reminder: notice.reminder,
-        age_sec: Math.trunc(ageSeconds(message, Date.now() / 1000)),
-      },
-      { repo: root, base: defaultBase(root) ?? '', run },
-    )
-  } catch (e) {
-    // 질문 줄은 이미 냈다. 이벤트 실행기의 오류(설정 파일 오류 포함)로 감시를 멈추면 다음 질문을 알리지 못한다
-    process.stderr.write(`watch-questions: worker-question 을 내지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
   }
 }
 

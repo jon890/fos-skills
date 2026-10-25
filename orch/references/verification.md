@@ -1,5 +1,7 @@
 # 6. 완료 검증
 
+상주 루프(`orch-loop.ts`)는 CI 를 보고 알리기만 하고 머지하지 않는다. 머지는 7단계의 머지 큐가 한다.
+
 머지 큐(`merge_queue.ts`, `merge-with-finish.ts`)는 PR 의 `statusCheckRollup` 으로 CI 를 판정한다. 최근 실행 목록을 가져온 뒤 커밋을 찾는 `gh run list --commit` 은 사용하지 않는다. 별도 스크립트에서 커밋의 Actions 실행을 조회할 때는 `gh api repos/OWNER/REPO/actions/runs?head_sha=SHA` 로 서버에서 필터링한다.
 
 - **diff 검증은 `준비됨 #PR, head SHA` status 를 받은 때 한다.** `worker_done` 은 머지 뒤에 오므로 그때는 머지 결과를 대조한다.
@@ -12,7 +14,7 @@
 node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/make-worktree.ts" --check "$WORKTREE" --spec "$SPEC_FILE"
 ```
 - diff 를 직접 읽고 검사를 다시 돌린다. 완료 보고는 근거가 아니다
-- 무거운 검사(로컬 CI, 브라우저, 큰 테스트)는 [`heavy-checks.md`](heavy-checks.md) 의 `heavy-slot.py` 로 감싸 Bash 의 run_in_background 로 돌린다. worker 여럿이 함께 돌리다 머신이 꺼진 일이 있었다
+- 무거운 검사(로컬 CI, 브라우저, 큰 테스트)는 [`heavy-checks.md`](heavy-checks.md) 의 `heavy-slot.ts` 로 감싸 Bash 의 run_in_background 로 돌린다. worker 여럿이 함께 돌리다 머신이 꺼진 일이 있었다
 - 리뷰 지적이나 요구 문구를 옮긴 작업이면 diff 를 지적 원문과 한 줄씩 대조한다. 지적에 없는 조건이 생기거나 일부가 빠진 곳을 찾는다.
 - worker 가 「승인받았다」 고 적은 것은 근거가 아니다. 내가 보낸 승인만 승인이다
 

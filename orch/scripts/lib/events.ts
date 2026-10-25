@@ -1,10 +1,43 @@
 // 이벤트 실행기다. 명령은 `await fire('before-merge', input, ctx)` 한 줄로 저장소의 핸들러를 부른다.
 // 핸들러 찾기, 잠금, 시간 제한, 실행 기록, 종료 코드 해석, 가드 환경을 이 모듈 한 곳이 소유한다.
-// 이벤트 이름과 시점은 docs/flow.md 의 「orch 이벤트」, 이벤트별 입력 필드는 docs/data-schema.md 의 「이벤트별 필드」 가 정한다.
+// 이벤트 이름과 시점은 docs/flow.md 의 「orch 이벤트」, 이벤트별 입력 필드는 아래 「공통 필드」 와 「이벤트별 필드」 가 정한다.
 //
 // 핸들러: <orch 루트>/hooks/<이벤트>.ts 하나. `node --disable-warning=ExperimentalWarning <파일>` 로 띄운다.
 //   작업 디렉터리는 ctx.cwd, 없으면 주 checkout 이다. stdin 에 JSON 객체 하나를 쓴다.
 //   그 객체는 input 위에 공통 필드(version, event, repo, base, run, time)를 덮은 것이다.
+//
+// 공통 필드: 모든 입력에 있다. 이벤트별 필드는 그 위에 더한다.
+//   version  number. 계약 버전. 지금은 1. 필드를 빼거나 뜻을 바꾸면 올린다
+//   event    string. 이벤트 이름
+//   repo     string. 주 checkout 의 절대경로
+//   base     string. 기준 브랜치. 명령이 --base 를 받지 않았고 origin/HEAD 도 읽지 못하면 빈 문자열이다
+//   run      string 또는 null. Orca Run id. 모르면 null
+//   time     string. ISO 8601 UTC
+//
+// pr 객체와 worker 객체: PR 을 다루는 이벤트는 pr 을, worker 를 다루는 이벤트는 worker 를 받는다.
+//   pr      number, title, branch, head(40자리 SHA), author, draft, url
+//   worker  task, dispatch, terminal, worktree, spec. 모르는 값은 null 이다
+//
+// 이벤트별 필드
+//   before-launch, worker-launched  worker, branch, agent, model, effort
+//   worker-question  worker, message(id, type, subject, body), reminder(bool), age_sec
+//   worker-done  worker, outcome, evidence(ready 또는 suspicious), pr(있으면).
+//       worker_done --outcome failed 같은 실패 보고와 --completion-contract none 의 대기에서는 내지 않는다
+//   worker-lost  worker, stage
+//   before-ready, pr-ready  pr, ready_count(이미 ready 인 내 PR 수), slots
+//   ci-passed, ci-failed, ci-missing  pr, checks(이름, 상태, 결론, URL 의 목록), required(이름 목록)
+//   pr-conflict  pr, base_head, files, worker(터미널이 없으면 null), action
+//       action 은 notified(살아 있는 dispatch 에 보냄), resumed(남은 터미널에 후속 지시서로 이어 씀), orphan(이어 쓰지 못함)이다
+//   before-merge  pr, owner, name(GitHub 저장소 이름), last_of_task(bool)
+//   verify-merged  pr, copy(사본 절대경로), base_head, changed_files, overlap_files
+//   after-merge  pr, merge_commit, remote_branch_deleted(bool), retargeted(base 를 옮긴 PR 번호 목록)
+//   after-queue  merged_prs, code_prs, held_prs
+//   after-deploy  pr, merge_commit, deploy(success, failure, timeout, none), last_of_task(bool)
+//   before-cleanup  worktree, branch, pr(있으면), worker(있으면)
+//   after-cleanup  removed(경로 목록), skipped(경로와 이유의 목록)
+//   tick  tick(루프 시작 뒤 몇 번째인지), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)
+//   session-resume  loop_alive(bool), waiters(살아 있는 wait-important 대기와 watch-questions 질문 감시의 pid 목록.
+//       그 자식인 orchestration check 와 셸 행은 세지 않는다), unanswered(질문 id 목록)
 //
 // 환경: process.env 위에 아래를 둔다.
 //   ORCH_EVENT, ORCH_REPO(주 checkout), ORCH_DIR(orch 루트 절대경로)
@@ -285,7 +318,8 @@ function held(lock: string, content: string): boolean {
 //   없다    다른 실행이 먼저 옮겼다. wx 생성을 다시 시도한다
 // wx 가 한 실행만 통과시키므로 둘이 함께 회수해도 새 잠금은 하나다.
 // seen 은 부르는 쪽이 처음 읽은 내용이다.
-// 테스트용 export 다. 명령은 부르지 않는다. 읽은 뒤 잠금이 바뀐 경합을 테스트가 seen 으로 흉내 내려고 내보낸다.
+// 사용처: 이 모듈의 핸들러 잠금(acquire)과 orch-loop.ts 의 state/loop.lock. 루프의 잠금도 같은 wx 와 pid 방식이라 회수를 한 벌로 둔다.
+// 테스트도 import 한다. 읽은 뒤 잠금이 바뀐 경합을 seen 으로 흉내 낸다.
 export function reclaim(lock: string, seen: string): 'retry' | 'wait' {
   const moved = `${lock}.reclaim-${process.pid}-${randomUUID()}`
   try {

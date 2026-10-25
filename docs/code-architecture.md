@@ -39,7 +39,7 @@ scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 테�
 scripts/tests/test_plugin_manifest.py   매니페스트와 루트의 스킬 디렉터리를 대조한다
 hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 orch/hooks/hooks.json               플러그인이 싣는 Claude Code 훅 정의. plugin.json 의 hooks 배열이 가리킨다
-work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모듈, bin/board.py 는 보드 편집 명령이다
+work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모듈, bin/board.ts 는 보드 편집 명령이다
 ```
 
 스킬을 `skills/` 아래로 옮기지 않은 근거는 [ADR-001](adr/001-plugin-from-repo-root.md) 이 소유한다.
@@ -95,6 +95,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | `.claude-plugin/plugin.json` | 플러그인 이름과 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
 | `orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
+| `work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `content-preview/scripts/show-preview.sh` |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 없는지 확인한다 | 사람, 구현 검증 |
 | `scripts/test-plugin-install.sh` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
@@ -164,6 +165,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | 명령 | 확인하는 것 |
 | --- | --- |
 | `python3 -m unittest discover -s scripts/tests` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `test_export_to_team.py` 가 `export-to-team.sh` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
+| `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` | orch 와 work-board 의 node:test. 파일마다 프로세스가 나뉜다 |
 | `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 스킬 여섯 개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
 `claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.
@@ -178,7 +180,9 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 
 ## orch 코어와 핸들러
 
-이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)). 구현 PR 이 모두 머지되기 전의 실제 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
+상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 
 ### 사용자 결정 (2026-10-24)
@@ -203,24 +207,27 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
 orch/scripts/<명령>.py            node 로 넘기는 shim. 다음 major 에서 지운다
 orch/scripts/ts_shim.py           shim 의 node 버전 확인과 exec 한 벌
-orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돌며 틱마다 질문 확인, 정리, ready 슬롯, 순서, CI 감시를 한다
+orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돈다. 틱이 하는 일은 머리 주석이 소유한다
 orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호를 받은 명령이 진행 중인 자식을 끊는 일 한 벌. 함수와 반환 형태는 머리 주석이 소유한다
 orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
 orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
 orch/scripts/lib/git.ts           git 호출. 기준 브랜치, merge-tree 충돌 판정 한 벌
-orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할
+orch/scripts/lib/paths.ts         orch 루트와 이름별 경로. 옛 orch_paths.py 의 역할. 셸에서 부르는 명령은 orch_paths.ts
 orch/scripts/lib/fs.ts            파일 경로 판정 helper 한 벌
 orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작하는 값 처리. 옛 argparse 호출과 맞춘다
 orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
 orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
 orch/scripts/lib/overlap.ts       단위 겹침 판정 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/queue-options.ts 머지 큐가 값을 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/queue-options.ts 머지 큐의 옵션 목록과 설정의 queue 키를 옵션으로 바꾸는 표 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/questions.ts     미답변 질문 조회 한 벌
+orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다
+orch/scripts/lib/loop.ts          상주 루프의 상태 파일 한 벌. 파일과 판정은 머리 주석이 소유한다
+orch/scripts/lib/workers.ts       브랜치의 워크트리와 그 worker 행 찾기 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
+orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경
 orch/scripts/lib/guard/orca       핸들러 PATH 앞에 두는 shim. 확장자가 없어 CommonJS 로 읽히므로 타입 문법 없이 guard.ts 를 import() 한다
 orch/scripts/lib/guard/gh
@@ -229,10 +236,11 @@ orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node 로 부�
 orch/hooks/shell-text.ts          hook 이 함께 쓰는 셸 글자 처리 모듈. hook 이 아니다
 orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
 orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
-work-board/bin/board.ts           보드 편집 명령. 옛 board.py
+work-board/bin/board.ts           보드 편집 명령. 옛 board.py. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
 ```
 
 `orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
+예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `work-board/bin/board.ts` 에서 import 한다. 의존 방향은 orch 에서 work-board 로 하나다.
 옛 코드는 하이픈이 든 파일을 `importlib` 로 읽어 함수를 빌려 썼다. 그 함수는 `lib/` 로 옮긴다.
 
 ### 실행 규칙
@@ -262,7 +270,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py
 | 배포를 간격으로 묶기 | `after-queue` 묶기 | `pipeline.after_queue_interval_sec`, `after-queue.ts` |
 | CI 없음 알림 | `ci-missing` | `pipeline.ci_missing_after_sec`, `ci-missing.ts` |
 | 로컬 검증 뒤 머지 | 합친 사본 만들기와 HEAD 대조 | `verify-merged.ts` |
-| 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. `ci-ready` 와 `notify-conflicts` 가 같이 쓴다 | 없음 |
+| 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. 사용처는 `lib/conflicts.ts` 머리 주석이 소유한다 | 없음 |
 | 충돌한 PR | 기존 worker 에게 base 를 합치라는 지시. 끝난 dispatch 는 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 알림 | 없음 |
 | 뒤처진 draft 최신화 | 틱 | `pipeline.update_behind_drafts` |
 | 질문 감시 | 루프의 틱과 `watch-questions.ts` | `worker-question.ts` |
@@ -286,7 +294,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py
 | --- | --- | --- |
 | `orch/SKILL.md` | 단계, 통과 조건, 원칙 | 옵션 설명, 스크립트 동작 |
 | `orch/references/<단계>.md` | 언제 어떤 명령과 옵션을 쓰는가, 사용자에게 알릴 것, 스크립트가 다루지 않는 수동 경로 | 머리 주석의 반복, 모델 행동 관측을 이유로 단 문장 |
-| `orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. 이 저장소의 data-schema.md 가 계약이고, 구현 뒤에는 `lib/events.ts` 머리 주석이 소유한다 |
+| `orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. `lib/events.ts` 머리 주석이 소유한다 |
 | 스크립트 머리 주석 | 사용법, 옵션, 판정, 종료 코드 | 다른 스크립트의 동작 |
 | `orch/templates/spec-common.md` | 모든 worker 에게 같은 규칙. `{{...}}` 는 저장소마다 한 번 채우는 값만 | Run 마다 바뀌는 값, 허락. 허락은 지시서의 `허락:` 줄이 소유한다 |
 | 저장소의 `.orch/overlay.md`, `config.json`, `hooks/` | 저장소 고유 값과 일 | 코어 규칙의 사본 |

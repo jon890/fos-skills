@@ -10,6 +10,8 @@
 // run 은 동기(spawnSync)다. 시간을 넘긴 자식이 TERM 을 무시하면 그 자식이 스스로 끝날 때까지 돌아오지 않는다
 // (Node 22.18 실측: 500ms 제한에 4초 넘게 걸렸다). 병렬이 필요하거나 TERM 을 무시할 수 있는 자식은 runAsync 로 부른다.
 // runAsync 는 시간을 넘기면 TERM 을 보내고, 10초 뒤에도 살아 있으면 KILL 을 보낸다.
+// runAsync 에 group: true 를 주면 자식을 detached 로 띄워 새 프로세스 그룹을 만든다. 시간 초과와 stopChildren 의 신호가
+// 그 그룹 전체(손자 포함)에 간다. 자식이 신호를 받아 손자를 끝내는 중에 죽어도 손자가 남지 않게 하려는 것이다.
 // runAsync 는 자식이 끝난 뒤 2초 안에 출력 파이프가 닫히지 않으면(백그라운드 손자가 쥐고 있다) 파이프를 닫고 자식의 종료 코드를 낸다.
 // 손자가 그 뒤에 쓴 출력은 버린다. 끝난 자식에는 시간 제한을 적용하지 않으므로 이때 124 가 아니다.
 //
@@ -22,17 +24,24 @@
 // 띄우기 전에 이 프로세스의 stdout 과 stderr 를 비운다. macOS 에서 파이프로 가는 쓰기는 비동기라,
 // 비우지 않으면 앞서 쓴 줄이 자식의 출력보다 뒤에 나온다.
 //
+// execCommand 는 이 프로세스를 다른 명령으로 바꾼다(execvp). 옛 명령이 os.execvp 로 명령을 이어받던 자리
+// (heavy-slot 의 가벼운 검사와 중첩 호출, mem-gate 의 명령)에 쓴다. pid, 신호, 표준 입출력이 그대로 명령에 넘어간다.
+// 판정과 함정은 그 함수 위 주석이 소유한다.
+//
 // 진행 중인 자식: runAsync, runInherit 와 lib/events.ts 의 핸들러 실행이 띄운 자식을 끝날 때까지 기억한다(trackChild).
 // 신호를 받은 명령은 끝내기 전에 stopChildren 을 불러 자식을 남기지 않는다. 기억한 자식에 TERM 을 보내고,
-// STOP_GRACE_MS(2초) 뒤에도 살아 있으면 KILL 을 보낸다. 그룹으로 띄운 자식(핸들러)은 그룹 전체에 보낸다.
+// 유예(기본 STOP_GRACE_MS, 2초) 뒤에도 살아 있으면 KILL 을 보낸다. 그룹으로 띄운 자식(핸들러, group 을 준 runAsync)은 그룹 전체에 보낸다.
+// 자식도 stopChildren 으로 자기 자식을 끝내는 명령이면, 부르는 쪽은 유예를 STOP_GRACE_MS 보다 길게 준다.
+// 같은 유예면 자식이 손자에게 KILL 을 보내기 전에 부르는 쪽의 KILL 이 자식에 닿을 수 있다.
 // stopChildren 을 부른 뒤에는 runAsync, runInherit, 핸들러 실행이 새 자식을 띄우지 않고 128 + 받은 신호 번호로 끝난다.
 // 유예 동안에도 부른 쪽의 흐름은 이어 돌기 때문이다. 동기 실행(run)은 막지 않는다. 신호 처리기가 기다리는 동안 부른 쪽이
 // run 으로 쓰기 호출(머지 같은 것)을 할 수 있으므로, 그 자리는 부르는 쪽이 stopping() 을 보고 막는다.
 
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import { accessSync, closeSync, constants as fsConstants, openSync, readSync, statSync } from 'node:fs'
 import { constants } from 'node:os'
-import { extname } from 'node:path'
+import { delimiter, extname, join } from 'node:path'
 
 export type RunResult = { code: number; stdout: string; stderr: string; timedOut: boolean }
 export type RunOptions = {
@@ -43,6 +52,8 @@ export type RunOptions = {
   timeoutMs?: number
   // 출력 한도(바이트, stdout 과 stderr 각각). 테스트가 256MB 를 실제로 만들지 않게 하려고 둔 내부용 칸이다.
   maxBuffer?: number
+  // runAsync 만 읽는다. true 면 자식을 새 프로세스 그룹으로 띄운다(머리 주석)
+  group?: boolean
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000
@@ -50,7 +61,7 @@ const DEFAULT_TIMEOUT_MS = 60_000
 const DEFAULT_MAX_BUFFER = 256 * 1024 * 1024
 const KILL_GRACE_MS = 10_000
 const PIPE_GRACE_MS = 2_000
-const STOP_GRACE_MS = 2_000
+export const STOP_GRACE_MS = 2_000
 const STOP_POLL_MS = 50
 // 옛 명령이 시간 제한을 두지 않던 호출에 준다. setTimeout 이 받는 최댓값(약 24.8일)이고, 넘기면 Node 가 1ms 로 바꾼다
 export const NO_LIMIT_MS = 2 ** 31 - 1
@@ -121,13 +132,13 @@ function signalTracked(entry: Tracked, signal: NodeJS.Signals): void {
   else entry.child.kill(signal)
 }
 
-// 기억한 자식에 TERM 을 보내고 모두 끝나거나 STOP_GRACE_MS 가 지나기를 기다린 뒤, 남은 것에 KILL 을 보낸다.
+// 기억한 자식에 TERM 을 보내고 모두 끝나거나 graceMs 가 지나기를 기다린 뒤, 남은 것에 KILL 을 보낸다.
 // 이 뒤로는 새 자식을 띄우지 않는다(머리 주석의 「진행 중인 자식」)
-export async function stopChildren(signal: NodeJS.Signals): Promise<void> {
+export async function stopChildren(signal: NodeJS.Signals, graceMs = STOP_GRACE_MS): Promise<void> {
   stopSignal ??= signal
   const targets = [...tracked]
   for (const entry of targets) signalTracked(entry, 'SIGTERM')
-  const deadline = Date.now() + STOP_GRACE_MS
+  const deadline = Date.now() + graceMs
   while (targets.some(trackedAlive) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS))
   }
@@ -200,16 +211,18 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
       resolve(result)
     }
 
-    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'] })
-    trackChild(child, false)
+    const group = opts.group ?? false
+    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'], detached: group })
+    trackChild(child, group)
 
-    // TERM 을 보내고 10초 뒤에도 끝나지 않았으면 KILL 을 보낸다.
+    // TERM 을 보내고 10초 뒤에도 끝나지 않았으면 KILL 을 보낸다. 그룹으로 띄웠으면 그룹 전체에 보낸다
+    const entry: Tracked = { child, group }
     const terminate = () => {
-      if (terminating) return
+      if (terminating || child.pid === undefined) return
       terminating = true
-      child.kill('SIGTERM')
+      signalTracked(entry, 'SIGTERM')
       killTimer = setTimeout(() => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+        if (trackedAlive(entry)) signalTracked(entry, 'SIGKILL')
       }, KILL_GRACE_MS)
     }
     const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {
@@ -331,4 +344,74 @@ export function scriptCommand(script: string, args: string[]): string[] {
     default:
       return ['python3', script, ...args]
   }
+}
+
+// execve 가 받는 실행 파일 형식의 앞 4바이트(big-endian). Mach-O 32/64비트와 그 반대 바이트 순서, fat(universal), ELF 다
+const EXEC_MAGIC = [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0x7f454c46]
+
+// 앞 바이트가 `#!` 이거나 EXEC_MAGIC 이면 true. `#!` 없는 셸 스크립트처럼 execve 가 ENOEXEC 로 거절할 파일은 false 다.
+// 파일을 읽지 못하면 true 다. 읽기 권한 없이 실행 권한만 있는 바이너리는 execve 가 실행한다.
+function execFormat(path: string): boolean {
+  const head = Buffer.alloc(4)
+  let size: number
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      size = readSync(fd, head, 0, 4, 0)
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    return true
+  }
+  if (size >= 2 && head[0] === 0x23 && head[1] === 0x21) return true
+  return size === 4 && EXEC_MAGIC.includes(head.readUInt32BE(0))
+}
+
+// argv[0] 을 옛 명령의 os.execvp 처럼 찾는다. `/` 가 있으면 그 경로만, 없으면 PATH 의 폴더를 앞에서부터 본다(빈 칸은 현재 폴더).
+// 실행할 수 없거나 형식이 틀린 파일은 건너뛰고 다음 폴더를 본다. 쓸 것이 없으면 처음 만난 실패로 판정한다.
+//     126  실행할 수 없는 파일(실행 권한이 없거나 파일이 아니다)
+//     1    형식이 틀린 파일(os.execvp 의 OSError ENOEXEC 를 옛 명령이 1 로 끝냈다)
+//     127  아무것도 없다
+function findExecutable(name: string): { path: string } | { code: 1 | 126 | 127 } {
+  // PATH 가 없을 때 execvp 가 쓰는 기본값이다
+  const dirs = name.includes('/') ? [''] : (process.env.PATH ?? '/usr/bin:/bin').split(delimiter)
+  let failed: 1 | 126 | undefined
+  for (const dir of dirs) {
+    const candidate = name.includes('/') ? name : join(dir || '.', name)
+    let stat
+    try {
+      stat = statSync(candidate)
+    } catch {
+      continue
+    }
+    try {
+      if (!stat.isFile()) throw new Error('not a file')
+      accessSync(candidate, fsConstants.X_OK)
+    } catch {
+      failed ??= 126
+      continue
+    }
+    if (execFormat(candidate)) return { path: candidate }
+    failed ??= 1
+  }
+  return { code: failed ?? 127 }
+}
+
+// 이 프로세스를 argv 의 명령으로 바꾼다. 바꾸면 돌아오지 않는다. 돌아오면 바꾸지 못한 것이고 종료 코드를 낸다.
+//     127  명령이 없다. stderr 에 `<label>: command not found: <명령>`
+//     126  실행할 수 없다. stderr 에 `<label>: command is not executable: <명령>`
+//     1    실행 파일 형식이 아니다(`#!` 없는 스크립트 같은 것). stderr 에 `<label>: exec format error: <명령>`
+// 실행 파일은 먼저 찾아 확인한 뒤 넘긴다. process.execve 는 실패하면 예외를 던지지 않고 프로세스를 abort(종료 코드 134)한다
+// (Node 24.15 실측: 없는 경로에 ENOENT 와 네이티브 스택을 내고 죽었다). PATH 도 찾지 않으므로 경로를 풀어 넘긴다.
+// 넘기기 전에 쓴 출력은 동기로 써야 한다. 파이프로 가는 비동기 쓰기는 exec 와 함께 사라진다.
+export function execCommand(argv: string[], label: string): number {
+  const found = findExecutable(argv[0])
+  if ('code' in found) {
+    const reason = { 1: 'exec format error', 126: 'command is not executable', 127: 'command not found' }[found.code]
+    process.stderr.write(`${label}: ${reason}: ${argv[0]}\n`)
+    return found.code
+  }
+  process.execve(found.path, argv, process.env as Record<string, string>)
+  return 1
 }

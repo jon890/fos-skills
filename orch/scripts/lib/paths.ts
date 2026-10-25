@@ -16,7 +16,7 @@
 //   hooks-state  state/hooks/       이벤트 핸들러의 잠금
 //   bin          bin/               저장소 포장 스크립트
 //
-// 보드는 work-board 소유라 여기 없다. boardPath 는 work-board 의 규칙을 옮겨 쓴다.
+// 보드는 work-board 소유라 여기 없다. boardPath 의 기본 위치는 work-board/bin/board.ts 의 defaultBoardPath 를 import 해 쓴다.
 //
 // 옛 구조: .claude/orch-overlay.md, .claude/orch-finish.json, .omc/orch/, .omc/handoffs/specs/ 가 남아 있으면
 // (폴더는 안에 파일이 있을 때만 센다) requireMigrated 가 옮기는 명령(migrate-orch-dir.py)을 알린다.
@@ -29,6 +29,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFile
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { defaultBoardPath } from '../../../work-board/bin/board.ts'
 import { inside, real } from './fs.ts'
 import { git, mainCheckout } from './git.ts'
 
@@ -86,18 +87,12 @@ export function pathOf(name: string, repo: string): string {
 }
 
 // 보드 파일. explicit(명령줄이나 설정의 board)이 있으면 그것을 주 checkout 기준으로, 없으면 work-board 의 기본 위치다.
-// 기본 위치는 work-board/bin/board.py 의 board_path 규칙을 옮겼다. 그 규칙이 바뀌면 여기도 같이 고친다.
-// 주 checkout 이 아니라 repo 의 작업 트리 최상위(--show-toplevel) 기준이다. 원본 규칙이 그렇다.
 export function boardPath(repo: string, explicit?: string | null): string {
   if (explicit) {
     const board = expandUser(explicit)
     return isAbsolute(board) ? board : join(mainCheckout(repo), board)
   }
-  const cwd = real(repo)
-  const top = git(cwd, ['rev-parse', '--show-toplevel'])
-  const root = top.code === 0 && top.stdout.trim() ? top.stdout.trim() : cwd
-  const legacy = join(root, '.omc/handoffs/board.json')
-  return existsSync(legacy) ? legacy : join(root, '.omc/board.json')
+  return defaultBoardPath(real(repo))
 }
 
 // 루트를 git 이 무시하게 한다. 더한 줄이 있으면 그 줄, 없으면 null.

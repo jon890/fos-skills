@@ -24,7 +24,7 @@
 //      다른 사람의 PR 이 하나라도 있거나, 조회나 옮기기가 하나라도 실패하면 지우지 않는다
 //   7. after-merge 이벤트를 낸다. 실패하면 HOOK-FAIL 줄만 남기고 다음 PR 로 간다
 //
-// 이벤트: <orch 루트>/hooks/<이벤트>.ts 핸들러를 lib/events.ts 의 fire 로 부른다. 입력 필드는 docs/data-schema.md 의 「이벤트별 필드」 다.
+// 이벤트: <orch 루트>/hooks/<이벤트>.ts 핸들러를 lib/events.ts 의 fire 로 부른다. 입력 필드는 lib/events.ts 머리 주석의 「이벤트별 필드」 다.
 //   before-merge   4 의 자리. 거부면 `STOP <PR> HOOK-REJECT`, 실패와 시간 초과면 `STOP <PR> HOOK-FAIL`
 //   verify-merged  합친 사본 검사의 자리. 작업 디렉터리는 사본이다. 거부, 실패, 시간 초과는 검사 실패와 같은 STOP 이다.
 //                  hooks/verify-merged.ts 가 있으면 --verify-merged 를 준 것과 같이 겹침 판정을 켠다
@@ -120,11 +120,11 @@
 //                         --docs-glob 에 맞는 문서 PR 을 뺀 것. --docs-glob 이 없으면 MERGED_PRS 와 같다)를 받는다.
 //                         실패하면 `AFTER-MERGED-FAILED 종료코드` 를 찍는다. 머지 결과는 바뀌지 않는다
 //   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
-//   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.py 에 넘길 인자. 하나씩 준다
+//   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.ts 에 넘길 인자. 하나씩 준다
 //                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs)
-//   --no-sweep            머지 뒤 cleanup-sweep.py --apply 를 부르지 않는다
+//   --no-sweep            머지 뒤 cleanup-sweep.ts --apply 를 부르지 않는다
 //
-// 모든 PR 이 머지되면 cleanup-sweep.py --apply 로 머지된 worktree, 브랜치, 터미널, 지시서를 정리한다.
+// 모든 PR 이 머지되면 cleanup-sweep.ts --apply 로 머지된 worktree, 브랜치, 터미널, 지시서를 정리한다.
 // 정리가 실패해도 머지 결과는 바뀌지 않으므로 경고만 찍고 종료 코드는 0 이다.
 // CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, OVERLAP_UNITS 로 판정 명령 경로를, GH 로 gh 실행 파일을 바꾼다.
 // 두 스크립트는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
@@ -157,7 +157,7 @@ import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
-import { apiTarget, gh, ghJson, isOwnPr, ownAuthors, updateBranch } from './lib/gh.ts'
+import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
 import { groupMap, isDoc } from './lib/overlap.ts'
 import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
@@ -185,11 +185,9 @@ const ROLL_NAMES_NO_SKIPPED = '[.statusCheckRollup[] | select((.conclusion // ""
 const PENDING =
   '[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING" ' +
   'or (.state // "") == "EXPECTED")] | length'
+// 실패 판정의 목록은 상주 루프와 한 벌이다(lib/gh.ts 머리 주석의 「필수 체크 판정」)
 const FAIL_SEL =
-  'select(((.conclusion // "") | test("FAILURE|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE")) ' +
-  'or ((.state // "") | test("FAILURE|ERROR")))'
-const RULES_JQ =
-  '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] ' + '| unique | join(",")'
+  `select(((.conclusion // "") | test("${FAILED_CONCLUSIONS.join('|')}")) ` + `or ((.state // "") | test("${FAILED_STATES.join('|')}")))`
 
 // 사용법 오류. 종료 코드 2 로 끝난다. 메시지가 비면 머리 주석을 찍는다
 class Usage extends Error {}
@@ -736,7 +734,7 @@ class Queue {
     return { PR: p.n, BRANCH: p.branch, OWNER: p.owner, REPO: p.repo }
   }
 
-  // 이벤트 입력의 pr 객체(docs/data-schema.md 의 「이벤트별 필드」)
+  // 이벤트 입력의 pr 객체(lib/events.ts 머리 주석의 「이벤트별 필드」)
   prInput(): Record<string, unknown> {
     const p = this.p
     return { number: Number(p.n), title: p.title, branch: p.branch, head: p.ph, author: p.author, draft: p.draft, url: p.url }
@@ -849,7 +847,7 @@ class Queue {
     if (!merged) stop(`${n} 머지 실패`)
     log(`${n} MERGED`)
     this.merged.push([n, kind])
-    // 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.py 가 워크트리 커밋을 원격에 있다고 본다
+    // 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.ts 가 워크트리 커밋을 원격에 있다고 본다
     git('fetch', '-q', 'origin')
     const branch = !o.keepBranch && !p.cross ? this.deleteBranch() : { retargeted: [], deleted: false }
     await this.afterMerge(branch)
@@ -978,7 +976,7 @@ class Queue {
       const done = this.api(`repos/${p.owner}/${p.repo}/rules/branches/${p.base}`, '--jq', RULES_JQ)
       if (done.code === 0) {
         req = chomp(done.stdout)
-      } else if (done.stderr.includes('HTTP 403') && done.stderr.includes('Upgrade to GitHub Pro')) {
+      } else if (rulesPlanLimited(done.stderr)) {
         // 무료 플랜의 비공개 저장소는 규칙 API 를 읽을 수 없다. 필수 체크 목록이 없는 것으로 다룬다
         log(`${p.n} 경고: 이 플랜은 저장소 규칙을 읽을 수 없다(HTTP 403, 플랜 제한). 필수 체크 목록을 비어 있는 것으로 본다`)
         req = ''
@@ -1175,12 +1173,12 @@ class Queue {
 
   // 머지가 끝난 뒤 cleanup-sweep --apply 로 정리한다. 실패해도 머지 결과는 그대로라 경고만 찍는다
   async sweep(): Promise<void> {
-    const sweep = process.env.CLEANUP_SWEEP ?? `${HERE}/cleanup-sweep.py`
+    const sweep = process.env.CLEANUP_SWEEP ?? `${HERE}/cleanup-sweep.ts`
     const done = await runInherit(
       scriptCommand(sweep, ['--repo', process.cwd(), '--base', this.sweepBase || 'main', '--apply', ...this.o.sweepArgs]),
       { timeoutMs: NO_LIMIT_MS },
     )
-    if (done.code !== 0) out('경고: cleanup-sweep.py 가 실패했다. 머지 결과는 그대로다')
+    if (done.code !== 0) out('경고: cleanup-sweep.ts 가 실패했다. 머지 결과는 그대로다')
   }
 
   // 큐 도중의 설정 오류로 멈춘다. 종료 코드 2 다. 이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue 만 돌린다.

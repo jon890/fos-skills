@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { run, runAsync, runInherit, scriptCommand } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { alive } from '../scripts/lib/process.ts'
@@ -178,5 +183,37 @@ describe('scriptCommand', () => {
   test('확장자 없는 파일과 모르는 확장자는 옛 명령처럼 python3 으로 띄운다', () => {
     assert.deepEqual(scriptCommand('/s/tool', ['x']), ['python3', '/s/tool', 'x'])
     assert.deepEqual(scriptCommand('/s/a.rb', []), ['python3', '/s/a.rb'])
+  })
+})
+
+describe('execCommand', () => {
+  const PROC = fileURLToPath(new URL('../scripts/lib/proc.ts', import.meta.url))
+
+  // execCommand 를 부르는 node 를 띄운다. 바꾸지 못하면 execCommand 가 낸 코드로 끝난다
+  function exec(argv: string[]) {
+    const code = `import { execCommand } from ${JSON.stringify(PROC)}; process.exitCode = execCommand(${JSON.stringify(argv)}, 'label')`
+    const done = spawnSync(NODE, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', code], { encoding: 'utf8' })
+    return { code: done.status, signal: done.signal, stdout: done.stdout, stderr: done.stderr }
+  }
+
+  test('실행 권한이 있어도 #! 나 실행 파일 형식이 아니면 abort 하지 않고 이유와 1 을 낸다', () => {
+    const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'lib-proc-')))
+    try {
+      const script = join(tmp, 'no-shebang')
+      writeFileSync(script, 'echo ran\n', { mode: 0o755 })
+      const bad = exec([script])
+      assert.deepEqual([bad.code, bad.signal, bad.stdout], [1, null, ''], bad.stderr)
+      assert.equal(bad.stderr, `label: exec format error: ${script}\n`)
+      // 앞 2바이트만 #! 이면 넘긴다
+      const good = join(tmp, 'shebang')
+      writeFileSync(good, '#!/bin/sh\necho ran\n', { mode: 0o755 })
+      const ran = exec([good])
+      assert.deepEqual([ran.code, ran.stdout], [0, 'ran\n'], ran.stderr)
+      // 실행 파일(이 node)도 넘긴다
+      const binary = exec([NODE, '-e', "process.stdout.write('bin')"])
+      assert.deepEqual([binary.code, binary.stdout], [0, 'bin'], binary.stderr)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 })

@@ -11,7 +11,7 @@
 // 사용법:
 //     wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]
 //                       [--timeout-ms 7000000] [--kill-stale] [--lost-interval-sec 60] [--ignore-lost ctx_...]
-//                       [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none]
+//                       [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none] [--loop-repo DIR ...]
 //
 //     --run         기다릴 Run
 //     --ack         앞 대기가 낸 delivery id. 첫 대기처럼 넘길 것이 없으면 뺀다
@@ -25,6 +25,7 @@
 //                   파일을 쓰지 못하면 종료 코드 1 이고 확인한 것으로 처리하지 않는다. 다른 Run 의 기록과 아직 확인하지 않은 dispatch 는 유지한다
 //     --completion-contract  ready(기본)는 앞선 PR 준비 상태를 검사한다. PR 없는 작업만 none 으로 끈다
 //     --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
+//     --loop-repo   상주 루프(orch-loop.ts)의 알림과 생존을 볼 저장소. 여러 번 줄 수 있다. 주지 않으면 보지 않는다. 아래 「상주 루프」
 //
 // 완료 계약 (--completion-contract ready):
 //     worker_done 이 오면 같은 Task·Dispatch·발신자가 앞서 `준비됨 #N, head <전체 40자리 SHA>` 상태를 보냈는지
@@ -40,7 +41,7 @@
 //         같은 이유는 이유가 바뀌거나 조회가 한 번 성공할 때까지 다시 내지 않는다. `LAST_DELIVERY` 줄보다 늘 앞이다.
 //         `waiter_exists`(종료 코드 4 와 stderr 의 프로세스 목록이 맡는다)와 완료 근거용 `check --all` 의 실패(종료 코드 6)는 내지 않는다.
 //
-// 이벤트(docs/data-schema.md 「이벤트별 필드」). 둘 다 거부할 수 없고 핸들러의 실패는 `HOOK-FAIL` 줄만 남기고 종료 코드를 바꾸지 않는다.
+// 이벤트(lib/events.ts 머리 주석의 「이벤트별 필드」). 둘 다 거부할 수 없고 핸들러의 실패는 `HOOK-FAIL` 줄만 남기고 종료 코드를 바꾸지 않는다.
 //     worker-done  묶음 안의 worker_done 마다, 완료 근거를 판정한 뒤 JSON 줄을 내기 전. 근거가 있으면 evidence 가 ready 이고
 //                  pr 은 준비 상태의 PR 번호로 `gh pr view` 를 읽어 채운다(읽지 못하면 null). 없으면 suspicious 이고 pr 은 null 이다.
 //                  실패 보고와 `--completion-contract none` 의 대기에서는 내지 않는다
@@ -72,6 +73,21 @@
 //     깨우지 않게 하기 위해서다. 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 에 한 줄로 남긴다.
 //     다시 알리게 하려면 그 파일에서 Run 의 항목을 지운다.
 //
+// 상주 루프 (--loop-repo):
+//     대기를 시작할 때와 --lost-interval-sec 간격의 확인마다 저장소 순서대로 본다. 간격이 0 이면 시작할 때만 본다.
+//     끊긴 worker 확인(종료 코드 5)이 먼저다. 판정은 lib/loop.ts 의 readEvents 와 loopStatus 다.
+//     - 알림 파일에 커서 뒤의 줄이 있으면 줄마다 `LOOP-EVENT <kind> <pr 또는 -> <text>` 를 모두 낸다. 잘려 잃은 구간이 있으면
+//       그 앞에 `LOOP-EVENT GAP - seq <a>..<b> 를 잃었다` 를 낸다. 그다음 마지막 seq 로 커서를 쓰고, check --wait 그룹을 끝낸 뒤
+//       `LAST_DELIVERY <id>` 와 종료 코드 7 로 끝난다. 커서를 쓰지 못하면 WATCH-ERROR 줄을 더 내고 그래도 7 이다.
+//       줄은 이미 냈으므로 다음 대기가 같은 줄을 다시 낼 수 있다
+//     - 루프가 죽었으면 `LOOP-DEAD <repo> <이유>`, `LAST_DELIVERY <id>` 와 종료 코드 8 로 끝난다.
+//       pid 가 살아 있는 루프 프로세스인데 alive_at 만 오래됐으면(loopStatus 의 recheck) 바로 죽음으로 내지 않는다.
+//       lib/loop.ts 의 recheckMs(생존 타이머 간격 ORCH_LOOP_ALIVE_SEC, 기본 30초에 5초를 더한 값)를 기다린 뒤 한 번 더 보고,
+//       그때도 죽었으면 LOOP-DEAD 다. 잠들었다 깬 macOS 에서 루프의 타이머가 아직 alive_at 을 쓰지 못한 것을 죽음으로 보지 않으려는 것이다.
+//       기다리는 동안에도 check --wait 와 끊긴 worker, 알림 파일은 지금처럼 본다. 간격이 0 이어도 다시 보는 확인 한 번은 한다
+//     한 번 깨어나면 끝난다. 알림 줄이 있으면 그 저장소의 죽음보다 먼저 낸다. 다음 대기가 죽음을 낸다.
+//     <repo> 는 --loop-repo 의 주 checkout 이다.
+//
 // 남은 대기:
 //     Run 의 대기 자리는 하나다. 앞 세션이 띄운 `check --wait` 가 남아 있으면 새 대기는 매번 `waiter_exists` 로
 //     바로 끝난다. 다시 걸어도 같은 오류만 받으므로, 이 오류를 받으면 되풀이하지 않고 같은 사용자의 프로세스 가운데
@@ -98,13 +114,15 @@
 //     5  처리하지 않은 끊긴 worker 가 있다(WORKER_LOST). references/launch.md 의 「끊긴 worker 다시 띄우기」 를 따른다.
 //        같은 dispatch 는 다음 대기에서 다시 알리지 않는다
 //     6  의심스러운 worker_done 이 있다. 자동 ack 하지 않으며 완료 검증 전에는 해제하지 않는다
+//     7  상주 루프의 알림이 있다(LOOP-EVENT). 그 줄을 처리한 뒤 마지막 줄의 id 로 다시 건다
+//     8  상주 루프가 죽었다(LOOP-DEAD). 루프를 다시 띄운 뒤 다시 건다
 //     1  orca 가 그 밖의 오류를 냈다(runtime_unavailable 같은 것). 그 JSON 을 그대로 낸다
 //     2  사용법 오류
 
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { classify, context, payload } from './lib/completion.ts'
@@ -112,6 +130,7 @@ import { fire, handlerFile } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { ghJson } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
+import { loopStatus, readEvents, recheckMs, writeCursor } from './lib/loop.ts'
 import { orcaBin, orcaJson } from './lib/orca.ts'
 import { makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
@@ -120,7 +139,7 @@ import { pyJson, pyStr as text } from './lib/py.ts'
 const USAGE = [
   '사용법: wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]',
   '                          [--timeout-ms 7000000] [--kill-stale] [--lost-interval-sec 60] [--ignore-lost ctx_...]',
-  '                          [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none]',
+  '                          [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none] [--loop-repo DIR ...]',
 ].join('\n')
 const DEFAULT_TYPES = 'worker_done,question,escalation,status'
 const LIVE_STATUSES = new Set(['pending', 'dispatched', 'running'])
@@ -324,7 +343,67 @@ function dropDeliberate(rows: Json[], lost: Lost[], watched: Set<unknown>): Lost
   return kept
 }
 
-type Checked = { kind: 'lost'; lost: Lost[]; rows: Json[] } | { kind: 'done'; data: unknown; raw: string }
+// 상주 루프 ------------------------------------------------------------------
+
+type LoopWake = { code: 7 | 8; lines: string[]; cursor: { repo: string; seq: number } | null }
+
+function oneLine(value: string): string {
+  return value.replace(/\r?\n|\r/g, ' ')
+}
+
+// 죽음을 다시 볼 저장소와 그 시각(epoch ms). 머리 주석의 「상주 루프」
+const recheckAt = new Map<string, number>()
+
+// 깨어날 일이 있는 첫 저장소의 줄과 종료 코드. 없으면 null 이다. 머리 주석의 「상주 루프」
+function loopWake(repos: string[]): LoopWake | null {
+  for (const repo of repos) {
+    let found: ReturnType<typeof readEvents> | null = null
+    try {
+      found = readEvents(repo)
+    } catch (e) {
+      watchError(`루프 알림을 읽지 못했다: ${repo}: ${(e as Error).message}`)
+    }
+    if (found && found.events.length > 0) {
+      const lines = found.gap ? [`LOOP-EVENT GAP - seq ${found.gap[0]}..${found.gap[1]} 를 잃었다`] : []
+      for (const event of found.events) lines.push(`LOOP-EVENT ${oneLine(String(event.kind))} ${event.pr ?? '-'} ${oneLine(String(event.text))}`)
+      return { code: 7, lines, cursor: { repo, seq: found.events.reduce((max, event) => Math.max(max, event.seq), 0) } }
+    }
+    const now = Date.now()
+    const status = loopStatus(repo, now)
+    if (status.alive) {
+      recheckAt.delete(repo)
+      continue
+    }
+    if (status.recheck) {
+      const at = recheckAt.get(repo)
+      if (at === undefined) recheckAt.set(repo, now + recheckMs())
+      if (at === undefined || now < at) continue
+    }
+    return { code: 8, lines: [`LOOP-DEAD ${repo} ${status.reason}`], cursor: null }
+  }
+  return null
+}
+
+// 다음 확인까지의 ms. 간격 확인이 없고 다시 볼 루프도 없으면 null 이다
+function nextLook(interval: number, periodic: boolean): number | null {
+  const every = periodic && interval > 0 ? interval * 1000 : null
+  if (recheckAt.size === 0) return every
+  const due = Math.max(0, Math.min(...recheckAt.values()) - Date.now())
+  return every === null ? due : Math.min(every, due)
+}
+
+// 루프의 줄을 내고 커서를 옮긴다. LAST_DELIVERY 줄은 부르는 쪽이 check --wait 그룹을 끝낸 뒤 낸다
+function deliverLoop(wake: LoopWake): void {
+  for (const line of wake.lines) out(line)
+  if (!wake.cursor) return
+  try {
+    writeCursor(wake.cursor.repo, wake.cursor.seq)
+  } catch (e) {
+    watchError(`루프 알림 커서를 쓰지 못했다: ${wake.cursor.repo}: ${(e as Error).message}`)
+  }
+}
+
+type Checked = { kind: 'lost'; lost: Lost[]; rows: Json[] } | { kind: 'loop'; code: 7 | 8 } | { kind: 'done'; data: unknown; raw: string }
 
 // 도는 check --wait 자식. 신호를 받으면 그 그룹을 끝낸다
 let waiting: ChildProcess | null = null
@@ -348,9 +427,18 @@ for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
 
 // `check --wait --json` 한 번. 결과 JSON 과 원문을 낸다. JSON 이 아니면 data 가 null 이다.
 // watched 가 있으면 interval 초마다 worker 상태를 보고, 끊긴 worker 가 있으면 check 를 멈추고 lost 를 낸다.
+// loopRepos 가 있으면 같은 간격에 그 뒤로 상주 루프를 보고, 깨어날 일이 있으면 줄을 낸 뒤 check 를 멈추고 loop 를 낸다.
 // lib/proc 의 runAsync 는 도는 자식을 도중에 끝낼 수 없어 직접 띄운다. 끝내지 못하고 나가면 그 check 가 대기 자리를 쥔 채 남는다.
 // --timeout-ms 를 orca 에 넘기므로 orca 가 그 시간에 끝낸다(옛 명령과 같다). 그래도 끝나지 않으면 CHECK_GRACE_MS 뒤에 끝낸다.
-function check(runId: string, types: string, ack: string | null, timeoutMs: number, watched: Set<unknown>, interval: number): Promise<Checked> {
+function check(
+  runId: string,
+  types: string,
+  ack: string | null,
+  timeoutMs: number,
+  watched: Set<unknown>,
+  interval: number,
+  loopRepos: string[],
+): Promise<Checked> {
   const args = ['orchestration', 'check', '--run', runId, ...(ack ? ['--ack', ack] : []), '--wait', '--types', types, '--timeout-ms', String(timeoutMs), '--json']
   return new Promise((resolve) => {
     const chunks: Buffer[] = []
@@ -386,20 +474,35 @@ function check(runId: string, types: string, ack: string | null, timeoutMs: numb
       }
       settle({ kind: 'done', data, raw })
     })
-    if (watched.size === 0 || interval <= 0) return
+    const watchWorkers = watched.size > 0
+    const periodic = watchWorkers || loopRepos.length > 0
+    // 간격이 0 이면 worker 는 시작할 때만 본다. 다시 볼 루프가 있으면 그 시각에 루프만 본다
+    const schedule = () => {
+      const delay = nextLook(interval, periodic)
+      if (delay !== null) timer = setTimeout(look, delay)
+    }
     const look = () => {
       if (stopped) return
-      const rows = workerRows(runId)
-      let lost = rows && rows.length ? lostWorkers(rows, watched) : []
-      lost = lost.length && rows ? dropDeliberate(rows, lost, watched) : []
-      if (lost.length && rows) {
+      if (watchWorkers && interval > 0) {
+        const rows = workerRows(runId)
+        let lost = rows && rows.length ? lostWorkers(rows, watched) : []
+        lost = lost.length && rows ? dropDeliberate(rows, lost, watched) : []
+        if (lost.length && rows) {
+          stopGroup(child, 'SIGKILL')
+          settle({ kind: 'lost', lost, rows })
+          return
+        }
+      }
+      const wake = loopWake(loopRepos)
+      if (wake) {
+        deliverLoop(wake)
         stopGroup(child, 'SIGKILL')
-        settle({ kind: 'lost', lost, rows })
+        settle({ kind: 'loop', code: wake.code })
         return
       }
-      timer = setTimeout(look, interval * 1000)
+      schedule()
     }
-    timer = setTimeout(look, interval * 1000)
+    schedule()
   })
 }
 
@@ -614,6 +717,7 @@ async function main(argv: string[]): Promise<number> {
       'lost-state': { type: 'string' },
       'ack-lost': { type: 'string', multiple: true, default: [] },
       'completion-contract': { type: 'string', default: 'ready' },
+      'loop-repo': { type: 'string', multiple: true, default: [] },
       help: { type: 'boolean', short: 'h' },
     } as const
     values = parseArgs({ args: expandArgs(argv, options), options }).values
@@ -667,6 +771,13 @@ async function main(argv: string[]): Promise<number> {
     if (found.length) return reportLost(found, rows, values.ack ?? null, state, runId, cwd)
     watched = new Set([...liveDispatches(rows)].filter((d) => !ignore.has(d)))
   }
+  const loopRepos = (values['loop-repo'] as string[]).map((repo) => mainCheckout(resolve(repo)))
+  const woke = loopWake(loopRepos)
+  if (woke) {
+    deliverLoop(woke)
+    out(`LAST_DELIVERY ${values.ack || '-'}`)
+    return woke.code
+  }
 
   const deadline = performance.now() + timeoutMs
   let ack: string | null = values.ack ?? null
@@ -677,8 +788,12 @@ async function main(argv: string[]): Promise<number> {
       out(`TIMEOUT LAST_DELIVERY ${ack || '-'}`)
       return 3
     }
-    const checked = await check(runId, types, ack, remaining, watched, interval)
+    const checked = await check(runId, types, ack, remaining, watched, interval, loopRepos)
     if (checked.kind === 'lost') return reportLost(checked.lost, checked.rows, ack, state, runId, cwd)
+    if (checked.kind === 'loop') {
+      out(`LAST_DELIVERY ${ack || '-'}`)
+      return checked.code
+    }
     const data = checked.data
     if (typeof data !== 'object' || data === null || Array.isArray(data) || !(data as Json).ok) {
       out(checked.raw.trim() || 'wait-important: orca 출력이 JSON 이 아니다')

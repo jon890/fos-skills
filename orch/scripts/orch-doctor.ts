@@ -41,8 +41,11 @@
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
 //     둘 다 경고라 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
-// session-resume 이벤트(--run 을 줄 때, docs/data-schema.md 「이벤트별 필드」):
-//     loop_alive  늘 false 다. 상주 루프는 아직 없다
+// session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
+//     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
+//                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다.
+//                 pid 가 살아 있는 루프 프로세스인데 alive_at 만 오래됐으면(loopStatus 의 recheck) lib/loop.ts 의 recheckMs 를
+//                 기다린 뒤 한 번 더 판정한다. 잠들었다 깬 macOS 에서 루프의 타이머가 아직 alive_at 을 쓰지 못했을 수 있다
 //     waiters     `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 나 `watch-questions` 와 Run id(낱말)가 든 것의 pid.
 //                 살아 있는 대기와 질문 감시다. 다음 행은 뺀다.
 //                   - `orchestration check` 행. wait-important 가 띄운 자식이라 대기 하나를 두 번 세게 된다
@@ -63,10 +66,11 @@
 //     DEPRECATED-CONFIG <절>.<키> → hooks/<이벤트>.ts   옛 설정 칸
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
 //     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초 안에 답하지 않은 경우도 여기다
+//     LOOP-DEAD <repo> <이유>                    --run 을 줬는데 상주 루프가 죽었다. 다음 줄에 다시 띄울 명령이 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, LOOP-DEAD, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING 이나 UNANSWERED 가 있다
 //     2  사용법 오류
 //
@@ -75,6 +79,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
@@ -82,7 +87,9 @@ import { ConfigError, DEPRECATED_KEYS, loadConfig } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
+import { loopStatus, recheckMs } from './lib/loop.ts'
 import { run } from './lib/proc.ts'
+import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
 
 const USAGE =
@@ -328,13 +335,25 @@ async function main(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const repoLines = checkRepo(repo)
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId)
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...repoLines, ...questions.lines].join('\n')}\n`)
+  let loop = runId ? loopStatus(repo, Date.now()) : null
+  if (loop && !loop.alive && loop.recheck) {
+    await sleep(recheckMs())
+    loop = loopStatus(repo, Date.now())
+  }
+  const loopLines =
+    loop && !loop.alive
+      ? [
+          `LOOP-DEAD ${repo} ${loop.reason}`,
+          `  node --disable-warning=ExperimentalWarning "${join(skillDir, 'scripts', 'orch-loop.ts')}" --repo ${shQuote(repo)} --run ${shQuote(runId as string)} --start`,
+        ]
+      : []
+  process.stdout.write(`${[...version.lines, ...scripts.lines, ...repoLines, ...questions.lines, ...loopLines].join('\n')}\n`)
 
   if (runId) {
     try {
       await fire(
         'session-resume',
-        { loop_alive: false, waiters: waiterPids(runId), unanswered: questions.pending },
+        { loop_alive: loop?.alive ?? false, waiters: waiterPids(runId), unanswered: questions.pending },
         { repo, base: defaultBase(repo) ?? '', run: runId },
       )
     } catch (e) {

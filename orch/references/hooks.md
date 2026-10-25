@@ -10,7 +10,6 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 
 - **동작을 막아야 하면 거부할 수 있는 이벤트를 고른다.** `before-` 로 시작하는 이벤트와 `verify-merged` 다. 핸들러가 종료 코드 10 으로 끝나면 명령이 그 동작을 하지 않는다.
 - **알리거나 기록만 하면 나머지 이벤트를 고른다.** 핸들러가 실패해도 코어 동작은 이어 간다.
-- 「내는 명령」 이 아직 Python 인 이벤트는 그 명령을 TypeScript 로 옮기기 전까지 나지 않는다. 핸들러를 두어도 불리지 않는다. 지금 이벤트를 내는 명령은 아래 표다.
 - 파일 이름이 이벤트 이름과 한 글자라도 다르면 불리지 않는다. `orch-doctor` 가 그런 파일을 `UNKNOWN-HOOK <파일>` 로 알린다.
   `hooks/` 바로 아래만 본다. 핸들러가 import 하는 모듈은 `hooks/lib/` 같은 하위 폴더에 둔다.
 
@@ -24,8 +23,11 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 | `notify-conflicts.ts` | `pr-conflict` |
 | `merge_queue.ts`(`merge-with-finish.ts` 가 건 것 포함) | `before-merge`, `verify-merged`, `after-merge`, `after-queue` |
 | `finish-pr.ts` | `after-deploy` |
+| `cleanup-sweep.ts` | `before-cleanup`, `after-cleanup` |
+| `orch-loop.ts`(상주 루프) | `worker-question`, `tick`, `ci-passed`, `ci-failed`, `pr-conflict` |
+| 아직 없다. 핸들러를 두어도 불리지 않는다 | `ci-missing` |
 
-핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `docs/data-schema.md` 의 「공통 필드」 와 「이벤트별 필드」 표가 소유한다.
+핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `scripts/lib/events.ts` 머리 주석의 「공통 필드」 와 「이벤트별 필드」 가 소유한다.
 환경 변수와 작업 디렉터리는 `scripts/lib/events.ts` 머리 주석의 「핸들러」 와 「환경」 이 소유한다.
 
 ## 핸들러 예시

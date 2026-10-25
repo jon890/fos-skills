@@ -135,7 +135,9 @@ flowchart TD
 
 ## orch 이벤트
 
-이 절은 orch 개편 뒤의 흐름이다([ADR-009](adr/009-orch-event-handlers.md)). 구현 PR 이 모두 머지되기 전의 실제 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이 절은 orch 개편 뒤의 흐름이다([ADR-009](adr/009-orch-event-handlers.md)).
+상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 핸들러의 입력과 종료 코드는 [data-schema.md](data-schema.md) 의 「orch 이벤트 핸들러 입력」, 코어와 핸들러의 경계는 [code-architecture.md](code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
 
 orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
@@ -199,7 +201,7 @@ flowchart TD
 | `before-ready` | `ci-ready`, `orch-loop` | draft 를 ready 로 바꾸기 전 | 예 | 겹침과 충돌 보류, ready 슬롯 | 이 저장소에서 CI 를 돌릴 수 없는 시간대 거부 |
 | `pr-ready` | `ci-ready`, `orch-loop` | ready 로 바꾼 뒤 | 아니오 | 없음 | 리뷰 요청 |
 | `ci-passed` | `orch-loop` | 필수 체크가 모두 통과한 것을 처음 본 때 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
-| `ci-failed` | `orch-loop` | 필수 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 그 worker 에게 알림 | runner 장애면 다시 실행 |
+| `ci-failed` | `orch-loop` | 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 살아 있는 dispatch 의 worker 에게 알림. 알림 파일에 `CI-FAILED` 줄 | runner 장애면 다시 실행 |
 | `ci-missing` | `orch-loop` | ready 뒤 `pipeline.ci_missing_after_sec` 안에 필수 체크가 나타나지 않을 때 | 아니오 | `CI-MISSING` 줄 | runner 재시작 |
 | `pr-conflict` | `notify-conflicts`, `orch-loop` | base 와 충돌하는 내 PR 을 (PR, base SHA) 마다 처음 본 때 | 아니오 | 그 PR 을 만든 worker 에게 base 를 합치라고 보낸다. dispatch 가 끝났으면 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 `CONFLICT-ORPHAN` 줄. 새 worker 는 띄우지 않는다 | 없음 |
 | `before-merge` | `merge_queue` | PR 마다 머지 직전, HEAD 를 고정한 뒤 | 예 | 머지 조건 확인 | DB 마이그레이션 PR 앞의 백업 |
@@ -207,9 +209,9 @@ flowchart TD
 | `after-merge` | `merge_queue` | PR 하나가 MERGED 인 것을 확인한 뒤 | 아니오 | 원격 브랜치 삭제, 그 브랜치를 base 로 둔 내 PR 의 base 옮기기 | 없음 |
 | `after-queue` | `merge_queue`, `orch-loop` | 큐가 끝나거나 보류나 큐 도중의 설정 오류로 멈춘 뒤, 하나라도 머지했을 때 | 아니오 | `pipeline.after_queue_interval_sec` 로 묶기 | 로컬 배포. `code_prs` 가 비면 건너뛴다 |
 | `after-deploy` | `finish-pr` | 배포 판정 뒤, 보드 done 앞. 배포 워크플로가 없으면 정리 직후. `deploy` 가 `failure` 나 `timeout` 이어도 내고, 그때는 보드 done 을 하지 않는다 | 아니오 | 보드 done | 업무의 마지막 PR 이면 업무 완료 처리 |
-| `before-cleanup` | `cleanup-sweep` | 워크트리 하나를 지우기 직전 | 예 | 소유와 머지 확인 | 저장소가 남길 워크트리 거부 |
-| `after-cleanup` | `cleanup-sweep` | 정리 한 차례가 끝난 뒤 | 아니오 | 지운 것과 남긴 것 출력 | 저장소 캐시 폴더 정리 |
-| `tick` | `orch-loop` | `pipeline.tick_sec` 마다 | 아니오 | 질문 확인, 원격 브랜치 정리, 정리, 보드 동기화 | 뒤처진 저장소 고유 상태 점검 |
+| `before-cleanup` | `cleanup-sweep` | 워크트리 하나를 지우기 직전. `--apply` 일 때만 | 예 | 소유와 머지 확인 | 저장소가 남길 워크트리 거부 |
+| `after-cleanup` | `cleanup-sweep` | 저장소 하나의 정리(`--apply`)가 끝난 뒤 | 아니오 | 지운 것과 남긴 것 출력 | 저장소 캐시 폴더 정리 |
+| `tick` | `orch-loop` | `pipeline.tick_sec` 마다 | 아니오 | 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시. 충돌 처리는 `tick` 핸들러 뒤에 한다. 순서는 `orch-loop.ts` 머리 주석의 「틱」 이 소유한다 | 뒤처진 저장소 고유 상태 점검 |
 | `session-resume` | `orch-doctor --run` | 압축이나 재시작 뒤 코디네이터가 doctor 를 부를 때 | 아니오 | 루프와 대기 생존 확인, 미답변 질문 | 저장소 상태 요약 |
 
 ### 운영 공백을 막는 곳
@@ -229,12 +231,13 @@ flowchart TD
 | 모르는 이름의 핸들러 파일이 있다 | `orch-doctor` 가 `UNKNOWN-HOOK <파일>` 로 경고한다. 실행하지 않는다 |
 | 거부할 수 있는 이벤트의 핸들러가 거부한다 | `HOOK-REJECT <이벤트> <이유>` 를 내고 그 동작을 하지 않는다. 머지 큐는 그 PR 에서 `STOP` 이다 |
 | 거부할 수 있는 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | 거부처럼 멈춘다. 줄은 `HOOK-FAIL <이벤트> <종료 코드>` 다. 시간을 넘기면 `HOOK-FAIL <이벤트> timeout`, 잠금을 기다리다 시간을 넘기면 `HOOK-FAIL <이벤트> lock` 이다. 모르는 실패로 머지하거나 지우지 않는다 |
-| 나머지 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | `HOOK-FAIL` 을 내고 코어 동작은 이어 간다. 명령의 종료 코드에 반영한다. 띄우기, 대기, 질문 감시, doctor, ready 전환, 충돌 알림 명령은 알림 이벤트의 실패를 종료 코드에 반영하지 않는다. 대기의 종료 코드는 코디네이터의 다음 동작을 고르는 계약이고, 질문 감시는 질문 줄을 이미 냈으며 멈추면 다음 질문을 알리지 못하기 때문이다. ready 전환(`ci-ready`)의 종료 코드는 코디네이터의 ready 판정 계약이라, 0 을 다른 값으로 바꾸면 이미 ready 로 바뀐 PR 을 보류로 읽는다. 충돌 알림(`notify-conflicts`)의 `pr-conflict` 는 충돌한 PR 이 있을 때만 나서 종료 코드가 이미 1 이고, 실패를 따로 나타낼 값이 없다. 코어는 핸들러를 다시 돌리지 않는다. `tick` 만 다음 틱에 다시 돈다 |
+| 나머지 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | `HOOK-FAIL` 을 내고 코어 동작은 이어 간다. 명령의 종료 코드에 반영한다. 띄우기, 대기, 질문 감시, doctor, ready 전환, 충돌 알림, 정리 명령은 알림 이벤트의 실패를 종료 코드에 반영하지 않는다. 대기의 종료 코드는 코디네이터의 다음 동작을 고르는 계약이고, 질문 감시는 질문 줄을 이미 냈으며 멈추면 다음 질문을 알리지 못하기 때문이다. ready 전환(`ci-ready`)의 종료 코드는 코디네이터의 ready 판정 계약이라, 0 을 다른 값으로 바꾸면 이미 ready 로 바뀐 PR 을 보류로 읽는다. 충돌 알림(`notify-conflicts`)의 `pr-conflict` 는 충돌한 PR 이 있을 때만 나서 종료 코드가 이미 1 이고, 실패를 따로 나타낼 값이 없다. 정리(`cleanup-sweep`)의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(머리 주석의 「종료 코드」). `after-cleanup` 의 실패를 2 에 섞으면 정리 자체가 실패한 경우와 구별할 수 없다. 코어는 핸들러를 다시 돌리지 않는다. `tick` 만 다음 틱에 다시 돈다 |
 | 같은 저장소의 같은 이벤트가 동시에 난다(PR 여럿의 `after-deploy`) | 이벤트마다 잠금을 잡아 하나씩 실행한다 |
 | worker 를 띄운 저장소가 둘 이상이다 | 이벤트는 그 PR 이나 워크트리의 저장소에서 나고, 그 저장소의 핸들러만 돈다 |
 | `config.json` 에 옛 셸 명령 칸이 있고 같은 이벤트의 핸들러가 없다 | 다음 major 까지는 옛 칸을 그 이벤트의 핸들러처럼 돌리고 `DEPRECATED <키> → hooks/<이벤트>.ts` 줄로 옮길 곳을 알린다. 옮기는 명령은 `migrate-orch-dir.ts --hooks` 다 |
 | 머지한 브랜치를 base 로 둔 열린 PR 가운데 내 PR 이 아닌 것이 있거나, 그 조회 또는 base 옮기기가 실패한다 | 원격 브랜치를 남기고 `after-merge` 의 `remote_branch_deleted` 를 false 로 낸다 |
 | 옛 셸 명령 칸과 핸들러가 함께 있다 | 사용법 오류(종료 코드 2)로 멈춘다. 어느 쪽이 맞는지 정할 수 없다. 머지 큐가 시작한 뒤에 알게 되면 그 전에 머지한 PR 이 있을 때 `after-queue` 만 돌린 뒤 2 로 끝난다 |
 | worker 가 `worker_done` 을 보냈는데 PR 이 아직 열려 있다 | 그 worker 터미널을 남긴다. 충돌이나 리뷰 반영을 같은 worker 가 이어 받는다. PR 이 머지되거나 닫히면 정리가 바로 닫는다 |
-| 상주 루프가 죽었거나 틱이 멈췄다 | 마지막 틱이 `pipeline.tick_sec` 의 세 배보다 오래되면 `wait-important` 가 `LOOP-DEAD` 로 깨어난다. 코디네이터가 루프를 다시 띄운다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다 |
-| 같은 저장소에 루프를 둘 띄운다 | 둘째는 `state/loop.json` 의 살아 있는 pid 를 보고 종료 코드 4 로 끝난다 |
+| 상주 루프가 죽었거나 틱이 멈췄다 | `state/loop.json` 의 pid 가 죽었거나 `alive_at` 이 `max(3 × tick_sec, 120)` 초보다 오래되면 `wait-important` 가 `LOOP-DEAD` 로 깨어난다. `alive_at` 은 루프의 부모 프로세스가 틱과 따로 쓰므로 긴 틱은 죽음이 아니다. pid 가 살아 있는 루프 프로세스인데 `alive_at` 만 오래됐으면 생존 타이머 간격에 5초를 더한 만큼 기다려 한 번 더 판정한다. 잠들었다 깬 뒤의 거짓 `LOOP-DEAD` 를 막는다. 기다리는 시간은 `lib/loop.ts` 머리 주석의 「생존」 이 소유한다. 코디네이터가 루프를 다시 띄운다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다 |
+| `notify-conflicts` 와 상주 루프의 충돌 처리가 겹쳐 돈다 | 같은 (PR, base SHA) 를 두 번 보낼 수 있다. `state/notify-conflicts.json` 에 잠금이 없다. 차례로 돌면 한 번이다 |
+| 같은 저장소에 루프를 둘 띄운다 | 둘째는 `state/loop.lock` 이나 `state/loop.json` 의 살아 있는 루프 프로세스(명령줄에 `orch-loop` 가 든 pid)를 보고 종료 코드 4 로 끝난다. 띄우려던 Run 이 다르면 코디네이터가 `--stop` 뒤 다시 띄운다 |

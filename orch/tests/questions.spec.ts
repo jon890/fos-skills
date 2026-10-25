@@ -8,8 +8,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ageSeconds, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
-import { poll } from '../scripts/watch-questions.ts'
+import { ageSeconds, poll, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/watch-questions.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../scripts/watch-questions.py', import.meta.url))
