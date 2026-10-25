@@ -10,16 +10,27 @@
 제외를 넓히는 변경은 조용히 통과하므로 표본으로 고정한다.
 """
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "korean-style-check.py"
 RULES = Path(__file__).resolve().parents[1] / "references" / "korean-style.md"
+
+# 표본마다 검사기를 새 프로세스로 띄우면 표본 수만큼 기동 비용이 쌓인다.
+# run_on 은 모듈을 한 번 불러 check() 를 직접 부르고, 명령줄 경로는 subprocess 를 쓰는 테스트가 따로 본다.
+_SPEC = importlib.util.spec_from_file_location("korean_style_check", SCRIPT)
+checker = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(checker)
+MATCHERS = checker.build_matchers(checker.load_terms(RULES))
 
 
 class Base(unittest.TestCase):
@@ -34,12 +45,14 @@ class Base(unittest.TestCase):
         return path
 
     def run_on(self, text, name="a.md"):
+        """subprocess 로 부를 때와 같은 returncode, stdout, stderr 를 낸다. 예외 파일 환경 변수는 비운다."""
         path = self.write(name, text)
-        return subprocess.run(
-            ["python3", str(SCRIPT), str(path)],
-            capture_output=True, text=True,
-            env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
-        )
+        out, err = io.StringIO(), io.StringIO()
+        checker._ALLOW_CACHE.clear()
+        with mock.patch.dict(os.environ), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            os.environ.pop(checker.ALLOW_ENV, None)
+            code = checker.check([str(path)], RULES, MATCHERS)
+        return types.SimpleNamespace(returncode=code, stdout=out.getvalue(), stderr=err.getvalue())
 
     def assertCaught(self, text, term=None, name="a.md"):
         done = self.run_on(text, name)
