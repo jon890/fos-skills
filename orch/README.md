@@ -57,7 +57,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 ## 준비
 
 - Orca 앱과 `orca` CLI 가 필요하다. worker 는 Orca orchestration 으로 띄운다
-- PATH 에 node 22.18 이상과 `python3` 가 있어야 한다. node 가 낮으면 스킬을 열 때 `NODE-TOO-OLD` 로 알린다
+- PATH 에 node 24 이상과 `python3` 가 있어야 한다. node 가 낮으면 스킬을 열 때 `NODE-TOO-OLD` 로 알린다
 - `gh` 에 로그인돼 있어야 PR 을 확인하고 머지한다
 - 같은 PC 의 무거운 검사를 대기열로 돌리는 `heavy-slot` 은 perl 이 PATH 에 있어야 한다
 - 스킬을 열 때 설치본이 원본 main 보다 낡았으면 갱신 명령을 보여 준다

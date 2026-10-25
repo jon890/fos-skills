@@ -23,13 +23,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           check-latest: true
       - name: Install Claude Code CLI
         run: npm install --global @anthropic-ai/claude-code@2.1.309
       - name: Run plugin tests from repository root
         run: claude plugin test .
       - name: Run orch and work-board node tests
+        # 명령마다 .ts 를 다시 컴파일하지 않게 캐시를 둔다. Node 24 부터 타입을 제거한 .ts 에 듣는다(docs/adr/011-node-24-minimum.md)
+        env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
         run: node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"
 
   python:
@@ -45,7 +48,7 @@ jobs:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           check-latest: true
       - name: Install shell test dependencies
         run: sudo apt-get update && sudo apt-get install --yes jq zsh

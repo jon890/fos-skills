@@ -336,7 +336,7 @@ describe('worker-ask.py shim', () => {
     mkdirSync(empty)
     const done = spawnSync(python(), [SHIM, '--help'], { env: { ...process.env, PATH: empty }, encoding: 'utf8' })
     assert.equal(done.status, 127, done.stdout + done.stderr)
-    assert.match(done.stderr, /node 22\.18 이상이 PATH 에 필요하다/)
+    assert.match(done.stderr, /node 24 이상이 PATH 에 필요하다/)
   })
 
   test('node 가 있으면 worker-ask.ts 의 종료 코드와 answer: 첫 줄이 그대로 온다', () => {

@@ -328,7 +328,7 @@ export async function runInherit(argv: string[], opts: Omit<RunOptions, 'input' 
 }
 
 // 명령끼리 서로 부를 때 쓴다. 확장자로 인터프리터를 고른다.
-//     .ts    이 프로세스의 node(process.execPath). PATH 의 node 가 22.18 보다 낮아도 지금 도는 node 로 띄운다
+//     .ts    이 프로세스의 node(process.execPath). PATH 의 node 가 24 보다 낮아도 지금 도는 node 로 띄운다
 //     .sh    bash
 //     .zsh   zsh
 //     그 밖  python3. `.py` 와 확장자 없는 파일, 모르는 확장자가 모두 여기다.

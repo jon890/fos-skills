@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 const SCRIPTS = fileURLToPath(new URL('../scripts/', import.meta.url)).replace(/\/$/, '')
 const SHIM = join(SCRIPTS, 'launch-worker.py')
 const TARGET = join(SCRIPTS, 'launch-worker.ts')
-const NO_NODE = 'node 22.18 이상이 PATH 에 필요하다'
+const NO_NODE = 'node 24 이상이 PATH 에 필요하다'
 const FLAG = '--disable-warning=ExperimentalWarning'
 
 let bin: string
@@ -50,26 +50,26 @@ function nodeTooOld(text: string): boolean {
 }
 
 describe('node_too_old', () => {
-  test('22.18 부터는 통과한다', () => {
-    for (const text of ['v22.18.0', 'v24.1.0', 'v22.18.0\n']) assert.equal(nodeTooOld(text), false, text)
+  test('24.0 부터는 통과한다', () => {
+    for (const text of ['v24.0.0', 'v26.1.0', 'v24.0.0\n']) assert.equal(nodeTooOld(text), false, text)
   })
 
   test('낮거나 읽지 못하는 버전은 낮음이다', () => {
-    for (const text of ['v22.17.9', 'v20.19.0', 'garbage', '']) assert.equal(nodeTooOld(text), true, JSON.stringify(text))
+    for (const text of ['v23.11.1', 'v22.23.4', 'garbage', '']) assert.equal(nodeTooOld(text), true, JSON.stringify(text))
   })
 })
 
 describe('exec', () => {
   test('낮은 node 는 exec 전에 NODE-TOO-OLD 로 127 이다', () => {
-    fakeNode('v22.17.0')
+    fakeNode('v22.23.4')
     const done = py([SHIM, '--help'], withFakeNode())
     assert.equal(done.status, 127, done.stdout + done.stderr)
-    assert.ok(done.stdout.startsWith('NODE-TOO-OLD v22.17.0'), done.stdout)
+    assert.ok(done.stdout.startsWith('NODE-TOO-OLD v22.23.4'), done.stdout)
     assert.ok(!done.stdout.includes('--help'), done.stdout)
   })
 
   test('새 node 는 .ts 파일과 인자를 받고 종료 코드는 node 의 것이다', () => {
-    fakeNode('v22.18.0')
+    fakeNode('v24.0.0')
     const done = py([SHIM, '--help'], withFakeNode())
     assert.equal(done.status, 7, done.stderr)
     assert.deepEqual(done.stdout.split('\n').filter(Boolean), [FLAG, TARGET, '--help'])
@@ -77,16 +77,16 @@ describe('exec', () => {
   })
 
   test('doctor 진입점은 낮은 node 를 막고 DEPRECATED 줄을 내지 않는다', () => {
-    fakeNode('v22.17.0')
+    fakeNode('v22.23.4')
     const done = py([join(SCRIPTS, 'orch-doctor.py'), '--skip-version', '--skip-questions'], withFakeNode())
     assert.equal(done.status, 127, done.stdout + done.stderr)
-    assert.ok(done.stdout.startsWith('NODE-TOO-OLD v22.17.0'), done.stdout)
+    assert.ok(done.stdout.startsWith('NODE-TOO-OLD v22.23.4'), done.stdout)
     assert.ok(!done.stderr.includes('DEPRECATED'), done.stderr)
   })
 
   test('worker-ask 진입점은 DEPRECATED 줄을 내지 않는다', () => {
     // worker 는 답의 첫 줄 answer: 를 읽는다. stderr 를 합쳐 읽어도 그 앞에 DEPRECATED 줄이 끼지 않아야 한다
-    fakeNode('v22.18.0')
+    fakeNode('v24.0.0')
     const done = py([join(SCRIPTS, 'worker-ask.py'), '--help'], withFakeNode())
     assert.equal(done.status, 7, done.stderr)
     assert.deepEqual(done.stdout.split('\n').filter(Boolean), [FLAG, join(SCRIPTS, 'worker-ask.ts'), '--help'])
@@ -99,7 +99,7 @@ describe('exec', () => {
       'from unittest import mock',
       'sys.path.insert(0, sys.argv[1])',
       'import ts_shim',
-      'version = subprocess.CompletedProcess(["node", "--version"], 0, stdout="v22.18.0\\n", stderr="")',
+      'version = subprocess.CompletedProcess(["node", "--version"], 0, stdout="v24.0.0\\n", stderr="")',
       'with mock.patch.object(ts_shim.subprocess, "run", return_value=version), \\',
       '        mock.patch.object(ts_shim.os, "execvp", side_effect=PermissionError(13, "Permission denied")):',
       '    ts_shim.exec_ts(sys.argv[2], deprecated=False)',
@@ -116,7 +116,7 @@ describe('exec', () => {
   })
 
   test('shim 을 import 만 해서는 node 로 넘기지 않는다', () => {
-    fakeNode('v22.18.0')
+    fakeNode('v24.0.0')
     const script = [
       'import importlib.util, sys',
       'sys.path.insert(0, sys.argv[2])',

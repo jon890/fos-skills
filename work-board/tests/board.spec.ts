@@ -13,7 +13,7 @@ import { defaultBoardPath } from '../bin/board.ts'
 
 const BOARD = fileURLToPath(new URL('../bin/board.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../bin/board.py', import.meta.url))
-// shim 이 PATH 의 node 를 부르므로 이 테스트를 돌리는 node(22.18 이상)를 앞에 둔다
+// shim 이 PATH 의 node 를 부르므로 이 테스트를 돌리는 node(24 이상)를 앞에 둔다
 const SHIM_ENV = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}` }
 
 type Json = Record<string, unknown>
