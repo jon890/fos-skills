@@ -10,6 +10,8 @@
 // run 은 동기(spawnSync)다. 시간을 넘긴 자식이 TERM 을 무시하면 그 자식이 스스로 끝날 때까지 돌아오지 않는다
 // (Node 22.18 실측: 500ms 제한에 4초 넘게 걸렸다). 병렬이 필요하거나 TERM 을 무시할 수 있는 자식은 runAsync 로 부른다.
 // runAsync 는 시간을 넘기면 TERM 을 보내고, 10초 뒤에도 살아 있으면 KILL 을 보낸다.
+// runAsync 에 group: true 를 주면 자식을 detached 로 띄워 새 프로세스 그룹을 만든다. 시간 초과와 stopChildren 의 신호가
+// 그 그룹 전체(손자 포함)에 간다. 자식이 신호를 받아 손자를 끝내는 중에 죽어도 손자가 남지 않게 하려는 것이다.
 // runAsync 는 자식이 끝난 뒤 2초 안에 출력 파이프가 닫히지 않으면(백그라운드 손자가 쥐고 있다) 파이프를 닫고 자식의 종료 코드를 낸다.
 // 손자가 그 뒤에 쓴 출력은 버린다. 끝난 자식에는 시간 제한을 적용하지 않으므로 이때 124 가 아니다.
 //
@@ -28,7 +30,9 @@
 //
 // 진행 중인 자식: runAsync, runInherit 와 lib/events.ts 의 핸들러 실행이 띄운 자식을 끝날 때까지 기억한다(trackChild).
 // 신호를 받은 명령은 끝내기 전에 stopChildren 을 불러 자식을 남기지 않는다. 기억한 자식에 TERM 을 보내고,
-// STOP_GRACE_MS(2초) 뒤에도 살아 있으면 KILL 을 보낸다. 그룹으로 띄운 자식(핸들러)은 그룹 전체에 보낸다.
+// 유예(기본 STOP_GRACE_MS, 2초) 뒤에도 살아 있으면 KILL 을 보낸다. 그룹으로 띄운 자식(핸들러, group 을 준 runAsync)은 그룹 전체에 보낸다.
+// 자식도 stopChildren 으로 자기 자식을 끝내는 명령이면, 부르는 쪽은 유예를 STOP_GRACE_MS 보다 길게 준다.
+// 같은 유예면 자식이 손자에게 KILL 을 보내기 전에 부르는 쪽의 KILL 이 자식에 닿을 수 있다.
 // stopChildren 을 부른 뒤에는 runAsync, runInherit, 핸들러 실행이 새 자식을 띄우지 않고 128 + 받은 신호 번호로 끝난다.
 // 유예 동안에도 부른 쪽의 흐름은 이어 돌기 때문이다. 동기 실행(run)은 막지 않는다. 신호 처리기가 기다리는 동안 부른 쪽이
 // run 으로 쓰기 호출(머지 같은 것)을 할 수 있으므로, 그 자리는 부르는 쪽이 stopping() 을 보고 막는다.
@@ -48,6 +52,8 @@ export type RunOptions = {
   timeoutMs?: number
   // 출력 한도(바이트, stdout 과 stderr 각각). 테스트가 256MB 를 실제로 만들지 않게 하려고 둔 내부용 칸이다.
   maxBuffer?: number
+  // runAsync 만 읽는다. true 면 자식을 새 프로세스 그룹으로 띄운다(머리 주석)
+  group?: boolean
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000
@@ -55,7 +61,7 @@ const DEFAULT_TIMEOUT_MS = 60_000
 const DEFAULT_MAX_BUFFER = 256 * 1024 * 1024
 const KILL_GRACE_MS = 10_000
 const PIPE_GRACE_MS = 2_000
-const STOP_GRACE_MS = 2_000
+export const STOP_GRACE_MS = 2_000
 const STOP_POLL_MS = 50
 // 옛 명령이 시간 제한을 두지 않던 호출에 준다. setTimeout 이 받는 최댓값(약 24.8일)이고, 넘기면 Node 가 1ms 로 바꾼다
 export const NO_LIMIT_MS = 2 ** 31 - 1
@@ -126,13 +132,13 @@ function signalTracked(entry: Tracked, signal: NodeJS.Signals): void {
   else entry.child.kill(signal)
 }
 
-// 기억한 자식에 TERM 을 보내고 모두 끝나거나 STOP_GRACE_MS 가 지나기를 기다린 뒤, 남은 것에 KILL 을 보낸다.
+// 기억한 자식에 TERM 을 보내고 모두 끝나거나 graceMs 가 지나기를 기다린 뒤, 남은 것에 KILL 을 보낸다.
 // 이 뒤로는 새 자식을 띄우지 않는다(머리 주석의 「진행 중인 자식」)
-export async function stopChildren(signal: NodeJS.Signals): Promise<void> {
+export async function stopChildren(signal: NodeJS.Signals, graceMs = STOP_GRACE_MS): Promise<void> {
   stopSignal ??= signal
   const targets = [...tracked]
   for (const entry of targets) signalTracked(entry, 'SIGTERM')
-  const deadline = Date.now() + STOP_GRACE_MS
+  const deadline = Date.now() + graceMs
   while (targets.some(trackedAlive) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS))
   }
@@ -205,16 +211,18 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
       resolve(result)
     }
 
-    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'] })
-    trackChild(child, false)
+    const group = opts.group ?? false
+    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'], detached: group })
+    trackChild(child, group)
 
-    // TERM 을 보내고 10초 뒤에도 끝나지 않았으면 KILL 을 보낸다.
+    // TERM 을 보내고 10초 뒤에도 끝나지 않았으면 KILL 을 보낸다. 그룹으로 띄웠으면 그룹 전체에 보낸다
+    const entry: Tracked = { child, group }
     const terminate = () => {
-      if (terminating) return
+      if (terminating || child.pid === undefined) return
       terminating = true
-      child.kill('SIGTERM')
+      signalTracked(entry, 'SIGTERM')
       killTimer = setTimeout(() => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+        if (trackedAlive(entry)) signalTracked(entry, 'SIGKILL')
       }, KILL_GRACE_MS)
     }
     const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {

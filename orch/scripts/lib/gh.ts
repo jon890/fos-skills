@@ -7,8 +7,11 @@
 //
 // 호스트: `gh api` 는 origin 을 보지 않고 기본 호스트로 간다. 그래서 GitHub Enterprise 저장소에서 `api user` 를 그냥 부르면
 // 다른 호스트의 사용자가 오거나 null 이 된다. 호스트는 PR URL 에서 읽어(apiTarget) GH_HOST 나 --hostname 으로 준다.
+//
+// 필수 체크 판정: 규칙 조회(RULES_JQ, ruleChecks)와 실패 판정(FAILED_CONCLUSIONS, FAILED_STATES)은 머지 큐(merge_queue.ts)와
+// 상주 루프(orch-loop.ts)가 함께 쓴다. 머지 큐가 통과로 보는 PR 을 루프가 실패로 알리면 코디네이터가 어느 쪽을 믿을지 모른다.
 
-import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './config.ts'
+import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './config.ts'
 import { NO_LIMIT_MS, run } from './proc.ts'
 import type { RunResult } from './proc.ts'
 
@@ -87,4 +90,92 @@ export function updateBranch(
   const args = ['api', ...(opts.host ? ['--hostname', opts.host] : []), '-X', 'PUT', `repos/${repo}/pulls/${pr.number}/update-branch`]
   if (opts.expectedHead) args.push('-f', `expected_head_sha=${opts.expectedHead}`)
   return gh(args, { timeoutMs: NO_LIMIT_MS })
+}
+
+// 필수 체크 판정 -----------------------------------------------------------------
+
+// 저장소 규칙(repos/<owner>/<repo>/rules/branches/<base>)에서 필수 상태 체크 이름을 쉼표로 이어 낸다
+export const RULES_JQ =
+  '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] ' + '| unique | join(",")'
+// 실패로 보는 체크 실행의 결론과 커밋 상태의 상태. 롤업의 값은 GraphQL enum 이라 머지 큐의 jq test(정규식)와 같은 집합이다
+export const FAILED_CONCLUSIONS: readonly string[] = ['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']
+export const FAILED_STATES: readonly string[] = ['FAILURE', 'ERROR']
+
+export type Names = { ok: true; names: string[] } | { ok: false; error: string }
+export type CiCheck = { name: string; status: string | null; conclusion: string | null; url: string | null }
+export type CiState = { state: 'passed' | 'failed' | 'pending'; checks: CiCheck[] }
+
+// 무료 플랜의 비공개 저장소는 규칙 API 를 읽을 수 없다(HTTP 403 과 Upgrade to GitHub Pro). 필수 체크 목록이 없는 것으로 다룬다
+export function rulesPlanLimited(stderr: string): boolean {
+  return stderr.includes('HTTP 403') && stderr.includes('Upgrade to GitHub Pro')
+}
+
+// base 의 저장소 규칙이 정한 필수 체크 이름. 플랜 제한은 빈 목록이다. slug 는 owner/repo 다.
+export function ruleChecks(host: string, slug: string, base: string): Names {
+  const path = `repos/${slug}/rules/branches/${base}`
+  const done = gh(['api', '--hostname', host, path, '--jq', RULES_JQ])
+  if (done.code === 0) return { ok: true, names: done.stdout.replace(/\n+$/, '').split(',').filter((name) => name) }
+  if (rulesPlanLimited(done.stderr)) return { ok: true, names: [] }
+  return { ok: false, error: `gh api ${path} 가 종료 코드 ${done.code} 로 끝났다: ${(done.stderr || done.stdout).trim()}` }
+}
+
+// 필수 체크 이름. config.json 의 queue.required 가 있으면 그것(목록이면 그대로, 문자열이면 쉼표로 나눈다)이고 규칙 API 를 부르지 않는다.
+// 없으면 ruleChecks 다. required 를 받는 꼴은 merge-with-finish 가 머지 큐에 넘길 때와 같고, 틀리면 ConfigError 다.
+export function requiredNames(repo: string, host: string, slug: string, base: string): Names {
+  const queue = section<{ required?: unknown }>(loadConfig(repo), 'queue', QUEUE_KEYS)
+  const value = queue.required
+  if (value === undefined) return ruleChecks(host, slug, base)
+  const joined = Array.isArray(value) && value.every((name) => typeof name === 'string') ? value.join(',') : value
+  if (typeof joined !== 'string' || !joined) throw new ConfigError('설정 파일의 queue.required 는 비지 않은 문자열이어야 한다')
+  return { ok: true, names: joined.split(',').filter((name) => name) }
+}
+
+function field(row: Record<string, unknown>, key: string): string | null {
+  const value = row[key]
+  return typeof value === 'string' ? value : null
+}
+
+// 롤업 행의 이름. 체크 실행은 name, 커밋 상태는 context 다(머지 큐의 `.name // .context`)
+function checkName(row: Record<string, unknown>): string {
+  return field(row, 'name') ?? field(row, 'context') ?? ''
+}
+
+function failedRow(row: Record<string, unknown>): boolean {
+  return FAILED_CONCLUSIONS.includes(field(row, 'conclusion') ?? '') || FAILED_STATES.includes(field(row, 'state') ?? '')
+}
+
+// 머지 큐의 PENDING 과 같다. 체크 실행은 status 가 COMPLETED 가 아니면, 커밋 상태는 state 가 PENDING 이나 EXPECTED 면 아직이다
+function pendingRow(row: Record<string, unknown>): boolean {
+  const state = field(row, 'state')
+  return (field(row, 'status') ?? 'COMPLETED') !== 'COMPLETED' || state === 'PENDING' || state === 'EXPECTED'
+}
+
+// ciState 가 낸 체크가 실패인가. status 는 체크 실행의 status 나 커밋 상태의 state 다. 체크 실행의 status 에는 FAILURE, ERROR 가 없다
+export function failedCheck(check: CiCheck): boolean {
+  return FAILED_CONCLUSIONS.includes(check.conclusion ?? '') || FAILED_STATES.includes(check.status ?? '')
+}
+
+// PR 의 statusCheckRollup 으로 CI 상태를 정한다. 머지 큐의 기본 판정(--allow-fail 없음)과 같다.
+//   failed   롤업의 체크 하나라도 실패다(FAILED_CONCLUSIONS, FAILED_STATES). 필수 체크가 아니어도 실패다(머지 큐의 waitChecks 가 멈춘다)
+//   passed   실패가 없고, 필수 체크가 모두 나타났고, 롤업의 체크가 모두 끝났다. 필수가 아닌 체크가 아직 돌면 머지 큐도 기다리므로 pending 이다
+//   pending  그 밖. 체크가 하나도 없을 때도 pending 이다. 머지 큐는 「지금 있는 체크만 기다린다」 로 바로 넘어가지만, 루프는 체크가
+//            붙기 전에 ci-passed 를 내지 않는다
+// required 가 비면(규칙 없음, 플랜 제한) 나타난 체크 전부로 판정하는 것과 같다.
+// skippedIsMissing 이면 결론이 SKIPPED 인 체크를 나타나지 않은 것으로 본다(머지 큐의 --skipped-is-missing).
+// checks 는 롤업에 나타난 체크 전부다. 실패한 것은 failedCheck 로 고른다.
+export function ciState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean): CiState {
+  const rows = (Array.isArray(rollup) ? rollup : []).filter(
+    (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
+  )
+  const seen = rows.filter((row) => !(skippedIsMissing && field(row, 'conclusion') === 'SKIPPED'))
+  const checks = seen.map((row) => ({
+    name: checkName(row),
+    status: field(row, 'status') ?? field(row, 'state'),
+    conclusion: field(row, 'conclusion'),
+    url: field(row, 'detailsUrl') ?? field(row, 'targetUrl'),
+  }))
+  if (seen.some(failedRow)) return { state: 'failed', checks }
+  const missing = required.some((name) => !seen.some((row) => checkName(row) === name))
+  if (seen.length === 0 || missing || seen.some(pendingRow)) return { state: 'pending', checks }
+  return { state: 'passed', checks }
 }

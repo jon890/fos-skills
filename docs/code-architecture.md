@@ -180,7 +180,9 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 
 ## orch 코어와 핸들러
 
-이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)). 구현 PR 이 모두 머지되기 전의 실제 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
+상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 
 ### 사용자 결정 (2026-10-24)
@@ -205,7 +207,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
 orch/scripts/<명령>.py            node 로 넘기는 shim. 다음 major 에서 지운다
 orch/scripts/ts_shim.py           shim 의 node 버전 확인과 exec 한 벌
-orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돌며 틱마다 질문 확인, 정리, ready 슬롯, 순서, CI 감시를 한다
+orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돈다. 틱이 하는 일은 머리 주석이 소유한다
 orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호를 받은 명령이 진행 중인 자식을 끊는 일 한 벌. 함수와 반환 형태는 머리 주석이 소유한다
 orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
 orch/scripts/lib/gh.ts            gh 호출. 내 PR 판정(작성자), update-branch 를 부를 수 있는 경우를 한 곳에서 정한다
@@ -216,12 +218,14 @@ orch/scripts/lib/args.ts          옵션 고유 접두 펼치기와 - 로 시작
 orch/scripts/lib/py.ts            옛 Python 출력과 같은 바이트 꼴(json.dumps, None 표기, shlex.quote)
 orch/scripts/lib/config.ts        config.json 읽기. 절마다 아는 키를 선언하고 모르는 키는 사용법 오류다
 orch/scripts/lib/overlap.ts       단위 겹침 판정 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/queue-options.ts 머지 큐가 값을 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/queue-options.ts 머지 큐의 옵션 목록과 설정의 queue 키를 옵션으로 바꾸는 표 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 찾기와 (PR, base SHA) 마다 한 번 알린 기록 한 벌. 사용처는 머리 주석이 소유한다
+orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
-orch/scripts/lib/questions.ts     미답변 질문 조회 한 벌
+orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다
+orch/scripts/lib/loop.ts          상주 루프의 상태 파일 한 벌. 파일과 판정은 머리 주석이 소유한다
+orch/scripts/lib/workers.ts       브랜치의 워크트리와 그 worker 행 찾기 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/process.ts       pid 생존 확인(EPERM 은 살아 있음), 작업 디렉터리를 쥔 프로세스 찾기
 orch/scripts/lib/ownership.ts     터미널 소유 확인 한 벌. 모든 Run 의 worker 행을 읽어 60초 동안 다시 쓴다. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/events.ts        이벤트 실행기. 핸들러 찾기, 잠금, 시간 제한, 기록, 가드 환경
@@ -266,7 +270,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py. 기본 보
 | 배포를 간격으로 묶기 | `after-queue` 묶기 | `pipeline.after_queue_interval_sec`, `after-queue.ts` |
 | CI 없음 알림 | `ci-missing` | `pipeline.ci_missing_after_sec`, `ci-missing.ts` |
 | 로컬 검증 뒤 머지 | 합친 사본 만들기와 HEAD 대조 | `verify-merged.ts` |
-| 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. `ci-ready` 와 `notify-conflicts` 가 같이 쓴다 | 없음 |
+| 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. 사용처는 `lib/conflicts.ts` 머리 주석이 소유한다 | 없음 |
 | 충돌한 PR | 기존 worker 에게 base 를 합치라는 지시. 끝난 dispatch 는 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 알림 | 없음 |
 | 뒤처진 draft 최신화 | 틱 | `pipeline.update_behind_drafts` |
 | 질문 감시 | 루프의 틱과 `watch-questions.ts` | `worker-question.ts` |
@@ -290,7 +294,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py. 기본 보
 | --- | --- | --- |
 | `orch/SKILL.md` | 단계, 통과 조건, 원칙 | 옵션 설명, 스크립트 동작 |
 | `orch/references/<단계>.md` | 언제 어떤 명령과 옵션을 쓰는가, 사용자에게 알릴 것, 스크립트가 다루지 않는 수동 경로 | 머리 주석의 반복, 모델 행동 관측을 이유로 단 문장 |
-| `orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. 이 저장소의 data-schema.md 가 계약이고, 구현 뒤에는 `lib/events.ts` 머리 주석이 소유한다 |
+| `orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. `lib/events.ts` 머리 주석이 소유한다 |
 | 스크립트 머리 주석 | 사용법, 옵션, 판정, 종료 코드 | 다른 스크립트의 동작 |
 | `orch/templates/spec-common.md` | 모든 worker 에게 같은 규칙. `{{...}}` 는 저장소마다 한 번 채우는 값만 | Run 마다 바뀌는 값, 허락. 허락은 지시서의 `허락:` 줄이 소유한다 |
 | 저장소의 `.orch/overlay.md`, `config.json`, `hooks/` | 저장소 고유 값과 일 | 코어 규칙의 사본 |

@@ -25,7 +25,7 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/orch_paths.ts`: orch 작업 폴더(`.orch/`)의 경로를 낸다. 셸에서 `orch_paths.ts specs` 처럼 이름으로 경로를 받는다. 경로 규칙은 `lib/paths.ts` 가 소유한다
 - `scripts/migrate-orch-dir.ts`: 옛 위치(`.claude/orch-overlay.md`, `.claude/orch-finish.json`, `.omc/orch/`, `.omc/handoffs/`)의 orch 파일을 `.orch/` 로 옮긴다. `--hooks` 는 `.orch/config.json` 의 옛 셸 명령 칸(`queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`)을 같은 일을 하는 `.orch/hooks/<이벤트>.ts` 로 바꾼다. 둘 다 기본은 미리보기이고 `--apply` 로 바꾼다
 - `scripts/ci-ready.ts`: 내 draft PR 을 ready 로 바꿔 CI 를 시작한다. 이미 ready 인 PR 과 파일이 겹치거나 merge-tree 로 합쳐 본 base 와 충돌하면 보류한다. 바뀐 파일은 REST 로 읽는다. ready 로 바꾸기 전에 `before-ready`, 바꾼 뒤에 `pr-ready` 이벤트를 낸다. draft 로 CI 를 미루는 저장소에서만 쓴다
-- `scripts/wait-important.ts`: worker_done, question, escalation, status 가 든 묶음이 올 때까지 기다린다. heartbeat 만 든 묶음은 ack 하고 계속 기다리고, 마지막 줄에 다음 `--ack` 로 넘길 delivery id 를 낸다. 다른 대기가 자리를 쥐고 있으면(`waiter_exists`) 되풀이하지 않고 남은 대기 프로세스를 보여 준다
+- `scripts/wait-important.ts`: worker_done, question, escalation, status 가 든 묶음이 올 때까지 기다린다. heartbeat 만 든 묶음은 ack 하고 계속 기다리고, 마지막 줄에 다음 `--ack` 로 넘길 delivery id 를 낸다. `--loop-repo` 를 주면 상주 루프의 알림(종료 코드 7)과 루프의 죽음(종료 코드 8)에도 깨어난다. 다른 대기가 자리를 쥐고 있으면(`waiter_exists`) 되풀이하지 않고 남은 대기 프로세스를 보여 준다
 - `scripts/nudge-worker.ts`: 메시지를 보낸 뒤 worker 화면이 입력 대기면 「check 로 읽어라」 를 넣고 턴 시작을 확인한다. 보이지 않으면 `--retry-request` 로 한 번 더 확인한다
 - `scripts/spec-line.ts`: 지시서의 `허락:` 줄을 붙여 `worker-start --spec` 에 넘길 첫 지시 줄을 만든다
 - `scripts/launch-worker.ts`: `spec-line` 으로 첫 지시 줄을 만들고 새 워크트리는 `make-worktree` 로 만든 뒤 띄운다. 기존 워크트리에 터미널이 남아 있으면 거부하고, 띄운 뒤 `worktree_creating` 에서 멈추면 abandon 하고 한 번 다시 띄운다
@@ -41,7 +41,8 @@ Orca orchestration 으로 worker 를 띄워 PR 머지까지 끝내고, 머지 �
 - `scripts/worker-ask.ts`: worker 가 코디네이터에게 묻는다. 읽지 않은 코디네이터 메시지가 있으면 묻지 않고, 답은 첫 줄 `answer:` 로 낸다. 시간 제한 뒤에는 status 로 온 답을 찾고, 끝난 Dispatch 에서는 Run 메일함으로 대신 보낸다
 - `scripts/cleanup-sweep.ts`: 머지된 worktree, 로컬과 원격 브랜치, 그 터미널과 Dispatch, 지시서와 PR 본문 파일, 저장소 밖에 남은 detached 워크트리를 정리하고 기준 브랜치를 fast-forward 한다. 살아 있는 dispatch 의 지시서는 지우지 않는다. 깨어날 때마다 사용자가 말하지 않아도 돌고, `--repo` 를 여러 번 받는다. 기본은 dry-run 이다. `--kill-holders` 는 끝난 dispatch 의 워크트리를 쥔 프로세스를 끈다. `--remote-branches` 는 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다. 대상은 MERGED PR 과, 다른 PR 에 합쳐 닫혀 head 커밋이 base 에 든 CLOSED PR 이다. `--run` 을 주면 머지 없이 CLOSED 가 된 내 PR 의 끝난 dispatch 터미널을 닫고 dispatch 를 반납한다. `--apply` 이면 워크트리를 지우기 직전에 `before-cleanup`, 저장소 하나의 정리가 끝나면 `after-cleanup` 이벤트를 낸다
 - `scripts/board-sync.ts`: PR 이 머지된 보드 항목을 done 으로 바꾸고 남은 단계에 ✓ 를 붙인 뒤 목표 진행률을 다시 센다. 상태 줄은 쓰지 않는다
-- `scripts/watch-questions.ts`: Monitor 의 이벤트 소스. 미답변 질문과 재알림을 한 줄씩 낸다
+- `scripts/watch-questions.ts`: 루프를 쓸 수 없을 때 Monitor 로 띄우는 질문 감시. 미답변 질문과 재알림을 한 줄씩 낸다
+- `scripts/orch-loop.ts`: 저장소마다 하나 도는 상주 루프이고, 틱마다 질문 확인, 정리와 원격 브랜치 정리, 보드 동기화, 내 PR 의 CI 감시와 `ci-passed`, `ci-failed`, 충돌 PR 처리, `tick` 이벤트를 한다. 코디네이터를 깨울 일은 알림 파일에 쓴다
 - `scripts/goal-progress.ts`: 보드 목표 항목의 진행 표시줄을 추적 항목 상태로 다시 계산한다
 - `hooks/`: 플러그인이 싣는 PreToolUse 훅. `hooks.json` 이 각 hook 을 PATH 의 `node` 로 부른다. 판정과 오탐 기준은 각 파일 머리 주석이 소유한다
   - `block-background-wait.ts`: `check --wait` 와 `wait-important` 를 셸의 `&` 나 `nohup` 으로 띄우는 Bash 호출을 거부한다
