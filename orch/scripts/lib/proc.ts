@@ -9,7 +9,7 @@
 //
 // run 은 동기(spawnSync)다. 시간을 넘긴 자식이 TERM 을 무시하면 그 자식이 스스로 끝날 때까지 돌아오지 않는다
 // (Node 22.18 실측: 500ms 제한에 4초 넘게 걸렸다). 병렬이 필요하거나 TERM 을 무시할 수 있는 자식은 runAsync 로 부른다.
-// runAsync 는 시간을 넘기면 TERM 을 보내고, 10초 뒤에도 살아 있으면 KILL 을 보낸다.
+// runAsync 는 시간을 넘기면 TERM 을 보내고, KILL 유예(기본 10초, ORCH_KILL_GRACE_SEC) 뒤에도 살아 있으면 KILL 을 보낸다.
 // runAsync 에 group: true 를 주면 자식을 detached 로 띄워 새 프로세스 그룹을 만든다. 시간 초과와 stopChildren 의 신호가
 // 그 그룹 전체(손자 포함)에 간다. 자식이 신호를 받아 손자를 끝내는 중에 죽어도 손자가 남지 않게 하려는 것이다.
 // runAsync 는 자식이 끝난 뒤 2초 안에 출력 파이프가 닫히지 않으면(백그라운드 손자가 쥐고 있다) 파이프를 닫고 자식의 종료 코드를 낸다.
@@ -43,6 +43,8 @@ import { accessSync, closeSync, constants as fsConstants, openSync, readSync, st
 import { constants } from 'node:os'
 import { delimiter, extname, join } from 'node:path'
 
+import { killGraceMs } from './env.ts'
+
 export type RunResult = { code: number; stdout: string; stderr: string; timedOut: boolean }
 export type RunOptions = {
   cwd?: string
@@ -59,7 +61,6 @@ export type RunOptions = {
 const DEFAULT_TIMEOUT_MS = 60_000
 // spawnSync 의 기본 1MB 를 넘으면 자식이 SIGTERM 으로 죽는다. orca 조회 출력이 수십 MB 까지 간 기록이 있다.
 const DEFAULT_MAX_BUFFER = 256 * 1024 * 1024
-const KILL_GRACE_MS = 10_000
 const PIPE_GRACE_MS = 2_000
 export const STOP_GRACE_MS = 2_000
 const STOP_POLL_MS = 50
@@ -215,7 +216,7 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
     const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'], detached: group })
     trackChild(child, group)
 
-    // TERM 을 보내고 10초 뒤에도 끝나지 않았으면 KILL 을 보낸다. 그룹으로 띄웠으면 그룹 전체에 보낸다
+    // TERM 을 보내고 KILL 유예 뒤에도 끝나지 않았으면 KILL 을 보낸다. 그룹으로 띄웠으면 그룹 전체에 보낸다
     const entry: Tracked = { child, group }
     const terminate = () => {
       if (terminating || child.pid === undefined) return
@@ -223,7 +224,7 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
       signalTracked(entry, 'SIGTERM')
       killTimer = setTimeout(() => {
         if (trackedAlive(entry)) signalTracked(entry, 'SIGKILL')
-      }, KILL_GRACE_MS)
+      }, killGraceMs())
     }
     const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {
       if (overflowed) return
@@ -321,7 +322,7 @@ export async function runInherit(argv: string[], opts: Omit<RunOptions, 'input' 
       child.kill('SIGTERM')
       killTimer = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-      }, KILL_GRACE_MS)
+      }, killGraceMs())
     }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   })
 }

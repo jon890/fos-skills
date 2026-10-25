@@ -14,7 +14,7 @@
 //   alive_at 만 오래됐고 pid 가 살아 있는 루프 프로세스(isLoopProcess 가 true 나 null)면 recheck: true 를 붙인다. 잠들었다 깬 macOS 에서는
 //   루프의 생존 타이머가 아직 alive_at 을 쓰지 못했을 수 있다. 판정은 동기라 기다리지 않는다. 부르는 쪽(wait-important, doctor)이
 //   recheckMs() 를 기다린 뒤 한 번 더 부르고, 그때도 죽었으면 죽음으로 낸다.
-//   recheckMs 는 생존 타이머 간격(ORCH_LOOP_ALIVE_SEC, 양수 초, 기본 30. 양수가 아니면 기본값)에 여유 5초를 더한 값이다.
+//   recheckMs 는 생존 타이머 간격(ORCH_LOOP_ALIVE_SEC, 양수 초, 기본 30. 양수가 아니면 기본값)에 여유(ORCH_LOOP_RECHECK_MARGIN_SEC, 기본 5초)를 더한 값이다.
 //   간격은 부르는 쪽의 환경 변수로 읽는다. 루프는 그 값을 loop.json 에 적지 않는다.
 //
 // 루프 프로세스(isLoopProcess): pid 가 살아 있고 `ps -o command=` 의 명령줄에 orch-loop 가 들어 있으면 true 다.
@@ -36,6 +36,7 @@
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeParent, pathOf } from './paths.ts'
+import { envMs } from './env.ts'
 import { run } from './proc.ts'
 import { alive } from './process.ts'
 
@@ -43,7 +44,6 @@ export const EVENTS_LIMIT = 1000
 const DEFAULT_TICK_SEC = 300
 const MIN_DEAD_SEC = 120
 export const DEFAULT_ALIVE_SEC = 30
-const RECHECK_MARGIN_SEC = 5
 
 export type LoopState = {
   pid: number
@@ -122,9 +122,7 @@ export function isLoopProcess(pid: number): boolean | null {
 
 // 머리 주석의 「생존」. 다시 판정하기 전에 기다릴 ms
 export function recheckMs(): number {
-  const raw = Number(process.env.ORCH_LOOP_ALIVE_SEC)
-  const sec = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_ALIVE_SEC
-  return (sec + RECHECK_MARGIN_SEC) * 1000
+  return envMs('ORCH_LOOP_ALIVE_SEC', DEFAULT_ALIVE_SEC) + envMs('ORCH_LOOP_RECHECK_MARGIN_SEC', 5)
 }
 
 // now 는 epoch ms 다.

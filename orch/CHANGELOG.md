@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.5.0 (2026-10-25)
+
+- KILL 유예, 질문 조회 시간 제한, 루프 재확인 여유를 `ORCH_KILL_GRACE_SEC`, `ORCH_QUESTIONS_TIMEOUT_SEC`, `ORCH_LOOP_RECHECK_MARGIN_SEC` 로 바꿀 수 있다. 기본값은 그대로다
+- 이벤트 핸들러의 잠금 대기는 시간 제한에 KILL 유예의 1.5배를 더한다. 기본은 전과 같은 15초다
+
 ## 3.4.1 (2026-10-25)
 
 - README 를 스킬을 쓰는 사람 관점으로 다시 쓰고, 이 CHANGELOG 를 버전마다 핵심만 남기도록 줄였다. 동작은 바뀌지 않았다

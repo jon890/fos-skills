@@ -65,7 +65,7 @@
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
 //     DEPRECATED-CONFIG <절>.<키> → hooks/<이벤트>.ts   옛 설정 칸
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
-//     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초 안에 답하지 않은 경우도 여기다
+//     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초(ORCH_QUESTIONS_TIMEOUT_SEC) 안에 답하지 않은 경우도 여기다
 //     LOOP-DEAD <repo> <이유>                    --run 을 줬는데 상주 루프가 죽었다. 다음 줄에 다시 띄울 명령이 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //

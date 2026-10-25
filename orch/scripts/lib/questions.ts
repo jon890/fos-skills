@@ -17,6 +17,7 @@
 
 import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { context, isoTime } from './completion.ts'
+import { envMs } from './env.ts'
 import { fire } from './events.ts'
 import { defaultBase, mainCheckout } from './git.ts'
 import { orcaJson } from './orca.ts'
@@ -25,13 +26,12 @@ import { pyJson, pyStr as text } from './py.ts'
 
 export const HISTORY_LIMIT = 100
 export const REPLY_LIMIT = 200
-const TIMEOUT_MS = 30_000
 const KINDS = new Set(['question', 'escalation'])
 
 export type Message = Record<string, unknown>
 
 function orca(args: string[]): Record<string, unknown> {
-  const got = orcaJson<unknown>(['orchestration', ...args], { timeoutMs: TIMEOUT_MS })
+  const got = orcaJson<unknown>(['orchestration', ...args], { timeoutMs: envMs('ORCH_QUESTIONS_TIMEOUT_SEC', 30) })
   if (!got.ok) throw new Error(got.error)
   if (typeof got.data !== 'object' || got.data === null || Array.isArray(got.data)) throw new Error('Orca result 가 객체가 아니다')
   return got.data as Record<string, unknown>
