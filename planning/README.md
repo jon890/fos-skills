@@ -1,73 +1,69 @@
 # planning
 
-사용자와 합의한 것을 `docs/` 에 남기고, 그것만 읽고 구현할 수 있는 `tasks/` 를 만든다.
+구현을 시작한 뒤에야 범위와 이름이 정해지지 않은 것을 알게 되는 수고를 덜어 준다.
+구현 가능성부터 task 생성까지 8단계를 하나씩 밟으며, 사용자만 답할 수 있는 결정은 선택지를 붙여 묻는다.
+합의한 설계와 근거는 대상 저장소의 `docs/` 에 남기고, 이 대화를 보지 못한 구현자도 그것만 읽고 실행할 수 있는 `tasks/` 를 만든다.
 
-## 산출물
+plan 하나는 PR 하나로 끝나는 크기로 자른다. 더 크면 plan 을 나누고, 지금 할 plan 만 자세히 쓰고 뒤의 일은 한 줄로 남긴다.
 
-대상 저장소에 아래가 남는다.
+## 이럴 때 쓴다
 
-| 산출물 | 내용 |
-| --- | --- |
-| `docs/prd.md`, `docs/flow.md`, `docs/code-architecture.md`, `docs/data-schema.md` | 이번 변경이 영향을 준 부분의 갱신 diff |
-| `docs/adr/NNN-<슬러그>.md` | 이번에 내린 기술 결정 하나마다 한 파일 |
-| `tasks/plan{N}-<kebab-slug>/index.json` | plan 하나의 phase 목록과 상태 |
-| `tasks/plan{N}-<kebab-slug>/phase-*.md` | 이 대화를 보지 못한 구현자가 읽고 실행하는 실행 명세 |
-| 커밋 | 문서 갱신과 task 파일을 담은 기획 커밋 |
+- 새 기능을 만들기 전에 범위, 흐름, API, 저장 모델을 먼저 정하고 싶다
+- 리팩터링이 여러 파일에 걸쳐 어디서 잘라 PR 을 나눌지 정해야 한다
+- 다른 에이전트나 `build-with-teams` 에 맡길 task 파일이 필요하다
+- 정한 기술 결정을 ADR 로 남겨 두고 싶다
+
+"계획 세워보자", "설계해보자", "task 파일 만들어줘", "구현 전 검토", "리팩토링 계획" 처럼 말하면 이 스킬이 뜬다.
+
+## 사용 예시
+
+기능 이름, 파일 이름, 번호는 예시다.
+
+```text
+나:   댓글 알림 기능 계획 세워보자
+
+스킬: 1단계 구현 가능성입니다. 재사용 지점은 src/notify/sender.ts 이고,
+      이번 PR 의 범위는 「댓글이 달리면 글쓴이에게 앱 알림을 보낸다」 로 두겠습니다.
+      메일 알림은 범위 밖으로 미룰까요?
+
+나:   응, 메일은 다음에
+
+스킬: 2단계 기술 스택입니다. 새 의존 없이 기존 큐로 됩니다.
+      ...
+      5단계 API 입니다. 알림 목록 응답의 read 필드를 필수로 둘지 옵셔널로 둘지 정해 주세요.
+        1. 필수. 기존 데이터에 기본값을 채운다
+        2. 옵셔널. 클라이언트가 없음을 처리한다
+
+나:   1
+
+스킬: 8단계까지 마쳤습니다.
+        docs/flow.md, docs/data-schema.md 갱신
+        docs/adr/012-notification-queue.md 추가
+        tasks/plan27-comment-notify/ 에 phase 3개
+        뒤로 미룬 일: 메일 알림 (앱 알림이 머지된 뒤)
+      verify_task.py 는 종료 코드 0 으로 통과했습니다.
+```
+
+## 받는 것
+
+- `docs/` 갱신. `prd.md`, `flow.md`, `code-architecture.md`, `data-schema.md` 가운데 이번 변경이 영향을 준 부분이 바뀐다
+- `docs/adr/` 의 ADR. 이번에 내린 기술 결정 하나마다 한 파일이다
+- `tasks/plan{N}-<slug>/index.json`. phase 목록, 이번 PR 의 범위(`pr_scope`), 뒤로 미룬 일(`deferred`)이 들어 있다
+- `tasks/plan{N}-<slug>/phase-*.md`. 구현자가 읽고 실행하는 명세로, phase 마다 작업 항목, 검증 명령, 변경 파일이 있다
+- push, 배포, 원격 접속이 있어야 끝나는 검증이 있으면 같은 디렉터리의 `remote-verification.md`
+- `verify_task.py` 검사 결과. 경고와 대조하지 못한 경로는 보고에 남는다
 
 `docs/` 는 구현이 끝난 뒤에도 읽는 문서이고, `tasks/` 는 구현 PR 에서 지운다.
 
-plan 하나는 PR 하나로 끝나는 크기이고, 대략 하루 안에 구현하고 머지한다.
-더 크면 plan 을 여럿으로 나누고 지금 할 plan 만 자세히 쓴다. 뒤의 일은 `index.json` 의 `deferred` 에 한 줄로 남기고 앞 PR 이 머지된 뒤 계획한다.
-`verify_task.py` 가 `pr_scope` 와 `deferred` 필드, phase 수 상한을 검사한다. 기준은 `references/plan-size.md` 가 소유한다.
+## 준비
 
-## 사용 시점
+- `python3` 가 필요하다. task 를 만든 직후 `verify_task.py` 를 돌린다
+- plan 번호를 정할 때 머지된 PR 의 브랜치 이름도 보므로 `gh` 에 로그인돼 있어야 한다
+- 대상 저장소의 검증 명령, 레이어 구조, docs 경로와 tasks 경로는 `.claude/planning-overlay.md` 에 적는다. 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 보고, 거기도 없으면 묻는다
+- 각 단계에서 범위와 취향을 물으므로 사용자가 답할 수 있어야 한다
 
-새 기능이나 변경을 구현하기 전에 쓴다.
-"계획 세워보자", "설계해보자", "task 파일 만들어줘", "구현 전 검토", "리팩토링 계획" 같은 요청이 여기 해당한다.
+## 함께 쓰는 스킬
 
-| 하려는 일 | 쓰는 스킬 |
-| --- | --- |
-| 구현 전에 합의를 문서로 남기고 task 를 만든다 | `planning` |
-| 만들어진 task 를 읽어 구현하고 PR 까지 만든다 | `build-with-teams` |
-| 이미 있는 `docs/` 가 코드와 맞는지 감사한다 | `docs-check` |
-| 하네스 지침과 스킬 본문이 실행 환경과 맞는지 감사한다 | `harness-cleanup` |
-
-## 전제
-
-- **대상 저장소의 레포 설정.** 검증 명령, 레이어 구조, 도메인 변형, 필수 다섯 밖의 추가 문서가 여기 들어 있다.
-  찾는 순서는 `references/monorepo.md` 가 정한다.
-- **사용자가 답할 수 있는 상태.** 각 단계의 통과 조건에 사용자 확정이 들어 있어
-  취향, 범위, 되돌리기 어려운 선택은 물어서 정한다.
-- **`python3`.** task 생성 직후 `scripts/verify_task.py` 를 돌린다.
-- **반복 함정 목록.** 레포 설정이 지정한 경로를 쓰고, 지정이 없으면 `docs/pitfalls/` 를 읽는다. 읽기만 한다.
-  그 디렉터리도 없으면 사전 확인 항목을 건너뛴다.
-
-## 구성
-
-| 파일 | 소유하는 것 |
-| --- | --- |
-| `SKILL.md` | 관리 문서 다섯의 책임 분담, 레포 설정 탐색 명령, 8단계 표와 단계별 통과 조건, task 생성 직후 확인 절차 |
-| `references/step-1-feasibility.md` | 구현 가능 판단, 재사용 지점을 파일 경로로 짚는 기준, 리스크와 제약 |
-| `references/step-2-tech-stack.md` | 기존 스택으로 되는지 판단, 새 의존 도입 심사, ADR 로 남길 조건 |
-| `references/step-3-flow.md` | 정상 흐름과 에러·빈 상태·동시 요청의 갈래, `docs/flow.md` 에 mermaid 로 남기는 규칙 |
-| `references/step-4-interface.md` | UI·CLI·backend 별로 확정할 표면, 경로와 라벨과 필드명을 유예하지 않는 기준 |
-| `references/step-5-api.md` | 엔드포인트와 함수 시그니처, 요청과 응답 스키마, 4단계와 병합할 때의 표기 |
-| `references/step-6-data-code.md` | 테이블과 컬럼과 키와 제약, cascade 범위, 새 코드가 앉을 레이어와 디렉터리 |
-| `references/step-7-docs.md` | 필수 다섯 전체의 영향 판정, ADR 로 남길 결정을 가르는 두 조건 |
-| `references/step-8-tasks.md` | phase 분할 기준, plan 을 나눌 조건, plan 번호를 원격과 git 이력까지 훑어 정하는 방법 |
-| `references/examples/code-architecture.md` | `docs/code-architecture.md` 의 다섯 절 뼈대, 책임 칸에 목록을 늘어놓지 않는 이유, 이력 서술을 넣지 않는 이유. 6단계가 가리킨다 |
-| `references/examples/adr-parallel.md` | 병렬 PR 용 `ADR-YYYYMMDD-slug.md` 와 `INDEX.md`, 색인 일치 테스트, 번호 충돌 사례. 7단계가 가리킨다 |
-| `references/examples/test-boundaries.md` | `tests/` 의 목적 디렉터리와 이름 규칙, boundary 테스트, CI 순서와 concurrency. 6단계가 가리킨다 |
-| `references/plan-size.md` | plan 하나를 PR 하나 크기로 자르는 규칙, 뒤로 미룬 일을 남기는 칸, `verify_task.py` 가 쓰는 phase 수와 변경 파일 수 기준 |
-| `references/task-create.md` | `index.json` 스키마, ADR 템플릿과 supersede 처리, phase 파일 구조와 작성 규칙 |
-| `references/rule-placement.md` | 반복될 실패를 저장소 규칙으로 옮길 때 넣을 곳 표, 규칙 문장 형식, 반복 함정 목록 처리. `build-with-teams` 와 `review-fix` 가 함께 쓴다 |
-| `references/monorepo.md` | 모노레포 판정, 대상 하위 프로젝트를 정하는 순서, 오버레이 탐색 순서, 오버레이가 지정하는 docs 경로와 tasks 경로와 plan 접두사. 네 스킬이 함께 쓴다 |
-| `scripts/overlay_paths.py` | `references/monorepo.md` 의 판정을 실행해 대상 하위 프로젝트와 레포 설정을 읽을 순서를 낸다 |
-| `scripts/plan_number.sh` | 원격 브랜치와 git 이력을 훑어 쓰인 plan 번호와 다음 번호를 낸다. 접두사마다 따로 센다 |
-| `scripts/verify_task.py` | 생성한 task와 커밋 전 staged 범위 검사. 종료 코드 0 통과, 1 위반, 2 실행 불가 |
-| `tests/test_verify_task.py` | 파일 상태, 같은 phase의 테스트 실행, staged 범위와 오탐 회귀 검사 |
-| `tests/test_overlay_paths.py` | 단일 저장소 하위 호환, 변경 경로와 plan 접두사와 cwd 로 정하는 대상, 정하지 못하는 표본 |
-| `tests/test_plan_number.py` | 접두사별 번호, tasks 경로, 지운 계획서와 앞의 0 을 실제 git 저장소로 검사 |
-| `CHANGELOG.md` | 버전 이력 |
-
-실행 절차는 `SKILL.md` 가 소유한다.
+- 만든 task 를 읽어 구현하고 PR 까지 만드는 일은 `build-with-teams` 가 맡는다
+- 이미 있는 `docs/` 가 코드와 맞는지 감사하는 일은 `docs-check` 가 맡는다
+- 하네스 지침과 스킬 문서가 실제 동작과 맞는지 감사하는 일은 `harness-cleanup` 이 맡는다

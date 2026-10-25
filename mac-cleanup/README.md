@@ -1,27 +1,56 @@
 # mac-cleanup
 
-macOS 개발 머신의 디스크, 메모리, 스왑을 조사해 정리하고, 오래된 에이전트 세션과 머지된 브랜치, 끝난 워크트리까지 정리한다.
+맥이 느려지거나 디스크가 모자랄 때, 무엇을 지워도 되는지 하나하나 찾아보는 수고를 덜어 준다.
+디스크, 메모리, 스왑과 Docker, 도구 캐시, 오래된 에이전트 세션, 머지된 브랜치와 끝난 워크트리를 한 번에 조사한다.
+후보마다 크기와 등급을 붙여 보여 주고, 사용자가 고른 묶음만 지운 뒤 정리 전후 수치를 비교해 보고한다.
 
-## 산출물
+조사는 읽기 전용이다. 데이터 volume, 대화 기록, 미커밋 변경처럼 되돌릴 수 없는 것은 기본 등급을 「확인 필요」 로 두고 따로 묻는다.
 
-| 산출물 | 내용 |
-| --- | --- |
-| 조사 결과 | 디스크, 메모리, 스왑, 큰 디렉터리, Docker, 도구 캐시, updater 캐시, `~/.cache`, Codex 이전 버전, Cursor snapshots, mise 후보, 세션, 브랜치, 워크트리, Gradle 버전 |
-| 후보 표 | 후보마다 크기와 등급(안전 / 확인 필요 / 유지) |
-| 정리 전후 표 | 디스크 여유, 스왑 사용량, 메모리 여유 비율과 사용자가 직접 할 일 |
+## 이럴 때 쓴다
 
-## 구성
+- 디스크 여유가 몇 GB 남지 않았다는 경고가 뜬다
+- 스왑이 커져 맥이 느려졌다
+- Docker 이미지와 testcontainers 가 남긴 volume 이 쌓였다
+- 에이전트 작업을 여러 번 돌려 머지된 브랜치와 끝난 워크트리가 남았다
 
-- `scripts/survey_*.sh`, `scripts/survey_*.py`, `scripts/docker_images.py`, `scripts/check_pr_branches.py`: 읽기 전용 조사. 지우거나 종료하지 않는다.
-- `scripts/delete_branches.py`, `scripts/delete_volumes.py`: 지우는 스크립트. 조사 JSON 을 받아 기본은 dry-run 으로 보이고 `--apply` 일 때만 로컬 브랜치와 익명 volume 을 지운다.
-- `scripts/colima_trim.py`: Colima VM 디스크를 trim 하고 호스트 확보량을 잰다. 부족하면 재시도한다. 데이터는 지우지 않는다.
-- `references/targets.md`: 정리 후보의 등급과 명령
-- `references/git-and-sessions.md`: 세션, 브랜치, 워크트리 정리 절차
-- `~/.claude/mac-cleanup-overlay.md`: 이 머신에만 해당하는 개인 오버레이(저장소 밖). 정리 후보에서 뺄 앱과 이유를 적는다. 없으면 코어 기본값이다
-- `tests/`: 파싱과 분류 함수의 단위 테스트
+"디스크 정리해줘", "맥 느려", "도커 정리", "머지된 브랜치 정리" 처럼 말하면 이 스킬이 뜬다.
 
-```bash
-python3 -m unittest discover -s mac-cleanup/tests
+## 사용 예시
+
+수치는 예시다.
+
+```text
+나:   디스크 정리해줘
+
+스킬: 디스크 여유 18GB, 스왑 6.2GB, 메모리 여유 31% 입니다. 후보는 아래와 같습니다.
+        안전        도구 캐시(npm, Homebrew, pip)          9.4GB
+        안전        Docker 미사용 이미지                   최대 12GB
+        확인 필요   익명 volume 64개(Postgres 58, 그 밖 6)  21GB
+        확인 필요   머지된 브랜치 23개, 끝난 워크트리 4개
+        유지        설치 대기 업데이트가 든 updater 캐시
+      어느 묶음을 정리할까요?
+
+나:   도구 캐시, Docker 이미지, Postgres volume, 브랜치
+
+스킬: 브랜치와 volume 은 지울 목록을 dry-run 으로 먼저 보인 뒤 지웠습니다.
+        디스크 여유  18GB  ->  61GB
+        스왑        6.2GB 그대로. 재부팅하면 비워집니다
+      직접 할 일: 오래된 에이전트 세션 3개 닫기
 ```
 
-하네스 지침 정리는 `harness-cleanup` 이 맡는다.
+## 받는 것
+
+- 후보 표. 후보마다 크기와 등급(안전, 확인 필요, 유지)이 붙는다
+- 브랜치와 volume 을 지우기 전에 보이는 dry-run 목록
+- 정리 전후 표. 디스크 여유, 스왑 사용량, 메모리 여유 비율을 비교한다
+- 세션 닫기와 재부팅처럼 스킬이 대신하지 않는, 사용자가 직접 할 일
+
+## 준비
+
+- macOS 와 `python3` 가 필요하다. `gh` 에 로그인돼 있으면 squash 머지된 브랜치도 찾는다
+- Docker 항목은 Docker(Colima 포함)가 떠 있을 때만 조사한다
+- 이 머신에서 정리하지 않을 앱이 있으면 `~/.claude/mac-cleanup-overlay.md` 에 앱과 이유를 적는다. 그 항목은 후보에 올라오지 않는다
+
+## 함께 쓰는 스킬
+
+- CLAUDE.md 와 스킬 문서 같은 하네스 지침의 정리는 `harness-cleanup` 이 맡는다

@@ -49,6 +49,7 @@ orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있다. 
 | `scripts/install-hooks.sh` | `hooks/` 의 훅을 `.git/hooks` 에 건다 |
 | `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트한다 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾는다. 셸에 따라 죽는 이식성 결함이다 |
+| `scripts/check-skill-docs.py` | 스킬 README 와 CHANGELOG 가 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사한다 |
 
 `check-shell-korean.py` 가 `korean-check` 에 없는 이유는 그 스킬이 마크다운 전용으로
 경계를 선언해 두었기 때문이다. 판정 근거와 다른 도구가 잡지 못하는 이유는 그 파일의 docstring 이 소유한다.
@@ -118,7 +119,7 @@ PR 은 draft 없이 연다. CI 가 PR 과 main push 에서 돈다.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행한다.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않다.
-Python 테스트는 각 `tests/` 폴더에서 `python3 -m unittest discover -s 경로` 로 실행한다.
+Python 테스트는 저장소 루트에서 `python3 -m unittest discover -s mac-cleanup/tests` 처럼 각 `tests/` 폴더를 주어 실행한다. 다른 위치에서 상대 경로로 부르면 `ImportError` 로 끝나는 스킬이 있다.
 orch 와 work-board 의 TypeScript 테스트는 Node 22.18 이상에서 `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` 로 실행한다.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둔다.
 
@@ -129,6 +130,25 @@ orch 와 work-board 의 TypeScript 테스트는 Node 22.18 이상에서 `node --
 
 코어 SKILL 이 시작할 때 현재 레포의 오버레이를 읽어 채운다.
 오버레이가 없으면 코어 기본값으로 동작한다.
+
+## 스킬 README
+
+스킬 README 의 독자는 스킬을 쓰는 사람이다.
+이 스킬이 무엇을 덜어 주는지, 언제 부르는지, 부르면 무엇이 오가는지를 알린다.
+절은 아래 순서로 둔다. 필요하면 다른 절을 더해도 된다.
+
+| 절 | 담는 것 |
+| --- | --- |
+| 첫 문단 | 이 스킬이 덜어 주는 수고. 제목 바로 밑에 절 제목 없이 둔다 |
+| `## 이럴 때 쓴다` | 쓰는 상황과 스킬을 부르는 말 |
+| `## 사용 예시` | 요청, 스킬이 하는 일, 받는 결과를 짧은 대화로 보인다 |
+| `## 받는 것` | 끝났을 때 사용자에게 남는 것 |
+| `## 준비` | 설치, 로그인, 개인 설정이 필요할 때만 둔다 |
+| `## 함께 쓰는 스킬` | 이 스킬이 맡지 않는 일과 그 일을 맡는 스킬 |
+
+**파일 목록(`## 구성`)은 두지 않는다.**
+실행 절차는 `SKILL.md`, 스크립트 동작은 각 파일의 docstring 과 `--help` 가 소유한다. README 에 한 벌 더 두면 한쪽만 고쳐진다.
+테스트 실행 명령은 「기여」 절에 둔다.
 
 ## 버전과 변경 이력
 
@@ -146,7 +166,16 @@ orch 와 work-board 의 TypeScript 테스트는 Node 22.18 이상에서 `node --
 | minor | 지시를 추가하거나 제거한다 | 스폰 폴백 단계화를 넣는다 |
 | patch | 문구만 다듬는다 | 표현을 고치고 오타를 바로잡는다 |
 
-규칙 두 가지를 지킨다.
+**CHANGELOG 에는 스킬을 쓰는 사람이 알아야 할 변화만 적는다.**
+
+- 버전 하나는 `## X.Y.Z (YYYY-MM-DD)` 제목 밑에 목록 항목 몇 개로 쓴다. 새 명령, 바뀐 동작, 고친 문제가 여기 든다.
+- 기존 사용법이 깨지면 그 항목을 `호환성:` 으로 시작한다.
+- 경위, 실측 수치, 내부 리팩터링, 테스트 추가는 적지 않는다. 커밋 메시지와 PR 본문이 이것을 갖는다.
+- major 를 올리면 이전 major 의 버전들을 `## N.x` 한 절로 줄인다.
+
+항목 수와 줄 길이의 상한은 `scripts/check-skill-docs.py` 가 소유하고, `python3 -m unittest discover -s scripts/tests` 가 README 형식과 함께 검사한다.
+
+이력을 두는 자리와 태그는 아래를 따른다.
 
 - 저장소 루트에는 CHANGELOG 를 두지 않는다. 갱신 지점이 갈려 한쪽이 먼저 낡는다.
 - git 태그는 만들지 않는다. 설치한 쪽이 main 의 커밋을 받으므로 태그가 아무것도 고정하지 못한다.
