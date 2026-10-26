@@ -96,17 +96,18 @@
 ### 7. `orch/tests/orch-loop-auto-merge.spec.ts` (신규)
 
 `orch-loop-ci.spec.ts` 의 짜임을 따른다. 가짜 gh(`tests/fixtures/fake-bin.ts`)가 `pr list`(내 PR, 롤업 통과, 작성자), 규칙 조회, `api user`, `pr view --json reviews,comments,files`, `pr list --json number,baseRefName,files` 에 답한다.
-가짜 `MERGE_WITH_FINISH` 는 받은 인자와 자기 pid 를 파일에 적고 `QUEUE-DONE` 을 낸 뒤 정리 출력 흉내로 두 줄(`정리: …`)을 더 내고 0 으로 끝난다. `THREADS_CMD` 는 파일의 숫자를 낸다.
+가짜 `MERGE_WITH_FINISH` 는 파일 이름을 `fake-merge-with-finish.ts` 로 둔다(4.2 가 명령줄의 `merge-with-finish.` 로 도는 큐를 알아보게). 환경 변수 `FAKE_QUEUE_HOLD_MS` 만큼 기다린 뒤 받은 인자와 자기 pid 를 파일에 적고 `QUEUE-DONE` 을 낸 뒤 정리 출력 흉내로 두 줄(`정리: …`)을 더 내고 0 으로 끝난다. `THREADS_CMD` 는 파일의 숫자를 낸다.
 `PS` 는 테스트가 정한 줄에 더해 실제 `ps -axo pid=,command=` 에서 가짜 큐의 pid 줄만 골라 낸다(그래야 4.2 가 도는 큐를 알아본다). 테스트가 정한 줄의 기본은 빈 목록이다.
 저장소는 임시 git 저장소와 bare origin 이고, `.orch/config.json` 에 `queue.auto_merge: true`, `finish.run`(예 `run_t`), `finish.specs_dir` 를 두고 지시서 `spec-a.md` 에 `브랜치:` 줄을 둔다. 루프는 `--run` 없이 띄워 `finish.run` 을 쓴다. 각 테스트는 `--foreground --once` 를 돌리고 가짜 큐의 인자와 `state/loop-events/<Run>.jsonl` 을 단언한다.
 
 - 대상 고르기: 지시서에 든 브랜치의 통과한 PR 은 `--run <Run> --continue-on-hold <번호>` 로 걸리고 `AUTO-MERGE` 가 쓰인다. 지시서에 없는 브랜치의 PR, draft, CI pending, 스레드 1 인 PR 은 인자에 없다. `auto_merge` 가 false 면 가짜 큐가 불리지 않는다.
 - 리뷰: `auto_review` 를 두고 마지막 리뷰 본문이 block 이면 걸리지 않고, pass 면 걸린다.
 - 보류 표시: 지시서의 `- 머지 보류: 배포 뒤` 줄, 보드 항목(pr 칸에 그 번호)의 끝나지 않은 `머지 보류` 줄은 각각 걸리지 않는다.
-- 다시 걸지 않음: 첫 틱 뒤 가짜 큐의 인자 파일이 생기고 적힌 pid 가 끝날 때까지 기다린 다음 같은 HEAD 로 두 번째 틱을 돌린다. 가짜 큐가 한 번만 불렸고, `AUTO-MERGE-END` 의 text 가 `QUEUE-DONE log=` 로 시작한다(정리 줄이 뒤에 있어도). HEAD 를 바꾼 세 번째 틱에는 다시 걸린다. `PS` 가 `node merge_queue.ts 9` 줄을 내면 걸지 않는다.
+- 다시 걸지 않음: 첫 틱 뒤 가짜 큐의 인자 파일이 생기고 적힌 pid 가 끝날 때까지 기다린 다음 같은 HEAD 로 두 번째 틱을 돌린다. 가짜 큐가 한 번만 불렸고, `AUTO-MERGE-END` 의 text 가 `QUEUE-DONE log=` 로 시작한다(정리 줄이 뒤에 있어도). HEAD 를 바꾼 세 번째 틱에는 다시 걸린다.
+- 큐가 도는 동안: `FAKE_QUEUE_HOLD_MS` 를 길게(예 5000) 두고 첫 틱 바로 뒤 HEAD 를 바꿔 두 번째 틱을 돌리면 `AUTO-MERGE-END` 가 없고 가짜 큐가 한 번만 불렸다. 테스트 끝에 가짜 큐 pid 를 끝낸다. `PS` 가 `node merge_queue.ts 9` 줄을 내면 걸지 않는다.
 - 마이그레이션 겹침: base 에 `db/api/V2__a.sql` 이 있고 PR 이 `db/api/V1__b.sql` 을 더하면 걸리지 않고 `MIGRATION-CLASH` text 가 `api V1: base 최고 V2 이하` 다. 다른 열린 PR 이 같은 `V3` 를 더해도 `#<그 PR> 과 같은 번호` 로 알린다. 같은 틱을 다시 돌려도 같은 알림은 한 번이다.
 - 순서: 준비된 PR 둘이 `db/api/V4__x.sql`(먼저 준비), `db/api/V3__y.sql` 을 더하면 인자 순서가 V3 의 PR, V4 의 PR 이고 `--chain <V3 PR>,<V4 PR>` 이 있다. `migrations.before` 가 `{"*": "backup {module}"}` 이면 PR 인자가 `<번호>:backup api` 다.
-- 여러 Run: 등록된 Run 둘(`state/loop-runs/` 에 등록 파일)의 지시서 폴더에 각각 브랜치를 두고, 앞 Run 의 마이그레이션 없는 PR, 뒤 Run 의 V3 PR, 앞 Run 의 V4 PR 이 모두 준비되면 큐 인자에 마이그레이션 없는 PR 만 있다.
+- 여러 Run: 등록된 Run 둘(`state/loop-runs/` 에 등록 파일. 앞 Run 은 `finish.run` 과 같은 id 에 `registered_at` 을 `2026-01-01T00:00:00Z`, 뒤 Run 은 다른 id 에 `2026-01-02T00:00:00Z`. 루프가 시작할 때 `finish.run` 을 다시 등록해도 이미 있어 차례가 바뀌지 않는다)의 지시서 폴더에 각각 브랜치를 두고, 앞 Run 의 마이그레이션 없는 PR, 뒤 Run 의 V3 PR, 앞 Run 의 V4 PR 이 모두 준비되면 큐 인자에 마이그레이션 없는 PR 만 있다.
 - 보드 깨짐: 보드 파일이 JSON 이 아니면 걸지 않고 `WATCH-ERROR` 의 text 가 `auto-merge: 보드를 읽지 못했다` 로 시작한다.
 - 막힘: 다른 열린 PR(CI pending)이 V3 를, 준비된 PR 이 V4 를 더하면 걸리지 않는다. `blocked_after_sec` 를 1 로 두고 2초 뒤 다시 돌리면 `MIGRATION-BLOCKED` 가 한 번 쓰인다.
 - 설정 오류: `queue.auto_merge: "yes"` 면 `--foreground --once` 가 종료 코드 2 다.

@@ -96,8 +96,8 @@ export type QueueItem = { pr: number; readyAt: string; migrations: Migration[] }
 export function queueOrder(items: QueueItem[]): { order: number[]; chains: number[][] }
 ```
 `readyAt` 오름차순(같으면 PR 번호). 모듈마다 그 모듈 마이그레이션을 가진 PR 이 앉은 자리를 그 모듈의 가장 낮은 버전 순으로 다시 채운다(모듈 이름 순으로 차례로).
-모듈을 함께 가진 PR 들을 이어 묶음으로 만들고, 둘 이상인 묶음만 `order` 순서로 `chains` 에 담는다.
 모듈 둘 이상에 걸친 PR 때문에 뒤 모듈의 재배치가 앞 모듈의 버전 순서를 깨면, 모든 모듈의 버전이 오름차순인 가장 긴 앞부분만 `order` 에 남긴다. 나머지는 다음 틱에 다시 본다. 번호 순서를 어기고 거는 것보다 늦게 거는 쪽이 되돌리기 쉽다.
+묶음은 `order` 에 남은 PR 끼리만 만든다. 남은 PR 가운데 모듈을 함께 가진 PR 들을 이어 묶음으로 만들고, 둘 이상인 묶음만 `order` 순서로 `chains` 에 담는다. 빠진 PR 을 거쳐서만 이어지는 PR 은 묶지 않는다.
 
 ```ts
 export function sweepArgs(configured: unknown, run: string): string[] | null
@@ -117,7 +117,7 @@ merge-with-finish 는 명령줄에 `--sweep-arg` 가 있으면 설정 목록을 
 - `compareVersion`: `[1,2]` 와 `[1,10]` 은 음수, `[2]` 와 `[2,0]` 은 0.
 - `judgeMigrations`: base 최고 V12 에서 이 PR 의 V11 은 clash `{module: 'api', label: 'V11', reason: 'base 최고 V12 이하'}`, 다른 PR #31 의 V13 과 이 PR 의 V13 은 clash `#31 과 같은 번호`, 다른 PR #32 의 V13 과 이 PR 의 V14 는 lower 에 #32.
 - `beforeCommand`: `{"*": "backup {module}"}` 와 `['web', 'api']` 는 `backup api && backup web`. `{"api": "b"}` 와 `['web']` 는 `{ok: false, module: 'web'}`. before null 은 command null.
-- `queueOrder`: 준비 순 #3(V14 api), #5(마이그레이션 없음), #4(V13 api) 는 order `[4, 5, 3]`, chains `[[4, 3]]`. #1(api V5, web V2), #2(api V6), #3(web V1) 이 이 순서로 준비되면 api 순서는 #1, #2 이고 web 순서는 #3, #1 이라 한 순서로 둘 다 지킬 수 없다. 결과 order 는 둘 다 지키는 가장 긴 앞부분이고 chains 는 남은 PR 의 묶음 하나다(값은 구현이 정한 재배치 순서로 단언한다). 모듈이 겹치지 않는 PR 은 묶음에 들지 않는다.
+- `queueOrder`: 준비 순 #3(V14 api), #5(마이그레이션 없음), #4(V13 api) 는 order `[4, 5, 3]`, chains `[[4, 3]]`. #1(api V5, web V2), #2(api V6), #3(web V1) 이 이 순서로 준비되면 api 재배치 뒤 `[1, 2, 3]`, web 재배치 뒤 `[3, 2, 1]` 이고 api 가 #2, #1 순서가 되어 깨진다. 결과는 order `[3, 2]`, chains `[]` 다(#3 과 #2 는 모듈을 함께 갖지 않는다).
 - `sweepArgs`: `['--run', 'old', '--kill-holders']` 와 `run_x` 는 `['--run', 'run_x', '--kill-holders']`, `['--kill-holders']` 는 `['--kill-holders', '--run', 'run_x']`, undefined 는 null.
 
 ### 4. `orch/tests/lib-config.spec.ts` 의 기대값
