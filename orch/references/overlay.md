@@ -40,8 +40,8 @@
 `merge-with-finish.ts`, `finish-pr.ts`, `handoff-cleanup.ts` 는 `<repo>/.orch/config.json` 이 있으면 읽는다.
 `--config FILE` 로 다른 파일을 줄 수 있고, 명령줄 옵션이 파일 값보다 우선한다. 파일에 없는 값은 옵션이나 기본값을 쓴다.
 스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.ts` 가, `cleanup` 절은 `handoff-cleanup.ts` 가, `queue` 절은 `merge-with-finish.ts` 가 읽는다.
-`hooks` 절은 이벤트를 내는 모든 명령이, `pipeline` 절은 아래 표의 명령이 읽는다.
-상주 루프(`orch-loop.ts`)는 `finish` 절의 `run`, `specs_dir`, `queue` 절의 `required`, `skipped_is_missing`, `pipeline` 절을 읽는다.
+`hooks` 절은 이벤트를 내는 모든 명령이, `pipeline` 절은 아래 표의 명령이, `migrations` 절은 상주 루프가 읽는다.
+상주 루프(`orch-loop.ts`)는 `finish` 절의 `run`, `specs_dir`, `queue` 절의 `required`, `skipped_is_missing`, `auto_merge`, `auto_review`, `pipeline` 절을 읽는다.
 절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다.
 
 | 절 | 키 | 담는 것 |
@@ -70,12 +70,14 @@
 | `queue` | `unit_groups` | 한 단위로 세는 단위 이름의 목록의 목록(`[["web", "bff"]]`). 안쪽 목록마다 `--unit-group a,b` 가 된다 |
 | `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 문자열 목록. 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
 | `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |
+| `queue` | `auto_merge`, `auto_review` | 상주 루프의 자동 머지. 키 뜻은 저장소 `docs/data-schema.md` 의 「config.json 에 더하는 절」 이 소유한다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 초(양수)로 가는 객체. 핸들러와 옛 칸의 시간 제한을 바꾼다. 기본값과 모르는 이벤트 처리는 `scripts/lib/events.ts` 머리 주석이 소유한다 |
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 문자열 목록. 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
 | `pipeline` | `enabled`, `docs_merge`, `after_queue_interval_sec`, `ci_missing_after_sec`, `update_behind_drafts` | 상주 루프의 자동 진행에 쓸 값이다. 키는 사용법 오류 없이 받지만 아직 읽는 명령이 없다 |
 | `heavy` | `exclusive`, `normal`, `light`, `wait_idle` | 정규식 목록이다. `heavy-slot.ts` 가 읽는다. 사용법은 [`heavy-checks.md`](heavy-checks.md) 가 소유한다 |
+| `migrations` | `dirs`, `before`, `blocked_after_sec` | 모듈별 마이그레이션 폴더와 자동 머지의 머지 전 명령, 막힘 알림 시간 |
 
 ```json
 {
@@ -172,4 +174,13 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.
 - draft PR 은 CI 를 돌리지 않는다. worker 는 `gh pr create --draft` 로 열고, 코디네이터가 `ci-ready.ts` 로 ready 로 바꾼다
 - 머지 전 명령: DB 마이그레이션이 든 PR 은 `PR:./bin/backup-db.sh <db> "before-pr-$PR"`. DB 마다 최근 2개만 보관
 - CI runner 가 offline 이면 묻지 않고 runner 호스트를 재부팅하고, 끊긴 실행은 `gh run rerun --failed` 로 다시 돌린다
+```
+
+자동 머지를 켠 저장소의 `config.json` 조각이다.
+
+```json
+{
+  "queue": { "auto_merge": true, "auto_review": { "pass": "머지 가능", "block": "반영 필요|반영 후 머지" } },
+  "migrations": { "dirs": { "api": "modules/api/src/main/resources/db/migration" }, "before": { "*": ".orch/bin/backup-db.sh {module} \"pre-$PR\"" } }
+}
 ```

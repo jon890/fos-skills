@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.5.0 (2026-10-27)
+
+- 자동 머지(`queue.auto_merge`)를 더했다. 상주 루프가 지시서에 든 내 열린 PR 가운데 draft 가 아니고, CI 가 통과했고, 미해결 스레드가 없고, 리뷰 판정(`queue.auto_review`)이 통과인 것을 머지 큐에 건다
+- 지시서의 `- 머지 보류: <이유>` 줄과 보드 항목의 끝나지 않은 `머지 보류: <이유>` 줄이 그 PR 을 루프가 거는 대상에서 뺀다
+- 마이그레이션 검사(`migrations` 절)를 더했다. 번호가 base 이하거나 다른 PR 과 같으면 `MIGRATION-CLASH`, 낮은 번호의 PR 이 오래 막혀 있으면 `MIGRATION-BLOCKED` 를 낸다
+- 루프 알림 `AUTO-MERGE`(큐를 걸었다)와 `AUTO-MERGE-END`(건 큐가 끝났다)를 더했다
+
 ## 4.4.0 (2026-10-27)
 
 - 지시서에 `중간 과정: PR #N` 줄이 있으면 `launch-worker` 가 보드에 새 항목을 만들지 않고 그 PR 의 기존 항목에 한 줄만 남긴다. 충돌 해결, CI 고침, 리뷰 반영 지시서에 쓴다
