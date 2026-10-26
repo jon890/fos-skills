@@ -194,7 +194,7 @@ describe('set', () => {
       '   "id": "a",',
       '   "title": "a",',
       '   "status": "doing",',
-      '   "pr": "#1",',
+      '   "pr": 1,',
       '   "next": [',
       '    {',
       '     "text": "1. 구현",',
@@ -207,6 +207,22 @@ describe('set', () => {
       '}',
     ].join('\n')
     assert.equal(text.replace(at[1], '<at>'), expected)
+  })
+
+  test('--pr 과 --merged-pr 은 # 유무와 상관없이 PR 번호 하나는 숫자로, 여럿은 문자열로 저장한다', () => {
+    write({ id: 'a', status: 'wait' })
+    const cases: [string, unknown][] = [
+      ['#555', 555],
+      ['555', 555],
+      [' #492, #495 ', '492, 495'],
+      ['492/495', '492, 495'],
+      ['곧 연다', '곧 연다'],
+    ]
+    for (const [given, want] of cases) {
+      assert.equal(board('set', 'a', '--pr', given, '--merged-pr', given).code, 0)
+      const item = JSON.parse(readFileSync(file, 'utf8')).items[0]
+      assert.deepEqual([item.pr, item['merged-pr']], [want, want], given)
+    }
   })
 
   test('id 는 타입까지 같을 때만 맞는다', () => {

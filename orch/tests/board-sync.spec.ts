@@ -222,10 +222,11 @@ test('같은 브랜치의 열린 PR 만 연결하고 다음 틱에도 보존한�
   states['9'] = 'OPEN'
   const r = sync([{ id: 'a', status: 'doing', branch: 'feat/a', details: ['1. 구현'] }], ['--open-prs', JSON.stringify([{ number: 8, headRefName: 'feat/ab' }, { number: 9, headRefName: 'feat/a' }])])
   assert.equal(r.code, 0, r.result.stderr)
-  assert.equal(r.board.a.pr, '#9')
+  // board.ts 가 PR 번호 하나를 숫자로 저장한다
+  assert.equal(r.board.a.pr, 9)
   assert.equal(r.board.a.status, 'doing')
   assert.equal(run(['--board', board, '--repo', tmp]).code, 0)
-  assert.equal(load().a.pr, '#9')
+  assert.equal(load().a.pr, 9)
 })
 
 test('pr 칸이 비어도 같은 브랜치의 머지 PR 로 남은 단계를 끝낸다', () => {
@@ -258,6 +259,6 @@ test('저장한 branch 가 없어도 실제 worktree 브랜치로 PR 을 연결�
   states['9'] = 'OPEN'
   const r = sync([{ id: 'a', status: 'doing', worktree: basename(tmp), details: ['1. 구현'] }], ['--open-prs', JSON.stringify([{ number: 9, headRefName: 'feat/a' }])])
   assert.equal(r.code, 0, r.result.stderr)
-  assert.equal(r.board.a.pr, '#9')
+  assert.equal(r.board.a.pr, 9)
   assert.equal(r.board.a.branch, 'feat/a')
 })

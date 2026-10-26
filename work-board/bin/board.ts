@@ -7,6 +7,7 @@
 // 사용:
 //   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--progress N/M] [--detail D ...]
 //   --branch 와 --merged-pr 은 orch 가 브랜치와 처리한 머지 PR 을 기억하는 칸이다.
+//   --pr 과 --merged-pr 은 「#555」 와 「555」 를 같게 숫자 555 로 저장한다. 여럿(「#492, #495」)은 「492, 495」 문자열이다
 //   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
 //   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
 //   (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
@@ -29,7 +30,7 @@
 //
 // 파일은 json.dump(indent=1, ensure_ascii=False) 의 꼴로 쓴다. 한 칸 들여쓰기, 한글 그대로, 끝 줄바꿈 없음이다.
 // 숫자는 JS 의 number 로 읽고 쓰므로 옛 board.py 와 다르게 바뀌는 값이 있다. 소수점 아래가 0 인 실수(1.0)는 1 이 되고,
-// 2^53 을 넘는 정수는 가까운 double 로 바뀐다. 이 명령이 쓰는 칸은 모두 문자열이라, 손대지 않은 칸에 그런 숫자가 있을 때만 바뀐다.
+// 2^53 을 넘는 정수는 가까운 double 로 바뀐다. 이 명령이 쓰는 칸은 PR 번호 칸을 빼면 모두 문자열이라, 손대지 않은 칸에 그런 숫자가 있을 때만 바뀐다.
 //
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
@@ -45,6 +46,10 @@ const DONE_MARKS = ['✓', '[x]', '[X]']
 const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
 const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'progress'] as const
+// PR 번호를 담는 칸. 「#555」 와 「555」 를 같은 값으로 저장한다(prValue)
+const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
+// 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
+const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
 const COMMANDS = ['set', 'step', 'steps', 'del', 'list']
 const USAGE =
   '사용법: board.ts {set,step,steps,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
@@ -267,6 +272,13 @@ function parse(argv: string[]): Args | 'help' {
   return { cmd, id, status, undo: values.undo ?? false, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
+// pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
+function prValue(value: string): string | number {
+  if (!PR_LIST.test(value)) return value
+  const numbers = value.match(/\d+/g) as string[]
+  return numbers.length === 1 ? Number(numbers[0]) : numbers.join(', ')
+}
+
 // === 라 문자열 id 만 맞는다. 옛 board.py 의 `i['id'] == a.id` 도 문자열과 숫자를 같게 보지 않았다
 function find(board: Board, id: string): Item | undefined {
   return board.items.find((item) => item.id === id)
@@ -324,7 +336,7 @@ function apply(a: Args, board: Board): boolean {
   for (const key of FIELDS) {
     const value = a.fields[key]
     if (value === '' || (key === 'progress' && value === 'auto')) delete item[key]
-    else if (value !== undefined) item[key] = value
+    else if (value !== undefined) item[key] = PR_FIELDS.has(key) ? prValue(value) : value
   }
   for (const [key, values] of [
     ['details', a.detail],

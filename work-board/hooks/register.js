@@ -588,7 +588,8 @@ export function register(on) {
     // 펼친 보기(d)는 「표시 제목」, 막대, 담당·PR, 모든 단계 줄을 적힌 순서대로 그린다
     // 완료 항목은 막대 줄이 없다
     const itemView = (item, section) => {
-      const meta = [item.owner, item.pr].filter(Boolean)
+      // board.ts 는 PR 번호 하나를 숫자로 저장한다. 옛 값(「#9」)과 같게 # 를 붙여 그린다
+      const meta = [item.owner, typeof item.pr === 'number' ? '#' + item.pr : item.pr].filter(Boolean)
       const done = section.status === 'done'
       const bar = progressBar(itemProgress(item), 10)
       const rows = done ? [] : stepRows(item)
