@@ -210,7 +210,7 @@ flowchart TD
 | `verify-merged` | `merge_queue` | `queue.verify_merged_when` 이 맞는 PR 의 합친 사본을 만든 뒤 | 예 | 사본 생성, HEAD 대조, 사본 삭제 | 사본에서 로컬 CI 실행 |
 | `after-merge` | `merge_queue` | PR 하나가 MERGED 인 것을 확인한 뒤 | 아니오 | 원격 브랜치 삭제, 그 브랜치를 base 로 둔 내 PR 의 base 옮기기 | 없음 |
 | `after-queue` | `merge_queue`, `orch-loop` | 큐가 끝나거나 보류나 큐 도중의 설정 오류로 멈춘 뒤, 하나라도 머지했을 때 | 아니오 | `pipeline.after_queue_interval_sec` 로 묶기 | 로컬 배포. `code_prs` 가 비면 건너뛴다 |
-| `after-deploy` | `finish-pr` | 배포 판정 뒤, 보드 done 앞. 배포 워크플로가 없으면 정리 직후. `deploy` 가 `failure` 나 `timeout` 이어도 내고, 그때는 보드 done 을 하지 않는다 | 아니오 | 보드 done | 업무의 마지막 PR 이면 업무 완료 처리 |
+| `after-deploy` | `finish-pr` | 배포 판정과 마지막 PR 판정 뒤, 보드 done 앞. 배포 워크플로가 없으면 정리 직후. `last_of_task` 는 마지막 PR 판정(`!`, `~`, 없으면 `lib/last-pr.ts`)이다. `deploy` 가 `failure` 나 `timeout` 이어도 내고, 그때는 보드 done 을 하지 않는다 | 아니오 | 보드 done | 업무의 마지막 PR 이면 업무 완료 처리 |
 | `before-cleanup` | `cleanup-sweep` | 워크트리 하나를 지우기 직전. `--apply` 일 때만 | 예 | 소유와 머지 확인 | 저장소가 남길 워크트리 거부 |
 | `after-cleanup` | `cleanup-sweep` | 저장소 하나의 정리(`--apply`)가 끝난 뒤 | 아니오 | 지운 것과 남긴 것 출력 | 저장소 캐시 폴더 정리 |
 | `tick` | `orch-loop` | `pipeline.tick_sec` 마다 루프에 등록된 Run 하나에 한 번. 입력의 `run` 이 그 Run 이고, 주 Run 에서만 `primary` 가 true 다 | 아니오 | Run 마다 질문 확인과 정리. 원격 브랜치 정리, 보드 동기화, CI 감시는 틱마다 한 번. 충돌 처리는 `tick` 핸들러 뒤에 한다. 순서는 `orch-loop.ts` 머리 주석의 「틱」 이 소유한다 | 그 Run 의 산출물 정리. 저장소 공유 점검은 `primary` 일 때만 |
@@ -226,6 +226,9 @@ flowchart TD
 | 같은 저장소를 쓰는 둘째 세션이 루프를 쓰지 못한다. 첫 세션의 루프를 멈추면 첫 세션이 루프를 잃는다 | `orch-loop --start --run`, `wait-important --run --loop-repo` | 루프는 저장소마다 하나이고 여러 Run 을 맡는다([ADR-012](adr/012-orch-loop-multi-run.md)). 세션은 자기 Run 을 등록하고 뺀다. 질문 확인, 정리, `tick` 은 Run 마다 그 Run 범위로 돌고, 알림 파일도 Run 마다 나뉘어 대기는 자기 Run 의 알림에만 깨어난다 |
 | 정리가 다른 세션의 산출물을 옮긴다 | `cleanup-sweep --run`, `handoff-cleanup --run` | `--run` 을 주면 그 Run 의 worker 와 Task 가 쓴 것만 정리한다. Run 에 묶을 수 없는 산출물(큐 로그, 폴더, csv)은 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다 |
 | worker 가 모델 오류 화면에서 멈춰 사람이 터미널을 봐야 안다 | `tick`, `worker-stalled` | 틱마다 등록된 Run 이 띄운 살아 있는 worker 의 화면을 판정해 같은 멈춤이 이어지면 이벤트를 낸다. 다시 시도시키는 일은 저장소 핸들러가 맡고, 맡지 못하면 그 Run 의 코디네이터가 `WORKER-STALLED` 로 깨어난다([ADR-013](adr/013-orch-worker-stalled.md)) |
+| 코디네이터가 `!` 를 빠뜨려 배포가 끝나도 업무가 완료되지 않고 보드 항목이 진행 중으로 남는다 | `finish-pr`, `board-sync` | 표시가 없는 PR 은 마무리가 배포 확인 뒤, 보드 동기화가 머지를 본 틱에 업무의 마지막 PR 인지 판정한다([ADR-014](adr/014-orch-auto-last-pr.md)). 판정하지 못하면 중간 PR 이다 |
+| 보드 항목의 `pr` 필드이 비어 머지 뒤에도 항목이 진행 중으로 남는다 | `launch-worker`, `wait-important`, `board-sync`, `finish-pr` | 띄울 때 같은 워크트리의 항목을 이어 쓰고, 준비됨 `worker_done` 과 틱이 브랜치로 `pr` 필드을 채우고, 마무리가 `pr` 필드이 빈 항목을 브랜치나 워크트리 이름으로 찾는다 |
+| 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. 알림 파일에 `QUEUE-CONFLICT` 를 쓴다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
 | ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에만, 그리고 `pipeline.update_behind_drafts` 가 draft 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
 
 ### 갈래
@@ -248,3 +251,29 @@ flowchart TD
 | 같은 저장소에 루프를 둘 띄운다 | 둘째 프로세스는 `state/loop.lock` 이나 `state/loop.json` 의 살아 있는 루프 프로세스(명령줄에 `orch-loop` 가 든 pid)를 보고 띄우지 않는다. `--run` 을 줬고 그 Run 이 아직 등록되지 않았으면 등록하고 `LOOP-JOINED` 와 0 으로 끝난다. 이미 등록됐거나 `--run` 이 없으면 `LOOP-RUNNING` 과 4 다. 등록을 모르는 옛 루프면 등록하지 못하고 4 와 안내 줄을 낸다. 두 세션이 거의 동시에 `--start` 해 둘 다 루프를 띄우면 잠금을 먼저 쥔 쪽이 돌고, 진 쪽은 그 루프에 합류해 `LOOP-JOINED` 와 0 으로 끝난다. 새로 뜬 루프는 앞 루프의 `alive_at` 뒤에 쓴 등록을 지우지 않으므로 두 Run 이 함께 등록된다 |
 | Run 이 등록된 루프를 `--run` 없이 멈춘다 | 등록이 하나여도 다른 세션의 Run 일 수 있다. `finish.run` 도 없으면 다른 세션의 루프를 끊지 않게 신호를 보내지 않고 `LOOP-STOP-SHARED` 와 1 이다. 자기 Run 만 빼려면 `--stop --run`, 모두 멈추려면 `--stop --all` 이다. 마지막 Run 이 빠지면 루프가 끝난다 |
 | 대기의 Run 이 살아 있는 루프에 등록되지 않았다 | `wait-important --run <Run> --loop-repo` 가 `LOOP-DEAD <repo> run <Run> 미등록` 과 8 로 깨어난다. 코디네이터가 `--start --run` 으로 등록한다. 등록을 모르는 옛 루프면 이 판정을 하지 않는다 |
+
+### 머지 뒤 마지막 PR 판정
+
+머지 큐는 PR 마다 마무리를 함께 걸고, 마무리가 배포를 확인한 뒤 업무의 마지막 PR 인지 정한다.
+판정 조건은 `orch/scripts/lib/last-pr.ts` 머리 주석이, 표시와 쓰는 때는 `orch/references/cleanup.md` 의 「머지」 가 소유한다.
+
+```mermaid
+flowchart TD
+    Q[merge-with-finish PR 목록] --> F[PR 마다 finish-pr 시작]
+    Q --> MQ[merge_queue 차례대로]
+    MQ -->|update-branch 충돌, CONFLICTING| CF[CONFLICT 로 빼고 QUEUE-CONFLICT 알림]
+    CF --> CH{묶음 안 뒤 PR}
+    CH -->|예| SK[SKIP]
+    CH -->|아니오| MQ
+    MQ -->|머지| F2[finish-pr: 머지 확인, 정리, 배포 확인]
+    F2 --> J{표시}
+    J -->|PR!| L[마지막]
+    J -->|PR~| M[중간]
+    J -->|없음| A{업무 번호, 남은 PR, 남은 지시서}
+    A -->|남은 것 없음| L
+    A -->|남은 것 있음| M
+    A -->|판정 못 함| M
+    L --> LD[지시서 삭제, after-deploy last_of_task=true, 보드 done]
+    M --> MD[지시서 유지, after-deploy last_of_task=false, 보드 pr 칸 채움]
+```
+

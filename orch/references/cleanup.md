@@ -27,7 +27,39 @@
 머지 큐는 오래 걸리므로 Bash 도구의 `run_in_background` 로 건다. 셸의 `&` 나 `nohup` 은 쓰지 않는다.
 `merge_queue.ts` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.ts` 머리 주석이 소유한다.
 PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은 변수 하나로 넘기면 zsh 가 쪼개지 않아 사용법 오류로 끝난다.
-**PR 번호 뒤 `!` 는 그 PR 이 업무의 마지막 PR 이라는 뜻이다.** 업무 하나에 PR 이 여럿이면 마지막 PR 에만 붙인다. 배포가 성공한 뒤 업무가 완료 처리된다.
+**업무의 마지막 PR 인지는 마무리(`finish-pr.ts`)가 배포를 확인한 뒤 스스로 판정한다. 코디네이터가 PR 마다 `!` 를 정하지 않아도 된다.**
+`!` 를 빠뜨려 배포가 끝나도 업무가 완료되지 않고 보드 항목이 진행 중으로 남은 일이 하루에 세 건 있었다.
+판정 규칙은 아래 「마지막 PR 판정」 이 소유한다. 판정을 덮어야 할 때만 표시를 붙인다.
+
+| 표시 | 뜻 | 쓰는 때 |
+| --- | --- | --- |
+| 없음 | 마무리가 판정한다 | 늘 |
+| `PR!` | 판정 없이 마지막 PR 이다(`finish-pr.ts --complete`) | 판정 규칙이 모르는 남은 일이 없다고 코디네이터가 안다. 업무 번호 설정이 없는 저장소에서 업무를 끝낼 때 |
+| `PR~` | 판정 없이 중간 PR 이다(`finish-pr.ts --intermediate`) | 열린 PR 도 지시서도 없지만 뒤 작업이 남았다(사용자 확인 대기 같은 것) |
+
+`!` 와 `~` 는 함께 쓸 수 없다. before-merge 입력의 `last_of_task` 는 `!` 일 때만 true 다. 판정은 머지와 배포 뒤에야 하기 때문이다.
+
+#### 마지막 PR 판정
+
+`!` 와 `~` 가 없으면 아래를 모두 만족할 때 마지막 PR 이다. 조건의 원본은 `scripts/lib/last-pr.ts` 머리 주석이다.
+
+- PR 제목에서 `finish.task_pattern` 으로 업무 번호를 뽑았다
+- 같은 업무 번호를 제목에 가진 다른 열린 PR 이 없다
+- `finish.specs_dir` 에 같은 업무를 가리키는 다른 지시서가 없다. 지시서가 업무를 가리키는지는 `finish.spec_task_pattern` 을 지시서의 줄마다 맞춰 본다. 이 PR 의 브랜치를 `브랜치:` 줄에 둔 지시서와, `브랜치:` 줄의 브랜치가 이미 머지된 지시서는 세지 않는다
+
+판정하지 못하면(번호 없음, `specs_dir` 는 있는데 `spec_task_pattern` 이 없음, gh 조회 실패) 중간 PR 로 본다. 업무를 일찍 완료하는 것이 늦게 완료하는 것보다 되돌리기 어렵다.
+마무리 출력에 판정과 근거가 한 줄로 남는다. 예: `마지막 PR 판정: 중간(업무 PROJ-12, 남은 PR #31, 남은 지시서 spec-b.md)`.
+보드 동기화(`board-sync.ts`)도 머지를 본 틱에 같은 판정을 쓴다([`board.md`](board.md)).
+
+```json
+{
+  "finish": {
+    "task_pattern": "^\\[(PROJ-[0-9]+)\\]",
+    "spec_task_pattern": "^브랜치: `feature/(PROJ-[0-9]+)-",
+    "specs_dir": ".orch/specs"
+  }
+}
+```
 
 `--run "$RUN_ID"` 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록 한정한다. 빠지면 정리 단계가 Run 으로 한정되지 않는다는 경고가 난다.
 
@@ -46,6 +78,17 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/notify-conflicts.
 ```
 
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
+
+**base 와 충돌하는 PR 은 큐를 멈추지 않는다.** update-branch 가 충돌로 실패하거나 mergeable 이 `CONFLICTING` 이면 `CONFLICT <PR> <이유>` 를 찍고 그 PR 만 빼고 뒤 PR 을 이어 머지한다.
+충돌 PR 하나 때문에 머지할 수 있는 PR 셋이 함께 멈춘 일이 있었다.
+상주 루프의 알림 파일에 `QUEUE-CONFLICT` 가 쓰이고(대기가 `LOOP-EVENT QUEUE-CONFLICT` 로 깨운다), 그 PR 의 worker 에게 base 를 합치라고 보내는 일은 루프의 충돌 처리와 `notify-conflicts.ts` 가 한다.
+끝 줄 앞에 `QUEUE-CONFLICT <번호...>` 가 오고, 끝 줄은 `QUEUE-HELD` 이며 종료 코드는 1 이다. worker 가 충돌을 푼 뒤 그 PR 만 다시 건다.
+
+**앞 PR 이 먼저 들어가야 하는 PR 들은 `--chain 101,102` 로 묶는다.** 마이그레이션 순서가 있는 PR 이 예다. 묶음 안 앞 PR 이 머지되지 않고 빠지면 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 로 머지하지 않는다. 묶음 밖의 PR 은 이어 머지한다.
+
+```bash
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --run "$RUN_ID" --chain 101,102 101 102 103
+```
 `--continue-on-hold` 를 주면 보류한 PR 의 `STOP` 줄만 찍고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다. 서로 무관한 PR 여럿을 한 번에 걸 때 쓴다. 뒤 PR 이 앞 PR 에 기대면 쓰지 않는다.
 
 PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대기, 충돌과 미해결 스레드, 머지 결과 확인)의 순서와 종료 코드는 `merge_queue.ts` 머리 주석이 소유한다.
@@ -82,7 +125,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 오래된 base 위에서 각각 통과한 PR 둘이 머지돼 base 빌드가 깨진 일이 있었다. 한 PR 은 계약 칸이 서로 일치하는지 보는 테스트를 더했고, 다른 PR 은 계약 칸을 더했다. 둘 다 서로를 모른 채 통과했고, 머지된 base 에서 테스트가 실패했다.
 체크는 PR HEAD 기준으로 도는 것이라 base 가 움직였는지는 모른다. 이 옵션이 그 틈을 닫는다.
 
-- 충돌이 나면 `update-branch` 가 실패해 멈춘다. 충돌을 푸는 일은 그 PR 의 worker 가 한다
+- 충돌이 나면 `update-branch` 가 실패하고 그 PR 을 큐에서 뺀다(위 `CONFLICT`). 충돌을 푸는 일은 그 PR 의 worker 가 한다
 - 머지 큐에서 앞선 PR 이 머지되면 뒤 PR 은 base 가 달라진 것이므로 이 옵션이 뒤 PR 마다 다시 base 를 merge 한다. 시간이 더 걸리는 대신 base 가 깨지지 않는다
 
 ```bash
@@ -141,11 +184,12 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 
 `sweep_args` 에 `--run` 을 고정하지 않는다. Run 은 명령줄의 `--run` 으로 준다. 둘이 다르면 `merge-with-finish.ts` 가 멈춘다.
 
-그러면 호출은 다음 한 줄이다. 마지막 PR 에는 `!` 를 붙이고, 그 PR 의 보드 항목은 보드 파일에서 `pr` 필드로 찾아 done 으로 바꾼다.
-`!` 가 없는 PR 은 보드 항목을 바꾸지 않는다. 같은 PR 이 든 항목이 둘 이상이면 건너뛴다. `--board-item PR=ID` 로 직접 줄 수도 있다.
+그러면 호출은 다음 한 줄이다. 마무리가 보드 파일에서 그 PR 의 항목을 찾아, 마지막 PR 이면 done 으로 바꾼다.
+항목은 `pr` 필드에 그 PR 이 든 것을 먼저 찾고, 없으면 `pr` 필드이 빈 항목을 PR 브랜치나 워크트리 이름으로 찾는다. 중간 PR 이면 브랜치로 찾은 항목의 `pr` 필드만 채운다.
+같은 PR 의 항목이 둘 이상이면 건너뛴다. `--board-item PR=ID` 로 준 항목은 판정과 상관없이 done 으로 바꾼다. 규칙은 `finish-pr.ts` 머리 주석의 「보드 항목」 이 소유한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" 492 '495!:./bin/backup-db.sh orders "before-pr-$PR"'
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" 492 '495:./bin/backup-db.sh orders "before-pr-$PR"'
 ```
 
 ### 같은 파일을 고친 PR
@@ -218,7 +262,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 ### 머지 뒤 마무리
 
 **`finish-pr.ts` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.ts` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
-순서(머지 확인, worker 정리, 배포 확인, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.ts` 의 `PR!` 도 같은 뜻이다.
+순서(머지 확인, worker 정리, 배포 확인, 마지막 PR 판정, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.ts` 의 `PR!` 도 같은 뜻이다.
 
 출력은 `<로그 폴더>/finish-<PR>.out` 에 쌓이고 마지막 줄이 `FINISH-DONE` 이나 `FINISH-FAIL` 이다. 깨어날 때마다 그 줄을 본다.
 `FINISH-FAIL` 이면 출력의 이유를 읽고 사용자에게 알린다. 배포 실패나 업무 번호 없음처럼 사람이 정해야 하는 것은 스크립트가 다시 시도하지 않는다.
