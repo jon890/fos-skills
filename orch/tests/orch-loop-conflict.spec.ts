@@ -361,7 +361,8 @@ describe('이어 쓰지 못함', () => {
     assert.deepEqual(record(), {})
     assert.deepEqual(hookInputs(), [])
     assert.deepEqual(sends(), [])
-    const lines = events()
+    // 멈춤 확인도 같은 worker 목록을 읽지 못해 stalls 를 따로 알린다. 여기서는 충돌 처리만 본다
+    const lines = events().filter((line) => !String(line.text).startsWith('stalls: '))
     assert.equal(lines.length, 1, JSON.stringify(lines))
     assert.equal(lines[0].kind, 'WATCH-ERROR')
     assert.match(String(lines[0].text), /^conflicts: worker 목록을 읽지 못했다: .*worker-list offline/)

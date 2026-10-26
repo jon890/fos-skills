@@ -305,7 +305,9 @@ describe('질문 확인', () => {
     board()
     orca({ fail: true })
     once()
-    const first = events()
+    // 멈춤 확인의 worker 목록 조회도 같은 orca 로 실패해 stalls 를 따로 알린다. 여기서는 질문 확인만 본다
+    const notStalls = () => events().filter((line) => !String(line.text).startsWith('stalls: '))
+    const first = notStalls()
     assert.equal(first.length, 1, JSON.stringify(first))
     assert.equal(first[0].kind, 'WATCH-ERROR')
     assert.match(String(first[0].text), /^questions: .*offline/)
@@ -313,7 +315,7 @@ describe('질문 확인', () => {
     assert.equal(argsOf('sweep').length, 1)
     assert.equal(argsOf('board').length, 1)
     once()
-    assert.equal(events().length, 1, '같은 실패를 다시 알렸다')
+    assert.equal(notStalls().length, 1, '같은 실패를 다시 알렸다')
     // loop.log 에는 실패할 때마다 쓴다
     assert.equal(logText().match(/^WATCH-ERROR questions: /gm)?.length, 2, logText())
     orca({})
@@ -321,7 +323,7 @@ describe('질문 확인', () => {
     assert.equal(loopState()?.errors && (loopState()?.errors as Json)['questions@r'], null)
     orca({ fail: true })
     once()
-    assert.equal(events().length, 2, JSON.stringify(events()))
+    assert.equal(notStalls().length, 2, JSON.stringify(events()))
   })
 })
 
@@ -367,8 +369,8 @@ describe('tick 이벤트', () => {
     const r = loop(['--run', 'r', '--tick', '--tick-number', '5'])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     const last = JSON.parse(r.stdout.trim().split('\n').at(-1) ?? '') as Json
-    // 열린 PR 을 읽은 틱은 CI 감시의 ci 도 낸다
-    assert.deepEqual(Object.keys(last).sort(), ['ci', 'errors', 'open_prs', 'tick_at'])
+    // 열린 PR 을 읽은 틱은 CI 감시의 ci 도, 멈춤 확인을 마친 틱은 stalls 도 낸다
+    assert.deepEqual(Object.keys(last).sort(), ['ci', 'errors', 'open_prs', 'stalls', 'tick_at'])
     assert.ok(!Number.isNaN(Date.parse(String(last.tick_at))), String(last.tick_at))
     assert.deepEqual(last.open_prs, [1])
     assert.equal(received('tick')[0].tick, 5)
@@ -752,8 +754,9 @@ describe('여러 Run', () => {
     prs([], 1)
     const result = tickOnce()
     const kinds = (run: string) => runEvents(run).map((row) => String(row.text).split(':')[0])
-    assert.deepEqual(kinds('A').sort(), ['prs', 'questions'])
-    assert.deepEqual(kinds('B'), ['questions'])
+    // stalls 는 Run 마다 그 Run 의 worker 목록을 읽어 그 Run 에 알린다
+    assert.deepEqual(kinds('A').sort(), ['prs', 'questions', 'stalls'])
+    assert.deepEqual(kinds('B').sort(), ['questions', 'stalls'])
     const errors = result.errors as Json
     assert.equal(typeof errors['questions@A'], 'string')
     assert.equal(typeof errors['questions@B'], 'string')

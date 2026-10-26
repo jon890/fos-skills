@@ -150,6 +150,7 @@ flowchart TD
         LA --> Q[worker-question]
         LA --> D[worker-done]
         LA --> LO[worker-lost]
+        LA --> ST[worker-stalled]
     end
     subgraph P[PR 과 CI]
         D --> BR[before-ready] --> R[pr-ready]
@@ -170,7 +171,7 @@ flowchart TD
         TK[tick]
         SR[session-resume]
     end
-    class L,LA,Q,D,LO c1
+    class L,LA,Q,D,LO,ST c1
     class BR,R,CP,CF,CM,CO c2
     class BM,VM,AM,AQ,AD c3
     class BC,AC c4
@@ -198,6 +199,7 @@ flowchart TD
 | `worker-question` | `orch-loop`, `watch-questions` | 새 question 이나 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄, 보드 결정 필요 | 메신저 알림 |
 | `worker-done` | `wait-important` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
 | `worker-lost` | `wait-important` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER_LOST` 줄과 상태 기록 | runner 호스트 상태 확인 |
+| `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다 | 아니오 | 입력하지 않는다. 핸들러가 없거나 0 이 아니면 그 Run 의 알림 파일에 `WORKER-STALLED` 줄 | `nudge-worker --text` 로 다시 시도시키고 횟수 상한에서 코디네이터에게 넘긴다 |
 | `before-ready` | `ci-ready`, `orch-loop` | draft 를 ready 로 바꾸기 전 | 예 | 겹침과 충돌 보류, ready 슬롯 | 이 저장소에서 CI 를 돌릴 수 없는 시간대 거부 |
 | `pr-ready` | `ci-ready`, `orch-loop` | ready 로 바꾼 뒤 | 아니오 | 없음 | 리뷰 요청 |
 | `ci-passed` | `orch-loop` | 필수 체크가 모두 통과한 것을 처음 본 때 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
@@ -223,6 +225,7 @@ flowchart TD
 | 원격 브랜치가 쌓인다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 브랜치가 남는다 | `after-merge`, `tick` | 머지를 확인한 자리에서 원격 브랜치를 지운다. 틱마다 내 PR 가운데 MERGED 이거나, CLOSED 이고 head 커밋이 base 에 들어간 PR 의 원격 브랜치를 지운다 |
 | 같은 저장소를 쓰는 둘째 세션이 루프를 쓰지 못한다. 첫 세션의 루프를 멈추면 첫 세션이 루프를 잃는다 | `orch-loop --start --run`, `wait-important --run --loop-repo` | 루프는 저장소마다 하나이고 여러 Run 을 맡는다([ADR-012](adr/012-orch-loop-multi-run.md)). 세션은 자기 Run 을 등록하고 뺀다. 질문 확인, 정리, `tick` 은 Run 마다 그 Run 범위로 돌고, 알림 파일도 Run 마다 나뉘어 대기는 자기 Run 의 알림에만 깨어난다 |
 | 정리가 다른 세션의 산출물을 옮긴다 | `cleanup-sweep --run`, `handoff-cleanup --run` | `--run` 을 주면 그 Run 의 worker 와 Task 가 쓴 것만 정리한다. Run 에 묶을 수 없는 산출물(큐 로그, 폴더, csv)은 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다 |
+| worker 가 모델 오류 화면에서 멈춰 사람이 터미널을 봐야 안다 | `tick`, `worker-stalled` | 틱마다 등록된 Run 이 띄운 살아 있는 worker 의 화면을 판정해 같은 멈춤이 이어지면 이벤트를 낸다. 다시 시도시키는 일은 저장소 핸들러가 맡고, 맡지 못하면 그 Run 의 코디네이터가 `WORKER-STALLED` 로 깨어난다([ADR-013](adr/013-orch-worker-stalled.md)) |
 | ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에만, 그리고 `pipeline.update_behind_drafts` 가 draft 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
 
 ### 갈래

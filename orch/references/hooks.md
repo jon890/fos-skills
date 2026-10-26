@@ -24,7 +24,7 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 | `merge_queue.ts`(`merge-with-finish.ts` 가 건 것 포함) | `before-merge`, `verify-merged`, `after-merge`, `after-queue` |
 | `finish-pr.ts` | `after-deploy` |
 | `cleanup-sweep.ts` | `before-cleanup`, `after-cleanup` |
-| `orch-loop.ts`(상주 루프) | `worker-question`, `tick`, `ci-passed`, `ci-failed`, `pr-conflict` |
+| `orch-loop.ts`(상주 루프) | `worker-question`, `worker-stalled`, `tick`, `ci-passed`, `ci-failed`, `pr-conflict` |
 | 아직 없다. 핸들러를 두어도 불리지 않는다 | `ci-missing` |
 
 핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `scripts/lib/events.ts` 머리 주석의 「공통 필드」 와 「이벤트별 필드」 가 소유한다.
@@ -55,6 +55,38 @@ if (live.length >= LIMIT) {
 - **거부 이유는 stdout 의 마지막 줄이다.** 명령이 그 줄을 `HOOK-REJECT before-launch <이유>` 로 옮겨 낸다.
 - **타입 제거가 지우는 문법만 쓴다.** 핸들러도 `node --disable-warning=ExperimentalWarning` 으로 뜬다. 문법 규칙은 `docs/code-architecture.md` 「실행 규칙」 이 소유한다.
 - **`orca` 와 `gh` 는 `ORCA`, `GH` 환경 변수로 부른다.** 그 값이 아래 「가드가 막는 호출」 의 shim 이다.
+
+### 멈춘 worker 다시 시도시키기
+
+상주 루프는 멈춘 worker 를 알리기만 하고 입력하지 않는다. 다시 시도시킬지와 몇 번까지 할지는 저장소의 `worker-stalled` 핸들러가 정한다.
+판정 기준과 틱 수는 `scripts/orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
+
+아래는 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 dispatch 마다 세 번까지 「계속 진행해」 를 넣는 핸들러다. `.orch/hooks/worker-stalled.ts` 에 둔다.
+
+```ts
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const LIMIT = 3
+const input = JSON.parse(readFileSync(0, 'utf8'))
+if (input.state !== 'error') process.exit(1)
+
+const file = join(process.env.ORCH_DIR!, 'state', 'stall-retries.json')
+const tries: Record<string, number> = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
+const dispatch = input.worker.dispatch
+if ((tries[dispatch] ?? 0) >= LIMIT) process.exit(1)
+tries[dispatch] = (tries[dispatch] ?? 0) + 1
+writeFileSync(file, JSON.stringify(tries))
+
+const nudge = join(process.env.ORCH_SCRIPTS!, 'nudge-worker.ts')
+execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--terminal', input.worker.terminal, '--text', '계속 진행해'], { stdio: 'inherit' })
+```
+
+- **0 으로 끝나면 코디네이터를 깨우지 않는다.** 0 이 아니면 루프가 그 Run 의 알림 파일에 `WORKER-STALLED` 를 써 코디네이터가 깨어난다. 위 예시는 상한에 닿았거나 `error` 가 아닌 멈춤이면 1 로 끝나 코디네이터에게 넘긴다.
+- **0 으로 끝나면 같은 화면이 기준 틱 수만큼 더 이어질 때 다시 불린다.** 다시 시도한 worker 가 같은 오류로 끝나면 화면이 앞과 같아 보여서다. 그래서 횟수 상한은 핸들러가 둔다. 0 이 아니면 그 멈춤에는 다시 불리지 않는다.
+- **입력은 `ORCH_SCRIPTS` 의 코어 명령(`nudge-worker`, `send-to-worker`)으로만 한다.** 그 명령은 진짜 orca(`ORCH_REAL_ORCA`)로 입력해 가드에 막히지 않는다. 플러그인 설치 경로는 커밋마다 바뀌므로 경로를 핸들러에 적지 않는다.
+- 코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다. 그 판정을 쓰려면 `config.json` 의 `pipeline.stall_ticks.idle` 을 켠다.
 
 ## 실패 줄 읽기
 
@@ -108,4 +140,5 @@ if (live.length >= LIMIT) {
 - `gh pr merge`, `gh pr update-branch`, PR 머지와 브랜치 갱신 API, GraphQL 의 머지 mutation. 머지는 머지 큐가, base 합치기는 차례가 온 PR 에만 코어가 한다
 
 막히면 stderr 에 이유를 내고 종료 코드 126 으로 끝난다. 판정의 원본은 `scripts/lib/guard/guard.ts` 머리 주석이다.
-가드는 보안 경계가 아니다. 진짜 실행 파일 경로(`ORCH_REAL_ORCA`, `ORCH_REAL_GH`)가 환경에 보이므로 일부러 부르면 우회된다.
+worker 에게 입력하는 코어 명령(`nudge-worker`, `send-to-worker`)은 `ORCH_REAL_ORCA` 로 진짜 orca 를 불러 가드를 거치지 않는다.
+가드는 보안 경계가 아니다. 진짜 실행 파일 경로(`ORCH_REAL_ORCA`, `ORCH_REAL_GH`)가 환경에 보이므로 일부러 부르면 우회된다. 근거는 ADR-013 이 소유한다.

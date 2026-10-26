@@ -43,7 +43,8 @@
 //     --tick, --tick-number N
 //                    틱 하나를 돌고 끝난다. --foreground 의 부모가 틱마다 띄운다. N 은 1 부터다.
 //                    stdout 마지막 줄에 {"tick_at": <ISO 8601 UTC>, "errors": {<출처>: <이유 또는 null>}, "open_prs": <번호 목록 또는 null>,
-//                    "ci": {<PR 번호>: {"head": <SHA>, "state": <passed, failed, pending>}}} 을 내고 0. 열린 PR 을 읽지 못한 틱은 ci 가 없다
+//                    "ci": {<PR 번호>: {"head": <SHA>, "state": <passed, failed, pending>}}, "stalls": {<dispatch>: <멈춤 항목>}} 을 내고 0.
+//                    열린 PR 을 읽지 못한 틱은 ci 가 없고, 멈춤 확인이 예외로 끝난 틱은 stalls 가 없다. 멈춤 항목은 아래 「멈춤 확인」 이다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // 한 저장소에 하나: --foreground 는 시작할 때 state/loop.lock 을 wx 로 만들어 자기 pid 를 적고, 끝날 때 자기 pid 가 든 잠금만 지운다.
@@ -89,11 +90,12 @@
 //     4. 정리. Run 마다 cleanup-sweep --repo <repo> --kill-holders [--remote-branches] --apply [--run <run>] [--specs-dir <그 Run 의 dir>].
 //        --remote-branches 는 저장소 공유 일이라 주 Run 의 차례에서만 준다
 //     5. CI 감시. 아래 「CI 감시」
-//     6. tick 이벤트. Run 마다 공통 필드 run 을 그 Run 으로 낸다. 입력은 tick(틱 번호), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null),
+//     6. 멈춤 확인. 아래 「멈춤 확인」
+//     7. tick 이벤트. Run 마다 공통 필드 run 을 그 Run 으로 낸다. 입력은 tick(틱 번호), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null),
 //        primary(주 Run 이면 true)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
-//     7. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
-//     틱 자식은 loop.json 을 읽기만 한다(이전 errors 와 ci 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
-//     ci(결과에 있을 때만 통째로 바꾼다)를 쓴다.
+//     8. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
+//     틱 자식은 loop.json 을 읽기만 한다(이전 errors, ci, stalls 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
+//     ci 와 stalls(결과에 있을 때만 통째로 바꾼다)를 쓴다.
 //     결과 줄 앞의 출력과 stderr 는 부모가 로그로 옮긴다. 결과 줄을 읽었으면 종료 코드와 상관없이 합친다. 버리면 그 틱이 이미 알린
 //     CI 상태가 loop.json 에 남지 않아 다음 틱이 같은 실패를 다시 알린다. 틱 자식이 0 이 아니면 errors.tick 에 `종료 코드 <n>` 을 둔다.
 //     결과 줄 없이 끝나면 last_tick 은 그대로 두고 errors.tick 에 `종료 코드 <n>`(0 이 아닐 때)이나 `결과 줄 없음` 을 둔다.
@@ -116,6 +118,25 @@
 //     `보냈다 <dispatch>`, `깨우지 못했다(종료 코드 4)`, `보내지 못했다(종료 코드 <n>)`, `살아 있는 dispatch 없음`, `Run id 없음`,
 //     `worker 목록을 읽지 못했다` 가운데 하나다.
 //
+// 멈춤 확인: 맡은 Run 마다 그 Run 의 worker-list(위 「worker 찾기」 와 같은 조회)에서 살아 있는 dispatch(LIVE_DISPATCH)의 터미널 화면을
+//     `orca terminal read --screen` 으로 읽고 lib/screen.ts 의 readScreen 으로 판정한다. 등록되지 않은 Run 의 worker 화면은 읽지 않는다.
+//     입력하지 않는다. 다시 시도시키는 일과 그 횟수 상한은 저장소의 worker-stalled 핸들러가 정한다(references/hooks.md, ADR-013).
+//     멈춤은 error(모델 오류로 멈춘 화면)와 idle(입력란이 빈 화면)이다. pipeline.stall_ticks 가 상태마다 기준 틱 수를 정하고, 0 이면 보지 않는다.
+//     기본은 error 2, idle 0 이다. idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 기본으로 끈다.
+//     idle 을 켜도 그 dispatch(또는 그 터미널)가 보낸 미답변 질문(1 의 poll 이 본 question, escalation)이 있으면 세지 않는다.
+//     그 Run 의 질문을 읽지 못한 틱은 질문을 기다리는지 모르므로 idle 항목을 세지도 지우지도 않는다.
+//     멈춤 항목(loop.json 의 stalls[<dispatch>]): run, terminal, state, hash(마지막 메시지 묶음의 lib/screen.ts blockHash), since(처음 본 틱의
+//     ISO 8601 UTC 시각), ticks(같은 상태와 같은 hash 를 본 틱 수. 핸들러가 처리한 뒤로 다시 센다), fired(코디네이터에게 알렸는지).
+//     입력란 아래 상태 줄(경과 시간, 컨텍스트 사용량)은 hash 에 들지 않아 그 줄만 바뀐 화면은 같은 멈춤이다.
+//     상태나 hash 나 터미널이 바뀌면 ticks 1 부터 다시 센다.
+//     ticks 가 기준에 닿은 틱에 worker-stalled 를 그 Run 으로 낸다.
+//     핸들러가 0 으로 끝나면(pass) 알림 파일에 쓰지 않고 ticks 를 0 으로 되돌린다. 다시 시도시킨 worker 가 같은 오류로 끝나면 마지막
+//     메시지 묶음이 같아 hash 가 같다. 그래서 같은 화면이 기준 틱 수만큼 더 이어지면 핸들러를 다시 부른다. 횟수 상한은 핸들러가 정한다.
+//     핸들러가 없거나 0 이 아니면 그 Run 의 알림 파일에 WORKER-STALLED 를 쓰고 fired 를 true 로 둔다. 같은 멈춤이 이어지는 동안 다시 내지 않는다.
+//     text 는 `<dispatch> <state> <ticks>틱 <terminal>` 이다.
+//     작업 중으로 바뀌었거나, 멈춤이 아니거나, dispatch 가 끝났거나, 등록에서 빠진 Run 의 항목은 결과에서 빠진다.
+//     worker-list 를 읽지 못한 Run 의 항목과 화면을 읽지 못한 dispatch 의 항목은 그대로 옮기고, 그 Run 의 errors 의 stalls@<Run> 에 이유를 둔다.
+//
 // 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
 //     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
 //     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 (PR, base SHA) 를 두 번 보내지 않는다. 둘이 겹쳐 돌면
@@ -135,16 +156,16 @@
 // 생존 타이머: 부모가 틱과 따로 ORCH_LOOP_ALIVE_SEC(양수 초, 기본 30)마다 loop.json 의 alive_at 을 쓴다. 시작할 때도 한 번 쓴다.
 //     그래서 긴 틱(정리의 대기, 끝난 dispatch 이어 쓰기)도 죽은 것으로 보이지 않는다.
 //
-// loop.json: pid, run(주 Run), runs(등록된 Run 목록), repo, tick_sec, started_at, alive_at, last_tick, ticks, errors, ci. 시각은 ISO 8601 UTC 다. 부모만 쓴다.
-//     시작할 때 앞 loop.json 의 errors 와 ci 를 이어받는다. 다시 띄운 루프가 같은 실패를 다시 알리지 않게 한다.
+// loop.json: pid, run(주 Run), runs(등록된 Run 목록), repo, tick_sec, started_at, alive_at, last_tick, ticks, errors, ci, stalls. 시각은 ISO 8601 UTC 다. 부모만 쓴다.
+//     시작할 때 앞 loop.json 의 errors, ci, stalls 를 이어받는다. 다시 띄운 루프가 같은 실패를 다시 알리지 않게 한다.
 //
-// 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook)는 `<출처>@<Run>` 키다
+// 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook, stalls)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
 //     공유 출처(SHARED_SOURCES: prs, board, ci, conflicts, tick)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
 //     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
 //     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
-//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), conflicts(충돌 처리),
+//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), conflicts(충돌 처리),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
 //     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 알림 파일의 text 는 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
@@ -157,7 +178,7 @@
 //     틱 자식은 stdout 에만 쓴다. 부모가 그 줄을 loop.log 로 옮기므로 두 번 쓰이지 않는다.
 //     잡지 않은 예외와 거부된 promise 는 스택을 로그에 남기고 1 로 끝난다.
 //
-// 설정: pipeline.tick_sec(양수, 기본 300), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false).
+// 설정: pipeline.tick_sec(양수, 기본 300), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. 위 「멈춤 확인」), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false).
 //     finish 절은 lib/finish-options.ts 의 FINISH_KEYS 로, queue 절은 lib/config.ts 의 QUEUE_KEYS 로 읽는다.
 //     pipeline.enabled 는 읽지 않는다. 이 루프가 하는 일은 모두 그 값과 무관하게 돈다.
 //
@@ -179,6 +200,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { context as questionContext } from './lib/completion.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './lib/config.ts'
 import { concludeConflict, findConflicts, loadNotified, notifiedFile, notifiedKey, resolveConflict, SEND_MS } from './lib/conflicts.ts'
 import type { OpenPr, WorkerFound } from './lib/conflicts.ts'
@@ -190,12 +212,14 @@ import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { appendEvent, DEFAULT_ALIVE_SEC, dropReadEvents, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
+import { orcaJson } from './lib/orca.ts'
 import { remindDecisions } from './lib/board.ts'
 import { boardPath, makeParent, pathOf } from './lib/paths.ts'
 import { NO_LIMIT_MS, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { notifyQuestion, poll } from './lib/questions.ts'
+import { blockHash, readScreen, screenLines, screenTail } from './lib/screen.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
 
 const USAGE = [
@@ -221,11 +245,21 @@ const PARENT_POLL_MS = 2_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
 const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'conflicts', 'tick'])
+// pipeline.stall_ticks 의 기본값(머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
+const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze({ error: 2, idle: 0 })
 
 type Mode = (typeof MODES)[number]
-type Context = { repo: string; run: string | null; specsDir: string | null; tickSec: number; skippedIsMissing: boolean }
+type Context = { repo: string; run: string | null; specsDir: string | null; tickSec: number; skippedIsMissing: boolean; stallTicks: Record<StallState, number> }
 type CiEntry = { head: string; state: 'passed' | 'failed' | 'pending' }
-type TickResult = { tick_at: string; errors: Record<string, string | null>; open_prs: number[] | null; ci?: Record<string, CiEntry> }
+type TickResult = {
+  tick_at: string
+  errors: Record<string, string | null>
+  open_prs: number[] | null
+  ci?: Record<string, CiEntry>
+  stalls?: Record<string, Stall>
+}
+type StallState = 'error' | 'idle'
+type Stall = { run: string; terminal: string; state: StallState; hash: string; since: string; ticks: number; fired: boolean }
 
 class Usage extends Error {}
 
@@ -266,9 +300,25 @@ function optionalString(value: unknown, key: string): string | null {
   return value
 }
 
+function stallTicks(value: unknown): Record<StallState, number> {
+  if (value === undefined) return { ...DEFAULT_STALL_TICKS }
+  const shape = '설정 파일의 pipeline.stall_ticks 는 {"error": 틱 수, "idle": 틱 수} 객체여야 한다'
+  if (!isObject(value)) throw new ConfigError(shape)
+  const unknown = Object.keys(value).filter((key) => !Object.hasOwn(DEFAULT_STALL_TICKS, key))
+  if (unknown.length > 0) throw new ConfigError(`${shape}. 모르는 키: ${unknown.sort().join(', ')}`)
+  const ticks = { ...DEFAULT_STALL_TICKS }
+  for (const key of Object.keys(DEFAULT_STALL_TICKS) as StallState[]) {
+    const n = value[key]
+    if (n === undefined) continue
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new ConfigError(`설정 파일의 pipeline.stall_ticks.${key} 는 0 이상의 정수여야 한다: ${JSON.stringify(n)}`)
+    ticks[key] = n
+  }
+  return ticks
+}
+
 function context(repo: string, run: string | undefined, specsDir: string | undefined): Context {
   const config = loadConfig(repo)
-  const pipeline = section<{ tick_sec?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
+  const pipeline = section<{ tick_sec?: unknown; stall_ticks?: unknown }>(config, 'pipeline', PIPELINE_KEYS)
   const finish = section<{ run?: unknown; specs_dir?: unknown }>(config, 'finish', FINISH_KEYS)
   const queue = section<{ skipped_is_missing?: unknown }>(config, 'queue', QUEUE_KEYS)
   const skipped = queue.skipped_is_missing ?? false
@@ -283,6 +333,7 @@ function context(repo: string, run: string | undefined, specsDir: string | undef
     specsDir: specsDir || optionalString(finish.specs_dir, 'finish.specs_dir'),
     tickSec,
     skippedIsMissing: skipped,
+    stallTicks: stallTicks(pipeline.stall_ticks),
   }
 }
 
@@ -621,6 +672,7 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
   const previous = readLoop(ctx.repo)
   const errors = previous && typeof previous.errors === 'object' && previous.errors !== null && !Array.isArray(previous.errors) ? previous.errors : {}
   const ci = ciEntries(previous?.ci)
+  const stalls = stallEntries(previous?.stalls)
   const now = iso()
   const state: LoopState = {
     pid: process.pid,
@@ -634,6 +686,7 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
     ticks: 0,
     errors: { ...errors },
     ci,
+    stalls,
   }
   writeLoop(ctx.repo, state)
   if (runs.length === 0 && !ctx.run) log('경고: Run id 가 없어 질문 확인을 건너뛴다. --run 이나 finish.run 으로 준다')
@@ -670,6 +723,8 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
         for (const [source, value] of Object.entries(result.errors ?? {})) state.errors[source] = value ?? null
         // 열린 PR 을 읽지 못한 틱은 ci 가 없다. 그때는 이전 값을 둔다
         if (isObject(result.ci)) state.ci = ciEntries(result.ci)
+        // 멈춤 확인이 실패한 틱은 stalls 가 없다. 그때도 이전 값을 둔다
+        if (isObject(result.stalls)) state.stalls = stallEntries(result.stalls)
       }
       state.ticks = n
       const tickKey = state.run ? `tick@${state.run}` : 'tick'
@@ -801,12 +856,7 @@ function ownerOf(path: string, lookup: Lookup): { ok: true; found: Owner | null 
   let error: string | null = null
   let ended: Owner | null = null
   for (const { run } of lookup.runs) {
-    const key = run ?? ''
-    let rows = lookup.rows.get(key)
-    if (!rows) {
-      rows = workerRows(key)
-      lookup.rows.set(key, rows)
-    }
+    const rows = rowsOf(run ?? '', lookup)
     if (!rows.ok) {
       error ??= rows.error
       continue
@@ -923,6 +973,147 @@ async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiE
   return { ci, error: errors.length > 0 ? errors.join('; ') : null }
 }
 
+// 멈춤 확인 ------------------------------------------------------------------
+
+// 미답변 질문을 보낸 worker 의 dispatch 와 터미널. null 은 그 Run 의 질문을 읽지 못한 것이다
+type Waiting = { dispatches: Set<string>; terminals: Set<string> } | null
+
+function askers(pending: Record<string, unknown>[]): Waiting {
+  const dispatches = new Set<string>()
+  const terminals = new Set<string>()
+  for (const message of pending) {
+    const dispatch = questionContext(message)[1]
+    if (dispatch) dispatches.add(String(dispatch))
+    if (message.from_handle) terminals.add(String(message.from_handle))
+  }
+  return { dispatches, terminals }
+}
+
+// loop.json 의 stalls 에서 형식이 맞는 항목만 남긴다
+function stallEntries(value: unknown): Record<string, Stall> {
+  const entries: Record<string, Stall> = {}
+  if (!isObject(value)) return entries
+  for (const [dispatch, e] of Object.entries(value)) {
+    if (!isObject(e) || (e.state !== 'error' && e.state !== 'idle')) continue
+    if (typeof e.run !== 'string' || typeof e.terminal !== 'string' || typeof e.hash !== 'string' || typeof e.since !== 'string') continue
+    if (typeof e.ticks !== 'number' || !Number.isInteger(e.ticks) || e.ticks < 0 || typeof e.fired !== 'boolean') continue
+    entries[dispatch] = { run: e.run, terminal: e.terminal, state: e.state, hash: e.hash, since: e.since, ticks: e.ticks, fired: e.fired }
+  }
+  return entries
+}
+
+function rowsOf(run: string, lookup: Lookup): ReturnType<typeof workerRows> {
+  let rows = lookup.rows.get(run)
+  if (!rows) {
+    rows = workerRows(run)
+    lookup.rows.set(run, rows)
+  }
+  return rows
+}
+
+// 머리 주석의 「멈춤 확인」. stalls 는 결과 줄에 담을 값, errors 는 Run 마다 errors 의 stalls@<Run> 에 둘 이유다
+async function watchStalls(
+  ctx: Context,
+  lookup: Lookup,
+  previous: Record<string, Stall>,
+  waiting: Map<string, Waiting>,
+  base: string,
+): Promise<{ stalls: Record<string, Stall>; errors: Map<string, string | null> }> {
+  const stalls: Record<string, Stall> = {}
+  const errors = new Map<string, string | null>()
+  const keep = (dispatch: string) => {
+    if (previous[dispatch]) stalls[dispatch] = previous[dispatch]
+  }
+  for (const { run } of lookup.runs) {
+    if (!run) continue
+    const rows = rowsOf(run, lookup)
+    if (!rows.ok) {
+      // 읽지 못한 Run 의 멈춤은 그대로 둔다. 다음 틱이 이어서 센다
+      for (const [dispatch, entry] of Object.entries(previous)) if (entry.run === run) keep(dispatch)
+      errors.set(run, `worker 목록을 읽지 못했다: ${oneLine(rows.error)}`)
+      continue
+    }
+    const failed: string[] = []
+    for (const row of rows.rows) {
+      const dispatch = String(row.dispatchId ?? '')
+      const terminal = String(row.agentTerminalHandle ?? '')
+      if (!dispatch || !terminal || !LIVE_DISPATCH.has(String(row.dispatchStatus))) continue
+      const read = orcaJson<Record<string, unknown>>(['terminal', 'read', '--terminal', terminal, '--screen'])
+      if (!read.ok || !isObject(read.data)) {
+        keep(dispatch)
+        failed.push(`${terminal} 화면을 읽지 못했다: ${oneLine(read.ok ? '결과가 객체가 아니다' : read.error)}`)
+        continue
+      }
+      const lines = screenLines(read.data)
+      const screen = readScreen(lines)
+      if (screen.state !== 'error' && screen.state !== 'idle') continue
+      const state: StallState = screen.state
+      const limit = ctx.stallTicks[state]
+      if (limit === 0) continue
+      if (state === 'idle') {
+        const asked = waiting.get(run) ?? null
+        // 질문을 읽지 못했으면 질문을 기다리는지 모른다. 세지도 지우지도 않는다
+        if (asked === null) {
+          keep(dispatch)
+          continue
+        }
+        if (asked.dispatches.has(dispatch) || asked.terminals.has(terminal)) continue
+      }
+      const hash = blockHash(screen.block)
+      const before = previous[dispatch]
+      const same = before && before.state === state && before.hash === hash && before.terminal === terminal
+      const entry: Stall = same
+        ? { ...before, run, ticks: before.ticks + 1 }
+        : { run, terminal, state, hash, since: iso(), ticks: 1, fired: false }
+      stalls[dispatch] = entry
+      if (entry.ticks < limit || entry.fired) continue
+      if (await notifyStall(ctx, run, row, entry, screenTail(lines), base)) {
+        // 핸들러가 처리했다. 다시 시도한 뒤에도 같은 화면이면 묶음이 같아 해시가 같으므로, 처음부터 다시 세 핸들러를 다시 부른다
+        entry.ticks = 0
+      } else {
+        entry.fired = true
+      }
+    }
+    errors.set(run, failed.length > 0 ? failed.join('; ') : null)
+  }
+  return { stalls, errors }
+}
+
+// worker-stalled 를 내고, 핸들러가 0 으로 끝나지 않았으면 그 Run 의 알림 파일에 WORKER-STALLED 를 쓴다(머리 주석의 「멈춤 확인」).
+// 핸들러가 0 으로 끝났으면 true 다
+async function notifyStall(ctx: Context, run: string, row: Record<string, unknown>, entry: Stall, lines: string[], base: string): Promise<boolean> {
+  const dispatch = String(row.dispatchId)
+  const resource = isObject(row.resource) ? row.resource : {}
+  const id = String(resource.worktreeId ?? '')
+  const worktree = id.includes('::') ? id.slice(id.indexOf('::') + 2) : null
+  const text = `${dispatch} ${entry.state} ${entry.ticks}틱 ${entry.terminal}`
+  log(`WORKER-STALLED ${text}`)
+  let handled = false
+  try {
+    const fired = await fire(
+      'worker-stalled',
+      {
+        worker: { task: row.taskId ?? null, dispatch, terminal: entry.terminal, worktree, spec: null },
+        state: entry.state,
+        since: entry.since,
+        ticks: entry.ticks,
+        lines,
+      },
+      { repo: ctx.repo, base, run },
+    )
+    handled = fired.result === 'pass'
+  } catch (e) {
+    log(`orch-loop: worker-stalled 를 내지 못했다: ${oneLine(e)}`)
+  }
+  if (handled) return true
+  try {
+    appendEvent(ctx.repo, 'WORKER-STALLED', null, text, run)
+  } catch (e) {
+    log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+  }
+  return false
+}
+
 // 충돌 처리(머리 주석의 「충돌 처리」). 결과는 errors.conflicts 에 둘 이유다
 async function handleConflicts(ctx: Context, lookup: Lookup): Promise<string | null> {
   const base = defaultBase(ctx.repo) ?? 'main'
@@ -1015,7 +1206,8 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
   }
 
-  // 1. 질문 확인. Run 마다
+  // 1. 질문 확인. Run 마다. 미답변 질문을 보낸 worker 는 멈춤 확인이 idle 로 보지 않는다
+  const waiting = new Map<string, Waiting>()
   for (const { run } of runs) {
     if (!run) {
       report('questions', null, { run })
@@ -1023,9 +1215,12 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
     let notices: ReturnType<typeof poll>['notices'] = []
     try {
-      notices = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo).notices
+      const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo)
+      notices = polled.notices
+      waiting.set(run, askers(polled.pending))
       report('questions', null, { run })
     } catch (e) {
+      waiting.set(run, null)
       report('questions', oneLine(e), { run })
     }
     for (const notice of notices) {
@@ -1100,8 +1295,18 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
   }
 
-  // 6. tick 이벤트. Run 마다 그 Run 을 공통 필드 run 으로 낸다
+  // 6. 멈춤 확인. Run 마다 그 Run 의 살아 있는 dispatch 화면만 본다. 실패하면 결과에 stalls 를 넣지 않아 부모가 이전 값을 둔다
   const base = defaultBase(ctx.repo) ?? ''
+  let stalls: Record<string, Stall> | undefined
+  try {
+    const watched = await watchStalls(ctx, lookup, stallEntries(loaded?.stalls), waiting, base)
+    stalls = watched.stalls
+    for (const [run, reason] of watched.errors) report('stalls', reason, { run })
+  } catch (e) {
+    log(`orch-loop: 멈춤 확인을 하지 못했다: ${oneLine(e)}`)
+  }
+
+  // 7. tick 이벤트. Run 마다 그 Run 을 공통 필드 run 으로 낸다
   for (const [i, { run }] of runs.entries()) {
     try {
       const fired = await fire('tick', { tick: n, open_prs: openPrNumbers, primary: i === 0 }, { repo: ctx.repo, base, run })
@@ -1116,7 +1321,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
   }
 
-  // 7. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다
+  // 8. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다
   if (prs.ok) {
     try {
       report('conflicts', prs.mine.length > 0 ? await handleConflicts(ctx, lookup) : null)
@@ -1125,7 +1330,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
   }
 
-  const result: TickResult = { tick_at: iso(), errors, open_prs: openPrNumbers, ...(ci ? { ci } : {}) }
+  const result: TickResult = { tick_at: iso(), errors, open_prs: openPrNumbers, ...(ci ? { ci } : {}), ...(stalls ? { stalls } : {}) }
   process.stdout.write(`${JSON.stringify(result)}\n`)
   return 0
 }
