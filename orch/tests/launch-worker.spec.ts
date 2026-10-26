@@ -761,7 +761,38 @@ describe('중간 과정과 다시 열기', () => {
     assert.deepEqual(items(), [done])
   })
 
-  test('보드 항목 id 가 가리키는 done 항목은 다시 열고 남은 일과 중간 과정 줄을 빼고 지난 단계 뒤에 할 일을 다음 번호로 붙인다', () => {
+  test('PR 번호가 없는 중간 과정 지시서는 결정과 목표 항목을 빼고 같은 브랜치의 항목을 찾는다', () => {
+    // 워크트리가 git 저장소여야 launch-worker 가 브랜치를 읽는다
+    const git = (...args: string[]) => assert.equal(spawnSync('git', args, { env }).status, 0, args.join(' '))
+    rmSync(worktree, { recursive: true, force: true })
+    git('init', '-q', '-b', 'feat/x', worktree)
+    mkdirSync(dirname(file), { recursive: true })
+    const target = { id: 'feat', title: '기능', status: 'doing', branch: 'feat/x', worktree: 'old-wt', details: [{ text: '1. 구현', done: false }] }
+    const decide = { id: 'ask', title: '정할 것', status: 'decide', branch: 'feat/x', details: [{ text: '이름', done: false }] }
+    const goal = { id: 'goal', title: '목표', status: 'goal', branch: 'feat/x' }
+    writeFileSync(file, JSON.stringify({ items: [decide, goal, target] }))
+    writeFileSync(spec, '# 리뷰 반영하기\n허락: push\n중간 과정: 리뷰 반영\n')
+    const r = run()
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+    const after = items()
+    assert.deepEqual(after.slice(0, 2), [decide, goal])
+    assert.deepEqual(after[2].details, [...target.details, { text: '중간 과정: 리뷰 반영하기', done: false }])
+    assert.equal(after[2].status, 'doing')
+  })
+
+  test('중간 과정 지시서에 맞는 항목이 둘 이상이면 보드를 쓰지 않고 알린다', () => {
+    const one = { id: 'one', title: '하나', status: 'doing', pr: 7, details: [{ text: '1. 구현', done: false }] }
+    const two = { id: 'two', title: '둘', status: 'wait', pr: '7, 8', details: [{ text: '1. 구현', done: false }] }
+    writeFileSync(file, JSON.stringify({ items: [one, two] }))
+    writeFileSync(spec, '# PR #7 CI 고치기\n허락: push\n중간 과정: PR #7\n')
+    const r = run()
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /보드를 갱신하지 못했다: 중간 과정 지시서의 보드 항목을 찾지 못해 만들지 않는다: 항목이 둘 이상이다: one, two/)
+    assert.deepEqual(items(), [one, two])
+  })
+
+  test('보드 항목 id 가 가리키는 done 항목은 다시 열고 남은 일과 중간 과정 줄을 빼고 details 와 next 의 마지막 번호 다음부터 할 일을 붙인다', () => {
     const done = {
       id: 'a',
       title: '옛 제목',
@@ -775,8 +806,10 @@ describe('중간 과정과 다시 열기', () => {
         { text: '1. 구현', done: true },
         { text: '2. 머지', done: true },
         { text: '남은 일: PR #13', done: false },
-        { text: '중간 과정: PR #12 CI 고치기', done: false },
+        // 옛 문자열 줄은 앞에 완료 표시가 붙어 있다
+        '✓ 중간 과정: PR #12 CI 고치기',
       ],
+      next: ['5. 배포 확인'],
     }
     writeFileSync(file, JSON.stringify({ items: [done] }))
     writeFileSync(spec, '# 후속 기능\n허락: push\n보드 항목 id: a\n\n## 할 일\n1. 후속 구현\n2. 후속 머지\n')
@@ -791,8 +824,8 @@ describe('중간 과정과 다시 열기', () => {
     assert.deepEqual(item.details, [
       { text: '1. 구현', done: true },
       { text: '2. 머지', done: true },
-      { text: '3. 후속 구현', done: false },
-      { text: '4. 후속 머지', done: false },
+      { text: '6. 후속 구현', done: false },
+      { text: '7. 후속 머지', done: false },
     ])
     assert.equal('pr' in item, false, JSON.stringify(item))
     assert.equal(item['merged-pr'], '12, 9')

@@ -58,7 +58,7 @@ export function countQuestions(stdout, runId) {
 }
 
 // 깨진 JSON 이나 잘린 기록은 조회 오류로 보인다. 임의의 질문 수로 바꾸지 않는다.
-// 질문의 thread 에 worker 쪽으로 간 메시지(Run 으로 가지 않은 것)가 있으면 답한 질문이다. 보낸 사람은 Run 이든 코디네이터 터미널이든 보지 않는다(ADR-015).
+// 질문의 thread 에 worker 쪽으로 간 메시지(받는 쪽이 있고 Run 이 아닌 것)가 있으면 답한 질문이다. 보낸 사람은 Run 이든 코디네이터 터미널이든 보지 않는다(ADR-015).
 // ask 는 답을 받을 때까지 막혀 worker 하나에 열린 질문은 하나다. 그래서 같은 worker 의 질문은 가장 늦은 미답변 하나로 묶고 repeats 에 나머지 수를 둔다.
 // worker 열쇠는 keyOf(m), 없으면 질문의 dispatch(payload.dispatchId, 없으면 `dispatch:` 를 뗀 발신자), 그것도 없으면 그 메시지 id(묶지 않음)다.
 // 늦고 이른 것은 created_at 문자열로 비교하고, 같으면 입력 순서가 뒤인 것을 늦은 것으로 본다.
@@ -69,7 +69,7 @@ export function parseQuestions(stdout, runId, keyOf = null) {
   if (!Array.isArray(rows) || rows.some((m) => !m || typeof m !== 'object')) throw new Error('질문 기록을 읽지 못했어요')
   const messages = rows.filter((m) => !runId || m.run_id === runId)
   const answered = new Set(messages.filter((m) => m.thread_id && m.id !== m.thread_id
-    && m.to_handle !== 'run:' + (runId || m.run_id)).map((m) => m.thread_id))
+    && m.to_handle && m.to_handle !== 'run:' + (runId || m.run_id)).map((m) => m.thread_id))
   const asked = [...new Map(messages
     .filter((m) => (m.type === 'question' || m.type === 'escalation') && m.id
       && m.to_handle === 'run:' + (runId || m.run_id))
@@ -697,7 +697,7 @@ export function register(on) {
       })
     }
     const questionError = live.errors.questions
-    const decideView = decideRows.length + asked.length === 0 && !questionError && !live.questionsLimited ? [] : [box('live-decide', 'red',
+    const decideView = decideCount(decideRows) + asked.length === 0 && !questionError && !live.questionsLimited ? [] : [box('live-decide', 'red',
       questionError ? '결정 필요  확인 불가' : '결정 필요  ' + (decideCount(decideRows) + asked.length), [
         ...(questionError ? [dim('qe', '읽지 못했어요: ' + questionError)] : []),
         ...(live.questionsLimited ? [dim('ql', '최근 질문 100건과 읽지 않은 질문 최대 100건 기준이에요. 더 오래된 미답변은 빠질 수 있어요.')] : []),

@@ -30,15 +30,17 @@
 
 - `INTERIM = '중간 과정: '` 을 export 한다.
 - `interimOf(text): { pr: string | null } | null` 을 export 한다. 지시서 줄 `^\s*(?:[-*]\s*)?중간 과정\s*:\s*(.+)$` 이 없으면 null 이다. 값에서 `#(\d+)` 를 먼저 찾고, 없으면 첫 `\d+` 를 PR 번호로 쓴다. 숫자가 없으면 `pr: null` 이다.
-- `registerBoard` 는 이 줄이 있으면 새 항목을 만들지 않는다. done 이 아닌 항목 가운데 `prNumbers(item.pr)` 에 그 PR 이 든 항목을 찾고, 없거나 PR 번호가 null 이면 done 이 아닌 항목 가운데 `branch` 가 같거나 `worktree` 가 `basename(worktree)` 인 항목을 찾는다(`pr` 필드는 보지 않는다).
+- `interimOf` 는 첫 `## ` 제목 앞 머리 영역에서만 찾는다. 본문의 인용을 잡지 않는다(리뷰 반영).
+- `registerBoard` 는 이 줄이 있으면 새 항목을 만들지 않는다. done, decide, goal 이 아닌 항목 가운데 `prNumbers(item.pr)` 에 그 PR 이 든 항목을 찾고, 없거나 PR 번호가 null 이면 같은 후보 가운데 `branch` 가 같거나 `worktree` 가 `basename(worktree)` 인 항목을 찾는다(`pr` 필드는 보지 않는다).
   하나면 그 항목의 details 에서 `INTERIM` 으로 시작하는 줄을 빼고 `중간 과정: <지시서 첫 # 제목>` 한 줄을 끝에 둔 목록으로 `set <id> --worktree <basename> --branch <branch> ...detailArgs` 를 부른다. 다른 줄의 완료 값은 `detailArgs` 가 보존한다. status, 제목, pr 은 바꾸지 않는다.
   없거나 둘 이상이면 보드를 쓰지 않고 `Error('중간 과정 지시서의 보드 항목을 찾지 못해 만들지 않는다: ...')` 를 던진다.
 
 ### 2. `orch/scripts/lib/board.ts` 의 다시 열기
 
 - 중간 과정이 아니고 `보드 항목 id:` 로 정한 항목이 있고 그 status 가 done 이면 다시 연다. 같은 워크트리나 브랜치로 찾을 때 done 항목은 지금처럼 고르지 않는다.
-- 새 하위 줄: 기존 details 에서 `NOTE` 줄을 빼고 나머지는 모두 완료로 둔다. 지시서 「할 일」 의 번호 줄(없으면 `1. 구현`, `2. 리뷰 반영`, `3. 머지`)의 앞 번호를 기존 단계 번호의 최댓값 다음 번호부터 차례로 고쳐 끝에 붙인다. 기존 단계 번호는 `board.ts steps` 대신 details 줄의 앞 번호(`/^(\d+)[.)]?\s/`)에서 읽는다. 없으면 1 부터다.
-- 명령: `set <id> doing --title <지시서 제목> --worktree <basename> --branch <branch> --pr '' --merged-pr <옛 pr 칸의 번호들, 이어서 기존 merged-pr 의 번호들(중복 제외)> ...detailArgs`. 옛 pr 칸이 비었으면 `--pr ''` 와 `--merged-pr` 를 주지 않는다.
+- 새 하위 줄: 기존 details 에서 `NOTE` 줄과 `INTERIM` 줄을 빼고(앞 완료 표시를 뗀 글로 판정한다) 나머지는 모두 완료로 둔다. 지시서 「할 일」 의 번호 줄(없으면 `1. 구현`, `2. 리뷰 반영`, `3. 머지`)의 앞 번호를 기존 단계 번호의 최댓값 다음 번호부터 차례로 고쳐 끝에 붙인다. 기존 단계 번호는 `board.ts steps` 대신 details 와 next 줄의 앞 번호(`/^(\d+)[.)]?\s/`)에서 읽는다. 없으면 1 부터다.
+- 명령: `set <id> doing --title <지시서 제목> --worktree <basename> --branch <branch> --progress auto --pr '' --merged-pr <옛 pr 칸의 번호들, 이어서 기존 merged-pr 의 번호들(중복 제외)> ...detailArgs`. 옛 pr 칸이 비었으면 `--pr ''` 와 `--merged-pr` 를 주지 않는다. `--progress auto` 는 남은 `progress` 값(예: `3/3`)이 진행률을 100% 로 덮지 않게 한다.
+- 두 경로 모두 브랜치를 읽지 못해 빈 문자열이면 `--branch` 를 주지 않는다. 기존 항목의 branch 를 지우지 않는다(구현 중 정함).
 - 머리 주석과 `registerBoard` 위 주석에 두 규칙을 적는다.
 
 ### 3. 문서
@@ -48,11 +50,13 @@
 
 ### 4. 테스트
 
-- `orch/tests/lib-board.spec.ts`: `interimOf` 가 `중간 과정: PR #7` 에서 7, `- 중간 과정: 2차 PR #7` 에서 7, `중간 과정: 리뷰 반영` 에서 null PR, 줄이 없으면 null 을 낸다.
+- `orch/tests/lib-board.spec.ts`: `interimOf` 가 `중간 과정: PR #7` 에서 7, `- 중간 과정: 2차 PR #7` 에서 7, `중간 과정: 리뷰 반영` 에서 null PR, 줄이 없으면 null 을 낸다. 첫 `##` 제목 뒤 본문이 인용한 `중간 과정:` 줄은 읽지 않는다.
 - `orch/tests/launch-worker.spec.ts`:
   - `중간 과정: PR #7` 지시서로 띄우면 pr 이 7 인 기존 doing 항목에 `중간 과정: ...` 줄 하나만 생기고 항목 수, 제목, status, 기존 단계의 완료 값이 그대로다. 두 번 띄워도 그 줄은 하나다.
+  - PR 번호가 없는 `중간 과정: 리뷰 반영` 지시서는 decide 와 goal 항목을 빼고 같은 브랜치의 doing 항목을 찾는다.
+  - 맞는 항목이 둘 이상이면 보드를 쓰지 않고 `보드를 갱신하지 못했다` 를 낸다.
   - 맞는 항목이 없으면 보드에 항목이 생기지 않고 stderr 에 `보드를 갱신하지 못했다` 가 나온다.
-  - `보드 항목 id: a` 가 가리키는 done 항목(pr 12, merged-pr 9, 단계 `1. 구현`, `2. 머지` 완료, `남은 일:` 줄)에 띄우면 doing 이 되고, 옛 두 단계는 완료, 지시서의 할 일 두 줄이 `3. …`, `4. …` 로 붙고, `남은 일:` 줄은 없고, pr 칸이 없고, merged-pr 이 `12, 9` 다.
+  - `보드 항목 id: a` 가 가리키는 done 항목(pr 12, merged-pr 9, 단계 `1. 구현`, `2. 머지` 완료, `남은 일:` 줄)에 띄우면 doing 이 되고, 옛 두 단계는 완료, 지시서의 할 일 두 줄이 `3. …`, `4. …` 로 붙고(next 에 `5. …` 가 있으면 `6.`, `7.`), `남은 일:` 줄과 옛 문자열 `✓ 중간 과정: …` 줄은 없고, pr 칸이 없고, merged-pr 이 `12, 9` 다.
 
 ## 검증
 

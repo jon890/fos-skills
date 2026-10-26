@@ -15,7 +15,7 @@
 //   board.ts step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
 //   board.ts steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
 //     단계 밖의 줄이 있으면 stderr 에 mark 번호와 함께 낸다. stdout 의 JSON 은 orch 가 읽어 단계를 판정하므로 그 줄을 넣지 않는다
-//   board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다)
+//   board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 빈 줄은 세지 않는다)
 //     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
 //   board.ts del <id>
 //   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
@@ -73,7 +73,7 @@ const HELP = `${USAGE}
   board.ts step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
   board.ts steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
     단계 밖의 줄이 있으면 stderr 에 mark 번호와 함께 낸다
-  board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다)
+  board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 빈 줄은 세지 않는다)
     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
   board.ts del <id>
   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
@@ -177,9 +177,12 @@ function progressText(item: Item): string {
 }
 
 // details 다음 next 순서의 모든 줄. 번호 없는 참고 줄도 들고, mark 번호는 이 순서의 1부터다.
+// text 가 비었거나 공백뿐인 줄은 뺀다. 창(register.js 의 decideCount)도 그 줄을 세지 않아 결정 필요 수와 mark 번호가 같은 줄을 가리킨다
 // 줄 객체는 item 에 든 것 그대로라 done 을 바꾸면 항목이 바뀐다. main 이 normalizeItem 으로 목록을 Line[] 로 바꿔 둔다
 function allLines(item: Item): Line[] {
-  return ['details', 'next'].flatMap((key) => (Array.isArray(item[key]) ? (item[key] as Line[]) : []))
+  return ['details', 'next']
+    .flatMap((key) => (Array.isArray(item[key]) ? (item[key] as Line[]) : []))
+    .filter((line) => line.text.trim())
 }
 
 // list 와 steps 의 stderr 가 내는 줄 꼴. 「    3 ✓ 본문」 이나 「    3   본문」 이다

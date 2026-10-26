@@ -31,6 +31,7 @@
 ### 0. 남은 결정 줄 세기
 
 - `decideCount(items)` 를 export 한다. decide 항목마다 details 와 next 의 끝나지 않은 줄 수를 더하고, 줄이 없는 항목은 1 로 센다. 줄은 `normalizeLines` 로 읽는다.
+- 결정 상자는 `decideCount(decideRows) + asked.length` 가 0 이고 조회 오류와 상한 표시가 없으면 그리지 않는다(리뷰 반영).
 - `statusLine` 과 `decideView` 의 수가 `count('decide')` 대신 `decideCount` 와 질문 수의 합을 쓴다.
 
 ### 1. `work-board/hooks/register.js` 의 `parseQuestions(stdout, runId, keyOf?)`
@@ -45,7 +46,8 @@
 
 - 질문마다 읽을 handle 은 발신자, `dispatch:<payload dispatchId>`, 그 질문이 붙은 살아 있는 worker 의 `dispatch:<id>` 다. 중복은 한 번만 읽고 네 개씩 읽는다.
 - 회신 행을 `from_handle` 로 고르지 않는다. thread 가 후보 질문인 행을 모두 남긴다.
-- 답변 기록 한도 판정은 그 handle 로 묶인 질문 기준으로 지금과 같이 한다.
+- 답변 기록 한도 판정은 모든 handle 을 읽은 뒤 한 번 한다. 한도에 닿은 handle 을 가진 질문 가운데 모든 회신을 합쳐도 미답변인 것이 있을 때만 오류다(구현 중 정함: handle 하나만 보면 다른 handle 의 회신으로 답한 질문도 오류가 된다).
+- 답 판정은 `to_handle` 이 있고 `run:<Run>` 이 아닌 메시지만 센다(리뷰 반영).
 - `parseQuestions` 에 살아 있는 worker 의 id 로 묶는 `keyOf` 를 넘긴다(질문의 dispatch 가 살아 있는 id 면 그것, 아니면 발신 터미널이 같은 worker 의 id).
 
 ### 3. 창
@@ -56,7 +58,9 @@
 
 - 「결정 필요」 줄의 회신 판정과 조회 handle, 다시 보낸 질문 묶기, 남은 줄 세기를 고친다.
 
-### 5. `work-board/tests/live.test.ts`
+### 5. `work-board/tests/live.test.ts`, `work-board/tests/pane.test.ts`
+
+- pane.test.ts: 줄이 모두 끝난 decide 항목만 있으면 결정 상자를 그리지 않고, 남은 줄이 있으면 「결정 필요  1」 을 보인다. 회신 행에 `to_handle` 이 없던 기존 상한 테스트는 회신에 `to_handle: 'dispatch:d'` 를 넣는다.
 
 - `decideCount` 와 `statusLine` 이 끝난 줄을 빼고 센다. 줄이 없는 decide 항목은 1 이다.
 - 코디네이터 터미널(`term_c`)이 `dispatch:open` 으로 보낸 회신이 있으면 `term_w` 가 보낸 질문이 빠진다. 조회한 handle 에 `dispatch:open` 이 든다.
@@ -79,3 +83,4 @@ claude plugin test work-board  # work-board/tests/live.test.ts 를 돌린다
 | `work-board/hooks/register.js` | 수정 |
 | `work-board/README.md` | 수정 |
 | `work-board/tests/live.test.ts` | 수정 |
+| `work-board/tests/pane.test.ts` | 수정 |

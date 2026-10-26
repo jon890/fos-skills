@@ -25,7 +25,7 @@
 
 ### 1. `work-board/bin/board.ts`
 
-- `COMMANDS` 에 `mark` 를 더한다. `board.ts mark <id> <n> [--undo]`. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 그 줄의 `done` 만 바꾼다. 줄이 없으면 `Refused`.
+- `COMMANDS` 에 `mark` 를 더한다. `board.ts mark <id> <n> [--undo]`. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다. 빈 줄(공백뿐 포함)은 세지 않는다. `list`, `steps` 의 stderr, decide 자동 완료도 같은 줄 목록을 쓴다(리뷰 반영). 그 줄의 `done` 만 바꾼다. 줄이 없으면 `Refused`.
 - `mark` 와 `step` 뒤에 항목이 `decide` 이고 details 와 next 의 줄이 하나 이상이며 모두 `done` 이면 `status` 를 `done` 으로 바꾼다. `--undo` 로 되돌려도 status 는 바꾸지 않는다.
 - `list` 는 항목 줄 아래에 details 와 next 의 모든 줄을 `    <n> ✓ <text>`(끝냄) 또는 `    <n>   <text>`(안 끝냄) 로 낸다. n 은 `mark` 의 번호와 같다.
 - `steps` 는 stdout JSON 을 그대로 두고, 진행률을 세는 단계 줄이 아닌 줄이 있으면 stderr 에 `단계 밖의 줄(mark 번호):` 머리와 `list` 와 같은 꼴의 줄을 낸다.
@@ -45,7 +45,7 @@
 
 - 기존 `work-board/tests/board.spec.ts` 의 `list` 테스트(항목 줄이 `lines[1]`, `lines[2]` 라고 가정)와 사용법 테스트(`사용법: board.ts {set,step,steps,del,list}` 로 시작)의 기대값을 새 출력과 `USAGE` 에 맞춘다.
 - `work-board/tests/skills.spec.ts` 가 `board-decide/SKILL.md` 의 문구를 검사한다. 5단계를 고친 뒤 그 기대 문구가 남는지 확인하고, 바꾼 문구면 테스트 기대값도 고친다.
-- `work-board/tests/board.spec.ts`: `mark` 가 번호 없는 줄을 끝내고 `--undo` 로 되돌린다. decide 항목의 마지막 줄을 끝내면 status 가 done 이다. 없는 줄 번호는 종료 코드 1. `list` 가 줄과 완료 표시를 낸다. `steps` 는 stdout JSON 이 그대로이고 stderr 에 단계 밖의 줄을 낸다.
+- `work-board/tests/board.spec.ts`: `mark` 가 번호 없는 줄을 끝내고 `--undo` 로 되돌린다. decide 항목의 마지막 줄을 끝내면 status 가 done 이다. 없는 줄 번호는 종료 코드 1. `list` 가 줄과 완료 표시를 낸다. `steps` 는 stdout JSON 이 그대로이고 stderr 에 단계 밖의 줄을 낸다. 빈 줄은 `mark` 번호에서 건너뛰고, 남은 줄을 모두 끝내면 빈 줄이 있어도 done 이 된다.
 
 ## 검증
 

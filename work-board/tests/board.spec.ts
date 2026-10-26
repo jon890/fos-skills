@@ -141,6 +141,19 @@ describe('mark', () => {
     assert.equal(item('d').status, 'done')
   })
 
+  test('빈 줄은 mark 번호에서 건너뛰고, 남은 줄을 모두 끝내면 빈 줄이 있어도 done 이 된다', () => {
+    write({ id: 'd', status: 'decide', details: ['A 를 고를지', '', '   '], next: ['B 를 고를지'] })
+    assert.equal(board('mark', 'd', '1').code, 0)
+    assert.equal(item('d').status, 'decide')
+    const r = board('mark', 'd', '2')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('d').next, rows(['B 를 고를지', true]))
+    assert.equal(item('d').status, 'done')
+    const missing = board('mark', 'd', '3')
+    assert.equal(missing.code, 1)
+    assert.ok(missing.stderr.includes('줄은 2 개다'), missing.stderr)
+  })
+
   test('step 으로 decide 항목의 줄을 모두 끝내도 done 이 된다', () => {
     write({ id: 'd', status: 'decide', next: '1. 정하기' })
     assert.equal(board('step', 'd', '1').code, 0)

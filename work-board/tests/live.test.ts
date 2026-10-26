@@ -84,6 +84,9 @@ test('worker 의 후속 status 는 Run 으로 가므로 답이 아니다', () =>
   expect(parseQuestions(JSON.stringify({ messages: [q, follow] }), 'r').map((m) => m.id)).toEqual(['q'])
   const reply = { ...follow, id: 'a', from_handle: 'term_c', to_handle: 'dispatch:d' }
   expect(parseQuestions(JSON.stringify({ messages: [q, follow, reply] }), 'r')).toEqual([])
+  // 받는 쪽이 없는 thread 메시지도 답이 아니다
+  const { to_handle: _, ...nowhere } = reply
+  expect(parseQuestions(JSON.stringify({ messages: [q, nowhere] }), 'r').map((m) => m.id)).toEqual(['q'])
 })
 
 test('같은 worker 의 미답변 질문은 가장 늦은 하나로 묶고, 답한 질문보다 이른 미답변은 뺀다', () => {
@@ -118,7 +121,7 @@ test('질문 100건 상한은 조회 범위를 표시하고 답변 기록 상한
   let failure = ''
   try { await queryQuestions($, 'r') } catch (error) { failure = error.message }
   expect(failure).toContain('답변 기록 한도')
-  replies[0] = { id: 'answer', thread_id: 'q', from_handle: 'run:r', run_id: 'r' }
+  replies[0] = { id: 'answer', thread_id: 'q', from_handle: 'run:r', to_handle: 'dispatch:d', run_id: 'r' }
   expect((await queryQuestions($, 'r')).questions).toEqual([])
 })
 

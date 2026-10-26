@@ -122,4 +122,9 @@ describe('interimOf', () => {
     assert.equal(interimOf('# 새 기능\n보드 항목 id: a\n중간 과정 없이 만든다\n'), null)
     assert.equal(interimOf(''), null)
   })
+
+  test('첫 ## 제목 뒤 본문이 인용한 중간 과정 줄은 읽지 않는다', () => {
+    assert.equal(interimOf('# 지시서 규칙 고치기\n\n## 할 일\n1. 문서에 적는다\n- 중간 과정: PR #N 줄을 넣는다\n'), null)
+    assert.deepEqual(interimOf('# CI 고침\n브랜치: `feat/x`\n중간 과정: PR #7\n\n## 할 일\n- 중간 과정: PR #8\n'), { pr: '7' })
+  })
 })
