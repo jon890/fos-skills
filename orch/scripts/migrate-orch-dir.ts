@@ -465,8 +465,9 @@ function blockers(root: string, runId: string | null): string[] {
   if (live === null || workers === null) {
     found.push(`orca 로 살아 있는 dispatch 와 worker 를 읽지 못했다${runId ? '' : '(--run 이 없으면 모든 Run 의 목록을 읽어야 한다)'}`)
   } else {
-    if (live.size > 0) found.push(`살아 있는 dispatch 가 지시서 ${live.size}개를 쓰고 있다`)
     const trees = worktreePaths(root)
+    const localSpecs = [...live].filter((spec) => [...trees].some((tree) => under(spec, tree)))
+    if (localSpecs.length > 0) found.push(`살아 있는 dispatch 가 지시서 ${localSpecs.length}개를 쓰고 있다`)
     const held: string[] = []
     for (const w of workers) {
       const res = isObject(w.resource) ? w.resource : {}
@@ -490,22 +491,29 @@ function blockers(root: string, runId: string | null): string[] {
 
 // ---- 옮기기 ---------------------------------------------------------------------------------------------
 
-// src(파일이나 폴더) 안의 상대경로 심볼릭 링크 중 src 밖을 가리키는 것: [링크, 절대 대상]
-function outwardLinks(src: string): Pair[] {
+// src 안의 상대경로 심볼릭 링크 중 함께 옮기는 폴더 밖을 가리키는 것: [링크, 절대 대상]
+function outwardLinks(src: string, movingRoot: string): Pair[] {
   const links = isLink(src) ? [src] : isDir(src) ? walk(src).filter(isLink) : []
   const found: Pair[] = []
   for (const link of links) {
     const target = readlinkSync(link)
     if (isAbsolute(target)) continue
     const absolute = normalize(join(dirname(link), target))
-    if (realDir(src) && (absolute === src || under(absolute, src))) continue
+    if (realDir(movingRoot) && (absolute === movingRoot || under(absolute, movingRoot))) continue
     found.push([link, absolute])
   }
   return found
 }
 
-function move(src: string, dst: string, root: string): void {
-  const links = outwardLinks(src)
+function move(src: string, dst: string, root: string, movingRoot = src): void {
+  // 앞의 이동이 대상 폴더를 만들 수 있으므로 실행할 때 다시 판정한다.
+  if (realDir(src) && realDir(dst)) {
+    for (const name of readdirSync(src).sort()) move(join(src, name), join(dst, name), root, movingRoot)
+    rmdirSync(src)
+    return
+  }
+  if (lexists(dst)) throw new Error(`대상이 이미 있다: ${dst}`)
+  const links = outwardLinks(src, movingRoot)
   mkdirSync(dirname(dst), { recursive: true })
   try {
     renameSync(src, dst)
