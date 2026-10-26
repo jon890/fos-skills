@@ -662,6 +662,37 @@ describe('migrate-orch-dir --hooks', { concurrency: 4 }, () => {
     assert.deepEqual(readJson(config), { queue: { before: 'echo hi' } })
   })
 
+  test('dispatch 와 worker 가 살아 있어도 --hooks --apply 는 적용한다', async (t) => {
+    const c = setup(t)
+    const spec = c.write('.orch/specs/spec-a.md', '작업 중\n')
+    const config = writeConfig(c, { queue: { before: 'echo hi' } })
+    await c.migrate(['--hooks', '--apply'], { env: {
+      FAKE_TASKS: JSON.stringify([{ id: 't1', status: 'running', spec: `지시서 ${spec} 를 읽는다.` }]),
+      FAKE_WORKERS: JSON.stringify([{ dispatchId: 'ctx_1', dispatchStatus: 'running', terminalState: 'active',
+        resource: { ownershipState: 'owned', worktreeId: `wt::${c.repo}` } }]),
+    } })
+    assert.ok(existsSync(hookPath(c, 'before-merge')))
+    assert.deepEqual(readJson(config), { queue: {} })
+    assert.equal(readFileSync(spec, 'utf8'), '작업 중\n')
+  })
+
+  test('orca 를 실행할 수 없어도 --hooks --apply 는 적용한다', async (t) => {
+    const c = setup(t)
+    const config = writeConfig(c, { queue: { before: 'echo hi' } })
+    await c.migrate(['--hooks', '--apply'], { env: { ORCA: join(c.tmp, 'missing-orca') } })
+    assert.ok(existsSync(hookPath(c, 'before-merge')))
+    assert.deepEqual(readJson(config), { queue: {} })
+  })
+
+  test('pgrep 을 돌리지 못하면 --hooks --apply 를 막는다', async (t) => {
+    const c = setup(t)
+    const config = writeConfig(c, { queue: { before: 'echo hi' } })
+    const { stderr } = await c.migrate(['--hooks', '--apply'], { code: 3, env: { FAKE_PGREP_FAILS: '1' } })
+    assert.ok(stderr.includes('pgrep 으로 머지 큐와 마무리 프로세스를 확인하지 못했다'), stderr)
+    assert.ok(!existsSync(hookPath(c, 'before-merge')))
+    assert.deepEqual(readJson(config), { queue: { before: 'echo hi' } })
+  })
+
   test('머지 큐가 돌면 --hooks --apply 도 막는다', async (t) => {
     const c = setup(t)
     const config = writeConfig(c, { queue: { before: 'echo hi' } })
