@@ -95,6 +95,7 @@
 //   셋이 겹치면 드물게 둘이 함께 돈다. A 가 회수하려고 B 가 새로 만든 잠금을 떼어 낸 사이 C 가 wx 로 만들고,
 //   B 가 그보다 먼저 다시 읽기를 지나 핸들러를 띄웠으면 B 와 C 가 함께 돈다. 다시 읽기는 B 가 아직 띄우기 전인 경우만 막는다.
 //   같은 죽은 잠금을 세 실행이 몇 밀리초 안에 함께 회수해야 생기는 경합이라 그대로 둔다.
+//   같은 잠금을 acquireLock, ownsLock, releaseLock 으로 내보낸다. lib/reservations.ts 의 예약 잠금이 이것을 쓴다.
 //
 // 기록: <orch 루트>/state/hooks.jsonl 에 결과마다 한 줄(time, event, handler, exit, result, duration_ms, reason).
 //   none 은 적지 않는다. legacy 실행의 handler 는 legacy:<key> 다. 더하기 전에 1MB 를 넘으면 hooks.jsonl.1 로 옮긴다.
@@ -329,7 +330,7 @@ function held(lock: string, content: string): boolean {
 //   없다    다른 실행이 먼저 옮겼다. wx 생성을 다시 시도한다
 // wx 가 한 실행만 통과시키므로 둘이 함께 회수해도 새 잠금은 하나다.
 // seen 은 부르는 쪽이 처음 읽은 내용이다.
-// 사용처: 이 모듈의 핸들러 잠금(acquire)과 orch-loop.ts 의 state/loop.lock. 루프의 잠금도 같은 wx 와 pid 방식이라 회수를 한 벌로 둔다.
+// 사용처: 이 모듈의 핸들러 잠금(acquireLock)과 orch-loop.ts 의 state/loop.lock. 루프의 잠금도 같은 wx 와 pid 방식이라 회수를 한 벌로 둔다.
 // 테스트도 import 한다. 읽은 뒤 잠금이 바뀐 경합을 seen 으로 흉내 낸다.
 export function reclaim(lock: string, seen: string): 'retry' | 'wait' {
   const moved = `${lock}.reclaim-${process.pid}-${randomUUID()}`
@@ -356,7 +357,8 @@ export function reclaim(lock: string, seen: string): 'retry' | 'wait' {
 }
 
 // deadline(epoch ms)까지 잠금을 얻으려 한다. 다시 읽기에서 잠금을 잃어 다시 부를 때도 처음 정한 기한을 쓴다.
-async function acquire(lock: string, deadline: number): Promise<boolean> {
+// 잠금 폴더는 만들지 않는다. 부르는 쪽이 먼저 만든다(createLock 의 wx 는 폴더가 없으면 ENOENT 로 던진다).
+export async function acquireLock(lock: string, deadline: number): Promise<boolean> {
   for (;;) {
     if (createLock(lock)) return true
     const seen = readLock(lock)
@@ -367,13 +369,13 @@ async function acquire(lock: string, deadline: number): Promise<boolean> {
   }
 }
 
-function owns(lock: string): boolean {
+export function ownsLock(lock: string): boolean {
   return (readLock(lock) ?? '').trim() === String(process.pid)
 }
 
-function release(lock: string): void {
+export function releaseLock(lock: string): void {
   try {
-    if (owns(lock)) unlinkSync(lock)
+    if (ownsLock(lock)) unlinkSync(lock)
   } catch {
     // 이미 없거나 다른 실행이 쥐었다. 남의 잠금은 지우지 않는다.
   }
@@ -578,14 +580,14 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
     let env: NodeJS.ProcessEnv
     let payload: Record<string, unknown>
     for (;;) {
-      if (!(await acquire(lock, deadline))) {
+      if (!(await acquireLock(lock, deadline))) {
         return finish('fail', null, `잠금을 얻지 못했다: ${lock} 를 쥔 실행이 ${seconds + lockExtraMs / 1000}초 안에 끝나지 않았다`)
       }
       env = handlerEnv(event, repo, root, checkout, legacy?.env)
       payload = { ...input, version: CONTRACT_VERSION, event, repo, base: ctx.base, run: ctx.run, time: new Date().toISOString() }
       // 띄우기 직전에 잠금이 아직 내 것인지 다시 읽는다. 죽은 잠금을 다른 실행이 회수하다 내 새 잠금을 떼어 냈으면
       // 그 사이 또 다른 실행이 잠금을 만들었을 수 있다. 내 것이 아니면 다시 기다린다(머리 주석의 「잠금」).
-      if (owns(lock)) break
+      if (ownsLock(lock)) break
     }
     const outcome = await execute(argv, {
       cwd: ctx.cwd ?? (legacy ? checkout : repo),
@@ -601,7 +603,7 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
     if (outcome.code === REJECT_CODE && spec.rejectable) return finish('reject', REJECT_CODE, outcome.lastLine || NO_REASON)
     return finish('fail', outcome.code, `종료 코드 ${outcome.code}`)
   } finally {
-    release(lock)
+    releaseLock(lock)
   }
 }
 
