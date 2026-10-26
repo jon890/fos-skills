@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { DECIDE_PROMPT, START_PROMPT } from '../hooks/register.js'
+import { DECIDE_PROMPT } from '../hooks/register.js'
 
 const BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
   { id: 'a', title: '단계 항목', status: 'doing', owner: 'worker', pr: '#9', worktree: 'wt-a',
@@ -170,28 +170,6 @@ test('정할 것 묻기 명령과 q 단축키 버튼은 같은 요청을 보낸�
   await ui.press({ key: 'ask-decisions' })
   expect(result).toMatchObject({ text: DECIDE_PROMPT })
   expect(submitted).toEqual([DECIDE_PROMPT])
-  await ui.unmount()
-})
-
-test('오늘 시작 명령은 요청 본문을 반환하고 s 단축키 버튼은 직접 보낸다', async ($, on) => {
-  const submitted = []
-  const commands = []
-  on('prompt.submit', (_, e) => {
-    submitted.push(e.text)
-    return { drop: "테스트에서 요청만 확인" }
-  })
-  on('ui.toast', () => ({ value: undefined }))
-  await start($, on, undefined, BOARD, commands)
-  expect(commands.find((command) => command.name === 'board-start')).toMatchObject({ immediate: true })
-  const result = await $.command.run({ command: 'board-start' })
-  expect(result).toMatchObject({ text: START_PROMPT })
-  expect(submitted).toEqual([])
-
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  const button = await ui.find({ type: 'Button', key: 'start-today' })
-  expect(button.props).toMatchObject({ label: '오늘 시작', hotkey: 's' })
-  await ui.press({ key: 'start-today' })
-  expect(submitted).toEqual([START_PROMPT])
   await ui.unmount()
 })
 

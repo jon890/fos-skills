@@ -541,8 +541,8 @@ export function register(on) {
   })
 
   on('command.run', { command: 'board-start' }, async ($) => {
-    // 명령 훅에서는 prompt.submit 대신 요청 본문을 반환한다.
-    return { text: START_PROMPT }
+    startToday($)
+    return {}
   })
 
   on('command.run', { command: 'board-decide' }, async () => {
