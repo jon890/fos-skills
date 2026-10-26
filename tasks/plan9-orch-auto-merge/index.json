@@ -1,0 +1,21 @@
+{
+  "name": "plan9-orch-auto-merge",
+  "description": "상주 루프가 머지할 수 있는 PR 을 코디네이터 지시 없이 머지 큐에 건다 — 준비된 PR 이 몇 시간씩 머지되지 않고 마이그레이션 번호가 PR 끼리 겹치는 문제를 막는다",
+  "pr_scope": "queue.auto_merge 를 켠 저장소에서 orch-loop 의 틱이 대상 PR 을 골라 마이그레이션 번호를 검사하고 순서를 정해 merge-with-finish 를 건다.",
+  "deferred": [
+    {
+      "what": "worker 가 마이그레이션을 만들 때 다음 번호를 잠금을 걸고 예약하는 reserve-migration.ts 와 지시서 공통 문구 예시",
+      "why": "이 plan 의 migrations 설정과 번호 읽기를 그대로 쓰는 별도 기능이라 PR 을 나눈다(사용자 결정 2026-10-27)",
+      "after": "이 plan 의 lib/auto-merge.ts 와 migrations 절이 브랜치에 커밋된 뒤, 그 브랜치 위의 feat/orch-migration-reserve 에서"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-10-27",
+  "total_phases": 3,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "deep" },
+    { "number": 2, "file": "phase-02.md", "execution_profile": "deep" },
+    { "number": 3, "file": "phase-03.md", "execution_profile": "standard" }
+  ]
+}
