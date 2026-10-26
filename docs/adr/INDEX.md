@@ -14,3 +14,4 @@
 - [ADR-012](012-orch-loop-multi-run.md): 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다 (`accepted`)
 - [ADR-013](013-orch-worker-stalled.md): 상주 루프는 멈춘 worker 를 이벤트로 알리고, 다시 시도시키는 일은 저장소 핸들러가 맡는다 (`accepted`)
 - [ADR-014](014-orch-auto-last-pr.md): 업무의 마지막 PR 은 마무리가 머지와 배포 뒤에 판정하고, 충돌한 PR 은 머지 큐를 멈추지 않는다 (`accepted`)
+- [ADR-015](015-board-decide-clear.md): 보드의 결정 필요는 남은 줄과 남은 질문만 세고, 중간 과정은 보드 항목을 만들지 않는다 (`accepted`)
