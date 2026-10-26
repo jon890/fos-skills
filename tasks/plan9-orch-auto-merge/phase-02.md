@@ -56,7 +56,7 @@
 
 ### 4. 앞선 큐와 도는 큐
 
-1. `PS` 로 `-axo pid=,command=` 를 읽는다. ps 가 0 이 아니면 오류 이유 `프로세스 목록을 읽지 못했다` 로 단계를 끝낸다.
+1. `PS` 로 `-Ao pid=,command=` 를 읽는다. ps 가 0 이 아니면 오류 이유 `프로세스 목록을 읽지 못했다` 로 단계를 끝낸다.
 2. `queue` 기록이 있으면 그 pid 가 ps 출력에 있고 그 명령줄에 `merge-with-finish.` 가 들었는지 본다. 없으면 끝난 큐다. pid 를 다른 프로세스가 다시 받았을 수 있어 `alive` 만으로 보지 않는다.
    끝났으면 로그에서 `QUEUE-DONE`, `QUEUE-HELD` 로 시작하는 마지막 줄, 없으면 `STOP ` 으로 시작하는 마지막 줄, 그것도 없으면 `끝 줄 없음` 을 끝 줄로 정한다. 머지 큐는 끝 줄 뒤에 after-queue 와 정리 출력을 같은 로그에 이어 쓰므로 마지막 줄이 끝 줄이 아니다.
    `AUTO-MERGE-END`(pr null, text `<끝 줄> log=<로그 경로>`, 로그를 읽지 못하면 끝 줄 자리에 `로그 없음`)를 기록의 run 으로 쓰고 기록을 비운다. 아직 돌면 이 틱에는 걸지 않는다.
@@ -77,7 +77,7 @@
 
 ### 6. 마이그레이션, 순서, 띄우기
 
-1. `ctx.autoMerge.dirs` 가 비지 않았고 준비된 PR 가운데 `changeType` 이 `ADDED`, `RENAMED`, `COPIED` 인 파일에 `migrationOf` 가 있는 PR 이 있으면 아래를 한 번씩 한다.
+1. `ctx.autoMerge.dirs` 가 비지 않았고 준비된 PR 가운데 `changeType` 이 `ADDED`, `RENAMED`, `COPIED` 이거나 없는(옛 gh 출력) 파일에 `migrationOf` 가 있는 PR 이 있으면 아래를 한 번씩 한다.
    PR 의 base 마다 한 번 `git fetch --quiet origin <base>` 뒤 모듈 폴더마다 `git ls-tree -r --name-only origin/<base> -- <폴더>` 로 `maxByModule`. `gh pr list --state open --limit 200 --json number,baseRefName,files` 로 같은 base 의 다른 열린 PR 의 마이그레이션.
    실패하면 오류 이유로 남기고 마이그레이션이 있는 PR 은 이 틱에 걸지 않는다.
 2. `judgeMigrations` 의 clashes 가 있으면 걸지 않는다. 이유를 `<모듈> <label>: <이유>` 로 만들어 `; ` 로 잇고, `clashes[<PR>@<head>]` 와 다를 때만 `MIGRATION-CLASH`(pr 그 번호, text 그 이유)를 그 PR 의 Run 으로 쓴다.

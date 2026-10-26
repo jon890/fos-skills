@@ -222,7 +222,7 @@ orch/scripts/lib/overlap.ts       단위 겹침 판정 한 벌. 사용처는 머
 orch/scripts/lib/queue-options.ts 머지 큐의 옵션 목록과 설정의 queue 키를 옵션으로 바꾸는 표 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
-orch/scripts/lib/auto-merge.ts    상주 루프의 자동 머지 판정 한 벌. 설정 읽기, 보류 표시, 리뷰 판정, 마이그레이션 번호, 큐 순서. 부수 효과(gh, git, 큐 띄우기)는 orch-loop.ts 가 한다
+orch/scripts/lib/auto-merge.ts    상주 루프의 자동 머지 판정 한 벌. 함수는 머리 주석이 소유한다. 부수 효과는 orch-loop.ts 가 한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다

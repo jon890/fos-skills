@@ -14,7 +14,7 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
-import type { FakeBin } from './fixtures/fake-bin.ts'
+import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
 const RULES_PATH = 'repos/o/r/rules/branches/main'
@@ -184,8 +184,8 @@ function added(...paths: string[]): Json[] {
   return paths.map((path) => ({ path, changeType: 'ADDED', additions: 1, deletions: 0 }))
 }
 
-// 이번 실행의 gh 답. views 는 PR 마다의 pr view 답, open 은 마이그레이션을 보는 pr list 의 답이다
-function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[] } = {}): void {
+// 이번 실행의 gh 답. views 는 PR 마다의 pr view 답, open 은 마이그레이션을 보는 pr list 의 답, rules 는 저장소 규칙 API 의 답이다
+function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[]; rules?: FakeRule } = {}): void {
   gh.setRules([
     { args: ['pr', 'list', '--base'], stdout: '[]\n' },
     { args: ['pr', 'list', 'number,baseRefName,files'], stdout: `${JSON.stringify(opts.open ?? [])}\n` },
@@ -193,7 +193,7 @@ function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[
     ...Object.entries(opts.views ?? {}).map(([n, view]) => ({ args: ['pr', 'view', n], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [], ...view })}\n` })),
     { args: ['pr', 'view'], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [] })}\n` },
     { args: ['api', 'user'], stdout: 'me\n' },
-    { args: [RULES_PATH], stdout: 'test\n' },
+    { stdout: 'test\n', ...opts.rules, args: [RULES_PATH] },
   ])
 }
 
@@ -279,6 +279,19 @@ describe('대상 고르기', () => {
     const state = autoMergeState()
     assert.deepEqual((state.queue as Json).prs, [1])
     assert.deepEqual(Object.keys(state.tried as Json), [`1@${HEAD_A}`])
+  })
+
+  test('이번 틱에 필수 체크 규칙을 읽지 못한 base 의 PR 은 이전 틱의 passed 로 걸지 않는다', () => {
+    // 첫 틱은 지시서 보류로 걸지 않고 CI passed 만 loop.json 에 남긴다
+    spec('specs', 'spec-a.md', ['feat-1'], ['- 머지 보류: 배포 뒤'])
+    github([pr(1)])
+    once()
+    spec('specs', 'spec-a.md', ['feat-1'])
+    github([pr(1)], { rules: { code: 1, stderr: 'HTTP 502: Bad Gateway\n' } })
+    const output = once()
+    assert.match(output, /AUTO-MERGE-WAIT #1 CI 규칙을 읽지 못했다/)
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
   })
 
   test('queue.auto_merge 가 false 면 가짜 큐를 부르지 않고 기록도 만들지 않는다', () => {
@@ -476,6 +489,24 @@ describe('마이그레이션', () => {
     assert.equal(blocked[0].pr, 2)
     assert.match(String(blocked[0].text), /^api V4 이 #1 V3 을 \d+분 기다린다\. #1 의 번호를 뒤로 미는 재예약을 검토한다$/)
     assert.deepEqual(events('AUTO-MERGE'), [])
+  })
+})
+
+describe('막힘 정리', () => {
+  test('막혀 기다리던 PR 이 걸 후보에서 빠진 틱에는 blocked 항목을 지운다', () => {
+    config({ migrations: { dirs: { api: 'db/api' } } })
+    spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
+    const views = { 1: { files: added('db/api/V3__y.sql') }, 2: { files: added('db/api/V4__x.sql') } }
+    const open = [
+      { number: 1, baseRefName: 'main', files: views[1].files },
+      { number: 2, baseRefName: 'main', files: views[2].files },
+    ]
+    github([pr(1, { statusCheckRollup: pending() }), pr(2)], { views, open })
+    once()
+    assert.deepEqual(Object.keys(autoMergeState().blocked as Json), ['2'])
+    github([pr(1, { statusCheckRollup: pending() }), pr(2, { statusCheckRollup: pending() })], { views, open })
+    once()
+    assert.deepEqual(autoMergeState().blocked, {})
   })
 })
 

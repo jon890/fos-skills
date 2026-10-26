@@ -66,7 +66,9 @@
 //     틱 자식은 등록을 다시 읽는다. 등록이 없으면 --run(또는 finish.run) 하나를, 그것도 없으면 Run 없는 한 칸을 맡는다.
 //     알림의 Run: Run 에 묶인 일(질문, 그 Run 의 정리, 그 Run 의 tick 핸들러)의 알림은 그 Run 의 파일에 쓴다.
 //     PR 에 붙는 알림(CI-FAILED, CONFLICT-ORPHAN)은 그 PR 워크트리의 worker 를 띄운 Run(아래 「worker 찾기」)에, 주인을 모르면 주 Run 에 쓴다.
-//     공유 일(열린 PR 조회, 보드, CI 규칙, 충돌 처리)의 WATCH-ERROR, 보드 결정의 REMINDER, 부모의 WATCH-ERROR tick 은 주 Run 에 쓴다.
+//     AUTO-MERGE, AUTO-MERGE-END 는 루프가 건 큐의 Run(state/auto-merge.json 의 queue.run)에, MIGRATION-CLASH, MIGRATION-BLOCKED 는
+//     그 PR 지시서의 Run 에 쓴다(아래 「자동 머지」).
+//     공유 일(열린 PR 조회, 보드, CI 규칙, 자동 머지, 충돌 처리)의 WATCH-ERROR, 보드 결정의 REMINDER, 부모의 WATCH-ERROR tick 은 주 Run 에 쓴다.
 //     Run 없는 한 칸이면 옛 파일(state/loop-events.jsonl)에 쓴다.
 //     worker 찾기: 맡은 Run 마다 worker-list --run 을 읽어(한 틱에 Run 마다 한 번) 그 워크트리의 worker 를 찾는다. 살아 있는 dispatch 가
 //     있는 Run 을 먼저 고르고, 없으면 처음 찾은 Run 이다. 살아 있는 dispatch 를 못 찾았고 읽지 못한 Run 이 있으면 읽지 못한 것으로 본다.
@@ -150,7 +152,7 @@
 //     큐를 건 뒤의 판정(필수 체크, 스레드, mergeable)은 머지 큐가 다시 한다. 여기 판정은 멈출 큐를 걸지 않으려는 앞 단계다.
 //     업무의 마지막 PR 표시(!, ~)는 붙이지 않는다. 마무리가 ADR-014 대로 판정한다.
 //     기록은 state/auto-merge.json 이다(ready, tried, clashes, blocked, queue. 형식은 docs/data-schema.md). 없거나 깨졌으면 빈 기록이고,
-//     단계가 끝날 때 옆 파일에 쓰고 rename 한다. 큐 로그는 state/auto-merge/<YYYYMMDDTHHMMSSZ>.log 다. queue 폴더에 두면 4 의 정리가
+//     단계가 끝날 때 옆 파일에 쓰고 rename 한다. 쓰지 못하면 로그에 남기고, 단계가 예외 없이 끝났으면 오류 이유로 낸다. 큐 로그는 state/auto-merge/<YYYYMMDDTHHMMSSZ>.log 다. queue 폴더에 두면 4 의 정리가
 //     끝난 로그를 휴지통으로 옮겨(lib/queue-logs.ts) 끝 줄을 읽기 전에 사라진다.
 //     1. 기록에서 이번 틱의 내 열린 PR 이 아닌 PR 의 ready, blocked 항목과 tried, clashes 의 `<PR>@…` 키를 지운다.
 //        로그 폴더에서 마지막으로 바뀐 지 7일이 넘은 .log 를 지운다. queue 기록이 가리키는 로그는 남긴다
@@ -158,6 +160,7 @@
 //        queue 기록의 pid 줄이 없거나 그 명령줄에 `merge-with-finish.` 가 없으면 끝난 큐다. pid 를 다른 프로세스가 다시 받았을 수 있어
 //        살아 있는지만으로 보지 않는다. 끝 줄은 로그에서 QUEUE-DONE, QUEUE-HELD 로 시작하는 마지막 줄, 없으면 `STOP ` 으로 시작하는
 //        마지막 줄, 그것도 없으면 `끝 줄 없음` 이다. 머지 큐는 끝 줄 뒤에 after-queue 와 정리 출력을 같은 로그에 이어 쓰므로 마지막 줄이 끝 줄이 아니다.
+//        merge-with-finish 가 큐를 걸기 전에 끝나면(사용법 오류, 마무리를 띄우지 못함) 끝 줄은 `끝 줄 없음` 이고 이유는 로그에 있다.
 //        AUTO-MERGE-END(pr null, text `<끝 줄> log=<로그>`. 로그를 읽지 못하면 끝 줄 자리에 `로그 없음`)를 기록의 run 으로 쓰고 기록을 비운다.
 //        아직 돌면 이 틱에는 걸지 않는다. 명령줄에 `merge_queue.`, `merge-queue.sh`, `merge-with-finish.` 가 든 줄이 있어도 걸지 않는다.
 //        머신 전체를 보므로 다른 저장소의 큐나 테스트 실행도 막는다. 거는 쪽으로는 틀리지 않아 그대로 둔다
@@ -165,7 +168,8 @@
 //        같은 브랜치는 앞 Run 의 것이다. Run id 가 없는 칸은 큐의 --run 과 알림의 Run 을 정할 수 없어 보지 않는다.
 //        보드 파일이 있으면 한 번 읽는다. 읽지 못하면 `보드를 읽지 못했다: <이유>` 로 걸지 않는다. 보류 표시를 놓친 채 걸지 않으려는 것이다.
 //        아래를 차례로 보고 처음 걸린 이유로 `AUTO-MERGE-WAIT #<PR> <이유>` 를 로그에만 쓰고 넘어간다.
-//        `draft`, `CI <상태>`(이번 틱의 ci 가 없거나 HEAD 가 다르면 `CI 없음`), `이미 건 HEAD`(tried 에 `<PR>@<HEAD>`),
+//        `draft`, `CI 규칙을 읽지 못했다`(이번 틱의 CI 감시가 그 PR 의 base 규칙을 읽지 못해 이전 판정을 옮겼다. 옛 passed 로 걸지 않는다),
+//        `CI <상태>`(이번 틱의 ci 가 없거나 HEAD 가 다르면 `CI 없음`), `이미 건 HEAD`(tried 에 `<PR>@<HEAD>`),
 //        `지시서 보류: <이유>`(lib/auto-merge.ts 의 specHold), `보드 보류: <줄>`(lib/board.ts 의 findBoardItems 로 찾은 항목의 boardHold),
 //        `미해결 스레드 <n>`(THREADS_CMD), `리뷰 보류`, `리뷰 대기`(queue.auto_review 가 있을 때 gh pr view --json reviews,comments,files 의
 //        reviewVerdict 가 block, none). 그 조회의 files 는 migrations.dirs 가 있으면 리뷰 판정이 없어도 읽는다.
@@ -182,7 +186,8 @@
 //        lower 가운데 걸 후보(clash 가 없는 준비된 PR)에 없는 PR 이 있으면 걸지 않고 blocked[<PR>] 에 {head, since, fired} 를 둔다(같은 HEAD 면
 //        since 를 둔다). since 에서 migrations.blocked_after_sec 가 지났고 fired 가 아니면 MIGRATION-BLOCKED(pr 기다리는 PR, text
 //        `<모듈> <label> 이 #<막는 PR> <막는 label> 을 <분>분 기다린다. #<막는 PR> 의 번호를 뒤로 미는 재예약을 검토한다`)를 쓰고 fired 를 둔다.
-//        막힘이 풀린 준비된 PR 은 항목을 지운다. migrations.before 에 그 모듈의 명령이 없으면(beforeCommand)
+//        막힘이 풀린 PR 과 이번 틱의 걸 후보가 아닌 PR 의 항목은 지운다. 기다리던 PR 이 준비에서 빠졌다 같은 HEAD 로 돌아와도
+//        옛 since 로 바로 알리지 않게 한다. migrations.before 에 그 모듈의 명령이 없으면(beforeCommand)
 //        `#<PR> 의 모듈 <모듈> 에 migrations.before 규칙이 없다` 로 걸지 않는다
 //     5. 순서: queueOrder 로 정하고 첫 PR 의 Run 의 PR 만 남긴다. 빠진 PR 이 lower 인 PR 도 빼고, 남는 집합이 바뀌지 않을 때까지
 //        queueOrder 부터 되풀이한다. 되풀이로 빠진 PR 은 blocked 에 두지 않고 다음 틱에 다시 본다. 묶음은 남은 PR 로 줄이고 둘 미만이면 뺀다
@@ -1004,8 +1009,15 @@ function runOfPr(ctx: Context, pr: OwnPr, lookup: Lookup): string | null {
 }
 
 // CI 감시(머리 주석의 「CI 감시」). ci 는 결과 줄에 담을 값, error 는 errors.ci 에 둘 이유다
-async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiEntry>, lookup: Lookup): Promise<{ ci: Record<string, CiEntry>; error: string | null }> {
+// stale 은 규칙을 읽지 못해 이전 판정을 옮긴 PR 이다. 자동 머지가 옛 passed 로 걸지 않게 한다
+async function watchCi(
+  ctx: Context,
+  mine: OwnPr[],
+  previous: Record<string, CiEntry>,
+  lookup: Lookup,
+): Promise<{ ci: Record<string, CiEntry>; error: string | null; stale: Set<number> }> {
   const ci: Record<string, CiEntry> = {}
+  const stale = new Set<number>()
   const rules = new Map<string, Names>()
   const errors: string[] = []
   for (const pr of mine) {
@@ -1028,6 +1040,7 @@ async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiE
     }
     if (!names.ok) {
       if (before) ci[key] = before
+      stale.add(pr.number)
       continue
     }
     const judged = ciState(pr.rollup, names.names, ctx.skippedIsMissing)
@@ -1056,7 +1069,7 @@ async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiE
       await fireCi('ci-failed', ctx, pr, judged.checks, names.names, run)
     }
   }
-  return { ci, error: errors.length > 0 ? errors.join('; ') : null }
+  return { ci, error: errors.length > 0 ? errors.join('; ') : null, stale }
 }
 
 // 멈춤 확인 ------------------------------------------------------------------
@@ -1332,7 +1345,12 @@ function writeAutoMerge(file: string, repo: string, state: AutoMergeState): void
 // 이번 틱의 내 열린 PR 이 아닌 PR 의 항목을 지운다(머리 주석의 「자동 머지」 1)
 function pruneAutoMerge(state: AutoMergeState, open: Set<string>): void {
   for (const map of [state.ready, state.blocked]) for (const key of Object.keys(map)) if (!open.has(key)) delete map[key]
-  for (const map of [state.tried, state.clashes]) for (const key of Object.keys(map)) if (!open.has(key.slice(0, key.indexOf('@')))) delete map[key]
+  for (const map of [state.tried, state.clashes]) {
+    for (const key of Object.keys(map)) {
+      const at = key.indexOf('@')
+      if (at < 0 || !open.has(key.slice(0, at))) delete map[key]
+    }
+  }
 }
 
 function dropOldLogs(dir: string, keep: string | null): void {
@@ -1407,10 +1425,12 @@ function judgeTarget(
   pr: OwnPr,
   hold: string | null,
   ci: Record<string, CiEntry>,
+  stale: Set<number>,
   state: AutoMergeState,
   board: { file: string; items: BoardItem[] } | null,
 ): { wait: string } | { error: string } | { migrations: Migration[] } {
   if (pr.draft) return { wait: 'draft' }
+  if (stale.has(pr.number)) return { wait: 'CI 규칙을 읽지 못했다' }
   const entry = ci[String(pr.number)]
   if (!entry || entry.head !== pr.head) return { wait: 'CI 없음' }
   if (entry.state !== 'passed') return { wait: `CI ${entry.state}` }
@@ -1435,7 +1455,7 @@ function judgeTarget(
   const review = ctx.autoMerge.review
   if (!review && Object.keys(ctx.autoMerge.dirs).length === 0) return { migrations: [] }
   const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments,files'], { cwd: ctx.repo })
-  if (!got.ok) return { error: oneLine(got.error) }
+  if (!got.ok) return { error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
   const data = isObject(got.data) ? got.data : {}
   if (review) {
     const verdict = reviewVerdict([...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')], review)
@@ -1486,14 +1506,22 @@ function launchDetached(argv: string[], cwd: string, fd: number): Promise<{ ok: 
 }
 
 // 자동 머지(머리 주석의 「자동 머지」). 결과는 errors.auto-merge 에 둘 이유다. 기록은 단계가 끝나거나 예외로 끝날 때 쓴다
-async function autoMerge(ctx: Context, mine: OwnPr[], ci: Record<string, CiEntry>, runs: TickRun[]): Promise<string | null> {
+async function autoMerge(ctx: Context, mine: OwnPr[], ci: Record<string, CiEntry>, stale: Set<number>, runs: TickRun[]): Promise<string | null> {
   const file = autoMergeFile(ctx.repo)
   const state = readAutoMerge(file)
   const errors = new Set<string>()
+  // 단계가 예외로 끝났으면 쓰기 실패보다 그 예외를 던진다. 예외가 없으면 쓰기 실패를 오류 이유로 낸다
+  let failed = true
   try {
-    await autoMergeStep(ctx, mine, ci, runs, state, errors)
+    await autoMergeStep(ctx, mine, ci, stale, runs, state, errors)
+    failed = false
   } finally {
-    writeAutoMerge(file, ctx.repo, state)
+    try {
+      writeAutoMerge(file, ctx.repo, state)
+    } catch (e) {
+      log(`orch-loop: state/auto-merge.json 을 쓰지 못했다: ${oneLine(e)}`)
+      if (!failed) errors.add(`state/auto-merge.json 을 쓰지 못했다: ${oneLine(e)}`)
+    }
   }
   return errors.size > 0 ? [...errors].join('; ') : null
 }
@@ -1510,7 +1538,15 @@ function notifyAutoMerge(ctx: Context, kind: string, pr: number | null, text: st
   }
 }
 
-async function autoMergeStep(ctx: Context, mine: OwnPr[], ci: Record<string, CiEntry>, runs: TickRun[], state: AutoMergeState, errors: Set<string>): Promise<void> {
+async function autoMergeStep(
+  ctx: Context,
+  mine: OwnPr[],
+  ci: Record<string, CiEntry>,
+  stale: Set<number>,
+  runs: TickRun[],
+  state: AutoMergeState,
+  errors: Set<string>,
+): Promise<void> {
   // 1. 지난 항목과 오래된 로그
   pruneAutoMerge(state, new Set(mine.map((pr) => String(pr.number))))
   const logs = join(pathOf('state', ctx.repo), 'auto-merge')
@@ -1553,7 +1589,7 @@ async function autoMergeStep(ctx: Context, mine: OwnPr[], ci: Record<string, CiE
   for (const pr of mine) {
     const target = targets.get(pr.branch)
     if (!target) continue
-    const judged = judgeTarget(ctx, pr, target.hold, ci, state, board)
+    const judged = judgeTarget(ctx, pr, target.hold, ci, stale, state, board)
     if ('error' in judged) {
       errors.add(judged.error)
       continue
@@ -1620,6 +1656,8 @@ async function autoMergeStep(ctx: Context, mine: OwnPr[], ci: Record<string, CiE
       log(`AUTO-MERGE-WAIT #${c.pr.number} ${blocker.module} ${blocker.mine} 이 #${blocker.pr} ${blocker.label} 을 기다린다`)
     }
   }
+  // 이번 틱의 걸 후보가 아닌 PR 의 막힘은 지운다. 준비에서 빠졌다 같은 HEAD 로 돌아온 PR 이 옛 since 로 바로 알리지 않게 한다
+  for (const key of Object.keys(state.blocked)) if (!byNumber.has(Number(key))) delete state.blocked[key]
 
   // 머지 전 명령
   const commands = new Map<number, string | null>()
@@ -1797,12 +1835,14 @@ async function tick(ctx: Context, n: number): Promise<number> {
 
   // 5. CI 감시. 열린 PR 을 읽지 못한 틱은 결과에 ci 를 넣지 않아 부모가 이전 값을 둔다
   let ci: Record<string, CiEntry> | undefined
+  let ciStale = new Set<number>()
   // CI 감시와 충돌 처리가 함께 쓴다
   const lookup: Lookup = { runs, rows: new Map() }
   if (prs.ok) {
     try {
       const watched = await watchCi(ctx, prs.mine, ciEntries(loaded?.ci), lookup)
       ci = watched.ci
+      ciStale = watched.stale
       report('ci', watched.error)
     } catch (e) {
       report('ci', oneLine(e))
@@ -1849,7 +1889,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
   // 8. 자동 머지. queue.auto_merge 가 false 거나 열린 PR 을 읽지 못한 틱은 errors.auto-merge 를 그대로 둔다
   if (prs.ok && ctx.autoMerge.enabled) {
     try {
-      report('auto-merge', await autoMerge(ctx, prs.mine, ci ?? {}, runs))
+      report('auto-merge', await autoMerge(ctx, prs.mine, ci ?? {}, ciStale, runs))
     } catch (e) {
       report('auto-merge', oneLine(e))
     }
