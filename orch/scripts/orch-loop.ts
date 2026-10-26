@@ -122,17 +122,19 @@
 //     `orca terminal read --screen` 으로 읽고 lib/screen.ts 의 readScreen 으로 판정한다. 등록되지 않은 Run 의 worker 화면은 읽지 않는다.
 //     입력하지 않는다. 다시 시도시키는 일과 그 횟수 상한은 저장소의 worker-stalled 핸들러가 정한다(references/hooks.md, ADR-013).
 //     멈춤은 error(모델 오류로 멈춘 화면)와 idle(입력란이 빈 화면)이다. pipeline.stall_ticks 가 상태마다 기준 틱 수를 정하고, 0 이면 보지 않는다.
+//     interrupted(사람이 Esc 로 끊은 화면)는 멈춤이 아니다. 사람이 일부러 멈춘 작업을 핸들러가 다시 돌리지 않게 한다.
 //     기본은 error 2, idle 0 이다. idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 기본으로 끈다.
 //     idle 을 켜도 그 dispatch(또는 그 터미널)가 보낸 미답변 질문(1 의 poll 이 본 question, escalation)이 있으면 세지 않는다.
 //     그 Run 의 질문을 읽지 못한 틱은 질문을 기다리는지 모르므로 idle 항목을 세지도 지우지도 않는다.
-//     멈춤 항목(loop.json 의 stalls[<dispatch>]): run, terminal, state, hash(마지막 메시지 묶음의 lib/screen.ts blockHash), since(처음 본 틱의
+//     멈춤 항목(loop.json 의 stalls[<dispatch>]): run, terminal, state, hash(lib/screen.ts 의 stallHash), since(그 상태를 처음 본 틱의
 //     ISO 8601 UTC 시각), ticks(같은 상태와 같은 hash 를 본 틱 수. 핸들러가 처리한 뒤로 다시 센다), fired(코디네이터에게 알렸는지).
 //     입력란 아래 상태 줄(경과 시간, 컨텍스트 사용량)은 hash 에 들지 않아 그 줄만 바뀐 화면은 같은 멈춤이다.
-//     상태나 hash 나 터미널이 바뀌면 ticks 1 부터 다시 센다.
+//     상태나 터미널이 바뀌면 새 항목이다. 같은 상태에서 hash 만 바뀌면 since 는 두고 ticks 1, fired false 로 다시 센다.
+//     코디네이터가 이어 가게 한 worker 가 같은 오류로 다시 끝나면 화면에 오류 줄이 늘어 hash 가 바뀌므로 다시 알린다.
 //     ticks 가 기준에 닿은 틱에 worker-stalled 를 그 Run 으로 낸다.
-//     핸들러가 0 으로 끝나면(pass) 알림 파일에 쓰지 않고 ticks 를 0 으로 되돌린다. 다시 시도시킨 worker 가 같은 오류로 끝나면 마지막
-//     메시지 묶음이 같아 hash 가 같다. 그래서 같은 화면이 기준 틱 수만큼 더 이어지면 핸들러를 다시 부른다. 횟수 상한은 핸들러가 정한다.
-//     핸들러가 없거나 0 이 아니면 그 Run 의 알림 파일에 WORKER-STALLED 를 쓰고 fired 를 true 로 둔다. 같은 멈춤이 이어지는 동안 다시 내지 않는다.
+//     핸들러가 0 으로 끝나면(pass) 알림 파일에 쓰지 않고 ticks 를 0 으로 되돌린다. 다시 시도시킨 worker 의 화면이 그대로면 hash 가 같다.
+//     그래서 같은 화면이 기준 틱 수만큼 더 이어지면 핸들러를 다시 부른다. 횟수 상한은 핸들러가 since 로 센다.
+//     핸들러가 없거나 0 이 아니면 그 Run 의 알림 파일에 WORKER-STALLED 를 쓰고 fired 를 true 로 둔다. 같은 hash 가 이어지는 동안 다시 내지 않는다.
 //     text 는 `<dispatch> <state> <ticks>틱 <terminal>` 이다.
 //     작업 중으로 바뀌었거나, 멈춤이 아니거나, dispatch 가 끝났거나, 등록에서 빠진 Run 의 항목은 결과에서 빠진다.
 //     worker-list 를 읽지 못한 Run 의 항목과 화면을 읽지 못한 dispatch 의 항목은 그대로 옮기고, 그 Run 의 errors 의 stalls@<Run> 에 이유를 둔다.
@@ -219,7 +221,7 @@ import { NO_LIMIT_MS, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopCh
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { notifyQuestion, poll } from './lib/questions.ts'
-import { blockHash, readScreen, screenLines, screenTail } from './lib/screen.ts'
+import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
 
 const USAGE = [
@@ -1059,16 +1061,19 @@ async function watchStalls(
         }
         if (asked.dispatches.has(dispatch) || asked.terminals.has(terminal)) continue
       }
-      const hash = blockHash(screen.block)
+      const hash = stallHash(screen)
       const before = previous[dispatch]
-      const same = before && before.state === state && before.hash === hash && before.terminal === terminal
-      const entry: Stall = same
-        ? { ...before, run, ticks: before.ticks + 1 }
-        : { run, terminal, state, hash, since: iso(), ticks: 1, fired: false }
+      const continued = before && before.state === state && before.terminal === terminal
+      // 화면만 바뀐 멈춤(다시 시도한 worker 가 같은 오류로 끝남)은 since 를 두고 새 멈춤으로 센다. 핸들러가 since 로 횟수를 센다
+      const entry: Stall = !continued
+        ? { run, terminal, state, hash, since: iso(), ticks: 1, fired: false }
+        : before.hash === hash
+          ? { ...before, run, ticks: before.ticks + 1 }
+          : { ...before, run, hash, ticks: 1, fired: false }
       stalls[dispatch] = entry
       if (entry.ticks < limit || entry.fired) continue
       if (await notifyStall(ctx, run, row, entry, screenTail(lines), base)) {
-        // 핸들러가 처리했다. 다시 시도한 뒤에도 같은 화면이면 묶음이 같아 해시가 같으므로, 처음부터 다시 세 핸들러를 다시 부른다
+        // 핸들러가 처리했다. 다시 시도한 뒤에도 화면이 그대로면 해시가 같으므로, 처음부터 다시 세 핸들러를 다시 부른다
         entry.ticks = 0
       } else {
         entry.fired = true

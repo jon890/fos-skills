@@ -23,8 +23,9 @@
 //     --state        그 터미널 화면을 판정만 하고 상태 한 낱말을 낸다
 //     --classify     표준 입력의 화면 문자열을 판정만 하고 상태 한 낱말을 낸다
 //
-// 화면 상태(working, error, idle, draft, permission, unknown)의 뜻과 판정은 lib/screen.ts 머리 주석이 소유한다.
-// error 는 입력란이 빈 채 모델 오류로 멈춘 화면이라 idle 처럼 입력한다.
+// 화면 상태(working, error, interrupted, idle, draft, permission, unknown)의 뜻과 판정은 lib/screen.ts 머리 주석이 소유한다.
+// error 는 입력란이 빈 채 모델 오류로 멈춘 화면이라 idle 처럼 입력한다. interrupted(사람이 Esc 로 끊은 화면)도 입력란이 비어 idle 처럼 입력한다.
+// 이 명령은 코디네이터나 핸들러가 고른 때만 불린다. 사람이 끊은 작업을 저절로 다시 돌리지 않는 일은 상주 루프의 멈춤 확인이 맡는다.
 //
 // ORCA 환경 변수로 orca 실행 파일을 바꾼다. ORCH_REAL_ORCA 가 있으면 그것을 먼저 쓴다.
 // 이벤트 핸들러 환경의 ORCA 는 `orca terminal send` 를 막는 가드 shim 이고, 진짜 실행 파일은 ORCH_REAL_ORCA 다(lib/events.ts 의 「환경」).
@@ -108,7 +109,7 @@ function nudge(terminal: string, msgId: string | undefined, waitSubmit: number, 
     out('working: 작업 중이라 다음 check 에서 읽는다. 입력하지 않았다')
     return 0
   }
-  if (state !== 'idle' && state !== 'error') {
+  if (state !== 'idle' && state !== 'error' && state !== 'interrupted') {
     out(`${state}: 입력하지 않았다. terminal read --screen 으로 화면을 직접 본다`)
     return 4
   }

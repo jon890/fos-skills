@@ -5,7 +5,7 @@
 
 ## 4.1.0 (2026-10-26)
 
-- `nudge-worker --state` 가 모델 오류로 멈춘 화면을 `error` 로 낸다. `--msg-id` 와 `--text` 는 `error` 화면에도 입력한다
+- `nudge-worker --state` 가 모델 오류로 멈춘 화면을 `error` 로, 사람이 Esc 로 끊은 Codex 화면을 `interrupted` 로 낸다. `--msg-id` 와 `--text` 는 두 화면에도 입력한다
 - 상주 루프가 등록된 Run 의 살아 있는 worker 화면을 보고, 같은 멈춤이 `pipeline.stall_ticks`(기본 `error` 2틱) 이어지면 `worker-stalled` 를 낸다. 핸들러가 없거나 실패하면 그 Run 의 대기에 `WORKER-STALLED` 가 온다
 - 핸들러 환경에 `ORCH_SCRIPTS` 를 넘기고, 핸들러가 부른 `nudge-worker` 와 `send-to-worker` 가 가드에 막히지 않고 입력한다
 - 고친 문제: `--run` 없이 띄운 루프의 알림을 대기가 읽지 않았다. 주 Run 이 바뀌면 진행 중인 실패가 새 주 Run 에 오지 않았다

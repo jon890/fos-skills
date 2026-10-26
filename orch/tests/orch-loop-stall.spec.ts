@@ -42,6 +42,20 @@ const CODEX_ERROR = (footer = 'Context 47% used') => `• 테스트를 고쳤다
   ~/work/repo · user/branch · GPT-6.1-Sol medium · ${footer}
   ? for shortcuts`
 
+// 코디네이터가 「계속 진행해」 로 이어 가게 했는데 같은 오류로 다시 끝난 화면이다
+const CODEX_ERROR_AGAIN = `• 테스트를 고쳤다.
+■ Selected model is at capacity. Please try a different model.
+› 계속 진행해
+■ Selected model is at capacity. Please try a different model.
+› Ask Codex to do anything
+  ~/work/repo · user/branch · GPT-6.1-Sol medium · Context 47% used
+  ? for shortcuts`
+
+const CODEX_INTERRUPTED = `• 파일을 고친다.
+■ Conversation interrupted - use /feedback if something went wrong
+› Ask Codex to do anything
+  ? for shortcuts`
+
 const CLAUDE_IDLE = `⏺ 백그라운드 에이전트를 기다린다.
 ───────────────────────────────
 ❯
@@ -207,6 +221,31 @@ describe('error 멈춤', () => {
     tick()
     tick()
     assert.equal(stalledEvents('A').length, 1, '같은 멈춤을 다시 알렸다')
+  })
+
+  test('알린 뒤 이어 가게 한 worker 가 같은 오류로 다시 멈추면 다시 알리고, since 는 그대로다', () => {
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
+    tick()
+    const fired = stallOf(tick(), 'd1')
+    assert.equal(fired?.fired, true)
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR_AGAIN } })
+    const recounted = stallOf(tick(), 'd1')
+    assert.deepEqual([recounted?.ticks, recounted?.fired, recounted?.since], [1, false, fired?.since])
+    tick()
+    tick()
+    tick()
+    assert.deepEqual(
+      stalledEvents('A').map((row) => row.text),
+      ['d1 error 2틱 tA', 'd1 error 2틱 tA'],
+    )
+  })
+
+  test('사람이 Esc 로 끊은 화면은 멈춤으로 세지 않고 핸들러도 부르지 않는다', () => {
+    write(orchFile('hooks', 'worker-stalled.ts'), retryExample())
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_INTERRUPTED } })
+    for (let i = 0; i < 4; i++) assert.deepEqual(tick().stalls, {})
+    assert.deepEqual(stalledEvents('A'), [])
+    assert.deepEqual(sends(), [])
   })
 
   test('입력란 아래 상태 줄만 바뀌어도 같은 멈춤으로 센다', () => {

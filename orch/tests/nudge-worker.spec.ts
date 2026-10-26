@@ -180,6 +180,8 @@ describe('화면 판정', () => {
     ['Claude API 오류', CLAUDE_ERROR, 'error'],
     ['오류 뒤에 답이 나온 Claude', CLAUDE_RECOVERED, 'idle'],
     ['자동 재시도 중인 Claude', CLAUDE_RETRYING, 'working'],
+    ['옛 오류 줄 위에서 다시 작업 중인 Codex', CODEX_ERROR.replace(CODEX_FOOTER('Ask Codex to do anything'), `› 계속 진행해\n• Working (5s • esc to interrupt)\n${CODEX_FOOTER('Ask Codex to do anything')}`), 'working'],
+    ['사람이 Esc 로 끊은 Codex', `${CODEX_HISTORY}■ Conversation interrupted - use /feedback if something went wrong\n${CODEX_FOOTER('Ask Codex to do anything')}`, 'interrupted'],
     ['오류 화면의 쓰다 만 글', CODEX_ERROR.replace('› Ask Codex to do anything', '› 다른 모델로 바꿔'), 'draft'],
     // 아래 12줄만 본다. 그 위의 입력란 기호는 대화 기록이다
     ['화면 위쪽의 입력란은 기록이다', `› 지난 지시\n${Array.from({ length: 20 }, (_, i) => `출력 ${i}`).join('\n')}`, 'unknown'],
