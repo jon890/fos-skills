@@ -9,6 +9,7 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/nudge-worker.ts', import.meta.url))
+const GUARD_ORCA = fileURLToPath(new URL('../scripts/lib/guard/orca', import.meta.url))
 
 const CLAUDE_FOOTER = (input: string) => `───────────────────────────────────────────────────────────────
 ${input}
@@ -54,6 +55,27 @@ const CODEX_PERMISSION = `  Would you like to run the following command?
   $ git push -u origin HEAD
 › 1. Yes, proceed (y)
   2. No, and tell Codex what to do differently (esc)`
+
+// 모델 오류로 멈춘 화면. 입력란이 비었고 바로 위 마지막 메시지 묶음이 오류 줄이다
+const CODEX_ERROR = `${CODEX_HISTORY}■ Selected model is at capacity. Please try a different model.
+${CODEX_FOOTER('Ask Codex to do anything')}`
+
+const CLAUDE_ERROR = `⏺ 검사를 다시 돌린다.
+❯ 계속 진행해
+  ⎿  API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}
+${CLAUDE_FOOTER('❯ ')}`
+
+// 오류 뒤에 사람이 「계속」 을 쳐서 답이 나왔다. 마지막 묶음은 그 답이다
+const CLAUDE_RECOVERED = `${CLAUDE_ERROR.replace(CLAUDE_FOOTER('❯ '), '')}
+❯ 계속 진행해
+⏺ 이어서 검사를 끝냈다.
+${CLAUDE_FOOTER('❯ ')}`
+
+// 자동 재시도 중인 오류는 작업 중이다
+const CLAUDE_RETRYING = `❯ 계속 진행해
+  ⎿  API Error (529 Overloaded) · Retrying in 5 seconds… (attempt 2/10)
+✳ Thinking… (12s · esc to interrupt)
+${CLAUDE_FOOTER('❯ ')}`
 
 // 차례로 응답을 하나씩 낸다. 부를 때마다 인자를 기록한다. 확장자가 없어 타입 문법 없이 쓴다.
 // macOS 에서 파이프로 가는 process.stdout 쓰기는 비동기라 process.exit 가 출력을 자를 수 있어 writeSync 로 쓴다.
@@ -104,6 +126,7 @@ beforeEach(() => {
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
   }
+  delete env.ORCH_REAL_ORCA
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -153,6 +176,13 @@ describe('화면 판정', () => {
     ['Codex 작업 중', CODEX_WORKING, 'working'],
     ['Codex 쓰다 만 글', CODEX_DRAFT, 'draft'],
     ['Codex 권한 확인', CODEX_PERMISSION, 'permission'],
+    ['Codex 용량 초과', CODEX_ERROR, 'error'],
+    ['Claude API 오류', CLAUDE_ERROR, 'error'],
+    ['오류 뒤에 답이 나온 Claude', CLAUDE_RECOVERED, 'idle'],
+    ['자동 재시도 중인 Claude', CLAUDE_RETRYING, 'working'],
+    ['옛 오류 줄 위에서 다시 작업 중인 Codex', CODEX_ERROR.replace(CODEX_FOOTER('Ask Codex to do anything'), `› 계속 진행해\n• Working (5s • esc to interrupt)\n${CODEX_FOOTER('Ask Codex to do anything')}`), 'working'],
+    ['사람이 Esc 로 끊은 Codex', `${CODEX_HISTORY}■ Conversation interrupted - use /feedback if something went wrong\n${CODEX_FOOTER('Ask Codex to do anything')}`, 'interrupted'],
+    ['오류 화면의 쓰다 만 글', CODEX_ERROR.replace('› Ask Codex to do anything', '› 다른 모델로 바꿔'), 'draft'],
     // 아래 12줄만 본다. 그 위의 입력란 기호는 대화 기록이다
     ['화면 위쪽의 입력란은 기록이다', `› 지난 지시\n${Array.from({ length: 20 }, (_, i) => `출력 ${i}`).join('\n')}`, 'unknown'],
     ['셸 화면', '~/work/repo on main\n$ ', 'unknown'],
@@ -195,6 +225,22 @@ describe('입력 흐름', () => {
   test('권한 확인 receipt 는 다시 보내지 않고 4 다', () => {
     const r = runNudge([screen(CLAUDE_IDLE), receipt(['input_accepted'], 'permission')])
     assert.equal(r.code, 4, r.stdout)
+    assert.equal(sends().length, 1)
+  })
+
+  test('모델 오류로 멈춘 worker 에게는 입력 대기처럼 넣는다', () => {
+    const r = runNudge([screen(CODEX_ERROR), receipt(['input_accepted', 'turn_started'])])
+    assert.equal(r.code, 0, r.stdout)
+    assert.ok(r.stdout.startsWith('nudged'), r.stdout)
+    assert.equal(sends().length, 1)
+  })
+
+  test('핸들러 환경에서는 가드 shim 이 아니라 ORCH_REAL_ORCA 로 입력한다', () => {
+    // 이벤트 핸들러의 ORCA 는 terminal send 를 막는 가드 shim 이다(lib/events.ts 의 「환경」)
+    env.ORCH_REAL_ORCA = env.ORCA
+    env.ORCA = GUARD_ORCA
+    const r = runNudge([screen(CODEX_ERROR), receipt(['input_accepted', 'turn_started'])])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(sends().length, 1)
   })
 

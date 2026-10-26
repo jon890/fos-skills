@@ -25,6 +25,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --r
 - 등록된 Run 마다 질문 확인. 답이 없는 질문을 다시 알릴 시간이 되면 알림 파일에 `REMINDER` 를 쓴다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
 - Run 마다 그 Run 범위의 정리(`cleanup-sweep --run`), 원격 브랜치 정리와 보드 동기화(`board-sync`)는 틱마다 한 번
 - 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 그 PR 의 worker 에게 알리고, 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알리기만 하고 머지하지 않는다
+- Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
 - Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
 - 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기. 끝난 dispatch 에 이어 쓰는 동안(최대 65분)은 다음 틱이 밀린다
 
@@ -83,6 +84,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
   - `REMINDER`: 답이 없는 질문의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
+  - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `nudge-worker.ts --terminal <터미널> --state` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
   - `WATCH-ERROR`, `HOOK-FAIL`: 루프가 무엇을 하지 못했다는 알림이다. 내용의 이유(Orca 꺼짐, 핸들러 오류)를 고친다. 같은 이유는 한 번만 오고, 한 번 성공한 뒤 다시 실패하면 다시 온다
   - `GAP`: 알림 파일이 1000 줄을 넘어 잘려 일부를 잃었다. `<orch 루트>/state/loop.log` 를 읽어 놓친 일을 찾는다
 - 종료 코드 8 의 `LOOP-DEAD <repo> run <Run> 미등록` 은 루프는 살아 있는데 이 Run 이 등록되지 않았다는 뜻이다. `orch-loop.ts --start --run` 으로 등록한 뒤 다시 건다

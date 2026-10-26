@@ -12,3 +12,4 @@
 - [ADR-010](010-orch-typescript.md): orch 와 work-board 의 Python 스크립트를 빌드 없는 TypeScript 로 한 번에 옮긴다 (`accepted`)
 - [ADR-011](011-node-24-minimum.md): orch 와 work-board 의 최소 Node 를 24 로 올린다 (`accepted`)
 - [ADR-012](012-orch-loop-multi-run.md): 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다 (`accepted`)
+- [ADR-013](013-orch-worker-stalled.md): 상주 루프는 멈춘 worker 를 이벤트로 알리고, 다시 시도시키는 일은 저장소 핸들러가 맡는다 (`accepted`)

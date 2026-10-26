@@ -23,14 +23,13 @@
 //     --state        그 터미널 화면을 판정만 하고 상태 한 낱말을 낸다
 //     --classify     표준 입력의 화면 문자열을 판정만 하고 상태 한 낱말을 낸다
 //
-// 화면 상태:
-//     working     작업 중이다. Claude 의 「✳ Thinking… (」 줄, Codex 의 「• Working (」 줄, 「esc to interrupt」
-//     idle        입력란이 비어 있다. Claude 의 「❯」 만 있는 줄, Codex 의 「›」 줄이 비었거나 기본 안내 문구다
-//     draft       입력란에 누가 쓰다 만 글이 있다. 덧붙여 보내면 그 글과 섞인다
-//     permission  권한 확인 창에서 기다린다. 코디네이터가 대신 고르지 않는다
-//     unknown     어느 것도 아니다
+// 화면 상태(working, error, interrupted, idle, draft, permission, unknown)의 뜻과 판정은 lib/screen.ts 머리 주석이 소유한다.
+// error 는 입력란이 빈 채 모델 오류로 멈춘 화면이라 idle 처럼 입력한다. interrupted(사람이 Esc 로 끊은 화면)도 입력란이 비어 idle 처럼 입력한다.
+// 이 명령은 코디네이터나 핸들러가 고른 때만 불린다. 사람이 끊은 작업을 저절로 다시 돌리지 않는 일은 상주 루프의 멈춤 확인이 맡는다.
 //
-// ORCA 환경 변수로 orca 실행 파일을 바꾼다.
+// ORCA 환경 변수로 orca 실행 파일을 바꾼다. ORCH_REAL_ORCA 가 있으면 그것을 먼저 쓴다.
+// 이벤트 핸들러 환경의 ORCA 는 `orca terminal send` 를 막는 가드 shim 이고, 진짜 실행 파일은 ORCH_REAL_ORCA 다(lib/events.ts 의 「환경」).
+// 핸들러가 worker 에게 입력할 길은 이 명령과 send-to-worker 뿐이라, 이 명령은 가드를 거치지 않고 진짜 orca 를 부른다.
 //
 // 종료 코드:
 //     0  입력해서 턴이 시작됐거나, 작업 중이라 입력할 필요가 없다. 표준 출력 첫 낱말이 nudged 또는 working 이다.
@@ -45,7 +44,9 @@
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { orca } from './lib/orca.ts'
+import { orcaBin } from './lib/orca.ts'
+import { run } from './lib/proc.ts'
+import { classify, LINE_BREAK, screenLines as tailOf } from './lib/screen.ts'
 
 const USAGE = [
   '사용법: nudge-worker.ts --terminal HANDLE --msg-id MSG_ID [--wait-submit 15]',
@@ -53,50 +54,10 @@ const USAGE = [
   '        nudge-worker.ts --terminal HANDLE --state',
   '        nudge-worker.ts --classify < screen.txt',
 ].join('\n')
-// 상태 줄과 입력란은 화면 아래에 있다. 위쪽 대화 기록의 「›」 와 「❯」 는 보지 않는다
-const BOTTOM = 12
 // terminal send --wait-submit 은 그 초만큼 기다린 뒤 답한다. 기다리는 시간 위에 orca 자체의 여유를 더한다
 const ORCA_SLACK_MS = 60_000
 
-const PERMISSION = /Do you want to (proceed|make this edit|create)|Would you like to (run|make|apply)|Allow command\?/u
-const WORKING = /esc to interrupt|^\s*• Working \(|^\S\s+[A-Z][a-z]+…/u
-const CLAUDE_INPUT = /^\s*❯(?:\s(.*))?$/u
-const CODEX_INPUT = /^\s*›(?:\s(.*))?$/u
-// Codex 는 빈 입력란에 안내 문구를 흐리게 보여 준다. 화면 문자열로는 입력한 글과 구분되지 않아 알려진 문구만 빈 것으로 본다
-const CODEX_PLACEHOLDERS = new Set([
-  'Ask Codex to do anything',
-  'Explain this codebase',
-  'Summarize recent commits',
-  'Implement {feature}',
-  'Find and fix a bug in @filename',
-  'Write tests for @filename',
-  'Improve documentation in @filename',
-  'Run /review on my current changes',
-  'Use /skills to list available skills',
-])
-// Python 의 str.splitlines 와 같은 줄 경계다. 화면 문자열에 \r 이나 \u2028 이 섞여도 같은 줄로 나눈다
-const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/u
-
 type Prompt = { stages?: unknown; observation?: unknown; requestId?: unknown }
-
-function classify(lines: string[]): string {
-  const tail = lines.filter((line) => line.trim()).map((line) => line.trimEnd()).slice(-BOTTOM)
-  if (tail.some((line) => PERMISSION.test(line))) return 'permission'
-  if (tail.some((line) => WORKING.test(line))) return 'working'
-  for (const line of [...tail].reverse()) {
-    const claude = CLAUDE_INPUT.exec(line)
-    if (claude) {
-      // 선택 창의 「❯ 1. Yes」 는 위에서 권한 확인으로 판정했다. 남은 「❯ 글」 은 입력란의 글이다
-      return (claude[1] ?? '').trim() ? 'draft' : 'idle'
-    }
-    const codex = CODEX_INPUT.exec(line)
-    if (codex) {
-      const text = (codex[1] ?? '').trim()
-      return !text || CODEX_PLACEHOLDERS.has(text) ? 'idle' : 'draft'
-    }
-  }
-  return 'unknown'
-}
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`)
@@ -104,7 +65,7 @@ function out(line: string): void {
 
 // 실패하면 orca 의 출력을 그대로 내고 null 이다. 종료 코드가 아니라 응답의 ok 로 판정한다
 function orcaJson(args: string[], timeoutMs?: number): Record<string, unknown> | null {
-  const done = orca([...args, '--json'], { timeoutMs })
+  const done = run([process.env.ORCH_REAL_ORCA || orcaBin(), ...args, '--json'], { timeoutMs })
   let data: unknown
   try {
     data = JSON.parse(done.stdout)
@@ -122,8 +83,7 @@ function orcaJson(args: string[], timeoutMs?: number): Record<string, unknown> |
 function screenLines(terminal: string): string[] | null {
   const result = orcaJson(['terminal', 'read', '--terminal', terminal, '--screen'])
   if (result === null) return null
-  const tail = ((result.terminal as { tail?: unknown }) || {}).tail || []
-  return Array.isArray(tail) ? tail.map(String) : String(tail).split(LINE_BREAK)
+  return tailOf(result)
 }
 
 function send(terminal: string, text: string, waitSubmit: number | null, retry?: string): Prompt | null {
@@ -149,7 +109,7 @@ function nudge(terminal: string, msgId: string | undefined, waitSubmit: number, 
     out('working: 작업 중이라 다음 check 에서 읽는다. 입력하지 않았다')
     return 0
   }
-  if (state !== 'idle') {
+  if (state !== 'idle' && state !== 'error' && state !== 'interrupted') {
     out(`${state}: 입력하지 않았다. terminal read --screen 으로 화면을 직접 본다`)
     return 4
   }
