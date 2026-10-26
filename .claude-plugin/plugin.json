@@ -12,7 +12,9 @@
     "./orch",
     "./planning",
     "./pr-review",
-    "./review-fix"
+    "./review-fix",
+    "./work-board/board-decide",
+    "./work-board/board-start"
   ],
   "hooks": [
     "./orch/hooks/hooks.json",
