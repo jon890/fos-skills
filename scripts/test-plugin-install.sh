@@ -148,7 +148,7 @@ SKILLS_LINE="$(printf '%s\n' "$OUT" | grep -E 'Skills \([0-9]+\)' | head -n 1 ||
 COUNT="$(printf '%s' "$SKILLS_LINE" | sed -n 's/.*Skills (\([0-9][0-9]*\)).*/\1/p')"
 MISSING_NAMES=""
 for name in "${SKILLS[@]}"; do
-  case "$SKILLS_LINE" in *"$name"*) ;; *) MISSING_NAMES="$MISSING_NAMES $name" ;; esac
+  case "$SKILLS_LINE" in *"${name##*/}"*) ;; *) MISSING_NAMES="$MISSING_NAMES $name" ;; esac
 done
 if [ "$RC" -eq 0 ] && [ "$COUNT" = "$EXPECTED" ] && [ -z "$MISSING_NAMES" ]; then
   ok "스킬 인식: ${COUNT}개가 모두 인식된다"

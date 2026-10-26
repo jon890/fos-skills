@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, decisionOf, START_PROMPT } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, decisionOf } from '../hooks/register.js'
 import { queryQuestions } from '../hooks/register.js'
 
 test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
@@ -247,15 +247,6 @@ test('결정 질문 형식이면 제목과 권장안을 꺼내고 형식이 없�
   expect(decisionOf('배경: 첫 줄이 결정이 아니다\n결정: x\n권장: y')).toBeNull()
   expect(decisionOf('')).toBeNull()
   expect(decisionOf('결정:  \n- a\n- b\n권장: a')).toBeNull()
-})
-
-test('오늘 시작 요청은 board 갱신, 완료 비우기, 정리, 감시, 보고를 모두 담는다', () => {
-  expect(START_PROMPT).toContain('완료(done) 항목은 비운다')
-  expect(START_PROMPT).toContain('현재 저장소의 남은 워크트리')
-  expect(START_PROMPT).toContain('.orch/overlay.md 의 정리 규칙')
-  expect(START_PROMPT).not.toMatch(/fos-|세 저장소/)
-  expect(START_PROMPT).toContain('orch-watch')
-  expect(START_PROMPT).toContain('정할 것은 바로 물어본다')
 })
 
 test('전체 진행률은 진행 중 항목의 끝낸 단계 합과 전체 단계 합이다', () => {

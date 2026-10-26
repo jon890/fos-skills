@@ -1,4 +1,5 @@
 import { test, expect } from 'claude-code/testing'
+import { START_COMMAND, DECIDE_COMMAND } from '../hooks/register.js'
 
 const BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
   { id: 'a', title: '단계 항목', status: 'doing', owner: 'worker', pr: '#9', worktree: 'wt-a',
@@ -14,8 +15,11 @@ const PANE = {
   props: { title: '작업 현황', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
-async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD) {
-  on('command.register', (_, e) => ({ value: { command: e.name } }))
+async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD, commands = []) {
+  on('command.register', (_, e) => {
+    commands.push(e.name)
+    return { value: { command: e.name } }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
@@ -139,14 +143,53 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   await ui.unmount()
 })
 
-test('새로 읽기 버튼은 없고 오늘 시작과 펼치기 버튼만 남는다', async ($, on) => {
+test('새로 읽기 버튼은 없고 오늘 시작, 정할 것 묻기, 펼치기 버튼을 보인다', async ($, on) => {
   await start($, on)
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Button', text: /새로 읽기|읽는 중/ })).toBeFalsy()
   expect(await ui.find({ type: 'Button', text: /오늘 시작/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', text: /정할 것 묻기/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', text: /펼치기/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('명령은 /board 만 등록한다. board-start 와 board-decide 는 스킬이 맡는다', async ($, on) => {
+  const commands = []
+  await start($, on, undefined, BOARD, commands)
+  expect(commands).toEqual(['board'])
+})
+
+for (const [key, hotkey, command] of [
+  ['start-today', 's', START_COMMAND],
+  ['ask-decisions', 'q', DECIDE_COMMAND],
+] as const) {
+  test(key + ' 버튼은 요청을 보내지 않고 입력란에 스킬 명령을 채운다', async ($, on) => {
+    const filled = []
+    const submitted = []
+    const toasts = []
+    on('prompt.fill', (_, e) => {
+      filled.push(e.text)
+      return { isFilled: true }
+    })
+    on('prompt.submit', (_, e) => {
+      submitted.push(e.text)
+      return { drop: '테스트에서 요청만 확인' }
+    })
+    on('ui.toast', (_, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    await start($, on)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect((await ui.find({ type: 'Button', key })).props.hotkey).toBe(hotkey)
+    await ui.press({ key })
+    expect(filled).toEqual([command])
+    expect(submitted).toEqual([])
+    expect(toasts.join('\n')).toContain('Enter 를 누르면')
+    await ui.unmount()
+  })
+}
 
 test('질문 조회 실패를 결정 필요 0 대신 확인 불가로 표시한다', async ($, on) => {
   await start($, on, (argv) => argv.includes('run-current')
