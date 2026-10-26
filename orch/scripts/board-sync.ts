@@ -7,9 +7,13 @@
 //       task_pattern, spec_task_pattern, specs_dir). 마지막이면 남은 단계를 끝내고 항목을 done 으로 바꾼다.
 //       중간이면 그 PR 번호(#N)가 적힌 단계만 끝내고 pr 칸을 비우고, 하위 항목에 `남은 일: PR #31 #33, 지시서 spec-b.md` 한 줄을 둔다.
 //       그 줄은 단계 줄이 아니라 진행률에 세지 않고, 다음 판정 때 새 줄로 바꾼다
-//     - 판정하지 못하면(task_pattern 이 없다 같은 것) 단계 수로 정한다. 끝나지 않은 단계가 1개 이하면 남은 단계를 끝내고
-//       done 으로 바꾸고, 2개 이상이면 그 PR 번호가 적힌 단계만 끝내고 pr 칸을 비운다. 머지 뒤 검증이나 후속 PR 이 남은 항목을
-//       끝난 것으로 보지 않기 위해서다. finish 절이 틀렸으면 stderr 에 한 줄 남기고 단계 수로 정한다
+//     - gh 조회가 실패해 판정하지 못하면 그 항목을 고치지 않고 다음 틱에 다시 판정한다
+//     - 그 밖의 이유로 판정하지 못하면(task_pattern 이 없다, 제목에 업무 번호가 없다) 단계 수로 정한다. 끝나지 않은 단계가
+//       1개 이하면 남은 단계를 끝내고 done 으로 바꾸고, 2개 이상이면 그 PR 번호가 적힌 단계만 끝내고 pr 칸을 비운다.
+//       머지 뒤 검증이나 후속 PR 이 남은 항목을 끝난 것으로 보지 않기 위해서다. finish 절이 틀렸으면 stderr 에 한 줄 남기고 단계 수로 정한다
+//     - 그 PR 의 마무리(finish-pr)가 돌고 있으면(<orch 작업 폴더>/queue/finish-<PR>.pid 의 프로세스가 살아 있으면) 머지를 반영하지 않는다.
+//       마무리가 배포 뒤 판정과 표시(PR!, PR~)로 항목을 고친다. merge-with-finish --finish-log-dir 로 폴더를 바꾸면 보지 못한다
+//     - done 으로 바꿀 때는 남은 일 줄을 지운다
 //     - 단계 줄 판정과 끝내기는 보드 명령에 맡긴다. `steps` 로 단계 목록을 받고 `step <id> <n>` 으로 끝낸다.
 //       단계 줄 판정은 이 스크립트에서 하지 않는다. 옛 자동 줄을 지울 때만 완료 값을 CLI 입력 표시로 전달한다
 //     - 예전 버전이 남긴 「자동: 」 줄은 지운다
@@ -41,20 +45,20 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
+import { detailArgs, detailText as textOf, noteLine, prSteps, withNote } from './lib/board.ts'
+import type { BoardDetail as Detail } from './lib/board.ts'
 import { judgeLastPr, rulesFrom } from './lib/last-pr.ts'
+import { pidFileAlive } from './lib/process.ts'
 import type { LastPrRules, LastPrVerdict } from './lib/last-pr.ts'
 import { worktreePaths } from './lib/workers.ts'
 import { gh, ghJson } from './lib/gh.ts'
-import { boardPath } from './lib/paths.ts'
+import { boardPath, pathOf } from './lib/paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
 
 const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--goal GOAL_ID [--goal-items FILE]] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const LEGACY_AUTO = '자동: '
-const NOTE = '남은 일: '
-// 단계 줄. work-board/bin/board.ts 의 STEP 과 같은 규칙이다
-const STEP = /^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s/
 const SKIP_STATUS = new Set(['done', 'goal'])
 
 const OPTIONS = {
@@ -68,7 +72,6 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
 } as const
 
-type Detail = string | { text: string; done?: unknown }
 type Step = { number: number; done: boolean; text: string }
 
 function out(line: string): void {
@@ -83,9 +86,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function textOf(detail: Detail): string {
-  return typeof detail === 'string' ? detail : detail.text
-}
 
 function prNumber(pr: unknown): string {
   return pyStr(pr || '').split(',')[0].replace(/\D/g, '')
@@ -111,17 +111,6 @@ function boardSteps(boardBin: string, itemId: string, board: string): Step[] | n
   }
 }
 
-// 끝낼 단계 번호 목록과 항목을 끝내는지. last 는 마지막 PR 판정이고 null 이면 단계 수로 정한다
-function finishPlan(steps: Step[], pr: unknown, last: boolean | null): { numbers: number[]; finish: boolean } {
-  const left = steps.filter((step) => !step.done)
-  if (last === false || (last === null && left.length > 1)) {
-    const num = prNumber(pr)
-    const pattern = num ? new RegExp(`#${num}(?!\\d)`) : null
-    return { numbers: left.filter((step) => pattern?.test(step.text)).map((step) => step.number), finish: false }
-  }
-  return { numbers: left.map((step) => step.number), finish: true }
-}
-
 // finish 절의 판정 규칙. 설정이 틀리면 알리고 null 이다(단계 수로 정한다)
 function lastPrRules(repo: string): LastPrRules | null {
   try {
@@ -133,25 +122,16 @@ function lastPrRules(repo: string): LastPrRules | null {
   }
 }
 
-// 머지한 PR 의 제목과 브랜치로 마지막 PR 인지 판정한다. 규칙이 없거나 PR 을 읽지 못하면 last 가 null 이다
+// 머지한 PR 의 제목과 브랜치로 마지막 PR 인지 판정한다. 규칙(task_pattern)이 없으면 null 이다. PR 을 읽지 못하면 retry 다
 function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerdict | null {
   if (!rules?.taskPattern) return null
   const got = ghJson<{ title?: unknown; headRefName?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName'], { cwd: repo })
-  if (!got.ok || typeof got.data !== 'object' || got.data === null) return null
+  if (!got.ok || typeof got.data !== 'object' || got.data === null) {
+    return { last: null, retry: true, number: null, prs: [], specs: [], reason: `PR ${num} 의 제목과 브랜치를 읽지 못했다` }
+  }
   const title = typeof got.data.title === 'string' ? got.data.title : ''
   const branch = typeof got.data.headRefName === 'string' ? got.data.headRefName : ''
   return judgeLastPr(repo, { number: num, title, branch }, rules)
-}
-
-// 중간 PR 판정의 남은 일 줄. 남은 것이 없으면 null
-function noteLine(verdict: LastPrVerdict): string | null {
-  const parts = [verdict.prs.length > 0 ? `PR ${verdict.prs.join(' ')}` : '', verdict.specs.length > 0 ? `지시서 ${verdict.specs.join(' ')}` : ''].filter(Boolean)
-  return parts.length > 0 ? NOTE + parts.join(', ') : null
-}
-
-// CLI 입력으로 돌려줄 때 완료 값을 옛 입력 표시로 전달한다.
-function detailArgument(line: Detail): string {
-  return typeof line === 'string' ? line : (line.done === true ? '✓ ' : '') + line.text
 }
 
 function main(argv: string[]): number {
@@ -224,37 +204,41 @@ function main(argv: string[]): number {
     }
     const merged = discovered?.state === 'MERGED' || (item.pr ? prMerged(item.pr, repo) : false)
     const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
-    const kept = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
-    if (kept.length === old.length && !merged && cmds.length === 0) continue
-    if (kept.length !== old.length) cmds.push(['set', id, ...(kept.length > 0 ? kept : ['']).flatMap((d) => ['--detail', detailArgument(d)])])
+    let details = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
     let finish = false
-    if (merged) {
+    const after: string[][] = []
+    const num = prNumber(item.pr)
+    if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
+      // 마무리가 배포를 확인한 뒤 판정과 표시(PR!, PR~)로 이 항목을 고친다. 여기서 먼저 고치면 그 표시를 덮는다
+      out(`board-sync: ${id} 는 PR ${num} 의 마무리(finish-pr)가 돌고 있어 그쪽에 맡긴다`)
+    } else if (merged) {
       const steps = boardSteps(boardBin, id, board)
       if (steps === null) {
         err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
         return 1
       }
       if (rules === undefined) rules = lastPrRules(repo)
-      const verdict = judge(repo, prNumber(item.pr), rules)
-      if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${verdict.last === null ? '단계 수로 정함' : verdict.last ? '마지막' : '중간'}(${verdict.reason})`)
-      const plan = finishPlan(steps, item.pr, verdict?.last ?? null)
-      finish = plan.finish
-      cmds.push(...plan.numbers.map((n) => ['step', id, String(n)]))
-      const note = verdict?.last === false ? noteLine(verdict) : null
-      if (note) {
-        // 하위 항목 전체를 다시 쓰므로 위에서 끝낸 하위 단계도 끝낸 것으로 적는다
-        const stepped = new Set(plan.numbers)
-        const fromDetails = kept.some((d) => STEP.test(textOf(d)))
-        const lines = kept
-          .filter((d) => !textOf(d).startsWith(NOTE))
-          .map((d) => {
-            const n = Number(STEP.exec(textOf(d))?.[2])
-            return fromDetails && stepped.has(n) ? { text: textOf(d).replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, ''), done: true } : d
-          })
-        cmds.push(['set', id, ...[...lines, note].flatMap((d) => ['--detail', detailArgument(d)])])
+      const verdict = judge(repo, num, rules)
+      const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '단계 수로 정함') : verdict.last ? '마지막' : '중간'
+      if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
+      if (!verdict?.retry) {
+        const last = verdict?.last ?? (steps.filter((step) => !step.done).length <= 1)
+        if (last) {
+          finish = true
+          details = withNote(details, null)
+          after.push(...steps.filter((step) => !step.done).map((step) => ['step', id, String(step.number)]), ['set', id, 'done'])
+        } else {
+          const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
+          details = withNote(details, note)
+          // lib/board.ts 의 intermediateCommands 와 같은 순서다. 하위 항목은 위에서 한 번에 다시 쓴다
+          after.push(...prSteps(steps, num).map((n) => ['step', id, String(n)]), ['set', id, '--pr', '', '--merged-pr', num])
+        }
       }
-      cmds.push(finish ? ['set', id, 'done'] : ['set', id, '--pr', '', '--merged-pr', prNumber(item.pr)])
     }
+    const rewrite = details.length !== old.length || details.some((d, i) => d !== old[i])
+    if (rewrite) cmds.push(['set', id, ...detailArgs(details)])
+    cmds.push(...after)
+    if (cmds.length === 0) continue
     changed.push(id)
     if (dryRun) {
       out([id + (finish ? ' -> done' : ''), ...cmds.map((c) => c.join(' '))].join('\n  '))

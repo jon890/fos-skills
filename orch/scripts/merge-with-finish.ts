@@ -20,7 +20,8 @@
 //     코디네이터가 PR 마다 마지막인지 정하지 않아도 된다. 판정을 덮어야 할 때만 표시를 붙인다.
 //     PR 번호 뒤의 `!` 는 판정 없이 업무의 마지막 PR 로 본다(`finish-pr.ts --complete`). 머지 큐에는 그 PR 마다
 //     `--last-of-task <PR>` 를 인자 맨 앞에 넣어 before-merge 입력의 last_of_task 를 true 로 한다. 예: 449! , 446!:'./bin/backup-db.sh orders "pre-446"'
-//     PR 번호 뒤의 `~` 는 판정 없이 중간 PR 로 본다(`finish-pr.ts --intermediate`). 업무를 완료하지 않고 지시서와 보드 항목을 남긴다.
+//     PR 번호 뒤의 `~` 는 판정 없이 중간 PR 로 본다(`finish-pr.ts --intermediate`). 업무를 완료하지 않고 지시서를 남기며
+//     보드 항목을 done 으로 바꾸지 않는다. --board-item 으로 준 항목은 판정과 상관없이 done 으로 바꾼다.
 //     before-merge 의 last_of_task 는 `!` 일 때만 true 다. 판정은 머지와 배포 뒤에야 하기 때문이다.
 //     마지막 PR 이면 업무 완료 명령(`complete_cmd`)이 설정에 없는 저장소에서는 업무 완료만 건너뛰고 그 PR 의 지시서를 지운다.
 //     표시와 `:명령` 은 PR 번호 바로 뒤에 `번호[!|~][:명령]` 순서로 쓴다. `!` 와 `~` 는 함께 쓸 수 없다. 머지 큐에는 표시를 뗀 인자가 넘어간다.
@@ -81,7 +82,7 @@ import { FINISH_OPTIONS } from './lib/finish-options.ts'
 import { isFile, real } from './lib/fs.ts'
 import { makeParent, pathOf, requireMigrated } from './lib/paths.ts'
 import { NO_LIMIT_MS, runInherit, scriptCommand } from './lib/proc.ts'
-import { alive } from './lib/process.ts'
+import { pidFileAlive } from './lib/process.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './lib/queue-options.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
@@ -276,16 +277,6 @@ function completeCommandSource(wrapper: Wrapper, config: Config): string | null 
   return typeof value === 'string' && value ? 'finish.complete_cmd' : null
 }
 
-function finishRunning(pidFile: string): boolean {
-  let text: string
-  try {
-    text = readFileSync(pidFile, 'utf8').trim()
-  } catch {
-    return false
-  }
-  return /^\d+$/.test(text) && alive(Number(text))
-}
-
 // 새 세션으로 띄워 이 명령이 끝나도 마무리가 이어 돌게 한다. 프로세스가 시작되면 null, 띄우지 못하면 이유다
 function launch(cmd: string[], fd: number): Promise<string | null> {
   return new Promise((resolve) => {
@@ -304,7 +295,7 @@ async function startFinish(wrapper: Wrapper, pr: PrArg): Promise<boolean> {
   const logDir = wrapper.logDir ?? pathOf('queue', repo)
   makeParent(join(logDir, 'x'), repo)
   const pidFile = join(logDir, `finish-${pr.number}.pid`)
-  if (finishRunning(pidFile)) {
+  if (pidFileAlive(pidFile)) {
     out(`마무리는 이미 돌고 있다: PR ${pr.number} (${pidFile})`)
     return true
   }

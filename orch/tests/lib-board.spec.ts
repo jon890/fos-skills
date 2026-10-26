@@ -1,11 +1,11 @@
-// lib/board.ts 의 보드 항목 찾기(prNumbers, findBoardItems)를 임시 보드 파일로 본다.
+// lib/board.ts 의 보드 항목 찾기(prNumbers, findBoardItems)와 중간 PR 명령(intermediateCommands)을 본다. 보드는 임시 파일이다.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { findBoardItems, prNumbers } from '../scripts/lib/board.ts'
+import { findBoardItems, intermediateCommands, noteLine, prNumbers } from '../scripts/lib/board.ts'
 
 let tmp = ''
 let n = 0
@@ -59,6 +59,15 @@ describe('findBoardItems', () => {
     assert.equal(findBoardItems(file, '77', 'feat/z', null), null)
   })
 
+  test('브랜치로 찾을 때 done 항목과 merged-pr 에 이 PR 이 든 항목은 뺀다', () => {
+    const file = board([
+      { id: 'done', status: 'done', branch: 'feat/x' },
+      { id: 'handled', status: 'doing', branch: 'feat/x', 'merged-pr': '#77' },
+      { id: 'open', status: 'doing', branch: 'feat/x', 'merged-pr': 70 },
+    ])
+    assert.deepEqual(findBoardItems(file, '77', 'feat/x', null), { by: 'branch', ids: ['open'] })
+  })
+
   test('빈 브랜치 이름은 branch 칸이 없는 항목과 맞지 않는다', () => {
     const file = board([{ id: 'blank' }])
     assert.equal(findBoardItems(file, '77', '', null), null)
@@ -77,5 +86,27 @@ describe('findBoardItems', () => {
     const broken = join(tmp, 'broken.json')
     writeFileSync(broken, '{broken')
     assert.equal(findBoardItems(broken, '77', 'feat/x', null), null)
+  })
+})
+
+describe('intermediateCommands', () => {
+  test('남은 일 줄을 바꾸고 그 PR 의 끝나지 않은 단계를 끝내고 PR 을 merged-pr 로 옮긴다', () => {
+    const steps = [
+      { number: 1, done: false, text: '1. PR #77' },
+      { number: 2, done: true, text: '2. PR #77 확인' },
+      { number: 3, done: false, text: '3. PR #770' },
+    ]
+    const note = noteLine(['#78'], ['spec-b.md'])
+    assert.equal(note, '남은 일: PR #78, 지시서 spec-b.md')
+    assert.deepEqual(intermediateCommands('a', ['1. PR #77', '남은 일: 옛 줄'], steps, '77', note), [
+      ['set', 'a', '--detail', '1. PR #77', '--detail', '남은 일: PR #78, 지시서 spec-b.md'],
+      ['step', 'a', '1'],
+      ['set', 'a', '--pr', '', '--merged-pr', '77'],
+    ])
+  })
+
+  test('하위 항목이 그대로면 다시 쓰지 않는다', () => {
+    assert.equal(noteLine([], []), null)
+    assert.deepEqual(intermediateCommands('a', [{ text: '1. 구현', done: false }], [], '77', null), [['set', 'a', '--pr', '', '--merged-pr', '77']])
   })
 })

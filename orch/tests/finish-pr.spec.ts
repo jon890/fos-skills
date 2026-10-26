@@ -69,8 +69,11 @@ if os.environ.get("FAKE_SWEEP_REMOVES") == "1":
     subprocess.run(["git", "-C", repo, "worktree", "remove", "--force", wt], check=True, capture_output=True)
     subprocess.run(["git", "-C", repo, "branch", "-D", os.environ["FAKE_BRANCH"]], check=True, capture_output=True)
 `
+// steps 는 FAKE_STEPS(JSON, 없으면 빈 목록)를 낸다
 const FAKE_BOARD = `import os, sys
 open(os.environ["FAKE_LOG"], "a").write("board " + " ".join(sys.argv[1:]) + "\\n")
+if sys.argv[1:2] == ["steps"]:
+    print(os.environ.get("FAKE_STEPS", "[]"))
 `
 
 const PATTERN = '^\\[?(PROJ-[0-9]+)'
@@ -763,6 +766,28 @@ describe('finish-pr 마지막 PR 판정', { concurrency: 4 }, () => {
     assert.equal(inputs(file)[0].last_of_task, true)
   })
 
+  test('명령줄의 표시가 설정의 complete, intermediate 보다 우선한다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.repo, '.orch'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch', 'config.json'), JSON.stringify({ finish: { complete: true } }))
+    let r = await c.finish(['--intermediate'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 중간(--intermediate 로 지정)')
+    writeFileSync(join(c.repo, '.orch', 'config.json'), JSON.stringify({ finish: { intermediate: true } }))
+    r = await c.finish(['--complete'])
+    has(r.stdout, '마지막 PR 판정: 마지막(--complete 로 지정)')
+    r = await c.finish([])
+    has(r.stdout, '마지막 PR 판정: 중간(--intermediate 로 지정)')
+  })
+
+  test('브랜치가 여럿인 지시서는 모두 머지됐을 때만 세지 않는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.specs, 'spec-z.md'), '# z\n업무: PROJ-123\n브랜치: `feat/z1`\n브랜치: `feat/z2`\n')
+    c.state.merged = ['feat/z1']
+    const r = await judged(c)
+    has(r.stdout, '남은 지시서 spec-z.md')
+  })
+
   test('--complete 와 --intermediate 가 판정보다 우선하고 함께 주면 사용법 오류다', async (t) => {
     const c = setup(t)
     c.state.open = [{ number: 78, title: '[PROJ-123] 뒷부분' }]
@@ -831,19 +856,41 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(starting(c.calls(), 'board set task-wt done').length, 1, c.calls().join('\n'))
   })
 
-  test('중간 PR 이면 브랜치로 찾은 항목의 pr 칸만 채우고 pr 칸으로 찾은 항목은 바꾸지 않는다', async (t) => {
+  test('중간 PR 이면 그 PR 의 단계를 끝내고 남은 일 줄을 두고 PR 을 merged-pr 로 옮긴다', async (t) => {
     const c = setup(t)
     c.state.open = [{ number: 78, title: '[PROJ-123] 뒷부분' }]
-    let bin = board(c, [{ id: 'task-x', status: 'doing', branch: 'feat/x' }])
-    let r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [{ id: 'task-x', status: 'doing', branch: 'feat/x', details: [{ text: '1. PR #77', done: false }, '남은 일: 옛 줄'] }])
+    const steps = JSON.stringify([{ number: 1, done: false, text: '1. PR #77' }, { number: 2, done: false, text: '2. PR #78' }])
+    const r = await c.finish(['--task-pattern', PATTERN, ...bin], { FAKE_STEPS: steps })
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(starting(c.calls(), 'board '), [`board set task-x --pr 77 --file ${join(c.repo, '.omc', 'board.json')}`])
-    has(r.stdout, '보드 task-x 의 pr 칸을 77 로 채웠다. 중간 PR 이라 done 으로 바꾸지 않는다')
-    rmSync(join(c.tmp, 'log.txt'))
-    bin = board(c, [{ id: 'by-pr', status: 'doing', pr: 77 }])
-    r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.deepEqual(starting(c.calls(), 'board '), [
+      `board steps task-x --file ${file}`,
+      `board set task-x --detail 1. PR #77 --detail 남은 일: PR #78 --file ${file}`,
+      `board step task-x 1 --file ${file}`,
+      `board set task-x --pr  --merged-pr 77 --file ${file}`,
+    ])
+    has(r.stdout, '보드 task-x 는 중간 PR 이라 done 으로 바꾸지 않고 PR 77 를 merged-pr 에 적었다')
+  })
+
+  test('--intermediate 면 pr 칸으로 찾은 항목도 done 으로 바꾸지 않고 merged-pr 로 옮긴다', async (t) => {
+    const c = setup(t)
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [{ id: 'by-pr', status: 'doing', pr: 77 }])
+    const r = await c.finish(['--intermediate', '--task-pattern', PATTERN, ...bin])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board set'), [`board set by-pr --pr  --merged-pr 77 --file ${file}`])
+  })
+
+  test('브랜치로 찾을 때 done 항목과 merged-pr 에 이 PR 이 든 항목은 뺀다', async (t) => {
+    const c = setup(t)
+    const bin = board(c, [
+      { id: 'old', status: 'done', branch: 'feat/x' },
+      { id: 'handled', status: 'doing', branch: 'feat/x', 'merged-pr': 77 },
+    ])
+    const r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.equal(r.code, 0, both(r))
     assert.equal(starting(c.calls(), 'board ').length, 0, c.calls().join('\n'))
-    has(r.stdout, '보드 by-pr 는 중간 PR 이라 done 으로 바꾸지 않는다')
   })
 
   test('찾은 항목이 둘 이상이면 건너뛴다', async (t) => {

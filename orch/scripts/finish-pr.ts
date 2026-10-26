@@ -34,8 +34,11 @@
 //     --board-id 를 주면 판정과 상관없이 그 항목을 done 으로 바꾼다.
 //     없으면 보드 파일(lib/board.ts 의 findBoardItems)에서 pr 칸에 이 PR 이 든 항목을 찾고, 없으면 pr 칸이 빈 항목 가운데
 //     branch 가 PR 브랜치이거나 worktree 가 그 브랜치의 워크트리 이름(정리 전에 읽는다)인 항목을 찾는다.
-//     마지막 PR 이면 그 항목을 done 으로 바꾼다. 중간 PR 이면 브랜치로 찾은 항목의 pr 칸만 이 PR 로 채운다.
-//     그 뒤는 board-sync.ts 의 단계 규칙이 맡는다. 찾은 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다
+//     브랜치로 찾을 때 done 항목과 merged-pr 에 이미 이 PR 이 든 항목은 뺀다.
+//     마지막 PR 이면 그 항목을 done 으로 바꾼다. 중간 PR 이면 lib/board.ts 의 intermediateCommands 로 그 PR 번호의 단계를 끝내고,
+//     하위 항목에 `남은 일: PR #31, 지시서 spec-b.md` 한 줄을 두고, pr 칸을 비우고 merged-pr 에 적는다.
+//     merged-pr 에 적은 PR 은 board-sync.ts 가 다시 판정하지 않으므로 --intermediate 가 덮이지 않는다.
+//     찾은 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다
 //
 //     업무 완료(--complete-cmd)는 after-deploy 의 옛 칸이다. 다음 major 에서 지운다.
 //     마지막 PR 이고, 배포가 성공했거나 배포 워크플로가 없고, PR 제목에서 --task-pattern 으로 업무 번호를 뽑았을 때만
@@ -69,7 +72,8 @@
 //     --task-pattern RE     PR 제목에서 업무 번호를 뽑는 Python 정규식(lib/py.ts 의 pyRegExp). 첫 번째 그룹이 번호다
 //                           (예: '^\[?(PROJ-[0-9]+)'). 번호는 영문, 숫자, `._/-` 만 받는다. 마지막 PR 판정에도 쓴다
 //     --spec-task-pattern RE  지시서의 줄에서 업무 번호를 뽑는 Python 정규식. 첫 번째 그룹이 번호다
-//                           (예: '^브랜치: `feature/PROJ/([0-9]+)-'). 마지막 PR 판정이 남은 지시서를 찾는 데 쓴다
+//                           (예: '^브랜치: `feature/(PROJ-[0-9]+)-'). --task-pattern 이 뽑는 번호와 같은 꼴을 뽑아야 한다.
+//                           마지막 PR 판정이 남은 지시서를 찾는 데 쓴다
 //     --complete            이 PR 이 업무의 마지막 PR 이다. 판정하지 않는다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
 //     --intermediate        이 PR 이 업무의 중간 PR 이다. 판정하지 않는다. --complete 와 함께 쓸 수 없다
 //     --complete-cmd CMD    업무 완료 명령 틀. shlex 처럼 나누고(lib/py.ts 의 shSplit) 조각마다 {number} 를 업무 번호로 바꾼다.
@@ -97,7 +101,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { findBoardItems } from './lib/board.ts'
+import { findBoardItems, intermediateCommands, noteLine, readBoard } from './lib/board.ts'
+import type { BoardDetail, BoardStep } from './lib/board.ts'
 import { extractTaskNumber, judgeLastPr, numberPattern, specFiles } from './lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
@@ -290,8 +295,9 @@ function parse(argv: string[]): Args | null {
     deployBranch: pick('deploy-branch'),
     taskPattern: pattern('task-pattern'),
     specTaskPattern: pattern('spec-task-pattern'),
-    complete: values.complete === true || configComplete === true,
-    intermediate: values.intermediate === true || configIntermediate === true,
+    // 명령줄의 표시(merge-with-finish 의 PR!, PR~)가 설정의 기본값보다 우선한다
+    complete: values.complete === true || (values.intermediate !== true && configComplete === true),
+    intermediate: values.intermediate === true || (values.complete !== true && configIntermediate === true),
     completeCmd: pick('complete-cmd'),
     board: pick('board'),
     boardId: pick('board-id'),
@@ -410,12 +416,13 @@ function deleteBranchSpecs(args: Args, repo: string, branch: string): void {
 }
 
 // 머리 주석의 「마지막 PR 판정」. 판정하지 못하면 중간 PR 이다. reason 은 근거 줄의 괄호 안이다
-function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; reason: string } {
-  if (args.complete) return { last: true, reason: '--complete 로 지정' }
-  if (args.intermediate) return { last: false, reason: '--intermediate 로 지정' }
+// prs 와 specs 는 남은 PR 과 지시서다. 보드의 남은 일 줄에 쓴다
+function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; reason: string; prs: string[]; specs: string[] } {
+  if (args.complete) return { last: true, reason: '--complete 로 지정', prs: [], specs: [] }
+  if (args.intermediate) return { last: false, reason: '--intermediate 로 지정', prs: [], specs: [] }
   const rules = { taskPattern: args.taskPattern, specTaskPattern: args.specTaskPattern, specsDir: args.specsDir ? specsDirOf(args, repo) : null }
   const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch }, rules)
-  return { last: verdict.last === true, reason: verdict.reason }
+  return { last: verdict.last === true, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
 }
 
 async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ deploy: Deploy; sha: string }> {
@@ -466,8 +473,28 @@ function setBoardDone(args: Args, repo: string, item: string): boolean {
   return board(args, repo, ['set', item, 'done', '--worktree', '', '--pr', '', '--next', ''])
 }
 
-function setBoardPr(args: Args, repo: string, item: string): boolean {
-  return board(args, repo, ['set', item, '--pr', args.pr])
+// 중간 PR 을 항목에 반영한다(lib/board.ts 의 intermediateCommands). 항목이나 단계 목록을 읽지 못하면 false 다
+function setBoardIntermediate(args: Args, repo: string, item: string, note: string | null): boolean {
+  const file = boardPath(repo, args.board)
+  let row: Record<string, unknown> | undefined
+  try {
+    row = readBoard(file).find((i) => pyStr(i.id) === item)
+  } catch {
+    row = undefined
+  }
+  const steps = run(scriptCommand(args.boardBin, ['steps', item, '--file', file]), { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
+  let parsed: unknown = null
+  try {
+    parsed = JSON.parse(steps.stdout)
+  } catch {
+    parsed = null
+  }
+  if (!row || steps.code !== 0 || !Array.isArray(parsed)) {
+    log(`보드 ${item} 의 단계 목록을 읽지 못했다: ${steps.stderr.trim()}`)
+    return false
+  }
+  const details = (Array.isArray(row.details) ? row.details : []) as BoardDetail[]
+  return intermediateCommands(item, details, parsed as BoardStep[], args.pr, note).every((cmd) => board(args, repo, cmd))
 }
 
 function failLabel(r: FireResult): string {
@@ -547,11 +574,11 @@ async function finish(args: Args, repo: string): Promise<number> {
   if (item && (last || item.by === 'id')) {
     if (setBoardDone(args, repo, item.id)) log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
     else problems.push(`보드 ${item.id} 를 done 으로 바꾸지 못했다`)
-  } else if (item && item.by === 'branch') {
-    if (setBoardPr(args, repo, item.id)) log(`보드 ${item.id} 의 pr 칸을 ${args.pr} 로 채웠다. 중간 PR 이라 done 으로 바꾸지 않는다`)
-    else problems.push(`보드 ${item.id} 의 pr 칸을 채우지 못했다`)
   } else if (item) {
-    log(`보드 ${item.id} 는 중간 PR 이라 done 으로 바꾸지 않는다`)
+    // 중간 PR 은 merged-pr 에 적어 board-sync 가 다시 판정하지 않게 한다. 다시 판정하면 PR~ 를 덮는다
+    if (setBoardIntermediate(args, repo, item.id, noteLine(verdict.prs, verdict.specs))) {
+      log(`보드 ${item.id} 는 중간 PR 이라 done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
+    } else problems.push(`보드 ${item.id} 에 중간 PR 을 적지 못했다`)
   }
   if (problems.length > 0) return fail(problems.join('; '))
   out('FINISH-DONE')

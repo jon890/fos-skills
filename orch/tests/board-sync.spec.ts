@@ -320,6 +320,40 @@ describe('board-sync 마지막 PR 판정', () => {
     assert.deepEqual(r.board.a.details, [step('1. 구현', false), step('남은 일: PR #9', false)])
   })
 
+  test('그 PR 의 마무리가 돌고 있으면 항목을 고치지 않고 마무리에 맡긴다', () => {
+    rules()
+    states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 마무리', headRefName: 'feat/b' }
+    mkdirSync(join(tmp, '.orch', 'queue'), { recursive: true })
+    writeFileSync(join(tmp, '.orch', 'queue', 'finish-7.pid'), String(process.pid))
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.a.pr, '#7')
+    assert.match(r.result.stdout, /a 는 PR 7 의 마무리\(finish-pr\)가 돌고 있어 그쪽에 맡긴다/)
+  })
+
+  test('gh 조회가 실패해 판정하지 못하면 고치지 않고 다음 틱에 다시 판정한다', () => {
+    rules()
+    states['7'] = 'MERGED'
+    // 제목과 브랜치 조회(info:7)가 없어 실패한다
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.a.pr, '#7')
+    assert.match(r.result.stdout, /다음 틱에 다시 판정\(PR 7 의 제목과 브랜치를 읽지 못했다\)/)
+  })
+
+  test('마지막 PR 로 done 이 되면 남은 일 줄을 지운다', () => {
+    rules()
+    states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 마무리', headRefName: 'feat/b' }
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '남은 일: PR #6', '2. 머지'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual(r.board.a.details, [step('1. 구현', true), step('2. 머지', true)])
+  })
+
   test('판정하지 못하면 단계 수로 정한다', () => {
     rules()
     states['7'] = 'MERGED'
