@@ -183,8 +183,8 @@
 //        gh pr list --state open --limit 200 --json number,headRefName,baseRefName,files 로 같은 base 의 열린 PR 의 번호와
 //        브랜치마다의 열린 PR 번호를 읽는다. 예약과 브랜치마다의 번호는 base 에 묶이지 않아 모든 base 에 같은 값을 쓴다.
 //        실패하면 오류 이유(예약은 `마이그레이션 예약을 읽지 못했다: <이유>`)로 남기고 마이그레이션이 있는 PR 은 이 틱에 걸지 않는다.
-//        형식이 틀린 예약 항목이 있으면(readReservations 의 skipped) `마이그레이션 예약 <n> 개의 형식이 틀렸다`, 열린 PR 조회가 200 줄이면
-//        `열린 PR 이 200 개를 넘어 마이그레이션 목록이 잘렸을 수 있다` 로 같게 다룬다. 버린 예약이나 잘린 PR 의 번호를 놓친 채 높은 번호 PR 을 걸지 않으려는 것이다.
+//        형식이 틀린 예약 항목이 있으면(readReservations 의 skipped) `마이그레이션 예약 <n> 개의 형식이 틀렸다. reserve-migration.ts --prune 으로 뺀다`,
+//        열린 PR 조회가 200 줄 이상이면 `열린 PR 이 200 개 이상이라 마이그레이션 목록이 잘렸을 수 있다` 로 같게 다룬다. 버린 예약이나 잘린 PR 의 번호를 놓친 채 높은 번호 PR 을 걸지 않으려는 것이다.
 //        예약 가운데 그 PR 브랜치의 것과, 예약한 브랜치의 열린 PR 이 같은 (모듈, 번호)를 이미 더한 것은 뺀다(lib/auto-merge.ts 의 reservedFor).
 //        judgeMigrations 의 clash 가 있으면 걸지 않는다. 이유는 `<모듈> <label>: <이유>` 를 `; ` 로 이은 것이고, clashes[<PR>@<HEAD>] 와
 //        다를 때만 MIGRATION-CLASH(pr 그 PR, text 그 이유)를 그 PR 지시서의 Run 으로 쓴다.
@@ -1494,7 +1494,7 @@ function migrationContext(
     return { ok: false, error: `마이그레이션 예약을 읽지 못했다: ${oneLine(e)}` }
   }
   // 형식이 틀린 예약을 버린 채 보면 그 번호보다 높은 PR 을 건다
-  if (read.skipped > 0) return { ok: false, error: `마이그레이션 예약 ${read.skipped} 개의 형식이 틀렸다` }
+  if (read.skipped > 0) return { ok: false, error: `마이그레이션 예약 ${read.skipped} 개의 형식이 틀렸다. reserve-migration.ts --prune 으로 뺀다` }
   for (const r of read.list) {
     const migration: Migration = { module: r.module, version: r.version, label: r.label, path: r.path }
     const entry = reserved.find((item) => item.branch === r.branch)
@@ -1519,7 +1519,7 @@ function migrationContext(
   if (!got.ok) return { ok: false, error: oneLine(got.error) }
   if (!Array.isArray(got.data)) return { ok: false, error: '열린 PR 의 파일 목록이 목록이 아니다' }
   // 잘린 목록에서 빠진 PR 의 번호를 놓친 채 걸지 않는다
-  if (got.data.length >= MIGRATION_PR_LIMIT) return { ok: false, error: `열린 PR 이 ${MIGRATION_PR_LIMIT} 개를 넘어 마이그레이션 목록이 잘렸을 수 있다` }
+  if (got.data.length >= MIGRATION_PR_LIMIT) return { ok: false, error: `열린 PR 이 ${MIGRATION_PR_LIMIT} 개 이상이라 마이그레이션 목록이 잘렸을 수 있다` }
   const others = new Map<string, OpenMigrations[]>()
   const openByBranch = new Map<string, Migration[]>()
   for (const row of got.data) {

@@ -83,7 +83,12 @@ reserve-migration.ts --repo DIR --prune
   3. 잠금 안: 예약을 다시 읽고 1 의 정리 판정을 그 목록에 적용한다(판정하지 않은 새 항목은 남김). `--prune` 이면 지운 것이 있을 때 쓰고 `PRUNE-DONE <지운 수>` 와 0. 아니면 `choose` 뒤 바뀌었으면 쓴다.
   4. 쓰기 직전에 `ownsLock` 이 false 면 쓰지 않고 `LOCK-LOST <lock 경로>` 와 4. 세 실행이 죽은 잠금을 함께 회수하는 경합을 막는다(`lib/events.ts` 의 「잠금」 이 적은 보장 범위).
   5. `releaseLock`(finally).
-- 정리 판정(예약마다): `gh pr list --state all --head <branch> --limit 20 --json state,mergedAt,closedAt`. OPEN 이 있으면 false. 예약의 `at` 보다 뒤에 머지되거나 닫힌 PR 이 있으면 true(브랜치 이름을 다시 써 남은 옛 PR 은 세지 않는다). PR 이 없거나 모두 `at` 이전이면 브랜치를 본다.
+  - 잠금 안에서 지울 항목 가운데 근거가 「브랜치 없음」 인 것은 지우기 직전에 로컬 `show-ref` 를 다시 보고, 있으면 남긴다. 근거가 머지인 항목은 다시 보지 않고 지운다. 다른 base 로 머지된 예약이 main 쪽 PR 을 막지 않게 하려는 것이다.
+  - 열린 PR 조회가 200 줄 이상이면 `LOOKUP-FAIL 열린 PR 이 200 개 이상이라 목록이 잘렸을 수 있다` 와 1.
+  - 잡지 않은 예외도 stdout 에 `LOOKUP-FAIL <메시지>` 를 내고 1.
+  - `--prune` 은 형식이 틀려 건너뛴 항목이 있으면 지울 것이 없어도 다시 써서 빼고 `PRUNED-INVALID <수>` 를 낸다.
+  - `writeReservations` 는 쓰기나 rename 이 실패하면 옆 파일을 지우고 다시 던진다.
+- 정리 판정(예약마다): `gh pr list --state all --head <branch> --limit 20 --json state,mergedAt,closedAt`. OPEN 이 있으면 false. 예약의 `at` 보다 뒤에 머지된(mergedAt) PR 이 있으면 true(근거 merged). 머지 없이 닫힌 PR 은 다시 열 수 있어 세지 않는다. 브랜치 이름을 다시 써 남은 옛 PR 도 세지 않는다. PR 이 없거나 모두 `at` 이전이면 브랜치를 본다.
   `git ls-remote --heads origin <branch>` 는 0 에 빈 출력이면 원격에 없음, 0 에 출력이 있으면 있음, 0 이 아니면 판정 못 함. `git show-ref --verify --quiet refs/heads/<branch>` 는 0 이면 있음, 1 이면 없음, 그 밖은 판정 못 함.
   ls-remote 의 「있음」 은 출력 줄이 정확히 `refs/heads/<branch>` 일 때다. 끝만 맞는 `x/<branch>` 는 다른 브랜치다.
   둘 다 없음이면 true, 하나라도 있음이면 false, 그 밖은 null. gh 조회 실패도 null. 같은 브랜치의 조회는 한 번만 한다.

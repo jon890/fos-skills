@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
@@ -79,9 +80,9 @@ function reserve(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv }
   return { status: done.status, stdout: done.stdout, stderr: done.stderr }
 }
 
-function reserveAsync(args: string[]): Promise<Result> {
+function reserveAsync(args: string[], extra: NodeJS.ProcessEnv = {}): Promise<Result> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, ...args], { env, cwd: tmp })
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, ...args], { env: { ...env, ...extra }, cwd: tmp })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (chunk) => (stdout += chunk))
@@ -219,11 +220,29 @@ describe('정리', () => {
     )
   })
 
-  test('예약 뒤에 머지된 PR 이 있어도 로컬 브랜치가 있으면 잠금 안의 확인이 남긴다', () => {
+  test('예약 뒤에 머지된 PR 이 있으면 로컬 브랜치가 남아도 지운다', () => {
     git(['branch', 'feat-old'])
     seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
     github({ open: [openPr(7, 'feat-b', 'db/api/V3__b.sql')], heads: { 'feat-old': prs({ state: 'MERGED', mergedAt: LATER, closedAt: LATER }) } })
-    assert.equal(ok(reserve(['--prune'])), 'PRUNE-DONE 0\n')
+    assert.equal(ok(reserve(['--prune'])), 'PRUNED api V4 feat-old\nPRUNE-DONE 1\n')
+    assert.deepEqual(reservations(), [])
+  })
+
+  test('브랜치 없음으로 판정한 뒤 잠금을 기다리는 사이 로컬 브랜치가 생기면 남긴다', async () => {
+    seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
+    // 테스트 프로세스가 잠금을 쥔 동안 명령은 잠금 밖의 판정(PR 없음, 원격과 로컬 모두 없음)을 마치고 잠금을 기다린다
+    const lock = stateFile('migration-reservations.lock')
+    write(lock, String(process.pid))
+    const running = reserveAsync(['--prune'], { RESERVE_LOCK_WAIT_MS: '30000' })
+    const deadline = Date.now() + 20_000
+    while (!gh.calls().some((call) => call.argv.includes('--head')) && Date.now() < deadline) await sleep(50)
+    assert.ok(gh.calls().some((call) => call.argv.includes('--head')), '명령이 정리 판정을 시작하지 않았다')
+    // gh 조회 뒤의 ls-remote 와 show-ref 가 끝나기를 기다린다. 늦게 끝나 로컬 브랜치를 보면 판정이 false 라 결과는 같다
+    await sleep(2_000)
+    git(['branch', 'feat-old'])
+    rmSync(lock)
+    const done = await running
+    assert.equal(ok(done), 'PRUNE-DONE 0\n')
     assert.deepEqual(
       reservations().map((r) => r.branch),
       ['feat-old'],
@@ -321,6 +340,14 @@ describe('정리', () => {
     )
   })
 
+  test('--prune 은 지울 항목이 없어도 형식이 틀린 예약을 빼고 PRUNED-INVALID 를 낸다', () => {
+    const valid = entry('feat-a', 'V5', '2026-10-27T00:00:00Z')
+    seed([valid, { module: 'api' }])
+    const done = reserve(['--prune'])
+    assert.equal(ok(done), 'PRUNED-INVALID 1\nPRUNE-DONE 0\n')
+    assert.deepEqual(reservations(), [valid])
+  })
+
   test('형식이 틀린 예약은 stderr 로 알리고 다음 쓰기에서 뺀다', () => {
     seed([entry('feat-a', 'V5', '2026-10-27T00:00:00Z'), { module: 'api' }])
     const done = reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-c'])
@@ -367,7 +394,7 @@ describe('실패', () => {
     github({ open })
     const done = reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a'])
     assert.equal(done.status, 1, done.stdout + done.stderr)
-    assert.equal(done.stdout, 'LOOKUP-FAIL 열린 PR 이 200 개를 넘어 목록이 잘렸을 수 있다\n')
+    assert.equal(done.stdout, 'LOOKUP-FAIL 열린 PR 이 200 개 이상이라 목록이 잘렸을 수 있다\n')
     assert.equal(existsSync(stateFile('migration-reservations.json')), false)
   })
 

@@ -570,7 +570,7 @@ describe('마이그레이션 예약', () => {
     once()
     assert.deepEqual(events('AUTO-MERGE'), [])
     assert.deepEqual(queueCalls(), [])
-    assert.match(migrationError(), /auto-merge: 마이그레이션 예약 1 개의 형식이 틀렸다/)
+    assert.match(migrationError(), /auto-merge: 마이그레이션 예약 1 개의 형식이 틀렸다\. reserve-migration\.ts --prune 으로 뺀다/)
   })
 
   test('열린 PR 조회가 200 줄이면 목록이 잘렸을 수 있어 마이그레이션이 든 PR 을 걸지 않는다', () => {
@@ -584,7 +584,7 @@ describe('마이그레이션 예약', () => {
     once()
     assert.deepEqual(events('AUTO-MERGE'), [])
     assert.deepEqual(queueCalls(), [])
-    assert.match(migrationError(), /auto-merge: 열린 PR 이 200 개를 넘어 마이그레이션 목록이 잘렸을 수 있다/)
+    assert.match(migrationError(), /auto-merge: 열린 PR 이 200 개 이상이라 마이그레이션 목록이 잘렸을 수 있다/)
   })
 
   test('예약 파일이 JSON 이 아니면 마이그레이션이 든 PR 을 걸지 않고 WATCH-ERROR auto-merge 로 알린다', () => {
