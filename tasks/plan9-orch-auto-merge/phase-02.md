@@ -96,7 +96,7 @@
 ### 7. `orch/tests/orch-loop-auto-merge.spec.ts` (신규)
 
 `orch-loop-ci.spec.ts` 의 짜임을 따른다. 가짜 gh(`tests/fixtures/fake-bin.ts`)가 `pr list`(내 PR, 롤업 통과, 작성자), 규칙 조회, `api user`, `pr view --json reviews,comments,files`, `pr list --json number,baseRefName,files` 에 답한다.
-가짜 `MERGE_WITH_FINISH` 는 파일 이름을 `fake-merge-with-finish.ts` 로 둔다(4.2 가 명령줄의 `merge-with-finish.` 로 도는 큐를 알아보게). 환경 변수 `FAKE_QUEUE_HOLD_MS` 만큼 기다린 뒤 받은 인자와 자기 pid 를 파일에 적고 `QUEUE-DONE` 을 낸 뒤 정리 출력 흉내로 두 줄(`정리: …`)을 더 내고 0 으로 끝난다. `THREADS_CMD` 는 파일의 숫자를 낸다.
+가짜 `MERGE_WITH_FINISH` 는 파일 이름을 `fake-merge-with-finish.ts` 로 둔다(4.2 가 명령줄의 `merge-with-finish.` 로 도는 큐를 알아보게). 먼저 받은 인자와 자기 pid 를 파일에 적고, 환경 변수 `FAKE_QUEUE_HOLD_MS`(기본 0)만큼 기다린 다음 `QUEUE-DONE` 을 낸 뒤 정리 출력 흉내로 두 줄(`정리: …`)을 더 내고 0 으로 끝난다. `THREADS_CMD` 는 파일의 숫자를 낸다.
 `PS` 는 테스트가 정한 줄에 더해 실제 `ps -axo pid=,command=` 에서 가짜 큐의 pid 줄만 골라 낸다(그래야 4.2 가 도는 큐를 알아본다). 테스트가 정한 줄의 기본은 빈 목록이다.
 저장소는 임시 git 저장소와 bare origin 이고, `.orch/config.json` 에 `queue.auto_merge: true`, `finish.run`(예 `run_t`), `finish.specs_dir` 를 두고 지시서 `spec-a.md` 에 `브랜치:` 줄을 둔다. 루프는 `--run` 없이 띄워 `finish.run` 을 쓴다. 각 테스트는 `--foreground --once` 를 돌리고 가짜 큐의 인자와 `state/loop-events/<Run>.jsonl` 을 단언한다.
 
