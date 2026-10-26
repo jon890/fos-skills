@@ -57,7 +57,8 @@
 //        그 종료 코드로 끝난다. 작업 디렉터리는 verify-merged 가 사본이고, 나머지는 부른 명령이 --repo 로 받은 경로(ORCH_CHECKOUT)다.
 //        핸들러 자신은 주 checkout 에서 돌지만, 옛 칸은 연결된 워크트리를 --repo 로 주면 그 워크트리에서 돌았기 때문이다.
 //        사용자 저장소에 남고 설치 캐시의 경로가 바뀌므로 이 스킬의 lib/ 를 import 하지 않는다.
-//        after-deploy.ts 의 정규식은 lib/py.ts 의 pyRegExp 로 바꾼 결과를, 인자 목록은 shSplit 으로 나눈 결과를 파일에 적는다
+//        after-deploy.ts 의 정규식은 lib/py.ts 의 pyRegExp 로 바꾼 결과를, 인자 목록은 shSplit 으로 나눈 결과를 파일에 적는다.
+//        finish.task_pattern 은 마지막 PR 판정(lib/last-pr.ts)도 읽으므로 설정에서 지우지 않는다
 //     3. --apply 이고 옮길 것이 있으면 머지 큐나 마무리 프로세스만 확인한다. 돌고 있거나 pgrep 을 돌리지 못하면
 //        `막음 <이유>` 를 stderr 에 내고 3 이다. dispatch, worker, orca 조회 실패는 막지 않는다.
 //        worker 는 지시서와 폴더 위치만 쓰므로, 머지 큐와 마무리만 읽는 옛 설정 칸을 바꿔도 작업을 이어 갈 수 있다
@@ -66,7 +67,7 @@
 //     옮기지 못하는 칸은 설정에 남기고 이유를 보인다(종료 코드 1). 다른 칸은 옮긴다.
 //       - 같은 이름의 핸들러 파일이 이미 있다(겹침). 덮지 않는다
 //       - 값이 비지 않은 문자열이 아니다
-//       - complete_cmd 와 task_pattern 가운데 하나만 있다, complete_cmd 를 나누지 못하거나 {number} 가 없다
+//       - complete_cmd 는 있는데 task_pattern 이 없다, complete_cmd 를 나누지 못하거나 {number} 가 없다
 //       - task_pattern 을 JS 정규식으로 바꾸지 못했거나 그룹이 없다. JS 정규식으로 고쳐 task_pattern 에 다시 적고 다시 돌린다
 //
 // 종료 코드: 0 옮겼거나 옮길 것이 없다, 1 겹침이 있거나 추적 파일이 남았거나 옮기다 실패했다(겹침이 있으면 아무것도 옮기지 않는다),
@@ -941,12 +942,11 @@ function hookPlan(config: Record<string, unknown>, root: string, orch: string): 
   const finishSection = sectionOf('finish')
   const command = finishSection.complete_cmd
   const pattern = finishSection.task_pattern
-  if (command === undefined && pattern === undefined) return { writes, problems }
+  // task_pattern 은 마지막 PR 판정(lib/last-pr.ts)도 읽어 설정에 남긴다. 업무 완료 명령이 없으면 옮길 것이 없다
+  if (command === undefined) return { writes, problems }
   const names = ['finish.complete_cmd', 'finish.task_pattern']
   const fail = (reason: string) => problems.push(`옮기지 못함 ${names.join(', ')}: ${reason}`)
-  if (command === undefined) {
-    fail('complete_cmd 가 없다. 업무 완료 명령이 없으면 task_pattern 은 쓰이지 않는 칸이라 지워도 된다')
-  } else if (pattern === undefined) {
+  if (pattern === undefined) {
     fail('task_pattern 이 없다. PR 제목에서 업무 번호를 뽑을 정규식을 task_pattern 에 적고 다시 돌린다')
   } else if (typeof command !== 'string' || !command || typeof pattern !== 'string' || !pattern) {
     fail('둘 다 비지 않은 문자열이어야 한다')
@@ -976,7 +976,7 @@ function hookPlan(config: Record<string, unknown>, root: string, orch: string): 
     if (argv !== null && regexp !== null) {
       const file = hookFile(orch, 'after-deploy')
       if (!conflict(file, names)) {
-        writes.push({ event: 'after-deploy', keys: [['finish', 'complete_cmd'], ['finish', 'task_pattern']], file, body: afterDeployBody(argv, regexp) })
+        writes.push({ event: 'after-deploy', keys: [['finish', 'complete_cmd']], file, body: afterDeployBody(argv, regexp) })
       }
     }
   }

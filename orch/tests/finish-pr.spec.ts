@@ -34,6 +34,13 @@ if (args[0] === 'pr' && args[1] === 'view') {
     title: pr.title, headRefOid: pr.head, author: { login: 'me' }, isDraft: false, url: 'https://git.example.com/owner/repo/pull/' + args[2], baseRefName: 'main' }))
   process.exit(0)
 }
+// 마지막 PR 판정의 조회. 열린 PR 은 state.open, --head 의 MERGED PR 은 state.merged(브랜치 목록)에 있는지로 답한다
+if (args[0] === 'pr' && args[1] === 'list') {
+  if (state.listFails) process.exit(1)
+  const head = args.includes('--head') ? args[args.indexOf('--head') + 1] : null
+  say(1, JSON.stringify(head === null ? state.open || [] : (state.merged || []).includes(head) ? [{ number: 1 }] : []))
+  process.exit(0)
+}
 if (args[0] === 'run' && args[1] === 'list') {
   say(1, JSON.stringify(state.runs))
   process.exit(0)
@@ -79,7 +86,7 @@ type Ctx = {
   later: string
   init: string
   bin: string
-  state: { pr: Json; runs: Json[]; orca?: Json }
+  state: { pr: Json; runs: Json[]; orca?: Json; open?: Json[]; merged?: string[]; listFails?: boolean }
   env: NodeJS.ProcessEnv
   finish: (args: string[], env?: Record<string, string>) => Promise<Done>
   calls: () => string[]
@@ -318,9 +325,9 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.deepEqual(starting(c.calls(), 'task-cli'), [])
   })
 
-  test('--complete 가 없으면 업무 완료 명령을 돌리지 않는다', async (t) => {
+  test('중간 PR 이면 업무 완료 명령을 돌리지 않는다', async (t) => {
     const c = setup(t)
-    const r = await c.finish(['--task-pattern', PATTERN, '--complete-cmd', 'task-cli complete {number}'])
+    const r = await c.finish(['--intermediate', '--task-pattern', PATTERN, '--complete-cmd', 'task-cli complete {number}'])
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(starting(c.calls(), 'task-cli'), [])
     lacks(r.stdout, 'DEPRECATED')
@@ -696,5 +703,155 @@ describe('finish-pr 살아 있는 지시서', { concurrency: 4 }, () => {
     assert.equal(r.code, 0, both(r))
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
     has(r.stdout, '살아 있는 지시서 목록을 읽지 못했다')
+  })
+})
+
+// 지시서가 업무를 가리키는 줄의 형식. 이 테스트의 지시서는 `업무: PROJ-123` 줄을 쓴다
+const SPEC_PATTERN = '^업무: (PROJ-[0-9]+)'
+
+describe('finish-pr 마지막 PR 판정', { concurrency: 4 }, () => {
+  const judged = (c: Ctx, extra: string[] = []) =>
+    c.finish(['--task-pattern', PATTERN, '--complete-cmd', 'task-cli complete {number}', '--specs-dir', c.specs, '--spec-task-pattern', SPEC_PATTERN, ...extra])
+
+  test('같은 업무의 다른 열린 PR 이 있으면 중간 PR 이라 업무를 완료하지 않고 지시서를 남긴다', async (t) => {
+    const c = setup(t)
+    c.state.open = [
+      { number: 77, title: '[PROJ-123] 로그인 고침' },
+      { number: 78, title: '[PROJ-123] 뒷부분' },
+      { number: 79, title: '[PROJ-9] 다른 업무' },
+    ]
+    const r = await judged(c)
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 중간(업무 PROJ-123, 남은 PR #78, 남은 지시서 없음)')
+    assert.equal(starting(c.calls(), 'task-cli').length, 0)
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
+    has(r.stdout, '지시서 유지')
+  })
+
+  test('같은 업무를 가리키는 다른 지시서가 있으면 중간 PR 이고, 브랜치가 이미 머지된 지시서는 세지 않는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.specs, 'spec-z.md'), '# z\n업무: PROJ-123\n브랜치: `feat/z`\n')
+    writeFileSync(join(c.specs, 'spec-w.md'), '# w\n업무: PROJ-123\n브랜치: `feat/w`\n')
+    writeFileSync(join(c.specs, 'spec-v.md'), '# v\n업무: PROJ-9\n브랜치: `feat/v`\n')
+    c.state.merged = ['feat/w']
+    const r = await judged(c)
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 중간(업무 PROJ-123, 남은 PR 없음, 남은 지시서 spec-z.md)')
+    assert.equal(starting(c.calls(), 'task-cli').length, 0)
+  })
+
+  test('남은 PR 도 지시서도 없으면 마지막 PR 이라 업무를 완료하고 그 브랜치의 지시서를 지운다', async (t) => {
+    const c = setup(t)
+    // 이 PR 의 브랜치를 가리키는 지시서는 같은 업무여도 세지 않는다
+    writeFileSync(join(c.specs, 'spec-x.md'), '# x\n업무: PROJ-123\n브랜치: `feat/x`\n')
+    c.state.open = [{ number: 77, title: '[PROJ-123] 로그인 고침' }]
+    const r = await judged(c)
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 마지막(업무 PROJ-123, 남은 PR 없음, 남은 지시서 없음)')
+    assert.deepEqual(starting(c.calls(), 'task-cli'), ['task-cli complete PROJ-123'])
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
+    assert.equal(existsSync(join(c.specs, 'spec-y.md')), true)
+  })
+
+  test('판정으로 마지막 PR 이면 after-deploy 의 last_of_task 가 true 다', async (t) => {
+    const c = setup(t)
+    const file = join(c.tmp, 'inputs.jsonl')
+    hook(c, recorder(file))
+    const r = await c.finish(['--task-pattern', PATTERN])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 마지막(업무 PROJ-123, 남은 PR 없음, 지시서는 보지 않음(specs_dir 없음))')
+    assert.equal(inputs(file)[0].last_of_task, true)
+  })
+
+  test('--complete 와 --intermediate 가 판정보다 우선하고 함께 주면 사용법 오류다', async (t) => {
+    const c = setup(t)
+    c.state.open = [{ number: 78, title: '[PROJ-123] 뒷부분' }]
+    let r = await judged(c, ['--complete'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 마지막(--complete 로 지정)')
+    assert.deepEqual(starting(c.calls(), 'task-cli'), ['task-cli complete PROJ-123'])
+    c.state.open = []
+    r = await judged(c, ['--intermediate'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 중간(--intermediate 로 지정)')
+    r = await judged(c, ['--complete', '--intermediate'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, '--complete 와 --intermediate 는 함께 쓸 수 없다')
+  })
+
+  test('판정하지 못하면 중간 PR 이다', async (t) => {
+    const c = setup(t)
+    let r = await c.finish(['--specs-dir', c.specs])
+    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: task_pattern 이 없다)')
+    r = await c.finish(['--task-pattern', PATTERN, '--specs-dir', c.specs])
+    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: specs_dir 는 있는데 spec_task_pattern 이 없다)')
+    c.state.listFails = true
+    r = await judged(c)
+    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: 열린 PR 을 읽지 못했다)')
+    c.state.listFails = false
+    c.state.pr.title = '제목에 번호 없음'
+    r = await judged(c)
+    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: PR 제목에서 업무 번호를 찾지 못했다: 제목에 번호 없음)')
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
+    assert.equal(starting(c.calls(), 'task-cli').length, 0)
+  })
+
+  test('설정 파일의 spec_task_pattern 을 읽는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.specs, 'spec-z.md'), '# z\n업무: PROJ-123\n브랜치: `feat/z`\n')
+    mkdirSync(join(c.repo, '.orch'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch', 'config.json'), JSON.stringify({ finish: { task_pattern: PATTERN, spec_task_pattern: SPEC_PATTERN, specs_dir: c.specs } }))
+    const r = await c.finish([])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '남은 지시서 spec-z.md')
+  })
+})
+
+describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
+  function board(c: Ctx, items: Json[]): string[] {
+    mkdirSync(join(c.repo, '.omc'), { recursive: true })
+    writeFileSync(join(c.repo, '.omc', 'board.json'), JSON.stringify({ items }))
+    return ['--board-bin', join(c.bin, 'board.py')]
+  }
+
+  test('pr 칸이 빈 항목을 브랜치로 찾아 마지막 PR 이면 done 으로 바꾼다', async (t) => {
+    const c = setup(t)
+    const bin = board(c, [{ id: 'other', branch: 'feat/y' }, { id: 'task-x', status: 'doing', branch: 'feat/x' }])
+    const r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(starting(c.calls(), 'board set task-x done').length, 1, c.calls().join('\n'))
+    has(r.stdout, '보드 task-x done(브랜치로 찾았다)')
+  })
+
+  test('워크트리 이름으로도 찾는다. 정리가 워크트리를 지우기 전에 이름을 읽는다', async (t) => {
+    const c = setup(t)
+    const bin = board(c, [{ id: 'task-wt', status: 'doing', worktree: 'wt' }])
+    const r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(starting(c.calls(), 'board set task-wt done').length, 1, c.calls().join('\n'))
+  })
+
+  test('중간 PR 이면 브랜치로 찾은 항목의 pr 칸만 채우고 pr 칸으로 찾은 항목은 바꾸지 않는다', async (t) => {
+    const c = setup(t)
+    c.state.open = [{ number: 78, title: '[PROJ-123] 뒷부분' }]
+    let bin = board(c, [{ id: 'task-x', status: 'doing', branch: 'feat/x' }])
+    let r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board '), [`board set task-x --pr 77 --file ${join(c.repo, '.omc', 'board.json')}`])
+    has(r.stdout, '보드 task-x 의 pr 칸을 77 로 채웠다. 중간 PR 이라 done 으로 바꾸지 않는다')
+    rmSync(join(c.tmp, 'log.txt'))
+    bin = board(c, [{ id: 'by-pr', status: 'doing', pr: 77 }])
+    r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.equal(starting(c.calls(), 'board ').length, 0, c.calls().join('\n'))
+    has(r.stdout, '보드 by-pr 는 중간 PR 이라 done 으로 바꾸지 않는다')
+  })
+
+  test('찾은 항목이 둘 이상이면 건너뛴다', async (t) => {
+    const c = setup(t)
+    const bin = board(c, [{ id: 'a', pr: '#77' }, { id: 'b', pr: '77' }])
+    const r = await c.finish(['--task-pattern', PATTERN, ...bin])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(starting(c.calls(), 'board ').length, 0)
+    has(r.stdout, '보드 항목이 둘 이상이라 건너뛴다: PR 77 -> a, b')
   })
 })

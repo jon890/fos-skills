@@ -72,7 +72,6 @@ export const DEPRECATED_KEYS: ReadonlyArray<{ section: Section; key: string; eve
   { section: 'queue', key: 'verify_merged', event: 'verify-merged' },
   { section: 'queue', key: 'after_merged', event: 'after-queue' },
   { section: 'finish', key: 'complete_cmd', event: 'after-deploy' },
-  { section: 'finish', key: 'task_pattern', event: 'after-deploy' },
 ]
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -602,7 +602,8 @@ describe('migrate-orch-dir --hooks', { concurrency: 4 }, () => {
     const cli = taskCli(c)
     const config = writeConfig(c, { finish: { run: 'run_x', task_pattern: '(?P<n>PROJ-[0-9]+)', complete_cmd: `${cli.path} complete {number} 'note {number}'` } })
     await c.migrate(['--hooks', '--apply'])
-    assert.deepEqual(readJson(config), { finish: { run: 'run_x' } })
+    // task_pattern 은 마지막 PR 판정이 읽어 남는다
+    assert.deepEqual(readJson(config), { finish: { run: 'run_x', task_pattern: '(?P<n>PROJ-[0-9]+)' } })
 
     const done = await fireIn(c, 'after-deploy', { pr: PR, merge_commit: 'c'.repeat(40), deploy: 'success', last_of_task: true })
     assert.equal(done.result.result, 'pass')

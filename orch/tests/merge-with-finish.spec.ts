@@ -129,9 +129,25 @@ describe('merge-with-finish PR 인자 해석', { skip: !HAS_BASH && 'bash 가 �
     has(by['446'], '--complete')
   })
 
+  test('~ 는 마무리에 --intermediate 를 넘기고, 표시가 없으면 둘 다 넘기지 않아 마무리가 판정한다', async (t) => {
+    const c = setup(t)
+    const r = await c.wrap(['--no-sweep', '449', '450~', '451~:./backup.sh', '452!'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), ['queue --last-of-task 452 --no-sweep 449 450 451:./backup.sh 452'])
+    const by = await c.finishes(4)
+    for (const flag of ['--complete', '--intermediate']) lacks(by['449'], flag)
+    has(by['450'], '--intermediate')
+    lacks(by['450'], '--complete')
+    has(by['451'], '--intermediate')
+    has(by['452'], '--complete')
+    lacks(by['452'], '--intermediate')
+    has(r.stdout, `마무리 시작: PR 449 (마지막 PR 인지는 배포 뒤 판정) -> ${c.logs}/finish-449.out`)
+    has(r.stdout, `마무리 시작: PR 450 (중간 PR) -> ${c.logs}/finish-450.out`)
+  })
+
   test('PR 번호가 아닌 인자는 사용법 오류이고 아무것도 걸지 않는다', async (t) => {
     const c = setup(t)
-    for (const arg of ['abc', '12a', '!449', '449!!', '']) {
+    for (const arg of ['abc', '12a', '!449', '449!!', '449!~', '449~!', '449~~', '']) {
       const r = await c.wrap([arg])
       assert.equal(r.code, 2, `${JSON.stringify(arg)}: ${both(r)}`)
       has(r.stderr, 'PR 번호가 아니다')
@@ -550,97 +566,23 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
 })
 
 describe('merge-with-finish 보드 항목', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
-  test('pr 필드로 찾은 항목은 업무의 마지막 PR 에만 넘긴다', async (t) => {
+  test('보드 항목은 마무리가 찾으므로 --board-item 이 없으면 --board-id 를 넘기지 않는다', async (t) => {
     const c = setup(t)
-    c.writeBoard([{ id: 'task-a', pr: '#492, #495' }, { id: 'task-b', pr: '500' }, { id: 'none' }])
-    const r = await c.wrap(['--repo', c.tmp, '492', '495!', '500!', '501!'])
+    c.writeBoard([{ id: 'task-a', pr: '492' }])
+    const r = await c.wrap(['--repo', c.tmp, '492!', '493'])
     assert.equal(r.code, 0, both(r))
-    const by = await c.finishes(4)
+    const by = await c.finishes(2)
     lacks(by['492'], '--board-id')
-    has(by['495'], '--board-id task-a')
-    has(by['500'], '--board-id task-b')
-    lacks(by['501'], '--board-id')
-    has(r.stdout, '보드 항목 task-a 는 PR 492 가 업무의 마지막 PR(!)이 아니라')
+    lacks(by['493'], '--board-id')
   })
 
-  test('숫자 id 는 문자열로 넘기고, 둘 이상이면 건너뛴다고 알린다', async (t) => {
-    const c = setup(t)
-    c.writeBoard([{ id: 7, pr: '492' }, { id: 8, pr: '495' }, { id: 9, pr: '495' }])
-    const r = await c.wrap(['--repo', c.tmp, '492!', '495!'])
-    assert.equal(r.code, 0, both(r))
-    has((await c.finishes(2))['492'], '--board-id 7')
-    has(r.stdout, '보드 항목이 둘 이상이라 건너뛴다: PR 495 -> 8, 9')
-  })
-
-  test('pr 필드의 숫자는 글자에 붙지 않은 것만 PR 번호로 읽는다', async (t) => {
-    const c = setup(t)
-    const cases: [unknown, string[]][] = [
-      ['#492 495', ['492', '495']],
-      ['492/495', ['492', '495']],
-      ['#492 (v2)', ['492']],
-      ['492, #495', ['492', '495']],
-      ['PR한2', []],
-      ['', []],
-      [null, []],
-    ]
-    const items = cases.map(([pr], i) => ({ id: `case-${i}`, pr }))
-    c.writeBoard(items)
-    const r = await c.wrap(['--repo', c.tmp, '492!', '495!', '2!'])
-    assert.equal(r.code, 0, both(r))
-    const by = await c.finishes(3)
-    const want = (n: string) => cases.flatMap(([, numbers], i) => (numbers.includes(n) ? [`case-${i}`] : []))
-    // 492 와 495 는 여러 항목에 들어 건너뛰고, 2 는 어느 항목에도 없다
-    assert.deepEqual(want('492'), ['case-0', 'case-1', 'case-2', 'case-3'])
-    has(r.stdout, `보드 항목이 둘 이상이라 건너뛴다: PR 492 -> ${want('492').join(', ')}`)
-    has(r.stdout, `보드 항목이 둘 이상이라 건너뛴다: PR 495 -> ${want('495').join(', ')}`)
-    assert.deepEqual(want('2'), [])
-    lacks(by['2'], '--board-id')
-  })
-
-  test('--board-item 이 찾은 항목보다 우선하고 ! 와 상관없이 쓴다', async (t) => {
+  test('--board-item 은 표시와 상관없이 그 PR 의 마무리에 --board-id 로 넘긴다', async (t) => {
     const c = setup(t)
     c.writeBoard([{ id: 'found', pr: '492' }])
     await c.wrap(['--repo', c.tmp, '--board-item', '492=explicit', '492', '493'])
-    has((await c.finishes(2))['492'], '--board-id explicit')
-  })
-
-  test('같은 PR 이 든 항목이 둘이면 건너뛴다', async (t) => {
-    const c = setup(t)
-    c.writeBoard([{ id: 'a', pr: '7' }, { id: 'b', pr: '#7' }])
-    const r = await c.wrap(['--repo', c.tmp, '7!'])
-    assert.equal(r.code, 0, both(r))
-    lacks((await c.finishes(1))['7'], '--board-id')
-    has(r.stdout, '보드 항목이 둘 이상이라 건너뛴다: PR 7 -> a, b')
-  })
-
-  test('보드 파일은 --finish-arg 의 --board, finish.board, 옛 기본 위치 순서로 정한다', async (t) => {
-    const c = setup(t)
-    c.writeBoard([{ id: 'plain', pr: '9' }])
-    c.writeBoard([{ id: 'nested', pr: '9' }], '.omc/handoffs/board.json')
-    await c.wrap(['--repo', c.tmp, '9!'])
-    has((await c.finishes(1))['9'], '--board-id nested')
-    c.reset()
-    c.writeBoard([{ id: 'configured', pr: '9' }], 'boards/main.json')
-    c.writeConfig({ finish: { board: 'boards/main.json' } })
-    await c.wrap(['--repo', c.tmp, '9!'])
-    has((await c.finishes(1))['9'], '--board-id configured')
-    c.reset()
-    c.writeBoard([{ id: 'arg', pr: '9' }], 'boards/other.json')
-    await c.wrap(['--repo', c.tmp, '--finish-arg=--board=boards/other.json', '9!'])
-    has((await c.finishes(1))['9'], '--board-id arg')
-  })
-
-  test('보드가 없거나 깨져도 오류가 아니다', async (t) => {
-    const c = setup(t)
-    let r = await c.wrap(['--repo', c.tmp, '9!'])
-    assert.equal(r.code, 0, both(r))
-    lacks((await c.finishes(1))['9'], '--board-id')
-    c.reset()
-    mkdirSync(join(c.tmp, '.omc'), { recursive: true })
-    writeFileSync(join(c.tmp, '.omc', 'board.json'), '{broken')
-    r = await c.wrap(['--repo', c.tmp, '9!'])
-    assert.equal(r.code, 0, both(r))
-    lacks((await c.finishes(1))['9'], '--board-id')
+    const by = await c.finishes(2)
+    has(by['492'], '--board-id explicit')
+    lacks(by['493'], '--board-id')
   })
 })
 

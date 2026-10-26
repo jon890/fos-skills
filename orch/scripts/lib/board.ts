@@ -38,6 +38,31 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
   }
 }
 
+// 보드 항목의 pr 칸(`#492`, `492, 495`, `492/495`)에 든 PR 번호들. 글자에 붙은 숫자(`#492 (v2)` 의 `2`)는 읽지 않는다.
+// 옮기기 전 Python 의 \w 가 한글도 글자로 보았으므로 유니코드 글자와 숫자를 글자로 센다
+export function prNumbers(field: unknown): Set<string> {
+  const text = !field ? '' : typeof field === 'string' ? field : JSON.stringify(field)
+  return new Set([...text.matchAll(/(?<![\p{L}\p{N}_])#?(\d+)(?![\p{L}\p{N}_])/gu)].map((m) => m[1]))
+}
+
+export type BoardMatch = { by: 'pr' | 'branch'; ids: string[] }
+
+// 머지한 PR 의 보드 항목. pr 칸에 그 PR 이 든 항목을 먼저 찾고, 없으면 pr 칸이 빈 항목 가운데 branch 가 PR 브랜치이거나
+// worktree 가 그 워크트리 이름인 항목을 찾는다. 어느 쪽도 없거나 보드를 읽지 못하면 null 이다. 둘 이상이면 ids 에 모두 담는다
+export function findBoardItems(file: string, pr: string, branch: string, worktree: string | null): BoardMatch | null {
+  let items: BoardItem[]
+  try {
+    items = readBoard(file).filter((i) => typeof i === 'object' && i !== null && !Array.isArray(i) && Boolean(i.id))
+  } catch {
+    return null
+  }
+  const id = (i: BoardItem) => (typeof i.id === 'string' ? i.id : JSON.stringify(i.id))
+  const byPr = items.filter((i) => prNumbers(i.pr).has(pr))
+  if (byPr.length > 0) return { by: 'pr', ids: byPr.map(id) }
+  const byBranch = items.filter((i) => prNumbers(i.pr).size === 0 && ((branch && i.branch === branch) || (worktree && i.worktree === worktree)))
+  return byBranch.length > 0 ? { by: 'branch', ids: byBranch.map(id) } : null
+}
+
 // 알림을 기록한 뒤에만 해시를 저장한다. 사라진 항목은 잊어 다시 생겼을 때 알린다.
 export function remindDecisions(repo: string, notify: (text: string) => void): void {
   const file = boardPath(repo)
