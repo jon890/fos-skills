@@ -177,15 +177,23 @@
 //        마무리(finish-<PR>.pid)가 살아 있는지는 보지 않는다. 마무리는 머지를 180분까지 기다려 큐가 그 PR 을 보류한 뒤에도 살아 있다.
 //        merge-with-finish 는 도는 마무리를 그대로 쓰므로 다시 걸어도 마무리가 겹치지 않는다.
 //        통과한 PR 은 ready[<PR>] 에 {head, at} 를 둔다. 같은 HEAD 면 at 을 그대로 둔다. at 이 큐 순서의 준비 시각이다
-//     4. 마이그레이션: 준비된 PR 이 더한 파일(changeType 이 ADDED, RENAMED, COPIED. changeType 이 없는 행은 더한 파일로 본다)에
-//        migrationOf 가 있으면, PR 의 base 마다 git fetch --quiet origin <base> 와 모듈 폴더마다 git ls-tree -r --name-only origin/<base>
-//        로 base 의 최고 번호를, gh pr list --state open --limit 200 --json number,baseRefName,files 로 같은 base 의 열린 PR 의 번호를 읽는다.
-//        실패하면 오류 이유로 남기고 마이그레이션이 있는 PR 은 이 틱에 걸지 않는다.
+//     4. 마이그레이션: 준비된 PR 이 더한 파일(lib/reservations.ts 의 addedPaths. changeType 이 ADDED, RENAMED, COPIED 이거나 없는 행)에
+//        migrationOf 가 있으면, 마이그레이션 번호 예약(ADR-017, lib/reservations.ts 의 readReservations. 잠금 없이 읽는다)과
+//        PR 의 base 마다 git fetch --quiet origin <base> 와 모듈 폴더마다 git ls-tree -r --name-only origin/<base> 로 base 의 최고 번호를,
+//        gh pr list --state open --limit 200 --json number,headRefName,baseRefName,files 로 같은 base 의 열린 PR 의 번호와
+//        브랜치마다의 열린 PR 번호를 읽는다. 예약과 브랜치마다의 번호는 base 에 묶이지 않아 모든 base 에 같은 값을 쓴다.
+//        실패하면 오류 이유(예약은 `마이그레이션 예약을 읽지 못했다: <이유>`)로 남기고 마이그레이션이 있는 PR 은 이 틱에 걸지 않는다.
+//        형식이 틀린 예약 항목이 있으면(readReservations 의 skipped) `마이그레이션 예약 <n> 개의 형식이 틀렸다. reserve-migration.ts --prune 으로 뺀다`,
+//        열린 PR 조회가 200 줄 이상이면 `열린 PR 이 200 개 이상이라 마이그레이션 목록이 잘렸을 수 있다` 로 같게 다룬다. 버린 예약이나 잘린 PR 의 번호를 놓친 채 높은 번호 PR 을 걸지 않으려는 것이다.
+//        예약 가운데 그 PR 브랜치의 것과, 예약한 브랜치의 열린 PR 이 같은 (모듈, 번호)를 이미 더한 것은 뺀다(lib/auto-merge.ts 의 reservedFor).
 //        judgeMigrations 의 clash 가 있으면 걸지 않는다. 이유는 `<모듈> <label>: <이유>` 를 `; ` 로 이은 것이고, clashes[<PR>@<HEAD>] 와
 //        다를 때만 MIGRATION-CLASH(pr 그 PR, text 그 이유)를 그 PR 지시서의 Run 으로 쓴다.
-//        lower 가운데 걸 후보(clash 가 없는 준비된 PR)에 없는 PR 이 있으면 걸지 않고 blocked[<PR>] 에 {head, since, fired} 를 둔다(같은 HEAD 면
-//        since 를 둔다). since 에서 migrations.blocked_after_sec 가 지났고 fired 가 아니면 MIGRATION-BLOCKED(pr 기다리는 PR, text
-//        `<모듈> <label> 이 #<막는 PR> <막는 label> 을 <분>분 기다린다. #<막는 PR> 의 번호를 뒤로 미는 재예약을 검토한다`)를 쓰고 fired 를 둔다.
+//        lower 가운데 걸 후보(clash 가 없는 준비된 PR)에 없는 PR 이나 예약이 있으면 걸지 않는다. 예약은 걸 후보에 들 수 없어 늘 기다린다.
+//        blocked[<PR>] 에 {head, since, fired} 를 둔다(같은 HEAD 면 since 를 둔다). 막는 쪽 이름은 PR 이면 `#<PR> <label>`, 예약이면
+//        `<브랜치> 의 예약 <label>` 이다. since 에서 migrations.blocked_after_sec 가 지났고 fired 가 아니면 MIGRATION-BLOCKED(pr 기다리는 PR, text
+//        `<모듈> <label> 이 <막는 쪽> 을 <분>분 기다린다. 막는 쪽 worker 가 reserve-migration.ts --again 으로 번호를 다시 받는다.
+//        막는 브랜치를 버렸으면 지운 뒤 reserve-migration.ts --prune`)를 쓰고 fired 를 둔다. 아니면 `AUTO-MERGE-WAIT #<PR> <모듈> <label> 이
+//        <막는 쪽> 을 기다린다` 를 로그에 쓴다.
 //        막힘이 풀린 PR 과 이번 틱의 걸 후보가 아닌 PR 의 항목은 지운다. 기다리던 PR 이 준비에서 빠졌다 같은 HEAD 로 돌아와도
 //        옛 since 로 바로 알리지 않게 한다. migrations.before 에 그 모듈의 명령이 없으면(beforeCommand)
 //        `#<PR> 의 모듈 <모듈> 에 migrations.before 규칙이 없다` 로 걸지 않는다
@@ -268,8 +276,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reviewVerdict, specHold, sweepArgs } from './lib/auto-merge.ts'
-import type { AutoMergeConfig, Migration, MigrationJudgement, OpenMigrations, ReviewNote } from './lib/auto-merge.ts'
+import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, reviewVerdict, specHold, sweepArgs } from './lib/auto-merge.ts'
+import type { AutoMergeConfig, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote } from './lib/auto-merge.ts'
 import { context as questionContext } from './lib/completion.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './lib/config.ts'
 import { concludeConflict, findConflicts, loadNotified, notifiedFile, notifiedKey, resolveConflict, SEND_MS } from './lib/conflicts.ts'
@@ -291,6 +299,7 @@ import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { notifyQuestion, poll } from './lib/questions.ts'
+import { addedPaths, readReservations } from './lib/reservations.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
 import { branchesOf } from './lib/spec.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
@@ -324,8 +333,8 @@ const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze(
 const AUTO_MERGE_LOG_KEEP_MS = 7 * 24 * 60 * 60 * 1000
 // 명령줄에 이 글자가 들면 도는 머지 큐로 본다(머리 주석의 「자동 머지」 2)
 const QUEUE_COMMANDS: readonly string[] = ['merge_queue.', 'merge-queue.sh', 'merge-with-finish.']
-// 마이그레이션을 더한 것으로 보는 파일 변경(머리 주석의 「자동 머지」 4)
-const ADDED_CHANGES: ReadonlySet<string> = new Set(['ADDED', 'RENAMED', 'COPIED'])
+// 마이그레이션을 보는 열린 PR 조회의 최대 줄 수. 이만큼 오면 잘렸을 수 있다(머리 주석의 「자동 머지」 4)
+const MIGRATION_PR_LIMIT = 200
 
 type Mode = (typeof MODES)[number]
 type Context = {
@@ -1401,14 +1410,11 @@ function queueEndLine(file: string): string {
   )
 }
 
-// 더한 파일의 마이그레이션. changeType 이 없는 행은 더한 파일로 본다(머리 주석의 「자동 머지」 4)
+// 더한 파일의 마이그레이션. 더한 파일은 lib/reservations.ts 의 addedPaths 가 고른다(머리 주석의 「자동 머지」 4)
 function addedMigrations(files: unknown, dirs: Record<string, string>): Migration[] {
   const found: Migration[] = []
-  if (!Array.isArray(files)) return found
-  for (const file of files) {
-    if (!isObject(file) || typeof file.path !== 'string') continue
-    if (typeof file.changeType === 'string' && !ADDED_CHANGES.has(file.changeType)) continue
-    const migration = migrationOf(file.path, dirs)
+  for (const path of addedPaths(files)) {
+    const migration = migrationOf(path, dirs)
     if (migration) found.push(migration)
   }
   return found
@@ -1465,12 +1471,36 @@ function judgeTarget(
   return { migrations: addedMigrations(data.files, ctx.autoMerge.dirs) }
 }
 
-// base 마다의 최고 번호와 같은 base 의 열린 PR 의 번호(머리 주석의 「자동 머지」 4)
+// base 마다의 최고 번호와 같은 base 의 열린 PR 의 번호, 예약, 브랜치마다의 열린 PR 번호(머리 주석의 「자동 머지」 4).
+// 예약과 openByBranch 는 base 에 묶이지 않아 모든 base 에 같은 값을 쓴다
 function migrationContext(
   ctx: Context,
   bases: string[],
-): { ok: true; baseMax: Map<string, Map<string, Migration>>; others: Map<string, OpenMigrations[]> } | { ok: false; error: string } {
+):
+  | {
+      ok: true
+      baseMax: Map<string, Map<string, Migration>>
+      others: Map<string, OpenMigrations[]>
+      reserved: ReservedMigrations[]
+      openByBranch: Map<string, Migration[]>
+    }
+  | { ok: false; error: string } {
   const dirs = ctx.autoMerge.dirs
+  const reserved: ReservedMigrations[] = []
+  let read: ReturnType<typeof readReservations>
+  try {
+    read = readReservations(ctx.repo)
+  } catch (e) {
+    return { ok: false, error: `마이그레이션 예약을 읽지 못했다: ${oneLine(e)}` }
+  }
+  // 형식이 틀린 예약을 버린 채 보면 그 번호보다 높은 PR 을 건다
+  if (read.skipped > 0) return { ok: false, error: `마이그레이션 예약 ${read.skipped} 개의 형식이 틀렸다. reserve-migration.ts --prune 으로 뺀다` }
+  for (const r of read.list) {
+    const migration: Migration = { module: r.module, version: r.version, label: r.label, path: r.path }
+    const entry = reserved.find((item) => item.branch === r.branch)
+    if (entry) entry.migrations.push(migration)
+    else reserved.push({ branch: r.branch, migrations: [migration] })
+  }
   const baseMax = new Map<string, Map<string, Migration>>()
   for (const base of bases) {
     const fetched = git(ctx.repo, ['fetch', '--quiet', 'origin', base])
@@ -1483,15 +1513,22 @@ function migrationContext(
     }
     baseMax.set(base, maxByModule(paths, dirs))
   }
-  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,baseRefName,files'], { cwd: ctx.repo })
+  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', String(MIGRATION_PR_LIMIT), '--json', 'number,headRefName,baseRefName,files'], {
+    cwd: ctx.repo,
+  })
   if (!got.ok) return { ok: false, error: oneLine(got.error) }
   if (!Array.isArray(got.data)) return { ok: false, error: '열린 PR 의 파일 목록이 목록이 아니다' }
+  // 잘린 목록에서 빠진 PR 의 번호를 놓친 채 걸지 않는다
+  if (got.data.length >= MIGRATION_PR_LIMIT) return { ok: false, error: `열린 PR 이 ${MIGRATION_PR_LIMIT} 개 이상이라 마이그레이션 목록이 잘렸을 수 있다` }
   const others = new Map<string, OpenMigrations[]>()
+  const openByBranch = new Map<string, Migration[]>()
   for (const row of got.data) {
     if (!isObject(row) || !Number.isInteger(row.number) || typeof row.baseRefName !== 'string') continue
-    others.set(row.baseRefName, [...(others.get(row.baseRefName) ?? []), { pr: row.number as number, migrations: addedMigrations(row.files, dirs) }])
+    const migrations = addedMigrations(row.files, dirs)
+    others.set(row.baseRefName, [...(others.get(row.baseRefName) ?? []), { pr: row.number as number, migrations }])
+    if (typeof row.headRefName === 'string') openByBranch.set(row.headRefName, [...(openByBranch.get(row.headRefName) ?? []), ...migrations])
   }
-  return { ok: true, baseMax, others }
+  return { ok: true, baseMax, others, reserved, openByBranch }
 }
 
 function launchDetached(argv: string[], cwd: string, fd: number): Promise<{ ok: true; pid: number } | { ok: false; error: string }> {
@@ -1614,7 +1651,11 @@ async function autoMergeStep(
       candidates = ready.filter((c) => c.migrations.length === 0)
     } else {
       for (const c of migrating) {
-        judgements.set(c.pr.number, judgeMigrations(c.pr.number, c.migrations, read.baseMax.get(c.pr.base) ?? new Map(), read.others.get(c.pr.base) ?? []))
+        const reserved = reservedFor(c.pr.branch, read.reserved, read.openByBranch)
+        judgements.set(
+          c.pr.number,
+          judgeMigrations(c.pr.number, c.migrations, read.baseMax.get(c.pr.base) ?? new Map(), read.others.get(c.pr.base) ?? [], reserved),
+        )
       }
     }
   }
@@ -1631,9 +1672,10 @@ async function autoMergeStep(
     else if (notifyAutoMerge(ctx, 'MIGRATION-CLASH', c.pr.number, reason, c.run)) state.clashes[key] = reason
   }
 
-  // 걸 후보에 없는 더 낮은 번호의 PR
+  // 걸 후보에 없는 더 낮은 번호의 PR 과 예약. 예약은 PR 이 없어 걸 후보에 들 수 없으므로 늘 기다린다
   const byNumber = new Map(clean.map((c) => [c.pr.number, c]))
-  const waitsFor = (c: Candidate, set: Set<number>) => (judgements.get(c.pr.number)?.lower ?? []).filter((lower) => !set.has(lower.pr))
+  const waitsFor = (c: Candidate, set: Set<number>) =>
+    (judgements.get(c.pr.number)?.lower ?? []).filter((lower) => lower.pr === null || !set.has(lower.pr))
   let set = new Set(byNumber.keys())
   const first = new Set(set)
   for (const c of clean) {
@@ -1648,12 +1690,15 @@ async function autoMergeStep(
     const entry = before && before.head === c.pr.head ? before : { head: c.pr.head, since: iso(), fired: false }
     state.blocked[key] = entry
     const blocker = blockers[0]
+    const holder = blocker.pr === null ? `${blocker.branch} 의 예약 ${blocker.label}` : `#${blocker.pr} ${blocker.label}`
     const waited = Date.now() - Date.parse(entry.since)
     if (!entry.fired && waited > ctx.autoMerge.blockedAfterSec * 1000) {
-      const text = `${blocker.module} ${blocker.mine} 이 #${blocker.pr} ${blocker.label} 을 ${Math.floor(waited / 60_000)}분 기다린다. #${blocker.pr} 의 번호를 뒤로 미는 재예약을 검토한다`
+      const text =
+        `${blocker.module} ${blocker.mine} 이 ${holder} 을 ${Math.floor(waited / 60_000)}분 기다린다. ` +
+        '막는 쪽 worker 가 reserve-migration.ts --again 으로 번호를 다시 받는다. 막는 브랜치를 버렸으면 지운 뒤 reserve-migration.ts --prune'
       if (notifyAutoMerge(ctx, 'MIGRATION-BLOCKED', c.pr.number, text, c.run)) entry.fired = true
     } else {
-      log(`AUTO-MERGE-WAIT #${c.pr.number} ${blocker.module} ${blocker.mine} 이 #${blocker.pr} ${blocker.label} 을 기다린다`)
+      log(`AUTO-MERGE-WAIT #${c.pr.number} ${blocker.module} ${blocker.mine} 이 ${holder} 을 기다린다`)
     }
   }
   // 이번 틱의 걸 후보가 아닌 PR 의 막힘은 지운다. 준비에서 빠졌다 같은 HEAD 로 돌아온 PR 이 옛 since 로 바로 알리지 않게 한다

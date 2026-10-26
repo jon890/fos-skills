@@ -11,6 +11,7 @@ import {
   maxByModule,
   migrationOf,
   queueOrder,
+  reservedFor,
   reviewVerdict,
   specHold,
   sweepArgs,
@@ -198,7 +199,7 @@ describe('judgeMigrations', () => {
 
   test('같은 모듈에 더 낮은 번호를 더한 다른 열린 PR 은 lower 다', () => {
     const got = judgeMigrations(30, [mig('api', 'V14')], baseMax, [{ pr: 32, migrations: [mig('api', 'V13')] }])
-    assert.deepEqual(got, { clashes: [], lower: [{ pr: 32, module: 'api', label: 'V13', mine: 'V14' }] })
+    assert.deepEqual(got, { clashes: [], lower: [{ pr: 32, branch: null, module: 'api', label: 'V13', mine: 'V14' }] })
   })
 
   test('같은 PR 번호와 다른 모듈, base 이하의 번호는 다른 PR 판정에서 뺀다', () => {
@@ -213,8 +214,51 @@ describe('judgeMigrations', () => {
     const got = judgeMigrations(30, [mig('api', 'V12'), mig('api', 'V15')], baseMax, [{ pr: 34, migrations: [mig('api', 'V14')] }])
     assert.deepEqual(got, {
       clashes: [{ module: 'api', label: 'V12', reason: 'base 최고 V12 이하' }],
-      lower: [{ pr: 34, module: 'api', label: 'V14', mine: 'V15' }],
+      lower: [{ pr: 34, branch: null, module: 'api', label: 'V14', mine: 'V15' }],
     })
+  })
+
+  const base2 = new Map([['api', mig('api', 'V2')]])
+
+  test('base 최고와 이 PR 사이의 다른 브랜치 예약은 pr 이 null 인 lower 다', () => {
+    const got = judgeMigrations(30, [mig('api', 'V4')], base2, [], [{ branch: 'feat/x', migrations: [mig('api', 'V3')] }])
+    assert.deepEqual(got, { clashes: [], lower: [{ pr: null, branch: 'feat/x', module: 'api', label: 'V3', mine: 'V4' }] })
+  })
+
+  test('이 PR 과 같은 번호의 예약은 그 브랜치 이름의 clash 다', () => {
+    const got = judgeMigrations(30, [mig('api', 'V4')], base2, [], [{ branch: 'feat/x', migrations: [mig('api', 'V4')] }])
+    assert.deepEqual(got, { clashes: [{ module: 'api', label: 'V4', reason: 'feat/x 의 예약과 같은 번호' }], lower: [] })
+  })
+
+  test('base 최고 이하의 예약은 lower 가 아니고, base 이하 clash 가 예약 clash 보다 먼저다', () => {
+    const reserved = [{ branch: 'feat/x', migrations: [mig('api', 'V2'), mig('api', 'V1')] }]
+    assert.deepEqual(judgeMigrations(30, [mig('api', 'V2'), mig('api', 'V5')], base2, [], reserved), {
+      clashes: [{ module: 'api', label: 'V2', reason: 'base 최고 V2 이하' }],
+      lower: [],
+    })
+  })
+})
+
+describe('reservedFor', () => {
+  const reserved = [
+    { branch: 'feat-a', migrations: [mig('api', 'V3')] },
+    { branch: 'feat-b', migrations: [mig('api', 'V4'), mig('web', 'V4')] },
+    { branch: 'feat-c', migrations: [mig('api', 'V5')] },
+  ]
+
+  test('대상 PR 자기 브랜치의 예약과, 그 브랜치의 열린 PR 이 같은 (모듈, 번호)를 더한 예약은 뺀다', () => {
+    const open = new Map([
+      ['feat-b', [mig('api', 'V4')]],
+      ['feat-c', [mig('api', 'V6')]],
+    ])
+    assert.deepEqual(reservedFor('feat-a', reserved, open), [
+      { branch: 'feat-b', migrations: [mig('web', 'V4')] },
+      { branch: 'feat-c', migrations: [mig('api', 'V5')] },
+    ])
+  })
+
+  test('예약이 없으면 빈 목록이다', () => {
+    assert.deepEqual(reservedFor('feat-a', [], new Map()), [])
   })
 })
 

@@ -11,7 +11,11 @@
 //   - reviewVerdict    리뷰와 댓글을 늦은 것부터 보고 pass 나 block 에 맞는 첫 본문으로 정한다. 둘 다 맞으면 block 이다
 //   - migrationOf      모듈 폴더 아래 Flyway 버전 마이그레이션(`V<버전>__<설명>`). 버전은 `.` 과 `_` 로 나눈 숫자 목록이다.
 //                      반복 마이그레이션(`R__`)과 되돌리기(`U`)는 번호를 차지하지 않아 세지 않는다
-//   - judgeMigrations  base 최고 이하이거나 다른 열린 PR 과 같은 번호는 clash, 같은 모듈에 더 낮은 번호를 더한 다른 열린 PR 은 lower 다
+//   - judgeMigrations  base 최고 이하이거나 다른 열린 PR 이나 다른 브랜치의 예약(docs/adr/017-orch-migration-reserve.md)과 같은 번호는 clash 다.
+//                      base 최고 이하면 그 이유 하나만 낸다. 같은 모듈에 base 최고보다 크고 이 PR 보다 낮은 번호를 더한 다른 열린 PR 과
+//                      예약은 lower 다. lower 항목은 열린 PR 이면 pr 에 번호, 예약이면 pr 이 null 이고 branch 에 예약한 브랜치를 둔다
+//   - reservedFor      judgeMigrations 에 넘길 예약. 대상 PR 자기 브랜치의 예약과, 예약한 브랜치의 열린 PR 이 같은 (모듈, 번호)를
+//                      이미 더한 예약은 뺀다. 그 PR 의 파일로 이미 세므로 같은 번호를 두 번 세지 않으려는 것이다
 //   - beforeCommand    마이그레이션 모듈의 머지 전 명령(migrations.before)을 ` && ` 로 잇는다
 //   - queueOrder       준비를 처음 본 순서에서 같은 모듈 마이그레이션 PR 의 자리만 번호 순으로 바꾸고, 모듈을 함께 가진 PR 을 묶음(--chain)으로 만든다
 //   - sweepArgs        queue.sweep_args 의 --run 을 큐의 Run 으로 맞춘다. merge-with-finish 는 설정의 --run 과 --run 옵션이 다르면 사용법 오류다
@@ -189,35 +193,64 @@ export function maxByModule(paths: string[], dirs: Record<string, string>): Map<
 }
 
 export type OpenMigrations = { pr: number; migrations: Migration[] }
+// PR 이 아직 없을 수 있는 다른 브랜치의 예약. migrations 의 path 는 예약이 정한 파일 경로다
+export type ReservedMigrations = { branch: string; migrations: Migration[] }
 export type MigrationJudgement = {
   clashes: { module: string; label: string; reason: string }[]
-  lower: { pr: number; module: string; label: string; mine: string }[]
+  // 열린 PR 이면 branch 가 null, 예약이면 pr 이 null 이다
+  lower: { pr: number | null; branch: string | null; module: string; label: string; mine: string }[]
 }
 
-// 이 PR 의 마이그레이션마다 본다. base 최고 이하면 그 이유 하나만 낸다. 다른 PR 과 같은 번호여도 base 를 넘기는 번호로 다시 정해야 하는 것은 같다
-export function judgeMigrations(pr: number, mine: Migration[], baseMax: Map<string, Migration>, others: OpenMigrations[]): MigrationJudgement {
+function sameVersion(a: Migration, b: Migration): boolean {
+  return a.module === b.module && compareVersion(a.version, b.version) === 0
+}
+
+// 이 PR 의 마이그레이션마다 본다. base 최고 이하면 그 이유 하나만 낸다. 다른 PR 이나 예약과 같은 번호여도 base 를 넘기는 번호로 다시 정해야 하는 것은 같다
+export function judgeMigrations(
+  pr: number,
+  mine: Migration[],
+  baseMax: Map<string, Migration>,
+  others: OpenMigrations[],
+  reserved: ReservedMigrations[] = [],
+): MigrationJudgement {
   const judgement: MigrationJudgement = { clashes: [], lower: [] }
   const rest = others.filter((other) => other.pr !== pr)
+  const holders = [
+    ...rest.map((other) => ({ pr: other.pr, branch: null, migrations: other.migrations })),
+    ...reserved.map((r) => ({ pr: null, branch: r.branch, migrations: r.migrations })),
+  ]
   for (const m of mine) {
     const base = baseMax.get(m.module)
     if (base && compareVersion(m.version, base.version) <= 0) {
       judgement.clashes.push({ module: m.module, label: m.label, reason: `base 최고 ${base.label} 이하` })
     } else {
-      for (const other of rest) {
-        if (other.migrations.some((o) => o.module === m.module && compareVersion(o.version, m.version) === 0)) {
-          judgement.clashes.push({ module: m.module, label: m.label, reason: `#${other.pr} 과 같은 번호` })
-        }
+      for (const holder of holders) {
+        if (!holder.migrations.some((o) => sameVersion(o, m))) continue
+        const reason = holder.pr === null ? `${holder.branch} 의 예약과 같은 번호` : `#${holder.pr} 과 같은 번호`
+        judgement.clashes.push({ module: m.module, label: m.label, reason })
       }
     }
-    for (const other of rest) {
-      for (const o of other.migrations) {
+    for (const holder of holders) {
+      for (const o of holder.migrations) {
         if (o.module !== m.module || compareVersion(o.version, m.version) >= 0) continue
         if (base && compareVersion(o.version, base.version) <= 0) continue
-        judgement.lower.push({ pr: other.pr, module: m.module, label: o.label, mine: m.label })
+        judgement.lower.push({ pr: holder.pr, branch: holder.branch, module: m.module, label: o.label, mine: m.label })
       }
     }
   }
   return judgement
+}
+
+// openByBranch 는 열린 PR 의 브랜치마다 그 PR 들이 더한 마이그레이션이다. base 를 가리지 않는다. 예약도 base 에 묶이지 않기 때문이다
+export function reservedFor(branch: string, reserved: ReservedMigrations[], openByBranch: Map<string, Migration[]>): ReservedMigrations[] {
+  const kept: ReservedMigrations[] = []
+  for (const r of reserved) {
+    if (r.branch === branch) continue
+    const opened = openByBranch.get(r.branch) ?? []
+    const migrations = r.migrations.filter((m) => !opened.some((o) => sameVersion(o, m)))
+    if (migrations.length > 0) kept.push({ branch: r.branch, migrations })
+  }
+  return kept
 }
 
 // before 의 `*` 는 규칙이 없는 나머지 모듈의 명령이고 `{module}` 이 모듈 이름으로 바뀐다

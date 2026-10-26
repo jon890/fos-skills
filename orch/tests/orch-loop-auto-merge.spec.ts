@@ -188,7 +188,7 @@ function added(...paths: string[]): Json[] {
 function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[]; rules?: FakeRule } = {}): void {
   gh.setRules([
     { args: ['pr', 'list', '--base'], stdout: '[]\n' },
-    { args: ['pr', 'list', 'number,baseRefName,files'], stdout: `${JSON.stringify(opts.open ?? [])}\n` },
+    { args: ['pr', 'list', 'number,headRefName,baseRefName,files'], stdout: `${JSON.stringify(opts.open ?? [])}\n` },
     { args: ['pr', 'list'], stdout: `${JSON.stringify(rows)}\n` },
     ...Object.entries(opts.views ?? {}).map(([n, view]) => ({ args: ['pr', 'view', n], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [], ...view })}\n` })),
     { args: ['pr', 'view'], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [] })}\n` },
@@ -417,7 +417,7 @@ describe('마이그레이션', () => {
   test('base 최고 번호 이하를 더한 PR 은 걸지 않고 MIGRATION-CLASH 를 한 번만 쓴다', () => {
     config({ migrations: { dirs } })
     const files = added('db/api/V1__b.sql')
-    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, baseRefName: 'main', files }] })
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
     once()
     once()
     assert.deepEqual(
@@ -433,8 +433,8 @@ describe('마이그레이션', () => {
     github([pr(1)], {
       views: { 1: { files } },
       open: [
-        { number: 1, baseRefName: 'main', files },
-        { number: 9, baseRefName: 'main', files: added('db/api/V3__other.sql') },
+        { number: 1, headRefName: 'feat-1', baseRefName: 'main', files },
+        { number: 9, headRefName: 'feat-9', baseRefName: 'main', files: added('db/api/V3__other.sql') },
       ],
     })
     once()
@@ -450,8 +450,8 @@ describe('마이그레이션', () => {
     spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
     const views = { 1: { files: added('db/api/V4__x.sql') }, 2: { files: added('db/api/V3__y.sql') } }
     const open = [
-      { number: 1, baseRefName: 'main', files: views[1].files },
-      { number: 2, baseRefName: 'main', files: views[2].files },
+      { number: 1, headRefName: 'feat-1', baseRefName: 'main', files: views[1].files },
+      { number: 2, headRefName: 'feat-2', baseRefName: 'main', files: views[2].files },
     ]
     // 첫 틱에는 V4 의 PR 만 준비된다. V3 의 PR 을 기다리므로 걸지 않는다
     github([pr(1), pr(2, { statusCheckRollup: pending() })], { views, open })
@@ -465,7 +465,7 @@ describe('마이그레이션', () => {
   test('migrations.before 가 있으면 PR 인자에 그 모듈의 머지 전 명령을 붙인다', async () => {
     config({ migrations: { dirs, before: { '*': 'backup {module}' } } })
     const files = added('db/api/V3__y.sql')
-    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, baseRefName: 'main', files }] })
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
     once()
     assert.deepEqual(await queued(), queueArgs('1:backup api'))
   })
@@ -475,8 +475,8 @@ describe('마이그레이션', () => {
     spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
     const views = { 1: { files: added('db/api/V3__y.sql') }, 2: { files: added('db/api/V4__x.sql') } }
     const open = [
-      { number: 1, baseRefName: 'main', files: views[1].files },
-      { number: 2, baseRefName: 'main', files: views[2].files },
+      { number: 1, headRefName: 'feat-1', baseRefName: 'main', files: views[1].files },
+      { number: 2, headRefName: 'feat-2', baseRefName: 'main', files: views[2].files },
     ]
     github([pr(1, { statusCheckRollup: pending() }), pr(2)], { views, open })
     once()
@@ -487,8 +487,116 @@ describe('마이그레이션', () => {
     const blocked = events('MIGRATION-BLOCKED')
     assert.equal(blocked.length, 1, JSON.stringify(events()))
     assert.equal(blocked[0].pr, 2)
-    assert.match(String(blocked[0].text), /^api V4 이 #1 V3 을 \d+분 기다린다\. #1 의 번호를 뒤로 미는 재예약을 검토한다$/)
+    assert.match(
+      String(blocked[0].text),
+      /^api V4 이 #1 V3 을 \d+분 기다린다\. 막는 쪽 worker 가 reserve-migration\.ts --again 으로 번호를 다시 받는다\. 막는 브랜치를 버렸으면 지운 뒤 reserve-migration\.ts --prune$/,
+    )
     assert.deepEqual(events('AUTO-MERGE'), [])
+  })
+})
+
+describe('마이그레이션 예약', () => {
+  const dirs = { api: 'db/api' }
+
+  function reservations(...rows: { branch: string; label: string }[]): void {
+    const list = rows.map(({ branch, label }) => ({
+      module: 'api',
+      version: [Number(label.slice(1))],
+      label,
+      branch,
+      name: 'x',
+      path: `db/api/${label}__x.sql`,
+      at: '2026-01-01T00:00:00Z',
+    }))
+    write(orchFile('state', 'migration-reservations.json'), JSON.stringify({ reservations: list }))
+  }
+
+  test('PR 이 없는 다른 브랜치의 더 낮은 예약이 있으면 걸지 않고, blocked_after_sec 가 지나면 막는 브랜치와 재예약 명령을 알린다', async () => {
+    config({ migrations: { dirs, blocked_after_sec: 1 } })
+    reservations({ branch: 'feat/x', label: 'V3' })
+    const files = added('db/api/V4__y.sql')
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
+    const output = once()
+    assert.match(output, /AUTO-MERGE-WAIT #1 api V4 이 feat\/x 의 예약 V3 을 기다린다/)
+    assert.deepEqual(events('MIGRATION-BLOCKED'), [])
+    await sleep(2_000)
+    once()
+    const blocked = events('MIGRATION-BLOCKED')
+    assert.equal(blocked.length, 1, JSON.stringify(events()))
+    assert.equal(blocked[0].pr, 1)
+    assert.match(String(blocked[0].text), /^api V4 이 feat\/x 의 예약 V3 을 \d+분 기다린다\. /)
+    assert.match(String(blocked[0].text), /reserve-migration\.ts --again/)
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('같은 PR 의 브랜치가 예약한 더 낮은 번호는 기다리지 않는다', async () => {
+    config({ migrations: { dirs } })
+    // 열린 PR 의 파일에 없는 번호라 브랜치로 빼지 않으면 lower 로 잡혀 걸지 않는다
+    reservations({ branch: 'feat-1', label: 'V3' })
+    const files = added('db/api/V4__x.sql')
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
+    once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+    assert.deepEqual(events('MIGRATION-CLASH'), [])
+  })
+
+  test('예약한 브랜치의 열린 PR 이 같은 번호를 더했으면 예약을 두 번 세지 않고 둘 다 건다', async () => {
+    config({ migrations: { dirs } })
+    spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
+    reservations({ branch: 'feat-1', label: 'V3' })
+    const views = { 1: { files: added('db/api/V3__x.sql') }, 2: { files: added('db/api/V4__y.sql') } }
+    const open = [
+      { number: 1, headRefName: 'feat-1', baseRefName: 'main', files: views[1].files },
+      { number: 2, headRefName: 'feat-2', baseRefName: 'main', files: views[2].files },
+    ]
+    github([pr(1), pr(2)], { views, open })
+    once()
+    assert.deepEqual(await queued(), queueArgs('--chain', '1,2', '1', '2'))
+    assert.deepEqual(events('MIGRATION-CLASH'), [])
+  })
+
+  function migrationError(): string {
+    const errors = events('WATCH-ERROR').filter((row) => String(row.text).startsWith('auto-merge: '))
+    assert.equal(errors.length, 1, JSON.stringify(events()))
+    return String(errors[0].text)
+  }
+
+  test('형식이 틀린 예약 항목이 있으면 마이그레이션이 든 PR 을 걸지 않고 그 수를 알린다', () => {
+    config({ migrations: { dirs } })
+    write(orchFile('state', 'migration-reservations.json'), JSON.stringify({ reservations: [{ module: 'api', label: 'V3' }] }))
+    const files = added('db/api/V4__y.sql')
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
+    once()
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+    assert.match(migrationError(), /auto-merge: 마이그레이션 예약 1 개의 형식이 틀렸다\. reserve-migration\.ts --prune 으로 뺀다/)
+  })
+
+  test('열린 PR 조회가 200 줄이면 목록이 잘렸을 수 있어 마이그레이션이 든 PR 을 걸지 않는다', () => {
+    config({ migrations: { dirs } })
+    const files = added('db/api/V3__y.sql')
+    const open = [
+      { number: 1, headRefName: 'feat-1', baseRefName: 'main', files },
+      ...Array.from({ length: 199 }, (_, i) => ({ number: 100 + i, headRefName: `feat-${100 + i}`, baseRefName: 'main', files: [] })),
+    ]
+    github([pr(1)], { views: { 1: { files } }, open })
+    once()
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+    assert.match(migrationError(), /auto-merge: 열린 PR 이 200 개 이상이라 마이그레이션 목록이 잘렸을 수 있다/)
+  })
+
+  test('예약 파일이 JSON 이 아니면 마이그레이션이 든 PR 을 걸지 않고 WATCH-ERROR auto-merge 로 알린다', () => {
+    config({ migrations: { dirs } })
+    write(orchFile('state', 'migration-reservations.json'), '{')
+    const files = added('db/api/V3__y.sql')
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
+    once()
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    const errors = events('WATCH-ERROR').filter((row) => String(row.text).startsWith('auto-merge: '))
+    assert.equal(errors.length, 1, JSON.stringify(events()))
+    assert.match(String(errors[0].text), /auto-merge: 마이그레이션 예약을 읽지 못했다/)
   })
 })
 
@@ -498,8 +606,8 @@ describe('막힘 정리', () => {
     spec('specs', 'spec-a.md', ['feat-1', 'feat-2'])
     const views = { 1: { files: added('db/api/V3__y.sql') }, 2: { files: added('db/api/V4__x.sql') } }
     const open = [
-      { number: 1, baseRefName: 'main', files: views[1].files },
-      { number: 2, baseRefName: 'main', files: views[2].files },
+      { number: 1, headRefName: 'feat-1', baseRefName: 'main', files: views[1].files },
+      { number: 2, headRefName: 'feat-2', baseRefName: 'main', files: views[2].files },
     ]
     github([pr(1, { statusCheckRollup: pending() }), pr(2)], { views, open })
     once()
@@ -519,9 +627,9 @@ describe('여러 Run', () => {
     write(orchFile('state', 'loop-runs', 'run_b.json'), JSON.stringify({ run: 'run_b', specs_dir: 'specs-b', registered_at: '2026-01-02T00:00:00Z' }))
     const views = { 2: { files: added('db/api/V3__y.sql') }, 3: { files: added('db/api/V4__x.sql') } }
     const open = [
-      { number: 1, baseRefName: 'main', files: [] },
-      { number: 2, baseRefName: 'main', files: views[2].files },
-      { number: 3, baseRefName: 'main', files: views[3].files },
+      { number: 1, headRefName: 'feat-1', baseRefName: 'main', files: [] },
+      { number: 2, headRefName: 'feat-2', baseRefName: 'main', files: views[2].files },
+      { number: 3, headRefName: 'feat-3', baseRefName: 'main', files: views[3].files },
     ]
     github([pr(1), pr(2), pr(3)], { views, open })
     once()
