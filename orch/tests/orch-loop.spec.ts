@@ -754,12 +754,13 @@ describe('여러 Run', () => {
     prs([], 1)
     const result = tickOnce()
     const kinds = (run: string) => runEvents(run).map((row) => String(row.text).split(':')[0])
-    // stalls 는 Run 마다 그 Run 의 worker 목록을 읽어 그 Run 에 알린다
-    assert.deepEqual(kinds('A').sort(), ['prs', 'questions', 'stalls'])
-    assert.deepEqual(kinds('B').sort(), ['questions', 'stalls'])
+    // 같은 틱에 질문 확인도 실패한 Run 의 멈춤 확인 실패는 로그에만 쓴다. Orca 가 꺼진 틱에 같은 원인으로 두 번 깨우지 않는다
+    assert.deepEqual(kinds('A').sort(), ['prs', 'questions'])
+    assert.deepEqual(kinds('B').sort(), ['questions'])
     const errors = result.errors as Json
     assert.equal(typeof errors['questions@A'], 'string')
     assert.equal(typeof errors['questions@B'], 'string')
+    assert.deepEqual([errors['stalls@A'], errors['stalls@B']], [null, null])
   })
 
   test('주 Run 이 바뀌면 진행 중인 공유 일의 실패가 새 주 Run 에 한 번 간다', () => {

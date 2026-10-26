@@ -1,6 +1,6 @@
 // orch-loop.ts 의 멈춤 확인을 가짜 orca 와 가짜 화면으로 본다. Orca 와 GitHub 에는 닿지 않는다.
 // 틱 자식(--tick)을 바로 돌리고, 부모가 하듯 결과의 stalls 와 errors 를 loop.json 에 옮겨 다음 틱으로 잇는다.
-// 가짜 orca 는 orca.json 의 workers_by_run(Run 마다의 worker-list 행), screens(터미널마다의 화면 문자열),
+// 가짜 orca 는 orca.json 의 workers_by_run(Run 마다의 worker-list 행), screens(터미널마다의 화면 문자열. 문자열이 아니면 tail 에 그대로 둔다),
 // questions_by_run(Run 마다의 미답변 질문)으로 답하고 받은 인자를 orca-calls.jsonl 에 적는다. terminal send 에는 턴이 시작됐다고 답한다.
 
 import assert from 'node:assert/strict'
@@ -31,7 +31,7 @@ else if (sub === 'inbox') reply({ messages: [] })
 else if (argv[0] === 'terminal' && sub === 'read') {
   const text = (st.screens || {})[flag('--terminal')]
   if (text === undefined) process.stdout.write(JSON.stringify({ ok: false, error: { code: 'terminal_not_found' } }) + '\\n')
-  else reply({ terminal: { tail: text.split('\\n') } })
+  else reply({ terminal: { tail: typeof text === 'string' ? text.split('\\n') : text } })
 } else if (argv[0] === 'terminal' && sub === 'send') reply({ send: { prompt: { stages: ['turn_started'], requestId: 'r1' } } })
 else reply({})
 `
@@ -248,6 +248,18 @@ describe('error 멈춤', () => {
     assert.deepEqual(sends(), [])
   })
 
+  test('멈춤 확인 전체가 예외로 끝나면 주 Run 에 WATCH-ERROR stalls 를 한 번 쓰고, 성공하면 이유를 지운다', () => {
+    // 문자열로 바꿀 수 없는 tail 이 화면 읽기에서 예외를 낸다
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: { toString: 1 } } })
+    const failed = tick()
+    assert.equal(failed.stalls, undefined)
+    assert.match(String((failed.errors as Json)['stalls@A']), /^멈춤 확인을 하지 못했다: /)
+    tick()
+    assert.equal(runEvents('A').filter((row) => row.kind === 'WATCH-ERROR' && String(row.text).startsWith('stalls: 멈춤 확인을 하지 못했다')).length, 1)
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CLAUDE_WORKING } })
+    assert.equal((tick().errors as Json)['stalls@A'], null)
+  })
+
   test('입력란 아래 상태 줄만 바뀌어도 같은 멈춤으로 센다', () => {
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR('Context 47% used') } })
     tick()
@@ -364,6 +376,23 @@ describe('error 멈춤', () => {
   })
 })
 
+describe('Orca 꺼짐', () => {
+  test('같은 틱에 질문 확인도 실패하면 멈춤 확인의 실패는 알리지 않고, 질문 확인이 살아난 뒤에도 실패하면 알린다', () => {
+    register('A', '2026-01-01T00:00:00Z')
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: {}, questions_by_run: { A: 'broken' } })
+    const both = tick()
+    assert.match(String((both.errors as Json)['questions@A']), /./)
+    assert.equal((both.errors as Json)['stalls@A'], null)
+    assert.deepEqual(
+      runEvents('A').map((row) => String(row.text).split(':')[0]),
+      ['questions'],
+    )
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: {} })
+    tick()
+    assert.equal(runEvents('A').filter((row) => String(row.text).startsWith('stalls:')).length, 1)
+  })
+})
+
 describe('Run 범위', () => {
   test('등록된 Run 의 worker 화면만 보고, 알림은 그 worker 를 띄운 Run 에 간다', () => {
     register('A', '2026-01-01T00:00:00Z')
@@ -414,6 +443,27 @@ describe('idle 멈춤', () => {
     assert.deepEqual(
       stalledEvents('A').map((row) => row.text),
       ['d2 idle 2틱 tB'],
+    )
+  })
+
+  test('미답변 질문은 dispatch_id 만 맞아도, from_handle 만 맞아도 그 worker 를 제외한다', () => {
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_ticks: { idle: 2 } } }))
+    const base = { type: 'question', run_id: 'A', to_handle: 'run:A', body: '어느 쪽?', created_at: '2026-01-01T00:00:00Z' }
+    const questions = [
+      { ...base, id: 'q1', from_handle: 'term_other', dispatch_id: 'd1' },
+      { ...base, id: 'q2', from_handle: 'tB', dispatch_id: null },
+    ]
+    orca({
+      workers_by_run: { A: [worker('d1', 'tA'), worker('d2', 'tB'), worker('d3', 'tC')] },
+      screens: { tA: CLAUDE_IDLE, tB: CLAUDE_IDLE, tC: CLAUDE_IDLE },
+      questions_by_run: { A: questions },
+    })
+    tick()
+    const result = tick()
+    assert.deepEqual(Object.keys(result.stalls as Json), ['d3'])
+    assert.deepEqual(
+      stalledEvents('A').map((row) => row.text),
+      ['d3 idle 2틱 tC'],
     )
   })
 

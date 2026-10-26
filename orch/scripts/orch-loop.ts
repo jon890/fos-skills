@@ -138,6 +138,8 @@
 //     text 는 `<dispatch> <state> <ticks>틱 <terminal>` 이다.
 //     작업 중으로 바뀌었거나, 멈춤이 아니거나, dispatch 가 끝났거나, 등록에서 빠진 Run 의 항목은 결과에서 빠진다.
 //     worker-list 를 읽지 못한 Run 의 항목과 화면을 읽지 못한 dispatch 의 항목은 그대로 옮기고, 그 Run 의 errors 의 stalls@<Run> 에 이유를 둔다.
+//     같은 틱에 그 Run 의 질문 확인도 실패했으면 stalls@<Run> 은 로그에만 쓰고 비워 둔다. Orca 가 꺼진 틱에 같은 원인으로 두 번 깨우지 않는다.
+//     멈춤 확인 전체가 예외로 끝나면 주 Run 의 stalls 키에 이유를 둔다.
 //
 // 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
 //     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
@@ -1306,9 +1308,20 @@ async function tick(ctx: Context, n: number): Promise<number> {
   try {
     const watched = await watchStalls(ctx, lookup, stallEntries(loaded?.stalls), waiting, base)
     stalls = watched.stalls
-    for (const [run, reason] of watched.errors) report('stalls', reason, { run })
+    for (const [run, reason] of watched.errors) {
+      // 같은 틱에 그 Run 의 질문 확인도 실패했으면(Orca 꺼짐) 그 알림 하나로 둔다. 질문 확인이 살아난 뒤에도 실패하면 그때 알린다
+      if (reason !== null && waiting.get(run) === null) {
+        log(`WATCH-ERROR stalls: ${reason}`)
+        report('stalls', null, { run })
+      } else {
+        report('stalls', reason, { run })
+      }
+    }
+    // Run 없는 루프는 위에서 키를 쓰지 않는다. 아래 catch 가 남긴 이유를 지운다
+    if (!primary) report('stalls', null)
   } catch (e) {
-    log(`orch-loop: 멈춤 확인을 하지 못했다: ${oneLine(e)}`)
+    // 조용히 멈춤 확인을 잃지 않게 주 Run 에 알린다
+    report('stalls', `멈춤 확인을 하지 못했다: ${oneLine(e)}`)
   }
 
   // 7. tick 이벤트. Run 마다 그 Run 을 공통 필드 run 으로 낸다
