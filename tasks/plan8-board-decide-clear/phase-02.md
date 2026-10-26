@@ -36,9 +36,9 @@
 ### 1. `work-board/hooks/register.js` 의 `parseQuestions(stdout, runId, keyOf?)`
 
 - 답 판정: 같은 Run 의 메시지 가운데 `thread_id` 가 질문 id 이고, id 가 질문 id 와 다르고, `to_handle` 이 `run:<Run>` 이 아닌 것이 있으면 답한 질문이다. 보낸 사람은 보지 않는다.
-- 묶기: `keyOf(m)` 이 없으면 worker 열쇠는 질문의 dispatch(payload `dispatchId`, 없으면 `dispatch:` 를 뗀 발신자), 그것도 없으면 발신자다.
+- 묶기: `keyOf(m)` 이 없으면 worker 열쇠는 질문의 dispatch(payload `dispatchId`, 없으면 `dispatch:` 를 뗀 발신자), 그것도 없으면 발신자, 그것도 없으면 그 메시지의 id 다. id 로 묶이면 묶이지 않는다.
   열쇠마다 답한 질문 가운데 가장 늦은 `created_at` 보다 늦지 않은 미답변 질문은 뺀다. 남은 미답변 가운데 가장 늦은 것 하나만 내고 `repeats` 에 묶인 나머지 수를 둔다.
-  `created_at` 이 같거나 없으면 입력 순서가 뒤인 것을 늦은 것으로 본다.
+  늦고 이른 것은 `created_at` 문자열(없으면 빈 문자열)로 먼저 비교하고, 같으면 입력 순서가 뒤인 것을 늦은 것으로 본다. 그래서 `created_at` 이 없는 행은 있는 행보다 이르다.
 - 반환 행에 `repeats`(0 이상 정수)를 더한다.
 
 ### 2. `queryQuestions($, runId, active)`
@@ -62,7 +62,7 @@
 - 코디네이터 터미널(`term_c`)이 `dispatch:open` 으로 보낸 회신이 있으면 `term_w` 가 보낸 질문이 빠진다. 조회한 handle 에 `dispatch:open` 이 든다.
 - worker 의 후속 status(`to_handle: run:r`)는 답이 아니다.
 - 같은 dispatch 의 미답변 질문 둘은 하나로 나오고 `repeats` 가 1 이다. 앞 질문이 미답변이고 뒤 질문이 답했으면 둘 다 빠진다.
-- 기존 테스트 가운데 같은 dispatch 의 질문 여럿을 세는 기대값은 묶인 수로 고친다.
+- 기존 테스트 가운데 같은 dispatch 의 질문 여럿을 세는 기대값은 묶인 수로 고친다. 발신자가 없는 question 과 escalation 을 세는 기존 테스트(「질문과 escalation 만 세고 heartbeat 는 세지 않는다」)는 id 로 묶여 2 그대로다.
 
 ## 검증
 

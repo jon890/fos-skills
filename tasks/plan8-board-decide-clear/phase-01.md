@@ -43,12 +43,14 @@
 
 ### 4. 테스트
 
+- 기존 `work-board/tests/board.spec.ts` 의 `list` 테스트(항목 줄이 `lines[1]`, `lines[2]` 라고 가정)와 사용법 테스트(`사용법: board.ts {set,step,steps,del,list}` 로 시작)의 기대값을 새 출력과 `USAGE` 에 맞춘다.
+- `work-board/tests/skills.spec.ts` 가 `board-decide/SKILL.md` 의 문구를 검사한다. 5단계를 고친 뒤 그 기대 문구가 남는지 확인하고, 바꾼 문구면 테스트 기대값도 고친다.
 - `work-board/tests/board.spec.ts`: `mark` 가 번호 없는 줄을 끝내고 `--undo` 로 되돌린다. decide 항목의 마지막 줄을 끝내면 status 가 done 이다. 없는 줄 번호는 종료 코드 1. `list` 가 줄과 완료 표시를 낸다. `steps` 는 stdout JSON 이 그대로이고 stderr 에 단계 밖의 줄을 낸다.
 
 ## 검증
 
 ```bash
-node --test work-board/tests/board.spec.ts
+node --test --test-concurrency=4 "work-board/tests/*.spec.ts"
 ```
 
 기대값: 종료 코드 0.
@@ -61,3 +63,4 @@ node --test work-board/tests/board.spec.ts
 | `work-board/board-decide/SKILL.md` | 수정 |
 | `work-board/README.md` | 수정 |
 | `work-board/tests/board.spec.ts` | 수정 |
+| `work-board/tests/skills.spec.ts` | 수정 |
