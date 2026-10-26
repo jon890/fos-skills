@@ -1,36 +1,54 @@
-// PR 하나의 머지 뒤 마무리를 끝까지 한다: worker 정리, 배포 확인, after-deploy 이벤트(업무 완료), 보드 done.
+// PR 하나의 머지 뒤 마무리를 끝까지 한다: worker 정리, 배포 확인, 마지막 PR 판정, after-deploy 이벤트(업무 완료), 보드 done.
 //
 // 머지 큐(`merge_queue.ts`)를 건 자리에서 PR 마다 함께 건다. 보통은 `merge-with-finish.ts` 가 대신 건다.
 // 코디네이터가 머지 뒤 단계를 잊거나, 정리가 GitHub 상태 반영보다 먼저 돌아 워크트리가 남는 일을 막는다.
 //
 // 사용법:
-//     finish-pr.ts PR [--complete] [--repo DIR] [--config FILE] [옵션...]
+//     finish-pr.ts PR [--complete | --intermediate] [--repo DIR] [--config FILE] [옵션...]
 //
 //     1. PR 이 MERGED 가 될 때까지 기다린다(--merge-timeout). 머지 없이 닫히면 FINISH-FAIL 이다
 //        머지된 것을 gh 로 직접 확인한 뒤에야 정리한다. 머지 직후 `cleanup-sweep.ts` 는 GitHub 상태가 아직
 //        반영되지 않아 「살아 있는 터미널」 로 건너뛰고 워크트리를 남긴 적이 있다
 //     2. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
-//        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
-//        --specs-dir 와 --complete 를 함께 주면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
-//        지우기는 lib/spec.ts 의 deleteSpecs 한 경로다. 살아 있는 dispatch(--run 의 Run, 없으면 모든 Run)가 쓰는 지시서와,
-//        그 목록을 읽지 못한 실행에서는 지우지 않는다. 지시서 폴더가 orch 루트 밖이어도 지운다.
-//        --complete 가 없으면 지시서는 남긴다. 업무 하나가 PR 여럿이면 다음 PR 에도 지시서를 쓴다
+//        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다
 //     3. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
 //        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 deployVerdict 가 소유한다
-//     4. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
-//     5. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
-//     6. --board-id 를 주면 그 보드 항목을 done 으로 바꾼다
+//     4. 이 PR 이 업무의 마지막 PR 인지 판정하고 `마지막 PR 판정: <마지막|중간>(근거)` 한 줄을 낸다(아래 「마지막 PR 판정」).
+//        배포가 실패하거나 시간이 지나도 판정한다
+//     5. --specs-dir 를 줬고 마지막 PR 이면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
+//        지우기는 lib/spec.ts 의 deleteSpecs 한 경로다. 살아 있는 dispatch(--run 의 Run, 없으면 모든 Run)가 쓰는 지시서와,
+//        그 목록을 읽지 못한 실행에서는 지우지 않는다. 지시서 폴더가 orch 루트 밖이어도 지운다.
+//        중간 PR 이면 지시서는 남긴다. 업무 하나가 PR 여럿이면 다음 PR 에도 지시서를 쓴다
+//     6. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
+//     7. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
+//     8. 보드 항목을 고친다(아래 「보드 항목」)
 //
-//     업무 완료(--complete-cmd, --task-pattern)는 after-deploy 의 옛 칸이다. 다음 major 에서 지운다.
-//     --complete 이고, 배포가 성공했거나 배포 워크플로가 없고, PR 제목에서 --task-pattern 으로 업무 번호를 뽑았을 때만
+// 마지막 PR 판정:
+//     --complete(merge-with-finish 의 `PR!`)면 마지막, --intermediate(`PR~`)면 중간이다. 둘 다 없으면 lib/last-pr.ts 의 judgeLastPr 로
+//     판정한다. 규칙은 --task-pattern, --spec-task-pattern, --specs-dir 이고 조건은 그 모듈의 머리 주석이 소유한다.
+//     판정하지 못하면 중간 PR 로 본다. 업무를 일찍 완료하는 것이 늦게 완료하는 것보다 되돌리기 어렵다.
+//     근거 줄의 예: `마지막 PR 판정: 중간(업무 PROJ-12, 남은 PR #31 #33, 남은 지시서 spec-b.md)`
+//
+// 보드 항목:
+//     --board-id 를 주면 판정과 상관없이 그 항목을 done 으로 바꾼다.
+//     없으면 보드 파일(lib/board.ts 의 findBoardItems)에서 pr 칸에 이 PR 이 든 항목을 찾고, 없으면 pr 칸이 빈 항목 가운데
+//     branch 가 PR 브랜치이거나 worktree 가 그 브랜치의 워크트리 이름(정리 전에 읽는다)인 항목을 찾는다.
+//     브랜치로 찾을 때 done 항목과 merged-pr 에 이미 이 PR 이 든 항목은 뺀다.
+//     마지막 PR 이면 그 항목을 done 으로 바꾼다. 중간 PR 이면 lib/board.ts 의 intermediateCommands 로 그 PR 번호의 단계를 끝내고,
+//     하위 항목에 `남은 일: PR #31, 지시서 spec-b.md` 한 줄을 두고, pr 칸을 비우고 merged-pr 에 적는다.
+//     merged-pr 에 적은 PR 은 board-sync.ts 가 다시 판정하지 않으므로 --intermediate 가 덮이지 않는다.
+//     찾은 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다
+//
+//     업무 완료(--complete-cmd)는 after-deploy 의 옛 칸이다. 다음 major 에서 지운다.
+//     마지막 PR 이고, 배포가 성공했거나 배포 워크플로가 없고, PR 제목에서 --task-pattern 으로 업무 번호를 뽑았을 때만
 //     `DEPRECATED --complete-cmd → hooks/after-deploy.ts` 줄과 함께 그 명령을 핸들러 자리에서 돌린다.
 //     작업 디렉터리는 옛 명령과 같이 --repo 로 준 경로다. 연결된 워크트리를 주면 그 워크트리다(lib/events.ts 의 legacy).
-//     업무의 마지막 PR 일 때만 --complete 를 준다. --complete-cmd 가 없으면(업무 시스템이 없는 저장소) 이 단계만 건너뛰고
-//     로그에 남긴다. 지시서는 지운다. --complete 와 --complete-cmd 를 함께 주면 --task-pattern 도 있어야 한다
+//     --complete-cmd 가 없으면(업무 시스템이 없는 저장소) 이 단계만 건너뛰고 로그에 남긴다. 지시서는 지운다.
+//     --complete 와 --complete-cmd 를 함께 주면 --task-pattern 도 있어야 한다
 //
 // 이벤트 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, merge_commit, deploy(success, failure, timeout, none),
-//     last_of_task(--complete). base 는 PR 의 base, run 은 --run(없으면 null)이다.
+//     last_of_task(마지막 PR 판정). base 는 PR 의 base, run 은 --run(없으면 null)이다.
 //     업무 완료 명령과 <orch 루트>/hooks/after-deploy.ts 가 함께 있으면 머지를 기다리기 전에 사용법 오류로 끝난다.
 //     업무 완료 명령이나 핸들러가 있으면 config.json 의 hooks.timeouts.after-deploy 값도 머지를 기다리기 전에 본다. 틀리면 사용법 오류다.
 //     이벤트 실행기는 배포를 기다린 뒤에야 이 충돌을 알아채는데, 그때는 이미 머지와 정리가 끝났기 때문이다
@@ -47,17 +65,21 @@
 //     --run RUN_ID          worker 를 찾을 Orca Run. 없으면 dispatch 해제는 건너뛰고 터미널만 경로로 찾는다
 //     --base-branch NAME    cleanup-sweep.ts 의 --base
 //     --sweep-arg ARG       cleanup-sweep.ts 에 더 넘길 인자. 하나씩 준다. 값이 `-` 로 시작하면 `--sweep-arg=--x` 로 쓴다
-//     --specs-dir DIR       지시서 폴더. 상대경로는 --repo 기준이다. --complete 일 때만 `브랜치:` 줄이 이 PR 의 브랜치인
+//     --specs-dir DIR       지시서 폴더. 상대경로는 --repo 기준이다. 마지막 PR 일 때만 `브랜치:` 줄이 이 PR 의 브랜치인
 //                           spec-*.md 를 지운다. 중간 PR 에서는 지시서를 남기고 그 사실을 로그에 한 줄 남긴다
 //     --deploy-workflow F   배포 워크플로 파일 이름 (예: deploy.yml)
 //     --deploy-branch B     배포가 도는 브랜치 (예: develop)
 //     --task-pattern RE     PR 제목에서 업무 번호를 뽑는 Python 정규식(lib/py.ts 의 pyRegExp). 첫 번째 그룹이 번호다
-//                           (예: '^\[?(PROJ-[0-9]+)'). 번호는 영문, 숫자, `._/-` 만 받는다
-//     --complete            이 PR 이 업무의 마지막 PR 이다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
+//                           (예: '^\[?(PROJ-[0-9]+)'). 번호는 영문, 숫자, `._/-` 만 받는다. 마지막 PR 판정에도 쓴다
+//     --spec-task-pattern RE  지시서의 줄에서 업무 번호를 뽑는 Python 정규식. 첫 번째 그룹이 번호다
+//                           (예: '^브랜치: `feature/(PROJ-[0-9]+)-'). --task-pattern 이 뽑는 번호와 같은 꼴을 뽑아야 한다.
+//                           마지막 PR 판정이 남은 지시서를 찾는 데 쓴다
+//     --complete            이 PR 이 업무의 마지막 PR 이다. 판정하지 않는다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
+//     --intermediate        이 PR 이 업무의 중간 PR 이다. 판정하지 않는다. --complete 와 함께 쓸 수 없다
 //     --complete-cmd CMD    업무 완료 명령 틀. shlex 처럼 나누고(lib/py.ts 의 shSplit) 조각마다 {number} 를 업무 번호로 바꾼다.
 //                           셸을 거치지 않는다 (예: 'task-cli complete {number}')
 //     --board FILE          보드 파일. 기본은 work-board 의 board.ts 가 정한 위치. 상대경로면 주 checkout 기준
-//     --board-id ID         done 으로 바꿀 보드 항목
+//     --board-id ID         판정과 상관없이 done 으로 바꿀 보드 항목. 없으면 보드 파일에서 찾는다(위 「보드 항목」)
 //     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
 //     --merge-timeout MIN   머지 대기 한도(분). 기본 180
 //     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
@@ -73,26 +95,28 @@
 // 종료 코드: 0 FINISH-DONE, 1 FINISH-FAIL, 2 사용법 오류(설정 파일 오류, 업무 완료 명령과 핸들러가 함께 있음 포함)이거나
 //           orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
-import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { findBoardItems, intermediateCommands, noteLine, readBoard } from './lib/board.ts'
+import type { BoardDetail, BoardStep } from './lib/board.ts'
+import { extractTaskNumber, judgeLastPr, numberPattern, specFiles } from './lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireResult } from './lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from './lib/finish-options.ts'
-import { isFile, real, realPath } from './lib/fs.ts'
+import { real, realPath } from './lib/fs.ts'
 import { ghBin } from './lib/gh.ts'
 import { boardPath, requireMigrated } from './lib/paths.ts'
 import { run, runAsync, scriptCommand } from './lib/proc.ts'
-import { pyRegExp, pyStr, shSplit } from './lib/py.ts'
+import { pyStr, shSplit } from './lib/py.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from './lib/spec.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
-const NUMBER_OK = /^[A-Za-z0-9._/-]+$/
 const CLEANUP_TRIES = 5
 // 옛 명령의 자식 실행 시간 제한(초). 정리 스크립트만 600초였다
 const RUN_TIMEOUT_MS = 300_000
@@ -113,7 +137,9 @@ type Args = {
   deployWorkflow: string | null
   deployBranch: string | null
   taskPattern: RegExp | null
+  specTaskPattern: RegExp | null
   complete: boolean
+  intermediate: boolean
   completeCmd: string | null
   board: string | null
   boardId: string | null
@@ -166,20 +192,7 @@ function git(repo: string, args: string[]): { code: number; stdout: string } {
   return run([gitBin(), ...args], { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
 }
 
-// 정규식의 잡는 그룹 수. 빈 문자열에 늘 맞는 대안을 붙여 exec 결과의 길이로 센다
-function groupCount(re: RegExp): number {
-  return (new RegExp(`(?:${re.source})|`).exec('') as RegExpExecArray).length - 1
-}
-
 // ---- 판정 ---------------------------------------------------------------------------------------------
-
-// PR 제목에서 업무 번호를 뽑는다. 맞지 않거나 번호가 비었거나 안전하지 않으면 null 이다
-function extractTaskNumber(title: string, pattern: RegExp): string | null {
-  const found = pattern.exec(title || '')
-  const number = found?.[1]
-  if (!number) return null
-  return NUMBER_OK.test(number) ? number : null
-}
 
 type RunRow = { headSha?: unknown; status?: unknown; conclusion?: unknown }
 
@@ -255,15 +268,19 @@ function parse(argv: string[]): Args | null {
   if (configComplete !== undefined && typeof configComplete !== 'boolean') throw new ConfigError('설정 파일의 finish.complete 는 true 나 false 여야 한다')
   const num = (name: string, fallback: number) => minutes(cli(name) ?? config[name.replaceAll('-', '_')], `--${name}`, fallback)
 
-  const taskPattern = pick('task-pattern')
-  let pattern: RegExp | null = null
-  if (taskPattern) {
+  // 업무 번호를 뽑는 정규식. 첫 번째 그룹이 번호다
+  const pattern = (name: string): RegExp | null => {
+    const source = pick(name)
+    if (!source) return null
     try {
-      pattern = pyRegExp(taskPattern)
+      return numberPattern(source, `--${name}`)
     } catch (e) {
-      throw new Usage(`--task-pattern 이 정규식이 아니다: ${(e as Error).message}`)
+      throw new Usage((e as Error).message)
     }
-    if (groupCount(pattern) < 1) throw new Usage('--task-pattern 에 업무 번호를 담을 그룹이 없다')
+  }
+  const configIntermediate = config.intermediate
+  if (configIntermediate !== undefined && typeof configIntermediate !== 'boolean') {
+    throw new ConfigError('설정 파일의 finish.intermediate 는 true 나 false 여야 한다')
   }
   const args: Args = {
     pr: positionals[0],
@@ -276,8 +293,11 @@ function parse(argv: string[]): Args | null {
     specsDir: pick('specs-dir'),
     deployWorkflow: pick('deploy-workflow'),
     deployBranch: pick('deploy-branch'),
-    taskPattern: pattern,
-    complete: values.complete === true || configComplete === true,
+    taskPattern: pattern('task-pattern'),
+    specTaskPattern: pattern('spec-task-pattern'),
+    // 명령줄의 표시(merge-with-finish 의 PR!, PR~)가 설정의 기본값보다 우선한다
+    complete: values.complete === true || (values.intermediate !== true && configComplete === true),
+    intermediate: values.intermediate === true || (values.complete !== true && configIntermediate === true),
     completeCmd: pick('complete-cmd'),
     board: pick('board'),
     boardId: pick('board-id'),
@@ -288,6 +308,7 @@ function parse(argv: string[]): Args | null {
     pidFile: pick('pid-file'),
   }
   if (Boolean(args.deployWorkflow) !== Boolean(args.deployBranch)) throw new Usage('--deploy-workflow 와 --deploy-branch 는 함께 준다')
+  if (args.complete && args.intermediate) throw new Usage('--complete 와 --intermediate 는 함께 쓸 수 없다')
   if (args.complete && args.completeCmd && !args.taskPattern) throw new Usage('--complete-cmd 를 주면 --task-pattern 도 있어야 한다')
   if (args.completeCmd) {
     if (!args.completeCmd.includes('{number}')) throw new Usage('--complete-cmd 에 {number} 가 없다')
@@ -378,32 +399,30 @@ async function cleanupWorker(args: Args, repo: string, branch: string): Promise<
   return false
 }
 
+function specsDirOf(args: Args, repo: string): string {
+  const given = args.specsDir as string
+  return isAbsolute(given) ? given : join(repo, given)
+}
+
 // 지시서 폴더에서 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
 // root 는 orch 루트가 아니라 지시서 폴더 실경로의 부모다. deleteSpecs 는 root 밖의 파일을 남기는데, 옛 명령은
 // 지시서 폴더가 orch 루트 밖이어도 지웠다. 지시서는 그 부모의 바로 아래 폴더에 있으므로 늘 root 안이다
 function deleteBranchSpecs(args: Args, repo: string, branch: string): void {
-  const given = args.specsDir as string
-  const dir = isAbsolute(given) ? given : join(repo, given)
-  let names: string[]
-  try {
-    names = readdirSync(dir)
-  } catch {
-    return
-  }
-  const specs: string[] = []
-  for (const name of names.filter((n) => n.startsWith('spec-') && n.endsWith('.md')).sort()) {
-    const target = join(dir, name)
-    if (!isFile(target)) continue
-    let text: string
-    try {
-      text = readFileSync(target, 'utf8')
-    } catch {
-      continue
-    }
-    if (branchesOf(text).includes(branch)) specs.push(target)
-  }
+  const specs = specFiles(specsDirOf(args, repo))
+    .filter((spec) => branchesOf(spec.text).includes(branch))
+    .map((spec) => spec.path)
   if (specs.length === 0) return
-  deleteSpecs({ root: dirname(realPath(dir)), specs, prBodies: [], live: liveSpecPaths(args.run), mode: 'delete', apply: true, log })
+  deleteSpecs({ root: dirname(realPath(specsDirOf(args, repo))), specs, prBodies: [], live: liveSpecPaths(args.run), mode: 'delete', apply: true, log })
+}
+
+// 머리 주석의 「마지막 PR 판정」. 판정하지 못하면 중간 PR 이다. reason 은 근거 줄의 괄호 안이다
+// prs 와 specs 는 남은 PR 과 지시서다. 보드의 남은 일 줄에 쓴다
+function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; reason: string; prs: string[]; specs: string[] } {
+  if (args.complete) return { last: true, reason: '--complete 로 지정', prs: [], specs: [] }
+  if (args.intermediate) return { last: false, reason: '--intermediate 로 지정', prs: [], specs: [] }
+  const rules = { taskPattern: args.taskPattern, specTaskPattern: args.specTaskPattern, specsDir: args.specsDir ? specsDirOf(args, repo) : null }
+  const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch }, rules)
+  return { last: verdict.last === true, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
 }
 
 async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ deploy: Deploy; sha: string }> {
@@ -432,12 +451,50 @@ async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ 
   }
 }
 
-function setBoardDone(args: Args, repo: string, item: string): boolean {
-  const board = boardPath(repo, args.board)
-  const cmd = scriptCommand(args.boardBin, ['set', item, 'done', '--worktree', '', '--pr', '', '--next', '', '--file', board])
+// 머리 주석의 「보드 항목」 에서 찾은 항목. 없거나 둘 이상이면 null 이고, 둘 이상이면 알린다
+function pickBoardItem(args: Args, repo: string, branch: string, worktree: string | null): { id: string; by: 'pr' | 'branch' } | null {
+  const found = findBoardItems(boardPath(repo, args.board), args.pr, branch, worktree)
+  if (found === null) return null
+  if (found.ids.length > 1) {
+    log(`보드 항목이 둘 이상이라 건너뛴다: PR ${args.pr} -> ${found.ids.join(', ')}`)
+    return null
+  }
+  return { id: found.ids[0], by: found.by }
+}
+
+function board(args: Args, repo: string, argv: string[]): boolean {
+  const cmd = scriptCommand(args.boardBin, [...argv, '--file', boardPath(repo, args.board)])
   const done = run(cmd, { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
   if (done.code !== 0) log(`보드 명령이 실패했다: ${done.stderr.trim()}`)
   return done.code === 0
+}
+
+function setBoardDone(args: Args, repo: string, item: string): boolean {
+  return board(args, repo, ['set', item, 'done', '--worktree', '', '--pr', '', '--next', ''])
+}
+
+// 중간 PR 을 항목에 반영한다(lib/board.ts 의 intermediateCommands). 항목이나 단계 목록을 읽지 못하면 false 다
+function setBoardIntermediate(args: Args, repo: string, item: string, note: string | null): boolean {
+  const file = boardPath(repo, args.board)
+  let row: Record<string, unknown> | undefined
+  try {
+    row = readBoard(file).find((i) => pyStr(i.id) === item)
+  } catch {
+    row = undefined
+  }
+  const steps = run(scriptCommand(args.boardBin, ['steps', item, '--file', file]), { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
+  let parsed: unknown = null
+  try {
+    parsed = JSON.parse(steps.stdout)
+  } catch {
+    parsed = null
+  }
+  if (!row || steps.code !== 0 || !Array.isArray(parsed)) {
+    log(`보드 ${item} 의 단계 목록을 읽지 못했다: ${steps.stderr.trim()}`)
+    return false
+  }
+  const details = (Array.isArray(row.details) ? row.details : []) as BoardDetail[]
+  return intermediateCommands(item, details, parsed as BoardStep[], args.pr, note).every((cmd) => board(args, repo, cmd))
 }
 
 function failLabel(r: FireResult): string {
@@ -451,12 +508,10 @@ async function finish(args: Args, repo: string): Promise<number> {
   const { merge, branch, title } = merged
   log(`PR ${args.pr} 머지됨 ${merge.slice(0, 9)} (${branch})`)
 
+  // 보드 항목을 워크트리 이름으로도 찾는다. 정리가 워크트리를 지우므로 그 전에 읽는다
+  const worktree = branch ? worktreePath(repo, branch) : null
   if (!(await cleanupWorker(args, repo, branch))) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
-  }
-  if (args.specsDir) {
-    if (args.complete) deleteBranchSpecs(args, repo, branch)
-    else log('지시서 유지: 업무의 마지막 PR(--complete)이 아니다')
   }
 
   let deploy: Deploy = 'none'
@@ -469,9 +524,17 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
   const deployed = deploy === 'success' || deploy === 'none'
 
+  const verdict = judgeLast(args, repo, merged)
+  const last = verdict.last
+  log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${verdict.reason})`)
+  if (args.specsDir) {
+    if (last) deleteBranchSpecs(args, repo, branch)
+    else log('지시서 유지: 업무의 마지막 PR 이 아니다')
+  }
+
   const problems: string[] = []
   let number: string | null = null
-  if (args.complete && deployed) {
+  if (last && deployed) {
     if (!args.completeCmd) log('업무 완료 단계 건너뜀: --complete-cmd 가 없다')
     else {
       number = extractTaskNumber(title, args.taskPattern as RegExp)
@@ -484,7 +547,7 @@ async function finish(args: Args, repo: string): Promise<number> {
       : undefined
   // 옛 명령은 업무 완료 명령 출력의 마지막 줄을 결과 줄에 붙였다. 출력은 접두를 붙여 그대로 내고 마지막 줄만 기억한다
   let lastLine = ''
-  const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: args.complete }
+  const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
   try {
     const result = await fire('after-deploy', input, {
       repo,
@@ -507,9 +570,15 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
 
   if (!deployed) return fail(problems.join('; '))
-  if (args.boardId) {
-    if (setBoardDone(args, repo, args.boardId)) log(`보드 ${args.boardId} done`)
-    else problems.push(`보드 ${args.boardId} 를 done 으로 바꾸지 못했다`)
+  const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
+  if (item && (last || item.by === 'id')) {
+    if (setBoardDone(args, repo, item.id)) log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
+    else problems.push(`보드 ${item.id} 를 done 으로 바꾸지 못했다`)
+  } else if (item) {
+    // 중간 PR 은 merged-pr 에 적어 board-sync 가 다시 판정하지 않게 한다. 다시 판정하면 PR~ 를 덮는다
+    if (setBoardIntermediate(args, repo, item.id, noteLine(verdict.prs, verdict.specs))) {
+      log(`보드 ${item.id} 는 중간 PR 이라 done 으로 바꾸지 않고 PR ${args.pr} 를 merged-pr 에 적었다`)
+    } else problems.push(`보드 ${item.id} 에 중간 PR 을 적지 못했다`)
   }
   if (problems.length > 0) return fail(problems.join('; '))
   out('FINISH-DONE')

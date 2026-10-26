@@ -1,5 +1,6 @@
 // pid 생존 확인과 작업 디렉터리 점유 프로세스 찾기의 한 벌이다.
 
+import { readFileSync } from 'node:fs'
 import { inside, real } from './fs.ts'
 import { run } from './proc.ts'
 
@@ -15,6 +16,17 @@ export function alive(pid: number): boolean {
   } catch (e) {
     return (e as NodeJS.ErrnoException).code === 'EPERM'
   }
+}
+
+// pid 파일에 적힌 프로세스가 살아 있는지. 파일이 없거나 정수가 아니면 false 다
+export function pidFileAlive(file: string): boolean {
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8').trim()
+  } catch {
+    return false
+  }
+  return /^\d+$/.test(text) && alive(Number(text))
 }
 
 // dir 이나 그 하위를 작업 디렉터리로 쓰는 프로세스의 pid 와 작업 디렉터리.

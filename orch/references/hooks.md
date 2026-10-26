@@ -120,7 +120,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--termina
 
 ## 옛 설정 칸 옮기기
 
-`config.json` 의 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 와 `finish.task_pattern` 은 다음 major 에서 지운다.
+`config.json` 의 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 는 다음 major 에서 지운다. `finish.task_pattern` 은 마지막 PR 판정이 읽으므로 남는다.
 그때까지 명령이 그 칸을 핸들러처럼 돌리고 `DEPRECATED` 줄을 낸다.
 `migrate-orch-dir.ts --hooks` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다. 만든 핸들러는 옛 칸을 돌리던 것과 같은 인자, 환경 변수, 작업 디렉터리로 옛 명령을 부른다.
 

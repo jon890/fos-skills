@@ -4,7 +4,7 @@
 // 이 명령이 그 일을 기본 절차로 만든다. 사용자가 말하지 않아도 머지 큐는 이 명령으로 건다.
 //
 // 사용법:
-//     merge-with-finish.ts [래퍼 옵션] [merge_queue.ts 옵션] PR[!][:머지 전 명령] ...
+//     merge-with-finish.ts [래퍼 옵션] [merge_queue.ts 옵션] PR[!|~][:머지 전 명령] ...
 //
 //     1. PR 마다 `finish-pr.ts` 를 백그라운드로 시작한다. 출력은 <로그 폴더>/finish-<PR>.out 이다.
 //        띄우기 전에 마무리 스크립트 파일이 있는지 보고, 띄운 프로세스가 시작된 것을 확인한 뒤에 `마무리 시작` 줄을 낸다.
@@ -16,11 +16,15 @@
 //     2. `merge_queue.ts` 를 같은 인자로 돌리고 그 종료 코드로 끝난다.
 //        오래 걸리므로 Bash 도구의 run_in_background 로 건다. 셸의 `&` 나 nohup 은 쓰지 않는다
 //
-//     PR 번호 뒤의 `!` 는 그 PR 이 업무의 마지막 PR 이라는 뜻이다. 그 PR 의 마무리는 배포가 성공한 뒤
-//     업무를 완료 처리한다(`finish-pr.ts --complete`). 머지 큐에는 그 PR 마다 `--last-of-task <PR>` 를 인자 맨 앞에 넣어
-//     before-merge 입력의 last_of_task 를 true 로 한다. 예: 449! , 446!:'./bin/backup-db.sh orders "pre-446"'
-//     업무 완료 명령(`complete_cmd`)이 설정에 없는 저장소에서는 업무 완료만 건너뛰고 그 PR 의 지시서를 지운다.
-//     `!` 와 `:명령` 은 PR 번호 바로 뒤에 `번호[!][:명령]` 순서로 쓴다. 머지 큐에는 `!` 를 뗀 인자가 넘어간다.
+//     표시가 없는 PR 은 마무리가 배포를 확인한 뒤 업무의 마지막 PR 인지 스스로 판정한다(finish-pr.ts 머리 주석의 「마지막 PR 판정」).
+//     코디네이터가 PR 마다 마지막인지 정하지 않아도 된다. 판정을 덮어야 할 때만 표시를 붙인다.
+//     PR 번호 뒤의 `!` 는 판정 없이 업무의 마지막 PR 로 본다(`finish-pr.ts --complete`). 머지 큐에는 그 PR 마다
+//     `--last-of-task <PR>` 를 인자 맨 앞에 넣어 before-merge 입력의 last_of_task 를 true 로 한다. 예: 449! , 446!:'./bin/backup-db.sh orders "pre-446"'
+//     PR 번호 뒤의 `~` 는 판정 없이 중간 PR 로 본다(`finish-pr.ts --intermediate`). 업무를 완료하지 않고 지시서를 남기며
+//     보드 항목을 done 으로 바꾸지 않는다. --board-item 으로 준 항목은 판정과 상관없이 done 으로 바꾼다.
+//     before-merge 의 last_of_task 는 `!` 일 때만 true 다. 판정은 머지와 배포 뒤에야 하기 때문이다.
+//     마지막 PR 이면 업무 완료 명령(`complete_cmd`)이 설정에 없는 저장소에서는 업무 완료만 건너뛰고 그 PR 의 지시서를 지운다.
+//     표시와 `:명령` 은 PR 번호 바로 뒤에 `번호[!|~][:명령]` 순서로 쓴다. `!` 와 `~` 는 함께 쓸 수 없다. 머지 큐에는 표시를 뗀 인자가 넘어간다.
 //
 // 래퍼 옵션 (merge_queue.ts 에는 넘기지 않는다):
 //     --finish-config FILE    finish-pr.ts 의 --config. 없으면 finish-pr.ts 가 orch 작업 폴더의 config.json 을 찾는다
@@ -28,8 +32,8 @@
 //     --run RUN_ID            worker 를 찾을 Orca Run. finish-pr.ts 에 `--run` 을 넘기고, 머지 큐의 정리 단계에도
 //                             `--sweep-arg --run --sweep-arg RUN_ID` 를 넘겨 다른 Run 의 worker 터미널을 건너뛰게 한다.
 //                             `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 어디에도 없으면 경고 한 줄을 낸다
-//     --board-item PR=ID      그 PR 의 마무리가 done 으로 바꿀 보드 항목(`finish-pr.ts --board-id`). PR 마다 준다.
-//                             주지 않으면 보드 파일에서 `pr` 필드에 그 PR 이 든 항목을 찾아 쓴다(아래 「보드 항목」)
+//     --board-item PR=ID      그 PR 의 마무리가 판정과 상관없이 done 으로 바꿀 보드 항목(`finish-pr.ts --board-id`). PR 마다 준다.
+//                             주지 않으면 마무리가 보드 파일에서 찾는다(finish-pr.ts 머리 주석의 「보드 항목」)
 //     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(lib/paths.ts 의 queue). handoff-cleanup.ts 가 이 폴더의 끝난 로그를 옮긴다
 //     --no-finish             마무리를 걸지 않고 머지 큐만 돌린다
 //     래퍼 옵션은 `--옵션 값` 과 `--옵션=값` 을 받는다. 고유 접두로 줄여 쓸 수 없다
@@ -60,12 +64,6 @@
 // --finish-arg 는 finish-pr.ts 의 옵션 목록(lib/finish-options.ts)으로 펼쳐 본다. 그래서 finish-pr 이 받아들이는
 // 고유 접두(`--complete-c`)와 `--complete-cmd=값` 도 알아본다. 접두가 여러 옵션에 맞으면 사용법 오류다.
 //
-// 보드 항목: 보드 파일은 --finish-arg 의 `--board`, 없으면 설정 파일 `finish` 절의 `board`, 없으면 finish-pr.ts 와 같은 기본
-// (work-board 의 board.ts 가 정한 위치) 이다. 상대경로는 주 checkout 기준이다. 항목의 `pr` 필드에서 단어에 붙지 않은 숫자(`#492`, `492, 495`, `492/495`)를 PR 번호로 읽고, 그 PR 이 든 항목을 찾는다.
-// (`#492 (v2)` 의 `2` 처럼 글자에 붙은 숫자는 읽지 않는다.)
-// **업무의 마지막 PR(`!`)일 때만 그 항목을 done 으로 바꾼다.** 중간 PR 이 항목을 끝내지 않도록 `!` 가 없으면 찾은 항목을 알리기만 한다.
-// 같은 PR 이 든 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다. `--board-item` 으로 준 항목은 `!` 와 상관없이 쓴다.
-//
 // --finish-config 없이 orch 작업 폴더를 옮기기 전인 저장소에서 부르면 옮기는 명령을 알리고 머지 큐를 걸지 않는다(종료 코드 2).
 // 옛 설정을 읽지 않으므로 그대로 걸면 머지 전 명령(DB 백업 같은 것)과 필수 체크가 경고 없이 빠진다.
 //
@@ -82,17 +80,16 @@ import type { Config } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, handlerFile } from './lib/events.ts'
 import { FINISH_OPTIONS } from './lib/finish-options.ts'
 import { isFile, real } from './lib/fs.ts'
-import { boardPath, makeParent, pathOf, requireMigrated } from './lib/paths.ts'
+import { makeParent, pathOf, requireMigrated } from './lib/paths.ts'
 import { NO_LIMIT_MS, runInherit, scriptCommand } from './lib/proc.ts'
-import { alive } from './lib/process.ts'
-import { pyStr } from './lib/py.ts'
+import { pidFileAlive } from './lib/process.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './lib/queue-options.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
 // 문자열 목록도 받는 queue 키와 목록을 잇는 구분자. 키와 옵션의 대응은 lib/queue-options.ts 의 QUEUE_VALUES 들이다
 const QUEUE_LISTS: Readonly<Record<string, string>> = { required: ',', docs_glob: ',', shared_paths: '|' }
-const PR_SPEC = /^(\d+)(!?)(:.*)?$/s
+const PR_SPEC = /^(\d+)([!~]?)(:.*)?$/s
 const LEGACY_KEY = '--complete-cmd'
 
 class Usage extends Error {}
@@ -107,7 +104,8 @@ type Wrapper = {
   repo: string
 }
 
-type PrArg = { number: string; complete: boolean }
+// mark 는 `!`(마지막), `~`(중간), 없으면 null(마무리가 판정한다)이다
+type PrArg = { number: string; mark: '!' | '~' | null }
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`)
@@ -122,11 +120,12 @@ function usageText(): string {
   return lines.join('\n')
 }
 
-// `번호[!][:머지 전 명령]` 을 (번호, 마지막 PR 인지, 머지 큐에 넘길 인자) 로 나눈다. PR 인자가 아니면 null 이다
-function parseQueueSpec(arg: string): { number: string; complete: boolean; queueArg: string } | null {
+// `번호[!|~][:머지 전 명령]` 을 (번호, 표시, 머지 큐에 넘길 인자) 로 나눈다. PR 인자가 아니면 null 이다
+function parseQueueSpec(arg: string): { number: string; mark: PrArg['mark']; queueArg: string } | null {
   const found = PR_SPEC.exec(arg)
   if (!found) return null
-  return { number: found[1], complete: found[2] === '!', queueArg: found[1] + (found[3] ?? '') }
+  const mark = found[2] === '!' || found[2] === '~' ? found[2] : null
+  return { number: found[1], mark, queueArg: found[1] + (found[3] ?? '') }
 }
 
 // `name VALUE` 쌍의 VALUE. 없으면 null 이고, 쌍의 값이 서로 다르면 Usage 다
@@ -199,7 +198,7 @@ function splitArgs(argv: string[]): { wrapper: Wrapper; queue: string[]; prs: Pr
     } else {
       const spec = parseQueueSpec(arg)
       if (spec === null) throw new Usage(`PR 번호가 아니다: ${arg}`)
-      prs.push({ number: spec.number, complete: spec.complete })
+      prs.push({ number: spec.number, mark: spec.mark })
       queue.push(spec.queueArg)
     }
   }
@@ -278,62 +277,6 @@ function completeCommandSource(wrapper: Wrapper, config: Config): string | null 
   return typeof value === 'string' && value ? 'finish.complete_cmd' : null
 }
 
-// 마무리가 보드를 고칠 때 쓰는 파일. finish-pr.ts 와 같은 순서(--board, 설정의 finish.board, 기본 경로)로 정하고,
-// 상대경로는 주 checkout 기준으로 푼다
-function boardFile(wrapper: Wrapper, config: Config): string {
-  let given: string | null = null
-  const args = wrapper.finishArg
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--board' && i + 1 < args.length) given = args[i + 1]
-    else if (args[i].startsWith('--board=')) given = args[i].slice('--board='.length)
-  }
-  const configured = config.finish?.board
-  return boardPath(wrapper.repo, given || (typeof configured === 'string' ? configured : null))
-}
-
-// 보드 항목의 pr 필드(`#492`, `492, 495`)에 든 PR 번호들. 글자에 붙은 숫자는 읽지 않는다.
-// 옮기기 전 Python 의 \w 가 한글도 글자로 보았으므로 유니코드 글자와 숫자를 글자로 센다
-function prNumbers(field: unknown): Set<string> {
-  const text = !field ? '' : typeof field === 'string' ? field : JSON.stringify(field)
-  return new Set([...text.matchAll(/(?<![\p{L}\p{N}_])#?(\d+)(?![\p{L}\p{N}_])/gu)].map((m) => m[1]))
-}
-
-// 보드 파일에서 pr 필드에 그 PR 이 든 항목 id 목록. 보드가 없거나 읽지 못하면 빈 목록이다
-function boardItemsFor(board: string, number: string): string[] {
-  let items: unknown
-  try {
-    items = (JSON.parse(readFileSync(board, 'utf8')) as { items?: unknown })?.items
-  } catch {
-    return []
-  }
-  if (!Array.isArray(items)) return []
-  return items
-    .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null && !Array.isArray(i))
-    .filter((i) => Boolean(i.id) && prNumbers(i.pr).has(number))
-    .map((i) => pyStr(i.id))
-}
-
-// 이 PR 의 마무리가 done 으로 바꿀 보드 항목 id. 없으면 null. 알릴 말이 있으면 출력한다
-function pickBoardItem(wrapper: Wrapper, config: Config, number: string, complete: boolean): string | null {
-  const explicit = wrapper.boardItems.get(number)
-  if (explicit !== undefined) return explicit
-  const found = boardItemsFor(boardFile(wrapper, config), number)
-  if (found.length > 1) out(`보드 항목이 둘 이상이라 건너뛴다: PR ${number} -> ${found.join(', ')}`)
-  else if (found.length === 1 && !complete) out(`보드 항목 ${found[0]} 는 PR ${number} 가 업무의 마지막 PR(!)이 아니라 done 으로 바꾸지 않는다`)
-  else if (found.length === 1) return found[0]
-  return null
-}
-
-function finishRunning(pidFile: string): boolean {
-  let text: string
-  try {
-    text = readFileSync(pidFile, 'utf8').trim()
-  } catch {
-    return false
-  }
-  return /^\d+$/.test(text) && alive(Number(text))
-}
-
 // 새 세션으로 띄워 이 명령이 끝나도 마무리가 이어 돌게 한다. 프로세스가 시작되면 null, 띄우지 못하면 이유다
 function launch(cmd: string[], fd: number): Promise<string | null> {
   return new Promise((resolve) => {
@@ -347,12 +290,12 @@ function launch(cmd: string[], fd: number): Promise<string | null> {
 }
 
 // 마무리를 걸었거나 이미 돌고 있으면 true. 띄우지 못하면 이유를 stderr 에 내고 false 다
-async function startFinish(wrapper: Wrapper, pr: PrArg, config: Config): Promise<boolean> {
+async function startFinish(wrapper: Wrapper, pr: PrArg): Promise<boolean> {
   const repo = real(wrapper.repo)
   const logDir = wrapper.logDir ?? pathOf('queue', repo)
   makeParent(join(logDir, 'x'), repo)
   const pidFile = join(logDir, `finish-${pr.number}.pid`)
-  if (finishRunning(pidFile)) {
+  if (pidFileAlive(pidFile)) {
     out(`마무리는 이미 돌고 있다: PR ${pr.number} (${pidFile})`)
     return true
   }
@@ -364,8 +307,9 @@ async function startFinish(wrapper: Wrapper, pr: PrArg, config: Config): Promise
   }
   const args = [pr.number, '--repo', repo, '--pid-file', pidFile]
   if (wrapper.finishConfig) args.push('--config', wrapper.finishConfig)
-  if (pr.complete) args.push('--complete')
-  const boardId = pickBoardItem(wrapper, config, pr.number, pr.complete)
+  if (pr.mark === '!') args.push('--complete')
+  else if (pr.mark === '~') args.push('--intermediate')
+  const boardId = wrapper.boardItems.get(pr.number)
   if (boardId) args.push('--board-id', boardId)
   args.push(...wrapper.finishArg)
   const outFile = join(logDir, `finish-${pr.number}.out`)
@@ -380,7 +324,8 @@ async function startFinish(wrapper: Wrapper, pr: PrArg, config: Config): Promise
     process.stderr.write(`merge-with-finish: 마무리를 띄우지 못했다: PR ${pr.number}: ${failure}\n`)
     return false
   }
-  out(`마무리 시작: PR ${pr.number}${pr.complete ? ' (업무의 마지막 PR)' : ''} -> ${outFile}`)
+  const note = pr.mark === '!' ? '업무의 마지막 PR' : pr.mark === '~' ? '중간 PR' : '마지막 PR 인지는 배포 뒤 판정'
+  out(`마무리 시작: PR ${pr.number} (${note}) -> ${outFile}`)
   return true
 }
 
@@ -417,7 +362,7 @@ async function main(argv: string[]): Promise<number> {
       // 마무리는 배포를 기다린 뒤에야 after-deploy 를 낸다. 시간 제한 값이 틀린 것을 머지 큐를 걸기 전에 알린다
       if (source || handlerFile('after-deploy', wrapper.repo)) eventTimeoutSec('after-deploy', wrapper.repo)
     }
-    const lastOfTask = prs.filter((pr) => pr.complete).flatMap((pr) => ['--last-of-task', pr.number])
+    const lastOfTask = prs.filter((pr) => pr.mark === '!').flatMap((pr) => ['--last-of-task', pr.number])
     queue = [...lastOfTask, ...scopeSweep(wrapper, [...queueDefaults(path, parsed.queue, config), ...parsed.queue])]
     if (wrapper.run && pairValue(wrapper.finishArg, '--run') === null) wrapper.finishArg.push('--run', wrapper.run)
   } catch (e) {
@@ -426,7 +371,7 @@ async function main(argv: string[]): Promise<number> {
     return 2
   }
   if (!wrapper.noFinish) {
-    for (const pr of prs) if (!(await startFinish(wrapper, pr, config))) return 1
+    for (const pr of prs) if (!(await startFinish(wrapper, pr))) return 1
   }
   const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || join(HERE, 'merge_queue.ts'), queue), { timeoutMs: NO_LIMIT_MS })
   return done.code

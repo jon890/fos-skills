@@ -50,10 +50,12 @@
 | `finish` | `run` | worker 를 찾을 Orca Run id |
 | `finish` | `base_branch` | `cleanup-sweep.ts` 의 기준 브랜치. 없으면 origin/HEAD |
 | `finish` | `deploy_workflow`, `deploy_branch` | 배포 워크플로 파일 이름과 배포가 도는 브랜치. 둘 다 주면 배포 성공까지 기다린다 |
-| `finish` | `task_pattern` | PR 제목에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
+| `finish` | `task_pattern` | PR 제목에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다. 마지막 PR 판정([`cleanup.md`](cleanup.md) 의 「마지막 PR 판정」)과 옛 업무 완료 명령이 쓴다 |
+| `finish` | `spec_task_pattern` | 지시서의 줄에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다. 마지막 PR 판정이 같은 업무의 남은 지시서를 찾는다. `specs_dir` 를 두면 함께 둔다 |
+| `finish` | `complete`, `intermediate` | true 면 모든 PR 을 판정 없이 마지막(`--complete`)이나 중간(`--intermediate`)으로 본다. 보통은 두지 않는다 |
 | `finish` | `complete_cmd` | 업무 완료 명령 틀. `{number}` 가 업무 번호로 바뀌고 셸을 거치지 않는다. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
-| `finish` | `board`, `board_bin` | 보드 파일과 보드 명령. 보드 항목은 `pr` 필드에 그 PR 이 든 항목을 `merge-with-finish.ts` 가 찾아 업무의 마지막 PR(`!`)에서만 done 으로 바꾼다. 직접 줄 때는 `--board-item 101=ITEM` 이다 |
-| `finish` | `specs_dir` | 지시서 폴더. 그 PR 브랜치의 지시서를 지운다 |
+| `finish` | `board`, `board_bin` | 보드 파일과 보드 명령. 마무리가 `pr` 필드나 브랜치로 그 PR 의 항목을 찾아 마지막 PR 에서만 done 으로 바꾼다. 직접 줄 때는 `--board-item 101=ITEM` 이다 |
+| `finish` | `specs_dir` | 지시서 폴더. 마지막 PR 이면 그 PR 브랜치의 지시서를 지운다. 마지막 PR 판정이 같은 업무의 남은 지시서를 여기서 찾는다 |
 | `cleanup` | `orch_dir`, `previews`, `board` | orch 작업 폴더, 함께 정리할 미리보기 폴더, 보드 파일. 미리보기는 content-preview 의 산출물이라 주지 않으면 보지 않는다 |
 | `cleanup` | `trash` | 휴지통 폴더. 기본은 `~/.Trash/orch-cleanup-<날짜>` |
 | `cleanup` | `queue_days`, `folder_days`, `data_days`, `data_ext` | 큐 로그, 폴더, 데이터 파일의 기준 일수와 데이터 확장자 |

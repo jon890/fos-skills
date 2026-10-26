@@ -11,6 +11,7 @@ import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { readEvents } from '../scripts/lib/loop.ts'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
@@ -468,7 +469,8 @@ describe('merge_queue --require-up-to-date', { skip: !HAS_TOOLS && 'jq 와 bash 
     const p = pr({ statusCheckRollup: [check('backend')], update_fails: true })
     const r = await c.runQueue({ '1': p, _behind: 1 }, ['--required', 'backend', '--require-up-to-date', '1'])
     assert.equal(r.code, 1, both(r))
-    has(r.stdout, 'STOP 1 update-branch 실패(충돌 가능)')
+    has(r.stdout, 'STOP 1 update-branch 실패')
+    lacks(r.stdout, 'CONFLICT')
     lacks(c.log(), 'pr merge')
   })
 
@@ -830,6 +832,77 @@ describe('merge_queue 보류', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
     lacks(r.stdout, 'QUEUE-DONE')
     // 머지된 PR 이 있으니 정리는 돈다. base 는 마지막으로 읽은 PR(3) 의 것이다
     has(readFileSync(c.sweepLog, 'utf8'), '--base main --apply')
+  })
+
+  test('update-branch 가 충돌로 실패한 PR 은 --continue-on-hold 없이도 빼고 뒤 PR 을 머지한다', async (t) => {
+    const c = setup(t)
+    const conflict = 'gh: merge conflict between base and head (HTTP 422)'
+    const state = {
+      '1': pr({ statusCheckRollup: [check('backend')], update_fails: conflict }),
+      '2': pr({ headRefName: 'b', statusCheckRollup: [check('backend')], after_update: [check('backend')] }),
+      _behind: 1,
+    }
+    const r = await c.runQueue(state, ['--required', 'backend', '--require-up-to-date', '--sweep-arg', '--run', '--sweep-arg', 'run_q', '1', '2'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'CONFLICT 1 update-branch 가 충돌로 실패했다')
+    has(r.stdout, '1 충돌. 큐에서 빼고 다음 PR 로 간다')
+    lacks(r.stdout, 'STOP 1')
+    lacks(c.log(), 'pr merge 1 ')
+    has(c.log(), 'pr merge 2 --merge')
+    has(r.stdout, 'QUEUE-CONFLICT 1\nQUEUE-HELD 1\n')
+    const events = readEvents(c.tmp, 'run_q').events
+    assert.deepEqual(
+      events.map((e) => [e.kind, e.pr, e.text]),
+      [['QUEUE-CONFLICT', 1, '1 update-branch 가 충돌로 실패했다']],
+    )
+    // 머지한 PR 이 있으니 정리는 돈다
+    assert.equal(existsSync(c.sweepLog), true)
+  })
+
+  test('mergeable 이 CONFLICTING 인 PR 도 충돌로 빼고 뒤 PR 을 머지한다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ mergeable: 'CONFLICTING' }), '2': pr({ headRefName: 'b' }) }, ['1', '2'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'CONFLICT 1 base(main) 와 충돌한다(mergeable=CONFLICTING)')
+    has(c.log(), 'pr merge 2 --merge')
+    has(r.stdout, 'QUEUE-HELD 1')
+  })
+
+  test('--chain 안에서 앞 PR 이 빠지면 뒤 PR 은 SKIP 하고 묶음 밖 PR 은 머지한다', async (t) => {
+    const c = setup(t)
+    const state = { '1': pr({ mergeable: 'CONFLICTING' }), '2': pr({ headRefName: 'b' }), '3': pr({ headRefName: 'c' }), '4': pr({ headRefName: 'd' }) }
+    const r = await c.runQueue(state, ['--chain', '1,2,4', '1', '2', '3', '4'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'SKIP 2 묶음의 앞 PR 1 가 머지되지 않았다')
+    has(r.stdout, 'SKIP 4 묶음의 앞 PR 1 가 머지되지 않았다')
+    has(c.log(), 'pr merge 3 --merge')
+    for (const n of ['2', '4']) lacks(c.log(), `pr merge ${n} `)
+    has(r.stdout, 'QUEUE-CONFLICT 1\nQUEUE-HELD 1 2 4\n')
+  })
+
+  test('--chain 의 앞 PR 이 머지되면 뒤 PR 도 머지한다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, ['--chain', '1,2', '1', '2'])
+    assert.equal(r.code, 0, both(r))
+    has(c.log(), 'pr merge 2 --merge')
+    has(r.stdout, 'QUEUE-DONE')
+  })
+
+  test('--chain 이 틀리면 사용법 오류다', async (t) => {
+    const c = setup(t)
+    const cases: [string[], string][] = [
+      [['--chain', '1', '1', '2'], '둘 이상을 쉼표로 잇는다'],
+      [['--chain', '1,x', '1', '2'], '둘 이상을 쉼표로 잇는다'],
+      [['--chain', '1,3', '1', '2'], '3 는 큐에 없는 PR 이다'],
+      [['--chain', '2,1', '1', '2'], '큐의 순서와 같게 적는다'],
+      [['--chain', '1,2', '--chain', '2,3', '1', '2', '3'], '2 는 다른 묶음에도 있다'],
+    ]
+    for (const [args, message] of cases) {
+      const r = await c.runQueue({ '1': pr(), '2': pr(), '3': pr() }, args)
+      assert.equal(r.code, 2, `${args.join(' ')}: ${both(r)}`)
+      has(r.stderr, message)
+    }
+    lacks(c.log(), 'pr merge')
   })
 
   test('--continue-on-hold 에서 보류가 없으면 QUEUE-DONE 이다', async (t) => {

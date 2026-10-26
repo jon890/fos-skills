@@ -24,6 +24,7 @@ export const QUEUE_VALUE_OPTIONS: readonly string[] = [
   '--after-merged',
   '--sweep-arg',
   '--last-of-task',
+  '--chain',
 ]
 
 // queue 절의 값을 받는 키와 머지 큐 옵션
