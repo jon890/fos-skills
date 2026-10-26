@@ -15,3 +15,4 @@
 - [ADR-013](013-orch-worker-stalled.md): 상주 루프는 멈춘 worker 를 이벤트로 알리고, 다시 시도시키는 일은 저장소 핸들러가 맡는다 (`accepted`)
 - [ADR-014](014-orch-auto-last-pr.md): 업무의 마지막 PR 은 마무리가 머지와 배포 뒤에 판정하고, 충돌한 PR 은 머지 큐를 멈추지 않는다 (`accepted`)
 - [ADR-016](016-orch-auto-merge.md): 상주 루프가 머지할 수 있는 PR 을 스스로 머지 큐에 건다 (`accepted`)
+- [ADR-017](017-orch-migration-reserve.md): 마이그레이션 번호는 worker 가 만들기 전에 잠금을 걸고 예약한다 (`accepted`)
