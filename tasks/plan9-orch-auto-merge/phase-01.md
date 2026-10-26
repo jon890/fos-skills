@@ -20,7 +20,7 @@
 - 보드 항목 형식은 `work-board/README.md` 「저장 형식」 이다. `next` 와 `details` 는 `{text, done}` 목록이고 옛 문자열도 섞일 수 있다. 문자열 줄은 끝나지 않은 줄로 본다.
   타입은 `orch/scripts/lib/board.ts` 의 `BoardItem`, `BoardDetail`, `detailText` 를 쓴다.
 
-**근거 문서**: `docs/adr/015-orch-auto-merge.md`, `docs/data-schema.md` 의 「config.json 에 더하는 절」(`queue.auto_merge`, `queue.auto_review`, `migrations.*` 행), `docs/flow.md` 의 「상주 루프의 자동 머지」.
+**근거 문서**: `docs/adr/016-orch-auto-merge.md`, `docs/data-schema.md` 의 「config.json 에 더하는 절」(`queue.auto_merge`, `queue.auto_review`, `migrations.*` 행), `docs/flow.md` 의 「상주 루프의 자동 머지」.
 
 ## 의도 메모
 

@@ -21,7 +21,7 @@
 - 분리 실행 예: `merge-with-finish.ts` 의 `launch`(spawn detached, stdio 를 파일 서술자로, unref).
 - 테스트 짜임 예: `orch/tests/orch-loop-ci.spec.ts`(가짜 gh 는 `tests/fixtures/fake-bin.ts`, 가짜 orca, `--foreground --once` 를 여러 번).
 
-**근거 문서**: `docs/adr/015-orch-auto-merge.md`, `docs/flow.md` 의 「상주 루프의 자동 머지」, `docs/data-schema.md` 의 `state/auto-merge.json` 행과 `state/loop-events/<Run>.jsonl` 행.
+**근거 문서**: `docs/adr/016-orch-auto-merge.md`, `docs/flow.md` 의 「상주 루프의 자동 머지」, `docs/data-schema.md` 의 `state/auto-merge.json` 행과 `state/loop-events/<Run>.jsonl` 행.
 
 ## 의도 메모
 

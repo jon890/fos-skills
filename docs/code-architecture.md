@@ -181,7 +181,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 ## orch 코어와 핸들러
 
 이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
-상주 루프의 자동 진행 가운데 ready 슬롯, base 합치기, 문서 PR 머지와 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge` 로 따로 켠다([ADR-015](adr/015-orch-auto-merge.md)).
+상주 루프의 자동 진행 가운데 ready 슬롯, base 합치기, 문서 PR 머지와 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge` 로 따로 켠다([ADR-016](adr/016-orch-auto-merge.md)).
 이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 

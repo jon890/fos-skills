@@ -17,7 +17,7 @@
 - 버전과 CHANGELOG 형식은 저장소 `README.md` 의 「버전과 변경 이력」, 항목 수와 줄 길이는 `scripts/check-skill-docs.py` 가 검사한다.
 - 루프의 틱 목록은 `orch/references/waiting.md` 「상주 루프와 압축 뒤 복구」 의 목록이다.
 
-**근거 문서**: `docs/adr/015-orch-auto-merge.md`, `docs/flow.md` 의 「상주 루프의 자동 머지」, `docs/data-schema.md` 의 「config.json 에 더하는 절」.
+**근거 문서**: `docs/adr/016-orch-auto-merge.md`, `docs/flow.md` 의 「상주 루프의 자동 머지」, `docs/data-schema.md` 의 「config.json 에 더하는 절」.
 
 ## 의도 메모
 

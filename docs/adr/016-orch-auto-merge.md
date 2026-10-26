@@ -1,4 +1,4 @@
-# ADR-015: 상주 루프가 머지할 수 있는 PR 을 스스로 머지 큐에 건다
+# ADR-016: 상주 루프가 머지할 수 있는 PR 을 스스로 머지 큐에 건다
 
 - **status**: `accepted`
 - **결정**: `queue.auto_merge` 가 true 인 저장소에서 상주 루프가 틱마다 머지할 수 있는 PR 을 골라 `merge-with-finish.ts` 를 건다.

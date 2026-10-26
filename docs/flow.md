@@ -229,7 +229,7 @@ flowchart TD
 | 코디네이터가 `!` 를 빠뜨려 배포가 끝나도 업무가 완료되지 않고 보드 항목이 진행 중으로 남는다 | `finish-pr`, `board-sync` | 표시가 없는 PR 은 마무리가 배포 확인 뒤, 보드 동기화가 머지를 본 틱에 업무의 마지막 PR 인지 판정한다([ADR-014](adr/014-orch-auto-last-pr.md)). 판정하지 못하면 중간 PR 이다 |
 | 보드 항목의 `pr` 필드가 비어 머지 뒤에도 항목이 진행 중으로 남는다 | `launch-worker`, `wait-important`, `board-sync`, `finish-pr` | 띄울 때 같은 워크트리의 항목을 이어 쓰고, 준비됨 `worker_done` 과 틱이 브랜치로 `pr` 필드를 채우고, 마무리가 `pr` 필드가 빈 항목을 브랜치나 워크트리 이름으로 찾는다 |
 | 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. 알림 파일에 `QUEUE-CONFLICT` 를 쓴다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
-| 준비된 PR 이 코디네이터가 다른 일을 하는 동안 몇 시간씩 머지되지 않는다. 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨린다 | `orch-loop` 의 `tick` | `queue.auto_merge` 를 켠 저장소에서 틱이 머지할 수 있는 PR 을 골라 `merge-with-finish` 를 건다. 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같으면 걸지 않고 `MIGRATION-CLASH` 로 알린다([ADR-015](adr/015-orch-auto-merge.md)). 아래 「상주 루프의 자동 머지」 |
+| 준비된 PR 이 코디네이터가 다른 일을 하는 동안 몇 시간씩 머지되지 않는다. 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨린다 | `orch-loop` 의 `tick` | `queue.auto_merge` 를 켠 저장소에서 틱이 머지할 수 있는 PR 을 골라 `merge-with-finish` 를 건다. 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같으면 걸지 않고 `MIGRATION-CLASH` 로 알린다([ADR-016](adr/016-orch-auto-merge.md)). 아래 「상주 루프의 자동 머지」 |
 | ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에만, 그리고 `pipeline.update_behind_drafts` 가 draft 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
 
 ### 갈래

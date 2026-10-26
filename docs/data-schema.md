@@ -89,7 +89,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `pipeline` | `stall_ticks` | `{"error": 정수, "idle": 정수}`. 모르는 키나 0 미만, 정수가 아닌 값은 사용법 오류다 | `{"error": 2, "idle": 0}` | 상주 루프가 같은 멈춤 화면을 몇 틱 보면 `worker-stalled` 를 낼지. 0 이면 그 상태를 보지 않는다. 판정은 `orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다 |
 | `heavy` | `exclusive`, `normal`, `light` | 정규식 목록 | 빈 목록 | 무거운 검사 분류. 앞의 목록부터 맞춰 본다. 어디에도 맞지 않으면 `normal` 이다 |
 | `heavy` | `wait_idle` | 정규식 목록 | 빈 목록 | 자리를 잡기 전에, 명령줄이 이 정규식에 맞는 프로세스가 없을 때까지 기다린다. 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 대상이다 |
-| `queue` | `auto_merge` | bool | false | 상주 루프가 머지할 수 있는 PR 을 스스로 `merge-with-finish.ts` 에 건다. 대상과 순서는 `orch-loop.ts` 머리 주석의 「자동 머지」 가, 근거는 [ADR-015](adr/015-orch-auto-merge.md) 가 소유한다. `pipeline.enabled` 와 무관하다 |
+| `queue` | `auto_merge` | bool | false | 상주 루프가 머지할 수 있는 PR 을 스스로 `merge-with-finish.ts` 에 건다. 대상과 순서는 `orch-loop.ts` 머리 주석의 「자동 머지」 가, 근거는 [ADR-016](adr/016-orch-auto-merge.md) 가 소유한다. `pipeline.enabled` 와 무관하다 |
 | `queue` | `auto_review` | `{"pass": 정규식, "block": 정규식}`. 둘 다 비지 않은 문자열이다 | 없음(리뷰 판정을 보지 않는다) | 자동 리뷰의 판정 문구. PR 의 리뷰와 댓글 가운데 어느 하나에 맞는 마지막 본문이 `pass` 에만 맞아야 자동 머지 대상이다. 둘 다 맞으면 `block` 이다. Python 정규식이고 본문 어디든 맞으면 된다 |
 | `migrations` | `dirs` | 모듈 이름에서 저장소 루트 기준 폴더로. 폴더는 비지 않은 문자열이다 | 없음(마이그레이션을 보지 않는다) | 모듈별 마이그레이션 폴더. 그 폴더 아래 파일 가운데 이름이 Flyway 버전 마이그레이션(`V<버전>__<설명>`)인 것을 그 모듈의 마이그레이션으로 본다. 버전은 `.` 과 `_` 로 나눈 숫자 목록으로 비교한다 |
 | `migrations` | `before` | 모듈 이름에서 셸 명령으로. `*` 는 나머지 모듈의 명령이고 `{module}` 을 모듈 이름으로 바꾼다 | 없음(머지 전 명령을 붙이지 않는다) | 마이그레이션이 든 PR 을 자동 머지할 때 붙일 머지 전 명령(DB 백업). 모듈이 여럿이면 ` && ` 로 잇는다. 이 키가 있는데 규칙이 없는 모듈의 PR 은 걸지 않는다. 명령은 `merge_queue.ts` 의 `PR:명령` 처럼 돈다 |
