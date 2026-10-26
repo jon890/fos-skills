@@ -175,3 +175,12 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.
 - 머지 전 명령: DB 마이그레이션이 든 PR 은 `PR:./bin/backup-db.sh <db> "before-pr-$PR"`. DB 마다 최근 2개만 보관
 - CI runner 가 offline 이면 묻지 않고 runner 호스트를 재부팅하고, 끊긴 실행은 `gh run rerun --failed` 로 다시 돌린다
 ```
+
+자동 머지를 켠 저장소의 `config.json` 조각이다.
+
+```json
+{
+  "queue": { "auto_merge": true, "auto_review": { "pass": "머지 가능", "block": "반영 필요|반영 후 머지" } },
+  "migrations": { "dirs": { "api": "modules/api/src/main/resources/db/migration" }, "before": { "*": ".orch/bin/backup-db.sh {module} \"pre-$PR\"" } }
+}
+```
