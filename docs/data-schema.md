@@ -29,7 +29,8 @@
 | 10 | 거부. `HOOK-REJECT` | 실패로 본다 |
 | 그 밖, 시간 초과 | 실패. 거부처럼 멈추고 `HOOK-FAIL` | 실패. 코어 동작은 이어 가고 `HOOK-FAIL` |
 
-거부할 수 있는 이벤트는 `before-launch`, `before-ready`, `before-merge`, `verify-merged`, `before-cleanup` 이다.
+거부할 수 있는 이벤트는 `before-launch`, `before-ready`, `before-merge`, `verify-merged`, `before-cleanup`, `worker-stalled` 다.
+`worker-stalled` 에서는 막을 동작이 없어 10 과 그 밖의 코드가 넘김이다. 핸들러가 처리하지 않고, 코어가 그 Run 의 알림 파일에 `WORKER-STALLED` 를 쓴다. 로그에는 10 이면 `HOOK-REJECT`, 그 밖이면 `HOOK-FAIL` 이 남는다.
 거부를 1 이 아니라 10 으로 둔 것은 의도한 거부와 예외로 죽은 핸들러를 가르기 위해서다. node 는 잡지 않은 예외에 1 을 낸다.
 
 ### 공통 필드와 이벤트별 필드
