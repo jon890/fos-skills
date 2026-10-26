@@ -707,6 +707,167 @@ test('지시서에 항목 id 가 없으면 같은 워크트리의 끝나지 않�
   assert.equal(items[1].title, '처음 일')
 })
 
+test('보드 항목 id 가 가리키는 끝나지 않은 항목은 제목과 단계를 그대로 두고 워크트리와 브랜치만 바꾼다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  const milestone = { id: 'chart', title: '차트 코드별 분리', status: 'doing', worktree: 'old-wt', details: [{ text: '1. 구현', done: true }, { text: '2. 머지', done: false }] }
+  writeFileSync(file, JSON.stringify({ items: [milestone] }))
+  writeFileSync(spec, '# PR #9 를 develop 과 합친다\n허락: push\n보드 항목 id: chart\n\n## 할 일\n1. develop 합치기\n2. push\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+  const items = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.equal(items.length, 1)
+  assert.equal(items[0].title, '차트 코드별 분리')
+  assert.equal(items[0].status, 'doing')
+  assert.equal(items[0].worktree, 'wt')
+  assert.deepEqual(items[0].details, milestone.details)
+})
+
+test('단계도 진행률도 없는 기존 항목은 단계를 더하지 않고 status 도 그대로 둔다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ items: [{ id: 'later', title: '나중 일', status: 'wait' }] }))
+  writeFileSync(spec, '# 다른 제목\n허락: push\n보드 항목 id: later\n\n## 할 일\n1. 구현\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+  const [item] = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.equal(item.title, '나중 일')
+  assert.equal(item.status, 'wait')
+  assert.equal(item.worktree, 'wt')
+  assert.equal('details' in item, false, JSON.stringify(item))
+})
+
+describe('중간 과정과 다시 열기', () => {
+  type Item = Record<string, unknown> & { id: string }
+  let file: string
+
+  beforeEach(() => {
+    file = join(worktree, '.omc', 'board.json')
+    mkdirSync(dirname(file), { recursive: true })
+    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('input_accepted'), ctx_2: shown('input_accepted') } })
+  })
+
+  const items = (): Item[] => JSON.parse(readFileSync(file, 'utf8')).items
+  const run = () => launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+
+  test('중간 과정 지시서는 그 PR 의 항목에 줄 하나만 남기고 항목, 제목, status, 단계 완료 값은 그대로다', () => {
+    const target = {
+      id: 'feat',
+      title: '기능',
+      status: 'doing',
+      pr: 7,
+      worktree: 'old-wt',
+      branch: 'feat/x',
+      details: [{ text: '1. 구현', done: true }, { text: '2. 머지', done: false }],
+    }
+    const other = { id: 'other', title: '다른 일', status: 'doing', worktree: 'wt', details: [{ text: '1. 구현', done: false }] }
+    writeFileSync(file, JSON.stringify({ items: [target, other] }))
+    writeFileSync(spec, '# PR #7 CI 고치기\n허락: push\n중간 과정: PR #7\n\n## 할 일\n1. CI 고치기\n')
+    for (let i = 0; i < 2; i++) {
+      const r = run()
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+    }
+    const after = items()
+    assert.deepEqual(after.map((i) => i.id), ['feat', 'other'])
+    const item = after[0]
+    assert.equal(item.title, '기능')
+    assert.equal(item.status, 'doing')
+    assert.equal(item.pr, 7)
+    assert.equal(item.worktree, 'wt')
+    // 이 워크트리는 git 저장소가 아니라 브랜치를 읽지 못한다. 기존 branch 칸은 지우지 않는다
+    assert.equal(item.branch, 'feat/x')
+    assert.deepEqual(item.details, [...target.details, { text: '중간 과정: PR #7 CI 고치기', done: false }])
+    assert.deepEqual(after[1], other)
+  })
+
+  test('중간 과정 지시서에 맞는 항목이 없으면 항목을 만들지 않고 알린다', () => {
+    const done = { id: 'feat', title: '기능', status: 'done', pr: 7, worktree: 'wt', details: [{ text: '1. 구현', done: true }] }
+    writeFileSync(file, JSON.stringify({ items: [done] }))
+    writeFileSync(spec, '# PR #7 충돌 풀기\n허락: push\n중간 과정: PR #7\n')
+    const r = run()
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /보드를 갱신하지 못했다: 중간 과정 지시서의 보드 항목을 찾지 못해 만들지 않는다/)
+    assert.deepEqual(items(), [done])
+  })
+
+  test('PR 번호가 없는 중간 과정 지시서는 결정과 목표 항목을 빼고 같은 브랜치의 항목을 찾는다', () => {
+    // 워크트리가 git 저장소여야 launch-worker 가 브랜치를 읽는다
+    const git = (...args: string[]) => assert.equal(spawnSync('git', args, { env }).status, 0, args.join(' '))
+    rmSync(worktree, { recursive: true, force: true })
+    git('init', '-q', '-b', 'feat/x', worktree)
+    mkdirSync(dirname(file), { recursive: true })
+    const target = { id: 'feat', title: '기능', status: 'doing', branch: 'feat/x', worktree: 'old-wt', details: [{ text: '1. 구현', done: false }] }
+    const decide = { id: 'ask', title: '정할 것', status: 'decide', branch: 'feat/x', details: [{ text: '이름', done: false }] }
+    const goal = { id: 'goal', title: '목표', status: 'goal', branch: 'feat/x' }
+    writeFileSync(file, JSON.stringify({ items: [decide, goal, target] }))
+    writeFileSync(spec, '# 리뷰 반영하기\n허락: push\n중간 과정: 리뷰 반영\n')
+    const r = run()
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+    const after = items()
+    assert.deepEqual(after.slice(0, 2), [decide, goal])
+    assert.deepEqual(after[2].details, [...target.details, { text: '중간 과정: 리뷰 반영하기', done: false }])
+    assert.equal(after[2].status, 'doing')
+  })
+
+  test('중간 과정 지시서에 맞는 항목이 둘 이상이면 보드를 쓰지 않고 알린다', () => {
+    const one = { id: 'one', title: '하나', status: 'doing', pr: 7, details: [{ text: '1. 구현', done: false }] }
+    const two = { id: 'two', title: '둘', status: 'wait', pr: '7, 8', details: [{ text: '1. 구현', done: false }] }
+    writeFileSync(file, JSON.stringify({ items: [one, two] }))
+    writeFileSync(spec, '# PR #7 CI 고치기\n허락: push\n중간 과정: PR #7\n')
+    const r = run()
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /보드를 갱신하지 못했다: 중간 과정 지시서의 보드 항목을 찾지 못해 만들지 않는다: 항목이 둘 이상이다: one, two/)
+    assert.deepEqual(items(), [one, two])
+  })
+
+  test('보드 항목 id 가 가리키는 done 항목은 다시 열고 남은 일과 중간 과정 줄을 빼고 details 와 next 의 마지막 번호 다음부터 할 일을 붙인다', () => {
+    const done = {
+      id: 'a',
+      title: '옛 제목',
+      status: 'done',
+      pr: 12,
+      'merged-pr': 9,
+      progress: '2/2',
+      worktree: 'old-wt',
+      branch: 'feat/a',
+      details: [
+        { text: '1. 구현', done: true },
+        { text: '2. 머지', done: true },
+        { text: '남은 일: PR #13', done: false },
+        // 옛 문자열 줄은 앞에 완료 표시가 붙어 있다
+        '✓ 중간 과정: PR #12 CI 고치기',
+      ],
+      next: ['5. 배포 확인'],
+    }
+    writeFileSync(file, JSON.stringify({ items: [done] }))
+    writeFileSync(spec, '# 후속 기능\n허락: push\n보드 항목 id: a\n\n## 할 일\n1. 후속 구현\n2. 후속 머지\n')
+    const r = run()
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+    const [item] = items()
+    assert.equal(item.status, 'doing')
+    // 제목은 마일스톤이라 다시 연 지시서의 머리줄로 바꾸지 않는다
+    assert.equal(item.title, '옛 제목')
+    assert.equal(item.worktree, 'wt')
+    assert.equal(item.branch, 'feat/a')
+    assert.deepEqual(item.details, [
+      { text: '1. 구현', done: true },
+      { text: '2. 머지', done: true },
+      { text: '6. 후속 구현', done: false },
+      { text: '7. 후속 머지', done: false },
+    ])
+    assert.equal('pr' in item, false, JSON.stringify(item))
+    assert.equal(item['merged-pr'], '12, 9')
+    assert.equal('progress' in item, false, JSON.stringify(item))
+  })
+})
+
 test('보드가 없으면 LAUNCHED 뒤에도 파일을 만들지 않는다', () => {
   state({ next_ids: ['ctx_1'] })
   const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])

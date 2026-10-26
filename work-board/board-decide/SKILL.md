@@ -5,7 +5,7 @@ description: |
   보드의 결정 필요 항목, 답하지 않은 worker 질문, 미뤄 둔 결정을 모은다.
   "/board-decide", "정할 것 물어봐", "결정 사항 모아줘" 같은 요청이면 이 스킬을 쓴다.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # board-decide
@@ -19,3 +19,5 @@ metadata:
 3. 항목마다 배경, 선택지, 권장안과 그 이유, 고르면 바뀌는 것을 짧게 정리해 먼저 보여 준다.
 4. 그다음 AskUserQuestion 으로 한 번에 4개까지 묻고, 남으면 이어서 묻는다. 권장안을 첫 선택지로 두고 「(Recommended)」 를 붙인다.
 5. 답을 받으면 보드 항목을 갱신하고, 답을 기다리는 worker 가 있으면 전달한다.
+   - 답한 보드 줄은 `board.ts mark <id> <n>` 으로 끝낸다. 줄 번호는 `board.ts list` 가 항목 아래 줄마다 보인다. 줄이 모두 끝난 decide 항목은 저절로 done 이 된다.
+   - worker 질문은 코디네이터 터미널에서 `orca orchestration reply --id <질문 id> --body ...` 로 답한다.

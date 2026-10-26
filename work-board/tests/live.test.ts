@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, decisionOf } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, decisionOf } from '../hooks/register.js'
 import { queryQuestions } from '../hooks/register.js'
 
 test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
@@ -39,8 +39,8 @@ test('끝난 dispatch 의 질문은 세지 않고 그 발신자의 inbox 도 읽
   expect(inboxed).toEqual(['dispatch:open'])
   // 살아 있는 dispatch 가 없으면 모두 닫힌 것이다
   expect((await queryQuestions($, 'r', [])).questions).toEqual([])
-  // 목록을 주지 않으면 거르지 않는다
-  expect((await queryQuestions($, 'r')).questions.length).toBe(3)
+  // 목록을 주지 않으면 거르지 않는다. 같은 dispatch(closed)의 질문과 escalation 은 하나로 묶인다
+  expect((await queryQuestions($, 'r')).questions.map((m) => [m.id, m.repeats])).toEqual([['old-e', 1], ['live-q', 0]])
 })
 
 test('터미널 handle 로 온 질문은 payload 의 dispatch 나 살아 있는 worker 의 터미널로 판정한다', async () => {
@@ -57,6 +57,59 @@ test('터미널 handle 로 온 질문은 payload 의 dispatch 나 살아 있는 
   expect(result.questions.map((m) => m.id)).toEqual(['term-live'])
 })
 
+test('코디네이터 터미널이 worker 의 dispatch 로 보낸 회신은 답이고, 그 dispatch 의 inbox 를 읽는다', async () => {
+  // 실측: 회신은 type status, thread_id 가 질문 id, to_handle 이 dispatch:<그 터미널의 지금 dispatch>, 보낸 사람은 term_* 다
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_w', thread_id: 'q' }
+  const reply = { id: 'ans', type: 'status', run_id: 'r', thread_id: 'q', from_handle: 'term_c', to_handle: 'dispatch:open' }
+  const unrelated = { id: 'x', type: 'status', run_id: 'r', thread_id: 'other', from_handle: 'term_c', to_handle: 'dispatch:open' }
+  const inboxes = { 'dispatch:open': [reply, unrelated], term_w: [] }
+  const calls: string[][] = []
+  const $ = { process: { run: async (argv) => {
+    calls.push(argv)
+    const handle = argv[argv.indexOf('--terminal') + 1]
+    return { exitCode: 0, stderr: '', stdout: JSON.stringify({ messages: argv.includes('check') ? [q] : inboxes[handle] }) }
+  } } }
+  const active = [{ id: 'open', terminal: 'term_w' }]
+  expect((await queryQuestions($, 'r', active)).questions).toEqual([])
+  const inboxed = calls.filter((argv) => argv.includes('inbox')).map((argv) => argv[argv.indexOf('--terminal') + 1])
+  expect(inboxed.sort()).toEqual(['dispatch:open', 'term_w'])
+  // 그 회신이 없으면 질문이 남는다
+  inboxes['dispatch:open'] = [unrelated]
+  expect((await queryQuestions($, 'r', active)).questions.map((m) => m.id)).toEqual(['q'])
+})
+
+test('worker 의 후속 status 는 Run 으로 가므로 답이 아니다', () => {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_w', thread_id: 'q' }
+  const follow = { id: 'f', type: 'status', run_id: 'r', to_handle: 'run:r', from_handle: 'term_w', thread_id: 'q' }
+  expect(parseQuestions(JSON.stringify({ messages: [q, follow] }), 'r').map((m) => m.id)).toEqual(['q'])
+  const reply = { ...follow, id: 'a', from_handle: 'term_c', to_handle: 'dispatch:d' }
+  expect(parseQuestions(JSON.stringify({ messages: [q, follow, reply] }), 'r')).toEqual([])
+  // 받는 쪽이 없는 thread 메시지도 답이 아니다
+  const { to_handle: _, ...nowhere } = reply
+  expect(parseQuestions(JSON.stringify({ messages: [q, nowhere] }), 'r').map((m) => m.id)).toEqual(['q'])
+})
+
+test('같은 worker 의 미답변 질문은 가장 늦은 하나로 묶고, 답한 질문보다 이른 미답변은 뺀다', () => {
+  const ask = (id, at, dispatchId = 'd') => ({ id, type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_w',
+    thread_id: id, payload: JSON.stringify({ dispatchId, question: id }), ...(at === null ? {} : { created_at: at }) })
+  const answer = (id) => ({ id: 'a-' + id, type: 'status', run_id: 'r', thread_id: id, from_handle: 'term_c', to_handle: 'dispatch:d' })
+  const parse = (messages, keyOf?) => parseQuestions(JSON.stringify({ messages }), 'r', keyOf)
+    .map((m) => ({ id: m.id, repeats: m.repeats }))
+  // 미답변 둘은 늦은 하나로 나오고 repeats 가 1 이다
+  expect(parse([ask('q2', '2026-10-26T10:05:00Z'), ask('q1', '2026-10-26T10:00:00Z')])).toEqual([{ id: 'q2', repeats: 1 }])
+  // 앞 질문이 미답변이고 뒤 질문이 답했으면 둘 다 빠진다
+  expect(parse([ask('q1', '2026-10-26T10:00:00Z'), ask('q2', '2026-10-26T10:05:00Z'), answer('q2')])).toEqual([])
+  // 답한 질문보다 늦게 다시 보낸 미답변은 남는다
+  expect(parse([ask('q1', '2026-10-26T10:00:00Z'), answer('q1'), ask('q2', '2026-10-26T10:05:00Z')])).toEqual([{ id: 'q2', repeats: 0 }])
+  // created_at 이 같으면 입력 순서가 뒤인 것이, 없는 행은 있는 행보다 이른 것으로 본다
+  expect(parse([ask('q1', '2026-10-26T10:00:00Z'), ask('q2', '2026-10-26T10:00:00Z')])).toEqual([{ id: 'q2', repeats: 1 }])
+  expect(parse([ask('q2', '2026-10-26T10:00:00Z'), ask('q1', null)])).toEqual([{ id: 'q2', repeats: 1 }])
+  // dispatch 가 다르면 따로 센다. keyOf 가 같은 worker 로 보면 묶는다
+  const split = [ask('q1', '2026-10-26T10:00:00Z', 'old'), ask('q2', '2026-10-26T10:05:00Z', 'd')]
+  expect(parse(split)).toEqual([{ id: 'q1', repeats: 0 }, { id: 'q2', repeats: 0 }])
+  expect(parse(split, () => 'w')).toEqual([{ id: 'q2', repeats: 1 }])
+})
+
 test('질문 100건 상한은 조회 범위를 표시하고 답변 기록 상한은 오류로 표시한다', async () => {
   const q = { id: 'q', type: 'escalation', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
   let replies = []
@@ -68,8 +121,25 @@ test('질문 100건 상한은 조회 범위를 표시하고 답변 기록 상한
   let failure = ''
   try { await queryQuestions($, 'r') } catch (error) { failure = error.message }
   expect(failure).toContain('답변 기록 한도')
-  replies[0] = { id: 'answer', thread_id: 'q', from_handle: 'run:r', run_id: 'r' }
+  replies[0] = { id: 'answer', thread_id: 'q', from_handle: 'run:r', to_handle: 'dispatch:d', run_id: 'r' }
   expect((await queryQuestions($, 'r')).questions).toEqual([])
+})
+
+test('한도에 닿은 handle 이 있어도 다른 handle 의 회신으로 답한 질문은 오류 없이 빠진다', async () => {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_w', thread_id: 'q' }
+  const reply = { id: 'ans', type: 'status', run_id: 'r', thread_id: 'q', from_handle: 'term_c', to_handle: 'dispatch:open' }
+  const noise = Array.from({ length: 200 }, (_, i) => ({ id: 'n' + i, type: 'status', run_id: 'r', from_handle: 'term_x', to_handle: 'term_w' }))
+  const inboxes = { term_w: noise, 'dispatch:open': [reply] }
+  const $ = { process: { run: async (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({
+    messages: argv.includes('check') ? [q] : inboxes[argv[argv.indexOf('--terminal') + 1]],
+  }) }) } }
+  const active = [{ id: 'open', terminal: 'term_w' }]
+  expect((await queryQuestions($, 'r', active)).questions).toEqual([])
+  // 회신이 어느 handle 에도 없으면 잘린 term_w 기록에 있을 수 있어 오류다
+  inboxes['dispatch:open'] = []
+  let failure = ''
+  try { await queryQuestions($, 'r', active) } catch (error) { failure = error.message }
+  expect(failure).toContain('답변 기록 한도')
 })
 
 test('프로세스 출력이 잘렸으면 JSON 파싱 전에 한도 오류로 표시한다', async () => {
@@ -102,6 +172,18 @@ test('PR 의 CI 결과를 통과, 실패, 진행으로 나누고 worker 에 붙�
   expect(checkSummary(prs[0])).toBe('CI 2/4 · 실패 1 · 진행 1')
   expect(prFor({ id: 'a', state: '', worktree: 'ci-path-filter' }, prs)?.number).toBe(503)
   expect(prFor({ id: 'b', state: '', worktree: 'path-filter' }, prs)).toBe(null)
+})
+
+test('decide 항목은 끝나지 않은 줄을 세고 줄이 없는 항목은 1 로 센다', () => {
+  const items = [
+    { status: 'decide', details: [{ text: '저장 형식', done: true }, { text: '배포 시점', done: false }], next: [{ text: '이름', done: false }] },
+    { status: 'decide', title: '줄 없음' },
+    { status: 'decide', details: ['✓ 끝낸 결정'] },
+    { status: 'doing', details: [{ text: '1 a', done: false }] },
+  ]
+  expect(decideCount(items)).toBe(3)
+  expect(decideCount([])).toBe(0)
+  expect(statusLine(items, { questions: [{}] })).toBe('결정 필요 4 · 진행 1   /board')
 })
 
 test('상태 줄은 질문과 수동 decide 를 합쳐 결정 필요로 센다', () => {

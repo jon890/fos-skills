@@ -278,6 +278,22 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.deepEqual(starting(c.calls(), 'orca '), [])
   })
 
+  test('중간 PR 이어도 orch 루트의 그 PR 충돌 후속 지시서는 옛 이름까지 지우고 다른 PR 의 것은 남긴다', async (t) => {
+    const c = setup(t)
+    const specs = join(c.repo, '.orch/specs')
+    mkdirSync(specs, { recursive: true })
+    for (const name of ['spec-conflict-77.md', 'spec-conflict-77-0123abcd.md', 'spec-conflict-771.md']) {
+      writeFileSync(join(specs, name), '# 충돌\n브랜치: `feat/x`\n중간 과정: PR #77\n')
+    }
+    const r = await c.finish(['--intermediate'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '마지막 PR 판정: 중간')
+    assert.equal(existsSync(join(specs, 'spec-conflict-77.md')), false, both(r))
+    assert.equal(existsSync(join(specs, 'spec-conflict-77-0123abcd.md')), false, both(r))
+    assert.equal(existsSync(join(specs, 'spec-conflict-771.md')), true, both(r))
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
+  })
+
   test('마지막 PR 은 줄 머리의 브랜치 줄이 그 브랜치인 지시서만 지운다', async (t) => {
     const c = setup(t)
     writeFileSync(join(c.specs, 'spec-bold.md'), '# 지시서\n- **브랜치:** `feat/x`\n')

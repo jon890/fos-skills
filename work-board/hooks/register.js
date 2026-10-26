@@ -58,18 +58,23 @@ export function countQuestions(stdout, runId) {
 }
 
 // 깨진 JSON 이나 잘린 기록은 조회 오류로 보인다. 임의의 질문 수로 바꾸지 않는다.
-export function parseQuestions(stdout, runId) {
+// 질문의 thread 에 worker 쪽으로 간 메시지(받는 쪽이 있고 Run 이 아닌 것)가 있으면 답한 질문이다. 보낸 사람은 Run 이든 코디네이터 터미널이든 보지 않는다(ADR-015).
+// ask 는 답을 받을 때까지 막혀 worker 하나에 열린 질문은 하나다. 그래서 같은 worker 의 질문은 가장 늦은 미답변 하나로 묶고 repeats 에 나머지 수를 둔다.
+// worker 열쇠는 keyOf(m), 없으면 질문의 dispatch(payload.dispatchId, 없으면 `dispatch:` 를 뗀 발신자), 그것도 없으면 그 메시지 id(묶지 않음)다.
+// 늦고 이른 것은 created_at 문자열로 비교하고, 같으면 입력 순서가 뒤인 것을 늦은 것으로 본다.
+export function parseQuestions(stdout, runId, keyOf = null) {
   const data = JSON.parse(String(stdout).replace(/[\u0000-\u001f]/g, ' '))
   if (data.ok === false) throw new Error('질문 기록 조회 실패')
   const rows = (data.result || data).messages
   if (!Array.isArray(rows) || rows.some((m) => !m || typeof m !== 'object')) throw new Error('질문 기록을 읽지 못했어요')
   const messages = rows.filter((m) => !runId || m.run_id === runId)
   const answered = new Set(messages.filter((m) => m.thread_id && m.id !== m.thread_id
-    && m.from_handle === (runId ? 'run:' + runId : 'run:' + m.run_id)).map((m) => m.thread_id))
-  return messages
+    && m.to_handle && m.to_handle !== 'run:' + (runId || m.run_id)).map((m) => m.thread_id))
+  const asked = [...new Map(messages
     .filter((m) => (m.type === 'question' || m.type === 'escalation') && m.id
-      && m.to_handle === 'run:' + (runId || m.run_id) && !answered.has(m.id))
-    .map((m) => {
+      && m.to_handle === 'run:' + (runId || m.run_id))
+    .map((m) => [m.id, m])).values()]
+    .map((m, order) => {
       let dispatch = String(m.from_handle || '').replace(/^dispatch:/, '')
       let text = String(m.body || '')
       try {
@@ -77,8 +82,22 @@ export function parseQuestions(stdout, runId) {
         dispatch = payload.dispatchId || dispatch
         text = payload.question || text
       } catch {}
-      return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '' }
+      const key = (keyOf && keyOf(m)) || dispatch || 'id:' + m.id
+      return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '', key, order, answered: answered.has(m.id) }
     })
+  const later = (a, b) => (a.at === b.at ? a.order > b.order : a.at > b.at)
+  const groups = new Map()
+  for (const q of asked) groups.set(q.key, [...(groups.get(q.key) || []), q])
+  const shown = []
+  for (const group of groups.values()) {
+    const last = group.filter((q) => q.answered).reduce((a, b) => (!a || later(b, a) ? b : a), null)
+    const open = group.filter((q) => !q.answered && (!last || later(q, last)))
+    if (open.length === 0) continue
+    const newest = open.reduce((a, b) => (later(b, a) ? b : a))
+    shown.push({ ...newest, repeats: open.length - 1 })
+  }
+  return shown.sort((a, b) => a.order - b.order)
+    .map(({ id, type, dispatch, text, at, repeats }) => ({ id, type, dispatch, text, at, repeats }))
 }
 
 function messageRows(stdout) {
@@ -103,7 +122,9 @@ function dispatchOf(m) {
 // 끝난 dispatch(worker-list 에서 dispatched 가 아닌 것)가 보낸 질문은 다른 경로로 처리됐으므로 세지 않는다.
 // 닫힌 dispatch 는 inbox 에 답변이 남지 않아 답해도 줄지 않는다. active 는 살아 있는 worker 의 {id, terminal} 목록이고, null 이면 거르지 않는다.
 // dispatch id 를 알 수 없는 질문은 발신 터미널 handle 이 살아 있는 worker 의 것일 때만 센다.
-// 전체 inbox 대신 Run 의 질문 후보와 살아 있는 발신자의 수신 기록만 읽는다.
+// 전체 inbox 대신 Run 의 질문 후보와 그 질문의 worker handle 만 읽는다.
+// 회신은 `dispatch:<그 worker 터미널의 지금 dispatch>` 로 가서 발신 터미널의 inbox 에 나오지 않는다(ADR-015).
+// 그래서 질문마다 발신자, payload 의 dispatch, 그 질문이 붙은 살아 있는 worker 의 dispatch 를 읽는다.
 export async function queryQuestions($, runId, active = null) {
   const history = messageRows(await run($, ['orca', 'orchestration', 'check', '--run', runId,
     '--all', '--types', 'question,escalation', '--json']))
@@ -116,29 +137,48 @@ export async function queryQuestions($, runId, active = null) {
     const dispatch = dispatchOf(m)
     return dispatch ? ids.has(dispatch) : terminals.has(m.from_handle)
   }
+  // 질문이 붙은 살아 있는 worker 의 id. 질문의 dispatch 가 살아 있으면 그것, 아니면 발신 터미널이 같은 worker 다
+  const workerOf = (m) => {
+    if (!active) return null
+    const dispatch = dispatchOf(m)
+    if (dispatch && ids.has(dispatch)) return dispatch
+    const worker = active.find((w) => w.terminal && w.terminal === m.from_handle)
+    return worker ? worker.id : null
+  }
   const candidates = [...new Map([...history, ...unread]
     .filter((m) => m.id && m.run_id === runId && m.to_handle === 'run:' + runId
       && (m.type === 'question' || m.type === 'escalation')
       && alive(m))
     .map((m) => [m.id, m])).values()]
+  const handlesOf = (m) => [...new Set([m.from_handle,
+    dispatchOf(m) && 'dispatch:' + dispatchOf(m),
+    workerOf(m) && 'dispatch:' + workerOf(m)].filter(Boolean))]
+  const threads = new Set(candidates.map((m) => m.id))
   const replies = []
-  // 같은 worker 의 질문은 한 번에 확인한다. 네 명씩 조회해 프로세스 수를 제한한다.
-  const senders = [...new Set(candidates.map((m) => m.from_handle))]
-  for (let i = 0; i < senders.length; i += 4) {
-    const batches = await Promise.all(senders.slice(i, i + 4).map(async (sender) => {
-      if (!sender) throw new Error('질문 발신자가 없어요')
+  const full = []
+  // 같은 handle 은 한 번만 읽는다. 네 개씩 조회해 프로세스 수를 제한한다.
+  const handles = [...new Set(candidates.flatMap((m) => {
+    const own = handlesOf(m)
+    if (own.length === 0) throw new Error('질문 발신자가 없어요')
+    return own
+  }))]
+  for (let i = 0; i < handles.length; i += 4) {
+    const batches = await Promise.all(handles.slice(i, i + 4).map(async (handle) => {
       const rows = messageRows(await run($, ['orca', 'orchestration', 'inbox',
-        '--terminal', sender, '--limit', String(REPLY_LIMIT), '--json']))
-      const own = candidates.filter((m) => m.from_handle === sender)
-      if (rows.length >= REPLY_LIMIT && parseQuestions(JSON.stringify({ messages: [...own, ...rows] }), runId).length) {
-        throw new Error('답변 기록 한도에 닿아 답변 여부를 확인할 수 없어요')
-      }
-      return rows.filter((m) => m.from_handle === 'run:' + runId)
+        '--terminal', handle, '--limit', String(REPLY_LIMIT), '--json']))
+      if (rows.length >= REPLY_LIMIT) full.push(handle)
+      return rows.filter((m) => threads.has(m.thread_id))
     }))
     replies.push(...batches.flat())
   }
+  // 한도에 닿은 handle 의 질문이라도 다른 handle 에서 온 회신으로 답한 것이 확인되면 오류가 아니다.
+  // 모든 회신을 합쳐도 미답변으로 남는 질문이 있을 때만 잘린 기록에 회신이 있을 수 있다고 본다.
+  const unsure = candidates.filter((m) => handlesOf(m).some((handle) => full.includes(handle)))
+  if (unsure.length && parseQuestions(JSON.stringify({ messages: [...unsure, ...replies] }), runId, workerOf).length) {
+    throw new Error('답변 기록 한도에 닿아 답변 여부를 확인할 수 없어요')
+  }
   return {
-    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId),
+    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId, workerOf),
     limited: history.length >= QUESTION_HISTORY_LIMIT || unread.length >= QUESTION_HISTORY_LIMIT,
   }
 }
@@ -370,11 +410,19 @@ export function checkSummary(pr) {
   return parts.join(' · ')
 }
 
+// decide 항목의 남은 결정 수. 항목마다 details 와 next 의 끝나지 않은 줄을 세고, 줄이 없는 항목은 1 로 센다(ADR-015)
+export function decideCount(items) {
+  return items.filter((item) => item.status === 'decide').reduce((sum, item) => {
+    const lines = [...normalizeLines(item.details), ...normalizeLines(item.next)].filter((line) => line.text.trim())
+    return sum + (lines.length === 0 ? 1 : lines.filter((line) => !line.done).length)
+  }, 0)
+}
+
 // 상태 줄 한 줄. 실제 상태와 수동 항목을 함께 센다.
 export function statusLine(items, state) {
   const count = (status) => items.filter((item) => item.status === status).length
   const parts = []
-  const decide = count('decide') + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
+  const decide = decideCount(items) + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
   if (state.errors && state.errors.questions) parts.push('결정 필요 확인 불가')
   else if (decide > 0 || state.questionsLimited) parts.push('결정 필요 ' + decide + (state.questionsLimited ? '(최근 질문 기준)' : ''))
   if (Array.isArray(state.workers)) parts.push('worker ' + state.workers.length)
@@ -621,7 +669,7 @@ export function register(on) {
       })
     }
 
-    // 결정 필요: worker 질문 수와 수동 decide 항목
+    // 결정 필요: worker 질문 수와 수동 decide 항목의 남은 줄
     const decideRows = items.filter((item) => item.status === 'decide')
     const asked = Array.isArray(live.questions) ? live.questions : []
     const questionView = (q) => {
@@ -637,7 +685,8 @@ export function register(on) {
             columnGap: 1,
             children: [
               Text({ color: 'red', children: ['◆'] }),
-              Text({ bold: true, wrap: 'wrap', children: [(q.type === 'escalation' ? '막힘 · ' : '질문 · ') + who] }),
+              Text({ bold: true, wrap: 'wrap', children: [(q.type === 'escalation' ? '막힘 · ' : '질문 · ') + who
+                + (q.repeats > 0 ? ' · 다시 보냄 ' + q.repeats : '')] }),
             ],
           }),
           ...(decision ? [
@@ -648,8 +697,8 @@ export function register(on) {
       })
     }
     const questionError = live.errors.questions
-    const decideView = decideRows.length + asked.length === 0 && !questionError && !live.questionsLimited ? [] : [box('live-decide', 'red',
-      questionError ? '결정 필요  확인 불가' : '결정 필요  ' + (decideRows.length + asked.length), [
+    const decideView = decideCount(decideRows) + asked.length === 0 && !questionError && !live.questionsLimited ? [] : [box('live-decide', 'red',
+      questionError ? '결정 필요  확인 불가' : '결정 필요  ' + (decideCount(decideRows) + asked.length), [
         ...(questionError ? [dim('qe', '읽지 못했어요: ' + questionError)] : []),
         ...(live.questionsLimited ? [dim('ql', '최근 질문 100건과 읽지 않은 질문 최대 100건 기준이에요. 더 오래된 미답변은 빠질 수 있어요.')] : []),
         ...asked.map(questionView),
