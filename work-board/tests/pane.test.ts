@@ -15,7 +15,7 @@ const PANE = {
   props: { title: '작업 현황', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
-async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD, commands = []) {
+async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD, commands = [], now = Date.parse('2026-10-22T10:05:00+09:00')) {
   on('command.register', (_, e) => {
     commands.push(e.name)
     return { value: { command: e.name } }
@@ -28,7 +28,7 @@ async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '
     : processResult(e.argv) }))
   on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
   on('fs.read', () => ({ value: board }))
-  on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
+  on('clock.now', () => ({ value: now }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
 
@@ -249,3 +249,33 @@ test('결정 형식이 없는 질문은 본문 앞부분을 그대로 보인다'
   expect(rest).toEqual([])
   await ui.unmount()
 })
+
+// 창을 연 뒤 s, q, d 는 포커스가 있을 때 hotkey 로 눌린다. 시험 환경의 ui.key 는 Client 전용이라
+// hotkey 경로를 직접 칠 수 없어, 상자 안 Button 이 hotkey 를 갖는지와 key 로 누른 동작을 확인한다.
+for (const [name, boardAt, liveAt] of [
+  ['실시간 조회가 늦음', '2026-10-22T10:00:00+09:00', Date.parse('2026-10-22T10:05:00+09:00')],
+  ['보드 파일이 늦음', '2026-10-22T10:10:00+09:00', Date.parse('2026-10-22T10:05:00+09:00')],
+  ['둘 다 없음', '', 0],
+] as const) {
+  test('머리 줄은 갱신 시각 하나와 단축키 상자를 보인다: ' + name, async ($, on) => {
+    const runId = 'run-visible-id-must-be-hidden'
+    await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
+      argv.includes('run-current') ? { run: { id: runId } }
+        : argv.includes('worker-list') ? { workers: [] } : { messages: [] },
+    }) }), JSON.stringify({ updatedAt: boardAt, items: [] }), [], liveAt)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const timestamp = Math.max(Date.parse(boardAt) || 0, liveAt)
+    const date = new Date(timestamp)
+    const label = timestamp
+      ? String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0') + ' 업데이트'
+      : '읽는 중'
+    expect(await ui.find({ type: 'Text', text: new RegExp('^' + label + '$') })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /run-visible-id-must-be-hidden|수동|자동|실제 상태/ })).toBeUndefined()
+    const shortcuts = await ui.find({ type: 'Box', key: 'shortcuts' })
+    expect(shortcuts.props.borderStyle).toBe('round')
+    expect(await ui.find({ type: 'Text', text: /^단축키$/ })).toBeTruthy()
+    const buttons = (shortcuts.children as Drawn[])[1].children as Drawn[]
+    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'q', 'd'])
+    await ui.unmount()
+  })
+}

@@ -726,43 +726,50 @@ export function register(on) {
     })
 
     const nothing = !board && live.workers === null && live.prs === null
+    const updatedAt = Math.max(live.at || 0, Date.parse(board?.updatedAt) || 0)
+    const updated = updatedAt ? new Date(updatedAt) : null
+    const updateLabel = updated
+      ? String(updated.getHours()).padStart(2, '0') + ':' + String(updated.getMinutes()).padStart(2, '0') + ' 업데이트'
+      : '읽는 중'
     return Box({
       flexDirection: 'column',
       gap: 1,
       children: [
         overallView,
+        dim('updated-at', updateLabel),
         Box({
-          flexDirection: 'row',
-          columnGap: 2,
+          key: 'shortcuts',
+          borderStyle: 'round',
+          padding: 1,
+          flexDirection: 'column',
           children: [
-            Text({ dimColor: true, children: [
-              '실제 상태 ' + (live.at ? ago(live.at) : '읽는 중') + (live.runId ? '  ·  ' + live.runId : '')
-                + (board ? '  ·  수동 ' + ago(board.updatedAt) : ''),
+            Text({ bold: true, children: ['단축키'] }),
+            Box({ flexDirection: 'row', columnGap: 2, children: [
+              Button({
+                key: 'start-today',
+                label: '오늘 시작',
+                hotkey: 's',
+                plain: true,
+                onPress: () => { fillCommand($, START_COMMAND) },
+              }),
+              Button({
+                key: 'ask-decisions',
+                label: '정할 것 묻기',
+                hotkey: 'q',
+                plain: true,
+                onPress: () => { fillCommand($, DECIDE_COMMAND) },
+              }),
+              Button({
+                key: 'toggle-done',
+                label: expanded ? '접기' : '단계와 완료 펼치기',
+                hotkey: 'd',
+                plain: true,
+                onPress: () => {
+                  expanded = !expanded
+                  $.ui.invalidate('ui.render')
+                },
+              }),
             ] }),
-            Button({
-              key: 'start-today',
-              label: '오늘 시작',
-              hotkey: 's',
-              plain: true,
-              onPress: () => { fillCommand($, START_COMMAND) },
-            }),
-            Button({
-              key: 'ask-decisions',
-              label: '정할 것 묻기',
-              hotkey: 'q',
-              plain: true,
-              onPress: () => { fillCommand($, DECIDE_COMMAND) },
-            }),
-            Button({
-              key: 'toggle-done',
-              label: expanded ? '접기' : '단계와 완료 펼치기',
-              hotkey: 'd',
-              plain: true,
-              onPress: () => {
-                expanded = !expanded
-                $.ui.invalidate('ui.render')
-              },
-            }),
           ],
         }),
         ...(board && board.error ? [Text({ color: 'red', wrap: 'wrap', children: ['board.json 을 읽지 못했어요: ' + board.error] })] : []),
