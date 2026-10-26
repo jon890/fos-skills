@@ -357,8 +357,8 @@ describe('session-resume', () => {
     assert.doesNotMatch(r.stdout, /^UNANSWERED /m)
   })
 
-  function loopJson(pid: number, aliveAt: string): void {
-    write(join(tmp, '.orch', 'state', 'loop.json'), JSON.stringify({ pid, run: 'r', repo: tmp, tick_sec: 300, started_at: aliveAt, alive_at: aliveAt, last_tick: null, ticks: 0, errors: {} }))
+  function loopJson(pid: number, aliveAt: string, fields: Record<string, unknown> = {}): void {
+    write(join(tmp, '.orch', 'state', 'loop.json'), JSON.stringify({ pid, run: 'r', repo: tmp, tick_sec: 300, started_at: aliveAt, alive_at: aliveAt, last_tick: null, ticks: 0, errors: {}, ...fields }))
   }
 
   test('죽은 pid 의 loop.json 이면 LOOP-DEAD 와 다시 띄울 명령을 내고 loop_alive 는 false 다', () => {
@@ -381,6 +381,23 @@ describe('session-resume', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile, RECEIVED: received } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.doesNotMatch(r.stdout, /LOOP-DEAD/)
+    assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, true)
+  })
+
+  test('Run 등록을 아는 살아 있는 루프에 이 Run 이 없으면 미등록 LOOP-DEAD 와 다시 등록할 명령을 내고 loop_alive 는 false 다', () => {
+    handler("import { readFileSync, writeFileSync } from 'node:fs'\nwriteFileSync(process.env.RECEIVED, readFileSync(0, 'utf8'))\n")
+    loopJson(process.pid, new Date().toISOString(), { run: 'other', runs: ['other'] })
+    write(join(tmp, '.orch', 'state', 'loop-runs', 'other.json'), JSON.stringify({ run: 'other', specs_dir: null, registered_at: '2026-01-01T00:00:00Z' }))
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile, RECEIVED: received } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = r.stdout.split('\n')
+    const at = out.indexOf(`LOOP-DEAD ${tmp} run r 미등록`)
+    assert.ok(at >= 0, r.stdout)
+    assert.equal(out[at + 1], `  node --disable-warning=ExperimentalWarning "${join(skill, 'scripts', 'orch-loop.ts')}" --repo ${tmp} --run r --start`)
+    assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, false)
+    write(join(tmp, '.orch', 'state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: '2026-01-02T00:00:00Z' }))
+    const joined = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile, RECEIVED: received } })
+    assert.doesNotMatch(joined.stdout, /LOOP-DEAD/)
     assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, true)
   })
 

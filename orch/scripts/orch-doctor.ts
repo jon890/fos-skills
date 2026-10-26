@@ -44,6 +44,8 @@
 // session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
 //                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다.
+//                 Run 등록을 아는 살아 있는 루프(loop.json 에 runs 가 있다)에 이 Run 이 등록되지 않았으면 그 루프는 이 Run 을 맡지 않는다.
+//                 false 로 보고 `LOOP-DEAD <repo> run <Run> 미등록` 줄과 같은 --start 명령을 낸다(wait-important 의 미등록 판정과 같다).
 //                 pid 가 살아 있는 루프 프로세스인데 alive_at 만 오래됐으면(loopStatus 의 recheck) lib/loop.ts 의 recheckMs 를
 //                 기다린 뒤 한 번 더 판정한다. 잠들었다 깬 macOS 에서 루프의 타이머가 아직 alive_at 을 쓰지 못했을 수 있다
 //     waiters     `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 나 `watch-questions` 와 Run id(낱말)가 든 것의 pid.
@@ -87,7 +89,7 @@ import { ConfigError, DEPRECATED_KEYS, loadConfig } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { loopStatus, recheckMs } from './lib/loop.ts'
+import { isRegistered, loopStatus, recheckMs } from './lib/loop.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
@@ -340,10 +342,12 @@ async function main(argv: string[]): Promise<number> {
     await sleep(recheckMs())
     loop = loopStatus(repo, Date.now())
   }
+  // 살아 있어도 이 Run 이 등록되지 않았으면 이 Run 에는 루프가 없다(머리 주석의 loop_alive)
+  const unregistered = loop?.alive === true && Array.isArray(loop.state.runs) && !isRegistered(repo, runId as string)
   const loopLines =
-    loop && !loop.alive
+    loop && (!loop.alive || unregistered)
       ? [
-          `LOOP-DEAD ${repo} ${loop.reason}`,
+          loop.alive ? `LOOP-DEAD ${repo} run ${runId} 미등록` : `LOOP-DEAD ${repo} ${loop.reason}`,
           `  node --disable-warning=ExperimentalWarning "${join(skillDir, 'scripts', 'orch-loop.ts')}" --repo ${shQuote(repo)} --run ${shQuote(runId as string)} --start`,
         ]
       : []
@@ -353,7 +357,7 @@ async function main(argv: string[]): Promise<number> {
     try {
       await fire(
         'session-resume',
-        { loop_alive: loop?.alive ?? false, waiters: waiterPids(runId), unanswered: questions.pending },
+        { loop_alive: (loop?.alive ?? false) && !unregistered, waiters: waiterPids(runId), unanswered: questions.pending },
         { repo, base: defaultBase(repo) ?? '', run: runId },
       )
     } catch (e) {

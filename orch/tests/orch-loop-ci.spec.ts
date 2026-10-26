@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -18,7 +18,7 @@ const RULES_PATH = 'repos/o/r/rules/branches/main'
 const HEAD_A = 'a'.repeat(40)
 const HEAD_B = 'b'.repeat(40)
 
-// 질문 조회와 worker-list 에 답하는 가짜 orca. worker-list 는 orca.json 의 workers 를 낸다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
+// 질문 조회와 worker-list 에 답하는 가짜 orca. worker-list 는 orca.json 의 workers 를 낸다. workers_by_run 이 있으면 --run 의 Run 의 목록이다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
 const dir = process.env.FAKE_DIR
@@ -27,7 +27,8 @@ fs.appendFileSync(dir + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const st = JSON.parse(fs.readFileSync(dir + '/orca.json', 'utf8'))
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const sub = argv[1]
-if (sub === 'worker-list') reply({ workers: st.workers || [], page: {} })
+const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
+if (sub === 'worker-list') reply({ workers: (st.workers_by_run && run ? st.workers_by_run[run] : st.workers) || [], page: {} })
 else if (sub === 'check' || sub === 'inbox') reply({ messages: [] })
 else reply({})
 `
@@ -182,8 +183,11 @@ function jsonl(file: string): Json[] {
     : []
 }
 
+// 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
-  return jsonl(orchFile('state', 'loop-events.jsonl'))
+  const dir = orchFile('state', 'loop-events')
+  const perRun = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().flatMap((name) => jsonl(join(dir, name))) : []
+  return [...jsonl(orchFile('state', 'loop-events.jsonl')), ...perRun]
 }
 
 function received(event: string): Json[] {
@@ -213,6 +217,27 @@ function worker(number: number, status: string): string {
   )
   return path
 }
+
+describe('여러 Run', () => {
+  test('실패한 PR 의 worker 를 띄운 Run 이 주 Run 이 아니면 그 Run 으로 보내고 CI-FAILED 는 그 Run 의 알림 파일에만 쓴다', () => {
+    const path = worker(1, 'running')
+    const row = { resource: { worktreeId: `wt::${path}` }, dispatchId: 'd1', dispatchStatus: 'running', taskId: 't1' }
+    writeFileSync(join(tmp, 'orca.json'), JSON.stringify({ workers_by_run: { r: [], B: [row] } }))
+    mkdirSync(orchFile('state', 'loop-runs'), { recursive: true })
+    writeFileSync(orchFile('state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: '2026-01-01T00:00:00Z' }))
+    writeFileSync(orchFile('state', 'loop-runs', 'B.json'), JSON.stringify({ run: 'B', specs_dir: null, registered_at: '2026-01-02T00:00:00Z' }))
+    github([pr(1, [check('test', 'FAILURE')])])
+    // 새로 뜬 루프는 앞 루프의 등록을 지우므로 등록된 Run 을 맡는 틱 자식을 바로 돌린다
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8', timeout: 60_000 })
+    assert.equal(done.status, 0, done.stdout + done.stderr)
+    const [argv] = sends()
+    assert.deepEqual(argv.slice(0, 2), ['--dispatch', 'd1'])
+    assert.deepEqual(argv.slice(4), ['--run', 'B'])
+    assert.deepEqual(jsonl(orchFile('state', 'loop-events', 'B.jsonl')).map((line) => line.text), ['test: 보냈다 d1'])
+    assert.equal(existsSync(orchFile('state', 'loop-events', 'r.jsonl')), false)
+    assert.equal(received('ci-failed')[0].run, 'B')
+  })
+})
 
 describe('알림 한 번', () => {
   test('같은 HEAD 의 실패를 두 틱 연속 보면 ci-failed 와 CI-FAILED 는 한 번이다', () => {

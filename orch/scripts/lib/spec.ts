@@ -125,6 +125,19 @@ export function liveSpecPaths(run: string | null): Set<string> | null {
   return paths
 }
 
+// 그 Run 의 Task 가 쓴 지시서의 실경로 집합. 상태와 상관없이 그 Run 의 모든 Task 를 본다. 조회가 실패하면 null 이다.
+// handoff-cleanup --run 이 그 Run 의 지시서만 옮기는 데 쓴다(ADR-012).
+export function runSpecPaths(run: string): Set<string> | null {
+  const tasks = readAll(['orchestration', 'task-list', '--run', run], 'tasks')
+  if (tasks === null) return null
+  const paths = new Set<string>()
+  for (const task of tasks.rows) {
+    const spec = typeof task.spec === 'string' ? task.spec : ''
+    for (const m of spec.matchAll(SPEC_PATH)) paths.add(realPath(m[1]))
+  }
+  return paths
+}
+
 // cleanup-sweep 의 이름 규칙으로 지울 후보를 낸다. 파일이 있는지 보지 않는다.
 //   specs     <specsDir>/<name>.md, <specsDir>/spec-<name>.md
 //   prBodies  <specsDir 의 부모>/pr-<후보>.md. 후보는 name, branch 의 / 를 모두 - 로 바꾼 것,

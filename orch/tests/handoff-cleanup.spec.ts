@@ -31,12 +31,15 @@ fs.appendFileSync(process.env.FAKE_GIT_LOG, args.join(' ') + '\\n')
 if (args[0] === 'ls-remote' && process.env.FAKE_LS_REMOTE_CODE) process.exit(Number(process.env.FAKE_LS_REMOTE_CODE))
 process.exit(spawnSync('git', args, { stdio: 'inherit' }).status ?? 1)
 `
-// 살아 있는 Task 는 FAKE_TASKS(JSON 목록)다. FAKE_ORCA_FAILS=1 이면 실패한다
+// 살아 있는 Task 는 FAKE_TASKS(JSON 목록)다. FAKE_RUN_TASKS(Run 에서 Task 목록)가 있으면 task-list --run <Run> 은 그 Run 의 목록이다.
+// FAKE_ORCA_FAILS=1 이면 실패한다
 const FAKE_ORCA = `const fs = require('node:fs')
 if (process.env.FAKE_ORCA_FAILS === '1') process.exit(1)
 const args = process.argv.slice(2)
 const say = (value) => fs.writeSync(1, JSON.stringify({ ok: true, result: value }) + '\\n')
-if (args.includes('task-list')) say({ tasks: JSON.parse(process.env.FAKE_TASKS || '[]') })
+const run = args.includes('--run') ? args[args.indexOf('--run') + 1] : null
+if (args.includes('task-list') && run && process.env.FAKE_RUN_TASKS) say({ tasks: JSON.parse(process.env.FAKE_RUN_TASKS)[run] || [] })
+else if (args.includes('task-list')) say({ tasks: JSON.parse(process.env.FAKE_TASKS || '[]') })
 else say({ workers: [], scope: { source: 'all' } })
 `
 
@@ -77,7 +80,7 @@ beforeEach(() => {
     GH: join(bindir, 'gh'),
     ORCA: join(bindir, 'orca'),
   }
-  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS', 'FAKE_LS_REMOTE_CODE']) delete env[key]
+  for (const key of ['ORCH_DIR', 'GH_HOST', 'GIT', 'FAKE_OPEN', 'FAKE_TASKS', 'FAKE_RUN_TASKS', 'FAKE_GH_FAILS', 'FAKE_ORCA_FAILS', 'FAKE_LS_REMOTE_CODE']) delete env[key]
   const origin = join(tmp, 'origin.git')
   repo = join(tmp, 'repo')
   sh('git', 'init', '-q', '--bare', '-b', 'main', origin)
@@ -433,5 +436,58 @@ describe('handoff-cleanup', () => {
     assert.equal(done.status, 0, done.stderr)
     assert.match(done.stderr, /DEPRECATED/)
     assert.match(done.stdout, /^후보 \.orch\/queue\/q\.out$/m)
+  })
+
+  describe('Run 범위', () => {
+    // Run 마다 Task 하나가 지시서 하나를 쓴다. 두 지시서 모두 끝난 일의 것이다
+    function twoRuns(): { mine: string; theirs: string; runTasks: string } {
+      const mine = make('.orch/specs/spec-mine.md', spec('feat/mine', 'item-done'))
+      const theirs = make('.orch/specs/spec-theirs.md', spec('feat/theirs', 'item-done'))
+      const task = (id: string, path: string) => ({ id, status: 'completed', spec: `지시서 ${path} 를 끝까지 읽고 수행한다` })
+      const runTasks = JSON.stringify({ A: [task('t1', mine)], B: [task('t2', theirs)] })
+      return { mine, theirs, runTasks }
+    }
+
+    test('--run A 는 A 의 Task 가 쓴 지시서와 그 PR 본문만 옮기고, B 의 지시서는 까닭과 함께 남긴다', () => {
+      const { mine, theirs, runTasks } = twoRuns()
+      const body = make('.orch/pr-feat-mine.md', '본문\n')
+      const otherBody = make('.orch/pr-feat-theirs.md', '본문\n')
+      const r = ok(['--apply', '--run', 'A'], { FAKE_RUN_TASKS: runTasks })
+      assert.equal(existsSync(mine), false)
+      assert.equal(existsSync(body), false)
+      assert.equal(existsSync(join(trash, '.orch/specs/spec-mine.md')), true)
+      assert.equal(existsSync(join(trash, '.orch/pr-feat-mine.md')), true)
+      assert.equal(existsSync(theirs), true)
+      assert.equal(existsSync(otherBody), true)
+      assert.ok(r.stderr.includes(`지시서를 남긴다 ${theirs}: Run A 의 Task 가 쓴 지시서가 아니다`), r.stderr)
+      assert.doesNotMatch(r.stderr, /경고: --run 이 없어/)
+    })
+
+    test('--run 이면 큐 로그, 폴더, csv 는 옮기지 않고 남긴다 줄을 낸다', () => {
+      const log = make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+      const folder = make('.orch/old-handoff', null, 9)
+      const csv = make('.orch/raw.csv', 'a,b\n', 2)
+      const r = ok(['--apply', '--run', 'A'], { FAKE_RUN_TASKS: '{}' })
+      for (const target of [log, folder, csv]) assert.equal(existsSync(target), true, target)
+      for (const rel of ['.orch/queue/q.out', '.orch/old-handoff', '.orch/raw.csv']) {
+        assert.ok(r.stderr.includes(`남긴다 ${rel}: --run 을 주면 그 Run 의 지시서와 PR 본문만 옮긴다`), r.stderr)
+      }
+      assert.doesNotMatch(r.stdout, /^옮김/m)
+    })
+
+    test('Run 의 Task 목록을 읽지 못하면 지시서를 옮기지 않는다', () => {
+      const { mine } = twoRuns()
+      const r = ok(['--apply', '--run', 'A'], { FAKE_ORCA_FAILS: '1' })
+      assert.equal(existsSync(mine), true)
+      assert.match(r.stderr, /Run A 의 Task 목록을 읽지 못해 지시서는 옮기지 않는다/)
+    })
+
+    test('--run 이 없으면 저장소 전체를 보고 경고 한 줄을 낸다', () => {
+      const { mine, theirs } = twoRuns()
+      const r = ok(['--apply'])
+      assert.equal(existsSync(mine), false)
+      assert.equal(existsSync(theirs), false)
+      assert.equal(r.stderr.split('\n').filter((line) => line.startsWith('경고: --run 이 없어 저장소 전체를 본다')).length, 1, r.stderr)
+    })
   })
 })
