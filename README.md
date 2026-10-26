@@ -38,7 +38,7 @@
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려간다.
 이 플러그인은 `bin/` 을 두지 않아 `browser-driver` 를 PATH 명령으로 싣지 않는다. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 가 소유한다.
 
-`work-board/` 는 스킬이 아니라 작업 현황 창 `/board` 를 그리는 mod 다.
+`work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 다. 창 버튼이 채우는 스킬 `board-start`, `board-decide` 도 여기 둔다.
 orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있다. 동작은 [`work-board/README.md`](work-board/README.md) 가 소유한다.
 
 `scripts/` 에는 이 저장소를 관리하는 명령과, 어느 스킬도 소유하지 않는 검사기를 둔다.

@@ -30,6 +30,7 @@ const SECTIONS = [
 let board = null
 let boardPath = ''
 let raw = ''
+let now = 0
 let expanded = false // d: 항목의 모든 단계와 완료 칸을 펼친다
 
 // 실제 상태. 읽지 못한 원천은 error 에 이유를 남기고 나머지는 그린다.
@@ -422,6 +423,7 @@ async function boardRoot($) {
 }
 
 async function loadFile($) {
+  now = await $.clock.now()
   let found = ''
   let text = ''
   const root = await boardRoot($)
@@ -491,34 +493,27 @@ async function loadLive($) {
   refreshStatus($)
 }
 
-// ---- 훅 ----
-
-// 「오늘 시작」 이 코디네이터에게 보내는 요청. 하루 작업을 시작할 때 쓴다.
-export const START_PROMPT = [
-  '오늘 작업을 시작하자.',
-  '1. .omc/board.json 을 오늘 기준으로 갱신하고 완료(done) 항목은 비운다.',
-  '2. 현재 저장소의 남은 워크트리, 세션, 머지된 브랜치를 그 저장소 .orch/overlay.md 의 정리 규칙대로 정리한다.',
-  '3. orchestration 감시(orch-watch)가 꺼져 있으면 다시 띄우고, 쌓인 worker 보고를 처리한다.',
-  '4. 열린 PR 의 CI 와 리뷰 상태, 막힌 것, 내가 정해야 할 것을 짧게 정리해 보고하고, 정할 것은 바로 물어본다.',
-].join('\n')
-
-function startToday($) {
-  void $.prompt.submit({ text: START_PROMPT })
-  $.ui.toast('오늘 시작 요청을 보냈어요')
+function ago(at) {
+  const time = typeof at === 'number' ? at : Date.parse(at || '')
+  if (!time) return '-'
+  const minutes = Math.max(0, Math.round((now - time) / 60000))
+  if (minutes < 1) return '방금'
+  if (minutes < 60) return minutes + '분 전'
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return hours + '시간 전'
+  return Math.floor(hours / 24) + '일 전'
 }
 
-export const DECIDE_PROMPT = [
-  '지금 정할 것을 모아 정리하고 물어봐 줘.',
-  '1. 보드의 결정 필요(decide) 항목, 「나중에 정할 것」 같은 모음 항목의 줄, 답하지 않은 worker 질문, 이번 대화에서 정하기로 미뤄 둔 것을 모은다.',
-  '2. 이미 정해졌거나 지금 정할 수 없는 것(외부 답 대기)은 빼고, 뺀 이유를 한 줄씩 적는다.',
-  '3. 항목마다 배경, 선택지, 권장안과 그 이유, 고르면 바뀌는 것을 짧게 정리해 먼저 보여 준다.',
-  '4. 그다음 AskUserQuestion 으로 한 번에 4개까지 묻고, 남으면 이어서 묻는다. 권장안을 첫 선택지로 두고 「(Recommended)」 를 붙인다.',
-  '5. 답을 받으면 보드 항목을 갱신하고, 답을 기다리는 worker 가 있으면 전달한다.',
-].join('\n')
+// ---- 훅 ----
 
-function askDecisions($) {
-  void $.prompt.submit({ text: DECIDE_PROMPT })
-  $.ui.toast('정할 것 묻기 요청을 보냈어요')
+// 「오늘 시작」, 「정할 것 묻기」 는 요청문을 보내지 않고 입력란에 스킬 명령을 채운다.
+// 요청문은 각 스킬의 SKILL.md 가 소유한다. 명령 이름은 플러그인 접두가 붙은 스킬 이름이다.
+export const START_COMMAND = '/fos-skills:board-start'
+export const DECIDE_COMMAND = '/fos-skills:board-decide'
+
+function fillCommand($, text) {
+  void $.prompt.fill({ text })
+  $.ui.toast('입력란에 ' + text + ' 를 채웠어요. Enter 를 누르면 보내요')
 }
 
 export function register(on) {
@@ -528,8 +523,6 @@ export function register(on) {
     $.clock.every(LIVE_MS, () => loadLive($))
     loadLive($)
     await $.command.register({ name: 'board', description: '작업 현황 창 열기', immediate: true })
-    await $.command.register({ name: 'board-start', description: '오늘 작업 시작 요청 보내기(board 갱신, 정리, 보고)', immediate: true })
-    await $.command.register({ name: 'board-decide', description: '정할 것을 모아 질문하도록 요청 보내기', immediate: true })
     return next(e)
   })
 
@@ -538,16 +531,6 @@ export function register(on) {
     loadLive($)
     await $.ui.open({ id: PANE, title: '작업 현황', closeOnEscape: true })
     return {}
-  })
-
-  on('command.run', { command: 'board-start' }, async ($) => {
-    // 명령 훅에서는 prompt.submit 대신 요청 본문을 반환한다.
-    return { text: START_PROMPT }
-  })
-
-  on('command.run', { command: 'board-decide' }, async () => {
-    // 명령 훅 안에서 prompt.submit 을 호출하면 현재 명령의 turn 을 기다리며 막힌다.
-    return { text: DECIDE_PROMPT }
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
@@ -767,14 +750,14 @@ export function register(on) {
                 label: '오늘 시작',
                 hotkey: 's',
                 plain: true,
-                onPress: () => { startToday($) },
+                onPress: () => { fillCommand($, START_COMMAND) },
               }),
               Button({
                 key: 'ask-decisions',
                 label: '정할 것 묻기',
                 hotkey: 'q',
                 plain: true,
-                onPress: () => { askDecisions($) },
+                onPress: () => { fillCommand($, DECIDE_COMMAND) },
               }),
               Button({
                 key: 'toggle-done',
