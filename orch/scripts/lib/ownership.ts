@@ -7,7 +7,8 @@
 // 끝난 dispatch 의 터미널은 `worker-list` 의 `resource` 로 아래처럼 나뉜다.
 //
 //     owned, 이유 없음                      PR 이 MERGED 면 터미널을 닫고 dispatch 를 release 한다
-//     user_owned / user_takeover            `남김: 사용자 보유 터미널` (cleanup-sweep 의 --close-own-taken-over 를 켠 때만 예외)
+//     user_owned / user_takeover            `남김: 사용자 보유 터미널` (예외: cleanup-sweep 이 launch-worker 의 기록으로 코디네이터가
+//                                           띄운 끝난 터미널로 가린 것, --close-own-taken-over 를 켠 때. 둘 다 호출자가 ignore 로 넘긴다)
 //     released                              `남김: 사용자 보유 터미널`
 //     external / external_terminal          소유 상태가 owned 가 아니라 `터미널 소유 상태 조회 실패` 로 남긴다
 //     owned / identity_unproven             owned 라 막지 않는다. Orca 의 release 는 닫지 않으므로 sweep 이 경로로 찾아 닫는다

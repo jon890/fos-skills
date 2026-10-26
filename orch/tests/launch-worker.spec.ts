@@ -372,6 +372,43 @@ describe('띄우기', () => {
     assert.match(r.stdout, /ctx_1 단계: agent_starting/)
   })
 
+  describe('띄운 worker 의 기록', () => {
+    const recordOf = (dispatch: string) => join(worktree, '.orch/state/launched-workers', `${dispatch}.json`)
+
+    test('LAUNCHED 뒤 dispatch, 터미널, 워크트리를 상태 폴더에 남긴다', () => {
+      state({
+        next_ids: ['ctx_1'],
+        dispatches: { ctx_1: { ...shown('input_accepted'), worker: { agentTerminalHandle: 'term_w' } } },
+      })
+      const r = launch(['--worktree', worktree, '--run', 'run_a', '--', '--agent', 'claude'])
+      assert.equal(r.code, 0, both(r))
+      assert.deepEqual(JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8')), { dispatch: 'ctx_1', terminal: 'term_w', worktree, run: 'run_a' })
+    })
+
+    test('다시 띄우면 새 dispatch 의 기록이 생긴다', () => {
+      state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
+      const r = launch(['--worktree', worktree, '--watch', '3', '--', '--agent', 'claude'])
+      assert.equal(r.code, 0, both(r))
+      assert.ok(existsSync(recordOf('ctx_2')))
+    })
+
+    test('--terminal 이어 쓰기는 그 터미널을 기록한다', () => {
+      state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+      const r = launch(['--worktree', worktree, '--', '--terminal', 'term_old'])
+      assert.equal(r.code, 0, both(r))
+      assert.equal(JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8')).terminal, 'term_old')
+    })
+
+    test('기록하지 못해도 LAUNCHED 와 종료 코드는 그대로다', () => {
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+      writeFileSync(join(worktree, '.orch'), '폴더가 아니라 파일이다')
+      const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stdout, /LAUNCHED ctx_1/)
+      assert.match(r.stderr, /띄운 worker 를 기록하지 못했다/)
+    })
+  })
+
   test('실패한 worker-start 는 다시 띄우지 않는다', () => {
     state({ start_fails: true })
     const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
