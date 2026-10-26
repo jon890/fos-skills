@@ -35,8 +35,9 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 // 1. `중간 과정:` 줄이 있으면 done, decide, goal 이 아닌 항목 가운데 pr 칸에 그 PR 이 든 항목을, 없으면 같은 브랜치나 워크트리의 항목을 찾는다.
 //    찾은 항목 하나에 `중간 과정: <지시서 제목>` 줄 하나만 바꿔 두고 status, 제목, pr 은 그대로 둔다. 없거나 둘 이상이면 보드를 쓰지 않고 Error 다
 // 2. `보드 항목 id:` 로 정한 항목이 done 이면 다시 연다. 지난 줄은 완료로 두고(남은 일 줄과 중간 과정 줄은 뺀다) 지시서 할 일을 다음 번호부터 붙인다.
-//    pr 칸의 머지된 PR 은 merged-pr 의 맨 앞으로 옮긴다. board-sync 가 merged-pr 의 첫 번호만 보고 다시 연결하지 않는다
-// 3. 그 밖에는 지시서의 id, 같은 워크트리나 브랜치의 끝나지 않은 항목, --name, 워크트리 이름 순으로 항목을 정해 doing 으로 둔다
+//    pr 칸의 머지된 PR 은 merged-pr 의 맨 앞으로 옮긴다. board-sync 가 merged-pr 의 첫 번호만 보고 다시 연결하지 않는다. 제목은 바꾸지 않는다
+// 3. 그 밖에는 지시서의 id, 같은 워크트리나 브랜치의 끝나지 않은 항목, --name, 워크트리 이름 순으로 항목을 정한다.
+//    항목이 이미 있으면 제목과 단계는 그대로 두고 워크트리와 브랜치만 바꿔 doing 으로 둔다. 새 항목만 지시서 머리줄과 할 일로 만든다
 export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string): void {
   const file = boardPath(repo)
   if (!existsSync(file)) return
@@ -84,19 +85,23 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
     const numbers = [...old.map((d) => d.text), ...lines(item.next).map(plain)].map((text) => Number(/^(\d+)[.)]?\s/.exec(text)?.[1] ?? 0))
     let last = Math.max(0, ...numbers)
     const added = steps.map((step) => step.replace(/^\d+/, () => String(++last)))
-    // progress 칸에 옛 값(3/3)이 남아 있으면 단계 수보다 앞서 진행률이 100% 로 남아 지운다
-    const args = ['set', id, 'doing', '--title', title, '--worktree', basename(worktree), ...branchArgs, '--progress', 'auto']
+    // progress 칸에 옛 값(3/3)이 남아 있으면 단계 수보다 앞서 진행률이 100% 로 남아 지운다.
+    // 제목은 사용자가 정한 마일스톤이라 이어 띄운 지시서의 머리줄로 바꾸지 않는다
+    const args = ['set', id, 'doing', '--worktree', basename(worktree), ...branchArgs, '--progress', 'auto']
     const merged = [...prNumbers(item.pr)]
     if (merged.length) args.push('--pr', '', '--merged-pr', [...new Set([...merged, ...prNumbers(item['merged-pr'])])].join(', '))
     return write([...args, ...detailArgs([...old, ...added])])
   }
-  // 이어 쓰는 항목은 처음 지시서의 제목을 그대로 둔다
-  const args = ['set', id, 'doing', ...(same ? [] : ['--title', title]), '--worktree', basename(worktree), '--branch', branch]
+  // 이미 있는 끝나지 않은 항목은 제목과 단계를 그대로 두고 worker 의 워크트리와 브랜치만 바꾼다.
+  // 이어 띄운 지시서(충돌 풀기, CI 고침)의 머리줄과 할 일이 마일스톤 제목과 단계를 덮지 않게 한다.
+  // 단계도 progress 도 없는 항목을 doing 으로 두면 board.ts 가 거절해 status 도 그대로 둔다
   if (item) {
     const known = run(scriptCommand(bin, ['steps', id, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (known.code !== 0) throw new Error(known.stderr || '단계 목록을 읽지 못했다')
-    if (JSON.parse(known.stdout).length) return write(args)
+    const ready = JSON.parse(known.stdout).length > 0 || /^\s*\d+\s*\/\s*\d+\s*$/.test(String(item.progress ?? ''))
+    return write(['set', id, ...(ready ? ['doing'] : []), '--worktree', basename(worktree), ...branchArgs])
   }
+  const args = ['set', id, 'doing', '--title', title, '--worktree', basename(worktree), '--branch', branch]
   for (const step of steps) args.push('--detail', step)
   write(args)
   function write(args: string[]): void {

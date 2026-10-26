@@ -707,6 +707,40 @@ test('지시서에 항목 id 가 없으면 같은 워크트리의 끝나지 않�
   assert.equal(items[1].title, '처음 일')
 })
 
+test('보드 항목 id 가 가리키는 끝나지 않은 항목은 제목과 단계를 그대로 두고 워크트리와 브랜치만 바꾼다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  const milestone = { id: 'chart', title: '차트 코드별 분리', status: 'doing', worktree: 'old-wt', details: [{ text: '1. 구현', done: true }, { text: '2. 머지', done: false }] }
+  writeFileSync(file, JSON.stringify({ items: [milestone] }))
+  writeFileSync(spec, '# PR #9 를 develop 과 합친다\n허락: push\n보드 항목 id: chart\n\n## 할 일\n1. develop 합치기\n2. push\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+  const items = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.equal(items.length, 1)
+  assert.equal(items[0].title, '차트 코드별 분리')
+  assert.equal(items[0].status, 'doing')
+  assert.equal(items[0].worktree, 'wt')
+  assert.deepEqual(items[0].details, milestone.details)
+})
+
+test('단계도 진행률도 없는 기존 항목은 단계를 더하지 않고 status 도 그대로 둔다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ items: [{ id: 'later', title: '나중 일', status: 'wait' }] }))
+  writeFileSync(spec, '# 다른 제목\n허락: push\n보드 항목 id: later\n\n## 할 일\n1. 구현\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+  const [item] = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.equal(item.title, '나중 일')
+  assert.equal(item.status, 'wait')
+  assert.equal(item.worktree, 'wt')
+  assert.equal('details' in item, false, JSON.stringify(item))
+})
+
 describe('중간 과정과 다시 열기', () => {
   type Item = Record<string, unknown> & { id: string }
   let file: string
@@ -818,7 +852,8 @@ describe('중간 과정과 다시 열기', () => {
     assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
     const [item] = items()
     assert.equal(item.status, 'doing')
-    assert.equal(item.title, '후속 기능')
+    // 제목은 마일스톤이라 다시 연 지시서의 머리줄로 바꾸지 않는다
+    assert.equal(item.title, '옛 제목')
     assert.equal(item.worktree, 'wt')
     assert.equal(item.branch, 'feat/a')
     assert.deepEqual(item.details, [
