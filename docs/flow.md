@@ -325,21 +325,26 @@ worker 는 마이그레이션 파일을 만들기 전에 `reserve-migration.ts` 
 
 ```mermaid
 flowchart TD
-    W[worker: reserve-migration --module --name] --> L[예약 잠금 잡기]
-    L -->|10초 안에 못 잡음| F[LOCK-TIMEOUT, 종료 코드 4]
-    L --> P[정리: PR 이 MERGED, CLOSED 이거나 브랜치가 없는 예약 지움]
+    W[worker: reserve-migration --module --name] --> Q[잠금 밖: 정리 판정, base 최고, 열린 PR 조회]
+    Q -->|base 나 열린 PR 을 읽지 못함| E[LOOKUP-FAIL, 종료 코드 1, 예약하지 않음]
+    Q --> L[예약 잠금 잡기]
+    L -->|못 잡음| F[LOCK-TIMEOUT, 종료 코드 4]
+    L --> P[예약을 다시 읽고 정리 판정 적용]
     P --> S{같은 브랜치, 모듈, 설명의 예약}
-    S -->|있고 --again 없음| R[그 예약을 돌려줌]
-    S -->|없거나 --again| N[base 최고, 다른 열린 PR, 다른 브랜치 예약의 최대 첫 자리 + 1]
+    S -->|있고 --again 없고 번호가 아직 유효| R[그 예약을 돌려줌 reused]
+    S -->|없거나 --again| N[base 최고, 열린 PR, 남은 예약의 최대 첫 자리 + 1]
+    S -->|있지만 base 이하가 됐거나 겹침| N2[새 번호 renewed]
     N --> WR[예약 파일에 쓰고 잠금 풂]
+    N2 --> WR
     R --> O[RESERVED 모듈 V번호 경로]
     WR --> O
-    N -->|base 나 열린 PR 을 읽지 못함| E[LOOKUP-FAIL, 종료 코드 1, 예약하지 않음]
 ```
 
 | 상황 | 동작 |
 | --- | --- |
 | 두 worker 가 같은 모듈을 동시에 예약한다 | 잠금이 한 번에 하나만 들여보내 서로 다른 번호를 받는다 |
-| 예약한 브랜치가 PR 을 열기 전에 버려졌다 | 브랜치가 원격과 로컬에서 사라진 뒤 다음 예약 호출이 지운다. 그때까지 같은 모듈의 높은 번호 PR 은 자동 머지에서 기다린다 |
+| 예약한 브랜치가 PR 을 열기 전에 버려졌다 | 브랜치가 원격과 로컬에서 사라진 뒤 다음 예약 호출이나 `--prune` 이 지운다. 그때까지 같은 모듈의 높은 번호 PR 은 자동 머지에서 기다린다 |
+| 브랜치 이름을 다시 썼다 | 예약 시각 뒤에 머지되거나 닫힌 PR 만 세어, 옛 PR 때문에 새 예약을 지우지 않는다 |
+| 정리 조회(gh, ls-remote)가 실패했다 | 그 예약을 남긴다. 지우면 같은 번호가 다시 나간다 |
 | 낮은 번호 PR 이 오래 막혀 높은 번호 PR 이 기다린다 | `MIGRATION-BLOCKED` 를 받은 코디네이터가 막는 쪽 worker 에게 `--again` 으로 다시 받게 한다. 루프는 파일 이름을 바꾸지 않는다 |
 

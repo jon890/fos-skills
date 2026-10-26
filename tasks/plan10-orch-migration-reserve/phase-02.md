@@ -40,14 +40,17 @@
 - `addedMigrations` 가 `lib/reservations.ts` 의 `addedPaths` 로 파일을 고르게 바꾼다.
 - `migrationContext` 가 `readReservations(ctx.repo)` 도 읽어 base 마다 돌려준다. 실패하면 `ok: false` 와 이유 `마이그레이션 예약을 읽지 못했다: <이유>`.
   예약을 base 에 묶을 수 없으므로 모든 base 에 같은 예약을 쓴다.
-- 「4. 마이그레이션 겹침」 블록에서 PR 마다 `reserved` 를 만든다. 그 PR 의 브랜치(`c.pr.branch`) 것을 빼고, 그 예약의 브랜치가 연 열린 PR 이 같은 (모듈, 번호)를 더한 것도 뺀다. 열린 PR 의 브랜치는 `migrationContext` 가 읽는 `gh pr list` 에 `headRefName` 을 더해 얻는다.
+- `migrationContext` 의 `gh pr list` 필드를 `number,headRefName,baseRefName,files`(이 순서) 로 바꾸고, 모든 base 의 열린 PR 에서 `headRefName` → (모듈, 번호) 집합 지도 `openByBranch` 를 만들어 함께 돌려준다. 예약은 모든 base 에 쓰므로 이 지도도 base 를 가리지 않는다.
+- 「4. 마이그레이션 겹침」 블록에서 PR 마다 `reserved` 를 만든다. 그 PR 의 브랜치(`c.pr.branch`) 것을 빼고, `openByBranch.get(예약의 branch)` 에 같은 (모듈, 번호)가 있는 예약도 뺀다. 예약한 브랜치가 PR 을 열면 그 PR 의 파일로 이미 세기 때문이다.
 - `waitsFor` 는 `pr` 이 null 인 항목을 늘 기다릴 대상으로 본다.
-- `MIGRATION-BLOCKED` 의 text 를 바꾼다. 막는 쪽이 PR 이면 `#<pr> <label>`, 예약이면 `<branch> 의 예약 <label>` 로 쓰고, 끝을 `막는 쪽 worker 가 reserve-migration.ts --again 으로 번호를 다시 받는다` 로 바꾼다. `AUTO-MERGE-WAIT` 로그 줄도 같은 이름 규칙을 쓴다.
+- `MIGRATION-BLOCKED` 의 text 를 바꾼다. 막는 쪽이 PR 이면 `#<pr> <label>`, 예약이면 `<branch> 의 예약 <label>` 로 쓰고, 끝을 `막는 쪽 worker 가 reserve-migration.ts --again 으로 번호를 다시 받는다. 막는 브랜치를 버렸으면 지운 뒤 reserve-migration.ts --prune` 으로 바꾼다. `AUTO-MERGE-WAIT` 로그 줄도 같은 이름 규칙을 쓴다.
 - 머리 주석 「자동 머지」 에 예약을 읽는 것과 새 text 를 적는다.
 
 ### 3. 테스트
 
 - `orch/tests/lib-auto-merge.spec.ts` 의 `judgeMigrations`: base 최고 V2, 다른 브랜치 예약 V3, 이 PR V4 면 `lower` 에 `{pr: null, branch: 'feat/x', label: 'V3'}`. 예약 V4 와 이 PR V4 면 clash `feat/x 의 예약과 같은 번호`. 기존 단언에 `branch: null` 을 더한다.
+- `orch/tests/orch-loop-auto-merge.spec.ts` 의 `github()` 도우미가 쓰는 pr list 규칙의 args 를 `['pr', 'list', 'number,headRefName,baseRefName,files']` 로 바꾸고, 기존 테스트의 열린 PR 행에 `headRefName` 을 넣는다. 가짜 gh(`tests/fixtures/fake-bin.ts`)는 argv 원소가 정확히 같은지 보므로 바꾸지 않으면 기존 마이그레이션 테스트가 깨진다.
+- 중복 제외: 예약 파일에 feat-1 의 api V3 을 두고, PR #1(headRefName feat-1)이 V3, PR #2 가 V4 를 더하고 둘 다 준비되면 `--chain 1,2` 로 둘 다 걸린다. 이 제외가 빠지면 예약이 늘 기다릴 대상이 되어 #2 가 영영 막힌다.
 - `orch/tests/orch-loop-auto-merge.spec.ts`: 예약 파일(`.orch/state/migration-reservations.json`)에 다른 브랜치의 api V3 을 두고 준비된 PR 이 api V4 를 더하면 걸리지 않는다. `blocked_after_sec` 1 로 두고 2초 뒤 다시 돌리면 `MIGRATION-BLOCKED` text 가 `api V4 이 feat/x 의 예약 V3 을` 로 시작하고 `--again` 을 담는다.
   같은 PR 의 브랜치가 예약한 V4 는 막지 않는다(자기 예약). 예약 파일이 JSON 이 아니면 `WATCH-ERROR` 의 text 가 `auto-merge: 마이그레이션 예약을 읽지 못했다` 를 담는다.
   기존 MIGRATION-BLOCKED text 단언을 새 형식으로 고친다.
