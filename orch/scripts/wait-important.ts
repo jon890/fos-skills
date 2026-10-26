@@ -78,6 +78,8 @@
 //     끊긴 worker 확인(종료 코드 5)이 먼저다. 판정은 lib/loop.ts 의 readEvents 와 loopStatus 다.
 //     알림 파일은 --run 의 Run 의 파일(state/loop-events/<Run>.jsonl)과 Run 이 없는 루프의 옛 파일(state/loop-events.jsonl)이다.
 //     다른 Run 의 알림에는 깨어나지 않는다(ADR-012). 옛 파일은 Run 등록을 모르는 옛 루프와 Run 없이 띄운 루프가 쓴다.
+//     --run 이 있으면 옛 파일은 loop.json 에 runs 가 없고 그 run 이 --run 의 Run 이거나 비었을 때(loop.json 이 없을 때 포함)만 읽는다.
+//     옛 파일과 그 커서는 Run 마다 나뉘지 않아, 다른 Run 의 옛 루프 알림에 깨어나 커서를 옮기면 그 Run 의 코디네이터가 알림을 잃는다
 //     - 알림 파일에 커서 뒤의 줄이 있으면 줄마다 `LOOP-EVENT <kind> <pr 또는 -> <text>` 를 모두 낸다. 잘려 잃은 구간이 있으면
 //       그 앞에 `LOOP-EVENT GAP - seq <a>..<b> 를 잃었다` 를 낸다. 그다음 마지막 seq 로 커서를 쓰고, check --wait 그룹을 끝낸 뒤
 //       `LAST_DELIVERY <id>` 와 종료 코드 7 로 끝난다. 커서를 쓰지 못하면 WATCH-ERROR 줄을 더 내고 그래도 7 이다.
@@ -135,7 +137,7 @@ import { fire, handlerFile } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { ghJson } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { isRegistered, loopStatus, readEvents, recheckMs, writeCursor } from './lib/loop.ts'
+import { isRegistered, loopStatus, readEvents, readLoop, recheckMs, writeCursor } from './lib/loop.ts'
 import { orcaBin, orcaJson } from './lib/orca.ts'
 import { makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
@@ -359,11 +361,17 @@ function oneLine(value: string): string {
 // 죽음을 다시 볼 저장소와 그 시각(epoch ms). 머리 주석의 「상주 루프」
 const recheckAt = new Map<string, number>()
 
+// --run 의 대기가 옛 파일을 읽을지. runs 가 없고 run 이 이 Run 이거나 빈 루프의 것만 읽는다(머리 주석의 「상주 루프」)
+function legacyFileOf(repo: string, run: string): boolean {
+  const state = readLoop(repo)
+  return state === null || (!Array.isArray(state.runs) && (!state.run || state.run === run))
+}
+
 // 깨어날 일이 있는 첫 저장소의 줄과 종료 코드. 없으면 null 이다. 머리 주석의 「상주 루프」
 function loopWake(repos: string[], run: string | null): LoopWake | null {
   for (const repo of repos) {
     // 이 Run 의 알림 파일과 Run 이 없는 루프의 옛 파일. 머리 주석의 「상주 루프」
-    for (const source of run ? [run, null] : [null]) {
+    for (const source of run ? (legacyFileOf(repo, run) ? [run, null] : [run]) : [null]) {
       let found: ReturnType<typeof readEvents> | null = null
       try {
         found = readEvents(repo, source)
