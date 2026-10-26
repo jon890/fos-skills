@@ -194,6 +194,20 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.ok(existsSync(join(c.repo, '.omc/board.json')))
   })
 
+  test('앞 단계가 만든 대상 폴더에 합치고 orch 폴더를 중첩하지 않는다', async (t) => {
+    const c = setup(t)
+    c.write('.claude/orch-overlay.md', '오버레이\n')
+    c.write('.omc/orch/specs/spec-a.md', '지시서\n')
+    c.write('.omc/orch/queue/q.out', '로그\n')
+    assert.ok(!existsSync(join(c.repo, '.orch')))
+    await c.migrate(['--apply'])
+    assert.equal(readFileSync(join(c.repo, '.orch/overlay.md'), 'utf8'), '오버레이\n')
+    assert.equal(readFileSync(join(c.repo, '.orch/specs/spec-a.md'), 'utf8'), '지시서\n')
+    assert.equal(readFileSync(join(c.repo, '.orch/queue/q.out'), 'utf8'), '로그\n')
+    assert.ok(!existsSync(join(c.repo, '.orch/orch')))
+    assert.ok(!existsSync(join(c.repo, '.omc/orch')))
+  })
+
   test('더한 쌍은 있는 폴더에 합치고 보드는 옮기지 않는다', async (t) => {
     const c = setup(t)
     c.write('.orch/specs/spec-new.md', '새\n')
@@ -269,6 +283,39 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     }
     await c.migrate(['--apply'], { env: { FAKE_WORKERS: JSON.stringify([owned('ctx_2', join(c.tmp, 'other'))]) } })
     assert.ok(existsSync(join(c.repo, '.orch/specs/spec-a.md')))
+  })
+
+  test('다른 저장소의 살아 있는 지시서는 옮기기를 막지 않는다', async (t) => {
+    const c = setup(t)
+    c.write('.omc/orch/specs/spec-a.md', 'x\n')
+    const other = join(c.tmp, 'repo-other/.omc/orch/specs/spec-a.md')
+    mkdirSync(dirname(other), { recursive: true })
+    writeFileSync(other, '다른 저장소\n')
+    await c.migrate(['--apply'], {
+      env: { FAKE_TASKS: JSON.stringify([{ id: 't1', status: 'running', spec: `지시서 ${other} 를 읽는다.` }]) },
+    })
+    assert.ok(existsSync(join(c.repo, '.orch/specs/spec-a.md')))
+    assert.equal(readFileSync(other, 'utf8'), '다른 저장소\n')
+  })
+
+  test('주 checkout 과 연결된 워크트리의 새 경로와 옛 경로 지시서는 막는다', async (t) => {
+    const c = setup(t)
+    c.write('.omc/orch/specs/spec-a.md', 'x\n')
+    const wt = join(c.tmp, 'linked')
+    c.sh('git', '-C', c.repo, 'worktree', 'add', '-q', '-b', 'linked', wt)
+    for (const tree of [c.repo, wt]) {
+      for (const rel of ['.orch/specs/spec-new.md', '.omc/orch/specs/spec-orch.md', '.omc/handoffs/specs/spec-handoffs.md']) {
+        const spec = join(tree, rel)
+        mkdirSync(dirname(spec), { recursive: true })
+        writeFileSync(spec, '살아 있음\n')
+        const { stderr } = await c.migrate(['--apply'], {
+          code: 3,
+          env: { FAKE_TASKS: JSON.stringify([{ id: 't1', status: 'running', spec: `지시서 ${spec} 를 읽는다.` }]) },
+        })
+        assert.ok(stderr.includes('살아 있는 dispatch 가 지시서 1개를 쓰고 있다'), stderr)
+        assert.ok(existsSync(join(c.repo, '.omc/orch/specs/spec-a.md')))
+      }
+    }
   })
 
   test('옮긴 명령의 .ts 명령줄도 막고, 이름만 비슷한 명령줄은 막지 않는다', async (t) => {
