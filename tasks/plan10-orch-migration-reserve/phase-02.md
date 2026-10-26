@@ -35,6 +35,8 @@
 - `lower` 항목 타입을 `{ pr: number | null; branch: string | null; module: string; label: string; mine: string }` 로 바꾼다. 열린 PR 항목은 `branch: null` 이다.
 - 머리 주석의 판정 설명을 고친다.
 
+- 예약을 거르는 판정은 `export function reservedFor(branch, reserved, openByBranch): ReservedMigrations[]` 로 둔다. 자기 브랜치의 예약과, 예약한 브랜치의 열린 PR 이 같은 (모듈, 번호)를 더한 예약을 뺀다.
+
 ### 2. `orch/scripts/orch-loop.ts`
 
 - `addedMigrations` 가 `lib/reservations.ts` 의 `addedPaths` 로 파일을 고르게 바꾼다.

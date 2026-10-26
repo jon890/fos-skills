@@ -88,7 +88,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
   - `QUEUE-CONFLICT`: 머지 큐가 base 와 충돌한 PR 을 빼고 뒤 PR 을 이어 머지했다. 내용은 충돌 이유다. worker 에게 알리는 일은 루프의 충돌 처리가 한다. worker 가 base 를 합친 뒤 그 PR 만 다시 머지 큐에 건다
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
   - `AUTO-MERGE-END`: 루프가 건 큐가 끝났다. 내용의 끝 줄은 머지 큐의 결과 줄(`QUEUE-DONE`, `QUEUE-HELD …`, `STOP …`)이다. `QUEUE-DONE` 이 아니면 `log=` 의 로그를 읽고 멈춘 이유를 처리한다. `끝 줄 없음` 이면 머지 큐가 시작 전에 끝났거나(사용법 오류, 마무리를 띄우지 못함) 도중에 신호를 받아 끝났다. 로그로 어디까지 머지했는지 확인하고 오류를 고친다. 같은 HEAD 는 루프가 다시 걸지 않으므로, 이유를 풀었으면 코디네이터가 직접 건다
-  - `MIGRATION-CLASH`: 그 PR 의 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같다. 그 PR 의 worker 에게 번호를 다시 정하게 한다
+  - `MIGRATION-CLASH`: 그 PR 의 마이그레이션 번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같다. 그 PR 의 worker 에게 `reserve-migration.ts` 를 다시 불러 파일 이름을 바꾸게 한다. 줄 끝이 `renewed` 면 그 경로로 바꾼다
   - `MIGRATION-BLOCKED`: 더 낮은 번호가 오래 막혀 있다. 막는 쪽은 열린 PR 이거나 PR 없는 예약이다. 막는 쪽 worker 에게 `reserve-migration.ts --again` 으로 번호를 다시 받아 파일 이름을 바꾸게 한다. 루프는 파일 이름을 바꾸지 않는다
     막는 쪽 브랜치를 버렸으면 그 브랜치를 지운 뒤 `reserve-migration.ts --repo <저장소> --prune` 을 부른다. 다음 틱에 막힘이 풀린다
     알림은 한 번만 오므로 기다리는 PR 은 그 뒤 알림 없이 기다린다

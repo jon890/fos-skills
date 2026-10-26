@@ -220,6 +220,13 @@ describe('readReservations 와 writeReservations', () => {
     assert.equal(existsSync(`${reservationsFile(tmp)}.${process.pid}.tmp`), false)
   })
 
+  test('rename 이 실패하면 옆 파일을 지우고 오류를 던진다', () => {
+    // 예약 파일 자리에 비지 않은 폴더가 있으면 rename 이 실패한다
+    mkdirSync(join(reservationsFile(tmp), 'x'), { recursive: true })
+    assert.throws(() => writeReservations(tmp, [res('feat-a', 'V3')]), (e: NodeJS.ErrnoException) => typeof e.code === 'string')
+    assert.equal(existsSync(`${reservationsFile(tmp)}.${process.pid}.tmp`), false, '옆 파일이 남았다')
+  })
+
   test('형식이 틀린 항목은 건너뛰고 센다', () => {
     put(JSON.stringify({ reservations: [res('feat-a', 'V3'), { module: 'api' }, { ...res('feat-b', 'V4'), version: [] }] }))
     assert.deepEqual(readReservations(tmp), { list: [res('feat-a', 'V3')], skipped: 2 })

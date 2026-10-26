@@ -223,7 +223,7 @@ orch/scripts/lib/queue-options.ts 머지 큐의 옵션 목록과 설정의 queue
 orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
 orch/scripts/lib/auto-merge.ts    상주 루프의 자동 머지 판정 한 벌. 함수는 머리 주석이 소유한다. 부수 효과는 orch-loop.ts 가 한다
-orch/scripts/lib/reservations.ts  마이그레이션 번호 예약 파일과 잠금, 다음 번호 판정 한 벌. reserve-migration.ts 가 쓰고 orch-loop.ts 가 읽는다. 함수는 머리 주석이 소유한다
+orch/scripts/lib/reservations.ts  마이그레이션 번호 예약 한 벌. 파일, 잠금, 함수와 사용처는 머리 주석이 소유한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다

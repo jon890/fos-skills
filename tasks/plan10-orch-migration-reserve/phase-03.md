@@ -26,7 +26,7 @@
 
 ```markdown
 - Flyway 마이그레이션 파일 이름은 직접 정하지 않는다. 만들기 전에 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/reserve-migration.ts" --repo <저장소> --module <모듈> --name <영문 설명>` 을 자기 worktree 에서 부르고, `RESERVED` 줄의 경로로 만든다. 줄 끝이 `renewed` 면 이미 만든 파일의 이름을 그 경로로 바꾼다.
-- `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)면 다시 부르고, 1 이나 2 면 그 줄을 붙여 ask 로 묻는다.
+- `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)나 1(조회 실패)이면 한 번 다시 부르고, 그래도 아니면 그 줄을 붙여 ask 로 묻는다. 2 면 바로 ask 로 묻는다.
 - out-of-order 를 켜지 않는다. 코디네이터가 이 PR 이 막는 쪽이라고 알리면 `--again` 으로 새 번호를 받아 파일 이름을 바꾼다.
 ```
 

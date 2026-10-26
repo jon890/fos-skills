@@ -207,8 +207,8 @@ describe('예약', () => {
 })
 
 describe('정리', () => {
-  test('예약 뒤에 머지된 PR 이 있으면 다음 호출이 PRUNED 로 지우고 그 번호를 다시 쓴다', () => {
-    git(['branch', 'feat-old'])
+  test('예약 뒤에 머지된 PR 이 있으면 원격 브랜치가 남아도 다음 호출이 PRUNED 로 지우고 그 번호를 다시 쓴다', () => {
+    git(['push', '-q', 'origin', 'main:refs/heads/feat-old'])
     seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
     github({ open: [openPr(7, 'feat-b', 'db/api/V3__b.sql')], heads: { 'feat-old': prs({ state: 'MERGED', mergedAt: LATER, closedAt: LATER }) } })
     const out = ok(reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a']))
@@ -216,6 +216,39 @@ describe('정리', () => {
     assert.deepEqual(
       reservations().map((r) => r.branch),
       ['feat-a'],
+    )
+  })
+
+  test('예약 뒤에 머지된 PR 이 있어도 로컬 브랜치가 있으면 잠금 안의 확인이 남긴다', () => {
+    git(['branch', 'feat-old'])
+    seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
+    github({ open: [openPr(7, 'feat-b', 'db/api/V3__b.sql')], heads: { 'feat-old': prs({ state: 'MERGED', mergedAt: LATER, closedAt: LATER }) } })
+    assert.equal(ok(reserve(['--prune'])), 'PRUNE-DONE 0\n')
+    assert.deepEqual(
+      reservations().map((r) => r.branch),
+      ['feat-old'],
+    )
+  })
+
+  test('예약 뒤에 머지 없이 닫힌 PR 만 있고 로컬 브랜치가 있으면 남긴다', () => {
+    git(['branch', 'feat-old'])
+    seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
+    github({ heads: { 'feat-old': prs({ state: 'CLOSED', mergedAt: null, closedAt: LATER }) } })
+    assert.equal(ok(reserve(['--prune'])), 'PRUNE-DONE 0\n')
+    assert.deepEqual(
+      reservations().map((r) => r.branch),
+      ['feat-old'],
+    )
+  })
+
+  test('예약 뒤에 머지 없이 닫힌 PR 은 세지 않고 원격 브랜치가 있으면 남긴다', () => {
+    git(['push', '-q', 'origin', 'main:refs/heads/feat-old'])
+    seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
+    github({ heads: { 'feat-old': prs({ state: 'CLOSED', mergedAt: null, closedAt: LATER }) } })
+    assert.equal(ok(reserve(['--prune'])), 'PRUNE-DONE 0\n')
+    assert.deepEqual(
+      reservations().map((r) => r.branch),
+      ['feat-old'],
     )
   })
 
@@ -327,6 +360,29 @@ describe('실패', () => {
     assert.equal(done.status, 1, done.stdout + done.stderr)
     assert.match(done.stdout, /^LOOKUP-FAIL /)
     assert.equal(readFileSync(stateFile('migration-reservations.json'), 'utf8'), before)
+  })
+
+  test('열린 PR 이 200 개면 잘렸을 수 있어 LOOKUP-FAIL 과 1 이다', () => {
+    const open = Array.from({ length: 200 }, (_, i) => openPr(100 + i, `feat-${i}`))
+    github({ open })
+    const done = reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a'])
+    assert.equal(done.status, 1, done.stdout + done.stderr)
+    assert.equal(done.stdout, 'LOOKUP-FAIL 열린 PR 이 200 개를 넘어 목록이 잘렸을 수 있다\n')
+    assert.equal(existsSync(stateFile('migration-reservations.json')), false)
+  })
+
+  test('열린 PR 이 199 개면 예약한다', () => {
+    const open = Array.from({ length: 199 }, (_, i) => openPr(100 + i, `feat-${i}`))
+    github({ open })
+    assert.equal(ok(reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a'])), 'RESERVED api V3 db/api/V3__add_index.sql\n')
+  })
+
+  test('잡지 않은 예외도 LOOKUP-FAIL 한 줄과 1 이다', () => {
+    // 잠금 자리에 폴더가 있으면 잠금 내용을 읽다 EISDIR 로 던진다
+    mkdirSync(stateFile('migration-reservations.lock'), { recursive: true })
+    const done = reserve(['--prune'])
+    assert.equal(done.status, 1, done.stdout + done.stderr)
+    assert.match(done.stdout, /^LOOKUP-FAIL [^\n]*EISDIR[^\n]*\n$/)
   })
 
   test('예약 파일이 JSON 이 아니면 LOOKUP-FAIL 과 1 이다', () => {

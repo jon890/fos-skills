@@ -6,10 +6,11 @@
 //   (module, version) 은 한 항목에만 있고, (branch, module, name) 도 한 항목에만 있다(docs/data-schema.md 의 행).
 //   name 은 받은 설명을 slug 로 바꾼 값이다. 같은 예약인지 이 값으로 가리고, 파일 이름의 설명 조각도 이 값이다.
 //   쓰는 쪽은 잠금 안에서 옆 파일(<파일>.<pid>.tmp)에 쓰고 rename 한다. 읽는 쪽은 잠금 없이 읽어도 반쯤 쓴 파일을 보지 않는다.
+//   쓰기나 rename 이 실패하면 옆 파일을 지우고(실패는 무시) 그 오류를 다시 던진다.
 //   최상위가 틀리면(JSON 이 아님, reservations 목록이 없음) Error 다. 부르는 쪽은 읽지 못한 것으로 다룬다.
 //   형식이 맞지 않는 항목은 건너뛰고 skipped 로 센다. 다음 쓰기에서 빠진다.
 //
-// 잠금: 같은 폴더의 migration-reservations.lock. lib/events.ts 의 acquireLock, ownsLock, releaseLock 을 쓴다
+// 잠금: 같은 폴더의 migration-reservations.lock. 경로는 lockFile 이 정하고, 잡고 푸는 일은 reserve-migration.ts 가 lib/events.ts 의 acquireLock, ownsLock, releaseLock 으로 한다
 //   (wx 로 만들고 pid 를 적는다. 죽은 pid 는 reclaim 으로 회수한다). 보장 범위도 그 파일의 「잠금」 과 같다.
 //
 // 판정:
@@ -21,7 +22,7 @@
 //                  같은 브랜치의 열린 PR 파일도 세되, 다시 정하는 예약과 같은 (모듈, 번호)인 파일 하나는 뺀다. 그 예약으로 만든 파일이다
 //   - prune        gone 이 true 인 항목만 지운다. null(판정 못 함)과 false 는 남긴다. 지우면 그 번호가 다시 나가기 때문이다
 
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { compareVersion } from './auto-merge.ts'
 import type { Migration } from './auto-merge.ts'
@@ -80,8 +81,17 @@ export function writeReservations(repo: string, list: Reservation[]): void {
   const file = reservationsFile(repo)
   makeParent(file, repo)
   const tmp = `${file}.${process.pid}.tmp`
-  writeFileSync(tmp, `${JSON.stringify({ reservations: list }, null, 2)}\n`, 'utf8')
-  renameSync(tmp, file)
+  try {
+    writeFileSync(tmp, `${JSON.stringify({ reservations: list }, null, 2)}\n`, 'utf8')
+    renameSync(tmp, file)
+  } catch (e) {
+    try {
+      unlinkSync(tmp)
+    } catch {
+      // 옆 파일이 없거나 지우지 못했다. 원래 오류를 던지는 것이 먼저다
+    }
+    throw e
+  }
 }
 
 export function addedPaths(files: unknown): string[] {

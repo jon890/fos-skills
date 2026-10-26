@@ -95,7 +95,7 @@
 //   셋이 겹치면 드물게 둘이 함께 돈다. A 가 회수하려고 B 가 새로 만든 잠금을 떼어 낸 사이 C 가 wx 로 만들고,
 //   B 가 그보다 먼저 다시 읽기를 지나 핸들러를 띄웠으면 B 와 C 가 함께 돈다. 다시 읽기는 B 가 아직 띄우기 전인 경우만 막는다.
 //   같은 죽은 잠금을 세 실행이 몇 밀리초 안에 함께 회수해야 생기는 경합이라 그대로 둔다.
-//   같은 잠금을 acquireLock, ownsLock, releaseLock 으로 내보낸다. lib/reservations.ts 의 예약 잠금이 이것을 쓴다.
+//   같은 잠금을 acquireLock, ownsLock, releaseLock 으로 내보낸다. reserve-migration.ts 가 lib/reservations.ts 의 예약 잠금(lockFile)에 이것을 쓴다.
 //
 // 기록: <orch 루트>/state/hooks.jsonl 에 결과마다 한 줄(time, event, handler, exit, result, duration_ms, reason).
 //   none 은 적지 않는다. legacy 실행의 handler 는 legacy:<key> 다. 더하기 전에 1MB 를 넘으면 hooks.jsonl.1 로 옮긴다.

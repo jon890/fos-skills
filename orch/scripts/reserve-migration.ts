@@ -23,10 +23,14 @@
 //     1. 잠금 밖: 예약을 읽고 예약마다 정리 판정을 한다. --prune 이 아니면 `git fetch --quiet origin <base>`,
 //        `git ls-tree -r --name-only origin/<base> -- <모듈 폴더>` 로 base 최고를, `gh pr list --state open --limit 200
 //        --json number,headRefName,baseRefName,files` 로 열린 PR 의 마이그레이션을 읽는다. 하나라도 실패하면 예약하지 않는다.
+//        열린 PR 이 200 개면 목록이 잘렸을 수 있어 실패로 본다.
 //        모르는 번호를 피한 척 예약하면 겹친다. 정리 판정의 실패는 그 항목을 남길 뿐 실패가 아니다
 //     2. 예약 잠금(lib/reservations.ts 의 lockFile)을 잡는다. RESERVE_LOCK_WAIT_MS 동안 잡지 못하면 LOCK-TIMEOUT 이다
 //     3. 잠금 안: 예약을 다시 읽고 1 의 정리 판정을 (branch, module, name, at) 이 같은 항목에만 적용한다. 그 사이 더해지거나
-//        --again 으로 바뀐 항목은 판정하지 않은 것으로 보고 남긴다. 머지됨, 닫힘, 브랜치 없음은 시간이 지나도 뒤집히지 않고,
+//        --again 으로 바뀐 항목은 판정하지 않은 것으로 보고 남긴다. 지울 항목은 지우기 직전에
+//        `git show-ref --verify --quiet refs/heads/<branch>` 로 로컬 브랜치를 한 번 더 보고, 0(있음)이면 남긴다.
+//        1 과 3 사이에 같은 이름의 브랜치가 다시 생겨 그 예약을 reused 로 받았을 수 있기 때문이다. 로컬 git 만 보고 네트워크는 부르지 않는다.
+//        머지됨과 브랜치 없음은 그 확인 밖에서는 시간이 지나도 뒤집히지 않고,
 //        예약 파일을 잠금 안에서 다시 읽으므로 동시 예약도 서로 다른 번호를 받는다
 //     4. 쓰기 직전에 잠금이 아직 내 것인지 본다. 아니면 쓰지 않고 LOCK-LOST 다. 죽은 잠금을 세 실행이 함께 회수하는 경합을 막는다
 //        (lib/events.ts 의 「잠금」 이 적은 보장 범위)
@@ -34,8 +38,9 @@
 //
 // 정리 판정(예약마다. 같은 브랜치의 조회는 한 번만 한다):
 //     `gh pr list --state all --head <branch> --limit 20 --json state,mergedAt,closedAt`
-//       OPEN 이 있으면 남긴다. 예약 시각(at) 뒤에 머지되거나 닫힌 PR 이 있으면 지운다. 브랜치 이름을 다시 써 남은 옛 PR 은 세지 않는다.
-//       PR 이 없거나 모두 at 이전이면 브랜치를 본다. gh 조회 실패는 판정 못 함이다
+//       OPEN 이 있으면 남긴다. 예약 시각(at) 뒤에 머지된(mergedAt) PR 이 있으면 지운다. 브랜치 이름을 다시 써 남은 옛 PR 은 세지 않는다.
+//       머지 없이 닫힌 PR 은 다시 열 수 있어 세지 않는다. PR 이 없거나, 닫힌 것뿐이거나, 머지가 모두 at 이전이면 브랜치를 본다.
+//       gh 조회 실패는 판정 못 함이다
 //     `git ls-remote --heads origin <branch>`  0 이고 그 브랜치 줄이 없으면 원격에 없음, 있으면 있음, 0 이 아니면 판정 못 함
 //     `git show-ref --verify --quiet refs/heads/<branch>`  0 이면 있음, 1 이면 없음, 그 밖은 판정 못 함
 //     둘 다 없음이면 지운다. 하나라도 있음이면 남긴다. 그 밖은 판정 못 함이라 남긴다. 지우면 그 번호가 다시 나가기 때문이다
@@ -45,12 +50,13 @@
 //     RESERVED <module> <label> <path>      예약했다. path 는 저장소 루트 기준이다. 다시 준 예약이면 끝에 ` reused`,
 //                                           번호가 무효가 되어 새로 정했으면 ` renewed` 를 붙인다. --again 은 붙이지 않는다
 //     PRUNE-DONE <지운 수>                  --prune 이 끝났다. 지운 것이 있을 때만 파일에 쓴다
-//     LOOKUP-FAIL <이유>                    base 나 열린 PR 을 읽지 못함, 예약 파일을 읽지 못함, 예약 파일 쓰기 실패
+//     LOOKUP-FAIL <이유>                    base 나 열린 PR 을 읽지 못함(200 개에서 잘렸을 수 있음 포함), 예약 파일을 읽지 못함,
+//                                           예약 파일 쓰기 실패, 그 밖의 예기치 않은 오류(이유는 오류 메시지 한 줄)
 //     LOCK-TIMEOUT <잠금 경로>              잠금을 잡지 못했다
 //     LOCK-LOST <잠금 경로>                 쓰기 직전에 잠금이 내 것이 아니었다. 쓰지 않았다
 //     형식이 틀려 건너뛴 예약이 있으면 stderr 에 `경고: 형식이 틀린 예약 <n> 개를 건너뛴다. 다음 쓰기에서 빠진다` 를 낸다.
 //
-// 종료 코드: 0 예약함(reused, renewed 포함)이나 PRUNE-DONE, 1 LOOKUP-FAIL(그 밖의 예기치 않은 오류 포함),
+// 종료 코드: 0 예약함(reused, renewed 포함)이나 PRUNE-DONE, 1 LOOKUP-FAIL(그 밖의 예기치 않은 오류도 LOOKUP-FAIL 줄을 낸다),
 //     2 사용법 오류(설정 파일 오류 포함), 4 LOCK-TIMEOUT 이나 LOCK-LOST
 //
 // 환경 변수:
@@ -77,6 +83,7 @@ const USAGE = [
 ].join('\n')
 const LOCK_WAIT_MS = 10_000
 const OPEN_FIELDS = 'number,headRefName,baseRefName,files'
+const OPEN_LIMIT = 200
 
 class Usage extends Error {}
 
@@ -137,7 +144,7 @@ function pruneJudge(repo: string): (r: Reservation) => boolean | null {
     if (rows === null) return null
     if (rows.some((row) => row.state === 'OPEN')) return false
     const at = Date.parse(r.at)
-    if (rows.some((row) => time(row.mergedAt) > at || time(row.closedAt) > at)) return true
+    if (rows.some((row) => time(row.mergedAt) > at)) return true
     if (!branches.has(r.branch)) {
       const remote = remoteBranch(repo, r.branch)
       const local = localBranch(repo, r.branch)
@@ -160,9 +167,10 @@ function lookupNumbers(
   if (listed.code !== 0) return { ok: false, error: `origin/${base} 의 ${dir} 를 읽지 못했다(종료 코드 ${listed.code}): ${listed.stderr}` }
   const paths = listed.stdout.split('\n').filter((line) => line)
   const baseMax = maxByModule(paths, dirs).get(module) ?? null
-  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', OPEN_FIELDS], { cwd: repo })
+  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', String(OPEN_LIMIT), '--json', OPEN_FIELDS], { cwd: repo })
   if (!got.ok) return { ok: false, error: got.error }
   if (!Array.isArray(got.data)) return { ok: false, error: '열린 PR 의 파일 목록이 목록이 아니다' }
+  if (got.data.length >= OPEN_LIMIT) return { ok: false, error: `열린 PR 이 ${OPEN_LIMIT} 개를 넘어 목록이 잘렸을 수 있다` }
   const open = got.data.filter(isObject).map((row) => ({
     // 브랜치를 모르는 행은 다른 브랜치로 센다. 빼는 것보다 피하는 쪽이 겹치지 않는다
     branch: typeof row.headRefName === 'string' ? row.headRefName : '',
@@ -280,7 +288,11 @@ async function main(argv: string[]): Promise<number> {
       return lookupFail(`예약 파일을 읽지 못했다: ${(e as Error).message}`)
     }
     if (current.skipped > 0) process.stderr.write(`경고: 형식이 틀린 예약 ${current.skipped} 개를 건너뛴다. 다음 쓰기에서 빠진다\n`)
-    const { kept, removed } = prune(current.list, (r) => verdicts.get(verdictKey(r)) ?? null)
+    // 지울 항목은 로컬 브랜치를 한 번 더 본다. 그 사이 다시 생긴 브랜치가 받은 예약을 지우지 않는다(머리 주석의 「순서」 3)
+    const { kept, removed } = prune(current.list, (r) => {
+      const verdict = verdicts.get(verdictKey(r)) ?? null
+      return verdict === true && localBranch(repo, r.branch) === 'present' ? false : verdict
+    })
 
     let chosen: ReturnType<typeof choose> | null = null
     if (target && lookup?.ok) {
@@ -328,8 +340,8 @@ main(process.argv.slice(2)).then(
   (code) => {
     process.exitCode = code
   },
-  (e: Error) => {
-    process.stderr.write(`reserve-migration: ${e.message}\n`)
+  (e: unknown) => {
+    say(`LOOKUP-FAIL ${oneLine(e instanceof Error ? e.message : String(e))}`)
     process.exitCode = 1
   },
 )

@@ -530,9 +530,10 @@ describe('마이그레이션 예약', () => {
     assert.deepEqual(queueCalls(), [])
   })
 
-  test('같은 PR 의 브랜치가 예약한 번호는 막지 않는다', async () => {
+  test('같은 PR 의 브랜치가 예약한 더 낮은 번호는 기다리지 않는다', async () => {
     config({ migrations: { dirs } })
-    reservations({ branch: 'feat-1', label: 'V4' })
+    // 열린 PR 의 파일에 없는 번호라 브랜치로 빼지 않으면 lower 로 잡혀 걸지 않는다
+    reservations({ branch: 'feat-1', label: 'V3' })
     const files = added('db/api/V4__x.sql')
     github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
     once()
@@ -553,6 +554,37 @@ describe('마이그레이션 예약', () => {
     once()
     assert.deepEqual(await queued(), queueArgs('--chain', '1,2', '1', '2'))
     assert.deepEqual(events('MIGRATION-CLASH'), [])
+  })
+
+  function migrationError(): string {
+    const errors = events('WATCH-ERROR').filter((row) => String(row.text).startsWith('auto-merge: '))
+    assert.equal(errors.length, 1, JSON.stringify(events()))
+    return String(errors[0].text)
+  }
+
+  test('형식이 틀린 예약 항목이 있으면 마이그레이션이 든 PR 을 걸지 않고 그 수를 알린다', () => {
+    config({ migrations: { dirs } })
+    write(orchFile('state', 'migration-reservations.json'), JSON.stringify({ reservations: [{ module: 'api', label: 'V3' }] }))
+    const files = added('db/api/V4__y.sql')
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
+    once()
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+    assert.match(migrationError(), /auto-merge: 마이그레이션 예약 1 개의 형식이 틀렸다/)
+  })
+
+  test('열린 PR 조회가 200 줄이면 목록이 잘렸을 수 있어 마이그레이션이 든 PR 을 걸지 않는다', () => {
+    config({ migrations: { dirs } })
+    const files = added('db/api/V3__y.sql')
+    const open = [
+      { number: 1, headRefName: 'feat-1', baseRefName: 'main', files },
+      ...Array.from({ length: 199 }, (_, i) => ({ number: 100 + i, headRefName: `feat-${100 + i}`, baseRefName: 'main', files: [] })),
+    ]
+    github([pr(1)], { views: { 1: { files } }, open })
+    once()
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+    assert.match(migrationError(), /auto-merge: 열린 PR 이 200 개를 넘어 마이그레이션 목록이 잘렸을 수 있다/)
   })
 
   test('예약 파일이 JSON 이 아니면 마이그레이션이 든 PR 을 걸지 않고 WATCH-ERROR auto-merge 로 알린다', () => {

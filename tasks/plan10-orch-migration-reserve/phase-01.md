@@ -85,7 +85,9 @@ reserve-migration.ts --repo DIR --prune
   5. `releaseLock`(finally).
 - 정리 판정(예약마다): `gh pr list --state all --head <branch> --limit 20 --json state,mergedAt,closedAt`. OPEN 이 있으면 false. 예약의 `at` 보다 뒤에 머지되거나 닫힌 PR 이 있으면 true(브랜치 이름을 다시 써 남은 옛 PR 은 세지 않는다). PR 이 없거나 모두 `at` 이전이면 브랜치를 본다.
   `git ls-remote --heads origin <branch>` 는 0 에 빈 출력이면 원격에 없음, 0 에 출력이 있으면 있음, 0 이 아니면 판정 못 함. `git show-ref --verify --quiet refs/heads/<branch>` 는 0 이면 있음, 1 이면 없음, 그 밖은 판정 못 함.
+  ls-remote 의 「있음」 은 출력 줄이 정확히 `refs/heads/<branch>` 일 때다. 끝만 맞는 `x/<branch>` 는 다른 브랜치다.
   둘 다 없음이면 true, 하나라도 있음이면 false, 그 밖은 null. gh 조회 실패도 null. 같은 브랜치의 조회는 한 번만 한다.
+- `--prune` 에 `--module`, `--name`, `--branch`, `--base`, `--again` 을 함께 주면 사용법 오류(2)다.
 - 출력: 성공이면 `RESERVED <module> <label> <path>` 한 줄과 0. 재사용이면 끝에 ` reused`, 다시 정했으면 ` renewed` 를 붙인다. 조회 실패, 예약 파일을 읽지 못함, 쓰기 실패는 `LOOKUP-FAIL <이유>` 와 1. 정리로 지운 항목마다 앞에 `PRUNED <module> <label> <branch>` 줄. 형식이 틀려 건너뛴 예약이 있으면 `경고: 형식이 틀린 예약 <n> 개를 건너뛴다. 다음 쓰기에서 빠진다` 를 stderr 에 낸다.
 - `--name` 이 `slug` 로 비면 사용법 오류(2)다. 설명은 영문으로 준다.
 - 환경 변수 `GH` 는 `lib/gh.ts` 를 따른다.
