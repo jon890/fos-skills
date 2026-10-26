@@ -31,6 +31,10 @@
 - `registerBoard` 는 그 줄이 있으면 `findBoardItems(file, pr ?? '', branch, basename(worktree))` 로 항목을 찾는다. PR 번호가 없으면 끝나지 않은 항목 가운데 branch 나 worktree 가 같은 것을 찾는다.
   찾은 항목이 하나면 그 항목의 details 에서 `중간 과정: ` 으로 시작하는 줄을 빼고 `중간 과정: <지시서 첫 # 제목>` 한 줄을 끝에 둔다(`board.ts set <id> --detail ...`). status, 제목, 단계, pr 은 바꾸지 않는다.
   없거나 둘 이상이면 아무것도 쓰지 않고 `Error` 를 던져 `launch-worker` 가 `보드를 갱신하지 못했다` 로 알리게 한다.
+- `중간 과정:` 줄이 없고 이어 쓸 항목(지시서의 `보드 항목 id:` 나 같은 워크트리, 브랜치로 찾은 항목)이 done 이면 다시 연다.
+  status 를 doing 으로 바꾸고, 기존 하위 줄은 모두 완료로 두고 `남은 일:` 줄은 뺀다. 지시서 「할 일」 의 번호 줄(없으면 구현·리뷰 반영·머지)을 기존 단계 번호의 최댓값 다음 번호부터 고쳐 이어 붙인다.
+  `pr` 칸의 PR 은 `merged-pr` 로 옮기고 `pr` 칸을 비운다. 남기면 `board-sync.ts` 가 다음 틱에 그 머지 PR 로 항목을 다시 done 으로 바꾼다(코디네이터 실측 2026-10-26).
+  같은 워크트리나 브랜치로 찾을 때 done 항목은 지금처럼 고르지 않는다. 다시 열기는 `보드 항목 id:` 로 정한 항목에만 한다.
 
 ### 2. `orch/scripts/lib/conflicts.ts`
 
@@ -53,6 +57,7 @@
 ### 5. 테스트
 
 - `orch/tests/lib-board.spec.ts`: `interimOf` 가 줄과 PR 번호를 읽는다.
+- `orch/tests/launch-worker.spec.ts`: `보드 항목 id:` 가 가리키는 done 항목에 띄우면 doing 이 되고 옛 단계는 완료, 새 단계는 이어진 번호로 붙고, pr 칸이 비고 merged-pr 에 옛 PR 이 든다.
 - `orch/tests/launch-worker.spec.ts`: `중간 과정: PR #7` 지시서로 띄우면 pr 이 7 인 기존 항목에 줄 하나만 생기고 항목 수, 제목, status 가 그대로다. 두 번 띄워도 줄은 하나다. 찾지 못하면 항목을 만들지 않는다.
 - `orch/tests/notify-conflicts.spec.ts`, `orch/tests/orch-loop-conflict.spec.ts`: 지시서 이름이 `spec-conflict-7.md` 이고 `중간 과정: PR #7` 줄이 있다. base 가 움직여도 파일은 하나다.
 - `orch/tests/finish-pr.spec.ts`: 중간 PR 판정에서도 `spec-conflict-<PR>.md` 와 옛 이름 파일이 지워지고 다른 PR 의 충돌 지시서는 남는다.
