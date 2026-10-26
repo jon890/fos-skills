@@ -3,61 +3,24 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 3.7.0 (2026-10-26)
+## 4.0.0 (2026-10-26)
 
-- worker 를 띄우면 지시서로 보드 항목을 만들고, 루프가 같은 브랜치의 PR 을 연결해 머지를 반영한다. 기존 단계는 보존한다
-- 결정 필요 항목의 제목이나 줄이 바뀌면 루프가 REMINDER 로 코디네이터를 깨운다. 같은 내용은 다시 알리지 않는다
+- 상주 루프가 같은 저장소를 쓰는 여러 세션의 Run 을 함께 맡는다. `--start --run` 은 살아 있는 루프에 그 Run 을 더하고 `LOOP-JOINED` 와 0 이다
+- `--stop --run` 은 그 Run 만 빼고 마지막 Run 이 빠지면 루프가 끝난다. `--run` 없는 `--stop` 은 Run 이 둘 이상이면 1 로 거부하고 `--all` 로 모두 멈춘다
+- 질문 확인, 정리, `tick` 이 Run 마다 그 Run 범위로 돈다. 알림은 `state/loop-events/<Run>.jsonl` 로 나뉘고 대기는 자기 Run 의 알림에만 깨어난다
+- 호환성: `tick` 핸들러가 틱마다 Run 수만큼 불린다. 저장소 공유 일은 입력의 `primary` 가 true 일 때만 한다. 옛 루프에는 Run 을 더하지 못하고 안내 줄을 낸다
+- 호환성: `handoff-cleanup --run` 은 그 Run 의 지시서와 PR 본문만 옮기고 큐 로그, 폴더, csv 는 남긴다. `--run` 이 없으면 경고 한 줄을 낸다
 
-## 3.6.0 (2026-10-25)
+## 3.x
 
-- 호환성: node 24 이상이 필요하다. 그보다 낮으면 스킬을 열 때 `NODE-TOO-OLD` 로 멈춘다. 근거는 ADR-011 이 소유한다
-
-## 3.5.0 (2026-10-25)
-
-- KILL 유예, 질문 조회 시간 제한, 루프 재확인 여유를 `ORCH_KILL_GRACE_SEC`, `ORCH_QUESTIONS_TIMEOUT_SEC`, `ORCH_LOOP_RECHECK_MARGIN_SEC` 로 바꿀 수 있다. 기본값은 그대로다
-- 이벤트 핸들러의 잠금 대기는 시간 제한에 KILL 유예의 1.5배를 더한다. 기본은 전과 같은 15초다
-
-## 3.4.1 (2026-10-25)
-
-- README 를 스킬을 쓰는 사람 관점으로 다시 쓰고, 이 CHANGELOG 를 버전마다 핵심만 남기도록 줄였다. 동작은 바뀌지 않았다
-
-## 3.4.0 (2026-10-25)
-
-- 저장소마다 하나 도는 상주 루프 `orch-loop.ts` 를 더했다. 틱마다 질문 확인, 정리, 보드 동기화, 내 PR 의 CI 감시, 충돌 PR 알림을 하고 머지는 하지 않는다
-- `wait-important --loop-repo` 가 루프의 알림(`LOOP-EVENT`, 종료 코드 7)과 루프의 죽음(`LOOP-DEAD`, 8)에도 깨어난다
-- 루프가 `ci-passed`, `ci-failed`, `tick`, `pr-conflict` 이벤트를 낸다. `orch-doctor --run` 은 죽은 루프와 다시 띄울 명령을 알린다
-- 기다리기 절차를 루프 기준으로 바꿨다. Monitor 로 띄우는 `watch-questions` 는 루프를 쓸 수 없을 때의 대안이다
-- 호환성: 루프를 쓰는 저장소는 `watch-questions` 를 따로 띄우지 않는다. `watch-questions.ts` 는 `poll` 을 export 하지 않는다
-
-## 3.3.0 (2026-10-25)
-
-- 정리와 대기열 명령(`cleanup-sweep`, `remove-worktree`, `handoff-cleanup`, `heavy-slot` 등)과 보드 명령이 TypeScript 로 돈다. 옛 `.py` 는 shim 으로 남는다
-- `cleanup-sweep` 이 `before-cleanup`, `after-cleanup` 이벤트를 내고, `--remote-branches` 로 머지된 원격 브랜치를 지운다
-- `.orch/config.json` 의 `heavy` 절로 무거운 검사를 분류하고, `wait_idle` 로 대기열 밖의 무거운 프로세스가 끝나길 기다린다
-- 호환성: `heavy-slot` 의 자동 분류를 지웠다. `heavy` 절이 없으면 모든 명령이 자리를 기다리고, perl 이 PATH 에 필요하다
-- 호환성: `cleanup-sweep`, `handoff-cleanup` 의 출력 줄 일부가 바뀌었다. `scripts/run-orch-tests.py` 를 지우고 `node --test` 하나로 돌린다
-
-## 3.2.0 (2026-10-24)
-
-- worker 가 PR 이 머지될 때까지 맡는다. PR 이 열리면 `준비됨` 을 보내고 CI 실패, 충돌, 리뷰를 직접 처리한 뒤 MERGED 를 확인하고 `worker_done` 을 보낸다
-- 지시서 하나는 PR 하나로 끝나는 크기로 쓴다. 더 큰 일은 나눠 앞 PR 이 머지된 뒤 다음 지시서를 쓴다
-- 완료 검증은 `준비됨` 을 받은 때 한다. `worker_done` 을 기다리지 않고 diff 를 읽고 머지 큐에 넣는다
-
-## 3.1.0 (2026-10-24)
-
-- 머지 단계 명령(`ci-ready`, `notify-conflicts`, `merge_queue`, `merge-with-finish`, `finish-pr`)이 TypeScript 로 돌고 `before-merge`, `after-deploy` 같은 이벤트를 낸다
-- 업무 완료는 `after-deploy` 핸들러가 한다. `migrate-orch-dir --hooks` 가 `config.json` 의 옛 셸 명령 칸을 같은 일을 하는 `hooks/<이벤트>.ts` 로 바꾼다
-- 머지한 브랜치를 base 로 둔 열린 PR 이 모두 내 PR 이면 머지 큐가 그 PR 들의 base 를 옮긴 뒤 원격 브랜치를 지운다
-- 호환성: `ci-ready` 는 로컬 merge-tree 로 충돌을 보고 남의 PR 은 보류한다. `notify-conflicts` 는 내 PR 만 보고, 이어 쓰지 못하면 `CONFLICT-ORPHAN` 을 낸다
-- 호환성: 옛 설정 칸도 이벤트 실행기로 돌아 1800초 제한을 받는다. `after-merge` 나 `after-queue` 가 실패하면 머지 큐는 종료 코드 3 이다
-
-## 3.0.0 (2026-10-24)
-
-- hook 과 띄우기, 답하기, 기다리기 명령, `orch-doctor` 가 TypeScript 로 돈다. 옵션과 종료 코드는 그대로이고, 저장소의 `.orch/hooks/<이벤트>.ts` 를 부른다
-- worker 터미널 직접 입력 금지 hook 이 모든 Run 의 worker 를 보고, 대상이 변수이거나 orca 조회가 실패하면 거부한다
-- `orch-doctor` 가 이름이 틀린 핸들러를 `UNKNOWN-HOOK`, 지울 설정 칸을 `DEPRECATED-CONFIG` 로 알린다. 질문 감시의 조회 실패는 stdout 의 `WATCH-ERROR` 줄로 낸다
-- 호환성: 옛 `.py` 경로는 `DEPRECATED` 줄을 내고 `.ts` 로 넘기며 다음 major 에서 지운다. node 22.18 이상이 없으면 종료 코드 127 로 끝난다
-- 호환성: stdout 에 `WATCH-ERROR`, `HOOK-FAIL` 줄이 섞이고 ps 명령줄이 `node … <이름>.ts` 로 바뀐다. 가짜 orca 는 `ORCA` 환경 변수로 넣는다
+- 명령이 TypeScript 로 돌고 단계마다 이벤트를 낸다. 저장소 고유 일은 `.orch/hooks/<이벤트>.ts` 가 맡고, 옛 `.py` 경로는 shim 으로 남는다
+- 업무 완료는 `after-deploy` 핸들러가 한다. `migrate-orch-dir --hooks` 가 옛 셸 명령 칸을 핸들러로 바꾼다
+- 저장소마다 상주 루프 `orch-loop.ts` 가 질문 확인, 정리, 보드 동기화, 내 PR 의 CI 감시, 충돌 PR 알림을 하고 `wait-important --loop-repo` 를 깨운다
+- worker 가 PR 이 머지될 때까지 맡고, 완료 검증은 `준비됨` 을 받은 때 한다. 지시서 하나는 PR 하나로 끝나는 크기로 쓴다
+- `cleanup-sweep --remote-branches` 가 머지된 원격 브랜치를 지우고, 머지 큐가 머지한 브랜치를 base 로 둔 내 PR 의 base 를 옮긴다
+- worker 를 띄우면 보드 항목을 만들고 루프가 PR 연결과 머지를 반영한다. 결정 필요 항목이 바뀌면 REMINDER 로 깨운다
+- `heavy` 절로 무거운 검사를 분류하고, 시간 제한과 유예를 `ORCH_*` 환경 변수로 바꿀 수 있다
+- node 24 이상이 필요하다. 그보다 낮으면 스킬을 열 때 `NODE-TOO-OLD` 로 멈춘다(ADR-011)
 
 ## 2.x
 
