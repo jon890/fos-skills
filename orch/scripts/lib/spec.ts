@@ -140,7 +140,7 @@ export function runSpecPaths(run: string): Set<string> | null {
 
 // cleanup-sweep 의 이름 규칙으로 지울 후보를 낸다. 파일이 있는지 보지 않는다.
 //   specs     <specsDir>/<name>.md, <specsDir>/spec-<name>.md
-//   prBodies  <specsDir 의 부모>/pr-<후보>.md. 후보는 name, branch 의 / 를 모두 - 로 바꾼 것,
+//   prBodies  옛 위치인 <specsDir 의 부모>/pr-<후보>.md. 후보는 name, branch 의 / 를 모두 - 로 바꾼 것,
 //             branch 에서 첫 / 앞을 뗀 나머지(/ 가 없으면 branch 그대로), prNumber 다. 겹치는 경로는 한 번만 낸다
 export function specCandidates(opts: { specsDir: string; name: string; branch?: string; prNumber?: number }): {
   specs: string[]

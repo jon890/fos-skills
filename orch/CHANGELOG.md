@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.1.1 (2026-10-26)
+
+- PR 본문 파일 위치를 worker 세션 임시 폴더로 바꾼다. 지시서 작성과 오버레이 안내가 저장소의 `.orch/` 대신 임시 폴더에 쓰고 경로를 status 나 `worker_done` 에 적게 한다
+- `cleanup-sweep` 이 지시서 폴더의 `pr-<이름>.md` 를 지우는 동작은 그대로다. 옛 위치의 파일을 정리하는 용도로 문서와 주석에 밝힌다
+
 ## 4.1.0 (2026-10-26)
 
 - `nudge-worker --state` 가 모델 오류로 멈춘 화면을 `error` 로, 사람이 Esc 로 끊은 Codex 화면을 `interrupted` 로 낸다. `--msg-id` 와 `--text` 는 두 화면에도 입력한다

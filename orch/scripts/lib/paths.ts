@@ -8,7 +8,7 @@
 // 이름과 경로 (루트 기준):
 //   overlay      overlay.md         사람이 읽는 저장소 규칙
 //   config       config.json        명령이 읽는 저장소 값. 읽기는 lib/config.ts 가 맡는다
-//   specs        specs/             지시서와 spec-common.md. PR 본문 pr-<이름>.md 는 그 부모(루트)에 둔다
+//   specs        specs/             지시서와 spec-common.md. 옛 위치의 PR 본문 pr-<이름>.md 는 그 부모(루트)에 있다
 //   queue        queue/             머지 큐와 마무리 출력, pid
 //   state        state/             대기와 알림이 기억하는 것
 //   heavy-slot   state/heavy-slot/  무거운 검사 대기열의 상태
