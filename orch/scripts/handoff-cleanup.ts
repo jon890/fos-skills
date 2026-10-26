@@ -26,7 +26,7 @@
 //
 // Run 범위(--run 을 줄 때. ADR-012):
 //     그 Run 의 Task 가 쓴 지시서(`orca orchestration task-list --run <Run>` 의 spec 이 가리키는 경로)와 그 지시서의 PR 본문만 옮긴다.
-//     PR 본문은 지시서 폴더의 부모에 있는 pr-<이름>.md 다. 이름 규칙은 lib/spec.ts 의 specCandidates 이고, 지시서 이름은 spec- 를 뗀 파일 이름이다.
+//     옛 위치의 PR 본문은 지시서 폴더의 부모에 있는 pr-<이름>.md 다(지금은 worker 세션 임시 폴더에 둔다). 이름 규칙은 lib/spec.ts 의 specCandidates 이고, 지시서 이름은 spec- 를 뗀 파일 이름이다.
 //     다른 세션이 띄운 일의 산출물을 옮기지 않으려는 것이다. 정리는 그 세션이 띄운 것만 한다.
 //     - 그 Run 의 Task 가 쓰지 않은 지시서는 `지시서를 남긴다 <경로>: Run <Run> 의 Task 가 쓴 지시서가 아니다`(stderr)
 //     - task-list 를 읽지 못하면 지시서는 옮기지 않는다
