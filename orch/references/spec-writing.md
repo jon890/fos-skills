@@ -27,6 +27,15 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 - 「push 는 `git push -u origin HEAD` 로 한다. 브랜치 이름을 바꾸지 않는다」.
   워크트리는 지시서의 이름으로 만들어져 있고, 다른 이름으로 올리면 6단계 대조에서 걸린다
 - 다른 PR 의 배포 뒤에 머지할 PR 처럼 루프가 자동으로 머지하면 안 되는 지시서에는 `- 머지 보류: <이유>` 줄을 넣는다
+- DB 마이그레이션을 더할 수 있는 지시서에는 아래 문구를 공통 규칙으로 넣는다. `$SKILL_DIR` 은 코디네이터가 이 스킬 디렉터리의 절대경로로 바꿔 넣는다.
+  worker 가 번호를 직접 정하면 다른 worktree 의 파일과 번호가 겹친다.
+
+  ```markdown
+  - Flyway 마이그레이션 파일 이름은 직접 정하지 않는다. 만들기 전에 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/reserve-migration.ts" --repo <저장소> --module <모듈> --name <영문 설명>` 을 자기 worktree 에서 부르고, `RESERVED` 줄의 경로로 만든다. 줄 끝이 `renewed` 면 이미 만든 파일의 이름을 그 경로로 바꾼다.
+  - `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)나 1(조회 실패)이면 한 번 다시 부르고, 그래도 아니면 그 줄을 붙여 ask 로 묻는다. 2 면 바로 ask 로 묻는다.
+  - out-of-order 를 켜지 않는다. 코디네이터가 이 PR 이 막는 쪽이라고 알리면 `--again` 으로 새 번호를 받아 파일 이름을 바꾼다.
+  ```
+
 - 담당 범위, 기대하는 이득, 선행 결과, 결정하지 못한 사항
 - effort 가 `low` 나 `medium` 이면 「끝까지 진행하고 판단만 ask 로 묻는다. 검증 명령을 실행한다」 를 넣는다. 중간에 멈추거나 검증을 건너뛴 채 보고하는 것을 막는다
 - Ownership 에 「구현이 docs 계약과 달라지면 같은 커밋에서 그 절을 고친다. 고치기 전에 ask 로 알린다」.
