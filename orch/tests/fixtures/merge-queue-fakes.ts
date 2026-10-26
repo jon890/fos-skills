@@ -3,7 +3,7 @@
 // 가짜 gh 는 FAKE_STATE 의 JSON 상태로 움직이고 받은 인자를 FAKE_LOG 에 한 줄씩 적는다.
 // 머지 큐가 넘기는 --jq 식을 그대로 확인하려고 진짜 jq 로 평가한다. 그래서 jq 가 없으면 두 테스트를 건너뛴다.
 // 상태 키: <번호> 마다 PR 필드(state, statusCheckRollup, mergeable, url, headRefName, baseRefName, headRefOid,
-//   isCrossRepository, mergeStateStatus)와 흉내 칸(appear, update_fails, after_update, after_update_head),
+//   isCrossRepository, mergeStateStatus)와 흉내 칸(appear, update_fails(true 나 stderr 문구), after_update, after_update_head),
 //   그리고 _behind, _behind_after_update, _api_fails, _rules, _rules_error, _view_fails, _remote_head, _base_head, _ls_remote_fails.
 //   쌓인 PR 칸: _based(`pr list --base` 가 내는 열린 PR 목록. `pr edit <n> --base` 가 그 PR 을 뺀다), _list_fails,
 //   _edit_fails, _user(`api user` 의 login. 기본 me).
@@ -63,7 +63,11 @@ if (args[0] === 'api') {
   if (path.includes('update-branch')) {
     const parts = path.split('/')
     const pr = state[parts[parts.length - 2]]
-    if (pr.update_fails) process.exit(1)
+    if (pr.update_fails) {
+      // 문자열이면 gh 가 stderr 에 내는 이유다(충돌 같은 것)
+      if (typeof pr.update_fails === 'string') fs.writeSync(2, pr.update_fails + '\\n')
+      process.exit(1)
+    }
     pr.headRefOid = pr.after_update_head ?? 'new'
     pr.statusCheckRollup = []
     pr.appear = { left: 2, checks: pr.after_update ?? [] }

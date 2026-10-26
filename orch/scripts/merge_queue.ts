@@ -1,13 +1,15 @@
 // 사용: merge_queue.ts [옵션] PR[:머지 전 명령] ...
 //
 // 받은 순서대로 PR 을 하나씩 머지한다. 한 PR 이라도 조건에 못 미치면 이유를 찍고 종료 코드 1 로 멈춘다.
+// base 와 충돌하는 PR 은 멈추지 않고 큐에서 빼고 다음 PR 로 간다(아래 「충돌」). 묶음(--chain) 안에서는 앞 PR 이 빠지면 뒤 PR 도 뺀다.
 // PR 마다 하는 일:
 //   1. 이미 MERGED 면 건너뛴다. OPEN 이 아니면 멈춘다
 //   2. 필수 체크가 모두 나타나고 끝날 때까지 기다린다(--check-timeout 분까지).
 //      PR 을 연 직후에는 체크 목록이 비어 있어 「대기 0」이 「모두 끝남」이 아니기 때문이다
 //      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
 //      (--up-to-date-when overlap 이면 base 최신을 품지 않아도 단위가 겹치지 않으면 merge 없이 3 으로 간다)
-//   3. 실패한 체크, 미해결 리뷰 스레드, 충돌이 있으면 멈춘다. mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다
+//   3. 실패한 체크, 미해결 리뷰 스레드가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
+//      mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다
 //      --allow-fail 로 준 체크의 실패는 세지 않고 경고 줄만 찍는다
 //   3-1. --stop-on-overlap 이나 --verify-merged 를 주면, PR 이 바꾼 파일과 PR 이 갈라진 뒤 base 에서 바뀐 파일이
 //      겹치는지 본다. 겹치면 --stop-on-overlap 은 겹친 파일을 찍고 멈추고, --verify-merged 는 base 와 합친
@@ -40,6 +42,16 @@
 //   이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue(--after-merged 포함)만 돌리고 정리(cleanup-sweep)는 부르지 않는다.
 //   보류로 멈출 때, 큐 끝의 after-queue 가 설정 오류를 낼 때와 같은 규칙이다
 //
+// 충돌: update-branch 가 충돌로 실패하거나 mergeable 이 CONFLICTING 인 PR 은 `CONFLICT <PR> <이유>` 를 찍고 큐에서 뺀다.
+//   --continue-on-hold 가 없어도 다음 PR 로 간다. 충돌한 PR 하나 때문에 머지할 수 있는 뒤 PR 이 함께 멈추지 않게 하기 위해서다.
+//   상주 루프의 알림 파일(lib/loop.ts 의 appendEvent)에 `QUEUE-CONFLICT` 를 쓴다. Run 은 --sweep-arg 로 준 --run 이고, 없으면 Run 이 없는 루프의 파일이다.
+//   그 PR 의 worker 에게 base 를 합치라고 보내는 일은 상주 루프의 충돌 처리와 notify-conflicts.ts 가 한다(pr-conflict).
+//   충돌로 뺀 PR 은 큐 끝에 `QUEUE-CONFLICT 번호...` 로 다시 모으고 `QUEUE-HELD` 에도 든다. 종료 코드는 1 이다.
+//   update-branch 의 다른 실패(검사한 HEAD 와 다르다 같은 것)는 지금처럼 멈춘다
+// 묶음: `--chain 101,102,103` 은 앞 PR 이 먼저 머지돼야 하는 PR 들이다(마이그레이션 순서 같은 것). 묶음 안 앞 PR 이 머지되지 않고
+//   빠지면(충돌, --continue-on-hold 의 보류, 묶음으로 뺌) 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 를 찍고 머지하지 않는다.
+//   묶음 밖의 PR 은 이어 머지한다. 묶음의 PR 은 큐에 있어야 하고 큐의 순서와 같은 순서로 적는다. PR 하나는 묶음 하나에만 든다
+//
 // origin 은 PR 이 속한 저장소를 가리켜야 한다. fork 를 origin 으로 둔 체크아웃에서는 HEAD 대조가 STOP 으로 끝난다.
 //
 // 옵션
@@ -52,6 +64,7 @@
 //   --before CMD          모든 PR 에 쓸 머지 전 명령. before-merge 의 옛 칸이다. `PR:명령` 으로 준 PR 에서는 그 명령이 대신한다.
 //                         `PR:명령` 은 이벤트가 아니라 시간 제한 없이 bash -c 로 돌고, before-merge 핸들러가 있으면 그 다음에 돈다.
 //                         콜론 뒤가 빈 `PR:` 는 그 PR 에서 --before 를 끈다(핸들러는 그대로 돈다)
+//   --chain A,B,C         앞 PR 이 먼저 머지돼야 하는 묶음(위 「묶음」). 여러 번 준다
 //   --last-of-task PR     그 PR 이 task 의 마지막 PR 이다. before-merge 입력의 last_of_task 가 true 다. 여러 번 준다.
 //                         큐에 없는 번호면 사용법 오류다
 //   --method M            merge | squash | rebase. 기본 merge
@@ -144,7 +157,8 @@
 // OWNER, REPO, GH_HOST(위 --hostname 과 같은 값)를 받는다.
 // 예: merge_queue.ts 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 //
-// 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음. 3 보다 우선한다),
+// 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음. 충돌이나 묶음으로 뺀 PR 이 있음.
+//           3 보다 우선한다),
 //           2 사용법 오류(설정 파일 오류, 핸들러와 옛 칸이 함께 있음, 큐에 없는 --last-of-task 포함),
 //           3 모두 머지했지만 after-merge 나 after-queue(--after-merged 포함)가 하나라도 실패하거나 시간을 넘겼다,
 //           143 SIGTERM 을 받았다, 130 SIGINT 를 받았다
@@ -161,6 +175,7 @@ import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownA
 import { groupMap, isDoc } from './lib/overlap.ts'
 import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
+import { appendEvent } from './lib/loop.ts'
 import { alive } from './lib/process.ts'
 import { pyJson } from './lib/py.ts'
 import { QUEUE_VALUE_OPTIONS } from './lib/queue-options.ts'
@@ -195,6 +210,9 @@ class Usage extends Error {}
 // PR 하나가 조건에 못 미쳐 멈춘다. 종료 코드 1 이고 --continue-on-hold 면 다음 PR 로 간다
 class Stop extends Error {}
 
+// PR 하나가 base 와 충돌한다. 머리 주석의 「충돌」 대로 큐에서 빼고 다음 PR 로 간다
+class Conflict extends Stop {}
+
 type Options = {
   repo: string
   beforeAll: string
@@ -221,6 +239,7 @@ type Options = {
   afterMerged: string
   copyDir: string
   lastOfTask: string[]
+  chains: string[][]
   items: string[]
 }
 
@@ -330,6 +349,7 @@ function parseArgs(argv: string[]): Options {
     afterMerged: '',
     copyDir: '',
     lastOfTask: [],
+    chains: [],
     items: [],
   }
   let i = 0
@@ -360,6 +380,7 @@ function parseArgs(argv: string[]): Options {
       else if (arg === '--after-merged') o.afterMerged = value
       else if (arg === '--sweep-arg') o.sweepArgs.push(value)
       else if (arg === '--last-of-task') o.lastOfTask.push(value)
+      else if (arg === '--chain') o.chains.push(value.split(','))
       continue
     }
     if (arg === '--require-up-to-date') o.upToDate = true
@@ -409,6 +430,18 @@ function validate(o: Options): Options {
   for (const n of o.lastOfTask) {
     if (!queued.includes(n)) throw new Usage(`--last-of-task ${n} 는 큐에 없는 PR 이다`)
   }
+  const chained = new Set<string>()
+  for (const chain of o.chains) {
+    const label = chain.join(',')
+    if (chain.length < 2 || !chain.every(isDigits)) throw new Usage(`--chain ${label} 은 PR 번호 둘 이상을 쉼표로 잇는다`)
+    for (const n of chain) {
+      if (!queued.includes(n)) throw new Usage(`--chain ${label} 의 ${n} 는 큐에 없는 PR 이다`)
+      if (chained.has(n)) throw new Usage(`--chain ${label} 의 ${n} 는 다른 묶음에도 있다`)
+      chained.add(n)
+    }
+    const order = chain.map((n) => queued.indexOf(n))
+    if (order.some((at, i) => i > 0 && at <= order[i - 1])) throw new Usage(`--chain ${label} 은 큐의 순서와 같게 적는다`)
+  }
   return o
 }
 
@@ -429,6 +462,8 @@ class Queue {
   // [번호, code|docs]. --after-merged 가 읽는다
   merged: [string, 'code' | 'docs'][] = []
   held: string[] = []
+  // 충돌로 뺀 PR. held 에도 든다
+  conflicted: string[] = []
   copy = ''
   afterFailed = false
   // after-merge 가 실패하거나 시간을 넘겼다. 모두 머지했으면 종료 코드 3 이다
@@ -896,6 +931,7 @@ class Queue {
       }
 
       log(`${n} fails=${f} threads=${t} mergeable=${m}`)
+      if (m === 'CONFLICTING') throw new Conflict(`${n} base(${p.base}) 와 충돌한다(mergeable=CONFLICTING)`)
       if (f !== '0' || t !== '0' || m !== 'MERGEABLE') stop(n)
 
       p.ov = []
@@ -1071,7 +1107,10 @@ class Queue {
         host: p.apiHost,
         expectedHead: p.ph,
       })
-      if (updated.code !== 0) stop(`${n} update-branch 실패(충돌 가능)`)
+      if (updated.code !== 0) {
+        if (/conflict/i.test(updated.stderr + updated.stdout)) throw new Conflict(`${n} update-branch 가 충돌로 실패했다`)
+        stop(`${n} update-branch 실패`)
+      }
       // update-branch 는 비동기라 PR HEAD 가 바뀔 때까지 기다린다
       let next = ''
       for (let i = 0; i < 12; i++) {
@@ -1196,10 +1235,35 @@ class Queue {
     return 2
   }
 
+  // 충돌로 뺀 PR 을 상주 루프의 알림 파일에 쓴다. 쓰지 못해도 큐는 이어 간다
+  notifyConflict(n: string, reason: string): void {
+    const sweep = this.o.sweepArgs
+    const at = sweep.indexOf('--run')
+    const run = at >= 0 && at + 1 < sweep.length ? sweep[at + 1] : null
+    try {
+      appendEvent(this.repoDir, 'QUEUE-CONFLICT', Number(n), reason, run)
+    } catch (e) {
+      process.stderr.write(`경고: QUEUE-CONFLICT 알림을 쓰지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
+    }
+  }
+
+  // 묶음 안에서 n 보다 앞에 있고 머지되지 않고 빠진 PR. 없으면 null
+  droppedBefore(n: string): string | null {
+    const chain = this.o.chains.find((c) => c.includes(n))
+    if (!chain) return null
+    return chain.slice(0, chain.indexOf(n)).find((m) => this.held.includes(m)) ?? null
+  }
+
   async run(): Promise<number> {
     const o = this.o
     for (const item of o.items) {
       const n = item.split(':')[0]
+      const before = this.droppedBefore(n)
+      if (before !== null) {
+        out(`SKIP ${n} 묶음의 앞 PR ${before} 가 머지되지 않았다`)
+        this.held.push(n)
+        continue
+      }
       let code = 0
       try {
         await this.processPr(item)
@@ -1209,7 +1273,11 @@ class Queue {
           this.dropCopy()
           return await this.stopOnConfig(e)
         }
-        if (e instanceof Stop) {
+        if (e instanceof Conflict) {
+          out(`CONFLICT ${e.message}`)
+          this.conflicted.push(n)
+          this.notifyConflict(n, e.message)
+        } else if (e instanceof Stop) {
           out(`STOP ${e.message}`)
         } else {
           // 예상 못 한 오류도 그 PR 의 보류로 다룬다
@@ -1222,6 +1290,10 @@ class Queue {
       }
       if (code === 0) continue
       this.held.push(n)
+      if (this.conflicted.includes(n)) {
+        log(`${n} 충돌. 큐에서 빼고 다음 PR 로 간다`)
+        continue
+      }
       if (!o.continueOnHold) {
         // 보류로 멈춰도 앞에서 머지한 PR 의 머지 뒤 명령은 돌린다
         await this.runAfterMerged()
@@ -1229,6 +1301,7 @@ class Queue {
       }
       log(`${n} 보류. 다음 PR 로 간다`)
     }
+    if (this.conflicted.length > 0) out(`QUEUE-CONFLICT ${this.conflicted.join(' ')}`)
     out(this.held.length > 0 ? `QUEUE-HELD ${this.held.join(' ')}` : 'QUEUE-DONE')
     await this.runAfterMerged()
     if (o.sweep) await this.sweep()
