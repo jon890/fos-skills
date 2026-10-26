@@ -14,8 +14,11 @@
 //   doing 항목은 진행률이 있어야 한다. 단계 줄이나 --progress N/M 이 없으면 set 을 거절하고 보드를 고치지 않는다
 //   board.ts step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
 //   board.ts steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
+//     단계 밖의 줄이 있으면 stderr 에 mark 번호와 함께 낸다. stdout 의 JSON 은 orch 가 읽어 단계를 판정하므로 그 줄을 넣지 않는다
+//   board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다)
+//     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
 //   board.ts del <id>
-//   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙인다)
+//   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 // status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 // 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
 //   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
@@ -50,9 +53,9 @@ const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'prog
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-const COMMANDS = ['set', 'step', 'steps', 'del', 'list']
+const COMMANDS = ['set', 'step', 'steps', 'mark', 'del', 'list']
 const USAGE =
-  '사용법: board.ts {set,step,steps,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '사용법: board.ts {set,step,steps,mark,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--progress N/M] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 옛 board.py 의 argparse 도움말처럼 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
@@ -69,8 +72,11 @@ const HELP = `${USAGE}
   doing 항목은 진행률이 있어야 한다. 단계 줄이나 --progress N/M 이 없으면 set 을 거절하고 보드를 고치지 않는다
   board.ts step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
   board.ts steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
+    단계 밖의 줄이 있으면 stderr 에 mark 번호와 함께 낸다
+  board.ts mark <id> <n> [--undo]   (n 번 줄을 끝낸 것으로 표시한다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고 번호 없는 줄도 센다)
+    step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
   board.ts del <id>
-  board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙인다)
+  board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
@@ -168,6 +174,23 @@ function progressText(item: Item): string {
   if (progress === null) return '진행률 없음'
   const [done, total] = progress
   return `${done}/${total} (${pyRound((done * 100) / total)}%)`
+}
+
+// details 다음 next 순서의 모든 줄. 번호 없는 참고 줄도 들고, mark 번호는 이 순서의 1부터다.
+// 줄 객체는 item 에 든 것 그대로라 done 을 바꾸면 항목이 바뀐다. main 이 normalizeItem 으로 목록을 Line[] 로 바꿔 둔다
+function allLines(item: Item): Line[] {
+  return ['details', 'next'].flatMap((key) => (Array.isArray(item[key]) ? (item[key] as Line[]) : []))
+}
+
+// list 와 steps 의 stderr 가 내는 줄 꼴. 「    3 ✓ 본문」 이나 「    3   본문」 이다
+function lineText(number: number, line: Line): string {
+  return `    ${number} ${line.done ? '✓' : ' '} ${line.text}\n`
+}
+
+// 줄이 하나 이상 있고 모두 끝난 decide 항목을 done 으로 바꾼다. 결정 필요 수에서 그 항목을 빼기 위해서다(ADR-015)
+function closeDecided(item: Item): void {
+  const lines = allLines(item)
+  if (item.status === 'decide' && lines.length > 0 && lines.every((line) => line.done)) item.status = 'done'
 }
 
 // Python 의 str.ljust 처럼 글자 수로 채운다
@@ -290,6 +313,7 @@ function apply(a: Args, board: Board): boolean {
     for (const item of board.items) {
       const status = typeof item.status === 'string' ? item.status : String(item.status ?? '?')
       process.stdout.write(`${ljust(status, 7)} ${ljust(String(item.id), 16)} ${String(item.title ?? '')}   ${progressText(item)}\n`)
+      allLines(item).forEach((line, index) => process.stdout.write(lineText(index + 1, line)))
     }
     return false
   }
@@ -298,11 +322,18 @@ function apply(a: Args, board: Board): boolean {
   if (a.cmd === 'steps') {
     const item = find(board, id)
     if (!item) throw new Refused(`항목이 없다: ${id}`)
-    const steps = stepSource(item)[1].flatMap((line) => {
+    const [source, lines] = stepSource(item)
+    const steps = lines.flatMap((line) => {
       const step = parseStep(line)
       return step ? [{ number: step[0], done: step[1], text: line.text }] : []
     })
     process.stdout.write(`${pyJson(steps)}\n`)
+    // 진행률을 세지 않는 줄: 단계를 세는 쪽의 참고 줄과 다른 쪽의 모든 줄이다. mark 로 끝낼 수 있게 그 번호를 보인다
+    const outside = allLines(item).flatMap((line, index) => {
+      const counted = source !== null && (item[source] as Line[]).includes(line) && parseStep(line) !== null
+      return counted ? [] : [lineText(index + 1, line)]
+    })
+    if (outside.length > 0) process.stderr.write(`단계 밖의 줄(mark 번호):\n${outside.join('')}`)
     return false
   }
   if (a.cmd === 'step') {
@@ -317,6 +348,19 @@ function apply(a: Args, board: Board): boolean {
     }
     line.done = !a.undo
     item[source] = lines
+    if (!a.undo) closeDecided(item)
+    return true
+  }
+  if (a.cmd === 'mark') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    if (!/^\d+$/.test(a.status ?? '')) throw new Refused('mark 에는 줄 번호가 필요하다')
+    const number = Number(a.status)
+    const lines = allLines(item)
+    const line = lines[number - 1]
+    if (number < 1 || !line) throw new Refused(`${number} 번 줄이 없다. 줄은 ${lines.length} 개다. 번호는 board.ts list 로 본다`)
+    line.done = !a.undo
+    if (!a.undo) closeDecided(item)
     return true
   }
   if (a.cmd === 'del') {

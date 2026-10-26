@@ -98,6 +98,73 @@ describe('step 과 steps', () => {
     assert.equal(readFileSync(file, 'utf8'), before)
     assert.equal(board('steps', 'none').code, 1)
   })
+
+  test('steps 는 단계 밖의 줄을 stderr 에 mark 번호와 함께 내고 stdout JSON 은 그대로다', () => {
+    write({ id: 's', status: 'doing', details: ['참고: x', '✓ 1 a'], next: ['결정: y'] })
+    const r = board('steps', 's')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout, '[{"number": 1, "done": true, "text": "1 a"}]\n')
+    assert.equal(r.stderr, '단계 밖의 줄(mark 번호):\n    1   참고: x\n    3   결정: y\n')
+  })
+
+  test('steps 는 단계 밖의 줄이 없으면 stderr 를 비운다', () => {
+    write({ id: 's', status: 'doing', next: '1. a\n2. b' })
+    const r = board('steps', 's')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stderr, '')
+  })
+})
+
+describe('mark', () => {
+  test('번호 없는 줄을 끝내고 --undo 로 되돌린다. 번호는 details 다음 next 순서다', () => {
+    write({ id: 'n', status: 'wait', details: ['참고 a', '1 b'], next: ['결정 c'] })
+    let r = board('mark', 'n', '3')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('n').details, rows(['참고 a', false], ['1 b', false]))
+    assert.deepEqual(item('n').next, rows(['결정 c', true]))
+    r = board('mark', 'n', '1')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('n').details, rows(['참고 a', true], ['1 b', false]))
+    board('mark', 'n', '3', '--undo')
+    assert.deepEqual(item('n').next, rows(['결정 c', false]))
+    assert.equal(item('n').status, 'wait')
+  })
+
+  test('decide 항목의 마지막 줄을 끝내면 done 이 되고 --undo 는 status 를 바꾸지 않는다', () => {
+    write({ id: 'd', status: 'decide', details: ['A 를 고를지', 'B 를 고를지'] })
+    board('mark', 'd', '1')
+    assert.equal(item('d').status, 'decide')
+    assert.equal(board('mark', 'd', '2').code, 0)
+    assert.equal(item('d').status, 'done')
+    board('mark', 'd', '2', '--undo')
+    assert.deepEqual(item('d').details, rows(['A 를 고를지', true], ['B 를 고를지', false]))
+    assert.equal(item('d').status, 'done')
+  })
+
+  test('step 으로 decide 항목의 줄을 모두 끝내도 done 이 된다', () => {
+    write({ id: 'd', status: 'decide', next: '1. 정하기' })
+    assert.equal(board('step', 'd', '1').code, 0)
+    assert.equal(item('d').status, 'done')
+  })
+
+  test('decide 가 아닌 항목은 줄이 모두 끝나도 status 를 바꾸지 않는다', () => {
+    write({ id: 'w', status: 'wait', next: '확인' })
+    board('mark', 'w', '1')
+    assert.equal(item('w').status, 'wait')
+  })
+
+  test('없는 줄 번호는 거절하고 보드를 고치지 않는다', () => {
+    write({ id: 'x', status: 'decide', next: '결정' })
+    const before = readFileSync(file)
+    for (const n of ['0', '2']) {
+      const r = board('mark', 'x', n)
+      assert.equal(r.code, 1, `${n}: ${r.stderr}`)
+      assert.ok(r.stderr.includes(`${n} 번 줄이 없다`), r.stderr)
+    }
+    assert.equal(board('mark', 'x').code, 1)
+    assert.equal(board('mark', 'none', '1').code, 1)
+    assert.deepEqual(readFileSync(file), before)
+  })
 })
 
 describe('set', () => {
@@ -250,8 +317,9 @@ describe('사용법', () => {
     test(`${flag} 는 사용법을 stdout 에 내고 0 이다`, () => {
       const r = board('set', flag)
       assert.equal(r.code, 0, r.stderr)
-      assert.ok(r.stdout.startsWith('사용법: board.ts {set,step,steps,del,list}'), r.stdout)
+      assert.ok(r.stdout.startsWith('사용법: board.ts {set,step,steps,mark,del,list}'), r.stdout)
       assert.ok(r.stdout.includes('board.ts steps <id>'), r.stdout)
+      assert.ok(r.stdout.includes('board.ts mark <id> <n>'), r.stdout)
       assert.equal(existsSync(file), false, '도움말인데 보드를 만들었다')
     })
   }
@@ -269,10 +337,22 @@ describe('사용법', () => {
 describe('list', () => {
   test('항목마다 진행률을 붙인다', () => {
     write({ id: 'a', status: 'doing', next: '✓ 1. a\n[x] 2. b\n3. c' }, { id: 'b', status: 'doing', progress: '1/4' }, { id: 'c', status: 'wait' })
-    const lines = board('list').stdout.split('\n')
+    // 줄 표시는 들여쓰기로 시작하므로 항목 줄만 고른다
+    const lines = board('list')
+      .stdout.split('\n')
+      .filter((line) => line && !line.startsWith(' '))
     assert.ok(lines[0].endsWith('2/3 (67%)'), lines[0])
     assert.ok(lines[1].endsWith('1/4 (25%)'), lines[1])
     assert.ok(lines[2].endsWith('진행률 없음'), lines[2])
+  })
+
+  test('항목 줄 아래에 details 와 next 의 모든 줄을 mark 번호와 끝냄 표시로 낸다', () => {
+    write({ id: 'a', status: 'decide', details: ['✓ 1. a', '참고 b'], next: ['결정 c'] }, { id: 'b', status: 'wait' })
+    const lines = board('list').stdout.split('\n')
+    assert.ok(lines[0].startsWith('decide  a'), lines[0])
+    assert.deepEqual(lines.slice(1, 4), ['    1 ✓ 1. a', '    2   참고 b', '    3   결정 c'])
+    assert.ok(lines[4].startsWith('wait    b'), lines[4])
+    assert.equal(lines[5], '')
   })
 
   test('딱 반인 백분율은 옛 명령처럼 짝수 쪽으로 반올림한다', () => {
