@@ -1,21 +1,30 @@
-// 저장소마다 하나 도는 상주 루프다. 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 충돌 PR 처리를 한다.
-// 코디네이터를 깨워야 하는 일은 알림 파일(state/loop-events.jsonl)에 적고, 코디네이터의 wait-important --loop-repo 가 그 파일로 깨어난다.
+// 저장소마다 하나 도는 상주 루프다. 여러 세션의 Run 을 함께 맡는다(ADR-012, 아래 「Run」). 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 충돌 PR 처리를 한다.
+// 코디네이터를 깨워야 하는 일은 그 Run 의 알림 파일(state/loop-events/<Run>.jsonl)에 적고, 코디네이터의 wait-important --loop-repo 가 그 파일로 깨어난다.
 // 루프는 상태로만 판정한다. 루프가 없던 동안 생긴 일은 다음 틱이 다시 보므로, 죽으면 다시 띄우기만 하면 된다.
 // 상태 파일의 읽기, 생존 판정, 알림 파일과 커서는 lib/loop.ts 가 소유한다. 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이다.
 //
 // 사용법:
-//     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop | --status | --foreground) [--once]
+//     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop [--all] | --status | --foreground) [--once]
 //     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N      (내부용. 부모가 띄운다)
 //
 //     --repo         대상 저장소. 주 checkout 으로 바꿔 쓴다
-//     --run          질문을 확인하고 정리에 넘길 Run. 없으면 config.json 의 finish.run 이다
-//     --specs-dir    정리에 넘길 지시서 폴더. 없으면 finish.specs_dir 이고, 둘 다 없으면 넘기지 않는다
-//     --start        살아 있는 루프가 없으면 자기 자신을 --foreground 로 분리해(detached, stdio ignore) 띄우고, 자식이 loop.json 에
-//                    자기 pid 를 쓸 때까지 10초까지 기다린다. 하네스의 백그라운드 명령이 아니라 시간 한도에 묶이지 않는다
+//     --run          루프에 등록하거나 뺄 Run. 없으면 config.json 의 finish.run 이다
+//     --specs-dir    그 Run 의 정리에 넘길 지시서 폴더. 없으면 finish.specs_dir 이고, 둘 다 없으면 넘기지 않는다. 등록 파일에 적는다
+//     --start        Run 이 있으면 먼저 등록한다(lib/loop.ts 의 registerRun). 살아 있는 루프가 없으면 자기 자신을 --foreground 로
+//                    분리해(detached, stdio ignore) 띄우고, 자식이 loop.json 에 자기 pid 를 쓸 때까지 10초까지 기다린다.
+//                    하네스의 백그라운드 명령이 아니라 시간 한도에 묶이지 않는다.
 //                    LOOP-STARTED <pid> run=<Run id 또는 -> 와 0. 10초 안에 쓰지 않으면 자식을 끝내고 LOOP-START-FAIL <이유> 와 1.
-//                    살아 있는 루프가 있으면 요청한 Run 과 같든 다르든 띄우지 않고 LOOP-RUNNING <pid> run=<기존 Run id 또는 -> 와 4.
-//                    Run 이 다르면 --stop 뒤 다시 --start 한다
-//     --stop         loop.json 의 pid 에 TERM 을 보내고 20초까지 끝나기를 기다린다. LOOP-STOPPED <pid> 와 0,
+//                    살아 있는 루프가 있으면 띄우지 않는다. 그 Run 이 아직 등록되지 않았으면 등록하고 LOOP-JOINED <pid> run=<Run id> 와 0.
+//                    이미 등록됐거나 Run 이 없으면 LOOP-RUNNING <pid> run=<Run id> 와 4.
+//                    Run 등록을 모르는 옛 루프(loop.json 에 runs 가 없다)면 등록하지 않고 LOOP-RUNNING 과 4 이고, Run 이 다르면
+//                    `안내: …` 한 줄을 더 낸다. 그 루프를 띄운 세션이 --stop 뒤 새 orch 로 다시 띄워야 한다
+//     --stop         --run 을 주면 그 Run 의 등록만 지운다. 다른 Run 이 남으면 루프를 멈추지 않고
+//                    LOOP-LEFT <pid> run=<Run id> runs=<남은 Run 목록> 와 0, 등록돼 있지 않았으면 LOOP-NOT-REGISTERED run=<Run id> 와 0.
+//                    옛 루프가 다른 Run 의 것이면 멈추지 않고 LOOP-NOT-REGISTERED 와 안내 줄, 0 이다.
+//                    --run 이 없으면 등록된 Run 이 둘 이상일 때 멈추지 않고 LOOP-STOP-SHARED <pid> runs=<목록> 와 1 이다.
+//                    다른 세션의 루프를 끊지 않으려는 것이다. --all 을 주면 모두 지우고 멈춘다.
+//                    남은 Run 이 없으면 아래처럼 루프 프로세스를 멈춘다.
+//                    loop.json 의 pid 에 TERM 을 보내고 20초까지 끝나기를 기다린다. LOOP-STOPPED <pid> 와 0,
 //                    루프가 없으면 LOOP-NOT-RUNNING 과 0, 20초 뒤에도 살아 있으면 LOOP-STOP-TIMEOUT <pid> 와 1.
 //                    pid 가 살아 있어도 그 명령줄에 orch-loop 가 없으면 루프가 아니다. 죽은 루프의 pid 를 다른 프로세스가 다시 받았을 수 있다.
 //                    ps 로 판정할 수 없으면(lib/loop.ts 의 isLoopProcess 가 null) 신호를 보내지 않고 LOOP-STOP-UNKNOWN <pid> <이유> 와 1.
@@ -24,6 +33,7 @@
 //     --foreground   지금 프로세스에서 틱을 돈다. --start 의 자식과 테스트가 쓴다. 신호를 받으면 진행 중인 틱 자식을 끝내고(아래 「틱」)
 //                    128 + 신호 번호
 //     --once         --foreground 와 함께 틱 한 번만 돌고 0 으로 끝난다
+//     --all          --stop 과 함께, --run 없이 준다. 등록된 Run 을 모두 지우고 루프를 멈춘다
 //     --tick, --tick-number N
 //                    틱 하나를 돌고 끝난다. --foreground 의 부모가 틱마다 띄운다. N 은 1 부터다.
 //                    stdout 마지막 줄에 {"tick_at": <ISO 8601 UTC>, "errors": {<출처>: <이유 또는 null>}, "open_prs": <번호 목록 또는 null>,
@@ -37,6 +47,21 @@
 //     살아 있는 루프가 쥐고 있으면 LOOP-RUNNING 과 4 다.
 //     --start 는 loopStatus 와 이 잠금을 함께 본다.
 //
+// Run(ADR-012): 루프는 lib/loop.ts 의 「Run 등록」 이 정한 Run 들을 맡는다. 앞이 주 Run 이다.
+//     부모는 틱마다 등록을 읽어 loop.json 의 runs(목록)와 run(주 Run)에 적는다. 등록된 Run 이 있던 루프는 마지막 Run 이 빠지면
+//     다음 틱 전에 LOOP-EMPTY 줄을 내고 0 으로 끝난다. 처음부터 등록이 없던 루프(Run 없이 띄웠다)는 --stop 까지 돈다.
+//     --foreground 는 시작할 때 앞 루프가 남긴 다른 Run 의 등록을 지우고 --run(또는 finish.run)을 등록한다. 루프가 죽은 뒤 끝난 세션의
+//     Run 을 계속 맡지 않게 하려는 것이다. 살아 있는 세션은 wait-important 가 미등록 LOOP-DEAD 로 깨워 다시 등록하게 한다.
+//     --stop 도 --run 이 없으면 finish.run 을 쓴다.
+//     틱 자식은 등록을 다시 읽는다. 등록이 없으면 --run(또는 finish.run) 하나를, 그것도 없으면 Run 없는 한 칸을 맡는다.
+//     알림의 Run: Run 에 묶인 일(질문, 그 Run 의 정리, 그 Run 의 tick 핸들러)의 알림은 그 Run 의 파일에 쓴다.
+//     PR 에 붙는 알림(CI-FAILED, CONFLICT-ORPHAN)은 그 PR 워크트리의 worker 를 띄운 Run(아래 「worker 찾기」)에, 주인을 모르면 주 Run 에 쓴다.
+//     공유 일(열린 PR 조회, 보드, CI 규칙, 충돌 처리)의 WATCH-ERROR, 보드 결정의 REMINDER, 부모의 WATCH-ERROR tick 은 주 Run 에 쓴다.
+//     Run 없는 한 칸이면 옛 파일(state/loop-events.jsonl)에 쓴다.
+//     worker 찾기: 맡은 Run 마다 worker-list --run 을 읽어(한 틱에 Run 마다 한 번) 그 워크트리의 worker 를 찾는다. 살아 있는 dispatch 가
+//     있는 Run 을 먼저 고르고, 없으면 처음 찾은 Run 이다. 살아 있는 dispatch 를 못 찾았고 읽지 못한 Run 이 있으면 읽지 못한 것으로 본다.
+//     ci-passed 와 ci-failed 핸들러의 run 도 그 Run 이다(모르면 주 Run).
+//
 // 틱: 부모는 틱 자식 하나가 끝나면 pipeline.tick_sec 을 기다린 뒤 다음 틱 자식을 띄운다. 겹치지 않는다.
 //     틱을 자식 프로세스로 떼어 낸 것은 lib 의 조회(질문 조회, gh)가 동기라, 같은 프로세스에서 돌면 그동안 생존 타이머가 돌지 못해서다.
 //     틱 자식은 자기 프로세스 그룹으로 띄운다(lib/proc.ts runAsync 의 group). 부모가 신호를 받으면 그 그룹 전체에 TERM 을 보내고,
@@ -46,15 +71,17 @@
 //     바뀌었거나 그 pid 가 죽었으면 SIGHUP 을 받은 것처럼 자기 자식을 끝내고 129 로 끝난다. 동기 조회(질문 조회, gh) 중에는 그 조회가
 //     끝난 뒤에 본다. 부모가 없으면 stdout 을 읽는 쪽도 없으므로 그 뒤의 쓰기 오류(EPIPE)는 버린다.
 //     틱 자식이 하는 일(순서대로, 하나가 실패해도 다음을 한다):
-//     1. 질문 확인. Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
+//     1. 질문 확인. Run 마다, Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
 //        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓰고 worker-question 을 낸다. REMINDER 는 알림 파일에도 쓴다.
 //        새 질문(QUESTION)은 알림 파일에 쓰지 않는다. 코디네이터의 wait-important 가 question 메시지로 이미 깨어난다
 //     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 충돌 처리가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     3. 보드 동기화(워크트리 정리 전). 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
 //        decide 제목·줄의 내용 해시가 달라지면 REMINDER 를 기록한다(lib/board.ts)
-//     4. 정리. cleanup-sweep --repo <repo> --kill-holders --remote-branches --apply [--run <run>] [--specs-dir <dir>]
+//     4. 정리. Run 마다 cleanup-sweep --repo <repo> --kill-holders [--remote-branches] --apply [--run <run>] [--specs-dir <그 Run 의 dir>].
+//        --remote-branches 는 저장소 공유 일이라 주 Run 의 차례에서만 준다
 //     5. CI 감시. 아래 「CI 감시」
-//     6. tick 이벤트. 입력은 tick(틱 번호)과 open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
+//     6. tick 이벤트. Run 마다 공통 필드 run 을 그 Run 으로 낸다. 입력은 tick(틱 번호), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null),
+//        primary(주 Run 이면 true)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     7. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors 와 ci 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
 //     ci(결과에 있을 때만 통째로 바꾼다)를 쓴다.
@@ -74,8 +101,8 @@
 //     결과의 ci 는 이번 틱에 본 내 열린 PR 의 값이라 닫힌 PR 의 항목은 빠진다. draft 와 규칙을 읽지 못한 base 의 PR 처럼 이번 틱에
 //     판정하지 않은 PR 은 이전 값을 그대로 옮긴다. 지우면 다음 틱에 같은 HEAD 의 실패를 다시 알린다.
 //     규칙을 읽지 못한 base 는 errors.ci 로 `WATCH-ERROR ci: …` 를 쓴다(아래 「오류 줄 억제」).
-//     worker 에게 보내기: Run id 가 있고, 그 PR 브랜치의 워크트리(lib/workers.ts 의 worktreePaths)에 살아 있는 dispatch(workerFor,
-//     LIVE_DISPATCH)가 있을 때만 send-to-worker --dispatch <id> --body <본문> --run <run> 으로 보낸다. 끝난 dispatch 에 후속 지시서로
+//     worker 에게 보내기: 맡은 Run 에 Run id 가 있고, 그 PR 브랜치의 워크트리(lib/workers.ts 의 worktreePaths)에 살아 있는 dispatch
+//     (위 「worker 찾기」, LIVE_DISPATCH)가 있을 때만 send-to-worker --dispatch <id> --body <본문> --run <그 worker 의 Run> 으로 보낸다. 끝난 dispatch 에 후속 지시서로
 //     이어 쓰지 않는다. 그때는 CI-FAILED 로 코디네이터가 판단한다. CI-FAILED 의 text 는 `<실패한 체크 이름>: <worker 결과>` 이고 worker 결과는
 //     `보냈다 <dispatch>`, `깨우지 못했다(종료 코드 4)`, `보내지 못했다(종료 코드 <n>)`, `살아 있는 dispatch 없음`, `Run id 없음`,
 //     `worker 목록을 읽지 못했다` 가운데 하나다.
@@ -99,10 +126,12 @@
 // 생존 타이머: 부모가 틱과 따로 ORCH_LOOP_ALIVE_SEC(양수 초, 기본 30)마다 loop.json 의 alive_at 을 쓴다. 시작할 때도 한 번 쓴다.
 //     그래서 긴 틱(정리의 대기, 끝난 dispatch 이어 쓰기)도 죽은 것으로 보이지 않는다.
 //
-// loop.json: pid, run, repo, tick_sec, started_at, alive_at, last_tick, ticks, errors, ci. 시각은 ISO 8601 UTC 다. 부모만 쓴다.
+// loop.json: pid, run(주 Run), runs(등록된 Run 목록), repo, tick_sec, started_at, alive_at, last_tick, ticks, errors, ci. 시각은 ISO 8601 UTC 다. 부모만 쓴다.
 //     시작할 때 앞 loop.json 의 errors 와 ci 를 이어받는다. 다시 띄운 루프가 같은 실패를 다시 알리지 않게 한다.
 //
-// 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
+// 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook)는 `<출처>@<Run>` 키다
+//     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
+//     부모는 등록에서 빠진 Run 의 키를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
 //     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), conflicts(충돌 처리),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
@@ -147,7 +176,7 @@ import { isFile } from './lib/fs.ts'
 import { apiTarget, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { appendEvent, DEFAULT_ALIVE_SEC, isLoopProcess, lockFile, loopStatus, readLoop, writeLoop } from './lib/loop.ts'
+import { appendEvent, DEFAULT_ALIVE_SEC, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
 import { remindDecisions } from './lib/board.ts'
 import { boardPath, makeParent, pathOf } from './lib/paths.ts'
@@ -158,7 +187,7 @@ import { notifyQuestion, poll } from './lib/questions.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
 
 const USAGE = [
-  '사용법: orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop | --status | --foreground) [--once]',
+  '사용법: orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop [--all] | --status | --foreground) [--once]',
   '        orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] --tick --tick-number N',
 ].join('\n')
 const SELF = fileURLToPath(import.meta.url)
@@ -343,12 +372,32 @@ function running(repo: string): { pid: number; run: string } | null {
   return holder === null ? null : { pid: holder, run: runOf(readLoop(repo), holder) }
 }
 
+// 옛 루프는 loop.json 에 runs 가 없다. Run 등록을 모른다(ADR-012)
+function legacyLoop(state: LoopState | null, pid?: number): boolean {
+  return state !== null && !Array.isArray(state.runs) && (pid === undefined || Number(state.pid) === pid)
+}
+
+const LEGACY_HINT = '안내: 이 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다. 그 루프를 띄운 세션이 --stop 한 뒤 새 orch 로 --start 하면 여러 Run 을 함께 맡는다'
+
 async function start(ctx: Context): Promise<number> {
   const found = running(ctx.repo)
   if (found) {
-    log(`LOOP-RUNNING ${found.pid} run=${found.run}`)
+    // 살아 있는 루프에 이 Run 을 더한다. 이미 맡고 있거나 Run 이 없으면 전처럼 LOOP-RUNNING 이다(머리 주석의 --start)
+    const state = readLoop(ctx.repo)
+    if (ctx.run && legacyLoop(state, found.pid)) {
+      log(`LOOP-RUNNING ${found.pid} run=${found.run}`)
+      if (found.run !== ctx.run) log(LEGACY_HINT)
+      return 4
+    }
+    if (ctx.run && !isRegistered(ctx.repo, ctx.run)) {
+      registerRun(ctx.repo, ctx.run, ctx.specsDir)
+      log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
+      return 0
+    }
+    log(`LOOP-RUNNING ${found.pid} run=${ctx.run && isRegistered(ctx.repo, ctx.run) ? ctx.run : found.run}`)
     return 4
   }
+  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir)
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SELF, ...passArgs(ctx), '--foreground'], {
     cwd: ctx.repo,
     detached: true,
@@ -393,7 +442,47 @@ async function start(ctx: Context): Promise<number> {
   return 1
 }
 
-async function stop(repo: string): Promise<number> {
+// 머리 주석의 --stop. run 을 주면 그 Run 만 빼고, 남은 Run 이 없을 때만 루프를 멈춘다
+async function stop(repo: string, run: string | null, all: boolean): Promise<number> {
+  const state = readLoop(repo)
+  if (run !== null) {
+    if (legacyLoop(state) && state?.run && state.run !== run && isLoopProcess(Number(state.pid)) !== false) {
+      // 옛 루프는 다른 Run 의 것이다. 그 세션의 루프를 끊지 않는다
+      log(`LOOP-NOT-REGISTERED run=${run}`)
+      log(LEGACY_HINT)
+      return 0
+    }
+    const removed = unregisterRun(repo, run)
+    const left = registeredRuns(repo)
+    // 등록돼 있지 않던 Run 은 루프를 멈추지 않는다. Run 없이 띄운 루프는 --run 없는 --stop 으로 멈춘다
+    if (!removed && !legacyLoop(state)) {
+      log(`LOOP-NOT-REGISTERED run=${run}`)
+      return 0
+    }
+    if (left.length > 0) {
+      log(`LOOP-LEFT ${state?.pid ?? '-'} run=${run} runs=${left.map((e) => e.run).join(',')}`)
+      return 0
+    }
+    return stopProcess(repo, true)
+  } else if (!all) {
+    const runs = registeredRuns(repo)
+    if (runs.length > 1 && isLoopProcess(Number(state?.pid)) !== false) {
+      log(`LOOP-STOP-SHARED ${state?.pid ?? '-'} runs=${runs.map((e) => e.run).join(',')}`)
+      log('다른 세션의 Run 이 함께 등록돼 있어 멈추지 않았다. 자기 Run 만 빼려면 --stop --run, 모두 멈추려면 --stop --all 이다')
+      return 1
+    }
+  }
+  for (const entry of registeredRuns(repo)) unregisterRun(repo, entry.run)
+  return stopProcess(repo, false)
+}
+
+// recheck 면 신호를 보내기 직전에 등록을 다시 본다. 마지막 Run 을 뺀 사이 다른 세션이 합류했으면 멈추지 않는다
+async function stopProcess(repo: string, recheck: boolean): Promise<number> {
+  const joined = recheck ? registeredRuns(repo) : []
+  if (joined.length > 0) {
+    log(`LOOP-LEFT ${readLoop(repo)?.pid ?? '-'} runs=${joined.map((e) => e.run).join(',')}`)
+    return 0
+  }
   const candidates = [Number(readLoop(repo)?.pid), lockPid(lockFile(repo))]
   const verdicts = candidates.map((p) => ({ pid: p, loop: isLoopProcess(p) }))
   const pid = verdicts.find((v) => v.loop === true)?.pid
@@ -472,13 +561,25 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
     return 4
   }
   process.on('exit', () => releaseLock(lock))
+  // 새로 뜬 루프는 앞 루프의 등록을 지우고 자기 Run 만 남긴다. 끝난 세션의 Run 을 계속 맡지 않게 한다.
+  // 아직 살아 있는 세션은 대기가 미등록 LOOP-DEAD 로 깨어나 다시 등록한다(머리 주석의 「Run」)
+  for (const entry of registeredRuns(ctx.repo)) {
+    if (entry.run === ctx.run) continue
+    unregisterRun(ctx.repo, entry.run)
+    log(`앞 루프의 Run ${entry.run} 등록을 지웠다. 그 세션이 살아 있으면 대기가 미등록으로 깨어나 다시 등록한다`)
+  }
+  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir)
+  let runs = registeredRuns(ctx.repo).map((entry) => entry.run)
+  // 등록된 Run 이 있던 루프는 마지막 Run 이 빠지면 끝난다. 처음부터 Run 이 없던 루프는 --stop 까지 돈다(머리 주석의 「Run」)
+  let hadRuns = runs.length > 0
   const previous = readLoop(ctx.repo)
   const errors = previous && typeof previous.errors === 'object' && previous.errors !== null && !Array.isArray(previous.errors) ? previous.errors : {}
   const ci = ciEntries(previous?.ci)
   const now = iso()
   const state: LoopState = {
     pid: process.pid,
-    run: ctx.run,
+    run: runs[0] ?? ctx.run,
+    runs,
     repo: ctx.repo,
     tick_sec: ctx.tickSec,
     started_at: now,
@@ -489,7 +590,7 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
     ci,
   }
   writeLoop(ctx.repo, state)
-  if (!ctx.run) log('경고: Run id 가 없어 질문 확인을 건너뛴다. --run 이나 finish.run 으로 준다')
+  if (runs.length === 0 && !ctx.run) log('경고: Run id 가 없어 질문 확인을 건너뛴다. --run 이나 finish.run 으로 준다')
   const timer = setInterval(() => {
     state.alive_at = iso()
     try {
@@ -500,6 +601,14 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
   }, interval * 1000)
   try {
     for (let n = 1; ; n++) {
+      runs = registeredRuns(ctx.repo).map((entry) => entry.run)
+      if (hadRuns && runs.length === 0) {
+        log('LOOP-EMPTY 등록된 Run 이 없어 루프를 끝낸다')
+        return 0
+      }
+      hadRuns ||= runs.length > 0
+      state.runs = runs
+      state.run = runs[0] ?? ctx.run
       log(`tick ${n} ${iso()}`)
       const done = await runAsync(scriptCommand(SELF, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), {
         cwd: ctx.repo,
@@ -513,6 +622,11 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
       if (result) {
         state.last_tick = result.tick_at
         for (const [source, value] of Object.entries(result.errors ?? {})) state.errors[source] = value ?? null
+        // 등록에서 빠진 Run 의 키를 지운다(머리 주석의 「오류 줄 억제」)
+        for (const key of Object.keys(state.errors)) {
+          const at = key.indexOf('@')
+          if (at > 0 && !runs.includes(key.slice(at + 1))) delete state.errors[key]
+        }
         // 열린 PR 을 읽지 못한 틱은 ci 가 없다. 그때는 이전 값을 둔다
         if (isObject(result.ci)) state.ci = ciEntries(result.ci)
       }
@@ -521,7 +635,7 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
         log(`WATCH-ERROR tick: ${reason}`)
         if (state.errors.tick !== reason) {
           try {
-            appendEvent(ctx.repo, 'WATCH-ERROR', null, `tick: ${reason}`)
+            appendEvent(ctx.repo, 'WATCH-ERROR', null, `tick: ${reason}`, state.run)
           } catch (e) {
             log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
           }
@@ -614,40 +728,89 @@ function prInput(pr: OwnPr): Record<string, unknown> {
   return { number: pr.number, title: pr.title, branch: pr.branch || null, head: pr.head || null, author: pr.author, draft: pr.draft, url: pr.url }
 }
 
-// 틱 안에서 한 번만 읽는 워크트리 목록과 worker 행
-type Lookup = { paths?: Map<string, string>; rows?: ReturnType<typeof workerRows> }
+// 이번 틱이 맡는 Run. 앞이 주 Run 이다. 등록된 Run 이 없으면 --run(또는 finish.run) 하나이거나, 그것도 없으면 Run 없는 한 칸이다
+type TickRun = { run: string | null; specsDir: string | null }
 
-// 체크가 실패한 PR 의 살아 있는 dispatch 에 보낸다. 결과는 CI-FAILED 의 text 에 붙일 말이다(머리 주석의 「CI 감시」)
-async function tellWorker(ctx: Context, pr: OwnPr, failed: CiCheck[], lookup: Lookup): Promise<string> {
-  if (!ctx.run) return 'Run id 없음'
+function tickRuns(ctx: Context): TickRun[] {
+  const entries = registeredRuns(ctx.repo)
+  if (entries.length === 0) return [{ run: ctx.run, specsDir: ctx.specsDir }]
+  return entries.map((entry) => ({ run: entry.run, specsDir: entry.specs_dir }))
+}
+
+// 틱 안에서 한 번만 읽는 워크트리 목록과 Run 마다의 worker 행. runs 는 이번 틱이 맡는 Run 이다
+type Lookup = { runs: TickRun[]; paths?: Map<string, string>; rows: Map<string, ReturnType<typeof workerRows>> }
+type Owner = { run: string | null; row: Record<string, unknown> }
+
+// 그 워크트리의 worker 와 그 worker 를 띄운 Run. 맡은 Run 을 차례로 보고, 살아 있는 dispatch 가 있는 Run 을 먼저 고른다.
+// worker 가 없으면 found 가 null 이다. 살아 있는 dispatch 를 찾지 못했고 읽지 못한 Run 이 있으면 ok 가 false 다
+function ownerOf(path: string, lookup: Lookup): { ok: true; found: Owner | null } | { ok: false; error: string } {
+  let error: string | null = null
+  let ended: Owner | null = null
+  for (const { run } of lookup.runs) {
+    const key = run ?? ''
+    let rows = lookup.rows.get(key)
+    if (!rows) {
+      rows = workerRows(key)
+      lookup.rows.set(key, rows)
+    }
+    if (!rows.ok) {
+      error ??= rows.error
+      continue
+    }
+    const row = workerFor(rows.rows, path)
+    if (!row) continue
+    if (LIVE_DISPATCH.has(String(row.dispatchStatus))) return { ok: true, found: { run, row } }
+    ended ??= { run, row }
+  }
+  // 읽지 못한 Run 에 살아 있는 worker 가 있을 수 있다. 끝난 worker 를 고르지 않고 읽지 못한 것으로 본다
+  if (error !== null) return { ok: false, error }
+  return { ok: true, found: ended }
+}
+
+// 체크가 실패한 PR 의 살아 있는 dispatch 에 보낸다. text 는 CI-FAILED 의 text 에 붙일 말, run 은 그 worker 를 띄운 Run 이다
+// (모르면 null. 알림은 주 Run 에 간다. 머리 주석의 「CI 감시」)
+async function tellWorker(ctx: Context, pr: OwnPr, failed: CiCheck[], lookup: Lookup): Promise<{ text: string; run: string | null }> {
+  if (!lookup.runs.some((entry) => entry.run)) return { text: 'Run id 없음', run: null }
   lookup.paths ??= worktreePaths(ctx.repo)
   const path = lookup.paths.get(pr.branch)
-  if (!path) return '살아 있는 dispatch 없음'
-  lookup.rows ??= workerRows(ctx.run)
-  if (!lookup.rows.ok) {
-    log(`orch-loop: worker 목록을 읽지 못했다: ${oneLine(lookup.rows.error)}`)
-    return 'worker 목록을 읽지 못했다'
+  if (!path) return { text: '살아 있는 dispatch 없음', run: null }
+  const owner = ownerOf(path, lookup)
+  if (!owner.ok) {
+    log(`orch-loop: worker 목록을 읽지 못했다: ${oneLine(owner.error)}`)
+    return { text: 'worker 목록을 읽지 못했다', run: null }
   }
-  const row = workerFor(lookup.rows.rows, path)
-  if (!row || !LIVE_DISPATCH.has(String(row.dispatchStatus))) return '살아 있는 dispatch 없음'
-  const dispatch = String(row.dispatchId)
+  const found = owner.found
+  if (!found || !found.run || !LIVE_DISPATCH.has(String(found.row.dispatchStatus))) return { text: '살아 있는 dispatch 없음', run: found?.run ?? null }
+  const dispatch = String(found.row.dispatchId)
   const shown = failed.map((check) => (check.url ? `${check.name} ${check.url}` : check.name)).join(', ')
   const body = `PR #${pr.number} 의 체크가 실패했다: ${shown}. 실패를 고치고 검사를 다시 돌린 뒤 push 한다. 끝나면 status 로 알린다.`
   const send = process.env.SEND_TO_WORKER || join(HERE, 'send-to-worker.ts')
-  const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', ctx.run]), { cwd: ctx.repo, timeoutMs: SEND_MS })
+  const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', found.run]), { cwd: ctx.repo, timeoutMs: SEND_MS })
   relay(sent)
-  if (sent.code === 0) return `보냈다 ${dispatch}`
-  if (sent.code === 4) return '깨우지 못했다(종료 코드 4)'
-  return `보내지 못했다(종료 코드 ${sent.code})`
+  if (sent.code === 0) return { text: `보냈다 ${dispatch}`, run: found.run }
+  if (sent.code === 4) return { text: '깨우지 못했다(종료 코드 4)', run: found.run }
+  return { text: `보내지 못했다(종료 코드 ${sent.code})`, run: found.run }
 }
 
-async function fireCi(event: 'ci-passed' | 'ci-failed', ctx: Context, pr: OwnPr, checks: CiCheck[], required: string[]): Promise<void> {
+async function fireCi(event: 'ci-passed' | 'ci-failed', ctx: Context, pr: OwnPr, checks: CiCheck[], required: string[], run: string | null): Promise<void> {
   try {
     // 핸들러의 실패는 fire 가 낸 HOOK-FAIL 줄로만 남는다. 알림 파일의 HOOK-FAIL 은 tick 핸들러의 것만이다
-    await fire(event, { pr: prInput(pr), checks, required }, { repo: ctx.repo, base: pr.base, run: ctx.run })
+    await fire(event, { pr: prInput(pr), checks, required }, { repo: ctx.repo, base: pr.base, run })
   } catch (e) {
     log(`orch-loop: ${event} 를 내지 못했다: ${oneLine(e)}`)
   }
+}
+
+function primaryRun(lookup: Lookup): string | null {
+  return lookup.runs[0]?.run ?? null
+}
+
+// 그 PR 워크트리의 worker 를 띄운 Run. 모르거나 읽지 못하면 주 Run 이다
+function runOfPr(ctx: Context, pr: OwnPr, lookup: Lookup): string | null {
+  lookup.paths ??= worktreePaths(ctx.repo)
+  const path = lookup.paths.get(pr.branch)
+  const owner = path ? ownerOf(path, lookup) : null
+  return (owner?.ok && owner.found?.run) || primaryRun(lookup)
 }
 
 // CI 감시(머리 주석의 「CI 감시」). ci 는 결과 줄에 담을 값, error 는 errors.ci 에 둘 이유다
@@ -683,23 +846,24 @@ async function watchCi(ctx: Context, mine: OwnPr[], previous: Record<string, CiE
     if (before && before.head === entry.head && before.state === entry.state) continue
     if (entry.state === 'passed') {
       log(`CI-PASSED #${pr.number} ${pr.head.slice(0, 8)}`)
-      await fireCi('ci-passed', ctx, pr, judged.checks, names.names)
+      await fireCi('ci-passed', ctx, pr, judged.checks, names.names, runOfPr(ctx, pr, lookup))
     } else if (entry.state === 'failed') {
       const failed = judged.checks.filter(failedCheck)
-      let told: string
+      let told: { text: string; run: string | null }
       try {
         told = await tellWorker(ctx, pr, failed, lookup)
       } catch (e) {
-        told = `보내지 못했다(${oneLine(e)})`
+        told = { text: `보내지 못했다(${oneLine(e)})`, run: null }
       }
-      const text = `${failed.map((check) => check.name).join(', ')}: ${told}`
+      const text = `${failed.map((check) => check.name).join(', ')}: ${told.text}`
+      const run = told.run ?? primaryRun(lookup)
       log(`CI-FAILED #${pr.number} ${text}`)
       try {
-        appendEvent(ctx.repo, 'CI-FAILED', pr.number, text)
+        appendEvent(ctx.repo, 'CI-FAILED', pr.number, text, run)
       } catch (e) {
         log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
       }
-      await fireCi('ci-failed', ctx, pr, judged.checks, names.names)
+      await fireCi('ci-failed', ctx, pr, judged.checks, names.names, run)
     }
   }
   return { ci, error: errors.length > 0 ? errors.join('; ') : null }
@@ -725,7 +889,7 @@ async function handleConflicts(ctx: Context, lookup: Lookup): Promise<string | n
   }
   const statePath = notifiedFile(ctx.repo)
   const state = loadNotified(statePath)
-  const fireCtx = { repo: ctx.repo, base, run: ctx.run }
+  const primary = primaryRun(lookup)
   const errors = new Set<string>()
   for (const { pr, files } of mine) {
     if (Object.hasOwn(state, notifiedKey(pr.number, baseSha))) continue
@@ -733,19 +897,22 @@ async function handleConflicts(ctx: Context, lookup: Lookup): Promise<string | n
     lookup.paths ??= worktreePaths(ctx.repo)
     const path = lookup.paths.get(pr.headRefName)
     let target: WorkerFound
+    // 그 worker 를 띄운 Run. 모르면 주 Run 이다(ADR-012)
+    let run = primary
     if (!path) {
       target = { orphan: '워크트리 없음. 새 worker 는 띄우지 않는다' }
     } else {
-      lookup.rows ??= workerRows(ctx.run ?? '')
-      if (!lookup.rows.ok) {
+      const owner = ownerOf(path, lookup)
+      if (!owner.ok) {
         // 알리지도 기록하지도 않는다. 다음 틱이 다시 본다
-        errors.add(`worker 목록을 읽지 못했다: ${oneLine(lookup.rows.error)}`)
+        errors.add(`worker 목록을 읽지 못했다: ${oneLine(owner.error)}`)
         continue
       }
-      const row = workerFor(lookup.rows.rows, path)
-      target = row ? { path, row } : { orphan: '그 워크트리의 dispatch 없음. 새 worker 는 띄우지 않는다' }
+      if (owner.found) run = owner.found.run ?? primary
+      target = owner.found ? { path, row: owner.found.row } : { orphan: '그 워크트리의 dispatch 없음. 새 worker 는 띄우지 않는다' }
     }
-    const outcome = await resolveConflict({ repo: ctx.repo, base, baseSha, pr, files, found: target, run: ctx.run, dryRun: false, out: log })
+    const fireCtx = { repo: ctx.repo, base, run }
+    const outcome = await resolveConflict({ repo: ctx.repo, base, baseSha, pr, files, found: target, run, dryRun: false, out: log })
     if (outcome.kind === 'usage') {
       errors.add('send-to-worker 사용법 오류')
       break
@@ -754,7 +921,7 @@ async function handleConflicts(ctx: Context, lookup: Lookup): Promise<string | n
     await concludeConflict(statePath, ctx.repo, fireCtx, pr, files, baseSha, outcome)
     if (outcome.action === 'orphan') {
       try {
-        appendEvent(ctx.repo, 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '')
+        appendEvent(ctx.repo, 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '', run)
       } catch (e) {
         log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
       }
@@ -772,42 +939,52 @@ async function tick(ctx: Context, n: number): Promise<number> {
   const before = loaded?.errors
   const previous = isObject(before) ? before : {}
   const errors: Record<string, string | null> = {}
-  // 출처의 실패를 기록한다. 이유가 이전과 다를 때만 알림 파일에 쓴다(머리 주석의 「오류 줄 억제」).
+  const runs = tickRuns(ctx)
+  const primary = runs[0].run
+  // Run 마다 도는 출처의 errors 키는 `<출처>@<Run>` 이다. 주 Run 이 바뀌어도 키가 그대로다(머리 주석의 「오류 줄 억제」)
+  const keyOf = (source: string, run: string | null, perRun: boolean) => (perRun && run ? `${source}@${run}` : source)
+  // 출처의 실패를 기록한다. 이유가 이전과 다를 때만 그 Run 의 알림 파일에 쓴다(머리 주석의 「오류 줄 억제」).
   // 로그 줄은 `<kind> <text>` 이고 알림 파일의 text 는 kind 를 뺀 나머지다. logged 면 그 줄은 이미 stdout 에 나갔다(fire 의 HOOK-FAIL 줄)
-  const report = (source: string, reason: string | null, kind = 'WATCH-ERROR', text = `${source}: ${reason}`, logged = false) => {
-    errors[source] = reason
+  const report = (source: string, reason: string | null, opts: { run?: string | null; kind?: string; text?: string; logged?: boolean } = {}) => {
+    const run = opts.run === undefined ? primary : opts.run
+    const key = keyOf(source, run, opts.run !== undefined)
+    const kind = opts.kind ?? 'WATCH-ERROR'
+    const text = opts.text ?? `${source}: ${reason}`
+    errors[key] = reason
     if (reason === null) return
-    if (!logged) log(`${kind} ${text}`)
-    if (previous[source] === reason) return
+    if (!opts.logged) log(`${kind} ${text}`)
+    if (previous[key] === reason) return
     try {
-      appendEvent(ctx.repo, kind, null, text)
+      appendEvent(ctx.repo, kind, null, text, run)
     } catch (e) {
       log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
     }
   }
 
-  // 1. 질문 확인
-  if (ctx.run) {
+  // 1. 질문 확인. Run 마다
+  for (const { run } of runs) {
+    if (!run) {
+      report('questions', null, { run })
+      continue
+    }
     let notices: ReturnType<typeof poll>['notices'] = []
     try {
-      notices = poll(ctx.run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo).notices
-      report('questions', null)
+      notices = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo).notices
+      report('questions', null, { run })
     } catch (e) {
-      report('questions', oneLine(e))
+      report('questions', oneLine(e), { run })
     }
     for (const notice of notices) {
       log(notice.line)
       if (notice.reminder) {
         try {
-          appendEvent(ctx.repo, 'REMINDER', null, notice.line.replace(/^REMINDER /, ''))
+          appendEvent(ctx.repo, 'REMINDER', null, notice.line.replace(/^REMINDER /, ''), run)
         } catch (e) {
           log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
         }
       }
-      await notifyQuestion(notice, ctx.repo, ctx.run, 'orch-loop')
+      await notifyQuestion(notice, ctx.repo, run, 'orch-loop')
     }
-  } else {
-    report('questions', null)
   }
 
   // 2. 열린 PR 은 한 번만 읽어 보드, CI 감시와 tick 이벤트가 함께 쓴다
@@ -820,7 +997,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
   report('prs', prs.ok ? null : oneLine(prs.error))
   const openPrNumbers = prs.ok ? prs.mine.map((pr) => pr.number) : null
 
-  // 3. 보드 동기화
+  // 3. 보드 동기화. 저장소 공유 일이라 한 번이고 알림은 주 Run 에 간다
   try {
     if (isFile(boardPath(ctx.repo))) {
       const sync = process.env.BOARD_SYNC || join(HERE, 'board-sync.ts')
@@ -830,7 +1007,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
       relay(done)
       report('board', done.code === 0 ? null : `종료 코드 ${done.code}`)
       remindDecisions(ctx.repo, (text) => {
-        appendEvent(ctx.repo, 'REMINDER', null, text)
+        appendEvent(ctx.repo, 'REMINDER', null, text, primary)
         log(`REMINDER ${text}`)
       })
     } else {
@@ -840,23 +1017,25 @@ async function tick(ctx: Context, n: number): Promise<number> {
     report('board', oneLine(e))
   }
 
-  // 4. 정리
-  try {
-    const sweep = process.env.CLEANUP_SWEEP || join(HERE, 'cleanup-sweep.ts')
-    const args = ['--repo', ctx.repo, '--kill-holders', '--remote-branches', '--apply']
-    if (ctx.run) args.push('--run', ctx.run)
-    if (ctx.specsDir) args.push('--specs-dir', ctx.specsDir)
-    const done = await runAsync(scriptCommand(sweep, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
-    relay(done)
-    report('cleanup', done.code === 0 ? null : `종료 코드 ${done.code}`)
-  } catch (e) {
-    report('cleanup', oneLine(e))
+  // 4. 정리. Run 마다 그 Run 범위로 돈다. 원격 브랜치 정리는 저장소 공유 일이라 주 Run 의 차례에서만 한다
+  for (const [i, { run, specsDir }] of runs.entries()) {
+    try {
+      const sweep = process.env.CLEANUP_SWEEP || join(HERE, 'cleanup-sweep.ts')
+      const args = ['--repo', ctx.repo, '--kill-holders', ...(i === 0 ? ['--remote-branches'] : []), '--apply']
+      if (run) args.push('--run', run)
+      if (specsDir) args.push('--specs-dir', specsDir)
+      const done = await runAsync(scriptCommand(sweep, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
+      relay(done)
+      report('cleanup', done.code === 0 ? null : `종료 코드 ${done.code}`, { run })
+    } catch (e) {
+      report('cleanup', oneLine(e), { run })
+    }
   }
 
   // 5. CI 감시. 열린 PR 을 읽지 못한 틱은 결과에 ci 를 넣지 않아 부모가 이전 값을 둔다
   let ci: Record<string, CiEntry> | undefined
   // CI 감시와 충돌 처리가 함께 쓴다
-  const lookup: Lookup = {}
+  const lookup: Lookup = { runs, rows: new Map() }
   if (prs.ok) {
     try {
       const watched = await watchCi(ctx, prs.mine, ciEntries(loaded?.ci), lookup)
@@ -867,17 +1046,20 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
   }
 
-  // 6. tick 이벤트
-  try {
-    const fired = await fire('tick', { tick: n, open_prs: openPrNumbers }, { repo: ctx.repo, base: defaultBase(ctx.repo) ?? '', run: ctx.run })
-    if (fired.result === 'fail' || fired.result === 'timeout') {
-      const reason = fired.result === 'timeout' ? 'timeout' : String(fired.code ?? 'lock')
-      report('hook', reason, 'HOOK-FAIL', `tick ${reason}`, true)
-    } else {
-      report('hook', null)
+  // 6. tick 이벤트. Run 마다 그 Run 을 공통 필드 run 으로 낸다
+  const base = defaultBase(ctx.repo) ?? ''
+  for (const [i, { run }] of runs.entries()) {
+    try {
+      const fired = await fire('tick', { tick: n, open_prs: openPrNumbers, primary: i === 0 }, { repo: ctx.repo, base, run })
+      if (fired.result === 'fail' || fired.result === 'timeout') {
+        const reason = fired.result === 'timeout' ? 'timeout' : String(fired.code ?? 'lock')
+        report('hook', reason, { run, kind: 'HOOK-FAIL', text: `tick ${reason}`, logged: true })
+      } else {
+        report('hook', null, { run })
+      }
+    } catch (e) {
+      report('hook', oneLine(e), { run })
     }
-  } catch (e) {
-    report('hook', oneLine(e))
   }
 
   // 7. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다
@@ -937,6 +1119,7 @@ async function main(argv: string[]): Promise<number> {
       'specs-dir': { type: 'string' },
       start: { type: 'boolean', default: false },
       stop: { type: 'boolean', default: false },
+      all: { type: 'boolean', default: false },
       status: { type: 'boolean', default: false },
       foreground: { type: 'boolean', default: false },
       once: { type: 'boolean', default: false },
@@ -954,6 +1137,7 @@ async function main(argv: string[]): Promise<number> {
     mode = chosen[0]
     if (!values.repo) throw new Usage('--repo 가 필요하다')
     if (values.once && mode !== 'foreground') throw new Usage('--once 는 --foreground 와 함께 준다')
+    if (values.all && (mode !== 'stop' || values.run)) throw new Usage('--all 은 --run 없이 --stop 과 함께 준다')
     if ((mode === 'tick') !== (values['tick-number'] !== undefined)) throw new Usage('--tick 과 --tick-number 는 함께 준다')
     if (mode === 'tick') {
       const raw = values['tick-number'] as string
@@ -966,7 +1150,19 @@ async function main(argv: string[]): Promise<number> {
     return 2
   }
   const repo = mainCheckout(resolve(values.repo as string))
-  if (mode === 'stop') return stop(repo)
+  if (mode === 'stop') {
+    let run = (values.run as string | undefined) || null
+    if (!run && !values.all) {
+      try {
+        run = context(repo, undefined, undefined).run
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e
+        process.stderr.write(`orch-loop: ${e.message}\n`)
+        return 2
+      }
+    }
+    return stop(repo, run, values.all as boolean)
+  }
   if (mode === 'status') return status(repo)
 
   let ctx: Context

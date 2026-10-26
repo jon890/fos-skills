@@ -2,30 +2,34 @@
 
 ## 상주 루프와 압축 뒤 복구
 
-**저장소마다 상주 루프 `orch-loop.ts` 를 하나 띄운다.** 루프는 하네스의 백그라운드 명령이 아니라 분리된 프로세스라 시간 한도에 묶이지 않고, 세션이 끝나도 살아 있다.
+**저장소마다 상주 루프 `orch-loop.ts` 를 하나 띄우고, 세션은 자기 Run 을 그 루프에 등록한다.** 루프는 하네스의 백그라운드 명령이 아니라 분리된 프로세스라 시간 한도에 묶이지 않고, 세션이 끝나도 살아 있다.
+같은 저장소를 쓰는 다른 세션이 이미 루프를 띄웠으면 그 루프에 자기 Run 을 더한다. 루프는 Run 마다 그 Run 범위로 질문을 확인하고 정리하며, 알림도 Run 마다 나뉜다([ADR-012](../../docs/adr/012-orch-loop-multi-run.md)).
 `$SKILL_DIR` 과 `$REPO` 는 절대경로로, `$RUN_ID` 는 현재 Run 으로 바꾼다. `--run` 과 `--specs-dir` 은 `.orch/config.json` 의 `finish.run`, `finish.specs_dir` 로 대신할 수 있다.
 
 ```bash
 node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --start
 node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --status
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --stop
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --run "$RUN_ID" --stop
 ```
 
-`--start` 는 `LOOP-STARTED` 와 0 으로 끝난다. 살아 있는 루프가 이미 있으면 띄우지 않고 `LOOP-RUNNING <pid> run=<Run id>` 와 4 로 끝난다.
+`--start` 는 루프를 띄우면 `LOOP-STARTED` 와 0, 살아 있는 루프에 이 Run 을 더하면 `LOOP-JOINED` 와 0 으로 끝난다.
+이 Run 이 이미 등록돼 있으면 `LOOP-RUNNING <pid> run=<Run id>` 와 4 다. 할 일은 없다.
+**세션의 일이 끝나면 `--stop --run` 으로 자기 Run 만 뺀다.** 다른 Run 이 남으면 루프는 그대로 돌고(`LOOP-LEFT`), 마지막 Run 이 빠지면 루프가 끝난다.
+`--run` 없는 `--stop` 은 다른 세션의 Run 이 함께 등록돼 있으면 `LOOP-STOP-SHARED` 와 1 로 멈추지 않는다. 다른 세션의 루프를 끊지 않는다. 모두 멈추라는 사용자 지시가 있을 때만 `--stop --all` 을 쓴다.
 **`--stop` 이 1 로 끝나면(`LOOP-STOP-UNKNOWN`, `LOOP-STOP-TIMEOUT`) 그 pid 가 루프인지 `ps -o command= -p <pid>` 로 직접 확인한다.** 루프면 끝낸 뒤 다시 `--start` 한다. 다른 프로세스면 끝내지 않는다.
 
-**4 로 끝나면 출력의 Run id 를 현재 Run 과 비교한다.** 다른 Run 이면 그 루프는 이 Run 의 질문을 확인하지 않으므로 `--stop` 뒤 다시 `--start` 한다.
+**4 와 함께 `안내:` 줄이 오면 그 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다.** 다른 세션의 루프이므로 멈추지 않는다. 그 루프를 띄운 세션이나 사용자에게 다시 띄워 달라고 알리고, 그동안은 아래 Monitor 대안을 쓴다.
 
 루프는 `pipeline.tick_sec`(기본 300초)마다 아래를 차례로 한다. 판정과 순서는 `orch-loop.ts` 머리 주석이 소유한다.
 
-- 질문 확인. 답이 없는 질문을 다시 알릴 시간이 되면 알림 파일에 `REMINDER` 를 쓴다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
-- 정리와 원격 브랜치 정리(`cleanup-sweep`), 보드 동기화(`board-sync`)
+- 등록된 Run 마다 질문 확인. 답이 없는 질문을 다시 알릴 시간이 되면 알림 파일에 `REMINDER` 를 쓴다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
+- Run 마다 그 Run 범위의 정리(`cleanup-sweep --run`), 원격 브랜치 정리와 보드 동기화(`board-sync`)는 틱마다 한 번
 - 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 그 PR 의 worker 에게 알리고, 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알리기만 하고 머지하지 않는다
-- `tick` 이벤트
+- Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
 - 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기. 끝난 dispatch 에 이어 쓰는 동안(최대 65분)은 다음 틱이 밀린다
 
 CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체크의 실패도 `failed` 로 본다. 루프는 `--allow-fail` 을 모르므로, 그 옵션을 주고 머지 큐를 거는 저장소에서는 루프가 실패로 알린 PR 도 큐가 머지할 수 있다.
-알림은 `<orch 루트>/state/loop-events.jsonl` 에 쌓이고, 아래 대기가 `--loop-repo` 로 읽는다. 루프의 출력은 `state/loop.log` 에 남는다.
+알림은 Run 마다 `<orch 루트>/state/loop-events/<Run>.jsonl` 에 쌓이고, 아래 대기가 `--run` 과 `--loop-repo` 로 자기 Run 의 것만 읽는다. 주인을 모르는 알림(공유 일의 실패, 보드 결정)은 가장 먼저 등록한 Run 에 간다. 루프의 출력은 `state/loop.log` 에 남는다.
 조회 실패는 이유가 바뀔 때만 알림 파일에 쓰므로 틱마다 코디네이터를 깨우지 않는다.
 
 **Monitor 로 `watch-questions.ts` 를 띄우는 것은 루프를 쓸 수 없을 때의 대안이다.** `--run "$RUN_ID" --repo "$REPO"` 를 주고, 질문과 재알림을 한 줄씩 받는다. 이때는 아래 「깨어날 때마다 정리와 보드 동기화」 의 수동 명령도 돌려야 한다.
@@ -81,6 +85,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
   - `WATCH-ERROR`, `HOOK-FAIL`: 루프가 무엇을 하지 못했다는 알림이다. 내용의 이유(Orca 꺼짐, 핸들러 오류)를 고친다. 같은 이유는 한 번만 오고, 한 번 성공한 뒤 다시 실패하면 다시 온다
   - `GAP`: 알림 파일이 1000 줄을 넘어 잘려 일부를 잃었다. `<orch 루트>/state/loop.log` 를 읽어 놓친 일을 찾는다
+- 종료 코드 8 의 `LOOP-DEAD <repo> run <Run> 미등록` 은 루프는 살아 있는데 이 Run 이 등록되지 않았다는 뜻이다. `orch-loop.ts --start --run` 으로 등록한 뒤 다시 건다
 - 종료 코드 8(`LOOP-DEAD <repo> <이유>`)은 그 저장소의 루프가 죽었다. 알림 줄이 있으면 그 줄이 먼저 오고 죽음은 다음 대기가 낸다. doctor 가 낸 명령(`orch-loop.ts --start`)으로 다시 띄운 뒤 다시 건다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 본다
 
 **복구하거나 더 처리할 일이 없다고 확인한 dispatch 는 `--ack-lost` 로 기록한다.**

@@ -219,8 +219,11 @@ function jsonl(file: string): Json[] {
     : []
 }
 
+// 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
-  return jsonl(orchFile('state', 'loop-events.jsonl'))
+  const dir = orchFile('state', 'loop-events')
+  const perRun = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().flatMap((name) => jsonl(join(dir, name))) : []
+  return [...jsonl(orchFile('state', 'loop-events.jsonl')), ...perRun]
 }
 
 function sends(): string[][] {

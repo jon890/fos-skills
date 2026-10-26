@@ -2,10 +2,20 @@
 // 사용처: orch-loop.ts(쓰는 쪽과 --status), wait-important.ts(--loop-repo 로 깨어나기), orch-doctor.ts(session-resume 의 loop_alive).
 // 파일 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이 정한다. 경로는 모두 <orch 루트>/state/ 아래다.
 //
-//   loop.json            루프 상태. 루프의 부모 프로세스만 쓴다(옆 파일에 쓰고 rename)
+//   loop.json            루프 상태. 루프의 부모 프로세스만 쓴다(옆 파일에 쓰고 rename). runs 가 없으면 Run 등록을 모르는 옛 루프다
 //   loop.lock            한 저장소에 루프 하나. orch-loop.ts --foreground 가 쥔다
-//   loop-events.jsonl    코디네이터를 깨워야 하는 알림. 한 줄에 {"seq", "time", "kind", "pr", "text"}. text 는 kind 를 뺀 나머지다
-//   loop-events.cursor   읽는 쪽이 마지막으로 읽은 seq 하나
+//   loop-runs/<Run>.json         루프에 등록된 Run 하나. {"run", "specs_dir", "registered_at"}. 아래 「Run 등록」
+//   loop-events/<Run>.jsonl      그 Run 의 코디네이터를 깨워야 하는 알림. 한 줄에 {"seq", "time", "kind", "pr", "text"}. text 는 kind 를 뺀 나머지다
+//   loop-events/<Run>.cursor     그 Run 의 읽는 쪽이 마지막으로 읽은 seq 하나
+//   loop-events.jsonl, loop-events.cursor
+//                                Run 이 없는 루프(옛 루프 포함)의 알림과 커서. 함수에 run 을 주지 않으면(null) 이 파일이다
+//   <Run> 은 runKey 로 바꾼 이름이다(영문, 숫자, _, ., - 밖의 글자를 _ 로).
+//
+// Run 등록(registerRun, unregisterRun, registeredRuns, ADR-012):
+//   루프는 저장소마다 하나이고 여러 Run 을 맡는다. 등록은 Run 마다 파일 하나라 잠금 없이 만들고(옆 파일에 쓰고 rename) 지운다.
+//   loop.json 은 루프의 부모만 쓰는 파일이라 다른 프로세스(--start, --stop)가 쓰지 않게 등록을 따로 둔다.
+//   이미 등록된 Run 을 다시 등록하면 registered_at 은 그대로 두고 specs_dir 만 바꾼다. 주 Run 의 차례가 바뀌지 않게 하려는 것이다.
+//   registeredRuns 는 registered_at 이 이른 순(같으면 Run id 순)이다. 앞이 주 Run 이다. 읽지 못한 파일은 건너뛴다.
 //
 // 생존(loopStatus): loop.json 이 있고, pid 가 살아 있고(lib/process.ts 의 alive), alive_at 이 now 에서 max(3 × tick_sec, 120) 초 안이면
 //   살아 있다. tick_sec 은 loop.json 에 루프가 적은 값이다. last_tick 은 상태 보고용이고 판정에 쓰지 않는다.
@@ -33,7 +43,7 @@
 //   - 커서 파일이 없거나 정수가 아니면 0 이다. 깨진 커서로 멈추면 알림을 다시 받을 길이 없어서다(대신 남은 줄을 다시 낸다)
 //   - JSON 으로 읽지 못한 줄(쓰다 끊긴 줄)은 건너뛴다
 
-import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeParent, pathOf } from './paths.ts'
 import { envMs } from './env.ts'
@@ -48,6 +58,7 @@ export const DEFAULT_ALIVE_SEC = 30
 export type LoopState = {
   pid: number
   run: string | null
+  runs?: string[]
   repo: string
   tick_sec: number
   started_at: string
@@ -59,17 +70,85 @@ export type LoopState = {
 }
 export type LoopStatus = { alive: true; state: LoopState } | { alive: false; reason: string; recheck?: true }
 export type LoopEvent = { seq: number; time: string; kind: string; pr: number | null; text: string }
+export type RunEntry = { run: string; specs_dir: string | null; registered_at: string }
+
+// 파일 이름에 쓸 Run. 머리 주석의 「<Run>」
+export function runKey(run: string): string {
+  return run.replace(/[^A-Za-z0-9_.-]/g, '_')
+}
 
 export function loopFile(repo: string): string {
   return join(pathOf('state', repo), 'loop.json')
 }
 
-export function eventsFile(repo: string): string {
-  return join(pathOf('state', repo), 'loop-events.jsonl')
+// run 이 없으면 Run 이 없는 루프의 파일이다(머리 주석)
+function eventPaths(dir: string, run: string | null | undefined): { events: string; cursor: string } {
+  if (!run) return { events: join(dir, 'loop-events.jsonl'), cursor: join(dir, 'loop-events.cursor') }
+  const base = join(dir, 'loop-events', runKey(run))
+  return { events: `${base}.jsonl`, cursor: `${base}.cursor` }
 }
 
-export function cursorFile(repo: string): string {
-  return join(pathOf('state', repo), 'loop-events.cursor')
+export function eventsFile(repo: string, run: string | null = null): string {
+  return eventPaths(pathOf('state', repo), run).events
+}
+
+export function cursorFile(repo: string, run: string | null = null): string {
+  return eventPaths(pathOf('state', repo), run).cursor
+}
+
+function runFile(repo: string, run: string): string {
+  return join(pathOf('state', repo), 'loop-runs', `${runKey(run)}.json`)
+}
+
+function readRunFile(file: string): RunEntry | null {
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as RunEntry
+    if (!parsed || typeof parsed.run !== 'string' || !parsed.run) return null
+    return {
+      run: parsed.run,
+      specs_dir: typeof parsed.specs_dir === 'string' && parsed.specs_dir ? parsed.specs_dir : null,
+      registered_at: typeof parsed.registered_at === 'string' ? parsed.registered_at : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+// 머리 주석의 「Run 등록」. 새로 등록했으면 true, 이미 등록돼 있었으면 false
+export function registerRun(repo: string, run: string, specsDir: string | null): boolean {
+  const file = runFile(repo, run)
+  const before = readRunFile(file)
+  const entry: RunEntry = { run, specs_dir: specsDir ?? before?.specs_dir ?? null, registered_at: before?.registered_at || new Date().toISOString() }
+  replace(file, `${JSON.stringify(entry)}\n`, repo)
+  return before === null
+}
+
+// 지웠으면 true, 등록돼 있지 않았으면 false
+export function unregisterRun(repo: string, run: string): boolean {
+  try {
+    unlinkSync(runFile(repo, run))
+    return true
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw e
+  }
+}
+
+// 파일 이름이 같아도(runKey 가 겹친다) 안의 Run 이 다르면 등록되지 않은 것이다
+export function isRegistered(repo: string, run: string): boolean {
+  return readRunFile(runFile(repo, run))?.run === run
+}
+
+export function registeredRuns(repo: string): RunEntry[] {
+  const dir = join(pathOf('state', repo), 'loop-runs')
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return []
+  }
+  const entries = names.filter((name) => name.endsWith('.json')).map((name) => readRunFile(join(dir, name))).filter((e): e is RunEntry => e !== null)
+  return entries.sort((a, b) => (a.registered_at < b.registered_at ? -1 : a.registered_at > b.registered_at ? 1 : a.run < b.run ? -1 : a.run > b.run ? 1 : 0))
 }
 
 export function lockFile(repo: string): string {
@@ -165,23 +244,23 @@ function cursorAt(file: string): number {
   return /^\d+$/.test(text) ? Number(text) : 0
 }
 
-export function readCursor(repo: string): number {
-  return cursorAt(cursorFile(repo))
+export function readCursor(repo: string, run: string | null = null): number {
+  return cursorAt(cursorFile(repo, run))
 }
 
-export function writeCursor(repo: string, seq: number): void {
-  replace(cursorFile(repo), `${seq}\n`, repo)
+export function writeCursor(repo: string, seq: number, run: string | null = null): void {
+  replace(cursorFile(repo, run), `${seq}\n`, repo)
 }
 
-// 알림 한 줄을 더하고 그 줄을 돌려준다. pr 은 PR 번호이고 없으면 null 이다.
+// 알림 한 줄을 그 Run 의 알림 파일에 더하고 그 줄을 돌려준다. pr 은 PR 번호이고 없으면 null 이다. run 이 없으면 Run 이 없는 루프의 파일이다.
 // 상태 폴더는 한 번만 구한다. pathOf 는 부를 때마다 git 으로 주 checkout 을 찾는다.
-export function appendEvent(repo: string, kind: string, pr: number | null, text: string): LoopEvent {
-  const dir = pathOf('state', repo)
-  const file = join(dir, 'loop-events.jsonl')
+export function appendEvent(repo: string, kind: string, pr: number | null, text: string, run: string | null = null): LoopEvent {
+  const paths = eventPaths(pathOf('state', repo), run)
+  const file = paths.events
   const raw = readText(file)
   const rows = parseLines(raw)
   const last = rows.reduce((max, row) => Math.max(max, row.seq), 0)
-  const event: LoopEvent = { seq: Math.max(last, cursorAt(join(dir, 'loop-events.cursor'))) + 1, time: new Date().toISOString(), kind, pr, text }
+  const event: LoopEvent = { seq: Math.max(last, cursorAt(paths.cursor)) + 1, time: new Date().toISOString(), kind, pr, text }
   const line = `${JSON.stringify(event)}\n`
   if (raw === null) makeParent(file, repo)
   if (rows.length + 1 > EVENTS_LIMIT) {
@@ -196,11 +275,11 @@ export function appendEvent(repo: string, kind: string, pr: number | null, text:
   return event
 }
 
-// 커서보다 큰 seq 의 줄과 빠진 구간. 커서는 옮기지 않는다.
-export function readEvents(repo: string): { events: LoopEvent[]; gap: [number, number] | null } {
-  const dir = pathOf('state', repo)
-  const cursor = cursorAt(join(dir, 'loop-events.cursor'))
-  const rows = parseLines(readText(join(dir, 'loop-events.jsonl')))
+// 그 Run 의 알림 파일에서 커서보다 큰 seq 의 줄과 빠진 구간. 커서는 옮기지 않는다.
+export function readEvents(repo: string, run: string | null = null): { events: LoopEvent[]; gap: [number, number] | null } {
+  const paths = eventPaths(pathOf('state', repo), run)
+  const cursor = cursorAt(paths.cursor)
+  const rows = parseLines(readText(paths.events))
   const events = rows.filter((row) => row.seq > cursor)
   const first = rows.reduce((min, row) => Math.min(min, row.seq), Number.POSITIVE_INFINITY)
   const gap: [number, number] | null = events.length > 0 && first > cursor + 1 ? [cursor + 1, first - 1] : null

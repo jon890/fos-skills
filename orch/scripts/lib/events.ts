@@ -35,7 +35,8 @@
 //   after-deploy  pr, merge_commit, deploy(success, failure, timeout, none), last_of_task(bool)
 //   before-cleanup  worktree, branch, pr(있으면), worker(있으면)
 //   after-cleanup  removed(경로 목록), skipped(경로와 이유의 목록)
-//   tick  tick(루프 시작 뒤 몇 번째인지), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)
+//   tick  tick(루프 시작 뒤 몇 번째인지), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null), primary(bool. 주 Run 이거나 Run 이 없는 루프면 true).
+//       루프에 등록된 Run 마다 한 번씩 나고 공통 필드 run 이 그 Run 이다(ADR-012). 저장소 공유 일은 primary 일 때만 한다
 //   session-resume  loop_alive(bool), waiters(살아 있는 wait-important 대기와 watch-questions 질문 감시의 pid 목록.
 //       그 자식인 orchestration check 와 셸 행은 세지 않는다), unanswered(질문 id 목록)
 //
