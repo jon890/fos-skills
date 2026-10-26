@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.8.0 (2026-10-26)
+
+- `launch-worker.ts` 가 띄운 worker 의 dispatch, 터미널, 워크트리를 기록한다. 이전에 띄운 worker 는 기록이 없어 예전처럼 사용자 보유 터미널로 남는다
+- `cleanup-sweep.ts` 는 기록에 있고 dispatch 가 끝난 `user_owned` 터미널을 코디네이터의 것으로 보고 닫은 뒤 PR 상태로 정리를 판단한다. 기록이 없는 터미널은 남긴다
+- PR 을 만들지 않은 워크트리는 dispatch 가 completed 이고 base 보다 앞선 커밋과 변경이 없으면 치운다. 원격 브랜치도 앞선 커밋이 없을 때만 지운다. 아니면 남기고 이유를 낸다
+
 ## 3.7.2 (2026-10-26)
 
 - `migrate-orch-dir --hooks --apply` 는 worker 가 작업 중이어도 적용한다. 머지 큐나 마무리 프로세스가 돌거나 이를 확인하지 못하면 막는다. 폴더 옮기기의 보호 조건은 그대로다

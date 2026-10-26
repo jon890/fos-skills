@@ -10,6 +10,10 @@
 `user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 가르지 못한다. Orca 의 필드에 시각과 주체가 없다.
 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
+**`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 띄울 때 dispatch 마다 남긴 기록(`.orch/state/launched-workers/`)에 있고 그 dispatch 가 끝났으면(completed, failed, canceled) `user_owned` 여도 코디네이터의 터미널로 보고 닫은 뒤 PR 상태와 남은 커밋, 변경으로 정리를 판단한다.
+기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 이 소유한다.
+PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 completed 이고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
+
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.ts --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
 `finish-pr.ts` 와 `merge-with-finish.ts` 는 이 옵션을 넘기지 않는다.
