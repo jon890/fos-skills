@@ -44,6 +44,12 @@
 //     읽지 않은 줄이 1000 줄을 넘어 잘린 경우다. 읽는 것만으로는 커서를 옮기지 않는다. 낸 뒤 writeCursor 로 옮긴다
 //   - 커서 파일이 없거나 정수가 아니면 0 이다. 깨진 커서로 멈추면 알림을 다시 받을 길이 없어서다(대신 남은 줄을 다시 낸다)
 //   - JSON 으로 읽지 못한 줄(쓰다 끊긴 줄)은 건너뛴다
+//
+// 알림 파일 지우기(dropReadEvents): 루프에서 뺀 Run 의 알림 파일과 커서를 지운다. orch-loop.ts --stop 이 등록을 지운 Run 마다 부른다.
+//   커서 뒤의 줄이 없을 때만 지운다. 읽지 않은 줄이 있으면 둘 다 남겨, 그 Run 을 다시 등록한 대기가 읽게 한다.
+//   알림 파일을 먼저, 커서를 나중에 지운다. 그 사이 틱이 새 줄을 쓰면 커서 다음 seq 로 새 파일이 생기고, 커서까지 지운 뒤에는
+//   커서가 0 이라 그 줄이 읽지 않은 줄로 남는다. 읽지 않은 줄이 없다고 본 뒤 지우기 전에 틱이 쓴 줄은 잃는다. 루프를 떠나는
+//   Run 의 알림이고 그 사이가 몇 밀리초라 그대로 둔다.
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -276,6 +282,25 @@ export function appendEvent(repo: string, kind: string, pr: number | null, text:
     appendFileSync(file, raw && !raw.endsWith('\n') ? `\n${line}` : line)
   }
   return event
+}
+
+function removeFile(file: string): boolean {
+  try {
+    unlinkSync(file)
+    return true
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw e
+  }
+}
+
+// 머리 주석의 「알림 파일 지우기」. 지웠으면 true, 읽지 않은 줄이 있어 남겼거나 지울 파일이 없으면 false
+export function dropReadEvents(repo: string, run: string): boolean {
+  if (readEvents(repo, run).events.length > 0) return false
+  const paths = eventPaths(pathOf('state', repo), run)
+  const events = removeFile(paths.events)
+  const cursor = removeFile(paths.cursor)
+  return events || cursor
 }
 
 // 그 Run 의 알림 파일에서 커서보다 큰 seq 의 줄과 빠진 구간. 커서는 옮기지 않는다.

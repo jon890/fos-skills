@@ -257,7 +257,7 @@ describe('알림 한 번', () => {
     once({ NODE_OPTIONS: `--import=${join(binDir, 'preload.mjs')}`, TICK_EXIT_CODE: '3' })
     const first = JSON.parse(readFileSync(orchFile('state', 'loop.json'), 'utf8')) as Json
     assert.deepEqual(first.ci, { 1: { head: HEAD_A, state: 'failed' } })
-    assert.equal((first.errors as Json).tick, '종료 코드 3')
+    assert.equal((first.errors as Json)['tick@r'], '종료 코드 3')
     assert.ok(!Number.isNaN(Date.parse(String(first.last_tick))), String(first.last_tick))
     once()
     assert.equal(received('ci-failed').length, 1)
@@ -268,7 +268,7 @@ describe('알림 한 번', () => {
         ['WATCH-ERROR', 'tick: 종료 코드 3'],
       ],
     )
-    assert.equal(((JSON.parse(readFileSync(orchFile('state', 'loop.json'), 'utf8')) as Json).errors as Json).tick, null)
+    assert.equal(((JSON.parse(readFileSync(orchFile('state', 'loop.json'), 'utf8')) as Json).errors as Json)['tick@r'], null)
   })
 
   test('실패한 PR 에 새 HEAD 가 와서 다시 실패하면 한 번 더 알린다', () => {

@@ -17,12 +17,15 @@
 //                    살아 있는 루프가 없을 때의 등록은 registered_at 을 지금으로 새로 쓴다(아래 「Run」).
 //                    자식이 4(다른 --start 가 띄운 루프가 먼저 잠금을 쥐었다)로 끝나면 그 루프가 살아 있는지 다시 보고, 있으면 아래 합류와 같다.
 //                    살아 있는 루프가 있으면 띄우지 않는다. 그 Run 이 아직 등록되지 않았으면 등록하고 LOOP-JOINED <pid> run=<Run id> 와 0.
+//                    그 루프가 막 뜨는 중(loop.json 의 pid 가 아직 그 루프의 것이 아니다)이면 이미 등록된 Run 이어도 registered_at 을
+//                    새로 쓴다. 뜨는 루프가 앞 루프의 alive_at 이전 등록을 지울 때 이 Run 을 지우지 않게 하려는 것이다.
 //                    이미 등록됐거나 Run 이 없으면 LOOP-RUNNING <pid> run=<Run id> 와 4.
 //                    Run 등록을 모르는 옛 루프(loop.json 에 runs 가 없다)면 등록하지 않고 LOOP-RUNNING 과 4 이고, Run 이 다르면
 //                    `안내: …` 한 줄을 더 낸다. 그 루프를 띄운 세션이 --stop 뒤 새 orch 로 다시 띄워야 한다
 //     --stop         --run 을 주면 그 Run 의 등록만 지운다. 다른 Run 이 남으면 루프를 멈추지 않고
 //                    LOOP-LEFT <pid> run=<Run id> runs=<남은 Run 목록> 와 0, 등록돼 있지 않았으면 LOOP-NOT-REGISTERED run=<Run id> 와 0.
 //                    옛 루프가 다른 Run 의 것이면 멈추지 않고 LOOP-NOT-REGISTERED 와 안내 줄, 0 이다.
+//                    등록을 지운 Run 은 알림 파일과 커서도 지운다. 읽지 않은 줄이 있으면 남긴다(lib/loop.ts 의 「알림 파일 지우기」). --all 도 같다.
 //                    --run 이 없고 finish.run 도 없으면 등록된 Run 이 하나라도 있을 때 멈추지 않고 LOOP-STOP-SHARED <pid> runs=<목록> 와 1 이다.
 //                    등록이 하나여도 다른 세션의 Run 일 수 있어, 다른 세션의 루프를 끊지 않으려는 것이다. --all 을 주면 모두 지우고 멈춘다.
 //                    등록을 뺀 뒤 신호를 보내기 직전에 다른 세션이 합류했으면 멈추지 않고 LOOP-LEFT <pid> run=<Run id> runs=<목록> 와 0 이다.
@@ -137,7 +140,10 @@
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
-//     부모는 등록에서 빠진 Run 의 키를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
+//     공유 출처(SHARED_SOURCES: prs, board, ci, conflicts, tick)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
+//     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
+//     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
+//     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
 //     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), conflicts(충돌 처리),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
@@ -182,7 +188,7 @@ import { isFile } from './lib/fs.ts'
 import { apiTarget, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { appendEvent, DEFAULT_ALIVE_SEC, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from './lib/loop.ts'
+import { appendEvent, DEFAULT_ALIVE_SEC, dropReadEvents, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
 import { remindDecisions } from './lib/board.ts'
 import { boardPath, makeParent, pathOf } from './lib/paths.ts'
@@ -213,6 +219,8 @@ const TICK_STOP_GRACE_MS = STOP_GRACE_MS + 3_000
 // 틱 자식이 부모가 살아 있는지 보는 간격(머리 주석의 「틱」)
 const PARENT_POLL_MS = 2_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
+// 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'conflicts', 'tick'])
 
 type Mode = (typeof MODES)[number]
 type Context = { repo: string; run: string | null; specsDir: string | null; tickSec: number; skippedIsMissing: boolean }
@@ -386,9 +394,12 @@ function legacyLoop(state: LoopState | null, pid?: number): boolean {
 const LEGACY_HINT = '안내: 이 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다. 그 루프를 띄운 세션이 --stop 한 뒤 새 orch 로 --start 하면 여러 Run 을 함께 맡는다'
 
 // 살아 있는 루프에 이 Run 을 더한다. 이미 맡고 있거나 Run 이 없으면 전처럼 LOOP-RUNNING 이다(머리 주석의 --start).
-// raced 는 띄운 자식이 다른 --start 의 루프에 잠금을 져 4 로 끝난 경우다. 이 Run 은 띄우기 전에 등록했으므로 합류로 본다
+// raced 는 띄운 자식이 다른 --start 의 루프에 잠금을 져 4 로 끝난 경우다. 이 Run 은 띄우기 전에 등록했으므로 합류로 본다.
+// loop.json 의 pid 가 찾은 pid 와 다르면 루프가 막 뜨는 중이다. 그 루프는 시작할 때 앞 루프의 alive_at 이전 등록을 지우므로,
+// 이미 등록된 Run 이어도 registered_at 을 새로 써서 지워지지 않게 한다(머리 주석의 「Run」)
 function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: boolean): number {
   const state = readLoop(ctx.repo)
+  const starting = state === null || Number(state.pid) !== found.pid
   if (ctx.run && legacyLoop(state, found.pid)) {
     // 옛 루프는 등록을 읽지 않는다. 띄우기 전에 쓴 등록을 남기지 않는다
     if (raced) unregisterRun(ctx.repo, ctx.run)
@@ -397,10 +408,11 @@ function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: bool
     return 4
   }
   if (ctx.run && (raced || !isRegistered(ctx.repo, ctx.run))) {
-    registerRun(ctx.repo, ctx.run, ctx.specsDir)
+    registerRun(ctx.repo, ctx.run, ctx.specsDir, starting)
     log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
     return 0
   }
+  if (ctx.run && starting) registerRun(ctx.repo, ctx.run, ctx.specsDir, true)
   log(`LOOP-RUNNING ${found.pid} run=${ctx.run && isRegistered(ctx.repo, ctx.run) ? ctx.run : found.run}`)
   return 4
 }
@@ -470,6 +482,7 @@ async function stop(repo: string, run: string | null, all: boolean): Promise<num
       return 0
     }
     const removed = unregisterRun(repo, run)
+    if (removed) dropEvents(repo, run)
     const left = registeredRuns(repo)
     // 등록돼 있지 않던 Run 은 루프를 멈추지 않는다. Run 없이 띄운 루프는 --run 없는 --stop 으로 멈춘다
     if (!removed && !legacyLoop(state)) {
@@ -490,8 +503,19 @@ async function stop(repo: string, run: string | null, all: boolean): Promise<num
       return 1
     }
   }
-  for (const entry of registeredRuns(repo)) unregisterRun(repo, entry.run)
+  for (const entry of registeredRuns(repo)) {
+    if (unregisterRun(repo, entry.run)) dropEvents(repo, entry.run)
+  }
   return stopProcess(repo, null)
+}
+
+// 뺀 Run 의 알림 파일과 커서를 지운다. 읽지 않은 줄이 있으면 남긴다(lib/loop.ts 의 「알림 파일 지우기」). 지우지 못해도 --stop 은 이어 간다
+function dropEvents(repo: string, run: string): void {
+  try {
+    dropReadEvents(repo, run)
+  } catch (e) {
+    log(`orch-loop: Run ${run} 의 알림 파일을 지우지 못했다: ${oneLine(e)}`)
+  }
 }
 
 // left 는 방금 등록을 뺀 Run 이다. 있으면 신호를 보내기 직전에 등록을 다시 본다. 마지막 Run 을 뺀 사이 다른 세션이 합류했으면 멈추지 않는다
@@ -644,18 +668,14 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
       if (result) {
         state.last_tick = result.tick_at
         for (const [source, value] of Object.entries(result.errors ?? {})) state.errors[source] = value ?? null
-        // 등록에서 빠진 Run 의 키를 지운다(머리 주석의 「오류 줄 억제」)
-        for (const key of Object.keys(state.errors)) {
-          const at = key.indexOf('@')
-          if (at > 0 && !runs.includes(key.slice(at + 1))) delete state.errors[key]
-        }
         // 열린 PR 을 읽지 못한 틱은 ci 가 없다. 그때는 이전 값을 둔다
         if (isObject(result.ci)) state.ci = ciEntries(result.ci)
       }
       state.ticks = n
+      const tickKey = state.run ? `tick@${state.run}` : 'tick'
       if (reason !== null) {
         log(`WATCH-ERROR tick: ${reason}`)
-        if (state.errors.tick !== reason) {
+        if (state.errors[tickKey] !== reason) {
           try {
             appendEvent(ctx.repo, 'WATCH-ERROR', null, `tick: ${reason}`, state.run)
           } catch (e) {
@@ -663,7 +683,8 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
           }
         }
       }
-      state.errors.tick = reason
+      state.errors[tickKey] = reason
+      dropStaleErrors(state.errors, runs, state.run)
       state.alive_at = iso()
       writeLoop(ctx.repo, state)
       if (once) return 0
@@ -671,6 +692,17 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
     }
   } finally {
     clearInterval(timer)
+  }
+}
+
+// 지난 오류 키를 지운다(머리 주석의 「오류 줄 억제」). runs 는 등록된 Run, primary 는 주 Run 이다
+function dropStaleErrors(errors: Record<string, string | null>, runs: string[], primary: string | null): void {
+  for (const key of Object.keys(errors)) {
+    const at = key.indexOf('@')
+    const source = at > 0 ? key.slice(0, at) : key
+    const run = at > 0 ? key.slice(at + 1) : null
+    if (run !== null && !runs.includes(run)) delete errors[key]
+    else if (SHARED_SOURCES.has(source) && primary && run !== primary) delete errors[key]
   }
 }
 
@@ -963,13 +995,13 @@ async function tick(ctx: Context, n: number): Promise<number> {
   const errors: Record<string, string | null> = {}
   const runs = tickRuns(ctx)
   const primary = runs[0].run
-  // Run 마다 도는 출처의 errors 키는 `<출처>@<Run>` 이다. 주 Run 이 바뀌어도 키가 그대로다(머리 주석의 「오류 줄 억제」)
-  const keyOf = (source: string, run: string | null, perRun: boolean) => (perRun && run ? `${source}@${run}` : source)
+  // errors 키는 `<출처>@<Run>` 이다. 공유 출처는 주 Run 이 Run 이다. Run 없는 한 칸이면 출처 이름 그대로다(머리 주석의 「오류 줄 억제」)
+  const keyOf = (source: string, run: string | null) => (run ? `${source}@${run}` : source)
   // 출처의 실패를 기록한다. 이유가 이전과 다를 때만 그 Run 의 알림 파일에 쓴다(머리 주석의 「오류 줄 억제」).
   // 로그 줄은 `<kind> <text>` 이고 알림 파일의 text 는 kind 를 뺀 나머지다. logged 면 그 줄은 이미 stdout 에 나갔다(fire 의 HOOK-FAIL 줄)
   const report = (source: string, reason: string | null, opts: { run?: string | null; kind?: string; text?: string; logged?: boolean } = {}) => {
     const run = opts.run === undefined ? primary : opts.run
-    const key = keyOf(source, run, opts.run !== undefined)
+    const key = keyOf(source, run)
     const kind = opts.kind ?? 'WATCH-ERROR'
     const text = opts.text ?? `${source}: ${reason}`
     errors[key] = reason

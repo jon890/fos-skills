@@ -462,7 +462,7 @@ describe('틱 자식의 실패', () => {
     child.kill('SIGTERM')
     await closed
     const [first, third] = seen
-    assert.equal((first.errors as Json).tick, '종료 코드 3')
+    assert.equal((first.errors as Json)['tick@r'], '종료 코드 3')
     assert.equal(first.last_tick, null)
     // 같은 이유로 두 번 끝났지만 알림은 한 줄이다
     assert.deepEqual(
@@ -470,7 +470,7 @@ describe('틱 자식의 실패', () => {
       ['tick: 종료 코드 3'],
     )
     // 세 번째 틱은 성공했다
-    assert.equal((third.errors as Json).tick, null)
+    assert.equal((third.errors as Json)['tick@r'], null)
     assert.ok(!Number.isNaN(Date.parse(String(third.last_tick))), String(third.last_tick))
     assert.match(logText(), /^결과 없이 끝난다$/m)
     assert.equal(pidAlive(child.pid as number), false)
@@ -581,6 +581,43 @@ describe('--start, --status, --stop', () => {
     assert.equal(stopped.stdout.trim(), `LOOP-STOPPED ${pid}`)
     assert.equal(pidAlive(pid), false)
     assert.equal(existsSync(orchFile('state', 'loop-runs', 'r1.json')), false)
+  })
+
+  test('막 뜨는 루프에 이미 등록된 Run 이 합류하면 registered_at 을 새로 쓰고, 다 뜬 루프면 그대로 둔다', async (t) => {
+    const pid = await fakeLoop(t)
+    const old = '2026-01-01T00:00:00.000Z'
+    const runFile = orchFile('state', 'loop-runs', 'r1.json')
+    const registeredAt = () => String((JSON.parse(readFileSync(runFile, 'utf8')) as Json).registered_at)
+    // 잠금은 그 루프가 쥐었는데 loop.json 은 아직 그 루프의 것이 아니다. 뜨는 루프가 앞 루프의 alive_at 이전 등록을 지우는 때다
+    write(orchFile('state', 'loop.lock'), String(pid))
+    write(runFile, JSON.stringify({ run: 'r1', specs_dir: null, registered_at: old }))
+    const starting = loop(['--run', 'r1', '--start'])
+    assert.equal(starting.code, 4, starting.stdout + starting.stderr)
+    assert.equal(starting.stdout.trim(), `LOOP-RUNNING ${pid} run=r1`)
+    assert.ok(Date.parse(registeredAt()) > Date.parse(old), registeredAt())
+    const now = new Date().toISOString()
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid, run: 'r1', runs: ['r1'], repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} }))
+    write(runFile, JSON.stringify({ run: 'r1', specs_dir: null, registered_at: old }))
+    assert.equal(loop(['--run', 'r1', '--start']).code, 4)
+    assert.equal(registeredAt(), old)
+  })
+
+  test('--stop --run 은 다 읽은 알림 파일과 커서를 지우고, 읽지 않은 줄이 있으면 남긴다', () => {
+    const at = '2026-01-01T00:00:00.000Z'
+    for (const run of ['r1', 'r2']) write(orchFile('state', 'loop-runs', `${run}.json`), JSON.stringify({ run, specs_dir: null, registered_at: at }))
+    const row = `${JSON.stringify({ seq: 1, time: at, kind: 'REMINDER', pr: null, text: 'q' })}\n`
+    write(orchFile('state', 'loop-events', 'r1.jsonl'), row)
+    write(orchFile('state', 'loop-events', 'r1.cursor'), '1\n')
+    write(orchFile('state', 'loop-events', 'r2.jsonl'), row)
+    const left = loop(['--run', 'r1', '--stop'])
+    assert.equal(left.code, 0, left.stdout + left.stderr)
+    assert.equal(left.stdout.trim(), 'LOOP-LEFT - run=r1 runs=r2')
+    assert.equal(existsSync(orchFile('state', 'loop-events', 'r1.jsonl')), false)
+    assert.equal(existsSync(orchFile('state', 'loop-events', 'r1.cursor')), false)
+    const stopped = loop(['--run', 'r2', '--stop'])
+    assert.equal(stopped.code, 0, stopped.stdout + stopped.stderr)
+    assert.equal(stopped.stdout.trim(), 'LOOP-NOT-RUNNING')
+    assert.equal(readFileSync(orchFile('state', 'loop-events', 'r2.jsonl'), 'utf8'), row)
   })
 
   test('Run 등록을 모르는 옛 루프에는 Run 을 더하지 않고 안내 줄을 내며, 다른 Run 의 --stop --run 은 그 루프를 멈추지 않는다', async (t) => {
@@ -720,6 +757,23 @@ describe('여러 Run', () => {
     const errors = result.errors as Json
     assert.equal(typeof errors['questions@A'], 'string')
     assert.equal(typeof errors['questions@B'], 'string')
+  })
+
+  test('주 Run 이 바뀌면 진행 중인 공유 일의 실패가 새 주 Run 에 한 번 간다', () => {
+    register('A', '2026-01-01T00:00:00Z')
+    register('B', '2026-01-02T00:00:00Z')
+    prs([], 1)
+    const sharedTexts = (run: string) => runEvents(run).map((row) => String(row.text)).filter((text) => text.startsWith('prs:'))
+    // 틱 자식은 loop.json 의 errors 를 이전 값으로 읽는다. 부모가 하듯 결과의 errors 를 옮겨 둔다
+    const carry = (result: Json) => write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, errors: result.errors }))
+    carry(tickOnce())
+    assert.equal(sharedTexts('A').length, 1)
+    assert.equal(sharedTexts('B').length, 0)
+    rmSync(orchFile('state', 'loop-runs', 'A.json'))
+    carry(tickOnce())
+    carry(tickOnce())
+    assert.equal(sharedTexts('B').length, 1)
+    assert.equal(sharedTexts('A').length, 1)
   })
 
   test('새로 뜬 루프는 앞 루프의 alive_at 까지 쓴 다른 Run 의 등록을 지우고, 그 뒤에 쓴 등록은 남긴다', () => {
