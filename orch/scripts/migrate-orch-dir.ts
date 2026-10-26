@@ -35,7 +35,7 @@
 // .omc/handoffs, .omc/orch 아래 파일, 옮긴 스크립트(bin). 큐 로그(.out, .pid, .log)는 보지 않는다. 그 파일은 저장소가 고친다.
 // 스크립트의 참조에는 「다시 만들 수 있다」 를 붙인다. 옮긴 포장 스크립트가 옛 폴더를 다시 만들면 진입점이 다시 멈춘다.
 //
-// 막는 조건 (옮길 것이 있을 때 --apply 를 거부하고 종료 코드 3. --hooks 도 같다):
+// 폴더 옮기기의 막는 조건 (옮길 것이 있을 때 --apply 를 거부하고 종료 코드 3):
 //     - 살아 있는 dispatch 가 있다. worker_done 뒤에도 이 저장소 워크트리의 터미널을 쥔(owned, active) worker 가 있다
 //     - orca 로 그 목록을 읽지 못했다
 //     - 머지 큐나 마무리(merge-queue, merge_queue, merge-with-finish, finish-pr 의 .sh, .py, .ts)가 돌고 있다.
@@ -58,7 +58,9 @@
 //        핸들러 자신은 주 checkout 에서 돌지만, 옛 칸은 연결된 워크트리를 --repo 로 주면 그 워크트리에서 돌았기 때문이다.
 //        사용자 저장소에 남고 설치 캐시의 경로가 바뀌므로 이 스킬의 lib/ 를 import 하지 않는다.
 //        after-deploy.ts 의 정규식은 lib/py.ts 의 pyRegExp 로 바꾼 결과를, 인자 목록은 shSplit 으로 나눈 결과를 파일에 적는다
-//     3. --apply 이고 옮길 것이 있으면 위 막는 조건을 본다. 하나라도 있으면 `막음 <이유>` 를 stderr 에 내고 3 이다
+//     3. --apply 이고 옮길 것이 있으면 머지 큐나 마무리 프로세스만 확인한다. 돌고 있거나 pgrep 을 돌리지 못하면
+//        `막음 <이유>` 를 stderr 에 내고 3 이다. dispatch, worker, orca 조회 실패는 막지 않는다.
+//        worker 는 지시서와 폴더 위치만 쓰므로, 머지 큐와 마무리만 읽는 옛 설정 칸을 바꿔도 작업을 이어 갈 수 있다
 //     4. 핸들러 파일을 쓰고 쓴 키만 설정에서 지운다. 설정의 나머지 키와 순서는 그대로 둔다. 비게 된 절도 남긴다.
 //        설정 파일이나 hooks/ 를 git 이 추적하면 `git add -f` 명령을 보인다. 공개 저장소에 올리면 안 되는 값이 있을 수 있어 커밋하지 않는다
 //     옮기지 못하는 칸은 설정에 남기고 이유를 보인다(종료 코드 1). 다른 칸은 옮긴다.
@@ -479,6 +481,11 @@ function blockers(root: string, runId: string | null): string[] {
     }
     if (held.length > 0) found.push(`이 저장소 워크트리의 터미널을 쥔 worker 가 있다: ${held.join(', ')}`)
   }
+  return [...found, ...processBlockers()]
+}
+
+function processBlockers(): string[] {
+  const found: string[] = []
   const done = run([process.env.PGREP || 'pgrep', '-fl', BUSY])
   if (done.code === 0 && done.stdout.trim()) {
     const lines = done.stdout.split('\n').filter((l) => l.trim()).slice(0, 5)
@@ -981,7 +988,7 @@ function trackedUnder(root: string, target: string): boolean {
   return done.code === 0 && done.stdout.trim() !== ''
 }
 
-function migrateHooks(repo: string, runId: string | null, apply: boolean): number {
+function migrateHooks(repo: string, apply: boolean): number {
   const root = mainCheckout(repo)
   const left = legacyPaths(root)
   if (left.length > 0) {
@@ -1021,10 +1028,10 @@ function migrateHooks(repo: string, runId: string | null, apply: boolean): numbe
     return problems.length > 0 ? 1 : 0
   }
   if (writes.length > 0) {
-    const found = blockers(root, runId ?? configuredRun(root))
+    const found = processBlockers()
     if (found.length > 0) {
       for (const reason of found) err(`막음 ${reason}`)
-      err('worker 와 머지 큐가 끝난 뒤 다시 돌린다')
+      err('머지 큐와 마무리 프로세스가 끝나고 pgrep 으로 확인할 수 있을 때 다시 돌린다')
       return 3
     }
   }
@@ -1109,7 +1116,7 @@ function main(argv: string[]): number {
   const runId = (values.run as string | undefined) || null
   if (!values.hooks) return migrateFolders(repo, runId, extra, values.apply as boolean)
   try {
-    return migrateHooks(repo, runId, values.apply as boolean)
+    return migrateHooks(repo, values.apply as boolean)
   } catch (e) {
     if (!(e instanceof Usage)) throw e
     err(`migrate-orch-dir: ${e.message}`)
