@@ -186,6 +186,14 @@ function moveFile(from: string, to: string): void {
   }
 }
 
+// 파일 하나를 destDir 아래로 옮긴다. 같은 이름이 있으면 번호를 붙이고, 옮긴 경로를 돌려준다.
+export function moveToTrash(from: string, destDir: string): string {
+  const dest = uniqueDest(join(destDir, basename(from)))
+  mkdirSync(dirname(dest), { recursive: true })
+  moveFile(from, dest)
+  return dest
+}
+
 const KIND = {
   spec: { object: '지시서를', subject: '지시서' },
   pr: { object: 'PR 본문을', subject: 'PR 본문' },

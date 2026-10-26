@@ -10,6 +10,10 @@
 `user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 가르지 못한다. Orca 의 필드에 시각과 주체가 없다.
 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
+**`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 띄울 때 dispatch 마다 남긴 기록(`.orch/state/launched-workers/`)에 있고 그 dispatch 가 끝났으면(completed, failed, canceled) `user_owned` 여도 코디네이터의 터미널로 보고 닫은 뒤 PR 상태와 남은 커밋, 변경으로 정리를 판단한다.
+기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 이 소유한다.
+PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 completed 이고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
+
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.ts --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
 `finish-pr.ts` 와 `merge-with-finish.ts` 는 이 옵션을 넘기지 않는다.
@@ -229,6 +233,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 **정리는 `cleanup-sweep.ts` 가 한다.** `merge_queue.ts` 가 모든 PR 을 머지한 뒤 `--apply` 로 부르고, 상주 루프(`orch-loop.ts`)가 틱마다 `--remote-branches` 와 함께 부른다.
 **사용자가 정리하라고 말하지 않아도 상주 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 로컬 브랜치가 없는 원격 브랜치는 `--remote-branches` 로 지운다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치가 여기 든다.
+머지 큐 로그 폴더(`.orch/queue`)의 끝난 마무리 로그와 큐 로그도 휴지통(`--trash`)으로 옮긴다. 돌고 있는 것, 모르는 파일, 1시간이 안 된 실패 로그는 남긴다. 조건은 `lib/queue-logs.ts` 머리 주석이 소유한다.
 상세 판정은 `cleanup-sweep.ts` 머리 주석이 소유한다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
 

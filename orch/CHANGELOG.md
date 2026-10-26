@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.2.0 (2026-10-26)
+
+- `launch-worker.ts` 가 띄운 worker 의 dispatch, 터미널, 워크트리를 기록한다. 기록이 없는 터미널은 예전처럼 사용자 보유로 남는다
+- `cleanup-sweep.ts` 는 기록에 있고 dispatch 가 끝난 `user_owned` 터미널을 닫고 PR 상태로 정리를 판단한다
+- PR 없는 워크트리는 dispatch 가 끝나고 앞선 커밋과 변경이 없으면 치운다. 원격 브랜치도 앞선 커밋이 없을 때만 지운다
+- 머지 큐 로그 폴더의 끝난 로그를 휴지통(`--trash`)으로 옮긴다. `FINISH-FAIL` 과 `STOP` 로그는 1시간 남기고 모르는 파일은 건드리지 않는다
+
 ## 4.1.1 (2026-10-26)
 
 - PR 본문 파일 위치를 worker 세션 임시 폴더로 바꾼다. 지시서 작성과 오버레이 안내가 저장소의 `.orch/` 대신 임시 폴더에 쓰고 경로를 status 나 `worker_done` 에 적게 한다
