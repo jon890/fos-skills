@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
@@ -19,6 +19,7 @@ const FAKE_GH = `const fs = require('node:fs')
 const state = JSON.parse(fs.readFileSync('state.json', 'utf8'))
 const args = process.argv.slice(2)
 if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) fs.writeSync(1, state[args[2]] + '\\n')
+else if (args[1] === 'list') fs.writeSync(1, JSON.stringify(state.list || []) + '\\n')
 else process.exit(1)
 `
 
@@ -214,4 +215,49 @@ describe('board-sync', () => {
     assert.match(r.stderr, /DEPRECATED/)
     assert.equal(load().a.status, 'done')
   })
+})
+
+
+test('같은 브랜치의 열린 PR 만 연결하고 다음 틱에도 보존한다', () => {
+  states['9'] = 'OPEN'
+  const r = sync([{ id: 'a', status: 'doing', branch: 'feat/a', details: ['1. 구현'] }], ['--open-prs', JSON.stringify([{ number: 8, headRefName: 'feat/ab' }, { number: 9, headRefName: 'feat/a' }])])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.a.pr, '#9')
+  assert.equal(r.board.a.status, 'doing')
+  assert.equal(run(['--board', board, '--repo', tmp]).code, 0)
+  assert.equal(load().a.pr, '#9')
+})
+
+test('pr 칸이 비어도 같은 브랜치의 머지 PR 로 남은 단계를 끝낸다', () => {
+  const merged = [{ number: 9, headRefName: 'feat/a', state: 'MERGED' }]
+  const r = sync([{ id: 'a', status: 'doing', branch: 'feat/a', details: ['✓ 1. 구현', '2. 머지'] }], ['--open-prs', '[]'])
+  writeFileSync(join(tmp, 'state.json'), JSON.stringify({ list: merged }))
+  const result = run(['--board', board, '--repo', tmp, '--open-prs', '[]'])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(result.code, 0, result.stderr)
+  assert.equal(load().a.status, 'done')
+  assert.deepEqual(load().a.details, [step('1. 구현', true), step('2. 머지', true)])
+})
+
+test('후속 단계가 여럿 남아 비운 PR 은 다음 틱에 다시 연결하지 않는다', () => {
+  sync([{ id: 'a', status: 'doing', branch: 'feat/a', details: ['1. PR #9', '2. 검증'] }])
+  writeFileSync(join(tmp, 'state.json'), JSON.stringify({ list: [{ number: 9, headRefName: 'feat/a', state: 'MERGED' }, { number: 8, headRefName: 'feat/a', state: 'MERGED' }] }))
+  for (let n = 0; n < 3; n++) {
+    const r = run(['--board', board, '--repo', tmp, '--open-prs', '[]'])
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(load().a.status, 'doing')
+    assert.equal(load().a.pr, undefined)
+    assert.deepEqual(load().a.details, [step('1. PR #9', true), step('2. 검증', false)])
+  }
+})
+
+
+test('저장한 branch 가 없어도 실제 worktree 브랜치로 PR 을 연결한다', () => {
+  const init = spawnSync('git', ['init', '-b', 'feat/a', tmp], { encoding: 'utf8' })
+  assert.equal(init.status, 0, init.stderr)
+  states['9'] = 'OPEN'
+  const r = sync([{ id: 'a', status: 'doing', worktree: basename(tmp), details: ['1. 구현'] }], ['--open-prs', JSON.stringify([{ number: 9, headRefName: 'feat/a' }])])
+  assert.equal(r.code, 0, r.result.stderr)
+  assert.equal(r.board.a.pr, '#9')
+  assert.equal(r.board.a.branch, 'feat/a')
 })

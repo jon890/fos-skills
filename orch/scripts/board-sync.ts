@@ -17,22 +17,26 @@
 //     --board       board.json. 기본은 work-board 의 board.ts 가 정한 위치
 //     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
 //     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
+//     --open-prs    루프가 이미 읽은 열린 PR JSON 목록(number, headRefName). 없으면 직접 조회한다
 //     --goal, --goal-items
 //                   --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다.
 //                   --goal-items 가 없으면 목표 항목의 단계 줄을 센다
 //     --dry-run     보드를 고치지 않고 바뀔 항목과 부를 보드 명령만 낸다. 단계 목록은 읽는다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
+// doing 항목의 pr 칸이 비었으면 worktree 브랜치(없으면 저장한 branch)로 PR 을 연결한다.
+// 후속 단계가 남아 비운 머지 PR 은 merged-pr 에 기록해 다시 연결하지 않는다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
 import { readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { gh } from './lib/gh.ts'
+import { worktreePaths } from './lib/workers.ts'
+import { gh, ghJson } from './lib/gh.ts'
 import { boardPath } from './lib/paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
@@ -46,6 +50,7 @@ const OPTIONS = {
   board: { type: 'string' },
   'board-bin': { type: 'string' },
   repo: { type: 'string' },
+  'open-prs': { type: 'string' },
   goal: { type: 'string' },
   'goal-items': { type: 'string' },
   'dry-run': { type: 'boolean' },
@@ -129,7 +134,7 @@ function main(argv: string[]): number {
     return 2
   }
   const boardBin = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.ts')
-  const board = values.board ? resolve(values.board) : boardPath(process.cwd())
+  const board = values.board ? resolve(values.board) : boardPath(resolve(values.repo ?? '.'))
   const repo = resolve(values.repo ?? '.')
   const dryRun = values['dry-run'] === true
   let items: Record<string, unknown>[]
@@ -143,15 +148,45 @@ function main(argv: string[]): number {
     return 1
   }
 
+  type Pr = { number: number; headRefName: string; state?: string }
+  let open: Pr[] | null = null
+  if (values['open-prs']) {
+    try {
+      open = JSON.parse(values['open-prs'])
+      if (!Array.isArray(open)) throw new Error('목록이 아니다')
+    } catch (e) {
+      err(`board-sync: --open-prs: ${(e as Error).message}`)
+      return 2
+    }
+  }
+  const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
   const changed: string[] = []
   for (const item of items) {
     if (SKIP_STATUS.has(String(item.status))) continue
     const id = String(item.id)
-    const merged = item.pr ? prMerged(item.pr, repo) : false
+    const cmds: string[][] = []
+    let discovered: Pr | undefined
+    const branch = branches.get(String(item.worktree)) || String(item.branch || '')
+    if (item.status === 'doing' && !item.pr && branch) {
+      if (open === null) {
+        const got = ghJson<Pr[]>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,headRefName'], { cwd: repo })
+        open = got.ok && Array.isArray(got.data) ? got.data : []
+      }
+      discovered = open.find((pr) => pr.headRefName === branch)
+      if (!discovered) {
+        const got = ghJson<Pr[]>(['pr', 'list', '--state', 'merged', '--head', branch, '--limit', '100', '--json', 'number,headRefName,state'], { cwd: repo })
+        if (got.ok && Array.isArray(got.data)) discovered = got.data.find((pr) => pr.headRefName === branch && pr.state === 'MERGED')
+      }
+      if (discovered?.state === 'MERGED' && String(discovered.number) === prNumber(item['merged-pr'])) discovered = undefined
+      if (discovered) {
+        item.pr = `#${discovered.number}`
+        cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch])
+      }
+    }
+    const merged = discovered?.state === 'MERGED' || (item.pr ? prMerged(item.pr, repo) : false)
     const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
     const kept = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
-    if (kept.length === old.length && !merged) continue
-    const cmds: string[][] = []
+    if (kept.length === old.length && !merged && cmds.length === 0) continue
     if (kept.length !== old.length) cmds.push(['set', id, ...(kept.length > 0 ? kept : ['']).flatMap((d) => ['--detail', detailArgument(d)])])
     let finish = false
     if (merged) {
@@ -163,7 +198,7 @@ function main(argv: string[]): number {
       const plan = finishPlan(steps, item.pr)
       finish = plan.finish
       cmds.push(...plan.numbers.map((n) => ['step', id, String(n)]))
-      cmds.push(finish ? ['set', id, 'done'] : ['set', id, '--pr', ''])
+      cmds.push(finish ? ['set', id, 'done'] : ['set', id, '--pr', '', '--merged-pr', prNumber(item.pr)])
     }
     changed.push(id)
     if (dryRun) {

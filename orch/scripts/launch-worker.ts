@@ -21,6 +21,7 @@
 //     4. `orca worktree list` 에 그 경로가 보일 때까지 기다린다
 //     5. worker-start 로 띄우고 --watch 초 동안 단계를 본다
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
+//        보드가 있으면 지시서의 항목 id, 제목과 단계로 doing 항목을 갱신한다. 실패는 stderr 로 알리고 LAUNCHED 는 유지한다.
 //        핸들러의 실패와 이벤트 실행기의 예외(설정 파일 오류, state 폴더를 쓰지 못함 같은 것)가 모두 그렇다.
 //        stderr 에 `worker-launched 를 내지 못했다: <이유>` 를 남긴다. worker 가 이미 떠 있어 코디네이터는 LAUNCHED 를 믿고 다음 단계로 가야 한다
 //     새로 만든 워크트리는 띄우지 못하고 멈춰도 남긴다. 지시서의 브랜치 이름을 다시 쓸 때 사람이 판단할 근거라서다.
@@ -50,6 +51,7 @@ import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { registerBoard } from './lib/board.ts'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
@@ -402,6 +404,12 @@ async function main(argv: string[]): Promise<number> {
       if (!dispatch || !(await watch(dispatch))) return 1
     }
     out(`LAUNCHED ${dispatch} ${worktree}`)
+
+    try {
+      registerBoard(repo, a.spec, worktree, a.name, common.branch || '')
+    } catch (e) {
+      err(`launch-worker: 보드를 갱신하지 못했다: ${(e as Error).message}`)
+    }
 
     // worker-show 결과의 터미널 키는 send-to-worker 가 읽는 키와 같다.
     const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || passValue(passthru, '--terminal')

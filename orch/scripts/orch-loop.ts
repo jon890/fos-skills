@@ -49,12 +49,13 @@
 //     1. 질문 확인. Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
 //        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓰고 worker-question 을 낸다. REMINDER 는 알림 파일에도 쓴다.
 //        새 질문(QUESTION)은 알림 파일에 쓰지 않는다. 코디네이터의 wait-important 가 question 메시지로 이미 깨어난다
-//     2. 정리. cleanup-sweep --repo <repo> --kill-holders --remote-branches --apply [--run <run>] [--specs-dir <dir>]
-//     3. 보드 동기화. 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 board-sync --repo <repo>
-//     4. CI 감시. 아래 「CI 감시」
-//     5. tick 이벤트. 입력은 tick(틱 번호)과 open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
-//     6. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
-//     열린 PR 은 틱마다 gh pr list 한 번으로 읽어 4, 5, 6 이 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
+//     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 충돌 처리가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
+//     3. 보드 동기화(워크트리 정리 전). 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
+//        decide 제목·줄의 내용 해시가 달라지면 REMINDER 를 기록한다(lib/board.ts)
+//     4. 정리. cleanup-sweep --repo <repo> --kill-holders --remote-branches --apply [--run <run>] [--specs-dir <dir>]
+//     5. CI 감시. 아래 「CI 감시」
+//     6. tick 이벤트. 입력은 tick(틱 번호)과 open_prs(내 열린 PR 번호 목록. 읽지 못하면 null)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
+//     7. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors 와 ci 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
 //     ci(결과에 있을 때만 통째로 바꾼다)를 쓴다.
 //     결과 줄 앞의 출력과 stderr 는 부모가 로그로 옮긴다. 결과 줄을 읽었으면 종료 코드와 상관없이 합친다. 버리면 그 틱이 이미 알린
@@ -148,6 +149,7 @@ import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { appendEvent, DEFAULT_ALIVE_SEC, isLoopProcess, lockFile, loopStatus, readLoop, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
+import { remindDecisions } from './lib/board.ts'
 import { boardPath, makeParent, pathOf } from './lib/paths.ts'
 import { NO_LIMIT_MS, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
@@ -808,7 +810,37 @@ async function tick(ctx: Context, n: number): Promise<number> {
     report('questions', null)
   }
 
-  // 2. 정리
+  // 2. 열린 PR 은 한 번만 읽어 보드, CI 감시와 tick 이벤트가 함께 쓴다
+  let prs: Prs
+  try {
+    prs = openPrs(ctx.repo)
+  } catch (e) {
+    prs = { ok: false, error: oneLine(e) }
+  }
+  report('prs', prs.ok ? null : oneLine(prs.error))
+  const openPrNumbers = prs.ok ? prs.mine.map((pr) => pr.number) : null
+
+  // 3. 보드 동기화
+  try {
+    if (isFile(boardPath(ctx.repo))) {
+      const sync = process.env.BOARD_SYNC || join(HERE, 'board-sync.ts')
+      const args = ['--repo', ctx.repo]
+      if (prs.ok) args.push('--open-prs', JSON.stringify(prs.mine.map((pr) => ({ number: pr.number, headRefName: pr.branch }))))
+      const done = await runAsync(scriptCommand(sync, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
+      relay(done)
+      report('board', done.code === 0 ? null : `종료 코드 ${done.code}`)
+      remindDecisions(ctx.repo, (text) => {
+        appendEvent(ctx.repo, 'REMINDER', null, text)
+        log(`REMINDER ${text}`)
+      })
+    } else {
+      report('board', null)
+    }
+  } catch (e) {
+    report('board', oneLine(e))
+  }
+
+  // 4. 정리
   try {
     const sweep = process.env.CLEANUP_SWEEP || join(HERE, 'cleanup-sweep.ts')
     const args = ['--repo', ctx.repo, '--kill-holders', '--remote-branches', '--apply']
@@ -821,31 +853,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     report('cleanup', oneLine(e))
   }
 
-  // 3. 보드 동기화
-  try {
-    if (isFile(boardPath(ctx.repo))) {
-      const sync = process.env.BOARD_SYNC || join(HERE, 'board-sync.ts')
-      const done = await runAsync(scriptCommand(sync, ['--repo', ctx.repo]), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
-      relay(done)
-      report('board', done.code === 0 ? null : `종료 코드 ${done.code}`)
-    } else {
-      report('board', null)
-    }
-  } catch (e) {
-    report('board', oneLine(e))
-  }
-
-  // 열린 PR 은 한 번만 읽어 CI 감시와 tick 이벤트가 함께 쓴다
-  let prs: Prs
-  try {
-    prs = openPrs(ctx.repo)
-  } catch (e) {
-    prs = { ok: false, error: oneLine(e) }
-  }
-  report('prs', prs.ok ? null : oneLine(prs.error))
-  const openPrNumbers = prs.ok ? prs.mine.map((pr) => pr.number) : null
-
-  // 4. CI 감시. 열린 PR 을 읽지 못한 틱은 결과에 ci 를 넣지 않아 부모가 이전 값을 둔다
+  // 5. CI 감시. 열린 PR 을 읽지 못한 틱은 결과에 ci 를 넣지 않아 부모가 이전 값을 둔다
   let ci: Record<string, CiEntry> | undefined
   // CI 감시와 충돌 처리가 함께 쓴다
   const lookup: Lookup = {}
@@ -859,7 +867,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
   }
 
-  // 5. tick 이벤트
+  // 6. tick 이벤트
   try {
     const fired = await fire('tick', { tick: n, open_prs: openPrNumbers }, { repo: ctx.repo, base: defaultBase(ctx.repo) ?? '', run: ctx.run })
     if (fired.result === 'fail' || fired.result === 'timeout') {
@@ -872,7 +880,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     report('hook', oneLine(e))
   }
 
-  // 6. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다
+  // 7. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다
   if (prs.ok) {
     try {
       report('conflicts', prs.mine.length > 0 ? await handleConflicts(ctx, lookup) : null)

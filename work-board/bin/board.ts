@@ -5,7 +5,8 @@
 // import 할 때 명령이 돌지 않도록 명령 실행은 import.meta.main 안에만 둔다.
 //
 // 사용:
-//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--progress N/M] [--detail D ...]
+//   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--progress N/M] [--detail D ...]
+//   --branch 와 --merged-pr 은 orch 가 브랜치와 처리한 머지 PR 을 기억하는 칸이다.
 //   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
 //   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
 //   (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
@@ -43,10 +44,10 @@ const STEP = /^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s/
 const DONE_MARKS = ['✓', '[x]', '[X]']
 const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
-const FIELDS = ['title', 'owner', 'pr', 'worktree', 'progress'] as const
+const FIELDS = ['title', 'owner', 'pr', 'worktree', 'branch', 'merged-pr', 'progress'] as const
 const COMMANDS = ['set', 'step', 'steps', 'del', 'list']
 const USAGE =
-  '사용법: board.ts {set,step,steps,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] ' +
+  '사용법: board.ts {set,step,steps,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--progress N/M] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 옛 board.py 의 argparse 도움말처럼 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
@@ -56,7 +57,7 @@ const HELP = `${USAGE}
 파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
 
 사용:
-  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--progress N/M] [--detail D ...]
+  board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--progress N/M] [--detail D ...]
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
   (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
@@ -244,6 +245,8 @@ function parse(argv: string[]): Args | 'help' {
     owner: { type: 'string' },
     pr: { type: 'string' },
     worktree: { type: 'string' },
+    branch: { type: 'string' },
+    'merged-pr': { type: 'string' },
     progress: { type: 'string' },
     detail: { type: 'string', multiple: true },
     next: { type: 'string', multiple: true },

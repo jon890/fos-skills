@@ -616,3 +616,48 @@ describe('before-launch 와 worker-launched', () => {
     assert.match(r.stderr, /worker-launched 를 내지 못했다: .*hooks\.timeouts/)
   })
 })
+
+
+test('LAUNCHED 뒤 지시서의 id, 제목, 할 일로 항목을 만들고 기존 단계는 보존한다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ items: [] }))
+  writeFileSync(spec, '# 자동 갱신\n허락: PR 생성\n보드 항목 id: `board-id`\n\n## 할 일\n1. 구현\n   설명\n2. 검증\n\n## 완료\n1. 다른 절\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  let item = JSON.parse(readFileSync(file, 'utf8')).items[0]
+  assert.equal(item.id, 'board-id')
+  assert.equal(item.title, '자동 갱신')
+  assert.equal(item.worktree, 'wt')
+  assert.equal(item.status, 'doing')
+  assert.deepEqual(item.details, [{ text: '1. 구현', done: false }, { text: '2. 검증', done: false }])
+  item.details[0].done = true
+  writeFileSync(file, JSON.stringify({ items: [item] }))
+  state({ next_ids: ['ctx_2'] })
+  assert.equal(launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex']).code, 0)
+  item = JSON.parse(readFileSync(file, 'utf8')).items[0]
+  assert.equal(item.details[0].done, true)
+})
+
+
+test('항목 id 가 없으면 --name 을 쓰고 단계가 없으면 기본 단계를 둔다', () => {
+  const file = join(tmp, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ items: [] }))
+  state({ next_ids: ['ctx_1'] })
+  const r = launch(['--repo', tmp, '--name', 'example', '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  const item = JSON.parse(readFileSync(file, 'utf8')).items[0]
+  assert.equal(item.id, 'example')
+  assert.equal(item.details.length, 3)
+  assert.equal(item.worktree, 'new')
+})
+
+test('보드가 없으면 LAUNCHED 뒤에도 파일을 만들지 않는다', () => {
+  state({ next_ids: ['ctx_1'] })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  assert.equal(existsSync(join(worktree, '.omc', 'board.json')), false)
+  assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+})
