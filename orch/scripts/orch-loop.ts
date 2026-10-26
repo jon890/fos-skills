@@ -126,11 +126,14 @@
 //     기본은 error 2, idle 0 이다. idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 기본으로 끈다.
 //     idle 을 켜도 그 dispatch(또는 그 터미널)가 보낸 미답변 질문(1 의 poll 이 본 question, escalation)이 있으면 세지 않는다.
 //     그 Run 의 질문을 읽지 못한 틱은 질문을 기다리는지 모르므로 idle 항목을 세지도 지우지도 않는다.
-//     멈춤 항목(loop.json 의 stalls[<dispatch>]): run, terminal, state, hash(lib/screen.ts 의 stallHash), since(그 상태를 처음 본 틱의
-//     ISO 8601 UTC 시각), ticks(같은 상태와 같은 hash 를 본 틱 수. 핸들러가 처리한 뒤로 다시 센다), fired(코디네이터에게 알렸는지).
+//     멈춤 항목(loop.json 의 stalls[<dispatch>]): run, terminal, state, hash(lib/screen.ts 의 stallHash), errors(그 멈춤에서 본 가장 많은
+//     오류 줄 수), since(그 상태를 처음 본 틱의 ISO 8601 UTC 시각), ticks(같은 상태와 같은 hash 를 본 틱 수. 핸들러가 처리한 뒤로 다시 센다),
+//     fired(코디네이터에게 알렸는지).
 //     입력란 아래 상태 줄(경과 시간, 컨텍스트 사용량)은 hash 에 들지 않아 그 줄만 바뀐 화면은 같은 멈춤이다.
-//     상태나 터미널이 바뀌면 새 항목이다. 같은 상태에서 hash 만 바뀌면 since 는 두고 ticks 1, fired false 로 다시 센다.
-//     코디네이터가 이어 가게 한 worker 가 같은 오류로 다시 끝나면 화면에 오류 줄이 늘어 hash 가 바뀌므로 다시 알린다.
+//     상태나 터미널이 바뀌면 새 항목이다. 같은 상태에서 hash 만 바뀌면 since 는 두고 ticks 1 로 다시 센다.
+//     fired 는 오류 줄 수가 errors 보다 늘 때만 false 로 되돌린다. 코디네이터가 이어 가게 한 worker 가 같은 오류로 다시 끝나면
+//     화면에 오류 줄이 늘어 다시 알린다. 창 크기가 바뀌어 오류 줄이 화면 위로 밀려났다 돌아온 화면은 같은 멈춤을 다시 알리지 않는다.
+//     처음 본 창보다 크게 늘려 밀려나 있던 오류 줄이 보이면 늘어난 것과 구분하지 못해 다시 알린다.
 //     ticks 가 기준에 닿은 틱에 worker-stalled 를 그 Run 으로 낸다.
 //     핸들러가 0 으로 끝나면(pass) 알림 파일에 쓰지 않고 ticks 를 0 으로 되돌린다. 다시 시도시킨 worker 의 화면이 그대로면 hash 가 같다.
 //     그래서 같은 화면이 기준 틱 수만큼 더 이어지면 핸들러를 다시 부른다. 횟수 상한은 핸들러가 since 로 센다.
@@ -263,7 +266,7 @@ type TickResult = {
   stalls?: Record<string, Stall>
 }
 type StallState = 'error' | 'idle'
-type Stall = { run: string; terminal: string; state: StallState; hash: string; since: string; ticks: number; fired: boolean }
+type Stall = { run: string; terminal: string; state: StallState; hash: string; errors: number; since: string; ticks: number; fired: boolean }
 
 class Usage extends Error {}
 
@@ -1001,7 +1004,9 @@ function stallEntries(value: unknown): Record<string, Stall> {
     if (!isObject(e) || (e.state !== 'error' && e.state !== 'idle')) continue
     if (typeof e.run !== 'string' || typeof e.terminal !== 'string' || typeof e.hash !== 'string' || typeof e.since !== 'string') continue
     if (typeof e.ticks !== 'number' || !Number.isInteger(e.ticks) || e.ticks < 0 || typeof e.fired !== 'boolean') continue
-    entries[dispatch] = { run: e.run, terminal: e.terminal, state: e.state, hash: e.hash, since: e.since, ticks: e.ticks, fired: e.fired }
+    // errors 가 없는 항목은 오류 줄 수를 모른다. 0 으로 두어 다음 hash 변화에서 다시 센다
+    const errors = typeof e.errors === 'number' && Number.isInteger(e.errors) && e.errors >= 0 ? e.errors : 0
+    entries[dispatch] = { run: e.run, terminal: e.terminal, state: e.state, hash: e.hash, errors, since: e.since, ticks: e.ticks, fired: e.fired }
   }
   return entries
 }
@@ -1066,12 +1071,14 @@ async function watchStalls(
       const hash = stallHash(screen)
       const before = previous[dispatch]
       const continued = before && before.state === state && before.terminal === terminal
-      // 화면만 바뀐 멈춤(다시 시도한 worker 가 같은 오류로 끝남)은 since 를 두고 새 멈춤으로 센다. 핸들러가 since 로 횟수를 센다
+      // 화면만 바뀐 멈춤(다시 시도한 worker 가 같은 오류로 끝남)은 since 를 두고 새 멈춤으로 센다. 핸들러가 since 로 횟수를 센다.
+      // 알린 뒤 다시 알리는 것은 오류 줄 수가 이제까지 본 수보다 늘 때뿐이다. 창 크기가 바뀌어 줄 수가 줄거나 되돌아온 화면은 같은 멈춤이다
+      const grew = continued && screen.errors > before.errors
       const entry: Stall = !continued
-        ? { run, terminal, state, hash, since: iso(), ticks: 1, fired: false }
+        ? { run, terminal, state, hash, errors: screen.errors, since: iso(), ticks: 1, fired: false }
         : before.hash === hash
           ? { ...before, run, ticks: before.ticks + 1 }
-          : { ...before, run, hash, ticks: 1, fired: false }
+          : { ...before, run, hash, errors: Math.max(before.errors, screen.errors), ticks: 1, fired: before.fired && !grew }
       stalls[dispatch] = entry
       if (entry.ticks < limit || entry.fired) continue
       if (await notifyStall(ctx, run, row, entry, screenTail(lines), base)) {

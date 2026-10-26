@@ -240,6 +240,26 @@ describe('error 멈춤', () => {
     )
   })
 
+  test('창 크기가 바뀌어 오류 줄이 밀려났다 돌아와도 다시 알리지 않고, 오류 줄이 이제까지보다 늘 때만 다시 알린다', () => {
+    // 창을 줄여 첫 오류 줄이 화면 위로 밀려난 화면과, 한 번 더 이어 가게 했는데 같은 오류로 끝난 화면이다
+    const shrunk = CODEX_ERROR_AGAIN.split('\n').slice(2).join('\n')
+    const third = CODEX_ERROR_AGAIN.replace('› Ask Codex', '› 계속 진행해\n■ Selected model is at capacity. Please try a different model.\n› Ask Codex')
+    const screen = (text: string) => orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: text } })
+    screen(CODEX_ERROR_AGAIN)
+    tick()
+    tick()
+    for (const text of [shrunk, CODEX_ERROR_AGAIN]) {
+      screen(text)
+      const entry = stallOf(tick(), 'd1')
+      assert.deepEqual([entry?.errors, entry?.fired], [2, true])
+      tick()
+    }
+    assert.equal(stalledEvents('A').length, 1, '창 크기만 바뀐 같은 멈춤을 다시 알렸다')
+    screen(third)
+    assert.deepEqual([stallOf(tick(), 'd1')?.errors, stallOf(tick(), 'd1')?.fired], [3, true])
+    assert.equal(stalledEvents('A').length, 2)
+  })
+
   test('사람이 Esc 로 끊은 화면은 멈춤으로 세지 않고 핸들러도 부르지 않는다', () => {
     write(orchFile('hooks', 'worker-stalled.ts'), retryExample())
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_INTERRUPTED } })

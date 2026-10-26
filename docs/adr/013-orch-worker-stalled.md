@@ -8,6 +8,7 @@
   핸들러가 넘길 때는 10 으로 끝낸다. `worker-stalled` 를 거부할 수 있는 이벤트로 두어 로그에 `HOOK-REJECT worker-stalled <이유>` 가 남고, 핸들러 결함의 `HOOK-FAIL` 과 구분된다.
   같은 멈춤인지는 마지막 메시지 묶음과 입력란 위 화면의 오류 줄 수로 만든 해시로 본다. 이어 가게 한 worker 가 같은 오류로 다시 끝나면 오류 줄이 늘어 해시가 바뀌고, 다시 센 뒤 다시 알린다.
   해시만 바뀐 같은 상태는 `since` 를 그대로 둔다. 핸들러는 `since` 로 멈춤마다 횟수를 센다.
+  알린 멈춤을 다시 알리는 것은 오류 줄 수가 그 멈춤에서 본 가장 많은 수보다 늘 때뿐이다. 창 크기가 바뀌어 오류 줄이 화면 위로 밀려났다 돌아와도 같은 멈춤을 두 번 알리지 않는다.
   코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식(Codex 의 `■ ` 줄, Claude Code 의 `⎿` 뒤 `API Error:` 나 `API Error (` 줄)뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다.
   사람이 Esc 로 끊은 Codex 화면(`■ Conversation interrupted`)은 `interrupted` 로 따로 두고 멈춤으로 세지 않는다. 사람이 일부러 멈춘 작업을 코어가 다시 돌리지 않는다.
   핸들러 환경의 `ORCH_SCRIPTS` 가 코어 명령의 폴더를 알리고, worker 에게 입력하는 코어 명령(`nudge-worker`, `send-to-worker`)은 `ORCH_REAL_ORCA` 로 진짜 orca 를 부른다.
