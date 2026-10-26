@@ -1,4 +1,5 @@
 import { test, expect } from 'claude-code/testing'
+import { DECIDE_PROMPT } from '../hooks/register.js'
 
 const BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
   { id: 'a', title: '단계 항목', status: 'doing', owner: 'worker', pr: '#9', worktree: 'wt-a',
@@ -14,8 +15,11 @@ const PANE = {
   props: { title: '작업 현황', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
-async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD) {
-  on('command.register', (_, e) => ({ value: { command: e.name } }))
+async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD, commands = [], now = Date.parse('2026-10-22T10:05:00+09:00')) {
+  on('command.register', (_, e) => {
+    commands.push(e)
+    return { value: { command: e.name } }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
@@ -24,7 +28,7 @@ async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '
     : processResult(e.argv) }))
   on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
   on('fs.read', () => ({ value: board }))
-  on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
+  on('clock.now', () => ({ value: now }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
 
@@ -139,14 +143,63 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   await ui.unmount()
 })
 
-test('새로 읽기 버튼은 없고 오늘 시작과 펼치기 버튼만 남는다', async ($, on) => {
+test('새로 읽기 버튼은 없고 오늘 시작과 결정 질문, 펼치기 버튼을 보인다', async ($, on) => {
   await start($, on)
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Button', text: /새로 읽기|읽는 중/ })).toBeFalsy()
   expect(await ui.find({ type: 'Button', text: /오늘 시작/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', text: /정할 것 묻기/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('정할 것 묻기 명령과 q 단축키 버튼은 같은 요청을 보낸다', async ($, on) => {
+  const submitted = []
+  const commands = []
+  on('prompt.submit', (_, e) => {
+    submitted.push(e.text)
+    return { drop: "테스트에서 요청만 확인" }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  await start($, on, undefined, BOARD, commands)
+  expect(commands.find((command) => command.name === 'board-decide')).toMatchObject({ immediate: true })
+  const result = await $.command.run({ command: 'board-decide' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const button = await ui.find({ type: 'Button', key: 'ask-decisions' })
+  expect(button.props).toMatchObject({ label: '정할 것 묻기', hotkey: 'q' })
+  await ui.press({ key: 'ask-decisions' })
+  expect(result).toMatchObject({ text: DECIDE_PROMPT })
+  expect(submitted).toEqual([DECIDE_PROMPT])
+  await ui.unmount()
+})
+
+for (const [name, boardAt, liveAt] of [
+  ['실시간 조회가 늦음', '2026-10-22T10:00:00+09:00', Date.parse('2026-10-22T10:05:00+09:00')],
+  ['보드 파일이 늦음', '2026-10-22T10:10:00+09:00', Date.parse('2026-10-22T10:05:00+09:00')],
+  ['둘 다 없음', '', 0],
+] as const) {
+  test('머리 줄은 갱신 시각 하나와 단축키 상자를 보인다: ' + name, async ($, on) => {
+    const runId = 'run-visible-id-must-be-hidden'
+    await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
+      argv.includes('run-current') ? { run: { id: runId } }
+        : argv.includes('worker-list') ? { workers: [] } : { messages: [] },
+    }) }), JSON.stringify({ updatedAt: boardAt, items: [] }), [], liveAt)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const timestamp = Math.max(Date.parse(boardAt) || 0, liveAt)
+    const date = new Date(timestamp)
+    const label = timestamp
+      ? String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0') + ' 업데이트'
+      : '읽는 중'
+    expect(await ui.find({ type: 'Text', text: new RegExp('^' + label + '$') })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /run-visible-id-must-be-hidden|수동|자동|실제 상태/ })).toBeUndefined()
+    const shortcuts = await ui.find({ type: 'Box', key: 'shortcuts' })
+    expect(shortcuts.props.borderStyle).toBe('round')
+    expect(await ui.find({ type: 'Text', text: /^단축키$/ })).toBeTruthy()
+    const buttons = (shortcuts.children as Drawn[])[1].children as Drawn[]
+    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'q', 'd'])
+    await ui.unmount()
+  })
+}
 
 test('질문 조회 실패를 결정 필요 0 대신 확인 불가로 표시한다', async ($, on) => {
   await start($, on, (argv) => argv.includes('run-current')
