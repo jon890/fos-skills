@@ -87,7 +87,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
   - `QUEUE-CONFLICT`: 머지 큐가 base 와 충돌한 PR 을 빼고 뒤 PR 을 이어 머지했다. 내용은 충돌 이유다. worker 에게 알리는 일은 루프의 충돌 처리가 한다. worker 가 base 를 합친 뒤 그 PR 만 다시 머지 큐에 건다
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
-  - `AUTO-MERGE-END`: 루프가 건 큐가 끝났다. 내용의 끝 줄은 머지 큐의 결과 줄(`QUEUE-DONE`, `QUEUE-HELD …`, `STOP …`)이다. `QUEUE-DONE` 이 아니면 `log=` 의 로그를 읽고 멈춘 이유를 처리한다. `끝 줄 없음` 이면 머지 큐가 시작되지 않았다(사용법 오류, 마무리를 띄우지 못함). 로그의 오류를 고친다. 같은 HEAD 는 루프가 다시 걸지 않으므로, 이유를 풀었으면 코디네이터가 직접 건다
+  - `AUTO-MERGE-END`: 루프가 건 큐가 끝났다. 내용의 끝 줄은 머지 큐의 결과 줄(`QUEUE-DONE`, `QUEUE-HELD …`, `STOP …`)이다. `QUEUE-DONE` 이 아니면 `log=` 의 로그를 읽고 멈춘 이유를 처리한다. `끝 줄 없음` 이면 머지 큐가 시작 전에 끝났거나(사용법 오류, 마무리를 띄우지 못함) 도중에 신호를 받아 끝났다. 로그로 어디까지 머지했는지 확인하고 오류를 고친다. 같은 HEAD 는 루프가 다시 걸지 않으므로, 이유를 풀었으면 코디네이터가 직접 건다
   - `MIGRATION-CLASH`: 그 PR 의 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같다. 그 PR 의 worker 에게 번호를 다시 정하게 한다
   - `MIGRATION-BLOCKED`: 더 낮은 번호의 열린 PR 이 오래 막혀 있다. 막는 PR 의 번호를 뒤로 미룰지 정한다. 루프는 파일 이름을 바꾸지 않는다
   - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `nudge-worker.ts --terminal <터미널> --state` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
