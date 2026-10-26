@@ -5,9 +5,9 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -230,15 +230,39 @@ describe('정리', () => {
 
   test('브랜치 없음으로 판정한 뒤 잠금을 기다리는 사이 로컬 브랜치가 생기면 남긴다', async () => {
     seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
+    // 명령의 git 호출을 진짜 git 으로 넘기고, 끝난 뒤에 인자를 기록하는 래퍼다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
+    const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8', env }).stdout.trim()
+    assert.ok(realGit, 'git 을 찾지 못했다')
+    const binDir = join(tmp, 'git-bin')
+    const log = join(tmp, 'git-calls.jsonl')
+    write(
+      join(binDir, 'git'),
+      `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process')
+const argv = process.argv.slice(2)
+const done = spawnSync(${JSON.stringify(realGit)}, argv, { stdio: 'inherit' })
+require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(argv) + '\\n')
+process.exitCode = done.status ?? 1
+`,
+    )
+    chmodSync(join(binDir, 'git'), 0o755)
+    const checkedLocal = () =>
+      existsSync(log) &&
+      readFileSync(log, 'utf8')
+        .split('\n')
+        .filter((line) => line)
+        .some((line) => {
+          const argv = JSON.parse(line) as string[]
+          return argv.includes('show-ref') && argv.includes('refs/heads/feat-old')
+        })
     // 테스트 프로세스가 잠금을 쥔 동안 명령은 잠금 밖의 판정(PR 없음, 원격과 로컬 모두 없음)을 마치고 잠금을 기다린다
     const lock = stateFile('migration-reservations.lock')
     write(lock, String(process.pid))
-    const running = reserveAsync(['--prune'], { RESERVE_LOCK_WAIT_MS: '30000' })
+    const running = reserveAsync(['--prune'], { RESERVE_LOCK_WAIT_MS: '30000', PATH: `${binDir}${delimiter}${env.PATH ?? ''}` })
+    // 잠금 밖 판정의 show-ref 가 끝난 것을 본 뒤에 브랜치를 만든다. 그 호출은 잠금을 잡기 전의 것뿐이다
     const deadline = Date.now() + 20_000
-    while (!gh.calls().some((call) => call.argv.includes('--head')) && Date.now() < deadline) await sleep(50)
-    assert.ok(gh.calls().some((call) => call.argv.includes('--head')), '명령이 정리 판정을 시작하지 않았다')
-    // gh 조회 뒤의 ls-remote 와 show-ref 가 끝나기를 기다린다. 늦게 끝나 로컬 브랜치를 보면 판정이 false 라 결과는 같다
-    await sleep(2_000)
+    while (!checkedLocal() && Date.now() < deadline) await sleep(50)
+    assert.ok(checkedLocal(), '20초 안에 잠금 밖 판정의 show-ref 호출이 기록되지 않았다')
     git(['branch', 'feat-old'])
     rmSync(lock)
     const done = await running
