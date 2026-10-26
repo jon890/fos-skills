@@ -294,7 +294,7 @@ describe('error 멈춤', () => {
     assert.deepEqual(received('worker-stalled.env'), [{ ORCH_SCRIPTS: dirname(SCRIPT) }])
   })
 
-  test('hooks.md 예시 핸들러는 같은 오류 화면에 상한까지 다시 시도시키고, 상한에서 WORKER-STALLED 를 한 번 쓴다', () => {
+  test('hooks.md 예시 핸들러는 같은 오류 화면에 상한까지 다시 시도시키고, 상한에서 10 으로 넘겨 WORKER-STALLED 를 한 번 쓴다', () => {
     write(orchFile('hooks', 'worker-stalled.ts'), retryExample())
     // 다시 시도한 worker 가 같은 오류로 바로 끝나 화면이 그대로인 경우다
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
@@ -314,6 +314,26 @@ describe('error 멈춤', () => {
     tick()
     assert.equal(sends().length, 3)
     assert.equal(stalledEvents('A').length, 1, '같은 멈춤을 다시 알렸다')
+    const rejected = jsonl(orchFile('state', 'hooks.jsonl')).filter((row) => row.event === 'worker-stalled' && row.result === 'reject')
+    assert.deepEqual(
+      rejected.map((row) => row.reason),
+      ['다시 시도 3번에 닿았다'],
+    )
+  })
+
+  test('hooks.md 예시 핸들러는 횟수를 멈춤(since)마다 센다', () => {
+    write(orchFile('hooks', 'worker-stalled.ts'), retryExample())
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
+    for (let i = 0; i < 8; i++) tick()
+    assert.equal(sends().length, 3)
+    assert.equal(stalledEvents('A').length, 1)
+    // 작업 중 화면을 거쳐 다시 멈추면 새 멈춤이라 다시 세 번까지 시도시킨다
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CLAUDE_WORKING } })
+    tick()
+    orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CODEX_ERROR() } })
+    for (let i = 0; i < 6; i++) tick()
+    assert.equal(sends().length, 6)
+    assert.equal(stalledEvents('A').length, 1)
   })
 
   test('핸들러가 실패하면 알림 파일에 쓴다', () => {

@@ -27,7 +27,8 @@
 //   worker-stalled  worker, state(error 또는 idle. lib/screen.ts 의 화면 상태), since(그 상태를 처음 본 틱의 ISO 8601 UTC 시각),
 //       ticks(같은 상태와 같은 마지막 메시지 묶음을 본 틱 수. 핸들러가 처리한 뒤로 다시 센다), lines(빈 줄을 뺀 화면 끝 줄 목록. 핸들러가 직접 판정할 때 쓴다).
 //       상주 루프가 그 Run 의 살아 있는 dispatch 화면에서 같은 멈춤을 pipeline.stall_ticks 의 틱 수만큼 본 때 낸다.
-//       핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 내고, 아니면 그 멈춤에는 다시 내지 않는다(orch-loop.ts 의 「멈춤 확인」)
+//       핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 내고, 아니면 그 멈춤에는 다시 내지 않는다(orch-loop.ts 의 「멈춤 확인」).
+//       10 은 처리하지 않고 코디네이터에게 넘긴다는 뜻이다(HOOK-REJECT). 같은 상태가 이어지는 동안 since 는 그대로라 핸들러는 since 로 횟수를 센다
 //   before-ready, pr-ready  pr, ready_count(이미 ready 인 내 PR 수), slots
 //   ci-passed, ci-failed, ci-missing  pr, checks(이름, 상태, 결론, URL 의 목록), required(이름 목록)
 //   pr-conflict  pr, base_head, files, worker(터미널이 없으면 null), action
@@ -157,7 +158,8 @@ export const EVENTS: Readonly<Record<string, EventSpec>> = Object.freeze({
   'worker-question': spec(false),
   'worker-done': spec(false),
   'worker-lost': spec(false),
-  'worker-stalled': spec(false),
+  // 거부는 넘김이다. 핸들러가 처리하지 않고 코디네이터에게 넘긴다(orch-loop.ts 의 「멈춤 확인」)
+  'worker-stalled': spec(true),
   'before-ready': spec(true),
   'pr-ready': spec(false),
   'ci-passed': spec(false),
