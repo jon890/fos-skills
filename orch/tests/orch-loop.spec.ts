@@ -399,7 +399,7 @@ describe('정리와 보드 동기화', () => {
     assert.deepEqual(argsOf('board'), [])
     board()
     once()
-    assert.deepEqual(argsOf('board'), [['--repo', repo]])
+    assert.deepEqual(argsOf('board'), [['--repo', repo, '--open-prs', '[]']])
   })
 
   test('정리 명령이 실패하면 WATCH-ERROR cleanup 이다', () => {
@@ -616,4 +616,24 @@ describe('사용법과 설정', () => {
     assert.equal(loop(['--start', '--stop']).code, 2)
     assert.equal(loop(['--tick']).code, 2)
   })
+})
+
+
+test('decide 제목과 줄이 바뀔 때만 REMINDER 를 기록하고 삭제 뒤 재생성도 알린다', () => {
+  const file = join(repo, '.omc', 'board.json')
+  const save = (title = '방식 선택', next = '1. 방식 고르기') => write(file, JSON.stringify({ items: [{ id: 'choice', status: 'decide', title, next }] }))
+  save()
+  once()
+  once()
+  assert.equal(events().filter((e) => e.kind === 'REMINDER').length, 1)
+  save('보관 방식 선택')
+  once()
+  save('보관 방식 선택', '1. 보관 기간 고르기')
+  once()
+  assert.equal(events().filter((e) => e.kind === 'REMINDER').length, 3)
+  board()
+  once()
+  save()
+  once()
+  assert.equal(events().filter((e) => e.kind === 'REMINDER').length, 4)
 })

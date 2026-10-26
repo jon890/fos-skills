@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "3.6.0"
+  version: "3.7.0"
 ---
 
 # orch
@@ -77,7 +77,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
 | 7 | 머지와 정리 | `merge-with-finish.ts` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
 
-진행 보드를 쓰는 환경이면 상태가 바뀌는 단계마다 보드를 고친다. 보드가 없으면 건너뛴다.
+진행 보드가 있으면 띄우기와 루프가 항목, PR 연결, 머지를 자동 반영한다. 코디네이터는 결정과 다음 단계를 관리한다([보드 갱신 담당](references/board.md)). 보드가 없으면 건너뛴다.
 
 ## 1. 에이전트 고르기
 
