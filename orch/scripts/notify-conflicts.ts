@@ -24,7 +24,7 @@
 // base 가 움직이면 새 충돌일 수 있어 다시 알린다. 처음 보면:
 //     1. 그 브랜치의 워크트리(git worktree list)와 그 워크트리의 dispatch(worker-list, 살아 있는 것을 먼저)를 찾는다
 //     2. dispatch 가 살아 있으면 본문을 `send-to-worker --dispatch <id> --body <본문>` 으로 보낸다
-//     3. dispatch 가 끝났으면 후속 지시서 <지시서 폴더>/spec-conflict-<PR>-<base SHA 앞 8자리>.md 를 쓰고
+//     3. dispatch 가 끝났으면 후속 지시서 <지시서 폴더>/spec-conflict-<PR>.md 를 쓰고(base 가 움직이면 덮어쓴다)
 //        `send-to-worker --dispatch <id> --spec <지시서>` 로 보낸다. --body 는 주지 않는다. 끝난 dispatch 에는 가지 않는다
 //        지시서 이름을 spec- 으로 시작하게 둔 것은 정리 경로(cleanup-sweep, handoff-cleanup, finish-pr)가 이 이름만 보기 때문이다
 //     4. 아래 표로 기록하고 pr-conflict 이벤트를 낸다. 기록하지 않은 경우에는 이벤트도 내지 않는다. 다음 실행이 다시 본다
@@ -46,7 +46,8 @@
 //     워크트리나 dispatch 를 찾지 못한 경우도 orphan 이고 기록한다. worker-list 를 읽지 못하면 알리지도 기록하지도 않는다
 //
 // 후속 지시서: 첫 줄은 공통 지시서 <지시서 폴더>/spec-common.md 의 절대경로를 먼저 읽으라는 줄이다. 그 파일이 없으면 이 줄 없이 쓰고
-//     stderr 에 경고를 낸다. 브랜치 줄, 허락 줄(push 는 허락, PR 은 새로 열지 않는다), 할 일과 충돌 파일 목록을 둔다.
+//     stderr 에 경고를 낸다. 브랜치 줄, `중간 과정: PR #<PR>` 줄, 허락 줄(push 는 허락, PR 은 새로 열지 않는다), 할 일과 충돌 파일 목록을 둔다.
+//     중간 과정 줄이 있어 보드에 새 항목이 생기지 않는다. 그 PR 의 마무리(finish-pr.ts)가 머지 뒤 이 지시서를 지운다.
 //
 // pr-conflict 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, base_head, files, worker, action.
 //     worker 는 찾은 dispatch 의 worker-list 행에서 채우고(spec 은 후속 지시서 경로, 없으면 null) 워크트리나 dispatch 가 없으면 null 이다.

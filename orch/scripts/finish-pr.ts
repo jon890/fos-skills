@@ -20,6 +20,9 @@
 //        지우기는 lib/spec.ts 의 deleteSpecs 한 경로다. 살아 있는 dispatch(--run 의 Run, 없으면 모든 Run)가 쓰는 지시서와,
 //        그 목록을 읽지 못한 실행에서는 지우지 않는다. 지시서 폴더가 orch 루트 밖이어도 지운다.
 //        중간 PR 이면 지시서는 남긴다. 업무 하나가 PR 여럿이면 다음 PR 에도 지시서를 쓴다
+//        마지막과 중간 모두, --specs-dir 와 상관없이 <orch 루트>/specs 의 이 PR 의 충돌 후속 지시서(spec-conflict-<PR>.md 와
+//        옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md, lib/conflicts.ts 의 conflictSpecFiles)를 같은 deleteSpecs 로 지운다(ADR-015).
+//        그 PR 이 머지되면 쓸모가 없다. 지울 것이 없으면 살아 있는 지시서 목록도 읽지 않는다
 //     6. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
 //     7. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
 //     8. 보드 항목을 고친다(아래 「보드 항목」)
@@ -103,6 +106,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { findBoardItems, intermediateCommands, noteLine, readBoard } from './lib/board.ts'
 import type { BoardDetail, BoardStep } from './lib/board.ts'
+import { conflictSpecFiles } from './lib/conflicts.ts'
 import { extractTaskNumber, judgeLastPr, numberPattern, specFiles } from './lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
@@ -110,7 +114,7 @@ import type { FireResult } from './lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from './lib/finish-options.ts'
 import { real, realPath } from './lib/fs.ts'
 import { ghBin } from './lib/gh.ts'
-import { boardPath, requireMigrated } from './lib/paths.ts'
+import { boardPath, pathOf, requireMigrated } from './lib/paths.ts'
 import { run, runAsync, scriptCommand } from './lib/proc.ts'
 import { pyStr, shSplit } from './lib/py.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from './lib/spec.ts'
@@ -415,6 +419,13 @@ function deleteBranchSpecs(args: Args, repo: string, branch: string): void {
   deleteSpecs({ root: dirname(realPath(specsDirOf(args, repo))), specs, prBodies: [], live: liveSpecPaths(args.run), mode: 'delete', apply: true, log })
 }
 
+// 이 PR 의 충돌 후속 지시서를 지운다(머리 주석의 단계 5). root 는 deleteBranchSpecs 와 같이 지시서 폴더 실경로의 부모다
+function deleteConflictSpecs(args: Args, repo: string): void {
+  const specs = conflictSpecFiles(repo, Number(args.pr))
+  if (specs.length === 0) return
+  deleteSpecs({ root: dirname(realPath(pathOf('specs', repo))), specs, prBodies: [], live: liveSpecPaths(args.run), mode: 'delete', apply: true, log })
+}
+
 // 머리 주석의 「마지막 PR 판정」. 판정하지 못하면 중간 PR 이다. reason 은 근거 줄의 괄호 안이다
 // prs 와 specs 는 남은 PR 과 지시서다. 보드의 남은 일 줄에 쓴다
 function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; reason: string; prs: string[]; specs: string[] } {
@@ -527,6 +538,7 @@ async function finish(args: Args, repo: string): Promise<number> {
   const verdict = judgeLast(args, repo, merged)
   const last = verdict.last
   log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${verdict.reason})`)
+  deleteConflictSpecs(args, repo)
   if (args.specsDir) {
     if (last) deleteBranchSpecs(args, repo, branch)
     else log('지시서 유지: 업무의 마지막 PR 이 아니다')

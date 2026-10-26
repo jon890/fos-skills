@@ -206,12 +206,31 @@ test('최근 질문 상한이면 답변이 모두 끝났어도 조회 범위를 
   await start($, on, (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ result:
     argv.includes('run-current') ? { run: { id: 'r' } }
       : argv.includes('check') ? { messages: Array(100).fill(q) }
-        : argv.includes('inbox') ? { messages: [{ id: 'answer', thread_id: 'q', run_id: 'r', from_handle: 'run:r' }] }
+        : argv.includes('inbox') ? { messages: [{ id: 'answer', thread_id: 'q', run_id: 'r', from_handle: 'run:r', to_handle: 'dispatch:d' }] }
           : { workers: [{ dispatchId: 'd', dispatchStatus: 'dispatched', workerState: 'ready' }] },
   }) }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /^결정 필요  0$/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /최근 질문 100건과 읽지 않은 질문/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+const decided = (lines) => JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
+  { id: 'd', title: '모음 결정', status: 'decide', details: lines },
+] })
+
+test('줄이 모두 끝난 decide 항목만 있으면 결정 필요 상자를 그리지 않는다', async ($, on) => {
+  await start($, on, undefined, decided([{ text: 'A 를 고를지', done: true }, { text: 'B 를 고를지', done: true }]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Box', key: 'live-decide' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('decide 항목에 남은 줄이 있으면 결정 필요 상자에 그 수를 보인다', async ($, on) => {
+  await start($, on, undefined, decided([{ text: 'A 를 고를지', done: true }, { text: 'B 를 고를지', done: false }]))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Box', key: 'live-decide' })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^결정 필요  1$/ })).toBeTruthy()
   await ui.unmount()
 })
 

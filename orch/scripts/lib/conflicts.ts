@@ -17,10 +17,15 @@
 //                     결과가 record 면 기록하고, skip 이면 기록하지 않고(다음 실행이 다시 본다), usage 면 부르는 쪽이 충돌 처리를 멈춘다
 //   concludeConflict  기록한 뒤 pr-conflict 를 낸다. 이벤트를 내지 못한 오류는 stderr 에 한 줄 남기고 넘어간다
 //   SEND_TO_WORKER 환경 변수가 send-to-worker 의 경로를 바꾼다. 기본은 이 폴더의 부모 폴더의 send-to-worker.ts 다.
+//
+// 후속 지시서 이름: <지시서 폴더>/spec-conflict-<PR>.md(conflictSpecPath). PR 마다 하나이고 base 가 움직이면 덮어쓴다(ADR-015).
+//   앞 base 의 지시서는 다음 base 에서 쓸모가 없다. `중간 과정: PR #<PR>` 줄을 담아 launch-worker 가 보드에 새 항목을 만들지 않는다.
+//   그 PR 의 마무리(finish-pr.ts)가 머지 뒤 conflictSpecFiles 로 찾아 지운다. 옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md 도 그 목록에 든다.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { INTERIM } from './board.ts'
 import { fire } from './events.ts'
 import type { FireContext } from './events.ts'
 import { conflicts, git } from './git.ts'
@@ -82,6 +87,27 @@ export function findConflicts(repo: string, base: string): { ok: true; baseSha: 
     if (merged.conflict) found.push({ pr, files: merged.files })
   }
   return { ok: true, baseSha: head.sha, found }
+}
+
+// PR 의 충돌 후속 지시서 경로(머리 주석의 「후속 지시서 이름」)
+export function conflictSpecPath(repo: string, pr: number): string {
+  return join(pathOf('specs', repo), `spec-conflict-${pr}.md`)
+}
+
+// 지시서 폴더에서 그 PR 의 충돌 후속 지시서 경로들. 옛 이름(base SHA 앞 8자리를 붙인 것)도 든다. 폴더가 없으면 빈 목록이다
+export function conflictSpecFiles(repo: string, pr: number): string[] {
+  const dir = pathOf('specs', repo)
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return []
+  }
+  const legacy = new RegExp(`^spec-conflict-${pr}-[0-9a-f]{8}\\.md$`)
+  return names
+    .filter((name) => name === `spec-conflict-${pr}.md` || legacy.test(name))
+    .sort()
+    .map((name) => join(dir, name))
 }
 
 export function notifiedFile(repo: string): string {
@@ -148,6 +174,7 @@ function followUp(repo: string, pr: OpenPr, base: string, baseSha: string, files
     `# PR #${pr.number} 의 base 충돌 풀기`,
     '',
     `브랜치: \`${pr.headRefName}\``,
+    `${INTERIM}PR #${pr.number}`,
     '허락: push 는 허락됐다. PR 은 이미 있으므로 새로 열지 않는다',
     '',
     `PR #${pr.number}(${pr.url}) 이 base ${base}(${baseSha.slice(0, 8)}) 와 충돌한다. 같은 워크트리에서 이어 받는다.`,
@@ -212,7 +239,7 @@ export async function resolveConflict(args: {
     }
     sendArgs.push('--body', body)
   } else {
-    worker.spec = join(pathOf('specs', repo), `spec-conflict-${number}-${baseSha.slice(0, 8)}.md`)
+    worker.spec = conflictSpecPath(repo, number)
     if (dryRun) {
       out(`  ${dispatch} 에 이어 쓸 것: ${worker.spec}`)
       return { kind: 'skip' }
