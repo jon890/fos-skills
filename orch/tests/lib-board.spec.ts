@@ -1,11 +1,11 @@
-// lib/board.ts 의 보드 항목 찾기(prNumbers, findBoardItems)와 중간 PR 명령(intermediateCommands)을 본다. 보드는 임시 파일이다.
+// lib/board.ts 의 보드 항목 찾기(prNumbers, findBoardItems), 중간 PR 명령(intermediateCommands), 지시서의 중간 과정 줄(interimOf)을 본다. 보드는 임시 파일이다.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { findBoardItems, intermediateCommands, noteLine, prNumbers } from '../scripts/lib/board.ts'
+import { findBoardItems, interimOf, intermediateCommands, noteLine, prNumbers } from '../scripts/lib/board.ts'
 
 let tmp = ''
 let n = 0
@@ -108,5 +108,23 @@ describe('intermediateCommands', () => {
   test('하위 항목이 그대로면 다시 쓰지 않는다', () => {
     assert.equal(noteLine([], []), null)
     assert.deepEqual(intermediateCommands('a', [{ text: '1. 구현', done: false }], [], '77', null), [['set', 'a', '--pr', '', '--merged-pr', '77']])
+  })
+})
+
+describe('interimOf', () => {
+  test('중간 과정 줄의 PR 번호는 #N 을 먼저 읽고, 숫자가 없으면 null 이다', () => {
+    assert.deepEqual(interimOf('# CI 고침\n중간 과정: PR #7\n'), { pr: '7' })
+    assert.deepEqual(interimOf('# 리뷰\n- 중간 과정: 2차 PR #7\n'), { pr: '7' })
+    assert.deepEqual(interimOf('중간 과정: 리뷰 반영'), { pr: null })
+  })
+
+  test('중간 과정 줄이 없으면 null 이다', () => {
+    assert.equal(interimOf('# 새 기능\n보드 항목 id: a\n중간 과정 없이 만든다\n'), null)
+    assert.equal(interimOf(''), null)
+  })
+
+  test('첫 ## 제목 뒤 본문이 인용한 중간 과정 줄은 읽지 않는다', () => {
+    assert.equal(interimOf('# 지시서 규칙 고치기\n\n## 할 일\n1. 문서에 적는다\n- 중간 과정: PR #N 줄을 넣는다\n'), null)
+    assert.deepEqual(interimOf('# CI 고침\n브랜치: `feat/x`\n중간 과정: PR #7\n\n## 할 일\n- 중간 과정: PR #8\n'), { pr: '7' })
   })
 })

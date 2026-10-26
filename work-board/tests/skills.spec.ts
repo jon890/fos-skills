@@ -20,7 +20,7 @@ test('오늘 시작 스킬은 board 갱신, 완료 비우기, 정리, 감시, �
 
 test('정할 것 묻기 스킬은 결정 모으기, 질문, 보드 갱신을 담는다', () => {
   const skill = read('work-board/board-decide/SKILL.md')
-  for (const text of ['결정 필요(decide)', 'AskUserQuestion', '(Recommended)', '보드 항목을 갱신하고']) {
+  for (const text of ['결정 필요(decide)', 'AskUserQuestion', '(Recommended)', '보드 항목을 갱신하고', 'board.ts mark']) {
     assert.ok(skill.includes(text), text)
   }
 })
