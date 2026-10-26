@@ -229,6 +229,7 @@ flowchart TD
 | 코디네이터가 `!` 를 빠뜨려 배포가 끝나도 업무가 완료되지 않고 보드 항목이 진행 중으로 남는다 | `finish-pr`, `board-sync` | 표시가 없는 PR 은 마무리가 배포 확인 뒤, 보드 동기화가 머지를 본 틱에 업무의 마지막 PR 인지 판정한다([ADR-014](adr/014-orch-auto-last-pr.md)). 판정하지 못하면 중간 PR 이다 |
 | 보드 항목의 `pr` 필드가 비어 머지 뒤에도 항목이 진행 중으로 남는다 | `launch-worker`, `wait-important`, `board-sync`, `finish-pr` | 띄울 때 같은 워크트리의 항목을 이어 쓰고, 준비됨 `worker_done` 과 틱이 브랜치로 `pr` 필드를 채우고, 마무리가 `pr` 필드가 빈 항목을 브랜치나 워크트리 이름으로 찾는다 |
 | 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. 알림 파일에 `QUEUE-CONFLICT` 를 쓴다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
+| 준비된 PR 이 코디네이터가 다른 일을 하는 동안 몇 시간씩 머지되지 않는다. 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨린다 | `orch-loop` 의 `tick` | `queue.auto_merge` 를 켠 저장소에서 틱이 머지할 수 있는 PR 을 골라 `merge-with-finish` 를 건다. 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같으면 걸지 않고 `MIGRATION-CLASH` 로 알린다([ADR-015](adr/015-orch-auto-merge.md)). 아래 「상주 루프의 자동 머지」 |
 | ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에만, 그리고 `pipeline.update_behind_drafts` 가 draft 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
 
 ### 갈래
@@ -277,3 +278,37 @@ flowchart TD
     M --> MD[지시서 유지, after-deploy last_of_task=false, 보드 pr 칸 채움]
 ```
 
+### 상주 루프의 자동 머지
+
+`queue.auto_merge` 가 true 이면 틱이 CI 감시 뒤, 충돌 처리 앞에 한 번 돈다. 대상 조건, 순서, 알림 text 는 `orch-loop.ts` 머리 주석의 「자동 머지」 가,
+판정 함수는 `orch/scripts/lib/auto-merge.ts` 가 소유한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
+
+```mermaid
+flowchart TD
+    T[틱: CI 감시 뒤] --> E{queue.auto_merge}
+    E -->|false| X[건너뜀]
+    E -->|true| Q{루프가 건 큐}
+    Q -->|끝남| END[AUTO-MERGE-END 알림, 기록 비움]
+    Q -->|도는 중| X
+    END --> P
+    Q -->|없음| P{merge_queue 프로세스}
+    P -->|있음| X
+    P -->|없음| C[등록된 Run 의 지시서 브랜치에 든 내 열린 PR]
+    C --> R{draft 아님, CI passed, 마무리 없음, 보류 표시 없음, 미해결 스레드 0, 리뷰 판정 통과, 같은 HEAD 를 건 적 없음}
+    R -->|아니오| W[AUTO-MERGE-WAIT 로그만]
+    R -->|예| M{마이그레이션}
+    M -->|번호가 base 이하거나 다른 열린 PR 과 같음| CL[MIGRATION-CLASH 알림, 걸지 않음]
+    M -->|더 낮은 번호의 열린 PR 이 큐 밖에 있음| B[기다림. blocked_after_sec 를 넘으면 MIGRATION-BLOCKED]
+    M -->|백업 규칙 없음| WE[WATCH-ERROR auto-merge, 걸지 않음]
+    M -->|없음이나 통과| O[준비 순, 같은 모듈은 번호 순으로 정렬하고 --chain 으로 묶음]
+    O --> L[첫 PR 의 Run 의 PR 만 merge-with-finish --run --continue-on-hold 로 분리 실행]
+    L --> A[AUTO-MERGE 알림, tried 에 기록]
+```
+
+| 상황 | 동작 |
+| --- | --- |
+| 큐가 멈춰 PR 이 열린 채 남았다 | 같은 HEAD 는 다시 걸지 않는다. `AUTO-MERGE-END` 의 끝 줄(`QUEUE-HELD`, `STOP`)로 코디네이터가 이유를 보고 직접 건다. worker 가 push 해 HEAD 가 바뀌면 다시 대상이 된다 |
+| 코디네이터가 큐를 따로 걸었다 | 그 큐가 도는 동안에는 걸지 않는다. 그 큐의 PR 은 마무리가 돌아 대상에서 빠진다 |
+| 루프가 건 큐가 도는 동안 루프가 멈췄다 | 큐는 분리 실행이라 이어 돈다. 다시 뜬 루프는 기록의 pid 로 끝을 보고 `AUTO-MERGE-END` 를 쓴다 |
+| 대상 PR 이 여러 Run 의 것이다 | 큐 첫 PR 의 Run 것만 건다. 나머지는 그 큐가 끝난 뒤 다음 틱에 건다 |
+| 열린 PR 이나 리뷰를 읽지 못했다 | 그 틱에는 걸지 않는다. 이유는 `WATCH-ERROR auto-merge` 로 알린다 |

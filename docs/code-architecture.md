@@ -181,7 +181,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 ## orch 코어와 핸들러
 
 이 절은 orch 개편 뒤의 구조다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
-상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
+상주 루프의 자동 진행 가운데 ready 슬롯, base 합치기, 문서 PR 머지와 배포 묶기, `ci-missing` 은 아직 구현하지 않았다. 머지할 수 있는 PR 을 머지 큐에 거는 자동 머지는 `queue.auto_merge` 로 따로 켠다([ADR-015](adr/015-orch-auto-merge.md)).
 이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
 이벤트의 시점은 [flow.md](flow.md) 의 「orch 이벤트」, 핸들러 입력과 설정 키는 [data-schema.md](data-schema.md) 가 소유한다.
 
@@ -199,6 +199,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | 사용자 결정 질문 | worker 와 코디네이터가 사용자에게 묻는 결정은 첫 줄 `결정: <무엇을 정하는지>` 와 배경, 선택지별 결과, 권장안과 이유를 갖춘다. 보드는 결정 필요 항목마다 그 첫 줄과 권장안을 보인다. 코디네이터는 사용자가 정할 질문에 대신 답하지 않고 권장안을 보여 사용자가 고르게 한다 |
 | 터미널 직접 입력 금지 hook | 대상이 변수이거나 orca 조회가 실패하면 막는다. `send-to-worker` 를 안내한다 |
 | 상주 루프의 자동 진행 | 코어에 두되 `pipeline.enabled` 를 켠 저장소에서만 돈다. 원격 브랜치 정리와 미답변 질문 알림은 늘 돈다 |
+| 상주 루프의 자동 머지 (2026-10-27) | 머지할 수 있는 PR 은 코디네이터에게 말하지 않아도 머지된다. `pipeline.enabled` 가 아니라 `queue.auto_merge` 로 켠다. Flyway out-of-order 는 켜지 않는다 |
 | 핸들러의 `orca`, `gh` | 가드 shim 으로 감싼다 |
 
 ### 배치
@@ -221,6 +222,7 @@ orch/scripts/lib/overlap.ts       단위 겹침 판정 한 벌. 사용처는 머
 orch/scripts/lib/queue-options.ts 머지 큐의 옵션 목록과 설정의 queue 키를 옵션으로 바꾸는 표 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
+orch/scripts/lib/auto-merge.ts    상주 루프의 자동 머지 판정 한 벌. 설정 읽기, 보류 표시, 리뷰 판정, 마이그레이션 번호, 큐 순서. 부수 효과(gh, git, 큐 띄우기)는 orch-loop.ts 가 한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/questions.ts     미답변 질문 조회와 알림 한 벌. 함수와 사용처는 머리 주석이 소유한다
@@ -264,6 +266,7 @@ work-board/bin/board.ts           보드 편집 명령. 옛 board.py. 기본 보
 | 상주 루프와 주기 실행 | `orch-loop.ts` 의 틱 | `tick.ts`, `pipeline.tick_sec` |
 | runner 수만큼 draft 를 ready 로 | ready 슬롯 | `pipeline.ready_slots`, `before-ready.ts` |
 | 머지 순서 | `state/order.json` | 없음 |
+| 자동 머지 | 루프의 틱(`lib/auto-merge.ts`) | `queue.auto_merge`, `queue.auto_review`, `migrations.*`, 지시서와 보드의 `머지 보류` 줄 |
 | 바로 머지 판정 | 머지 큐의 단위 겹침 판정 | `queue.*` |
 | 문서 PR 바로 머지 | 루프 | `pipeline.docs_merge`, `queue.docs_glob` |
 | 원격 브랜치 삭제, 쌓인 PR 의 base 옮기기 | `after-merge` 코어 동작, 틱 | 없음 |
