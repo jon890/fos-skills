@@ -24,6 +24,17 @@
 //     - <orch> 아래 --data-ext 확장자 파일(기본 csv, tsv) 중 --data-days 일 넘게 지난 것. bin 폴더 안은 뺀다
 //       (DB 에서 뽑은 원본은 쓰고 나서 지운다)
 //
+// Run 범위(--run 을 줄 때. ADR-012):
+//     그 Run 의 Task 가 쓴 지시서(`orca orchestration task-list --run <Run>` 의 spec 이 가리키는 경로)와 그 지시서의 PR 본문만 옮긴다.
+//     PR 본문은 지시서 폴더의 부모에 있는 pr-<이름>.md 다. 이름 규칙은 lib/spec.ts 의 specCandidates 이고, 지시서 이름은 spec- 를 뗀 파일 이름이다.
+//     다른 세션이 띄운 일의 산출물을 옮기지 않으려는 것이다. 정리는 그 세션이 띄운 것만 한다.
+//     - 그 Run 의 Task 가 쓰지 않은 지시서는 `지시서를 남긴다 <경로>: Run <Run> 의 Task 가 쓴 지시서가 아니다`(stderr)
+//     - task-list 를 읽지 못하면 지시서는 옮기지 않는다
+//     - 큐 로그, 폴더, 미리보기, csv 는 Run 에 묶을 수 없어 옮기지 않는다. 옮길 조건에 맞는 것마다
+//       `남긴다 <상대경로>: --run 을 주면 그 Run 의 지시서와 PR 본문만 옮긴다`(stderr)
+//     --run 이 없으면 저장소 전체를 보고 stderr 에 `경고: --run 이 없어 …` 한 줄을 낸다. 사용자가 직접 돌릴 때의 경로다.
+//     설정 파일의 cleanup.run 도 --run 과 같다.
+//
 // 남길 폴더는 .keep 에 한 줄에 하나씩 이름을 적는다.
 // 휴지통 안에서는 <휴지통>/<그 폴더 이름>/<상대 경로> 로 두고, 같은 이름이 있으면 번호를 붙여 덮어쓰지 않는다.
 //
@@ -35,7 +46,8 @@
 //     --repo DIR         대상 저장소. 기본은 현재 디렉터리. git 과 gh 를 여기서 돌린다
 //     --config FILE      옵션 값을 담은 JSON. 「cleanup」 절을 읽는다. 없으면 <orch>/config.json 이 있을 때 쓴다. 명령줄이 우선한다
 //     --gh-host HOST     gh 에 줄 GH_HOST
-//     --run RUN          살아 있는 dispatch 를 찾을 Orca Run. 없으면 코디네이터에 묶인 Run 이다
+//     --run RUN          이 Run 의 지시서와 PR 본문만 옮기고, 살아 있는 dispatch 도 이 Run 에서 찾는다(위 「Run 범위」).
+//                        없으면 저장소 전체를 보고 살아 있는 dispatch 는 모든 Run 에서 찾는다
 //     --orch-dir DIR     orch 작업 폴더. 기본은 lib/paths.ts 가 정한 곳(<주 checkout>/.orch). 상대경로면 주 checkout 기준
 //     --previews DIR     미리보기 폴더. 주지 않으면 보지 않는다. 상대경로면 주 checkout 기준
 //     --board FILE       보드 파일. 기본은 work-board 의 board.ts 가 정한 위치. 상대경로면 주 checkout 기준
@@ -61,7 +73,7 @@ import { mainCheckout } from './lib/git.ts'
 import { ghJson } from './lib/gh.ts'
 import { boardPath, orchDir, requireMigrated } from './lib/paths.ts'
 import { run } from './lib/proc.ts'
-import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths } from './lib/spec.ts'
+import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths, runSpecPaths, specCandidates } from './lib/spec.ts'
 
 const USAGE = '사용법: handoff-cleanup.ts [--repo DIR] [--config FILE] [--apply] [--gh-host HOST] [--run RUN] [--orch-dir DIR] [--previews DIR] [--board FILE] [--trash DIR] [--queue-days N] [--folder-days N] [--data-days N] [--data-ext LIST]'
 const QUEUE_DONE = /QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL/m
@@ -280,16 +292,29 @@ function dataFiles(dir: string, dataExt: Set<string>): string[] {
 }
 
 // targets 는 깊이 순으로 늘어놓은 후보이고, 그 가운데 끝난 지시서가 specs 다. live 는 살아 있는 지시서 목록이다
-// (읽지 못했으면 null). 지시서를 옮길지는 deleteSpecs 가 정한다
-type Found = { targets: string[]; specs: Set<string>; live: Set<string> | null }
+// (읽지 못했으면 null). 지시서를 옮길지는 deleteSpecs 가 정한다. prBodies 는 지시서마다 함께 옮길 PR 본문이다(--run 일 때만)
+type Found = { targets: string[]; specs: Set<string>; live: Set<string> | null; prBodies: Map<string, string[]> }
+
+const OUT_OF_RUN = '--run 을 주면 그 Run 의 지시서와 PR 본문만 옮긴다'
+
+// 지시서의 PR 본문 후보. 이름은 spec- 를 뗀 파일 이름이다(머리 주석의 「Run 범위」)
+function prBodiesOf(spec: string, text: string): string[] {
+  const name = basename(spec, '.md').replace(/^spec-/, '')
+  return specCandidates({ specsDir: dirname(spec), name, branch: branchesOf(text)[0] }).prBodies
+}
 
 function candidates(args: Args, repo: string, orch: string, previews: string | null, board: string, now: number): Found {
   const found: string[] = []
+  // --run 이면 Run 에 묶을 수 없는 후보를 옮기지 않고 까닭을 낸다(머리 주석의 「Run 범위」)
+  const push = (target: string, root: string) => {
+    if (args.run === null) found.push(target)
+    else err(`남긴다 ${join(basename(root), relative(root, target))}: ${OUT_OF_RUN}`)
+  }
   const queue = join(orch, 'queue')
   for (const name of isDir(queue) ? listDir(queue).filter((n) => n.endsWith('.out')) : []) {
     const log = join(queue, name)
     try {
-      if (isOld(mtimeSec(log), now, args.queueDays) && queueLogFinished(readFileSync(log, 'utf8'))) found.push(log)
+      if (isOld(mtimeSec(log), now, args.queueDays) && queueLogFinished(readFileSync(log, 'utf8'))) push(log, orch)
     } catch {
       continue
     }
@@ -304,8 +329,20 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
         .map((n) => join(specsDir, n))
     : []
   const finished: string[] = []
+  const prBodies = new Map<string, string[]>()
   let live: Set<string> | null = new Set()
-  if (specFiles.length > 0) {
+  let mine: Set<string> | null = null
+  if (specFiles.length > 0 && args.run !== null) {
+    mine = runSpecPaths(args.run)
+    if (mine === null) err(`orca 로 Run ${args.run} 의 Task 목록을 읽지 못해 지시서는 옮기지 않는다`)
+  }
+  const ownSpecs = mine === null ? [] : specFiles.filter((spec) => {
+    if ((mine as Set<string>).has(realPath(spec))) return true
+    err(`지시서를 남긴다 ${spec}: Run ${args.run} 의 Task 가 쓴 지시서가 아니다`)
+    return false
+  })
+  const judged = args.run === null ? specFiles : ownSpecs
+  if (judged.length > 0) {
     const heads = openPrHeads(repo)
     if (heads === null) {
       err('gh 로 열린 PR 을 읽지 못해 지시서는 옮기지 않는다')
@@ -318,9 +355,11 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
         // --exit-code 는 그 이름의 브랜치가 없을 때만 2 다. 네트워크나 인증 실패를 원격에 없다고 읽으면 쓰는 지시서를 옮긴다
         const remoteHas = (b: string) => runOut([gitBin(), 'ls-remote', '--exit-code', '--heads', 'origin', b], repo).code !== 2
         const worktreeHas = (b: string) => worktrees.includes(`[${b}]`)
-        for (const spec of specFiles) {
+        for (const spec of judged) {
           const text = readFileSync(spec, 'utf8')
-          if (specFinished(text, statuses, heads, remoteHas, worktreeHas)) finished.push(spec)
+          if (!specFinished(text, statuses, heads, remoteHas, worktreeHas)) continue
+          finished.push(spec)
+          if (args.run !== null) prBodies.set(spec, prBodiesOf(spec, text))
         }
       }
     }
@@ -335,13 +374,13 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
   const keep = new Map<string, Set<string>>()
   for (const root of [orch, previews]) if (root) keep.set(root, keepNames(root))
   for (const { entry, root } of entries) {
-    if (isOld(mtimeSec(entry), now, args.folderDays) && !referenced(basename(entry), boardText, keep.get(root) as Set<string>)) found.push(entry)
+    if (isOld(mtimeSec(entry), now, args.folderDays) && !referenced(basename(entry), boardText, keep.get(root) as Set<string>)) push(entry, root)
   }
 
   if (isDir(orch)) {
-    for (const file of dataFiles(orch, args.dataExt)) if (isOld(mtimeSec(file), now, args.dataDays)) found.push(file)
+    for (const file of dataFiles(orch, args.dataExt)) if (isOld(mtimeSec(file), now, args.dataDays)) push(file, orch)
   }
-  return { targets: dropNested([...found, ...finished]), specs: new Set(finished), live }
+  return { targets: dropNested([...found, ...finished]), specs: new Set(finished), live, prBodies }
 }
 
 // ---- 진입점 --------------------------------------------------------------------------------------------
@@ -416,14 +455,15 @@ function main(argv: string[]): number {
   const shownTrash = args.trash ? normalize(expandUser(args.trash)).replace(/(.)\/+$/, '$1') : join(homedir(), '.Trash', `orch-cleanup-${stamp}`)
   const trash = resolve(shownTrash)
   if (args.ghHost) process.env.GH_HOST = args.ghHost
+  if (args.run === null) err('경고: --run 이 없어 저장소 전체를 본다. 다른 세션이 띄운 일의 산출물도 옮길 수 있다. 세션 안에서는 --run 으로 그 Run 만 옮긴다')
   const roots = [orch, previews].filter((r): r is string => Boolean(r))
   const found = candidates(args, repo, orch, previews, board, nowMs / 1000)
-  // 남긴다 줄은 옛 명령처럼 stderr 로 낸다. prBodies 는 주지 않으므로 지시서 줄만 온다
-  const log = (line: string) => (line.startsWith('지시서를 남긴다') ? err(line) : out(line))
+  // 남긴다 줄은 옛 명령처럼 stderr 로 낸다. PR 본문 줄은 --run 일 때만 온다
+  const log = (line: string) => (/^(지시서를|PR 본문을) 남긴다/.test(line) ? err(line) : out(line))
   for (const target of found.targets) {
     // 지시서는 deleteSpecs 한 경로로만 옮긴다. 후보 차례를 지키려고 지시서마다 부른다
     if (found.specs.has(target)) {
-      deleteSpecs({ root: orch, specs: [target], prBodies: [], live: found.live, mode: { trash }, apply: args.apply, log })
+      deleteSpecs({ root: orch, specs: [target], prBodies: found.prBodies.get(target) ?? [], live: found.live, mode: { trash }, apply: args.apply, log })
       continue
     }
     const root = roots.find((r) => target.startsWith(r + sep))
