@@ -594,8 +594,9 @@ export function register(on) {
       return counts ? [indent('steps', 2 + STEP_MARK_WIDTH, dim('counts', counts))] : []
     }
 
-    // 접힌 보기는 「표시 제목 막대」, 「▶ 지금 단계」, worker 줄만 그린다
-    // 펼친 보기(d)는 담당·PR 과 모든 줄을 적힌 순서대로 그린다
+    // 접힌 보기는 「표시 제목」, 제목 아래 막대, 「▶ 지금 단계」, worker 줄만 그린다
+    // 펼친 보기(d)는 「표시 제목」, 막대, 담당·PR, 모든 단계 줄을 적힌 순서대로 그린다
+    // 완료 항목은 막대 줄이 없다
     const itemView = (item, section) => {
       const meta = [item.owner, item.pr].filter(Boolean)
       const done = section.status === 'done'
@@ -609,18 +610,17 @@ export function register(on) {
           Box({
             key: 'head',
             flexDirection: 'row',
-            flexWrap: 'wrap',
             columnGap: 1,
             children: [
               Text({ key: 'mark', color: section.color, children: [section.mark] }),
               done
                 ? Text({ key: 'title', dimColor: true, strikethrough: true, wrap: 'wrap', children: [item.title || item.id] })
                 : Text({ key: 'title', bold: true, wrap: 'wrap', children: [item.title || item.id] }),
-              ...(done ? [] : [bar
-                ? Text({ key: 'bar', color: section.color, wrap: 'truncate', children: [bar] })
-                : Text({ key: 'bar', dimColor: true, children: ['진행률 없음'] })]),
             ],
           }),
+          ...(done ? [] : [indent('bar', 2, bar
+            ? Text({ color: section.color, wrap: 'truncate', children: [bar] })
+            : Text({ dimColor: true, children: ['진행률 없음'] }))]),
           ...(expanded && meta.length ? [indent('meta', 2, dim('meta', meta.join('  ·  ')))] : []),
           ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(rows, item.progress)),
           ...(!done && item.worktree ? [indent('w', 2, worker

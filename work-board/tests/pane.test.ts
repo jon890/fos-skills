@@ -14,7 +14,7 @@ const PANE = {
   props: { title: '작업 현황', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
-async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' })) {
+async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '', stderr: '없음' }), board = BOARD) {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -23,7 +23,7 @@ async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '
     ? { exitCode: 0, stdout: '/repo/.git\n', stderr: '' }
     : processResult(e.argv) }))
   on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
-  on('fs.read', () => ({ value: BOARD }))
+  on('fs.read', () => ({ value: board }))
   on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
@@ -32,7 +32,7 @@ async function start($, on, processResult = (_argv) => ({ exitCode: 1, stdout: '
 
 }
 
-test('창 맨 위에 전체 진행률을, 항목 제목 줄 끝에 막대나 「진행률 없음」 을 그린다', async ($, on) => {
+test('창 맨 위에 전체 진행률을, 항목 제목 아래 줄에 막대나 「진행률 없음」 을 그린다', async ($, on) => {
   await start($, on)
 
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -58,10 +58,41 @@ const stepParts = (row) => {
   return { row: row.props, mark, markText: textOf(mark), body: (body.children as Drawn[])[0], bodyText: textOf(body) }
 }
 
+const LONG_TITLE = '제목이 아주 길어서 좁은 창에서는 여러 줄로 줄바꿈되는 진행 중 항목의 제목 '.repeat(3)
+const BAR_BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
+  { id: 's', title: '짧은', status: 'doing', owner: 'worker', pr: '#1', details: [{ text: '1 a', done: true }, { text: '2 b', done: false }] },
+  { id: 'l', title: LONG_TITLE, status: 'doing', details: [{ text: '1 a', done: true }, { text: '2 b', done: false }] },
+  { id: 'n', title: '진행률 없는 항목', status: 'doing' },
+  { id: 'd', title: '끝난 항목', status: 'done', details: [{ text: '1 a', done: true }] },
+] })
+
+// 항목 Box 의 자식 key 를 위에서 아래로
+const keys = async (ui, id) => ((await ui.find({ type: 'Box', key: 'item-' + id }))?.children as Drawn[]).map((child) => child.props.key)
+
+test('막대는 제목이 짧든 길든 제목 바로 아래 줄에 그리고, 완료 항목에는 그리지 않는다', async ($, on) => {
+  await start($, on, undefined, BAR_BOARD)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: 40 } })
+  for (const id of ['s', 'l', 'n']) {
+    const [head, bar] = await keys(ui, id)
+    expect([head, bar]).toEqual(['head', 'bar'])
+    const item = await ui.find({ type: 'Box', key: 'item-' + id })
+    const [headBox, barBox] = item.children as Drawn[]
+    expect(textOf(headBox)).not.toMatch(/█|░|진행률 없음/)
+    expect(barBox.props.paddingLeft).toBe(2)
+  }
+  expect(textOf((await ui.find({ type: 'Box', key: 'item-n' })).children[1])).toBe('진행률 없음')
+  // 펼친 보기에서도 막대가 담당·PR 줄보다 앞이고, 완료 항목에는 막대가 없다. 완료 칸은 펼쳐야 보인다
+  await ui.press({ key: 'toggle-done' })
+  expect((await keys(ui, 's')).slice(0, 3)).toEqual(['head', 'bar', 'meta'])
+  expect((await keys(ui, 'd')).includes('bar')).toBe(false)
+  expect((await keys(ui, 'd'))[0]).toBe('head')
+  await ui.unmount()
+})
+
 test('접힌 보기는 제목 줄, 지금 단계 줄, worker 줄만 그리고 끝낸 단계와 남은 단계는 수로 접는다', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await lines(ui, 'a')).toBe(3)
+  expect(await lines(ui, 'a')).toBe(4)
   const now = stepParts(await ui.find({ type: 'Box', key: 'steps' }))
   expect(now.markText).toBe('▶')
   expect(now.bodyText).toBe('2. 리뷰  ✓\u00a01개  ·  남은\u00a0단계\u00a01개')
@@ -69,8 +100,8 @@ test('접힌 보기는 제목 줄, 지금 단계 줄, worker 줄만 그리고 �
   expect(await ui.find({ type: 'Text', text: /구현/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /참고: 머지 뒤 갱신/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /worker 없음 \(wt-a\)/ })).toBeTruthy()
-  // 진행률이 없는 옛 항목은 제목 줄 하나다
-  expect(await lines(ui, 'b')).toBe(1)
+  // 진행률이 없는 옛 항목은 제목 줄과 「진행률 없음」 줄이다
+  expect(await lines(ui, 'b')).toBe(2)
   await ui.unmount()
 })
 
@@ -78,7 +109,7 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'toggle-done' })
-  expect(await lines(ui, 'a')).toBe(7)
+  expect(await lines(ui, 'a')).toBe(8)
   const rows = []
   for (const key of ['s-0', 's-1', 's-2', 's-3']) rows.push(stepParts(await ui.find({ type: 'Box', key })))
   expect(rows.map((row) => [row.markText, row.bodyText])).toEqual([
@@ -104,7 +135,7 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   expect(first.body.props.strikethrough).toBe(true)
   // 다시 누르면 접힌 보기로 돌아간다
   await ui.press({ key: 'toggle-done' })
-  expect(await lines(ui, 'a')).toBe(3)
+  expect(await lines(ui, 'a')).toBe(4)
   await ui.unmount()
 })
 
