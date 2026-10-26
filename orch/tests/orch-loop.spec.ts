@@ -722,12 +722,66 @@ describe('여러 Run', () => {
     assert.equal(typeof errors['questions@B'], 'string')
   })
 
-  test('새로 뜬 루프는 앞 루프가 남긴 다른 Run 의 등록을 지우고 자기 Run 만 맡는다', () => {
+  test('새로 뜬 루프는 앞 루프의 alive_at 까지 쓴 다른 Run 의 등록을 지우고, 그 뒤에 쓴 등록은 남긴다', () => {
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'old', runs: ['old'], alive_at: '2026-01-02T00:00:00Z' }))
     register('old', '2026-01-01T00:00:00Z')
+    register('fresh', '2026-01-03T00:00:00Z')
     const r = once({}, ['--run', 'r'])
     assert.match(r.stdout, /^앞 루프의 Run old 등록을 지웠다/m)
     assert.equal(existsSync(orchFile('state', 'loop-runs', 'old.json')), false)
-    assert.deepEqual((loopState() as Json).runs, ['r'])
+    assert.deepEqual((loopState() as Json).runs, ['fresh', 'r'])
+  })
+
+  test('앞 loop.json 이 없으면 다른 Run 의 등록을 지우지 않는다', () => {
+    register('other', '2026-01-01T00:00:00Z')
+    const r = once({}, ['--run', 'r'])
+    assert.doesNotMatch(r.stdout, /등록을 지웠다/)
+    assert.deepEqual((loopState() as Json).runs, ['other', 'r'])
+  })
+
+  test('죽은 루프 뒤 두 세션이 거의 동시에 --start 하면 둘 다 0 이고 한 루프가 두 Run 을 맡는다', { timeout: 60_000 }, async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    // 두 Run 모두 죽은 루프에 등록돼 있었다. 같은 LOOP-DEAD 로 깨어난 경우다
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
+    register('A', '2026-01-01T00:00:00Z')
+    register('B', '2026-01-02T00:00:00Z')
+    for (const delay of [0, 50, 150]) {
+      const run = (id: string) =>
+        new Promise<Result>((resolve) => {
+          const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', id, '--start'], { env, cwd: tmp })
+          spawned.push(child)
+          let stdout = ''
+          child.stdout?.on('data', (chunk) => (stdout += String(chunk)))
+          child.on('close', (code) => resolve({ code, stdout, stderr: '' }))
+        })
+      const a = run('A')
+      await new Promise((resolve) => setTimeout(resolve, delay))
+      const [ra, rb] = await Promise.all([a, run('B')])
+      assert.equal(ra.code, 0, `delay ${delay}: ${ra.stdout}`)
+      assert.equal(rb.code, 0, `delay ${delay}: ${rb.stdout}`)
+      const pid = Number(loopState()?.pid)
+      const lines = [ra.stdout.trim(), rb.stdout.trim()].sort()
+      assert.match(lines.join('\n'), new RegExp(`^LOOP-(STARTED|JOINED) ${pid} run=[AB]\n(LOOP-JOINED|LOOP-STARTED) ${pid} run=[AB]$`), `delay ${delay}`)
+      assert.ok(existsSync(orchFile('state', 'loop-runs', 'A.json')), `delay ${delay}: A 의 등록이 지워졌다`)
+      assert.ok(existsSync(orchFile('state', 'loop-runs', 'B.json')), `delay ${delay}: B 의 등록이 지워졌다`)
+      assert.equal(loop(['--stop', '--all']).code, 0)
+      await waitDead([pid], 20_000)
+      register('A', '2026-01-01T00:00:00Z')
+      register('B', '2026-01-02T00:00:00Z')
+      write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
+    }
+  })
+
+  test('--run 도 finish.run 도 없는 --stop 은 등록된 Run 이 하나여도 멈추지 않고 LOOP-STOP-SHARED 와 1 이다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    const started = loop(['--run', 'B', '--start'])
+    const pid = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
+    const r = loop(['--stop'])
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout, new RegExp(`^LOOP-STOP-SHARED ${pid} runs=B$`, 'm'))
+    assert.equal(pidAlive(pid), true)
+    assert.ok(existsSync(orchFile('state', 'loop-runs', 'B.json')))
+    assert.equal(loop(['--run', 'B', '--stop']).stdout.trim(), `LOOP-STOPPED ${pid}`)
   })
 
   test('--stop 은 --run 이 없으면 finish.run 의 Run 만 빼고, 등록되지 않은 Run 의 --stop --run 은 루프를 멈추지 않는다', async () => {

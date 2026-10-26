@@ -14,6 +14,8 @@
 //                    분리해(detached, stdio ignore) 띄우고, 자식이 loop.json 에 자기 pid 를 쓸 때까지 10초까지 기다린다.
 //                    하네스의 백그라운드 명령이 아니라 시간 한도에 묶이지 않는다.
 //                    LOOP-STARTED <pid> run=<Run id 또는 -> 와 0. 10초 안에 쓰지 않으면 자식을 끝내고 LOOP-START-FAIL <이유> 와 1.
+//                    살아 있는 루프가 없을 때의 등록은 registered_at 을 지금으로 새로 쓴다(아래 「Run」).
+//                    자식이 4(다른 --start 가 띄운 루프가 먼저 잠금을 쥐었다)로 끝나면 그 루프가 살아 있는지 다시 보고, 있으면 아래 합류와 같다.
 //                    살아 있는 루프가 있으면 띄우지 않는다. 그 Run 이 아직 등록되지 않았으면 등록하고 LOOP-JOINED <pid> run=<Run id> 와 0.
 //                    이미 등록됐거나 Run 이 없으면 LOOP-RUNNING <pid> run=<Run id> 와 4.
 //                    Run 등록을 모르는 옛 루프(loop.json 에 runs 가 없다)면 등록하지 않고 LOOP-RUNNING 과 4 이고, Run 이 다르면
@@ -21,8 +23,9 @@
 //     --stop         --run 을 주면 그 Run 의 등록만 지운다. 다른 Run 이 남으면 루프를 멈추지 않고
 //                    LOOP-LEFT <pid> run=<Run id> runs=<남은 Run 목록> 와 0, 등록돼 있지 않았으면 LOOP-NOT-REGISTERED run=<Run id> 와 0.
 //                    옛 루프가 다른 Run 의 것이면 멈추지 않고 LOOP-NOT-REGISTERED 와 안내 줄, 0 이다.
-//                    --run 이 없으면 등록된 Run 이 둘 이상일 때 멈추지 않고 LOOP-STOP-SHARED <pid> runs=<목록> 와 1 이다.
-//                    다른 세션의 루프를 끊지 않으려는 것이다. --all 을 주면 모두 지우고 멈춘다.
+//                    --run 이 없고 finish.run 도 없으면 등록된 Run 이 하나라도 있을 때 멈추지 않고 LOOP-STOP-SHARED <pid> runs=<목록> 와 1 이다.
+//                    등록이 하나여도 다른 세션의 Run 일 수 있어, 다른 세션의 루프를 끊지 않으려는 것이다. --all 을 주면 모두 지우고 멈춘다.
+//                    등록을 뺀 뒤 신호를 보내기 직전에 다른 세션이 합류했으면 멈추지 않고 LOOP-LEFT <pid> run=<Run id> runs=<목록> 와 0 이다.
 //                    남은 Run 이 없으면 아래처럼 루프 프로세스를 멈춘다.
 //                    loop.json 의 pid 에 TERM 을 보내고 20초까지 끝나기를 기다린다. LOOP-STOPPED <pid> 와 0,
 //                    루프가 없으면 LOOP-NOT-RUNNING 과 0, 20초 뒤에도 살아 있으면 LOOP-STOP-TIMEOUT <pid> 와 1.
@@ -50,8 +53,11 @@
 // Run(ADR-012): 루프는 lib/loop.ts 의 「Run 등록」 이 정한 Run 들을 맡는다. 앞이 주 Run 이다.
 //     부모는 틱마다 등록을 읽어 loop.json 의 runs(목록)와 run(주 Run)에 적는다. 등록된 Run 이 있던 루프는 마지막 Run 이 빠지면
 //     다음 틱 전에 LOOP-EMPTY 줄을 내고 0 으로 끝난다. 처음부터 등록이 없던 루프(Run 없이 띄웠다)는 --stop 까지 돈다.
-//     --foreground 는 시작할 때 앞 루프가 남긴 다른 Run 의 등록을 지우고 --run(또는 finish.run)을 등록한다. 루프가 죽은 뒤 끝난 세션의
-//     Run 을 계속 맡지 않게 하려는 것이다. 살아 있는 세션은 wait-important 가 미등록 LOOP-DEAD 로 깨워 다시 등록하게 한다.
+//     --foreground 는 시작할 때 다른 Run 의 등록 가운데 registered_at 이 앞 loop.json 의 alive_at(앞 루프가 마지막으로 살아 있던 때)
+//     이전인 것을 지우고 --run(또는 finish.run)을 등록한다. 루프가 죽은 뒤 끝난 세션의 Run 을 계속 맡지 않게 하려는 것이다.
+//     그 뒤의 등록은 남긴다. 살아 있는 루프 없이 --start 한 세션은 등록의 registered_at 을 새로 쓰므로, 루프가 죽어 여러 세션이 함께
+//     --start 해도 서로의 등록을 지우지 않는다. 앞 loop.json 이 없으면(alive_at 을 읽지 못하면) 지우지 않는다.
+//     지운 Run 의 세션이 살아 있으면 wait-important 가 미등록 LOOP-DEAD 로 깨워 다시 등록하게 한다.
 //     --stop 도 --run 이 없으면 finish.run 을 쓴다.
 //     틱 자식은 등록을 다시 읽는다. 등록이 없으면 --run(또는 finish.run) 하나를, 그것도 없으면 Run 없는 한 칸을 맡는다.
 //     알림의 Run: Run 에 묶인 일(질문, 그 Run 의 정리, 그 Run 의 tick 핸들러)의 알림은 그 Run 의 파일에 쓴다.
@@ -379,25 +385,31 @@ function legacyLoop(state: LoopState | null, pid?: number): boolean {
 
 const LEGACY_HINT = '안내: 이 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다. 그 루프를 띄운 세션이 --stop 한 뒤 새 orch 로 --start 하면 여러 Run 을 함께 맡는다'
 
-async function start(ctx: Context): Promise<number> {
-  const found = running(ctx.repo)
-  if (found) {
-    // 살아 있는 루프에 이 Run 을 더한다. 이미 맡고 있거나 Run 이 없으면 전처럼 LOOP-RUNNING 이다(머리 주석의 --start)
-    const state = readLoop(ctx.repo)
-    if (ctx.run && legacyLoop(state, found.pid)) {
-      log(`LOOP-RUNNING ${found.pid} run=${found.run}`)
-      if (found.run !== ctx.run) log(LEGACY_HINT)
-      return 4
-    }
-    if (ctx.run && !isRegistered(ctx.repo, ctx.run)) {
-      registerRun(ctx.repo, ctx.run, ctx.specsDir)
-      log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
-      return 0
-    }
-    log(`LOOP-RUNNING ${found.pid} run=${ctx.run && isRegistered(ctx.repo, ctx.run) ? ctx.run : found.run}`)
+// 살아 있는 루프에 이 Run 을 더한다. 이미 맡고 있거나 Run 이 없으면 전처럼 LOOP-RUNNING 이다(머리 주석의 --start).
+// raced 는 띄운 자식이 다른 --start 의 루프에 잠금을 져 4 로 끝난 경우다. 이 Run 은 띄우기 전에 등록했으므로 합류로 본다
+function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: boolean): number {
+  const state = readLoop(ctx.repo)
+  if (ctx.run && legacyLoop(state, found.pid)) {
+    // 옛 루프는 등록을 읽지 않는다. 띄우기 전에 쓴 등록을 남기지 않는다
+    if (raced) unregisterRun(ctx.repo, ctx.run)
+    log(`LOOP-RUNNING ${found.pid} run=${found.run}`)
+    if (found.run !== ctx.run) log(LEGACY_HINT)
     return 4
   }
-  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir)
+  if (ctx.run && (raced || !isRegistered(ctx.repo, ctx.run))) {
+    registerRun(ctx.repo, ctx.run, ctx.specsDir)
+    log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
+    return 0
+  }
+  log(`LOOP-RUNNING ${found.pid} run=${ctx.run && isRegistered(ctx.repo, ctx.run) ? ctx.run : found.run}`)
+  return 4
+}
+
+async function start(ctx: Context): Promise<number> {
+  const found = running(ctx.repo)
+  if (found) return joinLoop(ctx, found, false)
+  // registered_at 을 새로 쓴다. 새로 뜬 루프는 앞 루프의 alive_at 뒤에 쓴 등록을 살아 있는 세션의 것으로 보고 남긴다(머리 주석의 「Run」)
+  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, true)
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SELF, ...passArgs(ctx), '--foreground'], {
     cwd: ctx.repo,
     detached: true,
@@ -423,6 +435,11 @@ async function start(ctx: Context): Promise<number> {
     if (pid !== undefined && state && Number(state.pid) === pid) {
       log(`LOOP-STARTED ${pid} run=${state.run || '-'}`)
       return 0
+    }
+    if (exited === 4) {
+      // 동시에 --start 한 다른 세션의 루프가 먼저 잠금을 쥐었다. 그 루프에 합류한다
+      const other = running(ctx.repo)
+      if (other) return joinLoop(ctx, other, true)
     }
     if (exited !== null) {
       log(`LOOP-START-FAIL 루프가 loop.json 을 쓰기 전에 종료 코드 ${exited} 로 끝났다`)
@@ -463,24 +480,25 @@ async function stop(repo: string, run: string | null, all: boolean): Promise<num
       log(`LOOP-LEFT ${state?.pid ?? '-'} run=${run} runs=${left.map((e) => e.run).join(',')}`)
       return 0
     }
-    return stopProcess(repo, true)
+    return stopProcess(repo, run)
   } else if (!all) {
     const runs = registeredRuns(repo)
-    if (runs.length > 1 && isLoopProcess(Number(state?.pid)) !== false) {
+    // 등록이 하나뿐이어도 다른 세션의 Run 일 수 있다. --run 없이는 멈추지 않는다
+    if (runs.length > 0 && isLoopProcess(Number(state?.pid)) !== false) {
       log(`LOOP-STOP-SHARED ${state?.pid ?? '-'} runs=${runs.map((e) => e.run).join(',')}`)
-      log('다른 세션의 Run 이 함께 등록돼 있어 멈추지 않았다. 자기 Run 만 빼려면 --stop --run, 모두 멈추려면 --stop --all 이다')
+      log('Run 이 등록된 루프는 --run 없이 멈추지 않는다. 자기 Run 만 빼려면 --stop --run, 모두 멈추려면 --stop --all 이다')
       return 1
     }
   }
   for (const entry of registeredRuns(repo)) unregisterRun(repo, entry.run)
-  return stopProcess(repo, false)
+  return stopProcess(repo, null)
 }
 
-// recheck 면 신호를 보내기 직전에 등록을 다시 본다. 마지막 Run 을 뺀 사이 다른 세션이 합류했으면 멈추지 않는다
-async function stopProcess(repo: string, recheck: boolean): Promise<number> {
-  const joined = recheck ? registeredRuns(repo) : []
+// left 는 방금 등록을 뺀 Run 이다. 있으면 신호를 보내기 직전에 등록을 다시 본다. 마지막 Run 을 뺀 사이 다른 세션이 합류했으면 멈추지 않는다
+async function stopProcess(repo: string, left: string | null): Promise<number> {
+  const joined = left !== null ? registeredRuns(repo) : []
   if (joined.length > 0) {
-    log(`LOOP-LEFT ${readLoop(repo)?.pid ?? '-'} runs=${joined.map((e) => e.run).join(',')}`)
+    log(`LOOP-LEFT ${readLoop(repo)?.pid ?? '-'} run=${left} runs=${joined.map((e) => e.run).join(',')}`)
     return 0
   }
   const candidates = [Number(readLoop(repo)?.pid), lockPid(lockFile(repo))]
@@ -561,10 +579,14 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
     return 4
   }
   process.on('exit', () => releaseLock(lock))
-  // 새로 뜬 루프는 앞 루프의 등록을 지우고 자기 Run 만 남긴다. 끝난 세션의 Run 을 계속 맡지 않게 한다.
-  // 아직 살아 있는 세션은 대기가 미등록 LOOP-DEAD 로 깨어나 다시 등록한다(머리 주석의 「Run」)
+  // 새로 뜬 루프는 앞 루프가 마지막으로 살아 있던 때(alive_at)까지의 등록을 지운다. 끝난 세션의 Run 을 계속 맡지 않게 한다.
+  // 그 뒤의 등록은 살아 있는 세션이 동시에 --start 한 것이라 남긴다. 앞 loop.json 이 없으면 지우지 않는다(머리 주석의 「Run」)
+  const before = readLoop(ctx.repo)
+  const cutoff = typeof before?.alive_at === 'string' ? Date.parse(before.alive_at) : Number.NaN
   for (const entry of registeredRuns(ctx.repo)) {
-    if (entry.run === ctx.run) continue
+    if (entry.run === ctx.run || !Number.isFinite(cutoff)) continue
+    const at = Date.parse(entry.registered_at)
+    if (Number.isFinite(at) && at > cutoff) continue
     unregisterRun(ctx.repo, entry.run)
     log(`앞 루프의 Run ${entry.run} 등록을 지웠다. 그 세션이 살아 있으면 대기가 미등록으로 깨어나 다시 등록한다`)
   }
