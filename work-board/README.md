@@ -1,6 +1,6 @@
 # work-board
 
-저장소의 작업 현황을 Claude Code 창으로 본다. 코디네이터(에이전트)가 상태를 갱신하고, 사람은 `/board` 로 본다.
+저장소의 작업 현황을 Claude Code 창으로 본다. 개발 루프가 항목과 PR 상태를 갱신하고 코디네이터가 결정과 단계를 관리하며, 사람은 `/board` 로 본다.
 
 - 창: `/board`. 결정 필요, 진행 중, 대기, 완료 순으로 묶는다
 - 갱신 시각: 전체 진행률 아래에 실시간 조회와 보드 파일 중 늦은 시각을 로컬 시각 `HH:MM 업데이트` 로 보인다. 둘 다 없으면 `읽는 중` 이다. Run id 와 수동·자동 구분은 보이지 않는다
@@ -23,7 +23,7 @@
 - 진행률 표시: 창 맨 위에 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 막대로 그린다. 완료가 아닌 항목마다 제목 바로 아래 줄에 막대를 그리고(제목 길이와 상관없이 같은 자리), 진행률이 없는 옛 항목은 「진행률 없음」 으로 보인다. `board.ts list` 도 항목마다 「n/m (p%)」 를 붙인다
 - 진행률 필수: `board.ts set` 은 doing 항목에 단계 줄이나 `--progress N/M` 이 없으면 거절하고 보드를 고치지 않는다. `--next` 를 여러 번 주면 줄로 이어 단계 줄을 적을 수 있다
 - 단계 끝내기: `board.ts step <id> <n>` 이 진행률을 세는 줄에서 n 번 단계를 끝낸다. `done` 값만 `true` 로 바꾼다(`--undo` 는 `false`). `set --progress auto` 는 `progress` 값을 지워 단계 수로 세게 한다. `board.ts steps <id>` 는 진행률을 세는 단계 줄을 JSON 으로 낸다. orch 의 `board-sync.ts` 가 이것으로 단계를 판정한다
-- 갱신: `node --disable-warning=ExperimentalWarning "$BOARD_BIN" set <id> doing --title "..." --next "..."`. `$BOARD_BIN` 은 이 디렉터리의 `bin/board.ts` 다
+- 갱신: orch 의 띄우기와 루프가 자동 반영한다. 시점과 담당은 [갱신 담당 표](../orch/references/board.md#갱신-담당)를 따른다. 수동 보정은 `node --disable-warning=ExperimentalWarning "$BOARD_BIN" set <id> doing --title "..." --next "..."`. `$BOARD_BIN` 은 이 디렉터리의 `bin/board.ts` 다
 
 ## 저장 형식
 
