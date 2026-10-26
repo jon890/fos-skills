@@ -993,6 +993,15 @@ describe('상주 루프', () => {
         assert.equal(cursor(), '1')
       }
     })
+
+    test('Run 없이 띄운 새 루프(runs 가 빈 목록)의 알림도 옛 파일에서 읽는다', () => {
+      loopJson({ runs: [] })
+      loopEvents([event(1, 'WATCH-ERROR', null, 'prs: offline')], 0)
+      const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0.2', '--loop-repo', tmp])
+      assert.equal(r.code, 7, r.stdout + r.stderr)
+      assert.deepEqual(lines(r.stdout), ['LOOP-EVENT WATCH-ERROR - prs: offline', 'LAST_DELIVERY d0'])
+      assert.equal(cursor(), '1')
+    })
   })
 
   test('--loop-repo 가 없으면 알림 파일과 루프 상태를 보지 않는다', () => {

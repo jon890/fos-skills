@@ -3,12 +3,20 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 4.1.0 (2026-10-26)
+## 4.2.0 (2026-10-26)
 
 - `launch-worker.ts` 가 띄운 worker 의 dispatch, 터미널, 워크트리를 기록한다. 기록이 없는 터미널은 예전처럼 사용자 보유로 남는다
 - `cleanup-sweep.ts` 는 기록에 있고 dispatch 가 끝난 `user_owned` 터미널을 닫고 PR 상태로 정리를 판단한다
 - PR 없는 워크트리는 dispatch 가 끝나고 앞선 커밋과 변경이 없으면 치운다. 원격 브랜치도 앞선 커밋이 없을 때만 지운다
 - 머지 큐 로그 폴더의 끝난 로그를 휴지통(`--trash`)으로 옮긴다. `FINISH-FAIL` 과 `STOP` 로그는 1시간 남기고 모르는 파일은 건드리지 않는다
+
+## 4.1.0 (2026-10-26)
+
+- `nudge-worker --state` 가 모델 오류로 멈춘 화면을 `error` 로, 사람이 Esc 로 끊은 Codex 화면을 `interrupted` 로 낸다. `--msg-id` 와 `--text` 는 두 화면에도 입력한다
+- 상주 루프가 등록된 Run 의 worker 화면에서 같은 멈춤이 `pipeline.stall_ticks`(기본 `error` 2틱) 이어지면 `worker-stalled` 를 낸다. 핸들러가 없거나 0 이 아니면(10 은 넘김) 그 Run 에 `WORKER-STALLED` 가 온다
+- 핸들러 환경에 `ORCH_SCRIPTS` 를 넘기고, 핸들러가 부른 `nudge-worker` 와 `send-to-worker` 가 가드에 막히지 않고 입력한다
+- 고친 문제: `--run` 없이 띄운 루프의 알림을 대기가 읽지 않았다. 주 Run 이 바뀌면 진행 중인 실패가 새 주 Run 에 오지 않았다
+- 고친 문제: `--stop --run` 이 다 읽은 알림 파일과 커서를 남겼다. 막 뜨는 루프에 합류한 Run 의 등록이 지워질 수 있었다
 
 ## 4.0.0 (2026-10-26)
 

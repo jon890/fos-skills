@@ -361,7 +361,8 @@ describe('이어 쓰지 못함', () => {
     assert.deepEqual(record(), {})
     assert.deepEqual(hookInputs(), [])
     assert.deepEqual(sends(), [])
-    const lines = events()
+    // 멈춤 확인도 같은 worker 목록을 읽지 못해 stalls 를 따로 알린다. 여기서는 충돌 처리만 본다
+    const lines = events().filter((line) => !String(line.text).startsWith('stalls: '))
     assert.equal(lines.length, 1, JSON.stringify(lines))
     assert.equal(lines[0].kind, 'WATCH-ERROR')
     assert.match(String(lines[0].text), /^conflicts: worker 목록을 읽지 못했다: .*worker-list offline/)
@@ -396,7 +397,7 @@ describe('send-to-worker 의 사용법 오류', () => {
       dispatches.every((id) => id === 'd7'),
       JSON.stringify(dispatches),
     )
-    assert.equal((loopState()?.errors as Json).conflicts, 'send-to-worker 사용법 오류')
+    assert.equal((loopState()?.errors as Json)['conflicts@r'], 'send-to-worker 사용법 오류')
     assert.deepEqual(
       conflictErrors().map((line) => line.text),
       ['conflicts: send-to-worker 사용법 오류'],
@@ -406,7 +407,7 @@ describe('send-to-worker 의 사용법 오류', () => {
     const r = loop(['--tick', '--tick-number', '3'])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     const last = JSON.parse(r.stdout.trim().split('\n').at(-1) ?? '') as Json
-    assert.equal((last.errors as Json).conflicts, 'send-to-worker 사용법 오류')
+    assert.equal((last.errors as Json)['conflicts@r'], 'send-to-worker 사용법 오류')
     assert.equal(conflictErrors().length, 1, '같은 이유를 다시 알렸다')
   })
 })

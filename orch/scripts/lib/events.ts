@@ -24,6 +24,11 @@
 //   worker-done  worker, outcome, evidence(ready 또는 suspicious), pr(있으면).
 //       worker_done --outcome failed 같은 실패 보고와 --completion-contract none 의 대기에서는 내지 않는다
 //   worker-lost  worker, stage
+//   worker-stalled  worker, state(error 또는 idle. lib/screen.ts 의 화면 상태), since(그 상태를 처음 본 틱의 ISO 8601 UTC 시각),
+//       ticks(같은 상태와 같은 마지막 메시지 묶음을 본 틱 수. 핸들러가 처리한 뒤로 다시 센다), lines(빈 줄을 뺀 화면 끝 줄 목록. 핸들러가 직접 판정할 때 쓴다).
+//       상주 루프가 그 Run 의 살아 있는 dispatch 화면에서 같은 멈춤을 pipeline.stall_ticks 의 틱 수만큼 본 때 낸다.
+//       핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 내고, 아니면 그 멈춤에는 다시 내지 않는다(orch-loop.ts 의 「멈춤 확인」).
+//       10 은 처리하지 않고 코디네이터에게 넘긴다는 뜻이다(HOOK-REJECT). 같은 상태가 이어지는 동안 since 는 그대로라 핸들러는 since 로 횟수를 센다
 //   before-ready, pr-ready  pr, ready_count(이미 ready 인 내 PR 수), slots
 //   ci-passed, ci-failed, ci-missing  pr, checks(이름, 상태, 결론, URL 의 목록), required(이름 목록)
 //   pr-conflict  pr, base_head, files, worker(터미널이 없으면 null), action
@@ -47,6 +52,8 @@
 //   PATH        맨 앞에 가드 폴더(lib/guard)
 //   ORCA, GH    가드 폴더의 shim 절대경로
 //   ORCH_REAL_ORCA, ORCH_REAL_GH  진짜 실행 파일의 절대경로. 찾지 못하면 넘기지 않는다
+//   ORCH_SCRIPTS  orch 의 scripts 폴더 절대경로. 플러그인 설치 경로는 커밋마다 바뀌어 핸들러가 코어 명령(nudge-worker, send-to-worker)을 찾는 데 쓴다.
+//                 worker 에게 입력하는 코어 명령은 ORCH_REAL_ORCA 로 orca 를 부르므로 가드에 막히지 않는다. 핸들러는 그 명령으로만 입력한다
 //   진짜 실행 파일은 가드 폴더를 PATH 에 넣기 전에 찾는다. orcaBin(), ghBin() 의 기본값은 이름이라, 그대로 넘기면
 //   shim 이 PATH 맨 앞의 자기 자신을 다시 불러 node 프로세스가 끝없이 생긴다. `/` 가 든 값은 절대경로로 바꾸고
 //   (그 실경로가 가드 폴더 안이면 버리고 이름으로 찾는다), 이름이면 PATH 를 앞에서부터 보며 가드 폴더가 아닌 곳의 실행 파일을 고른다.
@@ -151,6 +158,8 @@ export const EVENTS: Readonly<Record<string, EventSpec>> = Object.freeze({
   'worker-question': spec(false),
   'worker-done': spec(false),
   'worker-lost': spec(false),
+  // 거부는 넘김이다. 핸들러가 처리하지 않고 코디네이터에게 넘긴다(orch-loop.ts 의 「멈춤 확인」)
+  'worker-stalled': spec(true),
   'before-ready': spec(true),
   'pr-ready': spec(false),
   'ci-passed': spec(false),
@@ -189,6 +198,7 @@ const EMPTY_LOCK_GRACE_MS = 2_000
 const LOG_LIMIT = 1_048_576
 
 const GUARD_DIR = fileURLToPath(new URL('./guard', import.meta.url))
+const SCRIPTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 function insideGuard(target: string): boolean {
   return inside(real(target), real(GUARD_DIR))
@@ -232,6 +242,7 @@ function handlerEnv(event: string, repo: string, root: string, checkout: string,
   env.ORCH_REPO = repo
   env.ORCH_DIR = root
   env.ORCH_CHECKOUT = checkout
+  env.ORCH_SCRIPTS = SCRIPTS_DIR
   env.PATH = process.env.PATH ? `${GUARD_DIR}${delimiter}${process.env.PATH}` : GUARD_DIR
   env.ORCA = join(GUARD_DIR, 'orca')
   env.GH = join(GUARD_DIR, 'gh')

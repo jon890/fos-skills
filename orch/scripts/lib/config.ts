@@ -60,6 +60,7 @@ export const PIPELINE_KEYS: readonly string[] = [
   'ci_missing_after_sec',
   'update_behind_drafts',
   'authors',
+  'stall_ticks',
 ]
 
 // heavy 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 heavy 행이다. 값은 정규식 문자열 목록이고 heavy-slot.ts 가 읽는다.

@@ -112,7 +112,8 @@ function brief(body: unknown): string {
 
 // now 는 epoch 초다. 알릴 줄을 정하고 알린 시각을 state 에 적는다.
 // 처음 보는 미답변 질문은 QUESTION, 알린 뒤 remindAfter 초가 지나도 답이 없는 질문은 REMINDER 줄이다.
-export function poll(run: string | null, state: string, now: number, remindAfter: number, repo: string): { run: string; notices: Notice[] } {
+// pending 은 알릴지와 무관한 미답변 질문 전부다. 상주 루프가 질문을 기다리는 worker 를 멈춘 것으로 보지 않는 데 쓴다.
+export function poll(run: string | null, state: string, now: number, remindAfter: number, repo: string): { run: string; notices: Notice[]; pending: Message[] } {
   const found = snapshot(run)
   const seen = (exists(state) ? JSON.parse(readFileSync(state, 'utf8')) : {}) as Seen
   const isMap = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -144,7 +145,7 @@ export function poll(run: string | null, state: string, now: number, remindAfter
   const temporary = state.replace(/\.json$/, '') + '.tmp'
   writeFileSync(temporary, `${pyJson(seen)}\n`)
   renameSync(temporary, state)
-  return { run: found.run, notices }
+  return { run: found.run, notices, pending: found.pending }
 }
 
 // 알릴 줄 하나에 worker-question 이벤트를 낸다(lib/events.ts 머리 주석의 「이벤트별 필드」).
