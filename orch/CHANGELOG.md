@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.9.0 (2026-10-26)
+
+- `cleanup-sweep.ts` 가 머지 큐 로그 폴더(`<orch>/queue`)의 끝난 로그를 휴지통으로 옮긴다. 마무리 로그(`finish-<PR>.out`, `.pid`)는 프로세스가 끝나고 `FINISH-DONE` 이나 `FINISH-FAIL` 로 끝났을 때, 머지 큐 로그는 연 프로세스가 없고 `QUEUE-DONE` 이나 `STOP` 으로 끝났거나 담긴 PR 이 모두 MERGED 나 CLOSED 일 때다
+- `FINISH-FAIL` 과 `STOP` 로그는 마지막으로 바뀐 뒤 1시간 남긴다. 돌고 있는 프로세스의 로그와 모르는 파일은 건드리지 않는다
+- `--trash` 옵션을 더했다. 기본은 `handoff-cleanup.ts` 와 같은 `~/.Trash/orch-cleanup-<날짜>` 다
+
 ## 3.8.0 (2026-10-26)
 
 - `launch-worker.ts` 가 띄운 worker 의 dispatch, 터미널, 워크트리를 기록한다. 이전에 띄운 worker 는 기록이 없어 예전처럼 사용자 보유 터미널로 남는다

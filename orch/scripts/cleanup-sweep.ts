@@ -6,7 +6,7 @@
 //
 // 사용법 (기본은 dry-run. 무엇을 할지만 낸다):
 //     cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders]
-//                      [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--wait SEC] [--poll-interval SEC] [--apply]
+//                      [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--trash DIR] [--wait SEC] [--poll-interval SEC] [--apply]
 //
 //     --repo        대상 저장소의 기본 체크아웃. 여러 번 줄 수 있다. 여기서 git worktree 목록과 gh 를 읽는다.
 //                   하나를 읽지 못해도 나머지는 돌고, 종료 코드만 2 가 된다
@@ -28,6 +28,7 @@
 //     --remote-branches
 //                   저장소마다 워크트리와 로컬 브랜치 정리가 끝난 뒤, 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다
 //                   (아래 「원격 브랜치 삭제」 의 --remote-branches). 없으면 하지 않는다
+//     --trash       머지 큐 로그를 옮길 휴지통 폴더(아래 「머지 큐 로그」). 기본 ~/.Trash/orch-cleanup-<날짜>
 //     --wait        터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 0 이상의 유한한 수. 기본 5
 //     --poll-interval  프로세스 확인 간격(초). 0 초과의 유한한 수. 기본 1
 //     --apply       실제로 정리한다
@@ -106,6 +107,12 @@
 //     하나라도 아니면 남기고 `남김 <경로>: PR 없음, upstream 이 남아 있다. 치우지 않는 이유: <이유>` 를 낸다.
 //     그 경로의 터미널은 위 「코디네이터가 띄운 터미널」 만 닫는다. 기록 없는 터미널이 있으면 `살아 있는 터미널이 있다` 로 남긴다.
 //     터미널을 닫은 뒤 Orca 가 다시 연 빈 셸은 MERGED 일 때와 같게 닫는다
+//
+// 머지 큐 로그 (저장소마다 워크트리와 브랜치 정리 뒤에 한 번. --run 이 없어도 한다):
+//     <orch>/queue(lib/paths.ts 의 queue, merge-with-finish.ts 의 --finish-log-dir 기본값)에 남은 끝난 로그를 휴지통으로 옮긴다.
+//     지우지 않고 handoff-cleanup.ts 와 같은 방식(--trash, <휴지통>/queue/<이름>)으로 옮긴다.
+//     마무리 로그(finish-<PR>.out 과 .pid), 머지 큐 로그의 조건과 실패 로그를 남기는 시간은 lib/queue-logs.ts 머리 주석이 소유한다.
+//     돌고 있는 프로세스의 로그와 모르는 파일은 건드리지 않는다. 출력은 `머지 큐 로그를 휴지통으로 옮길 것`, `머지 큐 로그 옮김`, `머지 큐 로그를 남긴다` 다.
 //
 // 건너뜀 (이유를 낸다):
 //     - 커밋 안 된 변경이 있다
@@ -267,6 +274,7 @@
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
+import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -281,12 +289,13 @@ import { forgetLaunch, readLaunch } from './lib/launched.ts'
 import { orcaBin } from './lib/orca.ts'
 import { allWorkers, blocker as ownershipBlocker, cached, LookupError, rowHandles, runWorkers } from './lib/ownership.ts'
 import type { WorkerRow } from './lib/ownership.ts'
-import { requireMigrated } from './lib/paths.ts'
+import { pathOf, requireMigrated } from './lib/paths.ts'
+import { lsofOpenedBy, sweepQueueLogs } from './lib/queue-logs.ts'
 import { run as runProcess, scriptCommand } from './lib/proc.ts'
 import { deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates } from './lib/spec.ts'
 
 const USAGE =
-  "사용법: cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--wait SEC] [--poll-interval SEC] [--apply]"
+  "사용법: cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--trash DIR] [--wait SEC] [--poll-interval SEC] [--apply]"
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REMOVE = join(HERE, 'remove-worktree.ts')
 const LIVE_STATES = new Set(['working', 'ready'])
@@ -326,6 +335,7 @@ type Args = {
   agentGlob: string
   closeOwnTakenOver: boolean
   remoteBranches: boolean
+  trash: string
   apply: boolean
   wait: number
   pollInterval: number
@@ -1467,6 +1477,22 @@ function sweepBranches(repo: string, args: Args, checkedOut: Set<string>, log: L
   }
 }
 
+// 머지 큐 로그 정리가 쓰는 실제 조회. PR 은 번호마다 `gh pr view` 로 읽고 읽지 못한 번호는 담지 않는다
+function queueLogHost(repo: string) {
+  return {
+    now: () => Date.now(),
+    openedBy: lsofOpenedBy,
+    prStates: (numbers: number[]) => {
+      const states = new Map<number, string>()
+      for (const n of numbers) {
+        const done = ghJson<{ state?: unknown }>(['pr', 'view', String(n), '--json', 'state'], { cwd: repo })
+        if (done.ok && isObject(done.data) && PR_STATES.has(done.data.state as string)) states.set(n, done.data.state as string)
+      }
+      return states
+    },
+  }
+}
+
 // 종료 코드를 돌려준다. 내 PR 의 작성자나 원격 브랜치 후보를 읽지 못하면 그 동작만 하지 않고 2 다
 async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], terminals: Terminal[], log: Log): Promise<number> {
   const base = given.base || (defaultBase(repo) ?? 'main')
@@ -1494,6 +1520,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   remaining.add(git(repo, 'branch', '--show-current').out)
   sweepBranches(repo, args, remaining, log)
   if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, remaining, log)) code = 2
+  sweepQueueLogs({ dir: pathOf('queue', repo), trash: args.trash, apply: args.apply, log, host: queueLogHost(repo) })
   if (!args.apply) return code
   try {
     // 실패와 시간 초과는 HOOK-FAIL 줄만 남긴다. 정리의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(머리 주석의 「종료 코드」).
@@ -1515,6 +1542,14 @@ function parseFloatArg(text: string): number | null {
   return word[1] === '-' ? -Infinity : Infinity
 }
 
+// 휴지통 폴더. 안 주면 handoff-cleanup.ts 와 같은 ~/.Trash/orch-cleanup-<날짜> 다
+function trashDir(given: string | undefined): string {
+  if (given) return given === '~' ? homedir() : given.startsWith('~/') ? join(homedir(), given.slice(2)) : given
+  const day = new Date()
+  const stamp = `${day.getFullYear()}${String(day.getMonth() + 1).padStart(2, '0')}${String(day.getDate()).padStart(2, '0')}`
+  return join(homedir(), '.Trash', `orch-cleanup-${stamp}`)
+}
+
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
 }
@@ -1529,6 +1564,7 @@ export async function main(argv: string[]): Promise<number> {
     'agent-glob': { type: 'string', default: 'agent-*' },
     'close-own-taken-over': { type: 'boolean', default: false },
     'remote-branches': { type: 'boolean', default: false },
+    trash: { type: 'string' },
     apply: { type: 'boolean', default: false },
     wait: { type: 'string', default: '5' },
     'poll-interval': { type: 'string', default: '1' },
@@ -1536,7 +1572,7 @@ export async function main(argv: string[]): Promise<number> {
   } as const
   let values
   try {
-    const expanded = expandArgs(argv, options, ['repo', 'base', 'run', 'specs-dir', 'agent-glob', 'wait', 'poll-interval'])
+    const expanded = expandArgs(argv, options, ['repo', 'base', 'run', 'specs-dir', 'agent-glob', 'trash', 'wait', 'poll-interval'])
     ;({ values } = parseArgs({ args: expanded, options, allowPositionals: false }))
   } catch (e) {
     err(`${USAGE}\ncleanup-sweep: ${(e as Error).message}`)
@@ -1589,6 +1625,7 @@ export async function main(argv: string[]): Promise<number> {
     agentGlob: values['agent-glob'],
     closeOwnTakenOver: values['close-own-taken-over'],
     remoteBranches: values['remote-branches'],
+    trash: trashDir(values.trash),
     apply: values.apply,
     wait,
     pollInterval,

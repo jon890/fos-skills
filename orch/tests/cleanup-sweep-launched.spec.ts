@@ -205,3 +205,18 @@ describe('PR 없이 끝난 워크트리', () => {
     lacks(calls(), 'terminal close')
   })
 })
+
+describe('머지 큐 로그 폴더', () => {
+  test('끝난 마무리 로그는 --trash 로 옮기고 모르는 파일은 남긴다', () => {
+    const queue = join(fx.repo, '.orch/queue')
+    mkdirSync(queue, { recursive: true })
+    writeFileSync(join(queue, 'finish-41.out'), 'FINISH-DONE\n')
+    writeFileSync(join(queue, 'memo.txt'), 'x')
+    const trash = join(fx.tmp, 'trash-q')
+    const out = runSweep(['--trash', trash, '--apply'])
+    has(out, '머지 큐 로그 옮김')
+    assert.ok(!existsSync(join(queue, 'finish-41.out')))
+    assert.ok(existsSync(join(trash, 'queue', 'finish-41.out')))
+    assert.ok(existsSync(join(queue, 'memo.txt')))
+  })
+})
