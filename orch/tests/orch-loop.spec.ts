@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -17,7 +17,7 @@ import type { FakeBin } from './fixtures/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
 
-// 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
+// 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
 // 받은 인자는 calls.jsonl 에 한 줄씩 적는다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -32,7 +32,9 @@ if (st.fail) {
 }
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const sub = argv[1]
-if (sub === 'check' && argv.includes('--all')) reply({ messages: st.messages || [] })
+const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
+const byRun = st.by_run && run ? st.by_run[run] || [] : null
+if (sub === 'check' && argv.includes('--all')) reply({ messages: byRun || st.messages || [] })
 else if (sub === 'check') reply({ messages: [] })
 else if (sub === 'inbox') reply({ messages: [] })
 else reply({})
@@ -199,8 +201,11 @@ function jsonl(file: string): Json[] {
     : []
 }
 
+// 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
-  return jsonl(orchFile('state', 'loop-events.jsonl'))
+  const dir = orchFile('state', 'loop-events')
+  const perRun = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().flatMap((name) => jsonl(join(dir, name))) : []
+  return [...jsonl(orchFile('state', 'loop-events.jsonl')), ...perRun]
 }
 
 function received(event: string): Json[] {
@@ -313,7 +318,7 @@ describe('질문 확인', () => {
     assert.equal(logText().match(/^WATCH-ERROR questions: /gm)?.length, 2, logText())
     orca({})
     once()
-    assert.equal(loopState()?.errors && (loopState()?.errors as Json).questions, null)
+    assert.equal(loopState()?.errors && (loopState()?.errors as Json)['questions@r'], null)
     orca({ fail: true })
     once()
     assert.equal(events().length, 2, JSON.stringify(events()))
@@ -409,7 +414,7 @@ describe('정리와 보드 동기화', () => {
       events().map((line) => line.text),
       ['cleanup: 종료 코드 2'],
     )
-    assert.equal((loopState()?.errors as Json).cleanup, '종료 코드 2')
+    assert.equal((loopState()?.errors as Json)['cleanup@r'], '종료 코드 2')
   })
 })
 
@@ -527,7 +532,7 @@ describe('신호', () => {
 })
 
 describe('--start, --status, --stop', () => {
-  test('띄우고, 살아 있음을 보고, 다른 Run 의 --start 는 4 이고, 멈춘 뒤 pid 가 죽어 있다', async () => {
+  test('띄우고, 다른 Run 을 더하고, 자기 Run 만 빼고, 마지막 Run 이 빠지면 멈춘다', async () => {
     config({ pipeline: { tick_sec: 3600 } })
     const started = loop(['--run', 'r1', '--start'])
     assert.equal(started.code, 0, started.stdout + started.stderr)
@@ -538,18 +543,79 @@ describe('--start, --status, --stop', () => {
     const status = loop(['--status'])
     assert.equal(status.code, 0, status.stdout + status.stderr)
     assert.match(status.stdout, new RegExp(`^LOOP-ALIVE ${pid} run=r1 last_tick=\\S+ alive_at=\\S+$`, 'm'))
-    const again = loop(['--run', 'r2', '--start'])
-    assert.equal(again.code, 4, again.stdout + again.stderr)
-    assert.equal(again.stdout.trim(), `LOOP-RUNNING ${pid} run=r1`)
-    const stopped = loop(['--stop'])
+    const same = loop(['--run', 'r1', '--start'])
+    assert.equal(same.code, 4, same.stdout + same.stderr)
+    assert.equal(same.stdout.trim(), `LOOP-RUNNING ${pid} run=r1`)
+    const joined = loop(['--run', 'r2', '--start'])
+    assert.equal(joined.code, 0, joined.stdout + joined.stderr)
+    assert.equal(joined.stdout.trim(), `LOOP-JOINED ${pid} run=r2`)
+    assert.ok(existsSync(orchFile('state', 'loop-runs', 'r2.json')))
+    const shared = loop(['--stop'])
+    assert.equal(shared.code, 1, shared.stdout + shared.stderr)
+    assert.match(shared.stdout, new RegExp(`^LOOP-STOP-SHARED ${pid} runs=r1,r2$`, 'm'))
+    assert.equal(pidAlive(pid), true)
+    const left = loop(['--run', 'r1', '--stop'])
+    assert.equal(left.code, 0, left.stdout + left.stderr)
+    assert.equal(left.stdout.trim(), `LOOP-LEFT ${pid} run=r1 runs=r2`)
+    assert.equal(pidAlive(pid), true)
+    const stopped = loop(['--run', 'r2', '--stop'])
     assert.equal(stopped.code, 0, stopped.stdout + stopped.stderr)
     assert.equal(stopped.stdout.trim(), `LOOP-STOPPED ${pid}`)
     assert.equal(pidAlive(pid), false)
     assert.ok(!existsSync(orchFile('state', 'loop.lock')), '잠금을 풀지 않았다')
+    assert.ok(!existsSync(orchFile('state', 'loop-runs', 'r2.json')))
     const dead = loop(['--status'])
     assert.equal(dead.code, 1)
     assert.equal(dead.stdout.trim(), `LOOP-DEAD ${repo} pid ${pid} 종료`)
     assert.equal(loop(['--stop']).stdout.trim(), 'LOOP-NOT-RUNNING')
+  })
+
+  test('--stop --all 은 등록된 Run 을 모두 빼고 멈춘다. --all 과 --run 을 함께 주면 2 다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    const started = loop(['--run', 'r1', '--start'])
+    const pid = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
+    assert.equal(loop(['--run', 'r2', '--start']).code, 0)
+    assert.equal(loop(['--run', 'r1', '--stop', '--all']).code, 2)
+    const stopped = loop(['--stop', '--all'])
+    assert.equal(stopped.code, 0, stopped.stdout + stopped.stderr)
+    assert.equal(stopped.stdout.trim(), `LOOP-STOPPED ${pid}`)
+    assert.equal(pidAlive(pid), false)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r1.json')), false)
+  })
+
+  test('Run 등록을 모르는 옛 루프에는 Run 을 더하지 않고 안내 줄을 내며, 다른 Run 의 --stop --run 은 그 루프를 멈추지 않는다', async (t) => {
+    const pid = await fakeLoop(t)
+    const now = new Date().toISOString()
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid, run: 'r1', repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} }))
+    const again = loop(['--run', 'r2', '--start'])
+    assert.equal(again.code, 4, again.stdout + again.stderr)
+    assert.match(again.stdout, new RegExp(`^LOOP-RUNNING ${pid} run=r1$`, 'm'))
+    assert.match(again.stdout, /^안내: 이 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다/m)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
+    const stop = loop(['--run', 'r2', '--stop'])
+    assert.equal(stop.code, 0, stop.stdout + stop.stderr)
+    assert.match(stop.stdout, /^LOOP-NOT-REGISTERED run=r2$/m)
+    assert.equal(pidAlive(pid), true)
+  })
+
+  test('마지막 Run 의 등록이 사라지면 다음 틱 전에 LOOP-EMPTY 로 끝난다', { timeout: 60_000 }, async () => {
+    config({ pipeline: { tick_sec: 1 } })
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r1', '--foreground'], { env, cwd: tmp })
+    spawned.push(child)
+    let stdout = ''
+    child.stdout?.on('data', (chunk) => {
+      stdout += String(chunk)
+    })
+    child.stderr?.on('data', (chunk) => {
+      stdout += String(chunk)
+    })
+    const exited = new Promise<number | null>((resolve) => child.once('exit', (c) => resolve(c)))
+    const deadline = Date.now() + 20_000
+    while (!/^tick 1 /m.test(stdout) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100))
+    rmSync(orchFile('state', 'loop-runs', 'r1.json'))
+    const code = await exited
+    assert.equal(code, 0, stdout)
+    assert.match(stdout, /^LOOP-EMPTY /m)
   })
 
   test('살아 있는 루프의 잠금이 있으면 --foreground 도 4 다', async (t) => {
@@ -599,6 +665,138 @@ describe('--start, --status, --stop', () => {
     once()
     assert.equal(argsOf('sweep').length, 1)
     assert.ok(!existsSync(orchFile('state', 'loop.lock')))
+  })
+})
+
+describe('여러 Run', () => {
+  // 루프에 Run 을 등록한다. registered_at 이 이른 Run 이 주 Run 이다
+  function register(run: string, at: string, specsDir: string | null = null): void {
+    write(orchFile('state', 'loop-runs', `${run}.json`), JSON.stringify({ run, specs_dir: specsDir, registered_at: at }))
+  }
+
+  function runEvents(run: string): Json[] {
+    return jsonl(orchFile('state', 'loop-events', `${run}.jsonl`))
+  }
+
+  // 틱 자식을 바로 돌린다. 새로 뜬 루프(--foreground)는 앞 루프의 등록을 지우므로, 등록된 Run 을 맡는 틱은 자식으로 본다
+  function tickOnce(): Json {
+    const r = loop(['--tick', '--tick-number', '1'])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    return JSON.parse(r.stdout.trim().split('\n').at(-1) ?? '') as Json
+  }
+
+  test('질문, 정리, tick 은 Run 마다 그 Run 범위로 돌고 원격 브랜치 정리는 주 Run 에서만 한다', () => {
+    register('A', '2026-01-01T00:00:00Z', 'specs/a')
+    register('B', '2026-01-02T00:00:00Z')
+    hook('tick')
+    hook('worker-question')
+    const asked = (run: string) => ({ ...question(`q${run}`), run_id: run, to_handle: `run:${run}` })
+    orca({ by_run: { A: [asked('A')], B: [asked('B')] } })
+    write(orchFile('state', 'questions-seen.json'), JSON.stringify({ A: { qA: Date.now() / 1000 - 700 }, B: { qB: Date.now() / 1000 - 700 } }))
+    tickOnce()
+    assert.deepEqual(argsOf('sweep'), [
+      ['--repo', repo, '--kill-holders', '--remote-branches', '--apply', '--run', 'A', '--specs-dir', 'specs/a'],
+      ['--repo', repo, '--kill-holders', '--apply', '--run', 'B'],
+    ])
+    const ticks = received('tick').map((input) => [input.run, input.primary])
+    assert.deepEqual(ticks, [
+      ['A', true],
+      ['B', false],
+    ])
+    assert.deepEqual(runEvents('A').map((row) => [row.kind, String(row.text).split(' ')[0]]), [['REMINDER', 'qA']])
+    assert.deepEqual(runEvents('B').map((row) => [row.kind, String(row.text).split(' ')[0]]), [['REMINDER', 'qB']])
+    assert.equal(existsSync(orchFile('state', 'loop-events.jsonl')), false)
+  })
+
+  test('공유 일의 실패는 주 Run 에만, Run 의 질문 조회 실패는 그 Run 에만 알린다', () => {
+    register('A', '2026-01-01T00:00:00Z')
+    register('B', '2026-01-02T00:00:00Z')
+    orca({ fail: true })
+    prs([], 1)
+    const result = tickOnce()
+    const kinds = (run: string) => runEvents(run).map((row) => String(row.text).split(':')[0])
+    assert.deepEqual(kinds('A').sort(), ['prs', 'questions'])
+    assert.deepEqual(kinds('B'), ['questions'])
+    const errors = result.errors as Json
+    assert.equal(typeof errors['questions@A'], 'string')
+    assert.equal(typeof errors['questions@B'], 'string')
+  })
+
+  test('새로 뜬 루프는 앞 루프의 alive_at 까지 쓴 다른 Run 의 등록을 지우고, 그 뒤에 쓴 등록은 남긴다', () => {
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'old', runs: ['old'], alive_at: '2026-01-02T00:00:00Z' }))
+    register('old', '2026-01-01T00:00:00Z')
+    register('fresh', '2026-01-03T00:00:00Z')
+    const r = once({}, ['--run', 'r'])
+    assert.match(r.stdout, /^앞 루프의 Run old 등록을 지웠다/m)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'old.json')), false)
+    assert.deepEqual((loopState() as Json).runs, ['fresh', 'r'])
+  })
+
+  test('앞 loop.json 이 없으면 다른 Run 의 등록을 지우지 않는다', () => {
+    register('other', '2026-01-01T00:00:00Z')
+    const r = once({}, ['--run', 'r'])
+    assert.doesNotMatch(r.stdout, /등록을 지웠다/)
+    assert.deepEqual((loopState() as Json).runs, ['other', 'r'])
+  })
+
+  test('죽은 루프 뒤 두 세션이 거의 동시에 --start 하면 둘 다 0 이고 한 루프가 두 Run 을 맡는다', { timeout: 60_000 }, async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    // 두 Run 모두 죽은 루프에 등록돼 있었다. 같은 LOOP-DEAD 로 깨어난 경우다
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
+    register('A', '2026-01-01T00:00:00Z')
+    register('B', '2026-01-02T00:00:00Z')
+    for (const delay of [0, 50, 150]) {
+      const run = (id: string) =>
+        new Promise<Result>((resolve) => {
+          const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', id, '--start'], { env, cwd: tmp })
+          spawned.push(child)
+          let stdout = ''
+          child.stdout?.on('data', (chunk) => (stdout += String(chunk)))
+          child.on('close', (code) => resolve({ code, stdout, stderr: '' }))
+        })
+      const a = run('A')
+      await new Promise((resolve) => setTimeout(resolve, delay))
+      const [ra, rb] = await Promise.all([a, run('B')])
+      assert.equal(ra.code, 0, `delay ${delay}: ${ra.stdout}`)
+      assert.equal(rb.code, 0, `delay ${delay}: ${rb.stdout}`)
+      const pid = Number(loopState()?.pid)
+      const lines = [ra.stdout.trim(), rb.stdout.trim()].sort()
+      assert.match(lines.join('\n'), new RegExp(`^LOOP-(STARTED|JOINED) ${pid} run=[AB]\n(LOOP-JOINED|LOOP-STARTED) ${pid} run=[AB]$`), `delay ${delay}`)
+      assert.ok(existsSync(orchFile('state', 'loop-runs', 'A.json')), `delay ${delay}: A 의 등록이 지워졌다`)
+      assert.ok(existsSync(orchFile('state', 'loop-runs', 'B.json')), `delay ${delay}: B 의 등록이 지워졌다`)
+      assert.equal(loop(['--stop', '--all']).code, 0)
+      await waitDead([pid], 20_000)
+      register('A', '2026-01-01T00:00:00Z')
+      register('B', '2026-01-02T00:00:00Z')
+      write(orchFile('state', 'loop.json'), JSON.stringify({ pid: 999999, run: 'A', runs: ['A', 'B'], alive_at: new Date(Date.now() - 600_000).toISOString() }))
+    }
+  })
+
+  test('--run 도 finish.run 도 없는 --stop 은 등록된 Run 이 하나여도 멈추지 않고 LOOP-STOP-SHARED 와 1 이다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    const started = loop(['--run', 'B', '--start'])
+    const pid = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
+    const r = loop(['--stop'])
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout, new RegExp(`^LOOP-STOP-SHARED ${pid} runs=B$`, 'm'))
+    assert.equal(pidAlive(pid), true)
+    assert.ok(existsSync(orchFile('state', 'loop-runs', 'B.json')))
+    assert.equal(loop(['--run', 'B', '--stop']).stdout.trim(), `LOOP-STOPPED ${pid}`)
+  })
+
+  test('--stop 은 --run 이 없으면 finish.run 의 Run 만 빼고, 등록되지 않은 Run 의 --stop --run 은 루프를 멈추지 않는다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    const started = loop(['--run', 'r1', '--start'])
+    const pid = Number(/^LOOP-STARTED (\d+)/m.exec(started.stdout)?.[1])
+    assert.equal(loop(['--run', 'r2', '--start']).code, 0)
+    config({ pipeline: { tick_sec: 3600 }, finish: { run: 'r2' } })
+    const left = loop(['--stop'])
+    assert.equal(left.code, 0, left.stdout + left.stderr)
+    assert.equal(left.stdout.trim(), `LOOP-LEFT ${pid} run=r2 runs=r1`)
+    const stranger = loop(['--run', 'zz', '--stop'])
+    assert.equal(stranger.stdout.trim(), 'LOOP-NOT-REGISTERED run=zz')
+    assert.equal(pidAlive(pid), true)
+    assert.equal(loop(['--run', 'r1', '--stop']).stdout.trim(), `LOOP-STOPPED ${pid}`)
   })
 })
 

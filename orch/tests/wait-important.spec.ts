@@ -939,6 +939,62 @@ describe('상주 루프', () => {
     assert.deepEqual(lines(r.stdout), [`LOOP-DEAD ${tmp} 없음`, 'LAST_DELIVERY -'])
   })
 
+  describe('여러 Run', () => {
+    function runEvents(run: string, rows: Json[]): void {
+      mkdirSync(join(stateDir(), 'loop-events'), { recursive: true })
+      writeFileSync(join(stateDir(), 'loop-events', `${run}.jsonl`), rows.map((row) => `${JSON.stringify(row)}\n`).join(''))
+    }
+
+    function register(run: string): void {
+      mkdirSync(join(stateDir(), 'loop-runs'), { recursive: true })
+      writeFileSync(join(stateDir(), 'loop-runs', `${run}.json`), JSON.stringify({ run, specs_dir: null, registered_at: '2026-10-25T00:00:00.000Z' }))
+    }
+
+    test('다른 Run 의 알림에는 깨어나지 않고 자기 Run 의 알림만 내며 커서도 자기 Run 의 파일에 쓴다', () => {
+      loopJson({ runs: ['run_other', 'run_x'] })
+      register('run_other')
+      register('run_x')
+      runEvents('run_other', [event(1, 'CI-FAILED', 7, '남의 실패')])
+      const quiet = wait([batch('d1', 'status')], ['--lost-interval-sec', '0.2', '--loop-repo', tmp])
+      assert.equal(quiet.code, 0, quiet.stdout + quiet.stderr)
+      assert.ok(!quiet.stdout.includes('LOOP-'), quiet.stdout)
+      runEvents('run_x', [event(1, 'REMINDER', null, '내 질문')])
+      const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0.2', '--loop-repo', tmp])
+      assert.equal(r.code, 7, r.stdout + r.stderr)
+      assert.deepEqual(lines(r.stdout), ['LOOP-EVENT REMINDER - 내 질문', 'LAST_DELIVERY d0'])
+      assert.equal(readFileSync(join(stateDir(), 'loop-events', 'run_x.cursor'), 'utf8').trim(), '1')
+      assert.ok(!existsSync(join(stateDir(), 'loop-events', 'run_other.cursor')))
+    })
+
+    test('Run 등록을 아는 살아 있는 루프에 이 Run 이 없으면 미등록 LOOP-DEAD 와 8 이다', () => {
+      loopJson({ runs: ['run_other'] })
+      register('run_other')
+      const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0.2', '--loop-repo', tmp])
+      assert.equal(r.code, 8, r.stdout + r.stderr)
+      assert.deepEqual(lines(r.stdout), [`LOOP-DEAD ${tmp} run run_x 미등록`, 'LAST_DELIVERY d0'])
+    })
+
+    test('옛 루프(runs 가 없다)에는 미등록 판정을 하지 않고, 다른 Run 의 옛 루프 알림에는 깨어나지 않고 커서도 옮기지 않는다', () => {
+      loopJson({ run: 'run_other' })
+      loopEvents([event(1, 'CI-FAILED', 7, '남의 옛 알림')])
+      const quiet = wait([batch('d1', 'status')], ['--lost-interval-sec', '0.2', '--loop-repo', tmp])
+      assert.equal(quiet.code, 0, quiet.stdout + quiet.stderr)
+      assert.ok(!quiet.stdout.includes('LOOP-'), quiet.stdout)
+      assert.ok(!existsSync(join(stateDir(), 'loop-events.cursor')))
+    })
+
+    test('이 Run 이나 Run 없이 띄운 옛 루프의 알림은 옛 파일에서 읽는다', () => {
+      for (const run of ['run_x', null]) {
+        loopJson({ run })
+        loopEvents([event(1, 'REMINDER', null, '옛 알림')], 0)
+        const r = wait(NEVER(), ['--ack', 'd0', '--lost-interval-sec', '0.2', '--loop-repo', tmp])
+        assert.equal(r.code, 7, r.stdout + r.stderr)
+        assert.deepEqual(lines(r.stdout), ['LOOP-EVENT REMINDER - 옛 알림', 'LAST_DELIVERY d0'])
+        assert.equal(cursor(), '1')
+      }
+    })
+  })
+
   test('--loop-repo 가 없으면 알림 파일과 루프 상태를 보지 않는다', () => {
     loopEvents([event(1, 'REMINDER', null, 'r')])
     const r = wait([batch('d1', 'status')], ['--lost-interval-sec', '0.2'])

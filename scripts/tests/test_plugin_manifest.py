@@ -16,6 +16,7 @@ EXPORT_ONLY = set(json.loads((ROOT / "scripts" / "export-only-skills.json").read
 def skill_diff(array, root):
     """내보내기 전용 원본을 제외하고 array 와 비교해 (빠진 것, 남는 것) 을 돌려준다."""
     found = {f"./{child.name}" for child in Path(root).iterdir() if (child / "SKILL.md").is_file()}
+    found |= {f"./work-board/{child.name}" for child in (Path(root) / "work-board").glob("*") if (child / "SKILL.md").is_file()}
     declared = set(array)
     expected = found - EXPORT_ONLY
     return sorted(expected - declared), sorted(declared - expected)

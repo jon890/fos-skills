@@ -332,7 +332,9 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sw
 
 끝난 작업의 큐 로그, 지시서, 오래된 handoff 폴더와 미리보기, 지난 csv·tsv 는 `handoff-cleanup.ts` 가 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
 **사용자에게 묻지 않고 `--apply` 로 옮긴다.** 휴지통 폴더라 되살릴 수 있다. 판정 조건과 옵션은 스크립트 머리 주석이 소유한다.
+**코디네이터와 핸들러는 `--run` 을 준다.** 그 Run 의 Task 가 쓴 지시서와 PR 본문만 옮겨 다른 세션의 산출물을 건드리지 않는다.
+`tick` 이나 `after-cleanup` 핸들러에서 부르면 입력의 `run` 을 넘긴다. 큐 로그, 폴더, csv 는 Run 에 묶을 수 없어 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/handoff-cleanup.ts" --repo "$REPO" --apply
+node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/handoff-cleanup.ts" --repo "$REPO" --run "$RUN_ID" --apply
 ```
