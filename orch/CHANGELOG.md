@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.2.0 (2026-10-26)
+
+- 표시가 없는 PR 은 `finish-pr` 가 배포 뒤 업무의 마지막 PR 인지 스스로 판정한다. 근거는 `마지막 PR 판정:` 한 줄로 남는다. `PR!` 는 강제로 마지막, 새 `PR~` 는 강제로 중간이다
+- 판정에 `finish.spec_task_pattern` 을 더했고 `finish.task_pattern` 은 지우지 않는다. 판정하지 못하면 중간 PR 이다
+- 머지 큐가 base 와 충돌한 PR 을 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지하며 루프 알림 `QUEUE-CONFLICT` 를 쓴다. `--chain A,B` 로 묶은 PR 은 앞 PR 이 빠지면 `SKIP` 한다
+- 보드 항목을 `pr` 필드이 비어도 브랜치나 워크트리로 찾는다. 다시 띄운 worker 는 같은 워크트리의 항목을 이어 쓰고, `pr` 필드은 `#` 없이 숫자로 저장한다
+- 호환성: `PR!` 가 없던 PR 도 판정이 마지막이면 업무를 완료하고 보드를 done 으로 바꾼다. 뒤 작업이 남았는데 PR 도 지시서도 없으면 `PR~` 를 붙인다
+
 ## 4.1.0 (2026-10-26)
 
 - `nudge-worker --state` 가 모델 오류로 멈춘 화면을 `error` 로, 사람이 Esc 로 끊은 Codex 화면을 `interrupted` 로 낸다. `--msg-id` 와 `--text` 는 두 화면에도 입력한다
