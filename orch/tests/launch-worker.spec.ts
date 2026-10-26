@@ -654,6 +654,22 @@ test('항목 id 가 없으면 --name 을 쓰고 단계가 없으면 기본 단�
   assert.equal(item.worktree, 'new')
 })
 
+test('지시서에 항목 id 가 없으면 같은 워크트리의 끝나지 않은 항목을 이어 쓰고 새 항목을 만들지 않는다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  const first = { id: 'first', title: '처음 일', status: 'doing', worktree: 'wt', details: [{ text: '1. 구현', done: true }, { text: '2. 머지', done: false }] }
+  writeFileSync(file, JSON.stringify({ items: [{ id: 'old', status: 'done', worktree: 'wt' }, first] }))
+  writeFileSync(spec, '# 충돌 풀기\n허락: push\n\n## 할 일\n1. base 합치기\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  const items = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.deepEqual(items.map((i: { id: string }) => i.id), ['old', 'first'])
+  assert.deepEqual(items[1].details, first.details)
+  assert.equal(items[1].worktree, 'wt')
+  assert.equal(items[1].title, '처음 일')
+})
+
 test('보드가 없으면 LAUNCHED 뒤에도 파일을 만들지 않는다', () => {
   state({ next_ids: ['ctx_1'] })
   const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])

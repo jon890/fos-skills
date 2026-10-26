@@ -18,11 +18,19 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
   const file = boardPath(repo)
   if (!existsSync(file)) return
   const text = readFileSync(spec, 'utf8')
-  const id = text.match(/^\s*(?:[-*]\s*)?보드 항목 id\s*:\s*`?([^`\n]+)`?\s*$/m)?.[1].trim() || name || basename(worktree)
+  const items = readBoard(file)
+  const explicit = text.match(/^\s*(?:[-*]\s*)?보드 항목 id\s*:\s*`?([^`\n]+)`?\s*$/m)?.[1].trim()
+  // 지시서가 id 를 정하지 않았으면 같은 워크트리나 브랜치의 끝나지 않은 항목을 이어 쓴다.
+  // 충돌 후속 지시서로 같은 워크트리에 다시 띄운 worker 가 항목을 하나 더 만들지 않게 한다
+  const same = explicit
+    ? undefined
+    : items.find((row) => row.status !== 'done' && typeof row.id === 'string' && (row.worktree === basename(worktree) || (branch && row.branch === branch)))
+  const id = explicit || (same?.id as string | undefined) || name || basename(worktree)
   const title = text.match(/^#\s+(.+)$/m)?.[1].trim() || id
   const bin = process.env.BOARD_BIN || BOARD_BIN
-  const item = readBoard(file).find((row) => row.id === id)
-  const args = ['set', id, 'doing', '--title', title, '--worktree', basename(worktree), '--branch', branch]
+  const item = items.find((row) => row.id === id)
+  // 이어 쓰는 항목은 처음 지시서의 제목을 그대로 둔다
+  const args = ['set', id, 'doing', ...(same ? [] : ['--title', title]), '--worktree', basename(worktree), '--branch', branch]
   if (item) {
     const steps = run(scriptCommand(bin, ['steps', id, '--file', file]), { timeoutMs: NO_LIMIT_MS })
     if (steps.code !== 0) throw new Error(steps.stderr || '단계 목록을 읽지 못했다')
@@ -61,6 +69,17 @@ export function findBoardItems(file: string, pr: string, branch: string, worktre
   if (byPr.length > 0) return { by: 'pr', ids: byPr.map(id) }
   const byBranch = items.filter((i) => prNumbers(i.pr).size === 0 && ((branch && i.branch === branch) || (worktree && i.worktree === worktree)))
   return byBranch.length > 0 ? { by: 'branch', ids: byBranch.map(id) } : null
+}
+
+// pr 칸이 빈 항목을 브랜치로 찾아 그 PR 번호로 채운다. 채운 항목 id 를 내고, 찾지 못했거나 pr 칸에 이미 든 항목이거나
+// 둘 이상이면 null 이다. 보드 명령이 실패하면 Error 다
+export function linkBoardPr(file: string, number: string, branch: string): string | null {
+  const found = findBoardItems(file, number, branch, null)
+  if (!found || found.by !== 'branch' || found.ids.length !== 1) return null
+  const bin = process.env.BOARD_BIN || BOARD_BIN
+  const done = run(scriptCommand(bin, ['set', found.ids[0], '--pr', number, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  if (done.code !== 0) throw new Error(done.stderr.trim() || `보드 명령 종료 코드 ${done.code}`)
+  return found.ids[0]
 }
 
 // 알림을 기록한 뒤에만 해시를 저장한다. 사라진 항목은 잊어 다시 생겼을 때 알린다.

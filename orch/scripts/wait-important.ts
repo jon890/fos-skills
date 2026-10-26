@@ -45,6 +45,8 @@
 //     worker-done  묶음 안의 worker_done 마다, 완료 근거를 판정한 뒤 JSON 줄을 내기 전. 근거가 있으면 evidence 가 ready 이고
 //                  pr 은 준비 상태의 PR 번호로 `gh pr view` 를 읽어 채운다(읽지 못하면 null). 없으면 suspicious 이고 pr 은 null 이다.
 //                  실패 보고와 `--completion-contract none` 의 대기에서는 내지 않는다
+//     보드: 근거가 ready 인 worker_done 은 그 PR 의 브랜치로 pr 칸이 빈 보드 항목을 찾아 pr 칸을 채운다(lib/board.ts 의 linkBoardPr).
+//                  보드 파일이 없으면 하지 않는다. 고치지 못하면 stderr 에 한 줄 남기고 종료 코드를 바꾸지 않는다
 //     worker-lost  WORKER_LOST 줄을 처음 낼 때. LAST_DELIVERY 줄 앞. worker 는 worker-list 행의 값, stage 는 WORKER_LOST 줄의 값이다
 //     repo 는 작업 디렉터리의 주 checkout, base 는 그 저장소의 origin/HEAD 브랜치(없으면 빈 문자열), run 은 --run 이다.
 //
@@ -129,10 +131,11 @@
 
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { linkBoardPr } from './lib/board.ts'
 import { classify, context, payload } from './lib/completion.ts'
 import { fire, handlerFile } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
@@ -140,7 +143,7 @@ import { ghJson } from './lib/gh.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { isRegistered, loopStatus, readEvents, readLoop, recheckMs, writeCursor } from './lib/loop.ts'
 import { orcaBin, orcaJson } from './lib/orca.ts'
-import { makeParent, pathOf, warnLegacy } from './lib/paths.ts'
+import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
 import { pyJson, pyStr as text } from './lib/py.ts'
 
@@ -659,7 +662,7 @@ async function notify(event: string, input: Json, runId: string): Promise<void> 
   }
 }
 
-// 핸들러가 있는지(lib/events.ts 의 handlerFile). 없으면 fire 가 입력을 쓰지 않으므로 gh 조회를 건너뛴다.
+// 핸들러가 있는지(lib/events.ts 의 handlerFile). 핸들러도 보드도 없으면 gh 조회를 건너뛴다.
 // worker_done 마다 GitHub 를 부르지 않게 한다
 function hasHandler(event: string, runId: string): boolean {
   return handlerFile(event, contextFor(runId).repo) !== null
@@ -682,21 +685,37 @@ function prOf(number: unknown, repo: string): Json | null {
   }
 }
 
+// 준비됨 worker_done 의 PR 로 보드 항목의 빈 pr 칸을 채우고(lib/board.ts 의 linkBoardPr) worker-done 을 낸다.
+// 보드를 고치지 못해도 종료 코드는 바꾸지 않고 stderr 에 한 줄 남긴다
 async function workerDone(messages: Json[], runId: string): Promise<void> {
-  if (!hasHandler('worker-done', runId)) return
+  const handler = hasHandler('worker-done', runId)
+  const repo = contextFor(runId).repo
+  const board = boardPath(repo)
+  const hasBoard = existsSync(board)
+  if (!handler && !hasBoard) return
   for (const message of messages) {
     if (message.type !== 'worker_done' && message.originalType !== 'worker_done') continue
     const verified = obj(message.completionVerification)
     if (verified.status !== 'ready' && verified.status !== 'suspicious') continue
     const [task, dispatch] = context(message)
     const ready = verified.status === 'ready'
+    const pr = ready ? prOf(verified.pr, repo) : null
+    if (pr && hasBoard && typeof pr.branch === 'string') {
+      try {
+        const id = linkBoardPr(board, String(pr.number), pr.branch)
+        if (id) err(`wait-important: 보드 ${id} 의 pr 칸을 ${pr.number} 로 채웠다`)
+      } catch (e) {
+        err(`wait-important: 보드 pr 칸을 채우지 못했다: ${(e as Error)?.message ?? String(e)}`)
+      }
+    }
+    if (!handler) continue
     await notify(
       'worker-done',
       {
         worker: { task, dispatch, terminal: message.from_handle || message.fromHandle || null, worktree: null, spec: null },
         outcome: message.outcome || payload(message).outcome || null,
         evidence: ready ? 'ready' : 'suspicious',
-        pr: ready ? prOf(verified.pr, contextFor(runId).repo) : null,
+        pr,
       },
       runId,
     )

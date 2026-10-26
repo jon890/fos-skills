@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -15,11 +15,20 @@ import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 const SCRIPT = fileURLToPath(new URL('../scripts/board-sync.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../scripts/board-sync.py', import.meta.url))
 
+// 마지막 PR 판정의 조회: \`pr view N --json title,headRefName\` 은 state['info:N'], 열린 PR 목록(\`--json number,title\`)은 state.open,
+// \`--head B\` 목록은 state.list 에서 그 브랜치의 행만 낸다
 const FAKE_GH = `const fs = require('node:fs')
 const state = JSON.parse(fs.readFileSync('state.json', 'utf8'))
 const args = process.argv.slice(2)
-if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) fs.writeSync(1, state[args[2]] + '\\n')
-else if (args[1] === 'list') fs.writeSync(1, JSON.stringify(state.list || []) + '\\n')
+const say = (value) => fs.writeSync(1, (typeof value === 'string' ? value : JSON.stringify(value)) + '\\n')
+const head = args.includes('--head') ? args[args.indexOf('--head') + 1] : null
+if (args[1] === 'view' && args.includes('title,headRefName')) {
+  if (!state['info:' + args[2]]) process.exit(1)
+  say(state['info:' + args[2]])
+} else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
+else if (args[1] === 'list' && args.includes('number,title')) say(state.open || [])
+else if (args[1] === 'list' && head !== null) say((state.list || []).filter((pr) => pr.headRefName === head))
+else if (args[1] === 'list') say(state.list || [])
 else process.exit(1)
 `
 
@@ -35,7 +44,7 @@ after(() => rmSync(bindir, { recursive: true, force: true }))
 
 let tmp: string
 let board: string
-let states: Record<string, string>
+let states: Record<string, unknown>
 beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'board-sync-')))
   board = join(tmp, 'board.json')
@@ -261,4 +270,70 @@ test('저장한 branch 가 없어도 실제 worktree 브랜치로 PR 을 연결�
   assert.equal(r.code, 0, r.result.stderr)
   assert.equal(r.board.a.pr, 9)
   assert.equal(r.board.a.branch, 'feat/a')
+})
+
+describe('board-sync 마지막 PR 판정', () => {
+  // finish 절의 판정 규칙을 둔다. 지시서 폴더는 tmp/specs 다
+  function rules(): void {
+    mkdirSync(join(tmp, '.orch'), { recursive: true })
+    mkdirSync(join(tmp, 'specs'), { recursive: true })
+    writeFileSync(
+      join(tmp, '.orch', 'config.json'),
+      JSON.stringify({ finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]', spec_task_pattern: '^업무: (PROJ-[0-9]+)', specs_dir: 'specs' } }),
+    )
+  }
+
+  test('마지막 PR 이면 남은 단계가 여럿이어도 끝내고 done 으로 바꾼다', () => {
+    rules()
+    states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 마무리', headRefName: 'feat/b' }
+    states.open = [{ number: 8, title: '[PROJ-2] 다른 업무' }]
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. PR #7', '2. dev 확인', '3. 문서'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual(r.board.a.details, [step('1. PR #7', true), step('2. dev 확인', true), step('3. 문서', true)])
+    assert.match(r.result.stdout, /a 마지막 PR 판정: 마지막\(업무 PROJ-1, 남은 PR 없음, 남은 지시서 없음\)/)
+  })
+
+  test('같은 업무의 열린 PR 이나 지시서가 남으면 그 PR 단계만 끝내고 남은 일을 적는다', () => {
+    rules()
+    writeFileSync(join(tmp, 'specs', 'spec-c.md'), '# c\n업무: PROJ-1\n브랜치: `feat/c`\n')
+    states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 앞부분', headRefName: 'feat/b' }
+    states.open = [{ number: 9, title: '[PROJ-1] 뒷부분' }]
+    const r = sync([{ id: 'a', status: 'doing', pr: '7', details: ['1. PR #7', '2. 마무리', '남은 일: 옛 줄'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.a.pr, undefined)
+    assert.equal(r.board.a['merged-pr'], 7)
+    assert.deepEqual(r.board.a.details, [step('1. PR #7', true), step('2. 마무리', false), step('남은 일: PR #9, 지시서 spec-c.md', false)])
+  })
+
+  test('남은 단계가 하나여도 중간 PR 이면 done 으로 바꾸지 않는다', () => {
+    rules()
+    states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 앞부분', headRefName: 'feat/b' }
+    states.open = [{ number: 9, title: '[PROJ-1] 뒷부분' }]
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual(r.board.a.details, [step('1. 구현', false), step('남은 일: PR #9', false)])
+  })
+
+  test('판정하지 못하면 단계 수로 정한다', () => {
+    rules()
+    states['7'] = 'MERGED'
+    states['info:7'] = { title: '업무 번호 없는 제목', headRefName: 'feat/b' }
+    const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.match(r.result.stdout, /단계 수로 정함\(판정하지 못했다: PR 제목에서 업무 번호를 찾지 못했다/)
+  })
+
+  test('done 과 goal 이 아닌 항목이면 wait 이어도 같은 브랜치의 열린 PR 을 연결한다', () => {
+    states['9'] = 'OPEN'
+    const r = sync([{ id: 'a', status: 'wait', branch: 'feat/a' }], ['--open-prs', JSON.stringify([{ number: 9, headRefName: 'feat/a' }])])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.pr, 9)
+  })
 })

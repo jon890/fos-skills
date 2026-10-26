@@ -3,9 +3,13 @@
 // 하위 줄은 코디네이터가 쓰는 번호 붙은 단계만 둔다. 이 스크립트는 상태 줄을 쓰지 않는다.
 // PR 상태나 커밋 같은 자동 줄은 읽기 어렵고 단계와 섞여 보드를 흐린다(사용자 요청).
 //
-//     - pr 칸의 PR 이 MERGED 이고 끝나지 않은 단계가 1개 이하면 남은 단계를 끝내고 항목을 done 으로 바꾼다
-//     - MERGED 여도 끝나지 않은 단계가 2개 이상이면 done 으로 바꾸지 않는다. 그 PR 번호(#N)가 적힌 단계만
-//       끝내고 pr 칸을 비운다. 머지 뒤 검증이나 후속 PR 이 남은 항목을 끝난 것으로 보지 않기 위해서다
+//     - pr 칸의 PR 이 MERGED 면 업무의 마지막 PR 인지 판정한다(lib/last-pr.ts 의 judgeLastPr, 규칙은 config.json 의 finish 절
+//       task_pattern, spec_task_pattern, specs_dir). 마지막이면 남은 단계를 끝내고 항목을 done 으로 바꾼다.
+//       중간이면 그 PR 번호(#N)가 적힌 단계만 끝내고 pr 칸을 비우고, 하위 항목에 `남은 일: PR #31 #33, 지시서 spec-b.md` 한 줄을 둔다.
+//       그 줄은 단계 줄이 아니라 진행률에 세지 않고, 다음 판정 때 새 줄로 바꾼다
+//     - 판정하지 못하면(task_pattern 이 없다 같은 것) 단계 수로 정한다. 끝나지 않은 단계가 1개 이하면 남은 단계를 끝내고
+//       done 으로 바꾸고, 2개 이상이면 그 PR 번호가 적힌 단계만 끝내고 pr 칸을 비운다. 머지 뒤 검증이나 후속 PR 이 남은 항목을
+//       끝난 것으로 보지 않기 위해서다. finish 절이 틀렸으면 stderr 에 한 줄 남기고 단계 수로 정한다
 //     - 단계 줄 판정과 끝내기는 보드 명령에 맡긴다. `steps` 로 단계 목록을 받고 `step <id> <n>` 으로 끝낸다.
 //       단계 줄 판정은 이 스크립트에서 하지 않는다. 옛 자동 줄을 지울 때만 완료 값을 CLI 입력 표시로 전달한다
 //     - 예전 버전이 남긴 「자동: 」 줄은 지운다
@@ -24,7 +28,7 @@
 //     --dry-run     보드를 고치지 않고 바뀔 항목과 부를 보드 명령만 낸다. 단계 목록은 읽는다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
-// doing 항목의 pr 칸이 비었으면 worktree 브랜치(없으면 저장한 branch)로 PR 을 연결한다.
+// done, goal 이 아닌 항목의 pr 칸이 비었으면 worktree 브랜치(없으면 저장한 branch)로 PR 을 연결한다.
 // 후속 단계가 남아 비운 머지 PR 은 merged-pr 에 기록해 다시 연결하지 않는다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
@@ -35,6 +39,10 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { ConfigError, loadConfig, section } from './lib/config.ts'
+import { FINISH_KEYS } from './lib/finish-options.ts'
+import { judgeLastPr, rulesFrom } from './lib/last-pr.ts'
+import type { LastPrRules, LastPrVerdict } from './lib/last-pr.ts'
 import { worktreePaths } from './lib/workers.ts'
 import { gh, ghJson } from './lib/gh.ts'
 import { boardPath } from './lib/paths.ts'
@@ -44,6 +52,9 @@ import { pyStr } from './lib/py.ts'
 const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--goal GOAL_ID [--goal-items FILE]] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const LEGACY_AUTO = '자동: '
+const NOTE = '남은 일: '
+// 단계 줄. work-board/bin/board.ts 의 STEP 과 같은 규칙이다
+const STEP = /^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s/
 const SKIP_STATUS = new Set(['done', 'goal'])
 
 const OPTIONS = {
@@ -100,15 +111,42 @@ function boardSteps(boardBin: string, itemId: string, board: string): Step[] | n
   }
 }
 
-// 끝낼 단계 번호 목록과 항목을 끝내는지.
-function finishPlan(steps: Step[], pr: unknown): { numbers: number[]; finish: boolean } {
+// 끝낼 단계 번호 목록과 항목을 끝내는지. last 는 마지막 PR 판정이고 null 이면 단계 수로 정한다
+function finishPlan(steps: Step[], pr: unknown, last: boolean | null): { numbers: number[]; finish: boolean } {
   const left = steps.filter((step) => !step.done)
-  if (left.length > 1) {
+  if (last === false || (last === null && left.length > 1)) {
     const num = prNumber(pr)
     const pattern = num ? new RegExp(`#${num}(?!\\d)`) : null
     return { numbers: left.filter((step) => pattern?.test(step.text)).map((step) => step.number), finish: false }
   }
   return { numbers: left.map((step) => step.number), finish: true }
+}
+
+// finish 절의 판정 규칙. 설정이 틀리면 알리고 null 이다(단계 수로 정한다)
+function lastPrRules(repo: string): LastPrRules | null {
+  try {
+    return rulesFrom(section<Record<string, unknown>>(loadConfig(repo), 'finish', FINISH_KEYS), repo)
+  } catch (e) {
+    if (!(e instanceof ConfigError) && !(e instanceof Error)) throw e
+    err(`board-sync: 마지막 PR 판정 규칙을 읽지 못해 단계 수로 정한다: ${(e as Error).message}`)
+    return null
+  }
+}
+
+// 머지한 PR 의 제목과 브랜치로 마지막 PR 인지 판정한다. 규칙이 없거나 PR 을 읽지 못하면 last 가 null 이다
+function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerdict | null {
+  if (!rules?.taskPattern) return null
+  const got = ghJson<{ title?: unknown; headRefName?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName'], { cwd: repo })
+  if (!got.ok || typeof got.data !== 'object' || got.data === null) return null
+  const title = typeof got.data.title === 'string' ? got.data.title : ''
+  const branch = typeof got.data.headRefName === 'string' ? got.data.headRefName : ''
+  return judgeLastPr(repo, { number: num, title, branch }, rules)
+}
+
+// 중간 PR 판정의 남은 일 줄. 남은 것이 없으면 null
+function noteLine(verdict: LastPrVerdict): string | null {
+  const parts = [verdict.prs.length > 0 ? `PR ${verdict.prs.join(' ')}` : '', verdict.specs.length > 0 ? `지시서 ${verdict.specs.join(' ')}` : ''].filter(Boolean)
+  return parts.length > 0 ? NOTE + parts.join(', ') : null
 }
 
 // CLI 입력으로 돌려줄 때 완료 값을 옛 입력 표시로 전달한다.
@@ -160,6 +198,7 @@ function main(argv: string[]): number {
     }
   }
   const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
+  let rules: LastPrRules | null | undefined
   const changed: string[] = []
   for (const item of items) {
     if (SKIP_STATUS.has(String(item.status))) continue
@@ -167,7 +206,7 @@ function main(argv: string[]): number {
     const cmds: string[][] = []
     let discovered: Pr | undefined
     const branch = branches.get(String(item.worktree)) || String(item.branch || '')
-    if (item.status === 'doing' && !item.pr && branch) {
+    if (!item.pr && branch) {
       if (open === null) {
         const got = ghJson<Pr[]>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,headRefName'], { cwd: repo })
         open = got.ok && Array.isArray(got.data) ? got.data : []
@@ -179,7 +218,7 @@ function main(argv: string[]): number {
       }
       if (discovered?.state === 'MERGED' && String(discovered.number) === prNumber(item['merged-pr'])) discovered = undefined
       if (discovered) {
-        item.pr = `#${discovered.number}`
+        item.pr = String(discovered.number)
         cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch])
       }
     }
@@ -195,9 +234,25 @@ function main(argv: string[]): number {
         err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
         return 1
       }
-      const plan = finishPlan(steps, item.pr)
+      if (rules === undefined) rules = lastPrRules(repo)
+      const verdict = judge(repo, prNumber(item.pr), rules)
+      if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${verdict.last === null ? '단계 수로 정함' : verdict.last ? '마지막' : '중간'}(${verdict.reason})`)
+      const plan = finishPlan(steps, item.pr, verdict?.last ?? null)
       finish = plan.finish
       cmds.push(...plan.numbers.map((n) => ['step', id, String(n)]))
+      const note = verdict?.last === false ? noteLine(verdict) : null
+      if (note) {
+        // 하위 항목 전체를 다시 쓰므로 위에서 끝낸 하위 단계도 끝낸 것으로 적는다
+        const stepped = new Set(plan.numbers)
+        const fromDetails = kept.some((d) => STEP.test(textOf(d)))
+        const lines = kept
+          .filter((d) => !textOf(d).startsWith(NOTE))
+          .map((d) => {
+            const n = Number(STEP.exec(textOf(d))?.[2])
+            return fromDetails && stepped.has(n) ? { text: textOf(d).replace(/^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/, ''), done: true } : d
+          })
+        cmds.push(['set', id, ...[...lines, note].flatMap((d) => ['--detail', detailArgument(d)])])
+      }
       cmds.push(finish ? ['set', id, 'done'] : ['set', id, '--pr', '', '--merged-pr', prNumber(item.pr)])
     }
     changed.push(id)
