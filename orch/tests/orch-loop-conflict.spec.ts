@@ -290,13 +290,14 @@ describe('끝난 dispatch', () => {
   test('후속 지시서를 써서 --spec 으로 보내고 resumed 로 기록한다', () => {
     const path = setupConflict('completed')
     once()
-    const name = `spec-conflict-7-${baseSha().slice(0, 8)}.md`
-    const spec = orchFile('specs', name)
+    const spec = orchFile('specs', 'spec-conflict-7.md')
     assert.deepEqual(
       readdirSync(orchFile('specs')).filter((file) => file.startsWith('spec-conflict-')),
-      [name],
+      ['spec-conflict-7.md'],
     )
-    assert.match(readFileSync(spec, 'utf8'), /^- a\.txt$/m)
+    const text = readFileSync(spec, 'utf8')
+    assert.match(text, /^중간 과정: PR #7$/m)
+    assert.match(text, /^- a\.txt$/m)
     assert.deepEqual(sends(), [['--dispatch', 'd1', '--spec', spec, '--run', 'r']])
     const [input] = hookInputs()
     assert.equal(input.action, 'resumed')
