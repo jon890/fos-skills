@@ -166,6 +166,18 @@ export function detailArgs(details: BoardDetail[]): string[] {
   return details.flatMap((d) => ['--detail', typeof d === 'string' ? d : (d.done === true ? '✓ ' : '') + d.text])
 }
 
+// 보드 명령(board.ts steps)이 판정한 단계 목록. 읽지 못하면 null 이다
+export function boardSteps(bin: string, id: string, file: string): BoardStep[] | null {
+  const done = run(scriptCommand(bin, ['steps', id, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  if (done.code !== 0) return null
+  try {
+    const steps: unknown = JSON.parse(done.stdout)
+    return Array.isArray(steps) ? (steps as BoardStep[]) : null
+  } catch {
+    return null
+  }
+}
+
 // 남은 일 줄. 남은 PR 도 지시서도 없으면 null
 export function noteLine(prs: string[], specs: string[]): string | null {
   const parts = [prs.length > 0 ? `PR ${prs.join(' ')}` : '', specs.length > 0 ? `지시서 ${specs.join(' ')}` : ''].filter(Boolean)

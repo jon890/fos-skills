@@ -60,7 +60,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
-import { detailArgs, detailText as textOf, noteLine, prNumbers, prSteps, withNote } from './lib/board.ts'
+import { boardSteps, detailArgs, detailText as textOf, noteLine, prNumbers, prSteps, withNote } from './lib/board.ts'
 import type { BoardDetail as Detail } from './lib/board.ts'
 import { deployVerdict, parseRuns } from './lib/deploy.ts'
 import type { DeployVerdict, RunRow } from './lib/deploy.ts'
@@ -91,8 +91,6 @@ const OPTIONS = {
   'dry-run': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 } as const
-
-type Step = { number: number; done: boolean; text: string }
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`)
@@ -137,18 +135,6 @@ function deployedNow(repo: string, num: string, deploy: { workflow: string; bran
     cache.runs = runs.code === 0 ? parseRuns(runs.stdout) : []
   }
   return deployVerdict(cache.runs, oid, (ancestor, sha) => git(repo, ['merge-base', '--is-ancestor', ancestor, sha]).code === 0).verdict
-}
-
-// 보드 명령이 판정한 단계 목록. 읽지 못하면 null.
-function boardSteps(boardBin: string, itemId: string, board: string): Step[] | null {
-  const done = run(scriptCommand(boardBin, ['steps', itemId, '--file', board]), { timeoutMs: NO_LIMIT_MS })
-  if (done.code !== 0) return null
-  try {
-    const steps: unknown = JSON.parse(done.stdout)
-    return Array.isArray(steps) ? (steps as Step[]) : null
-  } catch {
-    return null
-  }
 }
 
 // finish 절의 판정 규칙. 설정이 틀리면 알리고 null 이다(단계 수로 정한다)
