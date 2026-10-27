@@ -14,8 +14,6 @@
     "./orch",
     "./planning",
     "./pr-review",
-    "./review-fix",
-    "./work-board/board-decide",
-    "./work-board/board-start"
+    "./review-fix"
   ]
 }
