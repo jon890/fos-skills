@@ -305,6 +305,20 @@ describe('set', () => {
     }
   })
 
+  test('--stages 는 사건과 단계 번호의 짝만 받고 빈 값은 칸을 지운다', () => {
+    write({ id: 'a', status: 'wait' })
+    assert.equal(board('set', 'a', '--stages', 'pr=1,merge=2,deploy=3,release=4').code, 0)
+    assert.equal(item('a').stages, 'pr=1,merge=2,deploy=3,release=4')
+    for (const bad of ['qa=1', 'pr=x', 'pr=1;merge=2']) {
+      const r = board('set', 'a', '--stages', bad)
+      assert.equal(r.code, 1, bad)
+      assert.ok(r.stderr.includes('--stages'), r.stderr)
+    }
+    assert.equal(item('a').stages, 'pr=1,merge=2,deploy=3,release=4')
+    assert.equal(board('set', 'a', '--stages', '').code, 0)
+    assert.equal('stages' in item('a'), false)
+  })
+
   test('id 는 타입까지 같을 때만 맞는다', () => {
     write({ id: 1, status: 'wait', title: '숫자 id' })
     const r = board('steps', '1')
