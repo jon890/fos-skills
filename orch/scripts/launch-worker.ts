@@ -435,7 +435,7 @@ async function main(argv: string[]): Promise<number> {
     // worker-show 결과의 터미널 키는 send-to-worker 가 읽는 키와 같다.
     const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || passValue(passthru, '--terminal')
     try {
-      recordLaunch(repo, { dispatch, terminal: terminal || null, worktree, run: a.run || null })
+      recordLaunch(repo, { dispatch, task: task || null, terminal: terminal || null, worktree, run: a.run || null, spec: resolve(a.spec) })
     } catch (e) {
       err(`launch-worker: 띄운 worker 를 기록하지 못했다. cleanup-sweep 이 이 터미널을 코디네이터의 것으로 알아보지 못한다: ${(e as Error).message}`)
     }
