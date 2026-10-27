@@ -20,11 +20,13 @@
 //        거부만 보고 실패를 지나치면 죽은 핸들러가 막으려던 띄우기를 하게 된다(docs/flow.md 「갈래」 의 「거부처럼 멈춘다」)
 //     4. `orca worktree list` 에 그 경로가 보일 때까지 기다린다
 //     5. worker-start 로 띄우고 --watch 초 동안 단계를 본다
+//        실패하면 출력의 error 를 `worker-start 오류: <code>: <message>` 한 줄로 낸다
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
 //        기록 실패는 stderr 로만 알리고 LAUNCHED 와 종료 코드는 유지한다.
 //        보드가 있으면 지시서의 항목 id, 제목과 마일스톤 단계(lib/milestones.ts)로 doing 항목을 갱신한다. 실패는 stderr 로 알리고 LAUNCHED 는 유지한다.
+//        설정이 보드를 가리키는데 파일이 없으면 그 사실을 알린다.
 //        핸들러의 실패와 이벤트 실행기의 예외(설정 파일 오류, state 폴더를 쓰지 못함 같은 것)가 모두 그렇다.
 //        stderr 에 `worker-launched 를 내지 못했다: <이유>` 를 남긴다. worker 가 이미 떠 있어 코디네이터는 LAUNCHED 를 믿고 다음 단계로 가야 한다
 //     새로 만든 워크트리는 띄우지 못하고 멈춰도 남긴다. 지시서의 브랜치 이름을 다시 쓸 때 사람이 판단할 근거라서다.
@@ -128,6 +130,21 @@ function jget(text: string, keys: string): string {
     if (value !== undefined && value !== null && value !== '') return typeof value === 'string' ? value : JSON.stringify(value)
   }
   return ''
+}
+
+// worker-start 출력에서 오류를 `code: message` 한 줄로 뽑는다. 못 찾으면 빈 문자열이다
+function startError(text: string): string {
+  let parsed: { error?: unknown; result?: { error?: unknown } }
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return ''
+  }
+  const found = parsed?.error ?? parsed?.result?.error
+  if (typeof found === 'string') return found
+  if (typeof found !== 'object' || found === null) return ''
+  const { code, message } = found as { code?: unknown; message?: unknown }
+  return [code, message].filter((part) => typeof part === 'string' && part).join(': ')
 }
 
 // WORKER_ARGS 에서 옵션의 값. 없거나 값이 빠졌으면 null.
@@ -380,6 +397,8 @@ async function main(argv: string[]): Promise<number> {
       if (output.includes('agent-hooks-review-prompt')) {
         err('Codex 설치본에 .codex-plugin 이 없는 옛 버전이다: codex plugin marketplace upgrade fos-skills (docs/adr/007)')
       }
+      const reason = startError(result.stdout)
+      if (reason) err(`worker-start 오류: ${reason}`)
       err(`worker-start 가 종료 코드 ${result.code} 로 끝났다. launch.md 의 「첫 화면에서 멈춤」 과 「시작 직후 실패」 를 본다`)
       return 1
     }
@@ -402,7 +421,11 @@ async function main(argv: string[]): Promise<number> {
       if ((await call(['orchestration', 'worker-abandon', '--dispatch', dispatch, '--json'])).code !== 0) return 1
       out(`${dispatch} 를 abandon 하고 같은 Task 를 path:${worktree} 로 다시 띄운다`)
       result = await start([...runArgs, '--task', task, '--retry-of', dispatch, '--worktree', `path:${worktree}`, ...passthru])
-      if (result.code !== 0) return 1
+      if (result.code !== 0) {
+        const reason = startError(result.stdout)
+        err(`다시 띄운 worker-start 가 종료 코드 ${result.code} 로 끝났다${reason ? `: ${reason}` : ''}`)
+        return 1
+      }
       dispatch = jget(result.stdout, DISPATCH_KEYS)
       task = jget(result.stdout, TASK_KEYS) || task
       if (!dispatch || !(await watch(dispatch))) return 1
