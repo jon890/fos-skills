@@ -76,10 +76,14 @@
 //                         예전 방식의 브랜치 보호 규칙은 규칙 조회에 나오지 않으므로 이 옵션으로 준다.
 //                         무료 플랜의 비공개 저장소는 규칙 API 가 403(플랜 제한)을 내는데, 이때는 경고를 찍고 목록을 빈 것으로 다룬다.
 //                         인증, 네트워크, 404 는 멈춘다
+//   --required-check NAME 필수 체크 이름 하나를 쉼표로 나누지 않고 받는다. 여러 번 줄 수 있고 --required 와 함께 쓰면 이어 붙는다.
+//                         GitHub Actions 의 job 이름에는 `Lint, Test & Build` 처럼 쉼표가 흔하다.
+//                         `--required "Lint, Test & Build"` 는 `Lint` 와 ` Test & Build` 두 이름으로 나뉘어, 생기지 않는 체크를 기다리게 된다
 //   --allow-fail A,B      실패해도 멈추지 않을 비필수 체크 이름. 실패한 체크마다 `경고: PR 실패를 허용한 체크 이름` 을
 //                         찍고 머지한다. 코드와 무관한 이유(사용량 한도, 외부 장애)로 실패했고 그 대신 할 검증을
 //                         끝냈을 때만 쓴다. 진행 중인 체크는 이 옵션과 상관없이 끝날 때까지 기다린다.
 //                         필수 체크(--required 나 저장소 규칙)에 든 이름은 허용할 수 없다
+//   --allow-fail-check NAME  --allow-fail 의 이름 하나를 쉼표로 나누지 않고 받는다. 여러 번 줄 수 있다
 //   --require-up-to-date  머지 전에 PR 이 base 최신을 품지 않으면 update-branch 로 base 를 merge 하고
 //                         필수 체크를 다시 기다린 뒤 머지한다. 기본은 끔. 필수 체크 목록이 있어야 켤 수 있다
 //   --up-to-date-when W   --require-up-to-date 가 base 를 merge 하는 때. always(기본, 뒤처졌으면 늘) 또는 overlap.
@@ -171,7 +175,7 @@ import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
-import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
+import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, parseNames, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
 import { groupMap, isDoc } from './lib/overlap.ts'
 import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
@@ -219,8 +223,8 @@ type Options = {
   method: string
   threadsCmd: string
   checkTimeout: string
-  required: string
-  allowFail: string
+  required: string[]
+  allowFail: string[]
   upToDate: boolean
   upToDateWhen: string
   sharedPaths: string
@@ -291,9 +295,14 @@ function stop(message: string): never {
   throw new Stop(message)
 }
 
-// 쉼표로 이은 이름을 jq 배열 리터럴로 바꾼다
-function namesJson(names: string): string {
-  return pyJson(names.split(',').filter((x) => x))
+// 이름 목록을 jq 배열 리터럴로 바꾼다
+function namesJson(names: readonly string[]): string {
+  return pyJson(names)
+}
+
+// `--required A,B` 처럼 쉼표로 이은 값을 이름으로 나눈다. 쉼표가 든 이름 하나는 나누지 않는 `--required-check` 로 받는다
+function splitNames(value: string): string[] {
+  return value.split(',').filter((x) => x)
 }
 
 function isDigits(text: string): boolean {
@@ -329,8 +338,8 @@ function parseArgs(argv: string[]): Options {
     method: 'merge',
     threadsCmd: '',
     checkTimeout: '60',
-    required: '',
-    allowFail: '',
+    required: [],
+    allowFail: [],
     upToDate: false,
     upToDateWhen: 'always',
     sharedPaths: '',
@@ -365,8 +374,10 @@ function parseArgs(argv: string[]): Options {
       else if (arg === '--method') o.method = value
       else if (arg === '--threads-cmd') o.threadsCmd = value
       else if (arg === '--check-timeout') o.checkTimeout = value
-      else if (arg === '--required') o.required = value
-      else if (arg === '--allow-fail') o.allowFail = value
+      else if (arg === '--required') o.required.push(...splitNames(value))
+      else if (arg === '--required-check') o.required.push(value)
+      else if (arg === '--allow-fail') o.allowFail.push(...splitNames(value))
+      else if (arg === '--allow-fail-check') o.allowFail.push(value)
       else if (arg === '--up-to-date-when') o.upToDateWhen = value
       else if (arg === '--shared-paths') o.sharedPaths = value
       else if (arg === '--unit-prefix') o.unitPrefix = value
@@ -410,11 +421,10 @@ function validate(o: Options): Options {
   }
   // --verify-merged 와 --after-merged 가 있어야 하는 옵션은 핸들러 파일도 봐야 해서 Queue.preflight 가 본다
   if (o.updateDocs && !o.docsGlob) throw new Usage('--update-docs-on-overlap 은 --docs-glob 이 필요하다')
-  if (/["\\]/.test(o.required)) throw new Usage('--required 에 따옴표나 역슬래시를 넣을 수 없다')
-  if (/["\\]/.test(o.allowFail)) throw new Usage('--allow-fail 에 따옴표나 역슬래시를 넣을 수 없다')
-  const required = o.required.split(',')
-  for (const name of o.allowFail.split(',')) {
-    if (name && required.includes(name)) {
+  if (o.required.some((name) => /["\\]/.test(name))) throw new Usage('--required 에 따옴표나 역슬래시를 넣을 수 없다')
+  if (o.allowFail.some((name) => /["\\]/.test(name))) throw new Usage('--allow-fail 에 따옴표나 역슬래시를 넣을 수 없다')
+  for (const name of o.allowFail) {
+    if (o.required.includes(name)) {
       throw new Usage(`--allow-fail 의 ${name} 는 --required 에도 있다. 필수 체크의 실패는 허용할 수 없다`)
     }
   }
@@ -848,9 +858,8 @@ class Queue {
     this.sweepBase = p.base
 
     const req = this.requiredChecks()
-    const reqNames = req.split(',')
-    for (const name of o.allowFail.split(',')) {
-      if (name && reqNames.includes(name)) stop(`${n} --allow-fail 의 ${name} 는 필수 체크다. 필수 체크의 실패는 허용할 수 없다`)
+    for (const name of o.allowFail) {
+      if (req.includes(name)) stop(`${n} --allow-fail 의 ${name} 는 필수 체크다. 필수 체크의 실패는 허용할 수 없다`)
     }
     const roll = o.skippedMissing ? ROLL_NAMES_NO_SKIPPED : ROLL_NAMES
     const allowed = `(.name // .context) as $nm | (${namesJson(o.allowFail)} | any(. == $nm))`
@@ -1004,23 +1013,23 @@ class Queue {
     return sha
   }
 
-  requiredChecks(): string {
+  requiredChecks(): string[] {
     const o = this.o
     const p = this.p
     let req = o.required
-    if (!req) {
+    if (req.length === 0) {
       const done = this.api(`repos/${p.owner}/${p.repo}/rules/branches/${p.base}`, '--jq', RULES_JQ)
       if (done.code === 0) {
-        req = chomp(done.stdout)
+        req = parseNames(chomp(done.stdout))
       } else if (rulesPlanLimited(done.stderr)) {
         // 무료 플랜의 비공개 저장소는 규칙 API 를 읽을 수 없다. 필수 체크 목록이 없는 것으로 다룬다
         log(`${p.n} 경고: 이 플랜은 저장소 규칙을 읽을 수 없다(HTTP 403, 플랜 제한). 필수 체크 목록을 비어 있는 것으로 본다`)
-        req = ''
+        req = []
       } else {
         stop(`${p.n} 필수 체크 규칙 조회 실패. --required 로 준다`)
       }
     }
-    if (!req) {
+    if (req.length === 0) {
       if (o.upToDate) stop(`${p.n} 필수 체크 목록이 비어 있어 --require-up-to-date 를 쓸 수 없다. --required 로 준다`)
       if (o.updateDocs) stop(`${p.n} 문서 PR 갱신에는 필수 체크 목록이 필요하다. --required 로 준다`)
       log(`${p.n} 필수 체크 목록이 비어 있다. 지금 있는 체크만 기다린다`)
