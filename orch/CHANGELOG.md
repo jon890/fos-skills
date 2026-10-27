@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.7.1 (2026-10-27)
+
+- 끝난 dispatch 의 question 과 escalation 에도 `send-to-worker` 가 답을 단다. `--reply-to` 를 주거나, 없으면 미답변 메시지 중 마지막에 답하고, 깨우지 않으며 `--spec` 이 없으면 0 으로 끝난다
+- 답을 `--from run:<run>` 으로 달아 `orch-doctor` 의 `UNANSWERED` 와 루프의 `REMINDER` 가 남지 않는다
+
 ## 4.7.0 (2026-10-27)
 
 - 머지 큐에 `--required-check NAME` 과 `--allow-fail-check NAME` 을 더했다. 쉼표가 든 체크 이름을 나누지 않고 받는다
