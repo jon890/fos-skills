@@ -193,7 +193,7 @@ function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[
     ...Object.entries(opts.views ?? {}).map(([n, view]) => ({ args: ['pr', 'view', n], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [], ...view })}\n` })),
     { args: ['pr', 'view'], stdout: `${JSON.stringify({ reviews: [], comments: [], files: [] })}\n` },
     { args: ['api', 'user'], stdout: 'me\n' },
-    { stdout: 'test\n', ...opts.rules, args: [RULES_PATH] },
+    { stdout: '["test"]\n', ...opts.rules, args: [RULES_PATH] },
   ])
 }
 

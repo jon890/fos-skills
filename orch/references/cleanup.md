@@ -114,6 +114,11 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/ci-ready.ts" --re
 
 `보류` 줄의 PR 은 겹친 PR 이 머지된 뒤 다시 돌린다. base 와 충돌하는 PR 은 그 worker 에게 base 를 합치게 한다.
 
+### 쉼표가 든 체크 이름
+
+`--required` 는 값을 쉼표로 나눈다. `Lint, Test & Build` 처럼 쉼표가 든 이름은 `--required-check "Lint, Test & Build"` 로 준다(여러 번 줄 수 있고 `--allow-fail-check` 도 같다).
+이름이 틀려 필수 체크가 나타나지 않으면 `--missing-timeout`(기본 5분) 뒤에 나타나지 않은 이름과 PR 에 붙은 체크 이름을 찍고 멈춘다.
+
 ### 실패를 허용하는 체크
 
 **`--allow-fail A,B` 는 필수가 아닌 체크가 코드와 무관한 이유로 실패했고, 그 대신 할 검증을 끝냈을 때만 쓴다.**

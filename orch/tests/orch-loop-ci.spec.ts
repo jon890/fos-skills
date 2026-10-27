@@ -155,7 +155,7 @@ function pr(number: number, rollup: Json[], extra: Json = {}): Json {
 }
 
 // 이번 실행의 gh 답. rules 는 저장소 규칙 API 의 답이다(기본은 필수 체크 test 하나)
-function github(rows: Json[], rules: FakeRule = { stdout: 'test\n' }, listCode = 0): void {
+function github(rows: Json[], rules: FakeRule = { stdout: '["test"]\n' }, listCode = 0): void {
   gh.setRules([
     { args: ['pr', 'list', '--base'], stdout: '[]\n' },
     { args: ['pr', 'list'], stdout: `${JSON.stringify(rows)}\n`, stderr: listCode ? 'gh offline\n' : '', code: listCode },
@@ -319,7 +319,7 @@ describe('알림 한 번', () => {
   })
 
   test('필수 체크 하나가 아직 나타나지 않았으면 이벤트가 없다', () => {
-    github([pr(1, [check('test', 'SUCCESS')])], { stdout: 'lint,test\n' })
+    github([pr(1, [check('test', 'SUCCESS')])], { stdout: '["lint","test"]\n' })
     once()
     assert.deepEqual(received('ci-passed'), [])
     assert.deepEqual(received('ci-failed'), [])
@@ -383,7 +383,7 @@ describe('필수 체크 이름', () => {
     assert.equal(errors.length, 1, JSON.stringify(events()))
     assert.match(String(errors[0].text), /^ci: main 의 필수 체크 규칙을 읽지 못했다: .*HTTP 502/)
     // 열린 PR 을 읽지 못한 틱도 이전 값을 둔다
-    github([], { stdout: 'test\n' }, 1)
+    github([], { stdout: '["test"]\n' }, 1)
     once()
     assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'failed' } })
     github([pr(1, [check('test', 'FAILURE')])])

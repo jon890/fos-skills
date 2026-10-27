@@ -265,7 +265,7 @@ describe('requiredNames', () => {
 
   test('queue.required 가 없으면 --hostname 과 함께 base 의 규칙을 읽는다', () => {
     const repo = repoWith({ queue: { method: 'squash' } })
-    fake.setRules([{ args: ['repos/o/r/rules/branches/main'], stdout: 'lint,test\n' }])
+    fake.setRules([{ args: ['repos/o/r/rules/branches/main'], stdout: '["lint","test"]\n' }])
     try {
       const calls = newCalls(() => assert.deepEqual(requiredNames(repo, 'ghe.example.com', 'o/r', 'main'), { ok: true, names: ['lint', 'test'] }))
       assert.deepEqual(

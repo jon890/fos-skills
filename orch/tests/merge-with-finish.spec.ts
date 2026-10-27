@@ -343,7 +343,7 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
     assert.equal(r.code, 0, both(r))
     const [line] = await c.lines('queue')
-    for (const part of ['--required ci,lint', '--verify-merged cd "$1" && make test', '--verify-merged-when code', '--docs-glob docs/*,*.md', '--method squash', '--before true']) {
+    for (const part of ['--required-check ci --required-check lint', '--verify-merged cd "$1" && make test', '--verify-merged-when code', '--docs-glob docs/*,*.md', '--method squash', '--before true']) {
       has(line, part)
     }
     assert.ok(line.endsWith(`--repo ${c.tmp} 449`), line)
@@ -479,7 +479,7 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     const r = await c.wrap(['--repo', repo, '449!'], {}, { logDir: false })
     assert.equal(r.code, 0, both(r))
     const [line] = await c.lines('queue')
-    has(line, '--required ci')
+    has(line, '--required-check ci')
     has(line, '--before true')
     assert.equal(existsSync(join(repo, '.orch', 'queue', 'finish-449.out')), true)
     assert.ok(readFileSync(join(repo, '.git', 'info', 'exclude'), 'utf8').split('\n').includes('/.orch/'))

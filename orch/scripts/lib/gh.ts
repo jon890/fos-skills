@@ -94,9 +94,17 @@ export function updateBranch(
 
 // 필수 체크 판정 -----------------------------------------------------------------
 
-// 저장소 규칙(repos/<owner>/<repo>/rules/branches/<base>)에서 필수 상태 체크 이름을 쉼표로 이어 낸다
+// 저장소 규칙(repos/<owner>/<repo>/rules/branches/<base>)에서 필수 상태 체크 이름을 JSON 배열 문자열로 낸다.
+// 체크 이름에는 쉼표가 들 수 있어 쉼표로 이어 내지 않는다
 export const RULES_JQ =
-  '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] ' + '| unique | join(",")'
+  '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] ' + '| unique | tojson'
+
+// RULES_JQ 의 출력을 이름 목록으로 읽는다. 배열이 아니면 Error 다
+export function parseNames(text: string): string[] {
+  const parsed: unknown = JSON.parse(text)
+  if (!Array.isArray(parsed) || !parsed.every((name) => typeof name === 'string')) throw new Error(`필수 체크 이름 목록이 아니다: ${text}`)
+  return parsed.filter((name) => name)
+}
 // 실패로 보는 체크 실행의 결론과 커밋 상태의 상태. 롤업의 값은 GraphQL enum 이라 머지 큐의 jq test(정규식)와 같은 집합이다
 export const FAILED_CONCLUSIONS: readonly string[] = ['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']
 export const FAILED_STATES: readonly string[] = ['FAILURE', 'ERROR']
@@ -114,20 +122,30 @@ export function rulesPlanLimited(stderr: string): boolean {
 export function ruleChecks(host: string, slug: string, base: string): Names {
   const path = `repos/${slug}/rules/branches/${base}`
   const done = gh(['api', '--hostname', host, path, '--jq', RULES_JQ])
-  if (done.code === 0) return { ok: true, names: done.stdout.replace(/\n+$/, '').split(',').filter((name) => name) }
+  if (done.code === 0) {
+    try {
+      return { ok: true, names: parseNames(done.stdout.trim()) }
+    } catch (e) {
+      return { ok: false, error: `gh api ${path} 의 출력을 읽지 못했다: ${(e as Error).message}` }
+    }
+  }
   if (rulesPlanLimited(done.stderr)) return { ok: true, names: [] }
   return { ok: false, error: `gh api ${path} 가 종료 코드 ${done.code} 로 끝났다: ${(done.stderr || done.stdout).trim()}` }
 }
 
-// 필수 체크 이름. config.json 의 queue.required 가 있으면 그것(목록이면 그대로, 문자열이면 쉼표로 나눈다)이고 규칙 API 를 부르지 않는다.
+// 필수 체크 이름. config.json 의 queue.required 가 있으면 그것(목록이면 그대로이고 이름에 쉼표가 있어도 나누지 않는다, 문자열이면 쉼표로 나눈다)이고 규칙 API 를 부르지 않는다.
 // 없으면 ruleChecks 다. required 를 받는 꼴은 merge-with-finish 가 머지 큐에 넘길 때와 같고, 틀리면 ConfigError 다.
 export function requiredNames(repo: string, host: string, slug: string, base: string): Names {
   const queue = section<{ required?: unknown }>(loadConfig(repo), 'queue', QUEUE_KEYS)
   const value = queue.required
   if (value === undefined) return ruleChecks(host, slug, base)
-  const joined = Array.isArray(value) && value.every((name) => typeof name === 'string') ? value.join(',') : value
-  if (typeof joined !== 'string' || !joined) throw new ConfigError('설정 파일의 queue.required 는 비지 않은 문자열이어야 한다')
-  return { ok: true, names: joined.split(',').filter((name) => name) }
+  if (Array.isArray(value) && value.every((name) => typeof name === 'string')) {
+    const names = value.filter((name) => name)
+    if (names.length === 0) throw new ConfigError('설정 파일의 queue.required 는 비지 않은 문자열이어야 한다')
+    return { ok: true, names }
+  }
+  if (typeof value !== 'string' || !value) throw new ConfigError('설정 파일의 queue.required 는 비지 않은 문자열이어야 한다')
+  return { ok: true, names: value.split(',').filter((name) => name) }
 }
 
 function field(row: Record<string, unknown>, key: string): string | null {

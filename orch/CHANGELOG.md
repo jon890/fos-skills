@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.7.0 (2026-10-27)
+
+- 머지 큐에 `--required-check NAME` 과 `--allow-fail-check NAME` 을 더했다. 쉼표가 든 체크 이름을 나누지 않고 받는다
+- 저장소 규칙과 `queue.required` 목록에서 읽은 이름에 쉼표가 있어도 나뉘지 않는다
+- 진행 중인 체크 없이 필수 체크가 `--missing-timeout`(기본 5분) 동안 나타나지 않으면 먼저 멈추고 실제 체크 이름을 찍는다
+- 호환성: `queue.required` 목록은 이름마다 `--required-check` 로 머지 큐에 넘어간다
+
 ## 4.6.0 (2026-10-27)
 
 - `reserve-migration.ts` 를 더했다. 마이그레이션 번호를 잠금을 걸고 예약하며, 같은 인자는 같은 예약을 돌려준다. `--again` 으로 새 번호를 받고, 머지되거나 사라진 브랜치의 예약을 정리한다
