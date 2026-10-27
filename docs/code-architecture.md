@@ -239,7 +239,7 @@ orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node 로 부�
 orch/hooks/shell-text.ts          hook 이 함께 쓰는 셸 글자 처리 모듈. hook 이 아니다
 orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
 orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
-work-board/bin/board.ts           보드 편집 명령. 옛 board.py. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
+work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
 ```
 
 `orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.

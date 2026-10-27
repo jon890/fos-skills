@@ -29,12 +29,11 @@
 //   step 은 done 값만 바꾸고, 창이 체크 표시와 취소선을 그린다. 옛 문자열은 읽을 때 변환하고 다음 쓰기 때 저장한다
 //   --progress N/M 은 「끝낸 단계/전체 단계」 (예: 7/10) 를 직접 적고 단계 수보다 앞선다. 주지 않으면 기존 값을 지우지 않는다
 //   --progress auto 는 값을 지워 단계 수로 세게 한다
-// 옵션은 고유 접두로 줄여 쓸 수 있다(옛 board.py 의 argparse 와 같다). --help 나 -h 는 사용법을 stdout 에 내고 0 이다.
-// 항목은 id 의 값과 타입이 모두 같을 때만 맞는다. 명령줄의 id 는 문자열이라 숫자 id(1)는 「1」 로 찾지 못한다(옛 board.py 와 같다).
+// 옵션은 고유 접두로 줄여 쓸 수 있다. --help 나 -h 는 사용법을 stdout 에 내고 0 이다.
+// id 는 값과 타입이 모두 같아야 맞는다. 명령줄 id 는 문자열이라 숫자 id(1)는 찾지 못한다.
 //
 // 파일은 json.dump(indent=1, ensure_ascii=False) 의 꼴로 쓴다. 한 칸 들여쓰기, 한글 그대로, 끝 줄바꿈 없음이다.
-// 숫자는 JS 의 number 로 읽고 쓰므로 옛 board.py 와 다르게 바뀌는 값이 있다. 소수점 아래가 0 인 실수(1.0)는 1 이 되고,
-// 2^53 을 넘는 정수는 가까운 double 로 바뀐다. 이 명령이 쓰는 칸은 PR 번호 칸을 빼면 모두 문자열이라, 손대지 않은 칸에 그런 숫자가 있을 때만 바뀐다.
+// 숫자는 JS number 로 다시 쓴다. 1.0 은 1 이 되고 2^53 을 넘는 정수는 바뀐다. 이 명령이 쓰는 칸은 PR 번호 말고는 문자열이다.
 //
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
@@ -60,7 +59,7 @@ const COMMANDS = ['set', 'step', 'steps', 'mark', 'del', 'list']
 const USAGE =
   '사용법: board.ts {set,step,steps,mark,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
-// --help 가 내는 글. 옛 board.py 의 argparse 도움말처럼 사용법 줄 뒤에 머리 설명을 붙인다
+// --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 
 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
@@ -98,7 +97,7 @@ type Item = Record<string, unknown> & { id: string }
 type Board = Record<string, unknown> & { items: Item[] }
 
 // 보드 파일의 기본 위치. cwd 의 git 작업 트리 최상위(--show-toplevel)가 기준이고, git 밖이면 cwd 다.
-// 주 checkout 이 아니라 작업 트리 기준이다. 옛 board.py 의 board_path 가 그랬다.
+// 주 checkout 이 아니라 작업 트리 기준이다.
 export function defaultBoardPath(cwd: string): string {
   const done = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
   const top = done.status === 0 ? (done.stdout ?? '').trim() : ''
@@ -310,7 +309,7 @@ function prValue(value: string): string | number {
   return numbers.length === 1 ? Number(numbers[0]) : numbers.join(', ')
 }
 
-// === 라 문자열 id 만 맞는다. 옛 board.py 의 `i['id'] == a.id` 도 문자열과 숫자를 같게 보지 않았다
+// === 라 문자열 id 만 맞는다
 function find(board: Board, id: string): Item | undefined {
   return board.items.find((item) => item.id === id)
 }
