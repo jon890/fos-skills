@@ -6,6 +6,7 @@
 //
 // 옮기는 조건:
 //     마무리 로그  pid 파일의 프로세스가 살아 있지 않고 끝 3줄에 FINISH-DONE 이나 FINISH-FAIL 이 있다. 같은 PR 의 .pid 도 함께 옮긴다.
+//                 끝 표시 없이 pid 만 죽은 로그(마무리가 중간에 죽었다)는 마지막으로 바뀐 뒤 holdMs 가 지나면 옮긴다. 그 전에는 코디네이터가 볼 수 있게 남긴다
 //                 로그 없이 .pid 만 있으면 남긴다
 //     큐 로그      그 로그를 연 프로세스가 없고(lsof) 아래 가운데 하나다
 //                   · 끝 3줄에 QUEUE-DONE 이나 STOP 이 있다
@@ -18,7 +19,7 @@
 // 내보내는 것:
 //     sweepQueueLogs  옮길 것을 정하고 apply 이면 옮긴다. 옮긴 파일 경로와 남긴 파일의 이유를 돌려준다
 
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { alive } from './process.ts'
 import { run } from './proc.ts'
@@ -46,7 +47,7 @@ export type QueueLogHost = {
 export const lsofOpenedBy = (file: string): boolean | null => {
   const done = run(['lsof', '-t', '--', file])
   if (done.code !== 0 && done.code !== 1) return null
-  return done.out.trim() !== ''
+  return done.stdout.trim() !== ''
 }
 
 function tail(text: string): string {
@@ -82,7 +83,11 @@ function finishVerdict(dir: string, name: string, number: string, host: QueueLog
   if (pidAlive(join(dir, `finish-${number}.pid`))) return { move: false, reason: '마무리가 돌고 있다' }
   const text = readFileSync(file, 'utf8')
   const end = tail(text)
-  if (!FINISH_END.test(end)) return { move: false, reason: '끝 표시(FINISH-DONE, FINISH-FAIL)가 없다' }
+  if (!FINISH_END.test(end)) {
+    // pid 파일이 없으면 막 띄우는 중일 수 있어 판단하지 않는다
+    if (!existsSync(join(dir, `finish-${number}.pid`))) return { move: false, reason: '끝 표시(FINISH-DONE, FINISH-FAIL)가 없다' }
+    return hold(true, statSync(file).mtimeMs, host, holdMs) ?? { move: true }
+  }
   return hold(FAILED_END.test(end), statSync(file).mtimeMs, host, holdMs) ?? { move: true }
 }
 
