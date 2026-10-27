@@ -13,7 +13,7 @@
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다
 //     3. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
-//        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 deployVerdict 가 소유한다
+//        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 lib/deploy.ts 의 deployVerdict 가 소유한다
 //     4. 이 PR 이 업무의 마지막 PR 인지 판정하고 `마지막 PR 판정: <마지막|중간>(근거)` 한 줄을 낸다(아래 「마지막 PR 판정」).
 //        배포가 실패하거나 시간이 지나도 판정한다
 //     5. --specs-dir 를 줬고 마지막 PR 이면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
@@ -107,6 +107,7 @@ import { expandArgs } from './lib/args.ts'
 import { findBoardItems, intermediateCommands, noteLine, readBoard } from './lib/board.ts'
 import type { BoardDetail, BoardStep } from './lib/board.ts'
 import { conflictSpecFiles } from './lib/conflicts.ts'
+import { deployVerdict, parseRuns } from './lib/deploy.ts'
 import { extractTaskNumber, judgeLastPr, numberPattern, specFiles } from './lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
@@ -197,29 +198,6 @@ function git(repo: string, args: string[]): { code: number; stdout: string } {
 }
 
 // ---- 판정 ---------------------------------------------------------------------------------------------
-
-type RunRow = { headSha?: unknown; status?: unknown; conclusion?: unknown }
-
-// 머지 커밋이 배포됐는지 판정한다. success, failure 는 그 실행의 커밋과 함께, wait 은 sha 없이 낸다.
-// runs 는 `gh run list --json headSha,status,conclusion` 의 목록이다. 머지 커밋과 같거나 그 뒤 커밋의 실행만 센다.
-//   - 센 실행 중 성공이 하나라도 있으면 성공이다. 머지 커밋의 실행이 뒤 커밋의 실행에 합쳐져
-//     skipped 나 cancelled 로 끝나도 뒤 커밋이 성공하면 이 커밋은 배포된 것이다
-//   - 성공이 없고 아직 끝나지 않은 실행이 있으면 기다린다. 그 실행이 뒤 커밋의 것일 수 있다
-//   - 성공도 진행 중도 없고 실패나 취소가 있으면 실패다. skipped 만 있으면 기다린다
-function deployVerdict(runs: RunRow[], merge: string, isAncestor: (ancestor: string, sha: string) => boolean): { verdict: 'success' | 'failure' | 'wait'; sha: string } {
-  let failed = ''
-  let waiting = false
-  for (const row of runs) {
-    const sha = typeof row.headSha === 'string' ? row.headSha : ''
-    if (!sha || !isAncestor(merge, sha)) continue
-    if (row.status !== 'completed') waiting = true
-    else if (row.conclusion === 'success') return { verdict: 'success', sha }
-    else if (['failure', 'cancelled', 'timed_out', 'startup_failure'].includes(String(row.conclusion))) failed = failed || sha
-  }
-  if (waiting) return { verdict: 'wait', sha: '' }
-  if (failed) return { verdict: 'failure', sha: failed }
-  return { verdict: 'wait', sha: '' }
-}
 
 // `git worktree list --porcelain` 출력에서 그 브랜치를 체크아웃한 워크트리 경로. 없으면 null
 function worktreeForBranch(porcelain: string, branch: string): string | null {
@@ -446,16 +424,7 @@ async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ 
       cwd: repo,
       timeoutMs: RUN_TIMEOUT_MS,
     })
-    let runs: RunRow[] = []
-    if (done.code === 0) {
-      try {
-        const parsed: unknown = JSON.parse(done.stdout)
-        if (Array.isArray(parsed)) runs = parsed.filter((row) => typeof row === 'object' && row !== null) as RunRow[]
-      } catch {
-        runs = []
-      }
-    }
-    const { verdict, sha } = deployVerdict(runs, merge, isAncestor)
+    const { verdict, sha } = deployVerdict(done.code === 0 ? parseRuns(done.stdout) : [], merge, isAncestor)
     if (verdict !== 'wait') return { deploy: verdict, sha }
     if (Date.now() >= deadline) return { deploy: 'timeout', sha: '' }
     await sleep(args.pollInterval * 1000)
