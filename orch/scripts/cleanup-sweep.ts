@@ -1606,7 +1606,7 @@ export async function main(argv: string[]): Promise<number> {
     err('cleanup-sweep: ORCH_HOOK_WAIT 는 정수다')
     return 2
   }
-  const repos = [...new Set(values.repo.map((repo) => realPath(repo)))]
+  const repos = [...new Set<string>(values.repo.map((repo) => realPath(repo)))]
   const log: Log = (line) => {
     process.stdout.write(`${line}\n`)
   }

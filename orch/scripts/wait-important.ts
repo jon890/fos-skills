@@ -755,11 +755,11 @@ async function main(argv: string[]): Promise<number> {
       'timeout-ms': { type: 'string', default: '7000000' },
       'kill-stale': { type: 'boolean', default: false },
       'lost-interval-sec': { type: 'string', default: '60' },
-      'ignore-lost': { type: 'string', multiple: true, default: [] },
+      'ignore-lost': { type: 'string', multiple: true, default: [] as string[] },
       'lost-state': { type: 'string' },
-      'ack-lost': { type: 'string', multiple: true, default: [] },
+      'ack-lost': { type: 'string', multiple: true, default: [] as string[] },
       'completion-contract': { type: 'string', default: 'ready' },
-      'loop-repo': { type: 'string', multiple: true, default: [] },
+      'loop-repo': { type: 'string', multiple: true, default: [] as string[] },
       help: { type: 'boolean', short: 'h' },
     } as const
     values = parseArgs({ args: expandArgs(argv, options), options }).values

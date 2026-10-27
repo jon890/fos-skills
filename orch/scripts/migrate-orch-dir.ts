@@ -1087,7 +1087,7 @@ function main(argv: string[]): number {
   const options = {
     repo: { type: 'string', default: '.' },
     run: { type: 'string' },
-    move: { type: 'string', multiple: true, default: [] },
+    move: { type: 'string', multiple: true, default: [] as string[] },
     apply: { type: 'boolean', default: false },
     hooks: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h' },

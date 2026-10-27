@@ -29,6 +29,12 @@ jobs:
         run: npm install --global @anthropic-ai/claude-code@2.1.309
       - name: Run plugin tests from repository root
         run: claude plugin test .
+      - name: Type check orch and work-board scripts
+        # node 는 타입을 지우기만 해서 잘못된 속성 접근(RunResult 의 .out 같은 것)이 실행 때까지 드러나지 않는다.
+        # 저장소에 package.json 이 없으니 typescript 는 임시 폴더에 설치한다
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/tsc" typescript@5.9.3 @types/node@24
+          "$RUNNER_TEMP/tsc/node_modules/.bin/tsc" -p tsconfig.json --typeRoots "$RUNNER_TEMP/tsc/node_modules/@types"
       - name: Run orch and work-board node tests
         # 명령마다 .ts 를 다시 컴파일하지 않게 캐시를 둔다. Node 24 부터 타입을 제거한 .ts 에 듣는다(docs/adr/011-node-24-minimum.md)
         env:

@@ -413,6 +413,6 @@ export function execCommand(argv: string[], label: string): number {
     process.stderr.write(`${label}: ${reason}: ${argv[0]}\n`)
     return found.code
   }
-  process.execve(found.path, argv, process.env as Record<string, string>)
+  process.execve!(found.path, argv, process.env as Record<string, string>)
   return 1
 }

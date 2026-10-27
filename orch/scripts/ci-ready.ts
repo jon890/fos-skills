@@ -106,7 +106,8 @@ function prInput(pr: Pr, draft: boolean): Record<string, unknown> {
 }
 
 type Verdict =
-  | { verdict: 'hold' | 'already'; why: string }
+  | { verdict: 'hold'; why: string }
+  | { verdict: 'already'; why: string }
   | { verdict: 'ready'; pr: Pr; files: Set<string>; readyCount: number }
 
 class Judge {

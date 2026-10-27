@@ -1,11 +1,12 @@
 // lib/queue-logs.ts 가 끝난 머지 큐 로그만 휴지통으로 옮기는지 본다. lsof 와 gh 는 host 로 갈아 끼운다.
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { type QueueLogHost, sweepQueueLogs } from '../scripts/lib/queue-logs.ts'
+import { run } from '../scripts/lib/proc.ts'
+import { lsofOpenedBy, type QueueLogHost, sweepQueueLogs } from '../scripts/lib/queue-logs.ts'
 
 const NOW = Date.parse('2026-10-26T12:00:00Z')
 const HOUR = 3600_000
@@ -68,6 +69,16 @@ describe('마무리 로그', () => {
     const out = put('finish-9.out', '머지를 기다린다\n')
     sweep()
     assert.ok(existsSync(out))
+  })
+
+  test('끝 표시 없이 pid 만 죽었으면 남길 시간 동안 남기고 지나면 옮긴다', () => {
+    const young = put('finish-5.out', '머지를 기다린다\n', HOUR / 2)
+    put('finish-5.pid', '999999999')
+    const old = put('finish-6.out', '머지를 기다린다\n', 2 * HOUR)
+    const oldPid = put('finish-6.pid', '999999999')
+    sweep()
+    assert.ok(existsSync(young))
+    assert.ok(!existsSync(old) && !existsSync(oldPid))
   })
 
   test('FINISH-FAIL 은 남길 시간 안이면 남기고 지나면 옮긴다', () => {
@@ -144,4 +155,31 @@ test('휴지통에 같은 이름이 있으면 번호를 붙인다', () => {
 test('폴더가 없으면 아무것도 하지 않는다', () => {
   rmSync(dir, { recursive: true })
   assert.deepEqual(sweep().moved, [])
+})
+
+// host 를 갈아 끼우지 않고 실제 lsof 를 부른다. lsof 가 없는 머신에서는 건너뛴다
+describe('lsofOpenedBy', { skip: run(['lsof', '-v']).code === 127 ? 'lsof 가 없다' : false }, () => {
+  test('연 프로세스가 있으면 true, 없으면 false 를 낸다', () => {
+    const file = put('queue-h.out', 'QUEUE-DONE\n')
+    assert.equal(lsofOpenedBy(file), false)
+    const fd = openSync(file, 'r')
+    try {
+      assert.equal(lsofOpenedBy(file), true)
+    } finally {
+      closeSync(fd)
+    }
+  })
+
+  test('실제 lsof 로 판정해 끝난 큐 로그를 옮기고 열린 로그는 남긴다', () => {
+    const ended = put('queue-i.out', '12:00 5 MERGED\nQUEUE-DONE\n')
+    const live = put('queue-j.out', '12:00 6 MERGED\nQUEUE-DONE\n')
+    const fd = openSync(live, 'r')
+    try {
+      sweepQueueLogs({ dir, trash, apply: true, log: () => {}, host: { ...host(), openedBy: lsofOpenedBy } })
+    } finally {
+      closeSync(fd)
+    }
+    assert.ok(!existsSync(ended))
+    assert.ok(existsSync(live))
+  })
 })
