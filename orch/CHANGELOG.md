@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.7.0 (2026-10-27)
+
+- 호환성: `launch-worker` 가 만드는 보드 항목의 단계는 지시서 「할 일」 이 아니라 마일스톤 단계다. 지시서의 `## 보드 단계` 절, `board.steps`, 기본값(PR, 머지) 순으로 정한다
+- 꼬리표 `[pr]`, `[merge]`, `[deploy]` 단계는 `board-sync`, `finish-pr` 가 PR 열림, 머지, 배포 성공에 맞춰 끝낸다. done 으로 바꾸는 사건은 `board.done_after`(기본 `merge`)다
+- `board-release.ts` 를 더했다. 릴리스 PR(`--release`)이나 PR 번호(`--pr`)로 항목의 `[release]` 단계를 끝낸다. 부르는 때는 저장소가 정한다
+- `board-sync` 가 정리된 워크트리의 `worktree` 필드를 비우고 중간 PR 을 `merged-pr` 에 쌓는다. 공통 지시서 틀에 worker 는 보드를 고치지 않는다는 줄을 더했다
+
 ## 4.6.0 (2026-10-27)
 
 - `reserve-migration.ts` 를 더했다. 마이그레이션 번호를 잠금을 걸고 예약하며, 같은 인자는 같은 예약을 돌려준다. `--again` 으로 새 번호를 받고, 머지되거나 사라진 브랜치의 예약을 정리한다

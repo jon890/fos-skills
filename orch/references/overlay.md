@@ -41,6 +41,7 @@
 `--config FILE` 로 다른 파일을 줄 수 있고, 명령줄 옵션이 파일 값보다 우선한다. 파일에 없는 값은 옵션이나 기본값을 쓴다.
 스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.ts` 가, `cleanup` 절은 `handoff-cleanup.ts` 가, `queue` 절은 `merge-with-finish.ts` 가 읽는다.
 `hooks` 절은 이벤트를 내는 모든 명령이, `pipeline` 절은 아래 표의 명령이, `migrations` 절은 상주 루프가 읽는다.
+`board` 절은 `launch-worker`, `board-sync.ts`, `finish-pr.ts`, `board-release.ts` 가 읽는다.
 상주 루프(`orch-loop.ts`)는 `finish` 절의 `run`, `specs_dir`, `queue` 절의 `required`, `skipped_is_missing`, `auto_merge`, `auto_review`, `pipeline` 절을 읽는다.
 절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다.
 
@@ -78,6 +79,8 @@
 | `pipeline` | `enabled`, `docs_merge`, `after_queue_interval_sec`, `ci_missing_after_sec`, `update_behind_drafts` | 상주 루프의 자동 진행에 쓸 값이다. 키는 사용법 오류 없이 받지만 아직 읽는 명령이 없다 |
 | `heavy` | `exclusive`, `normal`, `light`, `wait_idle` | 정규식 목록이다. `heavy-slot.ts` 가 읽는다. 사용법은 [`heavy-checks.md`](heavy-checks.md) 가 소유한다 |
 | `migrations` | `dirs`, `before`, `blocked_after_sec` | 모듈별 마이그레이션 폴더와 자동 머지의 머지 전 명령, 막힘 알림 시간 |
+| `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
+| `board` | `done_after` | 보드 항목을 done 으로 바꾸는 사건. `merge`, `deploy`, `release` 중 하나이고 기본은 `merge` 다 |
 
 ```json
 {
