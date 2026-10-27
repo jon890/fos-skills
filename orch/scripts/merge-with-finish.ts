@@ -46,7 +46,8 @@
 // after_merged, up_to_date_when, shared_paths, unit_prefix 이고 각각 --before, --required, --verify-merged,
 // --verify-merged-when, --docs-glob, --method, --after-merged, --up-to-date-when, --shared-paths, --unit-prefix 가 된다.
 // before, verify_merged, after_merged 는 옛 칸이라 머지 큐가 그 이벤트의 핸들러처럼 돌리고 DEPRECATED 줄을 낸다(merge_queue.ts 머리 주석).
-// required 와 docs_glob 은 문자열 목록도 받아 쉼표로 잇고, shared_paths 는 정규식 목록도 받아 `|` 로 잇는다.
+// required 는 문자열 목록도 받아 이름마다 `--required-check` 로 넘기고(이름에 쉼표가 있어도 나뉘지 않는다), docs_glob 은 목록을 쉼표로 잇고,
+// shared_paths 는 정규식 목록도 받아 `|` 로 잇는다.
 // skipped_is_missing, update_docs_on_overlap, require_up_to_date 는 true 면 같은 이름의 옵션을 붙이는 참거짓 값이다.
 // unit_groups 는 단위 이름 목록의 목록이고 안쪽 목록마다 `--unit-group a,b` 가 된다.
 // sweep_args 는 문자열 목록이고 항목마다 `--sweep-arg` 로 넘어간다. 명령줄에 `--sweep-arg` 가 하나라도 있으면 목록은 쓰지 않는다.
@@ -88,7 +89,7 @@ import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_V
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
 // 문자열 목록도 받는 queue 키와 목록을 잇는 구분자. 키와 옵션의 대응은 lib/queue-options.ts 의 QUEUE_VALUES 들이다
-const QUEUE_LISTS: Readonly<Record<string, string>> = { required: ',', docs_glob: ',', shared_paths: '|' }
+const QUEUE_LISTS: Readonly<Record<string, string>> = { docs_glob: ',', shared_paths: '|' }
 const PR_SPEC = /^(\d+)([!~]?)(:.*)?$/s
 const LEGACY_KEY = '--complete-cmd'
 
@@ -231,6 +232,11 @@ function queueDefaults(path: string, queue: string[], config: Config): string[] 
   for (const [key, option] of Object.entries(QUEUE_VALUES)) {
     if (!(key in body) || given.has(option)) continue
     let value = body[key]
+    // 필수 체크 이름에는 쉼표가 들 수 있어 목록은 이름마다 --required-check 로 넘긴다
+    if (key === 'required' && Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string' && v)) {
+      if (!given.has('--required-check')) for (const name of value as string[]) extra.push('--required-check', name)
+      continue
+    }
     if (Array.isArray(value) && key in QUEUE_LISTS && value.every((v) => typeof v === 'string')) value = value.join(QUEUE_LISTS[key])
     if (typeof value !== 'string' || !value) throw new ConfigError(`${path} 의 queue.${key} 는 비지 않은 문자열이어야 한다`)
     extra.push(option, value)

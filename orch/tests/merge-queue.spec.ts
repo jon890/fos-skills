@@ -358,6 +358,85 @@ describe('merge_queue 필수 체크', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     lacks(c.log(), 'pr merge')
   })
 
+  test('--required-check 는 쉼표가 든 이름 하나를 나누지 않고, 그 체크가 통과하면 머지한다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('Lint, Test & Build')] }) }, ['--required-check', 'Lint, Test & Build', '1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '1 MERGED')
+  })
+
+  test('--required-check 로 준 이름에 쉼표로 나뉜 조각만 있으면 나타나지 않은 것으로 본다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('Lint'), check(' Test & Build')] }) }, [
+      '--required-check',
+      'Lint, Test & Build',
+      '--check-timeout',
+      '0',
+      '1',
+    ])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, '나타나지 않은 필수 체크 Lint, Test & Build')
+  })
+
+  test('--required A,B 는 전처럼 두 이름을 기다리고, --required-check 와 함께 쓰면 이어 붙는다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('A')] }) }, ['--required', 'A,B', '--check-timeout', '0', '1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, '나타나지 않은 필수 체크 B')
+    lacks(r.stdout, '나타나지 않은 필수 체크 A')
+    const r2 = await c.runQueue({ '1': pr({ statusCheckRollup: [check('A')] }) }, ['--required', 'A', '--required-check', 'X, Y', '--check-timeout', '0', '1'])
+    assert.equal(r2.code, 1, both(r2))
+    has(r2.stdout, '나타나지 않은 필수 체크 X, Y')
+  })
+
+  test('저장소 규칙에서 읽은 필수 체크 이름에 쉼표가 있어도 나누지 않는다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('Lint, Test & Build')] }), _rules: rules('Lint, Test & Build') }, ['1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '1 MERGED')
+  })
+
+  test('--allow-fail-check 는 쉼표가 든 이름의 실패를 허용하고, 필수 체크와 겹치면 사용법 오류다', async (t) => {
+    const c = setup(t)
+    const rollup = [check('backend'), check('Review, Bot', 'FAILURE')]
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: rollup }) }, ['--required', 'backend', '--allow-fail-check', 'Review, Bot', '1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '경고: 1 실패를 허용한 체크 Review, Bot')
+    const r2 = await c.runQueue({ '1': pr() }, ['--required-check', 'Review, Bot', '--allow-fail-check', 'Review, Bot', '1'])
+    assert.equal(r2.code, 2, both(r2))
+    has(r2.stderr + r2.stdout, '필수 체크의 실패는 허용할 수 없다')
+  })
+
+  test('진행 중인 체크 없이 필수 체크가 나타나지 않으면 --check-timeout 전에 멈추고, 없는 이름과 붙은 체크 이름을 찍는다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('Lint'), check(' Test & Build')] }) }, ['--required-check', 'Lint, Test & Build', '1'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, '5분째 나타나지 않는다')
+    has(r.stdout, '나타나지 않은 필수 체크 Lint, Test & Build')
+    has(r.stdout, '[" Test & Build","Lint"]')
+    has(r.stdout, '이름이 틀렸을 수 있다')
+    lacks(r.stdout, '체크 대기 60분 초과')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('--missing-timeout 으로 기준 시간을 바꾼다. 0 이면 끈다', async (t) => {
+    const c = setup(t)
+    const state = { '1': pr({ statusCheckRollup: [check('A')] }) }
+    const r = await c.runQueue(state, ['--required', 'A,B', '--missing-timeout', '1', '1'])
+    has(r.stdout, '1분째 나타나지 않는다')
+    const r2 = await c.runQueue(state, ['--required', 'A,B', '--missing-timeout', '0', '--check-timeout', '2', '1'])
+    has(r2.stdout, '체크 대기 2분 초과')
+  })
+
+  test('같은 상태라도 기준 시간 안에 필수 체크가 나타나면 멈추지 않는다', async (t) => {
+    const c = setup(t)
+    // 조회 한 번에 30초씩 가정하면 left 8 은 4분 안이다
+    const p = pr({ statusCheckRollup: [check('A')], appear: { left: 8, checks: [check('B')] } })
+    const r = await c.runQueue({ '1': p }, ['--required', 'A,B', '1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '1 MERGED')
+  })
+
   test('필수 체크를 저장소 규칙에서 읽는다', async (t) => {
     const c = setup(t)
     const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('backend')] }), _rules: rules('backend', 'lint') }, ['--check-timeout', '0', '1'])

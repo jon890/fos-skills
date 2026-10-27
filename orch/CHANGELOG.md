@@ -3,12 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 4.7.0 (2026-10-27)
+## 4.8.0 (2026-10-27)
 
 - 호환성: `launch-worker` 가 만드는 보드 항목의 단계는 지시서 「할 일」 이 아니라 마일스톤 단계다. 지시서의 `## 보드 단계` 절, `board.steps`, 기본값(PR, 머지) 순으로 정한다
 - 꼬리표 `[pr]`, `[merge]`, `[deploy]` 단계는 `board-sync`, `finish-pr` 가 PR 열림, 머지, 배포 성공에 맞춰 끝낸다. done 으로 바꾸는 사건은 `board.done_after`(기본 `merge`)다
 - `board-release.ts` 를 더했다. 릴리스 PR(`--release`)이나 PR 번호(`--pr`)로 항목의 `[release]` 단계를 끝낸다. 부르는 때는 저장소가 정한다
 - `board-sync` 가 정리된 워크트리의 `worktree` 필드를 비우고 중간 PR 을 `merged-pr` 에 쌓는다. 공통 지시서 틀에 worker 는 보드를 고치지 않는다는 줄을 더했다
+
+## 4.7.0 (2026-10-27)
+
+- 머지 큐에 `--required-check NAME` 과 `--allow-fail-check NAME` 을 더했다. 쉼표가 든 체크 이름을 나누지 않고 받는다
+- 저장소 규칙과 `queue.required` 목록에서 읽은 이름에 쉼표가 있어도 나뉘지 않는다
+- 진행 중인 체크 없이 필수 체크가 `--missing-timeout`(기본 5분) 동안 나타나지 않으면 먼저 멈추고 실제 체크 이름을 찍는다
+- 호환성: `queue.required` 목록은 이름마다 `--required-check` 로 머지 큐에 넘어간다
 
 ## 4.6.0 (2026-10-27)
 
