@@ -57,7 +57,7 @@ function main(argv: string[]): number {
     head: { type: 'string' },
     'shared-paths': { type: 'string', default: '' },
     'unit-prefix': { type: 'string', default: 'modules/' },
-    'unit-group': { type: 'string', multiple: true, default: [] },
+    'unit-group': { type: 'string', multiple: true, default: [] as string[] },
     'docs-glob': { type: 'string', default: '' },
     repo: { type: 'string', default: '.' },
     help: { type: 'boolean', short: 'h' },
