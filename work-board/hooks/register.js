@@ -554,14 +554,27 @@ function ago(at) {
 
 // ---- 훅 ----
 
-// 「오늘 시작」, 「정할 것 묻기」 는 요청문을 보내지 않고 입력란에 스킬 명령을 채운다.
-// 요청문은 각 스킬의 SKILL.md 가 소유한다. 명령 이름은 플러그인 접두가 붙은 스킬 이름이다.
-export const START_COMMAND = '/fos-skills:board-start'
-export const DECIDE_COMMAND = '/fos-skills:board-decide'
+// 「오늘 시작」, 「정할 것 묻기」 버튼이 입력란에 채우는 요청문. 사용자가 Enter 를 눌러 보낸다.
+// 훅이 직접 보내는 prompt.submit 은 모델에 닿지 않아 쓰지 않는다
+export const START_PROMPT = [
+  '오늘 작업을 시작하자.',
+  '1. .omc/board.json 을 오늘 기준으로 갱신하고 done 항목은 비워 줘.',
+  '2. 남은 워크트리, 세션, 머지된 브랜치를 .orch/overlay.md 의 정리 규칙대로 정리해 줘.',
+  '3. orch 상주 루프와 대기(wait-important)가 꺼져 있으면 다시 띄우고, 쌓인 worker 보고를 처리해 줘.',
+  '4. 열린 PR 의 CI 와 리뷰, 막힌 것, 내가 정할 것을 짧게 보고하고 정할 것은 바로 물어봐 줘.',
+].join('\n')
 
-function fillCommand($, text) {
+export const DECIDE_PROMPT = [
+  '지금 정할 것을 모아 물어봐 줘.',
+  '1. 보드의 결정 필요(decide) 항목과 그 줄, 답하지 않은 worker 질문, 이번 대화에서 미룬 결정을 모아 줘.',
+  '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
+  '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
+  '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 orca orchestration reply 로 전해 줘.',
+].join('\n')
+
+function fillPrompt($, text) {
   void $.prompt.fill({ text })
-  $.ui.toast('입력란에 ' + text + ' 를 채웠어요. Enter 를 누르면 보내요')
+  $.ui.toast('입력란에 요청문을 채웠어요. Enter 를 누르면 보내요')
 }
 
 export function register(on) {
@@ -800,14 +813,14 @@ export function register(on) {
                 label: '오늘 시작',
                 hotkey: 's',
                 plain: true,
-                onPress: () => { fillCommand($, START_COMMAND) },
+                onPress: () => { fillPrompt($, START_PROMPT) },
               }),
               Button({
                 key: 'ask-decisions',
                 label: '정할 것 묻기',
                 hotkey: 'q',
                 plain: true,
-                onPress: () => { fillCommand($, DECIDE_COMMAND) },
+                onPress: () => { fillPrompt($, DECIDE_PROMPT) },
               }),
               Button({
                 key: 'toggle-done',

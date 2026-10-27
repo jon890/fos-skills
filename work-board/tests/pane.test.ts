@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { START_COMMAND, DECIDE_COMMAND } from '../hooks/register.js'
+import { START_PROMPT, DECIDE_PROMPT } from '../hooks/register.js'
 
 const BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
   { id: 'a', title: '단계 항목', status: 'doing', owner: 'worker', pr: '#9', worktree: 'wt-a',
@@ -154,17 +154,17 @@ test('새로 읽기 버튼은 없고 오늘 시작, 정할 것 묻기, 펼치기
   await ui.unmount()
 })
 
-test('명령은 /board 만 등록한다. board-start 와 board-decide 는 스킬이 맡는다', async ($, on) => {
+test('명령은 /board 만 등록한다', async ($, on) => {
   const commands = []
   await start($, on, undefined, BOARD, commands)
   expect(commands).toEqual(['board'])
 })
 
-for (const [key, hotkey, command] of [
-  ['start-today', 's', START_COMMAND],
-  ['ask-decisions', 'q', DECIDE_COMMAND],
+for (const [key, hotkey, prompt] of [
+  ['start-today', 's', START_PROMPT],
+  ['ask-decisions', 'q', DECIDE_PROMPT],
 ] as const) {
-  test(key + ' 버튼은 요청을 보내지 않고 입력란에 스킬 명령을 채운다', async ($, on) => {
+  test(key + ' 버튼은 보내지 않고 입력란에 요청문을 채운다', async ($, on) => {
     const filled = []
     const submitted = []
     const toasts = []
@@ -184,7 +184,7 @@ for (const [key, hotkey, command] of [
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     expect((await ui.find({ type: 'Button', key })).props.hotkey).toBe(hotkey)
     await ui.press({ key })
-    expect(filled).toEqual([command])
+    expect(filled).toEqual([prompt])
     expect(submitted).toEqual([])
     expect(toasts.join('\n')).toContain('Enter 를 누르면')
     await ui.unmount()
