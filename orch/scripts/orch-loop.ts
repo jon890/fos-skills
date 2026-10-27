@@ -86,6 +86,7 @@
 //     1. 질문 확인. Run 마다, Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
 //        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓰고 worker-question 을 낸다. REMINDER 는 알림 파일에도 쓴다.
 //        새 질문(QUESTION)은 알림 파일에 쓰지 않는다. 코디네이터의 wait-important 가 question 메시지로 이미 깨어난다
+//        닫힌 질문(lib/questions.ts 의 「닫힌 질문」)의 REMINDER 는 내지 않고, 처음 닫힌 것으로 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓴다
 //     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 자동 머지, 충돌 처리가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     3. 보드 동기화(워크트리 정리 전). 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
 //        decide 제목·줄의 내용 해시가 달라지면 REMINDER 를 기록한다(lib/board.ts)
@@ -298,7 +299,8 @@ import { boardPath, makeParent, pathOf } from './lib/paths.ts'
 import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
-import { notifyQuestion, poll } from './lib/questions.ts'
+import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './lib/questions.ts'
+import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
 import { branchesOf } from './lib/spec.ts'
@@ -1804,7 +1806,11 @@ async function tick(ctx: Context, n: number): Promise<number> {
   }
 
   // 1. 질문 확인. Run 마다. 미답변 질문을 보낸 worker 는 멈춤 확인이 idle 로 보지 않는다
+  // 닫힌 질문(끝난 dispatch 의 질문이고 그 PR 이 머지되거나 닫혔다)은 재알림하지 않는다(lib/questions.ts 의 「닫힌 질문」)
   const waiting = new Map<string, Waiting>()
+  const closedFile = join(pathOf('state', ctx.repo), 'questions-closed.json')
+  const closed = readClosed(closedFile)
+  let closedChanged = false
   for (const { run } of runs) {
     if (!run) {
       report('questions', null, { run })
@@ -1816,11 +1822,31 @@ async function tick(ctx: Context, n: number): Promise<number> {
       notices = polled.notices
       waiting.set(run, askers(polled.pending))
       report('questions', null, { run })
+      // 미답변 목록에서 빠진 질문의 기록은 지운다
+      const pendingIds = new Set(polled.pending.map((m) => String(m.id)))
+      for (const id of Object.keys(closed[run] ?? {})) {
+        if (!pendingIds.has(id)) {
+          delete closed[run][id]
+          closedChanged = true
+        }
+      }
     } catch (e) {
       waiting.set(run, null)
       report('questions', oneLine(e), { run })
     }
+    const lookup: ClosedLookup = {}
     for (const notice of notices) {
+      if (notice.reminder) {
+        const id = String(notice.message.id)
+        if (closed[run]?.[id]) continue
+        const reason = closedReason(notice.message, run, ctx.repo, lookup)
+        if (reason) {
+          ;(closed[run] ??= {})[id] = reason
+          closedChanged = true
+          log(`REMINDER-SKIP ${id}: ${reason}`)
+          continue
+        }
+      }
       log(notice.line)
       if (notice.reminder) {
         try {
@@ -1830,6 +1856,13 @@ async function tick(ctx: Context, n: number): Promise<number> {
         }
       }
       await notifyQuestion(notice, ctx.repo, run, 'orch-loop')
+    }
+  }
+  if (closedChanged) {
+    try {
+      writeClosed(closedFile, closed, ctx.repo)
+    } catch (e) {
+      log(`orch-loop: 닫힌 질문 기록을 쓰지 못했다: ${oneLine(e)}`)
     }
   }
 

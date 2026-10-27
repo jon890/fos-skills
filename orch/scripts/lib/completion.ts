@@ -35,6 +35,12 @@ export function isoTime(value: unknown): number | null {
   return Number.isNaN(ms) ? null : ms
 }
 
+// 메시지의 제목과 본문에서 준비 상태 줄을 읽는다. 없으면 null. head 는 소문자다
+export function readyOf(message: Json): { pr: number; head: string } | null {
+  const match = READY.exec(`${String(message.subject || '')}\n${String(message.body || '')}`)
+  return match ? { pr: Number(match[1]), head: match[2].toLowerCase() } : null
+}
+
 function obj(value: unknown): Json | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : null
 }
@@ -97,8 +103,8 @@ export function classify(messages: Json[], history: Json[] = []): Json[] {
           const from = sender(item)
           if (!from || from !== sender(candidate)) continue
           if (!earlier(candidate, item, messages.slice(0, output.length))) continue
-          const match = READY.exec(`${String(candidate.subject || '')}\n${String(candidate.body || '')}`)
-          if (match) ready = { status: 'ready', pr: Number(match[1]), head: match[2].toLowerCase(), statusMessageId: candidate.id ?? null }
+          const found = readyOf(candidate)
+          if (found) ready = { status: 'ready', ...found, statusMessageId: candidate.id ?? null }
         }
         item.completionVerification = ready ?? { status: 'suspicious', reason: '같은 Task·Dispatch의 앞선 PR 준비 상태가 없다' }
         if (!ready) {

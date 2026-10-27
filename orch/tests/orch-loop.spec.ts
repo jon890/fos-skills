@@ -17,7 +17,8 @@ import type { FakeBin } from './fixtures/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
 
-// 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
+// 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다.
+// statuses 는 status 조회에, workers 는 worker-list 에 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
 // 받은 인자는 calls.jsonl 에 한 줄씩 적는다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -34,7 +35,9 @@ const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result
 const sub = argv[1]
 const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
 const byRun = st.by_run && run ? st.by_run[run] || [] : null
-if (sub === 'check' && argv.includes('--all')) reply({ messages: byRun || st.messages || [] })
+if (sub === 'check' && argv.includes('--all') && argv.includes('status')) reply({ messages: st.statuses || [] })
+else if (sub === 'check' && argv.includes('--all')) reply({ messages: byRun || st.messages || [] })
+else if (sub === 'worker-list') reply({ workers: st.workers || [], page: {} })
 else if (sub === 'check') reply({ messages: [] })
 else if (sub === 'inbox') reply({ messages: [] })
 else reply({})
@@ -292,6 +295,61 @@ describe('질문 확인', () => {
     assert.equal(inputs.length, 1)
     assert.equal(inputs[0].reminder, true)
     assert.equal(inputs[0].run, 'r')
+  })
+
+  describe('닫힌 질문', () => {
+    const SHA = 'a'.repeat(40)
+    const ready = { id: 's1', type: 'status', run_id: 'r', payload: { dispatchId: 'd' }, subject: `준비됨 #7, head ${SHA}` }
+    const settled = (status: string) => [{ dispatchId: 'd', dispatchStatus: status }]
+    const pr = (state: string, head = SHA) =>
+      gh.setRules([
+        { args: ['pr', 'view', '7'], stdout: `${JSON.stringify({ state, headRefOid: head, commits: [{ oid: head }] })}\n` },
+        { args: ['pr', 'list'], stdout: '[]\n' },
+        { args: ['api', 'user'], stdout: 'me\n' },
+      ])
+    const remindLater = () => write(orchFile('state', 'questions-seen.json'), JSON.stringify({ r: { q: Date.now() / 1000 - 700 } }))
+
+    test('dispatch 가 끝났고 PR 이 머지됐으면 재알림하지 않고 근거를 한 번만 로그에 쓴다', () => {
+      hook('worker-question')
+      orca({ messages: [question()], statuses: [ready], workers: settled('completed') })
+      pr('MERGED')
+      remindLater()
+      once()
+      assert.deepEqual(events(), [])
+      assert.deepEqual(received('worker-question'), [])
+      assert.match(logText(), /^REMINDER-SKIP q: dispatch d completed, PR #7 MERGED$/m)
+      const viewed = () => gh.calls().filter((c) => c.argv.includes('view')).length
+      assert.equal(viewed(), 1)
+      remindLater()
+      once()
+      assert.deepEqual(events(), [])
+      assert.equal(logText().match(/^REMINDER-SKIP /gm)?.length, 1, logText())
+      // 한 번 닫힌 질문은 다시 판정하지 않는다
+      assert.equal(viewed(), 1)
+    })
+
+    for (const [name, workers, state, head] of [
+      ['dispatch 가 살아 있다', settled('running'), 'MERGED', SHA],
+      ['PR 이 열려 있다', settled('completed'), 'OPEN', SHA],
+      ['번호만 같은 다른 PR 이다', settled('completed'), 'MERGED', 'b'.repeat(40)],
+    ] as const) {
+      test(`${name}: 재알림한다`, () => {
+        orca({ messages: [question()], statuses: [ready], workers })
+        pr(state, head)
+        remindLater()
+        once()
+        assert.deepEqual(events().map((e) => e.kind), ['REMINDER'])
+        assert.doesNotMatch(logText(), /REMINDER-SKIP/)
+      })
+    }
+
+    test('준비 상태가 없으면 재알림한다', () => {
+      orca({ messages: [question()], statuses: [], workers: settled('completed') })
+      pr('MERGED')
+      remindLater()
+      once()
+      assert.deepEqual(events().map((e) => e.kind), ['REMINDER'])
+    })
   })
 
   test('처음 보는 미답변 질문은 loop.log 에 QUESTION 줄이고 알림 파일에는 쓰지 않는다', () => {

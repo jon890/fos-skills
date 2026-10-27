@@ -20,6 +20,8 @@
 //                   같은 폴더의 부모(`<specs-dir>/..`)에 있는 그 PR 의 옛 위치 본문 파일 `pr-<이름>.md` 도 지운다(지금 PR 본문은 worker 세션 임시 폴더에 둔다).
 //                   이름은 worktree 이름, 브랜치의 `/` 를 `-` 로 바꾼 것, 브랜치의 첫 `/` 뒤, PR 번호다.
 //                   고르기와 지우기는 lib/spec.ts 의 specCandidates 와 deleteSpecs 다
+//                   워크트리를 지우면 launch-worker 가 그 워크트리에 준 지시서(lib/launched.ts 의 기록. 이어받기, 충돌 해소, 후속 지시서처럼
+//                   이름이 다른 것도 든다)를 --trash 로 옮기고 그 기록을 지운다. 살아 있는 dispatch 가 가리키는 지시서는 남긴다
 //     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
 //     --agent-glob  하위 에이전트 워크트리 폴더 이름의 glob. 기본 `agent-*`(아래 「하위 에이전트 워크트리」)
 //     --close-own-taken-over
@@ -28,7 +30,7 @@
 //     --remote-branches
 //                   저장소마다 워크트리와 로컬 브랜치 정리가 끝난 뒤, 로컬 브랜치가 없어도 내 PR 의 원격 브랜치를 지운다
 //                   (아래 「원격 브랜치 삭제」 의 --remote-branches). 없으면 하지 않는다
-//     --trash       머지 큐 로그를 옮길 휴지통 폴더(아래 「머지 큐 로그」). 기본 ~/.Trash/orch-cleanup-<날짜>
+//     --trash       머지 큐 로그(아래 「머지 큐 로그」)와 기록된 지시서(--specs-dir)를 옮길 휴지통 폴더. 기본 ~/.Trash/orch-cleanup-<날짜>
 //     --wait        터미널을 닫은 뒤 프로세스가 빠지기를 기다리는 초. 0 이상의 유한한 수. 기본 5
 //     --poll-interval  프로세스 확인 간격(초). 0 초과의 유한한 수. 기본 1
 //     --apply       실제로 정리한다
@@ -285,7 +287,7 @@ import { fire } from './lib/events.ts'
 import { realPath } from './lib/fs.ts'
 import { apiTarget, ghBin, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { defaultBase } from './lib/git.ts'
-import { forgetLaunch, readLaunch } from './lib/launched.ts'
+import { forgetLaunch, launchesAt, readLaunch } from './lib/launched.ts'
 import { orcaBin } from './lib/orca.ts'
 import { allWorkers, blocker as ownershipBlocker, cached, LookupError, rowHandles, runWorkers } from './lib/ownership.ts'
 import type { WorkerRow } from './lib/ownership.ts'
@@ -850,6 +852,15 @@ function deleteSpecFiles(specsDir: string | null, name: string, apply: boolean, 
   deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies, live, mode: 'delete', apply, log: (line) => log(`  ${line}`) })
 }
 
+// 그 워크트리에 launch-worker 가 준 지시서(lib/launched.ts 의 기록)를 휴지통으로 옮긴다. 이름 규칙에 기대지 않는다.
+// live 에 든 지시서(살아 있는 dispatch 가 쓴다)와 orch 루트 밖의 지시서는 남긴다. 지시서 폴더를 받지 않았으면 하지 않는다
+function trashLaunchedSpecs(repo: string, specsDir: string | null, path: string, apply: boolean, log: Log, live: Set<string> | null, trash: string): void {
+  if (!specsDir) return
+  const specs = [...new Set(launchesAt(repo, path).flatMap((launch) => (launch.spec ? [launch.spec] : [])))]
+  if (specs.length === 0) return
+  deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies: [], live, mode: { trash }, apply, log: (line) => log(`  ${line}`) })
+}
+
 // 기본 체크아웃이 기준 브랜치에 있으면 origin/<기준> 으로 fast-forward 한다.
 function followBase(repo: string, base: string, apply: boolean, log: Log): void {
   const current = git(repo, 'branch', '--show-current').out
@@ -1399,6 +1410,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
     log(`  worktree 와 로컬 브랜치를 지울 것 ${branch}`)
     deleteRemote(repo, plan, args.base, false, log)
+    trashLaunchedSpecs(repo, specsDir, path, false, log, args.liveSpecs, args.trash)
     deleteSpecFiles(specsDir, name, false, log, args.liveSpecs, branch, m.pr)
     return
   }
@@ -1449,9 +1461,12 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     return
   }
   report.removed.push(path)
-  for (const w of mine) if (typeof w.dispatchId === 'string') forgetLaunch(repo, w.dispatchId)
   deleteRemote(repo, plan, args.base, true, log)
+  trashLaunchedSpecs(repo, specsDir, path, true, log, args.liveSpecs, args.trash)
   deleteSpecFiles(specsDir, name, true, log, args.liveSpecs, branch, m.pr)
+  // 지시서를 옮긴 뒤 지운다. 그 워크트리를 가리키는 다른 Run 의 기록도 워크트리와 함께 끝났다
+  for (const w of mine) if (typeof w.dispatchId === 'string') forgetLaunch(repo, w.dispatchId)
+  for (const launch of launchesAt(repo, path)) forgetLaunch(repo, launch.dispatch)
 }
 
 function sweepBranches(repo: string, args: Args, checkedOut: Set<string>, log: Log): void {

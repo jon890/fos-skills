@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.10.0 (2026-10-27)
+
+- `orch-loop` 이 끝난 dispatch 의 질문을 재알림하지 않는다. 그 dispatch 의 준비 상태가 가리키는 PR 이 모두 머지되거나 닫혔을 때다
+- 처음 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓰고, `state/questions-closed.json` 에 남겨 다시 조회하지 않는다
+- `launch-worker` 가 dispatch 기록(`state/launched-workers/<dispatch>.json`)에 Task 와 지시서 절대경로를 더한다. `send-to-worker` 의 이어 쓰기도 `launch-worker` 를 거쳐 같이 남는다
+- `cleanup-sweep --specs-dir` 가 워크트리를 지우면 그 워크트리의 기록에 든 지시서를 이름과 상관없이 `--trash` 로 옮기고 기록을 지운다. 살아 있는 dispatch 가 가리키는 지시서는 남긴다
+- 공통 지시서 틀의 tasks 규칙을 바꿨다. PR 이 여럿이거나 재시작을 넘길 수 있는 일은 `tasks/` 를 만들고, PR 하나로 끝나는 일은 `build-with-teams` 의 리뷰부터 도는 경로를 쓴다
+
 ## 4.9.0 (2026-10-27)
 
 - `launch-worker` 가 worker-start 실패를 `worker-start 오류: <code>: <message>` 한 줄로 알린다. 다시 띄우기 실패도 이유를 붙인다

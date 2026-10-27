@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -379,14 +379,21 @@ describe('띄우기', () => {
   describe('띄운 worker 의 기록', () => {
     const recordOf = (dispatch: string) => join(worktree, '.orch/state/launched-workers', `${dispatch}.json`)
 
-    test('LAUNCHED 뒤 dispatch, 터미널, 워크트리를 상태 폴더에 남긴다', () => {
+    test('LAUNCHED 뒤 dispatch, Task, 터미널, 워크트리, 지시서를 상태 폴더에 남긴다', () => {
       state({
         next_ids: ['ctx_1'],
         dispatches: { ctx_1: { ...shown('input_accepted'), worker: { agentTerminalHandle: 'term_w' } } },
       })
       const r = launch(['--worktree', worktree, '--run', 'run_a', '--', '--agent', 'claude'])
       assert.equal(r.code, 0, both(r))
-      assert.deepEqual(JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8')), { dispatch: 'ctx_1', terminal: 'term_w', worktree, run: 'run_a' })
+      assert.deepEqual(JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8')), {
+        dispatch: 'ctx_1',
+        task: 'task_1',
+        terminal: 'term_w',
+        worktree,
+        run: 'run_a',
+        spec: resolve(spec),
+      })
     })
 
     test('다시 띄우면 새 dispatch 의 기록이 생긴다', () => {

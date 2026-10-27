@@ -289,6 +289,55 @@ describe('지시서, PR 본문, 기준 브랜치', () => {
     gone(spec, out)
   })
 
+  // launch-worker 가 남기는 기록과 같은 꼴이다(lib/launched.ts)
+  function launched(dispatch: string, path: string, spec: string): void {
+    const dir = join(fx.repo, '.orch/state/launched-workers')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `${dispatch}.json`), JSON.stringify({ dispatch, task: `task_${dispatch}`, terminal: null, worktree: path, run: null, spec }))
+  }
+
+  test('워크트리를 지우면 기록된 지시서를 이름과 상관없이 휴지통으로 옮기고 기록을 지운다', () => {
+    const { path, specs } = mergedWithSpecs('feat-rec')
+    const resume = join(specs, 'spec-feat-rec-resume.md')
+    const conflict = join(specs, 'spec-conflict-9-abc.md')
+    const other = join(specs, 'spec-unrelated.md')
+    for (const file of [resume, conflict, other]) writeFileSync(file, 'x')
+    launched('ctx_a', path, join(specs, 'spec-feat-rec.md'))
+    launched('ctx_b', path, resume)
+    launched('ctx_c', path, conflict)
+    const trash = join(fx.tmp, 'trash-s')
+    const out = runSweep(['--specs-dir', '.orch/specs', '--trash', trash, '--apply'])
+    gone(path, out)
+    for (const file of [resume, conflict, join(specs, 'spec-feat-rec.md')]) gone(file, out)
+    assert.ok(existsSync(join(trash, '.orch', 'specs', 'spec-feat-rec-resume.md')), out)
+    assert.ok(existsSync(join(trash, '.orch', 'specs', 'spec-conflict-9-abc.md')), out)
+    // 기록에 없는 지시서는 건드리지 않는다
+    exists(other, out)
+    assert.deepEqual(readdirSync(join(fx.repo, '.orch/state/launched-workers')), [])
+  })
+
+  test('기록된 지시서도 살아 있는 dispatch 가 쓰면 남긴다', () => {
+    const { path, specs } = mergedWithSpecs('feat-rec-live')
+    const follow = join(specs, 'spec-follow-up.md')
+    writeFileSync(follow, 'x')
+    launched('ctx_f', path, follow)
+    fx.tasks = [{ id: 'task_2', status: 'dispatched', spec: `지시서 ${follow} 를 끝까지 읽고 수행한다.` }]
+    const out = runSweep(['--specs-dir', '.orch/specs', '--trash', join(fx.tmp, 'trash-l'), '--apply'])
+    gone(path, out)
+    exists(follow, out)
+    has(out, '살아 있는 dispatch 가 쓴다')
+  })
+
+  test('dry-run 은 기록된 지시서를 옮길 것만 낸다', () => {
+    const { path, specs } = mergedWithSpecs('feat-rec-dry')
+    const resume = join(specs, 'spec-feat-rec-dry-resume.md')
+    writeFileSync(resume, 'x')
+    launched('ctx_d', path, resume)
+    const out = runSweep(['--specs-dir', '.orch/specs', '--trash', join(fx.tmp, 'trash-d')])
+    has(out, `휴지통으로 옮길 것 ${resume}`)
+    exists(resume, out)
+  })
+
   test('살아 있는 dispatch 를 읽지 못하면 지시서를 남긴다', () => {
     const { path, specs } = mergedWithSpecs('feat-unknown')
     fx.tasksFail = true
