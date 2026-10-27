@@ -10,6 +10,11 @@
 - `board-release.ts` 를 더했다. 릴리스 PR(`--release`)이나 PR 번호(`--pr`)로 항목의 `[release]` 단계를 끝낸다. 부르는 때는 저장소가 정한다
 - `board-sync` 가 정리된 워크트리의 `worktree` 필드를 비우고 중간 PR 을 `merged-pr` 에 쌓는다. 공통 지시서 틀에 worker 는 보드를 고치지 않는다는 줄을 더했다
 
+## 4.7.1 (2026-10-27)
+
+- 끝난 dispatch 의 question 과 escalation 에도 `send-to-worker` 가 답을 단다. `--reply-to` 를 주거나, 없으면 미답변 메시지 중 마지막에 답하고, 깨우지 않으며 `--spec` 이 없으면 0 으로 끝난다
+- 답을 `--from run:<run>` 으로 달아 `orch-doctor` 의 `UNANSWERED` 와 루프의 `REMINDER` 가 남지 않는다
+
 ## 4.7.0 (2026-10-27)
 
 - 머지 큐에 `--required-check NAME` 과 `--allow-fail-check NAME` 을 더했다. 쉼표가 든 체크 이름을 나누지 않고 받는다

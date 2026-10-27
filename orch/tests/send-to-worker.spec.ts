@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { unanswered } from '../scripts/lib/questions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/send-to-worker.ts', import.meta.url))
 // 다시 띄우라는 안내 줄이 가리키는 명령. 실행 규칙의 꼴이다
@@ -153,7 +154,7 @@ describe('살아 있는 dispatch', () => {
     state({ dispatches: worker('dispatched'), inbox })
     const r = send('--body', '그렇게 한다')
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_q --body 그렇게 한다 --run run_x'])
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_q --body 그렇게 한다 --run run_x --from run:run_x'])
     assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_new'])
   })
 
@@ -176,7 +177,7 @@ describe('살아 있는 dispatch', () => {
     state({ dispatches: worker('dispatched'), inbox: [question, answer, message('m_st', 'term_w', 'status', 3)] })
     const r = send('--body', 'x')
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_st --body x --run run_x'])
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_st --body x --run run_x --from run:run_x'])
   })
 
   test('두 번째 후보도 거부되면 더 시도하지 않고 5 다', () => {
@@ -201,7 +202,7 @@ describe('살아 있는 dispatch', () => {
     state({ dispatches: worker('dispatched') })
     const r = send('--body', '- 첫 항목', '--reply-to', 'm_given')
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_given --body - 첫 항목 --run run_x'])
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_given --body - 첫 항목 --run run_x --from run:run_x'])
   })
 
   test('worker 가 보낸 메시지가 없으면 --reply-to 를 요구하고 3 이다', () => {
@@ -223,6 +224,59 @@ describe('살아 있는 dispatch', () => {
 })
 
 describe('끝난 dispatch', () => {
+  test('--reply-to 로 준 메시지에 --from run:<run> 으로 답하고 깨우지 않고 0 이다', () => {
+    state({ dispatches: worker('succeeded'), terminals: [{ handle: 'term_w' }] })
+    const r = send('--body', '이렇게 한다', '--reply-to', 'm_esc')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_esc --body 이렇게 한다 --run run_x --from run:run_x'])
+    assert.match(r.stdout, /^replied: m_esc 에 답했다 \(msg_new\)\. 끝난 dispatch 라 깨우지 않았다/m)
+    assert.deepEqual(lines('nudge'), [])
+    assert.deepEqual(lines('launch'), [])
+  })
+
+  test('--reply-to 가 없으면 미답변 question 과 escalation 중 마지막에 답한다', () => {
+    const inbox = [
+      message('m_hb', 'term_w', 'heartbeat', 9),
+      message('m_q', 'dispatch:ctx_1', 'question', 5),
+      message('m_esc', 'term_w', 'escalation', 7),
+      message('m_st', 'term_w', 'status', 8),
+    ]
+    state({ dispatches: worker('succeeded'), terminals: [], inbox })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_esc --body x --run run_x --from run:run_x'])
+  })
+
+  test('--reply-to 와 --spec 을 주면 답을 단 뒤 이어 띄운다', () => {
+    state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
+    const r = send('--body', '답', '--reply-to', 'm_esc', '--spec', '/s/next.md')
+    assert.equal(r.code, 0, both(r))
+    assert.equal(lines('orca orchestration reply').length, 1)
+    assert.deepEqual(lines('launch'), ['launch --spec /s/next.md --worktree /w/feat --run run_x -- --terminal term_w'])
+    assert.doesNotMatch(r.stdout, /note:/)
+  })
+
+  test('답할 메시지도 --spec 도 없으면 3 이다', () => {
+    const answer = { ...message('m_ans', 'run:run_x', 'status', 6), thread_id: 'm_q' }
+    const question = { ...message('m_q', 'dispatch:ctx_1', 'question', 5), thread_id: 'm_q' }
+    state({ dispatches: worker('completed'), terminals: [], inbox: [question, answer, message('m_st', 'term_w', 'status', 3)] })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 3, both(r))
+    assert.match(r.stdout, /^ended:/m)
+    assert.deepEqual(lines('orca orchestration reply'), [])
+  })
+
+  test('이 답을 unanswered() 가 답으로 세어 그 메시지를 뺀다', () => {
+    state({ dispatches: worker('succeeded'), terminals: [] })
+    send('--body', 'x', '--reply-to', 'm_esc')
+    const sent = lines('orca orchestration reply')[0].split(' ')
+    const from = sent[sent.indexOf('--from') + 1]
+    const escalation = { id: 'm_esc', run_id: 'run_x', type: 'escalation', from_handle: 'term_w', to_handle: 'run:run_x', thread_id: 'm_esc' }
+    const answer = { id: 'msg_new', run_id: 'run_x', type: 'reply', from_handle: from, thread_id: 'm_esc' }
+    assert.deepEqual(unanswered([escalation], 'run_x').map((m) => m.id), ['m_esc'])
+    assert.deepEqual(unanswered([escalation, answer], 'run_x'), [])
+  })
+
   test('터미널이 남았어도 --spec 이 없으면 3 으로 --spec 을 요구한다', () => {
     state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
     const r = send('--body', 'x')
@@ -428,7 +482,7 @@ describe('옵션 접두', () => {
     state({ dispatches: worker('dispatched') })
     const r = send('--body', 'x', '--rep', 'm_given')
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_given --body x --run run_x'])
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_given --body x --run run_x --from run:run_x'])
     const ambiguous = send('--bo', 'x')
     assert.equal(ambiguous.code, 2, both(ambiguous))
     assert.match(ambiguous.stderr, /--bo 이 여러 옵션의 접두다: --body, --body-file/)
