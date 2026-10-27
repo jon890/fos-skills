@@ -24,7 +24,7 @@
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
 //        기록 실패는 stderr 로만 알리고 LAUNCHED 와 종료 코드는 유지한다.
-//        보드가 있으면 지시서의 항목 id, 제목과 단계로 doing 항목을 갱신한다. 실패는 stderr 로 알리고 LAUNCHED 는 유지한다.
+//        보드가 있으면 지시서의 항목 id, 제목과 마일스톤 단계(lib/milestones.ts)로 doing 항목을 갱신한다. 실패는 stderr 로 알리고 LAUNCHED 는 유지한다.
 //        핸들러의 실패와 이벤트 실행기의 예외(설정 파일 오류, state 폴더를 쓰지 못함 같은 것)가 모두 그렇다.
 //        stderr 에 `worker-launched 를 내지 못했다: <이유>` 를 남긴다. worker 가 이미 떠 있어 코디네이터는 LAUNCHED 를 믿고 다음 단계로 가야 한다
 //     새로 만든 워크트리는 띄우지 못하고 멈춰도 남긴다. 지시서의 브랜치 이름을 다시 쓸 때 사람이 판단할 근거라서다.

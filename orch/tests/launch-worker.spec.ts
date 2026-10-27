@@ -655,7 +655,7 @@ describe('before-launch 와 worker-launched', () => {
 })
 
 
-test('LAUNCHED 뒤 지시서의 id, 제목, 할 일로 항목을 만들고 기존 단계는 보존한다', () => {
+test('LAUNCHED 뒤 지시서의 id, 제목과 마일스톤 단계로 항목을 만들고 할 일 줄은 올리지 않으며 기존 단계는 보존한다', () => {
   const file = join(worktree, '.omc', 'board.json')
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, JSON.stringify({ items: [] }))
@@ -668,7 +668,8 @@ test('LAUNCHED 뒤 지시서의 id, 제목, 할 일로 항목을 만들고 기�
   assert.equal(item.title, '자동 갱신')
   assert.equal(item.worktree, 'wt')
   assert.equal(item.status, 'doing')
-  assert.deepEqual(item.details, [{ text: '1. 구현', done: false }, { text: '2. 검증', done: false }])
+  assert.deepEqual(item.details, [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }])
+  assert.equal(item.stages, 'pr=1,merge=2')
   item.details[0].done = true
   writeFileSync(file, JSON.stringify({ items: [item] }))
   state({ next_ids: ['ctx_2'] })
@@ -687,7 +688,7 @@ test('항목 id 가 없으면 --name 을 쓰고 단계가 없으면 기본 단�
   assert.equal(r.code, 0, both(r))
   const item = JSON.parse(readFileSync(file, 'utf8')).items[0]
   assert.equal(item.id, 'example')
-  assert.equal(item.details.length, 3)
+  assert.equal(item.details.length, 2)
   assert.equal(item.worktree, 'new')
 })
 
@@ -826,7 +827,7 @@ describe('중간 과정과 다시 열기', () => {
     assert.deepEqual(items(), [one, two])
   })
 
-  test('보드 항목 id 가 가리키는 done 항목은 다시 열고 남은 일과 중간 과정 줄을 빼고 details 와 next 의 마지막 번호 다음부터 할 일을 붙인다', () => {
+  test('보드 항목 id 가 가리키는 done 항목은 다시 열고 남은 일과 중간 과정 줄을 빼고 details 와 next 의 마지막 번호 다음부터 마일스톤 단계를 붙인다', () => {
     const done = {
       id: 'a',
       title: '옛 제목',
@@ -846,7 +847,7 @@ describe('중간 과정과 다시 열기', () => {
       next: ['5. 배포 확인'],
     }
     writeFileSync(file, JSON.stringify({ items: [done] }))
-    writeFileSync(spec, '# 후속 기능\n허락: push\n보드 항목 id: a\n\n## 할 일\n1. 후속 구현\n2. 후속 머지\n')
+    writeFileSync(spec, '# 후속 기능\n허락: push\n보드 항목 id: a\n\n## 할 일\n1. 후속 구현\n\n## 보드 단계\n1. [pr] 후속 PR\n2. [merge] 후속 머지\n')
     const r = run()
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
@@ -859,12 +860,62 @@ describe('중간 과정과 다시 열기', () => {
     assert.deepEqual(item.details, [
       { text: '1. 구현', done: true },
       { text: '2. 머지', done: true },
-      { text: '6. 후속 구현', done: false },
+      { text: '6. 후속 PR', done: false },
       { text: '7. 후속 머지', done: false },
     ])
+    assert.equal(item.stages, 'pr=6,merge=7')
     assert.equal('pr' in item, false, JSON.stringify(item))
     assert.equal(item['merged-pr'], '12, 9')
     assert.equal('progress' in item, false, JSON.stringify(item))
+  })
+})
+
+describe('마일스톤 단계', () => {
+  let file: string
+  beforeEach(() => {
+    file = join(worktree, '.omc', 'board.json')
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify({ items: [] }))
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  })
+  const config = (body: unknown) => {
+    mkdirSync(join(worktree, '.orch'), { recursive: true })
+    writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify(body))
+  }
+  const made = () => {
+    const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+    assert.equal(r.code, 0, both(r))
+    return { r, item: JSON.parse(readFileSync(file, 'utf8')).items[0] }
+  }
+  const texts = (item: { details: { text: string }[] }) => item.details.map((d) => d.text)
+
+  test('배포 워크플로가 있어도 기본 단계에 배포 단계를 만들지 않는다', () => {
+    config({ finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'stage' } })
+    const { item } = made()
+    assert.deepEqual(texts(item), ['1. PR', '2. 머지'])
+    assert.equal(item.stages, 'pr=1,merge=2')
+  })
+
+  test('board.steps 가 기본 단계를 바꾸고 꼬리표 없는 줄은 stages 에 넣지 않는다', () => {
+    config({ board: { steps: ['[pr] 구현', 'QA 확인', '[merge] 기준 브랜치 머지'] } })
+    const { item } = made()
+    assert.deepEqual(texts(item), ['1. 구현', '2. QA 확인', '3. 기준 브랜치 머지'])
+    assert.equal(item.stages, 'pr=1,merge=3')
+  })
+
+  test('지시서의 보드 단계 절이 설정보다 앞선다', () => {
+    config({ board: { steps: ['[pr] 설정 단계'] } })
+    writeFileSync(spec, '# 일\n허락: push\n보드 항목 id: s\n\n## 보드 단계\n1. [pr] 지시서 단계\n2. [release] 출시\n\n## 할 일\n1. 구현 세부\n')
+    const { item } = made()
+    assert.deepEqual(texts(item), ['1. 지시서 단계', '2. 출시'])
+    assert.equal(item.stages, 'pr=1,release=2')
+  })
+
+  test('꼬리표가 틀리면 보드를 쓰지 않고 알린다', () => {
+    config({ board: { steps: ['[qa] 확인'] } })
+    const { r, item } = made()
+    assert.equal(item, undefined)
+    assert.match(r.stderr, /보드를 갱신하지 못했다: .*board\.steps/)
   })
 })
 

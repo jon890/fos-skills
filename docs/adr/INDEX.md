@@ -17,3 +17,4 @@
 - [ADR-015](015-board-decide-clear.md): 보드의 결정 필요는 남은 줄과 남은 질문만 세고, 중간 과정은 보드 항목을 만들지 않는다 (`accepted`)
 - [ADR-016](016-orch-auto-merge.md): 상주 루프가 머지할 수 있는 PR 을 스스로 머지 큐에 건다 (`accepted`)
 - [ADR-017](017-orch-migration-reserve.md): 마이그레이션 번호는 worker 가 만들기 전에 잠금을 걸고 예약한다 (`accepted`)
+- [ADR-018](018-board-milestone-steps.md): 보드 단계는 사건 꼬리표가 붙은 마일스톤이고, 스크립트가 PR, 머지, 배포, 릴리스로 끝낸다 (`accepted`)

@@ -105,6 +105,11 @@ describe('intermediateCommands', () => {
     ])
   })
 
+  test('merged-pr 에 든 앞 PR 을 지우지 않고 뒤에 더한다', () => {
+    assert.deepEqual(intermediateCommands('a', [], [], '77', null, '70, 71'), [['set', 'a', '--pr', '', '--merged-pr', '70, 71, 77']])
+    assert.deepEqual(intermediateCommands('a', [], [], '77', null, 77), [['set', 'a', '--pr', '', '--merged-pr', '77']])
+  })
+
   test('하위 항목이 그대로면 다시 쓰지 않는다', () => {
     assert.equal(noteLine([], []), null)
     assert.deepEqual(intermediateCommands('a', [{ text: '1. 구현', done: false }], [], '77', null), [['set', 'a', '--pr', '', '--merged-pr', '77']])

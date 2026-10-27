@@ -9,7 +9,7 @@ import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scri
 import type { Section } from '../scripts/lib/config.ts'
 
 const OVERLAY = fileURLToPath(new URL('../references/overlay.md', import.meta.url))
-const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations']
+const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'board']
 const saved = { ORCH_DIR: process.env.ORCH_DIR, GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES }
 
 let tmp: string
