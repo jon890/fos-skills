@@ -15,6 +15,7 @@ import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 const SCRIPT = fileURLToPath(new URL('../scripts/board-sync.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../scripts/board-sync.py', import.meta.url))
 
+// 배포 확인의 조회: \`pr view N --json mergeCommit\` 은 state['merge:N'], \`run list\` 는 state.runs 를 낸다.
 // 마지막 PR 판정의 조회: \`pr view N --json title,headRefName\` 은 state['info:N'], 열린 PR 목록(\`--json number,title\`)은 state.open,
 // \`--head B\` 목록은 state.list 에서 그 브랜치의 행만 낸다
 const FAKE_GH = `const fs = require('node:fs')
@@ -22,7 +23,11 @@ const state = JSON.parse(fs.readFileSync('state.json', 'utf8'))
 const args = process.argv.slice(2)
 const say = (value) => fs.writeSync(1, (typeof value === 'string' ? value : JSON.stringify(value)) + '\\n')
 const head = args.includes('--head') ? args[args.indexOf('--head') + 1] : null
-if (args[1] === 'view' && args.includes('title,headRefName')) {
+if (args[0] === 'run' && args[1] === 'list') say(state.runs || [])
+else if (args[1] === 'view' && args.includes('mergeCommit')) {
+  if (!state['merge:' + args[2]]) process.exit(1)
+  say(state['merge:' + args[2]])
+} else if (args[1] === 'view' && args.includes('title,headRefName')) {
   if (!state['info:' + args[2]]) process.exit(1)
   say(state['info:' + args[2]])
 } else if (args[0] === 'pr' && args[1] === 'view' && args[2] in state) say(state[args[2]])
@@ -174,7 +179,7 @@ describe('board-sync', () => {
     const r = sync(items, ['--dry-run'])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(readFileSync(board, 'utf8'), before)
-    assert.equal(r.result.stdout, 'a -> done\n  step a 1\n  set a done\nboard-sync: a\n')
+    assert.equal(r.result.stdout, 'a -> done\n  step a 1\n  set a done --worktree \nboard-sync: a\n')
   })
 
   test('단계 목록을 모르는 보드 명령이면 고치지 않고 1 로 멈춘다', () => {
@@ -369,5 +374,107 @@ describe('board-sync 마지막 PR 판정', () => {
     const r = sync([{ id: 'a', status: 'wait', branch: 'feat/a' }], ['--open-prs', JSON.stringify([{ number: 9, headRefName: 'feat/a' }])])
     assert.equal(r.code, 0, r.result.stderr)
     assert.equal(r.board.a.pr, 9)
+  })
+})
+
+describe('board-sync 마일스톤 항목', () => {
+  const four = [step('1. PR', false), step('2. 머지', false), step('3. 배포', false), step('4. 릴리스', false)]
+  const config = (body: unknown) => {
+    mkdirSync(join(tmp, '.orch'), { recursive: true })
+    writeFileSync(join(tmp, '.orch', 'config.json'), JSON.stringify(body))
+  }
+  // tmp 를 커밋 하나가 있는 git 저장소로 만들고 그 커밋을 낸다
+  const gitRepo = (): string => {
+    const git = (...args: string[]) => {
+      const done = spawnSync('git', ['-C', tmp, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' })
+      assert.equal(done.status, 0, done.stderr)
+      return done.stdout.trim()
+    }
+    git('init', '-q', '-b', 'main')
+    git('commit', '-q', '--allow-empty', '-m', 'merge')
+    return git('rev-parse', 'HEAD')
+  }
+
+  test('PR 이 열려 있으면 [pr] 단계만 끝낸다', () => {
+    states['7'] = 'OPEN'
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', false)])
+  })
+
+  test('pr 칸이 비면 branch 로 머지된 PR 을 찾고, 판정 규칙이 없으면 마지막 PR 로 보고 기본 done 지점(merge)에서 done 으로 바꾼다', () => {
+    states.list = [{ number: 7, headRefName: 'feat/a', state: 'MERGED' }]
+    const r = sync([{ id: 'a', status: 'doing', branch: 'feat/a', stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)] }], [
+      '--open-prs',
+      '[]',
+    ])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', true)])
+    assert.equal(r.board.a.pr, 7)
+    assert.equal(r.board.a['merged-pr'], 7)
+  })
+
+  test('done 지점이 release 면 머지 뒤에도 doing 으로 두고 pr 칸을 남기며 다시 판정하지 않는다', () => {
+    config({ board: { done_after: 'release' } })
+    states['7'] = 'MERGED'
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2,deploy=3,release=4', details: four }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.a.pr, 7)
+    assert.equal(r.board.a['merged-pr'], 7)
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', true), step('3. 배포', false), step('4. 릴리스', false)])
+    const again = run(['--board', board, '--repo', tmp])
+    assert.equal(again.code, 0, again.stderr)
+    assert.match(again.stdout, /바뀐 항목 없음/)
+  })
+
+  test('배포 워크플로가 머지 커밋을 성공으로 배포했으면 [deploy] 단계까지 끝낸다', () => {
+    const sha = gitRepo()
+    config({ board: { done_after: 'release' }, finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'main' } })
+    states['7'] = 'MERGED'
+    states['merge:7'] = sha
+    states.runs = [{ headSha: sha, status: 'completed', conclusion: 'success' }]
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, 'merged-pr': 7, stages: 'pr=1,merge=2,deploy=3,release=4', details: four.map((d, i) => (i < 2 ? { ...d, done: true } : d)) }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', true), step('3. 배포', true), step('4. 릴리스', false)])
+  })
+
+  test('배포가 끝나지 않았으면 [deploy] 단계를 그대로 둔다', () => {
+    const sha = gitRepo()
+    config({ board: { done_after: 'release' }, finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'main' } })
+    states['7'] = 'MERGED'
+    states['merge:7'] = sha
+    states.runs = [{ headSha: sha, status: 'in_progress', conclusion: null }]
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, stages: 'pr=1,merge=2,deploy=3,release=4', details: four }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', true), step('3. 배포', false), step('4. 릴리스', false)])
+  })
+
+  test('중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓고 남은 일 줄을 둔다', () => {
+    mkdirSync(join(tmp, '.orch'), { recursive: true })
+    writeFileSync(join(tmp, '.orch', 'config.json'), JSON.stringify({ finish: { task_pattern: '^\\[(PROJ-[0-9]+)\\]' } }))
+    states['7'] = 'MERGED'
+    states['info:7'] = { title: '[PROJ-1] 앞 PR', headRefName: 'feat/a' }
+    states.open = [{ number: 8, title: '[PROJ-1] 뒤 PR' }]
+    const r = sync([{ id: 'a', status: 'doing', pr: 7, 'merged-pr': 5, stages: 'pr=1,merge=2', details: [step('1. PR', false), step('2. 머지', false)] }])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal('pr' in r.board.a, false)
+    assert.equal(r.board.a['merged-pr'], '5, 7')
+    assert.deepEqual(r.board.a.details, [step('1. PR', true), step('2. 머지', true), step('남은 일: PR #8', false)])
+  })
+
+  test('git 워크트리 목록에 없는 worktree 칸은 done 항목도 비운다', () => {
+    gitRepo()
+    const r = sync([
+      { id: 'gone', status: 'done', worktree: 'removed-wt' },
+      { id: 'here', status: 'wait', worktree: basename(tmp) },
+    ])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal('worktree' in r.board.gone, false)
+    assert.equal(r.board.here.worktree, basename(tmp))
   })
 })

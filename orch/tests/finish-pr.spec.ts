@@ -909,6 +909,52 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(starting(c.calls(), 'board ').length, 0, c.calls().join('\n'))
   })
 
+  test('마일스톤 항목은 판정하지 못한 PR 도 마지막으로 보고 기본 done 지점(merge)에서 done 으로 바꾼다', async (t) => {
+    const c = setup(t)
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [{ id: 'm', status: 'doing', branch: 'feat/x', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }] }])
+    const steps = JSON.stringify([{ number: 1, done: false, text: '1. PR' }, { number: 2, done: false, text: '2. 머지' }])
+    // --task-pattern 이 없어 판정하지 못한다
+    const r = await c.finish([...bin], { FAKE_STEPS: steps })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board '), [
+      `board steps m --file ${file}`,
+      `board step m 1 --file ${file}`,
+      `board step m 2 --file ${file}`,
+      `board set m done --worktree  --file ${file}`,
+      `board set m --merged-pr 77 --file ${file}`,
+    ])
+    has(r.stdout, '보드 m done(브랜치로 찾았다)')
+  })
+
+  test('마일스톤 항목은 배포가 성공하면 [deploy] 단계까지 끝내고 done 지점 전이면 doing 으로 둔다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.repo, '.orch'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch', 'config.json'), JSON.stringify({ board: { done_after: 'release' } }))
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [{ id: 'm', status: 'doing', pr: 77, stages: 'pr=1,merge=2,deploy=3,release=4' }])
+    const steps = JSON.stringify([1, 2, 3, 4].map((number) => ({ number, done: number === 1, text: `${number}. 단계` })))
+    const r = await c.finish([...DEPLOY, '--complete', ...bin], { FAKE_STEPS: steps })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board '), [
+      `board steps m --file ${file}`,
+      `board step m 2 --file ${file}`,
+      `board step m 3 --file ${file}`,
+      `board set m --merged-pr 77 --file ${file}`,
+    ])
+    has(r.stdout, '보드 m 는 done 지점 전이라 단계만 끝내고 PR 77 를 merged-pr 에 적었다')
+  })
+
+  test('마일스톤 항목의 중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓는다', async (t) => {
+    const c = setup(t)
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [{ id: 'm', status: 'doing', pr: 77, 'merged-pr': 70, stages: 'pr=1,merge=2' }])
+    const steps = JSON.stringify([{ number: 1, done: true, text: '1. PR' }, { number: 2, done: true, text: '2. 머지' }])
+    const r = await c.finish(['--intermediate', ...bin], { FAKE_STEPS: steps })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board set'), [`board set m --pr  --merged-pr 70, 77 --file ${file}`])
+  })
+
   test('찾은 항목이 둘 이상이면 건너뛴다', async (t) => {
     const c = setup(t)
     const bin = board(c, [{ id: 'a', pr: '#77' }, { id: 'b', pr: '77' }])

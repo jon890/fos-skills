@@ -42,6 +42,9 @@
 //     하위 항목에 `남은 일: PR #31, 지시서 spec-b.md` 한 줄을 두고, pr 칸을 비우고 merged-pr 에 적는다.
 //     merged-pr 에 적은 PR 은 board-sync.ts 가 다시 판정하지 않으므로 --intermediate 가 덮이지 않는다.
 //     찾은 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다
+//     마일스톤 항목(stages 칸이 있다, lib/milestones.ts)은 위 대신 mergedCommands 로 [pr], [merge] 단계와 배포가 성공했으면 [deploy] 단계를 끝낸다.
+//     판정하지 못한 PR 은 board-sync.ts 와 같이 마지막으로 본다. 마지막 PR 이 done 지점(board.done_after, 기본 merge)에 닿았을 때만 done 으로 바꾸고, 아니면 doing 으로 두고 PR 을 merged-pr 에 적는다.
+//     마지막 PR 은 pr 칸에 남겨 board-release.ts 가 찾게 한다. 중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓는다
 //
 //     업무 완료(--complete-cmd)는 after-deploy 의 옛 칸이다. 다음 major 에서 지운다.
 //     마지막 PR 이고, 배포가 성공했거나 배포 워크플로가 없고, PR 제목에서 --task-pattern 으로 업무 번호를 뽑았을 때만
@@ -108,6 +111,8 @@ import { findBoardItems, intermediateCommands, noteLine, readBoard } from './lib
 import type { BoardDetail, BoardStep } from './lib/board.ts'
 import { conflictSpecFiles } from './lib/conflicts.ts'
 import { deployVerdict, parseRuns } from './lib/deploy.ts'
+import { boardSettings, mergedCommands, stagesOf } from './lib/milestones.ts'
+import type { StageKind, Stages } from './lib/milestones.ts'
 import { extractTaskNumber, judgeLastPr, numberPattern, specFiles } from './lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
@@ -406,12 +411,13 @@ function deleteConflictSpecs(args: Args, repo: string): void {
 
 // 머리 주석의 「마지막 PR 판정」. 판정하지 못하면 중간 PR 이다. reason 은 근거 줄의 괄호 안이다
 // prs 와 specs 는 남은 PR 과 지시서다. 보드의 남은 일 줄에 쓴다
-function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; reason: string; prs: string[]; specs: string[] } {
-  if (args.complete) return { last: true, reason: '--complete 로 지정', prs: [], specs: [] }
-  if (args.intermediate) return { last: false, reason: '--intermediate 로 지정', prs: [], specs: [] }
+// known 은 판정했는지다. 판정하지 못해 중간으로 본 것이면 false 다
+function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; known: boolean; reason: string; prs: string[]; specs: string[] } {
+  if (args.complete) return { last: true, known: true, reason: '--complete 로 지정', prs: [], specs: [] }
+  if (args.intermediate) return { last: false, known: true, reason: '--intermediate 로 지정', prs: [], specs: [] }
   const rules = { taskPattern: args.taskPattern, specTaskPattern: args.specTaskPattern, specsDir: args.specsDir ? specsDirOf(args, repo) : null }
   const verdict = judgeLastPr(repo, { number: args.pr, title: merged.title, branch: merged.branch }, rules)
-  return { last: verdict.last === true, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
+  return { last: verdict.last === true, known: verdict.last !== null, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
 }
 
 async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ deploy: Deploy; sha: string }> {
@@ -428,6 +434,16 @@ async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ 
     if (verdict !== 'wait') return { deploy: verdict, sha }
     if (Date.now() >= deadline) return { deploy: 'timeout', sha: '' }
     await sleep(args.pollInterval * 1000)
+  }
+}
+
+// 그 항목의 stages 칸(lib/milestones.ts). 옛 단계 항목이거나 보드를 읽지 못하면 null 이다
+function milestoneStages(args: Args, repo: string, item: string): Stages | null {
+  try {
+    const row = readBoard(boardPath(repo, args.board)).find((i) => pyStr(i.id) === item)
+    return row ? stagesOf(row) : null
+  } catch {
+    return null
   }
 }
 
@@ -453,8 +469,8 @@ function setBoardDone(args: Args, repo: string, item: string): boolean {
   return board(args, repo, ['set', item, 'done', '--worktree', '', '--pr', '', '--next', ''])
 }
 
-// 중간 PR 을 항목에 반영한다(lib/board.ts 의 intermediateCommands). 항목이나 단계 목록을 읽지 못하면 false 다
-function setBoardIntermediate(args: Args, repo: string, item: string, note: string | null): boolean {
+// 보드 항목과 그 단계 목록. 읽지 못하면 알리고 null 이다
+function boardRow(args: Args, repo: string, item: string): { row: Record<string, unknown>; steps: BoardStep[] } | null {
   const file = boardPath(repo, args.board)
   let row: Record<string, unknown> | undefined
   try {
@@ -471,10 +487,34 @@ function setBoardIntermediate(args: Args, repo: string, item: string, note: stri
   }
   if (!row || steps.code !== 0 || !Array.isArray(parsed)) {
     log(`보드 ${item} 의 단계 목록을 읽지 못했다: ${steps.stderr.trim()}`)
+    return null
+  }
+  return { row, steps: parsed as BoardStep[] }
+}
+
+// 중간 PR 을 옛 단계 항목에 반영한다(lib/board.ts 의 intermediateCommands). 항목이나 단계 목록을 읽지 못하면 false 다
+function setBoardIntermediate(args: Args, repo: string, item: string, note: string | null): boolean {
+  const got = boardRow(args, repo, item)
+  if (!got) return false
+  const details = (Array.isArray(got.row.details) ? got.row.details : []) as BoardDetail[]
+  return intermediateCommands(item, details, got.steps, args.pr, note, got.row['merged-pr']).every((cmd) => board(args, repo, cmd))
+}
+
+// 마일스톤 항목(stages 칸이 있다)에 머지와 배포를 반영한다(lib/milestones.ts 의 mergedCommands). 배포가 성공했으면 [deploy] 단계까지 끝낸다.
+// 마지막 PR 이 done 지점에 닿았으면 done 이다. 결과는 done, doing, 실패(false) 셋이다
+function setBoardMilestone(args: Args, repo: string, item: string, stages: Stages, deploy: Deploy, last: boolean, note: string | null): 'done' | 'doing' | false {
+  let doneAfter: StageKind | null
+  try {
+    doneAfter = boardSettings(repo).doneAfter
+  } catch (e) {
+    log(`보드 설정을 읽지 못했다: ${(e as Error).message}`)
     return false
   }
-  const details = (Array.isArray(row.details) ? row.details : []) as BoardDetail[]
-  return intermediateCommands(item, details, parsed as BoardStep[], args.pr, note).every((cmd) => board(args, repo, cmd))
+  const got = boardRow(args, repo, item)
+  if (!got) return false
+  const made = mergedCommands({ ...got.row, id: item }, got.steps, stages, args.pr, deploy === 'success' ? 'deploy' : 'merge', { last, doneAfter, note })
+  if (!made.cmds.every((cmd) => board(args, repo, cmd))) return false
+  return made.done ? 'done' : 'doing'
 }
 
 function failLabel(r: FireResult): string {
@@ -552,7 +592,16 @@ async function finish(args: Args, repo: string): Promise<number> {
 
   if (!deployed) return fail(problems.join('; '))
   const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
-  if (item && (last || item.by === 'id')) {
+  const stages = item && item.by !== 'id' ? milestoneStages(args, repo, item.id) : null
+  if (item && stages) {
+    // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
+    // 판정하지 못한 PR 은 board-sync 와 같이 마지막으로 본다. done 지점 전이면 doing 으로 남아 업무 완료로 번지지 않는다
+    const boardLast = last || !verdict.known
+    const result = setBoardMilestone(args, repo, item.id, stages, deploy, boardLast, boardLast ? null : noteLine(verdict.prs, verdict.specs))
+    if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
+    else if (result === 'doing') log(`보드 ${item.id} 는 ${boardLast ? 'done 지점 전이라' : '중간 PR 이라'} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
+    else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
+  } else if (item && (last || item.by === 'id')) {
     if (setBoardDone(args, repo, item.id)) log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
     else problems.push(`보드 ${item.id} 를 done 으로 바꾸지 못했다`)
   } else if (item) {

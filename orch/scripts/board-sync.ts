@@ -19,6 +19,21 @@
 //     - 예전 버전이 남긴 「자동: 」 줄은 지운다
 //     - --goal 을 주면 끝에 goal-progress.ts 로 목표 진행률을 다시 센다
 //
+// 마일스톤 항목(stages 칸이 있는 항목, lib/milestones.ts, ADR-018)은 위 규칙 대신 사건으로 단계를 끝낸다:
+//     - pr 칸의 PR 이 열려 있으면 [pr] 단계를 끝낸다
+//     - 머지됐으면 위와 같이 마지막 PR 인지 판정하고 lib/milestones.ts 의 mergedCommands 로 [pr], [merge] 단계를 끝낸다.
+//       판정하지 못하면(gh 조회 실패는 빼고) 마지막 PR 로 본다. 마일스톤 항목은 마지막 PR 이어도 done 지점 전이면 doing 으로 남아
+//       잘못 본 값이 업무 완료로 번지지 않는다. 마지막 PR 은 pr 칸에 두고 merged-pr 에도 적어 다음 틱에 다시 판정하지 않는다.
+//       중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓고 남은 일 줄을 둔다
+//     - 항목에 끝나지 않은 [deploy] 단계가 있고 config.json 에 finish.deploy_workflow 와 deploy_branch 가 있으면, 머지 커밋이 든 배포 실행이
+//       성공했는지 틱마다 한 번 본다(lib/deploy.ts). 성공이면 [deploy] 단계까지 끝낸다. 배포 실행 목록은 틱마다 한 번만 읽는다
+//     - 마지막 PR 이 done 지점(board.done_after, 기본 merge)에 닿으면 done 으로 바꾸고 worktree 칸을 비운다
+//     - [release] 단계는 이 스크립트가 끝내지 않는다. board-release.ts 가 끝낸다
+//     - config.json 의 board 절이 틀리면 stderr 에 한 줄 남기고 마일스톤 항목의 머지 반영을 건너뛴다
+//
+// 모든 항목(done, goal 포함)의 worktree 칸이 git 워크트리 목록에 없는 이름이면 칸을 비운다. 끝난 worker 의 워크트리를 정리한 뒤
+// 창이 「worker 없음」 을 보이지 않게 한다. 워크트리 목록을 읽지 못하면 비우지 않는다
+//
 // 사용법:
 //     board-sync.ts [--board PATH] [--repo DIR] [--goal GOAL_ID --goal-items FILE] [--dry-run]
 //
@@ -45,9 +60,14 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
-import { detailArgs, detailText as textOf, noteLine, prSteps, withNote } from './lib/board.ts'
+import { detailArgs, detailText as textOf, noteLine, prNumbers, prSteps, withNote } from './lib/board.ts'
 import type { BoardDetail as Detail } from './lib/board.ts'
+import { deployVerdict, parseRuns } from './lib/deploy.ts'
+import type { DeployVerdict, RunRow } from './lib/deploy.ts'
+import { git } from './lib/git.ts'
 import { judgeLastPr, rulesFrom } from './lib/last-pr.ts'
+import { advanceCommands, boardSettings, mergedCommands, stagesOf } from './lib/milestones.ts'
+import type { BoardSettings } from './lib/milestones.ts'
 import { pidFileAlive } from './lib/process.ts'
 import type { LastPrRules, LastPrVerdict } from './lib/last-pr.ts'
 import { worktreePaths } from './lib/workers.ts'
@@ -91,12 +111,32 @@ function prNumber(pr: unknown): string {
   return pyStr(pr || '').split(',')[0].replace(/\D/g, '')
 }
 
-// pr 칸의 첫 PR 이 MERGED 인지. 조회에 실패하면 머지되지 않은 것으로 본다.
-function prMerged(pr: unknown, repo: string): boolean {
+// pr 칸의 첫 PR 의 상태(OPEN, MERGED, CLOSED). 조회에 실패하면 null 이다
+function prState(pr: unknown, repo: string): string | null {
   const num = prNumber(pr)
-  if (!num) return false
+  if (!num) return null
   const done = gh(['pr', 'view', num, '--json', 'state', '--jq', '.state'], { cwd: repo })
-  return done.code === 0 && done.stdout.trim() === 'MERGED'
+  return done.code === 0 ? done.stdout.trim() : null
+}
+
+// git 워크트리 폴더 이름들. 목록을 읽지 못하면 null 이다
+function worktreeNames(repo: string): Set<string> | null {
+  const done = git(repo, ['worktree', 'list', '--porcelain'])
+  if (done.code !== 0) return null
+  return new Set(done.stdout.split('\n').flatMap((line) => (line.startsWith('worktree ') ? [basename(line.slice('worktree '.length))] : [])))
+}
+
+// 머지 커밋이 배포됐는지(lib/deploy.ts). 배포 실행 목록은 한 번만 읽어 runs 에 둔다. 머지 커밋을 읽지 못하면 wait 이다
+function deployedNow(repo: string, num: string, deploy: { workflow: string; branch: string }, cache: { runs: RunRow[] | null }): DeployVerdict {
+  const merge = gh(['pr', 'view', num, '--json', 'mergeCommit', '--jq', '.mergeCommit.oid'], { cwd: repo })
+  const oid = merge.code === 0 ? merge.stdout.trim() : ''
+  if (!/^[0-9a-f]{7,64}$/.test(oid)) return 'wait'
+  if (cache.runs === null) {
+    git(repo, ['fetch', '-q', 'origin', deploy.branch])
+    const runs = gh(['run', 'list', '--branch', deploy.branch, '--workflow', deploy.workflow, '--limit', '15', '--json', 'headSha,status,conclusion'], { cwd: repo })
+    cache.runs = runs.code === 0 ? parseRuns(runs.stdout) : []
+  }
+  return deployVerdict(cache.runs, oid, (ancestor, sha) => git(repo, ['merge-base', '--is-ancestor', ancestor, sha]).code === 0).verdict
 }
 
 // 보드 명령이 판정한 단계 목록. 읽지 못하면 null.
@@ -178,60 +218,112 @@ function main(argv: string[]): number {
     }
   }
   const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
+  const names = worktreeNames(repo)
   let rules: LastPrRules | null | undefined
+  let settings: BoardSettings | null | undefined
+  const runs: { runs: RunRow[] | null } = { runs: null }
   const changed: string[] = []
   for (const item of items) {
-    if (SKIP_STATUS.has(String(item.status))) continue
     const id = String(item.id)
     const cmds: string[][] = []
-    let discovered: Pr | undefined
-    const branch = branches.get(String(item.worktree)) || String(item.branch || '')
-    if (!item.pr && branch) {
-      if (open === null) {
-        const got = ghJson<Pr[]>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,headRefName'], { cwd: repo })
-        open = got.ok && Array.isArray(got.data) ? got.data : []
-      }
-      discovered = open.find((pr) => pr.headRefName === branch)
-      if (!discovered) {
-        const got = ghJson<Pr[]>(['pr', 'list', '--state', 'merged', '--head', branch, '--limit', '100', '--json', 'number,headRefName,state'], { cwd: repo })
-        if (got.ok && Array.isArray(got.data)) discovered = got.data.find((pr) => pr.headRefName === branch && pr.state === 'MERGED')
-      }
-      if (discovered?.state === 'MERGED' && String(discovered.number) === prNumber(item['merged-pr'])) discovered = undefined
-      if (discovered) {
-        item.pr = String(discovered.number)
-        cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch])
-      }
-    }
-    const merged = discovered?.state === 'MERGED' || (item.pr ? prMerged(item.pr, repo) : false)
-    const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
-    let details = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
-    let finish = false
     const after: string[][] = []
-    const num = prNumber(item.pr)
-    if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
-      // 마무리가 배포를 확인한 뒤 판정과 표시(PR!, PR~)로 이 항목을 고친다. 여기서 먼저 고치면 그 표시를 덮는다
-      out(`board-sync: ${id} 는 PR ${num} 의 마무리(finish-pr)가 돌고 있어 그쪽에 맡긴다`)
-    } else if (merged) {
-      const steps = boardSteps(boardBin, id, board)
-      if (steps === null) {
-        err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
-        return 1
+    let finish = false
+    // 끝난 worker 의 워크트리가 정리됐으면 칸을 비운다. done 과 goal 항목도 본다
+    if (names !== null && typeof item.worktree === 'string' && item.worktree && !names.has(item.worktree)) cmds.push(['set', id, '--worktree', ''])
+    const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
+    let details = old
+    if (!SKIP_STATUS.has(String(item.status))) {
+      let discovered: Pr | undefined
+      const branch = branches.get(String(item.worktree)) || String(item.branch || '')
+      if (!item.pr && branch) {
+        if (open === null) {
+          const got = ghJson<Pr[]>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,headRefName'], { cwd: repo })
+          open = got.ok && Array.isArray(got.data) ? got.data : []
+        }
+        discovered = open.find((pr) => pr.headRefName === branch)
+        if (!discovered) {
+          const got = ghJson<Pr[]>(['pr', 'list', '--state', 'merged', '--head', branch, '--limit', '100', '--json', 'number,headRefName,state'], { cwd: repo })
+          if (got.ok && Array.isArray(got.data)) discovered = got.data.find((pr) => pr.headRefName === branch && pr.state === 'MERGED')
+          // 그 브랜치의 가장 최근 머지가 merged-pr 에 들었으면 이미 반영한 머지라 다시 연결하지 않는다. 더 옛 머지도 보지 않는다
+          if (discovered && prNumbers(item['merged-pr']).has(String(discovered.number))) discovered = undefined
+        }
+        if (discovered) {
+          item.pr = String(discovered.number)
+          cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch])
+        }
       }
-      if (rules === undefined) rules = lastPrRules(repo)
-      const verdict = judge(repo, num, rules)
-      const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '단계 수로 정함') : verdict.last ? '마지막' : '중간'
-      if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
-      if (!verdict?.retry) {
-        const last = verdict?.last ?? (steps.filter((step) => !step.done).length <= 1)
-        if (last) {
-          finish = true
-          details = withNote(details, null)
-          after.push(...steps.filter((step) => !step.done).map((step) => ['step', id, String(step.number)]), ['set', id, 'done'])
-        } else {
-          const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
-          details = withNote(details, note)
-          // lib/board.ts 의 intermediateCommands 와 같은 순서다. 하위 항목은 위에서 한 번에 다시 쓴다
-          after.push(...prSteps(steps, num).map((n) => ['step', id, String(n)]), ['set', id, '--pr', '', '--merged-pr', num])
+      const state = discovered ? (discovered.state ?? 'OPEN') : item.pr ? prState(item.pr, repo) : null
+      const merged = state === 'MERGED'
+      details = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
+      const num = prNumber(item.pr)
+      const stages = stagesOf(item)
+      if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
+        // 마무리가 배포를 확인한 뒤 판정과 표시(PR!, PR~)로 이 항목을 고친다. 여기서 먼저 고치면 그 표시를 덮는다
+        out(`board-sync: ${id} 는 PR ${num} 의 마무리(finish-pr)가 돌고 있어 그쪽에 맡긴다`)
+      } else if (stages && (state === 'OPEN' || merged)) {
+        const steps = boardSteps(boardBin, id, board)
+        if (steps === null) {
+          err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
+          return 1
+        }
+        if (settings === undefined) {
+          try {
+            settings = boardSettings(repo)
+          } catch (e) {
+            err(`board-sync: 보드 설정을 읽지 못해 마일스톤 항목의 머지 반영을 건너뛴다: ${(e as Error).message}`)
+            settings = null
+          }
+        }
+        const doneAfter = settings?.doneAfter ?? null
+        const deploy = settings?.deploy ?? null
+        // 끝나지 않은 [deploy] 단계가 있고 배포 설정이 있을 때만 배포를 본다
+        const deployPending = () => deploy !== null && stages.deploy !== undefined && steps.some((step) => step.number === stages.deploy && !step.done)
+        if (state === 'OPEN') {
+          after.push(...advanceCommands(id, steps, stages, 'pr', { last: false, doneAfter }).cmds)
+        } else if (settings !== null && prNumbers(item['merged-pr']).has(num)) {
+          // 이미 반영한 마지막 PR 이다. 배포만 기다린다
+          if (deployPending() && deployedNow(repo, num, deploy as { workflow: string; branch: string }, runs) === 'success') {
+            const got = advanceCommands(id, steps, stages, 'deploy', { last: true, doneAfter })
+            after.push(...got.cmds)
+            finish = got.done
+          }
+        } else if (settings !== null) {
+          if (rules === undefined) rules = lastPrRules(repo)
+          const verdict = judge(repo, num, rules)
+          const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '마지막으로 봄') : verdict.last ? '마지막' : '중간'
+          if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
+          if (!verdict?.retry) {
+            const last = verdict?.last ?? true
+            const reached = deployPending() && deployedNow(repo, num, deploy as { workflow: string; branch: string }, runs) === 'success' ? 'deploy' : 'merge'
+            const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
+            const got = mergedCommands({ ...item, details }, steps, stages, num, reached, { last, doneAfter, note })
+            after.push(...got.cmds)
+            finish = got.done
+          }
+        }
+      } else if (merged && !stages) {
+        const steps = boardSteps(boardBin, id, board)
+        if (steps === null) {
+          err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
+          return 1
+        }
+        if (rules === undefined) rules = lastPrRules(repo)
+        const verdict = judge(repo, num, rules)
+        const label = verdict === null || verdict.last === null ? (verdict?.retry ? '다음 틱에 다시 판정' : '단계 수로 정함') : verdict.last ? '마지막' : '중간'
+        if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
+        if (!verdict?.retry) {
+          const last = verdict?.last ?? (steps.filter((step) => !step.done).length <= 1)
+          if (last) {
+            finish = true
+            details = withNote(details, null)
+            after.push(...steps.filter((step) => !step.done).map((step) => ['step', id, String(step.number)]), ['set', id, 'done', '--worktree', ''])
+          } else {
+            const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
+            details = withNote(details, note)
+            // lib/board.ts 의 intermediateCommands 와 같은 순서다. 하위 항목은 위에서 한 번에 다시 쓴다
+            const mergedPrs = [...new Set([...prNumbers(item['merged-pr']), num])].join(', ')
+            after.push(...prSteps(steps, num).map((n) => ['step', id, String(n)]), ['set', id, '--pr', '', '--merged-pr', mergedPrs])
+          }
         }
       }
     }
