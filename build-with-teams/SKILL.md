@@ -2,21 +2,23 @@
 name: build-with-teams
 description: |
   planning 이 만든 task 를 읽어 plan 하나를 구현까지 끝낸다.
+  PR 하나로 끝나는 작은 일은 task 없이 지시서나 ADR 을 계획으로 받아 리뷰 단계부터 돈다.
   "/build-with-teams", "agent team 으로 빌드", "teams 로 phase 실행",
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.23.1"
+  version: "5.24.0"
 ---
 # build-with-teams
 
 **목표: planning 이 만든 `tasks/` 를 읽어 구현하고, 검토를 거쳐 PR 을 만든다.**
 
 - 계획에 결함이 있으면 구현 전에 찾아낸다.
-- plan 하나를 PR 하나로 끝낸다. PR 하나에 들어가지 않는 크기면 구현 전에 plan 을 나누게 돌려보낸다.
+- plan 하나를 PR 하나로 끝내는 것이 기본이다. PR 하나에 들어가지 않는 크기면 구현 전에 plan 을 나누게 돌려보낸다.
+  업무가 PR 여럿에 걸치면 phase 경계에서 PR 을 나누고, 끝난 phase 는 `index.json` 의 `current_phase` 를 다음 phase 로 올려 남긴다.
 - 구현된 코드가 계획한 것과 같아야 한다.
 - 코드가 `docs/` 에 적힌 결정과 어긋나지 않아야 한다.
-- 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획서는 이 스킬이 PR 에서 지운다.
+- 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획서는 이 스킬이 남은 phase 가 없는 PR(업무의 마지막 PR)에서 지운다.
 
 team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서가 소유한다.
 
@@ -55,7 +57,7 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 | docs 경로와 tasks 경로 (기본값 `docs/`, `tasks/`) | 1, 3, 5, 6 |
 | 커밋 컨벤션, 반복될 실패를 규칙으로 넣을 위치 | 4, 6 |
 | 의존성 설치와 환경 파일 준비 | 2 |
-| 계획서 보존 여부 (기본값: 지운다) | 6 |
+| 계획서 보존 여부 (기본값: 남은 phase 가 없는 PR 에서 지운다) | 6 |
 
 ## 실행 절차
 
@@ -69,6 +71,9 @@ team-lead 가 팀원 넷을 부른다. 각자의 판정 기준은 자기 문서�
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
 | 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
 | 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, `pr_mergeable.sh` 가 0 으로 끝났고, 팀원이 남지 않았다 | `references/step-finish.md` |
+
+task 없이 리뷰만 도는 경로는 아래 「task 없이 리뷰부터 도는 경로」 의 표를 따른다.
+발동 조건: 일이 PR 하나로 끝나고, `tasks/` 에 그 일의 plan 이 없고, 계획 입력으로 쓸 지시서나 ADR 이 있다.
 
 **팀원을 스폰하기 전에 [`references/team-spawn.md`](references/team-spawn.md)를 읽는다.**
 
@@ -233,3 +238,23 @@ phase 파일의 「Blocked 조건」 에 걸려 executor 가 같은 값을 회�
 
 [`references/step-finish.md`](references/step-finish.md)를 읽고 수행한다.
 기준 브랜치 확인, 통합 검증, 원격 검증 목록, 계획서 삭제, PR, 팀 종료, 작업 공간 정리, 보고, 반복될 실패를 저장소 규칙으로 옮기는 일이 거기 있다.
+
+## task 없이 리뷰부터 도는 경로
+
+PR 하나로 끝나는 작은 일에 `tasks/` 를 만들면 머지 뒤 지울 파일만 는다.
+이 경로는 지시서나 ADR 을 계획 입력으로 받아, 부른 쪽이 구현한 뒤의 검토와 PR 만 맡는다.
+PR 이 둘 이상이거나 세션 재시작, 계정 전환을 넘길 수 있는 일이면 이 경로를 쓰지 않고 `planning` 으로 `tasks/` 를 만든다.
+다음 실행자가 계획과 phase 커밋으로 이어받아야 하기 때문이다.
+
+`$PLAN_INPUT` 은 계획 입력으로 쓸 지시서나 ADR 의 절대경로다.
+
+| 단계 | 이름 | 통과 조건 | reference |
+| --- | --- | --- | --- |
+| 1 | 작업 공간 확인 | 위 2단계의 요구를 채운 작업 공간에 구현이 커밋돼 있다 | 오버레이 |
+| 2 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
+| 3 | 통합 검증과 PR | 위 6단계의 통과 조건에서 계획서 삭제 커밋을 뺀 것을 채웠다 | `references/step-finish.md` |
+
+- 재실행 확인, 계획 검토, phase 구현(위 1, 3, 4단계)은 돌지 않는다. 계획서가 없어 `plan_precheck.py` 와 `verify_task.py` 가 볼 것이 없다.
+- 2단계는 위 5단계와 같다. code-reviewer 에게 phase 파일 대신 `$PLAN_INPUT` 을 넘긴다. 발견의 phase 자리에는 `-` 를 쓴다.
+  `FIX_NEEDED` 와 `VIOLATION` 은 executor 를 하나 띄워 고치고, 수정은 검토 반영 커밋 하나로 묶는다.
+- 3단계는 `references/step-finish.md` 에서 「원격 검증 목록」 과 「커밋 검토와 계획서 삭제」 를 건너뛴다. 지울 계획서가 없다.
