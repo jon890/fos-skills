@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { boardSettings, DEFAULT_STEPS, milestoneLines, specSteps, stagesText } from './milestones.ts'
+import { loadConfig } from './config.ts'
 import { boardPath, pathOf } from './paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
 
@@ -42,9 +43,15 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 //    항목이 이미 있으면 제목과 단계는 그대로 두고 워크트리와 브랜치만 바꿔 doing 으로 둔다. 새 항목만 지시서 머리줄과 마일스톤 단계로 만든다
 // 마일스톤 단계는 지시서의 `## 보드 단계` 절, config.json 의 board.steps, 기본값 순으로 처음 있는 것이다.
 // 설정이 틀리면 ConfigError 다. 지시서의 「할 일」 줄은 보드에 올리지 않는다. 구현 세부라 머지와 배포로 끝낼 수 없다
+// 보드 파일이 없으면 넘어간다. 단 설정이 보드를 가리키면 Error 로 알린다
 export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string): void {
   const file = boardPath(repo)
-  if (!existsSync(file)) return
+  if (!existsSync(file)) {
+    const config = loadConfig(repo)
+    const named = [config.finish?.board && 'finish.board', config.cleanup?.board && 'cleanup.board', config.board && 'board 절'].filter(Boolean)
+    if (named.length > 0) throw new Error(`설정 파일에 ${named.join(', ')} 이 있지만 보드 파일이 없다: ${file}. {"items":[]} 로 만들면 다음부터 항목을 만든다`)
+    return
+  }
   const text = readFileSync(spec, 'utf8')
   const items = readBoard(file)
   const bin = process.env.BOARD_BIN || BOARD_BIN

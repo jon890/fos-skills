@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.9.0 (2026-10-27)
+
+- `launch-worker` 가 worker-start 실패를 `worker-start 오류: <code>: <message>` 한 줄로 알린다. 다시 띄우기 실패도 이유를 붙인다
+- 설정이 보드(`finish.board`, `cleanup.board`, `board` 절)를 가리키는데 보드 파일이 없으면 `launch-worker` 가 항목을 만들지 못했다고 알린다
+- 호환성: 옛 경로 `work-board/bin/board.py` 를 지웠다. `board.ts` 를 부른다
+
 ## 4.8.0 (2026-10-27)
 
 - 호환성: `launch-worker` 가 만드는 보드 항목의 단계는 지시서 「할 일」 이 아니라 마일스톤 단계다. 지시서의 `## 보드 단계` 절, `board.steps`, 기본값(PR, 머지) 순으로 정한다

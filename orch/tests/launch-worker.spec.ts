@@ -48,6 +48,10 @@ if (is('terminal', 'list')) out({ terminals: state.terminals || [] })
 if (is('terminal', 'close')) out({}, state.close_fails ? 1 : 0)
 if (is('orchestration', 'worker-start')) {
   if (state.start_errors && state.start_errors.length) out({ error: state.start_errors.shift() }, 1)
+  if (state.start_error_obj) {
+    fs.writeSync(1, JSON.stringify({ ok: false, error: state.start_error_obj }) + '\\n')
+    process.exit(1)
+  }
   if (state.start_fails) out({ failedStage: 'agent_readiness' }, 1)
   const id = state.next_ids.shift()
   out({ dispatch: { id, taskId: 'task_1' }, launch: { effective: {} } })
@@ -409,6 +413,13 @@ describe('띄우기', () => {
     })
   })
 
+  test('worker-start 의 오류 code 와 message 를 한 줄로 낸다', () => {
+    state({ start_error_obj: { code: 'invalid_argument', message: 'Agent claude model haiku does not support effort low.' } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'haiku', '--effort', 'low'])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /^worker-start 오류: invalid_argument: Agent claude model haiku does not support effort low\.$/m)
+  })
+
   test('실패한 worker-start 는 다시 띄우지 않는다', () => {
     state({ start_fails: true })
     const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
@@ -678,6 +689,24 @@ test('LAUNCHED 뒤 지시서의 id, 제목과 마일스톤 단계로 항목을 �
   assert.equal(item.details[0].done, true)
 })
 
+
+test('설정이 보드를 가리키는데 파일이 없으면 LAUNCHED 는 두고 알린다', () => {
+  mkdirSync(join(worktree, '.orch'), { recursive: true })
+  writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify({ finish: { board: '.omc/board.json' } }))
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  assert.match(r.stdout, /^LAUNCHED ctx_1 /m)
+  assert.match(r.stderr, /보드를 갱신하지 못했다: 설정 파일에 finish\.board 이 있지만 보드 파일이 없다/)
+  assert.equal(existsSync(join(worktree, '.omc', 'board.json')), false)
+})
+
+test('설정에 보드가 없고 파일도 없으면 알리지 않는다', () => {
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  assert.equal(r.code, 0, both(r))
+  assert.doesNotMatch(r.stderr, /보드/)
+})
 
 test('항목 id 가 없으면 --name 을 쓰고 단계가 없으면 기본 단계를 둔다', () => {
   const file = join(tmp, '.omc', 'board.json')

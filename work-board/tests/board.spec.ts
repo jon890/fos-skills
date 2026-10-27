@@ -4,17 +4,14 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { defaultBoardPath } from '../bin/board.ts'
 
 const BOARD = fileURLToPath(new URL('../bin/board.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../bin/board.py', import.meta.url))
-// shim 이 PATH 의 node 를 부르므로 이 테스트를 돌리는 node(24 이상)를 앞에 둔다
-const SHIM_ENV = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}` }
 
 type Json = Record<string, unknown>
 type Result = { code: number | null; stdout: string; stderr: string }
@@ -249,7 +246,7 @@ describe('set', () => {
     assert.equal(board('set', 'old', 'done').code, 0)
   })
 
-  test('쓴 파일은 옛 board.py 의 json.dump(indent=1) 꼴이다', () => {
+  test('쓴 파일은 한 칸 들여쓰기에 한글을 그대로 둔다', () => {
     write({ id: 'old', status: 'wait', title: '옛 항목', note: { tags: [], n: 2 } })
     const r = board('set', 'a', 'doing', '--next', '1. 구현', '--pr', '#1')
     assert.equal(r.code, 0, r.stderr)
@@ -441,25 +438,5 @@ describe('기본 보드 위치', () => {
     const saved = JSON.parse(readFileSync(join(repo, '.omc/board.json'), 'utf8')) as { items: Json[]; updatedAt: string }
     assert.deepEqual(saved.items, [{ id: 'a', title: 'a', status: 'wait' }])
     assert.match(saved.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
-  })
-})
-
-describe('옛 경로', () => {
-  test('board.py 는 board.ts 로 넘긴다', () => {
-    write({ id: 'a', status: 'wait' })
-    const done = spawnSync('python3', [SHIM, 'list', '--file', file], { encoding: 'utf8', env: SHIM_ENV })
-    assert.equal(done.status, 0, done.stderr)
-    assert.ok(done.stdout.startsWith('wait    a'), done.stdout)
-    assert.match(done.stderr, /^DEPRECATED python3 board\.py → /m)
-  })
-
-  test('board.py 를 다른 폴더의 symlink 로 불러도 board.ts 로 넘긴다', () => {
-    write({ id: 'a', status: 'wait' })
-    const link = join(tmp, 'link', 'board.py')
-    mkdirSync(dirname(link))
-    symlinkSync(SHIM, link)
-    const done = spawnSync('python3', [link, 'list', '--file', file], { encoding: 'utf8', env: SHIM_ENV })
-    assert.equal(done.status, 0, done.stderr)
-    assert.ok(done.stdout.startsWith('wait    a'), done.stdout)
   })
 })
