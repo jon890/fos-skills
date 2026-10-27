@@ -11,6 +11,7 @@ export const QUEUE_VALUE_OPTIONS: readonly string[] = [
   '--method',
   '--threads-cmd',
   '--check-timeout',
+  '--missing-timeout',
   '--required',
   '--required-check',
   '--allow-fail',
