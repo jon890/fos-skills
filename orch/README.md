@@ -64,6 +64,76 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 - 스킬을 열 때 설치본이 원본 main 보다 낡았으면 갱신 명령을 보여 준다
 - 저장소마다 다른 기준 브랜치, 검증 명령, 머지 조건은 `<저장소>/.orch/overlay.md` 에, 배포 워크플로와 보드 위치는 `.orch/config.json` 에, 업무 완료 같은 저장소 고유 동작은 `.orch/hooks/<이벤트>.ts` 에 둔다. 없으면 기본값으로 동작한다
 
+## 설정한 저장소의 예
+
+모듈이 여러 개인 Gradle 저장소에서 실제로 쓰는 설정과 흐름이다. 저장소, 모듈, 업무 번호, PR 번호는 바꿨다.
+
+`.orch/config.json` 발췌:
+
+```json
+{
+  "finish": {
+    "base_branch": "develop",
+    "deploy_workflow": "cd-dev.yml",
+    "deploy_branch": "develop",
+    "task_pattern": "^#SHOP/([0-9]+)",
+    "board": ".omc/board.json",
+    "specs_dir": ".orch/specs"
+  },
+  "queue": {
+    "required": ["backend", "frontend"],
+    "method": "merge",
+    "require_up_to_date": true,
+    "up_to_date_when": "overlap",
+    "shared_paths": ["^modules/common/", "^build\\.gradle\\.kts$"],
+    "unit_prefix": "modules/",
+    "auto_merge": true,
+    "auto_review": { "pass": "\\*\\*머지 가능\\*\\*", "block": "\\*\\*머지 전 반영 필요\\*\\*" }
+  },
+  "migrations": {
+    "dirs": { "order-api": "modules/order-api/src/main/resources/db/migration" },
+    "before": { "order-api": ".orch/bin/backup-db.sh order pre-auto" }
+  }
+}
+```
+
+| 설정 | 바뀌는 동작 |
+| --- | --- |
+| `finish.deploy_workflow`, `deploy_branch` | 머지 뒤 `develop` 의 dev 배포가 성공할 때까지 기다린 다음 업무와 보드를 마무리한다 |
+| `queue.auto_merge`, `auto_review` | 필수 체크가 통과하고, 미해결 스레드가 없고, 자동 리뷰의 마지막 판정이 `pass` 문구인 PR 을 상주 루프가 스스로 머지 큐에 건다 |
+| `queue.up_to_date_when: overlap` | 앞 PR 과 바꾼 모듈이 겹치지 않으면 base 를 다시 합치지 않고 바로 머지한다. `shared_paths` 를 건드린 PR 은 늘 겹친 것으로 본다 |
+| `migrations.dirs`, `before` | 마이그레이션이 든 PR 은 번호 순서를 지켜 머지하고, 머지 직전에 그 모듈의 DB 를 백업한다 |
+
+`.orch/overlay.md` 에는 검증 명령(`./gradlew :<모듈>:build` 와 통합 테스트), 마이그레이션 파일을 고치지 않는 규칙, CI runner 장애 대응처럼 설정 값으로 적을 수 없는 절차를 둔다.
+`.orch/hooks/after-deploy.ts` 는 dev 배포가 끝나면 업무 상태를 바꾸고 태그를 단다.
+키 전체는 [`references/overlay.md`](references/overlay.md) 가 소유한다.
+
+이렇게 설정하면 worker 를 띄운 뒤에는 코디네이터에게 알릴 일이 있을 때만 대화가 이어진다.
+
+```text
+나:   주문 이력 조회 API 와 정산 내역 화면을 맡겨 줘. PR 까지 열어도 돼
+
+스킬: worker 둘을 띄웠습니다.
+        주문 이력 조회 API   Claude   feature/SHOP/118-order-history
+        정산 내역 화면       Codex    feature/SHOP/121-settlement-view
+
+      (worker 가 마이그레이션 번호를 예약하고 PR #301, #302 를 연다.
+       #302 의 frontend 체크가 실패하자 그 worker 가 고쳐 다시 올린다)
+
+스킬: 상주 루프가 두 PR 을 머지했습니다.
+        #301   order-api 마이그레이션이 있어 머지 직전에 DB 를 백업했습니다
+        #302   #301 과 모듈이 겹치지 않아 base 를 다시 합치지 않고 머지했습니다
+        배포    dev 성공
+        업무    SHOP/118, SHOP/121 상태를 바꾸고 DEV 태그를 달았습니다
+        보드    두 항목 done
+        정리    워크트리, 브랜치, worker 터미널, 지시서를 지웠습니다
+```
+
+진행 보드는 코디네이터 세션의 `/board` 창으로 본다. 아래는 같은 구성의 데모 저장소에서 2026-10-27 에 찍은 화면이다.
+목표와 결정 필요가 맨 위에 오고, 항목마다 막대와 지금 단계, 그 항목을 맡은 worker 가 보인다.
+
+![데모 저장소의 /board 창. 오늘 목표 1/4, 결정 필요 항목 둘이 보인다](../docs/images/board.png)
+
 ## 함께 쓰는 스킬
 
 - orca 명령 문법과 worker lifecycle 은 Orca 의 `orchestration` 스킬이 맡는다
