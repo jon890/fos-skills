@@ -68,7 +68,9 @@
 
 - `planning` 과 `build-with-teams` 는 사용자와 대화하는 세션을 전제로 한다. worker 는 사용자에게 묻지 못하므로 아래로 바꿔 읽는다.
 - 사용자에게 확인하라는 단계는 위 「판단이 필요할 때」 의 기준으로 가른다. 기술 판단은 권장안으로 진행하고, ask 대상만 `worker-ask` 로 묻는다. `AskUserQuestion` 은 쓰지 않는다.
-- 설계와 근거 문서는 `{{DESIGN_DIR}}` 에 둔다. `tasks/` 는 만들지 않는다. 설계부터 구현까지 같은 worker 가 하므로 task 파일을 읽을 다음 실행자가 없고, 남기면 머지 뒤 지울 파일만 는다.
+- 설계와 근거 문서는 `{{DESIGN_DIR}}` 에 둔다.
+- PR 이 둘 이상이거나 세션 재시작, 계정 전환을 넘길 수 있는 일은 `planning` 으로 `tasks/` 를 만든다. 끊긴 뒤 다음 worker 가 계획과 phase 커밋으로 이어받는다. 계획서는 업무의 마지막 PR 에서 지운다(`build-with-teams` 가 정한다).
+- PR 하나로 끝나는 작은 일은 `tasks/` 를 만들지 않는다. 구현한 뒤 `build-with-teams` 의 「task 없이 리뷰부터 도는 경로」 로 이 지시서를 계획 입력으로 넘겨 리뷰와 PR 을 한다.
 - 구현만 맡겼으면 `build-with-teams` 의 PR 단계는 위 공통 규칙(PR 생성은 허락 줄을 따름, 본문 파일, 머지하지 않음)을 따른다.
 - 하위 에이전트는 `name` 없이 띄운다. 이름을 주면 팀원으로 등록되고 tmux pane 이 없는 worker 터미널에서 실패한다.
 - 저장소에 `.claude/planning-overlay.md` 나 `.claude/build-with-teams-overlay.md` 가 있으면 경로는 그 파일을 따른다.
