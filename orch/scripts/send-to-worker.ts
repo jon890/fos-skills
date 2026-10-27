@@ -7,12 +7,18 @@
 //     dispatch 가 살아 있다   그 worker 의 마지막 메시지(없으면 --reply-to)에 `reply` 하고 `nudge-worker` 로 깨운다.
 //                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」 로 거부하면
 //                             다음 후보 메시지로 한 번 더 시도한다
+//     끝났고 답할 메시지가 있다  `--reply-to`(없으면 그 worker 의 미답변 question 과 escalation 중 마지막)에 `reply` 한다.
+//                             worker 가 없어 깨우지는 않는다. `--spec` 이 없으면 답만 달고 0 으로 끝나고, 있으면 아래처럼 이어 띄운다
 //     끝났고 터미널이 남았다  `--spec` 의 지시서로 `launch-worker --worktree <그 워크트리> -- --terminal <그 터미널>` 을 부른다.
 //                             agent_unconfigured(종료 코드 3)이면 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다
 //     끝났는데 아직 일한다    `--spec` 이 없고 그 터미널 화면이 작업 중이면 `nudge-worker --text` 로 본문을 넣고,
 //                             Task 기록에 묶이지 않는다고 경고한다. worker 가 중간에 worker_done 을 보내 dispatch 가
 //                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
 //     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
+//
+// reply 는 `--from run:<run>` 과 함께 보낸다. lib/questions.ts 의 unanswered() 는 from_handle 이 `run:<run>` 인 답만
+// 질문의 답으로 센다. `--from` 이 없으면 orca 가 보낸 쪽을 그렇게 적는다는 보장이 없어 살아 있는 dispatch 에도 같이 붙인다.
+// Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다
 //
 // agent_unconfigured 로 새 worker 를 띄울 때 실행 설정은 원래 dispatch 의 `startOptions.launch` 에서 읽는다.
 // effective 를 우선하고 없는 값은 requested 에서 읽으며, --agent, --model, --effort 로 바꿀 수 있다.
@@ -26,7 +32,8 @@
 //
 //     --dispatch   worker 의 dispatch id
 //     --body       보낼 글. --body-file 로 파일에서 읽을 수 있다. 끝난 dispatch 를 --spec 으로 이어 쓸 때는 필요 없다
-//     --reply-to   답을 달 메시지 id. 없으면 inbox 에서 그 worker 가 보낸 마지막 메시지(heartbeat 는 뒤로 미룬다)를 쓴다
+//     --reply-to   답을 달 메시지 id. 없으면 inbox 에서 그 worker 가 보낸 마지막 메시지(heartbeat 는 뒤로 미룬다)를 쓴다.
+//                  끝난 dispatch 는 question 과 escalation 만 후보로 보고, 이미 답한 것은 뺀다
 //     --spec       dispatch 가 끝났을 때 이어 쓸 후속 지시서. `허락:` 줄이 있어야 한다.
 //                  끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 이 지시서에 적는다. 그래서 --spec 만 주면 된다
 //                  (--body 를 함께 주면 무시한다고 알린다). 살아 있는 dispatch 에 --spec 만 주면 보낼 글이 없어 거부한다
@@ -39,7 +46,8 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있고 값이 - 로 시작해도 받는다(lib/args.ts).
 //
 // 종료 코드:
-//     0  보냈다. 살아 있는 worker 면 깨웠거나 작업 중이다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다
+//     0  보냈다. 살아 있는 worker 면 깨웠거나 작업 중이다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다.
+//        닫힌 dispatch 에 답만 달았으면(--spec 없음) `replied: ... 끝난 dispatch 라 깨우지 않았다` 한 줄을 찍고 0 이다
 //     1  보냈지만 턴 시작을 보지 못했거나, 다시 띄우기가 실패했다. nudge-worker 가 제한 시간(5분)에 끊겨도 1 이다
 //     3  dispatch 가 끝나 보낼 수 없다. 표준 출력이 다음에 할 일을 말한다
 //     4  보냈지만 입력란에 글이 있거나 권한 확인 창이라 깨우지 않았다(nudge-worker 의 4)
@@ -66,6 +74,8 @@ const LAUNCH_WORKER = process.env.LAUNCH_WORKER || `${HERE}/launch-worker.ts`
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 // 이미 답한 question 에 다시 reply 하면 orca 가 이 문구로 거부한다
 const ANSWERED = 'already has a different answer'
+// 끝난 dispatch 에서 답할 후보로 보는 메시지 종류
+const ASKS = new Set(['question', 'escalation'])
 // nudge-worker 는 턴 시작을 기본 15초씩 두 번 기다린다. ORCH_NUDGE_TIMEOUT_MS 는 이 한도를 바꾼다. 테스트만 쓴다
 const NUDGE_MS = Number(process.env.ORCH_NUDGE_TIMEOUT_MS) || 300_000
 // launch-worker 는 make-worktree 와 worker-start 를 각각 10분까지 기다리고, 멈춘 dispatch 를 한 번 다시 띄운다
@@ -131,7 +141,7 @@ function describe(dispatchId: string): Described {
 }
 
 // reply 할 후보 메시지 id. 앞이 우선이다. heartbeat 는 뒤로 미루고, 답이 보이는 question 은 뺀다.
-function candidates(dispatchId: string, handle: string): string[] {
+function candidates(dispatchId: string, handle: string, kinds?: Set<string>): string[] {
   const messages = rows(orcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
   const fromWorker = (row: Json) => row.from_handle === `dispatch:${dispatchId}` || (!!handle && row.from_handle === handle)
   // 같은 thread 에 worker 가 아닌 쪽이 쓴 글이 있으면 그 question 은 이미 답했다
@@ -145,7 +155,8 @@ function candidates(dispatchId: string, handle: string): string[] {
     }
     if (!fromWorker(row) && obj(payload).dispatchId !== dispatchId) return false
     if (String(row.from_handle ?? '').startsWith('run:')) return false
-    return !(row.type === 'question' && answered.has(row.id))
+    if (kinds && !kinds.has(String(row.type))) return false
+    return !((kinds || row.type === 'question') && answered.has(row.id))
   })
   // heartbeat 를 앞에, 같은 종류 안에서는 sequence 순으로 놓고 뒤집는다. 가장 최근의 heartbeat 아닌 메시지가 맨 앞이 된다
   const rank = (row: Json) => [row.type !== 'heartbeat' ? 1 : 0, Number(row.sequence) || 0]
@@ -162,8 +173,25 @@ function liveHandles(): Set<string> {
 }
 
 function reply(msgId: string, body: string, run: string): string {
-  const result = orcaJson(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])])
+  const result = orcaJson(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run, '--from', `run:${run}`] : [])])
   return String(obj(result.message).id || result.messageId || result.id || '')
+}
+
+// 이미 답한 question 이면 다음 후보로 한 번만 더 시도한다. 답을 단 메시지 id 와 새 답의 id 를 낸다
+function replyFirst(targets: string[], body: string, run: string): { target: string; sent: string } {
+  let target = targets[0]
+  let sent = ''
+  for (const [attempt, candidate] of targets.slice(0, 2).entries()) {
+    target = candidate
+    try {
+      sent = reply(candidate, body, run)
+      break
+    } catch (e) {
+      if (!(e instanceof OrcaFailed) || !e.message.includes(ANSWERED) || attempt === 1 || targets.length < 2) throw e
+      out(`skipped: ${candidate} 는 이미 답한 question 이라 다음 메시지에 답한다`)
+    }
+  }
+  return { target, sent }
 }
 
 // 자식의 출력을 그대로 흘리고 종료 코드를 낸다
@@ -274,25 +302,23 @@ async function main(argv: string[]): Promise<number> {
         out(`send-to-worker: ${a.dispatch} 가 보낸 메시지가 없어 reply 할 곳이 없다. --reply-to 로 준다`)
         return 3
       }
-      // 이미 답한 question 이면 다음 후보로 한 번만 더 시도한다
-      let target = targets[0]
-      let sent = ''
-      for (const [attempt, candidate] of targets.slice(0, 2).entries()) {
-        target = candidate
-        try {
-          sent = reply(candidate, body, run)
-          break
-        } catch (e) {
-          if (!(e instanceof OrcaFailed) || !e.message.includes(ANSWERED) || attempt === 1 || targets.length < 2) throw e
-          out(`skipped: ${candidate} 는 이미 답한 question 이라 다음 메시지에 답한다`)
-        }
-      }
+      const { target, sent } = replyFirst(targets, body, run)
       out(`replied: ${target} 에 답했다 (${sent || 'None'})`)
       if (!handle) {
         out('send-to-worker: 터미널 handle 을 몰라 깨우지 못했다')
         return 1
       }
       return await nudge(['--terminal', handle, '--msg-id', sent || target])
+    }
+    // 끝난 dispatch 라도 worker 가 보낸 question 과 escalation 이 남았으면 답을 단다. 깨울 worker 는 없다
+    if (body) {
+      const targets = a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, ASKS)
+      if (targets.length > 0) {
+        const { target, sent } = replyFirst(targets, body, run)
+        out(`replied: ${target} 에 답했다 (${sent || 'None'}). 끝난 dispatch 라 깨우지 않았다`)
+        if (!a.spec) return 0
+        body = ''
+      }
     }
     alive = handle ? liveHandles().has(handle) : false
   } catch (e) {
