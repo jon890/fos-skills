@@ -6,6 +6,17 @@
 쓰지 않을 모델은 사용자 지침이나 오버레이가 정한다.
 사용 한도에 걸렸을 때의 모델 변경은 `~/.claude/CLAUDE.md` 「사용 한도에 걸려도 더 비싼 모델로 올리지 않는다」 를 따른다.
 
+## 제공자
+
+모델 표를 보기 전에 Claude 와 Codex 중 어느 쪽에 맡길지 먼저 정한다.
+같은 계열을 기본값으로 두지 않는다. 한 세션에서 worker 를 모두 Claude 로 띄우고 「리뷰와 검증」 행을 한 번도 쓰지 않은 일이 있었다.
+
+- 한국어 문서와 스킬 문서처럼 Claude Code hook(한국어 표기 검사, orch 안전 hook)에 기대는 작업은 Claude 로 띄운다. Codex 매니페스트는 hook 을 싣지 않는다([ADR-007](../../docs/adr/007-codex-manifest-without-hooks.md))
+- 코드 중심 구현은 `gpt-6.1-sol` 과 Claude Sonnet 5.5 를 비교해 고르고, 고른 이유를 dispatch 보고에 남긴다
+- Claude 가 만든 PR 의 머지 전 독립 리뷰는 Codex 로 띄운다. 보안 리뷰는 아래 표대로 Claude 다
+- 화면과 이미지 판정은 `gpt-6.1-terra` 를 먼저 본다
+- Codex worker 를 띄울 때 걸리는 GitHub 게시 승인은 [`spec-writing.md`](spec-writing.md) 가, 준비 설정은 [`launch.md`](launch.md) 의 「codex 준비 판정」 이 다룬다
+
 ## 모델
 
 계획서의 구체성과 필요한 탐색에 따라 고른다.
@@ -18,14 +29,16 @@
 | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
 | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | `medium`, 같은 Task 가 실패하면 `high` |
 | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium` 시작, sol `high` |
+| 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작. 실측 전이다. 두세 작업에 써 본 뒤 확정한다 |
 | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델 | `medium` |
 | 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
 
-비교 근거다(2026-10-01 공식 자료 조사, Claude 행은 2026-10-12 재확인. 값이 바뀌면 아래 출처에서 다시 확인한다).
+비교 근거다(2026-10-01 공식 자료 조사, Claude 행은 2026-10-12 재확인, `gpt-6.1-terra` 행은 2026-10-28 확인. 값이 바뀌면 아래 출처에서 다시 확인한다).
 
 | 모델 | 공식 권장 용도 | 공식 effort 시작점 | 입력 / 출력 ($/1M 토큰) | 상대 속도 |
 | --- | --- | --- | --- | --- |
 | `gpt-6.1-sol` | 복잡한 리팩터링, 코드베이스 조사, 장기 에이전트 | `medium`(기본) | 2 / 10 | Fast 2배(사용량 증가) |
+| `gpt-6.1-terra` | 시각 추론, 정밀한 컴퓨터 사용, 분명하고 자연스러운 글쓰기 | 기본 `medium`. Codex 안내에 시작점이 없고 `codex debug models` 기본값은 `low` | 1 / 5 | 공식 수치 없음 |
 | `gpt-6-luna` | 집중된 대량 작업, focused coding | `high` | 0.10 / 0.50 | Fast 1.5배 |
 | Claude Sonnet 5.5 | 일상 코딩과 에이전트 | 잘 정의된 Task 는 `medium`, 어렵거나 긴 Task 는 `high`(기본) | 2 / 10 | Fast |
 | Claude Opus 5.5 | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
@@ -35,7 +48,8 @@
 - worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
 - 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
 - effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 는 effort 를 지정하지 않고 공식 기본값 `medium` 을 쓴다
-- 출처: [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
+- terra 는 코딩 성능과 한국어 품질의 근거가 공식 자료에 없어 여러 파일 구현, 어려운 디버깅, 한국어 문서에 넣지 않는다
+- 출처: [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
 - 출처: [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing), [Claude 모델 선택](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model), [Claude 모델 비교](https://platform.claude.com/docs/en/about-claude/models/overview)
 
 ## effort
