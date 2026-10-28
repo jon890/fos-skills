@@ -46,22 +46,23 @@ worker 를 띄우는 조율 도구의 보고 명령(예: `orca orchestration` �
 ```text
 계획 판정: APPROVE | REVISE
 
+phase별 실행 형태:
+- phase 01: BOUNDED | JUDGMENT_REQUIRED | HIGH_RISK
+  근거: <왜 그 형태인지 한 줄>
+
 발견 목록:
 - phase NN <걸린 기준 이름> <파일:줄 또는 phase 의 어느 절>
   <무엇이 정해지지 않았거나 실제와 다른지 한 줄>
 - 없음
-
-phase별 실행 형태:
-- phase 01: BOUNDED | JUDGMENT_REQUIRED | HIGH_RISK
-  근거: <왜 그 형태인지 한 줄>
 ```
 
-- **발견 목록** — 판정과 무관하게 걸린 것을 전부 적는다.
-`APPROVE` 여도 비워 두지 않고, 없으면 「없음」 으로 명시한다.
+회신은 약 4,000자에서 잘린다. 잘릴 때 뒤쪽부터 사라지므로 판정, 실행 형태, 발견 목록 순으로 쓴다. 발견 목록이 길면 파일에 쓰고 경로를 보낸다.
 
-- **`REVISE` 는 계획의 어디를 고쳐야 하는지까지 적는다.**
 - **phase별 실행 형태** — 구현을 어느 등급으로 돌릴지 정하는 데 쓴다.
 값과 판정 기준은 [`executor-routing.md`](executor-routing.md)가 소유한다.
+- **발견 목록** — 판정과 무관하게 걸린 것을 전부 적는다.
+`APPROVE` 여도 비워 두지 않고, 없으면 「없음」 으로 명시한다.
+- **`REVISE` 는 계획의 어디를 고쳐야 하는지까지 적는다.**
 
 ## 재평가
 
