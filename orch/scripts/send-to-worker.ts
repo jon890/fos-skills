@@ -6,7 +6,9 @@
 //
 //     dispatch 가 살아 있다   그 worker 의 마지막 메시지(없으면 --reply-to)에 `reply` 하고 `nudge-worker` 로 깨운다.
 //                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」 로 거부하면
-//                             다음 후보 메시지로 한 번 더 시도한다
+//                             다음 후보 메시지로 한 번 더 시도한다. reply 할 후보가 없거나 시도한 후보가 모두 그 문구로 거부되면
+//                             `send --to dispatch:<id> --subject <본문 첫 줄> --body <본문>` 으로 새 메시지를 보내고
+//                             `sent: ...` 한 줄을 찍은 뒤 `nudge-worker --msg-id <새 메시지>` 로 깨운다
 //     끝났고 답할 메시지가 있다  `--reply-to`(없으면 그 worker 의 미답변 question 과 escalation 중 마지막)에 `reply` 한다.
 //                             worker 가 없어 깨우지는 않는다. `--spec` 이 없으면 답만 달고 0 으로 끝나고, 있으면 아래처럼 이어 띄운다
 //     끝났고 터미널이 남았다  `--spec` 의 지시서로 `launch-worker --worktree <그 워크트리> -- --terminal <그 터미널>` 을 부른다.
@@ -16,7 +18,7 @@
 //                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
 //     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
 //
-// reply 는 `--run <run> --from run:<run>` 과 함께 보낸다. Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다.
+// reply 와 새 메시지는 `--run <run> --from run:<run>` 과 함께 보낸다. Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다.
 // Orca 터미널에서 돌면 터미널 증명 때문에 `--from run:<run>` 이 `consumer_fenced` 로 거부된다. 그러면 `--from` 만 빼고 한 번 다시 보낸다.
 // 그 답의 보낸 쪽은 코디네이터 터미널(term_*)이지만 lib/questions.ts 의 unanswered() 는 worker 쪽으로 간 답을 모두 센다(ADR-015)
 //
@@ -46,7 +48,7 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있고 값이 - 로 시작해도 받는다(lib/args.ts).
 //
 // 종료 코드:
-//     0  보냈다. 살아 있는 worker 면 깨웠거나 작업 중이다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다.
+//     0  보냈다(reply 나 새 메시지). 살아 있는 worker 면 깨웠거나 작업 중이다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다.
 //        닫힌 dispatch 에 답만 달았으면(--spec 없음) `replied: ... 끝난 dispatch 라 깨우지 않았다` 한 줄을 찍고 0 이다
 //     1  보냈지만 턴 시작을 보지 못했거나, 다시 띄우기가 실패했다. nudge-worker 가 제한 시간(5분)에 끊겨도 1 이다
 //     3  dispatch 가 끝나 보낼 수 없다. 표준 출력이 다음에 할 일을 말한다
@@ -78,6 +80,8 @@ const ANSWERED = 'already has a different answer'
 const FENCED = 'consumer_fenced'
 // 끝난 dispatch 에서 답할 후보로 보는 메시지 종류
 const ASKS = new Set(['question', 'escalation'])
+// 새 메시지 제목에 쓰는 본문 첫 줄의 최대 글자 수
+const SUBJECT_MAX = 120
 // nudge-worker 는 턴 시작을 기본 15초씩 두 번 기다린다. ORCH_NUDGE_TIMEOUT_MS 는 이 한도를 바꾼다. 테스트만 쓴다
 const NUDGE_MS = Number(process.env.ORCH_NUDGE_TIMEOUT_MS) || 300_000
 // launch-worker 는 make-worktree 와 worker-start 를 각각 10분까지 기다리고, 멈춘 dispatch 를 한 번 다시 띄운다
@@ -174,8 +178,8 @@ function liveHandles(): Set<string> {
   return new Set(rows(orcaJson(['terminal', 'list']).terminals).map((t) => String(t.handle || '')).filter(Boolean))
 }
 
-function reply(msgId: string, body: string, run: string): string {
-  const base = ['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])]
+// `--from run:<run>` 을 붙여 보내고, consumer_fenced 로 거부되면 빼고 한 번 다시 보낸다. 보낸 메시지 id 를 낸다
+function sendAs(base: string[], run: string): string {
   let result: Json
   try {
     result = orcaJson([...base, ...(run ? ['--from', `run:${run}`] : [])])
@@ -187,21 +191,33 @@ function reply(msgId: string, body: string, run: string): string {
   return String(obj(result.message).id || result.messageId || result.id || '')
 }
 
-// 이미 답한 question 이면 다음 후보로 한 번만 더 시도한다. 답을 단 메시지 id 와 새 답의 id 를 낸다
-function replyFirst(targets: string[], body: string, run: string): { target: string; sent: string } {
-  let target = targets[0]
-  let sent = ''
+function reply(msgId: string, body: string, run: string): string {
+  return sendAs(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])], run)
+}
+
+// reply 할 곳이 없을 때 그 dispatch 에 새 메시지로 보낸다. 제목은 본문 첫 줄이다
+function sendNew(dispatchId: string, body: string, run: string): string {
+  const subject = Array.from(body.split('\n')[0].trim()).slice(0, SUBJECT_MAX).join('') || '코디네이터 후속 지시'
+  const base = ['orchestration', 'send', ...(run ? ['--run', run] : []), '--to', `dispatch:${dispatchId}`, '--subject', subject, '--body', body]
+  return sendAs(base, run)
+}
+
+// 이미 답한 question 이면 다음 후보로 한 번만 더 시도한다. 답을 단 메시지 id 와 새 답의 id 를 낸다.
+// 시도한 후보가 모두 이미 답한 question 이면 null 이다
+function replyFirst(targets: string[], body: string, run: string): { target: string; sent: string } | null {
   for (const [attempt, candidate] of targets.slice(0, 2).entries()) {
-    target = candidate
     try {
-      sent = reply(candidate, body, run)
-      break
+      return { target: candidate, sent: reply(candidate, body, run) }
     } catch (e) {
-      if (!(e instanceof OrcaFailed) || !e.message.includes(ANSWERED) || attempt === 1 || targets.length < 2) throw e
+      if (!(e instanceof OrcaFailed) || !e.message.includes(ANSWERED)) throw e
+      if (attempt === 1 || targets.length < 2) {
+        out(`skipped: ${candidate} 는 이미 답한 question 이다`)
+        return null
+      }
       out(`skipped: ${candidate} 는 이미 답한 question 이라 다음 메시지에 답한다`)
     }
   }
-  return { target, sent }
+  return null
 }
 
 // 자식의 출력을 그대로 흘리고 종료 코드를 낸다
@@ -308,24 +324,34 @@ async function main(argv: string[]): Promise<number> {
       }
       const targets = a.replyTo ? [a.replyTo] : []
       targets.push(...candidates(a.dispatch, handle).filter((t) => !targets.includes(t)))
-      if (targets.length === 0) {
-        out(`send-to-worker: ${a.dispatch} 가 보낸 메시지가 없어 reply 할 곳이 없다. --reply-to 로 준다`)
-        return 3
+      const replied = targets.length > 0 ? replyFirst(targets, body, run) : null
+      let wake: string
+      if (replied) {
+        out(`replied: ${replied.target} 에 답했다 (${replied.sent || 'None'})`)
+        wake = replied.sent || replied.target
+      } else {
+        // 답할 곳이 없다. worker 의 질문이 모두 이미 답해졌거나 worker 가 아직 아무것도 보내지 않았다
+        const sent = sendNew(a.dispatch, body, run)
+        const why = targets.length === 0 ? '보낸 메시지가 없어' : '후보가 모두 이미 답한 question 이라'
+        out(`sent: ${why} reply 대신 dispatch:${a.dispatch} 에 새 메시지로 보냈다 (${sent || 'None'})`)
+        if (!sent) {
+          out('send-to-worker: 새 메시지 id 를 받지 못해 깨우지 못했다')
+          return 1
+        }
+        wake = sent
       }
-      const { target, sent } = replyFirst(targets, body, run)
-      out(`replied: ${target} 에 답했다 (${sent || 'None'})`)
       if (!handle) {
         out('send-to-worker: 터미널 handle 을 몰라 깨우지 못했다')
         return 1
       }
-      return await nudge(['--terminal', handle, '--msg-id', sent || target])
+      return await nudge(['--terminal', handle, '--msg-id', wake])
     }
     // 끝난 dispatch 라도 worker 가 보낸 question 과 escalation 이 남았으면 답을 단다. 깨울 worker 는 없다
     if (body) {
       const targets = a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, ASKS)
-      if (targets.length > 0) {
-        const { target, sent } = replyFirst(targets, body, run)
-        out(`replied: ${target} 에 답했다 (${sent || 'None'}). 끝난 dispatch 라 깨우지 않았다`)
+      const replied = targets.length > 0 ? replyFirst(targets, body, run) : null
+      if (replied) {
+        out(`replied: ${replied.target} 에 답했다 (${replied.sent || 'None'}). 끝난 dispatch 라 깨우지 않았다`)
         if (!a.spec) return 0
         body = ''
       }
