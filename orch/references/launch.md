@@ -30,6 +30,8 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 **worker 는 `launch-worker` 로 띄운다.** 첫 지시 줄 만들기(`spec-line --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
 `worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. `launch-worker` 는 `--spec` 이 필수라 늘 Task 를 새로 만들므로, `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다.
 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
+**`--agent codex` 의 `--model`, `--effort` 는 워크트리를 만들기 전에 `codex debug models` 로 검사한다.** 없는 모델이나 그 모델이 지원하지 않는 effort 면 종료 코드 4 로 멈추고 쓸 수 있는 값을 낸다.
+조회가 실패하거나 claude(모델 목록을 내는 명령이 없다)면 경고만 내고 띄운다. `worker-start` 를 직접 부르는 예외 호출은 이 검사를 거치지 않으니 모델을 `agent-selection.md` 의 명령으로 먼저 확인한다.
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
