@@ -1,7 +1,7 @@
 # build-with-teams
 
 `planning` 이 만든 task 를 구현할 때, phase 마다 구현을 지시하고 커밋하고 검토자를 붙이는 수고를 덜어 준다.
-team-lead 가 팀원 넷을 부려 plan 하나를 브랜치 하나와 PR 하나로 끝낸다.
+team-lead 가 팀원을 부려 plan 하나를 브랜치 하나와 PR 하나로 끝낸다.
 critic 이 구현 전에 계획을 검토하고, executor 가 phase 마다 구현하고, code-reviewer 와 docs-verifier 가 모든 phase 뒤에 코드와 `docs/` 를 검토한다.
 
 같은 plan 을 두 번 구현하지 않도록 시작 전에 재실행 여부를 검사한다.
