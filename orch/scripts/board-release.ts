@@ -37,7 +37,7 @@ import { git } from './lib/git.ts'
 import { ghJson } from './lib/gh.ts'
 import { boardSettings, mergedCommands, stagesOf } from './lib/milestones.ts'
 import { boardPath } from './lib/paths.ts'
-import { NO_LIMIT_MS, run, scriptCommand } from './lib/proc.ts'
+import { run, scriptCommand } from './lib/proc.ts'
 import { parseEventTag } from '../../work-board/hooks/event-tags.js'
 
 const USAGE = '사용법: board-release.ts (--release PR | --pr N [--pr N ...]) [--repo DIR] [--board PATH] [--board-bin PATH] [--dry-run]'
@@ -74,7 +74,7 @@ function number(value: string): string | null {
 }
 
 function view(repo: string, pr: string): Pr | null {
-  const got = ghJson<Pr>(['pr', 'view', pr, '--json', 'state,mergeCommit,headRefOid'], { cwd: repo })
+  const got = ghJson<Pr>(['pr', 'view', pr, '--json', 'state,mergeCommit,headRefOid'], { cwd: repo, killSignal: 'SIGKILL' })
   return got.ok && isRecord(got.data) ? got.data : null
 }
 
@@ -84,11 +84,11 @@ function oidOf(value: unknown): string {
 
 // 커밋이 로컬에 있는지. 없으면 origin 을, 그래도 없으면 그 PR 의 head 를 받아 온다
 function ensureCommit(repo: string, oid: string, pr: string): boolean {
-  const has = () => git(repo, ['cat-file', '-e', `${oid}^{commit}`]).code === 0
+  const has = () => git(repo, ['cat-file', '-e', `${oid}^{commit}`], { killSignal: 'SIGKILL' }).code === 0
   if (has()) return true
-  git(repo, ['fetch', '-q', 'origin'])
+  git(repo, ['fetch', '-q', 'origin'], { killSignal: 'SIGKILL' })
   if (has()) return true
-  git(repo, ['fetch', '-q', 'origin', `refs/pull/${pr}/head`])
+  git(repo, ['fetch', '-q', 'origin', `refs/pull/${pr}/head`], { killSignal: 'SIGKILL' })
   return has()
 }
 
@@ -138,8 +138,11 @@ function main(argv: string[]): number {
 
   // 기준 커밋. --pr 로 줬으면 쓰지 않는다
   let target = ''
+  const views = new Map<string, Pr | null>()
   if (release) {
+    err(`board-release: 릴리스 PR ${release} 확인 중`)
     const got = view(repo, release)
+    views.set(release, got)
     if (!got) {
       err(`board-release: 릴리스 PR ${release} 를 읽지 못했다`)
       return 1
@@ -152,8 +155,19 @@ function main(argv: string[]): number {
   }
 
   const changed: string[] = []
+  const ancestors = new Map<string, boolean>()
+  function included(pr: string): boolean | null {
+    if (!views.has(pr)) views.set(pr, view(repo, pr))
+    const got = views.get(pr)
+    if (!got) return null
+    const merge = oidOf(got.mergeCommit?.oid)
+    if (got.state !== 'MERGED' || !merge) return false
+    if (!ancestors.has(merge)) ancestors.set(merge, git(repo, ['merge-base', '--is-ancestor', merge, target], { killSignal: 'SIGKILL' }).code === 0)
+    return ancestors.get(merge)!
+  }
   for (const item of items) {
     if (item.status === 'done') continue
+    err(`board-release: ${item.id} 확인 중`)
     const tagged = taggedBoardSteps(boardBin, String(item.id), board, item)
     if (tagged === null) {
       err(`board-release: 단계 목록을 읽지 못했다: ${item.id}`)
@@ -164,18 +178,17 @@ function main(argv: string[]): number {
         const tag = parseEventTag(step.text)!
         if (tag.event !== 'release') continue
         if (release) {
-          const got = view(repo, tag.pr)
-          if (!got) {
+          const found = included(tag.pr)
+          if (found === null) {
             err(`board-release: ${item.id} 의 PR ${tag.pr} 를 읽지 못했다`)
             return 1
           }
-          const merge = oidOf(got.mergeCommit?.oid)
-          if (got.state !== 'MERGED' || !merge || git(repo, ['merge-base', '--is-ancestor', merge, target]).code !== 0) continue
+          if (!found) continue
         } else if (!prs.includes(tag.pr)) continue
         const cmd = ['step', String(item.id), String(step.number)]
         if (dryRun) out(`${item.id} (PR #${tag.pr})\n  ${cmd.join(' ')}`)
         else {
-          const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { timeoutMs: NO_LIMIT_MS })
+          const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { killSignal: 'SIGKILL' })
           if (done.code !== 0) {
             err(`board-release: 보드 명령이 실패했다: ${item.id}: ${done.stderr}`)
             return 1
@@ -194,14 +207,12 @@ function main(argv: string[]): number {
     if (release) {
       pr = own[0]
       if (!pr) continue
-      const got = view(repo, pr)
-      if (!got) {
+      const found = included(pr)
+      if (found === null) {
         err(`board-release: ${id} 의 PR ${pr} 를 읽지 못했다`)
         return 1
       }
-      const merge = oidOf(got.mergeCommit?.oid)
-      if (got.state !== 'MERGED' || !merge) continue
-      if (git(repo, ['merge-base', '--is-ancestor', merge, target]).code !== 0) continue
+      if (!found) continue
     } else {
       pr = [...own, ...prNumbers(item['merged-pr'])].find((n) => prs.includes(n))
       if (!pr) continue
@@ -219,7 +230,7 @@ function main(argv: string[]): number {
       continue
     }
     for (const cmd of made.cmds) {
-      const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { timeoutMs: NO_LIMIT_MS })
+      const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { killSignal: 'SIGKILL' })
       if (done.code !== 0) {
         if (done.stderr) process.stderr.write(done.stderr)
         err(`board-release: 보드 명령이 실패했다: ${id}`)

@@ -15,14 +15,14 @@ import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './c
 import { NO_LIMIT_MS, run } from './proc.ts'
 import type { RunResult } from './proc.ts'
 
-type GhOptions = { host?: string; cwd?: string; timeoutMs?: number }
+type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals }
 
 export function ghBin(): string {
   return process.env.GH || 'gh'
 }
 
 export function gh(args: string[], opts: GhOptions = {}): RunResult {
-  return run([ghBin(), ...args], { cwd: opts.cwd, env: opts.host ? { GH_HOST: opts.host } : undefined, timeoutMs: opts.timeoutMs })
+  return run([ghBin(), ...args], { cwd: opts.cwd, env: opts.host ? { GH_HOST: opts.host } : undefined, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal })
 }
 
 export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T } | { ok: false; error: string } {

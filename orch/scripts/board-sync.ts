@@ -77,7 +77,7 @@ import type { LastPrRules, LastPrVerdict } from './lib/last-pr.ts'
 import { worktreePaths } from './lib/workers.ts'
 import { gh, ghJson } from './lib/gh.ts'
 import { boardPath, pathOf } from './lib/paths.ts'
-import { NO_LIMIT_MS, run, scriptCommand } from './lib/proc.ts'
+import { run, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
 import { parseEventTag } from '../../work-board/hooks/event-tags.js'
 
@@ -118,7 +118,7 @@ function prNumber(pr: unknown): string {
 function prState(pr: unknown, repo: string): string | null {
   const num = prNumber(pr)
   if (!num) return null
-  const done = gh(['pr', 'view', num, '--json', 'state', '--jq', '.state'], { cwd: repo })
+  const done = gh(['pr', 'view', num, '--json', 'state', '--jq', '.state'], { cwd: repo, killSignal: 'SIGKILL' })
   return done.code === 0 ? done.stdout.trim() : null
 }
 
@@ -131,7 +131,7 @@ function worktreeNames(repo: string): Set<string> | null {
 
 // 머지 커밋이 배포됐는지(lib/deploy.ts). 배포 실행 목록은 한 번만 읽어 runs 에 둔다. 머지 커밋을 읽지 못하면 wait 이다
 function deployedNow(repo: string, num: string, deploy: { workflow: string; branch: string }, cache: { runs: RunRow[] | null }): DeployVerdict {
-  const merge = gh(['pr', 'view', num, '--json', 'mergeCommit', '--jq', '.mergeCommit.oid'], { cwd: repo })
+  const merge = gh(['pr', 'view', num, '--json', 'mergeCommit', '--jq', '.mergeCommit.oid'], { cwd: repo, killSignal: 'SIGKILL' })
   const oid = merge.code === 0 ? merge.stdout.trim() : ''
   if (!/^[0-9a-f]{7,64}$/.test(oid)) return 'wait'
   if (cache.runs === null) {
@@ -156,7 +156,7 @@ function lastPrRules(repo: string): LastPrRules | null {
 // 머지한 PR 의 제목과 브랜치로 마지막 PR 인지 판정한다. 규칙(task_pattern)이 없으면 null 이다. PR 을 읽지 못하면 retry 다
 function judge(repo: string, num: string, rules: LastPrRules | null): LastPrVerdict | null {
   if (!rules?.taskPattern) return null
-  const got = ghJson<{ title?: unknown; headRefName?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName'], { cwd: repo })
+  const got = ghJson<{ title?: unknown; headRefName?: unknown }>(['pr', 'view', num, '--json', 'title,headRefName'], { cwd: repo, killSignal: 'SIGKILL' })
   if (!got.ok || typeof got.data !== 'object' || got.data === null) {
     return { last: null, retry: true, number: null, prs: [], specs: [], reason: `PR ${num} 의 제목과 브랜치를 읽지 못했다` }
   }
@@ -214,6 +214,12 @@ function main(argv: string[]): number {
   let settings: BoardSettings | null | undefined
   const runs: { runs: RunRow[] | null } = { runs: null }
   const tagStates = new Map<string, string | null>()
+  const stateFor = (pr: unknown): string | null => {
+    const num = prNumber(pr)
+    if (!num) return null
+    if (!tagStates.has(num)) tagStates.set(num, prState(num, repo))
+    return tagStates.get(num) ?? null
+  }
   const changed: string[] = []
   for (const item of items) {
     const id = String(item.id)
@@ -234,8 +240,7 @@ function main(argv: string[]): number {
       for (const step of tagged.filter((step) => !step.done)) {
         const tag = parseEventTag(step.text)!
         if (tag.event === 'release') continue
-        if (!tagStates.has(tag.pr)) tagStates.set(tag.pr, prState(tag.pr, repo))
-        const state = tagStates.get(tag.pr)
+        const state = stateFor(tag.pr)
         let reached = tag.event === 'pr' ? state === 'OPEN' || state === 'MERGED' : tag.event === 'merge' && state === 'MERGED'
         if (tag.event === 'deploy' && state === 'MERGED') {
           if (settings === undefined) {
@@ -269,7 +274,7 @@ function main(argv: string[]): number {
           cmds.push(['set', id, '--pr', String(item.pr), '--branch', branch])
         }
       }
-      const state = discovered ? (discovered.state ?? 'OPEN') : item.pr ? prState(item.pr, repo) : null
+      const state = discovered ? (discovered.state ?? 'OPEN') : stateFor(item.pr)
       const merged = state === 'MERGED'
       details = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
       const num = prNumber(item.pr)
@@ -354,7 +359,7 @@ function main(argv: string[]): number {
       continue
     }
     for (const cmd of cmds) {
-      const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { timeoutMs: NO_LIMIT_MS })
+      const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { killSignal: 'SIGKILL' })
       if (done.code !== 0) {
         if (done.stderr) process.stderr.write(done.stderr)
         err(`board-sync: 보드 명령이 실패했다: ${id}`)
@@ -365,7 +370,7 @@ function main(argv: string[]): number {
   if (values.goal && !dryRun) {
     const cmd = [values.goal, '--board', board, '--board-bin', boardBin]
     if (values['goal-items']) cmd.push('--items-file', values['goal-items'], '--details')
-    const done = run(scriptCommand(join(HERE, 'goal-progress.ts'), cmd), { timeoutMs: NO_LIMIT_MS })
+    const done = run(scriptCommand(join(HERE, 'goal-progress.ts'), cmd), { killSignal: 'SIGKILL' })
     if (done.stderr) process.stderr.write(done.stderr)
   }
   out(`board-sync: ${changed.join(', ') || '바뀐 항목 없음'}`)
