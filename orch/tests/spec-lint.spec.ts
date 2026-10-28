@@ -54,8 +54,9 @@ beforeEach(() => {
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
+// 제목 경고가 다른 검사의 출력에 섞이지 않게 끝에 제목 줄을 둔다. 줄 번호는 그대로다
 function spec(name: string, text: string): string {
-  return write(join(specs, `${name}.md`), text)
+  return write(join(specs, `${name}.md`), `${text}\n# ${name}\n`)
 }
 
 function overlay(text: string): string {
@@ -159,6 +160,16 @@ describe('지시서 검사', () => {
     const r = lint([spec('spec-kr2', '`put값()` 을 고친다\n')])
     assert.equal(r.code, 1, r.stdout)
     assert.match(r.stdout, /없음: `put값\(\)`/)
+  })
+
+  test('제목 줄도 보드 항목 id 도 없으면 고르는 순서와 첫 줄 예시를 경고한다', () => {
+    const bare = write(join(specs, 'spec-bare.md'), '공통 지시서를 먼저 읽는다.\n\n## 할 일\n- 고친다\n')
+    const r = run(['--repo', repo, bare])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /^spec-bare\.md:1: 제목: .*업무 연결 줄의 제목, `## 목표` 첫 문장, id 순으로 고른다\. 첫 줄 예: `# .+`$/m)
+    assert.match(r.stderr, /제목 경고 1건/)
+    const named = write(join(specs, 'spec-named.md'), '공통 지시서를 먼저 읽는다.\n보드 항목 id: `chart`\n')
+    assert.deepEqual(lint([named]), { code: 0, stdout: '' })
   })
 
   test('없는 지시서는 사용법 오류다', () => {

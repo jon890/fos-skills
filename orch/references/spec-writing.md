@@ -10,7 +10,13 @@
 - 폴더는 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch_paths.ts" --repo "$REPO" --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
 - scratchpad 에 쓰지 않는다. **실측으로** 코디네이터 세션이 다시 시작되면서 scratchpad 가 정리돼 전날 쓴 지시서가 사라졌다. worker 는 받은 경로를 계속 읽으므로, 도중에 사라지면 읽을 곳을 잃는다.
 
-**worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 첫 줄에서 그 파일을 가리킨다.**
+**개별 지시서의 첫 줄은 `# <업무 목적 한 문장>` 이다.** `launch-worker` 가 이 줄을 보드 항목 제목으로 쓴다.
+이 줄이 없으면 업무 연결 줄의 제목, `## 목표` 첫 문장, 워크트리 이름 순으로 밀려나 보드에 `282-attention-check-history-screen` 같은 이름만 보인다.
+고르는 순서는 `lib/board.ts` 의 `specTitle` 이 소유하고, `spec-lint` 가 제목 줄도 `보드 항목 id:` 도 없는 지시서에 `제목` 경고를 낸다.
+업무 연결 줄(기본 꼴 `두레이 업무: <프로젝트>/<번호> 「제목」`)이 있으면 제목 앞에 업무 번호가 붙고, 같은 업무 번호의 끝나지 않은 항목을 이어 쓴다.
+꼴이 다른 저장소는 `config.json` 의 `board.task_line` 으로 정한다.
+
+**worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 제목 줄 다음 줄에서 그 파일을 가리킨다.**
 틀은 [`../templates/spec-common.md`](../templates/spec-common.md) 다. 저장소마다 한 번 복사해 `{{...}}` 를 채운다.
 **스크립트 경로는 채우지 않는다.** 틀의 명령이 worker 세션의 `CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `orch/scripts` 를 푼다. 캐시 폴더 이름은 해시라 `ls | tail -1` 이나 `ls -t` 로 고르면 설치되지 않은 번들을 집는다. 코디네이터가 그때의 캐시 경로를 박으면 번들이 갱신되거나 worker 가 다른 프로필에서 돌 때 옛 스크립트를 가리킨다. 저장소 체크아웃 경로도 박지 않는다. 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
 같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
