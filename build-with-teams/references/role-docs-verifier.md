@@ -25,7 +25,7 @@
 `data-schema`, `flow`, `code-architecture` 에 반영됐는지 본다.
 - **계획서를 가리키는 참조.** → `UPDATE_NEEDED`
 이번 변경이 `docs/` 나 코드에 계획서 번호를 새로 남겼는지 본다.
-계획서는 업무의 마지막 PR 에서 지우므로, 그 자리는 머지와 함께 깨진 참조가 된다.
+계획서는 구현한 PR 에서 지우므로, 그 자리는 머지와 함께 깨진 참조가 된다.
 기존 파일과 식별자의 이름, 측정 기록에 남은 실행 경로는 대상이 아니다.
 - **code-architecture 에 늘어놓은 목록.** → `UPDATE_NEEDED`
 이번 변경이 `code-architecture.md` 에서 고친 줄을 planning 예시의 [「디렉터리 책임」](../../planning/references/examples/code-architecture.md#디렉터리-책임) 절과 대조한다.
