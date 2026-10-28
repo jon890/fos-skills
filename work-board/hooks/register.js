@@ -559,7 +559,7 @@ function ago(at) {
 export const START_PROMPT = [
   '오늘 작업을 시작하자.',
   '1. .omc/board.json 을 오늘 기준으로 갱신하고 done 항목은 비워 줘.',
-  '2. 남은 워크트리, 세션, 머지된 브랜치를 .orch/overlay.md 의 정리 규칙대로 정리해 줘.',
+  '2. 남은 워크트리, 세션, 머지된 브랜치 정리는 상주 루프의 cleanup-sweep 이 맡는다. 루프가 정리하지 못하고 남긴 것만 알려 줘.',
   '3. orch 상주 루프와 대기(wait-important)가 꺼져 있으면 다시 띄우고, 쌓인 worker 보고를 처리해 줘.',
   '4. 열린 PR 의 CI 와 리뷰, 막힌 것, 내가 정할 것을 짧게 보고하고 정할 것은 바로 물어봐 줘.',
 ].join('\n')
@@ -569,7 +569,7 @@ export const DECIDE_PROMPT = [
   '1. 보드의 결정 필요(decide) 항목과 그 줄, 답하지 않은 worker 질문, 이번 대화에서 미룬 결정을 모아 줘.',
   '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
   '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
-  '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 orca orchestration reply 로 전해 줘.',
+  '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 orch/scripts/send-to-worker.ts 로 전해 줘.',
 ].join('\n')
 
 function fillPrompt($, text) {
