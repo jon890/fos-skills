@@ -14,6 +14,7 @@
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
 //
 // 차례:
+//     0. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     1. spec-line --require-permission 으로 첫 지시 줄을 만든다
 //     2. 워크트리를 만들거나 확인한다
 //     3. before-launch 이벤트를 낸다. 결과가 pass 나 none 이 아니면(거부, 실패, 시간 초과, 잠금 실패) 띄우지 않고 1 이다.
@@ -44,7 +45,8 @@
 //     agent, model, effort   WORKER_ARGS 의 값. 없으면 null
 //
 // 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
-//            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured)
+//            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured),
+//            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다)
 //
 // 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2 가 기본값이다. 소수도 받는다.
@@ -62,6 +64,7 @@ import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { realPath } from './lib/fs.ts'
+import { checkLaunchSettings } from './lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { recordLaunch } from './lib/launched.ts'
 import { orca, orcaBin, repoVisibility, repoVisibilityActions } from './lib/orca.ts'
@@ -277,6 +280,12 @@ async function main(argv: string[]): Promise<number> {
   if (passthru.includes('--terminal') && reuseOpts.length > 0) {
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
+  }
+  const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
+  for (const warning of settings.warnings) err(`경고: ${warning}`)
+  if (settings.reject) {
+    err(`거부: ${settings.reject}`)
+    return 4
   }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
   const poll = seconds('LAUNCH_POLL', '5')

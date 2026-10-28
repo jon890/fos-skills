@@ -110,6 +110,8 @@ beforeEach(() => {
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(binDir, 'orca'),
+    // 실제 codex 의 모델 목록에 기대지 않게 없는 실행 파일로 고정한다(검사 불능이라 경고만 나온다)
+    CODEX_BIN: join(tmp, 'no-codex'),
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     MAKE_WORKTREE: make,
@@ -1029,5 +1031,92 @@ describe('보드 항목 제목과 같은 업무', () => {
     assert.equal(after.length, 2)
     assert.equal(after[1].id, 'wt')
     assert.equal(after[1].title, 'wt')
+  })
+})
+
+describe('모델과 effort 검사', () => {
+  const MODELS = {
+    models: [
+      { slug: 'gpt-6.1-sol', visibility: 'list', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }, { effort: 'ultra' }] },
+      { slug: 'gpt-6-luna', visibility: 'list', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }] },
+      { slug: 'gpt-hidden', visibility: 'hide', supported_reasoning_levels: [{ effort: 'low' }] },
+    ],
+  }
+
+  function fakeCodex(output: string, code = 0): void {
+    const bin = join(tmp, 'codex')
+    writeFileSync(bin, `#!/bin/sh\nprintf '%s' '${output.replace(/'/g, `'\\''`)}'\nexit ${code}\n`)
+    chmodSync(bin, 0o755)
+    env.CODEX_BIN = bin
+  }
+
+  function launchCodex(...extra: string[]): Launch {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    return launch(['--worktree', worktree, '--', '--agent', 'codex', ...extra])
+  }
+
+  test('목록에 없는 모델은 4 로 거부하고 쓸 수 있는 목록을 내며 orca 를 부르지 않는다', () => {
+    fakeCodex(JSON.stringify(MODELS))
+    const r = launchCodex('--model', 'gpt-5.5')
+    assert.equal(r.code, 4, both(r))
+    assert.match(r.stderr, /codex 에 없는 모델이다: gpt-5.5/)
+    assert.match(r.stderr, /gpt-6\.1-sol: low, high, ultra/)
+    assert.doesNotMatch(r.stderr, /gpt-hidden/)
+    assert.deepEqual(lines('orca '), [])
+  })
+
+  test('새 워크트리도 만들기 전에 멈춘다', () => {
+    fakeCodex(JSON.stringify(MODELS))
+    state({ next_ids: ['ctx_1'] })
+    const r = launch(['--repo', tmp, '--name', 'x', '--', '--agent', 'codex', '--model', 'gpt-5.5'])
+    assert.equal(r.code, 4, both(r))
+    assert.deepEqual(lines('make '), [])
+  })
+
+  test('모델이 지원하지 않는 effort 는 4 로 거부한다', () => {
+    fakeCodex(JSON.stringify(MODELS))
+    const r = launchCodex('--model', 'gpt-6-luna', '--effort', 'ultra')
+    assert.equal(r.code, 4, both(r))
+    assert.match(r.stderr, /gpt-6-luna 이 지원하지 않는 effort 다: ultra/)
+    assert.match(r.stderr, /gpt-6-luna 의 effort: low, high/)
+  })
+
+  test('있는 모델과 effort 는 통과한다. 숨긴 모델도 거절하지 않는다', () => {
+    fakeCodex(JSON.stringify(MODELS))
+    for (const model of ['gpt-6.1-sol', 'gpt-hidden']) {
+      const r = launchCodex('--model', model, '--effort', 'low')
+      assert.equal(r.code, 0, both(r))
+      assert.doesNotMatch(r.stderr, /경고/)
+    }
+  })
+
+  test('조회 명령이 실패하면 경고만 내고 띄운다', () => {
+    fakeCodex('', 1)
+    const r = launchCodex('--model', 'gpt-5.5')
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /경고: .*종료 코드 1/)
+  })
+
+  test('조회 출력이 JSON 이 아니거나 목록이 없어도 경고만 내고 띄운다', () => {
+    for (const output of ['not json', '{}']) {
+      fakeCodex(output)
+      const r = launchCodex('--model', 'gpt-5.5')
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stderr, /경고: /)
+    }
+  })
+
+  test('claude 는 목록을 조회할 수 없어 경고만 내고 띄운다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'nonexistent'])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /경고: claude 는 모델 목록을 조회하는 명령이 없어/)
+  })
+
+  test('--model 이 없으면 검사하지 않는다', () => {
+    env.CODEX_BIN = join(tmp, 'missing-codex')
+    const r = launchCodex()
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /경고/)
   })
 })

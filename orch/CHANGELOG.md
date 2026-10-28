@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.17.0 (2026-10-28)
+
+- `launch-worker` 가 워크트리를 만들기 전에 `--agent codex` 의 `--model`, `--effort` 를 `codex debug models` 로 검사한다. 없는 모델이나 지원하지 않는 effort 면 쓸 수 있는 값을 내고 종료 코드 4 로 멈춘다
+- 조회가 실패하거나 claude 면 검사를 건너뛰고 경고만 낸다. claude 는 모델 목록을 내는 명령이 없다
+
 ## 4.16.1 (2026-10-28)
 
 - 보드 릴리스에서 같은 PR 과 머지 커밋의 반복 조회를 줄이고 진행 항목을 알린다.
