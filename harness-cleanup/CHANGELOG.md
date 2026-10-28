@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.22.0 (2026-10-28)
+
+- 대화 기록으로 스킬이 실제로 어떻게 쓰였는지 보는 사용 기록 모드를 더했다. 요청하거나 「사용 이력 0」, 「모델 교체」 축에 근거가 필요할 때만 `references/usage-audit.md` 를 읽고 돈다
+- `scripts/extract_skill_usage.py`, `scripts/render_session.py`, `scripts/model_fit_signals.py` 를 더했다. 스킬은 `--skill`, 기간은 `--since` 로 고르고, 발췌는 세션 임시 폴더에만 쓴다
+- 판정 `해결됨` 과 근거 등급 `세션 실측` 을 더했다
+- `references/audit-axes.md` 에 형제 스킬 사이의 정책 어긋남과 트리거 겹침을 보는 「스킬 경계」 축을 더했다
+
 ## 3.21.0 (2026-10-28)
 
 - `scripts/run_checks.py` 가 2단계 검사를 따로 돌리고 스크립트별 종료 코드와 판정을 표로 낸다. 2단계가 이 스크립트를 부른다
