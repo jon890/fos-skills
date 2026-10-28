@@ -16,6 +16,7 @@ const SCRIPT = fileURLToPath(new URL('../scripts/board-release.ts', import.meta.
 const FAKE_GH = `const fs = require('node:fs')
 const state = JSON.parse(fs.readFileSync('state.json', 'utf8'))
 const args = process.argv.slice(2)
+fs.appendFileSync('gh-calls.log', args[2] + '\\n')
 if (args[0] === 'pr' && args[1] === 'view' && state[args[2]]) fs.writeSync(1, JSON.stringify(state[args[2]]) + '\\n')
 else process.exit(1)
 `
@@ -71,6 +72,18 @@ const four = (doneUpTo: number) => ['1. PR', '2. 머지', '3. 배포', '4. 릴�
 const STAGES = 'pr=1,merge=2,deploy=3,release=4'
 
 describe('board-release', () => {
+  test('같은 PR 이 여러 항목에 있어도 한 번만 조회한다', () => {
+    states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release } }
+    states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
+    const r = release([
+      { id: 'a', status: 'doing', pr: 7, stages: STAGES, details: four(3) },
+      { id: 'b', status: 'goal', details: [step('1. 릴리스 (#7 release)', false)] },
+    ], ['--release', '100', '--dry-run'])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.match(r.result.stdout, /step a 4/)
+    assert.match(r.result.stdout, /step b 1/)
+    assert.deepEqual(readFileSync(join(tmp, 'gh-calls.log'), 'utf8').trim().split('\n'), ['100', '7'])
+  })
   test('릴리스 PR 의 커밋이 품은 PR 의 항목만 [release] 단계까지 끝내고 done 으로 바꾼다', () => {
     states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release }, headRefOid: commits.release }
     states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }

@@ -52,6 +52,7 @@ export type RunOptions = {
   env?: Record<string, string | undefined>
   input?: string
   timeoutMs?: number
+  killSignal?: NodeJS.Signals
   // 출력 한도(바이트, stdout 과 stderr 각각). 테스트가 256MB 를 실제로 만들지 않게 하려고 둔 내부용 칸이다.
   maxBuffer?: number
   // runAsync 만 읽는다. true 면 자식을 새 프로세스 그룹으로 띄운다(머리 주석)
@@ -168,7 +169,7 @@ export function run(argv: string[], opts: RunOptions = {}): RunResult {
     env: childEnv(opts.env),
     input: opts.input,
     timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    killSignal: 'SIGTERM',
+    killSignal: opts.killSignal ?? 'SIGTERM',
     maxBuffer,
     encoding: 'utf8',
   })
