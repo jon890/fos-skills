@@ -7,7 +7,7 @@ description: |
   "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
   만든 task 를 실행하는 일은 `build-with-teams` 가 맡는다.
 metadata:
-  version: "2.31.1"
+  version: "2.32.0"
 ---
 # planning
 
@@ -16,7 +16,7 @@ metadata:
 - 의사결정과 서비스의 흐름은 `docs/` 에 남는다. 구현이 끝난 뒤에도 읽는다.
 - `tasks/plan{N}-{slug}/phase-*.md` 는 구현자가 이 대화를 보지 못해도 실행할 수 있어야 한다.
 - 구현된 것이 합의한 것과 같아야 한다.
-- **plan 하나는 PR 하나로 끝나는 크기다.** 더 크면 plan 을 나누고 지금 할 plan 만 자세히 쓴다. 뒤의 일은 한 줄로 두고 앞 PR 이 머지된 뒤 계획한다. 기준과 검사는 [`references/plan-size.md`](references/plan-size.md) 가 소유한다.
+- plan 의 크기 기준(PR 하나)과 자르는 방법은 [`references/plan-size.md`](references/plan-size.md) 가 소유한다.
 - `docs/` 와 `tasks/` 는 계획서를 번호로 가리키지 않는다. 근거는 [`references/step-7-docs.md`](references/step-7-docs.md) 의 「계획서를 가리키지 않는다」 가 소유한다.
 
 이 워크플로가 관리하는 문서는 다섯이다. 파일 이름이 담을 것을 정한다.
@@ -50,25 +50,25 @@ python3 "$SKILL_DIR/scripts/overlay_paths.py" --skill planning
 
 각 단계는 진입 시 해당 reference 를 읽고 수행한다. 단계를 표기하고, 통과 조건을 확인한 뒤 다음으로 간다.
 
+**UI, API, 저장 모델이 없는 변경은 그 단계(4, 5, 6)를 근거 한 줄로 통과한다.** 근거를 단계 표기에 적고 다음으로 간다. 여러 단계를 묶어 통과해도 각 단계의 근거는 따로 남긴다.
+
 
 | 단계  | 이름                 | 통과 조건                                                         | reference                                                 |
 | --- | ------------------ | ------------------------------------------------------------- | --------------------------------------------------------- |
-| 1   | 구현 가능성             | 가능 판단과 근거, 재사용 지점의 파일 경로, 리스크가 적혔고, 이번 PR 의 범위가 한 문장으로 정해졌다 | `references/step-1-feasibility.md`                        |
+| 1   | 구현 가능성             | 가능 판단과 근거, 재사용 지점의 파일 경로, 리스크가 적혔고, 이번 PR 의 범위가 한 문장으로 정해졌다(`plan-size.md`) | `references/step-1-feasibility.md`                        |
 | 2   | 기술 스택              | 새 의존이 없거나, 새 의존마다 대안 둘 이상을 비교해 사용자가 확정했다                      | `references/step-2-tech-stack.md`                         |
 | 3   | 호출·사용자 흐름          | 정상 흐름과 실패, 빈 상태, 동시 요청 갈래 각각에 답이 있다                           | `references/step-3-flow.md`                               |
 | 4   | 인터페이스 설계           | 경로, 라벨, 필드명 가운데 「나중에 정한다」 로 남은 것이 없다                          | `references/step-4-interface.md`                          |
 | 5   | API·함수 설계          | 응답 스키마의 필드, 옵셔널, 에러 코드가 채워졌다                                  | `references/step-5-api.md`                                |
 | 6   | 데이터·코드 구조          | 스키마의 키와 제약, 삭제 범위, 새 코드의 디렉터리가 정해졌다                           | `references/step-6-data-code.md`                          |
-| 7   | docs 영향과 기술 결정 기록 | `git diff -- docs/` 에 갱신이 있고, 영향이 없는 문서는 근거가 단계 결과에 있다           | `references/step-7-docs.md`                               |
-| 8   | task 파일 생성과 커밋     | 범위가 PR 하나에 들어가고(넘으면 plan 을 나누고 뒤의 일은 `deferred` 에 한 줄), `verify_task.py` 종료 코드가 0 이고, phase 가 인용한 식별자와 스키마와 경로가 `docs/` 와 같다 | `references/step-8-tasks.md`, `references/task-create.md`, `references/plan-size.md` |
+| 7   | docs 영향과 기술 결정 기록 | 영향 판정이 모든 문서에 있고, 영향이 있는 문서만 diff 가 있다. 영향이 없는 문서는 근거가 단계 결과에 있다           | `references/step-7-docs.md`                               |
+| 8   | task 파일 생성과 커밋     | 범위가 `plan-size.md` 의 기준에 들어가고, `verify_task.py` 종료 코드가 0 이고, phase 가 인용한 식별자와 스키마와 경로가 docs 와 코드에 같다 | `references/step-8-tasks.md`, `references/task-create.md`, `references/plan-size.md` |
 
 
 ### 단계는 하나씩 순차로 진행한다
 
-1. **단계 기록 생성**: planning 시작 시 밟을 단계를 각각 할 일로 만들고,
-   단계를 통과할 때마다 완료 처리한다. 할 일 목록 도구가 있으면 그것을 쓴다.
-2. **단계에 진입하면 해당 reference 문서를 읽고 그 문서의 「정할 것」 을 정한다.**
-3. **통과 조건**: 표의 조건과 아래 둘이 모두 참이어야 다음 단계로 간다.
+1. **단계에 진입하면 해당 reference 문서를 읽고 그 문서의 「정할 것」 을 정한다.**
+2. **통과 조건**: 표의 조건과 아래 둘이 모두 참이어야 다음 단계로 간다.
    - **남은 질문이 없다.** 그 단계의 「물어서 확정할 것」 을 하나씩 짚었고, 답이 열어 놓은 후속 질문도 닫혔다.
    - **사용자만 답할 결정이 남지 않았다.** 취향, 범위, 되돌리기 어려운 것, 트레이드오프 판단이 여기 해당한다.
      선택지와 트레이드오프를 붙여 묻고 확정받는다.
