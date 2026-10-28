@@ -18,6 +18,11 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --r
 `--run` 없는 `--stop` 은 `finish.run` 도 없으면 Run 이 하나라도 등록돼 있을 때 `LOOP-STOP-SHARED` 와 1 로 멈추지 않는다. 다른 세션의 루프를 끊지 않는다. 모두 멈추라는 사용자 지시가 있을 때만 `--stop --all` 을 쓴다.
 **`--stop` 이 1 로 끝나면(`LOOP-STOP-UNKNOWN`, `LOOP-STOP-TIMEOUT`) 그 pid 가 루프인지 `ps -o command= -p <pid>` 로 직접 확인한다.** 루프면 끝낸 뒤 다시 `--start` 한다. 다른 프로세스면 끝내지 않는다.
 
+**5(`LOOP-START-FENCED <Run> <묶인 Run>`)면 띄우지도 합류하지도 않았다.** Orca 는 호출자를 그 프로세스가 나온 터미널로 정하고, 루프는 띄운 터미널의 명의를 물려받는다.
+부른 터미널이 다른 Run 에 묶였거나, 도는 루프가 다른 Run 에 묶였거나 명의를 알 수 없는 옛 루프(`unknown`)라 이 Run 의 질문을 읽지 못한다는 뜻이다.
+**`--start` 는 그 Run 의 코디네이터 세션(그 Run 에 묶인 터미널)에서 부른다.** 다른 세션의 루프를 `--stop` 한 뒤 내 터미널에서 다시 띄우지 않는다. 새 루프가 내 Run 명의를 물려받아 원래 Run 의 질문을 읽지 못한다.
+도는 루프가 다른 Run 에 묶였으면 그 루프가 끝날 때까지 아래 Monitor 대안을 쓴다.
+
 **4 와 함께 `안내:` 줄이 오면 그 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다.** 다른 세션의 루프이므로 멈추지 않는다. 그 루프를 띄운 세션이나 사용자에게 다시 띄워 달라고 알리고, 그동안은 아래 Monitor 대안을 쓴다.
 
 루프는 `pipeline.tick_sec`(기본 300초)마다 아래를 차례로 한다. 판정과 순서는 `orch-loop.ts` 머리 주석이 소유한다.
