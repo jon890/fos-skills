@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.6.0 (2026-10-28)
+
+- `scripts/run_static_check.py` 가 정적 검사를 돌리고 종료 코드와 판정을 표로 낸다. 2단계가 이 스크립트를 부른다
+- ADR 색인 검사가 `[001-slug.md](...)` 처럼 파일 이름을 링크 문구로 쓴 형식을 인식한다. 이 형식이면 모든 ADR 이 「본문에만 있다」 로 나오던 오탐을 고쳤다
+- 모노레포 판정을 `planning/scripts/overlay_paths.py --skill docs-check` 호출로 바꿨다
+- 「조사를 나눠 맡긴다」 에서 Agent 도구 설명과 겹치는 지시를 줄였다
+
 ## 3.5.1 (2026-10-25)
 
 - README 를 스킬을 쓰는 사람 관점으로 다시 쓰고, 이 CHANGELOG 를 버전마다 핵심만 남기도록 줄였다. 동작은 바뀌지 않았다
