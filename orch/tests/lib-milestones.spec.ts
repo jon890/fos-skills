@@ -92,16 +92,22 @@ describe('단계 정의', () => {
 
 describe('boardSettings', () => {
   test('설정이 없으면 단계도 done 지점도 배포도 없다', () => {
-    assert.deepEqual(boardSettings(repo(undefined)), { steps: null, doneAfter: null, deploy: null })
+    assert.deepEqual(boardSettings(repo(undefined)), { steps: null, doneAfter: null, deploy: null, taskLine: null })
   })
 
   test('board 절과 finish 의 배포 설정을 읽는다', () => {
     const got = boardSettings(repo({ board: { steps: ['[pr] PR'], done_after: 'deploy' }, finish: { deploy_workflow: 'd.yml', deploy_branch: 'stage' } }))
-    assert.deepEqual(got, { steps: [{ kind: 'pr', text: 'PR' }], doneAfter: 'deploy', deploy: { workflow: 'd.yml', branch: 'stage' } })
+    assert.deepEqual(got, { steps: [{ kind: 'pr', text: 'PR' }], doneAfter: 'deploy', deploy: { workflow: 'd.yml', branch: 'stage' }, taskLine: null })
+  })
+
+  test('board.task_line 을 m, u 플래그 정규식으로 읽는다', () => {
+    const { taskLine } = boardSettings(repo({ board: { task_line: '^이슈: (?<number>#\\d+)' } }))
+    assert.equal(taskLine?.flags, 'mu')
+    assert.equal(taskLine?.exec('머리\n이슈: #12\n')?.groups?.number, '#12')
   })
 
   test('틀린 값과 모르는 키는 ConfigError 다', () => {
-    for (const board of [{ steps: [] }, { steps: 'PR' }, { steps: ['[qa] x'] }, { done_after: 'pr' }, { done_after: 'later' }, { colour: 'red' }]) {
+    for (const board of [{ steps: [] }, { steps: 'PR' }, { steps: ['[qa] x'] }, { done_after: 'pr' }, { done_after: 'later' }, { colour: 'red' }, { task_line: '' }, { task_line: '(' }, { task_line: '이슈: #\\d+' }]) {
       assert.throws(() => boardSettings(repo({ board })), ConfigError, JSON.stringify(board))
     }
   })

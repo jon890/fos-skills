@@ -25,13 +25,22 @@ export const STAGE_KINDS = ['pr', 'merge', 'deploy', 'release'] as const
 export type StageKind = (typeof STAGE_KINDS)[number]
 export type Stages = Partial<Record<StageKind, number>>
 export type MilestoneStep = { kind: StageKind | null; text: string }
-export type BoardSettings = { steps: MilestoneStep[] | null; doneAfter: StageKind | null; deploy: { workflow: string; branch: string } | null }
+export type BoardSettings = {
+  steps: MilestoneStep[] | null
+  doneAfter: StageKind | null
+  deploy: { workflow: string; branch: string } | null
+  taskLine: RegExp | null
+}
 
 // board.steps 가 없을 때의 단계
 export const DEFAULT_STEPS: readonly MilestoneStep[] = [
   { kind: 'pr', text: 'PR' },
   { kind: 'merge', text: '머지' },
 ]
+// board.task_line 이 없을 때의 업무 연결 줄. `두레이 업무: <프로젝트>/<번호>` 뒤 같은 줄의 「」 안이 제목이다.
+// 번호 뒤에 붙은 `(중간 PR)` 같은 괄호 글은 제목으로 읽지 않는다. lib/board.ts 의 taskOf 가 읽는다
+export const DEFAULT_TASK_LINE = /^\s*(?:[-*]\s*)?두레이 업무\s*:\s*`?(?<number>[^\s`「(.,]+\/\d+)`?[^「\n]*(?:「(?<title>[^」\n]+)」)?/mu
+
 // board.done_after 가 없을 때의 done 지점
 export const DEFAULT_DONE_AFTER: StageKind = 'merge'
 
@@ -103,9 +112,19 @@ export function boardSettings(repo: string): BoardSettings {
     }
     doneAfter = value as StageKind
   }
+  let taskLine: RegExp | null = null
+  if (board.task_line !== undefined) {
+    if (typeof board.task_line !== 'string' || !board.task_line) throw new ConfigError('설정 파일의 board.task_line 은 비지 않은 정규식 문자열이어야 한다')
+    try {
+      taskLine = new RegExp(board.task_line, 'mu')
+    } catch (e) {
+      throw new ConfigError(`설정 파일의 board.task_line 을 정규식으로 읽지 못했다: ${(e as Error).message}`)
+    }
+    if (!/\(\?<number>/.test(board.task_line)) throw new ConfigError('설정 파일의 board.task_line 에는 이름 붙은 묶음 (?<number>...) 이 있어야 한다')
+  }
   const workflow = typeof finish.deploy_workflow === 'string' ? finish.deploy_workflow : ''
   const branch = typeof finish.deploy_branch === 'string' ? finish.deploy_branch : ''
-  return { steps, doneAfter, deploy: workflow && branch ? { workflow, branch } : null }
+  return { steps, doneAfter, deploy: workflow && branch ? { workflow, branch } : null, taskLine }
 }
 
 // 단계 정의를 보드 줄과 stages 로 바꾼다. 번호는 start 부터다
