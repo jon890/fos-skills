@@ -49,6 +49,9 @@ ADR_BODY = re.compile(r"^#+\s+.*?(ADR-\d+)")
 #   표 칸에 링크를 건 `| [ADR-001](...)` 형도 있어 표 쪽에도 `[` 를 받는다.
 #   이것을 못 받으면 ADR 전부가 "본문에만 있다" 로 나온다.
 ADR_INDEX = re.compile(r"^\s*(?:[-*]\s+|\|\s*)\[?(ADR-\d+)")
+# 링크 문구가 파일 이름인 `[001-slug.md](001-slug.md)` 형. 번호는 `ADR-001` 로 읽는다.
+#   ADR_INDEX 는 `ADR-` 로 시작하는 문구만 받아서, 이 형식이면 ADR 전부가 "본문에만 있다" 로 나왔다.
+ADR_INDEX_FILE = re.compile(r"^\s*(?:[-*]\s+|\|\s*)\[(\d+)-[^\]]*\.md\]")
 
 # 문서가 `tasks/` 의 계획서를 번호로 가리키는 자리를 찾는다.
 #   계획서는 구현이 끝나면 제거되므로, 번호로 가리킨 자리는 그때 깨진 참조가 된다.
@@ -140,6 +143,10 @@ def check_index(adr_dir):
         m = ADR_INDEX.match(line)
         if m:
             listed.add(m.group(1))
+            continue
+        m = ADR_INDEX_FILE.match(line)
+        if m:
+            listed.add(f"ADR-{m.group(1)}")
 
     if body == listed:
         return []

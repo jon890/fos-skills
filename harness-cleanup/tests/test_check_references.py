@@ -313,5 +313,46 @@ class GuideSectionRefTest(CheckReferencesTest):
         self.assertNotIn("src/Rules.java", result.stdout)
 
 
+class FenceAndBranchTest(CheckReferencesTest):
+    """펜스 코드 블록 안과 브랜치 이름 표기를 깨진 참조로 내지 않는지 검증한다."""
+
+    def write(self, text):
+        (self.repo / "CLAUDE.md").write_text(text)
+
+    def test_broken_link_and_path_inside_fence_are_skipped(self):
+        self.write("# 지침\n\n```markdown\n[견본](없다.md)\n`docs/없다.md` 와 `AGENTS.md` 「없는 제목」\n```\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_tilde_fence_is_skipped_and_inner_backtick_fence_does_not_close_it(self):
+        self.write("~~~\n```\n[견본](없다.md)\n~~~\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_same_references_outside_fence_are_still_broken(self):
+        self.write("```\n[견본](없다.md)\n```\n\n[본문](없다.md)\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("CLAUDE.md:5  [링크] 없다.md", result.stdout)
+        self.assertNotIn("CLAUDE.md:2", result.stdout)
+
+    def test_branch_name_on_branch_line_is_not_a_path(self):
+        self.write("작업 브랜치는 `docs/branch-naming` 으로 만든다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_extensionless_docs_path_without_branch_context_is_still_broken(self):
+        self.write("규칙은 `docs/branch-naming` 에 있다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[경로] docs/branch-naming", result.stdout)
+
+    def test_file_path_on_branch_line_is_still_broken(self):
+        self.write("브랜치 규칙은 `docs/branch-naming.md` 에 있다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[경로] docs/branch-naming.md", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

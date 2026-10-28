@@ -16,6 +16,10 @@
      대상 파일은 참조하는 파일 기준, 그다음 저장소 루트 기준으로 찾고, 못 찾으면 건너뛴다.
      파일 표기가 바로 앞에 없는 「」 는 화면 문구로 보고 검사하지 않는다.
 
+펜스 코드 블록(``` 와 ~~~) 안은 모든 검사에서 건너뛴다. 예시 출력과 서식 견본이 들어 있는 자리라서다.
+브랜치 이름처럼 경로가 아닌 백틱 표기는 2번에서 건너뛴다. 확장자도 끝 슬래시도 없는 표기가
+브랜치를 말하는 줄(「브랜치」, `branch`, `checkout`, `switch`, `worktree`)에 있을 때다.
+
 5번은 두 범위를 본다. 감사 대상 지침 전부와, git 이 추적하는 텍스트 파일 가운데
 가리키는 파일이 감사 대상 지침인 참조다. 지침의 절 이름을 바꾸면 코드 주석과 프롬프트의
 참조가 깨지기 때문이다. 바이너리와 디코딩이 안 되는 파일은 건너뛴다.
@@ -72,6 +76,27 @@ BUNDLE_DIRS = ("assets/", "references/", "scripts/")
 #   한 단 깊어져 정확히 그 형태가 된다. 스킬이 시킨 작업이 만드는 링크를
 #   스킬의 검사기가 안 보게 된다. 저장소 밖으로 나가는지는 해석 결과로 판정한다.
 SKIP = re.compile(r"[<>{}*]|^~|^\$|^https?:")
+FENCE = re.compile(r"^\s*(```|~~~)")
+# 브랜치 이름은 `docs/branch-naming` 처럼 경로와 같은 모양이다. 줄이 브랜치를 말하면 확장자 없는 표기는 경로로 보지 않는다.
+BRANCH_CONTEXT = re.compile(r"브랜치|\bbranch|checkout|switch|worktree", re.I)
+
+
+def outside_fences(lines):
+    """펜스 코드 블록 밖의 (줄 번호, 줄). 여는 펜스와 같은 문자로 닫히기 전까지는 블록 안이다."""
+    fence = None
+    for number, line in enumerate(lines, 1):
+        m = FENCE.match(line)
+        if m and fence is None:
+            fence = m[1]
+        elif m and m[1] == fence:
+            fence = None
+        elif fence is None:
+            yield number, line
+
+
+def is_branch_name(cand, line):
+    last = cand.rstrip("/").rsplit("/", 1)[-1]
+    return not cand.endswith("/") and "." not in last and bool(BRANCH_CONTEXT.search(line.replace(cand, "")))
 
 
 def targets():
@@ -255,9 +280,8 @@ def main():
         scanned.add(f.resolve())
         rel = f.relative_to(ROOT)
         text = f.read_text(encoding="utf-8", errors="replace")
-        lines = text.splitlines()
 
-        for i, line in enumerate(lines, 1):
+        for i, line in outside_fences(text.splitlines()):
             # 1) 마크다운 링크
             for link in MD_LINK.findall(line):
                 if SKIP.search(link):
@@ -272,7 +296,7 @@ def main():
 
             # 2) 백틱 경로 — repo 상대 경로로 해석
             for cand in PATH_IN_BACKTICK.findall(mask_resolved_link_text(f, line)):
-                if SKIP.search(cand):
+                if SKIP.search(cand) or is_branch_name(cand, line):
                     continue
                 bare = cand.rstrip("/")
                 normalized = bare[2:] if bare.startswith("./") else bare
@@ -332,7 +356,7 @@ def main():
     for f, text in tracked_text_files():
         if f.resolve() in scanned:
             continue
-        for i, line in enumerate(text.splitlines(), 1):
+        for i, line in outside_fences(text.splitlines()):
             for name, title in broken_guide_refs(f, line, instructions):
                 broken.append((f.relative_to(ROOT), i, "절 제목", f"{name} → 「{title}」"))
 

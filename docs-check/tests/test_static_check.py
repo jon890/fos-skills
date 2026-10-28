@@ -242,6 +242,26 @@ class TestRepo(unittest.TestCase):
         done = self.invoke("docs/adr")
         self.assertEqual(done.returncode, 0, done.stdout)
 
+    def test_index_with_file_name_link_text_is_in_sync(self):
+        for n in range(1, 4):
+            self.write(f"docs/adr/00{n}-slug.md", f"## ADR-00{n}: 결정\n")
+        self.write(
+            "docs/adr/INDEX.md",
+            "# INDEX\n\n- [001-slug.md](001-slug.md): 요약\n- [002-slug.md](002-slug.md): 요약\n\n"
+            "| 번호 | 제목 |\n| --- | --- |\n| [003-slug.md](003-slug.md) | 표 링크 |\n",
+        )
+        done = self.invoke("docs/adr")
+        self.assertEqual(done.returncode, 0, done.stdout)
+
+    def test_index_with_file_name_link_text_still_detects_missing_entry(self):
+        self.write("docs/adr/001-slug.md", "## ADR-001: 결정\n")
+        self.write("docs/adr/002-slug.md", "## ADR-002: 결정\n")
+        self.write("docs/adr/INDEX.md", "# INDEX\n\n- [001-slug.md](001-slug.md): 요약\n")
+        done = self.invoke("docs/adr")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("본문에만 있다: ADR-002", done.stdout)
+        self.assertNotIn("ADR-001", done.stdout)
+
     def test_missing_index_skips_the_check(self):
         self.write("docs/adr/ADR-001.md", "# 하나\n\n## ADR-001 첫 결정\n")
         done = self.invoke("docs/adr")
