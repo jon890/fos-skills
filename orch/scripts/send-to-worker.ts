@@ -16,9 +16,9 @@
 //                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
 //     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
 //
-// reply 는 `--from run:<run>` 과 함께 보낸다. lib/questions.ts 의 unanswered() 는 from_handle 이 `run:<run>` 인 답만
-// 질문의 답으로 센다. `--from` 이 없으면 orca 가 보낸 쪽을 그렇게 적는다는 보장이 없어 살아 있는 dispatch 에도 같이 붙인다.
-// Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다
+// reply 는 `--run <run> --from run:<run>` 과 함께 보낸다. Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다.
+// Orca 터미널에서 돌면 터미널 증명 때문에 `--from run:<run>` 이 `consumer_fenced` 로 거부된다. 그러면 `--from` 만 빼고 한 번 다시 보낸다.
+// 그 답의 보낸 쪽은 코디네이터 터미널(term_*)이지만 lib/questions.ts 의 unanswered() 는 worker 쪽으로 간 답을 모두 센다(ADR-015)
 //
 // agent_unconfigured 로 새 worker 를 띄울 때 실행 설정은 원래 dispatch 의 `startOptions.launch` 에서 읽는다.
 // effective 를 우선하고 없는 값은 requested 에서 읽으며, --agent, --model, --effort 로 바꿀 수 있다.
@@ -74,6 +74,8 @@ const LAUNCH_WORKER = process.env.LAUNCH_WORKER || `${HERE}/launch-worker.ts`
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 // 이미 답한 question 에 다시 reply 하면 orca 가 이 문구로 거부한다
 const ANSWERED = 'already has a different answer'
+// Orca 터미널 안에서 `--from run:<run>` 을 붙이면 orca 가 이 코드로 거부한다
+const FENCED = 'consumer_fenced'
 // 끝난 dispatch 에서 답할 후보로 보는 메시지 종류
 const ASKS = new Set(['question', 'escalation'])
 // nudge-worker 는 턴 시작을 기본 15초씩 두 번 기다린다. ORCH_NUDGE_TIMEOUT_MS 는 이 한도를 바꾼다. 테스트만 쓴다
@@ -173,7 +175,15 @@ function liveHandles(): Set<string> {
 }
 
 function reply(msgId: string, body: string, run: string): string {
-  const result = orcaJson(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run, '--from', `run:${run}`] : [])])
+  const base = ['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])]
+  let result: Json
+  try {
+    result = orcaJson([...base, ...(run ? ['--from', `run:${run}`] : [])])
+  } catch (e) {
+    if (!run || !(e instanceof OrcaFailed) || !e.message.includes(FENCED)) throw e
+    out(`retry: --from run:${run} 이 ${FENCED} 로 거부돼 --from 없이 다시 보낸다`)
+    result = orcaJson(base)
+  }
   return String(obj(result.message).id || result.messageId || result.id || '')
 }
 

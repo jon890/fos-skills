@@ -24,8 +24,9 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 스크립트가 dispatch 상태를 보고 경로를 고른다. 상태별 경로와 종료 코드는 스크립트 머리 주석이 소유한다.
 종료 코드 3 이면 표준 출력이 다음에 할 일을 말한다. 끝난 dispatch 에 `--spec` 을 주지 않았거나 터미널이 없는 경우다.
 
-**끝난 dispatch 의 질문에 답할 때도 `send-to-worker` 를 쓴다.** `orca orchestration reply` 를 직접 부르면 답으로 세지지 않을 수 있다.
-`send-to-worker` 는 `--from run:<run>` 을 붙여 달아, 질문 감시가 답한 것으로 센다. 깨울 worker 가 없으니 답만 달고 0 으로 끝난다.
+**끝난 dispatch 의 질문에 답할 때도 `send-to-worker` 를 쓴다.** 답할 메시지를 고르고, 이미 답한 question 은 건너뛴다. 깨울 worker 가 없으니 답만 달고 0 으로 끝난다.
+`send-to-worker` 는 `--from run:<run>` 을 붙여 보내고, Orca 터미널 안이라 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보낸다.
+질문 감시는 질문의 스레드에 worker 쪽으로 간 답이면 보낸 쪽과 상관없이 답한 것으로 센다(ADR-015).
 
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
 

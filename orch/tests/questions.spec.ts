@@ -127,6 +127,13 @@ describe('unanswered', () => {
     assert.deepEqual(unanswered([e, reply], 'r'), [e])
     assert.deepEqual(unanswered([e, { ...reply, thread_id: 'e' }], 'r'), [])
   })
+
+  test('--from 없이 코디네이터 터미널이 보낸 답도 worker 쪽으로 갔으면 답이다', () => {
+    const q = message('q', 'escalation', { from_handle: 'term_w' })
+    const reply = message('answer', 'status', { from_handle: 'term_coord', to_handle: 'dispatch:d', thread_id: 'q' })
+    assert.deepEqual(unanswered([q, reply], 'r'), [])
+    assert.deepEqual(unanswered([q, { ...reply, to_handle: 'run:r' }], 'r'), [q])
+  })
 })
 
 describe('snapshot', () => {
@@ -158,12 +165,20 @@ describe('snapshot', () => {
   })
 
   test('답 기록이 한도에 닿으면 모든 질문이 답을 받았을 때만 성공이다', () => {
-    const unrelated = { ...message(), id: 'follow', type: 'status', to_handle: 'dispatch:d' }
+    const unrelated = { ...message(), id: 'follow', type: 'status' }
     const rows = Array.from({ length: REPLY_LIMIT }, () => unrelated)
     fake({ all: { messages: [message()] }, inbox: { 'dispatch:d': rows } })
     assert.throws(() => snapshot('r'), /답변 기록 한도/)
-    fake({ all: { messages: [message()] }, inbox: { 'dispatch:d': [{ ...unrelated, id: 'answer', from_handle: 'run:r' }, ...rows.slice(1)] } })
+    fake({ all: { messages: [message()] }, inbox: { 'dispatch:d': [{ ...unrelated, id: 'answer', from_handle: 'run:r', to_handle: 'dispatch:d' }, ...rows.slice(1)] } })
     assert.deepEqual(snapshot('r'), { run: 'r', pending: [] })
+  })
+
+  test('터미널에서 보낸 질문은 그 dispatch 의 inbox 에서도 답을 찾는다', () => {
+    const q = message('q', 'escalation', { from_handle: 'term_w', payload: JSON.stringify({ dispatchId: 'd' }) })
+    const reply = answer('q', { from_handle: 'term_coord' })
+    fake({ all: { messages: [q] }, inbox: { 'dispatch:d': [reply] } })
+    assert.deepEqual(snapshot('r').pending, [])
+    assert.deepEqual(calls().filter((c) => c[0] === 'inbox').map((c) => c[2]), ['term_w', 'dispatch:d'])
   })
 
   test('전역 inbox 는 부르지 않는다', () => {
@@ -281,7 +296,7 @@ describe('watch-questions', () => {
   })
 
   test('답 기록 한도와 깨진 알림 기록도 WATCH-ERROR 다', () => {
-    const unrelated = { ...message(), id: 'follow', type: 'status', to_handle: 'dispatch:d' }
+    const unrelated = { ...message(), id: 'follow', type: 'status' }
     fake({ all: { messages: [message()] }, inbox: { 'dispatch:d': Array.from({ length: REPLY_LIMIT }, () => unrelated) } })
     assert.match(watch('--run', 'r', '--once').stdout, /^WATCH-ERROR .*답변 기록 한도/m)
     fake({})

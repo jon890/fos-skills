@@ -36,4 +36,5 @@
   - 감당할 것: 마무리가 `pr` 필드를 비우고 done 으로 바꾼 항목은 `merged-pr` 에 옛 PR 이 없다. 다시 연 항목의 새 worker 가 옛 브랜치 이름을 그대로 쓰면 보드 동기화가 옛 머지 PR 을 다시 찾아 done 으로 되돌릴 수 있다. 새 브랜치 이름으로 띄운다.
   - 감당할 것: `중간 과정:` 줄은 그 worker 가 끝난 뒤에도 항목이 done 이 될 때까지 남는다. 다음 중간 과정이 그 줄을 바꿔 쓴다.
 - **적용 범위**: 줄 명령은 `work-board/bin/board.ts`, 창의 질문 판정은 `work-board/hooks/register.js` 의 `queryQuestions` 와 `parseQuestions`,
+  orch 질문 감시(`watch-questions`, `orch-loop` 의 재알림)의 같은 판정은 `orch/scripts/lib/questions.ts` 의 `unanswered` 와 `snapshot`,
   중간 과정은 `orch/scripts/lib/board.ts` 의 `registerBoard`, 충돌 지시서는 `orch/scripts/lib/conflicts.ts`, 지우기는 `orch/scripts/finish-pr.ts` 머리 주석이 소유한다.
