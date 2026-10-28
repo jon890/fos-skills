@@ -213,6 +213,11 @@ function main(argv: string[]): number {
   let rules: LastPrRules | null | undefined
   let settings: BoardSettings | null | undefined
   const runs: { runs: RunRow[] | null } = { runs: null }
+  const deployments = new Map<string, DeployVerdict>()
+  const deploymentFor = (num: string, deploy: { workflow: string; branch: string }): DeployVerdict => {
+    if (!deployments.has(num)) deployments.set(num, deployedNow(repo, num, deploy, runs))
+    return deployments.get(num)!
+  }
   const tagStates = new Map<string, string | null>()
   const stateFor = (pr: unknown): string | null => {
     const num = prNumber(pr)
@@ -250,7 +255,7 @@ function main(argv: string[]): number {
               settings = null
             }
           }
-          reached = Boolean(settings?.deploy && deployedNow(repo, tag.pr, settings.deploy, runs) === 'success')
+          reached = Boolean(settings?.deploy && deploymentFor(tag.pr, settings.deploy) === 'success')
         }
         if (reached) after.push(['step', id, String(step.number)])
       }
@@ -304,7 +309,7 @@ function main(argv: string[]): number {
           after.push(...advanceCommands(id, steps, stages, 'pr', { last: false, doneAfter }).cmds)
         } else if (settings !== null && prNumbers(item['merged-pr']).has(num)) {
           // 이미 반영한 마지막 PR 이다. 배포만 기다린다
-          if (deployPending() && deployedNow(repo, num, deploy as { workflow: string; branch: string }, runs) === 'success') {
+          if (deployPending() && deploymentFor(num, deploy as { workflow: string; branch: string }) === 'success') {
             const got = advanceCommands(id, steps, stages, 'deploy', { last: true, doneAfter })
             after.push(...got.cmds)
             finish = got.done
@@ -316,7 +321,7 @@ function main(argv: string[]): number {
           if (verdict) out(`board-sync: ${id} 마지막 PR 판정: ${label}(${verdict.reason})`)
           if (!verdict?.retry) {
             const last = verdict?.last ?? true
-            const reached = deployPending() && deployedNow(repo, num, deploy as { workflow: string; branch: string }, runs) === 'success' ? 'deploy' : 'merge'
+            const reached = deployPending() && deploymentFor(num, deploy as { workflow: string; branch: string }) === 'success' ? 'deploy' : 'merge'
             const note = verdict?.last === false ? noteLine(verdict.prs, verdict.specs) : null
             const got = mergedCommands({ ...item, details }, steps, stages, num, reached, { last, doneAfter, note })
             after.push(...got.cmds)
