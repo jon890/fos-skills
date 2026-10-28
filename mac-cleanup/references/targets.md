@@ -35,11 +35,13 @@
 | mise 가 지울 수 있다고 본 버전 | 확인 필요 | 사용자가 고른 도구만 | 실측: node 3개, java 1개, gradle 3개 등. `mise prune` 은 사용자가 고르지 않은 도구(gradle 등)까지 지우므로 돌리지 않는다 |
 | 오래된 `~/.cache` 하위 디렉터리 | 확인 필요 | 절의 「프로세스 없음」 이고 마지막 수정이 사용자가 정한 기준보다 오래됐을 때만 | 실측: `codex-runtimes` 1.8GB 는 4개월, `puppeteer` 1GB 는 3개월 동안 바뀌지 않았다. 프로세스 확인은 명령줄에 그 경로가 있는지만 보므로 열린 파일은 못 잡는다 |
 
+변수가 비면 `${VAR:?}` 형식은 셸이 오류로 멈춰 `rm -rf /` 가 되지 않는다. Claude Code 의 삭제 안전 검사도 이 형식은 막지 않는다.
+
 ```bash
-rm -rf "$RELEASE"
+rm -rf "${RELEASE:?}"
 mise uninstall "$TOOL@$VERSION"
-rm -rf "$HOME/Library/Application Support/Cursor/snapshots"
-rm -rf "$DIR"
+rm -rf "${HOME:?}/Library/Application Support/Cursor/snapshots"
+rm -rf "${DIR:?}"
 ```
 
 ## 도구 캐시 명령
@@ -69,8 +71,10 @@ rm -rf "$DIR"
 ```bash
 find ~/.npm/_npx -mindepth 1 -maxdepth 1 -type d -mtime +"$DAYS"
 pgrep -fl _npx
-rm -rf "$DIR"
+rm -rf "${DIR:?}"
 ```
+
+변수가 비면 `${DIR:?}` 가 셸을 멈춰 `rm -rf ~/.npm/_npx` 같은 넓은 삭제가 되지 않는다. 삭제 안전 검사도 이 형식은 막지 않는다.
 
 `pgrep` 이 그 디렉터리를 쓰는 프로세스를 보이면 그 디렉터리는 남긴다.
 
