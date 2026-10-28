@@ -51,6 +51,12 @@ if (is('orchestration', 'reply')) {
   }
   out({ message: { id: 'msg_new' } })
 }
+if (is('orchestration', 'send')) {
+  if (state.fenced && args.includes('--from')) {
+    print(JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'run consumer is fenced to another terminal' } }), 1)
+  }
+  out({ message: { id: 'msg_sent' } })
+}
 if (is('orchestration', 'worker-list')) {
   if (state.worker_pages && state.worker_pages.length) out(state.worker_pages.shift())
   out({ workers: state.workers || [] })
@@ -183,12 +189,24 @@ describe('살아 있는 dispatch', () => {
     assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_st --body x --run run_x --from run:run_x'])
   })
 
-  test('두 번째 후보도 거부되면 더 시도하지 않고 5 다', () => {
+  test('두 번째 후보도 거부되면 더 reply 하지 않고 새 메시지로 보내 깨운다', () => {
     const inbox = [message('m_a', 'term_w', 'question', 5), message('m_b', 'term_w', 'question', 4), message('m_c', 'term_w', 'question', 3)]
     state({ dispatches: worker('dispatched'), inbox, answered: ['m_a', 'm_b'] })
-    const r = send('--body', 'x')
-    assert.equal(r.code, 5, r.stdout)
+    const r = send('--body', '후속 지시\n둘째 줄')
+    assert.equal(r.code, 0, both(r))
     assert.equal(lines('orca orchestration reply').length, 2)
+    // 본문의 줄바꿈 때문에 기록이 두 줄로 나뉜다. 제목은 첫 줄이다
+    assert.deepEqual(lines('orca orchestration send'), ['orca orchestration send --run run_x --to dispatch:ctx_1 --subject 후속 지시 --body 후속 지시'])
+    assert.match(r.stdout, /^sent: 후보가 모두 이미 답한 question 이라 reply 대신 dispatch:ctx_1 에 새 메시지로 보냈다 \(msg_sent\)$/m)
+    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+  })
+
+  test('--reply-to 로 준 질문이 이미 답했으면 새 메시지로 보낸다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [], answered: ['m_done'] })
+    const r = send('--body', 'x', '--reply-to', 'm_done')
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^sent: .*dispatch:ctx_1 에 새 메시지로 보냈다 \(msg_sent\)$/m)
+    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
   })
 
   test('--reply-to 와 --body-file 을 쓰고 nudge-worker 의 종료 코드를 그대로 낸다', () => {
@@ -208,12 +226,33 @@ describe('살아 있는 dispatch', () => {
     assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_given --body - 첫 항목 --run run_x --from run:run_x'])
   })
 
-  test('worker 가 보낸 메시지가 없으면 --reply-to 를 요구하고 3 이다', () => {
+  test('worker 가 보낸 메시지가 없으면 reply 없이 새 메시지로 보내고 깨운다', () => {
     state({ dispatches: worker('dispatched'), inbox: [] })
     const r = send('--body', 'x')
-    assert.equal(r.code, 3, both(r))
-    assert.match(r.stdout, /--reply-to/)
+    assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration reply'), [])
+    assert.deepEqual(lines('orca orchestration send'), ['orca orchestration send --run run_x --to dispatch:ctx_1 --subject x --body x --from run:run_x'])
+    assert.match(r.stdout, /^sent: 보낸 메시지가 없어 reply 대신 dispatch:ctx_1 에 새 메시지로 보냈다 \(msg_sent\)$/m)
+    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+  })
+
+  test('새 메시지의 --from run:<run> 이 consumer_fenced 면 --from 없이 다시 보낸다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [], fenced: true })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration send'), [
+      'orca orchestration send --run run_x --to dispatch:ctx_1 --subject x --body x --from run:run_x',
+      'orca orchestration send --run run_x --to dispatch:ctx_1 --subject x --body x',
+    ])
+    assert.match(r.stdout, /^retry: .*consumer_fenced/m)
+  })
+
+  test('답할 후보가 있으면 새 메시지를 보내지 않는다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_st', 'term_w')] })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration send'), [])
+    assert.match(r.stdout, /^replied: m_st 에 답했다/m)
   })
 
   test('--spec 만 주면 보낼 글이 없어 2 다', () => {

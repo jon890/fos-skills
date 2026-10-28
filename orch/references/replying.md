@@ -23,6 +23,7 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 작업 중인 worker 의 입력란에 글이 섞이고, 끝난 dispatch 의 터미널에 쓴 지시는 Task 기록 없이 사라진다.
 스크립트가 dispatch 상태를 보고 경로를 고른다. 상태별 경로와 종료 코드는 스크립트 머리 주석이 소유한다.
 종료 코드 3 이면 표준 출력이 다음에 할 일을 말한다. 끝난 dispatch 에 `--spec` 을 주지 않았거나 터미널이 없는 경우다.
+살아 있는 dispatch 인데 reply 할 메시지가 없거나 모두 이미 답한 question 이면 스크립트가 그 dispatch 에 새 메시지로 보내고 깨운다(`sent:` 줄). `orca orchestration send` 와 `nudge-worker` 를 직접 잇지 않는다.
 
 **끝난 dispatch 의 질문에 답할 때도 `send-to-worker` 를 쓴다.** 답할 메시지를 고르고, 이미 답한 question 은 건너뛴다. 깨울 worker 가 없으니 답만 달고 0 으로 끝난다.
 `send-to-worker` 는 `--from run:<run>` 을 붙여 보내고, Orca 터미널 안이라 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보낸다.

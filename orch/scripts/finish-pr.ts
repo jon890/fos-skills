@@ -9,23 +9,30 @@
 //     1. PR 이 MERGED 가 될 때까지 기다린다(--merge-timeout). 머지 없이 닫히면 FINISH-FAIL 이다
 //        머지된 것을 gh 로 직접 확인한 뒤에야 정리한다. 머지 직후 `cleanup-sweep.ts` 는 GitHub 상태가 아직
 //        반영되지 않아 「살아 있는 터미널」 로 건너뛰고 워크트리를 남긴 적이 있다
-//     2. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
+//     2. --run 을 줬고 그 Run 에서 그 PR 브랜치의 워크트리에 살아 있는 dispatch(lib/workers.ts 의 workerFor, LIVE_DISPATCH)가 있으면
+//        `send-to-worker --dispatch <id> --body "PR #<N> 이 MERGED 됐다(머지 커밋 <SHA>). ..." [--run <run>]` 으로 머지를 알린다.
+//        머지된 줄 모르고 기다리는 worker 의 dispatch 가 살아 있으면 정리가 그 워크트리를 「살아 있는 worker」 로 건너뛴다.
+//        보낸 뒤 --worker-done-timeout 동안 --poll-interval 마다 worker-list 로 그 dispatch 가 끝났는지 본다.
+//        끝나면 `worker 끝남: <dispatch> (<상태>)`, 시간이 지나면 `worker 남음: <dispatch> 가 아직 살아 있다 ...` 를 남기고 정리로 넘어간다.
+//        보내지 못했으면(send-to-worker 의 3, 5 같은 것) 기다리지 않는다. worker 목록을 읽지 못하면 알리지 않고 그 사실을 남긴다.
+//        출력 줄은 `notify: ` 로 시작한다
+//     3. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다
-//     3. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
+//     4. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
 //        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 lib/deploy.ts 의 deployVerdict 가 소유한다
-//     4. 이 PR 이 업무의 마지막 PR 인지 판정하고 `마지막 PR 판정: <마지막|중간>(근거)` 한 줄을 낸다(아래 「마지막 PR 판정」).
+//     5. 이 PR 이 업무의 마지막 PR 인지 판정하고 `마지막 PR 판정: <마지막|중간>(근거)` 한 줄을 낸다(아래 「마지막 PR 판정」).
 //        배포가 실패하거나 시간이 지나도 판정한다
-//     5. --specs-dir 를 줬고 마지막 PR 이면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
+//     6. --specs-dir 를 줬고 마지막 PR 이면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
 //        지우기는 lib/spec.ts 의 deleteSpecs 한 경로다. 살아 있는 dispatch(--run 의 Run, 없으면 모든 Run)가 쓰는 지시서와,
 //        그 목록을 읽지 못한 실행에서는 지우지 않는다. 지시서 폴더가 orch 루트 밖이어도 지운다.
 //        중간 PR 이면 지시서는 남긴다. 업무 하나가 PR 여럿이면 다음 PR 에도 지시서를 쓴다
 //        마지막과 중간 모두, --specs-dir 와 상관없이 <orch 루트>/specs 의 이 PR 의 충돌 후속 지시서(spec-conflict-<PR>.md 와
 //        옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md, lib/conflicts.ts 의 conflictSpecFiles)를 같은 deleteSpecs 로 지운다(ADR-015).
 //        그 PR 이 머지되면 쓸모가 없다. 지울 것이 없으면 살아 있는 지시서 목록도 읽지 않는다
-//     6. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
-//     7. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
-//     8. 보드 항목을 고친다(아래 「보드 항목」)
+//     7. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
+//     8. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
+//     9. 보드 항목을 고친다(아래 「보드 항목」)
 //
 // 마지막 PR 판정:
 //     --complete(merge-with-finish 의 `PR!`)면 마지막, --intermediate(`PR~`)면 중간이다. 둘 다 없으면 lib/last-pr.ts 의 judgeLastPr 로
@@ -90,10 +97,11 @@
 //     --merge-timeout MIN   머지 대기 한도(분). 기본 180
 //     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
 //     --poll-interval SEC   확인 간격(초). 기본 30
+//     --worker-done-timeout MIN  머지를 알린 worker 의 dispatch 가 끝나기를 기다리는 한도(분). 기본 10. 0 이면 알리기만 한다
 //     --pid-file FILE       시작할 때 pid 를 쓰고 끝나면 지운다. 같은 PR 의 마무리가 둘 도는 것을 막을 때 쓴다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
-// CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, BOARD_BIN 으로 보드 명령을, GH 와 GIT 로 실행 파일을, ORCA 로 orca 를 바꾼다.
+// CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, SEND_TO_WORKER 로 worker 에게 보내는 명령을, BOARD_BIN 으로 보드 명령을, GH 와 GIT 로 실행 파일을, ORCA 로 orca 를 바꾼다.
 // 정리 스크립트와 보드 명령은 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //
 // 출력의 마지막 줄은 FINISH-DONE 이나 FINISH-FAIL 이다. 그 줄이 없으면 아직 돌고 있거나 죽은 것이다.
@@ -124,6 +132,7 @@ import { boardPath, pathOf, requireMigrated } from './lib/paths.ts'
 import { run, runAsync, scriptCommand } from './lib/proc.ts'
 import { pyStr, shSplit } from './lib/py.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from './lib/spec.ts'
+import { LIVE_DISPATCH, workerFor, workerRows } from './lib/workers.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
@@ -131,6 +140,8 @@ const CLEANUP_TRIES = 5
 // 옛 명령의 자식 실행 시간 제한(초). 정리 스크립트만 600초였다
 const RUN_TIMEOUT_MS = 300_000
 const SWEEP_TIMEOUT_MS = 600_000
+// send-to-worker 는 nudge-worker 를 5분까지 기다린다
+const SEND_TIMEOUT_MS = 600_000
 const LEGACY_KEY = '--complete-cmd'
 const HOOK_PREFIX = '[hook after-deploy] '
 const PR_FIELDS = 'state,mergeCommit,headRefName,title,number,headRefOid,author,isDraft,url,baseRefName'
@@ -157,6 +168,7 @@ type Args = {
   mergeTimeout: number
   deployTimeout: number
   pollInterval: number
+  workerDoneTimeout: number
   pidFile: string | null
 }
 
@@ -292,6 +304,7 @@ function parse(argv: string[]): Args | null {
     mergeTimeout: num('merge-timeout', 180),
     deployTimeout: num('deploy-timeout', 120),
     pollInterval: num('poll-interval', 30),
+    workerDoneTimeout: num('worker-done-timeout', 10),
     pidFile: pick('pid-file'),
   }
   if (Boolean(args.deployWorkflow) !== Boolean(args.deployBranch)) throw new Usage('--deploy-workflow 와 --deploy-branch 는 함께 준다')
@@ -386,6 +399,47 @@ async function cleanupWorker(args: Args, repo: string, branch: string): Promise<
   return false
 }
 
+// 머리 주석의 단계 2. 그 워크트리의 살아 있는 worker 에게 머지를 알리고, dispatch 가 끝나기를 기다린다
+async function tellMerged(args: Args, runId: string, worktree: string, merge: string): Promise<void> {
+  const found = workerRows(runId)
+  if (!found.ok) {
+    log(`notify: worker 목록을 읽지 못해 머지를 알리지 않았다: ${found.error}`)
+    return
+  }
+  const row = workerFor(found.rows, worktree)
+  if (!row || !LIVE_DISPATCH.has(String(row.dispatchStatus))) return
+  const dispatch = String(row.dispatchId)
+  const body = `PR #${args.pr} 이 MERGED 됐다(머지 커밋 ${merge}). gh pr view 로 확인한 뒤 worker_done 을 보내고 끝낸다`
+  const send = process.env.SEND_TO_WORKER || join(HERE, 'send-to-worker.ts')
+  const done = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', runId]), {
+    cwd: worktree,
+    timeoutMs: SEND_TIMEOUT_MS,
+  })
+  for (const line of (done.stdout + done.stderr).split('\n')) {
+    if (line) log(`notify: ${line.replace(/\r$/, '')}`)
+  }
+  // 1 은 보냈지만 턴 시작을 보지 못했고, 4 는 보냈지만 깨우지 못했다. 둘 다 메시지는 갔다(send-to-worker 머리 주석)
+  if (![0, 1, 4].includes(done.code)) {
+    log(`notify: ${dispatch} 에 머지를 알리지 못했다(종료 코드 ${done.code}). 기다리지 않고 정리한다`)
+    return
+  }
+  log(`notify: ${dispatch} 에 PR #${args.pr} 머지를 알렸다. ${args.workerDoneTimeout}분까지 끝나기를 기다린다`)
+  const deadline = Date.now() + args.workerDoneTimeout * 60_000
+  for (;;) {
+    const rows = workerRows(runId)
+    const status = rows.ok ? String(rows.rows.find((r) => String(r.dispatchId) === dispatch)?.dispatchStatus ?? '') : null
+    if (status !== null && !LIVE_DISPATCH.has(status)) {
+      log(`notify: worker 끝남: ${dispatch} (${status || '목록에 없음'})`)
+      return
+    }
+    if (Date.now() >= deadline) {
+      log(`notify: worker 남음: ${dispatch} 가 아직 살아 있다. 정리가 그 워크트리를 살아 있는 worker 로 건너뛸 수 있다`)
+      return
+    }
+    await sleep(args.pollInterval * 1000)
+  }
+}
+
 function specsDirOf(args: Args, repo: string): string {
   const given = args.specsDir as string
   return isAbsolute(given) ? given : join(repo, given)
@@ -402,7 +456,7 @@ function deleteBranchSpecs(args: Args, repo: string, branch: string): void {
   deleteSpecs({ root: dirname(realPath(specsDirOf(args, repo))), specs, prBodies: [], live: liveSpecPaths(args.run), mode: 'delete', apply: true, log })
 }
 
-// 이 PR 의 충돌 후속 지시서를 지운다(머리 주석의 단계 5). root 는 deleteBranchSpecs 와 같이 지시서 폴더 실경로의 부모다
+// 이 PR 의 충돌 후속 지시서를 지운다(머리 주석의 단계 6). root 는 deleteBranchSpecs 와 같이 지시서 폴더 실경로의 부모다
 function deleteConflictSpecs(args: Args, repo: string): void {
   const specs = conflictSpecFiles(repo, Number(args.pr))
   if (specs.length === 0) return
@@ -530,6 +584,7 @@ async function finish(args: Args, repo: string): Promise<number> {
 
   // 보드 항목을 워크트리 이름으로도 찾는다. 정리가 워크트리를 지우므로 그 전에 읽는다
   const worktree = branch ? worktreePath(repo, branch) : null
+  if (worktree && args.run) await tellMerged(args, args.run, worktree, merge)
   if (!(await cleanupWorker(args, repo, branch))) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
   }

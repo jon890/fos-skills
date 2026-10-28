@@ -69,6 +69,17 @@ if os.environ.get("FAKE_SWEEP_REMOVES") == "1":
     subprocess.run(["git", "-C", repo, "worktree", "remove", "--force", wt], check=True, capture_output=True)
     subprocess.run(["git", "-C", repo, "branch", "-D", os.environ["FAKE_BRANCH"]], check=True, capture_output=True)
 `
+// worker 에게 보내는 명령. 받은 인자를 적고, FAKE_SEND_ENDS 면 상태의 worker 를 끝난 것(succeeded)으로 바꾼 뒤 FAKE_SEND_EXIT 로 끝난다
+const FAKE_SEND = `import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+appendFileSync(process.env.FAKE_LOG, 'send-to-worker ' + process.argv.slice(2).join(' ') + '\\n')
+if (process.env.FAKE_SEND_ENDS === '1') {
+  const state = JSON.parse(readFileSync(process.env.FAKE_STATE, 'utf8'))
+  for (const row of state.orca.workers) row.dispatchStatus = 'succeeded'
+  writeFileSync(process.env.FAKE_STATE, JSON.stringify(state))
+}
+console.log('replied: m_1 에 답했다 (msg_new)')
+process.exit(Number(process.env.FAKE_SEND_EXIT || '0'))
+`
 // steps 는 FAKE_STEPS(JSON, 없으면 빈 목록)를 낸다
 const FAKE_BOARD = `import os, sys
 open(os.environ["FAKE_LOG"], "a").write("board " + " ".join(sys.argv[1:]) + "\\n")
@@ -103,6 +114,7 @@ before(() => {
   writeNodeBin(bindir, 'task-cli', FAKE_TASK)
   writeNodeBin(bindir, 'orca', FAKE_ORCA)
   writeFileSync(join(bindir, 'sweep.py'), FAKE_SWEEP)
+  writeFileSync(join(bindir, 'send.ts'), FAKE_SEND)
   writeFileSync(join(bindir, 'board.py'), FAKE_BOARD)
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
@@ -121,12 +133,13 @@ function setup(t: TestContext): Ctx {
     GH: join(bindir, 'gh'),
     ORCA: join(bindir, 'orca'),
     CLEANUP_SWEEP: join(bindir, 'sweep.py'),
+    SEND_TO_WORKER: join(bindir, 'send.ts'),
     FAKE_STATE: join(tmp, 'state.json'),
     FAKE_LOG: join(tmp, 'log.txt'),
     PATH: `${bindir}:${process.env.PATH}`,
     FAKE_SWEEP_REMOVES: '1',
   }
-  for (const key of ['ORCH_DIR', 'BOARD_BIN', 'GH_HOST', 'GIT', 'FAKE_ARGV']) delete env[key]
+  for (const key of ['ORCH_DIR', 'BOARD_BIN', 'GH_HOST', 'GIT', 'FAKE_ARGV', 'FAKE_SEND_ENDS', 'FAKE_SEND_EXIT']) delete env[key]
   const sh = (cmd: string[]): string => {
     const done = spawnSync(cmd[0], cmd.slice(1), { env, encoding: 'utf8' })
     assert.equal(done.status, 0, `${cmd.join(' ')}: ${done.stderr}`)
@@ -962,5 +975,57 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(r.code, 0, both(r))
     assert.equal(starting(c.calls(), 'board ').length, 0)
     has(r.stdout, '보드 항목이 둘 이상이라 건너뛴다: PR 77 -> a, b')
+  })
+})
+
+describe('finish-pr 머지 알림', { concurrency: 4 }, () => {
+  const live = (c: Ctx, status = 'running') => {
+    c.state.orca = { workers: [{ dispatchId: 'ctx_w', dispatchStatus: status, resource: { worktreeId: `repo::${c.wt}` } }] }
+  }
+
+  test('그 워크트리의 살아 있는 worker 에게 머지를 알리고, 끝나기를 기다린 뒤 정리한다', async (t) => {
+    const c = setup(t)
+    live(c)
+    const r = await c.finish(['--run', 'run_1', '--complete'], { FAKE_SEND_ENDS: '1' })
+    assert.equal(r.code, 0, both(r))
+    const calls = c.calls()
+    const sent = calls.findIndex((line) => line.startsWith('send-to-worker '))
+    assert.ok(sent >= 0, calls.join('\n'))
+    assert.equal(
+      calls[sent],
+      `send-to-worker --dispatch ctx_w --body PR #77 이 MERGED 됐다(머지 커밋 ${c.merge}). gh pr view 로 확인한 뒤 worker_done 을 보내고 끝낸다 --run run_1`,
+    )
+    // 알림이 정리보다 먼저다
+    assert.ok(sent < calls.findIndex((line) => line.startsWith('sweep ')), calls.join('\n'))
+    has(r.stdout, 'notify: replied: m_1 에 답했다 (msg_new)')
+    has(r.stdout, 'notify: worker 끝남: ctx_w (succeeded)')
+    assert.equal(existsSync(c.wt), false)
+  })
+
+  test('시간 안에 끝나지 않으면 남았다고 알리고 정리를 이어 간다', async (t) => {
+    const c = setup(t)
+    live(c)
+    const r = await c.finish(['--run', 'run_1', '--complete', '--worker-done-timeout', '0.001'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'notify: worker 남음: ctx_w 가 아직 살아 있다')
+    assert.ok(starting(c.calls(), 'sweep ').length > 0, c.calls().join('\n'))
+  })
+
+  test('보내지 못하면 기다리지 않는다', async (t) => {
+    const c = setup(t)
+    live(c)
+    const r = await c.finish(['--run', 'run_1', '--complete'], { FAKE_SEND_EXIT: '3' })
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'notify: ctx_w 에 머지를 알리지 못했다(종료 코드 3). 기다리지 않고 정리한다')
+    lacks(r.stdout, '끝나기를 기다린다')
+  })
+
+  test('살아 있는 worker 가 없으면 알리지 않는다', async (t) => {
+    const c = setup(t)
+    live(c, 'succeeded')
+    const r = await c.finish(['--run', 'run_1', '--complete'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'send-to-worker '), [])
+    lacks(r.stdout, 'notify:')
   })
 })

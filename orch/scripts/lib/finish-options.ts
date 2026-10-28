@@ -25,6 +25,7 @@ export const FINISH_OPTIONS = {
   'merge-timeout': { type: 'string' },
   'deploy-timeout': { type: 'string' },
   'poll-interval': { type: 'string' },
+  'worker-done-timeout': { type: 'string' },
   'pid-file': { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 } as const

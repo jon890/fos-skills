@@ -33,6 +33,10 @@
 //     금지        금지 문구가 든 줄인데 그 줄에 부정 표현(않, 말고, 대신, 금지, 없이)이 없다
 //     경로        백틱 안의 파일 경로(확장자가 있는 것)가 저장소에 없다. 파일 이름만 적었으면 어느 폴더에든 있으면 된다.
 //                 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다
+//     공통        지시서 폴더의 spec-common.md 에 틀(orch/templates/spec-common.md)의 `<!-- orch-rule: <이름> -->` 표지가 빠졌다.
+//                 표지는 틀이 요구하는 완료 규칙(준비됨 status, MERGED 확인 뒤 worker_done)을 가리킨다. 공통 지시서가 틀보다 낡으면
+//                 worker 가 옛 규칙대로 PR 을 열자마자 worker_done 을 보낸다. 문장이 아니라 표지로 판정한다. 저장소가 그 규칙을 일부러 바꿨을 수
+//                 있어 경고이고 종료 코드에 넣지 않는다. 지시서 폴더에 spec-common.md 가 없으면 보지 않는다
 //     제목        `# ` 제목 줄도 `보드 항목 id:` 줄도 없다. 보드 항목 제목이 업무 연결 줄, `## 목표` 첫 문장, 워크트리 이름으로 밀려나
 //                 보드에 업무 목적이 보이지 않을 수 있다(lib/board.ts 의 specTitle). 경고이고 종료 코드에 넣지 않는다
 //     오버레이    (--check-overlay) 오버레이의 백틱 값과 config.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
@@ -44,7 +48,7 @@
 //                 로컬에만 있는 스크립트를 오버레이가 부르면 다른 워크트리와 worker 에서 그 단계가 「파일 없음」 으로 멈춘다
 //
 // 종료 코드:
-//     0  막을 발견이 없다(경로 경고와 제목 경고는 있을 수 있다)
+//     0  막을 발견이 없다(경로, 공통, 제목 경고는 있을 수 있다)
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
@@ -52,7 +56,8 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, extname, join, normalize } from 'node:path'
+import { basename, dirname, extname, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { isFile } from './lib/fs.ts'
@@ -73,6 +78,11 @@ const W = '\\p{L}\\p{N}_'
 const CALL = new RegExp(`^(?:[A-Za-z_][${W}]*\\.)*([A-Za-z_][${W}]*)\\(\\)$`, 'u')
 // 마지막 마디에 확장자가 있는 것만 경로로 본다. `mac/battle-join` 같은 브랜치 이름과 `feature/` 같은 접두를 빼려는 것이다
 const PATHLIKE = new RegExp(`^(?:[${W}.\\-]+/)*[${W}\\-]+(?:\\.[${W}\\-]+)*\\.[A-Za-z]{1,5}$`, 'u')
+
+// 저장소 공통 지시서가 따라야 할 틀. SPEC_TEMPLATE 은 테스트가 바꾼다
+const TEMPLATE = process.env.SPEC_TEMPLATE || join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'spec-common.md')
+const COMMON = 'spec-common.md'
+const RULE_MARK = /<!--\s*orch-rule:\s*([A-Za-z0-9_-]+)\s*-->/g
 
 class UsageError extends Error {}
 
@@ -302,6 +312,34 @@ function readSpec(path: string): Spec {
   return { name, stem: basename(path, extname(path)), owned, lines }
 }
 
+function ruleMarks(text: string): Set<string> {
+  return new Set([...text.matchAll(RULE_MARK)].map((m) => m[1]))
+}
+
+// 머리 주석의 「공통」. 지시서 폴더마다 한 번 본다
+function staleCommon(specs: string[]): string[] {
+  let required: Set<string>
+  try {
+    required = ruleMarks(readFileSync(TEMPLATE, 'utf8'))
+  } catch {
+    return []
+  }
+  const found: string[] = []
+  for (const dir of new Set(specs.map((s) => dirname(normalize(s))))) {
+    const common = join(dir, COMMON)
+    if (!isFile(common)) continue
+    const has = ruleMarks(readFileSync(common, 'utf8'))
+    const missing = [...required].filter((name) => !has.has(name))
+    if (missing.length > 0) {
+      found.push(
+        `${common}:1: 공통: 틀의 규칙 표지 ${missing.map((m) => `\`${m}\``).join(', ')} 가 없다. ` +
+          `공통 지시서가 틀(${TEMPLATE})보다 낡았을 수 있다. 틀에서 그 표지가 붙은 줄을 옮긴다`,
+      )
+    }
+  }
+  return found
+}
+
 function lint(repo: Repo, specs: string[], overlay: string | null): { errors: string[]; warnings: string[] } {
   const { coordinator, owners, forbidden } = readOverlay(overlay)
   const errors: string[] = []
@@ -353,6 +391,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null): { errors: st
       }
     })
   }
+  warnings.push(...staleCommon(specs))
   return { errors, warnings }
 }
 
@@ -397,8 +436,9 @@ function main(argv: string[]): number {
     if (values['check-overlay']) errors.push(...checkOverlay(values.repo, overlay, values.base as string))
     for (const line of [...errors, ...warnings]) process.stdout.write(`${line}\n`)
     const titles = warnings.filter((line) => line.includes(': 제목: ')).length
-    const tail = titles > 0 ? `, 제목 경고 ${titles}건` : ''
-    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${warnings.length - titles}건${tail}\n`)
+    const commons = warnings.filter((line) => line.includes(': 공통: ')).length
+    const tail = (titles > 0 ? `, 제목 경고 ${titles}건` : '') + (commons > 0 ? `, 공통 경고 ${commons}건` : '')
+    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${warnings.length - titles - commons}건${tail}\n`)
     return errors.length > 0 ? 1 : 0
   } catch (e) {
     if (!(e instanceof UsageError)) throw e

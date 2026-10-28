@@ -19,6 +19,7 @@ const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url)
 
 // 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다.
 // statuses 는 status 조회에, workers 는 worker-list 에 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
+// slow_run_current 는 run-current 만 그 초만큼 늦게 답한다. bound 가 있으면 그 Run 에 묶인 호출자처럼 run-current 에 그 Run 을 내고, 다른 Run 의 check 를 consumer_fenced 로 거부한다.
 // 받은 인자는 calls.jsonl 에 한 줄씩 적는다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -35,6 +36,15 @@ const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result
 const sub = argv[1]
 const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
 const byRun = st.by_run && run ? st.by_run[run] || [] : null
+if (st.bound && sub === 'check' && run && run !== st.bound) {
+  process.stdout.write(JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'This caller is bound to Run ' + st.bound + ', not Run ' + run } }) + '\\n')
+  process.exit(1)
+}
+if (sub === 'run-current') {
+  if (st.slow_run_current) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.slow_run_current * 1000)
+  reply({ run: st.bound ? { id: st.bound } : null })
+  process.exit(0)
+}
 if (sub === 'check' && argv.includes('--all') && argv.includes('status')) reply({ messages: st.statuses || [] })
 else if (sub === 'check' && argv.includes('--all')) reply({ messages: byRun || st.messages || [] })
 else if (sub === 'worker-list') reply({ workers: st.workers || [], page: {} })
@@ -454,7 +464,8 @@ describe('정리와 보드 동기화', () => {
   test('Run id 가 없으면 경고 한 줄을 내고 질문을 확인하지 않으며 정리에 --run 을 넘기지 않는다', () => {
     const r = once({}, [])
     assert.equal(r.stdout.match(/^경고: Run id 가 없어 질문 확인을 건너뛴다/gm)?.length, 1, r.stdout)
-    assert.equal(jsonl(join(tmp, 'orca-calls.jsonl')).length, 0)
+    // run-current 는 명의를 적으려는 호출이다(머리 주석의 「명의」). 질문 조회는 없다
+    assert.deepEqual(jsonl(join(tmp, 'orca-calls.jsonl')).filter((argv) => (argv as unknown as string[])[1] !== 'run-current'), [])
     assert.equal(loopState()?.run, null)
     assert.ok(!argsOf('sweep')[0].includes('--run'), JSON.stringify(argsOf('sweep')))
   })
@@ -628,6 +639,72 @@ describe('--start, --status, --stop', () => {
     assert.equal(dead.code, 1)
     assert.equal(dead.stdout.trim(), `LOOP-DEAD ${repo} pid ${pid} 종료`)
     assert.equal(loop(['--stop']).stdout.trim(), 'LOOP-NOT-RUNNING')
+  })
+
+  test('부른 터미널이 다른 Run 에 묶였으면 띄우지도 등록하지도 않고 LOOP-START-FENCED 와 5 다', () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ bound: 'X' })
+    const fenced = loop(['--run', 'r1', '--start'])
+    assert.equal(fenced.code, 5, fenced.stdout + fenced.stderr)
+    assert.match(fenced.stdout, /^LOOP-START-FENCED r1 X$/m)
+    assert.match(fenced.stdout, /^안내: 이 터미널은 Run X 에 묶여 Run r1 의 질문을 읽지 못한다/m)
+    assert.equal(loopState(), null)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r1.json')), false)
+  })
+
+  test('그 Run 에 묶인 터미널이 띄운 루프는 bound_run 을 적고, 다른 Run 은 합류하지 못한다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ bound: 'r1' })
+    const started = loop(['--run', 'r1', '--start'])
+    assert.equal(started.code, 0, started.stdout + started.stderr)
+    const pid = Number(/^LOOP-STARTED (\d+) run=r1$/m.exec(started.stdout)?.[1])
+    assert.equal(loopState()?.bound_run, 'r1')
+    // 부른 쪽은 묶이지 않았지만 루프는 r1 에 묶였다
+    orca({})
+    const joined = loop(['--run', 'r2', '--start'])
+    assert.equal(joined.code, 5, joined.stdout + joined.stderr)
+    assert.match(joined.stdout, /^LOOP-START-FENCED r2 r1$/m)
+    assert.match(joined.stdout, new RegExp(`^안내: 도는 루프\\(pid ${pid}\\)는 Run r1 에 묶여 Run r2 의 질문을 읽지 못한다`, 'm'))
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
+    assert.equal(loop(['--run', 'r1', '--stop']).code, 0)
+  })
+
+  test('명의 조회가 시작 대기(10초)보다 느려도 띄운 루프는 다시 조회하지 않고 시작한다', { timeout: 60_000 }, () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ bound: 'r1', slow_run_current: 11 })
+    const started = loop(['--run', 'r1', '--start'])
+    assert.equal(started.code, 0, started.stdout + started.stderr)
+    assert.match(started.stdout, /^LOOP-STARTED \d+ run=r1$/m)
+    assert.equal(loopState()?.bound_run, 'r1')
+    // run-current 는 --start 가 한 번만 불렀다
+    assert.equal(jsonl(join(tmp, 'orca-calls.jsonl')).filter((argv) => (argv as unknown as string[])[1] === 'run-current').length, 1)
+    assert.equal(loop(['--run', 'r1', '--stop']).code, 0)
+  })
+
+  test('묶이지 않은 루프는 bound_run 이 null 이고 다른 Run 의 합류를 받는다', async () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    const started = loop(['--run', 'r1', '--start'])
+    assert.equal(started.code, 0, started.stdout + started.stderr)
+    assert.equal(loopState()?.bound_run, null)
+    const joined = loop(['--run', 'r2', '--start'])
+    assert.equal(joined.code, 0, joined.stdout + joined.stderr)
+    assert.match(joined.stdout, /^LOOP-JOINED \d+ run=r2$/m)
+    assert.equal(loop(['--stop', '--all']).code, 0)
+  })
+
+  test('bound_run 이 없는 루프(명의를 모른다)에는 합류하지 않고 unknown 으로 알린다', async (t) => {
+    const pid = await fakeLoop(t)
+    const now = new Date().toISOString()
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid, run: 'r1', runs: ['r1'], repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} }))
+    write(orchFile('state', 'loop-runs', 'r1.json'), JSON.stringify({ run: 'r1', specs_dir: null, registered_at: now }))
+    const joined = loop(['--run', 'r2', '--start'])
+    assert.equal(joined.code, 5, joined.stdout + joined.stderr)
+    assert.match(joined.stdout, /^LOOP-START-FENCED r2 unknown$/m)
+    assert.match(joined.stdout, /명의를 알 수 없어/)
+    assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
+    // 이미 등록된 Run 은 판정 없이 전처럼 LOOP-RUNNING 이다
+    const same = loop(['--run', 'r1', '--start'])
+    assert.equal(same.code, 4, same.stdout + same.stderr)
   })
 
   test('--stop --all 은 등록된 Run 을 모두 빼고 멈춘다. --all 과 --run 을 함께 주면 2 다', async () => {

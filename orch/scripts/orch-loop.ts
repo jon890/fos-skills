@@ -10,13 +10,18 @@
 //     --repo         대상 저장소. 주 checkout 으로 바꿔 쓴다
 //     --run          루프에 등록하거나 뺄 Run. 없으면 config.json 의 finish.run 이다
 //     --specs-dir    그 Run 의 정리에 넘길 지시서 폴더. 없으면 finish.specs_dir 이고, 둘 다 없으면 넘기지 않는다. 등록 파일에 적는다
-//     --start        Run 이 있으면 먼저 등록한다(lib/loop.ts 의 registerRun). 살아 있는 루프가 없으면 자기 자신을 --foreground 로
+//     --start        Run 이 있으면 먼저 이 프로세스가 그 Run 을 조회할 수 있는지 본다(아래 「명의」). consumer_fenced 면 띄우지도
+//                    합류하지도 않고 LOOP-START-FENCED <Run> <묶인 Run> 과 `안내: …` 한 줄, 5 다.
+//                    그다음 등록한다(lib/loop.ts 의 registerRun). 살아 있는 루프가 없으면 자기 자신을 --foreground 로
 //                    분리해(detached, stdio ignore) 띄우고, 자식이 loop.json 에 자기 pid 를 쓸 때까지 10초까지 기다린다.
 //                    하네스의 백그라운드 명령이 아니라 시간 한도에 묶이지 않는다.
 //                    LOOP-STARTED <pid> run=<Run id 또는 -> 와 0. 10초 안에 쓰지 않으면 자식을 끝내고 LOOP-START-FAIL <이유> 와 1.
 //                    살아 있는 루프가 없을 때의 등록은 registered_at 을 지금으로 새로 쓴다(아래 「Run」).
 //                    자식이 4(다른 --start 가 띄운 루프가 먼저 잠금을 쥐었다)로 끝나면 그 루프가 살아 있는지 다시 보고, 있으면 아래 합류와 같다.
 //                    살아 있는 루프가 있으면 띄우지 않는다. 그 Run 이 아직 등록되지 않았으면 등록하고 LOOP-JOINED <pid> run=<Run id> 와 0.
+//                    다만 그 루프의 묶인 Run(loop.json 의 bound_run)이 이 Run 과 다르거나 bound_run 이 없으면(옛 루프, 명의를 읽지 못한 루프)
+//                    등록하지 않고 LOOP-START-FENCED <Run> <묶인 Run 또는 unknown> 과 `안내: …` 한 줄, 5 다. 막 뜨는 루프는 loop.json 을
+//                    쓸 때까지 10초까지 기다려 판정한다
 //                    그 루프가 막 뜨는 중(loop.json 의 pid 가 아직 그 루프의 것이 아니다)이면 이미 등록된 Run 이어도 registered_at 을
 //                    새로 쓴다. 뜨는 루프가 앞 루프의 alive_at 이전 등록을 지울 때 이 Run 을 지우지 않게 하려는 것이다.
 //                    이미 등록됐거나 Run 이 없으면 LOOP-RUNNING <pid> run=<Run id> 와 4.
@@ -53,6 +58,16 @@
 //     pid 가 살아 있는데 ps 로 판정할 수 없으면(isLoopProcess 가 null) 루프가 쥔 것으로 보고 회수하지 않는다. 잘못 회수하면 루프가 둘이 된다.
 //     살아 있는 루프가 쥐고 있으면 LOOP-RUNNING 과 4 다.
 //     --start 는 loopStatus 와 이 잠금을 함께 본다.
+//
+// 명의: Orca 는 orchestration 호출의 호출자를 그 프로세스가 나온 터미널로 정한다. 환경 변수를 빼도 바뀌지 않는다(실측).
+//     루프는 --start 한 터미널의 명의를 물려받으므로, 그 터미널이 다른 Run 에 묶였으면 이 Run 의 질문 조회가 consumer_fenced
+//     ("This caller is bound to Run X, not Run Y")로 틱마다 실패한다. 그래서 --start 는 띄우거나 합류하기 전에
+//     `orca orchestration check --run <Run> --peek --types question` 을 한 번 불러 본다. 묶인 Run 은 오류 문구에서 읽고,
+//     없으면 run-current 로 읽고, 그것도 못 읽으면 unknown 이다. consumer_fenced 가 아닌 실패는 명의 문제로 보지 않고 stderr 에 적고 진행한다.
+//     --foreground 는 시작할 때 자기가 묶인 Run 을 loop.json 의 bound_run 에 적는다. --start 가 띄운 자식은 부모가 띄우기 전에 run-current 로
+//     읽어 ORCH_LOOP_BOUND 로 넘긴 값을 쓰고 다시 조회하지 않는다. 조회가 느려도 START_WAIT_MS 안에 loop.json 을 쓰게 하려는 것이다.
+//     직접 띄운 --foreground 는 run-current 로 읽는다. 묶이지 않았으면 null 이고,
+//     읽지 못하면 적지 않는다. 묶이지 않은 루프는 여러 Run 을 조회할 수 있어 합류를 받는다.
 //
 // Run(ADR-012): 루프는 lib/loop.ts 의 「Run 등록」 이 정한 Run 들을 맡는다. 앞이 주 Run 이다.
 //     부모는 틱마다 등록을 읽어 loop.json 의 runs(목록)와 run(주 Run)에 적는다. 등록된 Run 이 있던 루프는 마지막 Run 이 빠지면
@@ -268,6 +283,7 @@
 //     1  --start 실패, --stop 시간 초과나 루프 프로세스인지 판정하지 못함, --status 가 죽었다, 잡지 않은 예외
 //     2  사용법 오류와 설정 오류(ConfigError, ORCH_LOOP_ALIVE_SEC 가 양수가 아님)
 //     4  살아 있는 루프가 있다(LOOP-RUNNING)
+//     5  --start 가 명의 때문에 띄우지도 합류하지도 않았다(LOOP-START-FENCED)
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
 import { spawn } from 'node:child_process'
@@ -317,6 +333,8 @@ const REMIND_AFTER_SEC = 600
 const START_WAIT_MS = 10_000
 const STOP_WAIT_MS = 20_000
 const POLL_MS = 100
+// --start 의 명의 확인 조회 한도
+const PROBE_MS = 30_000
 const LOG_LIMIT = 1_048_576
 // finish-pr 이 정리 명령에 주는 시간 제한과 같다
 const SWEEP_TIMEOUT_MS = 600_000
@@ -550,7 +568,7 @@ const LEGACY_HINT = '안내: 이 루프는 Run 등록을 모르는 옛 orch 로 
 // raced 는 띄운 자식이 다른 --start 의 루프에 잠금을 져 4 로 끝난 경우다. 이 Run 은 띄우기 전에 등록했으므로 합류로 본다.
 // loop.json 의 pid 가 찾은 pid 와 다르면 루프가 막 뜨는 중이다. 그 루프는 시작할 때 앞 루프의 alive_at 이전 등록을 지우므로,
 // 이미 등록된 Run 이어도 registered_at 을 새로 써서 지워지지 않게 한다(머리 주석의 「Run」)
-function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: boolean): number {
+async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: boolean): Promise<number> {
   const state = readLoop(ctx.repo)
   const starting = state === null || Number(state.pid) !== found.pid
   if (ctx.run && legacyLoop(state, found.pid)) {
@@ -561,6 +579,17 @@ function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: bool
     return 4
   }
   if (ctx.run && (raced || !isRegistered(ctx.repo, ctx.run))) {
+    // 루프는 띄운 터미널의 명의로 조회한다. 묶인 Run 이 다르거나 모르면 이 Run 의 질문을 읽지 못하니 합류하지 않는다(머리 주석의 「명의」)
+    const bound = await loopBound(ctx.repo, found.pid)
+    if (bound !== null && bound !== ctx.run) {
+      if (raced) unregisterRun(ctx.repo, ctx.run)
+      log(`LOOP-START-FENCED ${ctx.run} ${bound}`)
+      log(
+        `안내: 도는 루프(pid ${found.pid})는 ${bound === UNKNOWN_BOUND ? '명의를 알 수 없어(loop.json 에 bound_run 이 없다)' : `Run ${bound} 에 묶여`} ` +
+          `Run ${ctx.run} 의 질문을 읽지 못한다. 그 루프가 맡은 Run 이 모두 빠진 뒤 Run ${ctx.run} 의 코디네이터 세션에서 --start 한다`,
+      )
+      return 5
+    }
     registerRun(ctx.repo, ctx.run, ctx.specsDir, starting)
     log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
     return 0
@@ -570,13 +599,80 @@ function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: bool
   return 4
 }
 
+// 머리 주석의 「명의」. Orca 는 이 프로세스가 나온 터미널로 호출자를 정한다
+const FENCED = 'consumer_fenced'
+const UNKNOWN_BOUND = 'unknown'
+// --start 가 자식 루프에 넘기는 명의. {"run": <Run id 또는 null>} 이고, 읽지 못했으면 {} 다
+const BOUND_ENV = 'ORCH_LOOP_BOUND'
+
+// 이 프로세스가 묶인 Run. 묶이지 않았으면 null, 읽지 못하면 undefined 다
+function boundRun(): string | null | undefined {
+  const got = orcaJson<{ run?: { id?: unknown } | null } | null>(['orchestration', 'run-current'], { timeoutMs: PROBE_MS })
+  if (!got.ok) return undefined
+  const id = got.data?.run?.id
+  return typeof id === 'string' && id ? id : null
+}
+
+// --start 가 넘긴 명의. 넘기지 않았으면(--foreground 를 직접 띄웠다) 여기서 읽는다. 결과의 뜻은 boundRun 과 같다
+function inheritedBound(): string | null | undefined {
+  const raw = process.env[BOUND_ENV]
+  if (raw === undefined) return boundRun()
+  try {
+    const parsed = JSON.parse(raw) as { run?: unknown }
+    if (!('run' in parsed)) return undefined
+    return typeof parsed.run === 'string' && parsed.run ? parsed.run : null
+  } catch {
+    return undefined
+  }
+}
+
+// 이 프로세스가 run 을 조회하지 못하면(consumer_fenced) 묶인 Run 을, 조회하면 null 을 낸다.
+// 다른 이유로 실패하면 명의 문제로 보지 않고 null 이다. 그 실패는 루프의 질문 확인이 WATCH-ERROR 로 알린다
+function callerFenced(run: string): string | null {
+  const got = orcaJson<unknown>(['orchestration', 'check', '--run', run, '--peek', '--types', 'question'], { timeoutMs: PROBE_MS })
+  if (got.ok) return null
+  if (!got.error.includes(FENCED)) {
+    process.stderr.write(`orch-loop: Run ${run} 조회 확인이 실패해 명의를 판정하지 못하고 진행한다: ${got.error}\n`)
+    return null
+  }
+  const named = /bound to Run ([^\s,.'"\\]+)/.exec(got.error)?.[1]
+  const bound = named ?? boundRun()
+  return typeof bound === 'string' && bound ? bound : UNKNOWN_BOUND
+}
+
+// 도는 루프가 묶인 Run. 묶이지 않았으면 null, 모르면 UNKNOWN_BOUND 다. 막 뜨는 루프는 loop.json 을 쓸 때까지 기다린다
+async function loopBound(repo: string, pid: number): Promise<string | null> {
+  const deadline = Date.now() + START_WAIT_MS
+  for (;;) {
+    const state = readLoop(repo)
+    if (state && Number(state.pid) === pid) {
+      if (!('bound_run' in state)) return UNKNOWN_BOUND
+      return typeof state.bound_run === 'string' && state.bound_run ? state.bound_run : null
+    }
+    if (Date.now() >= deadline || !alive(pid)) return UNKNOWN_BOUND
+    await sleep(POLL_MS)
+  }
+}
+
 async function start(ctx: Context): Promise<number> {
+  if (ctx.run) {
+    // 띄운 루프는 이 프로세스의 명의를 물려받는다. 이 Run 을 읽지 못하면 띄우지도 합류하지도 않는다(머리 주석의 「명의」)
+    const bound = callerFenced(ctx.run)
+    if (bound !== null) {
+      log(`LOOP-START-FENCED ${ctx.run} ${bound}`)
+      log(`안내: 이 터미널은 Run ${bound} 에 묶여 Run ${ctx.run} 의 질문을 읽지 못한다. Run ${ctx.run} 의 코디네이터 세션에서 --start 한다`)
+      return 5
+    }
+  }
   const found = running(ctx.repo)
   if (found) return joinLoop(ctx, found, false)
   // registered_at 을 새로 쓴다. 새로 뜬 루프는 앞 루프의 alive_at 뒤에 쓴 등록을 살아 있는 세션의 것으로 보고 남긴다(머리 주석의 「Run」)
   if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, true)
+  // 자식은 이 프로세스의 명의를 물려받는다. 명의 조회는 느릴 수 있어 START_WAIT_MS 를 쓰기 전에 여기서 한 번 읽어 넘긴다(머리 주석의 「명의」)
+  const bound = boundRun()
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SELF, ...passArgs(ctx), '--foreground'], {
     cwd: ctx.repo,
+    env: { ...process.env, [BOUND_ENV]: JSON.stringify(bound === undefined ? {} : { run: bound }) },
     detached: true,
     stdio: 'ignore',
   })
@@ -604,7 +700,7 @@ async function start(ctx: Context): Promise<number> {
     if (exited === 4) {
       // 동시에 --start 한 다른 세션의 루프가 먼저 잠금을 쥐었다. 그 루프에 합류한다
       const other = running(ctx.repo)
-      if (other) return joinLoop(ctx, other, true)
+      if (other) return await joinLoop(ctx, other, true)
     }
     if (exited !== null) {
       log(`LOOP-START-FAIL 루프가 loop.json 을 쓰기 전에 종료 코드 ${exited} 로 끝났다`)
@@ -775,9 +871,12 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
   const errors = previous && typeof previous.errors === 'object' && previous.errors !== null && !Array.isArray(previous.errors) ? previous.errors : {}
   const ci = ciEntries(previous?.ci)
   const stalls = stallEntries(previous?.stalls)
+  // 뒤의 --start 가 합류를 판정할 수 있게 이 프로세스가 묶인 Run 을 적는다. 읽지 못하면 적지 않는다(머리 주석의 「명의」)
+  const bound = inheritedBound()
   const now = iso()
   const state: LoopState = {
     pid: process.pid,
+    ...(bound === undefined ? {} : { bound_run: bound }),
     run: runs[0] ?? ctx.run,
     runs,
     repo: ctx.repo,
