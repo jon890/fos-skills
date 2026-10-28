@@ -2,13 +2,14 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/spec-lint.ts', import.meta.url))
+const TEMPLATE = fileURLToPath(new URL('../templates/spec-common.md', import.meta.url))
 // 로컬의 전역 git 설정이 결과를 바꾸지 않게 하고, CI 에 없는 작성자 설정을 채운다.
 const ENV: NodeJS.ProcessEnv = {
   ...process.env,
@@ -170,6 +171,23 @@ describe('지시서 검사', () => {
     assert.match(r.stderr, /제목 경고 1건/)
     const named = write(join(specs, 'spec-named.md'), '공통 지시서를 먼저 읽는다.\n보드 항목 id: `chart`\n')
     assert.deepEqual(lint([named]), { code: 0, stdout: '' })
+  })
+
+  test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
+    const template = readFileSync(TEMPLATE, 'utf8')
+    // 틀은 준비됨 status 와 MERGED 확인 뒤 worker_done 규칙에 표지를 단다
+    assert.match(template, /<!-- orch-rule: ready-status -->/)
+    assert.match(template, /<!-- orch-rule: done-after-merged -->/)
+    const a = spec('spec-a', '담당: `src/a/**`')
+    write(join(specs, 'spec-common.md'), template)
+    assert.deepEqual(lint([a]), { code: 0, stdout: '' })
+    // 옛 규칙: PR 을 열면 끝이다
+    write(join(specs, 'spec-common.md'), '## 공통 규칙\n\n- `worker_done` 은 완료 기준을 채운 뒤 보낸다.\n')
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 `ready-status`, `done-after-merged` 가 없다/m)
+    assert.match(r.stderr, /공통 경고 1건/)
+    assert.match(r.stderr, /경로 경고 0건/)
   })
 
   test('없는 지시서는 사용법 오류다', () => {
