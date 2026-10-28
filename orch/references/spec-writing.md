@@ -59,8 +59,8 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 - PR 을 열게 하면 「PR 본문 파일은 worker 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 쓰고 PR 이 열릴 때까지 지우지 않는다. 경로는 status 나 `worker_done` 에 적는다」 도 적는다. 권한 거부로 worker 가 PR 을 못 열면 코디네이터가 그 경로의 파일로 연다. 저장소의 `.orch/` 에는 두지 않는다
 - PR 을 열게 하면 「PR 은 기준 브랜치를 base 로 따로 연다. 다른 PR 브랜치를 base 로 두지 않는다」 도 적는다.
   앞 PR 브랜치를 base 로 연 PR 은 앞 PR 을 `--delete-branch` 로 머지하면 자동으로 닫히거나 앞 브랜치로 머지된다
-- PR 을 몇 개로 나눌지는 worker 가 정하고, 머지 순서는 코디네이터가 정해 지시서에 적는다. 뒤 PR 이 앞 PR 의 코드에 기대면 머지 순서와, 앞 PR 머지 뒤 뒤 브랜치를 기준 브랜치 위로 다시 맞출 담당(worker 또는 코디네이터)을 적는다.
-  base 를 따로 열라는 규칙과 부딪혀 worker 가 순서를 스스로 정하게 된다
+- 지시서 하나는 PR 하나로 쓴다([`SKILL.md`](../SKILL.md) 원칙). 설계 문서만 따로 PR 로 올리지 않고 설계와 구현을 한 PR 에 담는다. PR 이 둘 이상 필요한 일은 지시서를 나누고, 뒤 지시서는 앞 PR 이 머지된 뒤 쓴다.
+  사용자가 「설계문서만 굳이 PR 로 올릴 필요 없다, 설계와 구현까지」 라고 정했다(2026-10-26). worker 가 PR 을 나누면 base 를 따로 열라는 규칙과 부딪혀 머지 순서를 worker 가 스스로 정하게 된다
 - 「파일 수정은 `sed -i` 대신 Edit 나 python 으로 한다」.
   macOS `sed` 는 `-i ''` 가 필요하고 줄바꿈 치환이 실패한다
 - 의존성이 필요한 검사를 시키면 「워크트리 안에서 lockfile 로 설치한다(`npm ci`, `pnpm install --frozen-lockfile`)」 를 적는다. 원래 저장소의 `node_modules` 를 심볼릭 링크로 걸게 하지 않는다.
