@@ -49,6 +49,8 @@ ps -eo pid,command | grep -E "orch-loop|wait-important|orchestration check" | gr
 python3 "$SKILL_DIR/scripts/orch-doctor.py" --repo "$REPO" --run "$RUN_ID"
 ```
 
+**doctor 의 `LOOP-STALE <repo> <pid> <번들 해시>` 는 플러그인을 갱신한 뒤에도 옛 번들의 스크립트로 도는 루프다.** 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
+
 doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
 `--run` 을 주면 저장소의 `session-resume` 핸들러에 루프 생존과 살아 있는 대기 pid, 미답변 질문 id 를 넘긴다([`hooks.md`](hooks.md)).
 알림을 받으면 [`replying.md`](replying.md) 의 분류 기준으로 처리한다. 루프는 delivery 를 소비하거나 ack 하지 않으므로 아래 완료 대기와 함께 쓴다.

@@ -41,6 +41,16 @@
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
 //     둘 다 경고라 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
+// 루프 번들 판정(늘 본다):
+//     `ps -axo pid=,command=`(PS 환경 변수로 바꾼다)에서 `orch-loop.ts` 와 `--foreground` 가 든 행(상주 루프의 부모)을 읽는다.
+//     --tick 자식과 --start 는 뺀다. 스크립트 경로는 첫 낱말(node) 뒤 처음 `/` 로 시작하는 곳부터 `orch-loop.ts` 까지다(경로에 빈칸이 있을 수 있다).
+//     그 경로가 설치 캐시 꼴(`<plugins>/cache/<마켓플레이스>/<플러그인>/<sha>/orch/scripts/orch-loop.ts`)이면 같은 `<plugins>` 의
+//     installed_plugins.json 에서 `<플러그인>@<마켓플레이스>` 의 installPath 를 읽는다. 루프마다 그 루프를 띄운 프로필의 설치본과 비교한다.
+//     installPath 가운데 그 `<sha>` 폴더가 없으면 LOOP-STALE 이다. 이미 고친 결함이 옛 번들의 루프에서 계속 난다.
+//     캐시 꼴이 아니면(저장소 체크아웃에서 띄운 개발 중인 루프) 보지 않는다. installed_plugins.json 을 읽지 못하면 판정하지 않는다.
+//     다시 띄우는 명령은 그 루프의 Run 코디네이터 세션에서 돌리라는 안내와 함께 낸다. 루프는 띄운 터미널의 Run 명의를 물려받는다
+//     (orch-loop.ts 머리 주석의 「명의」). Run 은 그 저장소 loop.json 의 bound_run, 없으면 run 이다. 경고라 종료 코드를 바꾸지 않는다.
+//
 // session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
 //                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다.
@@ -69,10 +79,11 @@
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
 //     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초(ORCH_QUESTIONS_TIMEOUT_SEC) 안에 답하지 않은 경우도 여기다
 //     LOOP-DEAD <repo> <이유>                    --run 을 줬는데 상주 루프가 죽었다. 다음 줄에 다시 띄울 명령이 온다
+//     LOOP-STALE <repo> <pid> <번들 sha>          설치되지 않은 번들의 스크립트로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, LOOP-DEAD, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, LOOP-DEAD, LOOP-STALE, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING 이나 UNANSWERED 가 있다
 //     2  사용법 오류
 //
@@ -89,7 +100,7 @@ import { ConfigError, DEPRECATED_KEYS, loadConfig } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
-import { isRegistered, loopStatus, recheckMs } from './lib/loop.ts'
+import { isRegistered, loopStatus, readLoop, recheckMs } from './lib/loop.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
@@ -303,6 +314,57 @@ function waiterPids(runId: string): number[] {
   return pids
 }
 
+// 머리 주석의 「루프 번들 판정」. 설치 캐시가 아닌 경로나 판정하지 못한 경로는 null 이다
+function staleBundle(script: string): { sha: string; installed: string } | null {
+  const skillDir = dirname(dirname(script))
+  const layout = installLayout(skillDir)
+  if (!layout) return null
+  const [plugins, marketplace, plugin, sha] = layout
+  let entries: unknown
+  try {
+    entries = (JSON.parse(readFileSync(join(plugins, 'installed_plugins.json'), 'utf8')) as { plugins?: Record<string, unknown> }).plugins?.[
+      `${plugin}@${marketplace}`
+    ]
+  } catch {
+    return null
+  }
+  if (!Array.isArray(entries)) return null
+  const rows = (entries as { installPath?: unknown; scope?: unknown }[]).filter((e) => typeof e?.installPath === 'string')
+  if (rows.length === 0) return null
+  // 다시 띄울 번들은 worker-ask 와 같이 user 범위를 먼저 고른다
+  rows.sort((a, b) => Number(a.scope !== 'user') - Number(b.scope !== 'user'))
+  const bundle = real(dirname(skillDir))
+  if (rows.some((e) => real(e.installPath as string) === bundle)) return null
+  return { sha, installed: join(rows[0].installPath as string, basename(skillDir)) }
+}
+
+function staleLoops(): string[] {
+  const done = run([process.env.PS || 'ps', '-axo', 'pid=,command='], { env: { LC_ALL: 'C' } })
+  if (done.code !== 0) return []
+  const lines: string[] = []
+  for (const row of done.stdout.split('\n')) {
+    const m = /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(row)
+    if (!m || !/\s--foreground(\s|$)/.test(m[3]) || /\s--tick(\s|$)/.test(m[3])) continue
+    const found = /(?:^|\s)(\/.*?orch-loop\.ts)(?=\s|$)/.exec(m[3])
+    if (!found) continue
+    const stale = staleBundle(found[1])
+    if (!stale) continue
+    const repo = /\s--repo\s+(.+?)(?=\s--|$)/.exec(m[3])?.[1] ?? '<repo>'
+    const state = repo === '<repo>' ? null : readLoop(repo)
+    const named = typeof state?.bound_run === 'string' && state.bound_run ? state.bound_run : state?.run
+    const runId = typeof named === 'string' && named ? named : '<Run>'
+    const script = join(stale.installed, 'scripts', 'orch-loop.ts')
+    lines.push(
+      `LOOP-STALE ${repo} ${m[1]} ${stale.sha}`,
+      `  안내: 이 루프는 설치되지 않은 번들(${stale.sha})로 돈다. 아래 두 명령은 그 루프의 Run(${runId}) 코디네이터 세션에서 돌린다. ` +
+        '다른 세션에서 띄우면 새 루프가 그 세션의 Run 명의를 물려받아 원래 Run 의 질문을 읽지 못한다',
+      `  node --disable-warning=ExperimentalWarning "${script}" --repo ${shQuote(repo)} --stop --all`,
+      `  node --disable-warning=ExperimentalWarning "${script}" --repo ${shQuote(repo)} --run ${shQuote(runId)} --start`,
+    )
+  }
+  return lines
+}
+
 async function main(argv: string[]): Promise<number> {
   let values
   try {
@@ -351,7 +413,7 @@ async function main(argv: string[]): Promise<number> {
           `  node --disable-warning=ExperimentalWarning "${join(skillDir, 'scripts', 'orch-loop.ts')}" --repo ${shQuote(repo)} --run ${shQuote(runId as string)} --start`,
         ]
       : []
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...repoLines, ...questions.lines, ...loopLines].join('\n')}\n`)
+  process.stdout.write(`${[...version.lines, ...scripts.lines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops()].join('\n')}\n`)
 
   if (runId) {
     try {

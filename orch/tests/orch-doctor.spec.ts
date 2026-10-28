@@ -431,3 +431,58 @@ describe('session-resume', () => {
     assert.ok(!existsSync(received), '핸들러가 불렸다')
   })
 })
+
+describe('루프 번들 판정', () => {
+  test('설치되지 않은 번들로 도는 루프만 LOOP-STALE 로 알리고, 다시 띄울 명령을 그 Run 의 세션에서 돌리라고 안내한다', () => {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    // 프로필 경로에 빈칸이 있다(macOS 의 Application Support)
+    const plugins = join(tmp, 'Application Support', 'plugins')
+    const bundle = (sha: string) => join(plugins, 'cache', 'mkt', 'fos-skills', sha)
+    write(
+      join(plugins, 'installed_plugins.json'),
+      JSON.stringify({ plugins: { 'fos-skills@mkt': [{ scope: 'project', installPath: bundle('ccccccc3') }, { scope: 'user', installPath: bundle('bbbbbbb2') }] } }),
+    )
+    const repo = join(tmp, 'my repo')
+    write(join(repo, '.orch', 'state', 'loop.json'), JSON.stringify({ pid: 111, run: 'r0', bound_run: 'r1', runs: ['r0', 'r1'] }))
+    const loopOf = (sha: string) => join(bundle(sha), 'orch', 'scripts', 'orch-loop.ts')
+    const psFile = join(tmp, 'ps.txt')
+    writeFileSync(
+      psFile,
+      [
+        `  111 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('aaaaaaa1')} --repo ${repo} --run r1 --foreground`,
+        // 같은 루프의 틱 자식은 따로 세지 않는다
+        `  112 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('aaaaaaa1')} --repo ${repo} --run r1 --tick --tick-number 3`,
+        // 설치된 번들(user 와 project 범위 모두 설치본이다)
+        `  222 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('bbbbbbb2')} --repo /r/b --run r2 --foreground`,
+        `  333 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('ccccccc3')} --repo /r/c --run r3 --foreground`,
+        // 저장소 체크아웃에서 띄운 개발 중인 루프
+        '  444 /usr/bin/node --disable-warning=ExperimentalWarning /Users/me/fos-skills/orch/scripts/orch-loop.ts --repo /r/d --foreground',
+        '',
+      ].join('\n'),
+    )
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile } })
+    // 경고라 종료 코드는 바꾸지 않는다
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = r.stdout.split('\n')
+    assert.deepEqual(
+      out.filter((line) => line.startsWith('LOOP-STALE')),
+      [`LOOP-STALE ${repo} 111 aaaaaaa1`],
+    )
+    const at = out.indexOf(`LOOP-STALE ${repo} 111 aaaaaaa1`)
+    assert.match(out[at + 1], /^ {2}안내: 이 루프는 설치되지 않은 번들\(aaaaaaa1\)로 돈다\. 아래 두 명령은 그 루프의 Run\(r1\) 코디네이터 세션에서 돌린다/)
+    const fresh = join(bundle('bbbbbbb2'), 'orch', 'scripts', 'orch-loop.ts')
+    assert.equal(out[at + 2], `  node --disable-warning=ExperimentalWarning "${fresh}" --repo '${repo}' --stop --all`)
+    assert.equal(out[at + 3], `  node --disable-warning=ExperimentalWarning "${fresh}" --repo '${repo}' --run r1 --start`)
+  })
+
+  test('installed_plugins.json 을 읽지 못하면 판정하지 않는다', () => {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    const psFile = join(tmp, 'ps.txt')
+    writeFileSync(psFile, `  111 node ${join(tmp, 'plugins', 'cache', 'mkt', 'fos-skills', 'aaaaaaa1', 'orch', 'scripts', 'orch-loop.ts')} --repo /r/a --foreground\n`)
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /LOOP-STALE/)
+  })
+})
