@@ -75,7 +75,7 @@ export const HEAVY_KEYS: readonly string[] = ['exclusive', 'normal', 'light', 'w
 export const MIGRATIONS_KEYS: readonly string[] = ['dirs', 'before', 'blocked_after_sec']
 
 // board 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 board 행이다. 값의 판정은 lib/milestones.ts 의 boardSettings 가 소유한다.
-export const BOARD_KEYS: readonly string[] = ['steps', 'done_after']
+export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line']
 
 // event 는 그 키가 하던 일을 옮겨 받을 핸들러의 이벤트 이름이다(<orch 루트>/hooks/<event>.ts).
 export const DEPRECATED_KEYS: ReadonlyArray<{ section: Section; key: string; event: string }> = [
