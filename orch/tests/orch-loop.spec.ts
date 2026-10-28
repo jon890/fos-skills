@@ -19,7 +19,7 @@ const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url)
 
 // 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다.
 // statuses 는 status 조회에, workers 는 worker-list 에 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
-// bound 가 있으면 그 Run 에 묶인 호출자처럼 run-current 에 그 Run 을 내고, 다른 Run 의 check 를 consumer_fenced 로 거부한다.
+// slow_run_current 는 run-current 만 그 초만큼 늦게 답한다. bound 가 있으면 그 Run 에 묶인 호출자처럼 run-current 에 그 Run 을 내고, 다른 Run 의 check 를 consumer_fenced 로 거부한다.
 // 받은 인자는 calls.jsonl 에 한 줄씩 적는다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.
 const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
@@ -41,6 +41,7 @@ if (st.bound && sub === 'check' && run && run !== st.bound) {
   process.exit(1)
 }
 if (sub === 'run-current') {
+  if (st.slow_run_current) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.slow_run_current * 1000)
   reply({ run: st.bound ? { id: st.bound } : null })
   process.exit(0)
 }
@@ -665,6 +666,18 @@ describe('--start, --status, --stop', () => {
     assert.match(joined.stdout, /^LOOP-START-FENCED r2 r1$/m)
     assert.match(joined.stdout, new RegExp(`^안내: 도는 루프\\(pid ${pid}\\)는 Run r1 에 묶여 Run r2 의 질문을 읽지 못한다`, 'm'))
     assert.equal(existsSync(orchFile('state', 'loop-runs', 'r2.json')), false)
+    assert.equal(loop(['--run', 'r1', '--stop']).code, 0)
+  })
+
+  test('명의 조회가 시작 대기(10초)보다 느려도 띄운 루프는 다시 조회하지 않고 시작한다', { timeout: 60_000 }, () => {
+    config({ pipeline: { tick_sec: 3600 } })
+    orca({ bound: 'r1', slow_run_current: 11 })
+    const started = loop(['--run', 'r1', '--start'])
+    assert.equal(started.code, 0, started.stdout + started.stderr)
+    assert.match(started.stdout, /^LOOP-STARTED \d+ run=r1$/m)
+    assert.equal(loopState()?.bound_run, 'r1')
+    // run-current 는 --start 가 한 번만 불렀다
+    assert.equal(jsonl(join(tmp, 'orca-calls.jsonl')).filter((argv) => (argv as unknown as string[])[1] === 'run-current').length, 1)
     assert.equal(loop(['--run', 'r1', '--stop']).code, 0)
   })
 
