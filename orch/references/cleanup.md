@@ -276,7 +276,10 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 ### 머지 뒤 마무리
 
 **`finish-pr.ts` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.ts` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
-순서(머지 확인, worker 정리, 배포 확인, 마지막 PR 판정, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.ts` 의 `PR!` 도 같은 뜻이다.
+순서(머지 확인, worker 에게 머지 알림, worker 정리, 배포 확인, 마지막 PR 판정, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.ts` 의 `PR!` 도 같은 뜻이다.
+
+**정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지를 알린다.** 머지된 줄 모르고 기다리는 worker 의 dispatch 가 살아 있으면 `cleanup-sweep` 이 그 워크트리를 「살아 있는 worker」 로 계속 건너뛴다. 코디네이터가 「MERGED 됐다, worker_done 을 보내라」 를 따로 보내지 않는다.
+알린 뒤 `finish.worker_done_timeout`(분, 기본 10) 동안 dispatch 가 끝나기를 기다린다. 출력의 `notify: worker 남음` 줄이면 worker 가 끝내지 않았다는 뜻이다. 그 worker 의 화면을 보고 이어 가게 한다.
 
 출력은 `<로그 폴더>/finish-<PR>.out` 에 쌓이고 마지막 줄이 `FINISH-DONE` 이나 `FINISH-FAIL` 이다. 깨어날 때마다 그 줄을 본다.
 `FINISH-FAIL` 이면 출력의 이유를 읽고 사용자에게 알린다. 배포 실패나 업무 번호 없음처럼 사람이 정해야 하는 것은 스크립트가 다시 시도하지 않는다.
