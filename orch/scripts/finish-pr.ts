@@ -115,7 +115,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { findBoardItems, intermediateCommands, noteLine, readBoard } from './lib/board.ts'
+import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard } from './lib/board.ts'
 import type { BoardDetail, BoardStep } from './lib/board.ts'
 import { conflictSpecFiles } from './lib/conflicts.ts'
 import { deployVerdict, parseRuns } from './lib/deploy.ts'
@@ -501,6 +501,16 @@ function milestoneStages(args: Args, repo: string, item: string): Stages | null 
   }
 }
 
+// 사건 꼬리표 항목은 PR 단위 일괄 완료 대신 board-sync 가 단계별로 반영한다.
+function taggedBoardItem(args: Args, repo: string, item: string): boolean {
+  try {
+    const row = readBoard(boardPath(repo, args.board)).find((i) => pyStr(i.id) === item)
+    return row ? hasEventTags(row) : false
+  } catch {
+    return false
+  }
+}
+
 // 머리 주석의 「보드 항목」 에서 찾은 항목. 없거나 둘 이상이면 null 이고, 둘 이상이면 알린다
 function pickBoardItem(args: Args, repo: string, branch: string, worktree: string | null): { id: string; by: 'pr' | 'branch' } | null {
   const found = findBoardItems(boardPath(repo, args.board), args.pr, branch, worktree)
@@ -648,7 +658,9 @@ async function finish(args: Args, repo: string): Promise<number> {
   if (!deployed) return fail(problems.join('; '))
   const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
   const stages = item && item.by !== 'id' ? milestoneStages(args, repo, item.id) : null
-  if (item && stages) {
+  if (item && taggedBoardItem(args, repo, item.id)) {
+    log(`보드 ${item.id} 는 사건 꼬리표가 있어 board-sync 에 맡긴다`)
+  } else if (item && stages) {
     // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
     // 판정하지 못한 PR 은 board-sync 와 같이 마지막으로 본다. done 지점 전이면 doing 으로 남아 업무 완료로 번지지 않는다
     const boardLast = last || !verdict.known

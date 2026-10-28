@@ -15,6 +15,8 @@
 //     --dry-run     보드를 고치지 않고 바뀔 항목과 부를 보드 명령만 낸다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
+// 줄 끝 사건 꼬리표가 있는 항목은 goal 도 포함해 릴리스에 든 PR 의 release 줄만 끝낸다.
+//     다른 줄과 항목 상태는 그대로 둔다. 꼬리표가 없으면 아래 마일스톤 규칙을 쓴다.
 // 대상 항목: done, goal 이 아니고, stages 칸에 release 가 있고, 그 단계가 끝나지 않은 항목이다.
 //     --release 로 찾을 때는 pr 칸의 PR 만 본다. 마일스톤 항목은 업무의 마지막 PR 을 pr 칸에 남긴다(board-sync.ts).
 //     pr 칸이 비었거나 그 PR 이 머지되지 않았으면 건너뛴다. 업무의 뒤 PR 이 아직 남은 항목이다
@@ -29,13 +31,14 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { boardSteps, prNumbers } from './lib/board.ts'
+import { taggedBoardSteps, boardSteps, prNumbers } from './lib/board.ts'
 import { ConfigError } from './lib/config.ts'
 import { git } from './lib/git.ts'
 import { ghJson } from './lib/gh.ts'
 import { boardSettings, mergedCommands, stagesOf } from './lib/milestones.ts'
 import { boardPath } from './lib/paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './lib/proc.ts'
+import { parseEventTag } from '../../work-board/hooks/event-tags.js'
 
 const USAGE = '사용법: board-release.ts (--release PR | --pr N [--pr N ...]) [--repo DIR] [--board PATH] [--board-bin PATH] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -150,6 +153,38 @@ function main(argv: string[]): number {
 
   const changed: string[] = []
   for (const item of items) {
+    if (item.status === 'done') continue
+    const tagged = taggedBoardSteps(boardBin, String(item.id), board, item)
+    if (tagged === null) {
+      err(`board-release: 단계 목록을 읽지 못했다: ${item.id}`)
+      return 1
+    }
+    if (tagged.length > 0) {
+      for (const step of tagged.filter((step) => !step.done)) {
+        const tag = parseEventTag(step.text)!
+        if (tag.event !== 'release') continue
+        if (release) {
+          const got = view(repo, tag.pr)
+          if (!got) {
+            err(`board-release: ${item.id} 의 PR ${tag.pr} 를 읽지 못했다`)
+            return 1
+          }
+          const merge = oidOf(got.mergeCommit?.oid)
+          if (got.state !== 'MERGED' || !merge || git(repo, ['merge-base', '--is-ancestor', merge, target]).code !== 0) continue
+        } else if (!prs.includes(tag.pr)) continue
+        const cmd = ['step', String(item.id), String(step.number)]
+        if (dryRun) out(`${item.id} (PR #${tag.pr})\n  ${cmd.join(' ')}`)
+        else {
+          const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { timeoutMs: NO_LIMIT_MS })
+          if (done.code !== 0) {
+            err(`board-release: 보드 명령이 실패했다: ${item.id}: ${done.stderr}`)
+            return 1
+          }
+        }
+        if (!changed.includes(String(item.id))) changed.push(String(item.id))
+      }
+      continue
+    }
     if (SKIP_STATUS.has(String(item.status))) continue
     const stages = stagesOf(item)
     if (!stages || stages.release === undefined) continue
