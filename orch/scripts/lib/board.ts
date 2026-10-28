@@ -226,7 +226,7 @@ export function detailArgs(details: BoardDetail[]): string[] {
 
 // 보드 명령(board.ts steps)이 판정한 단계 목록. 읽지 못하면 null 이다
 export function boardSteps(bin: string, id: string, file: string): BoardStep[] | null {
-  const done = run(scriptCommand(bin, ['steps', id, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+  const done = run(scriptCommand(bin, ['steps', id, '--file', file]), { killSignal: 'SIGKILL' })
   if (done.code !== 0) return null
   try {
     const steps: unknown = JSON.parse(done.stdout)
