@@ -42,9 +42,10 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 
+export { parseEventTag } from '../hooks/event-tags.js'
+import { STEP } from '../hooks/event-tags.js'
+
 const STATUSES = ['goal', 'decide', 'doing', 'wait', 'done']
-// 단계 줄: 앞 표시(끝냄 ✓ [x], 안 끝냄 [ ] ▶ ◇)와 번호. hooks/register.js 의 STEP 과 같은 규칙이다
-const STEP = /^\s*(?:(✓|\[[xX ]\]|▶|◇)\s*)?(\d+)[.)]?\s/
 const DONE_MARKS = ['✓', '[x]', '[X]']
 const LEAD_MARK = /^\s*(✓|\[[xX ]\]|▶|◇)\s*/
 const PROGRESS = /^\s*(\d+)\s*\/\s*(\d+)\s*$/
