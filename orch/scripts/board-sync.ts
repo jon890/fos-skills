@@ -31,6 +31,10 @@
 //     - [release] 단계는 이 스크립트가 끝내지 않는다. board-release.ts 가 끝낸다
 //     - config.json 의 board 절이 틀리면 stderr 에 한 줄 남기고 마일스톤 항목의 머지 반영을 건너뛴다
 //
+// 수동 사건 단계: 줄 끝의 (#PR번호 pr|merge|deploy|release) 를 board.ts 와 같은 파서로 읽는다.
+//     꼬리표가 있는 항목은 goal 도 사건별 단계만 끝내고 항목 상태와 꼬리표 없는 줄은 그대로 둔다.
+//     release 는 board-release.ts 에 맡긴다.
+//
 // 모든 항목(done, goal 포함)의 worktree 칸이 git 워크트리 목록에 없는 이름이면 칸을 비운다. 끝난 worker 의 워크트리를 정리한 뒤
 // 창이 「worker 없음」 을 보이지 않게 한다. 워크트리 목록을 읽지 못하면 비우지 않는다
 //
@@ -60,7 +64,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
-import { boardSteps, detailArgs, detailText as textOf, noteLine, prNumbers, prSteps, withNote } from './lib/board.ts'
+import { taggedBoardSteps, boardSteps, detailArgs, detailText as textOf, noteLine, prNumbers, prSteps, withNote } from './lib/board.ts'
 import type { BoardDetail as Detail } from './lib/board.ts'
 import { deployVerdict, parseRuns } from './lib/deploy.ts'
 import type { DeployVerdict, RunRow } from './lib/deploy.ts'
@@ -75,6 +79,7 @@ import { gh, ghJson } from './lib/gh.ts'
 import { boardPath, pathOf } from './lib/paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
+import { parseEventTag } from '../../work-board/hooks/event-tags.js'
 
 const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--goal GOAL_ID [--goal-items FILE]] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -208,6 +213,7 @@ function main(argv: string[]): number {
   let rules: LastPrRules | null | undefined
   let settings: BoardSettings | null | undefined
   const runs: { runs: RunRow[] | null } = { runs: null }
+  const tagStates = new Map<string, string | null>()
   const changed: string[] = []
   for (const item of items) {
     const id = String(item.id)
@@ -218,7 +224,32 @@ function main(argv: string[]): number {
     if (names !== null && typeof item.worktree === 'string' && item.worktree && !names.has(item.worktree)) cmds.push(['set', id, '--worktree', ''])
     const old = (Array.isArray(item.details) ? item.details : []) as Detail[]
     let details = old
-    if (!SKIP_STATUS.has(String(item.status))) {
+    const tagged = item.status === 'done' ? [] : taggedBoardSteps(boardBin, id, board, item)
+    if (tagged === null) {
+      err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
+      return 1
+    }
+    if (tagged.length > 0) {
+      // 꼬리표가 있는 수동 항목과 goal 은 사건별로만 끝낸다. 다른 단계나 항목 상태는 바꾸지 않는다.
+      for (const step of tagged.filter((step) => !step.done)) {
+        const tag = parseEventTag(step.text)!
+        if (tag.event === 'release') continue
+        if (!tagStates.has(tag.pr)) tagStates.set(tag.pr, prState(tag.pr, repo))
+        const state = tagStates.get(tag.pr)
+        let reached = tag.event === 'pr' ? state === 'OPEN' || state === 'MERGED' : tag.event === 'merge' && state === 'MERGED'
+        if (tag.event === 'deploy' && state === 'MERGED') {
+          if (settings === undefined) {
+            try { settings = boardSettings(repo) }
+            catch (e) {
+              err(`board-sync: 보드 설정을 읽지 못해 배포 반영을 건너뛴다: ${(e as Error).message}`)
+              settings = null
+            }
+          }
+          reached = Boolean(settings?.deploy && deployedNow(repo, tag.pr, settings.deploy, runs) === 'success')
+        }
+        if (reached) after.push(['step', id, String(step.number)])
+      }
+    } else if (!SKIP_STATUS.has(String(item.status))) {
       let discovered: Pr | undefined
       const branch = branches.get(String(item.worktree)) || String(item.branch || '')
       if (!item.pr && branch) {

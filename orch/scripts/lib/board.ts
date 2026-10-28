@@ -2,6 +2,7 @@
 // 지시서에 `중간 과정:` 줄이 있으면 띄울 때 항목을 만들지 않고 그 PR 의 기존 항목에 한 줄만 남긴다.
 // `보드 항목 id:` 로 정한 항목이 done 이면 doing 으로 다시 열고 지난 단계 뒤에 새 단계를 잇는다(ADR-015).
 // 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018)
+import { parseEventTag } from '../../../work-board/hooks/event-tags.js'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
@@ -293,4 +294,16 @@ export function remindDecisions(repo: string, notify: (text: string) => void): v
   mkdirSync(dirname(stateFile), { recursive: true })
   writeFileSync(`${stateFile}.tmp`, JSON.stringify(next))
   renameSync(`${stateFile}.tmp`, stateFile)
+}
+
+// 진행률을 세는 쪽은 board.ts steps 가 정한다. 꼬리표 후보가 없는 항목은 CLI 를 부르지 않는다.
+export function taggedBoardSteps(bin: string, id: string, file: string, item: Record<string, unknown>): BoardStep[] | null {
+  if (!hasEventTags(item)) return []
+  const steps = boardSteps(bin, id, file)
+  return steps === null ? null : steps.filter((step) => parseEventTag(step.text))
+}
+
+export function hasEventTags(item: Record<string, unknown>): boolean {
+  const candidates = ['details', 'next'].flatMap((key) => Array.isArray(item[key]) ? item[key] as BoardDetail[] : String(item[key] || '').split('\n'))
+  return candidates.some((line) => parseEventTag(detailText(line)))
 }

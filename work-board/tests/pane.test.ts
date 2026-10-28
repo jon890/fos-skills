@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { START_PROMPT, DECIDE_PROMPT } from '../hooks/register.js'
+import { START_PROMPT, DECIDE_PROMPT, REFRESH_PROMPT } from '../hooks/register.js'
 
 const BOARD = JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
   { id: 'a', title: '단계 항목', status: 'doing', owner: 'worker', pr: '#9', worktree: 'wt-a',
@@ -163,6 +163,7 @@ test('명령은 /board 만 등록한다', async ($, on) => {
 for (const [key, hotkey, prompt] of [
   ['start-today', 's', START_PROMPT],
   ['ask-decisions', 'q', DECIDE_PROMPT],
+  ['refresh-board', 'u', REFRESH_PROMPT],
 ] as const) {
   test(key + ' 버튼은 보내지 않고 입력란에 요청문을 채운다', async ($, on) => {
     const filled = []
@@ -294,7 +295,7 @@ for (const [name, boardAt, liveAt] of [
     expect(shortcuts.props.borderStyle).toBe('round')
     expect(await ui.find({ type: 'Text', text: /^단축키$/ })).toBeTruthy()
     const buttons = (shortcuts.children as Drawn[])[1].children as Drawn[]
-    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'q', 'd'])
+    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'u', 'q', 'd'])
     await ui.unmount()
   })
 }

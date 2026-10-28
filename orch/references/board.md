@@ -49,7 +49,7 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 3. [merge] 머지
 ```
 
-항목은 사건과 단계 번호의 짝을 `stages` 필드(`pr=1,merge=2`)에 둔다. `stages` 필드가 없는 옛 항목은 예전 규칙으로 읽는다. 머지된 PR 의 번호(`#N`)가 적힌 단계만 끝내고, 마지막 PR 이면 done 으로 바꾼다.
+항목은 사건과 단계 번호의 짝을 `stages` 필드(`pr=1,merge=2`)에 둔다. `stages` 필드도 아래 사건 꼬리표도 없는 옛 항목은 예전 규칙으로 읽는다. 머지된 PR 의 번호(`#N`)가 적힌 단계만 끝내고, 마지막 PR 이면 done 으로 바꾼다.
 
 **done 으로 바꾸는 때는 `board.done_after` 가 정한다.** 값은 `merge`, `deploy`, `release` 이고 기본은 `merge` 다.
 마지막 PR 이 그 사건 단계에 닿으면 그 번호까지의 남은 단계를 끝내고 done 으로 바꾼다. 항목에 그 사건 단계가 없으면 항목에 있는 가장 늦은 사건 단계에서 바꾼다.
@@ -64,6 +64,13 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-release.ts"
 **PR 머지 반영과 목표 진행률은 `board-sync.ts` 에 맡긴다.** 판정은 스크립트 머리 주석이 소유한다.
 결정과 다음 할 일처럼 사람만 아는 단계는 코디네이터가 직접 쓴다. 부르는 시점은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 정한다.
 
+## 직접 작성한 사건 단계
+
+코디네이터가 직접 항목이나 goal 을 쓸 때는 자동으로 끝낼 단계의 줄 끝에 `(#665 merge)` 처럼 PR 번호와 사건을 붙인다.
+`pr`, `merge`, `deploy`, `release` 를 쓰며, `3. develop 머지 (#665 merge)`, `4. dev 배포 (#665 deploy)`, `5. real 반영 (#665 release)` 처럼 적는다.
+꼬리표가 있는 항목은 진행률을 세는 쪽의 사건 단계만 끝낸다. 꼬리표 없는 줄과 항목 상태는 코디네이터가 관리한다.
+`stages` 와 함께 있어도 줄 끝 꼬리표를 우선한다. `finish-pr.ts` 도 꼬리표 항목은 일괄 완료하지 않고 `board-sync.ts` 에 맡긴다. 창에서는 꼬리표를 숨기지만 원본과 `board.ts steps` 출력에는 남는다.
+
 ## 갱신 담당
 
 | 시점 | 담당 | 갱신하는 것 |
@@ -74,6 +81,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-release.ts"
 | PR 머지 뒤 | `board-sync.ts` | 그 PR 의 마무리(`finish-pr.ts`)가 돌고 있으면 그 항목은 마무리에 맡긴다. 아니면 업무의 마지막 PR 인지 판정한다([`cleanup.md`](cleanup.md) 의 「마지막 PR 판정」). gh 조회 실패로 판정하지 못하면 다음 틱에 다시 판정한다. 마일스톤 항목은 `[merge]` 단계까지(배포가 이미 성공했으면 `[deploy]` 까지) 끝낸다. 마지막 PR 은 `pr` 필드에 두고 `merged-pr` 에도 적고, done 지점에 닿았으면 done 으로 바꾼다. 중간 PR 은 `pr` 필드를 비워 `merged-pr` 에 쌓고 `남은 일: PR #31, 지시서 spec-b.md` 한 줄을 둔다. 판정하지 못하면 마지막으로 본다. 옛 항목은 마지막 PR 이면 남은 단계를 끝내고 done, 중간 PR 이면 그 PR 번호의 단계만 끝낸다. 판정하지 못하면 남은 단계가 하나 이하일 때 done 이다 |
 | 배포 성공 뒤 | `board-sync.ts`, `finish-pr.ts` | 마일스톤 항목의 끝나지 않은 `[deploy]` 단계를 끝낸다. 마지막 PR 이 done 지점에 닿았으면 done 으로 바꾼다. `finish-pr.ts` 는 배포를 기다린 뒤 `pr` 필드나 브랜치로 찾은 항목에 PR 머지 뒤와 같은 규칙을 쓴다. 옛 항목은 마지막 PR 이면 done, 중간 PR(`PR~` 포함)이면 그 PR 의 단계를 끝내고 `남은 일:` 줄을 두고 PR 을 `merged-pr` 로 옮긴다. `merged-pr` 의 PR 은 다시 판정하지 않는다 |
 | 릴리스 뒤 | `board-release.ts` | 저장소가 부른다. 릴리스에 든 PR 의 항목에서 `[release]` 단계까지 끝내고, done 지점에 닿았으면 done 으로 바꾼다 |
+| 사건 꼬리표 확인 | `board-sync.ts`, `board-release.ts` | done 을 제외한 goal 과 수동 항목도 줄 끝의 `(#PR번호 사건)` 을 읽는다. 틱마다 PR 열림·머지와 머지 커밋을 포함한 배포 성공을 확인한다. 릴리스 명령은 `--pr` 목록 또는 `--release` 커밋에 포함된 PR 의 release 줄만 끝낸다. 다른 줄과 항목 상태는 그대로 둔다 |
 | 결정·수동 단계 변경 | 코디네이터 | decide·wait 상태와 꼬리표 없는 수동 단계의 완료를 `board.ts set/step/mark` 로 반영한다. 자동 반영이 빠졌을 때만 사건 단계를 직접 고친다 |
 
 자동 연결은 항목의 worktree 와 git 워크트리 목록으로 브랜치를 찾는다. 띄울 때 저장한 `branch` 는 워크트리가 정리된 뒤에도 연결할 근거다.

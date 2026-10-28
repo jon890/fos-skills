@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { START_PROMPT, DECIDE_PROMPT } from '../hooks/register.js'
+import { START_PROMPT, DECIDE_PROMPT, REFRESH_PROMPT } from '../hooks/register.js'
 
 const read = (path: string) => readFileSync(new URL('../../' + path, import.meta.url), 'utf8')
 
@@ -26,4 +26,8 @@ test('보드 스킬은 매니페스트에 없고 훅은 요청문을 직접 보�
     assert.doesNotMatch(read(file), /work-board\/board-/, file)
   }
   assert.doesNotMatch(read('work-board/hooks/register.js'), /prompt\.submit\(|command: 'board-start'|command: 'board-decide'/)
+})
+
+test('갱신 요청문은 실제 근거 대조와 보드 반영을 요청한다', () => {
+  for (const text of ['PR 상태', '배포 결과', '두레이 업무 상태', 'orch worker 보고', 'board.ts', '정할 것만']) assert.ok(REFRESH_PROMPT.includes(text), text)
 })

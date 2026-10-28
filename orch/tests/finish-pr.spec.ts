@@ -868,6 +868,20 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     return ['--board-bin', join(c.bin, 'board.py')]
   }
 
+  for (const mode of ['--complete', '--intermediate']) {
+    test(`사건 꼬리표 항목은 ${mode} 에서도 일괄 완료하지 않는다`, async (t) => {
+      const c = setup(t)
+      const file = join(c.repo, '.omc', 'board.json')
+      const bin = board(c, [{ id: 'tagged', status: 'doing', pr: 77, details: ['1. 머지 (#77 merge)', '2. 반영 (#77 release)'] }])
+      const before = readFileSync(file, 'utf8')
+      const r = await c.finish([mode, ...bin])
+      assert.equal(r.code, 0, both(r))
+      assert.deepEqual(starting(c.calls(), 'board '), [])
+      assert.equal(readFileSync(file, 'utf8'), before)
+      has(r.stdout, '사건 꼬리표가 있어 board-sync 에 맡긴다')
+    })
+  }
+
   test('pr 칸이 빈 항목을 브랜치로 찾아 마지막 PR 이면 done 으로 바꾼다', async (t) => {
     const c = setup(t)
     const bin = board(c, [{ id: 'other', branch: 'feat/y' }, { id: 'task-x', status: 'doing', branch: 'feat/x' }])

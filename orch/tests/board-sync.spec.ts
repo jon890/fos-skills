@@ -478,3 +478,52 @@ describe('board-sync 마일스톤 항목', () => {
     assert.equal(r.board.here.worktree, basename(tmp))
   })
 })
+
+describe('손으로 쓴 사건 단계', () => {
+  const details = () => ['1. PR (#7 pr)', '2. 머지 (#7 merge)', '3. 배포 (#7 deploy)', '4. 반영 (#7 release)', '5. 사람이 확인'].map((text) => step(text, false))
+  test('항목의 PR 과 무관하게 꼬리표의 PR 을 읽고 goal 과 next 도 처리한다', () => {
+    states['7'] = 'MERGED'
+    states['8'] = 'OPEN'
+    const r = sync([
+      { id: 'a', status: 'doing', pr: 8, details: details() },
+      { id: 'g', status: 'goal', next: details() },
+      { id: 'other', status: 'doing', details: [step('1. 머지 (#8 merge)', false)] },
+    ])
+    assert.equal(r.code, 0, r.result.stderr)
+    for (const [id, key] of [['a', 'details'], ['g', 'next']]) {
+      assert.deepEqual(r.board[id][key], details().map((d, i) => ({ ...d, done: i < 2 })))
+    }
+    assert.equal(r.board.a.status, 'doing')
+    assert.equal(r.board.g.status, 'goal')
+    assert.deepEqual(r.board.other.details, [step('1. 머지 (#8 merge)', false)])
+  })
+  test('조회 실패와 dry-run 은 완료 값을 바꾸지 않는다', () => {
+    let r = sync([{ id: 'g', status: 'goal', details: details() }])
+    assert.deepEqual(r.board.g.details, details())
+    states['7'] = 'MERGED'
+    r = sync([{ id: 'g', status: 'goal', details: details() }], ['--dry-run'])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.deepEqual(r.board.g.details, details())
+    assert.match(r.result.stdout, /step g 2/)
+  })
+  test('머지 커밋이 포함된 배포 성공만 deploy 단계를 끝낸다', () => {
+    const git = (...args: string[]) => {
+      const r = spawnSync('git', ['-C', tmp, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' })
+      assert.equal(r.status, 0, r.stderr)
+      return r.stdout.trim()
+    }
+    git('init', '-q', '-b', 'main')
+    git('commit', '-q', '--allow-empty', '-m', 'deploy')
+    const sha = git('rev-parse', 'HEAD')
+    mkdirSync(join(tmp, '.orch'), { recursive: true })
+    writeFileSync(join(tmp, '.orch', 'config.json'), JSON.stringify({ finish: { deploy_workflow: 'deploy.yml', deploy_branch: 'main' } }))
+    states['7'] = 'MERGED'
+    states['merge:7'] = sha
+    for (const conclusion of ['failure', 'success']) {
+      states.runs = [{ headSha: sha, status: 'completed', conclusion }]
+      const r = sync([{ id: 'g', status: 'goal', details: details() }])
+      assert.equal(r.code, 0, r.result.stderr)
+      assert.deepEqual(r.board.g.details, details().map((d, i) => ({ ...d, done: i < (conclusion === 'success' ? 3 : 2) })))
+    }
+  })
+})

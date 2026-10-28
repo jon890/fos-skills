@@ -48,6 +48,17 @@ beforeEach(() => {
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 describe('step 과 steps', () => {
+  test('사건 꼬리표는 steps 출력과 단계 완료 뒤에도 남는다', () => {
+    const text = '3. 배포 (#665 deploy)'
+    write({ id: 'g', status: 'goal', details: [text] })
+    let r = board('steps', 'g')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(JSON.parse(r.stdout), [{ number: 3, done: false, text }])
+    r = board('step', 'g', '3')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('g').details, [{ text, done: true }])
+  })
+
   test('번호 붙은 next 줄을 찾아 끝내고 --undo 로 되돌린다', () => {
     write({ id: 'up', status: 'doing', next: '1. 구현\n2. 리뷰 반영\n3. 머지' })
     const r = board('step', 'up', '1')
