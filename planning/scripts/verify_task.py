@@ -1041,7 +1041,7 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
     runners = [command for command, _ in runner_pairs]
     runner_cwds = [cwd for _, cwd in runner_pairs]
     if not commands:
-        out.append(f"{path} — 검증 절에 실행할 명령이 없다")
+        out.append(f"{path} — 검증 절에 실행할 명령이 없다 (명령은 bash 코드 블록에 적는다. 목록이나 인라인 코드로 적은 명령은 읽지 않는다)")
     elif not runners:
         unknown = [command for command in commands if classify(command, entries, repo) == "unknown"]
         if unknown:
