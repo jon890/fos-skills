@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.14.0 (2026-10-28)
+
+- 호환성: `orch-loop --start` 가 그 Run 을 조회하지 못하는 터미널이나 루프(`bound_run` 이 없는 옛 루프 포함)면 띄우지도 합류하지도 않고 `LOOP-START-FENCED` 와 5 로 끝난다
+- `spec-lint` 가 저장소 공통 지시서에 틀의 `orch-rule` 표지(준비됨 status, MERGED 확인 뒤 `worker_done`)가 빠졌으면 `공통` 경고를 낸다
+- `send-to-worker` 가 살아 있는 dispatch 에 reply 할 메시지가 없거나 모두 이미 답한 question 이면 새 메시지로 보내고 깨운다(`sent:` 줄)
+- doctor 가 설치되지 않은 번들로 도는 상주 루프를 `LOOP-STALE <repo> <pid> <번들 해시>` 로 알리고, 그 루프의 Run 세션에서 돌릴 재시작 명령을 낸다
+- `finish-pr` 이 정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지를 알리고 `--worker-done-timeout`(기본 10분) 동안 끝나기를 기다린다
+
 ## 4.13.0 (2026-10-28)
 
 - 사용 한도에 걸렸을 때 더 비싼 모델로 올리지 않는다는 전역 지침을 에이전트 고르기에서 가리킨다
