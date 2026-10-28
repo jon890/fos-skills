@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.13.0 (2026-10-28)
+
+- 사용 한도에 걸렸을 때 더 비싼 모델로 올리지 않는다는 전역 지침을 에이전트 고르기에서 가리킨다
+
 ## 4.12.0 (2026-10-28)
 
 - `send-to-worker` 가 `--from run:<run>` 이 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보내고 `retry:` 줄을 낸다
