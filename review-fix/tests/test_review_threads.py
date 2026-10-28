@@ -60,6 +60,16 @@ class TestCount(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn('"resolved":false', lines[0])
 
+    def test_outdated_thread_falls_back_to_original_line(self):
+        data = json.loads(response([False, False]))
+        nodes = data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+        nodes[0].update(line=None, originalLine=7, isOutdated=True)
+        nodes[1].update(line=12, originalLine=9)
+        code, out, _ = run_main(["list", "o", "r", "1"], json.dumps(data))
+        self.assertEqual(code, 0)
+        lines = [json.loads(l) for l in out.splitlines()]
+        self.assertEqual([l["line"] for l in lines], [7, 12])
+
 
 def carried_response(threads):
     nodes = [{"id": tid, "isResolved": resolved, "path": "a.py", "line": 3,

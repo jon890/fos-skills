@@ -25,6 +25,7 @@
 봇의 발견사항은 인라인 댓글이 아니라 리뷰 스레드로 달리는 경우가 많다.
 REST 의 `pulls/<N>/comments` 로는 스레드 ID 를 얻을 수 없어 조회와 회신 모두 GraphQL 로 한다 (실측).
 `path` 와 `line` 을 함께 내므로 REST 댓글과 대조해 어느 지적인지 가릴 수 있다.
+push 뒤 outdated 가 된 스레드는 GitHub 가 `line` 을 비우므로 그때는 `originalLine` 을 `line` 에 담아 낸다.
 
 회신 본문은 파일로 받는다. 셸에서 본문을 직접 넘기면
 백틱과 달러가 명령 치환으로 사라진다 (실측).
@@ -60,7 +61,7 @@ LIST_QUERY = """
         pullRequest(number:$num) {
           reviewThreads(first:%d) {
             totalCount
-            nodes { id isResolved isOutdated path line
+            nodes { id isResolved isOutdated path line originalLine
                     comments(first:1){ nodes{ author{login} body } } }
           }
         }
@@ -124,6 +125,12 @@ def emit(value):
         print(json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
 
 
+def thread_line(node):
+    """push 뒤 outdated 가 된 스레드는 `line` 이 비므로 `originalLine` 으로 대신한다."""
+    line = node.get("line")
+    return line if line is not None else node.get("originalLine")
+
+
 def cmd_list(host, owner, repo, num, only_unresolved, count_only=False):
     code, out, err = gh("api", "graphql", "-f", f"query={LIST_QUERY}",
                         "-f", f"owner={owner}", "-f", f"repo={repo}", "-F", f"num={num}",
@@ -154,7 +161,7 @@ def cmd_list(host, owner, repo, num, only_unresolved, count_only=False):
             "resolved": node["isResolved"],
             "outdated": node["isOutdated"],
             "path": node["path"],
-            "line": node["line"],
+            "line": thread_line(node),
             "author": (first.get("author") or {}).get("login"),
             "head": (first.get("body") or "")[:HEAD_LEN],
         })
