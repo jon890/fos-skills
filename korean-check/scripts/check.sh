@@ -77,7 +77,7 @@ if [ "${1:-}" = "--text" ]; then
   python3 "$READABILITY" --text "$*" || rc=$?
   worst "$rc"
 
-  [ "$status" -eq 0 ] && echo "통과: 문자열"
+  [ "$status" -eq 0 ] && echo "표기 검사 통과: 문자열. 의미 점검은 별도"
   exit "$status"
 fi
 
@@ -98,5 +98,5 @@ done
 rc=0; "$STYLE" "$@" || rc=$?; worst "$rc"
 rc=0; python3 "$READABILITY" "$@" || rc=$?; worst "$rc"
 
-[ "$status" -eq 0 ] && echo "통과: $#개 파일"
+[ "$status" -eq 0 ] && echo "표기 검사 통과: $#개 파일. 의미 점검은 별도"
 exit "$status"
