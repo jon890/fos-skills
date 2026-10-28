@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.12.1"
+  version: "2.13.0"
 ---
 
 # review-fix
@@ -56,10 +56,12 @@ base 에는 열린 PR 이 없기 때문이다. 그때는 둘째 명령의 오픈
 **루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
 PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 정하고, 그 오버레이를 루트 오버레이보다 먼저 읽는다.
 `$PLANNING_SKILL_DIR` 은 planning 번들이고 이 스킬 번들의 형제 디렉터리다. 이 스킬 번들 경로를 `$SKILL_DIR` 이라 하면 값은 `$SKILL_DIR/../planning` 이다.
-`$PR` 은 위에서 정한 PR 번호다.
+
+**PR 번호와 저장소는 변수로 두고 이후 명령에서 같은 이름을 쓴다.** `PR` 은 위에서 정한 PR 번호, `OWNER` 와 `REPO` 는 아래 명령의 출력(`owner/repo`)을 나눈 값이다.
 
 ```bash
 # cwd: 대상 저장소 루트
+PR=""      # 위에서 정한 PR 번호로 채운다
 gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill review-fix -
 ```
 
@@ -68,28 +70,31 @@ gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_path
 종료 코드 1 이면 사용자에게 묻는다. 판정 규칙은 [planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
 
 ```bash
+OWNER=""   # 첫 명령 출력의 owner 쪽
+REPO=""    # 첫 명령 출력의 repo 쪽
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
-python3 scripts/collect_review.py <owner> <repo> <N>
+python3 scripts/collect_review.py "$OWNER" "$REPO" "$PR"
 ```
 
 **두 명령은 서 있어야 할 디렉터리가 다르다.**
 첫 명령은 현재 디렉터리의 저장소를 읽으므로 대상 저장소의 워크트리에서 돌린다.
 둘째 명령의 `scripts/` 는 이 스킬 디렉터리를 전제하므로 그 경로를 절대경로로 주거나
-스킬 디렉터리에서 돌린다. 호스트는 넘긴 `<owner> <repo>` 로 정해지므로 어느 쪽이든 맞다.
+스킬 디렉터리에서 돌린다. 호스트는 넘긴 `OWNER` 와 `REPO` 로 정해지므로 어느 쪽이든 맞다.
 저장소 이름을 이미 알고 있으면 첫 명령을 건너뛴다.
 
 이 스킬의 스크립트는 호스트를 스스로 구한다.
 스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 아래처럼 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" repos/<owner>/<repo>/...
+gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" "repos/$OWNER/$REPO/..."
 ```
 
 **이전 PR 에서 「다음 PR 에서 반영」 으로 미룬 지적이 있으면** 그 PR 번호를 `--carried-from` 으로 준다.
 회신에 「다음 PR」 이 든 스레드를 다섯째 소스로 모은다. resolve 된 것도 나온다. 다른 문구는 `--carried-marker` 로 준다.
 
 ```bash
-python3 scripts/collect_review.py <owner> <repo> <N> --carried-from <이전 PR 번호>
+PREV=""    # 이전 PR 번호
+python3 scripts/collect_review.py "$OWNER" "$REPO" "$PR" --carried-from "$PREV"
 ```
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
@@ -103,7 +108,7 @@ python3 scripts/collect_review.py <owner> <repo> <N> --carried-from <이전 PR �
 ### 2. 작업 트리 정렬
 
 ```bash
-python3 scripts/checkout_pr.py <N>
+python3 scripts/checkout_pr.py "$PR"
 ```
 
 종료 코드 1 은 작업 트리가 dirty 하다는 뜻이다. 변경 내용을 보여주고 사용자에게 확인받는다.
@@ -112,7 +117,7 @@ python3 scripts/checkout_pr.py <N>
 정렬이 끝나면 PR 이 base 와 conflict 상태인지 본다.
 
 ```bash
-gh pr view <N> --json baseRefName,mergeable,mergeStateStatus
+gh pr view "$PR" --json baseRefName,mergeable,mergeStateStatus
 ```
 
 **`baseRefName` 을 적어 둔다.** conflict 를 해결할 때 가져올 base 브랜치다.
@@ -250,6 +255,9 @@ git diff --stat '@{u}..HEAD'
 | --- | --- | --- |
 | <파일>: <요약> | <THREAD_ID 또는 comment_id> | <해시> |
 
+**지적이 PR 본문을 가리키면 커밋으로 고치지 않고 `create-pr` 스킬로 본문을 고친다.**
+본문 양식과 갱신 절차는 그 스킬이 소유한다. 이 표에는 해시 대신 `PR 본문` 을 적는다.
+
 해시 칸에 들어갈 커밋이 없는 행도 표에 둔다.
 이슈로 등록한 대범위 항목은 `이슈 #<번호>`, 반영하지 않기로 정한 항목은 `미반영` 을 적는다.
 이미 반영돼 있던 항목은 회신하지 않으므로 표에서 뺀다.
@@ -259,10 +267,33 @@ push 직후 `mergeable` 을 다시 조회한다. fix push 와 base 갱신의 시
 
 ### 7. 회신
 
-`references/reply.md` 를 읽고 따른다.
-회신 경로 분기, 본문 형식, 등록 전 검사를 그 문서가 소유한다.
+**`gh api` 나 GraphQL 을 직접 부르지 않는다.** 회신은 아래 스크립트로 단다.
+경로 분기(스레드, 인라인 댓글, 통합 댓글)와 본문 양식은 `references/reply.md` 를 읽고 따른다.
+
+```bash
+# cwd: 대상 저장소 루트. OWNER, REPO, PR 은 1단계 값이다
+MAP=""     # 줄마다 `THREAD_ID<탭>본문파일` 인 map 파일의 경로
+BODY=""    # 회신 본문 파일의 경로. 본문 파일마다 검사를 돌린다
+python3 scripts/check_reply_body.py "$BODY"
+python3 scripts/review_threads.py reply-batch --repo "$OWNER/$REPO" "$MAP"
+```
+
+| 명령 | 종료 코드 |
+| --- | --- |
+| `check_reply_body.py` | 0 걸린 것 없음. 1 걸림(위치를 사용자에게 보이고 확인받는다). 2 파일 읽기 실패 |
+| `reply-batch` | 0 전부 등록. 1 일부 실패(끝에 실패한 줄이 나온다. 그 줄만 남긴 map 으로 다시 돌린다). 2 map 오류 |
 
 ### 8. 마무리
 
-`references/finish.md` 를 읽고 따른다.
-resolve, 규칙 반영, 결과 보고를 그 문서가 소유한다.
+**스레드를 직접 resolve 하지 않는다.** 아래 스크립트로 하고, 결과 보고 양식과 규칙 반영은 `references/finish.md` 를 읽고 따른다.
+
+```bash
+# cwd: 대상 저장소 루트
+IDS=""     # 처리한 THREAD_ID 를 공백이나 줄로 이은 값. 대응 표에서 모은다
+python3 scripts/review_threads.py list "$OWNER" "$REPO" "$PR"
+printf '%s\n' "$IDS" | python3 scripts/review_threads.py resolve --repo "$OWNER/$REPO" -
+python3 scripts/review_threads.py list --count "$OWNER" "$REPO" "$PR"
+```
+
+`list --count` 가 낸 정수가 0 이 아니면 머지 가능으로 보고하지 않는다. 종료 코드 1 은 조회 실패이거나 스레드가 한 번에 조회하는 수를 넘은 것이라 0 으로 읽지 않는다.
+`resolve` 의 종료 코드 1 은 일부 스레드가 실패한 것이다. 출력에서 `resolved=true` 가 없는 ID 만 다시 돌린다.

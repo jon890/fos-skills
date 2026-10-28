@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.13.0 (2026-10-28)
+
+- 7, 8단계 본문에 회신, 등록 전 검사, resolve, 미해결 수 확인 명령과 종료 코드를 뒀다. reference 를 열지 않고 GraphQL 로 직접 회신하던 문제다
+- `review_threads.py list` 가 push 뒤 outdated 가 되어 `line` 이 빈 스레드에 `originalLine` 을 낸다
+- 리뷰 본문에만 있는 지적과 스레드 지적이 섞였을 때의 회신 경로를 더했다. P1, P2 를 반영하지 않으려면 먼저 확인받고 「반영하지 않음」 으로 회신한다
+- 지적이 PR 본문을 가리키면 `create-pr` 로, 회신 등록 전에는 `content-preview` 로 보낸다
+- 명령 블록의 `<owner>`, `<N>` 을 붙여넣어 돌아가는 변수로 바꿨다
+
 ## 2.12.1 (2026-10-25)
 
 - README 를 스킬을 쓰는 사람 관점으로 다시 쓰고, 이 CHANGELOG 를 버전마다 핵심만 남기도록 줄였다. 동작은 바뀌지 않았다
