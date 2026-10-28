@@ -11,38 +11,32 @@
 
 ## 경로 분기
 
-봇의 발견사항이 리뷰 스레드로 달렸는지 인라인 댓글로 달렸는지 먼저 본다.
+봇의 발견사항이 리뷰 스레드로 달렸는지 인라인 댓글로 달렸는지 먼저 본다. 변수와 명령은 `SKILL.md` 의 「회신」, 「마무리」 단계가 소유한다.
 
 ```bash
-python3 scripts/review_threads.py list <owner> <repo> <N>
+python3 scripts/review_threads.py list "$OWNER" "$REPO" "$PR"
 ```
 
 | 상태 | 회신 경로 |
 |---|---|
-| 리뷰 스레드가 있다 | `python3 scripts/review_threads.py reply --repo <owner>/<repo> <THREAD_ID> <본문파일>` |
-| 스레드가 없고 인라인 댓글만 있다 | REST `pulls/<N>/comments/<comment_id>/replies` |
-| 둘 다 없다 | `gh pr comment <N> --body-file <본문파일>` 로 통합 회신 하나 |
+| 리뷰 스레드가 있다 | `reply-batch`(하나여도 같다). map 한 줄이 회신 하나다 |
+| 스레드가 없고 인라인 댓글만 있다 | REST `pulls/$PR/comments/$COMMENT_ID/replies` (아래) |
+| 둘 다 없다 | `gh pr comment "$PR" --body-file "$BODY"` 로 통합 회신 하나 |
+| 리뷰 본문에만 있는 지적과 스레드 지적이 섞여 있다 | 스레드 지적은 스레드로, 본문에만 있는 지적은 통합 댓글 하나로 단다. 스레드가 있는 지적에는 통합 댓글을 달지 않는다 |
 
-**회신이 여럿이면 `reply-batch` 로 한 번에 단다.** map 은 줄마다 `THREAD_ID`, 탭, 본문 파일 경로다.
-상대 경로는 map 파일 위치를 기준으로 푼다. 하나가 실패해도 나머지는 계속 달고, 끝에 실패한 줄과 스레드를 알리며 종료 코드 1 이다.
-실패한 줄만 남겨 다시 돌린다. 이미 달린 회신을 다시 돌리면 같은 회신이 또 달린다.
-
-```bash
-python3 scripts/review_threads.py reply-batch --repo <owner>/<repo> "$MAP"
-```
-
-**`reply` 와 `resolve` 에는 `--repo <owner>/<repo>` 를 붙인다.**
-THREAD_ID 만으로는 저장소를 알 수 없어, 붙이지 않으면 현재 디렉터리의 origin 으로 호스트를 정한다.
+`reply-batch` 는 하나가 실패해도 나머지를 계속 달아서, 이미 달린 회신을 다시 돌리면 같은 회신이 또 달린다. 실패한 줄만 남긴 map 으로 돌린다.
+`reply` 와 `resolve` 에는 `--repo "$OWNER/$REPO"` 를 붙인다. THREAD_ID 만으로는 저장소를 알 수 없다.
 
 `list` 는 이미 resolve 된 스레드를 빼고 낸다.
 목록이 비었는데 인라인 댓글이 있으면 앞선 실행이 resolve 한 것일 수 있으니 `list-all` 로 확인한다.
 
-인라인 댓글 경로는 아래와 같다.
+인라인 댓글 경로는 아래와 같다. `COMMENT_ID` 는 수집 결과의 `comment_id` 다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" \
-  repos/<owner>/<repo>/pulls/<N>/comments/<comment_id>/replies \
-  -X POST -F body=@<본문파일>
+COMMENT_ID=""
+gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" \
+  "repos/$OWNER/$REPO/pulls/$PR/comments/$COMMENT_ID/replies" \
+  -X POST -F body=@"$BODY"
 ```
 
 ## 본문
@@ -76,20 +70,18 @@ gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" \
 
 ## 등록 전 검사
 
-```bash
-python3 scripts/check_reply_body.py <본문파일>
-```
-
-재트리거 토큰과 GitHub auto-link 를 찾는다. 걸리는 것과 대응은 그 스크립트가 소유한다.
+`check_reply_body.py` 를 본문 파일마다 돌린다. 명령과 종료 코드는 `SKILL.md` 의 「회신」 단계가 소유하고, 걸리는 것과 대응은 그 스크립트가 소유한다.
 
 의도한 참조인지 사고인지는 자동으로 가릴 수 없다.
 걸린 위치를 사용자에게 보여주고 구조화 질문 도구가 있으면 그것으로 확인받는다.
 
+**회신 본문은 외부에 나가는 글이다.** 등록하기 전에 `content-preview` 스킬을 부른다.
+미리 승인받았을 때 생략하는 조건과 dispatch 로 받은 세션의 처리는 그 스킬의 6단계와 「보는 사람이 없는 세션에서 등록할 때」 가 소유한다.
+
 이미 등록한 댓글에서 발견하면 본문을 교체한다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py <owner> <repo>)" \
-  repos/<owner>/<repo>/issues/comments/<id> -X PATCH -F body=@<본문파일>
+COMMENT_ID=""   # 교체할 댓글 id. 인라인 댓글이면 경로가 pulls/comments/$COMMENT_ID 다
+gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" \
+  "repos/$OWNER/$REPO/issues/comments/$COMMENT_ID" -X PATCH -F body=@"$BODY"
 ```
-
-인라인 댓글은 경로가 `pulls/comments/<id>` 다.

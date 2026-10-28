@@ -4,32 +4,15 @@
 
 ## 리뷰 스레드 resolve
 
-```bash
-python3 scripts/review_threads.py list <owner> <repo> <N>
-python3 scripts/review_threads.py resolve --repo <owner>/<repo> <THREAD_ID> ...
-```
-
-여러 ID 를 변수에 모았으면 표준 입력으로 넘긴다. zsh 는 따옴표 없는 `$IDS` 를 낱말로 나누지 않는다.
-
-```bash
-printf '%s\n' "$IDS" | python3 scripts/review_threads.py resolve --repo <owner>/<repo> -
-```
+명령과 종료 코드는 `SKILL.md` 의 「마무리」 단계가 소유한다.
 
 resolve 는 「이 지적을 처리했다」 는 표시다.
 반영했거나 반영하지 않기로 판단하고 그 판단을 회신한 스레드만 resolve 한다.
 
-**머지 전에 미해결 수가 0 인지 이 명령으로 확인한다.**
-
-```bash
-python3 scripts/review_threads.py list --count <owner> <repo> <N>
-```
-
-출력은 정수 하나다. 0 이 아니면 머지 가능으로 보고하지 않는다.
-
 resolve 한 뒤 보호 규칙이 풀렸는지 본다.
 
 ```bash
-gh pr view <N> --json mergeStateStatus
+gh pr view "$PR" --json mergeStateStatus
 ```
 
 ## 반복될 지적을 저장소 규칙으로 옮긴다
