@@ -6,8 +6,12 @@
 //
 // 조회 범위: Orca 는 check 의 기록과 --peek 을 100건까지 낸다. 그 한도에 닿으면 stderr 에 조회 범위를 알린다.
 // 그 Run 에서는 조회마다 나오는 안내라 stdout 으로 내지 않는다(watch-questions 가 Monitor 를 깨우지 않게).
-// 답 판정: 코디네이터가 질문의 스레드에 답하면 답한 것이다. 질문을 ack 했는지는 보지 않는다. worker 의 후속 메시지는 답이 아니다.
-// 답은 보낸 쪽의 inbox 에서 200건까지 읽는다. 그 한도에 닿아 답했는지 증명하지 못하면 짐작하지 않고 오류를 던진다.
+// 답 판정: 질문의 스레드에 worker 쪽으로 간 메시지(받는 쪽이 있고 Run 이 아닌 것)가 있으면 답한 것이다(ADR-015).
+// 보낸 쪽이 Run 인지 코디네이터 터미널인지는 보지 않는다. Orca 터미널에서는 `--from run:<run>` 이 거부돼 답의 보낸 쪽이 term_* 다.
+// 질문을 ack 했는지는 보지 않는다. worker 의 후속 메시지는 Run 으로 가서 답이 아니다.
+// 답은 질문을 보낸 쪽과 그 질문의 dispatch(`dispatch:<id>`)의 inbox 에서 각각 200건까지 읽는다.
+// 코디네이터 터미널의 답은 `dispatch:<id>` 로 가서 보낸 터미널의 inbox 에 나오지 않는다.
+// 그 한도에 닿아 답했는지 증명하지 못하면 짐작하지 않고 오류를 던진다.
 //
 // 알린 기록(poll 의 state, 보통 <orch 작업 폴더>/state/questions-seen.json): {<Run id>: {<질문 id>: <알린 epoch 초>}}.
 // 파일의 바이트 꼴은 옛 명령의 json.dumps(ensure_ascii=False) 와 같다(lib/py.ts 의 pyJson).
@@ -47,11 +51,11 @@ function messages(data: Record<string, unknown>): Message[] {
   return rows as Message[]
 }
 
-// 질문을 받은 쪽(Run)의 답만 질문을 푼다. worker 의 후속 메시지는 풀지 않는다.
+// worker 쪽으로 간 답이 질문을 푼다. Run 으로 간 worker 의 후속 메시지는 풀지 않는다.
 export function unanswered(rows: Message[], run: string): Message[] {
   const scoped = rows.filter((m) => m.run_id === run)
   const answered = new Set(
-    scoped.filter((r) => r.thread_id && r.id !== r.thread_id && r.from_handle === `run:${run}`).map((r) => r.thread_id),
+    scoped.filter((r) => r.thread_id && r.id !== r.thread_id && r.to_handle && r.to_handle !== `run:${run}`).map((r) => r.thread_id),
   )
   return scoped.filter((m) => KINDS.has(String(m.type)) && m.to_handle === `run:${run}` && m.id && !answered.has(m.id))
 }
@@ -73,19 +77,26 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   for (const m of [...history, ...unread]) {
     if (m.id && m.run_id === run && KINDS.has(String(m.type)) && m.to_handle === `run:${run}`) candidates.set(m.id, m)
   }
-  const replies: Message[] = []
-  const senders = [...new Set([...candidates.values()].map((m) => m.from_handle))]
-  for (const sender of senders) {
-    if (!sender) throw new Error('질문 발신자가 없다')
-    const rows = messages(orca(['inbox', '--terminal', String(sender), '--limit', String(REPLY_LIMIT)]))
-    const answers = rows.filter((m) => m.from_handle === `run:${run}`)
-    const pending = unanswered([...candidates.values(), ...answers], run)
-    if (rows.length >= REPLY_LIMIT && pending.some((m) => m.from_handle === sender)) {
-      throw new Error('답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다')
-    }
-    replies.push(...answers)
+  // 질문마다 답이 올 수 있는 handle 이다. 보낸 쪽과 그 질문의 dispatch 다
+  const handlesOf = (m: Message): string[] => {
+    if (!m.from_handle) throw new Error('질문 발신자가 없다')
+    const dispatch = dispatchOf(m)
+    return [...new Set([String(m.from_handle), ...(dispatch ? [`dispatch:${dispatch}`] : [])])]
   }
-  return { run, pending: unanswered([...candidates.values(), ...replies], run) }
+  const threads = new Set([...candidates.keys()])
+  const replies: Message[] = []
+  const full = new Set<string>()
+  for (const handle of new Set([...candidates.values()].flatMap(handlesOf))) {
+    const rows = messages(orca(['inbox', '--terminal', handle, '--limit', String(REPLY_LIMIT)]))
+    if (rows.length >= REPLY_LIMIT) full.add(handle)
+    replies.push(...rows.filter((m) => threads.has(m.thread_id)))
+  }
+  const pending = unanswered([...candidates.values(), ...replies], run)
+  // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
+  if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {
+    throw new Error('답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다')
+  }
+  return { run, pending }
 }
 
 // 질문이 만들어진 뒤 지난 초. now 는 epoch 초다. 시각을 읽지 못하면 0.

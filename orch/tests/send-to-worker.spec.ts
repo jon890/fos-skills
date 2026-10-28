@@ -46,6 +46,9 @@ if (is('orchestration', 'reply')) {
   if ((state.answered || []).includes(opt('--id'))) {
     print(JSON.stringify({ ok: false, error: { message: 'Question ' + opt('--id') + ' already has a different answer' } }), 1)
   }
+  if (state.fenced && args.includes('--from')) {
+    print(JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'run consumer is fenced to another terminal' } }), 1)
+  }
   out({ message: { id: 'msg_new' } })
 }
 if (is('orchestration', 'worker-list')) {
@@ -272,9 +275,21 @@ describe('끝난 dispatch', () => {
     const sent = lines('orca orchestration reply')[0].split(' ')
     const from = sent[sent.indexOf('--from') + 1]
     const escalation = { id: 'm_esc', run_id: 'run_x', type: 'escalation', from_handle: 'term_w', to_handle: 'run:run_x', thread_id: 'm_esc' }
-    const answer = { id: 'msg_new', run_id: 'run_x', type: 'reply', from_handle: from, thread_id: 'm_esc' }
+    const answer = { id: 'msg_new', run_id: 'run_x', type: 'reply', from_handle: from, to_handle: 'dispatch:ctx_1', thread_id: 'm_esc' }
     assert.deepEqual(unanswered([escalation], 'run_x').map((m) => m.id), ['m_esc'])
     assert.deepEqual(unanswered([escalation, answer], 'run_x'), [])
+  })
+
+  test('--from run:<run> 이 consumer_fenced 로 거부되면 --from 없이 한 번 다시 보낸다', () => {
+    state({ dispatches: worker('succeeded'), terminals: [], fenced: true })
+    const r = send('--body', 'x', '--reply-to', 'm_esc')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration reply'), [
+      'orca orchestration reply --id m_esc --body x --run run_x --from run:run_x',
+      'orca orchestration reply --id m_esc --body x --run run_x',
+    ])
+    assert.match(r.stdout, /^retry: .*consumer_fenced/m)
+    assert.match(r.stdout, /^replied: m_esc 에 답했다 \(msg_new\)/m)
   })
 
   test('터미널이 남았어도 --spec 이 없으면 3 으로 --spec 을 요구한다', () => {
