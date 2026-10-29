@@ -114,7 +114,7 @@ class EgoBackend(Backend):
     name = "ego"
     binary = "ego-browser"
     supported = {"open", "nav", "js", "waitjs", "ready", "url", "snap",
-                 "shot", "close", "pages", "reset", "click", "drag", "hover"}
+                 "shot", "close", "pages", "spaces", "reset", "click", "drag", "hover"}
     js_timeout = True
 
     def prepare_note(self):
@@ -252,6 +252,99 @@ class EgoBackend(Backend):
     def _want(self, args):
         """명령이 받은 프로필 인자를 해석 순서보다 앞에 둔다."""
         return (args[0] if args else "") or resolve_profile()[0]
+
+    def _reset(self, args):
+        """공간에서 에이전트가 연 page 를 닫고 공간까지 닫는다.
+
+        `[프로필, 공간 id 또는 None]` 을 받는다. 공간 id 가 있으면 그 공간을 이름과 무관하게 닫고,
+        없으면 `BROWSER_EGO_SPACE` 로 이름 준 공간을 닫는다.
+
+        page 를 하나씩 닫지 않고 `task.finish({ keep })` 한 번으로 닫는다. 에이전트 page 를 먼저
+        다 닫으면 ego 가 빈 탭 하나를 다시 만들어 두고 공간의 소유가 사용자로 넘어가, 그 뒤의
+        finish 는 공간을 닫지 못한다 (실측). finish 는 관리 중인 page 를 스스로 닫는다.
+        사용자가 연 탭과 ego 가 소유를 판정하지 못한 탭은 finish 가 지키므로 공간이 남는다.
+        """
+        profile = args[0] if args else ""
+        space_id = args[1] if len(args) > 1 else None
+
+        if space_id is None:
+            # 기본 공간(`browser-driver/<프로필 id>`)은 같은 프로필의 모든 호출자가 나눠 쓴다.
+            # 거기서 reset 하면 다른 호출자의 탭까지 닫는다(실측 5건). 이름 준 공간만 허락한다.
+            # 이름은 resolve_space 가 검증하므로 공백뿐이거나 줄바꿈이 든 값은 거기서 거절된다.
+            if resolve_space() is None:
+                raise UsageError(
+                    f"기본 공간에서는 reset 하지 않는다. 같은 프로필의 다른 호출자가 연 탭까지 닫기 때문이다. "
+                    f"{SPACE_ENV} 에 이 작업만의 이름을 주고 다시 부른다. "
+                    f"예: {SPACE_ENV}='<저장소> <용도>' browser-driver reset. "
+                    f"남은 공간은 spaces 로 찾아 reset --space-id <id> 로 닫는다. "
+                    f"기본 공간의 탭은 pages 로 핸들을 보고 close 로 골라 닫는다")
+            # 되돌릴 수 없는 명령이라 어디에 대고 도는지 먼저 알린다. 인자를 생략하면
+            # 해석 순서가 고른 프로필에서 돌아, 알리지 않으면 엉뚱한 공간을 닫고도
+            # 닫은 것이 없다는 출력과 구분되지 않는다.
+            if profile:
+                want, source = profile, "인자"
+            else:
+                want, source = resolve_profile()
+            print(f"reset 대상 프로필: {want or '(ego 의 기본 프로필)'}"
+                  f" — {source or '아무 호출자도 정하지 않았다'}", file=sys.stderr)
+            pick = "let refused = null;\n" + self._space_js(want, create=False)
+        else:
+            # id 로 고르면 이름과 프로필 해석을 거치지 않는다. 사용자가 제어권을 가져간 공간과
+            # 기본 공간은 닫지 않는다. 판정은 이 id 의 공간 하나를 보고 그 결과를 돌려준다.
+            pick = (
+                f"const targetId = {int(space_id)};\n"
+                f"const prefix = {json.dumps(SPACE_PREFIX)};\n"
+                "const target = (await listTaskSpaces()).find((s) => s.id === targetId);\n"
+                "let refused = null;\n"
+                "if (!target) refused = 'missing';\n"
+                "else if (target.ownership !== 'agent') refused = 'not-agent';\n"
+                "else if (target.name.startsWith(prefix + '/')) refused = 'default';\n"
+                "let task = refused ? null : await taskSpace(targetId);\n"
+            )
+
+        raw = self._run(
+            pick
+            + "const closing = [];\n"
+            "const keep = [];\n"
+            "if (task) for (const t of await task.tabs()) {\n"
+            "  if (!t.label) continue;\n"
+            "  if (t.openedBy === 'agent') closing.push([t.label, task.spaceId + ':' + t.label + '\\t' + (t.url || '')]);\n"
+            "  else keep.push(t.label);\n"
+            "}\n"
+            "const res = task ? await task.finish({ keep }) : null;\n"
+            "__out(JSON.stringify({ space: task ? task.spaceId : null,\n"
+            "  refused, res, closing }));\n"
+        )
+        result = json.loads(raw)
+        refused = result["refused"]
+        if refused:
+            reasons = {
+                "missing": f"공간 {space_id} 가 없다. spaces 로 남은 공간을 다시 본다",
+                "not-agent": f"공간 {space_id} 는 에이전트가 가진 공간이 아니다. 사용자가 제어권을 가져간 공간은 닫지 않는다",
+                "default": f"공간 {space_id} 는 기본 공간이라 닫지 않는다. 같은 프로필의 다른 호출자가 나눠 쓴다. "
+                           "pages 로 핸들을 보고 close 로 골라 닫는다",
+            }
+            raise UsageError(reasons[refused])
+
+        res = result["res"]
+        if res is None:
+            print("reset 대상 공간: (공간 없음)", file=sys.stderr)
+            return None
+        print(f"reset 대상 공간: {result['space']}", file=sys.stderr)
+        closed = set(res.get("closedManagedLabels") or [])
+        if res.get("closedSpace"):
+            print(f"공간 {result['space']} 를 닫았다", file=sys.stderr)
+        else:
+            # 닫지 못한 것은 오류가 아니다. 사용자의 탭이 남아 있으면 ego 가 공간을 지킨다.
+            left = []
+            if res.get("preservedUnmanagedCount"):
+                left.append(f"사용자 탭 {res['preservedUnmanagedCount']}개")
+            if res.get("keptManagedLabels"):
+                left.append("소유를 판정하지 못한 page " + ", ".join(res["keptManagedLabels"]))
+            print(f"공간 {result['space']} 는 닫지 않았다: {', '.join(left) or '남은 탭이 있다'}."
+                  " 에이전트가 연 page 만 닫았다. 남은 탭은 사용자가 닫는다", file=sys.stderr)
+        lines = [line for label, line in result["closing"] if label in closed]
+        return "\n".join(lines) or None
 
     def dispatch(self, cmd, args):
         if cmd == "open":
@@ -430,42 +523,25 @@ class EgoBackend(Backend):
             ).rstrip("\n")
             return out or None
 
-        if cmd == "reset":
-            # 사용자가 연 page 는 남긴다. ego 의 API 문서가 openedBy 가 'unknown' 인 것도
-            # 사용자 소유로 다루라고 정하고 있으므로 'agent' 인 것만 고른다.
-            # 공간째 닫지 않는 것도 같은 이유다. 사용자가 보던 것까지 사라진다.
-            #
-            # 기본 공간(`browser-driver/<프로필 id>`)은 같은 프로필의 모든 호출자가 나눠 쓴다.
-            # 거기서 reset 하면 다른 호출자의 탭까지 닫는다(실측 5건). 이름 준 공간만 허락한다.
-            # 이름은 resolve_space 가 검증하므로 공백뿐이거나 줄바꿈이 든 값은 거기서 거절된다.
-            if resolve_space() is None:
-                raise UsageError(
-                    f"기본 공간에서는 reset 하지 않는다. 같은 프로필의 다른 호출자가 연 탭까지 닫기 때문이다. "
-                    f"{SPACE_ENV} 에 이 작업만의 이름을 주고 다시 부른다. "
-                    f"예: {SPACE_ENV}='<저장소> <용도>' browser-driver reset. "
-                    f"기본 공간의 탭은 pages 로 핸들을 보고 close 로 골라 닫는다")
-            # 되돌릴 수 없는 명령이라 어디에 대고 도는지 먼저 알린다. 인자를 생략하면
-            # 해석 순서가 고른 프로필에서 돌아, 알리지 않으면 엉뚱한 공간을 비우고도
-            # 닫은 것이 없다는 출력과 구분되지 않는다.
-            if args and args[0]:
-                want, source = args[0], "인자"
-            else:
-                want, source = resolve_profile()
-            print(f"reset 대상 프로필: {want or '(ego 의 기본 프로필)'}"
-                  f" — {source or '아무 호출자도 정하지 않았다'}", file=sys.stderr)
-            raw = self._run(
-                self._space_js(want, create=False)
-                + "const out = [];\n"
-                "if (task) for (const t of await task.tabs()) {\n"
-                "  if (!t.label || t.openedBy !== 'agent') continue;\n"
-                "  const h = task.spaceId + ':' + t.label + '\\t' + (t.url || '');\n"
-                "  try { await task.page(t.label).close(); out.push(h); }\n"
-                "  catch (e) { out.push(h + '\\t닫지 못했다: ' + String(e).split('\\n')[0]); }\n"
+        if cmd == "spaces":
+            # 작업이 끝났는데 남은 공간을 찾는 명령이다. 에이전트가 가진 공간만 낸다.
+            # 사용자가 제어권을 가져간 공간(ownership 이 agent 가 아닌 것)은 닫을 수 없으므로 뺀다.
+            # page 수는 tabs() 로 센다. 이 값은 evaluate 를 거치지 않아 멈춘 page 가 있어도 걸리지 않는다.
+            prefix = args[0] if args else ""
+            out = self._run(
+                f"const prefix = {json.dumps(prefix)};\n"
+                "const out = [];\n"
+                "for (const s of await listTaskSpaces()) {\n"
+                "  if (s.ownership !== 'agent' || !s.name.startsWith(prefix)) continue;\n"
+                "  let count = '?';\n"
+                "  try { count = String((await (await taskSpace(s.id)).tabs()).length); } catch (e) {}\n"
+                "  out.push(s.id + '\\t' + s.name + '\\t' + count);\n"
                 "}\n"
-                "__out((task ? task.spaceId : '(공간 없음)') + '\\n' + out.join('\\n'));\n"
-            )
-            space, _, out = raw.partition("\n")
-            print(f"reset 대상 공간: {space.strip()}", file=sys.stderr)
-            return out.rstrip("\n") or None
+                "__out(out.join('\\n'));\n"
+            ).rstrip("\n")
+            return out or None
+
+        if cmd == "reset":
+            return self._reset(args)
 
         raise UsageError(f"ego 백엔드가 '{cmd}' 를 다루지 않는다")

@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from driver.args import parse_js_args, parse_pointer_args
+from driver.args import parse_js_args, parse_pointer_args, parse_reset_args
 from driver.backends.ego import EgoBackend, MARKER, NOTICE
 from driver.errors import UsageError
 
@@ -99,7 +99,7 @@ class OutputSeparationTest(unittest.TestCase):
 
     def test_help_lists_new_commands_as_supported_on_ego(self):
         lines = self.fake("").run("help").stdout.splitlines()
-        for name in ("jsfile", "click", "drag", "hover"):
+        for name in ("jsfile", "click", "drag", "hover", "spaces", "reset"):
             line = next(l for l in lines if l.startswith(f"  {name} "))
             self.assertNotIn("(이 백엔드는 못 씀)", line)
         self.assertTrue(any("--timeout" in l for l in lines))
@@ -130,6 +130,13 @@ class OtherBackendTest(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("--timeout", r.stderr)
 
+    def test_space_commands_are_rejected(self):
+        for args in (("spaces",), ("reset", "--space-id", "3")):
+            with self.subTest(args=args):
+                r = self.run_cmd(*args)
+                self.assertEqual(r.returncode, 2)
+                self.assertIn("대응 명령을 확인하지 못했다", r.stderr)
+
     def test_mouse_commands_are_rejected(self):
         for args in (("click", "tab1", "1", "2"), ("hover", "tab1", "1", "2"),
                      ("drag", "tab1", "1", "2", "3", "4")):
@@ -150,6 +157,17 @@ class ArgsTest(unittest.TestCase):
                     ["h", "x", "--timeout", "soon"], ["h", "x", "y"]):
             with self.subTest(bad=bad), self.assertRaises(UsageError):
                 parse_js_args(bad)
+
+    def test_reset_args(self):
+        self.assertEqual(parse_reset_args([]), ["", None])
+        self.assertEqual(parse_reset_args(["Default"]), ["Default", None])
+        self.assertEqual(parse_reset_args(["--space-id", "12"]), ["", "12"])
+
+    def test_reset_args_reject(self):
+        for bad in (["--space-id"], ["--space-id", "abc"], ["--space-id", "-1"],
+                    ["Default", "--space-id", "3"], ["a", "b"]):
+            with self.subTest(bad=bad), self.assertRaises(UsageError):
+                parse_reset_args(bad)
 
     def test_pointer_args(self):
         self.assertEqual(parse_pointer_args("click", ["h", "1", "2.5"], 1, True), ["h", 1.0, 2.5, "left"])

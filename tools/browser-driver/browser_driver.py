@@ -24,7 +24,7 @@ from pathlib import Path
 # resolve() 로 실체 경로를 잡아 그 옆의 패키지를 찾게 한다.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from driver.args import parse_js_args, parse_pointer_args  # noqa: E402
+from driver.args import parse_js_args, parse_pointer_args, parse_reset_args  # noqa: E402
 from driver.admin import cmd_doctor, cmd_install  # noqa: E402
 from driver.backends import BACKENDS, load_backend, resolve_backend_name  # noqa: E402
 from driver.commands import COMMAND_MAP, COMMANDS, META_COMMANDS, render_help  # noqa: E402
@@ -44,6 +44,8 @@ def normalize_args(cmd, args, backend):
         if args[2] is not None and not backend.js_timeout:
             raise UsageError(f"{backend.name} 백엔드는 js 의 --timeout 을 지원하지 않는다.")
         return args
+    if cmd == "reset":
+        return parse_reset_args(args)
     if cmd in POINTER_SHAPES:
         points, allow_button = POINTER_SHAPES[cmd]
         return parse_pointer_args(cmd, args, points, allow_button)

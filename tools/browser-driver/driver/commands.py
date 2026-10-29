@@ -80,11 +80,20 @@ COMMANDS = [
             note="핸들은 open 이 내는 것과 같은 형식이라 close, nav, js 에 그대로 넘긴다.\n"
                  "page 수가 한도에 차서 open 이 막히면 이것으로 무엇을 닫을지 고른다.\n"
                  "openedBy 가 agent 인 줄이 reset 이 닫을 대상이다"),
-    Command("reset", ["[profile]"],
-            "그 공간에서 에이전트가 연 탭을 전부 닫는다",
-            returns="닫은 탭을 `<핸들><TAB><주소>` 한 줄씩. 닫지 못한 탭은 이유를 한 칸 더 붙인다",
+    Command("spaces", ["[prefix]"],
+            "에이전트가 가진 공간을 id, 이름, 탭 수로 낸다",
+            returns="`<id><TAB><이름><TAB><탭 수>` 한 줄씩. 없으면 아무것도 내지 않는다",
+            note="작업이 끝났는데 남은 공간을 찾을 때 쓴다. 접두를 주면 그 이름으로 시작하는 공간만 낸다.\n"
+                 "사용자가 제어권을 가져간 공간은 목록에 나오지 않고, reset 도 그 공간을 닫지 않는다.\n"
+                 "찾은 공간은 reset --space-id <id> 로 하나씩 닫는다"),
+    Command("reset", ["[profile]", "[--space-id <id>]"],
+            "에이전트가 연 탭을 닫고 그 공간까지 닫는다",
+            returns="닫은 탭을 `<핸들><TAB><주소>` 한 줄씩. 공간을 닫았는지 남겼는지는 stderr 로 알린다",
             note="BROWSER_EGO_SPACE 로 이름 준 공간에서만 돈다. 기본 공간이면 아무것도 닫지 않고 종료 코드 2 로 거절한다.\n"
-                 "사용자가 직접 연 탭과 ego 가 소유를 판정하지 못한 탭은 남는다.\n"
+                 "--space-id 는 spaces 가 낸 id 의 공간을 이름과 무관하게 닫는다. 기본 공간과\n"
+                 "에이전트가 가지지 않은 공간은 id 로도 닫지 않고 종료 코드 2 로 거절한다.\n"
+                 "사용자가 직접 연 탭과 ego 가 소유를 판정하지 못한 탭은 남고, 그러면 공간도 남는다.\n"
+                 "남아도 종료 코드는 0 이다. 어느 쪽인지는 stderr 의 마지막 줄로 본다.\n"
                  "에이전트가 열어 사람이 이어서 쓰고 있는 탭은 닫힌다. openedBy 로는 둘을 구분하지 못한다.\n"
                  "무엇이 닫힐지는 pages 의 openedBy 열로 먼저 본다"),
 ]
@@ -142,7 +151,7 @@ def render_help(backend_name=None, unsupported=frozenset()):
     lines += [
         "",
         "종료 코드는 0 성공, 1 조작 실패, 2 잘못된 호출이나 환경 문제.",
-        "ego 의 BROWSER_EGO_SPACE 는 open, pages, reset 이 쓸 공간의 기준 이름을 정한다. reset 은 이 이름이 있어야 돈다.",
+        "ego 의 BROWSER_EGO_SPACE 는 open, pages, reset 이 쓸 공간의 기준 이름을 정한다. reset 은 이 이름이나 --space-id 가 있어야 돈다.",
         "공간을 나눠도 로그인 세션의 경계는 기존 프로필이다.",
         "백엔드별 상세는 README.md, 환경 진단은 doctor 를 본다.",
     ]
