@@ -25,7 +25,7 @@
 - {{REMOTE_ACCESS_RULE}}
 - 다른 worker 가 동시에 다른 일을 한다. 지시서 범위 밖의 파일은 고치지 않는다.
 - 프로세스는 자기가 띄운 PID 로만 끈다. `pkill`, `killall` 은 다른 worker 의 호스트까지 꺼 쓰지 않는다(워크트리 권한 설정이 막는다). 스폰 프롬프트에 이 줄을 넣는다.
-- 브라우저는 `BROWSER_EGO_SPACE` 를 자기 워크트리 이름(`basename "$(git rev-parse --show-toplevel)"`)으로 주고 연다. 다른 worker 와 같은 공간을 쓰면 탭이 섞이고 공간 한도가 찬다. 끝나면 실패해도 같은 이름으로 `browser-driver reset` 을 불러 공간을 닫는다. `BROWSER_EGO_SPACE` 없이 부른 reset 은 기본 공간을 비우므로 browser-driver 가 거절한다.
+- 브라우저는 `BROWSER_EGO_SPACE` 를 자기 워크트리 이름(`basename "$(git rev-parse --show-toplevel)"`)으로 주고 연다. 다른 worker 와 같은 공간을 쓰면 탭이 섞이고 공간 한도가 찬다. 끝나면 실패해도 같은 이름으로 `browser-driver reset` 을 불러 탭과 공간을 함께 닫는다. 사용자 탭이 남아 공간이 닫히지 않으면 reset 이 그 사실을 알린다. `BROWSER_EGO_SPACE` 없이 부른 reset 은 기본 공간을 비우므로 browser-driver 가 거절한다.
 
 ## 판단이 필요할 때
 

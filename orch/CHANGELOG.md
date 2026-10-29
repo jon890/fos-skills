@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.18.1 (2026-10-29)
+
+- 지시서 틀의 브라우저 규칙을 `browser-driver reset` 이 탭과 함께 공간까지 닫는다는 내용으로 맞췄다. 사용자 탭이 남아 공간이 닫히지 않으면 reset 이 알린다
+
 ## 4.18.0 (2026-10-29)
 
 - 호환성: worker 워크트리에 `Bash(browser-driver reset:*)` deny 를 더하지 않는다. 이름 준 공간(`BROWSER_EGO_SPACE=<이름>`)의 reset 까지 거부당했다. 기본 공간 reset 은 browser-driver 가 거절한다
