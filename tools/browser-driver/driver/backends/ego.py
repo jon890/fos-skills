@@ -168,7 +168,8 @@ class EgoBackend(Backend):
             if "PageBudget" in str(e):
                 raise DriverError(
                     "이 공간의 page 수가 한도에 찼다. pages 로 무엇이 열려 있는지 보고 "
-                    "close 로 골라 닫거나, reset 으로 에이전트가 연 page 를 한 번에 닫는다.\n"
+                    "close 로 골라 닫는다. BROWSER_EGO_SPACE 로 이름 준 공간이면 "
+                    "reset 으로 에이전트가 연 page 를 한 번에 닫을 수도 있다.\n"
                     + str(e))
             raise
         if MARKER not in out:
@@ -434,6 +435,15 @@ class EgoBackend(Backend):
             # 사용자 소유로 다루라고 정하고 있으므로 'agent' 인 것만 고른다.
             # 공간째 닫지 않는 것도 같은 이유다. 사용자가 보던 것까지 사라진다.
             #
+            # 기본 공간(`browser-driver/<프로필 id>`)은 같은 프로필의 모든 호출자가 나눠 쓴다.
+            # 거기서 reset 하면 다른 호출자의 탭까지 닫는다(실측 5건). 이름 준 공간만 허락한다.
+            # 이름은 resolve_space 가 검증하므로 공백뿐이거나 줄바꿈이 든 값은 거기서 거절된다.
+            if resolve_space() is None:
+                raise UsageError(
+                    f"기본 공간에서는 reset 하지 않는다. 같은 프로필의 다른 호출자가 연 탭까지 닫기 때문이다. "
+                    f"{SPACE_ENV} 에 이 작업만의 이름을 주고 다시 부른다. "
+                    f"예: {SPACE_ENV}='<저장소> <용도>' browser-driver reset. "
+                    f"기본 공간의 탭은 pages 로 핸들을 보고 close 로 골라 닫는다")
             # 되돌릴 수 없는 명령이라 어디에 대고 도는지 먼저 알린다. 인자를 생략하면
             # 해석 순서가 고른 프로필에서 돌아, 알리지 않으면 엉뚱한 공간을 비우고도
             # 닫은 것이 없다는 출력과 구분되지 않는다.
