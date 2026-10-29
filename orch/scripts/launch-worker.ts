@@ -2,9 +2,11 @@
 //
 // 사용법:
 //     launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)
-//         [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] -- WORKER_ARGS...
+//         [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] -- WORKER_ARGS...
 //
 //     --spec           지시서. spec-line 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 거부한다
+//     --lint-ack       spec-lint 가 막을 발견을 냈지만 의도한 것이라 넘기는 이유. 이유 없이 넘기는 옵션은 없다(빈 값은 사용법 오류).
+//                      이유는 `lint-ack: <이유>` 줄로 출력하고 띄운 worker 의 기록(lib/launched.ts 의 lint_ack)에 남긴다
 //     --repo, --name   새 워크트리를 make-worktree 로 만든다. --base, --resume-remote 는 make-worktree 에 넘긴다
 //     --worktree       기존 워크트리(`path:` 접두를 받는다). 그 경로에 터미널이 남아 있으면 목록을 보이고 거부한다.
 //                      같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓인다. --terminal 로 이어 쓰는 터미널은 세지 않는다
@@ -16,6 +18,12 @@
 // 차례:
 //     0. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     1. spec-line --require-permission 으로 첫 지시 줄을 만든다
+//     1-1. spec-lint 로 이 지시서를 검사한다. 함께 넘기는 활성 지시서는 살아 있는 dispatch(pending, dispatched, running)가 쓰는 지시서
+//        가운데 이 지시서와 같은 폴더에 있는 것이다(lib/spec.ts 의 liveSpecPaths. 이 지시서 자신과 spec-common.md 는 뺀다).
+//        띄울 지시서끼리 겹치는 것은 먼저 띄운 쪽이 활성이 된 뒤 나중 지시서를 띄울 때 잡힌다. 아직 안 띄운 지시서는 보지 않는다.
+//        spec-lint 가 1 로 끝나면(막을 발견) 워크트리를 만들기 전에 발견 줄을 내고 5 로 멈춘다. --lint-ack 이 있으면 이유와 함께 넘긴다.
+//        활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다. spec-lint 가 1 이 아닌 코드로 끝나도(저장소를 읽지 못함 같은 것) 경고만 하고 진행한다
+//        SPEC_LINT 로 spec-lint 를 바꾼다
 //     2. 워크트리를 만들거나 확인한다
 //     3. before-launch 이벤트를 낸다. 결과가 pass 나 none 이 아니면(거부, 실패, 시간 초과, 잠금 실패) 띄우지 않고 1 이다.
 //        거부만 보고 실패를 지나치면 죽은 핸들러가 막으려던 띄우기를 하게 된다(docs/flow.md 「갈래」 의 「거부처럼 멈춘다」)
@@ -46,7 +54,8 @@
 //
 // 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
 //            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured),
-//            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다)
+//            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다),
+//            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
 //
 // 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2 가 기본값이다. 소수도 받는다.
@@ -54,7 +63,7 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
 
 import { statSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -63,7 +72,7 @@ import { expandArgs } from './lib/args.ts'
 import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
-import { realPath } from './lib/fs.ts'
+import { isFile, realPath } from './lib/fs.ts'
 import { checkLaunchSettings } from './lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { recordLaunch } from './lib/launched.ts'
@@ -72,10 +81,11 @@ import { requireMigrated } from './lib/paths.ts'
 import { runAsync, scriptCommand } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
+import { liveSpecPaths } from './lib/spec.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)',
-  '            [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] -- WORKER_ARGS...',
+  '            [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] -- WORKER_ARGS...',
 ].join('\n')
 const HERE = dirname(fileURLToPath(import.meta.url))
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
@@ -208,6 +218,29 @@ function listed(worktree: string): boolean {
   return rows.some((row) => realPath(String((row as { path?: unknown })?.path || '/nonexistent')) === target)
 }
 
+// spec-lint 로 이 지시서를 검사한다. 머리 주석의 「1-1」. 막으면 종료 코드, 통과하거나 넘기면 null 이다.
+// acked 는 --lint-ack 으로 넘긴 발견의 이유다. 넘길 발견이 없으면 null 이라 기록에 남지 않는다.
+async function lintGate(a: Args): Promise<{ stop: number | null; acked: string | null }> {
+  const specPath = resolve(a.spec)
+  const repo = a.repo || mainCheckout(realPath(a.worktree.replace(/^path:/, '')))
+  const live = liveSpecPaths(a.run || null)
+  if (live === null) err('경고: 활성 지시서를 읽지 못해 이 지시서 하나만 검사한다(다른 지시서와의 겹침은 보지 못한다)')
+  const specsDir = realPath(dirname(specPath))
+  const others = [...(live ?? [])].filter((file) => file !== realPath(specPath) && dirname(file) === specsDir && basename(file) !== 'spec-common.md' && isFile(file))
+  const done = await runAsync(scriptCommand(process.env.SPEC_LINT || `${HERE}/spec-lint.ts`, ['--repo', repo, specPath, ...others]))
+  if (done.code !== 1) {
+    if (done.code !== 0) err(`경고: spec-lint 가 종료 코드 ${done.code} 로 끝나 검사하지 못했다: ${done.stderr.trim().split('\n').pop() ?? ''}`)
+    return { stop: null, acked: null }
+  }
+  err(done.stdout.trimEnd())
+  if (a.lintAck === null) {
+    err(`거부: spec-lint 가 막을 발견을 냈다. 지시서를 고치거나, 의도한 겹침이면 --lint-ack "<이유>" 로 이유를 적어 넘긴다${others.length > 0 ? `\n함께 본 활성 지시서: ${others.join(', ')}` : ''}`)
+    return { stop: 5, acked: null }
+  }
+  out(`lint-ack: ${a.lintAck}`)
+  return { stop: null, acked: a.lintAck }
+}
+
 function isDir(target: string): boolean {
   try {
     return statSync(target).isDirectory()
@@ -224,6 +257,7 @@ type Args = {
   worktree: string
   run: string
   watch: number
+  lintAck: string | null
   resumeRemote: boolean
   passthru: string[]
 }
@@ -239,12 +273,13 @@ function parse(argv: string[]): Args | 'help' {
     worktree: { type: 'string', default: '' },
     run: { type: 'string', default: '' },
     watch: { type: 'string', default: '90' },
+    'lint-ack': { type: 'string' },
     'resume-remote': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h' },
   } as const
   let values
   try {
-    values = parseArgs({ args: expandArgs(argv.slice(0, split), options), options }).values
+    values = parseArgs({ args: expandArgs(argv.slice(0, split), options, ['lint-ack']), options }).values
   } catch (e) {
     throw new Stop(`${USAGE}\nlaunch-worker: ${(e as Error).message}`, 2)
   }
@@ -253,6 +288,8 @@ function parse(argv: string[]): Args | 'help' {
   if (!values.spec) throw usage('--spec 이 필요하다')
   const watch = values.watch as string
   if (!/^\d+$/.test(watch)) throw usage('--watch 는 초 단위 정수다')
+  const lintAck = values['lint-ack'] === undefined ? null : (values['lint-ack'] as string).trim()
+  if (lintAck === '') throw usage('--lint-ack 에는 넘기는 이유를 적는다')
   const resumeRemote = values['resume-remote'] as boolean
   if (values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
   if (!values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
@@ -264,6 +301,7 @@ function parse(argv: string[]): Args | 'help' {
     worktree: values.worktree as string,
     run: values.run as string,
     watch: Number(watch),
+    lintAck,
     resumeRemote,
     passthru,
   }
@@ -298,6 +336,9 @@ async function main(argv: string[]): Promise<number> {
     err('거부: 첫 지시 줄을 만들지 못했다(지시서에 `허락:` 줄을 적는다)')
     return 1
   }
+
+  const gate = await lintGate(a)
+  if (gate.stop !== null) return gate.stop
 
   const created = !a.worktree
   let worktree: string
@@ -444,7 +485,7 @@ async function main(argv: string[]): Promise<number> {
     // worker-show 결과의 터미널 키는 send-to-worker 가 읽는 키와 같다.
     const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || passValue(passthru, '--terminal')
     try {
-      recordLaunch(repo, { dispatch, task: task || null, terminal: terminal || null, worktree, run: a.run || null, spec: resolve(a.spec) })
+      recordLaunch(repo, { dispatch, task: task || null, terminal: terminal || null, worktree, run: a.run || null, spec: resolve(a.spec), ...(gate.acked ? { lint_ack: gate.acked } : {}) })
     } catch (e) {
       err(`launch-worker: 띄운 worker 를 기록하지 못했다. cleanup-sweep 이 이 터미널을 코디네이터의 것으로 알아보지 못한다: ${(e as Error).message}`)
     }
