@@ -24,7 +24,8 @@ const profiles = async () => [{id: 'Default', name: 'Personal', isDefault: true}
 const listTaskSpaces = async () => fixture;
 const fakePage = {
   label: 'p1', goto: async () => {}, waitForLoadState: async () => {},
-  close: async () => {}, url: async () => 'https://example.com'
+  close: async () => { throw new Error('reset 은 page 를 하나씩 닫지 않고 finish 로 닫는다'); },
+  url: async () => 'https://example.com'
 };
 const taskSpace = async (key, options) => {
   if (typeof key === 'string' && (!options || options.profileId !== 'Default')) {
@@ -33,7 +34,19 @@ const taskSpace = async (key, options) => {
   const spaceId = typeof key === 'number' ? key : 99;
   return {
     spaceId, page: () => fakePage, newPage: async () => fakePage,
-    tabs: async () => [{label: 'p1', openedBy: 'agent', url: 'about:blank'}]
+    tabs: async () => tabsFixture,
+    // 실제 ego 와 같은 규칙이다 (실측). 관리 중인 page 는 keep 에 없으면 닫고,
+    // 사용자 탭(label 이 없는 것)이 남아 있거나 keep 이 있으면 공간을 닫지 않는다.
+    finish: async (options) => {
+      const labels = tabsFixture.filter((t) => t.label).map((t) => t.label);
+      const kept = labels.filter((l) => options.keep.includes(l));
+      const unmanaged = tabsFixture.filter((t) => !t.label).length;
+      return {
+        spaceId, closedSpace: kept.length === 0 && unmanaged === 0,
+        keptManagedLabels: kept, closedManagedLabels: labels.filter((l) => !kept.includes(l)),
+        preservedUnmanagedCount: unmanaged,
+      };
+    }
   };
 };
 """
@@ -49,14 +62,20 @@ class EgoSpaceTest(unittest.TestCase):
         self.addCleanup(config.stop)
         self.backend = EgoBackend()
 
-    def execute(self, cmd, args=(), spaces=()):
+    def execute(self, cmd, args=(), spaces=(), tabs=None):
         if NODE is None:
             self.skipTest("가짜 ego API 시험에는 Node.js 가 필요하다")
 
         def fake_run(argv, stdin_text, check_exit):
             self.assertEqual(argv, ["ego-browser", "nodejs"])
             self.assertTrue(check_exit)
-            script = "const fixture = " + json.dumps(spaces) + ";\n" + FAKE_API + stdin_text
+            if tabs is None:
+                tab_list = [{"label": "p1", "openedBy": "agent", "url": "about:blank"}]
+            else:
+                tab_list = tabs
+            script = ("const fixture = " + json.dumps(spaces) + ";\n"
+                      "const tabsFixture = " + json.dumps(tab_list) + ";\n"
+                      + FAKE_API + stdin_text)
             result = subprocess.run(
                 [NODE, "--input-type=module"], input=script,
                 capture_output=True, text=True, timeout=10,
@@ -168,6 +187,70 @@ class EgoSpaceTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 output, _ = self.execute(cmd, ["Personal"], spaces)
                 self.assertTrue(output.startswith("3:p1\t"), output)
+
+    def test_reset_closes_space_and_reports_closed_tabs(self):
+        os.environ["BROWSER_EGO_SPACE"] = "작업"
+        output, note = self.execute("reset", spaces=[self.space("작업", space_id=3)])
+        self.assertEqual(output, "3:p1\tabout:blank")
+        self.assertIn("공간 3 를 닫았다", note)
+
+    def test_reset_keeps_space_when_user_tab_remains(self):
+        os.environ["BROWSER_EGO_SPACE"] = "작업"
+        tabs = [{"label": "p1", "openedBy": "agent", "url": "https://a"},
+                {"openedBy": "user", "url": "https://user"}]
+        output, note = self.execute("reset", spaces=[self.space("작업", space_id=3)], tabs=tabs)
+        self.assertEqual(output, "3:p1\thttps://a")
+        self.assertIn("공간 3 는 닫지 않았다: 사용자 탭 1개", note)
+        self.assertNotIn("공간 3 를 닫았다", note)
+
+    def test_reset_keeps_labeled_page_with_unknown_owner(self):
+        os.environ["BROWSER_EGO_SPACE"] = "작업"
+        tabs = [{"label": "p1", "openedBy": "agent", "url": "https://a"},
+                {"label": "p2", "openedBy": "unknown", "url": "https://u"}]
+        output, note = self.execute("reset", spaces=[self.space("작업", space_id=3)], tabs=tabs)
+        self.assertEqual(output, "3:p1\thttps://a")
+        self.assertIn("소유를 판정하지 못한 page p2", note)
+
+    def test_reset_by_id_ignores_space_name_variable(self):
+        spaces = [self.space("남은 작업", space_id=9)]
+        for value in (None, "", "다른 이름"):
+            with self.subTest(value=value):
+                if value is not None:
+                    os.environ["BROWSER_EGO_SPACE"] = value
+                output, note = self.execute("reset", ["", "9"], spaces)
+                self.assertEqual(output, "9:p1\tabout:blank")
+                self.assertIn("공간 9 를 닫았다", note)
+
+    def test_reset_by_id_refuses_user_default_and_missing_spaces(self):
+        spaces = [self.space("남은 작업", "user", space_id=5),
+                  self.space("browser-driver/Default", space_id=6)]
+        for space_id, expect in (("5", "에이전트가 가진 공간이 아니다"),
+                                 ("6", "기본 공간이라 닫지 않는다"),
+                                 ("77", "공간 77 가 없다")):
+            with self.subTest(space_id=space_id):
+                with self.assertRaises(UsageError) as caught:
+                    self.execute("reset", ["", space_id], spaces)
+                self.assertIn(expect, str(caught.exception))
+
+    def test_spaces_lists_only_agent_spaces_with_tab_count(self):
+        spaces = [self.space("fos 확인", space_id=3), self.space("fos 다른", "user", space_id=4),
+                  self.space("다른 저장소", space_id=5)]
+        tabs = [{"label": "p1", "openedBy": "agent", "url": "a"},
+                {"label": "p2", "openedBy": "agent", "url": "b"}]
+        output, _ = self.execute("spaces", spaces=spaces, tabs=tabs)
+        self.assertEqual(output.splitlines(), ["3\tfos 확인\t2", "5\t다른 저장소\t2"])
+        output, _ = self.execute("spaces", ["fos"], spaces, tabs)
+        self.assertEqual(output, "3\tfos 확인\t2")
+
+    def test_spaces_prints_nothing_without_agent_spaces(self):
+        output, _ = self.execute("spaces", spaces=[self.space("작업", "user")])
+        self.assertIsNone(output)
+
+    def test_spaces_does_not_need_space_variable(self):
+        os.environ["BROWSER_EGO_SPACE"] = "\n"
+        output, _ = self.execute("spaces", spaces=[self.space("작업", space_id=3)])
+        self.assertTrue(output.startswith("3\t작업\t"), output)
+
 
     def test_pages_and_reset_do_not_create_or_use_unrelated_spaces(self):
         os.environ["BROWSER_EGO_SPACE"] = "작업"

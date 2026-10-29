@@ -50,3 +50,21 @@ def parse_pointer_args(cmd, args, points, allow_button):
     if button not in BUTTONS:
         raise UsageError(f"--button 은 {', '.join(BUTTONS)} 중 하나여야 한다: {button}")
     return [rest[0], *coords, button]
+
+
+def parse_reset_args(args):
+    """`reset [profile] [--space-id <id>]` → `[profile 또는 "", space_id 또는 None]`.
+
+    공간 id 는 이름과 프로필을 거치지 않고 공간 하나를 고른다. 프로필과 함께 줄 수 없다.
+    """
+    rest, raw = split_option(args, "--space-id")
+    if len(rest) > 1:
+        raise UsageError("인자가 남는다. reset [profile] [--space-id <id>]")
+    space_id = None
+    if raw is not None:
+        if not raw.isdigit():
+            raise UsageError(f"--space-id 는 spaces 가 낸 숫자 id 여야 한다: {raw}")
+        if rest:
+            raise UsageError("--space-id 와 프로필은 함께 줄 수 없다. id 가 공간을 정한다")
+        space_id = raw
+    return [rest[0] if rest else "", space_id]
