@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/make-worktree.ts', import.meta.url))
 const DENY_SCRIPT = fileURLToPath(new URL('../scripts/worktree-deny.ts', import.meta.url))
-const DENY = ['Bash(pkill:*)', 'Bash(killall:*)', 'Bash(browser-driver reset:*)', 'Bash(gh pr merge:*)']
+const DENY = ['Bash(pkill:*)', 'Bash(killall:*)', 'Bash(gh pr merge:*)']
 
 let tmp: string
 let origin: string
@@ -198,6 +198,28 @@ describe('deny 규칙', () => {
     assert.equal(got.model, 'opus')
     assert.deepEqual(got.permissions.allow, ['Bash(ls:*)'])
     assert.deepEqual(got.permissions.deny, DENY)
+  })
+
+  test('새 워크트리에 browser-driver reset 의 deny 규칙을 두지 않는다', () => {
+    make()
+    assert.ok(!settings().permissions.deny.includes('Bash(browser-driver reset:*)'))
+  })
+
+  test('이미 있는 browser-driver reset deny 줄만 지우고 나머지는 그대로 둔다', () => {
+    make()
+    const file = join(wt(), '.claude/settings.local.json')
+    const stale = { model: 'opus', permissions: { allow: ['Bash(ls:*)'], deny: ['Bash(pkill:*)', 'Bash(browser-driver reset:*)', 'Bash(rm:*)'] } }
+    writeFileSync(file, JSON.stringify(stale))
+    const done = node(DENY_SCRIPT, [wt()])
+    assert.equal(done.status, 0, done.stderr)
+    const got = settings()
+    assert.equal(got.model, 'opus')
+    assert.deepEqual(got.permissions.allow, ['Bash(ls:*)'])
+    assert.deepEqual(got.permissions.deny, ['Bash(pkill:*)', 'Bash(rm:*)', 'Bash(killall:*)', 'Bash(gh pr merge:*)'])
+    // 두 번째는 바꾸지 않는다
+    const before = readFileSync(file, 'utf8')
+    assert.equal(node(DENY_SCRIPT, [wt()]).status, 0)
+    assert.equal(readFileSync(file, 'utf8'), before)
   })
 
   test('git 이 추적하는 설정 파일은 고치지 않는다', () => {
