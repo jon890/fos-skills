@@ -101,7 +101,8 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-lint.ts" --repo "$REPO" --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 ```
 
-종료 코드 1 이면 발견 줄을 보고 지시서를 고친다. `경로` 경고는 새로 만들 파일이면 그대로 둔다.
+`launch-worker` 도 띄우기 전에 같은 검사를 한 번 더 한다. 이 지시서와, 같은 폴더에서 살아 있는 dispatch 의 지시서를 함께 넘겨 겹침을 보고, 막을 발견이 있으면 워크트리를 만들기 전에 종료 코드 5 로 멈춘다. 두 명령을 한 줄에 이어 써서 앞 검사의 실패를 지나쳐도 worker 는 뜨지 않는다. 아직 띄우지 않은 지시서끼리의 겹침은 이 단계의 한 번에 검사하는 호출이 잡는다.
+종료 코드 1 이면 발견 줄을 보고 지시서를 고친다. 의도한 겹침이면 `launch-worker --lint-ack "<이유>"` 로 넘기고, 이유는 worker 기록에 남는다. `경로` 경고는 새로 만들 파일이면 그대로 둔다.
 **`공통` 경고가 나오면 저장소 공통 지시서가 틀보다 낡았다.** 틀의 `<!-- orch-rule: ... -->` 표지가 붙은 줄(준비됨 status, MERGED 확인 뒤 `worker_done`)을 공통 지시서로 옮긴 뒤 띄운다. 옛 공통 지시서로 띄운 worker 는 PR 을 열자마자 `worker_done` 을 보낸다. 저장소가 그 규칙을 일부러 바꿨으면 표지만 남긴다.
 `오버레이` 발견은 오버레이나 `.orch/config.json` 이 `origin/<기준 브랜치>` 에 없는 파일을 가리킨다는 뜻이라 그 파일을 고친다. 기준 브랜치가 main 이 아니면 `--base` 로 준다.
 담당 범위는 지시서에 `` 담당: `src/a/**`, `docs/a.md` `` 줄로 적는다. 그 줄이 없으면 겹침 검사가 그 지시서를 건너뛴다.
