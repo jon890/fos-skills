@@ -83,7 +83,8 @@ COMMANDS = [
     Command("reset", ["[profile]"],
             "그 공간에서 에이전트가 연 탭을 전부 닫는다",
             returns="닫은 탭을 `<핸들><TAB><주소>` 한 줄씩. 닫지 못한 탭은 이유를 한 칸 더 붙인다",
-            note="사용자가 직접 연 탭과 ego 가 소유를 판정하지 못한 탭은 남는다.\n"
+            note="BROWSER_EGO_SPACE 로 이름 준 공간에서만 돈다. 기본 공간이면 아무것도 닫지 않고 종료 코드 2 로 거절한다.\n"
+                 "사용자가 직접 연 탭과 ego 가 소유를 판정하지 못한 탭은 남는다.\n"
                  "에이전트가 열어 사람이 이어서 쓰고 있는 탭은 닫힌다. openedBy 로는 둘을 구분하지 못한다.\n"
                  "무엇이 닫힐지는 pages 의 openedBy 열로 먼저 본다"),
 ]
@@ -141,7 +142,7 @@ def render_help(backend_name=None, unsupported=frozenset()):
     lines += [
         "",
         "종료 코드는 0 성공, 1 조작 실패, 2 잘못된 호출이나 환경 문제.",
-        "ego 의 BROWSER_EGO_SPACE 는 open, pages, reset 이 쓸 공간의 기준 이름을 정한다.",
+        "ego 의 BROWSER_EGO_SPACE 는 open, pages, reset 이 쓸 공간의 기준 이름을 정한다. reset 은 이 이름이 있어야 돈다.",
         "공간을 나눠도 로그인 세션의 경계는 기존 프로필이다.",
         "백엔드별 상세는 README.md, 환경 진단은 doctor 를 본다.",
     ]

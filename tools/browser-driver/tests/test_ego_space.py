@@ -122,15 +122,39 @@ class EgoSpaceTest(unittest.TestCase):
         handle, _ = self.execute("open", ["https://example.com"], spaces)
         self.assertEqual(handle, "7:p1")
 
-    def test_default_pages_and_reset_keep_current_name(self):
+    def test_default_pages_keeps_current_name(self):
         spaces = [self.space("browser-driver/Default", space_id=5), self.space("작업")]
         for value in (None, ""):
             if value is not None:
                 os.environ["BROWSER_EGO_SPACE"] = value
-            for cmd in ("pages", "reset"):
-                with self.subTest(value=value, cmd=cmd):
-                    output, _ = self.execute(cmd, spaces=spaces)
-                    self.assertTrue(output.startswith("5:p1\t"), output)
+            with self.subTest(value=value):
+                output, _ = self.execute("pages", spaces=spaces)
+                self.assertTrue(output.startswith("5:p1\t"), output)
+
+    def test_default_space_reset_is_refused_without_calling_ego(self):
+        for value in (None, ""):
+            if value is not None:
+                os.environ["BROWSER_EGO_SPACE"] = value
+            with self.subTest(value=value):
+                with patch.object(self.backend, "_run") as run:
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        with self.assertRaises(UsageError) as caught:
+                            self.backend.dispatch("reset", [])
+                run.assert_not_called()
+                self.assertIn("BROWSER_EGO_SPACE", str(caught.exception))
+
+    def test_default_space_reset_exits_with_usage_code(self):
+        env = Env(installed=("ego-browser",), driver_env="ego")
+        self.addCleanup(env.close)
+        for value in (None, ""):
+            if value is None:
+                env.env.pop("BROWSER_EGO_SPACE", None)
+            else:
+                env.env["BROWSER_EGO_SPACE"] = value
+            with self.subTest(value=value):
+                result = env.run("reset")
+                self.assertEqual(result.returncode, EXIT_USAGE, result.stderr)
+                self.assertIn("BROWSER_EGO_SPACE", result.stderr)
 
     def test_pages_and_reset_target_only_selected_name_and_profile(self):
         spaces = [

@@ -2,8 +2,10 @@
 //
 // 한 머신에서 worker 여럿이 같은 이름의 프로세스와 같은 브라우저를 쓴다.
 // 하위 에이전트가 `pkill -f 'node server/local-host.cjs'` 로 자기 호스트를 끄다 다른 worker 의 호스트까지 껐고,
-// `browser-driver reset` 이 다른 worker 의 탭을 닫았다(실측 5건). 지시서 문장으로는 하위 에이전트까지 닿지 않아
-// 권한 규칙으로 막는다. 자기가 띄운 프로세스는 PID 로 `kill` 한다.
+// 지시서 문장으로는 하위 에이전트까지 닿지 않아 권한 규칙으로 막는다. 자기가 띄운 프로세스는 PID 로 `kill` 한다.
+// `browser-driver reset` 은 여기서 막지 않는다. 권한 규칙은 `BROWSER_EGO_SPACE=<이름>` 접두로 이름 준 공간과
+// 기본 공간을 가르지 못해, 이름 준 공간의 reset 까지 거부당했다(2026-10-29). 다른 worker 의 탭을 닫은 것(실측 5건)은
+// 기본 공간 reset 이었고, 그건 browser-driver 가 거절한다.
 // `gh pr merge` 도 막는다. 머지는 코디네이터가 하는데, 지시서에 「머지하지 않는다」 를 적어도 worker 가 PR 다섯 개를
 // 직접 머지했다(실측). 코디네이터는 기본 체크아웃에서 머지 큐로 머지하므로 이 규칙에 닿지 않는다.
 //
@@ -11,6 +13,7 @@
 //     worktree-deny.ts <워크트리>
 //
 //     기존 설정의 다른 키와 규칙은 그대로 두고, 없는 deny 규칙만 더한다. 몇 번을 돌려도 같다.
+//     예전에 더했다가 이제 막지 않는 규칙(STALE)이 이미 있으면 그 줄만 지운다.
 //     그 파일을 git 이 추적하면 쓰지 않고 종료 코드 1 을 낸다. 고치면 워크트리가 dirty 해져 정리가 거부된다.
 //     새로 만든 설정 파일은 git 이 무시하게 공통 git 폴더의 info/exclude 에 한 줄을 더한다.
 //     untracked 로 남으면 remove-worktree 가 커밋 안 된 변경으로 거부하기 때문이다.
@@ -26,7 +29,9 @@ import { isFile } from './lib/fs.ts'
 import { git } from './lib/git.ts'
 
 const USAGE = '사용법: worktree-deny.ts <워크트리>'
-const DENY = ['Bash(pkill:*)', 'Bash(killall:*)', 'Bash(browser-driver reset:*)', 'Bash(gh pr merge:*)']
+const DENY = ['Bash(pkill:*)', 'Bash(killall:*)', 'Bash(gh pr merge:*)']
+// 이미 만들어진 워크트리 설정에 남은 낡은 규칙. 이름 준 공간의 reset 까지 막는다
+const STALE = ['Bash(browser-driver reset:*)']
 const REL = '.claude/settings.local.json'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -74,8 +79,9 @@ function main(raw: string[]): number {
     return 2
   }
   const added = DENY.filter((rule) => !deny.includes(rule))
-  if (added.length > 0) {
-    deny.push(...added)
+  const stale = deny.filter((rule) => STALE.includes(rule as string))
+  if (added.length > 0 || stale.length > 0) {
+    permissions.deny = [...deny.filter((rule) => !STALE.includes(rule as string)), ...added]
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   }

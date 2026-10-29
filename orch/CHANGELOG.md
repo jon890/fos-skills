@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.18.0 (2026-10-29)
+
+- 호환성: worker 워크트리에 `Bash(browser-driver reset:*)` deny 를 더하지 않는다. 이름 준 공간(`BROWSER_EGO_SPACE=<이름>`)의 reset 까지 거부당했다. 기본 공간 reset 은 browser-driver 가 거절한다
+- `worktree-deny` 가 이미 만들어진 워크트리 설정에 남은 그 deny 줄을 지운다. 다른 키와 규칙은 그대로 둔다
+- 지시서 틀의 브라우저 규칙에 「끝나면 같은 이름으로 reset 한다」 를 더했다
+
 ## 4.17.0 (2026-10-28)
 
 - `launch-worker` 가 워크트리를 만들기 전에 `--agent codex` 의 `--model`, `--effort` 를 `codex debug models` 로 검사한다. 없는 모델이나 지원하지 않는 effort 면 쓸 수 있는 값을 내고 종료 코드 4 로 멈춘다
