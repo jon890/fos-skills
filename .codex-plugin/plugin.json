@@ -1,6 +1,6 @@
 {
   "name": "fos-skills",
-  "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리, 맥 정리, worker 조율 스킬. Claude Code 전용 hook 과 작업 현황 창은 싣지 않는다",
+  "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리, 맥 정리, 발표 자료, worker 조율 스킬. Claude Code 전용 hook 과 작업 현황 창은 싣지 않는다",
   "author": {
     "name": "jon890"
   },
@@ -14,6 +14,7 @@
     "./orch",
     "./planning",
     "./pr-review",
+    "./presentation",
     "./review-fix"
   ]
 }
