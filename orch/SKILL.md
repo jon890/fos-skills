@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "4.19.0"
+  version: "4.20.0"
 ---
 
 # orch
@@ -71,7 +71,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 고른 이유가 dispatch 보고에 한 줄로 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
+| 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 비교한 후보, 고른 이유가 지시서의 `worker 선택:` 줄에 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다(`launch-worker` 도 띄우기 전에 한 번 더 돌려 막는다) | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
 | 3 | 띄우기 | `launch-worker` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
 | 4 | 기다리기 | 저장소마다 `orch-loop.ts --start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `wait-important` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다. 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 받은 delivery 를 `triage-messages` 로 읽었다 | [`references/waiting.md`](references/waiting.md) |
@@ -83,7 +83,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 
 ## 1. 에이전트 고르기
 
-Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
+Task 성격으로 모델과 effort 를 고르고, 비교한 후보와 이유를 지시서의 `worker 선택:` 줄에 남긴다. `spec-lint` 와 `launch-worker` 가 이 줄을 검사한다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
 
 ## 2. 지시서 쓰기
 
@@ -92,7 +92,7 @@ Task 성격으로 모델과 effort 를 고르고 이유를 한 줄로 남긴다.
 
 ## 3. 띄우기
 
-원격을 갱신한 뒤 `launch-worker` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
+원격을 갱신한 뒤 `launch-worker` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, `worker 선택:` 줄과 `--agent`, `--model` 이 다르면 거부하고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
 새로 띄우기는 `launch-worker`, 후속 지시는 `send-to-worker` 로 한다. `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다. `launch-worker` 는 `--spec` 이 필수라 늘 Task 를 새로 만들기 때문이다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.

@@ -54,6 +54,12 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
   허락한 것이 없으면 「허락: 없음. push 까지만 한다.」 를 적는다.
   codex worker 의 기본 지침은 GitHub 게시를 막아, 지시서에 「PR 을 연다」 만 있으면 승인을 다시 묻는다.
   `spec-line` 이 이 줄을 `--spec` 의 첫 지시 줄에 붙인다
+- 고른 worker 를 `worker 선택:` 으로 시작하는 줄 하나에 적는다. 모든 개별 지시서에 필수다.
+  형식은 「worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 비교: <다른 후보>. 이유: <고른 이유>.」 다.
+  예: 「worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: 계획서가 수정 위치를 정했고 CI 리뷰가 Claude 라 제공자를 나눈다.」
+  후보와 고르는 규칙은 [`agent-selection.md`](agent-selection.md) 가 소유한다. 비교 없이 익숙한 제공자로 기우는 것을 막으려고 줄을 강제한다.
+  `spec-lint` 는 줄이 없거나 요소가 빠지면 `선택` 발견으로 막고, `launch-worker` 는 그 지시서를 거부하며 `--agent`, `--model` 이 줄의 값과 다를 때도 거부한다. `--lint-ack` 으로 넘기지 못한다.
+  `--terminal` 로 이어 쓰는 띄우기는 처음 띄울 때의 선택을 쓰므로 대조하지 않는다
 - PR 을 열게 하면 「`gh pr create` 나 리뷰 회신이 거부되면 push 한 뒤 본문 파일 경로(회신이면 스레드 id 와 회신 파일)를 status 로 보낸다. 묻지 않고 다음 일을 계속한다」 도 적는다.
   지시서의 승인은 worker 세션의 권한 분류기에 전달되지 않아, 같은 요청이 세션마다 허용되기도 하고 거부되기도 한다.
   받은 뒤의 처리는 [`replying.md`](replying.md) 의 「PR 생성과 리뷰 회신을 대신 한다」 가 정한다

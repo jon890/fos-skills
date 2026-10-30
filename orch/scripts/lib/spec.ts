@@ -1,4 +1,4 @@
-// 지시서 읽기와 지우기의 한 벌이다. 브랜치 줄과 허락 줄, 살아 있는 dispatch 가 쓰는 지시서 목록, 지시서 삭제 경로를 둔다.
+// 지시서 읽기와 지우기의 한 벌이다. 브랜치 줄과 허락 줄, worker 선택 줄, 살아 있는 dispatch 가 쓰는 지시서 목록, 지시서 삭제 경로를 둔다.
 //
 // 지시서 삭제는 deleteSpecs 한 경로다. 어떤 파일을 지울지 고르는 일과 지우는 일을 나눈다.
 //   - 본문의 브랜치 줄로 고르면 branchesOf, 이름 규칙으로 고르면 specCandidates 를 쓴다
@@ -19,6 +19,38 @@ export const BRANCH_LINE: RegExp = /^\s*(?:[-*]\s+)?(?:\*\*)?브랜치(?:\*\*)?:
 
 // 줄 머리의 `허락: ...`. 목록 기호와 굵은 글씨는 벗긴다. `- **허락:** ...` 도 같은 줄로 본다.
 const PERMISSION = /^\s*(?:[-*]\s+)?(?:\*\*)?허락\s*:\s*(?:\*\*)?\s*(.+?)\s*$/
+
+// 줄 머리의 `worker 선택: ...`. 목록 기호와 굵은 글씨는 허락 줄과 같이 받는다.
+const SELECTION = /^\s*(?:[-*]\s+)?(?:\*\*)?worker 선택\s*:\s*(?:\*\*)?\s*(.+?)\s*$/
+const TICK = /`([^`]+)`/g
+
+// worker 선택 줄의 값. 줄 판정과 형식은 selectionsOf 가 소유한다
+export type Selection = { no: number; agent: string | null; model: string | null; effort: string | null; problems: string[] }
+
+// 형식 예: worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: ...
+// `effort` 뒤의 백틱 값이 effort 이고, 그 밖의 백틱 값 가운데 첫째가 에이전트, 둘째가 모델이다.
+// problems 에는 빠진 요소를 적는다. `비교:` 와 `이유:` 는 낱말이 있는지만 본다. 코디네이터가 비교 없이 고른 일을 막으려는 것이다.
+export const SELECTION_FORMAT = 'worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 비교: <다른 후보>. 이유: <고른 이유>.'
+
+export function selectionsOf(text: string): Selection[] {
+  const found: Selection[] = []
+  lines(text).forEach((line, index) => {
+    const m = SELECTION.exec(line)
+    if (!m) return
+    const body = m[1]
+    const effortAt = /effort\s*`([^`]+)`/.exec(body)
+    const rest = effortAt ? body.slice(0, effortAt.index) + body.slice(effortAt.index + effortAt[0].length) : body
+    const values = [...rest.matchAll(TICK)].map((t) => t[1].trim())
+    const problems: string[] = []
+    if (values.length < 1) problems.push('에이전트')
+    if (values.length < 2) problems.push('모델')
+    if (!effortAt) problems.push('effort')
+    if (!/비교\s*:/.test(body)) problems.push('비교')
+    if (!/이유\s*:/.test(body)) problems.push('이유')
+    found.push({ no: index + 1, agent: values[0] ?? null, model: values[1] ?? null, effort: effortAt?.[1].trim() ?? null, problems })
+  })
+  return found
+}
 
 // spec 줄에서 / 로 시작하고 .md 로 끝나는 경로. 뒤에 글자나 점이 이어지면 경로의 끝이 아니다.
 // u 플래그로 글자를 유니코드로 본다. 옮기기 전 Python 의 \w 가 한글도 글자로 보았다.
