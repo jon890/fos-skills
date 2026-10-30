@@ -19,7 +19,9 @@
 //                   그 목록을 읽지 못하면 이번 실행에서는 지시서와 PR 본문을 하나도 지우지 않는다.
 //                   같은 폴더의 부모(`<specs-dir>/..`)에 있는 그 PR 의 옛 위치 본문 파일 `pr-<이름>.md` 도 지운다(지금 PR 본문은 worker 세션 임시 폴더에 둔다).
 //                   이름은 worktree 이름, 브랜치의 `/` 를 `-` 로 바꾼 것, 브랜치의 첫 `/` 뒤, PR 번호다.
-//                   고르기와 지우기는 lib/spec.ts 의 specCandidates 와 deleteSpecs 다
+//                   `브랜치:` 줄이 머지된 브랜치를 가리키는 지시서도 이름과 관계없이 지운다(lib/spec.ts 의 specsOnBranch).
+//                   앞 워크트리를 이어 쓴 후속 지시서처럼 이름이 워크트리와 다른 지시서가 남지 않게 한다
+//                   고르기와 지우기는 lib/spec.ts 의 specCandidates, specsOnBranch 와 deleteSpecs 다
 //                   워크트리를 지우면 launch-worker 가 그 워크트리에 준 지시서(lib/launched.ts 의 기록. 이어받기, 충돌 해소, 후속 지시서처럼
 //                   이름이 다른 것도 든다)를 --trash 로 옮기고 그 기록을 지운다. 살아 있는 dispatch 가 가리키는 지시서는 남긴다
 //     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
@@ -301,7 +303,7 @@ import type { WorkerRow } from './lib/ownership.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from './lib/queue-logs.ts'
 import { run as runProcess, scriptCommand } from './lib/proc.ts'
-import { deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates } from './lib/spec.ts'
+import { deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from './lib/spec.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
 import type { Verdict } from './lib/worker-state.ts'
 
@@ -850,7 +852,8 @@ function deleteRemote(repo: string, plan: RemotePlan, base: string, apply: boole
 function deleteSpecFiles(specsDir: string | null, name: string, apply: boolean, log: Log, live: Set<string> | null, branch: string, pr: Pr | null): void {
   if (!specsDir) return
   const prNumber = pr && truthy(pr.number) ? pr.number : undefined
-  const { specs, prBodies } = specCandidates({ specsDir, name, branch, prNumber })
+  const { specs: named, prBodies } = specCandidates({ specsDir, name, branch, prNumber })
+  const specs = [...new Set([...named, ...specsOnBranch(specsDir, branch)])]
   deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies, live, mode: 'delete', apply, log: (line) => log(`  ${line}`) })
 }
 

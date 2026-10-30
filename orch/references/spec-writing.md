@@ -6,7 +6,7 @@
 
 지시서 폴더의 기본은 `<repo>/.orch/specs/` 다(`orch_paths.ts specs`). 오버레이가 다른 폴더를 정하면 그것을 따른다.
 
-- 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.ts --specs-dir` 가 이 이름을 보고 머지 뒤 지시서를 지운다.
+- 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.ts --specs-dir` 가 이 이름과, 지시서의 `브랜치:` 줄이 가리키는 머지된 브랜치를 보고 머지 뒤 지시서를 지운다. 후속 지시서처럼 이름이 워크트리와 달라도 `브랜치:` 줄이 있으면 지워진다. 그 줄이 없는 지시서는 이름이 워크트리 이름과 같아야 지워진다.
 - 폴더는 `"$SKILL_DIR/bin/orch.ts" orch_paths --repo "$REPO" --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
 - scratchpad 에 쓰지 않는다. **실측으로** 코디네이터 세션이 다시 시작되면서 scratchpad 가 정리돼 전날 쓴 지시서가 사라졌다. worker 는 받은 경로를 계속 읽으므로, 도중에 사라지면 읽을 곳을 잃는다.
 

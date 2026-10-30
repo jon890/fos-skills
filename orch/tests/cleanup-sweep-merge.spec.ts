@@ -26,6 +26,20 @@ describe('머지 판정과 기본 정리', () => {
     has(calls(), 'orca orchestration worker-release --dispatch ctx_a')
   })
 
+  test('이름이 워크트리와 달라도 브랜치 줄이 머지된 브랜치를 가리키는 지시서를 지운다', () => {
+    const path = worktree('feat-a')
+    squashMerge('feat-a', path)
+    const specs = join(fx.repo, '.orch/specs')
+    mkdirSync(specs, { recursive: true })
+    writeFileSync(join(specs, 'spec-328-pr3-resync.md'), '# 후속\n\n브랜치: `feat-a`\n')
+    writeFileSync(join(specs, 'spec-next.md'), '# 다음 PR\n\n- 브랜치: `feat-b`\n')
+    writeFileSync(join(specs, 'spec-common.md'), '지시서의 `브랜치:` 이름으로 만든다. `feat-a`\n')
+    runSweep(['--run', 'run_x', '--specs-dir', '.orch/specs', '--apply'])
+    assert.ok(!existsSync(join(specs, 'spec-328-pr3-resync.md')))
+    assert.ok(existsSync(join(specs, 'spec-next.md')))
+    assert.ok(existsSync(join(specs, 'spec-common.md')))
+  })
+
   test('dry-run 은 아무것도 바꾸지 않는다', () => {
     const path = worktree('feat-a')
     squashMerge('feat-a', path)

@@ -6,7 +6,7 @@
 //     live 가 null(목록을 읽지 못했다)이면 지시서와 PR 본문 모두 지우지 않는다. 남은 파일은 다음 정리가 지운다
 // 브랜치가 모두 머지됐다는 이유로 아직 일하는 worker 의 지시서를 지운 일이 있어, 부르는 쪽이 이 확인을 건너뛸 수 없게 했다.
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, renameSync, unlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { inside, isFile, realPath } from './fs.ts'
 import { orcaJson } from './orca.ts'
@@ -189,6 +189,27 @@ export function specCandidates(opts: { specsDir: string; name: string; branch?: 
   const parent = dirname(resolve(specsDir))
   const prBodies = [...new Set(names.map((n) => join(parent, `pr-${n}.md`)))]
   return { specs, prBodies }
+}
+
+// 지시서 폴더에서 `브랜치:` 줄이 그 브랜치를 가리키는 지시서. 이름이 워크트리 이름과 달라 specCandidates 가 못 고르는
+// 후속 지시서(spec-328-pr3-resync.md 같은 것)를 머지된 브랜치로 찾는다. 폴더 바로 아래의 .md 만 본다. 읽지 못하면 건너뛴다.
+// 고르기만 한다. 살아 있는 dispatch 의 지시서를 남기는 일은 deleteSpecs 가 한다
+export function specsOnBranch(specsDir: string, branch: string): string[] {
+  if (!branch) return []
+  let names: string[]
+  try {
+    names = readdirSync(specsDir).filter((name) => name.endsWith('.md'))
+  } catch {
+    return []
+  }
+  return names.sort().flatMap((name) => {
+    const file = join(specsDir, name)
+    try {
+      return branchesOf(readFileSync(file, 'utf8')).includes(branch) ? [file] : []
+    } catch {
+      return []
+    }
+  })
 }
 
 // 같은 이름이 있으면 <이름>.2, <이름>.3 처럼 번호를 붙인다. 휴지통의 파일을 덮어쓰지 않는다.
