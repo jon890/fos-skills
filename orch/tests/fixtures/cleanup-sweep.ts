@@ -60,6 +60,8 @@ export type Fixture = {
   openHeads: string[]
   // gh 인자를 이은 문자열에 이 조각이 들면 그 호출이 실패한다
   ghFailOn: string[]
+  // `terminal read --screen` 이 줄 화면. handle 에서 화면 줄로. 없는 handle 은 빈 화면이다
+  screens: Record<string, string[]>
 }
 export const fx = {} as Fixture
 
@@ -138,6 +140,9 @@ if (has('terminal', 'list')) {
   const [at, size] = page()
   const more = at + size < rows.length
   out({ result: { workers: rows.slice(at, at + size), scope: { source: 'flag', run }, page: { nextCursor: more ? String(at + size) : null, hasMore: more } } })
+} else if (has('terminal', 'read')) {
+  const h = a[a.indexOf('--terminal') + 1]
+  out({ ok: true, result: { terminal: { tail: st.screens[h] || [] } } })
 } else if (has('terminal', 'close') && st.close_noop) {
   out({ ok: true, result: {} })
 } else if (has('terminal', 'close')) {
@@ -229,6 +234,7 @@ beforeEach(() => {
   fx.prAuthors = {}
   fx.openHeads = []
   fx.ghFailOn = []
+  fx.screens = {}
   fx.repo = makeRepo('repo')
   fx.wts = join(fx.tmp, 'wts')
 })
@@ -291,6 +297,7 @@ export function save(): void {
       pr_authors: fx.prAuthors,
       open_heads: fx.openHeads,
       gh_fail_on: fx.ghFailOn,
+      screens: fx.screens,
     }),
   )
 }

@@ -1,5 +1,11 @@
 # 7. 머지와 정리
 
+**worker 가 일하는 중인지, 끝났는지, 사용자가 넘겨받았는지는 `scripts/lib/worker-state.ts` 한 곳이 정한다.**
+`cleanup-sweep.ts`, `orch-doctor.ts`, `wait-important.ts` 가 같은 판정을 쓴다. 입력은 dispatch 상태, PR 상태, base 보다 앞선 커밋 수, 터미널 화면이고 판정 순서는 그 파일 머리 주석이 소유한다.
+`completed`, `failed`, 반납(released)된 dispatch 는 끝난 것이다. 그 위에 PR 이 MERGED 이거나, PR 이 없고 base 보다 앞선 커밋이 0 개면 치워도 된다.
+`user_takeover` 로 표시된 살아 있는 worker 라도 화면이 에이전트 작업 중이면 일하는 중으로 본다. 새 세션에서 띄운 worker 를 Orca 가 이렇게 적는다.
+`cleanup-sweep.ts` 는 살아 있는 dispatch 의 워크트리를 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많아도 조회 시간이 일하는 워크트리 수에 따라 늘지 않는다.
+
 `cleanup-sweep.ts` 와 `remove-worktree.ts` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
 소유 상태는 모든 Run 의 worker 행에서 읽는다. 코디네이터 터미널에서 부르면 범위 없는 `worker-list` 가 그 Run 만 주므로(scope `bound`), `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다.
 정리 한 번 안에서는 읽은 지 60초가 지나기 전까지 다시 읽지 않고, 범위를 읽는 방법과 이유는 `scripts/lib/ownership.ts` 머리 주석이 소유한다.
@@ -12,7 +18,7 @@
 
 **`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 띄울 때 dispatch 마다 남긴 기록(`.orch/state/launched-workers/`)에 있고 그 dispatch 가 끝났으면(completed, failed, canceled) `user_owned` 여도 코디네이터의 터미널로 보고 닫은 뒤 PR 상태와 남은 커밋, 변경으로 정리를 판단한다.
 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 이 소유한다.
-PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 completed 이고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
+PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 끝났고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 그 경로의 터미널을 닫고 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
 
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.ts --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
@@ -364,7 +370,7 @@ fi
 활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
 거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
-거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
+거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. 위 판정이 「끝남」 인 워크트리(PR MERGED, PR 없이 끝남)의 남은 프로세스만 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
 node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/remove-worktree.ts" "$WORKTREE" --delete-branch
