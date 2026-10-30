@@ -18,6 +18,7 @@ git -C "$REPO" fetch origin
 ```
 
 codex 를 띄우기 전에 아래 「codex 준비 판정」 의 설정이 있는지 본다.
+claude 를 띄우면 `launch-worker` 가 아래 「claude 프로필 준비 판정」 을 먼저 본다.
 
 **새 워크트리와 원격 브랜치 이어 받기(`--resume-remote`)는 `launch-worker` 가 만든다. `make-worktree` 를 직접 부르는 것은 6단계의 `--check` 뿐이다.**
 Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<워크트리 이름>` 으로 정해 지시서의 `브랜치:` 줄과 어긋난다.
@@ -119,6 +120,25 @@ terminal_title = ["app-name", "run-state", "project-name"]
 
 이 설정이 없으면 codex 가 떠 있어도 터미널 제목에 `Codex` 와 `ready` 가 함께 나오지 않아 `agent_readiness` 에서 실패한다.
 `check_for_update_on_startup = false` 는 codex 가 시작할 때 업데이트 안내 화면에서 멈추지 않게 한다.
+
+## claude 프로필 준비 판정
+
+Orca 는 Claude 계정마다 `~/Library/Application Support/orca/claude-profiles/<id>/home` 을 따로 만들어 worker 의 설정 폴더로 쓴다.
+새로 쓰는 계정의 프로필에는 플러그인 링크와 `settings.json` 이 없어, 그 계정으로 뜬 worker 에게 플러그인과 스킬, 지침이 보이지 않는다.
+
+`launch-worker` 는 `--agent claude` 면 지금 선택된 계정의 프로필(그 폴더의 `selected-host`)에 `plugins` 링크와 `settings.json` 이 있는지 본다.
+없으면 띄우지 않고 종료 코드 1 과 함께 맞추는 명령 한 줄을 낸다. 고치는 것은 사용자나 코디네이터가 그 명령으로 한다.
+프로필 폴더나 `selected-host` 가 없으면 Orca 를 쓰지 않는 환경으로 보고 건너뛴다.
+
+맞추는 명령은 `link-claude-profile` 이다. `--apply` 를 빼고 먼저 돌려 바꿀 목록을 본다.
+`$PROFILE_ID` 는 거부 메시지에 나온 프로필 id 다.
+
+```bash
+"$SKILL_DIR/bin/orch.ts" link-claude-profile "$PROFILE_ID"
+```
+
+무엇을 링크하고 복사하는지, 세션 상태와 로그인 정보를 옮기지 않는 이유, 백업 이름은 `scripts/lib/claude-profile.ts` 머리 주석이 소유한다.
+목록이 맞으면 같은 명령에 `--apply` 를 붙여 돌리고, 그 계정의 Claude 세션을 다시 시작한다.
 
 ## 첫 화면에서 멈춤
 

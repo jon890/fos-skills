@@ -21,6 +21,8 @@
 // 차례:
 //     0. --terminal 이 아니면 지시서의 `worker 선택:` 줄을 --agent, --model 과 대조한다. 어긋나면 1 이다
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
+//     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
+//        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
 //     1. spec-line --require-permission 으로 첫 지시 줄을 만든다
 //     1-1. spec-lint 로 이 지시서를 검사한다. 함께 넘기는 활성 지시서는 살아 있는 dispatch(pending, dispatched, running)가 쓰는 지시서
 //        가운데 이 지시서와 같은 폴더에 있는 것이다(lib/spec.ts 의 liveSpecPaths. 이 지시서 자신과 spec-common.md 는 뺀다).
@@ -62,7 +64,7 @@
 //            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다),
 //            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
 //
-// 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
+// 환경 변수: ORCA, SPEC_LINE, MAKE_WORKTREE 로 실행 도구를 바꾼다. ORCA_CLAUDE_PROFILES 로 0-2 의 프로필 폴더를 바꾼다. 도구는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //            확인 간격(초)은 LAUNCH_POLL=5, LAUNCH_WT_WAIT=30, LAUNCH_WT_POLL=2 가 기본값이다. 소수도 받는다.
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
@@ -78,6 +80,7 @@ import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { isFile, realPath } from './lib/fs.ts'
+import { profilesRoot, selectedReadiness } from './lib/claude-profile.ts'
 import { checkLaunchSettings } from './lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { recordLaunch } from './lib/launched.ts'
@@ -357,6 +360,14 @@ async function main(argv: string[]): Promise<number> {
   if (settings.reject) {
     err(`거부: ${settings.reject}`)
     return 4
+  }
+  if (passValue(passthru, '--agent') === 'claude') {
+    const profile = selectedReadiness(profilesRoot())
+    if (profile && profile.missing.length > 0) {
+      err(`거부: 선택된 Orca 의 Claude 프로필 ${profile.id} 에 ${profile.missing.join(', ')} 가 없어 worker 에게 플러그인과 지침이 보이지 않는다. 아래 명령으로 맞춘 뒤 다시 띄운다(--apply 를 빼면 목록만 본다)`)
+      err(`${shQuote(resolve(HERE, '../bin/orch.ts'))} link-claude-profile ${profile.id} --apply`)
+      return 1
+    }
   }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
   const poll = seconds('LAUNCH_POLL', '5')

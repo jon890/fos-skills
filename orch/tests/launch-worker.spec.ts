@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -121,6 +121,8 @@ beforeEach(() => {
     MAKE_WORKTREE: make,
     // 기본 spec-lint 는 막을 발견이 없는 가짜다. 막는 경우는 「spec-lint 관문」 에서 따로 본다
     SPEC_LINT: join(binDir, 'spec-lint-ok.sh'),
+    // 실제 Orca 프로필에 기대지 않게 없는 폴더로 고정한다(Orca 없음이라 프로필 판정을 건너뛴다). 판정은 「claude 프로필 준비 판정」 에서 본다
+    ORCA_CLAUDE_PROFILES: join(tmp, 'no-profiles'),
     LAUNCH_POLL: '0',
     LAUNCH_WT_POLL: '0',
     LAUNCH_WT_WAIT: '3',
@@ -1192,6 +1194,57 @@ describe('모델과 effort 검사', () => {
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /--model \(없음\), 지시서 gpt-6\.1-sol/)
     assert.doesNotMatch(r.stderr, /경고/)
+  })
+})
+
+describe('claude 프로필 준비 판정', () => {
+  // 임시 프로필 폴더에 선택된 프로필 하나를 만든다. ready 면 plugins 링크와 settings.json 을 둔다
+  function profiles(ready: boolean): string {
+    const root = join(tmp, 'profiles')
+    const home = join(root, 'p1', 'home')
+    mkdirSync(home, { recursive: true })
+    writeFileSync(join(root, 'selected-host'), `${home}\n`)
+    if (ready) {
+      mkdirSync(join(tmp, 'config', 'plugins'), { recursive: true })
+      symlinkSync(join(tmp, 'config', 'plugins'), join(home, 'plugins'))
+      writeFileSync(join(home, 'settings.json'), '{}')
+    } else {
+      mkdirSync(join(home, 'plugins'))
+    }
+    env.ORCA_CLAUDE_PROFILES = root
+    return home
+  }
+
+  test('선택된 프로필에 plugins 링크와 settings.json 이 없으면 맞추는 명령을 내고 띄우지 않는다', () => {
+    profiles(false)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /프로필 p1 에 plugins 링크, settings\.json 가 없어/)
+    assert.match(r.stderr, /bin\/orch\.ts'? link-claude-profile p1 --apply$/m)
+    assert.equal(existsSync(log), false)
+  })
+
+  test('갖춰진 프로필이면 띄운다', () => {
+    profiles(true)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /LAUNCHED ctx_1/)
+  })
+
+  test('codex 는 Claude 프로필을 보지 않는다', () => {
+    profiles(false)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CODEX])
+    assert.equal(r.code, 0, both(r))
+  })
+
+  test('Orca 프로필 폴더가 없으면 판정을 건너뛴다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stderr, /link-claude-profile/)
   })
 })
 
