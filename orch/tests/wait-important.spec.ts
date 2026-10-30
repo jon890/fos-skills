@@ -11,6 +11,7 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
+import { adoptHint } from '../scripts/lib/sessions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/wait-important.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../scripts/wait-important.py', import.meta.url))
@@ -238,7 +239,7 @@ describe('끊긴 worker', () => {
       ],
     })
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_a stage=terminal_missing', 'LAST_DELIVERY d0'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_a stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY d0'])
   })
 
   test('끝난 dispatch 만 있으면 대기를 끝내지 않는다', () => {
@@ -285,7 +286,7 @@ describe('끊긴 worker', () => {
   test('시작할 때 처리하지 않은 끊긴 dispatch 가 있으면 check 없이 끝낸다', () => {
     const r = lostAtStart(['--ack', 'd0'])
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', 'LAST_DELIVERY d0'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY d0'])
     assert.deepEqual(calls(), [])
   })
 
@@ -459,7 +460,7 @@ describe('끊긴 worker', () => {
       latest: { t1: 'ctx_bad' },
     })
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', 'LAST_DELIVERY -'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY -'])
     const pages = allCalls().filter((c) => c.includes('worker-list'))
     assert.equal(pages.length, 2, JSON.stringify(pages))
     assert.ok(!pages[0].includes('--cursor'), JSON.stringify(pages[0]))
