@@ -993,7 +993,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function openPrs(repo: string): Prs {
-  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', PR_FIELDS], { cwd: repo })
+  const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', '200', '--json', PR_FIELDS], { cwd: repo, cache: false })
   if (!got.ok) return got
   if (!Array.isArray(got.data)) return { ok: false, error: 'gh pr list 의 출력이 목록이 아니다' }
   const authors = new Map<string, string[]>()
@@ -1160,7 +1160,7 @@ async function watchCi(
       stale.add(pr.number)
       continue
     }
-    const judged = ciState(pr.rollup, names.names, ctx.skippedIsMissing)
+    const judged = ciState(pr.rollup, names.names, ctx.skippedIsMissing, pr.head)
     const entry: CiEntry = { head: pr.head, state: judged.state }
     ci[key] = entry
     if (before && before.head === entry.head && before.state === entry.state) continue

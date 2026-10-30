@@ -133,8 +133,59 @@ function editStateCmd(c: Ctx, fields: Record<string, unknown>, target = ''): str
 }
 
 describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  test('옛 completed 실패 캐시가 있어도 STOP 전에 새 실행의 성공을 읽는다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '1'
+    c.writeState({ '1': pr({ statusCheckRollup: [check('verify', 'FAILURE')] }) })
+    const module = join(SCRIPTS, 'lib/gh.ts')
+    const repo = realpathSync(c.tmp)
+    const code = `import { checkSnapshot } from ${JSON.stringify(module)}; process.chdir(${JSON.stringify(repo)}); if (!checkSnapshot(${JSON.stringify(repo)}, '1', 'abc').ok) process.exitCode=1`
+    const seeded = await spawnDone([process.execPath, '--input-type=module', '-e', code], { env: c.env })
+    assert.equal(seeded.code, 0, both(seeded))
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('verify')] }) }, ['--required', 'verify', '1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'QUEUE-DONE')
+  })
+  test('머지 전 명령 중 같은 HEAD 에 재실행이 시작되면 completed 캐시로 머지하지 않는다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '1'
+    const code = `python3 -c "import json; p='${c.stateFile}'; d=json.load(open(p)); d['1']['statusCheckRollup']=[{'name':'verify','status':'IN_PROGRESS'}]; json.dump(d, open(p,'w'))"`
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('verify')] }) }, ['--required', 'verify', `1:${code}`])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, '머지 직전 체크가 바뀌었다')
+    lacks(c.log(), 'pr merge')
+  })
+  test('취소 뒤 같은 HEAD 의 새 실행이 성공하면 머지하고 다른 HEAD 성공은 쓰지 않는다', async (t) => {
+    const rollup = [
+      { ...check('verify', 'CANCELLED'), startedAt: '2026-10-30T01:00:00Z', checkSuite: { workflowRun: { workflow: { name: 'CI' } } } },
+      { ...check('verify'), startedAt: '2026-10-30T02:00:00Z', checkSuite: { workflowRun: { workflow: { name: 'CI' } } }, headSha: 'abc' },
+    ]
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '1'
+    const passed = await c.runQueue({ '1': pr({ statusCheckRollup: rollup }) }, ['--required', 'verify', '1'])
+    assert.equal(passed.code, 0, both(passed))
+    has(passed.stdout, 'QUEUE-DONE')
+    const d = setup(t)
+    const failed = await d.runQueue({ '1': pr({ statusCheckRollup: [rollup[0], { ...rollup[1], headSha: 'old' }] }) }, ['--required', 'verify', '1'])
+    assert.equal(failed.code, 1, both(failed))
+    lacks(d.log(), 'pr merge')
+  })
+  test('캐시가 꺼져 있어도 draft 전환으로 취소된 옛 실행 대신 뒤의 성공을 쓴다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '0'
+    const names = ['backend', 'changes', 'frontend', 'infra', 'pr-result']
+    const rollup = names.flatMap((name) => ['CANCELLED', 'SUCCESS'].map((conclusion, i) => ({
+      ...check(name, conclusion),
+      startedAt: `2026-10-30T0${i + 1}:00:00Z`,
+      workflowName: 'PR CI',
+    })))
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: rollup }) }, ['--required', names.join(','), '1'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'QUEUE-DONE')
+  })
   test('머지하고 머지 전 명령에 PR, BRANCH, OWNER, REPO 를 넘긴다', async (t) => {
     const c = setup(t)
+    c.env.ORCH_GH_CACHE = '1'
     const marker = join(c.tmp, 'before.txt')
     const r = await c.runQueue({ '1': pr() }, [`1:echo "$PR $BRANCH $OWNER/$REPO" > ${marker}`])
     assert.equal(r.code, 0, both(r))
@@ -142,6 +193,7 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     assert.equal(readFileSync(marker, 'utf8'), '1 feat owner/repo\n')
     has(c.log(), 'pr merge 1 --merge --match-head-commit abc')
     has(c.log(), 'git push -q origin --delete feat')
+    t.diagnostic(`기본 PR 머지의 gh 호출: ${c.log().split('\n').filter((line) => /^(pr|api) /.test(line)).length}`)
   })
 
   test('머지가 끝나면 정리를 base 와 --sweep-arg 로 부른다', async (t) => {

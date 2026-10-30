@@ -159,7 +159,7 @@ import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
 import { eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
-import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, parseNames, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
+import { apiTarget, checkSnapshot, currentChecks, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, parseNames, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
 import { pollSeconds } from './lib/gh-budget.ts'
 import { groupMap, isDoc } from './lib/overlap.ts'
 import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
@@ -594,7 +594,27 @@ class Queue {
   async field(n: string, jsonField: string, jq: string, fresh = false): Promise<string> {
     let attempt = 1
     for (;;) {
-      const done = gh(['pr', 'view', n, '--json', jsonField, '--jq', jq], { cache: !fresh })
+      const rollup = jsonField === 'statusCheckRollup'
+      if (rollup) {
+        const got = checkSnapshot(this.o.repo, n, this.p.ph, fresh)
+        if (!got.ok) {
+          if (attempt >= this.ghRetries) return ''
+          attempt++
+          await nap(this.ghRetrySeconds)
+          continue
+        }
+        try {
+          const pr = got.data
+          if (!pr.headRefOid || pr.headRefOid !== this.p.ph) stop(`${n} 체크 조회 중 HEAD 가 바뀌었다 checked=${this.p.ph} now=${pr.headRefOid || '?'}`)
+          pr.statusCheckRollup = currentChecks(pr.statusCheckRollup, pr.headRefOid)
+          const filtered = run(['jq', '-r', jq], { input: JSON.stringify(pr) })
+          if (filtered.code === 0) return chomp(filtered.stdout)
+        } catch (e) {
+          if (e instanceof Stop) throw e
+        }
+        return ''
+      }
+      const done = gh(['pr', 'view', n, '--json', jsonField, '--jq', jq], { cache: false })
       if (done.code === 0) return chomp(done.stdout)
       if (attempt >= this.ghRetries) return ''
       attempt += 1
@@ -603,7 +623,7 @@ class Queue {
   }
 
   api(...args: string[]): RunResult {
-    return gh(['api', '--hostname', this.p.apiHost, ...args])
+    return gh(['api', '--hostname', this.p.apiHost, ...args], { cache: false })
   }
 
   // ---- 겹침 -------------------------------------------------------------------------------------
@@ -842,7 +862,7 @@ class Queue {
     let merged = false
     for (let i = 0; i < 3; i++) {
       await nap(5)
-      if ((await this.field(n, 'state', '.state', true)) === 'MERGED') {
+      if ((await this.field(n, 'state', '.state')) === 'MERGED') {
         merged = true
         break
       }
@@ -885,7 +905,7 @@ class Queue {
       for (const name of (await this.field(n, 'statusCheckRollup', this.q.allowedFailed)).split('\n')) {
         if (name) out(`경고: ${n} 실패를 허용한 체크 ${name}`)
       }
-      const threads = await runAsync(['bash', '-c', o.threadsCmd], { env: { ...this.prEnv(), GH_HOST: p.apiHost }, timeoutMs: NO_LIMIT_MS })
+      const threads = await runAsync(['bash', '-c', o.threadsCmd], { env: { ...this.prEnv(), GH_HOST: p.apiHost, ORCH_GH_CACHE: '0' }, timeoutMs: NO_LIMIT_MS })
       // 옛 명령은 스레드 명령의 stderr 를 받지 않고 그대로 흘렸다
       if (threads.stderr) process.stderr.write(threads.stderr)
       if (threads.code !== 0) stop(`${n} 스레드 조회 실패`)
@@ -895,7 +915,7 @@ class Queue {
       for (let i = 0; i < 4; i++) {
         if (m !== 'UNKNOWN') break
         await nap(20)
-        m = await this.field(n, 'mergeable', '.mergeable', true)
+        m = await this.field(n, 'mergeable', '.mergeable')
       }
 
       log(`${n} fails=${f} threads=${t} mergeable=${m}`)
@@ -930,6 +950,11 @@ class Queue {
 
       const ph2 = await this.field(n, 'headRefOid', '.headRefOid')
       if (p.ph !== ph2) stop(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
+      // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
+      const latestFailed = await this.field(n, 'statusCheckRollup', this.q.failed, true)
+      const latestPending = await this.field(n, 'statusCheckRollup', PENDING)
+      const latestMissing = await this.field(n, 'statusCheckRollup', `${this.q.missing} | length`)
+      if (latestFailed !== '0' || latestPending !== '0' || latestMissing !== '0') stop(`${n} 머지 직전 체크가 바뀌었다 fails=${latestFailed} pending=${latestPending} missing=${latestMissing}`)
       if (!p.cross) {
         if (git('fetch', '-q', 'origin', p.branch).code !== 0) stop(`${n} 원격 브랜치 fetch 실패`)
         const rh = git('rev-parse', '-q', '--verify', `origin/${p.branch}`).stdout.trim()
@@ -1003,7 +1028,8 @@ class Queue {
     let idle = 0
     let attempt = 0
     for (;;) {
-      const f = await this.field(n, 'statusCheckRollup', q.failed)
+      let f = await this.field(n, 'statusCheckRollup', q.failed, waited >= limit || (missingLimit > 0 && idle >= missingLimit))
+      if (f !== '0') f = await this.field(n, 'statusCheckRollup', q.failed, true)
       if ((f || '0') !== '0') stop(`${n} 실패한 체크 ${f} 개`)
       const pending = await this.field(n, 'statusCheckRollup', PENDING)
       const missing = await this.field(n, 'statusCheckRollup', `${q.missing} | length`)
@@ -1031,7 +1057,7 @@ class Queue {
     }
     // 체크가 끝난 직후에 새 체크가 붙는 경우가 있어 잠시 뒤 다시 본다
     await nap(60)
-    const pending = await this.field(n, 'statusCheckRollup', PENDING)
+    const pending = await this.field(n, 'statusCheckRollup', PENDING, true)
     const missing = await this.field(n, 'statusCheckRollup', `${q.missing} | length`)
     if (!(pending === '0' && missing === '0')) {
       stop(`${n} 새로 붙은 체크가 아직 돈다(진행 중 ${pending || '?'}, 미등장 ${missing || '?'}). 다시 돌린다`)
@@ -1097,7 +1123,7 @@ class Queue {
       let next = ''
       for (let i = 0; i < 12; i++) {
         await nap(5)
-        next = await this.field(n, 'headRefOid', '.headRefOid', true)
+        next = await this.field(n, 'headRefOid', '.headRefOid')
         if (next && next !== p.ph) break
       }
       if (!next || next === p.ph) stop(`${n} update-branch 뒤 HEAD 가 바뀌지 않았다`)

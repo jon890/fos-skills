@@ -82,7 +82,7 @@ function login(pr: { author: { login: string } | null }): string {
 }
 
 function ghData<T>(repo: string, args: string[]): T {
-  const got = ghJson<T>(args, { cwd: repo })
+  const got = ghJson<T>(args, { cwd: repo, cache: false })
   if (!got.ok) throw new LookupFailed(got.error)
   return got.data
 }
@@ -96,7 +96,7 @@ function target(url: string): { host: string; slug: string } {
 // REST 로 읽은 PR 의 바뀐 파일 집합.
 function filesOf(repo: string, pr: { number: number; url: string }): Set<string> {
   const { host, slug } = target(pr.url)
-  const done = gh(['api', '--hostname', host, `repos/${slug}/pulls/${pr.number}/files?per_page=100`, '--paginate', '--jq', '.[].filename'], { cwd: repo })
+  const done = gh(['api', '--hostname', host, `repos/${slug}/pulls/${pr.number}/files?per_page=100`, '--paginate', '--jq', '.[].filename'], { cwd: repo, cache: false })
   if (done.code !== 0) throw new LookupFailed(`gh api 로 PR ${pr.number} 의 파일을 읽지 못했다: ${done.stderr.trim()}`)
   return new Set(done.stdout.split('\n').filter((line) => line))
 }
