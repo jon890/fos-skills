@@ -2,8 +2,8 @@
 
 - **status**: `accepted`
 - **결정**: orch 스킬의 지시서, 머지 큐 출력, 대기 기록, 저장소 포장 스크립트, 저장소 설정을 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
-  경로는 `orch/scripts/orch_paths.py` 한 곳이 정하고, 루트는 `ORCH_DIR` 환경 변수로 바꾼다.
-  옛 위치(`.omc/handoffs/`, `.omc/orch/`, `.claude/orch-overlay.md`, `.claude/orch-finish.json`)는 `orch/scripts/migrate-orch-dir.ts` 가 한 번 옮기고(옛 `.py` 는 [ADR-010](010-orch-typescript.md) 의 shim), 스크립트는 옛 위치를 찾지 않는다.
+  경로는 `orch/scripts/lib/paths.ts` 한 곳이 정하고, 루트는 `ORCH_DIR` 환경 변수로 바꾼다.
+  옛 위치(`.omc/handoffs/`, `.omc/orch/`, `.claude/orch-overlay.md`, `.claude/orch-finish.json`)는 `orch/bin/orch.ts migrate-orch-dir` 가 한 번 옮기고, 스크립트는 옛 위치를 찾지 않는다.
   사용자 결정 2026-10-23.
 - **맥락**: `.omc` 는 oh-my-claudecode 의 폴더다. orch 는 그 아래 `handoffs/`, `state/` 에 자기 파일을 두었다.
   oh-my-claudecode 가 없는 환경에서는 경로 관례가 어색했고, `handoff-cleanup.py` 가 `.omc` 전체를 훑어 다른 도구의 파일까지 정리 후보로 삼았다.
@@ -14,7 +14,7 @@
   - 스크립트마다 새 위치가 없으면 옛 위치를 읽는다. 옮긴 뒤에도 분기가 남고, 두 위치에 파일이 함께 생기면 어느 쪽이 맞는지 알 수 없다.
   - 설정 이름을 `.orch/AGENTS.md` 로 한다. Codex 같은 에이전트가 그 폴더의 일반 지침으로 읽는 관례와 겹친다.
   - 보드(`board.json`)도 `.orch/` 로 옮긴다. 보드는 사용자의 업무 보드라 work-board 가 소유한다. orch 는 설정의 `board` 값이나 work-board 의 기본 위치를 받기만 한다.
-  - 미리보기 폴더(`.omc/previews/`)를 orch 가 계속 정리한다. 미리보기는 content-preview 의 산출물이라 `handoff-cleanup.py` 는 설정으로 폴더를 줄 때만 본다.
+  - 미리보기 폴더(`.omc/previews/`)를 orch 가 계속 정리한다. 미리보기는 content-preview 의 산출물이라 `bin/orch.ts handoff-cleanup` 은 설정으로 폴더를 줄 때만 본다.
 - **결과**:
   - 얻는 것: oh-my-claudecode 가 없는 저장소에서도 orch 스크립트가 같은 경로로 돈다. 정리 스크립트는 `.orch` 와 설정이 지정한 폴더만 건드린다.
   - 얻는 것: 저장소 설정이 `.orch/overlay.md` 와 `.orch/config.json` 두 파일로 모인다.

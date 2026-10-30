@@ -1,4 +1,4 @@
-// 옛 .py 경로를 같은 이름의 .ts 로 넘기는 shim(ts_shim.py)을 가짜 node 로 본다.
+// doctor 의 Python 진입점과 Node 버전 검사를 가짜 node 로 본다.
 
 import assert from 'node:assert/strict'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts/', import.meta.url)).replace(/\/$/, '')
-const SHIM = join(SCRIPTS, 'launch-worker.py')
-const TARGET = join(SCRIPTS, 'launch-worker.ts')
+const SHIM = join(SCRIPTS, 'orch-doctor.py')
+const TARGET = join(SCRIPTS, 'orch-doctor.ts')
 const NO_NODE = 'node 24 이상이 PATH 에 필요하다'
 const FLAG = '--disable-warning=ExperimentalWarning'
 
@@ -73,7 +73,7 @@ describe('exec', () => {
     const done = py([SHIM, '--help'], withFakeNode())
     assert.equal(done.status, 7, done.stderr)
     assert.deepEqual(done.stdout.split('\n').filter(Boolean), [FLAG, TARGET, '--help'])
-    assert.ok(done.stderr.includes(`DEPRECATED python3 launch-worker.py → node ${FLAG} ${TARGET}`), done.stderr)
+    assert.equal(done.stderr, '')
   })
 
   test('doctor 진입점은 낮은 node 를 막고 DEPRECATED 줄을 내지 않는다', () => {
@@ -81,15 +81,6 @@ describe('exec', () => {
     const done = py([join(SCRIPTS, 'orch-doctor.py'), '--skip-version', '--skip-questions'], withFakeNode())
     assert.equal(done.status, 127, done.stdout + done.stderr)
     assert.ok(done.stdout.startsWith('NODE-TOO-OLD v22.23.4'), done.stdout)
-    assert.ok(!done.stderr.includes('DEPRECATED'), done.stderr)
-  })
-
-  test('worker-ask 진입점은 DEPRECATED 줄을 내지 않는다', () => {
-    // worker 는 답의 첫 줄 answer: 를 읽는다. stderr 를 합쳐 읽어도 그 앞에 DEPRECATED 줄이 끼지 않아야 한다
-    fakeNode('v24.0.0')
-    const done = py([join(SCRIPTS, 'worker-ask.py'), '--help'], withFakeNode())
-    assert.equal(done.status, 7, done.stderr)
-    assert.deepEqual(done.stdout.split('\n').filter(Boolean), [FLAG, join(SCRIPTS, 'worker-ask.ts'), '--help'])
     assert.ok(!done.stderr.includes('DEPRECATED'), done.stderr)
   })
 
@@ -121,7 +112,7 @@ describe('exec', () => {
       'import importlib.util, sys',
       'sys.path.insert(0, sys.argv[2])',
       'import ts_shim',
-      'spec = importlib.util.spec_from_file_location("launch_worker_shim", sys.argv[1])',
+      'spec = importlib.util.spec_from_file_location("orch_doctor_shim", sys.argv[1])',
       'module = importlib.util.module_from_spec(spec)',
       'spec.loader.exec_module(module)',
       'assert module.ts_shim is ts_shim',

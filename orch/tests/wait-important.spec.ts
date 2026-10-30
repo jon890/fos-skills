@@ -13,7 +13,6 @@ import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/wait-important.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/wait-important.py', import.meta.url))
 const TRIAGE = fileURLToPath(new URL('../scripts/triage-messages.ts', import.meta.url))
 const SHA = 'a'.repeat(40)
 
@@ -1130,16 +1129,5 @@ describe('작업 폴더', () => {
     assert.equal(done.status, 0, done.stdout + done.stderr)
     assert.ok(existsSync(join(other, 'rel-lost.json')))
     assert.ok(!existsSync(join(repo, 'rel-lost.json')))
-  })
-})
-
-describe('wait-important.py shim', () => {
-  test('옛 경로가 같은 줄과 종료 코드로 넘긴다', () => {
-    const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim()
-    writeFileSync(stateFile, JSON.stringify({ replies: [batch('d1', 'status')], workers: [] }))
-    const done = spawnSync(python, [SHIM, '--run', 'run_x', '--lost-state', lostState, '--lost-interval-sec', '0'], { env, cwd: tmp, encoding: 'utf8' })
-    assert.equal(done.status, 0, done.stderr)
-    assert.equal(lastLine(done.stdout), 'LAST_DELIVERY d1')
-    assert.equal(spawnSync(python, [SHIM], { env, cwd: tmp }).status, 2)
   })
 })

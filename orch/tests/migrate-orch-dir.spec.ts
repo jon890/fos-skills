@@ -19,7 +19,7 @@ import { spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/migrate-orch-dir.ts', import.meta.url))
-const ORCH_PATHS = fileURLToPath(new URL('../scripts/orch_paths.py', import.meta.url))
+const ORCH_PATHS = fileURLToPath(new URL('../scripts/orch_paths.ts', import.meta.url))
 
 const FAKE_ORCA = `const fs = require('node:fs')
 if (process.env.FAKE_ORCA_FAILS === '1') process.exit(1)
@@ -371,7 +371,7 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     mkdirSync(join(c.repo, '.omc/orch'), { recursive: true })
     await c.migrate(['--apply'])
     assert.ok(!existsSync(join(c.repo, '.omc/orch')))
-    const done = spawnSync('python3', [ORCH_PATHS, '--repo', c.repo, 'check'], { env: c.env, encoding: 'utf8' })
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', ORCH_PATHS, '--repo', c.repo, 'check'], { env: c.env, encoding: 'utf8' })
     assert.equal(done.status, 0, done.stderr)
   })
 

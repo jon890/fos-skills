@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, test } from 'node:test'
-import { type Row, SHIM, branches, calls, exists, fx, git, gone, has, hook, idleShell, lacks, mergedWorkerWithTerminal, remoteBranches, runSweep, runSweepFull, save, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
+import { type Row, branches, calls, exists, fx, git, gone, has, hook, idleShell, lacks, mergedWorkerWithTerminal, remoteBranches, runSweep, runSweepFull, save, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
 
 type TakeOver = { row?: Row; entry?: Row; child?: boolean; otherRun?: boolean }
 
@@ -489,14 +489,4 @@ describe('머지 없이 CLOSED 가 된 PR 의 터미널', () => {
 })
 
 describe('옛 경로', () => {
-  test('cleanup-sweep.py 는 DEPRECATED 줄을 내고 cleanup-sweep.ts 로 넘긴다', () => {
-    const path = worktree('shim-a')
-    squashMerge('shim-a', path)
-    save()
-    const done = spawnSync('python3', [SHIM, '--repo', fx.repo, '--wait', '0.01', '--poll-interval', '0.01', '--apply'], { env: fx.env, encoding: 'utf8' })
-    assert.equal(done.status, 0, done.stdout + done.stderr)
-    has(done.stderr, 'DEPRECATED')
-    has(done.stdout, `cleanup-sweep apply: ${fx.repo}`)
-    gone(path, done.stdout)
-  })
 })

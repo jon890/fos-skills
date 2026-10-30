@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/remove-worktree.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/remove-worktree.py', import.meta.url))
 const HOOK = 'node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}'
 
 type Proc = { pid: number; cwd: string; command: string; gone?: number; ppid?: number }
@@ -98,7 +97,7 @@ function proc(pid: number, command: string, opts: { gone?: number; ppid?: number
   return { pid, cwd: wt, command, ...opts }
 }
 
-type Launch = 'node' | 'bash' | 'shim'
+type Launch = 'node' | 'bash'
 
 function removeWorktree(state: State, args: string[] = [], opts: { hookWait?: number; launch?: Launch } = {}) {
   writeFileSync(stateFile, JSON.stringify({ slept: 0, ...state }))
@@ -108,9 +107,7 @@ function removeWorktree(state: State, args: string[] = [], opts: { hookWait?: nu
   const command =
     opts.launch === 'bash'
       ? ['bash', '-c', 'exec "$@"', 'remove-worktree', ...node]
-      : opts.launch === 'shim'
-        ? ['python3', SHIM, wt, ...args]
-        : node
+      : node
   const done = spawnSync(command[0], command.slice(1), { env: runEnv, encoding: 'utf8' })
   const slept = (JSON.parse(readFileSync(stateFile, 'utf8')) as { slept: number }).slept
   return { code: done.status, stdout: done.stdout, out: done.stdout + done.stderr, slept }
@@ -329,11 +326,4 @@ describe('터미널 소유 상태', () => {
 })
 
 describe('옛 경로', () => {
-  test('remove-worktree.py 는 DEPRECATED 줄을 내고 같은 판정으로 지운다', () => {
-    const r = removeWorktree({}, ['--delete-branch'], { launch: 'shim' })
-    assert.equal(r.code, 0, r.out)
-    has(r.out, 'DEPRECATED python3 remove-worktree.py')
-    has(r.stdout, `removed ${wt}`)
-    assert.equal(existsSync(wt), false)
-  })
 })

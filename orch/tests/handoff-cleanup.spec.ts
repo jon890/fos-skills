@@ -13,7 +13,6 @@ import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/handoff-cleanup.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/handoff-cleanup.py', import.meta.url))
 const DAY = 86400
 
 // 열린 PR 의 head 는 FAKE_OPEN(JSON 목록)이다. FAKE_GH_FAILS=1 이면 실패한다
@@ -426,16 +425,6 @@ describe('handoff-cleanup', () => {
     const r = clean()
     assert.equal(r.code, 0)
     assert.equal(r.stdout, '')
-  })
-
-  test('옛 .py 경로는 같은 결과를 내는 shim 이다', () => {
-    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
-    // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
-    const shimEnv = { ...env, PATH: [dirname(process.execPath), env.PATH ?? ''].join(delimiter) }
-    const done = spawnSync('python3', [SHIM, '--repo', repo, '--trash', trash, '--board', 'board.json'], { env: shimEnv, encoding: 'utf8' })
-    assert.equal(done.status, 0, done.stderr)
-    assert.match(done.stderr, /DEPRECATED/)
-    assert.match(done.stdout, /^후보 \.orch\/queue\/q\.out$/m)
   })
 
   describe('Run 범위', () => {

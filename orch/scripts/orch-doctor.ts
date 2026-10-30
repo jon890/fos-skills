@@ -5,7 +5,7 @@
 // 갱신 명령을 보여 주는 것까지만 하고 갱신은 하지 않는다. 다른 세션이 같은 캐시를 쓰고 있을 수 있다.
 //
 // Node 버전은 여기서 보지 않는다. 타입 제거를 지원하지 않는 낮은 node 는 이 파일을 읽지 못하고 ERR_UNKNOWN_FILE_EXTENSION 으로 죽는다.
-// 그래서 SKILL.md 는 옛 진입점 orch-doctor.py 로 부르고, 그 진입점(ts_shim.py)이 버전을 보고 낮으면 NODE-TOO-OLD 로 멈춘다.
+// 그래서 SKILL.md 가 doctor 를 부르기 전에 셸에서 node 버전을 보고, 낮으면 NODE-TOO-OLD 줄을 내고 doctor 를 부르지 않는다.
 //
 // 사용법:
 //     orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]

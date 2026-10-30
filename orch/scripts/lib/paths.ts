@@ -19,7 +19,7 @@
 // 보드는 work-board 소유라 여기 없다. boardPath 의 기본 위치는 work-board/bin/board.ts 의 defaultBoardPath 를 import 해 쓴다.
 //
 // 옛 구조: .claude/orch-overlay.md, .claude/orch-finish.json, .omc/orch/, .omc/handoffs/specs/ 가 남아 있으면
-// (폴더는 안에 파일이 있을 때만 센다) requireMigrated 가 옮기는 명령(migrate-orch-dir.py)을 알린다.
+// (폴더는 안에 파일이 있을 때만 센다) requireMigrated 가 옮기는 명령(migrate-orch-dir.ts)을 알린다.
 // 옛 위치를 읽는 분기는 두지 않는다. 옮길 쌍의 기본 표 DEFAULT_MOVES 도 여기 둔다.
 //
 // git 무시: 루트가 저장소 안에 있고 git 이 아직 무시하지 않으면 `git rev-parse --git-path info/exclude` 파일에
@@ -65,7 +65,7 @@ export const DEFAULT_MOVES: ReadonlyArray<readonly [string, string]> = [
 // 남아 있으면 옮기기 전이라고 보는 옛 위치. 설정과 지시서가 여기 있으면 명령이 그 값 없이 돌게 된다.
 export const LEGACY_MARKERS: readonly string[] = ['.claude/orch-overlay.md', '.claude/orch-finish.json', '.omc/orch', '.omc/handoffs/specs']
 
-const MIGRATE = fileURLToPath(new URL('../migrate-orch-dir.py', import.meta.url))
+const MIGRATE = fileURLToPath(new URL('../migrate-orch-dir.ts', import.meta.url))
 const DEFAULT_BYPASS = '설정 파일을 --config 로 직접 준다'
 
 function expandUser(value: string): string {
@@ -168,7 +168,7 @@ export function requireMigrated(repo: string, script: string, bypass: string | n
   const lines = [
     `${script}: orch 작업 폴더를 옮기기 전이다. 옛 위치가 남아 있다: ${left.join(', ')}`,
     `  새 위치(${orchDir(repo)})의 설정과 지시서만 읽으므로 이대로 돌면 저장소 값이 빠진다.`,
-    `  머지 큐와 worker 가 돌지 않을 때 옮긴다: python3 ${MIGRATE} --repo ${mainCheckout(repo)} --apply`,
+    `  머지 큐와 worker 가 돌지 않을 때 옮긴다: node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${mainCheckout(repo)} --apply`,
     '  이미 옮겼는데 다시 나오면 옮긴 포장 스크립트(bin)나 다른 도구가 옛 폴더를 다시 만든 것이다. ' +
       '그 스크립트의 옛 경로를 고친 뒤 다시 옮긴다.',
   ]
@@ -182,6 +182,6 @@ export function warnLegacy(repo: string, script: string): void {
   const left = legacyPaths(repo)
   if (left.length === 0) return
   process.stderr.write(
-    `${script}: 옛 위치가 남아 있다(${left.join(', ')}). 대기가 끝나면 python3 ${MIGRATE} --repo ${mainCheckout(repo)} 로 옮긴다\n`,
+    `${script}: 옛 위치가 남아 있다(${left.join(', ')}). 대기가 끝나면 node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${mainCheckout(repo)} 로 옮긴다\n`,
   )
 }
