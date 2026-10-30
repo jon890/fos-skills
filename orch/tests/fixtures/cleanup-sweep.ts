@@ -204,6 +204,7 @@ beforeEach(() => {
     HOOK_LOG: fx.hookLog,
     ORCA: join(fx.bin, 'orca'),
     GH: join(fx.bin, 'gh'),
+    ORCH_GH_CACHE: '0', // 가짜 상태를 매 검사마다 바꾸므로 이전 응답을 재사용하지 않는다.
     ORCH_KILL: join(fx.bin, 'kill'),
   }
   // Orca 터미널에서 돌려도 가짜 orca 가 bound 범위로 답하지 않게 한다. bound 는 테스트가 직접 켠다.

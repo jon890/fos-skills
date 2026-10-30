@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -34,6 +34,8 @@ function shim(tool: 'orca' | 'gh', argv: string[], env: Record<string, string | 
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
     ORCH_REAL_ORCA: fake.orca.path,
     ORCH_REAL_GH: fake.gh.path,
+    ORCH_REPO: tmp,
+    ORCH_DIR: join(tmp, '.orch'),
   }
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) delete merged[key]
@@ -72,6 +74,30 @@ describe('통과하는 호출은 진짜 실행 파일로 간다', () => {
     assert.equal(r.code, 0, r.stderr)
     assert.equal(r.stdout, '입력 한 줄\n')
   })
+})
+
+test('코어와 가드가 gh 를 중복 기록하지 않고 가드의 쓰기도 캐시를 비운다', (t) => {
+  const root = join(tmp, 'budget')
+  fake.gh.setRules([{ stdout: '{}' }])
+  t.after(() => fake.gh.setRules([{ args: ['view'], stdout: 'gh-out\n', code: 3 }, { code: 0 }]))
+  const module = fileURLToPath(new URL('../scripts/lib/gh.ts', import.meta.url))
+  const code = `import { gh } from ${JSON.stringify(module)}; process.stdout.write(gh(['pr','view','7'], {cwd:${JSON.stringify(tmp)}}).stdout)`
+  const env = { ...process.env, GH: SHIM.gh, ORCH_REAL_GH: fake.gh.path, ORCH_REPO: tmp, ORCH_DIR: root, ORCH_GH_CACHE: '1' }
+  const start = fake.gh.calls().length
+  const core = () => {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { env, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, '{}')
+  }
+  core(); core()
+  assert.equal(fake.gh.calls().length - start, 1)
+  assert.equal(shim('gh', ['pr', 'comment', '7'], { ORCH_DIR: root }).code, 0)
+  core()
+  assert.equal(fake.gh.calls().length - start, 3)
+  const logDir = join(root, 'state/gh/logs')
+  const rows = readdirSync(logDir).flatMap((name) => readFileSync(join(logDir, name), 'utf8').trim().split('\n').map((line) => JSON.parse(line)))
+  assert.equal(rows.length, 4)
+  assert.equal(rows.filter((row) => row.cacheHit).length, 1)
 })
 
 describe('거부 표의 호출은 126 이고 진짜 실행 파일을 부르지 않는다', () => {

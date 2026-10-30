@@ -332,7 +332,7 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
 describe('merge_queue 필수 체크', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
   test('필수 체크가 나타날 때까지 기다린다. 대기 0 을 완료로 보지 않는다', async (t) => {
     const c = setup(t)
-    const p = pr({ statusCheckRollup: [], appear: { left: 30, checks: [check('backend')] } })
+    const p = pr({ statusCheckRollup: [], appear: { left: 8, checks: [check('backend')] } })
     const r = await c.runQueue({ '1': p, _rules: rules('backend') }, ['1'])
     assert.equal(r.code, 0, both(r))
     has(r.stdout, '1 MERGED')
@@ -430,7 +430,7 @@ describe('merge_queue 필수 체크', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
 
   test('같은 상태라도 기준 시간 안에 필수 체크가 나타나면 멈추지 않는다', async (t) => {
     const c = setup(t)
-    // 조회 한 번에 30초씩 가정하면 left 8 은 4분 안이다
+    // 한 대기에서 필드별로 여러 번 조회한다. backoff 가 누적되기 전에 체크가 나타난다.
     const p = pr({ statusCheckRollup: [check('A')], appear: { left: 8, checks: [check('B')] } })
     const r = await c.runQueue({ '1': p }, ['--required', 'A,B', '1'])
     assert.equal(r.code, 0, both(r))
@@ -485,6 +485,16 @@ describe('merge_queue 필수 체크', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
 })
 
 describe('merge_queue --require-up-to-date', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  test('캐시를 켜도 쓰기 직후 HEAD 와 머지 상태가 늦게 반영되면 다시 조회한다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '1'
+    const p = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')], after_update_delay: 1, merge_delay: 1 })
+    const r = await c.runQueue({ '1': p, _behind: 2 }, ['--required', 'backend', '--require-up-to-date', '1'])
+    assert.equal(r.code, 0, both(r))
+    has(c.log(), 'pr merge 1 --merge --match-head-commit new')
+    has(r.stdout, '1 MERGED')
+  })
+
   test('뒤처지면 PR URL 호스트와 검사한 HEAD 로 update-branch 하고 체크를 다시 기다려 새 HEAD 로 머지한다', async (t) => {
     const c = setup(t)
     const p = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })

@@ -14,15 +14,28 @@
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './config.ts'
 import { NO_LIMIT_MS, run } from './proc.ts'
 import type { RunResult } from './proc.ts'
+import { budgetGh } from './gh-budget.ts'
+import { git, mainCheckout } from './git.ts'
 
-type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals }
+type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean }
+const contexts = new Map<string, { root: string; origin: string; expires: number }>()
 
 export function ghBin(): string {
   return process.env.GH || 'gh'
 }
 
 export function gh(args: string[], opts: GhOptions = {}): RunResult {
-  return run([ghBin(), ...args], { cwd: opts.cwd, env: opts.host ? { GH_HOST: opts.host } : undefined, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal })
+  const repo = opts.cwd ?? process.cwd()
+  let context = contexts.get(repo)
+  if (!context || context.expires <= Date.now()) {
+    context = { root: mainCheckout(repo), origin: git(repo, ['remote', 'get-url', 'origin']).stdout.trim(), expires: Date.now() + 60_000 }
+    contexts.set(repo, context)
+  }
+  const identity = [ghBin(), context.root, context.origin, opts.host ?? process.env.GH_HOST, process.env.GH_REPO, process.env.GH_CONFIG_DIR,
+    process.env.GH_TOKEN, process.env.GITHUB_TOKEN, process.env.GH_ENTERPRISE_TOKEN, process.env.GITHUB_ENTERPRISE_TOKEN,
+    // 브랜치에서 PR 을 추론하는 호출은 다른 워크트리와 섞지 않는다.
+    args[0] === 'pr' && ['view', 'checks'].includes(args[1]) && (!args[2] || args[2].startsWith('-')) ? repo : null]
+  return budgetGh(args, repo, identity, () => run([ghBin(), ...args], { cwd: opts.cwd, env: { ...(opts.host ? { GH_HOST: opts.host } : {}), ORCH_GH_BUDGET_PARENT: String(process.pid) }, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal }), { passthrough: opts.cache === false })
 }
 
 export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T } | { ok: false; error: string } {
@@ -36,8 +49,8 @@ export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T
   }
 }
 
-export function currentUser(host?: string): string | null {
-  const done = gh(['api', 'user', '--jq', '.login'], { host })
+export function currentUser(host?: string, cwd?: string): string | null {
+  const done = gh(['api', 'user', '--jq', '.login'], { host, cwd })
   const login = done.stdout.trim()
   return done.code === 0 && login ? login : null
 }
@@ -63,7 +76,7 @@ export function ownAuthors(repo: string, host: string): string[] | null {
     }
     if (authors.length > 0) return authors as string[]
   }
-  const login = currentUser(host)
+  const login = currentUser(host, repo)
   return login ? [login] : null
 }
 
