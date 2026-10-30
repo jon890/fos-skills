@@ -12,16 +12,18 @@
 //     - 어느 Run 의 worker 도 아니면 통과한다
 //
 // worker 판정 범위(앞 단계에서 정해지면 뒤 단계로 가지 않는다):
-//     1. `worker-list --terminal-state active --limit 100` 을 page.nextCursor 끝까지 읽는다. 행의 agentTerminalHandle 이
+//     1. `worker-list --limit 100` 을 page.nextCursor 끝까지 읽는다. 행의 agentTerminalHandle 이
 //        대상이면 worker 이고, 그 행의 dispatchId 로 첫 화면을 본다
 //     2. 없고 첫 응답의 scope.source 가 all 이면 worker 가 아니다
 //     3. 없고 all 이 아니면(묶인 Run 만 봤다) `orca terminal show --terminal <대상>` 의 agentIdentity 를 본다.
 //        비어 있으면(에이전트가 돌지 않는 셸) worker 가 아니다
 //     4. agentIdentity 가 있으면 `run-list --limit 100` 을 result.nextCursor 끝까지 읽어 updated_at 이 최근인 순서로 놓고,
-//        Run 마다 `worker-list --run <id> --terminal-state active --limit 100` 을 page.nextCursor 끝까지 읽는다.
+//        Run 마다 `worker-list --run <id> --limit 100` 을 page.nextCursor 끝까지 읽는다.
 //        동시 16개까지 부르고, 대상을 모두 찾으면 남은 호출을 기다리지 않는다. 모두 읽고도 없으면 worker 가 아니다
 //     Run 이 수백 개 쌓인 머신에서 모든 Run 을 늘 읽으면 시간 한도에 자주 닿는다(2026-10-24 실측 251개, 한 번 약 0.11초).
 //     그래서 전체 조회는 다른 Run 의 worker 일 수 있는 에이전트 터미널로 보낼 때만 한다.
+//     active 필터를 쓰면 끝난 dispatch 의 살아 있는 터미널을 못 찾아 모든 Run 을 훑고 시간 초과한다.
+//     끝난 dispatch 도 식별해 직접 입력을 막고 adopt-sessions 로 새 dispatch 에 연결하도록 안내한다.
 //
 // 조회 실패와 시간 한도:
 //     - 종료 코드가 0 이 아니거나, JSON 이 아니거나, result.workers(run-list 는 result.runs, terminal show 는 result.terminal)
@@ -73,7 +75,7 @@ const REASON = {
   worker: (handle: string) =>
     `orch: worker 터미널(${handle})에 \`orca terminal send\` 로 직접 쓰지 않는다. ` +
     '작업 중이면 입력이 섞이고, 끝난 dispatch 면 지시가 어느 Task 에도 묶이지 않는다. ' +
-    `${SEND_TO_WORKER} 깨우기만 하려면 \`nudge-worker\` 를 쓴다.`,
+    `${SEND_TO_WORKER} 깨우기만 하려면 \`nudge-worker\` 를 쓴다. 끝난 dispatch 는 \`adopt-sessions\` 로 이어 붙인다.`,
   firstScreen: (handle: string, why: string) =>
     `orch: worker 터미널(${handle})이 첫 화면 대기가 아니라 \`--enter\` 를 보내지 않는다(${why}). ` +
     `${SEND_TO_WORKER} 첫 화면 승인이면 handle 을 그대로 적어 다시 부른다.`,
@@ -87,7 +89,7 @@ const REASON = {
     'orch: `--environment` 나 `--pairing-code` 로 원격 서버의 터미널에 보내는 `orca terminal send` 는 ' +
     `이 hook 이 worker 터미널인지 확인할 수 없다. worker 면 ${SEND_TO_WORKER} 아니면 그 서버의 셸에서 보낸다.`,
   failed: (why: string) => `orch: worker 터미널인지 확인하는 orca 조회가 실패했다: ${why}. ${RESEND}`,
-  timeout: (ms: number) => `orch: worker 터미널인지 확인하는 orca 조회가 ${ms}ms 안에 끝나지 않았다(시간 초과). ${RESEND}`,
+  timeout: (ms: number) => `orch: worker 터미널인지 확인하는 orca 조회가 ${ms}ms 안에 끝나지 않았다(시간 초과, 경과 ${Date.now() - startedAt}ms, 조회 ${queries}회, 완료 ${completed}회, 마지막 ${lastQuery}). \`adopt-sessions\` 로 연결 상태를 먼저 확인한다. ${RESEND}`,
   unexpected: (why: string) => `orch: worker 터미널인지 판정하다 예상 밖 오류가 났다: ${why}. ${RESEND}`,
 }
 
@@ -134,14 +136,20 @@ function budgetMs(): number {
 }
 
 const budget = budgetMs()
-const deadline = Date.now() + budget
+const startedAt = Date.now()
+const deadline = startedAt + budget
 const TIMEOUT = Symbol('timeout')
+let queries = 0
+let completed = 0
+let lastQuery = '-'
 
 // orca 를 한 번 부르고 봉투의 result 객체를 낸다. 남은 시간이 없거나 넘기면 시간 초과, 그 밖의 문제는 조회 실패다.
 async function orcaResult(args: string[]): Promise<Record<string, unknown>> {
   const left = deadline - Date.now()
   if (left <= 0) throw new LookupFailure('시간 초과', true)
   const label = `orca ${args.join(' ')}`
+  queries++
+  lastQuery = label
   let timer: NodeJS.Timeout | undefined
   // runAsync 는 시간을 넘긴 자식이 TERM 을 무시하면 KILL 까지 10초를 더 기다린다. 마감 시각에 따로 끊는다.
   const limit = new Promise<typeof TIMEOUT>((resolve) => {
@@ -154,6 +162,7 @@ async function orcaResult(args: string[]): Promise<Record<string, unknown>> {
     clearTimeout(timer)
   }
   if (done === TIMEOUT || done.timedOut) throw new LookupFailure('시간 초과', true)
+  completed++
   if (done.code !== 0) throw new LookupFailure(`${label} 가 종료 코드 ${done.code} 로 끝났다`)
   let envelope: unknown
   try {
@@ -197,13 +206,17 @@ async function scanWorkers(
   let first = true
   do {
     if (stop()) return scope
-    const page = await workerPage([...base, '--terminal-state', 'active', '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
+    const page = await workerPage([...base, '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
     if (first) scope = page.scope
     first = false
     for (const w of page.workers) {
       const handle = w.agentTerminalHandle
       if (typeof handle === 'string' && wanted.has(handle) && !found.has(handle)) {
         found.set(handle, { dispatchId: typeof w.dispatchId === 'string' ? w.dispatchId : null })
+      }
+      const resourceHandle = (w.resource as { terminalHandle?: unknown } | undefined)?.terminalHandle
+      if (typeof resourceHandle === 'string' && wanted.has(resourceHandle) && !found.has(resourceHandle)) {
+        found.set(resourceHandle, { dispatchId: typeof w.dispatchId === 'string' ? w.dispatchId : null })
       }
     }
     if ([...wanted].every((h) => found.has(h))) return scope
