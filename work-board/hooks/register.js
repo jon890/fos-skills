@@ -41,17 +41,43 @@ let liveBusy = false
 
 // ---- 외부 명령 출력을 그릴 값으로 바꾸는 순수 함수(테스트가 직접 부른다) ----
 
+const LIVE_DISPATCH = new Set(['pending', 'dispatched', 'running'])
+
 // worker-list --json 의 결과에서 아직 일하는 worker 만 고른다.
 export function parseWorkers(stdout) {
   const data = JSON.parse(stdout)
+  if (data?.ok === false) throw new Error('worker 목록 조회 실패')
   const workers = (data && data.result && (data.result.workers || data.result.dispatches)) || []
+  if (!Array.isArray(workers)) throw new Error('worker 목록을 읽지 못했어요')
   return workers
-    .filter((w) => w.dispatchStatus === 'dispatched')
+    .filter((w) => w && typeof w === 'object' && LIVE_DISPATCH.has(w.dispatchStatus))
     .map((w) => {
       const tree = (w.resource && w.resource.worktreeId) || ''
       const path = tree.includes('::') ? tree.split('::').pop() : tree
       return { id: w.dispatchId, terminal: w.agentTerminalHandle || '', state: w.workerState || '', worktree: path.split('/').filter(Boolean).pop() || '' }
     })
+}
+
+// worker-list 는 페이지를 나눌 수 있다. 한 페이지만 읽어 살아 있는 dispatch 를 빠뜨리면 닫힌 질문이 보드에 남는다.
+export async function queryWorkers($, runId) {
+  const workers = []
+  const cursors = new Set()
+  let cursor = ''
+  for (;;) {
+    const args = ['orca', 'orchestration', 'worker-list', '--run', runId, '--json']
+    if (cursor) args.splice(-1, 0, '--cursor', cursor)
+    const data = JSON.parse(await run($, args))
+    if (data?.ok === false) throw new Error('worker 목록 조회 실패')
+    const result = data?.result || data
+    const rows = result.workers || result.dispatches
+    if (!Array.isArray(rows)) throw new Error('worker 목록을 읽지 못했어요')
+    workers.push(...rows)
+    cursor = result.page?.nextCursor || ''
+    if (!cursor) break
+    if (typeof cursor !== 'string' || cursors.has(cursor)) throw new Error('worker 목록의 다음 페이지가 앞 페이지와 같아요')
+    cursors.add(cursor)
+  }
+  return parseWorkers(JSON.stringify({ result: { workers } }))
 }
 
 // inbox 의 양방향 thread 기록으로 미답변 질문을 센다. read/ack 는 답변 여부가 아니다.
@@ -77,13 +103,9 @@ export function parseQuestions(stdout, runId, keyOf = null) {
       && m.to_handle === 'run:' + (runId || m.run_id))
     .map((m) => [m.id, m])).values()]
     .map((m, order) => {
-      let dispatch = String(m.from_handle || '').replace(/^dispatch:/, '')
-      let text = String(m.body || '')
-      try {
-        const payload = JSON.parse(m.payload || '{}')
-        dispatch = payload.dispatchId || dispatch
-        text = payload.question || text
-      } catch {}
+      const payload = payloadOf(m)
+      let dispatch = String(payload?.dispatchId || m.from_handle || '').replace(/^dispatch:/, '')
+      let text = String(payload?.question || m.body || '')
       const key = (keyOf && keyOf(m)) || dispatch || 'id:' + m.id
       return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '', key, order, answered: answered.has(m.id) }
     })
@@ -102,6 +124,15 @@ export function parseQuestions(stdout, runId, keyOf = null) {
     .map(({ id, type, dispatch, text, at, repeats }) => ({ id, type, dispatch, text, at, repeats }))
 }
 
+function payloadOf(m) {
+  if (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload)) return m.payload
+  if (typeof m.payload !== 'string') return null
+  try {
+    const parsed = JSON.parse(m.payload)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch { return null }
+}
+
 function messageRows(stdout) {
   const data = JSON.parse(stdout)
   if (data.ok === false) throw new Error('질문 기록 조회 실패')
@@ -112,10 +143,7 @@ function messageRows(stdout) {
 
 // 질문이 속한 dispatch id 는 payload.dispatchId, 없으면 from_handle 의 `dispatch:` 접두사다. 둘 다 없으면 null 이다.
 function dispatchOf(m) {
-  let payload = m.payload
-  if (typeof payload === 'string') {
-    try { payload = JSON.parse(payload) } catch { payload = null }
-  }
+  const payload = payloadOf(m)
   if (payload && payload.dispatchId) return String(payload.dispatchId)
   const from = String(m.from_handle || '')
   return from.startsWith('dispatch:') ? from.slice('dispatch:'.length) : null
@@ -513,7 +541,7 @@ async function loadLive($) {
     }
     if (next.runId) {
       try {
-        next.workers = parseWorkers(await run($, ['orca', 'orchestration', 'worker-list', '--run', next.runId, '--json']))
+        next.workers = await queryWorkers($, next.runId)
       } catch (failure) {
         next.errors.workers = String(failure.message || failure)
       }

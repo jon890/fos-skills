@@ -42,6 +42,7 @@ if (is('orchestration', 'worker-show')) {
   out({ dispatch: d.dispatch, worker: d.worker || {}, terminalResource: d.terminalResource || {} })
 }
 if (is('orchestration', 'inbox')) out({ messages: state.inbox || [] })
+if (is('orchestration', 'check')) out({ messages: args.includes('--types') ? state.questions || state.inbox || [] : state.inbox || [] })
 if (is('orchestration', 'reply')) {
   if (state.no_pane) {
     print(JSON.stringify({ ok: false, error: { code: 'stable_pane_required', message: 'The coordinator terminal has no stable pane identity' } }), 1)
@@ -155,6 +156,51 @@ function both(r: Result): string {
 }
 
 describe('살아 있는 dispatch', () => {
+  test('status 에 밀린 질문은 Run 질문 조회로 찾고 전역 inbox 는 읽지 않는다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('status', 'term_w', 'status', 20)],
+      questions: [{ ...message('q', 'term_w', 'question', 2), payload: { dispatchId: 'ctx_1' } }] })
+    const r = send('--body', '답')
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('orca orchestration reply')[0], /--id q /)
+    assert.ok(lines('orca orchestration inbox').every((line) => line.includes('--terminal')), logText())
+  })
+
+  test('최신 질문에 답했으면 앞선 재전송 질문에 다시 답하지 않는다', () => {
+    const old = message('old', 'term_w', 'question', 2)
+    const latest = message('latest', 'term_w', 'question', 4)
+    const answer = { ...message('answer', 'run:run_x', 'status', 5), thread_id: 'latest' }
+    state({ dispatches: worker('dispatched'), inbox: [old, latest, answer, message('progress', 'term_w', 'status', 10)] })
+    const r = send('--body', '계속 진행')
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('orca orchestration reply')[0], /--id progress /)
+  })
+
+  test('질문 뒤에 status 가 와도 최신 미답변 질문에 답한다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [
+      message('old', 'term_w', 'question', 2),
+      message('latest', 'term_w', 'question', 4),
+      message('progress', 'term_w', 'status', 10),
+    ] })
+    const r = send('--body', '권장안으로 한다')
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('orca orchestration reply')[0], /--id latest /)
+    assert.match(r.stdout, /replied: latest/)
+  })
+
+  test('--no-reply 는 열린 질문이 있어도 새 메시지로 보내고 질문을 건드리지 않는다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('q', 'term_w', 'question', 3)] })
+    const r = send('--body', '별도 진행 지시', '--no-reply')
+    assert.equal(r.code, 0, both(r))
+    assert.equal(lines('orca orchestration reply').length, 0)
+    assert.equal(lines('orca orchestration send').length, 1)
+  })
+
+  test('--no-reply 와 --reply-to 를 함께 주면 보내기 전에 멈춘다', () => {
+    const r = send('--body', 'x', '--no-reply', '--reply-to', 'q')
+    assert.equal(r.code, 2, both(r))
+    assert.equal(logText(), '')
+  })
+
   test('그 worker 의 마지막 메시지에 reply 하고 깨운다', () => {
     const inbox = [
       message('m_hb', 'term_w', 'heartbeat', 9),

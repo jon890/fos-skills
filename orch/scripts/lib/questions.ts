@@ -57,7 +57,18 @@ export function unanswered(rows: Message[], run: string): Message[] {
   const answered = new Set(
     scoped.filter((r) => r.thread_id && r.id !== r.thread_id && r.to_handle && r.to_handle !== `run:${run}`).map((r) => r.thread_id),
   )
-  return scoped.filter((m) => KINDS.has(String(m.type)) && m.to_handle === `run:${run}` && m.id && !answered.has(m.id))
+  const asked = [...new Map(scoped.filter((m) => KINDS.has(String(m.type)) && m.to_handle === `run:${run}` && m.id)
+    .map((m) => [m.id, m])).values()]
+  const key = (m: Message) => dispatchOf(m) || m.from_handle || m.id
+  const later = (a: Message, b: Message) => String(a.created_at || '') === String(b.created_at || '')
+    ? asked.indexOf(a) > asked.indexOf(b) : String(a.created_at || '') > String(b.created_at || '')
+  const latestAnswered = new Map<unknown, Message>()
+  for (const message of asked.filter((m) => answered.has(m.id))) {
+    const previous = latestAnswered.get(key(message))
+    if (!previous || later(message, previous)) latestAnswered.set(key(message), message)
+  }
+  // ask 는 한 번에 한 질문의 답을 기다린다. 뒤 질문에 답하면 같은 dispatch 의 앞선 재전송 질문도 푼다.
+  return asked.filter((m) => !answered.has(m.id) && (!latestAnswered.has(key(m)) || later(m, latestAnswered.get(key(m))!)))
 }
 
 // run 이 없으면 run-current 의 Run 이다. { run, pending } 을 낸다.
@@ -202,7 +213,7 @@ const CLOSED_PR = new Set(['MERGED', 'CLOSED'])
 // 틱 안에서 Run 마다 한 번만 읽는 worker 행과 status 메시지
 export type ClosedLookup = { rows?: ReturnType<typeof workerRows>; reports?: Message[] | null }
 
-function dispatchOf(message: Message): string | null {
+export function dispatchOf(message: Message): string | null {
   const dispatch = context(message)[1]
   if (dispatch) return String(dispatch)
   const from = String(message.from_handle ?? '')

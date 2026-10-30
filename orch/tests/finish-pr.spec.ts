@@ -1007,7 +1007,7 @@ describe('finish-pr 머지 알림', { concurrency: 4 }, () => {
     assert.ok(sent >= 0, calls.join('\n'))
     assert.equal(
       calls[sent],
-      `send-to-worker --dispatch ctx_w --body PR #77 이 MERGED 됐다(머지 커밋 ${c.merge}). gh pr view 로 확인한 뒤 worker_done 을 보내고 끝낸다 --run run_1`,
+      `send-to-worker --dispatch ctx_w --body PR #77 이 MERGED 됐다(머지 커밋 ${c.merge}). gh pr view 로 확인한 뒤 worker_done 을 보내고 끝낸다 --run run_1 --no-reply`,
     )
     // 알림이 정리보다 먼저다
     assert.ok(sent < calls.findIndex((line) => line.startsWith('sweep ')), calls.join('\n'))

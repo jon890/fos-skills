@@ -1090,7 +1090,7 @@ async function tellWorker(ctx: Context, pr: OwnPr, failed: CiCheck[], lookup: Lo
   const shown = failed.map((check) => (check.url ? `${check.name} ${check.url}` : check.name)).join(', ')
   const body = `PR #${pr.number} 의 체크가 실패했다: ${shown}. 실패를 고치고 검사를 다시 돌린 뒤 push 한다. 끝나면 status 로 알린다.`
   const send = process.env.SEND_TO_WORKER || join(HERE, 'send-to-worker.ts')
-  const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', found.run]), { cwd: ctx.repo, timeoutMs: SEND_MS })
+  const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', found.run, '--no-reply']), { cwd: ctx.repo, timeoutMs: SEND_MS })
   relay(sent)
   if (sent.code === 0) return { text: `보냈다 ${dispatch}`, run: found.run }
   if (sent.code === 4) return { text: '깨우지 못했다(종료 코드 4)', run: found.run }

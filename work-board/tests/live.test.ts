@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, questionText, decisionOf } from '../hooks/register.js'
+import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, queryWorkers, questionText, decisionOf } from '../hooks/register.js'
 import { queryQuestions } from '../hooks/register.js'
 
 test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
@@ -57,6 +57,15 @@ test('터미널 handle 로 온 질문은 payload 의 dispatch 나 살아 있는 
   expect(result.questions.map((m) => m.id)).toEqual(['term-live'])
 })
 
+test('끝난 dispatch 를 적은 질문은 같은 터미널이 새 worker 에 재사용돼도 세지 않는다', async () => {
+  const closed = { id: 'old', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_reused', payload: { dispatchId: 'closed', question: '옛 질문' } }
+  const current = { id: 'new', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_reused', payload: { dispatchId: 'open', question: '새 질문' } }
+  const $ = { process: { run: async (argv) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify({ messages: argv.includes('check') ? [closed, current] : [] }) }) } }
+  expect((await queryQuestions($, 'r', [{ id: 'open', terminal: 'term_reused' }])).questions).toEqual([
+    { id: 'new', type: 'question', dispatch: 'open', text: '새 질문', at: '', repeats: 0 },
+  ])
+})
+
 test('코디네이터 터미널이 worker 의 dispatch 로 보낸 회신은 답이고, 그 dispatch 의 inbox 를 읽는다', async () => {
   // 실측: 회신은 type status, thread_id 가 질문 id, to_handle 이 dispatch:<그 터미널의 지금 dispatch>, 보낸 사람은 term_* 다
   const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_w', thread_id: 'q' }
@@ -110,6 +119,14 @@ test('같은 worker 의 미답변 질문은 가장 늦은 하나로 묶고, 답�
   expect(parse(split, () => 'w')).toEqual([{ id: 'q2', repeats: 1 }])
 })
 
+test('객체 payload도 문자열 payload와 같이 dispatch와 질문 본문을 읽는다', () => {
+  const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'term_w', created_at: '2026-10-26T10:00:00Z',
+    payload: { dispatchId: 'd', question: '결정: 저장 형식\n권장: JSON' } }
+  expect(parseQuestions(JSON.stringify({ messages: [q] }), 'r')).toEqual([
+    { id: 'q', type: 'question', dispatch: 'd', text: '결정: 저장 형식\n권장: JSON', at: '2026-10-26T10:00:00Z', repeats: 0 },
+  ])
+})
+
 test('질문 100건 상한은 조회 범위를 표시하고 답변 기록 상한은 오류로 표시한다', async () => {
   const q = { id: 'q', type: 'escalation', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d' }
   let replies = []
@@ -153,9 +170,32 @@ test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
   const stdout = JSON.stringify({ result: { workers: [
     { dispatchId: 'a', agentTerminalHandle: 'term_a', dispatchStatus: 'dispatched', workerState: 'ready',
       resource: { worktreeId: 'x::/repo/worktrees/repo/ci-path-filter' } },
-    { dispatchId: 'b', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: 'x::/repo/w/old' } },
+    { dispatchId: 'b', dispatchStatus: 'pending', workerState: 'ready', resource: { worktreeId: 'x::/repo/w/pending' } },
+    { dispatchId: 'c', dispatchStatus: 'running', workerState: 'working', resource: { worktreeId: 'x::/repo/w/running' } },
+    { dispatchId: 'd', dispatchStatus: 'completed', workerState: 'succeeded', resource: { worktreeId: 'x::/repo/w/old' } },
   ] } })
-  expect(parseWorkers(stdout)).toEqual([{ id: 'a', terminal: 'term_a', state: 'ready', worktree: 'ci-path-filter' }])
+  expect(parseWorkers(stdout)).toEqual([
+    { id: 'a', terminal: 'term_a', state: 'ready', worktree: 'ci-path-filter' },
+    { id: 'b', terminal: '', state: 'ready', worktree: 'pending' },
+    { id: 'c', terminal: '', state: 'working', worktree: 'running' },
+  ])
+})
+
+test('worker 목록은 모든 페이지를 읽고 반복 cursor는 오류로 만든다', async () => {
+  const calls = []
+  const $ = { process: { run: async (argv) => {
+    calls.push(argv)
+    const cursor = argv.includes('--cursor') ? argv[argv.indexOf('--cursor') + 1] : ''
+    const result = cursor ? { workers: [{ dispatchId: 'b', dispatchStatus: 'running' }], page: {} }
+      : { workers: [{ dispatchId: 'a', dispatchStatus: 'dispatched' }], page: { nextCursor: 'next' } }
+    return { exitCode: 0, stdout: JSON.stringify({ result }), stderr: '' }
+  } } }
+  expect(await queryWorkers($, 'r')).toEqual([
+    { id: 'a', terminal: '', state: '', worktree: '' }, { id: 'b', terminal: '', state: '', worktree: '' },
+  ])
+  expect(calls).toHaveLength(2)
+  const looping = { process: { run: async () => ({ exitCode: 0, stdout: JSON.stringify({ result: { workers: [], page: { nextCursor: 'again' } } }), stderr: '' }) } }
+  await expect(queryWorkers(looping, 'r')).rejects.toThrow('다음 페이지')
 })
 
 test('질문과 escalation 만 세고 heartbeat 는 세지 않는다', () => {
