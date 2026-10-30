@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -98,14 +98,6 @@ describe('orch_paths.ts', () => {
     }
   })
 
-  test('옛 경로 orch_paths.py 도 같은 경로를 낸다', () => {
-    // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
-    const env = { ...ENV, PATH: [dirname(process.execPath), ENV.PATH ?? ''].join(delimiter) }
-    const done = spawnSync('python3', [join(SCRIPTS, 'orch_paths.py'), '--repo', repo, 'specs'], { env, encoding: 'utf8' })
-    assert.equal(done.status, 0, done.stderr)
-    assert.equal(done.stdout, `${join(repo, '.orch/specs')}\n`)
-    assert.match(done.stderr, /^DEPRECATED python3 orch_paths\.py → /m)
-  })
 })
 
 describe('옛 구조', () => {
@@ -119,7 +111,7 @@ describe('옛 구조', () => {
     ] as const) {
       const r = cmd(script, [...args])
       assert.equal(r.code, 2, `${script}: ${r.stdout}${r.stderr}`)
-      assert.ok(r.stderr.includes('migrate-orch-dir.py'), `${script}: ${r.stderr}`)
+      assert.ok(r.stderr.includes('migrate-orch-dir.ts'), `${script}: ${r.stderr}`)
     }
   })
 
@@ -128,7 +120,7 @@ describe('옛 구조', () => {
     for (const args of [['check'], ['--ensure', 'specs']]) {
       const r = cmd('orch_paths.ts', ['--repo', repo, ...args])
       assert.equal(r.code, 2, args.join(' '))
-      assert.ok(r.stderr.includes('migrate-orch-dir.py'), r.stderr)
+      assert.ok(r.stderr.includes('migrate-orch-dir.ts'), r.stderr)
     }
     assert.equal(existsSync(join(repo, '.orch')), false)
     assert.equal(cmd('orch_paths.ts', ['--repo', repo, 'specs']).stdout, `${join(repo, '.orch/specs')}\n`)
@@ -146,7 +138,7 @@ describe('옛 구조', () => {
       env: { ...ENV, ORCA: '/nonexistent/orca' },
     })
     assert.equal(r.code, 2, r.stdout + r.stderr)
-    assert.ok(r.stderr.includes('migrate-orch-dir.py'), r.stderr)
+    assert.ok(r.stderr.includes('migrate-orch-dir.ts'), r.stderr)
     const fake = join(tmp, 'orca')
     writeFileSync(fake, '#!/bin/sh\necho \'{"result": {"terminals": [], "tasks": [], "workers": []}}\'\n')
     chmodSync(fake, 0o755)

@@ -13,7 +13,6 @@ import { after, before, beforeEach, afterEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 export const SCRIPT = fileURLToPath(new URL('../../scripts/cleanup-sweep.ts', import.meta.url))
-export const SHIM = fileURLToPath(new URL('../../scripts/cleanup-sweep.py', import.meta.url))
 export const REMOVE = fileURLToPath(new URL('../../scripts/remove-worktree.ts', import.meta.url))
 export const HOOK = 'node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}'
 

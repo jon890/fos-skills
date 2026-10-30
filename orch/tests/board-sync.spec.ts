@@ -13,7 +13,6 @@ import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/board-sync.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/board-sync.py', import.meta.url))
 
 // 배포 확인의 조회: \`pr view N --json mergeCommit\` 은 state['merge:N'], \`run list\` 는 state.runs 를 낸다.
 // 마지막 PR 판정의 조회: \`pr view N --json title,headRefName\` 은 state['info:N'], 열린 PR 목록(\`--json number,title\`)은 state.open,
@@ -57,11 +56,11 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-function run(args: string[], opts: { script?: string; env?: Record<string, string> } = {}): Result {
+function run(args: string[], opts: { env?: Record<string, string> } = {}): Result {
   // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH ?? ''].join(delimiter), GH: join(bindir, 'gh'), ...opts.env }
   if (!opts.env?.BOARD_BIN) delete env.BOARD_BIN
-  const argv = opts.script ? ['python3', opts.script] : [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
+  const argv = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
   const done = spawnSync(argv[0], [...argv.slice(1), ...args], { env, cwd: tmp, encoding: 'utf8' })
   return { code: done.status, stdout: done.stdout, stderr: done.stderr }
 }
@@ -220,15 +219,6 @@ describe('board-sync', () => {
     assert.equal(run(['--board', join(tmp, 'none.json')]).code, 1)
   })
 
-  test('옛 .py 경로는 같은 결과를 내는 shim 이다', () => {
-    states['7'] = 'MERGED'
-    writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
-    writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', pr: '7', details: ['1. 구현'] }] }))
-    const r = run(['--board', board, '--repo', tmp], { script: SHIM })
-    assert.equal(r.code, 0, r.stderr)
-    assert.match(r.stderr, /DEPRECATED/)
-    assert.equal(load().a.status, 'done')
-  })
 })
 
 

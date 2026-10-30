@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/goal-progress.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/goal-progress.py', import.meta.url))
 
 let tmp: string
 let board: string
@@ -30,12 +29,12 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-function goal(args: string[], opts: { script?: string; env?: Record<string, string> } = {}): { code: number | null; stdout: string; stderr: string } {
+function goal(args: string[], opts: { env?: Record<string, string> } = {}): { code: number | null; stdout: string; stderr: string } {
   // shim 은 PATH 의 node 를 부른다. 이 테스트를 도는 node 를 앞에 둔다
   const env = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH ?? ''].join(delimiter), ...opts.env }
   delete env.BOARD_BIN
   if (opts.env?.BOARD_BIN) env.BOARD_BIN = opts.env.BOARD_BIN
-  const argv = opts.script ? ['python3', opts.script] : [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
+  const argv = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
   const done = spawnSync(argv[0], [...argv.slice(1), ...args], { env, encoding: 'utf8' })
   return { code: done.status, stdout: done.stdout, stderr: done.stderr }
 }
@@ -128,10 +127,4 @@ describe('goal-progress', () => {
     assert.equal(goal([]).code, 2)
   })
 
-  test('옛 .py 경로는 같은 결과를 내는 shim 이다', () => {
-    const r = goal(['goal', 'a', '--board', board, '--board-bin', fakeBin, '--dry-run'], { script: SHIM })
-    assert.equal(r.code, 0, r.stderr)
-    assert.match(r.stderr, /DEPRECATED/)
-    assert.equal(r.stdout, 'goal 1/1\n')
-  })
 })

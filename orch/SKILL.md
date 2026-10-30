@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "4.25.0"
+  version: "5.1.0"
 ---
 
 # orch

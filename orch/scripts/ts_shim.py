@@ -1,19 +1,9 @@
-"""옛 `.py` 명령 경로를 같은 폴더의 같은 이름 `.ts` 로 넘기는 shim 의 공통 처리다.
+"""doctor 의 Python 진입점에서 Node 버전을 검사하고 같은 이름의 .ts 로 넘긴다.
 
-아직 Python 인 명령과 다른 저장소가 옛 `.py` 경로를 부른다. 그 경로가 이름, 옵션, 종료 코드를 그대로 지키도록
-node 로 exec 한다. shim 은 다음 major 에서 지운다(docs/adr/010-orch-typescript.md).
-
-shim 파일은 이 모듈을 import 하고 `if __name__ == "__main__":` 안에서만 `exec_ts(__file__)` 를 부른다.
-테스트가 importlib 로 shim 을 읽을 때 테스트 프로세스가 node 로 바뀌지 않게 하기 위해서다.
-
-exec_ts 의 차례:
-    1. 대상은 shim 과 같은 폴더의 같은 이름 `.ts` 다
-    2. `node --version` 을 10초 제한으로 부른다. node 가 없으면 stderr 에 `node 24 이상이 PATH 에 필요하다` 를 내고 127 이다
-       5 의 exec 가 OSError 로 실패해도 같은 줄과 127 이다
-    3. 버전이 24 보다 낮거나 읽지 못하면 exec 하지 않는다. stdout 에 `NODE-TOO-OLD <버전> 24 이상이 필요하다` 를 내고 127 이다
-       최소 버전을 24 로 둔 이유는 docs/adr/011-node-24-minimum.md 가 소유한다
-    4. deprecated 면 stderr 에 `DEPRECATED python3 <이름>.py → node --disable-warning=ExperimentalWarning <대상>` 을 낸다
-    5. `node --disable-warning=ExperimentalWarning <대상> <받은 인자>` 로 exec 한다. 종료 코드는 node 의 것이다
+Node 24 미만은 .ts 를 읽지 못하므로 Python 에서 먼저 판정한다(ADR-011).
+Node 가 없거나 실행할 수 없으면 stderr 안내와 127, 낮거나 읽지 못한 버전이면
+stdout 의 NODE-TOO-OLD 와 127 로 끝낸다. 버전 조회 제한은 10초다.
+통과하면 인자와 종료 코드를 보존하며 node 로 exec 한다.
 """
 
 from __future__ import annotations
