@@ -264,7 +264,7 @@ describe('살아 있는 dispatch', () => {
     const [argv] = calls
     assert.deepEqual(argv.slice(0, 3), ['--dispatch', 'd1', '--body'])
     assert.ok(argv[3].startsWith(`PR #7 이 base main(${baseSha().slice(0, 8)}) 와 충돌한다. 충돌 파일: a.txt.`), argv[3])
-    assert.deepEqual(argv.slice(4), ['--run', 'r'])
+    assert.deepEqual(argv.slice(4), ['--no-reply', '--run', 'r'])
     const [input] = hookInputs()
     assert.equal(input.action, 'notified')
     assert.equal(input.base_head, baseSha())

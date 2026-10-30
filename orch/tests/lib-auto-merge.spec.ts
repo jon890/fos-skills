@@ -28,16 +28,17 @@ function mig(module: string, label: string): Migration {
 
 describe('autoMergeConfig', () => {
   test('빈 설정은 꺼진 자동 머지와 기본값이다', () => {
-    assert.deepEqual(autoMergeConfig({}), { enabled: false, review: null, dirs: {}, before: null, blockedAfterSec: 3600 })
+    assert.deepEqual(autoMergeConfig({}), { enabled: false, review: null, dirs: {}, watch: {}, before: null, blockedAfterSec: 3600 })
   })
 
   test('값을 읽고 dirs 끝의 / 를 뗀다', () => {
     const got = autoMergeConfig({
       queue: { auto_merge: true, auto_review: { pass: 'LGTM', block: '(?P<v>BLOCK)' } },
-      migrations: { dirs: { api: 'db/api/' }, before: { '*': 'backup {module}' }, blocked_after_sec: 60 },
+      migrations: { dirs: { api: 'db/api/' }, watch: { api: ['src/main/java/db/migration/'] }, before: { '*': 'backup {module}' }, blocked_after_sec: 60 },
     })
     assert.equal(got.enabled, true)
     assert.deepEqual(got.dirs, { api: 'db/api' })
+    assert.deepEqual(got.watch, { api: ['src/main/java/db/migration'] })
     assert.deepEqual(got.before, { '*': 'backup {module}' })
     assert.equal(got.blockedAfterSec, 60)
     assert.ok(got.review?.pass.test('LGTM 입니다'), 'pass 정규식이 본문에 맞아야 한다')
@@ -51,6 +52,8 @@ describe('autoMergeConfig', () => {
     ['queue.auto_review 의 정규식을 읽지 못함', { queue: { auto_review: { pass: 'ok', block: '(?i)no' } } }],
     ['migrations.blocked_after_sec 가 0', { migrations: { blocked_after_sec: 0 } }],
     ['migrations.dirs 의 값이 빈 문자열', { migrations: { dirs: { api: '' } } }],
+    ['migrations.watch 의 값이 문자열', { migrations: { watch: { api: 'src/main/java/db/migration' } } }],
+    ['migrations.watch 의 경로가 빈 문자열', { migrations: { watch: { api: [''] } } }],
     ['migrations.before 의 값이 숫자', { migrations: { before: { api: 1 } } }],
     ['migrations 절의 모르는 키', { migrations: { dir: {} } }],
   ]
@@ -154,6 +157,12 @@ describe('migrationOf', () => {
     assert.equal(migrationOf('db/web/V1__x.sql', { api: 'db/api/' }), null)
     assert.equal(migrationOf('db/apix/V1__x.sql', { api: 'db/api' }), null)
     assert.equal(migrationOf('db/api/U1__undo.sql', { api: 'db/api' }), null)
+  })
+
+  test('같은 모듈의 감시 폴더 여러 곳을 하나의 번호 공간으로 읽는다', () => {
+    assert.deepEqual(migrationOf('src/main/java/db/migration/V13__add.java', { api: ['db/api', 'src/main/java/db/migration'] }), {
+      module: 'api', version: [13], label: 'V13', path: 'src/main/java/db/migration/V13__add.java',
+    })
   })
 })
 

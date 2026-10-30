@@ -24,13 +24,20 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 | `merge_queue.ts`(`merge-with-finish.ts` 가 건 것 포함) | `before-merge`, `verify-merged`, `after-merge`, `after-queue` |
 | `finish-pr.ts` | `after-deploy` |
 | `cleanup-sweep.ts` | `before-cleanup`, `after-cleanup` |
-| `orch-loop.ts`(상주 루프) | `worker-question`, `worker-stalled`, `tick`, `ci-passed`, `ci-failed`, `pr-conflict` |
+| `orch-loop.ts`(상주 루프) | `worker-question`, `decision-pending`, `worker-stalled`, `tick`, `ci-passed`, `ci-failed`, `pr-conflict` |
 | 아직 없다. 핸들러를 두어도 불리지 않는다 | `ci-missing` |
 
 핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `scripts/lib/events.ts` 머리 주석의 「공통 필드」 와 「이벤트별 필드」 가 소유한다.
 환경 변수와 작업 디렉터리는 `scripts/lib/events.ts` 머리 주석의 「핸들러」 와 「환경」 이 소유한다.
 
 ## 핸들러 예시
+
+### 사용자 결정 요청 바꾸기
+
+`decision-pending` 은 기본 핸들러가 있는 이벤트다. 루프에 새 사용자 결정이 생기면 Run 등록의 현재 코디네이터에게 「정할 것 묻기」 를 넣는다. 등록된 터미널이 없거나 입력을 확인하지 못하면 실패로 남겨 다음 틱에 다시 시도한다.
+저장소에 `.orch/hooks/decision-pending.ts` 를 두면 기본 핸들러를 대체한다. 입력의 `questions` 는 질문 id·dispatch·본문 목록이고 `items` 는 보드 항목 id·남은 줄 목록이다. 이 핸들러는 코디네이터에게 묻기를 요청하며 사용자의 답을 대신 정하지 않는다. 전달했을 때만 0 으로 끝낸다.
+
+사용자 결정은 `decision-pending`만 코디네이터를 깨운다. `worker-question`은 기술 질문과 일반 escalation의 새 알림·재알림만 맡고, 결정 질문의 재알림은 루프 로그에만 남긴다. 따라서 결정 질문의 재알림으로 `worker-question` 핸들러를 다시 부르지 않는다.
 
 동시에 도는 worker 가 상한에 닿았으면 새 worker 를 띄우지 않는 `before-launch` 핸들러다. `.orch/hooks/before-launch.ts` 에 둔다.
 

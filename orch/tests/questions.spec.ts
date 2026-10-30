@@ -115,6 +115,15 @@ function answer(thread = 'q', extra: Json = {}): Json {
 }
 
 describe('unanswered', () => {
+  test('최신 질문의 답은 같은 dispatch 의 앞선 질문도 풀고 그 뒤의 새 질문은 남긴다', () => {
+    const q1 = message('q1', 'question', { created_at: '2026-01-01T01:00:00Z', payload: { dispatchId: 'd' } })
+    const q2 = message('q2', 'question', { created_at: '2026-01-01T02:00:00Z', payload: JSON.stringify({ dispatchId: 'd' }) })
+    const q3 = message('q3', 'question', { created_at: '2026-01-01T03:00:00Z' })
+    const other = message('other', 'question', { from_handle: 'dispatch:another' })
+    assert.deepEqual(unanswered([q2, q1, answer('q2'), other], 'r'), [other])
+    assert.deepEqual(unanswered([q2, q1, answer('q2'), q3], 'r'), [q3])
+  })
+
   test('ack 은 질문을 풀지 않고 코디네이터의 답은 푼다', () => {
     const q = message('q', 'question', { read: 1 })
     const follow = { ...q, id: 'follow', type: 'status', thread_id: 'q' }

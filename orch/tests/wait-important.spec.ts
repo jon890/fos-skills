@@ -14,6 +14,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import { adoptHint } from '../scripts/lib/sessions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/wait-important.ts', import.meta.url))
+const ORCH_BIN = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
 const TRIAGE = fileURLToPath(new URL('../scripts/triage-messages.ts', import.meta.url))
 const SHA = 'a'.repeat(40)
 
@@ -211,6 +212,42 @@ function lastLine(text: string): string {
 function lostEntries(): Json {
   return JSON.parse(readFileSync(lostState, 'utf8')).run_x as Json
 }
+
+function nextWait(stderr: string): string {
+  return lines(stderr).find((line) => line.startsWith('NEXT_WAIT ')) ?? ''
+}
+
+describe('다음 대기 안내', () => {
+  test('중요 메시지는 delivery를 다음 --ack로 넣고 stdout 마지막 줄은 유지한다', () => {
+    const r = wait([batch('d1', 'question')], ['--types', 'question,status', '--timeout-ms', '1234', '--lost-interval-sec', '0'])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(lastLine(r.stdout), 'LAST_DELIVERY d1')
+    assert.equal(nextWait(r.stderr), `NEXT_WAIT ${ORCH_BIN} wait-important --run run_x --ack d1 --types question,status --timeout-ms 1234 --lost-interval-sec 0 --completion-contract none --lost-state ${lostState}`)
+  })
+
+  test('시간 초과와 루프 wake는 앞 delivery를 다시 넘기는 명령을 남긴다', () => {
+    const timedOut = wait([], ['--ack', 'd0', '--timeout-ms', '1', '--lost-interval-sec', '0'])
+    assert.equal(timedOut.code, 3, timedOut.stdout + timedOut.stderr)
+    assert.equal(lastLine(timedOut.stdout), 'TIMEOUT LAST_DELIVERY d0')
+    assert.match(nextWait(timedOut.stderr), /--ack d0 /)
+
+    const loopRepo = join(tmp, 'loop repo')
+    mkdirSync(loopRepo)
+    mkdirSync(join(loopRepo, '.orch', 'state'), { recursive: true })
+    writeFileSync(join(loopRepo, '.orch', 'state', 'loop-events.jsonl'), `${JSON.stringify({ seq: 1, time: '2026-10-30T00:00:00Z', kind: 'REMINDER', pr: null, text: '답변' })}\n`)
+    const woke = wait([], ['--ack', 'd0', '--lost-interval-sec', '0', '--loop-repo', loopRepo])
+    assert.equal(woke.code, 7, woke.stdout + woke.stderr)
+    assert.equal(lastLine(woke.stdout), 'LAST_DELIVERY d0')
+    assert.match(nextWait(woke.stderr), /--ack d0 /)
+    assert.match(nextWait(woke.stderr), /--loop-repo '.*loop repo'/)
+  })
+
+  test('--ack-lost 같은 일회성 명령은 다음 대기 안내를 내지 않는다', () => {
+    const r = wait([], ['--ack-lost', 'ctx_a'])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(nextWait(r.stderr), '')
+  })
+})
 
 // 시작할 때 이미 failed/abandoned 인 ctx_bad 하나가 있는 Run 에 대기를 건다
 function lostAtStart(args: string[] = [], opts: { taskStatus?: string; result?: unknown; latest?: unknown; screens?: Json } = {}): Result {

@@ -31,7 +31,10 @@ export type ReviewRule = { pass: RegExp; block: RegExp }
 export type AutoMergeConfig = {
   enabled: boolean
   review: ReviewRule | null
+  // 예약 파일을 만들 폴더다. watch 에만 든 경로에는 reserve-migration 이 쓰지 않는다.
   dirs: Record<string, string>
+  // 모듈별 추가 감시 폴더다. dirs 와 합쳐 Flyway 번호 충돌과 순서를 판정한다.
+  watch: Record<string, string[]>
   before: Record<string, string> | null
   blockedAfterSec: number
 }
@@ -50,6 +53,24 @@ function stringMap(value: unknown, name: string): Record<string, string> {
     if (typeof item !== 'string' || !item) throw new ConfigError(`설정 파일의 ${name}.${key} 는 비지 않은 문자열이어야 한다`)
   }
   return { ...(value as Record<string, string>) }
+}
+
+function trimmedDir(value: string, name: string): string {
+  const trimmed = value.replace(/\/+$/, '')
+  if (!trimmed) throw new ConfigError(`설정 파일의 ${name} 는 저장소 루트 기준 폴더여야 한다: ${JSON.stringify(value)}`)
+  return trimmed
+}
+
+function watchMap(value: unknown): Record<string, string[]> {
+  if (!isObject(value)) throw new ConfigError('설정 파일의 migrations.watch 는 객체여야 한다')
+  const watch: Record<string, string[]> = {}
+  for (const [module, dirs] of Object.entries(value)) {
+    if (!Array.isArray(dirs) || dirs.some((dir) => typeof dir !== 'string' || !dir)) {
+      throw new ConfigError(`설정 파일의 migrations.watch.${module} 는 비지 않은 문자열 목록이어야 한다`)
+    }
+    watch[module] = dirs.map((dir) => trimmedDir(dir, `migrations.watch.${module}`))
+  }
+  return watch
 }
 
 function reviewRule(value: unknown): ReviewRule {
@@ -84,11 +105,10 @@ export function autoMergeConfig(config: Config): AutoMergeConfig {
   const dirs: Record<string, string> = {}
   if (migrations.dirs !== undefined) {
     for (const [module, dir] of Object.entries(stringMap(migrations.dirs, 'migrations.dirs'))) {
-      const trimmed = dir.replace(/\/+$/, '')
-      if (!trimmed) throw new ConfigError(`설정 파일의 migrations.dirs.${module} 는 저장소 루트 기준 폴더여야 한다: ${JSON.stringify(dir)}`)
-      dirs[module] = trimmed
+      dirs[module] = trimmedDir(dir, `migrations.dirs.${module}`)
     }
   }
+  const watch = migrations.watch === undefined ? {} : watchMap(migrations.watch)
 
   const before = migrations.before === undefined ? null : stringMap(migrations.before, 'migrations.before')
 
@@ -97,7 +117,7 @@ export function autoMergeConfig(config: Config): AutoMergeConfig {
     throw new ConfigError('설정 파일의 migrations.blocked_after_sec 는 양수여야 한다')
   }
 
-  return { enabled, review, dirs, before, blockedAfterSec }
+  return { enabled, review, dirs, watch, before, blockedAfterSec }
 }
 
 // 줄 머리의 `머지 보류: 이유`. 목록 기호(-, *)와 굵은 글씨(**머지 보류:**, **머지 보류**:)를 모두 받는다.
@@ -153,18 +173,21 @@ export function reviewVerdict(notes: ReviewNote[], rule: ReviewRule): 'pass' | '
 }
 
 export type Migration = { module: string; version: number[]; label: string; path: string }
+export type MigrationDirs = Record<string, string | string[]>
 
 const VERSIONED = /^V(\d+(?:[._]\d+)*)__/
 
 // 폴더가 겹치면(db 와 db/api) 가장 깊은 폴더의 모듈로 본다
-export function migrationOf(path: string, dirs: Record<string, string>): Migration | null {
+export function migrationOf(path: string, dirs: MigrationDirs): Migration | null {
   let module: string | null = null
   let depth = -1
   for (const [name, raw] of Object.entries(dirs)) {
-    const dir = raw.replace(/\/+$/, '')
-    if (dir && path.startsWith(`${dir}/`) && dir.length > depth) {
-      module = name
-      depth = dir.length
+    for (const value of Array.isArray(raw) ? raw : [raw]) {
+      const dir = value.replace(/\/+$/, '')
+      if (dir && path.startsWith(`${dir}/`) && dir.length > depth) {
+        module = name
+        depth = dir.length
+      }
     }
   }
   if (module === null) return null
@@ -181,7 +204,7 @@ export function compareVersion(a: number[], b: number[]): number {
   return 0
 }
 
-export function maxByModule(paths: string[], dirs: Record<string, string>): Map<string, Migration> {
+export function maxByModule(paths: string[], dirs: MigrationDirs): Map<string, Migration> {
   const max = new Map<string, Migration>()
   for (const path of paths) {
     const found = migrationOf(path, dirs)
@@ -190,6 +213,17 @@ export function maxByModule(paths: string[], dirs: Record<string, string>): Map<
     if (!current || compareVersion(found.version, current.version) > 0) max.set(found.module, found)
   }
   return max
+}
+
+// 예약 폴더와 감시 전용 폴더를 모듈별로 합친다. 같은 경로는 한 번만 읽는다.
+export function watchedDirs(dirs: Record<string, string>, watch: Record<string, string[]>): Record<string, string[]> {
+  const all = new Map<string, string[]>()
+  for (const [module, dir] of Object.entries(dirs)) all.set(module, [dir])
+  for (const [module, entries] of Object.entries(watch)) {
+    const current = all.get(module) ?? []
+    all.set(module, [...new Set([...current, ...entries])])
+  }
+  return Object.fromEntries(all)
 }
 
 export type OpenMigrations = { pr: number; migrations: Migration[] }

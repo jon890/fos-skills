@@ -291,15 +291,40 @@ async function sampled(args: string[], extra: NodeJS.ProcessEnv): Promise<{ code
 }
 
 describe('질문 확인', () => {
-  test('알린 지 700초 지난 미답변 질문은 REMINDER 를 알림 파일에 쓰고 worker-question 이 reminder 를 받는다', () => {
+  test('새 사용자 결정은 기본 대기가 없어도 핸들러로 요청하고 같은 질문 재전송은 다시 깨우지 않는다', () => {
+    hook('decision-pending')
     hook('worker-question')
-    orca({ messages: [question()] })
+    const ask = (id: string) => ({ ...question(id), body: '결정: 저장 형식\n권장: JSON' })
+    const workers = [{ dispatchId: 'd', dispatchStatus: 'dispatched', agentTerminalHandle: 'term_w' }]
+    orca({ messages: [ask('first')], workers })
+    once()
+    assert.equal(received('decision-pending').length, 1)
+    assert.equal(received('decision-pending')[0].run, 'r')
+    assert.equal((received('decision-pending')[0].questions as Json[])[0].id, 'first')
+    const workerQuestionCount = received('worker-question').length
+    // 질문 감시의 재알림 시간이 지나도 사용자 결정은 DECISION-PENDING 한 번으로만 다룬다.
+    write(orchFile('state', 'questions-seen.json'), JSON.stringify({ r: { first: Date.now() / 1000 - 700, retry: Date.now() / 1000 - 700 } }))
+    orca({ messages: [ask('first'), ask('retry')], workers })
+    once()
+    assert.equal(received('decision-pending').length, 1)
+    assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 1)
+    assert.deepEqual(events().filter((e) => e.kind === 'REMINDER'), [])
+    assert.equal(received('worker-question').length, workerQuestionCount)
+    // 끝난 dispatch 의 질문은 결정 알림에서 제거된다.
+    orca({ messages: [ask('retry')], workers: [{ ...workers[0], dispatchStatus: 'completed' }] })
+    once()
+    assert.equal(received('decision-pending').length, 1)
+  })
+
+  test('알린 지 700초 지난 기술 질문은 REMINDER 를 알림 파일에 쓰고 worker-question 이 reminder 를 받는다', () => {
+    hook('worker-question')
+    orca({ messages: [{ ...question(), body: '기술 질문: 연결을 확인한다' }] })
     write(orchFile('state', 'questions-seen.json'), JSON.stringify({ r: { q: Date.now() / 1000 - 700 } }))
     once()
     const lines = events()
     assert.equal(lines.length, 1, JSON.stringify(lines))
     assert.equal(lines[0].kind, 'REMINDER')
-    assert.match(String(lines[0].text), /^q question from=dispatch:d: 질문$/)
+    assert.match(String(lines[0].text), /^q question from=dispatch:d: 기술 질문: 연결을 확인한다$/)
     assert.equal(lines[0].pr, null)
     const inputs = received('worker-question')
     assert.equal(inputs.length, 1)
@@ -1010,21 +1035,33 @@ describe('사용법과 설정', () => {
 })
 
 
-test('decide 제목과 줄이 바뀔 때만 REMINDER 를 기록하고 삭제 뒤 재생성도 알린다', () => {
+test('decide 제목과 줄이 바뀔 때만 DECISION-PENDING 을 보내고 삭제 뒤 재생성도 알린다', () => {
+  hook('decision-pending')
   const file = join(repo, '.omc', 'board.json')
   const save = (title = '방식 선택', next = '1. 방식 고르기') => write(file, JSON.stringify({ items: [{ id: 'choice', status: 'decide', title, next }] }))
   save()
   once()
   once()
-  assert.equal(events().filter((e) => e.kind === 'REMINDER').length, 1)
+  assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 1)
+  assert.equal(received('decision-pending').length, 1)
   save('보관 방식 선택')
   once()
   save('보관 방식 선택', '1. 보관 기간 고르기')
   once()
-  assert.equal(events().filter((e) => e.kind === 'REMINDER').length, 3)
+  assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 3)
   board()
   once()
   save()
   once()
-  assert.equal(events().filter((e) => e.kind === 'REMINDER').length, 4)
+  assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 4)
+})
+
+test('완료한 decide 줄만 있으면 REMINDER 와 DECISION-PENDING 을 만들지 않는다', () => {
+  hook('decision-pending')
+  write(join(repo, '.omc', 'board.json'), JSON.stringify({ items: [{
+    id: 'done-choice', status: 'decide', title: '끝난 결정', details: [{ text: '선택 완료', done: true }], next: ['✓ 후속 작업 완료'],
+  }] }))
+  once()
+  assert.deepEqual(events().filter((e) => e.kind === 'REMINDER' || e.kind === 'DECISION-PENDING'), [])
+  assert.deepEqual(received('decision-pending'), [])
 })

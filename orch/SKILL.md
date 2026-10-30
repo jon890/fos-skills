@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "5.3.0"
+  version: "5.4.0"
 ---
 
 # orch
@@ -106,6 +106,8 @@ Task 성격으로 모델과 effort 를 고르고, 비교한 후보와 이유를 
 
 저장소마다 상주 루프 `orch-loop.ts` 를 띄운다. 루프가 틱마다 질문 확인, 정리, 보드 동기화, CI 감시, 충돌 PR 처리를 한다.
 `wait-important` 를 `--loop-repo` 와 함께 백그라운드로 하나만 걸고, 깨어나면 `triage-messages` 로 `worker_done`, `escalation`, `question` 을 먼저 본다. 루프의 알림(`LOOP-EVENT`)과 죽음(`LOOP-DEAD`)에도 이 대기가 깨어난다.
+받은 메시지와 알림을 처리하면 stderr 의 `NEXT_WAIT` 명령으로 즉시 다음 대기를 건다. 미완료 dispatch 가 있는 동안 대기 없이 턴을 끝내지 않는다.
+루프가 새 사용자 결정 질문이나 보드의 남은 `decide` 줄을 찾으면 `decision-pending` 기본 핸들러가 코디네이터에게 「정할 것 묻기」 를 요청한다. 이미 물어 답을 기다리는 결정은 다시 묻지 않는다.
 압축 뒤에는 루프와 대기가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
 heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.
 
@@ -117,7 +119,7 @@ TTL, 기록 위치, 호출 수 확인 명령은 [`references/gh-call-budget.md`]
 
 ## 5. 답하고 지시 보내기
 
-답과 지시는 `send-to-worker` 로 보낸다. 살아 있는 dispatch 면 마지막 메시지에 `reply` 하고 깨우고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄우고, 터미널도 없으면 종료 코드 3 이다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
+답과 지시는 `send-to-worker` 로 보낸다. 살아 있는 dispatch 면 최신 미답변 질문에 `reply` 하고 깨운다. 별도 지시는 `--no-reply` 로 보내고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄우고, 터미널도 없으면 종료 코드 3 이다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
 충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받고, 종료 코드 3 이면 새 worker 를 띄우지 않고 사용자에게 알린다.
 PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 

@@ -4,7 +4,8 @@
 // 끝난 dispatch 의 터미널에 쓴 지시는 Task 기록 없이 사라진다. 닫힌 dispatch 에 `reply` 해도 전달되지 않는다.
 // 이 명령이 경로를 고른다.
 //
-//     dispatch 가 살아 있다   그 worker 의 마지막 메시지(없으면 --reply-to)에 `reply` 하고 `nudge-worker` 로 깨운다.
+//     dispatch 가 살아 있다   가장 늦은 미답변 question/escalation 에 `reply` 하고 `nudge-worker` 로 깨운다.
+//                             질문이 없으면 마지막 status 를 쓴다. --reply-to 는 지정한 메시지를 먼저 쓰고, --no-reply 는 새 메시지로 보낸다.
 //                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」 로 거부하면
 //                             다음 후보 메시지로 한 번 더 시도한다. reply 할 후보가 없거나 시도한 후보가 모두 그 문구로 거부되면
 //                             `send --to dispatch:<id> --subject <본문 첫 줄> --body <본문>` 으로 새 메시지를 보내고
@@ -38,8 +39,9 @@
 //
 //     --dispatch   worker 의 dispatch id
 //     --body       보낼 글. --body-file 로 파일에서 읽을 수 있다. 끝난 dispatch 를 --spec 으로 이어 쓸 때는 필요 없다
-//     --reply-to   답을 달 메시지 id. 없으면 inbox 에서 그 worker 가 보낸 마지막 메시지(heartbeat 는 뒤로 미룬다)를 쓴다.
+//     --reply-to   답을 달 메시지 id. 없으면 최신 미답변 질문, status, heartbeat 차례로 고른다.
 //                  끝난 dispatch 는 question 과 escalation 만 후보로 보고, 이미 답한 것은 뺀다
+//     --no-reply   질문에 답하지 않고 새 메시지로 보낸다. 자동 알림이나 별도 지시에 쓴다. --reply-to 와 함께 쓰지 않는다
 //     --spec       dispatch 가 끝났을 때 이어 쓸 후속 지시서. `허락:` 줄이 있어야 한다.
 //                  끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 이 지시서에 적는다. 그래서 --spec 만 주면 된다
 //                  (--body 를 함께 주면 무시한다고 알린다). 살아 있는 dispatch 에 --spec 만 주면 보낼 글이 없어 거부한다
@@ -65,12 +67,13 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { context } from './lib/completion.ts'
 import { orca } from './lib/orca.ts'
 import { runAsync, runInherit, scriptCommand } from './lib/proc.ts'
 import { pyStr, shQuote } from './lib/py.ts'
 
 const USAGE = [
-  '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID] [--spec FILE] [--run RUN]',
+  '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
   '        send-to-worker.ts --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]',
 ].join('\n')
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -153,31 +156,38 @@ function describe(dispatchId: string): Described {
 }
 
 // reply 할 후보 메시지 id. 앞이 우선이다. heartbeat 는 뒤로 미루고, 답이 보이는 question 은 뺀다.
-function candidates(dispatchId: string, handle: string, kinds?: Set<string>): string[] {
-  const messages = rows(orcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
+function candidates(dispatchId: string, handle: string, kinds?: Set<string>, run?: string): string[] {
+  // 질문은 status/heartbeat 에 밀리지 않게 따로 읽는다. 전역 inbox 를 읽지 않는다.
+  const history = run ? [
+    ...rows(orcaJson(['orchestration', 'check', '--run', run, '--all']).messages),
+    ...rows(orcaJson(['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation']).messages),
+    ...rows(orcaJson(['orchestration', 'check', '--run', run, '--peek', '--types', 'question,escalation']).messages),
+  ] : rows(orcaJson(['orchestration', 'inbox', '--limit', '200']).messages)
+  const replies = [...new Set([`dispatch:${dispatchId}`, handle].filter(Boolean))].flatMap((terminal) =>
+    rows(orcaJson(['orchestration', 'inbox', '--terminal', terminal, '--limit', '200']).messages))
+  const messages = [...new Map([...history, ...replies].filter((m) => !run || !m.run_id || m.run_id === run).map((m) => [m.id, m])).values()]
   const fromWorker = (row: Json) => row.from_handle === `dispatch:${dispatchId}` || (!!handle && row.from_handle === handle)
   // 같은 thread 에 worker 가 아닌 쪽이 쓴 글이 있으면 그 question 은 이미 답했다
   const answered = new Set(messages.filter((r) => r.thread_id && !fromWorker(r) && r.thread_id !== r.id).map((r) => r.thread_id))
   const mine = messages.filter((row) => {
-    let payload: unknown
-    try {
-      payload = JSON.parse(String(row.payload || '{}'))
-    } catch {
-      payload = {}
-    }
-    if (!fromWorker(row) && obj(payload).dispatchId !== dispatchId) return false
+    const owner = context(row)[1]
+    // 터미널은 새 dispatch 가 이어 쓸 수 있다. 명시된 이전 dispatch 의 질문에는 답하지 않는다.
+    if (owner && owner !== dispatchId) return false
+    if (!fromWorker(row) && owner !== dispatchId) return false
     if (String(row.from_handle ?? '').startsWith('run:')) return false
     if (kinds && !kinds.has(String(row.type))) return false
-    return !((kinds || row.type === 'question') && answered.has(row.id))
+    return true
   })
-  // heartbeat 를 앞에, 같은 종류 안에서는 sequence 순으로 놓고 뒤집는다. 가장 최근의 heartbeat 아닌 메시지가 맨 앞이 된다
-  const rank = (row: Json) => [row.type !== 'heartbeat' ? 1 : 0, Number(row.sequence) || 0]
+  // 미답변 질문을 먼저, 그다음 status, 마지막 heartbeat 순서다.
+  const rank = (row: Json) => [ASKS.has(String(row.type)) ? 2 : row.type !== 'heartbeat' ? 1 : 0, Number(row.sequence) || 0]
   mine.sort((a, b) => {
     const [ka, sa] = rank(a)
     const [kb, sb] = rank(b)
-    return ka - kb || sa - sb
+    return ka - kb || String(a.created_at || '').localeCompare(String(b.created_at || '')) || sa - sb
   })
-  return mine.reverse().map((row) => String(row.id))
+  const latestAnswer = mine.findLastIndex((row) => ASKS.has(String(row.type)) && answered.has(row.id))
+  return mine.filter((row, index) => !ASKS.has(String(row.type)) || (!answered.has(row.id) && index > latestAnswer))
+    .reverse().map((row) => String(row.id))
 }
 
 function liveHandles(): Set<string> {
@@ -198,8 +208,9 @@ function sendAs(base: string[], run: string): string {
 }
 
 // inbox 에서 본 그 메시지의 종류. 못 찾으면 빈 문자열이다
-function typeOf(msgId: string): string {
-  const row = rows(orcaJson(['orchestration', 'inbox', '--limit', '200']).messages).find((m) => m.id === msgId)
+function typeOf(msgId: string, run: string): string {
+  const args = run ? ['orchestration', 'check', '--run', run, '--all', '--types', 'question,escalation'] : ['orchestration', 'inbox', '--limit', '200']
+  const row = rows(orcaJson(args).messages).find((m) => m.id === msgId)
   return String(row?.type ?? '')
 }
 
@@ -213,7 +224,7 @@ function reply(msgId: string, body: string, run: string, dispatchId: string): st
   try {
     return sendAs(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])], run)
   } catch (e) {
-    if (!(e instanceof OrcaFailed) || !NO_PANE.some((text) => e.message.includes(text)) || typeOf(msgId) !== 'question') throw e
+    if (!(e instanceof OrcaFailed) || !NO_PANE.some((text) => e.message.includes(text)) || typeOf(msgId, run) !== 'question') throw e
     const base = [
       'orchestration',
       'send',
@@ -285,6 +296,7 @@ type Args = {
   body?: string
   bodyFile?: string
   replyTo?: string
+  noReply?: boolean
   spec?: string
   run?: string
   agent?: string
@@ -294,7 +306,7 @@ type Args = {
 
 function parse(argv: string[]): Args | 'help' | null {
   const names = ['dispatch', 'body', 'body-file', 'reply-to', 'spec', 'run', ...SETTING_KEYS]
-  const options = { ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), help: { type: 'boolean' as const, short: 'h' } }
+  const options = { ...Object.fromEntries(names.map((name) => [name, { type: 'string' as const }])), 'no-reply': { type: 'boolean' as const }, help: { type: 'boolean' as const, short: 'h' } }
   let values
   try {
     // `--body "-x"` 처럼 값이 - 로 시작해도 값으로 받는다
@@ -304,6 +316,10 @@ function parse(argv: string[]): Args | 'help' | null {
     return null
   }
   if (values.help) return 'help'
+  if (values['no-reply'] && values['reply-to']) {
+    err('send-to-worker: --no-reply 와 --reply-to 는 함께 주지 않는다')
+    return null
+  }
   if (!values.dispatch) {
     err(`${USAGE}\nsend-to-worker: --dispatch 가 필요하다`)
     return null
@@ -314,6 +330,7 @@ function parse(argv: string[]): Args | 'help' | null {
     body: text('body'),
     bodyFile: text('body-file'),
     replyTo: text('reply-to'),
+    noReply: values['no-reply'] === true,
     spec: text('spec'),
     run: text('run'),
     agent: text('agent'),
@@ -362,8 +379,7 @@ async function main(argv: string[]): Promise<number> {
         )
         return 2
       }
-      const targets = a.replyTo ? [a.replyTo] : []
-      targets.push(...candidates(a.dispatch, handle).filter((t) => !targets.includes(t)))
+      const targets = a.noReply ? [] : a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, undefined, run)
       const replied = targets.length > 0 ? replyFirst(targets, body, run, a.dispatch) : null
       let wake: string
       if (replied) {
@@ -372,7 +388,7 @@ async function main(argv: string[]): Promise<number> {
       } else {
         // 답할 곳이 없다. worker 의 질문이 모두 이미 답해졌거나 worker 가 아직 아무것도 보내지 않았다
         const sent = sendNew(a.dispatch, body, run)
-        const why = targets.length === 0 ? '보낸 메시지가 없어' : '후보가 모두 이미 답한 question 이라'
+        const why = a.noReply ? '--no-reply 로' : targets.length === 0 ? '보낸 메시지가 없어' : '후보가 모두 이미 답한 question 이라'
         out(`sent: ${why} reply 대신 dispatch:${a.dispatch} 에 새 메시지로 보냈다 (${sent || 'None'})`)
         if (!sent) {
           out('send-to-worker: 새 메시지 id 를 받지 못해 깨우지 못했다')
@@ -388,7 +404,7 @@ async function main(argv: string[]): Promise<number> {
     }
     // 끝난 dispatch 라도 worker 가 보낸 question 과 escalation 이 남았으면 답을 단다. 깨울 worker 는 없다
     if (body) {
-      const targets = a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, ASKS)
+      const targets = a.noReply ? [] : a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, ASKS, run)
       const replied = targets.length > 0 ? replyFirst(targets, body, run, a.dispatch) : null
       if (replied) {
         out(`replied: ${replied.target} 에 답했다 (${replied.sent || 'None'}). 끝난 dispatch 라 깨우지 않았다`)

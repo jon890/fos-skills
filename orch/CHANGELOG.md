@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.4.0 (2026-10-30)
+
+- 호환성: 기존 사용자 결정 `REMINDER`는 `DECISION-PENDING`으로 바뀐다. 저장소의 `worker-question` 핸들러로 결정 재알림을 받았다면 `decision-pending` 핸들러로 옮긴다
+- `send-to-worker` 가 최신 미답변 질문에 먼저 답한다. 별도 지시는 `--no-reply` 로 보내고 재전송 질문은 뒤 질문에 답하면 보드와 감시에서 함께 해결된다
+- `wait-important` 가 다음 대기 명령을 안내한다. 코디네이터는 메시지를 처리한 직후 다시 대기한다
+- 상주 루프가 새 사용자 결정과 보드의 남은 결정 줄을 찾으면 `decision-pending` 기본 핸들러로 현재 코디네이터에게 묻기를 요청한다. 같은 결정은 반복해서 깨우지 않는다
+- `migrations.watch` 로 감시 전용 폴더를 더한다. 예약 파일은 계속 `migrations.dirs` 의 폴더에 만든다
+
 ## 5.3.0 (2026-10-30)
 
 - 체크 스냅샷은 PR HEAD 별로 공유한다. 진행 중이면 짧게, 완료됐으면 길게 캐시하고 멈춤·머지 직전에 다시 읽는다
@@ -48,7 +56,7 @@
 - 저장소마다 상주 루프 `orch-loop.ts` 가 질문 확인, 정리, 보드 동기화, 내 PR 의 CI 감시, 충돌 PR 알림을 하고 `wait-important --loop-repo` 를 깨운다
 - worker 가 PR 이 머지될 때까지 맡고, 완료 검증은 `준비됨` 을 받은 때 한다. 지시서 하나는 PR 하나로 끝나는 크기로 쓴다
 - `cleanup-sweep --remote-branches` 가 머지된 원격 브랜치를 지우고, 머지 큐가 머지한 브랜치를 base 로 둔 내 PR 의 base 를 옮긴다
-- worker 를 띄우면 보드 항목을 만들고 루프가 PR 연결과 머지를 반영한다. 결정 필요 항목이 바뀌면 REMINDER 로 깨운다
+- worker 를 띄우면 보드 항목을 만들고 루프가 PR 연결과 머지를 반영한다. 결정 필요 항목은 `DECISION-PENDING` notifier가 깨운다
 - `heavy` 절로 무거운 검사를 분류하고, 시간 제한과 유예를 `ORCH_*` 환경 변수로 바꿀 수 있다
 - node 24 이상이 필요하다. 그보다 낮으면 스킬을 열 때 `NODE-TOO-OLD` 로 멈춘다(ADR-011)
 

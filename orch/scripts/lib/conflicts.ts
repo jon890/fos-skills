@@ -237,7 +237,7 @@ export async function resolveConflict(args: {
       out(`  ${dispatch} 에 알릴 것: ${body}`)
       return { kind: 'skip' }
     }
-    sendArgs.push('--body', body)
+    sendArgs.push('--body', body, '--no-reply')
   } else {
     worker.spec = conflictSpecPath(repo, number)
     if (dryRun) {

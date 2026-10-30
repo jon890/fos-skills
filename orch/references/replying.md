@@ -12,7 +12,9 @@ worker 가 `--decision` 으로 보낸 질문은 `결정:` 줄과 `권장:` 줄�
 사용자 결정은 배경과 권장안을 붙여 `AskUserQuestion` 하나에 최대 4개까지 묶는다.
 Codex 에서는 같은 내용을 사용 가능한 구조화 질문 도구로 묻는다.
 답을 받으면 각 질문의 원래 메시지 ID 에 `send-to-worker --reply-to` 로 전달한다.
-이미 끝난 질문도 처리 결과를 답해 thread 를 닫는다. ack 만 해서는 답한 것이 아니다.
+`--reply-to` 를 생략하면 최신 미답변 질문을 우선한다. 같은 dispatch 의 뒤 질문에 답하면 앞선 미답변 질문도 해결된 것으로 본다. ask 가 한 번에 한 답을 기다리므로 재전송 질문이 보드에 남지 않게 하는 규칙이다. 서로 다른 dispatch 의 질문은 함께 닫지 않는다.
+답과 관계없는 진행 지시·CI 알림·머지 알림은 `--no-reply` 로 보낸다. 이 옵션은 질문 thread 에 답을 달지 않는다.
+살아 있는 dispatch 에서 이미 해결된 질문도 처리 결과를 답해 thread 를 닫는다. inactive dispatch 의 질문은 보드 결정 필요에서 제외한다. ack 만 해서는 답한 것이 아니다.
 
 답한 뒤 보드가 다음 조회에서 해당 질문을 제외하는지 확인한다. 모두 답했다면 자동 질문 수는 0 이다.
 수동 `decide` 항목이 남아 있으면 별도로 정리한다. 보드는 이 항목을 질문 수에 더한다.
@@ -25,7 +27,7 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 종료 코드 3 이면 표준 출력이 다음에 할 일을 말한다. 끝난 dispatch 에 `--spec` 을 주지 않았거나 터미널이 없는 경우다.
 살아 있는 dispatch 인데 reply 할 메시지가 없거나 모두 이미 답한 question 이면 스크립트가 그 dispatch 에 새 메시지로 보내고 깨운다(`sent:` 줄). `orca orchestration send` 와 `nudge-worker` 를 직접 잇지 않는다.
 
-**끝난 dispatch 의 질문에 답할 때도 `send-to-worker` 를 쓴다.** 답할 메시지를 고르고, 이미 답한 question 은 건너뛴다. 깨울 worker 가 없으니 답만 달고 0 으로 끝난다.
+**끝난 dispatch 의 질문은 보드에서 제외한다.** Orca 가 `dispatch_inactive` 로 답장을 거부하면 닫으려고 같은 답을 반복하지 않는다. 실제 후속 일이 있으면 `send-to-worker --spec` 으로 이어 쓴다.
 `send-to-worker` 는 `--from run:<run>` 을 붙여 보내고, Orca 터미널 안이라 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보낸다.
 질문 감시는 질문의 스레드에 worker 쪽으로 간 답이면 보낸 쪽과 상관없이 답한 것으로 센다(ADR-015).
 **세션을 다시 시작하면 코디네이터 터미널의 pane 신원이 없어 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.** 그 메시지가 question 이면 `send-to-worker` 가 같은 스레드에 status 로 `answer: <첫 줄>` 제목과 본문을 `send --to dispatch:<id>` 로 보내고 `fallback:` 줄로 알린다. 직접 우회하지 않는다. `worker-ask` 가 그 status 의 본문을 답으로 읽는다(종료 코드 3).

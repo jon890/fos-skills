@@ -387,7 +387,7 @@ async function tellMerged(args: Args, runId: string, worktree: string, merge: st
   const dispatch = String(row.dispatchId)
   const body = `PR #${args.pr} 이 MERGED 됐다(머지 커밋 ${merge}). gh pr view 로 확인한 뒤 worker_done 을 보내고 끝낸다`
   const send = process.env.SEND_TO_WORKER || join(HERE, 'send-to-worker.ts')
-  const done = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', runId]), {
+  const done = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', runId, '--no-reply']), {
     cwd: worktree,
     timeoutMs: SEND_TIMEOUT_MS,
   })

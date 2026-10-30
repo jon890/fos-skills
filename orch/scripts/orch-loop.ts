@@ -99,12 +99,14 @@
 //     끝난 뒤에 본다. 부모가 없으면 stdout 을 읽는 쪽도 없으므로 그 뒤의 쓰기 오류(EPIPE)는 버린다.
 //     틱 자식이 하는 일(순서대로, 하나가 실패해도 다음을 한다):
 //     1. 질문 확인. Run 마다, Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
-//        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓰고 worker-question 을 낸다. REMINDER 는 알림 파일에도 쓴다.
+//        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓴다. 기술 질문의 REMINDER 는 알림 파일과 worker-question 에도 낸다.
+//        사용자 결정 재알림은 로그만 남기고 decision-pending 의 중복 억제를 따른다.
 //        새 질문(QUESTION)은 알림 파일에 쓰지 않는다. 코디네이터의 wait-important 가 question 메시지로 이미 깨어난다
 //        닫힌 질문(lib/questions.ts 의 「닫힌 질문」)의 REMINDER 는 내지 않고, 처음 닫힌 것으로 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓴다
 //     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 자동 머지, 충돌 처리가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     3. 보드 동기화(워크트리 정리 전). 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
-//        decide 제목·줄의 내용 해시가 달라지면 REMINDER 를 기록한다(lib/board.ts)
+//        새 사용자 결정 질문과 보드의 남은 decide 줄은 lib/decisions.ts 가 DECISION-PENDING 과 decision-pending 을 낸다.
+//        기본 핸들러가 --start 로 등록한 현재 코디네이터에게 묻기를 요청한다. 같은 결정은 해결될 때까지 다시 깨우지 않는다.
 //     4. 정리. Run 마다 cleanup-sweep --repo <repo> --kill-holders [--remote-branches] --apply [--run <run>] [--specs-dir <그 Run 의 dir>].
 //        --remote-branches 는 저장소 공유 일이라 주 Run 의 차례에서만 준다
 //     5. CI 감시. 아래 「CI 감시」
@@ -293,7 +295,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, reviewVerdict, specHold, sweepArgs } from './lib/auto-merge.ts'
+import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, reviewVerdict, specHold, sweepArgs, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote } from './lib/auto-merge.ts'
 import { context as questionContext } from './lib/completion.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './lib/config.ts'
@@ -309,13 +311,14 @@ import { specFiles } from './lib/last-pr.ts'
 import { appendEvent, DEFAULT_ALIVE_SEC, dropReadEvents, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
 import { orcaJson } from './lib/orca.ts'
-import { findBoardItems, readBoard, remindDecisions } from './lib/board.ts'
+import { findBoardItems, readBoard } from './lib/board.ts'
 import type { BoardItem } from './lib/board.ts'
 import { boardPath, makeParent, pathOf } from './lib/paths.ts'
 import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './lib/questions.ts'
+import { isUserDecision, notifyDecisions } from './lib/decisions.ts'
 import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
@@ -571,6 +574,7 @@ const LEGACY_HINT = '안내: 이 루프는 Run 등록을 모르는 옛 orch 로 
 async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced: boolean): Promise<number> {
   const state = readLoop(ctx.repo)
   const starting = state === null || Number(state.pid) !== found.pid
+  const registered = ctx.run ? isRegistered(ctx.repo, ctx.run) : false
   if (ctx.run && legacyLoop(state, found.pid)) {
     // 옛 루프는 등록을 읽지 않는다. 띄우기 전에 쓴 등록을 남기지 않는다
     if (raced) unregisterRun(ctx.repo, ctx.run)
@@ -578,7 +582,7 @@ async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced
     if (found.run !== ctx.run) log(LEGACY_HINT)
     return 4
   }
-  if (ctx.run && (raced || !isRegistered(ctx.repo, ctx.run))) {
+  if (ctx.run && (raced || !registered)) {
     // 루프는 띄운 터미널의 명의로 조회한다. 묶인 Run 이 다르거나 모르면 이 Run 의 질문을 읽지 못하니 합류하지 않는다(머리 주석의 「명의」)
     const bound = await loopBound(ctx.repo, found.pid)
     if (bound !== null && bound !== ctx.run) {
@@ -590,11 +594,14 @@ async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced
       )
       return 5
     }
-    registerRun(ctx.repo, ctx.run, ctx.specsDir, starting)
-    log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
-    return 0
   }
-  if (ctx.run && starting) registerRun(ctx.repo, ctx.run, ctx.specsDir, true)
+  if (ctx.run) {
+    registerRun(ctx.repo, ctx.run, ctx.specsDir, starting, process.env.ORCA_TERMINAL_HANDLE)
+    if (raced || !registered) {
+      log(`LOOP-JOINED ${found.pid} run=${ctx.run}`)
+      return 0
+    }
+  }
   log(`LOOP-RUNNING ${found.pid} run=${ctx.run && isRegistered(ctx.repo, ctx.run) ? ctx.run : found.run}`)
   return 4
 }
@@ -667,7 +674,7 @@ async function start(ctx: Context): Promise<number> {
   const found = running(ctx.repo)
   if (found) return joinLoop(ctx, found, false)
   // registered_at 을 새로 쓴다. 새로 뜬 루프는 앞 루프의 alive_at 뒤에 쓴 등록을 살아 있는 세션의 것으로 보고 남긴다(머리 주석의 「Run」)
-  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, true)
+  if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, true, process.env.ORCA_TERMINAL_HANDLE)
   // 자식은 이 프로세스의 명의를 물려받는다. 명의 조회는 느릴 수 있어 START_WAIT_MS 를 쓰기 전에 여기서 한 번 읽어 넘긴다(머리 주석의 「명의」)
   const bound = boundRun()
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SELF, ...passArgs(ctx), '--foreground'], {
@@ -1090,7 +1097,7 @@ async function tellWorker(ctx: Context, pr: OwnPr, failed: CiCheck[], lookup: Lo
   const shown = failed.map((check) => (check.url ? `${check.name} ${check.url}` : check.name)).join(', ')
   const body = `PR #${pr.number} 의 체크가 실패했다: ${shown}. 실패를 고치고 검사를 다시 돌린 뒤 push 한다. 끝나면 status 로 알린다.`
   const send = process.env.SEND_TO_WORKER || join(HERE, 'send-to-worker.ts')
-  const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', found.run]), { cwd: ctx.repo, timeoutMs: SEND_MS })
+  const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', found.run, '--no-reply']), { cwd: ctx.repo, timeoutMs: SEND_MS })
   relay(sent)
   if (sent.code === 0) return { text: `보냈다 ${dispatch}`, run: found.run }
   if (sent.code === 4) return { text: '깨우지 못했다(종료 코드 4)', run: found.run }
@@ -1512,7 +1519,7 @@ function queueEndLine(file: string): string {
 }
 
 // 더한 파일의 마이그레이션. 더한 파일은 lib/reservations.ts 의 addedPaths 가 고른다(머리 주석의 「자동 머지」 4)
-function addedMigrations(files: unknown, dirs: Record<string, string>): Migration[] {
+function addedMigrations(files: unknown, dirs: Record<string, string | string[]>): Migration[] {
   const found: Migration[] = []
   for (const path of addedPaths(files)) {
     const migration = migrationOf(path, dirs)
@@ -1560,7 +1567,8 @@ function judgeTarget(
   }
   if (Number(count) > 0) return { wait: `미해결 스레드 ${Number(count)}` }
   const review = ctx.autoMerge.review
-  if (!review && Object.keys(ctx.autoMerge.dirs).length === 0) return { migrations: [] }
+  const watched = watchedDirs(ctx.autoMerge.dirs, ctx.autoMerge.watch)
+  if (!review && Object.keys(watched).length === 0) return { migrations: [] }
   const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments,files'], { cwd: ctx.repo })
   if (!got.ok) return { error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
   const data = isObject(got.data) ? got.data : {}
@@ -1569,7 +1577,7 @@ function judgeTarget(
     if (verdict === 'block') return { wait: '리뷰 보류' }
     if (verdict === 'none') return { wait: '리뷰 대기' }
   }
-  return { migrations: addedMigrations(data.files, ctx.autoMerge.dirs) }
+  return { migrations: addedMigrations(data.files, watched) }
 }
 
 // base 마다의 최고 번호와 같은 base 의 열린 PR 의 번호, 예약, 브랜치마다의 열린 PR 번호(머리 주석의 「자동 머지」 4).
@@ -1586,7 +1594,7 @@ function migrationContext(
       openByBranch: Map<string, Migration[]>
     }
   | { ok: false; error: string } {
-  const dirs = ctx.autoMerge.dirs
+  const dirs = watchedDirs(ctx.autoMerge.dirs, ctx.autoMerge.watch)
   const reserved: ReservedMigrations[] = []
   let read: ReturnType<typeof readReservations>
   try {
@@ -1607,7 +1615,7 @@ function migrationContext(
     const fetched = git(ctx.repo, ['fetch', '--quiet', 'origin', base])
     if (fetched.code !== 0) return { ok: false, error: `origin ${base} 를 받지 못했다(종료 코드 ${fetched.code}): ${oneLine(fetched.stderr.trim())}` }
     const paths: string[] = []
-    for (const dir of new Set(Object.values(dirs))) {
+    for (const dir of new Set(Object.values(dirs).flat())) {
       const listed = git(ctx.repo, ['ls-tree', '-r', '--name-only', `origin/${base}`, '--', dir])
       if (listed.code !== 0) return { ok: false, error: `origin/${base} 의 ${dir} 를 읽지 못했다(종료 코드 ${listed.code}): ${oneLine(listed.stderr.trim())}` }
       paths.push(...lines(listed.stdout))
@@ -1907,6 +1915,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
   // 1. 질문 확인. Run 마다. 미답변 질문을 보낸 worker 는 멈춤 확인이 idle 로 보지 않는다
   // 닫힌 질문(끝난 dispatch 의 질문이고 그 PR 이 머지되거나 닫혔다)은 재알림하지 않는다(lib/questions.ts 의 「닫힌 질문」)
   const waiting = new Map<string, Waiting>()
+  const pendingDecisions = new Map<string, ReturnType<typeof poll>['pending']>()
   const closedFile = join(pathOf('state', ctx.repo), 'questions-closed.json')
   const closed = readClosed(closedFile)
   let closedChanged = false
@@ -1919,6 +1928,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     try {
       const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo)
       notices = polled.notices
+      pendingDecisions.set(run, polled.pending)
       waiting.set(run, askers(polled.pending))
       report('questions', null, { run })
       // 미답변 목록에서 빠진 질문의 기록은 지운다
@@ -1947,6 +1957,8 @@ async function tick(ctx: Context, n: number): Promise<number> {
         }
       }
       log(notice.line)
+      // 사용자 결정은 decision-pending 만 깨운다. 600초 재알림이 중복 억제를 우회하지 않게 한다.
+      if (notice.reminder && isUserDecision(notice.message)) continue
       if (notice.reminder) {
         try {
           appendEvent(ctx.repo, 'REMINDER', null, notice.line.replace(/^REMINDER /, ''), run)
@@ -1984,15 +1996,22 @@ async function tick(ctx: Context, n: number): Promise<number> {
       const done = await runAsync(scriptCommand(sync, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
       relay(done)
       report('board', done.code === 0 ? null : `종료 코드 ${done.code}`)
-      remindDecisions(ctx.repo, (text) => {
-        appendEvent(ctx.repo, 'REMINDER', null, text, primary)
-        log(`REMINDER ${text}`)
-      })
     } else {
       report('board', null)
     }
   } catch (e) {
     report('board', oneLine(e))
+  }
+
+  // 대기가 꺼져 있어도 기본 핸들러가 코디네이터를 깨운다. 같은 결정은 해결될 때까지 한 번만 보낸다.
+  for (const { run } of runs) {
+    if (!run || !pendingDecisions.has(run)) continue
+    try {
+      await notifyDecisions(ctx.repo, run, pendingDecisions.get(run)!, run === primary)
+      report('decisions', null, { run })
+    } catch (e) {
+      report('decisions', oneLine(e), { run })
+    }
   }
 
   // 4. 정리. Run 마다 그 Run 범위로 돈다. 원격 브랜치 정리는 저장소 공유 일이라 주 Run 의 차례에서만 한다

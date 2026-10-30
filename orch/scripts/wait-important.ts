@@ -147,6 +147,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { fileURLToPath } from 'node:url'
 import { expandArgs } from './lib/args.ts'
 import { linkBoardPr } from './lib/board.ts'
 import { classify, context, payload } from './lib/completion.ts'
@@ -158,7 +159,7 @@ import { isRegistered, loopStatus, readEvents, readLoop, recheckMs, writeCursor 
 import { orcaBin, orcaJson } from './lib/orca.ts'
 import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
-import { pyJson, pyStr as text } from './lib/py.ts'
+import { pyJson, pyStr as text, shQuote } from './lib/py.ts'
 import { judge, readScreens, screenHandles } from './lib/worker-state.ts'
 import { adoptHint } from './lib/sessions.ts'
 
@@ -174,6 +175,7 @@ const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish'])
 const HISTORY_TIMEOUT_MS = 30_000
 // orca 는 --timeout-ms 에 끝난다. 그 뒤에도 남은 check 를 끝내기까지 더 기다리는 시간
 const CHECK_GRACE_MS = 30_000
+const ORCH_BIN = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
 
 type Json = Record<string, unknown>
 type Lost = [string, unknown]
@@ -188,6 +190,22 @@ function out(line: string): void {
 
 function err(line: string): void {
   process.stderr.write(`${line}\n`)
+}
+
+// 대기를 끝낸 뒤에도 코디네이터가 같은 Run을 계속 감시할 수 있게 다음 호출을 stderr에 남긴다.
+// stdout의 JSON과 LAST_DELIVERY 계약은 자동 처리기가 읽으므로 건드리지 않는다.
+function nextWait(values: Record<string, string | boolean | string[] | undefined>, ack: string | null, loopRepos: string[], lostState: string): void {
+  const args = [shQuote(ORCH_BIN), 'wait-important', '--run', shQuote(String(values.run))]
+  if (ack) args.push('--ack', shQuote(ack))
+  args.push('--types', shQuote(String(values.types)))
+  args.push('--timeout-ms', shQuote(String(values['timeout-ms'])))
+  args.push('--lost-interval-sec', shQuote(String(values['lost-interval-sec'])))
+  args.push('--completion-contract', shQuote(String(values['completion-contract'])))
+  if (values['kill-stale'] === true) args.push('--kill-stale')
+  for (const dispatch of values['ignore-lost'] as string[]) args.push('--ignore-lost', shQuote(dispatch))
+  args.push('--lost-state', shQuote(lostState))
+  for (const repo of loopRepos) args.push('--loop-repo', shQuote(repo))
+  err(`NEXT_WAIT ${args.join(' ')}`)
 }
 
 // 같은 이유의 WATCH-ERROR 는 이유가 바뀌거나 조회가 한 번 성공할 때까지 다시 내지 않는다
@@ -756,7 +774,7 @@ async function workerDone(messages: Json[], runId: string): Promise<void> {
   }
 }
 
-async function reportLost(lost: Lost[], rows: Json[], ack: string | null, state: string, runId: string, repo: string): Promise<number> {
+async function reportLost(lost: Lost[], rows: Json[], ack: string | null, state: string, runId: string, repo: string, next: () => void): Promise<number> {
   for (const [dispatch, stage] of lost) out(`WORKER_LOST ${dispatch} stage=${text(stage)}`)
   out(adoptHint(repo))
   const rowOf = new Map(rows.map((w) => [w.dispatchId, w]))
@@ -772,6 +790,7 @@ async function reportLost(lost: Lost[], rows: Json[], ack: string | null, state:
     )
   }
   out(`LAST_DELIVERY ${ack || '-'}`)
+  next()
   saveReported(state, runId, Object.fromEntries(lost.map(([d]) => [d, 'lost'])), repo)
   return 5
 }
@@ -865,6 +884,7 @@ async function main(argv: string[]): Promise<number> {
   repoBase = cwd
   if (!values['lost-state']) warnLegacy(cwd, 'wait-important')
   const state = values['lost-state'] ? resolve(base, values['lost-state']) : join(pathOf('state', cwd), 'wait-important-lost.json')
+  const continueWait = (delivery: string | null) => nextWait(values as Record<string, string | boolean | string[] | undefined>, delivery, loopRepos, state)
   const ignoreLost = values['ignore-lost'] as string[]
   const ackLost = values['ack-lost'] as string[]
   if (ackLost.length) {
@@ -889,13 +909,14 @@ async function main(argv: string[]): Promise<number> {
     const { found: candidates, deliberate } = unhandledLost(runId, rows, ignore)
     saveReported(state, runId, deliberate, cwd)
     const found = candidates.length ? dropWorking(rows, candidates) : []
-    if (found.length) return reportLost(found, rows, values.ack ?? null, state, runId, cwd)
+    if (found.length) return reportLost(found, rows, values.ack ?? null, state, runId, cwd, () => continueWait(values.ack ?? null))
     watched = new Set([...liveDispatches(rows)].filter((d) => !ignore.has(d)))
   }
   const woke = loopWake(loopRepos, runId)
   if (woke) {
     deliverLoop(woke)
     out(`LAST_DELIVERY ${values.ack || '-'}`)
+    continueWait(values.ack ?? null)
     return woke.code
   }
 
@@ -906,12 +927,14 @@ async function main(argv: string[]): Promise<number> {
     const remaining = Math.trunc(deadline - performance.now())
     if (remaining <= 0) {
       out(`TIMEOUT LAST_DELIVERY ${ack || '-'}`)
+      continueWait(ack)
       return 3
     }
     const checked = await check(runId, types, ack, remaining, watched, interval, loopRepos)
-    if (checked.kind === 'lost') return reportLost(checked.lost, checked.rows, ack, state, runId, cwd)
+    if (checked.kind === 'lost') return reportLost(checked.lost, checked.rows, ack, state, runId, cwd, () => continueWait(ack))
     if (checked.kind === 'loop') {
       out(`LAST_DELIVERY ${ack || '-'}`)
+      continueWait(ack)
       return checked.code
     }
     const data = checked.data
@@ -946,6 +969,7 @@ async function main(argv: string[]): Promise<number> {
       out(pyJson(data))
       if (suspicious) out('의심스러운 worker_done: 앞선 PR 준비 상태를 확인하지 못했다. 완료 검증 전에 해제하지 않는다')
       out(`LAST_DELIVERY ${delivery || '-'}`)
+      continueWait(delivery ? String(delivery) : null)
       return suspicious ? 6 : 0
     }
     if (messages.length) {

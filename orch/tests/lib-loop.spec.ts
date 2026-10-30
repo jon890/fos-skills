@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync,
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { appendEvent, eventsFile, isLoopProcess, loopFile, loopStatus, readEvents, recheckMs, writeCursor } from '../scripts/lib/loop.ts'
+import { appendEvent, eventsFile, isLoopProcess, loopFile, loopStatus, readEvents, recheckMs, registerRun, registeredRuns, writeCursor } from '../scripts/lib/loop.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 let tmp: string
@@ -35,6 +35,14 @@ afterEach(() => {
 })
 
 const NOW = Date.parse('2026-10-25T12:00:00.000Z')
+
+test('Run 등록은 코디네이터 터미널을 보존하고 --start 재등록 때 갱신한다', () => {
+  registerRun(repo, 'r', null, false, 'term_first')
+  registerRun(repo, 'r', 'specs', false)
+  assert.deepEqual(registeredRuns(repo), [{ run: 'r', specs_dir: 'specs', registered_at: registeredRuns(repo)[0].registered_at, coordinator_terminal: 'term_first' }])
+  registerRun(repo, 'r', null, false, 'term_current')
+  assert.equal(registeredRuns(repo)[0].coordinator_terminal, 'term_current')
+})
 
 function ago(seconds: number): string {
   return new Date(NOW - seconds * 1000).toISOString()

@@ -71,7 +71,7 @@ export const PIPELINE_KEYS: readonly string[] = [
 export const HEAVY_KEYS: readonly string[] = ['exclusive', 'normal', 'light', 'wait_idle']
 
 // migrations 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 migrations 행이다. 상주 루프의 자동 머지(lib/auto-merge.ts)가 읽는다.
-export const MIGRATIONS_KEYS: readonly string[] = ['dirs', 'before', 'blocked_after_sec']
+export const MIGRATIONS_KEYS: readonly string[] = ['dirs', 'watch', 'before', 'blocked_after_sec']
 
 // board 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 board 행이다. 값의 판정은 lib/milestones.ts 의 boardSettings 가 소유한다.
 export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line']

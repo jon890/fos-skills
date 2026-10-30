@@ -21,6 +21,7 @@
 // 이벤트별 필드
 //   before-launch, worker-launched  worker, branch, agent, model, effort
 //   worker-question  worker, message(id, type, subject, body), reminder(bool), age_sec
+//   decision-pending  questions(id, dispatch, text 의 목록), items(id, text 의 목록). 새 사용자 결정이 생길 때 코디네이터에게 묻기를 요청한다
 //   worker-done  worker, outcome, evidence(ready 또는 suspicious), pr(있으면).
 //       worker_done --outcome failed 같은 실패 보고와 --completion-contract none 의 대기에서는 내지 않는다
 //   worker-lost  worker, stage
@@ -148,6 +149,7 @@ export const EVENTS: Readonly<Record<string, EventSpec>> = Object.freeze({
   'before-launch': spec(true),
   'worker-launched': spec(false),
   'worker-question': spec(false),
+  'decision-pending': spec(false),
   'worker-done': spec(false),
   'worker-lost': spec(false),
   // 거부는 넘김이다. 핸들러가 처리하지 않고 코디네이터에게 넘긴다(orch-loop.ts 의 「멈춤 확인」)
@@ -508,7 +510,8 @@ function execute(argv: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; in
 // 핸들러가 없으면 입력을 만들 필요가 없어, 입력에 비싼 조회가 드는 쪽(wait-important 의 gh)이 먼저 본다.
 export function handlerFile(event: string, repo: string): string | null {
   const file = handlerPath(event, orchDir(repo))
-  return isFile(file) ? file : null
+  if (isFile(file)) return file
+  return event === 'decision-pending' ? fileURLToPath(new URL('../handlers/decision-pending.ts', import.meta.url)) : null
 }
 
 function handlerPath(event: string, root: string): string {
@@ -524,7 +527,7 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
   // 주 checkout 과 orch 루트를 한 번만 구해 아래에 넘긴다. pathOf, ensure, loadConfig 가 저마다 구하면 git 을 여러 번 부른다.
   const repo = mainCheckout(ctx.repo)
   const root = orchDir(repo)
-  const file = handlerPath(event, root)
+  const file = handlerFile(event, repo) ?? handlerPath(event, root)
   const hasHandler = isFile(file)
   if (!hasHandler) return emptyResult()
 

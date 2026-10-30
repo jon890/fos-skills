@@ -196,7 +196,8 @@ flowchart TD
 | --- | --- | --- | --- | --- | --- |
 | `before-launch` | `launch-worker` | 워크트리를 만든 뒤, `worker-start` 전 | 예 | 지시서 검사, 허락 줄, deny 규칙 | 저장소의 동시 worker 상한, 준비되지 않은 개발 환경 거부 |
 | `worker-launched` | `launch-worker` | `LAUNCHED` 를 낸 뒤 | 아니오 | `LAUNCHED` 줄과 `launch.effective` | 개발 서버 접속 설정을 워크트리에 복사 |
-| `worker-question` | `orch-loop`, `watch-questions` | 새 question 이나 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄, 보드 결정 필요 | 메신저 알림 |
+| `worker-question` | `orch-loop`, `watch-questions` | 기술 question 이나 일반 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄 | 메신저 알림 |
+| `decision-pending` | `orch-loop` | 새 사용자 결정 질문이나 보드의 미완료 결정 줄을 찾을 때 | 아니오 | `DECISION-PENDING`, 현재 코디네이터에게 묻기 요청 | 저장소의 결정 요청 전달 |
 | `worker-done` | `wait-important` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
 | `worker-lost` | `wait-important` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER_LOST` 줄과 상태 기록 | runner 호스트 상태 확인 |
 | `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 입력하지 않는다. 핸들러가 없거나 0 이 아니면(거부는 넘김) 그 Run 의 알림 파일에 `WORKER-STALLED` 줄 | `nudge-worker --text` 로 다시 시도시키고 횟수 상한에서 코디네이터에게 넘긴다 |
@@ -221,7 +222,7 @@ flowchart TD
 | 공백 | 막는 곳 | 방법 |
 | --- | --- | --- |
 | 질문 감시가 꺼진다. Monitor 는 시간이 지나면 끝나고, 조회 실패를 stderr 로만 내 알림이 없다 | `orch-loop` 의 `tick`, `wait-important`, `session-resume` | 질문 확인을 루프의 틱에 넣어 Monitor 에 기대지 않는다. 루프는 하네스의 백그라운드 명령이 아니라 스스로 분리된 프로세스로 돌아 하네스의 시간 한도에 묶이지 않는다. 코디네이터를 깨워야 하는 일은 알림 파일에 적고, 코디네이터가 늘 다시 거는 `wait-important` 가 그 파일을 읽어 깨어난다. 조회 실패도 `WATCH-ERROR` 로 같은 파일에 간다. 루프가 죽으면 `wait-important` 가 `LOOP-DEAD` 로 깨어나고, doctor 가 다시 띄울 명령을 낸다 |
-| 미답변 질문이 쌓인다 | `tick`, `worker-question` | 틱마다 미답변을 세고 재알림 시간이 지난 것을 `REMINDER` 로 알림 파일에 적는다. 대기(`wait-important`)가 그 줄에 깨어난다. 저장소는 `worker-question` 으로 외부에 알린다 |
+| 미답변 질문이 쌓인다 | `tick`, `worker-question`, `decision-pending` | 틱마다 미답변을 센다. 기술 질문과 일반 escalation의 재알림은 `REMINDER` 로 알림 파일에 적고 `worker-question`으로 외부에 알린다. 사용자 결정의 재알림은 로그에만 남기며, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING`과 결정 notifier가 코디네이터에게 한 번만 전달한다 |
 | 원격 브랜치가 쌓인다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 브랜치가 남는다 | `after-merge`, `tick` | 머지를 확인한 자리에서 원격 브랜치를 지운다. 틱마다 내 PR 가운데 MERGED 이거나, CLOSED 이고 head 커밋이 base 에 들어간 PR 의 원격 브랜치를 지운다 |
 | 같은 저장소를 쓰는 둘째 세션이 루프를 쓰지 못한다. 첫 세션의 루프를 멈추면 첫 세션이 루프를 잃는다 | `orch-loop --start --run`, `wait-important --run --loop-repo` | 루프는 저장소마다 하나이고 여러 Run 을 맡는다([ADR-012](adr/012-orch-loop-multi-run.md)). 세션은 자기 Run 을 등록하고 뺀다. 질문 확인, 정리, `tick` 은 Run 마다 그 Run 범위로 돌고, 알림 파일도 Run 마다 나뉘어 대기는 자기 Run 의 알림에만 깨어난다 |
 | 정리가 다른 세션의 산출물을 옮긴다 | `cleanup-sweep --run`, `handoff-cleanup --run` | `--run` 을 주면 그 Run 의 worker 와 Task 가 쓴 것만 정리한다. Run 에 묶을 수 없는 산출물(큐 로그, 폴더, csv)은 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다 |
