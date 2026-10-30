@@ -212,6 +212,8 @@ export function currentChecks(rollup: unknown, head?: string): Record<string, un
     (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
   ).filter((row) => !head || !field(row, 'headSha') || field(row, 'headSha') === head)
   const workflow = (row: Record<string, unknown>): string | null => {
+    const flat = field(row, 'workflowName')
+    if (flat) return flat
     const suite = row.checkSuite as { workflowRun?: { workflow?: { name?: unknown } } } | null
     const name = suite?.workflowRun?.workflow?.name
     return typeof name === 'string' && name ? name : null

@@ -177,7 +177,7 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     const rollup = names.flatMap((name) => ['CANCELLED', 'SUCCESS'].map((conclusion, i) => ({
       ...check(name, conclusion),
       startedAt: `2026-10-30T0${i + 1}:00:00Z`,
-      checkSuite: { workflowRun: { workflow: { name: 'PR CI' } } },
+      workflowName: 'PR CI',
     })))
     const r = await c.runQueue({ '1': pr({ statusCheckRollup: rollup }) }, ['--required', names.join(','), '1'])
     assert.equal(r.code, 0, both(r))

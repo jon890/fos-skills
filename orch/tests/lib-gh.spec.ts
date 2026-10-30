@@ -255,6 +255,11 @@ describe('ciState', () => {
     assert.equal(ciState([newer, old], ['test'], false, 'head').state, 'passed')
     assert.equal(ciState([old, { ...newer, conclusion: null, status: 'IN_PROGRESS' }], ['test'], false, 'head').state, 'pending')
     assert.equal(ciState([old, { ...newer, conclusion: 'FAILURE' }], ['test'], false, 'head').state, 'failed')
+    // gh pr view 의 실제 JSON 은 checkSuite 대신 workflowName 으로 낸다.
+    assert.equal(ciState([
+      { ...run('test', 'CANCELLED'), workflowName: 'CI', startedAt: '2026-10-30T01:00:00Z' },
+      { ...run('test', 'SUCCESS'), workflowName: 'CI', startedAt: '2026-10-30T02:00:00Z' },
+    ], ['test'], false, 'head').state, 'passed')
   })
   test('다른 HEAD 결과와 다른 workflow 로 취소 실패를 덮지 않는다', () => {
     const old = attempt('CANCELLED', '2026-10-30T01:00:00Z')
