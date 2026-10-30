@@ -152,7 +152,25 @@ function shown(...stages: string[]): Record<string, unknown> {
 
 type Launch = { code: number | null; stdout: string; stderr: string }
 
-function launch(args: string[], shell = 'bash'): Launch {
+// 지시서의 worker 선택 줄과 맞춰 넘기는 WORKER_ARGS. 선택 줄 대조 밖의 테스트가 쓴다
+const CLAUDE = ['--agent', 'claude', '--model', 'm']
+const CODEX = ['--agent', 'codex', '--model', 'm']
+
+// 지시서에 worker 선택 줄이 없으면 WORKER_ARGS 의 --agent, --model 로 채운다. 선택 줄을 보는 테스트는 fill 을 끈다
+function fillSelection(args: string[]): void {
+  if (!existsSync(spec)) return
+  const text = readFileSync(spec, 'utf8')
+  if (text.includes('worker 선택')) return
+  const passthru = args.slice(args.indexOf('--') + 1)
+  const value = (name: string) => (passthru.includes(name) ? passthru[passthru.indexOf(name) + 1] : null)
+  const agent = value('--agent')
+  const model = value('--model')
+  if (!args.includes('--') || !agent || !model) return
+  writeFileSync(spec, `${text}\nworker 선택: \`${agent}\` \`${model}\` effort \`medium\`. 비교: 다른 제공자. 이유: 테스트.\n`)
+}
+
+function launch(args: string[], shell = 'bash', fill = true): Launch {
+  if (fill) fillSelection(args)
   const done = spawnSync(shell, ['-c', 'exec "$NODE_BIN" --disable-warning=ExperimentalWarning "$@"', 'launch', SCRIPT, '--spec', spec, ...args], {
     env,
     encoding: 'utf8',
@@ -173,7 +191,7 @@ describe('거부와 사용법', () => {
   test('허락 줄이 없는 지시서는 worker-start 전에 거부한다', () => {
     writeFileSync(spec, '# 일\n')
     state({ next_ids: ['ctx_1'] })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /허락:/)
     assert.deepEqual(lines('orca orchestration worker-start'), [])
@@ -187,7 +205,7 @@ describe('거부와 사용법', () => {
         { handle: 'term_other', worktreePath: '/elsewhere' },
       ],
     })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.match(r.stdout, /터미널이 남아 있다/)
     assert.match(r.stdout, /term_old claude 앞 세션/)
@@ -229,14 +247,14 @@ describe('거부와 사용법', () => {
 
   test('hooks review prompt 는 Codex 매니페스트 갱신 명령을 알린다', () => {
     state({ next_ids: ['ctx_1'], start_errors: ['Agent startup blocked: agent-hooks-review-prompt'] })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'codex'])
+    const r = launch(['--worktree', worktree, '--', ...CODEX])
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /codex plugin marketplace upgrade fos-skills/)
   })
 
   test('--terminal 없이 난 agent_unconfigured 는 보통 실패다', () => {
     state({ next_ids: ['ctx_1'], start_errors: ['agent_unconfigured: x'] })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
   })
 
@@ -244,7 +262,7 @@ describe('거부와 사용법', () => {
     const legacy = join(worktree, '.omc/orch')
     mkdirSync(legacy, { recursive: true })
     writeFileSync(join(legacy, 'old.json'), '{}')
-    const r = launch(['--worktree', `path:${worktree}`, '--', '--agent', 'codex'])
+    const r = launch(['--worktree', `path:${worktree}`, '--', ...CODEX])
     assert.equal(r.code, 2, both(r))
     assert.match(r.stderr, /옮기기 전/)
     assert.deepEqual(lines('orca orchestration worker-start'), [])
@@ -258,13 +276,59 @@ describe('거부와 사용법', () => {
 
   test('옵션의 고유 접두는 펼치고 여러 옵션에 맞는 접두는 2 다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--work', worktree, '--wat=0', '--', '--agent', 'claude'])
+    const r = launch(['--work', worktree, '--wat=0', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.ok(lines('orca orchestration worker-start')[0].includes(`--worktree path:${worktree} --agent claude`), lines('').join('\n'))
     // --re 는 --repo 와 --resume-remote 에 맞는다
-    const ambiguous = launch(['--re', tmp, '--name', 'x', '--', '--agent', 'claude'])
+    const ambiguous = launch(['--re', tmp, '--name', 'x', '--', ...CLAUDE])
     assert.equal(ambiguous.code, 2, both(ambiguous))
     assert.match(ambiguous.stderr, /--re 이 여러 옵션의 접두다: --repo, --resume-remote/)
+  })
+})
+
+describe('worker 선택 줄 대조', () => {
+  const SELECTED = '# 일\n허락: push\n- **worker 선택:** `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: CI 리뷰가 Claude 다.\n'
+
+  test('선택 줄이 없으면 orca 를 부르기 전에 형식과 함께 거부한다', () => {
+    state({ next_ids: ['ctx_1'] })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /`worker 선택:` 줄이 없다/)
+    assert.match(r.stderr, /형식: worker 선택: `<에이전트>` `<모델>` effort/)
+    assert.equal(existsSync(log), false)
+  })
+
+  test('비교나 이유가 빠진 선택 줄은 거부하고 --lint-ack 으로도 넘기지 못한다', () => {
+    writeFileSync(spec, '# 일\n허락: push\nworker 선택: `codex` `gpt-6.1-sol` effort `low`\n')
+    state({ next_ids: ['ctx_1'] })
+    const r = launch(['--worktree', worktree, '--lint-ack', '의도', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol'], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /3번 줄의 `worker 선택:` 에 비교, 이유 가 빠졌다/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('--agent 나 --model 이 선택 줄과 다르면 둘 다 알리고 거부한다', () => {
+    writeFileSync(spec, SELECTED)
+    state({ next_ids: ['ctx_1'] })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude', '--model', 'claude-sonnet-5-5'], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /--agent claude, 지시서 codex; --model claude-sonnet-5-5, 지시서 gpt-6\.1-sol/)
+    assert.equal(existsSync(log), false)
+  })
+
+  test('선택 줄과 같으면 띄운다. effort 는 대조하지 않는다', () => {
+    writeFileSync(spec, SELECTED)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /LAUNCHED ctx_1/)
+  })
+
+  test('--terminal 로 이어 쓰면 선택 줄을 보지 않는다', () => {
+    writeFileSync(spec, '# 일\n허락: push\n')
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--terminal', 'term_old'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
   })
 })
 
@@ -283,7 +347,7 @@ describe('띄우기', () => {
 
   test('--resume-remote 를 워크트리 만들기에 넘긴다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--repo', tmp, '--name', 'feat', '--resume-remote', '--', '--agent', 'codex'])
+    const r = launch(['--repo', tmp, '--name', 'feat', '--resume-remote', '--', ...CODEX])
     assert.equal(r.code, 0, both(r))
     assert.ok(lines('make')[0].includes('--resume-remote'))
   })
@@ -295,7 +359,7 @@ describe('띄우기', () => {
       resetLog()
       rmSync(join(tmp, 'new'), { recursive: true, force: true })
       state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
-      const r = launch(['--repo', tmp, '--name', 'feat', '--base', 'develop', '--run', 'run_x', '--watch', '1', '--', '--agent', 'codex'], shell)
+      const r = launch(['--repo', tmp, '--name', 'feat', '--base', 'develop', '--run', 'run_x', '--watch', '1', '--', ...CODEX], shell)
       assert.equal(r.code, 0, `${shell}: ${both(r)}`)
       assert.deepEqual(lines('make'), [`make --repo ${tmp} --spec ${spec} --name feat --base develop`])
       const [first, retry] = lines('orca orchestration worker-start')
@@ -309,7 +373,7 @@ describe('띄우기', () => {
       if (!hasShell(shell)) continue
       resetLog()
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--repo', tmp, '--name', 'feat', '--', '--agent', 'codex'], shell)
+      const r = launch(['--repo', tmp, '--name', 'feat', '--', ...CODEX], shell)
       assert.equal(r.code, 0, `${shell}: ${both(r)}`)
       assert.deepEqual(lines('make'), [`make --repo ${tmp} --spec ${spec} --name feat`])
       assert.ok(lines('orca orchestration worker-start')[0].startsWith('orca orchestration worker-start --spec '))
@@ -318,7 +382,7 @@ describe('띄우기', () => {
 
   test('--worktree 는 path: 접두를 받는다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', `path:${worktree}`, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', `path:${worktree}`, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.ok(lines('orca orchestration worker-start')[0].includes(`--worktree path:${worktree} --agent claude`))
     assert.ok(r.stdout.trimEnd().endsWith(`LAUNCHED ctx_1 ${worktree}`), r.stdout)
@@ -341,25 +405,25 @@ describe('띄우기', () => {
   test('worker-start 가 성공한 뒤의 실패는 이어 띄우는 명령을 알리지 않는다', () => {
     // dispatch 가 이미 떠 있으면 --worktree 로 다시 띄우라고 하지 않는다. 같은 일의 task 가 하나 더 생긴다
     state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
-    const r = launch(['--repo', tmp, '--name', 'feat', '--watch', '1', '--', '--agent', 'claude'])
+    const r = launch(['--repo', tmp, '--name', 'feat', '--watch', '1', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.doesNotMatch(r.stderr, /워크트리는 남아 있다/)
   })
 
   test('기존 워크트리의 실패와 성공은 이어 띄우는 명령을 알리지 않는다', () => {
     state({ start_fails: true })
-    let r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    let r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.doesNotMatch(r.stderr, /워크트리는 남아 있다/)
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    r = launch(['--repo', tmp, '--name', 'feat', '--', '--agent', 'claude'])
+    r = launch(['--repo', tmp, '--name', 'feat', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stderr, /워크트리는 남아 있다/)
   })
 
   test('worktree_creating 에서 멈추면 abandon 하고 한 번 다시 띄운다', () => {
     state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--watch', '3', '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), ['orca orchestration worker-abandon --dispatch ctx_1'])
     const retry = lines('orca orchestration worker-start')[1]
@@ -370,7 +434,7 @@ describe('띄우기', () => {
 
   test('다시 띄워도 멈추면 실패다', () => {
     state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
-    const r = launch(['--worktree', worktree, '--watch', '2', '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.equal(lines('orca orchestration worker-start').length, 2)
     assert.doesNotMatch(r.stdout, /LAUNCHED/)
@@ -378,7 +442,7 @@ describe('띄우기', () => {
 
   test('지켜보는 동안 단계가 넘어가면 그대로 둔다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating', 'agent_starting') } })
-    const r = launch(['--worktree', worktree, '--watch', '5', '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--watch', '5', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
     assert.match(r.stdout, /ctx_1 단계: agent_starting/)
@@ -392,7 +456,7 @@ describe('띄우기', () => {
         next_ids: ['ctx_1'],
         dispatches: { ctx_1: { ...shown('input_accepted'), worker: { agentTerminalHandle: 'term_w' } } },
       })
-      const r = launch(['--worktree', worktree, '--run', 'run_a', '--', '--agent', 'claude'])
+      const r = launch(['--worktree', worktree, '--run', 'run_a', '--', ...CLAUDE])
       assert.equal(r.code, 0, both(r))
       assert.deepEqual(JSON.parse(readFileSync(recordOf('ctx_1'), 'utf8')), {
         dispatch: 'ctx_1',
@@ -406,7 +470,7 @@ describe('띄우기', () => {
 
     test('다시 띄우면 새 dispatch 의 기록이 생긴다', () => {
       state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
-      const r = launch(['--worktree', worktree, '--watch', '3', '--', '--agent', 'claude'])
+      const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
       assert.equal(r.code, 0, both(r))
       assert.ok(existsSync(recordOf('ctx_2')))
     })
@@ -421,7 +485,7 @@ describe('띄우기', () => {
     test('기록하지 못해도 LAUNCHED 와 종료 코드는 그대로다', () => {
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
       writeFileSync(join(worktree, '.orch'), '폴더가 아니라 파일이다')
-      const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+      const r = launch(['--worktree', worktree, '--', ...CLAUDE])
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)
       assert.match(r.stderr, /띄운 worker 를 기록하지 못했다/)
@@ -437,7 +501,7 @@ describe('띄우기', () => {
 
   test('실패한 worker-start 는 다시 띄우지 않는다', () => {
     state({ start_fails: true })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.equal(lines('orca orchestration worker-start').length, 1)
   })
@@ -446,7 +510,7 @@ describe('띄우기', () => {
 describe('Orca 의 워크트리 인식', () => {
   test('orca worktree list 에 보일 때까지 기다린다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, worktree_lists: [[], [], [worktree]] })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.equal(lines('orca worktree list').length, 3)
     assert.match(r.stderr, /알아보기까지 2초 기다렸다/)
@@ -456,14 +520,14 @@ describe('Orca 의 워크트리 인식', () => {
     // 0.1 을 세 번 더하면 0.30000000000000004 다. 옛 명령은 0.3 으로 냈다
     env.LAUNCH_WT_POLL = '0.1'
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, worktree_lists: [[], [], [], [worktree]] })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.match(r.stderr, /^Orca 가 워크트리를 알아보기까지 0\.3초 기다렸다$/m)
   })
 
   test('끝까지 보이지 않으면 띄우지 않고 멈춘다', () => {
     state({ next_ids: ['ctx_1'], worktree_lists: Array.from({ length: 20 }, () => []) })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /Orca 가 워크트리를 알아보지 못했다/)
     assert.deepEqual(lines('orca orchestration worker-start'), [])
@@ -477,7 +541,7 @@ describe('Orca 의 워크트리 인식', () => {
     const wt = join(tmp, 'elsewhere', 'x')
     git('-C', repo, 'worktree', 'add', '-q', '-b', 'b', wt)
     state({ next_ids: ['ctx_1'], worktree_lists: Array.from({ length: 20 }, () => []), visibility: 'hide' })
-    const r = launch(['--worktree', wt, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', wt, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.ok(r.stderr.includes(`만든 경로: ${wt}`), r.stderr)
     assert.match(r.stderr, /externalWorktreeVisibility: hide/)
@@ -488,7 +552,7 @@ describe('Orca 의 워크트리 인식', () => {
 
   test('selector_not_found 는 한 번 다시 부른다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, start_errors: ['selector_not_found'] })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.equal(lines('orca orchestration worker-start').length, 2)
     assert.match(r.stdout, /LAUNCHED ctx_1/)
@@ -496,12 +560,12 @@ describe('Orca 의 워크트리 인식', () => {
 
   test('selector_not_found 가 두 번이면 실패하고 다른 오류는 다시 부르지 않는다', () => {
     state({ next_ids: ['ctx_1'], start_errors: ['selector_not_found', 'selector_not_found'] })
-    let r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    let r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.equal(lines('orca orchestration worker-start').length, 2)
     resetLog()
     state({ next_ids: ['ctx_1'], start_errors: ['agent_not_found'] })
-    r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.equal(lines('orca orchestration worker-start').length, 1)
   })
@@ -687,7 +751,7 @@ test('LAUNCHED 뒤 지시서의 id, 제목과 마일스톤 단계로 항목을 �
   writeFileSync(file, JSON.stringify({ items: [] }))
   writeFileSync(spec, '# 자동 갱신\n허락: PR 생성\n보드 항목 id: `board-id`\n\n## 할 일\n1. 구현\n   설명\n2. 검증\n\n## 완료\n1. 다른 절\n')
   state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   let item = JSON.parse(readFileSync(file, 'utf8')).items[0]
   assert.equal(item.id, 'board-id')
@@ -699,7 +763,7 @@ test('LAUNCHED 뒤 지시서의 id, 제목과 마일스톤 단계로 항목을 �
   item.details[0].done = true
   writeFileSync(file, JSON.stringify({ items: [item] }))
   state({ next_ids: ['ctx_2'] })
-  assert.equal(launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex']).code, 0)
+  assert.equal(launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX]).code, 0)
   item = JSON.parse(readFileSync(file, 'utf8')).items[0]
   assert.equal(item.details[0].done, true)
 })
@@ -709,7 +773,7 @@ test('설정이 보드를 가리키는데 파일이 없으면 LAUNCHED 는 두�
   mkdirSync(join(worktree, '.orch'), { recursive: true })
   writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify({ finish: { board: '.omc/board.json' } }))
   state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   assert.match(r.stdout, /^LAUNCHED ctx_1 /m)
   assert.match(r.stderr, /보드를 갱신하지 못했다: 설정 파일에 finish\.board 이 있지만 보드 파일이 없다/)
@@ -718,7 +782,7 @@ test('설정이 보드를 가리키는데 파일이 없으면 LAUNCHED 는 두�
 
 test('설정에 보드가 없고 파일도 없으면 알리지 않는다', () => {
   state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   assert.doesNotMatch(r.stderr, /보드/)
 })
@@ -728,7 +792,7 @@ test('항목 id 가 없으면 --name 을 쓰고 단계가 없으면 기본 단�
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, JSON.stringify({ items: [] }))
   state({ next_ids: ['ctx_1'] })
-  const r = launch(['--repo', tmp, '--name', 'example', '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--repo', tmp, '--name', 'example', '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   const item = JSON.parse(readFileSync(file, 'utf8')).items[0]
   assert.equal(item.id, 'example')
@@ -743,7 +807,7 @@ test('지시서에 항목 id 가 없으면 같은 워크트리의 끝나지 않�
   writeFileSync(file, JSON.stringify({ items: [{ id: 'old', status: 'done', worktree: 'wt' }, first] }))
   writeFileSync(spec, '# 충돌 풀기\n허락: push\n\n## 할 일\n1. base 합치기\n')
   state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   const items = JSON.parse(readFileSync(file, 'utf8')).items
   assert.deepEqual(items.map((i: { id: string }) => i.id), ['old', 'first'])
@@ -759,7 +823,7 @@ test('보드 항목 id 가 가리키는 끝나지 않은 항목은 제목과 단
   writeFileSync(file, JSON.stringify({ items: [milestone] }))
   writeFileSync(spec, '# PR #9 를 develop 과 합친다\n허락: push\n보드 항목 id: chart\n\n## 할 일\n1. develop 합치기\n2. push\n')
   state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
   const items = JSON.parse(readFileSync(file, 'utf8')).items
@@ -776,7 +840,7 @@ test('단계도 진행률도 없는 기존 항목은 단계를 더하지 않고 
   writeFileSync(file, JSON.stringify({ items: [{ id: 'later', title: '나중 일', status: 'wait' }] }))
   writeFileSync(spec, '# 다른 제목\n허락: push\n보드 항목 id: later\n\n## 할 일\n1. 구현\n')
   state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
   const [item] = JSON.parse(readFileSync(file, 'utf8')).items
@@ -797,7 +861,7 @@ describe('중간 과정과 다시 열기', () => {
   })
 
   const items = (): Item[] => JSON.parse(readFileSync(file, 'utf8')).items
-  const run = () => launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const run = () => launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
 
   test('중간 과정 지시서는 그 PR 의 항목에 줄 하나만 남기고 항목, 제목, status, 단계 완료 값은 그대로다', () => {
     const target = {
@@ -927,7 +991,7 @@ describe('마일스톤 단계', () => {
     writeFileSync(join(worktree, '.orch', 'config.json'), JSON.stringify(body))
   }
   const made = () => {
-    const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+    const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
     assert.equal(r.code, 0, both(r))
     return { r, item: JSON.parse(readFileSync(file, 'utf8')).items[0] }
   }
@@ -965,7 +1029,7 @@ describe('마일스톤 단계', () => {
 
 test('보드가 없으면 LAUNCHED 뒤에도 파일을 만들지 않는다', () => {
   state({ next_ids: ['ctx_1'] })
-  const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
   assert.equal(r.code, 0, both(r))
   assert.equal(existsSync(join(worktree, '.omc', 'board.json')), false)
   assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
@@ -982,7 +1046,7 @@ describe('보드 항목 제목과 같은 업무', () => {
   })
   const items = (): Item[] => JSON.parse(readFileSync(file, 'utf8')).items
   const run = () => {
-    const r = launch(['--worktree', worktree, '--watch', '0', '--', '--agent', 'codex'])
+    const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
   }
@@ -1090,6 +1154,8 @@ describe('모델과 effort 검사', () => {
   test('있는 모델과 effort 는 통과한다. 숨긴 모델도 거절하지 않는다', () => {
     fakeCodex(JSON.stringify(MODELS))
     for (const model of ['gpt-6.1-sol', 'gpt-hidden']) {
+      // 모델마다 선택 줄을 다시 채운다
+      writeFileSync(spec, '# 일\n\n허락: push 와 draft PR 생성은 사용자가 허락했다.\n')
       const r = launchCodex('--model', model, '--effort', 'low')
       assert.equal(r.code, 0, both(r))
       assert.doesNotMatch(r.stderr, /경고/)
@@ -1119,10 +1185,12 @@ describe('모델과 effort 검사', () => {
     assert.match(r.stderr, /경고: claude 는 모델 목록을 조회하는 명령이 없어/)
   })
 
-  test('--model 이 없으면 검사하지 않는다', () => {
+  test('--model 이 없으면 모델 검사 전에 선택 줄 대조가 거부한다', () => {
     env.CODEX_BIN = join(tmp, 'missing-codex')
+    writeFileSync(spec, '# 일\n허락: push\nworker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Sonnet. 이유: 테스트.\n')
     const r = launchCodex()
-    assert.equal(r.code, 0, both(r))
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /--model \(없음\), 지시서 gpt-6\.1-sol/)
     assert.doesNotMatch(r.stderr, /경고/)
   })
 })
@@ -1140,7 +1208,7 @@ describe('spec-lint 관문', () => {
   test('막을 발견이 있으면 워크트리를 만들기 전에 발견 줄과 5 로 멈춘다', () => {
     fakeLint(1)
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--repo', tmp, '--name', 'x', '--', '--agent', 'claude'])
+    const r = launch(['--repo', tmp, '--name', 'x', '--', ...CLAUDE])
     assert.equal(r.code, 5, both(r))
     assert.match(r.stderr, /spec\.md:3: 겹침: 담당 경로가 겹친다/)
     assert.match(r.stderr, /--lint-ack/)
@@ -1153,7 +1221,7 @@ describe('spec-lint 관문', () => {
     const proj = join(tmp, 'proj')
     spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--repo', proj, '--name', 'x', '--lint-ack', '두 PR 이 plugin.json 버전 줄을 함께 고친다', '--', '--agent', 'claude'])
+    const r = launch(['--repo', proj, '--name', 'x', '--lint-ack', '두 PR 이 plugin.json 버전 줄을 함께 고친다', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.match(r.stdout, /^lint-ack: 두 PR 이 plugin\.json 버전 줄을 함께 고친다$/m)
     assert.match(r.stdout, /LAUNCHED ctx_1/)
@@ -1164,7 +1232,7 @@ describe('spec-lint 관문', () => {
   test('이유가 빈 --lint-ack 은 사용법 오류다', () => {
     fakeLint(1)
     for (const reason of ['', '  ']) {
-      const r = launch(['--worktree', worktree, '--lint-ack', reason, '--', '--agent', 'claude'])
+      const r = launch(['--worktree', worktree, '--lint-ack', reason, '--', ...CLAUDE])
       assert.equal(r.code, 2, both(r))
       assert.match(r.stderr, /--lint-ack 에는 넘기는 이유/)
     }
@@ -1175,7 +1243,7 @@ describe('spec-lint 관문', () => {
     const proj = join(tmp, 'proj')
     spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--repo', proj, '--name', 'x', '--lint-ack', '쓰이지 않는 이유', '--', '--agent', 'claude'])
+    const r = launch(['--repo', proj, '--name', 'x', '--lint-ack', '쓰이지 않는 이유', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stdout, /lint-ack/)
     const record = JSON.parse(readFileSync(join(proj, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
@@ -1185,7 +1253,7 @@ describe('spec-lint 관문', () => {
   test('spec-lint 가 검사하지 못하면(2) 경고만 내고 띄운다', () => {
     fakeLint(2)
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.match(r.stderr, /경고: spec-lint 가 종료 코드 2 로 끝나/)
   })
@@ -1207,10 +1275,11 @@ describe('spec-lint 관문', () => {
         { id: 't4', status: 'completed', spec: join(tmp, 'spec-done.md') },
       ],
     })
-    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     const call = lines('lint ')[0]
-    assert.ok(call.endsWith(`${spec} ${other}`), call)
+    // 활성 지시서는 --active 로 넘겨 선택 검사를 하지 않게 한다
+    assert.ok(call.endsWith(`--active ${other} ${spec}`), call)
     assert.ok(!call.includes('spec-common.md') && !call.includes('spec-far.md') && !call.includes('spec-done.md'), call)
   })
 
@@ -1223,9 +1292,11 @@ describe('spec-lint 관문', () => {
     writeFileSync(first, '# 앞\n\n담당: `plugin.json`, `CHANGELOG.md`\n')
     writeFileSync(spec, '# 일\n\n허락: push 는 허락했다.\n담당: `plugin.json`\n')
     state({ next_ids: ['ctx_1'], tasks: [{ id: 't1', status: 'running', spec: first }] })
-    const r = launch(['--repo', proj, '--name', 'x', '--', '--agent', 'claude'])
+    const r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
     assert.equal(r.code, 5, both(r))
     assert.match(r.stderr, /겹침/)
+    // 앞 지시서에는 선택 줄이 없지만 이미 띄운 것이라 선택 발견을 내지 않는다
+    assert.doesNotMatch(r.stderr, /선택:/)
     assert.deepEqual(lines('make '), [])
   })
 })

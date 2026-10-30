@@ -4,12 +4,14 @@
 // worker 가 ask 로 멈추거나 먼저 머지된 쪽 때문에 뒤 PR 이 충돌한다. 띄우기 전에 한 번 돌린다.
 //
 // 사용법:
-//     spec-lint.ts --repo DIR [--overlay FILE] SPEC [SPEC ...]
+//     spec-lint.ts --repo DIR [--overlay FILE] [--active FILE ...] SPEC [SPEC ...]
 //     spec-lint.ts --repo DIR [--overlay FILE] --check-overlay [--base main] [SPEC ...]
 //
 //     --repo     대상 저장소. 존재 확인과 담당 경로 확장을 이 저장소의 git 으로 한다
 //     --overlay  저장소 값을 읽을 파일. 없으면 <orch 작업 폴더>/overlay.md 를 읽고, 그것도 없으면 저장소 값 없이 돈다
 //     SPEC       검사할 지시서. 공통 지시서(spec-common.md)는 넘기지 않는다
+//     --active   이미 띄운 지시서. 여러 번 준다. SPEC 과 같이 검사하되 선택 검사만 하지 않는다.
+//                선택 줄을 강제하기 전에 띄운 worker 의 지시서가 새 지시서의 띄우기를 막지 않게 한다(launch-worker 가 쓴다)
 //     --check-overlay  오버레이와 <orch 작업 폴더>/config.json 이 가리키는 경로가 origin/<base> 에 있는지도 본다.
 //                      이 옵션을 주면 SPEC 을 생략할 수 있다. `--overlay` 는 지금처럼 오버레이 파일 위치다
 //     --base     --check-overlay 가 대조할 기준 브랜치. 기본 main. fetch 하지 않고 지금 있는 origin/<base> 를 본다
@@ -17,6 +19,7 @@
 // 지시서에서 읽는 줄:
 //     담당: `src/a/**`, `docs/a.md`     그 worker 가 고치는 경로. glob 을 쓴다. 여러 줄이어도 된다
 //     예외: ...                          그 줄은 금지 문구와 존재 확인에서 뺀다
+//     worker 선택: ...                   고른 에이전트, 모델, effort 와 비교한 후보, 고른 이유. 형식은 lib/spec.ts 의 selectionsOf 가 소유한다
 //
 // 오버레이의 `## spec-lint` 절에서 읽는 줄 (저장소 값은 여기에만 둔다):
 //     코디네이터 소유: `docs/adr/**`, `CHANGELOG.md`   어느 지시서도 담당으로 가질 수 없는 경로
@@ -31,6 +34,8 @@
 //     소유        담당 경로가 다른 지시서 소유로 정한 경로와 겹친다
 //     없음        백틱 안의 함수 호출 꼴(`name()`, `Class.method()`)이 저장소에 없다(`git grep -w`)
 //     금지        금지 문구가 든 줄인데 그 줄에 부정 표현(않, 말고, 대신, 금지, 없이)이 없다
+//     선택        `worker 선택:` 줄이 없거나, 둘 이상이거나, 에이전트, 모델, effort, 비교, 이유 가운데 빠진 것이 있다.
+//                 모델을 비교 없이 익숙한 쪽으로 고르는 일을 막는다. launch-worker 도 같은 줄로 --agent, --model 을 대조한다
 //     경로        백틱 안의 파일 경로(확장자가 있는 것)가 저장소에 없다. 파일 이름만 적었으면 어느 폴더에든 있으면 된다.
 //                 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다
 //     공통        지시서 폴더의 spec-common.md 에 틀(orch/templates/spec-common.md)의 `<!-- orch-rule: <이름> -->` 표지가 빠졌다.
@@ -49,7 +54,7 @@
 //
 // 종료 코드:
 //     0  막을 발견이 없다(경로, 공통, 제목 경고는 있을 수 있다)
-//     1  겹침, 코디네이터, 소유, 없음, 금지, 오버레이 중 하나 이상
+//     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
 //
@@ -63,7 +68,7 @@ import { expandArgs } from './lib/args.ts'
 import { isFile } from './lib/fs.ts'
 import { git } from './lib/git.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
-import { LINE_BREAK } from './lib/spec.ts'
+import { LINE_BREAK, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
 
 const USAGE = [
   '사용법: spec-lint.ts --repo DIR [--overlay FILE] SPEC [SPEC ...]',
@@ -299,7 +304,7 @@ const TITLE_HINT =
   '`# ` 제목 줄도 `보드 항목 id:` 도 없다. 보드 항목 제목은 `# ` 제목 줄, `보드 항목 id` 의 기존 항목 제목, 업무 연결 줄의 제목, ' +
   '`## 목표` 첫 문장, id 순으로 고른다. 첫 줄 예: `# 보드 항목이 업무의 목적을 보이게 한다`'
 
-type Spec = { name: string; stem: string; owned: [string, number][]; lines: string[] }
+type Spec = { path: string; name: string; stem: string; owned: [string, number][]; lines: string[] }
 
 function readSpec(path: string): Spec {
   const lines = splitLines(readFileSync(path, 'utf8'))
@@ -309,7 +314,7 @@ function readSpec(path: string): Spec {
     if (rest !== null) for (const glob of ticks(rest)) owned.push([glob, index + 1])
   })
   const name = basename(path)
-  return { name, stem: basename(path, extname(path)), owned, lines }
+  return { path: normalize(path), name, stem: basename(path, extname(path)), owned, lines }
 }
 
 function ruleMarks(text: string): Set<string> {
@@ -340,12 +345,24 @@ function staleCommon(specs: string[]): string[] {
   return found
 }
 
-function lint(repo: Repo, specs: string[], overlay: string | null): { errors: string[]; warnings: string[] } {
+// 머리 주석의 「선택」. 줄이 없으면 1번 줄에 낸다
+function selectionErrors(spec: Spec): string[] {
+  const found = selectionsOf(spec.lines.join('\n'))
+  if (found.length === 0) return [`${spec.name}:1: 선택: \`worker 선택:\` 줄이 없다. 형식: ${SELECTION_FORMAT}`]
+  const errors: string[] = []
+  for (const extra of found.slice(1)) errors.push(`${spec.name}:${extra.no}: 선택: \`worker 선택:\` 줄이 둘 이상이다. 하나만 둔다`)
+  const [first] = found
+  if (first.problems.length > 0) errors.push(`${spec.name}:${first.no}: 선택: ${first.problems.join(', ')} 가 빠졌다. 형식: ${SELECTION_FORMAT}`)
+  return errors
+}
+
+function lint(repo: Repo, specs: string[], overlay: string | null, active: string[] = []): { errors: string[]; warnings: string[] } {
   const { coordinator, owners, forbidden } = readOverlay(overlay)
   const errors: string[] = []
   const warnings: string[] = []
   // 같은 지시서를 두 번 넘기면 한 번만 본다. 자기 자신과 겹친다고 하지 않게 한다
-  const parsed = [...new Map(specs.map((s) => [normalize(s), s])).values()].map(readSpec)
+  const launched = new Set(active.map((s) => normalize(s)))
+  const parsed = [...new Map([...specs, ...active].map((s) => [normalize(s), s])).values()].map(readSpec)
 
   for (let i = 0; i < parsed.length; i += 1) {
     for (const b of parsed.slice(i + 1)) {
@@ -359,6 +376,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null): { errors: st
   }
 
   for (const spec of parsed) {
+    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec))
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {
       warnings.push(`${spec.name}:1: 제목: ${TITLE_HINT}`)
     }
@@ -403,6 +421,7 @@ function main(argv: string[]): number {
       overlay: { type: 'string' },
       'check-overlay': { type: 'boolean' },
       base: { type: 'string', default: 'main' },
+      active: { type: 'string', multiple: true },
       help: { type: 'boolean', short: 'h' },
     } as const
     parsed = parseArgs({ args: expandArgs(argv, options), options, allowPositionals: true })
@@ -423,7 +442,8 @@ function main(argv: string[]): number {
     process.stderr.write('spec-lint: 지시서를 하나 이상 주거나 --check-overlay 를 준다\n')
     return 2
   }
-  const missing = specs.filter((s) => !isFile(s))
+  const active = values.active ?? []
+  const missing = [...specs, ...active].filter((s) => !isFile(s))
   if (missing.length > 0) {
     process.stderr.write(`spec-lint: 지시서를 읽지 못했다: ${missing.join(', ')}\n`)
     return 2
@@ -432,7 +452,7 @@ function main(argv: string[]): number {
     const repo = new Repo(values.repo)
     if (!values.overlay && !requireMigrated(values.repo, 'spec-lint', '오버레이를 --overlay 로 직접 준다')) return 2
     const overlay = values.overlay ?? pathOf('overlay', values.repo)
-    const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay) : { errors: [], warnings: [] }
+    const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay, active) : { errors: [], warnings: [] }
     if (values['check-overlay']) errors.push(...checkOverlay(values.repo, overlay, values.base as string))
     for (const line of [...errors, ...warnings]) process.stdout.write(`${line}\n`)
     const titles = warnings.filter((line) => line.includes(': 제목: ')).length

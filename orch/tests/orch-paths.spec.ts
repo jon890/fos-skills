@@ -141,8 +141,8 @@ describe('옛 구조', () => {
   })
 
   test('띄우기와 정리의 진입점도 옛 구조에서 멈춘다', () => {
-    const spec = write('.omc/orch/specs/spec-a.md', '브랜치: `feat/a`\n허락: push\n')
-    let r = cmd('launch-worker.ts', ['--spec', spec, '--repo', repo, '--name', 'a', '--', '--agent', 'claude'], {
+    const spec = write('.omc/orch/specs/spec-a.md', '브랜치: `feat/a`\n허락: push\nworker 선택: `claude` `m` effort `medium`. 비교: sol. 이유: 테스트.\n')
+    let r = cmd('launch-worker.ts', ['--spec', spec, '--repo', repo, '--name', 'a', '--', '--agent', 'claude', '--model', 'm'], {
       env: { ...ENV, ORCA: '/nonexistent/orca' },
     })
     assert.equal(r.code, 2, r.stdout + r.stderr)
@@ -188,7 +188,7 @@ describe('.omc 가 없는 저장소의 띄우기 준비', () => {
     const overlay = cmd('orch_paths.ts', ['--repo', repo, '--ensure', 'overlay']).stdout.trim()
     writeFileSync(overlay, '# 오버레이\n\n- 검증: `src/app.py` 를 고친 뒤 테스트를 돌린다\n')
     spec = join(cmd('orch_paths.ts', ['--repo', repo, '--ensure', 'specs']).stdout.trim(), 'spec-feat-a.md')
-    writeFileSync(spec, '# 일\n\n브랜치: `feat/a`\n허락: push 를 허락했다.\n\n## 담당\n\n- `src/app.py` 의 `run()`\n')
+    writeFileSync(spec, '# 일\n\n브랜치: `feat/a`\n허락: push 를 허락했다.\nworker 선택: `claude` `m` effort `medium`. 비교: sol. 이유: 테스트.\n\n## 담당\n\n- `src/app.py` 의 `run()`\n')
   })
 
   test('지시서 검사, 첫 지시 줄, 워크트리 만들기가 .omc 없이 돈다', () => {
