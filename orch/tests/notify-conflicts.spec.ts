@@ -237,7 +237,7 @@ describe('살아 있는 dispatch', () => {
     assert.deepEqual(args.slice(0, 3), ['--dispatch', 'ctx_live', '--body'])
     assert.ok(args[3].startsWith('PR #7 이 base main('), args[3])
     assert.match(args[3], /충돌 파일: a\.txt\./)
-    assert.deepEqual(args.slice(4), ['--run', 'run_x'])
+    assert.deepEqual(args.slice(4), ['--no-reply', '--run', 'run_x'])
     const r2 = notify('--run', 'run_x')
     assert.equal(r2.code, 1, r2.both)
     assert.match(r2.stdout, /이미 알렸다\(ctx_live\)/)

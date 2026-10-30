@@ -232,7 +232,7 @@ describe('여러 Run', () => {
     assert.equal(done.status, 0, done.stdout + done.stderr)
     const [argv] = sends()
     assert.deepEqual(argv.slice(0, 2), ['--dispatch', 'd1'])
-    assert.deepEqual(argv.slice(4), ['--run', 'B'])
+    assert.deepEqual(argv.slice(4), ['--run', 'B', '--no-reply'])
     assert.deepEqual(jsonl(orchFile('state', 'loop-events', 'B.jsonl')).map((line) => line.text), ['test: 보냈다 d1'])
     assert.equal(existsSync(orchFile('state', 'loop-events', 'r.jsonl')), false)
     assert.equal(received('ci-failed')[0].run, 'B')
@@ -415,7 +415,7 @@ describe('worker 에게 보내기', () => {
     assert.deepEqual(argv.slice(0, 2), ['--dispatch', 'd1'])
     assert.equal(argv[2], '--body')
     assert.match(argv[3], /^PR #1 의 체크가 실패했다: test https:\/\/ci\.example\.com\/test\./)
-    assert.deepEqual(argv.slice(4), ['--run', 'r'])
+    assert.deepEqual(argv.slice(4), ['--run', 'r', '--no-reply'])
     assert.deepEqual(
       events().map((line) => line.text),
       ['test: 보냈다 d1'],
