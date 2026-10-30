@@ -9,6 +9,85 @@ import { budgetGh, pollSeconds, readTtl } from '../scripts/lib/gh-budget.ts'
 import { run } from '../scripts/lib/proc.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
+import { createHash } from 'node:crypto'
+
+test('판정 조회는 낡은 캐시와 TTL 재설정이 있어도 매번 실행하고 표시 캐시는 유지한다', (t) => {
+  const repo = mkdtempSync(join(tmpdir(), 'gh-decisions-'))
+  const saved = { ORCH_DIR: process.env.ORCH_DIR, ORCH_GH_CACHE: process.env.ORCH_GH_CACHE, ORCH_GH_CACHE_TTL_SECONDS: process.env.ORCH_GH_CACHE_TTL_SECONDS }
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true })
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  process.env.ORCH_DIR = join(repo, '.orch')
+  process.env.ORCH_GH_CACHE = '1'
+  process.env.ORCH_GH_CACHE_TTL_SECONDS = '3600'
+  const cache = join(repo, '.orch/state/gh/cache')
+  mkdirSync(cache, { recursive: true })
+  const queries = [
+    ...['statusCheckRollup', 'headRefOid', 'mergeable', 'mergeStateStatus', 'isDraft', 'state', 'files'].map((field) => ['pr', 'view', '7', '--json', field]),
+    ['pr', 'list', '--json', 'number,headRefOid,statusCheckRollup'], ['pr', 'checks', '7'],
+    ['api', 'graphql', '-f', 'query=query { repository { pullRequest { reviewThreads { nodes { isResolved } } } } }'],
+    ['api', 'repos/o/r/compare/main...abc'], ['api', 'repos/o/r/rules/branches/main'],
+  ]
+  const display = ['pr', 'list', '--json', 'number,title']
+  let shown = 0
+  const show = () => budgetGh(display, repo, 'same', () => ({ code: 0, stdout: String(++shown), stderr: '', timedOut: false }))
+  assert.equal(show().stdout, '1')
+  for (const args of queries) {
+    const key = createHash('sha256').update(JSON.stringify(['same', args])).digest('hex')
+    writeFileSync(join(cache, `${key}.json`), JSON.stringify({ expires: Date.now() + 3600_000, generation: '', result: { code: 0, stdout: 'stale', stderr: '', timedOut: false } }))
+    let calls = 0
+    const read = () => budgetGh(args, repo, 'same', () => ({ code: 0, stdout: String(++calls), stderr: '', timedOut: false }), { passthrough: true })
+    assert.equal(read().stdout, '1', args.join(' '))
+    assert.equal(read().stdout, '2', args.join(' '))
+  }
+  assert.equal(show().stdout, '1', '읽기 판정은 표시 캐시를 무효화하지 않는다')
+})
+
+test('같은 한 시간 조건에서 HEAD 키를 둔 pending 과 completed 스냅샷의 호출 수를 센다', (t) => {
+  const repo = mkdtempSync(join(tmpdir(), 'gh-decision-hour-'))
+  const saved = { ORCH_DIR: process.env.ORCH_DIR, ORCH_GH_CACHE: process.env.ORCH_GH_CACHE }
+  const originalNow = Date.now
+  t.after(() => {
+    Date.now = originalNow
+    rmSync(repo, { recursive: true, force: true })
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  process.env.ORCH_DIR = join(repo, '.orch')
+  process.env.ORCH_GH_CACHE = '1'
+  let now = originalNow()
+  Date.now = () => now
+  const counts: number[] = []
+  for (const mode of ['disabled', 'pending', 'completed']) {
+    process.env.ORCH_GH_CACHE = mode === 'disabled' ? '0' : '1'
+    let calls = 0
+    const args = ['pr', 'view', '7', '--json', 'statusCheckRollup,headRefOid']
+    const options = { cacheKey: `checks:7:head:${mode}`, ttlSeconds: () => mode === 'completed' ? 300 : 60 }
+    const execute = () => ({ code: 0, stdout: String(++calls), stderr: '', timedOut: false })
+    for (let seconds = 0; seconds < 3600; seconds += 30) {
+      now += 30_000
+      for (let worker = 0; worker < 2; worker++) {
+        budgetGh(args, repo, 'same', execute, options)
+      }
+    }
+    counts.push(calls)
+    if (mode === 'completed') {
+      // 멈춤/머지 직전 검증 한 번, 캐시를 건너뛰는 mergeable 과 스레드 조회 각각 한 번.
+      budgetGh(args, repo, 'same', execute, { ...options, refresh: true })
+      budgetGh(['pr', 'view', '7', '--json', 'mergeable'], repo, 'same', execute, { passthrough: true })
+      budgetGh(['api', 'graphql', '-f', 'query=query { reviewThreads { nodes { isResolved } } }'], repo, 'same', execute, { passthrough: true })
+      counts.push(calls)
+    }
+  }
+  assert.deepEqual(counts, [240, 60, 12, 15])
+})
+
 test('캐시 분류는 읽기만 허용하고 환경 변수로 TTL 과 끄기를 바꾼다', () => {
   process.env.ORCH_GH_CACHE = '1'
   delete process.env.ORCH_GH_CACHE_TTL_SECONDS
