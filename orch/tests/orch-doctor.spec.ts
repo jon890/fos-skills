@@ -298,11 +298,12 @@ describe('저장소 판정', () => {
     assert.equal(r.stdout, `OK-SCRIPTS 0\nUNKNOWN-HOOK ${join(tmp, '.orch', 'hooks', 'befor-merge.ts')}\n`)
   })
 
-  test('옛 설정 칸은 DEPRECATED-CONFIG 이고 종료 코드 0 이다', () => {
+  test('삭제한 설정 칸은 INVALID-CONFIG 이고 종료 코드 1 이다', () => {
     write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { before: 'make check' } }))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
-    assert.equal(r.code, 0, r.stdout + r.stderr)
-    assert.equal(r.stdout, 'OK-SCRIPTS 0\nDEPRECATED-CONFIG queue.before → hooks/before-merge.ts\n')
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout, /INVALID-CONFIG .*queue.before.*migrate-orch-dir/)
+    assert.doesNotMatch(r.stdout, /DEPRECATED/)
   })
 
   test('설정 파일이 깨졌으면 이유를 stderr 에 내고 그 판정만 건너뛴다', () => {

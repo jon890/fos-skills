@@ -33,7 +33,7 @@
 //   ci-passed, ci-failed, ci-missing  pr, checks(이름, 상태, 결론, URL 의 목록), required(이름 목록)
 //   pr-conflict  pr, base_head, files, worker(터미널이 없으면 null), action
 //       action 은 notified(살아 있는 dispatch 에 보냄), resumed(남은 터미널에 후속 지시서로 이어 씀), orphan(이어 쓰지 못함)이다
-//   before-merge  pr, owner, name(GitHub 저장소 이름), last_of_task(bool)
+//   before-merge  pr, owner, name(GitHub 저장소 이름), last_of_task(bool), has_pr_command(bool. 빈 PR:도 true)
 //   verify-merged  pr, copy(사본 절대경로), base_head, changed_files, overlap_files
 //   after-merge  pr, merge_commit, remote_branch_deleted(bool), retargeted(base 를 옮긴 PR 번호 목록)
 //   after-queue  merged_prs, code_prs, held_prs
@@ -48,7 +48,7 @@
 // 환경: process.env 위에 아래를 둔다.
 //   ORCH_EVENT, ORCH_REPO(주 checkout), ORCH_DIR(orch 루트 절대경로)
 //   ORCH_CHECKOUT  ctx.repo 로 받은 경로의 실경로. 부른 명령이 --repo 로 받은 checkout 이고, 연결된 워크트리면 그 워크트리다.
-//                  legacy 의 기본 작업 디렉터리와 같다. migrate-orch-dir --hooks 가 만든 핸들러가 옛 명령을 이 경로에서 부른다
+//                  명령이 호출된 작업 디렉터리다. migrate-orch-dir --hooks 가 만든 핸들러가 옛 명령을 이 경로에서 부른다
 //   PATH        맨 앞에 가드 폴더(lib/guard)
 //   ORCA, GH    가드 폴더의 shim 절대경로
 //   ORCH_REAL_ORCA, ORCH_REAL_GH  진짜 실행 파일의 절대경로. 찾지 못하면 넘기지 않는다
@@ -60,7 +60,7 @@
 //   가드는 실수 방지 장치이고 보안 경계가 아니다. ORCH_REAL_* 가 보이므로 핸들러가 일부러 부르면 우회된다.
 //
 // 종료 코드와 결과(FireResult.result):
-//   핸들러가 없고 legacy 도 없다   none. 줄도 기록도 없다
+//   핸들러가 없다   none. 줄도 기록도 없다
 //   0                              pass
 //   10, 거부할 수 있는 이벤트      reject. 이유는 stdout 의 마지막 빈 줄 아닌 줄. `HOOK-REJECT <이벤트> <이유>`
 //                                  그런 줄이 없으면 이유는 `(이유 없음)` 이다. 줄 끝이 비어 거부인지 알아보기 어렵지 않게 한다
@@ -98,20 +98,11 @@
 //   같은 잠금을 acquireLock, ownsLock, releaseLock 으로 내보낸다. reserve-migration.ts 가 lib/reservations.ts 의 예약 잠금(lockFile)에 이것을 쓴다.
 //
 // 기록: <orch 루트>/state/hooks.jsonl 에 결과마다 한 줄(time, event, handler, exit, result, duration_ms, reason).
-//   none 은 적지 않는다. legacy 실행의 handler 는 legacy:<key> 다. 더하기 전에 1MB 를 넘으면 hooks.jsonl.1 로 옮긴다.
+//   none 은 적지 않는다. 더하기 전에 1MB 를 넘으면 hooks.jsonl.1 로 옮긴다.
 //   duration_ms 는 잠금 대기를 포함해 fire 가 걸린 시간이다.
 //   기록을 쓰지 못하면 예외를 내지 않고 stderr 에 경고 한 줄을 낸다. 결과와 HOOK-* 줄은 그대로 낸다.
 //   기록은 사후 확인용이라, 그 실패로 핸들러의 거부나 실패가 부르는 명령에 전해지지 않으면 안 되기 때문이다.
 //
-// legacy: 옛 설정 칸(queue.before 등)을 핸들러처럼 돌리는 어댑터다. 다음 major 에서 지운다.
-//   argv 를 셸 없이 그대로 띄운다. 셸이 필요한 옛 칸은 부르는 쪽이 ['bash', '-c', 명령] 을, finish.complete_cmd 는
-//   shlex 식으로 나눈 argv 를 넘긴다. PR 제목에서 뽑은 값이 셸에 들어가지 않게 하기 위해서다.
-//   작업 디렉터리는 ctx.cwd, 없으면 ctx.repo 로 받은 경로(ORCH_CHECKOUT)다. 주 checkout 이 아니다. 옛 명령은 --repo 로 chdir 한 뒤
-//   옛 칸을 돌렸으므로, 연결된 워크트리를 --repo 로 주면 상대경로 명령이 그 워크트리에서 돌아야 한다.
-//   legacy.env 는 process.env 위에 덮고, ORCH_* 와 가드 PATH, ORCA, GH 는 핸들러와 같게 그 위에 다시 둔다.
-//   실행 전에 `DEPRECATED <key> → hooks/<이벤트>.ts` 줄을 낸다. 시간 제한, 잠금, 기록, 종료 코드 해석, 출력 접두는 핸들러와 같다.
-//   핸들러 파일과 legacy 가 함께 있으면 ConfigError 다. 명령은 사용법 오류(종료 코드 2)로 바꾼다.
-//   checkLegacy 가 같은 판정과 문구를 낸다. 이벤트가 머지나 배포 뒤에 나는 명령이 시작하기 전에 부른다.
 
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -184,7 +175,6 @@ export type FireContext = {
   base: string
   run: string | null
   cwd?: string
-  legacy?: { key: string; argv: string[]; env: Record<string, string> }
   out?: (line: string) => void
 }
 
@@ -231,10 +221,10 @@ function realBin(value: string, name: string): string | null {
   return null
 }
 
-function handlerEnv(event: string, repo: string, root: string, checkout: string, legacyEnv: Record<string, string> | undefined): NodeJS.ProcessEnv {
+function handlerEnv(event: string, repo: string, root: string, checkout: string): NodeJS.ProcessEnv {
   const realOrca = realBin(orcaBin(), 'orca')
   const realGh = realBin(ghBin(), 'gh')
-  const env: NodeJS.ProcessEnv = { ...process.env, ...(legacyEnv ?? {}) }
+  const env: NodeJS.ProcessEnv = { ...process.env }
   delete env.ORCH_REAL_ORCA
   delete env.ORCH_REAL_GH
   if (realOrca) env.ORCH_REAL_ORCA = realOrca
@@ -525,16 +515,6 @@ function handlerPath(event: string, root: string): string {
   return join(root, NAMES.hooks, `${event}.ts`)
 }
 
-function conflictError(event: string, file: string, key: string): ConfigError {
-  return new ConfigError(`${event} 의 핸들러 ${file} 와 옛 설정 칸 ${key} 가 함께 있다. 어느 쪽이 맞는지 정할 수 없어 하나만 둔다`)
-}
-
-// 그 이벤트의 핸들러 파일이 있으면 옛 설정 칸 key 와 함께 있다는 ConfigError 를 던진다. fire 와 같은 판정과 문구다
-export function checkLegacy(event: string, repo: string, key: string): void {
-  const file = handlerFile(event, repo)
-  if (file) throw conflictError(event, file, key)
-}
-
 function emptyResult(): FireResult {
   return { result: 'none', code: null, reason: '', durationMs: 0 }
 }
@@ -546,16 +526,13 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
   const root = orchDir(repo)
   const file = handlerPath(event, root)
   const hasHandler = isFile(file)
-  const legacy = ctx.legacy
-  if (hasHandler && legacy) throw conflictError(event, file, legacy.key)
-  if (!hasHandler && !legacy) return emptyResult()
+  if (!hasHandler) return emptyResult()
 
   const spec = EVENTS[event]
   const seconds = timeoutSec(event, repo, root)
   const out = ctx.out ?? ((line: string) => void process.stdout.write(`${line}\n`))
-  const handler = legacy ? `legacy:${legacy.key}` : file
-  const argv = legacy ? legacy.argv : [process.execPath, '--disable-warning=ExperimentalWarning', file]
-  if (argv.length === 0) throw new ConfigError(`옛 설정 칸 ${legacy?.key} 의 명령이 비었다`)
+  const handler = file
+  const argv = [process.execPath, '--disable-warning=ExperimentalWarning', file]
   const started = Date.now()
   const finish = (result: FireResult['result'], code: number | null, reason: string): FireResult => {
     const durationMs = Date.now() - started
@@ -565,8 +542,6 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
     else if (result === 'timeout') out(`HOOK-FAIL ${event} timeout`)
     return { result, code, reason, durationMs }
   }
-
-  if (legacy) out(`DEPRECATED ${legacy.key} → hooks/${event}.ts`)
 
   const checkout = real(ctx.repo)
   const lockDir = join(root, NAMES['hooks-state'])
@@ -583,14 +558,14 @@ export async function fire(event: string, input: Record<string, unknown>, ctx: F
       if (!(await acquireLock(lock, deadline))) {
         return finish('fail', null, `잠금을 얻지 못했다: ${lock} 를 쥔 실행이 ${seconds + lockExtraMs / 1000}초 안에 끝나지 않았다`)
       }
-      env = handlerEnv(event, repo, root, checkout, legacy?.env)
+      env = handlerEnv(event, repo, root, checkout)
       payload = { ...input, version: CONTRACT_VERSION, event, repo, base: ctx.base, run: ctx.run, time: new Date().toISOString() }
       // 띄우기 직전에 잠금이 아직 내 것인지 다시 읽는다. 죽은 잠금을 다른 실행이 회수하다 내 새 잠금을 떼어 냈으면
       // 그 사이 또 다른 실행이 잠금을 만들었을 수 있다. 내 것이 아니면 다시 기다린다(머리 주석의 「잠금」).
       if (ownsLock(lock)) break
     }
     const outcome = await execute(argv, {
-      cwd: ctx.cwd ?? (legacy ? checkout : repo),
+      cwd: ctx.cwd ?? repo,
       env,
       input: JSON.stringify(payload),
       timeoutMs: seconds * 1000,
