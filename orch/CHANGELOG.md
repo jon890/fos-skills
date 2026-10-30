@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.19.0 (2026-10-29)
+
+- `launch-worker` 가 워크트리를 만들기 전에 `spec-lint` 로 그 지시서를 검사한다. 같은 폴더에서 살아 있는 dispatch 의 지시서와 함께 넘겨 담당 겹침을 보고, 막을 발견이 있으면 발견 줄을 내고 종료 코드 5 로 멈춘다
+- 의도한 겹침은 `--lint-ack "<이유>"` 로만 넘긴다. 이유는 출력과 worker 기록(`lint_ack`)에 남고, 이유 없이 끄는 옵션은 없다
+- `orch-doctor` 가 설치 기록의 모든 `installPath` 가 있는지 보고 없으면 `PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 와 고치는 방법, `/reload-plugins` 안내를 낸다. 설치 기록은 고치지 않는다
+
 ## 4.18.1 (2026-10-29)
 
 - 지시서 틀의 브라우저 규칙을 `browser-driver reset` 이 탭과 함께 공간까지 닫는다는 내용으로 맞췄다. 사용자 탭이 남아 공간이 닫히지 않으면 reset 이 알린다

@@ -63,6 +63,8 @@ if (is('orchestration', 'worker-show')) {
   out({ dispatch: d.dispatch, worker: Object.assign({}, d.worker || {}, { stage }), terminalResource: d.terminalResource || {} })
 }
 if (is('orchestration', 'worker-abandon')) out({})
+if (is('orchestration', 'worker-list')) out({ workers: state.workers || [], scope: { source: 'all' } })
+if (is('orchestration', 'task-list')) out({ tasks: state.tasks || [], scope: { source: 'all' } })
 process.exit(3)
 `
 
@@ -88,6 +90,8 @@ before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'launch-worker-bin-')))
   writeFileSync(join(binDir, 'orca'), FAKE_ORCA)
   chmodSync(join(binDir, 'orca'), 0o755)
+  writeFileSync(join(binDir, 'spec-lint-ok.sh'), '#!/bin/sh\nexit 0\n')
+  chmodSync(join(binDir, 'spec-lint-ok.sh'), 0o755)
 })
 after(() => rmSync(binDir, { recursive: true, force: true }))
 
@@ -115,6 +119,8 @@ beforeEach(() => {
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     MAKE_WORKTREE: make,
+    // 기본 spec-lint 는 막을 발견이 없는 가짜다. 막는 경우는 「spec-lint 관문」 에서 따로 본다
+    SPEC_LINT: join(binDir, 'spec-lint-ok.sh'),
     LAUNCH_POLL: '0',
     LAUNCH_WT_POLL: '0',
     LAUNCH_WT_WAIT: '3',
@@ -545,7 +551,7 @@ describe('before-launch 와 worker-launched', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launchNew()
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(order(), ['make --repo', 'orca worktree list', 'orca orchestration worker-start', 'orca orchestration worker-show'])
+    assert.deepEqual(order(), ['orca orchestration worker-list', 'orca orchestration task-list', 'make --repo', 'orca worktree list', 'orca orchestration worker-start', 'orca orchestration worker-show'])
     assert.doesNotMatch(r.stdout, /HOOK-/)
   })
 
@@ -1118,5 +1124,108 @@ describe('모델과 effort 검사', () => {
     const r = launchCodex()
     assert.equal(r.code, 0, both(r))
     assert.doesNotMatch(r.stderr, /경고/)
+  })
+})
+
+describe('spec-lint 관문', () => {
+  // 받은 인자를 기록하고 FAKE_LINT_CODE 로 끝나는 가짜 spec-lint. 1 이면 발견 줄을 낸다
+  function fakeLint(code: number): string {
+    const file = join(tmp, 'spec-lint-fake.sh')
+    writeFileSync(file, `#!/bin/sh\necho "lint $*" >> "$FAKE_LOG"\n[ ${code} = 1 ] && echo "spec.md:3: 겹침: 담당 경로가 겹친다"\n[ ${code} = 2 ] && echo "spec-lint: 저장소를 읽지 못했다" >&2\nexit ${code}\n`)
+    chmodSync(file, 0o755)
+    env.SPEC_LINT = file
+    return file
+  }
+
+  test('막을 발견이 있으면 워크트리를 만들기 전에 발견 줄과 5 로 멈춘다', () => {
+    fakeLint(1)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--repo', tmp, '--name', 'x', '--', '--agent', 'claude'])
+    assert.equal(r.code, 5, both(r))
+    assert.match(r.stderr, /spec\.md:3: 겹침: 담당 경로가 겹친다/)
+    assert.match(r.stderr, /--lint-ack/)
+    assert.deepEqual(lines('make '), [])
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('--lint-ack 은 이유를 출력하고 띄운다. 이유는 worker 기록에 남는다', () => {
+    fakeLint(1)
+    const proj = join(tmp, 'proj')
+    spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--repo', proj, '--name', 'x', '--lint-ack', '두 PR 이 plugin.json 버전 줄을 함께 고친다', '--', '--agent', 'claude'])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^lint-ack: 두 PR 이 plugin\.json 버전 줄을 함께 고친다$/m)
+    assert.match(r.stdout, /LAUNCHED ctx_1/)
+    const record = JSON.parse(readFileSync(join(proj, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
+    assert.equal(record.lint_ack, '두 PR 이 plugin.json 버전 줄을 함께 고친다')
+  })
+
+  test('이유가 빈 --lint-ack 은 사용법 오류다', () => {
+    fakeLint(1)
+    for (const reason of ['', '  ']) {
+      const r = launch(['--worktree', worktree, '--lint-ack', reason, '--', '--agent', 'claude'])
+      assert.equal(r.code, 2, both(r))
+      assert.match(r.stderr, /--lint-ack 에는 넘기는 이유/)
+    }
+  })
+
+  test('발견이 없으면 그대로 띄우고 기록에 lint_ack 이 없다', () => {
+    fakeLint(0)
+    const proj = join(tmp, 'proj')
+    spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--repo', proj, '--name', 'x', '--lint-ack', '쓰이지 않는 이유', '--', '--agent', 'claude'])
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stdout, /lint-ack/)
+    const record = JSON.parse(readFileSync(join(proj, '.orch/state/launched-workers/ctx_1.json'), 'utf8'))
+    assert.equal('lint_ack' in record, false)
+  })
+
+  test('spec-lint 가 검사하지 못하면(2) 경고만 내고 띄운다', () => {
+    fakeLint(2)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /경고: spec-lint 가 종료 코드 2 로 끝나/)
+  })
+
+  test('같은 폴더에서 살아 있는 dispatch 의 지시서만 함께 넘기고 자신과 공통 지시서는 뺀다', () => {
+    fakeLint(0)
+    const other = join(tmp, 'spec-other.md')
+    const common = join(tmp, 'spec-common.md')
+    const elsewhere = join(tmp, 'sub', 'spec-far.md')
+    mkdirSync(join(tmp, 'sub'))
+    for (const file of [other, common, elsewhere]) writeFileSync(file, '# 다른 일\n')
+    state({
+      next_ids: ['ctx_1'],
+      dispatches: { ctx_1: shown('input_accepted') },
+      tasks: [
+        { id: 't1', status: 'running', spec: `다음 지시서를 읽는다: ${other}` },
+        { id: 't2', status: 'running', spec: `${spec} 와 ${common}` },
+        { id: 't3', status: 'running', spec: elsewhere },
+        { id: 't4', status: 'completed', spec: join(tmp, 'spec-done.md') },
+      ],
+    })
+    const r = launch(['--worktree', worktree, '--', '--agent', 'claude'])
+    assert.equal(r.code, 0, both(r))
+    const call = lines('lint ')[0]
+    assert.ok(call.endsWith(`${spec} ${other}`), call)
+    assert.ok(!call.includes('spec-common.md') && !call.includes('spec-far.md') && !call.includes('spec-done.md'), call)
+  })
+
+  test('살아 있는 dispatch 의 지시서와 담당이 겹치면 진짜 spec-lint 가 막는다', () => {
+    env.SPEC_LINT = join(dirname(SCRIPT), 'spec-lint.ts')
+    const proj = join(tmp, 'proj')
+    spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
+    spawnSync('git', ['-C', proj, 'commit', '-q', '--allow-empty', '-m', 'i'], { env })
+    const first = join(tmp, 'spec-first.md')
+    writeFileSync(first, '# 앞\n\n담당: `plugin.json`, `CHANGELOG.md`\n')
+    writeFileSync(spec, '# 일\n\n허락: push 는 허락했다.\n담당: `plugin.json`\n')
+    state({ next_ids: ['ctx_1'], tasks: [{ id: 't1', status: 'running', spec: first }] })
+    const r = launch(['--repo', proj, '--name', 'x', '--', '--agent', 'claude'])
+    assert.equal(r.code, 5, both(r))
+    assert.match(r.stderr, /겹침/)
+    assert.deepEqual(lines('make '), [])
   })
 })

@@ -90,6 +90,8 @@ beforeEach(() => {
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(binDir, 'orca'),
     PS: join(binDir, 'ps'),
+    // 이 머신의 설치 기록을 읽지 않게 없는 설정 폴더로 고정한다. 설치 기록 판정은 그 폴더에 가짜를 만들어 본다
+    CLAUDE_CONFIG_DIR: join(tmp, 'no-config'),
   }
   delete env.ORCH_DIR
 })
@@ -484,5 +486,73 @@ describe('루프 번들 판정', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.doesNotMatch(r.stdout, /LOOP-STALE/)
+  })
+})
+
+describe('설치 기록 판정', () => {
+  let skill: string
+  let config: string
+  beforeEach(() => {
+    skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    config = join(tmp, 'config', 'home')
+  })
+
+  const record = (plugins: Record<string, unknown>) => write(join(config, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins }))
+  const run = () => doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { CLAUDE_CONFIG_DIR: config } })
+
+  test('installPath 가 없는 플러그인은 PLUGIN-PATH-MISSING 으로 알리고, 현재 설정 폴더의 같은 경로와 고치는 방법을 안내한다. 파일은 고치지 않는다', () => {
+    const old = join(tmp, 'config', 'old-profile', 'plugins', 'cache', 'fos-skills', 'fos-skills', 'abc1234')
+    const moved = join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', 'abc1234')
+    mkdirSync(moved, { recursive: true })
+    const present = join(config, 'plugins', 'cache', 'other', 'ok', '1')
+    mkdirSync(present, { recursive: true })
+    record({
+      'fos-skills@fos-skills': [{ scope: 'user', installPath: old }],
+      'ok@other': [{ scope: 'user', installPath: present }],
+      'gone@mkt': [{ scope: 'project', installPath: join(tmp, 'nowhere', 'plugins', 'cache', 'gone', 'x') }],
+    })
+    const before = readFileSync(join(config, 'plugins', 'installed_plugins.json'), 'utf8')
+    const r = run()
+    // 경고라 종료 코드는 바꾸지 않는다
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = r.stdout.split('\n')
+    assert.deepEqual(
+      out.filter((line) => line.startsWith('PLUGIN-PATH-MISSING')),
+      [`PLUGIN-PATH-MISSING fos-skills@fos-skills user ${old}`, `PLUGIN-PATH-MISSING gone@mkt project ${join(tmp, 'nowhere', 'plugins', 'cache', 'gone', 'x')}`],
+    )
+    const at = out.indexOf(`PLUGIN-PATH-MISSING fos-skills@fos-skills user ${old}`)
+    assert.equal(out[at + 1], `  현재 설정 폴더에 같은 경로가 있다: ${moved}`)
+    assert.match(r.stdout, /^ {2}고치기: .*installed_plugins\.json 을 백업한 뒤/m)
+    assert.match(r.stdout, /^ {2}반영: \/reload-plugins$/m)
+    assert.doesNotMatch(r.stdout, /PLUGIN-PATH-MISSING ok@other/)
+    assert.equal(readFileSync(join(config, 'plugins', 'installed_plugins.json'), 'utf8'), before)
+  })
+
+  test('모든 installPath 가 있으면 아무것도 내지 않는다', () => {
+    const present = join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', 'abc1234')
+    mkdirSync(present, { recursive: true })
+    record({ 'fos-skills@fos-skills': [{ scope: 'user', installPath: present }] })
+    const r = run()
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /PLUGIN-PATH-MISSING|반영:/)
+  })
+
+  test('기록이 없거나 깨졌으면 판정하지 않는다', () => {
+    assert.doesNotMatch(run().stdout, /PLUGIN-PATH-MISSING/)
+    write(join(config, 'plugins', 'installed_plugins.json'), '{깨짐')
+    const r = run()
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /PLUGIN-PATH-MISSING/)
+  })
+
+  test('CLAUDE_CONFIG_DIR 가 없으면 ~/.claude 를 본다', () => {
+    const home = join(tmp, 'home')
+    record({})
+    write(join(home, '.claude', 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'a@b': [{ scope: 'user', installPath: join(tmp, 'x', 'plugins', 'y') }] } }))
+    const e = { ...env, HOME: home }
+    delete e.CLAUDE_CONFIG_DIR
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--skip-version', '--skip-questions', '--skill-dir', skill], { cwd: tmp, env: e, encoding: 'utf8' })
+    assert.match(done.stdout, /^PLUGIN-PATH-MISSING a@b user /m)
   })
 })

@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "4.18.1"
+  version: "4.19.0"
 ---
 
 # orch
@@ -23,6 +23,7 @@ metadata:
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
 `UNKNOWN-HOOK`, `DEPRECATED-CONFIG` 는 작업 디렉터리 저장소의 핸들러와 설정 경고라 진행을 막지 않는다. 고치는 법은 [`references/hooks.md`](references/hooks.md) 가 소유한다.
+`PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록(`installed_plugins.json`)이 가리키는 폴더가 없어 그 플러그인이 실리지 않았다는 뜻이다. 이 스킬이 실렸어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있다. 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다. 설정 폴더가 바뀐 세션에서 옛 폴더 경로가 남은 경우가 대표적이다.
 설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
 
 ```bash
@@ -71,7 +72,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 고른 이유가 dispatch 보고에 한 줄로 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
-| 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다 | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
+| 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다(`launch-worker` 도 띄우기 전에 한 번 더 돌려 막는다) | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
 | 3 | 띄우기 | `launch-worker` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
 | 4 | 기다리기 | 저장소마다 `orch-loop.ts --start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `wait-important` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다. 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 받은 delivery 를 `triage-messages` 로 읽었다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |

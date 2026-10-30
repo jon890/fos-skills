@@ -41,6 +41,14 @@
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
 //     둘 다 경고라 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
+// 설치 기록 판정(늘 본다):
+//     `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에 적힌 모든 플러그인의 installPath 가 실제로 있는지 본다.
+//     Orca 가 세션을 새 설정 폴더로 열면 기록의 installPath 가 옛 설정 폴더를 가리킨 채 남을 수 있다. 그 경로에 복사본이 없으면
+//     Claude Code 는 그 플러그인을 싣지 않는다(디버그 로그의 `Plugin "<이름>" not cached at <경로>`). 스킬과 슬래시 명령이 통째로 빠지는데
+//     위의 설치본 판정은 실린 스킬의 버전만 보므로 알아채지 못한다. 없는 것만 낸다. fos-skills 도 같은 규칙이다.
+//     installPath 에서 `/plugins/` 뒤를 현재 설정 폴더의 plugins 아래에 붙인 경로가 있으면 그 경로를 함께 낸다(복사본이 옮겨 간 경우).
+//     기록 파일이 없거나 읽지 못하면 판정하지 않는다. 파일은 고치지 않는다. 경고라 종료 코드를 바꾸지 않는다.
+//
 // 루프 번들 판정(늘 본다):
 //     `ps -axo pid=,command=`(PS 환경 변수로 바꾼다)에서 `orch-loop.ts` 와 `--foreground` 가 든 행(상주 루프의 부모)을 읽는다.
 //     --tick 자식과 --start 는 뺀다. 스크립트 경로는 첫 낱말(node) 뒤 처음 `/` 로 시작하는 곳부터 `orch-loop.ts` 까지다(경로에 빈칸이 있을 수 있다).
@@ -78,19 +86,21 @@
 //     DEPRECATED-CONFIG <절>.<키> → hooks/<이벤트>.ts   옛 설정 칸
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
 //     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초(ORCH_QUESTIONS_TIMEOUT_SEC) 안에 답하지 않은 경우도 여기다
+//     PLUGIN-PATH-MISSING <플러그인> <scope> <경로>   설치 기록의 installPath 가 없다. 이어서 현재 설정 폴더에 같은 상대 경로가 있으면 그 경로,
+//                                                고치는 방법과 `/reload-plugins` 안내가 온다
 //     LOOP-DEAD <repo> <이유>                    --run 을 줬는데 상주 루프가 죽었다. 다음 줄에 다시 띄울 명령이 온다
 //     LOOP-STALE <repo> <pid> <번들 sha>          설치되지 않은 번들의 스크립트로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, LOOP-DEAD, LOOP-STALE, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING 이나 UNANSWERED 가 있다
 //     2  사용법 오류
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -253,6 +263,37 @@ function checkScripts(skillDir: string): Checked {
   return { lines, code: lines.some((line) => line.startsWith('MISSING')) ? 1 : 0 }
 }
 
+// 머리 주석의 「설치 기록 판정」. 없는 installPath 마다 줄을 내고, 하나라도 있으면 고치는 방법을 한 번 안내한다.
+function checkInstallPaths(configDir: string): string[] {
+  let plugins: unknown
+  try {
+    plugins = (JSON.parse(readFileSync(join(configDir, 'plugins', 'installed_plugins.json'), 'utf8')) as { plugins?: unknown }).plugins
+  } catch {
+    return []
+  }
+  if (typeof plugins !== 'object' || plugins === null) return []
+  const lines: string[] = []
+  for (const [name, entries] of Object.entries(plugins)) {
+    if (!Array.isArray(entries)) continue
+    for (const entry of entries as { installPath?: unknown; scope?: unknown }[]) {
+      const path = entry?.installPath
+      if (typeof path !== 'string' || !path || exists(path)) continue
+      lines.push(`PLUGIN-PATH-MISSING ${name} ${typeof entry.scope === 'string' ? entry.scope : '-'} ${path}`)
+      const tail = path.split(`${sep}plugins${sep}`).slice(1).join(`${sep}plugins${sep}`)
+      const moved = tail ? join(configDir, 'plugins', tail) : ''
+      if (moved && exists(moved)) lines.push(`  현재 설정 폴더에 같은 경로가 있다: ${moved}`)
+    }
+  }
+  if (lines.length > 0) {
+    lines.push(
+      '  이 플러그인들은 실리지 않아 스킬과 슬래시 명령이 빠진다. 아래는 사용자가 한다(doctor 는 설치 기록을 고치지 않는다)',
+      `  고치기: ${join(configDir, 'plugins', 'installed_plugins.json')} 을 백업한 뒤 installPath 를 위의 현재 설정 폴더 경로로 고치거나, 플러그인을 다시 설치한다(claude plugin install <플러그인>@<마켓플레이스>)`,
+      '  반영: /reload-plugins',
+    )
+  }
+  return lines
+}
+
 function checkRepo(repo: string): string[] {
   const lines = unknownHandlers(repo).map((file) => `UNKNOWN-HOOK ${file}`)
   try {
@@ -397,6 +438,7 @@ async function main(argv: string[]): Promise<number> {
 
   const version = values['skip-version'] ? { lines: [], code: 0 } : checkVersion(skillDir, values.remote, values.branch as string)
   const scripts = checkScripts(skillDir)
+  const installLines = checkInstallPaths(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'))
   const repoLines = checkRepo(repo)
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId)
   let loop = runId ? loopStatus(repo, Date.now()) : null
@@ -413,7 +455,7 @@ async function main(argv: string[]): Promise<number> {
           `  node --disable-warning=ExperimentalWarning "${join(skillDir, 'scripts', 'orch-loop.ts')}" --repo ${shQuote(repo)} --run ${shQuote(runId as string)} --start`,
         ]
       : []
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops()].join('\n')}\n`)
+  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops()].join('\n')}\n`)
 
   if (runId) {
     try {
