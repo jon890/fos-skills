@@ -99,12 +99,12 @@
 //     끝난 뒤에 본다. 부모가 없으면 stdout 을 읽는 쪽도 없으므로 그 뒤의 쓰기 오류(EPIPE)는 버린다.
 //     틱 자식이 하는 일(순서대로, 하나가 실패해도 다음을 한다):
 //     1. 질문 확인. Run 마다, Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
-//        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓰고 worker-question 을 낸다. REMINDER 는 알림 파일에도 쓴다.
+//        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓴다. 기술 질문의 REMINDER 는 알림 파일과 worker-question 에도 낸다.
+//        사용자 결정 재알림은 로그만 남기고 decision-pending 의 중복 억제를 따른다.
 //        새 질문(QUESTION)은 알림 파일에 쓰지 않는다. 코디네이터의 wait-important 가 question 메시지로 이미 깨어난다
 //        닫힌 질문(lib/questions.ts 의 「닫힌 질문」)의 REMINDER 는 내지 않고, 처음 닫힌 것으로 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓴다
 //     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 자동 머지, 충돌 처리가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     3. 보드 동기화(워크트리 정리 전). 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
-//        decide 제목·줄의 내용 해시가 달라지면 REMINDER 를 기록한다(lib/board.ts)
 //        새 사용자 결정 질문과 보드의 남은 decide 줄은 lib/decisions.ts 가 DECISION-PENDING 과 decision-pending 을 낸다.
 //        기본 핸들러가 --start 로 등록한 현재 코디네이터에게 묻기를 요청한다. 같은 결정은 해결될 때까지 다시 깨우지 않는다.
 //     4. 정리. Run 마다 cleanup-sweep --repo <repo> --kill-holders [--remote-branches] --apply [--run <run>] [--specs-dir <그 Run 의 dir>].
@@ -311,14 +311,14 @@ import { specFiles } from './lib/last-pr.ts'
 import { appendEvent, DEFAULT_ALIVE_SEC, dropReadEvents, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
 import { orcaJson } from './lib/orca.ts'
-import { findBoardItems, readBoard, remindDecisions } from './lib/board.ts'
+import { findBoardItems, readBoard } from './lib/board.ts'
 import type { BoardItem } from './lib/board.ts'
 import { boardPath, makeParent, pathOf } from './lib/paths.ts'
 import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './lib/questions.ts'
-import { notifyDecisions } from './lib/decisions.ts'
+import { isUserDecision, notifyDecisions } from './lib/decisions.ts'
 import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
@@ -1957,6 +1957,8 @@ async function tick(ctx: Context, n: number): Promise<number> {
         }
       }
       log(notice.line)
+      // 사용자 결정은 decision-pending 만 깨운다. 600초 재알림이 중복 억제를 우회하지 않게 한다.
+      if (notice.reminder && isUserDecision(notice.message)) continue
       if (notice.reminder) {
         try {
           appendEvent(ctx.repo, 'REMINDER', null, notice.line.replace(/^REMINDER /, ''), run)
@@ -1994,10 +1996,6 @@ async function tick(ctx: Context, n: number): Promise<number> {
       const done = await runAsync(scriptCommand(sync, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
       relay(done)
       report('board', done.code === 0 ? null : `종료 코드 ${done.code}`)
-      remindDecisions(ctx.repo, (text) => {
-        appendEvent(ctx.repo, 'REMINDER', null, text, primary)
-        log(`REMINDER ${text}`)
-      })
     } else {
       report('board', null)
     }

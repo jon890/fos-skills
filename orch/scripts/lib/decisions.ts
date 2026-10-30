@@ -18,6 +18,10 @@ type Seen = { announced: string[]; notified: string[]; coordinator?: string | nu
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const flatten = (value: unknown) => String(value || '').replace(/\s+/g, ' ').trim()
 
+export function isUserDecision(message: Message): boolean {
+  return /^결정:\s*\S/.test(String(payload(message).question || message.body || '').trim())
+}
+
 // done 값과 옛 문자열의 완료 표시를 함께 읽는다. 빈 줄만 든 항목도 줄 없는 항목처럼 취급한다.
 function lines(value: unknown): string[] {
   return (Array.isArray(value) ? value : String(value || '').split('\n')).flatMap((line) => {
@@ -40,7 +44,7 @@ export function decisionEntries(pending: Message[], items: BoardItem[], active: 
   const entries: Entry[] = []
   for (const [dispatch, message] of newest) {
     const text = String(payload(message).question || message.body || '').trim()
-    if (!/^결정:\s*\S/.test(text)) continue
+    if (!isUserDecision(message)) continue
     entries.push({ key: `question:${dispatch}:${hash(flatten(text))}`, question: { id: message.id, dispatch, text } })
   }
   for (const item of items.filter((item) => item.status === 'decide')) {
@@ -58,7 +62,7 @@ export function decisionEntries(pending: Message[], items: BoardItem[], active: 
 
 // 조회 실패 시 앞 기록을 보존한다. 성공한 전달만 notified 에 적어, 전달 실패는 다음 틱에 다시 시도한다.
 export async function notifyDecisions(repo: string, run: string, pending: Message[], includeBoard: boolean): Promise<void> {
-  const questions = pending.filter((m) => /^결정:\s*\S/.test(String(payload(m).question || m.body || '').trim()))
+  const questions = pending.filter(isUserDecision)
   const workers = questions.length ? workerRows(run) : { ok: true as const, rows: [] }
   if (!workers.ok) throw new Error(workers.error)
   const items = includeBoard && existsSync(boardPath(repo)) ? readBoard(boardPath(repo)) : []

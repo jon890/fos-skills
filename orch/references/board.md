@@ -88,8 +88,8 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 업무 하나에 PR 이 여럿이면 처리한 머지 PR 을 `merged-pr` 에 쌓아 다음 틱에 다시 연결하지 않는다.
 `pr` 필드와 `merged-pr` 필드는 `#555` 와 `555` 를 같은 값으로 읽고, `board.ts` 가 PR 번호 하나를 숫자 555 로 저장한다. 창은 `#555` 로 그린다. 수동 갱신은 자동 반영이 누락됐을 때만 쓴다.
 
-**REMINDER 가 정할 것이면 코디네이터는 배경, 선택지, 권장안을 정리해 보여 주고 `AskUserQuestion` 으로 묻는다.**
-알림의 내용 해시는 `.orch/state/board-decisions.json` 에 기억한다. 항목이 사라지면 잊고, 다시 생기면 알린다.
+**DECISION-PENDING 을 받으면 코디네이터는 배경, 선택지, 권장안을 정리해 사용자에게 묻는다.** 이미 물어 답을 기다리는 결정은 다시 묻지 않는다.
+알림은 `.orch/state/decision-pending/<Run>.json` 에 기억한다. 완료한 줄은 제외하고, 항목이 사라지면 잊어 다시 생겼을 때 알린다. 기본 핸들러와 사용자 질문 절차는 [`waiting.md`](waiting.md) 와 [`replying.md`](replying.md) 가 소유한다.
 
 ## 목표 진행 표시줄
 
