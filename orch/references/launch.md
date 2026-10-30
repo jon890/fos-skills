@@ -38,7 +38,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
+"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -55,7 +55,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts"
 로컬 브랜치나 경로가 있으면 덮어쓰지 않으며 기존 워크트리는 `--worktree` 로 이어 쓴다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --resume-remote --run "$RUN_ID" \
+"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --resume-remote --run "$RUN_ID" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -69,7 +69,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts"
 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts" --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
+"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 

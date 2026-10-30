@@ -11,7 +11,7 @@
   다른 이름으로 올렸으면 PR 과 정리 스크립트가 그 브랜치를 찾지 못한다. 지시서 이름으로 다시 push 하게 하고, 잘못 만든 원격 브랜치는 지우게 한다
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/make-worktree.ts" --check "$WORKTREE" --spec "$SPEC_FILE"
+"$SKILL_DIR/bin/orch.ts" make-worktree --check "$WORKTREE" --spec "$SPEC_FILE"
 ```
 - diff 를 직접 읽고 검사를 다시 돌린다. 완료 보고는 근거가 아니다
 - 무거운 검사(로컬 CI, 브라우저, 큰 테스트)는 [`heavy-checks.md`](heavy-checks.md) 의 `heavy-slot.ts` 로 감싸 Bash 의 run_in_background 로 돌린다. worker 여럿이 함께 돌리다 머신이 꺼진 일이 있었다
@@ -60,5 +60,5 @@ git diff "origin/$BASE" -- "$FILE"
 `$SPEC_FILE` 은 남은 일만 적은 지시서다. `send-to-worker` 가 끝난 dispatch 의 남은 터미널에 새 Task 로 띄운다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts" --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
+"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
 ```

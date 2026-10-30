@@ -5,8 +5,8 @@
 명시적으로 혼자 실행하려면 `--exclusive` 를 준다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/heavy-slot.ts" -- ./bin/build.sh
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/heavy-slot.ts" --exclusive -- ./bin/ci.sh
+"$SKILL_DIR/bin/orch.ts" heavy-slot -- ./bin/build.sh
+"$SKILL_DIR/bin/orch.ts" heavy-slot --exclusive -- ./bin/ci.sh
 ```
 
 어떤 명령이 혼자 실행할지(`exclusive`), 자리 하나를 쓸지(`normal`), 대기열을 거치지 않을지(`light`)는 저장소의 `.orch/config.json` 의 `heavy` 절이 정한다.

@@ -112,7 +112,7 @@
 ## orch 작업 폴더
 
 orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
-경로는 `scripts/orch_paths.ts` 가 정하고, 셸과 문서에서는 `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch_paths.ts" specs` 처럼 이름으로 받는다.
+경로는 `scripts/orch_paths.ts` 가 정하고, 셸과 문서에서는 `"$SKILL_DIR/bin/orch.ts" orch_paths specs` 처럼 이름으로 받는다.
 루트를 옮기려면 `ORCH_DIR` 을 orch 스크립트를 부르는 모든 환경(코디네이터 셸, 훅)에 같은 값으로 둔다.
 
 | 경로 | 담는 것 |
@@ -124,6 +124,19 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | `state/` | `wait-important`, `notify-conflicts.ts` 가 기억하는 것. 상주 루프의 파일(`loop.json`, `loop.lock`, `loop.log`, `loop-events.jsonl`, `loop-events.cursor`)도 여기 있다. 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
 | `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |
 | `bin/` | 저장소 포장 스크립트 |
+
+## 저장소 스크립트에서 orch 부르기
+
+**저장소의 `.orch/bin/` 스크립트와 `.orch/queue-env.sh` 같은 파일은 번들 경로를 박지 않는다.** 플러그인 경로는 프로필과 버전마다 바뀌어(`<설정 폴더>/plugins/cache/<마켓플레이스>/<플러그인>/<해시>/`), 박아 둔 경로는 갱신 뒤 옛 스크립트를 조용히 부른다. 저장소 체크아웃 경로도 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
+아래 한 줄이 설치 기록에서 진입점의 위치를 풀고, 스크립트는 `"$ORCH" <이름> [인자]` 로 부른다. 진입점이 그 호출의 설치 기록을 다시 읽어 현재 번들의 스크립트를 실행한다. 스크립트마다 새 셸이 뜨면 스크립트마다 이 줄을 둔다.
+
+```bash
+ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";const e=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"].sort((a,b)=>(a.scope!=="user")-(b.scope!=="user"))[0];console.log(e.installPath+"/orch/bin/orch.ts")') && "$ORCH" mem-gate --help
+```
+
+`"$ORCH" --path` 는 현재 번들의 스크립트 폴더를, `--path <이름>` 은 그 스크립트의 파일 경로를 낸다. 스크립트를 `node` 가 아닌 다른 방식으로 불러야 할 때 쓴다.
+고치는 중인 체크아웃의 스크립트를 테스트하려면 `ORCH_SCRIPTS_DIR` 에 그 체크아웃의 `orch/scripts` 를 준다. 설치 기록보다 앞선다.
+진입점 파일은 Node 내장 모듈만 쓰는 한 파일이라 저장소에 복사해 두고 써도 설치 기록을 따라간다. 복사본은 번들이 아니라 진입점만 고정한다.
 
 보드(`board.json`)는 work-board 소유라 여기 두지 않는다. 위치는 `work-board/README.md` 가 정하고, 다른 곳이면 `finish.board` 로 준다.
 
@@ -152,8 +165,8 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 `$REPO` 는 대상 저장소의 주 checkout 이다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.ts" --repo "$REPO"
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.ts" --repo "$REPO" --apply
+"$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO"
+"$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO" --apply
 ```
 
 - 기본으로 옮기는 쌍과 판정은 스크립트 머리 주석과 `scripts/lib/paths.ts` 의 `DEFAULT_MOVES` 가 소유한다. 다른 곳에 둔 파일은 `--move 옛=새` 로 더한다

@@ -3,12 +3,26 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 4.21.0 (2026-10-30)
+## 4.23.0 (2026-10-30)
 
 - 읽기 전용 gh 조회가 프로세스 사이에서 캐시를 공유한다. 쓰기를 시도하면 저장소 캐시를 비우며 `ORCH_GH_CACHE` 와 `ORCH_GH_CACHE_TTL_SECONDS` 로 캐시를 조절한다
 - `finish-pr` 의 기본 확인 간격이 60초로 바뀐다. 머지 큐의 CI 대기와 배포 대기는 최대 300초까지 간격을 늘린다
 - `gh-usage.ts` 가 로컬 일별 기록에서 최근 한 시간의 gh 호출 수와 캐시 적중 수를 낸다
 - 머지·update-branch 직후 반영 확인은 캐시를 건너뛰어 상태 반영 지연을 쓰기 실패로 판단하지 않는다
+
+## 4.22.0 (2026-10-30)
+
+- 진입점 `bin/orch.ts <이름> [인자]` 를 더했다. 부를 때마다 설치 기록에서 현재 번들을 읽어 그 `scripts/<이름>.ts` 를 실행하므로 옛 번들이나 복사해 둔 진입점으로 불러도 현재 번들이 돈다
+- 문서의 명령 예시를 `"$SKILL_DIR/bin/orch.ts" <이름>` 꼴로 바꿨고 `orch-doctor` 의 스크립트 판정이 이 꼴을 본다. `references/overlay.md` 에 저장소 스크립트가 진입점을 푸는 한 줄을 더했다
+- `send-to-worker` 가 reply 를 `stable_pane_required` 로 거부당하면, question 일 때 같은 스레드에 status `answer:` 로 보내고 `fallback:` 줄로 알린다
+- question 이 아닌 메시지는 전환하지 않고 지금처럼 5 로 실패한다
+- 호환성: `wait-important` 가 시작하면 작업 폴더를 `--loop-repo` 의 첫 저장소(없으면 시작 폴더의 주 checkout)로 옮겨 시작 폴더가 지워져도 orca 조회가 돈다. 상대 경로, 상태 파일, 핸들러 저장소는 시작 폴더 기준 그대로다
+
+## 4.21.0 (2026-10-30)
+
+- worker 가 일하는 중, 끝남, 사용자가 넘겨받음, 판정 못 함 가운데 무엇인지를 `lib/worker-state.ts` 한 곳이 정하고 `cleanup-sweep`, `orch-doctor`, `wait-important` 가 함께 쓴다
+- `cleanup-sweep` 이 살아 있는 dispatch 의 워크트리를 PR 조회 앞에서 건너뛴다. failed, 반납된 dispatch 도 끝난 것으로 보고 `--kill-holders` 로 남은 프로세스를 끈다. PR 없이 끝난 워크트리는 남은 터미널을 닫고 치운다
+- `user_takeover` 표시라도 화면이 작업 중인 worker 는 일하는 중으로 본다. `orch-doctor --run` 이 `WORKER-STATE` 줄로 알리고, `wait-important` 는 끊긴 것으로 보지 않는다
 
 ## 4.20.0 (2026-10-30)
 

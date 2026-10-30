@@ -1,8 +1,10 @@
 // 브랜치의 워크트리와 그 워크트리의 worker-list 행 찾기 한 벌이다.
-// 사용처: notify-conflicts.ts(충돌한 PR 의 worker 에게 알리기), orch-loop.ts(체크가 실패한 PR 의 worker 에게 알리기).
+// 사용처: notify-conflicts.ts(충돌한 PR 의 worker 에게 알리기), orch-loop.ts(체크가 실패한 PR 의 worker 에게 알리기),
+// orch-doctor.ts(--run 의 worker 판정. workerRows 만 쓴다).
 
 import { git } from './git.ts'
 import { orcaJson } from './orca.ts'
+import type { RunOptions } from './proc.ts'
 
 type Json = Record<string, unknown>
 
@@ -26,12 +28,12 @@ export function worktreePaths(repo: string): Map<string, string> {
 }
 
 // worker-list 의 행을 모든 페이지에 걸쳐 읽는다. 첫 페이지만 읽으면 다른 worker 를 놓친다(lib/orca.ts 머리 주석).
-export function workerRows(run: string): { ok: true; rows: Json[] } | { ok: false; error: string } {
+export function workerRows(run: string, opts?: RunOptions): { ok: true; rows: Json[] } | { ok: false; error: string } {
   const rows: Json[] = []
   const seen = new Set<string>()
   let cursor = ''
   for (;;) {
-    const got = orcaJson<unknown>(['orchestration', 'worker-list', ...(run ? ['--run', run] : []), '--limit', '100', ...(cursor ? ['--cursor', cursor] : [])])
+    const got = orcaJson<unknown>(['orchestration', 'worker-list', ...(run ? ['--run', run] : []), '--limit', '100', ...(cursor ? ['--cursor', cursor] : [])], opts)
     if (!got.ok) return got
     const result = obj(got.data)
     rows.push(...(Array.isArray(result.workers) ? result.workers.map(obj) : []))

@@ -43,6 +43,9 @@ if (is('orchestration', 'worker-show')) {
 }
 if (is('orchestration', 'inbox')) out({ messages: state.inbox || [] })
 if (is('orchestration', 'reply')) {
+  if (state.no_pane) {
+    print(JSON.stringify({ ok: false, error: { code: 'stable_pane_required', message: 'The coordinator terminal has no stable pane identity' } }), 1)
+  }
   if ((state.answered || []).includes(opt('--id'))) {
     print(JSON.stringify({ ok: false, error: { message: 'Question ' + opt('--id') + ' already has a different answer' } }), 1)
   }
@@ -391,6 +394,63 @@ describe('끝난 dispatch', () => {
     const r = send('--body', 'x')
     assert.equal(r.code, 3, both(r))
     assert.match(r.stdout, /^ended: ctx_1 가 끝났고\(None\) 터미널도 없다/m)
+  })
+})
+
+describe('코디네이터 터미널의 pane 신원이 없을 때', () => {
+  const STATUS = 'orca orchestration send --run run_x --type status --thread-id m_q --to dispatch:ctx_1 --subject'
+
+  test('question 에는 같은 스레드에 status answer 로 보내고 알린 뒤 깨운다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)], no_pane: true })
+    const r = send('--body', '그렇게 한다')
+    assert.equal(r.code, 0, both(r))
+    assert.equal(lines('orca orchestration reply').length, 1)
+    assert.deepEqual(lines(STATUS), [`${STATUS} answer: 그렇게 한다 --body 그렇게 한다 --from run:run_x`])
+    assert.match(r.stdout, /^fallback: reply 가 stable_pane_required 로 거부돼 m_q 스레드에 status answer 로 보냈다 \(msg_sent\)$/m)
+    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+  })
+
+  test('여러 줄 본문은 첫 줄만 제목에 쓰고 본문은 그대로 보낸다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)], no_pane: true })
+    const r = send('--body', '첫째 줄\n둘째 줄')
+    assert.equal(r.code, 0, both(r))
+    // 본문의 줄바꿈 때문에 기록이 두 줄로 나뉜다
+    assert.deepEqual(lines(STATUS), [`${STATUS} answer: 첫째 줄 --body 첫째 줄`])
+    assert.ok(logText().includes('둘째 줄 --from run:run_x'), logText())
+  })
+
+  test('question 이 아닌 메시지에는 전환하지 않고 5 로 실패한다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_st', 'term_w', 'status', 3)], no_pane: true })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 5, both(r))
+    assert.match(r.stdout, /stable_pane_required/)
+    assert.deepEqual(lines('orca orchestration send'), [])
+    assert.deepEqual(lines('nudge'), [])
+  })
+
+  test('--reply-to 가 inbox 에 없으면 종류를 몰라 전환하지 않는다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [], no_pane: true })
+    const r = send('--body', 'x', '--reply-to', 'm_gone')
+    assert.equal(r.code, 5, both(r))
+    assert.deepEqual(lines('orca orchestration send'), [])
+  })
+
+  test('끝난 dispatch 의 question 에도 status answer 로 보내고 깨우지 않는다', () => {
+    state({ dispatches: worker('completed'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)], no_pane: true })
+    const r = send('--body', '그렇게 한다', '--reply-to', 'm_q')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines(STATUS), [`${STATUS} answer: 그렇게 한다 --body 그렇게 한다 --from run:run_x`])
+    assert.match(r.stdout, /^fallback: /m)
+    assert.match(r.stdout, /끝난 dispatch 라 깨우지 않았다/)
+    assert.deepEqual(lines('nudge'), [])
+  })
+
+  test('보낸 status 가 unanswered() 에서 그 질문을 답한 것으로 세어진다', () => {
+    const question = { id: 'm_q', type: 'question', run_id: 'run_x', to_handle: 'run:run_x', from_handle: 'dispatch:ctx_1', thread_id: 'm_q' }
+    // send 가 만드는 메시지의 꼴: 스레드가 그 질문이고 받는 곳이 worker 의 dispatch 다
+    const answer = { id: 'msg_sent', type: 'status', run_id: 'run_x', to_handle: 'dispatch:ctx_1', from_handle: 'run:run_x', thread_id: 'm_q' }
+    assert.deepEqual(unanswered([question], 'run_x').map((m) => m.id), ['m_q'])
+    assert.deepEqual(unanswered([question, answer], 'run_x'), [])
   })
 })
 

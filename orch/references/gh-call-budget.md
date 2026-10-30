@@ -44,7 +44,7 @@ GraphQL 은 인자에 직접 쓴 query 만 캐시한다. mutation 이거나 quer
 캐시 적중 줄은 실제 gh 프로세스를 띄우지 않은 조회다. 기록 파일은 자동 삭제하지 않는다.
 
 ```bash
-node "$SKILL_DIR/scripts/gh-usage.ts" --repo "$REPO"
+node "$SKILL_DIR/bin/orch.ts" gh-usage --repo "$REPO"
 ```
 
 출력은 `GH-USAGE last-hour calls=... cache-hits=...` 다. 최근 한 시간의 실제 호출과 캐시 적중을 나눠 센다.

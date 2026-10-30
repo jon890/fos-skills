@@ -33,6 +33,8 @@ describe('block-background-wait', () => {
       'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" > /tmp/w.out 2>&1 &',
       'nohup python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID"',
       'node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts" --run r &',
+      '"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --loop-repo "$REPO" > /tmp/w.out 2>&1 &',
+      'nohup "$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID"',
     ]) {
       assert.equal(decide(command), 'deny', command)
     }
@@ -54,6 +56,7 @@ describe('block-background-wait', () => {
       'sleep 5 &',
       'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" --ack "$DELIVERY_ID"',
       'python3 "$SKILL_DIR/scripts/wait-important.py" --run "$RUN_ID" 2>/dev/null && echo woke',
+      '"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --ack "$DELIVERY_ID" --loop-repo "$REPO"',
       // heredoc 본문은 명령이 아니다. 문서를 고치는 스크립트에 이 문구가 든 일이 있었다
       "python3 - <<'EOF'\ntext = 'check --wait 를 셸의 & 나 nohup 으로 띄우는 호출'\norchestration check --wait &\nEOF",
     ]) {

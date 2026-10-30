@@ -1,5 +1,11 @@
 # 7. 머지와 정리
 
+**worker 가 일하는 중인지, 끝났는지, 사용자가 넘겨받았는지는 `scripts/lib/worker-state.ts` 한 곳이 정한다.**
+`cleanup-sweep.ts`, `orch-doctor.ts`, `wait-important.ts` 가 같은 판정을 쓴다. 입력은 dispatch 상태, PR 상태, base 보다 앞선 커밋 수, 터미널 화면이고 판정 순서는 그 파일 머리 주석이 소유한다.
+`completed`, `failed`, 반납(released)된 dispatch 는 끝난 것이다. 그 위에 PR 이 MERGED 이거나, PR 이 없고 base 보다 앞선 커밋이 0 개면 치워도 된다.
+`user_takeover` 로 표시된 살아 있는 worker 라도 화면이 에이전트 작업 중이면 일하는 중으로 본다. 새 세션에서 띄운 worker 를 Orca 가 이렇게 적는다.
+`cleanup-sweep.ts` 는 살아 있는 dispatch 의 워크트리를 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많아도 조회 시간이 일하는 워크트리 수에 따라 늘지 않는다.
+
 `cleanup-sweep.ts` 와 `remove-worktree.ts` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
 소유 상태는 모든 Run 의 worker 행에서 읽는다. 코디네이터 터미널에서 부르면 범위 없는 `worker-list` 가 그 Run 만 주므로(scope `bound`), `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다.
 정리 한 번 안에서는 읽은 지 60초가 지나기 전까지 다시 읽지 않고, 범위를 읽는 방법과 이유는 `scripts/lib/ownership.ts` 머리 주석이 소유한다.
@@ -12,7 +18,7 @@
 
 **`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 띄울 때 dispatch 마다 남긴 기록(`.orch/state/launched-workers/`)에 있고 그 dispatch 가 끝났으면(completed, failed, canceled) `user_owned` 여도 코디네이터의 터미널로 보고 닫은 뒤 PR 상태와 남은 커밋, 변경으로 정리를 판단한다.
 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 이 소유한다.
-PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 completed 이고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
+PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 끝났고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 그 경로의 터미널을 닫고 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
 
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.ts --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
@@ -72,7 +78,7 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 `--run "$RUN_ID"` 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록 한정한다. 빠지면 정리 단계가 Run 으로 한정되지 않는다는 경고가 난다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --run "$RUN_ID" 101 102 103!
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --run "$RUN_ID" 101 102 103!
 ```
 
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
@@ -82,7 +88,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 충돌 파일 출력과 알림 중복 방지는 스크립트 머리 주석이 소유한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/notify-conflicts.ts" --repo "$REPO" --base "$BASE" --run "$RUN_ID"
+"$SKILL_DIR/bin/orch.ts" notify-conflicts --repo "$REPO" --base "$BASE" --run "$RUN_ID"
 ```
 
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
@@ -95,7 +101,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/notify-conflicts.
 **앞 PR 이 먼저 들어가야 하는 PR 들은 `--chain 101,102` 로 묶는다.** 마이그레이션 순서가 있는 PR 이 예다. 묶음 안 앞 PR 이 머지되지 않고 빠지면 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 로 머지하지 않는다. 묶음 밖의 PR 은 이어 머지한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --run "$RUN_ID" --chain 101,102 101 102 103
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --run "$RUN_ID" --chain 101,102 101 102 103
 ```
 `--continue-on-hold` 를 주면 보류한 PR 의 `STOP` 줄만 찍고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다. 서로 무관한 PR 여럿을 한 번에 걸 때 쓴다. 뒤 PR 이 앞 PR 에 기대면 쓰지 않는다.
 
@@ -109,7 +115,7 @@ PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대�
 판정과 종료 코드는 스크립트 머리 주석이 소유한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/ci-ready.ts" --repo "$REPO" 101 102
+"$SKILL_DIR/bin/orch.ts" ci-ready --repo "$REPO" 101 102
 ```
 
 `보류` 줄의 PR 은 겹친 PR 이 머지된 뒤 다시 돌린다. base 와 충돌하는 PR 은 그 worker 에게 base 를 합치게 한다.
@@ -128,7 +134,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/ci-ready.ts" --re
 필수 체크는 허용할 수 없고, 목록에 없는 체크가 실패하면 멈춘다. 판정은 스크립트 머리 주석이 소유한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --required test,browser --allow-fail claude-review 101
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --required test,browser --allow-fail claude-review 101
 ```
 
 ### base 최신 여부
@@ -142,7 +148,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 - 머지 큐에서 앞선 PR 이 머지되면 뒤 PR 은 base 가 달라진 것이므로 이 옵션이 뒤 PR 마다 다시 base 를 merge 한다. 시간이 더 걸리는 대신 base 가 깨지지 않는다
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
 ```
 
 ### 겹치지 않는 PR 은 최신화하지 않기
@@ -203,7 +209,7 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 같은 PR 의 항목이 둘 이상이면 건너뛴다. `--board-item PR=ID` 로 준 항목은 판정과 상관없이 done 으로 바꾼다. 규칙은 `finish-pr.ts` 머리 주석의 「보드 항목」 이 소유한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" 492 '495:./bin/backup-db.sh orders "before-pr-$PR"'
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" 492 '495:./bin/backup-db.sh orders "before-pr-$PR"'
 ```
 
 ### 같은 파일을 고친 PR
@@ -234,7 +240,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 `$VERIFY_CMD` 와 `$COPY_DIR` 은 오버레이의 값이다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --verify-merged "$VERIFY_CMD" --copy-dir "$COPY_DIR" 101 102
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --verify-merged "$VERIFY_CMD" --copy-dir "$COPY_DIR" 101 102
 ```
 
 ### draft 때 건너뛴 필수 체크
@@ -250,7 +256,7 @@ ready 로 바꾼 직후 새 실행이 붙기 전에 머지 큐가 그 체크를 
 `$AFTER_CMD` 는 오버레이의 값이다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --docs-glob 'docs/*,*.md' --after-merged "$AFTER_CMD" 101 102
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --docs-glob 'docs/*,*.md' --after-merged "$AFTER_CMD" 101 102
 ```
 
 저장소의 검증과 배포 명령은 그 저장소의 오버레이가 소유한다.
@@ -264,7 +270,7 @@ DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하�
 백업 스크립트는 저장소마다 서버와 DB 가 달라 이 스킬에 두지 않는다. 저장소의 오버레이가 경로와 인자를 정한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 ```
 
 백업 스크립트를 저장소에 둘 때 지킬 것이다.
@@ -301,7 +307,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish
 판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
 ```
 
 **스크립트 머리 주석이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
@@ -340,7 +346,7 @@ gh pr view "$PR" --json state --jq .state
 먼저 `cleanup-sweep.ts` 로 정리한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts" --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
+"$SKILL_DIR/bin/orch.ts" cleanup-sweep --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
 ```
 
 스크립트가 건너뛴 것만 아래 묶음으로 직접 지운다. 묶음은 PR 이 `MERGED` 일 때만 돈다.
@@ -351,7 +357,7 @@ if [ "$(cd "$OTHER_REPO" && gh pr view "$PR" --json state --jq .state)" = MERGED
   BRANCH=$(git -C "$WORKTREE" branch --show-current)
   PR_HEAD=$(cd "$OTHER_REPO" && gh pr view "$PR" --json headRefOid --jq .headRefOid)
   orca terminal close --terminal "$WORKER_TERM"
-  node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/remove-worktree.ts" "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
+  "$SKILL_DIR/bin/orch.ts" remove-worktree "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
   if git -C "$OTHER_REPO" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
     git -C "$OTHER_REPO" push origin --delete "$BRANCH"
   fi
@@ -364,10 +370,10 @@ fi
 활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
 거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
-거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. lsof 로 직접 찾아 끄지 않는다.
+거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. 위 판정이 「끝남」 인 워크트리(PR MERGED, PR 없이 끝남)의 남은 프로세스만 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/remove-worktree.ts" "$WORKTREE" --delete-branch
+"$SKILL_DIR/bin/orch.ts" remove-worktree "$WORKTREE" --delete-branch
 ```
 
 squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sweep.ts` 는 이 값을 스스로 넘긴다.
@@ -393,5 +399,5 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sw
 `tick` 이나 `after-cleanup` 핸들러에서 부르면 입력의 `run` 을 넘긴다. 큐 로그, 폴더, csv 는 Run 에 묶을 수 없어 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/handoff-cleanup.ts" --repo "$REPO" --run "$RUN_ID" --apply
+"$SKILL_DIR/bin/orch.ts" handoff-cleanup --repo "$REPO" --run "$RUN_ID" --apply
 ```
