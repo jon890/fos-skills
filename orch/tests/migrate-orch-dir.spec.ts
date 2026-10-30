@@ -532,6 +532,18 @@ describe('migrate-orch-dir --hooks', { concurrency: 4 }, () => {
     assert.equal(readFileSync(got, 'utf8'), '101|feat/x|owner|repo|github.example.com\n')
   })
 
+  test('옮긴 queue.before 는 PR별 명령이 있는 입력이면 기본 명령을 건너뛴다', async (t) => {
+    const c = setup(t)
+    const got = join(c.tmp, 'before.txt')
+    writeConfig(c, { queue: { before: `printf 'default\n' >> '${got}'` } })
+    await c.migrate(['--hooks', '--apply'])
+    for (const has_pr_command of [true, false, true]) {
+      const { result } = await fireIn(c, 'before-merge', { pr: PR, has_pr_command })
+      assert.equal(result.result, 'pass', result.reason)
+    }
+    assert.equal(readFileSync(got, 'utf8'), 'default\n')
+  })
+
   test('만든 핸들러는 연결된 워크트리를 repo 로 받으면 옛 명령을 그 워크트리에서 부른다', async (t) => {
     const c = setup(t)
     const wt = join(c.tmp, 'wt')

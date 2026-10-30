@@ -8,6 +8,7 @@
 - 호환성: 5.0.0의 major 정리에 이어 옛 설정 칸과 옵션을 지운다. `migrate-orch-dir --hooks`로 변환한다
 - 호환성: `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 설정을 지웠다
 - 호환성: `--before`, `--verify-merged`, `--after-merged`, `--complete-cmd` 옵션을 지웠다
+- `before-merge` 입력에 `has_pr_command`를 더했다. 변환한 기본 명령은 PR별 명령이나 빈 `PR:`이 있으면 건너뛴다
 
 ## 5.0.0 (2026-10-30)
 

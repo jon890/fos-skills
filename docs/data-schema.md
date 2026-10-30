@@ -46,7 +46,8 @@
 | `queue.after_merged` | `after-queue` | `MERGED_PRS` → `merged_prs`, `CODE_PRS` → `code_prs` |
 | `finish.complete_cmd` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다. 정규식은 `finish.task_pattern` 을 옮겨 적고 설정의 그 칸은 남긴다 |
 
-명령줄의 `PR번호:명령` 형식은 그대로 둔다. 그 PR 하나에만 붙이는 일회성 명령이라 핸들러로 옮기지 않는다. `before-merge` 핸들러 다음에 돈다.
+명령줄의 `PR번호:명령` 형식은 그대로 둔다. 그 PR 하나에만 붙이는 일회성 명령이라 핸들러로 옮기지 않는다. `before-merge` 핸들러 다음에 돈다. 입력의 `has_pr_command`는 빈 `PR:`도 true다.
+`queue.before`에서 만든 핸들러만 이 값이 true면 기본 명령을 건너뛰어 기존 대체 동작을 지킨다. 수동 핸들러는 항상 실행한다.
 
 ## 사용자 결정 질문 형식
 

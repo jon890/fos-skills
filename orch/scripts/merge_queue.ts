@@ -949,7 +949,7 @@ class Queue {
     const env = { ...this.prEnv(), GH_HOST: p.apiHost }
     if (this.hooks.has('before-merge')) {
       const ctx = this.ctx()
-      const input = { pr: this.prInput(), owner: p.owner, name: p.repo, last_of_task: o.lastOfTask.includes(n) }
+      const input = { pr: this.prInput(), owner: p.owner, name: p.repo, last_of_task: o.lastOfTask.includes(n), has_pr_command: prCommand !== null }
       const done = await fire('before-merge', input, ctx)
       if (done.result === 'reject') stop(`${n} HOOK-REJECT`)
       if (failed(done)) stop(`${n} HOOK-FAIL`)

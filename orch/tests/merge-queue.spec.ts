@@ -1103,6 +1103,15 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     assert.equal(readFileSync(seen, 'utf8'), 'Y 1\n')
   })
 
+  test('before-merge 의 has_pr_command 는 PR별 명령과 빈 PR:을 대체로 표시한다', async (t) => {
+    const c = setup(t)
+    const seen = join(c.tmp, 'input.jsonl')
+    hook(c, 'before-merge', recorder(seen))
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }), '3': pr({ headRefName: 'c' }) }, ['1', '2:true', '3:'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(inputs(seen).map((input) => [input.pr.number, input.has_pr_command]), [[1, false], [2, true], [3, true]])
+  })
+
   test('hooks/before-merge.ts 와 PR:명령 이 있으면 핸들러 다음에 그 명령이 돈다', async (t) => {
     const c = setup(t)
     const seen = join(c.tmp, 'order.txt')
