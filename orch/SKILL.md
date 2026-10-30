@@ -28,10 +28,8 @@ metadata:
 `PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록(`installed_plugins.json`)이 가리키는 폴더가 없어 그 플러그인이 실리지 않았다는 뜻이다. 이 스킬이 실렸어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있다. 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다. 설정 폴더가 바뀐 세션에서 옛 폴더 경로가 남은 경우가 대표적이다.
 설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
 
-node 버전은 doctor 를 부르기 전에 셸에서 본다. 24 보다 낮은 node 는 `.ts` 를 읽지 못해 doctor 안에서는 판정할 수 없다.
-
 ```bash
-if node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)'; then "$SKILL_DIR/bin/orch.ts" orch-doctor; else echo "NODE-TOO-OLD $(node --version 2>/dev/null || echo 없음) 24 이상이 필요하다"; fi
+python3 "$SKILL_DIR/scripts/orch-doctor.py"
 ```
 
 ## 언제 쓰나

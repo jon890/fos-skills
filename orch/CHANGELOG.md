@@ -5,9 +5,9 @@
 
 ## 5.0.0 (2026-10-30)
 
-- 호환성: `orch/scripts` 의 옛 `.py` 진입점과 `merge-queue.sh`, `ts_shim.py` 를 지웠다. 명령은 `"$SKILL_DIR/bin/orch.ts" <이름>` 이나 같은 이름의 `.ts` 로 부른다
-- 호환성: 옛 `.py` 경로를 부르는 저장소 스크립트와 설정은 위 꼴로 바꿔야 한다
-- 스킬을 열 때의 점검은 셸 한 줄로 node 버전을 본 뒤 `bin/orch.ts orch-doctor` 를 부른다. node 가 24 보다 낮으면 doctor 를 부르지 않고 `NODE-TOO-OLD` 줄을 낸다
+- 호환성: `orch/scripts` 의 `orch-doctor.py`, `ts_shim.py` 외의 옛 `.py` 진입점과 `merge-queue.sh` 를 지웠다. 명령은 `"$SKILL_DIR/bin/orch.ts" <이름>` 이나 같은 이름의 `.ts` 로 부른다
+- 호환성: 옛 `.py` 이름으로 부르던 저장소 스크립트와 기억한 명령은 `bin/orch.ts <이름>` 으로 바꾼다
+- `orch-doctor.py` 는 공식 점검 진입점으로 남는다. `ts_shim.py` 가 Node 24 미만이면 `NODE-TOO-OLD` 로 멈춘다
 - 옛 구조 안내가 옮기는 명령을 `node --disable-warning=ExperimentalWarning <경로>/migrate-orch-dir.ts` 로 알린다
 
 ## 4.x

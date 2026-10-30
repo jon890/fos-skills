@@ -1,5 +1,4 @@
 // worker-ask.ts 를 가짜 orca 로 본다. ask 의 성공, 시간 제한, 실패 뒤 대신 보내기, 결정 질문 형식 검사를 다룬다.
-// 모든 worker 지시서가 옛 경로 worker-ask.py 를 부르므로 그 shim 도 함께 본다.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
