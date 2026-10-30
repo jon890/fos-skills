@@ -11,7 +11,6 @@ import { collect, parseObjects } from '../scripts/triage-messages.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/triage-messages.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/triage-messages.py', import.meta.url))
 
 type Json = Record<string, unknown>
 type Result = { code: number | null; stdout: string; stderr: string }
@@ -163,15 +162,5 @@ describe('--live', () => {
     const r = triage(['--live'])
     assert.equal(r.code, 1)
     assert.match(r.stderr, /runtime_unavailable/)
-  })
-})
-
-describe('triage-messages.py shim', () => {
-  test('옛 경로가 같은 출력과 종료 코드로 넘긴다', () => {
-    const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim()
-    const done = spawnSync(python, [SHIM, file(batch([msg('1', 'question')]))], { env, encoding: 'utf8' })
-    assert.equal(done.status, 0, done.stderr)
-    assert.match(done.stdout, /^== question 1건$/m)
-    assert.equal(spawnSync(python, [SHIM, file('nothing')], { env, encoding: 'utf8' }).status, 1)
   })
 })

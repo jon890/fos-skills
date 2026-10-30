@@ -14,4 +14,4 @@
 - **결과**:
   - 얻는 것: CI 에서 명령과 node 로 만든 가짜 실행 파일의 기동이 컴파일 캐시로 빨라진다. 지원이 오래 남은 버전을 기준으로 삼는다.
   - 감당할 것: Node 22 만 있는 머신에서는 스킬을 열 때 `NODE-TOO-OLD` 로 멈춘다. orch 와 work-board 는 팀 저장소로 내보내지 않는 스킬이라 영향은 이 저장소를 쓰는 머신에 그친다.
-- **적용 범위**: 버전 판정은 `orch/scripts/ts_shim.py` 가, 실행 규칙은 [`../code-architecture.md`](../code-architecture.md) 의 「실행 규칙」 이 소유한다.
+- **적용 범위**: 버전 판정은 `orch/SKILL.md` 의 doctor 점검 명령이(orch 5.0.0 전에는 `orch/scripts/ts_shim.py`), 실행 규칙은 [`../code-architecture.md`](../code-architecture.md) 의 「실행 규칙」 이 소유한다.

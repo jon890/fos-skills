@@ -3,7 +3,7 @@
 // 판정 명령(OVERLAP_UNITS)과 정리 명령(CLEANUP_SWEEP)의 가짜는 `.py` 라 확장자대로 python3 로 돈다.
 
 import assert from 'node:assert/strict'
-import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -142,19 +142,6 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     assert.equal(readFileSync(marker, 'utf8'), '1 feat owner/repo\n')
     has(c.log(), 'pr merge 1 --merge --match-head-commit abc')
     has(c.log(), 'git push -q origin --delete feat')
-  })
-
-  test('옛 merge-queue.sh 경로는 실행 가능하고 다른 디렉터리에서 불러도 같은 폴더의 큐를 돌린다', async (t) => {
-    const c = setup(t)
-    const old = join(SCRIPTS, 'merge-queue.sh')
-    accessSync(old, constants.X_OK)
-    has(readFileSync(old, 'utf8'), 'exec python3 "$(dirname "$0")/merge_queue.py" "$@"')
-    c.writeState({ '1': pr() })
-    const r = await spawnDone([old, '--repo', c.tmp, '--threads-cmd', 'echo 0', '--no-sweep', '1'], { env: c.env, cwd: '/' })
-    assert.equal(r.code, 0, both(r))
-    has(r.stdout, 'QUEUE-DONE')
-    const bare = await spawnDone([old], { env: c.env })
-    assert.equal(bare.code, 2, both(bare))
   })
 
   test('머지가 끝나면 정리를 base 와 --sweep-arg 로 부른다', async (t) => {

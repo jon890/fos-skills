@@ -11,7 +11,6 @@ import { fileURLToPath } from 'node:url'
 import { ageSeconds, poll, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/watch-questions.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/watch-questions.py', import.meta.url))
 
 // state.json 을 읽어 답한다. raw 가 있으면 그것을 그대로 내고 rc 로 끝난다.
 // check --all 은 부를 때마다 checkSeq 의 다음 값(ok 나 fail)을 따른다. 다 쓰면 마지막 값을 되풀이한다.
@@ -377,18 +376,5 @@ describe('watch-questions', () => {
     for (const option of ['--interval', '--remind-after']) {
       for (const value of ['0', 'abc']) assert.equal(watch(option, value).code, 2, `${option} ${value}`)
     }
-  })
-})
-
-describe('watch-questions.py shim', () => {
-  // python3 은 절대경로로 부른다
-  const python = (): string => spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim()
-
-  test('옛 경로가 같은 옵션, 줄, 종료 코드로 넘긴다', () => {
-    fake({ all: { messages: [message()] } })
-    const done = spawnSync(python(), [SHIM, '--repo', tmp, '--run', 'r', '--once'], { env, cwd: tmp, encoding: 'utf8' })
-    assert.equal(done.status, 0, done.stderr)
-    assert.match(done.stdout, /^QUESTION q question/m)
-    assert.equal(spawnSync(python(), [SHIM, '--interval', '0'], { env, encoding: 'utf8' }).status, 2)
   })
 })

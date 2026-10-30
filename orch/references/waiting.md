@@ -46,7 +46,7 @@ CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체�
 
 ```bash
 ps -eo pid,command | grep -E "orch-loop|wait-important|orchestration check" | grep -v grep
-python3 "$SKILL_DIR/scripts/orch-doctor.py" --repo "$REPO" --run "$RUN_ID"
+"$SKILL_DIR/bin/orch.ts" orch-doctor --repo "$REPO" --run "$RUN_ID"
 ```
 
 **doctor 의 `LOOP-STALE <repo> <pid> <번들 해시>` 는 플러그인을 갱신한 뒤에도 옛 번들의 스크립트로 도는 루프다.** 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).

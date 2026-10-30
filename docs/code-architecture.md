@@ -193,7 +193,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | 스크립트 언어 | 기존 Python 과 sh 스크립트 전부를 TypeScript 로 한 차례에 옮긴다. 모듈 단위의 단계적 전환은 하지 않는다 |
 | 진행 순서 | 설계 문서를 먼저 합의하고 구현한다 |
 | handoff 산출물 정리 | 묻지 않고 `--apply` 로 휴지통 폴더에 옮긴다. 지우지 않으므로 되살릴 수 있다 |
-| 옛 `.py` 명령 경로 | node 로 넘기는 shim 을 3.x 동안 두고 다음 major 에서 지운다 |
+| 옛 `.py` 명령 경로 | node 로 넘기는 shim 을 3.x 와 4.x 동안 두고 orch 5.0.0 에서 지웠다 |
 | 핸들러 언어 | `.orch/hooks/<이벤트>.ts` 만 받는다. 다른 언어는 그 핸들러가 자식 프로세스로 부른다 |
 | 충돌한 PR | 그 PR 을 만든 기존 worker 가 푼다. worker 터미널은 `worker_done` 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남기고, 충돌이 나면 같은 worker 에게 후속 지시서를 보낸다. 이어 받지 못하면 새 worker 를 띄우지 않고 코디네이터에게 알린다. 새 worker 자동 띄우기 설정은 두지 않는다. 로컬 자원을 아끼기 위해서다. 머지 뒤에는 그 터미널을 바로 정리한다. 처음 답(설정으로 자동 띄우기)을 같은 날 바꿨다 |
 | 사용자 결정 질문 | worker 와 코디네이터가 사용자에게 묻는 결정은 첫 줄 `결정: <무엇을 정하는지>` 와 배경, 선택지별 결과, 권장안과 이유를 갖춘다. 보드는 결정 필요 항목마다 그 첫 줄과 권장안을 보인다. 코디네이터는 사용자가 정할 질문에 대신 답하지 않고 권장안을 보여 사용자가 고르게 한다 |
@@ -205,9 +205,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 ### 배치
 
 ```
-orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다
-orch/scripts/<명령>.py            node 로 넘기는 shim. 다음 major 에서 지운다
-orch/scripts/ts_shim.py           shim 의 node 버전 확인과 exec 한 벌
+orch/scripts/<명령>.ts            명령. 이름과 옵션은 옛 <명령>.py 와 같고 확장자만 다르다. 옛 .py 진입점은 orch 5.0.0 에서 지웠다
 orch/scripts/orch-loop.ts         상주 루프. 분리된 프로세스로 돈다. 틱이 하는 일은 머리 주석이 소유한다
 orch/scripts/lib/proc.ts          자식 프로세스 실행과, 신호를 받은 명령이 진행 중인 자식을 끊는 일 한 벌. 함수와 반환 형태는 머리 주석이 소유한다
 orch/scripts/lib/orca.ts          orca 호출. 실행 파일은 ORCA, 없으면 orca 다. 한 스크립트만 쓰던 ORCA_CLI_COMMAND 는 읽지 않는다
@@ -250,7 +248,7 @@ work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규
 
 | 항목 | 규칙 |
 | --- | --- |
-| Node 버전 | 24 이상. 고른 이유는 [ADR-011](adr/011-node-24-minimum.md) 이 소유한다. 버전은 옛 `.py` 진입점의 `ts_shim.py` 가 `node --version` 으로 본다. 낮으면 `.ts` 로 넘기지 않고 stdout 에 `NODE-TOO-OLD` 줄을 내고 종료 코드 127 로 끝난다. `SKILL.md` 는 doctor 를 그 진입점(`orch-doctor.py`)으로 불러 스킬을 열 때 이 판정을 거친다. `.ts` 안에서는 판정하지 않는다. 낮은 node 는 `.ts` 를 읽지 못해 `ERR_UNKNOWN_FILE_EXTENSION` 으로 죽어 그 판정에 닿지 못한다 |
+| Node 버전 | 24 이상. 고른 이유는 [ADR-011](adr/011-node-24-minimum.md) 이 소유한다. 버전은 `SKILL.md` 가 doctor 를 부르기 전에 셸 한 줄(`node -e`)로 본다. 낮으면 doctor 를 부르지 않고 `NODE-TOO-OLD` 줄을 낸다. `.ts` 안에서는 판정하지 않는다. 낮은 node 는 `.ts` 를 읽지 못해 `ERR_UNKNOWN_FILE_EXTENSION` 으로 죽어 그 판정에 닿지 못한다 |
 | 실행 | `"$SKILL_DIR/bin/orch.ts" <명령>`. 진입점이 설치 기록의 현재 번들에서 `scripts/<명령>.ts` 를 `node --disable-warning=ExperimentalWarning` 으로 실행한다. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다. 경로 규칙은 `orch/bin/orch.ts` 머리 주석이 소유한다 |
 | 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
 | 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |

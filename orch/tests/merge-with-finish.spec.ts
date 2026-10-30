@@ -493,7 +493,7 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     writeFileSync(old, JSON.stringify({ queue: { before: './backup.sh' } }))
     let r = await c.wrap(['--repo', c.tmp, '449'])
     assert.equal(r.code, 2, both(r))
-    has(r.stderr, 'migrate-orch-dir.py')
+    has(r.stderr, 'migrate-orch-dir.ts')
     assert.equal(existsSync(c.logFile), false)
     r = await c.wrap(['--repo', c.tmp, '--finish-config', old, '--no-finish', '449'])
     assert.equal(r.code, 0, both(r))

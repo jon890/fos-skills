@@ -3,186 +3,23 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 4.23.0 (2026-10-30)
+## 5.0.0 (2026-10-30)
 
-- 읽기 전용 gh 조회가 프로세스 사이에서 캐시를 공유한다. 쓰기를 시도하면 저장소 캐시를 비우며 `ORCH_GH_CACHE` 와 `ORCH_GH_CACHE_TTL_SECONDS` 로 캐시를 조절한다
-- `finish-pr` 의 기본 확인 간격이 60초로 바뀐다. 머지 큐의 CI 대기와 배포 대기는 최대 300초까지 간격을 늘린다
-- `gh-usage.ts` 가 로컬 일별 기록에서 최근 한 시간의 gh 호출 수와 캐시 적중 수를 낸다
-- 머지·update-branch 직후 반영 확인은 캐시를 건너뛰어 상태 반영 지연을 쓰기 실패로 판단하지 않는다
+- 호환성: `orch/scripts` 의 옛 `.py` 진입점과 `merge-queue.sh`, `ts_shim.py` 를 지웠다. 명령은 `"$SKILL_DIR/bin/orch.ts" <이름>` 이나 같은 이름의 `.ts` 로 부른다
+- 호환성: 옛 `.py` 경로를 부르는 저장소 스크립트와 설정은 위 꼴로 바꿔야 한다
+- 스킬을 열 때의 점검은 셸 한 줄로 node 버전을 본 뒤 `bin/orch.ts orch-doctor` 를 부른다. node 가 24 보다 낮으면 doctor 를 부르지 않고 `NODE-TOO-OLD` 줄을 낸다
+- 옛 구조 안내가 옮기는 명령을 `node --disable-warning=ExperimentalWarning <경로>/migrate-orch-dir.ts` 로 알린다
 
-## 4.22.0 (2026-10-30)
+## 4.x
 
-- 진입점 `bin/orch.ts <이름> [인자]` 를 더했다. 부를 때마다 설치 기록에서 현재 번들을 읽어 그 `scripts/<이름>.ts` 를 실행하므로 옛 번들이나 복사해 둔 진입점으로 불러도 현재 번들이 돈다
-- 문서의 명령 예시를 `"$SKILL_DIR/bin/orch.ts" <이름>` 꼴로 바꿨고 `orch-doctor` 의 스크립트 판정이 이 꼴을 본다. `references/overlay.md` 에 저장소 스크립트가 진입점을 푸는 한 줄을 더했다
-- `send-to-worker` 가 reply 를 `stable_pane_required` 로 거부당하면, question 일 때 같은 스레드에 status `answer:` 로 보내고 `fallback:` 줄로 알린다
-- question 이 아닌 메시지는 전환하지 않고 지금처럼 5 로 실패한다
-- 호환성: `wait-important` 가 시작하면 작업 폴더를 `--loop-repo` 의 첫 저장소(없으면 시작 폴더의 주 checkout)로 옮겨 시작 폴더가 지워져도 orca 조회가 돈다. 상대 경로, 상태 파일, 핸들러 저장소는 시작 폴더 기준 그대로다
-
-## 4.21.0 (2026-10-30)
-
-- worker 가 일하는 중, 끝남, 사용자가 넘겨받음, 판정 못 함 가운데 무엇인지를 `lib/worker-state.ts` 한 곳이 정하고 `cleanup-sweep`, `orch-doctor`, `wait-important` 가 함께 쓴다
-- `cleanup-sweep` 이 살아 있는 dispatch 의 워크트리를 PR 조회 앞에서 건너뛴다. failed, 반납된 dispatch 도 끝난 것으로 보고 `--kill-holders` 로 남은 프로세스를 끈다. PR 없이 끝난 워크트리는 남은 터미널을 닫고 치운다
-- `user_takeover` 표시라도 화면이 작업 중인 worker 는 일하는 중으로 본다. `orch-doctor --run` 이 `WORKER-STATE` 줄로 알리고, `wait-important` 는 끊긴 것으로 보지 않는다
-
-## 4.20.0 (2026-10-30)
-
-- 호환성: 개별 지시서에 `worker 선택:` 줄(에이전트, 모델, effort, 비교한 후보, 고른 이유)이 필수다. 없거나 요소가 빠지면 `spec-lint` 가 `선택` 발견으로 막고 `launch-worker` 가 거부한다. `--lint-ack` 으로 넘기지 못한다
-- `launch-worker` 가 `--agent`, `--model` 이 `worker 선택:` 줄과 다르거나 빠졌으면 거부한다. `--terminal` 로 이어 쓰면 보지 않는다
-- `spec-lint --active` 로 넘긴 이미 띄운 지시서는 선택 줄을 보지 않는다. `launch-worker` 가 활성 지시서를 이 옵션으로 넘긴다
-- 라우팅표에 동률일 때 고르는 규칙, 리뷰 제공자가 실제로 갈리는 곳, 사용 한도 대응표, 실측 기록 형식을 더했다. Claude Fable 과 `gpt-6-astra` 는 기본 후보에서 뺀 모델로 이유와 가격을 함께 적었다
-- 「한국어 hook 에 기대는 작업은 Claude」 를 주 산출물이 한국어 문서나 스킬 문서인 작업으로 좁혔다
-
-## 4.19.0 (2026-10-29)
-
-- `launch-worker` 가 워크트리를 만들기 전에 `spec-lint` 로 그 지시서를 검사한다. 같은 폴더에서 살아 있는 dispatch 의 지시서와 함께 넘겨 담당 겹침을 보고, 막을 발견이 있으면 발견 줄을 내고 종료 코드 5 로 멈춘다
-- 의도한 겹침은 `--lint-ack "<이유>"` 로만 넘긴다. 이유는 출력과 worker 기록(`lint_ack`)에 남고, 이유 없이 끄는 옵션은 없다
-- `orch-doctor` 가 설치 기록의 모든 `installPath` 가 있는지 보고 없으면 `PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 와 고치는 방법, `/reload-plugins` 안내를 낸다. 설치 기록은 고치지 않는다
-
-## 4.18.1 (2026-10-29)
-
-- 지시서 틀의 브라우저 규칙을 `browser-driver reset` 이 탭과 함께 공간까지 닫는다는 내용으로 맞췄다. 사용자 탭이 남아 공간이 닫히지 않으면 reset 이 알린다
-
-## 4.18.0 (2026-10-29)
-
-- 호환성: worker 워크트리에 `Bash(browser-driver reset:*)` deny 를 더하지 않는다. 이름 준 공간(`BROWSER_EGO_SPACE=<이름>`)의 reset 까지 거부당했다. 기본 공간 reset 은 browser-driver 가 거절한다
-- `worktree-deny` 가 이미 만들어진 워크트리 설정에 남은 그 deny 줄을 지운다. 다른 키와 규칙은 그대로 둔다
-- 지시서 틀의 브라우저 규칙에 「끝나면 같은 이름으로 reset 한다」 를 더했다
-
-## 4.17.0 (2026-10-28)
-
-- `launch-worker` 가 워크트리를 만들기 전에 `--agent codex` 의 `--model`, `--effort` 를 `codex debug models` 로 검사한다. 없는 모델이나 지원하지 않는 effort 면 쓸 수 있는 값을 내고 종료 코드 4 로 멈춘다
-- 조회가 실패하거나 claude 면 검사를 건너뛰고 경고만 낸다. claude 는 모델 목록을 내는 명령이 없다
-
-## 4.16.1 (2026-10-28)
-
-- 보드 릴리스에서 같은 PR 과 머지 커밋의 반복 조회를 줄이고 진행 항목을 알린다.
-- 보드 단계 조회와 쓰기에 시간 제한을 두고, 보드 동기화에서 PR 상태와 배포 판정을 공유한다.
-
-## 4.16.0 (2026-10-28)
-
-- 직접 작성한 단계와 goal 의 줄 끝에 `(#665 merge)` 같은 사건 꼬리표를 붙이면 PR·배포·릴리스 근거로 그 단계만 끝낸다
-
-## 4.15.0 (2026-10-28)
-
-- 에이전트 고르기에 「제공자」 절을 더했다. 같은 계열을 기본값으로 두지 않고, hook 에 기대는 문서 작업은 Claude, 머지 전 독립 리뷰는 Codex 로 고른다
-- 선택 표에 화면이나 이미지 판정, 브라우저나 앱 조작 행을 두고 `gpt-6.1-terra` 를 넣었다. 실측 전이라 `low` 에서 시작한다
-
-## 4.14.0 (2026-10-28)
-
-- 호환성: `orch-loop --start` 가 그 Run 을 조회하지 못하는 터미널이나 루프(`bound_run` 이 없는 옛 루프 포함)면 띄우지도 합류하지도 않고 `LOOP-START-FENCED` 와 5 로 끝난다
-- `spec-lint` 가 저장소 공통 지시서에 틀의 `orch-rule` 표지(준비됨 status, MERGED 확인 뒤 `worker_done`)가 빠졌으면 `공통` 경고를 낸다
-- `send-to-worker` 가 살아 있는 dispatch 에 reply 할 메시지가 없거나 모두 이미 답한 question 이면 새 메시지로 보내고 깨운다(`sent:` 줄)
-- doctor 가 설치되지 않은 번들로 도는 상주 루프를 `LOOP-STALE <repo> <pid> <번들 해시>` 로 알리고, 그 루프의 Run 세션에서 돌릴 재시작 명령을 낸다
-- `finish-pr` 이 정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지를 알리고 `--worker-done-timeout`(기본 10분) 동안 끝나기를 기다린다
-
-## 4.13.0 (2026-10-28)
-
-- 사용 한도에 걸렸을 때 더 비싼 모델로 올리지 않는다는 전역 지침을 에이전트 고르기에서 가리킨다
-- 원칙에 「auto mode 분류기가 머지나 배포를 막으면 우회 스크립트를 새로 쓰지 않고, 돌릴 명령을 보여 주고 사용자가 직접 실행하게 한다」 를 더했다
-
-## 4.12.0 (2026-10-28)
-
-- `send-to-worker` 가 `--from run:<run>` 이 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보내고 `retry:` 줄을 낸다
-- 질문 감시가 질문의 스레드에 worker 쪽으로 간 답을 보낸 쪽과 상관없이 답으로 센다. 답은 질문을 보낸 쪽과 그 질문의 `dispatch:<id>` inbox 에서 찾는다. 코디네이터 터미널에서 보낸 답이 다시 REMINDER 로 뜨지 않는다
-- 공통 지시서 틀이 plan 하나를 PR 하나로 둔다. 큰 일은 plan 을 나누고 계획서는 그 plan 을 구현한 PR 에서 지운다. 기술 판단 목록에서 PR 분할을 뺐다
-- 지시서 작성 규칙이 지시서 하나를 PR 하나로 쓰게 한다. 설계 문서만 담은 PR 을 따로 열지 않는다
-
-## 4.11.0 (2026-10-28)
-
-- `launch-worker` 가 새 보드 항목의 제목을 `# ` 제목 줄, `보드 항목 id` 의 기존 항목 제목, 업무 연결 줄의 제목, `## 목표` 첫 문장, id 순으로 고른다. 업무 번호가 있으면 제목 앞에 붙인다
-- 같은 업무 번호가 제목에 든 끝나지 않은 항목이 있으면 다른 워크트리에서 띄워도 그 항목을 이어 쓴다. 워크트리만 바꾸고 단계는 그대로 둔다
-- 업무 연결 줄의 꼴은 `config.json` 의 `board.task_line` 정규식으로 바꾼다. 기본 꼴은 `두레이 업무: <프로젝트>/<번호> 「제목」` 이다
-- `spec-lint` 가 제목 줄도 `보드 항목 id:` 도 없는 지시서에 `제목` 경고를 낸다. 지시서 첫 줄은 `# <업무 목적 한 문장>` 이다
-
-## 4.10.0 (2026-10-27)
-
-- `orch-loop` 이 끝난 dispatch 의 질문을 재알림하지 않는다. 그 dispatch 의 준비 상태가 가리키는 PR 이 모두 머지되거나 닫혔을 때다
-- 처음 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓰고, `state/questions-closed.json` 에 남겨 다시 조회하지 않는다
-- `launch-worker` 가 dispatch 기록(`state/launched-workers/<dispatch>.json`)에 Task 와 지시서 절대경로를 더한다. `send-to-worker` 의 이어 쓰기도 `launch-worker` 를 거쳐 같이 남는다
-- `cleanup-sweep --specs-dir` 가 워크트리를 지우면 그 워크트리의 기록에 든 지시서를 이름과 상관없이 `--trash` 로 옮기고 기록을 지운다. 살아 있는 dispatch 가 가리키는 지시서는 남긴다
-- 공통 지시서 틀의 tasks 규칙을 바꿨다. PR 이 여럿이거나 재시작을 넘길 수 있는 일은 `tasks/` 를 만들고, PR 하나로 끝나는 일은 `build-with-teams` 의 리뷰부터 도는 경로를 쓴다
-
-## 4.9.0 (2026-10-27)
-
-- `launch-worker` 가 worker-start 실패를 `worker-start 오류: <code>: <message>` 한 줄로 알린다. 다시 띄우기 실패도 이유를 붙인다
-- 설정이 보드(`finish.board`, `cleanup.board`, `board` 절)를 가리키는데 보드 파일이 없으면 `launch-worker` 가 항목을 만들지 못했다고 알린다
-- 호환성: 옛 경로 `work-board/bin/board.py` 를 지웠다. `board.ts` 를 부른다
-
-## 4.8.0 (2026-10-27)
-
-- 호환성: `launch-worker` 가 만드는 보드 항목의 단계는 지시서 「할 일」 이 아니라 마일스톤 단계다. 지시서의 `## 보드 단계` 절, `board.steps`, 기본값(PR, 머지) 순으로 정한다
-- 꼬리표 `[pr]`, `[merge]`, `[deploy]` 단계는 `board-sync`, `finish-pr` 가 PR 열림, 머지, 배포 성공에 맞춰 끝낸다. done 으로 바꾸는 사건은 `board.done_after`(기본 `merge`)다
-- `board-release.ts` 를 더했다. 릴리스 PR(`--release`)이나 PR 번호(`--pr`)로 항목의 `[release]` 단계를 끝낸다. 부르는 때는 저장소가 정한다
-- `board-sync` 가 정리된 워크트리의 `worktree` 필드를 비우고 중간 PR 을 `merged-pr` 에 쌓는다. 공통 지시서 틀에 worker 는 보드를 고치지 않는다는 줄을 더했다
-
-## 4.7.1 (2026-10-27)
-
-- 끝난 dispatch 의 question 과 escalation 에도 `send-to-worker` 가 답을 단다. `--reply-to` 를 주거나, 없으면 미답변 메시지 중 마지막에 답하고, 깨우지 않으며 `--spec` 이 없으면 0 으로 끝난다
-- 답을 `--from run:<run>` 으로 달아 `orch-doctor` 의 `UNANSWERED` 와 루프의 `REMINDER` 가 남지 않는다
-
-## 4.7.0 (2026-10-27)
-
-- 머지 큐에 `--required-check NAME` 과 `--allow-fail-check NAME` 을 더했다. 쉼표가 든 체크 이름을 나누지 않고 받는다
-- 저장소 규칙과 `queue.required` 목록에서 읽은 이름에 쉼표가 있어도 나뉘지 않는다
-- 진행 중인 체크 없이 필수 체크가 `--missing-timeout`(기본 5분) 동안 나타나지 않으면 먼저 멈추고 실제 체크 이름을 찍는다
-- 호환성: `queue.required` 목록은 이름마다 `--required-check` 로 머지 큐에 넘어간다
-
-## 4.6.0 (2026-10-27)
-
-- `reserve-migration.ts` 를 더했다. 마이그레이션 번호를 잠금을 걸고 예약하며, 같은 인자는 같은 예약을 돌려준다. `--again` 으로 새 번호를 받고, 머지되거나 사라진 브랜치의 예약을 정리한다
-- 자동 머지가 PR 없는 예약을 낮은 번호로 보고, `MIGRATION-BLOCKED` 알림에 재예약 방법을 안내한다
-- 지시서 문구 예시에 마이그레이션 예약 규칙을 더했다
-
-## 4.5.0 (2026-10-27)
-
-- 자동 머지(`queue.auto_merge`)를 더했다. 상주 루프가 지시서에 든 내 열린 PR 가운데 draft 가 아니고, CI 가 통과했고, 미해결 스레드가 없고, 리뷰 판정(`queue.auto_review`)이 통과인 것을 머지 큐에 건다
-- 지시서의 `- 머지 보류: <이유>` 줄과 보드 항목의 끝나지 않은 `머지 보류: <이유>` 줄이 그 PR 을 루프가 거는 대상에서 뺀다
-- 마이그레이션 검사(`migrations` 절)를 더했다. 번호가 base 이하거나 다른 PR 과 같으면 `MIGRATION-CLASH`, 낮은 번호의 PR 이 오래 막혀 있으면 `MIGRATION-BLOCKED` 를 낸다
-- 루프 알림 `AUTO-MERGE`(큐를 걸었다)와 `AUTO-MERGE-END`(건 큐가 끝났다)를 더했다
-
-## 4.4.0 (2026-10-27)
-
-- 지시서에 `중간 과정: PR #N` 줄이 있으면 `launch-worker` 가 보드에 새 항목을 만들지 않고 그 PR 의 기존 항목에 한 줄만 남긴다. 충돌 해결, CI 고침, 리뷰 반영 지시서에 쓴다
-- 호환성: 이미 있는 보드 항목에 worker 를 다시 띄우면 제목과 단계를 바꾸지 않고 워크트리와 브랜치만 바꾼다. 그 항목이 done 이면 doing 으로 다시 열고 새 단계를 다음 번호부터 잇는다
-- 충돌 후속 지시서는 PR 마다 `spec-conflict-<PR>.md` 하나이고 base 가 움직이면 덮어쓴다. `finish-pr` 가 머지 뒤 중간 PR 이어도 그 지시서를 지운다
-- 답한 결정 줄은 `board.ts mark` 로 끝내고, 줄이 모두 끝난 decide 항목은 done 이 된다. `list` 가 번호 없는 줄도 보이고 `steps` 는 그 줄을 stderr 에 낸다
-- 창의 결정 필요는 남은 결정 줄과 답하지 않은 worker 질문만 센다. 코디네이터 터미널에서 보낸 회신도 답으로 보고, 같은 worker 가 다시 보낸 질문은 하나로 센다
-
-## 4.3.0 (2026-10-26)
-
-- 표시가 없는 PR 은 `finish-pr` 가 배포 뒤 업무의 마지막 PR 인지 스스로 판정한다. 근거는 `마지막 PR 판정:` 한 줄로 남는다. `PR!` 는 강제로 마지막, 새 `PR~` 는 강제로 중간이다
-- 판정에 `finish.spec_task_pattern` 을 더했고 `finish.task_pattern` 은 지우지 않는다. 판정하지 못하면 중간 PR 이다
-- 머지 큐가 base 와 충돌한 PR 을 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지하며 루프 알림 `QUEUE-CONFLICT` 를 쓴다. `--chain A,B` 로 묶은 PR 은 앞 PR 이 빠지면 `SKIP` 한다
-- 보드 항목을 `pr` 필드가 비어도 브랜치나 워크트리로 찾는다. 다시 띄운 worker 는 같은 워크트리의 항목을 이어 쓰고, `pr` 필드는 `#` 없이 숫자로 저장한다
-- 호환성: `PR!` 가 없던 PR 도 판정이 마지막이면 업무를 완료하고 보드를 done 으로 바꾼다. 뒤 작업이 남았는데 PR 도 지시서도 없으면 `PR~` 를 붙인다
-
-## 4.2.0 (2026-10-26)
-
-- `launch-worker.ts` 가 띄운 worker 의 dispatch, 터미널, 워크트리를 기록한다. 기록이 없는 터미널은 예전처럼 사용자 보유로 남는다
-- `cleanup-sweep.ts` 는 기록에 있고 dispatch 가 끝난 `user_owned` 터미널을 닫고 PR 상태로 정리를 판단한다
-- PR 없는 워크트리는 dispatch 가 끝나고 앞선 커밋과 변경이 없으면 치운다. 원격 브랜치도 앞선 커밋이 없을 때만 지운다
-- 머지 큐 로그 폴더의 끝난 로그를 휴지통(`--trash`)으로 옮긴다. `FINISH-FAIL` 과 `STOP` 로그는 1시간 남기고 모르는 파일은 건드리지 않는다
-
-## 4.1.1 (2026-10-26)
-
-- PR 본문 파일 위치를 worker 세션 임시 폴더로 바꾼다. 지시서 작성과 오버레이 안내가 저장소의 `.orch/` 대신 임시 폴더에 쓰고 경로를 status 나 `worker_done` 에 적게 한다
-- `cleanup-sweep` 이 지시서 폴더의 `pr-<이름>.md` 를 지우는 동작은 그대로다. 옛 위치의 파일을 정리하는 용도로 문서와 주석에 밝힌다
-
-## 4.1.0 (2026-10-26)
-
-- `nudge-worker --state` 가 모델 오류로 멈춘 화면을 `error` 로, 사람이 Esc 로 끊은 Codex 화면을 `interrupted` 로 낸다. `--msg-id` 와 `--text` 는 두 화면에도 입력한다
-- 상주 루프가 등록된 Run 의 worker 화면에서 같은 멈춤이 `pipeline.stall_ticks`(기본 `error` 2틱) 이어지면 `worker-stalled` 를 낸다. 핸들러가 없거나 0 이 아니면(10 은 넘김) 그 Run 에 `WORKER-STALLED` 가 온다
-- 핸들러 환경에 `ORCH_SCRIPTS` 를 넘기고, 핸들러가 부른 `nudge-worker` 와 `send-to-worker` 가 가드에 막히지 않고 입력한다
-- 고친 문제: `--run` 없이 띄운 루프의 알림을 대기가 읽지 않았다. 주 Run 이 바뀌면 진행 중인 실패가 새 주 Run 에 오지 않았다
-- 고친 문제: `--stop --run` 이 다 읽은 알림 파일과 커서를 남겼다. 막 뜨는 루프에 합류한 Run 의 등록이 지워질 수 있었다
-
-## 4.0.0 (2026-10-26)
-
-- 상주 루프가 같은 저장소를 쓰는 여러 세션의 Run 을 함께 맡는다. `--start --run` 은 살아 있는 루프에 그 Run 을 더하고 `LOOP-JOINED` 와 0 이다
-- `--stop --run` 은 그 Run 만 빼고 마지막 Run 이 빠지면 루프가 끝난다. `--run` 없는 `--stop` 은 등록된 Run 이 있으면 1 로 거부한다. 동시에 `--start` 해 진 쪽은 먼저 뜬 루프에 합류한다
-- 질문 확인, 정리, `tick` 이 Run 마다 그 Run 범위로 돈다. 알림은 `state/loop-events/<Run>.jsonl` 로 나뉘고 대기는 자기 Run 의 알림에만 깨어난다. 옛 알림 파일은 옛 루프가 자기 Run 이거나 Run 없는 루프일 때만 읽는다
-- 호환성: `tick` 핸들러가 틱마다 Run 수만큼 불린다. 저장소 공유 일은 입력의 `primary` 가 true 일 때만 한다. 옛 루프에는 Run 을 더하지 못하고 안내 줄을 낸다
-- 호환성: `handoff-cleanup --run` 은 그 Run 의 지시서와 PR 본문만 옮기고 큐 로그, 폴더, csv 는 남긴다. `--run` 이 없으면 경고 한 줄을 낸다
+- 상주 루프가 여러 세션의 Run 을 함께 맡고, 자동 머지(`queue.auto_merge`)와 마이그레이션 번호 검사, 예약(`reserve-migration.ts`)을 한다
+- 보드 항목의 단계는 마일스톤 단계다. `[pr]`, `[merge]`, `[deploy]`, `[release]` 와 줄 끝 사건 꼬리표를 사건에 맞춰 끝낸다
+- `launch-worker` 가 띄우기 전에 `spec-lint`, `worker 선택:` 줄 대조, codex 모델 검사를 한다. 띄운 worker 는 기록으로 남아 정리가 그 터미널을 알아본다
+- worker 상태 판정을 `lib/worker-state.ts` 한 곳이 정하고 `cleanup-sweep`, `orch-doctor`, `wait-important` 가 함께 쓴다
+- 진입점 `bin/orch.ts <이름>` 이 설치 기록의 현재 번들에서 스크립트를 찾아 실행한다. 문서의 명령 예시가 이 꼴이다
+- 읽기 전용 gh 조회가 프로세스 사이에서 캐시를 공유하고 `gh-usage.ts` 가 호출 수를 낸다
+- `finish-pr` 이 업무의 마지막 PR 인지 스스로 판정하고, 머지 큐가 충돌한 PR 을 빼고 뒤 PR 을 잇는다
+- 지시서 하나는 PR 하나다. 에이전트 고르기에 제공자 절과 라우팅표, 사용 한도 대응표를 두었다
 
 ## 3.x
 

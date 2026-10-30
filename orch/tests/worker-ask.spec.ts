@@ -10,7 +10,6 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker-ask.ts', import.meta.url))
-const SHIM = fileURLToPath(new URL('../scripts/worker-ask.py', import.meta.url))
 
 // ask 는 FAKE_ASK_SLEEP 초 잔 뒤 ask.out 을 내고 FAKE_ASK_RC 로 끝난다. check 는 n 번째 호출에 checkN.json, 없으면 check.json 을 낸다.
 // 받은 인자는 [인자] 를 이어 한 줄로 기록한다. 여러 줄 인자는 로그에서 줄이 나뉜다.
@@ -324,42 +323,5 @@ describe('사용법', () => {
     fake('{"result":{"answer":"x"}}', 0)
     assert.equal(ask('--question', 'q').code, 2)
     assert.equal(ask('--from', 'term_w', '--question', 'q', '--bogus').code, 2)
-  })
-})
-
-describe('worker-ask.py shim', () => {
-  // python3 은 절대경로로 부른다. PATH 에서 node 를 빼도 인터프리터를 찾게 한다
-  const python = (): string => spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim()
-
-  test('PATH 에 node 가 없으면 127 이고 필요한 버전을 알린다', () => {
-    const empty = join(tmp, 'empty-bin')
-    mkdirSync(empty)
-    const done = spawnSync(python(), [SHIM, '--help'], { env: { ...process.env, PATH: empty }, encoding: 'utf8' })
-    assert.equal(done.status, 127, done.stdout + done.stderr)
-    assert.match(done.stderr, /node 24 이상이 PATH 에 필요하다/)
-  })
-
-  test('node 가 있으면 worker-ask.ts 의 종료 코드와 answer: 첫 줄이 그대로 온다', () => {
-    fake('{"result":{"answer":"shim 으로 받았다"}}', 0)
-    const done = spawnSync(python(), [SHIM, '--from', 'term_w', '--question', 'q', '--decision'], { env, encoding: 'utf8' })
-    // 형식 위반은 .ts 의 검사다. 종료 코드 2 가 shim 을 지나 그대로 온다
-    assert.equal(done.status, 2, done.stderr)
-    const asked = spawnSync(python(), [SHIM, '--from', 'term_w', '--question', 'q'], { env, encoding: 'utf8' })
-    assert.equal(asked.status, 0, asked.stderr)
-    assert.equal(firstLine(asked.stdout), 'answer: shim 으로 받았다')
-  })
-
-  test('zsh 에서 따옴표로 넘긴 질문 변수는 인자 하나로 간다', (t) => {
-    if (spawnSync('zsh', ['-c', 'true']).status !== 0) {
-      t.skip('zsh 없음')
-      return
-    }
-    fake('{"result":{"reply":"ok"}}', 0)
-    const done = spawnSync('zsh', ['-c', 'Q="두 단어 질문"; "$ASK" --from term_w --question "$Q"'], {
-      env: { ...env, ASK: SHIM },
-      encoding: 'utf8',
-    })
-    assert.equal(done.status, 0, done.stderr)
-    assert.ok(readFileSync(log, 'utf8').includes('[--question][두 단어 질문]'))
   })
 })
