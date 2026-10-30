@@ -172,6 +172,20 @@ worker 가 `stage.detail: agent_readiness`, `outcome: failed` 로 아무 출력 
 orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --agent "$AGENT" --model "$MODEL" --effort "$EFFORT" --worktree "path:$WORKTREE"
 ```
 
+## 이전 세션 이어받기
+
+코디네이터가 바뀌거나 계정을 전환한 뒤에는 `adopt-sessions` 로 기존 터미널을 먼저 확인한다. 기본 실행은 다른 Run 의 살아 있는 dispatch 를 제외한 목록을 내며 터미널에 입력하거나 닫지 않는다.
+
+`$REPO` 는 대상 저장소, `$TERMINAL` 은 목록에서 고른 handle, `$RUN_ID` 는 현재 코디네이터의 Run 이다.
+
+```bash
+"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO"
+"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO" --apply "$TERMINAL" --run "$RUN_ID"
+```
+
+목록의 지시서 후보를 확인한다. 후보가 없거나 여럿이면 `--spec` 으로 해당 브랜치의 지시서를 고른다. 사람의 셸과 작업·권한·초안 대기 화면은 자동으로 이어 붙이지 않는다. 원래 허락 범위와 막힌 결정을 먼저 확인한다.
+명령이 `ADOPT-MANUAL` 을 내면 CLI 에 재연결 기능이 없는 것이다. 출력된 임시 이어받기 지시서를 검토하고, 사용자가 교체를 고른 뒤 같은 워크트리에 새 worker 를 띄운다. `ADOPT-ERROR` 면 잔여 자원과 실패 단계를 확인하고 자동으로 다시 띄우지 않는다.
+
 ## 끊긴 worker 다시 띄우기
 
 기기가 재시작되어 worker 터미널이 사라지면 `worker-show` 가 `[abandoned] stage=terminal_missing` 으로 보인다.

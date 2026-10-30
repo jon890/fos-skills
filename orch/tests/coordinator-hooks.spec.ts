@@ -348,12 +348,33 @@ describe('block-worker-terminal-send', () => {
         const v = verdict(HOOK, 'orca terminal send --terminal term_x --text x', sendEnv(orca.bin, { ORCH_SEND_HOOK_BUDGET_MS: '500' }))
         assert.equal(v.decision, 'deny', `ignoreTerm=${ignoreTerm}`)
         assert.match(v.reason, /시간 초과/)
+        assert.match(v.reason, /조회 \d+회, 완료 \d+회, 마지막 orca orchestration worker-list/)
+        assert.match(v.reason, /adopt-sessions/)
         // 한도 500ms 에 node 기동을 더해도 5초에 못 미친다. 잠든 자식이나 KILL 유예(10초)를 기다리면 넘는다
         assert.ok(v.ms < 5_000, `ignoreTerm=${ignoreTerm}: hook 이 ${v.ms}ms 걸렸다`)
       } finally {
         orca.kill()
       }
     }
+  })
+
+  test('끝난 dispatch 의 남은 터미널은 active 필터 없이 바로 찾아 이어받기를 안내한다', () => {
+    const fake = fakeOrca([
+      { args: ['worker-list', '--terminal-state', 'active'], stdout: workerList([], 'bound') },
+      { args: ['worker-list'], stdout: envelope({ workers: [{ agentTerminalHandle: 'term_old', dispatchId: 'ctx_old', dispatchStatus: 'failed', terminalState: 'retained' }], scope: { source: 'bound' } }) },
+      { args: ['terminal', 'show'], stdout: terminalShow('claude') },
+      { args: ['run-list'], code: 1 },
+    ])
+    const v = verdict(HOOK, 'orca terminal send --terminal term_old --text resume', sendEnv(fake.path))
+    assert.equal(v.decision, 'deny')
+    assert.match(v.reason, /worker 터미널\(term_old\)/)
+    assert.match(v.reason, /adopt-sessions/)
+    assert.ok(!argvs(fake).some((args) => /run-list|terminal show|--terminal-state/.test(args)), argvs(fake).join('\n'))
+  })
+
+  test('resource 에만 남은 터미널 handle 도 worker 로 판정한다', () => {
+    const fake = fakeOrca([{ args: ['worker-list'], stdout: envelope({ workers: [{ dispatchId: 'ctx_x', resource: { terminalHandle: 'term_old' } }], scope: { source: 'bound' } }) }])
+    assert.match(verdict(HOOK, 'orca terminal send --terminal term_old --text hi', sendEnv(fake.path)).reason, /worker 터미널\(term_old\)/)
   })
 
   test('남은 시간이 0 이면 orca 를 부르지 않고 거부한다', () => {

@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "5.0.0"
+  version: "5.1.0"
 ---
 
 # orch
@@ -20,6 +20,7 @@ metadata:
 `$SKILL_DIR` 은 이 스킬 번들 경로다.
 스크립트는 진입점 `"$SKILL_DIR/bin/orch.ts" <이름> [인자]` 로 부른다. 부를 때마다 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 설치 기록에서 지금 설치된 번들을 읽어 그 번들의 `scripts/<이름>.ts` 를 실행한다.
 갱신이나 프로필 전환 뒤에도 기억해 둔 명령이 옛 번들을 부르지 않는다. 저장소 스크립트가 진입점을 부르는 방법은 [`references/overlay.md`](references/overlay.md) 의 「저장소 스크립트에서 orch 부르기」 가 소유한다.
+캐시의 스크립트를 직접 불러 현재 설치 기록과 다르면 stderr 에 `STALE-BUNDLE` 경고와 현재 진입점 경로가 나온다.
 
 스킬을 열면 먼저 설치본을 점검한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
@@ -31,6 +32,8 @@ metadata:
 ```bash
 python3 "$SKILL_DIR/scripts/orch-doctor.py"
 ```
+
+새 세션을 시작하거나 압축·계정 전환 뒤에는 `"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO"` 로 이전 세션에서 떨어진 터미널을 확인한다. `$REPO` 는 대상 저장소 경로다. 목록을 검토한 뒤 이어받을 때만 `--apply` 를 쓴다. 상세는 [`references/launch.md`](references/launch.md) 의 「이전 세션 이어받기」 를 따른다.
 
 ## 언제 쓰나
 
