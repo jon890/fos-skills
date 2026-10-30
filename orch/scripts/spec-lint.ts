@@ -421,7 +421,7 @@ function main(argv: string[]): number {
       overlay: { type: 'string' },
       'check-overlay': { type: 'boolean' },
       base: { type: 'string', default: 'main' },
-      active: { type: 'string', multiple: true, default: [] },
+      active: { type: 'string', multiple: true },
       help: { type: 'boolean', short: 'h' },
     } as const
     parsed = parseArgs({ args: expandArgs(argv, options), options, allowPositionals: true })
@@ -442,7 +442,7 @@ function main(argv: string[]): number {
     process.stderr.write('spec-lint: 지시서를 하나 이상 주거나 --check-overlay 를 준다\n')
     return 2
   }
-  const active = values.active as string[]
+  const active = values.active ?? []
   const missing = [...specs, ...active].filter((s) => !isFile(s))
   if (missing.length > 0) {
     process.stderr.write(`spec-lint: 지시서를 읽지 못했다: ${missing.join(', ')}\n`)
