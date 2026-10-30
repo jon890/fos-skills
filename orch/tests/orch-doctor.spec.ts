@@ -231,6 +231,24 @@ describe('스크립트 판정', () => {
     assert.equal(found.stdout, 'OK-SCRIPTS 1\n')
   })
 
+  test('진입점으로 부르는 스크립트는 bin/orch.ts 와 그 이름의 .ts 를 모두 본다', () => {
+    const skill = join(tmp, 'skill')
+    write(
+      join(skill, 'SKILL.md'),
+      '```bash\n"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID"\n"$SKILL_DIR/bin/orch.ts" --path\n```\n`"$SKILL_DIR/bin/orch.ts" <이름>` 처럼 부른다\n',
+    )
+    const missing = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(missing.code, 1, missing.stdout + missing.stderr)
+    assert.equal(missing.stdout, 'MISSING SKILL.md:2 bin/orch.ts\nMISSING SKILL.md:2 scripts/wait-important.ts\nMISSING SKILL.md:3 bin/orch.ts\nMISSING SKILL.md:5 bin/orch.ts\n')
+    write(join(skill, 'bin', 'orch.ts'), '')
+    const half = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(half.stdout, 'MISSING SKILL.md:2 scripts/wait-important.ts\n')
+    write(join(skill, 'scripts', 'wait-important.ts'), '')
+    const found = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(found.code, 0, found.stdout + found.stderr)
+    assert.equal(found.stdout, 'OK-SCRIPTS 2\n')
+  })
+
   test('SKILL.md 가 없는 폴더는 사용법 오류다', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', tmp])
     assert.equal(r.code, 2, r.stdout + r.stderr)

@@ -34,6 +34,7 @@
 //     형제 번들 변수 `$PLANNING_SKILL_DIR/scripts/<이름>` 은 같은 플러그인의 `planning/scripts/<이름>` 으로 본다
 //     (변수 이름의 `_SKILL_DIR` 앞을 소문자로 바꾸고 `_` 를 `-` 로 바꾼 디렉터리).
 //     백틱 안의 `scripts/verify.sh` 처럼 앞에 아무것도 없는 경로는 저장소 쪽 예시일 수 있어 보지 않는다.
+//     진입점으로 부르는 `$SKILL_DIR/bin/orch.ts <이름>` 은 `bin/orch.ts` 와 `scripts/<이름>.ts` 를 모두 본다.
 //
 // 저장소 판정(--repo):
 //     <orch 루트>/hooks/ 바로 아래의 .ts 가운데 이벤트 이름이 아닌 파일은 UNKNOWN-HOOK 이다(lib/events.ts 의 unknownHandlers).
@@ -129,6 +130,9 @@ const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
 const SHA = /^[0-9a-f]{7,40}$/
 const REF = /(?:\$(?:(?<sibling>[A-Z][A-Z0-9_]*)_)?SKILL_DIR\/|\]\((?<up>(?:\.\.\/)*))scripts\/(?<name>[A-Za-z0-9_.-]+)/g
+// 진입점(bin/orch.ts)이 부르는 스크립트. `"$SKILL_DIR/bin/orch.ts" wait-important --run ...` 의 이름이 scripts/ 의 .ts 다
+const BIN_REF = /\$SKILL_DIR\/bin\/(?<name>[A-Za-z0-9_.-]+)/g
+const VIA_ENTRY = /\$SKILL_DIR\/bin\/orch\.ts"?\s+(?<name>[A-Za-z0-9_][A-Za-z0-9_-]*)/g
 const GIT_TIMEOUT_MS = 20_000
 const OVERDUE_SEC = 600
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish'])
@@ -256,6 +260,15 @@ function checkScripts(skillDir: string): Checked {
   for (const doc of markdownFiles(skillDir)) {
     const rows = readFileSync(doc, 'utf8').split(/\r\n|\r|\n/)
     rows.forEach((text, index) => {
+      const entry = [
+        ...[...text.matchAll(BIN_REF)].map((m) => ['bin', `bin/${m.groups?.name}`] as const),
+        ...[...text.matchAll(VIA_ENTRY)].map((m) => ['scripts', `scripts/${m.groups?.name}.ts`] as const),
+      ]
+      for (const [, shown] of entry) {
+        const target = join(skillDir, shown)
+        seen.add(target)
+        if (!exists(target)) lines.push(`MISSING ${relative(skillDir, doc)}:${index + 1} ${shown}`)
+      }
       for (const m of text.matchAll(REF)) {
         const { sibling, up, name } = m.groups as { sibling?: string; up?: string; name: string }
         let target: string
