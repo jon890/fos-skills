@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "5.4.0"
+  version: "5.5.0"
 ---
 
 # orch
@@ -55,7 +55,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
 - **사용자가 정할 질문은 코디네이터가 대신 답하지 않는다.** 권장안을 붙여 사용자에게 올리고 고른 답을 worker 에게 보낸다. 형식과 검사 규칙은 저장소의 `../docs/data-schema.md` 「사용자 결정 질문 형식」 이 소유한다
 - **worker 는 모두 코디네이터가 띄운다.** worker 는 다시 worker 를 띄우지 못한다(`nested_worker_depth_exceeded`).
   일을 나눠야 하면 worker 에게는 계획서와 worktree 준비까지만 맡기고, 소계획마다 `ready: <plan> <worktree 절대경로> <지시서 절대경로>` status 를 받아 코디네이터가 띄운다
-- **worker 는 PR 이 머지될 때까지 맡는다.** 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 가 직접 처리하고 `worker_done` 은 MERGED 뒤에 보낸다. 지시서 하나는 PR 하나로 끝나는 크기로 쓴다. 더 큰 일은 나눠 앞 PR 이 머지된 뒤 다음 지시서를 쓴다
+- **worker 는 PR 이 머지될 때까지 맡는다.** 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 가 직접 처리하고 `worker_done` 은 MERGED 뒤에 보낸다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 계획이 PR 여럿이면 지시서는 PR1 만 맡고, 앞 PR 이 머지되면 코디네이터가 다음 지시서를 써 새 worker 를 띄운다(worker 하나가 PR 여럿을 이어 맡지 않는다)
 - **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다
 - **범위가 큰 일은 지시서에 「`planning` 으로 설계를 확정한 뒤 `build-with-teams` 로 구현한다」 를 적는다.** 보안 경계, 저장 구조, 여러 화면에 걸친 변경이 여기 해당한다
 - **worker 보고서의 사용자 안내(누를 단추, 순서, 화면 문구)는 코드나 화면으로 확인한 뒤 사용자에게 전한다.** 계획한 화면과 실제 화면이 다를 수 있다
@@ -135,4 +135,5 @@ PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 `merge-with-finish.ts` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다. `queue.auto_merge` 를 켠 저장소는 상주 루프가 머지할 수 있는 PR 을 스스로 건다(`references/cleanup.md` 의 「머지」).
 앞 PR 머지마다 뒤 PR 을 최신화하느라 CI 를 다시 기다리는 저장소는 `--up-to-date-when overlap` 으로 겹치지 않는 PR 의 최신화를 생략한다. 쓸 수 있는 저장소와 규칙은 `references/cleanup.md` 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다.
 머지 큐가 끝나면 `notify-conflicts.ts` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 인지는 마무리가 배포 뒤에 판정하므로 PR 마다 `!` 를 정하지 않는다. 판정을 덮을 때만 `!`(마지막)나 `~`(중간)를 붙인다. 워크트리는 `remove-worktree.ts` 로만 지운다. 끝난 handoff 산출물은 묻지 않고 `handoff-cleanup.ts --apply` 로 휴지통 폴더에 옮긴다.
+뒤 PR 이 남았으면 머지한 뒤 같은 흐름에서 그 지시서를 써 새 worker 를 띄운다. 절차는 `references/cleanup.md` 의 「다음 PR 은 새 worker 로 띄운다」 가 소유한다.
 맡긴 작업은 다른 저장소의 것이어도 머지한 자리에서 정리하고, 다른 세션이 띄운 것은 건드리지 않는다. 원칙과 직접 머지했을 때의 명령은 `references/cleanup.md` 의 「정리」 가 소유한다.
