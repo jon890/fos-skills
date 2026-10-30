@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.21.0 (2026-10-30)
+
+- `launch-worker` 가 claude worker 를 띄우기 전에 선택된 Orca 계정 프로필에 `plugins` 링크와 `settings.json` 이 있는지 본다. 없으면 맞추는 명령 한 줄을 내고 종료 코드 1 로 거부한다. Orca 프로필 폴더가 없으면 건너뛴다
+- `link-claude-profile.ts` 를 더했다. 설정이 갖춰진 가장 최근 프로필을 기준으로 대상 프로필의 링크와 설정 파일을 맞춘다. 기본은 dry-run 이고, 세션 상태와 로그인 정보는 옮기지 않으며 있던 것은 백업 이름으로 옮긴다
+- `launch.md` 에 「claude 프로필 준비 판정」 절을 더했다
+
 ## 4.20.0 (2026-10-30)
 
 - 호환성: 개별 지시서에 `worker 선택:` 줄(에이전트, 모델, effort, 비교한 후보, 고른 이유)이 필수다. 없거나 요소가 빠지면 `spec-lint` 가 `선택` 발견으로 막고 `launch-worker` 가 거부한다. `--lint-ack` 으로 넘기지 못한다
