@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { ConfigError } from '../scripts/lib/config.ts'
-import { apiTarget, ciState, currentUser, gh, ghBin, ghJson, isOwnPr, ownAuthors, requiredNames, ruleChecks, updateBranch } from '../scripts/lib/gh.ts'
+import { apiTarget, checkSnapshot, ciState, currentUser, gh, ghBin, ghJson, isOwnPr, ownAuthors, requiredNames, ruleChecks, updateBranch } from '../scripts/lib/gh.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
@@ -187,6 +187,83 @@ function commitStatus(context: string, state: string) {
 }
 
 describe('ciState', () => {
+  test('실제 스냅샷은 pending 60초·completed 300초로 만료하고 TTL 0 도 따른다', (t) => {
+    const originalNow = Date.now
+    const savedTtl = process.env.ORCH_GH_CACHE_TTL_SECONDS
+    let now = originalNow()
+    Date.now = () => now
+    process.env.ORCH_GH_CACHE = '1'
+    delete process.env.ORCH_GH_CACHE_TTL_SECONDS
+    t.after(() => {
+      Date.now = originalNow
+      process.env.ORCH_GH_CACHE = '0'
+      if (savedTtl === undefined) delete process.env.ORCH_GH_CACHE_TTL_SECONDS
+      else process.env.ORCH_GH_CACHE_TTL_SECONDS = savedTtl
+      fake.setRules(RULES)
+    })
+    const repo = mkdtempSync(join(dir, 'snapshot-ttl-'))
+    const set = (status: string, conclusion: string | null) => fake.setRules([{ stdout: JSON.stringify({ headRefOid: 'head', statusCheckRollup: [run('test', conclusion, status)] }) }])
+    const read = () => checkSnapshot(repo, '7', 'head')
+    set('IN_PROGRESS', null)
+    assert.ok(read().ok)
+    set('COMPLETED', 'SUCCESS')
+    now += 59_000
+    assert.ok(read().ok)
+    assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 1)
+    now += 1000
+    assert.ok(read().ok)
+    now += 299_000
+    assert.ok(read().ok)
+    assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 2)
+    now += 1000
+    assert.ok(read().ok)
+    assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 3)
+    process.env.ORCH_GH_CACHE_TTL_SECONDS = '0'
+    assert.ok(read().ok)
+    assert.ok(read().ok)
+    assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 5)
+  })
+  test('HEAD 키로 옛 캐시를 격리하고 같은 HEAD 재실행은 refresh 로 읽어 캐시도 갱신한다', (t) => {
+    process.env.ORCH_GH_CACHE = '1'
+    t.after(() => { process.env.ORCH_GH_CACHE = '0'; fake.setRules(RULES) })
+    const repo = mkdtempSync(join(dir, 'snapshots-'))
+    const set = (head: string, conclusion: string) => fake.setRules([{ args: ['pr', 'view'], stdout: JSON.stringify({ headRefOid: head, statusCheckRollup: [run('test', conclusion)] }) }])
+    set('old', 'FAILURE')
+    const old = checkSnapshot(repo, '7', 'old')
+    assert.ok(old.ok)
+    set('new', 'SUCCESS')
+    const newer = checkSnapshot(repo, '7', 'new')
+    assert.ok(newer.ok)
+    assert.equal(ciState(newer.data.statusCheckRollup, ['test'], false, 'new').state, 'passed')
+    set('new', 'FAILURE')
+    const cached = checkSnapshot(repo, '7', 'new')
+    assert.ok(cached.ok)
+    assert.equal(ciState(cached.data.statusCheckRollup, ['test'], false, 'new').state, 'passed')
+    const fresh = checkSnapshot(repo, '7', 'new', true)
+    assert.ok(fresh.ok)
+    assert.equal(ciState(fresh.data.statusCheckRollup, ['test'], false, 'new').state, 'failed')
+    const updated = checkSnapshot(repo, '7', 'new')
+    assert.deepEqual(updated, fresh)
+    assert.equal(fake.calls().filter((call) => call.cwd === repo).length, 3)
+  })
+  const attempt = (conclusion: string | null, startedAt: string, workflow = 'CI', status = 'COMPLETED', headSha = 'head') => ({
+    ...run('test', conclusion, status), startedAt, headSha, checkSuite: { workflowRun: { workflow: { name: workflow } } },
+  })
+  test('같은 HEAD 와 workflow 의 새 실행이 있으면 옛 취소를 세지 않는다', () => {
+    const old = attempt('CANCELLED', '2026-10-30T01:00:00Z')
+    const newer = attempt('SUCCESS', '2026-10-30T02:00:00Z')
+    assert.equal(ciState([newer, old], ['test'], false, 'head').state, 'passed')
+    assert.equal(ciState([old, { ...newer, conclusion: null, status: 'IN_PROGRESS' }], ['test'], false, 'head').state, 'pending')
+    assert.equal(ciState([old, { ...newer, conclusion: 'FAILURE' }], ['test'], false, 'head').state, 'failed')
+  })
+  test('다른 HEAD 결과와 다른 workflow 로 취소 실패를 덮지 않는다', () => {
+    const old = attempt('CANCELLED', '2026-10-30T01:00:00Z')
+    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'Other')], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([attempt('FAILURE', '2026-10-30T01:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'pending')
+    assert.equal(ciState([old, attempt('SUCCESS', 'invalid')], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([run('test', 'CANCELLED'), run('test', 'SUCCESS')], ['test'], false, 'head').state, 'failed')
+  })
   test('필수 체크가 모두 나타나 성공으로 끝나고 실패가 없으면 passed 이고 checks 는 나타난 체크 전부다', () => {
     const got = ciState([run('test', 'SUCCESS'), run('lint', 'SUCCESS'), run('extra', 'NEUTRAL')], ['test', 'lint'], false)
     assert.equal(got.state, 'passed')

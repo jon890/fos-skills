@@ -15,9 +15,10 @@ import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './c
 import { NO_LIMIT_MS, run } from './proc.ts'
 import type { RunResult } from './proc.ts'
 import { budgetGh } from './gh-budget.ts'
+import type { BudgetOptions } from './gh-budget.ts'
 import { git, mainCheckout } from './git.ts'
 
-type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean }
+type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean } & Pick<BudgetOptions, 'cacheKey' | 'ttlSeconds' | 'refresh'>
 const contexts = new Map<string, { root: string; origin: string; expires: number }>()
 
 export function ghBin(): string {
@@ -35,7 +36,7 @@ export function gh(args: string[], opts: GhOptions = {}): RunResult {
     process.env.GH_TOKEN, process.env.GITHUB_TOKEN, process.env.GH_ENTERPRISE_TOKEN, process.env.GITHUB_ENTERPRISE_TOKEN,
     // 브랜치에서 PR 을 추론하는 호출은 다른 워크트리와 섞지 않는다.
     args[0] === 'pr' && ['view', 'checks'].includes(args[1]) && (!args[2] || args[2].startsWith('-')) ? repo : null]
-  return budgetGh(args, repo, identity, () => run([ghBin(), ...args], { cwd: opts.cwd, env: { ...(opts.host ? { GH_HOST: opts.host } : {}), ORCH_GH_BUDGET_PARENT: String(process.pid) }, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal }), { passthrough: opts.cache === false })
+  return budgetGh(args, repo, identity, () => run([ghBin(), ...args], { cwd: opts.cwd, env: { ...(opts.host ? { GH_HOST: opts.host } : {}), ORCH_GH_BUDGET_PARENT: String(process.pid) }, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal }), { passthrough: opts.cache === false, cacheKey: opts.cacheKey, ttlSeconds: opts.ttlSeconds, refresh: opts.refresh })
 }
 
 export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T } | { ok: false; error: string } {
@@ -134,7 +135,7 @@ export function rulesPlanLimited(stderr: string): boolean {
 // base 의 저장소 규칙이 정한 필수 체크 이름. 플랜 제한은 빈 목록이다. slug 는 owner/repo 다.
 export function ruleChecks(host: string, slug: string, base: string): Names {
   const path = `repos/${slug}/rules/branches/${base}`
-  const done = gh(['api', '--hostname', host, path, '--jq', RULES_JQ])
+  const done = gh(['api', '--hostname', host, path, '--jq', RULES_JQ], { cache: false })
   if (done.code === 0) {
     try {
       return { ok: true, names: parseNames(done.stdout.trim()) }
@@ -186,6 +187,41 @@ export function failedCheck(check: CiCheck): boolean {
   return FAILED_CONCLUSIONS.includes(check.conclusion ?? '') || FAILED_STATES.includes(check.status ?? '')
 }
 
+export type CheckSnapshot = { headRefOid: string; statusCheckRollup: unknown }
+
+// HEAD 별 공유 스냅샷. 멈추거나 머지하기 직전에는 refresh 로 재실행도 확인한다.
+export function checkSnapshot(repo: string, number: string, head: string, refresh = false): ReturnType<typeof ghJson<CheckSnapshot>> {
+  return ghJson<CheckSnapshot>(['pr', 'view', number, '--json', 'statusCheckRollup,headRefOid', '--jq', '.'], {
+    cwd: repo, cacheKey: `checks:${number}:${head}`, refresh,
+    ttlSeconds: (result) => {
+      try {
+        const pr = JSON.parse(result.stdout) as CheckSnapshot
+        const rows = currentChecks(pr.statusCheckRollup, head)
+        if (pr.headRefOid !== head) return 0
+        if (rows.length === 0 || rows.some(pendingRow)) return 60
+        return 300
+      } catch { return 0 }
+    },
+  })
+}
+
+// gh 는 commits(last:1) 의 롤업을 낸다. HEAD 와 같은 응답에서 읽고 도중의 push 는 호출자가 막는다.
+// 더 새 실행이 확인된 옛 취소만 뺀다. 시각이나 workflow 를 모르면 실패를 숨기지 않는다.
+export function currentChecks(rollup: unknown, head?: string): Record<string, unknown>[] {
+  const rows = (Array.isArray(rollup) ? rollup : []).filter(
+    (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
+  ).filter((row) => !head || !field(row, 'headSha') || field(row, 'headSha') === head)
+  const workflow = (row: Record<string, unknown>): string | null => {
+    const suite = row.checkSuite as { workflowRun?: { workflow?: { name?: unknown } } } | null
+    const name = suite?.workflowRun?.workflow?.name
+    return typeof name === 'string' && name ? name : null
+  }
+  return rows.filter((row) => field(row, 'conclusion') !== 'CANCELLED' || !rows.some((newer) =>
+    checkName(row) !== '' && checkName(newer) === checkName(row) && workflow(row) !== null && workflow(newer) === workflow(row) &&
+    Date.parse(field(newer, 'startedAt') ?? '') > Date.parse(field(row, 'startedAt') ?? ''),
+  ))
+}
+
 // PR 의 statusCheckRollup 으로 CI 상태를 정한다. 머지 큐의 기본 판정(--allow-fail 없음)과 같다.
 //   failed   롤업의 체크 하나라도 실패다(FAILED_CONCLUSIONS, FAILED_STATES). 필수 체크가 아니어도 실패다(머지 큐의 waitChecks 가 멈춘다)
 //   passed   실패가 없고, 필수 체크가 모두 나타났고, 롤업의 체크가 모두 끝났다. 필수가 아닌 체크가 아직 돌면 머지 큐도 기다리므로 pending 이다
@@ -194,10 +230,8 @@ export function failedCheck(check: CiCheck): boolean {
 // required 가 비면(규칙 없음, 플랜 제한) 나타난 체크 전부로 판정하는 것과 같다.
 // skippedIsMissing 이면 결론이 SKIPPED 인 체크를 나타나지 않은 것으로 본다(머지 큐의 --skipped-is-missing).
 // checks 는 롤업에 나타난 체크 전부다. 실패한 것은 failedCheck 로 고른다.
-export function ciState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean): CiState {
-  const rows = (Array.isArray(rollup) ? rollup : []).filter(
-    (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
-  )
+export function ciState(rollup: unknown, required: readonly string[], skippedIsMissing: boolean, head?: string): CiState {
+  const rows = currentChecks(rollup, head)
   const seen = rows.filter((row) => !(skippedIsMissing && field(row, 'conclusion') === 'SKIPPED'))
   const checks = seen.map((row) => ({
     name: checkName(row),

@@ -85,12 +85,22 @@ function invalidate(root: string): void {
   } catch { /* 캐시 폴더를 쓸 수 없어도 호출 결과를 유지한다. */ }
 }
 
-export function budgetGh(args: string[], repo: string, identity: unknown, execute: () => RunResult, options: { lockWaitMs?: number; passthrough?: boolean } = {}): RunResult {
+export type BudgetOptions = {
+  lockWaitMs?: number
+  passthrough?: boolean
+  cacheKey?: string
+  ttlSeconds?: (result: RunResult) => number
+  refresh?: boolean
+}
+
+export function budgetGh(args: string[], repo: string, identity: unknown, execute: () => RunResult, options: BudgetOptions = {}): RunResult {
   const start = Date.now()
   const root = cacheRoot(repo)
-  const ttl = options.passthrough ? 0 : readTtl(args)
   const writable = !readOnly(args)
-  const key = digest([identity, args])
+  const configuredTtl = process.env.ORCH_GH_CACHE_TTL_SECONDS
+  const disabled = options.passthrough || process.env.ORCH_GH_CACHE === '0' || (configuredTtl !== undefined && Number(configuredTtl) === 0)
+  const ttl = disabled || writable ? 0 : options.cacheKey && options.ttlSeconds ? 60 : readTtl(args)
+  const key = digest(options.cacheKey ? [identity, args, options.cacheKey] : [identity, args])
   const file = join(root, 'cache', `${key}.json`)
   // 같은 저장소의 읽기를 묶는다. 쓰기는 세대 번호로 진행 중 읽기와 옛 응답을 무효화한다.
   const lock = join(root, 'lock')
@@ -126,7 +136,7 @@ export function budgetGh(args: string[], repo: string, identity: unknown, execut
   }
   try {
     epoch = generation(root)
-    if (locked && ttl > 0) {
+    if (locked && ttl > 0 && !options.refresh) {
       try {
         const entry: Entry = JSON.parse(readFileSync(file, 'utf8'))
         if (entry.generation === epoch && entry.expires > Date.now() && entry.result && typeof entry.result.stdout === 'string' && typeof entry.result.code === 'number') {
@@ -147,7 +157,7 @@ export function budgetGh(args: string[], repo: string, identity: unknown, execut
     if (locked && ttl > 0 && (result.code === 0 || (args[0] === 'pr' && args[1] === 'checks' && result.code === 8))) {
       try {
         const temporary = `${file}.${randomUUID()}.tmp`
-        writeFileSync(temporary, JSON.stringify({ expires: Date.now() + ttl * 1000, generation: epoch, result }), { mode: 0o600 })
+        writeFileSync(temporary, JSON.stringify({ expires: Date.now() + (options.ttlSeconds?.(result) ?? ttl) * 1000, generation: epoch, result }), { mode: 0o600 })
         renameSync(temporary, file)
       } catch { /* 캐시 저장 실패는 호출 성공을 바꾸지 않는다. */ }
     }
