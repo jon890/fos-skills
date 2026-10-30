@@ -192,6 +192,32 @@ describe('지시서 검사', () => {
     assert.match(r.stderr, /경로 경고 0건/)
   })
 
+  test('완료 기준에 PR 이 둘 이상이면 한 PR 기준을 가리키며 경고하고 종료 코드는 0 이다', () => {
+    const multi = spec('spec-multi', '## 완료 기준\n\n- PR1 과 PR2 가 MERGED 됐다.\n')
+    const r = run(['--repo', repo, multi])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /^spec-multi\.md:3: 완료: .*PR 하나의 MERGED 다\. 이 지시서는 PR1 만 맡는다.*새 지시서로 띄운다.*\(PR1, PR2\)$/m)
+    assert.match(r.stderr, /완료 경고 1건/)
+    assert.match(r.stderr, /경로 경고 0건/)
+    for (const [name, body] of [
+      ['range', '- 완료 기준: PR1~PR3 이 MERGED 됐다'],
+      ['range-short', '## 완료 기준\n- PR 1-3 이 MERGED 됐다'],
+      ['count', '## 완료 기준\n- PR 두 개가 MERGED 됐다'],
+    ]) {
+      assert.match(run(['--repo', repo, spec(`spec-${name}`, body)]).stdout, /: 완료: /, name)
+    }
+  })
+
+  test('완료 기준이 PR 하나이거나, 뒤 PR 이 완료 기준 밖 참고 절에만 있으면 경고하지 않는다', () => {
+    const one = spec('spec-one', '## 완료 기준\n\n- PR #12 가 MERGED 됐다. 같은 PR #12 에서 CI 가 통과한다.\n')
+    assert.deepEqual(lint([one]), { code: 0, stdout: '' })
+    const later = spec(
+      'spec-later',
+      '## 범위\n\n이 지시서는 PR1 만 맡는다. 뒤 PR(참고): PR2 문서, PR3 정리\n\n## 완료 기준\n\n- PR 하나가 MERGED 됐다.\n\n## 참고\n\nPR2, PR3',
+    )
+    assert.deepEqual(lint([later]), { code: 0, stdout: '' })
+  })
+
   test('선택 줄이 없거나 빠진 요소가 있거나 둘이면 막는다', () => {
     const none = write(join(specs, 'spec-none.md'), '# 일\n')
     const partial = write(join(specs, 'spec-partial.md'), '# 일\n- **worker 선택:** `claude` `claude-opus-5-5` 로 고른다\n')

@@ -44,6 +44,10 @@
 //                 있어 경고이고 종료 코드에 넣지 않는다. 지시서 폴더에 spec-common.md 가 없으면 보지 않는다
 //     제목        `# ` 제목 줄도 `보드 항목 id:` 줄도 없다. 보드 항목 제목이 업무 연결 줄, `## 목표` 첫 문장, 워크트리 이름으로 밀려나
 //                 보드에 업무 목적이 보이지 않을 수 있다(lib/board.ts 의 specTitle). 경고이고 종료 코드에 넣지 않는다
+//     완료        `## 완료 기준` 절(또는 `완료 기준:` 줄)에 PR 이 둘 이상 든다. `PR1`, `PR #12` 처럼 번호가 다른 PR 이 둘 이상이거나
+//                 `PR1~PR3`, `PR 두 개` 꼴이다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 이 지시서는 PR1 만 맡고 뒤 PR 은
+//                 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다(SKILL.md 원칙). 뒤 PR 목록은 완료 기준이 아닌 참고 절에 둔다.
+//                 경고이고 종료 코드에 넣지 않는다
 //     오버레이    (--check-overlay) 오버레이의 백틱 값과 config.json 의 문자열 값에서 읽은 상대 경로가 origin/<base> 에 없다.
 //                 명령(`bash scripts/verify.sh --fast`)이면 낱말마다 본다. `/` 가 든 확장자 있는 낱말만 경로로 본다.
 //                 파일 이름만 적은 것(스킬 스크립트일 수 있다), 절대경로, `~`, `$`, glob, `<...>` 가 든 값,
@@ -53,7 +57,7 @@
 //                 로컬에만 있는 스크립트를 오버레이가 부르면 다른 워크트리와 worker 에서 그 단계가 「파일 없음」 으로 멈춘다
 //
 // 종료 코드:
-//     0  막을 발견이 없다(경로, 공통, 제목 경고는 있을 수 있다)
+//     0  막을 발견이 없다(경로, 공통, 제목, 완료 경고는 있을 수 있다)
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
@@ -304,6 +308,42 @@ const TITLE_HINT =
   '`# ` 제목 줄도 `보드 항목 id:` 도 없다. 보드 항목 제목은 `# ` 제목 줄, `보드 항목 id` 의 기존 항목 제목, 업무 연결 줄의 제목, ' +
   '`## 목표` 첫 문장, id 순으로 고른다. 첫 줄 예: `# 보드 항목이 업무의 목적을 보이게 한다`'
 
+// 머리 주석의 「완료」. 완료 기준 절에서 PR 이 둘 이상인 근거를 찾는다
+const PR_NUMBER = /\bPR\s*#?(\d+)/gi
+const PR_RANGE = /\bPR\s*#?\d+\s*[~\-–]\s*(?:PR\s*)?#?\d+/i
+const PR_COUNT = /\bPR\s*(?:[2-9]|\d{2,}|두|세|네|여러)\s*(?:개|건)/i
+const DONE_HINT =
+  '완료 기준에 PR 이 둘 이상 보인다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. ' +
+  '이 지시서는 PR1 만 맡는다고 적고, 뒤 PR 은 코디네이터가 앞 PR 이 머지된 뒤 새 지시서로 띄운다. 뒤 PR 목록은 참고 절에만 둔다'
+
+function doneProblem(lines: string[]): { no: number; found: string } | null {
+  let inSection = false
+  const numbers = new Map<string, number>()
+  let first = 0
+  let loose: string | null = null
+  const scan = (text: string, no: number) => {
+    for (const m of text.matchAll(PR_NUMBER)) {
+      if (!numbers.has(m[1])) numbers.set(m[1], no)
+      first ||= no
+    }
+    const hit = PR_RANGE.exec(text) ?? PR_COUNT.exec(text)
+    if (hit && loose === null) {
+      loose = hit[0]
+      first ||= no
+    }
+  }
+  lines.forEach((line, index) => {
+    const no = index + 1
+    if (/^#{1,6}\s/.test(line)) inSection = /^#{1,6}\s*완료 기준/.test(line)
+    else if (inSection) scan(line, no)
+    const rest = field(line, '완료 기준')
+    if (rest !== null) scan(rest, no)
+  })
+  if (numbers.size < 2 && loose === null) return null
+  const found = loose ?? [...numbers.keys()].map((n) => `PR${n}`).join(', ')
+  return { no: first, found }
+}
+
 type Spec = { path: string; name: string; stem: string; owned: [string, number][]; lines: string[] }
 
 function readSpec(path: string): Spec {
@@ -380,6 +420,8 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {
       warnings.push(`${spec.name}:1: 제목: ${TITLE_HINT}`)
     }
+    const done = doneProblem(spec.lines)
+    if (done) warnings.push(`${spec.name}:${done.no}: 완료: ${DONE_HINT}(${done.found})`)
     for (const [glob, no] of spec.owned) {
       for (const c of coordinator) {
         if (overlap(repo, glob, c)) errors.push(`${spec.name}:${no}: 코디네이터: \`${glob}\` 가 코디네이터 소유 \`${c}\` 와 겹친다`)
@@ -457,8 +499,10 @@ function main(argv: string[]): number {
     for (const line of [...errors, ...warnings]) process.stdout.write(`${line}\n`)
     const titles = warnings.filter((line) => line.includes(': 제목: ')).length
     const commons = warnings.filter((line) => line.includes(': 공통: ')).length
-    const tail = (titles > 0 ? `, 제목 경고 ${titles}건` : '') + (commons > 0 ? `, 공통 경고 ${commons}건` : '')
-    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${warnings.length - titles - commons}건${tail}\n`)
+    const dones = warnings.filter((line) => line.includes(': 완료: ')).length
+    const tail =
+      (titles > 0 ? `, 제목 경고 ${titles}건` : '') + (commons > 0 ? `, 공통 경고 ${commons}건` : '') + (dones > 0 ? `, 완료 경고 ${dones}건` : '')
+    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${warnings.length - titles - commons - dones}건${tail}\n`)
     return errors.length > 0 ? 1 : 0
   } catch (e) {
     if (!(e instanceof UsageError)) throw e
