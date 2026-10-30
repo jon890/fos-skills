@@ -21,6 +21,8 @@ GraphQL 은 인자에 직접 쓴 query 만 캐시한다. mutation 이거나 quer
 확인할 수 없는 호출은 매번 실행한다. merge, create, comment, update-branch 등 쓰기는 캐시하지 않는다.
 쓰기를 시도하면 해당 저장소의 캐시 전체를 비운다. PR 조회뿐 아니라 목록과 배포 조회도 새로 읽기 위해서다.
 다른 도구로 push 하거나 GitHub 를 바꾼 결과는 TTL 이 지난 뒤 반영된다.
+머지·update-branch 직후의 제한된 반영 확인과 mergeable 재시도는 캐시를 건너뛴다.
+첫 미반영 응답이 짧은 재시도 시간 내내 남아 성공한 쓰기를 실패로 판단하지 않기 위해서다.
 
 - `ORCH_GH_CACHE=0`: 캐시를 끈다.
 - `ORCH_GH_CACHE_TTL_SECONDS`: 읽기 조회의 TTL 을 초 단위로 바꾼다. `0` 은 끄기다.

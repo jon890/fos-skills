@@ -485,6 +485,16 @@ describe('merge_queue 필수 체크', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
 })
 
 describe('merge_queue --require-up-to-date', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  test('캐시를 켜도 쓰기 직후 HEAD 와 머지 상태가 늦게 반영되면 다시 조회한다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_GH_CACHE = '1'
+    const p = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')], after_update_delay: 1, merge_delay: 1 })
+    const r = await c.runQueue({ '1': p, _behind: 2 }, ['--required', 'backend', '--require-up-to-date', '1'])
+    assert.equal(r.code, 0, both(r))
+    has(c.log(), 'pr merge 1 --merge --match-head-commit new')
+    has(r.stdout, '1 MERGED')
+  })
+
   test('뒤처지면 PR URL 호스트와 검사한 HEAD 로 update-branch 하고 체크를 다시 기다려 새 HEAD 로 머지한다', async (t) => {
     const c = setup(t)
     const p = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })

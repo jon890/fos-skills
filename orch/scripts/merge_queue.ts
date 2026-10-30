@@ -629,10 +629,10 @@ class Queue {
   // ---- gh 조회 ----------------------------------------------------------------------------------
 
   // PR 하나의 필드. 호출이 실패하면 ghRetries 번까지 다시 부르고, 그래도 실패하면 빈 문자열이다
-  async field(n: string, jsonField: string, jq: string): Promise<string> {
+  async field(n: string, jsonField: string, jq: string, fresh = false): Promise<string> {
     let attempt = 1
     for (;;) {
-      const done = gh(['pr', 'view', n, '--json', jsonField, '--jq', jq])
+      const done = gh(['pr', 'view', n, '--json', jsonField, '--jq', jq], { cache: !fresh })
       if (done.code === 0) return chomp(done.stdout)
       if (attempt >= this.ghRetries) return ''
       attempt += 1
@@ -891,7 +891,7 @@ class Queue {
     let merged = false
     for (let i = 0; i < 3; i++) {
       await nap(5)
-      if ((await this.field(n, 'state', '.state')) === 'MERGED') {
+      if ((await this.field(n, 'state', '.state', true)) === 'MERGED') {
         merged = true
         break
       }
@@ -944,7 +944,7 @@ class Queue {
       for (let i = 0; i < 4; i++) {
         if (m !== 'UNKNOWN') break
         await nap(20)
-        m = await this.field(n, 'mergeable', '.mergeable')
+        m = await this.field(n, 'mergeable', '.mergeable', true)
       }
 
       log(`${n} fails=${f} threads=${t} mergeable=${m}`)
@@ -1149,7 +1149,7 @@ class Queue {
       let next = ''
       for (let i = 0; i < 12; i++) {
         await nap(5)
-        next = await this.field(n, 'headRefOid', '.headRefOid')
+        next = await this.field(n, 'headRefOid', '.headRefOid', true)
         if (next && next !== p.ph) break
       }
       if (!next || next === p.ph) stop(`${n} update-branch 뒤 HEAD 가 바뀌지 않았다`)

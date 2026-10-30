@@ -17,7 +17,7 @@ import type { RunResult } from './proc.ts'
 import { budgetGh } from './gh-budget.ts'
 import { git, mainCheckout } from './git.ts'
 
-type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals }
+type GhOptions = { host?: string; cwd?: string; timeoutMs?: number; killSignal?: NodeJS.Signals; cache?: boolean }
 const contexts = new Map<string, { root: string; origin: string; expires: number }>()
 
 export function ghBin(): string {
@@ -35,7 +35,7 @@ export function gh(args: string[], opts: GhOptions = {}): RunResult {
     process.env.GH_TOKEN, process.env.GITHUB_TOKEN, process.env.GH_ENTERPRISE_TOKEN, process.env.GITHUB_ENTERPRISE_TOKEN,
     // 브랜치에서 PR 을 추론하는 호출은 다른 워크트리와 섞지 않는다.
     args[0] === 'pr' && ['view', 'checks'].includes(args[1]) && (!args[2] || args[2].startsWith('-')) ? repo : null]
-  return budgetGh(args, repo, identity, () => run([ghBin(), ...args], { cwd: opts.cwd, env: { ...(opts.host ? { GH_HOST: opts.host } : {}), ORCH_GH_BUDGET_PARENT: String(process.pid) }, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal }))
+  return budgetGh(args, repo, identity, () => run([ghBin(), ...args], { cwd: opts.cwd, env: { ...(opts.host ? { GH_HOST: opts.host } : {}), ORCH_GH_BUDGET_PARENT: String(process.pid) }, timeoutMs: opts.timeoutMs, killSignal: opts.killSignal }), { passthrough: opts.cache === false })
 }
 
 export function ghJson<T>(args: string[], opts?: GhOptions): { ok: true; data: T } | { ok: false; error: string } {

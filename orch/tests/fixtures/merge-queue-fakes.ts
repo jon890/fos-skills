@@ -39,6 +39,7 @@ if (args[0] === 'pr' && args[1] === 'merge') {
   const at = args.indexOf('--match-head-commit')
   if (at >= 0 && args[at + 1] === pr.headRefOid) {
     pr.state = 'MERGED'
+    if (pr.merge_delay) pr.merge_pending = pr.merge_delay
     save()
     say('merged')
     process.exit(0)
@@ -71,6 +72,7 @@ if (args[0] === 'api') {
       if (typeof pr.update_fails === 'string') fs.writeSync(2, pr.update_fails + '\\n')
       process.exit(1)
     }
+    if (pr.after_update_delay) pr.pending_head = { old: pr.headRefOid, left: pr.after_update_delay }
     pr.headRefOid = pr.after_update_head ?? 'new'
     pr.statusCheckRollup = []
     pr.appear = { left: 2, checks: pr.after_update ?? [] }
@@ -96,6 +98,17 @@ if (args[0] === 'pr' && args[1] === 'view') {
     process.exit(1)
   }
   const pr = state[args[2]]
+  // 쓰기 성공 뒤 조회 API 에 상태가 늦게 반영되는 경우다.
+  if (args[args.indexOf('--json') + 1] === 'state' && pr.merge_pending) {
+    pr.merge_pending -= 1
+    save()
+    jq(args[args.indexOf('--jq') + 1], { ...pr, state: 'OPEN' })
+  }
+  if (args[args.indexOf('--json') + 1] === 'headRefOid' && pr.pending_head?.left) {
+    pr.pending_head.left -= 1
+    save()
+    jq(args[args.indexOf('--jq') + 1], { ...pr, headRefOid: pr.pending_head.old })
+  }
   // 체크가 나중에 나타나는 PR 을 흉내 낸다. 조회할 때마다 left 가 줄고 0 이 되면 체크가 붙는다
   if (pr.appear) {
     pr.appear.left -= 1
