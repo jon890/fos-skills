@@ -20,7 +20,7 @@
 
 ## 차례로 머지할 때 최신 base 와 합쳐 다시 검사한다
 
-합친 사본 검증은 7단계 머지 큐가 `queue.verify_merged` 가 있을 때 한다. [`cleanup.md`](cleanup.md) 의 「같은 파일을 고친 PR」 를 본다.
+합친 사본 검증은 7단계 머지 큐가 `hooks/verify-merged.ts`가 있을 때 한다. [`cleanup.md`](cleanup.md) 의 「같은 파일을 고친 PR」 를 본다.
 
 ## 충돌을 풀 때
 

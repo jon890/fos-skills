@@ -810,6 +810,8 @@ const [host = '', owner = '', name = ''] = scheme >= 0 ? url.slice(scheme + 3).s
 
 function beforeMergeBody(command: string): string {
   return `${handlerHead(['queue.before'], '머지 큐의 --before 와 같이 PR 마다 머지 직전에 bash -c 로 돈다. 10 으로 끝나면 거부, 그 밖의 실패도 멈춘다.')}
+// PR별 명령이나 빈 PR:은 옛 기본 before를 대체했다. 수동 핸들러의 실행 여부는 바꾸지 않는다.
+if (input.has_pr_command === true) process.exit(0)
 const COMMAND = ${JSON.stringify(command)}
 ${URL_PARTS}
 ${CHECKOUT}

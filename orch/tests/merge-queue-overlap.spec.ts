@@ -148,9 +148,18 @@ function count(text: string, part: string): number {
   return text.split(part).length - 1
 }
 
-// 합친 사본 검사 명령이 받은 환경 변수를 JSON 으로 남기는 셸 명령
-function dumpEnvCmd(file: string): string {
-  return `python3 -c 'import json,os; json.dump(dict(os.environ),open("${file}","w"))'`
+function hook(c: Ctx, event: string, body: string): void {
+  const dir = join(c.repo, '.orch', 'hooks')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${event}.ts`), body)
+}
+
+function recordInput(file: string, code = 0): string {
+  return [
+    "import { readFileSync, writeFileSync } from 'node:fs'",
+    `writeFileSync(${JSON.stringify(file)}, readFileSync(0, 'utf8'))`,
+    `process.exit(${code})`,
+  ].join('\n')
 }
 
 function patchPr(c: Ctx, fields: Json, behind?: number): void {
@@ -180,15 +189,16 @@ describe('merge_queue 겹침', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
     assert.equal(c.merged(), false)
   })
 
-  test('검사 명령의 CHANGED_FILES 에 지운 파일도 든다', async (t) => {
+  test('verify-merged 핸들러 입력에 지운 파일도 든다', async (t) => {
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'a.txt': `main\n${FIVE}` }, ['b.txt'])
     const seen = join(c.tmp, 'environment.json')
-    const r = await c.runQueue(['--verify-merged', dumpEnvCmd(seen)])
+    hook(c, 'verify-merged', recordInput(seen))
+    const r = await c.runQueue([])
     assert.equal(r.code, 0, both(r))
-    const env = JSON.parse(readFileSync(seen, 'utf8')) as Record<string, string>
-    assert.equal(env.CHANGED_FILES, 'a.txt\nb.txt')
-    assert.equal(env.OVERLAP_FILES, 'a.txt')
+    const input = JSON.parse(readFileSync(seen, 'utf8')) as Json
+    assert.deepEqual(input.changed_files, ['a.txt', 'b.txt'])
+    assert.deepEqual(input.overlap_files, ['a.txt'])
   })
 
   test('STOP 줄은 겹친 파일을 공백 하나로 잇고 끝 공백이 없다', async (t) => {
@@ -198,10 +208,11 @@ describe('merge_queue 겹침', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
     has(`\n${r.stdout}`, '\nSTOP 1 겹침: a.txt b.txt\n')
   })
 
-  test('겹침 기록 줄은 끝 공백이 없다', async (t) => {
+  test('verify-merged 핸들러가 있으면 겹침 기록 줄은 끝 공백이 없다', async (t) => {
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n`, 'b.txt': 'feat\n' }, { 'a.txt': `main\n${FIVE}`, 'b.txt': 'main\n' })
-    const r = await c.runQueue(['--verify-merged', 'true'])
+    hook(c, 'verify-merged', 'process.exit(0)\n')
+    const r = await c.runQueue([])
     assert.match(r.stdout, /^\d\d:\d\d 1 겹침: a\.txt b\.txt$/m)
   })
 
@@ -214,10 +225,11 @@ describe('merge_queue 겹침', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
     assert.equal(c.merged(), true)
   })
 
-  test('겹치지 않으면 검사 명령을 돌리지 않는다', async (t) => {
+  test('겹치지 않으면 verify-merged 핸들러를 돌리지 않는다', async (t) => {
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'b.txt': 'b2\n' })
-    const r = await c.runQueue(['--verify-merged', 'exit 1'])
+    hook(c, 'verify-merged', 'process.exit(1)\n')
+    const r = await c.runQueue([])
     assert.equal(r.code, 0, both(r))
     assert.equal(c.merged(), true)
   })
@@ -225,28 +237,32 @@ describe('merge_queue 겹침', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
   test('base 와 충돌하면 멈추고 사본을 남기지 않는다', async (t) => {
     const c = setup(t)
     c.branches({ 'a.txt': '1\n2\nfeat\n4\n5\n' }, { 'a.txt': '1\n2\nmain\n4\n5\n' })
-    const r = await c.runQueue(['--verify-merged', 'exit 0'])
+    hook(c, 'verify-merged', 'process.exit(0)\n')
+    const r = await c.runQueue([])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'STOP 1 base(main) 와 합치면 충돌한다')
     assert.equal(c.merged(), false)
     assert.equal(c.worktreeCount(), 1)
   })
 })
-
 describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
   test('합친 사본의 실경로에서 검사하고 TMPDIR 도 실경로로 준다. 끝나면 사본을 지운다', async (t) => {
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'a.txt': `main\n${FIVE}` })
     const seen = join(c.tmp, 'seen.txt')
-    const cmd = `grep -qx main "$1/a.txt" && grep -qx feat "$1/a.txt" && [ "$PWD" = "$1" ] && printf "%s\\n%s\\n" "$1" "$TMPDIR" > ${seen}`
-    const r = await c.runQueue(['--verify-merged', cmd])
+    hook(c, 'verify-merged', [
+      "import { readFileSync, writeFileSync } from 'node:fs'",
+      "const text = readFileSync('a.txt', 'utf8')",
+      "if (!text.includes('main') || !text.includes('feat')) process.exit(1)",
+      `writeFileSync(${JSON.stringify(seen)}, process.cwd())`,
+    ].join('\n'))
+    const r = await c.runQueue([])
     assert.equal(r.code, 0, both(r))
     has(r.stdout, '1 겹침: a.txt')
     has(r.stdout, '합친 사본의 검사 통과')
     assert.equal(c.merged(), true)
-    const [copy, tmpdirSeen] = readFileSync(seen, 'utf8').trim().split('\n')
+    const copy = readFileSync(seen, 'utf8').trim()
     const real = realpathSync(c.tmp)
-    assert.equal(tmpdirSeen, real)
     assert.equal(dirname(copy), real)
     assert.match(copy, /\/merge-queue-pr1-\d+$/)
     assert.equal(existsSync(copy), false)
@@ -295,35 +311,35 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'a.txt': `main\n${FIVE}` })
     const seen = join(c.tmp, 'seen.txt')
-    const r = await c.runQueue(['--verify-merged', `echo "$1" > ${seen}; exit 3`])
+    hook(c, 'verify-merged', recordInput(seen, 3))
+    const r = await c.runQueue([])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'STOP 1 합친 사본의 검사 실패(종료 코드 3)')
     assert.equal(c.merged(), false)
-    assert.equal(existsSync(readFileSync(seen, 'utf8').trim()), false)
+    assert.equal(existsSync(String((JSON.parse(readFileSync(seen, 'utf8')) as Json).copy)), false)
     assert.equal(c.worktreeCount(), 1)
   })
 
-  test('검사 명령은 PR, 바뀐 파일, 겹친 파일, 두 커밋 id, 사본 경로를 환경 변수로 받는다', async (t) => {
+  test('verify-merged 핸들러는 PR, 바뀐 파일, 겹친 파일, 두 커밋 id, 사본 경로를 stdin으로 받는다', async (t) => {
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n`, 'tests/new file.test.ts': 'test\n' }, { 'a.txt': `main\n${FIVE}` })
     const seen = join(c.tmp, 'environment.json')
-    const r = await c.runQueue(['--verify-merged', dumpEnvCmd(seen)])
+    hook(c, 'verify-merged', recordInput(seen))
+    const r = await c.runQueue([])
     assert.equal(r.code, 0, both(r))
-    const env = JSON.parse(readFileSync(seen, 'utf8')) as Record<string, string>
-    assert.equal(env.PR, '1')
-    assert.equal(env.CHANGED_FILES, 'a.txt\ntests/new file.test.ts')
-    assert.equal(env.OVERLAP_FILES, 'a.txt')
-    assert.equal(env.PR_HEAD, c.git(['rev-parse', 'feat']))
-    assert.equal(env.BASE_HEAD, c.git(['rev-parse', 'main']))
-    assert.equal(env.GH_HOST, 'git.example.com')
-    assert.equal(env.MERGE_COPY, env.PWD)
-    assert.equal(existsSync(env.MERGE_COPY), false)
+    const input = JSON.parse(readFileSync(seen, 'utf8')) as Json
+    assert.equal((input.pr as Json).number, 1)
+    assert.deepEqual(input.changed_files, ['a.txt', 'tests/new file.test.ts'])
+    assert.deepEqual(input.overlap_files, ['a.txt'])
+    assert.equal(input.base_head, c.git(['rev-parse', 'main']))
+    assert.equal(existsSync(String(input.copy)), false)
   })
 
   test('code 는 겹치지 않은 코드 PR 도 검사한다', async (t) => {
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'b.txt': 'b2\n' })
-    const r = await c.runQueue(['--verify-merged', 'exit 4', '--verify-merged-when', 'code'])
+    hook(c, 'verify-merged', 'process.exit(4)\n')
+    const r = await c.runQueue(['--verify-merged-when', 'code'])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, '합친 사본의 검사 실패(종료 코드 4)')
     lacks(r.stdout, '겹침')
@@ -334,7 +350,8 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
   test('문서만 바꾼 PR 은 겹쳐도 검사 없이 머지한다', async (t) => {
     const c = setup(t)
     c.branches({ 'docs/a.md': 'feat\n' }, { 'docs/a.md': 'main\n' })
-    const r = await c.runQueue(['--verify-merged', 'exit 1', '--docs-glob', 'docs/*,*.txt'])
+    hook(c, 'verify-merged', 'process.exit(1)\n')
+    const r = await c.runQueue(['--docs-glob', 'docs/*,*.txt'])
     assert.equal(r.code, 0, both(r))
     has(r.stdout, '1 겹침: docs/a.md')
     has(r.stdout, '문서만 바꿨다')
@@ -344,7 +361,8 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
   test('--docs-glob 은 바뀐 파일을 모두 덮어야 문서 PR 이다', async (t) => {
     const c = setup(t)
     c.branches({ 'docs/a.md': 'feat\n', 'c.py': 'c\n' }, { 'b.txt': 'b2\n' })
-    const r = await c.runQueue(['--verify-merged', 'exit 5', '--verify-merged-when', 'code', '--docs-glob', 'docs/*'])
+    hook(c, 'verify-merged', 'process.exit(5)\n')
+    const r = await c.runQueue(['--verify-merged-when', 'code', '--docs-glob', 'docs/*'])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, '검사 실패(종료 코드 5)')
   })
@@ -352,7 +370,8 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
   test('code 에서도 겹치지 않은 문서 PR 은 검사 없이 머지한다', async (t) => {
     const c = setup(t)
     c.branches({ 'README.md': 'x\n' }, { 'b.txt': 'b2\n' })
-    const r = await c.runQueue(['--verify-merged', 'exit 1', '--verify-merged-when', 'code', '--docs-glob', '*.md'])
+    hook(c, 'verify-merged', 'process.exit(1)\n')
+    const r = await c.runQueue(['--verify-merged-when', 'code', '--docs-glob', '*.md'])
     assert.equal(r.code, 0, both(r))
     assert.equal(c.merged(), true)
   })
@@ -360,27 +379,34 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
   test('always 는 문서 PR 도 검사한다', async (t) => {
     const c = setup(t)
     c.branches({ 'README.md': 'x\n' }, { 'b.txt': 'b2\n' })
-    const r = await c.runQueue(['--verify-merged', 'exit 6', '--verify-merged-when', 'always', '--docs-glob', '*.md'])
+    hook(c, 'verify-merged', 'process.exit(6)\n')
+    const r = await c.runQueue(['--verify-merged-when', 'always', '--docs-glob', '*.md'])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, '검사 실패(종료 코드 6)')
   })
 
-  test('--after-merged 의 CODE_PRS 에서 문서 PR 을 뺀다', async (t) => {
+  test('after-queue 핸들러의 code_prs 에서 문서 PR 을 뺀다', async (t) => {
     const c = setup(t)
     const seen = join(c.tmp, 'after.txt')
     c.branches({ 'docs/a.md': 'x\n' }, { 'b.txt': 'b2\n' })
-    const r = await c.runQueue(['--after-merged', `echo "$MERGED_PRS|$CODE_PRS" > ${seen}`, '--docs-glob', 'docs/*'])
+    hook(c, 'after-queue', recordInput(seen))
+    const r = await c.runQueue(['--docs-glob', 'docs/*'])
     assert.equal(r.code, 0, both(r))
-    assert.equal(readFileSync(seen, 'utf8'), '1|\n')
+    const input = JSON.parse(readFileSync(seen, 'utf8')) as Json
+    assert.deepEqual(input.merged_prs, [1])
+    assert.deepEqual(input.code_prs, [])
   })
 
-  test('--after-merged 의 CODE_PRS 에 코드 PR 이 든다', async (t) => {
+  test('after-queue 핸들러의 code_prs 에 코드 PR 이 든다', async (t) => {
     const c = setup(t)
     const seen = join(c.tmp, 'after.txt')
     c.branches({ 'docs/a.md': 'x\n', 'c.py': 'c\n' }, { 'b.txt': 'b2\n' })
-    const r = await c.runQueue(['--after-merged', `echo "$MERGED_PRS|$CODE_PRS" > ${seen}`, '--docs-glob', 'docs/*'])
+    hook(c, 'after-queue', recordInput(seen))
+    const r = await c.runQueue(['--docs-glob', 'docs/*'])
     assert.equal(r.code, 0, both(r))
-    assert.equal(readFileSync(seen, 'utf8'), '1|1\n')
+    const input = JSON.parse(readFileSync(seen, 'utf8')) as Json
+    assert.deepEqual(input.merged_prs, [1])
+    assert.deepEqual(input.code_prs, [1])
   })
 
   test('시작할 때 죽은 실행이 남긴 사본만 지운다', async (t) => {
@@ -406,8 +432,13 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'a.txt': `main\n${FIVE}` })
     const seen = join(c.tmp, 'seen.txt')
-    // 검사 명령은 사본 경로를 적고 기다린다. 그 자식은 큐가 끝난 뒤에도 출력 파이프를 쥐므로 close 대신 exit 를 기다린다
-    const args = ['--repo', c.repo, '--threads-cmd', 'echo 0', '--no-sweep', '--verify-merged', `echo "$1" > ${seen}; sleep 5`, '1']
+    // 핸들러는 사본 경로를 적고 기다린다. 그 자식은 큐가 끝난 뒤에도 출력 파이프를 쥐므로 close 대신 exit 를 기다린다
+    hook(c, 'verify-merged', [
+      "import { writeFileSync } from 'node:fs'",
+      `writeFileSync(${JSON.stringify(seen)}, process.cwd())`,
+      'setInterval(() => {}, 1000)',
+    ].join('\n'))
+    const args = ['--repo', c.repo, '--threads-cmd', 'echo 0', '--no-sweep', '1']
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], { env: c.env, stdio: 'ignore' })
     const exited = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)))
     const deadline = Date.now() + 30_000
@@ -425,7 +456,8 @@ describe('merge_queue 합친 사본 검사', { skip: !HAS_TOOLS && 'jq 와 bash 
     const c = setup(t)
     c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'a.txt': `main\n${FIVE}` })
     const seen = join(c.tmp, 'seen.txt')
-    const r = await c.runQueue(['--copy-dir', 'worktrees/repo', '--verify-merged', `echo "$1" > ${seen}`])
+    hook(c, 'verify-merged', ["import { writeFileSync } from 'node:fs'", `writeFileSync(${JSON.stringify(seen)}, process.cwd())`].join('\n'))
+    const r = await c.runQueue(['--copy-dir', 'worktrees/repo'])
     assert.equal(r.code, 0, both(r))
     assert.equal(dirname(readFileSync(seen, 'utf8').trim()), realpathSync(join(c.repo, 'worktrees', 'repo')))
   })
@@ -512,7 +544,11 @@ describe('merge_queue 와 진짜 판정 명령', { skip: !HAS_TOOLS && 'jq 와 b
     const c = setup(t)
     c.branches({ 'modules/api/A.java': 'a\n' }, { 'modules/web/W.java': 'w\n' })
     patchPr(c, { statusCheckRollup: [CI] }, 1)
-    const r = await judgeQueue(c, ['--before', pushFromAnotherClone(c, 'modules/db/D.java', 'd')])
+    hook(c, 'before-merge', [
+      "import { execFileSync } from 'node:child_process'",
+      `execFileSync('sh', ['-c', ${JSON.stringify(pushFromAnotherClone(c, 'modules/db/D.java', 'd'))}], { stdio: 'inherit' })`,
+    ].join('\n'))
+    const r = await judgeQueue(c)
     assert.equal(r.code, 0, both(r))
     has(r.stdout, '1 판정한 뒤 base(main) 가 움직였다. 새로 들어온 변경으로 다시 판정한다')
     assert.equal(count(r.stdout, '1 판정: 바로 머지'), 2, r.stdout)
@@ -534,41 +570,5 @@ describe('merge_queue 와 진짜 판정 명령', { skip: !HAS_TOOLS && 'jq 와 b
     has(r.stdout, '1 판정: 갱신 필요(단위 겹침: api)')
     assert.equal(count(c.log(), 'update-branch'), 1, c.log())
     has(c.log(), `pr merge 1 --merge --match-head-commit ${next}`)
-  })
-})
-
-describe('merge_queue 옛 칸의 작업 디렉터리', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다' }, () => {
-  test('연결된 워크트리를 --repo 로 주면 상대경로 --before 와 --after-merged 가 그 워크트리에서 돈다', async (t) => {
-    const c = setup(t)
-    c.branches({ 'a.txt': `${FIVE}feat\n` }, { 'b.txt': 'b2\n' })
-    const wt = join(c.tmp, 'wt')
-    c.git(['worktree', 'add', '-q', '-b', 'wt', wt, 'main'])
-    // 워크트리에만 있는 스크립트다. 주 checkout 에서 돌면 찾지 못해 멈춘다
-    const before = join(c.tmp, 'before.txt')
-    const after = join(c.tmp, 'after.txt')
-    writeFileSync(join(wt, 'mark-before.sh'), `pwd -P > '${before}'\n`, { mode: 0o755 })
-    writeFileSync(join(wt, 'mark-after.sh'), `pwd -P > '${after}'\n`, { mode: 0o755 })
-    const r = await spawnDone(
-      [
-        process.execPath,
-        '--disable-warning=ExperimentalWarning',
-        SCRIPT,
-        '--repo',
-        wt,
-        '--threads-cmd',
-        'echo 0',
-        '--no-sweep',
-        '--before',
-        './mark-before.sh',
-        '--after-merged',
-        './mark-after.sh',
-        '1',
-      ],
-      { env: c.env },
-    )
-    assert.equal(r.code, 0, both(r))
-    assert.equal(c.merged(), true)
-    assert.equal(readFileSync(before, 'utf8').trim(), realpathSync(wt))
-    assert.equal(readFileSync(after, 'utf8').trim(), realpathSync(wt))
   })
 })

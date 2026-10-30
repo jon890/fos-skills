@@ -88,7 +88,7 @@ if sys.argv[1:2] == ["steps"]:
 `
 
 const PATTERN = '^\\[?(PROJ-[0-9]+)'
-const COMPLETE = ['--complete', '--task-pattern', PATTERN, '--complete-cmd', 'task-cli complete {number}']
+const COMPLETE = ['--complete', '--task-pattern', PATTERN]
 
 type Json = Record<string, unknown>
 type Ctx = {
@@ -236,6 +236,10 @@ function recorder(file: string, code = 0): string {
   ].join('\n')
 }
 
+function taskCompleter(): string {
+  return "import { readFileSync } from 'node:fs'\nimport { spawnSync } from 'node:child_process'\nif (!JSON.parse(readFileSync(0, 'utf8')).last_of_task) process.exit(0)\nconst done = spawnSync('task-cli', ['complete', 'PROJ-123'], { stdio: 'inherit' })\nprocess.exit(done.status ?? 1)\n"
+}
+
 function inputs(file: string): Json[] {
   return existsSync(file)
     ? readFileSync(file, 'utf8')
@@ -250,6 +254,7 @@ const DEPLOY = ['--deploy-workflow', 'deploy.yml', '--deploy-branch', 'main']
 describe('finish-pr 흐름', { concurrency: 4 }, () => {
   test('worker 를 정리하고 배포를 기다리고 업무를 완료 처리하고 보드를 바꾼다', async (t) => {
     const c = setup(t)
+    hook(c, taskCompleter())
     const r = await c.finish([
       '--run',
       'run_1',
@@ -278,7 +283,6 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.ok(board >= 0, calls.join('\n'))
     assert.ok(calls.indexOf('task-cli complete PROJ-123') < board, calls.join('\n'))
     has(r.stdout, `배포 성공 ${c.later.slice(0, 9)}`)
-    has(r.stdout, '업무 PROJ-123 완료 처리: done complete PROJ-123')
   })
 
   test('중간 PR 은 지시서를 남긴다', async (t) => {
@@ -345,21 +349,21 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     }
   })
 
-  test('업무 완료 명령 없이 --complete 면 지시서를 지우고 업무 완료만 건너뛴다', async (t) => {
+  test('after-deploy 핸들러가 없어도 --complete 면 지시서를 지운다', async (t) => {
     const c = setup(t)
     const r = await c.finish(['--specs-dir', c.specs, '--complete'])
     assert.equal(r.code, 0, both(r))
     assert.equal(lastLine(r), 'FINISH-DONE', both(r))
-    has(r.stdout, '업무 완료 단계 건너뜀')
     lacks(r.stdout, '지시서 유지')
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
     assert.equal(existsSync(join(c.specs, 'spec-y.md')), true)
     assert.deepEqual(starting(c.calls(), 'task-cli'), [])
   })
 
-  test('중간 PR 이면 업무 완료 명령을 돌리지 않는다', async (t) => {
+  test('중간 PR 이면 after-deploy 핸들러를 업무 완료로 부르지 않는다', async (t) => {
     const c = setup(t)
-    const r = await c.finish(['--intermediate', '--task-pattern', PATTERN, '--complete-cmd', 'task-cli complete {number}'])
+    hook(c, taskCompleter())
+    const r = await c.finish(['--intermediate', '--task-pattern', PATTERN])
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(starting(c.calls(), 'task-cli'), [])
     lacks(r.stdout, 'DEPRECATED')
@@ -444,10 +448,6 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     assert.equal(r.code, 0, both(r))
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
     assert.ok(c.calls().some((line) => line.startsWith('gh run list --branch main --workflow deploy.yml')), c.calls().join('\n'))
-    // --compl 은 --complete 와 --complete-cmd 의 접두다
-    const ambiguous = await c.finish(['--compl'])
-    assert.equal(ambiguous.code, 2, both(ambiguous))
-    has(ambiguous.stderr, '여러 옵션의 접두다')
   })
 
   test('pid 파일은 도는 동안 쓰고 끝나면 지운다', async (t) => {
@@ -465,10 +465,7 @@ describe('finish-pr 사용법 오류', { concurrency: 4 }, () => {
     const c = setup(t)
     for (const extra of [
       ['--deploy-workflow', 'deploy.yml'],
-      ['--complete', '--complete-cmd', 'task-cli complete {number}'],
-      ['--complete', '--complete-cmd', 'task-cli complete', '--task-pattern', '(a)'],
-      ['--complete', '--complete-cmd', 'task-cli complete {number}', '--task-pattern', 'a'],
-      ['--complete-cmd', "task-cli 'complete {number}", '--task-pattern', '(a)'],
+      ['--complete-cmd', 'task-cli complete {number}'],
       ['--task-pattern', '('],
       ['--merge-timeout', 'soon'],
       ['--nope'],
@@ -484,19 +481,19 @@ describe('finish-pr 사용법 오류', { concurrency: 4 }, () => {
     assert.deepEqual(starting(c.calls(), 'gh '), [])
   })
 
-  test('업무 완료 명령과 hooks/after-deploy.ts 가 함께 있으면 머지를 기다리지 않고 2 로 끝난다', async (t) => {
+  test('삭제한 --complete-cmd 와 finish.complete_cmd 는 머지를 기다리지 않고 2 로 끝난다', async (t) => {
     const c = setup(t)
-    hook(c, recorder(join(c.tmp, 'in.jsonl')))
-    const r = await c.finish(COMPLETE)
+    const r = await c.finish(['--complete-cmd', 'task-cli complete {number}'])
     assert.equal(r.code, 2, both(r))
-    has(r.stderr, 'after-deploy 의 핸들러')
-    has(r.stderr, '옛 설정 칸 --complete-cmd 가 함께 있다')
+    has(r.stderr, '--complete-cmd')
     assert.deepEqual(c.calls(), [])
-    // 설정 파일의 complete_cmd 도 같다
+    // 설정 파일의 complete_cmd 는 5.0.0 에서 제거했다
     mkdirSync(join(c.repo, '.orch'), { recursive: true })
     writeFileSync(join(c.repo, '.orch', 'config.json'), JSON.stringify({ finish: { complete_cmd: 'task-cli complete {number}', task_pattern: PATTERN } }))
     const again = await c.finish(['--complete'])
     assert.equal(again.code, 2, both(again))
+    has(again.stderr, 'finish.complete_cmd')
+    has(again.stderr, 'migrate-orch-dir')
     assert.deepEqual(c.calls(), [])
   })
 })
@@ -511,7 +508,7 @@ describe('finish-pr 시간 제한 설정', { concurrency: 4 }, () => {
     assert.notEqual(none.code, 2, both(none))
     lacks(none.stderr, 'hooks.timeouts.after-deploy')
     for (const args of [COMPLETE, []]) {
-      if (args.length === 0) hook(c, recorder(join(c.tmp, 'in.jsonl')))
+      hook(c, recorder(join(c.tmp, `in-${args.length}.jsonl`)))
       const before = c.calls().length
       const r = await c.finish(args)
       assert.equal(r.code, 2, `${args.join(' ')}\n${both(r)}`)
@@ -633,13 +630,12 @@ describe('finish-pr after-deploy', { concurrency: 4 }, () => {
   test('배포가 실패하면 업무 완료 명령을 돌리지 않는다', async (t) => {
     const c = setup(t)
     c.state.runs = runs([c.merge, 'completed', 'failure'])
-    const r = await c.finish([...DEPLOY, ...COMPLETE, '--board-id', 'item-1', '--board-bin', join(c.bin, 'board.py')])
+    const r = await c.finish([...DEPLOY, '--complete', '--board-id', 'item-1', '--board-bin', join(c.bin, 'board.py')])
     assert.equal(r.code, 1, both(r))
     assert.equal(lastLine(r), 'FINISH-FAIL', both(r))
     has(r.stdout, `배포 실패 ${c.merge.slice(0, 9)}`)
     assert.deepEqual(starting(c.calls(), 'task-cli'), [])
     assert.deepEqual(starting(c.calls(), 'board'), [])
-    lacks(r.stdout, 'DEPRECATED')
   })
 
   test('핸들러가 1 로 끝나면 HOOK-FAIL 줄을 내고 보드는 done 으로 바꾸고 FINISH-FAIL 이다', async (t) => {
@@ -650,65 +646,6 @@ describe('finish-pr after-deploy', { concurrency: 4 }, () => {
     has(r.stdout, 'HOOK-FAIL after-deploy 1')
     has(r.stdout, 'after-deploy 핸들러가 실패했다')
     assert.ok(starting(c.calls(), 'board ').some((line) => line.includes('set item-1 done')), c.calls().join('\n'))
-    assert.equal(lastLine(r), 'FINISH-FAIL', both(r))
-  })
-})
-
-describe('finish-pr 업무 완료 명령(옛 칸)', { concurrency: 4 }, () => {
-  test('DEPRECATED 줄과 함께 {number} 를 바꾼 argv 를 셸 없이 돌린다', async (t) => {
-    const c = setup(t)
-    const argv = join(c.tmp, 'argv.jsonl')
-    const r = await c.finish(['--complete', '--task-pattern', '(?P<n>PROJ-[0-9]+)', '--complete-cmd', "task-cli complete {number} --note 'a b;$HOME' x{number}y"], {
-      FAKE_ARGV: argv,
-    })
-    assert.equal(r.code, 0, both(r))
-    has(r.stdout, 'DEPRECATED --complete-cmd → hooks/after-deploy.ts')
-    assert.deepEqual(inputs(argv), [['complete', 'PROJ-123', '--note', 'a b;$HOME', 'xPROJ-123y']] as unknown as Json[])
-    assert.equal(lastLine(r), 'FINISH-DONE', both(r))
-  })
-
-  test('PR 제목에서 업무 번호를 뽑는다', async (t) => {
-    const c = setup(t)
-    const cases: [string, string, string | null][] = [
-      ['[PROJ-123] 로그인 고침', PATTERN, 'PROJ-123'],
-      ['PROJ-7 fix', PATTERN, 'PROJ-7'],
-      ['번호 없는 제목', PATTERN, null],
-      ['#TEAM/449 title', '^#TEAM/([0-9]+)', '449'],
-      // 영문, 숫자, ._/- 밖의 글자가 든 번호는 받지 않는다
-      ['x; rm -rf y', '^(.*)$', null],
-    ]
-    for (const [title, pattern, number] of cases) {
-      rmSync(join(c.tmp, 'log.txt'), { force: true })
-      c.state.pr.title = title
-      const r = await c.finish(['--complete', '--task-pattern', pattern, '--complete-cmd', 'task-cli complete {number}'])
-      const tasks = starting(c.calls(), 'task-cli')
-      if (number === null) {
-        assert.equal(r.code, 1, `${title}: ${both(r)}`)
-        has(r.stdout, `PR 제목에서 업무 번호를 찾지 못했다: ${title}`)
-        assert.deepEqual(tasks, [], title)
-      } else {
-        assert.equal(r.code, 0, `${title}: ${both(r)}`)
-        assert.deepEqual(tasks, [`task-cli complete ${number}`], title)
-      }
-    }
-  })
-
-  test('업무 번호를 찾지 못해도 보드는 done 으로 바꾸고 FINISH-FAIL 이다', async (t) => {
-    const c = setup(t)
-    c.state.pr.title = '번호 없는 제목'
-    const r = await c.finish([...COMPLETE, '--board-id', 'item-1', '--board-bin', join(c.bin, 'board.py')])
-    assert.equal(r.code, 1, both(r))
-    has(r.stdout, '업무 번호를 찾지 못했다')
-    assert.equal(lastLine(r), 'FINISH-FAIL', both(r))
-    assert.ok(starting(c.calls(), 'board ').length > 0, c.calls().join('\n'))
-    assert.deepEqual(starting(c.calls(), 'task-cli'), [])
-  })
-
-  test('업무 완료 명령이 실패하면 종료 코드를 남기고 FINISH-FAIL 이다', async (t) => {
-    const c = setup(t)
-    const r = await c.finish(COMPLETE, { FAKE_EXIT_TASK_CLI: '3' })
-    assert.equal(r.code, 1, both(r))
-    has(r.stdout, '업무 PROJ-123 완료 명령이 실패했다(종료 코드 3)')
     assert.equal(lastLine(r), 'FINISH-FAIL', both(r))
   })
 })
@@ -742,8 +679,10 @@ describe('finish-pr 살아 있는 지시서', { concurrency: 4 }, () => {
 const SPEC_PATTERN = '^업무: (PROJ-[0-9]+)'
 
 describe('finish-pr 마지막 PR 판정', { concurrency: 4 }, () => {
-  const judged = (c: Ctx, extra: string[] = []) =>
-    c.finish(['--task-pattern', PATTERN, '--complete-cmd', 'task-cli complete {number}', '--specs-dir', c.specs, '--spec-task-pattern', SPEC_PATTERN, ...extra])
+  const judged = (c: Ctx, extra: string[] = []) => {
+    hook(c, taskCompleter())
+    return c.finish(['--task-pattern', PATTERN, '--specs-dir', c.specs, '--spec-task-pattern', SPEC_PATTERN, ...extra])
+  }
 
   test('같은 업무의 다른 열린 PR 이 있으면 중간 PR 이라 업무를 완료하지 않고 지시서를 남긴다', async (t) => {
     const c = setup(t)

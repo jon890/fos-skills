@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.2.0 (2026-10-30)
+
+- 호환성: 5.0.0의 major 정리에 이어 옛 설정 칸과 옵션을 지운다. `migrate-orch-dir --hooks`로 변환한다
+- 호환성: `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 설정을 지웠다
+- 호환성: `--before`, `--verify-merged`, `--after-merged`, `--complete-cmd` 옵션을 지웠다
+- `before-merge` 입력에 `has_pr_command`를 더했다. 변환한 기본 명령은 PR별 명령이나 빈 `PR:`이 있으면 건너뛴다
+
 ## 5.1.0 (2026-10-30)
 
 - `adopt-sessions` 로 살아 있는 dispatch 에서 떨어진 터미널과 지시서·PR·화면 상태를 찾고, `--apply` 로 선택한 에이전트를 새 Run 에 이어 붙인다. 기본 실행은 조회만 한다
