@@ -23,7 +23,7 @@
 //     PR 번호 뒤의 `~` 는 판정 없이 중간 PR 로 본다(`finish-pr.ts --intermediate`). 업무를 완료하지 않고 지시서를 남기며
 //     보드 항목을 done 으로 바꾸지 않는다. --board-item 으로 준 항목은 판정과 상관없이 done 으로 바꾼다.
 //     before-merge 의 last_of_task 는 `!` 일 때만 true 다. 판정은 머지와 배포 뒤에야 하기 때문이다.
-//     마지막 PR 이면 업무 완료 명령(`complete_cmd`)이 설정에 없는 저장소에서는 업무 완료만 건너뛰고 그 PR 의 지시서를 지운다.
+//     업무 완료는 hooks/after-deploy.ts 가 맡고, 마지막 PR 의 지시서는 코어가 지운다.
 //     표시와 `:명령` 은 PR 번호 바로 뒤에 `번호[!|~][:명령]` 순서로 쓴다. `!` 와 `~` 는 함께 쓸 수 없다. 머지 큐에는 표시를 뗀 인자가 넘어간다.
 //
 // 래퍼 옵션 (merge_queue.ts 에는 넘기지 않는다):
@@ -42,10 +42,7 @@
 // 값을 받는 머지 큐 옵션은 lib/queue-options.ts 의 목록이다. 그 옵션 바로 뒤의 인자는 숫자여도 PR 번호로 읽지 않는다.
 //
 // 머지 큐 기본값: --finish-config 파일(없으면 orch 작업 폴더의 config.json)의 `queue` 절을 읽어
-// 명령줄에 없는 머지 큐 옵션을 채운다. 키는 before, required, verify_merged, verify_merged_when, docs_glob, method,
-// after_merged, up_to_date_when, shared_paths, unit_prefix 이고 각각 --before, --required, --verify-merged,
-// --verify-merged-when, --docs-glob, --method, --after-merged, --up-to-date-when, --shared-paths, --unit-prefix 가 된다.
-// before, verify_merged, after_merged 는 옛 칸이라 머지 큐가 그 이벤트의 핸들러처럼 돌리고 DEPRECATED 줄을 낸다(merge_queue.ts 머리 주석).
+// 명령줄에 없는 머지 큐 옵션을 채운다. 키와 옵션의 대응은 lib/queue-options.ts 가 소유한다.
 // required 는 문자열 목록도 받아 이름마다 `--required-check` 로 넘기고(이름에 쉼표가 있어도 나뉘지 않는다), docs_glob 은 목록을 쉼표로 잇고,
 // shared_paths 는 정규식 목록도 받아 `|` 로 잇는다.
 // skipped_is_missing, update_docs_on_overlap, require_up_to_date 는 true 면 같은 이름의 옵션을 붙이는 참거짓 값이다.
@@ -57,28 +54,25 @@
 // FINISH_PR 은 lib/proc.ts 의 scriptCommand 다. MERGE_QUEUE 는 옛 명령의 규칙에 `.ts` 를 더한 것이다.
 // `.ts` 는 이 프로세스의 node, `.py` 는 python3, 그 밖(옛 merge-queue.sh 같은 것)은 bash 다
 //
-// 업무 완료 명령과 핸들러: 설정 `finish.complete_cmd` 나 --finish-arg 의 `--complete-cmd` 와 <orch 루트>/hooks/after-deploy.ts 가
-// 함께 있으면 사용법 오류로 멈추고, 마무리도 머지 큐도 걸지 않는다. 마무리는 배포를 기다린 뒤에야 이 충돌을 알아채는데,
-// 그때는 이미 머지와 정리가 끝났기 때문이다.
-// 업무 완료 명령이나 핸들러가 있으면 config.json 의 hooks.timeouts.after-deploy 값도 머지 큐를 걸기 전에 본다. 틀리면 사용법 오류다.
-// 두 검사(충돌, hooks.timeouts.after-deploy)는 --no-finish 면 하지 않는다. 마무리를 걸지 않으면 after-deploy 가 나지 않기 때문이다.
-// --finish-arg 는 finish-pr.ts 의 옵션 목록(lib/finish-options.ts)으로 펼쳐 본다. 그래서 finish-pr 이 받아들이는
-// 고유 접두(`--complete-c`)와 `--complete-cmd=값` 도 알아본다. 접두가 여러 옵션에 맞으면 사용법 오류다.
+// 마무리 인자와 hooks.timeouts.after-deploy 를 머지 큐를 걸기 전에 검사한다.
+// 마무리는 배포를 기다린 뒤에야 after-deploy 를 내므로, 그때 설정 오류를 알면 머지와 정리가 이미 끝났기 때문이다.
+// --no-finish 면 마무리가 없으므로 이 검사는 하지 않는다.
 //
 // --finish-config 없이 orch 작업 폴더를 옮기기 전인 저장소에서 부르면 옮기는 명령을 알리고 머지 큐를 걸지 않는다(종료 코드 2).
 // 옛 설정을 읽지 않으므로 그대로 걸면 머지 전 명령(DB 백업 같은 것)과 필수 체크가 경고 없이 빠진다.
 //
-// 종료 코드: merge_queue.ts 의 종료 코드. 2 는 사용법 오류(설정 파일 오류, 업무 완료 명령과 핸들러가 함께 있음 포함)이거나
+// 종료 코드: merge_queue.ts 의 종료 코드. 2 는 사용법 오류(설정 파일 오류나 삭제한 옵션 포함)이거나
 //           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다
 
 import { spawn } from 'node:child_process'
 import { closeSync, openSync, readFileSync } from 'node:fs'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, QUEUE_KEYS, section } from './lib/config.ts'
 import type { Config } from './lib/config.ts'
-import { checkLegacy, eventTimeoutSec, handlerFile } from './lib/events.ts'
+import { eventTimeoutSec, handlerFile } from './lib/events.ts'
 import { FINISH_OPTIONS } from './lib/finish-options.ts'
 import { isFile, real } from './lib/fs.ts'
 import { makeParent, pathOf, requireMigrated } from './lib/paths.ts'
@@ -91,7 +85,6 @@ const HERE = dirname(SCRIPT)
 // 문자열 목록도 받는 queue 키와 목록을 잇는 구분자. 키와 옵션의 대응은 lib/queue-options.ts 의 QUEUE_VALUES 들이다
 const QUEUE_LISTS: Readonly<Record<string, string>> = { docs_glob: ',', shared_paths: '|' }
 const PR_SPEC = /^(\d+)([!~]?)(:.*)?$/s
-const LEGACY_KEY = '--complete-cmd'
 
 class Usage extends Error {}
 
@@ -163,6 +156,9 @@ function splitArgs(argv: string[]): { wrapper: Wrapper; queue: string[]; prs: Pr
     const arg = argv[i]
     const eq = arg.indexOf('=')
     const name = eq >= 0 ? arg.slice(0, eq) : arg
+    if (['--before', '--verify-merged', '--after-merged'].includes(name)) {
+      throw new Usage(`${name} 은 orch 5.1.0 에서 삭제했다. hooks/ 의 이벤트 핸들러로 옮긴다`)
+    }
     const inline = eq >= 0 ? arg.slice(eq + 1) : null
     // `--옵션=값` 이면 그 값, 아니면 다음 인자. 다음 인자가 없으면 null 이다
     const value = (): string | null => {
@@ -267,20 +263,13 @@ function queueDefaults(path: string, queue: string[], config: Config): string[] 
   return extra
 }
 
-// 마무리에 업무 완료 명령이 가는가. 설정의 finish.complete_cmd 나 --finish-arg 의 --complete-cmd 다. 없으면 null.
-// --finish-arg 는 finish-pr 이 읽는 대로 옵션 이름을 펼친 뒤 본다. `--` 뒤는 finish-pr 이 옵션으로 읽지 않으므로 보지 않는다
-function completeCommandSource(wrapper: Wrapper, config: Config): string | null {
-  let expanded: string[]
+// 마무리 인자가 잘못됐으면 머지나 마무리를 시작하기 전에 멈춘다.
+function validateFinishArgs(wrapper: Wrapper): void {
   try {
-    expanded = expandArgs(wrapper.finishArg, FINISH_OPTIONS)
+    parseArgs({ args: expandArgs(wrapper.finishArg, FINISH_OPTIONS), options: FINISH_OPTIONS, allowPositionals: true })
   } catch (e) {
     throw new Usage(`--finish-arg: ${(e as Error).message}`)
   }
-  const end = expanded.indexOf('--')
-  const options = end >= 0 ? expanded.slice(0, end) : expanded
-  if (options.some((arg) => arg === LEGACY_KEY || arg.startsWith(`${LEGACY_KEY}=`))) return `--finish-arg 의 ${LEGACY_KEY}`
-  const value = config.finish?.complete_cmd
-  return typeof value === 'string' && value ? 'finish.complete_cmd' : null
 }
 
 // 새 세션으로 띄워 이 명령이 끝나도 마무리가 이어 돌게 한다. 프로세스가 시작되면 null, 띄우지 못하면 이유다
@@ -363,10 +352,9 @@ async function main(argv: string[]): Promise<number> {
     const path = configPath(wrapper)
     config = loadConfig(wrapper.repo, wrapper.finishConfig ? { file: wrapper.finishConfig } : {})
     if (!wrapper.noFinish) {
-      const source = completeCommandSource(wrapper, config)
-      if (source) checkLegacy('after-deploy', wrapper.repo, source)
+      validateFinishArgs(wrapper)
       // 마무리는 배포를 기다린 뒤에야 after-deploy 를 낸다. 시간 제한 값이 틀린 것을 머지 큐를 걸기 전에 알린다
-      if (source || handlerFile('after-deploy', wrapper.repo)) eventTimeoutSec('after-deploy', wrapper.repo)
+      if (handlerFile('after-deploy', wrapper.repo)) eventTimeoutSec('after-deploy', wrapper.repo)
     }
     const lastOfTask = prs.filter((pr) => pr.mark === '!').flatMap((pr) => ['--last-of-task', pr.number])
     queue = [...lastOfTask, ...scopeSweep(wrapper, [...queueDefaults(path, parsed.queue, config), ...parsed.queue])]

@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.1.0 (2026-10-30)
+
+- 호환성: 5.0.0의 major 정리에 이어 옛 설정 칸과 옵션을 지운다. `migrate-orch-dir --hooks`로 변환한다
+- 호환성: `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 설정을 지웠다
+- 호환성: `--before`, `--verify-merged`, `--after-merged`, `--complete-cmd` 옵션을 지웠다
+
 ## 5.0.0 (2026-10-30)
 
 - 호환성: `orch/scripts` 의 `orch-doctor.py`, `ts_shim.py` 외의 옛 `.py` 진입점과 `merge-queue.sh` 를 지웠다. 명령은 `"$SKILL_DIR/bin/orch.ts" <이름>` 이나 같은 이름의 `.ts` 로 부른다

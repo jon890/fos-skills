@@ -7,7 +7,6 @@
 
 export const QUEUE_VALUE_OPTIONS: readonly string[] = [
   '--repo',
-  '--before',
   '--method',
   '--threads-cmd',
   '--check-timeout',
@@ -20,11 +19,9 @@ export const QUEUE_VALUE_OPTIONS: readonly string[] = [
   '--shared-paths',
   '--unit-prefix',
   '--unit-group',
-  '--verify-merged',
   '--verify-merged-when',
   '--docs-glob',
   '--copy-dir',
-  '--after-merged',
   '--sweep-arg',
   '--last-of-task',
   '--chain',
@@ -32,13 +29,10 @@ export const QUEUE_VALUE_OPTIONS: readonly string[] = [
 
 // queue 절의 값을 받는 키와 머지 큐 옵션
 export const QUEUE_VALUES: Readonly<Record<string, string>> = {
-  before: '--before',
   required: '--required',
-  verify_merged: '--verify-merged',
   verify_merged_when: '--verify-merged-when',
   docs_glob: '--docs-glob',
   method: '--method',
-  after_merged: '--after-merged',
   up_to_date_when: '--up-to-date-when',
   shared_paths: '--shared-paths',
   unit_prefix: '--unit-prefix',

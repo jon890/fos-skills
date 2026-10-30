@@ -338,23 +338,22 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     const c = setup(t)
     c.writeConfig({
       finish: {},
-      queue: { required: ['ci', 'lint'], verify_merged: 'cd "$1" && make test', verify_merged_when: 'code', docs_glob: ['docs/*', '*.md'], method: 'squash', before: 'true' },
+      queue: { required: ['ci', 'lint'], verify_merged_when: 'code', docs_glob: ['docs/*', '*.md'], method: 'squash' },
     })
     const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
     assert.equal(r.code, 0, both(r))
     const [line] = await c.lines('queue')
-    for (const part of ['--required-check ci --required-check lint', '--verify-merged cd "$1" && make test', '--verify-merged-when code', '--docs-glob docs/*,*.md', '--method squash', '--before true']) {
+    for (const part of ['--required-check ci --required-check lint', '--verify-merged-when code', '--docs-glob docs/*,*.md', '--method squash']) {
       has(line, part)
     }
     assert.ok(line.endsWith(`--repo ${c.tmp} 449`), line)
   })
 
-  test('after_merged 와 참거짓 키', async (t) => {
+  test('참거짓 키', async (t) => {
     const c = setup(t)
-    c.writeConfig({ queue: { after_merged: 'bash deploy.sh', skipped_is_missing: true } })
+    c.writeConfig({ queue: { skipped_is_missing: true } })
     await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
     let [line] = await c.lines('queue')
-    has(line, '--after-merged bash deploy.sh')
     has(line, '--skipped-is-missing')
     c.reset()
     c.writeConfig({ queue: { skipped_is_missing: false } })
@@ -475,12 +474,11 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     const repo = join(c.tmp, 'repo')
     assert.equal(spawnSync('git', ['init', '-q', repo]).status, 0)
     mkdirSync(join(repo, '.orch'))
-    writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ queue: { required: ['ci'], before: 'true' } }))
+    writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ queue: { required: ['ci'] } }))
     const r = await c.wrap(['--repo', repo, '449!'], {}, { logDir: false })
     assert.equal(r.code, 0, both(r))
     const [line] = await c.lines('queue')
     has(line, '--required-check ci')
-    has(line, '--before true')
     assert.equal(existsSync(join(repo, '.orch', 'queue', 'finish-449.out')), true)
     assert.ok(readFileSync(join(repo, '.git', 'info', 'exclude'), 'utf8').split('\n').includes('/.orch/'))
     assert.equal(existsSync(join(repo, '.omc')), false)
@@ -496,35 +494,31 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     has(r.stderr, 'migrate-orch-dir.ts')
     assert.equal(existsSync(c.logFile), false)
     r = await c.wrap(['--repo', c.tmp, '--finish-config', old, '--no-finish', '449'])
-    assert.equal(r.code, 0, both(r))
-    has((await c.lines('queue'))[0], '--before ./backup.sh')
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'queue.before')
+    has(r.stderr, 'migrate-orch-dir')
   })
 
-  test('finish.complete_cmd 와 hooks/after-deploy.ts 가 함께 있으면 마무리도 머지 큐도 걸지 않고 2 로 끝난다', async (t) => {
+  test('삭제한 finish.complete_cmd 가 있으면 마무리도 머지 큐도 걸지 않고 2 로 끝난다', async (t) => {
     const c = setup(t)
-    hook(c.tmp, 'after-deploy')
     c.writeConfig({ finish: { complete_cmd: 'task-cli complete {number}', task_pattern: '(PROJ-[0-9]+)' } })
-    let r = await c.wrap(['--repo', c.tmp, '449!'])
+    const r = await c.wrap(['--repo', c.tmp, '449!'])
     assert.equal(r.code, 2, both(r))
-    has(r.stderr, 'after-deploy 의 핸들러')
-    has(r.stderr, '옛 설정 칸 finish.complete_cmd 가 함께 있다')
-    c.writeConfig({})
-    r = await c.wrap(['--repo', c.tmp, '--finish-arg=--complete-cmd', '--finish-arg', 'task-cli complete {number}', '449!'])
-    assert.equal(r.code, 2, both(r))
-    has(r.stderr, '옛 설정 칸 --finish-arg 의 --complete-cmd 가 함께 있다')
+    has(r.stderr, 'finish.complete_cmd')
+    has(r.stderr, 'migrate-orch-dir')
     await sleep(300)
     assert.equal(existsSync(c.logFile), false)
     assert.equal(existsSync(c.logs), false)
   })
 
-  test('--no-finish 면 업무 완료 명령과 hooks/after-deploy.ts 가 함께 있어도 머지 큐를 건다', async (t) => {
+  test('--no-finish 이어도 삭제한 finish.complete_cmd 가 있으면 머지 큐를 걸지 않는다', async (t) => {
     const c = setup(t)
     hook(c.tmp, 'after-deploy')
     c.writeConfig({ finish: { complete_cmd: 'task-cli complete {number}', task_pattern: '(PROJ-[0-9]+)' } })
     const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449!'])
-    assert.equal(r.code, 0, both(r))
-    lacks(r.stderr, '함께 있다')
-    assert.deepEqual(await c.lines('queue'), [`queue --last-of-task 449 --repo ${c.tmp} 449`])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'finish.complete_cmd')
+    has(r.stderr, 'migrate-orch-dir')
     await sleep(300)
     assert.deepEqual(await c.lines('finish ', 0), [])
   })
@@ -541,27 +535,30 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     assert.equal(existsSync(c.logFile), false, '머지 큐도 마무리도 돌면 안 된다')
   })
 
-  test('--finish-arg 의 줄여 쓴 --complete-cmd 도 hooks/after-deploy.ts 와 함께 있으면 2 로 끝난다', async (t) => {
+  test('삭제한 --complete-cmd 를 --finish-arg 로 넘기면 사용법 오류다', async (t) => {
     const c = setup(t)
-    hook(c.tmp, 'after-deploy')
-    // finish-pr 은 고유 접두를 온 이름으로 읽으므로 이것들도 업무 완료 명령이다
     for (const given of [
-      ['--finish-arg=--complete-c', '--finish-arg', 'task-cli complete {number}'],
-      ['--finish-arg=--complete-c=task-cli complete {number}'],
+      ['--finish-arg=--complete-cmd', '--finish-arg', 'task-cli complete {number}'],
+      ['--finish-arg=--complete-cmd=task-cli complete {number}'],
     ]) {
       const r = await c.wrap(['--repo', c.tmp, ...given, '449!'])
       assert.equal(r.code, 2, `${given.join(' ')}\n${both(r)}`)
-      has(r.stderr, '옛 설정 칸 --finish-arg 의 --complete-cmd 가 함께 있다')
+      has(r.stderr, '--complete-cmd')
     }
-    // 여러 옵션의 접두인 --comp 는 사용법 오류이고, --complete 는 온 이름이라 업무 완료 명령이 아니다
-    let r = await c.wrap(['--repo', c.tmp, '--finish-arg=--comp', '449'])
-    assert.equal(r.code, 2, both(r))
-    has(r.stderr, '--comp 이 여러 옵션의 접두다')
     await sleep(300)
     assert.equal(existsSync(c.logFile), false, '사용법 오류에서는 머지 큐도 마무리도 돌면 안 된다')
-    r = await c.wrap(['--repo', c.tmp, '--finish-arg=--complete', '449'])
-    assert.equal(r.code, 0, both(r))
-    assert.deepEqual(await c.lines('queue'), ['queue --repo ' + c.tmp + ' 449'])
+  })
+
+  test('삭제한 큐 옵션은 마무리와 머지 큐를 시작하기 전에 거부한다', async (t) => {
+    const c = setup(t)
+    for (const option of ['--before', '--verify-merged', '--after-merged']) {
+      const r = await c.wrap(['--repo', c.tmp, option, 'true', '449!'])
+      assert.equal(r.code, 2, `${option}\n${both(r)}`)
+      has(r.stderr, option)
+      has(r.stderr, 'hooks/')
+      lacks(r.stdout, '마무리 시작')
+      assert.equal(existsSync(c.logFile), false, `${option}: 머지 큐나 마무리를 실행하면 안 된다`)
+    }
   })
 })
 
@@ -690,26 +687,28 @@ describe('merge-with-finish 와 머지 큐 이벤트', { skip: !HAS_TOOLS && 'jq
     return env
   }
 
-  test('queue.before 와 hooks/before-merge.ts 가 함께 있으면 2 로 끝나고 머지하지 않는다', async (t) => {
+  test('삭제한 queue.before 가 있으면 2 로 끝나고 머지하지 않는다', async (t) => {
     const c = setup(t)
     const env = realQueue(c)
     c.writeConfig({ queue: { before: 'true' } })
     hook(c.tmp, 'before-merge')
     const r = await spawnDone([...NODE, '--repo', c.tmp, '--no-finish', '--threads-cmd', 'echo 0', '1'], { cwd: c.tmp, env })
     assert.equal(r.code, 2, both(r))
-    has(r.stderr, '옛 설정 칸 --before 가 함께 있다')
+    has(r.stderr, 'queue.before')
+    has(r.stderr, 'migrate-orch-dir')
     lacks(readFileSync(c.logFile, 'utf8'), 'pr merge')
   })
 
-  test('queue.after_merged 만 있으면 DEPRECATED 줄과 함께 옛 명령이 MERGED_PRS 를 받는다', async (t) => {
+  test('삭제한 queue.after_merged 가 있으면 머지 큐를 걸지 않는다', async (t) => {
     const c = setup(t)
     const env = realQueue(c)
     const seen = join(c.tmp, 'after.txt')
     c.writeConfig({ queue: { after_merged: `echo "$MERGED_PRS" > ${seen}` } })
     const r = await spawnDone([...NODE, '--repo', c.tmp, '--no-finish', '--threads-cmd', 'echo 0', '1'], { cwd: c.tmp, env })
-    assert.equal(r.code, 0, both(r))
-    has(r.stdout, 'DEPRECATED --after-merged → hooks/after-queue.ts')
-    assert.equal(readFileSync(seen, 'utf8'), '1\n')
-    has(readFileSync(c.logFile, 'utf8'), 'pr merge 1')
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'queue.after_merged')
+    has(r.stderr, 'migrate-orch-dir')
+    assert.equal(existsSync(seen), false)
+    lacks(readFileSync(c.logFile, 'utf8'), 'pr merge 1')
   })
 })

@@ -37,17 +37,16 @@
 
 입력 필드의 표는 `orch/scripts/lib/events.ts` 머리 주석이 소유한다. 「공통 필드」 와 「이벤트별 필드」 가 그것이다.
 
-옛 셸 명령의 환경 변수와 입력 필드의 대응이다. 옮기는 명령(`migrate-orch-dir.ts --hooks`)이 만드는 핸들러는 이 대응대로 옛 명령에 환경 변수를 채워 부른다.
+5.1.0 전 설정의 환경 변수와 입력 필드 대응이다. `migrate-orch-dir.ts --hooks`가 만드는 핸들러는 이 대응대로 이전 설정의 명령에 환경 변수를 채워 부른다.
 
 | 옛 칸 | 이벤트 | 옛 환경 변수 → 입력 필드 |
 | --- | --- | --- |
-| `queue.before`, 명령줄 `--before` | `before-merge` | `PR` → `pr.number`, `BRANCH` → `pr.branch`, `OWNER` → `owner`, `REPO` → `name` |
-| `queue.verify_merged`, 명령줄 `--verify-merged` | `verify-merged` | `$1`, `MERGE_COPY` → `copy`, `PR_HEAD` → `pr.head`, `BASE_HEAD` → `base_head`, `CHANGED_FILES` → `changed_files`, `OVERLAP_FILES` → `overlap_files` |
-| `queue.after_merged`, 명령줄 `--after-merged` | `after-queue` | `MERGED_PRS` → `merged_prs`, `CODE_PRS` → `code_prs` |
-| `finish.complete_cmd`, 명령줄 `--complete-cmd` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다. 정규식은 `finish.task_pattern` 을 옮겨 적고 설정의 그 칸은 남긴다 |
+| `queue.before` | `before-merge` | `PR` → `pr.number`, `BRANCH` → `pr.branch`, `OWNER` → `owner`, `REPO` → `name` |
+| `queue.verify_merged` | `verify-merged` | `$1`, `MERGE_COPY` → `copy`, `PR_HEAD` → `pr.head`, `BASE_HEAD` → `base_head`, `CHANGED_FILES` → `changed_files`, `OVERLAP_FILES` → `overlap_files` |
+| `queue.after_merged` | `after-queue` | `MERGED_PRS` → `merged_prs`, `CODE_PRS` → `code_prs` |
+| `finish.complete_cmd` | `after-deploy` | `{number}` 은 핸들러가 `pr.title` 에서 뽑는다. 정규식은 `finish.task_pattern` 을 옮겨 적고 설정의 그 칸은 남긴다 |
 
 명령줄의 `PR번호:명령` 형식은 그대로 둔다. 그 PR 하나에만 붙이는 일회성 명령이라 핸들러로 옮기지 않는다. `before-merge` 핸들러 다음에 돈다.
-명령줄 `--before` 가 있으면 그 PR 에서는 `PR번호:명령` 이 대신한다.
 
 ## 사용자 결정 질문 형식
 
@@ -98,21 +97,19 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `migrations` | `before` | 모듈 이름에서 셸 명령으로. `*` 는 나머지 모듈의 명령이고 `{module}` 을 모듈 이름으로 바꾼다 | 없음(머지 전 명령을 붙이지 않는다) | 마이그레이션이 든 PR 을 자동 머지할 때 붙일 머지 전 명령(DB 백업). 모듈이 여럿이면 ` && ` 로 잇는다. 이 키가 있는데 규칙이 없는 모듈의 PR 은 걸지 않는다. 명령은 `merge_queue.ts` 의 `PR:명령` 처럼 돈다 |
 | `migrations` | `blocked_after_sec` | 양수 | 3600 | 같은 모듈에 더 낮은 번호를 더한 열린 PR 이나 PR 이 없는 다른 브랜치의 예약(`state/migration-reservations.json`) 때문에 기다린 시간이 이 값을 넘으면 `MIGRATION-BLOCKED` 를 한 번 낸다 |
 
-다음 major 에서 지우는 키다. 그때까지는 읽되 `DEPRECATED` 줄을 낸다.
-
-| 키 | 옮길 곳 |
-| --- | --- |
-| `queue.before` | `hooks/before-merge.ts` |
-| `queue.verify_merged` | `hooks/verify-merged.ts`. 사본을 만들 조건 `queue.verify_merged_when` 은 남는다 |
-| `queue.after_merged` | `hooks/after-queue.ts` |
-| `finish.complete_cmd` | `hooks/after-deploy.ts`. `finish.task_pattern` 은 마지막 PR 판정이 읽어 남는다 |
+orch 5.1.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
+`finish.complete_cmd`와 대응 명령줄 옵션 `--before`, `--verify-merged`,
+`--after-merged`, `--complete-cmd`를 받지 않는다. 일반 런타임 명령은 남은 설정을
+사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로
+알린다. worker와 머지 큐가 끝난 뒤 `migrate-orch-dir.ts --hooks --apply`로 이벤트
+핸들러로 옮긴다. `queue.verify_merged_when`과 `finish.task_pattern`은 계속 쓴다.
 
 ## orch 루트에 더하는 파일
 
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
 | `hooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
-| `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. 옛 설정 칸 실행의 `handler` 는 `legacy:<키>` 다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
+| `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
 | `state/hooks/<이벤트>.lock` | 핸들러 잠금 | 실행이 끝나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다 |
 | `state/loop.json` | 상주 루프의 상태. `pid`, `run`(주 Run id 또는 null), `repo`, `tick_sec`, `started_at`, `alive_at`(생존 타이머가 쓴 마지막 시각), `runs`(마지막 틱이 본 등록된 Run id 목록. 앞이 주 Run 이다. 이 키가 없으면 Run 등록을 모르는 옛 루프다), `bound_run`(루프 프로세스가 묶인 Run id. Orca 는 호출자를 그 프로세스가 나온 터미널로 정한다. 묶이지 않았으면 null 이고, 시작할 때 `run-current` 를 읽지 못했으면 키가 없다. `--start` 는 이 값이 합류하려는 Run 과 다르거나 키가 없으면 합류하지 않는다), `last_tick`(마지막으로 끝난 틱의 시각 또는 null), `ticks`, `errors`(출처마다 마지막 오류 이유 또는 null. 키는 `<출처>@<Run>` 이고, 저장소 공유 일의 출처(`prs`, `board`, `ci`, `auto-merge`, `conflicts`, `tick`)는 Run 자리에 주 Run 을 둔다. Run 이 없는 루프는 출처 이름 그대로다), `ci`(PR 번호에서 `{ head, state }`. `head` 는 판정한 HEAD SHA, `state` 는 `passed`, `failed`, `pending`), `stalls`(dispatch id 에서 `{ run, terminal, state, hash, errors, since, ticks, fired }`. `state` 는 `error` 나 `idle`, `hash` 는 마지막 메시지 묶음과 화면의 오류 줄 수로 만든 해시, `errors` 는 그 멈춤에서 본 가장 많은 오류 줄 수, `since` 는 그 상태를 처음 본 시각(같은 상태에서 hash 만 바뀌면 그대로다), `ticks` 는 같은 상태와 같은 hash 를 본 틱 수, `fired` 는 `worker-stalled` 를 냈는지. 오류 줄 수가 `errors` 보다 늘 때만 다시 false 가 된다). 시각은 ISO 8601 UTC 다 | 루프의 부모 프로세스만 옆 파일에 쓴 뒤 rename 으로 덮어쓴다. 같은 실패를 두 번 알리지 않는 데 쓴다. `ci` 는 같은 HEAD 의 같은 상태를, `stalls` 는 같은 멈춤을 두 번 알리지 않는 데 쓴다 |
 | `state/loop.lock` | 한 저장소에 루프 하나. 쥔 루프의 pid | 루프가 끝나면 푼다. 죽은 pid 와 루프가 아닌 프로세스의 pid 가 든 잠금은 다음 루프가 회수한다 |

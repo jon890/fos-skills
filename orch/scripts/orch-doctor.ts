@@ -38,9 +38,9 @@
 //
 // 저장소 판정(--repo):
 //     <orch 루트>/hooks/ 바로 아래의 .ts 가운데 이벤트 이름이 아닌 파일은 UNKNOWN-HOOK 이다(lib/events.ts 의 unknownHandlers).
-//     <orch 루트>/config.json 에 다음 major 에서 지울 옛 칸(lib/config.ts 의 DEPRECATED_KEYS)이 있으면 DEPRECATED-CONFIG 다.
+//     <orch 루트>/config.json 에 5.1.0 에서 지운 옛 칸이 있으면 INVALID-CONFIG 와 종료 코드 1 이다.
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
-//     둘 다 경고라 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
+//     UNKNOWN-HOOK 과 깨진 JSON 경고는 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
 // 설치 기록 판정(늘 본다):
 //     `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에 적힌 모든 플러그인의 installPath 가 실제로 있는지 본다.
@@ -90,7 +90,7 @@
 //     MISSING <문서>:<줄> <경로>                 문서가 부르는 스크립트가 없다
 //     OK-SCRIPTS <개수>                          문서가 부르는 스크립트가 모두 있다
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
-//     DEPRECATED-CONFIG <절>.<키> → hooks/<이벤트>.ts   옛 설정 칸
+//     INVALID-CONFIG <이유>                       삭제한 옛 설정 칸
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
 //     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초(ORCH_QUESTIONS_TIMEOUT_SEC) 안에 답하지 않은 경우도 여기다
 //     PLUGIN-PATH-MISSING <플러그인> <scope> <경로>   설치 기록의 installPath 가 없다. 이어서 현재 설정 폴더에 같은 상대 경로가 있으면 그 경로,
@@ -102,8 +102,8 @@
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, HOOK-FAIL 줄은 있을 수 있다)
-//     1  STALE, MISSING 이나 UNANSWERED 가 있다
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, HOOK-FAIL 줄은 있을 수 있다)
+//     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
@@ -115,7 +115,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { ConfigError, DEPRECATED_KEYS, loadConfig } from './lib/config.ts'
+import { ConfigError, RemovedConfigError, loadConfig } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
@@ -321,14 +321,11 @@ function checkInstallPaths(configDir: string): string[] {
 function checkRepo(repo: string): string[] {
   const lines = unknownHandlers(repo).map((file) => `UNKNOWN-HOOK ${file}`)
   try {
-    const config = loadConfig(repo)
-    for (const { section, key, event } of DEPRECATED_KEYS) {
-      const values = config[section]
-      if (values && Object.hasOwn(values, key)) lines.push(`DEPRECATED-CONFIG ${section}.${key} → hooks/${event}.ts`)
-    }
+    loadConfig(repo)
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e
-    process.stderr.write(`orch-doctor: 설정 파일의 옛 칸을 보지 못했다: ${e.message}\n`)
+    if (e instanceof RemovedConfigError) lines.push(`INVALID-CONFIG ${e.message}`)
+    else process.stderr.write(`orch-doctor: 설정 파일의 옛 칸을 보지 못했다: ${e.message}\n`)
   }
   return lines
 }
@@ -508,7 +505,7 @@ async function main(argv: string[]): Promise<number> {
       process.stderr.write(`orch-doctor: session-resume 을 내지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
     }
   }
-  return Math.max(version.code, scripts.code, questions.code)
+  return Math.max(version.code, scripts.code, questions.code, repoLines.some((line) => line.startsWith('INVALID-CONFIG')) ? 1 : 0)
 }
 
 main(process.argv.slice(2)).then(
