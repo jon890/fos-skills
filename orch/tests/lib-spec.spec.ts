@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
-import { BRANCH_LINE, branchesOf, deleteSpecs, liveSpecPaths, permissionsOf, specCandidates } from '../scripts/lib/spec.ts'
+import { BRANCH_LINE, branchesOf, deleteSpecs, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
@@ -76,6 +76,18 @@ describe('permissionsOf', () => {
   test('허락 줄 여러 개를 마침표로 끝낸 문구로 낸다', () => {
     const text = ['허락: push 를 허락했다.', '- **허락:** PR 을 연다', '* 허락 :  draft 로 둔다  ', '허락받지 않은 줄'].join('\n')
     assert.deepEqual(permissionsOf(text), ['push 를 허락했다.', 'PR 을 연다.', 'draft 로 둔다.'])
+  })
+})
+
+describe('selectionsOf', () => {
+  test('백틱 값의 첫째를 에이전트, 둘째를 모델로 읽고 effort 뒤의 값은 effort 로 뺀다', () => {
+    const text = '# 일\n- **worker 선택:** effort `high` 로 `claude` `claude-opus-5-5` 를 고른다. 비교: `gpt-6.1-sol`. 이유: 계약 설계다.\n'
+    assert.deepEqual(selectionsOf(text), [{ no: 2, agent: 'claude', model: 'claude-opus-5-5', effort: 'high', problems: [] }])
+  })
+
+  test('빠진 요소를 problems 에 적고 선택 줄이 아닌 줄은 건너뛴다', () => {
+    const text = 'worker 선택 이유는 아래에 적는다\nworker 선택: `codex`\n'
+    assert.deepEqual(selectionsOf(text), [{ no: 2, agent: 'codex', model: null, effort: null, problems: ['모델', 'effort', '비교', '이유'] }])
   })
 })
 

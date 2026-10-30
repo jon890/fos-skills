@@ -32,6 +32,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
 **`launch-worker` 는 워크트리를 만들기 전에 `spec-lint` 로 그 지시서를 검사한다.** 함께 넘기는 것은 같은 폴더에서 살아 있는 dispatch 가 쓰는 지시서라, 먼저 띄운 지시서와 담당 경로가 겹치는 지시서는 나중에 띄울 때 막힌다. 막을 발견이 있으면 발견 줄을 내고 종료 코드 5 로 멈춘다. 지시서를 고치는 것이 기본이다.
 의도한 겹침(두 PR 이 같은 플러그인 버전 줄을 고치는 것 같은 것)만 `--lint-ack "<이유>"` 로 넘긴다. 이유는 출력의 `lint-ack:` 줄과 그 worker 의 기록(`state/launched-workers/<dispatch>.json` 의 `lint_ack`)에 남는다. 이유 없이 끄는 옵션은 없다. 활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다.
+**`launch-worker` 는 지시서의 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md))과 `--agent`, `--model` 을 대조한다.** 줄이 없거나, 요소가 빠졌거나, 값이 다르거나, 둘 가운데 하나를 넘기지 않으면 orca 를 부르기 전에 종료 코드 1 로 거부한다. `--terminal` 로 이어 쓰면 보지 않는다.
 **`--agent codex` 의 `--model`, `--effort` 는 워크트리를 만들기 전에 `codex debug models` 로 검사한다.** 없는 모델이나 그 모델이 지원하지 않는 effort 면 종료 코드 4 로 멈추고 쓸 수 있는 값을 낸다.
 조회가 실패하거나 claude(모델 목록을 내는 명령이 없다)면 경고만 내고 띄운다. `worker-start` 를 직접 부르는 예외 호출은 이 검사를 거치지 않으니 모델을 `agent-selection.md` 의 명령으로 먼저 확인한다.
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.

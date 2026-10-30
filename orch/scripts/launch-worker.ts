@@ -4,7 +4,10 @@
 //     launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)
 //         [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] -- WORKER_ARGS...
 //
-//     --spec           지시서. spec-line 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 거부한다
+//     --spec           지시서. spec-line 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 거부한다.
+//                      `worker 선택:` 줄(형식은 lib/spec.ts 의 selectionsOf)이 없거나 빠진 요소가 있거나, 그 줄의 에이전트, 모델이
+//                      WORKER_ARGS 의 --agent, --model 과 다르면 거부한다. 둘 가운데 하나를 빠뜨려도 거부한다.
+//                      --terminal 로 이어 쓰면 처음 띄울 때의 선택을 쓰므로 보지 않는다. --lint-ack 으로 넘길 수 없다
 //     --lint-ack       spec-lint 가 막을 발견을 냈지만 의도한 것이라 넘기는 이유. 이유 없이 넘기는 옵션은 없다(빈 값은 사용법 오류).
 //                      이유는 `lint-ack: <이유>` 줄로 출력하고 띄운 worker 의 기록(lib/launched.ts 의 lint_ack)에 남긴다
 //     --repo, --name   새 워크트리를 make-worktree 로 만든다. --base, --resume-remote 는 make-worktree 에 넘긴다
@@ -16,10 +19,12 @@
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
 //
 // 차례:
-//     0. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
+//     0. --terminal 이 아니면 지시서의 `worker 선택:` 줄을 --agent, --model 과 대조한다. 어긋나면 1 이다
+//     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     1. spec-line --require-permission 으로 첫 지시 줄을 만든다
 //     1-1. spec-lint 로 이 지시서를 검사한다. 함께 넘기는 활성 지시서는 살아 있는 dispatch(pending, dispatched, running)가 쓰는 지시서
 //        가운데 이 지시서와 같은 폴더에 있는 것이다(lib/spec.ts 의 liveSpecPaths. 이 지시서 자신과 spec-common.md 는 뺀다).
+//        활성 지시서는 --active 로 넘겨 선택 검사를 하지 않는다. 이미 띄운 worker 의 지시서가 새 띄우기를 막지 않게 한다.
 //        띄울 지시서끼리 겹치는 것은 먼저 띄운 쪽이 활성이 된 뒤 나중 지시서를 띄울 때 잡힌다. 아직 안 띄운 지시서는 보지 않는다.
 //        spec-lint 가 1 로 끝나면(막을 발견) 워크트리를 만들기 전에 발견 줄을 내고 5 로 멈춘다. --lint-ack 이 있으면 이유와 함께 넘긴다.
 //        활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다. spec-lint 가 1 이 아닌 코드로 끝나도(저장소를 읽지 못함 같은 것) 경고만 하고 진행한다
@@ -62,7 +67,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
 
-import { statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -81,7 +86,7 @@ import { requireMigrated } from './lib/paths.ts'
 import { runAsync, scriptCommand } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
-import { liveSpecPaths } from './lib/spec.ts'
+import { liveSpecPaths, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)',
@@ -227,7 +232,7 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
   if (live === null) err('경고: 활성 지시서를 읽지 못해 이 지시서 하나만 검사한다(다른 지시서와의 겹침은 보지 못한다)')
   const specsDir = realPath(dirname(specPath))
   const others = [...(live ?? [])].filter((file) => file !== realPath(specPath) && dirname(file) === specsDir && basename(file) !== 'spec-common.md' && isFile(file))
-  const done = await runAsync(scriptCommand(process.env.SPEC_LINT || `${HERE}/spec-lint.ts`, ['--repo', repo, specPath, ...others]))
+  const done = await runAsync(scriptCommand(process.env.SPEC_LINT || `${HERE}/spec-lint.ts`, ['--repo', repo, ...others.flatMap((file) => ['--active', file]), specPath]))
   if (done.code !== 1) {
     if (done.code !== 0) err(`경고: spec-lint 가 종료 코드 ${done.code} 로 끝나 검사하지 못했다: ${done.stderr.trim().split('\n').pop() ?? ''}`)
     return { stop: null, acked: null }
@@ -239,6 +244,27 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
   }
   out(`lint-ack: ${a.lintAck}`)
   return { stop: null, acked: a.lintAck }
+}
+
+// 지시서의 worker 선택 줄과 WORKER_ARGS 를 대조한다. 머리 주석의 「0」. 어긋나면 거부 문구, 맞으면 null 이다.
+// 지시서를 읽지 못하면 null 이다. 그 실패는 다음 단계의 spec-line 이 사용법 오류로 알린다.
+function selectionReject(specPath: string, passthru: string[]): string | null {
+  let text: string
+  try {
+    text = readFileSync(specPath, 'utf8')
+  } catch {
+    return null
+  }
+  const [selection] = selectionsOf(text)
+  if (!selection) return `지시서에 \`worker 선택:\` 줄이 없다. 비교한 후보와 고른 이유를 적는다(agent-selection.md). 형식: ${SELECTION_FORMAT}`
+  if (selection.problems.length > 0) return `지시서 ${selection.no}번 줄의 \`worker 선택:\` 에 ${selection.problems.join(', ')} 가 빠졌다. 형식: ${SELECTION_FORMAT}`
+  const mismatched: string[] = []
+  for (const [name, want] of [['--agent', selection.agent], ['--model', selection.model]] as const) {
+    const given = passValue(passthru, name)
+    if (given !== want) mismatched.push(`${name} ${given ?? '(없음)'}, 지시서 ${want}`)
+  }
+  if (mismatched.length === 0) return null
+  return `지시서 ${selection.no}번 줄의 \`worker 선택:\` 과 띄우는 값이 다르다: ${mismatched.join('; ')}. 지시서를 고치거나 그 값으로 띄운다`
 }
 
 function isDir(target: string): boolean {
@@ -318,6 +344,13 @@ async function main(argv: string[]): Promise<number> {
   if (passthru.includes('--terminal') && reuseOpts.length > 0) {
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
+  }
+  if (!passthru.includes('--terminal')) {
+    const rejected = selectionReject(a.spec, passthru)
+    if (rejected) {
+      err(`거부: ${rejected}`)
+      return 1
+    }
   }
   const settings = checkLaunchSettings({ agent: passValue(passthru, '--agent'), model: passValue(passthru, '--model'), effort: passValue(passthru, '--effort') })
   for (const warning of settings.warnings) err(`경고: ${warning}`)

@@ -55,9 +55,11 @@ beforeEach(() => {
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-// 제목 경고가 다른 검사의 출력에 섞이지 않게 끝에 제목 줄을 둔다. 줄 번호는 그대로다
+// 제목 경고와 선택 발견이 다른 검사의 출력에 섞이지 않게 끝에 제목 줄과 선택 줄을 둔다. 줄 번호는 그대로다
+const SELECTED = 'worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: CI 리뷰가 Claude 다.'
+
 function spec(name: string, text: string): string {
-  return write(join(specs, `${name}.md`), `${text}\n# ${name}\n`)
+  return write(join(specs, `${name}.md`), `${text}\n# ${name}\n${SELECTED}\n`)
 }
 
 function overlay(text: string): string {
@@ -164,12 +166,12 @@ describe('지시서 검사', () => {
   })
 
   test('제목 줄도 보드 항목 id 도 없으면 고르는 순서와 첫 줄 예시를 경고한다', () => {
-    const bare = write(join(specs, 'spec-bare.md'), '공통 지시서를 먼저 읽는다.\n\n## 할 일\n- 고친다\n')
+    const bare = write(join(specs, 'spec-bare.md'), `공통 지시서를 먼저 읽는다.\n\n## 할 일\n- 고친다\n${SELECTED}\n`)
     const r = run(['--repo', repo, bare])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /^spec-bare\.md:1: 제목: .*업무 연결 줄의 제목, `## 목표` 첫 문장, id 순으로 고른다\. 첫 줄 예: `# .+`$/m)
     assert.match(r.stderr, /제목 경고 1건/)
-    const named = write(join(specs, 'spec-named.md'), '공통 지시서를 먼저 읽는다.\n보드 항목 id: `chart`\n')
+    const named = write(join(specs, 'spec-named.md'), `공통 지시서를 먼저 읽는다.\n보드 항목 id: \`chart\`\n${SELECTED}\n`)
     assert.deepEqual(lint([named]), { code: 0, stdout: '' })
   })
 
@@ -188,6 +190,28 @@ describe('지시서 검사', () => {
     assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 `ready-status`, `done-after-merged` 가 없다/m)
     assert.match(r.stderr, /공통 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)
+  })
+
+  test('선택 줄이 없거나 빠진 요소가 있거나 둘이면 막는다', () => {
+    const none = write(join(specs, 'spec-none.md'), '# 일\n')
+    const partial = write(join(specs, 'spec-partial.md'), '# 일\n- **worker 선택:** `claude` `claude-opus-5-5` 로 고른다\n')
+    const twice = write(join(specs, 'spec-twice.md'), `# 일\n${SELECTED}\n${SELECTED}\n`)
+    const r = lint([none, partial, twice])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /spec-none\.md:1: 선택: `worker 선택:` 줄이 없다\. 형식: worker 선택: `<에이전트>`/)
+    assert.match(r.stdout, /spec-partial\.md:2: 선택: effort, 비교, 이유 가 빠졌다/)
+    assert.match(r.stdout, /spec-twice\.md:3: 선택: `worker 선택:` 줄이 둘 이상이다/)
+    assert.equal(count(r.stdout, ': 선택: '), 3, r.stdout)
+  })
+
+  test('--active 로 넘긴 이미 띄운 지시서는 선택 줄을 보지 않고 겹침은 본다', () => {
+    const launched = write(join(specs, 'spec-old.md'), '# 앞 일\n담당: `src/net/**`\n')
+    const fresh = spec('spec-new', '담당: `src/net/retry.ts`\n')
+    const r = run(['--repo', repo, '--active', launched, fresh])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /겹침/)
+    assert.doesNotMatch(r.stdout, /선택:/)
+    assert.equal(run(['--repo', repo, '--active', launched, spec('spec-ui', '담당: `src/ui/**`\n')]).code, 0)
   })
 
   test('없는 지시서는 사용법 오류다', () => {
