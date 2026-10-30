@@ -232,35 +232,34 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     has(r.stdout, '1 MERGED')
   })
 
-  test('--after-merged 는 머지한 PR 로 한 번 돈다', async (t) => {
+  test('after-queue 핸들러는 머지한 PR 로 한 번 돈다', async (t) => {
     const c = setup(t)
     const seen = join(c.tmp, 'after.txt')
-    const r = await c.runQueue({ '1': pr(), '2': pr(), '3': pr({ state: 'MERGED' }) }, [
-      '--after-merged',
-      `echo "$MERGED_PRS|$CODE_PRS" >> ${seen}`,
-      '1',
-      '2',
-      '3',
-    ])
+    hook(c, 'after-queue', recorder(seen))
+    const r = await c.runQueue({ '1': pr(), '2': pr(), '3': pr({ state: 'MERGED' }) }, ['1', '2', '3'])
     assert.equal(r.code, 0, both(r))
-    assert.equal(readFileSync(seen, 'utf8'), '1 2|1 2\n')
+    assert.deepEqual(inputs(seen)[0].merged_prs, [1, 2])
+    assert.deepEqual(inputs(seen)[0].code_prs, [1, 2])
   })
 
-  test('뒤 PR 이 보류로 멈춰도 앞서 머지한 PR 의 --after-merged 는 돈다', async (t) => {
+  test('뒤 PR 이 보류로 멈춰도 앞서 머지한 PR 의 after-queue 핸들러는 돈다', async (t) => {
     const c = setup(t)
     const seen = join(c.tmp, 'after.txt')
-    const r = await c.runQueue({ '1': pr(), '2': pr({ statusCheckRollup: FAILED }) }, ['--after-merged', `echo "$MERGED_PRS" > ${seen}`, '1', '2'])
+    hook(c, 'after-queue', recorder(seen))
+    const r = await c.runQueue({ '1': pr(), '2': pr({ statusCheckRollup: FAILED }) }, ['1', '2'])
     assert.equal(r.code, 1, both(r))
-    assert.equal(readFileSync(seen, 'utf8'), '1\n')
+    assert.deepEqual(inputs(seen)[0].merged_prs, [1])
   })
 
-  test('머지한 PR 이 없으면 --after-merged 를 건너뛰고, 그 실패는 종료 코드 3 이다', async (t) => {
+  test('머지한 PR 이 없으면 after-queue 핸들러를 건너뛰고, 그 실패는 종료 코드 3 이다', async (t) => {
     const c = setup(t)
     const seen = join(c.tmp, 'after.txt')
-    let r = await c.runQueue({ '1': pr({ state: 'MERGED' }) }, ['--after-merged', `touch ${seen}`, '1'])
+    hook(c, 'after-queue', recorder(seen))
+    let r = await c.runQueue({ '1': pr({ state: 'MERGED' }) }, ['1'])
     assert.equal(r.code, 0, both(r))
     assert.equal(existsSync(seen), false)
-    r = await c.runQueue({ '1': pr() }, ['--after-merged', 'exit 7', '1'])
+    hook(c, 'after-queue', 'process.exit(7)\n')
+    r = await c.runQueue({ '1': pr() }, ['1'])
     assert.equal(r.code, 3, both(r))
     has(r.stdout, 'AFTER-MERGED-FAILED 7')
     has(r.stdout, '1 MERGED')
@@ -277,16 +276,17 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
 
   test('머지 전 명령이 실패하면 멈춘다', async (t) => {
     const c = setup(t)
-    // --before 는 before-merge 의 옛 칸이라 실패가 HOOK-FAIL 이다
-    let r = await c.runQueue({ '1': pr() }, ['--before', 'exit 3', '1'])
+    hook(c, 'before-merge', 'process.exit(3)\n')
+    const r = await c.runQueue({ '1': pr() }, ['1'])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'HOOK-FAIL before-merge 3')
     has(r.stdout, 'STOP 1 HOOK-FAIL')
     lacks(c.log(), 'pr merge')
-    r = await c.runQueue({ '1': pr() }, ['1:exit 3'])
-    assert.equal(r.code, 1, both(r))
-    has(r.stdout, 'STOP 1 머지 전 명령 실패')
-    lacks(c.log(), 'pr merge')
+    const next = setup(t)
+    const second = await next.runQueue({ '1': pr() }, ['1:exit 3'])
+    assert.equal(second.code, 1, both(second))
+    has(second.stdout, 'STOP 1 머지 전 명령 실패')
+    lacks(next.log(), 'pr merge')
   })
 
   test('이미 MERGED 인 PR 은 건너뛰고 fork PR 의 브랜치는 지우지 않는다', async (t) => {
@@ -682,12 +682,8 @@ describe('merge_queue --up-to-date-when overlap', { skip: !HAS_TOOLS && 'jq 와 
   test('바로 머지로 판정한 뒤 머지 직전에 base 가 움직이면 멈추지 않고 다시 판정해 머지한다', async (t) => {
     const c = setup(t)
     fakeOverlapUnits(c, '바로 머지', 0)
-    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('backend')] }), _behind: 2 }, [
-      ...UP_TO_DATE_OVERLAP,
-      '--before',
-      editStateCmd(c, { _base_head: 'moved', _behind: 3 }),
-      '1',
-    ])
+    hook(c, 'before-merge', stateHook(c, { _base_head: 'moved', _behind: 3 }))
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('backend')] }), _behind: 2 }, [...UP_TO_DATE_OVERLAP, '1'])
     assert.equal(r.code, 0, both(r))
     has(r.stdout, '1 판정한 뒤 base(main) 가 움직였다. 새로 들어온 변경으로 다시 판정한다')
     assert.equal(count(r.stdout, '1 판정: 바로 머지'), 2, r.stdout)
@@ -698,12 +694,8 @@ describe('merge_queue --up-to-date-when overlap', { skip: !HAS_TOOLS && 'jq 와 
   test('최신이라 판정 없이 지나갔어도 그 뒤 base 가 움직이면 다시 판정한다', async (t) => {
     const c = setup(t)
     fakeOverlapUnits(c, '바로 머지', 0)
-    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('backend')] }), _behind: 0 }, [
-      ...UP_TO_DATE_OVERLAP,
-      '--before',
-      editStateCmd(c, { _base_head: 'moved', _behind: 3 }),
-      '1',
-    ])
+    hook(c, 'before-merge', stateHook(c, { _base_head: 'moved', _behind: 3 }))
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('backend')] }), _behind: 0 }, [...UP_TO_DATE_OVERLAP, '1'])
     assert.equal(r.code, 0, both(r))
     has(r.stdout, '1 판정한 뒤 base(main) 가 움직였다. 새로 들어온 변경으로 다시 판정한다')
     assert.equal(judgedCount(c), 1)
@@ -716,7 +708,8 @@ describe('merge_queue --up-to-date-when overlap', { skip: !HAS_TOOLS && 'jq 와 
     const c = setup(t)
     fakeOverlapUnits(c, '갱신 필요(단위 겹침: api)', 1, [['바로 머지', 0]])
     const p = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })
-    const r = await c.runQueue({ '1': p, _behind: 0 }, [...UP_TO_DATE_OVERLAP, '--before', editStateCmd(c, { _base_head: 'moved', _behind: 3 }), '1'])
+    hook(c, 'before-merge', stateHook(c, { _base_head: 'moved', _behind: 3 }))
+    const r = await c.runQueue({ '1': p, _behind: 0 }, [...UP_TO_DATE_OVERLAP, '1'])
     assert.equal(r.code, 0, both(r))
     assert.equal(count(c.log(), 'update-branch'), 1, c.log())
     has(c.log(), 'pr merge 1 --merge --match-head-commit new')
@@ -725,12 +718,8 @@ describe('merge_queue --up-to-date-when overlap', { skip: !HAS_TOOLS && 'jq 와 
   test('base 조회가 실패하면 움직인 것으로 읽지 않고 멈춘다', async (t) => {
     const c = setup(t)
     fakeOverlapUnits(c, '바로 머지', 0)
-    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('backend')] }), _behind: 2 }, [
-      ...UP_TO_DATE_OVERLAP,
-      '--before',
-      editStateCmd(c, { _ls_remote_fails: true }),
-      '1',
-    ])
+    hook(c, 'before-merge', stateHook(c, { _ls_remote_fails: true }))
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('backend')] }), _behind: 2 }, [...UP_TO_DATE_OVERLAP, '1'])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'STOP 1 base 조회 실패')
     lacks(r.stdout, '다시 판정한다')
@@ -745,7 +734,8 @@ describe('merge_queue --up-to-date-when overlap', { skip: !HAS_TOOLS && 'jq 와 
       ['바로 머지', 0],
     ])
     const p = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })
-    const r = await c.runQueue({ '1': p, _behind: 2 }, [...UP_TO_DATE_OVERLAP, '--before', editStateCmd(c, { _base_head: 'moved', _behind: 3 }), '1'])
+    hook(c, 'before-merge', stateHook(c, { _base_head: 'moved', _behind: 3 }))
+    const r = await c.runQueue({ '1': p, _behind: 2 }, [...UP_TO_DATE_OVERLAP, '1'])
     assert.equal(r.code, 0, both(r))
     assert.equal(count(c.log(), 'update-branch'), 1, c.log())
     has(c.log(), 'pr merge 1 --merge --match-head-commit new')
@@ -874,15 +864,26 @@ describe('merge_queue --allow-fail 과 사용법 오류', { skip: !HAS_TOOLS && 
     }
   })
 
-  test('--verify-merged-when 과 --docs-glob 은 --verify-merged 가 있어야 한다', async (t) => {
+  test('--verify-merged-when 과 --docs-glob 은 verify-merged 핸들러가 있어야 한다', async (t) => {
     const c = setup(t)
     for (const args of [['--verify-merged-when', 'code'], ['--verify-merged-when', 'always'], ['--docs-glob', '*.md']]) {
       const r = await c.runQueue({}, [...args, '1'])
       assert.equal(r.code, 2, `${args.join(' ')}\n${both(r)}`)
-      has(r.stderr, '--verify-merged 와 함께 쓴다')
+      has(r.stderr, 'hooks/verify-merged.ts')
     }
-    const r = await c.runQueue({}, ['--verify-merged', 'true', '--verify-merged-when', 'sometimes', '1'])
+    hook(c, 'verify-merged', 'process.exit(0)\n')
+    const r = await c.runQueue({}, ['--verify-merged-when', 'sometimes', '1'])
     assert.equal(r.code, 2, both(r))
+  })
+
+  test('삭제한 legacy hook CLI 옵션은 사용법 오류다', async (t) => {
+    const c = setup(t)
+    for (const option of ['--before', '--verify-merged', '--after-merged']) {
+      const r = await c.runQueue({ '1': pr() }, [option, 'true', '1'])
+      assert.equal(r.code, 2, `${option}\n${both(r)}`)
+      has(r.stderr, `모르는 옵션: ${option}`)
+      lacks(c.log(), 'pr merge')
+    }
   })
 })
 
@@ -996,6 +997,16 @@ function hook(c: Ctx, event: string, body: string): void {
   writeFileSync(join(dir, `${event}.ts`), body)
 }
 
+function stateHook(c: Ctx, fields: Json): string {
+  return [
+    "import { readFileSync, writeFileSync } from 'node:fs'",
+    `const file = ${JSON.stringify(c.stateFile)}`,
+    "const state = JSON.parse(readFileSync(file, 'utf8'))",
+    `Object.assign(state, ${JSON.stringify(fields)})`,
+    "writeFileSync(file, JSON.stringify(state))",
+  ].join('\n')
+}
+
 // 받은 입력을 file 에 한 줄씩 덧붙이고 code 로 끝나는 핸들러 본문
 function recorder(file: string, code = 0, reason = ''): string {
   return [
@@ -1065,25 +1076,6 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     lacks(c.log(), 'pr merge')
   })
 
-  test('--before 와 hooks/before-merge.ts 가 함께 있으면 머지하지 않고 2 로 끝난다', async (t) => {
-    const c = setup(t)
-    hook(c, 'before-merge', recorder(join(c.tmp, 'in.jsonl')))
-    const r = await c.runQueue({ '1': pr() }, ['--before', 'true', '1'])
-    assert.equal(r.code, 2, both(r))
-    has(r.stderr, 'before-merge 의 핸들러')
-    has(r.stderr, '옛 설정 칸 --before 가 함께 있다')
-    lacks(c.log(), 'pr merge')
-  })
-
-  test('--after-merged 와 hooks/after-queue.ts 가 함께 있으면 첫 PR 을 머지하기 전에 2 로 끝난다', async (t) => {
-    const c = setup(t)
-    hook(c, 'after-queue', recorder(join(c.tmp, 'in.jsonl')))
-    const r = await c.runQueue({ '1': pr() }, ['--after-merged', 'true', '1'])
-    assert.equal(r.code, 2, both(r))
-    has(r.stderr, '옛 설정 칸 --after-merged 가 함께 있다')
-    lacks(c.log(), 'pr merge')
-  })
-
   test('큐가 낼 이벤트의 hooks.timeouts 값이 틀리면 첫 머지 전에 2 로 끝난다', async (t) => {
     const c = setup(t)
     hook(c, 'after-merge', recorder(join(c.tmp, 'in.jsonl')))
@@ -1092,31 +1084,6 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     assert.equal(r.code, 2, both(r))
     has(r.stderr, 'hooks.timeouts.after-merge 는 양수(초)여야 한다')
     lacks(c.log(), 'pr merge')
-  })
-
-  test('큐 도중 설정 오류로 멈추면 앞에서 머지한 PR 의 머지 뒤 명령만 돌리고 정리는 부르지 않고 2 로 끝난다', async (t) => {
-    const c = setup(t)
-    const after = join(c.tmp, 'after.txt')
-    // 첫 PR 을 머지한 뒤 before-merge 핸들러를 만든다. 둘째 PR 의 --before 와 함께 있어 설정 오류가 된다
-    const handler = join(c.tmp, '.orch', 'hooks', 'before-merge.ts')
-    hook(c, 'after-merge', `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(handler)}, 'process.exit(0)\\n')\n`)
-    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, [
-      '--before',
-      'true',
-      '--after-merged',
-      `echo "$MERGED_PRS" > ${after}`,
-      '--continue-on-hold',
-      '1',
-      '2',
-    ])
-    assert.equal(r.code, 2, both(r))
-    has(r.stderr, '옛 설정 칸 --before 가 함께 있다')
-    has(c.log(), 'pr merge 1')
-    lacks(c.log(), 'pr merge 2')
-    assert.equal(readFileSync(after, 'utf8'), '1\n')
-    // 보류로 멈출 때와 같이 정리는 부르지 않는다
-    assert.equal(existsSync(c.sweepLog), false)
-    lacks(r.stdout, 'QUEUE-')
   })
 
   test('pipeline.authors 가 문자열이면 머지하지 않고 2 로 끝난다', async (t) => {
@@ -1128,32 +1095,21 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     lacks(c.log(), 'pr merge')
   })
 
-  test('옛 칸 --before 는 DEPRECATED 줄과 함께 PR, BRANCH, OWNER, REPO, GH_HOST 를 받는다', async (t) => {
+  test('PR:명령 은 해당 PR의 머지 전에 돈다', async (t) => {
     const c = setup(t)
     const seen = join(c.tmp, 'before.txt')
-    const r = await c.runQueue({ '1': pr() }, ['--before', `echo "$PR $BRANCH $OWNER $REPO $GH_HOST" > ${seen}`, '1'])
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, [`1:echo "Y $PR" >> ${seen}`, '2'])
     assert.equal(r.code, 0, both(r))
-    has(r.stdout, 'DEPRECATED --before → hooks/before-merge.ts')
-    assert.equal(readFileSync(seen, 'utf8'), '1 feat owner repo git.example.com\n')
+    assert.equal(readFileSync(seen, 'utf8'), 'Y 1\n')
   })
 
-  test('콜론 뒤가 빈 PR: 는 그 PR 에서 --before 를 끄고 다른 PR 에는 --before 가 돈다', async (t) => {
+  test('before-merge 의 has_pr_command 는 PR별 명령과 빈 PR:을 대체로 표시한다', async (t) => {
     const c = setup(t)
-    const seen = join(c.tmp, 'before.txt')
-    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, ['--before', `echo "X $PR" >> ${seen}`, '1:', '2'])
+    const seen = join(c.tmp, 'input.jsonl')
+    hook(c, 'before-merge', recorder(seen))
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }), '3': pr({ headRefName: 'c' }) }, ['1', '2:true', '3:'])
     assert.equal(r.code, 0, both(r))
-    assert.equal(readFileSync(seen, 'utf8'), 'X 2\n')
-    assert.equal(count(r.stdout, 'DEPRECATED --before'), 1, r.stdout)
-    has(c.log(), 'pr merge 1')
-    has(c.log(), 'pr merge 2')
-  })
-
-  test('PR:명령 은 그 PR 에서 --before 를 대신한다', async (t) => {
-    const c = setup(t)
-    const seen = join(c.tmp, 'before.txt')
-    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'b' }) }, ['--before', `echo "X $PR" >> ${seen}`, `1:echo "Y $PR" >> ${seen}`, '2'])
-    assert.equal(r.code, 0, both(r))
-    assert.equal(readFileSync(seen, 'utf8'), 'Y 1\nX 2\n')
+    assert.deepEqual(inputs(seen).map((input) => [input.pr.number, input.has_pr_command]), [[1, false], [2, true], [3, true]])
   })
 
   test('hooks/before-merge.ts 와 PR:명령 이 있으면 핸들러 다음에 그 명령이 돈다', async (t) => {
@@ -1165,10 +1121,11 @@ describe('merge_queue 이벤트', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요�
     assert.equal(readFileSync(seen, 'utf8'), 'H\nY\n')
   })
 
-  test('hooks.timeouts.before-merge 를 넘긴 옛 칸 --before 는 HOOK-FAIL timeout 으로 멈춘다', async (t) => {
+  test('hooks.timeouts.before-merge 를 넘긴 핸들러는 HOOK-FAIL timeout 으로 멈춘다', async (t) => {
     const c = setup(t)
     config(c, { hooks: { timeouts: { 'before-merge': 1 } } })
-    const r = await c.runQueue({ '1': pr() }, ['--before', 'sleep 5', '1'])
+    hook(c, 'before-merge', 'setInterval(() => {}, 1000)\n')
+    const r = await c.runQueue({ '1': pr() }, ['1'])
     assert.equal(r.code, 1, both(r))
     has(r.stdout, 'HOOK-FAIL before-merge timeout')
     has(r.stdout, 'STOP 1 HOOK-FAIL')

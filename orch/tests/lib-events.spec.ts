@@ -184,13 +184,6 @@ writeFileSync('received.json', JSON.stringify({ input: JSON.parse(readFileSync(0
     assert.equal(existsSync(lockFile(repo, 'before-cleanup')), false)
   })
 
-  test('핸들러와 legacy 가 함께 있으면 ConfigError 이고 실행하지 않는다', async () => {
-    const repo = makeRepo()
-    handler(repo, 'before-merge', `require('node:fs').writeFileSync('ran', '')\n`)
-    const { ctx: c } = ctx(repo, { legacy: { key: 'queue.before', argv: ['true'], env: {} } })
-    await assert.rejects(fire('before-merge', {}, c), ConfigError)
-    assert.equal(existsSync(join(repo, 'ran')), false)
-  })
 
   test('hooks.timeouts 에 모르는 이벤트나 양수가 아닌 값이 있으면 ConfigError 다', async () => {
     const repo = makeRepo()
@@ -241,7 +234,7 @@ describe('unknownHandlers', () => {
   })
 })
 
-describe('핸들러 환경과 legacy', () => {
+describe('핸들러 환경', () => {
   const DUMP = `const e = process.env
 console.log(JSON.stringify({ PATH: e.PATH, ORCA: e.ORCA, GH: e.GH, ORCH_REAL_ORCA: e.ORCH_REAL_ORCA ?? null, ORCH_REAL_GH: e.ORCH_REAL_GH ?? null, ORCH_EVENT: e.ORCH_EVENT, ORCH_REPO: e.ORCH_REPO, ORCH_DIR: e.ORCH_DIR }))
 `
@@ -317,21 +310,7 @@ console.log(JSON.stringify({ merge: merge.status, view: view.status, out: view.s
     )
   })
 
-  test('핸들러 없이 legacy 만 주면 DEPRECATED 줄을 내고 legacy.env 가 보이며 시간 제한을 넘기면 timeout 이다', async () => {
-    const repo = makeRepo()
-    timeouts(repo, { 'after-queue': 1 })
-    const argv = [process.execPath, '-e', 'console.log("값=" + process.env.LEGACY_X + " " + process.env.ORCA); console.error("오류 줄"); setInterval(() => {}, 1000)']
-    const { ctx: c, lines } = ctx(repo, { legacy: { key: 'queue.after_merged', argv, env: { LEGACY_X: 'legacy-value', ORCA: '/override/orca' } } })
-    const r = await fire('after-queue', { merged_prs: [1] }, c)
-    assert.equal(r.result, 'timeout')
-    assert.equal(r.code, null)
-    assert.equal(lines[0], 'DEPRECATED queue.after_merged → hooks/after-queue.ts')
-    assert.ok(lines.includes(PREFIXED('after-queue', `값=legacy-value ${join(GUARD, 'orca')}`)), `legacy.env 가 안 보이거나 ORCA 가 덮였다: ${lines.join('\n')}`)
-    assert.ok(lines.includes(PREFIXED('after-queue', '오류 줄')))
-    assert.equal(lines.at(-1), 'HOOK-FAIL after-queue timeout')
-    const [entry] = log(repo)
-    assert.deepEqual([entry.handler, entry.result, entry.exit], ['legacy:queue.after_merged', 'timeout', null])
-  })
+
 })
 
 describe('시간 제한', { concurrency: true }, () => {

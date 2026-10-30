@@ -179,7 +179,7 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 | `--shared-paths` 에서 빠진 루트 파일 | 접두 밖 파일은 파일 경로 자체가 단위라 같은 파일을 고칠 때만 겹친다. 루트에서 모듈이 함께 쓰는 파일을 모두 적는다 |
 | 너무 넓은 `--docs-glob`(`*.md` 가 문서 빌드나 doctest 가 읽는 파일일 때) | 문서 glob 은 코드가 읽지 않는 경로로 좁힌다 |
 | 판정한 base 를 마지막으로 확인한 때와 머지 API 를 부르는 때 사이의 짧은 틈 | 막을 수 없다. `--match-head-commit` 은 PR HEAD 만 지키고 base 는 지키지 않는다. 이 틈에 들어온 변경은 머지 뒤 안전망으로 잡는다 |
-| 합친 사본 검사(`--verify-merged`)를 도는 사이 base 가 움직였다 | 놓치지 않고 `STOP <PR> 검사하는 동안 base(<브랜치>) 가 움직였다. 다시 돌린다` 로 멈춘다. 같은 인자로 다시 걸면 새 base 로 검사한다 |
+| `hooks/verify-merged.ts`가 합친 사본을 검사하는 사이 base 가 움직였다 | 놓치지 않고 `STOP <PR> 검사하는 동안 base(<브랜치>) 가 움직였다. 다시 돌린다` 로 멈춘다. 같은 인자로 다시 걸면 새 base 로 검사한다 |
 
 **머지 뒤 안전망.** `overlap` 으로 합친 상태가 깨져도 PR 쪽 CI 는 알 수 없다. 이미 있는 확인은 `finish-pr.ts` 의 배포 워크플로 성공 대기(`--deploy-workflow`)뿐이다. 머지 커밋의 배포 실행이 실패하면 `FINISH-FAIL` 로 알린다. 배포 워크플로가 없는 저장소에는 머지 뒤 base CI 를 보는 단계가 없다.
 깨진 조합을 막으려면 `verify_merged_when: code` 를 `overlap` 과 함께 둬 합친 사본에서 컴파일과 영향받는 모듈의 테스트를 돌린다. 이 경우 CI 재대기는 줄지만 로컬 검사 시간은 든다.
@@ -222,7 +222,7 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 | 옵션 | 겹치면 | 쓰는 때 |
 | --- | --- | --- |
 | `--stop-on-overlap` | `STOP <PR> 겹침: <파일>` 로 멈춘다 | 합친 상태를 코디네이터가 따로 확인한다 |
-| `--verify-merged CMD` | `origin/<base>` 에 PR HEAD 를 merge 한 임시 사본에서 `CMD` 를 돌려 0 이면 머지한다 | 오버레이가 검사 명령을 정해 두었다 |
+| `hooks/verify-merged.ts` | `origin/<base>` 에 PR HEAD 를 merge 한 임시 사본에서 핸들러가 0으로 끝나면 머지한다 | 오버레이가 핸들러의 검사 명령을 정해 둔다 |
 
 **파일이 겹치지 않아도 합치면 깨질 수 있다.** 두 PR 이 각자 통과했지만 합치니 같은 상한을 함께 넘은 일이 있었다.
 그런 저장소는 오버레이가 `--verify-merged-when code` 를 정한다. 문서만 바꾼 PR 까지 검사하려면 `always` 다. 기본 `overlap` 은 겹칠 때만 검사한다.
@@ -233,14 +233,14 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 
 합친 사본 검사가 실패하면 그 PR 을 만든 worker 가 이어 받아 기준 브랜치를 merge 하고 고친다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」). rebase 와 force push 는 쓰지 않는다.
 
-`CMD` 가 받는 인자와 환경 변수, 사본을 두는 폴더(`--copy-dir`)는 `merge_queue.ts` 머리 주석이 소유한다.
+핸들러 입력과 환경 변수, 사본을 두는 폴더(`--copy-dir`)는 `merge_queue.ts` 머리 주석이 소유한다.
 검증 명령은 실행할 테스트 파일이 실제로 있는지 확인해야 한다.
 사본 생성과 머지까지 하는 저장소 스크립트가 이미 있으면 그 전체를 넘기지 않는다. 검증 부분만 넘기며 사본 생성, 충돌 검사, HEAD 대조와 머지는 큐가 한다.
 저장소 hook 이 `worktrees/` 밖의 워크트리를 막으면 오버레이가 허용된 폴더를 정한다.
-`$VERIFY_CMD` 와 `$COPY_DIR` 은 오버레이의 값이다.
+`$COPY_DIR` 은 오버레이의 값이고, 검증 명령은 `hooks/verify-merged.ts` 에 둔다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --verify-merged "$VERIFY_CMD" --copy-dir "$COPY_DIR" 101 102
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --copy-dir "$COPY_DIR" 101 102
 ```
 
 ### draft 때 건너뛴 필수 체크
@@ -251,19 +251,18 @@ ready 로 바꾼 직후 새 실행이 붙기 전에 머지 큐가 그 체크를 
 
 ### 머지 뒤 명령
 
-머지한 뒤 한 번 돌릴 명령이 있으면 `--after-merged CMD` 로 준다. 머지 뒤 배포를 Actions 가 아니라 로컬 스크립트로 하는 저장소가 예다.
-문서 PR 만 머지했을 때 배포를 건너뛰려면 명령이 `CODE_PRS` 를 본다. 환경 변수와 실패 처리는 `merge_queue.ts` 머리 주석이 소유한다.
-`$AFTER_CMD` 는 오버레이의 값이다.
+머지한 뒤 한 번 돌릴 명령은 `hooks/after-queue.ts` 에 둔다. 머지 뒤 배포를 Actions 가 아니라 로컬 스크립트로 하는 저장소가 예다.
+문서 PR 만 머지했을 때 배포를 건너뛰려면 핸들러가 `code_prs` 입력을 본다. 입력과 실패 처리는 `merge_queue.ts` 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --docs-glob 'docs/*,*.md' --after-merged "$AFTER_CMD" 101 102
+"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --docs-glob 'docs/*,*.md' 101 102
 ```
 
 저장소의 검증과 배포 명령은 그 저장소의 오버레이가 소유한다.
 
 ### 머지 전 명령
 
-PR 마다 머지 직전에 돌릴 명령이 있으면 `PR번호:명령` 으로 준다. 모든 PR 에 같은 명령이면 `--before` 로 준다.
+PR 마다 머지 직전에 돌릴 명령은 `PR번호:명령` 으로 준다. 모든 PR 에 같은 명령은 `hooks/before-merge.ts` 에 둔다.
 환경 변수와 종료 코드는 `merge_queue.ts` 머리 주석이 소유한다.
 
 DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하는 것이 대표적인 예다.

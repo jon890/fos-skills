@@ -15,12 +15,12 @@
 | 공통 지시서 위치 | `templates/spec-common.md` 를 채운 파일 경로 | 2 |
 | 검증 명령 | worker 와 코디네이터가 돌릴 포맷, lint, 테스트 명령 | 2, 6 |
 | 머지 조건 | 필수 체크 이름(`--required` 로 넘길 값), base 최신을 품게 할지(`--require-up-to-date`), 관리자 우회 가능 여부, 머지 방식(merge, squash) | 7 |
-| 합친 사본 검사 | 같은 파일을 고친 PR 을 base 와 합친 사본에서 돌릴 명령(`--verify-merged`)과 사본 폴더(`--copy-dir`), 겹치지 않아도 검사할지(`--verify-merged-when`), 검사 없이 머지할 문서 glob(`--docs-glob`). 폴더는 저장소 hook 이 워크트리를 허용하는 곳이다 | 6, 7 |
+| 합친 사본 검사 | 같은 파일을 고친 PR 을 base 와 합친 사본에서 돌릴 `hooks/verify-merged.ts`, 사본 폴더(`--copy-dir`), 겹치지 않아도 검사할지(`--verify-merged-when`), 검사 없이 머지할 문서 glob(`--docs-glob`). 폴더는 저장소 hook 이 워크트리를 허용하는 곳이다 | 6, 7 |
 | draft 로 CI 미루기 | draft PR 에서 CI 를 돌리지 않는 저장소인지. 켜면 worker 는 PR 을 draft 로 열고, 코디네이터가 검증 뒤 `ci-ready.ts` 로 ready 로 바꾼다 | 2, 7 |
 | 무거운 검사 분류 | 같은 PC 에서 혼자 돌아야 하는 전체 검사와 브라우저 검사 명령, 대기열을 거치지 않아도 되는 가벼운 명령 | 6 |
 | 문서 PR 의 CI | 문서만 바꾼 PR 이 CI 를 생략하는지, 그때 머지 큐에 줄 `--docs-glob` | 7 |
 | 머지 전 명령 | DB 마이그레이션이 든 PR 앞의 백업 명령과 인자, 보관 개수 | 7 |
-| 머지 뒤 명령 | 머지 뒤 한 번 돌릴 배포 명령(`--after-merged`). 문서 PR 만 머지했을 때 건너뛸지(`CODE_PRS`) | 7 |
+| 머지 뒤 명령 | `hooks/after-queue.ts`가 머지 뒤 한 번 돌릴 배포 명령. 문서 PR 만 머지했을 때 건너뛸지(`CODE_PRS`) | 7 |
 | draft 때 건너뛴 체크 | draft 에서 CI 를 건너뛰게 둔 저장소면 `--skipped-is-missing` | 7 |
 | 마이그레이션 순서 | 마이그레이션 PR 끼리의 머지 순서, 모듈별 선후, 공유 DB 에 적용하지 않는 규칙. 번호는 SQL 예약 폴더인 `migrations.dirs` 에 `reserve-migration.ts` 로 예약하고, Java 같은 추가 경로는 `migrations.watch` 로 감시한다 | 2, 7 |
 | CI runner 장애 대응 | runner 가 offline 이 됐을 때 누가 무엇을 하는지, 끊긴 실행을 다시 돌리는 명령 | 4, 7 |
@@ -51,20 +51,16 @@
 | `finish` | `run` | worker 를 찾을 Orca Run id |
 | `finish` | `base_branch` | `cleanup-sweep.ts` 의 기준 브랜치. 없으면 origin/HEAD |
 | `finish` | `deploy_workflow`, `deploy_branch` | 배포 워크플로 파일 이름과 배포가 도는 브랜치. 둘 다 주면 배포 성공까지 기다린다 |
-| `finish` | `task_pattern` | PR 제목에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다. 마지막 PR 판정([`cleanup.md`](cleanup.md) 의 「마지막 PR 판정」)과 옛 업무 완료 명령이 쓴다 |
+| `finish` | `task_pattern` | PR 제목에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다. 마지막 PR 판정([`cleanup.md`](cleanup.md) 의 「마지막 PR 판정」)이 쓴다 |
 | `finish` | `spec_task_pattern` | 지시서의 줄에서 업무 번호를 뽑는 정규식. 첫 그룹이 번호다. 마지막 PR 판정이 같은 업무의 남은 지시서를 찾는다. `specs_dir` 를 두면 함께 둔다 |
 | `finish` | `complete`, `intermediate` | true 면 모든 PR 을 판정 없이 마지막(`--complete`)이나 중간(`--intermediate`)으로 본다. 보통은 두지 않는다 |
-| `finish` | `complete_cmd` | 업무 완료 명령 틀. `{number}` 가 업무 번호로 바뀌고 셸을 거치지 않는다. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
 | `finish` | `board`, `board_bin` | 보드 파일과 보드 명령. 마무리가 `pr` 필드나 브랜치로 그 PR 의 항목을 찾아 마지막 PR 에서만 done 으로 바꾼다. 직접 줄 때는 `--board-item 101=ITEM` 이다 |
 | `finish` | `specs_dir` | 지시서 폴더. 마지막 PR 이면 그 PR 브랜치의 지시서를 지운다. 마지막 PR 판정이 같은 업무의 남은 지시서를 여기서 찾는다 |
 | `cleanup` | `orch_dir`, `previews`, `board` | orch 작업 폴더, 함께 정리할 미리보기 폴더, 보드 파일. 미리보기는 content-preview 의 산출물이라 주지 않으면 보지 않는다 |
 | `cleanup` | `trash` | 휴지통 폴더. 기본은 `~/.Trash/orch-cleanup-<날짜>` |
 | `cleanup` | `queue_days`, `folder_days`, `data_days`, `data_ext` | 큐 로그, 폴더, 데이터 파일의 기준 일수와 데이터 확장자 |
 | `queue` | `required`, `method` | `merge_queue.ts` 의 `--required`, `--method`. `required` 는 문자열 목록도 받는다 |
-| `queue` | `before` | `--before`. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
-| `queue` | `verify_merged` | `--verify-merged`. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
 | `queue` | `verify_merged_when`, `docs_glob` | `--verify-merged-when`, `--docs-glob`. `docs_glob` 은 문자열 목록도 받는다 |
-| `queue` | `after_merged` | `--after-merged`. 다음 major 에서 지운다. `migrate-orch-dir.ts --hooks` 로 옮긴다 |
 | `queue` | `skipped_is_missing` | `--skipped-is-missing`. true 나 false 다 |
 | `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
 | `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `shared_paths` 는 정규식 목록도 받아 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
@@ -72,7 +68,7 @@
 | `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 문자열 목록. 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
 | `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |
 | `queue` | `auto_merge`, `auto_review` | 상주 루프의 자동 머지. 키 뜻은 저장소 `docs/data-schema.md` 의 「config.json 에 더하는 절」 이 소유한다 |
-| `hooks` | `timeouts` | 이벤트 이름에서 초(양수)로 가는 객체. 핸들러와 옛 칸의 시간 제한을 바꾼다. 기본값과 모르는 이벤트 처리는 `scripts/lib/events.ts` 머리 주석이 소유한다 |
+| `hooks` | `timeouts` | 이벤트 이름에서 초(양수)로 가는 객체. 핸들러의 시간 제한을 바꾼다. 기본값과 모르는 이벤트 처리는 `scripts/lib/events.ts` 머리 주석이 소유한다 |
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 문자열 목록. 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
@@ -175,7 +171,7 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 - 「추적 파일」 로 나온 것은 보인 `git mv` 명령으로 옮겨 커밋한다. 대상 폴더는 `--apply` 가 만들어 둔다
 - 「스크립트」 가 붙은 옛 경로 참조는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 위 진입점이 다시 멈춘다
 - 옮기다 실패하면 그때까지 옮긴 것을 보이고 멈춘다. 원인을 고친 뒤 다시 돌리면 남은 것을 옮기고, 옮긴 뒤 고치는 단계는 `.orch` 전체를 다시 본다
-- 폴더를 옮긴 뒤 `config.json` 에 다음 major 에서 지울 칸이 남았으면 `--hooks` 로 핸들러로 바꾼다. 순서는 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 가 소유한다
+- 폴더를 옮긴 뒤 `config.json` 에 5.2.0에서 지운 칸이 남았으면 `--hooks --apply`로 핸들러로 바꾼다. 순서는 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 가 소유한다
 
 ## 예시
 
@@ -184,7 +180,7 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 
 - 기준 브랜치: develop. 필수 체크 `backend`, 관리자 우회 불가
 - 머지 큐는 `--require-up-to-date --required backend` 로 돌린다
-- 같은 파일을 고친 PR 은 `--verify-merged 'cd "$1" && ./gradlew test' --copy-dir worktrees/repo` 로 머지한다
+- 같은 파일을 고친 PR 은 `hooks/verify-merged.ts`에서 `cd "$copy" && ./gradlew test`를 돌리고 `--copy-dir worktrees/repo`로 머지한다
 - 공통 지시서: `.orch/specs/spec-common.md`
 - 검증: `scripts/verify.sh format`, `scripts/verify.sh test`
 - draft PR 은 CI 를 돌리지 않는다. worker 는 `gh pr create --draft` 로 열고, 코디네이터가 `ci-ready.ts` 로 ready 로 바꾼다

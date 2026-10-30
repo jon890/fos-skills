@@ -117,7 +117,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--termina
 | `HOOK-FAIL <이벤트> <종료 코드>` | 핸들러가 10 이 아닌 값으로 끝났다. 시그널로 죽으면 128 더하기 신호 번호다 | 바로 위의 `[hook <이벤트>]` 줄에서 예외를 찾아 핸들러를 고친다 |
 | `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
-| `DEPRECATED <옵션> → hooks/<이벤트>.ts` | 옛 설정 칸이나 같은 이름의 명령줄 옵션(`--before`, `--complete-cmd` 같은 것)을 핸들러처럼 돌렸다 | 아래 「옛 설정 칸 옮기기」 로 핸들러로 바꾼다. `orch-doctor` 가 남은 칸을 `DEPRECATED-CONFIG` 로 알린다 |
+| `INVALID-CONFIG ... migrate-orch-dir ... --hooks --apply` | `orch-doctor`가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
 나머지 이벤트에서 명령의 종료 코드에 반영하는지는 `docs/flow.md` 「갈래」 표가 소유한다.
@@ -125,8 +125,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--termina
 
 ## 옛 설정 칸 옮기기
 
-`config.json` 의 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 는 다음 major 에서 지운다. `finish.task_pattern` 은 마지막 PR 판정이 읽으므로 남는다.
-그때까지 명령이 그 칸을 핸들러처럼 돌리고 `DEPRECATED` 줄을 낸다.
+orch 5.2.0에서 `config.json`의 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`와 대응 명령줄 옵션 `--before`, `--verify-merged`, `--after-merged`, `--complete-cmd`를 지웠다. 일반 런타임 명령은 남은 설정을 사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다. `finish.task_pattern`은 마지막 PR 판정이 읽으므로 남는다.
 `migrate-orch-dir.ts --hooks` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다. 만든 핸들러는 옛 칸을 돌리던 것과 같은 인자, 환경 변수, 작업 디렉터리로 옛 명령을 부른다.
 
 머지 큐와 worker 가 돌지 않을 때 옮긴다. `$REPO` 는 대상 저장소의 주 checkout 이다.
@@ -147,7 +146,6 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--termina
    `추적 파일` 줄이 나왔으면 공개 저장소에 올리면 안 되는 값이 없는지 본 뒤 그 `git add -f` 명령으로 더해 커밋한다
 
 - 폴더를 옮기기 전이면 `--hooks` 는 아무것도 바꾸지 않고 종료 코드 2 로 멈춘다. 먼저 [`overlay.md`](overlay.md) 의 「옛 구조에서 옮기기」 를 한다
-- 명령줄로 준 옛 옵션(`--before`, `--verify-merged`, `--after-merged`, `--complete-cmd`)은 옮기지 않는다. 오버레이에 적힌 호출에서 그 옵션을 빼고 같은 일을 하는 핸들러를 둔다
 - `PR번호:명령` 은 그 PR 하나에만 붙이는 명령이라 옮기지 않는다
 - 판정과 종료 코드는 `scripts/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다
 

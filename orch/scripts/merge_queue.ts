@@ -11,8 +11,8 @@
 //   3. 실패한 체크, 미해결 리뷰 스레드가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
 //      mergeable 이 UNKNOWN 이면 몇 번 다시 묻는다
 //      --allow-fail 로 준 체크의 실패는 세지 않고 경고 줄만 찍는다
-//   3-1. --stop-on-overlap 이나 --verify-merged 를 주면, PR 이 바꾼 파일과 PR 이 갈라진 뒤 base 에서 바뀐 파일이
-//      겹치는지 본다. 겹치면 --stop-on-overlap 은 겹친 파일을 찍고 멈추고, --verify-merged 는 base 와 합친
+//   3-1. --stop-on-overlap 이나 hooks/verify-merged.ts 가 있으면, PR 이 바꾼 파일과 PR 이 갈라진 뒤 base 에서 바뀐 파일이
+//      겹치는지 본다. 겹치면 --stop-on-overlap 은 겹친 파일을 찍고 멈추고, verify-merged 핸들러는 base 와 합친
 //      임시 사본에서 그 명령을 돌려 0 일 때만 이어 간다. 체크는 PR 기준으로 돌아 같은 파일을 고친 base 와 합친
 //      상태는 아무도 검사하지 않았기 때문이다. 겹치지 않으면 그대로 이어 간다.
 //      --verify-merged-when 으로 겹치지 않아도 검사하게 하고, --docs-glob 에 맞는 문서 PR 은 검사 없이 머지한다
@@ -29,17 +29,13 @@
 // 이벤트: <orch 루트>/hooks/<이벤트>.ts 핸들러를 lib/events.ts 의 fire 로 부른다. 입력 필드는 lib/events.ts 머리 주석의 「이벤트별 필드」 다.
 //   before-merge   4 의 자리. 거부면 `STOP <PR> HOOK-REJECT`, 실패와 시간 초과면 `STOP <PR> HOOK-FAIL`
 //   verify-merged  합친 사본 검사의 자리. 작업 디렉터리는 사본이다. 거부, 실패, 시간 초과는 검사 실패와 같은 STOP 이다.
-//                  hooks/verify-merged.ts 가 있으면 --verify-merged 를 준 것과 같이 겹침 판정을 켠다
+//                  hooks/verify-merged.ts 가 있으면 겹침 판정을 켠다
 //   after-merge    7 의 자리
-//   after-queue    --after-merged 의 자리. 실패와 시간 초과면 HOOK-FAIL 줄에 더해 `AFTER-MERGED-FAILED <종료 코드|timeout>` 이다
-//   --before, --verify-merged, --after-merged 는 옛 칸이라 그 이벤트의 핸들러처럼 돌고 `DEPRECATED <옵션> → hooks/<이벤트>.ts` 줄을 낸다.
-//   시간 제한도 핸들러와 같다(기본값은 lib/events.ts 의 EVENTS, config.json 의 hooks.timeouts.<이벤트> 가 덮는다).
-//   옛 칸의 작업 디렉터리는 --repo 로 준 경로다(--verify-merged 는 사본). 옛 명령과 같아, 연결된 워크트리를 --repo 로 주면
-//   상대경로 명령이 그 워크트리에서 돈다. 핸들러의 작업 디렉터리는 주 checkout 이다(lib/events.ts 머리 주석).
-//   같은 이벤트의 핸들러 파일과 옛 칸이 함께 있으면 큐를 시작하기 전에 사용법 오류로 끝난다. config.json 이 깨졌거나
-//   pipeline.authors 의 타입이 틀리거나, 큐가 낼 이벤트의 hooks.timeouts 값이 틀려도 첫 머지 전에 사용법 오류로 끝난다.
+//   after-queue    큐가 끝난 자리. 실패와 시간 초과면 HOOK-FAIL 줄에 더해 `AFTER-MERGED-FAILED <종료 코드|timeout>` 이다
+//   config.json 이 깨졌거나 삭제한 설정 키가 있거나, pipeline.authors 의 타입이나
+//   큐가 낼 이벤트의 hooks.timeouts 값이 틀리면 첫 머지 전에 사용법 오류로 끝난다.
 //   큐 도중에 설정 오류가 나면(핸들러 파일을 그 사이에 더했다 같은 것) 그 자리에서 멈추고 종료 코드 2 다.
-//   이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue(--after-merged 포함)만 돌리고 정리(cleanup-sweep)는 부르지 않는다.
+//   이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue만 돌리고 정리(cleanup-sweep)는 부르지 않는다.
 //   보류로 멈출 때, 큐 끝의 after-queue 가 설정 오류를 낼 때와 같은 규칙이다
 //
 // 충돌: update-branch 가 충돌로 실패하거나 mergeable 이 CONFLICTING 인 PR 은 `CONFLICT <PR> <이유>` 를 찍고 큐에서 뺀다.
@@ -61,10 +57,7 @@
 //                         `gh pr` 는 origin 으로 호스트를 찾지만 `gh api` 는 찾지 않고 기본 호스트(보통 github.com)로 간다.
 //                         그래서 `gh api` 에는 PR URL 의 호스트(`gh pr` 가 origin 으로 정한 값)를 --hostname 으로 넘긴다.
 //                         GH_HOST 환경 변수는 보지 않는다. 전역 GH_HOST 가 다른 호스트를 가리켜도 `gh pr` 와 같은 호스트로 간다
-//   --before CMD          모든 PR 에 쓸 머지 전 명령. before-merge 의 옛 칸이다. `PR:명령` 으로 준 PR 에서는 그 명령이 대신한다.
-//                         `PR:명령` 은 이벤트가 아니라 시간 제한 없이 bash -c 로 돌고, before-merge 핸들러가 있으면 그 다음에 돈다.
-//                         콜론 뒤가 빈 `PR:` 는 그 PR 에서 --before 를 끈다(핸들러는 그대로 돈다)
-//   --chain A,B,C         앞 PR 이 먼저 머지돼야 하는 묶음(위 「묶음」). 여러 번 준다
+//   PR:명령              그 PR 의 before-merge 핸들러 다음에 시간 제한 없이 bash -c 로 실행한다.
 //   --last-of-task PR     그 PR 이 task 의 마지막 PR 이다. before-merge 입력의 last_of_task 가 true 다. 여러 번 준다.
 //                         큐에 없는 번호면 사용법 오류다
 //   --method M            merge | squash | rebase. 기본 merge
@@ -108,20 +101,13 @@
 //   --unit-group A,B      overlap 에서 한 단위로 세는 단위 묶음. 여러 번 줄 수 있다. 계약 파일 없이 서로의 응답 모양에
 //                         기대는 모듈 쌍(화면 모듈과 그 BFF)은 폴더가 달라도 묶음 안 어느 쪽이 바뀌든 겹친 것으로 본다
 //   --stop-on-overlap     PR 의 바뀐 파일이 PR 기준 이후 base 에서 바뀐 파일과 겹치면 `STOP PR 겹침: 파일...` 로 멈춘다
-//   --verify-merged CMD   겹치면 origin/BASE 에 PR HEAD 를 merge 한 임시 사본을 만들고, 그 안에서 CMD 를 bash -c 로
-//                         돌린다. verify-merged 의 옛 칸이다. 사본의 절대경로를 첫 인자($1)로 받는다. 0 이면 이어 가고 아니면 멈춘다.
-//                         합치다 충돌하거나, 검사하는 동안 원격 base 가 움직였으면 멈춘다. 사본은 끝나면 지운다.
-//                         검사 명령은 저장소마다 달라 오버레이가 정한다(예: --verify-merged 'cd "$1" && make test')
-//                         MERGE_COPY(사본), PR(번호), PR_HEAD, BASE_HEAD, CHANGED_FILES, OVERLAP_FILES 를 환경 변수로
-//                         받는다. 파일 목록은 줄바꿈으로 이으며 삭제된 파일도 포함한다. $1 도 사본 경로다
 //   --verify-merged-when W  합친 사본 검사를 언제 할지. overlap(기본, 겹칠 때만), code(문서만 바꾼 PR 이 아니면 늘),
 //                         always(모든 PR). 파일이 겹치지 않아도 합쳐서 깨질 수 있다(두 PR 이 각자 통과했지만 합치니
-//                         같은 상한을 함께 넘었다). code 와 always 는 --verify-merged 나 hooks/verify-merged.ts 가 있어야 한다
+//                         같은 상한을 함께 넘었다). code 와 always 는 hooks/verify-merged.ts 가 있어야 한다
 //   --docs-glob G1,G2     문서 파일의 glob. PR 이 바꾼 파일이 모두 이것에 맞으면 overlap 과 code 에서 합친 사본 검사 없이
 //                         머지한다. 충돌은 mergeable 로 이미 걸렀다. case 패턴이라 `*` 가 `/` 도 넘는다
 //                         (예: --docs-glob 'docs/*,*.md'). 여러 번 주면 이어 붙인다.
-//                         --verify-merged, --after-merged, --update-docs-on-overlap 가운데 하나와 함께 쓴다
-//                         (hooks/verify-merged.ts 와 hooks/after-queue.ts 는 각각 앞의 두 옵션을 준 것으로 본다)
+//                         hooks/verify-merged.ts, hooks/after-queue.ts, --update-docs-on-overlap 가운데 하나와 함께 쓴다
 //   --update-docs-on-overlap  문서 PR 의 파일이 base 와 겹치면 GitHub mergeStateStatus 가 CLEAN 일 때 base 를 합치고
 //                         필수 CI 를 다시 기다린다. --docs-glob 과 필수 체크 목록이 필요하다. --stop-on-overlap 과도 쓴다
 //   --copy-dir DIR        임시 사본을 둘 폴더. 기본은 TMPDIR(없으면 /tmp). 상대경로는 --repo 기준이다.
@@ -135,11 +121,6 @@
 //   --skipped-is-missing  결론이 SKIPPED 인 체크는 나타나지 않은 것으로 본다. 필수 체크가 SKIPPED 로만 있으면
 //                         실제로 돌 때까지 기다린다. draft 에서는 CI 를 건너뛰게 둔 저장소용이다. 기본은 끔
 //                         (GitHub 처럼 SKIPPED 를 통과로 본다). 필수 체크 목록이 있어야 뜻이 있다
-//   --after-merged CMD    이번 실행에서 PR 을 하나라도 머지했으면, 큐가 끝나거나 보류로 멈춘 뒤 CMD 를 한 번 bash -c 로
-//                         돌린다(배포 같은 것). after-queue 의 옛 칸이다. 환경 변수 MERGED_PRS(머지한 PR 번호, 공백으로 이음)와 CODE_PRS(그 가운데
-//                         --docs-glob 에 맞는 문서 PR 을 뺀 것. --docs-glob 이 없으면 MERGED_PRS 와 같다)를 받는다.
-//                         실패하면 `AFTER-MERGED-FAILED 종료코드` 를 찍는다. 머지 결과는 바뀌지 않는다
-//   --keep-branch         머지 뒤 원격 브랜치를 지우지 않는다
 //   --sweep-arg ARG       머지가 끝난 뒤 부르는 cleanup-sweep.ts 에 넘길 인자. 하나씩 준다
 //                         (예: --sweep-arg --run --sweep-arg run_x --sweep-arg --specs-dir --sweep-arg .orch/specs)
 //   --no-sweep            머지 뒤 cleanup-sweep.ts --apply 를 부르지 않는다
@@ -152,22 +133,22 @@
 // PR 조회(gh pr view)가 실패하면 MERGE_QUEUE_GH_RETRIES 번(기본 3)까지 MERGE_QUEUE_GH_RETRY_SECONDS 초(기본 10)
 // 간격으로 다시 부른다. 일시 실패로 CI 를 통과한 PR 이 「체크 조회 실패」 로 보류되지 않게 하기 위해서다.
 //
-// 신호: SIGTERM 이나 SIGINT 를 받으면 진행 중인 자식(`PR:명령`, --threads-cmd, 정리, 이벤트의 핸들러와 옛 칸)에 TERM 을 보내고,
-// 2초 뒤에도 살아 있으면 KILL 을 보낸다. 핸들러와 옛 칸은 프로세스 그룹 전체에 보낸다(lib/proc.ts 의 stopChildren).
+// 신호: SIGTERM 이나 SIGINT 를 받으면 진행 중인 자식(`PR:명령`, --threads-cmd, 정리, 이벤트의 핸들러)에 TERM 을 보내고,
+// 2초 뒤에도 살아 있으면 KILL 을 보낸다. 핸들러는 프로세스 그룹 전체에 보낸다(lib/proc.ts 의 stopChildren).
 // 그 뒤 사본을 지우고 128 + 신호 번호로 끝난다. 그 사이에는 새 자식을 띄우지 않고, 머지와 base 합치기, base 옮기기,
 // 원격 브랜치 삭제도 하지 않는다. git, gh 처럼 동기로 부르는 호출(머지 포함) 중에 받은 신호는 그 호출이 끝난 뒤 처리된다.
 // `PR:명령`, --threads-cmd, 정리는 새 그룹(detached) 없이 띄우므로 TERM 과 KILL 이 그 자식에게만 간다. 복합 명령
 // (`a; b`, 파이프)이 띄운 손자 프로세스는 남을 수 있다. 옛 명령은 이 자식도 끊지 않고 끝났다.
 // 쓰는 gh 호출(머지, update-branch, base 옮기기)과 원격 브랜치 삭제는 옛 명령처럼 시간 제한이 없다. 읽는 gh 호출은 60초다.
 //
-// 머지 전 명령(--before, `PR:명령`), --threads-cmd, --verify-merged 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치),
+// 머지 전 명령(`PR:명령`)과 --threads-cmd 는 bash -c 로 돈다. 환경 변수 PR(번호), BRANCH(head 브랜치),
 // OWNER, REPO, GH_HOST(위 --hostname 과 같은 값)를 받는다.
 // 예: merge_queue.ts 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 //
 // 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음. 충돌이나 묶음으로 뺀 PR 이 있음.
 //           3 보다 우선한다),
-//           2 사용법 오류(설정 파일 오류, 핸들러와 옛 칸이 함께 있음, 큐에 없는 --last-of-task 포함),
-//           3 모두 머지했지만 after-merge 나 after-queue(--after-merged 포함)가 하나라도 실패하거나 시간을 넘겼다,
+//           2 사용법 오류(설정 파일 오류, 삭제한 옵션, 큐에 없는 --last-of-task 포함),
+//           3 모두 머지했지만 after-merge 나 after-queue가 하나라도 실패하거나 시간을 넘겼다,
 //           143 SIGTERM 을 받았다, 130 SIGINT 를 받았다
 //
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
@@ -176,7 +157,7 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
-import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
+import { eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
 import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, parseNames, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
 import { pollSeconds } from './lib/gh-budget.ts'
@@ -192,12 +173,12 @@ const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
 // 첫 판정 뒤에 base 가 움직여 다시 판정하는 횟수의 상한. 넘으면 멈춘다
 const REJUDGE_LIMIT = 5
-const DOCS_ONLY_NOTE = '--docs-glob 은 --after-merged 나 --verify-merged 와 함께 쓴다(--up-to-date-when overlap 과도 쓴다)'
+const DOCS_ONLY_NOTE = '--docs-glob 은 hooks/after-queue.ts 나 hooks/verify-merged.ts 와 함께 쓴다(--up-to-date-when overlap 과도 쓴다)'
 // 옛 명령은 git, 판정, 사용자 명령에 시간 제한을 두지 않았다. lib/proc.ts 의 기본 60초로 끊으면 큰 저장소의 fetch 나
 // 검사 명령이 실패로 읽혀, 그 호출에는 NO_LIMIT_MS(lib/proc.ts)를 준다
 // 사본 이름(merge-queue-pr<PR>-<pid>)을 찾는 glob `merge-queue-pr[0-9]*-[0-9]*` 와 같다
 const COPY_NAME = /^merge-queue-pr[0-9].*-[0-9].*$/s
-// 머지 큐가 내는 이벤트. 옛 칸(--before, --verify-merged, --after-merged)은 옵션 이름을 legacy 의 key 로 넘긴다
+// 머지 큐가 내는 이벤트다.
 const QUEUE_EVENTS = ['before-merge', 'verify-merged', 'after-merge', 'after-queue'] as const
 type QueueEvent = (typeof QUEUE_EVENTS)[number]
 type GhPr = { number: number; author: { login: string } | null; url: string }
@@ -223,7 +204,6 @@ class Conflict extends Stop {}
 
 type Options = {
   repo: string
-  beforeAll: string
   method: string
   threadsCmd: string
   checkTimeout: string
@@ -239,13 +219,11 @@ type Options = {
   sweep: boolean
   sweepArgs: string[]
   overlap: boolean
-  verifyMerged: string
   verifyWhen: string
   docsGlob: string
   updateDocs: boolean
   continueOnHold: boolean
   skippedMissing: boolean
-  afterMerged: string
   copyDir: string
   lastOfTask: string[]
   chains: string[][]
@@ -339,7 +317,6 @@ function usageText(): string {
 function parseArgs(argv: string[]): Options {
   const o: Options = {
     repo: '.',
-    beforeAll: '',
     method: 'merge',
     threadsCmd: '',
     checkTimeout: '60',
@@ -355,13 +332,11 @@ function parseArgs(argv: string[]): Options {
     sweep: true,
     sweepArgs: [],
     overlap: false,
-    verifyMerged: '',
     verifyWhen: 'overlap',
     docsGlob: '',
     updateDocs: false,
     continueOnHold: false,
     skippedMissing: false,
-    afterMerged: '',
     copyDir: '',
     lastOfTask: [],
     chains: [],
@@ -376,7 +351,6 @@ function parseArgs(argv: string[]): Options {
       if (!value) throw new Usage(`${arg} 에 값이 없다`)
       i += 2
       if (arg === '--repo') o.repo = value
-      else if (arg === '--before') o.beforeAll = value
       else if (arg === '--method') o.method = value
       else if (arg === '--threads-cmd') o.threadsCmd = value
       else if (arg === '--check-timeout') o.checkTimeout = value
@@ -389,13 +363,9 @@ function parseArgs(argv: string[]): Options {
       else if (arg === '--shared-paths') o.sharedPaths = value
       else if (arg === '--unit-prefix') o.unitPrefix = value
       else if (arg === '--unit-group') o.unitGroups.push(value)
-      else if (arg === '--verify-merged') {
-        o.verifyMerged = value
-        o.overlap = true
-      } else if (arg === '--verify-merged-when') o.verifyWhen = value
+      else if (arg === '--verify-merged-when') o.verifyWhen = value
       else if (arg === '--docs-glob') o.docsGlob = o.docsGlob ? `${o.docsGlob},${value}` : value
       else if (arg === '--copy-dir') o.copyDir = value
-      else if (arg === '--after-merged') o.afterMerged = value
       else if (arg === '--sweep-arg') o.sweepArgs.push(value)
       else if (arg === '--last-of-task') o.lastOfTask.push(value)
       else if (arg === '--chain') o.chains.push(value.split(','))
@@ -427,7 +397,7 @@ function validate(o: Options): Options {
   } else if (o.sharedPaths || o.unitGroups.length > 0) {
     throw new Usage('--shared-paths 와 --unit-group 은 --up-to-date-when overlap 과 함께 쓴다')
   }
-  // --verify-merged 와 --after-merged 가 있어야 하는 옵션은 핸들러 파일도 봐야 해서 Queue.preflight 가 본다
+  // 핸들러 파일이 있어야 하는 옵션은 Queue.preflight 가 본다
   if (o.updateDocs && !o.docsGlob) throw new Usage('--update-docs-on-overlap 은 --docs-glob 이 필요하다')
   if (o.required.some((name) => /["\\]/.test(name))) throw new Usage('--required 에 따옴표나 역슬래시를 넣을 수 없다')
   if (o.allowFail.some((name) => /["\\]/.test(name))) throw new Usage('--allow-fail 에 따옴표나 역슬래시를 넣을 수 없다')
@@ -477,7 +447,7 @@ class Queue {
   o: Options
   overlapUnits: string
   sweepBase = ''
-  // [번호, code|docs]. --after-merged 가 읽는다
+  // [번호, code|docs]. after-queue 입력을 만들 때 읽는다
   merged: [string, 'code' | 'docs'][] = []
   held: string[] = []
   // 충돌로 뺀 PR. held 에도 든다
@@ -490,7 +460,7 @@ class Queue {
   repoDir = ''
   // 큐를 시작할 때 있던 핸들러 파일의 이벤트. 입력에 조회가 드는 이벤트(after-merge)와 검사를 켜는 이벤트(verify-merged)가 본다
   hooks = new Set<QueueEvent>()
-  // 합친 사본 검사를 하는가. --verify-merged 나 hooks/verify-merged.ts 가 있으면 한다
+  // 합친 사본 검사를 하는가. hooks/verify-merged.ts 가 있으면 한다
   verify = false
   // 호스트마다 「내 PR」 작성자 목록. null 은 정하지 못한 것이다
   authors = new Map<string, string[] | null>()
@@ -553,7 +523,7 @@ class Queue {
   }
 
   // 큐를 시작하기 전에 설정과 핸들러를 본다. 여기서 내는 ConfigError 와 Usage 는 사용법 오류(종료 코드 2)다.
-  // fire 도 핸들러와 옛 칸이 함께 있으면 ConfigError 를 내지만, after-queue 는 머지가 끝난 뒤에 나므로 fire 에만 맡기면
+  // fire 도 핸들러이 함께 있으면 ConfigError 를 내지만, after-queue 는 머지가 끝난 뒤에 나므로 fire 에만 맡기면
   // 앞 PR 이 머지된 뒤에야 멈춘다. 설정 파일도 after-merge, after-queue, 쌓인 PR 판정이 머지 뒤에 읽으므로 여기서 먼저 읽는다
   preflight(): void {
     const o = this.o
@@ -566,25 +536,17 @@ class Queue {
     for (const event of QUEUE_EVENTS) {
       if (handlerFile(event, repo)) this.hooks.add(event)
     }
-    const legacy: [string, string, QueueEvent][] = [
-      ['--before', o.beforeAll, 'before-merge'],
-      ['--verify-merged', o.verifyMerged, 'verify-merged'],
-      ['--after-merged', o.afterMerged, 'after-queue'],
-    ]
-    for (const [key, value, event] of legacy) {
-      if (value) checkLegacy(event, repo, key)
-    }
     // 핸들러만 있고 옵션이 없어도 사본 검사가 빠지지 않게 겹침 판정을 켠다
-    this.verify = Boolean(o.verifyMerged) || this.hooks.has('verify-merged')
+    this.verify = this.hooks.has('verify-merged')
     if (this.verify) o.overlap = true
-    const afterQueue = Boolean(o.afterMerged) || this.hooks.has('after-queue')
+    const afterQueue = this.hooks.has('after-queue')
     if (!this.verify) {
-      if (o.verifyWhen !== 'overlap') throw new Usage(`--verify-merged-when ${o.verifyWhen} 은 --verify-merged 와 함께 쓴다`)
+      if (o.verifyWhen !== 'overlap') throw new Usage(`--verify-merged-when ${o.verifyWhen} 은 hooks/verify-merged.ts 와 함께 쓴다`)
       if (o.docsGlob && !(afterQueue || o.updateDocs || o.upToDateWhen === 'overlap')) throw new Usage(DOCS_ONLY_NOTE)
     }
     // 큐가 낼 이벤트의 시간 제한 값을 본다. after-merge 와 after-queue 는 머지 뒤에 나므로 fire 에만 맡기면 머지한 뒤에야 멈춘다
     const firing: [QueueEvent, boolean][] = [
-      ['before-merge', Boolean(o.beforeAll) || this.hooks.has('before-merge')],
+      ['before-merge', this.hooks.has('before-merge')],
       ['verify-merged', this.verify],
       ['after-merge', this.hooks.has('after-merge')],
       ['after-queue', afterQueue],
@@ -723,7 +685,7 @@ class Queue {
     return true
   }
 
-  // origin/BASE 에 PR HEAD 를 merge 한 임시 사본에서 verify-merged 를 낸다(옛 칸은 --verify-merged). 통과하지 않으면 멈춘다
+  // origin/BASE 에 PR HEAD 를 merge 한 임시 사본에서 verify-merged 를 낸다. 통과하지 않으면 멈춘다
   async verifyMerged(): Promise<void> {
     const p = this.p
     const o = this.o
@@ -758,20 +720,9 @@ class Queue {
       p.ph,
     )
     if (merged.code !== 0) stop(`${p.n} base(${p.base}) 와 합치면 충돌한다`)
-    log(`${p.n} 합친 사본에서 검사: ${o.verifyMerged || 'hooks/verify-merged.ts'}`)
-    const env = {
-      ...this.prEnv(),
-      TMPDIR: this.realTmp,
-      GH_HOST: p.apiHost,
-      MERGE_COPY: this.copy,
-      PR_HEAD: p.ph,
-      BASE_HEAD: bh,
-      CHANGED_FILES: changed.join('\n'),
-      OVERLAP_FILES: p.ov.join('\n'),
-    }
+    log(`${p.n} 합친 사본에서 검사: hooks/verify-merged.ts`)
     const input = { pr: this.prInput(), copy: this.copy, base_head: bh, changed_files: changed, overlap_files: p.ov }
     const ctx: FireContext = { ...this.ctx(), cwd: this.copy }
-    if (o.verifyMerged) ctx.legacy = { key: '--verify-merged', argv: ['bash', '-c', o.verifyMerged, 'verify-merged', this.copy], env }
     const done = await fire('verify-merged', input, ctx)
     this.dropCopy()
     // 핸들러를 큐 시작 뒤에 지웠으면 none 이다. 검사하지 않은 조합을 머지하지 않도록 통과로 읽지 않는다
@@ -803,8 +754,8 @@ class Queue {
     const o = this.o
     const colon = item.indexOf(':')
     const n = colon >= 0 ? item.slice(0, colon) : item
-    // `PR:명령` 은 그 PR 에서 --before 를 대신한다. 이벤트가 아니라 before-merge 다음에 따로 돈다.
-    // 콜론이 있으면 명령이 비어도 --before 를 끈다(옛 명령과 같이 콜론 유무로 가른다). 콜론이 없으면 null 이다
+    // `PR:명령` 은 이벤트가 아니라 before-merge 다음에 따로 돈다.
+    // 콜론 뒤가 비면 일회성 명령은 돌리지 않는다. 콜론이 없으면 null 이다
     const prCommand = colon >= 0 ? item.slice(colon + 1) : null
     const p: Pr = (this.pr = {
       n,
@@ -990,18 +941,15 @@ class Queue {
     }
   }
 
-  // before-merge 를 내고 `PR:명령` 을 돌린다. 옛 칸 --before 는 콜론 없이 준 PR 에서만 넘긴다
+  // before-merge 를 내고 `PR:명령` 을 돌린다.
   async beforeMerge(prCommand: string | null): Promise<void> {
     const o = this.o
     const p = this.p
     const n = p.n
     const env = { ...this.prEnv(), GH_HOST: p.apiHost }
-    const legacy = prCommand === null ? o.beforeAll : ''
-    if (legacy || this.hooks.has('before-merge')) {
-      if (legacy) log(`${n} 머지 전 명령: ${legacy}`)
+    if (this.hooks.has('before-merge')) {
       const ctx = this.ctx()
-      if (legacy) ctx.legacy = { key: '--before', argv: ['bash', '-c', legacy], env }
-      const input = { pr: this.prInput(), owner: p.owner, name: p.repo, last_of_task: o.lastOfTask.includes(n) }
+      const input = { pr: this.prInput(), owner: p.owner, name: p.repo, last_of_task: o.lastOfTask.includes(n), has_pr_command: prCommand !== null }
       const done = await fire('before-merge', input, ctx)
       if (done.result === 'reject') stop(`${n} HOOK-REJECT`)
       if (failed(done)) stop(`${n} HOOK-FAIL`)
@@ -1214,18 +1162,16 @@ class Queue {
 
   // ---- 큐 ---------------------------------------------------------------------------------------
 
-  // 이번 실행에서 머지한 PR 이 있으면 after-queue 를 한 번 낸다(옛 칸은 --after-merged)
+  // 이번 실행에서 머지한 PR 이 있으면 after-queue 를 한 번 낸다
   async runAfterMerged(): Promise<void> {
-    const command = this.o.afterMerged
-    if (!(this.merged.length > 0 && (command || this.hooks.has('after-queue')))) return
+    if (!(this.merged.length > 0 && this.hooks.has('after-queue'))) return
     const merged = this.merged.map(([n]) => n)
     const code = this.merged.filter(([, kind]) => kind === 'code').map(([n]) => n)
     const mergedPrs = merged.join(' ')
     const codePrs = code.join(' ')
-    log(`머지 뒤 명령(머지 ${mergedPrs}, 코드 ${codePrs || '없음'}): ${command || 'hooks/after-queue.ts'}`)
+    log(`머지 뒤 명령(머지 ${mergedPrs}, 코드 ${codePrs || '없음'}): hooks/after-queue.ts`)
     const input = { merged_prs: merged.map(Number), code_prs: code.map(Number), held_prs: this.held.map(Number) }
     const ctx: FireContext = { repo: this.repoDir, base: this.sweepBase, run: null }
-    if (command) ctx.legacy = { key: '--after-merged', argv: ['bash', '-c', command], env: { MERGED_PRS: mergedPrs, CODE_PRS: codePrs } }
     this.merged = []
     let label: string | null = null
     try {

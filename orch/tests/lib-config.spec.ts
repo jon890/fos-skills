@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ConfigError, DEPRECATED_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
+import { ConfigError, REMOVED_CONFIG_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
@@ -134,13 +134,15 @@ describe('section', () => {
   })
 })
 
-describe('DEPRECATED_KEYS', () => {
-  test('항목마다 아는 절, 밑줄 키 이름, 핸들러 이벤트 이름을 갖는다', () => {
-    assert.ok(DEPRECATED_KEYS.length > 0)
-    for (const entry of DEPRECATED_KEYS) {
-      assert.ok(SECTIONS.includes(entry.section), `모르는 절: ${entry.section}`)
-      assert.match(entry.key, /^[a-z]+(?:_[a-z]+)*$/, `키 이름이 밑줄 꼴이 아니다: ${entry.key}`)
-      assert.match(entry.event, /^[a-z]+(?:-[a-z]+)*$/, `이벤트 이름이 하이픈 꼴이 아니다: ${entry.event}`)
+describe('삭제한 설정', () => {
+  test('다른 절을 쓰는 명령도 삭제한 설정을 실행 전에 거부하고 옮기는 명령을 알린다', () => {
+    for (const { section: name, key } of REMOVED_CONFIG_KEYS) {
+      for (const value of ['', 'echo dangerous', null]) {
+        const target = file(JSON.stringify({ [name]: { [key]: value } }))
+        assert.throws(() => loadConfig(repo, { file: target }), (error: unknown) =>
+          error instanceof ConfigError && error.message.includes(`${name}.${key}`) && error.message.includes('migrate-orch-dir')
+        )
+      }
     }
   })
 })

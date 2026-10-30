@@ -53,21 +53,14 @@
 //     판정하지 못한 PR 은 board-sync.ts 와 같이 마지막으로 본다. 마지막 PR 이 done 지점(board.done_after, 기본 merge)에 닿았을 때만 done 으로 바꾸고, 아니면 doing 으로 두고 PR 을 merged-pr 에 적는다.
 //     마지막 PR 은 pr 칸에 남겨 board-release.ts 가 찾게 한다. 중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓는다
 //
-//     업무 완료(--complete-cmd)는 after-deploy 의 옛 칸이다. 다음 major 에서 지운다.
-//     마지막 PR 이고, 배포가 성공했거나 배포 워크플로가 없고, PR 제목에서 --task-pattern 으로 업무 번호를 뽑았을 때만
-//     `DEPRECATED --complete-cmd → hooks/after-deploy.ts` 줄과 함께 그 명령을 핸들러 자리에서 돌린다.
-//     작업 디렉터리는 옛 명령과 같이 --repo 로 준 경로다. 연결된 워크트리를 주면 그 워크트리다(lib/events.ts 의 legacy).
-//     --complete-cmd 가 없으면(업무 시스템이 없는 저장소) 이 단계만 건너뛰고 로그에 남긴다. 지시서는 지운다.
-//     --complete 와 --complete-cmd 를 함께 주면 --task-pattern 도 있어야 한다
+//     업무 완료는 hooks/after-deploy.ts 가 이벤트의 last_of_task 와 deploy 를 보고 처리한다.
 //
 // 이벤트 입력(lib/events.ts 머리 주석의 「이벤트별 필드」): pr, merge_commit, deploy(success, failure, timeout, none),
 //     last_of_task(마지막 PR 판정). base 는 PR 의 base, run 은 --run(없으면 null)이다.
-//     업무 완료 명령과 <orch 루트>/hooks/after-deploy.ts 가 함께 있으면 머지를 기다리기 전에 사용법 오류로 끝난다.
-//     업무 완료 명령이나 핸들러가 있으면 config.json 의 hooks.timeouts.after-deploy 값도 머지를 기다리기 전에 본다. 틀리면 사용법 오류다.
-//     이벤트 실행기는 배포를 기다린 뒤에야 이 충돌을 알아채는데, 그때는 이미 머지와 정리가 끝났기 때문이다
+//     hooks.timeouts.after-deploy 는 머지와 배포를 기다리기 전에 검사한다.
 //
 // 실패로 남기는 것(이것들이 있어도 보드 done 은 돌고 마지막 줄이 FINISH-FAIL 이다):
-//     PR 제목에서 업무 번호를 찾지 못했다, 업무 완료 명령이 실패하거나 시간을 넘겼다, after-deploy 핸들러가 실패했다,
+//     after-deploy 핸들러가 실패하거나 시간을 넘겼다,
 //     보드 명령이 실패했다
 //
 // 옵션 (저장소마다 다른 값이다. --config 의 JSON 키는 옵션 이름의 하이픈을 밑줄로 바꾼 것이다):
@@ -87,10 +80,8 @@
 //     --spec-task-pattern RE  지시서의 줄에서 업무 번호를 뽑는 Python 정규식. 첫 번째 그룹이 번호다
 //                           (예: '^브랜치: `feature/(PROJ-[0-9]+)-'). --task-pattern 이 뽑는 번호와 같은 꼴을 뽑아야 한다.
 //                           마지막 PR 판정이 남은 지시서를 찾는 데 쓴다
-//     --complete            이 PR 이 업무의 마지막 PR 이다. 판정하지 않는다. --complete-cmd 없이도 쓴다(지시서 삭제만 한다)
+//     --complete            이 PR 이 업무의 마지막 PR 이다. 판정하지 않는다.
 //     --intermediate        이 PR 이 업무의 중간 PR 이다. 판정하지 않는다. --complete 와 함께 쓸 수 없다
-//     --complete-cmd CMD    업무 완료 명령 틀. shlex 처럼 나누고(lib/py.ts 의 shSplit) 조각마다 {number} 를 업무 번호로 바꾼다.
-//                           셸을 거치지 않는다 (예: 'task-cli complete {number}')
 //     --board FILE          보드 파일. 기본은 work-board 의 board.ts 가 정한 위치. 상대경로면 주 checkout 기준
 //     --board-id ID         판정과 상관없이 done 으로 바꿀 보드 항목. 없으면 보드 파일에서 찾는다(위 「보드 항목」)
 //     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
@@ -121,17 +112,16 @@ import { conflictSpecFiles } from './lib/conflicts.ts'
 import { deployVerdict, parseRuns } from './lib/deploy.ts'
 import { boardSettings, mergedCommands, stagesOf } from './lib/milestones.ts'
 import type { StageKind, Stages } from './lib/milestones.ts'
-import { extractTaskNumber, judgeLastPr, numberPattern, specFiles } from './lib/last-pr.ts'
+import { judgeLastPr, numberPattern, specFiles } from './lib/last-pr.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
-import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
-import type { FireResult } from './lib/events.ts'
+import { eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from './lib/finish-options.ts'
 import { real, realPath } from './lib/fs.ts'
 import { gh } from './lib/gh.ts'
 import { pollSeconds } from './lib/gh-budget.ts'
 import { boardPath, pathOf, requireMigrated } from './lib/paths.ts'
 import { run, runAsync, scriptCommand } from './lib/proc.ts'
-import { pyStr, shSplit } from './lib/py.ts'
+import { pyStr } from './lib/py.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from './lib/spec.ts'
 import { LIVE_DISPATCH, workerFor, workerRows } from './lib/workers.ts'
 
@@ -143,8 +133,6 @@ const RUN_TIMEOUT_MS = 300_000
 const SWEEP_TIMEOUT_MS = 600_000
 // send-to-worker 는 nudge-worker 를 5분까지 기다린다
 const SEND_TIMEOUT_MS = 600_000
-const LEGACY_KEY = '--complete-cmd'
-const HOOK_PREFIX = '[hook after-deploy] '
 const PR_FIELDS = 'state,mergeCommit,headRefName,title,number,headRefOid,author,isDraft,url,baseRefName'
 
 type Args = {
@@ -162,7 +150,6 @@ type Args = {
   specTaskPattern: RegExp | null
   complete: boolean
   intermediate: boolean
-  completeCmd: string | null
   board: string | null
   boardId: string | null
   boardBin: string
@@ -298,7 +285,6 @@ function parse(argv: string[]): Args | null {
     // 명령줄의 표시(merge-with-finish 의 PR!, PR~)가 설정의 기본값보다 우선한다
     complete: values.complete === true || (values.intermediate !== true && configComplete === true),
     intermediate: values.intermediate === true || (values.complete !== true && configIntermediate === true),
-    completeCmd: pick('complete-cmd'),
     board: pick('board'),
     boardId: pick('board-id'),
     boardBin: pick('board-bin') ?? (process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.ts')),
@@ -310,17 +296,6 @@ function parse(argv: string[]): Args | null {
   }
   if (Boolean(args.deployWorkflow) !== Boolean(args.deployBranch)) throw new Usage('--deploy-workflow 와 --deploy-branch 는 함께 준다')
   if (args.complete && args.intermediate) throw new Usage('--complete 와 --intermediate 는 함께 쓸 수 없다')
-  if (args.complete && args.completeCmd && !args.taskPattern) throw new Usage('--complete-cmd 를 주면 --task-pattern 도 있어야 한다')
-  if (args.completeCmd) {
-    if (!args.completeCmd.includes('{number}')) throw new Usage('--complete-cmd 에 {number} 가 없다')
-    let parts: string[]
-    try {
-      parts = shSplit(args.completeCmd)
-    } catch (e) {
-      throw new Usage(`--complete-cmd 를 나누지 못했다: ${(e as Error).message}`)
-    }
-    if (!parts.some((part) => part.includes('{number}'))) throw new Usage('--complete-cmd 에 {number} 가 없다')
-  }
   if (!/^\d+$/.test(args.pr)) throw new Usage(`PR 번호가 아니다: ${args.pr}`)
   return args
 }
@@ -583,15 +558,10 @@ function setBoardMilestone(args: Args, repo: string, item: string, stages: Stage
   return made.done ? 'done' : 'doing'
 }
 
-function failLabel(r: FireResult): string {
-  if (r.code !== null) return String(r.code)
-  return r.result === 'timeout' ? 'timeout' : 'lock'
-}
-
 async function finish(args: Args, repo: string): Promise<number> {
   const merged = await waitMerged(args, repo)
   if (merged === null) return fail()
-  const { merge, branch, title } = merged
+  const { merge, branch } = merged
   log(`PR ${args.pr} 머지됨 ${merge.slice(0, 9)} (${branch})`)
 
   // 보드 항목을 워크트리 이름으로도 찾는다. 정리가 워크트리를 지우므로 그 전에 읽는다
@@ -621,40 +591,20 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
 
   const problems: string[] = []
-  let number: string | null = null
-  if (last && deployed) {
-    if (!args.completeCmd) log('업무 완료 단계 건너뜀: --complete-cmd 가 없다')
-    else {
-      number = extractTaskNumber(title, args.taskPattern as RegExp)
-      if (number === null) problems.push(`PR 제목에서 업무 번호를 찾지 못했다: ${title}`)
-    }
-  }
-  const legacy =
-    number !== null && args.completeCmd
-      ? { key: LEGACY_KEY, argv: shSplit(args.completeCmd).map((part) => part.replaceAll('{number}', number as string)), env: {} }
-      : undefined
-  // 옛 명령은 업무 완료 명령 출력의 마지막 줄을 결과 줄에 붙였다. 출력은 접두를 붙여 그대로 내고 마지막 줄만 기억한다
-  let lastLine = ''
   const input = { pr: merged.pr, merge_commit: merge || null, deploy, last_of_task: last }
   try {
     const result = await fire('after-deploy', input, {
       repo,
       base: merged.base || args.baseBranch || '',
       run: args.run,
-      legacy,
-      out: (line) => {
-        out(line)
-        if (line.startsWith(HOOK_PREFIX) && line.slice(HOOK_PREFIX.length).trim()) lastLine = line.slice(HOOK_PREFIX.length).trim()
-      },
+      out,
     })
     const failed = result.result === 'fail' || result.result === 'timeout'
-    if (legacy && result.result === 'pass') log(`업무 ${number} 완료 처리: ${lastLine}`)
-    else if (legacy && failed) problems.push(`업무 ${number} 완료 명령이 실패했다(종료 코드 ${failLabel(result)}): ${lastLine}`)
-    else if (failed) problems.push('after-deploy 핸들러가 실패했다')
+    if (failed) problems.push('after-deploy 핸들러가 실패했다')
   } catch (e) {
     process.stderr.write(`after-deploy 를 내지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
     out('HOOK-FAIL after-deploy error')
-    problems.push(legacy ? `업무 ${number} 완료 명령을 돌리지 못했다` : 'after-deploy 핸들러가 실패했다')
+    problems.push('after-deploy 핸들러가 실패했다')
   }
 
   if (!deployed) return fail(problems.join('; '))
@@ -699,9 +649,8 @@ async function main(argv: string[]): Promise<number> {
   }
   if (!args.config && !requireMigrated(args.repo, 'finish-pr')) return 2
   try {
-    if (args.completeCmd) checkLegacy('after-deploy', args.repo, LEGACY_KEY)
     // after-deploy 는 머지와 배포를 기다린 뒤에 난다. 시간 제한 값이 틀린 것을 그때 알면 정리와 배포가 이미 끝났다
-    if (args.completeCmd || handlerFile('after-deploy', args.repo)) eventTimeoutSec('after-deploy', args.repo)
+    if (handlerFile('after-deploy', args.repo)) eventTimeoutSec('after-deploy', args.repo)
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e
     process.stderr.write(`finish-pr: ${e.message}\n`)
