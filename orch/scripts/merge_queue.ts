@@ -179,6 +179,7 @@ import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './l
 import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
 import { apiTarget, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, parseNames, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
+import { pollSeconds } from './lib/gh-budget.ts'
 import { groupMap, isDoc } from './lib/overlap.ts'
 import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
@@ -1052,6 +1053,7 @@ class Queue {
     let waited = 0
     // 진행 중인 체크가 없는데 나타나지 않은 필수 체크가 남은 채로 지난 초
     let idle = 0
+    let attempt = 0
     for (;;) {
       const f = await this.field(n, 'statusCheckRollup', q.failed)
       if ((f || '0') !== '0') stop(`${n} 실패한 체크 ${f} 개`)
@@ -1063,8 +1065,7 @@ class Queue {
         const names = await this.field(n, 'statusCheckRollup', `${q.missing} | join(",")`)
         stop(`${n} 체크 대기 ${this.o.checkTimeout}분 초과(진행 중 ${pending}, 나타나지 않은 필수 체크 ${names})`)
       }
-      if (pending === '0') idle += 30
-      else idle = 0
+      if (pending !== '0') idle = 0
       if (missingLimit > 0 && idle >= missingLimit) {
         const names = await this.field(n, 'statusCheckRollup', `${q.missing} | join(", ")`)
         const seen = await this.field(n, 'statusCheckRollup', `${ROLL_NAMES} | unique | tojson`)
@@ -1073,11 +1074,15 @@ class Queue {
             `PR 에 붙은 체크: ${seen || '[]'}. 필수 체크 이름이 틀렸을 수 있다(쉼표가 든 이름은 --required-check 로 준다)`,
         )
       }
-      await nap(30)
-      waited += 30
+      const seconds = Math.min(pollSeconds(attempt++), Math.max(0, limit - waited),
+        pending === '0' && missingLimit > 0 ? Math.max(0, missingLimit - idle) : Infinity)
+      await nap(seconds)
+      waited += seconds
+      if (pending === '0') idle += seconds
+      else idle = 0
     }
     // 체크가 끝난 직후에 새 체크가 붙는 경우가 있어 잠시 뒤 다시 본다
-    await nap(15)
+    await nap(60)
     const pending = await this.field(n, 'statusCheckRollup', PENDING)
     const missing = await this.field(n, 'statusCheckRollup', `${q.missing} | length`)
     if (!(pending === '0' && missing === '0')) {

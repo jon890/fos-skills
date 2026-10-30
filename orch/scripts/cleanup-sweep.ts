@@ -285,7 +285,7 @@ import { expandArgs } from './lib/args.ts'
 import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import { realPath } from './lib/fs.ts'
-import { apiTarget, ghBin, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
+import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { defaultBase } from './lib/git.ts'
 import { forgetLaunch, launchesAt, readLaunch } from './lib/launched.ts'
 import { orcaBin } from './lib/orca.ts'
@@ -412,11 +412,11 @@ function worktrees(repo: string): [string, string][] {
 // JSON 이 아니거나 목록이 아니거나 state 가 모르는 값이면 error 다.
 // 출력 문자열을 비교하지 않고 파싱한다. `null` 같은 문자열이 PR 로 읽히지 않게 한다.
 function prList(repo: string, head: string): { ok: boolean; prs: Pr[] } {
-  const done = run([ghBin(), 'pr', 'list', '--head', head, '--state', 'all', '--limit', '5', '--json', PR_FIELDS], { cwd: repo })
+  const done = gh(['pr', 'list', '--head', head, '--state', 'all', '--limit', '5', '--json', PR_FIELDS], { cwd: repo })
   if (done.code !== 0) return { ok: false, prs: [] }
   let prs: unknown
   try {
-    prs = done.out ? JSON.parse(done.out) : []
+    prs = done.stdout.trim() ? JSON.parse(done.stdout) : []
   } catch {
     return { ok: false, prs: [] }
   }
@@ -471,11 +471,11 @@ function ensureCommit(repo: string, pr: Pr): void {
 // `gh pr view --json commits` 가 돌려주는 PR 의 커밋 해시 집합. 조회가 실패하거나 모양이 다르면 null 이다.
 // update-branch 로 합친 머지 커밋도 목록에 든다. gh 는 커밋을 앞쪽 100 개까지만 준다.
 function prCommitOids(repo: string, pr: Pr): Set<string> | null {
-  const done = run([ghBin(), 'pr', 'view', String(pr.number), '--json', 'commits'], { cwd: repo })
+  const done = gh(['pr', 'view', String(pr.number), '--json', 'commits'], { cwd: repo })
   if (done.code !== 0) return null
   let data: unknown
   try {
-    data = JSON.parse(done.out)
+    data = JSON.parse(done.stdout)
   } catch {
     return null
   }
@@ -795,8 +795,8 @@ export async function stopHolders(
 
 function protectedReason(repo: string, branch: string, base: string): string | null {
   if (branch === base || branch.startsWith('release/')) return '기준 브랜치나 release 브랜치'
-  const done = run([ghBin(), 'pr', 'list', '--state', 'open', '--base', branch, '--json', 'number', '--jq', 'length'], { cwd: repo })
-  if (done.code !== 0 || (done.out !== '' && done.out !== '0')) return '다른 열린 PR 의 base 이거나 조회 실패'
+  const done = gh(['pr', 'list', '--state', 'open', '--base', branch, '--json', 'number', '--jq', 'length'], { cwd: repo })
+  if (done.code !== 0 || (done.stdout.trim() !== '' && done.stdout.trim() !== '0')) return '다른 열린 PR 의 base 이거나 조회 실패'
   return null
 }
 

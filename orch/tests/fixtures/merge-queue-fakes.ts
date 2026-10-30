@@ -1,3 +1,6 @@
+// 실제 시간 대신 틱마다 상태를 바꾸는 가짜 gh 는 응답 캐시를 쓰지 않는다.
+process.env.ORCH_GH_CACHE = '0'
+
 // merge-queue.spec.ts 와 merge-queue-overlap.spec.ts 가 함께 쓰는 가짜 gh, git 과 실행 helper 다. GitHub 에는 닿지 않는다.
 //
 // 가짜 gh 는 FAKE_STATE 의 JSON 상태로 움직이고 받은 인자를 FAKE_LOG 에 한 줄씩 적는다.

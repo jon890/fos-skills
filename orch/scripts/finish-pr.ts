@@ -96,7 +96,7 @@
 //     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
 //     --merge-timeout MIN   머지 대기 한도(분). 기본 180
 //     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
-//     --poll-interval SEC   확인 간격(초). 기본 30
+//     --poll-interval SEC   확인 간격(초). 기본 60
 //     --worker-done-timeout MIN  머지를 알린 worker 의 dispatch 가 끝나기를 기다리는 한도(분). 기본 10. 0 이면 알리기만 한다
 //     --pid-file FILE       시작할 때 pid 를 쓰고 끝나면 지운다. 같은 PR 의 마무리가 둘 도는 것을 막을 때 쓴다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
@@ -127,7 +127,8 @@ import { checkLegacy, eventTimeoutSec, fire, handlerFile } from './lib/events.ts
 import type { FireResult } from './lib/events.ts'
 import { FINISH_KEYS, FINISH_OPTIONS as OPTIONS } from './lib/finish-options.ts'
 import { real, realPath } from './lib/fs.ts'
-import { ghBin } from './lib/gh.ts'
+import { gh } from './lib/gh.ts'
+import { pollSeconds } from './lib/gh-budget.ts'
 import { boardPath, pathOf, requireMigrated } from './lib/paths.ts'
 import { run, runAsync, scriptCommand } from './lib/proc.ts'
 import { pyStr, shSplit } from './lib/py.ts'
@@ -303,7 +304,7 @@ function parse(argv: string[]): Args | null {
     boardBin: pick('board-bin') ?? (process.env.BOARD_BIN || resolve(HERE, '../../work-board/bin/board.ts')),
     mergeTimeout: num('merge-timeout', 180),
     deployTimeout: num('deploy-timeout', 120),
-    pollInterval: num('poll-interval', 30),
+    pollInterval: num('poll-interval', 60),
     workerDoneTimeout: num('worker-done-timeout', 10),
     pidFile: pick('pid-file'),
   }
@@ -330,7 +331,7 @@ function parse(argv: string[]): Args | null {
 async function waitMerged(args: Args, repo: string): Promise<Merged | null> {
   const deadline = Date.now() + args.mergeTimeout * 60_000
   for (;;) {
-    const done = run([ghBin(), 'pr', 'view', args.pr, '--json', PR_FIELDS], { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
+    const done = gh(['pr', 'view', args.pr, '--json', PR_FIELDS], { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
     let data: Record<string, unknown> | null = null
     if (done.code === 0) {
       try {
@@ -477,17 +478,18 @@ function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; k
 async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ deploy: Deploy; sha: string }> {
   const deadline = Date.now() + args.deployTimeout * 60_000
   const branch = args.deployBranch as string
+  let attempt = 0
   const isAncestor = (ancestor: string, sha: string) => git(repo, ['merge-base', '--is-ancestor', ancestor, sha]).code === 0
   for (;;) {
     git(repo, ['fetch', '-q', 'origin', branch])
-    const done = run([ghBin(), 'run', 'list', '--branch', branch, '--workflow', args.deployWorkflow as string, '--limit', '15', '--json', 'headSha,status,conclusion'], {
+    const done = gh(['run', 'list', '--branch', branch, '--workflow', args.deployWorkflow as string, '--limit', '15', '--json', 'headSha,status,conclusion'], {
       cwd: repo,
       timeoutMs: RUN_TIMEOUT_MS,
     })
     const { verdict, sha } = deployVerdict(done.code === 0 ? parseRuns(done.stdout) : [], merge, isAncestor)
     if (verdict !== 'wait') return { deploy: verdict, sha }
     if (Date.now() >= deadline) return { deploy: 'timeout', sha: '' }
-    await sleep(args.pollInterval * 1000)
+    await sleep((args.pollInterval < 60 ? args.pollInterval : pollSeconds(attempt++, args.pollInterval)) * 1000)
   }
 }
 

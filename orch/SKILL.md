@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "4.20.0"
+  version: "4.21.0"
 ---
 
 # orch
@@ -103,6 +103,12 @@ Task 성격으로 모델과 effort 를 고르고, 비교한 후보와 이유를 
 `wait-important` 를 `--loop-repo` 와 함께 백그라운드로 하나만 걸고, 깨어나면 `triage-messages` 로 `worker_done`, `escalation`, `question` 을 먼저 본다. 루프의 알림(`LOOP-EVENT`)과 죽음(`LOOP-DEAD`)에도 이 대기가 깨어난다.
 압축 뒤에는 루프와 대기가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
 heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.
+
+### gh 호출 예산
+
+자동 조회로 GitHub 서버에 주는 부하를 줄이기 위해 같은 읽기 조회는 프로세스 사이에서 캐시를 공유한다.
+코디네이터가 직접 CI 를 기다릴 때는 `gh pr checks --watch --interval 60` 이상을 쓴다.
+TTL, 기록 위치, 호출 수 확인 명령은 [`references/gh-call-budget.md`](references/gh-call-budget.md) 를 따른다.
 
 ## 5. 답하고 지시 보내기
 
