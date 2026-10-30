@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.22.0 (2026-10-30)
+
+- 진입점 `bin/orch.ts <이름> [인자]` 를 더했다. 부를 때마다 설치 기록에서 현재 번들을 읽어 그 `scripts/<이름>.ts` 를 실행하므로 옛 번들이나 복사해 둔 진입점으로 불러도 현재 번들이 돈다
+- 문서의 명령 예시를 `"$SKILL_DIR/bin/orch.ts" <이름>` 꼴로 바꿨고 `orch-doctor` 의 스크립트 판정이 이 꼴을 본다. `references/overlay.md` 에 저장소 스크립트가 진입점을 푸는 한 줄을 더했다
+- `send-to-worker` 가 reply 를 `stable_pane_required` 로 거부당하면, question 일 때 같은 스레드에 status `answer:` 로 보내고 `fallback:` 줄로 알린다
+- question 이 아닌 메시지는 전환하지 않고 지금처럼 5 로 실패한다
+- 호환성: `wait-important` 가 시작하면 작업 폴더를 `--loop-repo` 의 첫 저장소(없으면 시작 폴더의 주 checkout)로 옮겨 시작 폴더가 지워져도 orca 조회가 돈다. 상대 경로, 상태 파일, 핸들러 저장소는 시작 폴더 기준 그대로다
+
 ## 4.21.0 (2026-10-30)
 
 - worker 가 일하는 중, 끝남, 사용자가 넘겨받음, 판정 못 함 가운데 무엇인지를 `lib/worker-state.ts` 한 곳이 정하고 `cleanup-sweep`, `orch-doctor`, `wait-important` 가 함께 쓴다

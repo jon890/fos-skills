@@ -251,7 +251,7 @@ work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규
 | 항목 | 규칙 |
 | --- | --- |
 | Node 버전 | 24 이상. 고른 이유는 [ADR-011](adr/011-node-24-minimum.md) 이 소유한다. 버전은 옛 `.py` 진입점의 `ts_shim.py` 가 `node --version` 으로 본다. 낮으면 `.ts` 로 넘기지 않고 stdout 에 `NODE-TOO-OLD` 줄을 내고 종료 코드 127 로 끝난다. `SKILL.md` 는 doctor 를 그 진입점(`orch-doctor.py`)으로 불러 스킬을 열 때 이 판정을 거친다. `.ts` 안에서는 판정하지 않는다. 낮은 node 는 `.ts` 를 읽지 못해 `ERR_UNKNOWN_FILE_EXTENSION` 으로 죽어 그 판정에 닿지 못한다 |
-| 실행 | `node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/<명령>.ts"`. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다 |
+| 실행 | `"$SKILL_DIR/bin/orch.ts" <명령>`. 진입점이 설치 기록의 현재 번들에서 `scripts/<명령>.ts` 를 `node --disable-warning=ExperimentalWarning` 으로 실행한다. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다. 경로 규칙은 `orch/bin/orch.ts` 머리 주석이 소유한다 |
 | 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
 | 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
 | 테스트 | `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"`. 파일마다 프로세스가 나뉘어 격리 러너가 필요 없다. CI 는 `Plugin tests` job 에 이 단계를 더한다. 필수 체크 이름이 바뀌지 않는다 |

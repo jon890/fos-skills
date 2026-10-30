@@ -58,7 +58,7 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 `--release <PR>` 은 그 PR 의 머지 커밋이 품은 PR 을 `pr` 필드에 둔 항목을, `--pr <N>` 은 그 번호가 `pr` 이나 `merged-pr` 필드에 든 항목을 끝낸다. `--dry-run` 은 보드를 고치지 않는다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-release.ts" --repo "$REPO" --release "$RELEASE_PR"
+"$SKILL_DIR/bin/orch.ts" board-release --repo "$REPO" --release "$RELEASE_PR"
 ```
 
 **PR 머지 반영과 목표 진행률은 `board-sync.ts` 에 맡긴다.** 판정은 스크립트 머리 주석이 소유한다.
@@ -97,7 +97,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-release.ts"
 `$GOAL_ID` 는 목표 항목 id 다. 무엇을 단계로 세는지는 스크립트 머리 주석이 소유한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/goal-progress.ts" "$GOAL_ID"
+"$SKILL_DIR/bin/orch.ts" goal-progress "$GOAL_ID"
 ```
 
 **mod 가 단계로 세면 이 스크립트는 걷어 낸다.** work-board mod 가 진행률을 단계 줄에서 직접 세는 기능을 갖게 되면 `goal-progress.ts` 와 `board-sync.ts` 의 `--goal` 을 지운다.

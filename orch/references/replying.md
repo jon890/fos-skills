@@ -28,11 +28,13 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 **끝난 dispatch 의 질문에 답할 때도 `send-to-worker` 를 쓴다.** 답할 메시지를 고르고, 이미 답한 question 은 건너뛴다. 깨울 worker 가 없으니 답만 달고 0 으로 끝난다.
 `send-to-worker` 는 `--from run:<run>` 을 붙여 보내고, Orca 터미널 안이라 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보낸다.
 질문 감시는 질문의 스레드에 worker 쪽으로 간 답이면 보낸 쪽과 상관없이 답한 것으로 센다(ADR-015).
+**세션을 다시 시작하면 코디네이터 터미널의 pane 신원이 없어 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.** 그 메시지가 question 이면 `send-to-worker` 가 같은 스레드에 status 로 `answer: <첫 줄>` 제목과 본문을 `send --to dispatch:<id>` 로 보내고 `fallback:` 줄로 알린다. 직접 우회하지 않는다. `worker-ask` 가 그 status 의 본문을 답으로 읽는다(종료 코드 3).
+question 이 아닌 메시지에는 전환하지 않고 5 로 끝난다. 세션이 바뀐 뒤 reply 가 계속 거부되면 사용자에게 알린다.
 
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts" --dispatch "$DISPATCH_ID" --body "$BODY"
+"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --body "$BODY"
 ```
 
 `send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤에는 `recipient_run_mismatch`, 끝난 dispatch 에는 `dispatch_inactive` 로 거절된다.
@@ -47,7 +49,7 @@ dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an acti
 `$MSG_ID` 는 방금 보낸 메시지 id 다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/nudge-worker.ts" --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
+"$SKILL_DIR/bin/orch.ts" nudge-worker --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
 ```
 
 종료 코드 4 는 입력란에 쓰다 만 글이 있거나 권한 확인 창이라 입력하지 않은 것이다. `terminal read --screen` 으로 화면을 보고, 권한 확인 창이면 4단계의 「권한 확인 창」 을 따른다.
@@ -134,7 +136,7 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 `$DISPATCH_ID` 는 PR 을 만든 worker 의 끝난 dispatch, `$SPEC_FILE` 은 후속 지시서다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts" --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE" --run "$RUN_ID"
+"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE" --run "$RUN_ID"
 ```
 
 - 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다
