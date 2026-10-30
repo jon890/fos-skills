@@ -4,7 +4,7 @@
 //
 //   loop.json            루프 상태. 루프의 부모 프로세스만 쓴다(옆 파일에 쓰고 rename). runs 가 없으면 Run 등록을 모르는 옛 루프다
 //   loop.lock            한 저장소에 루프 하나. orch-loop.ts --foreground 가 쥔다
-//   loop-runs/<Run>.json         루프에 등록된 Run 하나. {"run", "specs_dir", "registered_at"}. 아래 「Run 등록」
+//   loop-runs/<Run>.json         루프에 등록된 Run 하나. {"run", "specs_dir", "registered_at", "coordinator_terminal"}. 아래 「Run 등록」
 //   loop-events/<Run>.jsonl      그 Run 의 코디네이터를 깨워야 하는 알림. 한 줄에 {"seq", "time", "kind", "pr", "text"}. text 는 kind 를 뺀 나머지다
 //   loop-events/<Run>.cursor     그 Run 의 읽는 쪽이 마지막으로 읽은 seq 하나
 //   loop-events.jsonl, loop-events.cursor
@@ -79,7 +79,7 @@ export type LoopState = {
 }
 export type LoopStatus = { alive: true; state: LoopState } | { alive: false; reason: string; recheck?: true }
 export type LoopEvent = { seq: number; time: string; kind: string; pr: number | null; text: string }
-export type RunEntry = { run: string; specs_dir: string | null; registered_at: string }
+export type RunEntry = { run: string; specs_dir: string | null; registered_at: string; coordinator_terminal: string | null }
 
 // 파일 이름에 쓸 Run. 머리 주석의 「<Run>」
 export function runKey(run: string): string {
@@ -117,6 +117,7 @@ function readRunFile(file: string): RunEntry | null {
       run: parsed.run,
       specs_dir: typeof parsed.specs_dir === 'string' && parsed.specs_dir ? parsed.specs_dir : null,
       registered_at: typeof parsed.registered_at === 'string' ? parsed.registered_at : '',
+      coordinator_terminal: typeof parsed.coordinator_terminal === 'string' && parsed.coordinator_terminal ? parsed.coordinator_terminal : null,
     }
   } catch {
     return null
@@ -124,11 +125,16 @@ function readRunFile(file: string): RunEntry | null {
 }
 
 // 머리 주석의 「Run 등록」. 새로 등록했으면 true, 이미 등록돼 있었으면 false
-export function registerRun(repo: string, run: string, specsDir: string | null, renew = false): boolean {
+export function registerRun(repo: string, run: string, specsDir: string | null, renew = false, coordinatorTerminal?: string | null): boolean {
   const file = runFile(repo, run)
   const before = readRunFile(file)
   const at = (!renew && before?.registered_at) || new Date().toISOString()
-  const entry: RunEntry = { run, specs_dir: specsDir ?? before?.specs_dir ?? null, registered_at: at }
+  const entry: RunEntry = {
+    run,
+    specs_dir: specsDir ?? before?.specs_dir ?? null,
+    registered_at: at,
+    coordinator_terminal: coordinatorTerminal === undefined ? before?.coordinator_terminal ?? null : coordinatorTerminal,
+  }
   replace(file, `${JSON.stringify(entry)}\n`, repo)
   return before === null
 }

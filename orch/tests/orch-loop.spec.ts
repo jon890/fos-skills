@@ -291,6 +291,25 @@ async function sampled(args: string[], extra: NodeJS.ProcessEnv): Promise<{ code
 }
 
 describe('질문 확인', () => {
+  test('새 사용자 결정은 기본 대기가 없어도 핸들러로 요청하고 같은 질문 재전송은 다시 깨우지 않는다', () => {
+    hook('decision-pending')
+    const ask = (id: string) => ({ ...question(id), body: '결정: 저장 형식\n권장: JSON' })
+    const workers = [{ dispatchId: 'd', dispatchStatus: 'dispatched', agentTerminalHandle: 'term_w' }]
+    orca({ messages: [ask('first')], workers })
+    once()
+    assert.equal(received('decision-pending').length, 1)
+    assert.equal(received('decision-pending')[0].run, 'r')
+    assert.equal((received('decision-pending')[0].questions as Json[])[0].id, 'first')
+    orca({ messages: [ask('first'), ask('retry')], workers })
+    once()
+    assert.equal(received('decision-pending').length, 1)
+    assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 1)
+    // 끝난 dispatch 의 질문은 결정 알림에서 제거된다.
+    orca({ messages: [ask('retry')], workers: [{ ...workers[0], dispatchStatus: 'completed' }] })
+    once()
+    assert.equal(received('decision-pending').length, 1)
+  })
+
   test('알린 지 700초 지난 미답변 질문은 REMINDER 를 알림 파일에 쓰고 worker-question 이 reminder 를 받는다', () => {
     hook('worker-question')
     orca({ messages: [question()] })

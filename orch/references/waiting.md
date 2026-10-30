@@ -2,6 +2,23 @@
 
 ## 상주 루프와 압축 뒤 복구
 
+**대기가 깨어나면 메시지와 알림을 처리한 직후 다시 건다.** `wait-important` 는 stderr 의 `NEXT_WAIT` 에 방금 받은 delivery 를 `--ack` 로 넘기는 다음 명령을 낸다. 표준 출력의 마지막 줄 `LAST_DELIVERY` 계약은 유지한다.
+
+- 받은 delivery 를 `triage-messages` 로 읽고 질문·보고·알림을 처리한다
+- stderr 의 `NEXT_WAIT` 명령을 하네스의 백그라운드 실행으로 건다
+- 미완료 dispatch 가 있는 동안 대기가 하나 살아 있는지 확인한 뒤 턴을 끝낸다
+
+오류나 `WORKER_LOST` 를 받았으면 원인을 먼저 처리하고 다음 대기를 건다. 대기를 자동으로 둘 만들거나 처리하지 않은 delivery 를 자동 ack 하지 않는다.
+
+### 새 사용자 결정을 놓치지 않기
+
+루프는 틱마다 `결정:` 으로 시작하는 살아 있는 worker 의 미답변 질문과 보드의 남은 `decide` 줄을 확인한다. 새 결정이면 `DECISION-PENDING` 을 그 Run 의 알림 파일에 쓰고 `decision-pending` 기본 핸들러가 현재 코디네이터에게 「정할 것 묻기」 를 요청한다. 대기가 꺼져 있어도 터미널로 요청이 들어간다. cron 은 쓰지 않는다.
+
+같은 dispatch 의 같은 본문 재전송은 다시 깨우지 않는다. 보드의 완료된 줄은 제외하고, 결정이 사라졌다 다시 생기면 새로 알린다. 실패한 전달은 다음 틱에 다시 시도한다. 보드 결정은 주 Run 만 맡는다.
+이미 사용자에게 물어 답을 기다리는 결정은 다시 묻지 않는다. 답이 오면 [`replying.md`](replying.md) 의 답장과 보드 정리를 마친다.
+
+기본 핸들러는 `--start` 할 때 등록한 코디네이터 터미널을 쓴다. 압축이나 세션 전환 뒤에는 현재 코디네이터 세션에서 `--start --run` 을 다시 실행해 등록을 갱신한다. 등록값이 없거나 입력란에 글·권한 확인 창이 있으면 입력하지 않고 실패를 알린다. 저장소에서 전달 방법을 바꾸려면 [`hooks.md`](hooks.md) 의 `decision-pending` 핸들러를 둔다.
+
 **저장소마다 상주 루프 `orch-loop.ts` 를 하나 띄우고, 세션은 자기 Run 을 그 루프에 등록한다.** 루프는 하네스의 백그라운드 명령이 아니라 분리된 프로세스라 시간 한도에 묶이지 않고, 세션이 끝나도 살아 있다.
 같은 저장소를 쓰는 다른 세션이 이미 루프를 띄웠으면 그 루프에 자기 Run 을 더한다. 루프는 Run 마다 그 Run 범위로 질문을 확인하고 정리하며, 알림도 Run 마다 나뉜다([ADR-012](../../docs/adr/012-orch-loop-multi-run.md)).
 `$SKILL_DIR` 과 `$REPO` 는 절대경로로, `$RUN_ID` 는 현재 Run 으로 바꾼다. `--run` 과 `--specs-dir` 은 `.orch/config.json` 의 `finish.run`, `finish.specs_dir` 로 대신할 수 있다.
@@ -94,6 +111,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 - 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다.
   Orca 가 끊김이나 실패로 적어도 그 터미널 화면이 에이전트 작업 중이면 끊긴 것으로 보지 않고 stderr 에 `끊긴 것으로 보지 않는다` 한 줄만 남긴다. 화면이 멈추면 다음 확인이 알린다
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
+  - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `REMINDER`: 답이 없는 질문의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다

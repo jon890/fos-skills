@@ -197,6 +197,7 @@ flowchart TD
 | `before-launch` | `launch-worker` | 워크트리를 만든 뒤, `worker-start` 전 | 예 | 지시서 검사, 허락 줄, deny 규칙 | 저장소의 동시 worker 상한, 준비되지 않은 개발 환경 거부 |
 | `worker-launched` | `launch-worker` | `LAUNCHED` 를 낸 뒤 | 아니오 | `LAUNCHED` 줄과 `launch.effective` | 개발 서버 접속 설정을 워크트리에 복사 |
 | `worker-question` | `orch-loop`, `watch-questions` | 새 question 이나 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄, 보드 결정 필요 | 메신저 알림 |
+| `decision-pending` | `orch-loop` | 새 사용자 결정 질문이나 보드의 미완료 결정 줄을 찾을 때 | 아니오 | `DECISION-PENDING`, 현재 코디네이터에게 묻기 요청 | 저장소의 결정 요청 전달 |
 | `worker-done` | `wait-important` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
 | `worker-lost` | `wait-important` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER_LOST` 줄과 상태 기록 | runner 호스트 상태 확인 |
 | `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 입력하지 않는다. 핸들러가 없거나 0 이 아니면(거부는 넘김) 그 Run 의 알림 파일에 `WORKER-STALLED` 줄 | `nudge-worker --text` 로 다시 시도시키고 횟수 상한에서 코디네이터에게 넘긴다 |
