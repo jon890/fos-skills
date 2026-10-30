@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.21.0 (2026-10-30)
+
+- worker 가 일하는 중, 끝남, 사용자가 넘겨받음, 판정 못 함 가운데 무엇인지를 `lib/worker-state.ts` 한 곳이 정하고 `cleanup-sweep`, `orch-doctor`, `wait-important` 가 함께 쓴다
+- `cleanup-sweep` 이 살아 있는 dispatch 의 워크트리를 PR 조회 앞에서 건너뛴다. failed, 반납된 dispatch 도 끝난 것으로 보고 `--kill-holders` 로 남은 프로세스를 끈다. PR 없이 끝난 워크트리는 남은 터미널을 닫고 치운다
+- `user_takeover` 표시라도 화면이 작업 중인 worker 는 일하는 중으로 본다. `orch-doctor --run` 이 `WORKER-STATE` 줄로 알리고, `wait-important` 는 끊긴 것으로 보지 않는다
+
 ## 4.20.0 (2026-10-30)
 
 - 호환성: 개별 지시서에 `worker 선택:` 줄(에이전트, 모델, effort, 비교한 후보, 고른 이유)이 필수다. 없거나 요소가 빠지면 `spec-lint` 가 `선택` 발견으로 막고 `launch-worker` 가 거부한다. `--lint-ack` 으로 넘기지 못한다

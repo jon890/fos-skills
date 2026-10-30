@@ -70,6 +70,9 @@
 //     operator_close(코디네이터나 정리 스크립트가 터미널을 닫았다)이거나, last_failure 의 provenance 가
 //     worker_report(worker 가 `worker_done --outcome failed` 로 알렸다)인 것이다.
 //     camelCase 필드도 읽으며, 실패 이유가 abandoned 인 명시적 포기도 제외한다.
+//     끊긴 것으로 고른 dispatch 라도 그 터미널 화면을 읽어 lib/worker-state.ts 의 판정이 working(에이전트 작업 중)이면 뺀다.
+//     Orca 가 dispatch 를 실패나 끊김으로 적어도 에이전트가 돌고 있는 경우다. stderr 에 `끊긴 것으로 보지 않는다` 한 줄을 남기고
+//     --lost-state 에 적지 않으므로 화면이 멈추면 다음 확인이 알린다. 터미널이 없거나 화면을 읽지 못하면 그대로 끊긴 것이다.
 //     알린 dispatch 와 일부러 끝냈다고 판정한 dispatch 는 `--lost-state` 파일에 Run 별로 적고 다음 대기부터 다시
 //     알리거나 조회하지 않는다. worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 다시
 //     깨우지 않게 하기 위해서다. 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 에 한 줄로 남긴다.
@@ -146,6 +149,7 @@ import { orcaBin, orcaJson } from './lib/orca.ts'
 import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
 import { pyJson, pyStr as text } from './lib/py.ts'
+import { judge, readScreens, screenHandles } from './lib/worker-state.ts'
 
 const USAGE = [
   '사용법: wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]',
@@ -354,6 +358,22 @@ function dropDeliberate(rows: Json[], lost: Lost[], watched: Set<unknown>): Lost
   return kept
 }
 
+// 끊긴 것 가운데 터미널 화면이 에이전트 작업 중인 것을 뺀다(lib/worker-state.ts 의 판정이 working).
+// Orca 가 dispatch 를 실패나 끊김으로 적어도 에이전트가 돌고 있으면 깨우지 않는다. 기록하지 않으므로 화면이 멈추면 다음 확인이 알린다.
+// 터미널이 없거나(terminal_missing) 화면을 읽지 못하면 그대로 끊긴 것이다
+function dropWorking(rows: Json[], lost: Lost[]): Lost[] {
+  const byDispatch = new Map(rows.map((w) => [w.dispatchId, w]))
+  return lost.filter(([dispatch, stage]) => {
+    const row = byDispatch.get(dispatch)
+    if (!row) return true
+    const handles = new Set([row.agentTerminalHandle, obj(row.resource).terminalHandle].filter(Boolean))
+    const verdict = judge({ rows: [row], screens: readScreens(screenHandles([row], new Set(), handles)) })
+    if (verdict.state !== 'working') return true
+    err(`wait-important: ${dispatch} 는 ${String(stage)} 로 보이지만 끊긴 것으로 보지 않는다: ${verdict.reason}`)
+    return false
+  })
+}
+
 // 상주 루프 ------------------------------------------------------------------
 
 type LoopWake = { code: 7 | 8; lines: string[]; cursor: { repo: string; seq: number; run: string | null } | null }
@@ -513,6 +533,7 @@ function check(
         const rows = workerRows(runId)
         let lost = rows && rows.length ? lostWorkers(rows, watched) : []
         lost = lost.length && rows ? dropDeliberate(rows, lost, watched) : []
+        lost = lost.length && rows ? dropWorking(rows, lost) : []
         if (lost.length && rows) {
           stopGroup(child, 'SIGKILL')
           settle({ kind: 'lost', lost, rows })
@@ -808,8 +829,9 @@ async function main(argv: string[]): Promise<number> {
       .sort()
     if (still.length) err(`wait-important: 앞 대기가 알린 끊긴 dispatch ${still.length}개가 아직 처리되지 않았다: ${still.join(' ')}`)
     // 이미 끊겨 있는데 처리하지 않은 dispatch 가 있으면 기다리지 않고 알린다
-    const { found, deliberate } = unhandledLost(runId, rows, ignore)
+    const { found: candidates, deliberate } = unhandledLost(runId, rows, ignore)
     saveReported(state, runId, deliberate, cwd)
+    const found = candidates.length ? dropWorking(rows, candidates) : []
     if (found.length) return reportLost(found, rows, values.ack ?? null, state, runId, cwd)
     watched = new Set([...liveDispatches(rows)].filter((d) => !ignore.has(d)))
   }

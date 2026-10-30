@@ -14,7 +14,7 @@
 //     --remote          원본 저장소. 주지 않으면 설치 경로의 마켓플레이스 clone 의 origin 을 쓴다
 //     --branch          원본의 기준 브랜치. 기본 main
 //     --skip-version    설치본 비교를 건너뛰고 스크립트 존재만 본다. 저장소 테스트가 스킬마다 이것으로 부른다
-//     --run             미답변 질문을 확인할 Run. 주면 session-resume 이벤트도 낸다
+//     --run             미답변 질문과 worker 판정을 볼 Run. 주면 session-resume 이벤트도 낸다
 //     --skip-questions  질문 상태 조회를 건너뛴다
 //     --repo            핸들러와 설정을 볼 저장소. 기본은 작업 디렉터리의 주 checkout
 //
@@ -59,6 +59,12 @@
 //     다시 띄우는 명령은 그 루프의 Run 코디네이터 세션에서 돌리라는 안내와 함께 낸다. 루프는 띄운 터미널의 Run 명의를 물려받는다
 //     (orch-loop.ts 머리 주석의 「명의」). Run 은 그 저장소 loop.json 의 bound_run, 없으면 run 이다. 경고라 종료 코드를 바꾸지 않는다.
 //
+// worker 판정(--run 을 줄 때):
+//     그 Run 의 worker-list 행 가운데 살아 있는 dispatch 이고 터미널의 ownershipState 가 user_owned 인 것을 lib/worker-state.ts 로 판정한다.
+//     새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적어, 일하는 worker 가 사용자에게 넘어간 것처럼 보인다.
+//     그 터미널 화면을 읽어 에이전트가 작업 중이면 working, 아니면 taken_over 다. 판정마다 WORKER-STATE 줄을 낸다.
+//     worker-list 를 30초 안에 읽지 못하면 SKIP-WORKERS 다. 경고라 종료 코드를 바꾸지 않는다.
+//
 // session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
 //                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다.
@@ -90,10 +96,12 @@
 //                                                고치는 방법과 `/reload-plugins` 안내가 온다
 //     LOOP-DEAD <repo> <이유>                    --run 을 줬는데 상주 루프가 죽었다. 다음 줄에 다시 띄울 명령이 온다
 //     LOOP-STALE <repo> <pid> <번들 sha>          설치되지 않은 번들의 스크립트로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
+//     WORKER-STATE <dispatch> <상태> <근거>       --run 의 살아 있는 dispatch 가운데 user_owned 로 표시된 것의 판정(위 「worker 판정」)
+//     SKIP-WORKERS <이유>                         worker 판정을 하지 못했다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED 가 없다(SKIP, UNKNOWN-HOOK, DEPRECATED-CONFIG, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING 이나 UNANSWERED 가 있다
 //     2  사용법 오류
 //
@@ -114,6 +122,8 @@ import { isRegistered, loopStatus, readLoop, recheckMs } from './lib/loop.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
+import { workerRows } from './lib/workers.ts'
+import { isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
 
 const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
@@ -122,6 +132,7 @@ const REF = /(?:\$(?:(?<sibling>[A-Z][A-Z0-9_]*)_)?SKILL_DIR\/|\]\((?<up>(?:\.\.
 const GIT_TIMEOUT_MS = 20_000
 const OVERDUE_SEC = 600
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish'])
+const WORKERS_TIMEOUT_MS = 30_000
 
 type Checked = { lines: string[]; code: number }
 
@@ -406,6 +417,20 @@ function staleLoops(): string[] {
   return lines
 }
 
+// 머리 주석의 「worker 판정」. 살아 있는 dispatch 가운데 터미널이 user_owned 로 표시된 것만 판정해 낸다
+function checkWorkers(runId: string): string[] {
+  const got = workerRows(runId, { timeoutMs: WORKERS_TIMEOUT_MS })
+  if (!got.ok) return [`SKIP-WORKERS ${got.error}`]
+  const lines: string[] = []
+  for (const row of got.rows) {
+    const resource = row.resource as Record<string, unknown> | undefined
+    if (!isLive(row) || resource?.ownershipState !== 'user_owned') continue
+    const verdict = judge({ rows: [row], screens: readScreens(screenHandles([row])) })
+    lines.push(`WORKER-STATE ${String(row.dispatchId ?? '?')} ${verdict.state} ${verdict.reason}`)
+  }
+  return lines
+}
+
 async function main(argv: string[]): Promise<number> {
   let values
   try {
@@ -455,7 +480,8 @@ async function main(argv: string[]): Promise<number> {
           `  node --disable-warning=ExperimentalWarning "${join(skillDir, 'scripts', 'orch-loop.ts')}" --repo ${shQuote(repo)} --run ${shQuote(runId as string)} --start`,
         ]
       : []
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops()].join('\n')}\n`)
+  const workerLines = runId ? checkWorkers(runId) : []
+  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(), ...workerLines].join('\n')}\n`)
 
   if (runId) {
     try {
