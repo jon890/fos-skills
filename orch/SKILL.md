@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "4.21.0"
+  version: "4.24.0"
 ---
 
 # orch
@@ -18,6 +18,8 @@ metadata:
 명령 문법과 lifecycle 은 Orca 의 `orchestration` 가이드(`orca skills get orchestration`)가 소유한다.
 이 스킬은 그 가이드에 없는 코디네이터의 판단과, 각 단계에서 같은 실패를 피하는 규칙을 담는다.
 `$SKILL_DIR` 은 이 스킬 번들 경로다.
+스크립트는 진입점 `"$SKILL_DIR/bin/orch.ts" <이름> [인자]` 로 부른다. 부를 때마다 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 설치 기록에서 지금 설치된 번들을 읽어 그 번들의 `scripts/<이름>.ts` 를 실행한다.
+갱신이나 프로필 전환 뒤에도 기억해 둔 명령이 옛 번들을 부르지 않는다. 저장소 스크립트가 진입점을 부르는 방법은 [`references/overlay.md`](references/overlay.md) 의 「저장소 스크립트에서 orch 부르기」 가 소유한다.
 
 스킬을 열면 먼저 설치본을 점검한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
@@ -103,6 +105,12 @@ Task 성격으로 모델과 effort 를 고르고, 비교한 후보와 이유를 
 `wait-important` 를 `--loop-repo` 와 함께 백그라운드로 하나만 걸고, 깨어나면 `triage-messages` 로 `worker_done`, `escalation`, `question` 을 먼저 본다. 루프의 알림(`LOOP-EVENT`)과 죽음(`LOOP-DEAD`)에도 이 대기가 깨어난다.
 압축 뒤에는 루프와 대기가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
 heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.
+
+### gh 호출 예산
+
+자동 조회로 GitHub 서버에 주는 부하를 줄이기 위해 같은 읽기 조회는 프로세스 사이에서 캐시를 공유한다.
+코디네이터가 직접 CI 를 기다릴 때는 `gh pr checks --watch --interval 60` 이상을 쓴다.
+TTL, 기록 위치, 호출 수 확인 명령은 [`references/gh-call-budget.md`](references/gh-call-budget.md) 를 따른다.
 
 ## 5. 답하고 지시 보내기
 

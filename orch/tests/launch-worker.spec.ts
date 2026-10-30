@@ -1221,7 +1221,7 @@ describe('claude 프로필 준비 판정', () => {
     const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.match(r.stderr, /프로필 p1 에 plugins 링크, settings\.json 가 없어/)
-    assert.match(r.stderr, /link-claude-profile\.ts'? p1 --apply$/m)
+    assert.match(r.stderr, /bin\/orch\.ts'? link-claude-profile p1 --apply$/m)
     assert.equal(existsSync(log), false)
   })
 

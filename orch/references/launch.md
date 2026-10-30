@@ -39,7 +39,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
+"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -56,7 +56,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts"
 로컬 브랜치나 경로가 있으면 덮어쓰지 않으며 기존 워크트리는 `--worktree` 로 이어 쓴다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts" --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --resume-remote --run "$RUN_ID" \
+"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --resume-remote --run "$RUN_ID" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -70,7 +70,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts"
 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/launch-worker.ts" --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
+"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -130,11 +130,11 @@ Orca 는 Claude 계정마다 `~/Library/Application Support/orca/claude-profiles
 없으면 띄우지 않고 종료 코드 1 과 함께 맞추는 명령 한 줄을 낸다. 고치는 것은 사용자나 코디네이터가 그 명령으로 한다.
 프로필 폴더나 `selected-host` 가 없으면 Orca 를 쓰지 않는 환경으로 보고 건너뛴다.
 
-맞추는 명령은 `link-claude-profile.ts` 다. `--apply` 를 빼고 먼저 돌려 바꿀 목록을 본다.
+맞추는 명령은 `link-claude-profile` 이다. `--apply` 를 빼고 먼저 돌려 바꿀 목록을 본다.
 `$PROFILE_ID` 는 거부 메시지에 나온 프로필 id 다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/link-claude-profile.ts" "$PROFILE_ID"
+"$SKILL_DIR/bin/orch.ts" link-claude-profile "$PROFILE_ID"
 ```
 
 무엇을 링크하고 복사하는지, 세션 상태와 로그인 정보를 옮기지 않는 이유, 백업 이름은 `scripts/lib/claude-profile.ts` 머리 주석이 소유한다.

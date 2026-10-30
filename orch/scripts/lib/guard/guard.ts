@@ -26,6 +26,7 @@
 // 통과면 진짜 실행 파일을 같은 인자와 stdin 으로 실행하고 그 종료 코드를 낸다. 시그널로 죽으면 128 + 신호 번호다.
 
 import { spawnSync } from 'node:child_process'
+import { budgetGh } from '../gh-budget.ts'
 import { dirname, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inside, real } from '../fs.ts'
@@ -178,11 +179,17 @@ export function main(tool: Tool, argv: string[]): number {
     process.stderr.write(`${tool} 가드: ${bin.error}\n`)
     return DENIED
   }
-  const done = spawnSync(bin.path, argv, { stdio: 'inherit' })
-  if (done.error) {
-    process.stderr.write(`${tool} 가드: ${bin.path} 를 실행하지 못했다: ${done.error.message}\n`)
-    return (done.error as NodeJS.ErrnoException).code === 'ENOENT' ? 127 : 1
+  const execute = () => {
+    const done = spawnSync(bin.path, argv, { stdio: 'inherit' })
+    if (done.error) {
+      process.stderr.write(`${tool} 가드: ${bin.path} 를 실행하지 못했다: ${done.error.message}\n`)
+      return (done.error as NodeJS.ErrnoException).code === 'ENOENT' ? 127 : 1
+    }
+    if (done.signal) return signalCode(done.signal)
+    return done.status ?? 1
   }
-  if (done.signal) return signalCode(done.signal)
-  return done.status ?? 1
+  // 코어 gh() 에서 넘어온 shim 은 이미 측정 중이다. 핸들러의 직접 호출만 기록한다.
+  if (tool !== 'gh' || process.env.ORCH_GH_BUDGET_PARENT === String(process.ppid)) return execute()
+  return budgetGh(argv, process.env.ORCH_REPO ?? process.cwd(), bin.path,
+    () => ({ code: execute(), stdout: '', stderr: '', timedOut: false }), { passthrough: true }).code
 }

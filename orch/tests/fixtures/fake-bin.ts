@@ -7,6 +7,9 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+// 상태를 즉시 바꾸는 기존 가짜 호출은 캐시를 끈다. 캐시 전용 테스트가 명시적으로 켠다.
+process.env.ORCH_GH_CACHE = '0'
+
 export type FakeRule = { args?: string[]; stdout?: string; stderr?: string; code?: number }
 export type FakeCall = { argv: string[]; env: Record<string, string | null>; cwd: string }
 export type FakeBin = { path: string; calls: () => FakeCall[]; setRules: (rules: FakeRule[]) => void }

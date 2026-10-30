@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { HOOK, type Proc, branches, calls, exists, fx, git, gone, has, idleShell, lacks, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
+import { HOOK, type Proc, type Row, branches, calls, exists, fx, git, gone, has, idleShell, lacks, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
 function releasedWorkerWithShell(name: string, child = false): string {
   const path = worktree(name)
@@ -227,14 +227,25 @@ describe('worker 가 끝난 뒤에도 경로를 쥔 프로세스 (--kill-holders
     const path = finishedWorkerWithHolders('feat-k4')
     const out = runSweep(['--kill-holders', '--apply'])
     exists(path, out)
-    has(out, '그 경로의 worker 를 모른다')
-    for (const state of ['failed', 'abandoned']) {
-      fx.workers[0].workerState = state
-      const again = runSweep(['--run', 'run_x', '--kill-holders', '--apply'])
-      exists(path, again)
-      has(again, '끝나지 않은 dispatch ctx_k')
-    }
+    has(out, '그 경로의 dispatch 를 모른다')
+    // 반납되지 않은 채 끊긴 dispatch 는 끝났는지 몰라 끄지 않는다
+    fx.workers[0].dispatchStatus = 'dispatched'
+    fx.workers[0].workerState = 'abandoned'
+    fx.workers[0].resource = { worktreeId: (fx.workers[0].resource as Row).worktreeId }
+    const again = runSweep(['--run', 'run_x', '--kill-holders', '--apply'])
+    exists(path, again)
+    has(again, '끝나지 않은 dispatch ctx_k')
     assert.deepEqual(killCalls(), [])
+  })
+
+  test('failed 나 반납된 dispatch 는 끝난 것으로 보고 끈다', () => {
+    for (const state of ['failed', 'abandoned']) {
+      const path = finishedWorkerWithHolders(`feat-k4-${state}`)
+      fx.workers[0].workerState = state
+      const out = runSweep(['--run', 'run_x', '--kill-holders', '--apply'])
+      has(out, 'TERM 를 보낸다')
+      gone(path, out)
+    }
   })
 
   test('그 경로에 Orca 터미널이 남아 있으면 끄지 않는다', () => {

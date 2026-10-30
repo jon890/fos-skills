@@ -36,6 +36,13 @@
 //     --apply       실제로 정리한다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
+// 일하는 중 (--run 을 줬을 때, 워크트리마다 맨 처음):
+//     worker 상태는 lib/worker-state.ts 의 판정이 정한다. 그 경로의 이 Run worker 행 가운데 살아 있는 dispatch 가 있으면
+//     터미널 소유 확인과 PR 조회(gh) 앞에서 건너뛴다. 워크트리가 많을 때 그 조회가 루프의 제한 시간을 다 썼다.
+//     판정이 working 이면 `건너뜀 <경로>: 살아 있는 worker <dispatch>. 근거: <이유>`, taken_over 면
+//     `남김: 사용자 보유 터미널 (<경로>). 근거: <이유>` 다. user_takeover 로 표시된 행만 그 터미널 화면을 읽는다.
+//     화면이 에이전트 작업 중이면 working 이다. 새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적는다
+//
 // PR 찾기 (브랜치마다):
 //     로컬 브랜치 이름과 PR 의 head 브랜치 이름이 다르면(`<user>/<접두>-<주제>` 와 `<접두>/<주제>`) 이름 하나로는 못 찾는다.
 //     아래 순서로 `gh pr list --head` 를 부르고 처음 나온 PR 을 쓴다. fork 에서 온 PR 은 건너뛴다.
@@ -74,7 +81,7 @@
 //     PR 찾기로 찾은 PR 이 아래를 모두 채우면 그 dispatch 가 쓴 터미널을 닫고 dispatch 를 반납한다.
 //       - state 가 CLOSED 다(MERGED 가 아니다)
 //       - 내 PR 이다
-//       - --run 으로 찾은 그 경로의 worker 가 하나 이상이고 모두 workerState 가 succeeded 나 fenced 다
+//       - --run 으로 찾은 그 경로의 worker 가 하나 이상이고 모두 끝났다(lib/worker-state.ts 의 isFinished)
 //       - 터미널 소유 확인(lib/ownership.ts)을 통과한다. 사용자 보유 터미널이면 `남김: 사용자 보유 터미널` 이다
 //     닫는 터미널은 그 worker 행의 terminalHandle 과 agentTerminalHandle 가운데 그 경로에 살아 있는 것이다.
 //     모든 Run 의 worker 를 읽지 못했으면 agentTerminalHandle 만 닫는다.
@@ -101,14 +108,13 @@
 // PR 없이 끝난 워크트리 (--run 을 줬을 때만):
 //     측정처럼 PR 을 만들지 않는 지시서는 PR 이 없고 upstream 이 남아 있어 위 정리 대상 판정을 통과하지 못했다.
 //     PR 이 「없음」 이면(조회 실패는 아니다. 이름만 같은 PR 은 없음과 같다) 아래가 모두 참일 때 치운다.
-//       - 그 경로의 worker 행이 하나 이상이고 모두 dispatchStatus 가 completed 다. failed 나 canceled 는 같은 워크트리로 다시 맡길 수 있어 뺀다
-//       - 브랜치에 origin/<기준> 보다 앞선 커밋이 없다
+//       - lib/worker-state.ts 의 판정이 done 이다. 그 경로의 worker 행이 하나 이상이고 모두 끝났으며(completed, failed, canceled, 반납),
+//         브랜치에 origin/<기준> 보다 앞선 커밋이 없다. 살아 있는 터미널의 화면을 읽어 넘겨받은 터미널이나 작업 중인 화면이 있으면 아니다
 //       - 커밋 안 된 변경이 없다
 //       - 브랜치가 쓰는 원격 브랜치(upstream, `branch.<b>.merge`, 로컬 이름)가 있으면 그것도 앞선 커밋이 없다
 //     원격 브랜치도 위 조건을 채웠을 때만 지운다(원격 브랜치 삭제의 끝점 확인은 그대로다).
 //     하나라도 아니면 남기고 `남김 <경로>: PR 없음, upstream 이 남아 있다. 치우지 않는 이유: <이유>` 를 낸다.
-//     그 경로의 터미널은 위 「코디네이터가 띄운 터미널」 만 닫는다. 기록 없는 터미널이 있으면 `살아 있는 터미널이 있다` 로 남긴다.
-//     터미널을 닫은 뒤 Orca 가 다시 연 빈 셸은 MERGED 일 때와 같게 닫는다
+//     치울 때는 PR 이 MERGED 일 때와 같게 그 경로의 터미널(Orca 가 다시 연 빈 셸 포함)을 모두 닫고, --kill-holders 면 남은 프로세스도 끈다
 //
 // 머지 큐 로그 (저장소마다 워크트리와 브랜치 정리 뒤에 한 번. --run 이 없어도 한다):
 //     <orch>/queue(lib/paths.ts 의 queue, merge-with-finish.ts 의 --finish-log-dir 기본값)에 남은 끝난 로그를 휴지통으로 옮긴다.
@@ -119,7 +125,7 @@
 // 건너뜀 (이유를 낸다):
 //     - 커밋 안 된 변경이 있다
 //     - 원격에도 머지된 PR HEAD 에도 없는 커밋이 있다
-//     - 살아 있는 worker 가 그 worktree 를 맡고 있다. workerState 가 working 이나 ready 이면 살아 있다고 본다.
+//     - 살아 있는 worker 가 그 worktree 를 맡고 있다(위 「일하는 중」).
 //       PR 이 MERGED 가 아닌 브랜치(cherry 판정)는 Dispatch 상태와 상관없이 그 worker 의 터미널이
 //       `orca terminal list` 에 살아 있어도 살아 있다고 본다.
 //       Dispatch 가 succeeded 여도 같은 터미널에서 후속 일을 하는 worker 가 있고,
@@ -181,8 +187,9 @@
 //     프로세스가 그 경로를 작업 디렉터리로 쥐고 남아 `remove-worktree.ts` 가 매번 거부한다.
 //     이 옵션은 아래가 모두 참일 때만 그 프로세스를 TERM, HUP, KILL 순으로 끈다. 신호마다 --wait 초(최소 --poll-interval 초) 기다리고,
 //     그때도 그 경로를 쓰는 pid 만 다시 골라 다음 신호를 보낸다. 로그인 셸은 TERM 을 무시해 HUP 이 필요하다.
-//       - PR 이 MERGED 다
-//       - --run 으로 찾은 그 경로의 worker 가 하나 이상이고, 모두 workerState 가 succeeded 나 fenced 다
+//       - PR 이 MERGED 이거나 PR 없이 끝난 워크트리다
+//       - lib/worker-state.ts 의 판정이 done 이다. --run 으로 찾은 그 경로의 worker 가 하나 이상이고 모두 끝났다
+//         (completed, failed, canceled, 반납). 반납되지 않은 채 끊긴 dispatch 는 끝났는지 몰라 끄지 않는다
 //       - 그 경로에 Orca 터미널이 남아 있지 않다
 //       - 프로세스의 작업 디렉터리가 그 경로이거나 그 아래다
 //     하나라도 거짓이면 끄지 않고 이유를 낸다. 위가 참이어도 아래 프로세스는 빼고 끈다.
@@ -202,7 +209,7 @@
 //     기준 브랜치가 뒤처지면 그 위에서 계획한 worker 가 옛 코드를 본다.
 //
 // 실행 순서 (worktree 마다):
-//     그 경로의 Orca 터미널 close(PR 이 MERGED 일 때만. 머지 없이 CLOSED 가 된 내 PR 이면 그 dispatch 의 터미널만. PR 없이 끝난 워크트리면 코디네이터가 띄운 터미널만), 끝난 Dispatch release, `remove-worktree.ts --delete-branch --merged-head`,
+//     그 경로의 Orca 터미널 close(PR 이 MERGED 이거나 PR 없이 끝난 워크트리일 때만. 머지 없이 CLOSED 가 된 내 PR 이면 그 dispatch 의 터미널만), 끝난 Dispatch release, `remove-worktree.ts --delete-branch --merged-head`,
 //     원격 브랜치 삭제(이미 없으면 통과), 지시서와 PR 본문 파일 삭제.
 //     remove-worktree.ts 는 lib/proc.ts 의 scriptCommand 로 같은 폴더의 것을 부른다.
 //     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
@@ -285,7 +292,7 @@ import { expandArgs } from './lib/args.ts'
 import { ConfigError } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import { realPath } from './lib/fs.ts'
-import { apiTarget, ghBin, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
+import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { defaultBase } from './lib/git.ts'
 import { forgetLaunch, launchesAt, readLaunch } from './lib/launched.ts'
 import { orcaBin } from './lib/orca.ts'
@@ -295,17 +302,14 @@ import { pathOf, requireMigrated } from './lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from './lib/queue-logs.ts'
 import { run as runProcess, scriptCommand } from './lib/proc.ts'
 import { deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates } from './lib/spec.ts'
+import { isFinished, isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
+import type { Verdict } from './lib/worker-state.ts'
 
 const USAGE =
   "사용법: cleanup-sweep.ts --repo DIR [--repo DIR ...] [--base main] [--run RUN_ID] [--specs-dir DIR] [--kill-holders] [--agent-glob 'agent-*'] [--close-own-taken-over] [--remote-branches] [--trash DIR] [--wait SEC] [--poll-interval SEC] [--apply]"
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REMOVE = join(HERE, 'remove-worktree.ts')
-const LIVE_STATES = new Set(['working', 'ready'])
-// 이 상태의 worker 만 남은 프로세스를 끌 수 있다. failed 나 abandoned 는 같은 워크트리로 다시 맡길 수 있어 뺀다
-const FINISHED_STATES = new Set(['succeeded', 'fenced'])
 const STOP_SIGNALS = ['TERM', 'HUP', 'KILL']
-// 이 dispatch 상태면 끝났다고 본다. 코디네이터가 띄운 터미널을 알아보는 조건이다
-const FINISHED_DISPATCH = new Set(['completed', 'failed', 'canceled'])
 const PR_STATES = new Set(['MERGED', 'OPEN', 'CLOSED'])
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh'])
 const BY_PR = 'PR MERGED'
@@ -412,11 +416,11 @@ function worktrees(repo: string): [string, string][] {
 // JSON 이 아니거나 목록이 아니거나 state 가 모르는 값이면 error 다.
 // 출력 문자열을 비교하지 않고 파싱한다. `null` 같은 문자열이 PR 로 읽히지 않게 한다.
 function prList(repo: string, head: string): { ok: boolean; prs: Pr[] } {
-  const done = run([ghBin(), 'pr', 'list', '--head', head, '--state', 'all', '--limit', '5', '--json', PR_FIELDS], { cwd: repo })
+  const done = gh(['pr', 'list', '--head', head, '--state', 'all', '--limit', '5', '--json', PR_FIELDS], { cwd: repo })
   if (done.code !== 0) return { ok: false, prs: [] }
   let prs: unknown
   try {
-    prs = done.out ? JSON.parse(done.out) : []
+    prs = done.stdout.trim() ? JSON.parse(done.stdout) : []
   } catch {
     return { ok: false, prs: [] }
   }
@@ -471,11 +475,11 @@ function ensureCommit(repo: string, pr: Pr): void {
 // `gh pr view --json commits` 가 돌려주는 PR 의 커밋 해시 집합. 조회가 실패하거나 모양이 다르면 null 이다.
 // update-branch 로 합친 머지 커밋도 목록에 든다. gh 는 커밋을 앞쪽 100 개까지만 준다.
 function prCommitOids(repo: string, pr: Pr): Set<string> | null {
-  const done = run([ghBin(), 'pr', 'view', String(pr.number), '--json', 'commits'], { cwd: repo })
+  const done = gh(['pr', 'view', String(pr.number), '--json', 'commits'], { cwd: repo })
   if (done.code !== 0) return null
   let data: unknown
   try {
-    data = JSON.parse(done.out)
+    data = JSON.parse(done.stdout)
   } catch {
     return null
   }
@@ -717,13 +721,11 @@ function ownAncestors(host: Host): Set<string> {
   return seen
 }
 
-// 남은 프로세스를 끄면 안 되는 이유. 끌 수 있으면 null 이다.
-// dry-run 은 터미널을 닫기 전이라 checkTerminals 를 끈다. 실제 실행은 MERGED 면 터미널을 먼저 닫는다.
-function killBlocker(mine: WorkerRow[], path: string, byPr: boolean, checkTerminals = true): string | null {
-  if (!byPr) return 'PR 이 MERGED 가 아니다'
-  if (mine.length === 0) return '그 경로의 worker 를 모른다(--run 이 없거나 그 Run 에 없다)'
-  const unfinished = mine.filter((w) => !FINISHED_STATES.has(w.workerState as string)).map((w) => String(w.dispatchId ?? '?'))
-  if (unfinished.length) return `끝나지 않은 dispatch ${unfinished.join(', ')}`
+// 남은 프로세스를 끄면 안 되는 이유. 끌 수 있으면 null 이다. verdict 는 lib/worker-state.ts 의 판정이고 done 이어야 끈다.
+// dry-run 은 터미널을 닫기 전이라 checkTerminals 를 끈다. 실제 실행은 끝난 워크트리면 터미널을 먼저 닫는다.
+function killBlocker(verdict: Verdict | null, path: string, checkTerminals = true): string | null {
+  if (verdict === null) return 'PR 이 MERGED 가 아니고 PR 없이 끝난 워크트리도 아니다'
+  if (verdict.state !== 'done') return `끝남이 아니다(${verdict.state}): ${verdict.reason}`
   if (!checkTerminals) return null
   const terminals = liveTerminals()
   if (terminals === null || terminalsAt(terminals, path).length) return '그 경로에 Orca 터미널이 남아 있거나 터미널 목록을 읽지 못했다'
@@ -795,8 +797,8 @@ export async function stopHolders(
 
 function protectedReason(repo: string, branch: string, base: string): string | null {
   if (branch === base || branch.startsWith('release/')) return '기준 브랜치나 release 브랜치'
-  const done = run([ghBin(), 'pr', 'list', '--state', 'open', '--base', branch, '--json', 'number', '--jq', 'length'], { cwd: repo })
-  if (done.code !== 0 || (done.out !== '' && done.out !== '0')) return '다른 열린 PR 의 base 이거나 조회 실패'
+  const done = gh(['pr', 'list', '--state', 'open', '--base', branch, '--json', 'number', '--jq', 'length'], { cwd: repo })
+  if (done.code !== 0 || (done.stdout.trim() !== '' && done.stdout.trim() !== '0')) return '다른 열린 PR 의 base 이거나 조회 실패'
   return null
 }
 
@@ -1000,7 +1002,7 @@ function launchedOwn(repo: string, mine: WorkerRow[], terminals: Terminal[], pat
     for (const w of mine) {
       const handles = rowHandles(w)
       const live = [...handles].filter((h) => here.has(h))
-      if (!FINISHED_DISPATCH.has(w.dispatchStatus as string)) {
+      if (!isFinished(w)) {
         for (const h of live) busy.add(h)
         continue
       }
@@ -1017,18 +1019,19 @@ function launchedOwn(repo: string, mine: WorkerRow[], terminals: Terminal[], pat
   return own
 }
 
-// 「PR 없이 끝난 워크트리」 를 치우지 못하는 이유. 치워도 되면 null 이다. 조건은 머리 주석이 정한다
-function noPrBlocker(s: Sweep, branch: string, path: string, mine: WorkerRow[]): string | null {
+// 「PR 없이 끝난 워크트리」 를 치우지 못하는 이유. 치워도 되면 null 이다. 조건은 머리 주석이 정한다.
+// dispatch 와 앞선 커밋, 화면은 lib/worker-state.ts 의 판정이 done 이어야 한다. own 은 코디네이터 것으로 확인한 터미널이다
+function noPrBlocker(s: Sweep, branch: string, path: string, mine: WorkerRow[], terminals: Terminal[], own: ReadonlySet<unknown>): string | null {
   const { repo, args } = s
   if (mine.length === 0) return '그 경로의 dispatch 를 모른다(--run 이 없거나 그 Run 에 없다)'
-  const open = mine.filter((w) => w.dispatchStatus !== 'completed').map((w) => String(w.dispatchId ?? '?'))
-  if (open.length) return `끝나지 않은 dispatch ${open.join(', ')}`
   const ahead = (ref: string) => {
     const done = git(repo, 'rev-list', '--count', `origin/${args.base}..${ref}`)
     return done.code === 0 && /^\d+$/.test(done.out) ? Number(done.out) : -1
   }
   const local = ahead(`refs/heads/${branch}`)
-  if (local !== 0) return local < 0 ? 'base 보다 앞선 커밋을 세지 못했다' : `base 보다 앞선 커밋 ${local} 개`
+  const screens = readScreens(screenHandles(mine, own, new Set(terminalsAt(terminals, path))))
+  const verdict = judge({ rows: mine, pr: 'none', ahead: local < 0 ? null : local, screens, own })
+  if (verdict.state !== 'done') return verdict.reason
   if (dirty(path)) return '커밋 안 된 변경'
   for (const [name, exact] of prCandidates(repo, branch)) {
     const ref = `refs/remotes/origin/${name}`
@@ -1103,7 +1106,7 @@ function ownPr(pr: Pr, authors: string[]): boolean {
 // 작성자 목록은 이 Run 의 끝난 worker 가 있는 CLOSED PR 을 만났을 때만 읽는다
 function closedOwnTerminals(s: Sweep, pr: Pr | null, mine: WorkerRow[], terminals: Terminal[], path: string): string[] | null {
   if (!s.args.run || !pr || pr.state !== 'CLOSED') return null
-  if (mine.length === 0 || !mine.every((w) => FINISHED_STATES.has(w.workerState as string))) return null
+  if (mine.length === 0 || !mine.every(isFinished)) return null
   const authors = s.owners()
   if (!authors || !ownPr(pr, authors)) return null
   const foreign = s.args.foreign
@@ -1303,6 +1306,13 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     report.skipped.push({ path, reason })
   }
   const mine = workersAt(workers, path)
+  // 살아 있는 dispatch 의 워크트리는 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많으면 그 조회가 정리 시간을 다 쓴다(머리 주석의 「일하는 중」)
+  if (mine.some(isLive)) {
+    const verdict = judge({ rows: mine, screens: readScreens(screenHandles(mine)) })
+    if (verdict.state === 'taken_over') return keep('사용자 보유 터미널', `남김: 사용자 보유 터미널 (${path}). 근거: ${verdict.reason}`)
+    const reason = `살아 있는 worker ${mine.filter(isLive).map((w) => String(w.dispatchId ?? '?')).join(', ')}`
+    return keep(reason, `건너뜀 ${path}: ${reason}. 근거: ${verdict.reason}`)
+  }
   const launched = launchedOwn(repo, mine, terminals, path)
   const taken = new Set<unknown>([...takenOverOwn(args, mine, terminals, path), ...launched])
   const owner = await ownershipBlocker(path, taken, args.allWorkers)
@@ -1314,7 +1324,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   // PR 을 만들지 않는 일은 dispatch 가 끝나고 남긴 것이 없으면 치운다. 아니면 이유를 덧붙여 남긴다
   let byNoPr = false
   if (!m.ok && m.noPr) {
-    const why = noPrBlocker(s, branch, path, mine)
+    const why = noPrBlocker(s, branch, path, mine, terminals, taken)
     if (why === null) {
       m = { ...m, ok: true, why: BY_NO_PR }
       byNoPr = true
@@ -1339,15 +1349,12 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   }
   const alive = new Set(terminals.map((t) => t.handle ?? null))
   // PR 이 MERGED 면 끝난 worker 의 세션 터미널이 남아 있어도 살아 있다고 보지 않는다. 아래에서 그 터미널을 닫는다.
-  // 머지 없이 CLOSED 가 된 내 PR(closing)도 그 dispatch 의 터미널을 아래에서 닫으므로 같게 다룬다
+  // 머지 없이 CLOSED 가 된 내 PR(closing)도 그 dispatch 의 터미널을 아래에서 닫으므로 같게 다룬다.
+  // PR 없이 끝난 워크트리는 lib/worker-state.ts 의 판정이 그 터미널 화면까지 보고 done 으로 정했다
   const byPr = m.why === BY_PR
-  // 터미널을 닫고 치우는 판정. 코디네이터가 띄운 끝난 터미널은 아래에서 닫으므로 살아 있다고 보지 않는다
+  // 터미널을 모두 닫고 치우는 판정. 남은 프로세스를 끄는 것도 이때뿐이다
   const byDone = byPr || byNoPr
-  const live = mine.filter(
-    (w) =>
-      LIVE_STATES.has(w.workerState as string) ||
-      (!byPr && closing === null && alive.has(w.agentTerminalHandle ?? null) && !(byNoPr && launched.has(w.agentTerminalHandle))),
-  )
+  const live = mine.filter((w) => !byDone && closing === null && alive.has(w.agentTerminalHandle ?? null))
   if (live.length) {
     const reason = `살아 있는 worker ${live.map((w) => String(w.dispatchId ?? '?')).join(', ')}`
     return keep(reason, `건너뜀 ${path}: ${reason}`)
@@ -1372,9 +1379,9 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     const reason = `${what} ${theirs.join(', ')}`
     return keep(reason, `건너뜀 ${path}: ${reason}. 그 Run 의 코디네이터가 정리한다`)
   }
-  const closable = closing ?? (byNoPr ? [...launched] : [])
-  if (!byPr && terminalsAt(terminals, path).some((h) => !closable.includes(h))) {
-    const reason = '살아 있는 터미널이 있다. PR 이 MERGED 가 아니면 터미널을 닫지 않는다'
+  const closable = closing ?? []
+  if (!byDone && terminalsAt(terminals, path).some((h) => !closable.includes(h))) {
+    const reason = '살아 있는 터미널이 있다. 끝난 워크트리(PR MERGED, PR 없이 끝남)가 아니면 터미널을 닫지 않는다'
     return keep(reason, `건너뜀 ${path}: ${reason}`)
   }
 
@@ -1389,18 +1396,19 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     if (verdict.result !== 'pass' && verdict.result !== 'none') return keep(KEPT_BY_HOOK, `남김 ${path}: ${KEPT_BY_HOOK}`)
   }
   const plan = remotePlan(repo, branch, m.pr)
-  // 경로의 터미널은 PR 이 MERGED 일 때만 모두 닫는다. cherry 로만 판정한 브랜치는 막 만든 브랜치일 수 있다.
+  // 경로의 터미널은 끝난 워크트리(PR MERGED, PR 없이 끝남)일 때만 모두 닫는다. cherry 로만 판정한 브랜치는 막 만든 브랜치일 수 있다.
   // 머지 없이 CLOSED 가 된 내 PR 이면 그 dispatch 가 쓴 터미널만 닫는다
-  if (byPr) closeTerminals(terminalsAt(terminals, path), args.apply, log)
+  if (byDone) closeTerminals(terminalsAt(terminals, path), args.apply, log)
   else if (closing && m.pr) closeForClosedPr(closing, m.pr, args.apply, log, '  ')
-  else if (byNoPr) closeTerminals(terminalsAt(terminals, path).filter((h) => launched.has(h)), args.apply, log)
   releaseDispatches(mine, args.apply, log, '  ')
+  // 남은 프로세스를 끌지 정하는 판정. 터미널은 위에서 닫으므로 화면은 보지 않는다. PR 없이 끝난 워크트리는 화면까지 보고 이미 done 이다
+  const finished = byDone ? judge({ rows: mine, pr: byPr ? (m.pr ?? { state: 'MERGED' }) : 'none', ahead: 0 }) : null
   if (!args.apply) {
     const pids = holderPids(path, REAL_HOST)
     if (pids.length && byDone && onlyIdleShells(pids, REAL_HOST)) {
       log(`  남은 프로세스 ${pids.length} 개가 유휴 셸뿐이면 그 Orca 터미널을 닫고 다시 시도한다`)
     } else if (pids.length && args.killHolders) {
-      const blocker = killBlocker(mine, path, byPr, false)
+      const blocker = killBlocker(finished, path, false)
       log(
         `  터미널을 닫은 뒤에도 프로세스 ${pids.length} 개가 남으면 ` +
           (blocker ? `다음 실행으로 미룬다. 끄지 않는 이유: ${blocker}` : 'TERM, HUP, KILL 순으로 끈다'),
@@ -1430,7 +1438,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
   }
   if (pids.length && args.killHolders) {
-    const blocker = killBlocker(mine, path, byPr)
+    const blocker = killBlocker(finished, path)
     if (blocker) {
       log(`  남은 프로세스를 끄지 않는다: ${blocker}`)
     } else {

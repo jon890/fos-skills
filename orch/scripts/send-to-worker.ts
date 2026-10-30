@@ -18,6 +18,10 @@
 //                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
 //     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
 //
+// 세션을 다시 시작한 코디네이터 터미널은 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.
+// 그 메시지가 question 이면 같은 스레드에 `send --type status --thread-id <질문> --to dispatch:<id> --subject "answer: ..."` 로 답하고
+// `fallback:` 줄로 알린다. worker-ask 가 이 status 의 본문을 답으로 읽는다. question 이 아닌 메시지에는 전환하지 않고 실패로 둔다
+//
 // reply 와 새 메시지는 `--run <run> --from run:<run>` 과 함께 보낸다. Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다.
 // Orca 터미널에서 돌면 터미널 증명 때문에 `--from run:<run>` 이 `consumer_fenced` 로 거부된다. 그러면 `--from` 만 빼고 한 번 다시 보낸다.
 // 그 답의 보낸 쪽은 코디네이터 터미널(term_*)이지만 lib/questions.ts 의 unanswered() 는 worker 쪽으로 간 답을 모두 센다(ADR-015)
@@ -78,6 +82,8 @@ const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 const ANSWERED = 'already has a different answer'
 // Orca 터미널 안에서 `--from run:<run>` 을 붙이면 orca 가 이 코드로 거부한다
 const FENCED = 'consumer_fenced'
+// 코디네이터 터미널의 pane 신원이 없을 때 reply 가 이 코드나 문구로 거부된다
+const NO_PANE = ['stable_pane_required', 'no stable pane identity']
 // 끝난 dispatch 에서 답할 후보로 보는 메시지 종류
 const ASKS = new Set(['question', 'escalation'])
 // 새 메시지 제목에 쓰는 본문 첫 줄의 최대 글자 수
@@ -191,8 +197,42 @@ function sendAs(base: string[], run: string): string {
   return String(obj(result.message).id || result.messageId || result.id || '')
 }
 
-function reply(msgId: string, body: string, run: string): string {
-  return sendAs(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])], run)
+// inbox 에서 본 그 메시지의 종류. 못 찾으면 빈 문자열이다
+function typeOf(msgId: string): string {
+  const row = rows(orcaJson(['orchestration', 'inbox', '--limit', '200']).messages).find((m) => m.id === msgId)
+  return String(row?.type ?? '')
+}
+
+// 제목은 `answer: ` 와 본문 첫 줄이다. worker-ask 는 제목이 아니라 본문을 답으로 읽는다
+function answerSubject(body: string): string {
+  const first = Array.from(body.split('\n')[0].trim()).slice(0, SUBJECT_MAX).join('')
+  return `answer: ${first}`
+}
+
+function reply(msgId: string, body: string, run: string, dispatchId: string): string {
+  try {
+    return sendAs(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])], run)
+  } catch (e) {
+    if (!(e instanceof OrcaFailed) || !NO_PANE.some((text) => e.message.includes(text)) || typeOf(msgId) !== 'question') throw e
+    const base = [
+      'orchestration',
+      'send',
+      ...(run ? ['--run', run] : []),
+      '--type',
+      'status',
+      '--thread-id',
+      msgId,
+      '--to',
+      `dispatch:${dispatchId}`,
+      '--subject',
+      answerSubject(body),
+      '--body',
+      body,
+    ]
+    const sent = sendAs(base, run)
+    out(`fallback: reply 가 ${NO_PANE[0]} 로 거부돼 ${msgId} 스레드에 status answer 로 보냈다 (${sent || 'None'})`)
+    return sent
+  }
 }
 
 // reply 할 곳이 없을 때 그 dispatch 에 새 메시지로 보낸다. 제목은 본문 첫 줄이다
@@ -204,10 +244,10 @@ function sendNew(dispatchId: string, body: string, run: string): string {
 
 // 이미 답한 question 이면 다음 후보로 한 번만 더 시도한다. 답을 단 메시지 id 와 새 답의 id 를 낸다.
 // 시도한 후보가 모두 이미 답한 question 이면 null 이다
-function replyFirst(targets: string[], body: string, run: string): { target: string; sent: string } | null {
+function replyFirst(targets: string[], body: string, run: string, dispatchId: string): { target: string; sent: string } | null {
   for (const [attempt, candidate] of targets.slice(0, 2).entries()) {
     try {
-      return { target: candidate, sent: reply(candidate, body, run) }
+      return { target: candidate, sent: reply(candidate, body, run, dispatchId) }
     } catch (e) {
       if (!(e instanceof OrcaFailed) || !e.message.includes(ANSWERED)) throw e
       if (attempt === 1 || targets.length < 2) {
@@ -324,7 +364,7 @@ async function main(argv: string[]): Promise<number> {
       }
       const targets = a.replyTo ? [a.replyTo] : []
       targets.push(...candidates(a.dispatch, handle).filter((t) => !targets.includes(t)))
-      const replied = targets.length > 0 ? replyFirst(targets, body, run) : null
+      const replied = targets.length > 0 ? replyFirst(targets, body, run, a.dispatch) : null
       let wake: string
       if (replied) {
         out(`replied: ${replied.target} 에 답했다 (${replied.sent || 'None'})`)
@@ -349,7 +389,7 @@ async function main(argv: string[]): Promise<number> {
     // 끝난 dispatch 라도 worker 가 보낸 question 과 escalation 이 남았으면 답을 단다. 깨울 worker 는 없다
     if (body) {
       const targets = a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, ASKS)
-      const replied = targets.length > 0 ? replyFirst(targets, body, run) : null
+      const replied = targets.length > 0 ? replyFirst(targets, body, run, a.dispatch) : null
       if (replied) {
         out(`replied: ${replied.target} 에 답했다 (${replied.sent || 'None'}). 끝난 dispatch 라 깨우지 않았다`)
         if (!a.spec) return 0

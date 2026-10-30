@@ -129,13 +129,13 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--termina
 1. 미리보기로 만들 핸들러와 지울 키를 본다. `옮기지 못함` 이나 `겹침` 줄이 있으면 그 이유를 먼저 푼다
 
    ```bash
-   node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.ts" --repo "$REPO" --hooks
+   "$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO" --hooks
    ```
 
 2. 핸들러를 쓰고 설정에서 그 키를 지운다
 
    ```bash
-   node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/migrate-orch-dir.ts" --repo "$REPO" --hooks --apply
+   "$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO" --hooks --apply
    ```
 
 3. 만든 `.orch/hooks/<이벤트>.ts` 를 열어 옛 명령이 그대로 들었는지 본다. 그 파일은 저장소의 것이라 고쳐 써도 된다.

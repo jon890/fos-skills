@@ -27,6 +27,15 @@ const file = process.env.FAKE_STATE
 const st = JSON.parse(fs.readFileSync(file, 'utf8'))
 const argv = process.argv.slice(2)
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify(argv) + '\\n')
+if (process.env.FAKE_CWD) {
+  let here
+  try {
+    here = process.cwd()
+  } catch {
+    here = 'DELETED'
+  }
+  fs.appendFileSync(process.env.FAKE_CWD, here + '\\n')
+}
 process.stderr.write('{"_keepalive":true}\\n')
 const save = () => fs.writeFileSync(file, JSON.stringify(st))
 const print = (value) => process.stdout.write(JSON.stringify(value) + '\\n')
@@ -40,6 +49,11 @@ if (argv.includes('worker-list')) {
   }
   if (Array.isArray(rows)) print({ ok: true, result: { workers: rows } })
   else print({ ok: true, result: { workers: rows.workers, page: { nextCursor: rows.nextCursor } } })
+} else if (argv[0] === 'terminal' && argv[1] === 'read') {
+  // screens 에 없는 터미널은 사라진 것이다
+  const lines = (st.screens || {})[argv[argv.indexOf('--terminal') + 1]]
+  if (!lines) process.exit(1)
+  print({ ok: true, result: { terminal: { tail: lines } } })
 } else if (argv.includes('task-list')) {
   print({ ok: true, result: { tasks: st.tasks || [] } })
 } else if (argv.includes('dispatch-show')) {
@@ -70,6 +84,7 @@ let tmp: string
 let stateFile: string
 let log: string
 let psRows: string
+let cwdLog: string
 let lostState: string
 let env: NodeJS.ProcessEnv
 
@@ -94,6 +109,7 @@ beforeEach(() => {
   stateFile = join(tmp, 'state.json')
   log = join(tmp, 'log.txt')
   psRows = join(tmp, 'ps.txt')
+  cwdLog = join(tmp, 'cwd.txt')
   lostState = join(tmp, 'lost.json')
   env = {
     ...process.env,
@@ -104,6 +120,7 @@ beforeEach(() => {
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
     FAKE_PS: psRows,
+    FAKE_CWD: cwdLog,
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: dirname(tmp),
   }
@@ -111,7 +128,18 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-type WaitOptions = { workers?: unknown[]; tasks?: Json[]; latest?: Json; history?: Json[]; contract?: string; historyFail?: boolean }
+// cwd 는 대기를 시작하는 폴더(기본 tmp)다. deleted 가 있으면 그 폴더를 만들어 셸이 시작한 뒤 그 폴더와 부모를 지우고 node 를 띄운다
+type WaitOptions = {
+  workers?: unknown[]
+  tasks?: Json[]
+  latest?: Json
+  history?: Json[]
+  contract?: string
+  historyFail?: boolean
+  cwd?: string
+  deleted?: string
+  screens?: Json
+}
 
 function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extraEnv: NodeJS.ProcessEnv = {}): Result {
   writeFileSync(
@@ -123,10 +151,20 @@ function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extr
       latest: opts.latest ?? {},
       history: opts.history ?? [],
       history_fail: opts.historyFail ?? false,
+      screens: opts.screens ?? {},
     }),
   )
   const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', opts.contract ?? 'none', ...args]
-  const done = spawnSync(process.execPath, argv, { env: { ...env, ...extraEnv }, cwd: tmp, encoding: 'utf8', timeout: 120_000 })
+  const childEnv = { ...env, ...extraEnv }
+  const done = opts.deleted
+    ? // 셸이 PWD 로 지워진 폴더를 남긴 채 node 가 시작한다. 머지 뒤 워크트리 정리로 시작 폴더가 사라진 상황이다
+      spawnSync('sh', ['-c', 'mkdir -p "$GONE" && cd "$GONE" && rmdir "$GONE" "$(dirname "$GONE")" && PWD="$GONE" exec "$@"', 'sh', process.execPath, ...argv], {
+        env: { ...childEnv, GONE: opts.deleted },
+        cwd: tmp,
+        encoding: 'utf8',
+        timeout: 120_000,
+      })
+    : spawnSync(process.execPath, argv, { env: childEnv, cwd: opts.cwd ?? tmp, encoding: 'utf8', timeout: 120_000 })
   return { code: done.status, stdout: done.stdout, stderr: done.stderr }
 }
 
@@ -139,10 +177,10 @@ function allCalls(): string[][] {
     : []
 }
 
-// 대기 호출만. worker-list, task-list, dispatch-show 는 대기 호출이 아니다
+// 대기 호출만. worker-list, task-list, dispatch-show, 화면 읽기(terminal read)는 대기 호출이 아니다
 function calls(): string[][] {
   const skip = ['worker-list', 'task-list', 'dispatch-show']
-  return allCalls().filter((c) => !skip.some((s) => c.includes(s)))
+  return allCalls().filter((c) => !skip.some((s) => c.includes(s)) && !(c[0] === 'terminal' && c[1] === 'read'))
 }
 
 function ackOf(call: string[]): string | null {
@@ -175,13 +213,14 @@ function lostEntries(): Json {
 }
 
 // 시작할 때 이미 failed/abandoned 인 ctx_bad 하나가 있는 Run 에 대기를 건다
-function lostAtStart(args: string[] = [], opts: { taskStatus?: string; result?: unknown; latest?: unknown } = {}): Result {
+function lostAtStart(args: string[] = [], opts: { taskStatus?: string; result?: unknown; latest?: unknown; screens?: Json } = {}): Result {
   const rows = [worker('ctx_bad', 'abandoned', 'failed', 'terminal_missing')]
   const tasks = [{ id: 't1', status: opts.taskStatus ?? 'dispatched', result: opts.result ?? null }]
   return wait([batch('d1', 'worker_done')], ['--lost-interval-sec', '0.3', ...args], {
     workers: [rows],
     tasks,
     latest: { t1: opts.latest === undefined ? 'ctx_bad' : opts.latest },
+    screens: opts.screens,
   })
 }
 
@@ -248,6 +287,25 @@ describe('끊긴 worker', () => {
     assert.equal(r.code, 5, r.stdout + r.stderr)
     assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', 'LAST_DELIVERY d0'])
     assert.deepEqual(calls(), [])
+  })
+
+  test('끊긴 것으로 보여도 터미널 화면이 작업 중이면 깨우지 않고 기록하지 않는다', () => {
+    const working = ['⏺ 고친다.', '✳ Thinking… (4s · esc to interrupt)']
+    const r = lostAtStart([], { screens: { term_ctx_bad: working } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /WORKER_LOST/)
+    assert.match(r.stderr, /ctx_bad 는 terminal_missing 로 보이지만 끊긴 것으로 보지 않는다: dispatch ctx_bad 가 failed 지만 화면이 작업 중이다/)
+    assert.ok(!existsSync(lostState) || !('ctx_bad' in lostEntries()))
+    // 화면이 멈추면 다음 대기가 알린다
+    const idle = lostAtStart([], { screens: { term_ctx_bad: ['⏺ 끝.', '❯ '] } })
+    assert.equal(idle.code, 5, idle.stdout + idle.stderr)
+  })
+
+  test('대기 중에 끊긴 것으로 바뀌어도 화면이 작업 중이면 대기를 끝내지 않는다', () => {
+    const working = ['✳ Thinking… (4s · esc to interrupt)']
+    const r = wait([sleeping(batch('d1', 'worker_done'), 1)], ['--lost-interval-sec', '0.3'], { workers: [LIVE, GONE], screens: { term_ctx_a: working } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /WORKER_LOST/)
   })
 
   test('같은 task 에 나중 dispatch 가 있으면 뺀다', () => {
@@ -1010,6 +1068,68 @@ describe('상주 루프', () => {
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.ok(!r.stdout.includes('LOOP-'), r.stdout)
     assert.ok(!existsSync(join(stateDir(), 'loop-events.cursor')))
+  })
+})
+
+describe('작업 폴더', () => {
+  const GIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
+
+  function git(cwd: string, ...args: string[]): string {
+    const done = spawnSync('git', args, { cwd, env: { ...env, ...GIT_ENV }, encoding: 'utf8' })
+    assert.equal(done.status, 0, `git ${args.join(' ')}: ${done.stderr}`)
+    return done.stdout.trim()
+  }
+
+  // orca 가 실제로 돈 작업 폴더들(중복 없이)
+  function orcaCwds(): string[] {
+    return existsSync(cwdLog) ? [...new Set(readFileSync(cwdLog, 'utf8').split('\n').filter((line) => line))] : []
+  }
+
+  function mainRepo(): string {
+    const repo = join(tmp, 'main-repo')
+    mkdirSync(repo)
+    git(repo, 'init', '-q')
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
+    return repo
+  }
+
+  test('시작 폴더가 지워져도 orca 는 남은 윗 폴더에서 돌아 끝까지 간다', () => {
+    const r = wait([batch('d1', 'worker_done')], [], { deleted: join(tmp, 'gone', 'deeper') })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(lastLine(r.stdout), 'LAST_DELIVERY d1')
+    assert.deepEqual(orcaCwds(), [tmp])
+  })
+
+  test('워크트리에서 시작해도 orca 는 지워지지 않는 주 checkout 에서 돈다', () => {
+    const repo = mainRepo()
+    const tree = join(tmp, 'wt')
+    git(repo, 'worktree', 'add', '-q', tree, '-b', 'feat')
+    const r = wait([batch('d1', 'worker_done')], [], { cwd: tree })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.deepEqual(orcaCwds(), [realpathSync(repo)])
+  })
+
+  test('--loop-repo 가 있으면 그 저장소에서 돌고 상대 경로는 시작 폴더 기준이다', () => {
+    const repo = mainRepo()
+    const other = join(tmp, 'other')
+    mkdirSync(other)
+    // 루프가 없는 저장소라 시작할 때 LOOP-DEAD 로 끝난다. 그 전에 worker-list 가 한 번 돈다
+    const r = wait([batch('d1', 'worker_done')], ['--loop-repo', '../main-repo'], { cwd: other })
+    assert.equal(r.code, 8, r.stdout + r.stderr)
+    assert.ok(r.stdout.includes(`LOOP-DEAD ${realpathSync(repo)} `), r.stdout)
+    assert.deepEqual(orcaCwds(), [realpathSync(repo)])
+  })
+
+  test('상대 경로의 --lost-state 는 옮기기 전의 시작 폴더 기준이다', () => {
+    const repo = mainRepo()
+    const other = join(tmp, 'other')
+    mkdirSync(other)
+    writeFileSync(stateFile, JSON.stringify({ replies: [batch('d1', 'worker_done')], workers: [] }))
+    const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--ack-lost', 'ctx_a', '--lost-state', 'rel-lost.json', '--loop-repo', repo]
+    const done = spawnSync(process.execPath, argv, { env, cwd: other, encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stdout + done.stderr)
+    assert.ok(existsSync(join(other, 'rel-lost.json')))
+    assert.ok(!existsSync(join(repo, 'rel-lost.json')))
   })
 })
 

@@ -70,10 +70,21 @@
 //     operator_close(코디네이터나 정리 스크립트가 터미널을 닫았다)이거나, last_failure 의 provenance 가
 //     worker_report(worker 가 `worker_done --outcome failed` 로 알렸다)인 것이다.
 //     camelCase 필드도 읽으며, 실패 이유가 abandoned 인 명시적 포기도 제외한다.
+//     끊긴 것으로 고른 dispatch 라도 그 터미널 화면을 읽어 lib/worker-state.ts 의 판정이 working(에이전트 작업 중)이면 뺀다.
+//     Orca 가 dispatch 를 실패나 끊김으로 적어도 에이전트가 돌고 있는 경우다. stderr 에 `끊긴 것으로 보지 않는다` 한 줄을 남기고
+//     --lost-state 에 적지 않으므로 화면이 멈추면 다음 확인이 알린다. 터미널이 없거나 화면을 읽지 못하면 그대로 끊긴 것이다.
 //     알린 dispatch 와 일부러 끝냈다고 판정한 dispatch 는 `--lost-state` 파일에 Run 별로 적고 다음 대기부터 다시
 //     알리거나 조회하지 않는다. worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 다시
 //     깨우지 않게 하기 위해서다. 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 에 한 줄로 남긴다.
 //     다시 알리게 하려면 그 파일에서 Run 의 항목을 지운다.
+//
+// 작업 폴더:
+//     시작하면 먼저 작업 폴더를 --loop-repo 의 첫 저장소(없으면 시작 폴더의 주 checkout)로 옮기고, orca 와 git 호출은 거기서 돈다.
+//     머지 뒤 워크트리 정리로 시작 폴더가 지워지면 자식이 물려받은 폴더가 없어져 worker-list 조회가 매번 실패하기 때문이다.
+//     워크트리의 git 루트도 지워지므로 git 루트가 아니라 지워지지 않는 주 checkout 을 쓴다.
+//     시작할 때 이미 지워져 있으면 셸이 남긴 PWD 에서 남아 있는 가장 가까운 윗 폴더를 시작 폴더로 본다.
+//     상대 경로의 --loop-repo 는 옮기기 전의 시작 폴더 기준이다. 상태 파일(--lost-state 의 기본값)과 이벤트 핸들러를 찾는
+//     저장소는 옮기기 전과 같다. 시작 폴더가 이미 지워져 있었으면 옮긴 폴더다.
 //
 // 상주 루프 (--loop-repo):
 //     대기를 시작할 때와 --lost-interval-sec 간격의 확인마다 저장소 순서대로 본다. 간격이 0 이면 시작할 때만 본다.
@@ -132,6 +143,7 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
@@ -146,6 +158,7 @@ import { orcaBin, orcaJson } from './lib/orca.ts'
 import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
 import { pyJson, pyStr as text } from './lib/py.ts'
+import { judge, readScreens, screenHandles } from './lib/worker-state.ts'
 
 const USAGE = [
   '사용법: wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]',
@@ -354,6 +367,22 @@ function dropDeliberate(rows: Json[], lost: Lost[], watched: Set<unknown>): Lost
   return kept
 }
 
+// 끊긴 것 가운데 터미널 화면이 에이전트 작업 중인 것을 뺀다(lib/worker-state.ts 의 판정이 working).
+// Orca 가 dispatch 를 실패나 끊김으로 적어도 에이전트가 돌고 있으면 깨우지 않는다. 기록하지 않으므로 화면이 멈추면 다음 확인이 알린다.
+// 터미널이 없거나(terminal_missing) 화면을 읽지 못하면 그대로 끊긴 것이다
+function dropWorking(rows: Json[], lost: Lost[]): Lost[] {
+  const byDispatch = new Map(rows.map((w) => [w.dispatchId, w]))
+  return lost.filter(([dispatch, stage]) => {
+    const row = byDispatch.get(dispatch)
+    if (!row) return true
+    const handles = new Set([row.agentTerminalHandle, obj(row.resource).terminalHandle].filter(Boolean))
+    const verdict = judge({ rows: [row], screens: readScreens(screenHandles([row], new Set(), handles)) })
+    if (verdict.state !== 'working') return true
+    err(`wait-important: ${dispatch} 는 ${String(stage)} 로 보이지만 끊긴 것으로 보지 않는다: ${verdict.reason}`)
+    return false
+  })
+}
+
 // 상주 루프 ------------------------------------------------------------------
 
 type LoopWake = { code: 7 | 8; lines: string[]; cursor: { repo: string; seq: number; run: string | null } | null }
@@ -513,6 +542,7 @@ function check(
         const rows = workerRows(runId)
         let lost = rows && rows.length ? lostWorkers(rows, watched) : []
         lost = lost.length && rows ? dropDeliberate(rows, lost, watched) : []
+        lost = lost.length && rows ? dropWorking(rows, lost) : []
         if (lost.length && rows) {
           stopGroup(child, 'SIGKILL')
           settle({ kind: 'lost', lost, rows })
@@ -643,10 +673,12 @@ function float(name: string, value: string): number {
 
 // 이벤트의 공통 값. 핸들러가 없으면 쓰지 않으므로 처음 낼 때 한 번만 구한다
 let eventContext: FireContext | null = null
+// 이벤트 핸들러와 보드를 찾는 저장소의 기준 폴더. main 이 정한다. 작업 폴더를 옮겨도 이 값은 옮기기 전의 시작 폴더다
+let repoBase = ''
 
 function contextFor(runId: string): FireContext {
   if (!eventContext) {
-    const repo = mainCheckout(process.cwd())
+    const repo = mainCheckout(repoBase || process.cwd())
     eventContext = { repo, base: defaultBase(repo) ?? '', run: runId }
   }
   return eventContext
@@ -741,6 +773,45 @@ async function reportLost(lost: Lost[], rows: Json[], ack: string | null, state:
   return 5
 }
 
+// 작업 폴더 ----------------------------------------------------------------
+
+// 시작 폴더. 지워졌으면 null 이다
+function startDir(): string | null {
+  try {
+    return process.cwd()
+  } catch {
+    return null
+  }
+}
+
+// 지워진 시작 폴더 대신 쓸 폴더. 셸이 남긴 PWD 에서 남아 있는 가장 가까운 윗 폴더이고, 없으면 홈이다
+function survivingDir(): string {
+  let dir = process.env.PWD || ''
+  while (dir && !existsSync(dir)) {
+    const up = dirname(dir)
+    if (up === dir) return homedir()
+    dir = up
+  }
+  return dir || homedir()
+}
+
+// 작업 폴더를 옮기고 옮기기 전의 시작 폴더(지워졌으면 null), 상대 경로의 기준 폴더, resolve 한 --loop-repo 를 낸다. 머리 주석의 「작업 폴더」
+function enterWorkDir(repos: string[]): { origin: string | null; base: string; loopRepos: string[] } {
+  const origin = startDir()
+  const base = origin ?? survivingDir()
+  const loopRepos = repos.map((repo) => mainCheckout(resolve(base, repo)))
+  const target = loopRepos[0] ?? mainCheckout(base)
+  for (const dir of [target, base]) {
+    try {
+      process.chdir(dir)
+      break
+    } catch (e) {
+      err(`wait-important: 작업 폴더를 ${dir} 로 옮기지 못했다: ${(e as Error).message}`)
+    }
+  }
+  return { origin, base, loopRepos }
+}
+
 // 본체 ------------------------------------------------------------------
 
 async function main(argv: string[]): Promise<number> {
@@ -784,9 +855,13 @@ async function main(argv: string[]): Promise<number> {
     err('wait-important: --types 와 --timeout-ms 는 비어 있거나 0 일 수 없고 --lost-interval-sec 는 음수일 수 없다')
     return 2
   }
-  const cwd = process.cwd()
+  const { origin, base, loopRepos } = enterWorkDir(values['loop-repo'] as string[])
+  // 상태 파일과 이벤트 핸들러의 저장소는 옮기기 전의 시작 폴더 기준이다. 지워져 있었으면 옮긴 폴더다.
+  // 워크트리가 대기 중에 지워져도 이 값이 남도록 주 checkout 으로 정한다
+  const cwd = mainCheckout(origin ?? process.cwd())
+  repoBase = cwd
   if (!values['lost-state']) warnLegacy(cwd, 'wait-important')
-  const state = values['lost-state'] || join(pathOf('state', cwd), 'wait-important-lost.json')
+  const state = values['lost-state'] ? resolve(base, values['lost-state']) : join(pathOf('state', cwd), 'wait-important-lost.json')
   const ignoreLost = values['ignore-lost'] as string[]
   const ackLost = values['ack-lost'] as string[]
   if (ackLost.length) {
@@ -808,12 +883,12 @@ async function main(argv: string[]): Promise<number> {
       .sort()
     if (still.length) err(`wait-important: 앞 대기가 알린 끊긴 dispatch ${still.length}개가 아직 처리되지 않았다: ${still.join(' ')}`)
     // 이미 끊겨 있는데 처리하지 않은 dispatch 가 있으면 기다리지 않고 알린다
-    const { found, deliberate } = unhandledLost(runId, rows, ignore)
+    const { found: candidates, deliberate } = unhandledLost(runId, rows, ignore)
     saveReported(state, runId, deliberate, cwd)
+    const found = candidates.length ? dropWorking(rows, candidates) : []
     if (found.length) return reportLost(found, rows, values.ack ?? null, state, runId, cwd)
     watched = new Set([...liveDispatches(rows)].filter((d) => !ignore.has(d)))
   }
-  const loopRepos = (values['loop-repo'] as string[]).map((repo) => mainCheckout(resolve(repo)))
   const woke = loopWake(loopRepos, runId)
   if (woke) {
     deliverLoop(woke)
