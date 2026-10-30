@@ -7,14 +7,14 @@ description: |
   "task 실행해줘", "phase 실행" 같은 요청이면 이 스킬을 쓴다.
   task 를 만드는 일은 `planning` 이 맡는다. 방향이 반대다.
 metadata:
-  version: "5.26.1"
+  version: "5.27.0"
 ---
 # build-with-teams
 
 **목표: planning 이 만든 `tasks/` 를 읽어 구현하고, 검토를 거쳐 PR 을 만든다.**
 
 - 계획에 결함이 있으면 구현 전에 찾아낸다.
-- plan 하나는 PR 하나다. PR 하나에 들어가지 않는 크기면 구현 전에 plan 을 나누게 돌려보낸다(기준은 `planning` 의 `plan-size.md` 가 소유한다).
+- plan 하나는 PR 하나다. PR 하나에 들어가지 않는 크기면 구현 전에 plan 을 나누게 돌려보낸다(기준은 `planning` 의 `plan-size.md` 가 소유한다). `orch` worker 가 이 스킬을 돌 때도 그 PR 이 머지되면 끝낸다. 뒤 plan 은 코디네이터가 새 worker 로 띄운다.
 - 구현된 코드가 계획한 것과 같아야 한다.
 - 코드가 `docs/` 에 적힌 결정과 어긋나지 않아야 한다.
 - 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획서는 그 plan 을 구현한 PR 에서 이 스킬이 지운다.

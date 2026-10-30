@@ -31,6 +31,7 @@ phase 14개짜리 plan 에서 앞 phase 를 하는 동안 다른 리팩터가 �
 
 한 줄은 `index.json` 의 `deferred` 에 적고, 저장소에 목표 표나 할 일 목록이 있으면 거기에도 옮긴다.
 `deferred` 가 가리키는 일은 그 PR 이 머지된 뒤 `planning` 을 다시 열어 계획한다.
+`orch` 로 구현을 맡길 때 plan 하나는 worker 하나다. 뒤 plan 은 앞 PR 이 머지된 뒤 코디네이터가 새 지시서로 새 worker 에게 맡기고, 앞 worker 가 이어 맡지 않는다.
 
 ## 검사 기준
 
