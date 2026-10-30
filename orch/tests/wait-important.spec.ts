@@ -40,6 +40,11 @@ if (argv.includes('worker-list')) {
   }
   if (Array.isArray(rows)) print({ ok: true, result: { workers: rows } })
   else print({ ok: true, result: { workers: rows.workers, page: { nextCursor: rows.nextCursor } } })
+} else if (argv[0] === 'terminal' && argv[1] === 'read') {
+  // screens 에 없는 터미널은 사라진 것이다
+  const lines = (st.screens || {})[argv[argv.indexOf('--terminal') + 1]]
+  if (!lines) process.exit(1)
+  print({ ok: true, result: { terminal: { tail: lines } } })
 } else if (argv.includes('task-list')) {
   print({ ok: true, result: { tasks: st.tasks || [] } })
 } else if (argv.includes('dispatch-show')) {
@@ -111,7 +116,7 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-type WaitOptions = { workers?: unknown[]; tasks?: Json[]; latest?: Json; history?: Json[]; contract?: string; historyFail?: boolean }
+type WaitOptions = { workers?: unknown[]; tasks?: Json[]; latest?: Json; history?: Json[]; contract?: string; historyFail?: boolean; screens?: Json }
 
 function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extraEnv: NodeJS.ProcessEnv = {}): Result {
   writeFileSync(
@@ -123,6 +128,7 @@ function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extr
       latest: opts.latest ?? {},
       history: opts.history ?? [],
       history_fail: opts.historyFail ?? false,
+      screens: opts.screens ?? {},
     }),
   )
   const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', opts.contract ?? 'none', ...args]
@@ -139,10 +145,10 @@ function allCalls(): string[][] {
     : []
 }
 
-// 대기 호출만. worker-list, task-list, dispatch-show 는 대기 호출이 아니다
+// 대기 호출만. worker-list, task-list, dispatch-show, 화면 읽기(terminal read)는 대기 호출이 아니다
 function calls(): string[][] {
   const skip = ['worker-list', 'task-list', 'dispatch-show']
-  return allCalls().filter((c) => !skip.some((s) => c.includes(s)))
+  return allCalls().filter((c) => !skip.some((s) => c.includes(s)) && !(c[0] === 'terminal' && c[1] === 'read'))
 }
 
 function ackOf(call: string[]): string | null {
@@ -175,13 +181,14 @@ function lostEntries(): Json {
 }
 
 // 시작할 때 이미 failed/abandoned 인 ctx_bad 하나가 있는 Run 에 대기를 건다
-function lostAtStart(args: string[] = [], opts: { taskStatus?: string; result?: unknown; latest?: unknown } = {}): Result {
+function lostAtStart(args: string[] = [], opts: { taskStatus?: string; result?: unknown; latest?: unknown; screens?: Json } = {}): Result {
   const rows = [worker('ctx_bad', 'abandoned', 'failed', 'terminal_missing')]
   const tasks = [{ id: 't1', status: opts.taskStatus ?? 'dispatched', result: opts.result ?? null }]
   return wait([batch('d1', 'worker_done')], ['--lost-interval-sec', '0.3', ...args], {
     workers: [rows],
     tasks,
     latest: { t1: opts.latest === undefined ? 'ctx_bad' : opts.latest },
+    screens: opts.screens,
   })
 }
 
@@ -248,6 +255,25 @@ describe('끊긴 worker', () => {
     assert.equal(r.code, 5, r.stdout + r.stderr)
     assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', 'LAST_DELIVERY d0'])
     assert.deepEqual(calls(), [])
+  })
+
+  test('끊긴 것으로 보여도 터미널 화면이 작업 중이면 깨우지 않고 기록하지 않는다', () => {
+    const working = ['⏺ 고친다.', '✳ Thinking… (4s · esc to interrupt)']
+    const r = lostAtStart([], { screens: { term_ctx_bad: working } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /WORKER_LOST/)
+    assert.match(r.stderr, /ctx_bad 는 terminal_missing 로 보이지만 끊긴 것으로 보지 않는다: dispatch ctx_bad 가 failed 지만 화면이 작업 중이다/)
+    assert.ok(!existsSync(lostState) || !('ctx_bad' in lostEntries()))
+    // 화면이 멈추면 다음 대기가 알린다
+    const idle = lostAtStart([], { screens: { term_ctx_bad: ['⏺ 끝.', '❯ '] } })
+    assert.equal(idle.code, 5, idle.stdout + idle.stderr)
+  })
+
+  test('대기 중에 끊긴 것으로 바뀌어도 화면이 작업 중이면 대기를 끝내지 않는다', () => {
+    const working = ['✳ Thinking… (4s · esc to interrupt)']
+    const r = wait([sleeping(batch('d1', 'worker_done'), 1)], ['--lost-interval-sec', '0.3'], { workers: [LIVE, GONE], screens: { term_ctx_a: working } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /WORKER_LOST/)
   })
 
   test('같은 task 에 나중 dispatch 가 있으면 뺀다', () => {

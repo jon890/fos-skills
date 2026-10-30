@@ -52,6 +52,8 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py" --repo "$REPO" --run "$RUN_ID"
 **doctor 의 `LOOP-STALE <repo> <pid> <번들 해시>` 는 플러그인을 갱신한 뒤에도 옛 번들의 스크립트로 도는 루프다.** 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
 
 doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
+doctor 의 `WORKER-STATE <dispatch> <상태> <근거>` 는 살아 있는 dispatch 인데 터미널이 `user_owned` 로 표시된 worker 의 판정이다(`scripts/lib/worker-state.ts`).
+`working` 이면 화면이 작업 중이라 Orca 의 표시만 틀린 것이고 그대로 둔다. `taken_over` 면 사용자가 넘겨받은 worker 라 지시를 보내지 않고 사용자에게 알린다.
 `--run` 을 주면 저장소의 `session-resume` 핸들러에 루프 생존과 살아 있는 대기 pid, 미답변 질문 id 를 넘긴다([`hooks.md`](hooks.md)).
 알림을 받으면 [`replying.md`](replying.md) 의 분류 기준으로 처리한다. 루프는 delivery 를 소비하거나 ack 하지 않으므로 아래 완료 대기와 함께 쓴다.
 
@@ -87,7 +89,8 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
 - `TIMEOUT LAST_DELIVERY <id>` 는 실패가 아니다. 그 id 로 다시 건다
 - orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
 - 종료 코드 4(`waiter_exists`)는 다시 걸어도 같은 오류만 받는다. stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다
-- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다
+- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다.
+  Orca 가 끊김이나 실패로 적어도 그 터미널 화면이 에이전트 작업 중이면 끊긴 것으로 보지 않고 stderr 에 `끊긴 것으로 보지 않는다` 한 줄만 남긴다. 화면이 멈추면 다음 확인이 알린다
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `REMINDER`: 답이 없는 질문의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다
@@ -143,6 +146,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts"
 
 `cleanup-sweep.ts` 가 다루는 경우와 건너뛰는 조건은 그 파일 머리 주석이 소유한다. 스크립트가 다루는 경우를 코디네이터가 직접 지우지 않는다.
 `건너뜀` 줄은 `<orch 루트>/state/loop.log` 에서 읽는다. 살아 있는 worker 나 커밋 안 된 변경 때문이면 그대로 두고, 같은 항목이 여러 틱째 남으면 그 worker 를 확인한다.
+살아 있는 worker 로 건너뛴 줄에는 `근거:` 뒤에 판정 이유가 붙는다. `user_takeover 표시지만 화면이 작업 중이다` 는 Orca 의 표시만 틀린 정상 worker 다.
 
 ## 받은 메시지 읽기
 

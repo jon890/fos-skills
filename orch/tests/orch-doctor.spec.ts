@@ -33,7 +33,17 @@ if (process.env.FAKE_FAIL) {
   fs.writeSync(2, 'orca offline\\n')
   process.exit(1)
 }
-if (argv.includes('run-current')) {
+if (argv.includes('worker-list')) {
+  // FAKE_WORKERS 파일의 행을 낸다. 없으면 빈 목록이다
+  const rows = process.env.FAKE_WORKERS ? JSON.parse(fs.readFileSync(process.env.FAKE_WORKERS, 'utf8')) : []
+  print({ ok: true, result: { workers: rows, scope: { source: 'flag' }, page: { nextCursor: null } } })
+} else if (argv[0] === 'terminal' && argv[1] === 'read') {
+  // FAKE_SCREENS 파일의 handle 별 화면 줄을 낸다. 없는 handle 은 읽지 못한다
+  const screens = process.env.FAKE_SCREENS ? JSON.parse(fs.readFileSync(process.env.FAKE_SCREENS, 'utf8')) : {}
+  const lines = screens[argv[argv.indexOf('--terminal') + 1]]
+  if (!lines) process.exit(1)
+  print({ ok: true, result: { terminal: { tail: lines } } })
+} else if (argv.includes('run-current')) {
   print({ ok: true, result: { run: { id: 'r' } } })
 } else if (argv.includes('check')) {
   const created = new Date(Date.now() - Number(process.env.FAKE_AGE || '0') * 1000).toISOString()
@@ -431,6 +441,59 @@ describe('session-resume', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, RECEIVED: received } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.ok(!existsSync(received), '핸들러가 불렸다')
+  })
+})
+
+describe('worker 판정', () => {
+  let skill: string
+  beforeEach(() => {
+    skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+  })
+
+  function workers(rows: unknown[], screens: Record<string, string[]>): NodeJS.ProcessEnv {
+    const rowsFile = join(tmp, 'workers.json')
+    const screensFile = join(tmp, 'screens.json')
+    writeFileSync(rowsFile, JSON.stringify(rows))
+    writeFileSync(screensFile, JSON.stringify(screens))
+    return { FAKE_WORKERS: rowsFile, FAKE_SCREENS: screensFile, FAKE_PS: join(tmp, 'none') }
+  }
+
+  const takeover = (dispatch: string, handle: string) => ({
+    dispatchId: dispatch,
+    dispatchStatus: 'dispatched',
+    workerState: 'ready',
+    agentTerminalHandle: handle,
+    resource: { terminalHandle: handle, ownershipState: 'user_owned', retainedReason: 'user_takeover' },
+  })
+
+  test('user_takeover 로 표시된 살아 있는 worker 를 화면으로 판정해 WORKER-STATE 로 낸다', () => {
+    const env = workers(
+      [
+        takeover('ctx_busy', 'term_busy'),
+        takeover('ctx_idle', 'term_idle'),
+        { dispatchId: 'ctx_owned', dispatchStatus: 'dispatched', workerState: 'ready', resource: { ownershipState: 'owned' } },
+        { dispatchId: 'ctx_done', dispatchStatus: 'completed', workerState: 'succeeded', resource: { ownershipState: 'user_owned' } },
+      ],
+      { term_busy: ['✳ Thinking… (2s · esc to interrupt)'], term_idle: ['⏺ 끝.', '❯ '] },
+    )
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^WORKER-STATE ctx_busy working user_takeover 표시지만 화면이 작업 중이다\(ctx_busy, term_busy\)$/m)
+    assert.match(r.stdout, /^WORKER-STATE ctx_idle taken_over 사용자가 넘겨받은 터미널\(ctx_idle user_takeover, 화면 term_idle idle\)$/m)
+    assert.doesNotMatch(r.stdout, /ctx_owned|ctx_done/)
+  })
+
+  test('--run 이 없으면 판정하지 않는다', () => {
+    const env = workers([takeover('ctx_busy', 'term_busy')], {})
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env })
+    assert.doesNotMatch(r.stdout, /WORKER-STATE|SKIP-WORKERS/)
+  })
+
+  test('worker-list 를 읽지 못하면 SKIP-WORKERS 이고 종료 코드 0 이다', () => {
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_FAIL: '1', FAKE_PS: join(tmp, 'none') } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^SKIP-WORKERS .*worker-list/m)
   })
 })
 
