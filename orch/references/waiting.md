@@ -7,9 +7,9 @@
 `$SKILL_DIR` 과 `$REPO` 는 절대경로로, `$RUN_ID` 는 현재 Run 으로 바꾼다. `--run` 과 `--specs-dir` 은 `.orch/config.json` 의 `finish.run`, `finish.specs_dir` 로 대신할 수 있다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --start
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --status
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/orch-loop.ts" --repo "$REPO" --run "$RUN_ID" --stop
+"$SKILL_DIR/bin/orch.ts" orch-loop --repo "$REPO" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --start
+"$SKILL_DIR/bin/orch.ts" orch-loop --repo "$REPO" --status
+"$SKILL_DIR/bin/orch.ts" orch-loop --repo "$REPO" --run "$RUN_ID" --stop
 ```
 
 `--start` 는 루프를 띄우면 `LOOP-STARTED` 와 0, 살아 있는 루프에 이 Run 을 더하면 `LOOP-JOINED` 와 0 으로 끝난다.
@@ -57,6 +57,8 @@ doctor 의 `WORKER-STATE <dispatch> <상태> <근거>` 는 살아 있는 dispatc
 `--run` 을 주면 저장소의 `session-resume` 핸들러에 루프 생존과 살아 있는 대기 pid, 미답변 질문 id 를 넘긴다([`hooks.md`](hooks.md)).
 알림을 받으면 [`replying.md`](replying.md) 의 분류 기준으로 처리한다. 루프는 delivery 를 소비하거나 ack 하지 않으므로 아래 완료 대기와 함께 쓴다.
 
+**`wait-important` 는 시작하면 작업 폴더를 `--loop-repo` 의 첫 저장소(없으면 시작 폴더의 주 checkout)로 옮긴다.** 머지 뒤 워크트리 정리로 셸의 작업 폴더가 지워져도 worker 조회가 실패하지 않는다. 시작할 때 이미 지워져 있어도 돈다. 그래서 대기는 지워지지 않는 저장소 폴더에서 걸고 `--loop-repo` 를 준다.
+
 **대기는 `wait-important` 를 하네스의 백그라운드 실행 기능으로 run 마다 하나만 건다.**
 앞에서 돌리면 그동안 코디네이터가 막힌다.
 셸의 `&` 나 `nohup` 으로 띄우면 끝나도 완료 알림이 오지 않고 고아 프로세스가 남는다. 이 플러그인의 PreToolUse 훅(`hooks/block-background-wait.ts`)이 그런 Bash 호출을 거부한다. 이 스크립트와 `check --wait` 둘 다 막는다.
@@ -78,7 +80,7 @@ Claude Code 의 백그라운드 Bash 는 따로 정하지 않으면 30분 뒤 �
 Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `--timeout-ms` 는 기본값 7000000 을 쓴다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts" --run "$RUN_ID" --ack "$DELIVERY_ID" --loop-repo "$REPO"
+"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --ack "$DELIVERY_ID" --loop-repo "$REPO"
 ```
 
 저장소가 둘 이상이면 `--loop-repo` 를 저장소마다 준다. 루프가 없는 저장소는 주지 않는다.
@@ -112,8 +114,8 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
 `--ack-lost` 는 기록만 쓴 뒤 종료 코드 0 으로 끝나므로 대기는 따로 건다. `--ignore-lost` 와의 차이와 실패 처리는 스크립트 머리 주석이 소유한다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts" --run "$RUN_ID" --ack-lost "$DISPATCH_ID"
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts" --run "$RUN_ID" --ack "$DELIVERY_ID" --kill-stale
+"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --ack-lost "$DISPATCH_ID"
+"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --ack "$DELIVERY_ID" --kill-stale
 ```
 
 ## 깨어날 때마다 정리와 보드 동기화
@@ -130,8 +132,8 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/wait-important.ts
 `$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts" --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-sync.ts" --repo "$REPO" --goal "$GOAL_ID"
+"$SKILL_DIR/bin/orch.ts" cleanup-sweep --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
+"$SKILL_DIR/bin/orch.ts" board-sync --repo "$REPO" --goal "$GOAL_ID"
 ```
 
 머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.
@@ -141,7 +143,7 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/board-sync.ts" --
 `--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts" --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .orch/specs --kill-holders --apply
+"$SKILL_DIR/bin/orch.ts" cleanup-sweep --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .orch/specs --kill-holders --apply
 ```
 
 `cleanup-sweep.ts` 가 다루는 경우와 건너뛰는 조건은 그 파일 머리 주석이 소유한다. 스크립트가 다루는 경우를 코디네이터가 직접 지우지 않는다.
@@ -155,14 +157,14 @@ node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/cleanup-sweep.ts"
 `$OUT` 은 백그라운드 작업의 출력 파일 경로다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/triage-messages.ts" "$OUT"
+"$SKILL_DIR/bin/orch.ts" triage-messages "$OUT"
 ```
 
 **놓친 보고가 의심되면 지난 시각부터 다시 본다.** compact 나 세션 재시작 뒤, ack 를 먼저 하고 읽지 못한 경우가 여기 해당한다.
 `--live` 는 읽음 표시를 하지 않으므로 도는 대기의 delivery 를 건드리지 않는다.
 
 ```bash
-node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/triage-messages.ts" --live --run "$RUN_ID" --since 3h
+"$SKILL_DIR/bin/orch.ts" triage-messages --live --run "$RUN_ID" --since 3h
 ```
 
 ## 대기가 바로 끝나거나 남음
