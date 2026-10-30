@@ -414,6 +414,14 @@ describe('큐가 도는 동안', () => {
 describe('마이그레이션', () => {
   const dirs = { api: 'db/api' }
 
+  test('watch 전용 Java 폴더의 Flyway 파일도 자동 머지 순서 판정에 넣는다', async () => {
+    config({ migrations: { dirs, watch: { api: ['src/main/java/db/migration'] } } })
+    const files = added('src/main/java/db/migration/V3__add.java')
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
+    once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+  })
+
   test('base 최고 번호 이하를 더한 PR 은 걸지 않고 MIGRATION-CLASH 를 한 번만 쓴다', () => {
     config({ migrations: { dirs } })
     const files = added('db/api/V1__b.sql')

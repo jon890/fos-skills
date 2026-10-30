@@ -132,6 +132,18 @@ beforeEach(() => {
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 describe('예약', () => {
+  test('watch 전용 Java 폴더의 번호도 피하지만 예약 파일 경로는 dirs 에 둔다', () => {
+    write(join(repo, 'src', 'main', 'java', 'db', 'migration', 'V10__old.java'), 'class Old {}\n')
+    git(['add', '.'])
+    git(['commit', '-q', '-m', 'java migration'])
+    git(['push', '-q', 'origin', 'main'])
+    write(join(repo, '.orch', 'config.json'), JSON.stringify({ migrations: {
+      dirs: { api: 'db/api' }, watch: { api: ['src/main/java/db/migration'] },
+    } }))
+    github({ open: [] })
+    assert.equal(ok(reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a'])), 'RESERVED api V11 db/api/V11__add_index.sql\n')
+  })
+
   test('base 최고와 다른 브랜치의 열린 PR 을 넘는 번호를 작업 디렉터리의 브랜치로 예약한다', () => {
     git(['checkout', '-q', 'feat-a'])
     const out = ok(reserve(['--module', 'api', '--name', 'Add index'], { cwd: repo }))

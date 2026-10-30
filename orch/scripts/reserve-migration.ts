@@ -73,7 +73,7 @@
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { autoMergeConfig, maxByModule, migrationOf } from './lib/auto-merge.ts'
+import { autoMergeConfig, maxByModule, migrationOf, watchedDirs } from './lib/auto-merge.ts'
 import type { Migration } from './lib/auto-merge.ts'
 import { ConfigError, loadConfig } from './lib/config.ts'
 import { acquireLock, ownsLock, releaseLock } from './lib/events.ts'
@@ -93,7 +93,7 @@ const OPEN_LIMIT = 200
 
 class Usage extends Error {}
 
-type Target = { module: string; name: string; branch: string; base: string; again: boolean; dir: string; dirs: Record<string, string> }
+type Target = { module: string; name: string; branch: string; base: string; again: boolean; dir: string; watched: Record<string, string[]> }
 type Presence = 'present' | 'absent' | null
 // 정리 판정. merged 는 예약 뒤 머지, gone 은 브랜치가 원격과 로컬에 모두 없음이라 지운다. false 남김, null 판정 못 함
 type Verdict = 'merged' | 'gone' | false | null
@@ -168,13 +168,16 @@ function lookupNumbers(
   repo: string,
   target: Target,
 ): { ok: true; baseMax: Migration | null; open: { branch: string; migrations: Migration[] }[] } | { ok: false; error: string } {
-  const { base, dir, dirs, module } = target
+  const { base, watched, module } = target
   const fetched = git(repo, ['fetch', '--quiet', 'origin', base])
   if (fetched.code !== 0) return { ok: false, error: `origin ${base} 를 받지 못했다(종료 코드 ${fetched.code}): ${fetched.stderr}` }
-  const listed = git(repo, ['ls-tree', '-r', '--name-only', `origin/${base}`, '--', dir])
-  if (listed.code !== 0) return { ok: false, error: `origin/${base} 의 ${dir} 를 읽지 못했다(종료 코드 ${listed.code}): ${listed.stderr}` }
-  const paths = listed.stdout.split('\n').filter((line) => line)
-  const baseMax = maxByModule(paths, dirs).get(module) ?? null
+  const paths: string[] = []
+  for (const dir of new Set(Object.values(watched).flat())) {
+    const listed = git(repo, ['ls-tree', '-r', '--name-only', `origin/${base}`, '--', dir])
+    if (listed.code !== 0) return { ok: false, error: `origin/${base} 의 ${dir} 를 읽지 못했다(종료 코드 ${listed.code}): ${listed.stderr}` }
+    paths.push(...listed.stdout.split('\n').filter((line) => line))
+  }
+  const baseMax = maxByModule(paths, watched).get(module) ?? null
   const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', String(OPEN_LIMIT), '--json', OPEN_FIELDS], { cwd: repo })
   if (!got.ok) return { ok: false, error: got.error }
   if (!Array.isArray(got.data)) return { ok: false, error: '열린 PR 의 파일 목록이 목록이 아니다' }
@@ -183,7 +186,7 @@ function lookupNumbers(
     // 브랜치를 모르는 행은 다른 브랜치로 센다. 빼는 것보다 피하는 쪽이 겹치지 않는다
     branch: typeof row.headRefName === 'string' ? row.headRefName : '',
     migrations: addedPaths(row.files)
-      .map((path) => migrationOf(path, dirs))
+      .map((path) => migrationOf(path, watched))
       .filter((m): m is Migration => m !== null && m.module === module),
   }))
   return { ok: true, baseMax, open }
@@ -237,8 +240,11 @@ async function main(argv: string[]): Promise<number> {
   if (!parsed.prune) {
     const values = parsed.values
     let dirs: Record<string, string>
+    let watch: Record<string, string[]>
     try {
-      dirs = autoMergeConfig(loadConfig(repo)).dirs
+      const config = autoMergeConfig(loadConfig(repo))
+      dirs = config.dirs
+      watch = config.watch
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e
       process.stderr.write(`reserve-migration: ${e.message}\n`)
@@ -259,7 +265,7 @@ async function main(argv: string[]): Promise<number> {
       const branch = (values.branch as string | undefined) ?? git(process.cwd(), ['branch', '--show-current']).stdout.trim()
       if (!branch) throw new Usage('--branch 가 없고 작업 디렉터리의 현재 브랜치도 읽지 못했다')
       const base = (values.base as string | undefined) || defaultBase(repo) || 'main'
-      target = { module, name, branch, base, again: values.again === true, dir: dirs[module], dirs }
+      target = { module, name, branch, base, again: values.again === true, dir: dirs[module], watched: watchedDirs(dirs, watch) }
     } catch (e) {
       if (!(e instanceof Usage)) throw e
       process.stderr.write(`${USAGE}\nreserve-migration: ${e.message}\n`)

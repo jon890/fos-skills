@@ -293,7 +293,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, reviewVerdict, specHold, sweepArgs } from './lib/auto-merge.ts'
+import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, reviewVerdict, specHold, sweepArgs, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote } from './lib/auto-merge.ts'
 import { context as questionContext } from './lib/completion.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './lib/config.ts'
@@ -1512,7 +1512,7 @@ function queueEndLine(file: string): string {
 }
 
 // 더한 파일의 마이그레이션. 더한 파일은 lib/reservations.ts 의 addedPaths 가 고른다(머리 주석의 「자동 머지」 4)
-function addedMigrations(files: unknown, dirs: Record<string, string>): Migration[] {
+function addedMigrations(files: unknown, dirs: Record<string, string | string[]>): Migration[] {
   const found: Migration[] = []
   for (const path of addedPaths(files)) {
     const migration = migrationOf(path, dirs)
@@ -1560,7 +1560,8 @@ function judgeTarget(
   }
   if (Number(count) > 0) return { wait: `미해결 스레드 ${Number(count)}` }
   const review = ctx.autoMerge.review
-  if (!review && Object.keys(ctx.autoMerge.dirs).length === 0) return { migrations: [] }
+  const watched = watchedDirs(ctx.autoMerge.dirs, ctx.autoMerge.watch)
+  if (!review && Object.keys(watched).length === 0) return { migrations: [] }
   const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments,files'], { cwd: ctx.repo })
   if (!got.ok) return { error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
   const data = isObject(got.data) ? got.data : {}
@@ -1586,7 +1587,7 @@ function migrationContext(
       openByBranch: Map<string, Migration[]>
     }
   | { ok: false; error: string } {
-  const dirs = ctx.autoMerge.dirs
+  const dirs = watchedDirs(ctx.autoMerge.dirs, ctx.autoMerge.watch)
   const reserved: ReservedMigrations[] = []
   let read: ReturnType<typeof readReservations>
   try {
@@ -1607,7 +1608,7 @@ function migrationContext(
     const fetched = git(ctx.repo, ['fetch', '--quiet', 'origin', base])
     if (fetched.code !== 0) return { ok: false, error: `origin ${base} 를 받지 못했다(종료 코드 ${fetched.code}): ${oneLine(fetched.stderr.trim())}` }
     const paths: string[] = []
-    for (const dir of new Set(Object.values(dirs))) {
+    for (const dir of new Set(Object.values(dirs).flat())) {
       const listed = git(ctx.repo, ['ls-tree', '-r', '--name-only', `origin/${base}`, '--', dir])
       if (listed.code !== 0) return { ok: false, error: `origin/${base} 의 ${dir} 를 읽지 못했다(종료 코드 ${listed.code}): ${oneLine(listed.stderr.trim())}` }
       paths.push(...lines(listed.stdout))
