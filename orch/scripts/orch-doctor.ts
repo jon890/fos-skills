@@ -38,7 +38,7 @@
 //
 // 저장소 판정(--repo):
 //     <orch 루트>/hooks/ 바로 아래의 .ts 가운데 이벤트 이름이 아닌 파일은 UNKNOWN-HOOK 이다(lib/events.ts 의 unknownHandlers).
-//     <orch 루트>/config.json 에 5.1.0 에서 지운 옛 칸이 있으면 INVALID-CONFIG 와 종료 코드 1 이다.
+//     <orch 루트>/config.json 에 5.2.0 에서 지운 옛 칸이 있으면 INVALID-CONFIG 와 종료 코드 1 이다.
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
 //     UNKNOWN-HOOK 과 깨진 JSON 경고는 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
@@ -65,6 +65,7 @@
 //     새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적어, 일하는 worker 가 사용자에게 넘어간 것처럼 보인다.
 //     그 터미널 화면을 읽어 에이전트가 작업 중이면 working, 아니면 taken_over 다. 판정마다 WORKER-STATE 줄을 낸다.
 //     worker-list 를 30초 안에 읽지 못하면 SKIP-WORKERS 다. 경고라 종료 코드를 바꾸지 않는다.
+//     실패한 dispatch 나 작업 중이 아닌 user_owned 터미널이 있으면 adopt-sessions 를 안내한다.
 //
 // session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
@@ -124,6 +125,7 @@ import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
 import { workerRows } from './lib/workers.ts'
+import { adoptHint } from './lib/sessions.ts'
 import { isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
 
 const USAGE =
@@ -428,16 +430,20 @@ function staleLoops(): string[] {
 }
 
 // 머리 주석의 「worker 판정」. 살아 있는 dispatch 가운데 터미널이 user_owned 로 표시된 것만 판정해 낸다
-function checkWorkers(runId: string): string[] {
+function checkWorkers(runId: string, repo: string): string[] {
   const got = workerRows(runId, { timeoutMs: WORKERS_TIMEOUT_MS })
   if (!got.ok) return [`SKIP-WORKERS ${got.error}`]
   const lines: string[] = []
+  let disconnected = false
   for (const row of got.rows) {
+    if (row.dispatchStatus === 'failed' || ['failed', 'stopped', 'abandoned'].includes(String(row.workerState))) disconnected = true
     const resource = row.resource as Record<string, unknown> | undefined
     if (!isLive(row) || resource?.ownershipState !== 'user_owned') continue
     const verdict = judge({ rows: [row], screens: readScreens(screenHandles([row])) })
     lines.push(`WORKER-STATE ${String(row.dispatchId ?? '?')} ${verdict.state} ${verdict.reason}`)
+    if (verdict.state !== 'working') disconnected = true
   }
+  if (disconnected) lines.push(adoptHint(repo))
   return lines
 }
 
@@ -490,7 +496,7 @@ async function main(argv: string[]): Promise<number> {
           `  node --disable-warning=ExperimentalWarning "${join(skillDir, 'scripts', 'orch-loop.ts')}" --repo ${shQuote(repo)} --run ${shQuote(runId as string)} --start`,
         ]
       : []
-  const workerLines = runId ? checkWorkers(runId) : []
+  const workerLines = runId ? checkWorkers(runId, repo) : []
   process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(), ...workerLines].join('\n')}\n`)
 
   if (runId) {

@@ -3,12 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 5.1.0 (2026-10-30)
+## 5.2.0 (2026-10-30)
 
 - 호환성: 5.0.0의 major 정리에 이어 옛 설정 칸과 옵션을 지운다. `migrate-orch-dir --hooks`로 변환한다
 - 호환성: `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd` 설정을 지웠다
 - 호환성: `--before`, `--verify-merged`, `--after-merged`, `--complete-cmd` 옵션을 지웠다
 - `before-merge` 입력에 `has_pr_command`를 더했다. 변환한 기본 명령은 PR별 명령이나 빈 `PR:`이 있으면 건너뛴다
+
+## 5.1.0 (2026-10-30)
+
+- `adopt-sessions` 로 살아 있는 dispatch 에서 떨어진 터미널과 지시서·PR·화면 상태를 찾고, `--apply` 로 선택한 에이전트를 새 Run 에 이어 붙인다. 기본 실행은 조회만 한다
+- 끊긴 worker 알림에서 이어받기 명령을 안내한다. 압축이나 계정 전환 뒤에도 이전 세션을 찾는다
+- 입력 hook 이 끝난 dispatch 의 남은 터미널도 찾아 바로 차단하고 이어받기를 안내한다. 조회 시간이 초과되면 조회 횟수와 마지막 명령을 함께 알린다
+- 설치 기록과 다른 캐시 번들의 스크립트를 직접 부르면 현재 진입점 경로를 경고한다
 
 ## 5.0.0 (2026-10-30)
 

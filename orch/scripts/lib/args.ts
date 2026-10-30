@@ -11,6 +11,8 @@
 //     옛 Python 명령은 이 값을 사용법 오류(2)로 거부했다. 옮긴 명령은 받아들인다. 넓어진 동작이고 CHANGELOG 3.0.0 에 적었다.
 //     거부하던 호출이 통하게 될 뿐이라 옛 호출 가운데 깨지는 것은 없다. 붙인 값은 접두로 펼치지 않는다.
 
+import './bundle.ts'
+
 type Options = Record<string, { type: 'string' | 'boolean' }>
 
 function resolveName(given: string, names: string[]): string {

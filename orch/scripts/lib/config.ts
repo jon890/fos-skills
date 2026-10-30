@@ -14,7 +14,7 @@
 //     자기가 읽는 키만 넘기면 다른 명령의 키(pipeline.enabled 같은 것)를 둔 저장소에서 사용법 오류로 멈춘다
 // 명령은 ConfigError 를 사용법 오류(종료 코드 2)로 바꾼다.
 //
-// REMOVED_CONFIG_KEYS 는 orch 5.1.0 에서 지운 키다. 실행 전에 거부하고 핸들러로 옮기는 명령을 알린다.
+// REMOVED_CONFIG_KEYS 는 orch 5.2.0 에서 지운 키다. 실행 전에 거부하고 핸들러로 옮기는 명령을 알린다.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -109,7 +109,7 @@ export function loadConfig(repo: string, opts: { file?: string } = {}): Config {
   const removed = REMOVED_CONFIG_KEYS.filter(({ section, key }) => Object.hasOwn((parsed[section] ?? {}) as object, key))
   if (removed.length > 0) {
     const names = removed.map(({ section, key }) => `${section}.${key}`).join(', ')
-    throw new RemovedConfigError(`orch 5.1.0 에서 삭제한 설정: ${names}. bin/orch.ts migrate-orch-dir --repo ${repo} --hooks --apply 로 핸들러에 옮긴다`)
+    throw new RemovedConfigError(`orch 5.2.0 에서 삭제한 설정: ${names}. bin/orch.ts migrate-orch-dir --repo ${repo} --hooks --apply 로 핸들러에 옮긴다`)
   }
   return parsed as Config
 }

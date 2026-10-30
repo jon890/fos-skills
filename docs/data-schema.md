@@ -37,7 +37,7 @@
 
 입력 필드의 표는 `orch/scripts/lib/events.ts` 머리 주석이 소유한다. 「공통 필드」 와 「이벤트별 필드」 가 그것이다.
 
-5.1.0 전 설정의 환경 변수와 입력 필드 대응이다. `migrate-orch-dir.ts --hooks`가 만드는 핸들러는 이 대응대로 이전 설정의 명령에 환경 변수를 채워 부른다.
+5.2.0 전 설정의 환경 변수와 입력 필드 대응이다. `migrate-orch-dir.ts --hooks`가 만드는 핸들러는 이 대응대로 이전 설정의 명령에 환경 변수를 채워 부른다.
 
 | 옛 칸 | 이벤트 | 옛 환경 변수 → 입력 필드 |
 | --- | --- | --- |
@@ -98,7 +98,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `migrations` | `before` | 모듈 이름에서 셸 명령으로. `*` 는 나머지 모듈의 명령이고 `{module}` 을 모듈 이름으로 바꾼다 | 없음(머지 전 명령을 붙이지 않는다) | 마이그레이션이 든 PR 을 자동 머지할 때 붙일 머지 전 명령(DB 백업). 모듈이 여럿이면 ` && ` 로 잇는다. 이 키가 있는데 규칙이 없는 모듈의 PR 은 걸지 않는다. 명령은 `merge_queue.ts` 의 `PR:명령` 처럼 돈다 |
 | `migrations` | `blocked_after_sec` | 양수 | 3600 | 같은 모듈에 더 낮은 번호를 더한 열린 PR 이나 PR 이 없는 다른 브랜치의 예약(`state/migration-reservations.json`) 때문에 기다린 시간이 이 값을 넘으면 `MIGRATION-BLOCKED` 를 한 번 낸다 |
 
-orch 5.1.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
+orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 `finish.complete_cmd`와 대응 명령줄 옵션 `--before`, `--verify-merged`,
 `--after-merged`, `--complete-cmd`를 받지 않는다. 일반 런타임 명령은 남은 설정을
 사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로

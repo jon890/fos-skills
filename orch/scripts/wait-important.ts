@@ -58,6 +58,7 @@
 //     단, completed/abandoned dispatch 와 성공·취소 결과는 터미널이 사라져도 제외한다.
 //     끊긴 dispatch 를 찾으면 메시지를 기다리지 않고 `WORKER_LOST ctx_... stage=terminal_missing` 줄과
 //     `LAST_DELIVERY <id>` 줄을 내고 종료 코드 5 로 끝난다. 지켜보는 대상은 둘이다.
+//     두 줄 사이에 adopt-sessions 명령을 안내한다. LAST_DELIVERY 는 계속 마지막 줄이다.
 //     1) 대기를 시작할 때 살아 있던(dispatchStatus 가 pending, dispatched, running) dispatch 가 대기하는 동안 끊긴 경우
 //     2) 대기를 시작할 때 이미 끊겨 있는데 아직 처리하지 않은 dispatch. 재시작 뒤 새로 건 대기가 이 경우다.
 //        이때는 `check` 를 부르지 않고 바로 5 로 끝난다
@@ -159,6 +160,7 @@ import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
 import { pyJson, pyStr as text } from './lib/py.ts'
 import { judge, readScreens, screenHandles } from './lib/worker-state.ts'
+import { adoptHint } from './lib/sessions.ts'
 
 const USAGE = [
   '사용법: wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]',
@@ -756,6 +758,7 @@ async function workerDone(messages: Json[], runId: string): Promise<void> {
 
 async function reportLost(lost: Lost[], rows: Json[], ack: string | null, state: string, runId: string, repo: string): Promise<number> {
   for (const [dispatch, stage] of lost) out(`WORKER_LOST ${dispatch} stage=${text(stage)}`)
+  out(adoptHint(repo))
   const rowOf = new Map(rows.map((w) => [w.dispatchId, w]))
   for (const [dispatch, stage] of lost) {
     const row = rowOf.get(dispatch) ?? {}

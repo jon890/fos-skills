@@ -157,7 +157,7 @@ function splitArgs(argv: string[]): { wrapper: Wrapper; queue: string[]; prs: Pr
     const eq = arg.indexOf('=')
     const name = eq >= 0 ? arg.slice(0, eq) : arg
     if (['--before', '--verify-merged', '--after-merged'].includes(name)) {
-      throw new Usage(`${name} 은 orch 5.1.0 에서 삭제했다. hooks/ 의 이벤트 핸들러로 옮긴다`)
+      throw new Usage(`${name} 은 orch 5.2.0 에서 삭제했다. hooks/ 의 이벤트 핸들러로 옮긴다`)
     }
     const inline = eq >= 0 ? arg.slice(eq + 1) : null
     // `--옵션=값` 이면 그 값, 아니면 다음 인자. 다음 인자가 없으면 null 이다
