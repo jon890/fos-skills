@@ -7,11 +7,12 @@
     review_threads.py list --count <owner> <repo> <PR번호>   # 미해결 스레드 수만 정수로 낸다
     review_threads.py reply    <THREAD_ID> <본문파일>
     review_threads.py reply-batch <map.tsv>   # 줄마다 `THREAD_ID<탭>본문파일`. 빈 줄과 # 줄은 건너뛴다
+    review_threads.py show     <THREAD_ID>   # 스레드의 전체 본문과 댓글. `list` 의 head 는 120자에서 잘린다
     review_threads.py carried  <owner> <repo> <PR번호> [--marker 문구]   # 회신에 문구가 든 스레드
     review_threads.py resolve  <THREAD_ID> [<THREAD_ID> ...]
     review_threads.py resolve  -              # 표준 입력에서 공백이나 줄로 나뉜 THREAD_ID 를 읽는다
 
-    --repo <owner>/<repo>    reply 와 resolve 에서 호스트를 정한다. 어느 자리에 와도 된다
+    --repo <owner>/<repo>    show, reply, resolve 에서 호스트를 정한다. 어느 자리에 와도 된다
 
 종료 코드:
     0  성공
@@ -39,7 +40,7 @@ resolve 하지 않으면 "A conversation must be resolved" 보호 규칙이 머�
 
 호스트는 `gh_host.py` 가 정한다.
 `list` 와 `list-all` 은 받은 `<owner> <repo>` 를 그대로 넘기므로 현재 디렉터리를 보지 않는다.
-`reply` 와 `resolve` 는 THREAD_ID 만 받아 저장소를 알 수 없으므로 `--repo` 로 준다.
+`show`, `reply`, `resolve` 는 THREAD_ID 만 받아 저장소를 알 수 없으므로 `--repo` 로 준다.
 주지 않으면 현재 디렉터리의 origin 을 보므로, 대상 저장소 안에서 돌려야 한다.
 """
 
@@ -89,6 +90,18 @@ CARRIED_QUERY = """
     }""" % PAGE_SIZE
 
 DEFAULT_MARKER = "다음 PR"
+
+SHOW_PAGE_SIZE = 100
+
+SHOW_QUERY = """
+    query($id:ID!) {
+      node(id:$id) {
+        ... on PullRequestReviewThread {
+          id isResolved isOutdated path line originalLine
+          comments(first:%d){ totalCount nodes{ author{login} body url } }
+        }
+      }
+    }""" % SHOW_PAGE_SIZE
 
 RESOLVE_MUTATION = """
         mutation($threadId:ID!) {
@@ -165,6 +178,39 @@ def cmd_list(host, owner, repo, num, only_unresolved, count_only=False):
             "author": (first.get("author") or {}).get("login"),
             "head": (first.get("body") or "")[:HEAD_LEN],
         })
+    return 0
+
+
+def cmd_show(host, thread_id):
+    """스레드 하나의 전체 본문과 댓글을 낸다. `list` 의 head 는 HEAD_LEN 자에서 잘린다.
+
+    첫 줄은 `list` 와 같은 키의 JSON 이고 head 만 없다. 그 뒤에 댓글마다 머리줄과 본문 전체를 낸다.
+    본문은 줄바꿈이 살아 있어야 읽히므로 JSON 에 넣지 않는다.
+    """
+    code, out, err = gh("api", "graphql", "-f", f"query={SHOW_QUERY}",
+                        "-f", f"id={thread_id}", env={"GH_HOST": host})
+    if code != 0:
+        print(err.strip() or out.strip(), file=sys.stderr)
+        return 1
+    node = (json.loads(out).get("data") or {}).get("node")
+    if not node or "comments" not in node:
+        print(f"리뷰 스레드가 아니거나 찾을 수 없다: {thread_id}", file=sys.stderr)
+        return 1
+    comments = node["comments"]
+    emit({
+        "id": node["id"],
+        "resolved": node["isResolved"],
+        "outdated": node["isOutdated"],
+        "path": node["path"],
+        "line": thread_line(node),
+        "comments": comments["totalCount"],
+    })
+    for number, comment in enumerate(comments["nodes"], 1):
+        author = (comment.get("author") or {}).get("login")
+        print(f"\n--- {number}. {author} {comment.get('url') or ''}".rstrip())
+        print(comment.get("body") or "")
+    if comments["totalCount"] > SHOW_PAGE_SIZE:
+        print(f"\n경고: 댓글 {comments['totalCount']}건 중 {SHOW_PAGE_SIZE}건만 조회했다", file=sys.stderr)
     return 0
 
 
@@ -352,6 +398,8 @@ def main(argv):
             return usage()
         return cmd_list(host, rest[0], rest[1], rest[2],
                         only_unresolved=(cmd == "list"), count_only=count_only)
+    if cmd == "show":
+        return cmd_show(host, rest[0]) if len(rest) == 1 else usage()
     if cmd == "reply":
         return cmd_reply(host, *rest[:2]) if len(rest) == 2 else usage()
     if cmd == "reply-batch":
