@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.19.0"
+  version: "3.20.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -58,14 +58,11 @@ mkdir -p "$PREVIEW_DIR"
 
 본문을 `$PREVIEW_DIR/body.md` 에 쓴다.
 
-**수정본을 같은 경로에 다시 쓸 때는 기존 파일을 먼저 지운다.**
-생성기가 실패하면 이전 `preview.html` 이 그대로 남아,
-이전 본문으로 만든 미리보기를 새 본문이라고 착각하게 된다.
-
-**`rm` 대상의 변수는 `${PREVIEW_DIR:?}` 로 쓴다.** `$PREVIEW_DIR` 가 비어 있으면 셸이 오류를 내고 `rm` 을 실행하지 않는다.
+**수정본을 같은 경로에 다시 쓸 때 `rm` 으로 미리보기를 지우지 않는다.**
+5단계 생성기가 시작할 때 `--out` 의 이전 파일을 스스로 지우고, 임시 파일에 쓴 뒤 이름을 바꿔 덮어쓴다.
+생성기가 실패해도 이전 `preview.html` 이 남지 않아, 이전 본문으로 만든 미리보기를 새 본문이라고 착각하지 않는다.
 
 ```bash
-rm -f "${PREVIEW_DIR:?}/body.md" "${PREVIEW_DIR:?}/preview.html"
 cat > "$PREVIEW_DIR/body.md" <<'EOF'
 ...
 EOF
