@@ -101,6 +101,9 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 공유되는 `.gitignore` 는 고치지 않는다.
 대상 저장소의 `.claude/settings.local.json` 도 스크립트가 복사한다. 추적되지 않는 파일이라 워크트리에 따라오지 않고,
 없으면 사용자가 허용해 둔 `gh pr`, 리뷰 회신 같은 명령이 worker 세션에서 다시 막힌다.
+이 복사는 `permissions` 의 허용 규칙에만 듣는다. Claude Code 자동 모드 분류기의 허용 기준(`autoMode.allow`)은 워크트리의 `.claude/settings.local.json` 에서 먹지 않았다(2026-10-31 실측).
+worker 에게 push, PR 생성, 리뷰 회신과 resolve 를 맡기는 저장소는 worker 가 쓰는 Claude 프로필의 사용자 `settings.json` 에 그 저장소로 한정한 `autoMode.allow` 를 둔다.
+저장소를 한정하지 않으면 다른 저장소의 외부 쓰기까지 허용된다. 프로필 폴더는 `link-claude-profile.ts` 가 맞추는 곳이다.
 
 Orca 가 남기는 `.orca-worktree-trash` 는 Orca 가 관리하므로 지우지 않는다.
 

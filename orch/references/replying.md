@@ -120,6 +120,7 @@ critic 이 `REVISE` 로 판정했는데 worker 가 계획서를 고치지 않고
 ## PR 생성과 리뷰 회신을 대신 한다
 
 worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌다.
+반복해서 막히는 저장소는 worker 프로필의 사용자 `settings.json` 에 저장소를 한정한 `autoMode.allow` 를 두면 풀린다. 워크트리의 `.claude/settings.local.json` 에 둔 `autoMode.allow` 는 듣지 않는다([`launch.md`](launch.md) 의 `.claude/settings.local.json` 복사 설명).
 지시서대로 worker 가 push 한 뒤 본문 파일 경로(worker 세션 임시 폴더의 파일)를 status 나 `worker_done` 으로 보내면 코디네이터가 처리한다.
 
 - PR 은 그 본문 파일로 연다. 본문 끝의 서명 줄은 저장소 지침을 따른다.
