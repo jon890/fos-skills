@@ -1576,7 +1576,8 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
   }
   for (const [n, { branches, specs }] of [...found].sort(([a], [b]) => a - b)) {
     const view = ghJson<{ state?: unknown; headRefOid?: unknown }>(['pr', 'view', String(n), '--json', 'state,headRefOid'], { cwd: repo })
-    const state = view.ok && isObject(view.data) ? String(view.data.state) : ''
+    const data = view.ok && isObject(view.data) ? view.data : null
+    const state = data ? String(data.state) : ''
     if (!PR_STATES.has(state)) {
       log(`리뷰 흔적 남김 #${n}: PR 을 읽지 못했다`)
       continue
@@ -1590,7 +1591,7 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
       log(`리뷰 흔적 남김 #${n}: 리뷰 dispatch 가 살아 있다`)
       continue
     }
-    const head = isObject(view.data) && typeof view.data.headRefOid === 'string' ? view.data.headRefOid : ''
+    const head = data && typeof data.headRefOid === 'string' ? data.headRefOid : ''
     for (const branch of branches) {
       const kept = reviewBranchKept(repo, branch, args.base, n, head)
       if (kept) {
