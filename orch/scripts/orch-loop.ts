@@ -138,6 +138,8 @@
 //     이어 쓰지 않는다. 그때는 CI-FAILED 로 코디네이터가 판단한다. CI-FAILED 의 text 는 `<실패한 체크 이름>: <worker 결과>` 이고 worker 결과는
 //     `보냈다 <dispatch>`, `깨우지 못했다(종료 코드 4)`, `보내지 못했다(종료 코드 <n>)`, `살아 있는 dispatch 없음`, `Run id 없음`,
 //     `worker 목록을 읽지 못했다` 가운데 하나다.
+//     실패한 체크가 모두 CANCELLED 면 코디네이터가 일부러 취소한 CI 일 수 있어 worker 에게 보내지 않는다. worker 결과는 `취소만 있음` 이고
+//     CI-FAILED 는 그 PR 의 worker 를 띄운 Run 에 쓴다. 같은 체크 이름과 워크플로에 더 늦게 시작한 실행이 있으면 옛 취소는 애초에 실패로 세지 않는다(lib/gh.ts 의 currentChecks).
 //
 // 멈춤 확인: 맡은 Run 마다 그 Run 의 worker-list(위 「worker 찾기」 와 같은 조회)에서 살아 있는 dispatch(LIVE_DISPATCH)의 터미널 화면을
 //     `orca terminal read --screen` 으로 읽고 lib/screen.ts 의 readScreen 으로 판정한다. 등록되지 않은 Run 의 worker 화면은 읽지 않는다.
@@ -304,7 +306,7 @@ import type { OpenPr, WorkerFound } from './lib/conflicts.ts'
 import { fire, reclaim } from './lib/events.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
 import { isFile } from './lib/fs.ts'
-import { apiTarget, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
+import { apiTarget, cancelledOnly, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { specFiles } from './lib/last-pr.ts'
@@ -1079,6 +1081,9 @@ function ownerOf(path: string, lookup: Lookup): { ok: true; found: Owner | null 
   return { ok: true, found: ended }
 }
 
+// 실패한 체크가 모두 CANCELLED 일 때 CI-FAILED 의 worker 결과(머리 주석의 「CI 감시」)
+const CANCELLED_ONLY = '취소만 있음'
+
 // 체크가 실패한 PR 의 살아 있는 dispatch 에 보낸다. text 는 CI-FAILED 의 text 에 붙일 말, run 은 그 worker 를 띄운 Run 이다
 // (모르면 null. 알림은 주 Run 에 간다. 머리 주석의 「CI 감시」)
 async function tellWorker(ctx: Context, pr: OwnPr, failed: CiCheck[], lookup: Lookup): Promise<{ text: string; run: string | null }> {
@@ -1171,7 +1176,8 @@ async function watchCi(
       const failed = judged.checks.filter(failedCheck)
       let told: { text: string; run: string | null }
       try {
-        told = await tellWorker(ctx, pr, failed, lookup)
+        // 취소만 있으면 코드 실패가 아니다. worker 에게 고치라고 보내지 않고 코디네이터에게만 알린다
+        told = cancelledOnly(failed) ? { text: CANCELLED_ONLY, run: runOfPr(ctx, pr, lookup) } : await tellWorker(ctx, pr, failed, lookup)
       } catch (e) {
         told = { text: `보내지 못했다(${oneLine(e)})`, run: null }
       }

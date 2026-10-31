@@ -445,4 +445,54 @@ describe('worker 에게 보내기', () => {
     )
     assert.equal(received('ci-failed').length, 1)
   })
+
+  describe('취소된 체크', () => {
+    // 같은 워크플로의 실행. startedAt 이 늦을수록 새 실행이다
+    const attempt = (conclusion: string | null, startedAt: string, status = 'COMPLETED'): Json => ({
+      ...check('test', conclusion, status),
+      workflowName: 'CI',
+      startedAt,
+    })
+    const OLD = '2026-10-30T01:00:00Z'
+    const NEW = '2026-10-30T02:00:00Z'
+
+    test('실패한 체크가 취소뿐이면 worker 에게 보내지 않고 CI-FAILED 에 취소만 있음을 적는다', () => {
+      worker(1, 'running')
+      github([pr(1, [attempt('CANCELLED', OLD)])])
+      once()
+      assert.deepEqual(sends(), [])
+      assert.deepEqual(
+        events().map((line) => [line.kind, line.text]),
+        [['CI-FAILED', 'test: 취소만 있음']],
+      )
+      assert.equal(received('ci-failed').length, 1)
+    })
+
+    test('취소와 실제 실패가 섞이면 worker 에게 보낸다', () => {
+      worker(1, 'running')
+      github([pr(1, [attempt('CANCELLED', OLD), { ...check('lint', 'FAILURE') }])])
+      once()
+      assert.equal(sends().length, 1)
+      assert.match(sends()[0][3], /lint/)
+    })
+
+    test('이전 실행이 취소이고 최신 실행이 진행 중이면 알림도 보내기도 없다', () => {
+      worker(1, 'running')
+      github([pr(1, [attempt('CANCELLED', OLD), attempt(null, NEW, 'IN_PROGRESS')])])
+      once()
+      assert.deepEqual(sends(), [])
+      assert.deepEqual(events(), [])
+      assert.deepEqual(received('ci-failed'), [])
+      assert.deepEqual(loopCi(), { 1: { head: HEAD_A, state: 'pending' } })
+    })
+
+    test('이전 실행이 취소이고 최신 실행이 성공이면 ci-passed 이고 보내기가 없다', () => {
+      worker(1, 'running')
+      github([pr(1, [attempt('CANCELLED', OLD), attempt('SUCCESS', NEW)])])
+      once()
+      assert.deepEqual(sends(), [])
+      assert.deepEqual(events(), [])
+      assert.equal(received('ci-passed').length, 1)
+    })
+  })
 })

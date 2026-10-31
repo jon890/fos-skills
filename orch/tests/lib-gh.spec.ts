@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { ConfigError } from '../scripts/lib/config.ts'
-import { apiTarget, checkSnapshot, ciState, currentUser, gh, ghBin, ghJson, isOwnPr, ownAuthors, requiredNames, ruleChecks, updateBranch } from '../scripts/lib/gh.ts'
+import { apiTarget, cancelledOnly, checkSnapshot, ciState, currentUser, gh, ghBin, ghJson, isOwnPr, ownAuthors, requiredNames, ruleChecks, updateBranch } from '../scripts/lib/gh.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
@@ -318,6 +318,17 @@ describe('ciState', () => {
   test('skippedIsMissing 이면 SKIPPED 인 필수 체크는 나타나지 않은 것이고, 아니면 통과로 본다', () => {
     assert.equal(ciState([run('test', 'SKIPPED')], ['test'], true).state, 'pending')
     assert.equal(ciState([run('test', 'SKIPPED')], ['test'], false).state, 'passed')
+  })
+})
+
+describe('cancelledOnly', () => {
+  const row = (conclusion: string | null, status: string | null = 'COMPLETED') => ({ name: 'test', status, conclusion, url: null })
+  test('실패한 체크가 모두 CANCELLED 일 때만 참이다', () => {
+    assert.equal(cancelledOnly([row('CANCELLED'), row('CANCELLED')]), true)
+    assert.equal(cancelledOnly([row('CANCELLED'), row('FAILURE')]), false)
+    assert.equal(cancelledOnly([row('TIMED_OUT')]), false)
+    assert.equal(cancelledOnly([row(null, 'FAILURE')]), false)
+    assert.equal(cancelledOnly([]), false)
   })
 })
 

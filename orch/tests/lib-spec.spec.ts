@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
-import { BRANCH_LINE, branchesOf, deleteSpecs, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
+import { BRANCH_LINE, boardIdOf, branchesOf, deleteSpecs, liveSpecPaths, permissionsOf, selectionsOf, specCandidates } from '../scripts/lib/spec.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
@@ -69,6 +69,21 @@ describe('BRANCH_LINE 과 branchesOf', () => {
 
   test('줄은 옛 명령의 splitlines 처럼 \\u2028 같은 경계에서도 나눈다', () => {
     assert.deepEqual(branchesOf('설명\u2028브랜치: `a`\u000c브랜치: `b`'), ['a', 'b'])
+  })
+})
+
+describe('boardIdOf', () => {
+  test('백틱 안의 글이나 공백 앞 첫 토큰이 id 이고 뒤 글은 note 다', () => {
+    assert.deepEqual(boardIdOf('보드 항목 id: `a-1`\n'), { id: 'a-1', note: '' })
+    assert.deepEqual(boardIdOf('- 보드 항목 id: a-1\n'), { id: 'a-1', note: '' })
+    assert.deepEqual(boardIdOf('보드 항목 id: 326-eval-resume (이 PR 은 5단계)\n'), { id: '326-eval-resume', note: '(이 PR 은 5단계)' })
+    assert.deepEqual(boardIdOf('보드 항목 id: `a-1` (설명)\n'), { id: 'a-1', note: '(설명)' })
+  })
+
+  test('줄이 없거나 값이 비면 null 이고 첫 줄만 읽는다', () => {
+    assert.equal(boardIdOf('# 제목\n'), null)
+    assert.equal(boardIdOf('보드 항목 id:\n'), null)
+    assert.equal(boardIdOf('보드 항목 id: a\n보드 항목 id: b\n')?.id, 'a')
   })
 })
 

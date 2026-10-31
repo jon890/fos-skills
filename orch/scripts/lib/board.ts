@@ -1,6 +1,7 @@
 // worker 띄우기와 루프가 함께 쓰는 보드 연동. 쓰기는 board.ts 에 맡긴다.
 // 지시서에 `중간 과정:` 줄이 있으면 띄울 때 항목을 만들지 않고 그 PR 의 기존 항목에 한 줄만 남긴다.
 // `보드 항목 id:` 로 정한 항목이 done 이면 doing 으로 다시 열고 지난 단계 뒤에 새 단계를 잇는다(ADR-015).
+// id 는 백틱 안의 글이나 공백 앞 첫 토큰이다(lib/spec.ts 의 boardIdOf). 설명이 붙었는데 보드에 없는 id 면 항목을 만들지 않는다
 // 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018)
 import { parseEventTag } from '../../../work-board/hooks/event-tags.js'
 import { existsSync, readFileSync } from 'node:fs'
@@ -10,6 +11,7 @@ import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSt
 import { loadConfig } from './config.ts'
 import { boardPath } from './paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
+import { boardIdOf } from './spec.ts'
 
 export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../work-board/bin/board.ts')
 export type BoardItem = Record<string, unknown> & { id: string }
@@ -77,7 +79,12 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
     const kept = lines(found[0].details).filter((d) => !plain(d).startsWith(INTERIM))
     return write(['set', found[0].id, '--worktree', basename(worktree), ...branchArgs, ...detailArgs([...kept, INTERIM + (heading || basename(spec))])])
   }
-  const explicit = text.match(/^\s*(?:[-*]\s*)?보드 항목 id\s*:\s*`?([^`\n]+)`?\s*$/m)?.[1].trim()
+  const given = boardIdOf(text)
+  const explicit = given?.id
+  // id 줄에 설명이 붙었는데 그 id 가 보드에 없으면 설명을 id 로 잘못 쓴 줄일 수 있어 새 항목을 만들지 않는다
+  if (given?.note && !items.some((row) => row.id === given.id)) {
+    throw new Error(`지시서의 \`보드 항목 id: ${given.id}\` 가 보드에 없고 뒤에 설명이 붙어 있어 항목을 만들지 않는다. id 만 적거나 설명을 다른 줄로 옮긴다`)
+  }
   // 지시서가 id 를 정하지 않았으면 같은 워크트리나 브랜치의 끝나지 않은 항목을 이어 쓴다.
   // 충돌 후속 지시서로 같은 워크트리에 다시 띄운 worker 가 항목을 하나 더 만들지 않게 한다
   // 그다음은 같은 업무 번호의 항목이다. 한 업무의 다음 PR 이나 확인 작업을 다른 워크트리에서 띄워도 진행률이 한 항목에 모인다
