@@ -852,6 +852,106 @@ test('단계도 진행률도 없는 기존 항목은 단계를 더하지 않고 
   assert.equal('details' in item, false, JSON.stringify(item))
 })
 
+describe('리뷰 worker 준비', () => {
+  let proj: string
+  let reviewWt: string
+  let prHead: string
+  const git = (...args: string[]): string => {
+    const done = spawnSync('git', args, { env, encoding: 'utf8' })
+    assert.equal(done.status, 0, `${args.join(' ')}: ${done.stderr}`)
+    return done.stdout.trim()
+  }
+
+  // origin 에 main 과 PR head(refs/pull/5/head)를 두고, 지시서의 브랜치로 origin/main 위에 워크트리를 만드는 가짜 make-worktree
+  beforeEach(() => {
+    const origin = join(tmp, 'origin.git')
+    proj = join(tmp, 'proj')
+    reviewWt = join(tmp, 'hookwt')
+    git('init', '-q', '--bare', '-b', 'main', origin)
+    git('clone', '-q', origin, proj)
+    git('-C', proj, 'commit', '-q', '--allow-empty', '-m', 'init')
+    git('-C', proj, 'push', '-q', 'origin', 'main')
+    git('-C', proj, 'commit', '-q', '--allow-empty', '-m', 'pr 5')
+    prHead = git('-C', proj, 'rev-parse', 'HEAD')
+    git('-C', proj, 'push', '-q', 'origin', 'HEAD:refs/pull/5/head')
+    git('-C', proj, 'reset', '-q', '--hard', 'origin/main')
+    const make = join(tmp, 'make-review-worktree.sh')
+    writeFileSync(make, `echo "make $*" >> "$FAKE_LOG"\ngit -C ${proj} worktree add -q -b review/pr-5 ${reviewWt} origin/main >/dev/null 2>&1 || exit 1\necho ${reviewWt}\n`)
+    env.MAKE_WORKTREE = make
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  })
+
+  function reviewSpec(pr: number): void {
+    writeFileSync(spec, `# PR #${pr} 리뷰\n\n리뷰 PR: #${pr}\n브랜치: \`review/pr-${pr}\`\n허락: 리뷰 회신까지 허락했다.\n`)
+  }
+
+  function config(value: Record<string, unknown>): void {
+    mkdirSync(join(proj, '.orch'), { recursive: true })
+    writeFileSync(join(proj, '.orch', 'config.json'), JSON.stringify(value))
+  }
+
+  function launchReview(): Launch {
+    return launch(['--repo', proj, '--name', 'review-pr-5', '--', ...CLAUDE])
+  }
+
+  test('리뷰 PR 줄이 있으면 워크트리를 PR head 에 detached 로 두고 공유 저장소에 pr-N 브랜치를 만들지 않는다', () => {
+    reviewSpec(5)
+    const r = launchReview()
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, new RegExp(`^REVIEW-CHECKOUT #5 ${prHead}$`, 'm'))
+    assert.equal(git('-C', reviewWt, 'rev-parse', 'HEAD'), prHead)
+    assert.equal(git('-C', reviewWt, 'branch', '--show-current'), '')
+    assert.equal(spawnSync('git', ['-C', proj, 'rev-parse', '--verify', '-q', 'refs/heads/pr-5'], { env }).status, 1)
+    assert.doesNotMatch(r.stdout, /REVIEW-PREPARE/)
+    assert.equal(lines('orca orchestration worker-start').length, 1)
+  })
+
+  test('review.prepare 를 PR head 의 워크트리에서 한 번 돌리고 결과 코드를 낸다', () => {
+    reviewSpec(5)
+    const seen = join(tmp, 'prepare.txt')
+    config({ review: { prepare: `echo "$ORCH_REVIEW_PR $(pwd -P) $(git rev-parse HEAD)" >> ${seen}` } })
+    const r = launchReview()
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^REVIEW-PREPARE 0$/m)
+    assert.deepEqual(readFileSync(seen, 'utf8').trim().split('\n'), [`5 ${realpathSync(reviewWt)} ${prHead}`])
+  })
+
+  test('review.prepare 가 실패해도 경고하고 띄운다', () => {
+    reviewSpec(5)
+    config({ review: { prepare: 'echo 생성기 실패; exit 3' } })
+    const r = launchReview()
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^REVIEW-PREPARE 3$/m)
+    assert.match(r.stderr, /생성기 실패/)
+    assert.match(r.stderr, /경고: 리뷰 생성물 준비가 종료 코드 3 로 끝났다/)
+    assert.equal(lines('orca orchestration worker-start').length, 1)
+  })
+
+  test('PR head 를 받지 못하면 띄우지 않고 1 이다', () => {
+    reviewSpec(9)
+    const r = launchReview()
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /리뷰 PR head 를 꺼내지 못했다\(#9\)/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  test('review.prepare 가 문자열이 아니면 설정 오류 2 다', () => {
+    reviewSpec(5)
+    config({ review: { prepare: ['pnpm', 'gen'] } })
+    const r = launchReview()
+    assert.equal(r.code, 2, both(r))
+    assert.match(r.stderr, /review\.prepare 는 bash 명령 문자열이어야 한다/)
+  })
+
+  test('리뷰 PR 줄이 없으면 PR head 를 꺼내지 않는다', () => {
+    config({ review: { prepare: 'exit 1' } })
+    const r = launchReview()
+    assert.equal(r.code, 0, both(r))
+    assert.doesNotMatch(r.stdout, /REVIEW-/)
+    assert.equal(git('-C', reviewWt, 'branch', '--show-current'), 'review/pr-5')
+  })
+})
+
 describe('중간 과정과 다시 열기', () => {
   type Item = Record<string, unknown> & { id: string }
   let file: string

@@ -1,7 +1,7 @@
 // <orch 루트>/config.json 읽기의 한 벌이다.
 //
 // 최상위는 절(Section)마다 객체 하나다. 지금 절(finish, cleanup, queue)의 키는 orch/references/overlay.md 의
-// 「마무리 설정 파일」 표가, 더하는 절(hooks, pipeline, heavy, migrations, board)의 키는 docs/data-schema.md 의 「config.json 에 더하는 절」 이 정한다.
+// 「마무리 설정 파일」 표가, 더하는 절(hooks, pipeline, heavy, migrations, board, review)의 키는 docs/data-schema.md 의 「config.json 에 더하는 절」 이 정한다.
 // 키 이름은 그 절을 읽는 명령의 옵션 이름에서 하이픈을 밑줄로 바꾼 것이다.
 //
 // 판정:
@@ -10,7 +10,7 @@
 //     모르는 최상위 절도 막는 것은 절 이름의 오타(queu)가 조용히 무시되지 않게 하려는 것이다
 //   - section 은 known 에 없는 키가 있으면 ConfigError 다. known 은 그 절을 읽는 명령이 넘긴다.
 //     hooks 절은 HOOKS_KEYS, pipeline 절은 PIPELINE_KEYS, heavy 절은 HEAVY_KEYS, migrations 절은 MIGRATIONS_KEYS, queue 절은 QUEUE_KEYS,
-//     board 절은 BOARD_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
+//     board 절은 BOARD_KEYS, review 절은 REVIEW_KEYS 를 쓴다. 여러 명령이 같은 절의 다른 키를 읽으므로
 //     자기가 읽는 키만 넘기면 다른 명령의 키(pipeline.enabled 같은 것)를 둔 저장소에서 사용법 오류로 멈춘다
 // 명령은 ConfigError 를 사용법 오류(종료 코드 2)로 바꾼다.
 //
@@ -21,10 +21,10 @@ import { resolve } from 'node:path'
 import { isFile } from './fs.ts'
 import { pathOf } from './paths.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'board'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'board' | 'review'
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'board']
+const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'board', 'review']
 
 export class ConfigError extends Error {}
 
@@ -75,6 +75,9 @@ export const MIGRATIONS_KEYS: readonly string[] = ['dirs', 'watch', 'before', 'b
 
 // board 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 board 행이다. 값의 판정은 lib/milestones.ts 의 boardSettings 가 소유한다.
 export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line']
+
+// review 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 review 행이다. launch-worker 가 리뷰 worker 를 띄울 때 읽는다.
+export const REVIEW_KEYS: readonly string[] = ['prepare']
 
 // event 는 그 키가 하던 일을 옮겨 받을 핸들러의 이벤트 이름이다(<orch 루트>/hooks/<event>.ts).
 export const REMOVED_CONFIG_KEYS: ReadonlyArray<{ section: Section; key: string; event: string }> = [

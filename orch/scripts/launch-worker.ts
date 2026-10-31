@@ -32,6 +32,14 @@
 //        활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다. spec-lint 가 1 이 아닌 코드로 끝나도(저장소를 읽지 못함 같은 것) 경고만 하고 진행한다
 //        SPEC_LINT 로 spec-lint 를 바꾼다
 //     2. 워크트리를 만들거나 확인한다
+//     2-1. 리뷰 worker 준비. 새로 만든 워크트리이고 지시서에 `리뷰 PR: #<N>` 줄(lib/review.ts 의 reviewPrOfSpec)이 있을 때만 한다.
+//        그 워크트리에서 `git fetch origin refs/pull/<N>/head` 뒤 `git checkout --detach FETCH_HEAD` 로 PR head 에 둔다.
+//        공유 저장소에 로컬 브랜치(`pr-<N>`)를 만들지 않으려는 것이다. 실패하면 `리뷰 PR head 를 꺼내지 못했다` 를 내고 1 이다.
+//        꺼냈으면 `REVIEW-CHECKOUT #<N> <SHA>` 를 낸다. 워크트리를 만든 브랜치는 remove-worktree --delete-branch 가 reflog 로 찾아 지운다.
+//        config.json 의 review.prepare(bash 명령 문자열)가 있으면 그 워크트리에서 한 번 돌린다. 저장소가 정한 생성물 준비 명령이다.
+//        환경에 ORCH_REVIEW_PR(<N>)과 ORCH_REPO(주 checkout)를 둔다. 시간 제한은 PREPARE_MS(30분)이고 그룹 전체를 끝낸다.
+//        끝나면 `REVIEW-PREPARE <종료 코드>` 를 낸다. 0 이 아니면 출력 끝 20줄과 경고를 stderr 에 내고 그대로 띄운다.
+//        생성물이 없어도 코드 읽기 리뷰는 할 수 있어서다. review.prepare 가 문자열이 아니면 설정 오류(2)다
 //     3. before-launch 이벤트를 낸다. 결과가 pass 나 none 이 아니면(거부, 실패, 시간 초과, 잠금 실패) 띄우지 않고 1 이다.
 //        거부만 보고 실패를 지나치면 죽은 핸들러가 막으려던 띄우기를 하게 된다(docs/flow.md 「갈래」 의 「거부처럼 멈춘다」)
 //     4. `orca worktree list` 에 그 경로가 보일 때까지 기다린다
@@ -59,7 +67,7 @@
 //     branch   워크트리의 현재 브랜치. 없으면 null
 //     agent, model, effort   WORKER_ARGS 의 값. 없으면 null
 //
-// 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
+// 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 리뷰 PR head 를 꺼내지 못함, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
 //            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured),
 //            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다),
 //            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
@@ -76,7 +84,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { registerBoard } from './lib/board.ts'
 import { expandArgs } from './lib/args.ts'
-import { ConfigError } from './lib/config.ts'
+import { ConfigError, loadConfig, REVIEW_KEYS, section } from './lib/config.ts'
 import { fire } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { isFile, realPath } from './lib/fs.ts'
@@ -89,6 +97,7 @@ import { requireMigrated } from './lib/paths.ts'
 import { runAsync, scriptCommand } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
+import { reviewPrOfSpec } from './lib/review.ts'
 import { liveSpecPaths, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
 
 const USAGE = [
@@ -98,6 +107,9 @@ const USAGE = [
 const HERE = dirname(fileURLToPath(import.meta.url))
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
 const LONG_MS = 600_000
+// 리뷰 생성물 준비(review.prepare)의 시간 제한. 저장소의 생성기를 모두 돌리는 명령이라 띄우기보다 길게 준다
+const PREPARE_MS = 1_800_000
+const PREPARE_TAIL = 20
 
 class Stop extends Error {
   code: number
@@ -336,6 +348,33 @@ function parse(argv: string[]): Args | 'help' {
   }
 }
 
+// 차례 2-1(머리 주석). 리뷰 PR head 를 꺼내고 저장소의 생성물 준비 명령을 한 번 돌린다. 멈춰야 하면 종료 코드, 아니면 null 이다
+async function prepareReview(worktree: string, repo: string, pr: number): Promise<number | null> {
+  const fetched = git(worktree, ['fetch', '-q', 'origin', `refs/pull/${pr}/head`], { timeoutMs: LONG_MS })
+  const checked = fetched.code === 0 ? git(worktree, ['checkout', '-q', '--detach', 'FETCH_HEAD']) : fetched
+  if (checked.code !== 0) {
+    err(`리뷰 PR head 를 꺼내지 못했다(#${pr}): ${checked.stderr.trim()}`)
+    return 1
+  }
+  out(`REVIEW-CHECKOUT #${pr} ${git(worktree, ['rev-parse', 'HEAD']).stdout.trim()}`)
+  const command = section<{ prepare?: unknown }>(loadConfig(repo), 'review', REVIEW_KEYS).prepare
+  if (command === undefined) return null
+  if (typeof command !== 'string') throw new ConfigError('설정 파일의 review.prepare 는 bash 명령 문자열이어야 한다')
+  const done = await runAsync(['bash', '-c', command], {
+    cwd: worktree,
+    timeoutMs: PREPARE_MS,
+    group: true,
+    env: { ORCH_REVIEW_PR: String(pr), ORCH_REPO: repo },
+  })
+  out(`REVIEW-PREPARE ${done.code}`)
+  if (done.code !== 0) {
+    const tail = (done.stdout + done.stderr).trimEnd().split('\n').slice(-PREPARE_TAIL).join('\n')
+    if (tail) err(tail)
+    err(`경고: 리뷰 생성물 준비가 ${done.timedOut ? '시간 제한을 넘겨' : `종료 코드 ${done.code} 로`} 끝났다. worker 는 생성물 없이 리뷰한다`)
+  }
+  return null
+}
+
 async function main(argv: string[]): Promise<number> {
   const a = parse(argv)
   if (a === 'help') {
@@ -412,6 +451,21 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const repo = a.repo || mainCheckout(worktree)
+  const reviewPr = created ? reviewPrOfSpec(readFileSync(a.spec, 'utf8')) : null
+  if (reviewPr !== null) {
+    let stopped: number | null
+    try {
+      stopped = await prepareReview(worktree, repo, reviewPr)
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e
+      err(`launch-worker: ${e.message}`)
+      stopped = 2
+    }
+    if (stopped !== null) {
+      err(`워크트리는 남아 있다: ${worktree}`)
+      return stopped
+    }
+  }
   // 핸들러는 base 를 브랜치 이름으로 받는다. --base origin/main 으로 불러도 defaultBase 와 같은 꼴(main)로 넘긴다
   const ctx: FireContext = { repo, base: (a.base || defaultBase(repo) || '').replace(/^origin\//, ''), run: a.run || null }
   const branchOut = git(worktree, ['branch', '--show-current'])

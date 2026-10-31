@@ -380,6 +380,7 @@ fi
 ```
 
 squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sweep.ts` 는 이 값을 스스로 넘긴다.
+리뷰 worker 의 워크트리처럼 PR head 에 detached 로 놓인 워크트리도 같은 명령으로 지운다. `--delete-branch` 가 그 워크트리를 만든 `review/pr-<N>` 브랜치를 함께 지운다.
 
 - Orca 가 만든 워크트리를 `orca worktree rm` 으로 지울 때는 뒤에 `git -C "$REPO" worktree prune` 을 돌린다.
   디렉터리만 지우고 git 의 워크트리 기록이 남아, 그대로면 브랜치 삭제가 `used by worktree` 로 거절된다

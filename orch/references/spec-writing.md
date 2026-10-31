@@ -118,6 +118,28 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 금지 문구가 든 줄이 정말 필요하면 그 줄을 `예외:` 로 시작한다.
 코디네이터 소유 경로, 소유 계약, 저장소의 금지 문구는 오버레이의 `## spec-lint` 절에 둔다. 형식은 스크립트 머리 주석이 소유한다.
 
+## 리뷰 worker 지시서
+
+남의 PR 을 읽고 리뷰만 쓰는 worker 의 지시서에는 아래 두 줄을 첫 `##` 제목 앞에 둔다.
+
+```markdown
+리뷰 PR: #1137
+브랜치: `review/pr-1137`
+```
+
+**`launch-worker` 가 `리뷰 PR:` 줄을 보고 워크트리를 그 PR head 에 detached 로 둔다.** `git fetch origin refs/pull/<N>/head` 와 `FETCH_HEAD` 를 쓰므로 공유 저장소에 로컬 브랜치가 생기지 않는다.
+지시서에는 「워크트리는 PR head 에 놓여 있다. 브랜치를 만들거나 `git fetch origin pull/N/head:pr-N` 을 부르지 않는다」 를 적는다.
+옛 리뷰 지시서처럼 worker 가 `pr-N` 브랜치를 만들면, PR 을 열지 않는 브랜치라 정리가 PR 로 찾지 못해 쌓였다(10-31 실측 26개).
+파일 이름은 `spec-review-pr-<N>.md` 로 하고, 같은 PR 을 다시 리뷰하면 `spec-review-pr-<N>-<꼬리>.md` 와 `review/pr-<N>-<꼬리>` 로 쓴다.
+
+**생성물이 있어야 테스트가 도는 저장소는 `config.json` 의 `review.prepare` 에 준비 명령을 둔다.** `launch-worker` 가 PR head 를 꺼낸 뒤 그 워크트리에서 한 번 돌리고 `REVIEW-PREPARE <종료 코드>` 를 낸다.
+명령은 저장소마다 달라 스킬은 자리만 둔다. 무거운 생성이면 명령 안에서 `heavy-slot` 으로 감싼다. 감싸는 방법은 [`overlay.md`](overlay.md) 의 「저장소 스크립트에서 orch 부르기」 를 따른다.
+준비가 실패해도 worker 는 뜬다. 코디네이터는 0 이 아니면 지시서나 후속 지시로 「생성물이 없어 서비스 테스트는 돌지 않는다」 를 알린다.
+10-31 리뷰 셋이 모두 생성물이 없어 서비스와 UI 테스트를 수집 단계에서 못 돌리고 코드 읽기로만 끝났다.
+
+**리뷰가 끝난 뒤의 정리는 스크립트가 한다.** 리뷰 워크트리는 `remove-worktree.ts --delete-branch` 로 지운다. detached 워크트리여도 그것을 만든 `review/pr-<N>` 을 함께 지운다.
+남은 리뷰 브랜치와 리뷰 지시서는 PR 이 MERGED 나 CLOSED 이고 그 리뷰 dispatch 가 끝났으면 `cleanup-sweep` 이 지운다. 판정은 스크립트 머리 주석의 「리뷰 흔적」 이 소유한다.
+
 ## 스킬 개선 후보를 모으게 할 때
 
 worker 가 스킬을 쓰다 막힌 곳을 모으게 하려면 공통 지시서 틀의 「스킬 개선 후보 보고」 절을 남긴다.

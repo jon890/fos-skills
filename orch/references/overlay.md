@@ -77,6 +77,7 @@
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록, 자동 머지의 머지 전 명령, 막힘 알림 시간 |
 | `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
 | `board` | `done_after` | 보드 항목을 done 으로 바꾸는 사건. `merge`, `deploy`, `release` 중 하나이고 기본은 `merge` 다 |
+| `review` | `prepare` | 리뷰 worker 를 띄울 때 PR head 의 워크트리에서 한 번 돌리는 생성물 준비 명령(bash 문자열). 쓰는 법은 [`spec-writing.md`](spec-writing.md) 의 「리뷰 worker 지시서」 가 소유한다 |
 
 ```json
 {
