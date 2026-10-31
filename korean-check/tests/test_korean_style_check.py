@@ -15,6 +15,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import types
@@ -378,6 +379,42 @@ class TestTableParsing(Base):
         for text in ("aggregate 를 쓴다.\n", "gateway 를 앞에 둔다.\n", "pre-gate-check 라는 이름이다.\n"):
             with self.subTest(text=text):
                 self.assertEqual(self.run_with_table(text).returncode, 0)
+
+
+class TestMatchReport(Base):
+    """발견 줄에 실제로 걸린 글자와 열을 보인다.
+
+    매핑 표 항목 이름만 보이면 `x-` 칸 처럼 다른 글자가 걸려도 무엇이 원인인지 알 수 없다.
+    앞의 `경로:줄:` 은 check-diff.py 가 읽으므로 형식이 그대로여야 한다.
+    """
+
+    def test_reports_matched_text_and_column(self):
+        done = self.run_on("장애를 트리아지한다.\n")
+        self.assertIn('a.md:1: 금지어 "트리아지" (열 5, 걸린 글자 "트리아지")', done.stdout)
+
+    def test_alternative_form_reports_the_form_that_matched(self):
+        done = self.run_on("배포 게이트를 지나 기계가 판정한다.\n")
+        self.assertIn('(열 12, 걸린 글자 "기계가")', done.stdout)
+
+    def test_db_context_pattern_reports_the_actual_text(self):
+        done = self.run_on("`x-` 칸을 채운다.\n")
+        self.assertIn('금지어 "`식별자` 칸" (열 1, 걸린 글자 "`x-` 칸")', done.stdout)
+
+    def test_column_skips_same_text_inside_code_span(self):
+        done = self.run_on("`트리아지` 와 트리아지 를 구분한다.\n")
+        self.assertIn('(열 10, 걸린 글자 "트리아지")', done.stdout)
+
+    def test_each_finding_on_a_line_has_its_own_text(self):
+        done = self.run_on("트리아지와 스파이크를 한다.\n")
+        self.assertIn('걸린 글자 "트리아지"', done.stdout)
+        self.assertIn('걸린 글자 "스파이크"', done.stdout)
+
+    def test_prefix_stays_readable_by_check_diff(self):
+        done = self.run_on("트리아지.\n")
+        finding = re.compile(r"^(?P<path>.+?):(?P<line>\d+)[: ]")
+        match = finding.match(done.stdout.splitlines()[0])
+        self.assertEqual(match.group("line"), "1")
+        self.assertTrue(match.group("path").endswith("a.md"))
 
 
 class TestInlinePlus(Base):

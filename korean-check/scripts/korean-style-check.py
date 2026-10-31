@@ -168,25 +168,45 @@ def load_terms_or_complain(rules):
 
 
 def build_matchers(terms):
-    """금지어마다 줄에서 찾는 방법을 정한다.
+    """금지어마다 줄에서 찾는 방법을 정한다. 찾는 함수는 일치한 `re.Match` 나 None 을 돌려준다.
 
     영문 용어는 단어 경계로 찾는다. 부분 문자열로 찾으면 다른 낱말 안에서도 걸린다.
     한국어는 조사가 붙어 「게이트를」 처럼 쓰이므로 부분 문자열로 찾는다.
     WORD_START_PREFIXES 로 시작하는 금지어는 앞 글자가 한글이 아닐 때만 찾는다.
+    일치 문자열(`group(0)`)이 금지어 자신이 되도록 경계는 lookaround 로 쓴다.
     """
     matchers = []
     for term in terms:
         if ENGLISH_TERM.fullmatch(term):
-            boundary = re.compile(
-                r"(?:^|[^A-Za-z-])" + re.escape(term) + r"(?:[^A-Za-z-]|$)"
-            )
-            matchers.append((term, boundary.search))
+            pattern = re.compile(r"(?<![A-Za-z-])" + re.escape(term) + r"(?![A-Za-z-])")
         elif term.startswith(WORD_START_PREFIXES):
-            word_start = re.compile(r"(?<![가-힣])" + re.escape(term))
-            matchers.append((term, word_start.search))
+            pattern = re.compile(r"(?<![가-힣])" + re.escape(term))
         else:
-            matchers.append((term, lambda line, t=term: t in line))
+            pattern = re.compile(re.escape(term))
+        matchers.append((term, pattern.search))
     return matchers
+
+
+def locate(raw, text):
+    """원문 줄에서 걸린 글자의 열(1부터)을 돌려준다. 찾지 못하면 None 이다.
+
+    걸린 글자는 코드 스팬과 링크 대상을 지운 줄에서 찾은 것이라, 원문에서는 코드 스팬 안의 같은 글자가
+    먼저 나올 수 있다. 코드 스팬을 같은 길이의 자리 표시자로 바꾼 줄에서 먼저 찾는다.
+    DB 문맥 패턴처럼 일치 문자열이 코드 스팬을 품으면 원문에서 그대로 찾는다.
+    """
+    masked = CODE_SPAN.sub(lambda m: CODE_PLACEHOLDER * len(m.group(0)), raw)
+    index = masked.find(text)
+    if index < 0:
+        index = raw.find(text)
+    return index + 1 if index >= 0 else None
+
+
+def describe(path, n, raw, term, match, advice):
+    """발견 한 줄. 앞의 `경로:줄:` 은 check-diff.py 가 읽는 형식이라 그대로 둔다."""
+    text = match.group(0)
+    column = locate(raw, text)
+    where = f"열 {column}, " if column else ""
+    return f'{path}:{n}: 금지어 "{term}" ({where}걸린 글자 "{text}") — {advice}'
 
 
 def find_target_end(target):
@@ -316,15 +336,15 @@ def scan(path, matchers):
         for compound in allowed:  # 정당한 합성어와 저장소 예외 제외
             line = line.replace(compound, "")
 
-        for term, matches in matchers:
-            if matches(line):
+        for term, search in matchers:
+            if match := search(line):
                 found.append(
-                    f'{path}:{n}: 금지어 "{term}" — korean-style 매핑 표의 권장 표현으로'
+                    describe(path, n, raw, term, match, "korean-style 매핑 표의 권장 표현으로")
                 )
         for term, pattern in DB_CONTEXT_PATTERNS:
-            if pattern.search(with_spans):
+            if match := pattern.search(with_spans):
                 found.append(
-                    f'{path}:{n}: 금지어 "{term}" — DB 의 표는 테이블, 칸은 컬럼으로'
+                    describe(path, n, raw, term, match, "DB 의 표는 테이블, 칸은 컬럼으로")
                 )
         if any(joins_items(m) for m in INLINE_PLUS.finditer(plus_line)):
             warnings.append(f"{path}:{n}: 경고: 인라인 + 연결 — 쉼표·와/과 또는 목록으로")
