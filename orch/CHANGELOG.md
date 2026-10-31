@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.6.0 (2026-10-31)
+
+- `worker-ask` 가 ask 를 기다리는 동안 30초마다 status 답을 찾아, 오면 시간 제한을 기다리지 않고 3 으로 끝난다
+- 무거운 검사 자리를 상한(기본 30분, `HEAVY_HOLD_MAX`)보다 오래 쥐면 상주 루프가 `HEAVY-SLOT-HELD` 로 알린다. 끊지는 않는다
+- 지시서의 `리뷰 PR: #N` 줄을 보고 `launch-worker` 가 리뷰 워크트리를 PR head 에 detached 로 두고 `review.prepare` 명령을 한 번 돌린다
+- 정리가 MERGED, CLOSED PR 의 `pr-N`, `review/pr-N` 브랜치와 리뷰 지시서를 리뷰 dispatch 가 끝난 뒤 지운다. `remove-worktree --delete-branch` 는 detached 워크트리를 만든 브랜치도 지운다
+- `orch-doctor` 가 열린 개선 후보 수를 `FEEDBACK-OPEN` 으로 낸다. 공통 지시서에 worker-ask 규칙이나 개선 후보 절이 없으면 `spec-lint` 가 경고한다
+
 ## 5.5.0 (2026-10-30)
 
 - 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 계획이 PR 여럿이면 지시서는 PR1 만 맡고, 앞 PR 이 머지되면 코디네이터가 다음 지시서를 써 새 worker 와 새 워크트리로 띄운다
