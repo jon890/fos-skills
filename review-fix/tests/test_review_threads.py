@@ -81,6 +81,53 @@ def carried_response(threads):
         "totalCount": len(nodes), "nodes": nodes}}}}})
 
 
+def show_response(comments, total=None, thread=True):
+    node = {"id": "T1", "isResolved": False, "isOutdated": True, "path": "a.py",
+            "line": None, "originalLine": 9,
+            "comments": {"totalCount": total if total is not None else len(comments),
+                         "nodes": [{"author": {"login": a}, "body": b, "url": f"u{i}"}
+                                   for i, (a, b) in enumerate(comments)]}}
+    if not thread:
+        node = {}
+    return json.dumps({"data": {"node": node}})
+
+
+class TestShow(unittest.TestCase):
+    def test_prints_full_body_past_head_len_with_all_comments(self):
+        long_body = "근거 " * 100 + "\n둘째 줄"
+        out = show_response([("bot", long_body), ("me", "반영했다")])
+        code, stdout, _ = run_main(["show", "T1"], out)
+        self.assertEqual(code, 0)
+        self.assertGreater(len(long_body), rt.HEAD_LEN)
+        self.assertIn(long_body, stdout)
+        self.assertIn("반영했다", stdout)
+        header = json.loads(stdout.splitlines()[0])
+        self.assertEqual((header["id"], header["line"], header["comments"]), ("T1", 9, 2))
+        self.assertIn("--- 1. bot u0", stdout)
+        self.assertIn("--- 2. me u1", stdout)
+
+    def test_non_thread_node_fails(self):
+        code, out, err = run_main(["show", "X"], show_response([], thread=False))
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("X", err)
+
+    def test_requires_exactly_one_thread_id(self):
+        code, _, _ = run_main(["show"], "{}")
+        self.assertEqual(code, 2)
+
+    def test_truncated_comments_warn_on_stderr(self):
+        code, _, err = run_main(["show", "T1"], show_response([("bot", "x")], total=150))
+        self.assertEqual(code, 0)
+        self.assertIn("150", err)
+
+    def test_list_head_contract_stays_truncated(self):
+        data = json.loads(response([False]))
+        data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0][
+            "comments"]["nodes"][0]["body"] = "가" * 300
+        _, out, _ = run_main(["list", "o", "r", "1"], json.dumps(data))
+        self.assertEqual(len(json.loads(out)["head"]), rt.HEAD_LEN)
+
+
 class TestCarried(unittest.TestCase):
     def test_lists_only_threads_whose_reply_has_marker_including_resolved(self):
         out = carried_response([("T1", True, ["다음 PR 에서 반영한다"]),

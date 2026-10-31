@@ -175,6 +175,17 @@ describe('지시서 검사', () => {
     assert.deepEqual(lint([named]), { code: 0, stdout: '' })
   })
 
+  test('보드 항목 id 줄에 설명이 붙으면 보드 경고를 내고 종료 코드는 0 이다. id 만 있으면 조용하다', () => {
+    const noted = write(join(specs, 'spec-noted.md'), `# 제목\n보드 항목 id: 326-eval-resume (이 PR 은 5단계)\n${SELECTED}\n`)
+    const r = run(['--repo', repo, noted])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /^spec-noted\.md:2: 보드: .*설명은 다른 줄로 옮긴다.*\(326-eval-resume\)$/m)
+    assert.match(r.stderr, /보드 경고 1건/)
+    assert.match(r.stderr, /경로 경고 0건/)
+    const plain = write(join(specs, 'spec-plain.md'), `# 제목\n보드 항목 id: \`326-eval-resume\`\n${SELECTED}\n`)
+    assert.deepEqual(lint([plain]), { code: 0, stdout: '' })
+  })
+
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고 규칙에 표지를 단다

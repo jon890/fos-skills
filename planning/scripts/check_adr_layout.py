@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """ADR 위치와 저장소 Markdown의 ADR 상대 링크를 검사한다.
 
-사용법: check_adr_layout.py [ADR_DIR] [--repo-root ROOT]
-ADR_DIR의 기본값은 docs/adr이다. ROOT는 ADR_DIR에서 가장 가까운 Git 루트이며,
+사용법: check_adr_layout.py [ADR_DIR] [--repo-root ROOT] [--flat]
+ADR_DIR의 기본값은 docs/adr이다. --flat 은 superseded/ 폴더를 쓰지 않는 저장소용이다.
+대체된 ADR 을 ADR_DIR 에 그대로 두고 색인으로 구분하므로 폴더 위치와 status 검사를 건너뛰고 링크 검사만 한다. ROOT는 ADR_DIR에서 가장 가까운 Git 루트이며,
 Git 밖에서는 현재 디렉터리다. 종료 코드: 0 통과, 1 위반, 2 인자 오류.
 Git 저장소는 추적 파일과 무시되지 않은 미추적 파일만 읽는다.
 Git 밖에서는 모든 Markdown을 읽는다. 인라인 링크와 참조 링크를 검사하며,
@@ -56,9 +57,9 @@ def markdown_files(repo_root):
     return sorted(repo_root.rglob("*.md"))
 
 
-def check(adr_dir, repo_root):
+def check(adr_dir, repo_root, flat=False):
     violations = []
-    for file in sorted(adr_dir.rglob("*.md")):
+    for file in [] if flat else sorted(adr_dir.rglob("*.md")):
         status_lines = prose(file.read_text(encoding="utf-8"), strip_inline=False).splitlines()
         status = next((m[1] for line in status_lines if (m := STATUS.match(line))), None)
         archived = file.is_relative_to(adr_dir / "superseded")
@@ -88,6 +89,8 @@ def main():
     parser.add_argument("adr_dir", nargs="?", default="docs/adr", type=Path,
                         help="ADR 폴더 경로 (기본값: docs/adr)")
     parser.add_argument("--repo-root", type=Path, help="Markdown을 검사할 저장소 루트")
+    parser.add_argument("--flat", action="store_true",
+                        help="superseded/ 폴더를 쓰지 않는 저장소. 폴더 위치와 status 검사를 건너뛴다")
     args = parser.parse_args()
     adr_dir = args.adr_dir.resolve()
     repo_root = args.repo_root
@@ -97,7 +100,7 @@ def main():
     if not adr_dir.is_dir() or not repo_root.is_dir() or not adr_dir.is_relative_to(repo_root):
         parser.error("ADR_DIR 은 ROOT 아래에 있는 디렉터리여야 한다")
     try:
-        violations = check(adr_dir, repo_root)
+        violations = check(adr_dir, repo_root, args.flat)
     except (OSError, UnicodeError, ValueError, subprocess.CalledProcessError) as error:
         parser.error(str(error))
     for violation in violations:

@@ -10,36 +10,48 @@
 #   트리만 보면 마지막 번호를 다시 내준다. 지운 계획서는 커밋 이력에만 남는다.
 #
 # 왜 PR 의 head 브랜치 이름도 보나:
-#   같은 PR 안에서 계획서를 더하고 지운 뒤 squash 머지하면 main 이력에 index.json 이 남지 않는다.
+#   같은 PR 안에서 계획서를 더하고 지운 뒤 squash 머지하면 main 이력에 계획서가 남지 않는다.
 #   머지 후 원 브랜치를 지우면 git log --all 도 그 번호를 보지 못한다.
 #   PR 목록은 브랜치를 지워도 남으므로 gh pr list --state all 의 headRefName 에서 번호를 읽는다.
-#   `{접두사}plan{N}-...` 와 `plan/{접두사}{N}-...` 두 형식을 읽는다. 다른 형식은 읽지 못한다.
+#   기본 형식은 `{접두사}plan{N}-...` 와 `plan/{접두사}{N}-...` 두 가지다. 다른 형식은 읽지 못한다.
+#   --name-regex 를 주면 브랜치 이름의 어느 `/` 뒤에서든 그 형식을 앞에서부터 맞춘다.
 #   gh 가 없거나 실패하면 번호를 내되, 마지막 줄 앞에 PR 이력을 보지 못했다고 알린다.
 #
 # 사용법:
-#   plan_number.sh [--tasks-dir DIR] [--prefix PREFIX] [DIR]
+#   plan_number.sh [--tasks-dir DIR] [--prefix PREFIX | --name-regex REGEX] [--allow-empty] [DIR]
 #
-#   --tasks-dir  계획서를 담는 디렉터리. 저장소 루트 기준이다. 기본값 tasks
-#                이전 호출과 같이 첫 위치 인자로 줘도 된다
-#   --prefix     plan 접두사. 모노레포에서 하위 프로젝트마다 번호를 따로 셀 때 쓴다
-#                `fe-` 면 `fe-plan{N}-*` 만 센다. 주지 않으면 접두사 없는 `plan{N}-*` 만 센다
+#   --tasks-dir   계획서를 담는 디렉터리. 저장소 루트 기준이다. 기본값 tasks
+#                 이전 호출과 같이 첫 위치 인자로 줘도 된다
+#   --prefix      plan 접두사. 모노레포에서 하위 프로젝트마다 번호를 따로 셀 때 쓴다
+#                 `fe-` 면 `fe-plan{N}-*` 만 센다. 주지 않으면 접두사 없는 `plan{N}-*` 만 센다
+#   --name-regex  저장소가 `plan{N}` 이 아닌 이름을 쓸 때 디렉터리 이름 형식을 정규식으로 준다.
+#                 이름 앞에서부터 맞추고, 번호를 잡는 캡처 그룹이 정확히 하나다. `\d` 를 쓸 수 있다
+#                 예: `--name-regex 'area-(\d{3})-'` 는 `tasks/area-032-foo/` 에서 32 를 읽는다
+#                 접두사도 정규식에 넣으므로 --prefix 와 함께 쓰지 않는다
+#   --allow-empty tasks 이력이 있는데 읽은 번호가 0개여도 1 을 낸다. 다른 하위 프로젝트의 계획만 있는 정상 상태용이다
 #
 # cwd 는 그 저장소 안이어야 한다.
 # 번호는 앞의 0 을 떼고 센다. `plan027` 은 27 이다. 자릿수 맞춤은 저장소 관례를 따른다.
-# 브랜치 20개 남짓인 저장소에서 3초쯤 걸린다 (실측). ref 마다 ls-tree 를 한 번 부른다.
+# git 은 이력 조회 한 번(`git log --all --full-history -- tasks`)과 main 트리 조회 한 번만 부른다.
+# 그래서 main 밖의 계획이 어느 ref 에 있는지는 이력에서 가장 최근 커밋이 닿은 ref 로 근사한다.
 #
 # 종료 코드:
 #   0  훑기 성공. 마지막 줄이 다음 번호다
-#   2  인자가 잘못됐거나, 저장소가 아니거나, fetch 가 실패했다
+#   2  인자가 잘못됐거나, 저장소가 아니거나, fetch 가 실패했다.
+#      또는 tasks 이력에 계획 디렉터리가 있는데 이름 형식으로 해석한 번호가 0개다(형식이 저장소와 다르다)
 
 set -euo pipefail
 
 TASKS_DIR=tasks
 PREFIX=""
+NAME_REGEX=""
+ALLOW_EMPTY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --tasks-dir) TASKS_DIR="${2:?--tasks-dir 에 값이 없다}"; shift 2 ;;
     --prefix) PREFIX="${2:?--prefix 에 값이 없다}"; shift 2 ;;
+    --name-regex) NAME_REGEX="${2:?--name-regex 에 값이 없다}"; shift 2 ;;
+    --allow-empty) ALLOW_EMPTY=1; shift ;;
     -h|--help) awk 'NR > 1 && /^#/ {sub(/^# ?/, ""); print; next} NR > 1 {exit}' "$0"; exit 0 ;;
     -*) echo "모르는 옵션: $1" >&2; exit 2 ;;
     *) TASKS_DIR="$1"; shift ;;
@@ -47,7 +59,11 @@ while [ $# -gt 0 ]; do
 done
 TASKS_DIR="${TASKS_DIR%/}"
 
-# 접두사와 경로는 sed 정규식에 들어간다. 메타 문자가 섞이면 엉뚱한 디렉터리를 센다.
+if [ -n "$NAME_REGEX" ] && [ -n "$PREFIX" ]; then
+  echo "--name-regex 와 --prefix 는 함께 쓰지 않는다. 접두사는 정규식에 넣는다" >&2
+  exit 2
+fi
+# 접두사는 정규식 안에서 escape 해 쓰지만 디렉터리 이름 규칙에 맞는 문자만 받는다.
 case "$PREFIX" in
   *[!A-Za-z0-9_-]*) echo "접두사는 영문, 숫자, -, _ 만 쓴다: $PREFIX" >&2; exit 2 ;;
 esac
@@ -66,68 +82,28 @@ git fetch --all --quiet || {
   exit 2
 }
 
-NAME_RE="${PREFIX}plan\([0-9]\{1,\}\)-"
+# 이력은 한 번만 읽는다. ref 마다 git 을 따로 부르지 않는다(원격 ref 가 수백 개인 저장소에서 수 분이 걸렸다).
+# --full-history: 머지 전후 경로가 모두 없어도 중간에 지운 계획서를 빠뜨리지 않는다.
+# 번호를 읽고 출력하는 일은 plan_numbers.py 가 한다.
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
 
-# ref 마다 한 번만 훑어 `번호 ref` 줄을 모은다.
-# ls-tree 는 체크아웃 없이 그 ref 의 트리를 읽으므로 작업 트리를 건드리지 않는다.
-#
-# `sort -n -u` 를 쓰지 않는다. `-n` 은 첫 숫자 필드로만 비교해서
-# 같은 번호를 쥔 다른 ref 를 중복으로 보고 하나만 남긴다.
-PAIRS=$(
-  for ref in HEAD $(git branch -a --format='%(refname:short)' | grep -v 'HEAD$'); do
-    git ls-tree -d --name-only "$ref" "$TASKS_DIR/" 2>/dev/null \
-      | sed -n "s|^${TASKS_DIR}/${NAME_RE}.*|\1 ${ref}|p"
-  done | awk '{print $1 + 0, $2}' | sort -u | sort -n -s -k1,1
-)
-
-# 지운 계획서는 트리에 없고 그것을 더한 커밋에만 남는다. --all 이라 머지되지 않은 브랜치도 본다.
-HISTORY_NUMS=$(
-  git log --all --format= --name-only -- "$TASKS_DIR/*/index.json" 2>/dev/null \
-    | sed -n "s|^${TASKS_DIR}/${NAME_RE}[^/]*/index\.json$|\1|p" | awk '{print $1 + 0}' | sort -n -u
-)
-
-# 브랜치 이름은 `fe-plan027-login` 이나 `plan/fe-027-login` 이다. 앞에 `feature/` 같은 디렉터리가 붙어도 읽는다.
-PR_SEEN=1
-PR_NUMS=""
-if HEADS=$(gh pr list --state all --limit 1000 --json headRefName --jq '.[].headRefName' 2>/dev/null); then
-  PR_NUMS=$(echo "$HEADS" | sed -n \
-      -e "s#^\(.*/\)\{0,1\}${PREFIX}plan\([0-9]\{1,\}\)\(-.*\)\{0,1\}\$#\2#p" \
-      -e "s#^plan/${PREFIX}\([0-9]\{1,\}\)\(-.*\)\{0,1\}\$#\1#p" \
-    | awk '{print $1 + 0}' | sort -n -u)
-else
-  PR_SEEN=0
-fi
-
-ALL_NUMS=$( { echo "$PAIRS" | awk 'NF {print $1}'; echo "$HISTORY_NUMS"; echo "$PR_NUMS"; } | awk 'NF' | sort -n -u)
-PR_WARNING="PR 이력을 보지 못했다 (gh 미설치 또는 인증 실패). squash 머지 후 브랜치를 지운 번호는 빠졌을 수 있다."
-
-if [ -z "$ALL_NUMS" ]; then
-  echo "쓰인 번호가 없다"
-  [ "$PR_SEEN" = 1 ] || echo "$PR_WARNING"
-  echo "다음 번호: 1"
-  exit 0
-fi
+git -c core.quotepath=off log --all --full-history --no-renames --name-status --format='%x01%S' -- "$TASKS_DIR" \
+  > "$WORK/log" 2>/dev/null || : > "$WORK/log"
 
 # main 에 있는 번호는 머지됐지만 아직 지우지 않은 계획이다. 판단이 필요한 것은 main 밖에만 있는 번호다.
 MAIN_REF=$(git rev-parse --verify --quiet origin/main >/dev/null 2>&1 && echo origin/main || echo HEAD)
-MAIN_NUMS=$(git ls-tree -d --name-only "$MAIN_REF" "$TASKS_DIR/" 2>/dev/null \
-  | sed -n "s|^${TASKS_DIR}/${NAME_RE}.*|\1|p" | awk '{print $1 + 0}' | sort -n -u)
+git -c core.quotepath=off ls-tree -d --name-only "$MAIN_REF" "$TASKS_DIR/" > "$WORK/main-tree" 2>/dev/null || : > "$WORK/main-tree"
 
-echo "쓰인 번호:"
-for n in $ALL_NUMS; do
-  label="${PREFIX}plan${n}"
-  refs=$(echo "$PAIRS" | awk -v n="$n" '$1 == n {print $2}' | paste -sd' ' -)
-  if echo "$MAIN_NUMS" | grep -qx "$n"; then
-    printf '  %-12s %s 안에 있다\n' "$label" "$MAIN_REF"
-  elif [ -n "$refs" ]; then
-    printf '  %-12s %s 밖에만 있다: %s\n' "$label" "$MAIN_REF" "$refs"
-  elif echo "$HISTORY_NUMS" | grep -qx "$n"; then
-    printf '  %-12s 지워졌고 git 이력에만 있다\n' "$label"
-  else
-    printf '  %-12s PR 브랜치 이름에만 있다\n' "$label"
-  fi
-done
+# 브랜치 이름은 `fe-plan027-login` 이나 `plan/fe-027-login` 이다. 앞에 `feature/` 같은 디렉터리가 붙어도 읽는다.
+HEADS_ARGS=()
+if gh pr list --state all --limit 1000 --json headRefName --jq '.[].headRefName' > "$WORK/heads" 2>/dev/null; then
+  HEADS_ARGS=(--heads "$WORK/heads")
+fi
 
-[ "$PR_SEEN" = 1 ] || echo "$PR_WARNING"
+ARGS=(--tasks-dir "$TASKS_DIR" --log "$WORK/log" --main-tree "$WORK/main-tree" --main-ref "$MAIN_REF")
+[ -z "$NAME_REGEX" ] || ARGS+=(--name-regex "$NAME_REGEX")
+[ -z "$PREFIX" ] || ARGS+=(--prefix "$PREFIX")
+[ "$ALLOW_EMPTY" = 0 ] || ARGS+=(--allow-empty)
 
-echo "다음 번호: $(( $(echo "$ALL_NUMS" | tail -1) + 1 ))"
+python3 "$(dirname "$0")/plan_numbers.py" "${ARGS[@]}" ${HEADS_ARGS[@]+"${HEADS_ARGS[@]}"}

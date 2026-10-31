@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.13.0"
+  version: "2.14.0"
 ---
 
 # review-fix
@@ -95,6 +95,13 @@ gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" "repos/$OWNER
 ```bash
 PREV=""    # 이전 PR 번호
 python3 scripts/collect_review.py "$OWNER" "$REPO" "$PR" --carried-from "$PREV"
+```
+
+**미해결 스레드의 `head` 는 120자에서 잘린다.** 지적의 근거나 권장안이 잘렸으면 스레드 ID 로 전체를 읽는다.
+`gh api graphql` 을 직접 부르지 않는다.
+
+```bash
+python3 scripts/review_threads.py show --repo "$OWNER/$REPO" "$THREAD_ID"
 ```
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.

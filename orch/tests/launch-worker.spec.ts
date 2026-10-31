@@ -836,6 +836,34 @@ test('보드 항목 id 가 가리키는 끝나지 않은 항목은 제목과 단
   assert.deepEqual(items[0].details, milestone.details)
 })
 
+test('보드 항목 id 뒤에 설명이 붙어도 공백 앞 첫 토큰의 항목을 이어 쓰고 가짜 항목을 만들지 않는다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  const milestone = { id: '326-eval-resume', title: '평가 이어하기', status: 'doing', worktree: 'old-wt', details: [{ text: '1. 구현', done: true }, { text: '2. 머지', done: false }] }
+  writeFileSync(file, JSON.stringify({ items: [milestone] }))
+  writeFileSync(spec, '# 5단계\n허락: push\n보드 항목 id: 326-eval-resume (이 PR 은 5단계)\n\n## 할 일\n1. 구현\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
+  assert.equal(r.code, 0, both(r))
+  assert.doesNotMatch(r.stderr, /보드를 갱신하지 못했다/)
+  const items = JSON.parse(readFileSync(file, 'utf8')).items
+  assert.deepEqual(items.map((i: { id: string }) => i.id), ['326-eval-resume'])
+  assert.equal(items[0].worktree, 'wt')
+  assert.deepEqual(items[0].details, milestone.details)
+})
+
+test('보드 항목 id 뒤에 설명이 붙었는데 그 id 가 보드에 없으면 항목을 만들지 않고 알린다', () => {
+  const file = join(worktree, '.omc', 'board.json')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ items: [] }))
+  writeFileSync(spec, '# 5단계\n허락: push\n보드 항목 id: 327-trace (이 PR 은 5단계)\n\n## 할 일\n1. 구현\n')
+  state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+  const r = launch(['--worktree', worktree, '--watch', '0', '--', ...CODEX])
+  assert.equal(r.code, 0, both(r))
+  assert.match(r.stderr, /보드를 갱신하지 못했다: .*327-trace.*보드에 없고 뒤에 설명이 붙어/)
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).items, [])
+})
+
 test('단계도 진행률도 없는 기존 항목은 단계를 더하지 않고 status 도 그대로 둔다', () => {
   const file = join(worktree, '.omc', 'board.json')
   mkdirSync(dirname(file), { recursive: true })

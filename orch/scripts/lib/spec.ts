@@ -77,6 +77,30 @@ export function branchesOf(text: string): string[] {
   return found
 }
 
+// 줄 머리의 `보드 항목 id: x`. 목록 기호는 받고 굵은 글씨는 받지 않는다(보드 쓰기 쪽이 그렇게 읽어 왔다)
+const BOARD_ID = /^\s*(?:[-*]\s*)?보드 항목 id\s*:\s*(.+?)\s*$/
+
+// `보드 항목 id:` 줄의 id 와 그 뒤 설명. id 는 백틱 안의 글이거나 공백 앞 첫 토큰이다.
+// `326-eval-resume (이 PR 은 5단계)` 처럼 설명이 붙으면 note 에 남아, 줄 끝까지 id 로 읽어 가짜 보드 항목을 만들던 일을 막는다
+export function boardIdOfLine(line: string): { id: string; note: string } | null {
+  const value = BOARD_ID.exec(line)?.[1]
+  if (!value) return null
+  const ticked = /^`([^`]+)`\s*(.*)$/.exec(value)
+  if (ticked) return { id: ticked[1].trim(), note: ticked[2] }
+  const [id, ...rest] = value.split(/\s+/)
+  const bare = id.replaceAll('`', '')
+  return bare ? { id: bare, note: rest.join(' ') } : null
+}
+
+// 지시서의 첫 `보드 항목 id:` 줄. 없으면 null 이다
+export function boardIdOf(text: string): { id: string; note: string } | null {
+  for (const line of lines(text)) {
+    const found = boardIdOfLine(line)
+    if (found) return found
+  }
+  return null
+}
+
 // 허락 줄의 문구. 마침표로 끝나지 않으면 붙인다. 첫 지시 줄에 문장으로 이어 붙이기 때문이다.
 export function permissionsOf(text: string): string[] {
   const found: string[] = []

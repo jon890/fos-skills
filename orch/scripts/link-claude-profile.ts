@@ -9,6 +9,9 @@
 //     --apply          실제로 바꾼다. 없으면 바꿀 목록만 낸다(dry-run)
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
+// 자동 모드 분류기의 허용 기준(`autoMode.allow`)은 워크트리의 `.claude/settings.local.json` 에서 먹지 않고 프로필의 사용자 settings.json 에서 먹는다(2026-10-31 실측).
+// push, PR, 리뷰 회신과 resolve 를 worker 에게 맡기는 저장소는 저장소를 한정한 허용 기준을 프로필 사용자 설정에 둔다. 이 스크립트는 그 값을 만들지 않는다.
+//
 // 무엇을 옮기고 무엇을 두는지, 백업 이름은 lib/claude-profile.ts 머리 주석이 소유한다.
 // ORCA_CLAUDE_PROFILES 로 프로필 폴더를 바꾼다.
 //
@@ -20,6 +23,10 @@ import { expandArgs } from './lib/args.ts'
 import { apply, homeOf, pickSource, plan, profilesRoot, selectedProfile, stamp } from './lib/claude-profile.ts'
 
 const USAGE = '사용법: link-claude-profile.ts [TARGET] [--from ID] [--include-state] [--apply]'
+
+const HELP_NOTE =
+  '자동 모드 허용 기준(autoMode.allow)은 워크트리의 .claude/settings.local.json 에서 먹지 않는다. push, PR, 리뷰 회신을 worker 에게 맡기는 저장소는\n' +
+  '대상 프로필의 사용자 settings.json 에 저장소를 한정한 허용 기준을 둔다(orch/references/launch.md).'
 
 const OPTIONS = {
   from: { type: 'string' },
@@ -55,6 +62,7 @@ function main(argv: string[]): number {
   const { values, positionals } = parsed
   if (values.help) {
     out(USAGE)
+    out(HELP_NOTE)
     return 0
   }
   if (positionals.length > 1) {

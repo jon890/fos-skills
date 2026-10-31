@@ -34,6 +34,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from preview_output import clear_output, write_output  # noqa: E402
+
 TEMPLATE = Path(__file__).parent / "template.html"
 
 LINK_WARNING = "경고: Dooray 메신저의 업무·위키 dooray:// 마크다운 링크는 https 주소로 바꾸세요."
@@ -86,6 +89,7 @@ def main() -> int:
     ap.add_argument("--md-file", required=True, help="본문 markdown 파일 경로 ('-' 는 stdin)")
     ap.add_argument("--out", required=True, help="출력 HTML 경로")
     args = ap.parse_args()
+    clear_output(args.out)
 
     if args.md_file == "-":
         md = sys.stdin.read()
@@ -148,7 +152,7 @@ def main() -> int:
     # 본문의 템플릿 표기를 다시 치환하지 않도록 한 번만 삽입한다.
     out = re.sub(r"\{\{(\w+)\}\}", lambda match: values[match[1]],
                  TEMPLATE.read_text(encoding="utf-8"))
-    Path(args.out).write_text(out, encoding="utf-8")
+    write_output(args.out, out)
     print(f"생성 완료: {args.out}")
     return 1 if warning and args.strict else 0
 

@@ -187,6 +187,11 @@ export function failedCheck(check: CiCheck): boolean {
   return FAILED_CONCLUSIONS.includes(check.conclusion ?? '') || FAILED_STATES.includes(check.status ?? '')
 }
 
+// 실패한 체크가 모두 CANCELLED 인가. 코디네이터가 CI 를 일부러 취소하면 코드 실패가 아니라서 worker 에게 고치라고 보내지 않는다
+export function cancelledOnly(failed: readonly CiCheck[]): boolean {
+  return failed.length > 0 && failed.every((check) => check.conclusion === 'CANCELLED' && !FAILED_STATES.includes(check.status ?? ''))
+}
+
 export type CheckSnapshot = { headRefOid: string; statusCheckRollup: unknown }
 
 // HEAD 별 공유 스냅샷. 멈추거나 머지하기 직전에는 refresh 로 재실행도 확인한다.
