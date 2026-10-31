@@ -121,6 +121,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | `state/` | `wait-important`, `notify-conflicts.ts` 가 기억하는 것. 상주 루프의 파일(`loop.json`, `loop.lock`, `loop.log`, `loop-events.jsonl`, `loop-events.cursor`)도 여기 있다. 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
 | `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |
 | `bin/` | 저장소 포장 스크립트 |
+| `feedback/` | worker 가 쌓은 스킬 개선 후보. 다시 보는 법은 [`feedback-review.md`](feedback-review.md) |
 
 ## 저장소 스크립트에서 orch 부르기
 

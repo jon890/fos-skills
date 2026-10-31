@@ -177,9 +177,10 @@ describe('지시서 검사', () => {
 
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
-    // 틀은 준비됨 status 와 MERGED 확인 뒤 worker_done 규칙에 표지를 단다
-    assert.match(template, /<!-- orch-rule: ready-status -->/)
-    assert.match(template, /<!-- orch-rule: done-after-merged -->/)
+    // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고 규칙에 표지를 단다
+    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback']) {
+      assert.match(template, new RegExp(`<!-- orch-rule: ${rule} -->`))
+    }
     const a = spec('spec-a', '담당: `src/a/**`')
     write(join(specs, 'spec-common.md'), template)
     assert.deepEqual(lint([a]), { code: 0, stdout: '' })
@@ -187,7 +188,7 @@ describe('지시서 검사', () => {
     write(join(specs, 'spec-common.md'), '## 공통 규칙\n\n- `worker_done` 은 완료 기준을 채운 뒤 보낸다.\n')
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
-    assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 `ready-status`, `done-after-merged` 가 없다/m)
+    assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 `worker-ask`, `ready-status`, `done-after-merged`, `skill-feedback` 가 없다/m)
     assert.match(r.stderr, /공통 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)
   })
