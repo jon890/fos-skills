@@ -119,4 +119,68 @@ describe('리뷰 흔적', () => {
     assert.ok(branches().has('review/pr-71'))
     assert.ok(existsSync(path))
   })
+
+  test('--run 이 달라도 다른 Run 에서 도는 리뷰의 지시서는 남긴다', () => {
+    const dir = specsDir()
+    const spec = join(dir, 'spec-review-pr-91.md')
+    writeFileSync(spec, '# 리뷰\n브랜치: `review/pr-91`\n')
+    const wt = join(fx.wts, 'review-pr-91')
+    git('-C', fx.repo, 'worktree', 'add', '-q', '-b', 'review/pr-91', wt, 'origin/main')
+    git('-C', wt, 'checkout', '-q', '--detach', 'origin/main')
+    const row = {
+      runId: 'run_other',
+      taskId: 'task_other',
+      dispatchId: 'ctx_other',
+      dispatchStatus: 'running',
+      workerState: 'working',
+      agentTerminalHandle: 'term_other',
+      resource: { ownershipState: 'owned', worktreeId: `repo::${wt}` },
+    }
+    fx.runs = { run_current: [], run_other: [row] }
+    fx.allWorkers = [row]
+    fx.terminals = [{ handle: 'term_other', worktreePath: wt }]
+    fx.prViews['91'] = { state: 'MERGED' }
+    const out = runSweep(['--run', 'run_current', '--specs-dir', '.orch/specs', '--apply'])
+    has(out, '리뷰 흔적 남김 #91: 살아 있는 지시서 목록을 읽지 못했다')
+    assert.ok(existsSync(spec), out)
+    assert.ok(existsSync(wt))
+  })
+
+  test('모든 Run 의 지시서에서 다른 Run 의 살아 있는 리뷰를 찾으면 남긴다', () => {
+    const dir = specsDir()
+    const spec = join(dir, 'spec-review-pr-92.md')
+    writeFileSync(spec, '# 리뷰\n')
+    fx.prViews['92'] = { state: 'MERGED' }
+    fx.allWorkers = [{ runId: 'run_other', taskId: 'task_o', dispatchId: 'ctx_o', dispatchStatus: 'running' }]
+    fx.tasks = [{ id: 'task_o', status: 'running', spec: `지시서 ${spec} 를 읽는다` }]
+    const out = runSweep(['--run', 'run_current', '--specs-dir', '.orch/specs', '--apply'])
+    has(out, '리뷰 흔적 남김 #92: 리뷰 dispatch 가 살아 있다')
+    assert.ok(existsSync(spec))
+  })
+
+  test('다른 열린 PR 의 base 인 리뷰 브랜치는 남긴다', () => {
+    git('-C', fx.repo, 'branch', 'pr-81', 'origin/main')
+    fx.openBases = ['pr-81']
+    fx.prViews['81'] = { state: 'CLOSED' }
+    const out = runSweep(['--apply'])
+    has(out, '리뷰 브랜치 남김 pr-81: 다른 열린 PR 의 base')
+    assert.ok(branches().has('pr-81'))
+  })
+
+  test('그 브랜치를 head 로 둔 열린 PR 이 있으면 이름의 PR 이 닫혀도 남긴다', () => {
+    git('-C', fx.repo, 'branch', 'pr-82', 'origin/main')
+    fx.prs['pr-82'] = ['OPEN', git('-C', fx.repo, 'rev-parse', 'origin/main')]
+    fx.prViews['82'] = { state: 'CLOSED' }
+    const out = runSweep(['--apply'])
+    has(out, '리뷰 브랜치 남김 pr-82: 그 브랜치를 head 로 둔 열린 PR #1 가 있다')
+    assert.ok(branches().has('pr-82'))
+  })
+
+  test('리뷰 이름 규칙에 맞지 않는 비슷한 브랜치는 건드리지 않는다', () => {
+    git('-C', fx.repo, 'branch', 'pr-81-fix', 'origin/main')
+    fx.prViews['81'] = { state: 'CLOSED' }
+    const out = runSweep(['--apply'])
+    lacks(out, 'pr-81-fix')
+    assert.ok(branches().has('pr-81-fix'))
+  })
 })

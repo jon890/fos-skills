@@ -148,9 +148,12 @@
 //     남은 워크트리가 쓰는 브랜치는 후보가 아니다. detached 워크트리는 그것을 만든 브랜치(lib/review.ts 의 originBranch)를 쓰는 것으로 본다.
 //     PR 번호마다 `gh pr view <N> --json state,headRefOid` 를 한 번 읽고, 아래를 모두 채우면 그 번호의 후보를 지운다.
 //       - state 가 MERGED 나 CLOSED 다. OPEN 이면 줄 없이 남긴다
-//       - 그 리뷰 dispatch 가 끝났다. 살아 있는 dispatch 의 지시서(lib/spec.ts 의 liveSpecPaths) 가운데 같은 번호의 리뷰 지시서가 없다.
-//         --specs-dir 가 없으면 후보가 있을 때만 이 목록을 읽는다. 목록을 읽지 못하면 그 번호를 남긴다
-//     브랜치는 끝 커밋이 origin/<기준> 이나 PR headRefOid(로컬에 없으면 `refs/pull/<N>/head` 를 받는다)의 조상일 때만 `git branch -D` 로 지운다.
+//       - 그 리뷰 dispatch 가 끝났다. --run 과 상관없이 모든 Run 의 살아 있는 dispatch 지시서(lib/spec.ts 의 allLiveSpecPaths) 가운데
+//         같은 번호의 리뷰 지시서가 없다. 후보가 있을 때만 이 목록을 읽는다. 목록을 읽지 못하면 그 번호를 남긴다(lib/review.ts 의 reviewKeepReason)
+//     브랜치는 아래를 모두 채울 때만 `git branch -D` 로 지운다.
+//       - 기준 브랜치, `release/*`, 다른 열린 PR 의 base 가 아니다(위 「실행 순서」 의 보호와 같다)
+//       - 그 브랜치 이름(upstream, `branch.<b>.merge`, 로컬 이름)을 head 로 둔 열린 PR 이 없다. 조회가 실패하면 남긴다
+//       - 끝 커밋이 origin/<기준> 이나 PR headRefOid(로컬에 없으면 `refs/pull/<N>/head` 를 받는다)의 조상이다
 //     리뷰 브랜치는 PR head 의 사본이거나 기준 브랜치에서 갓 만든 것이라, 그 밖의 커밋이 있으면 누군가의 작업이다.
 //     지시서는 deleteSpecs 로 지운다. 원격 브랜치는 건드리지 않는다.
 //     출력은 `리뷰 브랜치를 지울 것 <브랜치> (#<N> <state>)`, `리뷰 브랜치 삭제 <브랜치> (#<N> <state>)`, `리뷰 브랜치 남김 <브랜치>: <이유>`,
@@ -319,8 +322,8 @@ import type { WorkerRow } from './lib/ownership.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from './lib/queue-logs.ts'
 import { run as runProcess, scriptCommand } from './lib/proc.ts'
-import { originBranch, reviewPrOf, reviewPrOfBranch } from './lib/review.ts'
-import { deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from './lib/spec.ts'
+import { liveReviewPrs, originBranch, reviewKeepReason, reviewPrOf, reviewPrOfBranch, reviewPrState } from './lib/review.ts'
+import { allLiveSpecPaths, deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from './lib/spec.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
 import type { Verdict } from './lib/worker-state.ts'
 
@@ -1540,6 +1543,19 @@ function readText(file: string): string | null {
   }
 }
 
+// 리뷰 브랜치 자체를 지키는 이유. 기준이나 release 브랜치, 다른 열린 PR 의 base, 그 브랜치를 head 로 둔 열린 PR 이 있으면 남긴다
+function reviewBranchGuard(repo: string, branch: string, base: string): string | null {
+  const guarded = protectedReason(repo, branch, base)
+  if (guarded) return guarded
+  for (const [name] of prCandidates(repo, branch).filter(([, exact]) => exact)) {
+    const listed = prList(repo, name)
+    if (!listed.ok) return '그 브랜치의 PR 을 읽지 못했다'
+    const open = listed.prs.find((pr) => pr.state === 'OPEN')
+    if (open) return `그 브랜치를 head 로 둔 열린 PR #${open.number} 가 있다`
+  }
+  return null
+}
+
 // 리뷰 worker 의 브랜치와 지시서를 PR 이 닫히고 그 dispatch 가 끝난 뒤 지운다(머리 주석의 「리뷰 흔적」)
 function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): void {
   const listed = git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/')
@@ -1568,43 +1584,30 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
     }
   }
   if (found.size === 0) return
-  const live = specsDir ? args.liveSpecs : liveSpecPaths(args.run)
-  const liveReviews = new Set<number>()
-  for (const path of live ?? []) {
-    const n = reviewPrOf(basename(path), readText(path))
-    if (n !== null) liveReviews.add(n)
-  }
+  // --run 과 상관없이 모든 Run 의 살아 있는 지시서를 본다. 다른 Run 의 리뷰를 지우지 않으려는 것이다
+  const livePaths = allLiveSpecPaths()
+  const live = liveReviewPrs(livePaths)
   for (const [n, { branches, specs }] of [...found].sort(([a], [b]) => a - b)) {
-    const view = ghJson<{ state?: unknown; headRefOid?: unknown }>(['pr', 'view', String(n), '--json', 'state,headRefOid'], { cwd: repo })
-    const data = view.ok && isObject(view.data) ? view.data : null
-    const state = data ? String(data.state) : ''
-    if (!PR_STATES.has(state)) {
-      log(`리뷰 흔적 남김 #${n}: PR 을 읽지 못했다`)
+    const pr = reviewPrState(repo, n)
+    const keep = reviewKeepReason(pr, n, live)
+    if (keep === 'PR 이 열려 있다') continue
+    if (keep || pr === null) {
+      log(`리뷰 흔적 남김 #${n}: ${keep}`)
       continue
     }
-    if (state === 'OPEN') continue
-    if (live === null) {
-      log(`리뷰 흔적 남김 #${n}: 살아 있는 지시서 목록을 읽지 못했다`)
-      continue
-    }
-    if (liveReviews.has(n)) {
-      log(`리뷰 흔적 남김 #${n}: 리뷰 dispatch 가 살아 있다`)
-      continue
-    }
-    const head = data && typeof data.headRefOid === 'string' ? data.headRefOid : ''
     for (const branch of branches) {
-      const kept = reviewBranchKept(repo, branch, args.base, n, head)
+      const kept = reviewBranchGuard(repo, branch, args.base) ?? reviewBranchKept(repo, branch, args.base, n, pr.head)
       if (kept) {
         log(`리뷰 브랜치 남김 ${branch}: ${kept}`)
       } else if (!args.apply) {
-        log(`리뷰 브랜치를 지울 것 ${branch} (#${n} ${state})`)
+        log(`리뷰 브랜치를 지울 것 ${branch} (#${n} ${pr.state})`)
       } else {
         const done = git(repo, 'branch', '-D', branch)
-        log(done.code === 0 ? `리뷰 브랜치 삭제 ${branch} (#${n} ${state})` : `리뷰 브랜치 삭제 실패 ${branch}: ${done.err}`)
+        log(done.code === 0 ? `리뷰 브랜치 삭제 ${branch} (#${n} ${pr.state})` : `리뷰 브랜치 삭제 실패 ${branch}: ${done.err}`)
       }
     }
     if (specs.length > 0 && specsDir) {
-      deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies: [], live, mode: 'delete', apply: args.apply, log: (line) => log(`  ${line}`) })
+      deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies: [], live: livePaths, mode: 'delete', apply: args.apply, log: (line) => log(`  ${line}`) })
     }
   }
 }

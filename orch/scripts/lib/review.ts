@@ -9,13 +9,20 @@
 //     지시서   `spec-review-pr-<N>.md` 와 `spec-review-pr-<N>-<꼬리>.md`, 그리고 본문에 `리뷰 PR: #<N>` 줄이 있는 지시서
 //     줄 머리의 `리뷰 PR: #N` 은 목록 기호와 굵은 글씨를 브랜치 줄(lib/spec.ts 의 BRANCH_LINE)처럼 받는다. `#` 는 없어도 된다
 //
+// 리뷰가 끝났는지(reviewKeepReason): PR 이 MERGED 나 CLOSED 이고, 모든 Run 의 살아 있는 dispatch 지시서(lib/spec.ts 의 allLiveSpecPaths)
+//     가운데 같은 번호의 리뷰 지시서가 없어야 끝난 것이다. PR 을 읽지 못하거나 지시서 목록을 읽지 못하면 끝나지 않은 것으로 본다.
+//     cleanup-sweep 의 리뷰 흔적 정리와 remove-worktree 의 detached 브랜치 삭제가 같은 판정을 쓴다.
+//
 // originBranch: detached 워크트리를 만든 브랜치. 리뷰 worker 는 `review/pr-N` 브랜치로 만든 워크트리에서 PR head 를 detached 로 꺼낸다.
 //     그 뒤로 git 은 그 브랜치를 워크트리의 것으로 보지 않아 remove-worktree --delete-branch 가 지우지 못했다(10-31 실측).
 //     워크트리 HEAD 의 reflog 에서 가장 오래된 `checkout: moving from <브랜치> to ` 줄의 <브랜치> 를 읽는다.
 //     그 이름의 로컬 브랜치가 지금 있을 때만 낸다. reflog 가 없거나 checkout 줄이 없으면 null 이다.
 
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
+import { ghJson } from './gh.ts'
 import { git } from './git.ts'
-import { LINE_BREAK } from './spec.ts'
+import { allLiveSpecPaths, LINE_BREAK } from './spec.ts'
 
 const BRANCH = /^(?:pr-(\d+)|review\/pr-(\d+)(?:-[A-Za-z0-9._-]+)?)$/
 const SPEC_NAME = /^spec-review-pr-(\d+)(?:-[^/]*)?\.md$/
@@ -68,4 +75,48 @@ export function originBranch(worktree: string): string | null {
     return m[1]
   }
   return null
+}
+
+export type ReviewPr = { state: string; head: string }
+
+const PR_STATES = new Set(['OPEN', 'MERGED', 'CLOSED'])
+
+// `gh pr view <N> --json state,headRefOid`. 읽지 못하거나 state 를 모르면 null
+export function reviewPrState(repo: string, n: number): ReviewPr | null {
+  const view = ghJson<{ state?: unknown; headRefOid?: unknown }>(['pr', 'view', String(n), '--json', 'state,headRefOid'], { cwd: repo })
+  if (!view.ok || typeof view.data !== 'object' || view.data === null) return null
+  const state = String(view.data.state)
+  if (!PR_STATES.has(state)) return null
+  return { state, head: typeof view.data.headRefOid === 'string' ? view.data.headRefOid : '' }
+}
+
+// 살아 있는 지시서 경로 가운데 리뷰 지시서의 PR 번호. 목록이 null 이면 null
+export function liveReviewPrs(live: Set<string> | null): Set<number> | null {
+  if (live === null) return null
+  const found = new Set<number>()
+  for (const path of live) {
+    let text: string | null
+    try {
+      text = readFileSync(path, 'utf8')
+    } catch {
+      text = null
+    }
+    const n = reviewPrOf(basename(path), text)
+    if (n !== null) found.add(n)
+  }
+  return found
+}
+
+// 머리 주석의 「리뷰가 끝났는지」. 끝났으면 null, 아니면 남길 이유다. live 는 liveReviewPrs 의 결과다
+export function reviewKeepReason(pr: ReviewPr | null, n: number, live: Set<number> | null): string | null {
+  if (pr === null) return 'PR 을 읽지 못했다'
+  if (pr.state === 'OPEN') return 'PR 이 열려 있다'
+  if (live === null) return '살아 있는 지시서 목록을 읽지 못했다'
+  if (live.has(n)) return '리뷰 dispatch 가 살아 있다'
+  return null
+}
+
+// 모든 Run 의 살아 있는 리뷰 PR 번호. 판정할 수 없으면 null
+export function liveReviews(): Set<number> | null {
+  return liveReviewPrs(allLiveSpecPaths())
 }

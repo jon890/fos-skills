@@ -157,6 +157,55 @@ export function liveSpecPaths(run: string | null): Set<string> | null {
   return paths
 }
 
+// 살아 있는 dispatch 의 Task 가 쓴 지시서 경로. 살아 있는 dispatch 의 Task 가 tasks 에 없으면 null 이다
+function liveOf(workers: Record<string, unknown>[], tasks: Record<string, unknown>[]): Set<string> | null {
+  const activeTasks = new Set(workers.filter((w) => ACTIVE.has(String(w.dispatchStatus))).map((w) => w.taskId))
+  const known = new Set(tasks.map((task) => task.id))
+  for (const id of activeTasks) if (!known.has(id)) return null
+  const paths = new Set<string>()
+  for (const task of tasks) {
+    if (!ACTIVE.has(String(task.status)) && !activeTasks.has(task.id)) continue
+    const spec = typeof task.spec === 'string' ? task.spec : ''
+    for (const m of spec.matchAll(SPEC_PATH)) paths.add(realPath(m[1]))
+  }
+  return paths
+}
+
+// 모든 Run 의 살아 있는 dispatch 가 쓰는 지시서의 실경로 집합. 판정할 수 없으면 null 이다.
+// 먼저 liveSpecPaths(null) 을 부른다. 부른 터미널이 한 Run 에 묶여 범위가 all 이 아니면(코디네이터 터미널이 늘 그렇다)
+// `run-list` 를 nextCursor 가 없을 때까지 따라 Run 마다 worker-list --run 과 task-list --run 을 읽어 합친다.
+// Run 마다 살아 있는 dispatch 의 Task 가 그 Run 의 task-list 에 없으면 null 이다. 그 지시서를 모른 채 지우지 않으려는 것이다.
+// 리뷰 흔적 정리(cleanup-sweep, remove-worktree)가 다른 Run 에서 도는 리뷰의 지시서와 브랜치를 지우지 않게 쓴다.
+export function allLiveSpecPaths(): Set<string> | null {
+  const direct = liveSpecPaths(null)
+  if (direct !== null) return direct
+  const ids: string[] = []
+  const seen = new Set<string>()
+  let cursor: string | null = null
+  for (;;) {
+    const got = orcaJson<{ runs?: unknown; nextCursor?: unknown }>(['orchestration', 'run-list', '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
+    if (!got.ok || typeof got.data !== 'object' || got.data === null || !Array.isArray(got.data.runs)) return null
+    for (const row of got.data.runs) {
+      if (typeof row !== 'object' || row === null || typeof (row as { id?: unknown }).id !== 'string') return null
+      ids.push((row as { id: string }).id)
+    }
+    const next = got.data.nextCursor
+    if (next === undefined || next === null || next === '') break
+    if (typeof next !== 'string' || seen.has(next)) return null
+    seen.add(next)
+    cursor = next
+  }
+  const paths = new Set<string>()
+  for (const id of ids) {
+    const workers = readAll(['orchestration', 'worker-list', '--run', id, '--limit', PAGE_LIMIT], 'workers')
+    const tasks = workers === null ? null : readAll(['orchestration', 'task-list', '--run', id], 'tasks')
+    const live = tasks === null || workers === null ? null : liveOf(workers.rows, tasks.rows)
+    if (live === null) return null
+    for (const path of live) paths.add(path)
+  }
+  return paths
+}
+
 // 그 Run 의 Task 가 쓴 지시서의 실경로 집합. 상태와 상관없이 그 Run 의 모든 Task 를 본다. 조회가 실패하면 null 이다.
 // handoff-cleanup --run 이 그 Run 의 지시서만 옮기는 데 쓴다(ADR-012).
 export function runSpecPaths(run: string): Set<string> | null {
