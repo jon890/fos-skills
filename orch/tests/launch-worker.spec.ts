@@ -927,12 +927,46 @@ describe('리뷰 worker 준비', () => {
     assert.equal(lines('orca orchestration worker-start').length, 1)
   })
 
-  test('PR head 를 받지 못하면 띄우지 않고 1 이다', () => {
+  test('PR head 를 받지 못하면 띄우지 않고 1 이며 임시 ref 를 남기지 않는다', () => {
     reviewSpec(9)
     const r = launchReview()
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stderr, /리뷰 PR head 를 꺼내지 못했다\(#9\)/)
+    assert.match(r.stderr, /리뷰 PR head 를 받지 못했다\(#9\)/)
     assert.deepEqual(lines('orca orchestration worker-start'), [])
+    assert.equal(git('-C', proj, 'for-each-ref', 'refs/orch/'), '')
+  })
+
+  test('PR head 를 받지 못해 멈춘 워크트리를 --worktree 로 다시 띄우면 PR head 로 옮긴 뒤 띄운다', () => {
+    reviewSpec(9)
+    assert.equal(launchReview().code, 1)
+    // 그사이 PR head 가 생겼다(일시 장애가 풀린 것과 같다)
+    git('-C', proj, 'push', '-q', 'origin', `${prHead}:refs/pull/9/head`)
+    const r = launch(['--worktree', reviewWt, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, new RegExp(`^REVIEW-CHECKOUT #9 ${prHead}$`, 'm'))
+    assert.equal(git('-C', reviewWt, 'rev-parse', 'HEAD'), prHead)
+  })
+
+  test('이미 PR head 에 놓인 워크트리를 다시 띄우면 준비 명령을 다시 돌리지 않는다', () => {
+    reviewSpec(5)
+    const seen = join(tmp, 'prepare.txt')
+    config({ review: { prepare: `echo run >> ${seen}` } })
+    assert.equal(launchReview().code, 0)
+    state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+    const r = launch(['--worktree', reviewWt, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, new RegExp(`^REVIEW-CHECKOUT #5 ${prHead} 이미 준비됨$`, 'm'))
+    assert.deepEqual(readFileSync(seen, 'utf8').trim().split('\n'), ['run'])
+  })
+
+  test('워크트리에 커밋 안 된 변경이 있으면 PR head 로 옮기지 않고 1 이다', () => {
+    reviewSpec(9)
+    assert.equal(launchReview().code, 1)
+    git('-C', proj, 'push', '-q', 'origin', `${prHead}:refs/pull/9/head`)
+    writeFileSync(join(reviewWt, 'local.txt'), 'x')
+    const r = launch(['--worktree', reviewWt, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /커밋 안 된 변경이 있어 PR head 로 옮기지 않는다/)
   })
 
   test('review.prepare 가 문자열이 아니면 설정 오류 2 다', () => {

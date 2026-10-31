@@ -32,11 +32,15 @@
 //        활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다. spec-lint 가 1 이 아닌 코드로 끝나도(저장소를 읽지 못함 같은 것) 경고만 하고 진행한다
 //        SPEC_LINT 로 spec-lint 를 바꾼다
 //     2. 워크트리를 만들거나 확인한다
-//     2-1. 리뷰 worker 준비. 새로 만든 워크트리이고 지시서에 `리뷰 PR: #<N>` 줄(lib/review.ts 의 reviewPrOfSpec)이 있을 때만 한다.
-//        그 워크트리에서 `git fetch origin refs/pull/<N>/head` 뒤 `git checkout --detach FETCH_HEAD` 로 PR head 에 둔다.
-//        공유 저장소에 로컬 브랜치(`pr-<N>`)를 만들지 않으려는 것이다. 실패하면 `리뷰 PR head 를 꺼내지 못했다` 를 내고 1 이다.
-//        꺼냈으면 `REVIEW-CHECKOUT #<N> <SHA>` 를 낸다. 워크트리를 만든 브랜치는 remove-worktree --delete-branch 가 reflog 로 찾아 지운다.
-//        config.json 의 review.prepare(bash 명령 문자열)가 있으면 그 워크트리에서 한 번 돌린다. 저장소가 정한 생성물 준비 명령이다.
+//     2-1. 리뷰 worker 준비. 지시서에 `리뷰 PR: #<N>` 줄(lib/review.ts 의 reviewPrOfSpec)이 있을 때만 한다. 새 워크트리도 --worktree 도 같다.
+//        PR head 는 이 프로세스가 주 checkout 에서 `git fetch origin +refs/pull/<N>/head:refs/orch/review/pr-<N>` 로 받는다.
+//        worker 가 직접 fetch 하지 않게 하려는 것이다. 원격이 SSH 별칭이면 worker 세션에서는 인증이 막혔다(10-31 실측).
+//        받은 커밋을 읽은 뒤 그 임시 ref 는 지운다. 받지 못하면 `리뷰 PR head 를 받지 못했다` 를 내고 1 이다.
+//        워크트리 HEAD 가 이미 그 커밋이면 `REVIEW-CHECKOUT #<N> <SHA> 이미 준비됨` 을 내고 아래 준비 명령을 다시 돌리지 않는다.
+//        아니면 커밋 안 된 변경이 없는지 보고(있으면 1) `git checkout --detach <SHA>` 로 그 커밋에 둔 뒤 `REVIEW-CHECKOUT #<N> <SHA>` 를 낸다.
+//        PR head 를 받지 못해 멈춘 워크트리를 --worktree 로 다시 띄우면 여기서 다시 꺼낸다. 기준 브랜치 커밋으로 worker 가 뜨지 않는다.
+//        공유 저장소에 로컬 브랜치(`pr-<N>`)를 만들지 않는다. 워크트리를 만든 브랜치는 remove-worktree --delete-branch 가 reflog 로 찾아 지운다.
+//        config.json 의 review.prepare(bash 명령 문자열)가 있으면 꺼낸 뒤 그 워크트리에서 한 번 돌린다. 저장소가 정한 생성물 준비 명령이다.
 //        환경에 ORCH_REVIEW_PR(<N>)과 ORCH_REPO(주 checkout)를 둔다. 시간 제한은 PREPARE_MS(30분)이고 그룹 전체를 끝낸다.
 //        끝나면 `REVIEW-PREPARE <종료 코드>` 를 낸다. 0 이 아니면 출력 끝 20줄과 경고를 stderr 에 내고 그대로 띄운다.
 //        생성물이 없어도 코드 읽기 리뷰는 할 수 있어서다. review.prepare 가 문자열이 아니면 설정 오류(2)다
@@ -67,7 +71,7 @@
 //     branch   워크트리의 현재 브랜치. 없으면 null
 //     agent, model, effort   WORKER_ARGS 의 값. 없으면 null
 //
-// 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 리뷰 PR head 를 꺼내지 못함, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
+// 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 리뷰 PR head 를 받거나 꺼내지 못함, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
 //            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured),
 //            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다),
 //            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
@@ -348,15 +352,31 @@ function parse(argv: string[]): Args | 'help' {
   }
 }
 
-// 차례 2-1(머리 주석). 리뷰 PR head 를 꺼내고 저장소의 생성물 준비 명령을 한 번 돌린다. 멈춰야 하면 종료 코드, 아니면 null 이다
+// 차례 2-1(머리 주석). 리뷰 PR head 를 받아 워크트리를 그 커밋에 두고 저장소의 생성물 준비 명령을 한 번 돌린다. 멈춰야 하면 종료 코드, 아니면 null 이다
 async function prepareReview(worktree: string, repo: string, pr: number): Promise<number | null> {
-  const fetched = git(worktree, ['fetch', '-q', 'origin', `refs/pull/${pr}/head`], { timeoutMs: LONG_MS })
-  const checked = fetched.code === 0 ? git(worktree, ['checkout', '-q', '--detach', 'FETCH_HEAD']) : fetched
+  const ref = `refs/orch/review/pr-${pr}`
+  const fetched = git(repo, ['fetch', '-q', 'origin', `+refs/pull/${pr}/head:${ref}`], { timeoutMs: LONG_MS })
+  const sha = fetched.code === 0 ? git(repo, ['rev-parse', '--verify', '-q', `${ref}^{commit}`]).stdout.trim() : ''
+  git(repo, ['update-ref', '-d', ref])
+  if (!sha) {
+    err(`리뷰 PR head 를 받지 못했다(#${pr}): ${fetched.stderr.trim()}`)
+    return 1
+  }
+  if (git(worktree, ['rev-parse', 'HEAD']).stdout.trim() === sha) {
+    out(`REVIEW-CHECKOUT #${pr} ${sha} 이미 준비됨`)
+    return null
+  }
+  const status = git(worktree, ['status', '--porcelain'])
+  if (status.code !== 0 || status.stdout.trim()) {
+    err(`리뷰 워크트리에 커밋 안 된 변경이 있어 PR head 로 옮기지 않는다: ${worktree}`)
+    return 1
+  }
+  const checked = git(worktree, ['checkout', '-q', '--detach', sha])
   if (checked.code !== 0) {
     err(`리뷰 PR head 를 꺼내지 못했다(#${pr}): ${checked.stderr.trim()}`)
     return 1
   }
-  out(`REVIEW-CHECKOUT #${pr} ${git(worktree, ['rev-parse', 'HEAD']).stdout.trim()}`)
+  out(`REVIEW-CHECKOUT #${pr} ${sha}`)
   const command = section<{ prepare?: unknown }>(loadConfig(repo), 'review', REVIEW_KEYS).prepare
   if (command === undefined) return null
   if (typeof command !== 'string') throw new ConfigError('설정 파일의 review.prepare 는 bash 명령 문자열이어야 한다')
@@ -451,7 +471,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const repo = a.repo || mainCheckout(worktree)
-  const reviewPr = created ? reviewPrOfSpec(readFileSync(a.spec, 'utf8')) : null
+  const reviewPr = reviewPrOfSpec(readFileSync(a.spec, 'utf8'))
   if (reviewPr !== null) {
     let stopped: number | null
     try {
