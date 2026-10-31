@@ -141,6 +141,21 @@
 //       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
 //     - before-cleanup 핸들러가 거부하거나 실패하거나 시간을 넘겼다(아래 「이벤트」)
 //
+// 리뷰 흔적 (저장소마다 워크트리와 로컬 브랜치 정리 뒤에 한 번. --run 이 없어도 한다):
+//     리뷰 worker 는 PR 을 열지 않아 위 「PR 찾기」 로는 그 브랜치를 찾지 못한다. 이름과 지시서 줄로 PR 번호를 읽는다(lib/review.ts).
+//     후보는 리뷰 브랜치(`pr-<N>`, `review/pr-<N>[-<꼬리>]`)와, --specs-dir 를 줬으면 그 폴더 바로 아래의 리뷰 지시서
+//     (`spec-review-pr-<N>[-<꼬리>].md` 이거나 본문에 `리뷰 PR: #<N>` 줄이 있는 것)다.
+//     남은 워크트리가 쓰는 브랜치는 후보가 아니다. detached 워크트리는 그것을 만든 브랜치(lib/review.ts 의 originBranch)를 쓰는 것으로 본다.
+//     PR 번호마다 `gh pr view <N> --json state,headRefOid` 를 한 번 읽고, 아래를 모두 채우면 그 번호의 후보를 지운다.
+//       - state 가 MERGED 나 CLOSED 다. OPEN 이면 줄 없이 남긴다
+//       - 그 리뷰 dispatch 가 끝났다. 살아 있는 dispatch 의 지시서(lib/spec.ts 의 liveSpecPaths) 가운데 같은 번호의 리뷰 지시서가 없다.
+//         --specs-dir 가 없으면 후보가 있을 때만 이 목록을 읽는다. 목록을 읽지 못하면 그 번호를 남긴다
+//     브랜치는 끝 커밋이 origin/<기준> 이나 PR headRefOid(로컬에 없으면 `refs/pull/<N>/head` 를 받는다)의 조상일 때만 `git branch -D` 로 지운다.
+//     리뷰 브랜치는 PR head 의 사본이거나 기준 브랜치에서 갓 만든 것이라, 그 밖의 커밋이 있으면 누군가의 작업이다.
+//     지시서는 deleteSpecs 로 지운다. 원격 브랜치는 건드리지 않는다.
+//     출력은 `리뷰 브랜치를 지울 것 <브랜치> (#<N> <state>)`, `리뷰 브랜치 삭제 <브랜치> (#<N> <state>)`, `리뷰 브랜치 남김 <브랜치>: <이유>`,
+//     `리뷰 흔적 남김 #<N>: <이유>` 와 deleteSpecs 의 줄이다.
+//
 // 저장소 밖 detached 워크트리:
 //     worker 가 기준선 비교나 임시 검사로 저장소 밖(임시 폴더 같은 곳)에 만든 detached 워크트리는 끝나도
 //     `git worktree remove` 를 하지 않아 남는다. 브랜치가 없어 위 판정에 걸리지 않는다.
@@ -215,7 +230,7 @@
 //     원격 브랜치 삭제(이미 없으면 통과), 지시서와 PR 본문 파일 삭제.
 //     remove-worktree.ts 는 lib/proc.ts 의 scriptCommand 로 같은 폴더의 것을 부른다.
 //     기준 브랜치, `release/*`, 다른 열린 PR 의 base 인 브랜치는 지우지 않는다.
-//     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다. 로컬 브랜치 없이 직접 머지한 PR 과
+//     worktree 없이 남은 로컬 브랜치도 같은 조건으로 판정해 지운다. 그다음 리뷰 흔적(위 「리뷰 흔적」)을 지운다. 로컬 브랜치 없이 직접 머지한 PR 과
 //     다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치는 `--remote-branches` 가 지운다.
 //
 // 원격 브랜치 삭제:
@@ -286,6 +301,7 @@
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
 import { homedir } from 'node:os'
+import { readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -303,6 +319,7 @@ import type { WorkerRow } from './lib/ownership.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from './lib/queue-logs.ts'
 import { run as runProcess, scriptCommand } from './lib/proc.ts'
+import { originBranch, reviewPrOf, reviewPrOfBranch } from './lib/review.ts'
 import { deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from './lib/spec.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
 import type { Verdict } from './lib/worker-state.ts'
@@ -1503,6 +1520,94 @@ function sweepBranches(repo: string, args: Args, checkedOut: Set<string>, log: L
   }
 }
 
+// 리뷰 브랜치를 남길 이유. 끝 커밋이 기준 브랜치나 PR head 의 조상이면 null 이다(머리 주석의 「리뷰 흔적」)
+function reviewBranchKept(repo: string, branch: string, base: string, n: number, head: string): string | null {
+  const tip = git(repo, 'rev-parse', '--verify', '-q', `refs/heads/${branch}`)
+  if (tip.code !== 0) return '끝 커밋을 읽지 못했다'
+  if (git(repo, 'merge-base', '--is-ancestor', tip.out, `origin/${base}`).code === 0) return null
+  if (head) {
+    if (!hasCommit(repo, head)) git(repo, 'fetch', '-q', 'origin', `refs/pull/${n}/head`)
+    if (hasCommit(repo, head) && git(repo, 'merge-base', '--is-ancestor', tip.out, head).code === 0) return null
+  }
+  return '기준 브랜치에도 PR head 에도 없는 커밋이 있다'
+}
+
+function readText(file: string): string | null {
+  try {
+    return readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+// 리뷰 worker 의 브랜치와 지시서를 PR 이 닫히고 그 dispatch 가 끝난 뒤 지운다(머리 주석의 「리뷰 흔적」)
+function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): void {
+  const listed = git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/')
+  if (listed.code !== 0) return
+  const used = new Set(checkedOut)
+  for (const [path, branch] of worktrees(repo)) {
+    const origin = branch ? null : originBranch(path)
+    if (origin) used.add(origin)
+  }
+  const found = new Map<number, { branches: string[]; specs: string[] }>()
+  const entry = (n: number) => found.get(n) ?? found.set(n, { branches: [], specs: [] }).get(n)!
+  for (const branch of lines(listed.out)) {
+    const n = reviewPrOfBranch(branch)
+    if (n !== null && !used.has(branch)) entry(n).branches.push(branch)
+  }
+  if (specsDir) {
+    let names: string[] = []
+    try {
+      names = readdirSync(specsDir).filter((name) => name.endsWith('.md')).sort()
+    } catch {
+      // 폴더가 없으면 지시서 후보가 없다
+    }
+    for (const name of names) {
+      const n = reviewPrOf(name, readText(join(specsDir, name)))
+      if (n !== null) entry(n).specs.push(join(specsDir, name))
+    }
+  }
+  if (found.size === 0) return
+  const live = specsDir ? args.liveSpecs : liveSpecPaths(args.run)
+  const liveReviews = new Set<number>()
+  for (const path of live ?? []) {
+    const n = reviewPrOf(basename(path), readText(path))
+    if (n !== null) liveReviews.add(n)
+  }
+  for (const [n, { branches, specs }] of [...found].sort(([a], [b]) => a - b)) {
+    const view = ghJson<{ state?: unknown; headRefOid?: unknown }>(['pr', 'view', String(n), '--json', 'state,headRefOid'], { cwd: repo })
+    const state = view.ok && isObject(view.data) ? String(view.data.state) : ''
+    if (!PR_STATES.has(state)) {
+      log(`리뷰 흔적 남김 #${n}: PR 을 읽지 못했다`)
+      continue
+    }
+    if (state === 'OPEN') continue
+    if (live === null) {
+      log(`리뷰 흔적 남김 #${n}: 살아 있는 지시서 목록을 읽지 못했다`)
+      continue
+    }
+    if (liveReviews.has(n)) {
+      log(`리뷰 흔적 남김 #${n}: 리뷰 dispatch 가 살아 있다`)
+      continue
+    }
+    const head = isObject(view.data) && typeof view.data.headRefOid === 'string' ? view.data.headRefOid : ''
+    for (const branch of branches) {
+      const kept = reviewBranchKept(repo, branch, args.base, n, head)
+      if (kept) {
+        log(`리뷰 브랜치 남김 ${branch}: ${kept}`)
+      } else if (!args.apply) {
+        log(`리뷰 브랜치를 지울 것 ${branch} (#${n} ${state})`)
+      } else {
+        const done = git(repo, 'branch', '-D', branch)
+        log(done.code === 0 ? `리뷰 브랜치 삭제 ${branch} (#${n} ${state})` : `리뷰 브랜치 삭제 실패 ${branch}: ${done.err}`)
+      }
+    }
+    if (specs.length > 0 && specsDir) {
+      deleteSpecs({ root: dirname(realPath(specsDir)), specs, prBodies: [], live, mode: 'delete', apply: args.apply, log: (line) => log(`  ${line}`) })
+    }
+  }
+}
+
 // 머지 큐 로그 정리가 쓰는 실제 조회. PR 은 번호마다 `gh pr view` 로 읽고 읽지 못한 번호는 담지 않는다
 function queueLogHost(repo: string) {
   return {
@@ -1545,6 +1650,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   const remaining = new Set(worktrees(repo).map(([, branch]) => branch))
   remaining.add(git(repo, 'branch', '--show-current').out)
   sweepBranches(repo, args, remaining, log)
+  sweepReviews(repo, args, remaining, specsDir, log)
   if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, remaining, log)) code = 2
   sweepQueueLogs({ dir: pathOf('queue', repo), trash: args.trash, apply: args.apply, log, host: queueLogHost(repo) })
   if (!args.apply) return code

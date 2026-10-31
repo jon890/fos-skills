@@ -325,5 +325,57 @@ describe('터미널 소유 상태', () => {
   })
 })
 
+describe('detached 워크트리의 브랜치', () => {
+  function branchExists(name: string): boolean {
+    return spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '-q', `refs/heads/${name}`], { env }).status === 0
+  }
+
+  // 리뷰 worker 처럼 브랜치로 만든 워크트리에서 PR head 를 detached 로 꺼낸다. PR head 는 원격의 다른 브랜치(topic)에도 있다
+  function detachToPrHead(): void {
+    const other = join(tmp, 'other')
+    git('clone', '-q', join(tmp, 'origin.git'), other)
+    git('-C', other, 'commit', '-q', '--allow-empty', '-m', 'pr head')
+    git('-C', other, 'push', '-q', 'origin', 'HEAD:refs/heads/topic', 'HEAD:refs/pull/7/head')
+    git('-C', wt, 'fetch', '-q', 'origin')
+    git('-C', wt, 'fetch', '-q', 'origin', 'refs/pull/7/head')
+    git('-C', wt, 'checkout', '-q', '--detach', 'FETCH_HEAD')
+  }
+
+  test('--delete-branch 는 detached 워크트리를 만든 브랜치를 지운다', () => {
+    detachToPrHead()
+    const r = removeWorktree({}, ['--delete-branch'])
+    assert.equal(r.code, 0, r.out)
+    has(r.out, 'deleted branch feat')
+    assert.equal(branchExists('feat'), false)
+  })
+
+  test('--delete-branch 가 없으면 detached 워크트리를 만든 브랜치를 남긴다', () => {
+    detachToPrHead()
+    const r = removeWorktree({})
+    assert.equal(r.code, 0, r.out)
+    lacks(r.out, 'deleted branch')
+    assert.equal(branchExists('feat'), true)
+  })
+
+  test('그 브랜치에 원격에 없는 커밋이 있으면 남기고 이유를 낸다', () => {
+    git('-C', wt, 'commit', '-q', '--allow-empty', '-m', 'local only')
+    detachToPrHead()
+    const r = removeWorktree({}, ['--delete-branch'])
+    assert.equal(r.code, 0, r.out)
+    has(r.out, `removed ${wt}`)
+    has(r.out, '브랜치 남김 feat: 원격에 없는 커밋 1 개')
+    assert.equal(branchExists('feat'), true)
+  })
+
+  test('처음부터 detached 로 만든 워크트리는 지울 브랜치가 없다', () => {
+    git('-C', repo, 'worktree', 'remove', wt)
+    git('-C', repo, 'worktree', 'add', '-q', '--detach', wt, 'origin/main')
+    const r = removeWorktree({}, ['--delete-branch'])
+    assert.equal(r.code, 0, r.out)
+    lacks(r.out, 'deleted branch')
+    assert.equal(branchExists('feat'), true)
+  })
+})
+
 describe('옛 경로', () => {
 })
