@@ -420,6 +420,47 @@ describe('질문 확인', () => {
   })
 })
 
+describe('자리 보유 확인', () => {
+  function slot(pid: number, heldAt: number, command: string): string {
+    const dir = join(tmp, 'slots')
+    write(join(dir, `${pid}.json`), JSON.stringify({ pid, ticket: 1, exclusive: false, held: true, slots: 3, held_at: heldAt, command }))
+    return dir
+  }
+
+  test('상한을 넘겨 자리를 쥔 검사를 HEAVY-SLOT-HELD 한 줄로 알리고, 같은 검사가 계속 쥐어도 다시 쓰지 않는다', () => {
+    const dir = slot(process.pid, Date.now() - 45 * 60_000, 'pnpm test:all')
+    once({ HEAVY_SLOT_DIR: dir })
+    const first = events().filter((line) => line.kind === 'HEAVY-SLOT-HELD')
+    assert.equal(first.length, 1, JSON.stringify(events()))
+    assert.match(String(first[0].text), new RegExp(`^pid ${process.pid} 4[5-6]분 pnpm test:all \\(상한 30분\\)$`))
+    once({ HEAVY_SLOT_DIR: dir })
+    assert.equal(events().filter((line) => line.kind === 'HEAVY-SLOT-HELD').length, 1, '같은 검사를 다시 알렸다')
+  })
+
+  test('상한 안의 자리는 알리지 않고, HEAVY_HOLD_MAX 로 상한을 줄이면 알린다', () => {
+    const dir = slot(process.pid, Date.now() - 5 * 60_000, 'pnpm build')
+    once({ HEAVY_SLOT_DIR: dir })
+    assert.deepEqual(events().filter((line) => line.kind === 'HEAVY-SLOT-HELD'), [])
+    once({ HEAVY_SLOT_DIR: dir, HEAVY_HOLD_MAX: '60' })
+    const held = events().filter((line) => line.kind === 'HEAVY-SLOT-HELD')
+    assert.equal(held.length, 1, JSON.stringify(events()))
+    assert.match(String(held[0].text), /\(상한 1분\)$/)
+  })
+
+  test('자리를 내놓은 뒤 다시 오래 쥐면 다시 알린다', () => {
+    const dir = slot(process.pid, Date.now() - 45 * 60_000, 'first')
+    once({ HEAVY_SLOT_DIR: dir })
+    rmSync(join(dir, `${process.pid}.json`))
+    once({ HEAVY_SLOT_DIR: dir })
+    slot(process.pid, Date.now() - 40 * 60_000, 'second')
+    once({ HEAVY_SLOT_DIR: dir })
+    assert.deepEqual(
+      events().filter((line) => line.kind === 'HEAVY-SLOT-HELD').map((line) => String(line.text).split(' ').slice(3, 4)[0]),
+      ['first', 'second'],
+    )
+  })
+})
+
 describe('tick 이벤트', () => {
   test('핸들러가 두 번 1 로 끝나면 HOOK-FAIL tick 1 은 한 줄이다', () => {
     hook('tick')

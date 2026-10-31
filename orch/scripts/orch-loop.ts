@@ -115,6 +115,7 @@
 //        primary(주 Run 이면 true)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     8. 자동 머지. 아래 「자동 머지」
 //     9. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
+//     10. 자리 보유 확인. 아래 「자리 보유 확인」
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors, ci, stalls 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
 //     ci 와 stalls(결과에 있을 때만 통째로 바꾼다)를 쓴다.
 //     결과 줄 앞의 출력과 stderr 는 부모가 로그로 옮긴다. 결과 줄을 읽었으면 종료 코드와 상관없이 합친다. 버리면 그 틱이 이미 알린
@@ -242,6 +243,13 @@
 //     resolveConflict 의 줄(`<dispatch> 에 알렸다` 따위)은 로그에 쓴다. send-to-worker 를 틱 자식 안에서 기다리는 동안에도
 //     부모의 생존 타이머가 alive_at 을 쓴다.
 //
+// 자리 보유 확인: 무거운 검사 대기열(HEAVY_SLOT_DIR, 없으면 lib/paths.ts 의 heavy-slot)에서 상한(HEAVY_HOLD_MAX 초, 기본 1800)보다
+//     오래 자리를 쥔 살아 있는 등록을 lib/heavy-hold.ts 의 overHeld 로 찾는다. 있으면 주 Run 의 알림 파일에 HEAVY-SLOT-HELD 를 쓴다.
+//     text 는 등록마다 `pid <pid> <분>분 <명령줄>` 을 `; ` 로 이은 뒤 ` (상한 <분>분)` 을 붙인 것이다.
+//     오류 줄 억제와 같은 규칙으로 errors 의 heavy-slot 에 `<pid>@<held_at>` 목록을 두고, 그 목록이 바뀔 때만 다시 쓴다.
+//     같은 검사가 계속 쥐고 있으면 분이 늘어도 다시 깨우지 않는다. 자리를 내놓으면 지우고, 다른 검사가 넘기면 다시 쓴다.
+//     알리기만 하고 프로세스를 끊거나 등록을 지우지 않는다. 끊을지는 사용자가 정한다
+//
 // 생존 타이머: 부모가 틱과 따로 ORCH_LOOP_ALIVE_SEC(양수 초, 기본 30)마다 loop.json 의 alive_at 을 쓴다. 시작할 때도 한 번 쓴다.
 //     그래서 긴 틱(정리의 대기, 끝난 dispatch 이어 쓰기)도 죽은 것으로 보이지 않는다.
 //
@@ -250,12 +258,12 @@
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook, stalls)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
-//     공유 출처(SHARED_SOURCES: prs, board, ci, auto-merge, conflicts, tick)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
+//     공유 출처(SHARED_SOURCES: prs, board, ci, auto-merge, conflicts, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
 //     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
 //     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
 //     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), auto-merge(자동 머지), conflicts(충돌 처리),
-//     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남)이다.
+//     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남), heavy-slot(자리 보유 확인. 알림의 kind 는 HEAVY-SLOT-HELD)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
 //     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 알림 파일의 text 는 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
 //     REMINDER 의 text 도 줄에서 `REMINDER ` 를 뺀 나머지다. 한 번 성공하면 이유를 지우고, 다시 실패하면 다시 쓴다. loop.log 에는 실패할 때마다 쓴다.
@@ -273,7 +281,7 @@
 //     finish 절은 lib/finish-options.ts 의 FINISH_KEYS 로, queue 절은 lib/config.ts 의 QUEUE_KEYS 로 읽는다.
 //     pipeline.enabled 는 읽지 않는다. 이 루프가 하는 일은 모두 그 값과 무관하게 돈다.
 //
-// 환경 변수: ORCA(orca 실행 파일), GH(gh 실행 파일), CLEANUP_SWEEP(정리 명령. 기본은 이 폴더의 cleanup-sweep.ts),
+// 환경 변수: ORCA(orca 실행 파일), GH(gh 실행 파일), HEAVY_SLOT_DIR, HEAVY_HOLD_MAX(자리 보유 확인), CLEANUP_SWEEP(정리 명령. 기본은 이 폴더의 cleanup-sweep.ts),
 //     BOARD_SYNC(보드 동기화 명령. 기본은 이 폴더의 board-sync.ts), SEND_TO_WORKER(worker 에게 보내는 명령. CI 감시와 충돌 처리가
 //     쓴다. 기본은 이 폴더의 send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격),
 //     MERGE_WITH_FINISH(자동 머지가 띄우는 큐 명령. 기본은 이 폴더의 merge-with-finish.ts),
@@ -304,6 +312,7 @@ import type { OpenPr, WorkerFound } from './lib/conflicts.ts'
 import { fire, reclaim } from './lib/events.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
 import { isFile } from './lib/fs.ts'
+import { holdMaxSec, overHeld } from './lib/heavy-hold.ts'
 import { apiTarget, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
@@ -349,7 +358,7 @@ const TICK_STOP_GRACE_MS = STOP_GRACE_MS + 3_000
 const PARENT_POLL_MS = 2_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
-const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'auto-merge', 'conflicts', 'tick'])
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'auto-merge', 'conflicts', 'tick', 'heavy-slot'])
 // pipeline.stall_ticks 의 기본값(머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
 const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze({ error: 2, idle: 0 })
 // 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
@@ -2098,6 +2107,17 @@ async function tick(ctx: Context, n: number): Promise<number> {
     } catch (e) {
       report('conflicts', oneLine(e))
     }
+  }
+
+  // 10. 자리 보유 확인. 저장소 공유 일이라 주 Run 에 알린다. 같은 등록 목록이면 다시 쓰지 않는다
+  try {
+    const maxSec = holdMaxSec()
+    const held = overHeld(process.env.HEAVY_SLOT_DIR || pathOf('heavy-slot', ctx.repo), maxSec, Date.now())
+    const minutes = (ms: number) => Math.floor(ms / 60_000)
+    const text = `${held.map((h) => `pid ${h.pid} ${minutes(Date.now() - h.heldAt)}분 ${h.command}`.trim()).join('; ')} (상한 ${minutes(maxSec * 1000)}분)`
+    report('heavy-slot', held.length > 0 ? held.map((h) => `${h.pid}@${h.heldAt}`).join(',') : null, { kind: 'HEAVY-SLOT-HELD', text })
+  } catch (e) {
+    log(`orch-loop: 무거운 검사 자리를 읽지 못했다: ${oneLine(e)}`)
   }
 
   const result: TickResult = { tick_at: iso(), errors, open_prs: openPrNumbers, ...(ci ? { ci } : {}), ...(stalls ? { stalls } : {}) }

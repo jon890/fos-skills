@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { classify, compileHeavy, Queue } from '../scripts/heavy-slot.ts'
+import { DEFAULT_HOLD_MAX_SEC, holdMaxSec, overHeld } from '../scripts/lib/heavy-hold.ts'
 import type { Heavy } from '../scripts/heavy-slot.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/heavy-slot.ts', import.meta.url))
@@ -212,6 +213,20 @@ describe('Queue', () => {
     assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')), quoted)
     assert.equal(existsSync(join(tmp, 'x')), false, '따옴표 안의 명령이 셸로 실행됐다')
     assert.deepEqual(entries(), [])
+  })
+
+  test('자리를 잡으면 등록에 잡은 시각과 명령줄을 적고, 기다리는 등록에는 적지 않는다', async () => {
+    rows([10, 1, true, true])
+    const waiting = new Queue(slots, 3, { alive: () => true, command: 'pnpm test', now: () => 5_000 })
+    await waiting.register(false)
+    assert.equal(await waiting.claim(), false)
+    const before = JSON.parse(readFileSync(waiting.entry, 'utf8')) as Record<string, unknown>
+    assert.deepEqual([before.held_at, before.command], [undefined, undefined])
+    unlinkSync(join(slots, '10.json'))
+    assert.equal(await waiting.claim(), true)
+    const after = JSON.parse(readFileSync(waiting.entry, 'utf8')) as Record<string, unknown>
+    assert.deepEqual([after.held, after.held_at, after.command], [true, 5_000, 'pnpm test'])
+    await waiting.cleanup()
   })
 
   test('다른 HEAVY_SLOTS 로 쓰는 대기열에는 등록하지 않는다', async () => {
@@ -615,5 +630,57 @@ describe('기본 대기열 폴더', () => {
     assert.equal(existsSync(join(repo, '.orch')), false)
     r = await runSlot({ HEAVY_SLOT_DIR: join(tmp, 'shared') })
     assert.equal(r.code, 0, r.stderr)
+  })
+})
+
+describe('자리 보유 상한', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'heavy-hold-')))
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  function entry(pid: number, row: Record<string, unknown>): void {
+    writeFileSync(join(dir, `${pid}.json`), JSON.stringify({ pid, ticket: 1, exclusive: false, slots: 3, ...row }))
+  }
+
+  test('상한을 넘겨 자리를 쥔 살아 있는 등록만 오래 쥔 차례로 낸다', () => {
+    const now = 10_000_000
+    entry(11, { held: true, held_at: now - 3_600_000, command: 'pnpm build' })
+    entry(12, { held: true, held_at: now - 7_200_000, command: 'pnpm ci' })
+    // 상한 안, 기다리는 중, 잡은 시각이 없는 옛 등록, 죽은 pid, 깨진 파일은 내지 않는다
+    entry(13, { held: true, held_at: now - 60_000, command: 'short' })
+    entry(14, { held: false })
+    entry(15, { held: true })
+    entry(16, { held: true, held_at: now - 7_200_000, command: 'dead' })
+    writeFileSync(join(dir, '17.json'), '{')
+    writeFileSync(join(dir, 'queue.lock'), '')
+    const found = overHeld(dir, 1800, now, (pid) => pid !== 16)
+    assert.deepEqual(found, [
+      { pid: 12, heldAt: now - 7_200_000, command: 'pnpm ci' },
+      { pid: 11, heldAt: now - 3_600_000, command: 'pnpm build' },
+    ])
+  })
+
+  test('상한과 같은 시간만 쥐었으면 넘긴 것이 아니고, 폴더가 없으면 빈 목록이다', () => {
+    entry(11, { held: true, held_at: 0, command: 'x' })
+    assert.deepEqual(overHeld(dir, 1800, 1_800_000, () => true), [])
+    assert.deepEqual(overHeld(join(dir, 'missing'), 1800, 1_800_000, () => true), [])
+  })
+
+  test('HEAVY_HOLD_MAX 가 양수가 아니면 기본 30분이다', () => {
+    const saved = process.env.HEAVY_HOLD_MAX
+    try {
+      process.env.HEAVY_HOLD_MAX = '600'
+      assert.equal(holdMaxSec(), 600)
+      for (const bad of ['0', '-5', 'abc', '']) {
+        process.env.HEAVY_HOLD_MAX = bad
+        assert.equal(holdMaxSec(), DEFAULT_HOLD_MAX_SEC)
+      }
+      assert.equal(DEFAULT_HOLD_MAX_SEC, 1800)
+    } finally {
+      if (saved === undefined) delete process.env.HEAVY_HOLD_MAX
+      else process.env.HEAVY_HOLD_MAX = saved
+    }
   })
 })
