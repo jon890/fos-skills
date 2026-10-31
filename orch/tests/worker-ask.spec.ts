@@ -172,7 +172,8 @@ describe('결정 질문 형식', () => {
     fake('{"result":{"answer":"재개한 답"}}', 0)
     const r = ask('--from', 'term_w', '--resume', 'm1', '--decision')
     assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: 재개한 답'])
-    assert.ok(r.calls[0].includes('[ask]') && r.calls[0].includes('[--resume][m1]'), r.calls[0])
+    // 앞의 check 는 status 답을 가릴 기준이다. 재개해도 읽지 않은 메시지로 막지는 않는다
+    assert.ok(r.calls[1].includes('[ask]') && r.calls[1].includes('[--resume][m1]'), r.calls[1])
   })
 })
 
@@ -199,7 +200,7 @@ describe('읽지 않은 메시지', () => {
     fake('{"result":{"answer":"x"}}', 0, { checks: [inbox(message())] })
     const r = ask('--from', 'term_w', '--question', 'q', '--force')
     assert.equal(r.code, 0, r.stderr)
-    assert.ok(r.calls[0].includes('[ask]'), r.calls[0])
+    assert.ok(r.calls[1].includes('[ask]'), r.calls[1])
   })
 
   test('자기 메시지와 heartbeat 는 묻기를 막지 않는다', () => {
@@ -255,6 +256,40 @@ describe('시간 제한', () => {
   })
 })
 
+describe('기다리는 동안 status 답', () => {
+  test('ask 를 기다리는 동안 이 dispatch 로 온 status 를 찾으면 ask 를 끊고 3 이다', () => {
+    fake('{"result":{"answer":"늦은 답"}}', 0, { checks: [inbox(), inbox(message({ body: '기다리는 중에 status 로 답한다' }))] })
+    env.FAKE_ASK_SLEEP = '20'
+    env.ORCH_ASK_POLL_MS = '200'
+    const started = Date.now()
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, firstLine(r.stdout)], [3, 'answer: 기다리는 중에 status 로 답한다'])
+    assert.match(r.stderr, /ask 를 끊었다/)
+    assert.ok(Date.now() - started < 10_000, `ask 를 끝까지 기다렸다: ${Date.now() - started}ms`)
+  })
+
+  test('ask 를 부르기 전에 있던 status 는 답으로 보지 않는다', () => {
+    // 앞서 받은 지시가 ack 되지 않아 --peek 에 남아 있다. 한 번 보인 메시지라 묻기를 막지 않는다
+    const old = inbox(message({ body: '앞서 받은 지시' }))
+    fake('{"result":{"answer":"ask 의 답"}}', 0, { checks: [old, old, old, old, old, old] })
+    writeFileSync(join(tmp, 'seen'), 'msg_c\n')
+    env.FAKE_ASK_SLEEP = '1'
+    env.ORCH_ASK_POLL_MS = '100'
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: ask 의 답'])
+    assert.ok(r.calls.filter((c) => c.includes('[check]')).length >= 2, '기다리는 동안 check 를 다시 읽어야 한다')
+  })
+
+  test('다른 dispatch 로 간 status 로는 ask 를 끊지 않는다', () => {
+    const other = inbox(message({ body: '다른 worker 의 답', to: 'dispatch:ctx_9' }))
+    fake('{"result":{"answer":"ask 의 답"}}', 0, { checks: [inbox(), other, other, other, other, other] })
+    env.FAKE_ASK_SLEEP = '1'
+    env.ORCH_ASK_POLL_MS = '100'
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: ask 의 답'])
+  })
+})
+
 describe('ask 실패 뒤 대신 보내기', () => {
   test('Run 메일함으로 question 을 보내고 3 이다', () => {
     fake('dispatch is not active', 1)
@@ -306,7 +341,8 @@ describe('ask 실패 뒤 대신 보내기', () => {
   test('--resume 이 실패하면 대신 보내지 않고 2 다', () => {
     fake('unknown message', 1)
     const r = ask('--from', 'term_w', '--resume', 'm1')
-    assert.deepEqual([r.code, r.calls.length], [2, 1])
+    assert.deepEqual([r.code, r.calls.length], [2, 2])
+    assert.ok(!r.calls.some((c) => c.includes('[send]')))
   })
 })
 

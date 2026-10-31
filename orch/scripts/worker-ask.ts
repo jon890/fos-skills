@@ -11,6 +11,11 @@
 //
 // 출력: 답을 받으면 첫 줄이 `answer: <답 본문>` 이고 그 뒤에 ask 의 출력이 온다.
 //
+// status 답 기다리기: ask 를 기다리는 동안 ORCH_ASK_POLL_MS(기본 30000)마다 check --peek 을 다시 읽는다. 아래 「status 답」 이 오면
+// ask 를 끊고 시간 초과 뒤의 status 답과 같게 3 으로 끝난다(첫 줄 `answer: <본문>`). 코디네이터가 reply 대신 status 로 답해도
+// 시간 제한(기본 600초)을 다 기다리지 않게 하려는 것이다. 끊은 ask 의 질문은 Orca 에 답 없이 남는다.
+// 기다리는 동안에는 질문 메시지 ID 를 모르므로 스레드가 아니라 받는 곳으로만 판정하고, ask 를 부르기 전에 이미 있던 status 는 뺀다.
+//
 // 시간 초과: ask 출력의 timedOut 이나 `timed out` 말고도, ask 가 --timeout-ms 에 여유(2분)를 더한 시간 안에 끝나지 않아
 // 이 명령이 끊은 경우도 시간 초과(4, status 답이 있으면 3)다. 실패로 보고 Run 메일함으로 대신 보내면 같은 질문이 두 번 간다.
 //
@@ -23,7 +28,8 @@
 //     읽지 않은 메시지 check --peek 결과에서 heartbeat 와 자기가 보낸 것을 뺀 메시지. ORCH_ASK_SEEN 파일에 든 ID 는 건너뛰고,
 //                   보인 ID 를 그 파일에 더한다. worker 가 `check` 로 읽어도 ack 하지 않으면 --peek 에 계속 남아(실측),
 //                   한 번 보여 준 메시지로 다시 막지 않으려는 것이다
-//     status 답     check --peek 결과에서 스레드가 그 질문이거나 받는 곳이 이 dispatch 인 status 의 본문
+//     status 답     check --peek 결과에서 스레드가 그 질문이거나 받는 곳이 이 dispatch 인 status 의 본문. 받는 곳으로 찾은 것은
+//                   ask 를 부르기 직전의 check --peek 에 이미 있던 ID 를 뺀다. 앞서 받은 다른 지시를 이 질문의 답으로 읽지 않게 한다
 //     출력 앞뒤에 다른 줄이 섞여도 마지막 JSON 객체를 읽는다. JSON 이 없으면 값이 없는 것으로 본다
 
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
@@ -42,6 +48,8 @@ const USAGE = [
 // ORCH_ASK_SLACK_MS 는 이 여유를 바꾼다. 테스트만 쓴다
 const ASK_SLACK_MS = Number(process.env.ORCH_ASK_SLACK_MS) || 120_000
 const DEFAULT_TIMEOUT_MS = '600000'
+// ask 를 기다리는 동안 status 답을 찾는 간격. ORCH_ASK_POLL_MS 로 바꾼다(테스트가 줄인다)
+const POLL_MS = Number(process.env.ORCH_ASK_POLL_MS) || 30_000
 // Python 의 str.splitlines 와 같은 줄 경계다. 결정 질문 형식 판정이 옛 명령과 같게 한다
 const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/u
 
@@ -127,15 +135,20 @@ function unreadOf(output: string, sender: string, seenFile: string): string {
   return lines.join('\n').trim()
 }
 
-function replyOf(output: string, sender: string, question: string): string {
+// before 는 ask 를 부르기 전에 있던 메시지 ID 다. 받는 곳으로만 맞은 status 가운데 여기 든 것은 답으로 보지 않는다
+function replyOf(output: string, sender: string, question: string, before: ReadonlySet<string>): string {
   const result = load(output)
   const dispatch = result.dispatchId
   for (const m of messages(result)) {
     if (m.from_handle === sender || m.type !== 'status') continue
-    const toMe = Boolean(dispatch) && m.to_handle === `dispatch:${dispatch}`
+    const toMe = Boolean(dispatch) && m.to_handle === `dispatch:${dispatch}` && !before.has(String(m.id))
     if ((question && m.thread_id === question) || toMe) return String(m.body || '').trim()
   }
   return ''
+}
+
+function idsOf(output: string): Set<string> {
+  return new Set(messages(load(output)).map((m) => String(m.id)))
 }
 
 function decisionProblems(question: string): string[] {
@@ -200,26 +213,58 @@ async function main(argv: string[]): Promise<number> {
     }
   }
   const orca = orcaBin()
-  const peek = () => run([orca, 'orchestration', 'check', '--terminal', sender, '--peek', '--json']).stdout
+  const peekArgs = [orca, 'orchestration', 'check', '--terminal', sender, '--peek', '--json']
+  const peek = () => run(peekArgs).stdout
+  const first = peek()
   if (!resume && !values.force) {
     const seen = process.env.ORCH_ASK_SEEN || join(process.env.TMPDIR || '/tmp', `orch-worker-ask-${sender}.seen`)
-    const unread = unreadOf(peek(), sender, seen)
+    const unread = unreadOf(first, sender, seen)
     if (unread) {
       process.stdout.write(`${unread}\n`)
       err('worker-ask: 읽지 않은 코디네이터 메시지가 있어 묻지 않았다. 위 메시지를 읽고도 물어야 하면 같은 명령을 다시 부른다')
       return 5
     }
   }
+  const before = idsOf(first)
   const args = [orca, 'orchestration', 'ask', '--from', sender, '--timeout-ms', timeoutMs, '--json']
   args.push(...(resume ? ['--resume', resume] : ['--question', question]))
   if (options && !resume) args.push('--options', options)
   const limitMs = (Number(timeoutMs) || Number(DEFAULT_TIMEOUT_MS)) + ASK_SLACK_MS
-  const asked = await runAsync(args, { timeoutMs: limitMs })
+  // ask 를 기다리는 동안 status 답을 찾는다(머리 주석의 「status 답 기다리기」). 찾으면 ask 를 끊는다
+  const stop = new AbortController()
+  let early = ''
+  const watching = (async () => {
+    while (!stop.signal.aborted) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, POLL_MS)
+        stop.signal.addEventListener('abort', () => {
+          clearTimeout(timer)
+          resolve()
+        }, { once: true })
+      })
+      if (stop.signal.aborted) return
+      const polled = await runAsync(peekArgs)
+      if (stop.signal.aborted) return
+      const reply = replyOf(polled.stdout, sender, resume, before)
+      if (reply) {
+        early = reply
+        stop.abort()
+      }
+    }
+  })()
+  const asked = await runAsync(args, { timeoutMs: limitMs, signal: stop.signal })
+  stop.abort()
+  await watching
   const output = asked.stdout + asked.stderr
+  if (early) {
+    process.stdout.write(`answer: ${early}\n${output}\n`)
+    err('worker-ask: ask 를 기다리는 동안 코디네이터가 status 로 답해 ask 를 끊었다. 첫 줄이 그 본문이다')
+    return 3
+  }
   // 끊은 ask 는 질문을 이미 보냈을 수 있다. 아래 실패 경로(Run 메일함으로 대신 보내기)로 가지 않게 시간 초과를 먼저 본다
   if (asked.timedOut) err(`worker-ask: ask 가 ${limitMs}ms 안에 끝나지 않아 끊었다`)
   if (asked.timedOut || /"timedOut"\s*:\s*true|timed out/.test(output)) {
-    const reply = replyOf(peek(), sender, messageIdOf(output) || resume)
+    const reply = replyOf(peek(), sender, messageIdOf(output) || resume, before)
     if (reply) {
       process.stdout.write(`answer: ${reply}\n${output}\n`)
       err('worker-ask: ask 에는 답이 없지만 코디네이터가 status 로 답했다. 첫 줄이 그 본문이다')
