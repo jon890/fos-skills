@@ -11,6 +11,8 @@ Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 �
 같은 접두사와 번호를 다른 계획 디렉터리가 쓰면(`plan12-a` 와 `plan12-b`) 알린다.
 검사하는 계획이 아직 커밋 전이면 위반이고, 이미 커밋된 계획끼리 겹치면 경고다.
 새 겹침만 막고, 이미 진행 중인 계획의 폴더 이름을 바꾸게 하지 않는다.
+phase 안 Markdown 상대 링크는 phase 파일 위치 기준으로 풀어 없는 파일이면 위반이다.
+변경 파일 표에 「신규」 로 적은 docs 가 커밋 전 파일이면(7단계에서 먼저 쓴 것) 위반 대신 경고다.
 작업 트리와 로컬, 원격 브랜치의 tasks 디렉터리를 본다. 보고에서 phase 번호가 어느 계획인지 갈리지 않게 된다.
 index.json 의 pr_scope(한 문장)와 deferred(뒤로 미룬 일) 칸을 보고, phase 가 6개를 넘으면 plan 을 나누게 한다.
 변경 파일이 40개를 넘으면 경고한다. 기준은 references/plan-size.md 가 소유한다.
@@ -47,6 +49,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 # task 생성 시 phase 파일에 필요한 필수 절을 검사한다.
 REQUIRED_SECTIONS = [
@@ -248,6 +251,16 @@ def is_glob(rel):
     return any(any(c in part for c in "*?[") and not literal_segment(part) for part in rel.split("/"))
 
 
+def uncommitted_docs(repo, rel):
+    """7단계에서 먼저 쓴 docs 다. docs 아래이고 git 저장소에서 HEAD 에 아직 없는 파일이다."""
+    if not (rel.startswith("docs/") or "/docs/" in rel):
+        return False
+    inside = subprocess.run(["git", "-C", str(repo), "rev-parse", "--git-dir"], capture_output=True, text=True)
+    if inside.returncode != 0:
+        return False
+    return subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"HEAD:{rel}"], capture_output=True).returncode != 0
+
+
 def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, created=None):
     """앞 phase 의 생성과 삭제를 적용한 파일 상태로 대조한다.
 
@@ -275,6 +288,9 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
         if action == "신규" and glob:
             warnings.append(f"{path} — 신규 glob 은 구체 파일의 부재를 보장하지 못한다: {rel}")
             created.append(rel)
+        elif action == "신규" and exists and uncommitted_docs(repo, rel):
+            warnings.append(f"{path} — 7단계에서 먼저 쓴 docs 로 보여 신규 존재를 허용한다: {rel} "
+                            "(이미 쓴 docs 는 변경 파일 표에 넣지 않는다)")
         elif action == "신규" and exists:
             out.append(f"{path} — 신규 파일이 이미 존재한다: {rel} (구현 후 검사는 --audit)")
         elif action in {"수정", "삭제"} and not exists:
@@ -1119,6 +1135,31 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
             warnings.append(f"{path} — 저장소 스크립트의 테스트 범위와 실패 종료 코드는 직접 확인한다: {' '.join(command)}")
 
 
+MARKDOWN_LINK = re.compile(r"!?\[[^\]\n]*\]\(\s*(<[^>\n]+>|[^\s)]+)")
+REFERENCE_LINK = re.compile(r"^ {0,3}\[[^\]\n]+\]:\s*(<[^>\n]+>|\S+)")
+
+
+def check_relative_links(path, text, repo, out):
+    """phase 안 Markdown 상대 링크를 그 파일 위치 기준으로 풀어 없는 파일이면 위반으로 낸다.
+
+    저장소의 문서 링크 검사기가 같은 기준으로 풀기 때문에, 계획서에서 ADR 이나 docs 를 가리키는
+    링크가 깨지면 계획을 커밋한 뒤 그 검사가 실패한다. 코드 블록과 코드 스팬 안은 보지 않는다.
+    """
+    base = (path if path.is_absolute() else repo / path).parent
+    for n, line, kind, _ in fences(text):
+        if kind != "text":
+            continue
+        prose = re.sub(r"(`+).*?\1", "", line)
+        for found in [*MARKDOWN_LINK.finditer(prose), *REFERENCE_LINK.finditer(prose)]:
+            target = found[1].strip("<>")
+            url = urlsplit(target)
+            if url.scheme or url.netloc or not url.path or url.path.startswith("/"):
+                continue
+            if not (base / unquote(url.path)).exists():
+                out.append(f"{path}:{n} — 링크 대상 파일이 없다: {target} ({path.name} 위치 기준). "
+                           "경로를 이 파일 기준 상대 경로로 고치거나, 링크 대신 백틱 경로로 쓴다")
+
+
 def check_code_sed(path, text, out):
     """셸 블록의 `sed ... \\b` 도 산문과 같이 본다. BSD sed 는 `\\b` 를 모른다."""
     for n, line, kind, language in fences(text):
@@ -1138,6 +1179,10 @@ def check_human_verification(path, text, out):
 # 작업 항목이 함수를 가리키는 형태다. `save()`, `save(user)`, `Repo.save()` 의 마지막 이름을 잡는다.
 CALL_REFERENCE = re.compile(r"`(?:[A-Za-z_][\w]*[.:#]+)*([A-Za-z_]\w*)\([^`]*\)`")
 CALLER_LIMIT = 5
+# 이름이 이만큼 짧으면(`of`, `now`) 낱말 grep 이 어느 함수의 호출자인지 가리지 못해 건너뛴다.
+MIN_CALL_NAME_LENGTH = 4
+# 일치 파일이 이 수를 넘으면 `save`, `record` 처럼 어느 저장소에나 있는 이름이다. 파일 목록 대신 한 줄로 줄인다.
+COMMON_CALLER_COUNT = 30
 # 어느 저장소에나 있는 이름이라 호출자 경고가 거의 모든 파일을 가리킨다(실측: 경고 28건 중 23건).
 # 낱말로 grep 하는 한 어느 함수의 호출자인지 가릴 수 없어 건너뛴다. 저장소 고유 이름은 넣지 않는다.
 COMMON_CALL_NAMES = frozenset({
@@ -1177,19 +1222,26 @@ def check_callers(phase_entries, repo, tasks_dir, warnings):
                     if action in {"수정", "삭제"} and Path(rel).suffix in CODE_SUFFIXES and not is_glob(rel)]
         if not modified:
             continue
-        names = dict.fromkeys(n for n in CALL_REFERENCE.findall(work) if n not in COMMON_CALL_NAMES)
+        names = dict.fromkeys(n for n in CALL_REFERENCE.findall(work)
+                              if n not in COMMON_CALL_NAMES and len(n) >= MIN_CALL_NAME_LENGTH)
+        too_common = []
         for name in names:
             owners = [rel for rel in modified if (repo / rel).is_file()
                       and re.search(rf"\b{re.escape(name)}\b", (repo / rel).read_text(encoding="utf-8", errors="ignore"))]
             if not owners:
                 continue
             callers = git_grep_files(repo, name, planned)
-            if callers:
+            if len(callers) > COMMON_CALLER_COUNT:
+                too_common.append(f"`{name}` {len(callers)}개")
+            elif callers:
                 shown = ", ".join(callers[:CALLER_LIMIT]) + (f" 외 {len(callers) - CALLER_LIMIT}개" if len(callers) > CALLER_LIMIT else "")
                 warnings.append(
                     f"{path} — `{name}` 을 쓰는 파일이 plan 의 변경 파일에 없다: {shown}. "
                     f"시그니처나 동작이 바뀌어 고쳐야 하면 변경 파일 표에 넣는다"
                 )
+        if too_common:
+            warnings.append(f"{path} — 너무 흔한 이름이라 호출자를 가리지 못해 건너뛴다: {', '.join(too_common)}. "
+                            "호출부가 바뀌면 `git grep` 에 클래스 이름을 함께 줘서 직접 찾는다")
 
 
 def main(argv: list) -> int:
@@ -1246,6 +1298,7 @@ def main(argv: list) -> int:
                     if BSD_SED.search(line):
                         out.append(f"{path}:{n} — BSD sed 에서 동작하지 않는 \\b: {line.strip()}")
                 check_code_sed(path, text, out)
+                check_relative_links(path, text, repo, out)
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
                 phase_entries.append((path, section(text, "작업 항목"), entries))

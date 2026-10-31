@@ -942,6 +942,90 @@ class TaskRulesTest(unittest.TestCase):
             self.assertTrue(out)
 
 
+class CheckerRefinementTest(unittest.TestCase):
+    """7단계 docs, 상대 링크, 흔한 이름 호출자 경고를 검증한다."""
+
+    setUp = TaskRulesTest.setUp
+    file = TaskRulesTest.file
+
+    def init_repo(self):
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@example.com",
+                        "commit", "-q", "-m", "init"], check=True)
+
+    def file_state(self, entries):
+        out, warnings = [], []
+        verify.check_file_state(Path("phase-01.md"), entries, self.repo, {}, out, warnings)
+        return out, warnings
+
+    def test_uncommitted_new_docs_is_warning_not_violation(self):
+        self.init_repo()
+        self.file("docs/adr/012-queue.md", "# ADR\n")
+        out, warnings = self.file_state([("docs/adr/012-queue.md", "신규")])
+        self.assertEqual(out, [])
+        self.assertTrue(any("docs/adr/012-queue.md" in w and "넣지 않는다" in w for w in warnings), warnings)
+
+    def test_committed_docs_new_is_still_violation(self):
+        self.init_repo()
+        out, _ = self.file_state([("docs/flow.md", "신규")])
+        self.assertTrue(any("신규 파일이 이미 존재한다" in v for v in out), out)
+
+    def test_uncommitted_non_docs_new_is_still_violation(self):
+        self.init_repo()
+        self.file("src/app.py", "x = 1\n")
+        out, _ = self.file_state([("src/app.py", "신규")])
+        self.assertTrue(any("신규 파일이 이미 존재한다" in v for v in out), out)
+
+    def test_new_docs_outside_git_is_still_violation(self):
+        out, _ = self.file_state([("docs/flow.md", "신규")])
+        self.assertTrue(any("신규 파일이 이미 존재한다" in v for v in out), out)
+
+    def links(self, text, plan="tasks/plan1-a"):
+        self.file("docs/adr/001-x.md")
+        phase = self.file(f"{plan}/phase-01.md", text)
+        out = []
+        verify.check_relative_links(phase, text, self.repo, out)
+        return out
+
+    def test_relative_link_resolves_from_phase_location(self):
+        self.assertEqual(self.links("[ADR](../../docs/adr/001-x.md) 와 [절](../../docs/adr/001-x.md#a)"), [])
+
+    def test_link_resolved_from_repo_root_is_violation(self):
+        out = self.links("[ADR](docs/adr/001-x.md)")
+        self.assertEqual(len(out), 1, out)
+        self.assertIn("phase-01.md:1", out[0])
+        self.assertIn("docs/adr/001-x.md", out[0])
+
+    def test_sibling_link_and_reference_link_are_checked(self):
+        out = self.links("[다음](031-next.md)\n\n[ref]: ../../docs/missing.md\n")
+        self.assertEqual(len(out), 2, out)
+
+    def test_urls_anchors_code_and_absolute_links_are_skipped(self):
+        text = ("[웹](https://example.com/a.md) [앵커](#절) [메일](mailto:a@b.c) [절대](/docs/x.md)\n"
+                "`[코드](missing.md)`\n```md\n[블록](missing.md)\n```\n")
+        self.assertEqual(self.links(text), [])
+
+    def test_common_short_and_widespread_names_do_not_flood_warnings(self):
+        self.file("src/repo.py", "def save(x):\n    pass\ndef of(x):\n    pass\ndef record(x):\n    pass\n")
+        for i in range(40):
+            self.file(f"src/user{i}.py", "save(1)\nrecord(2)\nof(3)\n")
+        self.file("src/api.py", "from src.repo import real_call\nreal_call(1)\n")
+        self.file("src/repo.py", "def save(x):\n    pass\ndef of(x):\n    pass\ndef record(x):\n    pass\ndef real_call(x):\n    pass\n")
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
+        warnings = []
+        work = "### 1. `save(x)`, `of(x)`, `record(x)`, `real_call(x)` 를 바꾼다"
+        verify.check_callers([(Path("phase-01.md"), work, [("src/repo.py", "수정")])], self.repo, "tasks", warnings)
+        self.assertEqual(len(warnings), 2, warnings)
+        self.assertTrue(any("src/api.py" in w and "`real_call`" in w for w in warnings), warnings)
+        crowded = next(w for w in warnings if "너무 흔한 이름" in w)
+        self.assertIn("`save` 40개", crowded)
+        self.assertIn("`record` 40개", crowded)
+        self.assertNotIn("`of`", " ".join(warnings))
+        self.assertNotIn("src/user0.py", " ".join(warnings))
+
+
 class PlanNumberTest(unittest.TestCase):
     """두 계획이 같은 번호를 쓰면 보고의 「phase 3」 이 어느 계획인지 갈리지 않는다."""
 
