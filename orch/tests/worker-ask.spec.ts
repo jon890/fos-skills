@@ -231,6 +231,13 @@ describe('시간 제한', () => {
     assert.deepEqual([r.code, firstLine(r.stdout)], [3, 'answer: dispatch 로 답한다'])
   })
 
+  test('시간 초과 뒤에도 이 dispatch 로 왔지만 다른 질문 스레드인 status 는 답이 아니다', () => {
+    const other = message({ body: '다른 질문의 답', thread: 'm9' })
+    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(other)] })
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 4, r.stderr)
+  })
+
   test('다른 스레드와 다른 dispatch 의 status 는 답이 아니다', () => {
     const other = message({ body: '다른 질문의 답', thread: 'm9', to: 'dispatch:ctx_9' })
     fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(other)] })
@@ -278,6 +285,24 @@ describe('기다리는 동안 status 답', () => {
     const r = ask('--from', 'term_w', '--question', 'q')
     assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: ask 의 답'])
     assert.ok(r.calls.filter((c) => c.includes('[check]')).length >= 2, '기다리는 동안 check 를 다시 읽어야 한다')
+  })
+
+  test('--resume 으로 기다리는 동안 같은 dispatch 의 다른 질문 스레드로 온 status 는 답이 아니다', () => {
+    const other = inbox(message({ body: '다른 질문 m9 의 답', thread: 'm9' }))
+    fake('{"result":{"answer":"m1 의 답"}}', 0, { checks: [inbox(), other, other, other, other, other] })
+    env.FAKE_ASK_SLEEP = '1'
+    env.ORCH_ASK_POLL_MS = '100'
+    const r = ask('--from', 'term_w', '--resume', 'm1')
+    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: m1 의 답'])
+  })
+
+  test('--resume 으로 기다리는 동안 그 질문 스레드로 온 status 는 답이다', () => {
+    const mine = inbox(message({ body: 'm1 에 status 로 답한다', thread: 'm1', to: 'run:run_x' }))
+    fake('{"result":{"answer":"늦은 답"}}', 0, { checks: [inbox(), mine] })
+    env.FAKE_ASK_SLEEP = '20'
+    env.ORCH_ASK_POLL_MS = '200'
+    const r = ask('--from', 'term_w', '--resume', 'm1')
+    assert.deepEqual([r.code, firstLine(r.stdout)], [3, 'answer: m1 에 status 로 답한다'])
   })
 
   test('다른 dispatch 로 간 status 로는 ask 를 끊지 않는다', () => {

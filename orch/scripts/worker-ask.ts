@@ -29,7 +29,9 @@
 //                   보인 ID 를 그 파일에 더한다. worker 가 `check` 로 읽어도 ack 하지 않으면 --peek 에 계속 남아(실측),
 //                   한 번 보여 준 메시지로 다시 막지 않으려는 것이다
 //     status 답     check --peek 결과에서 스레드가 그 질문이거나 받는 곳이 이 dispatch 인 status 의 본문. 받는 곳으로 찾은 것은
-//                   ask 를 부르기 직전의 check --peek 에 이미 있던 ID 를 뺀다. 앞서 받은 다른 지시를 이 질문의 답으로 읽지 않게 한다
+//                   ask 를 부르기 직전의 check --peek 에 이미 있던 ID 를 뺀다. 앞서 받은 다른 지시를 이 질문의 답으로 읽지 않게 한다.
+//                   스레드가 적힌 status 는 그 스레드가 이 질문일 때만 답이다. 질문 ID 를 모르는 기다리는 동안에는 스레드 없는 것만 받는다.
+//                   같은 dispatch 의 다른 질문(--resume m1 을 기다리는데 m9 스레드로 온 답)을 이 질문의 답으로 읽지 않게 한다
 //     출력 앞뒤에 다른 줄이 섞여도 마지막 JSON 객체를 읽는다. JSON 이 없으면 값이 없는 것으로 본다
 
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
@@ -141,8 +143,12 @@ function replyOf(output: string, sender: string, question: string, before: Reado
   const dispatch = result.dispatchId
   for (const m of messages(result)) {
     if (m.from_handle === sender || m.type !== 'status') continue
+    if (m.thread_id) {
+      if (question && m.thread_id === question) return String(m.body || '').trim()
+      continue
+    }
     const toMe = Boolean(dispatch) && m.to_handle === `dispatch:${dispatch}` && !before.has(String(m.id))
-    if ((question && m.thread_id === question) || toMe) return String(m.body || '').trim()
+    if (toMe) return String(m.body || '').trim()
   }
   return ''
 }
