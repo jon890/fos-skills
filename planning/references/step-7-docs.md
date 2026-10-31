@@ -25,6 +25,14 @@ ADR 을 대체한 뒤 위치와 저장소 Markdown 의 ADR 상대 링크를 검�
 python3 "$SKILL_DIR/scripts/check_adr_layout.py" "${ADR_DIR:-docs/adr}"
 ```
 
+오버레이가 「superseded 폴더 사용 안 함」 으로 정한 저장소(대체된 ADR 을 `docs/adr` 에 그대로 두고 색인으로 구분)는 `--flat` 을 붙인다.
+`--flat` 은 폴더 위치와 `status` 검사를 건너뛰고 링크 검사만 한다. 오버레이가 정하지 않았으면 붙이지 않는다.
+
+```bash
+# cwd: 타깃 레포 root
+python3 "$SKILL_DIR/scripts/check_adr_layout.py" "${ADR_DIR:-docs/adr}" --flat
+```
+
 코드 주석의 링크와 색인의 「현행」·「대체됨」 구분은 변경 diff 에서 확인한다.
 
 ## 계획서를 가리키지 않는다

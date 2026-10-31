@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.35.0 (2026-10-31)
+
+- `plan_number.sh --name-regex 'analysis-(\d{3})-'` 로 `plan{N}` 이 아닌 이름의 계획 번호를 센다. 번호를 못 읽으면 `다음 번호: 1` 대신 종료 코드 2 로 끝나고, 이력은 `git log` 한 번으로 읽는다
+- `verify_task.py` 는 phase 의 Markdown 상대 링크를 그 파일 위치 기준으로 풀어 없는 파일이면 위반으로 낸다
+- 변경 파일 표에 커밋 전 `docs/` 파일을 「신규」 로 적으면 경고다. 7단계에서 이미 쓴 docs 는 표에 넣지 않는다
+- 호출자 경고는 3자 이하 이름을 건너뛰고, 일치 파일이 30개를 넘는 이름은 「너무 흔한 이름」 한 줄로 줄인다
+- `check_adr_layout.py --flat` 은 superseded 폴더를 쓰지 않는 저장소에서 폴더 위치와 status 검사를 건너뛴다
+
 ## 2.34.0 (2026-10-30)
 
 - `orch` 로 구현을 맡길 때 plan 하나는 worker 하나다. 뒤 plan 은 앞 PR 이 머지된 뒤 새 worker 에게 맡긴다

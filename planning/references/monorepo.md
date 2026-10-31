@@ -68,7 +68,7 @@ plan 접두사처럼 하나만 골라야 하는 값은 사용자에게 묻는다
 
 ## 오버레이가 지정하는 경로 값
 
-아래 셋은 스크립트 인자로 넘어가므로 오버레이에 이 이름으로 적는다.
+아래 값은 스크립트 인자로 넘어가므로 오버레이에 이 이름으로 적는다.
 경로는 저장소 루트 기준이다. 적지 않으면 기본값을 쓴다.
 
 | 값 | 기본값 | 예 | 받는 스크립트 인자 |
@@ -76,6 +76,8 @@ plan 접두사처럼 하나만 골라야 하는 값은 사용자에게 묻는다
 | docs 경로 | `docs/` | `frontend/docs/` | `plan_precheck.py --docs-dir` |
 | tasks 경로 | `tasks/` | `tasks/` | `plan_number.sh --tasks-dir`, `verify_task.py --tasks-dir`, `plan_precheck.py --tasks-dir` |
 | plan 접두사 | 없음 | `fe-` | `plan_number.sh --prefix` |
+| plan 이름 형식 | `{접두사}plan{N}-` | `analysis-(\d{3})-` | `plan_number.sh --name-regex` (접두사 대신 준다) |
+| ADR 대체 배치 | `superseded/` 폴더 | 폴더 없음(색인으로 구분) | `check_adr_layout.py --flat` |
 
 오버레이에는 아래처럼 적는다.
 

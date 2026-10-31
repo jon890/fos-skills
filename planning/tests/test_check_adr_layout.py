@@ -36,6 +36,16 @@ class CheckAdrLayoutTests(unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertIn("001.md: 대체된 ADR 은", done.stdout)
 
+    def test_flat_allows_superseded_adr_in_root_but_still_checks_links(self):
+        self.write("docs/adr/001.md", "- **status**: `superseded`\n")
+        self.write("docs/adr/superseded/002.md", "- **status**: `accepted`\n")
+        self.assertEqual(self.run_check().returncode, 1)
+        self.assertEqual(self.run_check("--flat").returncode, 0)
+        self.write("docs/adr/003.md", "[x](missing.md)\n")
+        done = self.run_check("--flat")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("ADR 링크 대상이 없다", done.stdout)
+
     def test_archive_rejects_accepted_and_missing_status_recursively(self):
         for status in ("- **status**: `accepted`", "# Legacy"):
             with self.subTest(status=status):
