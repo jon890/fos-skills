@@ -114,7 +114,7 @@ def main():
         except re.error as error:
             parser.error(f"--name-regex 가 정규식이 아니다: {error}")
         if name_regex.groups != 1:
-            parser.error("--name-regex 에는 번호를 잡는 캡처 그룹이 하나여야 한다. 예: 'analysis-(\\d{3})-'")
+            parser.error("--name-regex 에는 번호를 잡는 캡처 그룹이 하나여야 한다. 예: 'area-(\\d{3})-'")
     else:
         name_regex = re.compile(rf"{re.escape(args.prefix)}plan(\d+)-")
 
@@ -139,7 +139,7 @@ def main():
         if relevant:
             print(f"tasks 이력에 계획 디렉터리 {len(relevant)}개가 있는데 이름 형식으로 해석한 번호가 0개다: "
                   f"{', '.join(relevant[:5])}", file=sys.stderr)
-            print("저장소의 이름 형식을 --name-regex 로 준다. 예: --name-regex 'analysis-(\\d{3})-' "
+            print("저장소의 이름 형식을 --name-regex 로 준다. 예: --name-regex 'area-(\\d{3})-' "
                   "(캡처 그룹이 번호). 다른 형식의 계획만 있는 정상 상태면 --allow-empty 를 준다", file=sys.stderr)
             return 2
 

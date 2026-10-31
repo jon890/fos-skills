@@ -145,41 +145,41 @@ class PlanNumberTest(unittest.TestCase):
 
 
     def test_name_regex_counts_area_numbered_directories(self):
-        self.commit("tasks/analysis-015-a/index.json", "a")
-        self.commit("tasks/analysis-017-b/phase-01.md", "b")
-        self.commit("tasks/sensor-040-c/index.json", "other area")
-        code, out = self.run_script("--name-regex", r"analysis-(\d{3})-")
+        self.commit("tasks/area-015-a/index.json", "a")
+        self.commit("tasks/area-017-b/phase-01.md", "b")
+        self.commit("tasks/other-040-c/index.json", "other area")
+        code, out = self.run_script("--name-regex", r"area-(\d{3})-")
         self.assertEqual((code, out.splitlines()[-1]), (0, "다음 번호: 18"), out)
-        self.assertIn("analysis-017-b", out)
-        self.assertNotIn("sensor", out)
+        self.assertIn("area-017-b", out)
+        self.assertNotIn("other", out)
 
     def test_name_regex_counts_deleted_plan_from_history(self):
-        self.commit("tasks/analysis-031-a/index.json", "a")
-        self.remove("tasks/analysis-031-a", "삭제")
-        code, out = self.run_script("--name-regex", r"analysis-(\d{3})-")
+        self.commit("tasks/area-031-a/index.json", "a")
+        self.remove("tasks/area-031-a", "삭제")
+        code, out = self.run_script("--name-regex", r"area-(\d{3})-")
         self.assertEqual(out.splitlines()[-1], "다음 번호: 32", out)
         self.assertIn("git 이력에만 있다", out)
 
     def test_name_regex_reads_pr_branch_names(self):
-        self.commit("tasks/analysis-001-a/index.json", "a")
-        self.heads.write_text("feat/analysis-020-x\nplan/analysis-021-y\nsensor-099-z\n")
-        code, out = self.run_script("--name-regex", r"analysis-(\d{3})-")
+        self.commit("tasks/area-001-a/index.json", "a")
+        self.heads.write_text("feat/area-020-x\nplan/area-021-y\nother-099-z\n")
+        code, out = self.run_script("--name-regex", r"area-(\d{3})-")
         self.assertEqual(out.splitlines()[-1], "다음 번호: 22", out)
 
     def test_unparsed_history_fails_instead_of_returning_one(self):
-        self.commit("tasks/analysis-015-a/index.json", "a")
-        code, out = self.run_script("--prefix", "analysis-")
+        self.commit("tasks/area-015-a/index.json", "a")
+        code, out = self.run_script("--prefix", "area-")
         self.assertEqual(code, 2)
         self.assertNotIn("다음 번호", out)
 
     def test_name_regex_matching_nothing_fails(self):
-        self.commit("tasks/analysis-015-a/index.json", "a")
-        code, out = self.run_script("--name-regex", r"sensor-(\d{3})-")
+        self.commit("tasks/area-015-a/index.json", "a")
+        code, out = self.run_script("--name-regex", r"other-(\d{3})-")
         self.assertEqual(code, 2)
 
     def test_allow_empty_returns_one(self):
-        self.commit("tasks/analysis-015-a/index.json", "a")
-        code, out = self.run_script("--name-regex", r"sensor-(\d{3})-", "--allow-empty")
+        self.commit("tasks/area-015-a/index.json", "a")
+        code, out = self.run_script("--name-regex", r"other-(\d{3})-", "--allow-empty")
         self.assertEqual((code, out.splitlines()[-1]), (0, "다음 번호: 1"))
 
     def test_other_prefix_only_history_is_not_an_error(self):
@@ -188,8 +188,8 @@ class PlanNumberTest(unittest.TestCase):
         self.assertEqual((code, out.splitlines()[-1]), (0, "다음 번호: 1"), out)
 
     def test_name_regex_needs_one_capture_group(self):
-        self.commit("tasks/analysis-015-a/index.json", "a")
-        self.assertEqual(self.run_script("--name-regex", r"analysis-\d{3}-")[0], 2)
+        self.commit("tasks/area-015-a/index.json", "a")
+        self.assertEqual(self.run_script("--name-regex", r"area-\d{3}-")[0], 2)
         self.assertEqual(self.run_script("--name-regex", "(a)(b)")[0], 2)
 
     def test_name_regex_and_prefix_conflict(self):

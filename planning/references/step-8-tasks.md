@@ -39,7 +39,7 @@ bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir "${TASKS_DIR:-tasks}" ${PLA
 
 ```bash
 # cwd: 타깃 레포 root
-bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir tasks --name-regex 'analysis-(\d{3})-'
+bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir tasks --name-regex 'area-(\d{3})-'
 ```
 
 `tasks/` 이력에 계획 디렉터리가 있는데 이름 형식으로 읽은 번호가 0개면 스크립트는 종료 코드 2 로 끝난다.
