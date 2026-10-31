@@ -113,7 +113,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `REMINDER`: 답이 없는 기술 질문이나 일반 escalation의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다. 사용자 결정의 재알림은 이 이벤트로 오지 않는다
-  - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다
+  - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다. 끝이 `취소만 있음` 이면 실패한 체크가 모두 취소다. worker 에게 보내지 않았다. 일부러 취소한 CI 면 아무것도 하지 않고, 아니면 코디네이터가 CI 를 다시 돌린다
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
   - `QUEUE-CONFLICT`: 머지 큐가 base 와 충돌한 PR 을 빼고 뒤 PR 을 이어 머지했다. 내용은 충돌 이유다. worker 에게 알리는 일은 루프의 충돌 처리가 한다. worker 가 base 를 합친 뒤 그 PR 만 다시 머지 큐에 건다
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
