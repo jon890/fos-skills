@@ -28,6 +28,9 @@ import html
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from preview_output import clear_output, write_output  # noqa: E402
+
 TEMPLATE = Path(__file__).parent / "template.html"
 
 TYPE_MAP = {
@@ -44,6 +47,7 @@ def main() -> int:
     ap.add_argument("--md-file", required=True, help="본문 markdown 파일 경로 ('-' 는 stdin)")
     ap.add_argument("--out", required=True, help="출력 HTML 경로")
     args = ap.parse_args()
+    clear_output(args.out)
 
     if args.md_file == "-":
         md = sys.stdin.read()
@@ -64,7 +68,7 @@ def main() -> int:
         .replace("{{TYPE_LABEL}}", type_label)
         .replace("{{MD_BODY}}", md)
     )
-    Path(args.out).write_text(out, encoding="utf-8")
+    write_output(args.out, out)
     print(f"생성 완료: {args.out}")
     return 0
 
