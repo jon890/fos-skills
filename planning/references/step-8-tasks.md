@@ -34,6 +34,18 @@ bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir "${TASKS_DIR:-tasks}" ${PLA
 
 `--prefix` 와 값을 따로 펼친다. `${PLAN_PREFIX:+--prefix "$PLAN_PREFIX"}` 로 묶으면 zsh 가 낱말을 나누지 않아 `--prefix plan` 한 낱말로 넘어간다.
 
+**오버레이가 `tasks/<영역>-<3자리 번호>-<slug>/` 처럼 `plan{N}` 이 아닌 이름을 정했으면 `--prefix` 대신 `--name-regex` 를 준다.**
+정규식은 디렉터리 이름 앞에서부터 맞추고, 번호를 잡는 캡처 그룹이 하나다. 접두사도 정규식에 넣는다.
+
+```bash
+# cwd: 타깃 레포 root
+bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir tasks --name-regex 'area-(\d{3})-'
+```
+
+`tasks/` 이력에 계획 디렉터리가 있는데 이름 형식으로 읽은 번호가 0개면 스크립트는 종료 코드 2 로 끝난다.
+`다음 번호: 1` 로 끝내지 않는다. 형식이 저장소와 다르다는 뜻이므로 `--name-regex` 를 저장소의 이름에 맞춘다.
+다른 하위 프로젝트의 계획만 있어 번호가 정말 없는 상태면 `--allow-empty` 를 준다.
+
 마지막 줄이 다음 번호다. 접두사가 있으면 그 접두사의 번호만 센다.
 `origin/main 밖에만 있다` 로 나온 번호는 머지되지 않은 브랜치가 쥔 것이고 그 번호도 쓰지 않는다.
 로컬 `tasks/` 만 보면 그 번호가 보이지 않는다.
