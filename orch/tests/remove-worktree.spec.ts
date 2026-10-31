@@ -15,7 +15,17 @@ const SCRIPT = fileURLToPath(new URL('../scripts/remove-worktree.ts', import.met
 const HOOK = 'node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}'
 
 type Proc = { pid: number; cwd: string; command: string; gone?: number; ppid?: number }
-type State = { procs?: Proc[]; terminals?: unknown[]; workers?: unknown[]; takeoverAt?: number; orcaFail?: boolean }
+type State = {
+  procs?: Proc[]
+  terminals?: unknown[]
+  workers?: unknown[]
+  takeoverAt?: number
+  orcaFail?: boolean
+  // 리뷰 브랜치 판정이 읽는 것. gh pr view 의 응답(PR 번호에서)과 task-list 의 Task
+  prViews?: Record<string, unknown>
+  tasks?: unknown[]
+  tasksFail?: boolean
+}
 
 let tmp: string
 let repo: string
@@ -56,6 +66,8 @@ beforeEach(() => {
     GIT_COMMITTER_NAME: 't',
     GIT_COMMITTER_EMAIL: 't@example.com',
     ORCA: join(bin, 'orca'),
+    GH: join(bin, 'gh'),
+    ORCH_GH_CACHE: '0',
   }
   // Orca 터미널 안에서 돌려도 이 변수가 가짜 orca 로 새지 않게 한다. 대기 시간은 테스트가 직접 정한다
   delete env.ORCA_TERMINAL_HANDLE
@@ -75,9 +87,17 @@ beforeEach(() => {
     `if (st.orcaFail) process.exit(1)
 if (argv.includes('terminal') && argv.includes('list')) console.log(JSON.stringify({ result: { terminals: st.terminals || [] } }))
 else if (argv.includes('worker-list')) console.log(JSON.stringify({ result: { scope: { source: 'all' }, workers: st.workers || [], page: {} } }))
+else if (argv.includes('task-list')) {
+  if (st.tasksFail) process.exit(1)
+  console.log(JSON.stringify({ result: { tasks: st.tasks || [] } }))
+}
 else console.log(JSON.stringify({ ok: true, result: {} }))
 `,
   )
+  fake(bin, 'gh', `const n = argv[2]
+if (argv[0] === 'pr' && argv[1] === 'view' && st.prViews && n in st.prViews) console.log(JSON.stringify(st.prViews[n]))
+else process.exit(1)
+`)
   fake(bin, 'lsof', `for (const q of st.procs || []) console.log('p' + q.pid + '\\nn' + q.cwd)\n`)
   fake(bin, 'ps', `for (const q of st.procs || []) console.log(q.pid + ' ' + (q.ppid ?? 1) + ' ' + q.command)\n`)
   fake(
@@ -330,8 +350,9 @@ describe('detached 워크트리의 브랜치', () => {
     return spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '-q', `refs/heads/${name}`], { env }).status === 0
   }
 
-  // 리뷰 worker 처럼 브랜치로 만든 워크트리에서 PR head 를 detached 로 꺼낸다. PR head 는 원격의 다른 브랜치(topic)에도 있다
-  function detachToPrHead(): void {
+  // 리뷰 worker 처럼 review/pr-7 브랜치로 만든 워크트리에서 PR head 를 detached 로 꺼낸다. PR head 는 원격의 다른 브랜치(topic)에도 있다
+  function detachToPrHead(branch = 'review/pr-7'): void {
+    git('-C', wt, 'branch', '-m', branch)
     const other = join(tmp, 'other')
     git('clone', '-q', join(tmp, 'origin.git'), other)
     git('-C', other, 'commit', '-q', '--allow-empty', '-m', 'pr head')
@@ -341,39 +362,81 @@ describe('detached 워크트리의 브랜치', () => {
     git('-C', wt, 'checkout', '-q', '--detach', 'FETCH_HEAD')
   }
 
-  test('--delete-branch 는 detached 워크트리를 만든 브랜치를 지운다', () => {
+  const merged = { prViews: { 7: { state: 'MERGED', headRefOid: 'x' } } }
+
+  test('--delete-branch 는 PR 이 닫히고 리뷰가 끝났으면 detached 워크트리를 만든 리뷰 브랜치를 지운다', () => {
     detachToPrHead()
-    const r = removeWorktree({}, ['--delete-branch'])
+    const r = removeWorktree(merged, ['--delete-branch'])
     assert.equal(r.code, 0, r.out)
-    has(r.out, 'deleted branch feat')
-    assert.equal(branchExists('feat'), false)
+    has(r.out, 'deleted branch review/pr-7')
+    assert.equal(branchExists('review/pr-7'), false)
   })
 
   test('--delete-branch 가 없으면 detached 워크트리를 만든 브랜치를 남긴다', () => {
     detachToPrHead()
-    const r = removeWorktree({})
+    const r = removeWorktree(merged)
     assert.equal(r.code, 0, r.out)
     lacks(r.out, 'deleted branch')
+    assert.equal(branchExists('review/pr-7'), true)
+  })
+
+  test('PR 이 열려 있으면 리뷰 브랜치를 남긴다', () => {
+    detachToPrHead()
+    const r = removeWorktree({ prViews: { 7: { state: 'OPEN' } } }, ['--delete-branch'])
+    assert.equal(r.code, 0, r.out)
+    has(r.out, `removed ${wt}`)
+    has(r.out, '브랜치 남김 review/pr-7: PR 이 열려 있다')
+    assert.equal(branchExists('review/pr-7'), true)
+  })
+
+  test('PR 을 읽지 못하면 리뷰 브랜치를 남긴다', () => {
+    detachToPrHead()
+    const r = removeWorktree({}, ['--delete-branch'])
+    has(r.out, '브랜치 남김 review/pr-7: PR 을 읽지 못했다')
+    assert.equal(branchExists('review/pr-7'), true)
+  })
+
+  test('살아 있는 dispatch 가 그 PR 의 리뷰 지시서를 쓰면 리뷰 브랜치를 남긴다', () => {
+    detachToPrHead()
+    const spec = join(tmp, 'spec-review-pr-7-2.md')
+    writeFileSync(spec, '# 다시 리뷰\n')
+    const state = { ...merged, workers: [{ taskId: 'task_r', dispatchStatus: 'running', resource: { ownershipState: 'owned' } }], tasks: [{ id: 'task_r', status: 'running', spec: `지시서 ${spec}` }] }
+    const r = removeWorktree(state, ['--delete-branch'])
+    has(r.out, '브랜치 남김 review/pr-7: 리뷰 dispatch 가 살아 있다')
+    assert.equal(branchExists('review/pr-7'), true)
+  })
+
+  test('살아 있는 지시서 목록을 읽지 못하면 리뷰 브랜치를 남긴다', () => {
+    detachToPrHead()
+    const r = removeWorktree({ ...merged, tasksFail: true }, ['--delete-branch'])
+    has(r.out, '브랜치 남김 review/pr-7: 살아 있는 지시서 목록을 읽지 못했다')
+    assert.equal(branchExists('review/pr-7'), true)
+  })
+
+  test('리뷰 브랜치 이름이 아니면 남긴다', () => {
+    detachToPrHead('feat')
+    const r = removeWorktree(merged, ['--delete-branch'])
+    has(r.out, '브랜치 남김 feat: 리뷰 브랜치 이름이 아니다')
     assert.equal(branchExists('feat'), true)
   })
 
   test('그 브랜치에 원격에 없는 커밋이 있으면 남기고 이유를 낸다', () => {
     git('-C', wt, 'commit', '-q', '--allow-empty', '-m', 'local only')
     detachToPrHead()
-    const r = removeWorktree({}, ['--delete-branch'])
+    const r = removeWorktree(merged, ['--delete-branch'])
     assert.equal(r.code, 0, r.out)
     has(r.out, `removed ${wt}`)
-    has(r.out, '브랜치 남김 feat: 원격에 없는 커밋 1 개')
-    assert.equal(branchExists('feat'), true)
+    has(r.out, '브랜치 남김 review/pr-7: 원격에 없는 커밋 1 개')
+    assert.equal(branchExists('review/pr-7'), true)
   })
 
   test('처음부터 detached 로 만든 워크트리는 지울 브랜치가 없다', () => {
     git('-C', repo, 'worktree', 'remove', wt)
     git('-C', repo, 'worktree', 'add', '-q', '--detach', wt, 'origin/main')
-    const r = removeWorktree({}, ['--delete-branch'])
+    const r = removeWorktree(merged, ['--delete-branch'])
     assert.equal(r.code, 0, r.out)
     lacks(r.out, 'deleted branch')
-    assert.equal(branchExists('feat'), true)
+    lacks(r.out, '브랜치 남김')
   })
 })
 
