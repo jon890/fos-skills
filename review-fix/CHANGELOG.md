@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.14.0 (2026-10-31)
+
+- `review_threads.py show <THREAD_ID>` 가 스레드의 전체 본문과 댓글을 낸다. `list` 의 `head` 는 120자에서 잘려 지적 근거를 읽지 못하던 문제다. `list` 출력은 바뀌지 않았다
+
 ## 2.13.0 (2026-10-28)
 
 - 7, 8단계 본문에 회신, 등록 전 검사, resolve, 미해결 수 확인 명령과 종료 코드를 뒀다. reference 를 열지 않고 GraphQL 로 직접 회신하던 문제다
