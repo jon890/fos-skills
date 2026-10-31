@@ -15,6 +15,7 @@
 //   hooks        hooks/             저장소의 이벤트 핸들러
 //   hooks-state  state/hooks/       이벤트 핸들러의 잠금
 //   bin          bin/               저장소 포장 스크립트
+//   feedback     feedback/          worker 가 쌓은 스킬 개선 후보(references/feedback-review.md)
 //
 // 보드는 work-board 소유라 여기 없다. boardPath 의 기본 위치는 work-board/bin/board.ts 의 defaultBoardPath 를 import 해 쓴다.
 //
@@ -45,6 +46,7 @@ export const NAMES: Readonly<Record<string, string>> = Object.freeze({
   hooks: 'hooks',
   'hooks-state': 'state/hooks',
   bin: 'bin',
+  feedback: 'feedback',
 })
 
 // 폴더가 아니라 파일인 이름. ensure 가 그 부모 폴더만 만든다.

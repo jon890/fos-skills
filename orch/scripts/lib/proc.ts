@@ -12,6 +12,8 @@
 // runAsync 는 시간을 넘기면 TERM 을 보내고, KILL 유예(기본 10초, ORCH_KILL_GRACE_SEC) 뒤에도 살아 있으면 KILL 을 보낸다.
 // runAsync 에 group: true 를 주면 자식을 detached 로 띄워 새 프로세스 그룹을 만든다. 시간 초과와 stopChildren 의 신호가
 // 그 그룹 전체(손자 포함)에 간다. 자식이 신호를 받아 손자를 끝내는 중에 죽어도 손자가 남지 않게 하려는 것이다.
+// runAsync 에 signal(AbortSignal)을 주면 abort 될 때 시간 초과와 같게 TERM 뒤 KILL 을 보낸다. 결과는 시그널 종료 코드(TERM 이면 143)이고
+// timedOut 은 false 다. 끊은 자식의 파이프는 시간 초과처럼 바로 닫는다. 부르는 쪽이 다른 근거로 기다림을 그만둘 때 쓴다(worker-ask 가 status 답을 먼저 받은 경우).
 // runAsync 는 자식이 끝난 뒤 2초 안에 출력 파이프가 닫히지 않으면(백그라운드 손자가 쥐고 있다) 파이프를 닫고 자식의 종료 코드를 낸다.
 // 손자가 그 뒤에 쓴 출력은 버린다. 끝난 자식에는 시간 제한을 적용하지 않으므로 이때 124 가 아니다.
 //
@@ -58,6 +60,8 @@ export type RunOptions = {
   maxBuffer?: number
   // runAsync 만 읽는다. true 면 자식을 새 프로세스 그룹으로 띄운다(머리 주석)
   group?: boolean
+  // runAsync 만 읽는다. abort 되면 자식을 끝낸다(머리 주석)
+  signal?: AbortSignal
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000
@@ -211,6 +215,7 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
       clearTimeout(timer)
       clearTimeout(killTimer)
       clearTimeout(pipeTimer)
+      opts.signal?.removeEventListener('abort', terminate)
       resolve(result)
     }
 
@@ -263,7 +268,7 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
     child.on('exit', (status: number | null, signal: NodeJS.Signals | null) => {
       exited = { status, signal }
       clearTimeout(timer)
-      if (timedOut || overflowed) closePipes()
+      if (timedOut || overflowed || opts.signal?.aborted) closePipes()
       else pipeTimer = setTimeout(closePipes, PIPE_GRACE_MS)
     })
     child.on('close', (status: number | null, signal: NodeJS.Signals | null) => {
@@ -279,6 +284,8 @@ export function runAsync(argv: string[], opts: RunOptions = {}): Promise<RunResu
       timedOut = true
       terminate()
     }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+    if (opts.signal?.aborted) terminate()
+    else opts.signal?.addEventListener('abort', terminate, { once: true })
   })
 }
 

@@ -112,6 +112,22 @@ describe('runAsync', () => {
     assert.equal(r.timedOut, true)
   })
 
+  test('signal 이 abort 되면 TERM 으로 끝내고 143 이며 timedOut 이 아니다', async () => {
+    const stop = new AbortController()
+    setTimeout(() => stop.abort(), 100)
+    const started = Date.now()
+    const r = await runAsync(node('setTimeout(() => {}, 20000)'), { timeoutMs: 30_000, signal: stop.signal })
+    assert.deepEqual([r.code, r.timedOut], [143, false])
+    assert.ok(Date.now() - started < 10_000)
+  })
+
+  test('이미 abort 된 signal 을 받으면 띄운 자식을 바로 끝낸다', async () => {
+    const stop = new AbortController()
+    stop.abort()
+    const r = await runAsync(node('setTimeout(() => {}, 20000)'), { timeoutMs: 30_000, signal: stop.signal })
+    assert.equal(r.code, 143)
+  })
+
   test('TERM 을 무시하는 자식은 KILL 유예 뒤 KILL 로 끝난다', { timeout: 30_000 }, async (t) => {
     // 운영 기본 유예는 10초다. 테스트는 1초로 줄여 같은 동작을 본다
     process.env.ORCH_KILL_GRACE_SEC = '1'

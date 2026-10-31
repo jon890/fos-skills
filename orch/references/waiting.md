@@ -123,6 +123,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
     막는 쪽 브랜치를 버렸으면 그 브랜치를 지운 뒤 `reserve-migration.ts --repo <저장소> --prune` 을 부른다. 다음 틱에 막힘이 풀린다
     알림은 한 번만 오므로 기다리는 PR 은 그 뒤 알림 없이 기다린다
   - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `nudge-worker.ts --terminal <터미널> --state` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
+  - `HEAVY-SLOT-HELD`: 내용은 `pid <pid> <분>분 <명령줄>` 목록과 상한이다. 그 검사가 무거운 검사 자리를 상한보다 오래 쥐어 다른 worker 의 검사가 기다린다. 명령줄과 그 pid 의 worktree 로 어느 worker 의 검사인지 찾고, 그 worker 에게 끝났는지 묻거나 사용자에게 끊을지 묻는다. 루프는 끊지 않는다. 같은 검사가 쥐고 있는 동안은 한 번만 온다
   - `WATCH-ERROR`, `HOOK-FAIL`: 루프가 무엇을 하지 못했다는 알림이다. 내용의 이유(Orca 꺼짐, 핸들러 오류)를 고친다. 같은 이유는 한 번만 오고, 한 번 성공한 뒤 다시 실패하면 다시 온다. 내용이 `auto-merge: 마이그레이션 예약 <n> 개의 형식이 틀렸다` 로 시작하면 `reserve-migration.ts --repo <저장소> --prune` 으로 그 항목을 뺀다
   - `GAP`: 알림 파일이 1000 줄을 넘어 잘려 일부를 잃었다. `<orch 루트>/state/loop.log` 를 읽어 놓친 일을 찾는다
 - 종료 코드 8 의 `LOOP-DEAD <repo> run <Run> 미등록` 은 루프는 살아 있는데 이 Run 이 등록되지 않았다는 뜻이다. `orch-loop.ts --start --run` 으로 등록한 뒤 다시 건다

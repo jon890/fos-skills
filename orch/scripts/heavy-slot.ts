@@ -37,6 +37,8 @@
 // ps 를 읽지 못하면 등록을 지우고 1 로 끝난다. ps 가 신호로 죽었고 이 프로세스도 INT 나 TERM 을 받았으면 128+신호 번호다.
 //
 // 대기열: slot 폴더의 <pid>.json 이 등록 하나다. 등록과 자리 잡기, 반납은 queue.lock 의 flock 아래에서 한다.
+// 자리를 잡으면 등록에 held_at(잡은 시각, epoch ms)과 command(명령줄을 공백으로 이은 것)를 더한다. 상주 루프가 이것으로
+// 자리를 오래 쥔 검사를 알린다(lib/heavy-hold.ts, 상한은 HEAVY_HOLD_MAX). 이 명령은 그 값을 판정에 쓰지 않는다.
 // 등록이나 자리 잡기에서 잠금을 기다리는 중에 INT 나 TERM 을 받으면 기다림을 멈추고 128+신호 번호로 끝난다.
 // 등록 전이면 지울 등록이 없고, 등록 뒤면 반납할 때 잠금을 다시 기다려 등록을 지운다.
 // 끝난 pid 의 등록은 다음 검사에서 회수하고, 정상 종료와 INT, TERM 때는 명령이 끝난 뒤 자리를 반납한다.
@@ -82,7 +84,7 @@ const LOCK_HELPER = [
 
 export type Kind = 'exclusive' | 'normal' | 'light'
 export type Heavy = Record<'exclusive' | 'normal' | 'light' | 'wait_idle', RegExp[]>
-type Row = { pid: number; ticket: number; exclusive: boolean; held: boolean; slots: number }
+type Row = { pid: number; ticket: number; exclusive: boolean; held: boolean; slots: number; held_at?: number; command?: string }
 
 class Usage extends Error {}
 // 잠금을 기다리는 중에 INT 나 TERM 을 받았다. main 이 128+신호 번호로 바꾼다
@@ -188,16 +190,21 @@ export class Queue {
   readonly slots: number
   readonly pid: number
   readonly entry: string
+  // 자리를 잡을 때 등록에 적는 명령줄(머리 주석의 「대기열」)
+  readonly command: string
   private readonly isAlive: (pid: number) => boolean
   // 등록 파일을 쓰려 했는지. 쓰기 전에 멈췄으면 반납할 때 잠금을 기다리지 않는다
   private written = false
+  private readonly now: () => number
 
-  constructor(root: string, slots: number, opts: { pid?: number; alive?: (pid: number) => boolean } = {}) {
+  constructor(root: string, slots: number, opts: { pid?: number; alive?: (pid: number) => boolean; command?: string; now?: () => number } = {}) {
     mkdirSync(root, { recursive: true, mode: 0o700 })
     this.root = real(root)
     this.slots = slots
     this.pid = opts.pid ?? process.pid
     this.isAlive = opts.alive ?? alive
+    this.command = opts.command ?? ''
+    this.now = opts.now ?? Date.now
     this.entry = join(this.root, `${this.pid}.json`)
   }
 
@@ -268,6 +275,8 @@ export class Queue {
         : !ahead.some((row) => row.exclusive) && ahead.length < this.slots - held.length
       if (ready) {
         own.held = true
+        own.held_at = this.now()
+        own.command = this.command
         writeFileSync(this.entry, JSON.stringify(own))
       }
       return ready
@@ -505,7 +514,7 @@ async function main(argv: string[]): Promise<number> {
   const exclusive = args.exclusive || process.env.HEAVY_EXCLUSIVE === '1' || kind === 'exclusive'
   if (!exclusive && kind === 'light') return execCommand(args.command, 'heavy-slot')
   if (!args.slotDir && !requireMigrated(process.cwd(), 'heavy-slot', '--slot-dir 로 공유할 대기열을 직접 준다')) return 2
-  const queue = new Queue(args.slotDir || ensure('heavy-slot', process.cwd()), args.slots)
+  const queue = new Queue(args.slotDir || ensure('heavy-slot', process.cwd()), args.slots, { command: args.command.join(' ') })
   process.on('SIGINT', onSignal)
   process.on('SIGTERM', onSignal)
   try {

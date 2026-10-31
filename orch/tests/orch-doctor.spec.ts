@@ -314,6 +314,26 @@ describe('저장소 판정', () => {
     assert.match(r.stderr, /설정 파일을 읽지 못했다/)
   })
 
+  test('다시 보지 않은 개선 후보 파일 수를 FEEDBACK-OPEN 으로 내고 종료 코드는 0 이다', () => {
+    const dir = join(tmp, '.orch', 'feedback')
+    write(join(dir, 'wt-a.md'), '후보\n')
+    write(join(dir, 'wt-b.md'), '후보\n')
+    // README 와 다시 본 뒤 옮긴 파일, .md 가 아닌 파일은 세지 않는다
+    write(join(dir, 'README.md'), '안내\n')
+    write(join(dir, 'reviewed', 'wt-old.md'), '판정함\n')
+    write(join(dir, 'notes.txt'), 'x\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+  })
+
+  test('열린 후보가 없거나 폴더가 없으면 FEEDBACK-OPEN 을 내지 않는다', () => {
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
+    write(join(tmp, '.orch', 'feedback', 'reviewed', 'wt-old.md'), '판정함\n')
+    assert.equal(doctor(['--skip-version', '--skip-questions', '--skill-dir', skill]).stdout, 'OK-SCRIPTS 0\n')
+  })
+
   test('--repo 로 준 저장소를 본다', () => {
     const other = join(tmp, 'other')
     write(join(other, '.orch', 'hooks', 'tik.ts'), '')

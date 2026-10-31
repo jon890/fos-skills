@@ -42,6 +42,11 @@
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
 //     UNKNOWN-HOOK 과 깨진 JSON 경고는 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
+// 개선 후보 판정(늘 본다):
+//     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 `.md` 가운데 README.md 가 아닌 파일 수를 센다.
+//     하나 이상이면 FEEDBACK-OPEN 줄을 낸다. 다시 보는 주기와 판정은 references/feedback-review.md 가 소유한다.
+//     폴더가 없거나 읽지 못하면 내지 않는다. 경고라 종료 코드를 바꾸지 않는다.
+//
 // 설치 기록 판정(늘 본다):
 //     `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에 적힌 모든 플러그인의 installPath 가 실제로 있는지 본다.
 //     Orca 가 세션을 새 설정 폴더로 열면 기록의 installPath 가 옛 설정 폴더를 가리킨 채 남을 수 있다. 그 경로에 복사본이 없으면
@@ -100,10 +105,11 @@
 //     LOOP-STALE <repo> <pid> <번들 sha>          설치되지 않은 번들의 스크립트로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
 //     WORKER-STATE <dispatch> <상태> <근거>       --run 의 살아 있는 dispatch 가운데 user_owned 로 표시된 것의 판정(위 「worker 판정」)
 //     SKIP-WORKERS <이유>                         worker 판정을 하지 못했다
+//     FEEDBACK-OPEN <개수> <폴더>                 다시 보지 않은 스킬 개선 후보 파일이 있다(위 「개선 후보 판정」)
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, FEEDBACK-OPEN, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -121,6 +127,7 @@ import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from './lib/loop.ts'
+import { pathOf } from './lib/paths.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
@@ -332,6 +339,19 @@ function checkRepo(repo: string): string[] {
   return lines
 }
 
+function checkFeedback(repo: string): string[] {
+  const dir = pathOf('feedback', repo)
+  let names: string[]
+  try {
+    names = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'README.md')
+      .map((entry) => entry.name)
+  } catch {
+    return []
+  }
+  return names.length > 0 ? [`FEEDBACK-OPEN ${names.length} ${dir}`] : []
+}
+
 function checkQuestions(runId: string | null): Checked & { pending: string[] } {
   let found
   try {
@@ -480,7 +500,7 @@ async function main(argv: string[]): Promise<number> {
   const version = values['skip-version'] ? { lines: [], code: 0 } : checkVersion(skillDir, values.remote, values.branch as string)
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'))
-  const repoLines = checkRepo(repo)
+  const repoLines = [...checkRepo(repo), ...checkFeedback(repo)]
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId)
   let loop = runId ? loopStatus(repo, Date.now()) : null
   if (loop && !loop.alive && loop.recheck) {

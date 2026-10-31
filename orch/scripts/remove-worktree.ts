@@ -9,6 +9,13 @@
 // 그때 --merged-head 를 주면 그 커밋의 조상은 원격에 있는 것으로 센다.
 // 출력 줄: 경로가 디렉터리가 아니면 `없음: <경로>`, 거부하면 `거부: <이유>`, 사용자 보유 터미널이나 소유 상태 조회 실패면
 // `남김: <이유> (<경로>)` 다. 소유 판정은 lib/ownership.ts 의 blocker 다.
+// --delete-branch: 워크트리가 브랜치에 있으면 그 브랜치를 지운다. detached 면(리뷰 worker 가 PR head 에서 리뷰한 경우)
+// 그 워크트리를 만든 브랜치(lib/review.ts 의 originBranch)를 아래를 모두 채울 때만 지운다. 판정은 워크트리를 지운 뒤에 한다.
+//     - 리뷰 브랜치 이름(lib/review.ts 의 reviewPrOfBranch)이다
+//     - 그 리뷰가 끝났다. PR 이 MERGED 나 CLOSED 이고 모든 Run 의 살아 있는 dispatch 가 그 PR 의 리뷰 지시서를 쓰지 않는다(lib/review.ts 의 reviewKeepReason)
+//     - 원격에 없는 커밋(--merged-head 의 조상은 뺀다)이 없다
+// 하나라도 아니면 지우지 않고 `브랜치 남김 <브랜치>: <이유>` 를 낸다. 다른 워크트리가 그 브랜치에 있으면 git 이 거절해 남는다.
+// 워크트리를 지웠으면 브랜치를 남겨도 종료 코드는 0 이다. 환경 변수 GH 로 gh 실행 파일을 바꾼다.
 // 환경 변수 ORCA 로 orca 실행 파일을 바꾼다. PATH 의 lsof, ps, sleep 을 부르고 git 2.31 이상이 필요하다.
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
@@ -20,6 +27,7 @@ import { expandArgs } from './lib/args.ts'
 import { realPath } from './lib/fs.ts'
 import { git as gitIn } from './lib/git.ts'
 import { blocker } from './lib/ownership.ts'
+import { liveReviews, originBranch, reviewKeepReason, reviewPrOfBranch, reviewPrState } from './lib/review.ts'
 import { NO_LIMIT_MS, run } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { cwdHolders } from './lib/process.ts'
@@ -79,6 +87,18 @@ function hookHolders(holders: string[]): string[] | null {
   })
 }
 
+// detached 워크트리를 만든 브랜치를 남길 이유(머리 주석의 --delete-branch). 지워도 되면 null
+function originKept(repo: string, origin: string, mergedHead: string): string | null {
+  const n = reviewPrOfBranch(origin)
+  if (n === null) return '리뷰 브랜치 이름이 아니다'
+  const reason = reviewKeepReason(reviewPrState(repo, n), n, liveReviews())
+  if (reason) return reason
+  const left = git(repo, ['rev-list', `refs/heads/${origin}`, '--not', '--remotes'])
+  if (left.code !== 0) return '원격에 없는 커밋 조회 실패'
+  const unique = left.stdout.split('\n').filter((commit) => commit && !(mergedHead && git(repo, ['merge-base', '--is-ancestor', commit, mergedHead]).code === 0))
+  return unique.length ? `원격에 없는 커밋 ${unique.length} 개` : null
+}
+
 async function main(argv: string[]): Promise<number> {
   const options = {
     'delete-branch': { type: 'boolean', default: false },
@@ -121,6 +141,8 @@ async function main(argv: string[]): Promise<number> {
   }
   const repo = dirname(common.stdout.trim())
   const branch = git(target, ['branch', '--show-current']).stdout.trim()
+  // detached 워크트리를 만든 브랜치. reflog 는 워크트리를 지우면 사라지므로 먼저 읽는다
+  const origin = values['delete-branch'] && !branch ? originBranch(target) : null
 
   // 소유 상태는 프로세스 대기 앞과 git worktree remove 바로 앞에서 두 번 본다.
   // 앞의 확인은 사용자 보유 터미널이면 hook 을 기다리지 않고 바로 남기게 한다.
@@ -199,6 +221,11 @@ async function main(argv: string[]): Promise<number> {
   git(repo, ['worktree', 'prune'])
   out(`removed ${target}`)
   if (values['delete-branch'] && branch && git(repo, ['branch', '-D', branch]).code === 0) out(`deleted branch ${branch}`)
+  if (origin) {
+    const kept = originKept(repo, origin, mergedHead)
+    if (kept) out(`브랜치 남김 ${origin}: ${kept}`)
+    else if (git(repo, ['branch', '-D', origin]).code === 0) out(`deleted branch ${origin}`)
+  }
   return 0
 }
 
