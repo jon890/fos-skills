@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import { parseWorkers, countQuestions, parsePullRequests, prFor, checkSummary, statusLine, decideCount, workerFor, unmappedWorkers, workerLine, progressBar, stepProgress, itemProgress, stepRows, stepSummary, stepMark, stepBody, parseStep, overallProgress, mainRoot, mergeVerdict, sortPullRequests, parseQuestions, queryWorkers, questionText, decisionOf } from '../hooks/register.js'
-import { queryQuestions } from '../hooks/register.js'
+import { queryQuestions, prAuthors, nextAuthor } from '../hooks/register.js'
 
 test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한다', async () => {
   const q = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d', thread_id: 'q', read: 1 }
@@ -212,6 +212,22 @@ test('PR 의 CI 결과를 통과, 실패, 진행으로 나누고 worker 에 붙�
   expect(checkSummary(prs[0])).toBe('CI 2/4 · 실패 1 · 진행 1')
   expect(prFor({ id: 'a', state: '', worktree: 'ci-path-filter' }, prs)?.number).toBe(503)
   expect(prFor({ id: 'b', state: '', worktree: 'path-filter' }, prs)).toBe(null)
+})
+
+test('PR 작성자를 읽고, 작성자 거르기는 전체에서 가나다순으로 돌아 전체로 돌아온다', () => {
+  const prs = parsePullRequests(JSON.stringify([
+    { number: 2, title: 'b', headRefName: 'b', author: { login: 'kim' }, statusCheckRollup: [] },
+    { number: 1, title: 'a', headRefName: 'a', author: { login: 'bifos' }, statusCheckRollup: [] },
+    { number: 3, title: 'c', headRefName: 'c', author: { login: 'kim' }, statusCheckRollup: [] },
+    { number: 4, title: 'd', headRefName: 'd', statusCheckRollup: [] },
+  ]))
+  expect(prs.map((pr) => pr.author)).toEqual(['kim', 'bifos', 'kim', ''])
+  expect(prAuthors(prs)).toEqual(['bifos', 'kim'])
+  expect(nextAuthor(prs, '')).toBe('bifos')
+  expect(nextAuthor(prs, 'bifos')).toBe('kim')
+  expect(nextAuthor(prs, 'kim')).toBe('')
+  expect(nextAuthor(prs, 'gone')).toBe('bifos')
+  expect(nextAuthor(null, '')).toBe('')
 })
 
 test('decide 항목은 끝나지 않은 줄을 세고 줄이 없는 항목은 1 로 센다', () => {
