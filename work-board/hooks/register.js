@@ -15,6 +15,50 @@ import { STEP, hideEventTag } from './event-tags.js'
 // 파일은 FILE_MS, 명령은 LIVE_MS 마다 다시 읽는다. 창을 열 때도 명령을 한 번 읽는다.
 
 const PANE = 'work-board'
+
+// PR 번호를 링크로 그릴 때 쓰는 저장소 주소. 실제 상태를 읽을 때마다 비어 있으면 `gh repo view` 로 읽는다
+let repoUrl = ''
+
+let repoUrlLoading = false
+
+// 저장소 주소를 기다리지 않고 읽는다. 실제 상태 읽기를 늦추지 않으려는 것이다. 읽으면 창을 다시 그린다
+function loadRepoUrl($) {
+  if (repoUrl || repoUrlLoading) return
+  repoUrlLoading = true
+  run($, ['gh', 'repo', 'view', '--json', 'url', '--jq', '.url'])
+    .then((stdout) => {
+      repoUrl = stdout.trim()
+      if (repoUrl) $.ui.invalidate('ui.render')
+    })
+    .catch(() => {})
+    .finally(() => { repoUrlLoading = false })
+}
+
+// 업무 주소 앞에 붙일 머리말. 두레이 주소면 「두레이」, 그 밖은 「업무」 다
+export function taskTag(url) {
+  return /(^|\.)dooray\.com$/.test(hostOf(url)) ? '두레이' : '업무'
+}
+
+function hostOf(url) {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return ''
+  }
+}
+
+// 항목의 pr 칸(숫자 하나나 「492, 495」 문자열)에서 PR 번호를 모두 뽑는다
+export function prNumbers(value) {
+  if (typeof value === 'number') return [value]
+  return String(value || '').match(/\d+/g)?.map(Number) || []
+}
+
+// 제목을 첫 업무 번호(「#342」) 앞, 번호, 뒤로 나눈다. 번호가 없으면 null
+export function splitTaskNumber(title) {
+  const match = /#\d+/.exec(String(title || ''))
+  if (!match) return null
+  return [title.slice(0, match.index), match[0], title.slice(match.index + match[0].length)]
+}
 const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
 const FILE_MS = 5000
 const LIVE_MS = 45000
@@ -283,7 +327,7 @@ export function unmappedWorkers(items, workers) {
 // worker 한 줄: 워크트리, 붙은 PR 과 CI, ready 가 아닌 상태.
 export function workerLine(worker, prs) {
   const pr = prFor(worker, prs)
-  return (worker.worktree || worker.id) + (pr ? '  #' + pr.number + ' ' + checkSummary(pr) : '')
+  return (worker.worktree || worker.id) + (pr ? '  PR #' + pr.number + ' ' + checkSummary(pr) : '')
     + (worker.state && worker.state !== 'ready' ? '  ' + worker.state : '')
 }
 
@@ -555,6 +599,7 @@ async function loadLive($) {
         next.errors.questions = String(failure.message || failure)
       }
     }
+    loadRepoUrl($)
     try {
       next.prs = parsePullRequests(await run($, ['gh', 'pr', 'list', '--state', 'open', '--limit', '30',
         '--json', 'number,title,isDraft,mergeStateStatus,headRefName,statusCheckRollup']))
@@ -631,7 +676,22 @@ export function register(on) {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Link } = $.ui.resolve(e)
+    // 머리말(「두레이」나 「업무」, 「PR」)과 번호를 대괄호로 감싸 제목과 가르고, 밑줄 친 링크와 색으로도 가린다. 주소가 없으면 글자만 그린다
+    const TAG_COLORS = { PR: 'magenta' }
+    const tagged = (key, tag, href, label) => {
+      const look = { underline: Boolean(href), color: TAG_COLORS[tag] || 'cyan' }
+      return href
+        ? Link({ key, href, children: [Text({ ...look, children: ['[' + tag + ' ' + label + ']'] })] })
+        : Text({ key, color: look.color, children: ['[' + tag + ' ' + label + ']'] })
+    }
+    const prLink = (n) => tagged('pr-' + n, 'PR', repoUrl ? repoUrl + '/pull/' + n : '', '#' + n)
+    // 제목 안의 업무 번호(「#342」)에만 머리말과 업무 링크를 건다. 항목에 업무 주소(task)가 없으면 제목 그대로다
+    const titleChildren = (item) => {
+      const title = item.title || item.id
+      const parts = typeof item.task === 'string' && /^https?:\/\//.test(item.task) ? splitTaskNumber(title) : null
+      return parts ? [parts[0], tagged('task', taskTag(item.task), item.task, parts[1]), parts[2]] : [title]
+    }
     const items = board && Array.isArray(board.items) ? board.items : []
 
     const box = (key, color, label, children) => Box({
@@ -701,14 +761,17 @@ export function register(on) {
             children: [
               Text({ key: 'mark', color: section.color, children: [section.mark] }),
               done
-                ? Text({ key: 'title', dimColor: true, strikethrough: true, wrap: 'wrap', children: [item.title || item.id] })
-                : Text({ key: 'title', bold: true, wrap: 'wrap', children: [item.title || item.id] }),
+                ? Text({ key: 'title', dimColor: true, strikethrough: true, wrap: 'wrap', children: titleChildren(item) })
+                : Text({ key: 'title', bold: true, wrap: 'wrap', children: titleChildren(item) }),
             ],
           }),
           ...(done ? [] : [indent('bar', 2, bar
             ? Text({ color: section.color, wrap: 'truncate', children: [bar] })
             : Text({ dimColor: true, children: ['진행률 없음'] }))]),
-          ...(expanded && meta.length ? [indent('meta', 2, dim('meta', meta.join('  ·  ')))] : []),
+          ...(expanded && meta.length ? [indent('meta', 2, Text({ key: 'meta', dimColor: true, wrap: 'wrap', children: [
+            ...(item.owner ? [item.owner] : []),
+            ...prNumbers(item.pr).flatMap((n, i) => [...(item.owner || i > 0 ? ['  ·  '] : []), prLink(n)]),
+          ] }))] : []),
           ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(rows, item.progress)),
           ...(!done && item.worktree ? [indent('w', 2, worker
             ? Text({ color: 'yellow', wrap: 'wrap', children: ['⚙ worker ' + workerLine(worker, live.prs)] })
@@ -782,7 +845,7 @@ export function register(on) {
                   columnGap: 1,
                   children: [
                     Text({ color: verdict.color, bold: verdict.rank === 0, children: [verdict.rank === 0 ? '●' : pr.draft ? '○' : '◐'] }),
-                    Text({ bold: true, dimColor: pr.draft, wrap: 'wrap', children: ['#' + pr.number + ' ' + pr.title] }),
+                    Text({ bold: true, dimColor: pr.draft, wrap: 'wrap', children: [prLink(pr.number), ' ' + pr.title] }),
                   ],
                 }),
                 Box({

@@ -327,6 +327,19 @@ describe('set', () => {
     assert.equal('stages' in item('a'), false)
   })
 
+  test('--task 는 http 나 https 주소만 받고 빈 값은 칸을 지운다', () => {
+    write({ id: 'a', status: 'wait' })
+    const url = 'https://nhnent.dooray.com/project/tasks/4455909338652535899'
+    assert.equal(board('set', 'a', '--task', url).code, 0)
+    assert.equal(item('a').task, url)
+    const r = board('set', 'a', '--task', 'nhnent.dooray.com/project/tasks/1')
+    assert.equal(r.code, 1)
+    assert.ok(r.stderr.includes('--task'), r.stderr)
+    assert.equal(item('a').task, url)
+    assert.equal(board('set', 'a', '--task', '').code, 0)
+    assert.equal('task' in item('a'), false)
+  })
+
   test('id 는 타입까지 같을 때만 맞는다', () => {
     write({ id: 1, status: 'wait', title: '숫자 id' })
     const r = board('steps', '1')

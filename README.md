@@ -92,7 +92,7 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | [`build-with-teams`](build-with-teams/README.md) | 구현과 개발 테스트를 수행해요 |
 | [`verify`](verify/README.md) | 독립 리뷰와 스펙 기준 실행 검증을 해요 |
 | [`docs-consolidate`](docs-consolidate/README.md) | 기능 문서를 맞추고 공통 후보를 추출하거나 별도 공통화를 해요 |
-| [`orch`](orch/README.md) | Orca worker 를 띄워 PR 머지까지 맡기고, 머지 뒤 워크트리와 브랜치를 남기지 않아요 |
+| [`orch`](orch/README.md) | 전체 개발 루프의 전이와 worker 실행·PR·머지·정리를 조율해요 |
 | [`pr-review`](pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록해요 |
 | [`review-fix`](review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영해요 |
 | [`docs-check`](docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |

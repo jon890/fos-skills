@@ -241,7 +241,7 @@ test('항목의 worktree 로 worker 를 붙이고, 안 붙은 worker 만 따로 
   expect(workerFor(items[0], workers)?.id).toBe('a')
   expect(unmappedWorkers(items, workers).map((w) => w.id)).toEqual(['b'])
   const prs = [{ number: 503, branch: 'jon890/ci-path-filter', pass: 9, fail: 0, pending: 0 }]
-  expect(workerLine(workers[0], prs)).toBe('ci-path-filter  #503 CI 9/9')
+  expect(workerLine(workers[0], prs)).toBe('ci-path-filter  PR #503 CI 9/9')
   expect(workerLine(workers[1], prs)).toBe('other  busy')
 })
 

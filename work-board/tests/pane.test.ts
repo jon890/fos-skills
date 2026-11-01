@@ -131,7 +131,7 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   expect(rows[1].body.props.strikethrough).toBeUndefined()
   expect(rows[2].body.props ?? {}).toEqual({})
   expect(rows[3].body.props.dimColor).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /worker  ·  #9/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /worker  ·  \[PR #9\]/ })).toBeTruthy()
   // details 의 끝낸 단계도 같은 모양이다
   const wait = await ui.find({ type: 'Box', key: 'item-c' })
   const first = stepParts((wait.children as Drawn[]).find((child) => child.props.key === 's-0'))
@@ -140,6 +140,34 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   // 다시 누르면 접힌 보기로 돌아간다
   await ui.press({ key: 'toggle-done' })
   expect(await lines(ui, 'a')).toBe(4)
+  await ui.unmount()
+})
+
+test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를 읽었으면 PR 번호에 밑줄 친 링크를 건다', async ($, on) => {
+  const task = 'https://nhnent.dooray.com/project/tasks/4455909338652535899'
+  const board = JSON.stringify({ items: [
+    { id: 't', title: '#342 감지상황 잇기', status: 'wait', pr: 877, task },
+    { id: 'n', title: '#343 주소 없는 업무', status: 'wait' },
+  ] })
+  const repo = (argv) => argv[0] === 'gh' && argv[1] === 'repo'
+    ? { exitCode: 0, stdout: 'https://github.com/o/r\n', stderr: '' }
+    : { exitCode: 1, stdout: '', stderr: '없음' }
+  await start($, on, repo, board)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'toggle-done' })
+  // 저장소 주소는 실제 상태를 읽을 때 채워지므로 PR 링크가 그려질 때까지 기다린다
+  let prLink
+  for (let i = 0; i < 50 && !prLink; i++) prLink = await ui.find({ type: 'Link', text: '[PR #877]' })
+  expect(prLink?.props.href).toBe('https://github.com/o/r/pull/877')
+  const taskLink = await ui.find({ type: 'Link', text: '[두레이 #342]' })
+  expect(taskLink?.props.href).toBe(task)
+  expect(((taskLink as Drawn).children[0] as Drawn).props).toMatchObject({ underline: true, color: 'cyan' })
+  expect(((prLink as Drawn).children[0] as Drawn).props).toMatchObject({ underline: true, color: 'magenta' })
+  expect(await ui.find({ type: 'Link', text: /#343/ })).toBeFalsy()
+  // 업무와 PR 을 머리말로 가린다
+  const title = textOf(await ui.find({ type: 'Box', key: 'item-t' }) as Drawn)
+  expect(title).toContain('[두레이 #342] 감지상황 잇기')
+  expect(title).toContain('[PR #877]')
   await ui.unmount()
 })
 
