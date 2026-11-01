@@ -78,6 +78,7 @@ let boardPath = ''
 let raw = ''
 let now = 0
 let expanded = false // d: 항목의 모든 단계와 완료 칸을 펼친다
+let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈 값은 전체다
 
 // 실제 상태. 읽지 못한 원천은 error 에 이유를 남기고 나머지는 그린다.
 let live = { at: 0, runId: '', workers: null, questions: null, prs: null, errors: {} }
@@ -274,6 +275,17 @@ export function decisionOf(text) {
   return { title, recommend: recommend ? recommend.slice('권장:'.length).trim() : null }
 }
 
+// 열린 PR 의 작성자 목록(가나다순, 중복 없음)
+export function prAuthors(prs) {
+  return [...new Set((prs || []).map((pr) => pr.author).filter(Boolean))].sort()
+}
+
+// 작성자 거르기의 다음 값. 전체(빈 값) → 작성자 가나다순 → 전체 로 돈다. 지금 값이 목록에 없으면 첫 작성자다
+export function nextAuthor(prs, current) {
+  const names = prAuthors(prs)
+  return names[names.indexOf(current) + 1] || ''
+}
+
 // gh pr list --json 의 결과를 PR 한 줄씩으로 바꾼다.
 export function parsePullRequests(stdout) {
   const rows = JSON.parse(stdout)
@@ -293,6 +305,7 @@ export function parsePullRequests(stdout) {
     }
     return {
       number: pr.number,
+      author: (pr.author && pr.author.login) || '',
       title: pr.title || '',
       branch: pr.headRefName || '',
       draft: Boolean(pr.isDraft),
@@ -602,7 +615,7 @@ async function loadLive($) {
     loadRepoUrl($)
     try {
       next.prs = parsePullRequests(await run($, ['gh', 'pr', 'list', '--state', 'open', '--limit', '30',
-        '--json', 'number,title,isDraft,mergeStateStatus,headRefName,statusCheckRollup']))
+        '--json', 'number,title,isDraft,mergeStateStatus,headRefName,statusCheckRollup,author']))
     } catch (failure) {
       next.errors.prs = String(failure.message || failure)
     }
@@ -828,13 +841,17 @@ export function register(on) {
           : loose.map((worker) => Text({ key: 'w-' + worker.id, wrap: 'wrap', children: ['▶ ' + workerLine(worker, live.prs)] })))]
 
     // 열린 PR: Draft/Ready, CI 요약, 머지 상태
+    // 작성자 거르기: 지금 열린 PR 에 없는 작성자로 걸러 있으면 전체로 본다
+    if (authorFilter && !prAuthors(live.prs).includes(authorFilter)) authorFilter = ''
+    const shownPrs = live.prs ? live.prs.filter((pr) => !authorFilter || pr.author === authorFilter) : null
     const prView = live.prs === null && !live.errors.prs ? [] : [box('live-prs', 'cyan',
-      '열린 PR  ' + (live.prs ? live.prs.length + '  ·  머지 가능 ' + live.prs.filter((pr) => mergeVerdict(pr).rank === 0).length : '-'),
+      '열린 PR  ' + (shownPrs ? shownPrs.length + '  ·  머지 가능 ' + shownPrs.filter((pr) => mergeVerdict(pr).rank === 0).length
+        + (authorFilter ? '  ·  작성자 @' + authorFilter : '') : '-'),
       live.errors.prs
         ? [dim('pe', '읽지 못했어요: ' + live.errors.prs)]
-        : live.prs.length === 0
+        : shownPrs.length === 0
           ? [dim('p0', '열린 PR 이 없어요')]
-          : sortPullRequests(live.prs).map((pr) => {
+          : sortPullRequests(shownPrs).map((pr) => {
             const verdict = mergeVerdict(pr)
             return Box({
               key: 'pr-' + pr.number,
@@ -845,7 +862,7 @@ export function register(on) {
                   columnGap: 1,
                   children: [
                     Text({ color: verdict.color, bold: verdict.rank === 0, children: [verdict.rank === 0 ? '●' : pr.draft ? '○' : '◐'] }),
-                    Text({ bold: true, dimColor: pr.draft, wrap: 'wrap', children: [prLink(pr.number), ' ' + pr.title] }),
+                    Text({ bold: true, dimColor: pr.draft, wrap: 'wrap', children: [prLink(pr.number), ' ' + pr.title, ...(pr.author ? [Text({ dimColor: true, children: ['  @' + pr.author] })] : [])] }),
                   ],
                 }),
                 Box({
@@ -926,6 +943,16 @@ export function register(on) {
                 hotkey: 'q',
                 plain: true,
                 onPress: () => { fillPrompt($, DECIDE_PROMPT) },
+              }),
+              Button({
+                key: 'pr-author',
+                label: 'PR 작성자: ' + (authorFilter ? '@' + authorFilter : '전체'),
+                hotkey: 'a',
+                plain: true,
+                onPress: () => {
+                  authorFilter = nextAuthor(live.prs, authorFilter)
+                  $.ui.invalidate('ui.render')
+                },
               }),
               Button({
                 key: 'toggle-done',

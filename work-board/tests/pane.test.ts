@@ -143,6 +143,37 @@ test('d 로 펼치면 모든 줄을 적힌 순서대로, 같은 표시 칸과 �
   await ui.unmount()
 })
 
+test('열린 PR 에 작성자를 붙이고, a 로 한 작성자의 PR 만 거른다', async ($, on) => {
+  const list = JSON.stringify([
+    { number: 7, title: '하나', headRefName: 'x', author: { login: 'bifos' }, statusCheckRollup: [] },
+    { number: 8, title: '둘', headRefName: 'y', author: { login: 'kim' }, statusCheckRollup: [] },
+  ])
+  await start($, on, (argv) => argv[0] === 'gh' && argv[1] === 'pr'
+    ? { exitCode: 0, stdout: list, stderr: '' }
+    : argv[0] === 'gh' && argv[1] === 'repo'
+      ? { exitCode: 0, stdout: 'https://github.com/o/r\n', stderr: '' }
+      : { exitCode: 1, stdout: '', stderr: '없음' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  let pr7
+  for (let i = 0; i < 50 && !pr7; i++) pr7 = await ui.find({ type: 'Box', key: 'pr-7' })
+  expect(textOf(pr7 as Drawn)).toContain('@bifos')
+  let linkedPr
+  for (let i = 0; i < 50 && !linkedPr; i++) linkedPr = await ui.find({ type: 'Link', text: '[PR #7]' })
+  expect(linkedPr?.props.href).toBe('https://github.com/o/r/pull/7')
+  expect(await ui.find({ type: 'Button', text: /PR 작성자: 전체/ })).toBeTruthy()
+  await ui.press({ key: 'pr-author' })
+  expect(await ui.find({ type: 'Box', key: 'pr-7' })).toBeTruthy()
+  expect(await ui.find({ type: 'Box', key: 'pr-8' })).toBeFalsy()
+  expect(await ui.find({ type: 'Text', text: /작성자 @bifos/ })).toBeTruthy()
+  await ui.press({ key: 'pr-author' })
+  expect(await ui.find({ type: 'Box', key: 'pr-7' })).toBeFalsy()
+  expect(await ui.find({ type: 'Box', key: 'pr-8' })).toBeTruthy()
+  await ui.press({ key: 'pr-author' })
+  expect(await ui.find({ type: 'Box', key: 'pr-7' })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', text: /PR 작성자: 전체/ })).toBeTruthy()
+  await ui.unmount()
+})
+
 test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를 읽었으면 PR 번호에 밑줄 친 링크를 건다', async ($, on) => {
   const task = 'https://nhnent.dooray.com/project/tasks/4455909338652535899'
   const board = JSON.stringify({ items: [
@@ -323,7 +354,7 @@ for (const [name, boardAt, liveAt] of [
     expect(shortcuts.props.borderStyle).toBe('round')
     expect(await ui.find({ type: 'Text', text: /^단축키$/ })).toBeTruthy()
     const buttons = (shortcuts.children as Drawn[])[1].children as Drawn[]
-    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'u', 'q', 'd'])
+    expect(buttons.map((button) => button.props.hotkey)).toEqual(['s', 'u', 'q', 'a', 'd'])
     await ui.unmount()
   })
 }

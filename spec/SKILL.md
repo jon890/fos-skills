@@ -22,7 +22,7 @@ metadata:
 4. 기능 폴더에 스펙을 쓰고 사용자 요청과 대조한다. 여러 기능이면 나누되 지금 구현할 기능만 상세화한다.
 5. 아래 형식 검사를 실행하고 스펙 경로와 결정 요약을 orch 에 넘긴다.
 
-`$PLANNING_SKILL_DIR` 은 이 번들의 형제 `planning` 디렉터리다. cwd 는 대상 저장소 루트다.
+`$PLANNING_SKILL_DIR` 은 이 번들의 형제 `planning` 디렉터리다. cwd 는 대상 저장소 루트이고 `$SPEC` 은 그 루트 기준 상대경로다.
 
 ```bash
 python3 "$PLANNING_SKILL_DIR/scripts/check_feature.py" "$SPEC"

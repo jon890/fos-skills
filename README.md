@@ -41,9 +41,9 @@ flowchart TD
 ### 처음 실행하기
 
 ```text
-/orch 작업 취소 기능을 스펙부터 구현·검증까지 진행해 줘
-/spec 작업 취소의 요구사항과 설계를 정리해 줘
-/planning docs/features/run-cancel/spec.md 를 구현 계획으로 만들어 줘
+/fos-skills:orch 작업 취소 기능을 스펙부터 구현·검증까지 진행해 줘
+/fos-skills:spec 작업 취소의 요구사항과 설계를 정리해 줘
+/fos-skills:planning docs/features/run-cancel/spec.md 를 구현 계획으로 만들어 줘
 ```
 
 기존 `index.json` 에 `spec` 이 없는 계획은 이전 절차로 이어 가요. 새 기능부터 기능 스펙 경로를 적용해요.
