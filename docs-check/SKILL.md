@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "3.6.0"
+  version: "3.7.0"
 ---
 # docs-check
 
@@ -62,8 +62,8 @@ python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill docs-check $SCOPE
 어느 문서가 소유해야 할 내용인지 가릴 기준이 없기 때문이다.
 
 그 저장소가 문서의 역할을 선언했으면 그것을 따른다.
-선언이 없으면 `planning` 이 관리하는 문서를 기본값으로 쓴다.
-어느 파일이 무엇을 담는지는 [`../planning/SKILL.md`](../planning/SKILL.md) 의 표가 소유한다.
+선언이 없으면 [기능 문서 소유권](../spec/references/feature-docs.md)을 기본값으로 쓴다.
+기존 전역 문서도 실제 소유 범위를 확인한다. 기능 문서의 내용을 전역 파일에 복제하라고 요구하지 않는다.
 
 여기에 범위의 `README.md` 와 책임 문서, `docs/adr/INDEX.md` 를 더한다.
 

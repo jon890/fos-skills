@@ -2,13 +2,14 @@
 
 이 저장소는 스킬을 두 가지 방식으로 제공한다.
 하나는 저장소를 Claude Code 플러그인 `fos-skills` 로 설치하는 것이고, 다른 하나는 스킬 디렉터리를 `~/.claude/skills/<이름>` 에 심볼릭 링크로 거는 것이다.
-이 문서는 플러그인 배포의 구조와 orch 의 코어와 핸들러 경계를 소유한다. 스킬 각각의 절차는 그 스킬의 `SKILL.md` 가 소유한다.
+이 문서는 플러그인 배포의 구조와 orch 의 코어와 핸들러 경계를 소유한다.
+기능 개발은 [orch 의 기능 루프](../orch/references/feature-loop.md)가 연결하고 문서 소유권은 [기능 문서 계약](../spec/references/feature-docs.md)이 소유한다. 스킬 각각의 절차는 그 스킬의 `SKILL.md` 가 소유한다.
 
 ## 범위
 
 | 구분 | 대상 |
 | --- | --- |
-| 플러그인에 담는다 | `build-with-teams`, `docs-check`, `harness-cleanup`, `planning`, `pr-review`, `review-fix` |
+| 플러그인에 담는다 | `.claude-plugin/plugin.json` 의 `skills` 배열에 등록한 스킬 |
 | 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
 | 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `scripts/`, `hooks/`, `docs/` |
 | 플러그인이 싣는 훅 | `orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 배열이 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
@@ -63,25 +64,8 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 }
 ```
 
-`.claude-plugin/plugin.json` 은 다음과 같다.
-
-```json
-{
-  "name": "fos-skills",
-  "description": "계획, 구현, 리뷰 작성, 리뷰 반영, 문서 감사, 하네스 정리 스킬",
-  "author": { "name": "jon890" },
-  "homepage": "https://github.com/jon890/fos-skills",
-  "repository": "https://github.com/jon890/fos-skills",
-  "skills": [
-    "./build-with-teams",
-    "./docs-check",
-    "./harness-cleanup",
-    "./planning",
-    "./pr-review",
-    "./review-fix"
-  ]
-}
-```
+등록한 스킬의 정확한 목록은 `.claude-plugin/plugin.json` 과 `.codex-plugin/plugin.json` 이 소유한다.
+이 문서에 배열 사본을 두지 않는다. 두 매니페스트의 일치는 `scripts/tests/test_plugin_manifest.py` 가 확인한다.
 
 `skills` 배열은 이름순으로 둔다. 스킬을 더하거나 이름을 바꾸면 이 배열을 함께 고친다.
 [`../scripts/export-only-skills.json`](../scripts/export-only-skills.json) 에 명시한 내보내기 전용 원본만 배열에서 제외한다.

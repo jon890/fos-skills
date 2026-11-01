@@ -1,112 +1,70 @@
 ---
 name: planning
 description: |
-  새 기능이나 변경을 구현하기 전에 사용자와 논의해 구현 범위와 검증 기준을 확정한다.
-  합의한 설계와 근거를 `docs/` 에, 그 문서만 읽고 실행할 수 있는 작업을 `tasks/` 에 남긴다.
-  "/planning", "계획 세워보자", "설계해보자", "plan 세워줘", "기획해줘", "task 파일 만들어줘",
-  "구현 전 검토", "새 기능 설계", "리팩토링 계획", "design", "plan this" 같은 요청이면 이 스킬을 쓴다.
-  만든 task 를 실행하는 일은 `build-with-teams` 가 맡는다.
+  합의한 기능 스펙을 읽고 PR 하나의 구현 작업과 검증 명령을 만든다.
+  "계획 세워줘", "task 파일 만들어줘", "스펙 구현 계획", "리팩토링 계획", "planning" 요청에 쓴다.
+  동작과 설계가 미정이면 spec 에서 먼저 정한다. 구현은 build-with-teams 가 맡는다.
 metadata:
-  version: "2.35.0"
+  version: "3.0.0"
 ---
 # planning
 
-**목표: 사용자와 논의해 구현 범위와 검증 기준을 확정하고, 합의한 설계와 근거를 `docs/` 에, 그 문서만 읽고 실행할 수 있는 작업을 `tasks/` 에 남겨 `build-with-teams` 로 바로 실행할 수 있게 한다.**
+**목표: 확정한 기능 스펙을 지금 구현할 PR 하나의 실행 계획으로 만든다.**
 
-- 의사결정과 서비스의 흐름은 `docs/` 에 남는다. 구현이 끝난 뒤에도 읽는다.
-- `tasks/plan{N}-{slug}/phase-*.md` 는 구현자가 이 대화를 보지 못해도 실행할 수 있어야 한다.
-- 구현된 것이 합의한 것과 같아야 한다.
-- plan 의 크기 기준(PR 하나)과 자르는 방법은 [`references/plan-size.md`](references/plan-size.md) 가 소유한다.
-- `docs/` 와 `tasks/` 는 계획서를 번호로 가리키지 않는다. 근거는 [`references/step-7-docs.md`](references/step-7-docs.md) 의 「계획서를 가리키지 않는다」 가 소유한다.
+## 입력과 설정
 
-이 워크플로가 관리하는 문서는 다섯이다. 파일 이름이 담을 것을 정한다.
+[기능 문서와 단계 인계](../spec/references/feature-docs.md)를 읽는다.
+[레포 설정 탐색](references/monorepo.md)에 따라 검증 명령, 작업 공간, docs/tasks 경로를 읽는다.
+스펙이 없으면 `spec` 으로 요구사항과 필요한 설계를 먼저 정한다. 같은 합의를 두 번 받지 않는다.
+`spec` 필드가 없는 기존 계획의 재개·수정 요청일 때만 [기존 계획의 호환 절차](references/legacy-workflow.md)를 쓴다.
 
+## 절차
 
-| 파일                          | 담는 것                                                                                       | 정하는 단계       |
-| --------------------------- | ------------------------------------------------------------------------------------------ | ------------ |
-| `docs/prd.md`               | 제품 요구사항. 무엇을 만들고 무엇은 만들지 않는가, 무엇을 관측하면 요구가 충족되는가                                           | 7 (영향만 판정)   |
-| `docs/flow.md`              | 흐름도나 시퀀스 다이어그램. mermaid 로 그린다. 정상 경로와 분기, 실패와 빈 상태와 동시 요청에서 갈리는 지점 | 3            |
-| `docs/code-architecture.md` | 모듈 책임과 배치. 어느 경로에 무엇이 앉고 어느 쪽이 어느 쪽을 부르는가                                                  | 4, 6         |
-| `docs/data-schema.md`       | 저장 모델. 필드와 타입, 키와 유니크 제약, 지울 때 함께 지워지는 것                                                   | 6            |
-| `docs/adr/NNN-<슬러그>.md`     | 결정 하나와 그 근거. 맥락, 버린 대안, 얻는 것과 감당할 것                                                        | 결정할 때마다 새 파일 |
+1. 스펙과 관련 코드를 읽고 식별자·호출 경계·스키마를 실제 정의와 대조한다. 구현에 필요한 미결정이 있으면 spec 으로 돌려보낸다.
+2. [plan 크기](references/plan-size.md)에 맞춰 이번 PR 의 요구사항을 고른다. 가능한 한 API·데이터·테스트를 함께 완성하는 동작 단위로 자른다.
+   뒤 PR 은 목표와 선행 조건만 `deferred` 에 남기고 상세 phase 를 미리 쓰지 않는다.
+3. [task 작성 규칙](references/task-create.md)으로 index 와 phase 를 만든다. 기능 설계는 스펙이 소유하며 전역 문서 다섯 개를 매번 갱신하지 않는다.
+4. 아래 검사를 실행한 뒤 [critic 계약](../build-with-teams/references/role-critic.md)으로 계획을 검토한다.
+   [팀원 위임 계약](../build-with-teams/references/team-spawn.md)을 따른 독립 검토자에게 스펙과 plan 을 함께 준다.
+   테스트가 인수 조건을 증명하는지 확인하고, 계획 결함만 수정한다. 새 제품 결정은 spec 으로 반환한다.
+5. 스펙 경로, plan 경로, 요구사항 ID 와 검증 결과를 orch 에 넘긴다.
 
-
-## 레포 설정을 먼저 읽는다
-
-검증 명령, 레이어 구조, 도메인 변형, 추가 문서처럼 레포 고유의 값은 레포 설정에서 읽는다.
-`overlay_paths.py` 가 낸 `search` 순서대로 읽고, 어디에도 없으면 사용자에게 확인한다.
-`$SKILL_DIR` 은 이 스킬 번들 경로다.
+`$SKILL_DIR` 은 planning 번들이다. `$PLAN` 은 tasks 아래 디렉터리 이름이며 `$TASKS_DIR` 기본값은 `tasks` 다. 아래 명령은 대상 저장소 루트에서 실행한다.
 
 ```bash
-# cwd: 타깃 레포 root
-python3 "$SKILL_DIR/scripts/overlay_paths.py" --skill planning
+python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "$TASKS_DIR"
 ```
 
-종료 코드와 모노레포 판정, 오버레이가 지정하는 docs 경로, tasks 경로, plan 접두사는
-[`references/monorepo.md`](references/monorepo.md) 가 소유한다.
-이 문서의 `docs/` 와 `tasks/` 는 그 값으로 바꿔 읽는다.
+## 기능 계획의 연결 필드
 
-## 8단계 실행 절차
+기존 index 스키마에 다음 필드를 더한다. 경로는 대상 저장소 루트 기준이다.
 
-각 단계는 진입 시 해당 reference 를 읽고 수행한다. 단계를 표기하고, 통과 조건을 확인한 뒤 다음으로 간다.
-
-**UI, API, 저장 모델이 없는 변경은 그 단계(4, 5, 6)를 근거 한 줄로 통과한다.** 근거를 단계 표기에 적고 다음으로 간다. 여러 단계를 묶어 통과해도 각 단계의 근거는 따로 남긴다.
-
-
-| 단계  | 이름                 | 통과 조건                                                         | reference                                                 |
-| --- | ------------------ | ------------------------------------------------------------- | --------------------------------------------------------- |
-| 1   | 구현 가능성             | 가능 판단과 근거, 재사용 지점의 파일 경로, 리스크가 적혔고, 이번 PR 의 범위가 한 문장으로 정해졌다(`plan-size.md`) | `references/step-1-feasibility.md`                        |
-| 2   | 기술 스택              | 새 의존이 없거나, 새 의존마다 대안 둘 이상을 비교해 사용자가 확정했다                      | `references/step-2-tech-stack.md`                         |
-| 3   | 호출·사용자 흐름          | 정상 흐름과 실패, 빈 상태, 동시 요청 갈래 각각에 답이 있다                           | `references/step-3-flow.md`                               |
-| 4   | 인터페이스 설계           | 경로, 라벨, 필드명 가운데 「나중에 정한다」 로 남은 것이 없다                          | `references/step-4-interface.md`                          |
-| 5   | API·함수 설계          | 응답 스키마의 필드, 옵셔널, 에러 코드가 채워졌다                                  | `references/step-5-api.md`                                |
-| 6   | 데이터·코드 구조          | 스키마의 키와 제약, 삭제 범위, 새 코드의 디렉터리가 정해졌다                           | `references/step-6-data-code.md`                          |
-| 7   | docs 영향과 기술 결정 기록 | 영향 판정이 모든 문서에 있고, 영향이 있는 문서만 diff 가 있다. 영향이 없는 문서는 근거가 단계 결과에 있다           | `references/step-7-docs.md`                               |
-| 8   | task 파일 생성과 커밋     | 범위가 `plan-size.md` 의 기준에 들어가고, `verify_task.py` 종료 코드가 0 이고, phase 가 인용한 식별자와 스키마와 경로가 docs 와 코드에 같다 | `references/step-8-tasks.md`, `references/task-create.md`, `references/plan-size.md` |
-
-
-### 단계는 하나씩 순차로 진행한다
-
-1. **단계에 진입하면 해당 reference 문서를 읽고 그 문서의 「정할 것」 을 정한다.**
-2. **통과 조건**: 표의 조건과 아래 둘이 모두 참이어야 다음 단계로 간다.
-   - **남은 질문이 없다.** 그 단계의 「물어서 확정할 것」 을 하나씩 짚었고, 답이 열어 놓은 후속 질문도 닫혔다.
-   - **사용자만 답할 결정이 남지 않았다.** 취향, 범위, 되돌리기 어려운 것, 트레이드오프 판단이 여기 해당한다.
-     선택지와 트레이드오프를 붙여 묻고 확정받는다.
-     구조화 질문 도구가 있으면 그것을 쓰고, 없으면 번호를 붙여 묻는다.
-
-### 인용할 정의를 코드에서 읽는다
-
-phase 에 기존 코드의 식별자, 스키마, 경로를 적기 전에 그 정의를 코드에서 읽는다.
-`docs/` 와 맞는 것만으로는 모자라고 코드와도 맞아야 한다.
-계획을 쓴 쪽이 이 확인을 한다. 구현자가 어긋남을 찾으면 계획을 다시 고쳐야 한다.
-
-## task 생성과 마감
-
-### task 작성에 쓸 입력
-
-task 를 쓰기 전에 사용자의 원래 요청과 1단계에서 확정한 성공 기준,
-관련 반복 함정 목록이 있으면 그것을 읽는다.
-성공 기준은 phase를 실행한 뒤 관측할 결과로 연결하고 관련 함정은 작업 항목에 반영한다.
-phase를 처음 읽는 사람이 새로 결정해야 실행할 수 있는 사항은 작성 전에 확정한다.
-
-### task 를 만든 직후 검사한다
-
-task 파일을 만든 직후, 구현 전 상태에서 스크립트를 돌린다. 종료 코드 0 이어야 한다.
-경고는 작성자가 확인하고 대조하지 못한 경로와 검증 범위를 보고에 남긴다.
-
-`$PLAN` 은 `plan9-db-backup` 같은 디렉터리 이름이다.
-`$TASKS_DIR` 은 레포 설정의 tasks 경로이고 지정이 없으면 `tasks` 다.
-
-```bash
-# cwd: 타깃 레포 root
-python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
+```json
+{
+  "spec": "docs/features/run-cancel/spec.md",
+  "requirements": ["R1", "R2"],
+  "phases": [
+    {"number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["R1", "R2"]}
+  ]
+}
 ```
 
-구현이 끝난 뒤, 그리고 구현 PR 에서 계획서를 검증할 때는 같은 명령에 `--audit` 를 붙인다.
-붙이지 않으면 phase 「변경 파일」에 신규로 적은 파일이 이미 있어 위반으로 센다.
+이 예시는 추가 필드만 보여준다. name, status, total_phases, current_phase, pr_scope, deferred 는 기존 규칙대로 채운다.
+스펙의 모든 요구사항을 한 PR 에 넣을 필요는 없다. 각 phase 는 맡은 ID 를 컨텍스트에 적고 같은 phase 안에서 테스트한다.
+기능별 ID 는 `<스펙 경로>#R1` 로 구분한다. 전역 요구사항 번호를 만들지 않는다.
 
-```bash
-python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}" --audit
-```
+## 완료 기준
 
-형식 위반은 고치고 다시 돌린다. 합의한 범위나 결정을 바꿔야 하는 위반만 선택지를 붙여 묻는다.
+이번 PR 의 요구사항과 phase 가 연결되고, 실행할 테스트와 기대값이 있으며, 형식 검사와 critic 검토를 통과했다.
+계획서만 통과한 것은 구현 완료가 아니다. 이후 build-with-teams 가 구현하고 verify 가 인수 검증한다.
+
+## 문서 소유권
+
+| 문서 | 소유하는 것 |
+| --- | --- |
+| 기능 spec/design | 요구사항, 인수 조건, API·데이터·테스트 설계 |
+| 기존 공유 계약·ADR | 기능들이 함께 지킬 규칙과 장기 결정 |
+| tasks/plan | 이번 PR 의 작업 순서·변경 파일·검증 명령 |
+
+기존 계획의 prd/flow/code-architecture/data-schema/adr 문서 배치는 호환 절차가 소유한다.
+새 기능에는 [기능 문서 규칙](../spec/references/feature-docs.md)을 적용한다.

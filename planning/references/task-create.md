@@ -6,6 +6,9 @@
 그 디렉터리도 없으면 사전 확인 항목을 건너뛴다.
 이 스킬은 그 목록에 새로 쓰지 않는다. 목록의 항목은 저장소 규칙으로 옮길 후보이고, 옮기는 일은 `build-with-teams` 의 마감 단계가 맡는다. 넣을 곳은 [`rule-placement.md`](rule-placement.md) 가 정한다.
 
+기능 계획은 `spec`, `requirements` 와 phase 별 `requirements` 를 더한다. 값과 검사는 [planning](../SKILL.md)의 「기능 계획의 연결 필드」를 따른다.
+기능의 설계와 인수 조건은 스펙이 소유한다. 아래 기존 ADR·전역 문서 규칙은 해당 문서를 실제로 바꿀 때만 적용한다.
+
 ## index.json 스키마
 
 ```jsonc

@@ -10,8 +10,9 @@
 
 **모든 phase 가 끝난 누적 diff 를 `docs/` 와 대조한다.**
 
-`docs/` 는 planning 이 관리하는 문서(`prd`, `flow`, `code-architecture`, `data-schema`, `adr`)와
-오버레이가 추가한 문서를 모두 포함한다.
+기능 계획은 spec/design 과 이들이 참조하는 공유 계약·ADR 을 범위로 삼는다.
+새 필드·흐름은 책임 문서 한곳에 있으면 된다. 전역 문서에도 복제하라고 요구하지 않는다.
+`spec` 필드 없는 기존 계획은 기존 prd/flow/code-architecture/data-schema/adr 과 오버레이 문서를 본다.
 
 ## 검사 축
 
@@ -22,7 +23,7 @@
 코드에서 제거되거나 이름이 바뀐 함수, 경로, 필드, 화면이 `docs/` 에 남아 있는지 `grep -rn` 으로 찾는다.
 - **docs 에 없는 새 결정.** → `UPDATE_NEEDED`
 이번 변경이 만든 새 저장 필드, 새 흐름 분기, 새 외부 인터페이스가
-`data-schema`, `flow`, `code-architecture` 에 반영됐는지 본다.
+기능 spec/design 또는 그 계약을 소유한 문서에 반영됐는지 본다. 기존 계획은 기존 문서 배치를 따른다.
 - **계획서를 가리키는 참조.** → `UPDATE_NEEDED`
 이번 변경이 `docs/` 나 코드에 계획서 번호를 새로 남겼는지 본다.
 계획서는 구현한 PR 에서 지우므로, 그 자리는 머지와 함께 깨진 참조가 된다.
