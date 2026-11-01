@@ -1272,6 +1272,15 @@ def main(argv: list) -> int:
             index = json.loads((plan_dir / "index.json").read_text(encoding="utf-8"))
             if isinstance(index, dict):
                 check_pr_scope(plan_dir / "index.json", index, out, warnings)
+                # 기존 계획은 그대로 두고, 기능 계획만 스펙/요구사항 연결을 검사한다.
+                if "spec" in index:
+                    checked = subprocess.run(
+                        [sys.executable, str(Path(__file__).with_name("check_feature.py")),
+                         str(index["spec"]), "--plan", str(plan_dir / "index.json")],
+                        cwd=repo, capture_output=True, text=True,
+                    )
+                    if checked.returncode:
+                        out.append(f"{plan_dir} — 기능 계약 검사 실패: " + (checked.stdout + checked.stderr).strip())
             check_plan_number(repo, args.tasks_dir, args.plan, out, warnings)
             remote = plan_dir / "remote-verification.md"
             if remote.is_file():

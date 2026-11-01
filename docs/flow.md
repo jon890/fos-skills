@@ -13,7 +13,7 @@ claude plugin install fos-skills@fos-skills
 claude plugin details fos-skills@fos-skills
 ```
 
-이 설치로 스킬 여섯 개를 받는다.
+이 설치로 매니페스트의 skills 배열에 등록한 스킬을 받는다.
 `content-preview` 와 `korean-check` 의 원본은 여기 있고, 스킬로는 사본을 싣는 팀 저장소의 플러그인으로 받는다.
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
 파일은 이 플러그인의 설치 캐시에도 남으므로 경로로 직접 읽고 실행할 수 있다.
@@ -25,7 +25,7 @@ flowchart TD
     B -- 이미 등록됨 --> C
     B -- 예 --> C[plugin install fos-skills@fos-skills]
     C --> D[plugin details fos-skills@fos-skills]
-    D --> E{Skills 가 6 인가}
+    D --> E{등록한 Skills 가 모두 보이는가}
     E -- 예 --> F[세션을 새로 열어 쓴다]
     E -- 아니오 --> G[plugin.json 의 skills 배열에서 빠진 스킬을 찾는다]
     G --> H[저장소에서 배열을 고쳐 main 에 push 한 뒤 갱신한다]
@@ -35,7 +35,7 @@ flowchart TD
 | --- | --- |
 | 마켓플레이스가 이미 등록돼 있다 | 등록을 건너뛰고 설치로 간다 |
 | 플러그인이 이미 설치돼 있다 | 설치 대신 「갱신」 의 명령을 쓴다 |
-| 스킬 수가 여섯과 다르다 | `skills` 배열과 내보내기 전용 원본 목록을 확인한다. 매니페스트 테스트가 미등록 스킬을 저장소에서 잡는다 |
+| 등록한 스킬이 보이지 않는다 | `skills` 배열과 내보내기 전용 원본 목록을 확인한다. 매니페스트 테스트가 미등록 스킬을 저장소에서 잡는다 |
 
 ## 갱신
 
@@ -102,7 +102,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[매니페스트가 main 에 있다] --> B[marketplace add 와 plugin install]
-    B --> C{details 의 Skills 가 6 인가}
+    B --> C{details 의 등록한 Skills 가 모두 보이는가}
     C -- 아니오 --> C1[링크를 지우지 않고 멈춘다]
     C -- 예 --> D[저장소 밖의 참조를 찾는다]
     D --> E[전역 지침의 경로를 체크아웃 경로로 고친다]
