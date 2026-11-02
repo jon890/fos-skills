@@ -108,7 +108,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 - `TIMEOUT LAST_DELIVERY <id>` 는 실패가 아니다. 그 id 로 다시 건다
 - orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
 - 종료 코드 4(`waiter_exists`)는 다시 걸어도 같은 오류만 받는다. stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다
-- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다.
+- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다. 같은 Task 를 다시 띄워 살아 있는 dispatch 가 생겼으면 앞 dispatch 는 처리한 것으로 보고 기록을 고치지 않아도 된다.
   Orca 가 끊김이나 실패로 적어도 그 터미널 화면이 에이전트 작업 중이면 끊긴 것으로 보지 않고 stderr 에 `끊긴 것으로 보지 않는다` 한 줄만 남긴다. 화면이 멈추면 다음 확인이 알린다
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다

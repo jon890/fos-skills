@@ -360,6 +360,41 @@ describe('끊긴 worker', () => {
     assert.doesNotMatch(r.stdout, /WORKER_LOST/)
   })
 
+  test('같은 task 에 살아 있는 다른 dispatch 가 있으면 시작할 때 알리지 않는다', () => {
+    const retry = worker('ctx_retry', 'ready', 'dispatched', 'input_accepted')
+    const r = wait([batch('d1', 'worker_done')], ['--lost-interval-sec', '0.3'], {
+      workers: [[worker('ctx_bad', 'abandoned', 'failed', 'terminal_missing'), retry]],
+      tasks: [{ id: 't1', status: 'dispatched', result: null }],
+      // dispatch-show 가 아직 앞 dispatch 를 최신으로 내도 worker-list 의 살아 있는 dispatch 로 판정한다
+      latest: { t1: 'ctx_bad' },
+    })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /WORKER_LOST/)
+  })
+
+  test('알린 뒤 같은 task 를 다시 띄웠으면 다음 대기는 경고하지 않고 handled 로 적는다', () => {
+    assert.equal(lostAtStart().code, 5)
+    const retry = worker('ctx_retry', 'ready', 'dispatched', 'input_accepted')
+    const r = wait([batch('d1', 'worker_done')], ['--lost-interval-sec', '0.3'], {
+      workers: [[worker('ctx_bad', 'abandoned', 'failed', 'terminal_missing'), retry]],
+      tasks: [{ id: 't1', status: 'dispatched', result: null }],
+      latest: { t1: 'ctx_retry' },
+    })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stderr, /아직 처리되지 않았다/)
+    assert.match(String(lostEntries().ctx_bad), /^handled /)
+  })
+
+  test('대기 중에 abandon 하고 같은 task 를 다시 띄우면 앞 dispatch 를 알리지 않는다', () => {
+    const retry = worker('ctx_retry', 'ready', 'dispatched', 'input_accepted')
+    const r = wait([sleeping(batch('d1', 'worker_done'), 1)], ['--lost-interval-sec', '0.3'], {
+      workers: [LIVE, LIVE, [...GONE, retry]],
+      latest: { t1: 'ctx_retry' },
+    })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /WORKER_LOST/)
+  })
+
   test('--ignore-lost 로 준 dispatch 는 뺀다', () => {
     const r = lostAtStart(['--ignore-lost', 'ctx_other', '--ignore-lost', 'ctx_bad'])
     assert.equal(r.code, 0, r.stdout + r.stderr)
@@ -500,7 +535,7 @@ describe('끊긴 worker', () => {
   test('nextCursor 를 둘째 호출의 --cursor 로 넘기고 둘째 페이지의 끊긴 worker 도 알린다', () => {
     const bad = worker('ctx_bad', 'abandoned', 'failed', 'terminal_missing')
     const r = wait([batch('d1', 'worker_done')], ['--lost-interval-sec', '0.3'], {
-      workers: [{ workers: LIVE, nextCursor: 'c2' }, [bad]],
+      workers: [{ workers: [worker('ctx_a', 'ready', 'dispatched', 'input_accepted', 't2')], nextCursor: 'c2' }, [bad]],
       tasks: [{ id: 't1', status: 'dispatched', result: null }],
       latest: { t1: 'ctx_bad' },
     })
