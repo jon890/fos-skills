@@ -15,7 +15,10 @@ const SCRIPT = fileURLToPath(new URL('../scripts/worker-ask.ts', import.meta.url
 const FAKE_ORCA = `#!/usr/bin/env bash
 for a in "$@"; do printf '[%s]' "$a" >> "$FAKE_LOG"; done; echo >> "$FAKE_LOG"
 case "$2" in
-  ask) sleep "\${FAKE_ASK_SLEEP:-0}"; cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
+  ask)
+    n=$(($(cat "$FAKE_DIR/ask-n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/ask-n"
+    if [ -f "$FAKE_DIR/ask$n.out" ]; then cat "$FAKE_DIR/ask$n.out"; echo; exit 0; fi
+    sleep "\${FAKE_ASK_SLEEP:-0}"; cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
   check)
     n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
     f="$FAKE_DIR/check$n.json"; [ -f "$f" ] || f="$FAKE_DIR/check.json"; cat "$f"; echo ;;
@@ -384,4 +387,51 @@ describe('사용법', () => {
     assert.equal(ask('--question', 'q').code, 2)
     assert.equal(ask('--from', 'term_w', '--question', 'q', '--bogus').code, 2)
   })
+})
+
+
+test('Orca 상한을 넘긴 timeout 은 줄여서 전달하고 이유를 알린다', () => {
+  fake('{"result":{"answer":"ok"}}', 0)
+  const r = ask('--from', 'w', '--question', 'q', '--timeout-ms', '3600000')
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.calls.find((c) => c.includes('[ask]'))!, /\[--timeout-ms\]\[1800000\]/)
+  assert.match(r.stderr, /Orca 상한/)
+})
+
+test('max-wait 는 같은 메시지 ID 로 재개하고 질문을 다시 보내지 않는다', () => {
+  fake('{"result":{"timedOut":true,"messageId":"msg_first"}}', 0)
+  writeFileSync(join(tmp, 'ask2.out'), '{"result":{"timedOut":true}}')
+  writeFileSync(join(tmp, 'ask3.out'), '{"result":{"answer":"승인"}}')
+  const r = ask('--from', 'w', '--question', 'q', '--max-wait', '10000')
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(firstLine(r.stdout), 'answer: 승인')
+  const asked = r.calls.filter((c) => c.includes('[ask]'))
+  assert.equal(asked.length, 3)
+  assert.match(asked[0], /\[--question\]\[q\]/)
+  for (const call of asked.slice(1)) {
+    assert.match(call, /\[--resume\]\[msg_first\]/)
+    assert.doesNotMatch(call, /\[--question\]/)
+  }
+})
+
+test('max-wait 가 끝나거나 메시지 ID 가 없으면 4 로 멈춘다', () => {
+  fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
+  env.FAKE_ASK_SLEEP = '0.03'
+  let r = ask('--from', 'w', '--question', 'q', '--max-wait', '10')
+  assert.equal(r.code, 4, r.stderr)
+  assert.equal(r.calls.filter((c) => c.includes('[ask]')).length, 1)
+  fake('{"result":{"timedOut":true}}', 0)
+  r = ask('--from', 'w', '--question', 'q', '--max-wait', '1000')
+  assert.equal(r.code, 4, r.stderr)
+})
+
+test('잘못된 대기 시간은 Orca 를 부르기 전에 거절한다', () => {
+  fake('{}', 0)
+  for (const option of ['--timeout-ms', '--max-wait']) {
+    for (const value of ['0', '-1', 'NaN', 'Infinity', '1.5']) {
+      const r = ask('--from', 'w', '--question', 'q', option, value)
+      assert.equal(r.code, 2, r.stderr)
+      assert.deepEqual(r.calls, [])
+    }
+  }
 })

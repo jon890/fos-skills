@@ -4,6 +4,7 @@
 import importlib.util
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 scripts = Path(__file__).resolve().parents[1] / "scripts"
@@ -36,6 +37,22 @@ class ParseArgs(unittest.TestCase):
 
     def test_wrong_positional_count_is_error(self):
         self.assertIsNone(self.parse("o", "r"))
+
+
+class KnownTarget(unittest.TestCase):
+    def test_explicit_target_controls_every_collection_command(self):
+        for target in [["https://github.com/o/r/pull/5"], ["github.com/o/r", "5"]]:
+            with self.subTest(target=target), \
+                    patch.object(cr.gh_host, "resolve", return_value="github.com") as resolve, \
+                    patch.object(cr, "run", return_value=0) as run:
+                self.assertEqual(cr.main(["collect_review.py", *target]), 0)
+                resolve.assert_called_once_with("o", "r", host="github.com")
+                self.assertGreater(len(run.call_args_list), 0)
+                for call in run.call_args_list:
+                    self.assertEqual(call.args[2], {"GH_HOST": "github.com"})
+
+    def test_invalid_pr_url_is_rejected(self):
+        self.assertIsNone(cr.parse_args(["collect_review.py", "https://github.com/o/r/issues/5"]))
 
 
 if __name__ == "__main__":

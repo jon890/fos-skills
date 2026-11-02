@@ -1498,6 +1498,25 @@ describe('spec-lint 관문', () => {
     assert.ok(!call.includes('spec-common.md') && !call.includes('spec-far.md') && !call.includes('spec-done.md'), call)
   })
 
+  test('다른 활성 지시서끼리만 겹치면 경고를 보이고 새 worker 를 띄운다', () => {
+    env.SPEC_LINT = join(dirname(SCRIPT), 'spec-lint.ts')
+    const proj = join(tmp, 'proj')
+    spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
+    const first = join(tmp, 'spec-first.md')
+    const second = join(tmp, 'spec-second.md')
+    for (const file of [first, second]) writeFileSync(file, '# 앞\n담당: `shared.txt`\n')
+    writeFileSync(spec, '# 리뷰\n허락: push 는 허락했다.\n')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, tasks: [
+      { id: 't1', status: 'running', spec: first },
+      { id: 't2', status: 'running', spec: second },
+    ] })
+    const r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /겹침 경고/)
+    assert.match(r.stdout, /LAUNCHED ctx_1/)
+    assert.doesNotMatch(r.stdout, /lint-ack/)
+  })
+
   test('살아 있는 dispatch 의 지시서와 담당이 겹치면 진짜 spec-lint 가 막는다', () => {
     env.SPEC_LINT = join(dirname(SCRIPT), 'spec-lint.ts')
     const proj = join(tmp, 'proj')

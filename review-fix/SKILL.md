@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.14.0"
+  version: "2.15.0"
 ---
 
 # review-fix
@@ -72,15 +72,18 @@ gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_path
 ```bash
 OWNER=""   # 첫 명령 출력의 owner 쪽
 REPO=""    # 첫 명령 출력의 repo 쪽
+PR_URL=""  # 받은 PR URL. 번호만 받았으면 대상 워크트리에서 gh pr view 로 구한다
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
-python3 scripts/collect_review.py "$OWNER" "$REPO" "$PR"
+gh pr view "$PR" --json url --jq .url
+python3 scripts/collect_review.py "$PR_URL"
 ```
 
-**두 명령은 서 있어야 할 디렉터리가 다르다.**
-첫 명령은 현재 디렉터리의 저장소를 읽으므로 대상 저장소의 워크트리에서 돌린다.
-둘째 명령의 `scripts/` 는 이 스킬 디렉터리를 전제하므로 그 경로를 절대경로로 주거나
-스킬 디렉터리에서 돌린다. 호스트는 넘긴 `OWNER` 와 `REPO` 로 정해지므로 어느 쪽이든 맞다.
-저장소 이름을 이미 알고 있으면 첫 명령을 건너뛴다.
+**명령마다 서 있어야 할 디렉터리가 다르다.**
+`gh` 명령은 현재 디렉터리의 저장소를 읽으므로 대상 저장소의 워크트리에서 돌린다.
+Python 명령의 `scripts/` 는 이 스킬 디렉터리를 전제하므로 그 경로를 절대경로로 주거나
+스킬 디렉터리에서 돌린다. 출력에서 읽은 PR URL 을 `PR_URL` 에 넣는다. 받은 URL 이 있으면 URL 조회를 건너뛴다.
+URL 의 호스트만 조회하므로 다른 로그인 호스트의 응답을 기다리지 않는다.
+기존 `OWNER REPO PR` 형식도 받는다. 이 형식은 origin 이 대상 저장소와 같으면 그 호스트를 먼저 쓴다.
 
 이 스킬의 스크립트는 호스트를 스스로 구한다.
 스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 아래처럼 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
@@ -94,7 +97,7 @@ gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" "repos/$OWNER
 
 ```bash
 PREV=""    # 이전 PR 번호
-python3 scripts/collect_review.py "$OWNER" "$REPO" "$PR" --carried-from "$PREV"
+python3 scripts/collect_review.py "$PR_URL" --carried-from "$PREV"
 ```
 
 **미해결 스레드의 `head` 는 120자에서 잘린다.** 지적의 근거나 권장안이 잘렸으면 스레드 ID 로 전체를 읽는다.
