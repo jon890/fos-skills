@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "5.18.0"
+  version: "5.19.0"
 ---
 
 # orch
@@ -116,7 +116,7 @@ Task 성격으로 모델과 effort 를 고르고, 비교한 후보와 이유를 
 
 ## 4. 기다리기
 
-저장소마다 상주 루프 `orch-loop.ts` 를 띄운다. 루프가 틱마다 질문 확인, 정리, 보드 동기화, CI 감시, 충돌 PR 처리를 한다.
+저장소마다 상주 루프 `orch-loop.ts` 를 띄운다. 루프가 틱마다 질문 확인, 정리, 보드 동기화, CI 감시, 멈춘 worker 와 worker 없이 남은 보드 단계 찾기, 충돌 PR 처리를 한다.
 `wait-important` 를 `--loop-repo` 와 함께 백그라운드로 하나만 걸고, 깨어나면 `triage-messages` 로 `worker_done`, `escalation`, `question` 을 먼저 본다. 루프의 알림(`LOOP-EVENT`)과 죽음(`LOOP-DEAD`)에도 이 대기가 깨어난다.
 받은 메시지와 알림을 처리하면 stderr 의 `NEXT_WAIT` 명령으로 즉시 다음 대기를 건다. 미완료 dispatch 가 있는 동안 대기 없이 턴을 끝내지 않는다.
 루프가 새 사용자 결정 질문이나 보드의 남은 `decide` 줄을 찾으면 `decision-pending` 기본 핸들러가 코디네이터에게 「정할 것 묻기」 를 요청한다. 이미 물어 답을 기다리는 결정은 다시 묻지 않는다.
