@@ -3,11 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 5.16.0 (2026-11-02)
+## 5.17.0 (2026-11-02)
 
 - `remove-worktree` 가 워크트리를 지운 직후 compose `working_dir` 가 그 워크트리 아래인 컨테이너와 그 프로젝트 네트워크를 지운다
 - `cleanup-sweep` 이 `config.json` 의 `docker` 절에 선언한 임시 컨테이너(이름의 PID 가 없는 것)와 이미지 태그(최근 `keep` 개와 쓰는 것을 뺀 것)를 지운다
 - 이름 있는 볼륨, build cache, 귀속 없는 dangling 자원은 지우지 않는다. Docker 를 쓸 수 없으면 경고 한 줄로 넘어간다
+
+## 5.16.0 (2026-11-02)
+
+- 공부 후보를 `study/candidates.md` 표 한 줄 대신 후보마다 `study/<slug>.md` 파일 하나로 둔다. 머리에 주제, 질문, 생긴 곳, 참고, 상태, 적은 날을 두고 본문에 메모를 쌓는다
+- 사용자가 뜻을 물은 개념을 나올 때마다 `후보` 로 적고, 하루 끝에 그날 적은 후보를 보여 사용자가 뺄 것만 `뺌` 으로 바꾼다
+- `study-candidates` 의 `add`, `set` 이 `--row` 대신 `--slug` 를 받고, `list` 가 `--today`, `--date` 로 그날 적은 후보를 낸다. 출력의 첫 칸이 번호에서 slug 로 바뀌고 적은 날 칸이 더해졌다
+- 옛 표 파일을 옮기는 `study-candidates migrate` 를 더했다. 옮긴 뒤 옛 파일은 휴지통으로 간다
+- `orch-doctor` 의 `STUDY-OPEN` 이 파일 대신 폴더를 내고, 옛 표 파일과 머리 없는 파일은 세지 않고 stderr 에 알린다
 
 ## 5.15.0 (2026-11-02)
 

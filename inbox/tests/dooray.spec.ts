@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, MORE_LOG_COUNT, mentions, plainText } from '../scripts/adapters/dooray.ts'
+import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, messageText, MORE_LOG_COUNT, mentions, plainText } from '../scripts/adapters/dooray.ts'
 import type { Adapter, Cache, RunResult } from '../scripts/lib/model.ts'
 
 const ME = '3421415092208840539'
@@ -58,7 +58,9 @@ const DEV_LOGS = [
 const LOGS: Record<string, unknown[]> = {
   'ch-dev': DEV_LOGS,
   'ch-dm': [
-    { id: 'l9', sender: { type: 'member', member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T14:00:00+09:00', text: `${link(ME, '김병태')} 잠깐 통화 가능?` },
+    // 일부 메시지는 text 가 {"type":0,"text":"…"} JSON 문자열로 온다
+    { id: 'l9', sender: { type: 'member', member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T14:00:00+09:00',
+      text: JSON.stringify({ type: 0, text: `${link(ME, '김병태')} 잠깐 통화 가능?` }) },
   ],
 }
 
@@ -129,6 +131,10 @@ describe('본문 읽기', () => {
     assert.equal(mentions(link(ME, '김병태'), ME), true)
     assert.equal(mentions(link(`${ME}9`, '다른 사람'), ME), false)
     assert.equal([...excerptOf('가'.repeat(100))].length, 81)
+    assert.equal(messageText('{"type":0,"text":"안녕"}'), '안녕')
+    assert.equal(messageText('{보통 글}'), '{보통 글}')
+    assert.equal(messageText('{"type":1}'), '{"type":1}')
+    assert.equal(messageText(undefined), '')
   })
 })
 
@@ -166,6 +172,7 @@ describe('받기', () => {
     assert.deepEqual(dev?.scope, ['ch-dev', '스마트홈 개발'])
     assert.deepEqual(dev?.from, { id: LEE, name: '이영희' })
     assert.equal(messenger.find((row) => row.id.endsWith('l9'))?.title, '김철수 대화')
+    assert.equal(messenger.find((row) => row.id.endsWith('l9'))?.excerpt, '@김병태 잠깐 통화 가능?')
     assert.deepEqual(calls.find((argv) => argv[3] === 'channels'), ['dooray', '--json', 'messenger', 'channels', '--since', '2026-11-02T05:00:00.000Z'])
     // 바뀐 방은 오래된 순으로 읽는다
     const logCalls = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])

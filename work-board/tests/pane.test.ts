@@ -382,7 +382,10 @@ test('알림 상자는 새 알림 수, 항목 줄, 출처별 오류, 미분류 �
   expect(await ui.find({ type: 'Text', text: /두레이 메신저 확인 불가: 429/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /미분류 알림 4/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /김철수 · 멘션 · 12분 전/ })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /박민수 · 멘션 · 답함/ })).toBeTruthy()
+  // 답한 알림은 목록에서 빼고 수만 흐리게 보인다
+  expect(await ui.find({ type: 'Text', text: /박민수 · 멘션/ })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-reply-dooray:messenger:ch:l1' })).toBeFalsy()
+  expect(await ui.find({ type: 'Text', text: /^답함 1$/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /「운영 계정도 같은 권한이 필요한지」/ })).toBeTruthy()
   expect((await ui.find({ type: 'Button', key: 'inbox-reply-dooray:task:comment:c1' })).props.hotkey).toBe('1')
   expect((await ui.find({ type: 'Button', key: 'inbox-all' })).props.hotkey).toBe('i')
