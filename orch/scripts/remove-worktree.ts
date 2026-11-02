@@ -16,14 +16,17 @@
 //     - 원격에 없는 커밋(--merged-head 의 조상은 뺀다)이 없다
 // 하나라도 아니면 지우지 않고 `브랜치 남김 <브랜치>: <이유>` 를 낸다. 다른 워크트리가 그 브랜치에 있으면 git 이 거절해 남는다.
 // 워크트리를 지웠으면 브랜치를 남겨도 종료 코드는 0 이다. 환경 변수 GH 로 gh 실행 파일을 바꾼다.
+// 워크트리를 지운 뒤 그 경로에 귀속된 Docker 컨테이너와 compose 네트워크를 지운다(lib/docker.ts, 판정은 cleanup.md 의 「Docker 자원 반납」).
+// Docker 를 쓸 수 없으면 `Docker 정리 건너뜀: <이유>` 한 줄만 내고 종료 코드는 그대로 0 이다. 환경 변수 DOCKER 로 docker 실행 파일을 바꾼다.
 // 환경 변수 ORCA 로 orca 실행 파일을 바꾼다. PATH 의 lsof, ps, sleep 을 부르고 git 2.31 이상이 필요하다.
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { statSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { dockerCleanup } from './lib/docker.ts'
 import { realPath } from './lib/fs.ts'
 import { git as gitIn } from './lib/git.ts'
 import { blocker } from './lib/ownership.ts'
@@ -225,6 +228,12 @@ async function main(argv: string[]): Promise<number> {
     const kept = originKept(repo, origin, mergedHead)
     if (kept) out(`브랜치 남김 ${origin}: ${kept}`)
     else if (git(repo, ['branch', '-D', origin]).code === 0) out(`deleted branch ${origin}`)
+  }
+  // 워크트리는 이미 지웠다. Docker 정리가 무엇으로 실패해도 종료 코드를 바꾸지 않는다
+  try {
+    dockerCleanup({ worktrees: [...new Set([target, resolve(positionals[0])])], apply: true, log: out })
+  } catch (e) {
+    out(`Docker 정리 건너뜀: ${(e as Error)?.message ?? String(e)}`)
   }
   return 0
 }
