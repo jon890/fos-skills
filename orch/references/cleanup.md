@@ -22,7 +22,7 @@ PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch
 
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.ts --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
-`finish-pr.ts` 와 `merge-with-finish.ts` 는 이 옵션을 넘기지 않는다.
+`finish-pr.ts` 와 `merge-with-finish.ts` 는 스스로 이 옵션을 더하지 않는다. `queue.sweep_args` 에 두면 `merge-with-finish.ts` 가 머지 큐의 정리에 넘기는데, `--run` 도 설정의 `finish.run` 도 없으면 그 옵션을 빼고 경고한다. Run 없이 넘기면 정리가 사용법 오류로 끝나기 때문이다.
 
 머지는 worker 에게 맡기지 않는다.
 사용자가 머지까지 맡겼으면 코디네이터가 6단계 검증 뒤 머지한다. 맡기지 않았으면 6단계 검증 뒤 사용자에게 확인받고 머지한다.

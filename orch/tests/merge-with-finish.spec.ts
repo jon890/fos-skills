@@ -652,6 +652,46 @@ describe('merge-with-finish --run', { skip: !HAS_BASH && 'bash 가 필요하다'
     assert.equal(count(r.stderr, '경고: 정리 단계가 Run 으로 한정되지 않는다'), 1, both(r))
   })
 
+  test('명령줄에 Run 이 없으면 finish.run 을 정리 단계에 넘긴다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ finish: { run: 'run_cfg' }, queue: { sweep_args: ['--close-own-taken-over'] } })
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    const [line] = await c.lines('queue')
+    has(line, '--sweep-arg --run --sweep-arg run_cfg')
+    has(line, '--sweep-arg --close-own-taken-over')
+    lacks(r.stderr, '경고:')
+  })
+
+  test('명령줄의 Run 이 finish.run 보다 우선한다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ finish: { run: 'run_cfg' } })
+    const r = await c.wrap(['--run', 'run_cli', '--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    const [line] = await c.lines('queue')
+    has(line, '--sweep-arg --run --sweep-arg run_cli')
+    lacks(line, 'run_cfg')
+  })
+
+  // 2026-11-02: queue.sweep_args 에 --close-own-taken-over 만 둔 저장소에서 --run 없이 건 큐의 정리가 사용법 오류로 끝났다
+  test('Run 을 어디서도 모르면 Run 이 있어야 하는 정리 옵션을 빼고 경고한다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { sweep_args: ['--close-own-taken-over', '--kill-holders'] } })
+    const r = await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(await c.lines('queue'), [`queue --sweep-arg --kill-holders --repo ${c.tmp} 449`])
+    assert.equal(count(r.stderr, '경고: Run 을 몰라 정리 단계에서 --close-own-taken-over 를 뺀다'), 1, both(r))
+  })
+
+  test('finish.run 이 문자열이 아니면 아무것도 걸기 전에 사용법 오류다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ finish: { run: 3 } })
+    const r = await c.wrap(['--repo', c.tmp, '449'])
+    assert.equal(r.code, 2, both(r))
+    has(r.stderr, 'finish.run 은 문자열이어야 한다')
+    assert.equal(existsSync(c.logFile), false)
+  })
+
   test('--no-sweep 이면 경고하지 않는다', async (t) => {
     const c = setup(t)
     const r = await c.wrap(['--no-sweep', '--no-finish', '449'])
