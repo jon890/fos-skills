@@ -415,3 +415,24 @@ describe('watch-questions', () => {
      assert.equal(closedReason(q, 'r', tmp, { ...lookup, readPr: wrongHead }), null)
    }
  })
+
+ test('다른 Task 가 같은 워크트리 브랜치의 PR 을 끝냈으면 질문을 닫는다', async () => {
+   const { closedReason } = await import('../scripts/lib/questions.ts')
+   const q = message('q', 'question', { task_id: 'old-task', dispatch_id: 'old' })
+   for (const state of ['MERGED', 'CLOSED', 'OPEN']) {
+     const calls: string[][] = []
+     const readPr = ((args: string[]) => {
+       calls.push(args)
+       return { ok: true, data: [{ number: 1156, state, headRefName: 'g2-mrc-004' }] }
+     }) as typeof import('../scripts/lib/gh.ts').ghJson
+     const lookup = {
+       rows: { ok: true as const, rows: [{ dispatchId: 'old', dispatchStatus: 'abandoned', resource: { worktreeId: 'repo::/work/g2-mrc-004' } }] },
+       reports: [{ type: 'status', task_id: 'new-task', dispatch_id: 'new', subject: `준비됨 #1156, head ${'a'.repeat(40)}` }],
+       branches: new Map([['g2-mrc-004', '/work/g2-mrc-004']]), readPr,
+     }
+     assert.equal(closedReason(q, 'r', tmp, lookup) !== null, state !== 'OPEN')
+     assert.ok(calls[0].includes('g2-mrc-004'))
+     assert.equal(closedReason(q, 'r', tmp, { ...lookup, branches: new Map([['other', '/work/other']]) }), null)
+     assert.equal(closedReason(q, 'r', tmp, { ...lookup, readPr: (() => ({ ok: false, error: 'offline' })) as typeof readPr }), null)
+   }
+ })
