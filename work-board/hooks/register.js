@@ -12,6 +12,8 @@ import { STEP, hideEventTag } from './event-tags.js'
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
 //      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. d 로 펼치면 끝낸 줄을 취소선으로 보인다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
+//      결정 필요 상자에는 worker 의 question 과 worker 가 직접 보낸 escalation 만 넣는다. Orca 자동 알림(autoAlertKind)은 빼고,
+//      그 worker 의 줄에 상태로 붙인다(docs/features/board-decision-box/spec.md).
 //   3. 업무 알림: 같은 플러그인의 inbox/scripts/inbox.ts board 출력. 받기와 저장소 필터는 inbox 가 하고 창은 그리기만 한다.
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
 //   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
@@ -185,7 +187,9 @@ export function countQuestions(stdout, runId) {
 // ask 는 답을 받을 때까지 막혀 worker 하나에 열린 질문은 하나다. 그래서 같은 worker 의 질문은 가장 늦은 미답변 하나로 묶고 repeats 에 나머지 수를 둔다.
 // worker 열쇠는 keyOf(m), 없으면 질문의 dispatch(payload.dispatchId, 없으면 `dispatch:` 를 뗀 발신자), 그것도 없으면 그 메시지 id(묶지 않음)다.
 // 늦고 이른 것은 created_at 문자열로 비교하고, 같으면 입력 순서가 뒤인 것을 늦은 것으로 본다.
-export function parseQuestions(stdout, runId, keyOf = null) {
+// shown(원본 메시지 → 참거짓)을 주면 보이는 미답변을 그것이 참인 것으로 줄인다. 답 기준선(가장 늦게 답한 질문)은 모든 질문에서 정한다.
+// 코디네이터가 더 늦은 자동 알림에 답했으면 그 worker 의 앞선 막힘도 푼 것이다(orch lib/questions.ts 의 unanswered 와 같다).
+export function parseQuestions(stdout, runId, keyOf = null, shown = null) {
   const data = JSON.parse(String(stdout).replace(/[\u0000-\u001f]/g, ' '))
   if (data.ok === false) throw new Error('질문 기록 조회 실패')
   const rows = (data.result || data).messages
@@ -202,22 +206,35 @@ export function parseQuestions(stdout, runId, keyOf = null) {
       let dispatch = String(payload?.dispatchId || m.from_handle || '').replace(/^dispatch:/, '')
       let text = String(payload?.question || m.body || '')
       const key = (keyOf && keyOf(m)) || dispatch || 'id:' + m.id
-      return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '', key, order, answered: answered.has(m.id) }
+      return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '', key, order, answered: answered.has(m.id), message: m }
     })
   const later = (a, b) => (a.at === b.at ? a.order > b.order : a.at > b.at)
   const groups = new Map()
   for (const q of asked) groups.set(q.key, [...(groups.get(q.key) || []), q])
-  const shown = []
+  const pending = []
   for (const group of groups.values()) {
     const last = group.filter((q) => q.answered).reduce((a, b) => (!a || later(b, a) ? b : a), null)
-    const open = group.filter((q) => !q.answered && (!last || later(q, last)))
+    const open = group.filter((q) => !q.answered && (!last || later(q, last)) && (!shown || shown(q.message)))
     if (open.length === 0) continue
     const newest = open.reduce((a, b) => (later(b, a) ? b : a))
-    shown.push({ ...newest, repeats: open.length - 1 })
+    pending.push({ ...newest, repeats: open.length - 1 })
   }
-  return shown.sort((a, b) => a.order - b.order)
+  return pending.sort((a, b) => a.order - b.order)
     .map(({ id, type, dispatch, text, at, repeats }) => ({ id, type, dispatch, text, at, repeats }))
 }
+
+// Orca 가 worker 대신 만드는 자동 알림의 종류. id 접두로 가린다(스펙 D10, 2026-11-02 inbox 실측).
+//   msg_stop_<hex>     worker 가 worker_done 없이 턴을 끝냈다(「Worker stopped without reporting」 등)
+//   msg_chaterr_<hex>  에이전트 오류(「Agent hit an error: …」)
+// worker 가 직접 보낸 메시지는 제목이 같아도 id 가 msg_<hex> 라 자동 알림이 아니다. 아니면 null 이다
+export function autoAlertKind(m) {
+  const id = String((m && m.id) || '')
+  if (id.startsWith('msg_stop_')) return 'stop'
+  if (id.startsWith('msg_chaterr_')) return 'error'
+  return null
+}
+
+const notAutoAlert = (m) => !autoAlertKind(m)
 
 function payloadOf(m) {
   if (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload)) return m.payload
@@ -248,6 +265,7 @@ function dispatchOf(m) {
 // 닫힌 dispatch 는 inbox 에 답변이 남지 않아 답해도 줄지 않는다. active 는 살아 있는 worker 의 {id, terminal} 목록이고, null 이면 거르지 않는다.
 // dispatch id 를 알 수 없는 질문은 발신 터미널 handle 이 살아 있는 worker 의 것일 때만 센다.
 // 전체 inbox 대신 Run 의 질문 후보와 그 질문의 worker handle 만 읽는다.
+// Orca 자동 알림(autoAlertKind)은 questions 에 넣지 않고 alerts 로 따로 낸다. 답 기준선에는 넣는다(parseQuestions 의 shown).
 // 회신은 `dispatch:<그 worker 터미널의 지금 dispatch>` 로 가서 발신 터미널의 inbox 에 나오지 않는다(ADR-015).
 // 그래서 질문마다 발신자, payload 의 dispatch, 그 질문이 붙은 살아 있는 worker 의 dispatch 를 읽는다.
 export async function queryQuestions($, runId, active = null) {
@@ -299,11 +317,12 @@ export async function queryQuestions($, runId, active = null) {
   // 한도에 닿은 handle 의 질문이라도 다른 handle 에서 온 회신으로 답한 것이 확인되면 오류가 아니다.
   // 모든 회신을 합쳐도 미답변으로 남는 질문이 있을 때만 잘린 기록에 회신이 있을 수 있다고 본다.
   const unsure = candidates.filter((m) => handlesOf(m).some((handle) => full.includes(handle)))
-  if (unsure.length && parseQuestions(JSON.stringify({ messages: [...unsure, ...replies] }), runId, workerOf).length) {
+  if (unsure.length && parseQuestions(JSON.stringify({ messages: [...unsure, ...replies] }), runId, workerOf, notAutoAlert).length) {
     throw new Error('답변 기록 한도에 닿아 답변 여부를 확인할 수 없어요')
   }
   return {
-    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId, workerOf),
+    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId, workerOf, notAutoAlert),
+    alerts: candidates.filter((m) => autoAlertKind(m)),
     limited: history.length >= QUESTION_HISTORY_LIMIT || unread.length >= QUESTION_HISTORY_LIMIT,
   }
 }
@@ -1022,6 +1041,10 @@ export const DECIDE_PROMPT = [
   '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
   '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
   '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 orch/scripts/send-to-worker.ts 로 전해 줘.',
+  '5. worker 가 직접 올린 막힘은 먼저 확인해서 네가 처리할 수 있으면 처리하고, 사람이 정할 것만 결정으로 물어봐 줘.',
+  '6. Orca 자동 알림(「Worker stopped without reporting」 같은 멈춤, 「Agent hit an error」 같은 오류)은 나에게 묻지 말고 처리한 결과만 한 줄로 알려 줘.',
+  '7. 자동 알림 가운데 계정 한도에 걸렸거나 터미널이 종료된 worker 는 묻지 말고 같은 워크트리에서 다시 띄우고, 멈춘 worker 는 상태를 확인해 필요하면 깨워 줘.',
+  '8. 처리한 막힘은 이어갈 일이 있는 worker 면 send-to-worker.ts 답장으로 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
 ].join('\n')
 
 function fillPrompt($, text) {
