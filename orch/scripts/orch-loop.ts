@@ -115,6 +115,7 @@
 //     5. CI 감시. 아래 「CI 감시」
 //     5-1. 머지 알림. 아래 「머지 알림」
 //     6. 멈춤 확인. 아래 「멈춤 확인」
+//     6-1. 움직임 확인. 아래 「움직임 확인」
 //     7. tick 이벤트. Run 마다 공통 필드 run 을 그 Run 으로 낸다. 입력은 tick(틱 번호), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null),
 //        primary(주 Run 이면 true)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     8. 자동 머지. 아래 「자동 머지」
@@ -182,6 +183,19 @@
 //     worker-list 를 읽지 못한 Run 의 항목과 화면을 읽지 못한 dispatch 의 항목은 그대로 옮기고, 그 Run 의 errors 의 stalls@<Run> 에 이유를 둔다.
 //     같은 틱에 그 Run 의 질문 확인도 실패했으면 stalls@<Run> 은 로그에만 쓰고 비워 둔다. Orca 가 꺼진 틱에 같은 원인으로 두 번 깨우지 않는다.
 //     멈춤 확인 전체가 예외로 끝나면 주 Run 의 stalls 키에 이유를 둔다.
+//
+// 움직임 확인: 화면 상태가 아니라 무엇이 바뀌었는지로 오래 움직이지 않은 worker 와, worker 없이 멈춘 보드 단계를 찾는다.
+//     Orca 의 structured worker 는 화면이 대화 기록 꼴이라 멈춤 확인이 입력란을 찾지 못한다(늘 unknown). 판정과 기록 형식은 lib/movement.ts
+//     머리 주석이 소유하고, 이 단계는 읽기, 기록, 알리기만 한다. 코디네이터가 지금 상태를 직접 볼 때는 stalled-workers.ts 가 같은 판정을 낸다.
+//     pipeline.idle_min 이 0 이고 pipeline.idle_exited 가 false 면 돌지 않는다.
+//     화면: 멈춤 확인이 이번 틱에 읽은 화면 끝 줄의 hash 를 state/movement.json 의 screens[<dispatch>] 에 바뀐 시각과 함께 둔다. 화면을 다시 읽지 않는다.
+//     기다리는 이유: 그 Run 의 질문을 읽지 못했거나, 그 dispatch(또는 터미널)가 보낸 미답변 질문이 있거나, 그 워크트리 브랜치의 내 열린 PR 이
+//     이번 틱의 CI 감시에서 지금 HEAD 로 passed 면 멈춤으로 보지 않는다. 코디네이터의 차례다. exited 는 이유가 있어도 알린다.
+//     worker: 새로 멈춘 dispatch 마다 그 worker 를 띄운 Run 의 알림 파일에 WORKER-IDLE(text `<dispatch> <idle 또는 exited> <움직임 뒤 분 또는 ->분
+//     <워크트리 이름 또는 -> <터미널 또는 ->`)을 쓴다. 다시 알리는 때는 lib/movement.ts 의 「알림 기록」 이다.
+//     단계: 맡은 Run 의 worker 목록을 모두 읽은 틱에만 본다. 새로 멈춘 단계마다 주 Run 의 알림 파일에 STAGE-STALLED(text `<보드 항목 id>
+//     <worktree 칸, 없으면 branch 칸> <분>분 <끝나지 않은 첫 단계>`)를 쓴다. 못 읽은 Run 이 있으면 단계 기록을 그대로 둔다.
+//     보드를 읽지 못했거나 movement.json 을 쓰지 못하면 errors 의 movement 에 이유를 둔다(아래 「오류 줄 억제」).
 //
 // 자동 머지(ADR-016): queue.auto_merge 가 true 이고 열린 PR 을 읽은 틱에만 돈다. 판정 함수는 lib/auto-merge.ts 가 소유하고,
 //     이 단계는 읽기, 기록, 띄우기만 한다. 큐는 저장소에 하나만 둔다. 두 큐가 같은 base 를 움직이면 서로의 최신화 판정이 무효가 된다.
@@ -291,11 +305,11 @@
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook, stalls)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
-//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, auto-merge, conflicts, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
+//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, movement, auto-merge, conflicts, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
 //     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
 //     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
-//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), auto-merge(자동 머지), conflicts(충돌 처리),
+//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남), heavy-slot(자리 보유 확인. 알림의 kind 는 HEAVY-SLOT-HELD)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
 //     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 알림 파일의 text 는 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
@@ -308,7 +322,8 @@
 //     틱 자식은 stdout 에만 쓴다. 부모가 그 줄을 loop.log 로 옮기므로 두 번 쓰이지 않는다.
 //     잡지 않은 예외와 거부된 promise 는 스택을 로그에 남기고 1 로 끝난다.
 //
-// 설정: pipeline.tick_sec(양수, 기본 300), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. 위 「멈춤 확인」), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false),
+// 설정: pipeline.tick_sec(양수, 기본 300), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. 위 「멈춤 확인」),
+//     pipeline.idle_min, pipeline.idle_exited(위 「움직임 확인」. lib/movement.ts 의 movementSettings 가 읽는다), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false),
 //     queue.auto_merge, queue.auto_review, migrations.dirs, migrations.before, migrations.blocked_after_sec(lib/auto-merge.ts 의 autoMergeConfig 가 읽는다.
 //     위 「자동 머지」), queue.sweep_args(자동 머지가 큐에 --sweep-arg 로 넘긴다).
 //     finish 절은 lib/finish-options.ts 의 FINISH_KEYS 로, queue 절은 lib/config.ts 의 QUEUE_KEYS 로 읽는다.
@@ -332,7 +347,7 @@
 
 import { spawn } from 'node:child_process'
 import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -367,6 +382,8 @@ import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
 import { limitedScreen } from './lib/sessions.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
+import { collectStages, collectWorkers, idleNotices, markScreen, movementSettings, readRecords, stageNotices, tailHash } from './lib/movement.ts'
+import type { MovementSettings, ScreenMark } from './lib/movement.ts'
 import { branchesOf } from './lib/spec.ts'
 import { waiterPids } from './lib/waiters.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
@@ -399,7 +416,7 @@ const NO_WAIT_SEC = Number(process.env.ORCH_NO_WAIT_SEC) || 300
 const NUDGE_TIMEOUT_MS = 90_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
-const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'auto-merge', 'conflicts', 'tick', 'heavy-slot'])
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'auto-merge', 'conflicts', 'tick', 'heavy-slot'])
 // pipeline.stall_ticks 의 기본값(머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
 const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze({ error: 2, idle: 0 })
 // 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
@@ -421,6 +438,8 @@ type Context = {
   tickSec: number
   skippedIsMissing: boolean
   stallTicks: Record<StallState, number>
+  // pipeline.idle_min, pipeline.idle_exited(머리 주석의 「움직임 확인」)
+  movement: MovementSettings
   autoMerge: AutoMergeConfig
   // config 의 queue.sweep_args 그대로. 자동 머지가 lib/auto-merge.ts 의 sweepArgs 로 큐의 Run 에 맞춘다
   sweepArgs: unknown
@@ -509,6 +528,7 @@ function context(repo: string, run: string | undefined, specsDir: string | undef
     tickSec,
     skippedIsMissing: skipped,
     stallTicks: stallTicks(pipeline.stall_ticks),
+    movement: movementSettings(repo),
     autoMerge: autoMergeConfig(config),
     sweepArgs: queue.sweep_args,
   }
@@ -1359,6 +1379,7 @@ async function watchStalls(
   previous: Record<string, Stall>,
   waiting: Map<string, Waiting>,
   base: string,
+  tails: Map<string, string[]> = new Map(),
 ): Promise<{ stalls: Record<string, Stall>; errors: Map<string, string | null> }> {
   const stalls: Record<string, Stall> = {}
   const errors = new Map<string, string | null>()
@@ -1386,6 +1407,8 @@ async function watchStalls(
         continue
       }
       const lines = screenLines(read.data)
+      // 움직임 확인이 화면이 바뀌었는지 본다. 화면을 두 번 읽지 않으려고 여기서 넘긴다
+      tails.set(dispatch, screenTail(lines))
       // 사용 한도는 설정과 관계없이 dispatch 생애에 한 번 알린다. 회복한 화면에서도 기록을 유지한다.
       const limitedNotified = previous[dispatch]?.limitedNotified === true
       const limited = limitedScreen(lines)
@@ -1472,6 +1495,90 @@ async function notifyStall(ctx: Context, run: string, row: Record<string, unknow
     log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
   }
   return false
+}
+
+// 움직임 확인 ------------------------------------------------------------------
+
+// 머리 주석의 「움직임 확인」. tails 는 멈춤 확인이 이번 틱에 읽은 dispatch 마다의 화면 끝 줄이다. 결과는 errors 의 movement 에 둘 이유다
+function watchMovement(
+  ctx: Context,
+  lookup: Lookup,
+  tails: Map<string, string[]>,
+  waiting: Map<string, Waiting>,
+  prs: Prs,
+  ci: Record<string, CiEntry> | undefined,
+  primary: string | null,
+): string | null {
+  const settings = ctx.movement
+  if (settings.idleMin === 0 && !settings.exited) return null
+  const file = join(pathOf('state', ctx.repo), 'movement.json')
+  let parsed: unknown = null
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    // 없거나 깨졌으면 빈 기록이다
+  }
+  const previous = readRecords(parsed)
+  const now = Date.now()
+  const screens: Record<string, ScreenMark> = { ...previous.screens }
+  for (const [dispatch, tail] of tails) screens[dispatch] = markScreen(previous.screens[dispatch], tailHash(tail), now)
+  lookup.paths ??= worktreePaths(ctx.repo)
+  const branchOf = new Map([...lookup.paths].map(([branch, path]) => [path, branch]))
+  // CI 를 통과한 내 열린 PR 의 브랜치. 이번 틱의 판정이 지금 HEAD 의 것일 때만 센다
+  const passed = new Set(prs.ok ? prs.mine.filter((pr) => ci?.[String(pr.number)]?.state === 'passed' && ci[String(pr.number)].head === pr.head).map((pr) => pr.branch) : [])
+  const waitingOf = (run: string, row: Record<string, unknown>, worktree: string | null): string | null => {
+    const asked = waiting.get(run)
+    // 질문을 읽지 못한 Run 은 질문을 기다리는지 모른다. 모르는 것을 멈춤으로 알리지 않는다
+    if (!asked) return '질문을 읽지 못했다'
+    if (asked.dispatches.has(String(row.dispatchId)) || asked.terminals.has(String(row.agentTerminalHandle ?? ''))) return '질문의 답을 기다린다'
+    const branch = worktree ? branchOf.get(worktree) : undefined
+    return branch && passed.has(branch) ? 'CI 를 통과해 머지를 기다린다' : null
+  }
+  const runs = lookup.runs.map((entry) => entry.run).filter((run): run is string => Boolean(run))
+  const workers = collectWorkers({ runs, rowsOf: (run) => rowsOf(run, lookup), settings, now, screens, waiting: waitingOf })
+  // 화면 기록은 열린 dispatch 의 것만 남긴다. 읽지 못한 Run 이 있으면 그 Run 의 dispatch 를 몰라 모두 둔다
+  if (workers.errors.size === 0) {
+    const open = new Set(workers.verdicts.map((v) => v.dispatch))
+    for (const dispatch of Object.keys(screens)) if (!open.has(dispatch)) delete screens[dispatch]
+  }
+  const idle = idleNotices(previous.workers, workers.verdicts, workers.read)
+  for (const v of idle.fire) {
+    const text = `${v.dispatch} ${v.reason} ${v.idleMin ?? '-'}분 ${v.worktree ? basename(v.worktree) : '-'} ${v.terminal || '-'}`
+    log(`WORKER-IDLE ${text}`)
+    try {
+      appendEvent(ctx.repo, 'WORKER-IDLE', null, text, v.run)
+    } catch (e) {
+      log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+    }
+  }
+  // 멈춘 단계는 모든 Run 의 worker 목록을 읽은 틱에만 본다. 하나라도 못 읽으면 살아 있는 worker 를 몰라 앞 기록을 그대로 둔다
+  let stages = previous.stages
+  let error: string | null = null
+  if (workers.errors.size === 0) {
+    try {
+      const found = stageNotices(previous.stages, collectStages(ctx.repo, workers.live, settings, now), now, settings.idleMin)
+      stages = found.records
+      for (const stage of found.fire) {
+        const text = `${stage.id} ${stage.worktree ?? stage.branch ?? '-'} ${stage.minutes}분 ${stage.step}`
+        log(`STAGE-STALLED ${text}`)
+        try {
+          appendEvent(ctx.repo, 'STAGE-STALLED', null, text, primary)
+        } catch (e) {
+          log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+        }
+      }
+    } catch (e) {
+      error = `보드를 읽지 못했다: ${oneLine(e)}`
+    }
+  }
+  try {
+    makeParent(file, ctx.repo)
+    writeFileSync(`${file}.tmp`, `${JSON.stringify({ screens, workers: idle.records, stages })}\n`)
+    renameSync(`${file}.tmp`, file)
+  } catch (e) {
+    error = [error, `${file} 에 쓰지 못했다: ${oneLine(e)}`].filter(Boolean).join('; ')
+  }
+  return error
 }
 
 // 충돌 처리(머리 주석의 「충돌 처리」). 결과는 errors.conflicts 에 둘 이유다
@@ -2314,8 +2421,10 @@ async function tick(ctx: Context, n: number): Promise<number> {
   // 6. 멈춤 확인. Run 마다 그 Run 의 살아 있는 dispatch 화면만 본다. 실패하면 결과에 stalls 를 넣지 않아 부모가 이전 값을 둔다
   const base = defaultBase(ctx.repo) ?? ''
   let stalls: Record<string, Stall> | undefined
+  // 움직임 확인(6-1)이 화면이 바뀌었는지 보려고 받는다
+  const tails = new Map<string, string[]>()
   try {
-    const watched = await watchStalls(ctx, lookup, stallEntries(loaded?.stalls), waiting, base)
+    const watched = await watchStalls(ctx, lookup, stallEntries(loaded?.stalls), waiting, base, tails)
     stalls = watched.stalls
     for (const [run, reason] of watched.errors) {
       // 같은 틱에 그 Run 의 질문 확인도 실패했으면(Orca 꺼짐) 그 알림 하나로 둔다. 질문 확인이 살아난 뒤에도 실패하면 그때 알린다
@@ -2331,6 +2440,13 @@ async function tick(ctx: Context, n: number): Promise<number> {
   } catch (e) {
     // 조용히 멈춤 확인을 잃지 않게 주 Run 에 알린다
     report('stalls', `멈춤 확인을 하지 못했다: ${oneLine(e)}`)
+  }
+
+  // 6-1. 움직임 확인. 멈춤 확인이 읽은 화면과 워크트리, 커밋, 보드로 오래 움직이지 않은 worker 와 worker 없이 멈춘 단계를 알린다
+  try {
+    report('movement', watchMovement(ctx, lookup, tails, waiting, prs, ci, primary))
+  } catch (e) {
+    report('movement', `움직임 확인을 하지 못했다: ${oneLine(e)}`)
   }
 
   // 7. tick 이벤트. Run 마다 그 Run 을 공통 필드 run 으로 낸다

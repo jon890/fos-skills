@@ -5,12 +5,14 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
+import { tailHash } from '../scripts/lib/movement.ts'
+import { screenLines, screenTail } from '../scripts/lib/screen.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
 const HOOKS_DOC = fileURLToPath(new URL('../references/hooks.md', import.meta.url))
@@ -496,6 +498,107 @@ describe('idle 멈춤', () => {
     const result = tick()
     assert.equal(stallOf(result, 'd1')?.ticks, 1)
     assert.deepEqual(stalledEvents('A'), [])
+  })
+})
+
+describe('움직임 확인', () => {
+  const MIN = 60_000
+  beforeEach(() => {
+    register('A', '2026-01-01T00:00:00Z')
+    writeFileSync(join(binDir, 'board-sync.ts'), 'process.exitCode = 0\n')
+    env.BOARD_SYNC = join(binDir, 'board-sync.ts')
+  })
+
+  // 파일 하나를 둔 워크트리 폴더. 수정 시각은 minutes 분 전이다
+  function worktree(name: string, minutes: number): string {
+    const path = join(tmp, name)
+    write(join(path, 'a.txt'), 'x')
+    const sec = (Date.now() - minutes * MIN) / 1000
+    utimesSync(join(path, 'a.txt'), sec, sec)
+    return path
+  }
+
+  function moving(dispatch: string, terminal: string, path: string, extra: Json = {}): Json {
+    return { ...worker(dispatch, terminal), resource: { worktreeId: `repo-id::${path}` }, ...extra }
+  }
+
+  // 그 화면이 minutes 분 전부터 그대로였다고 movement.json 에 적는다
+  function sameScreenSince(dispatch: string, text: string, minutes: number): void {
+    const hash = tailHash(screenTail(screenLines({ terminal: { tail: text.split('\n') } })))
+    write(orchFile('state', 'movement.json'), JSON.stringify({ screens: { [dispatch]: { hash, changedAt: Date.now() - minutes * MIN } } }))
+  }
+
+  function idleEvents(run: string): unknown[] {
+    return runEvents(run)
+      .filter((row) => row.kind === 'WORKER-IDLE')
+      .map((row) => String(row.text).replace(/ \d+분 /, ' N분 '))
+  }
+
+  test('파일과 화면이 기준 분 넘게 그대로인 worker 를 그 Run 에 WORKER-IDLE 로 한 번만 알린다', () => {
+    const path = worktree('wt-a', 45)
+    orca({ workers_by_run: { A: [moving('d1', 'tA', path)] }, screens: { tA: CLAUDE_WORKING } })
+    sameScreenSince('d1', CLAUDE_WORKING, 40)
+    tick()
+    tick()
+    assert.deepEqual(idleEvents('A'), ['d1 idle N분 wt-a tA'])
+    const saved = JSON.parse(readFileSync(orchFile('state', 'movement.json'), 'utf8')) as Json
+    assert.deepEqual(Object.keys(saved.workers as Json), ['d1'])
+  })
+
+  test('처음 본 화면은 지금 바뀐 것으로 보고, 화면이 바뀌면 멈춤이 아니다', () => {
+    const path = worktree('wt-a', 45)
+    orca({ workers_by_run: { A: [moving('d1', 'tA', path)] }, screens: { tA: CLAUDE_WORKING } })
+    tick()
+    sameScreenSince('d1', CLAUDE_IDLE, 40)
+    tick()
+    assert.deepEqual(idleEvents('A'), [])
+  })
+
+  test('미답변 질문을 보낸 worker 는 알리지 않고, liveness 가 exited 면 알린다', () => {
+    const question = { id: 'q1', type: 'question', run_id: 'A', to_handle: 'run:A', from_handle: 'tA', dispatch_id: 'd1', body: '어느 쪽?', created_at: '2026-01-01T00:00:00Z' }
+    const exited = { projection: { liveness: { verdict: 'exited' } } }
+    orca({
+      workers_by_run: { A: [moving('d1', 'tA', worktree('wt-a', 45)), moving('d2', 'tB', worktree('wt-b', 1), exited)] },
+      screens: { tA: CLAUDE_WORKING, tB: CLAUDE_WORKING },
+      questions_by_run: { A: [question] },
+    })
+    sameScreenSince('d1', CLAUDE_WORKING, 40)
+    tick()
+    assert.deepEqual(idleEvents('A'), ['d2 exited N분 wt-b tB'])
+  })
+
+  test('pipeline.idle_min 이 0 이고 idle_exited 가 false 면 돌지 않는다', () => {
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { idle_min: 0, idle_exited: false } }))
+    orca({ workers_by_run: { A: [moving('d1', 'tA', worktree('wt-a', 45), { projection: { liveness: { verdict: 'exited' } } })] }, screens: { tA: CLAUDE_WORKING } })
+    tick()
+    assert.deepEqual(idleEvents('A'), [])
+    assert.equal(existsSync(orchFile('state', 'movement.json')), false)
+  })
+
+  test('worker 없는 doing 항목의 단계가 기준 분 넘게 이어지면 주 Run 에 STAGE-STALLED 를 한 번 쓴다', () => {
+    write(join(repo, '.omc', 'board.json'), JSON.stringify({ items: [{ id: 'eval', status: 'doing', worktree: 'wt-gone', details: [{ text: '평가 결과 확인', done: false }] }] }))
+    orca({ workers_by_run: { A: [] } })
+    tick()
+    assert.deepEqual(runEvents('A').filter((row) => row.kind === 'STAGE-STALLED'), [])
+    const saved = JSON.parse(readFileSync(orchFile('state', 'movement.json'), 'utf8')) as { stages: Record<string, Json> }
+    saved.stages.eval.since = Date.now() - 31 * MIN
+    write(orchFile('state', 'movement.json'), JSON.stringify(saved))
+    tick()
+    tick()
+    assert.deepEqual(
+      runEvents('A')
+        .filter((row) => row.kind === 'STAGE-STALLED')
+        .map((row) => String(row.text).replace(/ \d+분 /, ' N분 ')),
+      ['eval wt-gone N분 평가 결과 확인'],
+    )
+  })
+
+  test('pipeline.idle_min 이 틀리면 설정 오류다', () => {
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { idle_min: 'x' } }))
+    orca({})
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8' })
+    assert.equal(done.status, 2, done.stdout + done.stderr)
+    assert.match(done.stderr, /pipeline\.idle_min/)
   })
 })
 

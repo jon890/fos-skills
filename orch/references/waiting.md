@@ -48,6 +48,7 @@
 - Run 마다 그 Run 범위의 정리(`cleanup-sweep --run`), 원격 브랜치 정리와 보드 동기화(`board-sync`)는 틱마다 한 번
 - 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 같은 워크플로의 base 최신 실행을 공유 캐시로 확인한다. base 도 실패하면 `CI-FAILED` 에 `<base> 도 실패` 를 남겨 코디네이터에게만 알리고, 그 밖에는 그 PR 의 worker 에게 알린다. 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알린다. `queue.auto_merge` 를 켠 저장소에서는 머지할 수 있는 PR 을 머지 큐에 건다(`orch-loop.ts` 머리 주석의 「자동 머지」)
 - Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 사용 한도 화면은 `stall_ticks` 와 무관하게 dispatch 마다 `WORKER-LIMITED` 알림을 한 번 쓴다. 알림의 dispatch 와 터미널로 대상을 찾고 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
+- Run 마다 그 Run 이 띄운 살아 있는 worker 의 움직임 확인. 워크트리 파일, 브랜치의 마지막 커밋, 화면이 `pipeline.idle_min`(기본 30분)분 넘게 그대로이거나 프로세스가 끝났으면(`exited`) `WORKER-IDLE` 을 쓴다. 보드의 `doing` 항목에 끝나지 않은 단계가 있는데 그 항목의 worker 가 없으면 `STAGE-STALLED` 를 쓴다. 화면 상태를 읽지 못하는 structured worker 도 이 확인으로 잡는다
 - Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
 - `queue.auto_merge` 를 켠 저장소에서 머지할 수 있는 PR 을 머지 큐에 건다
 - 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기. 끝난 dispatch 에 이어 쓰는 동안(최대 65분)은 다음 틱이 밀린다
@@ -125,6 +126,8 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
     알림은 한 번만 오므로 기다리는 PR 은 그 뒤 알림 없이 기다린다
   - `WORKER-LIMITED`: 사용 한도로 멈춘 dispatch 와 터미널이다. [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 같은 dispatch 는 한 번만 알리며 자동 재시도하지 않는다
   - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `nudge-worker.ts --terminal <터미널> --state` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
+  - `WORKER-IDLE`: 내용은 `<dispatch> <idle 또는 exited> <분>분 <워크트리> <터미널>` 이다. 그 worker 가 그 분 동안 파일, 커밋, 화면 어느 것도 바꾸지 않았거나(`idle`) 프로세스가 끝났는데 dispatch 가 열려 있다(`exited`). 미답변 질문을 보낸 worker 와 CI 를 통과해 머지를 기다리는 worker 는 오지 않는다. `idle` 이면 `nudge-worker.ts --terminal <터미널> --state` 로 화면을 보고 `send-to-worker` 로 진행을 묻는다. `exited` 면 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 멈춤은 한 번만 오고, 그 뒤에 움직였다 다시 멈추면 다시 온다
+  - `STAGE-STALLED`: 내용은 `<보드 항목 id> <worktree 또는 branch> <분>분 <끝나지 않은 첫 단계>` 이다. 보드의 `doing` 항목에 남은 단계가 있는데 그 항목의 worker 가 없이 그 분이 지났다. 평가 결과를 기다리던 단계처럼 코디네이터가 다음 worker 를 띄우거나 직접 처리할 차례다. 기다리는 것이 맞으면 그 항목을 `wait` 로 바꾼다. 같은 단계는 한 번만 온다
   - `HEAVY-SLOT-HELD`: 내용은 `pid <pid> <분>분 <명령줄>` 목록과 상한이다. 그 검사가 무거운 검사 자리를 상한보다 오래 쥐어 다른 worker 의 검사가 기다린다. 명령줄과 그 pid 의 worktree 로 어느 worker 의 검사인지 찾고, 그 worker 에게 끝났는지 묻거나 사용자에게 끊을지 묻는다. 루프는 끊지 않는다. 같은 검사가 쥐고 있는 동안은 한 번만 온다
   - `FINISH-MISSING`: 루프의 정리가 머지된 PR 의 워크트리를 치웠는데 그 PR 에 머지 뒤 마무리(`finish-pr`)가 돈 적이 없다. `gh pr merge` 로 바로 머지한 PR 이다. 내용 끝의 `finish-pr` 명령으로 마무리를 돌려 배포 확인, 업무 완료, 보드 done 을 채운다. 같은 PR 은 한 번만 온다
   - `NO-WAIT`: 살아 있는 dispatch 가 있는데 이 Run 의 `wait-important` 대기가 몇 분째 없었다. 루프가 같은 글을 코디네이터 터미널에도 넣는다. 받은 메시지를 처리한 뒤 마지막 `NEXT_WAIT` 명령으로 대기를 다시 건다
@@ -150,13 +153,20 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 루프가 하지 않는 수동 경로는 둘이다.
 
 - **목표 진행률은 코디네이터가 목표 항목을 고친 뒤 직접 돌린다.** 루프는 `--goal` 을 넘기지 않는다. `$GOAL_ID` 는 목표 항목 id 이고 저장소 오버레이가 정한다
-- **루프가 없는 저장소는 대기가 끝날 때마다, 기다리는 동안 5분마다 아래 두 명령을 돌린다.** 5분 주기는 하네스의 예약 기능이나 다음 깨어남에 붙인다. 보드가 없는 저장소는 `board-sync.ts` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다
+- **루프가 없는 저장소는 대기가 끝날 때마다, 기다리는 동안 5분마다 아래 명령을 돌린다.** 5분 주기는 하네스의 예약 기능이나 다음 깨어남에 붙인다. 보드가 없는 저장소는 `board-sync.ts` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다
 
 `$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더다.
 
 ```bash
 "$SKILL_DIR/bin/orch.ts" cleanup-sweep --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
 "$SKILL_DIR/bin/orch.ts" board-sync --repo "$REPO" --goal "$GOAL_ID"
+```
+
+멈춘 worker 와 멈춘 단계도 같은 주기에 `stalled-workers` 로 본다. 루프가 있는 저장소에서도 지금 상태를 직접 볼 때 쓴다.
+종료 코드 3 이면 `STALLED` 와 `STAGE` 줄을 위 `WORKER-IDLE`, `STAGE-STALLED` 처럼 처리한다. 출력 형식과 종료 코드는 스크립트 머리 주석이 소유한다.
+
+```bash
+"$SKILL_DIR/bin/orch.ts" stalled-workers --repo "$REPO" --run "$RUN_ID"
 ```
 
 머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.

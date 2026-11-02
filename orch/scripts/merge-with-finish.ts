@@ -31,7 +31,10 @@
 //     --finish-arg ARG        finish-pr.ts 에 더 넘길 인자. 하나씩 준다. 값이 `--` 로 시작하면 `--finish-arg=--run` 처럼 쓴다
 //     --run RUN_ID            worker 를 찾을 Orca Run. finish-pr.ts 에 `--run` 을 넘기고, 머지 큐의 정리 단계에도
 //                             `--sweep-arg --run --sweep-arg RUN_ID` 를 넘겨 다른 Run 의 worker 터미널을 건너뛰게 한다.
-//                             `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 어디에도 없으면 경고 한 줄을 낸다
+//                             `--finish-arg=--run` 으로만 준 값도 정리 단계에 넘긴다. 셋 다 없으면 설정 파일의 finish.run 을 정리 단계에 넘긴다
+//                             (마무리는 finish.run 을 스스로 읽는다). 그것도 없으면 경고 한 줄을 내고, 정리 인자의
+//                             `--close-own-taken-over` 를 빼고 경고 한 줄을 더 낸다. 그 옵션은 --run 없이 부르면 cleanup-sweep 이
+//                             사용법 오류로 끝나 머지 뒤 정리가 통째로 빠진다(2026-11-02 queue.sweep_args 에 그 옵션만 둔 저장소)
 //     --board-item PR=ID      그 PR 의 마무리가 판정과 상관없이 done 으로 바꿀 보드 항목(`finish-pr.ts --board-id`). PR 마다 준다.
 //                             주지 않으면 마무리가 보드 파일에서 찾는다(finish-pr.ts 머리 주석의 「보드 항목」)
 //     --finish-log-dir DIR    마무리 출력과 pid 폴더. 기본은 orch 작업 폴더의 queue/(lib/paths.ts 의 queue). handoff-cleanup.ts 가 이 폴더의 끝난 로그를 옮긴다
@@ -74,7 +77,7 @@ import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, QUEUE_KEYS, section } from './lib/config.ts'
 import type { Config } from './lib/config.ts'
 import { eventTimeoutSec, handlerFile } from './lib/events.ts'
-import { FINISH_OPTIONS } from './lib/finish-options.ts'
+import { FINISH_KEYS, FINISH_OPTIONS } from './lib/finish-options.ts'
 import { isFile, real } from './lib/fs.ts'
 import { repoArgProblem } from './lib/git.ts'
 import { makeParent, pathOf, requireMigrated } from './lib/paths.ts'
@@ -132,21 +135,44 @@ function pairValue(args: string[], name: string): string | null {
   return values.size === 1 ? [...values][0] : null
 }
 
-// 머지 큐의 정리 단계를 Run 으로 한정하는 인자를 더한 머지 큐 인자. Run 이 어디에도 없으면 경고만 내고 그대로 돌려준다.
-// Run 이 서로 다른 곳에 있으면 Usage 다
-function scopeSweep(wrapper: Wrapper, queue: string[]): string[] {
+// Run 을 알아야 하는 정리 옵션. Run 없이 넘기면 cleanup-sweep 이 사용법 오류로 끝난다
+const RUN_ONLY_SWEEP_ARGS: readonly string[] = ['--close-own-taken-over']
+
+// 머지 큐의 정리 단계를 Run 으로 한정하는 인자를 더한 머지 큐 인자. 명령줄에 Run 이 없으면 설정의 finish.run(configRun)을 쓴다.
+// Run 이 어디에도 없으면 경고를 내고, Run 이 있어야 하는 정리 옵션을 뺀 인자를 돌려준다. 명령줄의 Run 이 서로 다르면 Usage 다
+function scopeSweep(wrapper: Wrapper, queue: string[], configRun: string | null): string[] {
   if (queue.includes('--no-sweep')) return queue
   const sweep: string[] = []
   for (let i = 0; i < queue.length - 1; i++) if (queue[i] === '--sweep-arg') sweep.push(queue[i + 1])
   const sweepRun = pairValue(sweep, '--run')
   const runs = new Set([wrapper.run, pairValue(wrapper.finishArg, '--run'), sweepRun].filter((v): v is string => Boolean(v)))
   if (runs.size > 1) throw new Usage(`--run 의 값이 서로 다르다: ${[...runs].sort().join(', ')}`)
-  if (runs.size === 0) {
+  const run = runs.size === 1 ? [...runs][0] : configRun
+  if (!run) {
     process.stderr.write('경고: 정리 단계가 Run 으로 한정되지 않는다. --run RUN_ID 를 주면 다른 Run 의 worker 터미널을 건너뛴다\n')
-    return queue
+    const kept: string[] = []
+    const dropped = new Set<string>()
+    for (let i = 0; i < queue.length; i++) {
+      if (queue[i] === '--sweep-arg' && i + 1 < queue.length && RUN_ONLY_SWEEP_ARGS.includes(queue[i + 1])) {
+        dropped.add(queue[i + 1])
+        i += 1
+      } else {
+        kept.push(queue[i])
+      }
+    }
+    for (const name of dropped) process.stderr.write(`경고: Run 을 몰라 정리 단계에서 ${name} 를 뺀다. --run RUN_ID 를 주면 넘긴다\n`)
+    return kept
   }
-  if (sweepRun === null) return ['--sweep-arg', '--run', '--sweep-arg', [...runs][0], ...queue]
+  if (sweepRun === null) return ['--sweep-arg', '--run', '--sweep-arg', run, ...queue]
   return queue
+}
+
+// 설정 파일의 finish.run. 없거나 빈 문자열이면 null 이고, 문자열이 아니면 ConfigError 다
+function configRun(path: string, config: Config): string | null {
+  const value = section<Record<string, unknown>>(config, 'finish', FINISH_KEYS).run
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new ConfigError(`${path} 의 finish.run 은 문자열이어야 한다`)
+  return value
 }
 
 // (래퍼 옵션, 머지 큐 인자 목록, PR 목록). 모르는 래퍼 옵션 값이면 Usage
@@ -365,7 +391,7 @@ async function main(argv: string[]): Promise<number> {
       if (handlerFile('after-deploy', wrapper.repo)) eventTimeoutSec('after-deploy', wrapper.repo)
     }
     const lastOfTask = prs.filter((pr) => pr.mark === '!').flatMap((pr) => ['--last-of-task', pr.number])
-    queue = [...lastOfTask, ...scopeSweep(wrapper, [...queueDefaults(path, parsed.queue, config), ...parsed.queue])]
+    queue = [...lastOfTask, ...scopeSweep(wrapper, [...queueDefaults(path, parsed.queue, config), ...parsed.queue], configRun(path, config))]
     if (wrapper.run && pairValue(wrapper.finishArg, '--run') === null) wrapper.finishArg.push('--run', wrapper.run)
   } catch (e) {
     if (!(e instanceof Usage) && !(e instanceof ConfigError)) throw e
