@@ -53,6 +53,12 @@
 //     4. `orca worktree list` 에 그 경로가 보일 때까지 기다린다
 //     5. worker-start 로 띄우고 --watch 초 동안 단계를 본다
 //        실패하면 출력의 error 를 `worker-start 오류: <code>: <message>` 한 줄로 낸다
+//        단계는 `worker-show --full` 의 worker.stage 다. --full 없이 읽은 줄인 보기는 이 키가 없어 늘 「단계 없음」 으로 보였고,
+//        살아 일하는 worker 를 abandon 하고 같은 워크트리에 하나 더 띄웠다(2026-11-02 세 번)
+//        --watch 초가 지나도 worktree_creating 이면 abandon 하기 전에 일하는 흔적을 본다(아래 「일하는 흔적」).
+//        흔적이 있으면 `<dispatch> 단계는 <단계> 지만 일하는 흔적이 있어(<근거>) 다시 띄우지 않는다` 를 내고 그대로 LAUNCHED 다
+//     일하는 흔적(하나라도 있으면): dispatch 의 lastHeartbeatAt, dispatch.status 가 running, worker-start 직전과 비교해
+//        워크트리의 HEAD 나 `git status --porcelain` 이 바뀜, worker 터미널 화면이 작업 중이거나 권한 확인 창(lib/screen.ts)
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
@@ -100,8 +106,9 @@ import { profilesRoot, selectedReadiness } from './lib/claude-profile.ts'
 import { checkLaunchSettings } from './lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { recordLaunch } from './lib/launched.ts'
-import { orca, orcaBin, repoVisibility, repoVisibilityActions } from './lib/orca.ts'
+import { orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from './lib/orca.ts'
 import { requireMigrated } from './lib/paths.ts'
+import { readScreen, screenLines } from './lib/screen.ts'
 import { runAsync, scriptCommand } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
@@ -170,6 +177,40 @@ function jget(text: string, keys: string): string {
       value = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>)[part] : undefined
     }
     if (value !== undefined && value !== null && value !== '') return typeof value === 'string' ? value : JSON.stringify(value)
+  }
+  return ''
+}
+
+// 워크트리의 HEAD 와 `git status --porcelain`. 읽지 못하면 빈 문자열이다
+function worktreeSnapshot(worktree: string): string {
+  const head = git(worktree, ['rev-parse', 'HEAD'])
+  const status = git(worktree, ['status', '--porcelain'])
+  if (head.code !== 0 || status.code !== 0) return ''
+  return `${head.stdout.trim()}\n${status.stdout}`
+}
+
+// 머리 주석의 「일하는 흔적」. 근거 한 마디를 내고, 없으면 빈 문자열이다
+async function signsOfLife(
+  show: string,
+  worktree: string,
+  snapshot: string,
+  call: (args: string[], timeoutMs?: number) => Promise<RunResult>,
+): Promise<string> {
+  if (jget(show, 'dispatch.lastHeartbeatAt')) return `heartbeat ${jget(show, 'dispatch.lastHeartbeatAt')}`
+  if (jget(show, 'dispatch.status') === 'running') return 'dispatch running'
+  const now = worktreeSnapshot(worktree)
+  if (snapshot && now && now !== snapshot) return '워크트리 변경'
+  const handle = jget(show, 'worker.agentTerminalHandle|dispatch.assigneeHandle|terminal')
+  if (handle) {
+    const read = await call(['terminal', 'read', '--terminal', handle, '--screen', '--json'])
+    let result: Record<string, unknown> = {}
+    try {
+      result = ((JSON.parse(read.stdout) as { result?: Record<string, unknown> }).result ?? {}) as Record<string, unknown>
+    } catch {
+      result = {}
+    }
+    const state = read.code === 0 ? readScreen(screenLines(result)).state : 'unknown'
+    if (state === 'working' || state === 'permission') return `터미널 화면 ${state}`
   }
   return ''
 }
@@ -438,7 +479,7 @@ async function main(argv: string[]): Promise<number> {
   const poll = seconds('LAUNCH_POLL', '5')
   const wtWait = seconds('LAUNCH_WT_WAIT', '30')
   const wtPoll = seconds('LAUNCH_WT_POLL', '2')
-  const call = (args: string[], timeoutMs?: number): Promise<RunResult> => runAsync([orcaBin(), ...args], { timeoutMs })
+  const call = (args: string[], timeoutMs?: number): Promise<RunResult> => runAsync([orcaBin(), ...withFull(args)], { timeoutMs })
 
   const specLine = await runAsync(scriptCommand(process.env.SPEC_LINE || `${HERE}/spec-line.ts`, [a.spec, '--require-permission']))
   if (specLine.code !== 0) {
@@ -546,16 +587,22 @@ async function main(argv: string[]): Promise<number> {
       return result
     }
     let lastShow = ''
+    let snapshot = worktreeSnapshot(worktree)
     const watch = async (dispatch: string): Promise<boolean> => {
       let spent = 0
       for (;;) {
         lastShow = (await call(['orchestration', 'worker-show', '--dispatch', dispatch, '--json'])).stdout
-        const stage = jget(lastShow, 'worker.stage')
+        const stage = jget(lastShow, 'worker.stage|stage')
         if (stage && stage !== 'worktree_creating') {
           out(`${dispatch} 단계: ${stage}`)
           return true
         }
         if (spent >= a.watch) {
+          const life = await signsOfLife(lastShow, worktree, snapshot, call)
+          if (life) {
+            out(`${dispatch} 단계는 ${stage || '단계 없음'} 지만 일하는 흔적이 있어(${life}) 다시 띄우지 않는다`)
+            return true
+          }
           out(`${dispatch} 가 ${a.watch}초 동안 ${stage || '단계 없음'} 에서 넘어가지 않았다`)
           return false
         }
@@ -601,6 +648,7 @@ async function main(argv: string[]): Promise<number> {
       }
       if ((await call(['orchestration', 'worker-abandon', '--dispatch', dispatch, '--json'])).code !== 0) return 1
       out(`${dispatch} 를 abandon 하고 같은 Task 를 path:${worktree} 로 다시 띄운다`)
+      snapshot = worktreeSnapshot(worktree)
       result = await start([...runArgs, '--task', task, '--retry-of', dispatch, '--worktree', `path:${worktree}`, ...passthru])
       if (result.code !== 0) {
         const reason = startError(result.stdout)
