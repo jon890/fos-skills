@@ -2,23 +2,38 @@
 """기능 스펙의 최소 형식과 PR 계획의 요구사항 연결을 검사한다.
 
 cwd: 대상 저장소 루트.
-사용: python3 check_feature.py docs/features/run-cancel/spec.md [--plan tasks/plan1-cancel/index.json]
+사용: python3 check_feature.py docs/features/run-cancel/spec.md [--plan tasks/plan1-cancel/index.json] [--draft]
 종료 코드: 0 형식/연결 통과, 1 위반, 2 읽기/인자 오류.
-의미 완전성, 실제 실행 결과, 사용자 합의는 판정하지 않는다.
+
+스펙 검사:
+- 필수 절: 목표, 범위, 요구사항과 인수 조건, 설계, 결정.
+- 결정 절은 `| D1 | 결정 | 답 | 누가 | 근거 |` 표이거나 `없음: <이유>` 한 줄이다.
+  「답」 이 비었거나 미정·TBD·? 면 닫히지 않은 결정이다.
+  「누가」 는 `사용자 YYYY-MM-DD`, `작성자`, `작성자(위임)` 중 하나다.
+- 제목과 첫 `##` 절 사이에 `확인: YYYY-MM-DD` 줄(사용자 확인 날짜)이 있다. `--draft` 면 이 줄을 요구하지 않는다.
+  `--plan` 과 함께 쓰면 계획이 가리킨 스펙에도 확인 줄을 요구한다. 확인 전에는 계획을 만들지 않는다.
+- 옛 `## 미결정` 절은 결정 표로 바꾸라고 알린다.
+의미 완전성, 실제 실행 결과, 사용자 합의의 내용은 판정하지 않는다.
 """
 import argparse
 import json
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
-SECTIONS = ('목표', '범위', '요구사항과 인수 조건', '설계', '미결정')
+SECTIONS = ('목표', '범위', '요구사항과 인수 조건', '설계', '결정')
 ID = re.compile(r'R[1-9][0-9]*\Z')
+DECISION_ID = re.compile(r'D[1-9][0-9]*\Z')
+DECIDER = re.compile(r'(사용자 \d{4}-\d{2}-\d{2}|작성자|작성자\(위임\))\Z')
+OPEN_ANSWERS = {'', '미정', 'tbd', '?', '-'}
+CONFIRMED = re.compile(r'확인:\s*(\d{4}-\d{2}-\d{2})\s*\Z')
+NO_DECISION = re.compile(r'-?\s*없음:\s*\S.*')
 
 
 def sections(text):
-    """코드 예시 안의 제목과 표는 계약으로 읽지 않는다."""
-    result, current, fence = {}, None, None
+    """코드 예시 안의 제목과 표는 계약으로 읽지 않는다. 첫 `##` 앞은 빈 이름('')의 머리로 모은다."""
+    result, current, fence = {'': []}, '', None
     for line in text.splitlines():
         marker = re.match(r'^\s*(`{3,}|~{3,})', line)
         if marker:
@@ -33,19 +48,66 @@ def sections(text):
         if line.startswith('## '):
             current = line[3:].strip()
             result.setdefault(current, [])
-        elif current:
+        else:
             result[current].append(line)
     return {name: '\n'.join(lines).strip() for name, lines in result.items()}
 
 
-def check_spec(text):
+def table_rows(body):
+    for line in body.splitlines():
+        if line.lstrip().startswith('|'):
+            yield [cell.strip() for cell in line.strip().strip('|').split('|')]
+
+
+def check_decisions(body):
+    """결정 표가 모두 닫혔는지 본다. 표가 없으면 `없음: <이유>` 한 줄이어야 한다."""
+    rows = [cells for cells in table_rows(body) if cells and DECISION_ID.fullmatch(cells[0])]
+    if not rows:
+        if NO_DECISION.fullmatch(body.strip()):
+            return []
+        return ['결정 절에 D1 같은 ID 의 결정 표나 「없음: <이유>」 한 줄이 필요하다']
+    problems, seen = [], set()
+    for cells in rows:
+        did = cells[0]
+        if did in seen:
+            problems.append(f'결정 ID 중복: {did}')
+        seen.add(did)
+        if len(cells) < 5:
+            problems.append(f'{did}: 결정, 답, 누가, 근거 칸이 필요하다')
+            continue
+        _, title, answer, decider, reason = cells[:5]
+        if not title:
+            problems.append(f'{did}: 무엇을 정했는지 결정 칸이 비었다')
+        if answer.lower() in OPEN_ANSWERS:
+            problems.append(f'{did}: 답이 닫히지 않았다({answer or "빈칸"}). 사용자에게 묻거나 근거를 남겨 정한다')
+        if not DECIDER.fullmatch(decider):
+            problems.append(f'{did}: 누가 칸은 「사용자 YYYY-MM-DD」, 「작성자」, 「작성자(위임)」 중 하나다(지금 {decider or "빈칸"})')
+        if not reason:
+            problems.append(f'{did}: 근거 칸이 비었다')
+    return problems
+
+
+def check_confirmed(head):
+    for line in head.splitlines():
+        match = CONFIRMED.fullmatch(line.strip())
+        if match:
+            try:
+                date.fromisoformat(match.group(1))
+            except ValueError:
+                return [f'확인 줄의 날짜가 올바르지 않다: {match.group(1)}']
+            return []
+    return ['사용자 확인 줄(제목 아래 「확인: YYYY-MM-DD」)이 없다. 사용자가 스펙을 확인하기 전에는 계획을 만들지 않는다']
+
+
+def check_spec(text, draft=False):
     found, problems, ids = sections(text), [], []
+    if '미결정' in found and '결정' not in found:
+        problems.append('옛 「미결정」 절을 「결정」 표로 바꾼다(spec 의 references/interview.md)')
     for name in SECTIONS:
         if not found.get(name):
             problems.append(f'스펙의 필수 절이 없거나 비었다: {name}')
-    for line in found.get('요구사항과 인수 조건', '').splitlines():
-        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
-        if not line.lstrip().startswith('|') or not cells or not ID.fullmatch(cells[0]):
+    for cells in table_rows(found.get('요구사항과 인수 조건', '')):
+        if not cells or not ID.fullmatch(cells[0]):
             continue
         rid = cells[0]
         if rid in ids:
@@ -55,8 +117,10 @@ def check_spec(text):
             problems.append(f'{rid}: 요구사항과 인수 조건이 필요하다')
     if not ids:
         problems.append('요구사항 표에 R1 같은 ID 와 인수 조건이 필요하다')
-    if found.get('미결정') not in ('없음', '- 없음'):
-        problems.append('구현에 필요한 미결정을 해결하고 미결정 절에 없음으로 표시한다')
+    if found.get('결정'):
+        problems += check_decisions(found['결정'])
+    if not draft:
+        problems += check_confirmed(found.get('', ''))
     return set(ids), problems
 
 
@@ -105,10 +169,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('spec', type=Path)
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--draft', action='store_true', help='사용자 확인 줄을 요구하지 않는다(인터뷰 중 형식 검사)')
     args = parser.parse_args(argv)
     try:
         spec = inside(Path.cwd(), str(args.spec))
-        _, problems = check_spec(spec.read_text(encoding='utf-8'))
+        _, problems = check_spec(spec.read_text(encoding='utf-8'), draft=args.draft and not args.plan)
         if args.plan:
             problems += check_plan(json.loads(args.plan.read_text(encoding='utf-8')), Path.cwd(), spec)
     except (OSError, ValueError) as exc:
