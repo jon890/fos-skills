@@ -1,0 +1,17 @@
+{
+  "name": "plan12-report-skill",
+  "description": "있는 내용을 읽기 좋은 HTML 보고서로 만들어 띄우는 report 스킬을 새로 둔다",
+  "spec": "docs/features/report/spec.md",
+  "requirements": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"],
+  "pr_scope": "report 스킬의 검사 스크립트, 공통 틀, 세 구성, SKILL.md 와 플러그인 등록을 한 PR 로 끝낸다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-03",
+  "total_phases": 3,
+  "current_phase": 1,
+  "phases": [
+    {"number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["R2", "R3", "R7"]},
+    {"number": 2, "file": "phase-02.md", "execution_profile": "standard", "requirements": ["R4", "R5", "R6"]},
+    {"number": 3, "file": "phase-03.md", "execution_profile": "standard", "requirements": ["R1", "R3", "R5", "R6", "R7", "R8"]}
+  ]
+}
