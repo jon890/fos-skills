@@ -98,6 +98,7 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | [`orch`](orch/README.md) | 전체 개발 루프의 전이와 worker 실행·PR·머지·정리를 조율해요 |
 | [`pr-review`](pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록해요 |
 | [`review-fix`](review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영해요 |
+| [`inbox`](inbox/README.md) | 업무 도구에서 나를 태그한 알림을 `/board` 에 모으고, 확인받은 답변만 등록해요 |
 | [`docs-check`](docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |
 | [`harness-cleanup`](harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 승인받은 것만 고쳐요 |
 | [`mac-cleanup`](mac-cleanup/README.md) | 맥의 디스크, 메모리, 스왑과 오래된 세션, 머지된 브랜치를 조사하고 승인받은 것만 정리해요 |
@@ -186,7 +187,7 @@ PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않아요.
 Python 테스트는 저장소 루트에서 `python3 -m unittest discover -s mac-cleanup/tests` 처럼 각 `tests/` 폴더를 주어 실행해요. 다른 위치에서 상대 경로로 부르면 `ImportError` 로 끝나는 스킬이 있어요.
-orch 와 work-board 의 TypeScript 테스트는 Node 24 이상에서 `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` 로 실행해요.
+orch, work-board, inbox 의 TypeScript 테스트는 Node 24 이상에서 `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts" "inbox/tests/*.spec.ts"` 로 실행해요.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둬요.
 
 ### 고치는 동안
