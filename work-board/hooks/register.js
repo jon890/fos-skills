@@ -700,9 +700,16 @@ async function run($, argv, timeoutMs = COMMAND_TIMEOUT_MS) {
   return stdout
 }
 
+// 상태 줄은 글이 바뀔 때만 보낸다. SDK(stream-json)로 실린 세션은 $.ui.status 마다 ui_status 메시지를 host 에 보내고,
+// 그 메시지를 그리지 못하는 host(Orca 의 채팅 view 등)에서는 같은 원문 JSON 줄이 5초마다 쌓인다
+let sentStatus
 function refreshStatus($) {
   const items = board && Array.isArray(board.items) ? board.items : []
-  $.ui.status(statusLine(items, live, inbox))
+  const text = statusLine(items, live, inbox)
+  if (sentStatus !== text) {
+    sentStatus = text
+    $.ui.status(text)
+  }
   $.ui.invalidate('ui.render')
 }
 

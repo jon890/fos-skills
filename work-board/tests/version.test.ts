@@ -86,6 +86,13 @@ test('단축키 줄은 flexWrap 으로 좁은 창에서 다음 줄로 넘긴다 
   await ui.unmount()
 })
 
+test('상태 줄은 글이 바뀔 때만 보낸다', async ($, on) => {
+  const statuses: unknown[] = []
+  await start($, on, { statuses })
+  // 세션 시작과 /board 열기에서 보드 파일을 두 번 읽었지만 같은 글은 한 번만 보낸다
+  expect(statuses.length).toBe(new Set(statuses).size)
+})
+
 const CACHE = { kind: 'cache', version: '1.4.0', commit: OLD, scope: 'project', projectPath: '/Users/me', key: 'fos-skills@fos-skills' }
 const fake = (result) => {
   const calls: { argv: string[]; init: Record<string, unknown> }[] = []
