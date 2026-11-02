@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.21.0 (2026-11-02)
+
+- 일이 끝난 worker 의 막힘은 답장 대신 `worker-release` 로 닫는다. 답장은 그 worker 를 다시 깨운다
+
 ## 5.20.0 (2026-11-02)
 
 - 루프가 크레딧 소진 등 사용 한도로 멈춘 worker 를 dispatch 마다 한 번 알린다

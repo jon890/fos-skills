@@ -33,6 +33,9 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있다. --help 나 -h 는 사용법을 stdout 에 내고 0 이다.
 // id 는 값과 타입이 모두 같아야 맞는다. 명령줄 id 는 문자열이라 숫자 id(1)는 찾지 못한다.
 //
+// 항목의 status, details, next 가 바뀐 쓰기는 그 항목의 stepAt 에 그 시각(updatedAt 과 같은 꼴)을 남긴다. 새 항목도 남긴다.
+// 창이 worker 없이 남은 단계의 경과 시간을 이 값으로 잰다. 제목만 바꾸거나 같은 줄을 다시 쓰면 그대로다.
+//
 // 파일은 json.dump(indent=1, ensure_ascii=False) 의 꼴로 쓴다. 한 칸 들여쓰기, 한글 그대로, 끝 줄바꿈 없음이다.
 // 숫자는 JS number 로 다시 쓴다. 1.0 은 1 이 되고 2^53 을 넘는 정수는 바뀐다. 이 명령이 쓰는 칸은 PR 번호 말고는 문자열이다.
 //
@@ -84,6 +87,7 @@ const HELP = `${USAGE}
   board.ts del <id>
   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
 status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
+항목의 status, details, next 가 바뀐 쓰기는 그 항목의 stepAt 에 그 시각을 남긴다. 창이 worker 없이 남은 단계의 경과 시간을 이 값으로 잰다
 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
   줄 앞의 「✓」 나 「[x]」 는 끝낸 단계, 「[ ]」, 「▶」, 「◇」 는 끝나지 않은 단계다
@@ -196,6 +200,11 @@ function lineText(number: number, line: Line): string {
   return `    ${number} ${line.done ? '✓' : ' '} ${line.text}\n`
 }
 
+// stepAt 을 바꿀지 가르는 값. normalizeItem 뒤에 부르므로 줄은 {text, done} 객체다
+function stepKey(item: Item): string {
+  return JSON.stringify([item.status ?? null, item.details ?? null, item.next ?? null])
+}
+
 // 줄이 하나 이상 있고 모두 끝난 decide 항목을 done 으로 바꾼다. 결정 필요 수에서 그 항목을 빼기 위해서다(ADR-015)
 function closeDecided(item: Item): void {
   const lines = allLines(item)
@@ -222,7 +231,7 @@ function localIso(now: Date): string {
 }
 
 // json.dumps(ensure_ascii=False) 의 꼴. 구분자가 `, ` 와 `: ` 다. steps 출력을 읽는 쪽과 바이트를 맞춘다.
-// orch/scripts/lib/py.ts 의 pyJson 과 같다. work-board 는 orch 를 import 하지 않아(의존은 orch 에서 work-board 쪽 하나다) 복사해 두었다.
+// orch/scripts/lib/py.ts 의 pyJson 과 같다. board.ts 는 orch 를 import 하지 않아(orch 의 lib/paths.ts 가 board.ts 를 import 해 고리가 생긴다) 복사해 두었다.
 // 바꾸면 함께 고친다
 function pyJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(pyJson).join(', ')}]`
@@ -434,6 +443,7 @@ function main(argv: string[]): number {
   const path = a.file || defaultBoardPath(process.cwd())
   const board: Board = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { items: [] }
   for (const item of board.items) normalizeItem(item)
+  const before = new Map(board.items.map((item) => [item, stepKey(item)]))
   try {
     if (!apply(a, board)) return 0
   } catch (e) {
@@ -441,7 +451,9 @@ function main(argv: string[]): number {
     process.stderr.write(`${e.message}\n`)
     return 1
   }
-  board.updatedAt = localIso(new Date())
+  const stamp = localIso(new Date())
+  board.updatedAt = stamp
+  for (const item of board.items) if (before.get(item) !== stepKey(item)) item.stepAt = stamp
   mkdirSync(dirname(path), { recursive: true })
   const tmp = `${path}.tmp`
   writeFileSync(tmp, JSON.stringify(board, null, 1))

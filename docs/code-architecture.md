@@ -40,7 +40,7 @@ scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 테�
 scripts/tests/test_plugin_manifest.py   매니페스트와 루트의 스킬 디렉터리를 대조한다
 hooks/post-commit                   git 훅. Claude Code 훅이 아니다
 orch/hooks/hooks.json               플러그인이 싣는 Claude Code 훅 정의. plugin.json 의 hooks 배열이 가리킨다
-work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모듈, bin/board.ts 는 보드 편집 명령이다
+work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모듈, bin/board.ts 는 보드 편집 명령, bin/worker-marks.ts 는 worker 줄의 멈춤 판정 명령이다
 ```
 
 스킬을 `skills/` 아래로 옮기지 않은 근거는 [ADR-001](adr/001-plugin-from-repo-root.md) 이 소유한다.
@@ -226,7 +226,9 @@ work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규
 ```
 
 `orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
-예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `work-board/bin/board.ts` 에서 import 한다. 의존 방향은 orch 에서 work-board 로 하나다.
+예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `work-board/bin/board.ts` 에서 import 한다.
+work-board 에서 orch 를 import 하는 곳은 `work-board/bin/worker-marks.ts` 하나다. 보드 worker 줄의 멈춤 판정을 상주 루프와 한 벌로 두려는 것이다.
+`work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/paths.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.
 옛 코드는 하이픈이 든 파일을 `importlib` 로 읽어 함수를 빌려 썼다. 그 함수는 `lib/` 로 옮긴다.
 
 ### 실행 규칙

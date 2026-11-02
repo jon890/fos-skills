@@ -288,13 +288,14 @@ describe('set', () => {
       '     "text": "1. 구현",',
       '     "done": false',
       '    }',
-      '   ]',
+      '   ],',
+      '   "stepAt": "<at>"',
       '  }',
       ' ],',
       ' "updatedAt": "<at>"',
       '}',
     ].join('\n')
-    assert.equal(text.replace(at[1], '<at>'), expected)
+    assert.equal(text.replaceAll(at[1], '<at>'), expected)
   })
 
   test('--pr 과 --merged-pr 은 # 유무와 상관없이 PR 번호 하나는 숫자로, 여럿은 문자열로 저장한다', () => {
@@ -460,7 +461,49 @@ describe('기본 보드 위치', () => {
     const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', BOARD, 'set', 'a', 'wait'], { cwd: repo, encoding: 'utf8' })
     assert.equal(done.status, 0, done.stderr)
     const saved = JSON.parse(readFileSync(join(repo, '.omc/board.json'), 'utf8')) as { items: Json[]; updatedAt: string }
-    assert.deepEqual(saved.items, [{ id: 'a', title: 'a', status: 'wait' }])
+    assert.deepEqual(saved.items, [{ id: 'a', title: 'a', status: 'wait', stepAt: saved.updatedAt }])
     assert.match(saved.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+  })
+})
+
+describe('stepAt', () => {
+  const OLD = '2000-01-01T00:00:00+09:00'
+  const board_ = () => JSON.parse(readFileSync(file, 'utf8')) as { updatedAt: string; items: Json[] }
+
+  test('새 항목은 stepAt 을 updatedAt 과 같은 시각으로 남긴다 (docs/features/board-decision-box R6)', () => {
+    writeFileSync(file, JSON.stringify({ items: [] }), 'utf8')
+    const r = board('set', 'n', 'doing', '--next', '1. a')
+    assert.equal(r.code, 0, r.stderr)
+    const saved = board_()
+    assert.ok(saved.items[0].stepAt)
+    assert.equal(saved.items[0].stepAt, saved.updatedAt)
+  })
+
+  test('step 과 mark 와 status 바꾸기는 stepAt 을 새로 남긴다 (R6)', () => {
+    for (const args of [['step', 'n', '1'], ['mark', 'n', '1'], ['set', 'n', 'wait']]) {
+      write({ id: 'n', status: 'doing', next: rows(['1. a', false], ['2. b', false]), stepAt: OLD })
+      const r = board(...args)
+      assert.equal(r.code, 0, r.stderr)
+      assert.notEqual(item('n').stepAt, OLD, args.join(' '))
+    }
+  })
+
+  test('제목만 바꾸거나 같은 줄을 다시 쓰면 stepAt 이 그대로다 (R6)', () => {
+    write({ id: 'n', status: 'doing', next: rows(['1. a', false]), stepAt: OLD }, { id: 'm', status: 'wait', title: 'm', stepAt: OLD })
+    let r = board('set', 'n', '--title', '새 제목')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(item('n').stepAt, OLD)
+    r = board('set', 'n', 'doing', '--next', '1. a')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(item('n').stepAt, OLD)
+    // 다른 항목을 고쳐도 그대로다
+    assert.equal(item('m').stepAt, OLD)
+  })
+
+  test('옛 문자열 줄을 객체로 바꾸는 것은 변화로 세지 않는다 (R6)', () => {
+    write({ id: 'n', status: 'doing', next: '1. a' })
+    const r = board('set', 'n', '--title', '새 제목')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal('stepAt' in item('n'), false)
   })
 })
