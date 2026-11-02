@@ -4,22 +4,23 @@
 // worker 가 ask 로 멈추거나 먼저 머지된 쪽 때문에 뒤 PR 이 충돌한다. 띄우기 전에 한 번 돌린다.
 //
 // 사용법:
-//     spec-lint.ts --repo DIR [--overlay FILE] [--active FILE ...] SPEC [SPEC ...]
+//     spec-lint.ts --repo DIR [--overlay FILE] [--base main] [--active FILE ...] SPEC [SPEC ...]
 //     spec-lint.ts --repo DIR [--overlay FILE] --check-overlay [--base main] [SPEC ...]
 //
 //     --repo     대상 저장소. 존재 확인과 담당 경로 확장을 이 저장소의 git 으로 한다
 //     --overlay  저장소 값을 읽을 파일. 없으면 <orch 작업 폴더>/overlay.md 를 읽고, 그것도 없으면 저장소 값 없이 돈다
 //     SPEC       검사할 지시서. 공통 지시서(spec-common.md)는 넘기지 않는다
-//     --active   이미 띄운 지시서. 여러 번 준다. 선택 검사는 하지 않고, 활성 지시서끼리의 겹침은 경고로 낸다.
-//                선택 줄을 강제하기 전에 띄운 worker 의 지시서가 새 지시서의 띄우기를 막지 않게 한다(launch-worker 가 쓴다)
+//     --active   이미 띄운 지시서. 여러 번 준다. 선택 검사와 루프 검사는 하지 않고, 활성 지시서끼리의 겹침은 경고로 낸다.
+//                두 줄을 강제하기 전에 띄운 worker 의 지시서가 새 지시서의 띄우기를 막지 않게 한다(launch-worker 가 쓴다)
 //     --check-overlay  오버레이와 <orch 작업 폴더>/config.json 이 가리키는 경로가 origin/<base> 에 있는지도 본다.
 //                      이 옵션을 주면 SPEC 을 생략할 수 있다. `--overlay` 는 지금처럼 오버레이 파일 위치다
-//     --base     --check-overlay 가 대조할 기준 브랜치. 기본 main. fetch 하지 않고 지금 있는 origin/<base> 를 본다
+//     --base     --check-overlay 와 루프 검사의 상대경로 스펙이 대조할 기준 브랜치. 기본 main. fetch 하지 않고 지금 있는 origin/<base> 를 본다
 //
 // 지시서에서 읽는 줄:
 //     담당: `src/a/**`, `docs/a.md`     그 worker 가 고치는 경로. glob 을 쓴다. 여러 줄이어도 된다
 //     예외: ...                          그 줄은 금지 문구와 존재 확인에서 뺀다
 //     worker 선택: ...                   고른 에이전트, 모델, effort 와 비교한 후보, 고른 이유. 형식은 lib/spec.ts 의 selectionsOf 가 소유한다
+//     ## 할 일 아래 첫 줄                 기능 루프를 쓰는지. 아래 「루프」 의 세 꼴 가운데 하나다
 //
 // 오버레이의 `## spec-lint` 절에서 읽는 줄 (저장소 값은 여기에만 둔다):
 //     코디네이터 소유: `docs/adr/**`, `CHANGELOG.md`   어느 지시서도 담당으로 가질 수 없는 경로
@@ -36,6 +37,15 @@
 //     금지        금지 문구가 든 줄인데 그 줄에 부정 표현(않, 말고, 대신, 금지, 없이)이 없다
 //     선택        `worker 선택:` 줄이 없거나, 둘 이상이거나, 에이전트, 모델, effort, 비교, 이유 가운데 빠진 것이 있다.
 //                 모델을 비교 없이 익숙한 쪽으로 고르는 일을 막는다. launch-worker 도 같은 줄로 --agent, --model 을 대조한다
+//     루프        `## 할 일` 제목이 없거나, 그 아래 첫 줄(빈 줄은 건너뛴다. 목록 기호와 굵게는 벗긴다)이 아래 셋 가운데 하나로 시작하지 않는다.
+//                   `루프를 쓴다(스펙: <경로>)`   경로의 스펙이 있고 그 제목과 첫 `## ` 절 사이에 `확인: YYYY-MM-DD` 줄이 있어야 한다.
+//                                                  상대경로는 --repo 루트 기준이고 origin/<base> 에서 읽는다. worker 워크트리가 그 위에 만들어져서다.
+//                                                  커밋하지 않은 스펙은 절대경로로 적고 디스크에서 읽는다. 경로는 백틱으로 감싸도 된다
+//                   `루프를 쓴다(스펙: 새로 쓴다)` 스펙 파일을 보지 않는다. 그 worker 는 spec 단계부터 하고 확인 전에는 planning 과 구현을 하지 않는다
+//                   `루프 없이: <이유>`           이유가 비면 막는다. 이유가 타당한지는 보지 않는다(코디네이터가 feature-loop 기준표로 정한다)
+//                 `리뷰 PR:` 줄(lib/review.ts 의 reviewPrOfSpec)이나 머리의 `중간 과정:` 줄(lib/spec.ts 의 interimOf)이 있는 지시서와
+//                 --active 지시서는 보지 않는다. 기능 구현이 아니거나 이미 떠 있다.
+//                 확인받은 스펙 없이 기능 구현 worker 를 띄우는 일을 막는다. 지침에 루프가 적혀 있어도 바쁠 때 건너뛰었다(2026-11-02)
 //     경로        백틱 안의 파일 경로(확장자가 있는 것)가 저장소에 없다. 파일 이름만 적었으면 어느 폴더에든 있으면 된다.
 //                 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다
 //     공통        지시서 폴더의 spec-common.md 에 틀(orch/templates/spec-common.md)의 `<!-- orch-rule: <이름> -->` 표지가 빠졌다.
@@ -61,24 +71,25 @@
 //
 // 종료 코드:
 //     0  막을 발견이 없다(경로, 공통, 제목, 보드, 완료 경고는 있을 수 있다)
-//     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 오버레이 중 하나 이상
+//     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, extname, join, normalize } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { isFile } from './lib/fs.ts'
 import { git } from './lib/git.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
-import { boardIdOfLine, LINE_BREAK, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
+import { reviewPrOfSpec } from './lib/review.ts'
+import { boardIdOfLine, interimOf, LINE_BREAK, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
 
 const USAGE = [
-  '사용법: spec-lint.ts --repo DIR [--overlay FILE] SPEC [SPEC ...]',
+  '사용법: spec-lint.ts --repo DIR [--overlay FILE] [--base main] [--active FILE ...] SPEC [SPEC ...]',
   '        spec-lint.ts --repo DIR [--overlay FILE] --check-overlay [--base main] [SPEC ...]',
 ].join('\n')
 
@@ -402,7 +413,68 @@ function selectionErrors(spec: Spec): string[] {
   return errors
 }
 
-function lint(repo: Repo, specs: string[], overlay: string | null, active: string[] = []): { errors: string[]; warnings: string[] } {
+// 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 planning 의 check_feature.py 를 따른다
+const LOOP_FORMAT = '`루프를 쓴다(스펙: <경로>)`, `루프를 쓴다(스펙: 새로 쓴다)`, `루프 없이: <이유>`'
+const LOOP_HEADING = /^##\s+할 일\s*$/
+const LOOP_SPEC = /^루프를 쓴다\(스펙\s*:\s*(.*?)\s*\)/
+const LOOP_NONE = /^루프 없이\s*:(.*)$/
+const LOOP_NEW = '새로 쓴다'
+const CONFIRMED = /^확인:\s*(\d{4}-\d{2}-\d{2})\s*$/
+
+function validDate(text: string): boolean {
+  const [y, m, d] = text.split('-').map(Number)
+  const at = new Date(Date.UTC(y, m - 1, d))
+  return at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d
+}
+
+// 스펙 본문에서 확인 줄 문제. 없으면 null. 제목과 첫 `## ` 절 사이만 본다(check_feature.py 의 check_confirmed)
+function confirmProblem(text: string): string | null {
+  const head = splitLines(text.split(/^##\s/m)[0])
+  for (const line of head) {
+    const m = CONFIRMED.exec(line.trim())
+    if (m) return validDate(m[1]) ? null : `확인 줄의 날짜가 올바르지 않다: ${m[1]}`
+  }
+  return '제목 아래에 `확인: YYYY-MM-DD` 줄이 없다. 사용자가 확인한 스펙만 넘긴다. 확인 전이면 `루프를 쓴다(스펙: 새로 쓴다)` 로 spec 단계부터 맡긴다'
+}
+
+// 스펙 경로를 읽는다. 절대경로는 디스크에서, 상대경로는 origin/<base> 에서 읽는다. 못 읽으면 이유
+function readLoopSpec(repoRoot: string, base: string, target: string): { text: string } | { why: string } {
+  if (isAbsolute(target)) {
+    if (!isFile(target)) return { why: `스펙 \`${target}\` 을 읽지 못했다` }
+    return { text: readFileSync(target, 'utf8') }
+  }
+  const rel = removePrefix(target, './')
+  const ref = `origin/${base}`
+  const done = git(repoRoot, ['show', `${ref}:${rel}`])
+  if (done.code !== 0) return { why: `스펙 \`${target}\` 이 ${ref} 에 없다. 상대경로는 기준 브랜치에 커밋된 스펙만 받는다. 커밋하지 않은 스펙은 절대경로로 적는다` }
+  return { text: done.stdout }
+}
+
+function loopErrors(spec: Spec, repoRoot: string, base: string): string[] {
+  const text = spec.lines.join('\n')
+  if (reviewPrOfSpec(text) !== null || interimOf(text) !== null) return []
+  const at = spec.lines.findIndex((line) => LOOP_HEADING.test(line))
+  if (at < 0) return [`${spec.name}:1: 루프: \`## 할 일\` 제목이 없다. 제목 아래 첫 줄에 ${LOOP_FORMAT} 가운데 하나를 적는다`]
+  let index = at + 1
+  while (index < spec.lines.length && spec.lines[index].trim() === '') index += 1
+  const raw = index < spec.lines.length && !/^#{1,6}\s/.test(spec.lines[index]) ? spec.lines[index] : ''
+  const no = raw ? index + 1 : at + 1
+  const first = raw.trim().replace(/^(?:[-*]|\d+\.)\s+/, '').replaceAll('**', '').trim()
+  const where = `${spec.name}:${no}: 루프: `
+  const none = LOOP_NONE.exec(first)
+  if (none) return none[1].trim() ? [] : [`${where}\`루프 없이:\` 뒤에 이유가 없다. 루프 없이 가는 이유를 한 줄로 적는다`]
+  const loop = LOOP_SPEC.exec(first)
+  if (!loop) return [`${where}\`## 할 일\` 아래 첫 줄이 ${LOOP_FORMAT} 가운데 하나가 아니다${first ? `: ${first.slice(0, 60)}` : '(첫 줄이 없다)'}`]
+  const target = stripChars(loop[1], '`').trim()
+  if (target === LOOP_NEW) return []
+  if (!target) return [`${where}\`스펙:\` 뒤에 경로가 없다. 스펙이 아직 없으면 \`루프를 쓴다(스펙: 새로 쓴다)\` 를 쓴다`]
+  const got = readLoopSpec(repoRoot, base, target)
+  if ('why' in got) return [`${where}${got.why}`]
+  const problem = confirmProblem(got.text)
+  return problem ? [`${where}스펙 \`${target}\`: ${problem}`] : []
+}
+
+function lint(repo: Repo, specs: string[], overlay: string | null, active: string[] = [], base = 'main'): { errors: string[]; warnings: string[] } {
   const { coordinator, owners, forbidden } = readOverlay(overlay)
   const errors: string[] = []
   const warnings: string[] = []
@@ -428,7 +500,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
   }
 
   for (const spec of parsed) {
-    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec))
+    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec), ...loopErrors(spec, repo.root, base))
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {
       warnings.push(`${spec.name}:1: 제목: ${TITLE_HINT}`)
     }
@@ -510,7 +582,7 @@ function main(argv: string[]): number {
     const repo = new Repo(values.repo)
     if (!values.overlay && !requireMigrated(values.repo, 'spec-lint', '오버레이를 --overlay 로 직접 준다')) return 2
     const overlay = values.overlay ?? pathOf('overlay', values.repo)
-    const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay, active) : { errors: [], warnings: [] }
+    const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay, active, values.base as string) : { errors: [], warnings: [] }
     if (values['check-overlay']) errors.push(...checkOverlay(values.repo, overlay, values.base as string))
     for (const line of [...errors, ...warnings]) process.stdout.write(`${line}\n`)
     const overlaps = warnings.filter((line) => line.includes(': 겹침 경고: ')).length

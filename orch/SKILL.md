@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "5.20.0"
+  version: "5.21.0"
 ---
 
 # orch
@@ -67,7 +67,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
   일을 나눠야 하면 worker 에게는 계획서와 worktree 준비까지만 맡기고, 소계획마다 `ready: <plan> <worktree 절대경로> <지시서 절대경로>` status 를 받아 코디네이터가 띄운다
 - **worker 는 PR 이 머지될 때까지 맡는다.** 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 가 직접 처리하고 `worker_done` 은 MERGED 뒤에 보낸다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 계획이 PR 여럿이면 지시서는 PR1 만 맡고, 앞 PR 이 머지되면 코디네이터가 다음 지시서를 써 새 worker 를 띄운다(worker 하나가 PR 여럿을 이어 맡지 않는다)
 - **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다
-- **기능 루프를 쓸지는 지시서를 쓰기 전에 정하고 「할 일」 첫 줄에 적는다.** 새 동작, 새 계약, 여러 PR 이면 루프를 쓰고, 버그 수정·정리·설정·측정 같은 작은 일은 쓰지 않는다. 기준은 [`references/feature-loop.md`](references/feature-loop.md) 의 「루프를 쓸지 정한다」 가 소유한다
+- **기능 루프를 쓸지는 지시서를 쓰기 전에 정하고 `## 할 일` 아래 첫 줄에 적는다.** 새 동작, 새 계약, 여러 PR 이면 루프를 쓰고, 버그 수정·정리·설정·측정 같은 작은 일은 쓰지 않는다. 첫 줄의 꼴이 틀리거나 가리킨 스펙이 확인받지 않은 것이면 `launch-worker` 가 띄우지 않는다. 기준과 꼴은 [`references/feature-loop.md`](references/feature-loop.md) 의 「루프를 쓸지 정한다」 가 소유한다
 - **worker 의 spec 인터뷰는 코디네이터가 사용자에게 중계한다.** 결정 블록을 4개씩 나눠 묻고 답을 모아 돌려주며, 스펙 확인도 사용자에게 받는다. 절차는 [`references/replying.md`](references/replying.md) 의 「spec 인터뷰를 중계한다」 가 소유한다
 - **worker 보고서의 사용자 안내(누를 단추, 순서, 화면 문구)는 코드나 화면으로 확인한 뒤 사용자에게 전한다.** 계획한 화면과 실제 화면이 다를 수 있다
 - **auto mode 분류기가 코디네이터의 머지나 배포를 막으면 우회 스크립트를 새로 쓰지 않는다.** 돌릴 명령을 보여 주고 사용자가 직접 실행하게 한다. 우회 스크립트는 다시 거부되기 쉽다

@@ -11,7 +11,7 @@ import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSt
 import { loadConfig } from './config.ts'
 import { boardPath } from './paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
-import { boardIdOf } from './spec.ts'
+import { boardIdOf, interimOf } from './spec.ts'
 
 export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../work-board/bin/board.ts')
 export type BoardItem = Record<string, unknown> & { id: string }
@@ -24,14 +24,8 @@ export function readBoard(file: string): BoardItem[] {
 // CI 고침, 리뷰 반영, 충돌 해결처럼 기존 PR 을 마무리하는 지시서의 줄 머리. 단계 줄이 아니라 진행률에 세지 않는다
 export const INTERIM = '중간 과정: '
 
-// 지시서 머리(첫 `## ` 제목 앞)의 `중간 과정:` 줄. 할 일 본문이 그 줄을 인용해도 잡지 않는다.
-// 줄이 없으면 null 이고, 값에 PR 번호(#N 을 먼저, 없으면 첫 숫자)가 없으면 pr 이 null 이다
-export function interimOf(text: string): { pr: string | null } | null {
-  const head = text.split(/^##\s/m)[0]
-  const value = head.match(/^\s*(?:[-*]\s*)?중간 과정\s*:\s*(.+)$/m)?.[1]
-  if (value === undefined) return null
-  return { pr: value.match(/#(\d+)/)?.[1] ?? value.match(/\d+/)?.[0] ?? null }
-}
+// 지시서 머리의 `중간 과정:` 줄은 lib/spec.ts 의 interimOf 가 읽는다. spec-lint 도 같은 판정을 써서 그쪽에 둔다
+export { interimOf }
 
 // board.ts 가 하위 항목 앞에 붙이는 완료 표시. hooks/register.js 의 STEP 과 같은 표시다
 const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
