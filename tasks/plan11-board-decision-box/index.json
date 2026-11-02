@@ -1,0 +1,50 @@
+{
+  "name": "plan11-board-decision-box",
+  "description": "보드 「결정 필요」 상자에서 Orca 자동 알림을 빼고, 멈춤·오류·worker 없는 단계를 항목의 worker 줄에 붙인다",
+  "pr_scope": "work-board 질문 상자에서 Orca 자동 알림을 빼고 worker 줄에 멈춤·오류·worker 없음 경과 시간을 보이며 정할 것 묻기 요청문을 강화한다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-02",
+  "spec": "docs/features/board-decision-box/spec.md",
+  "requirements": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+  ],
+  "total_phases": 3,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "R1",
+        "R2",
+        "R3",
+        "R7"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "R4",
+        "R5"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "R6"
+      ]
+    }
+  ]
+}
