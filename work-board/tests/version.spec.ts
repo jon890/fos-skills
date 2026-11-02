@@ -35,6 +35,58 @@ test('설치본은 installPath 가 같은 기록에서 scope 와 커밋을 읽�
     { kind: 'tree', version: '1.4.0', commit: '', scope: '', projectPath: '', key: '' })
 })
 
+const PROFILE_A = '/Users/me/Library/Application Support/orca/claude-profiles/18c49fc3/home'
+const PROFILE_B = '/Users/me/Library/Application Support/orca/claude-profiles/7ba02f76/home'
+const PROFILE_ROOT = PROFILE_A + '/plugins/cache/fos-skills/fos-skills/1.4.0'
+const ALIAS_ROOT = PROFILE_B + '/plugins/cache/fos-skills/fos-skills/1.4.0'
+const records = (entries) => ({ plugins: { 'fos-skills@fos-skills': entries } })
+
+test('다른 Orca 프로필의 같은 캐시 설치본을 찾고 현재 프로필의 설정 폴더를 유지한다 (R1, R3)', () => {
+  const install = installOf(PROFILE_ROOT, records([
+    { scope: 'project', projectPath: '/Users/me', installPath: ALIAS_ROOT, gitCommitSha: NEW },
+  ]), { version: '1.4.0' }, 'fos-skills')
+  assert.equal(configDirOf(PROFILE_ROOT), PROFILE_A)
+  assert.deepEqual(install, { kind: 'cache', version: '1.4.0', commit: NEW, scope: 'project',
+    projectPath: '/Users/me', key: 'fos-skills@fos-skills' })
+  assert.deepEqual(updateCommand(install), {
+    argv: ['claude', 'plugin', 'update', 'fos-skills@fos-skills', '--scope', 'project'], cwd: '/Users/me',
+  })
+})
+
+test('정확한 경로는 다른 키에 있는 user scope 의 대체 경로보다 먼저 고른다 (R1, R3)', () => {
+  const installed = { plugins: {
+    'fos-skills@other': [{ scope: 'user', installPath: ALIAS_ROOT, gitCommitSha: OLD }],
+    'fos-skills@fos-skills': [{ scope: 'local', projectPath: '/repo', installPath: PROFILE_ROOT, gitCommitSha: NEW }],
+  } }
+  const install = installOf(PROFILE_ROOT, installed, {}, 'fos-skills')
+  assert.equal(install?.commit, NEW)
+  assert.deepEqual(updateCommand(install), {
+    argv: ['claude', 'plugin', 'update', 'fos-skills@fos-skills', '--scope', 'local'], cwd: '/repo',
+  })
+})
+
+test('같은 꼬리의 대체 경로가 겹치면 user scope 를 먼저 고르고 없으면 기록 순서다 (R3)', () => {
+  const project = { scope: 'project', projectPath: '/repo', installPath: ALIAS_ROOT, gitCommitSha: OLD }
+  const local = { ...project, scope: 'local' }
+  const user = { scope: 'user', installPath: ALIAS_ROOT, gitCommitSha: NEW }
+  const install = installOf(PROFILE_ROOT, records([project, user]), {}, 'fos-skills')
+  assert.deepEqual(updateCommand(install), {
+    argv: ['claude', 'plugin', 'update', 'fos-skills@fos-skills', '--scope', 'user'], cwd: '',
+  })
+  assert.equal(installOf(PROFILE_ROOT, records([local, project]), {}, 'fos-skills')?.scope, 'local')
+})
+
+test('캐시의 마켓, 플러그인, 버전이 다르거나 캐시가 아닌 경로는 대체하지 않는다 (R1)', () => {
+  for (const installPath of [
+    ALIAS_ROOT.replace('/1.4.0', '/1.3.0'),
+    ALIAS_ROOT.replace('/cache/fos-skills/', '/cache/other/'),
+    ALIAS_ROOT.replace('/fos-skills/1.4.0', '/other/1.4.0'),
+    '/work/fos-skills/1.4.0', undefined,
+  ]) {
+    assert.equal(installOf(PROFILE_ROOT, records([null, { scope: 'user', installPath }]), {}, 'fos-skills'), null)
+  }
+})
+
 test('ls-remote 출력에서 main 커밋을 읽고, 없으면 던진다', () => {
   assert.equal(parseLsRemote(NEW + '\trefs/heads/main\n'), NEW)
   assert.throws(() => parseLsRemote(''), /main 커밋/)

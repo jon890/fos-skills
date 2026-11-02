@@ -610,15 +610,22 @@ export function installOf(root, installed, manifest, name) {
   const version = manifest && typeof manifest.version === 'string' ? manifest.version : ''
   if (!configDirOf(root)) return { kind: 'tree', version, commit: '', scope: '', projectPath: '', key: '' }
   const plugins = (installed && installed.plugins) || {}
+  const candidates = []
   for (const [key, entries] of Object.entries(plugins)) {
     if (!key.startsWith(name + '@') || !Array.isArray(entries)) continue
-    const entry = entries.find((row) => row && row.installPath === root)
-    if (entry) {
-      return { kind: 'cache', version, commit: String(entry.gitCommitSha || ''), scope: String(entry.scope || ''),
-        projectPath: String(entry.projectPath || ''), key }
-    }
+    for (const entry of entries) if (entry) candidates.push({ key, entry })
   }
-  return null
+  // Orca 계정 프로필의 plugins 는 같은 캐시를 가리킬 수 있다. 정확한 경로를 먼저 찾는다.
+  const tail = (value) => typeof value === 'string' && configDirOf(value)
+    ? value.slice(configDirOf(value).length) : ''
+  const aliases = candidates.filter(({ entry }) => tail(entry.installPath) === tail(root))
+  // 프로필 경로만 다르면 user 설치를 우선하고, 그 밖에는 설치 기록 순서를 유지한다.
+  const found = candidates.find(({ entry }) => entry.installPath === root)
+    || aliases.find(({ entry }) => entry.scope === 'user') || aliases[0]
+  if (!found) return null
+  const { key, entry } = found
+  return { kind: 'cache', version, commit: String(entry.gitCommitSha || ''), scope: String(entry.scope || ''),
+    projectPath: String(entry.projectPath || ''), key }
 }
 
 // git ls-remote <저장소> refs/heads/main 출력의 커밋. 없으면 던진다
