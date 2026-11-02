@@ -181,6 +181,20 @@ test('일하는 worker 만 고르고 워크트리 이름을 꺼낸다', () => {
   ])
 })
 
+test('structured 모드 항목(outcome, state, terminal, workspace)도 읽고 끝난 것은 거른다', () => {
+  const row = (extra) => ({ dispatchId: 'x', taskId: 't', state: 'ready', outcome: 'in_progress', liveness: 'unverifiable',
+    terminal: 'structworker_1', terminalState: 'active', workspace: 'repo-id::/abs/worktrees/repo/accountbook-monthly-report', host: 'local', ...extra })
+  const stdout = JSON.stringify({ result: { workers: [
+    row({ dispatchId: 'a' }),
+    row({ dispatchId: 'b', outcome: 'succeeded' }),
+    row({ dispatchId: 'c', outcome: 'failed' }),
+    row({ dispatchId: 'd', state: 'abandoned' }),
+  ] } })
+  expect(parseWorkers(stdout)).toEqual([
+    { id: 'a', terminal: 'structworker_1', state: 'ready', worktree: 'accountbook-monthly-report' },
+  ])
+})
+
 test('worker 목록은 모든 페이지를 읽고 반복 cursor는 오류로 만든다', async () => {
   const calls = []
   const $ = { process: { run: async (argv) => {
