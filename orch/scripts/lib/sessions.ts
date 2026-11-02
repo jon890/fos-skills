@@ -1,4 +1,5 @@
 // adopt-sessions 의 읽기 전용 발견과 이어받기 문서. 닫기나 입력은 이 모듈에서 하지 않는다.
+// 다시 띄울 worker(discoverAll 의 limited, restartable)도 찾는다. 명령은 문자열로만 내고 부르지 않는다.
 // 모든 Run 을 읽지 못하면 실패시킨다. 현재 Run 에 없다는 이유만으로 다른 worker 를 가져오지 않는다.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve, relative, sep } from 'node:path'
@@ -45,6 +46,97 @@ export function terminalRows(): Json[] {
 }
 
 export async function discoverSessions(repo: string): Promise<Session[]> {
+  return (await discoverAll(repo, false)).sessions
+}
+
+// 다시 띄울 worker. limited 는 살아 있는 dispatch 인데 화면이 사용 한도 안내에서 멈춘 것, restart 는 Task 가 ready 인데
+// 마지막 dispatch 가 failed 인 것(재부팅으로 터미널과 루프가 사라진 경우)이다. commands 는 차례로 부를 명령이다
+export type Stuck = {
+  kind: 'limited' | 'restart'; terminal: string | null; dispatch: string; task: string; run: string | null
+  worktree: string; branch: string; agent: string | null; model: string | null; commands: string[]
+}
+
+// 화면 끝에서 이만큼의 줄만 본다. 한도 안내 뒤에 사람이 이어 가게 해 작업 중이면 working 판정이 먼저 막는다
+const LIMIT_TAIL = 20
+// Claude 의 「Claude usage limit reached」, 「You've hit your weekly limit」, Codex 의 「You've hit your usage limit」
+export const LIMIT_LINE = /usage limit reached|you['’]ve hit your\b.*\blimit/iu
+
+export function limitedScreen(lines: string[]): boolean {
+  const tail = screenTail(lines, LIMIT_TAIL)
+  return classify(tail) !== 'working' && tail.some((line) => LIMIT_LINE.test(line))
+}
+
+function rowWorktree(row: WorkerRow): string {
+  const id = String((row.resource as Json | undefined)?.worktreeId ?? (((row.projection as Json | undefined)?.workspace as Json | undefined)?.id ?? ''))
+  const at = id.indexOf('::')
+  return at >= 0 ? resolve(id.slice(at + 2)) : ''
+}
+
+function provider(row: WorkerRow): { agent: string | null; model: string | null } {
+  const found = ((row.projection as Json | undefined)?.provider ?? {}) as Json
+  return { agent: typeof found.id === 'string' ? found.id : null, model: typeof found.model === 'string' ? found.model : null }
+}
+
+function startCommand(task: string, worktree: string, retryOf: string | null, who: { agent: string | null; model: string | null }): string {
+  return ['orca', 'orchestration', 'worker-start', '--task', task, ...(retryOf ? ['--retry-of', retryOf] : []), '--worktree', `path:${worktree}`,
+    ...(who.agent ? ['--agent', who.agent] : []), ...(who.model ? ['--model', who.model] : []), '--json'].map(shQuote).join(' ')
+}
+
+// 살아 있는 dispatch 가운데 화면이 한도 안내에서 멈춘 것. heartbeat 는 계속 와 대기로는 알 수 없다
+function limitedWorkers(workers: WorkerRow[], paths: Map<string, string>, terminals: Json[]): Stuck[] {
+  const open = new Set(terminals.filter((t) => t.connected !== false && t.status !== 'exited').map((t) => t.handle))
+  const found: Stuck[] = []
+  for (const row of workers) {
+    if (!LIVE_DISPATCH.has(String(row.dispatchStatus)) || typeof row.dispatchId !== 'string' || typeof row.taskId !== 'string') continue
+    const worktree = rowWorktree(row)
+    const branch = paths.get(worktree)
+    const terminal = [...rowHandles(row)].find((handle) => typeof handle === 'string' && open.has(handle)) as string | undefined
+    if (!branch || !terminal) continue
+    const screen = orcaJson<Json>(['terminal', 'read', '--terminal', terminal, '--screen', '--limit', '40'])
+    if (!screen.ok || !limitedScreen(screenLines(screen.data))) continue
+    const who = provider(row)
+    found.push({ kind: 'limited', terminal, dispatch: row.dispatchId, task: row.taskId, run: typeof row.runId === 'string' ? row.runId : null, worktree, branch, ...who,
+      commands: [
+        ['orca', 'orchestration', 'worker-abandon', '--dispatch', row.dispatchId, '--json'].map(shQuote).join(' '),
+        startCommand(row.taskId, worktree, row.dispatchId, who),
+        ['orca', 'terminal', 'close', '--terminal', terminal].map(shQuote).join(' '),
+      ] })
+  }
+  return found
+}
+
+// Task 가 ready 인데 마지막 dispatch 가 failed 인 것. --retry-of 는 task_not_startable 로 거절되므로 없이 띄운다(references/launch.md 「끊긴 worker 다시 띄우기」)
+function restartable(workers: WorkerRow[], paths: Map<string, string>): Stuck[] {
+  const live = new Set(workers.filter((row) => LIVE_DISPATCH.has(String(row.dispatchStatus))).map((row) => row.taskId))
+  const failed = new Map<string, WorkerRow>()
+  for (const row of workers) {
+    if (row.dispatchStatus !== 'failed' || typeof row.taskId !== 'string' || typeof row.dispatchId !== 'string' || live.has(row.taskId)) continue
+    if (paths.has(rowWorktree(row))) failed.set(row.taskId, row)
+  }
+  const tasks = new Map<string, Json[] | null>()
+  const found: Stuck[] = []
+  for (const [task, row] of failed) {
+    const run = typeof row.runId === 'string' ? row.runId : null
+    if (!run) continue
+    if (!tasks.has(run)) {
+      const got = orcaJson<Json>(['orchestration', 'task-list', '--run', run])
+      tasks.set(run, got.ok && Array.isArray(got.data?.tasks) ? (got.data.tasks as Json[]) : null)
+    }
+    if ((tasks.get(run) ?? []).find((t) => t.id === task)?.status !== 'ready') continue
+    // 같은 Task 의 실패한 dispatch 가 여럿이면 마지막 것을 dispatch-show 로 고른다
+    const latest = orcaJson<Json>(['orchestration', 'dispatch-show', '--task', task])
+    const dispatch = latest.ok ? ((latest.data?.dispatch ?? {}) as Json) : {}
+    if (typeof dispatch.id !== 'string' || dispatch.status !== 'failed') continue
+    const latestRow = workers.find((r) => r.dispatchId === dispatch.id) ?? row
+    const worktree = rowWorktree(latestRow) || rowWorktree(row)
+    const who = provider(latestRow)
+    found.push({ kind: 'restart', terminal: null, dispatch: dispatch.id, task, run, worktree, branch: paths.get(worktree) ?? '', ...who,
+      commands: [startCommand(task, worktree, null, who)] })
+  }
+  return found
+}
+
+export async function discoverAll(repo: string, recover = true): Promise<{ sessions: Session[]; limited: Stuck[]; restartable: Stuck[] }> {
   const terminals = terminalRows()
   const workers = await allWorkers()
   const active = activeHandles(workers)
@@ -69,7 +161,8 @@ export async function discoverSessions(repo: string): Promise<Session[]> {
       previous: workers.filter((row) => rowHandles(row).has(handle)).map((row) => ({ dispatch: row.dispatchId, task: row.taskId, status: row.dispatchStatus })),
     })
   }
-  return sessions
+  if (!recover) return { sessions, limited: [], restartable: [] }
+  return { sessions, limited: limitedWorkers(workers, paths, terminals), restartable: restartable(workers, paths) }
 }
 
 export function handover(session: Session, spec: string | null): string {
