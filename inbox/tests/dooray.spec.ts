@@ -1,0 +1,357 @@
+// 두레이 adapter 를 가짜 Runner 로 돌려 본다. 응답은 두레이 공식 문서의 streams 예시와 dooray CLI 0.29.1 의 JSON 필드를 본떴다.
+// 실제 두레이에는 닿지 않는다.
+
+import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, test } from 'node:test'
+import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, MORE_LOG_COUNT, mentions, plainText } from '../scripts/adapters/dooray.ts'
+import type { Adapter, Cache, RunResult } from '../scripts/lib/model.ts'
+
+const ME = '3421415092208840539'
+const ORG = '1387695619080878080'
+const KIM = '1111'
+const LEE = '2222'
+const link = (id: string, name: string) => `[@${name}](dooray://${ORG}/members/${id} "member")`
+const SINCE = '2026-10-26T06:00:00.000Z'
+
+const STREAM = [
+  { type: 'event', event: { read: false, id: 'c1', type: 'comment', postId: 'p81', createdAt: '2026-11-02T14:00:00+09:00',
+    creator: { type: 'member', member: { organizationMemberId: KIM, name: '김철수' } },
+    body: { mimeType: 'text/x-markdown', content: `${link(ME, '김병태')} 운영 계정도 같은 권한이 필요한지 확인 부탁드려요` } } },
+  // 멘션 없는 댓글은 받지 않는다
+  { type: 'event', event: { id: 'c2', type: 'comment', postId: 'p81', creator: { member: { organizationMemberId: LEE, name: '이영희' } },
+    body: { content: '확인했습니다' } } },
+  // 내가 나를 멘션한 댓글은 받지 않는다
+  { type: 'event', event: { id: 'c3', type: 'comment', postId: 'p81', creator: { member: { organizationMemberId: ME, name: '김병태' } },
+    body: { content: link(ME, '김병태') } } },
+  { type: 'post', post: { id: 'p342', projectId: 'proj-home', subject: '배포 일정 조율', createdAt: '2026-11-02T10:00:00+09:00',
+    users: { from: { member: { organizationMemberId: LEE, name: '이영희' } }, to: [{ member: { organizationMemberId: ME, name: '김병태' } }], cc: [] },
+    body: { content: '이번 주 배포 일정' } } },
+  { type: 'post', post: { id: 'p77', createdAt: '2026-11-01T10:00:00+09:00',
+    users: { from: { member: { organizationMemberId: KIM } }, to: [], cc: [{ member: { organizationMemberId: ME } }] }, body: { content: '참조' } } },
+  // 기간 밖에 만든 업무가 고쳐져 피드에 다시 오면 받지 않는다
+  { type: 'post', post: { id: 'p1', createdAt: '2026-10-01T10:00:00+09:00',
+    users: { from: { member: { organizationMemberId: KIM } }, to: [{ member: { organizationMemberId: ME } }] } } },
+  { type: 'mail', mail: { id: 'mail1' } },
+]
+
+const POSTS: Record<string, unknown> = {
+  p81: { id: 'p81', taskNumber: '어드민개발/81', subject: '어드민 권한 정리', project: { id: 'proj-admin', code: '어드민개발' }, body: { content: '권한 정리 본문' } },
+  p342: { id: 'p342', taskNumber: 'AI-스마트홈-AI/342', subject: '배포 일정 조율', project: { id: 'proj-home', code: 'AI-스마트홈-AI' } },
+  p77: { id: 'p77', taskNumber: '어드민개발/77', subject: '로그 보존 기간', project: { id: 'proj-admin', code: '어드민개발' } },
+}
+
+const CHANNELS = [
+  { id: 'ch-dev', title: '스마트홈 개발', type: 'private', updatedAt: '2026-11-02T14:30:00+09:00' },
+  { id: 'ch-bot', title: '배포 알림', type: 'bot', updatedAt: '2026-11-02T14:31:00+09:00' },
+  { id: 'ch-me', title: '', type: 'me', updatedAt: '2026-11-02T14:32:00+09:00' },
+  { id: 'ch-dm', title: '', type: 'direct', updatedAt: '2026-11-02T14:20:00+09:00' },
+]
+
+const DEV_LOGS = [
+    { id: 'l2', sender: { type: 'member', member: { organizationMemberId: ME } }, sentAt: '2026-11-02T14:25:00+09:00', text: '네 볼게요' },
+    { id: 'l1', sender: { type: 'member', member: { organizationMemberId: LEE } }, sentAt: '2026-11-02T14:10:00+09:00', text: `${link(ME, '김병태')} 리뷰 부탁해요` },
+]
+
+const LOGS: Record<string, unknown[]> = {
+  'ch-dev': DEV_LOGS,
+  'ch-dm': [
+    { id: 'l9', sender: { type: 'member', member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T14:00:00+09:00', text: `${link(ME, '김병태')} 잠깐 통화 가능?` },
+  ],
+}
+
+class MemoryCache implements Cache {
+  values = new Map<string, unknown>()
+  read<T>(name: string, fallback: T): T {
+    return (this.values.has(name) ? structuredClone(this.values.get(name)) : fallback) as T
+  }
+  write(name: string, value: unknown): void {
+    this.values.set(name, structuredClone(value))
+  }
+}
+
+let calls: string[][]
+let failing: Set<string>
+let comments: unknown[]
+let sent: { argv: string[]; body: string }[]
+let dir: string
+
+function ok(value: unknown): RunResult {
+  return { code: 0, stdout: JSON.stringify(value), stderr: '' }
+}
+
+function runner(argv: string[]): RunResult {
+  calls.push(argv)
+  const key = argv.slice(2, 4).join(' ')
+  const writeKey = argv.slice(1, 3).join(' ')
+  if (failing.has(key) || failing.has(argv.slice(2).join(' ')) || (argv[1] !== '--json' && failing.has(writeKey))) return { code: 1, stdout: '', stderr: `${key} 실패 (429)` }
+  if (argv[1] !== '--json') {
+    const file = argv[argv.indexOf('--body-file') + 1]
+    sent.push({ argv, body: readFileSync(file, 'utf8') })
+    return { code: 0, stdout: '', stderr: '' }
+  }
+  const args = argv.slice(2)
+  if (key === 'member get') {
+    if (args[2] === 'me') return ok({ id: ME, name: '김병태', defaultOrganization: { id: ORG } })
+    const names: Record<string, string> = { [KIM]: '김철수', [LEE]: '이영희' }
+    return names[args[2]] ? ok({ id: args[2], name: names[args[2]] }) : { code: 1, stdout: '', stderr: '멤버 없음' }
+  }
+  if (key === 'stream list') return ok(STREAM)
+  if (key === 'post get') return ok(POSTS[args[3]])
+  if (key === 'post comment') return ok(comments)
+  if (key === 'messenger channels') return ok(CHANNELS)
+  if (key === 'messenger logs') return ok(LOGS[args[2]] ?? [])
+  return { code: 1, stdout: '', stderr: `모르는 명령 ${argv.join(' ')}` }
+}
+
+function adapter(config: Record<string, unknown> = {}): Adapter {
+  return createDooray({ type: 'dooray', webUrl: 'https://nhnent.dooray.com/', ...config },
+    { run: runner, cache: new MemoryCache(), now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+}
+
+beforeEach(() => {
+  calls = []
+  failing = new Set()
+  comments = []
+  sent = []
+  dir = mkdtempSync(join(tmpdir(), 'dooray-spec-'))
+})
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true })
+})
+
+describe('본문 읽기', () => {
+  test('링크 표기를 읽을 글로 바꾸고 멘션을 판정한다', () => {
+    assert.equal(plainText(`${link(ME, '김병태')} 확인 &#91;MOD&#93;`), '@김병태 확인 [MOD]')
+    assert.equal(mentions(link(ME, '김병태'), ME), true)
+    assert.equal(mentions(link(`${ME}9`, '다른 사람'), ME), false)
+    assert.equal([...excerptOf('가'.repeat(100))].length, 81)
+  })
+})
+
+describe('받기', () => {
+  test('업무 댓글 멘션, 담당, 참조를 공통 모델로 바꾼다 (R1, R2)', () => {
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
+    assert.deepEqual(result.errors, {})
+    const byId = Object.fromEntries(result.items.map((row) => [row.id, row]))
+    assert.deepEqual(Object.keys(byId).sort(), ['dooray:task:comment:c1', 'dooray:task:post:p342', 'dooray:task:post:p77'])
+    const mention = byId['dooray:task:comment:c1']
+    assert.equal(mention.kind, 'mention')
+    assert.equal(mention.title, '어드민개발/81 어드민 권한 정리')
+    assert.equal(mention.url, 'https://nhnent.dooray.com/project/tasks/p81')
+    assert.deepEqual(mention.scope, ['proj-admin', '어드민개발'])
+    assert.deepEqual(mention.from, { id: KIM, name: '김철수' })
+    assert.equal(mention.at, '2026-11-02T05:00:00.000Z')
+    assert.equal(mention.excerpt, '@김병태 운영 계정도 같은 권한이 필요한지 확인 부탁드려요')
+    assert.deepEqual(mention.target, { kind: 'task', postId: 'p81', commentId: 'c1' })
+    assert.equal(byId['dooray:task:post:p342'].kind, 'assigned')
+    assert.equal(byId['dooray:task:post:p77'].kind, 'cc')
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream'), ['dooray', '--json', 'stream', 'list', '--since', SINCE, '--all'])
+    // 지난 받기가 있으면 그 뒤만 읽는다
+    calls = []
+    adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', '2026-11-02T05:55:00.000Z'])
+    // 업무 정보는 업무마다 한 번만 읽는다
+    assert.equal(calls.filter((argv) => argv[2] === 'post' && argv[3] === 'get' && argv[5] === 'p81').length, 1)
+  })
+
+  test('메신저는 봇 방과 나와의 대화를 건너뛰고 바뀐 방의 멘션만 받는다 (D1, D14)', () => {
+    const result = adapter().fetch({ since: SINCE, cursors: { messenger: '2026-11-02T05:00:00.000Z' } })
+    const messenger = result.items.filter((row) => row.source === 'messenger')
+    assert.deepEqual(messenger.map((row) => row.id).sort(), ['dooray:messenger:ch-dev:l1', 'dooray:messenger:ch-dm:l9'])
+    const dev = messenger.find((row) => row.id.endsWith('l1'))
+    assert.deepEqual(dev?.scope, ['ch-dev', '스마트홈 개발'])
+    assert.deepEqual(dev?.from, { id: LEE, name: '이영희' })
+    assert.equal(messenger.find((row) => row.id.endsWith('l9'))?.title, '김철수 대화')
+    assert.deepEqual(calls.find((argv) => argv[3] === 'channels'), ['dooray', '--json', 'messenger', 'channels', '--since', '2026-11-02T05:00:00.000Z'])
+    // 바뀐 방은 오래된 순으로 읽는다
+    const logCalls = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])
+    assert.deepEqual(logCalls, ['ch-dm', 'ch-dev'])
+    // 남은 방이 없으면 커서는 이번 받기 시각이다
+    assert.equal(result.cursors.messenger, '2026-11-02T06:00:00.000Z')
+  })
+
+  test(`메신저는 한 번에 ${MAX_CHANNELS}개 방까지만 읽고, 남은 방은 cursor 로 다음 받기에 넘긴다`, () => {
+    const many = Array.from({ length: MAX_CHANNELS + 5 }, (_, i) => ({ id: `c${i}`, title: `방${i}`, type: 'private',
+      updatedAt: new Date(Date.parse('2026-11-01T00:00:00Z') + i * 60000).toISOString() }))
+    CHANNELS.push(...many)
+    try {
+      const result = adapter().fetch({ since: SINCE, cursors: {} })
+      const read = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])
+      assert.equal(read.length, MAX_CHANNELS)
+      assert.deepEqual(read.slice(0, 2), ['c0', 'c1'])
+      assert.equal(result.cursors.messenger, many[MAX_CHANNELS - 1].updatedAt)
+    } finally {
+      CHANNELS.splice(4)
+    }
+  })
+
+  test(`한 방의 logs ${LOG_COUNT}개가 모두 지난 받기 뒤의 것이면 ${MORE_LOG_COUNT}개로 다시 읽는다`, () => {
+    const busy = Array.from({ length: LOG_COUNT }, (_, i) => ({ id: `b${i}`, sender: { member: { organizationMemberId: LEE } },
+      sentAt: new Date(Date.parse('2026-11-02T05:30:00Z') + i * 1000).toISOString(), text: '잡담' }))
+    LOGS['ch-dev'] = busy
+    try {
+      adapter().fetch({ since: SINCE, cursors: { messenger: '2026-11-02T05:00:00.000Z' } })
+      const counts = calls.filter((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev').map((argv) => argv[6])
+      assert.deepEqual(counts, [String(LOG_COUNT), String(MORE_LOG_COUNT)])
+    } finally {
+      LOGS['ch-dev'] = DEV_LOGS
+    }
+  })
+
+  test('메신저가 실패해도 업무 항목은 낸다 (R7)', () => {
+    failing.add('messenger channels')
+    const result = adapter().fetch({ since: SINCE, cursors: {} })
+    assert.match(result.errors.messenger, /429/)
+    assert.equal(result.errors.task, undefined)
+    assert.equal(result.items.filter((row) => row.source === 'task').length, 3)
+  })
+
+  test('대화방 하나의 logs 가 실패하면 그 방만 빼고 오류를 남긴다', () => {
+    failing.add('messenger logs ch-dev -n 50')
+    const result = adapter().fetch({ since: SINCE, cursors: {} })
+    assert.match(result.errors.messenger, /대화방 1개 읽기 실패: 스마트홈 개발/)
+    assert.deepEqual(result.items.filter((row) => row.source === 'messenger').map((row) => row.id), ['dooray:messenger:ch-dm:l9'])
+  })
+
+  test('업무 피드가 실패하면 task 오류를 남긴다 (R7)', () => {
+    failing.add('stream list')
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
+    assert.match(result.errors.task, /stream list.*429/)
+    assert.equal(result.items.length, 0)
+  })
+})
+
+describe('부분 실패와 이름 (검토 반영)', () => {
+  test('대화방 하나가 실패해도 메신저 커서는 앞으로 가고 그 방은 다음 받기에 다시 읽는다 (R7)', () => {
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    failing.add('messenger logs ch-dev -n 50')
+    const first = make().fetch({ since: SINCE, cursors: {} })
+    assert.match(first.errors.messenger, /스마트홈 개발/)
+    assert.equal(first.cursors.messenger, '2026-11-02T06:00:00.000Z')
+    assert.equal(first.cursors.task, '2026-11-02T06:00:00.000Z')
+    failing.clear()
+    calls = []
+    const second = make().fetch({ since: SINCE, cursors: first.cursors })
+    // 커서 뒤에 바뀐 방이 없어도 실패했던 방은 다시 읽는다
+    assert.ok(calls.some((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev'))
+    assert.ok(second.items.some((row) => row.id === 'dooray:messenger:ch-dev:l1'))
+    assert.deepEqual(cache.read('dooray-retry-channels', ['?']), [])
+  })
+
+  test('업무 하나의 조회가 실패하면 그 원소만 빼고 커서는 앞으로 간다', () => {
+    failing.add('post get --id p342')
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
+    assert.match(result.errors.task, /업무 1개 읽기 실패/)
+    assert.equal(result.cursors.task, '2026-11-02T06:00:00.000Z')
+    assert.deepEqual(result.items.map((row) => row.id).sort(), ['dooray:task:comment:c1', 'dooray:task:post:p77'])
+  })
+
+  test('나를 읽지 못하면 auth 오류 한 줄만 내고 커서를 옮기지 않는다 (R7)', () => {
+    failing.add('member get me')
+    const result = adapter().fetch({ since: SINCE, cursors: {} })
+    assert.deepEqual(Object.keys(result.errors), ['auth'])
+    assert.deepEqual(result.cursors, {})
+  })
+
+  test('피드에 이름이 없는 보낸 사람은 member get 으로 풀어 맥락과 답변에 쓴다 (R3, R10)', () => {
+    const target = adapter({ messenger: false })
+    const cc = target.fetch({ since: SINCE, cursors: {} }).items.find((row) => row.id === 'dooray:task:post:p77')!
+    assert.deepEqual(cc.from, { id: KIM, name: '김철수' })
+    const unnamed = { ...cc, from: { id: KIM, name: '' } }
+    comments = []
+    assert.deepEqual(target.context(unnamed).unresolved, [])
+    assert.equal(target.context(unnamed).item.from.name, '김철수')
+    assert.match(target.compose(unnamed, '네', ''), /^\[@김철수\]/)
+  })
+
+  test('보낸 사람 이름을 끝내 풀지 못하면 맥락은 unresolved, 답변 합성은 던진다 (R3)', () => {
+    const target = adapter({ messenger: false })
+    const ghost = { ...mentionOf(target), from: { id: '9999', name: '' } }
+    comments = []
+    assert.deepEqual(target.context(ghost).unresolved, ['9999'])
+    assert.throws(() => target.compose(ghost, '네', ''), /9999/)
+  })
+})
+
+function mentionOf(target: Adapter) {
+  return target.fetch({ since: SINCE, cursors: {} }).items.find((row) => row.id === 'dooray:task:comment:c1')!
+}
+
+describe('맥락, 답함, 답변', () => {
+  function mentionItem(target: Adapter) {
+    return target.fetch({ since: SINCE, cursors: {} }).items.find((row) => row.id === 'dooray:task:comment:c1')!
+  }
+
+  test('context 는 앞 댓글의 작성자를 이름으로 푼다 (R3)', () => {
+    const target = adapter({ messenger: false })
+    comments = [
+      { id: 'c1', creator: { member: { organizationMemberId: KIM } }, createdAt: '2026-11-02T14:00:00+09:00', body: { content: '두 번째' } },
+      { id: 'c0', creator: { member: { organizationMemberId: LEE } }, createdAt: '2026-11-02T13:00:00+09:00', body: { content: '첫 번째' } },
+    ]
+    const context = target.context(mentionItem(target))
+    assert.equal(context.body, '권한 정리 본문')
+    assert.deepEqual(context.previous.map((row) => [row.from.name, row.text]), [['이영희', '첫 번째'], ['김철수', '두 번째']])
+    assert.deepEqual(context.unresolved, [])
+  })
+
+  test('풀지 못한 작성자는 unresolved 에 남는다 (R3)', () => {
+    const target = adapter({ messenger: false })
+    comments = [{ id: 'c9', creator: { member: { organizationMemberId: '9999' } }, createdAt: '2026-11-02T14:00:00+09:00', body: { content: '?' } }]
+    assert.deepEqual(target.context(mentionItem(target)).unresolved, ['9999'])
+  })
+
+  test('알림 뒤의 내 댓글이 있으면 답함이다 (R5)', () => {
+    const row = mentionItem(adapter({ messenger: false }))
+    comments = [{ creator: { member: { organizationMemberId: KIM } }, createdAt: '2026-11-02T14:30:00+09:00' }]
+    assert.equal(adapter({ messenger: false }).answered(row), false)
+    comments = [{ creator: { member: { organizationMemberId: ME } }, createdAt: '2026-11-02T14:30:00+09:00' }]
+    assert.equal(adapter({ messenger: false }).answered(row), true)
+  })
+
+  test('피드에 시각이 없던 멘션은 댓글 목록의 그 댓글 시각을 기준으로 답함을 판정한다 (R5)', () => {
+    // 처음 받은 시각(item.at)이 내 답보다 늦어도, 멘션 댓글 뒤에 내 답이 있으면 답함이다
+    const row = { ...mentionItem(adapter({ messenger: false })), at: '2026-11-02T06:00:00.000Z' }
+    comments = [
+      { id: 'mine', creator: { member: { organizationMemberId: ME } }, createdAt: '2026-11-02T14:20:00+09:00' },
+      { id: 'c1', creator: { member: { organizationMemberId: KIM } }, createdAt: '2026-11-02T14:00:00+09:00' },
+    ]
+    assert.equal(adapter({ messenger: false }).answered(row), true)
+  })
+
+  test('메신저 멘션 뒤에 내가 그 방에 쓰면 답함이다 (R5)', () => {
+    const target = adapter()
+    const row = target.fetch({ since: SINCE, cursors: {} }).items.find((item) => item.id === 'dooray:messenger:ch-dev:l1')!
+    assert.equal(target.answered(row), true)
+  })
+
+  test('답변은 보낸 사람을 id 로 멘션하고 signature 를 붙여 업무 댓글로 등록한다 (R10)', () => {
+    const target = adapter({ messenger: false })
+    const row = mentionItem(target)
+    const text = target.compose(row, '운영 계정은 필요 없습니다.\n', '🤖 서명')
+    assert.equal(text, `[@김철수](dooray://${ORG}/members/${KIM} "member") 운영 계정은 필요 없습니다.\n\n🤖 서명`)
+    assert.equal(target.compose(row, '네', ''), `[@김철수](dooray://${ORG}/members/${KIM} "member") 네`)
+    assert.equal(target.reply(row, text), 'https://nhnent.dooray.com/project/tasks/p81')
+    assert.deepEqual(sent[0].argv.slice(0, 6), ['dooray', 'post', 'comment', 'add', '--id', 'p81'])
+    assert.equal(sent[0].body, text)
+  })
+
+  test('등록 명령이 실패하면 던진다', () => {
+    const target = adapter({ messenger: false })
+    const row = mentionItem(target)
+    failing.add('post comment')
+    assert.throws(() => target.reply(row, '네'), /실패/)
+    assert.equal(sent.length, 0)
+  })
+
+  test('메신저 답변은 그 대화방으로 보낸다', () => {
+    const target = adapter()
+    const row = target.fetch({ since: SINCE, cursors: {} }).items.find((item) => item.id === 'dooray:messenger:ch-dm:l9')!
+    target.reply(row, '가능해요')
+    assert.deepEqual(sent[0].argv.slice(0, 5), ['dooray', 'messenger', 'channel-send', '--channel', 'ch-dm'])
+  })
+})

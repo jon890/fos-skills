@@ -11,6 +11,7 @@
     "./docs-check",
     "./docs-consolidate",
     "./harness-cleanup",
+    "./inbox",
     "./mac-cleanup",
     "./orch",
     "./planning",
