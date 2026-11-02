@@ -652,3 +652,14 @@ describe('설정', () => {
    assert.equal(limitedScreen(['Your workspace is out of credits', ...CLAUDE_WORKING.split('\n')]), false)
    assert.equal(limitedScreen(['테스트가 통과했다']), false)
  })
+
+ test('한도 알림 파일 쓰기가 실패해도 틱은 끝나고 다음 틱에 다시 알린다', () => {
+   register('A', '2026-01-01T00:00:00Z')
+   orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: 'Your workspace is out of credits' } })
+   const blocked = orchFile('state', 'loop-events', 'A.jsonl')
+   mkdirSync(blocked, { recursive: true })
+   assert.equal(stallOf(tick(), 'd1')?.limitedNotified, false)
+   rmSync(blocked, { recursive: true })
+   assert.equal(stallOf(tick(), 'd1')?.limitedNotified, true)
+   assert.equal(runEvents('A').filter((row) => row.kind === 'WORKER-LIMITED').length, 1)
+ })
