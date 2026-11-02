@@ -104,6 +104,13 @@ let inboxError = ''
 let inboxBusy = false
 // 이 세션에서 알림함이 켜진 것을 본 적이 있는지. 설정이 없는 사용자에게 node 실패를 오류 상자로 보이지 않으려는 것이다(R6)
 let inboxSeen = false
+// x: 켜져 있으면 숫자 단축키가 답변 요청문 대신 그 알림을 넘긴다. 넘기거나 다시 x 를 누르면 꺼진다
+let dismissMode = false
+let dismissBusy = false
+// z 로 되돌릴 알림 id. 이 세션에서 창이 넘긴 것만 쌓는다
+const dismissUndo = []
+// 넘김과 되돌리기마다 올린다. 그 전에 시작한 알림 읽기의 결과는 넘긴 항목을 되살리므로 버린다
+let inboxGeneration = 0
 
 // 플러그인 버전. install 은 설치본(installOf), latest 는 main 의 { commit, version } 이나 { error }, 아직 읽지 않았으면 undefined
 let plugin = { name: '', repository: '', install: null, error: '', latest: undefined }
@@ -602,6 +609,19 @@ export function replyPrompt(item) {
   ].join('\n')
 }
 
+// 넘긴 항목을 뺀 알림 상태. 다음 읽기를 기다리지 않고 상자에서 바로 지운다
+export function withoutItems(state, ids) {
+  if (!state || !Array.isArray(state.items)) return state
+  const gone = new Set(ids)
+  const removedNew = state.items.filter((item) => gone.has(item.id) && item.state === 'new').length
+  return { ...state, items: state.items.filter((item) => !gone.has(item.id)), newCount: Math.max(0, (Number(state.newCount) || 0) - removedNew) }
+}
+
+// inbox.ts dismiss 명령. 보드는 inbox 와 같은 넘김 기록(dismissed.json)을 쓴다
+export function dismissArgv(script, id, undo = false) {
+  return ['node', '--disable-warning=ExperimentalWarning', script, 'dismiss', id, ...(undo ? ['--undo'] : [])]
+}
+
 // 새 알림을 모두 훑는 요청문. i 가 입력란에 채운다
 export const INBOX_PROMPT = [
   '업무 알림함의 새 항목을 훑어 줘.',
@@ -839,18 +859,63 @@ async function loadLive($) {
 async function loadInbox($) {
   if (inboxBusy) return
   inboxBusy = true
+  const generation = inboxGeneration
+  let stale = false
   try {
     const root = (await boardRoot($)) || (await $.session.cwd())
     const script = $.plugin.root + '/inbox/scripts/inbox.ts'
-    inbox = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json'], INBOX_TIMEOUT_MS))
-    if (inbox.enabled) inboxSeen = true
-    inboxError = ''
+    const value = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json'], INBOX_TIMEOUT_MS))
+    stale = generation !== inboxGeneration
+    if (!stale) {
+      inbox = value
+      if (inbox.enabled) inboxSeen = true
+      inboxError = ''
+    }
   } catch (failure) {
-    inboxError = String(failure.message || failure)
+    stale = generation !== inboxGeneration
+    if (!stale) inboxError = String(failure.message || failure)
   } finally {
     inboxBusy = false
   }
+  if (stale) return loadInbox($)
   refreshStatus($)
+}
+
+// x 다음 숫자: 알림을 넘긴다. inbox.ts dismiss 를 불러 같은 넘김 기록에 적고, 상자에서 바로 뺀 뒤 z 로 되돌릴 수 있게 쌓는다
+export async function dismissInbox($, id) {
+  dismissMode = false
+  if (dismissBusy) return $.ui.invalidate('ui.render')
+  dismissBusy = true
+  try {
+    await run($, dismissArgv($.plugin.root + '/inbox/scripts/inbox.ts', id))
+    inboxGeneration++
+    inbox = withoutItems(inbox, [id])
+    dismissUndo.push(id)
+    $.ui.toast('알림을 넘겼어요. z 를 누르면 되돌려요')
+  } catch (failure) {
+    $.ui.toast('알림 넘기기 실패: ' + String(failure.message || failure))
+  } finally {
+    dismissBusy = false
+  }
+  refreshStatus($)
+}
+
+// z: 이 세션에서 마지막으로 넘긴 알림을 되돌린다. 되돌린 항목은 다시 읽어 상자에 그린다
+export async function undoDismiss($) {
+  const id = dismissUndo[dismissUndo.length - 1]
+  if (dismissBusy || !id) return
+  dismissBusy = true
+  try {
+    await run($, dismissArgv($.plugin.root + '/inbox/scripts/inbox.ts', id, true))
+    inboxGeneration++
+    dismissUndo.pop()
+    $.ui.toast('넘김을 되돌렸어요')
+  } catch (failure) {
+    $.ui.toast('넘김 되돌리기 실패: ' + String(failure.message || failure))
+  } finally {
+    dismissBusy = false
+  }
+  await loadInbox($)
 }
 
 // 설치본을 읽는다. 설치본은 세션 동안 바뀌지 않는다(갱신해도 /reload-plugins 전까지는 앞 설치본이 실려 있다)
@@ -979,6 +1044,7 @@ export function register(on) {
   })
 
   on('command.run', { command: 'board' }, async ($) => {
+    dismissMode = false
     await loadFile($)
     loadLive($)
     loadInbox($)
@@ -1155,8 +1221,8 @@ export function register(on) {
             children: [
               index < INBOX_ROWS
                 ? Button({ key: 'inbox-reply-' + item.id, hotkey: String(index + 1), plain: true, dimColor: answered,
-                  onPress: () => { fillPrompt($, replyPrompt(item)) },
-                  children: [Text({ bold: !answered, dimColor: answered, children: [label] })] })
+                  onPress: () => { if (dismissMode) void dismissInbox($, item.id); else fillPrompt($, replyPrompt(item)) },
+                  children: [Text({ bold: !answered, dimColor: answered, color: dismissMode ? 'red' : undefined, children: [label] })] })
                 : Text({ bold: !answered, dimColor: answered, children: ['   ' + label] }),
               tagged('tag', inboxTag(item), item.url || '', ''),
               Text({ dimColor: true, children: [meta] }),
@@ -1172,6 +1238,8 @@ export function register(on) {
         ...inboxErrors.map(([source, message]) => Text({ key: 'ie-' + source, color: 'red', wrap: 'wrap',
           children: [inboxSourceLabel(source) + ' 확인 불가: ' + message] })),
         ...(alerts.show && inbox.unclassified > 0 ? [dim('iu', '미분류 알림 ' + inbox.unclassified + ' · 기본 보드에서 봐요')] : []),
+        ...(alerts.show && dismissMode ? [Text({ key: 'idm', color: 'red', wrap: 'wrap',
+          children: ['넘길 알림의 번호를 누르세요. 넘긴 알림은 답하지 않음으로 남고 z 로 되돌려요. 그만두려면 x'] })] : []),
         ...(alerts.show && inboxItems.length === 0 ? [dim('i0', answeredCount > 0 ? '이 보드의 새 알림이 없어요' : '이 보드의 알림이 없어요')] : []),
         ...inboxItems.map(inboxRow),
         ...(answeredCount > 0 ? [dim('ia', '답함 ' + answeredCount)] : []),
@@ -1311,6 +1379,23 @@ export function register(on) {
                 hotkey: 'i',
                 plain: true,
                 onPress: () => { fillPrompt($, INBOX_PROMPT) },
+              })] : []),
+              ...(alerts.show && (inboxItems.length > 0 || dismissMode) ? [Button({
+                key: 'inbox-dismiss',
+                label: dismissMode ? '넘기기 그만' : '알림 넘기기',
+                hotkey: 'x',
+                plain: true,
+                onPress: () => {
+                  dismissMode = !dismissMode
+                  $.ui.invalidate('ui.render')
+                },
+              })] : []),
+              ...(alerts.show && dismissUndo.length > 0 ? [Button({
+                key: 'inbox-undo',
+                label: '넘김 되돌리기',
+                hotkey: 'z',
+                plain: true,
+                onPress: () => { void undoDismiss($) },
               })] : []),
               Button({
                 key: 'pr-author',
