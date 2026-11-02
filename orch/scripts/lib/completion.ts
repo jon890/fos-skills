@@ -6,6 +6,7 @@
 // 준비 상태: 같은 task 의 status(같은 dispatch 면 발신자도 일치) 이고 제목이나 본문의 한 줄이 `준비됨 #<PR>, head <40자리 SHA>` 로 시작한다.
 //   SHA 바로 뒤는 줄 끝이거나 공백, 탭, `.`, `,`, `;`, `:`, `(` 다. worker 가 같은 줄에 붙인 설명(`head <SHA> (리뷰 P3 1건)`)도 인정한다.
 //   SHA 가 40자리보다 길거나 짧으면 근거가 아니다.
+// 같은 dispatch 의 준비 상태를 우선하고 그 안에서 가장 늦은 시각을 고른다. 없으면 같은 Task 의 다른 dispatch 에도 같은 기준을 쓴다.
 // classify 는 메시지의 복사본에 completionVerification 을 붙인다.
 //   ready           근거가 있다. pr, head, statusMessageId 를 함께 둔다
 //   failure_report  worker_done --outcome failed 같은 실패 보고다. PR 준비를 요구하지 않는다
@@ -98,6 +99,7 @@ export function classify(messages: Json[], history: Json[] = []): Json[] {
       } else {
         const [task, dispatch] = context(item)
         let ready: Json | null = null
+        let selected: Json | null = null
         for (const candidate of previous) {
           if (candidate.type !== 'status' || !task || !dispatch) continue
           const [candidateTask, candidateDispatch] = context(candidate)
@@ -106,7 +108,19 @@ export function classify(messages: Json[], history: Json[] = []): Json[] {
           if (!from || !sender(candidate) || (candidateDispatch === dispatch && from !== sender(candidate))) continue
           if (!earlier(candidate, item, messages.slice(0, output.length))) continue
           const found = readyOf(candidate)
-          if (found) ready = { status: 'ready', ...found, statusMessageId: candidate.id ?? null }
+          if (!found) continue
+          if (selected) {
+            const same = candidateDispatch === dispatch
+            const selectedSame = context(selected)[1] === dispatch
+            if (!same && selectedSame) continue
+            if (same === selectedSame) {
+              const time = isoTime(candidate.created_at || candidate.createdAt)
+              const previousTime = isoTime(selected.created_at || selected.createdAt)
+              if (time !== null && previousTime !== null && time <= previousTime) continue
+            }
+          }
+          selected = candidate
+          ready = { status: 'ready', ...found, statusMessageId: candidate.id ?? null }
         }
         item.completionVerification = ready ?? { status: 'suspicious', reason: '같은 Task의 앞선 PR 준비 상태가 없다' }
         if (!ready) {
