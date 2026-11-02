@@ -69,25 +69,26 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 
 `skills` 배열은 이름순으로 둔다. 스킬을 더하거나 이름을 바꾸면 이 배열을 함께 고친다.
 [`../scripts/export-only-skills.json`](../scripts/export-only-skills.json) 에 명시한 내보내기 전용 원본만 배열에서 제외한다.
-`version` 을 쓰지 않는 근거는 [ADR-002](adr/002-plugin-version-is-commit-sha.md) 가 소유한다.
+`version` 은 main 머지마다 workflow 가 올린다. 규칙과 근거는 [ADR-019](adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
 ## 모듈 책임
 
 | 경로 | 책임 | 읽거나 부르는 쪽 |
 | --- | --- | --- |
 | `.claude-plugin/marketplace.json` | 마켓플레이스 이름과 플러그인 소스 | `claude plugin marketplace add` |
-| `.claude-plugin/plugin.json` | 플러그인 이름과 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
+| `.claude-plugin/plugin.json` | 플러그인 이름, version, 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
+| `scripts/bump-plugin-version.py` | main push 범위의 스킬 CHANGELOG 로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다 | `.github/workflows/plugin-version.yml` |
 | `orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `content-preview/scripts/show-preview.sh` |
-| `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 없는지 확인한다 | 사람, 구현 검증 |
+| `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
 | `scripts/test-plugin-install.sh` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보낸다. 플러그인 배포와 무관하게 그대로 동작한다. 인자는 스크립트 머리 주석이 소유한다 | 사람, `hooks/post-commit` |
 
 ## 스킬 사이의 경로 참조
 
-설치하면 저장소 루트가 `~/.claude/plugins/cache/fos-skills/fos-skills/<커밋 SHA 12자리>/` 로 복사된다.
+설치하면 저장소 루트가 `~/.claude/plugins/cache/fos-skills/fos-skills/<version>/` 로 복사된다.
 스킬 디렉터리는 캐시 안에서도 서로 형제이고 `tools/` 도 같은 루트에 있다.
 
 | 참조 | 플러그인 설치에서의 동작 |
@@ -106,7 +107,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 
 ## 저장소 밖에서 이 저장소를 가리키는 경로
 
-캐시 경로에는 커밋 SHA 가 들어 있어 갱신할 때마다 바뀐다.
+캐시 경로에는 version 이 들어 있어 갱신할 때마다 바뀐다.
 저장소 밖의 파일이 스킬 안의 파일을 가리켜야 하면 **로컬 체크아웃 경로**를 쓴다.
 
 | 저장소 밖의 것 | 가리키는 곳 | 플러그인으로 옮긴 뒤 |

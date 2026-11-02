@@ -1,0 +1,49 @@
+name: Plugin version
+
+# main 에 들어온 변경마다 .claude-plugin/plugin.json 의 version 을 올리고 플러그인 CHANGELOG 에 한 줄을 더한다.
+# version 이 바뀌어야 설치한 쪽의 claude plugin update 가 새 복사본을 받는다(docs/adr/019-plugin-version-auto-bump.md).
+# GITHUB_TOKEN 으로 push 한 커밋은 workflow 를 다시 띄우지 않아 루프가 생기지 않는다.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# 머지가 겹쳐도 차례로 올린다. 앞 실행을 취소하면 그 머지의 상향이 빠진다
+concurrency:
+  group: plugin-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump plugin version
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Bump version and changelog
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: python3 scripts/bump-plugin-version.py --base "$BEFORE" --head "$AFTER"
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "올릴 것이 없다"
+            exit 0
+          fi
+          version=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "chore(plugin): 플러그인 버전을 ${version} 으로 올린다"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git pull --rebase origin main
+          done
+          exit 1
