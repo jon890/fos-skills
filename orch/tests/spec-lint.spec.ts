@@ -55,11 +55,12 @@ beforeEach(() => {
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-// 제목 경고와 선택 발견이 다른 검사의 출력에 섞이지 않게 끝에 제목 줄과 선택 줄을 둔다. 줄 번호는 그대로다
+// 제목 경고와 선택, 루프 발견이 다른 검사의 출력에 섞이지 않게 끝에 제목 줄과 선택 줄, 할 일 절을 둔다. 줄 번호는 그대로다
 const SELECTED = 'worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: CI 리뷰가 Claude 다.'
+const NO_LOOP = '## 할 일\n루프 없이: 테스트 지시서다'
 
 function spec(name: string, text: string): string {
-  return write(join(specs, `${name}.md`), `${text}\n# ${name}\n${SELECTED}\n`)
+  return write(join(specs, `${name}.md`), `${text}\n# ${name}\n${SELECTED}\n${NO_LOOP}\n`)
 }
 
 function overlay(text: string): string {
@@ -166,23 +167,23 @@ describe('지시서 검사', () => {
   })
 
   test('제목 줄도 보드 항목 id 도 없으면 고르는 순서와 첫 줄 예시를 경고한다', () => {
-    const bare = write(join(specs, 'spec-bare.md'), `공통 지시서를 먼저 읽는다.\n\n## 할 일\n- 고친다\n${SELECTED}\n`)
+    const bare = write(join(specs, 'spec-bare.md'), `공통 지시서를 먼저 읽는다.\n\n## 할 일\n루프 없이: 설정만 바꾼다\n- 고친다\n${SELECTED}\n`)
     const r = run(['--repo', repo, bare])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /^spec-bare\.md:1: 제목: .*업무 연결 줄의 제목, `## 목표` 첫 문장, id 순으로 고른다\. 첫 줄 예: `# .+`$/m)
     assert.match(r.stderr, /제목 경고 1건/)
-    const named = write(join(specs, 'spec-named.md'), `공통 지시서를 먼저 읽는다.\n보드 항목 id: \`chart\`\n${SELECTED}\n`)
+    const named = write(join(specs, 'spec-named.md'), `공통 지시서를 먼저 읽는다.\n보드 항목 id: \`chart\`\n${SELECTED}\n${NO_LOOP}\n`)
     assert.deepEqual(lint([named]), { code: 0, stdout: '' })
   })
 
   test('보드 항목 id 줄에 설명이 붙으면 보드 경고를 내고 종료 코드는 0 이다. id 만 있으면 조용하다', () => {
-    const noted = write(join(specs, 'spec-noted.md'), `# 제목\n보드 항목 id: 326-eval-resume (이 PR 은 5단계)\n${SELECTED}\n`)
+    const noted = write(join(specs, 'spec-noted.md'), `# 제목\n보드 항목 id: 326-eval-resume (이 PR 은 5단계)\n${SELECTED}\n${NO_LOOP}\n`)
     const r = run(['--repo', repo, noted])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /^spec-noted\.md:2: 보드: .*설명은 다른 줄로 옮긴다.*\(326-eval-resume\)$/m)
     assert.match(r.stderr, /보드 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)
-    const plain = write(join(specs, 'spec-plain.md'), `# 제목\n보드 항목 id: \`326-eval-resume\`\n${SELECTED}\n`)
+    const plain = write(join(specs, 'spec-plain.md'), `# 제목\n보드 항목 id: \`326-eval-resume\`\n${SELECTED}\n${NO_LOOP}\n`)
     assert.deepEqual(lint([plain]), { code: 0, stdout: '' })
   })
 
@@ -266,8 +267,148 @@ describe('지시서 검사', () => {
     assert.equal(run(['--repo', repo, '--active', launched, spec('spec-ui', '담당: `src/ui/**`\n')]).code, 0)
   })
 
+  test('--active 로 넘긴 이미 띄운 지시서는 할 일 첫 줄을 보지 않는다', () => {
+    const launched = write(join(specs, 'spec-old.md'), '# 앞 일\n## 할 일\n- 고친다\n')
+    const r = run(['--repo', repo, '--active', launched, spec('spec-new', '담당: `src/ui/**`\n')])
+    assert.equal(r.code, 0, r.stdout)
+    assert.doesNotMatch(r.stdout, /루프:/)
+  })
+
   test('없는 지시서는 사용법 오류다', () => {
     assert.equal(lint([join(specs, 'nope.md')]).code, 2)
+  })
+})
+
+describe('할 일 첫 줄의 루프 선택', () => {
+  // 루프 검사만 보게 제목 줄과 선택 줄을 둔다. body 는 그 뒤에 붙는다
+  function task(name: string, body: string): string {
+    return write(join(specs, `${name}.md`), `# ${name}\n${SELECTED}\n\n${body}\n`)
+  }
+
+  function confirmed(head = '확인: 2026-11-02'): string {
+    return `# 기능\n${head}\n\n## 목표\n\n고친다\n\n## 결정\n\n확인: 2026-11-03 은 머리 밖이라 보지 않는다\n`
+  }
+
+  function loops(text: string): string[] {
+    return text.split('\n').filter((line) => line.includes(': 루프: '))
+  }
+
+  test('`## 할 일` 제목이 없으면 1번 줄에 세 꼴을 알리며 막는다', () => {
+    const r = lint([task('spec-none', '## 목표\n고친다')])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /^spec-none\.md:1: 루프: `## 할 일` 제목이 없다\. .*`루프를 쓴다\(스펙: <경로>\)`, `루프를 쓴다\(스펙: 새로 쓴다\)`, `루프 없이: <이유>`/m)
+  })
+
+  test('첫 줄이 세 꼴이 아니거나 비었으면 그 줄을 가리키며 막는다', () => {
+    const r = lint([task('spec-plain', '## 할 일\n\n1. 문서를 고친다\n루프 없이: 뒤에 와도 첫 줄이 아니다'), task('spec-empty', '## 할 일\n\n## 완료 기준\n- 끝')])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /^spec-plain\.md:6: 루프: `## 할 일` 아래 첫 줄이 .* 가운데 하나가 아니다: 문서를 고친다$/m)
+    assert.match(r.stdout, /^spec-empty\.md:4: 루프: .*\(첫 줄이 없다\)$/m)
+    assert.equal(loops(r.stdout).length, 2, r.stdout)
+  })
+
+  test('`루프 없이:` 는 이유가 있으면 통과하고 비면 막는다', () => {
+    assert.deepEqual(lint([task('spec-why', '## 할 일\n- **루프 없이:** 오타만 고친다\n- 고친다')]), { code: 0, stdout: '' })
+    const r = lint([task('spec-blank', '## 할 일\n루프 없이:   ')])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /^spec-blank\.md:5: 루프: `루프 없이:` 뒤에 이유가 없다/m)
+  })
+
+  test('`스펙: 새로 쓴다` 는 스펙 파일 없이 통과한다', () => {
+    assert.deepEqual(lint([task('spec-new', '## 할 일\n루프를 쓴다(스펙: 새로 쓴다). spec 인터뷰부터 한다')]), { code: 0, stdout: '' })
+  })
+
+  test('절대경로 스펙은 디스크에서 읽고 확인 줄이 있어야 통과한다', () => {
+    const good = write(join(tmp, 'drafts/good.md'), confirmed())
+    const draft = write(join(tmp, 'drafts/draft.md'), confirmed('작성: 2026-11-02'))
+    const badDate = write(join(tmp, 'drafts/bad-date.md'), confirmed('확인: 2026-02-30'))
+    assert.deepEqual(lint([task('spec-good', `## 할 일\n루프를 쓴다(스펙: \`${good}\`). planning 부터 한다`)]), { code: 0, stdout: '' })
+    const r = lint([
+      task('spec-draft', `## 할 일\n루프를 쓴다(스펙: ${draft})`),
+      task('spec-date', `## 할 일\n루프를 쓴다(스펙: ${badDate})`),
+      task('spec-gone', `## 할 일\n루프를 쓴다(스펙: ${join(tmp, 'drafts/gone.md')})`),
+      task('spec-blank', '## 할 일\n루프를 쓴다(스펙: )'),
+    ])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /^spec-draft\.md:5: 루프: 스펙 `.*draft\.md`: 제목 아래에 `확인: YYYY-MM-DD` 줄이 없다\..*`루프를 쓴다\(스펙: 새로 쓴다\)`/m)
+    assert.match(r.stdout, /^spec-date\.md:5: 루프: .*확인 줄의 날짜가 올바르지 않다: 2026-02-30$/m)
+    assert.match(r.stdout, /^spec-gone\.md:5: 루프: 스펙 `.*gone\.md` 을 파일로 읽지 못했다$/m)
+    assert.match(r.stdout, /^spec-blank\.md:5: 루프: `스펙:` 뒤에 경로가 없다/m)
+    assert.equal(loops(r.stdout).length, 4, r.stdout)
+  })
+
+  test('상대경로 스펙은 origin/<base> 에 있어야 하고 작업 트리에만 있으면 막는다', () => {
+    write(join(repo, 'docs/features/a/spec.md'), confirmed())
+    commitAsOrigin()
+    write(join(repo, 'docs/features/b/spec.md'), confirmed())
+    write(join(repo, 'docs/features/a/spec.md'), confirmed('작성: 확인 줄을 지운 작업 트리'))
+    // 작업 트리에서 확인 줄을 지워도 origin/main 의 내용으로 판정한다
+    assert.deepEqual(lint([task('spec-a', '## 할 일\n루프를 쓴다(스펙: ./docs/features/a/spec.md)')]), { code: 0, stdout: '' })
+    const r = lint([task('spec-b', '## 할 일\n루프를 쓴다(스펙: docs/features/b/spec.md)')])
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /^spec-b\.md:5: 루프: 스펙 `docs\/features\/b\/spec\.md` 이 origin\/main 에 없다\. .*절대경로로 적는다$/m)
+    // --base 로 준 기준 브랜치에서 읽는다
+    git('-C', repo, 'update-ref', 'refs/remotes/origin/release', 'refs/remotes/origin/main')
+    const other = run(['--repo', repo, '--base', 'release', task('spec-a2', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')])
+    assert.equal(other.code, 0, other.stdout)
+    assert.match(run(['--repo', repo, '--base', 'gone', task('spec-a3', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')]).stdout, /origin\/gone 가 없어 .*--base 로 주거나/)
+    // 폴더를 가리키면 파일이 아니라고 알린다
+    assert.match(lint([task('spec-dir', '## 할 일\n루프를 쓴다(스펙: docs/features/a)')]).stdout, /이 origin\/main 에서 파일이 아니다/)
+  })
+
+  test('--base 가 없으면 origin/HEAD 의 브랜치에서 읽고, --spec-ref 와 --spec-root 가 읽을 곳을 바꾼다', () => {
+    write(join(repo, 'docs/features/a/spec.md'), confirmed())
+    git('-C', repo, 'add', '-A')
+    git('-C', repo, 'commit', '-q', '-m', 'base')
+    git('-C', repo, 'update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    git('-C', repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    const rel = task('spec-rel', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')
+    assert.deepEqual(lint([rel]), { code: 0, stdout: '' })
+    // 커밋하지 않은 스펙도 worker 가 일할 워크트리(--spec-root)에 있으면 통과한다
+    const wt = join(tmp, 'wt')
+    write(join(wt, 'docs/features/b/spec.md'), confirmed())
+    const b = task('spec-b', '## 할 일\n루프를 쓴다(스펙: docs/features/b/spec.md)')
+    assert.equal(lint([b]).code, 1)
+    assert.equal(run(['--repo', repo, '--spec-root', wt, b]).code, 0)
+    assert.match(run(['--repo', repo, '--spec-root', wt, rel]).stdout, /spec\.md` 을 파일로 읽지 못했다/)
+    // --spec-ref 는 그 ref 에서 읽는다
+    git('-C', repo, 'update-ref', 'refs/remotes/origin/feat-x', 'HEAD')
+    assert.equal(run(['--repo', repo, '--spec-ref', 'origin/feat-x', rel]).code, 0)
+    assert.match(run(['--repo', repo, '--spec-ref', 'origin/nope', rel]).stdout, /origin\/nope 가 없어/)
+  })
+
+  test('괄호 앞 띄어쓰기, 제목 뒤 설명, 여러 목록 기호를 받는다', () => {
+    for (const [name, body] of [
+      ['space', '## 할 일\n루프를 쓴다 (스펙: 새로 쓴다)'],
+      ['heading', '## 할 일 (이 PR 범위)\n루프 없이: 오타만 고친다'],
+      ['plus', '## 할 일\n+ 루프 없이: 오타만 고친다'],
+      ['paren', '## 할 일\n1) 루프 없이: 오타만 고친다'],
+      ['check', '## 할 일\n- [ ] 루프 없이: 오타만 고친다'],
+    ]) {
+      assert.deepEqual(lint([task(`spec-${name}`, body)]), { code: 0, stdout: '' }, name)
+    }
+    // `## 할 일과 순서` 는 다른 제목이다
+    assert.match(lint([task('spec-other', '## 할 일과 순서\n루프 없이: 오타')]).stdout, /`## 할 일` 제목이 없다/)
+  })
+
+  test('코드 블록 안의 제목과 확인 줄은 보지 않는다', () => {
+    const quoted = task('spec-fence', '## 목표\n\n```markdown\n## 할 일\n루프 없이: 예시\n```')
+    assert.match(lint([quoted]).stdout, /spec-fence\.md:1: 루프: `## 할 일` 제목이 없다/)
+    const fenced = write(join(tmp, 'drafts/fenced.md'), '# 기능\n\n~~~\n확인: 2026-11-02\n## 예시\n~~~\n\n## 목표\n')
+    assert.match(lint([task('spec-fenced', `## 할 일\n루프를 쓴다(스펙: ${fenced})`)]).stdout, /`확인: YYYY-MM-DD` 줄이 없다/)
+    // 지시서 쪽 코드 블록이 할 일 절 뒤에 있어도 첫 줄 판정은 그대로다
+    assert.deepEqual(lint([task('spec-after', '## 할 일\n루프 없이: 오타만 고친다\n\n```\n## 할 일\n아무 줄\n```')]), { code: 0, stdout: '' })
+  })
+
+  test('`리뷰 PR:` 줄이나 머리의 `중간 과정:` 줄이 있으면 보지 않는다', () => {
+    const review = task('spec-review-pr-7', '리뷰 PR: #7\n\n## 할 일\n- 리뷰한다')
+    const interim = write(join(specs, 'spec-ci.md'), `# CI 고침\n중간 과정: PR #8\n${SELECTED}\n\n## 할 일\n- 고친다\n`)
+    assert.deepEqual(lint([review, interim]), { code: 0, stdout: '' })
+    // 할 일 본문에서 인용한 중간 과정 줄은 표시가 아니다
+    const quoted = task('spec-quote', '## 할 일\n- 중간 과정: PR #N 줄을 문서에 적는다')
+    const r = lint([quoted])
+    assert.equal(r.code, 1)
+    assert.match(r.stdout, /^spec-quote\.md:5: 루프: /m)
   })
 })
 

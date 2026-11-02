@@ -1548,7 +1548,7 @@ describe('spec-lint 관문', () => {
     const first = join(tmp, 'spec-first.md')
     const second = join(tmp, 'spec-second.md')
     for (const file of [first, second]) writeFileSync(file, '# 앞\n담당: `shared.txt`\n')
-    writeFileSync(spec, '# 리뷰\n허락: push 는 허락했다.\n')
+    writeFileSync(spec, '# 리뷰\n허락: push 는 허락했다.\n\n## 할 일\n루프 없이: 테스트 지시서다\n')
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') }, tasks: [
       { id: 't1', status: 'running', spec: first },
       { id: 't2', status: 'running', spec: second },
@@ -1567,14 +1567,98 @@ describe('spec-lint 관문', () => {
     spawnSync('git', ['-C', proj, 'commit', '-q', '--allow-empty', '-m', 'i'], { env })
     const first = join(tmp, 'spec-first.md')
     writeFileSync(first, '# 앞\n\n담당: `plugin.json`, `CHANGELOG.md`\n')
-    writeFileSync(spec, '# 일\n\n허락: push 는 허락했다.\n담당: `plugin.json`\n')
+    writeFileSync(spec, '# 일\n\n허락: push 는 허락했다.\n담당: `plugin.json`\n\n## 할 일\n루프 없이: 테스트 지시서다\n')
     state({ next_ids: ['ctx_1'], tasks: [{ id: 't1', status: 'running', spec: first }] })
     const r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
     assert.equal(r.code, 5, both(r))
     assert.match(r.stderr, /겹침/)
-    // 앞 지시서에는 선택 줄이 없지만 이미 띄운 것이라 선택 발견을 내지 않는다
-    assert.doesNotMatch(r.stderr, /선택:/)
+    // 앞 지시서에는 선택 줄도 할 일 절도 없지만 이미 띄운 것이라 선택, 루프 발견을 내지 않는다
+    assert.doesNotMatch(r.stderr, /선택:|루프:/)
     assert.deepEqual(lines('make '), [])
+  })
+
+  test('기준 브랜치와 상대경로 스펙을 읽을 곳을 spec-lint 에 넘긴다', () => {
+    fakeLint(0)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    let r = launch(['--repo', tmp, '--name', 'x', '--base', 'origin/release', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('lint ')[0], /^lint --repo \S+ --base release \S*spec\.md$/)
+    // --base 가 없으면 origin/HEAD 의 브랜치다
+    const proj = join(tmp, 'proj')
+    spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
+    spawnSync('git', ['-C', proj, 'commit', '-q', '--allow-empty', '-m', 'i'], { env })
+    spawnSync('git', ['-C', proj, 'update-ref', 'refs/remotes/origin/develop', 'HEAD'], { env })
+    spawnSync('git', ['-C', proj, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop'], { env })
+    resetLog()
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('lint ')[0], /^lint --repo \S+ --base develop \S*spec\.md$/)
+    // --resume-remote 면 지시서 브랜치의 원격 ref 에서 읽는다
+    writeFileSync(spec, `${readFileSync(spec, 'utf8')}브랜치: \`feat/a\`\n`)
+    resetLog()
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    r = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--resume-remote', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('lint ')[0], /--base main --spec-ref origin\/feat\/a \S*spec\.md$/)
+    // --worktree 면 그 워크트리 아래 디스크에서 읽는다
+    resetLog()
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.ok(lines('lint ')[0].includes(`--spec-root ${worktree} `), lines('lint ')[0])
+  })
+
+  describe('할 일 첫 줄의 루프 선택(진짜 spec-lint)', () => {
+    let proj: string
+
+    beforeEach(() => {
+      env.SPEC_LINT = join(dirname(SCRIPT), 'spec-lint.ts')
+      proj = join(tmp, 'proj')
+      spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
+      mkdirSync(join(proj, 'docs/features/a'), { recursive: true })
+      writeFileSync(join(proj, 'docs/features/a/spec.md'), '# 기능\n확인: 2026-11-02\n\n## 목표\n\n고친다\n')
+      spawnSync('git', ['-C', proj, 'add', '-A'], { env })
+      spawnSync('git', ['-C', proj, 'commit', '-q', '-m', 'i'], { env })
+      spawnSync('git', ['-C', proj, 'update-ref', 'refs/remotes/origin/main', 'HEAD'], { env })
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    })
+
+    test('확인받은 스펙이 없는 기능 지시서는 워크트리를 만들기 전에 5 로 멈춘다', () => {
+      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n\n## 할 일\n1. 화면에 취소 단추를 더한다\n')
+      const r = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--', ...CLAUDE])
+      assert.equal(r.code, 5, both(r))
+      assert.match(r.stderr, /spec\.md:5: 루프: `## 할 일` 아래 첫 줄이 .* 가운데 하나가 아니다: 화면에 취소 단추를 더한다/)
+      assert.match(r.stderr, /--lint-ack/)
+      assert.deepEqual(lines('make '), [])
+      assert.deepEqual(lines('orca orchestration worker-start'), [])
+      // 작업 트리에만 있는 스펙을 상대경로로 적어도 막는다
+      writeFileSync(join(proj, 'docs/features/a/draft.md'), '# 기능\n확인: 2026-11-02\n')
+      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/draft.md)\n')
+      const draft = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--', ...CLAUDE])
+      assert.equal(draft.code, 5, both(draft))
+      assert.match(draft.stderr, /루프: 스펙 `docs\/features\/a\/draft\.md` 이 origin\/main 에 없다/)
+      assert.deepEqual(lines('make '), [])
+    })
+
+    test('기준 브랜치의 확인받은 스펙을 가리키면 띄운다', () => {
+      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md). planning 부터 한다\n')
+      const r = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--', ...CLAUDE])
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stdout, /LAUNCHED ctx_1/)
+      assert.doesNotMatch(r.stderr, /루프:/)
+    })
+
+    test('`루프 없이: <이유>` 와 `스펙: 새로 쓴다` 도 띄운다', () => {
+      for (const first of ['루프 없이: 오타만 고친다', '루프를 쓴다(스펙: 새로 쓴다)']) {
+        resetLog()
+        state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+        writeFileSync(spec, `# 일\n허락: push 는 허락했다.\n\n## 할 일\n${first}\n`)
+        const r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
+        assert.equal(r.code, 0, `${first}\n${both(r)}`)
+        assert.match(r.stdout, /LAUNCHED ctx_1/)
+      }
+    })
   })
 })
 

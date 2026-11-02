@@ -1,4 +1,4 @@
-// 지시서 읽기와 지우기의 한 벌이다. 브랜치 줄과 허락 줄, worker 선택 줄, 살아 있는 dispatch 가 쓰는 지시서 목록, 지시서 삭제 경로를 둔다.
+// 지시서 읽기와 지우기의 한 벌이다. 브랜치 줄과 허락 줄, worker 선택 줄, 중간 과정 줄, 살아 있는 dispatch 가 쓰는 지시서 목록, 지시서 삭제 경로를 둔다.
 //
 // 지시서 삭제는 deleteSpecs 한 경로다. 어떤 파일을 지울지 고르는 일과 지우는 일을 나눈다.
 //   - 본문의 브랜치 줄로 고르면 branchesOf, 이름 규칙으로 고르면 specCandidates 를 쓴다
@@ -99,6 +99,15 @@ export function boardIdOf(text: string): { id: string; note: string } | null {
     if (found) return found
   }
   return null
+}
+
+// 지시서 머리(첫 `## ` 제목 앞)의 `중간 과정:` 줄. 할 일 본문이 그 줄을 인용해도 잡지 않는다.
+// 줄이 없으면 null 이고, 값에 PR 번호(#N 을 먼저, 없으면 첫 숫자)가 없으면 pr 이 null 이다
+export function interimOf(text: string): { pr: string | null } | null {
+  const head = text.split(/^##\s/m)[0]
+  const value = head.match(/^\s*(?:[-*]\s*)?중간 과정\s*:\s*(.+)$/m)?.[1]
+  if (value === undefined) return null
+  return { pr: value.match(/#(\d+)/)?.[1] ?? value.match(/\d+/)?.[0] ?? null }
 }
 
 // 허락 줄의 문구. 마침표로 끝나지 않으면 붙인다. 첫 지시 줄에 문장으로 이어 붙이기 때문이다.
