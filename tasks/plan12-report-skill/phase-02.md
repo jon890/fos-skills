@@ -46,6 +46,7 @@
 ### 3. 틀을 검증하는 테스트를 `report/tests/test_check_report.py` 에 더한다
 
 `report/assets/template.html` 을 임시 폴더에 `template-sample.html` 로 복사해 `check-report.py` 로 검사하면 종료 코드 0 이다. 틀이 R2, R7 을 스스로 지키는지 본다.
+틀에 R4 의 부품 표지(`class="toc"`, `class="top"`, `class="lead"`, `class="concl"`, 칩 네 가지, `class="steps"`, `class="callout"`, `<details`, `id="srcbox"`, `class="ref"`)가 모두 있는지, `--korean` 으로 틀의 예시 글이 금지어 검사를 통과하는지도 본다.
 
 ## 검증
 

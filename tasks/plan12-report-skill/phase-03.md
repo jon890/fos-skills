@@ -14,16 +14,16 @@ report 스킬의 실행 절차(`SKILL.md`), 사용자 안내(`README.md`), 이�
 - 문서 구조는 `~/.claude/references/skill-structure.md` 를 따른다: 목표 한 문장 → 워크플로우 개요 표(단계, 이름, 통과 조건, reference) → 단계별 절.
 - 선례: `presentation/SKILL.md` 의 번들 상대경로 안내, `presentation/README.md` 의 README 절 구성.
 - README 절과 CHANGELOG 형식은 저장소 `README.md` 의 「스킬 README」 와 「버전과 변경 이력」 이 정하고 `scripts/check-skill-docs.py` 가 검사한다.
-- 스킬을 더할 때 `.claude-plugin/plugin.json` 과 `.codex-plugin/plugin.json` 의 `skills` 배열, 저장소 README 의 스킬 목록 표를 함께 고친다. 빠지면 `scripts/tests/test_plugin_manifest.py` 가 실패한다.
+- 스킬을 더할 때 `.claude-plugin/plugin.json` 과 `.codex-plugin/plugin.json` 의 `skills` 배열, 저장소 README 의 스킬 목록 표를 함께 고친다. 두 배열이 빠지면 `scripts/tests/test_plugin_manifest.py` 가 실패한다. README 표는 테스트가 보지 않으므로 「검증」 절의 `grep` 이 확인한다.
 - 플러그인 `version` 은 main 머지 때 workflow 가 올린다. 사람이 올리지 않는다.
 
 **근거 문서**: `docs/features/report/spec.md` 의 「요구사항과 인수 조건」 전체와 「설계」
 
 ## 의도 메모
 
-- 파일 자리 계산은 짧은 셸 블록으로 둔다. git 저장소면 `<루트>/.omc/previews/`, 아니면 세션 임시 폴더(`$SCRATCHPAD`, 없으면 `$TMPDIR`)다(R3, D5).
+- 파일 자리 계산은 짧은 셸 블록으로 둔다. git 저장소면 `<루트>/.omc/previews/`, 아니면 세션 임시 폴더다(R3, D5). 세션 임시 폴더는 환경 변수가 아니라 하네스가 시스템 프롬프트로 알려 주는 경로다. 에이전트가 그 값을 `REPORT_TMP` 로 채우고, 알려 준 경로가 없을 때만 `$TMPDIR` 를 쓴다.
 - 검사 실패 시 두 번까지 고쳐 다시 검사하고, 그래도 실패면 띄우지 않고 알린다(R7, D12).
-- korean-check 는 `check-report.py --text` 로 뽑은 글을 임시 `.md` 로 저장해 `check.sh` 에 넘긴다(R6).
+- korean-check 는 `check-report.py --korean` 으로 돈다(R6). 금지어(종료 코드 1)는 고쳐 다시 검사한다. korean-check 를 찾지 못하면(종료 코드 2) 띄우기는 하되 응답에 「표기 검사를 돌리지 못했다」 고 적는다. R7 의 띄우기 관문은 구조 검사만이다.
 - 응답에는 경로, 고른 구성 한 줄, 검사 결과를 적는다(R3, R5).
 
 ## 작업 항목
@@ -42,7 +42,11 @@ report 스킬의 실행 절차(`SKILL.md`), 사용자 안내(`README.md`), 이�
 
 `# CHANGELOG: report` 머리와 `## 1.0.0 (2026-11-03)` 절. 항목은 새 스킬을 쓰는 사람이 알 것만.
 
-### 4. 매니페스트와 저장소 README
+### 4. R1, R8 문장을 지키는 테스트
+
+`report/tests/test_check_report.py` 에 `SkillDocTest` 를 더한다. `report/SKILL.md` frontmatter 의 description 에 `/report`, `HTML 로 시각화해서 설명`, `보고서로 만들어`, `한눈에 보이게 정리`, `presentation`, `content-preview` 가 있고, 본문에 R8 문장 「청중 앞에서 넘기며 말하는 발표는 `presentation`, 외부에 게시할 글은 `content-preview`, 혼자 읽는 설명과 보고서는 `report`」 가 있는지 본다.
+
+### 5. 매니페스트와 저장소 README
 
 - `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json` 의 `skills` 에 `./report` 를 알파벳 순 자리에 더한다.
 - `README.md` 의 스킬 목록 표에 `report` 줄을 `presentation` 아래에 더한다.
@@ -53,6 +57,7 @@ report 스킬의 실행 절차(`SKILL.md`), 사용자 안내(`README.md`), 이�
 python3 -m unittest discover -s scripts/tests
 python3 -m unittest discover -s report/tests
 python3 scripts/check-skill-docs.py
+grep -q '^| \[`report`\](report/README.md)' README.md
 python3 korean-check/scripts/korean-style-check.py report/SKILL.md report/README.md report/CHANGELOG.md README.md
 ```
 
@@ -65,6 +70,7 @@ python3 korean-check/scripts/korean-style-check.py report/SKILL.md report/README
 | `report/SKILL.md` | 신규 |
 | `report/README.md` | 신규 |
 | `report/CHANGELOG.md` | 신규 |
+| `report/tests/test_check_report.py` | 수정 |
 | `.claude-plugin/plugin.json` | 수정 |
 | `.codex-plugin/plugin.json` | 수정 |
 | `README.md` | 수정 |
