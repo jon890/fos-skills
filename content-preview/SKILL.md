@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.20.0"
+  version: "3.21.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -123,7 +123,7 @@ Dooray 업무와 댓글·메신저, GitHub issue 와 PR 본문은 실제 렌더�
 | 대상 | 렌더링 원리 | 생성기 |
 | --- | --- | --- |
 | Dooray 업무·댓글 | TOAST UI Editor viewer 의 CSS 와 JS. 실제 등록 화면과 거의 같다 | `scripts/dooray-preview/` |
-| Dooray 메신저 | 확인된 멘션과 HTTPS 주소만 렌더한다. 미확인 형식은 원문으로 둔다 | `scripts/dooray-preview/` |
+| Dooray 메신저 | 확인된 멘션, 인라인 코드, HTTPS 주소와 링크만 렌더한다. 렌더되지 않는 형식은 원문과 경고로 보인다 | `scripts/dooray-preview/` |
 | GitHub | github-markdown-css 와 marked.js. 실제 화면과 비슷하다 | `scripts/github-preview/` |
 
 **대상과 생성기를 바꿔 쓰지 않는다.** marked 는 한 문장마다 줄을 나눈 본문을 한 문단으로 붙이고
@@ -132,7 +132,7 @@ Dooray 업무와 댓글·메신저, GitHub issue 와 PR 본문은 실제 렌더�
 인자는 각 생성기의 `--help` 가 소유한다.
 Dooray 의 `--mode comment` 는 댓글과 진행 기록, 주간보고에, GitHub 의 `--type pr` 은 PR 본문과 리뷰 응답에 쓴다.
 
-메신저를 미리볼 때는 [`references/messenger-rendering.md`](references/messenger-rendering.md) 의 확인 범위를 읽는다.
+메신저 본문을 쓰기 전과 미리볼 때 [`references/messenger-rendering.md`](references/messenger-rendering.md) 의 확인 범위를 읽는다. 굵게, 제목, 표, 목록, 코드 블록은 기호가 그대로 보인다.
 
 `$AUTHOR` 는 Dooray 에 표시되는 작성자 이름이다. OS 계정명(`$USER`)과 다를 수 있다.
 

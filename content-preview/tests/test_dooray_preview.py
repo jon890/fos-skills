@@ -42,23 +42,64 @@ class DoorayPreviewTests(unittest.TestCase):
             result = subprocess.run(command, input=body, text=True, capture_output=True)
             return result, out.read_text(encoding="utf-8") if out.exists() else ""
 
-    def test_messenger_renders_only_verified_links(self):
+    def test_messenger_renders_only_verified_formats(self):
         body = ('[@example](dooray://example/members/example "member")\n'
                 'https://example.com/project/tasks/example\n'
-                '**bold**\n- item\n`code`\n```python\npass\n```\n'
+                '1. 첫째 `code https://example.com/in-code`\n\n'
                 '[example](https://example.com/page)')
-        result, source = self.generate(body)
+        result, source = self.generate(body, strict=True)
         parsed = PreviewParser(source)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stderr, "")
+        self.assertEqual(parsed.alerts, 0)
         self.assertEqual(parsed.links, ["dooray://example/members/example",
-                                       "https://example.com/project/tasks/example"])
+                                       "https://example.com/project/tasks/example",
+                                       "https://example.com/page"])
         text = "".join(parsed.text)
         self.assertIn("example channel", text)
         self.assertIn("example author", text)
-        self.assertIn('**bold**\n- item\n`code`\n```python\npass\n```', text)
-        self.assertIn('[example](https://example.com/page)', text)
-        self.assertNotIn("<strong>", source)
+        self.assertIn("1. 첫째 ", text)
+        self.assertIn("<code>code https://example.com/in-code</code>", source)
+        self.assertIn('>example</a>', source)
+
+    def test_unrendered_formats_warn_and_stay_literal(self):
+        cases = {
+            "굵게": "**bold**",
+            "제목": "# 제목",
+            "표": "| a | b |\n| --- | --- |\n| 1 | 2 |",
+            "목록": "- item",
+            "코드 블록": "```python\npass\n```",
+        }
+        for name, body in cases.items():
+            for strict in (False, True):
+                with self.subTest(name=name, strict=strict):
+                    result, source = self.generate(body, strict=strict)
+                    parsed = PreviewParser(source)
+                    self.assertEqual(result.returncode, int(strict))
+                    self.assertEqual(parsed.alerts, 1)
+                    self.assertIn(f"메신저는 {name} 형식을", result.stderr)
+                    self.assertIn("평문 번호", result.stderr)
+                    self.assertIn(result.stderr.strip(), "".join(parsed.text))
+                    self.assertLess(source.index('role="alert"'), source.index('class="dooray-head"'))
+                    self.assertIn(body, "".join(parsed.text))
+                    self.assertNotIn("<strong>", source)
+
+    def test_symbols_inside_code_do_not_warn(self):
+        result, source = self.generate("`**not bold**` `- x`", strict=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(PreviewParser(source).alerts, 0)
+
+    def test_code_block_hides_inner_symbols_from_other_formats(self):
+        result, _ = self.generate("```\n# comment\n- x\n```", strict=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("메신저는 코드 블록 형식을", result.stderr)
+
+    def test_link_and_format_warnings_are_separate_alerts(self):
+        result, source = self.generate('**bold** [example](dooray://example/tasks/example)')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(PreviewParser(source).alerts, 2)
+        self.assertEqual(len(result.stderr.strip().splitlines()), 2)
 
     def test_warning_and_strict_exit_still_generate_html(self):
         for resource in ("tasks", "pages"):
