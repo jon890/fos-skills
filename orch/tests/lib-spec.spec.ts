@@ -258,8 +258,8 @@ describe('liveSpecPaths', () => {
     const from = fake.calls().length
     assert.deepEqual(liveSpecPaths('run_x'), new Set(['/s/one.md', '/s/common.md', '/s/three.md']))
     const argv = lastCalls(from)
-    assert.ok(argv.some((a) => a.join(' ') === 'orchestration task-list --run run_x --json'), JSON.stringify(argv))
-    assert.ok(argv.some((a) => a.join(' ') === 'orchestration worker-list --run run_x --limit 100 --json'), JSON.stringify(argv))
+    assert.ok(argv.some((a) => a.join(' ') === 'orchestration task-list --run run_x --json --full'), JSON.stringify(argv))
+    assert.ok(argv.some((a) => a.join(' ') === 'orchestration worker-list --run run_x --limit 100 --json --full'), JSON.stringify(argv))
   })
 
   test('worker-list 가 nextCursor 로 두 페이지를 주면 둘째 페이지의 지시서도 살아 있다', () => {
@@ -271,7 +271,7 @@ describe('liveSpecPaths', () => {
     const from = fake.calls().length
     assert.deepEqual(liveSpecPaths('run_x'), new Set(['/s/one.md', '/s/common.md', '/s/three.md', '/s/five.md']))
     assert.ok(
-      lastCalls(from).some((a) => a.join(' ') === 'orchestration worker-list --run run_x --limit 100 --cursor c2 --json'),
+      lastCalls(from).some((a) => a.join(' ') === 'orchestration worker-list --run run_x --limit 100 --cursor c2 --json --full'),
       JSON.stringify(lastCalls(from)),
     )
   })

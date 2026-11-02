@@ -44,7 +44,7 @@
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { orcaBin } from './lib/orca.ts'
+import { orcaBin, withFull } from './lib/orca.ts'
 import { run } from './lib/proc.ts'
 import { classify, LINE_BREAK, screenLines as tailOf } from './lib/screen.ts'
 
@@ -65,7 +65,7 @@ function out(line: string): void {
 
 // 실패하면 orca 의 출력을 그대로 내고 null 이다. 종료 코드가 아니라 응답의 ok 로 판정한다
 function orcaJson(args: string[], timeoutMs?: number): Record<string, unknown> | null {
-  const done = run([process.env.ORCH_REAL_ORCA || orcaBin(), ...args, '--json'], { timeoutMs })
+  const done = run([process.env.ORCH_REAL_ORCA || orcaBin(), ...withFull(args), '--json'], { timeoutMs })
   let data: unknown
   try {
     data = JSON.parse(done.stdout)

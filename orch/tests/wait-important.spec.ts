@@ -287,6 +287,13 @@ describe('끊긴 worker', () => {
     assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_a stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY d0'])
   })
 
+  test('열린 dispatch 인데 liveness 가 exited 면 끊긴 것이다', () => {
+    const exited = { ...worker('ctx_a', 'ready', 'dispatched', 'input_accepted'), projection: { stage: { detail: 'input_accepted' }, liveness: { verdict: 'exited' } } }
+    const r = wait([sleeping(batch('d9', 'worker_done'), 5)], ['--lost-interval-sec', '0.3', '--ack', 'd0'], { workers: [LIVE, LIVE, [exited]] })
+    assert.equal(r.code, 5, r.stdout + r.stderr)
+    assert.equal(lines(r.stdout)[0], 'WORKER_LOST ctx_a stage=liveness_exited')
+  })
+
   test('끝난 dispatch 만 있으면 대기를 끝내지 않는다', () => {
     const r = wait([sleeping(batch('d1', 'worker_done'), 1)], ['--lost-interval-sec', '0.3'], { workers: [[worker('ctx_old', 'succeeded', 'completed', 'settled')]] })
     assert.equal(r.code, 0, r.stdout + r.stderr)
@@ -587,6 +594,33 @@ describe('WATCH-ERROR', () => {
 })
 
 describe('대기', () => {
+  test('orca 호출은 모두 --full 로 부른다', () => {
+    wait([batch('d1', 'heartbeat'), batch('d2', 'worker_done')], ['--lost-interval-sec', '0.3'], { workers: [LIVE] })
+    const orchestration = allCalls().filter((c) => c[0] === 'orchestration')
+    assert.ok(orchestration.length >= 3)
+    for (const call of orchestration) assert.ok(call.includes('--full'), call.join(' '))
+  })
+
+  test('턴만 끝낸 멈춤 보고만 든 묶음은 heartbeat 처럼 ack 하고, 오류로 멈춘 보고에는 깨어난다', () => {
+    const stop = (delivery: string, reason: string) => ({
+      ok: true,
+      result: { deliveryId: delivery, timedOut: false, messages: [{ id: `msg_stop_${delivery}`, type: 'escalation', subject: 'x', payload: JSON.stringify({ dispatchId: 'ctx_a', stopReason: reason }) }] },
+    })
+    const r = wait([stop('d1', 'finished'), stop('d2', 'errored')])
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(calls().map(ackOf), [null, 'd1'])
+    assert.equal(lastLine(r.stdout), 'LAST_DELIVERY d2')
+    assert.match(r.stderr, /턴만 끝낸 멈춤 보고 1 개 포함/)
+  })
+
+  test('--stop-reports 면 턴만 끝낸 멈춤 보고에도 깨어나고 다음 대기에도 넘긴다', () => {
+    const quiet = { ok: true, result: { deliveryId: 'd1', timedOut: false, messages: [{ id: 'msg_stop_1', type: 'escalation', subject: 'Worker stopped without reporting' }] } }
+    const r = wait([quiet], ['--stop-reports'])
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(lastLine(r.stdout), 'LAST_DELIVERY d1')
+    assert.match(nextWait(r.stderr), / --stop-reports /)
+  })
+
   test('worker_done 이 올 때까지 heartbeat 묶음을 ack 한다', () => {
     const r = wait([batch('d1', 'heartbeat', 'heartbeat'), batch('d2', 'heartbeat'), batch('d3', 'heartbeat', 'worker_done')])
     assert.equal(r.code, 0, r.stderr)

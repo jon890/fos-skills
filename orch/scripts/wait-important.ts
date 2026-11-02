@@ -11,7 +11,7 @@
 // 사용법:
 //     wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]
 //                       [--timeout-ms 7000000] [--kill-stale] [--lost-interval-sec 60] [--ignore-lost ctx_...]
-//                       [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none] [--loop-repo DIR ...]
+//                       [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none] [--loop-repo DIR ...] [--stop-reports]
 //
 //     --run         기다릴 Run
 //     --ack         앞 대기가 낸 delivery id. 첫 대기처럼 넘길 것이 없으면 뺀다
@@ -26,6 +26,8 @@
 //     --completion-contract  ready(기본)는 앞선 PR 준비 상태를 검사한다. PR 없는 작업만 none 으로 끈다
 //     --kill-stale  대기 자리를 쥔 프로세스 가운데 부모가 init(PID 1)인 것과 그 밑의 대기를 종료한다. 아래 「남은 대기」
 //     --loop-repo   상주 루프(orch-loop.ts)의 알림과 생존을 볼 저장소. 여러 번 줄 수 있다. 주지 않으면 보지 않는다. 아래 「상주 루프」
+//     --stop-reports  턴만 끝낸 멈춤 보고(Orca 의 「Worker stopped without reporting」, lib/stop-reports.ts 의 quiet)에도 깨어난다.
+//                   없으면 그 보고만 든 묶음은 heartbeat 처럼 ack 하고 계속 기다린다. 오류로 멈춤, 입력 대기, 프로세스 끝남 보고에는 늘 깨어난다
 //
 // 완료 계약 (--completion-contract ready):
 //     worker_done 이 오면 같은 Task·Dispatch·발신자가 앞서 `준비됨 #N, head <전체 40자리 SHA>` 상태를 보냈는지
@@ -57,6 +59,9 @@
 //     그래서 대기하는 동안 `--lost-interval-sec` 마다 `orca orchestration worker-list --run <id> --json` 으로 상태를 본다.
 //     한 번에 100행까지 오므로 page.nextCursor 끝까지 이어 읽는다(lib/orca.ts 머리 주석).
 //     「끊김」 은 workerState 가 abandoned, failed, stopped 이거나 dispatchStatus 가 failed 이거나 단계가 terminal_missing 인 것이다.
+//     dispatchStatus 가 pending, dispatched, running 인데 projection.liveness.verdict 가 exited 인 것도 끊김이고 단계는 liveness_exited 다.
+//     터미널이 끝났는데 dispatch 가 열린 채 남아, 보낸 답을 아무도 받지 않던 경우다(2026-11-02 1시간 넘게 진행 없음).
+//     worker-list 는 --full 로 읽는다(lib/orca.ts 의 withFull). 줄인 보기에는 이 판정에 쓰는 키가 없어 끊김을 하나도 찾지 못한다.
 //     단, completed/abandoned dispatch 와 성공·취소 결과는 터미널이 사라져도 제외한다.
 //     끊긴 dispatch 를 찾으면 메시지를 기다리지 않고 `WORKER_LOST ctx_... stage=terminal_missing` 줄과
 //     `LAST_DELIVERY <id>` 줄을 내고 종료 코드 5 로 끝난다. 지켜보는 대상은 둘이다.
@@ -158,9 +163,10 @@ import { classify, context, payload } from './lib/completion.ts'
 import { fire, handlerFile } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { ghJson } from './lib/gh.ts'
+import { isQuietStop } from './lib/stop-reports.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { isRegistered, loopStatus, readEvents, readLoop, recheckMs, writeCursor } from './lib/loop.ts'
-import { orcaBin, orcaJson } from './lib/orca.ts'
+import { orcaBin, orcaJson, withFull } from './lib/orca.ts'
 import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
 import { pyJson, pyStr as text, shQuote } from './lib/py.ts'
@@ -170,7 +176,7 @@ import { adoptHint } from './lib/sessions.ts'
 const USAGE = [
   '사용법: wait-important.ts --run RUN_ID [--ack DELIVERY_ID] [--types worker_done,question,escalation,status]',
   '                          [--timeout-ms 7000000] [--kill-stale] [--lost-interval-sec 60] [--ignore-lost ctx_...]',
-  '                          [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none] [--loop-repo DIR ...]',
+  '                          [--lost-state FILE] [--ack-lost ctx_...] [--completion-contract ready|none] [--loop-repo DIR ...] [--stop-reports]',
 ].join('\n')
 const DEFAULT_TYPES = 'worker_done,question,escalation,status'
 const LIVE_STATUSES = new Set(['pending', 'dispatched', 'running'])
@@ -208,6 +214,7 @@ function nextWait(values: Record<string, string | boolean | string[] | undefined
   args.push('--lost-interval-sec', shQuote(String(values['lost-interval-sec'])))
   args.push('--completion-contract', shQuote(String(values['completion-contract'])))
   if (values['kill-stale'] === true) args.push('--kill-stale')
+  if (values['stop-reports'] === true) args.push('--stop-reports')
   for (const dispatch of values['ignore-lost'] as string[]) args.push('--ignore-lost', shQuote(dispatch))
   args.push('--lost-state', shQuote(lostState))
   for (const repo of loopRepos) args.push('--loop-repo', shQuote(repo))
@@ -277,6 +284,9 @@ function lostWorkers(rows: Json[], watched: Set<unknown>): Lost[] {
     const detail = obj(projection.stage).detail
     if (LOST_WORKER_STATES.has(String(w.workerState)) || w.dispatchStatus === 'failed' || detail === 'terminal_missing') {
       lost.push([String(w.dispatchId), detail || w.workerState])
+    } else if (LIVE_STATUSES.has(String(w.dispatchStatus)) && obj(projection.liveness).verdict === 'exited') {
+      // 열린 dispatch 인데 worker 프로세스가 끝났다. 보낸 답을 받을 쪽이 없다(머리 주석의 「끊긴 worker」)
+      lost.push([String(w.dispatchId), 'liveness_exited'])
     }
   }
   return lost
@@ -421,6 +431,14 @@ function dropWorking(rows: Json[], lost: Lost[]): Lost[] {
     const row = byDispatch.get(dispatch)
     if (!row) return true
     const handles = new Set([row.agentTerminalHandle, obj(row.resource).terminalHandle].filter(Boolean))
+    // 프로세스가 끝난 열린 dispatch 는 행만으로는 살아 있어 judge 가 늘 working 이다. 화면만 본다
+    if (stage === 'liveness_exited') {
+      const screens = readScreens([...handles])
+      const busy = [...screens].find(([, state]) => state === 'working' || state === 'permission')
+      if (!busy) return true
+      err(`wait-important: ${dispatch} 는 ${String(stage)} 로 보이지만 끊긴 것으로 보지 않는다: 화면이 작업 중이다(${String(busy[0])} ${busy[1]})`)
+      return false
+    }
     const verdict = judge({ rows: [row], screens: readScreens(screenHandles([row], new Set(), handles)) })
     if (verdict.state !== 'working') return true
     err(`wait-important: ${dispatch} 는 ${String(stage)} 로 보이지만 끊긴 것으로 보지 않는다: ${verdict.reason}`)
@@ -545,7 +563,7 @@ function check(
     let timer: NodeJS.Timeout | undefined
     let stopped = false
     // keepalive 줄은 stderr 로 나온다. stdout 만 읽는다. 자기 그룹으로 띄워 끊을 때 orca 의 자식까지 함께 끝낸다
-    const child = spawn(orcaBin(), args, { stdio: ['ignore', 'pipe', 'ignore'], detached: true })
+    const child = spawn(orcaBin(), withFull(args), { stdio: ['ignore', 'pipe', 'ignore'], detached: true })
     waiting = child
     const settle = (value: Checked) => {
       clearTimeout(timer)
@@ -896,6 +914,7 @@ async function main(argv: string[]): Promise<number> {
       'ack-lost': { type: 'string', multiple: true, default: [] as string[] },
       'completion-contract': { type: 'string', default: 'ready' },
       'loop-repo': { type: 'string', multiple: true, default: [] as string[] },
+      'stop-reports': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h' },
     } as const
     values = parseArgs({ args: expandArgs(argv, options), options }).values
@@ -1002,7 +1021,9 @@ async function main(argv: string[]): Promise<number> {
     ack = null
     const messages = (Array.isArray(result.messages) ? result.messages : []).map(obj)
     const delivery = result.deliveryId
-    if (messages.some((m) => wanted.has(String(m.type)))) {
+    // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 --stop-reports 가 없으면 heartbeat 처럼 깨어나지 않는다
+    const wakes = (m: Json) => wanted.has(String(m.type)) && (values['stop-reports'] === true || !isQuietStop(m))
+    if (messages.some(wakes)) {
       let suspicious = false
       if (values['completion-contract'] === 'ready' && messages.some((m) => m.type === 'worker_done')) {
         const classified = verifyCompletion(messages, runId)
@@ -1018,7 +1039,8 @@ async function main(argv: string[]): Promise<number> {
     }
     if (messages.length) {
       skipped += messages.length
-      err(`heartbeat 같은 메시지 ${skipped} 개를 ack 하고 계속 기다린다`)
+      const quiet = messages.filter(isQuietStop).length
+      err(`heartbeat 같은 메시지 ${skipped} 개를 ack 하고 계속 기다린다${quiet ? `(턴만 끝낸 멈춤 보고 ${quiet} 개 포함)` : ''}`)
     }
     // heartbeat 만 든 묶음은 다음 호출에서 ack 한다. 시간 한도로 끝난 호출은 delivery 가 없다
     ack = delivery ? String(delivery) : null

@@ -17,8 +17,10 @@ const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
 const file = process.env.FAKE_STATE
 const state = JSON.parse(fs.readFileSync(file, 'utf8'))
-const args = process.argv.slice(2).filter((a) => a !== '--json')
+const args = process.argv.slice(2).filter((a) => a !== '--json' && a !== '--full')
 fs.appendFileSync(process.env.FAKE_LOG, 'orca ' + args.join(' ') + '\\n')
+// --full 없이 부른 orchestration 명령은 따로 적는다. Orca 1.4.246 의 줄인 보기는 판정에 쓰는 키를 뺀다
+if (args[0] === 'orchestration' && !process.argv.includes('--full')) fs.appendFileSync(process.env.FAKE_LOG + '.concise', args.join(' ') + '\\n')
 function out(result, code = 0) {
   fs.writeFileSync(file, JSON.stringify(state))
   fs.writeSync(1, JSON.stringify({ ok: code === 0, result }) + '\\n')
@@ -58,6 +60,10 @@ if (is('orchestration', 'worker-start')) {
 }
 if (is('orchestration', 'worker-show')) {
   const d = state.dispatches[opt('--dispatch')]
+  // worker 가 워크트리에 파일을 만든 것처럼 한다(일하는 흔적)
+  if (state.touch) fs.writeFileSync(state.touch, 'x')
+  // 줄인 보기처럼 단계를 맨 위 stage 에 둔다
+  if (d.flat) out({ dispatchId: opt('--dispatch'), stage: d.flat })
   const stages = d.stages || []
   const stage = stages.length > 1 ? stages.shift() : stages[0] || 'input_accepted'
   out({ dispatch: d.dispatch, worker: Object.assign({}, d.worker || {}, { stage }), terminalResource: d.terminalResource || {} })
@@ -131,7 +137,13 @@ beforeEach(() => {
   delete env.ORCH_DIR
 })
 
-afterEach(() => rmSync(tmp, { recursive: true, force: true }))
+afterEach(() => {
+  // 모든 테스트에서 orchestration 명령은 --full 로 불려야 한다(lib/orca.ts 의 withFull)
+  const concise = `${log}.concise`
+  const leaked = existsSync(concise) ? readFileSync(concise, 'utf8') : ''
+  rmSync(tmp, { recursive: true, force: true })
+  assert.equal(leaked, '', '--full 없이 부른 orchestration 명령')
+})
 
 function state(values: Record<string, unknown>): void {
   writeFileSync(stateFile, JSON.stringify(values))
@@ -440,6 +452,34 @@ describe('띄우기', () => {
     assert.equal(r.code, 1, both(r))
     assert.equal(lines('orca orchestration worker-start').length, 2)
     assert.doesNotMatch(r.stdout, /LAUNCHED/)
+  })
+
+  test('worktree_creating 이어도 heartbeat 가 있으면 abandon 하지 않고 LAUNCHED 다', () => {
+    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: { ...shown('worktree_creating'), dispatch: { lastHeartbeatAt: '2026-11-02T08:00:00Z' } } } })
+    const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration worker-abandon'), [])
+    assert.equal(lines('orca orchestration worker-start').length, 1)
+    assert.match(r.stdout, /ctx_1 단계는 worktree_creating 지만 일하는 흔적이 있어\(heartbeat 2026-11-02T08:00:00Z\) 다시 띄우지 않는다/)
+    assert.match(r.stdout, /LAUNCHED ctx_1/)
+  })
+
+  test('worktree_creating 이어도 워크트리가 바뀌었으면 abandon 하지 않는다', () => {
+    spawnSync('git', ['init', '-q', worktree], { env })
+    spawnSync('git', ['-C', worktree, 'commit', '-q', '--allow-empty', '-m', 'init'], { env })
+    // 가짜 worker-show 가 불릴 때 워크트리에 파일이 생긴 것처럼, 첫 worker-show 앞에 미리 바꿔 둘 수 없어 단계 목록을 길게 둔다
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') }, touch: join(worktree, 'made-by-worker.txt') })
+    const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration worker-abandon'), [])
+    assert.match(r.stdout, /일하는 흔적이 있어\(워크트리 변경\)/)
+  })
+
+  test('줄인 보기의 stage 키도 단계로 읽는다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { flat: 'input_accepted' } } })
+    const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /ctx_1 단계: input_accepted/)
   })
 
   test('지켜보는 동안 단계가 넘어가면 그대로 둔다', () => {

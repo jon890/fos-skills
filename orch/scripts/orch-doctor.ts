@@ -85,12 +85,8 @@
 //                 false 로 보고 `LOOP-DEAD <repo> run <Run> 미등록` 줄과 같은 --start 명령을 낸다(wait-important 의 미등록 판정과 같다).
 //                 pid 가 살아 있는 루프 프로세스인데 alive_at 만 오래됐으면(loopStatus 의 recheck) lib/loop.ts 의 recheckMs 를
 //                 기다린 뒤 한 번 더 판정한다. 잠들었다 깬 macOS 에서 루프의 타이머가 아직 alive_at 을 쓰지 못했을 수 있다
-//     waiters     `ps -axo pid=,command=` 의 행 가운데 명령줄에 `wait-important` 나 `watch-questions` 와 Run id(낱말)가 든 것의 pid.
-//                 살아 있는 대기와 질문 감시다. 다음 행은 뺀다.
-//                   - `orchestration check` 행. wait-important 가 띄운 자식이라 대기 하나를 두 번 세게 된다
-//                   - 셸 행(sh, bash, zsh, dash, fish 가 띄운 `-c` 명령). 대기 자신이 아니라 그것을 띄운 셸이다
-//                   - doctor 자신
-//                 PS 환경 변수로 ps 실행 파일을 바꾼다. ps 는 LC_ALL=C 로 부른다(wait-important 와 같다)
+//     waiters     이 Run 의 살아 있는 대기(wait-important)와 질문 감시(watch-questions) pid. 찾는 규칙은 lib/waiters.ts 가 소유한다.
+//                 PS 환경 변수로 ps 실행 파일을 바꾼다
 //     unanswered  질문 조회가 낸 미답변 질문 id 전부. 조회하지 못했거나 --skip-questions 면 빈 목록
 //     repo 는 --repo, base 는 그 저장소의 origin/HEAD 브랜치(없으면 빈 문자열), run 은 --run 이다.
 //     핸들러의 실패는 `HOOK-FAIL` 줄만 남기고 종료 코드를 바꾸지 않는다.
@@ -139,6 +135,7 @@ import { isOpen, scan as scanStudy } from './lib/study.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
+import { waiterPids as findWaiters } from './lib/waiters.ts'
 import { workerRows } from './lib/workers.ts'
 import { adoptHint } from './lib/sessions.ts'
 import { isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
@@ -152,7 +149,6 @@ const BIN_REF = /\$SKILL_DIR\/bin\/(?<name>[A-Za-z0-9_.-]+)/g
 const VIA_ENTRY = /\$SKILL_DIR\/bin\/orch\.ts"?\s+(?<name>[A-Za-z0-9_][A-Za-z0-9_-]*)/g
 const GIT_TIMEOUT_MS = 20_000
 const OVERDUE_SEC = 600
-const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish'])
 const WORKERS_TIMEOUT_MS = 30_000
 
 type Checked = { lines: string[]; code: number }
@@ -387,32 +383,12 @@ function checkQuestions(runId: string | null): Checked & { pending: string[] } {
   }
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-// 이 Run 의 살아 있는 대기(wait-important)와 질문 감시(watch-questions) pid. ps 를 읽지 못하면 빈 목록이다.
+// 이 Run 의 살아 있는 대기와 질문 감시 pid(lib/waiters.ts). ps 를 읽지 못하면 stderr 에 알리고 빈 목록이다.
 function waiterPids(runId: string): number[] {
-  const done = run([process.env.PS || 'ps', '-axo', 'pid=,command='], { env: { LC_ALL: 'C' } })
-  if (done.code !== 0) {
-    process.stderr.write(`orch-doctor: 프로세스 목록을 읽지 못했다(ps 종료 코드 ${done.code}): ${done.stderr.trim()}\n`)
-    return []
-  }
-  const word = new RegExp(`(?<![\\w-])${escapeRegExp(runId)}(?![\\w-])`)
-  const pids: number[] = []
-  for (const line of done.stdout.split('\n')) {
-    const m = /^\s*(\d+)\s+(\S.*)$/.exec(line)
-    if (!m) continue
-    const pid = Number(m[1])
-    const command = m[2]
-    if (pid === process.pid || !word.test(command)) continue
-    if (!command.includes('wait-important') && !command.includes('watch-questions')) continue
-    // 가짜 orca 의 경로처럼 `wait-important` 가 든 orca 명령줄도 자식 check 다
-    if (/\borchestration\s+check\b/.test(command)) continue
-    if (SHELLS.has(basename(command.split(/\s+/)[0]).replace(/^-+/, ''))) continue
-    pids.push(pid)
-  }
-  return pids
+  const found = findWaiters(runId)
+  if (found.ok) return found.pids
+  process.stderr.write(`orch-doctor: ${found.error}\n`)
+  return []
 }
 
 // 머리 주석의 「루프 번들 판정」. 설치 캐시가 아닌 경로나 판정하지 못한 경로는 null 이다

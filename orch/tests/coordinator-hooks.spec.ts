@@ -408,7 +408,7 @@ describe('block-worker-terminal-send 의 첫 화면 승인', () => {
       const fake = withShow(show)
       assert.equal(decide(HOOK, ENTER, sendEnv(fake.path)), 'pass', show)
       assert.equal(decide(HOOK, 'orca terminal send --enter --terminal=term_worker-1', sendEnv(fake.path)), 'pass', show)
-      assert.ok(argvs(fake).includes('orchestration worker-show --dispatch ctx_1 --json'), argvs(fake).join('\n'))
+      assert.ok(argvs(fake).includes('orchestration worker-show --dispatch ctx_1 --full --json'), argvs(fake).join('\n'))
     }
   })
 

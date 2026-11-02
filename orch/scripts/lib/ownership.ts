@@ -28,7 +28,7 @@
 //     blocker        안전하면 빈 문자열, 남길 때는 이유
 
 import { realPath, inside } from './fs.ts'
-import { orcaBin } from './orca.ts'
+import { orcaBin, withFull } from './orca.ts'
 import { runAsync } from './proc.ts'
 
 // Run 마다 읽을 때 동시에 띄우는 orca 수. Run 251개 실측: 8 이면 30초, 16 이면 18초
@@ -51,7 +51,7 @@ function given(value: unknown): boolean {
 }
 
 async function query(args: string[]): Promise<Record<string, unknown>> {
-  const done = await runAsync([orcaBin(), ...args, '--json'], { timeoutMs: QUERY_TIMEOUT_MS })
+  const done = await runAsync([orcaBin(), ...withFull(args), '--json'], { timeoutMs: QUERY_TIMEOUT_MS })
   let data: unknown
   try {
     data = JSON.parse(done.stdout)

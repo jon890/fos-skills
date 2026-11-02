@@ -64,6 +64,7 @@ if (st.ignore_term) process.on('SIGTERM', () => {})
 if (st.pid_file) writeFileSync(st.pid_file, process.pid + ' ' + process.ppid + '\\n')
 if (st.sleep) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.sleep * 1000)
 console.log('${name} 돌았다')
+if (st.stdout) console.log(st.stdout)
 process.exitCode = st.code ?? 0
 `
 }
@@ -552,6 +553,65 @@ describe('정리와 보드 동기화', () => {
       ['cleanup: 종료 코드 2'],
     )
     assert.equal((loopState()?.errors as Json)['cleanup@r'], '종료 코드 2')
+  })
+})
+
+describe('마무리 빠짐과 대기 확인', () => {
+  test('정리의 FINISH-MISSING 줄을 그 Run 의 알림 파일에 PR 마다 한 번 옮긴다', () => {
+    fake('sweep', { stdout: 'FINISH-MISSING #7 feat-x: 머지 뒤 마무리(finish-pr)가 돈 적이 없다' })
+    once()
+    once()
+    const missing = events().filter((line) => line.kind === 'FINISH-MISSING')
+    assert.equal(missing.length, 1, JSON.stringify(events()))
+    assert.equal(missing[0].pr, 7)
+    assert.match(String(missing[0].text), /^feat-x: 머지 뒤 마무리\(finish-pr\)가 돈 적이 없다\. 마무리를 뒤늦게 돌리려면 orch\.ts finish-pr 7 --repo .* --run r$/)
+  })
+
+  // ps 가짜. PS_OUT 을 낸다
+  function fakePs(out: string): string {
+    const file = join(tmp, 'ps')
+    writeFileSync(join(tmp, 'ps.out'), out)
+    writeFileSync(file, `#!/bin/sh\ncat "${join(tmp, 'ps.out')}"\n`)
+    chmodSync(file, 0o755)
+    return file
+  }
+
+  function nudge(): string {
+    const file = join(tmp, 'nudge.ts')
+    writeFileSync(file, `import { appendFileSync } from 'node:fs'\nappendFileSync(process.env.FAKE_DIR + '/nudge.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n')\n`)
+    return file
+  }
+
+  test('살아 있는 dispatch 가 있는데 대기가 기준 시간보다 오래 없으면 한 번 알리고 코디네이터 터미널에 넣는다', () => {
+    orca({ workers: [{ dispatchId: 'ctx_1', dispatchStatus: 'dispatched' }] })
+    // --start 한 코디네이터 터미널의 등록(lib/loop.ts 의 「Run 등록」)
+    write(orchFile('state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: new Date().toISOString(), coordinator_terminal: 'term_coord' }))
+    const extra = { PS: fakePs('  10 node other.js\n'), NUDGE_WORKER: nudge() }
+    once(extra)
+    assert.deepEqual(events().filter((line) => line.kind === 'NO-WAIT'), [])
+    const file = orchFile('state', 'no-wait', 'r.json')
+    const first = JSON.parse(readFileSync(file, 'utf8')) as Json
+    assert.equal(first.notified, false)
+    write(file, JSON.stringify({ since: Date.now() - 600_000, notified: false }))
+    once(extra)
+    once(extra)
+    const noWait = events().filter((line) => line.kind === 'NO-WAIT')
+    assert.equal(noWait.length, 1, JSON.stringify(events()))
+    assert.match(String(noWait[0].text), /^대기 없음: Run r 에 살아 있는 dispatch 1 개가 있는데 wait-important 대기가 10분째 없다\. 미답변 질문 0 개\./)
+    const typed = jsonl(join(tmp, 'nudge.jsonl')) as unknown as string[][]
+    assert.equal(typed.length, 1)
+    assert.deepEqual(typed[0].slice(0, 3), ['--terminal', 'term_coord', '--text'])
+    // 대기가 다시 생기면 기록을 지워 다음 공백을 새로 센다
+    once({ ...extra, PS: fakePs('  20 node /x/wait-important.ts --run r --loop-repo /r\n') })
+    assert.ok(!existsSync(file))
+  })
+
+  test('살아 있는 dispatch 가 없으면 대기가 없어도 알리지 않는다', () => {
+    const extra = { PS: fakePs(''), NUDGE_WORKER: nudge() }
+    write(orchFile('state', 'no-wait', 'r.json'), JSON.stringify({ since: Date.now() - 600_000, notified: false }))
+    once(extra)
+    assert.deepEqual(events().filter((line) => line.kind === 'NO-WAIT'), [])
+    assert.ok(!existsSync(orchFile('state', 'no-wait', 'r.json')))
   })
 })
 

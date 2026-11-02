@@ -19,8 +19,10 @@ const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
 const file = process.env.FAKE_STATE
 const state = JSON.parse(fs.readFileSync(file, 'utf8'))
-const args = process.argv.slice(2).filter((a) => a !== '--json')
+const args = process.argv.slice(2).filter((a) => a !== '--json' && a !== '--full')
 fs.appendFileSync(process.env.FAKE_LOG, 'orca ' + args.join(' ') + '\\n')
+// --full 없이 부른 orchestration 명령은 따로 적는다. Orca 1.4.246 의 줄인 보기는 판정에 쓰는 키를 뺀다
+if (args[0] === 'orchestration' && !process.argv.includes('--full')) fs.appendFileSync(process.env.FAKE_LOG + '.concise', args.join(' ') + '\\n')
 function print(text, code) {
   fs.writeSync(1, text + '\\n')
   process.exit(code)
@@ -110,7 +112,13 @@ beforeEach(() => {
   delete env.FAKE_OUT
   delete env.FAKE_EXIT
 })
-afterEach(() => rmSync(tmp, { recursive: true, force: true }))
+afterEach(() => {
+  // 모든 테스트에서 orchestration 명령은 --full 로 불려야 한다(lib/orca.ts 의 withFull)
+  const concise = `${log}.concise`
+  const leaked = existsSync(concise) ? readFileSync(concise, 'utf8') : ''
+  rmSync(tmp, { recursive: true, force: true })
+  assert.equal(leaked, '', '--full 없이 부른 orchestration 명령')
+})
 
 type Json = Record<string, any>
 
@@ -199,6 +207,27 @@ describe('살아 있는 dispatch', () => {
     const r = send('--body', 'x', '--no-reply', '--reply-to', 'q')
     assert.equal(r.code, 2, both(r))
     assert.equal(logText(), '')
+  })
+
+  test('구조화 worker 는 답만 달고 nudge-worker 를 부르지 않는다', () => {
+    const dispatches = worker('dispatched')
+    dispatches.ctx_1.worker = { agentTerminalHandle: 'structworker_1', worktreeId: 'repo::/w/feat', startOptions: { mode: { mode: 'structured' } } }
+    state({ dispatches, inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)] })
+    const r = send('--body', '그렇게 한다')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_q --body 그렇게 한다 --run run_x --from run:run_x'])
+    assert.match(r.stdout, /^delivered: 구조화 worker 라 Orca 가 msg_new 로 깨운다/m)
+    assert.deepEqual(lines('nudge'), [])
+  })
+
+  test('handle 이 structworker_ 면 실행 방식이 없어도 구조화 worker 로 본다', () => {
+    const dispatches = worker('dispatched')
+    dispatches.ctx_1.worker = { agentTerminalHandle: 'structworker_2', worktreeId: 'repo::/w/feat' }
+    state({ dispatches, inbox: [] })
+    const r = send('--body', '이어 간다', '--no-reply')
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^delivered: /m)
+    assert.deepEqual(lines('nudge'), [])
   })
 
   test('그 worker 의 마지막 메시지에 reply 하고 깨운다', () => {

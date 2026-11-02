@@ -34,6 +34,9 @@
 //     8. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
 //     9. 보드 항목을 고친다(아래 「보드 항목」)
 //
+// 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
+//     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
+//
 // 마지막 PR 판정:
 //     --complete(merge-with-finish 의 `PR!`)면 마지막, --intermediate(`PR~`)면 중간이다. 둘 다 없으면 lib/last-pr.ts 의 judgeLastPr 로
 //     판정한다. 규칙은 --task-pattern, --spec-task-pattern, --specs-dir 이고 조건은 그 모듈의 머리 주석이 소유한다.
@@ -106,6 +109,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { markFinishStarted } from './lib/finish-marks.ts'
 import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard } from './lib/board.ts'
 import type { BoardDetail, BoardStep } from './lib/board.ts'
 import { conflictSpecFiles } from './lib/conflicts.ts'
@@ -665,6 +669,12 @@ async function main(argv: string[]): Promise<number> {
   if (pidFile) {
     mkdirSync(dirname(resolve(pidFile)), { recursive: true })
     writeFileSync(pidFile, String(process.pid))
+  }
+  try {
+    markFinishStarted(repo, args.pr)
+  } catch (e) {
+    // 표시를 남기지 못하면 정리가 이 PR 을 FINISH-MISSING 으로 한 번 더 알릴 뿐이다
+    process.stderr.write(`finish-pr: 마무리 표시를 남기지 못했다: ${(e as Error).message}\n`)
   }
   try {
     return await finish(args, repo)
