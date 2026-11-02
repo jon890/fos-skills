@@ -38,6 +38,8 @@ export type FetchResult = {
   items: InboxItem[]
   // 출처 이름과 오류 한 줄. 실패한 출처의 항목은 지난 캐시에 남은 것을 그대로 쓴다
   errors: Record<string, string>
+  // 다음 받기의 lastFetchedAt. 다 읽지 못하고 남긴 곳이 있으면 그 앞 시각을 준다. 없으면 이번 받기 시각이다
+  cursor?: string
 }
 
 export type Message = { from: Person; at: string; text: string }

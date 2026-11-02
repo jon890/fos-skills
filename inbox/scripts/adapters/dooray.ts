@@ -1,12 +1,15 @@
 // 두레이 adapter. 모든 두레이 호출은 dooray CLI 로 한다. 토큰은 CLI 설정에만 있고 이 파일은 읽지 않는다(D3).
 //
 // 출처:
-//   task       `dooray --json stream list --since <ISO> --all` (공식 GET /common/v1/streams).
+//   task       `dooray --json stream list --since <지난 받기 또는 기간 시작> --all` (공식 GET /common/v1/streams, dooray-cli 0.30 의 명령).
+//              429 는 CLI 종료 코드 6 이고 다른 실패와 같이 task 오류로 남는다
 //              event(type comment) 본문에 내 멤버 링크가 있으면 mention, post 의 담당(to)·참조(cc)에 내가 있으면 assigned·cc
 //   messenger  `dooray --json messenger channels --since <지난 받기>` 로 바뀐 방만 고르고, 방마다 `messenger logs <id> -n 50`.
 //              logs 는 공식 문서에 없는 endpoint 라 실패해도 task 항목은 그대로 낸다(D1, R7)
 // 멘션 판정: 본문의 `dooray://{orgId}/members/{내 id}` 링크. 메신저 본문의 표기는 실제 로그로 확인하지 못해 같은 링크로 가정했다.
-// 메신저 호출 줄이기(D14): 봇 방과 나와의 대화는 건너뛰고, 최근 바뀐 순으로 MAX_CHANNELS 개까지만 읽는다.
+// 메신저 호출 줄이기(D14): 봇 방과 나와의 대화는 건너뛰고, 바뀐 방을 오래된 순으로 MAX_CHANNELS 개까지만 읽는다.
+//   남은 방이 있으면 마지막으로 읽은 방의 updatedAt 을 cursor 로 내어 다음 받기가 거기서 잇는다. 놓치는 방이 없게 하려는 것이다.
+//   한 방의 logs LOG_COUNT 개가 모두 지난 받기 뒤의 것이면 MORE_LOG_COUNT 개로 다시 읽는다.
 //
 // 설정(inbox.json 의 adapters 항목): { "type": "dooray", "messenger": true, "webUrl": "https://nhnent.dooray.com" }
 //   messenger  false 면 메신저를 읽지 않는다. 기본 true
@@ -20,6 +23,7 @@ import type { Adapter, AdapterConfig, AdapterDeps, Context, FetchRequest, FetchR
 
 export const MAX_CHANNELS = 20
 export const LOG_COUNT = 50
+export const MORE_LOG_COUNT = 300
 const SKIP_CHANNEL_TYPES = new Set(['bot', 'me'])
 const EXCERPT = 80
 
@@ -118,7 +122,8 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
   }
 
   function fetchTasks(request: FetchRequest, self: Me, now: string): InboxItem[] {
-    const elements = json(['stream', 'list', '--since', request.since, '--all'])
+    // 피드는 2주에 수천 건이라, 지난 받기가 있으면 그 뒤만 읽는다. 앞서 받은 항목은 캐시에 남아 있다
+    const elements = json(['stream', 'list', '--since', request.lastFetchedAt ?? request.since, '--all'])
     if (!Array.isArray(elements)) throw new Error('dooray stream list 출력이 목록이 아니다')
     const items: InboxItem[] = []
     for (const element of elements as Json[]) {
@@ -148,19 +153,23 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
     return items
   }
 
-  function fetchMessenger(request: FetchRequest, self: Me): { items: InboxItem[]; failures: string[] } {
-    const channels = json(['messenger', 'channels', '--since', request.lastFetchedAt ?? request.since])
+  function fetchMessenger(request: FetchRequest, self: Me): { items: InboxItem[]; failures: string[]; cursor: string | null } {
+    const from = request.lastFetchedAt ?? request.since
+    const channels = json(['messenger', 'channels', '--since', from])
     if (!Array.isArray(channels)) throw new Error('dooray messenger channels 출력이 목록이 아니다')
-    const picked = (channels as Json[])
+    const changed = (channels as Json[])
       .filter((channel) => channel?.id && !SKIP_CHANNEL_TYPES.has(String(channel.type)))
-      .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
-      .slice(0, MAX_CHANNELS)
+      .sort((a, b) => (Date.parse(a.updatedAt ?? '') || 0) - (Date.parse(b.updatedAt ?? '') || 0))
+    const picked = changed.slice(0, MAX_CHANNELS)
+    const cursor = changed.length > MAX_CHANNELS ? iso(picked[picked.length - 1].updatedAt) || null : null
     const items: InboxItem[] = []
     const failures: string[] = []
     for (const channel of picked) {
       let logs: Json[]
       try {
-        logs = json(['messenger', 'logs', String(channel.id), '-n', String(LOG_COUNT)])
+        logs = channelLogs(String(channel.id), LOG_COUNT)
+        const oldest = logs.reduce((min, log) => Math.min(min, Date.parse(log?.sentAt ?? '') || 0), Infinity)
+        if (logs.length >= LOG_COUNT && oldest > Date.parse(from)) logs = channelLogs(String(channel.id), MORE_LOG_COUNT)
       } catch (error) {
         failures.push(`${channel.title || channel.id}: ${(error as Error).message}`)
         continue
@@ -193,7 +202,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
       item.from.name = names.get(item.from.id) ?? ''
       if (!item.title) item.title = item.from.name ? `${item.from.name} 대화` : '대화'
     }
-    return { items, failures }
+    return { items, failures, cursor }
   }
 
   function resolvePeople(ids: string[]): Map<string, string> {
@@ -253,6 +262,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
         return { items, errors: readMessenger ? { task: reason, messenger: reason } : { task: reason } }
       }
       const now = deps.now().toISOString()
+      let cursor: string | undefined
       try {
         items.push(...fetchTasks(request, self, now))
       } catch (error) {
@@ -262,12 +272,13 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
         try {
           const result = fetchMessenger(request, self)
           items.push(...result.items)
+          if (result.cursor) cursor = result.cursor
           if (result.failures.length > 0) errors.messenger = `대화방 ${result.failures.length}개 읽기 실패: ${result.failures[0]}`
         } catch (error) {
           errors.messenger = (error as Error).message
         }
       }
-      return { items, errors }
+      return { items, errors, ...(cursor ? { cursor } : {}) }
     },
 
     context(item: InboxItem): Context {

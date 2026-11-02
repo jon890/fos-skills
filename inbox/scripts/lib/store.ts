@@ -140,6 +140,15 @@ export class Store implements Cache {
     }
   }
 
+  // 다른 세션이 받고 있는지. 오래된 잠금은 없는 것으로 본다
+  lockHeld(now: number): boolean {
+    try {
+      return now - statSync(join(this.dir, 'fetch.lock')).mtimeMs < LOCK_STALE_MS
+    } catch {
+      return false
+    }
+  }
+
   unlock(): void {
     rmSync(join(this.dir, 'fetch.lock'), { recursive: true, force: true })
   }

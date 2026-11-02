@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { createDooray, excerptOf, MAX_CHANNELS, mentions, plainText } from '../scripts/adapters/dooray.ts'
+import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, MORE_LOG_COUNT, mentions, plainText } from '../scripts/adapters/dooray.ts'
 import type { Adapter, Cache, RunResult } from '../scripts/lib/model.ts'
 
 const ME = '3421415092208840539'
@@ -50,11 +50,13 @@ const CHANNELS = [
   { id: 'ch-dm', title: '', type: 'direct', updatedAt: '2026-11-02T14:20:00+09:00' },
 ]
 
-const LOGS: Record<string, unknown[]> = {
-  'ch-dev': [
+const DEV_LOGS = [
     { id: 'l2', sender: { type: 'member', member: { organizationMemberId: ME } }, sentAt: '2026-11-02T14:25:00+09:00', text: '네 볼게요' },
     { id: 'l1', sender: { type: 'member', member: { organizationMemberId: LEE } }, sentAt: '2026-11-02T14:10:00+09:00', text: `${link(ME, '김병태')} 리뷰 부탁해요` },
-  ],
+]
+
+const LOGS: Record<string, unknown[]> = {
+  'ch-dev': DEV_LOGS,
   'ch-dm': [
     { id: 'l9', sender: { type: 'member', member: { organizationMemberId: KIM } }, sentAt: '2026-11-02T14:00:00+09:00', text: `${link(ME, '김병태')} 잠깐 통화 가능?` },
   ],
@@ -83,7 +85,8 @@ function ok(value: unknown): RunResult {
 function runner(argv: string[]): RunResult {
   calls.push(argv)
   const key = argv.slice(2, 4).join(' ')
-  if (failing.has(key) || failing.has(argv.slice(2).join(' '))) return { code: 1, stdout: '', stderr: `${key} 실패 (429)` }
+  const writeKey = argv.slice(1, 3).join(' ')
+  if (failing.has(key) || failing.has(argv.slice(2).join(' ')) || (argv[1] !== '--json' && failing.has(writeKey))) return { code: 1, stdout: '', stderr: `${key} 실패 (429)` }
   if (argv[1] !== '--json') {
     const file = argv[argv.indexOf('--body-file') + 1]
     sent.push({ argv, body: readFileSync(file, 'utf8') })
@@ -147,6 +150,10 @@ describe('받기', () => {
     assert.equal(byId['dooray:task:post:p342'].kind, 'assigned')
     assert.equal(byId['dooray:task:post:p77'].kind, 'cc')
     assert.deepEqual(calls.find((argv) => argv[2] === 'stream'), ['dooray', '--json', 'stream', 'list', '--since', SINCE, '--all'])
+    // 지난 받기가 있으면 그 뒤만 읽는다
+    calls = []
+    adapter({ messenger: false }).fetch({ since: SINCE, lastFetchedAt: '2026-11-02T05:55:00.000Z' })
+    assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', '2026-11-02T05:55:00.000Z'])
     // 업무 정보는 업무마다 한 번만 읽는다
     assert.equal(calls.filter((argv) => argv[2] === 'post' && argv[3] === 'get' && argv[5] === 'p81').length, 1)
   })
@@ -160,18 +167,37 @@ describe('받기', () => {
     assert.deepEqual(dev?.from, { id: LEE, name: '이영희' })
     assert.equal(messenger.find((row) => row.id.endsWith('l9'))?.title, '김철수 대화')
     assert.deepEqual(calls.find((argv) => argv[3] === 'channels'), ['dooray', '--json', 'messenger', 'channels', '--since', '2026-11-02T05:00:00.000Z'])
+    // 바뀐 방은 오래된 순으로 읽는다
     const logCalls = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])
-    assert.deepEqual(logCalls, ['ch-dev', 'ch-dm'])
+    assert.deepEqual(logCalls, ['ch-dm', 'ch-dev'])
+    assert.equal(result.cursor, undefined)
   })
 
-  test(`메신저는 한 번에 ${MAX_CHANNELS}개 방까지만 읽는다`, () => {
-    const many = Array.from({ length: MAX_CHANNELS + 5 }, (_, i) => ({ id: `c${i}`, title: `방${i}`, type: 'private', updatedAt: `2026-11-02T0${i % 10}:00:00Z` }))
+  test(`메신저는 한 번에 ${MAX_CHANNELS}개 방까지만 읽고, 남은 방은 cursor 로 다음 받기에 넘긴다`, () => {
+    const many = Array.from({ length: MAX_CHANNELS + 5 }, (_, i) => ({ id: `c${i}`, title: `방${i}`, type: 'private',
+      updatedAt: new Date(Date.parse('2026-11-01T00:00:00Z') + i * 60000).toISOString() }))
     CHANNELS.push(...many)
     try {
-      adapter().fetch({ since: SINCE, lastFetchedAt: null })
-      assert.equal(calls.filter((argv) => argv[3] === 'logs').length, MAX_CHANNELS)
+      const result = adapter().fetch({ since: SINCE, lastFetchedAt: null })
+      const read = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])
+      assert.equal(read.length, MAX_CHANNELS)
+      assert.deepEqual(read.slice(0, 2), ['c0', 'c1'])
+      assert.equal(result.cursor, many[MAX_CHANNELS - 1].updatedAt)
     } finally {
       CHANNELS.splice(4)
+    }
+  })
+
+  test(`한 방의 logs ${LOG_COUNT}개가 모두 지난 받기 뒤의 것이면 ${MORE_LOG_COUNT}개로 다시 읽는다`, () => {
+    const busy = Array.from({ length: LOG_COUNT }, (_, i) => ({ id: `b${i}`, sender: { member: { organizationMemberId: LEE } },
+      sentAt: new Date(Date.parse('2026-11-02T05:30:00Z') + i * 1000).toISOString(), text: '잡담' }))
+    LOGS['ch-dev'] = busy
+    try {
+      adapter().fetch({ since: SINCE, lastFetchedAt: '2026-11-02T05:00:00.000Z' })
+      const counts = calls.filter((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev').map((argv) => argv[6])
+      assert.deepEqual(counts, [String(LOG_COUNT), String(MORE_LOG_COUNT)])
+    } finally {
+      LOGS['ch-dev'] = DEV_LOGS
     }
   })
 
@@ -245,6 +271,14 @@ describe('맥락, 답함, 답변', () => {
     assert.equal(target.reply(row, text), 'https://nhnent.dooray.com/project/tasks/p81')
     assert.deepEqual(sent[0].argv.slice(0, 6), ['dooray', 'post', 'comment', 'add', '--id', 'p81'])
     assert.equal(sent[0].body, text)
+  })
+
+  test('등록 명령이 실패하면 던진다', () => {
+    const target = adapter({ messenger: false })
+    const row = mentionItem(target)
+    failing.add('post comment')
+    assert.throws(() => target.reply(row, '네'), /실패/)
+    assert.equal(sent.length, 0)
   })
 
   test('메신저 답변은 그 대화방으로 보낸다', () => {

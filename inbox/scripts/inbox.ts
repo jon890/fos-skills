@@ -2,7 +2,7 @@
 // 설계는 docs/features/work-inbox/spec.md, 파일 형식은 inbox/references/config.md 가 소유한다.
 //
 // 사용:
-//   inbox.ts board --repo <주 checkout> [--json]   보드에 보일 항목. 캐시가 intervalMinutes 보다 오래됐으면 먼저 받는다
+//   inbox.ts board --repo <주 checkout> [--json]   보드에 보일 항목. 캐시가 intervalMinutes 보다 오래됐으면 받기를 따로 띄우고 지금 캐시를 낸다
 //   inbox.ts fetch [--force]                        받기만 한다. --force 는 주기를 무시한다
 //   inbox.ts list [--repo <경로>]                   항목을 사람이 읽는 줄로 낸다. --repo 가 없으면 넘긴 것 말고 모두
 //   inbox.ts context <id>                           본문과 앞 대화를 JSON 으로 낸다. 작성자는 이름으로 푼다
@@ -12,10 +12,11 @@
 // 설정 파일이 없으면 board --json 은 {"enabled": false} 를 내고 0, 다른 명령은 1 이다(R6).
 // 명령 실행은 import.meta.main 안에만 둔다. 테스트는 main 에 가짜 adapter 와 Runner 를 넣는다.
 
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { orchDir } from '../../orch/scripts/lib/paths.ts'
 import { ADAPTERS } from './adapters/index.ts'
@@ -26,6 +27,8 @@ import { boardView, type RepoFilter, visibleItems } from './lib/view.ts'
 // 받기 한 번에 「답함」 을 확인하는 새 항목 수. 항목마다 두레이 호출이 하나씩 든다
 export const MAX_ANSWER_CHECKS = 15
 export const FILTER_FILE = join('config', 'notification.json')
+// 두레이 명령 하나를 기다리는 한도. 넘으면 그 호출만 실패로 친다
+const COMMAND_TIMEOUT_MS = 60000
 
 const USAGE = '사용법: inbox.ts {board,fetch,list,context,reply,dismiss} [id] [--repo R] [--json] [--force] [--body-file F] [--yes] [--undo]'
 
@@ -36,12 +39,15 @@ export type Deps = {
   out: (text: string) => void
   err: (text: string) => void
   tmpDir: string
+  // 받기를 따로 띄운다. board 는 보드 훅의 시간 제한 안에 끝나야 해서 받기를 기다리지 않는다.
+  // 없으면 board 가 그 자리에서 받는다(테스트)
+  startFetch?: () => void
 }
 
 class Refused extends Error {}
 
 export const defaultRunner: Runner = (argv) => {
-  const done = spawnSync(argv[0], argv.slice(1), { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  const done = spawnSync(argv[0], argv.slice(1), { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: COMMAND_TIMEOUT_MS })
   if (done.error) return { code: 127, stdout: '', stderr: done.error.message }
   return { code: done.status ?? 1, stdout: done.stdout ?? '', stderr: done.stderr ?? '' }
 }
@@ -93,13 +99,17 @@ function openSession(config: Config, deps: Deps): { session: Session; errors: Re
   return { session: { config, store, deps, adapters }, errors }
 }
 
+function isStale(session: Session, cache: CacheFile): boolean {
+  const age = session.deps.now().getTime() - Date.parse(cache.fetchedAt ?? '')
+  return !cache.fetchedAt || !(age < session.config.intervalMinutes * 60 * 1000)
+}
+
 // 캐시가 오래됐으면 받아서 합친다. 다른 세션이 받고 있으면 지금 캐시를 그대로 쓴다
 export function sync(session: Session, setupErrors: Record<string, string>, force: boolean): CacheFile {
   const { config, store, deps } = session
   const cache = store.cache()
   const now = deps.now()
-  const stale = force || !cache.fetchedAt || now.getTime() - Date.parse(cache.fetchedAt) >= config.intervalMinutes * 60 * 1000
-  if (!stale || !store.lock(now.getTime())) return cache
+  if (!(force || isStale(session, cache)) || !store.lock(now.getTime())) return cache
   try {
     const since = new Date(now.getTime() - config.days * 24 * 60 * 60 * 1000).toISOString()
     const lastOk = store.read<Record<string, string>>('last-ok', {})
@@ -108,7 +118,8 @@ export function sync(session: Session, setupErrors: Record<string, string>, forc
     for (const adapter of session.adapters.values()) {
       const result = adapter.fetch({ since, lastFetchedAt: lastOk[adapter.name] ?? null })
       for (const [source, message] of Object.entries(result.errors)) errors[`${adapter.name}:${source}`] = message
-      if (Object.keys(result.errors).length === 0) lastOk[adapter.name] = now.toISOString()
+      // 실패한 출처가 있으면 지난 성공 시각을 그대로 둬, 다음 받기가 놓친 구간을 다시 읽는다
+      if (Object.keys(result.errors).length === 0) lastOk[adapter.name] = result.cursor ?? now.toISOString()
       for (const item of result.items) {
         const known = byId.get(item.id)
         // 받은 값으로 갱신하되 답함 표시는 남긴다
@@ -183,7 +194,11 @@ function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, s
   const errors: Record<string, string> = {}
   let cache: CacheFile
   try {
-    cache = sync(session, setupErrors, false)
+    cache = store.cache()
+    if (isStale(session, cache) && !store.lockHeld(deps.now().getTime())) {
+      if (deps.startFetch) deps.startFetch()
+      else cache = sync(session, setupErrors, false)
+    }
   } catch (error) {
     cache = store.cache()
     errors.inbox = (error as Error).message
@@ -318,8 +333,19 @@ export function main(argv: string[], deps: Deps): number {
   }
 }
 
+// 받기를 떼어 띄운다. 이 프로세스가 끝나도 받기는 이어지고, 잠금이 같은 시각의 중복 받기를 막는다
+function startDetachedFetch(): void {
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', fileURLToPath(import.meta.url), 'fetch'], {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  })
+  child.unref()
+}
+
 if (import.meta.main) {
   process.exitCode = main(process.argv.slice(2), {
+    startFetch: startDetachedFetch,
     run: defaultRunner,
     now: () => new Date(),
     adapters: ADAPTERS,

@@ -411,3 +411,12 @@ test('숫자 단축키는 그 항목의 답변 요청문을 입력란에 채운�
   expect(filled[0]).toContain('확인 전에는 등록하지 마')
   await ui.unmount()
 })
+
+test('inbox 명령이 실패하면 알림 상자에 확인 불가를 빨갛게 보인다', async ($, on) => {
+  await start($, on, (argv) => String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')
+    ? { exitCode: 1, stdout: '', stderr: 'node 를 찾지 못했다' }
+    : { exitCode: 1, stdout: '', stderr: '없음' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /알림함 확인 불가: node 를 찾지 못했다/ })).toBeTruthy()
+  await ui.unmount()
+})

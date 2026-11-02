@@ -2,7 +2,7 @@
 // 설정과 상태 폴더는 INBOX_CONFIG, INBOX_STATE_DIR 로 테스트마다 새로 만든다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -25,6 +25,7 @@ type FakeState = {
   answered: Set<string>
   fetches: FetchRequest[]
   replies: { id: string; text: string }[]
+  failReply?: boolean
   people: Record<string, string>
 }
 
@@ -55,6 +56,7 @@ function fakeFactory(state: FakeState): AdapterFactory {
         return `@${row.from.name} ${body.trim()}${signature ? `\n\n${signature}` : ''}`
       },
       reply(row, text) {
+        if (state.failReply) throw new Error('등록 실패 (500)')
         state.replies.push({ id: row.id, text })
         return 'https://example.test/task'
       },
@@ -68,6 +70,7 @@ let state: FakeState
 let now: Date
 let out: string
 let err: string
+let extra: Partial<Deps>
 
 function deps(): Deps {
   return {
@@ -77,6 +80,7 @@ function deps(): Deps {
     out: (text) => { out += text },
     err: (text) => { err += text },
     tmpDir: dir,
+    ...extra,
   }
 }
 
@@ -109,6 +113,7 @@ beforeEach(() => {
   process.env.INBOX_STATE_DIR = join(dir, 'state')
   delete process.env.ORCH_DIR
   now = NOW
+  extra = {}
   state = { items: [], errors: {}, answered: new Set(), fetches: [], replies: [], people: { u1: '김철수', u2: '이영희' } }
 })
 
@@ -147,6 +152,35 @@ describe('설정과 받기', () => {
     assert.equal(state.fetches[0].since, '2026-10-26T06:00:00.000Z')
     assert.equal(state.fetches[0].lastFetchedAt, null)
     assert.equal(state.fetches[1].lastFetchedAt, NOW.toISOString())
+  })
+
+  test('board 는 받기를 따로 띄우고 지금 캐시를 바로 낸다 (D15)', () => {
+    writeConfig({})
+    state.items = [item('1', ['p1'])]
+    let started = 0
+    extra = { startFetch: () => { started++ } }
+    const root = repo('a', null)
+    assert.equal(board(root).items.length, 0)
+    assert.equal(started, 1)
+    assert.equal(state.fetches.length, 0)
+    // 따로 띄운 받기가 끝나면 다음 board 는 받은 항목을 내고 다시 띄우지 않는다
+    assert.equal(call('fetch'), 0)
+    assert.equal(board(root).items.length, 1)
+    assert.equal(started, 1)
+  })
+
+  test('다른 세션이 받는 중이면 받지 않고, 10분 넘은 잠금은 무시한다 (D2)', () => {
+    writeConfig({})
+    state.items = [item('1', ['p1'])]
+    const lock = join(process.env.INBOX_STATE_DIR as string, 'fetch.lock')
+    mkdirSync(lock, { recursive: true })
+    const root = repo('a', null)
+    assert.equal(board(root).items.length, 0)
+    assert.equal(state.fetches.length, 0)
+    const old = new Date(NOW.getTime() - 11 * 60 * 1000)
+    utimesSync(lock, old, old)
+    assert.equal(board(root).items.length, 1)
+    assert.equal(state.fetches.length, 1)
   })
 
   test('출처 하나가 실패하면 오류를 남기고 직전 항목을 그대로 보인다 (R7)', () => {
@@ -264,6 +298,19 @@ describe('맥락과 답변', () => {
     assert.match(out, /등록했다: https:\/\/example.test\/task/)
     // 등록한 항목은 다음 받기 전에도 답함이다
     assert.equal(board(repo('a', null)).newCount, 0)
+  })
+
+  test('등록이 실패하면 1 이고 답함으로 적지 않는다', () => {
+    writeConfig({})
+    state.items = [item('1', ['p1'])]
+    const root = repo('a', null)
+    board(root)
+    const body = join(dir, 'body.md')
+    writeFileSync(body, '네')
+    state.failReply = true
+    assert.equal(call('reply', 'fake:task:1', '--body-file', body, '--yes'), 1)
+    assert.match(err, /등록 실패/)
+    assert.equal(board(root).newCount, 1)
   })
 
   test('signature 가 빈 문자열이면 붙이지 않는다 (R10)', () => {
