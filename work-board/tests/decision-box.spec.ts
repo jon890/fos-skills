@@ -5,7 +5,9 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { autoAlertKind, queryQuestions, statusLine } from '../hooks/register.js'
+import {
+  autoAlertKind, ciPassed, errorSummary, isQuietStop, marksArgv, mergingIds, parseMarks, queryQuestions, spanText, statusLine, workerNotes,
+} from '../hooks/register.js'
 
 type Json = Record<string, unknown>
 
@@ -90,4 +92,91 @@ test('더 늦은 자동 알림에 답했으면 앞선 막힘도 푼 것이고, �
   // 답한 막힘 뒤에 온 미답변 막힘은 남는다
   const again = ask('msg_e2', 'escalation', '2026-11-02T10:30:00Z')
   assert.deepEqual(ids((await queryQuestions(fake([blocker, later, again], [answer('msg_stop_aa')]), RUN, ACTIVE)).questions), ['msg_e2'])
+})
+
+// ---- worker 줄의 멈춤과 오류 (R4, R5) ----
+
+test('멈춤 판정은 「멈춤 N분」 이나 「멈춤 · 터미널 종료」 로, 기다리거나 판정이 없으면 글이 없다 (R4)', () => {
+  const worker = { id: 'd1' }
+  assert.deepEqual(workerNotes(worker, { d1: { reason: 'idle', idleMin: 45 } }, []), ['멈춤 45분'])
+  assert.deepEqual(workerNotes(worker, { d1: { reason: 'idle', idleMin: 130 } }, []), ['멈춤 2시간'])
+  assert.deepEqual(workerNotes(worker, { d1: { reason: 'exited', idleMin: null } }, []), ['멈춤 · 터미널 종료'])
+  assert.deepEqual(workerNotes(worker, { d1: { reason: null, waiting: '질문의 답을 기다린다' } }, []), [])
+  assert.deepEqual(workerNotes(worker, null, []), [])
+  assert.deepEqual(workerNotes({ id: 'other' }, { d1: { reason: 'idle', idleMin: 45 } }, []), [])
+  assert.deepEqual([spanText(45), spanText(130), spanText(3000)], ['45분', '2시간', '2일'])
+})
+
+test('오류는 그 뒤 워크트리가 바뀌지 않았으면 보이고, 바뀌었으면 빠진다 (R5)', () => {
+  const at = Date.parse('2026-11-02T11:00:00Z')
+  const failures = [{ worker: 'd1', at, summary: '계정 한도' }]
+  const worker = { id: 'd1' }
+  assert.deepEqual(workerNotes(worker, { d1: { reason: null, workedAt: at - 60_000 } }, failures), ['오류: 계정 한도'])
+  assert.deepEqual(workerNotes(worker, { d1: { reason: null, workedAt: null } }, failures), ['오류: 계정 한도'])
+  assert.deepEqual(workerNotes(worker, null, failures), ['오류: 계정 한도'])
+  assert.deepEqual(workerNotes(worker, { d1: { reason: null, workedAt: at + 60_000 } }, failures), [])
+  assert.deepEqual(workerNotes(worker, { d1: { reason: 'idle', idleMin: 60, workedAt: at - 60_000 } }, failures), ['멈춤 1시간', '오류: 계정 한도'])
+})
+
+test('오류 요약은 분류어이고, 분류하지 못하면 오류 첫 줄이다 (R5)', () => {
+  assert.equal(errorSummary(chatError('msg_chaterr_1', '2026-11-02T11:00:00Z')), '계정 한도')
+  const capacity = chatError('msg_chaterr_2', '2026-11-02T11:00:00Z', {
+    payload: JSON.stringify({ dispatchId: 'open', error: 'Selected model is at capacity. Please try a different model.' }) })
+  assert.equal(errorSummary(capacity), '모델 용량 부족')
+  const weekly = chatError('msg_chaterr_3', '2026-11-02T11:00:00Z', { payload: { error: "You've hit your weekly limit" } })
+  assert.equal(errorSummary(weekly), '계정 한도')
+  assert.equal(errorSummary({ id: 'msg_chaterr_4', payload: { error: 'boom\nmore' }, body: '' }), 'boom')
+  assert.equal(errorSummary({ id: 'msg_chaterr_5', body: 'Worker w hit an error while running task.\nError: disk full\nmore' }), 'disk full')
+})
+
+test('같은 worker 의 오류는 늦은 하나로 묶고, 답을 기다리는 worker 는 루프처럼 턴만 끝낸 멈춤 보고를 빼고 정한다 (R4, R5)', async () => {
+  const rows = [
+    chatError('msg_chaterr_old', '2026-11-02T10:00:00Z', { payload: { dispatchId: 'open', error: 'first' } }),
+    chatError('msg_chaterr_new', '2026-11-02T11:00:00Z'),
+    stop('msg_stop_aa', '2026-11-02T09:00:00Z'),
+    ask('msg_q1', 'question', '2026-11-02T08:00:00Z'),
+  ]
+  const result = await queryQuestions(fake(rows), RUN, ACTIVE)
+  assert.deepEqual(result.failures, [{ worker: 'open', at: Date.parse('2026-11-02T11:00:00Z'), summary: '계정 한도' }])
+  assert.ok(result.asking.includes('open'))
+  // 턴만 끝낸 멈춤 보고만 남으면 답을 기다리는 것이 아니다
+  assert.deepEqual((await queryQuestions(fake([stop('msg_stop_aa', '2026-11-02T09:00:00Z')]), RUN, ACTIVE)).asking, [])
+  // 오류로 멈춘 보고(errored)는 루프처럼 답을 기다리는 것이다
+  const errored = await queryQuestions(fake([stop('msg_stop_bb', '2026-11-02T09:00:00Z', 'errored')]), RUN, ACTIVE)
+  assert.deepEqual(errored.asking.sort(), ['open', 'structworker_w'])
+  // 답한 질문은 기다리는 것이 아니다
+  assert.deepEqual((await queryQuestions(fake([ask('msg_q1', 'question', '2026-11-02T08:00:00Z')], [answer('msg_q1')]), RUN, ACTIVE)).asking, [])
+})
+
+test('턴만 끝낸 멈춤 보고는 payload 나 제목으로 가린다', () => {
+  assert.equal(isQuietStop(stop('msg_stop_a', 'x')), true)
+  assert.equal(isQuietStop({ id: 'msg_stop_b', type: 'escalation', subject: 'Worker stopped without reporting' }), true)
+  assert.equal(isQuietStop(stop('msg_stop_c', 'x', 'errored')), false)
+  assert.equal(isQuietStop({ id: 'q', type: 'question', subject: 'Worker stopped without reporting' }), false)
+})
+
+const pr = (extra: Json) => ({ number: 1, branch: 'wt-a', pass: 2, fail: 0, pending: 0, failed: [], ...extra })
+
+test('CI 를 통과한 PR 의 worker 만 머지를 기다린다. 판정은 루프처럼 선택 검사 실패도 실패로 본다 (R4)', () => {
+  assert.equal(ciPassed(pr({})), true)
+  assert.equal(ciPassed(pr({ pending: 1 })), false)
+  assert.equal(ciPassed(pr({ fail: 1, failed: ['claude-review'] })), false)
+  assert.equal(ciPassed(pr({ pass: 0 })), false)
+  const workers = [{ id: 'd1', worktree: 'wt-a' }, { id: 'd2', worktree: 'wt-b' }]
+  assert.deepEqual(mergingIds(workers, [pr({})]), ['d1'])
+  assert.deepEqual(mergingIds(workers, [pr({ fail: 1 })]), [])
+  assert.deepEqual(mergingIds(workers, []), [])
+  assert.deepEqual(mergingIds(workers, null), [])
+})
+
+test('판정 명령의 인자와 출력 읽기 (R4)', () => {
+  assert.deepEqual(marksArgv('/p/worker-marks.ts', '/repo', 'r', ['d1', 't1'], ['d2'], true), [
+    'node', '--disable-warning=ExperimentalWarning', '/p/worker-marks.ts', '--repo', '/repo', '--run', 'r',
+    '--asking', 'd1', '--asking', 't1', '--merging', 'd2', '--questions-unknown',
+  ])
+  assert.deepEqual(marksArgv('/p/w.ts', '/repo', '', [], [], false), ['node', '--disable-warning=ExperimentalWarning', '/p/w.ts', '--repo', '/repo'])
+  const out = { settings: { idleMin: 30, exited: true }, workers: [{ dispatch: 'd1', reason: 'idle', idleMin: 45 }], error: null }
+  assert.deepEqual(parseMarks(JSON.stringify(out)), { settings: out.settings, marks: { d1: out.workers[0] }, error: null })
+  assert.throws(() => parseMarks(JSON.stringify({ result: { workers: [] } })), /형식/)
+  assert.throws(() => parseMarks('not json'))
 })

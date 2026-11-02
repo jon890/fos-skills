@@ -222,7 +222,7 @@ function localIso(now: Date): string {
 }
 
 // json.dumps(ensure_ascii=False) 의 꼴. 구분자가 `, ` 와 `: ` 다. steps 출력을 읽는 쪽과 바이트를 맞춘다.
-// orch/scripts/lib/py.ts 의 pyJson 과 같다. work-board 는 orch 를 import 하지 않아(의존은 orch 에서 work-board 쪽 하나다) 복사해 두었다.
+// orch/scripts/lib/py.ts 의 pyJson 과 같다. board.ts 는 orch 를 import 하지 않아(orch 의 lib/paths.ts 가 board.ts 를 import 해 고리가 생긴다) 복사해 두었다.
 // 바꾸면 함께 고친다
 function pyJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(pyJson).join(', ')}]`

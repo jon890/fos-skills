@@ -1,5 +1,6 @@
 // 움직임으로 멈춘 worker 와 worker 없이 멈춘 보드 단계를 찾는 한 벌이다.
-// 사용처: stalled-workers.ts(코디네이터가 부르는 조회), orch-loop.ts(틱의 「움직임 확인」). 판정 함수는 조회하지 않는다.
+// 사용처: stalled-workers.ts(코디네이터가 부르는 조회), orch-loop.ts(틱의 「움직임 확인」), work-board/bin/worker-marks.ts(보드 worker 줄의 멈춤 표시).
+// 판정 함수는 조회하지 않는다.
 // 화면 상태로 보는 멈춤(lib/screen.ts, orch-loop.ts 의 「멈춤 확인」)과 따로 돈다. Orca 의 structured worker 는 화면이 대화 기록 꼴이라
 // 입력란을 찾지 못해 화면 상태가 늘 unknown 이다. 그래서 상태가 아니라 무엇이 바뀌었는지로 본다.
 //
