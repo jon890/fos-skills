@@ -1577,12 +1577,36 @@ describe('spec-lint 관문', () => {
     assert.deepEqual(lines('make '), [])
   })
 
-  test('--base 를 spec-lint 에 넘긴다', () => {
+  test('기준 브랜치와 상대경로 스펙을 읽을 곳을 spec-lint 에 넘긴다', () => {
     fakeLint(0)
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-    const r = launch(['--repo', tmp, '--name', 'x', '--base', 'origin/release', '--', ...CLAUDE])
+    let r = launch(['--repo', tmp, '--name', 'x', '--base', 'origin/release', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
-    assert.match(lines('lint ')[0], /^lint --repo \S+ --base release /)
+    assert.match(lines('lint ')[0], /^lint --repo \S+ --base release \S*spec\.md$/)
+    // --base 가 없으면 origin/HEAD 의 브랜치다
+    const proj = join(tmp, 'proj')
+    spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
+    spawnSync('git', ['-C', proj, 'commit', '-q', '--allow-empty', '-m', 'i'], { env })
+    spawnSync('git', ['-C', proj, 'update-ref', 'refs/remotes/origin/develop', 'HEAD'], { env })
+    spawnSync('git', ['-C', proj, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop'], { env })
+    resetLog()
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    r = launch(['--repo', proj, '--name', 'x', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('lint ')[0], /^lint --repo \S+ --base develop \S*spec\.md$/)
+    // --resume-remote 면 지시서 브랜치의 원격 ref 에서 읽는다
+    writeFileSync(spec, `${readFileSync(spec, 'utf8')}브랜치: \`feat/a\`\n`)
+    resetLog()
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    r = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--resume-remote', '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.match(lines('lint ')[0], /--base main --spec-ref origin\/feat\/a \S*spec\.md$/)
+    // --worktree 면 그 워크트리 아래 디스크에서 읽는다
+    resetLog()
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    assert.ok(lines('lint ')[0].includes(`--spec-root ${worktree} `), lines('lint ')[0])
   })
 
   describe('할 일 첫 줄의 루프 선택(진짜 spec-lint)', () => {

@@ -332,7 +332,7 @@ describe('할 일 첫 줄의 루프 선택', () => {
     assert.equal(r.code, 1, r.stdout)
     assert.match(r.stdout, /^spec-draft\.md:5: 루프: 스펙 `.*draft\.md`: 제목 아래에 `확인: YYYY-MM-DD` 줄이 없다\..*`루프를 쓴다\(스펙: 새로 쓴다\)`/m)
     assert.match(r.stdout, /^spec-date\.md:5: 루프: .*확인 줄의 날짜가 올바르지 않다: 2026-02-30$/m)
-    assert.match(r.stdout, /^spec-gone\.md:5: 루프: 스펙 `.*gone\.md` 을 읽지 못했다$/m)
+    assert.match(r.stdout, /^spec-gone\.md:5: 루프: 스펙 `.*gone\.md` 을 파일로 읽지 못했다$/m)
     assert.match(r.stdout, /^spec-blank\.md:5: 루프: `스펙:` 뒤에 경로가 없다/m)
     assert.equal(loops(r.stdout).length, 4, r.stdout)
   })
@@ -351,7 +351,53 @@ describe('할 일 첫 줄의 루프 선택', () => {
     git('-C', repo, 'update-ref', 'refs/remotes/origin/release', 'refs/remotes/origin/main')
     const other = run(['--repo', repo, '--base', 'release', task('spec-a2', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')])
     assert.equal(other.code, 0, other.stdout)
-    assert.match(run(['--repo', repo, '--base', 'gone', task('spec-a3', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')]).stdout, /이 origin\/gone 에 없다/)
+    assert.match(run(['--repo', repo, '--base', 'gone', task('spec-a3', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')]).stdout, /origin\/gone 가 없어 .*--base 로 주거나/)
+    // 폴더를 가리키면 파일이 아니라고 알린다
+    assert.match(lint([task('spec-dir', '## 할 일\n루프를 쓴다(스펙: docs/features/a)')]).stdout, /이 origin\/main 에서 파일이 아니다/)
+  })
+
+  test('--base 가 없으면 origin/HEAD 의 브랜치에서 읽고, --spec-ref 와 --spec-root 가 읽을 곳을 바꾼다', () => {
+    write(join(repo, 'docs/features/a/spec.md'), confirmed())
+    git('-C', repo, 'add', '-A')
+    git('-C', repo, 'commit', '-q', '-m', 'base')
+    git('-C', repo, 'update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    git('-C', repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    const rel = task('spec-rel', '## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md)')
+    assert.deepEqual(lint([rel]), { code: 0, stdout: '' })
+    // 커밋하지 않은 스펙도 worker 가 일할 워크트리(--spec-root)에 있으면 통과한다
+    const wt = join(tmp, 'wt')
+    write(join(wt, 'docs/features/b/spec.md'), confirmed())
+    const b = task('spec-b', '## 할 일\n루프를 쓴다(스펙: docs/features/b/spec.md)')
+    assert.equal(lint([b]).code, 1)
+    assert.equal(run(['--repo', repo, '--spec-root', wt, b]).code, 0)
+    assert.match(run(['--repo', repo, '--spec-root', wt, rel]).stdout, /spec\.md` 을 파일로 읽지 못했다/)
+    // --spec-ref 는 그 ref 에서 읽는다
+    git('-C', repo, 'update-ref', 'refs/remotes/origin/feat-x', 'HEAD')
+    assert.equal(run(['--repo', repo, '--spec-ref', 'origin/feat-x', rel]).code, 0)
+    assert.match(run(['--repo', repo, '--spec-ref', 'origin/nope', rel]).stdout, /origin\/nope 가 없어/)
+  })
+
+  test('괄호 앞 띄어쓰기, 제목 뒤 설명, 여러 목록 기호를 받는다', () => {
+    for (const [name, body] of [
+      ['space', '## 할 일\n루프를 쓴다 (스펙: 새로 쓴다)'],
+      ['heading', '## 할 일 (이 PR 범위)\n루프 없이: 오타만 고친다'],
+      ['plus', '## 할 일\n+ 루프 없이: 오타만 고친다'],
+      ['paren', '## 할 일\n1) 루프 없이: 오타만 고친다'],
+      ['check', '## 할 일\n- [ ] 루프 없이: 오타만 고친다'],
+    ]) {
+      assert.deepEqual(lint([task(`spec-${name}`, body)]), { code: 0, stdout: '' }, name)
+    }
+    // `## 할 일과 순서` 는 다른 제목이다
+    assert.match(lint([task('spec-other', '## 할 일과 순서\n루프 없이: 오타')]).stdout, /`## 할 일` 제목이 없다/)
+  })
+
+  test('코드 블록 안의 제목과 확인 줄은 보지 않는다', () => {
+    const quoted = task('spec-fence', '## 목표\n\n```markdown\n## 할 일\n루프 없이: 예시\n```')
+    assert.match(lint([quoted]).stdout, /spec-fence\.md:1: 루프: `## 할 일` 제목이 없다/)
+    const fenced = write(join(tmp, 'drafts/fenced.md'), '# 기능\n\n~~~\n확인: 2026-11-02\n## 예시\n~~~\n\n## 목표\n')
+    assert.match(lint([task('spec-fenced', `## 할 일\n루프를 쓴다(스펙: ${fenced})`)]).stdout, /`확인: YYYY-MM-DD` 줄이 없다/)
+    // 지시서 쪽 코드 블록이 할 일 절 뒤에 있어도 첫 줄 판정은 그대로다
+    assert.deepEqual(lint([task('spec-after', '## 할 일\n루프 없이: 오타만 고친다\n\n```\n## 할 일\n아무 줄\n```')]), { code: 0, stdout: '' })
   })
 
   test('`리뷰 PR:` 줄이나 머리의 `중간 과정:` 줄이 있으면 보지 않는다', () => {
@@ -360,7 +406,9 @@ describe('할 일 첫 줄의 루프 선택', () => {
     assert.deepEqual(lint([review, interim]), { code: 0, stdout: '' })
     // 할 일 본문에서 인용한 중간 과정 줄은 표시가 아니다
     const quoted = task('spec-quote', '## 할 일\n- 중간 과정: PR #N 줄을 문서에 적는다')
-    assert.equal(lint([quoted]).code, 1)
+    const r = lint([quoted])
+    assert.equal(r.code, 1)
+    assert.match(r.stdout, /^spec-quote\.md:5: 루프: /m)
   })
 })
 

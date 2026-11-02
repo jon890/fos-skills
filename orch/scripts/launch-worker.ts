@@ -30,7 +30,8 @@
 //        띄울 지시서끼리 겹치는 것은 먼저 띄운 쪽이 활성이 된 뒤 나중 지시서를 띄울 때 잡힌다. 아직 안 띄운 지시서는 보지 않는다.
 //        spec-lint 가 1 로 끝나면(막을 발견) 워크트리를 만들기 전에 발견 줄을 내고 5 로 멈춘다. --lint-ack 이 있으면 이유와 함께 넘긴다.
 //        활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다. spec-lint 가 1 이 아닌 코드로 끝나도(저장소를 읽지 못함 같은 것) 경고만 하고 진행한다
-//        --base(없으면 origin/HEAD 의 브랜치)를 spec-lint 의 --base 로 넘긴다. 「할 일」 첫 줄의 상대경로 스펙을 그 기준 브랜치에서 읽는다.
+//        --base(없으면 origin/HEAD 의 브랜치)를 spec-lint 의 --base 로 넘긴다. 「할 일」 첫 줄의 상대경로 스펙은 worker 가 시작할 곳에서 읽는다.
+//        새 워크트리면 origin/<base>, --resume-remote 면 --spec-ref origin/<지시서 브랜치>, --worktree 면 --spec-root <그 워크트리> 다.
 //        첫 줄 검사(spec-lint 의 「루프」)에 걸려도 같은 5 다. 확인받은 스펙 없이 기능 worker 를 띄우지 않게 한다
 //        SPEC_LINT 로 spec-lint 를 바꾼다
 //     2. 워크트리를 만들거나 확인한다
@@ -116,7 +117,7 @@ import type { RunResult } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { configureSshAgent } from './lib/ssh-agent.ts'
 import { reviewPrOfSpec } from './lib/review.ts'
-import { liveSpecPaths, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
+import { branchesOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)',
@@ -290,6 +291,19 @@ function listed(worktree: string): boolean {
   return rows.some((row) => realPath(String((row as { path?: unknown })?.path || '/nonexistent')) === target)
 }
 
+// 루프 검사가 상대경로 스펙을 읽을 곳. --worktree 면 그 워크트리, --resume-remote 면 origin/<지시서 브랜치>, 아니면 spec-lint 의 기본(origin/<base>)이다
+function loopSource(a: Args, specPath: string): string[] {
+  if (a.worktree) return ['--spec-root', realPath(a.worktree.replace(/^path:/, ''))]
+  if (!a.resumeRemote) return []
+  let branch: string | undefined
+  try {
+    branch = branchesOf(readFileSync(specPath, 'utf8'))[0]
+  } catch {
+    branch = undefined
+  }
+  return branch ? ['--spec-ref', `origin/${branch}`] : []
+}
+
 // spec-lint 로 이 지시서를 검사한다. 머리 주석의 「1-1」. 막으면 종료 코드, 통과하거나 넘기면 null 이다.
 // acked 는 --lint-ack 으로 넘긴 발견의 이유다. 넘길 발견이 없으면 null 이라 기록에 남지 않는다.
 async function lintGate(a: Args): Promise<{ stop: number | null; acked: string | null }> {
@@ -299,9 +313,10 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
   if (live === null) err('경고: 활성 지시서를 읽지 못해 이 지시서 하나만 검사한다(다른 지시서와의 겹침은 보지 못한다)')
   const specsDir = realPath(dirname(specPath))
   const others = [...(live ?? [])].filter((file) => file !== realPath(specPath) && dirname(file) === specsDir && basename(file) !== 'spec-common.md' && isFile(file))
-  // 루프 검사가 상대경로 스펙을 워크트리를 만들 기준 브랜치에서 읽게 한다. 이벤트 입력의 base 와 같은 값이다
+  // 루프 검사가 상대경로 스펙을 worker 가 시작할 곳에서 읽게 한다. 머리 주석의 「1-1」
   const base = (a.base || defaultBase(repo) || '').replace(/^origin\//, '')
-  const args = ['--repo', repo, ...(base ? ['--base', base] : []), ...others.flatMap((file) => ['--active', file]), specPath]
+  const source = loopSource(a, specPath)
+  const args = ['--repo', repo, ...(base ? ['--base', base] : []), ...source, ...others.flatMap((file) => ['--active', file]), specPath]
   const done = await runAsync(scriptCommand(process.env.SPEC_LINT || `${HERE}/spec-lint.ts`, args))
   if (done.code !== 1) {
     if (done.code === 0 && done.stdout.trim()) err(done.stdout.trim())
@@ -310,7 +325,7 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
   }
   err(done.stdout.trimEnd())
   if (a.lintAck === null) {
-    err(`거부: spec-lint 가 막을 발견을 냈다. 지시서를 고치거나, 의도한 겹침이면 --lint-ack "<이유>" 로 이유를 적어 넘긴다${others.length > 0 ? `\n함께 본 활성 지시서: ${others.join(', ')}` : ''}`)
+    err(`거부: spec-lint 가 막을 발견을 냈다. 지시서를 고치거나, 의도한 발견(겹침 같은 것)이면 --lint-ack "<이유>" 로 이유를 적어 넘긴다${others.length > 0 ? `\n함께 본 활성 지시서: ${others.join(', ')}` : ''}`)
     return { stop: 5, acked: null }
   }
   out(`lint-ack: ${a.lintAck}`)
