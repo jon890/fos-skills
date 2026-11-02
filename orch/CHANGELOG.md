@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.19.0 (2026-11-02)
+
+- 상주 루프가 틱마다 워크트리 파일, 브랜치 커밋, 화면이 `pipeline.idle_min`(기본 30분) 넘게 그대로이거나 프로세스가 끝난 열린 dispatch 를 `WORKER-IDLE` 로 알린다. 화면 상태를 읽지 못하는 structured worker 도 잡는다
+- 보드의 `doing` 항목에 끝나지 않은 단계가 있는데 그 항목의 worker 가 없으면 `STAGE-STALLED` 로 알린다
+- 같은 판정을 지금 바로 보는 `stalled-workers` 명령을 더한다. 루프가 없는 저장소는 정기 점검에서 이 명령을 부른다
+- Run 을 주지 않은 `merge-with-finish` 의 정리가 `--close-own-taken-over 는 --run 과 함께 쓴다` 로 실패하지 않게 `finish.run` 을 넘긴다
+
 ## 5.18.0 (2026-11-02)
 
 - Orca 1.4.246 의 줄인 보기로 비던 판정을 고친다. 모든 `orca orchestration` 조회에 `--full` 을 붙인다. 직접 조회할 때도 붙인다
