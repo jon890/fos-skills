@@ -88,8 +88,8 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `pipeline` | `update_behind_drafts` | bool | false | base 에 뒤처진 내 draft PR 에 틱마다 base 를 합친다. ready PR 은 합치지 않는다 |
 | `pipeline` | `authors` | 문자열 목록 | gh 의 현재 사용자 | 「내 PR」 로 볼 작성자. 루프, 원격 브랜치 정리, 충돌 알림이 이 PR 만 본다 |
 | `pipeline` | `stall_ticks` | `{"error": 정수, "idle": 정수}`. 모르는 키나 0 미만, 정수가 아닌 값은 사용법 오류다 | `{"error": 2, "idle": 0}` | 상주 루프가 같은 멈춤 화면을 몇 틱 보면 `worker-stalled` 를 낼지. 0 이면 그 상태를 보지 않는다. 판정은 `orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다 |
-| `pipeline` | `idle_min` | 0 이상의 수(분). 아니면 설정 오류다 | `30` | 열린 dispatch 의 워크트리 파일, 브랜치 커밋, 화면이 이 분 넘게 그대로면 멈춘 worker 로 본다. worker 없이 남은 보드 단계도 이 분이 지나면 알린다. 0 이면 둘 다 보지 않는다. 판정은 `lib/movement.ts` 머리 주석이 소유한다 |
-| `pipeline` | `idle_exited` | true 나 false. 아니면 설정 오류다 | `true` | Orca 가 프로세스가 끝났다고 본(liveness `exited`) 열린 dispatch 를 멈춘 worker 로 볼지 |
+| `pipeline` | `idle_min` | 0 이상의 수(분). 아니면 설정 오류다 | `30` | 열린 dispatch 의 워크트리 파일, 브랜치 커밋, 화면이 이 분 넘게 그대로면 멈춘 worker 로 본다. worker 없이 남은 보드 단계도 이 분이 지나면 알린다. 0 이면 둘 다 보지 않는다. 보드 창의 worker 줄 표시(멈춤, worker 없음 경과 시간)도 같은 값을 쓴다. 판정은 `lib/movement.ts` 머리 주석이 소유한다 |
+| `pipeline` | `idle_exited` | true 나 false. 아니면 설정 오류다 | `true` | Orca 가 프로세스가 끝났다고 본(liveness `exited`) 열린 dispatch 를 멈춘 worker 로 볼지. 보드 창의 「멈춤 · 터미널 종료」 도 같은 값을 쓴다 |
 | `board` | `steps` | 비지 않은 문자열 목록. 줄 앞 꼬리표는 `[pr]`, `[merge]`, `[deploy]`, `[release]` 중 하나이고 한 번씩만 쓴다. 다른 꼬리표는 사용법 오류다 | `["[pr] PR", "[merge] 머지"]` | 띄울 때 만드는 보드 마일스톤 단계. 지시서의 `## 보드 단계` 절이 앞선다. 근거는 [ADR-018](adr/018-board-milestone-steps.md) 가 소유한다 |
 | `board` | `task_line` | 정규식 문자열. 이름 붙은 묶음 `number` 가 있어야 하고 `title` 은 선택이다. `m`, `u` 플래그로 읽는다 | `두레이 업무: <프로젝트>/<번호>` 뒤 같은 줄의 「」 안을 제목으로 읽는 꼴(`lib/milestones.ts` 의 `DEFAULT_TASK_LINE`) | 띄울 때 지시서에서 업무 번호와 제목을 읽는다. 번호는 보드 항목 제목 앞에 붙고, 같은 번호의 끝나지 않은 항목을 이어 쓰는 기준이 된다 |
 | `board` | `done_after` | `merge`, `deploy`, `release` 중 하나 | `merge` | 마지막 PR 이 이 사건 단계에 닿으면 보드 항목을 done 으로 바꾼다. 항목에 그 단계가 없으면 가장 늦은 사건 단계에서 바꾼다 |
