@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { orca, orcaBin, orcaJson, repoVisibility, repoVisibilityActions } from '../scripts/lib/orca.ts'
+import { orca, orcaBin, orcaJson, repoVisibility, repoVisibilityActions, withFull } from '../scripts/lib/orca.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
@@ -19,6 +19,7 @@ before(() => {
     { args: ['fail'], stdout: '', stderr: 'boom', code: 3 },
     { args: ['notok'], stdout: JSON.stringify({ ok: false, error: { code: 'nope', message: '거부' } }) },
     { args: ['noresult'], stdout: JSON.stringify({ ok: true }) },
+    { args: ['pretty'], stdout: JSON.stringify({ ok: true, result: { a: 1 } }, null, 2) },
   ])
   process.env.ORCA = fake.path
   // ORCA_CLI_COMMAND 는 읽지 않는다. 엉뚱한 값을 두어 이 값이 쓰이지 않음을 본다.
@@ -54,12 +55,31 @@ describe('orca', () => {
   })
 })
 
+describe('withFull', () => {
+  test('orchestration 명령에만 --full 을 한 번 붙인다', () => {
+    assert.deepEqual(withFull(['orchestration', 'worker-show', '--dispatch', 'd']), ['orchestration', 'worker-show', '--dispatch', 'd', '--full'])
+    assert.deepEqual(withFull(['orchestration', 'check', '--full', '--json']), ['orchestration', 'check', '--full', '--json'])
+    assert.deepEqual(withFull(['terminal', 'list']), ['terminal', 'list'])
+    assert.deepEqual(withFull([]), [])
+  })
+
+  test('orca 도 orchestration 명령에 --full 을 붙인다', () => {
+    const before = fake.calls().length
+    orca(['orchestration', 'run-current'])
+    assert.deepEqual(fake.calls().slice(before).map((c) => c.argv), [['orchestration', 'run-current', '--full']])
+  })
+})
+
 describe('orcaJson', () => {
-  test('--json 을 붙여 부르고 봉투의 result 를 data 로 낸다', () => {
+  test('--json 을 붙여 부르고 봉투의 result 를 data 로 낸다. orchestration 명령에는 --full 도 붙인다', () => {
     const before = fake.calls().length
     const r = orcaJson<{ workers: { id: string }[] }>(['orchestration', 'worker-list', 'good'])
     assert.deepEqual(r, { ok: true, data: { workers: [{ id: 'w1' }] } })
-    assert.deepEqual(fake.calls().slice(before).map((c) => c.argv), [['orchestration', 'worker-list', 'good', '--json']])
+    assert.deepEqual(fake.calls().slice(before).map((c) => c.argv), [['orchestration', 'worker-list', 'good', '--json', '--full']])
+  })
+
+  test('여러 줄로 들여 쓴 --full 의 JSON 도 읽는다', () => {
+    assert.deepEqual(orcaJson(['orchestration', 'pretty']), { ok: true, data: { a: 1 } })
   })
 
   test('깨진 JSON 은 ok: false 다', () => {

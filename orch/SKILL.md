@@ -21,6 +21,7 @@ metadata:
 스크립트는 진입점 `"$SKILL_DIR/bin/orch.ts" <이름> [인자]` 로 부른다. 부를 때마다 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 설치 기록에서 지금 설치된 번들을 읽어 그 번들의 `scripts/<이름>.ts` 를 실행한다.
 갱신이나 프로필 전환 뒤에도 기억해 둔 명령이 옛 번들을 부르지 않는다. 저장소 스크립트가 진입점을 부르는 방법은 [`references/overlay.md`](references/overlay.md) 의 「저장소 스크립트에서 orch 부르기」 가 소유한다.
 캐시의 스크립트를 직접 불러 현재 설치 기록과 다르면 stderr 에 `STALE-BUNDLE` 경고와 현재 진입점 경로가 나온다.
+**`orca orchestration` 조회를 직접 부를 때는 `--full` 을 붙인다.** Orca 1.4.246 부터 `--full` 이 없으면 줄인 보기라 `dispatchStatus`, `resource`, `thread_id` 처럼 판정에 쓰는 키가 빠진다. 스크립트는 스스로 붙인다(`scripts/lib/orca.ts` 의 `withFull`).
 
 스킬을 열면 먼저 설치본을 점검한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
