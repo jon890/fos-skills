@@ -348,7 +348,7 @@ for (const [name, boardAt, liveAt] of [
     const label = timestamp
       ? String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0') + ' 업데이트'
       : '읽는 중'
-    expect(await ui.find({ type: 'Text', text: new RegExp('^' + label + '$') })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: new RegExp('^' + label + '  ·  $') })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /run-visible-id-must-be-hidden|수동|자동|실제 상태/ })).toBeUndefined()
     const shortcuts = await ui.find({ type: 'Box', key: 'shortcuts' })
     expect(shortcuts.props.borderStyle).toBe('round')

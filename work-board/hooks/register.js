@@ -14,7 +14,8 @@ import { STEP, hideEventTag } from './event-tags.js'
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
 //   3. 업무 알림: 같은 플러그인의 inbox/scripts/inbox.ts board 출력. 받기와 저장소 필터는 inbox 가 하고 창은 그리기만 한다.
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
-// 파일은 FILE_MS, 명령은 LIVE_MS, 알림은 INBOX_MS 마다 다시 읽는다. 창을 열 때도 명령과 알림을 한 번 읽는다.
+//   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
+// 파일은 FILE_MS, 명령은 LIVE_MS, 알림은 INBOX_MS, 최신 버전은 VERSION_MS 마다 다시 읽는다. 창을 열 때도 명령, 알림, 최신 버전을 한 번 읽는다.
 
 const PANE = 'work-board'
 
@@ -69,6 +70,11 @@ const COMMAND_TIMEOUT_MS = 20000
 const INBOX_MS = 60000
 // 받는 주기에는 두레이 호출이 수십 번 들 수 있어 다른 명령보다 길게 기다린다
 const INBOX_TIMEOUT_MS = 90000
+// main 의 최신 커밋은 세션 시작, /board 열 때, 이 주기, 갱신 직후에 읽는다(D2). 네트워크 호출이 시간당 두세 번이다
+const VERSION_MS = 30 * 60 * 1000
+const VERSION_TIMEOUT_MS = 10000
+// claude plugin update 는 저장소를 받아 캐시에 복사한다
+const UPDATE_TIMEOUT_MS = 180000
 // 알림 상자에 번호를 붙여 보이는 항목 수. 숫자 단축키 1~9 와 맞춘다
 const INBOX_ROWS = 9
 const QUESTION_HISTORY_LIMIT = 100 // Orca check --all/--peek 의 고정 상한
@@ -98,6 +104,11 @@ let inboxError = ''
 let inboxBusy = false
 // 이 세션에서 알림함이 켜진 것을 본 적이 있는지. 설정이 없는 사용자에게 node 실패를 오류 상자로 보이지 않으려는 것이다(R6)
 let inboxSeen = false
+
+// 플러그인 버전. install 은 설치본(installOf), latest 는 main 의 { commit, version } 이나 { error }, 아직 읽지 않았으면 undefined
+let plugin = { name: '', repository: '', install: null, error: '', latest: undefined }
+let versionBusy = false
+let updating = false
 
 // ---- 외부 명령 출력을 그릴 값으로 바꾸는 순수 함수(테스트가 직접 부른다) ----
 
@@ -576,6 +587,91 @@ export const INBOX_PROMPT = [
   '3. 넘길 것은 내 확인을 받아 inbox.ts dismiss 로 넘기고, 답할 것은 하나씩 초안, 미리보기, 내 확인 순서로 진행해 줘. 확인 전에는 등록하지 마.',
 ].join('\n')
 
+// ---- 플러그인 버전 ----
+// 지금 세션이 읽은 설치본($.plugin.root)과 main 의 최신 커밋을 비교해 머리 줄에 보인다.
+// 설치본이 마켓플레이스 캐시면 같은 설정 폴더의 installed_plugins.json 에서 scope 와 커밋을 읽고, 그 scope 로 갱신한다.
+
+// 마켓플레이스 캐시 폴더 <설정 폴더>/plugins/cache/<마켓>/<플러그인>/<버전> 에서 설정 폴더를 뽑는다. 캐시가 아니면 ''
+export function configDirOf(root) {
+  const marker = '/plugins/cache/'
+  const at = String(root || '').lastIndexOf(marker)
+  return at > 0 ? root.slice(0, at) : ''
+}
+
+// installed_plugins.json 과 설치본 plugin.json 으로 설치본을 정한다.
+// kind 는 cache(마켓플레이스 설치본)나 tree(--plugin-dir 로 읽은 작업 트리)다. 캐시인데 기록에 없으면 null
+export function installOf(root, installed, manifest, name) {
+  const version = manifest && typeof manifest.version === 'string' ? manifest.version : ''
+  if (!configDirOf(root)) return { kind: 'tree', version, commit: '', scope: '', projectPath: '', key: '' }
+  const plugins = (installed && installed.plugins) || {}
+  for (const [key, entries] of Object.entries(plugins)) {
+    if (!key.startsWith(name + '@') || !Array.isArray(entries)) continue
+    const entry = entries.find((row) => row && row.installPath === root)
+    if (entry) {
+      return { kind: 'cache', version, commit: String(entry.gitCommitSha || ''), scope: String(entry.scope || ''),
+        projectPath: String(entry.projectPath || ''), key }
+    }
+  }
+  return null
+}
+
+// git ls-remote <저장소> refs/heads/main 출력의 커밋. 없으면 던진다
+export function parseLsRemote(stdout) {
+  const match = /^([0-9a-f]{40})\s+refs\/heads\/main$/m.exec(String(stdout || ''))
+  if (!match) throw new Error('main 커밋을 읽지 못했어요')
+  return match[1]
+}
+
+// GitHub 저장소 주소면 그 커밋의 plugin.json 원문 주소. 아니면 ''
+export function rawManifestUrl(repository, commit) {
+  const match = /^https:\/\/github\.com\/([^/]+)\/([^/.]+?)(\.git)?\/?$/.exec(String(repository || ''))
+  return match && commit ? 'https://raw.githubusercontent.com/' + match[1] + '/' + match[2] + '/' + commit + '/.claude-plugin/plugin.json' : ''
+}
+
+// 최신 여부. 둘 다 version 이 있으면 version 으로, 아니면 커밋으로 비교한다.
+// version 을 올리지 않은 커밋은 update 가 받지 않으므로 커밋만 다를 때 뒤처졌다고 하지 않는다(docs/features/board-plugin-version/spec.md)
+export function versionState(install, latest) {
+  if (!install) return 'unknown'
+  if (!latest || latest.error || !latest.commit) return 'unknown'
+  if (install.version && latest.version) return install.version === latest.version ? 'latest' : 'behind'
+  if (!install.commit) return 'unknown'
+  return install.commit === latest.commit ? 'latest' : 'behind'
+}
+
+// 「1.4.0 (b1e2c09)」. version 이 없으면 커밋만, 둘 다 없으면 ''
+export function versionText(version, commit) {
+  const short = String(commit || '').slice(0, 7)
+  if (version && short) return version + ' (' + short + ')'
+  return version || short
+}
+
+// 머리 줄에 붙일 버전 글과 색. latest 가 undefined 면 아직 확인하지 않은 것이다
+export function versionLabel(name, install, latest, error = '') {
+  if (!install) return { text: name + ' 설치본 확인 불가' + (error ? ': ' + error : ''), color: undefined, dim: true }
+  const own = install.kind === 'tree' ? name + ' 작업 트리 ' + versionText(install.version, install.commit) : name + ' ' + versionText(install.version, install.commit)
+  if (latest === undefined) return { text: own.trim() + ' · 최신 확인 중', color: undefined, dim: true }
+  const state = versionState(install, latest)
+  if (state === 'latest') return { text: own.trim() + ' 최신', color: undefined, dim: true }
+  if (state === 'behind') {
+    return { text: own.trim() + ' → 최신 ' + versionText(latest.version, latest.commit) + (install.kind === 'cache' ? ' · p 로 갱신' : ''), color: 'yellow', dim: false }
+  }
+  return { text: own.trim() + ' · 최신 확인 불가', color: undefined, dim: true }
+}
+
+// 갱신 명령과 그 명령을 돌릴 폴더. project·local scope 는 그 프로젝트 폴더에서 돌린다. 작업 트리는 갱신하지 않는다(null)
+export function updateCommand(install) {
+  if (!install || install.kind !== 'cache' || !install.key || !install.scope) return null
+  return {
+    argv: ['claude', 'plugin', 'update', install.key, '--scope', install.scope],
+    cwd: install.scope === 'user' ? '' : install.projectPath,
+  }
+}
+
+// p 단축키를 보일지. 갱신할 수 있는 설치본이고 최신으로 확인되지 않았을 때만 보인다
+export function updateVisible(install, latest) {
+  return Boolean(updateCommand(install)) && versionState(install, latest) !== 'latest'
+}
+
 // 상태 줄 한 줄. 실제 상태와 수동 항목을 함께 센다. 새 업무 알림이 있으면 맨 앞에 「알림 n」 을 붙인다
 export function statusLine(items, state, inboxState = null) {
   const count = (status) => items.filter((item) => item.status === status).length
@@ -604,9 +700,16 @@ async function run($, argv, timeoutMs = COMMAND_TIMEOUT_MS) {
   return stdout
 }
 
+// 상태 줄은 글이 바뀔 때만 보낸다. SDK(stream-json)로 실린 세션은 $.ui.status 마다 ui_status 메시지를 host 에 보내고,
+// 그 메시지를 그리지 못하는 host(Orca 의 채팅 view 등)에서는 같은 원문 JSON 줄이 5초마다 쌓인다
+let sentStatus
 function refreshStatus($) {
   const items = board && Array.isArray(board.items) ? board.items : []
-  $.ui.status(statusLine(items, live, inbox))
+  const text = statusLine(items, live, inbox)
+  if (sentStatus !== text) {
+    sentStatus = text
+    $.ui.status(text)
+  }
   $.ui.invalidate('ui.render')
 }
 
@@ -720,6 +823,74 @@ async function loadInbox($) {
   refreshStatus($)
 }
 
+// 설치본을 읽는다. 설치본은 세션 동안 바뀌지 않는다(갱신해도 /reload-plugins 전까지는 앞 설치본이 실려 있다)
+async function loadInstall($) {
+  const root = $.plugin.root
+  try {
+    const manifest = JSON.parse(await $.fs.read(root + '/.claude-plugin/plugin.json'))
+    plugin.name = String(manifest.name || $.plugin.name || '')
+    plugin.repository = String(manifest.repository || '')
+    const config = configDirOf(root)
+    const installed = config ? JSON.parse(await $.fs.read(config + '/plugins/installed_plugins.json')) : null
+    const install = installOf(root, installed, manifest, plugin.name)
+    if (!install) throw new Error('installed_plugins.json 에 이 설치본이 없어요')
+    if (install.kind === 'tree') {
+      try {
+        install.commit = (await run($, ['git', '-C', root, 'rev-parse', 'HEAD'])).trim()
+      } catch {}
+    }
+    plugin.install = install
+    plugin.error = ''
+  } catch (failure) {
+    plugin.install = null
+    plugin.error = String(failure.message || failure)
+  }
+}
+
+// main 의 최신 커밋과 그 커밋의 plugin.json version 을 읽는다. 실패하면 { error } 를 두고 다음 주기에 다시 읽는다
+async function loadLatest($) {
+  if (versionBusy || !plugin.repository) return
+  versionBusy = true
+  try {
+    const commit = parseLsRemote(await run($, ['git', 'ls-remote', plugin.repository, 'refs/heads/main'], VERSION_TIMEOUT_MS))
+    let version = ''
+    const url = rawManifestUrl(plugin.repository, commit)
+    if (url) {
+      try {
+        const manifest = JSON.parse(await run($, ['curl', '-fsSL', '--max-time', String(VERSION_TIMEOUT_MS / 1000), url], VERSION_TIMEOUT_MS + 2000))
+        version = typeof manifest.version === 'string' ? manifest.version : ''
+      } catch {}
+    }
+    plugin.latest = { commit, version }
+  } catch (failure) {
+    plugin.latest = { error: String(failure.message || failure) }
+  } finally {
+    versionBusy = false
+  }
+  $.ui.invalidate('ui.render')
+}
+
+// p: 이 세션이 읽은 설치본의 scope 로 갱신하고, 성공하면 입력란에 /reload-plugins 를 채운다. 실패하면 toast 에 이유를 보이고 입력란은 그대로다
+export async function updatePlugin($, install = plugin.install) {
+  const command = updateCommand(install)
+  if (!command || updating) return
+  updating = true
+  $.ui.toast((plugin.name || $.plugin.name) + ' 플러그인을 갱신하는 중이에요')
+  $.ui.invalidate('ui.render')
+  try {
+    const { exitCode, stdout, stderr } = await $.process.run(command.argv,
+      { timeoutMs: UPDATE_TIMEOUT_MS, ...(command.cwd ? { cwd: command.cwd } : {}) })
+    if (exitCode !== 0) throw new Error((stderr || stdout || '종료 코드 ' + exitCode).trim().split('\n').pop())
+    void $.prompt.fill({ text: '/reload-plugins' })
+    $.ui.toast('갱신했어요. Enter 를 누르면 /reload-plugins 로 새 설치본을 읽어요')
+  } catch (failure) {
+    $.ui.toast('플러그인 갱신 실패: ' + String(failure.message || failure))
+  } finally {
+    updating = false
+  }
+  await loadLatest($)
+}
+
 function ago(at) {
   const time = typeof at === 'number' ? at : Date.parse(at || '')
   if (!time) return '-'
@@ -769,8 +940,10 @@ export function register(on) {
     $.clock.every(FILE_MS, () => loadFile($))
     $.clock.every(LIVE_MS, () => loadLive($))
     $.clock.every(INBOX_MS, () => loadInbox($))
+    $.clock.every(VERSION_MS, () => loadLatest($))
     loadLive($)
     loadInbox($)
+    void loadInstall($).then(() => loadLatest($))
     await $.command.register({ name: 'board', description: '작업 현황 창 열기', immediate: true })
     return next(e)
   })
@@ -779,6 +952,7 @@ export function register(on) {
     await loadFile($)
     loadLive($)
     loadInbox($)
+    loadLatest($)
     await $.ui.open({ id: PANE, title: '작업 현황', closeOnEscape: true })
     return {}
   })
@@ -1052,12 +1226,24 @@ export function register(on) {
     const updateLabel = updated
       ? String(updated.getHours()).padStart(2, '0') + ':' + String(updated.getMinutes()).padStart(2, '0') + ' 업데이트'
       : '읽는 중'
+    // 머리 줄: 업데이트 시각 뒤에 플러그인 버전. 좁은 창에서는 버전이 다음 줄로 넘어간다
+    const version = versionLabel(plugin.name || $.plugin.name, plugin.install, plugin.latest, plugin.error)
+    const headView = Box({
+      key: 'updated-at',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      children: [
+        Text({ key: 'time', dimColor: true, children: [updateLabel + '  ·  '] }),
+        Text({ key: 'version', dimColor: version.dim, color: version.color, wrap: 'wrap',
+          children: [updating ? version.text + ' · 갱신 중' : version.text] }),
+      ],
+    })
     return Box({
       flexDirection: 'column',
       gap: 1,
       children: [
         overallView,
-        dim('updated-at', updateLabel),
+        headView,
         Box({
           key: 'shortcuts',
           borderStyle: 'round',
@@ -1065,7 +1251,8 @@ export function register(on) {
           flexDirection: 'column',
           children: [
             Text({ bold: true, children: ['단축키'] }),
-            Box({ flexDirection: 'row', columnGap: 2, children: [
+            // 버튼 폭의 합이 상자보다 넓으면 다음 줄로 넘긴다. flexWrap 이 없으면 오른쪽 버튼이 잘린다(R4)
+            Box({ key: 'shortcut-row', flexDirection: 'row', flexWrap: 'wrap', columnGap: 2, children: [
               Button({
                 key: 'start-today',
                 label: '오늘 시작',
@@ -1114,6 +1301,13 @@ export function register(on) {
                   $.ui.invalidate('ui.render')
                 },
               }),
+              ...(updateVisible(plugin.install, plugin.latest) ? [Button({
+                key: 'update-plugin',
+                label: updating ? '플러그인 갱신 중' : '플러그인 갱신',
+                hotkey: 'p',
+                plain: true,
+                onPress: () => { void updatePlugin($) },
+              })] : []),
             ] }),
           ],
         }),
