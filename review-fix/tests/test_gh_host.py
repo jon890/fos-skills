@@ -55,5 +55,25 @@ class TestLoggedInHosts(unittest.TestCase):
             self.assertEqual(gh_host.resolve("octocat", "sample-repo"), "github.com")
 
 
+class TestKnownHost(unittest.TestCase):
+    def test_explicit_host_never_discovers_other_hosts(self):
+        with patch.object(gh_host, "_run", side_effect=AssertionError("호스트 탐색")):
+            self.assertEqual(gh_host.resolve("o", "r", host="github.com"), "github.com")
+
+    def test_matching_origin_never_checks_auth(self):
+        for origin in ["https://github.com/o/r.git", "git@github-alias:o/r.git"]:
+            with self.subTest(origin=origin), patch.dict(gh_host.os.environ, {}, clear=True), \
+                    patch.object(gh_host, "_run", return_value=origin), \
+                    patch.object(gh_host, "_via_ssh_config", return_value="github.com"), \
+                    patch.object(gh_host, "logged_in_hosts", side_effect=AssertionError("전체 호스트 조회")):
+                self.assertEqual(gh_host.resolve("o", "r"), "github.com")
+
+    def test_other_origin_does_not_select_its_host(self):
+        with patch.dict(gh_host.os.environ, {}, clear=True), \
+                patch.object(gh_host, "_run", return_value="git@wrong.example:other/repo.git"), \
+                patch.object(gh_host, "logged_in_hosts", return_value=["right.example"]):
+            self.assertEqual(gh_host.resolve("o", "r"), "right.example")
+
+
 if __name__ == "__main__":
     unittest.main()
