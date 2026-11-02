@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  autoAlertKind, ciPassed, errorSummary, idleStepMinutes, isQuietStop, marksArgv, mergingIds, parseMarks, queryQuestions, spanText, statusLine, stepRows, workerNoneText, workerNotes,
+  alertNoteText, autoAlertKind, ciPassed, errorSummary, idleStepMinutes, isQuietStop, marksArgv, mergingIds, parseMarks, queryQuestions, spanText, statusLine, stepRows, workerNoneText, workerNotes,
 } from '../hooks/register.js'
 
 type Json = Record<string, unknown>
@@ -109,13 +109,28 @@ test('멈춤 판정은 「멈춤 N분」 이나 「멈춤 · 터미널 종료」
 
 test('오류는 그 뒤 워크트리가 바뀌지 않았으면 보이고, 바뀌었으면 빠진다 (R5)', () => {
   const at = Date.parse('2026-11-02T11:00:00Z')
-  const failures = [{ worker: 'd1', at, summary: '계정 한도' }]
+  const failures = [{ worker: 'd1', kind: 'error', at, text: '오류: 계정 한도', reason: null }]
   const worker = { id: 'd1' }
   assert.deepEqual(workerNotes(worker, { d1: { reason: null, workedAt: at - 60_000 } }, failures), ['오류: 계정 한도'])
   assert.deepEqual(workerNotes(worker, { d1: { reason: null, workedAt: null } }, failures), ['오류: 계정 한도'])
   assert.deepEqual(workerNotes(worker, null, failures), ['오류: 계정 한도'])
   assert.deepEqual(workerNotes(worker, { d1: { reason: null, workedAt: at + 60_000 } }, failures), [])
   assert.deepEqual(workerNotes(worker, { d1: { reason: 'idle', idleMin: 60, workedAt: at - 60_000 } }, failures), ['멈춤 1시간', '오류: 계정 한도'])
+  // 오류 글이 멈춤 보고 글보다 앞이고, 터미널 종료로 멈춘 worker 에는 「종료 보고」 를 붙이지 않는다
+  const both = [{ worker: 'd1', kind: 'stop', at, text: '입력 대기', reason: 'needs-input' }, ...failures]
+  assert.deepEqual(workerNotes(worker, null, both), ['오류: 계정 한도', '입력 대기'])
+  const exited = [{ worker: 'd1', kind: 'stop', at, text: '종료 보고', reason: 'exited' }]
+  assert.deepEqual(workerNotes(worker, { d1: { reason: 'exited', idleMin: null, workedAt: null } }, exited), ['멈춤 · 터미널 종료'])
+  assert.deepEqual(workerNotes(worker, null, exited), ['종료 보고'])
+})
+
+test('멈춤 보고는 이유마다 worker 줄 글이 되고, 턴만 끝낸 것은 글이 없다 (R1, R5)', () => {
+  assert.equal(alertNoteText(stop('msg_stop_a', 'x')), '')
+  assert.equal(alertNoteText(stop('msg_stop_b', 'x', 'errored')), '오류로 멈춤')
+  assert.equal(alertNoteText(stop('msg_stop_c', 'x', 'needs-input')), '입력 대기')
+  assert.equal(alertNoteText(stop('msg_stop_d', 'x', 'exited')), '종료 보고')
+  assert.equal(alertNoteText(chatError('msg_chaterr_e', 'x')), '오류: 계정 한도')
+  assert.equal(alertNoteText(ask('msg_q', 'question', 'x')), '')
 })
 
 test('오류 요약은 분류어이고, 분류하지 못하면 오류 첫 줄이다 (R5)', () => {
@@ -127,6 +142,8 @@ test('오류 요약은 분류어이고, 분류하지 못하면 오류 첫 줄이
   assert.equal(errorSummary(weekly), '계정 한도')
   assert.equal(errorSummary({ id: 'msg_chaterr_4', payload: { error: 'boom\nmore' }, body: '' }), 'boom')
   assert.equal(errorSummary({ id: 'msg_chaterr_5', body: 'Worker w hit an error while running task.\nError: disk full\nmore' }), 'disk full')
+  // task 제목에 든 낱말로 분류하지 않는다
+  assert.equal(errorSummary({ id: 'msg_chaterr_6', body: 'Worker w hit an error while running task "overloaded usage limit reached 처리".\nError: disk full' }), 'disk full')
 })
 
 test('같은 worker 의 오류는 늦은 하나로 묶고, 답을 기다리는 worker 는 루프처럼 턴만 끝낸 멈춤 보고를 빼고 정한다 (R4, R5)', async () => {
@@ -137,8 +154,18 @@ test('같은 worker 의 오류는 늦은 하나로 묶고, 답을 기다리는 w
     ask('msg_q1', 'question', '2026-11-02T08:00:00Z'),
   ]
   const result = await queryQuestions(fake(rows), RUN, ACTIVE)
-  assert.deepEqual(result.failures, [{ worker: 'open', at: Date.parse('2026-11-02T11:00:00Z'), summary: '계정 한도' }])
-  assert.ok(result.asking.includes('open'))
+  assert.deepEqual(result.notes, [{ worker: 'open', kind: 'error', at: Date.parse('2026-11-02T11:00:00Z'), text: '오류: 계정 한도', reason: null }])
+  // 미답변 question 하나면 그 dispatch 와 터미널이 답을 기다린다
+  assert.deepEqual((await queryQuestions(fake([ask('msg_q1', 'question', '2026-11-02T08:00:00Z')]), RUN, ACTIVE)).asking.sort(), ['open', 'structworker_w'])
+  // 답 없는 오류 알림만 있어도 루프처럼 답을 기다리는 것이다
+  assert.deepEqual((await queryQuestions(fake([chatError('msg_chaterr_new', '2026-11-02T11:00:00Z')]), RUN, ACTIVE)).asking.sort(), ['open', 'structworker_w'])
+  // 해제·중지된 worker 의 오류는 글이 없다
+  assert.deepEqual((await queryQuestions(fake([chatError('msg_chaterr_x', '2026-11-02T11:00:00Z')]), RUN, [])).notes, [])
+  assert.deepEqual((await queryQuestions(fake([chatError('msg_chaterr_x', '2026-11-02T11:00:00Z')]), RUN, [{ id: 'other', terminal: 'term_o' }])).notes, [])
+  // 입력을 기다리는 멈춤 보고는 상자에 없고 worker 줄 글이 된다
+  const waitingPrompt = await queryQuestions(fake([stop('msg_stop_np', '2026-11-02T11:00:00Z', 'needs-input')]), RUN, ACTIVE)
+  assert.deepEqual(waitingPrompt.questions, [])
+  assert.deepEqual(waitingPrompt.notes.map((n: Json) => n.text), ['입력 대기'])
   // 턴만 끝낸 멈춤 보고만 남으면 답을 기다리는 것이 아니다
   assert.deepEqual((await queryQuestions(fake([stop('msg_stop_aa', '2026-11-02T09:00:00Z')]), RUN, ACTIVE)).asking, [])
   // 오류로 멈춘 보고(errored)는 루프처럼 답을 기다리는 것이다

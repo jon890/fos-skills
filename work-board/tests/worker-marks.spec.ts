@@ -23,10 +23,12 @@ beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'worker-marks-')))
   tree = join(tmp, 'wt-a')
   mkdirSync(tree)
+  // 커밋 없는 저장소로 둔다. 임시 폴더가 다른 git 작업 트리 안에 있어도 그 저장소의 커밋 시각을 읽지 않는다
+  spawnSync('git', ['init', '-q', tree])
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-// 워크트리의 파일 하나를 minutes 분 전에 바뀐 것으로 둔다. git 저장소가 아니라 커밋 시각은 없다
+// 워크트리의 파일 하나를 minutes 분 전에 바뀐 것으로 둔다. 커밋이 없어 커밋 시각은 없다(.git 폴더는 훑지 않는다)
 function touched(minutes: number): number {
   const file = join(tree, 'a.txt')
   writeFileSync(file, 'x')

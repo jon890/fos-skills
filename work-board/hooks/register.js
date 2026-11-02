@@ -100,8 +100,8 @@ let expanded = false // d: 항목의 모든 단계와 완료 칸을 펼친다
 let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈 값은 전체다
 
 // 실제 상태. 읽지 못한 원천은 error 에 이유를 남기고 나머지는 그린다.
-// marks 는 bin/worker-marks.ts 의 판정(dispatch 에서 WorkerMark 로), movement 는 그 settings, failures 는 worker 마다의 최근 오류 알림이다
-let live = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, failures: [], errors: {} }
+// marks 는 bin/worker-marks.ts 의 판정(dispatch 에서 WorkerMark 로), movement 는 그 settings, alertNotes 는 worker 마다의 최근 자동 알림 글이다
+let live = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, alertNotes: [], errors: {} }
 let liveBusy = false
 
 // 업무 알림. inbox.ts board --json 의 출력이다. 읽지 못하면 inboxError 에 이유를 두고 직전 값을 그린다
@@ -248,10 +248,24 @@ const STOP_SUBJECTS = {
   'Worker is waiting on a prompt': 'needs-input',
   'Worker exited without reporting': 'exited',
 }
-export function isQuietStop(m) {
-  if (!m || m.type !== 'escalation') return false
+function stopReasonOf(m) {
+  if (!m || m.type !== 'escalation') return null
   const reason = payloadOf(m)?.stopReason
-  return (typeof reason === 'string' && reason ? reason : STOP_SUBJECTS[String(m.subject || '')]) === 'finished'
+  return (typeof reason === 'string' && reason ? reason : STOP_SUBJECTS[String(m.subject || '')]) || null
+}
+export function isQuietStop(m) {
+  return stopReasonOf(m) === 'finished'
+}
+
+// 멈춤 보고(msg_stop_)의 worker 줄 글. 턴만 끝낸 것(finished)과 모르는 이유는 글이 없다
+const STOP_NOTES = { errored: '오류로 멈춤', 'needs-input': '입력 대기', exited: '종료 보고' }
+
+// 자동 알림 하나를 worker 줄 글로. 오류는 「오류: <요약>」, 멈춤 보고는 STOP_NOTES 다. 글이 없으면 ''
+export function alertNoteText(m) {
+  const kind = autoAlertKind(m)
+  if (kind === 'error') return '오류: ' + errorSummary(m)
+  if (kind === 'stop') return STOP_NOTES[stopReasonOf(m)] || ''
+  return ''
 }
 
 // 계정 한도 문구. orch/scripts/lib/sessions.ts 의 LIMIT_LINE 과 같다
@@ -261,11 +275,12 @@ const LIMIT_LINE = /usage limit reached|you['’]ve hit your\b.*\blimit|out of c
 export function errorSummary(m) {
   const payload = payloadOf(m) || {}
   const body = String(m.body || '')
-  const said = [payload.error, payload.detail, body].map((v) => String(v || '')).join('\n')
+  const errorLine = body.split(/\r?\n/).map((line) => line.trim()).find((line) => line.startsWith('Error:'))
+  // 분류는 오류 글에만 한다. 본문 첫 줄의 task 제목에 든 낱말로 잘못 분류하지 않는다
+  const said = [payload.error, payload.detail, errorLine].map((v) => String(v || '')).join('\n')
   if (payload.failureKind === 'usageLimitReached' || LIMIT_LINE.test(said)) return '계정 한도'
   if (/at capacity|overloaded/i.test(said)) return '모델 용량 부족'
   const first = (text) => String(text || '').split(/\r?\n/).map((line) => line.trim()).find(Boolean) || ''
-  const errorLine = body.split(/\r?\n/).map((line) => line.trim()).find((line) => line.startsWith('Error:'))
   return questionText(first(payload.error) || (errorLine ? errorLine.slice('Error:'.length).trim() : '') || first(body), 80)
 }
 
@@ -354,25 +369,30 @@ export async function queryQuestions($, runId, active = null) {
     throw new Error('답변 기록 한도에 닿아 답변 여부를 확인할 수 없어요')
   }
   const alerts = candidates.filter((m) => autoAlertKind(m))
-  // 답을 기다리는 worker. orch 루프의 askers(snapshot().pending) 와 같은 뜻이다. 턴만 끝낸 멈춤 보고는 세지 않는다
+  // 답을 기다리는 worker. orch 루프의 askers(snapshot().pending) 와 같은 뜻이다. 턴만 끝낸 멈춤 보고는 세지 않는다.
+  // 루프와 다른 점: 살아 있는 worker 의 질문(alive)만 본다. 끝난 dispatch 의 미답변 질문이 남은 터미널에 새 dispatch 가 붙으면
+  // 루프는 그 새 worker 를 기다리는 것으로 보고 보드는 멈춤으로 볼 수 있다. 끝난 dispatch 의 답은 읽지 않으므로 맞출 수 없다
   const byId = new Map(candidates.map((m) => [m.id, m]))
   const asking = [...new Set(parseQuestions(JSON.stringify({ messages: [...candidates.filter((m) => !isQuietStop(m)), ...replies] }), runId, workerOf)
     .map((q) => byId.get(q.id))
     .flatMap((m) => (m ? [dispatchOf(m), m.from_handle, workerOf(m)] : []))
     .filter(Boolean))]
-  // worker 마다 가장 늦은 오류 알림 하나. 같은 오류가 여러 번 와도 한 줄이다
-  const failures = new Map()
-  for (const m of alerts.filter((m) => autoAlertKind(m) === 'error')) {
+  // worker 와 종류(오류, 멈춤 보고)마다 가장 늦은 자동 알림 하나. 같은 알림이 여러 번 와도 한 줄이다
+  const notes = new Map()
+  for (const m of alerts) {
+    const text = alertNoteText(m)
+    if (!text) continue
     const worker = workerOf(m) || dispatchOf(m) || m.from_handle
+    const kind = autoAlertKind(m)
     const at = Date.parse(m.created_at || '') || 0
-    const before = failures.get(worker)
-    if (!before || at >= before.at) failures.set(worker, { worker, at, summary: errorSummary(m) })
+    const before = notes.get(worker + '\n' + kind)
+    if (!before || at >= before.at) notes.set(worker + '\n' + kind, { worker, kind, at, text, reason: stopReasonOf(m) })
   }
   return {
     questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId, workerOf, notAutoAlert),
     alerts,
     asking,
-    failures: [...failures.values()],
+    notes: [...notes.values()],
     limited: history.length >= QUESTION_HISTORY_LIMIT || unread.length >= QUESTION_HISTORY_LIMIT,
   }
 }
@@ -646,15 +666,19 @@ export function spanText(minutes) {
   return Math.floor(m / (24 * 60)) + '일'
 }
 
-// worker 줄 끝에 붙일 글. 멈춤(R4)과 최근 오류(R5)다.
-// 오류는 그 뒤 워크트리 파일이나 커밋이 바뀌었으면(workedAt) 빼고, 판정을 모르면 남긴다
-export function workerNotes(worker, marks, failures) {
+// worker 줄 끝에 붙일 글. 멈춤(R4)과 최근 자동 알림(R5 의 오류, 그 밖의 멈춤 보고)이다.
+// 자동 알림은 그 뒤 워크트리 파일이나 커밋이 바뀌었으면(workedAt) 빼고, 판정을 모르면 남긴다.
+// 터미널 종료로 이미 멈춤인 worker 에는 같은 뜻의 「종료 보고」 를 붙이지 않는다
+export function workerNotes(worker, marks, alertNotes) {
   const notes = []
   const mark = marks ? marks[worker.id] : null
   if (mark && mark.reason === 'idle') notes.push('멈춤 ' + spanText(mark.idleMin))
   else if (mark && mark.reason === 'exited') notes.push('멈춤 · 터미널 종료')
-  const failure = (failures || []).find((f) => f.worker === worker.id)
-  if (failure && (!mark || typeof mark.workedAt !== 'number' || mark.workedAt <= failure.at)) notes.push('오류: ' + failure.summary)
+  const own = (alertNotes || []).filter((note) => note.worker === worker.id)
+    .filter((note) => !(note.reason === 'exited' && mark && mark.reason === 'exited'))
+    .filter((note) => !mark || typeof mark.workedAt !== 'number' || mark.workedAt <= note.at)
+  // 오류를 멈춤 보고보다 앞에 둔다
+  for (const kind of ['error', 'stop']) for (const note of own.filter((n) => n.kind === kind)) notes.push(note.text)
   return notes
 }
 
@@ -954,7 +978,7 @@ async function loadFile($) {
 async function loadLive($) {
   if (liveBusy) return
   liveBusy = true
-  const next = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, failures: [], errors: {} }
+  const next = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, alertNotes: [], errors: {} }
   let asking = []
   try {
     try {
@@ -976,7 +1000,7 @@ async function loadLive($) {
         const result = await queryQuestions($, next.runId, next.workers)
         next.questions = result.questions
         next.questionsLimited = result.limited
-        next.failures = result.failures
+        next.alertNotes = result.notes
         asking = result.asking
       } catch (failure) {
         next.errors.questions = String(failure.message || failure)
@@ -1003,14 +1027,17 @@ async function loadLive($) {
     } catch (failure) {
       next.errors.marks = String(failure.message || failure)
     }
-    next.at = await $.clock.now()
+    try {
+      next.at = await $.clock.now()
+    } catch {
+      // 세션이 끝난 뒤 늦게 끝난 읽기다. host 가 호출을 거절하므로 앞 상태를 그대로 둔다
+      return
+    }
     live = next
-    refreshStatus($)
-  } catch {
-    // 세션이 끝난 뒤 늦게 끝난 읽기다. 앞 상태를 그대로 둔다
   } finally {
     liveBusy = false
   }
+  refreshStatus($)
 }
 
 // 업무 알림을 읽는다. 받기와 필터는 inbox.ts 가 하고, 여기서는 주 checkout 경로만 넘긴다
@@ -1238,12 +1265,13 @@ export function register(on) {
     // 맡은 worker 가 없는 줄. 단계가 idle_min 넘게 worker 없이 남았으면 경과 시간을 붙이고 노란색으로 그린다
     // 판정 명령을 읽지 못했으면 orch 기본값(30분)으로 잰다
     const idleView = (item, rows) => {
-      const idleMin = live.movement ? live.movement.idleMin : 30
+      // worker 목록을 읽지 못했으면 정말 worker 가 없는지 몰라 경과 시간을 붙이지 않는다
+      const idleMin = live.workers === null ? 0 : live.movement ? live.movement.idleMin : 30
       const stalled = idleStepMinutes(item, rows, now, idleMin) !== null
       return Text({ dimColor: !stalled, color: stalled ? 'yellow' : undefined, wrap: 'wrap', children: [workerNoneText(item, rows, now, idleMin)] })
     }
     // worker 줄 끝의 멈춤·오류 글. 빨간색으로 붙인다
-    const noteTexts = (worker) => workerNotes(worker, live.marks, live.failures)
+    const noteTexts = (worker) => workerNotes(worker, live.marks, live.alertNotes)
       .map((note, i) => Text({ key: 'note-' + i, color: 'red', children: ['  ' + note] }))
 
     const box = (key, color, label, children) => Box({

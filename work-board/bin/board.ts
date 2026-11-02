@@ -200,12 +200,12 @@ function lineText(number: number, line: Line): string {
   return `    ${number} ${line.done ? '✓' : ' '} ${line.text}\n`
 }
 
-// 줄이 하나 이상 있고 모두 끝난 decide 항목을 done 으로 바꾼다. 결정 필요 수에서 그 항목을 빼기 위해서다(ADR-015)
 // stepAt 을 바꿀지 가르는 값. normalizeItem 뒤에 부르므로 줄은 {text, done} 객체다
 function stepKey(item: Item): string {
   return JSON.stringify([item.status ?? null, item.details ?? null, item.next ?? null])
 }
 
+// 줄이 하나 이상 있고 모두 끝난 decide 항목을 done 으로 바꾼다. 결정 필요 수에서 그 항목을 빼기 위해서다(ADR-015)
 function closeDecided(item: Item): void {
   const lines = allLines(item)
   if (item.status === 'decide' && lines.length > 0 && lines.every((line) => line.done)) item.status = 'done'

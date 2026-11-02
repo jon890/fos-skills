@@ -6,7 +6,7 @@ work-board 는 스킬이 아닌 mod 이므로 이 파일에서 변경 이력을 
 ## 1.10.0 (2026-11-02)
 
 - 결정 필요 상자와 수에서 Orca 자동 알림(「Worker stopped without reporting」, 「Agent hit an error」)을 뺀다. worker 가 직접 보낸 질문과 막힘만 남는다
-- worker 줄 끝에 「멈춤 N분」, 「멈춤 · 터미널 종료」, 「오류: 계정 한도」 같은 상태를 붙인다. 멈춤 판정은 orch 상주 루프와 같다
+- worker 줄 끝에 「멈춤 N분」, 「멈춤 · 터미널 종료」, 「오류: 계정 한도」, 「입력 대기」 같은 상태를 붙인다. 멈춤 판정은 orch 상주 루프와 같다
 - doing 항목의 단계가 worker 없이 `pipeline.idle_min` 넘게 남으면 「⚙ worker 없음 · N시간」 으로 보인다. `board.ts` 가 항목마다 `stepAt` 을 남긴다
 - 정할 것 묻기 요청문이 직접 올린 막힘과 자동 알림을 다루는 방법을 담는다
 
