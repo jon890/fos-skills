@@ -58,6 +58,7 @@ worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하
 **worker 가 status 를 보내고 입력 대기로 멈춰 있으면 `reply` 와 `send` 가 그 worker 를 깨우지 않는다.**
 worker 는 메시지를 다음 턴의 `check` 에서 읽는데, 입력 대기인 worker 에게는 다음 턴이 오지 않는다.
 dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an active dispatch` 로 거절된다.
+구조화 worker(터미널 handle 이 `structworker_` 로 시작)는 화면이 없고 Orca 가 새 메시지로 직접 깨운다. `send-to-worker` 는 이 worker 에게 보낸 뒤 `delivered:` 한 줄로 끝나고 `nudge-worker` 를 부르지 않는다.
 **`send-to-worker` 가 아니라 `reply` 나 `send` 를 직접 보냈으면 그 직후에 `nudge-worker` 를 부른다.** 화면 판정과 재시도는 스크립트 머리 주석이 소유한다.
 `$MSG_ID` 는 방금 보낸 메시지 id 다.
 
@@ -99,7 +100,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 `user_owned`(`retainedReason: user_takeover`)는 사용자가 그 터미널에 직접 입력했을 때, `released` 는 `worker-release` 로 넘겼을 때 생긴다. 둘 다 사용자에게 넘어간 터미널이라 `send-to-worker` 는 닫지 않고 종료 코드 1 로 끝난다.
 이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다.
 
-1. `orca orchestration worker-show --dispatch <끝난 dispatch> --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
+1. `orca orchestration worker-show --dispatch <끝난 dispatch> --full --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
 2. `orca terminal read --terminal <handle>` 로 화면이 비어 있고 입력을 기다리는지 본다. 사용자가 쓰는 중이면 닫지 않는다
 3. 이 세션이 띄운 것이 맞으면 `orca terminal close --terminal <handle>` 로 닫는다
 4. `launch-worker --spec <후속 지시서> --worktree <워크트리>` 를 `--terminal` 없이 부른다

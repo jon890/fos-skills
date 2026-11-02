@@ -19,6 +19,13 @@
 //                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
 //     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
 //
+// 구조화 worker: worker-show 의 startOptions.mode.mode 가 structured 이거나 터미널 handle 이 structworker_ 로 시작하는 worker 다.
+// 화면이 없어 nudge-worker 가 입력할 곳을 판정하지 못한다(늘 unknown 이라 4 였다). Orca 가 dispatch 로 온 새 메시지마다 그 worker 의
+// 턴을 깨우므로, 살아 있는 dispatch 에 reply 나 새 메시지를 보낸 뒤 깨우기를 건너뛰고 `delivered: ...` 한 줄과 0 으로 끝난다.
+//
+// worker-show 는 --full 로 읽는다(lib/orca.ts 의 withFull). Orca 1.4.246 의 줄인 보기에는 dispatch.status 가 없어,
+// 살아 있는 dispatch 를 끝난 것으로 보고 「끝난 dispatch 라 깨우지 않았다」 로 끝났다(2026-11-02)
+//
 // 세션을 다시 시작한 코디네이터 터미널은 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.
 // 그 메시지가 question 이면 같은 스레드에 `send --type status --thread-id <질문> --to dispatch:<id> --subject "answer: ..."` 로 답하고
 // `fallback:` 줄로 알린다. worker-ask 가 이 status 의 본문을 답으로 읽는다. question 이 아닌 메시지에는 전환하지 않고 실패로 둔다
@@ -54,7 +61,7 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있고 값이 - 로 시작해도 받는다(lib/args.ts).
 //
 // 종료 코드:
-//     0  보냈다(reply 나 새 메시지). 살아 있는 worker 면 깨웠거나 작업 중이다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다.
+//     0  보냈다(reply 나 새 메시지). 살아 있는 worker 면 깨웠거나 작업 중이거나 Orca 가 깨우는 구조화 worker 다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다.
 //        닫힌 dispatch 에 답만 달았으면(--spec 없음) `replied: ... 끝난 dispatch 라 깨우지 않았다` 한 줄을 찍고 0 이다
 //     1  보냈지만 턴 시작을 보지 못했거나, 다시 띄우기가 실패했다. nudge-worker 가 제한 시간(5분)에 끊겨도 1 이다
 //     3  dispatch 가 끝나 보낼 수 없다. 표준 출력이 다음에 할 일을 말한다
@@ -96,6 +103,8 @@ const NUDGE_MS = Number(process.env.ORCH_NUDGE_TIMEOUT_MS) || 300_000
 // launch-worker 는 make-worktree 와 worker-start 를 각각 10분까지 기다리고, 멈춘 dispatch 를 한 번 다시 띄운다
 const LAUNCH_MS = 3_600_000
 const SETTING_KEYS = ['agent', 'model', 'effort'] as const
+// 구조화 worker 의 터미널 handle 접두. worker-show 의 startOptions.mode 가 없을 때 이것으로 가린다
+const STRUCTURED_PREFIX = 'structworker_'
 // 사람에게 다시 띄우라고 안내하는 명령. 실행 규칙의 꼴(node 와 경고 끄기, 절대경로)로 낸다
 const LAUNCH_HINT = `node --disable-warning=ExperimentalWarning ${shQuote(`${HERE}/launch-worker.ts`)}`
 
@@ -137,7 +146,7 @@ function orcaJson(args: string[]): Json {
   return obj(body.result)
 }
 
-type Described = { status: unknown; handle: string; worktree: string; runId: string; settings: Settings }
+type Described = { status: unknown; handle: string; worktree: string; runId: string; settings: Settings; structured: boolean }
 
 function describe(dispatchId: string): Described {
   const shown = orcaJson(['orchestration', 'worker-show', '--dispatch', dispatchId])
@@ -152,7 +161,9 @@ function describe(dispatchId: string): Described {
   Object.assign(settings, obj(launch.requested))
   for (const [key, value] of Object.entries(obj(launch.effective))) if (value) settings[key] = value
   if (!settings.agent) settings.agent = options.agent
-  return { status: dispatch.status, handle, worktree, runId: String(dispatch.runId || ''), settings }
+  // 구조화 worker(채팅 세션 worker)는 터미널 화면이 없고 Orca 가 새 메시지로 직접 깨운다(머리 주석의 「구조화 worker」)
+  const structured = obj(options.mode).mode === 'structured' || handle.startsWith(STRUCTURED_PREFIX)
+  return { status: dispatch.status, handle, worktree, runId: String(dispatch.runId || ''), settings, structured }
 }
 
 // reply 할 후보 메시지 id. 앞이 우선이다. heartbeat 는 뒤로 미루고, 답이 보이는 question 은 뺀다.
@@ -395,6 +406,10 @@ async function main(argv: string[]): Promise<number> {
           return 1
         }
         wake = sent
+      }
+      if (described.structured) {
+        out(`delivered: 구조화 worker 라 Orca 가 ${wake} 로 깨운다. 터미널에 입력하지 않았다`)
+        return 0
       }
       if (!handle) {
         out('send-to-worker: 터미널 handle 을 몰라 깨우지 못했다')
