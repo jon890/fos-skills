@@ -32,6 +32,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 `worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. `launch-worker` 는 `--spec` 이 필수라 늘 Task 를 새로 만들므로, `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다.
 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
 **`launch-worker` 는 워크트리를 만들기 전에 `spec-lint` 로 그 지시서를 검사한다.** 함께 넘기는 것은 같은 폴더에서 살아 있는 dispatch 가 쓰는 지시서라, 먼저 띄운 지시서와 담당 경로가 겹치는 지시서는 나중에 띄울 때 막힌다. 막을 발견이 있으면 발견 줄을 내고 종료 코드 5 로 멈춘다. 지시서를 고치는 것이 기본이다.
+「할 일」 첫 줄이 루프 선택 꼴이 아니거나 가리킨 스펙이 확인받지 않은 것이어도(`루프` 발견) 같은 5 로 멈춘다. `--base` 를 spec-lint 에 넘겨 상대경로 스펙을 그 기준 브랜치에서 읽는다.
 의도한 겹침(두 PR 이 같은 플러그인 버전 줄을 고치는 것 같은 것)만 `--lint-ack "<이유>"` 로 넘긴다. 이유는 출력의 `lint-ack:` 줄과 그 worker 의 기록(`state/launched-workers/<dispatch>.json` 의 `lint_ack`)에 남는다. 이유 없이 끄는 옵션은 없다. 활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다.
 **`launch-worker` 는 지시서의 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md))과 `--agent`, `--model` 을 대조한다.** 줄이 없거나, 요소가 빠졌거나, 값이 다르거나, 둘 가운데 하나를 넘기지 않으면 orca 를 부르기 전에 종료 코드 1 로 거부한다. `--terminal` 로 이어 쓰면 보지 않는다.
 **`--agent codex` 의 `--model`, `--effort` 는 워크트리를 만들기 전에 `codex debug models` 로 검사한다.** 없는 모델이나 그 모델이 지원하지 않는 effort 면 종료 코드 4 로 멈추고 쓸 수 있는 값을 낸다.
@@ -86,6 +87,9 @@ abandon 하기 전에 일하는 흔적(heartbeat, 워크트리 변경, 작업 �
 
 - `worker-start` 응답의 `launch.effective` 가 1단계에서 고른 모델, effort 와 같다
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
+
+**사용자에게 띄웠다고 보고할 때, 「할 일」 첫 줄이 `루프 없이: <이유>` 인 worker 는 그 이유를 한 줄로 함께 적는다.** 예: 「`orch-log-typo` 를 루프 없이 띄웠다. 이유: 로그 오타만 고치는 버그 수정이다.」
+루프를 건너뛸지는 코디네이터가 정하고 스크립트는 이유가 타당한지 보지 않는다. 사용자가 보고에서 보고 바로잡게 하려는 것이다([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」).
 
 `make-worktree` 는 Orca 가 직접 만드는 경로와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
 2026-10-23 다른 저장소에서 `orca worktree create` 가 만든 경로로 확인했다. Orca 전역 설정은 `workspaceDir: "worktrees"`, `nestWorkspaces: true` 이고, 저장소별 `worktreeBasePath` 로 덮어쓸 수 있다.
