@@ -8,7 +8,13 @@
 // `--resume` 으로 재개할 때는 검사하지 않는다.
 // 종료: 0 답 수신, 2 사용법·실행 오류(--decision 형식 위반 포함), 3 status 답 또는 Run 메일함으로 대신 보냄,
 // 4 시간 초과(출력의 ID로 재개), 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
+// 2 에는 질문이 닿았는지 확인하지 못한 경우도 든다. ask 가 0 으로 끝났는데 답도 질문 ID 도 없거나,
+// Run 메일함으로 대신 보낸 send 가 메시지 ID 를 내지 않은 경우다. 답 없이 `answer: ` 빈 줄로 0 을 내면 worker 가 물었다고 믿고 넘어간다.
 // ORCA로 CLI, ORCH_ASK_SEEN으로 읽은 메시지 기록 경로를 바꾼다.
+// orca orchestration 명령에는 --full 을 붙인다(lib/orca.ts 의 withFull). 줄인 보기는 from_handle, thread_id 를 빼 답을 찾지 못한다.
+//
+// 바로 돌아온 ask: Orca 1.4.246 부터 새 질문의 ask 는 답을 기다리지 않고 `pending: true` 와 messageId 를 내고 0 으로 끝난다.
+// 그러면 그 ID 로 --resume 해 같은 질문의 답을 기다린다(--resume 은 늘 기다린다). 질문을 두 번 보내지 않는다.
 //
 // 출력: 답을 받으면 첫 줄이 `answer: <답 본문>` 이고 그 뒤에 ask 의 출력이 온다.
 //
@@ -39,7 +45,7 @@ import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { orcaBin } from './lib/orca.ts'
+import { orcaBin, withFull } from './lib/orca.ts'
 import { run, runAsync } from './lib/proc.ts'
 import { pyStr as text } from './lib/py.ts'
 
@@ -107,6 +113,12 @@ function answerOf(output: string): string {
 function messageIdOf(output: string): string {
   const result = load(output)
   return String(result.messageId || result.id || '').trim()
+}
+
+// send 결과의 메시지 ID. 전체 기록은 message.id, 줄인 보기는 messageId 다
+function sentIdOf(output: string): string {
+  const result = load(output)
+  return String(obj(result.message)?.id || result.messageId || result.id || '').trim()
 }
 
 function runIdOf(output: string): string {
@@ -251,7 +263,7 @@ async function main(argv: string[]): Promise<number> {
     }
   }
   const orca = orcaBin()
-  const peekArgs = [orca, 'orchestration', 'check', '--terminal', sender, '--peek', '--json']
+  const peekArgs = [orca, ...withFull(['orchestration', 'check', '--terminal', sender, '--peek', '--json'])]
   const peek = () => run(peekArgs).stdout
   const first = peek()
   if (!resume && !values.force) {
@@ -268,9 +280,10 @@ async function main(argv: string[]): Promise<number> {
   while (true) {
     const remainingMs = maxWaitMs === undefined ? timeoutMs : Math.max(1, maxWaitMs - (Date.now() - started))
     const attemptMs = Math.min(timeoutMs, remainingMs)
-    const args = [orca, 'orchestration', 'ask', '--from', sender, '--timeout-ms', String(attemptMs), '--json']
-    args.push(...(resume ? ['--resume', resume] : ['--question', question]))
-    if (options && !resume) args.push('--options', options)
+    const askArgs = ['orchestration', 'ask', '--from', sender, '--timeout-ms', String(attemptMs), '--json']
+    askArgs.push(...(resume ? ['--resume', resume] : ['--question', question]))
+    if (options && !resume) askArgs.push('--options', options)
+    const args = [orca, ...withFull(askArgs)]
     const limitMs = attemptMs + ASK_SLACK_MS
     // ask 를 기다리는 동안 status 답을 찾는다(머리 주석의 「status 답 기다리기」). 찾으면 ask 를 끊는다
     const stop = new AbortController()
@@ -323,8 +336,25 @@ async function main(argv: string[]): Promise<number> {
       return 4
     }
     if (asked.code === 0) {
-      process.stdout.write(`answer: ${answerOf(output)}\n${output}\n`)
-      return 0
+      const answer = answerOf(output)
+      if (answer) {
+        process.stdout.write(`answer: ${answer}\n${output}\n`)
+        return 0
+      }
+      // 머리 주석의 「바로 돌아온 ask」. 질문 ID 가 있으면 그 질문의 답을 기다린다(--resume 은 늘 기다린다)
+      const messageId = messageIdOf(output)
+      if (load(output).pending === true && messageId && messageId !== resume) {
+        resume = messageId
+        err(`worker-ask: 질문 ${messageId} 를 보냈다. ask 가 답을 기다리지 않고 돌아와 같은 질문의 답을 기다린다`)
+        continue
+      }
+      process.stdout.write(`${output}\n`)
+      err(
+        messageId
+          ? `worker-ask: ask 가 0 으로 끝났지만 답이 비었다. --resume ${messageId} 로 다시 기다린다`
+          : 'worker-ask: ask 가 답도 질문 ID 도 내지 않았다. 질문이 코디네이터에 닿았는지 알 수 없어 실패로 끝낸다',
+      )
+      return 2
     }
     err(output)
     if (resume) {
@@ -338,14 +368,19 @@ async function main(argv: string[]): Promise<number> {
       return 2
     }
     const body = question + (options ? `\n선택지: ${options}` : '')
-    const sent = run([orca, 'orchestration', 'send', '--from', sender, '--to', `run:${runId}`, '--type', 'question', '--subject', '질문 (ask 대신 보냄)', '--body', body, '--json'])
+    const sent = run([orca, ...withFull(['orchestration', 'send', '--from', sender, '--to', `run:${runId}`, '--type', 'question', '--subject', '질문 (ask 대신 보냄)', '--body', body, '--json'])])
     process.stdout.write(sent.stdout)
     process.stderr.write(sent.stderr)
     if (sent.code !== 0) {
       err('worker-ask: 대신 보내기도 실패했다')
       return 2
     }
-    err(`worker-ask: run:${runId} 으로 보냈다. 답은 orca orchestration check --terminal ${sender} 로 읽는다`)
+    const sentId = sentIdOf(sent.stdout)
+    if (!sentId) {
+      err('worker-ask: 대신 보낸 send 가 메시지 ID 를 내지 않았다. 질문이 코디네이터에 닿았는지 알 수 없어 실패로 끝낸다')
+      return 2
+    }
+    err(`worker-ask: run:${runId} 으로 보냈다(${sentId}). 답은 orca orchestration check --terminal ${sender} 로 읽는다`)
     return 3
   }
 }
