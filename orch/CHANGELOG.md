@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.17.0 (2026-11-02)
+
+- Orca 1.4.246 의 줄인 보기로 비던 판정을 고친다. 모든 `orca orchestration` 조회에 `--full` 을 붙인다. 직접 조회할 때도 붙인다
+- `launch-worker` 는 일하는 흔적이 있으면 abandon 하지 않고, `worker-ask` 는 바로 돌아온 ask 의 답을 기다리며 닿지 않은 질문은 2 로 끝난다
+- 대기와 요약이 턴만 끝낸 멈춤 보고를 기본으로 빼고(`--stop-reports` 로 본다), 프로세스가 끝난 열린 dispatch 는 `WORKER_LOST` 로 알린다
+- 루프가 머지된 PR 의 열린 dispatch 에 머지를 알리고, 마무리 없이 머지된 PR(`FINISH-MISSING`)과 대기 없음(`NO-WAIT`)을 알린다
+- 정리는 끝난 reclaimable dispatch 를 반납하고, 공통 지시서 틀에 status 는 PR, 막힘, 범위 변경 때만 보낸다는 규칙을 더한다
+
 ## 5.16.0 (2026-11-02)
 
 - 공부 후보를 `study/candidates.md` 표 한 줄 대신 후보마다 `study/<slug>.md` 파일 하나로 둔다. 머리에 주제, 질문, 생긴 곳, 참고, 상태, 적은 날을 두고 본문에 메모를 쌓는다
