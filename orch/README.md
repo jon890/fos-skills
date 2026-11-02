@@ -143,5 +143,5 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 - orca 명령 문법과 worker lifecycle 은 Orca 의 `orchestration` 스킬이 맡는다
 - 감독 없이 작업을 통째로 넘기는 handoff 는 `orca-cli` 가 맡는다
 - 결과만 받으면 되는 짧은 조사, 판정, 리뷰는 이 스킬 대신 하위 에이전트에게 맡긴다
-- 범위가 큰 일은 worker 가 `planning` 으로 설계를 확정하고 `build-with-teams` 로 구현하도록 지시서에 적는다
+- 기능의 결정과 설계는 `spec` 이 사용자를 인터뷰해 확정한다. worker 가 spec 을 돌리면 코디네이터가 질문과 확인을 사용자에게 중계한다
 - 미해결 리뷰 스레드 세기와 리뷰 회신은 `review-fix` 의 스크립트를 쓴다

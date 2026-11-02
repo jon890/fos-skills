@@ -4,6 +4,7 @@
 //                    [--options CSV] [--run ID] [--timeout-ms N] [--max-wait N] [--force] [--decision]
 // --decision: 사용자가 정할 결정 질문이다. 본문이 docs/data-schema.md 「사용자 결정 질문 형식」
 // (첫 줄 `결정:` 과 비지 않은 제목, `- ` 선택지 둘 이상, `권장:` 줄 하나)을 따르는지 보고, 어긋나면 묻지 않고 줄마다 stderr 에 낸다.
+// `결정:` 줄이 여럿이면 그 줄마다 블록을 나눠 블록마다 같은 규칙을 보고, 위반 줄 앞에 `결정 블록 N:` 을 붙인다.
 // `--resume` 으로 재개할 때는 검사하지 않는다.
 // 종료: 0 답 수신, 2 사용법·실행 오류(--decision 형식 위반 포함), 3 status 답 또는 Run 메일함으로 대신 보냄,
 // 4 시간 초과(출력의 ID로 재개), 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
@@ -163,8 +164,26 @@ function idsOf(output: string): Set<string> {
 function decisionProblems(question: string): string[] {
   const lines = question === '' ? [] : question.replace(new RegExp(`(?:${LINE_BREAK.source})$`, 'u'), '').split(LINE_BREAK).map((line) => line.trim())
   const problems: string[] = []
-  if (lines.length === 0 || !lines[0].startsWith('결정:')) problems.push('첫 줄이 `결정:` 으로 시작해야 한다')
-  else if (!lines[0].slice('결정:'.length).trim()) problems.push('`결정:` 뒤에 무엇을 정하는지 제목이 있어야 한다')
+  if (lines.length === 0 || !lines[0].startsWith('결정:')) {
+    problems.push('첫 줄이 `결정:` 으로 시작해야 한다')
+    return problems.concat(blockProblems(lines))
+  }
+  // 결정 블록 여러 개를 한 질문으로 보낼 수 있다(spec 인터뷰). `결정:` 줄마다 블록을 나눠 각각 검사한다
+  const blocks: string[][] = []
+  for (const line of lines) {
+    if (line.startsWith('결정:')) blocks.push([line])
+    else blocks[blocks.length - 1].push(line)
+  }
+  if (blocks.length === 1) return blockProblems(blocks[0])
+  blocks.forEach((block, i) => {
+    for (const problem of blockProblems(block)) problems.push(`결정 블록 ${i + 1}: ${problem}`)
+  })
+  return problems
+}
+
+function blockProblems(lines: string[]): string[] {
+  const problems: string[] = []
+  if (lines[0]?.startsWith('결정:') && !lines[0].slice('결정:'.length).trim()) problems.push('`결정:` 뒤에 무엇을 정하는지 제목이 있어야 한다')
   const choices = lines.filter((line) => line.startsWith('- ')).length
   if (choices < 2) problems.push(`\`- \` 로 시작하는 선택지 줄이 둘 이상이어야 한다(지금 ${choices}개)`)
   const advice = lines.filter((line) => line.startsWith('권장:')).length
