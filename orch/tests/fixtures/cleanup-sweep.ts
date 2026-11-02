@@ -185,6 +185,9 @@ before(() => {
     writeFileSync(join(fx.bin, name), head + body)
     chmodSync(join(fx.bin, name), 0o755)
   }
+  // remove-worktree.ts 의 Docker 정리가 이 PC 의 docker 를 부르지 않게 한다. 컨테이너가 없다고 답한다
+  writeFileSync(join(fx.bin, 'docker'), '#!/usr/bin/env node\n')
+  chmodSync(join(fx.bin, 'docker'), 0o755)
 })
 
 after(() => rmSync(fx.bin, { recursive: true, force: true }))
@@ -210,6 +213,7 @@ beforeEach(() => {
     GH: join(fx.bin, 'gh'),
     ORCH_GH_CACHE: '0', // 가짜 상태를 매 검사마다 바꾸므로 이전 응답을 재사용하지 않는다.
     ORCH_KILL: join(fx.bin, 'kill'),
+    DOCKER: join(fx.bin, 'docker'),
   }
   // Orca 터미널에서 돌려도 가짜 orca 가 bound 범위로 답하지 않게 한다. bound 는 테스트가 직접 켠다.
   // orch 루트와 hook 대기 시간도 테스트가 정한다

@@ -124,6 +124,13 @@
 //     마무리 로그(finish-<PR>.out 과 .pid), 머지 큐 로그의 조건과 실패 로그를 남기는 시간은 lib/queue-logs.ts 머리 주석이 소유한다.
 //     돌고 있는 프로세스의 로그와 모르는 파일은 건드리지 않는다. 출력은 `머지 큐 로그를 휴지통으로 옮길 것`, `머지 큐 로그 옮김`, `머지 큐 로그를 남긴다` 다.
 //
+// Docker 자원 (저장소마다 머지 큐 로그 뒤에 한 번. --run 이 없어도 한다):
+//     config.json 의 docker 절(lib/docker.ts 의 dockerRules)이 선언한 컨테이너 가운데 띄운 프로세스가 없는 것과,
+//     선언한 이미지 가운데 최근 keep 개와 컨테이너가 쓰는 것을 뺀 태그를 지운다. --apply 가 없으면 지울 것만 낸다.
+//     워크트리에 귀속된 compose 컨테이너는 remove-worktree.ts 가 워크트리를 지운 직후 지운다.
+//     판정과 출력 줄은 lib/docker.ts 머리 주석이, 무엇을 남기는지는 orch/references/cleanup.md 의 「Docker 자원 반납」 이 소유한다.
+//     docker 절이 틀렸으면(ConfigError) stderr 에 이유를 내고 종료 코드를 2 로 둔다. Docker 를 쓸 수 없으면 경고 한 줄만 낸다.
+//
 // 건너뜀 (이유를 낸다):
 //     - 커밋 안 된 변경이 있다
 //     - 원격에도 머지된 PR HEAD 에도 없는 커밋이 있다
@@ -323,7 +330,8 @@ import { setTimeout as sleepMs } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { ConfigError } from './lib/config.ts'
+import { ConfigError, loadConfig } from './lib/config.ts'
+import { dockerCleanup, dockerRules } from './lib/docker.ts'
 import { fire } from './lib/events.ts'
 import { realPath } from './lib/fs.ts'
 import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
@@ -1652,6 +1660,20 @@ function queueLogHost(repo: string) {
   }
 }
 
+// 머리 주석의 「Docker 자원」. docker 절이 틀렸으면 false 다
+function sweepDocker(repo: string, apply: boolean, log: Log): boolean {
+  let rules
+  try {
+    rules = dockerRules(loadConfig(repo))
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
+    err(`cleanup-sweep: ${repo}: Docker 정리를 하지 않는다: ${e.message}`)
+    return false
+  }
+  dockerCleanup({ rules, apply, log })
+  return true
+}
+
 // 종료 코드를 돌려준다. 내 PR 의 작성자나 원격 브랜치 후보를 읽지 못하면 그 동작만 하지 않고 2 다
 async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], terminals: Terminal[], log: Log): Promise<number> {
   const base = given.base || (defaultBase(repo) ?? 'main')
@@ -1681,6 +1703,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   sweepReviews(repo, args, remaining, specsDir, log)
   if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, remaining, log)) code = 2
   sweepQueueLogs({ dir: pathOf('queue', repo), trash: args.trash, apply: args.apply, log, host: queueLogHost(repo) })
+  if (!sweepDocker(repo, args.apply, log)) code = 2
   if (!args.apply) return code
   try {
     // 실패와 시간 초과는 HOOK-FAIL 줄만 남긴다. 정리의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(머리 주석의 「종료 코드」).
