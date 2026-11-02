@@ -298,6 +298,19 @@
 //                     정리 자체가 실패한 경우와 구별할 수 없다
 //     ctx 는 { repo: --repo 의 체크아웃, base: 그 저장소의 기준 브랜치, run: --run 값 또는 null } 이다.
 //
+// 끝난 dispatch 반납 (--run 을 줬을 때, 워크트리마다 「일하는 중」 다음):
+//     그 경로의 worker 행 가운데 끝났고(lib/worker-state.ts 의 isFinished) terminalState 가 reclaimable 인 dispatch 는 워크트리를 치우기 전에,
+//     치우지 않고 남기더라도 `worker-release` 로 반납한다(--apply 가 없으면 반납할 것만 낸다). reclaimable 은 Orca 가 거둘 수 있다고 적은
+//     터미널이다. 반납하지 않으면 worker 프로세스가 워크트리를 쥔 채 남아 정리가 「남은 프로세스」 로 미뤘다(2026-11-02 ctx_ea9fb7dac42e)
+//
+// 마무리 빠짐: PR 이 MERGED 라 워크트리를 치울 때 그 PR 에 마무리(finish-pr.ts)가 돈 표시(lib/finish-marks.ts)가 없으면
+//     `정리` 줄 다음에 `FINISH-MISSING #<PR> <브랜치>: …` 한 줄을 낸다. 치우기는 그대로 한다. 상주 루프가 이 줄을 알림 파일에 옮긴다.
+//     `gh pr merge` 로 바로 머지해 배포 확인, 업무 완료, 보드 done 이 빠진 PR 을 코디네이터가 알게 하려는 것이다.
+//     worker 터미널과 dispatch 는 여기서 닫고 반납하므로, 마무리를 뒤늦게 돌려도 정리는 다시 할 일이 없다
+//
+// worker 목록과 터미널 소유는 `orca orchestration ... --full` 로 읽는다(lib/orca.ts 의 withFull). Orca 1.4.246 의 줄인 보기에는
+//     resource.worktreeId 가 없어 워크트리의 worker 를 하나도 찾지 못했고, 끝난 dispatch 를 반납하지 않아 그 프로세스가 워크트리를 쥔 채 남았다
+//
 // ORCA, GH, ORCH_KILL 환경 변수로 실행 파일을 바꾼다. 기본 orca, gh, kill.
 // ORCH_HOOK_WAIT(정수 초, 기본 180)에 60초를 더한 만큼 remove-worktree.ts 를 기다린다. 그 명령이 session-end hook 을 그만큼 기다린다.
 //
@@ -324,11 +337,12 @@ import { realPath } from './lib/fs.ts'
 import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { defaultBase } from './lib/git.ts'
 import { forgetLaunch, launchesAt, readLaunch } from './lib/launched.ts'
-import { orcaBin } from './lib/orca.ts'
+import { orcaBin, withFull } from './lib/orca.ts'
 import { allWorkers, blocker as ownershipBlocker, cached, LookupError, rowHandles, runWorkers } from './lib/ownership.ts'
 import type { WorkerRow } from './lib/ownership.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from './lib/queue-logs.ts'
+import { finishStarted } from './lib/finish-marks.ts'
 import { run as runProcess, scriptCommand } from './lib/proc.ts'
 import { liveReviewPrs, originBranch, reviewKeepReason, reviewPrOf, reviewPrOfBranch, reviewPrState } from './lib/review.ts'
 import { allLiveSpecPaths, deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from './lib/spec.ts'
@@ -659,7 +673,7 @@ function onlyIdleShells(pids: string[], host: Host): boolean {
 
 // `orca <args> --json` 응답의 result. 실패하거나 result 가 없으면 null 이다.
 function orcaResult(args: string[]): unknown {
-  const done = run([orcaBin(), ...args, '--json'])
+  const done = run([orcaBin(), ...withFull(args), '--json'])
   if (done.code !== 0) return null
   try {
     const data: unknown = JSON.parse(done.out)
@@ -1155,12 +1169,16 @@ function closeForClosedPr(handles: string[], pr: Pr, apply: boolean, log: Log, i
   }
 }
 
+// 이번 실행에서 반납한 dispatch. 끝난 dispatch 를 먼저 반납한 워크트리를 치울 때 같은 dispatch 를 다시 반납하지 않는다
+const released = new Set<string>()
+
 function releaseDispatches(mine: WorkerRow[], apply: boolean, log: Log, indent: string): void {
   for (const w of mine) {
     const dispatch = w.dispatchId
-    if (!truthy(dispatch) || resourceOf(w).releaseState === 'released') continue
+    if (!truthy(dispatch) || resourceOf(w).releaseState === 'released' || released.has(String(dispatch))) continue
     if (apply) {
       const done = run([orcaBin(), 'orchestration', 'worker-release', '--dispatch', String(dispatch), '--json'])
+      if (done.code === 0) released.add(String(dispatch))
       log(done.code === 0 ? `${indent}dispatch release ${dispatch}` : `${indent}dispatch release 실패 ${dispatch}`)
     } else {
       log(`${indent}dispatch 를 release 할 것 ${dispatch}`)
@@ -1344,6 +1362,8 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     const reason = `살아 있는 worker ${mine.filter(isLive).map((w) => String(w.dispatchId ?? '?')).join(', ')}`
     return keep(reason, `건너뜀 ${path}: ${reason}. 근거: ${verdict.reason}`)
   }
+  // 머리 주석의 「끝난 dispatch 반납」. 워크트리를 남기더라도 Orca 가 거둘 수 있다고 적은 터미널은 먼저 반납한다
+  releaseDispatches(mine.filter((w) => isFinished(w) && w.terminalState === 'reclaimable'), args.apply, log, '')
   const launched = launchedOwn(repo, mine, terminals, path)
   const taken = new Set<unknown>([...takenOverOwn(args, mine, terminals, path), ...launched])
   const owner = await ownershipBlocker(path, taken, args.allWorkers)
@@ -1417,6 +1437,10 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
   }
 
   log(`정리 ${path} (${branch}, ${m.why})`)
+  // 머리 주석의 「마무리 빠짐」
+  if (byPr && m.pr && !finishStarted(repo, String(m.pr.number))) {
+    log(`FINISH-MISSING #${m.pr.number} ${branch}: 머지 뒤 마무리(finish-pr)가 돈 적이 없다. 배포 확인, 업무 완료, 보드 done 이 빠졌을 수 있다`)
+  }
   if (args.apply) {
     // 터미널을 닫고 dispatch 를 반납한 뒤에 거부되면 터미널 없는 워크트리가 남으므로 그 앞에서 묻는다
     const input: Json = { worktree: path, branch }

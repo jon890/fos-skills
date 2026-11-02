@@ -10,6 +10,7 @@
 //       --since WHEN     이 시각 이후 메시지만. ISO 시각(2026-10-12T15:00:00Z) 또는 지금부터 거슬러 30m, 2h, 1d
 //       --width N        본문을 N 자에서 자른다. 기본 3000, 0 이면 자르지 않는다
 //       --json           사람이 읽는 글 대신 분류 결과를 JSON 으로 낸다
+//       --stop-reports   턴만 끝낸 멈춤 보고도 본문째 낸다(아래 「멈춤 보고」)
 //       --completion-contract ready|none
 //                        기본 ready: 앞선 PR 준비 상태 검사(lib/completion.ts). PR 없는 작업만 none 사용
 //
@@ -18,7 +19,11 @@
 // `--live` 의 `--all` 은 읽음 표시를 하지 않는다. 대기 중인 `check --wait` 의 delivery 를 건드리지 않는다.
 // ORCA 환경 변수로 orca 실행 파일을 바꾼다.
 //
-// 출력 순서는 완료 근거가 없는 의심스러운 worker_done, worker_done, escalation, question, 그 밖의 종류(status 등), heartbeat 개수다.
+// 출력 순서는 완료 근거가 없는 의심스러운 worker_done, worker_done, 멈춘 worker, escalation, question, 그 밖의 종류(status 등),
+// heartbeat 개수, 턴만 끝낸 멈춤 보고 개수다.
+// 멈춤 보고(lib/stop-reports.ts): Orca 가 worker 대신 보낸 escalation 이다. 턴만 끝낸 것(finished)은 heartbeat 처럼 dispatch 마다 개수만 내고
+// (JSON 의 quiet_stops), 오류로 멈춤, 입력 대기, 프로세스 끝남은 「멈춘 worker」(JSON 의 groups.stopped_worker)로 따로 모은다.
+// --stop-reports 를 주면 턴만 끝낸 보고도 「멈춘 worker」 에 본문째 낸다.
 // 같은 메시지 id 는 한 번만 센다. 사람이 읽는 출력의 payload 줄은 옛 명령의 json.dumps 꼴(lib/py.ts 의 pyJson)로 앞 200자를 낸다.
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 // 테스트가 parseObjects 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
@@ -33,16 +38,17 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { classify, isoTime } from './lib/completion.ts'
 import { orca } from './lib/orca.ts'
+import { isQuietStop, stopDispatch, stopReason } from './lib/stop-reports.ts'
 import { pyJson, pyStr as text } from './lib/py.ts'
 
 type Json = Record<string, unknown>
-type Triage = { groups: Record<string, Json[]>; heartbeats: Record<string, number> }
+type Triage = { groups: Record<string, Json[]>; heartbeats: Record<string, number>; quiet_stops: Record<string, number> }
 
 const USAGE = [
-  '사용법: triage-messages.ts FILE [FILE ...] [--since WHEN] [--width N] [--json] [--completion-contract ready|none]',
+  '사용법: triage-messages.ts FILE [FILE ...] [--since WHEN] [--width N] [--json] [--completion-contract ready|none] [--stop-reports]',
   '       triage-messages.ts --live [--run RUN_ID] [--terminal HANDLE] [--since WHEN] [--width N] [--json]',
 ].join('\n')
-const PRIORITY = ['suspicious_worker_done', 'worker_done', 'escalation', 'question']
+const PRIORITY = ['suspicious_worker_done', 'worker_done', 'stopped_worker', 'escalation', 'question']
 const RELATIVE = /^(\d+)([mhd])$/
 const UNIT_MS: Record<string, number> = { m: 60_000, h: 3_600_000, d: 86_400_000 }
 // 옛 명령은 시간 제한 없이 불렀다. 기록이 큰 Run 의 check --all 은 오래 걸려 넉넉히 준다
@@ -128,9 +134,10 @@ export function collect(objects: Json[]): { deliveries: string[]; messages: Json
   return { deliveries, messages }
 }
 
-function triage(messages: Json[], since: number | null, contract: string): Triage {
+function triage(messages: Json[], since: number | null, contract: string, stopReports = false): Triage {
   const groups: Record<string, Json[]> = {}
   const heartbeats: Record<string, number> = {}
+  const quietStops: Record<string, number> = {}
   const checked = contract === 'ready' ? classify(messages) : messages
   for (const m of checked) {
     // 시각을 읽지 못한 메시지는 뺄지 정할 수 없어 남긴다
@@ -142,10 +149,20 @@ function triage(messages: Json[], since: number | null, contract: string): Triag
       heartbeats[who] = (heartbeats[who] ?? 0) + 1
       continue
     }
+    // 머리 주석의 「멈춤 보고」
+    if (!stopReports && isQuietStop(m)) {
+      const who = stopDispatch(m) || String(m.from_handle || '?')
+      quietStops[who] = (quietStops[who] ?? 0) + 1
+      continue
+    }
+    if (stopReason(m) !== null) {
+      ;(groups.stopped_worker ??= []).push(m)
+      continue
+    }
     ;(groups[kind] ??= []).push(m)
   }
   const order = [...PRIORITY.filter((k) => k in groups), ...Object.keys(groups).filter((k) => !PRIORITY.includes(k)).sort()]
-  return { groups: Object.fromEntries(order.map((k) => [k, groups[k]])), heartbeats }
+  return { groups: Object.fromEntries(order.map((k) => [k, groups[k]])), heartbeats, quiet_stops: quietStops }
 }
 
 function field(m: Json, key: string, fallback = ''): string {
@@ -169,7 +186,7 @@ function render(deliveries: string[], result: Triage, width: number): string {
   const lines: string[] = []
   if (deliveries.length) lines.push(`delivery ${deliveries.join(' ')}`)
   for (const [kind, items] of Object.entries(result.groups)) {
-    const label = kind === 'suspicious_worker_done' ? '의심스러운 worker_done' : kind
+    const label = kind === 'suspicious_worker_done' ? '의심스러운 worker_done' : kind === 'stopped_worker' ? '멈춘 worker' : kind
     lines.push(`\n== ${label} ${items.length}건`)
     for (const m of items) {
       let body = payloadText(m.body)
@@ -188,7 +205,12 @@ function render(deliveries: string[], result: Triage, width: number): string {
     const total = names.reduce((sum, k) => sum + hb[k], 0)
     lines.push(`\n== heartbeat ${total}건 ${names.map((k) => `${k}=${hb[k]}`).join(', ')}`)
   }
-  if (Object.keys(result.groups).length === 0 && names.length === 0) lines.push('메시지 없음')
+  const stops = Object.keys(result.quiet_stops).sort()
+  if (stops.length) {
+    const total = stops.reduce((sum, k) => sum + result.quiet_stops[k], 0)
+    lines.push(`\n== 턴만 끝낸 멈춤 보고 ${total}건(기본 제외, --stop-reports 로 본문) ${stops.map((k) => `${k}=${result.quiet_stops[k]}`).join(', ')}`)
+  }
+  if (Object.keys(result.groups).length === 0 && names.length === 0 && stops.length === 0) lines.push('메시지 없음')
   return lines.join('\n')
 }
 
@@ -218,6 +240,7 @@ function main(argv: string[]): number {
       width: { type: 'string', default: '3000' },
       json: { type: 'boolean', default: false },
       'completion-contract': { type: 'string', default: 'ready' },
+      'stop-reports': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h' },
     } as const
     const parsed = parseArgs({ args: expandArgs(argv, options), allowPositionals: true, options })
@@ -257,7 +280,7 @@ function main(argv: string[]): number {
     process.stderr.write('읽을 orca 결과 JSON 이 없다\n')
     return 1
   }
-  const result = triage(messages, since, values['completion-contract'] as string)
+  const result = triage(messages, since, values['completion-contract'] as string, values['stop-reports'] === true)
   if (values.json) process.stdout.write(`${JSON.stringify({ deliveries, ...result }, null, 1)}\n`)
   else process.stdout.write(`${render(deliveries, result, width)}\n`)
   return 0

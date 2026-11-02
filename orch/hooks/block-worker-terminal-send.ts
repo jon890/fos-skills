@@ -50,7 +50,7 @@
 // 입력은 stdin 의 hook JSON 이다. 거부할 때만 deny 결정을 stdout 으로 낸다. 읽지 못한 입력은 통과시킨다.
 // hooks.json 은 이 파일을 PATH 의 `node` 로 부른다. node 를 찾지 못하면 Claude Code 는 오류를 보이고 막지 않는다.
 
-import { orcaBin } from '../scripts/lib/orca.ts'
+import { orcaBin, withFull } from '../scripts/lib/orca.ts'
 import { runAsync } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
 import { hookCommand, mask, pieces, stripHeredocs } from './shell-text.ts'
@@ -157,7 +157,7 @@ async function orcaResult(args: string[]): Promise<Record<string, unknown>> {
   })
   let done: RunResult | typeof TIMEOUT
   try {
-    done = await Promise.race([runAsync([orcaBin(), ...args, '--json'], { timeoutMs: left }), limit])
+    done = await Promise.race([runAsync([orcaBin(), ...withFull(args), '--json'], { timeoutMs: left }), limit])
   } finally {
     clearTimeout(timer)
   }

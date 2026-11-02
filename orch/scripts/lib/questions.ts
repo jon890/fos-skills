@@ -6,6 +6,7 @@
 //
 // 조회 범위: Orca 는 check 의 기록과 --peek 을 100건까지 낸다. 그 한도에 닿으면 stderr 에 조회 범위를 알린다.
 // 그 Run 에서는 조회마다 나오는 안내라 stdout 으로 내지 않는다(watch-questions 가 Monitor 를 깨우지 않게).
+// Orca 가 worker 대신 보낸 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 escalation 이어도 질문으로 세지 않는다.
 // 답 판정: 질문의 스레드에 worker 쪽으로 간 메시지(받는 쪽이 있고 Run 이 아닌 것)가 있으면 답한 것이다(ADR-015).
 // 보낸 쪽이 Run 인지 코디네이터 터미널인지는 보지 않는다. Orca 터미널에서는 `--from run:<run>` 이 거부돼 답의 보낸 쪽이 term_* 다.
 // 질문을 ack 했는지는 보지 않는다. worker 의 후속 메시지는 Run 으로 가서 답이 아니다.
@@ -28,6 +29,7 @@ import { defaultBase, mainCheckout } from './git.ts'
 import { orcaJson } from './orca.ts'
 import { makeParent } from './paths.ts'
 import { pyJson, pyStr as text } from './py.ts'
+import { isQuietStop } from './stop-reports.ts'
 import { workerRows } from './workers.ts'
 
 export const HISTORY_LIMIT = 100
@@ -86,7 +88,8 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   // 같은 id 는 뒤의 것(읽지 않은 질문)으로 덮되 처음 나온 자리를 지킨다
   const candidates = new Map<unknown, Message>()
   for (const m of [...history, ...unread]) {
-    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && m.to_handle === `run:${run}`) candidates.set(m.id, m)
+    // 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 답할 질문이 아니다. 답이 없어 600초마다 재알림되던 소음이었다
+    if (m.id && m.run_id === run && KINDS.has(String(m.type)) && m.to_handle === `run:${run}` && !isQuietStop(m)) candidates.set(m.id, m)
   }
   // 질문마다 답이 올 수 있는 handle 이다. 보낸 쪽과 그 질문의 dispatch 다
   const handlesOf = (m: Message): string[] => {

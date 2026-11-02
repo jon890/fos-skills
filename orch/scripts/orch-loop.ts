@@ -108,14 +108,19 @@
 //        새 사용자 결정 질문과 보드의 남은 decide 줄은 lib/decisions.ts 가 DECISION-PENDING 과 decision-pending 을 낸다.
 //        기본 핸들러가 --start 로 등록한 현재 코디네이터에게 묻기를 요청한다. 같은 결정은 해결될 때까지 다시 깨우지 않는다.
 //     4. 정리. Run 마다 cleanup-sweep --repo <repo> --kill-holders [--remote-branches] --apply [--run <run>] [--specs-dir <그 Run 의 dir>].
-//        --remote-branches 는 저장소 공유 일이라 주 Run 의 차례에서만 준다
+//        --remote-branches 는 저장소 공유 일이라 주 Run 의 차례에서만 준다.
+//        정리 출력의 `FINISH-MISSING #<PR> <글>` 줄(cleanup-sweep 머리 주석의 「마무리 빠짐」)은 그 Run 의 알림 파일에 FINISH-MISSING(pr 그 PR,
+//        text `<글>. 마무리를 뒤늦게 돌리려면 orch.ts finish-pr <PR> --repo <repo> [--run <Run>]`)으로 옮긴다. 같은 PR 은
+//        state/finish-missing.json 에 적어 한 번만 쓴다. 워크트리를 치우지 못해 다음 틱이 같은 줄을 내도 다시 깨우지 않는다
 //     5. CI 감시. 아래 「CI 감시」
+//     5-1. 머지 알림. 아래 「머지 알림」
 //     6. 멈춤 확인. 아래 「멈춤 확인」
 //     7. tick 이벤트. Run 마다 공통 필드 run 을 그 Run 으로 낸다. 입력은 tick(틱 번호), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null),
 //        primary(주 Run 이면 true)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     8. 자동 머지. 아래 「자동 머지」
 //     9. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
 //     10. 자리 보유 확인. 아래 「자리 보유 확인」
+//     11. 대기 확인. 아래 「대기 확인」
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors, ci, stalls 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
 //     ci 와 stalls(결과에 있을 때만 통째로 바꾼다)를 쓴다.
 //     결과 줄 앞의 출력과 stderr 는 부모가 로그로 옮긴다. 결과 줄을 읽었으면 종료 코드와 상관없이 합친다. 버리면 그 틱이 이미 알린
@@ -141,6 +146,14 @@
 //     `worker 목록을 읽지 못했다` 가운데 하나다.
 //     실패한 체크가 모두 CANCELLED 면 코디네이터가 일부러 취소한 CI 일 수 있어 worker 에게 보내지 않는다. worker 결과는 `취소만 있음` 이고
 //     CI-FAILED 는 그 PR 의 worker 를 띄운 Run 에 쓴다. 같은 체크 이름과 워크플로에 더 늦게 시작한 실행이 있으면 옛 취소는 애초에 실패로 세지 않는다(lib/gh.ts 의 currentChecks).
+//
+// 머지 알림: 열린 PR 을 읽은 틱에만 돈다. 앞 틱의 ci(loop.json)에 있었는데 이번 틱의 내 열린 PR 에 없는 PR 마다 gh pr view 로 상태를 읽는다.
+//     MERGED 이고 그 브랜치의 워크트리에 살아 있는 dispatch(위 「worker 찾기」)가 있으면 send-to-worker --no-reply 로
+//     `PR #<N> 이 MERGED 됐다(머지 커밋 <SHA>). … worker_done 을 보낸 뒤 끝낸다` 를 보낸다. 로그에 `MERGED-NOTIFY #<N> <dispatch> 종료 코드 <n>` 을 쓴다.
+//     머지 알림을 받지 못한 worker 의 dispatch 가 열린 채 남아 정리가 그 워크트리를 「살아 있는 worker」 로 건너뛰었다(2026-11-02 #945, #288).
+//     마무리(finish-pr)가 돈 PR(lib/finish-marks.ts)은 마무리가 같은 알림을 보내므로 보지 않는다. 판정한 PR 은 결과와 함께
+//     state/merged-notified.json 에 적어 다시 보지 않는다. 보내지 못해도 적는다. 닫힌 PR 은 다음 틱의 ci 에 없어 다시 볼 수 없다.
+//     PR 이나 worker 목록을 읽지 못하면 그 PR 은 적지 않고 errors 의 merged@<주 Run> 에 이유를 둔다(아래 「오류 줄 억제」)
 //
 // 멈춤 확인: 맡은 Run 마다 그 Run 의 worker-list(위 「worker 찾기」 와 같은 조회)에서 살아 있는 dispatch(LIVE_DISPATCH)의 터미널 화면을
 //     `orca terminal read --screen` 으로 읽고 lib/screen.ts 의 readScreen 으로 판정한다. 등록되지 않은 Run 의 worker 화면은 읽지 않는다.
@@ -251,6 +264,16 @@
 //     resolveConflict 의 줄(`<dispatch> 에 알렸다` 따위)은 로그에 쓴다. send-to-worker 를 틱 자식 안에서 기다리는 동안에도
 //     부모의 생존 타이머가 alive_at 을 쓴다.
 //
+// 대기 확인: 맡은 Run 마다, Run id 가 있을 때만. 코디네이터가 wait-important 를 다시 걸지 않으면 질문과 알림을 받을 대기가 없다
+//     (2026-11-02 80분 동안 대기가 없어 결정 질문 9개가 묻혔다). lib/waiters.ts 로 그 Run 의 wait-important, watch-questions 프로세스를 찾는다.
+//     있거나 그 Run 에 살아 있는 dispatch(LIVE_DISPATCH)가 없으면 state/no-wait/<Run>.json 을 지운다. 둘 다 아니면 처음 본 시각을 그 파일에 적고,
+//     ORCH_NO_WAIT_SEC(기본 300)초가 지나도 대기가 없으면 한 번만 알린다. 코디네이터가 묶음을 처리하는 사이의 짧은 공백은 알리지 않는다.
+//     알림은 그 Run 의 알림 파일의 NO-WAIT(text `대기 없음: Run <Run> 에 살아 있는 dispatch <n> 개가 있는데 … 다시 건다`)와,
+//     Run 등록의 coordinator_terminal(term_)에 nudge-worker --text 로 넣는 같은 글이다. 대기가 없으니 알림 파일만으로는 아무도 깨지 않는다.
+//     등록된 터미널이 없으면 알림 파일에만 쓰고 로그에 남긴다. 대기가 다시 생기면 파일을 지워 다음 공백을 새로 센다.
+//     ps 를 읽지 못하면 errors 의 waiter@<Run> 에 이유를 둔다(아래 「오류 줄 억제」). worker-list 를 읽지 못한 틱은 로그에만 남기고 판정하지 않는다.
+//     같은 원인(Orca 꺼짐)을 질문 확인과 충돌 처리가 이미 알린다
+//
 // 자리 보유 확인: 무거운 검사 대기열(HEAVY_SLOT_DIR, 없으면 lib/paths.ts 의 heavy-slot)에서 상한(HEAVY_HOLD_MAX 초, 기본 1800)보다
 //     오래 자리를 쥔 살아 있는 등록을 lib/heavy-hold.ts 의 overHeld 로 찾는다. 있으면 주 Run 의 알림 파일에 HEAVY-SLOT-HELD 를 쓴다.
 //     text 는 등록마다 `pid <pid> <분>분 <명령줄>` 을 `; ` 로 이은 뒤 ` (상한 <분>분)` 을 붙인 것이다.
@@ -266,7 +289,7 @@
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook, stalls)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
-//     공유 출처(SHARED_SOURCES: prs, board, ci, auto-merge, conflicts, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
+//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, auto-merge, conflicts, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
 //     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
 //     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
@@ -294,7 +317,8 @@
 //     쓴다. 기본은 이 폴더의 send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격),
 //     MERGE_WITH_FINISH(자동 머지가 띄우는 큐 명령. 기본은 이 폴더의 merge-with-finish.ts),
 //     THREADS_CMD(미해결 스레드 수를 내는 bash 명령. 환경 변수 OWNER, REPO, PR, GH_HOST 를 받는다. 기본은 머지 큐의 기본 --threads-cmd 와
-//     같은 review-fix 의 review_threads.py), PS(프로세스 목록 명령. 기본 ps)
+//     같은 review-fix 의 review_threads.py), PS(프로세스 목록 명령. 기본 ps), NUDGE_WORKER(대기 없음을 코디네이터 터미널에 넣는 명령.
+//     기본은 이 폴더의 nudge-worker.ts), ORCH_NO_WAIT_SEC(대기 확인의 기다리는 초)
 //
 // 종료 코드:
 //     0  성공. --start 가 띄웠다, --stop 이 멈췄거나 루프가 없다, --status 가 살아 있다, --once 와 --tick 이 끝났다
@@ -305,7 +329,7 @@
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
 import { spawn } from 'node:child_process'
-import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -318,6 +342,7 @@ import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './l
 import { concludeConflict, findConflicts, loadNotified, notifiedFile, notifiedKey, resolveConflict, SEND_MS } from './lib/conflicts.ts'
 import type { OpenPr, WorkerFound } from './lib/conflicts.ts'
 import { fire, reclaim } from './lib/events.ts'
+import { finishStarted } from './lib/finish-marks.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
 import { isFile } from './lib/fs.ts'
 import { holdMaxSec, overHeld } from './lib/heavy-hold.ts'
@@ -325,7 +350,7 @@ import { apiTarget, cancelledOnly, ciState, failedCheck, ghJson, isOwnPr, ownAut
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { specFiles } from './lib/last-pr.ts'
-import { appendEvent, DEFAULT_ALIVE_SEC, dropReadEvents, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, unregisterRun, writeLoop } from './lib/loop.ts'
+import { appendEvent, DEFAULT_ALIVE_SEC, dropReadEvents, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, runKey, unregisterRun, writeLoop } from './lib/loop.ts'
 import type { LoopState } from './lib/loop.ts'
 import { orcaJson } from './lib/orca.ts'
 import { findBoardItems, readBoard } from './lib/board.ts'
@@ -340,6 +365,7 @@ import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
 import { branchesOf } from './lib/spec.ts'
+import { waiterPids } from './lib/waiters.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
 
 const USAGE = [
@@ -364,9 +390,13 @@ const EMPTY_LOCK_GRACE_MS = 2_000
 const TICK_STOP_GRACE_MS = STOP_GRACE_MS + 3_000
 // 틱 자식이 부모가 살아 있는지 보는 간격(머리 주석의 「틱」)
 const PARENT_POLL_MS = 2_000
+// 대기 없음을 알리기 전에 기다리는 초(머리 주석의 「대기 확인」). 코디네이터가 묶음을 처리하는 사이에는 대기가 잠깐 없다
+const NO_WAIT_SEC = Number(process.env.ORCH_NO_WAIT_SEC) || 300
+// 코디네이터 터미널에 대기 없음을 넣는 nudge-worker 의 시간 제한
+const NUDGE_TIMEOUT_MS = 90_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
-const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'auto-merge', 'conflicts', 'tick', 'heavy-slot'])
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'auto-merge', 'conflicts', 'tick', 'heavy-slot'])
 // pipeline.stall_ticks 의 기본값(머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
 const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze({ error: 2, idle: 0 })
 // 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
@@ -1126,6 +1156,68 @@ async function tellWorker(ctx: Context, pr: OwnPr, failed: CiCheck[], lookup: Lo
   if (sent.code === 0) return { text: `보냈다 ${dispatch}`, run: found.run }
   if (sent.code === 4) return { text: '깨우지 못했다(종료 코드 4)', run: found.run }
   return { text: `보내지 못했다(종료 코드 ${sent.code})`, run: found.run }
+}
+
+// 머리 주석의 「머지 알림」. 오류가 있으면 이유를 `; ` 로 이어 내고, 없으면 null 이다
+async function tellMerged(ctx: Context, mine: OwnPr[], previous: Record<string, CiEntry>, lookup: Lookup): Promise<string | null> {
+  const open = new Set(mine.map((pr) => String(pr.number)))
+  const gone = Object.keys(previous).filter((n) => !open.has(n) && !finishStarted(ctx.repo, n))
+  if (gone.length === 0 || !lookup.runs.some((entry) => entry.run)) return null
+  const file = join(pathOf('state', ctx.repo), 'merged-notified.json')
+  let seen: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+    if (isObject(parsed)) seen = parsed
+  } catch {
+    seen = {}
+  }
+  const errors: string[] = []
+  let changed = false
+  const note = (n: string, value: string) => {
+    seen[n] = `${value} ${iso()}`
+    changed = true
+  }
+  for (const n of gone) {
+    if (Object.hasOwn(seen, n)) continue
+    const got = ghJson<Record<string, unknown>>(['pr', 'view', n, '--json', 'state,headRefName,mergeCommit'], { cwd: ctx.repo })
+    if (!got.ok || !isObject(got.data)) {
+      errors.push(`#${n}: ${got.ok ? 'PR 을 읽지 못했다' : oneLine(got.error)}`)
+      continue
+    }
+    const data = got.data
+    if (data.state !== 'MERGED') {
+      note(n, String(data.state))
+      continue
+    }
+    lookup.paths ??= worktreePaths(ctx.repo)
+    const path = lookup.paths.get(String(data.headRefName ?? ''))
+    const owner = path ? ownerOf(path, lookup) : { ok: true as const, found: null }
+    if (!owner.ok) {
+      errors.push(`#${n}: worker 목록을 읽지 못했다`)
+      continue
+    }
+    const found = owner.found
+    if (!found || !found.run || !LIVE_DISPATCH.has(String(found.row.dispatchStatus))) {
+      note(n, 'MERGED 살아 있는 dispatch 없음')
+      continue
+    }
+    const dispatch = String(found.row.dispatchId)
+    const commit = isObject(data.mergeCommit) ? String(data.mergeCommit.oid ?? '') : ''
+    const body = `PR #${n} 이 MERGED 됐다${commit ? `(머지 커밋 ${commit})` : ''}. 지시서의 완료 기준대로 확인하고 worker_done 을 보낸 뒤 끝낸다.`
+    const send = process.env.SEND_TO_WORKER || join(HERE, 'send-to-worker.ts')
+    const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', found.run, '--no-reply']), { cwd: ctx.repo, timeoutMs: SEND_MS })
+    relay(sent)
+    log(`MERGED-NOTIFY #${n} ${dispatch} 종료 코드 ${sent.code}`)
+    // 보내지 못해도 적는다. 닫힌 PR 은 다음 틱의 ci 에 없어 다시 볼 수 없고, 같은 PR 을 틱마다 다시 보내지 않게 한다
+    note(n, `MERGED ${dispatch} 종료 코드 ${sent.code}`)
+    if (sent.code !== 0 && sent.code !== 4) errors.push(`#${n}: ${dispatch} 에 머지를 알리지 못했다(종료 코드 ${sent.code})`)
+  }
+  if (changed) {
+    makeParent(file, ctx.repo)
+    writeFileSync(`${file}.tmp`, `${JSON.stringify(seen)}\n`)
+    renameSync(`${file}.tmp`, file)
+  }
+  return errors.length ? errors.join('; ') : null
 }
 
 async function fireCi(event: 'ci-passed' | 'ci-failed', ctx: Context, pr: OwnPr, checks: CiCheck[], required: string[], run: string | null): Promise<void> {
@@ -1934,6 +2026,97 @@ async function autoMergeStep(
   notifyAutoMerge(ctx, 'AUTO-MERGE', null, `${order.map((n) => `#${n}`).join(' ')} run=${queueRun} log=${queueLog}`, queueRun)
 }
 
+// 머리 주석의 「마무리 빠짐」. 정리 출력의 FINISH-MISSING 줄을 그 Run 의 알림 파일에 옮긴다. 같은 PR 은 한 번만 쓴다
+function relayFinishMissing(repo: string, stdout: string, run: string | null): void {
+  const found = lines(stdout).map((line) => /^\s*FINISH-MISSING #(\d+) (.*)$/.exec(line)).filter((m) => m !== null)
+  if (found.length === 0) return
+  const file = join(pathOf('state', repo), 'finish-missing.json')
+  let seen: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+    if (isObject(parsed)) seen = parsed
+  } catch {
+    seen = {}
+  }
+  let changed = false
+  for (const m of found) {
+    if (Object.hasOwn(seen, m[1])) continue
+    const hint = `마무리를 뒤늦게 돌리려면 orch.ts finish-pr ${m[1]} --repo ${repo}${run ? ` --run ${run}` : ''}`
+    try {
+      appendEvent(repo, 'FINISH-MISSING', Number(m[1]), `${m[2]}. ${hint}`, run)
+      seen[m[1]] = iso()
+      changed = true
+    } catch (e) {
+      log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+    }
+  }
+  if (!changed) return
+  try {
+    makeParent(file, repo)
+    writeFileSync(`${file}.tmp`, `${JSON.stringify(seen)}\n`)
+    renameSync(`${file}.tmp`, file)
+  } catch (e) {
+    log(`orch-loop: 마무리 빠짐 기록을 쓰지 못했다: ${oneLine(e)}`)
+  }
+}
+
+// 머리 주석의 「대기 확인」. 오류면 이유를, 아니면 null 을 낸다
+async function watchWaiter(repo: string, run: string, pending: number | null): Promise<string | null> {
+  const file = join(pathOf('state', repo), 'no-wait', `${runKey(run)}.json`)
+  const clear = () => rmSync(file, { force: true })
+  const waiters = waiterPids(run)
+  if (!waiters.ok) return waiters.error
+  if (waiters.pids.length > 0) {
+    clear()
+    return null
+  }
+  // worker 목록을 읽지 못하면 이번 틱은 판정하지 않는다. 같은 원인(Orca 꺼짐)은 질문 확인과 정리가 이미 알린다
+  const workers = workerRows(run)
+  if (!workers.ok) {
+    log(`orch-loop: 대기 확인을 건너뛴다. worker 목록을 읽지 못했다: ${oneLine(workers.error)}`)
+    return null
+  }
+  const live = workers.rows.filter((w) => LIVE_DISPATCH.has(String(w.dispatchStatus)))
+  if (live.length === 0) {
+    clear()
+    return null
+  }
+  let seen: { since: number; notified: boolean } | null = null
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+    if (isObject(parsed) && typeof parsed.since === 'number') seen = { since: parsed.since, notified: parsed.notified === true }
+  } catch {
+    seen = null
+  }
+  const now = Date.now()
+  const save = (value: { since: number; notified: boolean }) => {
+    makeParent(file, repo)
+    writeFileSync(`${file}.tmp`, `${JSON.stringify(value)}\n`)
+    renameSync(`${file}.tmp`, file)
+  }
+  if (seen === null) {
+    save({ since: now, notified: false })
+    return null
+  }
+  if (seen.notified || now - seen.since < NO_WAIT_SEC * 1000) return null
+  const minutes = Math.floor((now - seen.since) / 60_000)
+  const text =
+    `대기 없음: Run ${run} 에 살아 있는 dispatch ${live.length} 개가 있는데 wait-important 대기가 ${minutes}분째 없다. ` +
+    `미답변 질문 ${pending === null ? '확인 못 함' : `${pending} 개`}. 마지막 대기가 남긴 NEXT_WAIT 명령으로 wait-important 를 백그라운드로 다시 건다`
+  appendEvent(repo, 'NO-WAIT', null, text, run)
+  log(`NO-WAIT ${text}`)
+  const coordinator = registeredRuns(repo).find((entry) => entry.run === run)?.coordinator_terminal
+  if (typeof coordinator === 'string' && coordinator.startsWith('term_')) {
+    const nudge = process.env.NUDGE_WORKER || join(HERE, 'nudge-worker.ts')
+    const done = await runAsync(scriptCommand(nudge, ['--terminal', coordinator, '--text', text]), { timeoutMs: NUDGE_TIMEOUT_MS })
+    relay(done)
+  } else {
+    log(`NO-WAIT Run ${run} 의 코디네이터 터미널이 등록되지 않아 알림 파일에만 적었다`)
+  }
+  save({ since: seen.since, notified: true })
+  return null
+}
+
 function relay(done: RunResult): void {
   for (const line of [...lines(done.stdout), ...lines(done.stderr)]) log(line)
 }
@@ -2076,6 +2259,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
       if (specsDir) args.push('--specs-dir', specsDir)
       const done = await runAsync(scriptCommand(sweep, args), { cwd: ctx.repo, timeoutMs: SWEEP_TIMEOUT_MS })
       relay(done)
+      relayFinishMissing(ctx.repo, done.stdout, run)
       report('cleanup', done.code === 0 ? null : `종료 코드 ${done.code}`, { run })
     } catch (e) {
       report('cleanup', oneLine(e), { run })
@@ -2095,6 +2279,15 @@ async function tick(ctx: Context, n: number): Promise<number> {
       report('ci', watched.error)
     } catch (e) {
       report('ci', oneLine(e))
+    }
+  }
+
+  // 5-1. 머지 알림. 앞 틱에 본 내 열린 PR 이 닫혔으면 그 브랜치의 열린 dispatch 에 머지를 알린다
+  if (prs.ok) {
+    try {
+      report('merged', await tellMerged(ctx, prs.mine, ciEntries(loaded?.ci), lookup))
+    } catch (e) {
+      report('merged', oneLine(e))
     }
   }
 
@@ -2162,6 +2355,16 @@ async function tick(ctx: Context, n: number): Promise<number> {
     report('heavy-slot', held.length > 0 ? held.map((h) => `${h.pid}@${h.heldAt}`).join(',') : null, { kind: 'HEAVY-SLOT-HELD', text })
   } catch (e) {
     log(`orch-loop: 무거운 검사 자리를 읽지 못했다: ${oneLine(e)}`)
+  }
+
+  // 11. 대기 확인. Run 마다. 질문을 읽지 못한 Run 은 미답변 수를 모르지만 대기 확인은 한다
+  for (const { run } of runs) {
+    if (!run) continue
+    try {
+      report('waiter', await watchWaiter(ctx.repo, run, pendingDecisions.get(run)?.length ?? null), { run })
+    } catch (e) {
+      report('waiter', oneLine(e), { run })
+    }
   }
 
   const result: TickResult = { tick_at: iso(), errors, open_prs: openPrNumbers, ...(ci ? { ci } : {}), ...(stalls ? { stalls } : {}) }

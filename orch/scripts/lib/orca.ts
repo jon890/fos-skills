@@ -7,6 +7,12 @@
 //     활성 터미널로 호출자를 정한다. 그래서 이 모듈은 그 변수를 빼는 방식으로 범위를 다루지 않는다.
 //   - 한 번에 100행까지 온다. --limit 100 으로 부르고 page.nextCursor 가 있으면 --cursor <값> 으로 끝까지 이어 읽는다.
 //     첫 페이지만 읽으면 다른 worker 를 놓친다.
+//
+// `orca orchestration ...` 는 Orca 1.4.246 부터 --full 없이 부르면 에이전트용으로 줄인 보기를 낸다(2026-11-02 실측).
+// 줄인 보기는 키 이름이 다르고(worker.stage 대신 stage, from_handle 대신 from) 판정에 쓰는 값(dispatchStatus, workerState,
+// resource, thread_id, created_at, run_id)을 빼며 본문을 200자로 자른다. orch 는 전체 기록의 키를 읽으므로
+// orchestration 명령에는 늘 withFull 로 --full 을 붙인다. 붙이지 않으면 값이 빈 채로 판정이 엇나간다
+// (띄운 worker 의 단계를 읽지 못해 abandon 하고 다시 띄우거나, 살아 있는 dispatch 를 끝난 것으로 본다).
 
 import { run } from './proc.ts'
 import type { RunOptions, RunResult } from './proc.ts'
@@ -15,8 +21,14 @@ export function orcaBin(): string {
   return process.env.ORCA || 'orca'
 }
 
+// orchestration 명령이면 --full 을 붙인 인자를 낸다. 실행 파일을 뺀 인자를 받는다. 이미 있으면 그대로 둔다
+export function withFull(args: string[]): string[] {
+  if (args[0] !== 'orchestration' || args.includes('--full')) return args
+  return [...args, '--full']
+}
+
 export function orca(args: string[], opts?: RunOptions): RunResult {
-  return run([orcaBin(), ...args], opts)
+  return run([orcaBin(), ...withFull(args)], opts)
 }
 
 function brief(text: string): string {
@@ -28,6 +40,7 @@ function brief(text: string): string {
 export function orcaJson<T>(args: string[], opts?: RunOptions): { ok: true; data: T } | { ok: false; error: string } {
   const command = `orca ${args.join(' ')}`
   const done = orca([...args, '--json'], opts)
+  // --full 의 JSON 은 여러 줄로 들여 쓴 꼴이다. JSON.parse 는 출력 전체를 읽으므로 그대로 받는다
   if (done.code !== 0) return { ok: false, error: `${command} 가 종료 코드 ${done.code} 로 끝났다: ${brief(done.stderr || done.stdout)}` }
   let envelope: unknown
   try {

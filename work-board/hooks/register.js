@@ -159,7 +159,7 @@ export async function queryWorkers($, runId) {
   const cursors = new Set()
   let cursor = ''
   for (;;) {
-    const args = ['orca', 'orchestration', 'worker-list', '--run', runId, '--json']
+    const args = ['orca', 'orchestration', 'worker-list', '--run', runId, '--full', '--json']
     if (cursor) args.splice(-1, 0, '--cursor', cursor)
     const data = JSON.parse(await run($, args))
     if (data?.ok === false) throw new Error('worker 목록 조회 실패')
@@ -252,9 +252,9 @@ function dispatchOf(m) {
 // 그래서 질문마다 발신자, payload 의 dispatch, 그 질문이 붙은 살아 있는 worker 의 dispatch 를 읽는다.
 export async function queryQuestions($, runId, active = null) {
   const history = messageRows(await run($, ['orca', 'orchestration', 'check', '--run', runId,
-    '--all', '--types', 'question,escalation', '--json']))
+    '--all', '--types', 'question,escalation', '--full', '--json']))
   const unread = messageRows(await run($, ['orca', 'orchestration', 'check', '--run', runId,
-    '--peek', '--types', 'question,escalation', '--json']))
+    '--peek', '--types', 'question,escalation', '--full', '--json']))
   const ids = active && new Set(active.map((w) => w.id))
   const terminals = active && new Set(active.map((w) => w.terminal).filter(Boolean))
   const alive = (m) => {
@@ -290,7 +290,7 @@ export async function queryQuestions($, runId, active = null) {
   for (let i = 0; i < handles.length; i += 4) {
     const batches = await Promise.all(handles.slice(i, i + 4).map(async (handle) => {
       const rows = messageRows(await run($, ['orca', 'orchestration', 'inbox',
-        '--terminal', handle, '--limit', String(REPLY_LIMIT), '--json']))
+        '--terminal', handle, '--limit', String(REPLY_LIMIT), '--full', '--json']))
       if (rows.length >= REPLY_LIMIT) full.push(handle)
       return rows.filter((m) => threads.has(m.thread_id))
     }))
@@ -818,7 +818,7 @@ async function loadLive($) {
   const next = { at: 0, runId: '', workers: null, questions: null, prs: null, errors: {} }
   try {
     try {
-      const current = JSON.parse(await run($, ['orca', 'orchestration', 'run-current', '--json']))
+      const current = JSON.parse(await run($, ['orca', 'orchestration', 'run-current', '--full', '--json']))
       const runInfo = current && current.result && current.result.run
       next.runId = runInfo && runInfo.id ? runInfo.id : ''
     } catch (failure) {

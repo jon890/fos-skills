@@ -22,7 +22,9 @@ case "$2" in
   check)
     n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
     f="$FAKE_DIR/check$n.json"; [ -f "$f" ] || f="$FAKE_DIR/check.json"; cat "$f"; echo ;;
-  send) echo "\${FAKE_SEND_STDERR:-}" >&2; exit "$FAKE_SEND_RC" ;;
+  send)
+    if [ -n "\${FAKE_SEND_OUT+x}" ]; then echo "$FAKE_SEND_OUT"; else echo '{"ok":true,"result":{"message":{"id":"msg_sent"}}}'; fi
+    echo "\${FAKE_SEND_STDERR:-}" >&2; exit "$FAKE_SEND_RC" ;;
 esac
 `
 
@@ -132,6 +134,36 @@ describe('묻고 답 받기', () => {
     const r = ask('--from', 'term_w', '--question', '이 경로가 맞나')
     assert.equal(r.code, 0, r.stderr)
     assert.ok(r.calls[1].includes('[ask]'), r.calls[1])
+  })
+})
+
+describe('바로 돌아온 ask', () => {
+  test('pending 과 질문 ID 만 내면 그 ID 로 --resume 해 답을 기다리고 질문을 다시 보내지 않는다', () => {
+    fake('{"result":{"answer":"없어야 한다"}}', 0)
+    writeFileSync(join(tmp, 'ask1.out'), '{"ok":true,"result":{"messageId":"msg_q","pending":true,"next":"End your turn"}}')
+    writeFileSync(join(tmp, 'ask2.out'), '{"ok":true,"result":{"answer":"권장안으로 간다","messageId":"msg_q"}}')
+    const r = ask('--from', 'term_w', '--question', '이대로 갈까')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(firstLine(r.stdout), 'answer: 권장안으로 간다')
+    const asks = r.calls.filter((c) => c.includes('[ask]'))
+    assert.equal(asks.length, 2)
+    assert.ok(asks[0].includes('[--question][이대로 갈까]'), asks[0])
+    assert.ok(asks[1].includes('[--resume][msg_q]') && !asks[1].includes('[--question]'), asks[1])
+    assert.match(r.stderr, /질문 msg_q 를 보냈다/)
+  })
+
+  test('0 으로 끝났는데 답도 질문 ID 도 없으면 닿았는지 몰라 2 다', () => {
+    fake('{"ok":true,"result":{}}', 0)
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
+    assert.doesNotMatch(r.stdout, /^answer: /)
+    assert.match(r.stderr, /답도 질문 ID 도 내지 않았다/)
+  })
+
+  test('orca 명령에 --full 을 붙인다', () => {
+    fake('{"result":{"answer":"x","messageId":"m1"}}', 0)
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.ok(r.calls.every((c) => c.includes('[--full]')), r.calls.join('\n'))
   })
 })
 
@@ -384,6 +416,14 @@ describe('ask 실패 뒤 대신 보내기', () => {
       assert.match(r.stderr, /send diagnostic/)
     })
   }
+
+  test('대신 보낸 send 가 메시지 ID 를 내지 않으면 닿았는지 몰라 2 다', () => {
+    fake('dispatch is not active', 1)
+    env.FAKE_SEND_OUT = '{"ok":true,"result":{}}'
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
+    assert.match(r.stderr, /메시지 ID 를 내지 않았다/)
+  })
 
   test('--resume 이 실패하면 대신 보내지 않고 2 다', () => {
     fake('unknown message', 1)
