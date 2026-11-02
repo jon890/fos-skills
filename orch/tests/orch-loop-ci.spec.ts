@@ -496,3 +496,48 @@ describe('worker 에게 보내기', () => {
     })
   })
 })
+
+describe('머지 알림', () => {
+  function merged(number: number, opts: { state?: string } = {}): void {
+    gh.setRules([
+      { args: ['pr', 'list', '--base'], stdout: '[]\n' },
+      { args: ['pr', 'list'], stdout: '[]\n' },
+      { args: ['api', 'user'], stdout: 'me\n' },
+      { args: ['pr', 'view', String(number)], stdout: `${JSON.stringify({ state: opts.state ?? 'MERGED', headRefName: `feat-${number}`, mergeCommit: { oid: 'c0ffee' } })}\n` },
+    ])
+  }
+
+  test('앞 틱에 본 내 PR 이 MERGED 로 닫히면 그 브랜치의 살아 있는 dispatch 에 한 번 알린다', () => {
+    worker(1, 'running')
+    github([pr(1, [check('test', 'SUCCESS')])])
+    once()
+    assert.deepEqual(sends(), [])
+    merged(1)
+    once()
+    assert.deepEqual(sends(), [[
+      '--dispatch', 'd1',
+      '--body', 'PR #1 이 MERGED 됐다(머지 커밋 c0ffee). 지시서의 완료 기준대로 확인하고 worker_done 을 보낸 뒤 끝낸다.',
+      '--run', 'r', '--no-reply',
+    ]])
+    const notified = JSON.parse(readFileSync(orchFile('state', 'merged-notified.json'), 'utf8')) as Json
+    assert.match(String(notified['1']), /^MERGED d1 종료 코드 0 /)
+    once()
+    assert.equal(sends().length, 1)
+  })
+
+  test('마무리가 돈 PR 과 머지 없이 닫힌 PR 에는 알리지 않는다', () => {
+    worker(1, 'running')
+    github([pr(1, [check('test', 'SUCCESS')])])
+    once()
+    write(orchFile('state', 'finish-started', '1'), '2026-11-02T00:00:00Z\n')
+    merged(1)
+    once()
+    assert.deepEqual(sends(), [])
+    rmSync(orchFile('state', 'finish-started', '1'))
+    github([pr(1, [check('test', 'SUCCESS')])])
+    once()
+    merged(1, { state: 'CLOSED' })
+    once()
+    assert.deepEqual(sends(), [])
+  })
+})

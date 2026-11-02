@@ -154,6 +154,35 @@ describe('머지 판정과 기본 정리', () => {
     has(calls(), 'terminal close --terminal term_s')
   })
 
+  test('마무리가 돈 표시가 없는 머지된 PR 은 치우면서 FINISH-MISSING 을 낸다', () => {
+    const path = mergedWorkerWithTerminal('direct-merge', 'succeeded', 'completed')
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    gone(path, out)
+    has(out, 'FINISH-MISSING #1 direct-merge: 머지 뒤 마무리(finish-pr)가 돈 적이 없다')
+  })
+
+  test('마무리가 돈 표시가 있으면 FINISH-MISSING 을 내지 않는다', () => {
+    const path = mergedWorkerWithTerminal('queued-merge', 'succeeded', 'completed')
+    mkdirSync(join(fx.repo, '.orch/state/finish-started'), { recursive: true })
+    writeFileSync(join(fx.repo, '.orch/state/finish-started/1'), '2026-11-02T00:00:00Z\n')
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    gone(path, out)
+    lacks(out, 'FINISH-MISSING')
+  })
+
+  test('끝났고 reclaimable 인 dispatch 는 워크트리를 남겨도 반납한다', () => {
+    const path = worktree('kept-open')
+    fx.prs['kept-open'] = ['OPEN', git('-C', path, 'rev-parse', 'HEAD')]
+    fx.workers = [
+      { dispatchId: 'ctx_r', workerState: 'succeeded', dispatchStatus: 'completed', terminalState: 'reclaimable', agentTerminalHandle: 'structworker_r', resource: { worktreeId: `x::${path}`, releaseState: 'not_requested' } },
+      { dispatchId: 'ctx_k', workerState: 'succeeded', dispatchStatus: 'completed', terminalState: 'retained', agentTerminalHandle: 'term_k', resource: { worktreeId: `x::${path}`, releaseState: 'retained' } },
+    ]
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    exists(path, out)
+    has(calls(), 'orca orchestration worker-release --dispatch ctx_r')
+    lacks(calls(), 'worker-release --dispatch ctx_k')
+  })
+
   test('PR 이 MERGED 여도 working worker 의 worktree 는 남긴다', () => {
     const path = mergedWorkerWithTerminal('sensor-busy', 'working', 'dispatched')
     const out = runSweep(['--run', 'run_x', '--apply'])

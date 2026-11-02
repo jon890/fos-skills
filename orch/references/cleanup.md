@@ -342,6 +342,9 @@ worktree 는 재사용하지 않고 새로 만든다. 앞 PR 의 워크트리와
 gh pr view "$PR" --json state --jq .state
 ```
 
+**`gh pr merge` 로 바로 머지하면 마무리가 빠진다.** 루프의 정리가 워크트리는 치우지만 배포 확인, 업무 완료, 보드 done 은 하지 않는다.
+그 PR 에 마무리가 돈 표시가 없으면 정리가 `FINISH-MISSING` 을 내고 루프가 코디네이터를 깨운다. 알림의 `finish-pr` 명령으로 마무리를 돌린다.
+
 ### 다른 저장소에 맡긴 PR 을 직접 머지했을 때
 
 `merge-with-finish.ts` 의 마무리는 머지 큐를 건 저장소만 정리한다. 다른 저장소에 맡긴 PR 을 코디네이터가 `gh pr merge` 로 머지했으면 바로 이어서 정리한다.
