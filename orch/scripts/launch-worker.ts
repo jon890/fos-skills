@@ -26,7 +26,7 @@
 //     1. spec-line --require-permission 으로 첫 지시 줄을 만든다
 //     1-1. spec-lint 로 이 지시서를 검사한다. 함께 넘기는 활성 지시서는 살아 있는 dispatch(pending, dispatched, running)가 쓰는 지시서
 //        가운데 이 지시서와 같은 폴더에 있는 것이다(lib/spec.ts 의 liveSpecPaths. 이 지시서 자신과 spec-common.md 는 뺀다).
-//        활성 지시서는 --active 로 넘겨 선택 검사를 하지 않는다. 이미 띄운 worker 의 지시서가 새 띄우기를 막지 않게 한다.
+//        활성 지시서는 --active 로 넘겨 선택 검사를 하지 않는다. 활성 지시서끼리의 겹침은 경고만 낸다.
 //        띄울 지시서끼리 겹치는 것은 먼저 띄운 쪽이 활성이 된 뒤 나중 지시서를 띄울 때 잡힌다. 아직 안 띄운 지시서는 보지 않는다.
 //        spec-lint 가 1 로 끝나면(막을 발견) 워크트리를 만들기 전에 발견 줄을 내고 5 로 멈춘다. --lint-ack 이 있으면 이유와 함께 넘긴다.
 //        활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다. spec-lint 가 1 이 아닌 코드로 끝나도(저장소를 읽지 못함 같은 것) 경고만 하고 진행한다
@@ -258,6 +258,7 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
   const others = [...(live ?? [])].filter((file) => file !== realPath(specPath) && dirname(file) === specsDir && basename(file) !== 'spec-common.md' && isFile(file))
   const done = await runAsync(scriptCommand(process.env.SPEC_LINT || `${HERE}/spec-lint.ts`, ['--repo', repo, ...others.flatMap((file) => ['--active', file]), specPath]))
   if (done.code !== 1) {
+    if (done.code === 0 && done.stdout.trim()) err(done.stdout.trim())
     if (done.code !== 0) err(`경고: spec-lint 가 종료 코드 ${done.code} 로 끝나 검사하지 못했다: ${done.stderr.trim().split('\n').pop() ?? ''}`)
     return { stop: null, acked: null }
   }

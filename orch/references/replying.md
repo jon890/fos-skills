@@ -128,6 +128,13 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 - 리뷰 회신은 스레드 id 와 회신 파일을 받아 `review-fix` 스킬의 `review_threads.py reply` 로 달고, 반영한 스레드만 `resolve` 한다.
   `reply` 와 `resolve` 는 스레드 id 만 받으므로 대상 저장소 밖에서 돌릴 때는 `--repo "$OWNER/$REPO"` 를 준다
 
+## 자동 리뷰 workflow 를 바꾼 PR
+
+worker 의 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claude-code-review.yml`)가 있으면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다.
+기본 브랜치와 workflow 가 다르면 보안 검증으로 자동 리뷰가 건너뛰어질 수 있으므로, 코디네이터가 별도 리뷰 경로를 마련한다.
+독립 리뷰에는 PR URL 과 head SHA, 변경 파일과 검증 결과를 넘긴다. 지적은 PR 을 만든 worker 가 `review-fix` 로 반영한다.
+리뷰 workflow 를 바꾸지 않은 PR 은 기존 자동 리뷰 절차를 따른다.
+
 ## 충돌과 리뷰 반영은 만든 worker 가 이어 받는다
 
 **기본은 worker 가 머지될 때까지 스스로 처리한다.** 공통 지시서가 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 에게 맡기고, `worker_done` 은 MERGED 뒤에 온다. 아래는 worker 가 이미 `worker_done` 으로 끝났거나 멈춘 PR 의 절차다.

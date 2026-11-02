@@ -1,7 +1,7 @@
 // 읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문한다.
 //
 // 사용: worker-ask.ts --from HANDLE (--question TEXT | --resume ID)
-//                    [--options CSV] [--run ID] [--timeout-ms N] [--force] [--decision]
+//                    [--options CSV] [--run ID] [--timeout-ms N] [--max-wait N] [--force] [--decision]
 // --decision: 사용자가 정할 결정 질문이다. 본문이 docs/data-schema.md 「사용자 결정 질문 형식」
 // (첫 줄 `결정:` 과 비지 않은 제목, `- ` 선택지 둘 이상, `권장:` 줄 하나)을 따르는지 보고, 어긋나면 묻지 않고 줄마다 stderr 에 낸다.
 // `--resume` 으로 재개할 때는 검사하지 않는다.
@@ -44,12 +44,15 @@ import { pyStr as text } from './lib/py.ts'
 
 const USAGE = [
   '사용: worker-ask.ts --from HANDLE (--question TEXT | --resume ID)',
-  '                   [--options CSV] [--run ID] [--timeout-ms N] [--force] [--decision]',
+  '                   [--options CSV] [--run ID] [--timeout-ms N] [--max-wait N] [--force] [--decision]',
 ].join('\n')
 // ask 는 --timeout-ms 만큼 기다린다. 그 위에 orca 자체의 여유를 더해, orca 가 시간 초과를 알리기 전에 끊지 않게 한다.
 // ORCH_ASK_SLACK_MS 는 이 여유를 바꾼다. 테스트만 쓴다
 const ASK_SLACK_MS = Number(process.env.ORCH_ASK_SLACK_MS) || 120_000
 const DEFAULT_TIMEOUT_MS = '600000'
+const ORCA_MAX_TIMEOUT_MS = 1_800_000
+// --max-wait 는 총 대기 시간(밀리초)이다. 시간 제한이면 같은 메시지 ID 로 다시 기다린다.
+// 생략하면 시간 제한 때 종료 코드 4 로 끝나는 기존 동작을 유지한다.
 // ask 를 기다리는 동안 status 답을 찾는 간격. ORCH_ASK_POLL_MS 로 바꾼다(테스트가 줄인다)
 const POLL_MS = Number(process.env.ORCH_ASK_POLL_MS) || 30_000
 // Python 의 str.splitlines 와 같은 줄 경계다. 결정 질문 형식 판정이 옛 명령과 같게 한다
@@ -183,12 +186,13 @@ async function main(argv: string[]): Promise<number> {
       options: { type: 'string', default: '' },
       run: { type: 'string', default: '' },
       'timeout-ms': { type: 'string', default: DEFAULT_TIMEOUT_MS },
+      'max-wait': { type: 'string' },
       force: { type: 'boolean', default: false },
       decision: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h' },
     } as const
     // `--question "- 선택지"` 처럼 값이 - 로 시작해도 값으로 받는다
-    const joined = ['from', 'question', 'resume', 'options', 'run', 'timeout-ms']
+    const joined = ['from', 'question', 'resume', 'options', 'run', 'timeout-ms', 'max-wait']
     values = parseArgs({ args: expandArgs(argv, optionSpec, joined), options: optionSpec }).values
   } catch (e) {
     err(`${USAGE}\nworker-ask: ${(e as Error).message}`)
@@ -204,9 +208,18 @@ async function main(argv: string[]): Promise<number> {
     return 2
   }
   const question = values.question as string
-  const resume = values.resume as string
+  let resume = values.resume as string
   const options = values.options as string
-  const timeoutMs = values['timeout-ms'] as string
+  const requestedMs = Number(values['timeout-ms'])
+  const maxWaitMs = values['max-wait'] === undefined ? undefined : Number(values['max-wait'])
+  if (!Number.isSafeInteger(requestedMs) || requestedMs <= 0 ||
+      (maxWaitMs !== undefined && (!Number.isSafeInteger(maxWaitMs) || maxWaitMs <= 0))) {
+    err('worker-ask: --timeout-ms 와 --max-wait 는 양의 정수(밀리초)여야 한다')
+    return 2
+  }
+  const timeoutMs = Math.min(requestedMs, ORCA_MAX_TIMEOUT_MS)
+  if (requestedMs > ORCA_MAX_TIMEOUT_MS) err(`worker-ask: --timeout-ms ${requestedMs}ms 는 Orca 상한 ${ORCA_MAX_TIMEOUT_MS}ms 를 넘어 상한으로 줄였다`)
+
   if (!question && !resume) {
     err(`${USAGE}\nworker-ask: --question 이나 --resume 중 하나가 필요하다`)
     return 2
@@ -232,79 +245,90 @@ async function main(argv: string[]): Promise<number> {
     }
   }
   const before = idsOf(first)
-  const args = [orca, 'orchestration', 'ask', '--from', sender, '--timeout-ms', timeoutMs, '--json']
-  args.push(...(resume ? ['--resume', resume] : ['--question', question]))
-  if (options && !resume) args.push('--options', options)
-  const limitMs = (Number(timeoutMs) || Number(DEFAULT_TIMEOUT_MS)) + ASK_SLACK_MS
-  // ask 를 기다리는 동안 status 답을 찾는다(머리 주석의 「status 답 기다리기」). 찾으면 ask 를 끊는다
-  const stop = new AbortController()
-  let early = ''
-  const watching = (async () => {
-    while (!stop.signal.aborted) {
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, POLL_MS)
-        stop.signal.addEventListener('abort', () => {
-          clearTimeout(timer)
-          resolve()
-        }, { once: true })
-      })
-      if (stop.signal.aborted) return
-      const polled = await runAsync(peekArgs)
-      if (stop.signal.aborted) return
-      const reply = replyOf(polled.stdout, sender, resume, before)
-      if (reply) {
-        early = reply
-        stop.abort()
+  const started = Date.now()
+  while (true) {
+    const remainingMs = maxWaitMs === undefined ? timeoutMs : Math.max(1, maxWaitMs - (Date.now() - started))
+    const attemptMs = Math.min(timeoutMs, remainingMs)
+    const args = [orca, 'orchestration', 'ask', '--from', sender, '--timeout-ms', String(attemptMs), '--json']
+    args.push(...(resume ? ['--resume', resume] : ['--question', question]))
+    if (options && !resume) args.push('--options', options)
+    const limitMs = attemptMs + ASK_SLACK_MS
+    // ask 를 기다리는 동안 status 답을 찾는다(머리 주석의 「status 답 기다리기」). 찾으면 ask 를 끊는다
+    const stop = new AbortController()
+    let early = ''
+    const watching = (async () => {
+      while (!stop.signal.aborted) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, POLL_MS)
+          stop.signal.addEventListener('abort', () => {
+            clearTimeout(timer)
+            resolve()
+          }, { once: true })
+        })
+        if (stop.signal.aborted) return
+        const polled = await runAsync(peekArgs)
+        if (stop.signal.aborted) return
+        const reply = replyOf(polled.stdout, sender, resume, before)
+        if (reply) {
+          early = reply
+          stop.abort()
+        }
       }
-    }
-  })()
-  const asked = await runAsync(args, { timeoutMs: limitMs, signal: stop.signal })
-  stop.abort()
-  await watching
-  const output = asked.stdout + asked.stderr
-  if (early) {
-    process.stdout.write(`answer: ${early}\n${output}\n`)
-    err('worker-ask: ask 를 기다리는 동안 코디네이터가 status 로 답해 ask 를 끊었다. 첫 줄이 그 본문이다')
-    return 3
-  }
-  // 끊은 ask 는 질문을 이미 보냈을 수 있다. 아래 실패 경로(Run 메일함으로 대신 보내기)로 가지 않게 시간 초과를 먼저 본다
-  if (asked.timedOut) err(`worker-ask: ask 가 ${limitMs}ms 안에 끝나지 않아 끊었다`)
-  if (asked.timedOut || /"timedOut"\s*:\s*true|timed out/.test(output)) {
-    const reply = replyOf(peek(), sender, messageIdOf(output) || resume, before)
-    if (reply) {
-      process.stdout.write(`answer: ${reply}\n${output}\n`)
-      err('worker-ask: ask 에는 답이 없지만 코디네이터가 status 로 답했다. 첫 줄이 그 본문이다')
+    })()
+    const asked = await runAsync(args, { timeoutMs: limitMs, signal: stop.signal })
+    stop.abort()
+    await watching
+    const output = asked.stdout + asked.stderr
+    if (early) {
+      process.stdout.write(`answer: ${early}\n${output}\n`)
+      err('worker-ask: ask 를 기다리는 동안 코디네이터가 status 로 답해 ask 를 끊었다. 첫 줄이 그 본문이다')
       return 3
     }
-    process.stdout.write(`${output}\n`)
-    err('worker-ask: 시간 제한으로 답을 받지 못했다. 위 출력의 메시지 ID 로 --resume 한다')
-    return 4
+    // 끊은 ask 는 질문을 이미 보냈을 수 있다. 아래 실패 경로(Run 메일함으로 대신 보내기)로 가지 않게 시간 초과를 먼저 본다
+    if (asked.timedOut) err(`worker-ask: ask 가 ${limitMs}ms 안에 끝나지 않아 끊었다`)
+    if (asked.timedOut || /"timedOut"\s*:\s*true|timed out/.test(output)) {
+      const reply = replyOf(peek(), sender, messageIdOf(output) || resume, before)
+      if (reply) {
+        process.stdout.write(`answer: ${reply}\n${output}\n`)
+        err('worker-ask: ask 에는 답이 없지만 코디네이터가 status 로 답했다. 첫 줄이 그 본문이다')
+        return 3
+      }
+      const messageId = messageIdOf(output) || resume
+      if (maxWaitMs !== undefined && Date.now() - started < maxWaitMs && messageId) {
+        resume = messageId
+        err(`worker-ask: 시간 제한으로 같은 메시지 ${resume} 의 답을 다시 기다린다`)
+        continue
+      }
+      process.stdout.write(`${output}\n`)
+      err(`worker-ask: 시간 제한으로 답을 받지 못했다. ${messageId ? `--resume ${messageId} 로 다시 기다린다` : '출력에 메시지 ID 가 없어 자동 재개하지 않았다'}`)
+      return 4
+    }
+    if (asked.code === 0) {
+      process.stdout.write(`answer: ${answerOf(output)}\n${output}\n`)
+      return 0
+    }
+    err(output)
+    if (resume) {
+      err('worker-ask: --resume 이 실패했다. 대신 보낼 질문 본문이 없어 멈춘다')
+      return 2
+    }
+    err('worker-ask: ask 가 실패했다. Dispatch 가 끝났을 수 있어 Run 메일함으로 대신 보낸다')
+    const runId = (values.run as string) || runIdOf(peek())
+    if (!runId) {
+      err('worker-ask: Run 을 찾지 못했다. --run 으로 준다')
+      return 2
+    }
+    const body = question + (options ? `\n선택지: ${options}` : '')
+    const sent = run([orca, 'orchestration', 'send', '--from', sender, '--to', `run:${runId}`, '--type', 'question', '--subject', '질문 (ask 대신 보냄)', '--body', body, '--json'])
+    process.stdout.write(sent.stdout)
+    process.stderr.write(sent.stderr)
+    if (sent.code !== 0) {
+      err('worker-ask: 대신 보내기도 실패했다')
+      return 2
+    }
+    err(`worker-ask: run:${runId} 으로 보냈다. 답은 orca orchestration check --terminal ${sender} 로 읽는다`)
+    return 3
   }
-  if (asked.code === 0) {
-    process.stdout.write(`answer: ${answerOf(output)}\n${output}\n`)
-    return 0
-  }
-  err(output)
-  if (resume) {
-    err('worker-ask: --resume 이 실패했다. 대신 보낼 질문 본문이 없어 멈춘다')
-    return 2
-  }
-  err('worker-ask: ask 가 실패했다. Dispatch 가 끝났을 수 있어 Run 메일함으로 대신 보낸다')
-  const runId = (values.run as string) || runIdOf(peek())
-  if (!runId) {
-    err('worker-ask: Run 을 찾지 못했다. --run 으로 준다')
-    return 2
-  }
-  const body = question + (options ? `\n선택지: ${options}` : '')
-  const sent = run([orca, 'orchestration', 'send', '--from', sender, '--to', `run:${runId}`, '--type', 'question', '--subject', '질문 (ask 대신 보냄)', '--body', body, '--json'])
-  process.stdout.write(sent.stdout)
-  process.stderr.write(sent.stderr)
-  if (sent.code !== 0) {
-    err('worker-ask: 대신 보내기도 실패했다')
-    return 2
-  }
-  err(`worker-ask: run:${runId} 으로 보냈다. 답은 orca orchestration check --terminal ${sender} 로 읽는다`)
-  return 3
 }
 
 main(process.argv.slice(2)).then(
