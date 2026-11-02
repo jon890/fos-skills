@@ -34,6 +34,7 @@
 | 진행 보드 | 보드 파일 위치, 목표 항목 id(`board-sync.ts --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
 | 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
 | 산출물 정리 | 같은 파일의 `cleanup` 절. 함께 정리할 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
+| Docker 자원 | 같은 파일의 `docker` 절. 검사 스크립트가 띄우는 임시 컨테이너의 표식과 이름, 해시 태그로 쌓이는 이미지 이름. 판정은 [`cleanup.md`](cleanup.md) 의 「Docker 자원 반납」 이 소유한다 | 7 |
 | 머지 큐 기본 옵션 | 같은 파일의 `queue` 절. 머지 큐에 매번 붙일 필수 체크, 머지 전 명령, 합친 사본 검사, 문서 glob, 머지 방식 | 7 |
 
 ## 마무리 설정 파일
@@ -43,6 +44,7 @@
 스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.ts` 가, `cleanup` 절은 `handoff-cleanup.ts` 가, `queue` 절은 `merge-with-finish.ts` 가 읽는다.
 `hooks` 절은 이벤트를 내는 모든 명령이, `pipeline` 절은 아래 표의 명령이, `migrations` 절은 상주 루프가 읽는다.
 `board` 절은 `launch-worker`, `board-sync.ts`, `finish-pr.ts`, `board-release.ts` 가 읽는다.
+`docker` 절은 `cleanup-sweep.ts` 가 저장소마다 읽는다.
 상주 루프(`orch-loop.ts`)는 `finish` 절의 `run`, `specs_dir`, `queue` 절의 `required`, `skipped_is_missing`, `auto_merge`, `auto_review`, `pipeline` 절을 읽는다.
 절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다.
 
@@ -78,6 +80,8 @@
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
 | `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
 | `board` | `done_after` | 보드 항목을 done 으로 바꾸는 사건. `merge`, `deploy`, `release` 중 하나이고 기본은 `merge` 다 |
+| `docker` | `containers` | 정리가 지울 컨테이너 규칙의 목록. 규칙은 `label`(`키` 나 `키=값`)과 `name`(이름 전체에 맞출 정규식) 가운데 하나 이상을 둔 객체이고, 둘 다 두면 둘 다 맞아야 한다. `name` 에 이름 붙은 묶음 `pid` 가 있으면 그 프로세스가 없을 때만, 없으면 멈춘 컨테이너만 지운다. `cleanup-sweep.ts` 가 읽는다. 언제 무엇을 지우는지는 [`cleanup.md`](cleanup.md) 의 「Docker 자원 반납」 이 소유한다 |
+| `docker` | `images` | 정리가 지울 이미지 규칙의 목록. 규칙은 `repository`(저장소 이름 전체에 맞출 정규식)와 `keep`(저장소 이름마다 남길 최근 태그 수, 0 이상의 정수, 기본 1)이다. 컨테이너가 쓰는 이미지는 남긴다 |
 | `review` | `prepare` | 리뷰 worker 를 띄울 때 PR head 의 워크트리에서 한 번 돌리는 생성물 준비 명령(bash 문자열). 쓰는 법은 [`spec-writing.md`](spec-writing.md) 의 「리뷰 worker 지시서」 가 소유한다 |
 
 ```json

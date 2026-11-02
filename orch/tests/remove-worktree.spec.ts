@@ -25,6 +25,9 @@ type State = {
   prViews?: Record<string, unknown>
   tasks?: unknown[]
   tasksFail?: boolean
+  // 가짜 docker 가 답할 컨테이너(docker container inspect 의 행)와 데몬이 꺼졌는지. 부른 인자는 dockerCalls 에 쌓인다
+  docker?: { containers: unknown[] }
+  dockerDown?: boolean
 }
 
 let tmp: string
@@ -67,6 +70,7 @@ beforeEach(() => {
     GIT_COMMITTER_EMAIL: 't@example.com',
     ORCA: join(bin, 'orca'),
     GH: join(bin, 'gh'),
+    DOCKER: join(bin, 'docker'),
     ORCH_GH_CACHE: '0',
   }
   // Orca 터미널 안에서 돌려도 이 변수가 가짜 orca 로 새지 않게 한다. 대기 시간은 테스트가 직접 정한다
@@ -98,6 +102,20 @@ else console.log(JSON.stringify({ ok: true, result: {} }))
 if (argv[0] === 'pr' && argv[1] === 'view' && st.prViews && n in st.prViews) console.log(JSON.stringify(st.prViews[n]))
 else process.exit(1)
 `)
+  fake(
+    bin,
+    'docker',
+    `st.dockerCalls = [...(st.dockerCalls || []), argv.join(' ')]
+fs.writeFileSync(file, JSON.stringify(st))
+const rows = (st.docker || { containers: [] }).containers
+if (st.dockerDown) {
+  console.error('Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?')
+  process.exit(1)
+}
+if (argv[0] === 'ps') console.log(rows.map((c) => c.Id).join('\\n'))
+else if (argv[0] === 'container' && argv[1] === 'inspect') console.log(JSON.stringify(rows))
+`,
+  )
   fake(bin, 'lsof', `for (const q of st.procs || []) console.log('p' + q.pid + '\\nn' + q.cwd)\n`)
   fake(bin, 'ps', `for (const q of st.procs || []) console.log(q.pid + ' ' + (q.ppid ?? 1) + ' ' + q.command)\n`)
   fake(
@@ -437,6 +455,39 @@ describe('detached 워크트리의 브랜치', () => {
     assert.equal(r.code, 0, r.out)
     lacks(r.out, 'deleted branch')
     lacks(r.out, '브랜치 남김')
+  })
+})
+
+describe('Docker 자원', () => {
+  function box(id: string, dir: string) {
+    return { Id: id, Name: `/${id}`, Image: 'sha256:x', State: { Running: true }, Config: { Labels: { 'com.docker.compose.project.working_dir': dir } } }
+  }
+  function dockerCalls(): string[] {
+    return (JSON.parse(readFileSync(stateFile, 'utf8')) as { dockerCalls?: string[] }).dockerCalls ?? []
+  }
+
+  test('워크트리를 지운 뒤 그 아래에서 띄운 compose 컨테이너만 지운다', () => {
+    const r = removeWorktree({ docker: { containers: [box('mine', join(wt, 'infra')), box('other', join(tmp, 'company'))] } })
+    assert.equal(r.code, 0, r.out)
+    has(r.out, `removed ${wt}`)
+    has(r.out, 'Docker 컨테이너 삭제 mine (mine)')
+    const calls = dockerCalls()
+    assert.ok(calls.includes('rm -f -v mine'), calls.join('\n'))
+    assert.ok(!calls.some((c) => c.startsWith('rm') && c.includes('other')), calls.join('\n'))
+  })
+
+  test('Docker 데몬이 꺼져 있으면 경고 한 줄을 내고 0 이다', () => {
+    const r = removeWorktree({ dockerDown: true })
+    assert.equal(r.code, 0, r.out)
+    has(r.out, 'Docker 정리 건너뜀: 컨테이너 목록을 읽지 못했다 (Cannot connect to the Docker daemon')
+    assert.equal(existsSync(wt), false)
+  })
+
+  test('거부하면 docker 를 부르지 않는다', () => {
+    writeFileSync(join(wt, 'dirty.txt'), 'x')
+    const r = removeWorktree({ docker: { containers: [box('mine', wt)] } })
+    assert.equal(r.code, 1, r.out)
+    assert.deepEqual(dockerCalls(), [])
   })
 })
 

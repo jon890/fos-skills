@@ -3,6 +3,7 @@
 // 최상위는 절(Section)마다 객체 하나다. 지금 절(finish, cleanup, queue)의 키는 orch/references/overlay.md 의
 // 「마무리 설정 파일」 표가, 더하는 절(hooks, pipeline, heavy, migrations, board, review)의 키는 docs/data-schema.md 의 「config.json 에 더하는 절」 이 정한다.
 // 키 이름은 그 절을 읽는 명령의 옵션 이름에서 하이픈을 밑줄로 바꾼 것이다.
+// docker 절의 키와 값은 orch/references/overlay.md 「마무리 설정 파일」 표가 정하고 lib/docker.ts 의 dockerRules 가 읽는다.
 //
 // 판정:
 //   - 파일이 없으면 빈 객체다
@@ -21,10 +22,10 @@ import { resolve } from 'node:path'
 import { isFile } from './fs.ts'
 import { pathOf } from './paths.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'board' | 'review'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'board' | 'review' | 'docker'
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'board', 'review']
+const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'board', 'review', 'docker']
 
 export class ConfigError extends Error {}
 
