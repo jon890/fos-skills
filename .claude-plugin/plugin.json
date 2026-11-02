@@ -18,6 +18,7 @@
     "./planning",
     "./pr-review",
     "./presentation",
+    "./report",
     "./review-fix",
     "./spec",
     "./verify"
