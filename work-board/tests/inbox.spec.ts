@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { INBOX_PROMPT, inboxBoxVisible, inboxRows, inboxSourceLabel, inboxSummary, inboxTag, parseInbox, replyPrompt, statusLine } from '../hooks/register.js'
+import { dismissArgv, INBOX_PROMPT, inboxBoxVisible, inboxRows, inboxSourceLabel, inboxSummary, inboxTag, parseInbox, replyPrompt, statusLine, withoutItems } from '../hooks/register.js'
 
 const ITEM = {
   id: 'dooray:task:comment:c1', adapter: 'dooray', source: 'task', kind: 'mention', title: '어드민개발/81 어드민 권한 정리',
@@ -67,4 +67,18 @@ test('답한 알림은 목록에서 빼고 수만 센다', () => {
   const answered = { ...ITEM, id: 'a', state: 'answered' }
   assert.deepEqual(inboxRows([ITEM, answered]), { shown: [ITEM], answered: 1 })
   assert.deepEqual(inboxRows(undefined), { shown: [], answered: 0 })
+})
+
+test('넘긴 알림을 빼고 새 알림 수를 줄인다', () => {
+  const answered = { ...ITEM, id: 'a', state: 'answered' }
+  const other = { ...ITEM, id: 'b' }
+  const state = { enabled: true, newCount: 2, items: [ITEM, other, answered] }
+  assert.deepEqual(withoutItems(state, [ITEM.id, 'a']), { enabled: true, newCount: 1, items: [other] })
+  assert.equal(withoutItems(null, ['x']), null)
+  assert.deepEqual(withoutItems({ enabled: false }, ['x']), { enabled: false })
+})
+
+test('넘김은 inbox.ts dismiss 를 부르고 되돌리기는 --undo 를 붙인다', () => {
+  assert.deepEqual(dismissArgv('/p/inbox.ts', 'id1'), ['node', '--disable-warning=ExperimentalWarning', '/p/inbox.ts', 'dismiss', 'id1'])
+  assert.deepEqual(dismissArgv('/p/inbox.ts', 'id1', true).slice(-2), ['id1', '--undo'])
 })

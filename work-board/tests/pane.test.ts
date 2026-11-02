@@ -416,6 +416,79 @@ test('숫자 단축키는 그 항목의 답변 요청문을 입력란에 채운�
   await ui.unmount()
 })
 
+// x 를 누르면 숫자 단축키가 답변 요청문 대신 그 알림을 넘긴다. 넘긴 알림은 바로 빠지고 z 로 되돌린다
+test('x 다음 숫자는 알림을 inbox.ts dismiss 로 넘기고 z 는 되돌린다', async ($, on) => {
+  const filled = []
+  const toasts = []
+  const calls = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  const dismissed = new Set()
+  await start($, on, (argv) => {
+    if (!String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')) return { exitCode: 1, stdout: '', stderr: '없음' }
+    calls.push(argv.slice(3))
+    if (argv[3] === 'dismiss') {
+      if (argv.includes('--undo')) dismissed.delete(argv[4])
+      else dismissed.add(argv[4])
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    const items = INBOX_ITEMS.filter((item) => !dismissed.has(item.id))
+    return { exitCode: 0, stderr: '', stdout: JSON.stringify({ enabled: true, fetchedAt: null, unclassified: 0, isDefault: true, errors: {},
+      newCount: items.filter((item) => item.state === 'new').length, items }) }
+  })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Button', key: 'inbox-dismiss' })).props.hotkey).toBe('x')
+  expect(await ui.find({ type: 'Button', key: 'inbox-undo' })).toBeFalsy()
+
+  await ui.press({ key: 'inbox-dismiss' })
+  expect(await ui.find({ type: 'Text', text: /넘길 알림의 번호를 누르세요/ })).toBeTruthy()
+  await ui.press({ key: 'inbox-reply-dooray:task:comment:c1' })
+  expect(filled).toEqual([])
+  expect(calls).toContainEqual(['dismiss', 'dooray:task:comment:c1'])
+  expect(await ui.find({ type: 'Button', key: 'inbox-reply-dooray:task:comment:c1' })).toBeFalsy()
+  expect(await ui.find({ type: 'Text', text: /^알림  1/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /넘길 알림의 번호를 누르세요/ })).toBeFalsy()
+  expect((await ui.find({ type: 'Button', key: 'inbox-reply-dooray:task:post:p342' })).props.hotkey).toBe('1')
+  expect(toasts.join('\n')).toContain('z 를 누르면')
+
+  // 넘기기 모드는 한 번 넘기면 꺼진다. 다시 누르면 답변 요청문을 채운다
+  await ui.press({ key: 'inbox-reply-dooray:task:post:p342' })
+  expect(filled).toHaveLength(1)
+
+  expect((await ui.find({ type: 'Button', key: 'inbox-undo' })).props.hotkey).toBe('z')
+  await ui.press({ key: 'inbox-undo' })
+  expect(calls).toContainEqual(['dismiss', 'dooray:task:comment:c1', '--undo'])
+  expect(await ui.find({ type: 'Button', key: 'inbox-reply-dooray:task:comment:c1' })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-undo' })).toBeFalsy()
+  await ui.unmount()
+})
+
+test('넘기기에 실패하면 알림을 남기고 이유를 toast 로 보인다', async ($, on) => {
+  const toasts = []
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  await start($, on, (argv) => !String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')
+    ? { exitCode: 1, stdout: '', stderr: '없음' }
+    : argv[3] === 'dismiss'
+      ? { exitCode: 1, stdout: '', stderr: '쓰기 실패' }
+      : { exitCode: 0, stderr: '', stdout: JSON.stringify({ enabled: true, fetchedAt: null, newCount: 2, unclassified: 0, isDefault: true, errors: {}, items: INBOX_ITEMS }) })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'inbox-dismiss' })
+  await ui.press({ key: 'inbox-reply-dooray:task:comment:c1' })
+  expect(toasts.join('\n')).toContain('알림 넘기기 실패: 쓰기 실패')
+  expect(await ui.find({ type: 'Button', key: 'inbox-reply-dooray:task:comment:c1' })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-undo' })).toBeFalsy()
+  await ui.unmount()
+})
+
 test('알림함이 켜진 적 없이 inbox 명령이 실패하면 알림 상자를 그리지 않는다 (R6)', async ($, on) => {
   await start($, on, (argv) => String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')
     ? { exitCode: 1, stdout: '', stderr: 'node 를 찾지 못했다' }
