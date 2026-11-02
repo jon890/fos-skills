@@ -133,6 +133,7 @@
 //     상태는 ciState(queue.skipped_is_missing 을 따른다)다. 머지 큐의 기본 판정(--allow-fail 없음)과 같다. 필수가 아닌 체크의 실패도
 //     failed 이고, passed 는 실패가 없고 필수 체크가 모두 나타났고 롤업의 체크가 모두 끝난 때다. 필수 체크 목록이 비면 나타난 체크 전부로
 //     판정한다. 루프는 --allow-fail 을 모른다. 머지 큐에 --allow-fail 을 주는 저장소에서는 루프가 실패로 알린 PR 도 큐는 머지할 수 있다.
+//     base 조회가 실패하거나 예외가 나면 기존 worker 전달로 돌아간다.
 //     같은 워크플로의 base 최신 실행도 실패하면 worker 에게 보내지 않고 CI-FAILED 에 `<base> 도 실패` 를 쓴다. 조회는 공유 캐시를 쓴다.
 //     loop.json 의 ci[<PR>] 와 HEAD 와 상태가 같으면 넘어간다. 다르면 새 값을 결과의 ci 에 담고, passed 로 바뀌었으면 ci-passed 를,
 //     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 알림 파일에 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 lib/events.ts 머리 주석의
@@ -1313,9 +1314,17 @@ async function watchCi(
       let told: { text: string; run: string | null }
       try {
         // 취소만 있으면 코드 실패가 아니다. worker 에게 고치라고 보내지 않고 코디네이터에게만 알린다
-        told = cancelledOnly(failed) ? { text: CANCELLED_ONLY, run: runOfPr(ctx, pr, lookup) }
-          : baseWorkflowFailed(ctx.repo, pr.host, pr.slug, pr.base, failed)
-            ? { text: `${pr.base} 도 실패`, run: runOfPr(ctx, pr, lookup) }
+        const cancelled = cancelledOnly(failed)
+        let baseFailed = false
+        if (!cancelled) {
+          try {
+            baseFailed = baseWorkflowFailed(ctx.repo, pr.host, pr.slug, pr.base, failed)
+          } catch (e) {
+            log(`orch-loop: base CI 를 확인하지 못했다: ${oneLine(e)}`)
+          }
+        }
+        told = cancelled ? { text: CANCELLED_ONLY, run: runOfPr(ctx, pr, lookup) }
+          : baseFailed ? { text: `${pr.base} 도 실패`, run: runOfPr(ctx, pr, lookup) }
             : await tellWorker(ctx, pr, failed, lookup)
       } catch (e) {
         told = { text: `보내지 못했다(${oneLine(e)})`, run: null }

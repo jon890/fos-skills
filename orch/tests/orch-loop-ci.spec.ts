@@ -554,3 +554,16 @@ describe('머지 알림', () => {
    assert.deepEqual(sends(), [])
    assert.ok(events().some((e) => e.kind === 'CI-FAILED' && e.text === 'ci: main 도 실패'))
  })
+
+ test('base CI 판정이 예외로 끝나도 기존 worker 전달을 계속한다', () => {
+   worker(1, 'running')
+   const failed = { ...check('ci', 'FAILURE'), detailsUrl: 'https://github.com/o/r/actions/runs/123/job/1' }
+   github([pr(1, [failed])], { stdout: '[]' }, 0, [
+     { args: ['repos/o/r/actions/runs/123'], stdout: JSON.stringify({ workflow_id: 42 }) },
+     { args: ['repos/o/r/actions/workflows/42/runs?branch=main&event=push&status=completed&per_page=1'],
+       stdout: JSON.stringify({ workflow_runs: [{ status: 'completed', conclusion: 'failure', updated_at: { valueOf: null, toString: null } }] }) },
+   ])
+   once()
+   assert.equal(sends().length, 1)
+   assert.ok(events().some((e) => e.kind === 'CI-FAILED' && !String(e.text).includes('main 도 실패')))
+ })
