@@ -393,7 +393,7 @@ test('base workflow 실패는 체크 이름 대신 run 의 workflow 를 대조�
     const calls: string[][] = []
     const read = ((args: string[]) => {
       calls.push(args)
-      return { ok: true, data: calls.length === 1 ? { workflow_id: 42 } : { workflow_runs: [{ status: 'completed', updated_at: new Date().toISOString(), conclusion }] } }
+      return { ok: true, data: calls.length === 1 ? { workflow_id: 42 } : { workflow_runs: [{ status: 'completed', updated_at: new Date(Date.now() - 1000).toISOString(), conclusion }] } }
     }) as typeof import('../scripts/lib/gh.ts').ghJson
     assert.equal(baseWorkflowFailed('/tmp', 'github.com', 'o/r', 'release/test', checks, read), conclusion === 'failure')
     assert.match(calls[1].at(-1)!, /workflows\/42\/runs\?branch=release%2Ftest&event=push&status=completed&per_page=1/u)
@@ -407,7 +407,7 @@ test('base 실패가 없는 체크가 섞이면 worker 전달을 막지 않는�
   const { baseWorkflowFailed } = await import('../scripts/lib/gh.ts')
   const check = { name: 'ci', status: 'COMPLETED', conclusion: 'FAILURE', url: 'https://github.com/o/r/actions/runs/123/job/1' }
   const read = ((args: string[]) => ({ ok: true, data: args.at(-1)?.includes('/workflows/')
-    ? { workflow_runs: [{ status: 'completed', updated_at: new Date().toISOString(), conclusion: 'failure' }] } : { workflow_id: 42 } })) as typeof import('../scripts/lib/gh.ts').ghJson
+    ? { workflow_runs: [{ status: 'completed', updated_at: new Date(Date.now() - 1000).toISOString(), conclusion: 'failure' }] } : { workflow_id: 42 } })) as typeof import('../scripts/lib/gh.ts').ghJson
   assert.equal(baseWorkflowFailed('/tmp', 'github.com', 'o/r', 'main', [check, { ...check, url: 'https://external.test/check' }], read), false)
   for (const data of [null, {}, { workflow_runs: [] }, { workflow_runs: [{ status: 'in_progress', conclusion: 'failure' }] }]) {
     const pending = ((args: string[]) => ({ ok: true, data: args.at(-1)?.includes('/workflows/') ? data : { workflow_id: 42 } })) as typeof import('../scripts/lib/gh.ts').ghJson
