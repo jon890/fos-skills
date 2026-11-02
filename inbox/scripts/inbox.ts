@@ -68,12 +68,41 @@ export function filterPath(repo: string): string {
   return join(orchDir(repo), FILTER_FILE)
 }
 
-function readFilter(repo: string): RepoFilter | null {
-  const path = filterPath(repo)
+function readFilterFile(path: string): RepoFilter | null {
   if (!existsSync(path)) return null
   const value = JSON.parse(readFileSync(path, 'utf8'))
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${path} 는 adapter 이름을 키로 둔 객체여야 한다`)
   return value as RepoFilter
+}
+
+// 이 저장소의 필터와, 보드가 연 모든 저장소의 필터. 다른 저장소의 필터는 그 저장소가 적어 둔 파일 경로로 읽는다.
+// 저장소 경로로 다시 풀면 이 프로세스의 ORCH_DIR 이 다른 저장소에도 적용돼 틀린 파일을 읽는다
+function repoFilters(store: Store, repo: string): { filter: RepoFilter | null; knownFilters: RepoFilter[]; error: string } {
+  const path = filterPath(repo)
+  let filter: RepoFilter | null = null
+  let error = ''
+  try {
+    filter = readFilterFile(path)
+  } catch (failure) {
+    error = (failure as Error).message
+  }
+  let paths = store.repos()
+  if (filter && !paths.some((known) => samePath(known, path))) {
+    paths = [...paths, path]
+    store.write('repos', paths)
+  }
+  const knownFilters: RepoFilter[] = []
+  for (const known of paths) {
+    if (samePath(known, path)) continue
+    try {
+      const other = readFilterFile(known)
+      if (other) knownFilters.push(other)
+    } catch {
+      // 다른 저장소의 필터가 깨졌으면 그 저장소는 미분류 판정에서 뺀다
+    }
+  }
+  if (filter) knownFilters.push(filter)
+  return { filter, knownFilters, error }
 }
 
 type Session = { config: Config; store: Store; deps: Deps; adapters: Map<string, Adapter> }
@@ -107,22 +136,29 @@ function isStale(session: Session, cache: CacheFile): boolean {
 // 캐시가 오래됐으면 받아서 합친다. 다른 세션이 받고 있으면 지금 캐시를 그대로 쓴다
 export function sync(session: Session, setupErrors: Record<string, string>, force: boolean): CacheFile {
   const { config, store, deps } = session
-  const cache = store.cache()
   const now = deps.now()
-  if (!(force || isStale(session, cache)) || !store.lock(now.getTime())) return cache
+  if (!(force || isStale(session, store.cache())) || !store.lock(now.getTime())) return store.cache()
   try {
+    // 잠금을 잡은 뒤 다시 읽는다. 앞 받기가 막 쓰고 풀었으면 그 결과 위에 합치거나, 이미 새것이면 받지 않는다
+    const cache = store.cache()
+    if (!force && !isStale(session, cache)) return cache
     const since = new Date(now.getTime() - config.days * 24 * 60 * 60 * 1000).toISOString()
     const lastOk = store.read<Record<string, string>>('last-ok', {})
     const byId = new Map(cache.items.map((item) => [item.id, item]))
     const errors: Record<string, string> = { ...setupErrors }
     for (const adapter of session.adapters.values()) {
-      const result = adapter.fetch({ since, lastFetchedAt: lastOk[adapter.name] ?? null })
+      const prefix = `${adapter.name}:`
+      const cursors = Object.fromEntries(Object.entries(lastOk)
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([key, value]) => [key.slice(prefix.length), value]))
+      const result = adapter.fetch({ since, cursors })
+      store.touchLock()
       for (const [source, message] of Object.entries(result.errors)) errors[`${adapter.name}:${source}`] = message
-      // 실패한 출처가 있으면 지난 성공 시각을 그대로 둬, 다음 받기가 놓친 구간을 다시 읽는다
-      if (Object.keys(result.errors).length === 0) lastOk[adapter.name] = result.cursor ?? now.toISOString()
+      // 출처마다 커서를 옮긴다. 읽지 못한 출처는 커서가 없어 다음 받기가 지난 커서부터 다시 읽는다
+      for (const [source, cursor] of Object.entries(result.cursors)) lastOk[`${adapter.name}:${source}`] = cursor
       for (const item of result.items) {
         const known = byId.get(item.id)
-        // 받은 값으로 갱신하되 답함 표시는 남긴다
+        // 받은 값으로 갱신하되 답함 표시와 처음 본 시각은 남긴다
         byId.set(item.id, known ? { ...item, state: known.state, at: known.at } : item)
       }
     }
@@ -140,6 +176,9 @@ export function sync(session: Session, setupErrors: Record<string, string>, forc
         // 확인하지 못한 항목은 새 항목으로 둔다. 다음 받기에서 다시 본다
       }
     }
+    // 받는 동안 reply --yes 가 적은 답함을 덮지 않는다
+    const answeredMeanwhile = new Set(store.cache().items.filter((item) => item.state === 'answered').map((item) => item.id))
+    for (const item of items) if (answeredMeanwhile.has(item.id)) item.state = 'answered'
     const next: CacheFile = { fetchedAt: now.toISOString(), items, errors }
     store.write('cache', next)
     store.write('last-ok', lastOk)
@@ -204,28 +243,8 @@ function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, s
     errors.inbox = (error as Error).message
   }
   const repo = a.repo as string
-  let filter: RepoFilter | null = null
-  try {
-    filter = readFilter(repo)
-  } catch (error) {
-    errors.filter = (error as Error).message
-  }
-  let repos = store.repos()
-  if (filter && !repos.some((known) => samePath(known, repo))) {
-    repos = [...repos, repo]
-    store.write('repos', repos)
-  }
-  const knownFilters: RepoFilter[] = []
-  for (const known of repos) {
-    if (samePath(known, repo)) continue
-    try {
-      const other = readFilter(known)
-      if (other) knownFilters.push(other)
-    } catch {
-      // 다른 저장소의 필터가 깨졌으면 그 저장소는 미분류 판정에서 뺀다
-    }
-  }
-  if (filter) knownFilters.push(filter)
+  const { filter, knownFilters, error } = repoFilters(store, repo)
+  if (error) errors.filter = error
   const isDefault = config.defaultBoard ? samePath(config.defaultBoard, repo) : null
   const view = boardView({ items: cache.items, dismissed: store.dismissed(), now: deps.now(), days: config.days, filter, knownFilters, isDefault })
   const result = {
@@ -269,7 +288,12 @@ function run(a: Parsed, deps: Deps): number {
     }
     case 'list': {
       const cache = store.cache()
-      const items = visibleItems(cache.items, store.dismissed(), session.deps.now(), config.days)
+      let items = visibleItems(cache.items, store.dismissed(), session.deps.now(), config.days)
+      if (a.repo) {
+        const { filter, knownFilters } = repoFilters(store, a.repo)
+        const isDefault = config.defaultBoard ? samePath(config.defaultBoard, a.repo) : null
+        items = boardView({ items: cache.items, dismissed: store.dismissed(), now: session.deps.now(), days: config.days, filter, knownFilters, isDefault }).items
+      }
       for (const item of items) deps.out(`${line(item)}\n`)
       return 0
     }

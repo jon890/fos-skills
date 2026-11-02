@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { type Deps, main } from '../scripts/inbox.ts'
 import type { Adapter, AdapterFactory, FetchRequest, FetchResult, InboxItem } from '../scripts/lib/model.ts'
-import { DEFAULT_SIGNATURE } from '../scripts/lib/store.ts'
+import { DEFAULT_SIGNATURE, Store } from '../scripts/lib/store.ts'
 
 const NOW = new Date('2026-11-02T06:00:00.000Z')
 
@@ -35,7 +35,9 @@ function fakeFactory(state: FakeState): AdapterFactory {
       name: 'fake',
       fetch(request): FetchResult {
         state.fetches.push(request)
-        return { items: state.items.map((row) => ({ ...row })), errors: state.errors }
+        // 실패한 출처는 커서를 옮기지 않는다
+        const cursors = Object.fromEntries(['task', 'messenger'].filter((source) => !state.errors[source]).map((source) => [source, now.toISOString()]))
+        return { items: state.items.map((row) => ({ ...row })), errors: state.errors, cursors }
       },
       context(row) {
         const ids = ['u1', 'u2']
@@ -150,8 +152,8 @@ describe('설정과 받기', () => {
     board(root)
     assert.equal(state.fetches.length, 2)
     assert.equal(state.fetches[0].since, '2026-10-26T06:00:00.000Z')
-    assert.equal(state.fetches[0].lastFetchedAt, null)
-    assert.equal(state.fetches[1].lastFetchedAt, NOW.toISOString())
+    assert.deepEqual(state.fetches[0].cursors, {})
+    assert.deepEqual(state.fetches[1].cursors, { task: NOW.toISOString(), messenger: NOW.toISOString() })
   })
 
   test('board 는 받기를 따로 띄우고 지금 캐시를 바로 낸다 (D15)', () => {
@@ -197,7 +199,8 @@ describe('설정과 받기', () => {
     // 실패가 있었으니 다음 받기는 지난 성공 시각부터 다시 읽는다
     now = new Date(NOW.getTime() + 12 * 60 * 1000)
     board(root)
-    assert.equal(state.fetches[2].lastFetchedAt, NOW.toISOString())
+    // 실패한 출처만 지난 커서에서 다시 읽고, 성공한 출처는 앞으로 간다
+    assert.deepEqual(state.fetches[2].cursors, { task: new Date(NOW.getTime() + 6 * 60 * 1000).toISOString(), messenger: NOW.toISOString() })
   })
 
   test('days 보다 오래된 항목은 보이지 않는다', () => {
@@ -336,5 +339,21 @@ describe('맥락과 답변', () => {
     assert.equal(call('board'), 2)
     assert.equal(call('reply', 'x'), 2)
     assert.equal(call('nope'), 2)
+  })
+})
+
+describe('잠금 (검토 반영)', () => {
+  test('자기가 잡은 잠금만 풀고, 빼앗긴 잠금은 남긴다', () => {
+    const first = new Store(join(dir, 'lock-state'))
+    const second = new Store(join(dir, 'lock-state'))
+    const t0 = Date.now()
+    assert.equal(first.lock(t0), true)
+    assert.equal(second.lock(t0), false)
+    // 오래된 잠금을 다른 세션이 다시 잡으면, 먼저 잡았던 쪽의 unlock 은 그 잠금을 지우지 않는다
+    assert.equal(second.lock(t0 + 11 * 60 * 1000), true)
+    first.unlock()
+    assert.equal(second.lockHeld(Date.now()), true)
+    second.unlock()
+    assert.equal(second.lockHeld(Date.now()), false)
   })
 })

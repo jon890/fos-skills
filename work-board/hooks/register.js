@@ -96,6 +96,8 @@ let liveBusy = false
 let inbox = null
 let inboxError = ''
 let inboxBusy = false
+// 이 세션에서 알림함이 켜진 것을 본 적이 있는지. 설정이 없는 사용자에게 node 실패를 오류 상자로 보이지 않으려는 것이다(R6)
+let inboxSeen = false
 
 // ---- 외부 명령 출력을 그릴 값으로 바꾸는 순수 함수(테스트가 직접 부른다) ----
 
@@ -522,7 +524,7 @@ export function decideCount(items) {
 // ---- 업무 알림 ----
 
 export const INBOX_KIND_LABELS = { mention: '멘션', assigned: '담당', cc: '참조' }
-const INBOX_SOURCE_LABELS = { 'dooray:task': '두레이 업무', 'dooray:messenger': '두레이 메신저', inbox: '알림함', filter: '알림 필터' }
+const INBOX_SOURCE_LABELS = { 'dooray:task': '두레이 업무', 'dooray:messenger': '두레이 메신저', 'dooray:auth': '두레이 인증', inbox: '알림함', filter: '알림 필터' }
 
 // inbox.ts board --json 출력을 읽는다. 형식이 다르면 던진다
 export function parseInbox(stdout) {
@@ -541,6 +543,11 @@ export function inboxSourceLabel(source) {
 export function inboxTag(item) {
   if (item.adapter === 'dooray') return item.source === 'messenger' ? '메신저' : '두레이'
   return item.adapter
+}
+
+// 알림 상자를 그릴지. 켜진 출력이 있거나, 켜진 것을 본 뒤 명령이 실패했을 때만 그린다
+export function inboxBoxVisible(state, error, seen) {
+  return inboxSummary(state).show || Boolean(error && seen)
 }
 
 // 상자 머리 「알림 n」 과 그릴지. 설정이 없으면(enabled false) 그리지 않는다
@@ -703,6 +710,7 @@ async function loadInbox($) {
     const root = (await boardRoot($)) || (await $.session.cwd())
     const script = $.plugin.root + '/inbox/scripts/inbox.ts'
     inbox = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json'], INBOX_TIMEOUT_MS))
+    if (inbox.enabled) inboxSeen = true
     inboxError = ''
   } catch (failure) {
     inboxError = String(failure.message || failure)
@@ -954,10 +962,8 @@ export function register(on) {
         ],
       })
     }
-    const inboxErrors = alerts.show || inboxError
-      ? [...Object.entries((inbox && inbox.errors) || {}), ...(inboxError ? [['inbox', inboxError]] : [])]
-      : []
-    const inboxView = !alerts.show && !inboxError ? [] : [box('inbox', 'green',
+    const inboxErrors = [...Object.entries((alerts.show && inbox.errors) || {}), ...(inboxError ? [['inbox', inboxError]] : [])]
+    const inboxView = !inboxBoxVisible(inbox, inboxError, inboxSeen) ? [] : [box('inbox', 'green',
       '알림  ' + alerts.newCount + (inbox && inbox.fetchedAt ? '  ·  ' + clock(inbox.fetchedAt) + ' 확인' : ''), [
         ...inboxErrors.map(([source, message]) => Text({ key: 'ie-' + source, color: 'red', wrap: 'wrap',
           children: [inboxSourceLabel(source) + ' 확인 불가: ' + message] })),

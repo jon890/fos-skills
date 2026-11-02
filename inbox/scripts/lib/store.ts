@@ -4,12 +4,15 @@
 // 상태: ${XDG_STATE_HOME:-~/.local/state}/fos-skills/inbox/. INBOX_STATE_DIR 로 바꾼다
 //   cache.json      받은 항목, 받은 시각, 출처별 오류
 //   dismissed.json  넘긴 항목 id 목록. 모든 저장소의 보드가 함께 쓴다(D11)
-//   repos.json      필터 파일을 가진 저장소(주 checkout 경로) 목록. 미분류 판정에 쓴다
-//   fetch.lock/     받기 잠금. 여러 세션이 동시에 받지 않게 한다
-//   <adapter>-*.json  adapter 의 캐시(이름, 업무 정보 등)
+//   repos.json      보드가 연 저장소들의 필터 파일 경로 목록. 미분류 판정에 쓴다
+//   last-ok.json    '<adapter>:<출처>' 마다 다 읽은 시각(커서). 다음 받기는 그 뒤만 읽는다
+//   fetch.lock/     받기 잠금. 안의 owner 파일이 잡은 쪽의 표지라 자기 잠금만 푼다
+//   <adapter>-*.json  adapter 의 캐시(이름, 업무 정보, 다시 읽을 대화방 등)
 // 쓰기는 임시 파일에 쓴 뒤 rename 한다. 읽는 쪽이 반쯤 쓴 파일을 보지 않게 하려는 것이다.
+// 사내 메시지 발췌가 들어 있어 폴더는 0700, 파일은 0600 으로 만든다.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AdapterConfig, Cache, InboxItem } from './model.ts'
@@ -79,9 +82,9 @@ export function readJson<T>(path: string, fallback: T): T {
 }
 
 export function writeJson(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true })
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   const tmp = `${path}.${process.pid}.tmp`
-  writeFileSync(tmp, `${JSON.stringify(value, null, 1)}\n`)
+  writeFileSync(tmp, `${JSON.stringify(value, null, 1)}\n`, { mode: 0o600 })
   renameSync(tmp, path)
 }
 
@@ -121,35 +124,60 @@ export class Store implements Cache {
     return this.read<string[]>('repos', [])
   }
 
+  private token = ''
+
+  private lockDir(): string {
+    return join(this.dir, 'fetch.lock')
+  }
+
   // 받기 잠금을 잡으면 true. 이미 다른 세션이 받고 있으면 false 다
   lock(now: number): boolean {
-    const dir = join(this.dir, 'fetch.lock')
-    mkdirSync(this.dir, { recursive: true })
+    const dir = this.lockDir()
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
     try {
       mkdirSync(dir)
-      return true
     } catch {
+      if (this.lockHeld(now)) return false
+      rmSync(dir, { recursive: true, force: true })
       try {
-        if (now - statSync(dir).mtimeMs < LOCK_STALE_MS) return false
-        rmSync(dir, { recursive: true, force: true })
         mkdirSync(dir)
-        return true
       } catch {
         return false
       }
     }
+    this.token = randomUUID()
+    writeFileSync(join(dir, 'owner'), this.token, { mode: 0o600 })
+    return true
   }
 
   // 다른 세션이 받고 있는지. 오래된 잠금은 없는 것으로 본다
   lockHeld(now: number): boolean {
     try {
-      return now - statSync(join(this.dir, 'fetch.lock')).mtimeMs < LOCK_STALE_MS
+      return now - statSync(this.lockDir()).mtimeMs < LOCK_STALE_MS
     } catch {
       return false
     }
   }
 
+  // 받기가 길어질 때 잠금이 오래된 것으로 보이지 않게 시각을 새로 한다
+  touchLock(): void {
+    if (!this.token) return
+    const now = new Date()
+    try {
+      utimesSync(this.lockDir(), now, now)
+    } catch {
+      // 잠금을 빼앗겼으면 할 것이 없다
+    }
+  }
+
+  // 자기가 잡은 잠금만 푼다. 오래돼 다른 세션이 다시 잡은 잠금은 그대로 둔다
   unlock(): void {
-    rmSync(join(this.dir, 'fetch.lock'), { recursive: true, force: true })
+    if (!this.token) return
+    try {
+      if (readFileSync(join(this.lockDir(), 'owner'), 'utf8') === this.token) rmSync(this.lockDir(), { recursive: true, force: true })
+    } catch {
+      // 잠금이 이미 없다
+    }
+    this.token = ''
   }
 }

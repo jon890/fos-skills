@@ -134,7 +134,7 @@ describe('본문 읽기', () => {
 
 describe('받기', () => {
   test('업무 댓글 멘션, 담당, 참조를 공통 모델로 바꾼다 (R1, R2)', () => {
-    const result = adapter({ messenger: false }).fetch({ since: SINCE, lastFetchedAt: null })
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
     assert.deepEqual(result.errors, {})
     const byId = Object.fromEntries(result.items.map((row) => [row.id, row]))
     assert.deepEqual(Object.keys(byId).sort(), ['dooray:task:comment:c1', 'dooray:task:post:p342', 'dooray:task:post:p77'])
@@ -152,14 +152,14 @@ describe('받기', () => {
     assert.deepEqual(calls.find((argv) => argv[2] === 'stream'), ['dooray', '--json', 'stream', 'list', '--since', SINCE, '--all'])
     // 지난 받기가 있으면 그 뒤만 읽는다
     calls = []
-    adapter({ messenger: false }).fetch({ since: SINCE, lastFetchedAt: '2026-11-02T05:55:00.000Z' })
+    adapter({ messenger: false }).fetch({ since: SINCE, cursors: { task: '2026-11-02T05:55:00.000Z' } })
     assert.deepEqual(calls.find((argv) => argv[2] === 'stream')?.slice(4, 6), ['--since', '2026-11-02T05:55:00.000Z'])
     // 업무 정보는 업무마다 한 번만 읽는다
     assert.equal(calls.filter((argv) => argv[2] === 'post' && argv[3] === 'get' && argv[5] === 'p81').length, 1)
   })
 
   test('메신저는 봇 방과 나와의 대화를 건너뛰고 바뀐 방의 멘션만 받는다 (D1, D14)', () => {
-    const result = adapter().fetch({ since: SINCE, lastFetchedAt: '2026-11-02T05:00:00.000Z' })
+    const result = adapter().fetch({ since: SINCE, cursors: { messenger: '2026-11-02T05:00:00.000Z' } })
     const messenger = result.items.filter((row) => row.source === 'messenger')
     assert.deepEqual(messenger.map((row) => row.id).sort(), ['dooray:messenger:ch-dev:l1', 'dooray:messenger:ch-dm:l9'])
     const dev = messenger.find((row) => row.id.endsWith('l1'))
@@ -170,7 +170,8 @@ describe('받기', () => {
     // 바뀐 방은 오래된 순으로 읽는다
     const logCalls = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])
     assert.deepEqual(logCalls, ['ch-dm', 'ch-dev'])
-    assert.equal(result.cursor, undefined)
+    // 남은 방이 없으면 커서는 이번 받기 시각이다
+    assert.equal(result.cursors.messenger, '2026-11-02T06:00:00.000Z')
   })
 
   test(`메신저는 한 번에 ${MAX_CHANNELS}개 방까지만 읽고, 남은 방은 cursor 로 다음 받기에 넘긴다`, () => {
@@ -178,11 +179,11 @@ describe('받기', () => {
       updatedAt: new Date(Date.parse('2026-11-01T00:00:00Z') + i * 60000).toISOString() }))
     CHANNELS.push(...many)
     try {
-      const result = adapter().fetch({ since: SINCE, lastFetchedAt: null })
+      const result = adapter().fetch({ since: SINCE, cursors: {} })
       const read = calls.filter((argv) => argv[3] === 'logs').map((argv) => argv[4])
       assert.equal(read.length, MAX_CHANNELS)
       assert.deepEqual(read.slice(0, 2), ['c0', 'c1'])
-      assert.equal(result.cursor, many[MAX_CHANNELS - 1].updatedAt)
+      assert.equal(result.cursors.messenger, many[MAX_CHANNELS - 1].updatedAt)
     } finally {
       CHANNELS.splice(4)
     }
@@ -193,7 +194,7 @@ describe('받기', () => {
       sentAt: new Date(Date.parse('2026-11-02T05:30:00Z') + i * 1000).toISOString(), text: '잡담' }))
     LOGS['ch-dev'] = busy
     try {
-      adapter().fetch({ since: SINCE, lastFetchedAt: '2026-11-02T05:00:00.000Z' })
+      adapter().fetch({ since: SINCE, cursors: { messenger: '2026-11-02T05:00:00.000Z' } })
       const counts = calls.filter((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev').map((argv) => argv[6])
       assert.deepEqual(counts, [String(LOG_COUNT), String(MORE_LOG_COUNT)])
     } finally {
@@ -203,7 +204,7 @@ describe('받기', () => {
 
   test('메신저가 실패해도 업무 항목은 낸다 (R7)', () => {
     failing.add('messenger channels')
-    const result = adapter().fetch({ since: SINCE, lastFetchedAt: null })
+    const result = adapter().fetch({ since: SINCE, cursors: {} })
     assert.match(result.errors.messenger, /429/)
     assert.equal(result.errors.task, undefined)
     assert.equal(result.items.filter((row) => row.source === 'task').length, 3)
@@ -211,22 +212,79 @@ describe('받기', () => {
 
   test('대화방 하나의 logs 가 실패하면 그 방만 빼고 오류를 남긴다', () => {
     failing.add('messenger logs ch-dev -n 50')
-    const result = adapter().fetch({ since: SINCE, lastFetchedAt: null })
+    const result = adapter().fetch({ since: SINCE, cursors: {} })
     assert.match(result.errors.messenger, /대화방 1개 읽기 실패: 스마트홈 개발/)
     assert.deepEqual(result.items.filter((row) => row.source === 'messenger').map((row) => row.id), ['dooray:messenger:ch-dm:l9'])
   })
 
   test('업무 피드가 실패하면 task 오류를 남긴다 (R7)', () => {
     failing.add('stream list')
-    const result = adapter({ messenger: false }).fetch({ since: SINCE, lastFetchedAt: null })
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
     assert.match(result.errors.task, /stream list.*429/)
     assert.equal(result.items.length, 0)
   })
 })
 
+describe('부분 실패와 이름 (검토 반영)', () => {
+  test('대화방 하나가 실패해도 메신저 커서는 앞으로 가고 그 방은 다음 받기에 다시 읽는다 (R7)', () => {
+    const cache = new MemoryCache()
+    const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
+    failing.add('messenger logs ch-dev -n 50')
+    const first = make().fetch({ since: SINCE, cursors: {} })
+    assert.match(first.errors.messenger, /스마트홈 개발/)
+    assert.equal(first.cursors.messenger, '2026-11-02T06:00:00.000Z')
+    assert.equal(first.cursors.task, '2026-11-02T06:00:00.000Z')
+    failing.clear()
+    calls = []
+    const second = make().fetch({ since: SINCE, cursors: first.cursors })
+    // 커서 뒤에 바뀐 방이 없어도 실패했던 방은 다시 읽는다
+    assert.ok(calls.some((argv) => argv[3] === 'logs' && argv[4] === 'ch-dev'))
+    assert.ok(second.items.some((row) => row.id === 'dooray:messenger:ch-dev:l1'))
+    assert.deepEqual(cache.read('dooray-retry-channels', ['?']), [])
+  })
+
+  test('업무 하나의 조회가 실패하면 그 원소만 빼고 커서는 앞으로 간다', () => {
+    failing.add('post get --id p342')
+    const result = adapter({ messenger: false }).fetch({ since: SINCE, cursors: {} })
+    assert.match(result.errors.task, /업무 1개 읽기 실패/)
+    assert.equal(result.cursors.task, '2026-11-02T06:00:00.000Z')
+    assert.deepEqual(result.items.map((row) => row.id).sort(), ['dooray:task:comment:c1', 'dooray:task:post:p77'])
+  })
+
+  test('나를 읽지 못하면 auth 오류 한 줄만 내고 커서를 옮기지 않는다 (R7)', () => {
+    failing.add('member get me')
+    const result = adapter().fetch({ since: SINCE, cursors: {} })
+    assert.deepEqual(Object.keys(result.errors), ['auth'])
+    assert.deepEqual(result.cursors, {})
+  })
+
+  test('피드에 이름이 없는 보낸 사람은 member get 으로 풀어 맥락과 답변에 쓴다 (R3, R10)', () => {
+    const target = adapter({ messenger: false })
+    const cc = target.fetch({ since: SINCE, cursors: {} }).items.find((row) => row.id === 'dooray:task:post:p77')!
+    assert.deepEqual(cc.from, { id: KIM, name: '김철수' })
+    const unnamed = { ...cc, from: { id: KIM, name: '' } }
+    comments = []
+    assert.deepEqual(target.context(unnamed).unresolved, [])
+    assert.equal(target.context(unnamed).item.from.name, '김철수')
+    assert.match(target.compose(unnamed, '네', ''), /^\[@김철수\]/)
+  })
+
+  test('보낸 사람 이름을 끝내 풀지 못하면 맥락은 unresolved, 답변 합성은 던진다 (R3)', () => {
+    const target = adapter({ messenger: false })
+    const ghost = { ...mentionOf(target), from: { id: '9999', name: '' } }
+    comments = []
+    assert.deepEqual(target.context(ghost).unresolved, ['9999'])
+    assert.throws(() => target.compose(ghost, '네', ''), /9999/)
+  })
+})
+
+function mentionOf(target: Adapter) {
+  return target.fetch({ since: SINCE, cursors: {} }).items.find((row) => row.id === 'dooray:task:comment:c1')!
+}
+
 describe('맥락, 답함, 답변', () => {
   function mentionItem(target: Adapter) {
-    return target.fetch({ since: SINCE, lastFetchedAt: null }).items.find((row) => row.id === 'dooray:task:comment:c1')!
+    return target.fetch({ since: SINCE, cursors: {} }).items.find((row) => row.id === 'dooray:task:comment:c1')!
   }
 
   test('context 는 앞 댓글의 작성자를 이름으로 푼다 (R3)', () => {
@@ -248,17 +306,26 @@ describe('맥락, 답함, 답변', () => {
   })
 
   test('알림 뒤의 내 댓글이 있으면 답함이다 (R5)', () => {
-    const target = adapter({ messenger: false })
-    const row = mentionItem(target)
+    const row = mentionItem(adapter({ messenger: false }))
     comments = [{ creator: { member: { organizationMemberId: KIM } }, createdAt: '2026-11-02T14:30:00+09:00' }]
-    assert.equal(target.answered(row), false)
+    assert.equal(adapter({ messenger: false }).answered(row), false)
     comments = [{ creator: { member: { organizationMemberId: ME } }, createdAt: '2026-11-02T14:30:00+09:00' }]
-    assert.equal(target.answered(row), true)
+    assert.equal(adapter({ messenger: false }).answered(row), true)
+  })
+
+  test('피드에 시각이 없던 멘션은 댓글 목록의 그 댓글 시각을 기준으로 답함을 판정한다 (R5)', () => {
+    // 처음 받은 시각(item.at)이 내 답보다 늦어도, 멘션 댓글 뒤에 내 답이 있으면 답함이다
+    const row = { ...mentionItem(adapter({ messenger: false })), at: '2026-11-02T06:00:00.000Z' }
+    comments = [
+      { id: 'mine', creator: { member: { organizationMemberId: ME } }, createdAt: '2026-11-02T14:20:00+09:00' },
+      { id: 'c1', creator: { member: { organizationMemberId: KIM } }, createdAt: '2026-11-02T14:00:00+09:00' },
+    ]
+    assert.equal(adapter({ messenger: false }).answered(row), true)
   })
 
   test('메신저 멘션 뒤에 내가 그 방에 쓰면 답함이다 (R5)', () => {
     const target = adapter()
-    const row = target.fetch({ since: SINCE, lastFetchedAt: null }).items.find((item) => item.id === 'dooray:messenger:ch-dev:l1')!
+    const row = target.fetch({ since: SINCE, cursors: {} }).items.find((item) => item.id === 'dooray:messenger:ch-dev:l1')!
     assert.equal(target.answered(row), true)
   })
 
@@ -283,7 +350,7 @@ describe('맥락, 답함, 답변', () => {
 
   test('메신저 답변은 그 대화방으로 보낸다', () => {
     const target = adapter()
-    const row = target.fetch({ since: SINCE, lastFetchedAt: null }).items.find((item) => item.id === 'dooray:messenger:ch-dm:l9')!
+    const row = target.fetch({ since: SINCE, cursors: {} }).items.find((item) => item.id === 'dooray:messenger:ch-dm:l9')!
     target.reply(row, '가능해요')
     assert.deepEqual(sent[0].argv.slice(0, 5), ['dooray', 'messenger', 'channel-send', '--channel', 'ch-dm'])
   })

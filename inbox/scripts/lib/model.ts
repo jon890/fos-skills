@@ -30,16 +30,17 @@ export type InboxItem = {
 export type FetchRequest = {
   // 이 시각보다 오래된 알림은 받지 않는다(설정 days)
   since: string
-  // 지난 받기 시각. 처음이면 null. 메신저처럼 바뀐 곳만 읽는 출처가 쓴다
-  lastFetchedAt: string | null
+  // 출처마다 지난번에 다 읽은 시각. 처음이면 그 출처의 키가 없다. 그 뒤만 읽어 호출을 줄인다
+  cursors: Record<string, string>
 }
 
 export type FetchResult = {
   items: InboxItem[]
   // 출처 이름과 오류 한 줄. 실패한 출처의 항목은 지난 캐시에 남은 것을 그대로 쓴다
   errors: Record<string, string>
-  // 다음 받기의 lastFetchedAt. 다 읽지 못하고 남긴 곳이 있으면 그 앞 시각을 준다. 없으면 이번 받기 시각이다
-  cursor?: string
+  // 다음 받기의 출처별 커서. 그 출처를 읽지 못했으면 키를 넣지 않아 지난 커서에서 다시 읽는다.
+  // 일부만 실패한 출처(대화방 하나, 업무 하나)는 커서를 넣고 실패한 곳은 adapter 가 따로 기억한다
+  cursors: Record<string, string>
 }
 
 export type Message = { from: Person; at: string; text: string }

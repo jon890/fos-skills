@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { INBOX_PROMPT, inboxSourceLabel, inboxSummary, inboxTag, parseInbox, replyPrompt, statusLine } from '../hooks/register.js'
+import { INBOX_PROMPT, inboxBoxVisible, inboxSourceLabel, inboxSummary, inboxTag, parseInbox, replyPrompt, statusLine } from '../hooks/register.js'
 
 const ITEM = {
   id: 'dooray:task:comment:c1', adapter: 'dooray', source: 'task', kind: 'mention', title: '어드민개발/81 어드민 권한 정리',
@@ -53,4 +53,12 @@ test('답변 요청문은 맥락, 초안, 미리보기, 확인 뒤 등록 순서
   assert.ok(text.includes('김철수의 멘션'))
   assert.ok(INBOX_PROMPT.includes('확인 전에는 등록하지 마'))
   assert.ok(INBOX_PROMPT.includes('inbox.ts dismiss'))
+})
+
+test('알림함이 켜진 것을 본 뒤에만 명령 실패를 상자로 보인다 (R6, R7)', () => {
+  assert.equal(inboxBoxVisible({ enabled: false }, '', false), false)
+  assert.equal(inboxBoxVisible(null, 'node 없음', false), false)
+  assert.equal(inboxBoxVisible(null, 'node 없음', true), true)
+  assert.equal(inboxBoxVisible({ enabled: true, items: [] }, '', false), true)
+  assert.equal(inboxSourceLabel('dooray:auth'), '두레이 인증')
 })
