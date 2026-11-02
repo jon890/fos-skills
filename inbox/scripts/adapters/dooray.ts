@@ -45,6 +45,18 @@ export function plainText(text: string): string {
     .trim()
 }
 
+// 메신저 로그의 text 는 보통 글이지만, 일부 메시지는 {"type":0,"text":"…"} 같은 JSON 문자열로 온다. 그 안의 text 를 꺼낸다
+export function messageText(value: unknown): string {
+  const raw = String(value ?? '')
+  if (!raw.trimStart().startsWith('{')) return raw
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && typeof parsed.text === 'string' ? parsed.text : raw
+  } catch {
+    return raw
+  }
+}
+
 export function excerptOf(text: string): string {
   const plain = plainText(text)
   return [...plain].length > EXCERPT ? [...plain].slice(0, EXCERPT).join('') + '…' : plain
@@ -210,7 +222,7 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
       }
       for (const log of Array.isArray(logs) ? logs : []) {
         const senderId = String(log?.sender?.member?.organizationMemberId ?? '')
-        const text = String(log?.text ?? '')
+        const text = messageText(log?.text)
         const at = iso(log?.sentAt)
         if (!senderId || senderId === self.id || !at || at < request.since || !mentions(text, self.id)) continue
         const title = String(channel.title || '')
@@ -354,10 +366,10 @@ export function createDooray(config: AdapterConfig, deps: AdapterDeps): Adapter 
       const { previous, unresolved } = withNames(logs.map((log) => ({
         id: String(log?.sender?.member?.organizationMemberId ?? ''),
         at: iso(log?.sentAt),
-        text: plainText(String(log?.text ?? '')),
+        text: plainText(messageText(log?.text)),
       })))
       const mention = logs.find((log) => String(log?.id) === item.target.logId)
-      return { item: withSender(item), body: String(mention?.text ?? item.excerpt), previous, unresolved: [...new Set([...unresolved, ...senderMissing(item)])] }
+      return { item: withSender(item), body: mention ? messageText(mention.text) : item.excerpt, previous, unresolved: [...new Set([...unresolved, ...senderMissing(item)])] }
     },
 
     resolvePeople,

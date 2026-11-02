@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { INBOX_PROMPT, inboxBoxVisible, inboxSourceLabel, inboxSummary, inboxTag, parseInbox, replyPrompt, statusLine } from '../hooks/register.js'
+import { INBOX_PROMPT, inboxBoxVisible, inboxRows, inboxSourceLabel, inboxSummary, inboxTag, parseInbox, replyPrompt, statusLine } from '../hooks/register.js'
 
 const ITEM = {
   id: 'dooray:task:comment:c1', adapter: 'dooray', source: 'task', kind: 'mention', title: '어드민개발/81 어드민 권한 정리',
@@ -61,4 +61,10 @@ test('알림함이 켜진 것을 본 뒤에만 명령 실패를 상자로 보인
   assert.equal(inboxBoxVisible(null, 'node 없음', true), true)
   assert.equal(inboxBoxVisible({ enabled: true, items: [] }, '', false), true)
   assert.equal(inboxSourceLabel('dooray:auth'), '두레이 인증')
+})
+
+test('답한 알림은 목록에서 빼고 수만 센다', () => {
+  const answered = { ...ITEM, id: 'a', state: 'answered' }
+  assert.deepEqual(inboxRows([ITEM, answered]), { shown: [ITEM], answered: 1 })
+  assert.deepEqual(inboxRows(undefined), { shown: [], answered: 0 })
 })
