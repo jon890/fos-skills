@@ -121,18 +121,35 @@ let updating = false
 
 const LIVE_DISPATCH = new Set(['pending', 'dispatched', 'running'])
 
-// worker-list --json 의 결과에서 아직 일하는 worker 만 고른다.
+// 끝난 dispatch. 새 모양은 outcome 이 succeeded·failed 이거나 state 가 abandoned 다
+const ENDED_OUTCOME = new Set(['succeeded', 'failed'])
+
+// 일하는 dispatch 인가. 옛 모양은 dispatchStatus, structured 모드의 새 모양은 outcome 과 state 로 본다.
+function isLiveWorker(w) {
+  if (!w || typeof w !== 'object') return false
+  if (w.dispatchStatus !== undefined) return LIVE_DISPATCH.has(w.dispatchStatus)
+  if (w.outcome === undefined && w.state === undefined) return false
+  return !ENDED_OUTCOME.has(w.outcome) && w.state !== 'abandoned'
+}
+
+// worker-list --json 의 결과에서 아직 일하는 worker 만 고른다. 옛 모양(dispatchStatus, resource.worktreeId, agentTerminalHandle, workerState)과
+// 새 모양(outcome, state, workspace, terminal)을 모두 읽는다.
 export function parseWorkers(stdout) {
   const data = JSON.parse(stdout)
   if (data?.ok === false) throw new Error('worker 목록 조회 실패')
   const workers = (data && data.result && (data.result.workers || data.result.dispatches)) || []
   if (!Array.isArray(workers)) throw new Error('worker 목록을 읽지 못했어요')
   return workers
-    .filter((w) => w && typeof w === 'object' && LIVE_DISPATCH.has(w.dispatchStatus))
+    .filter(isLiveWorker)
     .map((w) => {
-      const tree = (w.resource && w.resource.worktreeId) || ''
+      const tree = (w.resource && w.resource.worktreeId) || w.workspace || ''
       const path = tree.includes('::') ? tree.split('::').pop() : tree
-      return { id: w.dispatchId, terminal: w.agentTerminalHandle || '', state: w.workerState || '', worktree: path.split('/').filter(Boolean).pop() || '' }
+      return {
+        id: w.dispatchId,
+        terminal: w.agentTerminalHandle || w.terminal || '',
+        state: w.workerState || (w.dispatchStatus === undefined ? w.state : '') || '',
+        worktree: path.split('/').filter(Boolean).pop() || '',
+      }
     })
 }
 
