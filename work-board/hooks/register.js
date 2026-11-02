@@ -567,6 +567,12 @@ export function inboxSummary(state) {
   return { show: true, newCount: Number(state.newCount) || 0 }
 }
 
+// 알림 상자에 그릴 항목과 숨긴 「답함」 수. 답한 알림은 목록에서 빼고 수만 보인다
+export function inboxRows(items) {
+  const rows = Array.isArray(items) ? items : []
+  return { shown: rows.filter((item) => item.state !== 'answered'), answered: rows.filter((item) => item.state === 'answered').length }
+}
+
 // 항목 하나에 답하는 요청문. 숫자 단축키가 입력란에 채운다
 export function replyPrompt(item) {
   const who = (item.from && (item.from.name || item.from.id)) || '보낸 사람'
@@ -1102,7 +1108,7 @@ export function register(on) {
 
     // 업무 알림: inbox 설정이 있을 때만 그린다. 새 항목 먼저, 앞 INBOX_ROWS 개에 숫자 단축키를 붙인다
     const alerts = inboxSummary(inbox)
-    const inboxItems = alerts.show ? inbox.items : []
+    const { shown: inboxItems, answered: answeredCount } = inboxRows(alerts.show ? inbox.items : [])
     const clock = (at) => {
       const time = Date.parse(at || '')
       if (!time) return ''
@@ -1142,8 +1148,9 @@ export function register(on) {
         ...inboxErrors.map(([source, message]) => Text({ key: 'ie-' + source, color: 'red', wrap: 'wrap',
           children: [inboxSourceLabel(source) + ' 확인 불가: ' + message] })),
         ...(alerts.show && inbox.unclassified > 0 ? [dim('iu', '미분류 알림 ' + inbox.unclassified + ' · 기본 보드에서 봐요')] : []),
-        ...(alerts.show && inboxItems.length === 0 ? [dim('i0', '이 보드의 알림이 없어요')] : []),
+        ...(alerts.show && inboxItems.length === 0 ? [dim('i0', answeredCount > 0 ? '이 보드의 새 알림이 없어요' : '이 보드의 알림이 없어요')] : []),
         ...inboxItems.map(inboxRow),
+        ...(answeredCount > 0 ? [dim('ia', '답함 ' + answeredCount)] : []),
       ])]
 
     // worker: 이 세션이 묶인 run 에서 일하는 worker 중 어느 항목에도 붙지 않은 것
