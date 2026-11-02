@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""report 스킬이 만든 HTML 보고서 한 파일이 깨지지 않았는지 검사한다.
+r"""report 스킬이 만든 HTML 보고서 한 파일이 깨지지 않았는지 검사한다.
 
 브라우저는 깨진 HTML 도 말없이 그려 주므로 눈으로 봐서는 놓치는 것만 본다.
 
 사용법:
     check-report.py <파일.html>          검사한다
     check-report.py --text <파일.html>   보이는 글만 한 덩어리에 한 줄씩 낸다
+    check-report.py --korean <파일.html> 보이는 글을 korean-check 의 check.sh 로 검사한다
 
---text 의 출력은 .md 로 저장해 korean-check 의 check.sh 에 넘긴다.
-그 검사기는 .md 만 받고, HTML 을 그대로 넘기면 태그로 시작하는 줄을 건너뛰어 금지어를 놓친다.
+korean-check 의 검사기는 .md 만 받고, HTML 을 그대로 넘기면 태그로 시작하는 줄을 건너뛰어 금지어를 놓친다.
+그래서 --korean 은 보이는 글을 임시 .md 로 써서 넘긴다. 줄 머리의 <, |, # 는 \ 를 붙여
+표 행이나 제목으로 읽혀 검사에서 빠지지 않게 한다.
+korean-check 는 KOREAN_CHECK 환경 변수, 이 스킬의 형제 디렉터리, ~/.claude/skills/korean-check 순서로 찾는다.
+플러그인 설치본은 저장소 전체를 복사하므로 형제 디렉터리에 있다.
 
 검사 항목 (위반 줄 형식: <파일>:<줄>: <종류>: <설명>)
     tag       닫히지 않은 태그, 짝이 맞지 않는 끝 태그. 끝 태그를 생략할 수 있는 요소도 닫아야 한다
@@ -19,12 +23,15 @@
     id        같은 id 가 두 번 나온다
     name      파일 이름이 영문 소문자, 숫자와 - 로 된 슬러그가 아니다
 
-종료 코드: 0 통과, 1 위반, 2 검사기가 돌지 못함 (인자가 틀렸거나 파일이 없음)
+종료 코드: 0 통과, 1 위반, 2 검사기가 돌지 못함 (인자가 틀렸거나 파일이 없음, --korean 에서 korean-check 를 못 찾음)
 """
 import html.parser
+import os
 import pathlib
 import re
+import subprocess
 import sys
+import tempfile
 
 VOID = {
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
@@ -42,6 +49,9 @@ RESOURCE_ATTRS = {
     "embed": ("src",),
     "object": ("data",),
     "track": ("src",),
+    "image": ("href", "xlink:href"),
+    "use": ("href", "xlink:href"),
+    "base": ("href",),
 }
 CSS_URL = re.compile(r"""url\(\s*['"]?([^'")\s]*)""", re.I)
 CSS_IMPORT = re.compile(r"""@import\s+(?:url\(\s*)?['"]?([^'")\s;]*)""", re.I)
@@ -95,6 +105,8 @@ class Checker(html.parser.HTMLParser):
         names = RESOURCE_ATTRS.get(tag, ())
         if tag == "input" and a.get("type", "").lower() == "image":
             names = ("src",)
+        if tag == "meta" and a.get("http-equiv", "").lower() == "refresh" and "url=" in a.get("content", "").lower():
+            self.add("external", "<meta http-equiv=refresh> 가 다른 주소로 넘긴다", line)
         for name in names:
             if name not in a:
                 continue
@@ -198,9 +210,38 @@ def extract_text(path):
     return ex.lines
 
 
+def md_safe(line):
+    """줄 머리가 마크다운의 표 행, 제목, HTML 로 읽혀 korean-check 가 건너뛰지 않게 한다."""
+    return "\\" + line if line[:1] in "<|#" else line
+
+
+def find_korean_check():
+    here = pathlib.Path(__file__).resolve().parent.parent
+    for base in (os.environ.get("KOREAN_CHECK", ""), str(here.parent / "korean-check"),
+                 os.path.expanduser("~/.claude/skills/korean-check")):
+        if base and (pathlib.Path(base) / "scripts" / "check.sh").is_file():
+            return pathlib.Path(base) / "scripts" / "check.sh"
+    return None
+
+
+def korean(path):
+    check_sh = find_korean_check()
+    if not check_sh:
+        print("check-report: korean-check 를 찾지 못했다. KOREAN_CHECK 로 그 스킬 경로를 준다", file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory() as tmp:
+        md = pathlib.Path(tmp) / (path.stem + ".md")
+        md.write_text("\n".join(md_safe(line) for line in extract_text(path)) + "\n", encoding="utf-8")
+        result = subprocess.run(["bash", str(check_sh), str(md)], capture_output=True, text=True, check=False)
+    # 임시 파일 이름 대신 보고서 이름으로 알린다. 줄 번호는 --text 출력의 줄이다
+    sys.stdout.write(result.stdout.replace(str(md), f"{path} (--text 줄)"))
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
 def main(argv):
-    text_mode = bool(argv) and argv[0] == "--text"
-    args = argv[1:] if text_mode else argv
+    mode = argv[0] if argv and argv[0] in ("--text", "--korean") else ""
+    args = argv[1:] if mode else argv
     if len(args) != 1 or args[0].startswith("-"):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
@@ -208,10 +249,12 @@ def main(argv):
     if not path.is_file():
         print(f"check-report: 파일이 없다: {path}", file=sys.stderr)
         return 2
-    if text_mode:
+    if mode == "--text":
         for line in extract_text(path):
-            print(line)
+            print(md_safe(line))
         return 0
+    if mode == "--korean":
+        return korean(path)
     problems = check(path)
     for line, kind, msg in problems:
         print(f"{path}:{line}: {kind}: {msg}")
