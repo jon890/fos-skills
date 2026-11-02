@@ -7,6 +7,10 @@ work-board 는 스킬이 아닌 mod 이므로 이 파일에서 변경 이력을 
 
 - Orca 1.4.246 에서 비어 보이던 워커 상태와 결정 필요를 고친다. Orca 조회를 `--full` 로 읽는다
 
+## 1.7.1 (2026-11-02)
+
+- structured 모드 worker 가 일하는데도 「worker 없음」 으로 보이던 문제를 고친다. `worker-list` 항목의 `outcome`, `state`, `terminal`, `workspace` 도 읽는다. 끝난 것(`succeeded`, `failed`, `abandoned`)은 뺀다
+
 ## 1.7.0 (2026-11-02)
 
 - 다른 Orca 계정 프로필에서 설치한 플러그인도 보드에서 버전과 갱신 대상을 찾는다
