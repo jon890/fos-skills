@@ -21,16 +21,19 @@
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
 import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { context, isoTime, readyOf } from './completion.ts'
 import { envMs } from './env.ts'
 import { fire } from './events.ts'
 import { ghJson } from './gh.ts'
 import { defaultBase, mainCheckout } from './git.ts'
 import { orcaJson } from './orca.ts'
+import { readLaunch } from './launched.ts'
+import type { Launch } from './launched.ts'
 import { makeParent } from './paths.ts'
 import { pyJson, pyStr as text } from './py.ts'
 import { isQuietStop } from './stop-reports.ts'
-import { workerRows } from './workers.ts'
+import { workerRows, worktreePaths } from './workers.ts'
 
 export const HISTORY_LIMIT = 100
 export const REPLY_LIMIT = 200
@@ -201,10 +204,12 @@ export async function notifyQuestion(notice: Notice, repo: string, run: string |
 
 // 닫힌 질문 ------------------------------------------------------------------
 // 끝난 dispatch 가 남긴 질문은 답할 곳이 없다. Orca 는 닫힌 dispatch 에 보낸 답을 전하지 않는다.
-// 그 dispatch 가 끝났고(SETTLED) 그 dispatch 가 알린 PR(status 의 `준비됨 #<PR>, head <SHA>`)이 모두 머지되거나 닫혔으면 닫힌 질문이다.
+// 그 dispatch 가 끝났고(SETTLED) 같은 Task 의 dispatch 가 알린 PR(status 의 `준비됨 #<PR>, head <SHA>`)이 모두 머지되거나 닫혔으면 닫힌 질문이다.
 // PR 은 부른 쪽 저장소에서 `gh pr view` 로 읽고, 준비 상태의 head 가 그 PR 의 커밋에 있을 때만 그 PR 로 본다.
 // 다른 저장소에서 번호만 같은 PR 을 닫힌 것으로 읽지 않으려는 것이다.
-// 하나라도 읽지 못하거나 준비 상태가 없으면 닫히지 않은 것으로 본다(재알림을 계속한다).
+// 준비 상태가 없으면 그 dispatch 의 워크트리에 해당하는 git 브랜치의 PR 을 조회한다. Task 가 달라도 브랜치가 같고 PR 이 모두 끝났으면 닫는다.
+// git 목록에 워크트리가 없으면 띄우기 기록의 branch 를 쓴다. 브랜치 없는 옛 기록은 끝난 dispatch 의 워크트리 경로가 기록과 같고 ENOENT 일 때 닫는다.
+// 어느 경로에서도 종료 근거가 확인되지 않으면 재알림을 계속한다.
 // 준비 상태는 그 Run 의 status 를 100건까지 읽는다. 그보다 오래된 준비 상태는 찾지 못해 재알림이 남는다.
 //
 // 닫힌 기록(보통 <orch 작업 폴더>/state/questions-closed.json): {<Run id>: {<질문 id>: <판정 근거>}}.
@@ -214,7 +219,7 @@ export const SETTLED = new Set(['completed', 'failed', 'abandoned', 'canceled'])
 const CLOSED_PR = new Set(['MERGED', 'CLOSED'])
 
 // 틱 안에서 Run 마다 한 번만 읽는 worker 행과 status 메시지
-export type ClosedLookup = { rows?: ReturnType<typeof workerRows>; reports?: Message[] | null }
+export type ClosedLookup = { rows?: ReturnType<typeof workerRows>; reports?: Message[] | null; readPr?: typeof ghJson; branches?: Map<string, string>; launches?: Map<string, Launch | null> }
 
 export function dispatchOf(message: Message): string | null {
   const dispatch = context(message)[1]
@@ -239,16 +244,49 @@ export function closedReason(message: Message, run: string, repo: string, lookup
       lookup.reports = null
     }
   }
-  if (!lookup.reports) return null
+  const task = context(message)[0] || row?.taskId
   const heads = new Map<number, string>()
-  for (const report of lookup.reports) {
-    const ready = report.type === 'status' && context(report)[1] === dispatch ? readyOf(report) : null
+  for (const report of lookup.reports ?? []) {
+    const [reportTask, reportDispatch] = context(report)
+    const sameWork = reportDispatch === dispatch || (task && reportTask === task && reportDispatch)
+    const ready = report.type === 'status' && sameWork ? readyOf(report) : null
     if (ready) heads.set(ready.pr, ready.head)
   }
-  if (heads.size === 0) return null
+  if (heads.size === 0) {
+    // Task 를 새로 만든 재시작도 있다. worker 의 worktreeId 와 git 의 브랜치 관계를 대조한다.
+    const resource = row?.resource as { worktreeId?: unknown } | undefined
+    const id = typeof resource?.worktreeId === 'string' ? resource.worktreeId : ''
+    const at = id.indexOf('::')
+    let worktree = at >= 0 && id.slice(at + 2) ? resolve(id.slice(at + 2)) : ''
+    lookup.branches ??= worktreePaths(repo)
+    let branch = worktree ? [...lookup.branches].find(([, directory]) => resolve(directory) === worktree)?.[0] : undefined
+    if (!branch) {
+      lookup.launches ??= new Map()
+      if (!lookup.launches.has(dispatch)) lookup.launches.set(dispatch, readLaunch(repo, dispatch))
+      const launch = lookup.launches.get(dispatch)
+      if (!worktree && launch?.worktree) worktree = resolve(launch.worktree)
+      const recorded = launch && resolve(launch.worktree) === worktree && (!launch.run || launch.run === run)
+      if (recorded) branch = launch.branch || undefined
+      // 브랜치를 저장하지 않던 옛 기록의 복구다. 끝난 dispatch 의 기록과 같은 경로가 실제로 사라진 경우에 한한다.
+      if (!branch && recorded) {
+        try {
+          statSync(worktree)
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === 'ENOENT') return `dispatch ${dispatch} ${status}, recorded worktree removed ${worktree}`
+        }
+      }
+    }
+    if (!branch) return null
+    const got = (lookup.readPr ?? ghJson)<{ number: number; state: string; headRefName: string }[]>(
+      ['pr', 'list', '--state', 'all', '--head', branch, '--json', 'number,state,headRefName', '--limit', '100'], { cwd: repo },
+    )
+    if (!got.ok || !Array.isArray(got.data) || got.data.length === 0 || got.data.length >= 100) return null
+    if (!got.data.every((pr) => pr.headRefName === branch && CLOSED_PR.has(pr.state))) return null
+    return `dispatch ${dispatch} ${status}, branch ${branch}, PR ${got.data.map((pr) => `#${pr.number} ${pr.state}`).join(', ')}`
+  }
   const states: string[] = []
   for (const [pr, head] of heads) {
-    const got = ghJson<{ state?: unknown; headRefOid?: unknown; commits?: { oid?: unknown }[] }>(
+    const got = (lookup.readPr ?? ghJson)<{ state?: unknown; headRefOid?: unknown; commits?: { oid?: unknown }[] }>(
       ['pr', 'view', String(pr), '--json', 'state,headRefOid,commits'],
       { cwd: repo },
     )

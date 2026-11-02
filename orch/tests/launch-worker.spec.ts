@@ -493,7 +493,9 @@ describe('띄우기', () => {
   describe('띄운 worker 의 기록', () => {
     const recordOf = (dispatch: string) => join(worktree, '.orch/state/launched-workers', `${dispatch}.json`)
 
-    test('LAUNCHED 뒤 dispatch, Task, 터미널, 워크트리, 지시서를 상태 폴더에 남긴다', () => {
+    test('LAUNCHED 뒤 dispatch, Task, 터미널, 워크트리, 브랜치, 지시서를 상태 폴더에 남긴다', () => {
+      const init = spawnSync('git', ['init', '-q', '-b', 'feature/record', worktree], { env, encoding: 'utf8' })
+      assert.equal(init.status, 0, init.stderr)
       state({
         next_ids: ['ctx_1'],
         dispatches: { ctx_1: { ...shown('input_accepted'), worker: { agentTerminalHandle: 'term_w' } } },
@@ -504,6 +506,7 @@ describe('띄우기', () => {
         dispatch: 'ctx_1',
         task: 'task_1',
         terminal: 'term_w',
+        branch: 'feature/record',
         worktree,
         run: 'run_a',
         spec: resolve(spec),

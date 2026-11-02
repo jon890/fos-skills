@@ -99,6 +99,7 @@
 //     OK-SCRIPTS <개수>                          문서가 부르는 스크립트가 모두 있다
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
 //     INVALID-CONFIG <이유>                       삭제한 옛 설정 칸
+//     끝난 dispatch 의 질문은 lib/questions.ts 와 같은 PR 종료 근거로 제외한다.
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
 //     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초(ORCH_QUESTIONS_TIMEOUT_SEC) 안에 답하지 않은 경우도 여기다
 //     PLUGIN-PATH-MISSING <플러그인> <scope> <경로>   설치 기록의 installPath 가 없다. 이어서 현재 설정 폴더에 같은 상대 경로가 있으면 그 경로,
@@ -134,7 +135,7 @@ import { pathOf } from './lib/paths.ts'
 import { isOpen, scan as scanStudy } from './lib/study.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
-import { ageSeconds, snapshot } from './lib/questions.ts'
+import { ageSeconds, closedReason, snapshot } from './lib/questions.ts'
 import { waiterPids as findWaiters } from './lib/waiters.ts'
 import { workerRows } from './lib/workers.ts'
 import { adoptHint } from './lib/sessions.ts'
@@ -365,7 +366,7 @@ function checkStudy(repo: string): string[] {
   return count > 0 ? [`STUDY-OPEN ${count} ${dir}`] : []
 }
 
-function checkQuestions(runId: string | null): Checked & { pending: string[] } {
+function checkQuestions(runId: string | null, repo: string): Checked & { pending: string[] } {
   let found
   try {
     found = snapshot(runId)
@@ -375,6 +376,8 @@ function checkQuestions(runId: string | null): Checked & { pending: string[] } {
   }
   // 조회를 마친 뒤의 시각으로 잰다. 조회가 오래 걸려도 그만큼 질문이 덜 늦은 것으로 보이지 않게 한다
   const now = Date.now() / 1000
+  const lookup = {}
+  found.pending = found.pending.filter((m) => !closedReason(m, found.run, repo, lookup))
   const overdue = found.pending.filter((m) => ageSeconds(m, now) >= OVERDUE_SEC)
   return {
     lines: overdue.map((m) => `UNANSWERED ${String(m.id)} 10분 이상 답이 없다 (Run ${found.run})`),
@@ -494,7 +497,7 @@ async function main(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'))
   const repoLines = [...checkRepo(repo), ...checkFeedback(repo), ...checkStudy(repo)]
-  const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId)
+  const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId, repo)
   let loop = runId ? loopStatus(repo, Date.now()) : null
   if (loop && !loop.alive && loop.recheck) {
     await sleep(recheckMs())

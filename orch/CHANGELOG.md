@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.20.0 (2026-11-02)
+
+- 루프가 크레딧 소진 등 사용 한도로 멈춘 worker 를 dispatch 마다 한 번 알린다
+- 다시 띄운 worker 의 완료와 끝난 dispatch 의 질문을 같은 Task 의 앞선 PR 준비 상태나 같은 워크트리 브랜치의 PR 종료로 판정한다
+- PR 과 같은 워크플로의 base 실행도 실패하면 worker 에게 수정을 보내지 않고 코디네이터에게만 알린다
+
 ## 5.19.0 (2026-11-02)
 
 - 상주 루프가 틱마다 워크트리 파일, 브랜치 커밋, 화면이 `pipeline.idle_min`(기본 30분) 넘게 그대로이거나 프로세스가 끝난 열린 dispatch 를 `WORKER-IDLE` 로 알린다. 화면 상태를 읽지 못하는 structured worker 도 잡는다
