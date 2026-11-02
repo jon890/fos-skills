@@ -36,11 +36,12 @@ metadata:
 
 ```bash
 REPO=$(git rev-parse --path-format=absolute --git-common-dir | sed 's#/\.git$##')
-node --disable-warning=ExperimentalWarning "$INBOX" board --repo "$REPO"
+node --disable-warning=ExperimentalWarning "$INBOX" board --repo "$REPO" --json
 ```
 
 - `enabled` 가 false 면 설정이 없다. [config.md](references/config.md) 대로 설정을 만들지 사용자에게 묻고 멈춘다.
-- `! dooray:messenger: …` 같은 오류 줄은 그 출처만 받지 못했다는 뜻이다. 사용자에게 한 줄로 알리고 나머지 항목으로 계속한다.
+- `errors` 의 `dooray:messenger` 같은 키는 그 출처만 받지 못했다는 뜻이다. 사용자에게 한 줄로 알리고 나머지 항목으로 계속한다.
+- `fetchedAt` 이 null 이면 첫 받기가 따로 도는 중이다. 1분쯤 뒤에 다시 읽는다.
 - 새 항목이 여럿이면 묻는 것을 항목마다 한 줄로 정리하고, 답할 것과 넘길 것을 나눠 사용자에게 보인다.
 
 ## 2. 맥락 읽기
