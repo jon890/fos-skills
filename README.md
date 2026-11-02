@@ -176,6 +176,7 @@ orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있어�
 | `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾아요. 셸에 따라 죽는 이식성 결함이에요 |
 | `scripts/check-skill-docs.py` | 스킬 README 와 CHANGELOG 가 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
+| `scripts/bump-plugin-version.py` | main 에 들어온 변경으로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올려요. `plugin-version.yml` workflow 가 불러요 |
 
 `check-shell-korean.py` 가 `korean-check` 에 없는 것은 그 스킬이 마크다운 전용으로 경계를 정해 두었기 때문이에요.
 판정 근거는 그 파일의 docstring 에 있어요.
@@ -244,9 +245,13 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)"
 
 각 스킬은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 디렉터리의 `CHANGELOG.md` 로 이력을 남겨요.
 
-**이 버전은 배포 핀이 아니에요.** 플러그인에는 버전을 쓰지 않아 커밋 SHA 가 버전이 되고, 설치한 쪽은 main 의 새 커밋을 갱신으로 받아요.
-스킬 버전은 무엇이 언제 왜 바뀌었는지 추적하는 데만 써요.
-이 점을 잊으면 태그와 릴리스까지 붙는 과설계로 가요. 근거는 [ADR-002](docs/adr/002-plugin-version-is-commit-sha.md) 에 있어요.
+**스킬 버전은 배포 핀이 아니에요.** 무엇이 언제 왜 바뀌었는지 추적하는 데만 써요.
+이 점을 잊으면 태그와 릴리스까지 붙는 과설계로 가요.
+
+플러그인 버전은 `.claude-plugin/plugin.json` 의 `version` 이에요. **사람이 올리지 않아요.**
+main 에 머지될 때마다 `.github/workflows/plugin-version.yml` 이 바뀐 스킬 CHANGELOG 로 등급을 정해 올리고 `.claude-plugin/CHANGELOG.md` 에 한 줄을 더해요.
+`호환성:` 항목이 있으면 major, 새 버전 절이 있으면 minor, 그 밖은 patch 예요. 이 값이 바뀌어야 설치한 쪽의 `update` 가 새 복사본을 받아요.
+근거는 [ADR-019](docs/adr/019-plugin-version-auto-bump.md) 에 있어요.
 
 올리는 기준은 아래 표를 따라요.
 
@@ -267,5 +272,5 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)"
 
 이력을 두는 자리와 태그는 아래를 따라요.
 
-- 저장소 루트에는 CHANGELOG 를 두지 않아요. 갱신 지점이 갈려 한쪽이 먼저 낡아요.
-- git 태그는 만들지 않아요. 설치한 쪽이 main 의 커밋을 받으므로 태그가 아무것도 고정하지 못해요.
+- 저장소 루트에는 CHANGELOG 를 두지 않아요. 갱신 지점이 갈려 한쪽이 먼저 낡아요. 플러그인 이력은 workflow 만 쓰는 `.claude-plugin/CHANGELOG.md` 에 둬요.
+- git 태그는 만들지 않아요. 설치한 쪽이 main 의 최신 version 을 받으므로 태그가 아무것도 고정하지 못해요.

@@ -39,7 +39,7 @@ flowchart TD
 
 ## 갱신
 
-설치한 쪽은 main 의 커밋을 받는다. 버전을 올리는 단계는 없다.
+설치한 쪽은 main 의 최신 version 을 받는다. version 은 머지마다 workflow 가 올리므로 사람이 올리는 단계는 없다([ADR-019](adr/019-plugin-version-auto-bump.md)).
 
 ```bash
 claude plugin update fos-skills@fos-skills
@@ -52,16 +52,17 @@ sequenceDiagram
     participant C as 설치 캐시
     participant S as 세션
     W->>G: 커밋하고 PR 을 머지한다
+    G->>G: plugin-version workflow 가 version 을 올린다
     Note over W,G: 머지 전에는 설치한 쪽에 가지 않는다
     C->>G: plugin update fos-skills@fos-skills
-    G-->>C: 새 커밋 SHA 의 복사본
-    Note over C: 캐시 디렉터리 이름이 새 SHA 로 바뀐다
+    G-->>C: 새 version 의 복사본
+    Note over C: 캐시 디렉터리 이름이 새 version 으로 바뀐다
     S->>C: 세션을 새로 열면 새 복사본을 읽는다
 ```
 
 | 상황 | 동작 |
 | --- | --- |
-| `already at the latest version` 이 나온다 | main 에 새 커밋이 없다. 머지와 push 가 끝났는지 확인한다 |
+| `already at the latest version` 이 나온다 | main 의 version 이 그대로다. 머지가 끝났는지, `Plugin version` workflow 가 성공했는지 확인한다 |
 | 커밋하지 않은 변경이 있다 | 설치본에 가지 않는다. 「고치는 동안의 확인」 으로 본다 |
 | 갱신한 뒤에도 옛 내용이 보인다 | 열려 있던 세션은 옛 복사본을 읽는다. 세션을 새로 연다 |
 

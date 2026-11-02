@@ -90,9 +90,10 @@ class PluginManifestTest(unittest.TestCase):
         """Codex 는 manifest 에 hooks 가 없어도 플러그인 루트의 hooks/hooks.json 을 읽는다"""
         self.assertFalse((ROOT / "hooks" / "hooks.json").exists())
 
-    def test_no_version_key(self):
+    def test_version_only_in_plugin_manifest(self):
+        """version 은 plugin.json 하나에 X.Y.Z 로 둔다. workflow 가 올리는 곳이 하나여야 한다(ADR-019)"""
         marketplace = load(MARKETPLACE)
-        self.assertNotIn("version", load(PLUGIN))
+        self.assertRegex(load(PLUGIN)["version"], r"^\d+\.\d+\.\d+$")
         self.assertNotIn("version", marketplace)
         self.assertNotIn("version", marketplace["plugins"][0])
 

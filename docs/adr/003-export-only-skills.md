@@ -17,6 +17,6 @@
     현재 다른 스킬의 참조는 `harness-cleanup/references/audit-axes.md` 의 상대 링크이며, 두 스킬을 이름으로 호출하는 곳은 없다.
   - `scripts/export-only-skills.json` 에 제외할 원본을 명시한다.
     테스트는 이 목록에 없는 스킬이 배열에서 빠지거나 내보내기 전용 원본이 다시 등록되면 실패한다.
-  - 플러그인 버전은 ADR-002 를 따라 커밋 SHA 를 사용한다.
+  - 플러그인 버전은 ADR-019 를 따라 main 머지마다 workflow 가 올린다.
     스킬 본문과 스크립트 동작을 바꾸지 않으므로 스킬 버전은 그대로 둔다.
 - **적용 범위**: 배치와 테스트는 [code-architecture.md](../code-architecture.md) 가, 설치는 [flow.md](../flow.md) 가 소유한다.

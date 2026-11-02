@@ -105,7 +105,7 @@ for skill in json.load(open(sys.argv[1], encoding="utf-8")):
     print(skill[2:] if skill.startswith("./") else skill)
 ' "$T/src/scripts/export-only-skills.json")
 
-# 검증: 매니페스트 오류가 없고 경고는 version 하나뿐이어야 한다.
+# 검증: 매니페스트 오류와 경고가 없어야 한다.
 run bash -c 'cd "$1" && claude plugin validate . --json' _ "$T/src"
 VALIDATE_OUT="$OUT"
 VALIDATE_RC="$RC"
@@ -114,9 +114,9 @@ import json, sys
 d = json.load(sys.stdin)
 m = d.get("manifest", {})
 paths = [w.get("path") for w in m.get("warnings", [])]
-sys.exit(0 if d.get("success") is True and not m.get("errors") and paths == ["plugins[0] plugin.json → version"] else 1)
+sys.exit(0 if d.get("success") is True and not m.get("errors") and paths == [] else 1)
 '; then
-  ok "claude plugin validate 가 오류 없이 통과하고 경고는 version 하나뿐이다"
+  ok "claude plugin validate 가 오류와 경고 없이 통과한다"
 else
   fail "claude plugin validate 결과가 기대와 다르다"
   printf '%s\n' "$VALIDATE_OUT"
@@ -168,10 +168,11 @@ if [ -d "$CACHE_ROOT" ]; then
     CACHE_COUNT=$((CACHE_COUNT + 1))
   done
 fi
-if [ "$CACHE_COUNT" -eq 1 ] && printf '%s' "$(basename "$CACHE")" | grep -Eq '^[0-9a-f]{12}$'; then
+VERSION=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$T/src/.claude-plugin/plugin.json")
+if [ "$CACHE_COUNT" -eq 1 ] && [ "$(basename "$CACHE")" = "$VERSION" ]; then
   ok "캐시 디렉터리: $(basename "$CACHE")"
 else
-  fail "캐시 디렉터리: $CACHE_ROOT 아래에 16진수 12자리 디렉터리가 하나여야 한다 (발견 ${CACHE_COUNT}개)"
+  fail "캐시 디렉터리: $CACHE_ROOT 아래에 plugin.json version($VERSION) 이름의 디렉터리가 하나여야 한다 (발견 ${CACHE_COUNT}개)"
   CACHE=""
 fi
 
