@@ -12,7 +12,9 @@ import { STEP, hideEventTag } from './event-tags.js'
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
 //      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. d 로 펼치면 끝낸 줄을 취소선으로 보인다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
-// 파일은 FILE_MS, 명령은 LIVE_MS 마다 다시 읽는다. 창을 열 때도 명령을 한 번 읽는다.
+//   3. 업무 알림: 같은 플러그인의 inbox/scripts/inbox.ts board 출력. 받기와 저장소 필터는 inbox 가 하고 창은 그리기만 한다.
+//      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
+// 파일은 FILE_MS, 명령은 LIVE_MS, 알림은 INBOX_MS 마다 다시 읽는다. 창을 열 때도 명령과 알림을 한 번 읽는다.
 
 const PANE = 'work-board'
 
@@ -63,6 +65,12 @@ const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
 const FILE_MS = 5000
 const LIVE_MS = 45000
 const COMMAND_TIMEOUT_MS = 20000
+// inbox.ts 는 1분마다 부르고, 두레이에서 받기는 inbox 설정의 주기(기본 5분)가 지났을 때만 한다(D15)
+const INBOX_MS = 60000
+// 받는 주기에는 두레이 호출이 수십 번 들 수 있어 다른 명령보다 길게 기다린다
+const INBOX_TIMEOUT_MS = 90000
+// 알림 상자에 번호를 붙여 보이는 항목 수. 숫자 단축키 1~9 와 맞춘다
+const INBOX_ROWS = 9
 const QUESTION_HISTORY_LIMIT = 100 // Orca check --all/--peek 의 고정 상한
 const REPLY_LIMIT = 200
 const SECTIONS = [
@@ -83,6 +91,11 @@ let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈
 // 실제 상태. 읽지 못한 원천은 error 에 이유를 남기고 나머지는 그린다.
 let live = { at: 0, runId: '', workers: null, questions: null, prs: null, errors: {} }
 let liveBusy = false
+
+// 업무 알림. inbox.ts board --json 의 출력이다. 읽지 못하면 inboxError 에 이유를 두고 직전 값을 그린다
+let inbox = null
+let inboxError = ''
+let inboxBusy = false
 
 // ---- 외부 명령 출력을 그릴 값으로 바꾸는 순수 함수(테스트가 직접 부른다) ----
 
@@ -506,10 +519,62 @@ export function decideCount(items) {
   }, 0)
 }
 
-// 상태 줄 한 줄. 실제 상태와 수동 항목을 함께 센다.
-export function statusLine(items, state) {
+// ---- 업무 알림 ----
+
+export const INBOX_KIND_LABELS = { mention: '멘션', assigned: '담당', cc: '참조' }
+const INBOX_SOURCE_LABELS = { 'dooray:task': '두레이 업무', 'dooray:messenger': '두레이 메신저', inbox: '알림함', filter: '알림 필터' }
+
+// inbox.ts board --json 출력을 읽는다. 형식이 다르면 던진다
+export function parseInbox(stdout) {
+  const value = JSON.parse(stdout)
+  if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean') throw new Error('inbox.ts 출력에 enabled 가 없어요')
+  if (value.enabled && !Array.isArray(value.items)) throw new Error('inbox.ts 출력에 items 가 없어요')
+  return value
+}
+
+// 오류 출처(「dooray:messenger」)를 사람이 읽는 이름으로
+export function inboxSourceLabel(source) {
+  return INBOX_SOURCE_LABELS[source] || source
+}
+
+// 항목 앞 머리말. 두레이 메신저는 「메신저」, 두레이 업무는 「두레이」, 다른 adapter 는 그 이름이다
+export function inboxTag(item) {
+  if (item.adapter === 'dooray') return item.source === 'messenger' ? '메신저' : '두레이'
+  return item.adapter
+}
+
+// 상자 머리 「알림 n」 과 그릴지. 설정이 없으면(enabled false) 그리지 않는다
+export function inboxSummary(state) {
+  if (!state || !state.enabled) return { show: false, newCount: 0 }
+  return { show: true, newCount: Number(state.newCount) || 0 }
+}
+
+// 항목 하나에 답하는 요청문. 숫자 단축키가 입력란에 채운다
+export function replyPrompt(item) {
+  const who = (item.from && (item.from.name || item.from.id)) || '보낸 사람'
+  return [
+    '업무 알림 ' + item.id + ' 에 답변을 준비해 줘. (' + item.title + ', ' + who + '의 ' + (INBOX_KIND_LABELS[item.kind] || item.kind) + ')',
+    '1. fos-skills 플러그인의 inbox 스킬 절차를 따라 inbox.ts context ' + item.id + ' 로 본문과 앞 대화를 읽어 줘. 사람은 이름으로 풀린 값만 써.',
+    '2. 묻는 것과 내가 답할 것을 한 줄로 정리하고 답변 초안을 써 줘. 받는 사람 멘션과 AI 작성 표기는 inbox.ts 가 붙이니 본문에 넣지 마.',
+    '3. inbox.ts reply ' + item.id + ' --body-file <초안> (--yes 없이) 로 합성한 본문을 미리보기로 보여 주고 내 확인을 받아 줘. 확인 전에는 등록하지 마.',
+    '4. 내가 확인하면 같은 명령에 --yes 를 붙여 등록하고 주소를 알려 줘. 답할 필요가 없다고 하면 inbox.ts dismiss ' + item.id + ' 로 넘겨 줘.',
+  ].join('\n')
+}
+
+// 새 알림을 모두 훑는 요청문. i 가 입력란에 채운다
+export const INBOX_PROMPT = [
+  '업무 알림함의 새 항목을 훑어 줘.',
+  '1. fos-skills 플러그인의 inbox 스킬 절차를 따라 이 저장소의 보드 기준으로 inbox.ts board --repo <이 저장소의 주 checkout> 를 읽어 줘.',
+  '2. 새 항목마다 묻는 것을 한 줄로 정리하고, 답할 것과 넘길 것(답할 필요 없음)을 나눠 보여 줘.',
+  '3. 넘길 것은 내 확인을 받아 inbox.ts dismiss 로 넘기고, 답할 것은 하나씩 초안, 미리보기, 내 확인 순서로 진행해 줘. 확인 전에는 등록하지 마.',
+].join('\n')
+
+// 상태 줄 한 줄. 실제 상태와 수동 항목을 함께 센다. 새 업무 알림이 있으면 맨 앞에 「알림 n」 을 붙인다
+export function statusLine(items, state, inboxState = null) {
   const count = (status) => items.filter((item) => item.status === status).length
   const parts = []
+  const alerts = inboxSummary(inboxState).newCount
+  if (alerts > 0) parts.push('알림 ' + alerts)
   const decide = decideCount(items) + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
   if (state.errors && state.errors.questions) parts.push('결정 필요 확인 불가')
   else if (decide > 0 || state.questionsLimited) parts.push('결정 필요 ' + decide + (state.questionsLimited ? '(최근 질문 기준)' : ''))
@@ -525,8 +590,8 @@ export function statusLine(items, state) {
 
 // ---- 읽기 ----
 
-async function run($, argv) {
-  const { exitCode, stdout, stderr, isStdoutTruncated } = await $.process.run(argv, { timeoutMs: COMMAND_TIMEOUT_MS })
+async function run($, argv, timeoutMs = COMMAND_TIMEOUT_MS) {
+  const { exitCode, stdout, stderr, isStdoutTruncated } = await $.process.run(argv, { timeoutMs })
   if (exitCode !== 0) throw new Error((stderr || stdout || '종료 코드 ' + exitCode).trim().split('\n')[0])
   if (isStdoutTruncated) throw new Error('명령 출력이 4 MiB 한도에서 잘렸어요')
   return stdout
@@ -534,7 +599,7 @@ async function run($, argv) {
 
 function refreshStatus($) {
   const items = board && Array.isArray(board.items) ? board.items : []
-  $.ui.status(statusLine(items, live))
+  $.ui.status(statusLine(items, live, inbox))
   $.ui.invalidate('ui.render')
 }
 
@@ -630,6 +695,23 @@ async function loadLive($) {
   refreshStatus($)
 }
 
+// 업무 알림을 읽는다. 받기와 필터는 inbox.ts 가 하고, 여기서는 주 checkout 경로만 넘긴다
+async function loadInbox($) {
+  if (inboxBusy) return
+  inboxBusy = true
+  try {
+    const root = (await boardRoot($)) || (await $.session.cwd())
+    const script = $.plugin.root + '/inbox/scripts/inbox.ts'
+    inbox = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json'], INBOX_TIMEOUT_MS))
+    inboxError = ''
+  } catch (failure) {
+    inboxError = String(failure.message || failure)
+  } finally {
+    inboxBusy = false
+  }
+  refreshStatus($)
+}
+
 function ago(at) {
   const time = typeof at === 'number' ? at : Date.parse(at || '')
   if (!time) return '-'
@@ -678,7 +760,9 @@ export function register(on) {
     await loadFile($)
     $.clock.every(FILE_MS, () => loadFile($))
     $.clock.every(LIVE_MS, () => loadLive($))
+    $.clock.every(INBOX_MS, () => loadInbox($))
     loadLive($)
+    loadInbox($)
     await $.command.register({ name: 'board', description: '작업 현황 창 열기', immediate: true })
     return next(e)
   })
@@ -686,6 +770,7 @@ export function register(on) {
   on('command.run', { command: 'board' }, async ($) => {
     await loadFile($)
     loadLive($)
+    loadInbox($)
     await $.ui.open({ id: PANE, title: '작업 현황', closeOnEscape: true })
     return {}
   })
@@ -697,9 +782,10 @@ export function register(on) {
     const TAG_COLORS = { PR: 'magenta' }
     const tagged = (key, tag, href, label) => {
       const look = { underline: Boolean(href), color: TAG_COLORS[tag] || 'cyan' }
+      const text = '[' + tag + (label ? ' ' + label : '') + ']'
       return href
-        ? Link({ key, href, children: [Text({ ...look, children: ['[' + tag + ' ' + label + ']'] })] })
-        : Text({ key, color: look.color, children: ['[' + tag + ' ' + label + ']'] })
+        ? Link({ key, href, children: [Text({ ...look, children: [text] })] })
+        : Text({ key, color: look.color, children: [text] })
     }
     const prLink = (n) => tagged('pr-' + n, 'PR', repoUrl ? repoUrl + '/pull/' + n : '', '#' + n)
     // 제목 안의 업무 번호(「#342」)에만 머리말과 업무 링크를 건다. 항목에 업무 주소(task)가 없으면 제목 그대로다
@@ -832,6 +918,54 @@ export function register(on) {
         ...decideRows.map((item) => itemView(item, SECTIONS[1])),
       ])]
 
+    // 업무 알림: inbox 설정이 있을 때만 그린다. 새 항목 먼저, 앞 INBOX_ROWS 개에 숫자 단축키를 붙인다
+    const alerts = inboxSummary(inbox)
+    const inboxItems = alerts.show ? inbox.items : []
+    const clock = (at) => {
+      const time = Date.parse(at || '')
+      if (!time) return ''
+      const date = new Date(time)
+      return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
+    }
+    const inboxRow = (item, index) => {
+      const answered = item.state === 'answered'
+      const meta = [item.from && (item.from.name || item.from.id), INBOX_KIND_LABELS[item.kind] || item.kind, answered ? '답함' : ago(item.at)]
+        .filter(Boolean).join(' · ')
+      const label = (answered ? '✓ ' : '● ') + (item.title || item.id)
+      return Box({
+        key: 'inbox-' + item.id,
+        flexDirection: 'column',
+        children: [
+          Box({
+            flexDirection: 'row',
+            columnGap: 1,
+            flexWrap: 'wrap',
+            children: [
+              index < INBOX_ROWS
+                ? Button({ key: 'inbox-reply-' + item.id, hotkey: String(index + 1), plain: true, dimColor: answered,
+                  onPress: () => { fillPrompt($, replyPrompt(item)) },
+                  children: [Text({ bold: !answered, dimColor: answered, children: [label] })] })
+                : Text({ bold: !answered, dimColor: answered, children: ['   ' + label] }),
+              tagged('tag', inboxTag(item), item.url || '', ''),
+              Text({ dimColor: true, children: [meta] }),
+            ],
+          }),
+          ...(!answered && item.excerpt ? [indent('excerpt', 5, Text({ dimColor: true, wrap: 'truncate', children: ['「' + item.excerpt + '」'] }))] : []),
+        ],
+      })
+    }
+    const inboxErrors = alerts.show || inboxError
+      ? [...Object.entries((inbox && inbox.errors) || {}), ...(inboxError ? [['inbox', inboxError]] : [])]
+      : []
+    const inboxView = !alerts.show && !inboxError ? [] : [box('inbox', 'green',
+      '알림  ' + alerts.newCount + (inbox && inbox.fetchedAt ? '  ·  ' + clock(inbox.fetchedAt) + ' 확인' : ''), [
+        ...inboxErrors.map(([source, message]) => Text({ key: 'ie-' + source, color: 'red', wrap: 'wrap',
+          children: [inboxSourceLabel(source) + ' 확인 불가: ' + message] })),
+        ...(alerts.show && inbox.unclassified > 0 ? [dim('iu', '미분류 알림 ' + inbox.unclassified + ' · 기본 보드에서 봐요')] : []),
+        ...(alerts.show && inboxItems.length === 0 ? [dim('i0', '이 보드의 알림이 없어요')] : []),
+        ...inboxItems.map(inboxRow),
+      ])]
+
     // worker: 이 세션이 묶인 run 에서 일하는 worker 중 어느 항목에도 붙지 않은 것
     const loose = unmappedWorkers(items, live.workers)
     const mapped = Array.isArray(live.workers) && Array.isArray(loose) ? live.workers.length - loose.length : 0
@@ -947,6 +1081,13 @@ export function register(on) {
                 plain: true,
                 onPress: () => { fillPrompt($, DECIDE_PROMPT) },
               }),
+              ...(alerts.show ? [Button({
+                key: 'inbox-all',
+                label: '알림 답변',
+                hotkey: 'i',
+                plain: true,
+                onPress: () => { fillPrompt($, INBOX_PROMPT) },
+              })] : []),
               Button({
                 key: 'pr-author',
                 label: 'PR 작성자: ' + (authorFilter ? '@' + authorFilter : '전체'),
@@ -974,6 +1115,7 @@ export function register(on) {
         ...(nothing ? [dim('none', '보여 줄 작업이 없어요. orca run 이나 열린 PR, ' + BOARD_PATHS[0] + ' 중 하나가 있어야 해요.')] : []),
         ...manualView(SECTIONS[0]),
         ...decideView,
+        ...inboxView,
         ...workerView,
         ...prView,
         ...SECTIONS.slice(2).flatMap(manualView),

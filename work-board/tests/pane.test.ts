@@ -358,3 +358,56 @@ for (const [name, boardAt, liveAt] of [
     await ui.unmount()
   })
 }
+
+// 업무 알림 상자. inbox.ts board --json 의 출력을 가짜 process.run 이 돌려준다
+const INBOX_ITEMS = [
+  { id: 'dooray:task:comment:c1', adapter: 'dooray', source: 'task', kind: 'mention', title: '어드민개발/81 어드민 권한 정리',
+    url: 'https://nhnent.dooray.com/project/tasks/p81', scope: [], from: { id: '1', name: '김철수' }, at: '2026-10-22T09:53:00+09:00',
+    excerpt: '운영 계정도 같은 권한이 필요한지', target: {}, state: 'new' },
+  { id: 'dooray:task:post:p342', adapter: 'dooray', source: 'task', kind: 'assigned', title: 'AI-스마트홈-AI/342 배포 일정 조율',
+    url: '', scope: [], from: { id: '2', name: '이영희' }, at: '2026-10-22T09:00:00+09:00', excerpt: '', target: {}, state: 'new' },
+  { id: 'dooray:messenger:ch:l1', adapter: 'dooray', source: 'messenger', kind: 'mention', title: '스마트홈 개발',
+    url: '', scope: [], from: { id: '3', name: '박민수' }, at: '2026-10-22T08:00:00+09:00', excerpt: '리뷰 부탁해요', target: {}, state: 'answered' },
+]
+const inboxOutput = (value) => (argv) => String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')
+  ? { exitCode: 0, stdout: JSON.stringify(value), stderr: '' }
+  : { exitCode: 1, stdout: '', stderr: '없음' }
+
+test('알림 상자는 새 알림 수, 항목 줄, 출처별 오류, 미분류 수를 보인다', async ($, on) => {
+  await start($, on, inboxOutput({ enabled: true, fetchedAt: '2026-10-22T10:03:00+09:00', newCount: 2, unclassified: 4, isDefault: false,
+    errors: { 'dooray:messenger': '429' }, items: INBOX_ITEMS }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^알림  2  ·  10:03 확인$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /두레이 메신저 확인 불가: 429/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /미분류 알림 4/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /김철수 · 멘션 · 12분 전/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /박민수 · 멘션 · 답함/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /「운영 계정도 같은 권한이 필요한지」/ })).toBeTruthy()
+  expect((await ui.find({ type: 'Button', key: 'inbox-reply-dooray:task:comment:c1' })).props.hotkey).toBe('1')
+  expect((await ui.find({ type: 'Button', key: 'inbox-all' })).props.hotkey).toBe('i')
+  await ui.unmount()
+})
+
+test('알림 설정이 없으면 알림 상자와 i 단축키를 그리지 않는다', async ($, on) => {
+  await start($, on, inboxOutput({ enabled: false }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^알림  / })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'inbox-all' })).toBeFalsy()
+  await ui.unmount()
+})
+
+test('숫자 단축키는 그 항목의 답변 요청문을 입력란에 채운다', async ($, on) => {
+  const filled = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  await start($, on, inboxOutput({ enabled: true, fetchedAt: null, newCount: 2, unclassified: 0, isDefault: true, errors: {}, items: INBOX_ITEMS }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'inbox-reply-dooray:task:post:p342' })
+  expect(filled).toHaveLength(1)
+  expect(filled[0]).toContain('inbox.ts context dooray:task:post:p342')
+  expect(filled[0]).toContain('확인 전에는 등록하지 마')
+  await ui.unmount()
+})
