@@ -548,7 +548,7 @@ describe('머지 알림', () => {
    const failed = { ...check('ci', 'FAILURE'), detailsUrl: 'https://github.com/o/r/actions/runs/123/job/1' }
    github([pr(1, [failed])], { stdout: '[]' }, 0, [
      { args: ['repos/o/r/actions/runs/123'], stdout: JSON.stringify({ workflow_id: 42 }) },
-     { args: ['repos/o/r/actions/workflows/42/runs?branch=main&per_page=1'], stdout: JSON.stringify({ workflow_runs: [{ status: 'completed', conclusion: 'failure' }] }) },
+     { args: ['repos/o/r/actions/workflows/42/runs?branch=main&event=push&status=completed&per_page=1'], stdout: JSON.stringify({ workflow_runs: [{ status: 'completed', updated_at: new Date().toISOString(), conclusion: 'failure' }] }) },
    ])
    once()
    assert.deepEqual(sends(), [])

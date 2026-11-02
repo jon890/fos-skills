@@ -393,10 +393,10 @@ describe('ruleChecks', () => {
      const calls: string[][] = []
      const read = ((args: string[]) => {
        calls.push(args)
-       return { ok: true, data: calls.length === 1 ? { workflow_id: 42 } : { workflow_runs: [{ status: 'completed', conclusion }] } }
+       return { ok: true, data: calls.length === 1 ? { workflow_id: 42 } : { workflow_runs: [{ status: 'completed', updated_at: new Date().toISOString(), conclusion }] } }
      }) as typeof import('../scripts/lib/gh.ts').ghJson
      assert.equal(baseWorkflowFailed('/tmp', 'github.com', 'o/r', 'release/test', checks, read), conclusion === 'failure')
-     assert.match(calls[1].at(-1)!, /workflows\/42\/runs\?branch=release%2Ftest&per_page=1/u)
+     assert.match(calls[1].at(-1)!, /workflows\/42\/runs\?branch=release%2Ftest&event=push&status=completed&per_page=1/u)
    }
    const offline = (() => ({ ok: false, error: 'offline' })) as typeof import('../scripts/lib/gh.ts').ghJson
    assert.equal(baseWorkflowFailed('/tmp', 'github.com', 'o/r', 'main', checks, offline), false)
@@ -407,10 +407,22 @@ describe('ruleChecks', () => {
    const { baseWorkflowFailed } = await import('../scripts/lib/gh.ts')
    const check = { name: 'ci', status: 'COMPLETED', conclusion: 'FAILURE', url: 'https://github.com/o/r/actions/runs/123/job/1' }
    const read = ((args: string[]) => ({ ok: true, data: args.at(-1)?.includes('/workflows/')
-     ? { workflow_runs: [{ status: 'completed', conclusion: 'failure' }] } : { workflow_id: 42 } })) as typeof import('../scripts/lib/gh.ts').ghJson
+     ? { workflow_runs: [{ status: 'completed', updated_at: new Date().toISOString(), conclusion: 'failure' }] } : { workflow_id: 42 } })) as typeof import('../scripts/lib/gh.ts').ghJson
    assert.equal(baseWorkflowFailed('/tmp', 'github.com', 'o/r', 'main', [check, { ...check, url: 'https://external.test/check' }], read), false)
    for (const data of [null, {}, { workflow_runs: [] }, { workflow_runs: [{ status: 'in_progress', conclusion: 'failure' }] }]) {
      const pending = ((args: string[]) => ({ ok: true, data: args.at(-1)?.includes('/workflows/') ? data : { workflow_id: 42 } })) as typeof import('../scripts/lib/gh.ts').ghJson
      assert.equal(baseWorkflowFailed('/tmp', 'github.com', 'o/r', 'main', [check], pending), false)
+   }
+ })
+
+ test('base 의 오래된 실패와 미래 시각은 PR 전달을 막지 않는다', async () => {
+   const { baseWorkflowFailed, BASE_FAILURE_MAX_AGE_MS } = await import('../scripts/lib/gh.ts')
+   const now = Date.parse('2026-11-02T12:00:00Z')
+   const check = { name: 'ci', status: 'COMPLETED', conclusion: 'FAILURE', url: 'https://github.com/o/r/actions/runs/123/job/1' }
+   for (const age of [0, BASE_FAILURE_MAX_AGE_MS, BASE_FAILURE_MAX_AGE_MS + 1, -1]) {
+     const read = ((args: string[]) => ({ ok: true, data: args.at(-1)?.includes('/workflows/')
+       ? { workflow_runs: [{ status: 'completed', conclusion: 'failure', updated_at: new Date(now - age).toISOString() }] }
+       : { workflow_id: 42 } })) as typeof import('../scripts/lib/gh.ts').ghJson
+     assert.equal(baseWorkflowFailed('/tmp', 'github.com', 'o/r', 'main', [check], read, now), age >= 0 && age <= BASE_FAILURE_MAX_AGE_MS)
    }
  })

@@ -46,7 +46,7 @@
 
 - 등록된 Run 마다 질문 확인. 기술 질문과 일반 escalation은 답이 없는 채 재알림 시간이 지나면 알림 파일에 `REMINDER` 를 쓴다. 사용자 결정 질문의 재알림은 루프 로그에만 남기고, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING` 알림과 단일 notifier가 맡는다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
 - Run 마다 그 Run 범위의 정리(`cleanup-sweep --run`), 원격 브랜치 정리와 보드 동기화(`board-sync`)는 틱마다 한 번
-- 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 같은 워크플로의 base 최신 실행을 공유 캐시로 확인한다. base 도 실패하면 `CI-FAILED` 에 `<base> 도 실패` 를 남겨 코디네이터에게만 알리고, 그 밖에는 그 PR 의 worker 에게 알린다. 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알린다. `queue.auto_merge` 를 켠 저장소에서는 머지할 수 있는 PR 을 머지 큐에 건다(`orch-loop.ts` 머리 주석의 「자동 머지」)
+- 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 같은 워크플로의 base 최신 완료된 push 실행을 공유 캐시로 확인한다. base 의 실패가 6시간 이내면 `CI-FAILED` 에 `<base> 도 실패` 를 남겨 코디네이터에게만 알리고, 그 밖에는 그 PR 의 worker 에게 알린다. 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알린다. `queue.auto_merge` 를 켠 저장소에서는 머지할 수 있는 PR 을 머지 큐에 건다(`orch-loop.ts` 머리 주석의 「자동 머지」)
 - Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 사용 한도 화면은 `stall_ticks` 와 무관하게 dispatch 마다 `WORKER-LIMITED` 알림을 한 번 쓴다. 알림의 dispatch 와 터미널로 대상을 찾고 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
 - Run 마다 그 Run 이 띄운 살아 있는 worker 의 움직임 확인. 워크트리 파일, 브랜치의 마지막 커밋, 화면이 `pipeline.idle_min`(기본 30분)분 넘게 그대로이거나 프로세스가 끝났으면(`exited`) `WORKER-IDLE` 을 쓴다. 보드의 `doing` 항목에 끝나지 않은 단계가 있는데 그 항목의 worker 가 없으면 `STAGE-STALLED` 를 쓴다. 화면 상태를 읽지 못하는 structured worker 도 이 확인으로 잡는다
 - Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
@@ -114,7 +114,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `REMINDER`: 답이 없는 기술 질문이나 일반 escalation의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다. 사용자 결정의 재알림은 이 이벤트로 오지 않는다
-  - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. `<base> 도 실패` 면 같은 워크플로의 base 최신 실행도 실패해 보내지 않았다. 코디네이터가 공통 원인을 별도 작업으로 처리한다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다. 끝이 `취소만 있음` 이면 실패한 체크가 모두 취소다. worker 에게 보내지 않았다. 일부러 취소한 CI 면 아무것도 하지 않고, 아니면 코디네이터가 CI 를 다시 돌린다
+  - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. `<base> 도 실패` 면 같은 워크플로의 base 최신 완료된 push 실행도 실패해 보내지 않았다. 코디네이터가 공통 원인을 별도 작업으로 처리한다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다. 끝이 `취소만 있음` 이면 실패한 체크가 모두 취소다. worker 에게 보내지 않았다. 일부러 취소한 CI 면 아무것도 하지 않고, 아니면 코디네이터가 CI 를 다시 돌린다
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
   - `QUEUE-CONFLICT`: 머지 큐가 base 와 충돌한 PR 을 빼고 뒤 PR 을 이어 머지했다. 내용은 충돌 이유다. worker 에게 알리는 일은 루프의 충돌 처리가 한다. worker 가 base 를 합친 뒤 그 PR 만 다시 머지 큐에 건다
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
