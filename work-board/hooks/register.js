@@ -629,7 +629,7 @@ export function rawManifestUrl(repository, commit) {
 }
 
 // 최신 여부. 둘 다 version 이 있으면 version 으로, 아니면 커밋으로 비교한다.
-// version 을 올리지 않은 커밋은 update 가 받지 않으므로 커밋만 다를 때 뒤처졌다고 하지 않는다(ADR-019)
+// version 을 올리지 않은 커밋은 update 가 받지 않으므로 커밋만 다를 때 뒤처졌다고 하지 않는다(docs/features/board-plugin-version/spec.md)
 export function versionState(install, latest) {
   if (!install) return 'unknown'
   if (!latest || latest.error || !latest.commit) return 'unknown'
