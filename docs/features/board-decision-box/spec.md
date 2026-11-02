@@ -13,7 +13,7 @@
 
 이번 범위:
 
-- work-board 질문 상자의 모으기·거르기와 표시(`work-board/hooks/register.js` 의 `queryQuestions`, 상자 그리기)
+- work-board 질문 상자의 모으기·제외와 표시(`work-board/hooks/register.js` 의 `queryQuestions`, 상자 그리기)
 - 항목의 worker 줄에 멈춤·오류 상태 붙이기, 「worker 없음」 줄에 멈춘 시간 붙이기
 - 「정할 것 묻기」 요청문(`DECIDE_PROMPT`) 강화
 - 모든 저장소 보드의 기본 동작으로 바꾼다. 저장소별 설정은 두지 않는다
@@ -38,7 +38,7 @@
 
 ## 설계
 
-- 거르기: `queryQuestions` 가 모은 `escalation` 가운데 id 가 `msg_stop_`, `msg_chaterr_` 로 시작하는 것은 질문 상자 후보에서 뺀다. 오류(`msg_chaterr_`)는 R5 의 worker 줄 표시 재료로 따로 넘긴다.
+- 제외: `queryQuestions` 가 모은 `escalation` 가운데 id 가 `msg_stop_`, `msg_chaterr_` 로 시작하는 것은 질문 상자 후보에서 뺀다. 오류(`msg_chaterr_`)는 R5 의 worker 줄 표시 재료로 따로 넘긴다.
 - 멈춤 판정: orch `lib/movement.ts` 의 판정 함수를 work-board 가 읽는다. 두 플러그인이 같은 번들에 있으므로 import 로 재사용하고, 판정 기준값은 orch 설정을 읽는다.
 - 막힘이 사라지는 조건: 지금의 「답장이 달림」 에 「dispatch 가 해제·중지됨」 을 더한다. 살아 있는 worker 를 판정하는 기존 `active` 목록을 쓴다.
 - 「worker 없음 · N시간」: board.ts 가 항목의 단계를 바꿀 때 그 항목에 갱신 시각을 남기고, 그 시각부터 잰다.
