@@ -377,7 +377,8 @@ test('알림 상자는 새 알림 수, 항목 줄, 출처별 오류, 미분류 �
   await start($, on, inboxOutput({ enabled: true, fetchedAt: '2026-10-22T10:03:00+09:00', newCount: 2, unclassified: 4, isDefault: false,
     errors: { 'dooray:messenger': '429' }, items: INBOX_ITEMS }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /^알림  2  ·  10:03 확인$/ })).toBeTruthy()
+  // 시각은 실행 환경의 시간대로 그린다(CI 는 UTC)
+  expect(await ui.find({ type: 'Text', text: /^알림  2  ·  \d{2}:03 확인$/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /두레이 메신저 확인 불가: 429/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /미분류 알림 4/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /김철수 · 멘션 · 12분 전/ })).toBeTruthy()
