@@ -4,7 +4,7 @@
 Dooray 업무·댓글은 TOAST UI Editor 로 렌더링하므로, 같은 viewer CSS/JS (uicdn.toast.com)
 를 쓰는 템플릿에 markdown 을 흘려 넣으면 실제 등록 화면과 거의 동일한 미리보기가 된다.
 
-업무·댓글·메신저는 --mode 로 고른다. 메신저는 확인된 멘션과 HTTPS 주소만 렌더한다.
+업무·댓글·메신저는 --mode 로 고른다. 메신저는 확인된 멘션, 인라인 코드, HTTPS 주소와 링크만 렌더한다.
 
 사용 예 (업무 본문):
     python3 scripts/dooray-preview/generate.py \
@@ -42,15 +42,45 @@ TEMPLATE = Path(__file__).parent / "template.html"
 LINK_WARNING = "경고: Dooray 메신저의 업무·위키 dooray:// 마크다운 링크는 https 주소로 바꾸세요."
 UNSUPPORTED_LINK = re.compile(r'dooray://[^\s)>]*/(?:tasks|pages)/', re.IGNORECASE)
 MENTION = r'\[@[^\]\n]+\]\(dooray://[^\s)]+/members/[^\s)]+\s+"member"\)'
+INLINE_CODE = r'`[^`\n]+`'
+HTTPS_LINK = re.compile(r'\[([^\]\n]+)\]\((https://[^\s)]+)\)')
 MESSENGER_TOKEN = re.compile(
     MENTION +
+    r'|' + INLINE_CODE +
+    r'|' + HTTPS_LINK.pattern +
     r'|\[[^\]\n]*\]\([^\n)]*\)'
     r'|https://[^\s<>\[\]"\x27]+'
 )
 
+# 메신저가 기호 그대로 보이는 형식이다. 사용자 실측(2026-11-02), references/messenger-rendering.md 가 소유한다.
+CODE_FENCE = re.compile(r'^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[ \t]*$|^[ \t]*(?:`{3,}|~{3,})', re.MULTILINE | re.DOTALL)
+UNRENDERED_FORMATS = (
+    ("굵게", re.compile(r'\*\*[^*\n]+\*\*|__[^_\n]+__')),
+    ("제목", re.compile(r'^[ \t]{0,3}#{1,6}[ \t]', re.MULTILINE)),
+    ("표", re.compile(r'^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$', re.MULTILINE)),
+    ("목록", re.compile(r'^[ \t]*[-*+][ \t]+\S', re.MULTILINE)),
+)
+
+
+def unrendered_formats(md: str) -> list[str]:
+    """메신저에서 기호 그대로 보이는 마크다운 형식의 이름을 본문 순서와 무관하게 정해진 순서로 돌려준다."""
+    found = []
+    if CODE_FENCE.search(md):
+        found.append("코드 블록")
+    # 코드 블록과 인라인 코드 안의 기호는 형식 판정에서 뺀다.
+    text = re.sub(INLINE_CODE, "", CODE_FENCE.sub("", md))
+    found += [name for name, pattern in UNRENDERED_FORMATS if pattern.search(text)]
+    return found
+
+
+def unrendered_warning(names: list[str]) -> str:
+    return (f"경고: Dooray 메신저는 {', '.join(names)} 형식을 렌더하지 않아 기호가 그대로 보입니다. "
+            "항목은 「1.」 같은 평문 번호와 빈 줄로 나누고, 표는 「항목: 값」 처럼 한 줄씩 쓰세요. "
+            "강조와 제목은 평문으로, 코드는 인라인 코드로 쓰세요.")
+
 
 def render_messenger(md: str) -> str:
-    """확인된 멘션과 HTTPS 주소만 렌더하고 나머지는 원문으로 둔다."""
+    """확인된 멘션, 인라인 코드, HTTPS 주소와 링크만 렌더하고 나머지는 원문으로 둔다."""
     parts = []
     end = 0
     for match in MESSENGER_TOKEN.finditer(md):
@@ -60,6 +90,11 @@ def render_messenger(md: str) -> str:
             label, target = token[1:].split("](", 1)
             url = target.split()[0]
             parts.append(f'<a class="dooray-mention" href="{html.escape(url, quote=True)}">{html.escape(label)}</a>')
+        elif re.fullmatch(INLINE_CODE, token):
+            parts.append(f"<code>{html.escape(token[1:-1])}</code>")
+        elif link := HTTPS_LINK.fullmatch(token):
+            href = html.escape(link[2], quote=True)
+            parts.append(f'<a href="{href}">{html.escape(link[1])}</a>')
         elif token.startswith("https://"):
             # 문장 끝의 구두점은 링크에 넣지 않는다. URL 내부 괄호는 보존한다.
             url = token.rstrip(".,!?;:，。")
@@ -81,7 +116,7 @@ def main() -> int:
     ap.add_argument("--mode", choices=("task", "comment", "messenger"), default="task",
                     help="task 는 업무, comment 는 댓글, messenger 는 대화방 메시지")
     ap.add_argument("--author", default="작성자", help="댓글 작성자 또는 메신저 보내는 사람")
-    ap.add_argument("--strict", action="store_true", help="messenger 모드에서만 적용: 링크 경고가 있으면 HTML 생성 후 종료 코드 1")
+    ap.add_argument("--strict", action="store_true", help="messenger 모드에서만 적용: 링크나 렌더되지 않는 형식의 경고가 있으면 HTML 생성 후 종료 코드 1")
     ap.add_argument("--project", default="", help="프로젝트명 (헤더 표시용). 없으면 그 줄을 그린다")
     ap.add_argument("--tag", action="append", default=[], help="태그 (반복 지정)")
     ap.add_argument("--meta", action="append", default=[],
@@ -100,11 +135,16 @@ def main() -> int:
         print("오류: 본문에 '</script>' 가 포함되어 미리보기가 깨진다. 본문을 수정하라.", file=sys.stderr)
         return 1
 
-    warning = args.mode == "messenger" and bool(UNSUPPORTED_LINK.search(md))
-    warning_html = ""
-    if warning:
-        print(LINK_WARNING, file=sys.stderr)
-        warning_html = f'<div class="dooray-warning" role="alert">{html.escape(LINK_WARNING)}</div>'
+    warnings = []
+    if args.mode == "messenger":
+        if UNSUPPORTED_LINK.search(md):
+            warnings.append(LINK_WARNING)
+        if names := unrendered_formats(md):
+            warnings.append(unrendered_warning(names))
+    for message in warnings:
+        print(message, file=sys.stderr)
+    warning_html = "".join(
+        f'<div class="dooray-warning" role="alert">{html.escape(message)}</div>' for message in warnings)
 
     if args.mode == "messenger":
         head_html = (
@@ -154,7 +194,7 @@ def main() -> int:
                  TEMPLATE.read_text(encoding="utf-8"))
     write_output(args.out, out)
     print(f"생성 완료: {args.out}")
-    return 1 if warning and args.strict else 0
+    return 1 if warnings and args.strict else 0
 
 
 if __name__ == "__main__":
