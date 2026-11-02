@@ -3,7 +3,8 @@ import { STEP, hideEventTag } from './event-tags.js'
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
 //   1. 수동 항목: 저장소의 board.json(BOARD_PATHS 순서로 찾는다). 갱신은 플러그인의 bin/board.ts 가 한다.
-//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[] }] }
+//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[], stepAt? }] }
+//      stepAt 은 board.ts 가 그 항목의 status, details, next 를 마지막으로 바꾼 시각이다. worker 없이 남은 단계의 경과 시간을 이 값으로 잰다.
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
 //      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
 //      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, done 값이 true 면 완료)을 세어 그린다.
@@ -12,6 +13,8 @@ import { STEP, hideEventTag } from './event-tags.js'
 //      창 맨 위에 진행 중(doing) 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 진행률로 그린다.
 //      항목은 접혀 「표시 제목 막대」 와 「▶ 지금 단계」, worker 줄만 보인다. d 로 펼치면 끝낸 줄을 취소선으로 보인다.
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
+//      결정 필요 상자에는 worker 의 question 과 worker 가 직접 보낸 escalation 만 넣는다. Orca 자동 알림(autoAlertKind)은 빼고,
+//      그 worker 의 줄에 상태로 붙인다(docs/features/board-decision-box/spec.md).
 //   3. 업무 알림: 같은 플러그인의 inbox/scripts/inbox.ts board 출력. 받기와 저장소 필터는 inbox 가 하고 창은 그리기만 한다.
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
 //   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
@@ -66,6 +69,8 @@ const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
 const FILE_MS = 5000
 const LIVE_MS = 45000
 const COMMAND_TIMEOUT_MS = 20000
+// bin/worker-marks.ts 는 worker 목록을 다시 읽고 워크트리마다 파일을 훑는다
+const MARKS_TIMEOUT_MS = 30000
 // inbox.ts 는 1분마다 부르고, 두레이에서 받기는 inbox 설정의 주기(기본 5분)가 지났을 때만 한다(D15)
 const INBOX_MS = 60000
 // 받는 주기에는 두레이 호출이 수십 번 들 수 있어 다른 명령보다 길게 기다린다
@@ -95,7 +100,8 @@ let expanded = false // d: 항목의 모든 단계와 완료 칸을 펼친다
 let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈 값은 전체다
 
 // 실제 상태. 읽지 못한 원천은 error 에 이유를 남기고 나머지는 그린다.
-let live = { at: 0, runId: '', workers: null, questions: null, prs: null, errors: {} }
+// marks 는 bin/worker-marks.ts 의 판정(dispatch 에서 WorkerMark 로), movement 는 그 settings, alertNotes 는 worker 마다의 최근 자동 알림 글이다
+let live = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, alertNotes: [], errors: {} }
 let liveBusy = false
 
 // 업무 알림. inbox.ts board --json 의 출력이다. 읽지 못하면 inboxError 에 이유를 두고 직전 값을 그린다
@@ -185,7 +191,9 @@ export function countQuestions(stdout, runId) {
 // ask 는 답을 받을 때까지 막혀 worker 하나에 열린 질문은 하나다. 그래서 같은 worker 의 질문은 가장 늦은 미답변 하나로 묶고 repeats 에 나머지 수를 둔다.
 // worker 열쇠는 keyOf(m), 없으면 질문의 dispatch(payload.dispatchId, 없으면 `dispatch:` 를 뗀 발신자), 그것도 없으면 그 메시지 id(묶지 않음)다.
 // 늦고 이른 것은 created_at 문자열로 비교하고, 같으면 입력 순서가 뒤인 것을 늦은 것으로 본다.
-export function parseQuestions(stdout, runId, keyOf = null) {
+// shown(원본 메시지 → 참거짓)을 주면 보이는 미답변을 그것이 참인 것으로 줄인다. 답 기준선(가장 늦게 답한 질문)은 모든 질문에서 정한다.
+// 코디네이터가 더 늦은 자동 알림에 답했으면 그 worker 의 앞선 막힘도 푼 것이다(orch lib/questions.ts 의 unanswered 와 같다).
+export function parseQuestions(stdout, runId, keyOf = null, shown = null) {
   const data = JSON.parse(String(stdout).replace(/[\u0000-\u001f]/g, ' '))
   if (data.ok === false) throw new Error('질문 기록 조회 실패')
   const rows = (data.result || data).messages
@@ -202,21 +210,78 @@ export function parseQuestions(stdout, runId, keyOf = null) {
       let dispatch = String(payload?.dispatchId || m.from_handle || '').replace(/^dispatch:/, '')
       let text = String(payload?.question || m.body || '')
       const key = (keyOf && keyOf(m)) || dispatch || 'id:' + m.id
-      return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '', key, order, answered: answered.has(m.id) }
+      return { id: m.id, type: m.type, dispatch, text: text.trim(), at: m.created_at || '', key, order, answered: answered.has(m.id), message: m }
     })
   const later = (a, b) => (a.at === b.at ? a.order > b.order : a.at > b.at)
   const groups = new Map()
   for (const q of asked) groups.set(q.key, [...(groups.get(q.key) || []), q])
-  const shown = []
+  const pending = []
   for (const group of groups.values()) {
     const last = group.filter((q) => q.answered).reduce((a, b) => (!a || later(b, a) ? b : a), null)
-    const open = group.filter((q) => !q.answered && (!last || later(q, last)))
+    const open = group.filter((q) => !q.answered && (!last || later(q, last)) && (!shown || shown(q.message)))
     if (open.length === 0) continue
     const newest = open.reduce((a, b) => (later(b, a) ? b : a))
-    shown.push({ ...newest, repeats: open.length - 1 })
+    pending.push({ ...newest, repeats: open.length - 1 })
   }
-  return shown.sort((a, b) => a.order - b.order)
+  return pending.sort((a, b) => a.order - b.order)
     .map(({ id, type, dispatch, text, at, repeats }) => ({ id, type, dispatch, text, at, repeats }))
+}
+
+// Orca 가 worker 대신 만드는 자동 알림의 종류. id 접두로 가린다(스펙 D10, 2026-11-02 inbox 실측).
+//   msg_stop_<hex>     worker 가 worker_done 없이 턴을 끝냈다(「Worker stopped without reporting」 등)
+//   msg_chaterr_<hex>  에이전트 오류(「Agent hit an error: …」)
+// worker 가 직접 보낸 메시지는 제목이 같아도 id 가 msg_<hex> 라 자동 알림이 아니다. 아니면 null 이다
+export function autoAlertKind(m) {
+  const id = String((m && m.id) || '')
+  if (id.startsWith('msg_stop_')) return 'stop'
+  if (id.startsWith('msg_chaterr_')) return 'error'
+  return null
+}
+
+const notAutoAlert = (m) => !autoAlertKind(m)
+
+// 턴만 끝낸 멈춤 보고인가. orch/scripts/lib/stop-reports.ts 의 stopReason 과 같은 규칙이다(mod 는 그 파일을 import 하지 못한다).
+// payload 의 stopReason 이 있으면 그 값, 없으면 제목으로 정한 값이 finished 면 참이다
+const STOP_SUBJECTS = {
+  'Worker stopped without reporting': 'finished',
+  'Worker stopped on an error without reporting': 'errored',
+  'Worker is waiting on a prompt': 'needs-input',
+  'Worker exited without reporting': 'exited',
+}
+function stopReasonOf(m) {
+  if (!m || m.type !== 'escalation') return null
+  const reason = payloadOf(m)?.stopReason
+  return (typeof reason === 'string' && reason ? reason : STOP_SUBJECTS[String(m.subject || '')]) || null
+}
+export function isQuietStop(m) {
+  return stopReasonOf(m) === 'finished'
+}
+
+// 멈춤 보고(msg_stop_)의 worker 줄 글. 턴만 끝낸 것(finished)과 모르는 이유는 글이 없다
+const STOP_NOTES = { errored: '오류로 멈춤', 'needs-input': '입력 대기', exited: '종료 보고' }
+
+// 자동 알림 하나를 worker 줄 글로. 오류는 「오류: <요약>」, 멈춤 보고는 STOP_NOTES 다. 글이 없으면 ''
+export function alertNoteText(m) {
+  const kind = autoAlertKind(m)
+  if (kind === 'error') return '오류: ' + errorSummary(m)
+  if (kind === 'stop') return STOP_NOTES[stopReasonOf(m)] || ''
+  return ''
+}
+
+// 계정 한도 문구. orch/scripts/lib/sessions.ts 의 LIMIT_LINE 과 같다
+const LIMIT_LINE = /usage limit reached|you['’]ve hit your\b.*\blimit|out of credits/iu
+
+// 오류 알림의 요약. 분류어(계정 한도, 모델 용량 부족)나, 분류하지 못하면 오류 첫 줄이다(스펙 D14)
+export function errorSummary(m) {
+  const payload = payloadOf(m) || {}
+  const body = String(m.body || '')
+  const errorLine = body.split(/\r?\n/).map((line) => line.trim()).find((line) => line.startsWith('Error:'))
+  // 분류는 오류 글에만 한다. 본문 첫 줄의 task 제목에 든 낱말로 잘못 분류하지 않는다
+  const said = [payload.error, payload.detail, errorLine].map((v) => String(v || '')).join('\n')
+  if (payload.failureKind === 'usageLimitReached' || LIMIT_LINE.test(said)) return '계정 한도'
+  if (/at capacity|overloaded/i.test(said)) return '모델 용량 부족'
+  const first = (text) => String(text || '').split(/\r?\n/).map((line) => line.trim()).find(Boolean) || ''
+  return questionText(first(payload.error) || (errorLine ? errorLine.slice('Error:'.length).trim() : '') || first(body), 80)
 }
 
 function payloadOf(m) {
@@ -248,6 +313,7 @@ function dispatchOf(m) {
 // 닫힌 dispatch 는 inbox 에 답변이 남지 않아 답해도 줄지 않는다. active 는 살아 있는 worker 의 {id, terminal} 목록이고, null 이면 거르지 않는다.
 // dispatch id 를 알 수 없는 질문은 발신 터미널 handle 이 살아 있는 worker 의 것일 때만 센다.
 // 전체 inbox 대신 Run 의 질문 후보와 그 질문의 worker handle 만 읽는다.
+// Orca 자동 알림(autoAlertKind)은 questions 에 넣지 않고 alerts 로 따로 낸다. 답 기준선에는 넣는다(parseQuestions 의 shown).
 // 회신은 `dispatch:<그 worker 터미널의 지금 dispatch>` 로 가서 발신 터미널의 inbox 에 나오지 않는다(ADR-015).
 // 그래서 질문마다 발신자, payload 의 dispatch, 그 질문이 붙은 살아 있는 worker 의 dispatch 를 읽는다.
 export async function queryQuestions($, runId, active = null) {
@@ -299,11 +365,34 @@ export async function queryQuestions($, runId, active = null) {
   // 한도에 닿은 handle 의 질문이라도 다른 handle 에서 온 회신으로 답한 것이 확인되면 오류가 아니다.
   // 모든 회신을 합쳐도 미답변으로 남는 질문이 있을 때만 잘린 기록에 회신이 있을 수 있다고 본다.
   const unsure = candidates.filter((m) => handlesOf(m).some((handle) => full.includes(handle)))
-  if (unsure.length && parseQuestions(JSON.stringify({ messages: [...unsure, ...replies] }), runId, workerOf).length) {
+  if (unsure.length && parseQuestions(JSON.stringify({ messages: [...unsure, ...replies] }), runId, workerOf, notAutoAlert).length) {
     throw new Error('답변 기록 한도에 닿아 답변 여부를 확인할 수 없어요')
   }
+  const alerts = candidates.filter((m) => autoAlertKind(m))
+  // 답을 기다리는 worker. orch 루프의 askers(snapshot().pending) 와 같은 뜻이다. 턴만 끝낸 멈춤 보고는 세지 않는다.
+  // 루프와 다른 점: 살아 있는 worker 의 질문(alive)만 본다. 끝난 dispatch 의 미답변 질문이 남은 터미널에 새 dispatch 가 붙으면
+  // 루프는 그 새 worker 를 기다리는 것으로 보고 보드는 멈춤으로 볼 수 있다. 끝난 dispatch 의 답은 읽지 않으므로 맞출 수 없다
+  const byId = new Map(candidates.map((m) => [m.id, m]))
+  const asking = [...new Set(parseQuestions(JSON.stringify({ messages: [...candidates.filter((m) => !isQuietStop(m)), ...replies] }), runId, workerOf)
+    .map((q) => byId.get(q.id))
+    .flatMap((m) => (m ? [dispatchOf(m), m.from_handle, workerOf(m)] : []))
+    .filter(Boolean))]
+  // worker 와 종류(오류, 멈춤 보고)마다 가장 늦은 자동 알림 하나. 같은 알림이 여러 번 와도 한 줄이다
+  const notes = new Map()
+  for (const m of alerts) {
+    const text = alertNoteText(m)
+    if (!text) continue
+    const worker = workerOf(m) || dispatchOf(m) || m.from_handle
+    const kind = autoAlertKind(m)
+    const at = Date.parse(m.created_at || '') || 0
+    const before = notes.get(worker + '\n' + kind)
+    if (!before || at >= before.at) notes.set(worker + '\n' + kind, { worker, kind, at, text, reason: stopReasonOf(m) })
+  }
   return {
-    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId, workerOf),
+    questions: parseQuestions(JSON.stringify({ messages: [...candidates, ...replies] }), runId, workerOf, notAutoAlert),
+    alerts,
+    asking,
+    notes: [...notes.values()],
     limited: history.length >= QUESTION_HISTORY_LIMIT || unread.length >= QUESTION_HISTORY_LIMIT,
   }
 }
@@ -533,6 +622,80 @@ export function mergeVerdict(pr) {
   return clean
     ? { label: '머지 가능', color: 'green', rank: 0 }
     : { label: pr.merge || '상태 모름', color: 'yellow', rank: 1 }
+}
+
+// CI 를 통과했는가. orch 루프의 ciState(orch/scripts/lib/gh.ts)처럼 선택 검사를 포함해 실패가 하나라도 있으면 통과가 아니다
+export function ciPassed(pr) {
+  return pr.pass + pr.fail + pr.pending > 0 && pr.fail === 0 && pr.pending === 0
+}
+
+// CI 를 통과해 머지를 기다리는 worker 의 id
+export function mergingIds(workers, prs) {
+  return (workers || []).filter((worker) => {
+    const pr = prFor(worker, prs)
+    return Boolean(pr && ciPassed(pr))
+  }).map((worker) => worker.id)
+}
+
+// bin/worker-marks.ts 를 부르는 명령
+export function marksArgv(script, repo, runId, asking, merging, questionsUnknown) {
+  return ['node', '--disable-warning=ExperimentalWarning', script, '--repo', repo,
+    ...(runId ? ['--run', runId] : []),
+    ...asking.flatMap((id) => ['--asking', id]),
+    ...merging.flatMap((id) => ['--merging', id]),
+    ...(questionsUnknown ? ['--questions-unknown'] : [])]
+}
+
+// bin/worker-marks.ts 의 출력. 형식이 다르면 던진다
+export function parseMarks(stdout) {
+  const value = JSON.parse(stdout)
+  const settings = value && value.settings
+  if (!settings || typeof settings !== 'object' || typeof settings.idleMin !== 'number' || !Array.isArray(value.workers)) {
+    throw new Error('판정 출력 형식이 달라요')
+  }
+  const marks = {}
+  for (const mark of value.workers) if (mark && mark.dispatch) marks[mark.dispatch] = mark
+  return { settings, marks, error: value.error || null }
+}
+
+// 경과 분을 「N분」, 「N시간」, 「N일」 로
+export function spanText(minutes) {
+  const m = Math.max(0, Math.floor(Number(minutes) || 0))
+  if (m < 60) return m + '분'
+  if (m < 24 * 60) return Math.floor(m / 60) + '시간'
+  return Math.floor(m / (24 * 60)) + '일'
+}
+
+// worker 줄 끝에 붙일 글. 멈춤(R4)과 최근 자동 알림(R5 의 오류, 그 밖의 멈춤 보고)이다.
+// 자동 알림은 그 뒤 워크트리 파일이나 커밋이 바뀌었으면(workedAt) 빼고, 판정을 모르면 남긴다.
+// 터미널 종료로 이미 멈춤인 worker 에는 같은 뜻의 「종료 보고」 를 붙이지 않는다
+export function workerNotes(worker, marks, alertNotes) {
+  const notes = []
+  const mark = marks ? marks[worker.id] : null
+  if (mark && mark.reason === 'idle') notes.push('멈춤 ' + spanText(mark.idleMin))
+  else if (mark && mark.reason === 'exited') notes.push('멈춤 · 터미널 종료')
+  const own = (alertNotes || []).filter((note) => note.worker === worker.id)
+    .filter((note) => !(note.reason === 'exited' && mark && mark.reason === 'exited'))
+    .filter((note) => !mark || typeof mark.workedAt !== 'number' || mark.workedAt <= note.at)
+  // 오류를 멈춤 보고보다 앞에 둔다
+  for (const kind of ['error', 'stop']) for (const note of own.filter((n) => n.kind === kind)) notes.push(note.text)
+  return notes
+}
+
+// doing 항목에 끝나지 않은 단계가 있고 stepAt 부터 idleMin 분 넘게 지났으면 그 분을, 아니면 null 을 낸다(R6).
+// rows 는 stepRows(item) 이다. stepAt 이 없는 옛 항목과 idleMin 0(보지 않는다)은 null 이다
+export function idleStepMinutes(item, rows, at, idleMin) {
+  if (!item || item.status !== 'doing' || !(idleMin > 0)) return null
+  if (!rows.some((row) => row.step && row.state !== 'done')) return null
+  const since = Date.parse(item.stepAt || '')
+  if (!Number.isFinite(since) || at - since < idleMin * 60000) return null
+  return Math.floor((at - since) / 60000)
+}
+
+// 맡은 worker 가 없는 항목의 worker 줄 글
+export function workerNoneText(item, rows, at, idleMin) {
+  const minutes = idleStepMinutes(item, rows, at, idleMin)
+  return '⚙ worker 없음' + (minutes === null ? '' : ' · ' + spanText(minutes)) + ' (' + item.worktree + ')'
 }
 
 export function sortPullRequests(prs) {
@@ -815,7 +978,8 @@ async function loadFile($) {
 async function loadLive($) {
   if (liveBusy) return
   liveBusy = true
-  const next = { at: 0, runId: '', workers: null, questions: null, prs: null, errors: {} }
+  const next = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, alertNotes: [], errors: {} }
+  let asking = []
   try {
     try {
       const current = JSON.parse(await run($, ['orca', 'orchestration', 'run-current', '--full', '--json']))
@@ -836,6 +1000,8 @@ async function loadLive($) {
         const result = await queryQuestions($, next.runId, next.workers)
         next.questions = result.questions
         next.questionsLimited = result.limited
+        next.alertNotes = result.notes
+        asking = result.asking
       } catch (failure) {
         next.errors.questions = String(failure.message || failure)
       }
@@ -847,7 +1013,26 @@ async function loadLive($) {
     } catch (failure) {
       next.errors.prs = String(failure.message || failure)
     }
-    next.at = await $.clock.now()
+    // worker 줄의 멈춤 판정. orch 상주 루프와 같은 함수와 같은 입력이다(bin/worker-marks.ts 머리 주석)
+    try {
+      const root = await boardRoot($)
+      if (root) {
+        const argv = marksArgv($.plugin.root + '/work-board/bin/worker-marks.ts', root, next.workers ? next.runId : '', asking,
+          mergingIds(next.workers || [], next.prs), Boolean(next.errors.questions))
+        const marks = parseMarks(await run($, argv, MARKS_TIMEOUT_MS))
+        next.marks = marks.marks
+        next.movement = marks.settings
+        if (marks.error) next.errors.marks = marks.error
+      }
+    } catch (failure) {
+      next.errors.marks = String(failure.message || failure)
+    }
+    try {
+      next.at = await $.clock.now()
+    } catch {
+      // 세션이 끝난 뒤 늦게 끝난 읽기다. host 가 호출을 거절하므로 앞 상태를 그대로 둔다
+      return
+    }
     live = next
   } finally {
     liveBusy = false
@@ -1022,6 +1207,10 @@ export const DECIDE_PROMPT = [
   '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
   '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
   '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 orch/scripts/send-to-worker.ts 로 전해 줘.',
+  '5. worker 가 직접 올린 막힘은 먼저 확인해서 네가 처리할 수 있으면 처리하고, 사람이 정할 것만 결정으로 물어봐 줘.',
+  '6. Orca 자동 알림(「Worker stopped without reporting」 같은 멈춤, 「Agent hit an error」 같은 오류)은 나에게 묻지 말고 처리한 결과만 한 줄로 알려 줘.',
+  '7. 자동 알림 가운데 계정 한도에 걸렸거나 터미널이 종료된 worker 는 묻지 말고 같은 워크트리에서 다시 띄우고, 멈춘 worker 는 상태를 확인해 필요하면 깨워 줘.',
+  '8. 처리한 막힘은 이어갈 일이 있는 worker 면 send-to-worker.ts 답장으로 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
 ].join('\n')
 
 function fillPrompt($, text) {
@@ -1073,6 +1262,17 @@ export function register(on) {
       return parts ? [parts[0], tagged('task', taskTag(item.task), item.task, parts[1]), parts[2]] : [title]
     }
     const items = board && Array.isArray(board.items) ? board.items : []
+    // 맡은 worker 가 없는 줄. 단계가 idle_min 넘게 worker 없이 남았으면 경과 시간을 붙이고 노란색으로 그린다
+    // 판정 명령을 읽지 못했으면 orch 기본값(30분)으로 잰다
+    const idleView = (item, rows) => {
+      // worker 목록을 읽지 못했으면 정말 worker 가 없는지 몰라 경과 시간을 붙이지 않는다
+      const idleMin = live.workers === null ? 0 : live.movement ? live.movement.idleMin : 30
+      const stalled = idleStepMinutes(item, rows, now, idleMin) !== null
+      return Text({ dimColor: !stalled, color: stalled ? 'yellow' : undefined, wrap: 'wrap', children: [workerNoneText(item, rows, now, idleMin)] })
+    }
+    // worker 줄 끝의 멈춤·오류 글. 빨간색으로 붙인다
+    const noteTexts = (worker) => workerNotes(worker, live.marks, live.alertNotes)
+      .map((note, i) => Text({ key: 'note-' + i, color: 'red', children: ['  ' + note] }))
 
     const box = (key, color, label, children) => Box({
       key,
@@ -1154,8 +1354,8 @@ export function register(on) {
           ] }))] : []),
           ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(rows, item.progress)),
           ...(!done && item.worktree ? [indent('w', 2, worker
-            ? Text({ color: 'yellow', wrap: 'wrap', children: ['⚙ worker ' + workerLine(worker, live.prs)] })
-            : Text({ dimColor: true, wrap: 'wrap', children: ['⚙ worker 없음 (' + item.worktree + ')'] }))] : []),
+            ? Text({ color: 'yellow', wrap: 'wrap', children: ['⚙ worker ' + workerLine(worker, live.prs), ...noteTexts(worker)] })
+            : idleView(item, rows))] : []),
         ],
       })
     }
@@ -1254,7 +1454,7 @@ export function register(on) {
         ? [dim('we', '읽지 못했어요: ' + live.errors.workers)]
         : loose.length === 0
           ? [dim('w0', mapped > 0 ? '모든 worker 가 항목에 붙어 있어요' : '일하는 worker 가 없어요')]
-          : loose.map((worker) => Text({ key: 'w-' + worker.id, wrap: 'wrap', children: ['▶ ' + workerLine(worker, live.prs)] })))]
+          : loose.map((worker) => Text({ key: 'w-' + worker.id, wrap: 'wrap', children: ['▶ ' + workerLine(worker, live.prs), ...noteTexts(worker)] })))]
 
     // 열린 PR: Draft/Ready, CI 요약, 머지 상태
     // 작성자 거르기: 지금 열린 PR 에 없는 작성자로 걸러 있으면 전체로 본다

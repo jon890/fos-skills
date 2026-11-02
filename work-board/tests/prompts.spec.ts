@@ -21,6 +21,12 @@ test('정할 것 묻기 요청문은 결정 모으기, 질문, 보드와 worker 
   }
 })
 
+test('정할 것 묻기 요청문은 직접 올린 막힘과 Orca 자동 알림을 다루는 방법을 담는다 (docs/features/board-decision-box R7)', () => {
+  for (const text of ['직접 올린 막힘', '사람이 정할 것만', '자동 알림', '한 줄로', '계정 한도', '터미널이 종료', '같은 워크트리', '깨워', '해제로 닫아']) {
+    assert.ok(DECIDE_PROMPT.includes(text), text)
+  }
+})
+
 test('보드 스킬은 매니페스트에 없고 훅은 요청문을 직접 보내지 않는다', () => {
   for (const file of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json']) {
     assert.doesNotMatch(read(file), /work-board\/board-/, file)
