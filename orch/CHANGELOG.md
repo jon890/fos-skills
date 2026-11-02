@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.16.0 (2026-11-02)
+
+- `remove-worktree` 가 워크트리를 지운 직후 compose `working_dir` 가 그 워크트리 아래인 컨테이너와 그 프로젝트 네트워크를 지운다
+- `cleanup-sweep` 이 `config.json` 의 `docker` 절에 선언한 임시 컨테이너(이름의 PID 가 없는 것)와 이미지 태그(최근 `keep` 개와 쓰는 것을 뺀 것)를 지운다
+- 이름 있는 볼륨, build cache, 귀속 없는 dangling 자원은 지우지 않는다. Docker 를 쓸 수 없으면 경고 한 줄로 넘어간다
+
 ## 5.15.0 (2026-11-02)
 
 - 기능 루프를 쓸지 정하는 기준(새 동작·계약·여러 PR 은 루프, 버그 수정·정리·설정·측정은 바로 구현)을 코어에 둔다

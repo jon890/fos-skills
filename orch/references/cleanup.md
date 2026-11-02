@@ -296,6 +296,7 @@ DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하�
 **사용자가 정리하라고 말하지 않아도 상주 루프가 돈다.** 끝난 워크트리, 터미널과 Dispatch, 로컬 브랜치를 사용자 지시를 기다리며 남겨 두지 않는다.
 로컬 브랜치가 없는 원격 브랜치는 `--remote-branches` 로 지운다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 원격 브랜치가 여기 든다.
 머지 큐 로그 폴더(`.orch/queue`)의 끝난 마무리 로그와 큐 로그도 휴지통(`--trash`)으로 옮긴다. 돌고 있는 것, 모르는 파일, 1시간이 안 된 실패 로그와, 끝 표시 없이 pid 만 죽은 마무리 로그는 남긴다(1시간이 지나면 옮긴다). 조건은 `lib/queue-logs.ts` 머리 주석이 소유한다.
+작업이 띄운 Docker 컨테이너와 쌓은 이미지도 반납한다. 무엇을 지우고 남기는지는 아래 「Docker 자원 반납」 이 소유한다.
 상세 판정은 `cleanup-sweep.ts` 머리 주석이 소유한다.
 머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
 
@@ -389,6 +390,42 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sw
 - `orca worktree rm` 은 그 워크트리의 로컬 브랜치까지 지우므로, 이어서 `git branch -d` 가 `not found` 로 끝나면 이미 지워진 것이다
 
 지우기 전에 미커밋 변경과 stash 를 확인한다. `.omc/` 처럼 추적되지 않는 디렉터리만 남은 것은 지워도 된다.
+
+### Docker 자원 반납
+
+**작업이 띄운 컨테이너와 쌓은 이미지도 정리가 반납한다.** 검사 스크립트의 trap 은 셸이 신호로 죽으면 돌지 않아, 끊긴 worker 의 임시 DB 컨테이너가 계속 돌았다.
+**귀속을 확인한 것만 지운다.** 같은 PC 에 다른 프로젝트의 Testcontainers, compose 컨테이너와 볼륨이 함께 있다.
+판정과 출력 줄은 `scripts/lib/docker.ts` 머리 주석이 소유한다.
+
+| 언제 | 지우는 것 | 근거 |
+| --- | --- | --- |
+| `remove-worktree.ts` 가 워크트리를 지운 직후 | `com.docker.compose.project.working_dir` 가 그 워크트리이거나 그 아래인 컨테이너 | compose 가 붙인 표식 |
+| 같은 때 | 위 컨테이너의 compose 프로젝트 네트워크. 그 프로젝트의 컨테이너가 모두 그 워크트리 것일 때만 | 같은 프로젝트 이름을 다른 체크아웃이 쓰면 남긴다 |
+| `cleanup-sweep.ts` 의 저장소마다(상주 루프의 틱마다) | `config.json` 의 `docker.containers` 규칙에 맞는 컨테이너 가운데, 이름의 PID 가 없는 것. 이름에 PID 가 없는 규칙은 멈춘 것만 | 저장소가 선언한 표식과 이름 |
+| 같은 때 | `docker.images` 규칙에 맞는 이미지 태그 가운데 저장소 이름마다 최근 `keep` 개와 컨테이너가 쓰는 것을 뺀 나머지 | 저장소가 선언한 이미지 이름 |
+
+컨테이너는 `docker rm -f -v` 로 지운다. 익명 볼륨만 함께 지워지고 이름 있는 볼륨은 남는다.
+지운 것과 남긴 것(규칙에 맞았지만 PID 가 살아 있다, 최근 `keep` 개 안이다 같은 까닭)을 한 줄씩 낸다. `cleanup-sweep.ts` 는 `--apply` 가 없으면 지울 것만 낸다.
+Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이유>` 한 줄만 내고 나머지 정리는 그대로 한다.
+
+**아래는 orch 가 지우지 않는다.** 귀속을 알 수 없거나 운영 데이터일 수 있다.
+
+- 이름 있는 볼륨. compose 가 만든 데이터 볼륨도 여기 든다
+- build cache, `docker system prune`, 귀속 없는 dangling 이미지와 볼륨. `mac-cleanup` 스킬이 맡는다
+- 규칙에 맞지 않는 컨테이너와 이미지. 줄도 내지 않는다
+
+규칙 칸의 형식은 [`overlay.md`](overlay.md) 의 「마무리 설정 파일」 표가 소유한다.
+검사 스크립트가 컨테이너를 띄우는 저장소는 표식과 `<이름>-<PID>` 이름을 함께 붙이고 그 둘을 규칙으로 선언한다.
+이름에 PID 를 넣어야 띄운 셸이 살아 있는 동안의 컨테이너를 지우지 않는다.
+
+```json
+{
+  "docker": {
+    "containers": [{ "label": "fos-assistant.temp", "name": "mysql-migration-check-(?<pid>\\d+)" }],
+    "images": [{ "repository": "fos-synthetic-(loopback|chrome)-test", "keep": 1 }]
+  }
+}
+```
 
 ### 남기는 것
 
