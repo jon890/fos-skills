@@ -168,7 +168,8 @@
 //     그 Run 의 질문을 읽지 못한 틱은 질문을 기다리는지 모르므로 idle 항목을 세지도 지우지도 않는다.
 //     멈춤 항목(loop.json 의 stalls[<dispatch>]): run, terminal, state, hash(lib/screen.ts 의 stallHash), errors(그 멈춤에서 본 가장 많은
 //     오류 줄 수), since(그 상태를 처음 본 틱의 ISO 8601 UTC 시각), ticks(같은 상태와 같은 hash 를 본 틱 수. 핸들러가 처리한 뒤로 다시 센다),
-//     fired(코디네이터에게 알렸는지).
+//     fired(코디네이터에게 알렸는지), limitedNotified(선택. 이 dispatch 의 사용 한도를 이미 알렸는지).
+//     사용 한도를 알린 뒤에는 회복한 화면에서도 limitedNotified 를 보존한다. 일반 멈춤이 없으면 state=limited 인 항목으로 기록만 둔다.
 //     입력란 아래 상태 줄(경과 시간, 컨텍스트 사용량)은 hash 에 들지 않아 그 줄만 바뀐 화면은 같은 멈춤이다.
 //     상태나 터미널이 바뀌면 새 항목이다. 같은 상태에서 hash 만 바뀌면 since 는 두고 ticks 1 로 다시 센다.
 //     fired 는 오류 줄 수가 errors 보다 늘 때만 false 로 되돌린다. 코디네이터가 이어 가게 한 worker 가 같은 오류로 다시 끝나면
@@ -179,7 +180,7 @@
 //     그래서 같은 화면이 기준 틱 수만큼 더 이어지면 핸들러를 다시 부른다. 횟수 상한은 핸들러가 since 로 센다.
 //     핸들러가 없거나 0 이 아니면(10 은 넘김이다) 그 Run 의 알림 파일에 WORKER-STALLED 를 쓰고 fired 를 true 로 둔다. 같은 hash 가 이어지는 동안 다시 내지 않는다.
 //     text 는 `<dispatch> <state> <ticks>틱 <terminal>` 이다.
-//     작업 중으로 바뀌었거나, 멈춤이 아니거나, dispatch 가 끝났거나, 등록에서 빠진 Run 의 항목은 결과에서 빠진다.
+//     작업 중이거나 멈춤이 아니면 일반 멈춤 항목은 빠지되 한도 알림 기록은 남긴다. dispatch 가 끝났거나 등록에서 빠진 Run 의 항목은 결과에서 빠진다.
 //     worker-list 를 읽지 못한 Run 의 항목과 화면을 읽지 못한 dispatch 의 항목은 그대로 옮기고, 그 Run 의 errors 의 stalls@<Run> 에 이유를 둔다.
 //     같은 틱에 그 Run 의 질문 확인도 실패했으면 stalls@<Run> 은 로그에만 쓰고 비워 둔다. Orca 가 꺼진 틱에 같은 원인으로 두 번 깨우지 않는다.
 //     멈춤 확인 전체가 예외로 끝나면 주 Run 의 stalls 키에 이유를 둔다.
