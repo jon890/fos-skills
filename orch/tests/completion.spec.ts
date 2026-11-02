@@ -134,21 +134,30 @@ describe('isoTime', () => {
   })
 })
 
- test('같은 Task 의 앞선 dispatch 준비 상태는 재시작한 발신자의 근거다', () => {
-   const prior = ready({ dispatch_id: 'ctx_old', from_handle: 'term_old' })
-   assert.equal(classify([message('worker_done', 2)], [prior])[0].type, 'worker_done')
-   assert.equal(classify([message('worker_done', 2)], [ready({ from_handle: 'term_other' })])[0].type, 'suspicious_worker_done')
- })
+test('같은 Task 의 앞선 dispatch 준비 상태는 재시작한 발신자의 근거다', () => {
+  const prior = ready({ dispatch_id: 'ctx_old', from_handle: 'term_old' })
+  assert.equal(classify([message('worker_done', 2)], [prior])[0].type, 'worker_done')
+  assert.equal(classify([message('worker_done', 2)], [ready({ from_handle: 'term_other' })])[0].type, 'suspicious_worker_done')
+})
 
- test('최신순 이력에서도 현재 dispatch 의 최신 PR 준비 상태를 우선한다', () => {
-   const old = ready({ dispatch_id: 'old', from_handle: 'term_old' })
-   const current = message('status', 2, { id: 'current', subject: `준비됨 #456, head ${SHA}` })
-   const other = message('status', 3, { dispatch_id: 'another', from_handle: 'term_another', subject: `준비됨 #789, head ${SHA}` })
-   const done = message('worker_done', 4)
-   for (const history of [[other, current, old], [old, current, other]]) {
-     assert.equal((classify([done], history)[0].completionVerification as Record<string, unknown>).pr, 456)
-     assert.equal((classify([done], history.filter((m) => m !== current))[0].completionVerification as Record<string, unknown>).pr, 789)
-   }
-   const latest = message('status', 3, { subject: `준비됨 #999, head ${SHA}` })
-   assert.equal((classify([done], [latest, current, old])[0].completionVerification as Record<string, unknown>).pr, 999)
- })
+test('최신순 이력에서도 현재 dispatch 의 최신 PR 준비 상태를 우선한다', () => {
+  const old = ready({ dispatch_id: 'old', from_handle: 'term_old' })
+  const current = message('status', 2, { id: 'current', subject: `준비됨 #456, head ${SHA}` })
+  const other = message('status', 3, { dispatch_id: 'another', from_handle: 'term_another', subject: `준비됨 #789, head ${SHA}` })
+  const done = message('worker_done', 4)
+  for (const history of [[other, current, old], [old, current, other]]) {
+    assert.equal((classify([done], history)[0].completionVerification as Record<string, unknown>).pr, 456)
+    assert.equal((classify([done], history.filter((m) => m !== current))[0].completionVerification as Record<string, unknown>).pr, 789)
+  }
+  const latest = message('status', 3, { subject: `준비됨 #999, head ${SHA}` })
+  assert.equal((classify([done], [latest, current, old])[0].completionVerification as Record<string, unknown>).pr, 999)
+})
+
+test('다른 dispatch 의 미래 준비 상태와 다른 Task 의 준비 상태는 거부한다', () => {
+  for (const candidate of [
+    message('status', 3, { dispatch_id: 'later', from_handle: 'term_later', subject: `준비됨 #456, head ${SHA}` }),
+    ready({ task_id: 'other-task', dispatch_id: 'other', from_handle: 'term_other' }),
+  ]) {
+    assert.equal(classify([message('worker_done', 2)], [candidate])[0].type, 'suspicious_worker_done')
+  }
+})
