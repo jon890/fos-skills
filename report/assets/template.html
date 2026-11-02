@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>캐시 만료 정책 비교</title>
+<!--
+  report 스킬의 공통 틀이다. 이 파일을 복사해 내용만 바꾼다. <style> 과 <script> 는 고치지 않는다.
+  절 순서는 references/layouts.md 의 세 구성 가운데 하나를 따른다. 쓰지 않는 부품은 지운다.
+  밖의 script, CSS, 글꼴, 이미지를 불러오지 않는다. 이미지는 data: 로 넣는다.
+-->
+<style>
+:root{
+  --accent:#1f6f78; --accent-dark:#164f56; --accent-soft:#e6f1f2;
+  --ink:#1d2528; --muted:#5d6a6e; --line:#d9e0e2; --bg:#f6f8f8; --card:#fff;
+  --yes:#1d7a46; --yes-bg:#e1f3e8; --no:#b3342a; --no-bg:#fbe5e2;
+  --part:#8a5a00; --part-bg:#fdf0d2; --na:#59656a; --na-bg:#e9eced;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:64px}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  font-size:16px;line-height:1.75}
+a{color:var(--accent-dark)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#eef2f3;border-radius:4px;padding:1px 5px}
+
+/* 목차 */
+nav.toc{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);backdrop-filter:blur(6px)}
+nav.toc ul{list-style:none;margin:0 auto;padding:10px 20px;max-width:900px;display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13.5px;line-height:1.4}
+nav.toc a{text-decoration:none;color:var(--muted);padding:2px 0;border-bottom:2px solid transparent}
+nav.toc a:hover{color:var(--accent-dark);border-color:var(--accent)}
+
+/* 머리와 절 */
+main{max-width:900px;margin:0 auto;padding:0 20px 80px}
+header.top{padding:48px 0 24px}
+header.top .meta{color:var(--muted);font-size:14px;margin:0 0 8px}
+header.top h1{font-size:30px;line-height:1.35;margin:0 0 14px;letter-spacing:-.01em}
+header.top .lead{font-size:18px;margin:0;padding:14px 18px;background:var(--accent-soft);border-left:4px solid var(--accent);border-radius:0 8px 8px 0}
+.note{font-size:13.5px;color:var(--muted);margin:14px 0 0}
+section{margin-top:52px}
+h2{font-size:22px;margin:0 0 6px;padding-bottom:8px;border-bottom:2px solid var(--accent);letter-spacing:-.01em}
+h2 .no{color:var(--accent);margin-right:8px;font-variant-numeric:tabular-nums}
+h3{font-size:17px;margin:26px 0 8px}
+p{margin:8px 0}
+.intro{color:var(--muted);margin:10px 0 16px}
+.ref{font-size:.8em;text-decoration:none;color:var(--accent);white-space:nowrap}
+.ref:hover{text-decoration:underline}
+.tag{font-size:12px;font-weight:700;color:var(--part);background:var(--part-bg);border-radius:4px;padding:1px 6px;white-space:nowrap}
+
+/* 결론 카드 */
+.cards{display:grid;gap:14px;margin-top:16px}
+.concl{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--accent);border-radius:8px;padding:14px 18px;display:grid;grid-template-columns:36px 1fr;gap:4px 12px}
+.concl .num{grid-row:span 2;font-size:26px;font-weight:800;color:var(--accent);line-height:1.3}
+.concl strong.hd{font-size:17px;line-height:1.55}
+.concl p{margin:0;font-size:15px;color:#33403f}
+
+/* 표와 상태 칩 */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:8px;background:var(--card);margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.55}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+thead th{background:var(--accent-dark);color:#fff;font-weight:600;white-space:nowrap;position:sticky;top:0}
+tbody tr:nth-child(even){background:#f3f7f7}
+tbody th{font-weight:700;background:inherit;white-space:nowrap}
+tr.pick{background:#fff6dd !important}
+tr.pick th{color:#6b4a00}
+table.wide{min-width:760px}
+table.wide td{min-width:130px}
+table.src td:first-child{white-space:nowrap}
+.chip{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px;margin-bottom:3px}
+.chip.y{color:var(--yes);background:var(--yes-bg)}
+.chip.n{color:var(--no);background:var(--no-bg)}
+.chip.p{color:var(--part);background:var(--part-bg)}
+.chip.x{color:var(--na);background:var(--na-bg)}
+.legend{font-size:13px;color:var(--muted)}
+
+/* 단계 목록 */
+ol.steps{list-style:none;counter-reset:step;margin:14px 0;padding:0}
+ol.steps > li{counter-increment:step;position:relative;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px 12px 60px;margin:10px 0}
+ol.steps > li::before{content:counter(step);position:absolute;left:16px;top:12px;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-weight:800;text-align:center;line-height:30px}
+ol.steps > li > strong{display:block;font-size:16px}
+ol.steps > li > p{margin:2px 0 0;font-size:15px;color:#33403f}
+
+/* 강조 상자와 용어 상자 */
+.callout{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--part);border-radius:6px;padding:10px 16px;margin:14px 0;font-size:15px}
+aside.gloss{background:#fff;border:1px dashed var(--accent);border-radius:8px;padding:12px 16px;margin:18px 0}
+aside.gloss h3{margin:0 0 6px;font-size:15px;color:var(--accent-dark)}
+aside.gloss dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:14px;line-height:1.55}
+aside.gloss dt{font-weight:700}
+aside.gloss dd{margin:0;color:#33403f}
+@media(max-width:640px){aside.gloss dl{grid-template-columns:1fr}aside.gloss dd{margin-bottom:6px}}
+
+/* 접는 절 */
+details{background:var(--card);border:1px solid var(--line);border-radius:8px;margin:10px 0}
+details > summary{cursor:pointer;padding:11px 16px;font-weight:700;list-style:none;display:flex;align-items:center;gap:10px}
+details > summary::-webkit-details-marker{display:none}
+details > summary::before{content:"+";flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;text-align:center;line-height:20px;font-size:15px}
+details[open] > summary::before{content:"\2212"}
+details[open] > summary{border-bottom:1px solid var(--line)}
+details > summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+details .body{padding:4px 18px 12px}
+details h4{margin:12px 0 2px;font-size:14px;color:var(--accent-dark)}
+details ul{margin:4px 0;padding-left:20px}
+details li{margin:4px 0;font-size:14.5px;line-height:1.65}
+.bar{display:flex;gap:10px;margin:8px 0 0}
+.bar button{font:inherit;font-size:13px;border:1px solid var(--accent);background:#fff;color:var(--accent-dark);border-radius:6px;padding:3px 12px;cursor:pointer}
+.bar button:hover{background:var(--accent-soft)}
+
+/* 목록, 출처, 꼬리 */
+ul.plain{padding-left:20px}
+ul.plain li{margin:8px 0}
+.sid::before{content:"["}.sid::after{content:"]"}
+.sid{font-weight:700;color:var(--accent-dark)}
+footer{margin-top:56px;color:var(--muted);font-size:13px}
+@media(max-width:560px){header.top h1{font-size:24px}.concl{grid-template-columns:28px 1fr}ol.steps > li{padding-left:52px}}
+@media print{nav.toc,.bar{display:none}details{break-inside:avoid}body{background:#fff}}
+</style>
+</head>
+<body>
+
+<!-- 부품: 목차. 절마다 한 줄. href 는 절의 id 와 같아야 한다 -->
+<nav class="toc" aria-label="목차">
+<ul>
+<li><a href="#concl">권장안</a></li>
+<li><a href="#compare">선택지 비교</a></li>
+<li><a href="#steps">바꾸는 순서</a></li>
+<li><a href="#detail">선택지별 상세</a></li>
+<li><a href="#unknown">남은 질문</a></li>
+<li><a href="#sources">출처</a></li>
+</ul>
+</nav>
+
+<main>
+
+<!-- 부품: 머리. 날짜와 독자, 제목, 한 줄 요약(.lead). 첫 화면에 결론이 보이게 .lead 에 답을 쓴다 -->
+<header class="top">
+  <p class="meta">작성일 2026-11-03 · 독자: 백엔드 개발자</p>
+  <h1>상품 조회 캐시의 만료 정책: 고정 TTL 과 이벤트 무효화 비교</h1>
+  <p class="lead">고정 TTL 5분을 유지하고, 가격이 바뀔 때만 이벤트로 지운다.</p>
+  <p class="note"><a class="ref" href="#src-D1">[D1]</a> 같은 표시는 맨 아래 「출처」 의 항목으로 이어진다. 원문으로 확인하지 못한 내용에는 <span class="tag">추정</span> 을 달았다.</p>
+</header>
+
+<!-- 부품: 결론 카드. 결론 하나에 카드 하나. 굵은 한 문장(strong.hd)과 근거 2~3문장 -->
+<section id="concl">
+  <h2><span class="no">1</span>권장안</h2>
+  <div class="cards">
+    <div class="concl">
+      <span class="num">1</span>
+      <strong class="hd">고정 TTL 5분은 그대로 둔다.</strong>
+      <p>조회의 대부분은 5분 낡은 값이어도 문제가 없다 <a class="ref" href="#src-D1">[D1]</a>. 만료를 줄이면 DB 조회가 늘어난다.</p>
+    </div>
+    <div class="concl">
+      <span class="num">2</span>
+      <strong class="hd">가격이 바뀔 때만 이벤트로 바로 지운다.</strong>
+      <p>가격은 낡으면 주문 금액이 틀린다. 변경 이벤트가 이미 있어 구독만 더하면 된다 <a class="ref" href="#src-D2">[D2]</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 부품: 비교표. 범례(.legend) → 표 감싸개(.tw) → table.wide. 칩: y 예, p 일부, n 아니오, x 미확인. 고른 행에 tr.pick -->
+<section id="compare">
+  <h2><span class="no">2</span>선택지 비교</h2>
+  <p class="intro">세 방식을 정확도, 비용, 구현 난이도로 비교했다. 노란 줄이 권장안이다.</p>
+  <p class="legend"><span class="chip y">예</span> 충족 <span class="chip p">일부</span> 조건부 <span class="chip n">아니오</span> 미충족 <span class="chip x">미확인</span> 확인하지 못함. 표는 옆으로 밀어서 본다.</p>
+  <div class="tw" tabindex="0" role="region" aria-label="만료 방식 비교표">
+  <table class="wide">
+    <thead><tr><th>방식</th><th>가격 정확도</th><th>DB 부하</th><th>구현</th></tr></thead>
+    <tbody>
+      <tr><th>고정 TTL 만</th>
+        <td><span class="chip n">아니오</span><br>최대 5분 낡음</td>
+        <td><span class="chip y">예</span><br>낮음</td>
+        <td><span class="chip y">예</span><br>지금 그대로</td></tr>
+      <tr><th>이벤트 무효화 만</th>
+        <td><span class="chip y">예</span><br>바로 반영</td>
+        <td><span class="chip p">일부</span><br>이벤트가 몰리면 늘어남</td>
+        <td><span class="chip n">아니오</span><br>모든 변경에 구독 필요</td></tr>
+      <tr class="pick"><th>TTL 과 가격 이벤트</th>
+        <td><span class="chip y">예</span><br>가격만 바로 반영</td>
+        <td><span class="chip y">예</span><br>낮음</td>
+        <td><span class="chip p">일부</span><br>구독 하나 추가</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 부품: 단계 목록. 순서가 있는 일. li 마다 굵은 제목 한 줄과 설명 한 문장 -->
+<section id="steps">
+  <h2><span class="no">3</span>바꾸는 순서</h2>
+  <ol class="steps">
+    <li><strong>가격 변경 이벤트를 구독한다</strong><p>상품 서비스의 <code>price-changed</code> 토픽을 읽는 consumer 를 하나 더한다.</p></li>
+    <li><strong>해당 상품의 캐시 키를 지운다</strong><p>키는 <code>product:{id}</code> 하나라 범위 삭제가 필요 없다.</p></li>
+    <li><strong>지운 횟수를 지표로 남긴다</strong><p>무효화가 몰리는 시간대를 보고 TTL 을 다시 정한다.</p></li>
+  </ol>
+
+  <!-- 부품: 강조 상자. 놓치면 안 되는 주의점 하나 -->
+  <div class="callout">
+    <p><b>이벤트가 늦게 오면 그 사이에는 낡은 가격이 보인다.</b> 주문 시점에는 캐시가 아니라 DB 의 가격으로 다시 계산한다.</p>
+  </div>
+
+  <!-- 부품: 용어 상자. 낯선 용어를 백엔드 개념에 빗댄다 -->
+  <aside class="gloss" aria-label="용어표">
+    <h3>용어</h3>
+    <dl>
+      <dt>TTL</dt><dd>저장한 뒤 정해진 시간이 지나면 저절로 지워지는 만료 시간.</dd>
+      <dt>이벤트 무효화</dt><dd>원본이 바뀌었다는 메시지를 받아 캐시를 바로 지우는 방식.</dd>
+    </dl>
+  </aside>
+</section>
+
+<!-- 부품: 접는 절. 원문의 상세를 빠짐없이 옮기는 곳. .bar 버튼은 같은 절의 details 를 모두 열고 닫는다 -->
+<section id="detail">
+  <h2><span class="no">4</span>선택지별 상세</h2>
+  <div class="bar"><button type="button" data-toggle="open">모두 펼치기</button><button type="button" data-toggle="close">모두 접기</button></div>
+  <details>
+    <summary>고정 TTL 만</summary>
+    <div class="body">
+      <h4>장점</h4>
+      <ul><li>코드 변경이 없다.</li></ul>
+      <h4>단점</h4>
+      <ul><li>가격이 최대 5분 낡는다 <a class="ref" href="#src-D1">[D1]</a>.</li></ul>
+    </div>
+  </details>
+  <details>
+    <summary>이벤트 무효화 만</summary>
+    <div class="body">
+      <ul><li>재고, 설명, 이미지 변경까지 모두 구독해야 한다 <span class="tag">추정: 변경 종류 6개</span>.</li></ul>
+    </div>
+  </details>
+</section>
+
+<!-- 부품: 확인하지 못한 것. 원문에서 답하지 못한 질문을 그대로 남긴다 -->
+<section id="unknown">
+  <h2><span class="no">5</span>남은 질문</h2>
+  <ul class="plain">
+    <li>가격 이벤트가 하루에 몇 건 오는지. 지표가 없어 확인하지 못했다.</li>
+  </ul>
+</section>
+
+<!-- 부품: 출처 각주. 표 행의 id 는 src-<표시>, 본문 링크는 <a class="ref" href="#src-표시">. 안 쓴 출처는 지운다 -->
+<section id="sources">
+  <h2><span class="no">6</span>출처</h2>
+  <details id="srcbox">
+    <summary>출처 표 열기</summary>
+    <div class="body">
+      <div class="tw" tabindex="0" role="region" aria-label="출처 표">
+      <table class="src">
+        <thead><tr><th>표시</th><th>문서</th><th>날짜</th></tr></thead>
+        <tbody>
+          <tr id="src-D1"><td><span class="sid">D1</span></td><td>캐시 적중률 대시보드 (예시)</td><td>2026-11-01</td></tr>
+          <tr id="src-D2"><td><span class="sid">D2</span></td><td><a href="https://example.com/price-events">가격 변경 이벤트 명세 (예시)</a></td><td>2026-10-20</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </details>
+</section>
+
+<footer>원본: 대화에서 넘겨받은 조사 메모 · 작성일 2026-11-03</footer>
+</main>
+
+<script>
+(function(){
+  var box=document.getElementById('srcbox');
+  // 출처 링크를 누르면 접힌 출처 상자를 먼저 연다
+  document.addEventListener('click',function(e){
+    var a=e.target.closest&&e.target.closest('a.ref');
+    if(a&&box){box.open=true;}
+  });
+  // 모두 펼치기, 모두 접기: 버튼이 든 절의 details 만 바꾼다
+  document.querySelectorAll('.bar button[data-toggle]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var sec=b.closest('section'), v=b.getAttribute('data-toggle')==='open';
+      if(sec){sec.querySelectorAll('details').forEach(function(d){d.open=v;});}
+    });
+  });
+})();
+</script>
+</body>
+</html>

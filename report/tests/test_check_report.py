@@ -93,6 +93,12 @@ class CheckReportTest(unittest.TestCase):
     def test_no_args(self):
         self.assertEqual(run().returncode, 2)
 
+    def test_template_passes(self):
+        """공통 틀을 그대로 복사한 보고서가 검사를 통과한다. 틀이 외부 자원과 깨진 각주를 갖지 않는다."""
+        body = (SKILL / "assets" / "template.html").read_text(encoding="utf-8")
+        result = run(str(self.write(body, "template-sample.html")))
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_text_mode(self):
         body = OK_BODY.replace(
             "</section>",
