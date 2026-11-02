@@ -4,6 +4,7 @@
 index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시와
 스킬 번들 cwd, 사람 의존 검증, 필수 절, BSD sed 를 검사한다.
 `remote-verification.md` 가 있으면 선행 조건과 시점 열의 값을 검사하고 명령 칸의 원격 접속 형태를 경고한다.
+변경 파일 표의 glob 행은 종류 칸에 `신규·수정` 을 써서 신규와 수정이 섞인 묶음을 적을 수 있다. 구체 경로에는 쓰지 못한다.
 작업 항목이 호출 형태(`name()`)로 적은 함수를 수정 파일이 정의하면, 그 함수를 부르는 파일 중
 plan 의 변경 파일에 없는 것을 git grep 으로 찾아 경고한다.
 Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 직접 실행하는지 본다.
@@ -194,7 +195,7 @@ def manifest(path, text, out, warnings):
             out.append(f"{path} — 변경 파일 행은 파일과 변경 두 칸이어야 한다: {line}")
             continue
         files = re.findall(r"`([^`]+)`", cells[0])
-        action = re.match(r"\s*(신규|수정|삭제)(?:\s|$|\()", cells[1])
+        action = re.match(r"\s*(신규·수정|신규|수정|삭제)(?:\s|$|\()", cells[1])
         if len(files) != 1 or not action:
             out.append(f"{path} — 변경 파일 행의 경로 또는 변경 종류가 잘못됐다: {line}")
             continue
@@ -202,6 +203,9 @@ def manifest(path, text, out, warnings):
         if Path(rel).is_absolute() or ".." in Path(rel).parts or "$" in rel or rel.startswith("~"):
             out.append(f"{path} — 저장소 상대경로가 필요하다: {rel}")
             continue
+        if action.group(1) == "신규·수정" and not is_glob(rel):
+            # 구체 경로는 신규인지 수정인지 미리 정할 수 있다. 섞인 묶음만 glob 행에 적는다.
+            out.append(f"{path} — 신규·수정은 glob 행에만 쓴다. 구체 경로는 신규나 수정 가운데 하나로 적는다: {rel}")
         if any(existing == rel for existing, _ in entries):
             out.append(f"{path} — 변경 파일 중복: {rel}")
         entries.append((rel, action.group(1)))
@@ -217,6 +221,15 @@ DYNAMIC_SEGMENT = re.compile(r"\[\[?(?:\.\.\.)?[^\[\]/*?]+\]\]?")
 
 def literal_segment(part):
     return bool(DYNAMIC_SEGMENT.fullmatch(part))
+
+
+# 생략 경로 위반 뒤에 붙는 안내다. 파일이 많아 적기 힘들면 glob 으로 적는다.
+OMIT_HINT = " (여러 파일은 glob 행으로 적고, 신규와 수정이 섞이면 종류 칸에 `신규·수정` 을 쓴다)"
+
+
+def accepts(kind, action):
+    """glob 행의 종류가 staged 변경 종류를 받는지 본다. `신규·수정` 은 신규와 수정을 받는다."""
+    return kind == action or (kind == "신규·수정" and action in {"신규", "수정"})
 
 
 def omitted(rel):
@@ -275,9 +288,14 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
             if legacy:
                 warnings.append(f"{path} — 생략 경로는 존재를 대조하지 않는다: {rel}")
             else:
-                out.append(f"{path} — 변경 파일에는 생략하지 않은 경로가 필요하다: {rel}")
+                out.append(f"{path} — 변경 파일에는 생략하지 않은 경로가 필요하다: {rel}{OMIT_HINT}")
             continue
         glob = is_glob(rel)
+        if action == "신규·수정":
+            # 신규일 수도 수정일 수도 있어 존재 조건을 정할 수 없다. 뒤 phase 가 겹치는 경로를 존재로 보게 glob 만 기억한다.
+            if glob:
+                created.append(rel)
+            continue
         candidates = {p.relative_to(repo).as_posix() for p in repo.glob(glob_pattern(rel))} if glob else {rel}
         candidates.update(p for p in virtual if not is_glob(p) and matches(p, rel))
         exists = any(virtual.get(p, (repo / p).exists()) for p in candidates)
@@ -826,7 +844,7 @@ def check_forbidden_grep_paths(path, commands, entries, warnings):
 def check_staged(path, text, repo, out, warnings):
     entries = manifest(path, text, out, warnings)
     if any(omitted(rel) for rel, _ in entries):
-        out.append(f"{path} — staged 대조에는 생략하지 않은 변경 파일 경로가 필요하다")
+        out.append(f"{path} — staged 대조에는 생략하지 않은 변경 파일 경로가 필요하다{OMIT_HINT}")
         return
     result = subprocess.run(["git", "diff", "--cached", "--name-status", "-z", "--find-renames"], cwd=repo, capture_output=True, check=True)
     fields = result.stdout.decode("utf-8").split("\0")
@@ -848,7 +866,7 @@ def check_staged(path, text, repo, out, warnings):
         allowed = [(pattern, kind) for pattern, kind in entries if matches(rel, pattern)]
         if not allowed:
             out.append(f"{path} — phase 범위 밖의 staged 파일: {rel}")
-        elif not any(kind == action for _, kind in allowed):
+        elif not any(accepts(kind, action) for _, kind in allowed):
             out.append(f"{path} — staged 변경 종류가 목록과 다르다: {rel} ({action})")
     # 목록에 있는데 staged 에 없는 파일이다. 신규 테스트가 빠진 커밋을 막는다.
     staged = set(changes)

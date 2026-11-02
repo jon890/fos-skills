@@ -964,6 +964,55 @@ class TaskRulesTest(unittest.TestCase):
             verify.check_staged(Path("p"), "## 변경 파일\n" + manifest, self.repo, out, [])
             self.assertTrue(out)
 
+    def commit_src(self, *files):
+        self.git("init", "--quiet")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("config", "user.name", "Test")
+        for rel in files:
+            self.file(rel, "old\n")
+        self.git("add", "src")
+        self.git("commit", "--quiet", "-m", "initial")
+
+    def test_mixed_glob_accepts_new_and_modified_staged_files(self):
+        # 에셋 phase: glob 아래에 고친 파일과 새 파일이 함께 staged 되어도 종류가 맞다고 본다.
+        self.commit_src("src/gen/a.png")
+        self.file("src/gen/a.png", "new\n")
+        self.file("src/gen/b.png", "new\n")
+        self.git("add", "src")
+        out = []
+        verify.check_staged(Path("p"), "## 변경 파일\n| `src/gen/*.png` | 신규·수정 |\n", self.repo, out, [])
+        self.assertEqual(out, [])
+
+    def test_mixed_glob_still_rejects_deleted_staged_file(self):
+        self.commit_src("src/gen/a.png", "src/gen/c.png")
+        self.file("src/gen/a.png", "new\n")
+        self.file("src/gen/b.png", "new\n")
+        self.git("rm", "--quiet", "src/gen/c.png")
+        self.git("add", "src/gen/a.png", "src/gen/b.png")
+        out = []
+        verify.check_staged(Path("p"), "## 변경 파일\n| `src/gen/*.png` | 신규·수정 |\n", self.repo, out, [])
+        self.assertEqual(out, ["p — staged 변경 종류가 목록과 다르다: src/gen/c.png (삭제)"])
+
+    def test_mixed_kind_on_concrete_path_is_rejected(self):
+        self.file("src/app.py")
+        out = []
+        verify.manifest(Path("p"), "## 변경 파일\n| `src/app.py` | 신규·수정 |\n", out, [])
+        self.assertEqual(len(out), 1)
+        self.assertIn("glob 행에만", out[0])
+
+    def test_mixed_glob_needs_no_existing_file(self):
+        out, warnings = [], []
+        verify.check_file_state(Path("p"), [("src/none/*.png", "신규·수정")], self.repo, {}, out, warnings)
+        self.assertEqual((out, warnings), ([], []))
+
+    def test_omitted_path_violation_points_to_glob_and_mixed_kind(self):
+        self.git("init", "--quiet")
+        out = []
+        verify.check_staged(Path("p"), "## 변경 파일\n| `src/.../app.py` | 신규 |\n", self.repo, out, [])
+        self.assertEqual(len(out), 1)
+        self.assertIn("신규·수정", out[0])
+        self.assertIn("glob", out[0])
+
 
 class CheckerRefinementTest(unittest.TestCase):
     """7단계 docs, 상대 링크, 흔한 이름 호출자 경고를 검증한다."""
