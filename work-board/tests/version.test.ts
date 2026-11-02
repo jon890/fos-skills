@@ -46,14 +46,15 @@ async function start($, on, { installed = '1.4.0', remote = { commit: NEW, versi
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
 }
 
-const head = async (ui) => textOf(await ui.find({ type: 'Box', key: 'updated-at' }))
+// 시각은 실행 환경의 시간대를 따르므로 형식만 보고, 버전 글은 그대로 본다
+const head = async (ui) => textOf(await ui.find({ type: 'Box', key: 'updated-at' })).replace(/^\d\d:\d\d 업데이트/, 'HH:MM 업데이트')
 const version = async (ui) => ((await ui.find({ type: 'Box', key: 'updated-at' })).children as Drawn[])[1]
 
 test('머리 줄에 갱신 시각과 작업 트리의 version·커밋, main 의 최신 version 을 보이고 뒤처지면 노란색이다 (R1, R2)', async ($, on) => {
   await start($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await head(ui)).toBe('10:05 업데이트  ·  fos-skills 작업 트리 1.4.0 (de0cb6d) → 최신 1.5.0 (b1e2c09)')
+    expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 작업 트리 1.4.0 (de0cb6d) → 최신 1.5.0 (b1e2c09)')
     expect((await version(ui)).props.color).toBe('yellow')
     // 작업 트리는 claude plugin update 로 갱신하지 않으므로 p 가 없다
     expect(await ui.find({ type: 'Button', key: 'update-plugin' })).toBeFalsy()
@@ -64,7 +65,7 @@ test('머리 줄에 갱신 시각과 작업 트리의 version·커밋, main 의 
 test('main 과 version 이 같으면 「최신」 을 흐리게 보인다 (R2)', async ($, on) => {
   await start($, on, { remote: { commit: NEW, version: '1.4.0' } })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await head(ui)).toBe('10:05 업데이트  ·  fos-skills 작업 트리 1.4.0 (de0cb6d) 최신')
+  expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 작업 트리 1.4.0 (de0cb6d) 최신')
   expect((await version(ui)).props.dimColor).toBe(true)
   await ui.unmount()
 })
@@ -72,7 +73,7 @@ test('main 과 version 이 같으면 「최신」 을 흐리게 보인다 (R2)',
 test('main 을 읽지 못하면 「최신 확인 불가」 를 흐리게 보인다 (R2)', async ($, on) => {
   await start($, on, { remote: null })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await head(ui)).toBe('10:05 업데이트  ·  fos-skills 작업 트리 1.4.0 (de0cb6d) · 최신 확인 불가')
+  expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 작업 트리 1.4.0 (de0cb6d) · 최신 확인 불가')
   expect((await version(ui)).props.dimColor).toBe(true)
   await ui.unmount()
 })
