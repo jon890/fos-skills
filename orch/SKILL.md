@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "5.15.0"
+  version: "5.16.0"
 ---
 
 # orch
@@ -27,7 +27,8 @@ metadata:
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
 `UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG` 은 doctor가 5.2.0에서 지운 설정 칸을 찾았다는 뜻이다. 일반 명령은 같은 설정을 사용법 오류로 거부한다. 고치는 법은 [`references/hooks.md`](references/hooks.md) 가 소유한다.
 `FEEDBACK-OPEN <개수> <폴더>` 는 다시 보지 않은 스킬 개선 후보가 있다는 뜻이다. 그날 안에 [`references/feedback-review.md`](references/feedback-review.md) 대로 판정한다.
-`STUDY-OPEN <개수> <파일>` 은 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 사용자에게 알리기만 한다. 사용자가 그날 나온 개념을 정리하자고 할 때와 후보를 다시 보자고 할 때는 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.
+`STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 사용자에게 알리기만 한다.
+사용자가 개념의 뜻을 물으면 답한 뒤 그 자리에서 공부 후보로 적는다. 적는 법, 하루 끝 고르기, 다시 보기는 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.
 `PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록(`installed_plugins.json`)이 가리키는 폴더가 없어 그 플러그인이 실리지 않았다는 뜻이다. 이 스킬이 실렸어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있다. 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다. 설정 폴더가 바뀐 세션에서 옛 폴더 경로가 남은 경우가 대표적이다.
 설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
 

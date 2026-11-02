@@ -48,9 +48,10 @@
 //     폴더가 없거나 읽지 못하면 내지 않는다. 경고라 종료 코드를 바꾸지 않는다.
 //
 // 공부 후보 판정(늘 본다):
-//     --repo 의 <orch 루트>/study/candidates.md 표에서 상태가 `후보` 나 `리뷰함` 인 줄을 센다. 표 형식은 lib/study.ts 가 소유한다.
+//     --repo 의 <orch 루트>/study/ 의 후보 파일 가운데 상태가 `후보` 나 `리뷰함` 인 것을 센다. 파일 형식은 lib/study.ts 가 소유한다.
 //     하나 이상이면 STUDY-OPEN 줄을 낸다. 다시 보는 주기와 기준은 references/study-candidates.md 가 소유한다.
-//     파일이 없으면 내지 않는다. 파일은 있는데 표 머리를 찾지 못하면 stderr 에 알리고 내지 않는다. 경고라 종료 코드를 바꾸지 않는다.
+//     폴더가 없으면 내지 않는다. 머리를 읽지 못한 파일과 옛 표 파일(candidates.md)은 세지 않고 stderr 에 알린다.
+//     옛 표 파일은 study-candidates.ts migrate 로 옮기라고 알린다. 경고라 종료 코드를 바꾸지 않는다.
 //
 // 설치 기록 판정(늘 본다):
 //     `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에 적힌 모든 플러그인의 installPath 가 실제로 있는지 본다.
@@ -111,7 +112,7 @@
 //     WORKER-STATE <dispatch> <상태> <근거>       --run 의 살아 있는 dispatch 가운데 user_owned 로 표시된 것의 판정(위 「worker 판정」)
 //     SKIP-WORKERS <이유>                         worker 판정을 하지 못했다
 //     FEEDBACK-OPEN <개수> <폴더>                 다시 보지 않은 스킬 개선 후보 파일이 있다(위 「개선 후보 판정」)
-//     STUDY-OPEN <개수> <파일>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
+//     STUDY-OPEN <개수> <폴더>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
@@ -134,7 +135,7 @@ import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from './lib/loop.ts'
 import { pathOf } from './lib/paths.ts'
-import { FILE_NAME as STUDY_FILE, openCount } from './lib/study.ts'
+import { isOpen, scan as scanStudy } from './lib/study.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, snapshot } from './lib/questions.ts'
@@ -360,14 +361,12 @@ function checkFeedback(repo: string): string[] {
 }
 
 function checkStudy(repo: string): string[] {
-  const file = join(pathOf('study', repo), STUDY_FILE)
-  if (!isFile(file)) return []
-  const count = openCount(file)
-  if (count === null) {
-    process.stderr.write(`orch-doctor: 공부 후보 파일에서 표 머리를 찾지 못했다: ${file}\n`)
-    return []
-  }
-  return count > 0 ? [`STUDY-OPEN ${count} ${file}`] : []
+  const dir = pathOf('study', repo)
+  const found = scanStudy(dir)
+  if (found.legacy) process.stderr.write(`orch-doctor: 옛 공부 후보 표 파일이 남아 있다. study-candidates migrate 로 옮긴다: ${found.legacy}\n`)
+  for (const file of found.broken) process.stderr.write(`orch-doctor: 공부 후보 파일의 머리를 읽지 못했다: ${file}\n`)
+  const count = found.candidates.filter(isOpen).length
+  return count > 0 ? [`STUDY-OPEN ${count} ${dir}`] : []
 }
 
 function checkQuestions(runId: string | null): Checked & { pending: string[] } {
