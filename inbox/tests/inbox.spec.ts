@@ -264,6 +264,31 @@ describe('저장소 필터 (R8, R9)', () => {
     assert.deepEqual(mainView.items.map((row) => row.id), ['fake:task:loose', 'fake:task:done'])
   })
 
+  test('enabled false 인 저장소는 알림을 보지 않고 받기도 띄우지 않는다', () => {
+    writeConfig({})
+    state.items = [item('1', ['p1'])]
+    const off = repo('off', { enabled: false, fake: { projects: ['p1'] } })
+    assert.deepEqual(board(off), { enabled: false })
+    assert.equal(state.fetches.length, 0)
+    assert.equal(call('board', '--repo', off), 0)
+    assert.match(out, /알림 꺼짐/)
+    assert.equal(call('list', '--repo', off), 0)
+    assert.equal(out.trim(), '')
+  })
+
+  test('끈 저장소의 필터는 다른 보드의 미분류 판정에 들지 않는다', () => {
+    const home = repo('home', { fake: { projects: ['smarthome'] } })
+    const off = repo('off', { enabled: false, fake: { projects: ['etc'] } })
+    const main = repo('main', { fake: { channels: ['개인'] } })
+    writeConfig({ defaultBoard: main })
+    state.items = [item('home', ['smarthome']), item('loose', ['etc'])]
+    board(off)
+    board(main)
+    // etc 는 끈 저장소 소유가 아니라 미분류다
+    assert.equal(board(home).unclassified, 1)
+    assert.deepEqual(board(main).items.map((row) => row.id), ['fake:task:loose'])
+  })
+
   test('깨진 필터 파일은 오류로 알리고 필터 없이 보인다', () => {
     writeConfig({})
     state.items = [item('1', ['p1'])]

@@ -22,7 +22,7 @@ import { orchDir } from '../../orch/scripts/lib/paths.ts'
 import { ADAPTERS } from './adapters/index.ts'
 import type { Adapter, AdapterFactory, InboxItem, Runner } from './lib/model.ts'
 import { type CacheFile, type Config, readConfig, Store } from './lib/store.ts'
-import { boardView, type RepoFilter, visibleItems } from './lib/view.ts'
+import { boardView, isOff, type RepoFilter, visibleItems } from './lib/view.ts'
 
 // 받기 한 번에 「답함」 을 확인하는 새 항목 수. 항목마다 두레이 호출이 하나씩 든다
 export const MAX_ANSWER_CHECKS = 15
@@ -87,7 +87,7 @@ function repoFilters(store: Store, repo: string): { filter: RepoFilter | null; k
     error = (failure as Error).message
   }
   let paths = store.repos()
-  if (filter && !paths.some((known) => samePath(known, path))) {
+  if (filter && !isOff(filter) && !paths.some((known) => samePath(known, path))) {
     paths = [...paths, path]
     store.write('repos', paths)
   }
@@ -96,12 +96,12 @@ function repoFilters(store: Store, repo: string): { filter: RepoFilter | null; k
     if (samePath(known, path)) continue
     try {
       const other = readFilterFile(known)
-      if (other) knownFilters.push(other)
+      if (other && !isOff(other)) knownFilters.push(other)
     } catch {
       // 다른 저장소의 필터가 깨졌으면 그 저장소는 미분류 판정에서 뺀다
     }
   }
-  if (filter) knownFilters.push(filter)
+  if (filter && !isOff(filter)) knownFilters.push(filter)
   return { filter, knownFilters, error }
 }
 
@@ -230,6 +230,11 @@ function parse(argv: string[]): Parsed | 'help' {
 
 function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, string>): void {
   const { config, store, deps } = session
+  // 필터가 알림을 끈 저장소는 받기도 띄우지 않고 설정이 없을 때와 같은 응답을 낸다
+  if (isOff(repoFilters(store, a.repo as string).filter)) {
+    deps.out(a.json ? '{"enabled":false}\n' : '알림 꺼짐\n')
+    return
+  }
   const errors: Record<string, string> = {}
   let cache: CacheFile
   try {
