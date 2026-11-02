@@ -283,6 +283,16 @@ describe('질문 판정', () => {
     assert.doesNotMatch(r.stdout, /UNANSWERED/u)
   })
 
+  test('워크트리와 지시서가 지워진 옛 dispatch 질문도 띄우기 기록으로 제외한다', () => {
+    const worktree = join(tmp, 'removed-worktree')
+    const rows = join(tmp, 'workers.json')
+    write(rows, JSON.stringify([{ dispatchId: 'd', dispatchStatus: 'abandoned', resource: { worktreeId: `repo::${worktree}` } }]))
+    write(join(tmp, '.orch/state/launched-workers/d.json'), JSON.stringify({ dispatch: 'd', worktree, run: 'r', terminal: null, spec: join(tmp, 'removed-spec.md') }))
+    const r = doctor(['--skip-version', '--skill-dir', skill], { env: { FAKE_AGE: '600', FAKE_WORKERS: rows } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /UNANSWERED/u)
+  })
+
   test('599초면 UNANSWERED 가 없고 종료 코드 0 이다', () => {
     const r = doctor(['--skip-version', '--skill-dir', skill], { env: { FAKE_AGE: '599' } })
     assert.equal(r.code, 0, r.stdout + r.stderr)

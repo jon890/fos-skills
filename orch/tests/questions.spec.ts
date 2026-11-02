@@ -436,3 +436,31 @@ test('다른 Task 가 같은 워크트리 브랜치의 PR 을 끝냈으면 질�
     assert.equal(closedReason(q, 'r', tmp, { ...lookup, readPr: (() => ({ ok: false, error: 'offline' })) as typeof readPr }), null)
   }
 })
+
+test('워크트리가 지워져도 띄우기 기록의 브랜치로 PR 종료를 확인한다', async () => {
+  const { closedReason } = await import('../scripts/lib/questions.ts')
+  const worktree = join(tmp, 'removed-worktree')
+  const dir = join(tmp, '.orch/state/launched-workers')
+  mkdirSync(dir, { recursive: true })
+  const launch = { dispatch: 'old', worktree, branch: 'retry-feature', terminal: null, run: 'r' }
+  writeFileSync(join(dir, 'old.json'), JSON.stringify(launch))
+  const q = message('q', 'question', { task_id: 'old-task', dispatch_id: 'old' })
+  for (const state of ['MERGED', 'CLOSED', 'OPEN']) {
+    const readPr = (() => ({ ok: true, data: [{ number: 456, state, headRefName: 'retry-feature' }] })) as typeof import('../scripts/lib/gh.ts').ghJson
+    const lookup = { rows: { ok: true as const, rows: [{ dispatchId: 'old', dispatchStatus: 'abandoned', resource: { worktreeId: `repo::${worktree}` } }] }, reports: [], branches: new Map<string, string>(), readPr }
+    assert.equal(closedReason(q, 'r', tmp, lookup) !== null, state !== 'OPEN')
+  }
+})
+
+test('브랜치 없는 옛 띄우기 기록은 끝난 dispatch 의 같은 경로가 없을 때만 질문을 닫는다', async () => {
+  const { closedReason } = await import('../scripts/lib/questions.ts')
+  const worktree = join(tmp, 'removed-worktree')
+  const launch = { dispatch: 'old', worktree, terminal: null, run: 'r' }
+  const q = message('q', 'question', { dispatch_id: 'old' })
+  const lookup = { rows: { ok: true as const, rows: [{ dispatchId: 'old', dispatchStatus: 'abandoned', resource: { worktreeId: `repo::${worktree}` } }] }, reports: [], branches: new Map<string, string>(), launches: new Map([['old', launch]]) }
+  assert.match(closedReason(q, 'r', tmp, lookup) ?? '', /recorded worktree removed/u)
+  mkdirSync(worktree)
+  assert.equal(closedReason(q, 'r', tmp, lookup), null)
+  assert.equal(closedReason(q, 'r', tmp, { ...lookup, launches: new Map([['old', { ...launch, worktree: join(tmp, 'other') }]]) }), null)
+  assert.equal(closedReason(q, 'r', tmp, { ...lookup, launches: new Map([['old', null]]) }), null)
+})

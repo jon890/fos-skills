@@ -60,7 +60,7 @@
 //     일하는 흔적(하나라도 있으면): dispatch 의 lastHeartbeatAt, dispatch.status 가 running, worker-start 직전과 비교해
 //        워크트리의 HEAD 나 `git status --porcelain` 이 바뀜, worker 터미널 화면이 작업 중이거나 권한 확인 창(lib/screen.ts)
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
-//        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리를 orch 상태 폴더에 기록한다(lib/launched.ts).
+//        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리와 브랜치를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
 //        기록 실패는 stderr 로만 알리고 LAUNCHED 와 종료 코드는 유지한다.
 //        보드가 있으면 지시서의 항목 id, 제목과 마일스톤 단계(lib/milestones.ts)로 doing 항목을 갱신한다. 실패는 stderr 로 알리고 LAUNCHED 는 유지한다.
@@ -664,7 +664,7 @@ async function main(argv: string[]): Promise<number> {
     // worker-show 결과의 터미널 키는 send-to-worker 가 읽는 키와 같다.
     const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || passValue(passthru, '--terminal')
     try {
-      recordLaunch(repo, { dispatch, task: task || null, terminal: terminal || null, worktree, run: a.run || null, spec: resolve(a.spec), ...(gate.acked ? { lint_ack: gate.acked } : {}) })
+      recordLaunch(repo, { dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch, run: a.run || null, spec: resolve(a.spec), ...(gate.acked ? { lint_ack: gate.acked } : {}) })
     } catch (e) {
       err(`launch-worker: 띄운 worker 를 기록하지 못했다. cleanup-sweep 이 이 터미널을 코디네이터의 것으로 알아보지 못한다: ${(e as Error).message}`)
     }
