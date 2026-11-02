@@ -4,6 +4,10 @@
 등급은 그 머지에서 바뀐 스킬 CHANGELOG 로 정한다. `호환성:` 항목이 있으면 major, 새 버전 절이 있으면 minor, 그 밖은 patch 다.
 규칙과 근거는 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 1.9.0 (2026-11-02)
+
+- content-preview 3.21.0 (#296)
+
 ## 1.8.0 (2026-11-02)
 
 - inbox 1.2.0, work-board 1.9.0 (#295)
