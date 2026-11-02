@@ -3,7 +3,8 @@ import { STEP, hideEventTag } from './event-tags.js'
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
 //   1. 수동 항목: 저장소의 board.json(BOARD_PATHS 순서로 찾는다). 갱신은 플러그인의 bin/board.ts 가 한다.
-//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[] }] }
+//      형식: { updatedAt: ISO 문자열, items: [{ id, title, status, owner?, pr?, worktree?, next?: {text, done}[], details?: {text, done}[], stepAt? }] }
+//      stepAt 은 board.ts 가 그 항목의 status, details, next 를 마지막으로 바꾼 시각이다. worker 없이 남은 단계의 경과 시간을 이 값으로 잰다.
 //      worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다.
 //      status: goal(목표), decide(결정 필요), doing(진행 중), wait(대기), done(완료)
 //      진행 표시줄은 번호로 시작하는 단계 줄(「1 …」, 「1. …」, done 값이 true 면 완료)을 세어 그린다.
@@ -657,6 +658,22 @@ export function workerNotes(worker, marks, failures) {
   return notes
 }
 
+// doing 항목에 끝나지 않은 단계가 있고 stepAt 부터 idleMin 분 넘게 지났으면 그 분을, 아니면 null 을 낸다(R6).
+// rows 는 stepRows(item) 이다. stepAt 이 없는 옛 항목과 idleMin 0(보지 않는다)은 null 이다
+export function idleStepMinutes(item, rows, at, idleMin) {
+  if (!item || item.status !== 'doing' || !(idleMin > 0)) return null
+  if (!rows.some((row) => row.step && row.state !== 'done')) return null
+  const since = Date.parse(item.stepAt || '')
+  if (!Number.isFinite(since) || at - since < idleMin * 60000) return null
+  return Math.floor((at - since) / 60000)
+}
+
+// 맡은 worker 가 없는 항목의 worker 줄 글
+export function workerNoneText(item, rows, at, idleMin) {
+  const minutes = idleStepMinutes(item, rows, at, idleMin)
+  return '⚙ worker 없음' + (minutes === null ? '' : ' · ' + spanText(minutes)) + ' (' + item.worktree + ')'
+}
+
 export function sortPullRequests(prs) {
   return [...prs].sort((a, b) => mergeVerdict(a).rank - mergeVerdict(b).rank || a.number - b.number)
 }
@@ -1218,6 +1235,13 @@ export function register(on) {
       return parts ? [parts[0], tagged('task', taskTag(item.task), item.task, parts[1]), parts[2]] : [title]
     }
     const items = board && Array.isArray(board.items) ? board.items : []
+    // 맡은 worker 가 없는 줄. 단계가 idle_min 넘게 worker 없이 남았으면 경과 시간을 붙이고 노란색으로 그린다
+    // 판정 명령을 읽지 못했으면 orch 기본값(30분)으로 잰다
+    const idleView = (item, rows) => {
+      const idleMin = live.movement ? live.movement.idleMin : 30
+      const stalled = idleStepMinutes(item, rows, now, idleMin) !== null
+      return Text({ dimColor: !stalled, color: stalled ? 'yellow' : undefined, wrap: 'wrap', children: [workerNoneText(item, rows, now, idleMin)] })
+    }
     // worker 줄 끝의 멈춤·오류 글. 빨간색으로 붙인다
     const noteTexts = (worker) => workerNotes(worker, live.marks, live.failures)
       .map((note, i) => Text({ key: 'note-' + i, color: 'red', children: ['  ' + note] }))
@@ -1303,7 +1327,7 @@ export function register(on) {
           ...(expanded ? rows.map((row, i) => stepLine('s-' + i, row)) : foldedSteps(rows, item.progress)),
           ...(!done && item.worktree ? [indent('w', 2, worker
             ? Text({ color: 'yellow', wrap: 'wrap', children: ['⚙ worker ' + workerLine(worker, live.prs), ...noteTexts(worker)] })
-            : Text({ dimColor: true, wrap: 'wrap', children: ['⚙ worker 없음 (' + item.worktree + ')'] }))] : []),
+            : idleView(item, rows))] : []),
         ],
       })
     }

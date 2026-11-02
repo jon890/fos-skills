@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  autoAlertKind, ciPassed, errorSummary, isQuietStop, marksArgv, mergingIds, parseMarks, queryQuestions, spanText, statusLine, workerNotes,
+  autoAlertKind, ciPassed, errorSummary, idleStepMinutes, isQuietStop, marksArgv, mergingIds, parseMarks, queryQuestions, spanText, statusLine, stepRows, workerNoneText, workerNotes,
 } from '../hooks/register.js'
 
 type Json = Record<string, unknown>
@@ -179,4 +179,24 @@ test('판정 명령의 인자와 출력 읽기 (R4)', () => {
   assert.deepEqual(parseMarks(JSON.stringify(out)), { settings: out.settings, marks: { d1: out.workers[0] }, error: null })
   assert.throws(() => parseMarks(JSON.stringify({ result: { workers: [] } })), /형식/)
   assert.throws(() => parseMarks('not json'))
+})
+
+// ---- worker 없이 남은 단계 (R6) ----
+
+test('doing 항목의 끝나지 않은 단계가 stepAt 부터 idle_min 넘게 worker 없이 남으면 경과 분을 낸다 (R6)', () => {
+  const at = Date.parse('2026-11-02T12:00:00+09:00')
+  const ago = (minutes: number) => new Date(at - minutes * 60_000).toISOString()
+  const item = (extra: Json) => ({ id: 'a', status: 'doing', worktree: 'wt-a', next: [{ text: '1. 구현', done: true }, { text: '2. 리뷰', done: false }], stepAt: ago(40), ...extra })
+  const minutes = (value: Json, idleMin = 30) => idleStepMinutes(value, stepRows(value), at, idleMin)
+  assert.equal(minutes(item({})), 40)
+  assert.equal(minutes(item({ status: 'wait' })), null)
+  assert.equal(minutes(item({ status: 'decide' })), null)
+  assert.equal(minutes(item({ next: [{ text: '1. 구현', done: true }] })), null)
+  assert.equal(minutes(item({ stepAt: undefined })), null)
+  assert.equal(minutes(item({ stepAt: ago(20) })), null)
+  assert.equal(minutes(item({}), 0), null)
+  const late = item({ stepAt: ago(180) })
+  assert.equal(workerNoneText(late, stepRows(late), at, 30), '⚙ worker 없음 · 3시간 (wt-a)')
+  const old = item({ stepAt: undefined })
+  assert.equal(workerNoneText(old, stepRows(old), at, 30), '⚙ worker 없음 (wt-a)')
 })
