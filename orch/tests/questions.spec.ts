@@ -399,3 +399,19 @@ describe('watch-questions', () => {
     }
   })
 })
+
+ test('끝난 dispatch 는 같은 Task 의 다른 dispatch PR 로 질문을 닫고, 살아 있으면 닫지 않는다', async () => {
+   const { closedReason } = await import('../scripts/lib/questions.ts')
+   const head = 'a'.repeat(40)
+   const q = message('q', 'question', { task_id: 'task', dispatch_id: 'old' })
+   const report = message('ready', 'status', { task_id: 'task', dispatch_id: 'new', subject: `준비됨 #123, head ${head}` })
+   for (const state of ['MERGED', 'CLOSED', 'OPEN']) {
+     const readPr = (() => ({ ok: true, data: { state, headRefOid: head } })) as typeof import('../scripts/lib/gh.ts').ghJson
+     const lookup = { rows: { ok: true as const, rows: [{ dispatchId: 'old', dispatchStatus: 'abandoned' }] }, reports: [report], readPr }
+     assert.equal(closedReason(q, 'r', tmp, lookup) !== null, state !== 'OPEN')
+     assert.equal(closedReason(q, 'r', tmp, { ...lookup, reports: [{ ...report, task_id: 'another' }] }), null)
+     assert.equal(closedReason(q, 'r', tmp, { ...lookup, rows: { ok: true, rows: [{ dispatchId: 'old', dispatchStatus: 'running' }] } }), null)
+     const wrongHead = (() => ({ ok: true, data: { state, headRefOid: 'b'.repeat(40) } })) as typeof import('../scripts/lib/gh.ts').ghJson
+     assert.equal(closedReason(q, 'r', tmp, { ...lookup, readPr: wrongHead }), null)
+   }
+ })

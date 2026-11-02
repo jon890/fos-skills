@@ -511,3 +511,41 @@ describe('설정', () => {
     }
   })
 })
+
+ test('크레딧 소진은 멈춤 감시를 꺼도 dispatch 마다 한 번 알린다', () => {
+   register('A', '2026-01-01T00:00:00Z')
+   write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_ticks: { error: 0, idle: 0 } } }))
+   orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: 'Your workspace is out of credits\n› Ask Codex to do anything' } })
+   tick()
+   tick()
+   const notices = runEvents('A').filter((row) => String(row.text).includes('사용 한도'))
+   assert.equal(notices.length, 1)
+   assert.match(String(notices[0].text), /d1.*tA.*agent-selection.md/u)
+   assert.deepEqual(sends(), [])
+ })
+
+ test('한도 알림 뒤 회복했다 일반 오류로 멈추면 오류 감시를 계속한다', () => {
+   register('A', '2026-01-01T00:00:00Z')
+   const state = { workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: 'Your workspace is out of credits' } }
+   orca(state)
+   tick()
+   state.screens.tA = CLAUDE_WORKING
+   orca(state)
+   tick()
+   state.screens.tA = CODEX_ERROR()
+   orca(state)
+   tick()
+   tick()
+   assert.equal(stalledEvents('A').length, 1)
+   state.screens.tA = 'Your workspace is out of credits'
+   orca(state)
+   tick()
+   assert.equal(runEvents('A').filter((row) => row.kind === 'WORKER-LIMITED').length, 1)
+ })
+
+ test('한도 안내가 남아 있어도 작업 중인 화면은 한도 멈춤이 아니다', async () => {
+   const { limitedScreen } = await import('../scripts/lib/sessions.ts')
+   assert.equal(limitedScreen(['Your workspace is out of credits']), true)
+   assert.equal(limitedScreen(['Your workspace is out of credits', ...CLAUDE_WORKING.split('\n')]), false)
+   assert.equal(limitedScreen(['테스트가 통과했다']), false)
+ })

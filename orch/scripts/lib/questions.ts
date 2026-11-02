@@ -201,7 +201,7 @@ export async function notifyQuestion(notice: Notice, repo: string, run: string |
 
 // 닫힌 질문 ------------------------------------------------------------------
 // 끝난 dispatch 가 남긴 질문은 답할 곳이 없다. Orca 는 닫힌 dispatch 에 보낸 답을 전하지 않는다.
-// 그 dispatch 가 끝났고(SETTLED) 그 dispatch 가 알린 PR(status 의 `준비됨 #<PR>, head <SHA>`)이 모두 머지되거나 닫혔으면 닫힌 질문이다.
+// 그 dispatch 가 끝났고(SETTLED) 같은 Task 의 dispatch 가 알린 PR(status 의 `준비됨 #<PR>, head <SHA>`)이 모두 머지되거나 닫혔으면 닫힌 질문이다.
 // PR 은 부른 쪽 저장소에서 `gh pr view` 로 읽고, 준비 상태의 head 가 그 PR 의 커밋에 있을 때만 그 PR 로 본다.
 // 다른 저장소에서 번호만 같은 PR 을 닫힌 것으로 읽지 않으려는 것이다.
 // 하나라도 읽지 못하거나 준비 상태가 없으면 닫히지 않은 것으로 본다(재알림을 계속한다).
@@ -214,7 +214,7 @@ export const SETTLED = new Set(['completed', 'failed', 'abandoned', 'canceled'])
 const CLOSED_PR = new Set(['MERGED', 'CLOSED'])
 
 // 틱 안에서 Run 마다 한 번만 읽는 worker 행과 status 메시지
-export type ClosedLookup = { rows?: ReturnType<typeof workerRows>; reports?: Message[] | null }
+export type ClosedLookup = { rows?: ReturnType<typeof workerRows>; reports?: Message[] | null; readPr?: typeof ghJson }
 
 export function dispatchOf(message: Message): string | null {
   const dispatch = context(message)[1]
@@ -240,15 +240,18 @@ export function closedReason(message: Message, run: string, repo: string, lookup
     }
   }
   if (!lookup.reports) return null
+  const task = context(message)[0] || row?.taskId
   const heads = new Map<number, string>()
   for (const report of lookup.reports) {
-    const ready = report.type === 'status' && context(report)[1] === dispatch ? readyOf(report) : null
+    const [reportTask, reportDispatch] = context(report)
+    const sameWork = reportDispatch === dispatch || (task && reportTask === task && reportDispatch)
+    const ready = report.type === 'status' && sameWork ? readyOf(report) : null
     if (ready) heads.set(ready.pr, ready.head)
   }
   if (heads.size === 0) return null
   const states: string[] = []
   for (const [pr, head] of heads) {
-    const got = ghJson<{ state?: unknown; headRefOid?: unknown; commits?: { oid?: unknown }[] }>(
+    const got = (lookup.readPr ?? ghJson)<{ state?: unknown; headRefOid?: unknown; commits?: { oid?: unknown }[] }>(
       ['pr', 'view', String(pr), '--json', 'state,headRefOid,commits'],
       { cwd: repo },
     )

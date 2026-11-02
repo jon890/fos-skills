@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 5.19.0 (2026-11-02)
+
+- 루프가 크레딧 소진 등 사용 한도로 멈춘 worker 를 dispatch 마다 한 번 알린다
+- 다시 띄운 worker 의 완료와 끝난 dispatch 의 질문을 같은 Task 의 앞선 PR 준비 상태로 판정한다
+- PR 과 같은 워크플로의 base 실행도 실패하면 worker 에게 수정을 보내지 않고 코디네이터에게만 알린다
+
 ## 5.18.0 (2026-11-02)
 
 - Orca 1.4.246 의 줄인 보기로 비던 판정을 고친다. 모든 `orca orchestration` 조회에 `--full` 을 붙인다. 직접 조회할 때도 붙인다

@@ -1,9 +1,9 @@
-// PR 작업의 완료 신호(worker_done)를 같은 Dispatch 의 앞선 준비 상태와 대조한다. wait-important 와 triage-messages 가 쓴다.
+// PR 작업의 완료 신호(worker_done)를 같은 Task 의 앞선 준비 상태와 대조한다. wait-important 와 triage-messages 가 쓴다.
 //
 // 이 검사는 발신 프로세스를 인증하지 않는다. Orca 의 settlement 를 바꾸지 않고, 완료 조건의 근거가 없는 신호를
 // 따로 분류해 코디네이터의 해제를 막는다.
 //
-// 준비 상태: 같은 task, dispatch, 발신자의 status 이고 제목이나 본문의 한 줄이 `준비됨 #<PR>, head <40자리 SHA>` 로 시작한다.
+// 준비 상태: 같은 task 의 status(같은 dispatch 면 발신자도 일치) 이고 제목이나 본문의 한 줄이 `준비됨 #<PR>, head <40자리 SHA>` 로 시작한다.
 //   SHA 바로 뒤는 줄 끝이거나 공백, 탭, `.`, `,`, `;`, `:`, `(` 다. worker 가 같은 줄에 붙인 설명(`head <SHA> (리뷰 P3 1건)`)도 인정한다.
 //   SHA 가 40자리보다 길거나 짧으면 근거가 아니다.
 // classify 는 메시지의 복사본에 completionVerification 을 붙인다.
@@ -101,14 +101,14 @@ export function classify(messages: Json[], history: Json[] = []): Json[] {
         for (const candidate of previous) {
           if (candidate.type !== 'status' || !task || !dispatch) continue
           const [candidateTask, candidateDispatch] = context(candidate)
-          if (candidateTask !== task || candidateDispatch !== dispatch) continue
+          if (candidateTask !== task || !candidateDispatch) continue
           const from = sender(item)
-          if (!from || from !== sender(candidate)) continue
+          if (!from || !sender(candidate) || (candidateDispatch === dispatch && from !== sender(candidate))) continue
           if (!earlier(candidate, item, messages.slice(0, output.length))) continue
           const found = readyOf(candidate)
           if (found) ready = { status: 'ready', ...found, statusMessageId: candidate.id ?? null }
         }
-        item.completionVerification = ready ?? { status: 'suspicious', reason: '같은 Task·Dispatch의 앞선 PR 준비 상태가 없다' }
+        item.completionVerification = ready ?? { status: 'suspicious', reason: '같은 Task의 앞선 PR 준비 상태가 없다' }
         if (!ready) {
           item.originalType = 'worker_done'
           item.type = 'suspicious_worker_done'

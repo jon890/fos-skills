@@ -155,12 +155,13 @@ function pr(number: number, rollup: Json[], extra: Json = {}): Json {
 }
 
 // 이번 실행의 gh 답. rules 는 저장소 규칙 API 의 답이다(기본은 필수 체크 test 하나)
-function github(rows: Json[], rules: FakeRule = { stdout: '["test"]\n' }, listCode = 0): void {
+function github(rows: Json[], rules: FakeRule = { stdout: '["test"]\n' }, listCode = 0, extra: FakeRule[] = []): void {
   gh.setRules([
     { args: ['pr', 'list', '--base'], stdout: '[]\n' },
     { args: ['pr', 'list'], stdout: `${JSON.stringify(rows)}\n`, stderr: listCode ? 'gh offline\n' : '', code: listCode },
     { args: ['api', 'user'], stdout: 'me\n' },
     { ...rules, args: [RULES_PATH] },
+    ...extra,
   ])
 }
 
@@ -541,3 +542,15 @@ describe('머지 알림', () => {
     assert.deepEqual(sends(), [])
   })
 })
+
+ test('base 의 같은 workflow 도 실패하면 worker 에게 보내지 않고 코디네이터에게만 알린다', () => {
+   worker(1, 'running')
+   const failed = { ...check('ci', 'FAILURE'), detailsUrl: 'https://github.com/o/r/actions/runs/123/job/1' }
+   github([pr(1, [failed])], { stdout: '[]' }, 0, [
+     { args: ['repos/o/r/actions/runs/123'], stdout: JSON.stringify({ workflow_id: 42 }) },
+     { args: ['repos/o/r/actions/workflows/42/runs?branch=main&per_page=1'], stdout: JSON.stringify({ workflow_runs: [{ status: 'completed', conclusion: 'failure' }] }) },
+   ])
+   once()
+   assert.deepEqual(sends(), [])
+   assert.ok(events().some((e) => e.kind === 'CI-FAILED' && e.text === 'ci: main 도 실패'))
+ })

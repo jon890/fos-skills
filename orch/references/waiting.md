@@ -46,8 +46,8 @@
 
 - 등록된 Run 마다 질문 확인. 기술 질문과 일반 escalation은 답이 없는 채 재알림 시간이 지나면 알림 파일에 `REMINDER` 를 쓴다. 사용자 결정 질문의 재알림은 루프 로그에만 남기고, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING` 알림과 단일 notifier가 맡는다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
 - Run 마다 그 Run 범위의 정리(`cleanup-sweep --run`), 원격 브랜치 정리와 보드 동기화(`board-sync`)는 틱마다 한 번
-- 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 그 PR 의 worker 에게 알리고, 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알린다. `queue.auto_merge` 를 켠 저장소에서는 머지할 수 있는 PR 을 머지 큐에 건다(`orch-loop.ts` 머리 주석의 「자동 머지」)
-- Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
+- 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 같은 워크플로의 base 최신 실행을 공유 캐시로 확인한다. base 도 실패하면 `CI-FAILED` 에 `<base> 도 실패` 를 남겨 코디네이터에게만 알리고, 그 밖에는 그 PR 의 worker 에게 알린다. 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알린다. `queue.auto_merge` 를 켠 저장소에서는 머지할 수 있는 PR 을 머지 큐에 건다(`orch-loop.ts` 머리 주석의 「자동 머지」)
+- Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 사용 한도 화면은 `stall_ticks` 와 무관하게 dispatch 마다 `WORKER-LIMITED` 알림을 한 번 쓴다. 알림의 dispatch 와 터미널로 대상을 찾고 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
 - Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
 - `queue.auto_merge` 를 켠 저장소에서 머지할 수 있는 PR 을 머지 큐에 건다
 - 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기. 끝난 dispatch 에 이어 쓰는 동안(최대 65분)은 다음 틱이 밀린다
@@ -68,7 +68,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py" --repo "$REPO" --run "$RUN_ID"
 
 **doctor 의 `LOOP-STALE <repo> <pid> <번들 해시>` 는 플러그인을 갱신한 뒤에도 옛 번들의 스크립트로 도는 루프다.** 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
 
-doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
+doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. 끝난 dispatch 는 같은 Task 의 PR 종료 근거가 있으면 루프와 doctor 모두 질문에서 제외한다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
 doctor 의 `WORKER-STATE <dispatch> <상태> <근거>` 는 살아 있는 dispatch 인데 터미널이 `user_owned` 로 표시된 worker 의 판정이다(`scripts/lib/worker-state.ts`).
 `working` 이면 화면이 작업 중이라 Orca 의 표시만 틀린 것이고 그대로 둔다. `taken_over` 면 사용자가 넘겨받은 worker 라 지시를 보내지 않고 사용자에게 알린다.
 `--run` 을 주면 저장소의 `session-resume` 핸들러에 루프 생존과 살아 있는 대기 pid, 미답변 질문 id 를 넘긴다([`hooks.md`](hooks.md)).
@@ -113,7 +113,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `REMINDER`: 답이 없는 기술 질문이나 일반 escalation의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다. 사용자 결정의 재알림은 이 이벤트로 오지 않는다
-  - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다. 끝이 `취소만 있음` 이면 실패한 체크가 모두 취소다. worker 에게 보내지 않았다. 일부러 취소한 CI 면 아무것도 하지 않고, 아니면 코디네이터가 CI 를 다시 돌린다
+  - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. `<base> 도 실패` 면 같은 워크플로의 base 최신 실행도 실패해 보내지 않았다. 코디네이터가 공통 원인을 별도 작업으로 처리한다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다. 끝이 `취소만 있음` 이면 실패한 체크가 모두 취소다. worker 에게 보내지 않았다. 일부러 취소한 CI 면 아무것도 하지 않고, 아니면 코디네이터가 CI 를 다시 돌린다
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
   - `QUEUE-CONFLICT`: 머지 큐가 base 와 충돌한 PR 을 빼고 뒤 PR 을 이어 머지했다. 내용은 충돌 이유다. worker 에게 알리는 일은 루프의 충돌 처리가 한다. worker 가 base 를 합친 뒤 그 PR 만 다시 머지 큐에 건다
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
@@ -123,6 +123,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
   - `MIGRATION-BLOCKED`: 더 낮은 번호가 오래 막혀 있다. 막는 쪽은 열린 PR 이거나 PR 없는 예약이다. 막는 쪽 worker 에게 `reserve-migration.ts --again` 으로 번호를 다시 받아 파일 이름을 바꾸게 한다. 루프는 파일 이름을 바꾸지 않는다
     막는 쪽 브랜치를 버렸으면 그 브랜치를 지운 뒤 `reserve-migration.ts --repo <저장소> --prune` 을 부른다. 다음 틱에 막힘이 풀린다
     알림은 한 번만 오므로 기다리는 PR 은 그 뒤 알림 없이 기다린다
+  - `WORKER-LIMITED`: 사용 한도로 멈춘 dispatch 와 터미널이다. [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 같은 dispatch 는 한 번만 알리며 자동 재시도하지 않는다
   - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `nudge-worker.ts --terminal <터미널> --state` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
   - `HEAVY-SLOT-HELD`: 내용은 `pid <pid> <분>분 <명령줄>` 목록과 상한이다. 그 검사가 무거운 검사 자리를 상한보다 오래 쥐어 다른 worker 의 검사가 기다린다. 명령줄과 그 pid 의 worktree 로 어느 worker 의 검사인지 찾고, 그 worker 에게 끝났는지 묻거나 사용자에게 끊을지 묻는다. 루프는 끊지 않는다. 같은 검사가 쥐고 있는 동안은 한 번만 온다
   - `FINISH-MISSING`: 루프의 정리가 머지된 PR 의 워크트리를 치웠는데 그 PR 에 머지 뒤 마무리(`finish-pr`)가 돈 적이 없다. `gh pr merge` 로 바로 머지한 PR 이다. 내용 끝의 `finish-pr` 명령으로 마무리를 돌려 배포 확인, 업무 완료, 보드 done 을 채운다. 같은 PR 은 한 번만 온다

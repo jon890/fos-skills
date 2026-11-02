@@ -251,3 +251,23 @@ export function ciState(rollup: unknown, required: readonly string[], skippedIsM
   if (seen.length === 0 || missing || seen.some(pendingRow)) return { state: 'pending', checks }
   return { state: 'passed', checks }
 }
+
+// 체크 이름이 같아도 다른 workflow 일 수 있다. Actions URL 의 run 으로 workflow ID 를 읽고,
+// base 의 최신 실행이 실패했는지 본다. lib/gh-budget.ts 의 REST GET 공유 캐시를 쓴다.
+// 모든 실패 체크가 같은 workflow 의 base 실패로 설명될 때만 worker 전달을 막는다.
+export function baseWorkflowFailed(repo: string, host: string, slug: string, base: string, checks: readonly CiCheck[],
+  read: typeof ghJson = ghJson): boolean {
+  if (checks.length === 0) return false
+  return checks.every((check) => {
+    let url: URL
+    try { url = new URL(check.url ?? '') } catch { return false }
+    const match = /^\/([^/]+\/[^/]+)\/actions\/runs\/([0-9]+)(?:\/|$)/u.exec(url.pathname)
+    if (url.host !== host || !match || match[1] !== slug) return false
+    const run = read<{ workflow_id?: number }>(['api', '--hostname', host, `repos/${slug}/actions/runs/${match[2]}`], { cwd: repo })
+    if (!run.ok || !Number.isSafeInteger(run.data?.workflow_id) || Number(run.data.workflow_id) <= 0) return false
+    const latest = read<{ workflow_runs?: { status?: string; conclusion?: string }[] }>(['api', '--hostname', host,
+      `repos/${slug}/actions/workflows/${run.data.workflow_id}/runs?branch=${encodeURIComponent(base)}&per_page=1`], { cwd: repo })
+    const row = latest.ok ? latest.data?.workflow_runs?.[0] : null
+    return row?.status === 'completed' && ['failure', 'timed_out', 'action_required', 'startup_failure', 'stale'].includes(row.conclusion ?? '')
+  })
+}

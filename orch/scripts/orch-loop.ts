@@ -132,6 +132,7 @@
 //     상태는 ciState(queue.skipped_is_missing 을 따른다)다. 머지 큐의 기본 판정(--allow-fail 없음)과 같다. 필수가 아닌 체크의 실패도
 //     failed 이고, passed 는 실패가 없고 필수 체크가 모두 나타났고 롤업의 체크가 모두 끝난 때다. 필수 체크 목록이 비면 나타난 체크 전부로
 //     판정한다. 루프는 --allow-fail 을 모른다. 머지 큐에 --allow-fail 을 주는 저장소에서는 루프가 실패로 알린 PR 도 큐는 머지할 수 있다.
+//     같은 워크플로의 base 최신 실행도 실패하면 worker 에게 보내지 않고 CI-FAILED 에 `<base> 도 실패` 를 쓴다. 조회는 공유 캐시를 쓴다.
 //     loop.json 의 ci[<PR>] 와 HEAD 와 상태가 같으면 넘어간다. 다르면 새 값을 결과의 ci 에 담고, passed 로 바뀌었으면 ci-passed 를,
 //     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 알림 파일에 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 lib/events.ts 머리 주석의
 //     「이벤트별 필드」). 같은 HEAD 에서 다시 돌린 체크가 통과로 바뀌면 ci-passed 를 낸다. 새 HEAD 는 새로 판정한다.
@@ -158,6 +159,7 @@
 // 멈춤 확인: 맡은 Run 마다 그 Run 의 worker-list(위 「worker 찾기」 와 같은 조회)에서 살아 있는 dispatch(LIVE_DISPATCH)의 터미널 화면을
 //     `orca terminal read --screen` 으로 읽고 lib/screen.ts 의 readScreen 으로 판정한다. 등록되지 않은 Run 의 worker 화면은 읽지 않는다.
 //     입력하지 않는다. 다시 시도시키는 일과 그 횟수 상한은 저장소의 worker-stalled 핸들러가 정한다(references/hooks.md, ADR-013).
+//     사용 한도 화면은 stall_ticks 와 무관하게 dispatch 마다 WORKER-LIMITED 알림을 한 번 쓴다. agent-selection.md 의 한도 복구를 안내한다.
 //     멈춤은 error(모델 오류로 멈춘 화면)와 idle(입력란이 빈 화면)이다. pipeline.stall_ticks 가 상태마다 기준 틱 수를 정하고, 0 이면 보지 않는다.
 //     interrupted(사람이 Esc 로 끊은 화면)는 멈춤이 아니다. 사람이 일부러 멈춘 작업을 핸들러가 다시 돌리지 않게 한다.
 //     기본은 error 2, idle 0 이다. idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 기본으로 끈다.
@@ -346,7 +348,7 @@ import { finishStarted } from './lib/finish-marks.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
 import { isFile } from './lib/fs.ts'
 import { holdMaxSec, overHeld } from './lib/heavy-hold.ts'
-import { apiTarget, cancelledOnly, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
+import { baseWorkflowFailed, apiTarget, cancelledOnly, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { specFiles } from './lib/last-pr.ts'
@@ -363,6 +365,7 @@ import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './l
 import { isUserDecision, notifyDecisions } from './lib/decisions.ts'
 import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
+import { limitedScreen } from './lib/sessions.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
 import { branchesOf } from './lib/spec.ts'
 import { waiterPids } from './lib/waiters.ts'
@@ -431,7 +434,7 @@ type TickResult = {
   stalls?: Record<string, Stall>
 }
 type StallState = 'error' | 'idle'
-type Stall = { run: string; terminal: string; state: StallState; hash: string; errors: number; since: string; ticks: number; fired: boolean }
+type Stall = { run: string; terminal: string; state: StallState | 'limited'; hash: string; errors: number; since: string; ticks: number; fired: boolean; limitedNotified?: boolean }
 
 class Usage extends Error {}
 
@@ -1288,7 +1291,10 @@ async function watchCi(
       let told: { text: string; run: string | null }
       try {
         // 취소만 있으면 코드 실패가 아니다. worker 에게 고치라고 보내지 않고 코디네이터에게만 알린다
-        told = cancelledOnly(failed) ? { text: CANCELLED_ONLY, run: runOfPr(ctx, pr, lookup) } : await tellWorker(ctx, pr, failed, lookup)
+        told = cancelledOnly(failed) ? { text: CANCELLED_ONLY, run: runOfPr(ctx, pr, lookup) }
+          : baseWorkflowFailed(ctx.repo, pr.host, pr.slug, pr.base, failed)
+            ? { text: `${pr.base} 도 실패`, run: runOfPr(ctx, pr, lookup) }
+            : await tellWorker(ctx, pr, failed, lookup)
       } catch (e) {
         told = { text: `보내지 못했다(${oneLine(e)})`, run: null }
       }
@@ -1327,12 +1333,12 @@ function stallEntries(value: unknown): Record<string, Stall> {
   const entries: Record<string, Stall> = {}
   if (!isObject(value)) return entries
   for (const [dispatch, e] of Object.entries(value)) {
-    if (!isObject(e) || (e.state !== 'error' && e.state !== 'idle')) continue
+    if (!isObject(e) || (e.state !== 'error' && e.state !== 'idle' && e.state !== 'limited')) continue
     if (typeof e.run !== 'string' || typeof e.terminal !== 'string' || typeof e.hash !== 'string' || typeof e.since !== 'string') continue
     if (typeof e.ticks !== 'number' || !Number.isInteger(e.ticks) || e.ticks < 0 || typeof e.fired !== 'boolean') continue
     // errors 가 없는 항목은 오류 줄 수를 모른다. 0 으로 두어 다음 hash 변화에서 다시 센다
     const errors = typeof e.errors === 'number' && Number.isInteger(e.errors) && e.errors >= 0 ? e.errors : 0
-    entries[dispatch] = { run: e.run, terminal: e.terminal, state: e.state, hash: e.hash, errors, since: e.since, ticks: e.ticks, fired: e.fired }
+    entries[dispatch] = { run: e.run, terminal: e.terminal, state: e.state, hash: e.hash, errors, since: e.since, ticks: e.ticks, fired: e.fired, ...(e.limitedNotified === true ? { limitedNotified: true } : {}) }
   }
   return entries
 }
@@ -1380,6 +1386,19 @@ async function watchStalls(
         continue
       }
       const lines = screenLines(read.data)
+      // 사용 한도는 설정과 관계없이 dispatch 생애에 한 번 알린다. 회복한 화면에서도 기록을 유지한다.
+      const limitedNotified = previous[dispatch]?.limitedNotified === true
+      const limited = limitedScreen(lines)
+      if (limited && !limitedNotified) {
+        const text = `사용 한도 ${dispatch} ${terminal}: references/agent-selection.md 의 「사용 한도에 걸렸을 때」에 따라 제공자나 모델을 바꿔 이어받는다`
+        appendEvent(ctx.repo, 'WORKER-LIMITED', null, text, run)
+        log(text)
+      }
+      // 정상 화면으로 돌아와도 한도 알림 기록은 두되 일반 오류 감시는 계속한다.
+      if (limited || limitedNotified) {
+        stalls[dispatch] = { run, terminal, state: 'limited', hash: '', errors: 0, since: iso(), ticks: 0, fired: true, limitedNotified: true }
+      }
+      if (limited) continue
       const screen = readScreen(lines)
       if (screen.state !== 'error' && screen.state !== 'idle') continue
       const state: StallState = screen.state
@@ -1405,6 +1424,7 @@ async function watchStalls(
         : before.hash === hash
           ? { ...before, run, ticks: before.ticks + 1 }
           : { ...before, run, hash, errors: Math.max(before.errors, screen.errors), ticks: 1, fired: before.fired && !grew }
+      if (limitedNotified) entry.limitedNotified = true
       stalls[dispatch] = entry
       if (entry.ticks < limit || entry.fired) continue
       if (await notifyStall(ctx, run, row, entry, screenTail(lines), base)) {

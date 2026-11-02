@@ -48,7 +48,8 @@ if (argv.includes('worker-list')) {
 } else if (argv.includes('check')) {
   const created = new Date(Date.now() - Number(process.env.FAKE_AGE || '0') * 1000).toISOString()
   const question = { id: 'q1', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'dispatch:d', thread_id: 'q1', body: '질문', created_at: created }
-  print({ ok: true, result: { messages: [question] } })
+  const ready = process.env.FAKE_READY ? JSON.parse(process.env.FAKE_READY) : null
+  print({ ok: true, result: { messages: argv.includes('status') ? (ready ? [ready] : []) : [question] } })
 } else {
   print({ ok: true, result: { messages: [] } })
 }
@@ -267,6 +268,19 @@ describe('질문 판정', () => {
     const r = doctor(['--skip-version', '--skill-dir', skill], { env: { FAKE_AGE: '600' } })
     assert.equal(r.code, 1, r.stdout + r.stderr)
     assert.match(r.stdout, /^UNANSWERED q1 10분 이상 답이 없다 \(Run r\)$/m)
+  })
+
+  test('다른 dispatch 의 같은 Task PR 이 끝났으면 UNANSWERED 에서 제외한다', () => {
+    const head = 'a'.repeat(40)
+    const rows = join(tmp, 'workers.json')
+    write(rows, JSON.stringify([{ dispatchId: 'd', taskId: 'task', dispatchStatus: 'abandoned' }]))
+    const fakeGh = join(tmp, 'gh')
+    write(fakeGh, '#!/usr/bin/env node\nconsole.log(JSON.stringify({ state: "MERGED", headRefOid: "' + head + '" }))\n')
+    chmodSync(fakeGh, 0o755)
+    const ready = { type: 'status', task_id: 'task', dispatch_id: 'new', subject: `준비됨 #123, head ${head}` }
+    const r = doctor(['--skip-version', '--skill-dir', skill], { env: { FAKE_AGE: '600', FAKE_WORKERS: rows, FAKE_READY: JSON.stringify(ready), GH: fakeGh, ORCH_GH_CACHE: '0' } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.doesNotMatch(r.stdout, /UNANSWERED/u)
   })
 
   test('599초면 UNANSWERED 가 없고 종료 코드 0 이다', () => {

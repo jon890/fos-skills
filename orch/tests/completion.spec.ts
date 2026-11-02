@@ -73,10 +73,9 @@ describe('classify', () => {
     }
   })
 
-  test('다른 Task, Dispatch, 발신자, 나중 상태, 짧은 해시, 줄 중간의 준비됨, 깨진 시각은 근거가 아니다', () => {
+  test('다른 Task, 발신자, 나중 상태, 짧은 해시, 줄 중간의 준비됨, 깨진 시각은 근거가 아니다', () => {
     const candidates = [
       ready({ task_id: 'task_old' }),
-      ready({ dispatch_id: 'ctx_old' }),
       ready({ from_handle: 'term_other' }),
       message('status', 3, { subject: `준비됨 #123, head ${SHA}` }),
       ready({ subject: '준비됨 #123, head abc1234' }),
@@ -134,3 +133,9 @@ describe('isoTime', () => {
     for (const value of ['bad', '', '2026-13-40T99:00:00Z', null, 12]) assert.equal(isoTime(value), null, String(value))
   })
 })
+
+ test('같은 Task 의 앞선 dispatch 준비 상태는 재시작한 발신자의 근거다', () => {
+   const prior = ready({ dispatch_id: 'ctx_old', from_handle: 'term_old' })
+   assert.equal(classify([message('worker_done', 2)], [prior])[0].type, 'worker_done')
+   assert.equal(classify([message('worker_done', 2)], [ready({ from_handle: 'term_other' })])[0].type, 'suspicious_worker_done')
+ })

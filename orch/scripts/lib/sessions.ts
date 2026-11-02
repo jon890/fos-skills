@@ -58,8 +58,8 @@ export type Stuck = {
 
 // 화면 끝에서 이만큼의 줄만 본다. 한도 안내 뒤에 사람이 이어 가게 해 작업 중이면 working 판정이 먼저 막는다
 const LIMIT_TAIL = 20
-// Claude 의 「Claude usage limit reached」, 「You've hit your weekly limit」, Codex 의 「You've hit your usage limit」
-export const LIMIT_LINE = /usage limit reached|you['’]ve hit your\b.*\blimit/iu
+// Claude 의 「Claude usage limit reached」, 「You've hit your weekly limit」, Codex 의 「You've hit your usage limit」, 「Your workspace is out of credits」
+export const LIMIT_LINE = /usage limit reached|you['’]ve hit your\b.*\blimit|out of credits/iu
 
 export function limitedScreen(lines: string[]): boolean {
   const tail = screenTail(lines, LIMIT_TAIL)
