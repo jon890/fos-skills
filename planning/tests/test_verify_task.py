@@ -633,7 +633,7 @@ class TaskRulesTest(unittest.TestCase):
             verify.check_remote_verification(self.file("tasks/p/remote-verification.md", "# 원격 검증\n\n" + header + body), out, warnings)
             return out, warnings
 
-        ok = "| 없음 | PR 전 | dev 서버 | `ssh dev 'select 1'` | 1 |\n| push 한 뒤 | PR 뒤 | 홈서버 | `verify.sh live` | 0 |\n| 배포 | PR 뒤 | dev | `curl /health` | 200 |\n"
+        ok = "| 없음 | PR 전 | app | 읽기 전용 측정 절차 | 1 |\n| push 한 뒤 | PR 뒤 | app | `scripts/verify.sh live` | 0 |\n| 배포 | PR 뒤 | app | 상태 확인 절차 | 200 |\n"
         self.assertEqual(check(ok), ([], []))
         for row, needle in (
             ("| 머지 | PR 전 | dev | `x` | 0 |\n", "PR 전에 돌릴 수 없다"),
@@ -646,6 +646,29 @@ class TaskRulesTest(unittest.TestCase):
                 self.assertTrue(any(needle in o for o in out), out)
         out, _ = check("| 없음 | dev | `x` |\n", "| 선행 조건 | 실행 위치 | 명령 |\n|---|---|---|\n")
         self.assertTrue(any("열이 없다" in o for o in out), out)
+
+    def test_remote_verification_connection_commands_only_warn(self):
+        headers = (
+            "| 선행 조건 | 시점 | 실행 위치 | 명령 | 기대값 |\n|---|---|---|---|---|\n",
+            "| 선행 조건 | 실행 위치 | 명령 | 기대값 |\n|---|---|---|---|\n",
+        )
+        for header in headers:
+            for command in ("ssh dev 'select 1'", "env FLAG=1 /usr/bin/ssh dev", "scp dist/app dev:/srv/", "sftp dev", "mosh dev", "rsync -a dist/ dev:/srv/", "echo ready && ssh dev true"):
+                with self.subTest(header=header, command=command):
+                    timing = " PR 전 |" if "시점" in header else ""
+                    row = f"| 없음 |{timing} app | `{command}` | 0 |\n"
+                    out, warnings = [], []
+                    verify.check_remote_verification(self.file("tasks/p/remote-verification.md", header + row), out, warnings)
+                    self.assertEqual(out, [])
+                    self.assertTrue(any("명령 칸에 원격 접속" in w for w in warnings), warnings)
+
+    def test_remote_verification_procedures_and_scripts_do_not_warn(self):
+        header = "| 선행 조건 | 시점 | 실행 위치 | 명령 | 기대값 |\n|---|---|---|---|---|\n"
+        for command in ("읽기 전용 측정 절차", "scripts/verify.sh live", "python3 scripts/measure.py", "scripts/ssh-check.py", "echo ssh", "rsync -a dist/ build/"):
+            with self.subTest(command=command):
+                out, warnings = [], []
+                verify.check_remote_verification(self.file("tasks/p/remote-verification.md", header + f"| 없음 | PR 전 | app | `{command}` | 0 |\n"), out, warnings)
+                self.assertEqual((out, warnings), ([], []))
 
     def test_remote_verification_legacy_table_only_warns(self):
         legacy = "| 선행 조건 | 실행 위치 | 명령 | 기대값 |\n|---|---|---|---|\n| PR 브랜치를 push 한 뒤 | 홈서버 | `x` | 0 |\n"
