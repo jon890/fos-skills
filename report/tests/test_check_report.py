@@ -180,3 +180,22 @@ class TemplateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkillDocTest(unittest.TestCase):
+    """스펙 R1(부르는 말)과 R8(다른 스킬과 나누는 문장)이 SKILL.md 에 남아 있는지 본다."""
+
+    R8 = "청중 앞에서 넘기며 말하는 발표는 `presentation`, 외부에 게시할 글은 `content-preview`, 혼자 읽는 설명과 보고서는 `report`"
+
+    def setUp(self):
+        text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        _, front, self.body = text.split("---", 2)
+        self.description = front.split("description:", 1)[1].split("metadata:", 1)[0]
+
+    def test_description_has_trigger_phrases(self):
+        for phrase in ("/report", "HTML 로 시각화해서 설명", "보고서로 만들어", "한눈에 보이게 정리"):
+            self.assertIn(phrase, self.description, phrase)
+
+    def test_description_and_body_separate_siblings(self):
+        self.assertIn(self.R8, " ".join(self.description.split()))
+        self.assertIn(self.R8, self.body)
