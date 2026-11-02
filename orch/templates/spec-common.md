@@ -68,15 +68,18 @@
 
 ## 설계와 구현을 맡길 때
 
-<!-- 지시서가 planning 이나 build-with-teams 를 쓰라고 하면 남긴다. 둘 다 쓰지 않으면 이 절을 지운다. -->
+<!-- 기능 개발이나 planning, build-with-teams 를 맡길 때 남긴다. 기능 루프 규칙의 표지는 지우지 않는다. -->
+
+- 새 기능은 `spec → planning → build-with-teams → verify → docs-consolidate 후보 추출` 순서로 진행한다. 스펙이나 계획이 있으면 필요한 단계부터 시작한다. 상세 인계는 orch 의 `references/feature-loop.md` 를 따른다. <!-- orch-rule: feature-loop -->
+- `build-with-teams` 는 PR 을 열지 않는다. verify 통과와 후보 추출(후보 없음 포함)을 마친 뒤, PR 생성이 허락됐으면 worker 가 위 공통 규칙에 따라 PR 을 연다.
 
 - `planning` 과 `build-with-teams` 는 사용자와 대화하는 세션을 전제로 한다. worker 는 사용자에게 묻지 못하므로 아래로 바꿔 읽는다.
 - 사용자에게 확인하라는 단계는 위 「판단이 필요할 때」 의 기준으로 가른다. 기술 판단은 권장안으로 진행하고, ask 대상만 `worker-ask` 로 묻는다. `AskUserQuestion` 은 쓰지 않는다.
 - 설계와 근거 문서는 `{{DESIGN_DIR}}` 에 둔다.
 - plan 하나는 PR 하나다. 큰 일은 plan 을 나누고 계획서는 그 plan 을 구현한 PR 에서 지운다(`planning` 의 `plan-size.md` 가 소유).
 - 세션 재시작, 계정 전환을 넘길 수 있는 일은 `planning` 으로 `tasks/` 를 만든다. 끊긴 뒤 다음 worker 가 계획과 phase 커밋으로 이어받는다.
-- PR 하나로 끝나는 작은 일은 `tasks/` 를 만들지 않는다. 구현한 뒤 `build-with-teams` 의 「task 없이 리뷰부터 도는 경로」 로 이 지시서를 계획 입력으로 넘겨 리뷰와 PR 을 한다.
-- 구현만 맡겼으면 `build-with-teams` 의 PR 단계는 위 공통 규칙(PR 생성은 허락 줄을 따름, 본문 파일, 머지하지 않음)을 따른다.
+- PR 하나로 끝나는 작은 일은 `tasks/` 를 만들지 않는다. 이 지시서를 계획 입력으로 구현과 개발 테스트를 마치고 verify 의 독립 검토와 docs-consolidate 의 후보 추출 뒤 PR 을 연다.
+- 구현만 맡겼으면 구현 결과와 검증 증거를 코디네이터에게 넘긴다. 뒤의 검증·후보 추출·PR 생성은 지시서가 정한 담당자가 이어 간다.
 - 하위 에이전트는 `name` 없이 띄운다. 이름을 주면 팀원으로 등록되고 tmux pane 이 없는 worker 터미널에서 실패한다.
 - 저장소에 `.claude/planning-overlay.md` 나 `.claude/build-with-teams-overlay.md` 가 있으면 경로는 그 파일을 따른다.
 - 보고에서 phase 를 가리킬 때는 계획 이름을 붙인다(`plan12-login phase 3`). 계획이 둘 이상 돌면 phase 번호만으로는 어느 계획인지 알 수 없다.

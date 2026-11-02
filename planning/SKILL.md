@@ -5,7 +5,7 @@ description: |
   "계획 세워줘", "task 파일 만들어줘", "스펙 구현 계획", "리팩토링 계획", "planning" 요청에 쓴다.
   동작과 설계가 미정이면 spec 에서 먼저 정한다. 구현은 build-with-teams 가 맡는다.
 metadata:
-  version: "3.0.0"
+  version: "3.1.0"
 ---
 # planning
 

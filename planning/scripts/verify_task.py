@@ -3,7 +3,7 @@
 
 index 스키마, 변경 파일 상태, 같은 phase 의 테스트 실행 지시와
 스킬 번들 cwd, 사람 의존 검증, 필수 절, BSD sed 를 검사한다.
-`remote-verification.md` 가 있으면 선행 조건과 시점 열의 값을 검사한다.
+`remote-verification.md` 가 있으면 선행 조건과 시점 열의 값을 검사하고 명령 칸의 원격 접속 형태를 경고한다.
 작업 항목이 호출 형태(`name()`)로 적은 함수를 수정 파일이 정의하면, 그 함수를 부르는 파일 중
 plan 의 변경 파일에 없는 것을 git grep 으로 찾아 경고한다.
 Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 직접 실행하는지 본다.
@@ -728,7 +728,7 @@ def table_rows(text):
 
 
 def check_remote_verification(path, out, warnings):
-    """remote-verification.md 의 선행 조건과 시점이 정한 값인지 본다.
+    """remote-verification.md 의 선행 조건·시점과 명령 칸의 원격 접속 형태를 본다.
 
     시점 열이 없는 옛 형식은 모두 PR 뒤로 읽고 경고만 한다. 진행 중인 계획을 막지 않는다.
     PR 전 항목이 읽기 전용인지는 명령의 뜻이라 판정하지 않는다. 작성자가 확인한다.
@@ -750,6 +750,10 @@ def check_remote_verification(path, out, warnings):
         def cell(name):
             i = col.get(name)
             return cells[i] if i is not None and i < len(cells) else ""
+        command_text = cell("명령").strip("`")
+        commands = shell_commands(f"```bash\n{command_text}\n```")
+        if any(remote_command(command) for command in commands):
+            warnings.append(f"{path}:{n} — 명령 칸에 원격 접속이나 push 형태가 있다. 접속 대상과 운영 값 대신 절차 이름이나 저장소 스크립트만 적고, 실행 위치는 저장소 이름만 적는다")
         prerequisite = cell("선행 조건")
         if not re.match(r"(?:%s)(?:\s|$)" % "|".join(REMOTE_PREREQUISITES), prerequisite):
             message = f"{path}:{n} — 선행 조건은 {', '.join(REMOTE_PREREQUISITES)} 중 하나로 시작한다: {prerequisite}"

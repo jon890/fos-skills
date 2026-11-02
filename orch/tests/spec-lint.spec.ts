@@ -207,6 +207,17 @@ describe('지시서 검사', () => {
     assert.match(r.stderr, /경로 경고 0건/)
   })
 
+  test('기능 루프 표지만 빠진 공통 지시서도 경고한다', () => {
+    const template = readFileSync(TEMPLATE, 'utf8')
+    assert.match(template, /<!-- orch-rule: feature-loop -->/)
+    const a = spec('spec-a', '담당: `src/a/**`')
+    write(join(specs, 'spec-common.md'), template.replace('<!-- orch-rule: feature-loop -->', ''))
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /공통: 틀의 규칙 표지 `feature-loop` 가 없다/)
+    assert.match(r.stderr, /공통 경고 1건/)
+  })
+
   test('완료 기준에 PR 이 둘 이상이면 한 PR 기준을 가리키며 경고하고 종료 코드는 0 이다', () => {
     const multi = spec('spec-multi', '## 완료 기준\n\n- PR1 과 PR2 가 MERGED 됐다.\n')
     const r = run(['--repo', repo, multi])
