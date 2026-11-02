@@ -12,7 +12,9 @@ import {
   migrationOf,
   queueOrder,
   reservedFor,
+  reviewScope,
   reviewVerdict,
+  scopedNotes,
   specHold,
   sweepArgs,
 } from '../scripts/lib/auto-merge.ts'
@@ -105,6 +107,58 @@ describe('boardHold', () => {
 
   test('next 와 details 가 없으면 null 이다', () => {
     assert.equal(boardHold({ id: 'a' }), null)
+  })
+})
+
+describe('reviewScope 와 scopedNotes', () => {
+  const at = (h: number) => `2026-01-01T${String(h).padStart(2, '0')}:00:00Z`
+  const base = new Set(['m1', 'm2'])
+  const inBase = (oid: string) => base.has(oid)
+
+  test('base 를 합친 merge 커밋만 이어지는 동안 앞 커밋을 인정하고 since 는 마지막으로 인정한 커밋의 시각이다', () => {
+    const chain = [
+      { oid: 'h', parents: ['x', 'm2'], at: at(3) },
+      { oid: 'x', parents: ['r', 'm1'], at: at(2) },
+      { oid: 'r', parents: ['c'], at: at(1) },
+      { oid: 'c', parents: [], at: at(0) },
+    ]
+    assert.deepEqual(reviewScope('h', chain, inBase), { heads: ['h', 'x', 'r'], since: at(1) })
+  })
+
+  test('코드 커밋이나 base 밖의 둘째 부모를 만나면 멈춘다', () => {
+    const code = [
+      { oid: 'h', parents: ['c', 'm1'], at: at(3) },
+      { oid: 'c', parents: ['r'], at: at(2) },
+      { oid: 'r', parents: [], at: at(1) },
+    ]
+    assert.deepEqual(reviewScope('h', code, inBase), { heads: ['h', 'c'], since: at(2) })
+    const other = [
+      { oid: 'h', parents: ['r', 'side'], at: at(3) },
+      { oid: 'r', parents: [], at: at(1) },
+    ]
+    assert.deepEqual(reviewScope('h', other, inBase), { heads: ['h'], since: at(3) })
+  })
+
+  test('체인을 읽지 못했으면 HEAD 의 리뷰만 세고 댓글은 세지 않는다', () => {
+    const scope = reviewScope('h', [], inBase)
+    assert.deepEqual(scope, { heads: ['h'], since: null })
+    const notes = [
+      { body: '통과', at: at(5), commit: 'h' },
+      { body: '통과', at: at(5) },
+    ]
+    assert.deepEqual(scopedNotes(notes, scope), [notes[0]])
+  })
+
+  test('리뷰는 달린 커밋으로, 댓글은 since 이후인지로 고른다', () => {
+    const notes = [
+      { body: 'a', at: at(9), commit: 'old' },
+      { body: 'b', at: at(1), commit: 'r' },
+      { body: 'c', at: at(0) },
+      { body: 'd', at: at(2) },
+      { body: 'e', at: '' },
+    ]
+    const picked = scopedNotes(notes, { heads: ['h', 'r'], since: at(1) }).map((note) => note.body)
+    assert.deepEqual(picked, ['b', 'd'])
   })
 })
 
