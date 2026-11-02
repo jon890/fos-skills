@@ -19,9 +19,9 @@ test('수만 건의 전체 inbox 대신 Run 질문과 worker 답변만 조회한
   expect(result.questions.map((m) => m.id)).toEqual(['old'])
   expect(result.limited).toBe(false)
   expect(calls).toEqual([
-    ['orca', 'orchestration', 'check', '--run', 'r', '--all', '--types', 'question,escalation', '--json'],
-    ['orca', 'orchestration', 'check', '--run', 'r', '--peek', '--types', 'question,escalation', '--json'],
-    ['orca', 'orchestration', 'inbox', '--terminal', 'dispatch:d', '--limit', '200', '--json'],
+    ['orca', 'orchestration', 'check', '--run', 'r', '--all', '--types', 'question,escalation', '--full', '--json'],
+    ['orca', 'orchestration', 'check', '--run', 'r', '--peek', '--types', 'question,escalation', '--full', '--json'],
+    ['orca', 'orchestration', 'inbox', '--terminal', 'dispatch:d', '--limit', '200', '--full', '--json'],
   ])
 })
 
