@@ -129,3 +129,15 @@ describe('spec-common.md 의 스크립트 경로', () => {
     assert.ok(r.stdout.trim().endsWith('/orch/scripts'), r.stdout)
   })
 })
+
+
+test('리뷰 workflow 변경 예외를 worker 와 코디네이터 지침이 함께 제공한다', () => {
+  const policy = template().split('\n').find((line) => line.includes('<!-- orch-rule: review-workflow -->'))
+  assert.ok(policy, '낡은 공통 지시서를 검사할 정책 표지가 필요하다')
+  const replying = readFileSync(new URL('../references/replying.md', import.meta.url), 'utf8')
+  for (const text of [policy, replying]) {
+    assert.match(text, /workflow/)
+    assert.match(text, /Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청/)
+    assert.match(text, /review-fix/)
+  }
+})

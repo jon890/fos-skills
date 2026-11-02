@@ -10,7 +10,7 @@
 //     --repo     대상 저장소. 존재 확인과 담당 경로 확장을 이 저장소의 git 으로 한다
 //     --overlay  저장소 값을 읽을 파일. 없으면 <orch 작업 폴더>/overlay.md 를 읽고, 그것도 없으면 저장소 값 없이 돈다
 //     SPEC       검사할 지시서. 공통 지시서(spec-common.md)는 넘기지 않는다
-//     --active   이미 띄운 지시서. 여러 번 준다. SPEC 과 같이 검사하되 선택 검사만 하지 않는다.
+//     --active   이미 띄운 지시서. 여러 번 준다. 선택 검사는 하지 않고, 활성 지시서끼리의 겹침은 경고로 낸다.
 //                선택 줄을 강제하기 전에 띄운 worker 의 지시서가 새 지시서의 띄우기를 막지 않게 한다(launch-worker 가 쓴다)
 //     --check-overlay  오버레이와 <orch 작업 폴더>/config.json 이 가리키는 경로가 origin/<base> 에 있는지도 본다.
 //                      이 옵션을 주면 SPEC 을 생략할 수 있다. `--overlay` 는 지금처럼 오버레이 파일 위치다
@@ -408,6 +408,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
   const warnings: string[] = []
   // 같은 지시서를 두 번 넘기면 한 번만 본다. 자기 자신과 겹친다고 하지 않게 한다
   const launched = new Set(active.map((s) => normalize(s)))
+  const targets = new Set(specs.map((s) => normalize(s)))
   const parsed = [...new Map([...specs, ...active].map((s) => [normalize(s), s])).values()].map(readSpec)
 
   for (let i = 0; i < parsed.length; i += 1) {
@@ -415,7 +416,12 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
       const a = parsed[i]
       for (const [ga, na] of a.owned) {
         for (const [gb] of b.owned) {
-          if (overlap(repo, ga, gb)) errors.push(`${a.name}:${na}: 겹침: \`${ga}\` 와 ${b.name} 의 \`${gb}\``)
+          if (overlap(repo, ga, gb)) {
+            const blocking = targets.has(a.path) || targets.has(b.path)
+            const kind = blocking ? '겹침' : '겹침 경고'
+            const findings = blocking ? errors : warnings
+            findings.push(`${a.name}:${na}: ${kind}: \`${ga}\` 와 ${b.name} 의 \`${gb}\``)
+          }
         }
       }
     }
@@ -507,16 +513,18 @@ function main(argv: string[]): number {
     const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay, active) : { errors: [], warnings: [] }
     if (values['check-overlay']) errors.push(...checkOverlay(values.repo, overlay, values.base as string))
     for (const line of [...errors, ...warnings]) process.stdout.write(`${line}\n`)
+    const overlaps = warnings.filter((line) => line.includes(': 겹침 경고: ')).length
     const titles = warnings.filter((line) => line.includes(': 제목: ')).length
     const commons = warnings.filter((line) => line.includes(': 공통: ')).length
     const boards = warnings.filter((line) => line.includes(': 보드: ')).length
     const dones = warnings.filter((line) => line.includes(': 완료: ')).length
     const tail =
+      (overlaps > 0 ? `, 겹침 경고 ${overlaps}건` : '') +
       (titles > 0 ? `, 제목 경고 ${titles}건` : '') +
       (commons > 0 ? `, 공통 경고 ${commons}건` : '') +
       (boards > 0 ? `, 보드 경고 ${boards}건` : '') +
       (dones > 0 ? `, 완료 경고 ${dones}건` : '')
-    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${warnings.length - titles - commons - boards - dones}건${tail}\n`)
+    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${warnings.length - titles - commons - boards - dones - overlaps}건${tail}\n`)
     return errors.length > 0 ? 1 : 0
   } catch (e) {
     if (!(e instanceof UsageError)) throw e

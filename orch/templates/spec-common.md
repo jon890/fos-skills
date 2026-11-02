@@ -16,6 +16,7 @@
 - 의존성이 필요하면 워크트리 안에서 lockfile 로 설치한다. 원래 저장소의 의존성 폴더를 링크로 걸지 않는다.
 - **PR 생성은 지시서의 `허락:` 줄이 허락한 경우에만 한다. 허락이 없으면 push 까지만 하고 status 로 알린다.** base 는 {{BASE}} 다. 다른 PR 브랜치를 base 로 두지 않는다. 제목과 본문은 {{PR_FORMAT}} 을 따른다. 지시서가 정한 PR 만 연다.
 - {{DRAFT_PR_RULE}}
+- 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claude-code-review.yml`)가 있으면 Ready 뒤 자동 리뷰를 기다리지 않고 코디네이터에게 독립 리뷰를 요청한다. 기본 브랜치와 workflow 가 달라 보안 검증으로 자동 리뷰가 건너뛰어질 수 있다. 코디네이터가 마련한 독립 리뷰 결과도 `review-fix` 로 반영한다. <!-- orch-rule: review-workflow -->
 - PR 을 연 뒤 리뷰가 달리면 `review-fix` 스킬로 반영한다. 리뷰 회신과 resolve 는 허용한다. 반영하지 않을 지적이 있으면 회신 전에 ask 로 묻는다.
 - 머지는 하지 않는다. 코디네이터가 한다(워크트리 권한 설정이 `gh pr merge` 를 막는다). **그러나 PR 이 머지될 때까지 이 worker 가 맡는다.** 준비됨을 보낸 뒤에도 CI 실패, 충돌, 기준 브랜치 변경, 리뷰를 코디네이터의 지시를 기다리지 않고 직접 처리한다. 고쳐 push 하면 바뀐 head 로 `준비됨` 을 다시 보낸다.
 - 하위 에이전트는 orca 명령을 쓰지 않는다. 스폰 프롬프트에 이 줄을 넣는다.
@@ -41,7 +42,7 @@
   ORCH_SCRIPTS=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";const e=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"].sort((a,b)=>(a.scope!=="user")-(b.scope!=="user"))[0];console.log(e.installPath+"/orch/scripts")') && node --disable-warning=ExperimentalWarning "$ORCH_SCRIPTS/worker-ask.ts" --from "$FROM" --question "$QUESTION"
   ```
 
-  위 블록은 `FROM` 과 `QUESTION` 을 채운 뒤 한 번에 붙여 넣는다. `FROM` 은 머리말의 `--from` 값이고 `QUESTION` 은 질문 문장이다. 값을 채우지 않고 돌리면 `worker-ask` 가 사용법 오류(종료 코드 2)로 끝난다. Claude 는 Bash 의 `run_in_background` 로 돌리고 완료 알림을 기다린다. 백그라운드 실행이 없으면 `--timeout-ms` 를 도구 시간 제한보다 짧게 준다. 답은 출력 첫 줄의 `answer: ` 뒤에 있다. 종료 코드 5 면 읽지 않은 코디네이터 메시지가 출력에 있으니 먼저 읽고, 그래도 물어야 하면 같은 명령을 다시 부른다(한 번 보여 준 메시지로는 다시 막지 않는다). 3 이면 첫 줄이 `answer: ` 일 때는 코디네이터가 status 로 보낸 답이고, 아니면 Run 메일함으로 대신 보낸 것이니 `orca orchestration check` 로 답을 읽는다. 4 면 출력의 메시지 ID 로 `--resume` 한다.
+  위 블록은 `FROM` 과 `QUESTION` 을 채운 뒤 한 번에 붙여 넣는다. `FROM` 은 머리말의 `--from` 값이고 `QUESTION` 은 질문 문장이다. 값을 채우지 않고 돌리면 `worker-ask` 가 사용법 오류(종료 코드 2)로 끝난다. Claude 는 Bash 의 `run_in_background` 로 돌리고 완료 알림을 기다린다. 백그라운드 실행이 없으면 `--timeout-ms` 를 도구 시간 제한보다 짧게 준다. 답은 출력 첫 줄의 `answer: ` 뒤에 있다. 종료 코드 5 면 읽지 않은 코디네이터 메시지가 출력에 있으니 먼저 읽고, 그래도 물어야 하면 같은 명령을 다시 부른다(한 번 보여 준 메시지로는 다시 막지 않는다). 3 이면 첫 줄이 `answer: ` 일 때는 코디네이터가 status 로 보낸 답이고, 아니면 Run 메일함으로 대신 보낸 것이니 `orca orchestration check` 로 답을 읽는다. 4 면 출력의 메시지 ID 로 `--resume` 한다. 오래 기다릴 때는 `--max-wait` 에 총 대기 시간(밀리초)을 주면 같은 질문으로 다시 기다린다. 호출별 대기 시간은 `--timeout-ms` 이고 Orca 상한을 넘으면 상한으로 줄인다.
 - **사용자가 정할 결정은 아래 형식으로 쓰고 `--decision` 을 붙인다.** 보드의 결정 필요 항목이 첫 줄을 제목으로, `권장:` 줄을 그 아래에 보인다. 형식이 어긋나면 `worker-ask` 가 묻지 않고 종료 코드 2 로 끝난다. 기술 질문과 막힘 보고는 형식 없이 묻는다.
 
   ```text

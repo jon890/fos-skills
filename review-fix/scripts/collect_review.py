@@ -4,9 +4,12 @@
 사용법:
     collect_review.py <owner> <repo> <PR번호> [--carried-from <PR번호> ...] [--carried-marker 문구]
 
+    collect_review.py https://HOST/OWNER/REPO/pull/NUMBER [옵션]
+    collect_review.py HOST/OWNER/REPO NUMBER [옵션]
+
     --carried-from    이전 PR 에서 「다음 PR 에서 반영」 으로 회신한 스레드를 다섯째 소스로 더한다.
                       PR 번호를 여럿 줄 수 있고, resolve 된 스레드도 낸다
-                      숫자는 모두 PR 번호로 읽으므로 `<owner> <repo> <PR번호>` 를 먼저 준다
+                      숫자는 모두 이전 PR 번호로 읽으므로 대상 PR 을 먼저 준다
     --carried-marker  회신에서 찾을 문구. 기본은 「다음 PR」
 
 종료 코드:
@@ -21,7 +24,8 @@
 REST 댓글의 `path` 와 `line` 을 스레드의 것과 대조해 어느 지적에 회신할지 정한다.
 
 `diff_hunk`, `html_url`, `_links`, `reactions` 는 토큰만 차지하므로 빼고 `body` 는 잘라 낸다.
-호스트는 `<owner> <repo>` 로 정한다. 어느 디렉터리에서 돌리든 같은 호스트가 나온다.
+PR URL 이나 HOST/OWNER/REPO 를 주면 그 호스트만 조회한다.
+`<owner> <repo>` 를 주면 대상과 같은 origin 의 호스트를 먼저 쓰고, 다르면 로그인 호스트에서 찾는다.
 로그인된 호스트 어디에도 그 저장소가 없으면 현재 디렉터리의 origin 으로 되돌아가고,
 저장소 밖이면 그 단계에서 실패한다. `gh_host.py` 가 그때 stderr 로 알린다.
 """
@@ -29,6 +33,7 @@ REST 댓글의 `path` 와 `line` 을 스레드의 것과 대조해 어느 지적
 import os
 import subprocess
 import sys
+from urllib.parse import urlparse
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -73,6 +78,17 @@ def parse_args(argv):
         else:
             positional.append(item)
             index += 1
+    if positional and positional[0].startswith("https://"):
+        target = urlparse(positional[0])
+        parts = target.path.strip("/").split("/")
+        if len(positional) == 1 and len(parts) == 4 and parts[2] == "pull" and parts[3].isdigit() and target.hostname:
+            positional = [f"{target.hostname}/{parts[0]}", parts[1], parts[3]]
+        else:
+            return None
+    elif len(positional) == 2:
+        parts = positional[0].strip("/").split("/")
+        if len(parts) == 3:
+            positional = [f"{parts[0]}/{parts[1]}", parts[2], positional[1]]
     if len(positional) != 3 or (seen_carried and not carried):
         return None
     return (*positional, carried, marker)
@@ -84,9 +100,12 @@ def main(argv):
         print(__doc__, file=sys.stderr)
         return 2
     owner, repo, num, carried, marker = parsed
+    host = None
+    if "/" in owner:
+        host, owner = owner.split("/", 1)
 
     try:
-        env = {"GH_HOST": gh_host.resolve(owner, repo)}
+        env = {"GH_HOST": gh_host.resolve(owner, repo, host=host)}
     except RuntimeError as e:
         print(e, file=sys.stderr)
         return 2

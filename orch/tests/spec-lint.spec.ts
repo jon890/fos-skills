@@ -199,7 +199,10 @@ describe('지시서 검사', () => {
     write(join(specs, 'spec-common.md'), '## 공통 규칙\n\n- `worker_done` 은 완료 기준을 채운 뒤 보낸다.\n')
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
-    assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 `worker-ask`, `ready-status`, `done-after-merged`, `skill-feedback` 가 없다/m)
+    assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 .* 가 없다/m)
+    for (const [, rule] of template.matchAll(/<!-- orch-rule: ([\w-]+) -->/g)) {
+      assert.ok(r.stdout.includes(`\`${rule}\``), r.stdout)
+    }
     assert.match(r.stderr, /공통 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)
   })

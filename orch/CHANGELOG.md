@@ -3,13 +3,19 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
-## 5.12.0 (2026-11-02)
+## 5.13.0 (2026-11-02)
 
 - 자동 머지의 리뷰 판정이 지금 HEAD 의 리뷰만 센다. 리뷰 뒤에 기준 브랜치를 합친 merge 커밋만 더했으면 앞 리뷰를 인정한다
 - 지금 HEAD 에 판정 문구가 든 리뷰가 없으면 자동 머지에 걸지 않고 `AUTO-MERGE-NO-REVIEW` 로 HEAD 마다 한 번 알린다. 독립 리뷰 결과를 그 HEAD 에 `pass` 문구로 남기면 다음 틱이 건다
 - `wait-important` 가 같은 Task 에 살아 있는 다른 dispatch 가 있으면 앞 dispatch 의 끊김을 처리한 것으로 본다. 알린 뒤 다시 띄운 dispatch 는 `handled` 로 적고 경고하지 않는다
 - `adopt-sessions` 가 사용 한도 안내에서 멈춘 worker 를 `LIMITED`, Task 가 `ready` 인데 마지막 dispatch 가 `failed` 인 worker 를 `RESTART` 로 내고 다시 띄울 명령을 붙인다
 - `launch.md` 「끊긴 worker 다시 띄우기」 표에 재부팅 뒤 `ready` 와 `failed` 가 겹친 경우를 더했다
+
+## 5.12.0 (2026-11-02)
+
+- `launch-worker` 는 띄울 지시서와 무관한 활성 지시서끼리의 겹침을 경고로만 낸다
+- `worker-ask` 는 Orca 대기 시간 상한을 적용하고 `--max-wait` 로 같은 질문의 답을 다시 기다린다
+- 자동 리뷰 workflow 를 바꾼 worker 는 Ready 뒤 코디네이터에게 독립 리뷰를 요청한다
 
 ## 5.11.0 (2026-11-01)
 

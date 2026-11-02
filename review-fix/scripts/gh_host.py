@@ -15,22 +15,16 @@ GitHub Enterprise 저장소에서 호스트를 넘기지 않으면 `Not Found` �
 
 ## 저장소 이름으로 정한다
 
-**`<owner> <repo>` 를 주면 현재 디렉터리를 보지 않는다.**
-어디서 돌리든 같은 결과가 나온다.
+PR URL 등으로 호스트를 명시하면 그 호스트만 쓴다.
+그 값이 없으면 `GH_HOST` 를 우선한다.
 
-현재 디렉터리를 보면 엉뚱한 호스트를 집는다. 스킬 디렉터리에서 돌리면 그 디렉터리가 속한
-저장소의 호스트(예: `github.com`)를 집고, GitHub Enterprise 저장소를 그 호스트에서 찾아 404 로 끝난다.
-저장소를 잘못 짚은 것이 아니라 호스트를 잘못 짚은 것이라 오류 문구에 원인이 드러나지 않는다.
+`<owner> <repo>` 를 주면 origin 의 저장소 이름과 먼저 대조한다.
+같은 저장소면 origin 의 호스트를 쓰므로 다른 로그인 호스트를 조회하지 않는다.
+다른 저장소에서 실행했으면 origin 의 호스트를 쓰지 않는다.
+로그인된 호스트가 하나면 그 호스트를 쓰고, 여럿이면 저장소가 있는 호스트를 찾는다.
 
-정하는 순서는 셋이다.
-
-1. `GH_HOST` 가 있으면 그것을 쓴다. 오버레이가 호스트를 고정하는 경우가 있다
-2. `gh` 에 로그인된 호스트가 하나면 그것을 쓴다. 조회하지 않으므로 그 호스트에
-   대상 저장소가 없어도 그대로 넘어간다
-3. 여럿이면 각 호스트에 그 저장소가 있는지 물어 맞는 것을 고른다
-
-**로그인된 호스트 어디에도 그 저장소가 없으면 현재 디렉터리의 origin 에서 호스트를 읽는다.**
-로그인된 호스트가 하나도 없을 때도 같다. 저장소 이름이 실제로 쓰이는 것은 셋째 경우뿐이다.
+로그인된 호스트 어디에도 그 저장소가 없거나 로그인 정보가 없으면
+경고를 내고 현재 디렉터리의 origin 에서 호스트를 읽는다.
 
 `<owner> <repo>` 없이 부르면 처음부터 현재 디렉터리의 origin 을 본다.
 그 저장소 안에서 돌리는 것이 확실할 때만 이 형태를 쓴다.
@@ -112,17 +106,30 @@ def _from_origin():
     return _via_ssh_config(host)
 
 
-def resolve(owner=None, repo=None):
+def resolve(owner=None, repo=None, host=None):
     """gh 에 넘길 호스트 이름. 구하지 못하면 UsageError 대신 예외를 던진다.
 
-    `owner` 와 `repo` 를 주면 현재 디렉터리를 보지 않는다.
+    `host` 가 있으면 탐색하지 않는다. 없으면 대상과 같은 origin 을 먼저 본다.
     """
+    if host:
+        return host
+
     # 호출자가 지정했으면 그것을 존중한다. 오버레이가 호스트를 고정하는 경우가 있다.
     given = os.environ.get("GH_HOST")
     if given:
         return given
 
     if owner and repo:
+        # 같은 저장소의 origin 이면 이미 호스트가 정해져 있다. 다른 저장소에서
+        # 실행한 경우에는 origin 호스트를 쓰지 않고 기존 탐색을 이어 간다.
+        origin = (_run(["git", "remote", "get-url", "origin"]) or "").strip()
+        origin_repo = re.split(r"[:/]", origin.rstrip("/"))[-2:]
+        if len(origin_repo) == 2:
+            origin_repo[-1] = origin_repo[-1].removesuffix(".git")
+            if [part.lower() for part in origin_repo] == [owner.lower(), repo.lower()]:
+                origin_host = _from_url(origin)
+                if origin_host:
+                    return _via_ssh_config(origin_host)
         hosts = logged_in_hosts()
         if len(hosts) == 1:
             return hosts[0]
