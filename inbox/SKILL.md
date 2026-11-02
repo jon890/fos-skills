@@ -5,7 +5,7 @@ description: |
   "알림 확인", "태그된 거 답해 줘", "멘션 온 거", "두레이 알림", "알림 답변", "알림함", "inbox" 요청과 /board 의 알림 답변 요청문에 쓴다.
   업무 문서 작성과 진행 기록 댓글은 dooray-task 가, 등록 전 렌더링은 content-preview 가 맡는다.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # inbox
@@ -83,5 +83,7 @@ node --disable-warning=ExperimentalWarning "$INBOX" reply "$ID" --body-file "$BO
 ```bash
 node --disable-warning=ExperimentalWarning "$INBOX" dismiss "$ID"
 ```
+
+사용자는 보드의 알림 상자에서 `x` 다음 번호로 직접 넘길 수도 있다. 보드도 이 명령을 부른다. 잘못 넘긴 항목은 같은 명령에 `--undo` 를 붙여 되돌린다.
 
 등록한 주소나 넘긴 항목을 한 줄로 보고한다.
