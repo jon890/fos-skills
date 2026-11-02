@@ -93,7 +93,12 @@ function calls(): string[][] {
   return readFileSync(log, 'utf8')
     .split('\n')
     .filter((line) => line)
-    .map((line) => (JSON.parse(line) as string[]).slice(1, -1))
+    .map((line) => JSON.parse(line) as string[])
+    // orchestration 명령은 모두 --full 로 부른다(lib/orca.ts 의 withFull). 비교에서는 --json 과 --full 을 뺀다
+    .map((argv) => {
+      assert.ok(argv.includes('--full'), argv.join(' '))
+      return argv.slice(1).filter((a) => a !== '--json' && a !== '--full')
+    })
 }
 
 function message(id = 'q', kind = 'question', extra: Json = {}): Json {
@@ -155,6 +160,13 @@ describe('snapshot', () => {
       ['check', '--run', 'r', '--peek', '--types', 'question,escalation'],
       ['inbox', '--terminal', 'dispatch:d', '--limit', String(REPLY_LIMIT)],
     ])
+  })
+
+  test('턴만 끝낸 멈춤 보고는 질문이 아니고, 오류로 멈춘 보고는 질문으로 남는다', () => {
+    const quiet = message('msg_stop_a', 'escalation', { subject: 'Worker stopped without reporting', payload: JSON.stringify({ dispatchId: 'd', stopReason: 'finished' }) })
+    const errored = message('msg_stop_b', 'escalation', { subject: 'Worker stopped on an error without reporting', payload: JSON.stringify({ dispatchId: 'd', stopReason: 'errored' }) })
+    fake({ all: { messages: [quiet, errored] }, peek: { messages: [] } })
+    assert.deepEqual(snapshot('r').pending.map((m) => m.id), ['msg_stop_b'])
   })
 
   test('질문 기록이 목록이 아니면 빈 성공이 아니라 오류다', () => {

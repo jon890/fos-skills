@@ -51,6 +51,30 @@ function json(args: string[]): { deliveries: string[]; groups: Record<string, Js
 }
 
 describe('분류', () => {
+  test('턴만 끝낸 멈춤 보고는 dispatch 마다 개수만 내고, 실제로 멈춘 보고는 멈춘 worker 로 모은다', () => {
+    const stop = (id: string, reason: string, subject: string) => ({
+      ...msg(id, 'escalation'),
+      subject,
+      payload: JSON.stringify({ taskId: 't', dispatchId: 'ctx_a', stopReason: reason }),
+    })
+    const messages = [
+      stop('msg_stop_1', 'finished', 'Worker stopped without reporting'),
+      stop('msg_stop_2', 'finished', 'Worker stopped without reporting'),
+      stop('msg_stop_3', 'exited', 'Worker exited without reporting'),
+      msg('4', 'escalation'),
+    ]
+    const out = json([file(batch(messages)), '--completion-contract', 'none']) as ReturnType<typeof json> & { quiet_stops: Record<string, number> }
+    assert.deepEqual(Object.keys(out.groups), ['stopped_worker', 'escalation'])
+    assert.deepEqual(out.groups.stopped_worker.map((m) => m.id), ['msg_stop_3'])
+    assert.deepEqual(out.quiet_stops, { ctx_a: 2 })
+    const text = triage([file(batch(messages)), '--completion-contract', 'none']).stdout
+    assert.match(text, /^== 멈춘 worker 1건$/m)
+    assert.match(text, /^== 턴만 끝낸 멈춤 보고 2건\(기본 제외, --stop-reports 로 본문\) ctx_a=2$/m)
+    const all = json([file(batch(messages)), '--completion-contract', 'none', '--stop-reports']) as ReturnType<typeof json> & { quiet_stops: Record<string, number> }
+    assert.deepEqual(all.groups.stopped_worker.map((m) => m.id), ['msg_stop_1', 'msg_stop_2', 'msg_stop_3'])
+    assert.deepEqual(all.quiet_stops, {})
+  })
+
   test('읽기 전용 계약(none)은 PR 준비를 요구하지 않는다', () => {
     const out = json([file(batch([msg('1', 'worker_done')])), '--completion-contract', 'none'])
     assert.deepEqual(Object.keys(out.groups), ['worker_done'])
@@ -154,7 +178,7 @@ describe('--live', () => {
     const r = triage(['--live', '--run', 'run_x', '--terminal', 'term_c'])
     assert.equal(r.code, 0, r.stderr)
     assert.match(r.stdout, /^== question 1건$/m)
-    assert.deepEqual(orca.calls()[0].argv, ['orchestration', 'check', '--all', '--json', '--run', 'run_x', '--terminal', 'term_c'])
+    assert.deepEqual(orca.calls()[0].argv, ['orchestration', 'check', '--all', '--json', '--run', 'run_x', '--terminal', 'term_c', '--full'])
   })
 
   test('orca 가 실패하면 그 출력을 stderr 로 내고 1 이다', () => {
