@@ -266,12 +266,15 @@ export function questionText(text, limit = 400) {
 }
 
 // 사용자 결정 질문 형식(첫 줄 `결정:`, 줄 머리 `권장:`)이면 제목과 권장안을 꺼낸다. 아니면 null 이다.
+// `결정:` 줄이 여럿이면(spec 인터뷰의 결정 블록 묶음) 첫 결정의 제목 뒤에 「외 N개」 를 붙이고 첫 권장안을 보인다.
 export function decisionOf(text) {
   const lines = String(text || '').split(/\r?\n/).map((line) => line.trim())
   if (!lines[0] || !lines[0].startsWith('결정:')) return null
   const recommend = lines.find((line) => line.startsWith('권장:'))
-  const title = lines[0].slice('결정:'.length).trim()
-  if (!title) return null
+  const first = lines[0].slice('결정:'.length).trim()
+  if (!first) return null
+  const more = lines.filter((line) => line.startsWith('결정:')).length - 1
+  const title = more > 0 ? `${first} 외 ${more}개` : first
   return { title, recommend: recommend ? recommend.slice('권장:'.length).trim() : null }
 }
 

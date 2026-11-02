@@ -382,6 +382,8 @@ test('결정 질문 형식이면 제목과 권장안을 꺼내고 형식이 없�
   expect(decisionOf(body)).toEqual({ title: '저장 형식을 바꿀까요', recommend: '둔다. 사용자 데이터가 있다' })
   expect(decisionOf('결정: 제목만\n- a\n- b')).toEqual({ title: '제목만', recommend: null })
   expect(decisionOf('A 와 B 중 무엇으로 할까요?')).toBeNull()
+  expect(decisionOf(body + '\n결정: 응답 형식\n- A\n- B\n권장: A\n결정: 기본값\n- 1\n- 2\n권장: 1'))
+    .toEqual({ title: '저장 형식을 바꿀까요 외 2개', recommend: '둔다. 사용자 데이터가 있다' })
   expect(decisionOf('배경: 첫 줄이 결정이 아니다\n결정: x\n권장: y')).toBeNull()
   expect(decisionOf('')).toBeNull()
   expect(decisionOf('결정:  \n- a\n- b\n권장: a')).toBeNull()

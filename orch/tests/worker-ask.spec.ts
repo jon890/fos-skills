@@ -171,6 +171,25 @@ describe('결정 질문 형식', () => {
     ])
   })
 
+  test('결정 블록 여러 개를 한 질문으로 보낸다', () => {
+    fake('{"result":{"answer":"D1 둔다, D2 A"}}', 0)
+    const body = `${DECISION}\n\n결정: 응답 형식\n선택지:\n- A: 짧다\n- B: 길다\n권장: A. 소비자가 하나다\n스펙 초안: docs/features/x/spec.md`
+    const r = ask('--from', 'term_w', '--question', body, '--decision')
+    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: D1 둔다, D2 A'])
+  })
+
+  test('여러 블록이면 어긋난 블록 번호를 붙여 알린다', () => {
+    fake('{"result":{"answer":"x"}}', 0)
+    const body = `${DECISION}\n결정: 응답 형식\n- A: 짧다\n권장: A\n권장: B`
+    const r = ask('--from', 'term_w', '--question', body, '--decision')
+    assert.equal(r.code, 2, r.stderr)
+    assert.deepEqual(r.stderr.trim().split('\n'), [
+      'worker-ask: --decision 형식 위반: 결정 블록 2: `- ` 로 시작하는 선택지 줄이 둘 이상이어야 한다(지금 1개)',
+      'worker-ask: --decision 형식 위반: 결정 블록 2: `권장:` 줄이 정확히 하나여야 한다(지금 2개)',
+    ])
+    assert.deepEqual(r.calls, [])
+  })
+
   test('--resume 으로 재개할 때는 형식을 보지 않는다', () => {
     fake('{"result":{"answer":"재개한 답"}}', 0)
     const r = ask('--from', 'term_w', '--resume', 'm1', '--decision')

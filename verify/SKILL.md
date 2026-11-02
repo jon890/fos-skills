@@ -3,7 +3,7 @@ name: verify
 description: |
   구현한 기능을 스펙·코드·문서와 실제 실행 결과로 독립 검증한다. "기능 검증", "인수 검증", "구현 확인", "verify" 요청이나 orch 의 구현 다음 단계에 쓴다. 구현 수정은 build-with-teams 로 돌려보낸다.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # verify
@@ -21,11 +21,13 @@ metadata:
 2. [위임 계약](../build-with-teams/references/team-spawn.md)에 따라 구현자가 아닌 검토자에게
    [코드 검토](../build-with-teams/references/role-code-reviewer.md)와 [문서 정합성](../build-with-teams/references/role-docs-verifier.md)을 맡긴다.
    스펙과 plan 을 함께 넘기고 구현자의 정당화나 예상 판정은 주지 않는다.
+   **오버레이가 코드 리뷰를 PR 자동 리뷰에 맡긴다고 정하면**(예: `코드 리뷰: PR 자동 리뷰` 한 줄) 코드 검토자를 띄우지 않고 문서 정합성만 맡긴다. 같은 diff 를 두 번 리뷰하지 않으려는 것이다.
+   이때 코드 리뷰 결과는 PR 자동 리뷰의 판정이 대신하고, verify 보고의 「코드·문서 검토」 에 「코드: PR 자동 리뷰에 맡김」 으로 적는다.
 3. 요구사항별 테스트 방법을 실행한다. 공개 API·저장 상태·외부 효과를 확인하고, UI 는 실제 브라우저 흐름을 확인한다.
    CLI·작업·웹훅이면 해당 경계에서 실행한다. 모든 검증을 브라우저로 대체하지 않는다.
    저장소의 필수 통합 검증과 plan 의 `PR 전` 원격 검증도 수행한다.
 4. 기대값과 실제값, 명령·환경·검증 커밋을 요구사항별로 기록한다. 테스트 개수나 리뷰어의 PASS 만으로 인수 조건을 대신하지 않는다.
-5. 완료를 막는 결함은 build 로, 요구사항·설계 누락은 spec/planning 으로 돌려보낸다.
+5. 완료를 막는 구현 결함은 build 로, 계획 결함은 planning 으로, 사용자 의도·결정 누락은 spec 으로 돌려보낸다.
    verify 는 코드를 수정하지 않는다. 수정 뒤 영향받는 검증을 다시 실행하고 새 커밋으로 결과를 갱신한다.
 6. 아래 보고를 orch 에 넘긴다. 통과하면 docs-consolidate 의 후보 추출로 간다.
 

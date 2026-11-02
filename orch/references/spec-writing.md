@@ -22,7 +22,7 @@
 **스크립트 경로는 채우지 않는다.** 틀의 명령이 worker 세션의 `CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `orch/scripts` 를 푼다. 캐시 폴더 이름은 해시라 `ls | tail -1` 이나 `ls -t` 로 고르면 설치되지 않은 번들을 집는다. 코디네이터가 그때의 캐시 경로를 박으면 번들이 갱신되거나 worker 가 다른 프로필에서 돌 때 옛 스크립트를 가리킨다. 저장소 체크아웃 경로도 박지 않는다. 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
 같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
-`{{DESIGN_DIR}}` 는 worker 가 `planning` 으로 만든 설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
+`{{DESIGN_DIR}}` 는 worker 가 `spec`, `planning` 으로 만든 설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
 worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask` 가 두 경우를 종료 코드로 가른다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.
 
@@ -43,6 +43,7 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
   - out-of-order 를 켜지 않는다. 코디네이터가 이 PR 이 막는 쪽이라고 알리면 `--again` 으로 새 번호를 받아 파일 이름을 바꾼다.
   ```
 
+- 「할 일」 첫 줄에 기능 루프를 쓰는지 적는다. 기준은 [`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」 가 소유한다
 - 담당 범위, 기대하는 이득, 선행 결과, 결정하지 못한 사항
 - effort 가 `low` 나 `medium` 이면 「끝까지 진행하고 판단만 ask 로 묻는다. 검증 명령을 실행한다」 를 넣는다. 중간에 멈추거나 검증을 건너뛴 채 보고하는 것을 막는다
 - Ownership 에 「구현이 docs 계약과 달라지면 같은 커밋에서 그 절을 고친다. 고치기 전에 ask 로 알린다」.

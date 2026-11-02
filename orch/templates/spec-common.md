@@ -71,6 +71,7 @@
 <!-- 기능 개발이나 planning, build-with-teams 를 맡길 때 남긴다. 기능 루프 규칙의 표지는 지우지 않는다. -->
 
 - 새 기능은 `spec → planning → build-with-teams → verify → docs-consolidate 후보 추출` 순서로 진행한다. 스펙이나 계획이 있으면 필요한 단계부터 시작한다. 상세 인계는 orch 의 `references/feature-loop.md` 를 따른다. <!-- orch-rule: feature-loop -->
+- spec 단계는 `spec` 스킬의 인터뷰 절차(`references/interview.md` 「직접 묻지 못할 때」)대로 결정 블록은 `worker-ask --decision` 으로, 스펙 확인 요청은 형식 없이 `worker-ask` 로 보낸다. 혼자 정하고 넘어가지 않는다. 코디네이터가 사용자의 확인을 돌려주기 전에는 planning 과 구현을 시작하지 않는다. <!-- orch-rule: spec-interview -->
 - `build-with-teams` 는 PR 을 열지 않는다. verify 통과와 후보 추출(후보 없음 포함)을 마친 뒤, PR 생성이 허락됐으면 worker 가 위 공통 규칙에 따라 PR 을 연다.
 
 - `planning` 과 `build-with-teams` 는 사용자와 대화하는 세션을 전제로 한다. worker 는 사용자에게 묻지 못하므로 아래로 바꿔 읽는다.
@@ -78,7 +79,8 @@
 - 설계와 근거 문서는 `{{DESIGN_DIR}}` 에 둔다.
 - plan 하나는 PR 하나다. 큰 일은 plan 을 나누고 계획서는 그 plan 을 구현한 PR 에서 지운다(`planning` 의 `plan-size.md` 가 소유).
 - 세션 재시작, 계정 전환을 넘길 수 있는 일은 `planning` 으로 `tasks/` 를 만든다. 끊긴 뒤 다음 worker 가 계획과 phase 커밋으로 이어받는다.
-- PR 하나로 끝나는 작은 일은 `tasks/` 를 만들지 않는다. 이 지시서를 계획 입력으로 구현과 개발 테스트를 마치고 verify 의 독립 검토와 docs-consolidate 의 후보 추출 뒤 PR 을 연다.
+- 지시서 「할 일」 첫 줄이 루프를 쓰지 않는다고 하면(버그 수정, 정리·삭제, 설정 변경, 측정 같은 작은 일) spec 과 planning 없이 바로 구현하고, PR 본문에 확인한 방법과 결과를 적는다. 사용자 동작·권한·데이터 보존을 바꾸는 선택이 생기면 그 결정만 `--decision` 으로 묻는다.
+- 루프를 쓰지만 PR 하나로 끝나는 일은 `tasks/` 를 만들지 않는다. 이 지시서를 계획 입력으로 구현과 개발 테스트를 마치고 verify 의 독립 검토와 docs-consolidate 의 후보 추출 뒤 PR 을 연다.
 - 구현만 맡겼으면 구현 결과와 검증 증거를 코디네이터에게 넘긴다. 뒤의 검증·후보 추출·PR 생성은 지시서가 정한 담당자가 이어 간다.
 - 하위 에이전트는 `name` 없이 띄운다. 이름을 주면 팀원으로 등록되고 tmux pane 이 없는 worker 터미널에서 실패한다.
 - 저장소에 `.claude/planning-overlay.md` 나 `.claude/build-with-teams-overlay.md` 가 있으면 경로는 그 파일을 따른다.
