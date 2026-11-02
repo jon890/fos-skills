@@ -187,6 +187,11 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 ```
 
 목록의 지시서 후보를 확인한다. 후보가 없거나 여럿이면 `--spec` 으로 해당 브랜치의 지시서를 고른다. 사람의 셸과 작업·권한·초안 대기 화면은 자동으로 이어 붙이지 않는다. 원래 허락 범위와 막힌 결정을 먼저 확인한다.
+기본 실행은 다시 띄울 worker 도 낸다. 명령은 안내만 하고 부르지 않는다.
+
+- `LIMITED <터미널>`: 살아 있는 dispatch 인데 화면이 사용 한도 안내(`Usage limit reached`, `You've hit your ... limit`)에서 멈췄다. 계정을 바꾼 뒤 이전 계정의 worker 가 이렇게 남는다. heartbeat 는 계속 와 대기로는 알 수 없다. 아래 줄의 `worker-abandon`, `worker-start --retry-of`, `terminal close` 를 차례로 부른다
+- `RESTART`: Task 가 `ready` 인데 가장 최근 dispatch 가 `failed` 다. 아래 「끊긴 worker 다시 띄우기」 표의 셋째 줄이다
+
 명령이 `ADOPT-MANUAL` 을 내면 CLI 에 재연결 기능이 없는 것이다. 출력된 임시 이어받기 지시서를 검토하고, 사용자가 교체를 고른 뒤 같은 워크트리에 새 worker 를 띄운다. `ADOPT-ERROR` 면 잔여 자원과 실패 단계를 확인하고 자동으로 다시 띄우지 않는다.
 
 ## 끊긴 worker 다시 띄우기
@@ -205,6 +210,7 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 | --- | --- | --- |
 | `failed` 또는 `blocked` | 가장 최근 settled dispatch 가 `agent_readiness` 같은 시작 실패 | `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID"` (위 「시작 직후 실패」) |
 | `ready` | `abandoned` (`terminal_missing`) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"` |
+| `ready` | 가장 최근 dispatch 가 `failed` (재부팅으로 터미널과 루프가 함께 사라졌다) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"`. `adopt-sessions` 가 `RESTART` 줄과 이 명령을 낸다 |
 | `dispatched` | 살아 있는 dispatch | 다시 띄우지 않는다. 같은 worker 에 `send-to-worker` 로 보낸다 |
 
 Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본다. 상태를 모르고 `--retry-of` 를 주면 `task_not_startable`(「--retry-of must name the latest settled Dispatch of a failed or blocked Task」)로 거절된다. 거절되면 표의 둘째 줄로 간다.

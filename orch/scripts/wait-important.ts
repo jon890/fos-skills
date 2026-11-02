@@ -65,6 +65,7 @@
 //     2) 대기를 시작할 때 이미 끊겨 있는데 아직 처리하지 않은 dispatch. 재시작 뒤 새로 건 대기가 이 경우다.
 //        이때는 `check` 를 부르지 않고 바로 5 로 끝난다
 //     「처리했다」 고 보아 뺀다: 같은 task 에 그보다 나중에 만든 dispatch 가 있으면(다시 띄웠으므로),
+//     같은 task 에 살아 있는 다른 dispatch 가 worker-list 에 있으면(retriedLost. 대기 중에 끊긴 것과 앞 대기가 알린 것에도 쓴다),
 //     task 가 completed 이거나 취소(failed 에 result 가 cancelled)면, `--ignore-lost` 로 준 id 면.
 //     worker-list 행에는 만든 시각이 없어 나중 dispatch 는 `dispatch-show --task` 의 최신 dispatch id 로 판정한다.
 //     그것이나 task-list 를 읽지 못하면 그 dispatch 는 시작할 때 지켜보지 않는다(이전 동작).
@@ -79,6 +80,7 @@
 //     알린 dispatch 와 일부러 끝냈다고 판정한 dispatch 는 `--lost-state` 파일에 Run 별로 적고 다음 대기부터 다시
 //     알리거나 조회하지 않는다. worker_done 없이 같은 터미널에 일을 이어 준 옛 dispatch 가 대기를 걸 때마다 다시
 //     깨우지 않게 하기 위해서다. 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 에 한 줄로 남긴다.
+//     그 가운데 같은 task 에 살아 있는 다른 dispatch 가 있는 것은 handled 로 덮어쓰고 남기지 않는다.
 //     다시 알리게 하려면 그 파일에서 Run 의 항목을 지운다.
 //
 // 작업 폴더:
@@ -280,6 +282,23 @@ function lostWorkers(rows: Json[], watched: Set<unknown>): Lost[] {
   return lost
 }
 
+// 같은 task 에 살아 있는 다른 dispatch 가 있는 것. 코디네이터가 그 task 를 다시 띄웠으므로(worker-start --task, --retry-of 유무와 관계없이)
+// 앞 dispatch 의 끊김은 처리된 것이다. worker-list 행으로만 판정해 dispatch-show 를 부르지 않는다
+export function retriedLost(rows: Json[], lost: Lost[]): Set<string> {
+  const liveByTask = new Map<unknown, Set<unknown>>()
+  for (const w of rows) {
+    if (!w.taskId || !w.dispatchId || !LIVE_STATUSES.has(String(w.dispatchStatus))) continue
+    liveByTask.set(w.taskId, new Set([...(liveByTask.get(w.taskId) ?? []), w.dispatchId]))
+  }
+  const taskOf = new Map(rows.map((w) => [w.dispatchId, w.taskId]))
+  const retried = new Set<string>()
+  for (const [dispatch] of lost) {
+    const live = liveByTask.get(taskOf.get(dispatch))
+    if (live && [...live].some((d) => d !== dispatch)) retried.add(dispatch)
+  }
+  return retried
+}
+
 // 일부러 끝낸 dispatch 의 이유. 끊긴 것이면 null 이다. dispatch 는 `dispatch-show` 의 dispatch 다.
 // operator_close 는 코디네이터나 정리 스크립트가 터미널을 닫은 것이고,
 // worker_report 는 worker 가 실패를 메시지로 알린 것이다. 둘 다 코디네이터가 이미 안다.
@@ -352,7 +371,9 @@ function taskClosed(task: Json): boolean {
 // 일부러 끝낸 것. 판정에 필요한 목록을 읽지 못하면 그 dispatch 는 지켜보지 않는다.
 // 일부러 끝낸 것은 따로 돌려줘 기록하게 한다. 다음 대기가 같은 dispatch 를 다시 조회하지 않게 하기 위해서다.
 function unhandledLost(runId: string, rows: Json[], ignore: Set<unknown>): { found: Lost[]; deliberate: Record<string, string> } {
-  const candidates = lostWorkers(rows, new Set(rows.map((w) => w.dispatchId))).filter(([d]) => !ignore.has(d))
+  const lost = lostWorkers(rows, new Set(rows.map((w) => w.dispatchId))).filter(([d]) => !ignore.has(d))
+  const retried = retriedLost(rows, lost)
+  const candidates = lost.filter(([d]) => !retried.has(d))
   if (candidates.length === 0) return { found: [], deliberate: {} }
   const tasks = orcaResult(['task-list', '--run', runId])?.tasks
   if (!Array.isArray(tasks)) return { found: [], deliberate: {} }
@@ -565,6 +586,11 @@ function check(
       if (watchWorkers && interval > 0) {
         const rows = workerRows(runId)
         let lost = rows && rows.length ? lostWorkers(rows, watched) : []
+        if (lost.length && rows) {
+          const retried = retriedLost(rows, lost)
+          for (const dispatch of retried) watched.delete(dispatch)
+          lost = lost.filter(([dispatch]) => !retried.has(dispatch))
+        }
         lost = lost.length && rows ? dropDeliberate(rows, lost, watched) : []
         lost = lost.length && rows ? dropWorking(rows, lost) : []
         if (lost.length && rows) {
@@ -917,9 +943,13 @@ async function main(argv: string[]): Promise<number> {
     const ignore = new Set<unknown>([...ignoreLost, ...Object.keys(judged)])
     // 앞 대기가 알렸는데 아직 끊긴 채인 dispatch 는 깨우지 않고 stderr 로만 남긴다
     const reported = new Set<unknown>(Object.entries(judged).filter(([, v]) => String(v).startsWith('lost')).map(([d]) => d))
-    const still = lostWorkers(rows, reported)
+    const reportedLost = lostWorkers(rows, reported)
+    // 알린 뒤 같은 task 를 다시 띄웠으면 처리한 것으로 적어 다음 대기부터 경고하지 않는다
+    const retried = retriedLost(rows, reportedLost)
+    saveReported(state, runId, Object.fromEntries([...retried].map((d) => [d, 'handled'])), cwd)
+    const still = reportedLost
       .map(([d]) => d)
-      .filter((d) => !ignoreLost.includes(d))
+      .filter((d) => !ignoreLost.includes(d) && !retried.has(d))
       .sort()
     if (still.length) err(`wait-important: 앞 대기가 알린 끊긴 dispatch ${still.length}개가 아직 처리되지 않았다: ${still.join(' ')}`)
     // 이미 끊겨 있는데 처리하지 않은 dispatch 가 있으면 기다리지 않고 알린다

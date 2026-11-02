@@ -9,6 +9,11 @@
 //   - specHold         지시서의 첫 `머지 보류:` 줄의 이유. 줄 꼴은 lib/spec.ts 의 BRANCH_LINE 과 같다(목록 기호, 굵은 글씨)
 //   - boardHold        보드 항목의 next 와 details 가운데 끝나지 않은 줄이 `머지 보류` 로 시작하면 그 줄. 옛 문자열 줄은 끝나지 않은 줄이다
 //   - reviewVerdict    리뷰와 댓글을 늦은 것부터 보고 pass 나 block 에 맞는 첫 본문으로 정한다. 둘 다 맞으면 block 이다
+//   - reviewScope      지금 HEAD 의 판정으로 셀 리뷰의 범위. HEAD 부터 첫 부모를 따라 내려가며, 기준 브랜치를 합친 merge 커밋
+//                      (첫 부모가 체인의 다음 커밋이고 둘째 부모가 base 에 있다)만 이어지는 동안 그 앞 커밋의 리뷰도 인정한다.
+//                      PR 의 변경을 바꾸지 않은 최신화 때문에 리뷰를 다시 받지 않게 하려는 것이다. 다른 커밋을 만나면 멈춘다.
+//                      since 는 마지막으로 인정한 커밋의 시각이다
+//   - scopedNotes      reviewScope 안의 본문. 리뷰는 달린 커밋으로, 댓글은 since 이후인지로 본다. 옛 HEAD 의 pass 로 새 HEAD 를 걸지 않으려는 것이다
 //   - migrationOf      모듈 폴더 아래 Flyway 버전 마이그레이션(`V<버전>__<설명>`). 버전은 `.` 과 `_` 로 나눈 숫자 목록이다.
 //                      반복 마이그레이션(`R__`)과 되돌리기(`U`)는 번호를 차지하지 않아 세지 않는다
 //   - judgeMigrations  base 최고 이하이거나 다른 열린 PR 이나 다른 브랜치의 예약(docs/adr/017-orch-migration-reserve.md)과 같은 번호는 clash 다.
@@ -154,7 +159,36 @@ export function boardHold(item: BoardItem): string | null {
   return null
 }
 
-export type ReviewNote = { body: string; at: string }
+// commit 은 리뷰가 달린 커밋(gh 의 reviews[].commit.oid)이다. 댓글처럼 커밋이 없으면 null 이다
+export type ReviewNote = { body: string; at: string; commit?: string | null }
+
+// 판정에 세는 리뷰의 범위. heads 는 리뷰를 그대로 인정하는 커밋, since 는 커밋이 없는 본문(댓글)을 세기 시작하는 시각이다
+export type ReviewScope = { heads: string[]; since: string | null }
+// HEAD 부터 첫 부모를 따라 내려간 커밋. at 은 커밋 시각(ISO 8601)이다
+export type ChainCommit = { oid: string; parents: string[]; at: string }
+
+// 머리 주석의 「reviewScope」. chain 이 비었으면 head 하나만 인정하고 댓글은 세지 않는다
+export function reviewScope(head: string, chain: ChainCommit[], inBase: (oid: string) => boolean): ReviewScope {
+  if (chain.length === 0 || chain[0].oid !== head) return { heads: [head], since: null }
+  const heads = [head]
+  let i = 0
+  for (; i + 1 < chain.length; i++) {
+    const { parents } = chain[i]
+    if (parents.length !== 2 || parents[0] !== chain[i + 1].oid || !inBase(parents[1])) break
+    heads.push(chain[i + 1].oid)
+  }
+  return { heads, since: chain[i].at || null }
+}
+
+// 범위 안의 본문만 남긴다. 커밋이 있는 본문은 heads 에 든 것, 없는 본문은 since 이후에 쓴 것이다
+export function scopedNotes(notes: ReviewNote[], scope: ReviewScope): ReviewNote[] {
+  const since = scope.since === null ? Number.NaN : Date.parse(scope.since)
+  return notes.filter((note) => {
+    if (note.commit) return scope.heads.includes(note.commit)
+    const at = Date.parse(note.at)
+    return !Number.isNaN(since) && !Number.isNaN(at) && at >= since
+  })
+}
 
 export function reviewVerdict(notes: ReviewNote[], rule: ReviewRule): 'pass' | 'block' | 'none' {
   // 시각을 읽지 못한 본문은 가장 이른 것으로 본다. 시각이 같으면 목록에서 뒤에 있는 것을 늦은 것으로 본다

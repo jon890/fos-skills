@@ -1,6 +1,10 @@
 // 이전 코디네이터의 살아 있는 dispatch 에 묶이지 않은 터미널을 발견해 이어 붙인다.
 // 사용법: adopt-sessions.ts [--repo DIR] [--json] [--apply TERMINAL --run RUN [--spec FILE]]
 // 기본은 읽기만 한다. 사람의 셸도 목록에는 보이지만 apply 는 확인된 에이전트의 빈 입력 대기/오류/중단 화면에만 허용한다.
+// 읽기 전용 실행은 다시 띄울 worker 도 낸다. 명령은 안내만 하고 부르지 않는다.
+//   LIMITED <터미널>  살아 있는 dispatch 인데 화면이 사용 한도 안내에서 멈췄다(계정 전환 뒤 이전 계정의 worker). abandon, --retry-of 로 다시 띄우기, 옛 터미널 닫기
+//   RESTART          Task 가 ready 인데 마지막 dispatch 가 failed 다(재부팅). --retry-of 없이 다시 띄우기
+//   줄 아래 들여 쓴 줄이 차례로 부를 명령이다. --json 은 limited, restartable 목록으로 낸다
 // apply 는 모든 Run 과 현재 화면을 다시 읽고 worker-start --terminal --worktree 로 새 Task/dispatch 를 만든다.
 // --spec 은 그 브랜치의 지시서 후보여야 한다. 후보가 하나면 자동 선택하고, 없거나 여럿이면 명시하도록 거부한다.
 // CLI 에 재연결 기능이 없으면 임시 폴더에 이어받기 뼈대를 쓰고 수동 교체 방법만 안내한다. 닫거나 입력하지 않는다.
@@ -13,7 +17,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { mainCheckout } from './lib/git.ts'
 import { orca } from './lib/orca.ts'
-import { discoverSessions, handover } from './lib/sessions.ts'
+import { discoverAll, discoverSessions, handover } from './lib/sessions.ts'
 
 const USAGE = '사용법: adopt-sessions.ts [--repo DIR] [--json] [--apply TERMINAL --run RUN [--spec FILE]]'
 async function main(): Promise<number> {
@@ -25,16 +29,22 @@ async function main(): Promise<number> {
   if ((!values.apply && (values.run || values.spec)) || (values.apply && !values.run)) { console.error(USAGE); return 2 }
   const repo = mainCheckout(values.repo ?? process.cwd())
   try {
-    const sessions = await discoverSessions(repo)
     if (!values.apply) {
-      if (values.json) console.log(JSON.stringify({ repo, sessions }))
+      const { sessions, limited, restartable } = await discoverAll(repo)
+      if (values.json) console.log(JSON.stringify({ repo, sessions, limited, restartable }))
       else {
         if (!sessions.length) console.log('NO-SESSIONS 살아 있는 dispatch 에서 떨어진 터미널이 없다')
         for (const session of sessions) console.log(`SESSION ${session.terminal}\n${JSON.stringify(session, null, 2)}`)
+        for (const stuck of [...limited, ...restartable]) {
+          const head = stuck.kind === 'limited' ? `LIMITED ${stuck.terminal}` : 'RESTART'
+          console.log(`${head} dispatch=${stuck.dispatch} task=${stuck.task} run=${stuck.run ?? '-'} branch=${stuck.branch}`)
+          for (const command of stuck.commands) console.log(`  ${command}`)
+        }
       }
       return 0
     }
-    // apply 직전 한 번 더 읽어 목록을 본 뒤 다른 세션이 가져간 터미널을 제외한다.
+    // 목록을 읽고, apply 직전 한 번 더 읽어 그사이 다른 세션이 가져간 터미널을 제외한다.
+    await discoverSessions(repo)
     const selected = (await discoverSessions(repo)).find((session) => session.terminal === values.apply)
     if (!selected || typeof selected.agent !== 'string' || !selected.agent || !['idle', 'error', 'interrupted'].includes(selected.state)) {
       console.error('ADOPT-REFUSED 대상이 없거나 살아 있는 dispatch, 사람의 셸, 작업/권한/초안 대기 화면이다'); return 3

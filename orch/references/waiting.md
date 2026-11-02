@@ -108,7 +108,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 - `TIMEOUT LAST_DELIVERY <id>` 는 실패가 아니다. 그 id 로 다시 건다
 - orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
 - 종료 코드 4(`waiter_exists`)는 다시 걸어도 같은 오류만 받는다. stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다
-- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다.
+- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다. 같은 Task 를 다시 띄워 살아 있는 dispatch 가 생겼으면 앞 dispatch 는 처리한 것으로 보고 기록을 고치지 않아도 된다.
   Orca 가 끊김이나 실패로 적어도 그 터미널 화면이 에이전트 작업 중이면 끊긴 것으로 보지 않고 stderr 에 `끊긴 것으로 보지 않는다` 한 줄만 남긴다. 화면이 멈추면 다음 확인이 알린다
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다
@@ -117,6 +117,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
   - `QUEUE-CONFLICT`: 머지 큐가 base 와 충돌한 PR 을 빼고 뒤 PR 을 이어 머지했다. 내용은 충돌 이유다. worker 에게 알리는 일은 루프의 충돌 처리가 한다. worker 가 base 를 합친 뒤 그 PR 만 다시 머지 큐에 건다
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
+  - `AUTO-MERGE-NO-REVIEW`: 그 PR 의 지금 HEAD 에 판정 문구가 든 리뷰가 없어 자동 머지에 걸지 않았다. 리뷰 봇이 결과 없이 실패했거나 아직 돌지 않았다. 리뷰 봇을 다시 돌리거나 독립 리뷰를 받아, 그 결과를 이 HEAD 에 `queue.auto_review.pass` 문구가 든 리뷰나 댓글로 남긴다. 다음 틱이 건다. PR 본문에 `머지 보류` 줄을 넣어 막을 필요가 없다. 같은 HEAD 는 한 번만 온다
   - `AUTO-MERGE-END`: 루프가 건 큐가 끝났다. 내용의 끝 줄은 머지 큐의 결과 줄(`QUEUE-DONE`, `QUEUE-HELD …`, `STOP …`)이다. `QUEUE-DONE` 이 아니면 `log=` 의 로그를 읽고 멈춘 이유를 처리한다. `끝 줄 없음` 이면 머지 큐가 시작 전에 끝났거나(사용법 오류, 마무리를 띄우지 못함) 도중에 신호를 받아 끝났다. 로그로 어디까지 머지했는지 확인하고 오류를 고친다. 같은 HEAD 는 루프가 다시 걸지 않으므로, 이유를 풀었으면 코디네이터가 직접 건다
   - `MIGRATION-CLASH`: 그 PR 의 마이그레이션 번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같다. 그 PR 의 worker 에게 `reserve-migration.ts` 를 다시 불러 파일 이름을 바꾸게 한다. 줄 끝이 `renewed` 면 그 경로로 바꾼다
   - `MIGRATION-BLOCKED`: 더 낮은 번호가 오래 막혀 있다. 막는 쪽은 열린 PR 이거나 PR 없는 예약이다. 막는 쪽 worker 에게 `reserve-migration.ts --again` 으로 번호를 다시 받아 파일 이름을 바꾸게 한다. 루프는 파일 이름을 바꾸지 않는다

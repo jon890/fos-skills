@@ -314,7 +314,36 @@ describe('대상 고르기', () => {
 
 describe('리뷰', () => {
   const review = { pass: '^통과', block: '^보류' }
-  const reviews = (...bodies: string[]) => bodies.map((body, i) => ({ body, submittedAt: `2026-01-0${i + 1}T00:00:00Z` }))
+  const reviews = (...bodies: string[]) => bodies.map((body, i) => ({ body, submittedAt: `2026-01-0${i + 1}T00:00:00Z`, commit: { oid: HEAD_A } }))
+
+  // repo 의 feat-1 에 커밋을 만들고 origin 에 올린 뒤 그 SHA 를 낸다
+  function commit(message: string, file = message): string {
+    write(join(repo, file), `${message}\n`)
+    // 지시서와 설정은 추적하지 않는다. 브랜치를 바꿀 때 사라지지 않게 그 파일만 더한다
+    git(['add', file])
+    git(['commit', '-q', '-m', message])
+    const done = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', env })
+    return done.stdout.trim()
+  }
+
+  function push(): void {
+    git(['push', '-q', 'origin', 'main', 'feat-1'])
+  }
+
+  // feat-1 에서 리뷰할 커밋을 만들고, main 을 한 칸 올린 뒤 feat-1 에 합친다. code 면 합치기 전에 코드 커밋을 하나 더한다
+  function mergedAfterReview(code: boolean): { reviewed: string; head: string } {
+    git(['checkout', '-q', '-b', 'feat-1'])
+    const reviewed = commit('reviewed')
+    if (code) commit('code')
+    git(['checkout', '-q', 'main'])
+    commit('base')
+    git(['checkout', '-q', 'feat-1'])
+    git(['merge', '-q', '--no-edit', '--no-ff', 'main'])
+    const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', env }).stdout.trim()
+    git(['checkout', '-q', 'main'])
+    push()
+    return { reviewed, head }
+  }
 
   test('마지막 리뷰 본문이 block 이면 걸지 않는다', () => {
     config({ queue: { auto_review: review } })
@@ -322,11 +351,62 @@ describe('리뷰', () => {
     const output = once()
     assert.match(output, /AUTO-MERGE-WAIT #1 리뷰 보류/)
     assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(events('AUTO-MERGE-NO-REVIEW'), [])
   })
 
   test('마지막 리뷰 본문이 pass 면 건다', async () => {
     config({ queue: { auto_review: review } })
     github([pr(1)], { views: { 1: { reviews: reviews('보류: 고칠 것', '통과') } } })
+    once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+  })
+
+  test('옛 HEAD 의 pass 만 있으면 걸지 않고 AUTO-MERGE-NO-REVIEW 를 그 HEAD 에 한 번만 쓴다', () => {
+    config({ queue: { auto_review: review } })
+    const old = [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }]
+    github([pr(1)], { views: { 1: { reviews: old } } })
+    const output = once()
+    assert.match(output, /AUTO-MERGE-WAIT #1 리뷰 대기/)
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    const [event] = events('AUTO-MERGE-NO-REVIEW')
+    assert.equal(event?.pr, 1, JSON.stringify(events()))
+    assert.match(String(event.text), new RegExp(`^HEAD ${HEAD_A.slice(0, 8)} 에 판정 문구가 든 리뷰가 없다`))
+    assert.deepEqual(Object.keys(autoMergeState().unreviewed as Json), [`1@${HEAD_A}`])
+    once()
+    assert.equal(events('AUTO-MERGE-NO-REVIEW').length, 1, JSON.stringify(events()))
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('리뷰 뒤에 기준 브랜치를 합친 merge 커밋만 있으면 앞 HEAD 의 pass 로 건다', async () => {
+    config({ queue: { auto_review: review } })
+    const { reviewed, head } = mergedAfterReview(false)
+    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: reviewed } }] } } })
+    once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+    assert.deepEqual(events('AUTO-MERGE-NO-REVIEW'), [])
+  })
+
+  test('리뷰 뒤에 코드 커밋이 섞이면 merge 커밋이 끝이어도 앞 HEAD 의 pass 로 걸지 않는다', () => {
+    config({ queue: { auto_review: review } })
+    const { reviewed, head } = mergedAfterReview(true)
+    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: reviewed } }] } } })
+    const output = once()
+    assert.match(output, /AUTO-MERGE-WAIT #1 리뷰 대기/)
+    assert.equal(events('AUTO-MERGE-NO-REVIEW').length, 1, JSON.stringify(events()))
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('커밋이 없는 댓글은 HEAD 커밋 뒤에 쓴 것만 센다', async () => {
+    config({ queue: { auto_review: review } })
+    git(['checkout', '-q', '-b', 'feat-1'])
+    const head = commit('head')
+    git(['checkout', '-q', 'main'])
+    push()
+    const before = [{ body: '통과', createdAt: '2000-01-01T00:00:00Z' }]
+    github([pr(1, { headRefOid: head })], { views: { 1: { comments: before } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 대기/)
+    const later = [{ body: '통과', createdAt: '2999-01-01T00:00:00Z' }]
+    github([pr(1, { headRefOid: head })], { views: { 1: { comments: later } } })
     once()
     assert.deepEqual(await queued(), queueArgs('1'))
   })

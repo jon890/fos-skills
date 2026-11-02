@@ -158,3 +158,60 @@ test('이어받기 문서의 화면 백틱이 코드 블록을 깨지 않는다'
   const doc = handover({ terminal: 'term_x', worktree, branch: 'feat/old', agent: 'codex', state: 'idle', lines: ['```', '기록'], specs: [], prs: [], previous: [] }, null)
   assert.match(doc, /````\n```\n기록\n````/)
 })
+test('살아 있는 dispatch 의 화면이 사용 한도 안내면 LIMITED 와 다시 띄울 명령을 낸다', () => {
+  const live = { agentTerminalHandle: 'term_live', dispatchStatus: 'running', dispatchId: 'ctx_live', taskId: 'task_live', runId: 'run_a',
+    resource: { worktreeId: `ws::${worktree}`, terminalHandle: 'term_live' }, projection: { provider: { id: 'claude', model: 'claude-opus-5-5' } } }
+  orca.setRules([
+    { args: ['worker-list'], stdout: envelope({ scope: { source: 'all' }, workers: [live] }) },
+    { args: ['terminal', 'read', '--terminal', 'term_live'], stdout: envelope({ terminal: { source: 'screen', tail: ["⎿ You've hit your weekly limit · resets 9am", '❯'] } }) },
+    ...rules,
+  ])
+  const r = run()
+  assert.equal(r.status, 0, r.stderr)
+  const out = r.stdout.split('\n')
+  const at = out.indexOf(`LIMITED term_live dispatch=ctx_live task=task_live run=run_a branch=feat/old`)
+  assert.ok(at >= 0, r.stdout)
+  assert.equal(out[at + 1], '  orca orchestration worker-abandon --dispatch ctx_live --json')
+  assert.equal(out[at + 2], `  orca orchestration worker-start --task task_live --retry-of ctx_live --worktree ${JSON.stringify(`path:${worktree}`).replaceAll('"', "'")} --agent claude --model claude-opus-5-5 --json`)
+  assert.equal(out[at + 3], '  orca terminal close --terminal term_live')
+  // 한도 안내가 없거나 작업 중이면 내지 않는다
+  for (const tail of [['⏺ 고친다.', '❯'], ['Usage limit reached', '✳ Thinking… (4s · esc to interrupt)']]) {
+    orca.setRules([
+      { args: ['worker-list'], stdout: envelope({ scope: { source: 'all' }, workers: [live] }) },
+      { args: ['terminal', 'read', '--terminal', 'term_live'], stdout: envelope({ terminal: { source: 'screen', tail } }) },
+      ...rules,
+    ])
+    const quiet = run(['--json'])
+    assert.equal(quiet.status, 0, quiet.stderr)
+    assert.deepEqual(JSON.parse(quiet.stdout).limited, [], tail.join('/'))
+  }
+  assert.ok(!orca.calls().some((c) => c.argv.includes('worker-abandon') || c.argv.includes('close') || (c.argv.includes('worker-start') && !c.argv.includes('--help'))))
+})
+test('Task 가 ready 이고 마지막 dispatch 가 failed 면 RESTART 와 --retry-of 없는 명령을 낸다', () => {
+  const failed = { agentTerminalHandle: 'term_gone', dispatchStatus: 'failed', dispatchId: 'ctx_f2', taskId: 'task_r', runId: 'run_a',
+    resource: { worktreeId: `ws::${worktree}` }, projection: { provider: { id: 'codex', model: 'gpt-6.1-sol' } } }
+  const older = { ...failed, dispatchId: 'ctx_f1' }
+  const other = { ...failed, dispatchId: 'ctx_x', taskId: 'task_blocked' }
+  const workers = [older, failed, other]
+  orca.setRules([
+    { args: ['worker-list'], stdout: envelope({ scope: { source: 'all' }, workers }) },
+    { args: ['task-list', '--run', 'run_a'], stdout: envelope({ tasks: [{ id: 'task_r', status: 'ready' }, { id: 'task_blocked', status: 'failed' }] }) },
+    { args: ['dispatch-show', '--task', 'task_r'], stdout: envelope({ dispatch: { id: 'ctx_f2', status: 'failed' } }) },
+    ...rules,
+  ])
+  const r = run(['--json'])
+  assert.equal(r.status, 0, r.stderr)
+  const found = JSON.parse(r.stdout).restartable
+  assert.equal(found.length, 1, r.stdout)
+  assert.equal(found[0].dispatch, 'ctx_f2')
+  assert.deepEqual(found[0].commands, [`orca orchestration worker-start --task task_r --worktree 'path:${worktree}' --agent codex --model gpt-6.1-sol --json`])
+  assert.equal(orca.calls().filter((c) => c.argv.includes('task-list')).length, 1)
+  // 같은 Task 에 살아 있는 dispatch 가 있으면 다시 띄우지 않는다
+  orca.setRules([
+    { args: ['worker-list'], stdout: envelope({ scope: { source: 'all' }, workers: [failed, { ...failed, dispatchId: 'ctx_live2', dispatchStatus: 'running' }] }) },
+    ...rules,
+  ])
+  const text = run()
+  assert.equal(text.status, 0, text.stderr)
+  assert.doesNotMatch(text.stdout, /^RESTART/m)
+})
