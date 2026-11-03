@@ -831,6 +831,43 @@ export function checkPrompt(item, worker, prs) {
   ].join('\n')
 }
 
+// 대기 사유로 보는 줄. 끝나지 않은 단계와, 끝나지 않은 참고 줄 가운데 기다림을 적은 줄이다
+const WAIT_WORDS = /대기|기다|회신/
+export function waitReasons(item) {
+  return stepRows(item)
+    .filter((row) => row.state === 'now' || row.state === 'todo' || (row.state === 'note' && WAIT_WORDS.test(row.text)))
+    .map((row) => stepBody(row.text))
+}
+
+// 대기 항목 재개 요청문의 지시 부분. resumePrompt 가 항목 정보 뒤에 붙인다
+export const RESUME_PROMPT = [
+  '1. 기다리던 것(답, 결정, 배포, 외부 회신)이 왔는지 업무 댓글, 메신저, PR, 배포 상태로 확인해 줘.',
+  '2. 왔으면 그 내용으로 다음 단계를 진행하고 이 항목을 진행 중(doing)으로 올려 줘.',
+  '3. 아직 오지 않았으면 무엇을 누구에게 기다리는지 적고, 재촉하거나 우회할 방법을 제안해 줘.',
+  '4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.',
+  '5. 확인한 것, 진행한 것, 내가 정할 것만 짧게 보고해 줘.',
+].join('\n')
+
+// 대기 항목 하나의 재개 요청문. 대기 사유를 다시 확인하고 조사를 이어 가게 한다
+export function resumePrompt(item, worker, prs) {
+  const reasons = waitReasons(item)
+  const numbers = prNumbers(item.pr)
+  const who = worker ? workerLine(worker, prs) : item.worktree ? '없음 (워크트리 ' + item.worktree + ')' : '없음'
+  return [
+    '보드 항목 ' + item.id + ' 의 대기 사유를 다시 확인하고 조사를 재개해 줘. (' + (item.title || item.id) + ')',
+    '- 대기 사유: ' + (reasons.length ? reasons.join(' / ') : '적혀 있지 않음'),
+    '- 업무: ' + (typeof item.task === 'string' && item.task ? item.task : '없음'),
+    '- worker: ' + who,
+    '- PR: ' + (numbers.length ? numbers.map((n) => '#' + n).join(', ') : '없음'),
+    RESUME_PROMPT,
+  ].join('\n')
+}
+
+// 제목 줄 클릭과 c 다음 번호가 채우는 요청문. 대기 항목은 재개 요청문, 진행 중 항목은 상태 확인 요청문이다
+export function itemPrompt(item, worker, prs) {
+  return item.status === 'wait' ? resumePrompt(item, worker, prs) : checkPrompt(item, worker, prs)
+}
+
 // ---- 플러그인 버전 ----
 // 지금 세션이 읽은 설치본($.plugin.root)과 main 의 최신 커밋을 비교해 머리 줄에 보인다.
 // 설치본이 마켓플레이스 캐시면 같은 설정 폴더의 installed_plugins.json 에서 scope 와 커밋을 읽고, 그 scope 로 갱신한다.
@@ -1470,7 +1507,7 @@ export function register(on) {
             // 넘기기(x) 모드에서는 항목을 눌러도 아무것도 하지 않는다. 그 모드의 누르기는 알림을 넘기는 뜻이다
             if (dismissMode) return
             checkMode = false
-            fillPrompt($, checkPrompt(item, worker, live.prs))
+            fillPrompt($, itemPrompt(item, worker, live.prs))
             $.ui.invalidate('ui.render')
           },
           children: [
