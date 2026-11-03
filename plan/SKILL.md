@@ -5,7 +5,7 @@ description: |
   "계획 세워줘", "task 파일 만들어줘", "PR 로 나눠줘", "스펙 구현 계획", "리팩토링 계획", "plan" 요청에 쓴다.
   "이 기능 설계해 보자" 처럼 요구사항은 spec, 구조와 경계 설계는 technical-design 이 맡는다. 구현은 implementation 가 맡는다.
 metadata:
-  version: "5.2.0"
+  version: "5.3.0"
 ---
 # plan
 
@@ -22,7 +22,7 @@ metadata:
 | 1 | 입력과 설정 | `check_feature.py "$SPEC"` 종료 코드가 0 이다(스펙 없는 계획은 범위가 한 문장으로 정해졌다). 레포 설정을 읽었다 | [`monorepo.md`](references/monorepo.md) |
 | 2 | 코드 대조 | phase 에 인용할 식별자, 호출 경계, 스키마를 실제 정의에서 읽었다. 재사용할 모듈의 부수 효과를 범위 안이나 밖에 적었다 | |
 | 3 | PR 범위 | 이번 PR 의 요구사항 ID 와 `pr_scope` 가 정해졌고, 뒤 PR 은 `deferred` 에 목표와 선행 조건만 있다 | [`plan-size.md`](references/plan-size.md) |
-| 4 | task 작성 | 양식으로 index·phase·인수 검증 계획을 썼고, 필요한 책임 문서 변경을 반영했다 | [`task-create.md`](references/task-create.md) |
+| 4 | task 작성 | 양식으로 index·phase·인수 검증 계획을 썼고, 필요한 책임 문서 변경을 반영했다. 도메인 규칙 변경이 있으면 도메인 문서·출력 계약 수정과 규칙별 확인 사례가 작업에 들어 있다([문서 소유권의 「단계별 책임」](../spec/references/document-ownership.md#단계별-책임)) | [`task-create.md`](references/task-create.md) |
 | 5 | 검사와 critic | 새 기능은 `--require-verification` 검사와 critic 의 인수 검증 계획 검토를 통과했다 | [critic 계약](../implementation/references/role-critic.md) |
 | 6 | 인계 | 스펙 경로, plan 경로, 요구사항 ID 와 검사 결과를 넘겼다 | |
 
