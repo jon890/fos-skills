@@ -299,14 +299,14 @@ flowchart TD
     P -->|있음| X
     P -->|없음| C[등록된 Run 의 지시서 브랜치에 든 내 열린 PR]
     C --> R{draft 아님, CI passed, 보류 표시 없음, 미해결 스레드 0, 리뷰 판정 통과, 같은 HEAD 를 건 적 없음}
-    R -->|아니오| W[AUTO-MERGE-WAIT 로그만. 지금 HEAD 의 리뷰 판정이 없으면 AUTO-MERGE-NO-REVIEW 를 HEAD 마다 한 번]
+    R -->|아니오| W[AUTO-MERGE-WAIT 로그만. 리뷰 조건이 판정 없음으로 막히면 AUTO-MERGE-NO-REVIEW 를 HEAD 마다 한 번]
     R -->|예| M{마이그레이션}
     M -->|번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같음| CL[MIGRATION-CLASH 알림, 걸지 않음]
     M -->|더 낮은 번호의 열린 PR 이 큐 밖에 있거나 PR 없는 예약이 있음| B[기다림. blocked_after_sec 를 넘으면 MIGRATION-BLOCKED]
     M -->|백업 규칙 없음| WE[WATCH-ERROR auto-merge, 걸지 않음]
     M -->|없음이나 통과| O[준비 순, 같은 모듈은 번호 순으로 정렬하고 --chain 으로 묶음]
     O --> L[첫 PR 의 Run 의 PR 만 merge-with-finish --run --continue-on-hold 로 분리 실행]
-    L --> A[AUTO-MERGE 알림, tried 에 기록]
+    L --> A[PR 마다 AUTO-MERGE-BASIS 로그, AUTO-MERGE 알림, tried 에 기록]
 ```
 
 | 상황 | 동작 |
@@ -316,7 +316,8 @@ flowchart TD
 | PR 이 아직 없는 다른 브랜치가 더 낮은 번호를 예약했다 | 높은 번호 PR 은 걸지 않고 기다린다. 예약과 같은 번호를 더한 PR 은 `MIGRATION-CLASH` 다. 막힘이 길면 `MIGRATION-BLOCKED` 가 막는 브랜치와 재예약 명령을 알린다([ADR-017](adr/017-orch-migration-reserve.md)) |
 | 다른 Run 의 낮은 번호 PR 이 이번 큐에서 빠진다 | 그 PR 을 기다리는 같은 모듈의 높은 번호 PR 도 이번 큐에서 뺀다. 남는 집합이 더 바뀌지 않을 때까지 다시 본다 |
 | 보드 파일을 읽지 못했다 | 보류 표시를 볼 수 없어 그 틱에는 걸지 않는다 |
-| 리뷰 뒤에 커밋이 더해졌거나 리뷰 봇이 결과 없이 실패했다 | 옛 HEAD 의 `pass` 로 걸지 않는다. 더한 커밋이 기준 브랜치를 합친 merge 커밋뿐이면 앞 리뷰를 인정한다. 지금 HEAD 의 판정이 없으면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 코디네이터가 받은 독립 리뷰 결과를 이 HEAD 에 `pass` 문구로 남기면 다음 틱이 건다 |
+| 리뷰 뒤에 커밋이 더해졌거나 리뷰 봇이 결과 없이 실패했다 | `queue.auto_review.require` 를 적지 않은 저장소(`verdict-on-head`)는 옛 HEAD 의 `pass` 로 걸지 않는다. 더한 커밋이 기준 브랜치를 합친 merge 커밋뿐이면 앞 리뷰를 인정한다. 지금 HEAD 의 판정이 없으면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 코디네이터가 받은 독립 리뷰 결과를 이 HEAD 에 `pass` 문구로 남기면 다음 틱이 건다 |
+| 「머지 가능」 판정 뒤 P3 이하만 반영한 커밋을 올렸다 | `last-verdict-pass` 를 조합에 넣은 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 건다. `rereview-after-block` 을 함께 넣으면 `block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋의 `pass` 가 나올 때까지 기다린다. 조합 예시는 [orch 오버레이](../orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
 | 루프가 건 큐가 도는 동안 루프가 멈췄다 | 큐는 분리 실행이라 이어 돈다. 다시 뜬 루프는 기록의 pid 로 끝을 보고 `AUTO-MERGE-END` 를 쓴다 |
 | 대상 PR 이 여러 Run 의 것이다 | 큐 첫 PR 의 Run 것만 건다. 나머지는 그 큐가 끝난 뒤 다음 틱에 건다 |
 | PR 의 리뷰, 스레드, 파일을 읽지 못했다 | 그 PR 만 넘어가고 다른 PR 은 건다. 열린 PR 의 마이그레이션 목록이나 마이그레이션 예약 파일을 읽지 못하면 마이그레이션이 든 PR 만 뺀다. 이유는 `WATCH-ERROR auto-merge` 로 알린다 |

@@ -224,14 +224,20 @@
 //        `draft`, `CI 규칙을 읽지 못했다`(이번 틱의 CI 감시가 그 PR 의 base 규칙을 읽지 못해 이전 판정을 옮겼다. 옛 passed 로 걸지 않는다),
 //        `CI <상태>`(이번 틱의 ci 가 없거나 HEAD 가 다르면 `CI 없음`), `이미 건 HEAD`(tried 에 `<PR>@<HEAD>`),
 //        `지시서 보류: <이유>`(lib/auto-merge.ts 의 specHold), `보드 보류: <줄>`(lib/board.ts 의 findBoardItems 로 찾은 항목의 boardHold),
-//        `미해결 스레드 <n>`(THREADS_CMD), `리뷰 보류`, `리뷰 대기`(queue.auto_review 가 있을 때 gh pr view --json reviews,comments,files 의
-//        reviewVerdict 가 block, none). 그 조회의 files 는 migrations.dirs 가 있으면 리뷰 판정이 없어도 읽는다.
-//        리뷰 판정은 지금 HEAD 의 본문만 센다(lib/auto-merge.ts 의 reviewScope, scopedNotes). 옛 HEAD 의 pass 로 새 HEAD 를 걸지 않으려는 것이다.
-//        범위는 git fetch --quiet origin <브랜치> <base> 뒤 git log --first-parent --max-count=50 --format=%H%x09%P%x09%cI <HEAD> 와
-//        git merge-base --is-ancestor <둘째 부모> origin/<base> 로 정한다. 읽지 못하면 HEAD 에 달린 리뷰만 세고 댓글은 세지 않는다.
-//        `리뷰 대기` 면 unreviewed[<PR>@<HEAD>] 가 없을 때만 AUTO-MERGE-NO-REVIEW(pr 그 PR, text `HEAD <앞 8자리> 에 판정 문구가 든 리뷰가 없다.
-//        독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`)를 그 PR 지시서의 Run 으로 쓰고 기록한다.
-//        리뷰가 결과 없이 실패한 PR(필수 검사가 아닌 리뷰 봇이 한도로 끝났다)을 코디네이터가 알게 하려는 것이다.
+//        `미해결 스레드 <n>`(THREADS_CMD), 리뷰 판정(queue.auto_review 가 있을 때).
+//        미해결 스레드는 queue.auto_review.require 의 조합과 상관없이 늘 본다. 조합에서 빼 실수로 스레드를 놓친 채 걸지 않으려는 것이다.
+//        리뷰 판정은 require 에 모르는 조건 이름이 있으면 gh 를 부르지 않고 `queue.auto_review.require 에 모르는 조건이 있다: …` 로 멈춘다.
+//        아니면 gh pr view --json reviews,comments,files 의 리뷰와 댓글 전체를 lib/auto-merge.ts 의 judgeReview 에 넘기고, 막힌 조건의 이유
+//        (`리뷰 대기`, `리뷰 보류`, `재리뷰 대기: …`)로 멈춘다. 조건의 뜻은 lib/auto-merge.ts 머리 주석의 「judgeReview」 가 소유한다.
+//        require 를 적지 않으면 verdict-on-head 하나라, 지금 HEAD 의 본문만 센다(reviewScope, scopedNotes). 그 조회의 files 는 migrations.dirs 가 있으면 리뷰 판정이 없어도 읽는다.
+//        HEAD 범위와 체인은 git fetch --quiet origin <브랜치> <base> 뒤 git log --first-parent --max-count=50 --format=%H%x09%P%x09%cI <HEAD> 와
+//        git merge-base --is-ancestor <둘째 부모> origin/<base> 로 정한다. 읽지 못하면 빈 체인이라 HEAD 에 달린 리뷰만 세고 댓글은 세지 않으며,
+//        rereview-after-block 은 block 뒤의 pass 를 세지 못해 멈춘다.
+//        판정 문구가 든 본문이 없어 `리뷰 대기` 로 멈추면 unreviewed[<PR>@<HEAD>] 가 없을 때만 AUTO-MERGE-NO-REVIEW 를 그 PR 지시서의 Run 으로 쓰고 기록한다.
+//        text 는 막은 조건이 verdict-on-head 면 `HEAD <앞 8자리> 에 판정 문구가 든 리뷰가 없다. 독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로
+//        남기면 다음 틱이 건다`, 다른 조건이면 `HEAD <앞 8자리> 의 PR 에 판정 문구가 든 리뷰가 없다(<조건>). 독립 리뷰 결과를 pass 문구가 든 리뷰나
+//        댓글로 남기면 다음 틱이 건다` 다. 리뷰가 결과 없이 실패한 PR(필수 검사가 아닌 리뷰 봇이 한도로 끝났다)을 코디네이터가 알게 하려는 것이다.
+//        통과하면 judgeReview 의 조건마다의 근거를 `; ` 로 이어 둔다. queue.auto_review 가 없으면 근거는 `queue.auto_review 없음` 이다
 //        스레드 명령이나 gh 조회가 실패하면 오류 이유로 남기고 그 PR 은 넘어간다.
 //        마무리(finish-<PR>.pid)가 살아 있는지는 보지 않는다. 마무리는 머지를 180분까지 기다려 큐가 그 PR 을 보류한 뒤에도 살아 있다.
 //        merge-with-finish 는 도는 마무리를 그대로 쓰므로 다시 걸어도 마무리가 겹치지 않는다.
@@ -262,8 +268,9 @@
 //        MERGE_WITH_FINISH --repo <repo> --run <Run> --continue-on-hold [--chain a,b]... [--sweep-arg <값>]... <PR>[:<머지 전 명령>]... 를
 //        작업 디렉터리 repo, stdin 무시, stdout 과 stderr 는 큐 로그로 분리(detached, unref)해 띄운다. --sweep-arg 는 queue.sweep_args 가
 //        목록일 때 sweepArgs 로 --run 을 큐의 Run 으로 맞춘 항목이다. 머지 전 명령은 beforeCommand 의 명령이다.
-//        띄웠으면 queue 기록에 {pid, log, run, prs, at}, tried[<PR>@<HEAD>] 에 지금 시각을 두고 AUTO-MERGE(pr null,
-//        text `#<a> #<b> run=<Run> log=<로그>`)를 그 Run 으로 쓰고 같은 줄을 로그에도 쓴다.
+//        띄웠으면 queue 기록에 {pid, log, run, prs, at}, tried[<PR>@<HEAD>] 에 지금 시각을 두고, 건 PR 마다
+//        `AUTO-MERGE-BASIS #<PR> HEAD <앞 8자리> <3 의 근거>` 를 로그에 쓴 뒤 AUTO-MERGE(pr null,
+//        text `#<a> #<b> run=<Run> log=<로그>`)를 그 Run 으로 쓰고 같은 줄을 로그에도 쓴다. 어느 판정으로 걸었는지 나중에 로그로 확인하려는 것이다.
 //     오류 이유는 `; ` 로 이어 errors 의 auto-merge 에 둔다(아래 「오류 줄 억제」). 바꿀 수 있는 명령은 아래 「환경 변수」 의
 //     MERGE_WITH_FINISH, THREADS_CMD, PS 다.
 //
@@ -355,7 +362,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, reviewScope, reviewVerdict, scopedNotes, specHold, sweepArgs, watchedDirs } from './lib/auto-merge.ts'
+import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, REVIEW_WAIT, reservedFor, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from './lib/auto-merge.ts'
 import { context as questionContext } from './lib/completion.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './lib/config.ts'
@@ -430,8 +437,6 @@ const QUEUE_COMMANDS: readonly string[] = ['merge_queue.', 'merge-queue.sh', 'me
 const MIGRATION_PR_LIMIT = 200
 // 리뷰 범위를 볼 때 HEAD 부터 첫 부모를 따라 읽는 커밋 수. merge 커밋이 이만큼 이어지는 일은 없다
 const REVIEW_CHAIN_LIMIT = 50
-// 판정 문구가 든 리뷰가 없을 때의 AUTO-MERGE-WAIT 이유. 이 이유면 AUTO-MERGE-NO-REVIEW 를 쓴다
-const REVIEW_WAIT = '리뷰 대기'
 
 type Mode = (typeof MODES)[number]
 type Context = {
@@ -1674,7 +1679,8 @@ type AutoMergeState = {
   queue: QueueRecord | null
 }
 // 판정을 통과한 PR. run 은 그 PR 지시서의 Run 이다
-type Candidate = { pr: OwnPr; run: string; migrations: Migration[] }
+// basis 는 리뷰 판정의 통과 근거다. 큐를 걸 때 AUTO-MERGE-BASIS 줄로 로그에 남긴다
+type Candidate = { pr: OwnPr; run: string; migrations: Migration[]; basis: string }
 type Proc = { pid: number; command: string }
 
 function autoMergeFile(repo: string): string {
@@ -1800,8 +1806,8 @@ function reviewNotes(rows: unknown, at: string): ReviewNote[] {
 }
 
 // 리뷰를 셀 범위(머리 주석의 「자동 머지」 3). PR 브랜치와 base 를 받아 HEAD 부터 첫 부모를 따라 읽는다.
-// 받지 못하거나 HEAD 가 없으면 빈 체인이라 reviewScope 가 HEAD 의 리뷰만 센다
-function prReviewScope(ctx: Context, pr: OwnPr): ReviewScope {
+// 받지 못하거나 HEAD 가 없으면 빈 체인이라 reviewScope 가 HEAD 의 리뷰만 센다. chain 은 judgeReview 의 rereview-after-block 도 쓴다
+function prReviewScope(ctx: Context, pr: OwnPr): { scope: ReviewScope; chain: ChainCommit[] } {
   git(ctx.repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base])
   const listed = git(ctx.repo, ['log', '--first-parent', `--max-count=${REVIEW_CHAIN_LIMIT}`, '--format=%H%x09%P%x09%cI', pr.head, '--'])
   const chain: ChainCommit[] = []
@@ -1812,10 +1818,11 @@ function prReviewScope(ctx: Context, pr: OwnPr): ReviewScope {
     }
   }
   const inBase = (oid: string) => git(ctx.repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0
-  return reviewScope(pr.head, chain, inBase)
+  return { scope: reviewScope(pr.head, chain, inBase), chain }
 }
 
-// 판정(머리 주석의 「자동 머지」 3). wait 은 AUTO-MERGE-WAIT 의 이유, error 는 오류 이유다
+// 판정(머리 주석의 「자동 머지」 3). wait 은 AUTO-MERGE-WAIT 의 이유, error 는 오류 이유다.
+// missing 은 판정 문구가 든 본문이 없어 멈춘 조건이다. AUTO-MERGE-NO-REVIEW 의 문구를 정한다
 function judgeTarget(
   ctx: Context,
   pr: OwnPr,
@@ -1824,7 +1831,7 @@ function judgeTarget(
   stale: Set<number>,
   state: AutoMergeState,
   board: { file: string; items: BoardItem[] } | null,
-): { wait: string } | { error: string } | { migrations: Migration[] } {
+): { wait: string; missing?: string } | { error: string } | { migrations: Migration[]; basis: string } {
   if (pr.draft) return { wait: 'draft' }
   if (stale.has(pr.number)) return { wait: 'CI 규칙을 읽지 못했다' }
   const entry = ci[String(pr.number)]
@@ -1850,17 +1857,21 @@ function judgeTarget(
   if (Number(count) > 0) return { wait: `미해결 스레드 ${Number(count)}` }
   const review = ctx.autoMerge.review
   const watched = watchedDirs(ctx.autoMerge.dirs, ctx.autoMerge.watch)
-  if (!review && Object.keys(watched).length === 0) return { migrations: [] }
+  const noReview = 'queue.auto_review 없음'
+  if (!review && Object.keys(watched).length === 0) return { migrations: [], basis: noReview }
+  // 모르는 조건이면 gh 를 부르지 않고 멈춘다
+  if (review && review.unknown.length > 0) return { wait: unknownConditionsText(review.unknown) }
   const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments,files'], { cwd: ctx.repo })
   if (!got.ok) return { error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
   const data = isObject(got.data) ? got.data : {}
+  let basis = noReview
   if (review) {
-    const notes = scopedNotes([...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')], prReviewScope(ctx, pr))
-    const verdict = reviewVerdict(notes, review)
-    if (verdict === 'block') return { wait: '리뷰 보류' }
-    if (verdict === 'none') return { wait: REVIEW_WAIT }
+    const notes = [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')]
+    const judged = judgeReview({ notes, ...prReviewScope(ctx, pr) }, review)
+    if (!judged.ok) return judged.missing && judged.condition ? { wait: judged.wait, missing: judged.condition } : { wait: judged.wait }
+    basis = judged.basis.join('; ')
   }
-  return { migrations: addedMigrations(data.files, watched) }
+  return { migrations: addedMigrations(data.files, watched), basis }
 }
 
 // base 마다의 최고 번호와 같은 base 의 열린 PR 의 번호, 예약, 브랜치마다의 열린 PR 번호(머리 주석의 「자동 머지」 4).
@@ -2026,15 +2037,18 @@ async function autoMergeStep(
     if ('wait' in judged) {
       log(`AUTO-MERGE-WAIT #${pr.number} ${judged.wait}`)
       const key = `${pr.number}@${pr.head}`
-      if (judged.wait === REVIEW_WAIT && !Object.hasOwn(state.unreviewed, key)) {
-        const text = `HEAD ${pr.head.slice(0, 8)} 에 판정 문구가 든 리뷰가 없다. 독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
+      if (judged.wait === REVIEW_WAIT && judged.missing && !Object.hasOwn(state.unreviewed, key)) {
+        const text =
+          judged.missing === 'verdict-on-head'
+            ? `HEAD ${pr.head.slice(0, 8)} 에 판정 문구가 든 리뷰가 없다. 독립 리뷰 결과를 이 HEAD 에 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
+            : `HEAD ${pr.head.slice(0, 8)} 의 PR 에 판정 문구가 든 리뷰가 없다(${judged.missing}). 독립 리뷰 결과를 pass 문구가 든 리뷰나 댓글로 남기면 다음 틱이 건다`
         if (notifyAutoMerge(ctx, 'AUTO-MERGE-NO-REVIEW', pr.number, text, target.run)) state.unreviewed[key] = iso()
       }
       continue
     }
     const key = String(pr.number)
     if (state.ready[key]?.head !== pr.head) state.ready[key] = { head: pr.head, at: iso() }
-    ready.push({ pr, run: target.run, migrations: judged.migrations })
+    ready.push({ pr, run: target.run, migrations: judged.migrations, basis: judged.basis })
   }
 
   // 4. 마이그레이션 겹침
@@ -2166,6 +2180,7 @@ async function autoMergeStep(
   const at = iso()
   state.queue = { pid: launched.pid, log: queueLog, run: queueRun, prs: order, at }
   for (const n of order) state.tried[`${n}@${byNumber.get(n)?.pr.head}`] = at
+  for (const n of order) log(`AUTO-MERGE-BASIS #${n} HEAD ${byNumber.get(n)?.pr.head.slice(0, 8)} ${byNumber.get(n)?.basis}`)
   notifyAutoMerge(ctx, 'AUTO-MERGE', null, `${order.map((n) => `#${n}`).join(' ')} run=${queueRun} log=${queueLog}`, queueRun)
 }
 

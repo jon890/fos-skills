@@ -5,10 +5,23 @@
 //
 // 판정:
 //   - autoMergeConfig  queue.auto_merge, queue.auto_review, migrations.* 를 읽는다. 키 뜻은 docs/data-schema.md 「config.json 에 더하는 절」 이 소유한다.
-//                      값이 잘못됐으면 ConfigError 다. 정규식을 읽지 못한 것도 ConfigError 로 바꿔 명령이 종료 코드 2 로 끝나게 한다
+//                      값이 잘못됐으면 ConfigError 다. 정규식을 읽지 못한 것도 ConfigError 로 바꿔 명령이 종료 코드 2 로 끝나게 한다.
+//                      queue.auto_review.require 의 모르는 조건 이름만은 ConfigError 가 아니라 review.unknown 에 둔다.
+//                      루프가 멈추지 않고 PR 만 걸지 않으며, orch-doctor 가 INVALID-CONFIG 로 알린다
 //   - specHold         지시서의 첫 `머지 보류:` 줄의 이유. 줄 꼴은 lib/spec.ts 의 BRANCH_LINE 과 같다(목록 기호, 굵은 글씨)
 //   - boardHold        보드 항목의 next 와 details 가운데 끝나지 않은 줄이 `머지 보류` 로 시작하면 그 줄. 옛 문자열 줄은 끝나지 않은 줄이다
 //   - reviewVerdict    리뷰와 댓글을 늦은 것부터 보고 pass 나 block 에 맞는 첫 본문으로 정한다. 둘 다 맞으면 block 이다
+//   - judgeReview      queue.auto_review.require 의 조건을 적은 순서대로 보고 처음 막힌 조건의 대기 이유를 낸다. 적지 않으면 verdict-on-head 하나다.
+//                      「판정」 은 pass 나 block 문구가 든 리뷰나 댓글이다. 조건은 아래와 같다
+//                        verdict-on-head       reviewScope 안(지금 HEAD)의 마지막 판정이 pass 다. 없으면 `리뷰 대기`, block 이면 `리뷰 보류`
+//                        verdict-seen          PR 전체에 판정이 하나 이상 있다. 없으면 `리뷰 대기`. 리뷰가 아직 돌지 않았거나 결과 없이 실패한 PR 을 막는다
+//                        last-verdict-pass     PR 전체의 마지막 판정이 pass 다. HEAD 가 달라도 된다. 없으면 `리뷰 대기`, block 이면 `리뷰 보류`
+//                        rereview-after-block  PR 전체의 마지막 block 보다 늦은 pass 가 있고, 그 pass 가 HEAD 의 첫 부모 체인에서 block 과 같은 커밋이나
+//                                              그 뒤 커밋을 가리킨다(chainIndex). block 이 없으면 통과다. 아니면 `재리뷰 대기: …`.
+//                                              block 을 받은 PR 이 고친 코드의 리뷰 없이 옛 커밋의 늦은 pass 로 걸리지 않게 하려는 것이다
+//                      `리뷰 대기` 로 멈추면 missing 이다. 모르는 조건 이름이 있으면 어느 조건도 보지 않고 그 이름을 담은 이유로 멈춘다.
+//                      통과하면 조건마다 `<조건> <판정>(커밋 <앞 8자리> 또는 댓글, <시각>)` 꼴의 근거를 낸다
+//   - chainIndex       본문이 가리키는 커밋의 체인 자리. 리뷰는 달린 커밋, 댓글은 쓴 시각 이전의 가장 새 커밋(커밋 시각 기준)이다
 //   - reviewScope      지금 HEAD 의 판정으로 셀 리뷰의 범위. HEAD 부터 첫 부모를 따라 내려가며, 기준 브랜치를 합친 merge 커밋
 //                      (첫 부모가 체인의 다음 커밋이고 둘째 부모가 base 에 있다)만 이어지는 동안 그 앞 커밋의 리뷰도 인정한다.
 //                      PR 의 변경을 바꾸지 않은 최신화 때문에 리뷰를 다시 받지 않게 하려는 것이다. 다른 커밋을 만나면 멈춘다.
@@ -33,9 +46,16 @@ import type { Config } from './config.ts'
 import type { BoardDetail, BoardItem } from './board.ts'
 
 export type ReviewRule = { pass: RegExp; block: RegExp }
+// 리뷰 판정 조건의 이름. 뜻은 머리 주석의 「judgeReview」 가 소유한다
+export const REVIEW_CONDITIONS = ['verdict-on-head', 'verdict-seen', 'last-verdict-pass', 'rereview-after-block'] as const
+export type ReviewCondition = (typeof REVIEW_CONDITIONS)[number]
+// queue.auto_review.require 를 적지 않은 저장소의 조합. 조합을 더하기 전의 동작과 같다
+export const DEFAULT_REVIEW_REQUIRE: readonly ReviewCondition[] = ['verdict-on-head']
+// require 는 적은 순서대로 볼 조건, unknown 은 모르는 이름이다. unknown 이 있으면 루프가 어느 PR 도 걸지 않는다
+export type ReviewConfig = ReviewRule & { require: ReviewCondition[]; unknown: string[] }
 export type AutoMergeConfig = {
   enabled: boolean
-  review: ReviewRule | null
+  review: ReviewConfig | null
   // 예약 파일을 만들 폴더다. watch 에만 든 경로에는 reserve-migration 이 쓰지 않는다.
   dirs: Record<string, string>
   // 모듈별 추가 감시 폴더다. dirs 와 합쳐 Flyway 번호 충돌과 순서를 판정한다.
@@ -46,6 +66,7 @@ export type AutoMergeConfig = {
 
 const BLOCKED_AFTER_SEC = 3600
 const REVIEW_KEYS = ['pass', 'block'] as const
+const REVIEW_CONFIG_KEYS: readonly string[] = [...REVIEW_KEYS, 'require']
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -78,11 +99,11 @@ function watchMap(value: unknown): Record<string, string[]> {
   return watch
 }
 
-function reviewRule(value: unknown): ReviewRule {
+function reviewRule(value: unknown): ReviewConfig {
   const name = 'queue.auto_review'
   if (!isObject(value)) throw new ConfigError(`설정 파일의 ${name} 는 {"pass": 정규식, "block": 정규식} 객체여야 한다`)
   const unknown = Object.keys(value)
-    .filter((key) => !(REVIEW_KEYS as readonly string[]).includes(key))
+    .filter((key) => !REVIEW_CONFIG_KEYS.includes(key))
     .sort()
   if (unknown.length > 0) throw new ConfigError(`설정 파일의 ${name} 에 모르는 키가 있다: ${unknown.join(', ')}`)
   const rule: Partial<ReviewRule> = {}
@@ -95,7 +116,23 @@ function reviewRule(value: unknown): ReviewRule {
       throw new ConfigError(`설정 파일의 ${name}.${key} 를 정규식으로 읽지 못했다: ${(e as Error).message}`)
     }
   }
-  return rule as ReviewRule
+  return { ...(rule as ReviewRule), ...reviewRequire(value.require) }
+}
+
+// 모르는 이름은 ConfigError 로 막지 않고 unknown 에 둔다. 루프가 멈추면 CI 감시와 정리까지 함께 멈추기 때문이다
+function reviewRequire(value: unknown): { require: ReviewCondition[]; unknown: string[] } {
+  if (value === undefined) return { require: [...DEFAULT_REVIEW_REQUIRE], unknown: [] }
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== 'string' || !item)) {
+    throw new ConfigError('설정 파일의 queue.auto_review.require 는 조건 이름(비지 않은 문자열)의 비지 않은 목록이어야 한다')
+  }
+  const names = [...new Set(value as string[])]
+  const known = (name: string): name is ReviewCondition => (REVIEW_CONDITIONS as readonly string[]).includes(name)
+  return { require: names.filter(known), unknown: names.filter((name) => !known(name)) }
+}
+
+// orch-doctor 와 루프가 함께 쓰는 모르는 조건 이름의 문구
+export function unknownConditionsText(unknown: string[]): string {
+  return `queue.auto_review.require 에 모르는 조건이 있다: ${unknown.join(', ')}. 쓸 수 있는 조건: ${REVIEW_CONDITIONS.join(', ')}`
 }
 
 export function autoMergeConfig(config: Config): AutoMergeConfig {
@@ -190,20 +227,95 @@ export function scopedNotes(notes: ReviewNote[], scope: ReviewScope): ReviewNote
   })
 }
 
-export function reviewVerdict(notes: ReviewNote[], rule: ReviewRule): 'pass' | 'block' | 'none' {
-  // 시각을 읽지 못한 본문은 가장 이른 것으로 본다. 시각이 같으면 목록에서 뒤에 있는 것을 늦은 것으로 본다
+export type Verdict = { verdict: 'pass' | 'block'; note: ReviewNote }
+
+// 판정 문구가 든 본문을 늦은 것부터 낸다. 둘 다 맞으면 block 이다.
+// 시각을 읽지 못한 본문은 가장 이른 것으로 본다. 시각이 같으면 목록에서 뒤에 있는 것을 늦은 것으로 본다
+export function verdicts(notes: ReviewNote[], rule: ReviewRule): Verdict[] {
   const time = (at: string) => {
     const t = Date.parse(at)
     return Number.isNaN(t) ? -Infinity : t
   }
+  const found: Verdict[] = []
   const latest = notes
     .map((note, index) => ({ note, index, t: time(note.at) }))
     .sort((a, b) => (a.t === b.t ? b.index - a.index : b.t - a.t))
   for (const { note } of latest) {
-    if (rule.block.test(note.body)) return 'block'
-    if (rule.pass.test(note.body)) return 'pass'
+    if (rule.block.test(note.body)) found.push({ verdict: 'block', note })
+    else if (rule.pass.test(note.body)) found.push({ verdict: 'pass', note })
   }
-  return 'none'
+  return found
+}
+
+export function reviewVerdict(notes: ReviewNote[], rule: ReviewRule): 'pass' | 'block' | 'none' {
+  return verdicts(notes, rule)[0]?.verdict ?? 'none'
+}
+
+// 로그에 남기는 판정 근거. 리뷰는 달린 커밋의 앞 8자리, 댓글은 `댓글` 이다
+export function verdictText(v: Verdict): string {
+  return `${v.verdict}(${v.note.commit ? `커밋 ${v.note.commit.slice(0, 8)}` : '댓글'}, ${v.note.at || '시각 없음'})`
+}
+
+// 본문이 가리키는 커밋의 chain 자리(0 이 HEAD). 리뷰는 달린 커밋, 댓글은 쓴 시각에 이미 있던 가장 새 커밋이다.
+// chain 에 없거나 시각을 읽지 못하면 null 이다
+export function chainIndex(note: ReviewNote, chain: ChainCommit[]): number | null {
+  if (note.commit) {
+    const i = chain.findIndex((c) => c.oid === note.commit)
+    return i < 0 ? null : i
+  }
+  const at = Date.parse(note.at)
+  if (Number.isNaN(at)) return null
+  const i = chain.findIndex((c) => {
+    const t = Date.parse(c.at)
+    return !Number.isNaN(t) && t <= at
+  })
+  return i < 0 ? null : i
+}
+
+export type ReviewInput = { notes: ReviewNote[]; scope: ReviewScope; chain: ChainCommit[] }
+// missing 은 판정 문구가 든 본문이 없어 멈췄다는 뜻이다. 루프가 AUTO-MERGE-NO-REVIEW 로 알린다
+export type ReviewJudgement =
+  | { ok: true; basis: string[] }
+  | { ok: false; condition: ReviewCondition | null; wait: string; missing: boolean }
+
+// 리뷰 판정 대기 이유. missing 인 것은 이 이유로 낸다
+export const REVIEW_WAIT = '리뷰 대기'
+export const REVIEW_HOLD = '리뷰 보류'
+
+// require 의 조건을 적은 순서대로 보고 처음 막힌 조건으로 멈춘다. 모두 통과하면 조건마다의 근거를 낸다.
+// 미해결 스레드, CI, 보류 표시는 조합과 상관없이 루프가 따로 본다(orch-loop.ts 머리 주석의 「자동 머지」 3)
+export function judgeReview(input: ReviewInput, config: ReviewConfig): ReviewJudgement {
+  if (config.unknown.length > 0) return { ok: false, condition: null, wait: unknownConditionsText(config.unknown), missing: false }
+  const all = verdicts(input.notes, config)
+  const basis: string[] = []
+  const stop = (condition: ReviewCondition, wait: string, missing = false): ReviewJudgement => ({ ok: false, condition, wait, missing })
+  for (const condition of config.require) {
+    if (condition === 'verdict-on-head' || condition === 'last-verdict-pass') {
+      const [last] = condition === 'verdict-on-head' ? verdicts(scopedNotes(input.notes, input.scope), config) : all
+      if (!last) return stop(condition, REVIEW_WAIT, true)
+      if (last.verdict === 'block') return stop(condition, REVIEW_HOLD)
+      basis.push(`${condition} ${verdictText(last)}`)
+    } else if (condition === 'verdict-seen') {
+      if (all.length === 0) return stop(condition, REVIEW_WAIT, true)
+      basis.push(`${condition} ${verdictText(all[0])}`)
+    } else {
+      const block = all.find((v) => v.verdict === 'block')
+      if (!block) {
+        basis.push(`${condition} block 없음`)
+        continue
+      }
+      // all 은 늦은 것부터라 block 앞의 항목이 block 보다 늦은 판정이다
+      const at = chainIndex(block.note, input.chain)
+      const later = all.slice(0, all.indexOf(block))
+      const pass = later.find((v) => {
+        const i = chainIndex(v.note, input.chain)
+        return i !== null && (at === null || i <= at)
+      })
+      if (!pass) return stop(condition, `재리뷰 대기: ${verdictText(block)} 뒤 같은 커밋이나 그 뒤 커밋의 pass 가 없다`)
+      basis.push(`${condition} ${verdictText(block)} 뒤 ${verdictText(pass)}`)
+    }
+  }
+  return { ok: true, basis }
 }
 
 export type Migration = { module: string; version: number[]; label: string; path: string }

@@ -104,7 +104,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 | 설정 | 바뀌는 동작 |
 | --- | --- |
 | `finish.deploy_workflow`, `deploy_branch` | 머지 뒤 `develop` 의 dev 배포가 성공할 때까지 기다린 다음 업무와 보드를 마무리한다 |
-| `queue.auto_merge`, `auto_review` | 필수 체크가 통과하고, 미해결 스레드가 없고, 지금 HEAD 의 자동 리뷰 판정이 `pass` 문구인 PR 을 상주 루프가 스스로 머지 큐에 건다. 판정 문구가 든 리뷰가 없으면 걸지 않고 `AUTO-MERGE-NO-REVIEW` 로 알린다 |
+| `queue.auto_merge`, `auto_review` | 필수 체크가 통과하고, 미해결 스레드가 없고, 자동 리뷰 판정이 `auto_review.require` 의 조건을 모두 만족하는 PR 을 상주 루프가 스스로 머지 큐에 건다. `require` 가 없으면 지금 HEAD 의 판정이 `pass` 여야 한다. 판정 문구가 든 리뷰가 없으면 걸지 않고 `AUTO-MERGE-NO-REVIEW` 로 알린다. 조건과 조합 예시는 [`references/overlay.md`](references/overlay.md) 의 「자동 머지 리뷰 조건」 에 있다 |
 | `queue.up_to_date_when: overlap` | 앞 PR 과 바꾼 모듈이 겹치지 않으면 base 를 다시 합치지 않고 바로 머지한다. `shared_paths` 를 건드린 PR 은 늘 겹친 것으로 본다 |
 | `migrations.dirs`, `before` | 마이그레이션이 든 PR 은 번호 순서를 지켜 머지하고, 머지 직전에 그 모듈의 DB 를 백업한다 |
 
