@@ -169,6 +169,31 @@ def group_by_tool(rows):
     return dict(sorted(grouped.items()))
 
 
+def mise_data_dir(environ=None):
+    """mise 가 도구를 설치하는 데이터 디렉터리. MISE_DATA_DIR 이 있으면 그것, 없으면 ~/.local/share/mise."""
+    env = os.environ if environ is None else environ
+    return env.get("MISE_DATA_DIR") or os.path.join(HOME, ".local", "share", "mise")
+
+
+def mise_version_rows(grouped, data_dir, sizes, ps_output):
+    """지울 수 있다고 본 mise 버전별 행을 만든다. grouped 는 {도구: [버전]}, sizes 는 {설치 경로: KiB}(없는 경로는 빠진다).
+    행은 dict(tool, version, path, kb, running) 이다. kb 는 설치 경로가 없으면 None 이다.
+    running 은 설치 경로 뒤에 `/` 를 붙여 명령줄에서 찾는다. `24.15.0` 이 `24.15.01` 에 걸리지 않게 한다."""
+    rows = []
+    for tool, versions in grouped.items():
+        for version in versions:
+            path = os.path.join(data_dir, "installs", tool, version)
+            rows.append({"tool": tool, "version": version, "path": path, "kb": sizes.get(path),
+                         "running": commands_using(ps_output, path + "/") > 0})
+    return rows
+
+
+def format_mise_row(row):
+    """버전별 한 줄. 예: `  3.3G  node 24.15.0  실행중`. 설치 경로가 없으면 크기 자리에 `없음` 을 쓴다."""
+    size = "없음" if row["kb"] is None else human_kb(row["kb"])
+    return f"{size:>6}  {row['tool']} {row['version']}" + ("  실행중" if row["running"] else "")
+
+
 def commands_using(ps_output, needle):
     """ps 의 명령줄 중 needle 경로를 포함한 줄의 수."""
     return sum(1 for line in ps_output.splitlines() if needle in line)
@@ -349,10 +374,22 @@ def survey_mise_prune():
     grouped = group_by_tool(parse_mise_prunable(out))
     if not grouped:
         print("지울 수 있다고 본 버전 없음")
+        return
+    data_dir = mise_data_dir()
+    sizes = {}
     for tool, versions in grouped.items():
-        print(f"{tool}  {len(versions)}개  {' '.join(versions)}")
-    if grouped:
-        print("mise prune 을 그대로 돌리지 않는다. 사용자가 고른 도구만 `mise uninstall 도구@버전` 으로 지운다")
+        for version in versions:
+            path = os.path.join(data_dir, "installs", tool, version)
+            if os.path.isdir(path):
+                found = du_kb(["-s", path])
+                if found:
+                    sizes[path] = found[0][0]
+    rows = mise_version_rows(grouped, data_dir, sizes, run(["ps", "-axo", "command="]) or "")
+    for row in rows:
+        print(format_mise_row(row))
+    keep = [r for r in rows if r["running"]]
+    print(f"버전 {len(rows)}개, 남길 것(실행중) {len(keep)}개")
+    print("mise prune 을 그대로 돌리지 않는다. 사용자가 고른 도구만 `mise uninstall 도구@버전` 으로 지운다. 실행중 표시가 붙은 버전은 남긴다")
 
 
 def survey_dot_cache():
