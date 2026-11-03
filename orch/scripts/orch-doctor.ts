@@ -39,6 +39,8 @@
 // 저장소 판정(--repo):
 //     <orch 루트>/hooks/ 바로 아래의 .ts 가운데 이벤트 이름이 아닌 파일은 UNKNOWN-HOOK 이다(lib/events.ts 의 unknownHandlers).
 //     <orch 루트>/config.json 에 5.2.0 에서 지운 옛 칸이 있으면 INVALID-CONFIG 와 종료 코드 1 이다.
+//     queue.auto_review.require 에 모르는 조건 이름이 있어도 INVALID-CONFIG 와 종료 코드 1 이다(lib/auto-merge.ts 의 unknownConditionsText).
+//     상주 루프는 이 설정으로 멈추지 않고 PR 만 걸지 않아, 여기서 알리지 않으면 자동 머지가 조용히 서 있다.
 //     설정 파일이 깨졌으면 그 이유를 stderr 에 내고 이 판정만 건너뛴다.
 //     UNKNOWN-HOOK 과 깨진 JSON 경고는 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
@@ -98,7 +100,7 @@
 //     MISSING <문서>:<줄> <경로>                 문서가 부르는 스크립트가 없다
 //     OK-SCRIPTS <개수>                          문서가 부르는 스크립트가 모두 있다
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
-//     INVALID-CONFIG <이유>                       삭제한 옛 설정 칸
+//     INVALID-CONFIG <이유>                       삭제한 옛 설정 칸, 모르는 리뷰 조건 이름
 //     끝난 dispatch 의 질문은 lib/questions.ts 와 같은 PR 종료 근거로 제외한다.
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
 //     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초(ORCH_QUESTIONS_TIMEOUT_SEC) 안에 답하지 않은 경우도 여기다
@@ -126,7 +128,9 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { autoMergeConfig, unknownConditionsText } from './lib/auto-merge.ts'
 import { ConfigError, RemovedConfigError, loadConfig } from './lib/config.ts'
+import type { Config } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
@@ -334,12 +338,21 @@ function checkInstallPaths(configDir: string): string[] {
 
 function checkRepo(repo: string): string[] {
   const lines = unknownHandlers(repo).map((file) => `UNKNOWN-HOOK ${file}`)
+  let config: Config
   try {
-    loadConfig(repo)
+    config = loadConfig(repo)
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e
     if (e instanceof RemovedConfigError) lines.push(`INVALID-CONFIG ${e.message}`)
     else process.stderr.write(`orch-doctor: 설정 파일의 옛 칸을 보지 못했다: ${e.message}\n`)
+    return lines
+  }
+  // 모르는 리뷰 조건은 루프가 멈추지 않고 PR 만 걸지 않으므로 여기서 알린다. 다른 자동 머지 설정 오류는 루프가 종료 코드 2 로 알린다
+  try {
+    const review = autoMergeConfig(config).review
+    if (review && review.unknown.length > 0) lines.push(`INVALID-CONFIG ${unknownConditionsText(review.unknown)}`)
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
   }
   return lines
 }
