@@ -5,7 +5,7 @@ description: |
   "task 실행해줘", "phase 실행", "agent team 으로 빌드", "build-with-teams" 요청에 쓴다.
   독립 리뷰와 인수 검증은 verify, PR·머지와 정리는 orch 가 조율한다.
 metadata:
-  version: "6.0.0"
+  version: "6.1.0"
 ---
 # build-with-teams
 
