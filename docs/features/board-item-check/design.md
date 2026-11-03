@@ -7,7 +7,7 @@
 | ID | 해결 방법 |
 | --- | --- |
 | REQ1 | 모듈 변수 `checkMode` 와 `c` Button 이 켜고 끈다. 켜지면 `checkTargets(items)` 의 앞 9개 항목 머리 표시를 hotkey Button 으로 그린다. Esc 는 `ui.close` 훅이 받아 모드만 끈다 |
-| REQ2 | `checkPrompt(item, worker, prs)` 가 항목 id, 제목, 끝나지 않은 단계, worker, PR 번호를 넣은 요청문을 만들고 `fillPrompt` 로 채운다 |
+| REQ2 | `itemPrompt(item, worker, prs)` 가 상태별 요청문을 골라 `fillPrompt` 로 채운다. 진행 중 항목은 `checkPrompt` 가 항목 id, 제목, 끝나지 않은 단계, worker, PR 번호를 넣고, 대기 항목은 `resumePrompt` 가 대기 사유와 업무 주소를 더해 재개를 시킨다(work-board 1.14.0) |
 | REQ3 | 요청문의 지시 부분은 상수 `CHECK_PROMPT` 하나가 소유한다 |
 | REQ4 | 단축키 상자는 `checkTargets(items)` 가 비지 않았을 때만 `c` Button 을 넣는다 |
 | REQ5 | `checkable(item)` 이 참인 항목(진행 중, 대기)은 머리 줄의 표시와 제목을 `check-<id>` Button 하나로 그린다. hotkey 는 확인 모드에서 앞 9개에만 준다 |
@@ -21,6 +21,7 @@
 
 - `checkTargets(items)`: status 가 doing 인 항목, 다음 wait 인 항목을 파일 순서로 모아 앞 9개를 돌려준다. 창이 그리는 순서와 같다.
 - `checkPrompt(item, worker, prs)`: 문자열. 끝나지 않은 단계는 `stepRows` 의 단계 줄 가운데 now, todo 인 것이다. worker 는 `workerLine` 으로 적는다. PR 은 `prNumbers(item.pr)` 다.
+- `resumePrompt(item, worker, prs)`: 대기 항목의 재개 요청문. 대기 사유는 `waitReasons(item)` 로, `stepRows` 의 now, todo 줄과 「대기」, 「기다」, 「회신」 이 든 note 줄이다. 지시 부분은 상수 `RESUME_PROMPT` 가 소유한다.
 - `checkable(item)`: status 가 doing 이나 wait 이면 참이다. 9개 제한이 없어 10번째 항목도 클릭할 수 있다.
 - Button key: 단축키 상자의 `item-check`, 항목 머리의 `check-<id>`. `check-<id>` 는 모드와 무관하게 늘 그리고, hotkey 만 확인 모드에서 붙는다.
 - Button 의 자식은 문자열과 Text 만 받는다(2.1.316 타입 문서). 제목에 업무 링크가 있으면 링크 앞 글까지를 Button 에 넣고, 링크와 그 뒤 글은 Button 밖에 이어 그린다. 이때 머리 줄은 columnGap 을 0 으로 두고 표시 뒤 칸과 제목의 띄어쓰기를 그대로 쓴다.

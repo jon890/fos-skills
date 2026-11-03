@@ -624,6 +624,46 @@ test('c 없이 진행 중·대기 항목의 제목 줄을 누르면 상태 확�
   await ui.unmount()
 })
 
+// 대기 항목은 접힌 보기, 대기 칸, 9개를 넘는 자리에서도 제목 줄을 눌러 재개 요청문을 채운다
+test('대기 항목의 제목 줄은 9개를 넘어도 눌리고 재개 요청문을 채운다', async ($, on) => {
+  const filled = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  const doing = Array.from({ length: 9 }, (_, i) => ({ id: 'd' + i, title: '진행 ' + i, status: 'doing', next: '1. 구현' }))
+  await start($, on, undefined, JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
+    { id: 'w', title: '기획 답을 기다리는 항목', status: 'wait', pr: 41, task: 'https://tasks.example.com/task/7',
+      details: [{ text: '1. 구현', done: true }, { text: '기획 답 대기', done: false }] },
+    ...doing,
+  ] }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const head = await ui.find({ type: 'Button', key: 'check-w' })
+  expect(textOf(head)).toBe('◇ 기획 답을 기다리는 항목')
+
+  // 확인 모드에서 대기 항목은 진행 중 9개 뒤라 번호가 없지만 클릭은 된다
+  await ui.press({ key: 'item-check' })
+  expect((await ui.find({ type: 'Button', key: 'check-d8' })).props.hotkey).toBe('9')
+  expect((await ui.find({ type: 'Button', key: 'check-w' })).props.hotkey).toBeUndefined()
+  await ui.press({ key: 'check-w' })
+  expect(filled).toHaveLength(1)
+  expect(filled[0]).toContain('보드 항목 w 의 대기 사유를 다시 확인하고 조사를 재개해 줘. (기획 답을 기다리는 항목)')
+  expect(filled[0]).toContain('- 대기 사유: 기획 답 대기')
+  expect(filled[0]).toContain('- 업무: https://tasks.example.com/task/7')
+  expect(filled[0]).toContain('- PR: #41')
+  expect(filled[0]).toContain('재촉하거나 우회할 방법')
+  // 진행 중 항목은 그대로 상태 확인 요청문이다
+  await ui.press({ key: 'check-d0' })
+  expect(filled[1]).toContain('보드 항목 d0 의 지금 상태를 확인하고 다음 단계를 이어 가 줘.')
+
+  // 펼친 보기에서도 대기 항목의 제목 줄은 눌린다
+  await ui.press({ key: 'toggle-done' })
+  await ui.press({ key: 'check-w' })
+  expect(filled[2]).toContain('대기 사유를 다시 확인하고 조사를 재개해 줘')
+  await ui.unmount()
+})
+
 test('넘기기(x) 모드에서는 항목 제목 줄을 눌러도 요청문을 채우지 않는다 (REQ5)', async ($, on) => {
   const filled = []
   on('prompt.fill', (_, e) => {
