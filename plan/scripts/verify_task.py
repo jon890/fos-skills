@@ -29,6 +29,8 @@ index.json 의 pr_scope(한 문장)와 deferred(뒤로 미룬 일) 칸을 보고
 기본 검사는 구현 전 파일 상태를 대조한다. --audit 는 구현 후 문서 검사라
 신규/수정/삭제 파일의 현재 존재 조건을 대조하지 않는다.
 --staged 는 git index 와 phase 변경 파일 목록을 대조한다.
+같은 계획 폴더 바로 아래 index.json 과 phase-*.md 는 계획 메타데이터로 분리한다.
+메타데이터만 staged 되어 있으면 구현 파일 누락을 검사하지 않는다. 구현 변경은 현재 index 만 대조한다.
 테스트 범위, 실패 전파, 식별자와 스키마의 일치는 사람이 확인한다.
 
 cwd 는 타깃 레포 root 여야 한다. 계획서 디렉터리는 --tasks-dir 로 바꾼다 (기본값 tasks).
@@ -862,7 +864,16 @@ def check_staged(path, text, repo, out, warnings):
             changes.append((rel, {"A": "신규", "D": "삭제"}.get(status, "수정")))
     if not changes:
         out.append(f"{path} — staged 변경이 없다")
-    for rel, action in changes:
+    plan_dir = posixpath.abspath((repo / path).parent)
+    implementation_changes = [
+        (rel, action) for rel, action in changes
+        if not (posixpath.abspath((repo / rel).parent) == plan_dir
+                and (Path(rel).name == "index.json" or Path(rel).match("phase-*.md")))
+    ]
+    # 메타데이터 보완 커밋에는 이미 커밋한 신규 구현 파일이 다시 staged 될 필요가 없다.
+    if changes and not implementation_changes:
+        return
+    for rel, action in implementation_changes:
         allowed = [(pattern, kind) for pattern, kind in entries if matches(rel, pattern)]
         if not allowed:
             out.append(f"{path} — phase 범위 밖의 staged 파일: {rel}")

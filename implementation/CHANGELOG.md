@@ -1,5 +1,9 @@
 # CHANGELOG: implementation
 
+## 7.1.0 (2026-11-03)
+
+- phase 커밋에 계획 진행 상태를 함께 기록하고, 메타데이터만 보완한 검사 통과와 구현 완료를 구분해요.
+
 ## 7.0.0 (2026-11-03)
 
 - 호환성: build-with-teams 를 implementation 으로 바꾸고 하위 에이전트가 없으면 순차 구현해요.

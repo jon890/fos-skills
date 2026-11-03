@@ -5,7 +5,7 @@ description: |
   "task 실행해줘", "phase 실행", "agent team 으로 빌드", "implementation" 요청에 쓴다.
   독립 리뷰와 인수 검증은 verify, PR·머지와 정리는 orch 가 조율한다.
 metadata:
-  version: "7.0.0"
+  version: "7.1.0"
 ---
 # implementation
 
@@ -23,7 +23,7 @@ plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 기존 계획�
 1. `scripts/plan_precheck.py` 로 중복 실행을 확인하고, 계획 브랜치의 분리된 작업 공간을 준비한다.
    처음 구현할 때는 기본 verify_task 검사를 쓴다. 일부 phase 가 이미 구현됐거나 verify 에서 돌아왔으면
    `--audit` 로 계획을 검사하고 기존 커밋과 `current_phase` 를 대조해 남은 phase 또는 지적받은 부분만 이어 간다.
-   완료한 phase 를 처음부터 다시 실행하지 않는다. 각 phase 커밋 뒤 다음 phase 를 `current_phase` 에 기록하고,
+   완료한 phase 를 처음부터 다시 실행하지 않는다. 각 phase 커밋에 다음 phase 를 `current_phase` 로 기록하고,
    모든 phase 구현 뒤에는 그 값을 유지한 채 인계에 구현 완료를 적는다. 최종 completed/계획서 정리는 orch 가 맡는다.
 2. 스펙·설계와 phase 를 함께 읽는다. [팀원 위임 계약](references/team-spawn.md)에 따라 하위 에이전트가 있으면 executor 에게 phase 를 맡기고, 없으면 주 에이전트가 같은 계약으로 순차 구현한다.
    [executor 계약](references/role-executor.md)과 [실행 등급](references/executor-routing.md)을 따른다.
@@ -43,7 +43,10 @@ python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" --base "$BA
 python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "$TASKS_DIR"
 ```
 
-phase 커밋 전에는 다음 검사로 해당 phase 의 staged 파일만 대조한다.
+phase 커밋 전에는 다음 검사로 해당 phase 의 staged 파일을 대조한다.
+다음 `current_phase` 갱신은 같은 커밋에 포함한다. 자기 계획 폴더 바로 아래 `index.json` 과 `phase-*.md` 는 변경 파일 표 없이 허용된다.
+메타데이터만 보완하는 커밋은 구현 파일 누락 검사에서 분리한다. 이 통과를 phase 구현 완료로 보지 않는다.
+구현 파일이 함께 있으면 현재 index 의 범위·변경 종류·신규 파일 누락을 검사한다. 앞 커밋의 diff 를 합치지 않으므로 phase 구현은 한 커밋으로 끝낸다.
 
 ```bash
 python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
