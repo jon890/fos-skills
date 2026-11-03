@@ -955,6 +955,86 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual(out, ["p — 신규로 적은 파일이 staged 에 없다: tests/test_app.py"])
         self.assertEqual(warnings, ["p — 수정로 적은 파일이 staged 에 없다: src/edit.py"])
 
+    def prepare_staged_metadata(self):
+        self.git("init", "--quiet")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("config", "user.name", "Test")
+        self.plan_dirs = ("tasks/plan1-app", "docs/features/app/tasks/plan1-app")
+        self.phase_manifest = "## 변경 파일\n| `tests/test_app.py` | 신규 |\n"
+        for plan_dir in self.plan_dirs:
+            self.file(f"{plan_dir}/index.json", '{"current_phase": 1}\n')
+            self.file(f"{plan_dir}/phase-01.md", self.phase_manifest)
+        self.git("add", ".")
+        self.git("commit", "--quiet", "-m", "initial")
+
+    def test_staged_metadata_only_does_not_require_committed_phase_files(self):
+        self.prepare_staged_metadata()
+        self.file("tests/test_app.py", "pass\n")
+        self.git("add", "tests")
+        self.git("commit", "--quiet", "-m", "phase implementation")
+        for plan_dir in self.plan_dirs:
+            for names in (("index.json",), ("index.json", "phase-01.md")):
+                with self.subTest(plan_dir=plan_dir, names=names):
+                    self.git("reset", "--quiet")
+                    for name in names:
+                        content = '{"current_phase": 2}\n' if name == "index.json" else self.phase_manifest + "\n보완\n"
+                        self.file(f"{plan_dir}/{name}", content)
+                        self.git("add", f"{plan_dir}/{name}")
+                    out, warnings = [], []
+                    verify.check_staged(Path(f"{plan_dir}/phase-01.md"), self.phase_manifest, self.repo, out, warnings)
+                    self.assertEqual((out, warnings), ([], []))
+                    with patch.object(verify.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(io.StringIO()) as stdout:
+                        self.assertEqual(verify.main(["verify", "--staged", str(self.repo / plan_dir / "phase-01.md")]), 0)
+                    self.assertEqual(stdout.getvalue(), "위반 0건, 경고 0건\n")
+
+    def test_staged_implementation_accepts_own_metadata(self):
+        self.prepare_staged_metadata()
+        for plan_dir in self.plan_dirs:
+            with self.subTest(plan_dir=plan_dir):
+                self.git("reset", "--quiet")
+                self.file("tests/test_app.py", "pass\n")
+                self.file(f"{plan_dir}/index.json", '{"current_phase": 2}\n')
+                self.file(f"{plan_dir}/phase-01.md", self.phase_manifest + "\n")
+                self.file(f"{plan_dir}/phase-02.md", "next phase\n")
+                self.git("add", "tests", plan_dir)
+                out, warnings = [], []
+                verify.check_staged(self.repo / plan_dir / "phase-01.md", self.phase_manifest, self.repo, out, warnings)
+                self.assertEqual((out, warnings), ([], []))
+
+    def test_staged_metadata_does_not_hide_unrelated_files_or_missing_tests(self):
+        self.prepare_staged_metadata()
+        plan_dir = self.plan_dirs[0]
+        self.file(f"{plan_dir}/index.json", '{"current_phase": 2}\n')
+        unrelated = (
+            "tasks/plan2-other/index.json",
+            f"{self.plan_dirs[1]}/phase-02.md",
+            f"{plan_dir}/notes.md",
+            f"{plan_dir}/nested/phase-02.md",
+            "src/app.py",
+        )
+        for rel in unrelated:
+            self.file(rel, "unrelated\n")
+        self.git("add", ".")
+        out, warnings = [], []
+        phase = Path(f"{plan_dir}/phase-01.md")
+        verify.check_staged(phase, self.phase_manifest, self.repo, out, warnings)
+        for rel in unrelated:
+            self.assertIn(f"{phase} — phase 범위 밖의 staged 파일: {rel}", out)
+        self.assertIn(f"{phase} — 신규로 적은 파일이 staged 에 없다: tests/test_app.py", out)
+        self.assertEqual(len(out), len(unrelated) + 1)
+
+    def test_staged_metadata_keeps_implementation_change_kind_check(self):
+        self.prepare_staged_metadata()
+        plan_dir = self.plan_dirs[0]
+        self.file(f"{plan_dir}/index.json", '{"current_phase": 2}\n')
+        self.file("tests/test_app.py", "pass\n")
+        self.git("add", ".")
+        out = []
+        verify.check_staged(Path(f"{plan_dir}/phase-01.md"),
+                            "## 변경 파일\n| `tests/test_app.py` | 수정 |\n", self.repo, out, [])
+        self.assertEqual(len(out), 1)
+        self.assertIn("staged 변경 종류가 목록과 다르다: tests/test_app.py (신규)", out[0])
+
     def test_staged_type_mismatch_and_ellipsis_are_rejected(self):
         self.git("init", "--quiet")
         self.file("src/app.py")
