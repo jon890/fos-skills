@@ -46,7 +46,7 @@ if (is('orchestration', 'worker-show')) {
 if (is('orchestration', 'inbox')) out({ messages: state.inbox || [] })
 if (is('orchestration', 'check')) out({ messages: args.includes('--types') ? state.questions || state.inbox || [] : state.inbox || [] })
 if (is('orchestration', 'reply')) {
-  if (state.no_pane) {
+  if (state.no_pane || (state.no_pane_scoped && (args.includes('--run') || args.includes('--from')))) {
     print(JSON.stringify({ ok: false, error: { code: 'stable_pane_required', message: 'The coordinator terminal has no stable pane identity' } }), 1)
   }
   if ((state.answered || []).includes(opt('--id'))) {
@@ -479,10 +479,24 @@ describe('코디네이터 터미널의 pane 신원이 없을 때', () => {
     state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)], no_pane: true })
     const r = send('--body', '그렇게 한다')
     assert.equal(r.code, 0, both(r))
-    assert.equal(lines('orca orchestration reply').length, 1)
+    // plain reply 도 거부돼야 status 로 바꾼다
+    assert.equal(lines('orca orchestration reply').length, 2)
     assert.deepEqual(lines(STATUS), [`${STATUS} answer: 그렇게 한다 --body 그렇게 한다 --from run:run_x`])
     assert.match(r.stdout, /^fallback: reply 가 stable_pane_required 로 거부돼 m_q 스레드에 status answer 로 보냈다 \(msg_sent\)$/m)
     assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+  })
+
+  test('--run 과 --from 을 뺀 plain reply 가 받아들여지면 status 로 바꾸지 않는다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)], no_pane_scoped: true })
+    const r = send('--body', '그렇게 한다')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('orca orchestration reply'), [
+      'orca orchestration reply --id m_q --body 그렇게 한다 --run run_x --from run:run_x',
+      'orca orchestration reply --id m_q --body 그렇게 한다',
+    ])
+    assert.deepEqual(lines('orca orchestration send'), [])
+    assert.match(r.stdout, /^retry: reply 가 stable_pane_required 로 거부돼 --run 과 --from 없이 다시 보냈다$/m)
+    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_new'])
   })
 
   test('여러 줄 본문은 첫 줄만 제목에 쓰고 본문은 그대로 보낸다', () => {

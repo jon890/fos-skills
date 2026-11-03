@@ -27,7 +27,9 @@
 // 살아 있는 dispatch 를 끝난 것으로 보고 「끝난 dispatch 라 깨우지 않았다」 로 끝났다(2026-11-02)
 //
 // 세션을 다시 시작한 코디네이터 터미널은 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.
-// 그 메시지가 question 이면 같은 스레드에 `send --type status --thread-id <질문> --to dispatch:<id> --subject "answer: ..."` 로 답하고
+// 그러면 먼저 `--run` 과 `--from` 을 뺀 plain `reply --id <질문> --body ...` 를 한 번 보내고 `retry:` 줄로 알린다.
+// 이 답은 질문을 바로 닫는다. status answer 는 lib/questions.ts 가 답으로 찾지 못해 decision-pending 이 다시 묻는 일이 있었다(2026-11-02).
+// plain reply 도 같은 이유로 거부되고 그 메시지가 question 이면 같은 스레드에 `send --type status --thread-id <질문> --to dispatch:<id> --subject "answer: ..."` 로 답하고
 // `fallback:` 줄로 알린다. worker-ask 가 이 status 의 본문을 답으로 읽는다. question 이 아닌 메시지에는 전환하지 않고 실패로 둔다
 //
 // reply 와 새 메시지는 `--run <run> --from run:<run>` 과 함께 보낸다. Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다.
@@ -235,7 +237,19 @@ function reply(msgId: string, body: string, run: string, dispatchId: string): st
   try {
     return sendAs(['orchestration', 'reply', '--id', msgId, '--body', body, ...(run ? ['--run', run] : [])], run)
   } catch (e) {
-    if (!(e instanceof OrcaFailed) || !NO_PANE.some((text) => e.message.includes(text)) || typeOf(msgId, run) !== 'question') throw e
+    const noPane = (failure: unknown) => failure instanceof OrcaFailed && NO_PANE.some((text) => failure.message.includes(text))
+    if (!noPane(e)) throw e
+    // `--run` 과 `--from` 을 뺀 plain reply 는 같은 터미널에서도 받아들여진다(2026-11-02 실측). 질문이 바로 닫힌다
+    if (run) {
+      try {
+        const result = orcaJson(['orchestration', 'reply', '--id', msgId, '--body', body])
+        out(`retry: reply 가 ${NO_PANE[0]} 로 거부돼 --run 과 --from 없이 다시 보냈다`)
+        return String(obj(result.message).id || result.messageId || result.id || '')
+      } catch (plain) {
+        if (!noPane(plain)) throw plain
+      }
+    }
+    if (typeOf(msgId, run) !== 'question') throw e
     const base = [
       'orchestration',
       'send',
