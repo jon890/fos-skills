@@ -118,7 +118,7 @@ flowchart TD
 2. 저장소 밖에서 링크 경로를 적은 곳을 찾는다.
 
    ```bash
-   grep -rnE '\.claude/skills/(build-with-teams|content-preview|docs-check|harness-cleanup|korean-check|planning|pr-review|review-fix)' \
+   grep -rnE '\.claude/skills/(implementation|content-preview|docs-check|harness-cleanup|korean-check|plan|pr-review|review-fix)' \
      ~/.claude/CLAUDE.md ~/.claude/references ~/.claude/rules
    ```
 

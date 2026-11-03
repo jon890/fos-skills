@@ -55,19 +55,19 @@ base 에는 열린 PR 이 없기 때문이다. 그때는 둘째 명령의 오픈
 
 **루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
 PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 정하고, 그 오버레이를 루트 오버레이보다 먼저 읽는다.
-`$PLANNING_SKILL_DIR` 은 planning 번들이고 이 스킬 번들의 형제 디렉터리다. 이 스킬 번들 경로를 `$SKILL_DIR` 이라 하면 값은 `$SKILL_DIR/../planning` 이다.
+`$PLAN_SKILL_DIR` 은 plan 번들이고 이 스킬 번들의 형제 디렉터리다. 이 스킬 번들 경로를 `$SKILL_DIR` 이라 하면 값은 `$SKILL_DIR/../plan` 이다.
 
 **PR 번호와 저장소는 변수로 두고 이후 명령에서 같은 이름을 쓴다.** `PR` 은 위에서 정한 PR 번호, `OWNER` 와 `REPO` 는 아래 명령의 출력(`owner/repo`)을 나눈 값이다.
 
 ```bash
 # cwd: 대상 저장소 루트
 PR=""      # 위에서 정한 PR 번호로 채운다
-gh pr diff "$PR" --name-only | python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill review-fix -
+gh pr diff "$PR" --name-only | python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill review-fix -
 ```
 
 `targets` 가 둘 이상이면 PR 이 두 하위 프로젝트에 걸친 것이다.
 검증 명령과 규칙을 넣을 위치는 지적이 달린 파일의 하위 프로젝트 오버레이에서 읽고, 검증은 둘 다 실행한다.
-종료 코드 1 이면 사용자에게 묻는다. 판정 규칙은 [planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
+종료 코드 1 이면 사용자에게 묻는다. 판정 규칙은 [plan 의 `references/monorepo.md`](../plan/references/monorepo.md) 가 소유한다.
 
 ```bash
 OWNER=""   # 첫 명령 출력의 owner 쪽

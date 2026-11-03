@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "6.1.0"
+  version: "7.1.0"
 ---
 
 # orch
@@ -43,7 +43,7 @@ python3 "$SKILL_DIR/scripts/orch-doctor.py"
 ## 기능 단위 개발
 
 기능 요청 또는 스펙을 받으면 [기능 단위 개발 루프](references/feature-loop.md)를 읽고 단계를 조율한다.
-제품 결정은 spec, 작업 분해는 planning, 구현은 build-with-teams, 독립 검증은 verify, 후보 추출은 docs-consolidate 가 맡는다.
+제품 결정은 spec, 구조와 책임은 technical-design, 작업 분해는 plan, 구현은 implementation, 독립 검증은 verify, 후보 추출은 docs-consolidate 가 맡는다.
 기존 worker·머지 큐를 사용한다. 이 스킬은 각 단계의 내용을 다시 소유하지 않는다.
 
 ## 언제 쓰나

@@ -20,7 +20,7 @@ gh pr view "$PR" --json mergeStateStatus
 fix 가 끝났다고 항상 옮기지 않는다. **같은 실수가 다른 코드에서도 날 수 있는 지적**만 옮긴다.
 1회성 오타, 특정 PR 맥락에서만 성립하는 지적, 칭찬과 단순 확인은 결과 보고에만 남긴다.
 
-넣을 곳, 규칙 문장, 반복 함정 목록 처리는 [planning 의 rule-placement.md](../../planning/references/rule-placement.md) 를 따른다.
+넣을 곳, 규칙 문장, 반복 함정 목록 처리는 [plan 의 rule-placement.md](../../plan/references/rule-placement.md) 를 따른다.
 모노레포면 지적이 달린 파일이 속한 하위 프로젝트의 것을 쓴다.
 
 ADR 급 결정은 구조화 질문 도구가 있으면 그것으로 사용자에게 확인받는다.

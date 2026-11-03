@@ -31,7 +31,7 @@
 // 스크립트 판정:
 //     SKILL.md 와 그 아래 .md 에서 `$SKILL_DIR/scripts/<이름>` 과 상대 링크 `](scripts/<이름>)`, `](../scripts/<이름>)` 를 읽는다.
 //     확장자는 가리지 않는다. `.py` 와 `.ts` 가 함께 쓰인다.
-//     형제 번들 변수 `$PLANNING_SKILL_DIR/scripts/<이름>` 은 같은 플러그인의 `planning/scripts/<이름>` 으로 본다
+//     형제 번들 변수 `$PLAN_SKILL_DIR/scripts/<이름>` 은 같은 플러그인의 `plan/scripts/<이름>` 으로 본다
 //     (변수 이름의 `_SKILL_DIR` 앞을 소문자로 바꾸고 `_` 를 `-` 로 바꾼 디렉터리).
 //     백틱 안의 `scripts/verify.sh` 처럼 앞에 아무것도 없는 경로는 저장소 쪽 예시일 수 있어 보지 않는다.
 //     진입점으로 부르는 `$SKILL_DIR/bin/orch.ts <이름>` 은 `bin/orch.ts` 와 `scripts/<이름>.ts` 를 모두 본다.
@@ -290,7 +290,7 @@ function checkScripts(skillDir: string): Checked {
       for (const m of text.matchAll(REF)) {
         const { sibling, up, name } = m.groups as { sibling?: string; up?: string; name: string }
         let target: string
-        if (sibling) target = join(dirname(skillDir), sibling.toLowerCase().replaceAll('_', '-'), 'scripts', name)
+        if (sibling) target = join(dirname(skillDir), (sibling === 'PLANNING' ? 'plan' : sibling.toLowerCase().replaceAll('_', '-')), 'scripts', name)
         else if (up === undefined) target = join(skillDir, 'scripts', name)
         else target = realPath(resolve(dirname(doc), up, 'scripts', name))
         seen.add(target)

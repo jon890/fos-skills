@@ -4,7 +4,7 @@
 
 ## 이럴 때 쓴다
 
-- build-with-teams 가 구현을 넘겼을 때
+- implementation 가 구현을 넘겼을 때
 - API·화면·작업이 요구사항을 만족하는지 확인할 때
 
 ## 사용 예시
@@ -20,6 +20,6 @@
 
 ## 함께 쓰는 스킬
 
-- `build-with-teams`: 구현과 수정
+- `implementation`: 구현과 수정
 - `docs-consolidate`: 검증 뒤 문서 대조와 공통 후보 추출
 - `orch`: 결과에 따른 다음 단계

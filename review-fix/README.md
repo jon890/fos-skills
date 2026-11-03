@@ -65,10 +65,10 @@ PR 이 base 와 충돌하면 충돌을 먼저 푼다. 같은 줄을 양쪽이 �
 - 작업 트리가 clean 해야 한다. 미커밋 변경이 있으면 PR 브랜치로 바꾸지 않고 묻는다
 - 저장소에 빌드, 테스트, lint 명령이 문서화돼 있어야 한다. 없으면 어떤 명령으로 검증할지 묻는다
 - 신뢰하는 봇 목록, 봇별 심각도 표기, 규칙을 넣을 위치, CI 실패 원인 표는 `<repo-root>/.claude/review-fix-overlay.md` 에 적는다. 없으면 기본값으로 동작한다
-- 모노레포에서는 하위 프로젝트의 `.claude/review-fix-overlay.md` 를 먼저 읽는다. 대상 판정에 `planning` 스킬을 쓰므로 함께 설치돼 있어야 한다
+- 모노레포에서는 하위 프로젝트의 `.claude/review-fix-overlay.md` 를 먼저 읽는다. 대상 판정에 `plan` 스킬을 쓰므로 함께 설치돼 있어야 한다
 
 ## 함께 쓰는 스킬
 
 - 남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다
 - PR 본문을 새로 쓰거나 고치는 일은 `create-pr` 가 맡는다
-- 반복될 지적을 저장소 규칙으로 옮길 때 넣을 곳은 `planning` 의 `references/rule-placement.md` 를 따른다
+- 반복될 지적을 저장소 규칙으로 옮길 때 넣을 곳은 `plan` 의 `references/rule-placement.md` 를 따른다
