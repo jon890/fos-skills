@@ -7,6 +7,7 @@
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
   "skills": [
+    "./browser",
     "./docs-check",
     "./docs-consolidate",
     "./harness-cleanup",
