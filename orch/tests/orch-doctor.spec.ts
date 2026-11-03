@@ -330,6 +330,22 @@ describe('저장소 판정', () => {
     assert.doesNotMatch(r.stdout, /DEPRECATED/)
   })
 
+  test('queue.auto_review.require 의 모르는 조건 이름은 INVALID-CONFIG 이고 종료 코드 1 이다', () => {
+    const review = { pass: '통과', block: '보류', require: ['verdict-seen', 'thread-resolved'] }
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_merge: true, auto_review: review } }))
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout, /^INVALID-CONFIG queue\.auto_review\.require 에 모르는 조건이 있다: thread-resolved\. 쓸 수 있는 조건: verdict-on-head, /m)
+  })
+
+  test('아는 조건만 적은 조합은 INVALID-CONFIG 가 아니다', () => {
+    const review = { pass: '통과', block: '보류', require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'] }
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_merge: true, auto_review: review } }))
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
+  })
+
   test('설정 파일이 깨졌으면 이유를 stderr 에 내고 그 판정만 건너뛴다', () => {
     write(join(tmp, '.orch', 'config.json'), '{')
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])

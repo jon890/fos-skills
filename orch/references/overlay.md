@@ -213,3 +213,35 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 `dirs`는 `reserve-migration.ts`가 SQL 파일 경로를 만드는 자리이고 자동 감시에도 들어간다. `watch`는 같은 모듈에 더할 감시 폴더 목록이다. 따라서 위 설정은 Java 경로의 Flyway 번호도 SQL 예약과 같은 번호 공간으로 본다.
 Java 마이그레이션은 `reserve-migration.ts --kind java` 로 받는다. 그 모듈의 `watch` 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 를 낸다. Flyway 는 클래스 이름을 파일 이름으로 쓰므로 이름은 대소문자를 지키고, Java 식별자가 아니면 사용법 오류다.
 `watch`에만 적은 모듈은 `--kind java` 로만 예약할 수 있다.
+
+### 자동 머지 리뷰 조건
+
+`queue.auto_review.require` 에 조건 이름을 적어 저장소마다 리뷰 판정을 조합한다.
+조건의 뜻은 `scripts/lib/auto-merge.ts` 머리 주석의 「judgeReview」, 키 형식은 저장소 `docs/data-schema.md` 가 소유한다.
+미해결 스레드 0, CI 통과, 보류 표시 없음은 조합과 상관없이 늘 본다.
+모르는 이름을 적으면 상주 루프가 어느 PR 도 걸지 않고 `AUTO-MERGE-WAIT` 로그에 이유를 남기며, `orch-doctor` 가 `INVALID-CONFIG` 로 알린다.
+
+`require` 를 적지 않은 저장소는 `verdict-on-head` 하나와 같다. 리뷰 뒤 코드 커밋을 더하면 다시 리뷰를 받아야 건다.
+
+```json
+{ "queue": { "auto_merge": true, "auto_review": { "pass": "머지 가능", "block": "반영 필요|반영 후 머지" } } }
+```
+
+「머지 가능」 판정 뒤 P3 이하만 반영하면 재리뷰를 받지 않는 저장소는 아래처럼 조합한다.
+판정이 한 번도 없으면 걸지 않고, 마지막 판정이 `pass` 면 그 뒤 반영 커밋이 있어도 건다.
+`block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋에 `pass` 가 달릴 때까지 기다린다.
+
+```json
+{
+  "queue": {
+    "auto_merge": true,
+    "auto_review": {
+      "pass": "머지 가능",
+      "block": "반영 필요|반영 후 머지",
+      "require": ["verdict-seen", "last-verdict-pass", "rereview-after-block"]
+    }
+  }
+}
+```
+
+큐를 걸면 PR 마다 `AUTO-MERGE-BASIS #<PR> HEAD <SHA> <근거>` 를 루프 로그에 남긴다. 근거는 조건마다 어느 판정(리뷰의 커밋이나 댓글, 시각)으로 통과했는지다.

@@ -6,7 +6,9 @@ import {
   autoMergeConfig,
   beforeCommand,
   boardHold,
+  chainIndex,
   compareVersion,
+  judgeReview,
   judgeMigrations,
   maxByModule,
   migrationOf,
@@ -19,7 +21,7 @@ import {
   sweepArgs,
 } from '../scripts/lib/auto-merge.ts'
 import { ConfigError } from '../scripts/lib/config.ts'
-import type { Migration, QueueItem, ReviewRule } from '../scripts/lib/auto-merge.ts'
+import type { ChainCommit, Migration, QueueItem, ReviewConfig, ReviewNote, ReviewRule } from '../scripts/lib/auto-merge.ts'
 import type { Config } from '../scripts/lib/config.ts'
 
 const DIRS = { api: 'db/api', web: 'db/web' }
@@ -52,6 +54,9 @@ describe('autoMergeConfig', () => {
     ['queue.auto_review 에 block 이 없음', { queue: { auto_review: { pass: 'ok' } } }],
     ['queue.auto_review 에 모르는 키', { queue: { auto_review: { pass: 'ok', block: 'no', hold: 'x' } } }],
     ['queue.auto_review 의 정규식을 읽지 못함', { queue: { auto_review: { pass: 'ok', block: '(?i)no' } } }],
+    ['queue.auto_review.require 가 문자열', { queue: { auto_review: { pass: 'ok', block: 'no', require: 'verdict-seen' } } }],
+    ['queue.auto_review.require 가 빈 목록', { queue: { auto_review: { pass: 'ok', block: 'no', require: [] } } }],
+    ['queue.auto_review.require 에 빈 문자열', { queue: { auto_review: { pass: 'ok', block: 'no', require: ['verdict-seen', ''] } } }],
     ['migrations.blocked_after_sec 가 0', { migrations: { blocked_after_sec: 0 } }],
     ['migrations.dirs 의 값이 빈 문자열', { migrations: { dirs: { api: '' } } }],
     ['migrations.watch 의 값이 문자열', { migrations: { watch: { api: 'src/main/java/db/migration' } } }],
@@ -64,6 +69,18 @@ describe('autoMergeConfig', () => {
       assert.throws(() => autoMergeConfig(config), ConfigError)
     })
   }
+
+  test('require 를 적지 않으면 조합 전의 동작인 verdict-on-head 하나다', () => {
+    const got = autoMergeConfig({ queue: { auto_review: { pass: 'ok', block: 'no' } } })
+    assert.deepEqual(got.review?.require, ['verdict-on-head'])
+    assert.deepEqual(got.review?.unknown, [])
+  })
+
+  test('require 는 적은 순서대로 두고, 모르는 이름은 ConfigError 가 아니라 unknown 에 둔다', () => {
+    const got = autoMergeConfig({ queue: { auto_review: { pass: 'ok', block: 'no', require: ['last-verdict-pass', 'nope', 'verdict-seen', 'last-verdict-pass'] } } })
+    assert.deepEqual(got.review?.require, ['last-verdict-pass', 'verdict-seen'])
+    assert.deepEqual(got.review?.unknown, ['nope'])
+  })
 
   test('정규식을 읽지 못하면 키 이름을 담은 ConfigError 다', () => {
     assert.throws(
@@ -386,5 +403,131 @@ describe('sweepArgs', () => {
     assert.equal(sweepArgs(undefined, 'run_x'), null)
     assert.equal(sweepArgs('--run x', 'run_x'), null)
     assert.equal(sweepArgs([1], 'run_x'), null)
+  })
+})
+
+describe('judgeReview', () => {
+  const rule: ReviewRule = { pass: /^통과/, block: /^보류/ }
+  const at = (h: number) => `2026-11-03T${String(h).padStart(2, '0')}:00:00Z`
+  // HEAD 부터 첫 부모를 따라 내려간 체인. c3 이 HEAD, c1 이 가장 앞 커밋이다
+  const chain: ChainCommit[] = [
+    { oid: 'c3', parents: ['c2'], at: at(3) },
+    { oid: 'c2', parents: ['c1'], at: at(2) },
+    { oid: 'c1', parents: [], at: at(1) },
+  ]
+  const headScope = { heads: ['c3'], since: at(3) }
+  const review = (body: string, commit: string, h: number): ReviewNote => ({ body, at: at(h), commit })
+  const comment = (body: string, h: number): ReviewNote => ({ body, at: at(h), commit: null })
+  const config = (...require: ReviewConfig['require']): ReviewConfig => ({ ...rule, require, unknown: [] })
+  const judge = (notes: ReviewNote[], cfg: ReviewConfig) => judgeReview({ notes, scope: headScope, chain }, cfg)
+  // ai-analysis 가 쓸 조합. 미해결 스레드 0 은 조합과 상관없이 루프가 따로 본다
+  const combo = config('verdict-seen', 'last-verdict-pass', 'rereview-after-block')
+
+  describe('verdict-on-head(require 를 적지 않은 저장소)', () => {
+    test('HEAD 범위의 마지막 판정이 pass 면 통과하고 그 판정을 근거로 낸다', () => {
+      assert.deepEqual(judge([review('보류', 'c3', 3), review('통과', 'c3', 4)], config('verdict-on-head')), {
+        ok: true,
+        basis: [`verdict-on-head pass(커밋 c3, ${at(4)})`],
+      })
+    })
+
+    test('옛 커밋의 pass 만 있으면 missing 인 리뷰 대기다', () => {
+      assert.deepEqual(judge([review('통과', 'c2', 2)], config('verdict-on-head')), { ok: false, condition: 'verdict-on-head', wait: '리뷰 대기', missing: true })
+    })
+
+    test('HEAD 범위의 마지막 판정이 block 이면 리뷰 보류다', () => {
+      assert.deepEqual(judge([review('통과', 'c3', 3), comment('보류: 고칠 것', 4)], config('verdict-on-head')), { ok: false, condition: 'verdict-on-head', wait: '리뷰 보류', missing: false })
+    })
+  })
+
+  describe('verdict-seen', () => {
+    test('판정이 하나도 없으면 missing 인 리뷰 대기다. 판정 문구가 없는 본문은 세지 않는다', () => {
+      assert.deepEqual(judge([comment('감사합니다', 4)], config('verdict-seen')), { ok: false, condition: 'verdict-seen', wait: '리뷰 대기', missing: true })
+    })
+
+    test('옛 커밋의 block 이라도 판정이 있으면 통과다', () => {
+      const got = judge([review('보류', 'c1', 1)], config('verdict-seen'))
+      assert.deepEqual(got, { ok: true, basis: [`verdict-seen block(커밋 c1, ${at(1)})`] })
+    })
+  })
+
+  describe('last-verdict-pass', () => {
+    test('마지막 판정이 옛 커밋의 pass 면 HEAD 가 달라도 통과다', () => {
+      assert.deepEqual(judge([review('통과', 'c1', 1)], config('last-verdict-pass')), { ok: true, basis: [`last-verdict-pass pass(커밋 c1, ${at(1)})`] })
+    })
+
+    test('마지막 판정이 block 이면 리뷰 보류, 판정이 없으면 리뷰 대기다', () => {
+      assert.deepEqual(judge([review('통과', 'c1', 1), review('보류', 'c2', 2)], config('last-verdict-pass')), { ok: false, condition: 'last-verdict-pass', wait: '리뷰 보류', missing: false })
+      assert.deepEqual(judge([], config('last-verdict-pass')), { ok: false, condition: 'last-verdict-pass', wait: '리뷰 대기', missing: true })
+    })
+  })
+
+  describe('rereview-after-block', () => {
+    test('block 이 없으면 통과다', () => {
+      assert.deepEqual(judge([review('통과', 'c1', 1)], config('rereview-after-block')), { ok: true, basis: ['rereview-after-block block 없음'] })
+    })
+
+    test('block 뒤의 새 커밋에 pass 가 있으면 통과다', () => {
+      const got = judge([review('보류', 'c1', 1), review('통과', 'c2', 2)], config('rereview-after-block'))
+      assert.deepEqual(got, { ok: true, basis: [`rereview-after-block block(커밋 c1, ${at(1)}) 뒤 pass(커밋 c2, ${at(2)})`] })
+    })
+
+    test('block 과 같은 커밋에 늦게 단 pass 댓글도 통과다', () => {
+      // c3 을 올리기 전(02:30)에 쓴 댓글이라 c2 를 가리킨다
+      const got = judge([review('보류', 'c2', 2), { body: '통과', at: '2026-11-03T02:30:00Z', commit: null }], config('rereview-after-block'))
+      assert.deepEqual(got, { ok: true, basis: [`rereview-after-block block(커밋 c2, ${at(2)}) 뒤 pass(댓글, 2026-11-03T02:30:00Z)`] })
+    })
+
+    test('block 보다 늦게 끝났어도 block 보다 앞 커밋의 pass 는 세지 않는다', () => {
+      const got = judge([review('보류', 'c2', 2), review('통과', 'c1', 3)], config('rereview-after-block'))
+      assert.deepEqual(got, { ok: false, condition: 'rereview-after-block', wait: `재리뷰 대기: block(커밋 c2, ${at(2)}) 뒤 같은 커밋이나 그 뒤 커밋의 pass 가 없다`, missing: false })
+    })
+
+    test('체인에 없는 커밋의 pass 는 세지 않는다', () => {
+      assert.equal(judge([review('보류', 'c1', 1), review('통과', 'gone', 2)], config('rereview-after-block')).ok, false)
+    })
+  })
+
+  describe('ai-analysis 조합', () => {
+    test('판정이 없으면 리뷰 대기다', () => {
+      assert.deepEqual(judge([], combo), { ok: false, condition: 'verdict-seen', wait: '리뷰 대기', missing: true })
+    })
+
+    test('마지막 pass 뒤에 반영 커밋이 있어도 통과한다', () => {
+      // c2 에 pass, 그 뒤 c3 을 올렸다(#986~#989 의 꼴)
+      const got = judge([review('보류', 'c1', 1), review('통과', 'c2', 2)], combo)
+      assert.equal(got.ok, true, JSON.stringify(got))
+      assert.deepEqual(got.ok && got.basis, [
+        `verdict-seen pass(커밋 c2, ${at(2)})`,
+        `last-verdict-pass pass(커밋 c2, ${at(2)})`,
+        `rereview-after-block block(커밋 c1, ${at(1)}) 뒤 pass(커밋 c2, ${at(2)})`,
+      ])
+    })
+
+    test('마지막 block 뒤에 커밋만 있으면 리뷰 보류다', () => {
+      assert.equal(judge([review('통과', 'c1', 1), review('보류', 'c2', 2)], combo).ok, false)
+    })
+
+    test('block 뒤에 새 pass 가 오면 통과한다', () => {
+      assert.equal(judge([review('보류', 'c2', 2), review('통과', 'c3', 4)], combo).ok, true)
+    })
+
+    test('pass 뒤에 block 이 오면 리뷰 보류다', () => {
+      assert.deepEqual(judge([review('통과', 'c2', 2), review('보류', 'c3', 3)], combo), { ok: false, condition: 'last-verdict-pass', wait: '리뷰 보류', missing: false })
+    })
+  })
+
+  test('모르는 조건 이름이 있으면 어느 조건도 보지 않고 그 이름으로 멈춘다', () => {
+    const got = judge([review('통과', 'c3', 3)], { ...config('verdict-on-head'), unknown: ['nope'] })
+    assert.equal(got.ok, false)
+    assert.match(!got.ok ? got.wait : '', /^queue\.auto_review\.require 에 모르는 조건이 있다: nope\. 쓸 수 있는 조건: /)
+  })
+
+  test('chainIndex 는 리뷰를 달린 커밋, 댓글을 쓴 시각 이전의 가장 새 커밋으로 본다', () => {
+    assert.equal(chainIndex(review('x', 'c2', 9), chain), 1)
+    assert.equal(chainIndex(review('x', 'gone', 9), chain), null)
+    assert.equal(chainIndex({ body: 'x', at: '2026-11-03T02:30:00Z', commit: null }, chain), 1)
+    assert.equal(chainIndex(comment('x', 0), chain), null)
+    assert.equal(chainIndex({ body: 'x', at: '', commit: null }, chain), null)
   })
 })

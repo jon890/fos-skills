@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "7.0.0"
+  version: "7.1.0"
 ---
 
 # orch
@@ -27,6 +27,7 @@ metadata:
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
 `UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG` 은 doctor가 5.2.0에서 지운 설정 칸을 찾았다는 뜻이다. 일반 명령은 같은 설정을 사용법 오류로 거부한다. 고치는 법은 [`references/hooks.md`](references/hooks.md) 가 소유한다.
+`INVALID-CONFIG queue.auto_review.require 에 모르는 조건이 있다` 는 자동 머지 리뷰 조건에 오타가 있다는 뜻이다. 상주 루프가 어느 PR 도 걸지 않으니 줄에 나온 조건 이름으로 고친다.
 `FEEDBACK-OPEN <개수> <폴더>` 는 다시 보지 않은 스킬 개선 후보가 있다는 뜻이다. 그날 안에 [`references/feedback-review.md`](references/feedback-review.md) 대로 판정한다.
 `STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 사용자에게 알리기만 한다.
 사용자가 개념의 뜻을 물으면 답한 뒤 그 자리에서 공부 후보로 적는다. 적는 법, 하루 끝 고르기, 다시 보기는 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.

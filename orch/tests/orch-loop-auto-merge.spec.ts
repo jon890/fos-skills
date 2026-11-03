@@ -412,6 +412,95 @@ describe('리뷰', () => {
   })
 })
 
+describe('리뷰 조건 조합', () => {
+  const combo = { pass: '^통과', block: '^보류', require: ['verdict-seen', 'last-verdict-pass', 'rereview-after-block'] }
+
+  function commit(message: string): string {
+    write(join(repo, message), `${message}\n`)
+    git(['add', message])
+    git(['commit', '-q', '-m', message])
+    return spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', env }).stdout.trim()
+  }
+
+  test('require 를 적지 않은 설정은 verdict-on-head 와 같아 옛 HEAD 의 pass 로 걸지 않는다', () => {
+    config({ queue: { auto_review: { pass: '^통과', block: '^보류' } } })
+    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }] } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 대기/)
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('마지막 판정이 옛 HEAD 의 pass 면 걸고 통과 근거를 AUTO-MERGE-BASIS 로 남긴다', async () => {
+    config({ queue: { auto_review: combo } })
+    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }] } } })
+    const output = once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+    const pass = 'pass(커밋 bbbbbbbb, 2026-01-01T00:00:00Z)'
+    assert.match(output, new RegExp(`AUTO-MERGE-BASIS #1 HEAD aaaaaaaa verdict-seen ${pass.replace(/[()]/g, '\\$&')}; last-verdict-pass `))
+    assert.match(output, /rereview-after-block block 없음/)
+  })
+
+  test('판정이 하나도 없으면 걸지 않고 AUTO-MERGE-NO-REVIEW 에 막은 조건을 적는다', () => {
+    config({ queue: { auto_review: combo } })
+    github([pr(1)], { views: { 1: { comments: [{ body: '감사합니다', createdAt: '2026-01-01T00:00:00Z' }] } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 대기/)
+    const [event] = events('AUTO-MERGE-NO-REVIEW')
+    assert.match(String(event?.text), new RegExp(`^HEAD ${HEAD_A.slice(0, 8)} 의 PR 에 판정 문구가 든 리뷰가 없다\\(verdict-seen\\)`), JSON.stringify(events()))
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('마지막 판정이 block 이면 그 뒤에 커밋만 있어도 걸지 않는다', () => {
+    config({ queue: { auto_review: combo } })
+    const reviews = [
+      { body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } },
+      { body: '보류: 고칠 것', submittedAt: '2026-01-02T00:00:00Z', commit: { oid: HEAD_B } },
+    ]
+    github([pr(1)], { views: { 1: { reviews } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 리뷰 보류/)
+    assert.deepEqual(events('AUTO-MERGE-NO-REVIEW'), [])
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('block 뒤 새 커밋의 pass 가 있으면 그 뒤 반영 커밋이 있어도 걸고, block 보다 앞 커밋의 늦은 pass 로는 걸지 않는다', async () => {
+    config({ queue: { auto_review: combo } })
+    git(['checkout', '-q', '-b', 'feat-1'])
+    const first = commit('first')
+    const fixed = commit('fixed')
+    const head = commit('p3')
+    git(['checkout', '-q', 'main'])
+    git(['push', '-q', 'origin', 'main', 'feat-1'])
+    const stale = [
+      { body: '보류: 고칠 것', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: fixed } },
+      { body: '통과', submittedAt: '2026-01-02T00:00:00Z', commit: { oid: first } },
+    ]
+    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: stale } } })
+    assert.match(once(), new RegExp(`AUTO-MERGE-WAIT #1 재리뷰 대기: block\\(커밋 ${fixed.slice(0, 8)}`))
+    assert.deepEqual(queueCalls(), [])
+    const rereviewed = [
+      { body: '보류: 고칠 것', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: first } },
+      { body: '통과', submittedAt: '2026-01-02T00:00:00Z', commit: { oid: fixed } },
+    ]
+    github([pr(1, { headRefOid: head })], { views: { 1: { reviews: rereviewed } } })
+    const output = once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+    assert.match(output, new RegExp(`rereview-after-block block\\(커밋 ${first.slice(0, 8)}, 2026-01-01T00:00:00Z\\) 뒤 pass\\(커밋 ${fixed.slice(0, 8)}`))
+  })
+
+  test('미해결 스레드가 있으면 조합이 통과해도 걸지 않는다', () => {
+    config({ queue: { auto_review: combo } })
+    write(join(tmp, 'threads-1'), '2\n')
+    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_B } }] } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 미해결 스레드 2/)
+    assert.deepEqual(queueCalls(), [])
+  })
+
+  test('모르는 조건 이름이 있으면 루프는 멈추지 않고 그 PR 을 걸지 않으며 이유를 로그에 남긴다', () => {
+    config({ queue: { auto_review: { ...combo, require: ['verdict-seen', 'thread-resolved'] } } })
+    github([pr(1)], { views: { 1: { reviews: [{ body: '통과', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: HEAD_A } }] } } })
+    assert.match(once(), /AUTO-MERGE-WAIT #1 queue\.auto_review\.require 에 모르는 조건이 있다: thread-resolved\./)
+    assert.deepEqual(queueCalls(), [])
+  })
+})
+
 describe('보류 표시', () => {
   test('지시서의 머지 보류 줄이 있으면 걸지 않는다', () => {
     spec('specs', 'spec-a.md', ['feat-1'], ['- 머지 보류: 배포 뒤'])
