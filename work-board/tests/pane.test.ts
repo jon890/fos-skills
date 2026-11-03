@@ -509,7 +509,7 @@ test('c 다음 번호는 그 항목의 상태 확인 요청문을 채우고 모�
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Button', key: 'item-check' })).props.hotkey).toBe('c')
-  expect(await ui.find({ type: 'Button', key: 'check-a' })).toBeFalsy()
+  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
 
   await ui.press({ key: 'item-check' })
   expect(await ui.find({ type: 'Text', text: /상태를 확인할 항목의 번호를 누르세요/ })).toBeTruthy()
@@ -526,7 +526,7 @@ test('c 다음 번호는 그 항목의 상태 확인 요청문을 채우고 모�
   expect(filled[0]).toContain('worker: 없음 (워크트리 wt-a)')
   expect(filled[0]).toContain('PR: #9')
   expect(filled[0]).toContain('멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘')
-  expect(await ui.find({ type: 'Button', key: 'check-a' })).toBeFalsy()
+  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /상태를 확인할 항목의 번호를 누르세요/ })).toBeFalsy()
   await ui.unmount()
 })
@@ -536,10 +536,10 @@ test('c 를 다시 누르면 번호가 사라진다 (REQ1)', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'item-check' })
-  expect(await ui.find({ type: 'Button', key: 'check-a' })).toBeTruthy()
+  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBe('1')
   expect((await ui.find({ type: 'Button', key: 'item-check' })).props.label).toBe('확인 그만')
   await ui.press({ key: 'item-check' })
-  expect(await ui.find({ type: 'Button', key: 'check-a' })).toBeFalsy()
+  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /상태를 확인할 항목의 번호를 누르세요/ })).toBeFalsy()
   await ui.unmount()
 })
@@ -579,12 +579,78 @@ test('확인 모드에서 알림 번호는 그대로 보이고 숫자 단축키�
 
   // x 를 켜면 c 가 꺼지고 알림 번호가 돌아온다
   await ui.press({ key: 'inbox-dismiss' })
-  expect(await ui.find({ type: 'Button', key: 'check-a' })).toBeFalsy()
+  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBeUndefined()
   expect((await ui.find({ type: 'Button', key: reply })).props.hotkey).toBe('1')
   expect(await ui.find({ type: 'Text', text: /넘길 알림의 번호를 누르세요/ })).toBeTruthy()
   // c 를 켜면 x 가 꺼진다
   await ui.press({ key: 'item-check' })
   expect(await ui.find({ type: 'Text', text: /넘길 알림의 번호를 누르세요/ })).toBeFalsy()
-  expect(await ui.find({ type: 'Button', key: 'check-a' })).toBeTruthy()
+  expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBe('1')
+  await ui.unmount()
+})
+
+// 알림처럼 진행 중·대기 항목의 제목 줄도 클릭이나 Enter 로 누를 수 있다 (REQ5)
+test('c 없이 진행 중·대기 항목의 제목 줄을 누르면 상태 확인 요청문을 채운다 (REQ5)', async ($, on) => {
+  const filled = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  await start($, on, undefined, JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
+    { id: 'a', title: '단계 항목', status: 'doing', next: '✓ 1. 구현\n2. 리뷰' },
+    { id: 'w', title: '대기 항목', status: 'wait' },
+    { id: 'd', title: '끝난 항목', status: 'done' },
+    { id: 'q', title: '결정 항목', status: 'decide' },
+  ] }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const head = await ui.find({ type: 'Button', key: 'check-a' })
+  expect(head.props.hotkey).toBeUndefined()
+  expect(textOf(head)).toBe('▶ 단계 항목')
+  // 완료와 결정 항목은 누를 대상이 아니다
+  expect(await ui.find({ type: 'Button', key: 'check-d' })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'check-q' })).toBeFalsy()
+
+  await ui.press({ key: 'check-w' })
+  expect(filled).toHaveLength(1)
+  expect(filled[0]).toContain('보드 항목 w ')
+  await ui.press({ key: 'check-a' })
+  expect(filled[1]).toContain('끝나지 않은 단계: 2. 리뷰')
+
+  // 펼친 보기에서도 머리 줄만 Button 이고 상세 줄은 Button 이 아니다
+  await ui.press({ key: 'toggle-done' })
+  expect((await ui.findAll({ type: 'Button' })).map((b) => b.props.key).filter((k) => String(k).startsWith('check-')).sort())
+    .toEqual(['check-a', 'check-w'])
+  await ui.unmount()
+})
+
+test('넘기기(x) 모드에서는 항목 제목 줄을 눌러도 요청문을 채우지 않는다 (REQ5)', async ($, on) => {
+  const filled = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  await start($, on, inboxOutput({ enabled: true, fetchedAt: null, newCount: 2, unclassified: 0, isDefault: true, errors: {}, items: INBOX_ITEMS }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'inbox-dismiss' })
+  await ui.press({ key: 'check-a' })
+  expect(filled).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /넘길 알림의 번호를 누르세요/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('제목에 업무 링크가 있으면 링크는 Button 밖에 그리고 제목 글은 이어진다 (REQ5)', async ($, on) => {
+  await start($, on, undefined, JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
+    { id: 't', title: '배포 #342 정리', status: 'doing', task: 'https://nhnent.dooray.com/task/342' },
+  ] }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const head = await ui.find({ type: 'Box', key: 'head' })
+  const [button, link, tail] = head.children as Drawn[]
+  expect(button.type).toBe('Button')
+  expect(textOf(button)).toBe('▶ 배포 ')
+  expect(link.type).toBe('Link')
+  expect(textOf(link)).toBe('[두레이 #342]')
+  expect(textOf(tail)).toBe(' 정리')
   await ui.unmount()
 })

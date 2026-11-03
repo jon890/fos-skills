@@ -805,6 +805,11 @@ export function checkTargets(items) {
   return [...rows.filter((item) => item.status === 'doing'), ...rows.filter((item) => item.status === 'wait')].slice(0, CHECK_ROWS)
 }
 
+// 제목 줄을 눌러 상태 확인 요청문을 채울 수 있는 항목. 진행 중과 대기만이고, 9개 제한 없이 모두다
+export function checkable(item) {
+  return Boolean(item) && (item.status === 'doing' || item.status === 'wait')
+}
+
 // 항목 상태 확인 요청문의 지시 부분. checkPrompt 가 항목 정보 뒤에 붙인다
 export const CHECK_PROMPT = [
   '1. PR·CI·배포·worker 보고·업무 상태와 대조해 지금 상태를 확인하고, 멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘.',
@@ -1384,6 +1389,39 @@ export function register(on) {
       return counts ? [indent('steps', 2 + STEP_MARK_WIDTH, dim('counts', counts))] : []
     }
 
+    // 항목 머리 줄. 진행 중·대기 항목은 표시와 제목을 Button 하나로 그려 클릭이나 Enter 로 상태 확인 요청문을 채운다
+    // 숫자 단축키는 확인 모드(c)에서 앞 9개에만 붙인다. 평소에 붙이면 알림의 숫자 단축키와 겹친다
+    // Button 의 자식은 문자열과 Text 만 받으므로, 제목에 업무 링크가 있으면 링크와 그 뒤 글은 Button 밖에 이어 그린다
+    // 이때 머리 줄은 columnGap 없이 제목 글의 띄어쓰기를 그대로 쓴다
+    const headChildren = (item, section, done, worker) => {
+      if (done || !checkable(item)) {
+        return [
+          Text({ key: 'mark', color: section.color, children: [section.mark] }),
+          done
+            ? Text({ key: 'title', dimColor: true, strikethrough: true, wrap: 'wrap', children: titleChildren(item) })
+            : Text({ key: 'title', bold: true, wrap: 'wrap', children: titleChildren(item) }),
+        ]
+      }
+      const numbered = checking && checkIndex.has(item.id)
+      const [lead, ...rest] = titleChildren(item)
+      return [
+        Button({ key: 'check-' + item.id, hotkey: numbered ? String(checkIndex.get(item.id) + 1) : undefined, plain: true,
+          onPress: () => {
+            // 넘기기(x) 모드에서는 항목을 눌러도 아무것도 하지 않는다. 그 모드의 누르기는 알림을 넘기는 뜻이다
+            if (dismissMode) return
+            checkMode = false
+            fillPrompt($, checkPrompt(item, worker, live.prs))
+            $.ui.invalidate('ui.render')
+          },
+          children: [
+            Text({ key: 'mark', color: numbered ? 'red' : section.color, children: [section.mark + ' '] }),
+            Text({ key: 'title', bold: true, wrap: 'wrap', children: [lead] }),
+          ] }),
+        ...rest.map((part, i) => typeof part === 'string'
+          ? Text({ key: 'title-' + i, bold: true, wrap: 'wrap', children: [part] })
+          : part),
+      ]
+    }
     // 접힌 보기는 「표시 제목」, 제목 아래 막대, 「▶ 지금 단계」, worker 줄만 그린다
     // 펼친 보기(d)는 「표시 제목」, 막대, 담당·PR, 모든 단계 줄을 적힌 순서대로 그린다
     // 완료 항목은 막대 줄이 없다
@@ -1401,21 +1439,8 @@ export function register(on) {
           Box({
             key: 'head',
             flexDirection: 'row',
-            columnGap: 1,
-            children: [
-              checking && checkIndex.has(item.id)
-                ? Button({ key: 'check-' + item.id, hotkey: String(checkIndex.get(item.id) + 1), plain: true,
-                  onPress: () => {
-                    checkMode = false
-                    fillPrompt($, checkPrompt(item, worker, live.prs))
-                    $.ui.invalidate('ui.render')
-                  },
-                  children: [Text({ color: 'red', children: [section.mark] })] })
-                : Text({ key: 'mark', color: section.color, children: [section.mark] }),
-              done
-                ? Text({ key: 'title', dimColor: true, strikethrough: true, wrap: 'wrap', children: titleChildren(item) })
-                : Text({ key: 'title', bold: true, wrap: 'wrap', children: titleChildren(item) }),
-            ],
+            columnGap: !done && checkable(item) ? 0 : 1,
+            children: headChildren(item, section, done, worker),
           }),
           ...(done ? [] : [indent('bar', 2, bar
             ? Text({ color: section.color, wrap: 'truncate', children: [bar] })
