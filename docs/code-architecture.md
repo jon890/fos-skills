@@ -33,7 +33,7 @@ korean-check/
 plan/
 pr-review/
 review-fix/
-tools/browser-driver/               content-preview 가 쓰는 공용 도구
+tools/browser-driver/               browser, content-preview 가 쓰는 공용 도구
 scripts/export-to-team.sh           공용 스킬을 팀 저장소로 내보낸다
 scripts/install-hooks.sh            hooks/ 의 git 훅을 건다
 scripts/test-plugin-install.sh      격리된 설정 폴더에서 설치를 테스트한다
@@ -81,7 +81,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | `orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
-| `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `content-preview/scripts/show-preview.sh` |
+| `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `browser/SKILL.md`, `content-preview/scripts/show-preview.sh` |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 루트 스킬 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
 | `scripts/test-plugin-install.sh` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보낸다. 플러그인 배포와 무관하게 그대로 동작한다. 인자는 스크립트 머리 주석이 소유한다 | 사람, `hooks/post-commit` |
@@ -98,6 +98,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | `implementation` 와 `review-fix` 의 `$PLAN_SKILL_DIR` | 자기 번들의 형제 디렉터리 `plan` 이다. 값은 `$SKILL_DIR/../plan` 이다 |
 | `content-preview/scripts/style-check.sh` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
 | `content-preview/scripts/show-preview.sh` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `tools/` 에서 찾는다 |
+| `browser/SKILL.md` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, `$SKILL_DIR/../tools/browser-driver/`, `~/.claude/scripts/browser-driver`, PATH 의 `browser-driver` 순이다. 캐시에서는 형제인 루트의 `tools/` 에서 찾는다 |
 | `harness-cleanup/scripts/check_references.py` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
 
 루트에는 `bin/` 을 두지 않는다. `browser-driver` 명령은 팀 저장소의 플러그인이 PATH 에 싣는다. 근거는 [ADR-004](adr/004-no-plugin-bin.md) 가 소유한다.

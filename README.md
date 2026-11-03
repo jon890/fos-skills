@@ -125,6 +125,7 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | [`mac-cleanup`](mac-cleanup/README.md) | 맥의 디스크, 메모리, 스왑과 오래된 세션, 머지된 브랜치를 조사하고 승인받은 것만 정리해요 |
 | [`presentation`](presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고, 장 수와 노트, 금지어, 세로 넘침을 검사해요 |
 | [`report`](report/README.md) | 있는 내용을 결론이 먼저 보이는 HTML 보고서 한 파일로 만들어 브라우저로 띄워요 |
+| [`browser`](browser/README.md) | CLI 나 API 로 안 되는 웹 작업을 `browser-driver` 로 브라우저를 조작해 끝내요. 로그인과 되돌리기 어려운 버튼만 사람이 확인해요 |
 
 플러그인은 위 표의 스킬과 `/board` 창을 함께 실어요.
 [`content-preview`](content-preview/README.md) 와 [`korean-check`](korean-check/README.md) 의 원본도 여기 있지만, 스킬로는 팀 저장소의 플러그인으로 받아요.
@@ -186,7 +187,7 @@ ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/s
 
 | 도구 | 하는 일 | 쓰는 스킬 |
 | --- | --- | --- |
-| `tools/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `content-preview` |
+| `tools/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview` |
 
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
 이 플러그인은 `bin/` 을 두지 않아 `browser-driver` 를 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
