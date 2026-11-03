@@ -853,14 +853,29 @@ export function directoryMarketplaceOf(root, known) {
   return ''
 }
 
+// ps 출력(프로세스 인자 줄들)에 root 폴더를 --plugin-dir 로 읽는 claude 가 있는지.
+// directory 소스로 등록된 폴더도 --plugin-dir 로 직접 읽으면 개발용 작업 트리다. 경로만으로는 둘을 가를 수 없어 실제 인자를 본다
+export function pluginDirLoads(root, psOutput) {
+  const clean = (value) => String(value || '').replace(/^["']|["']$/g, '').replace(/\/+$/, '')
+  const target = clean(root)
+  if (!target) return false
+  return String(psOutput || '').split('\n').some((line) => {
+    if (!/\bclaude\b/.test(line)) return false
+    const tokens = line.trim().split(/\s+/)
+    return tokens.some((token, at) => token === '--plugin-dir' ? clean(tokens[at + 1]) === target
+      : token.startsWith('--plugin-dir=') && clean(token.slice('--plugin-dir='.length)) === target)
+  })
+}
+
 // installed_plugins.json 과 설치본 plugin.json 으로 설치본을 정한다.
 // kind 는 cache(마켓플레이스 설치본), directory(directory 소스 마켓플레이스의 체크아웃 폴더를 그대로 읽은 것, dir 에 그 폴더),
 // tree(--plugin-dir 로 읽은 작업 트리)다. 캐시인데 기록에 없으면 null.
-// known 은 known_marketplaces.json 의 내용이다. 없으면 directory 를 가리지 않고 tree 로 본다
-export function installOf(root, installed, manifest, name, known = null) {
+// known 은 known_marketplaces.json 의 내용이다. 없으면 directory 를 가리지 않고 tree 로 본다.
+// explicit 은 그 폴더를 claude --plugin-dir 로 직접 읽고 있다는 뜻이다(pluginDirLoads). 이때는 등록된 폴더여도 tree 다
+export function installOf(root, installed, manifest, name, known = null, explicit = false) {
   const version = manifest && typeof manifest.version === 'string' ? manifest.version : ''
   if (!configDirOf(root)) {
-    const dir = directoryMarketplaceOf(root, known)
+    const dir = explicit ? '' : directoryMarketplaceOf(root, known)
     if (dir) return { kind: 'directory', version, commit: '', scope: '', projectPath: '', key: '', dir }
     return { kind: 'tree', version, commit: '', scope: '', projectPath: '', key: '' }
   }
@@ -1183,6 +1198,16 @@ async function readKnownMarketplaces($) {
   }
 }
 
+// 이 폴더를 claude --plugin-dir 로 읽는 프로세스가 있는지. ps 를 못 돌리면 false 다
+async function readPluginDirLoad($, root) {
+  try {
+    const { exitCode, stdout } = await $.process.run(['ps', '-axo', 'args='], { timeoutMs: COMMAND_TIMEOUT_MS })
+    return exitCode === 0 && pluginDirLoads(root, stdout)
+  } catch {
+    return false
+  }
+}
+
 // 설치본을 읽는다. 캐시 설치본은 세션 동안 바뀌지 않는다(갱신해도 /reload-plugins 전까지는 앞 설치본이 실려 있다).
 // directory 설치본은 폴더를 그대로 읽으므로 받은 뒤 다시 읽어 머리 줄이 새 version 을 보이게 한다
 async function loadInstall($) {
@@ -1194,7 +1219,8 @@ async function loadInstall($) {
     const config = configDirOf(root)
     const installed = config ? JSON.parse(await $.fs.read(config + '/plugins/installed_plugins.json')) : null
     const known = config ? null : await readKnownMarketplaces($)
-    const install = installOf(root, installed, manifest, plugin.name, known)
+    const explicit = config || !known ? false : await readPluginDirLoad($, root)
+    const install = installOf(root, installed, manifest, plugin.name, known, explicit)
     if (!install) throw new Error('installed_plugins.json 에 이 설치본이 없어요')
     if (install.kind !== 'cache') {
       try {

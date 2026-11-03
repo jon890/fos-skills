@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  configDirOf, directoryMarketplaceOf, directoryRefusal, installOf, parseLsRemote, rawManifestUrl, updateCommand, updateVisible, versionLabel, versionState, versionText,
+  configDirOf, directoryMarketplaceOf, pluginDirLoads, directoryRefusal, installOf, parseLsRemote, rawManifestUrl, updateCommand, updateVisible, versionLabel, versionState, versionText,
 } from '../hooks/register.js'
 
 const CONFIG = '/Users/me/.claude'
@@ -183,4 +183,18 @@ test('main 이 아니거나 추적 파일 변경이 있으면 받지 않는 이�
   assert.equal(directoryRefusal('main\n', ''), '')
   assert.match(directoryRefusal('feat/x\n', ''), /main 이 아니/)
   assert.match(directoryRefusal('main\n', ' M work-board/hooks/register.js\n'), /고치는 중인 파일/)
+})
+
+test('등록된 directory 폴더를 --plugin-dir 로 직접 읽으면 tree 이고 p 도 Git 갱신도 없다 (R1, R3)', () => {
+  const root = '/Users/me/personal/fos-skills'
+  const ps = ['/usr/bin/zsh', 'claude --plugin-dir ' + root + ' --model opus'].join('\n')
+  assert.equal(pluginDirLoads(root, ps), true)
+  assert.equal(pluginDirLoads(root, 'claude --plugin-dir=' + root + '/'), true)
+  assert.equal(pluginDirLoads(root, 'claude --plugin-dir /work/other'), false)
+  assert.equal(pluginDirLoads(root, 'claude --model opus'), false)
+  const install = installOf(root, null, { version: '1.4.0' }, 'fos-skills', KNOWN, true)
+  assert.equal(install?.kind, 'tree')
+  assert.ok(!updateVisible(install, { commit: NEW, version: '1.5.0' }))
+  assert.ok(!versionLabel('fos-skills', install, { commit: NEW, version: '1.5.0' }).text.includes('p 로'))
+  assert.equal(updateCommand(install), null)
 })

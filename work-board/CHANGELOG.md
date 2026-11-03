@@ -3,6 +3,10 @@
 work-board 는 스킬이 아닌 mod 이므로 이 파일에서 변경 이력을 시작한다.
 버전 등급과 쓰는 형식은 저장소 README 의 「버전과 변경 이력」 을 따른다.
 
+## 1.13.1 (2026-11-03)
+
+- directory 소스로 등록된 폴더라도 `claude --plugin-dir` 로 직접 읽고 있으면 작업 트리로 본다. 머리 줄에 「작업 트리」 가 보이고 `p` 가 없어, 개발용으로 읽은 폴더에 `git pull` 이 돌지 않는다
+
 ## 1.13.0 (2026-11-03)
 
 - directory 소스 마켓플레이스의 폴더에서 읽은 플러그인도 `p` 한 번으로 갱신한다. 그 폴더가 main 이고 추적 파일 변경이 없고 fast-forward 할 수 있으면 `git pull --ff-only origin main` 을 돌리고 입력란에 `/reload-plugins` 를 채운다
