@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  configDirOf, installOf, parseLsRemote, rawManifestUrl, updateCommand, updateVisible, versionLabel, versionState, versionText,
+  configDirOf, directoryMarketplaceOf, directoryRefusal, installOf, parseLsRemote, rawManifestUrl, updateCommand, updateVisible, versionLabel, versionState, versionText,
 } from '../hooks/register.js'
 
 const CONFIG = '/Users/me/.claude'
@@ -145,4 +145,42 @@ test('p 는 갱신할 수 있는 설치본이 최신으로 확인되지 않았�
   assert.equal(updateVisible(user, { commit: NEW, version: '' }), true)
   assert.equal(updateVisible(user, { error: '오프라인' }), true)
   assert.equal(updateVisible({ ...user, kind: 'tree', key: '', scope: '' }, { commit: NEW, version: '' }), false)
+})
+
+const KNOWN = {
+  'fos-skills': { source: { source: 'directory', path: '/Users/me/personal/fos-skills' }, installLocation: '/Users/me/personal/fos-skills' },
+  other: { source: { source: 'github', repo: 'a/b' }, installLocation: '/x' },
+}
+const DIRECTORY = { kind: 'directory', version: '1.4.0', commit: OLD, scope: '', projectPath: '', key: '', dir: '/Users/me/personal/fos-skills' }
+
+test('directory 소스 마켓플레이스의 폴더를 읽은 설치본은 tree 와 구분해 폴더 경로를 든다 (R1)', () => {
+  assert.equal(directoryMarketplaceOf('/Users/me/personal/fos-skills/', KNOWN), '/Users/me/personal/fos-skills')
+  assert.equal(directoryMarketplaceOf('/work/other-checkout', KNOWN), '')
+  assert.equal(directoryMarketplaceOf('/x', KNOWN), '')
+  assert.deepEqual(installOf('/Users/me/personal/fos-skills', null, { version: '1.4.0' }, 'fos-skills', KNOWN),
+    { kind: 'directory', version: '1.4.0', commit: '', scope: '', projectPath: '', key: '', dir: '/Users/me/personal/fos-skills' })
+  // --plugin-dir 로 읽은 다른 작업 트리나 known 을 못 읽은 경우는 tree 다
+  assert.equal(installOf('/work/fos-skills', null, {}, 'fos-skills', KNOWN)?.kind, 'tree')
+  assert.equal(installOf('/Users/me/personal/fos-skills', null, {}, 'fos-skills', null)?.kind, 'tree')
+})
+
+test('directory 설치본이 뒤처지면 머리 줄에 「p 로 갱신」 을 보이고, 작업 트리는 보이지 않는다 (R2)', () => {
+  const label = versionLabel('fos-skills', DIRECTORY, { commit: NEW, version: '1.5.0' })
+  assert.equal(label.text, 'fos-skills 1.4.0 (de0cb6d) → 최신 1.5.0 (b1e2c09) · p 로 갱신')
+  assert.equal(label.color, 'yellow')
+  assert.ok(updateVisible(DIRECTORY, { commit: NEW, version: '1.5.0' }))
+  assert.ok(!updateVisible(DIRECTORY, { commit: NEW, version: '1.4.0' }))
+  assert.ok(!versionLabel('fos-skills', { ...DIRECTORY, kind: 'tree' }, { commit: NEW, version: '1.5.0' }).text.includes('p 로'))
+})
+
+test('directory 설치본의 갱신 명령은 그 폴더에서 origin main 을 fast-forward 로만 받는다 (R3)', () => {
+  assert.deepEqual(updateCommand(DIRECTORY), {
+    argv: ['git', '-C', '/Users/me/personal/fos-skills', 'pull', '--ff-only', 'origin', 'main'], cwd: '',
+  })
+})
+
+test('main 이 아니거나 추적 파일 변경이 있으면 받지 않는 이유를 돌려준다 (R3)', () => {
+  assert.equal(directoryRefusal('main\n', ''), '')
+  assert.match(directoryRefusal('feat/x\n', ''), /main 이 아니/)
+  assert.match(directoryRefusal('main\n', ' M work-board/hooks/register.js\n'), /고치는 중인 파일/)
 })

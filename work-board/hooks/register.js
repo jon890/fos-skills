@@ -842,11 +842,28 @@ export function configDirOf(root) {
   return at > 0 ? root.slice(0, at) : ''
 }
 
+// known_marketplaces.json 에서 source 가 directory 이고 그 path 가 root 인 마켓플레이스의 폴더. 없으면 ''
+export function directoryMarketplaceOf(root, known) {
+  const clean = (value) => String(value || '').replace(/\/+$/, '')
+  if (!clean(root) || !known || typeof known !== 'object') return ''
+  for (const entry of Object.values(known)) {
+    const source = entry && entry.source
+    if (source && source.source === 'directory' && clean(source.path) === clean(root)) return clean(source.path)
+  }
+  return ''
+}
+
 // installed_plugins.json 과 설치본 plugin.json 으로 설치본을 정한다.
-// kind 는 cache(마켓플레이스 설치본)나 tree(--plugin-dir 로 읽은 작업 트리)다. 캐시인데 기록에 없으면 null
-export function installOf(root, installed, manifest, name) {
+// kind 는 cache(마켓플레이스 설치본), directory(directory 소스 마켓플레이스의 체크아웃 폴더를 그대로 읽은 것, dir 에 그 폴더),
+// tree(--plugin-dir 로 읽은 작업 트리)다. 캐시인데 기록에 없으면 null.
+// known 은 known_marketplaces.json 의 내용이다. 없으면 directory 를 가리지 않고 tree 로 본다
+export function installOf(root, installed, manifest, name, known = null) {
   const version = manifest && typeof manifest.version === 'string' ? manifest.version : ''
-  if (!configDirOf(root)) return { kind: 'tree', version, commit: '', scope: '', projectPath: '', key: '' }
+  if (!configDirOf(root)) {
+    const dir = directoryMarketplaceOf(root, known)
+    if (dir) return { kind: 'directory', version, commit: '', scope: '', projectPath: '', key: '', dir }
+    return { kind: 'tree', version, commit: '', scope: '', projectPath: '', key: '' }
+  }
   const plugins = (installed && installed.plugins) || {}
   const candidates = []
   for (const [key, entries] of Object.entries(plugins)) {
@@ -904,18 +921,29 @@ export function versionLabel(name, install, latest, error = '') {
   const state = versionState(install, latest)
   if (state === 'latest') return { text: own.trim() + ' 최신', color: undefined, dim: true }
   if (state === 'behind') {
-    return { text: own.trim() + ' → 최신 ' + versionText(latest.version, latest.commit) + (install.kind === 'cache' ? ' · p 로 갱신' : ''), color: 'yellow', dim: false }
+    return { text: own.trim() + ' → 최신 ' + versionText(latest.version, latest.commit) + (install.kind === 'tree' ? '' : ' · p 로 갱신'), color: 'yellow', dim: false }
   }
   return { text: own.trim() + ' · 최신 확인 불가', color: undefined, dim: true }
 }
 
-// 갱신 명령과 그 명령을 돌릴 폴더. project·local scope 는 그 프로젝트 폴더에서 돌린다. 작업 트리는 갱신하지 않는다(null)
+// 갱신 명령과 그 명령을 돌릴 폴더. project·local scope 는 그 프로젝트 폴더에서 돌린다.
+// directory 설치본은 그 폴더에서 main 을 fast-forward 로만 받는다. 작업 트리는 갱신하지 않는다(null)
 export function updateCommand(install) {
+  if (install && install.kind === 'directory' && install.dir) {
+    return { argv: ['git', '-C', install.dir, 'pull', '--ff-only', 'origin', 'main'], cwd: '' }
+  }
   if (!install || install.kind !== 'cache' || !install.key || !install.scope) return null
   return {
     argv: ['claude', 'plugin', 'update', install.key, '--scope', install.scope],
     cwd: install.scope === 'user' ? '' : install.projectPath,
   }
+}
+
+// directory 설치본을 받기 전에 막을 이유. 브랜치 이름과 추적 파일 변경(git status --porcelain -uno 출력)을 본다. 받아도 되면 ''
+export function directoryRefusal(branch, dirty) {
+  if (String(branch || '').trim() !== 'main') return 'main 이 아니라서 받지 않았어요'
+  if (String(dirty || '').trim()) return '고치는 중인 파일이 있어서 받지 않았어요'
+  return ''
 }
 
 // p 단축키를 보일지. 갱신할 수 있는 설치본이고 최신으로 확인되지 않았을 때만 보인다
@@ -1143,7 +1171,20 @@ export async function undoDismiss($) {
   await loadInbox($)
 }
 
-// 설치본을 읽는다. 설치본은 세션 동안 바뀌지 않는다(갱신해도 /reload-plugins 전까지는 앞 설치본이 실려 있다)
+// known_marketplaces.json 을 읽는다. 설정 폴더는 CLAUDE_CONFIG_DIR, 없으면 ~/.claude 다. 읽지 못하면 null
+async function readKnownMarketplaces($) {
+  try {
+    const { exitCode, stdout } = await $.process.run(['sh', '-c', 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"'], { timeoutMs: COMMAND_TIMEOUT_MS })
+    const dir = String(stdout || '').trim()
+    if (exitCode !== 0 || !dir) return null
+    return JSON.parse(await $.fs.read(dir + '/plugins/known_marketplaces.json'))
+  } catch {
+    return null
+  }
+}
+
+// 설치본을 읽는다. 캐시 설치본은 세션 동안 바뀌지 않는다(갱신해도 /reload-plugins 전까지는 앞 설치본이 실려 있다).
+// directory 설치본은 폴더를 그대로 읽으므로 받은 뒤 다시 읽어 머리 줄이 새 version 을 보이게 한다
 async function loadInstall($) {
   const root = $.plugin.root
   try {
@@ -1152,9 +1193,10 @@ async function loadInstall($) {
     plugin.repository = String(manifest.repository || '')
     const config = configDirOf(root)
     const installed = config ? JSON.parse(await $.fs.read(config + '/plugins/installed_plugins.json')) : null
-    const install = installOf(root, installed, manifest, plugin.name)
+    const known = config ? null : await readKnownMarketplaces($)
+    const install = installOf(root, installed, manifest, plugin.name, known)
     if (!install) throw new Error('installed_plugins.json 에 이 설치본이 없어요')
-    if (install.kind === 'tree') {
+    if (install.kind !== 'cache') {
       try {
         install.commit = (await run($, ['git', '-C', root, 'rev-parse', 'HEAD'])).trim()
       } catch {}
@@ -1190,6 +1232,21 @@ async function loadLatest($) {
   $.ui.invalidate('ui.render')
 }
 
+// directory 설치본의 폴더가 받아도 되는 상태인지 본다. 아니면 refusal 을 단 오류를 던진다. 사용자의 작업 중인 변경을 덮지 않는다
+async function checkDirectory($, dir) {
+  const git = async (...args) => $.process.run(['git', '-C', dir, ...args], { timeoutMs: COMMAND_TIMEOUT_MS })
+  const refuse = (message) => Object.assign(new Error(message), { refusal: true })
+  const branch = await git('rev-parse', '--abbrev-ref', 'HEAD')
+  const status = await git('status', '--porcelain', '--untracked-files=no')
+  if (branch.exitCode !== 0 || status.exitCode !== 0) throw new Error((branch.stderr || status.stderr || 'git 상태를 읽지 못했어요').trim().split('\n').pop())
+  const reason = directoryRefusal(branch.stdout, status.stdout)
+  if (reason) throw refuse(reason)
+  const fetched = await $.process.run(['git', '-C', dir, 'fetch', 'origin', 'main'], { timeoutMs: UPDATE_TIMEOUT_MS })
+  if (fetched.exitCode !== 0) throw new Error((fetched.stderr || fetched.stdout || '종료 코드 ' + fetched.exitCode).trim().split('\n').pop())
+  const ancestor = await git('merge-base', '--is-ancestor', 'HEAD', 'FETCH_HEAD')
+  if (ancestor.exitCode !== 0) throw refuse('fast-forward 할 수 없어서 받지 않았어요')
+}
+
 // p: 이 세션이 읽은 설치본의 scope 로 갱신하고, 성공하면 입력란에 /reload-plugins 를 채운다. 실패하면 toast 에 이유를 보이고 입력란은 그대로다
 export async function updatePlugin($, install = plugin.install) {
   const command = updateCommand(install)
@@ -1198,13 +1255,15 @@ export async function updatePlugin($, install = plugin.install) {
   $.ui.toast((plugin.name || $.plugin.name) + ' 플러그인을 갱신하는 중이에요')
   $.ui.invalidate('ui.render')
   try {
+    if (install.kind === 'directory') await checkDirectory($, install.dir)
     const { exitCode, stdout, stderr } = await $.process.run(command.argv,
       { timeoutMs: UPDATE_TIMEOUT_MS, ...(command.cwd ? { cwd: command.cwd } : {}) })
     if (exitCode !== 0) throw new Error((stderr || stdout || '종료 코드 ' + exitCode).trim().split('\n').pop())
     void $.prompt.fill({ text: '/reload-plugins' })
     $.ui.toast('갱신했어요. Enter 를 누르면 /reload-plugins 로 새 설치본을 읽어요')
+    if (install.kind === 'directory') await loadInstall($)
   } catch (failure) {
-    $.ui.toast('플러그인 갱신 실패: ' + String(failure.message || failure))
+    $.ui.toast(failure && failure.refusal ? String(failure.message) : '플러그인 갱신 실패: ' + String(failure.message || failure))
   } finally {
     updating = false
   }

@@ -125,3 +125,110 @@ test('갱신이 실패하면 toast 에 이유를 보이고 입력란은 그대�
   expect(fills).toEqual([])
   expect(toasts.at(-1)).toBe('플러그인 갱신 실패: Plugin "fos-skills@fos-skills" not found')
 })
+
+// directory 설치본: 폴더 상태를 git 으로 보고 받는다. 실제 체크아웃이 아니라 가짜 process.run 이다
+const DIR = '/Users/me/personal/fos-skills'
+const DIRECTORY = { kind: 'directory', version: '1.4.0', commit: OLD, scope: '', projectPath: '', key: '', dir: DIR }
+const fakeDirectory = ({ branch = 'main', dirty = '', fetch = 0, ancestor = 0, pull = 0 } = {}) => {
+  const calls: string[][] = []
+  const fills: string[] = []
+  const toasts: string[] = []
+  const out = (exitCode: number, stdout = '', stderr = '') => ({ exitCode, stdout, stderr })
+  const $ = {
+    plugin: { name: 'fos-skills', root: DIR },
+    process: { run: async (argv: string[]) => {
+      calls.push(argv)
+      const verb = argv[3]
+      if (verb === 'rev-parse') return out(0, branch + '\n')
+      if (verb === 'status') return out(0, dirty)
+      if (verb === 'fetch') return out(fetch, '', fetch ? 'fatal: unable to access' : '')
+      if (verb === 'merge-base') return out(ancestor)
+      if (verb === 'pull') return out(pull, 'Fast-forward', pull ? 'fatal: Not possible to fast-forward' : '')
+      return out(1)
+    } },
+    fs: { read: async () => { throw new Error('없음') } },
+    prompt: { fill: async ({ text }) => { fills.push(text) } },
+    ui: { toast: (text: string) => { toasts.push(text) }, invalidate: () => {} },
+  }
+  return { $, calls, fills, toasts }
+}
+const pulled = (calls: string[][]) => calls.some((argv) => argv[3] === 'pull')
+
+test('main 이고 변경이 없고 fast-forward 할 수 있으면 pull --ff-only 하고 /reload-plugins 를 채운다 (R3)', async () => {
+  const { $, calls, fills, toasts } = fakeDirectory()
+  await updatePlugin($, DIRECTORY)
+  expect(calls.at(-1)).toEqual(['git', '-C', DIR, 'pull', '--ff-only', 'origin', 'main'])
+  expect(fills).toEqual(['/reload-plugins'])
+  expect(toasts.at(-1)).toContain('/reload-plugins')
+})
+
+test('main 이 아니면 받지 않고 toast 에 이유를 보인다 (R3)', async () => {
+  const { $, calls, fills, toasts } = fakeDirectory({ branch: 'feat/x' })
+  await updatePlugin($, DIRECTORY)
+  expect(pulled(calls)).toBe(false)
+  expect(fills).toEqual([])
+  expect(toasts.at(-1)).toBe('main 이 아니라서 받지 않았어요')
+})
+
+test('추적 파일 변경이 있으면 받지 않고 toast 에 이유를 보인다 (R3)', async () => {
+  const { $, calls, fills, toasts } = fakeDirectory({ dirty: ' M a.txt\n' })
+  await updatePlugin($, DIRECTORY)
+  expect(pulled(calls)).toBe(false)
+  expect(fills).toEqual([])
+  expect(toasts.at(-1)).toBe('고치는 중인 파일이 있어서 받지 않았어요')
+})
+
+test('fast-forward 할 수 없으면 받지 않고 toast 에 이유를 보인다 (R3)', async () => {
+  const { $, calls, fills, toasts } = fakeDirectory({ ancestor: 1 })
+  await updatePlugin($, DIRECTORY)
+  expect(pulled(calls)).toBe(false)
+  expect(fills).toEqual([])
+  expect(toasts.at(-1)).toBe('fast-forward 할 수 없어서 받지 않았어요')
+})
+
+test('pull 이 실패하면 갱신 실패 toast 를 보이고 입력란은 그대로다 (R3)', async () => {
+  const { $, fills, toasts } = fakeDirectory({ pull: 1 })
+  await updatePlugin($, DIRECTORY)
+  expect(fills).toEqual([])
+  expect(toasts.at(-1)).toBe('플러그인 갱신 실패: fatal: Not possible to fast-forward')
+})
+
+// 받은 뒤 폴더의 plugin.json 을 다시 읽어 머리 줄이 새 version 을 보인다 (R5)
+test('directory 설치본은 받은 뒤 설치본을 다시 읽어 머리 줄이 새 version 을 보인다 (R5)', async ($, on) => {
+  let installed = '1.4.0'
+  let root = ''
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    const argv = e.argv
+    const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '' } })
+    if (argv[0] === 'sh') return ok('/home/me/.claude')
+    if (argv[0] === 'git' && argv.includes('--abbrev-ref')) return ok('main\n')
+    if (argv[0] === 'git' && argv.includes('rev-parse') && argv.includes('HEAD')) return ok(installed === '1.4.0' ? OLD + '\n' : NEW + '\n')
+    if (argv[0] === 'git' && argv[1] === 'ls-remote') return ok(NEW + '\trefs/heads/main\n')
+    if (argv[0] === 'curl') return ok(MANIFEST('1.5.0'))
+    if (argv[0] === 'git' && argv.includes('pull')) { installed = '1.5.0'; return ok('Fast-forward') }
+    if (argv[0] === 'git') return ok('')
+    return { value: { exitCode: 1, stdout: '', stderr: '없음' } }
+  })
+  on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
+  on('fs.read', (_, e) => {
+    if (e.path.endsWith('/plugins/known_marketplaces.json')) return { value: JSON.stringify({ 'fos-skills': { source: { source: 'directory', path: root } } }) }
+    if (e.path.endsWith('/.claude-plugin/plugin.json')) root = e.path.slice(0, -'/.claude-plugin/plugin.json'.length)
+    return { value: e.path.endsWith('/.claude-plugin/plugin.json') ? MANIFEST(installed) : BOARD }
+  })
+  on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('prompt.fill', () => ({ isFilled: true }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 1.4.0 (de0cb6d) → 최신 1.5.0 (b1e2c09) · p 로 갱신')
+  await ui.press({ key: 'update-plugin' })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 1.5.0 (b1e2c09) 최신')
+  await ui.unmount()
+})
