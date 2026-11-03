@@ -173,6 +173,44 @@ describe('list', () => {
   })
 })
 
+describe('worker 가 워크트리에서 적을 때', () => {
+  function git(cwd: string, ...args: string[]) {
+    const done = spawnSync('git', args, { cwd, encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stderr)
+  }
+
+  function runAt(cwd: string, ...args: string[]) {
+    const env = { ...process.env }
+    delete env.ORCH_DIR
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], { cwd, encoding: 'utf8', env })
+    return { code: done.status, stdout: done.stdout, stderr: done.stderr }
+  }
+
+  test('두 워크트리에서 같은 개념을 적으면 주 checkout 에 하나만 남고, 고를 후보 목록에 함께 나온다', () => {
+    git(repo, 'init', '-q', '-b', 'main')
+    git(repo, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'init')
+    const wtA = join(repo, 'wt-a')
+    const wtB = join(repo, 'wt-b')
+    git(repo, 'worktree', 'add', '-q', '-b', 'a', wtA)
+    git(repo, 'worktree', 'add', '-q', '-b', 'b', wtB)
+    const add = (cwd: string, slug: string, topic: string) =>
+      runAt(cwd, 'add', '--slug', slug, '--topic', topic, '--question', 'q', '--origin', 'o', '--memo', '네 기준 근거')
+
+    let r = add(wtA, 'optimistic-locking', '낙관적 잠금')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout, `ADDED optimistic-locking ${join(dir, 'optimistic-locking.md')}\n`)
+    r = add(wtB, 'optimistic-lock', ' 낙관적  잠금 ')
+    assert.equal(r.code, 1)
+    assert.match(r.stderr, /같은 후보가 이미 있다\(후보\): .*optimistic-locking\.md/)
+    assert.equal(add(wtB, 'run-once-cluster', '여러 서버에서 한 번만 실행하기').code, 0)
+
+    assert.equal(existsSync(join(wtA, '.orch')), false)
+    assert.equal(existsSync(join(wtB, '.orch')), false)
+    const open = `optimistic-locking\t${today}\t후보\t낙관적 잠금\nrun-once-cluster\t${today}\t후보\t여러 서버에서 한 번만 실행하기\n`
+    assert.equal(runAt(repo, 'list', '--open').stdout, open)
+  })
+})
+
 describe('migrate', () => {
   const SLUGS = ['minio-key-length', 'observability-ingest', 'clickhouse-memory', 'hikaricp-pool-size', 'timescale-percentile', 'shadow-compare', 'run-once-cluster', 'expand-contract']
 

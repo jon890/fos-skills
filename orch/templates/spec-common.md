@@ -67,7 +67,7 @@
 4. **게시가 막히면 묻지 않는다.** `gh pr create` 나 리뷰 회신이 거부되거나, 지금 실행의 지시가 GitHub 게시를 막는다고 판단되면 push 까지 하고 본문 파일(회신이면 스레드 id 와 회신 파일) 경로를 status 로 보낸다. 코디네이터가 그 파일로 연다.
 5. PR 이 열리면 status 로 `준비됨 #<PR 번호>, head <40자리 SHA>` 한 줄을 보낸다. 설명을 붙이려면 그 줄 뒤에 줄을 바꿔 쓴다. 4 로 넘겼으면 본문 파일 경로를 보내고 PR 이 열리면 이 줄을 보낸다. <!-- orch-rule: ready-status -->
 6. **머지될 때까지 맡는다.** CI 실패, 충돌, 기준 브랜치 변경, 리뷰를 직접 처리하고 push 할 때마다 5 를 다시 보낸다. 코디네이터가 머지한다.
-7. PR 이 MERGED 인 것을 확인한 뒤 `worker_done` 을 보낸다. PR 번호와 머지 커밋을 적는다. 머지 없이 닫혔으면 ask 로 알린다. <!-- orch-rule: done-after-merged -->
+7. PR 이 MERGED 인 것을 확인한 뒤 `worker_done` 을 보낸다. PR 번호와 머지 커밋, 아래 「스킬 개선 후보 보고」 와 「공부 후보 보고」 의 줄을 적는다. 머지 없이 닫혔으면 ask 로 알린다. <!-- orch-rule: done-after-merged -->
 
 ## 설계와 구현을 맡길 때
 
@@ -107,3 +107,29 @@
 - 메모는 `{{FEEDBACK_DIR}}/<워크트리 이름>.md` 에 쌓는다(스킬 이름, 상황, 실제로 한 것, 개선 제안).
 - `worker_done` 본문 끝에 「스킬 개선 후보 N건: <파일 경로>」 를 적는다. 없으면 「스킬 개선 후보 없음」. <!-- orch-rule: skill-feedback -->
 - 스킬 파일은 직접 고치지 않는다. 코디네이터가 사용자와 정한 뒤 고친다.
+
+## 공부 후보 보고
+
+<!-- 이 절은 지우지 않는다. 빠지면 spec-lint 가 공통 경고를 낸다. 기준과 글로 잇는 법은 orch/references/study-candidates.md 가 소유한다. -->
+
+- 작업 중 판단을 바꾼 일반 기술 개념이 있으면 공부 후보로 적는다. 엔지니어링으로 공부할 가치가 있는 것만 적고, 아무 주제나 올리지 않는다.
+- 아래 넷을 모두 채울 때만 적는다. 작업 하나에 0건이 기본이다.
+  - 저장소 밖에서도 통하는 일반 기술 개념이다.
+  - 이번 판단에서 선택지 사이의 트레이드오프를 갈랐다. 단순 사실 조회, 도구 사용법, 오타나 설정 실수, 내부 절차는 아니다.
+  - 공식 문서나 널리 알려진 글로 더 공부할 거리가 있다.
+  - 한두 문장 정의로 설명이 끝나지 않는다.
+- 회사 이름, 서비스 이름, 내부 식별자는 적지 않는다. 적는 자리에서 일반 개념과 질문으로 바꾼다.
+- `MEMO` 에는 네 기준을 어떻게 채웠는지 한 줄로 적는다. 같은 후보가 이미 있어 종료 코드 1 로 끝나면 새로 적지 않는다.
+
+  ```bash
+  SLUG=""
+  TOPIC=""
+  QUESTION=""
+  ORIGIN=""
+  REF=""
+  MEMO=""
+  ORCH_SCRIPTS=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";const e=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"].sort((a,b)=>(a.scope!=="user")-(b.scope!=="user"))[0];console.log(e.installPath+"/orch/scripts")') && node --disable-warning=ExperimentalWarning "$ORCH_SCRIPTS/study-candidates.ts" add --slug "$SLUG" --topic "$TOPIC" --question "$QUESTION" --origin "$ORIGIN" --ref "$REF" --memo "$MEMO"
+  ```
+
+  워크트리에서 불러도 후보는 주 checkout 의 orch 루트에 쌓인다. slug 는 영문 소문자, 숫자, 하이픈으로 짓는다.
+- `worker_done` 본문 끝에 「공부 후보 N건: <slug 목록>」 을 적는다. 없으면 「공부 후보 없음」. 0건도 정상이다. <!-- orch-rule: study-candidates -->
