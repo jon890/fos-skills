@@ -1,0 +1,31 @@
+{
+  "name": "check-shortcut",
+  "description": "/board 창에서 c 다음 번호로 진행 중·대기 항목의 상태 확인 요청문을 입력란에 채운다",
+  "pr_scope": "work-board 훅에 c 번호 모드와 확인 요청문을 넣고 테스트, README, CHANGELOG 를 함께 고친다",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-03",
+  "spec": "docs/features/board-item-check/spec.md",
+  "design": "docs/features/board-item-check/design.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ4"
+      ]
+    }
+  ]
+}
