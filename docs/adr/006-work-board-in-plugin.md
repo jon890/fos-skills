@@ -25,4 +25,4 @@
 
   `local-mods` marketplace 에 다른 mod 가 없으면 `claude plugin marketplace remove local-mods` 로 함께 지운다.
   board.json 의 위치와 형식은 바뀌지 않는다.
-- **적용 범위**: 창의 동작과 보드 명령은 [`work-board/README.md`](../../work-board/README.md) 가 소유한다.
+- **적용 범위**: 창의 동작과 보드 명령은 [`work-board/references/behavior.md`](../../work-board/references/behavior.md) 가 소유한다. 처음 쓰는 방법은 [`work-board/README.md`](../../work-board/README.md) 에 있다.
