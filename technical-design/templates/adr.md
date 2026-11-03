@@ -1,4 +1,5 @@
 <!-- 합의한 결정의 양식이다. 기존 양식·이름 정책이 우선한다. 승인 전 초안은 accepted 로 기록하지 않고 저장소의 초안 관례를 따른다. -->
+<!-- 도메인 판단 기준을 ADR 로 쓰지 않는다. 원본은 spec/references/document-ownership.md 의 「ADR 은 기술 결정만 담는다」 다. -->
 ## ADR-XXX: {제목. 결정의 한 줄 요약}
 
 - **status**: `accepted`

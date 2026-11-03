@@ -5,7 +5,7 @@ description: |
   "기술 설계", "아키텍처 설계", "모듈 경계", "스펙을 어떻게 구현할지 설계" 요청이나 spec 다음 단계에 쓴다.
   사용자 동작은 spec, PR 작업 분해는 plan, 구현은 implementation 이 맡는다.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # technical-design
@@ -19,6 +19,7 @@ metadata:
 작성 전에 [설계 양식](templates/design.md)을 읽는다. ADR 은 [ADR 양식](templates/adr.md),
 시스템 공통 흐름 문서가 실제로 필요할 때는 [flow 기본 양식](templates/system-flow.md)을 참고한다. 기존 저장소 양식이 우선이다.
 [문서 소유권](../spec/references/document-ownership.md)으로 이번 기능이 바꾸는 책임 문서만 식별한다. 영향 없는 전역 문서는 수정하지 않는다.
+도메인 판단 기준은 ADR 로 쓰지 않는다. 원본은 [문서 소유권의 「ADR 은 기술 결정만 담는다」](../spec/references/document-ownership.md#adr-은-기술-결정만-담는다)다.
 
 ## 절차
 
