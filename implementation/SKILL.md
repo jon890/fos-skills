@@ -23,7 +23,7 @@ plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 기존 계획�
 1. `scripts/plan_precheck.py` 로 중복 실행을 확인하고, 계획 브랜치의 분리된 작업 공간을 준비한다.
    처음 구현할 때는 기본 verify_task 검사를 쓴다. 일부 phase 가 이미 구현됐거나 verify 에서 돌아왔으면
    `--audit` 로 계획을 검사하고 기존 커밋과 `current_phase` 를 대조해 남은 phase 또는 지적받은 부분만 이어 간다.
-   완료한 phase 를 처음부터 다시 실행하지 않는다. 각 phase 커밋 뒤 다음 phase 를 `current_phase` 에 기록하고,
+   완료한 phase 를 처음부터 다시 실행하지 않는다. 각 phase 커밋에 다음 phase 를 `current_phase` 로 기록하고,
    모든 phase 구현 뒤에는 그 값을 유지한 채 인계에 구현 완료를 적는다. 최종 completed/계획서 정리는 orch 가 맡는다.
 2. 스펙·설계와 phase 를 함께 읽는다. [팀원 위임 계약](references/team-spawn.md)에 따라 하위 에이전트가 있으면 executor 에게 phase 를 맡기고, 없으면 주 에이전트가 같은 계약으로 순차 구현한다.
    [executor 계약](references/role-executor.md)과 [실행 등급](references/executor-routing.md)을 따른다.
