@@ -853,25 +853,98 @@ export function directoryMarketplaceOf(root, known) {
   return ''
 }
 
-// ps 출력(프로세스 인자 줄들)에 root 폴더를 --plugin-dir 로 읽는 claude 가 있는지.
-// directory 소스로 등록된 폴더도 --plugin-dir 로 직접 읽으면 개발용 작업 트리다. 경로만으로는 둘을 가를 수 없어 실제 인자를 본다
-export function pluginDirLoads(root, psOutput) {
-  const clean = (value) => String(value || '').replace(/^["']|["']$/g, '').replace(/\/+$/, '')
-  const target = clean(root)
-  if (!target) return false
-  return String(psOutput || '').split('\n').some((line) => {
-    if (!/\bclaude\b/.test(line)) return false
-    const tokens = line.trim().split(/\s+/)
-    return tokens.some((token, at) => token === '--plugin-dir' ? clean(tokens[at + 1]) === target
-      : token.startsWith('--plugin-dir=') && clean(token.slice('--plugin-dir='.length)) === target)
-  })
+// 프로세스 명령 줄이 claude 실행 파일의 것인지. 실행 파일 이름이 claude 이거나 node 가 claude 스크립트를 돌리는 경우다
+export function isClaudeCommand(command) {
+  const tokens = String(command || '').trim().split(/\s+/)
+  const base = (token) => String(token || '').split('/').pop()
+  return base(tokens[0]) === 'claude' || (/^node(js)?$/.test(base(tokens[0])) && base(tokens[1]) === 'claude')
+}
+
+// claude 명령 줄의 --plugin-dir 값들. 공백 경로는 따옴표나 다음 옵션 앞까지를 한 값으로 본다
+export function pluginDirValues(command) {
+  const values = []
+  const pattern = /(?:^|\s)--plugin-dir(?:=|\s+)/g
+  let match
+  while ((match = pattern.exec(String(command || '')))) {
+    const rest = command.slice(match.index + match[0].length)
+    const quote = rest[0]
+    let value
+    if (quote === '"' || quote === "'") {
+      const end = rest.indexOf(quote, 1)
+      value = end < 0 ? rest.slice(1) : rest.slice(1, end)
+    } else {
+      const next = rest.search(/\s-{1,2}[A-Za-z]/)
+      value = (next < 0 ? rest : rest.slice(0, next)).trim()
+    }
+    if (value) values.push(value)
+  }
+  return values
+}
+
+// 절대 경로로 풀고 . 와 .. 와 중복 / 를 정리한다
+export function resolvePath(base, value) {
+  const joined = String(value).startsWith('/') ? String(value) : String(base) + '/' + value
+  const parts = []
+  for (const part of joined.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') parts.pop()
+    else parts.push(part)
+  }
+  return '/' + parts.join('/')
+}
+
+// 지금 세션의 claude 가 root 를 --plugin-dir 로 직접 읽는지 정한다.
+// 'explicit'(직접 읽음), 'registered'(읽지 않음 = 마켓플레이스 폴더 그대로), 'unknown'(확정하지 못함)을 돌려준다.
+// 명령을 실행하는 쪽(셸의 부모)에서 부모를 따라 올라가 claude 프로세스 하나를 찾고 그 인자만 본다.
+// 프로세스를 못 찾거나, 명령이나 작업 폴더를 못 읽거나, 출력이 잘렸으면 'unknown' 이다
+export async function resolveLoadSource($, root) {
+  const exec = async (argv) => {
+    const out = await $.process.run(argv, { timeoutMs: COMMAND_TIMEOUT_MS })
+    if (out.exitCode !== 0 || out.isStdoutTruncated) throw new Error('읽지 못했어요')
+    return String(out.stdout || '')
+  }
+  try {
+    let pid = Number((await exec(['sh', '-c', 'echo $PPID'])).trim())
+    let found = null
+    for (let hop = 0; hop < 12 && Number.isInteger(pid) && pid > 1 && !found; hop++) {
+      const line = (await exec(['ps', '-ww', '-o', 'ppid=', '-o', 'command=', '-p', String(pid)])).trim()
+      const match = /^(\d+)\s+(.*)$/s.exec(line)
+      if (!match) return 'unknown'
+      if (isClaudeCommand(match[2])) found = { pid, command: match[2] }
+      else pid = Number(match[1])
+    }
+    if (!found) return 'unknown'
+    const values = pluginDirValues(found.command)
+    if (values.length === 0) return 'registered'
+    let cwd = ''
+    const real = async (path) => (await exec(['realpath', path])).trim()
+    const rootReal = await real(root)
+    for (const value of values) {
+      let absolute = value
+      if (!value.startsWith('/')) {
+        if (!cwd) {
+          const lines = (await exec(['lsof', '-a', '-p', String(found.pid), '-d', 'cwd', '-Fn'])).split('\n')
+          cwd = (lines.find((l) => l.startsWith('n')) || '').slice(1)
+          if (!cwd.startsWith('/')) return 'unknown'
+        }
+        absolute = resolvePath(cwd, value)
+      } else absolute = resolvePath('/', value)
+      if (absolute === resolvePath('/', root)) return 'explicit'
+      let valueReal = ''
+      try { valueReal = await real(absolute) } catch { continue }
+      if (valueReal === rootReal) return 'explicit'
+    }
+    return 'registered'
+  } catch {
+    return 'unknown'
+  }
 }
 
 // installed_plugins.json 과 설치본 plugin.json 으로 설치본을 정한다.
 // kind 는 cache(마켓플레이스 설치본), directory(directory 소스 마켓플레이스의 체크아웃 폴더를 그대로 읽은 것, dir 에 그 폴더),
 // tree(--plugin-dir 로 읽은 작업 트리)다. 캐시인데 기록에 없으면 null.
 // known 은 known_marketplaces.json 의 내용이다. 없으면 directory 를 가리지 않고 tree 로 본다.
-// explicit 은 그 폴더를 claude --plugin-dir 로 직접 읽고 있다는 뜻이다(pluginDirLoads). 이때는 등록된 폴더여도 tree 다
+// explicit 은 그 폴더를 claude --plugin-dir 로 직접 읽고 있다는 뜻이다(resolveLoadSource). 이때는 등록된 폴더여도 tree 다
 export function installOf(root, installed, manifest, name, known = null, explicit = false) {
   const version = manifest && typeof manifest.version === 'string' ? manifest.version : ''
   if (!configDirOf(root)) {
@@ -1198,16 +1271,6 @@ async function readKnownMarketplaces($) {
   }
 }
 
-// 이 폴더를 claude --plugin-dir 로 읽는 프로세스가 있는지. ps 를 못 돌리면 false 다
-async function readPluginDirLoad($, root) {
-  try {
-    const { exitCode, stdout } = await $.process.run(['ps', '-axo', 'args='], { timeoutMs: COMMAND_TIMEOUT_MS })
-    return exitCode === 0 && pluginDirLoads(root, stdout)
-  } catch {
-    return false
-  }
-}
-
 // 설치본을 읽는다. 캐시 설치본은 세션 동안 바뀌지 않는다(갱신해도 /reload-plugins 전까지는 앞 설치본이 실려 있다).
 // directory 설치본은 폴더를 그대로 읽으므로 받은 뒤 다시 읽어 머리 줄이 새 version 을 보이게 한다
 async function loadInstall($) {
@@ -1219,7 +1282,12 @@ async function loadInstall($) {
     const config = configDirOf(root)
     const installed = config ? JSON.parse(await $.fs.read(config + '/plugins/installed_plugins.json')) : null
     const known = config ? null : await readKnownMarketplaces($)
-    const explicit = config || !known ? false : await readPluginDirLoad($, root)
+    let explicit = false
+    if (!config && directoryMarketplaceOf(root, known)) {
+      const source = await resolveLoadSource($, root)
+      if (source === 'unknown') throw new Error('--plugin-dir 로 읽는지 확정하지 못해 갱신하지 않아요')
+      explicit = source === 'explicit'
+    }
     const install = installOf(root, installed, manifest, plugin.name, known, explicit)
     if (!install) throw new Error('installed_plugins.json 에 이 설치본이 없어요')
     if (install.kind !== 'cache') {

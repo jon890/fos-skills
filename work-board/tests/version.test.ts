@@ -193,37 +193,51 @@ test('pull 이 실패하면 갱신 실패 toast 를 보이고 입력란은 그�
   expect(toasts.at(-1)).toBe('플러그인 갱신 실패: fatal: Not possible to fast-forward')
 })
 
-// 받은 뒤 폴더의 plugin.json 을 다시 읽어 머리 줄이 새 version 을 보인다 (R5)
+// 세션 시작부터 로드 출처 판정을 거친다. ps 는 훅의 조상 claude 한 개를 돌려주는 모의다 (R1, R3, R5)
+type Source = 'registered' | 'explicit' | 'ps-fail' | 'ps-throw'
+function directorySession(source: Source) {
+  const ctx = { installed: '1.4.0', root: '', pulls: 0 }
+  const register = ($, on) => {
+    on('command.register', (_, e) => ({ value: { command: e.name } }))
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('session.start', (_, e) => ({ cwd: e.cwd }))
+    on('session.cwd', () => ({ value: '/repo' }))
+    on('process.run', (_, e) => {
+      const argv = e.argv
+      const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '' } })
+      if (argv[0] === 'ps') {
+        if (source === 'ps-throw') return { value: { exitCode: 127, stdout: '', stderr: 'ps: not found' } }
+        if (source === 'ps-fail') return { value: { exitCode: 1, stdout: '', stderr: 'x' } }
+        return ok('1 claude ' + (source === 'explicit' ? '--plugin-dir ' + ctx.root : '--model sonnet') + '\n')
+      }
+      if (argv[0] === 'realpath') return ok(argv[1] + '\n')
+      if (argv[0] === 'sh') return ok(argv[2].includes('PPID') ? '10\n' : '/home/me/.claude')
+      if (argv[0] === 'git' && argv.includes('--abbrev-ref')) return ok('main\n')
+      if (argv[0] === 'git' && argv.includes('rev-parse') && argv.includes('HEAD')) return ok(ctx.installed === '1.4.0' ? OLD + '\n' : NEW + '\n')
+      if (argv[0] === 'git' && argv[1] === 'ls-remote') return ok(NEW + '\trefs/heads/main\n')
+      if (argv[0] === 'curl') return ok(MANIFEST('1.5.0'))
+      if (argv[0] === 'git' && argv.includes('pull')) { ctx.pulls++; ctx.installed = '1.5.0'; return ok('Fast-forward') }
+      if (argv[0] === 'git') return ok('')
+      return { value: { exitCode: 1, stdout: '', stderr: '없음' } }
+    })
+    on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
+    on('fs.read', (_, e) => {
+      if (e.path.endsWith('/plugins/known_marketplaces.json')) return { value: JSON.stringify({ 'fos-skills': { source: { source: 'directory', path: ctx.root } } }) }
+      if (e.path.endsWith('/.claude-plugin/plugin.json')) ctx.root = e.path.slice(0, -'/.claude-plugin/plugin.json'.length)
+      return { value: e.path.endsWith('/.claude-plugin/plugin.json') ? MANIFEST(ctx.installed) : BOARD }
+    })
+    on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
+    on('clock.every', () => ({ value: undefined }))
+    on('ui.status', () => ({ value: undefined }))
+    on('ui.toast', () => ({ value: undefined }))
+    on('prompt.fill', () => ({ isFilled: true }))
+  }
+  return { ctx, register }
+}
+
 test('directory 설치본은 받은 뒤 설치본을 다시 읽어 머리 줄이 새 version 을 보인다 (R5)', async ($, on) => {
-  let installed = '1.4.0'
-  let root = ''
-  on('command.register', (_, e) => ({ value: { command: e.name } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.cwd', () => ({ value: '/repo' }))
-  on('process.run', (_, e) => {
-    const argv = e.argv
-    const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '' } })
-    if (argv[0] === 'sh') return ok('/home/me/.claude')
-    if (argv[0] === 'git' && argv.includes('--abbrev-ref')) return ok('main\n')
-    if (argv[0] === 'git' && argv.includes('rev-parse') && argv.includes('HEAD')) return ok(installed === '1.4.0' ? OLD + '\n' : NEW + '\n')
-    if (argv[0] === 'git' && argv[1] === 'ls-remote') return ok(NEW + '\trefs/heads/main\n')
-    if (argv[0] === 'curl') return ok(MANIFEST('1.5.0'))
-    if (argv[0] === 'git' && argv.includes('pull')) { installed = '1.5.0'; return ok('Fast-forward') }
-    if (argv[0] === 'git') return ok('')
-    return { value: { exitCode: 1, stdout: '', stderr: '없음' } }
-  })
-  on('fs.exists', (_, e) => ({ value: e.path === '/repo/.omc/board.json' }))
-  on('fs.read', (_, e) => {
-    if (e.path.endsWith('/plugins/known_marketplaces.json')) return { value: JSON.stringify({ 'fos-skills': { source: { source: 'directory', path: root } } }) }
-    if (e.path.endsWith('/.claude-plugin/plugin.json')) root = e.path.slice(0, -'/.claude-plugin/plugin.json'.length)
-    return { value: e.path.endsWith('/.claude-plugin/plugin.json') ? MANIFEST(installed) : BOARD }
-  })
-  on('clock.now', () => ({ value: Date.parse('2026-10-22T10:05:00+09:00') }))
-  on('clock.every', () => ({ value: undefined }))
-  on('ui.status', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
-  on('prompt.fill', () => ({ isFilled: true }))
+  const { register } = directorySession('registered')
+  register($, on)
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 1.4.0 (de0cb6d) → 최신 1.5.0 (b1e2c09) · p 로 갱신')
@@ -232,3 +246,30 @@ test('directory 설치본은 받은 뒤 설치본을 다시 읽어 머리 줄이
   expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 1.5.0 (b1e2c09) 최신')
   await ui.unmount()
 })
+
+test('등록된 폴더를 --plugin-dir 로 직접 읽으면 작업 트리라서 p 도 pull 도 없다 (R1, R3)', async ($, on) => {
+  const { ctx, register } = directorySession('explicit')
+  register($, on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await head(ui)).toBe('HH:MM 업데이트  ·  fos-skills 작업 트리 1.4.0 (de0cb6d) → 최신 1.5.0 (b1e2c09)')
+  // p 버튼이 그려지지 않아 누를 수 없다
+  await expect(ui.press({ key: 'update-plugin' })).rejects.toThrow()
+  expect(ctx.pulls).toBe(0)
+  await ui.unmount()
+})
+
+for (const source of ['ps-fail', 'ps-throw'] as const) {
+  test('로드 출처를 확정하지 못하면(' + source + ') 설치본 확인 불가로 두고 p 도 pull 도 없다 (R1, R3)', async ($, on) => {
+    const { ctx, register } = directorySession(source)
+    register($, on)
+    await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const text = await head(ui)
+    expect(text).toContain('설치본 확인 불가')
+    expect(text).not.toContain('p 로')
+    await expect(ui.press({ key: 'update-plugin' })).rejects.toThrow()
+    expect(ctx.pulls).toBe(0)
+    await ui.unmount()
+  })
+}
