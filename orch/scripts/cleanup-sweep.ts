@@ -152,6 +152,8 @@
 //     launch-worker 는 리뷰 워크트리를 `review/pr-<N>` 브랜치로 만든 뒤 PR head 를 detached 로 꺼낸다. 브랜치가 없어 위 판정에 걸리지 않는다.
 //     그것을 만든 브랜치(lib/review.ts 의 originBranch)가 리뷰 브랜치이거나, 그 경로의 띄우기 기록(lib/launched.ts) 지시서가 리뷰 지시서면
 //     리뷰 워크트리다. 아래가 모두 참이면 저장소 안팎과 상관없이 `git worktree remove` 로 지운다. PR 상태는 보지 않는다.
+//       - --run 과 상관없이 모든 Run 의 worker 행 가운데 그 실경로를 쓰는 살아 있는 dispatch 가 없다. 다른 PR 의 리뷰나 일반 작업이
+//         그 경로를 이어 쓸 수 있고, 터미널 없는 구조화 worker 는 터미널 목록으로 보이지 않는다. 목록을 읽지 못하면 남긴다
 //       - 모든 Run 의 살아 있는 dispatch 지시서 가운데 같은 번호의 리뷰 지시서가 없다. 목록을 읽지 못하면 남긴다
 //       - 커밋 안 된 변경이 없다
 //       - 그 경로를 작업 디렉터리로 쓰는 프로세스가 없고, 그 경로에 Orca 터미널이 없다
@@ -958,11 +960,25 @@ function reviewOfWorktree(repo: string, path: string): number | null {
 }
 
 // 리뷰 워크트리를 지운다. 조건은 머리 주석의 「리뷰 워크트리」 가 정한다
-function sweepReviewWorktree(repo: string, path: string, n: number, args: Args, terminals: Terminal[], log: Log, report: Report): void {
+async function sweepReviewWorktree(repo: string, path: string, n: number, args: Args, terminals: Terminal[], log: Log, report: Report): Promise<void> {
   const skip = (reason: string) => {
     log(`건너뜀 리뷰 워크트리 ${path} (#${n}): ${reason}`)
     report.skipped.push({ path, reason: `리뷰 워크트리: ${reason}` })
   }
+  // 다른 Run 의 dispatch 가 이 경로를 이어 쓸 수 있다. 다른 PR 의 리뷰나 일반 작업, 터미널 없는 구조화 worker 도 있다
+  let rows: WorkerRow[]
+  try {
+    rows = await args.allWorkers()
+  } catch (e) {
+    return skip(`모든 Run 의 worker 목록을 읽지 못했다: ${(e as Error)?.message ?? String(e)}`)
+  }
+  const target = realPath(path)
+  const using = rows.filter((w) => {
+    const id = String(resourceOf(w).worktreeId ?? '')
+    const at = id.indexOf('::')
+    return at >= 0 && realPath(id.slice(at + 2)) === target && isLive(w)
+  })
+  if (using.length) return skip(`그 경로를 쓰는 살아 있는 dispatch ${using.map((w) => String(w.dispatchId ?? '?')).join(', ')}`)
   const live = liveReviewPrs(allLiveSpecPaths())
   if (live === null) return skip('살아 있는 지시서 목록을 읽지 못했다')
   if (live.has(n)) return skip('리뷰 dispatch 가 살아 있다')
@@ -985,7 +1001,7 @@ function sweepReviewWorktree(repo: string, path: string, n: number, args: Args, 
 
 // 저장소 밖 detached 워크트리를 지운다. 조건은 머리 주석의 「저장소 밖 detached 워크트리」 가 정한다.
 // 리뷰 워크트리는 저장소 안팎과 상관없이 「리뷰 워크트리」 의 조건으로 지운다
-function sweepDetached(repo: string, path: string, args: Args, terminals: Terminal[], log: Log, report: Report): void {
+async function sweepDetached(repo: string, path: string, args: Args, terminals: Terminal[], log: Log, report: Report): Promise<void> {
   const skip = (reason: string, line: string) => {
     log(line)
     report.skipped.push({ path, reason })

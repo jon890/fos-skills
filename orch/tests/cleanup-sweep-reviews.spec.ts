@@ -139,6 +139,38 @@ describe('리뷰 흔적', () => {
     assert.ok(branches().has('review/pr-72'))
   })
 
+  // 다른 Run 의 살아 있는 dispatch 가 그 경로를 이어 쓴다. --run current 의 worker 목록에는 없다
+  function reusedBy(path: string, row: Record<string, unknown>): void {
+    const full = { runId: 'run_other', taskId: 'task_other', dispatchId: 'ctx_other', dispatchStatus: 'running', workerState: 'working', resource: { ownershipState: 'owned', worktreeId: `repo::${path}` }, ...row }
+    fx.runs = { run_current: [], run_other: [full] }
+    fx.allWorkers = [full]
+  }
+
+  test('다른 Run 의 살아 있는 dispatch 가 옛 리뷰 워크트리를 이어 쓰면 남긴다', () => {
+    const cases: [number, string, Record<string, unknown>, (path: string) => void][] = [
+      // 다른 PR 의 리뷰가 옛 리뷰 워크트리를 재사용한다. 지시서 번호(77)로는 옛 리뷰가 리뷰가 끝난 것으로 보인다
+      [76, '다른 PR 리뷰', { agentTerminalHandle: 'term_other' }, () => {
+        const spec = join(specsDir(), 'spec-review-pr-77.md')
+        writeFileSync(spec, '# 리뷰\n\n리뷰 PR: #77\n')
+        fx.tasks = [{ id: 'task_other', status: 'running', spec: `지시서 ${spec} 를 읽는다` }]
+      }],
+      [78, '일반 작업', { agentTerminalHandle: 'term_other' }, () => {}],
+      // 터미널 없는 구조화 worker 라 터미널 목록으로는 보이지 않는다
+      [79, '터미널 없는 구조화 worker', { agentTerminalHandle: 'structworker_other' }, () => {}],
+    ]
+    for (const [n, name, row, prepare] of cases) {
+      fx.prViews[String(n)] = { state: 'MERGED', headRefOid: prHead(n) }
+      const path = reviewWorktree(n)
+      reusedBy(path, row)
+      prepare(path)
+      const out = runSweep(['--run', 'run_current', '--apply'])
+      assert.ok(existsSync(path), `${name}: ${out}`)
+      lacks(out, `리뷰 워크트리 삭제 ${path}`)
+      assert.ok(branches().has(`review/pr-${n}`), name)
+      fx.tasks = []
+    }
+  })
+
   test('브랜치 이름이 리뷰 꼴이 아니어도 띄우기 기록의 지시서가 리뷰 지시서면 리뷰 워크트리다', () => {
     fx.prViews['75'] = { state: 'MERGED', headRefOid: prHead(75) }
     const path = join(fx.wts, 'check-75')
