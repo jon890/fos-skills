@@ -973,7 +973,7 @@ class TaskRulesTest(unittest.TestCase):
         self.git("add", "tests")
         self.git("commit", "--quiet", "-m", "phase implementation")
         for plan_dir in self.plan_dirs:
-            for names in (("index.json",), ("index.json", "phase-01.md")):
+            for names in (("index.json",), ("index.json", "phase-01.md"), ("verification-plan.md",)):
                 with self.subTest(plan_dir=plan_dir, names=names):
                     self.git("reset", "--quiet")
                     for name in names:
@@ -1022,6 +1022,7 @@ class TaskRulesTest(unittest.TestCase):
             "tasks/plan2-other/index.json",
             f"{self.plan_dirs[1]}/phase-02.md",
             f"{plan_dir}/notes.md",
+            f"{self.plan_dirs[1]}/verification-plan.md",
             f"{plan_dir}/nested/phase-02.md",
             "src/app.py",
         )

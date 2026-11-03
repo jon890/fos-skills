@@ -5,20 +5,68 @@
 
 ## 기능 하나를 끝내는 흐름
 
+![기능의 스펙·설계를 공유하며 PR 별 계획·구현·검증을 반복하는 개발 흐름](docs/images/development-loop.svg)
+
+파랑은 요구사항·설계, 보라는 실행 계획, 초록은 구현, 주황은 독립 검증, 청록은 문서 정리를 나타내요.
+`orch` 가 전체 전이를 조율해요. **인수 검증 계획은 구현 전에 plan 에서 만들고, verify 가 누락을 대조한 뒤 실제로 실행해요.**
+
+<details>
+<summary>Mermaid 원본과 다시 그리는 방법</summary>
+
 ```mermaid
 flowchart TD
-    O[orch: 전체 단계 조율] --> S[spec: 요구사항 확정]
-    S --> T[technical-design: 구조와 책임 설계]
-    T --> P[plan: PR 별 작업 분해]
-    P --> B[implementation: 구현과 개발 테스트]
-    B --> V[verify: 독립 리뷰와 인수 검증]
-    V --> D[docs-consolidate: 문서 대조와 공통 후보]
-    V -->|구현 결함| B
-    V -->|설계 결함| T
-    V -->|요구사항 누락| S
-    D --> M[orch: PR·머지·배포·정리]
-    M -->|같은 기능의 다음 PR| P
+    O["`**orch**
+전체 흐름 조율`"] --> S
+
+    subgraph FEATURE["기능 단위 · 스펙과 설계 공유"]
+        S["`**spec**
+요구사항 확정`"] --> T["`**technical-design**
+구조와 책임`"]
+    end
+
+    T --> P
+
+    subgraph PR["PR 단위 · 계획과 구현·검증 반복"]
+        P["`**plan**
+작업과 인수 검증 계획`"] --> I["`**implementation**
+구현과 개발 테스트`"]
+        I --> V["`**verify**
+독립 리뷰와 인수 검증`"]
+        V --> D["`**docs-consolidate**
+문서 대조와 공통 후보`"]
+        V -.->|구현 결함| I
+    end
+
+    V -.->|설계 결함| T
+    V -.->|요구사항 누락| S
+    D --> M["`**orch**
+PR 머지와 필요한 배포 검증`"]
+    M -->|다음 PR| P
+    M -->|전체 요구사항 검증 완료| F["기능 완료"]
+
+    classDef orchestrate fill:#e2e8f0,stroke:#cbd5e1,color:#172033,stroke-width:2px
+    classDef define fill:#dbeafe,stroke:#bfdbfe,color:#172554,stroke-width:2px
+    classDef plan fill:#ede9fe,stroke:#ddd6fe,color:#3b0764,stroke-width:2px
+    classDef implement fill:#dcfce7,stroke:#bbf7d0,color:#14532d,stroke-width:2px
+    classDef verify fill:#ffedd5,stroke:#fed7aa,color:#7c2d12,stroke-width:2px
+    classDef document fill:#ccfbf1,stroke:#99f6e4,color:#134e4a,stroke-width:2px
+    classDef complete fill:#166534,stroke:#14532d,color:#ffffff,stroke-width:2px
+    class O,M orchestrate
+    class S,T define
+    class P plan
+    class I implement
+    class V verify
+    class D document
+    class F complete
+    style FEATURE fill:#f8fbff,stroke:#93c5fd,color:#172554
+    style PR fill:#faf8ff,stroke:#c4b5fd,color:#3b0764
 ```
+
+원본은 위 Mermaid 한곳에 두고, [렌더링 설정](docs/diagrams/development-loop.config.json)에서 손그림 스타일과 고정 seed 를 지정해요.
+Mermaid CLI 12.2.0 을 준비한 뒤 `python3 scripts/render-development-loop.py --mmdc /path/to/mmdc` 로 SVG 를 갱신해요.
+SVG 를 함께 저장해 GitHub 에서도 같은 손그림 모양으로 볼 수 있어요.
+
+</details>
 
 | 단계 | 해결하는 것 | 다음으로 가는 기준 |
 | --- | --- | --- |
@@ -50,6 +98,19 @@ spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 
 전역 PRD·흐름·스키마를 기능마다 함께 고치거나 중앙 진행표에 기록하지 않아요.
 정확한 API·DB 스키마는 저장소의 원본을 참조하고, 문서에는 동작과 설계 이유를 남겨요.
 기존 문서는 일괄 이동하지 않고 관련 기능을 고칠 때 필요한 부분만 정리해요.
+
+### 문서 양식과 인수 검증 계획
+
+작성 스킬의 `templates/` 에 샘플 양식을 한 벌씩 둬요. [문서별 양식과 소유권](spec/references/document-ownership.md)을 보고 필요한 양식만 읽어요.
+기존 PRD·flow·ADR 양식이 있으면 우선하고, 기존 문서를 일괄 재작성하지 않아요.
+plan 은 개발 테스트와 별도로 인수 검증의 준비 조건·실행 절차·기대 결과·환경·시점을 정해요.
+기본은 계획 폴더의 `verification-plan.md`, 작은 계획은 phase 의 인수 검증 계획 절이에요.
+verify 는 스펙·설계와 대조해 누락을 보완한 뒤 실행하고, 실제 결과·커밋·증거를 PR 에 남겨요.
+계획을 지울 때도 검증 절차와 증거는 남겨요. 기준은 [계획 수명 규칙](plan/references/plan-lifecycle.md)이 소유해요.
+
+PRD 는 제품 범위, flow 는 공통 상호작용, 기능 spec/design 은 상세 요구사항·설계를 소유해요.
+이번 기능이 바꾼 공통 사실은 해당 PR 에 맞추고, 반복 표현 공통화는 별도 후보로 남겨요.
+같은 공유 문서를 바꾸는 worker 는 orch 가 담당을 나누거나 순차 실행해요. 중앙 진행표를 모두 갱신하지 않아요.
 
 ### 처음 실행하기
 
@@ -204,6 +265,7 @@ orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있어�
 | `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾아요. 셸에 따라 죽는 이식성 결함이에요 |
 | `scripts/check-skill-docs.py` | 스킬 README 와 CHANGELOG 가 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
+| `scripts/render-development-loop.py` | 이 README 의 Mermaid 원본으로 손그림 SVG 를 다시 그려요 |
 | `scripts/bump-plugin-version.py` | main 에 들어온 변경으로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올려요. `plugin-version.yml` workflow 가 불러요 |
 
 `check-shell-korean.py` 가 `korean-check` 에 없는 것은 그 스킬이 마크다운 전용으로 경계를 정해 두었기 때문이에요.
