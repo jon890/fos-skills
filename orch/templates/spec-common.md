@@ -73,7 +73,7 @@
 
 <!-- 기능 개발이나 plan, implementation 를 맡길 때 남긴다. 기능 루프 규칙의 표지는 지우지 않는다. -->
 
-- 새 기능은 `spec → plan → implementation → verify → docs-consolidate 후보 추출` 순서로 진행한다. 스펙이나 계획이 있으면 필요한 단계부터 시작한다. 상세 인계는 orch 의 `references/feature-loop.md` 를 따른다. <!-- orch-rule: feature-loop -->
+- 새 기능은 `spec → technical-design → plan → implementation → verify → docs-consolidate 후보 추출` 순서로 진행한다. 스펙이나 계획이 있으면 필요한 단계부터 시작한다. 상세 인계는 orch 의 `references/feature-loop.md` 를 따른다. <!-- orch-rule: feature-loop -->
 - spec 단계는 `spec` 스킬의 인터뷰 절차(`references/interview.md` 「직접 묻지 못할 때」)대로 결정 블록은 `worker-ask --decision` 으로, 스펙 확인 요청은 형식 없이 `worker-ask` 로 보낸다. 혼자 정하고 넘어가지 않는다. 코디네이터가 사용자의 확인을 돌려주기 전에는 plan 과 구현을 시작하지 않는다. <!-- orch-rule: spec-interview -->
 - `implementation` 는 PR 을 열지 않는다. verify 통과와 후보 추출(후보 없음 포함)을 마친 뒤, PR 생성이 허락됐으면 worker 가 위 공통 규칙에 따라 PR 을 연다.
 
