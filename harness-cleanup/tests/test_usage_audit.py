@@ -48,34 +48,34 @@ class UsageAuditTest(unittest.TestCase):
         return {line.split("\t")[0]: line.split("\t")[1:] for line in done.stdout.splitlines() if "\t" in line}
 
     def test_counts_only_user_and_assistant_records(self):
-        call = skill_call("fos-skills:planning", "2026-10-10T00:00:00Z", "t1")
+        call = skill_call("fos-skills:plan", "2026-10-10T00:00:00Z", "t1")
         blob = {"type": "api-request-blob", "sessionId": "abcdef1234", "message": call["message"]}
         self.write_session("abcdef1234", [call, blob, blob, user("그게 아니라 다시 해", "2026-10-10T00:01:00Z"), tool_error("2026-10-10T00:02:00Z")])
-        done = self.extract("--skill", "planning")
+        done = self.extract("--skill", "plan")
         self.assertEqual(done.returncode, 0, done.stderr)
         # calls, main, with_correction, with_interrupt, tool_errors, reinvoked, friction
-        self.assertEqual(self.rows(done)["planning"], ["1", "1", "1", "0", "1", "0", "4"])
+        self.assertEqual(self.rows(done)["plan"], ["1", "1", "1", "0", "1", "0", "4"])
 
     def test_skill_and_since_narrow_the_range(self):
         self.write_session("abcdef1234", [
-            skill_call("planning", "2026-09-01T00:00:00Z", "t1"),
-            skill_call("planning", "2026-10-05T00:00:00Z", "t2"),
+            skill_call("plan", "2026-09-01T00:00:00Z", "t1"),
+            skill_call("plan", "2026-10-05T00:00:00Z", "t2"),
             user("<command-name>/orch</command-name>", "2026-10-06T00:00:00Z"),
         ])
         rows = self.rows(self.extract("--since", "2026-10-01"))
-        self.assertEqual(rows["planning"][0], "1")
+        self.assertEqual(rows["plan"][0], "1")
         self.assertEqual(rows["orch"][0], "1")
-        self.assertNotIn("orch", self.rows(self.extract("--skill", "planning")))
+        self.assertNotIn("orch", self.rows(self.extract("--skill", "plan")))
 
     def test_stdout_has_no_excerpt_and_samples_use_short_id(self):
-        self.write_session("abcdef1234", [skill_call("planning", "2026-10-05T00:00:00Z", "t1"), user("비밀 문장 다시", "2026-10-05T00:01:00Z")])
+        self.write_session("abcdef1234", [skill_call("plan", "2026-10-05T00:00:00Z", "t1"), user("비밀 문장 다시", "2026-10-05T00:01:00Z")])
         done = self.extract("--samples", "1")
         self.assertNotIn("비밀 문장", done.stdout)
-        self.assertIn("abcdef12\t2026-10-05T00:00:00\tplanning\t3", done.stdout)
+        self.assertIn("abcdef12\t2026-10-05T00:00:00\tplan\t3", done.stdout)
         self.assertNotIn("abcdef1234", done.stdout)
 
     def test_out_writes_redacted_excerpts_and_refuses_git_worktree(self):
-        self.write_session("abcdef1234", [skill_call("planning", "2026-10-05T00:00:00Z", "t1"), user("token=ghp_abcdefghijklmnopqrstuvwxyz0123", "2026-10-05T00:01:00Z")])
+        self.write_session("abcdef1234", [skill_call("plan", "2026-10-05T00:00:00Z", "t1"), user("token=ghp_abcdefghijklmnopqrstuvwxyz0123", "2026-10-05T00:01:00Z")])
         done = self.extract("--out", str(self.out))
         self.assertEqual(done.returncode, 0, done.stderr)
         written = (self.out / "invocations.jsonl").read_text()
@@ -95,7 +95,7 @@ class UsageAuditTest(unittest.TestCase):
     def test_render_session_resolves_short_id_and_writes_only_to_out(self):
         self.write_session("abcdef1234", [
             user("첫 요청 password=hunter2", "2026-10-05T00:00:00Z"),
-            skill_call("planning", "2026-10-05T00:01:00Z", "t1"),
+            skill_call("plan", "2026-10-05T00:01:00Z", "t1"),
             tool_error("2026-10-05T00:02:00Z"),
         ])
         target = self.out / "s.txt"

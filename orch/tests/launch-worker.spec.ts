@@ -1642,7 +1642,7 @@ describe('spec-lint 관문', () => {
     })
 
     test('기준 브랜치의 확인받은 스펙을 가리키면 띄운다', () => {
-      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md). planning 부터 한다\n')
+      writeFileSync(spec, '# 일\n허락: push 는 허락했다.\n\n## 할 일\n루프를 쓴다(스펙: docs/features/a/spec.md). plan 부터 한다\n')
       const r = launch(['--repo', proj, '--name', 'x', '--base', 'main', '--', ...CLAUDE])
       assert.equal(r.code, 0, both(r))
       assert.match(r.stdout, /LAUNCHED ctx_1/)

@@ -241,7 +241,7 @@ def broken_guide_refs(source, line, instructions):
 def mask_resolved_link_text(source, line):
     """링크 대상이 실재하면 그 링크 문구를 지운다.
 
-    `[planning 의 `references/x.md`](../planning/references/x.md)` 처럼 문구가 대상을 다시 적거나
+    `[plan 의 `references/x.md`](../plan/references/x.md)` 처럼 문구가 대상을 다시 적거나
     `[`scripts/` 절](./step.md)` 처럼 대상 안의 것을 가리키는 경우,
     문구의 경로를 따로 해석하면 엉뚱한 기준으로 찾아 깨진 참조로 낸다. 대상은 링크가 이미 말한다.
     대상이 없으면 그대로 두어 문구의 경로도 2번 검사가 잡게 한다.

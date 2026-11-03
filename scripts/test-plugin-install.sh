@@ -228,9 +228,9 @@ else
   fi
 
   # 스크립트 실행
-  run python3 "$CACHE/planning/scripts/verify_task.py" --help
+  run python3 "$CACHE/plan/scripts/verify_task.py" --help
   if [ "$RC" -eq 0 ]; then
-    ok "스크립트 실행: planning/scripts/verify_task.py --help 가 종료 코드 0 이다"
+    ok "스크립트 실행: plan/scripts/verify_task.py --help 가 종료 코드 0 이다"
   else
     fail "스크립트 실행: verify_task.py --help 가 종료 코드 $RC 로 끝났다"
     printf '%s\n' "$OUT"

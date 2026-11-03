@@ -206,16 +206,16 @@ describe('설치본 판정', () => {
     write(
       join(skill, 'references', 'x.md'),
       '본문\n[링크](../scripts/gone.sh)\n`$SKILL_DIR/scripts/a.py`\n`scripts/verify.sh` 는 저장소 예시다\n' +
-        '`python3 "$PLANNING_SKILL_DIR/scripts/verify_task.py"`\n',
+        '`python3 "$PLAN_SKILL_DIR/scripts/verify_task.py"`\n`python3 "$PLANNING_SKILL_DIR/scripts/verify_task.py"`\n',
     )
     const r = run('--skip-version')
     assert.equal(r.code, 1, r.stdout + r.stderr)
     assert.ok(r.stdout.includes('MISSING references/x.md:2 scripts/gone.sh'), r.stdout)
-    assert.ok(r.stdout.includes('MISSING references/x.md:5 planning/scripts/verify_task.py'), r.stdout)
+    assert.ok(r.stdout.includes('MISSING references/x.md:5 plan/scripts/verify_task.py'), r.stdout)
     assert.ok(!r.stdout.includes('verify.sh'), r.stdout)
     assert.ok(!r.stdout.includes('VERSION'), r.stdout)
-    write(join(skill, '..', 'planning', 'scripts', 'verify_task.py'), '')
-    assert.ok(!run('--skip-version').stdout.includes('planning'))
+    write(join(skill, '..', 'plan', 'scripts', 'verify_task.py'), '')
+    assert.ok(!run('--skip-version').stdout.includes('plan'))
   })
 })
 

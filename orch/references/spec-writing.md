@@ -22,7 +22,7 @@
 **스크립트 경로는 채우지 않는다.** 틀의 명령이 worker 세션의 `CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `orch/scripts` 를 푼다. 캐시 폴더 이름은 해시라 `ls | tail -1` 이나 `ls -t` 로 고르면 설치되지 않은 번들을 집는다. 코디네이터가 그때의 캐시 경로를 박으면 번들이 갱신되거나 worker 가 다른 프로필에서 돌 때 옛 스크립트를 가리킨다. 저장소 체크아웃 경로도 박지 않는다. 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
 같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
-`{{DESIGN_DIR}}` 는 worker 가 `spec`, `planning` 으로 만든 설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
+`{{DESIGN_DIR}}` 는 worker 가 `spec`, `technical-design` 으로 만든 요구사항·설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
 worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask` 가 두 경우를 종료 코드로 가른다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.
 
@@ -91,7 +91,7 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
   빠뜨리면 같은 워크트리의 항목을 이어 쓰거나 새 항목을 만들어, 한 PR 의 중간 과정이 마일스톤 항목처럼 보드에 쌓인다
 - 보드 항목의 단계는 「할 일」 이 아니라 저장소의 마일스톤 단계(`board.steps`, 없으면 PR, 머지)다. 이 일만 다른 단계가 필요하면 `## 보드 단계` 절에 꼬리표 붙은 번호 줄을 적는다.
   꼬리표와 우선순위는 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다. 「할 일」 은 worker 가 읽는 구현 세부라 보드에 올리지 않는다
-- PR 은 머지될 때까지 만든 worker 가 맡는다. 기준 브랜치와 충돌하거나 CI 가 실패하면 그 worker 가 푼다. 코디네이터는 worker 브랜치에서 직접 풀지 않는다. 지시서 하나는 PR 하나로 끝나는 크기로 쓴다(`planning` 의 plan 크기 기준). 더 큰 일은 지시서를 나누고 앞 PR 이 머지된 뒤 다음 지시서를 쓴다.
+- PR 은 머지될 때까지 만든 worker 가 맡는다. 기준 브랜치와 충돌하거나 CI 가 실패하면 그 worker 가 푼다. 코디네이터는 worker 브랜치에서 직접 풀지 않는다. 지시서 하나는 PR 하나로 끝나는 크기로 쓴다(`plan` 의 plan 크기 기준). 더 큰 일은 지시서를 나누고 앞 PR 이 머지된 뒤 다음 지시서를 쓴다.
   [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 가 정한다
 
 **기술 판단과 사용자 판단을 나눠 적는다.**

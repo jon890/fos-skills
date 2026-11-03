@@ -46,7 +46,7 @@
 //                                                  상대경로는 --repo 루트 기준이고 worker 가 시작할 곳(--spec-root, --spec-ref, 기본 origin/<base>)에서 읽는다.
 //                                                  커밋하지 않은 스펙은 절대경로(`~/` 는 홈)로 적고 디스크에서 읽는다. 경로는 백틱으로 감싸도 된다.
 //                                                  괄호 앞 띄어쓰기는 받는다
-//                   `루프를 쓴다(스펙: 새로 쓴다)` 스펙 파일을 보지 않는다. 그 worker 는 spec 단계부터 하고 확인 전에는 planning 과 구현을 하지 않는다
+//                   `루프를 쓴다(스펙: 새로 쓴다)` 스펙 파일을 보지 않는다. 그 worker 는 spec 단계부터 하고 확인 전에는 plan 과 구현을 하지 않는다
 //                   `루프 없이: <이유>`           이유가 비면 막는다. 이유가 타당한지는 보지 않는다(코디네이터가 feature-loop 기준표로 정한다)
 //                 `리뷰 PR:` 줄(lib/review.ts 의 reviewPrOfSpec)이나 머리의 `중간 과정:` 줄(lib/spec.ts 의 interimOf)이 있는 지시서와
 //                 --active 지시서는 보지 않는다. 기능 구현이 아니거나 이미 떠 있다.
@@ -419,7 +419,7 @@ function selectionErrors(spec: Spec): string[] {
   return errors
 }
 
-// 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 planning 의 check_feature.py 를 따른다
+// 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 plan 의 check_feature.py 를 따른다
 const LOOP_FORMAT = '`루프를 쓴다(스펙: <경로>)`, `루프를 쓴다(스펙: 새로 쓴다)`, `루프 없이: <이유>`'
 const LOOP_HEADING = /^##\s+할 일(?:\s.*)?$/
 const LOOP_SPEC = /^루프를 쓴다\s*\(스펙\s*:\s*(.*?)\s*\)/

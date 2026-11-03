@@ -65,7 +65,7 @@ PLAN_DIR = re.compile(r"(?:[A-Za-z0-9]+-)?plan[-_]?\d{2,}(?:-.*)?")
 # `docs/code-architecture.md` 의 책임 설명에 괄호로 늘어놓은 목록을 찾는다.
 #   설정 항목과 기능 목록은 설정 파일 주석이나 ADR 이 소유한다. 이 문서에 다시 쓰면
 #   항목을 더하는 사람이 앞줄의 형식을 따라 덧붙여, 같은 사실이 두 곳 이상에 생긴다.
-#   판정 기준은 planning 의 `references/examples/code-architecture.md` 「디렉터리 책임」 이 소유한다.
+#   판정 기준은 plan 의 `references/examples/code-architecture.md` 「디렉터리 책임」 이 소유한다.
 #   쉼표로 셋 이상일 때만 잡는다. `(기본값 3, 최대 10)` 같은 둘짜리 부연은 목록이 아니다.
 #   처음에는 경고로 낸다. 오탐률을 실측한 뒤 위반으로 올릴지 정한다.
 PAREN = re.compile(r"[(（]([^()（）]*)[)）]")
@@ -238,7 +238,7 @@ def listed_items(text):
 
 
 def is_code_architecture(path):
-    """planning 이 관리하는 `docs/code-architecture.md` 인가.
+    """plan 이 관리하는 `docs/code-architecture.md` 인가.
 
     상위 디렉터리를 `docs` 로 한정한다. 모노레포의 `frontend/docs/` 도 여기 든다.
     한정하지 않으면 그 규칙을 설명하는 예시 문서가 나쁜 예를 담고 있어 걸린다.

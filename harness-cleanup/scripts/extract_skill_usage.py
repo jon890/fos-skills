@@ -4,7 +4,7 @@
 사용법:
     extract_skill_usage.py [--skill NAME ...] [--since YYYY-MM-DD] [--projects DIR] [--out DIR] [--samples N]
 
---skill    셀 스킬. 여러 번 줄 수 있고 `fos-skills:planning` 처럼 접두사가 붙어도 된다. 없으면 모든 스킬을 센다
+--skill    셀 스킬. 여러 번 줄 수 있고 `fos-skills:plan` 처럼 접두사가 붙어도 된다. 없으면 모든 스킬을 센다
 --since    그날(UTC) 이후의 호출만 센다
 --projects 대화 기록 폴더. 기본값은 `session_log.default_projects_dir()` 이다
 --out      호출별 기록을 쓸 폴더. 세션 임시 폴더를 준다. git 작업 트리 안이면 거부한다
@@ -62,7 +62,7 @@ COLUMNS = ["calls", "main", "with_correction", "with_interrupt", "tool_errors", 
 
 
 def norm(name: str) -> str:
-    """`fos-skills:planning` 처럼 플러그인 접두사가 붙은 이름을 스킬 이름만 남긴다."""
+    """`fos-skills:plan` 처럼 플러그인 접두사가 붙은 이름을 스킬 이름만 남긴다."""
     return name.strip().split(":")[-1]
 
 
