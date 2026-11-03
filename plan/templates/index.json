@@ -1,0 +1,28 @@
+{
+  "name": "cancel-api",
+  "description": "소유자의 예약 작업 취소와 인수 검증",
+  "pr_scope": "예약 작업 취소 API 를 완성한다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-03",
+  "spec": "docs/features/job-cancel/spec.md",
+  "design": "docs/features/job-cancel/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2"
+      ]
+    }
+  ]
+}

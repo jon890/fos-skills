@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.3.0 (2026-11-03)
+
+- 검증 절차·기대값·결과를 보존하고 공통 문서 변경이 겹치는 작업을 조율해요.
+
 ## 7.2.0 (2026-11-03)
 
 - `send-to-worker` 가 `stable_pane_required` 로 거부되면 status 로 바꾸기 전에 `--run`, `--from` 없는 reply 를 한 번 보낸다

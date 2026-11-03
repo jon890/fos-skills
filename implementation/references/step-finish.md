@@ -81,27 +81,8 @@ PR 을 올린 뒤 사람이 선행 조건(push, 머지, 배포)이 채워진 시
 
 커밋이 phase 하나씩으로 나뉘어 있고, 다른 plan 의 변경이 섞이지 않았는지 확인한다.
 
-**통합 검증이 통과했으면 구현한 plan 디렉터리를 지우는 커밋을 PR 브랜치에 더한다.**
-현재 사실은 `docs/` 와 코드가 소유한다. 계획서는 구현 뒤 곧 낡아서,
-남겨 두면 에이전트나 사람이 다시 읽고 이미 바뀐 설계를 근거로 쓴다.
-지난 계획은 git 이력에서 찾는다.
-
-`$TASKS_DIR` 은 레포 설정의 tasks 경로이고, `$PLAN` 은 사전 검사가 낸 task 디렉터리 이름이다.
-
-```bash
-# cwd: plan 작업 공간(worktree) root
-git rm -r --quiet "${TASKS_DIR:-tasks}/$PLAN"
-git commit -m "chore: 구현을 마친 $PLAN 계획서를 지운다"
-```
-
-- 커밋 메시지 형식은 레포 설정의 커밋 컨벤션을 따른다.
-- 지우기 전에 phase 가 인용한 근거 문서가 `docs/` 에 있는지 본다.
-  계획서에만 있는 결정이 남았으면 docs-verifier 의 `UPDATE_NEEDED` 처럼 `docs/` 로 옮긴 뒤 지운다.
-- phase 커밋과 분리한 커밋 하나로 둔다. 리뷰어가 구현 diff 와 삭제를 따로 본다.
-- 지운 계획서는 `plan_precheck.py` 가 git 이력과 그 브랜치로 머지된 PR 에서 찾아 재실행을 막는다.
-  squash 머지 뒤 브랜치를 지우면 git 이력에 남지 않아 PR 을 함께 본다. `index.json` 을 `completed` 로 바꾸지 않는다.
-
-레포 설정이 계획서를 남기라고 정했으면 지우지 않고, `index.json` 의 `status` 를 `completed` 로 바꿔 같은 자리에 커밋한다.
+[계획 수명 규칙](../../plan/references/plan-lifecycle.md)을 따른다. 호환 절차도 같은 보존·증거 인계 기준을 적용한다.
+현재 절차의 리뷰·검증과 기록 보존을 마치기 전에는 계획을 지우지 않는다.
 
 ## PR
 

@@ -8,6 +8,8 @@ cwd: 대상 저장소 루트.
 스펙 검사:
 - 필수 절: 목표, 범위, 요구사항과 인수 조건, 결정. 새 형식은 REQ1/DECISION1, 기존 R1/D1 은 읽기 호환이다.
 - --design 은 책임·경계·데이터·일관성·검증 전략과 모든 요구사항의 연결을 검사한다.
+- verification_plan 이 있으면 그 파일(또는 phase 의 인수 검증 계획 절)과 PR 요구사항 연결을 검사한다.
+  경로는 계획 폴더 기준이다. --require-verification 은 새 계획의 누락도 막고, 기본값은 기존 계획을 그대로 읽는다.
 - 새 REQ 형식의 계획은 design 경로가 필요하다. 기존 R 형식 계획은 기술 설계 연결을 강제하지 않는다.
 - 결정 절은 `| D1 | 결정 | 답 | 누가 | 근거 |` 표이거나 `없음: <이유>` 한 줄이다.
   「답」 이 비었거나 미정·TBD·? 면 닫히지 않은 결정이다.
@@ -59,7 +61,8 @@ def sections(text):
 def table_rows(body):
     for line in body.splitlines():
         if line.lstrip().startswith('|'):
-            yield [cell.strip() for cell in line.strip().strip('|').split('|')]
+            yield [cell.strip().replace(r'\|', '|')
+                   for cell in re.split(r'(?<!\\)\|', line.strip().strip('|'))]
 
 
 def check_decisions(body):
@@ -163,7 +166,60 @@ def inside(root, value):
     return path
 
 
-def check_plan(data, root, expected_spec=None):
+def check_verification(text, assigned):
+    """검증 계획의 구조와 PR 요구사항 연결만 본다. 절차의 충분성·실행 결과는 보지 않는다."""
+    body = sections(text).get('인수 검증 계획', '')
+    if not body:
+        return ['인수 검증 계획 절이 없거나 비었다']
+    headers = ['요구사항', '준비 조건', '실행 절차', '기대 결과', '실행 환경', '선행 조건', '시점']
+    rows = list(table_rows(body))
+    if not rows or rows[0] != headers:
+        return ['인수 검증 계획 표의 열은 ' + ', '.join(headers) + ' 순서여야 한다']
+    problems, covered = [], set()
+    for cells in rows[1:]:
+        if cells and all(re.fullmatch(r':?-+:?', cell) for cell in cells):
+            continue
+        if len(cells) != len(headers):
+            problems.append('인수 검증 사례에 준비 조건·절차·기대값·환경·선행 조건·시점이 필요하다')
+            continue
+        rid, _, _, _, _, prerequisite, timing = cells
+        if rid not in assigned:
+            problems.append(f'인수 검증에 이번 PR 범위 밖의 요구사항: {rid}')
+        else:
+            covered.add(rid)
+        if any(cell.lower() in OPEN_ANSWERS or '{{' in cell or '}}' in cell for cell in cells):
+            problems.append(f'{rid}: 인수 검증 사례의 빈칸·미정·양식 자리표시자를 채운다')
+        if timing not in {'PR 전', 'PR 뒤'}:
+            problems.append(f'{rid}: 인수 검증 시점은 PR 전 또는 PR 뒤다')
+        if not re.match(r'^(없음|push|머지|배포)(?:\s|$|[(:])', prerequisite):
+            problems.append(f'{rid}: 선행 조건은 없음, push, 머지, 배포 중 하나로 시작한다')
+        if timing == 'PR 전' and prerequisite.startswith(('머지', '배포')):
+            problems.append(f'{rid}: 머지·배포가 필요한 검증은 PR 뒤다')
+    if assigned - covered:
+        problems.append('인수 검증 사례가 없는 요구사항: ' + ', '.join(sorted(assigned - covered)))
+    return problems
+
+
+def check_verification_file(data, plan_path, assigned, required=False):
+    value = data.get('verification_plan')
+    if value is None:
+        return ['새 기능 계획에 verification_plan 경로가 필요하다'] if required else []
+    if plan_path is None:
+        return ['검증 계획을 읽으려면 계획 index 경로가 필요하다']
+    try:
+        # 경로는 repo 기준인 spec/design 과 달리 index.json 의 부모 기준이다.
+        directory = Path(plan_path).resolve().parent
+        if not isinstance(value, str) or not value.strip() or Path(value).is_absolute():
+            raise ValueError('verification_plan 은 계획 폴더 기준 상대경로여야 한다')
+        path = (directory / value).resolve()
+        if not path.is_relative_to(directory):
+            raise ValueError('verification_plan 이 다른 계획 폴더를 가리킨다')
+        return check_verification(path.read_text(encoding='utf-8'), assigned)
+    except (OSError, ValueError) as exc:
+        return [f'인수 검증 계획을 읽을 수 없다: {exc}']
+
+
+def check_plan(data, root, expected_spec=None, plan_path=None, require_verification=False):
     if not isinstance(data, dict):
         return ['계획 index 는 객체여야 한다']
     try:
@@ -202,6 +258,7 @@ def check_plan(data, root, expected_spec=None):
         covered.update(reqs)
     if set(assigned) - covered:
         problems.append('phase 에 배정하지 않은 요구사항: ' + ', '.join(sorted(set(assigned) - covered)))
+    problems += check_verification_file(data, plan_path, set(assigned), required=require_verification)
     return problems
 
 
@@ -209,9 +266,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('spec', type=Path)
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--require-verification', action='store_true', help='새 기능 계획의 인수 검증 계획을 요구한다')
     parser.add_argument('--design', type=Path, help='기술 설계 문서. 스펙의 기술 설계 절이면 스펙 경로를 준다')
     parser.add_argument('--draft', action='store_true', help='사용자 확인 줄을 요구하지 않는다(인터뷰 중 형식 검사)')
     args = parser.parse_args(argv)
+    if args.require_verification and not args.plan:
+        parser.error("--require-verification 은 --plan 과 함께 쓴다")
     try:
         spec = inside(Path.cwd(), str(args.spec))
         ids, problems = check_spec(spec.read_text(encoding='utf-8'), draft=args.draft and not args.plan and not args.design)
@@ -219,7 +279,7 @@ def main(argv=None):
             design = inside(Path.cwd(), str(args.design))
             problems += check_design(design.read_text(encoding='utf-8'), ids, inline=design == spec)
         if args.plan:
-            problems += check_plan(json.loads(args.plan.read_text(encoding='utf-8')), Path.cwd(), spec)
+            problems += check_plan(json.loads(args.plan.read_text(encoding='utf-8')), Path.cwd(), spec, args.plan, args.require_verification)
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 2

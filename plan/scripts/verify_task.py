@@ -17,7 +17,7 @@ phase 안 Markdown 상대 링크는 phase 파일 위치 기준으로 풀어 없�
 작업 트리와 로컬, 원격 브랜치의 tasks 디렉터리를 본다. 보고에서 phase 번호가 어느 계획인지 갈리지 않게 된다.
 index.json 의 pr_scope(한 문장)와 deferred(뒤로 미룬 일) 칸을 보고, phase 가 6개를 넘으면 plan 을 나누게 한다.
 변경 파일이 40개를 넘으면 경고한다. 기준은 references/plan-size.md 가 소유한다.
-완료 표시는 요구하지 않는다. 구현이 끝난 계획서는 implementation 가 디렉터리째 지운다.
+완료 표시는 요구하지 않는다. 계획의 수명은 references/plan-lifecycle.md 가 정한다.
 계획에 적힌 명령은 실행하지 않는다.
 
 사용법:
@@ -868,7 +868,7 @@ def check_staged(path, text, repo, out, warnings):
     implementation_changes = [
         (rel, action) for rel, action in changes
         if not (posixpath.abspath((repo / rel).parent) == plan_dir
-                and (Path(rel).name == "index.json" or Path(rel).match("phase-*.md")))
+                and (Path(rel).name in {"index.json", "verification-plan.md"} or Path(rel).match("phase-*.md")))
     ]
     # 메타데이터 보완 커밋에는 이미 커밋한 신규 구현 파일이 다시 staged 될 필요가 없다.
     if changes and not implementation_changes:
@@ -1280,6 +1280,7 @@ def check_callers(phase_entries, repo, tasks_dir, warnings):
 def main(argv: list) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan", nargs="?")
+    parser.add_argument("--require-verification", action="store_true", help="새 기능 계획의 인수 검증 계획을 요구한다")
     parser.add_argument("--audit", action="store_true", help="구현 후 문서 검사. 구현 전 파일 상태는 대조하지 않는다")
     parser.add_argument("--staged", type=Path, metavar="PHASE", help="phase 변경 파일 목록과 git index 대조")
     parser.add_argument("--tasks-dir", default="tasks", help="계획서 디렉터리. 저장소 루트 기준 (기본값 tasks)")
@@ -1287,7 +1288,7 @@ def main(argv: list) -> int:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    if bool(args.plan) == bool(args.staged) or (args.audit and args.staged):
+    if bool(args.plan) == bool(args.staged) or (args.audit and args.staged) or (args.require_verification and args.staged):
         print("plan 또는 --staged PHASE 중 하나를 지정한다", file=sys.stderr)
         return 2
     repo, out, warnings = Path.cwd(), [], []
@@ -1309,11 +1310,14 @@ def main(argv: list) -> int:
                 if "spec" in index:
                     checked = subprocess.run(
                         [sys.executable, str(Path(__file__).with_name("check_feature.py")),
-                         str(index["spec"]), "--plan", str(plan_dir / "index.json")],
+                         str(index["spec"]), "--plan", str(plan_dir / "index.json"),
+                         *(["--require-verification"] if args.require_verification else [])],
                         cwd=repo, capture_output=True, text=True,
                     )
                     if checked.returncode:
                         out.append(f"{plan_dir} — 기능 계약 검사 실패: " + (checked.stdout + checked.stderr).strip())
+                elif args.require_verification:
+                    out.append(f"{plan_dir} — 인수 검증 계획 검사는 spec 이 있는 기능 계획에 적용한다")
             check_plan_number(repo, args.tasks_dir, args.plan, out, warnings)
             remote = plan_dir / "remote-verification.md"
             if remote.is_file():

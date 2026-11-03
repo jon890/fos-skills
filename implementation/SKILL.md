@@ -5,7 +5,7 @@ description: |
   "task 실행해줘", "phase 실행", "agent team 으로 빌드", "implementation" 요청에 쓴다.
   독립 리뷰와 인수 검증은 verify, PR·머지와 정리는 orch 가 조율한다.
 metadata:
-  version: "7.1.0"
+  version: "7.2.0"
 ---
 # implementation
 
@@ -54,12 +54,15 @@ python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
 
 push·원격 접속·배포가 필요한 명령은 실행 시점과 기대값을 인계한다. 필요한 검증을 없애거나 통과로 표시하지 않는다.
 
+인수 검증 계획은 다음 verify 에 넘긴다. 이 단계에서 계획을 지우지 않는다.
+보존·삭제는 [계획 수명 규칙](../plan/references/plan-lifecycle.md)이 소유한다.
+
 ## 인계
 
 ```text
 완료: 구현과 개발 검증 (기능 인수 완료는 아님)
 스펙 / 기술 설계: <경로>
-plan: <경로>, 요구사항: <ID 목록>
+plan / 인수 검증 계획: <경로>, 요구사항: <ID 목록>
 작업 공간: <절대경로>
 기준 브랜치 / 검증 커밋: <값>
 변경 파일: <목록>

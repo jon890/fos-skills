@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "3.7.1"
+  version: "3.8.0"
 ---
 # docs-check
 
@@ -67,7 +67,7 @@ python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-check $SCOPE_PAT
 
 여기에 범위의 `README.md` 와 책임 문서, `docs/adr/INDEX.md` 를 더한다.
 
-**`tasks/` 의 계획서도 범위에 넣는다.** 구현이 끝난 plan 은 PR 에서 지워야 하므로, 남아 있으면 제거 후보다.
+**`tasks/` 의 계획서도 범위에 넣는다.** [계획 수명 규칙](../plan/references/plan-lifecycle.md)으로 완료·보존 정책·증거 인계를 확인한 뒤에만 제거 후보로 본다.
 판정 절차는 `references/six-axis.md` 의 「완료된 plan 은 제거 후보다」 가 소유한다.
 
 **계획서를 가리키는 문서도 함께 본다.** 계획서가 제거되면 그 자리가 깨진 참조가 된다.

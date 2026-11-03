@@ -11,7 +11,7 @@
 - plan 하나는 PR 하나다. PR 하나에 들어가지 않는 크기면 구현 전에 plan 을 나누게 돌려보낸다(기준은 `plan` 의 `plan-size.md` 가 소유한다). `orch` worker 가 이 스킬을 돌 때도 그 PR 이 머지되면 끝낸다. 뒤 plan 은 코디네이터가 새 worker 로 띄운다.
 - 구현된 코드가 계획한 것과 같아야 한다.
 - 코드가 `docs/` 에 적힌 결정과 어긋나지 않아야 한다.
-- 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획서는 그 plan 을 구현한 PR 에서 이 스킬이 지운다.
+- 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획 수명은 [공통 규칙](../../plan/references/plan-lifecycle.md)을 따른다.
 
 team-lead 가 아래 팀원을 부른다. 각자의 판정 기준은 자기 문서가 소유한다.
 
@@ -50,7 +50,7 @@ team-lead 가 아래 팀원을 부른다. 각자의 판정 기준은 자기 문�
 | docs 경로와 tasks 경로 (기본값 `docs/`, `tasks/`) | 1, 3, 5, 6 |
 | 커밋 컨벤션, 반복될 실패를 규칙으로 넣을 위치 | 4, 6 |
 | 의존성 설치와 환경 파일 준비 | 2 |
-| 계획서 보존 여부 (기본값: 구현한 PR 에서 지운다) | 6 |
+| 계획서 보존 여부 ([계획 수명 규칙](../../plan/references/plan-lifecycle.md)) | 6 |
 
 ## 실행 절차
 
@@ -63,7 +63,7 @@ team-lead 가 아래 팀원을 부른다. 각자의 판정 기준은 자기 문�
 | 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
 | 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
-| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획서 삭제 커밋을 담은 PR 이 있고, `pr_mergeable.sh` 가 0 으로 끝났고, 팀원이 남지 않았다 | `references/step-finish.md` |
+| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획 수명 규칙에 맞춘 PR 이 있고, `pr_mergeable.sh` 가 0 으로 끝났고, 팀원이 남지 않았다 | `references/step-finish.md` |
 
 task 없이 리뷰만 도는 경로는 아래 「task 없이 리뷰부터 도는 경로」 의 표를 따른다.
 발동 조건: 일이 PR 하나로 끝나고, `tasks/` 에 그 일의 plan 이 없고, 계획 입력으로 쓸 지시서나 ADR 이 있다.
