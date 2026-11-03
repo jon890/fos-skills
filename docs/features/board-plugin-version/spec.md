@@ -32,6 +32,7 @@
 | R2 | main 의 최신 버전과 비교해 최신 여부를 보인다 | 같으면 「최신」 이 흐리게, 다르면 최신 version·커밋과 「p 로 갱신」 이 노란색으로, 확인하지 못하면 「최신 확인 불가」 가 흐리게 보인다. 둘 다 version 이 있으면 version 으로, 아니면 커밋으로 비교한다 |
 | R3 | 갱신 단축키 `p` 가 설치본을 갱신한다 | `p` 를 누르면 그 설치본의 scope 로 `claude plugin update` 가 돌고, 성공하면 입력란에 `/reload-plugins` 가 채워진다. 실패하면 toast 에 이유가 보이고 입력란은 그대로다. 최신으로 확인됐거나 작업 트리면 `p` 가 없다 |
 | R4 | 좁은 창에서도 단축키가 모두 보인다 | 터미널 폭 70칸에서 `/board` 를 열면 단축키 상자에 모든 단축키가 잘리지 않고 보인다(줄바꿈 허용) |
+| R5 | directory 소스 마켓플레이스의 폴더에서 읽은 설치본도 `p` 로 갱신한다 | `known_marketplaces.json` 의 directory path 가 설치본 폴더와 같으면(`--plugin-dir` 로 읽었어도) 「작업 트리」 가 아니라 「fos-skills 1.4.0 (…)」 로 보이고 뒤처지면 「p 로 갱신」 이 보인다. `p` 는 그 폴더가 main 이고 추적 파일 변경이 없고 fast-forward 할 수 있을 때만 `git pull --ff-only origin main` 을 돌리고 `/reload-plugins` 를 채운다. 아니면 받지 않고 toast 에 이유(「main 이 아니라서」, 「고치는 중인 파일이 있어서」, 「fast-forward 할 수 없어서」)를 보인다. 받은 뒤 머리 줄은 새 version 을 보인다 |
 
 ## 설계
 
@@ -40,6 +41,7 @@
 - 최신 version: `git ls-remote` 로 받은 커밋의 `plugin.json` 을 `https://raw.githubusercontent.com/<owner>/<repo>/<커밋>/.claude-plugin/plugin.json` 에서 `curl` 로 읽는다. 커밋 주소라 CDN 캐시에 낡은 값이 남지 않는다. 읽지 못하면 커밋으로만 비교한다.
 - version 으로 비교하는 이유: version 을 올리지 않은 커밋은 `update` 가 받지 않는다. 커밋으로 비교하면 받을 것이 없는데도 「p 로 갱신」 이 계속 보인다.
 - 갱신: `updatePlugin` 이 `claude plugin update <key> --scope <scope>` 를 project·local scope 면 그 `projectPath` 에서 돌린다. 시간 초과는 3분이다.
+- directory 설치본: `claude plugin update` 는 folder 에서 읽는 마켓플레이스에서 갱신할 것이 없다고 끝난다. 설정 폴더의 `plugins/known_marketplaces.json` 에서 source 가 directory 이고 path 가 `$.plugin.root` 와 같으면 어떻게 읽었든(`--plugin-dir` 로 같은 폴더를 읽은 경우 포함) `kind: 'directory'` 로 본다(`directoryMarketplaceOf`). 등록되지 않은 다른 폴더를 `--plugin-dir` 로 읽은 것만 작업 트리(`tree`)다. 프로세스 인자는 보지 않는다. 작업 중인 변경은 아래 세 보호가 지킨다. 최신 판정은 같다(폴더의 version 과 origin main 의 version). `p` 는 `updatePlugin` 이 브랜치, 추적 파일 변경, `git fetch origin main` 뒤 fast-forward 가능 여부를 보고(`checkDirectory`, `directoryRefusal`) `git -C <폴더> pull --ff-only origin main` 을 돌린다. 이 설치본은 폴더를 그대로 읽으므로 받은 뒤 `loadInstall` 로 다시 읽어 머리 줄이 새 version 을 보인다. 캐시 설치본은 세션 동안 한 번만 읽는다
 - 단축키 줄: 버튼 줄 Box(`shortcut-row`)에 `flexWrap: 'wrap'` 을 준다.
 
 조사 결과는 아래와 같다.
@@ -62,3 +64,5 @@
 | D4 | plugin.json version 도입 | 둔다. 변경마다 올린다. ADR-002 를 ADR-019 로 대체한다 | 사용자 2026-11-02 | 플러그인 버전을 사람이 읽는 값으로 관리하고 싶다 |
 | D5 | 좁은 폭의 단축키 배치 | 줄바꿈을 허용한다 | 사용자 2026-11-02 | 넓은 창은 지금과 같다 |
 | D6 | version 을 자동으로 올리는 방식 | main push 때 GitHub Actions 가 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다. 바뀐 스킬 CHANGELOG 에 `호환성:` 항목이 있으면 major, 새 버전 절이 있으면 minor, 그 밖은 patch | 사용자 2026-11-02 | 동시 PR 끼리 충돌하지 않고 머지 경로와 상관없이 빠지지 않는다 |
+| D7 | directory 소스 마켓플레이스 설치본의 갱신 | 따로 판정(`kind: 'directory'`)하고 `p` 가 폴더에서 `git pull --ff-only origin main` 을 돌린다. 막을 이유(main 아님, 추적 파일 변경, fast-forward 불가)는 받기 전에 toast 로 보인다. 그 이유를 보이려고 뒤처졌으면 이유와 상관없이 `p` 를 보인다 | 사용자 2026-11-03 | `claude plugin update` 는 folder 에서 읽은 마켓플레이스에서 받을 것이 없다. 작업 중인 변경은 덮지 않는다 |
+| D8 | 등록된 폴더를 `--plugin-dir` 로 읽은 경우 | 프로세스 인자로 가르지 않고 directory 로 본다. 작업 중인 변경은 세 보호(main 인지, 추적 파일 변경, fast-forward 가능 여부)가 지킨다 | 사용자 2026-11-03: ps 판정을 빼고 세 보호로 작업 트리를 지킨다 | 프로세스 인자 해석은 상대경로, 공백 경로, 병행 세션, 조회 실패마다 예외가 생긴다 |
