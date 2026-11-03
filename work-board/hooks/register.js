@@ -1331,13 +1331,6 @@ export const START_PROMPT = [
   '4. 열린 PR 의 CI 와 리뷰, 막힌 것, 내가 정할 것을 짧게 보고하고 정할 것은 바로 물어봐 줘.',
 ].join('\n')
 
-export const REFRESH_PROMPT = [
-  '보드를 현재 상태로 갱신해 줘.',
-  '1. PR 상태와 CI, 배포 결과, 두레이 업무 상태, orch worker 보고를 대조해 줘. 확인하지 못한 상태는 추측하지 말고 남겨 줘.',
-  '2. 확인한 근거에 따라 work-board/bin/board.ts 로 항목 상태와 단계, 목표 진행률을 고쳐 줘. 직접 작성한 사건 단계에는 PR 번호와 사건 꼬리표를 붙여 줘.',
-  '3. 바뀐 것과 내가 정할 것만 짧게 보고해 줘.',
-].join('\n')
-
 export const DECIDE_PROMPT = [
   '지금 정할 것을 모아 물어봐 줘.',
   '1. 보드의 결정 필요(decide) 항목과 그 줄, 답하지 않은 worker 질문, 이번 대화에서 미룬 결정을 모아 줘.',
@@ -1757,13 +1750,6 @@ export function register(on) {
                 hotkey: 's',
                 plain: true,
                 onPress: () => { fillPrompt($, START_PROMPT) },
-              }),
-              Button({
-                key: 'refresh-board',
-                label: '보드 갱신',
-                hotkey: 'u',
-                plain: true,
-                onPress: () => { fillPrompt($, REFRESH_PROMPT) },
               }),
               Button({
                 key: 'ask-decisions',
