@@ -51,7 +51,7 @@
 //
 // 공부 후보 판정(늘 본다):
 //     --repo 의 <orch 루트>/study/ 의 후보 파일 가운데 상태가 `후보` 나 `리뷰함` 인 것을 센다. 파일 형식은 lib/study.ts 가 소유한다.
-//     하나 이상이면 STUDY-OPEN 줄을 낸다. 다시 보는 주기와 기준은 references/study-candidates.md 가 소유한다.
+//     하나 이상이면 STUDY-OPEN 줄을 낸다. 알리는 말과 고른 뒤의 절차는 references/study-candidates.md 가 소유한다.
 //     폴더가 없으면 내지 않는다. 머리를 읽지 못한 파일과 옛 표 파일(candidates.md)은 세지 않고 stderr 에 알린다.
 //     옛 표 파일은 study-candidates.ts migrate 로 옮기라고 알린다. 경고라 종료 코드를 바꾸지 않는다.
 //
