@@ -7,8 +7,12 @@
 //   SHA 바로 뒤는 줄 끝이거나 공백, 탭, `.`, `,`, `;`, `:`, `(` 다. worker 가 같은 줄에 붙인 설명(`head <SHA> (리뷰 P3 1건)`)도 인정한다.
 //   SHA 가 40자리보다 길거나 짧으면 근거가 아니다.
 // 같은 dispatch 의 준비 상태를 우선하고 그 안에서 가장 늦은 시각을 고른다. 없으면 같은 Task 의 다른 dispatch 에도 같은 기준을 쓴다.
+// 리뷰 dispatch(지시서에 `리뷰 PR:` 줄이 있다. 부르는 쪽이 options.isReview 로 알린다)는 PR 을 열지 않아 준비 상태가 없다.
+//   그 dispatch 는 준비 상태가 없으면 같은 dispatch, 같은 발신자가 앞서 보낸 결과 status 를 근거로 센다.
+//   결과 status 는 제목이나 본문의 한 줄이 `판정:`, `완료:`, `미완료:` 로 시작하는 것이다(목록 기호와 굵은 글씨는 받는다).
+//   `완료:`, `미완료:` 는 verify 보고의 첫 줄이다. 다른 dispatch 의 결과는 세지 않는다. 리뷰를 다시 띄우면 새 결과를 보내야 한다
 // classify 는 메시지의 복사본에 completionVerification 을 붙인다.
-//   ready           근거가 있다. pr, head, statusMessageId 를 함께 둔다
+//   ready           근거가 있다. pr, head, statusMessageId 를 함께 둔다. 리뷰 dispatch 의 결과 근거면 kind: 'review' 와 statusMessageId 만 둔다
 //   failure_report  worker_done --outcome failed 같은 실패 보고다. PR 준비를 요구하지 않는다
 //   suspicious      근거가 없다. type 을 suspicious_worker_done 으로, 원래 type 을 originalType 으로 둔다
 
@@ -21,6 +25,16 @@ type Json = Record<string, unknown>
 const READY = /(?<=^|\n)준비됨[ \t]+#([1-9][0-9]*),[ \t]*head[ \t]+([0-9a-f]{40})(?=[ \t.,;:(]|\n|$)/i
 // Python 의 datetime.fromisoformat 이 읽던 꼴이다. 날짜만, 공백 구분, 콜론 없는 시간대도 받는다
 const ISO = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?)(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/i
+
+// 리뷰 결과 줄(머리 주석의 「리뷰 dispatch」). 줄 경계는 READY 와 같이 \n 만이다
+const VERDICT = /(?<=^|\n)[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:판정|완료|미완료)(?:\*\*)?[ \t]*[:：]/
+
+export type ClassifyOptions = { isReview?: (dispatch: string) => boolean }
+
+// 메시지의 제목과 본문에 리뷰 결과 줄이 있는지
+export function hasVerdict(message: Json): boolean {
+  return VERDICT.test(`${String(message.subject || '')}\n${String(message.body || '')}`)
+}
 
 // ISO 시각을 epoch ms 로 읽는다. 시간대가 없으면 UTC 로 본다. orca 는 UTC 로 낸다.
 // Date.parse 에 그대로 넘기지 않는 것은 시간대 없는 시각을 지역 시각으로 읽기 때문이다. 읽지 못하면 null.
@@ -85,7 +99,7 @@ function earlier(candidate: Json, item: Json, batch: Json[]): boolean {
   return batch.some((message) => isDeepStrictEqual(message, candidate))
 }
 
-export function classify(messages: Json[], history: Json[] = []): Json[] {
+export function classify(messages: Json[], history: Json[] = [], options: ClassifyOptions = {}): Json[] {
   const output: Json[] = []
   const previous = [...history]
   for (const message of messages) {
@@ -121,6 +135,18 @@ export function classify(messages: Json[], history: Json[] = []): Json[] {
           }
           selected = candidate
           ready = { status: 'ready', ...found, statusMessageId: candidate.id ?? null }
+        }
+        if (!ready && task && dispatch && options.isReview?.(String(dispatch))) {
+          const from = sender(item)
+          const results = previous.filter((candidate) => candidate.type === 'status' && from && sender(candidate) === from
+            && context(candidate)[0] === task && context(candidate)[1] === dispatch && hasVerdict(candidate)
+            && earlier(candidate, item, messages.slice(0, output.length)))
+          const latest = results.reduce<Json | null>((best, candidate) => {
+            if (!best) return candidate
+            const [time, bestTime] = [isoTime(candidate.created_at || candidate.createdAt), isoTime(best.created_at || best.createdAt)]
+            return time !== null && bestTime !== null && time > bestTime ? candidate : best
+          }, null)
+          if (latest) ready = { status: 'ready', kind: 'review', statusMessageId: latest.id ?? null }
         }
         item.completionVerification = ready ?? { status: 'suspicious', reason: '같은 Task의 앞선 PR 준비 상태가 없다' }
         if (!ready) {

@@ -12,7 +12,8 @@
 //       --json           사람이 읽는 글 대신 분류 결과를 JSON 으로 낸다
 //       --stop-reports   턴만 끝낸 멈춤 보고도 본문째 낸다(아래 「멈춤 보고」)
 //       --completion-contract ready|none
-//                        기본 ready: 앞선 PR 준비 상태 검사(lib/completion.ts). PR 없는 작업만 none 사용
+//                        기본 ready: 앞선 PR 준비 상태 검사(lib/completion.ts). PR 없는 작업만 none 사용.
+//                        리뷰 dispatch 는 작업 디렉터리 저장소의 띄우기 기록으로 알아보고 결과 status 를 근거로 센다
 //
 // FILE 에는 JSON 객체가 여럿 이어져 있어도 되고, keepalive 줄과 하네스가 붙인 종료 코드 줄이 섞여 있어도 된다.
 // `-` 를 주면 표준 입력에서 읽는다.
@@ -37,9 +38,11 @@ import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { classify, isoTime } from './lib/completion.ts'
+import { mainCheckout } from './lib/git.ts'
 import { orca } from './lib/orca.ts'
 import { isQuietStop, stopDispatch, stopReason } from './lib/stop-reports.ts'
 import { pyJson, pyStr as text } from './lib/py.ts'
+import { reviewPrOfDispatch } from './lib/review.ts'
 
 type Json = Record<string, unknown>
 type Triage = { groups: Record<string, Json[]>; heartbeats: Record<string, number>; quiet_stops: Record<string, number> }
@@ -138,7 +141,9 @@ function triage(messages: Json[], since: number | null, contract: string, stopRe
   const groups: Record<string, Json[]> = {}
   const heartbeats: Record<string, number> = {}
   const quietStops: Record<string, number> = {}
-  const checked = contract === 'ready' ? classify(messages) : messages
+  // 리뷰 dispatch 는 결과 status 를 근거로 센다(lib/completion.ts 의 「리뷰 dispatch」). 띄우기 기록은 작업 디렉터리의 저장소에서 읽는다
+  const repo = mainCheckout(process.cwd())
+  const checked = contract === 'ready' ? classify(messages, [], { isReview: (dispatch) => reviewPrOfDispatch(repo, dispatch) !== null }) : messages
   for (const m of checked) {
     // 시각을 읽지 못한 메시지는 뺄지 정할 수 없어 남긴다
     const created = m.created_at ? isoTime(m.created_at) : null
