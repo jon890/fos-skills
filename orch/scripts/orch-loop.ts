@@ -160,6 +160,9 @@
 //
 // 멈춤 확인: 맡은 Run 마다 그 Run 의 worker-list(위 「worker 찾기」 와 같은 조회)에서 살아 있는 dispatch(LIVE_DISPATCH)의 터미널 화면을
 //     `orca terminal read --screen` 으로 읽고 lib/screen.ts 의 readScreen 으로 판정한다. 등록되지 않은 Run 의 worker 화면은 읽지 않는다.
+//     구조화 worker(터미널 handle 이 structworker_ 로 시작하거나 startOptions.mode.mode 가 structured)는 화면이 없어 읽지 않는다.
+//     `orca orchestration worker-show` 의 worker.stage 와 worker.lastError 로 판정한다(lib/sessions.ts 의 structuredScreen).
+//     lastError 가 있으면 error 멈춤이고, 한도 문구면 사용 한도다. 움직임 확인에 넘길 화면은 없다. worker-show 를 읽지 못하면 화면을 읽지 못한 것과 같다.
 //     입력하지 않는다. 다시 시도시키는 일과 그 횟수 상한은 저장소의 worker-stalled 핸들러가 정한다(references/hooks.md, ADR-013).
 //     사용 한도 화면은 stall_ticks 와 무관하게 dispatch 마다 WORKER-LIMITED 알림을 한 번 쓴다. agent-selection.md 의 한도 복구를 안내한다.
 //     멈춤은 error(모델 오류로 멈춘 화면)와 idle(입력란이 빈 화면)이다. pipeline.stall_ticks 가 상태마다 기준 틱 수를 정하고, 0 이면 보지 않는다.
@@ -390,7 +393,7 @@ import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './l
 import { isUserDecision, notifyDecisions } from './lib/decisions.ts'
 import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
-import { limitedScreen } from './lib/sessions.ts'
+import { isStructured, limitedScreen, structuredScreen } from './lib/sessions.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
 import { collectStages, collectWorkers, idleNotices, markScreen, movementSettings, readRecords, stageNotices, tailHash } from './lib/movement.ts'
 import type { MovementSettings, ScreenMark } from './lib/movement.ts'
@@ -1416,18 +1419,33 @@ async function watchStalls(
       const dispatch = String(row.dispatchId ?? '')
       const terminal = String(row.agentTerminalHandle ?? '')
       if (!dispatch || !terminal || !LIVE_DISPATCH.has(String(row.dispatchStatus))) continue
-      const read = orcaJson<Record<string, unknown>>(['terminal', 'read', '--terminal', terminal, '--screen'])
-      if (!read.ok || !isObject(read.data)) {
-        keep(dispatch)
-        failed.push(`${terminal} 화면을 읽지 못했다: ${oneLine(read.ok ? '결과가 객체가 아니다' : read.error)}`)
-        continue
+      let lines: string[]
+      let limited: boolean
+      let screen: ReturnType<typeof readScreen>
+      if (isStructured(terminal, row.startOptions)) {
+        // 구조화 worker 는 화면이 없다. worker-show 의 단계와 마지막 오류로 판정한다(lib/sessions.ts 의 structuredScreen)
+        const shown = orcaJson<Record<string, unknown>>(['orchestration', 'worker-show', '--dispatch', dispatch])
+        if (!shown.ok || !isObject(shown.data)) {
+          keep(dispatch)
+          failed.push(`${dispatch} worker-show 를 읽지 못했다: ${oneLine(shown.ok ? '결과가 객체가 아니다' : shown.error)}`)
+          continue
+        }
+        ;({ lines, limited, screen } = structuredScreen(shown.data))
+      } else {
+        const read = orcaJson<Record<string, unknown>>(['terminal', 'read', '--terminal', terminal, '--screen'])
+        if (!read.ok || !isObject(read.data)) {
+          keep(dispatch)
+          failed.push(`${terminal} 화면을 읽지 못했다: ${oneLine(read.ok ? '결과가 객체가 아니다' : read.error)}`)
+          continue
+        }
+        lines = screenLines(read.data)
+        // 움직임 확인이 화면이 바뀌었는지 본다. 화면을 두 번 읽지 않으려고 여기서 넘긴다
+        tails.set(dispatch, screenTail(lines))
+        limited = limitedScreen(lines)
+        screen = readScreen(lines)
       }
-      const lines = screenLines(read.data)
-      // 움직임 확인이 화면이 바뀌었는지 본다. 화면을 두 번 읽지 않으려고 여기서 넘긴다
-      tails.set(dispatch, screenTail(lines))
       // 사용 한도는 설정과 관계없이 dispatch 생애에 한 번 알린다. 회복한 화면에서도 기록을 유지한다.
       let limitedNotified = previous[dispatch]?.limitedNotified === true
-      const limited = limitedScreen(lines)
       if (limited && !limitedNotified) {
         const text = `사용 한도 ${dispatch} ${terminal}: references/agent-selection.md 의 「사용 한도에 걸렸을 때」에 따라 제공자나 모델을 바꿔 이어받는다`
         try {
@@ -1443,7 +1461,6 @@ async function watchStalls(
         stalls[dispatch] = { run, terminal, state: 'limited', hash: '', errors: 0, since: iso(), ticks: 0, fired: limitedNotified, limitedNotified }
       }
       if (limited) continue
-      const screen = readScreen(lines)
       if (screen.state !== 'error' && screen.state !== 'idle') continue
       const state: StallState = screen.state
       const limit = ctx.stallTicks[state]

@@ -1,7 +1,7 @@
 // orch-loop.ts 의 멈춤 확인을 가짜 orca 와 가짜 화면으로 본다. Orca 와 GitHub 에는 닿지 않는다.
 // 틱 자식(--tick)을 바로 돌리고, 부모가 하듯 결과의 stalls 와 errors 를 loop.json 에 옮겨 다음 틱으로 잇는다.
 // 가짜 orca 는 orca.json 의 workers_by_run(Run 마다의 worker-list 행), screens(터미널마다의 화면 문자열. 문자열이 아니면 tail 에 그대로 둔다),
-// questions_by_run(Run 마다의 미답변 질문)으로 답하고 받은 인자를 orca-calls.jsonl 에 적는다. terminal send 에는 턴이 시작됐다고 답한다.
+// questions_by_run(Run 마다의 미답변 질문), shows(dispatch 마다의 worker-show 결과)로 답하고 받은 인자를 orca-calls.jsonl 에 적는다. terminal send 에는 턴이 시작됐다고 답한다.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -30,6 +30,11 @@ const sub = argv[1]
 if (sub === 'worker-list') reply({ workers: (st.workers_by_run || {})[flag('--run')] || [], page: {} })
 else if (sub === 'check') reply({ messages: (st.questions_by_run || {})[flag('--run')] || [] })
 else if (sub === 'inbox') reply({ messages: [] })
+else if (sub === 'worker-show') {
+  const shown = (st.shows || {})[flag('--dispatch')]
+  if (shown === undefined) process.stdout.write(JSON.stringify({ ok: false, error: { code: 'dispatch_not_found' } }) + '\\n')
+  else reply(shown)
+}
 else if (argv[0] === 'terminal' && sub === 'read') {
   const text = (st.screens || {})[flag('--terminal')]
   if (text === undefined) process.stdout.write(JSON.stringify({ ok: false, error: { code: 'terminal_not_found' } }) + '\\n')
@@ -395,6 +400,45 @@ describe('error 멈춤', () => {
     assert.equal(stallOf(result, 'd1')?.ticks, 1)
     assert.match(String((result.errors as Json)['stalls@A']), /^tA 화면을 읽지 못했다/)
     assert.equal(runEvents('A').filter((row) => String(row.text).startsWith('stalls:')).length, 1)
+  })
+})
+
+describe('구조화 worker', () => {
+  beforeEach(() => register('A', '2026-01-01T00:00:00Z'))
+  const show = (lastError: unknown) => ({ worker: { stage: 'input_accepted', lastError } })
+
+  test('화면을 읽지 않고 worker-show 의 마지막 오류로 error 멈춤을 센다', () => {
+    orca({ workers_by_run: { A: [worker('d1', 'structworker_a')] }, shows: { d1: show('Agent hit an error: model overloaded') } })
+    tick()
+    const result = tick()
+    assert.deepEqual(screenReads(), [])
+    assert.equal(stallOf(result, 'd1')?.fired, true)
+    assert.deepEqual(stalledEvents('A').map((row) => row.text), ['d1 error 2틱 structworker_a'])
+    assert.equal((result.errors as Json)['stalls@A'], null)
+  })
+
+  test('startOptions.mode.mode 가 structured 면 handle 이 term_ 이어도 화면을 읽지 않는다', () => {
+    const row = { ...worker('d1', 'term_a'), startOptions: { mode: { mode: 'structured' } } }
+    orca({ workers_by_run: { A: [row] }, shows: { d1: show(null) } })
+    const result = tick()
+    assert.deepEqual(screenReads(), [])
+    assert.deepEqual(result.stalls, {})
+    assert.equal((result.errors as Json)['stalls@A'], null)
+  })
+
+  test('세션 한도 오류는 사용 한도로 한 번 알린다', () => {
+    orca({ workers_by_run: { A: [worker('d1', 'structworker_a')] }, shows: { d1: show({ message: 'Agent hit an error: You have reached your session limit' }) } })
+    tick()
+    tick()
+    assert.equal(runEvents('A').filter((row) => row.kind === 'WORKER-LIMITED').length, 1)
+    assert.deepEqual(stalledEvents('A'), [])
+  })
+
+  test('worker-show 를 읽지 못하면 항목을 그대로 두고 stalls@<Run> 으로 알린다', () => {
+    orca({ workers_by_run: { A: [worker('d1', 'structworker_a')] }, shows: {} })
+    const result = tick()
+    assert.match(String((result.errors as Json)['stalls@A']), /^d1 worker-show 를 읽지 못했다/)
+    assert.deepEqual(screenReads(), [])
   })
 })
 

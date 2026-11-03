@@ -10,8 +10,8 @@ import { allWorkers, rowHandles } from './ownership.ts'
 import type { WorkerRow } from './ownership.ts'
 import { pathOf } from './paths.ts'
 import { shQuote } from './py.ts'
-import { classify, screenLines, screenTail } from './screen.ts'
-import type { ScreenState } from './screen.ts'
+import { classify, LINE_BREAK, screenLines, screenTail } from './screen.ts'
+import type { Screen, ScreenState } from './screen.ts'
 import { branchesOf } from './spec.ts'
 import { LIVE_DISPATCH, worktreePaths } from './workers.ts'
 
@@ -64,6 +64,28 @@ export const LIMIT_LINE = /usage limit reached|you['’]ve hit your\b.*\blimit|o
 export function limitedScreen(lines: string[]): boolean {
   const tail = screenTail(lines, LIMIT_TAIL)
   return classify(tail) !== 'working' && tail.some((line) => LIMIT_LINE.test(line))
+}
+
+// 구조화 worker(터미널 handle 이 structworker_ 로 시작하거나 startOptions.mode.mode 가 structured)는 화면이 없어 `terminal read` 가 실패한다.
+// 그 worker 는 worker-show 의 worker.stage 와 worker.lastError 로 판정한다. lastError 가 있으면 error 멈춤이고 없으면 멈춤이 아니다.
+// 한도 판정은 화면과 같은 LIMIT_LINE 에 세션 한도(「Agent hit an error: ... session limit」)를 더한다.
+// dispatch.lastFailure 는 보지 않는다. 다시 시도해 살아난 dispatch 에도 앞 실패가 남는다
+export const STRUCTURED_PREFIX = 'structworker_'
+const SESSION_LIMIT = /\bsession limit\b/iu
+
+export function isStructured(handle: string, startOptions: unknown): boolean {
+  const mode = typeof startOptions === 'object' && startOptions !== null ? (startOptions as Json).mode : null
+  return handle.startsWith(STRUCTURED_PREFIX) || (typeof mode === 'object' && mode !== null && (mode as Json).mode === 'structured')
+}
+
+export function structuredScreen(shown: Json): { lines: string[]; limited: boolean; screen: Screen } {
+  const worker = (typeof shown.worker === 'object' && shown.worker !== null ? shown.worker : {}) as Json
+  const raw = worker.lastError
+  const error = typeof raw === 'string' ? raw.trim()
+    : typeof raw === 'object' && raw !== null ? String((raw as Json).message ?? JSON.stringify(raw)).trim() : ''
+  const lines = [`stage: ${String(worker.stage ?? '') || '-'}`, ...(error ? error.split(LINE_BREAK) : [])]
+  const limited = !!error && (LIMIT_LINE.test(error) || SESSION_LIMIT.test(error))
+  return { lines, limited, screen: { state: error ? 'error' : 'working', block: lines, errors: error ? 1 : 0 } }
 }
 
 function rowWorktree(row: WorkerRow): string {
