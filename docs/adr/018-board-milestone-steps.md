@@ -8,7 +8,7 @@
   `board-sync.ts` 는 PR 이 열리면 `[pr]`, 머지되면 `[merge]`, 배포 워크플로가 머지 커밋을 성공으로 배포하면 `[deploy]` 단계를 끝낸다. `finish-pr.ts` 도 배포 확인 뒤 같은 규칙으로 고친다.
   `[release]` 단계는 `board-release.ts` 가 끝낸다. 릴리스 PR 을 주면 그 머지 커밋이 품은 PR 의 항목을 찾는다. 언제 부를지는 저장소가 정한다.
   업무의 중간 PR 은 `[deploy]` 까지만 끝내고 `pr` 필드을 비워 `merged-pr` 에 쌓는다. 마지막 PR 은 `pr` 필드에 남는다.
-  마지막 PR 이 done 지점(`board.done_after`, 기본 `merge`)에 닿을 때만 항목을 done 으로 바꾼다.
+  마지막 PR 이 done 지점(`board.done_after`, 기본 `merge`)에 닿고 그 뒤에 끝나지 않은 수동 단계가 없을 때만 항목을 done 으로 바꾼다. done 지점 뒤에 남아도 되는 것은 나중 사건이 끝낼 사건 단계뿐이다.
   `stages` 필드이 없는 옛 항목은 예전 규칙(그 PR 번호가 적힌 단계만 끝낸다)으로 읽는다.
   사용자 결정 2026-10-27: 보드는 사용자 마일스톤만 담는다. 배포와 릴리스의 흐름은 저장소마다 달라 공용 스킬의 기본값으로 두지 않는다.
 - **맥락**: 단계 줄을 지시서 「할 일」 의 번호 줄로 만들었다. 머지 반영은 그 PR 번호(`#N`)가 적힌 단계만 끝내는데 「할 일」 줄에는 PR 번호가 없다.
@@ -24,7 +24,7 @@
 - **결과**:
   - 얻는 것: PR, 머지, 배포가 일어나면 코디네이터가 보드를 고치지 않아도 단계가 끝난다. 진행률이 사용자가 보는 마일스톤을 따라간다.
   - 얻는 것: `pr` 필드이 비어도 `branch` 필드으로 PR 을 찾아 채운다. 끝난 worker 의 워크트리가 정리되면 `worktree` 필드을 비워 「worker 없음」 이 남지 않는다.
-  - 감당할 것: 마일스톤 항목은 마지막 PR 을 판정하지 못하면 마지막으로 본다. done 지점 전이면 doing 으로 남아 업무 완료로 번지지 않지만, 기본 done 지점(merge)에서는 뒤 PR 이 남은 항목도 done 이 될 수 있다. 그때는 다음 지시서에 `보드 항목 id:` 를 적어 다시 연다.
+  - 감당할 것: `finish-pr.ts` 는 마지막 PR 을 판정하지 못하면 중간 PR 로 본다. 실제로 마지막 PR 이었으면 항목이 doing 으로 남아 코디네이터가 done 으로 바꾼다. `board-sync.ts` 는 판정하지 못하면 마지막으로 보지만, 뒤 PR 의 수동 단계가 남은 항목은 done 이 되지 않는다(2026-11-03, 뒤 PR 단계가 남은 항목이 두 번 done 이 된 일 뒤에 바꿨다).
   - 감당할 것: 배포를 기다리는 항목은 틱마다 PR 상태와 배포 실행 목록을 한 번씩 읽는다.
   - 감당할 것: `[release]` 단계를 둔 저장소가 `board-release.ts` 를 부르지 않으면 그 항목은 doing 으로 남는다.
 - **적용 범위**: 단계 정의와 사건 규칙은 `orch/scripts/lib/milestones.ts`, 사건 반영은 `orch/scripts/board-sync.ts`, `orch/scripts/finish-pr.ts`, `orch/scripts/board-release.ts` 의 머리 주석, 띄울 때 만들기는 `orch/scripts/lib/board.ts` 의 `registerBoard`, 코디네이터의 쓰는 법은 [`../../orch/references/board.md`](../../orch/references/board.md) 가 소유한다.

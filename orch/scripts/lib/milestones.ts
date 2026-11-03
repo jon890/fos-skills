@@ -14,7 +14,8 @@
 //     사건 하나는 그 사건과 앞 사건의 단계를 모두 끝낸다. 업무의 중간 PR 은 deploy 까지만 끝내고, 마지막 PR 만 release 와 done 으로 간다.
 // done 지점: board.done_after(기본 merge)의 사건 단계다. 항목에 그 사건 단계가 없으면 항목에 있는 가장 늦은 사건 단계다.
 //     마지막 PR 이 그 지점에 닿으면 그 번호까지의 남은 단계(수동 단계 포함)를 끝내고 done 으로 바꾸고 worktree 칸을 비운다.
-//     그 뒤 번호의 단계는 그대로 둔다
+//     그 뒤 번호의 사건 단계는 그대로 둔다. 그 뒤에 끝나지 않은 수동 단계가 있으면 done 으로 바꾸지 않고 사건 단계만 끝낸다.
+//     여러 PR 로 나눈 항목의 다음 PR 단계를 남긴 채 done 이 된 일이 있었다(2026-11-02 gersang-lab b87-asset-object-storage)
 
 import { detailArgs, detailText, prNumbers, withNote } from './board.ts'
 import type { BoardDetail, BoardItem, BoardStep } from './board.ts'
@@ -163,7 +164,7 @@ export function doneStep(stages: Stages, doneAfter: StageKind | null): number | 
 }
 
 // 사건 하나로 끝낼 보드 명령. reached 와 그 앞 사건의 끝나지 않은 단계를 끝낸다.
-// 중간 PR(last 가 false)은 deploy 까지만 끝내고 done 으로 가지 않는다. 마지막 PR 이 done 지점에 닿았으면
+// 중간 PR(last 가 false)은 deploy 까지만 끝내고 done 으로 가지 않는다. 마지막 PR 이 done 지점에 닿았고 그 뒤에 남은 수동 단계가 없으면
 // 그 번호까지의 남은 단계를 끝내고 done 으로 바꾸고 worktree 칸을 비운다. done 은 done 으로 바꿨는지다
 export function advanceCommands(
   id: string,
@@ -175,8 +176,13 @@ export function advanceCommands(
   const top = opts.last ? order(reached) : Math.min(order(reached), order('deploy'))
   const numbers = new Set(STAGE_KINDS.filter((kind) => order(kind) <= top && stages[kind] !== undefined).map((kind) => stages[kind] as number))
   const point = doneStep(stages, opts.doneAfter)
-  const done = opts.last && point !== null && numbers.has(point)
-  const finish = steps.filter((step) => !step.done && (numbers.has(step.number) || (done && step.number <= (point as number))))
+  const reaches = opts.last && point !== null && numbers.has(point)
+  const closing = steps.filter((step) => !step.done && (numbers.has(step.number) || (reaches && step.number <= (point as number))))
+  // done 지점 뒤의 사건 단계(release 처럼 나중 사건이 끝낸다)만 남길 수 있다. 수동 단계가 남으면 아직 할 일이 있어 done 으로 가지 않는다
+  const events = new Set(Object.values(stages))
+  const left = steps.filter((step) => !step.done && !closing.includes(step) && !events.has(step.number))
+  const done = reaches && left.length === 0
+  const finish = done ? closing : steps.filter((step) => !step.done && numbers.has(step.number))
   const cmds = finish.map((step) => ['step', id, String(step.number)])
   if (done) cmds.push(['set', id, 'done', '--worktree', ''])
   return { cmds, done }

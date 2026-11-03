@@ -129,7 +129,7 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 브랜치: `review/pr-1137`
 ```
 
-**`launch-worker` 가 `리뷰 PR:` 줄을 보고 PR head 를 받아 워크트리를 그 커밋에 detached 로 둔다.** 받는 일은 코디네이터 쪽 `launch-worker` 프로세스가 주 checkout 에서 하고, 공유 저장소에 로컬 브랜치가 생기지 않는다.
+**`launch-worker` 가 `리뷰 PR:` 줄을 보고 PR head 를 받아 워크트리를 그 커밋에 detached 로 둔다.** 받는 일은 코디네이터 쪽 `launch-worker` 프로세스가 주 checkout 에서 하고, 받을 때 쓴 임시 ref 는 바로 지운다. 워크트리를 만들 때 `브랜치:` 줄의 `review/pr-<N>` 로컬 브랜치가 생기고, 정리가 지운다.
 지시서에는 「worker 는 fetch 하지 않고 준비된 HEAD 를 리뷰한다. 브랜치를 만들거나 `git fetch origin pull/N/head` 를 부르지 않는다」 를 적는다.
 원격이 SSH 별칭인 저장소에서는 worker 세션의 fetch 가 인증으로 막혔다(10-31 실측). 옛 리뷰 지시서처럼 worker 가 `pr-N` 브랜치를 만들면, PR 을 열지 않는 브랜치라 정리가 PR 로 찾지 못해 쌓였다(10-31 실측 26개).
 PR head 를 받지 못해 멈추면 원인을 고친 뒤 같은 지시서로 `--worktree` 를 주어 다시 띄운다. 그때 다시 받아 옮긴다. 이미 PR head 에 놓인 워크트리면 준비 명령을 다시 돌리지 않는다.
@@ -141,7 +141,7 @@ PR head 를 받지 못해 멈추면 원인을 고친 뒤 같은 지시서로 `--
 10-31 리뷰 셋이 모두 생성물이 없어 서비스와 UI 테스트를 수집 단계에서 못 돌리고 코드 읽기로만 끝났다.
 
 **리뷰가 끝난 뒤의 정리는 스크립트가 한다.** 리뷰 워크트리는 `remove-worktree.ts --delete-branch` 로 지운다. detached 워크트리여도 그것을 만든 `review/pr-<N>` 을 함께 지운다.
-두 정리 모두 PR 이 MERGED 나 CLOSED 이고 모든 Run 에서 그 리뷰 dispatch 가 끝났을 때만 지운다. 남은 리뷰 브랜치와 리뷰 지시서는 `cleanup-sweep` 이 지운다. 판정은 스크립트 머리 주석의 「리뷰 흔적」 이 소유한다.
+두 정리 모두 PR 이 MERGED 나 CLOSED 이고 모든 Run 에서 그 리뷰 dispatch 가 끝났을 때만 지운다. 남은 리뷰 워크트리, 리뷰 브랜치와 리뷰 지시서는 `cleanup-sweep` 이 지운다. 리뷰 워크트리는 그 리뷰 dispatch 가 끝났고, 모든 Run 에서 그 경로를 쓰는 살아 있는 dispatch 가 없고, 변경이 없으면 PR 이 열려 있어도 지운다. 판정은 스크립트 머리 주석의 「리뷰 흔적」 이 소유한다.
 
 ## 스킬 개선 후보를 모으게 할 때
 

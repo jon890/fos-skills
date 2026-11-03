@@ -17,11 +17,16 @@
 //     그 뒤로 git 은 그 브랜치를 워크트리의 것으로 보지 않아 remove-worktree --delete-branch 가 지우지 못했다(10-31 실측).
 //     워크트리 HEAD 의 reflog 에서 가장 오래된 `checkout: moving from <브랜치> to ` 줄의 <브랜치> 를 읽는다.
 //     그 이름의 로컬 브랜치가 지금 있을 때만 낸다. reflog 가 없거나 checkout 줄이 없으면 null 이다.
+//
+// 리뷰 dispatch(reviewPrOfDispatch): launch-worker 의 띄우기 기록(lib/launched.ts)이 가리키는 지시서가 리뷰 지시서인 dispatch 다.
+//     완료 검증(lib/completion.ts)이 결과 status 를 근거로 세고, cleanup-sweep 이 detached 리뷰 워크트리를 알아보는 데 쓴다.
+//     기록이 없거나 지시서를 읽지 못하면 지시서 이름만 본다.
 
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { ghJson } from './gh.ts'
 import { git } from './git.ts'
+import { readLaunch } from './launched.ts'
 import { allLiveSpecPaths, LINE_BREAK } from './spec.ts'
 
 const BRANCH = /^(?:pr-(\d+)|review\/pr-(\d+)(?:-[A-Za-z0-9._-]+)?)$/
@@ -119,4 +124,17 @@ export function reviewKeepReason(pr: ReviewPr | null, n: number, live: Set<numbe
 // 모든 Run 의 살아 있는 리뷰 PR 번호. 판정할 수 없으면 null
 export function liveReviews(): Set<number> | null {
   return liveReviewPrs(allLiveSpecPaths())
+}
+
+// 머리 주석의 「리뷰 dispatch」. 리뷰 dispatch 면 그 PR 번호, 아니면 null
+export function reviewPrOfDispatch(repo: string, dispatch: string): number | null {
+  const spec = readLaunch(repo, dispatch)?.spec
+  if (!spec) return null
+  let text: string | null
+  try {
+    text = readFileSync(spec, 'utf8')
+  } catch {
+    text = null
+  }
+  return reviewPrOf(basename(spec), text)
 }

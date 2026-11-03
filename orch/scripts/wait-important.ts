@@ -36,6 +36,8 @@
 //     `inbox --limit 3000` 에서 이 Run 의 행만 골라 다시 대조한다. 둘 다 ack 하거나 소비하지 않는다.
 //     근거가 없거나 이력을 읽지 못하면 `의심스러운 worker_done` 으로 따로 표시하고 자동 ack 하지 않은 채 종료 코드 6 으로 끝난다.
 //     `worker_done --outcome failed` 같은 명시적인 실패 보고는 준비 상태 없이도 처리할 묶음으로 낸다.
+//     리뷰 dispatch(띄우기 기록의 지시서에 `리뷰 PR:` 줄이 있다, lib/review.ts 의 reviewPrOfDispatch)는 PR 을 열지 않는다.
+//     그 dispatch 는 앞서 보낸 결과 status(`판정:`, `완료:`, `미완료:` 줄)를 근거로 센다. 근거는 ready 이고 pr 은 null 이다.
 //
 // 출력:
 //     처리할 묶음이 오면 그 `check --json` 결과를 한 줄 JSON 으로 내고, 마지막 줄에 `LAST_DELIVERY <id>` 를 낸다.
@@ -170,6 +172,7 @@ import { orcaBin, orcaJson, withFull } from './lib/orca.ts'
 import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
 import { pyJson, pyStr as text, shQuote } from './lib/py.ts'
+import { reviewPrOfDispatch } from './lib/review.ts'
 import { judge, readScreens, screenHandles } from './lib/worker-state.ts'
 import { adoptHint } from './lib/sessions.ts'
 
@@ -774,11 +777,14 @@ function hasHandler(event: string, runId: string): boolean {
 function verifyCompletion(messages: Json[], runId: string): Json[] {
   const rows = (result: Json | null) => (result && Array.isArray(result.messages) ? result.messages.map(obj) : [])
   const statuses = rows(orcaResult(['check', '--run', runId, '--all', '--types', 'status'], HISTORY_TIMEOUT_MS))
-  const first = classify(messages, statuses)
+  // 리뷰 dispatch 는 결과 status 를 근거로 센다(lib/completion.ts 의 「리뷰 dispatch」)
+  const repo = contextFor(runId).repo
+  const options = { isReview: (dispatch: string) => reviewPrOfDispatch(repo, dispatch) !== null }
+  const first = classify(messages, statuses, options)
   if (!first.some((m) => m.type === 'suspicious_worker_done')) return first
   const inbox = rows(orcaResult(['inbox', '--limit', String(INBOX_LIMIT)], HISTORY_TIMEOUT_MS))
   const mine = inbox.filter((m) => m.type === 'status' && (m.run_id ?? m.runId) === runId)
-  return mine.length ? classify(messages, [...statuses, ...mine]) : first
+  return mine.length ? classify(messages, [...statuses, ...mine], options) : first
 }
 
 // gh 로 준비 상태의 PR 을 읽어 이벤트의 pr 필드로 옮긴다. 읽지 못하면 null

@@ -53,7 +53,8 @@
 //     merged-pr 에 적은 PR 은 board-sync.ts 가 다시 판정하지 않으므로 --intermediate 가 덮이지 않는다.
 //     찾은 항목이 둘 이상이면 어느 것인지 알 수 없어 건너뛴다
 //     마일스톤 항목(stages 칸이 있다, lib/milestones.ts)은 위 대신 mergedCommands 로 [pr], [merge] 단계와 배포가 성공했으면 [deploy] 단계를 끝낸다.
-//     판정하지 못한 PR 은 board-sync.ts 와 같이 마지막으로 본다. 마지막 PR 이 done 지점(board.done_after, 기본 merge)에 닿았을 때만 done 으로 바꾸고, 아니면 doing 으로 두고 PR 을 merged-pr 에 적는다.
+//     판정하지 못한 PR 은 중간 PR 로 본다. 마지막 PR 이 done 지점(board.done_after, 기본 merge)에 닿았고 그 뒤에 끝나지 않은 수동 단계가 없을 때만
+//     done 으로 바꾸고, 아니면 doing 으로 두고 PR 을 merged-pr 에 적는다.
 //     마지막 PR 은 pr 칸에 남겨 board-release.ts 가 찾게 한다. 중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓는다
 //
 //     업무 완료는 hooks/after-deploy.ts 가 이벤트의 last_of_task 와 deploy 를 보고 처리한다.
@@ -621,11 +622,11 @@ async function finish(args: Args, repo: string): Promise<number> {
     log(`보드 ${item.id} 는 사건 꼬리표가 있어 board-sync 에 맡긴다`)
   } else if (item && stages) {
     // 마일스톤 항목은 done 지점에 닿을 때까지 doing 으로 둔다. 중간 PR 은 merged-pr 에 쌓아 board-sync 가 다시 판정하지 않는다.
-    // 판정하지 못한 PR 은 board-sync 와 같이 마지막으로 본다. done 지점 전이면 doing 으로 남아 업무 완료로 번지지 않는다
-    const boardLast = last || !verdict.known
-    const result = setBoardMilestone(args, repo, item.id, stages, deploy, boardLast, boardLast ? null : noteLine(verdict.prs, verdict.specs))
+    // 판정하지 못한 PR 은 중간 PR 로 본다. 「중간(판정하지 못했다)」 로 적고도 done 으로 바꿔 남은 단계가 보드에서 사라졌다(2026-11-02)
+    const result = setBoardMilestone(args, repo, item.id, stages, deploy, last, last ? null : noteLine(verdict.prs, verdict.specs))
+    const why = !verdict.known ? '마지막 PR 인지 판정하지 못해' : last ? 'done 지점 전이거나 끝나지 않은 단계가 남아' : '중간 PR 이라'
     if (result === 'done') log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)
-    else if (result === 'doing') log(`보드 ${item.id} 는 ${boardLast ? 'done 지점 전이라' : '중간 PR 이라'} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
+    else if (result === 'doing') log(`보드 ${item.id} 는 ${why} 단계만 끝내고 PR ${args.pr} 를 merged-pr 에 적었다`)
     else problems.push(`보드 ${item.id} 에 PR ${args.pr} 를 반영하지 못했다`)
   } else if (item && (last || item.by === 'id')) {
     if (setBoardDone(args, repo, item.id)) log(`보드 ${item.id} done${item.by === 'branch' ? '(브랜치로 찾았다)' : ''}`)

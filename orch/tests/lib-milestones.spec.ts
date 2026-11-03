@@ -137,8 +137,18 @@ describe('사건마다 끝낼 단계', () => {
 
   test('마지막 PR 이 done 지점에 닿으면 그 번호까지의 수동 단계도 끝내고 done 으로 바꾼다', () => {
     const custom = { pr: 1, merge: 3 }
-    const got = advanceCommands('a', steps([1, true], [2, false], [3, false], [4, false]), custom, 'merge', { last: true, doneAfter: null })
+    const got = advanceCommands('a', steps([1, true], [2, false], [3, false]), custom, 'merge', { last: true, doneAfter: null })
     assert.deepEqual(got, { cmds: [['step', 'a', '2'], ['step', 'a', '3'], ['set', 'a', 'done', '--worktree', '']], done: true })
+  })
+
+  test('done 지점 뒤에 끝나지 않은 수동 단계가 남으면 사건 단계만 끝내고 done 으로 가지 않는다', () => {
+    const got = advanceCommands('a', steps([1, true], [2, false], [3, false]), { pr: 1, merge: 2 }, 'merge', { last: true, doneAfter: null })
+    assert.deepEqual(got, { cmds: [['step', 'a', '2']], done: false })
+  })
+
+  test('done 지점 뒤에 남은 것이 나중 사건 단계뿐이면 done 으로 바꾼다', () => {
+    const got = advanceCommands('a', steps([1, true], [2, false], [3, false], [4, false]), stages, 'merge', { last: true, doneAfter: null })
+    assert.deepEqual(got, { cmds: [['step', 'a', '2'], ['set', 'a', 'done', '--worktree', '']], done: true })
   })
 
   test('중간 PR 은 deploy 까지만 끝내고 done 으로 가지 않는다', () => {

@@ -1,8 +1,13 @@
 // lib/completion.ts 의 classify 를 본다. 부모 Dispatch ID 를 복사한 하위 세션의 완료를 PR 준비 보고와 구별한다.
 
 import assert from 'node:assert/strict'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { classify, isoTime } from '../scripts/lib/completion.ts'
+import { recordLaunch } from '../scripts/lib/launched.ts'
+import { reviewPrOfDispatch } from '../scripts/lib/review.ts'
 
 type Json = Record<string, unknown>
 
@@ -160,4 +165,53 @@ test('다른 dispatch 의 미래 준비 상태와 다른 Task 의 준비 상태�
   ]) {
     assert.equal(classify([message('worker_done', 2)], [candidate])[0].type, 'suspicious_worker_done')
   }
+})
+
+describe('리뷰 dispatch', () => {
+  const review = { isReview: (dispatch: string) => dispatch === 'ctx_a' }
+  const result = (subject: string, body = '', changes: Json = {}) => message('status', 1, { subject, body, ...changes })
+
+  test('리뷰 dispatch 는 같은 dispatch 의 앞선 결과 status 를 근거로 센다', () => {
+    for (const status of [result('#1159 리뷰 결과', '판정: PASS\n발견 없음'), result('완료: 이번 PR 인수 검증'), result('리뷰', '- **미완료**: REQ2 증거 없음')]) {
+      const got = classify([message('worker_done', 2)], [status], review)[0]
+      assert.equal(got.type, 'worker_done', JSON.stringify(status.body))
+      assert.deepEqual(got.completionVerification, { status: 'ready', kind: 'review', statusMessageId: 'm1' })
+    }
+  })
+
+  test('리뷰 dispatch 가 아니면 결과 status 만으로는 의심스럽다', () => {
+    const got = classify([message('worker_done', 2)], [result('리뷰 결과', '판정: PASS')])[0]
+    assert.equal(got.type, 'suspicious_worker_done')
+  })
+
+  test('판정 줄이 없거나 다른 dispatch, 다른 발신자, 완료보다 늦은 결과는 근거가 아니다', () => {
+    for (const status of [
+      result('진행 중', '테스트를 돌린다'),
+      result('결과', '판정: PASS', { dispatch_id: 'ctx_b' }),
+      result('결과', '판정: PASS', { from_handle: 'term_child' }),
+      { ...result('결과', '판정: PASS'), created_at: '2026-10-23T00:00:09Z' },
+    ]) {
+      const got = classify([message('worker_done', 2)], [status], review)[0]
+      assert.equal(got.type, 'suspicious_worker_done', JSON.stringify(status))
+    }
+  })
+
+  test('리뷰 dispatch 라도 준비 상태가 있으면 준비 상태를 쓴다', () => {
+    const got = classify([message('worker_done', 3)], [result('결과', '판정: PASS'), ready({ id: 'm2', created_at: '2026-10-23T00:00:02Z' })], review)[0]
+    assert.deepEqual(got.completionVerification, { status: 'ready', pr: 123, head: SHA, statusMessageId: 'm2' })
+  })
+})
+
+test('띄우기 기록의 지시서에 리뷰 PR 줄이 있는 dispatch 만 리뷰 dispatch 다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'completion-review-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  const reviewSpec = join(repo, 'spec-x.md')
+  const workSpec = join(repo, 'spec-y.md')
+  writeFileSync(reviewSpec, '# 리뷰\n\n리뷰 PR: #1159\n브랜치: `review/pr-1159`\n')
+  writeFileSync(workSpec, '# 구현\n\n브랜치: `feat/y`\n')
+  recordLaunch(repo, { dispatch: 'ctx_r', terminal: null, worktree: join(repo, 'w1'), run: null, spec: reviewSpec })
+  recordLaunch(repo, { dispatch: 'ctx_w', terminal: null, worktree: join(repo, 'w2'), run: null, spec: workSpec })
+  assert.equal(reviewPrOfDispatch(repo, 'ctx_r'), 1159)
+  assert.equal(reviewPrOfDispatch(repo, 'ctx_w'), null)
+  assert.equal(reviewPrOfDispatch(repo, 'ctx_none'), null)
 })
