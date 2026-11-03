@@ -83,7 +83,7 @@ test('단축키 줄은 flexWrap 으로 좁은 창에서 다음 줄로 넘긴다 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: 60 } })
   const row = await ui.find({ type: 'Box', key: 'shortcut-row' })
   expect(row.props.flexWrap).toBe('wrap')
-  expect((row.children as Drawn[]).map((button) => button.props.hotkey)).toEqual(['s', 'u', 'q', 'a', 'd'])
+  expect((row.children as Drawn[]).map((button) => button.props.hotkey)).toEqual(['s', 'u', 'q', 'c', 'a', 'd'])
   await ui.unmount()
 })
 
