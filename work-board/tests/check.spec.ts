@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { CHECK_PROMPT, CHECK_ROWS, checkPrompt, checkTargets, closeCancelsCheck } from '../hooks/register.js'
+import { CHECK_PROMPT, CHECK_ROWS, checkPrompt, checkTargets, closeCancelsCheck, onPaneClose, toggleCheckMode } from '../hooks/register.js'
 
 test('대상은 진행 중 다음 대기 항목을 파일 순서로 고르고 앞 9개만 받는다', () => {
   const items = [
@@ -56,4 +56,17 @@ test('확인 모드에서 사람이 창을 닫으면(Esc) 모드만 끄고, 엔�
   assert.equal(closeCancelsCheck({ id: 'work-board', origin: { kind: 'person' } }, false), false)
   assert.equal(closeCancelsCheck({ id: 'work-board', origin: { kind: 'unload' } }, true), false)
   assert.equal(closeCancelsCheck({ id: 'other', origin: { kind: 'person' } }, true), false)
+})
+
+test('확인 모드의 창 닫기 훅은 next 없이 { value: undefined } 로 답해 창을 남기고, 모드를 끈 뒤에는 닫기를 넘긴다 (REQ1)', async () => {
+  const calls = []
+  const $ = { ui: { invalidate: (name) => calls.push('invalidate ' + name) } }
+  const next = async (e) => { calls.push('next ' + e.id); return { value: undefined } }
+  const esc = { id: 'work-board', origin: { kind: 'person' } }
+  assert.equal(toggleCheckMode(), true)
+  assert.deepEqual(await onPaneClose($, esc, next), { value: undefined })
+  assert.deepEqual(calls, ['invalidate ui.render'])
+  // 모드가 꺼졌으니 다음 Esc 는 엔진에 넘겨 창을 닫는다
+  await onPaneClose($, esc, next)
+  assert.deepEqual(calls, ['invalidate ui.render', 'next work-board'])
 })

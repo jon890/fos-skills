@@ -531,7 +531,7 @@ test('c 다음 번호는 그 항목의 상태 확인 요청문을 채우고 모�
   await ui.unmount()
 })
 
-// Esc 는 ui.close 로 온다. 시험 키트의 $ 는 ui.close 를 부르지 못해, 판정은 check.spec.ts 의 closeCancelsCheck 가 본다
+// Esc 는 ui.close 로 온다. 테스트 키트의 $ 는 ui.close 를 부르지 못해, 훅은 check.spec.ts 가 onPaneClose 로 직접 부른다
 test('c 를 다시 누르면 번호가 사라진다 (REQ1)', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -555,6 +555,12 @@ test('진행 중·대기 항목이 없으면 c 가 없다 (REQ4)', async ($, on)
 })
 
 test('확인 모드에서 알림 번호는 그대로 보이고 숫자 단축키는 항목만 쓴다. x 와 c 는 함께 켜지지 않는다', async ($, on) => {
+  const filled = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
+  on('ui.toast', () => ({ value: undefined }))
   await start($, on, inboxOutput({ enabled: true, fetchedAt: null, newCount: 2, unclassified: 0, isDefault: true, errors: {}, items: INBOX_ITEMS }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const reply = 'inbox-reply-dooray:task:comment:c1'
@@ -567,6 +573,9 @@ test('확인 모드에서 알림 번호는 그대로 보이고 숫자 단축키�
   const hotkeys = (await ui.findAll({ type: 'Button' })).map((button) => button.props.hotkey).filter(Boolean)
   expect(hotkeys.filter((key) => key === '1')).toHaveLength(1)
   expect((await ui.find({ type: 'Button', key: 'check-a' })).props.hotkey).toBe('1')
+  // 확인 모드 동안 알림 버튼은 클릭이나 Enter 로도 요청문을 채우지 않는다
+  await ui.press({ key: reply })
+  expect(filled).toEqual([])
 
   // x 를 켜면 c 가 꺼지고 알림 번호가 돌아온다
   await ui.press({ key: 'inbox-dismiss' })
