@@ -1001,6 +1001,19 @@ class TaskRulesTest(unittest.TestCase):
                 verify.check_staged(self.repo / plan_dir / "phase-01.md", self.phase_manifest, self.repo, out, warnings)
                 self.assertEqual((out, warnings), ([], []))
 
+    def test_staged_metadata_rename_within_plan(self):
+        self.prepare_staged_metadata()
+        self.file("tests/test_app.py", "pass\n")
+        self.git("add", "tests")
+        self.git("commit", "--quiet", "-m", "phase implementation")
+        for plan_dir in self.plan_dirs:
+            with self.subTest(plan_dir=plan_dir):
+                self.git("reset", "--quiet")
+                self.git("mv", f"{plan_dir}/phase-01.md", f"{plan_dir}/phase-02.md")
+                out, warnings = [], []
+                verify.check_staged(Path(f"{plan_dir}/phase-02.md"), self.phase_manifest, self.repo, out, warnings)
+                self.assertEqual((out, warnings), ([], []))
+
     def test_staged_metadata_does_not_hide_unrelated_files_or_missing_tests(self):
         self.prepare_staged_metadata()
         plan_dir = self.plan_dirs[0]
