@@ -9,7 +9,7 @@
 
 **대신 대체 표기와 위치, 링크·색인 갱신 규약을 지켰는지 본다.** 어긋난 자리가 발견이다.
 `status` 가 없는 ADR 을 어떻게 읽는지를 포함해 규약은
-[planning 의 task-create.md](../../planning/references/task-create.md) 가 소유한다.
+[plan 의 task-create.md](../../plan/references/task-create.md) 가 소유한다.
 
 ## 완료된 plan 은 제거 후보다
 
@@ -18,7 +18,7 @@
 현재 사실은 `docs/` 와 코드가 소유하고, 계획서는 구현 뒤 곧 낡아 다시 읽으면 틀린 근거가 된다.
 지난 계획은 git 이력에서 찾는다.
 
-`build-with-teams` 가 구현 PR 에서 계획서를 지운다.
+`implementation` 가 구현 PR 에서 계획서를 지운다.
 그래서 이 감사에서 만나는 완료된 계획서는 그 삭제가 빠진 것이거나, 이 정책 전에 만든 것이다.
 
 **정합성을 확인한 뒤에 제거 후보로 올린다.**

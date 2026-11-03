@@ -7,19 +7,20 @@
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
   "skills": [
-    "./build-with-teams",
     "./docs-check",
     "./docs-consolidate",
     "./harness-cleanup",
+    "./implementation",
     "./inbox",
     "./mac-cleanup",
     "./orch",
-    "./planning",
+    "./plan",
     "./pr-review",
     "./presentation",
     "./report",
     "./review-fix",
     "./spec",
+    "./technical-design",
     "./verify"
   ]
 }

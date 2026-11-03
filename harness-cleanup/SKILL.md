@@ -73,7 +73,7 @@ python3 "$SKILL_DIR/scripts/collect_targets.py" "$ROOT" --scope "$SCOPE"
 경고는 종료 코드를 바꾸지 않고 파일도 지우지 않는다.
 경고가 났으면 이후 검증 실패의 원인 후보로 적어 두고, 지울지는 사용자에게 묻는다.
 
-일반 `docs/` 와 planning 산출물의 코드 정합성은 `docs-check` 로 보낸다.
+일반 `docs/` 와 plan 산출물의 코드 정합성은 `docs-check` 로 보낸다.
 저장소 밖을 가리키는 심볼릭 링크는 표시만 하고 수정하지 않는다.
 
 ## 2. 실측

@@ -23,19 +23,19 @@ metadata:
 오버레이는 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 을 소유한다.
 없으면 그 저장소의 하네스 지침 파일(`AGENTS.md`, `CLAUDE.md`)에서 문서 경계와 검증 명령을 찾는다.
 
-**모노레포인지, 감사 범위가 속한 하위 프로젝트가 무엇인지는 planning 의 스크립트가 판정한다.**
-`$PLANNING_SKILL_DIR` 은 planning 번들 경로이고, `$SCOPE_PATHS` 는 감사할 파일 경로다.
+**모노레포인지, 감사 범위가 속한 하위 프로젝트가 무엇인지는 plan 의 스크립트가 판정한다.**
+`$PLAN_SKILL_DIR` 은 plan 번들 경로이고, `$SCOPE_PATHS` 는 감사할 파일 경로다.
 
 ```bash
 # cwd: 감사 대상 저장소 루트
-python3 "$PLANNING_SKILL_DIR/scripts/overlay_paths.py" --skill docs-check $SCOPE_PATHS
+python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-check $SCOPE_PATHS
 ```
 
 출력의 `search` 순서대로 오버레이를 읽는다. 하위 프로젝트 오버레이가 루트 오버레이보다 먼저다.
 범위가 두 하위 프로젝트에 걸치면(`targets` 가 둘 이상) 하위 프로젝트마다 오버레이를 읽고 따로 감사한 뒤 한 리포트로 합친다.
 종료 코드 1 이면 대상을 정하지 못한 것이니 사용자에게 묻는다.
 판정 규칙과 오버레이가 지정하는 docs 경로는
-[planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.
+[plan 의 `references/monorepo.md`](../plan/references/monorepo.md) 가 소유한다.
 이 문서의 `docs/` 는 그 docs 경로로 바꿔 읽는다.
 
 ## 실행 절차
@@ -96,7 +96,7 @@ python3 "$SKILL_DIR/scripts/run_static_check.py" "$ADR_DIR" "$SCOPE"
 
 `WARN` 이 붙은 줄은 종료 코드를 바꾸지 않지만 리포트의 `Warning` 후보로 올린다.
 `LISTED_ITEMS` 는 `docs/code-architecture.md` 의 책임 설명에 늘어놓은 목록이다.
-고칠지는 [planning 예시의 「디렉터리 책임」](../planning/references/examples/code-architecture.md#디렉터리-책임) 절로 판정한다.
+고칠지는 [plan 예시의 「디렉터리 책임」](../plan/references/examples/code-architecture.md#디렉터리-책임) 절로 판정한다.
 
 ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에 합친다.
 
@@ -142,7 +142,7 @@ ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에
 - 현재 사실은 책임 문서 한곳에만 남기고 나머지는 그것을 가리킨다.
 - ADR 에는 코드로 자명하지 않은 장기 결정, 맥락, 기각한 대안만 남긴다.
 - 구현 경로와 실행 명령은 책임 문서나 코드로 옮기고 ADR 은 그 위치를 짧게 가리킨다.
-- 대체된 ADR 은 지우지 않는다. 표기와 위치, 링크·색인 갱신 규약은 [planning 의 task-create.md](../planning/references/task-create.md) 가 소유한다.
+- 대체된 ADR 은 지우지 않는다. 표기와 위치, 링크·색인 갱신 규약은 [plan 의 task-create.md](../plan/references/task-create.md) 가 소유한다.
 - ADR 파일과 `INDEX.md` 를 함께 고친다.
 - 고친 Markdown 에 그 저장소의 표현과 가독성 검사를 실행한다.
 

@@ -25,12 +25,12 @@
 .claude-plugin/marketplace.json     마켓플레이스 목록. 플러그인 하나를 소스 "./" 로 가리킨다
 .claude-plugin/plugin.json          플러그인 이름과 skills 배열. version 은 쓰지 않는다
 .codex-plugin/plugin.json           Codex 용 매니페스트. 같은 skills 배열만 담고 hooks 는 없다
-build-with-teams/                   스킬. 루트에 그대로 둔다
+implementation/                   스킬. 루트에 그대로 둔다
 content-preview/
 docs-check/
 harness-cleanup/
 korean-check/
-planning/
+plan/
 pr-review/
 review-fix/
 tools/browser-driver/               content-preview 가 쓰는 공용 도구
@@ -95,7 +95,7 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 | --- | --- |
 | 스킬 본문의 `$SKILL_DIR` | 스킬을 로드할 때 붙는 `Base directory for this skill` 줄의 값이다. 캐시 안의 스킬 디렉터리를 가리킨다 |
 | 스킬 문서의 `../korean-check/` 같은 형제 경로 | 캐시 안에서 그대로 풀린다 |
-| `build-with-teams` 와 `review-fix` 의 `$PLANNING_SKILL_DIR` | 자기 번들의 형제 디렉터리 `planning` 이다. 값은 `$SKILL_DIR/../planning` 이다 |
+| `implementation` 와 `review-fix` 의 `$PLAN_SKILL_DIR` | 자기 번들의 형제 디렉터리 `plan` 이다. 값은 `$SKILL_DIR/../plan` 이다 |
 | `content-preview/scripts/style-check.sh` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
 | `content-preview/scripts/show-preview.sh` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `tools/` 에서 찾는다 |
 | `harness-cleanup/scripts/check_references.py` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
@@ -124,8 +124,8 @@ work-board/                         작업 현황 창 mod. hooks/ 는 hooks 모�
 
 ## 이름과 겹침
 
-플러그인 스킬은 `fos-skills:planning` 처럼 불린다.
-`~/.claude/skills/planning` 같은 같은 이름의 링크와 함께 두면 둘 다 목록에 뜨고 어느 쪽도 다른 쪽을 가리지 않는다.
+플러그인 스킬은 `fos-skills:plan` 처럼 불린다.
+`~/.claude/skills/plan` 같은 같은 이름의 링크와 함께 두면 둘 다 목록에 뜨고 어느 쪽도 다른 쪽을 가리지 않는다.
 전환할 때 링크를 지우는 순서는 [flow.md](flow.md) 의 「링크 설치에서 옮기기」 가 소유한다.
 
 팀 저장소의 플러그인은 `content-preview` 와 `korean-check` 의 사본을 싣는다.

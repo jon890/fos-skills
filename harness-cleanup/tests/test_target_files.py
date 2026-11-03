@@ -13,7 +13,7 @@ ROOT = Path("/repo")
 class OverlayTargetTest(unittest.TestCase):
     def test_orch_overlay_and_claude_overlays_are_targets(self):
         self.assertTrue(is_target(ROOT / ".orch/overlay.md", ROOT))
-        self.assertTrue(is_target(ROOT / ".claude/planning-overlay.md", ROOT))
+        self.assertTrue(is_target(ROOT / ".claude/plan-overlay.md", ROOT))
 
     def test_other_overlay_named_files_are_not_targets(self):
         self.assertFalse(is_target(ROOT / "orch/references/overlay.md", ROOT))

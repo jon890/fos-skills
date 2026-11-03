@@ -40,8 +40,8 @@ class CheckReferencesTest(unittest.TestCase):
         )
 
     def test_finds_skill_of_plugin_laid_out_at_root(self):
-        self.make_skill("cache/fos-skills/fos-skills/0123456789ab/planning")
-        self.write_claude_md("planning")
+        self.make_skill("cache/fos-skills/fos-skills/0123456789ab/plan")
+        self.write_claude_md("plan")
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("깨진 참조 0건", result.stdout)
@@ -124,52 +124,52 @@ class SiblingAndPluginTest(CheckReferencesTest):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
     def test_link_text_path_matching_existing_target_is_not_broken(self):
-        self.make_repo_skill("skills/planning", "references/monorepo.md")
+        self.make_repo_skill("skills/plan", "references/monorepo.md")
         self.make_repo_skill("skills/beta")
         self.write_doc(
             "skills/beta/SKILL.md",
-            "[planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.\n",
+            "[plan 의 `references/monorepo.md`](../plan/references/monorepo.md) 가 소유한다.\n",
         )
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_link_text_path_with_missing_target_is_still_broken(self):
-        self.make_repo_skill("skills/planning")
+        self.make_repo_skill("skills/plan")
         self.make_repo_skill("skills/beta")
         self.write_doc(
             "skills/beta/SKILL.md",
-            "[planning 의 `references/monorepo.md`](../planning/references/monorepo.md) 가 소유한다.\n",
+            "[plan 의 `references/monorepo.md`](../plan/references/monorepo.md) 가 소유한다.\n",
         )
         result = self.run_check()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("[링크] ../planning/references/monorepo.md", result.stdout)
+        self.assertIn("[링크] ../plan/references/monorepo.md", result.stdout)
 
     def test_link_text_path_differing_from_target_is_skipped_when_target_resolves(self):
-        self.make_repo_skill("skills/planning", "references/monorepo.md")
+        self.make_repo_skill("skills/plan", "references/monorepo.md")
         self.make_repo_skill("skills/beta")
         self.write_doc(
             "skills/beta/SKILL.md",
-            "[`references/other.md`](../planning/references/monorepo.md) 가 소유한다.\n",
+            "[`references/other.md`](../plan/references/monorepo.md) 가 소유한다.\n",
         )
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_link_text_with_several_code_spans_is_skipped_when_target_resolves(self):
-        self.make_repo_skill("skills/planning", "references/monorepo.md")
+        self.make_repo_skill("skills/plan", "references/monorepo.md")
         self.make_repo_skill("skills/beta")
         self.write_doc(
             "skills/beta/SKILL.md",
-            "[`scripts/run.py` 와 `references/other.md` 절](../planning/references/monorepo.md) 를 본다.\n",
+            "[`scripts/run.py` 와 `references/other.md` 절](../plan/references/monorepo.md) 를 본다.\n",
         )
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_code_span_path_outside_link_text_is_still_broken(self):
-        self.make_repo_skill("skills/planning", "references/monorepo.md")
+        self.make_repo_skill("skills/plan", "references/monorepo.md")
         self.make_repo_skill("skills/beta")
         self.write_doc(
             "skills/beta/SKILL.md",
-            "[절](../planning/references/monorepo.md) 와 `references/other.md` 를 본다.\n",
+            "[절](../plan/references/monorepo.md) 와 `references/other.md` 를 본다.\n",
         )
         result = self.run_check()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)

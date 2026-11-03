@@ -322,7 +322,7 @@ describe('할 일 첫 줄의 루프 선택', () => {
     const good = write(join(tmp, 'drafts/good.md'), confirmed())
     const draft = write(join(tmp, 'drafts/draft.md'), confirmed('작성: 2026-11-02'))
     const badDate = write(join(tmp, 'drafts/bad-date.md'), confirmed('확인: 2026-02-30'))
-    assert.deepEqual(lint([task('spec-good', `## 할 일\n루프를 쓴다(스펙: \`${good}\`). planning 부터 한다`)]), { code: 0, stdout: '' })
+    assert.deepEqual(lint([task('spec-good', `## 할 일\n루프를 쓴다(스펙: \`${good}\`). plan 부터 한다`)]), { code: 0, stdout: '' })
     const r = lint([
       task('spec-draft', `## 할 일\n루프를 쓴다(스펙: ${draft})`),
       task('spec-date', `## 할 일\n루프를 쓴다(스펙: ${badDate})`),

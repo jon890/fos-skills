@@ -7,26 +7,32 @@
 
 ```mermaid
 flowchart TD
-    O[orch: 루프를 쓸지 정하고 단계 조율] --> S[spec: 인터뷰로 결정 닫기·사용자 확인]
-    S -->|확인한 스펙| P[planning: PR 별 작업 분해]
-    P -->|새 사용자 결정| S
-    P --> B[build-with-teams: 구현·개발 테스트]
-    B --> V[verify: 독립 리뷰·인수 검증]
-    V --> D[docs-consolidate: 문서 대조·공통 후보]
+    O[orch: 전체 단계 조율] --> S[spec: 요구사항 확정]
+    S --> T[technical-design: 구조와 책임 설계]
+    T --> P[plan: PR 별 작업 분해]
+    P --> B[implementation: 구현과 개발 테스트]
+    B --> V[verify: 독립 리뷰와 인수 검증]
+    V --> D[docs-consolidate: 문서 대조와 공통 후보]
     V -->|구현 결함| B
-    V -->|계획 결함| P
-    V -->|결정 누락| S
+    V -->|설계 결함| T
+    V -->|요구사항 누락| S
     D --> M[orch: PR·머지·배포·정리]
-    M -->|남은 기능 작업| P
+    M -->|같은 기능의 다음 PR| P
 ```
 
 | 단계 | 해결하는 것 | 다음으로 가는 기준 |
 | --- | --- | --- |
-| `spec` | 사용자 인터뷰로 정한 기능의 범위, 결정, 인수 조건과 필요한 API·데이터·테스트 설계 | 결정 표가 닫혔고 사용자가 스펙을 확인했어요(`확인:` 줄) |
-| `planning` | 지금 구현할 PR 의 작업·테스트·변경 파일. 사용자에게 다시 묻지 않아요 | 스펙과 요구사항이 연결된 계획을 critic 이 검토했어요 |
-| `build-with-teams` | 계획한 구현과 개발 테스트 | 구현 결과와 검증 증거를 넘겼어요 |
-| `verify` | 코드·문서 리뷰와 실제 API·화면·작업 검증. 코드 리뷰는 오버레이로 PR 자동 리뷰에 맡길 수 있어요 | 이번 PR 의 인수 조건을 확인했고 완료를 막는 문제가 없어요 |
-| `docs-consolidate` | 기능 문서 정합성과 공통화 후보 | 문서가 맞고 후보 또는 후보 없음이 남았어요 |
+| `spec` | 목표·범위·사용자 동작·권한·REQ1 같은 요구사항과 인수 조건 | 제품 결정이 닫혔고 사용자가 확인했어요 |
+| `technical-design` | 모듈 책임·데이터 소유권·호출·상태 변경·검증 전략 | 주요 기술 결정이 닫혔고 기존 원칙·계약과 대조하고 독립 검토했어요 |
+| `plan` | PR 하나의 작업·순서·변경 파일·검증 명령 | 스펙·설계와 연결된 계획을 critic 이 검토했어요 |
+| `implementation` | 계획한 구현과 개발 테스트 | 구현 결과와 개발 검증 증거를 넘겼어요 |
+| `verify` | 독립 코드·문서 리뷰와 실제 경계의 인수 검증 | 필수 인수 조건을 확인했고 완료를 막는 문제가 없어요 |
+| `docs-consolidate` | 기능 문서 정합성과 공통화 후보 | 문서가 맞고 후보 또는 후보 없음의 근거가 남았어요 |
+
+팀 실행은 implementation 의 수행 방식이에요. Claude Teams 를 필수로 요구하지 않아요.
+현재 하네스에 하위 에이전트가 있으면 위임하고, 없으면 구현을 순차 실행해요. 독립 검토를 자기 점검으로 통과 처리하지 않아요.
+스펙·설계는 기능 전체가 공유하고, 여러 PR 이면 plan → implementation → verify 를 반복해요.
+작은 변경의 기술 설계는 기존 구조를 유지하는 근거 몇 줄이면 돼요. 기능마다 전체 아키텍처를 다시 짜지 않아요.
 
 버그 수정, 정리, 설정 변경, 측정처럼 작은 일은 이 흐름을 쓰지 않고 바로 구현해요. 기준은 [orch 의 기능 루프](orch/references/feature-loop.md#루프를-쓸지-정한다)에 있어요.
 spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 결정은 4개씩 선택지와 권장안으로 물어요. 결정이 닫히면 대화를 모르는 검토자가 빠진 결정을 찾아요. 절차는 [인터뷰 절차](spec/references/interview.md)에 있어요.
@@ -37,7 +43,9 @@ spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 
 
 ### 문서는 기능별로 나눠요
 
-새 기능은 `docs/features/<기능>/spec.md` 에 요구사항과 설계를 둬요. 설계가 길면 `design.md` 로 나눠요.
+새 기능은 `docs/features/<기능>/spec.md` 에 요구사항을, `design.md` 에 기술 설계를 둬요. 작은 변경은 스펙의 기술 설계 절로 충분해요.
+계획은 같은 기능의 `tasks/<계획>/index.json`, `phase-*.md` 에 나눠 두고 전역 번호나 기능 전체 진행표를 만들지 않아요.
+기능에 속하지 않는 정리·이전 작업과 기존 계획은 설정의 최상위 `tasks/` 도 사용할 수 있어요.
 공유 계약은 기존 원본 또는 `docs/contracts/` 가 소유하고 기능 문서는 참조해요.
 전역 PRD·흐름·스키마를 기능마다 함께 고치거나 중앙 진행표에 기록하지 않아요.
 정확한 API·DB 스키마는 저장소의 원본을 참조하고, 문서에는 동작과 설계 이유를 남겨요.
@@ -48,11 +56,23 @@ spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 
 ```text
 /fos-skills:orch 작업 취소 기능을 스펙부터 구현·검증까지 진행해 줘
 /fos-skills:spec 작업 취소 기능을 설계해 보자
-/fos-skills:planning docs/features/run-cancel/spec.md 를 구현 계획으로 만들어 줘
+/fos-skills:technical-design docs/features/run-cancel/spec.md 의 모듈 책임과 데이터 소유권을 설계해 줘
+/fos-skills:plan docs/features/run-cancel/design.md 를 PR 하나의 실행 계획으로 만들어 줘
 ```
 
 BMAD 의 요구사항 연결, Superpowers 의 스펙·실행 계획 분리와 설계 승인 관문, gstack 의 실제 동작 QA 원칙을 참고했어요.
 외부 프레임워크 전체를 설치하거나 중첩하지 않아요. [문서와 단계 인계](spec/references/feature-docs.md)에 상세 규칙이 있어요.
+
+### 작업 취소 기능을 개발한다면
+
+| 단계 | 이 단계가 남기는 것 |
+| --- | --- |
+| spec | REQ1 소유자만 취소, REQ2 반복 취소 안전, REQ3 취소한 작업은 실행하지 않음 |
+| technical-design | 작업 모듈이 상태를 소유하고 취소·실행 시작은 조건부 갱신. 상태와 이력은 같은 트랜잭션 |
+| plan | `tasks/cancel-api/` 의 상태 전이·API·스케줄러 연결 작업과 검증 명령 |
+| implementation | 실제 코드·개발 테스트·검증 커밋 |
+| verify | 권한 거부·반복 취소·취소와 실행의 경쟁을 실제 API/DB/스케줄러 경계에서 확인한 증거 |
+| docs-consolidate | 설계 문서 대조와 관련 기능을 비교한 공통 후보 또는 없음 |
 
 ## 만든 이유
 
@@ -91,8 +111,9 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | 스킬 | 하는 일 |
 | --- | --- |
 | [`spec`](spec/README.md) | 사용자를 인터뷰해 기능의 결정을 닫고, 확인받은 스펙을 남겨요 |
-| [`planning`](planning/README.md) | 기능 스펙을 PR 하나의 실행 계획으로 나눠요 |
-| [`build-with-teams`](build-with-teams/README.md) | 구현과 개발 테스트를 수행해요 |
+| [`technical-design`](technical-design/README.md) | 기능의 구조·책임·데이터 소유권과 검증 전략을 정해요 |
+| [`plan`](plan/README.md) | 확정한 기술 설계를 PR 하나의 실행 계획으로 나눠요 |
+| [`implementation`](implementation/README.md) | 구현과 개발 테스트를 수행해요 |
 | [`verify`](verify/README.md) | 독립 리뷰와 스펙 기준 실행 검증을 해요 |
 | [`docs-consolidate`](docs-consolidate/README.md) | 기능 문서를 맞추고 공통 후보를 추출하거나 별도 공통화를 해요 |
 | [`orch`](orch/README.md) | 전체 개발 루프의 전이와 worker 실행·PR·머지·정리를 조율해요 |
@@ -128,6 +149,11 @@ claude plugin install fos-skills@fos-skills
 
 **3.** 일을 worker 에게 나눠 맡기려면 Orca 앱과 `gh` 로그인이 필요해요. 준비물은 [`orch/README.md`](orch/README.md) 의 「준비」 에 있어요.
 
+### 단계 이름 변경
+
+`planning` 은 `plan`, `build-with-teams` 는 `implementation` 으로 바뀌었어요. 예전 명령 대신 새 이름으로 불러요.
+기존 계획 경로와 R1/D1 ID 는 읽기 호환으로 유지해요. 기존 planning/build-with-teams 오버레이도 읽으며 새 이름의 값이 우선해요.
+
 ### 갱신
 
 플러그인에 버전을 쓰지 않아서, 버전을 올리지 않아도 main 의 새 커밋을 받아요.
@@ -141,7 +167,7 @@ claude plugin update fos-skills@fos-skills
 플러그인 시스템이 없는 에이전트에서는 스킬 디렉터리를 글로벌 스킬 디렉터리에 심링크해요.
 
 ```bash
-ln -sfn ~/personal/fos-skills/planning ~/.claude/skills/planning
+ln -sfn ~/personal/fos-skills/plan ~/.claude/skills/plan
 ```
 
 플러그인과 같은 이름의 링크를 함께 두면 스킬이 둘씩 떠요.
@@ -218,7 +244,7 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)"
 ### 코어와 오버레이
 
 - **코어**(이 저장소): 도메인과 무관한 워크플로예요. 단계 뼈대, 핵심 원칙, 검증기가 여기 있어요.
-- **오버레이**(각 프로젝트의 `.claude/planning-overlay.md`, `.orch/overlay.md` 같은 파일): 저장소 고유의 단계 변형, 문서 관례, 검증 경로, 실행 명령이 여기 있어요.
+- **오버레이**(각 프로젝트의 `.claude/plan-overlay.md`, `.orch/overlay.md` 같은 파일): 저장소 고유의 단계 변형, 문서 관례, 검증 경로, 실행 명령이 여기 있어요.
 
 코어 SKILL 이 시작할 때 현재 저장소의 오버레이를 읽어 채워요.
 오버레이가 없으면 코어 기본값으로 동작해요.
