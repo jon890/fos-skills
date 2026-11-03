@@ -148,6 +148,17 @@
 //       그 경로에 Orca 터미널이 있으면, 그 터미널을 `orca terminal close` 로 닫고 한 번 더 기다린다
 //     - before-cleanup 핸들러가 거부하거나 실패하거나 시간을 넘겼다(아래 「이벤트」)
 //
+// 리뷰 워크트리 (워크트리마다. 위 「건너뛰는 경우」 를 지난 detached 워크트리):
+//     launch-worker 는 리뷰 워크트리를 `review/pr-<N>` 브랜치로 만든 뒤 PR head 를 detached 로 꺼낸다. 브랜치가 없어 위 판정에 걸리지 않는다.
+//     그것을 만든 브랜치(lib/review.ts 의 originBranch)가 리뷰 브랜치이거나, 그 경로의 띄우기 기록(lib/launched.ts) 지시서가 리뷰 지시서면
+//     리뷰 워크트리다. 아래가 모두 참이면 저장소 안팎과 상관없이 `git worktree remove` 로 지운다. PR 상태는 보지 않는다.
+//       - 모든 Run 의 살아 있는 dispatch 지시서 가운데 같은 번호의 리뷰 지시서가 없다. 목록을 읽지 못하면 남긴다
+//       - 커밋 안 된 변경이 없다
+//       - 그 경로를 작업 디렉터리로 쓰는 프로세스가 없고, 그 경로에 Orca 터미널이 없다
+//     HEAD 가 원격에 있는지는 보지 않는다. 리뷰 워크트리의 HEAD 는 PR head 이고 `refs/pull/<N>/head` 는 원격 추적 브랜치가 아니다.
+//     출력은 `리뷰 워크트리를 지울 것 <경로> (#<N>)`, `리뷰 워크트리 삭제 <경로> (#<N>)`, `건너뜀 리뷰 워크트리 <경로> (#<N>): <이유>` 다.
+//     지운 뒤 아래 「리뷰 흔적」 이 그것을 만든 `review/pr-<N>` 브랜치를 PR 이 닫혔으면 지운다.
+//
 // 리뷰 흔적 (저장소마다 워크트리와 로컬 브랜치 정리 뒤에 한 번. --run 이 없어도 한다):
 //     리뷰 worker 는 PR 을 열지 않아 위 「PR 찾기」 로는 그 브랜치를 찾지 못한다. 이름과 지시서 줄로 PR 번호를 읽는다(lib/review.ts).
 //     후보는 리뷰 브랜치(`pr-<N>`, `review/pr-<N>[-<꼬리>]`)와, --specs-dir 를 줬으면 그 폴더 바로 아래의 리뷰 지시서
@@ -934,12 +945,53 @@ function onRemote(repo: string, commit: string): boolean {
   return done.code === 0 && done.out !== ''
 }
 
+// detached 워크트리가 리뷰 워크트리면 그 PR 번호. 만든 브랜치(originBranch)가 리뷰 브랜치이거나 띄우기 기록의 지시서가 리뷰 지시서다
+function reviewOfWorktree(repo: string, path: string): number | null {
+  const origin = originBranch(path)
+  const byBranch = origin ? reviewPrOfBranch(origin) : null
+  if (byBranch !== null) return byBranch
+  for (const launch of launchesAt(repo, path)) {
+    const n = launch.spec ? reviewPrOf(basename(launch.spec), readText(launch.spec)) : null
+    if (n !== null) return n
+  }
+  return null
+}
+
+// 리뷰 워크트리를 지운다. 조건은 머리 주석의 「리뷰 워크트리」 가 정한다
+function sweepReviewWorktree(repo: string, path: string, n: number, args: Args, terminals: Terminal[], log: Log, report: Report): void {
+  const skip = (reason: string) => {
+    log(`건너뜀 리뷰 워크트리 ${path} (#${n}): ${reason}`)
+    report.skipped.push({ path, reason: `리뷰 워크트리: ${reason}` })
+  }
+  const live = liveReviewPrs(allLiveSpecPaths())
+  if (live === null) return skip('살아 있는 지시서 목록을 읽지 못했다')
+  if (live.has(n)) return skip('리뷰 dispatch 가 살아 있다')
+  if (dirty(path)) return skip('커밋 안 된 변경')
+  const pids = holderPids(path, REAL_HOST)
+  if (pids.length) return skip(`그 경로를 쓰는 프로세스 ${pids.length} 개(${describe(pids, REAL_HOST)})`)
+  if (terminalsAt(terminals, path).length) return skip('Orca 터미널이 있다')
+  if (!args.apply) {
+    log(`리뷰 워크트리를 지울 것 ${path} (#${n})`)
+    return
+  }
+  const done = git(repo, 'worktree', 'remove', path)
+  if (done.code === 0) {
+    log(`리뷰 워크트리 삭제 ${path} (#${n})`)
+    report.removed.push(path)
+  } else {
+    skip(`삭제 실패: ${done.err}`)
+  }
+}
+
 // 저장소 밖 detached 워크트리를 지운다. 조건은 머리 주석의 「저장소 밖 detached 워크트리」 가 정한다.
+// 리뷰 워크트리는 저장소 안팎과 상관없이 「리뷰 워크트리」 의 조건으로 지운다
 function sweepDetached(repo: string, path: string, args: Args, terminals: Terminal[], log: Log, report: Report): void {
   const skip = (reason: string, line: string) => {
     log(line)
     report.skipped.push({ path, reason })
   }
+  const review = reviewOfWorktree(repo, path)
+  if (review !== null) return sweepReviewWorktree(repo, path, review, args, terminals, log, report)
   if (under(realPath(path), realPath(repo))) return skip('브랜치가 없다(detached)', `건너뜀 ${path}: 브랜치가 없다(detached)`)
   if (dirty(path)) return skip('커밋 안 된 변경', `건너뜀 detached ${path}: 커밋 안 된 변경`)
   const pids = holderPids(path, REAL_HOST)

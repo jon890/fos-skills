@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { branches, fx, git, has, lacks, runSweep } from './fixtures/cleanup-sweep.ts'
+import { recordLaunch } from '../scripts/lib/launched.ts'
 
 // 원격에 PR head 를 올리고(refs/pull/<n>/head) 그 커밋을 돌려준다. fetch 는 하지 않는다
 function prHead(n: number): string {
@@ -107,17 +108,63 @@ describe('리뷰 흔적', () => {
     assert.ok(branches().has('pr-61'))
   })
 
-  test('detached 리뷰 워크트리가 남아 있으면 그것을 만든 브랜치를 남긴다', () => {
-    const head = prHead(71)
-    fx.prViews['71'] = { state: 'MERGED', headRefOid: head }
-    const path = join(fx.wts, 'review-pr-71')
-    git('-C', fx.repo, 'worktree', 'add', '-q', '-b', 'review/pr-71', path, 'origin/main')
-    git('-C', path, 'fetch', '-q', 'origin', 'refs/pull/71/head')
+  // launch-worker 처럼 review/pr-<n> 브랜치로 워크트리를 만들고 PR head 를 detached 로 꺼낸다
+  function reviewWorktree(n: number): string {
+    const path = join(fx.wts, `review-pr-${n}`)
+    git('-C', fx.repo, 'worktree', 'add', '-q', '-b', `review/pr-${n}`, path, 'origin/main')
+    git('-C', path, 'fetch', '-q', 'origin', `refs/pull/${n}/head`)
     git('-C', path, 'checkout', '-q', '--detach', 'FETCH_HEAD')
+    return path
+  }
+
+  test('끝난 리뷰의 변경 없는 detached 워크트리를 지우고 그것을 만든 review/pr-N 브랜치도 지운다', () => {
+    fx.prViews['71'] = { state: 'MERGED', headRefOid: prHead(71) }
+    const path = reviewWorktree(71)
+    const dry = runSweep()
+    has(dry, `리뷰 워크트리를 지울 것 ${path} (#71)`)
+    assert.ok(existsSync(path), 'dry-run 이 지웠다')
     const out = runSweep(['--apply'])
-    lacks(out, '리뷰 브랜치 삭제 review/pr-71')
-    assert.ok(branches().has('review/pr-71'))
-    assert.ok(existsSync(path))
+    has(out, `리뷰 워크트리 삭제 ${path} (#71)`)
+    has(out, '리뷰 브랜치 삭제 review/pr-71 (#71 MERGED)')
+    lacks(out, '브랜치가 없다(detached)')
+    assert.ok(!existsSync(path))
+    assert.ok(!branches().has('review/pr-71'))
+  })
+
+  test('PR 이 열려 있어도 리뷰가 끝났으면 워크트리는 지우고 브랜치는 남긴다', () => {
+    fx.prViews['72'] = { state: 'OPEN', headRefOid: prHead(72) }
+    const path = reviewWorktree(72)
+    const out = runSweep(['--apply'])
+    has(out, `리뷰 워크트리 삭제 ${path} (#72)`)
+    assert.ok(branches().has('review/pr-72'))
+  })
+
+  test('브랜치 이름이 리뷰 꼴이 아니어도 띄우기 기록의 지시서가 리뷰 지시서면 리뷰 워크트리다', () => {
+    fx.prViews['75'] = { state: 'MERGED', headRefOid: prHead(75) }
+    const path = join(fx.wts, 'check-75')
+    git('-C', fx.repo, 'worktree', 'add', '-q', '-b', 'check-75', path, 'origin/main')
+    git('-C', path, 'checkout', '-q', '--detach', 'origin/main')
+    const spec = join(specsDir(), 'spec-check.md')
+    writeFileSync(spec, '# 리뷰\n\n리뷰 PR: #75\n')
+    recordLaunch(fx.repo, { dispatch: 'ctx_r75', terminal: null, worktree: path, run: null, spec })
+    const out = runSweep(['--apply'])
+    has(out, `리뷰 워크트리 삭제 ${path} (#75)`)
+  })
+
+  test('커밋 안 된 변경이 있거나 리뷰 dispatch 가 살아 있으면 리뷰 워크트리와 브랜치를 남긴다', () => {
+    fx.prViews['73'] = { state: 'MERGED', headRefOid: prHead(73) }
+    const changed = reviewWorktree(73)
+    writeFileSync(join(changed, 'note.txt'), '메모\n')
+    fx.prViews['74'] = { state: 'MERGED', headRefOid: prHead(74) }
+    const running = reviewWorktree(74)
+    const spec = join(specsDir(), 'spec-review-pr-74.md')
+    writeFileSync(spec, '# 리뷰\n\n리뷰 PR: #74\n')
+    fx.tasks = [{ id: 'task_r', status: 'running', spec: `지시서 ${spec} 를 끝까지 읽는다` }]
+    const out = runSweep(['--apply'])
+    has(out, `건너뜀 리뷰 워크트리 ${changed} (#73): 커밋 안 된 변경`)
+    has(out, `건너뜀 리뷰 워크트리 ${running} (#74): 리뷰 dispatch 가 살아 있다`)
+    assert.ok(existsSync(changed) && existsSync(running))
+    assert.ok(branches().has('review/pr-73') && branches().has('review/pr-74'))
   })
 
   test('--run 이 달라도 다른 Run 에서 도는 리뷰의 지시서는 남긴다', () => {
