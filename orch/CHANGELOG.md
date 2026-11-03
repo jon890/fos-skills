@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.2.0 (2026-11-03)
+
+- `send-to-worker` 가 `stable_pane_required` 로 거부되면 status 로 바꾸기 전에 `--run`, `--from` 없는 reply 를 한 번 보낸다
+- 멈춤 확인은 구조화 worker 의 화면을 읽지 않고 worker-show 의 단계와 마지막 오류로 판정한다
+- 마일스톤 항목은 마지막 PR 을 판정하지 못했거나 done 지점 뒤에 끝나지 않은 수동 단계가 남으면 done 으로 바꾸지 않는다
+- 리뷰 worker 의 `worker_done` 은 결과 status(`판정:`, `완료:`, `미완료:` 줄)를 완료 근거로 센다
+- `cleanup-sweep` 이 끝난 리뷰의 변경 없는 detached 워크트리와 `review/pr-N` 을 지운다. 공통 지시서 틀의 기능 루프에 technical-design 을 넣었다
+
 ## 7.1.0 (2026-11-03)
 
 - 자동 머지의 리뷰 판정을 저장소마다 `queue.auto_review.require` 의 조건 조합으로 고른다. 조건은 `verdict-on-head`, `verdict-seen`, `last-verdict-pass`, `rereview-after-block` 이다
