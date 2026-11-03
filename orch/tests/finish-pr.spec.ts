@@ -875,7 +875,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(starting(c.calls(), 'board ').length, 0, c.calls().join('\n'))
   })
 
-  test('마일스톤 항목은 판정하지 못한 PR 도 마지막으로 보고 기본 done 지점(merge)에서 done 으로 바꾼다', async (t) => {
+  test('마일스톤 항목은 판정하지 못한 PR 을 중간 PR 로 보고 done 으로 바꾸지 않는다', async (t) => {
     const c = setup(t)
     const file = join(c.repo, '.omc', 'board.json')
     const bin = board(c, [{ id: 'm', status: 'doing', branch: 'feat/x', stages: 'pr=1,merge=2', details: [{ text: '1. PR', done: false }, { text: '2. 머지', done: false }] }])
@@ -887,10 +887,29 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
       `board steps m --file ${file}`,
       `board step m 1 --file ${file}`,
       `board step m 2 --file ${file}`,
-      `board set m done --worktree  --file ${file}`,
+      `board set m --pr  --merged-pr 77 --file ${file}`,
+    ])
+    has(r.stdout, '마지막 PR 판정: 중간(판정하지 못했다: task_pattern 이 없다)')
+    has(r.stdout, '보드 m 는 마지막 PR 인지 판정하지 못해 단계만 끝내고 PR 77 를 merged-pr 에 적었다')
+  })
+
+  test('마일스톤 항목은 마지막 PR 이어도 done 지점 뒤에 끝나지 않은 수동 단계가 남으면 done 으로 바꾸지 않는다', async (t) => {
+    const c = setup(t)
+    const file = join(c.repo, '.omc', 'board.json')
+    const bin = board(c, [{ id: 'm', status: 'doing', branch: 'feat/x', stages: 'pr=1,merge=2' }])
+    const steps = JSON.stringify([
+      { number: 1, done: true, text: '1. PR1' },
+      { number: 2, done: false, text: '2. PR1 머지' },
+      { number: 3, done: false, text: '3. PR2' },
+    ])
+    const r = await c.finish(['--complete', ...bin], { FAKE_STEPS: steps })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(starting(c.calls(), 'board '), [
+      `board steps m --file ${file}`,
+      `board step m 2 --file ${file}`,
       `board set m --merged-pr 77 --file ${file}`,
     ])
-    has(r.stdout, '보드 m done(브랜치로 찾았다)')
+    has(r.stdout, '보드 m 는 done 지점 전이거나 끝나지 않은 단계가 남아 단계만 끝내고 PR 77 를 merged-pr 에 적었다')
   })
 
   test('마일스톤 항목은 배포가 성공하면 [deploy] 단계까지 끝내고 done 지점 전이면 doing 으로 둔다', async (t) => {
@@ -908,7 +927,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
       `board step m 3 --file ${file}`,
       `board set m --merged-pr 77 --file ${file}`,
     ])
-    has(r.stdout, '보드 m 는 done 지점 전이라 단계만 끝내고 PR 77 를 merged-pr 에 적었다')
+    has(r.stdout, '보드 m 는 done 지점 전이거나 끝나지 않은 단계가 남아 단계만 끝내고 PR 77 를 merged-pr 에 적었다')
   })
 
   test('마일스톤 항목의 중간 PR 은 pr 칸을 비우고 merged-pr 에 쌓는다', async (t) => {
