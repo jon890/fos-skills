@@ -15,9 +15,9 @@ korean-check 는 KOREAN_CHECK 환경 변수, 이 스킬의 형제 디렉터리, 
 플러그인 설치본은 저장소 전체를 복사하므로 형제 디렉터리에 있다.
 
 검사 항목 (위반 줄 형식: <파일>:<줄>: <종류>: <설명>)
-    tag       닫히지 않은 태그, 짝이 맞지 않는 끝 태그. 끝 태그를 생략할 수 있는 요소도 닫아야 한다
+    tag       닫히지 않은 태그, 짝이 맞지 않는 끝 태그, <html> 이 없는 파일. 끝 태그를 생략할 수 있는 요소도 닫아야 한다
     external  밖에서 불러오는 script, CSS, 글꼴, 이미지 같은 자원. data: 와 # 만 허용한다.
-              상대 경로도 다른 파일에 기대므로 막는다. 본문의 <a href="https://..."> 는 허용한다
+              CSS 주석 안의 url() 은 보지 않는다. 상대 경로도 다른 파일에 기대므로 막는다. 본문의 <a href="https://..."> 는 허용한다
     ref       href="#x" 링크가 가리키는 id 가 없다
     source    id 가 src- 로 시작하는 출처 항목을 가리키는 링크가 없다
     id        같은 id 가 두 번 나온다
@@ -52,9 +52,14 @@ RESOURCE_ATTRS = {
     "image": ("href", "xlink:href"),
     "use": ("href", "xlink:href"),
     "base": ("href",),
+    "body": ("background",),
+    "table": ("background",),
+    "td": ("background",),
+    "th": ("background",),
 }
 CSS_URL = re.compile(r"""url\(\s*['"]?([^'")\s]*)""", re.I)
 CSS_IMPORT = re.compile(r"""@import\s+(?:url\(\s*)?['"]?([^'")\s;]*)""", re.I)
+CSS_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\.html$")
 # --text 에서 줄을 나누는 요소
 BLOCK = {
@@ -84,6 +89,7 @@ class Checker(html.parser.HTMLParser):
         self.problems.append((line or self.getpos()[0], kind, msg))
 
     def check_css(self, css, line):
+        css = CSS_COMMENT.sub("", css)
         for pattern in (CSS_URL, CSS_IMPORT):
             for m in pattern.finditer(css):
                 if not allowed(m.group(1)):
@@ -194,9 +200,12 @@ class TextExtractor(html.parser.HTMLParser):
 
 def check(path):
     checker = Checker()
-    checker.feed(path.read_text(encoding="utf-8"))
+    body = path.read_text(encoding="utf-8")
+    checker.feed(body)
     checker.close()
     problems = checker.finish()
+    if "<html" not in body.lower():
+        problems.insert(0, (1, "tag", "<html> 요소가 없다. 틀을 복사해 채운 보고서가 아니다"))
     if not SLUG.match(path.name):
         problems.insert(0, (1, "name", f"파일 이름 {path.name} 이 슬러그(영문 소문자, 숫자, -)가 아니다"))
     return problems
@@ -243,7 +252,7 @@ def main(argv):
     mode = argv[0] if argv and argv[0] in ("--text", "--korean") else ""
     args = argv[1:] if mode else argv
     if len(args) != 1 or args[0].startswith("-"):
-        print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
+        print(next(b for b in __doc__.split("\n\n") if b.startswith("사용법")), file=sys.stderr)
         return 2
     path = pathlib.Path(args[0])
     if not path.is_file():

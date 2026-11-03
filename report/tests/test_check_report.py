@@ -77,6 +77,19 @@ class CheckReportTest(unittest.TestCase):
         body = OK_BODY.replace("</section>", '<svg><defs><g id="dot"></g></defs><use href="#dot"/></svg></section>')
         self.assertEqual(run(str(self.write(body))).returncode, 0)
 
+    def test_background_attribute(self):
+        self.assert_fails(OK_BODY.replace("<body>", '<body background="https://x.example/a.png">'), "external")
+
+    def test_css_comment_is_not_external(self):
+        body = OK_BODY.replace("body{color:#000}", "/* url(https://x.example/a.png) */body{color:#000}")
+        self.assertEqual(run(str(self.write(body))).returncode, 0)
+
+    def test_empty_file_fails(self):
+        self.assert_fails("", "tag")
+
+    def test_no_args_prints_usage(self):
+        self.assertIn("사용법", run().stderr)
+
     def test_unclosed_tag(self):
         self.assert_fails(OK_BODY.replace("</section>", "<div></section>"), "tag")
 
