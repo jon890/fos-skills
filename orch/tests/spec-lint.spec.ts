@@ -189,8 +189,8 @@ describe('지시서 검사', () => {
 
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
-    // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고 규칙에 표지를 단다
-    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback']) {
+    // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고, 공부 후보 보고 규칙에 표지를 단다
+    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates']) {
       assert.match(template, new RegExp(`<!-- orch-rule: ${rule} -->`))
     }
     const a = spec('spec-a', '담당: `src/a/**`')
