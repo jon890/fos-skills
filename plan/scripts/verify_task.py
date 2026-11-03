@@ -864,10 +864,10 @@ def check_staged(path, text, repo, out, warnings):
             changes.append((rel, {"A": "신규", "D": "삭제"}.get(status, "수정")))
     if not changes:
         out.append(f"{path} — staged 변경이 없다")
-    plan_dir = (repo / path).resolve().parent
+    plan_dir = posixpath.abspath((repo / path).parent)
     implementation_changes = [
         (rel, action) for rel, action in changes
-        if not ((repo / rel).resolve().parent == plan_dir
+        if not (posixpath.abspath((repo / rel).parent) == plan_dir
                 and (Path(rel).name == "index.json" or Path(rel).match("phase-*.md")))
     ]
     # 메타데이터 보완 커밋에는 이미 커밋한 신규 구현 파일이 다시 staged 될 필요가 없다.

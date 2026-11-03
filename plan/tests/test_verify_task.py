@@ -1035,6 +1035,18 @@ class TaskRulesTest(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertIn("staged 변경 종류가 목록과 다르다: tests/test_app.py (신규)", out[0])
 
+    def test_staged_symlink_outside_plan_is_not_own_metadata(self):
+        self.prepare_staged_metadata()
+        self.file("tests/test_app.py", "pass\n")
+        other = self.repo / "tasks/plan2-other/index.json"
+        other.parent.mkdir()
+        other.symlink_to("../plan1-app/index.json")
+        self.git("add", "tests", "tasks/plan2-other")
+        phase = Path(f"{self.plan_dirs[0]}/phase-01.md")
+        out = []
+        verify.check_staged(phase, self.phase_manifest, self.repo, out, [])
+        self.assertEqual(out, [f"{phase} — phase 범위 밖의 staged 파일: tasks/plan2-other/index.json"])
+
     def test_staged_type_mismatch_and_ellipsis_are_rejected(self):
         self.git("init", "--quiet")
         self.file("src/app.py")
