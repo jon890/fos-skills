@@ -22,6 +22,11 @@ kill -TERM $PIDS
 반복 helper 묶음은 부모 앱이 다시 띄우는 것이면 승인 뒤 `pkill -f` 로 종료해도 된다.
 무엇이 다시 띄우는지(예: IntelliJ 의 tailwind 플러그인이 `oxide-helper.js` 를 다시 띄운다) 한 줄로 적어 사용자에게 보인다.
 
+## 대화 기록
+
+오래된 기록은 `targets.md` 의 「대화 기록 명령」, 워크트리가 사라진 기록은 「워크트리가 사라진 대화 기록 명령」 이 절차를 소유한다.
+후자는 `survey_sessions.py --json-out` 파일을 `delete_sessions.py` 에 넘긴다.
+
 ## 워크트리
 
 "제거 후보" 는 머지됨, 미커밋 변경 0, 그 브랜치의 stash 0, 사용 중 아님을 모두 만족한 것이다.

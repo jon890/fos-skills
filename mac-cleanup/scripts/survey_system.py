@@ -321,6 +321,7 @@ def survey_tool_caches():
     size_of(os.path.join(HOME, ".gradle"))
     size_of(os.path.join(HOME, ".m2"))
     size_of(os.path.join(HOME, ".cache/uv"))
+    size_of(os.path.join(HOME, ".bun/install/cache"))
     if shutil.which("pip3"):
         size_of((run(["pip3", "cache", "dir"]) or "").strip())
     if shutil.which("brew"):

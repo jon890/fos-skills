@@ -7,7 +7,7 @@ description: |
   "오래된 세션 정리", "머지된 브랜치 정리", "워크트리 정리", "disk cleanup" 같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, 스킬 문서) 정리는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "1.12.0"
+  version: "1.13.0"
 ---
 
 # mac-cleanup
@@ -37,12 +37,12 @@ metadata:
 
 ## 1. 조사
 
-`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$SURVEY` 와 `$VOLUMES` 는 브랜치와 익명 volume 조사 JSON 을 저장할 파일 경로다. 아래 조사 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
+`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$SURVEY`, `$VOLUMES`, `$ORPHANS` 는 브랜치, 익명 volume, 워크트리가 사라진 대화 기록 조사 JSON 을 저장할 파일 경로다. 아래 조사 스크립트는 모두 읽기 전용이고 cwd 는 어디든 된다.
 `survey_system.py` 는 `du` 때문에 1분에서 5분 걸리므로 백그라운드로 돌리고, 나머지를 그동안 돌린다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/survey_system.py"
-python3 "$SKILL_DIR/scripts/survey_sessions.py"
+python3 "$SKILL_DIR/scripts/survey_sessions.py" --json-out "$ORPHANS"
 python3 "$SKILL_DIR/scripts/survey_git.py" --json-out "$SURVEY"
 bash "$SKILL_DIR/scripts/survey_gradle.sh"
 python3 "$SKILL_DIR/scripts/docker_images.py"
@@ -79,7 +79,7 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek all --json-out "$VOLUMES"
 
 승인한 묶음의 명령만 돌리고, 명령마다 종료 코드와 확보량을 기록한다.
 세션, 브랜치, 워크트리 정리는 `references/git-and-sessions.md` 의 절차를 따른다.
-브랜치 삭제와 `PR 확인 필요(-D)` 판정은 `references/git-and-sessions.md`, 익명 volume 삭제는 `references/targets.md` 가 절차를 소유한다. 둘 다 1단계의 `--json-out` 파일을 입력으로 받아 dry-run 으로 먼저 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. Docker 를 지웠다면 마지막에 `colima_trim.py` 를 돈다.
+브랜치 삭제와 `PR 확인 필요(-D)` 판정은 `references/git-and-sessions.md`, 익명 volume 과 워크트리가 사라진 대화 기록 삭제는 `references/targets.md` 가 절차를 소유한다. 둘 다 1단계의 `--json-out` 파일을 입력으로 받아 dry-run 으로 먼저 보인 뒤, 승인한 묶음만 `--apply` 로 돈다. Docker 를 지웠다면 마지막에 `colima_trim.py` 를 돈다.
 reference 가 처리 절차를 정한 거절(`branch -d` 의 `not fully merged`)을 빼고는, 명령이 실패하면 멈추고 원인을 보고한다.
 
 ## 5. 재측정과 보고

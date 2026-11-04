@@ -54,8 +54,11 @@ rm -rf "${DIR:?}"
 | pip | 안전 | `pip3 cache purge` |
 | pnpm | 안전 | `pnpm store prune` |
 | Docker 빌드 캐시 | 안전 | `docker builder prune -af` |
+| bun | 안전 | `pgrep -fl 'bun install'` 로 설치 중인 bun 이 없는지 본 뒤 `rm -rf "${HOME:?}/.bun/install/cache"` |
 
 **`npm cache clean --force` 는 `~/.npm/_cacache` 만 비운다.** `~/.npm/_npx` 는 그대로라 종료 코드 0 이어도 확보량이 0 일 수 있다(실측: `~/.npm` 3.4GB 가 전부 `_npx` 였다). 확보량은 `~/.npm` 합계가 아니라 `_cacache` 크기로 약속한다.
+
+**`bun pm cache rm` 은 프로젝트 밖에서 아무것도 지우지 않는다.** 2026-11-04 실측: 「Run "bun init"」 만 내고 종료 코드 0 으로 끝났고 `~/.bun/install/cache` 2.4GB 가 그대로였다. 폴더를 지워서 비웠다.
 
 **`pnpm store prune` 은 참조되지 않는 패키지만 지운다.** store 대부분이 프로젝트에서 쓰이면 거의 줄지 않는다(실측 13GB 중 114MB). 큰 확보량을 약속하지 않는다.
 
@@ -113,7 +116,9 @@ python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES" --apply --kind other  
 `survey_gradle.sh` 가 "삭제 후보" 로 낸 버전만 `~/.gradle/wrapper/dists`, `~/.gradle/caches`, `~/.gradle/daemon` 에서 지운다. 안전 등급이다.
 사용처도 데몬도 없는 버전이므로 지워도 wrapper 가 필요할 때 다시 받는다.
 스크립트가 후보 경로를 한 줄에 하나씩 보이고 끝에 「승인 뒤 돌릴 명령」 으로 `rm -rf` 한 줄을 낸다. 사용자가 승인한 뒤 그 줄을 그대로 돌린다.
-glob 반복문(`for d in ~/.gradle/wrapper/dists/gradle-9.8.0-*; do rm -rf "${d:?}"; done`)으로 지우지 않는다. 2026-11-04 실측: 이 반복문은 Claude Code auto mode 분류기가 되돌릴 수 없는 로컬 삭제로 막았고, 경로를 하나씩 적은 `rm -rf` 는 통과했다.
+glob 반복문(`for d in ~/.gradle/wrapper/dists/gradle-9.8.0-*; do rm -rf "${d:?}"; done`)으로 지우지 않는다.
+2026-11-04 실측: auto mode 분류기가 glob 반복문과 npm, brew, pnpm, mise 정리를 한 명령에 묶은 것을 되돌릴 수 없는 로컬 삭제로 막았다. 원인이 반복문인지 묶음인지는 가르지 않았다. 경로를 하나씩 적은 `rm -rf` 는 통과했다.
+스크립트가 낸 `rm -rf` 한 줄을 그대로 돌리는 규칙은 남긴다. 사용자가 승인한 목록과 실행 명령이 같아지기 때문이다.
 
 ## 프로젝트 산출물
 
@@ -129,6 +134,7 @@ find "$PROJECT" -type d \( -name node_modules -o -name build -o -name .gradle -o
 | 대상 | 등급 | 이유 |
 | --- | --- | --- |
 | `~/.claude/projects`, `~/.codex/sessions`, `orca/codex-accounts/*/home/sessions` | 확인 필요 | 지우면 resume 할 수 없다. 기본 기준은 30일이다. 명령은 아래 「대화 기록 명령」 |
+| 워크트리가 사라진 Claude 기록 폴더(`~/.claude/projects` 하위) | 확인 필요 | 안의 `cwd` 경로가 이미 없는 폴더다. 명령은 아래 「워크트리가 사라진 대화 기록 명령」. `harness-cleanup` 의 사용 기록 감사(`session_log.py`)가 이 기록을 입력으로 읽으므로 지우면 감사 자료가 준다 |
 | `orca/codex-accounts/*` 디렉터리 자체 | 유지 | 로그인 정보가 들어 있어 지우지 않는다. 그 안의 `home/sessions` 만 정리 대상이다 |
 | `.orca-worktree-trash` | 유지 | Orca 가 관리한다 |
 | 반복 helper 프로세스 | 확인 필요 | 절차는 `git-and-sessions.md`. 명령은 아래 「반복 helper 명령」 |
@@ -142,6 +148,20 @@ find "$PROJECT" -type d \( -name node_modules -o -name build -o -name .gradle -o
 find "$LOG_DIR" -type f -mtime +"$DAYS" | wc -l
 find "$LOG_DIR" -type f -mtime +"$DAYS" -delete
 find "$LOG_DIR" -type d -empty -delete
+```
+
+## 워크트리가 사라진 대화 기록 명령
+
+`survey_sessions.py` 의 「워크트리가 사라진 대화 기록」 절이 3일, 7일, 14일, 30일 넘은 묶음마다 개수와 크기를 보인다. 기준 일수는 사용자가 정한다.
+승인 질문에 묶음별 개수와 크기를 그대로 보이고, `harness-cleanup` 감사 자료가 준다는 점을 적는다.
+실측(2026-11-04): `~/.claude/projects` 18.4GB 의 폴더 1532개 가운데 1500개(13.5GB)가 `cwd` 가 없는 기록이었다. 30일 기준 대화 기록 절은 350.8MB 만 잡았다. orch worker 워크트리가 머지 뒤 지워지면서 남은 기록이다. 마지막 수정이 3일 넘은 것 1279개 12.4GB, 7일 넘은 것 1003개 10.7GB, 14일 넘은 것 731개 7.5GB 였다.
+`delete_sessions.py` 는 지우기 직전에 경로가 기록 폴더 바로 아래인지, `cwd` 가 여전히 없는지, 가장 늦은 수정 시각이 조사 때와 같은지 다시 확인하고 하나라도 다르면 남긴다.
+기본은 dry-run 이고 `--apply` 일 때만 지운다. 실패가 있으면 종료 코드가 1 이다. `cwd` 를 읽지 못한 폴더는 후보에 넣지 않는다.
+
+```bash
+python3 "$SKILL_DIR/scripts/survey_sessions.py" --json-out "$ORPHANS"
+python3 "$SKILL_DIR/scripts/delete_sessions.py" "$ORPHANS" --older-than-days "$DAYS"           # dry-run
+python3 "$SKILL_DIR/scripts/delete_sessions.py" "$ORPHANS" --older-than-days "$DAYS" --apply
 ```
 
 ## 반복 helper 명령
