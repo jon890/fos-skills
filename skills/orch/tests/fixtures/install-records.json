@@ -1,0 +1,68 @@
+{
+  "about": "번들 고르기 규칙(lib/install-record.ts 의 selectBundle)의 사례 표다. 진입점, 플러그인 루트의 실행기 bin/orch, templates/spec-common.md 의 한 줄 풀이가 같은 답을 내야 한다. 경로는 임시 폴더 기준 상대경로다. bundles 의 폴더에는 skills/orch/scripts 와 진입점을, legacy 의 폴더에는 3.x 배치 orch/scripts 만 만든다. record 가 null 이면 설치 기록 파일이 없고, \"broken\" 이면 JSON 이 깨졌다. expect 가 own 이면 부르는 쪽이 든 번들이다.",
+  "cases": [
+    {
+      "name": "user 하나",
+      "record": [{ "scope": "user", "path": "u1" }],
+      "bundles": ["u1", "own"],
+      "legacy": [],
+      "expect": { "bundle": "u1" }
+    },
+    {
+      "name": "user 가 project 보다 앞서고 같은 범위는 기록 순서",
+      "record": [{ "scope": "project", "path": "p1" }, { "scope": "user", "path": "u1" }, { "scope": "user", "path": "u2" }],
+      "bundles": ["p1", "u1", "u2", "own"],
+      "legacy": [],
+      "expect": { "bundle": "u1" }
+    },
+    {
+      "name": "user 항목 가운데 스크립트 폴더가 있는 첫 항목",
+      "record": [{ "scope": "user", "path": "gone" }, { "scope": "user", "path": "u2" }],
+      "bundles": ["u2", "own"],
+      "legacy": [],
+      "expect": { "bundle": "u2" }
+    },
+    {
+      "name": "user 설치본에 스크립트가 없으면 project 로 넘어가지 않는다",
+      "record": [{ "scope": "user", "path": "gone" }, { "scope": "project", "path": "p1" }],
+      "bundles": ["p1", "own"],
+      "legacy": [],
+      "expect": { "error": true }
+    },
+    {
+      "name": "user 설치본이 3.x 배치면 오류",
+      "record": [{ "scope": "user", "path": "old3" }, { "scope": "project", "path": "p1" }],
+      "bundles": ["p1", "own"],
+      "legacy": ["old3"],
+      "expect": { "error": true }
+    },
+    {
+      "name": "user 가 없으면 다른 범위를 기록 순서로",
+      "record": [{ "scope": "project", "path": "gone" }, { "scope": "local", "path": "l1" }, { "scope": "project", "path": "p2" }],
+      "bundles": ["l1", "p2", "own"],
+      "legacy": [],
+      "expect": { "bundle": "l1" }
+    },
+    {
+      "name": "기록이 없으면 own",
+      "record": null,
+      "bundles": ["own"],
+      "legacy": [],
+      "expect": { "bundle": "own" }
+    },
+    {
+      "name": "기록이 깨졌으면 own",
+      "record": "broken",
+      "bundles": ["own"],
+      "legacy": [],
+      "expect": { "bundle": "own" }
+    },
+    {
+      "name": "기록의 항목이 모두 없으면 own",
+      "record": [{ "scope": "project", "path": "gone" }],
+      "bundles": ["own"],
+      "legacy": [],
+      "expect": { "bundle": "own" }
+    }
+  ]
+}

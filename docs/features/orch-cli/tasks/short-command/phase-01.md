@@ -81,6 +81,7 @@ node --test skills/orch/tests/lib-install-record.spec.ts skills/orch/tests/lib-c
 | `skills/orch/scripts/lib/install-record.ts` | 신규 |
 | `skills/orch/scripts/lib/commands.ts` | 신규 |
 | `skills/orch/tests/fixtures/install-records.json` | 신규 |
+| `skills/orch/tests/fixtures/install-records.ts` | 신규 |
 | `skills/orch/tests/lib-install-record.spec.ts` | 신규 |
 | `skills/orch/bin/orch.ts` | 수정 |
 | `skills/orch/scripts/lib/bundle.ts` | 수정 |

@@ -2,7 +2,8 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -21,14 +22,22 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-// 번들 하나. hello 스크립트가 자기 이름과 받은 인자, 종료 코드 요청을 낸다
-function bundle(name: string): string {
-  const root = join(tmp, 'cache', name)
-  mkdirSync(join(root, 'skills', 'orch', 'scripts'), { recursive: true })
-  writeFileSync(
-    join(root, 'skills', 'orch', 'scripts', 'hello.ts'),
-    `console.log('${name}', process.argv.slice(2).join(' '))\nprocess.exitCode = Number(process.env.HELLO_EXIT ?? 0)\n`,
-  )
+// 번들 하나. 이 체크아웃의 진입점과 lib 사본을 넣어, 다른 번들에서 넘겨받은 진입점이 돌게 한다(lib: false 면 이 기능 이전 번들이다).
+// hello 스크립트가 자기 이름과 받은 인자, 종료 코드 요청을 낸다. wait-important 와 orch-loop 는 새 꼴의 대상이 되는 같은 꼴의 가짜다.
+// sleeper 는 ready 를 내고 신호를 기다린다
+function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): string {
+  const root = join(opts.base ?? join(tmp, 'cache'), name)
+  const scripts = join(root, 'skills', 'orch', 'scripts')
+  mkdirSync(scripts, { recursive: true })
+  const echo = `console.log('${name}', process.argv.slice(2).join(' '), 'hop=' + (process.env.ORCH_ENTRY_HOP ?? ''))\nprocess.exitCode = Number(process.env.HELLO_EXIT ?? 0)\n`
+  writeFileSync(join(scripts, 'hello.ts'), `console.log('${name}', process.argv.slice(2).join(' '))\nprocess.exitCode = Number(process.env.HELLO_EXIT ?? 0)\n`)
+  for (const fake of ['wait-important.ts', 'orch-loop.ts']) writeFileSync(join(scripts, fake), echo)
+  writeFileSync(join(scripts, 'sleeper.ts'), "console.log('ready')\nsetInterval(() => {}, 1000)\n")
+  if (opts.lib !== false) {
+    mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
+    copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
+    cpSync(join(OWN_SCRIPTS, 'lib'), join(scripts, 'lib'), { recursive: true })
+  }
   return root
 }
 
@@ -83,15 +92,47 @@ describe('번들 고르기', () => {
     assert.equal(orch(['hello'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), 'user-1')
   })
 
-  test('skills/orch/scripts 가 없는 installPath 는 건너뛴다', () => {
+  test('user 범위 설치본에 skills/orch/scripts 가 없으면 project 범위로 넘어가지 않고 3 이다', () => {
     const config = join(tmp, 'profile')
     install(config, [
       { scope: 'user', installPath: join(tmp, 'cache', 'deleted') },
       { scope: 'project', installPath: bundle('alive') },
     ])
     const r = orch(['hello'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.code, 3)
+    assert.equal(r.stdout, '')
+    assert.match(r.stderr, /user 범위 설치본 .*deleted 에 skills\/orch\/scripts 가 없다/)
+    assert.match(r.stderr, /deleted\/skills\/orch\/bin\/orch\.ts/)
+  })
+
+  test('project 범위만 있으면 기록 순서로 스크립트가 있는 항목을 쓴다', () => {
+    const config = join(tmp, 'profile')
+    install(config, [
+      { scope: 'project', installPath: join(tmp, 'cache', 'deleted') },
+      { scope: 'project', installPath: bundle('alive') },
+    ])
+    const r = orch(['hello'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 0, r.stderr)
     assert.equal(r.stdout.trim(), 'alive')
+  })
+
+  test('옛 번들의 진입점으로 불러도 현재 설치본의 진입점이 돌고 STALE-BUNDLE 이 없다', () => {
+    const config = join(tmp, 'profile')
+    const cacheDir = join(tmp, 'plugins', 'cache', 'fos-skills', 'fos-skills')
+    install(config, [{ scope: 'user', installPath: bundle('current', { base: cacheDir }) }])
+    const old = bundle('old', { base: cacheDir })
+    const r = orch(['hello', 'x'], { CLAUDE_CONFIG_DIR: config }, join(old, 'skills', 'orch', 'bin', 'orch.ts'))
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout.trim(), 'current x')
+    assert.doesNotMatch(r.stderr, /STALE-BUNDLE/)
+  })
+
+  test('설치본이 이 기능 이전 번들이면 넘기지 않고 갱신을 안내하며 3 이다', () => {
+    const config = join(tmp, 'profile')
+    install(config, [{ scope: 'user', installPath: bundle('before', { lib: false }) }])
+    const r = orch(['hello'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.code, 3)
+    assert.match(r.stderr, /새 진입점이 없다.*claude plugin update fos-skills@fos-skills/)
   })
 
   test('CLAUDE_CONFIG_DIR 가 없으면 ~/.claude 를 쓴다', () => {
@@ -109,24 +150,15 @@ describe('번들 고르기', () => {
     assert.match(r.stderr, /설치본을 찾지 못해 이 진입점이 든 번들을 쓴다/)
   })
 
-  test('진입점 파일만 복사해 둔 사본도 설치 기록을 따라간다', () => {
+  test('진입점 파일만 복사한 사본은 실행기 복사를 안내하고 3 이다', () => {
     const config = join(tmp, 'profile')
     install(config, [{ scope: 'user', installPath: bundle('installed') }])
     const vendored = join(tmp, 'repo', '.orch', 'bin', 'orch.ts')
     mkdirSync(dirname(vendored), { recursive: true })
     copyFileSync(ENTRY, vendored)
     const r = orch(['hello', 'from-copy'], { CLAUDE_CONFIG_DIR: config }, vendored)
-    assert.equal(r.code, 0, r.stderr)
-    assert.equal(r.stdout.trim(), 'installed from-copy')
-  })
-
-  test('설치 기록도 이 진입점의 번들도 없으면 3 이다', () => {
-    const vendored = join(tmp, 'alone', 'orch.ts')
-    mkdirSync(dirname(vendored), { recursive: true })
-    copyFileSync(ENTRY, vendored)
-    const r = orch(['hello'], { CLAUDE_CONFIG_DIR: join(tmp, 'empty') }, vendored)
     assert.equal(r.code, 3)
-    assert.match(r.stderr, /orch\/scripts 를 찾지 못했다/)
+    assert.match(r.stderr, /진입점만 복사해 쓰지 않는다.*bin\/orch/)
   })
 
   test('ORCH_SCRIPTS_DIR 가 설치 기록보다 앞선다', () => {
@@ -136,6 +168,15 @@ describe('번들 고르기', () => {
     const r = orch(['hello'], { CLAUDE_CONFIG_DIR: config, ORCH_SCRIPTS_DIR: join(checkout, 'skills', 'orch', 'scripts') })
     assert.equal(r.stdout.trim(), 'checkout')
     assert.equal(orch(['hello'], { CLAUDE_CONFIG_DIR: config, ORCH_SCRIPTS_DIR: join(tmp, 'nope') }).code, 3)
+  })
+
+  test('ORCH_SCRIPTS_DIR 의 체크아웃 진입점이 그 체크아웃의 명령 표로 푼다', () => {
+    const config = join(tmp, 'profile')
+    install(config, [{ scope: 'user', installPath: bundle('installed') }])
+    const checkout = bundle('checkout')
+    const r = orch(['loop', 'start', '--x'], { CLAUDE_CONFIG_DIR: config, ORCH_SCRIPTS_DIR: join(checkout, 'skills', 'orch', 'scripts') })
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout.trim(), 'checkout --start --x hop=')
   })
 })
 
@@ -193,7 +234,7 @@ describe('사용법 오류', () => {
   test('없는 이름은 쓸 수 있는 이름을 알리고 2 다', () => {
     const r = orch(['nope'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 2)
-    assert.match(r.stderr, /쓸 수 있는 이름: hello$/m)
+    assert.match(r.stderr, /쓸 수 있는 이름: hello orch-loop sleeper wait-important$/m)
   })
 
   test('경로 구분자나 .. 이 든 이름은 거부한다', () => {
@@ -207,12 +248,71 @@ describe('사용법 오류', () => {
     assert.equal(orch([], { CLAUDE_CONFIG_DIR: config }).code, 2)
     const help = orch(['--help'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(help.code, 0)
-    assert.match(help.stdout, /^사용법: orch\.ts NAME/)
+    assert.match(help.stdout, /^사용법: orch <묶음> <동작>/)
+    assert.match(help.stdout, /orch loop start/)
   })
 
   test('모르는 옵션과 --path 의 이름 둘은 2 다', () => {
     assert.equal(orch(['--nope'], { CLAUDE_CONFIG_DIR: config }).code, 2)
     assert.equal(orch(['--path', 'a', 'b'], { CLAUDE_CONFIG_DIR: config }).code, 2)
+  })
+})
+
+describe('새 꼴과 옛 꼴', () => {
+  let config: string
+  beforeEach(() => {
+    config = join(tmp, 'profile')
+    install(config, [{ scope: 'user', installPath: bundle('b') }])
+  })
+
+  test('새 꼴이 명령 표의 스크립트를 앞 인자와 함께 부르고 스크립트 자식에 ORCH_ENTRY_HOP 을 넘기지 않는다', () => {
+    const r = orch(['loop', 'start', '--repo', '/r'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout.trim(), 'b --start --repo /r hop=')
+    assert.doesNotMatch(r.stderr, /새 꼴/)
+  })
+
+  test('옛 꼴은 같은 stdout 과 종료 코드를 내고 stderr 에 새 꼴을 한 줄 안내한다', () => {
+    const fresh = orch(['wait', '--ack', 'd1', '--run', 'R'], { CLAUDE_CONFIG_DIR: config, HELLO_EXIT: '5' })
+    const old = orch(['wait-important', '--ack', 'd1', '--run', 'R'], { CLAUDE_CONFIG_DIR: config, HELLO_EXIT: '5' })
+    assert.equal(fresh.code, 5)
+    assert.equal(old.code, fresh.code)
+    assert.equal(old.stdout, fresh.stdout)
+    assert.equal(old.stderr.split('\n').filter((l) => l === 'orch: 새 꼴: orch wait').length, 1)
+    const loop = orch(['orch-loop.ts', '--start'], { CLAUDE_CONFIG_DIR: config })
+    assert.match(loop.stderr, /^orch: 새 꼴: orch loop start$/m)
+  })
+
+  test('새 꼴은 옛 모드 플래그를 사용법 오류로 거부한다', () => {
+    const r = orch(['loop', '--start'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.code, 2)
+    assert.equal(r.stdout, '')
+    assert.equal(orch(['wait', '--ack-l', 'd'], { CLAUDE_CONFIG_DIR: config }).code, 2)
+  })
+
+  test('묶음의 --help 는 동작 목록을 낸다', () => {
+    const r = orch(['loop', '--help'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.code, 0)
+    assert.match(r.stdout, /orch loop start/)
+    assert.match(r.stdout, /orch loop stalled/)
+  })
+
+  test('--path 는 옛 이름을 명령 표로 푼다', () => {
+    const r = orch(['--path', 'wait-important'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout.trim(), join(tmp, 'cache', 'b', 'skills', 'orch', 'scripts', 'wait-important.ts'))
+  })
+
+  test('받은 SIGTERM 을 자식에게 전하고 143 으로 끝난다', async () => {
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', ENTRY, 'sleeper'], { env: env({ CLAUDE_CONFIG_DIR: config }) })
+    let out = ''
+    await new Promise<void>((done) => child.stdout.on('data', (d) => {
+      out += String(d)
+      if (out.includes('ready')) done()
+    }))
+    child.kill('SIGTERM')
+    const code = await new Promise<number | null>((done) => child.on('close', (c) => done(c)))
+    assert.equal(code, 143)
   })
 })
 
