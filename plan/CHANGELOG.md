@@ -1,5 +1,9 @@
 # CHANGELOG: plan
 
+## 5.4.0 (2026-11-04)
+
+- `verify_task.py` 가 `claude plugin test [dir]` 를 dir 아래 `*.test.ts`, `*.test.tsx` 를 실행하는 테스트 명령으로 봐요.
+
 ## 5.3.0 (2026-11-03)
 
 - 도메인 규칙 변경이 있으면 도메인 문서·출력 계약 수정과 규칙별 확인 사례를 작업에 넣어요.

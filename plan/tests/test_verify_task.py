@@ -1325,5 +1325,37 @@ class PrScopeTest(unittest.TestCase):
         self.assertEqual(1, len(warnings), warnings)
 
 
+class PluginTestRunnerTest(unittest.TestCase):
+    """`claude plugin test [dir]` 은 dir 아래 `*.test.ts`, `*.test.tsx` 를 모두 실행한다."""
+
+    # TaskRulesTest 를 상속하면 그 테스트가 두 번 돈다. 쓰는 도우미만 가져온다.
+    setUp, file, prompt, inspect, classify = (TaskRulesTest.setUp, TaskRulesTest.file, TaskRulesTest.prompt,
+                                              TaskRulesTest.inspect, TaskRulesTest.classify)
+
+    def test_plugin_test_is_a_test_command(self):
+        for line in ("claude plugin test .", "claude plugin test", "claude plugin test work-board"):
+            with self.subTest(line=line):
+                self.assertEqual(self.classify(line), "test")
+        for line in ("claude plugin list", "claude plugin test --help", "claude -p hi"):
+            with self.subTest(line=line):
+                self.assertEqual(self.classify(line), "other")
+
+    def test_plugin_test_runs_declared_test_ts_under_its_directory(self):
+        entries = [("work-board/pane.ts", "수정"), ("work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
+        work = "### 1. `work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
+        node = 'node --test "orch/tests/a.spec.ts"'
+        for command in ("claude plugin test .", "claude plugin test", "cd work-board && claude plugin test", "claude plugin test work-board"):
+            with self.subTest(command=command):
+                self.assertEqual(self.inspect(work, f"{command}\n{node}", entries), [])
+
+    def test_plugin_test_does_not_run_other_tests_or_other_directories(self):
+        entries = [("work-board/pane.ts", "수정"), ("work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
+        work = "### 1. `work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
+        out = self.inspect(work, "claude plugin test .", entries)
+        self.assertEqual(["phase.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: orch/tests/a.spec.ts"], out)
+        out = self.inspect(work, 'claude plugin test orch\nnode --test "orch/tests/a.spec.ts"', entries)
+        self.assertEqual(["phase.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: work-board/tests/pane.test.ts"], out)
+
+
 if __name__ == "__main__":
     unittest.main()

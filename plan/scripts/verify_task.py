@@ -17,6 +17,7 @@ phase 안 Markdown 상대 링크는 phase 파일 위치 기준으로 풀어 없�
 작업 트리와 로컬, 원격 브랜치의 tasks 디렉터리를 본다. 보고에서 phase 번호가 어느 계획인지 갈리지 않게 된다.
 index.json 의 pr_scope(한 문장)와 deferred(뒤로 미룬 일) 칸을 보고, phase 가 6개를 넘으면 plan 을 나누게 한다.
 변경 파일이 40개를 넘으면 경고한다. 기준은 references/plan-size.md 가 소유한다.
+`claude plugin test [dir]` 은 dir 아래의 `*.test.ts`, `*.test.tsx` 를 모두 실행하는 테스트 명령으로 본다.
 완료 표시는 요구하지 않는다. 계획의 수명은 references/plan-lifecycle.md 가 정한다.
 계획에 적힌 명령은 실행하지 않는다.
 
@@ -488,6 +489,8 @@ def classify(command, entries, repo, cwd="", depth=0):
         found = True
     elif program in {"go", "cargo", "deno", "dotnet"}:
         found = bool(args) and args[0] == "test"
+    elif program == "claude":
+        found = plugin_test_dir(command) is not None
     elif program in {"make", "gmake"}:
         found = any(a in {"test", "check"} for a in args)
     if found is not None:
@@ -525,6 +528,19 @@ PACKAGE_TEST_VALUE_OPTIONS = {
     "--outputFile", "--output-file", "--reporter", "--reporters",
     "--maxWorkers", "-w", "--config", "-c", "--testTimeout", "--test-timeout",
 }
+
+
+# `claude plugin test [dir]` 은 dir(기본은 cwd) 아래의 `*.test.ts` 와 `*.test.tsx` 를 모두 실행한다. 파일 하나를 지정할 수 없다.
+PLUGIN_TEST_SUFFIXES = (".test.ts", ".test.tsx")
+
+
+def plugin_test_dir(command):
+    """`claude plugin test [dir]` 의 dir 이다. 그 명령이 아니면 None 이다."""
+    command = unwrap(command)
+    if not command or Path(command[0]).name != "claude" or command[1:3] != ["plugin", "test"]:
+        return None
+    rest = [arg for arg in command[3:] if not arg.startswith("-")]
+    return rest[0] if rest else "."
 
 
 def recursive_directory_runner(command):
@@ -1156,16 +1172,27 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
         if test_command(command, entries, repo) and recursive_directory_runner(command)
         for arg in directory_args(command) if not arg.startswith(("/", "-"))
     ]
+    plugin_dirs = [
+        posixpath.normpath(posixpath.join(cwd, directory))
+        for command, cwd in zip(commands, cwds)
+        if (directory := plugin_test_dir(command)) is not None and not directory.startswith("/")
+    ]
     # 보조 파일은 그것을 쓰는 테스트가 실행한다. 어느 테스트가 쓰는지는 구현 전이라 알 수 없어 파일 단위로 대조하지 않는다.
     runnable = [rel for rel in declared_tests if runnable_test(rel)]
-    if runnable and (targeted or directories) and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
+    if runnable and (targeted or directories or plugin_dirs) and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
         for rel in runnable:
             if not any(matches(rel, arg) or Path(rel).name == Path(arg).name or rel.startswith(arg.rstrip("/") + "/") for arg in targeted) \
-                    and not any(rel.startswith(directory + "/") for directory in directories):
+                    and not any(rel.startswith(directory + "/") for directory in directories) \
+                    and not any(under(rel, directory) and rel.endswith(PLUGIN_TEST_SUFFIXES) for directory in plugin_dirs):
                 out.append(f"{path} — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: {rel}")
     for command in runners:
         if any(arg.removeprefix("./").startswith("scripts/") for arg in command):
             warnings.append(f"{path} — 저장소 스크립트의 테스트 범위와 실패 종료 코드는 직접 확인한다: {' '.join(command)}")
+
+
+def under(rel, directory):
+    """rel 이 저장소 루트 기준 directory 아래다. `.` 은 저장소 전체다."""
+    return directory == "." or rel.removeprefix("./").startswith(directory.rstrip("/") + "/")
 
 
 MARKDOWN_LINK = re.compile(r"!?\[[^\]\n]*\]\(\s*(<[^>\n]+>|[^\s)]+)")
