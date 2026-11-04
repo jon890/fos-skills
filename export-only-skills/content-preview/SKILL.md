@@ -110,7 +110,7 @@ bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 
 본문과 함께 제목, 그리고 개인 문체 참조가 있으면 그 점검 항목을 함께 본다.
 
-`korean-check` 가 어디 있는지는 아래 명령이 낸다. 저장소마다 배치가 한 단 다르다.
+`korean-check` 가 어디 있는지는 아래 명령이 낸다.
 
 ```bash
 bash "$SKILL_DIR/scripts/style-check.sh" --where

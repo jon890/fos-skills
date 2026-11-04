@@ -3,8 +3,8 @@
 #
 # 판정 기준과 검사기는 korean-check 스킬이 소유한다. 여기서는 그것을 찾아 부른다.
 # 절대경로를 박지 않는 이유는 저장소마다 스킬 배치가 달라서다.
-# 개인 공용은 <repo>/content-preview, 팀 공용은 <repo>/skills/content-preview 라
-# 두 경우 모두 korean-check 가 형제 디렉터리에 온다.
+# 이 저장소는 export-only-skills/ 아래, 설치본은 스킬 폴더 아래라 어느 쪽이든
+# korean-check 가 형제 디렉터리에 온다.
 #
 # 사용법:
 #   style-check.sh <파일.md> [<파일.md>...]
