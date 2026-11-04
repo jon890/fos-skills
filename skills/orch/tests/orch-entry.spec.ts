@@ -294,6 +294,16 @@ describe('새 꼴과 옛 꼴', () => {
     assert.equal(orch(['wait', '--ack-l', 'd'], { CLAUDE_CONFIG_DIR: config }).code, 2)
   })
 
+  test('dispatch 없는 wait ack-lost 는 일반 대기를 시작하지 않고 2 다', () => {
+    const r = orch(['wait', 'ack-lost', '--run', 'R'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(r.code, 2)
+    assert.equal(r.stdout, '')
+    assert.match(r.stderr, /dispatch/)
+    const fine = orch(['wait', 'ack-lost', 'd1', '--run', 'R'], { CLAUDE_CONFIG_DIR: config })
+    assert.equal(fine.code, 0, fine.stderr)
+    assert.equal(fine.stdout.trim(), 'b --ack-lost d1 --run R hop=')
+  })
+
   test('묶음의 --help 는 동작 목록을 낸다', () => {
     const r = orch(['loop', '--help'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 0)

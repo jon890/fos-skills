@@ -65,7 +65,7 @@ describe('표의 행', () => {
   test('새 꼴은 한 행으로만 풀린다', () => {
     const forms = COMMANDS.map(form)
     assert.equal(new Set(forms).size, forms.length)
-    for (const c of COMMANDS) assert.equal(ok(argvOf(c)).command, c, form(c))
+    for (const c of COMMANDS) assert.equal(ok(argvOf(c, c.positional?.required ? ['v'] : [])).command, c, form(c))
   })
 
   test('옛 이름과 모드 플래그가 같은 행을 가리키고 같은 인자로 돈다', () => {
@@ -111,8 +111,22 @@ describe('인자 바꾸기', () => {
     assert.deepEqual(ok(['slot', 'heavy', '--', 'make', '--x']).args, ['--', 'make', '--x'])
   })
 
+  test('필수 위치 인자가 없으면 사용법 오류다. 옵션으로 직접 준 것은 받는다', () => {
+    // dispatch 없는 ack-lost 가 --ack-lost 없이 일반 대기를 시작하지 않게 한다
+    assert.match(fails(['wait', 'ack-lost']), /dispatch/)
+    assert.match(fails(['wait', 'ack-lost', '--run', 'R']), /dispatch/)
+    fails(['worker', 'screen'])
+    fails(['worker', 'check', '--spec', 's'])
+    assert.deepEqual(ok(['wait', 'ack-lost', 'd1', '--run', 'R']).args, ['--ack-lost', 'd1', '--run', 'R'])
+    assert.deepEqual(ok(['worker', 'screen', '--terminal', 't1']).args, ['--state', '--terminal', 't1'])
+    // 저장소는 선택이다
+    assert.deepEqual(ok(['worker', 'worktree', '--name', 'n']).args, ['--name', 'n'])
+  })
+
   test('`--` 뒤는 위치 인자로 바꾸지 않는다', () => {
-    assert.deepEqual(ok(['wait', 'ack-lost', '--', 'x']).args, ['--', 'x'])
+    assert.deepEqual(ok(['worker', 'worktree', '--', 'x']).args, ['--', 'x'])
+    // 필수 위치 인자는 `--` 뒤의 낱말로 채워지지 않는다
+    fails(['wait', 'ack-lost', '--', 'x'])
   })
 })
 

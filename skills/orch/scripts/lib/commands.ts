@@ -22,7 +22,8 @@ export type Command = {
   verb: string | null
   script: string
   prepend: string[]
-  positional: { flag: string; repeat: boolean; context?: ContextName } | null
+  // required 면 위치 인자도 그 옵션도 없을 때 사용법 오류다. 없이 돌면 동작을 고르는 옵션이 빠져 다른 동작이 된다
+  positional: { flag: string; repeat: boolean; context?: ContextName; required?: boolean; what?: string } | null
   context: ContextName[]
   explicit: Partial<Record<ContextName, RegExp[]>>
   required: ContextName[]
@@ -63,7 +64,7 @@ const ROWS: Row[] = [
     usage: 'orch wait [--ack <delivery>] [--types …] [--timeout-ms …] [--loop-repo <저장소>]',
   },
   {
-    group: 'wait', verb: 'ack-lost', script: 'wait-important.ts', positional: { flag: '--ack-lost', repeat: true }, context: ['run'], required: ['run'],
+    group: 'wait', verb: 'ack-lost', script: 'wait-important.ts', positional: { flag: '--ack-lost', repeat: true, required: true, what: 'dispatch' }, context: ['run'], required: ['run'],
     legacy: { name: 'wait-important', flags: ['--ack-lost'] }, usage: 'orch wait ack-lost <dispatch>...',
   },
   {
@@ -104,7 +105,7 @@ const ROWS: Row[] = [
     usage: 'orch worker nudge --terminal <터미널> [--text <글>]',
   },
   {
-    group: 'worker', verb: 'screen', script: 'nudge-worker.ts', prepend: ['--state'], positional: { flag: '--terminal', repeat: false }, forbid: ['--state'],
+    group: 'worker', verb: 'screen', script: 'nudge-worker.ts', prepend: ['--state'], positional: { flag: '--terminal', repeat: false, required: true, what: '터미널' }, forbid: ['--state'],
     legacy: { name: 'nudge-worker', flags: ['--state'] }, usage: 'orch worker screen <터미널>',
   },
   { group: 'worker', verb: 'ask', script: 'worker-ask.ts', legacy: { name: 'worker-ask', flags: [] }, usage: 'orch worker ask --from <터미널> --question <질문> [--decision]' },
@@ -117,7 +118,7 @@ const ROWS: Row[] = [
     legacy: { name: 'make-worktree', flags: [] }, usage: 'orch worker worktree [<저장소>] --name <이름>',
   },
   {
-    group: 'worker', verb: 'check', script: 'make-worktree.ts', positional: { flag: '--check', repeat: false }, forbid: ['--check'],
+    group: 'worker', verb: 'check', script: 'make-worktree.ts', positional: { flag: '--check', repeat: false, required: true, what: '워크트리' }, forbid: ['--check'],
     legacy: { name: 'make-worktree', flags: ['--check'] }, usage: 'orch worker check <워크트리> --spec <지시서>',
   },
   { group: 'worker', verb: 'deny', script: 'worktree-deny.ts', legacy: { name: 'worktree-deny', flags: [] }, usage: 'orch worker deny <워크트리>' },
@@ -263,6 +264,9 @@ export function resolveNew(argv: string[]): Resolved | { error: string } {
     const { flag, repeat } = command.positional
     let n = 0
     while (n < user.length && !user[n].startsWith('-') && (repeat || n < 1)) n++
+    if (command.positional.required && n === 0 && !hasFlag(user, flag.slice(2))) {
+      return { error: `${form(command)} 에 ${command.positional.what ?? '값'} 을 준다: ${command.usage}` }
+    }
     args = [...user.slice(0, n).flatMap((v) => [flag, v]), ...user.slice(n)]
   }
   return { command, args: [...command.prepend, ...args], user }
