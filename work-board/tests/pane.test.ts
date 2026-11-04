@@ -693,3 +693,61 @@ test('제목에 업무 링크가 있으면 링크는 Button 밖에 그리고 제
   expect(textOf(tail)).toBe(' 정리')
   await ui.unmount()
 })
+
+test('머지 큐 상자는 열린 PR 마다 큐 순서, 대기 이유, 바뀐 시각을 보이고 항목 줄 옆에 큐 순서를 붙인다', async ($, on) => {
+  const list = JSON.stringify([
+    { number: 7, title: '큐 밖', headRefName: 'x', author: { login: 'bifos' }, statusCheckRollup: [] },
+    { number: 8, title: '두 번째', headRefName: 'y', author: { login: 'bifos' }, statusCheckRollup: [] },
+    { number: 9, title: '차례', headRefName: 'z', author: { login: 'bifos' }, statusCheckRollup: [] },
+    { number: 6, title: '모름', headRefName: 'w', author: { login: 'bifos' }, statusCheckRollup: [] },
+  ])
+  const queue = JSON.stringify({ running: true, error: null, prs: {
+    9: { place: 'turn', rank: 1, reason: 'update-branch 뒤 체크 대기', at: '2026-10-22T01:02:00.000Z' },
+    8: { place: 'queued', rank: 2, reason: '#9 차례 대기', at: '2026-10-22T01:02:00.000Z' },
+    7: { place: 'out', rank: null, reason: '미해결 스레드 2', at: '2026-10-22T00:40:00.000Z' },
+  } })
+  const board = JSON.stringify({ items: [{ id: 'q', title: '큐 항목', status: 'doing', pr: 8, next: '1. 머지' }] })
+  const calls = []
+  await start($, on, (argv) => {
+    calls.push(argv)
+    if (argv[0] === 'gh' && argv[1] === 'pr') return { exitCode: 0, stdout: list, stderr: '' }
+    if (argv[0] === 'node' && String(argv[2]).endsWith('/work-board/bin/merge-queue.ts')) return { exitCode: 0, stdout: queue, stderr: '' }
+    return { exitCode: 1, stdout: '', stderr: '없음' }
+  }, board)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  let boxed
+  for (let i = 0; i < 50 && !boxed; i++) boxed = await ui.find({ type: 'Box', key: 'queue-9' })
+  const rowKeys = ((await ui.find({ type: 'Box', key: 'live-queue' }))?.children as Drawn[])
+    .map((child) => child.props?.key).filter((key) => String(key).startsWith('queue-'))
+  expect(rowKeys).toEqual(['queue-9', 'queue-8', 'queue-7', 'queue-6'])
+  expect(textOf(boxed as Drawn)).toContain('지금 차례')
+  expect(textOf(boxed as Drawn)).toContain('update-branch 뒤 체크 대기')
+  expect(textOf(boxed as Drawn)).toMatch(/\d\d:\d\d 부터/)
+  expect(textOf(await ui.find({ type: 'Box', key: 'queue-8' }) as Drawn)).toContain('2 번째')
+  expect(textOf(await ui.find({ type: 'Box', key: 'queue-7' }) as Drawn)).toContain('큐 밖')
+  expect(textOf(await ui.find({ type: 'Box', key: 'queue-7' }) as Drawn)).toContain('미해결 스레드 2')
+  expect(textOf(await ui.find({ type: 'Box', key: 'queue-6' }) as Drawn)).toContain('큐 상태 모름')
+  expect(await ui.find({ type: 'Text', text: /머지 큐 {2}도는 중/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /#8 큐 2 번째/ })).toBeTruthy()
+  // 큐 상태는 gh 를 부르지 않는다. gh 는 읽기마다 열린 PR 목록과 저장소 주소만 부른다
+  expect(calls.filter((argv) => argv[0] === 'gh' && !(argv[1] === 'pr' && argv[2] === 'list') && argv[1] !== 'repo')).toEqual([])
+  expect(calls.filter((argv) => argv[0] === 'gh' && argv[1] === 'pr').length)
+    .toBe(calls.filter((argv) => String(argv[2]).endsWith('merge-queue.ts')).length)
+  expect(calls.find((argv) => String(argv[2]).endsWith('merge-queue.ts'))).toEqual(
+    ['node', '--disable-warning=ExperimentalWarning', expect.stringContaining('merge-queue.ts'), '--repo', '/repo'])
+  await ui.unmount()
+})
+
+test('머지 큐 출력을 읽지 못하면 상자 머리와 모든 줄이 「큐 상태 모름」 이다', async ($, on) => {
+  const list = JSON.stringify([{ number: 7, title: '하나', headRefName: 'x', author: { login: 'bifos' }, statusCheckRollup: [] }])
+  await start($, on, (argv) => argv[0] === 'gh' && argv[1] === 'pr'
+    ? { exitCode: 0, stdout: list, stderr: '' }
+    : { exitCode: 1, stdout: '', stderr: '없음' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  let row
+  for (let i = 0; i < 50 && !row; i++) row = await ui.find({ type: 'Box', key: 'queue-7' })
+  expect(textOf(row as Drawn)).toContain('큐 상태 모름')
+  expect(await ui.find({ type: 'Text', text: /머지 큐 {2}상태 모름/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /큐 상태를 읽지 못했어요/ })).toBeTruthy()
+  await ui.unmount()
+})
