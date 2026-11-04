@@ -1,1 +1,0 @@
-- orch 의 워크트리 정리 명령을 새 꼴 `orch cleanup worktree`, `orch cleanup sweep` 으로 안내해요

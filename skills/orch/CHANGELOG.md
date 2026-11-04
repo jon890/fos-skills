@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.12.0 (2026-11-05)
+
+- 스크립트를 `orch <묶음> <동작>` 으로 불러요. 플러그인 루트 `bin/orch` 가 PATH 에 실리고, Codex 와 사람 셸은 `orch doctor install-cli` 로 `~/.local/bin/orch` 를 깔아요
+- 새 꼴은 저장소, Run, 지시서 폴더, 대기의 루프 저장소를 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽고 출처를 stderr 한 줄로 남겨요
+- user 범위 설치본이 있으면 그것만 써요. 옛 꼴 `bin/orch.ts <스크립트 이름>` 도 같은 스크립트를 부르고 stderr 에 새 꼴을 안내해요
+- `NEXT_WAIT` 가 `orch wait --ack <id> --loop-repo <저장소>` 꼴로 짧아져요. 핸들러 환경에 진입점 경로 `ORCH_BIN` 이 더해져요
+- doctor 가 `CLI-MISSING`, `CLI-STALE`, `CLI-NOT-ON-PATH`, `WAIT-STALE`, `OLD-CALL`, `DIRECT-PATH` 를 알리고, 문서의 새 꼴을 명령 표로 확인해요
+
 ## 7.11.1 (2026-11-05)
 
 - orch 명령이 한 번 실행되는 동안 주 checkout 과 .orch 무시 여부를 한 번만 확인해, 상주 루프의 틱과 정리가 빨라진다. 실행 중에 지운 무시 줄은 다음 명령이 다시 더한다
