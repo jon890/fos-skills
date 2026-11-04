@@ -1,5 +1,6 @@
 // 직접 부른 스크립트도 설치 기록과 다른 번들이면 stderr 에 한 줄 알린다.
 // args.ts 와 proc.ts 가 함께 import 한다. ESM 모듈은 한 번만 실행되어 경고도 한 번이다.
+// 진입점의 문맥 신호 ORCH_CONTEXT 도 여기서 읽고 지운다(아래 orchContext). 모든 진입 스크립트가 먼저 지나는 자리다.
 // 체크아웃·링크 설치는 갱신 전 검증에 쓰므로 plugins/cache 안의 복사본만 판정한다.
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -21,3 +22,16 @@ const parent = dirname(skill)
 const bundle = ['skills', 'export-only-skills'].includes(basename(parent)) ? dirname(parent) : parent
 const warning = staleBundleWarning(bundle, process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'))
 if (warning) process.stderr.write(`${warning}\n`)
+
+// 진입점이 새 꼴에서 채운 문맥 인자의 출처(ORCH_CONTEXT). 읽은 뒤 환경에서 지워, 이 스크립트가 띄우는 자식과 상주 루프, 핸들러로 새지 않게 한다
+const context: Record<string, string> = Object.fromEntries(
+  (process.env.ORCH_CONTEXT ?? '')
+    .split(/\s+/)
+    .filter((pair) => pair.includes('='))
+    .map((pair) => [pair.slice(0, pair.indexOf('=')), pair.slice(pair.indexOf('=') + 1)]),
+)
+delete process.env.ORCH_CONTEXT
+
+export function orchContext(): Record<string, string> {
+  return { ...context }
+}

@@ -20,6 +20,8 @@
 //
 // 자식 프로세스는 이 진입점의 작업 폴더를 그대로 물려받고, 표준 입출력과 종료 신호를 그대로 잇는다.
 // 신호(SIGINT, SIGTERM, SIGHUP)를 받으면 자식에게 전하고 자식이 끝나기를 기다린다. 스크립트 자식의 환경에서는 ORCH_ENTRY_HOP 을 지운다.
+// 새 꼴은 ../scripts/lib/context.ts 가 빠진 문맥 인자(--repo, --run, --specs-dir, --loop-repo)를 채우고, 채운 출처를 stderr 한 줄과
+// 자식 환경 ORCH_CONTEXT(`run=run-current loop-repo=registered` 꼴)로 알린다. 스크립트는 lib/bundle.ts 의 orchContext() 로 읽는다.
 //
 // 종료 코드:
 //     자식의 종료 코드(신호로 끝나면 128 + 신호 번호)
@@ -43,6 +45,7 @@ const NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/
 
 type InstallRecord = typeof import('../scripts/lib/install-record.ts')
 type Commands = typeof import('../scripts/lib/commands.ts')
+type Context = typeof import('../scripts/lib/context.ts')
 
 function real(path: string): string {
   try {
@@ -140,6 +143,8 @@ async function main(argv: string[]): Promise<number> {
   const commands = (await import(pathToFileURL(join(OWN_SCRIPTS, 'lib', 'commands.ts')).href)) as Commands
   const childEnv = { ...process.env }
   delete childEnv.ORCH_ENTRY_HOP
+  // 문맥 신호는 새 꼴에서만 넘긴다. 옛 꼴과 그 밖의 자식에는 물려주지 않는다
+  delete childEnv.ORCH_CONTEXT
 
   if (first === '--help' || first === '-h') {
     process.stdout.write(commands.helpText())
@@ -163,8 +168,18 @@ async function main(argv: string[]): Promise<number> {
     }
     if (resolved.user.includes('--help') || resolved.user.includes('-h')) {
       err(`${resolved.command.usage}\n옵션은 아래 스크립트 사용법을 따른다. 동작으로 바뀐 옛 모드 플래그(${resolved.command.forbid.join(', ') || '없음'})는 쓰지 않는다.`)
+      return run(file, resolved.args, childEnv)
     }
-    return run(file, resolved.args, childEnv)
+    const context = (await import(pathToFileURL(join(OWN_SCRIPTS, 'lib', 'context.ts')).href)) as Context
+    const filled = context.fillContext(resolved.command, resolved.args, process.cwd())
+    if ('error' in filled) {
+      err(`orch: ${filled.error}`)
+      return 2
+    }
+    if (filled.note) err(filled.note)
+    const env = context.contextEnv(filled.sources)
+    if (env) childEnv.ORCH_CONTEXT = env
+    return run(file, filled.args, childEnv)
   }
 
   const printing = first === '--path'

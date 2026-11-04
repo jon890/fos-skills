@@ -82,3 +82,18 @@ test('새 skills 배치의 직접 호출도 플러그인 루트와 현재 진입
   assert.match(run.stderr, /new\/skills\/orch\/bin\/orch\.ts/)
   assert.equal(staleBundleWarning(current, config), null)
 })
+
+test('ORCH_CONTEXT 는 스크립트가 읽고 지워 자식에 물려주지 않는다', () => {
+  const probe = join(root, 'probe.ts')
+  writeFileSync(
+    probe,
+    `import { orchContext } from ${JSON.stringify(join(SCRIPTS, 'lib', 'bundle.ts'))}\n` +
+      "import { spawnSync } from 'node:child_process'\n" +
+      'console.log(JSON.stringify(orchContext()))\n' +
+      "console.log(spawnSync(process.execPath, ['-e', 'console.log(process.env.ORCH_CONTEXT ?? \"none\")'], { encoding: 'utf8' }).stdout.trim())\n",
+  )
+  const run = spawnSync(process.execPath, [probe], { encoding: 'utf8', env: { ...process.env, ORCH_CONTEXT: 'run=run-current loop-repo=registered' } })
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(run.stdout, '{"run":"run-current","loop-repo":"registered"}\nnone\n')
+})
+

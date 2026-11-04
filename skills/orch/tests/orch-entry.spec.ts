@@ -37,6 +37,8 @@ function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): stri
     mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
     copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
     cpSync(join(OWN_SCRIPTS, 'lib'), join(scripts, 'lib'), { recursive: true })
+    // lib 가 가져오는 work-board 모듈(lib/paths.ts 의 board.ts 같은 것)
+    for (const dir of ['bin', 'hooks']) cpSync(join(OWN_SCRIPTS, '..', '..', '..', 'extensions', 'work-board', dir), join(root, 'extensions', 'work-board', dir), { recursive: true })
   }
   return root
 }
@@ -48,15 +50,17 @@ function install(configDir: string, entries: Entry[]): void {
 }
 
 function env(extra: Record<string, string>): NodeJS.ProcessEnv {
-  const base: NodeJS.ProcessEnv = { ...process.env, ...extra, HOME: join(tmp, 'nohome') }
-  for (const key of ['CLAUDE_CONFIG_DIR', 'ORCH_SCRIPTS_DIR']) if (!(key in extra)) delete base[key]
+  // 새 꼴의 문맥 채우기가 진짜 orca 의 run-current 를 읽지 않게 없는 실행 파일을 준다
+  const base: NodeJS.ProcessEnv = { ...process.env, ORCA: join(tmp, 'no-orca'), ...extra, HOME: join(tmp, 'nohome') }
+  for (const key of ['CLAUDE_CONFIG_DIR', 'ORCH_SCRIPTS_DIR', 'ORCH_CONTEXT', 'ORCH_ENTRY_HOP']) if (!(key in extra)) delete base[key]
   // 직접 실행할 때 shebang 의 env 가 이 테스트의 node 를 찾게 한다
   base.PATH = `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`
   return base
 }
 
-function orch(args: string[], extra: Record<string, string> = {}, entry = ENTRY): Result {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', entry, ...args], { env: env(extra), encoding: 'utf8' })
+// 작업 폴더는 git 저장소 밖(임시 폴더)이다. 새 꼴이 이 체크아웃을 문맥 저장소로 읽지 않게 한다
+function orch(args: string[], extra: Record<string, string> = {}, entry = ENTRY, cwd = tmp): Result {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', entry, ...args], { env: env(extra), encoding: 'utf8', cwd })
   return { code: done.status, stdout: done.stdout, stderr: done.stderr }
 }
 
@@ -266,9 +270,9 @@ describe('새 꼴과 옛 꼴', () => {
   })
 
   test('새 꼴이 명령 표의 스크립트를 앞 인자와 함께 부르고 스크립트 자식에 ORCH_ENTRY_HOP 을 넘기지 않는다', () => {
-    const r = orch(['loop', 'start', '--repo', '/r'], { CLAUDE_CONFIG_DIR: config })
+    const r = orch(['loop', 'status', '--repo', '/r'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 0, r.stderr)
-    assert.equal(r.stdout.trim(), 'b --start --repo /r hop=')
+    assert.equal(r.stdout.trim(), 'b --status --repo /r hop=')
     assert.doesNotMatch(r.stderr, /새 꼴/)
   })
 
@@ -303,6 +307,23 @@ describe('새 꼴과 옛 꼴', () => {
     assert.equal(r.stdout.trim(), join(tmp, 'cache', 'b', 'skills', 'orch', 'scripts', 'wait-important.ts'))
   })
 
+  test('새 꼴은 작업 폴더 저장소를 채워 넘기고 stderr 에 출처를 남기며, 옛 꼴은 채우지 않는다', () => {
+    const repo = join(tmp, 'repo')
+    mkdirSync(repo)
+    spawnSync('git', ['init', '-q', repo])
+    const fresh = orch(['loop', 'status'], { CLAUDE_CONFIG_DIR: config }, ENTRY, repo)
+    assert.equal(fresh.code, 0, fresh.stderr)
+    assert.equal(fresh.stdout.trim(), `b --status --repo ${realpathSync(repo)} hop=`)
+    assert.match(fresh.stderr, /^orch: 문맥 repo=.*\(작업 폴더\)$/m)
+    const old = orch(['orch-loop', '--status'], { CLAUDE_CONFIG_DIR: config }, ENTRY, repo)
+    assert.equal(old.stdout.trim(), 'b --status hop=')
+    assert.doesNotMatch(old.stderr, /문맥/)
+  })
+
+  test('줄여 쓴 문맥 인자는 사용법 오류다', () => {
+    assert.equal(orch(['loop', 'start', '--re', 'x'], { CLAUDE_CONFIG_DIR: config }).code, 2)
+  })
+
   test('받은 SIGTERM 을 자식에게 전하고 143 으로 끝난다', async () => {
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', ENTRY, 'sleeper'], { env: env({ CLAUDE_CONFIG_DIR: config }) })
     let out = ''
@@ -314,6 +335,13 @@ describe('새 꼴과 옛 꼴', () => {
     const code = await new Promise<number | null>((done) => child.on('close', (c) => done(c)))
     assert.equal(code, 143)
   })
+})
+
+test('git 저장소 밖에서 부르면 진입점은 repo 를 채우지 않고 스크립트가 --repo 를 요구한다', () => {
+  const r = orch(['loop', 'status'], { ORCH_SCRIPTS_DIR: OWN_SCRIPTS })
+  assert.equal(r.code, 2)
+  assert.match(r.stderr, /--repo/)
+  assert.doesNotMatch(r.stderr, /문맥 repo=/)
 })
 
 describe('overlay.md 의 진입점 경로 한 줄', () => {
