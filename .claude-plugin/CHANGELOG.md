@@ -4,6 +4,18 @@
 등급은 그 머지에서 바뀐 스킬 CHANGELOG 로 정한다. `호환성:` 항목이 있으면 major, 새 버전 절이 있으면 minor, 그 밖은 patch 다.
 규칙과 근거는 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 4.3.0 (2026-11-04)
+
+- korean-check 1.36.2 (#334)
+
+## 4.2.0 (2026-11-04)
+
+- orch 7.10.2 (#333)
+
+## 4.1.0 (2026-11-04)
+
+- orch 7.10.1 (#332)
+
 ## 4.0.1 (2026-11-04)
 
 - 바뀐 곳: .github, README.md, docs, extensions, scripts, skills, tsconfig.json (#331)
