@@ -1759,14 +1759,15 @@ describe('Codex worker 의 ssh-agent 설정', () => {
 })
 
 describe('짧은 출력', () => {
-  test('LAUNCHED 에 터미널을 넣고 worker-start JSON 과 단계 줄을 내지 않는다', () => {
+  test('LAUNCHED 에 터미널을 넣고 worker-start JSON 대신 LAUNCH-EFFECTIVE 만 남기며 단계 줄을 내지 않는다', () => {
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     env.ORCH_OUTPUT = 'short'
     const r = launch(['--worktree', worktree, '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     const out = r.stdout.trim().split('\n')
-    assert.equal(out.length, 1, r.stdout)
-    assert.match(out[0], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+    assert.equal(out.length, 2, r.stdout)
+    assert.equal(out[0], 'LAUNCH-EFFECTIVE {}')
+    assert.match(out[1], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
   })
 
   test('남은 터미널 거부는 REFUSED 한 줄이다', () => {

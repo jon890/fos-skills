@@ -172,7 +172,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `wait triage` | `== 종류 N건` 묶음과 본문 | `wait` 과 같은 메시지 줄, `HEARTBEAT`, `QUIET-STOP`, `DELIVERY <id…>`, 메시지가 없으면 `NO-MESSAGES`. 본문 전체는 `--full` | `references/waiting.md` |
 | `loop start`, `stop`, `status`, `run` | `안내: …` | 지금의 `LOOP-*` 줄. 옛 루프(Run 등록을 모른다)의 안내는 `LOOP-LEGACY <pid> run=<Run>` 판정 줄로 낸다. 정상 루프와 같은 `LOOP-RUNNING` 과 4 라 안내 없이는 가릴 수 없다. `state/loop.log` 는 늘 전부다 | `references/waiting.md`, `SKILL.md` |
 | `loop stalled` | `MOVING` | `STALLED`, `STAGE` | `references/waiting.md` |
-| `worker launch` | `워크트리를 만들었다`, worker-start JSON, 단계 감시 줄, `거부: …` | `LAUNCHED <dispatch> <터미널 또는 -> <워크트리>`, `REFUSED <이유 첫 줄>`, `lint-ack:`, `dirty-ack:` 와 `REVIEW-*`, `SSH-AGENT` 줄 | `references/launch.md` |
+| `worker launch` | `워크트리를 만들었다`, worker-start JSON, 단계 감시 줄, `거부: …` | `LAUNCHED <dispatch> <터미널 또는 -> <워크트리>`, worker-start JSON 대신 `LAUNCH-EFFECTIVE <launch.effective 의 JSON 한 줄>`(코디네이터가 고른 모델과 대조한다), `REFUSED <이유 첫 줄>`, `lint-ack:`, `dirty-ack:` 와 `REVIEW-*`, `SSH-AGENT` 줄 | `references/launch.md`, `SKILL.md` 3단계 |
 | `worker send` | `replied:`, `sent:`, `delivered:`, `relaunch:`, `restart:`, `ended:`, `closed:`, `retry:`, `fallback:`, `skipped:`, `warning:`, `note:`, `send-to-worker: …` | `REPLIED <메시지> <보낸 id>`, `SENT <dispatch> <보낸 id>`, `DELIVERED <깨운 id>`, `RESUMED <dispatch> <터미널>`, `RESTARTED <터미널>`, `ENDED <dispatch> <상태>`, `NOTE <내용>`, `FAIL <내용>`. 깨우기와 이어 띄우기는 자식의 짧은 줄(`NUDGED …`, `LAUNCHED …`)이 잇는다 | `references/replying.md` |
 | `worker nudge` | `queued: …` 같은 첫 낱말과 설명 | 첫 낱말을 대문자로 하고 request id 만 붙인다(`NUDGED <id>`, `QUEUED`, `WORKING`, `PERMISSION <id>`, `UNOBSERVED <id>`, 화면 상태 `DRAFT` 같은 것). orca 오류는 `ORCA-ERROR <한 줄>` | `references/replying.md` |
 | `worker screen` | 없음 | 상태 한 낱말 그대로(데이터) | `references/replying.md` |
@@ -194,7 +194,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `study …` | 없음 | 지금 줄(`ADDED`, `SET`, `MIGRATED`, `TRASHED`, `list` 의 탭 줄)이 이미 판정 줄이나 데이터다 | `references/study-candidates.md` |
 | `spec lint` | `<지시서>: <발견>` | `SPEC-ERROR <지시서>: <발견>`, `SPEC-WARN <지시서>: <발견>` | `references/spec-writing.md` |
 | `doctor` | `  안내: …` | 판정 줄과 들여 쓴 고칠 줄 | `SKILL.md` |
-| `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `NOTHING` | `references/overlay.md` |
+| `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `TRACKED <명령>`, `NOTHING`, 고칠 참조의 위치 `OLD-REF <파일>:<줄>`, `OLD-REF-SCRIPT`, `WOULD-REWRITE <파일>:<줄>` | `references/overlay.md` |
 | `queue reserve`, `wait user-active`, `wait questions`, `wait ack-lost`, `doctor gh-usage`, `doctor install-cli` | 없음 | 지금 줄이 판정 줄이다 | |
 | `paths`, `worker worktree`, `spec line`, `slot heavy`, `slot mem` | 없음 | 결과 그대로(스펙 DECISION20) | |
 | `status` | (새로) | 저장소의 `LOOP-ALIVE …` 나 `LOOP-DEAD …`, Run 마다 `RUN <id> workers=<살아 있는 수> stalled=<수>`, `BOARD doing=<수> decide=<수>`, 멈춘 것마다 `STALLED`, `STAGE`(`loop stalled` 와 같은 줄) | `SKILL.md` |

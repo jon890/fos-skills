@@ -71,7 +71,8 @@
 //       - task_pattern 을 JS 정규식으로 바꾸지 못했거나 그룹이 없다. JS 정규식으로 고쳐 task_pattern 에 다시 적고 다시 돌린다
 //
 // 짧은 출력(진입점의 orch doctor migrate, migrate-hooks, lib/output.ts): MOVED, WOULD-MOVE, CONFLICT, NOT-MOVED, REWRITE, WOULD-REWRITE, REMOVED,
-// WOULD-REMOVE, KEPT <보드> board, HANDLER, WOULD-HANDLER, CONFIG-REMOVED, WOULD-CONFIG-REMOVE, TRACKED <명령>, NOTHING 줄만 낸다(SHORT_RULES).
+// WOULD-REMOVE, KEPT <보드> board, HANDLER, WOULD-HANDLER, CONFIG-REMOVED, WOULD-CONFIG-REMOVE, TRACKED <명령>, NOTHING 과 참조 위치
+// OLD-REF <파일>:<줄>, OLD-REF-SCRIPT <파일>:<줄>, WOULD-REWRITE <파일>:<줄>, OLD-REF-MORE <수> 줄만 낸다(SHORT_RULES).
 // 종료 코드: 0 옮겼거나 옮길 것이 없다, 1 겹침이 있거나 추적 파일이 남았거나 옮기다 실패했다(겹침이 있으면 아무것도 옮기지 않는다),
 //            --hooks 면 옮기지 못한 칸이 있다, 2 사용법 오류(--hooks 에서 옛 위치가 남았거나 설정 파일이 깨졌다), 3 막는 조건이 있다
 //
@@ -149,6 +150,11 @@ const SHORT_RULES: ShortRule[] = [
   [/^설정에서 지움 (\S+)$/, (m) => `CONFIG-REMOVED ${m[1]}`],
   [/^설정에서 지울 키 (\S+)$/, (m) => `WOULD-CONFIG-REMOVE ${m[1]}`],
   [/^(?:옮길 것이 없다|옮길 칸이 없다)$/, () => 'NOTHING'],
+  // 참조 표본 줄. 코디네이터가 그 저장소에서 고칠 파일이라 위치만 남긴다(references/overlay.md 「orch 폴더 옮기기」)
+  [/^옛 경로 참조\(스크립트[^)]*\) (\S+?:\d+):/, (m) => `OLD-REF-SCRIPT ${m[1]}`],
+  [/^옛 경로 참조 (\S+?:\d+):/, (m) => `OLD-REF ${m[1]}`],
+  [/^바꿀 옛 경로 (\S+?:\d+):/, (m) => `WOULD-REWRITE ${m[1]}`],
+  [/^옛 경로 참조 (\d+)곳 더 있다$/, (m) => `OLD-REF-MORE ${m[1]}`],
   [/^추적 파일 (.*?) {2}\(/, (m) => `TRACKED ${m[1]}`],
 ]
 

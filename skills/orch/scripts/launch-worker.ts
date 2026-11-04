@@ -69,7 +69,8 @@
 //     일하는 흔적(하나라도 있으면): dispatch 의 lastHeartbeatAt, dispatch.status 가 running, worker-start 직전과 비교해
 //        워크트리의 HEAD 나 `git status --porcelain` 이 바뀜, worker 터미널 화면이 작업 중이거나 권한 확인 창(lib/screen.ts)
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
-//        짧은 출력(진입점의 orch worker launch, lib/output.ts)은 `LAUNCHED <dispatch id> <터미널 또는 -> <워크트리>` 이고, 거부는 `REFUSED <이유 첫 줄>`,
+//        짧은 출력(진입점의 orch worker launch, lib/output.ts)은 `LAUNCHED <dispatch id> <터미널 또는 -> <워크트리>` 이고, worker-start 가 성공할 때마다
+//        `LAUNCH-EFFECTIVE <launch.effective 의 JSON 한 줄 또는 ->` 를 낸다. 거부는 `REFUSED <이유 첫 줄>`,
 //        ack 줄과 REVIEW-*, SSH-AGENT 판정 줄 밖의 진행 줄과 worker-start JSON 은 내지 않는다
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리와 브랜치를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
@@ -650,6 +651,8 @@ async function main(argv: string[]): Promise<number> {
         result = await call(['orchestration', 'worker-start', ...args, '--json'], LONG_MS)
       }
       out(result.stdout + result.stderr)
+      // 짧은 출력은 worker-start JSON 을 내지 않는다. 코디네이터가 고른 값과 대조하는 launch.effective 만 판정 줄로 남긴다(references/launch.md 「띄운 직후 확인」)
+      if (short() && result.code === 0) out(`LAUNCH-EFFECTIVE ${jget(result.stdout, 'launch.effective') || '-'}`)
       return result
     }
     let lastShow = ''
