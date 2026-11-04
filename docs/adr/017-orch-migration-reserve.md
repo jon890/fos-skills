@@ -8,6 +8,8 @@
   그 브랜치의 PR 이 예약 뒤에 머지됐거나 브랜치가 원격과 로컬에 모두 없으면 다음 호출이 그 예약을 지운다. 브랜치가 없다는 판정은 지우기 직전에 로컬 브랜치를 다시 보고, 그 사이 생겼으면 남긴다. 닫힌 PR 은 다시 열 수 있어 세지 않는다.
   상주 루프의 자동 머지([ADR-016](016-orch-auto-merge.md))는 PR 이 아직 없는 다른 브랜치의 예약도 더 낮은 번호로 보고 높은 번호 PR 을 기다리게 한다.
   사용자 결정 2026-10-27: Flyway out-of-order 는 켜지 않는다. 적용 순서를 모든 환경에서 같게 두려는 것이다.
+  사용자 결정 2026-11-04: 번호 붙은 ADR 파일도 같은 명령의 `--kind adr` 로 예약한다. 병렬 PR 이 같은 폴더에 같은 ADR 번호를 고른 일이 되풀이됐다.
+  폴더는 orch 설정 `adr.dirs` 에 두고 폴더마다 번호가 따로다. ADR 예약은 `state/adr-reservations.json` 에 따로 두고 자동 머지는 읽지 않는다. ADR 번호는 DB 에 적용되지 않아 머지 순서를 막을 이유가 없고, 섞으면 같은 이름의 모듈에서 ADR 번호가 마이그레이션 번호로 세어진다.
 - **맥락**: 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨렸다. 하루에 한 모듈의 같은 번호를 PR 네 개가 함께 쓴 일이 있었다.
   자동 머지가 겹침을 머지 전에 잡아도, 그때는 worker 가 이미 번호를 정해 파일과 테스트를 만든 뒤라 다시 정하는 비용이 크다.
 - **대안 기각**:
@@ -20,4 +22,4 @@
   - 얻는 것: 같은 PC 의 worker 들이 같은 모듈에 서로 다른 번호를 받는다. PR 을 열기 전의 번호도 자동 머지의 순서 판정에 든다.
   - 감당할 것: 예약만 하고 버린 브랜치의 번호는 그 브랜치가 원격과 로컬에서 사라질 때까지 남는다. 그동안 높은 번호 PR 이 기다리고 `MIGRATION-BLOCKED` 가 온다.
   - 감당할 것: 다른 PC 에서 만든 브랜치의 번호는 PR 을 열기 전까지 보이지 않는다. 열린 뒤에는 자동 머지의 겹침 판정이 잡는다.
-- **적용 범위**: 예약 파일과 잠금은 `orch/scripts/lib/reservations.ts`, 명령은 `orch/scripts/reserve-migration.ts` 머리 주석, 지시서 문구 예시는 [`../../orch/references/spec-writing.md`](../../orch/references/spec-writing.md) 가 소유한다.
+- **적용 범위**: 예약 파일과 잠금, ADR 번호 꼴은 `orch/scripts/lib/reservations.ts`, 명령은 `orch/scripts/reserve-migration.ts` 머리 주석, 지시서 문구는 공통 지시서 틀(`orch/templates/spec-common.md`)의 `migration`, `adr` 표지 항목이 소유한다. 옮기는 기준은 [`../../orch/references/spec-writing.md`](../../orch/references/spec-writing.md) 에 있다.

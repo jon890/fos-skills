@@ -1,18 +1,20 @@
-// worker 가 Flyway 마이그레이션 파일을 만들기 전에 다음 번호를 잠금을 걸고 예약한다. 근거는 docs/adr/017-orch-migration-reserve.md 다.
+// worker 가 Flyway 마이그레이션 파일이나 ADR 문서를 만들기 전에 다음 번호를 잠금을 걸고 예약한다. 근거는 docs/adr/017-orch-migration-reserve.md 다.
 // 파일은 만들지 않는다. 경로만 돌려주고 worker 가 그 이름으로 만든다. 명령이 만들면 다른 worktree 의 경로와 섞인다.
 //
 // 사용법:
-//     reserve-migration.ts --repo DIR --module M --name TEXT [--kind sql|java] [--dir DIR] [--branch B] [--base B] [--again]
+//     reserve-migration.ts --repo DIR --module M --name TEXT [--kind sql|java|adr] [--dir DIR] [--branch B] [--base B] [--again]
 //     reserve-migration.ts --repo DIR --prune
 //
 //     --repo    대상 저장소. 주 checkout 으로 바꿔 쓴다. 예약 파일과 잠금은 그 주 checkout 의 <orch 루트>/state/ 에 있다.
 //               git 작업 트리 안의 디렉터리가 아니면 사용법 오류다(lib/git.ts 의 repoArgProblem)
 //     --module  config.json 의 migrations.dirs 에 있는 모듈 이름. 없으면 사용법 오류다.
-//               --kind java 면 migrations.dirs 대신 migrations.watch 에 그 모듈이 있어야 한다
+//               --kind java 면 migrations.dirs 대신 migrations.watch 에, --kind adr 면 adr.dirs 에 그 모듈이 있어야 한다
 //     --name    마이그레이션 설명. 영문으로 준다. SQL 은 파일 이름 조각(lib/reservations.ts 의 slug)으로 바꿔 비면 사용법 오류다.
-//               Java 는 대소문자를 지켜 클래스 이름 조각으로 쓰고, ASCII Java 식별자가 아니면 사용법 오류다(lib/reservations.ts 의 migrationName)
-//     --kind    sql(기본)이나 java. sql 은 migrations.dirs 의 폴더에 `V<버전>__<slug>.sql` 을,
-//               java 는 그 모듈의 migrations.watch 폴더에 `V<버전>__<이름>.java` 를 낸다. Flyway Java 마이그레이션은 클래스 이름이 파일 이름이다
+//               Java 는 대소문자를 지켜 클래스 이름 조각으로 쓰고, ASCII Java 식별자가 아니면 사용법 오류다(lib/reservations.ts 의 migrationName).
+//               ADR 은 하이픈으로 이은 조각(lib/reservations.ts 의 adrSlug)으로 바꿔 비면 사용법 오류다
+//     --kind    sql(기본), java, adr. sql 은 migrations.dirs 의 폴더에 `V<버전>__<slug>.sql` 을,
+//               java 는 그 모듈의 migrations.watch 폴더에 `V<버전>__<이름>.java` 를 낸다. Flyway Java 마이그레이션은 클래스 이름이 파일 이름이다.
+//               adr 은 adr.dirs 의 폴더에 `<번호>-<adrSlug>.md` 를 내고 label 은 `ADR-<번호>` 다. 번호 꼴은 lib/reservations.ts 의 「ADR 번호」 가 소유한다
 //     --dir     --kind java 에서 그 모듈의 migrations.watch 폴더가 여럿일 때 고른다. 하나면 생략한다.
 //               목록에 없는 폴더, 여럿인데 생략, --kind sql 과 함께 주면 사용법 오류다
 //     --branch  예약할 브랜치. 기본은 작업 디렉터리의 `git branch --show-current` 다. worker 는 자기 worktree 에서 부른다. 비면 사용법 오류다
@@ -21,16 +23,20 @@
 //     --prune   번호를 받지 않고 정리만 한다. 형식이 틀린 예약도 파일에서 뺀다. --repo 밖의 옵션과 함께 주면 사용법 오류다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
-// 번호: SQL 과 Java 는 같은 모듈의 번호 공간을 함께 쓴다(dirs 와 watch 를 모두 센다).
-//     base 최고, 열린 PR 이 더한 그 모듈 마이그레이션, 남은 예약 가운데 가장 큰 것의 첫 자리에 1 을 더한다.
+// 예약 파일: sql 과 java 는 마이그레이션 예약 파일에, adr 은 ADR 예약 파일에 둔다(lib/reservations.ts 의 ReservationStore).
+//     예약할 때는 그 종류의 파일만 읽고 정리하고 쓴다. --prune 은 두 파일을 마이그레이션, ADR 순서로 모두 정리한다.
+//     ADR 예약은 상주 루프의 자동 머지가 읽지 않는다. 자동 머지의 번호 판정은 Flyway 마이그레이션만 본다.
+//
+// 번호: SQL 과 Java 는 같은 모듈의 번호 공간을 함께 쓴다(dirs 와 watch 를 모두 센다). ADR 은 adr.dirs 의 폴더마다 번호 공간이 따로다.
+//     base 최고, 열린 PR 이 더한 그 모듈 마이그레이션(ADR 이면 그 폴더의 ADR), 남은 예약 가운데 가장 큰 것의 첫 자리에 1 을 더한다.
 //     같은 브랜치, 모듈, 설명의 예약이 있으면 그 예약을 다시 준다. 그 번호가 base 최고 이하가 됐거나(다른 PC 에서 같은 번호가 머지됨)
 //     다른 브랜치의 열린 PR 이나 다른 예약과 같으면 새로 정한다. 판정은 lib/reservations.ts 의 choose 가 소유한다.
 //     열린 PR 은 base 를 가리지 않고 모두 센다. 다른 base 로 가는 PR 의 번호도 나중에 같은 base 에 모일 수 있어 피하는 쪽을 고른다.
 //
 // 순서: 네트워크 조회는 잠금 밖에서 먼저 하고, 잠금 안에서는 파일만 다룬다.
 //     1. 잠금 밖: 예약을 읽고 예약마다 정리 판정을 한다. --prune 이 아니면 `git fetch --quiet origin <base>`,
-//        `git ls-tree -r --name-only origin/<base> -- <모듈 폴더>` 로 base 최고를, `gh pr list --state open --limit 200
-//        --json number,headRefName,baseRefName,files` 로 열린 PR 의 마이그레이션을 읽는다. 하나라도 실패하면 예약하지 않는다.
+//        `git ls-tree -r --name-only origin/<base> -- <모듈 폴더>`(ADR 이면 그 ADR 폴더 하나) 로 base 최고를, `gh pr list --state open --limit 200
+//        --json number,headRefName,baseRefName,files` 로 열린 PR 의 마이그레이션이나 ADR 을 읽는다. 하나라도 실패하면 예약하지 않는다.
 //        열린 PR 이 200 개 이상이면 목록이 잘렸을 수 있어 실패로 본다.
 //        모르는 번호를 피한 척 예약하면 겹친다. 정리 판정의 실패는 그 항목을 남길 뿐 실패가 아니다
 //     2. 예약 잠금(lib/reservations.ts 의 lockFile)을 잡는다. RESERVE_LOCK_WAIT_MS 동안 잡지 못하면 LOCK-TIMEOUT 이다
@@ -57,18 +63,19 @@
 //     둘 다 없음이면 지운다(근거 gone. 잠금 안에서 로컬 브랜치를 다시 본다). 하나라도 있음이면 남긴다. 그 밖은 판정 못 함이라 남긴다. 지우면 그 번호가 다시 나가기 때문이다
 //
 // 출력(stdout):
-//     PRUNED <module> <label> <branch>      정리로 지운 항목마다. 아래 끝 줄보다 앞에 낸다
+//     PRUNED <module> <label> <branch>      정리로 지운 항목마다. 아래 끝 줄보다 앞에 낸다. ADR 예약이면 label 이 `ADR-<번호>` 다
 //     RESERVED <module> <label> <path>      예약했다. path 는 저장소 루트 기준이다. 다시 준 예약이면 끝에 ` reused`,
 //                                           번호가 무효가 되어 새로 정했으면 ` renewed` 를 붙인다. --again 은 붙이지 않는다
-//     PRUNED-INVALID <건너뛴 수>            --prune 이 형식이 틀린 예약을 파일에서 뺐다. PRUNE-DONE 바로 앞에 낸다.
+//     PRUNED-INVALID <건너뛴 수>            --prune 이 형식이 틀린 예약을 파일에서 뺐다. 수는 두 파일의 합이다. PRUNE-DONE 바로 앞에 낸다.
 //                                           상주 루프는 예약 파일에 형식이 틀린 항목이 있으면 마이그레이션 PR 을 멈추므로,
 //                                           코디네이터가 --prune 으로 풀 수 있게 지울 항목이 없어도 다시 쓴다
-//     PRUNE-DONE <지운 수>                  --prune 이 끝났다. 지운 것이나 형식이 틀린 예약이 있을 때만 파일에 쓴다
+//     PRUNE-DONE <지운 수>                  --prune 이 끝났다. 수는 두 파일의 합이다. 파일마다 지운 것이나 형식이 틀린 예약이 있을 때만 그 파일에 쓴다
 //     LOOKUP-FAIL <이유>                    base 나 열린 PR 을 읽지 못함(200 개 이상이라 잘렸을 수 있음 포함), 예약 파일을 읽지 못함,
 //                                           예약 파일 쓰기 실패, 그 밖의 예기치 않은 오류(이유는 오류 메시지 한 줄)
 //     LOCK-TIMEOUT <잠금 경로>              잠금을 잡지 못했다
 //     LOCK-LOST <잠금 경로>                 쓰기 직전에 잠금이 내 것이 아니었다. 쓰지 않았다
 //     형식이 틀려 건너뛴 예약이 있으면 stderr 에 `경고: 형식이 틀린 예약 <n> 개를 건너뛴다. 다음 쓰기에서 빠진다` 를 낸다.
+//     ADR 예약 파일이면 `예약` 을 `ADR 예약` 으로 쓴다.
 //
 // 종료 코드: 0 예약함(reused, renewed 포함)이나 PRUNE-DONE, 1 LOOKUP-FAIL(그 밖의 예기치 않은 오류도 LOOKUP-FAIL 줄을 낸다),
 //     2 사용법 오류(설정 파일 오류 포함), 4 LOCK-TIMEOUT 이나 LOCK-LOST
@@ -81,18 +88,18 @@
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { autoMergeConfig, maxByModule, migrationOf, watchedDirs } from './lib/auto-merge.ts'
+import { autoMergeConfig, compareVersion, migrationOf, watchedDirs } from './lib/auto-merge.ts'
 import type { Migration } from './lib/auto-merge.ts'
 import { ConfigError, loadConfig } from './lib/config.ts'
 import { acquireLock, ownsLock, releaseLock } from './lib/events.ts'
 import { ghJson } from './lib/gh.ts'
 import { defaultBase, git, mainCheckout, repoArgProblem } from './lib/git.ts'
 import { makeParent } from './lib/paths.ts'
-import { addedPaths, choose, lockFile, migrationName, prune, readReservations, writeReservations } from './lib/reservations.ts'
-import type { MigrationKind, Reservation } from './lib/reservations.ts'
+import { adrDirs, adrOf, addedPaths, choose, lockFile, migrationName, prune, readReservations, writeReservations } from './lib/reservations.ts'
+import type { Reservation, ReservationStore, ReserveKind } from './lib/reservations.ts'
 
 const USAGE = [
-  '사용법: reserve-migration.ts --repo DIR --module M --name TEXT [--kind sql|java] [--dir DIR] [--branch B] [--base B] [--again]',
+  '사용법: reserve-migration.ts --repo DIR --module M --name TEXT [--kind sql|java|adr] [--dir DIR] [--branch B] [--base B] [--again]',
   '        reserve-migration.ts --repo DIR --prune',
 ].join('\n')
 const LOCK_WAIT_MS = 10_000
@@ -104,12 +111,20 @@ class Usage extends Error {}
 type Target = {
   module: string
   name: string
-  kind: MigrationKind
+  kind: ReserveKind
   branch: string
   base: string
   again: boolean
   dir: string
-  watched: Record<string, string[]>
+  // base 에서 읽을 폴더와, 경로를 그 모듈의 번호로 바꾸는 판정. 마이그레이션은 모든 감시 폴더를 읽고, ADR 은 그 폴더 하나만 읽는다
+  listed: string[]
+  numberOf: (path: string) => Migration | null
+}
+
+const STORES: readonly ReservationStore[] = ['migration', 'adr']
+
+function storeOf(kind: ReserveKind): ReservationStore {
+  return kind === 'adr' ? 'adr' : 'migration'
 }
 type Presence = 'present' | 'absent' | null
 // 정리 판정. merged 는 예약 뒤 머지, gone 은 브랜치가 원격과 로컬에 모두 없음이라 지운다. false 남김, null 판정 못 함
@@ -137,9 +152,10 @@ function lockWaitMs(): number {
   return /^\d+$/.test(raw) ? Number(raw) : LOCK_WAIT_MS
 }
 
-// 잠금 밖의 판정을 잠금 안에서 다시 읽은 목록에 붙이는 열쇠. --again 으로 바뀐 항목은 at 이 달라 옛 판정이 붙지 않는다
-function verdictKey(r: Reservation): string {
-  return JSON.stringify([r.branch, r.module, r.name, r.at])
+// 잠금 밖의 판정을 잠금 안에서 다시 읽은 목록에 붙이는 열쇠. --again 으로 바뀐 항목은 at 이 달라 옛 판정이 붙지 않는다.
+// 두 예약 파일의 module 은 서로 다른 이름 공간이라 파일 종류도 넣는다
+function verdictKey(store: ReservationStore, r: Reservation): string {
+  return JSON.stringify([store, r.branch, r.module, r.name, r.at])
 }
 
 function remoteBranch(repo: string, branch: string): Presence {
@@ -180,21 +196,23 @@ function pruneJudge(repo: string): (r: Reservation) => Verdict {
   }
 }
 
-// base 최고와 열린 PR 의 그 모듈 마이그레이션. 하나라도 읽지 못하면 error 다
+// base 최고와 열린 PR 의 그 모듈 마이그레이션이나 ADR. 하나라도 읽지 못하면 error 다
 function lookupNumbers(
   repo: string,
   target: Target,
 ): { ok: true; baseMax: Migration | null; open: { branch: string; migrations: Migration[] }[] } | { ok: false; error: string } {
-  const { base, watched, module } = target
+  const { base, module, numberOf } = target
   const fetched = git(repo, ['fetch', '--quiet', 'origin', base])
   if (fetched.code !== 0) return { ok: false, error: `origin ${base} 를 받지 못했다(종료 코드 ${fetched.code}): ${fetched.stderr}` }
-  const paths: string[] = []
-  for (const dir of new Set(Object.values(watched).flat())) {
+  let baseMax: Migration | null = null
+  for (const dir of target.listed) {
     const listed = git(repo, ['ls-tree', '-r', '--name-only', `origin/${base}`, '--', dir])
     if (listed.code !== 0) return { ok: false, error: `origin/${base} 의 ${dir} 를 읽지 못했다(종료 코드 ${listed.code}): ${listed.stderr}` }
-    paths.push(...listed.stdout.split('\n').filter((line) => line))
+    for (const path of listed.stdout.split('\n')) {
+      const found = path ? numberOf(path) : null
+      if (found && found.module === module && (!baseMax || compareVersion(found.version, baseMax.version) > 0)) baseMax = found
+    }
   }
-  const baseMax = maxByModule(paths, watched).get(module) ?? null
   const got = ghJson<unknown>(['pr', 'list', '--state', 'open', '--limit', String(OPEN_LIMIT), '--json', OPEN_FIELDS], { cwd: repo })
   if (!got.ok) return { ok: false, error: got.error }
   if (!Array.isArray(got.data)) return { ok: false, error: '열린 PR 의 파일 목록이 목록이 아니다' }
@@ -203,7 +221,7 @@ function lookupNumbers(
     // 브랜치를 모르는 행은 다른 브랜치로 센다. 빼는 것보다 피하는 쪽이 겹치지 않는다
     branch: typeof row.headRefName === 'string' ? row.headRefName : '',
     migrations: addedPaths(row.files)
-      .map((path) => migrationOf(path, watched))
+      .map(numberOf)
       .filter((m): m is Migration => m !== null && m.module === module),
   }))
   return { ok: true, baseMax, open }
@@ -238,7 +256,9 @@ function parse(argv: string[]): { repo: string; prune: boolean; values: Record<s
   } else {
     if (!values.module) throw new Usage('--module 이 필요하다')
     if (!values.name) throw new Usage('--name 이 필요하다')
-    if (values.kind !== undefined && values.kind !== 'sql' && values.kind !== 'java') throw new Usage(`--kind 는 sql 이나 java 다: ${values.kind}`)
+    if (values.kind !== undefined && values.kind !== 'sql' && values.kind !== 'java' && values.kind !== 'adr') {
+      throw new Usage(`--kind 는 sql, java, adr 중 하나다: ${values.kind}`)
+    }
     if (values.dir !== undefined && values.kind !== 'java') throw new Usage('--dir 는 --kind java 와만 준다')
   }
   return { repo: values.repo, prune: values.prune, values }
@@ -266,6 +286,26 @@ function javaDir(watch: Record<string, string[]>, module: string, picked: string
   throw new Usage(`--dir ${picked} 는 모듈 ${module} 의 migrations.watch 에 없다. 있는 폴더: ${found.join(', ')}`)
 }
 
+function adrDir(dirs: Record<string, string>, module: string): string {
+  if (Object.hasOwn(dirs, module)) return dirs[module]
+  const known = Object.keys(dirs).sort()
+  throw new Usage(`--kind adr 는 adr.dirs 의 폴더에 만든다. 모듈 ${module} 이 없다. ${known.length > 0 ? `있는 모듈: ${known.join(', ')}` : 'adr.dirs 가 비었다'}`)
+}
+
+// 예약 종류마다 예약을 만들 폴더, base 에서 읽을 폴더, 경로를 번호로 바꾸는 판정. 설정 오류는 ConfigError, 모듈과 폴더 오류는 Usage 다
+function targetDirs(repo: string, kind: ReserveKind, module: string, picked: string | undefined): Pick<Target, 'dir' | 'listed' | 'numberOf'> {
+  const config = loadConfig(repo)
+  if (kind === 'adr') {
+    const dir = adrDir(adrDirs(config), module)
+    const only = { [module]: dir }
+    return { dir, listed: [dir], numberOf: (path) => adrOf(path, only) }
+  }
+  const { dirs, watch } = autoMergeConfig(config)
+  const watched = watchedDirs(dirs, watch)
+  const dir = kind === 'java' ? javaDir(watch, module, picked) : sqlDir(dirs, module)
+  return { dir, listed: [...new Set(Object.values(watched).flat())], numberOf: (path) => migrationOf(path, watched) }
+}
+
 async function main(argv: string[]): Promise<number> {
   let parsed
   try {
@@ -284,21 +324,10 @@ async function main(argv: string[]): Promise<number> {
   let target: Target | null = null
   if (!parsed.prune) {
     const values = parsed.values
-    let dirs: Record<string, string>
-    let watch: Record<string, string[]>
-    try {
-      const config = autoMergeConfig(loadConfig(repo))
-      dirs = config.dirs
-      watch = config.watch
-    } catch (e) {
-      if (!(e instanceof ConfigError)) throw e
-      process.stderr.write(`reserve-migration: ${e.message}\n`)
-      return 2
-    }
     try {
       const module = values.module as string
-      const kind: MigrationKind = values.kind === 'java' ? 'java' : 'sql'
-      const dir = kind === 'java' ? javaDir(watch, module, values.dir as string | undefined) : sqlDir(dirs, module)
+      const kind: ReserveKind = values.kind === 'java' || values.kind === 'adr' ? values.kind : 'sql'
+      const dirs = targetDirs(repo, kind, module, values.dir as string | undefined)
       const name = values.name as string
       try {
         migrationName(name, kind)
@@ -309,24 +338,31 @@ async function main(argv: string[]): Promise<number> {
       if (!branch) throw new Usage('--branch 가 없고 작업 디렉터리의 현재 브랜치도 읽지 못했다')
       // origin 에서 받으므로 `origin/develop` 처럼 원격 접두를 붙여 줘도 브랜치 이름만 쓴다. 붙인 채로 fetch 하면 실패한다
       const base = ((values.base as string | undefined) || defaultBase(repo) || 'main').replace(/^origin\//, '')
-      target = { module, name, kind, branch, base, again: values.again === true, dir, watched: watchedDirs(dirs, watch) }
+      target = { module, name, kind, branch, base, again: values.again === true, ...dirs }
     } catch (e) {
+      if (e instanceof ConfigError) {
+        process.stderr.write(`reserve-migration: ${e.message}\n`)
+        return 2
+      }
       if (!(e instanceof Usage)) throw e
       process.stderr.write(`${USAGE}\nreserve-migration: ${e.message}\n`)
       return 2
     }
   }
 
-  // 1. 잠금 밖의 조회
-  let first
-  try {
-    first = readReservations(repo)
-  } catch (e) {
-    return lookupFail(`예약 파일을 읽지 못했다: ${(e as Error).message}`)
-  }
+  // 1. 잠금 밖의 조회. 예약하면 그 종류의 파일만, --prune 이면 두 파일을 본다(머리 주석의 「예약 파일」)
+  const stores = target ? [storeOf(target.kind)] : STORES
   const judge = pruneJudge(repo)
   const verdicts = new Map<string, Verdict>()
-  for (const r of first.list) verdicts.set(verdictKey(r), judge(r))
+  for (const store of stores) {
+    let first
+    try {
+      first = readReservations(repo, store)
+    } catch (e) {
+      return lookupFail(`예약 파일을 읽지 못했다: ${(e as Error).message}`)
+    }
+    for (const r of first.list) verdicts.set(verdictKey(store, r), judge(r))
+  }
   const lookup = target ? lookupNumbers(repo, target) : null
   if (lookup && !lookup.ok) return lookupFail(lookup.error)
 
@@ -338,56 +374,68 @@ async function main(argv: string[]): Promise<number> {
     return 4
   }
   try {
-    // 3. 잠금 안에서는 파일만 다룬다
-    let current
-    try {
-      current = readReservations(repo)
-    } catch (e) {
-      return lookupFail(`예약 파일을 읽지 못했다: ${(e as Error).message}`)
-    }
-    if (current.skipped > 0) process.stderr.write(`경고: 형식이 틀린 예약 ${current.skipped} 개를 건너뛴다. 다음 쓰기에서 빠진다\n`)
-    // 브랜치 없음으로 지울 항목은 로컬 브랜치를 한 번 더 본다. 그 사이 다시 생긴 브랜치가 받은 예약을 지우지 않는다(머리 주석의 「순서」 3)
-    const { kept, removed } = prune(current.list, (r) => {
-      const verdict = verdicts.get(verdictKey(r)) ?? null
-      if (verdict === 'merged') return true
-      if (verdict === 'gone') return localBranch(repo, r.branch) !== 'present'
-      return verdict
-    })
-
+    // 3. 잠금 안에서는 파일만 다룬다. 파일마다 읽고 정리하고 정한 뒤, 쓸 것을 모아 4 에서 한 번에 쓴다
+    const writes: { store: ReservationStore; list: Reservation[] }[] = []
+    const removedAll: Reservation[] = []
+    let invalid = 0
     let chosen: ReturnType<typeof choose> | null = null
-    if (target && lookup?.ok) {
-      chosen = choose({
-        module: target.module,
-        name: target.name,
-        branch: target.branch,
-        again: target.again,
-        dir: target.dir,
-        kind: target.kind,
-        at: new Date().toISOString(),
-        baseMax: lookup.baseMax,
-        open: lookup.open,
-        reservations: kept,
+    for (const store of stores) {
+      let current
+      try {
+        current = readReservations(repo, store)
+      } catch (e) {
+        return lookupFail(`예약 파일을 읽지 못했다: ${(e as Error).message}`)
+      }
+      if (current.skipped > 0) {
+        process.stderr.write(`경고: 형식이 틀린 ${store === 'adr' ? 'ADR ' : ''}예약 ${current.skipped} 개를 건너뛴다. 다음 쓰기에서 빠진다\n`)
+      }
+      // 브랜치 없음으로 지울 항목은 로컬 브랜치를 한 번 더 본다. 그 사이 다시 생긴 브랜치가 받은 예약을 지우지 않는다(머리 주석의 「순서」 3)
+      const { kept, removed } = prune(current.list, (r) => {
+        const verdict = verdicts.get(verdictKey(store, r)) ?? null
+        if (verdict === 'merged') return true
+        if (verdict === 'gone') return localBranch(repo, r.branch) !== 'present'
+        return verdict
       })
+      removedAll.push(...removed)
+      let picked: ReturnType<typeof choose> | null = null
+      if (target && lookup?.ok) {
+        picked = choose({
+          module: target.module,
+          name: target.name,
+          branch: target.branch,
+          again: target.again,
+          dir: target.dir,
+          kind: target.kind,
+          at: new Date().toISOString(),
+          baseMax: lookup.baseMax,
+          open: lookup.open,
+          reservations: kept,
+        })
+        chosen = picked
+      }
+      // --prune 은 형식이 틀린 예약만 있어도 다시 써서 뺀다(머리 주석의 PRUNED-INVALID)
+      const dropInvalid = picked === null && current.skipped > 0
+      if (dropInvalid) invalid += current.skipped
+      if (removed.length > 0 || dropInvalid || (picked !== null && !picked.reused)) writes.push({ store, list: picked ? picked.list : kept })
     }
-    const next = chosen ? chosen.list : kept
-    // --prune 은 형식이 틀린 예약만 있어도 다시 써서 뺀다(머리 주석의 PRUNED-INVALID)
-    const dropInvalid = chosen === null && current.skipped > 0
-    if (removed.length > 0 || dropInvalid || (chosen !== null && !chosen.reused)) {
+    if (writes.length > 0) {
       // 4. 쓰기 직전에 잠금을 다시 본다
       if (!ownsLock(lock)) {
         say(`LOCK-LOST ${lock}`)
         return 4
       }
-      try {
-        writeReservations(repo, next)
-      } catch (e) {
-        return lookupFail(`예약 파일에 쓰지 못했다: ${(e as Error).message}`)
+      for (const { store, list } of writes) {
+        try {
+          writeReservations(repo, list, store)
+        } catch (e) {
+          return lookupFail(`예약 파일에 쓰지 못했다: ${(e as Error).message}`)
+        }
       }
     }
-    for (const r of removed) say(`PRUNED ${r.module} ${r.label} ${r.branch}`)
+    for (const r of removedAll) say(`PRUNED ${r.module} ${r.label} ${r.branch}`)
     if (!chosen) {
-      if (dropInvalid) say(`PRUNED-INVALID ${current.skipped}`)
-      say(`PRUNE-DONE ${removed.length}`)
+      if (invalid > 0) say(`PRUNED-INVALID ${invalid}`)
+      say(`PRUNE-DONE ${removedAll.length}`)
       return 0
     }
     const { reservation } = chosen

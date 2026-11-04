@@ -707,6 +707,17 @@ describe('마이그레이션 예약', () => {
     assert.deepEqual(queueCalls(), [])
   })
 
+  test('ADR 예약은 같은 모듈 이름의 더 낮은 번호이거나 형식이 틀려도 마이그레이션 판정에 넣지 않는다', async () => {
+    config({ migrations: { dirs }, adr: { dirs: { api: 'docs/adr' } } })
+    const adr = { module: 'api', version: [3], label: 'ADR-003', branch: 'feat/x', name: 'x', path: 'docs/adr/003-x.md', at: '2026-01-01T00:00:00Z' }
+    write(orchFile('state', 'adr-reservations.json'), JSON.stringify({ reservations: [adr, { module: 'api' }] }))
+    const files = added('db/api/V4__y.sql')
+    github([pr(1)], { views: { 1: { files } }, open: [{ number: 1, headRefName: 'feat-1', baseRefName: 'main', files }] })
+    once()
+    assert.deepEqual(await queued(), queueArgs('1'))
+    assert.deepEqual(events('WATCH-ERROR'), [])
+  })
+
   test('같은 PR 의 브랜치가 예약한 더 낮은 번호는 기다리지 않는다', async () => {
     config({ migrations: { dirs } })
     // 열린 PR 의 파일에 없는 번호라 브랜치로 빼지 않으면 lower 로 잡혀 걸지 않는다

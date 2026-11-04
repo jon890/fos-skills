@@ -6,7 +6,22 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { addedPaths, choose, migrationName, migrationPath, nextVersion, prune, readReservations, reservationsFile, slug, writeReservations } from '../scripts/lib/reservations.ts'
+import { ConfigError } from '../scripts/lib/config.ts'
+import {
+  adrDirs,
+  adrOf,
+  adrSlug,
+  addedPaths,
+  choose,
+  migrationName,
+  migrationPath,
+  nextVersion,
+  prune,
+  readReservations,
+  reservationsFile,
+  slug,
+  writeReservations,
+} from '../scripts/lib/reservations.ts'
 import type { Migration } from '../scripts/lib/auto-merge.ts'
 import type { Reservation } from '../scripts/lib/reservations.ts'
 
@@ -70,6 +85,54 @@ describe('migrationName', () => {
   test('경로는 종류에 맞는 확장자를 붙인다', () => {
     assert.equal(migrationPath('db/api', 'V3', 'add_index', 'sql'), 'db/api/V3__add_index.sql')
     assert.equal(migrationPath('src/main/java/db/migration', 'V3', 'Backfill', 'java'), 'src/main/java/db/migration/V3__Backfill.java')
+  })
+})
+
+describe('adrSlug', () => {
+  test('공백과 _ 는 - 로, 대문자는 소문자로 바꾸고 그 밖의 글자는 지운다', () => {
+    assert.equal(adrSlug('Reserve ADR_number (orch)!'), 'reserve-adr-number-orch')
+    assert.equal(migrationName('Keep  -- one', 'adr'), 'keep-one')
+  })
+
+  test('한글만 있으면 비어 Error 다', () => {
+    assert.throws(() => adrSlug('한글만'), /빈다/)
+  })
+
+  test('ADR 경로는 label 의 번호 뒤에 설명을 붙인 .md 다', () => {
+    assert.equal(migrationPath('docs/adr', 'ADR-084', 'keep-one', 'adr'), 'docs/adr/084-keep-one.md')
+  })
+})
+
+describe('adrOf', () => {
+  const dirs = { root: 'docs/adr', api: 'modules/api/docs/adr' }
+
+  test('폴더 바로 아래의 <숫자>-<설명>.md 만 센다', () => {
+    assert.deepEqual(adrOf('docs/adr/017-orch-migration-reserve.md', dirs), {
+      module: 'root',
+      version: [17],
+      label: 'ADR-017',
+      path: 'docs/adr/017-orch-migration-reserve.md',
+    })
+    assert.equal(adrOf('modules/api/docs/adr/084-x.md', dirs)?.module, 'api')
+  })
+
+  test('INDEX.md, 하위 폴더, 다른 확장자, 다른 폴더는 세지 않는다', () => {
+    for (const path of ['docs/adr/INDEX.md', 'docs/adr/img/001-a.md', 'docs/adr/001-a.png', 'docs/adr/001.md', 'other/docs/adr/001-a.md', 'docs/adr2/001-a.md']) {
+      assert.equal(adrOf(path, dirs), null, path)
+    }
+  })
+})
+
+describe('adrDirs', () => {
+  test('끝의 / 를 떼고 모듈마다 폴더를 낸다. 절이 없으면 빈 객체다', () => {
+    assert.deepEqual(adrDirs({ adr: { dirs: { root: 'docs/adr/' } } }), { root: 'docs/adr' })
+    assert.deepEqual(adrDirs({}), {})
+  })
+
+  test('객체가 아니거나 폴더가 비었거나 모르는 키가 있으면 ConfigError 다', () => {
+    for (const adr of [{ dirs: ['docs/adr'] }, { dirs: { root: '' } }, { dirs: { root: 3 } }, { dirs: {}, width: 4 }]) {
+      assert.throws(() => adrDirs({ adr }), ConfigError, JSON.stringify(adr))
+    }
   })
 })
 
@@ -197,6 +260,63 @@ describe('choose', () => {
   })
 })
 
+describe('choose 의 ADR', () => {
+  function adr(label: string, module = 'root'): Migration {
+    return { module, version: [Number(label.slice(4))], label, path: `docs/adr/${label.slice(4)}-x.md` }
+  }
+  function adrRes(branch: string, label: string, name = 'x'): Reservation {
+    return { module: 'root', version: [Number(label.slice(4))], label, branch, name, path: `docs/adr/${label.slice(4)}-${name}.md`, at: AT }
+  }
+  function adrInput(extra: Partial<Parameters<typeof choose>[0]> = {}): Parameters<typeof choose>[0] {
+    return input({
+      module: 'root',
+      name: 'Reserve ADR number',
+      kind: 'adr',
+      dir: 'docs/adr',
+      baseMax: adr('ADR-017'),
+      open: [{ branch: 'feat-b', migrations: [adr('ADR-018')] }],
+      reservations: [adrRes('feat-c', 'ADR-019')],
+      ...extra,
+    })
+  }
+
+  test('base 최고, 열린 PR, 남은 예약을 넘는 번호를 자릿수를 맞춰 낸다', () => {
+    const got = choose(adrInput())
+    assert.deepEqual(got.reservation, {
+      module: 'root',
+      version: [20],
+      label: 'ADR-020',
+      branch: 'feat-a',
+      name: 'reserve-adr-number',
+      path: 'docs/adr/020-reserve-adr-number.md',
+      at: NOW,
+    })
+  })
+
+  test('센 번호가 없으면 001 이고, 네 자리 번호가 있으면 네 자리로 낸다', () => {
+    assert.equal(choose(adrInput({ baseMax: null, open: [], reservations: [] })).reservation.label, 'ADR-001')
+    assert.equal(choose(adrInput({ baseMax: adr('ADR-0042'), open: [], reservations: [] })).reservation.path, 'docs/adr/0043-reserve-adr-number.md')
+  })
+
+  test('세 자리를 넘으면 그 길이를 쓴다', () => {
+    assert.equal(choose(adrInput({ baseMax: adr('ADR-999'), open: [], reservations: [] })).reservation.label, 'ADR-1000')
+  })
+
+  test('같은 브랜치, 폴더, 설명이면 그 예약을 다시 준다', () => {
+    const mine = adrRes('feat-a', 'ADR-020', 'reserve-adr-number')
+    const got = choose(adrInput({ reservations: [adrRes('feat-c', 'ADR-019'), mine] }))
+    assert.equal(got.reused, true)
+    assert.deepEqual(got.reservation, mine)
+  })
+
+  test('다시 줄 예약이 base 최고 이하가 됐으면 renewed 다', () => {
+    const mine = adrRes('feat-a', 'ADR-017', 'reserve-adr-number')
+    const got = choose(adrInput({ open: [], reservations: [mine] }))
+    assert.equal(got.renewed, true)
+    assert.equal(got.reservation.label, 'ADR-018')
+  })
+})
+
 describe('prune', () => {
   test('gone 이 true 인 항목만 지우고 false 와 null 은 남긴다', () => {
     const list = [res('gone', 'V1'), res('live', 'V2'), res('unknown', 'V3')]
@@ -267,6 +387,14 @@ describe('readReservations 와 writeReservations', () => {
   test('형식이 틀린 항목은 건너뛰고 센다', () => {
     put(JSON.stringify({ reservations: [res('feat-a', 'V3'), { module: 'api' }, { ...res('feat-b', 'V4'), version: [] }] }))
     assert.deepEqual(readReservations(tmp), { list: [res('feat-a', 'V3')], skipped: 2 })
+  })
+
+  test('ADR 예약은 따로 된 파일에 쓰고, 기본(마이그레이션) 읽기는 그것을 보지 않는다', () => {
+    const adr: Reservation = { module: 'root', version: [20], label: 'ADR-020', branch: 'feat-a', name: 'x', path: 'docs/adr/020-x.md', at: AT }
+    writeReservations(tmp, [adr], 'adr')
+    assert.notEqual(reservationsFile(tmp, 'adr'), reservationsFile(tmp))
+    assert.deepEqual(readReservations(tmp, 'adr'), { list: [adr], skipped: 0 })
+    assert.deepEqual(readReservations(tmp), { list: [], skipped: 0 })
   })
 
   test('JSON 이 아니거나 최상위가 틀리면 Error 다', () => {
