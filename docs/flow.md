@@ -39,7 +39,7 @@ flowchart TD
 
 ## 갱신
 
-설치한 쪽은 main 의 최신 version 을 받는다. version 은 머지마다 workflow 가 올리므로 사람이 올리는 단계는 없다([ADR-019](adr/019-plugin-version-auto-bump.md)).
+설치한 쪽은 main 의 최신 version 을 받는다. version 은 머지마다 workflow 가 올리므로 사람이 올리는 단계는 없다([ADR-019](adr/019-plugin-version-auto-bump.md)). 스킬 버전도 같은 실행이 PR 의 변경 이력 조각(`<스킬>/changes/*.md`)으로 올린다([ADR-023](adr/023-version-at-merge.md)).
 
 ```bash
 claude plugin update fos-skills@fos-skills
@@ -52,7 +52,7 @@ sequenceDiagram
     participant C as 설치 캐시
     participant S as 세션
     W->>G: 커밋하고 PR 을 머지한다
-    G->>G: plugin-version workflow 가 version 을 올린다
+    G->>G: plugin-version workflow 가 스킬 조각과 플러그인 version 을 올린다
     Note over W,G: 머지 전에는 설치한 쪽에 가지 않는다
     C->>G: plugin update fos-skills@fos-skills
     G-->>C: 새 version 의 복사본

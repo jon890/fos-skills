@@ -136,6 +136,7 @@ def is_junk(rel: str) -> bool:
         or ".omc" in parts
         or ".orch" in parts
         or ".DS_Store" in parts
+        or rel.startswith("changes/")  # 머지 때 workflow 가 지우는 변경 이력 조각(docs/adr/023-version-at-merge.md)
         or rel.endswith((".pyc", ".pyo"))
     )
 
@@ -168,7 +169,7 @@ def to_team_frontmatter(text: str) -> str:
 
 def rendered(src: pathlib.Path, rel: str) -> bytes:
     raw = src.read_bytes()
-    if src.suffix not in (".md", ".py", ".ts", ".js", ".sh", ".json"):
+    if src.suffix != ".md" or "tests" in pathlib.PurePosixPath(rel).parts:
         return raw
     text = raw.decode("utf-8")
     if rel == "SKILL.md":
@@ -177,8 +178,7 @@ def rendered(src: pathlib.Path, rel: str) -> bytes:
     import posixpath
     source_file = src.relative_to(repo).as_posix()
     target_file = next(dst + source_file[len(prefix):] for prefix, dst in PAIRS if source_file.startswith(prefix + "/"))
-    def relocate(match):
-        value = match[0]
+    def relocate(value):
         resolved = posixpath.normpath(posixpath.join(posixpath.dirname(source_file), value))
         for before, after in PAIRS:
             if resolved == before or resolved.startswith(before + "/"):
@@ -186,8 +186,38 @@ def rendered(src: pathlib.Path, rel: str) -> bytes:
                 result = posixpath.relpath(target, posixpath.dirname(target_file))
                 return "./" + result if value.startswith("./") and not result.startswith(".") else result
         return value
-    text = re.sub(r"(?<![\w./-])(?:\.{1,2}/)+(?:[A-Za-z0-9_.*-]+/?)+", relocate, text)
-    return text.encode("utf-8")
+    # 문서의 링크 주소만 옮긴다. 코드와 명령 예시의 경로는 실행 의미를 갖는다.
+    link_or_code = re.compile(
+        r"(?P<ticks>`+)(?!`)[\s\S]*?(?<!`)(?P=ticks)(?!`)"
+        r"|(?P<leader>\]\([ \t]*<?|^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?)"
+        r"(?P<destination>(?:\.{1,2}/)+(?:[A-Za-z0-9_.*-]+/?)+)",
+        re.M,
+    )
+
+    def rewrite_prose(prose):
+        return link_or_code.sub(
+            lambda m: m["leader"] + relocate(m["destination"]) if m["destination"] else m[0],
+            prose,
+        )
+
+    result, prose = [], []
+    fence = None
+    for line in text.splitlines(keepends=True):
+        marker = re.match(r"^[ \t]*(`{3,}|~{3,})", line)
+        if fence is not None:
+            result.append(line)
+            if re.fullmatch(r"[ \t]*" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*(?:\r?\n)?", line):
+                fence = None
+        elif marker or line.startswith(("    ", "\t")):
+            result.append(rewrite_prose("".join(prose)))
+            prose.clear()
+            result.append(line)
+            if marker:
+                fence = marker[1]
+        else:
+            prose.append(line)
+    result.append(rewrite_prose("".join(prose)))
+    return "".join(result).encode("utf-8")
 
 
 # 방향 보호. 이 저장소가 원본이라는 전제는 이쪽 버전이 뒤처지지 않았을 때만 성립한다.

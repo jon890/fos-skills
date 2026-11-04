@@ -315,6 +315,8 @@ DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하�
 
 **`finish-pr.ts` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.ts` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
 순서(머지 확인, worker 에게 머지 알림, worker 정리, 배포 확인, 마지막 PR 판정, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.ts` 의 `PR!` 도 같은 뜻이다.
+**워크트리는 배포 확인보다 먼저 지운다.** 배포 브랜치에 연달아 머지하면 배포 확인이 길어지는데, 그동안 머지된 워크트리가 남았다(2026-11-04).
+**연달아 머지해 배포가 건너뛰어지면 끝없이 기다리지 않는다.** 앞 머지의 배포가 skipped 로만 끝나면 배포 브랜치의 끝 커밋 배포를 기다리고, 끝 커밋도 skipped 면 배포 실패로 끝낸다. 근거는 출력의 `배포 판정:` 줄과 `배포 실패 <sha> (근거: ...)` 줄에 남는다.
 
 **정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지를 알린다.** 머지된 줄 모르고 기다리는 worker 의 dispatch 가 살아 있으면 `cleanup-sweep` 이 그 워크트리를 「살아 있는 worker」 로 계속 건너뛴다. 코디네이터가 「MERGED 됐다, worker_done 을 보내라」 를 따로 보내지 않는다.
 알린 뒤 `finish.worker_done_timeout`(분, 기본 10) 동안 dispatch 가 끝나기를 기다린다. 출력의 `notify: worker 남음` 줄이면 worker 가 끝내지 않았다는 뜻이다. 그 worker 의 화면을 보고 이어 가게 한다.
@@ -409,6 +411,7 @@ fi
 **작업이 끝난 워크트리는 `remove-worktree.ts` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
 활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
 거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
+**워크트리를 쥔 것이 자식 없는 Orca 기본 셸(「Terminal 1」 같은 에이전트 없는 로그인 셸)뿐이면 스스로 그 터미널을 닫고 지운다.** 끝난 worker 의 워크트리에서만 닫고, 에이전트 터미널, 살아 있는 dispatch 의 터미널, 자식이 있는 셸, worker 기록이 없는 워크트리의 셸(사람이 연 셸일 수 있다)은 남긴다. 커밋 안 된 변경처럼 어차피 거부할 워크트리면 셸을 닫기 전에 거부한다. 판정은 `scripts/lib/idle-shells.ts` 한 곳이 소유하고 `cleanup-sweep.ts` 도 같은 판정을 쓴다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
 거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. 위 판정이 「끝남」 인 워크트리(PR MERGED, PR 없이 끝남)의 남은 프로세스만 끈다. lsof 로 직접 찾아 끄지 않는다.
 
@@ -479,4 +482,4 @@ Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이�
 "$SKILL_DIR/bin/orch.ts" handoff-cleanup --repo "$REPO" --run "$RUN_ID" --apply
 ```
 
-기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. finish-pr 은 배포·후속 검증 뒤 정리하고, 근거 누락이나 대기는 FINISH-FAIL 로 남긴다. 후속 검증을 갱신한 뒤 같은 명령으로 재개한다. 기존 비기능 PR 의 정리 순서는 유지한다.
+기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. finish-pr 은 기능 PR 도 배포 확인 전에 워크트리·브랜치·빈 터미널을 지운다. 근거 누락이나 대기면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 로 끝난다. 후속 검증을 갱신한 뒤 같은 명령으로 재개한다.

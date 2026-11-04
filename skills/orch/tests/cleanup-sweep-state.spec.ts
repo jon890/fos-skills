@@ -96,6 +96,7 @@ describe('user_takeover 로 표시된 살아 있는 worker (사례 9)', () => {
     has(out, '살아 있는 worker ctx_t. 근거: user_takeover 표시지만 화면이 작업 중이다(ctx_t, term_t)')
     has(calls(), 'orca terminal read --terminal term_t --screen')
     lacks(calls(), '--head takeover-busy')
+    lacks(calls(), 'headRefName: "takeover-busy"')
   })
 
   test('화면이 작업 중이 아니면 사용자 보유 터미널로 남긴다', () => {

@@ -62,12 +62,15 @@ class ExportToTeamScriptTest(unittest.TestCase):
     def edit_working_tree(self):
         (self.repo / self.skill / "NOTE.md").write_text("uncommitted\n", encoding="utf-8")
 
-    def test_nested_sources_rebase_cross_root_links_for_the_team(self):
+    def nest_sources(self):
         names = shared_names("SHARED_SKILLS")
         for name in names:
             prefix = "export-only-skills" if name in ("content-preview", "korean-check") else "skills"
             (self.repo / prefix).mkdir(exist_ok=True)
             self.repo.joinpath(name).rename(self.repo / prefix / name)
+
+    def test_nested_sources_rebase_cross_root_links_for_the_team(self):
+        self.nest_sources()
         source = self.repo / "skills/spec/NOTE.md"
         source.write_text("[규칙](../../export-only-skills/korean-check/NOTE.md)\n")
         self.run_script("--apply")
@@ -78,10 +81,79 @@ class ExportToTeamScriptTest(unittest.TestCase):
         git(self.repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "move sources")
         self.assertEqual(0, self.run_script("--source-ref", "HEAD").returncode)
 
+    def test_change_fragments_are_not_exported_or_reported_as_drift(self):
+        fragment = self.repo / self.skill / "changes" / "add-x.minor.md"
+        fragment.parent.mkdir()
+        fragment.write_text("- 새 기능\n", encoding="utf-8")
+        self.assertEqual(0, self.run_script("--apply").returncode)
+        self.assertTrue((self.team / "skills" / self.skill / "NOTE.md").is_file())
+        self.assertFalse((self.team / "skills" / self.skill / "changes").exists())
+        self.assertEqual(0, self.run_script().returncode)
+
+    def test_change_fragments_already_in_the_team_copy_are_not_drift(self):
+        self.assertEqual(0, self.run_script("--apply").returncode)
+        stale = self.team / "skills" / self.skill / "changes" / "old.minor.md"
+        stale.parent.mkdir()
+        stale.write_text("- 옛 조각\n", encoding="utf-8")
+        self.assertEqual(0, self.run_script().returncode)
+
     def test_unknown_argument_exits_2(self):
         result = self.run_script("--nope")
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("알 수 없는 인자: --nope", result.stderr)
+
+    def test_export_preserves_test_sources_and_markdown_code(self):
+        self.nest_sources()
+        source = self.repo / "skills/plan"
+        (source / "tests").mkdir()
+        original = (SCRIPT.parents[1] / "skills/plan/tests/test_verify_task.py").read_bytes()
+        (source / "tests/test_verify_task.py").write_bytes(original)
+        (source / "tests/fixture.md").write_text("[문서](../NOTE.md)\n")
+        code = (
+            'safe = "cd frontend && bun test ./.claude\\ncd frontend && bun test ./.claude"\n'
+            'command = "python3 -m unittest -v ./.github/scripts/tests/test_sync.py"\n'
+            'command = "bun test ./pkg/scripts/profile/"\n'
+            'command = "go test ./..."\n'
+            'link = "[문서](../../export-only-skills/korean-check/NOTE.md)"\n'
+        )
+        (source / "example.py").write_text(code)
+        markdown = (
+            "`[문서](../../export-only-skills/korean-check/NOTE.md)`\n"
+            "``[문서](../../export-only-skills/korean-check/NOTE.md) `code` ``\n"
+            "`여러 줄\n[문서](../../export-only-skills/korean-check/NOTE.md)`\n"
+            "```python\n" + code + "```\n"
+            "~~~markdown\n[문서](../../export-only-skills/korean-check/NOTE.md)\n~~~~\n"
+            "    [문서](../../export-only-skills/korean-check/NOTE.md)\n"
+            "평문 ./pkg/scripts/profile/\n"
+            "```미완성 코드 블록\n[문서](../../export-only-skills/korean-check/NOTE.md)\n"
+        )
+        (source / "NOTE.md").write_text(markdown)
+        result = self.run_script("--apply")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        exported = self.team / "skills/plan"
+        self.assertEqual(original, (exported / "tests/test_verify_task.py").read_bytes())
+        self.assertEqual("[문서](../NOTE.md)\n", (exported / "tests/fixture.md").read_text())
+        self.assertEqual(code, (exported / "example.py").read_text())
+        self.assertEqual(markdown, (exported / "NOTE.md").read_text())
+
+    def test_export_relocates_markdown_link_destinations_only(self):
+        self.nest_sources()
+        source = self.repo / "skills/plan/NOTE.md"
+        fence = "~~~~markdown\n[문서](../../export-only-skills/korean-check/NOTE.md)\n~~~~~\n"
+        source.write_text(
+            fence + '[문서](../../export-only-skills/korean-check/NOTE.md#section "제목")\n'
+            '[`문서`](<../../export-only-skills/korean-check/NOTE.md>)\n'
+            '[문서]: ../../export-only-skills/korean-check/NOTE.md "제목"\n'
+            '문자열 "../../export-only-skills/korean-check/NOTE.md"\n'
+        )
+        self.run_script("--apply")
+        self.assertEqual(
+            fence + '[문서](../korean-check/NOTE.md#section "제목")\n'
+            '[`문서`](<../korean-check/NOTE.md>)\n'
+            '[문서]: ../korean-check/NOTE.md "제목"\n'
+            '문자열 "../../export-only-skills/korean-check/NOTE.md"\n',
+            (self.team / "skills/plan/NOTE.md").read_text(),
+        )
 
     def test_source_ref_without_value_exits_2(self):
         for args in (["--source-ref"], ["--source-ref", "--apply"]):

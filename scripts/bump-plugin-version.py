@@ -9,9 +9,13 @@
 - 새 버전 절(`## X.Y.Z (날짜)`)이 있으면 minor
 - 그 밖의 변경은 patch
 
+먼저 main 트리의 변경 이력 조각(`<단위>/changes/*.patch.md`, `*.minor.md`)으로 스킬 버전을 올린다(scripts/skill_changes.py,
+docs/adr/023-version-at-merge.md). 조각이 있었으면 플러그인 등급은 minor 이상이고 요약 줄에 그 새 스킬 버전이 든다.
+조각 검사에 걸려 건너뛴 것은 stderr 에 경고로 낸다.
+
 올리지 않고 끝내는 경우(종료 코드 0, stdout 첫 줄이 `skip:`):
-- base..head 가 plugin.json 의 version 을 이미 바꿨다(사람이 직접 올림)
-- 바뀐 파일이 plugin.json 과 플러그인 CHANGELOG 뿐이다
+- base..head 가 plugin.json 의 version 을 이미 바꿨다(사람이 직접 올림). 조각은 그래도 적용한다
+- 바뀐 파일이 plugin.json, 플러그인 CHANGELOG, 조각뿐이고 이번에 적용한 조각이 없다
 올렸으면 stdout 첫 줄이 새 version 이다.
 """
 
@@ -20,13 +24,16 @@ import json
 import re
 import subprocess
 import sys
-from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import skill_changes
 MANIFEST = ".claude-plugin/plugin.json"
 CHANGELOG = ".claude-plugin/CHANGELOG.md"
 OWN_FILES = {MANIFEST, CHANGELOG}
+FRAGMENT_PATH = re.compile(rf"^(?:{'|'.join(skill_changes.UNIT_ROOTS)})/[^/]+/{skill_changes.CHANGES_DIR}/")
+RANK = {"patch": 0, "minor": 1, "major": 2}
 ZERO = "0" * 40
 
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -123,13 +130,20 @@ def prepend(changelog, version, day, line):
 def run(base, head, day, root=ROOT):
     if not base or base == ZERO:
         base = git("rev-parse", f"{head}~1", root=root).strip()
-    changed = [path for path in git("diff", "--name-only", base, head, root=root).splitlines() if path]
+    applied, warnings = skill_changes.apply_fragments(root, day)
+    for warning in warnings:
+        print(f"경고: {warning}", file=sys.stderr)
+    changed = [path for path in git("diff", "--name-only", base, head, root=root).splitlines()
+               if path and not FRAGMENT_PATH.match(path)]
     if manifest_version(file_at(base, MANIFEST, root)) != manifest_version(file_at(head, MANIFEST, root)):
         return "skip: 이번 변경이 version 을 이미 바꿨어요"
     changed = [path for path in changed if path not in OWN_FILES]
-    if not changed:
+    if not changed and not applied:
         return "skip: 플러그인 버전 파일 말고 바뀐 것이 없어요"
     level, entries = classify(base, head, changed, root)
+    if applied:
+        level = max(level, "minor", key=RANK.get)
+        entries = applied + entries
     manifest_path = root / MANIFEST
     manifest_text = manifest_path.read_text(encoding="utf-8")
     version = bump(manifest_version(manifest_text), level)
@@ -148,7 +162,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base", default="", help="push 전 main 커밋. 비었거나 0 이면 head 의 부모")
     parser.add_argument("--head", default="HEAD")
-    parser.add_argument("--date", default=date.today().isoformat())
+    parser.add_argument("--date", default=skill_changes.today_seoul(), help="절 날짜. 기본은 한국 시간 오늘")
     args = parser.parse_args(argv)
     print(run(args.base, args.head, args.date))
     return 0
