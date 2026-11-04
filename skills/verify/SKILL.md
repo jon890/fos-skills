@@ -3,7 +3,7 @@ name: verify
 description: |
   구현한 기능을 스펙·코드·문서와 실제 실행 결과로 독립 검증한다. "기능 검증", "인수 검증", "구현 확인", "verify" 요청이나 orch 의 구현 다음 단계에 쓴다. 구현 수정은 implementation 로 돌려보낸다.
 metadata:
-  version: "1.5.0"
+  version: "1.5.1"
 ---
 
 # verify

@@ -1,5 +1,9 @@
 # CHANGELOG: verify
 
+## 1.5.1 (2026-11-05)
+
+- 오버레이를 찾는 순서를 `verify-overlay.md`, `implementation-overlay.md`, 옛 `build-with-teams-overlay.md` 로 정확히 적었다
+
 ## 1.5.0 (2026-11-04)
 
 - PR 전 실행 검증과 PR 뒤 자동 코드 리뷰를 나누고 리뷰 대기를 최종 통과로 쓰지 않아요.
