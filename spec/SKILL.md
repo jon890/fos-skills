@@ -8,7 +8,7 @@ description: |
   사용자에게 보이는 새 동작을 정해야 하는지로 가른다. 기능 없이 도메인 판단 기준의 의미만 바뀌어도 결정 표 하나짜리 작은 스펙으로 쓴다.
   버그 수정, 오타 고침, 정리·삭제, 허용 범위 안의 설정 값 조정, 측정, 문서만 바꾸는 일, 조회와 질문 답변에는 쓰지 않는다. PR 단위 작업 분해는 plan 이 맡는다.
 metadata:
-  version: "3.2.0"
+  version: "3.3.0"
 ---
 
 # spec
@@ -29,8 +29,8 @@ metadata:
 | 1 | 탐색 | 관련 코드, 기존 스펙, 공유 계약, 도메인 문서, ADR 을 읽었고 근거 경로를 적었다 | |
 | 2 | 결정 목록 | 점검 축마다 결정 또는 「해당 없음과 이유」 가 결정 표 초안에 있다. 도메인 규칙을 바꾸면 변경할 규칙과 확정 상태가, 바꾸지 않으면 그 사실이 스펙에 있다 | [`interview.md`](references/interview.md) |
 | 3 | 질문 라운드 | 결정 표에서 「누가」 가 `사용자` 인 행이 모두 답을 받았다 | [`interview.md`](references/interview.md) |
-| 4 | 모호함 0 판정 | `check_feature.py --draft` 종료 코드가 0 이고, 독립 검토자의 발견이 모두 결정 표에 반영됐다 | [`interview.md`](references/interview.md) |
-| 5 | 사용자 확인 | 사용자가 스펙을 확인했고 스펙 머리에 `확인: YYYY-MM-DD` 줄이 있다. `check_feature.py` 종료 코드가 0 이다 | |
+| 4 | 모호함 0 판정 | `check_feature.py --draft` 와 `run_doc_checks.py` 종료 코드가 0 이고, 독립 검토자의 발견이 모두 결정 표에 반영됐다 | [`interview.md`](references/interview.md) |
+| 5 | 사용자 확인 | 사용자가 스펙을 확인했고 스펙 머리에 `확인: YYYY-MM-DD` 줄이 있다. `check_feature.py` 와 `run_doc_checks.py` 종료 코드가 0 이다 | |
 
 3~4 에서 새 결정이 나오면 결정 표에 더하고 3으로 돌아간다.
 확인 뒤 plan·verify 가 새 사용자 결정을 찾아 되돌려 보내면, 그 결정만 3부터 다시 돌고 확인을 다시 받는다.
@@ -67,9 +67,12 @@ PRD 가 필요하고 기존 양식이 없을 때만 [제품 요구사항 양식]
 
 ```bash
 python3 "$PLAN_SKILL_DIR/scripts/check_feature.py" "$SPEC" --draft
+python3 "$PLAN_SKILL_DIR/scripts/run_doc_checks.py" --skill spec "$SPEC"
 ```
 
 `--draft` 는 확인 줄을 요구하지 않는다. 이 검사는 형식만 보고 의미 검토와 사용자 합의를 대신하지 않는다.
+`run_doc_checks.py` 는 레포 설정의 「문서 검사 명령」(예: ADR 링크 규칙을 보는 저장소 문서 검사)을 돌린다. 값이 없으면 건너뛰고 0 으로 끝난다.
+저장소 문서 검사를 이 단계에서 돌리지 않으면 구현 phase 커밋에서야 걸려 문서 수정이 구현 커밋에 섞인다.
 
 ## 5. 사용자 확인
 
@@ -79,6 +82,7 @@ python3 "$PLAN_SKILL_DIR/scripts/check_feature.py" "$SPEC" --draft
 
 ```bash
 python3 "$PLAN_SKILL_DIR/scripts/check_feature.py" "$SPEC"
+python3 "$PLAN_SKILL_DIR/scripts/run_doc_checks.py" --skill spec "$SPEC"
 ```
 
 스펙 경로와 결정 요약을 technical-design 이나 orch 에 넘긴다. 구현은 시작하지 않는다.

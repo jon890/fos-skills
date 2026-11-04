@@ -4,6 +4,7 @@
 
 - `verify_task.py` 가 `claude plugin test [dir]` 를 dir 아래 `*.test.ts`, `*.test.tsx` 를 실행하는 테스트 명령으로 봐요.
 - 레포 설정의 「PR 변경 파일 상한」 과 「파일 길이 상한」 을 `verify_task.py` 가 읽어 계획 단계에서 경고해요.
+- `run_doc_checks.py` 가 레포 설정의 「문서 검사 명령」 을 spec·technical-design 단계에서 실행해요.
 
 ## 5.3.0 (2026-11-03)
 
