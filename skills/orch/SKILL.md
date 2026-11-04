@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "7.10.1"
+  version: "7.10.2"
 ---
 
 # orch
@@ -23,7 +23,7 @@ metadata:
 캐시의 스크립트를 직접 불러 현재 설치 기록과 다르면 stderr 에 `STALE-BUNDLE` 경고와 현재 진입점 경로가 나온다.
 **`orca orchestration` 조회를 직접 부를 때는 `--full` 을 붙인다.** Orca 1.4.246 부터 `--full` 이 없으면 줄인 보기라 `dispatchStatus`, `resource`, `thread_id` 처럼 판정에 쓰는 키가 빠진다. 스크립트는 스스로 붙인다(`scripts/lib/orca.ts` 의 `withFull`).
 
-스킬을 열면 먼저 설치본을 점검한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
+스킬을 열면 먼저 설치본을 점검한다. 커밋 SHA 이름 캐시는 폴더 이름으로, 버전 이름 캐시는 `installed_plugins.json` 의 같은 설치 경로에 적힌 `gitCommitSha` 로 원본과 비교한다. 버전 이름 캐시의 설치 기록을 읽지 못하거나 경로 또는 SHA 가 없으면 `SKIP-VERSION` 으로 알리고 그대로 진행한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
 `UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG` 은 doctor가 5.2.0에서 지운 설정 칸을 찾았다는 뜻이다. 일반 명령은 같은 설정을 사용법 오류로 거부한다. 고치는 법은 [`references/hooks.md`](references/hooks.md) 가 소유한다.

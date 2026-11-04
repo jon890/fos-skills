@@ -131,6 +131,15 @@ describe('설치본 판정', () => {
     return doctor(['--skip-questions', '--skill-dir', skill, ...args])
   }
 
+  function installVersion(record: unknown = [{ installPath: join(tmp, 'plugins', 'cache', 'mkt', 'plug', '3.23.0'), gitCommitSha: installed }]): void {
+    const installPath = join(tmp, 'plugins', 'cache', 'mkt', 'plug', '3.23.0')
+    skill = join(installPath, 'skills', 'orch')
+    cpSync(join(dev, 'orch'), skill, { recursive: true })
+    if (record !== null) {
+      write(join(tmp, 'no-config', 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'plug@mkt': record } }))
+    }
+  }
+
   beforeEach(() => {
     origin = join(tmp, 'origin.git')
     git('init', '-q', '--bare', '-b', 'main', origin)
@@ -189,6 +198,44 @@ describe('설치본 판정', () => {
     assert.ok(r.stdout.includes(`STALE ${installed.slice(0, 12)} ${latest.slice(0, 12)}`), r.stdout)
     assert.ok(r.stdout.includes('claude plugin marketplace update mkt'), r.stdout)
     assert.ok(r.stdout.includes('claude plugin update plug@mkt'), r.stdout)
+  })
+
+  test('버전 폴더에서 설치 기록의 커밋이 오래됐으면 STALE 이다', () => {
+    installVersion()
+    write(join(dev, 'orch', 'scripts', 'spec-line.ts'), '')
+    const latest = commit('orch 변경')
+    updateMarketplace()
+    const r = run()
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.ok(r.stdout.includes(`STALE ${installed.slice(0, 12)} ${latest.slice(0, 12)}`), r.stdout)
+  })
+
+  test('버전 폴더에서 설치 기록의 커밋이 같으면 OK-VERSION 이다', () => {
+    installVersion()
+    const r = run()
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, new RegExp(`^OK-VERSION ${installed.slice(0, 12)}$`, 'm'))
+  })
+
+  test('버전 폴더에서 설치 기록을 읽지 못하면 SKIP-VERSION 이다', () => {
+    installVersion(null)
+    const r = run()
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^SKIP-VERSION 버전 설치 기록을 읽지 못했다:/m)
+  })
+
+  test('버전 폴더의 설치 기록에 일치하는 경로가 있어도 gitCommitSha 가 없으면 SKIP-VERSION 이다', () => {
+    installVersion([{ installPath: join(tmp, 'plugins', 'cache', 'mkt', 'plug', '3.23.0') }])
+    const r = run()
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^SKIP-VERSION 현재 설치 경로의 gitCommitSha 가 없거나 SHA 형식이 아니다:/m)
+  })
+
+  test('버전 폴더에서 설치 기록에 일치하는 경로가 없으면 SKIP-VERSION 이다', () => {
+    installVersion([{ installPath: join(tmp, 'plugins', 'cache', 'mkt', 'plug', '3.22.0'), gitCommitSha: installed }])
+    const r = run()
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^SKIP-VERSION 설치 기록에서 현재 설치 경로를 찾지 못했다:/m)
   })
 
   test('다른 스킬만 바뀐 커밋이면 OK-VERSION 이다', () => {
