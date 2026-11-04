@@ -19,13 +19,15 @@
 //     --repo            핸들러와 설정을 볼 저장소. 기본은 작업 디렉터리의 주 checkout
 //
 // 설치본 판정:
-//     설치 경로는 `<plugins>/cache/<마켓플레이스>/<플러그인>/<sha>/<스킬>` 이다. `<sha>` 가 설치한 커밋이다.
+//     설치 경로는 `<plugins>/cache/<마켓플레이스>/<플러그인>/<sha 또는 버전>/<스킬>` 이다.
+//     폴더 이름이 sha 면 설치한 커밋이고, 버전이면 installed_plugins.json 에서 같은 installPath 의 gitCommitSha 를 읽는다.
 //     원본 브랜치의 커밋을 `git ls-remote` 로 읽어 앞자리가 같으면 최신이다.
 //     다르면 설치본 스킬 디렉터리의 tree hash 를 마켓플레이스 clone 의 `<원본 커밋>:<스킬>` 과 비교한다.
 //     같으면 최신으로 본다. 다른 스킬만 바뀐 커밋에 갱신하라고 하지 않기 위해서다.
 //     마켓플레이스 clone 은 커밋 하나뿐인 shallow clone 이라 커밋끼리 diff 하지 못한다. 그래서 tree 를 비교한다.
 //     clone 에 원본 커밋이 없거나(마켓플레이스를 아직 갱신하지 않았다) 그 경로가 없으면 판정할 수 없어 낡은 것으로 본다.
-//     설치 경로가 이 꼴이 아니면(`--plugin-dir` 로 체크아웃을 실은 경우) 비교하지 않는다.
+//     설치 경로가 이 꼴이 아니거나 버전 폴더의 설치 기록을 찾지 못하면 비교하지 않는다.
+//     (`--plugin-dir` 로 체크아웃을 실은 경우도 비교하지 않는다.)
 //     원본을 읽지 못하면(오프라인) 비교하지 않고 SKIP-VERSION 을 낸다. 스킬을 여는 일을 막지 않는다.
 //
 // 스크립트 판정:
@@ -195,7 +197,7 @@ function treeHash(directory: string, excludes: string): string | null {
   }
 }
 
-// [plugins 디렉터리, 마켓플레이스, 플러그인, 설치 sha]. 설치 캐시가 아니면 null.
+// [plugins 디렉터리, 마켓플레이스, 플러그인, 설치 폴더 이름]. 설치 캐시가 아니면 null.
 // versions 면 `<sha>` 자리에 플러그인 버전(3.12.0)도 받는다. plugin.json 에 version 이 생긴 뒤 캐시 폴더 이름이 버전이 됐다.
 // 설치본 판정은 커밋과 비교하므로 sha 만 받고, 루프 번들 판정은 폴더 이름만 비교하므로 둘 다 받는다
 function installLayout(skillDir: string, versions = false): [string, string, string, string] | null {
@@ -226,10 +228,37 @@ function marketplaceClone(plugins: string, marketplace: string): string | null {
   }
 }
 
-function checkVersion(skillDir: string, remote: string | undefined, branch: string): Checked {
-  const layout = installLayout(skillDir)
+function checkVersion(skillDir: string, remote: string | undefined, branch: string, configDir: string): Checked {
+  const layout = installLayout(skillDir, true)
   if (!layout) return { lines: [`SKIP-VERSION 설치 캐시가 아니다: ${skillDir}`], code: 0 }
-  const [plugins, marketplace, plugin, installed] = layout
+  const [plugins, marketplace, plugin, folder] = layout
+  let installed = folder
+  if (!SHA.test(folder)) {
+    let entries: unknown
+    try {
+      entries = (JSON.parse(readFileSync(join(configDir, 'plugins', 'installed_plugins.json'), 'utf8')) as { plugins?: Record<string, unknown> }).plugins?.[
+        `${plugin}@${marketplace}`
+      ]
+    } catch {
+      return { lines: [`SKIP-VERSION 버전 설치 기록을 읽지 못했다: ${plugin}@${marketplace}`], code: 0 }
+    }
+    if (!Array.isArray(entries)) {
+      return { lines: [`SKIP-VERSION 설치 기록에서 ${plugin}@${marketplace} 항목을 찾지 못했다`], code: 0 }
+    }
+    const bundle = real(dirname(skillDir))
+    const matching = (entries as { installPath?: unknown; gitCommitSha?: unknown }[]).filter(
+      (entry) => typeof entry?.installPath === 'string' && real(entry.installPath) === bundle,
+    )
+    if (matching.length === 0) {
+      return { lines: [`SKIP-VERSION 설치 기록에서 현재 설치 경로를 찾지 못했다: ${bundle}`], code: 0 }
+    }
+    const sha = matching.find((entry) => typeof entry.gitCommitSha === 'string' && SHA.test(entry.gitCommitSha))?.gitCommitSha
+    if (typeof sha !== 'string') {
+      return { lines: [`SKIP-VERSION 현재 설치 경로의 gitCommitSha 가 없거나 SHA 형식이 아니다: ${bundle}`], code: 0 }
+    }
+    // SHA 폴더 이름과 같은 출력 형식을 유지한다.
+    installed = sha.slice(0, 12)
+  }
   const clone = marketplaceClone(plugins, marketplace)
   let found: { code: number; out: string }
   if (remote) found = git(['ls-remote', remote, `refs/heads/${branch}`])
@@ -534,9 +563,9 @@ async function main(argv: string[]): Promise<number> {
   const repo = mainCheckout(values.repo ?? process.cwd())
   const runId = values.run ?? null
 
-  const version = values['skip-version'] ? { lines: [], code: 0 } : checkVersion(skillDir, values.remote, values.branch as string)
-  const scripts = checkScripts(skillDir)
   const configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+  const version = values['skip-version'] ? { lines: [], code: 0 } : checkVersion(skillDir, values.remote, values.branch as string, configDir)
+  const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
   const repoLines = [...checkRepo(repo), ...checkFeedback(repo), ...checkStudy(repo)]
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId, repo)
