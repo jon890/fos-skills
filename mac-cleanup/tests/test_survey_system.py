@@ -143,6 +143,30 @@ class MiseRowsTest(unittest.TestCase):
         self.assertIsNone(rows[0]["kb"])
         self.assertEqual(sy.format_mise_row(rows[0]), "    없음  gradle 9.8.0")
 
+    def test_alias_path_process_is_running(self):
+        v = f"{self.D}/installs/node/24.15.0"
+        aliases = {v: [f"{self.D}/installs/node/24.15"]}
+        ps = f"{self.D}/installs/node/24.15/bin/node /h/.claude/hud/omc-hud.mjs\n"
+        self.assertTrue(sy.mise_version_rows({"node": ["24.15.0"]}, self.D, {}, ps, aliases)[0]["running"])
+        self.assertFalse(sy.mise_version_rows({"node": ["24.15.0"]}, self.D, {}, ps)[0]["running"])
+
+    def test_alias_of_other_version_is_not_running(self):
+        aliases = {f"{self.D}/installs/node/24.22.1": [f"{self.D}/installs/node/24"]}
+        ps = f"{self.D}/installs/node/24/bin/node x\n"
+        rows = sy.mise_version_rows({"node": ["24.15.0", "24.22.1"]}, self.D, {}, ps, aliases)
+        self.assertEqual([(r["version"], r["running"]) for r in rows], [("24.15.0", False), ("24.22.1", True)])
+
+    def test_mise_aliases_reads_symlinks(self):
+        import os, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            tool = os.path.join(d, "installs", "node")
+            os.makedirs(os.path.join(tool, "24.15.0"))
+            os.makedirs(os.path.join(tool, "24.22.1"))
+            os.symlink("./24.15.0", os.path.join(tool, "24.15"))
+            os.symlink("./24.22.1", os.path.join(tool, "24"))
+            got = sy.mise_aliases(d, {"node": ["24.15.0"]})
+            self.assertEqual(got, {os.path.join(tool, "24.15.0"): [os.path.join(tool, "24.15")]})
+
     def test_data_dir_env_overrides_default(self):
         self.assertEqual(sy.mise_data_dir({"MISE_DATA_DIR": "/x/mise"}), "/x/mise")
         self.assertTrue(sy.mise_data_dir({}).endswith("/.local/share/mise"))

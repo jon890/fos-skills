@@ -175,16 +175,35 @@ def mise_data_dir(environ=None):
     return env.get("MISE_DATA_DIR") or os.path.join(HOME, ".local", "share", "mise")
 
 
-def mise_version_rows(grouped, data_dir, sizes, ps_output):
+def mise_aliases(data_dir, grouped):
+    """같은 installs/<도구>/ 안에서 각 후보 버전 경로로 풀리는 심볼릭 링크(`24.15`, `lts` 등)를 {버전 경로: [링크 경로]} 로 읽는다."""
+    found = {}
+    for tool, versions in grouped.items():
+        tool_dir = os.path.join(data_dir, "installs", tool)
+        try:
+            names = os.listdir(tool_dir)
+        except OSError:
+            continue
+        targets = {os.path.realpath(os.path.join(tool_dir, v)): os.path.join(tool_dir, v) for v in versions}
+        for name in sorted(names):
+            link = os.path.join(tool_dir, name)
+            if os.path.islink(link) and os.path.realpath(link) in targets:
+                found.setdefault(targets[os.path.realpath(link)], []).append(link)
+    return found
+
+
+def mise_version_rows(grouped, data_dir, sizes, ps_output, aliases=None):
     """지울 수 있다고 본 mise 버전별 행을 만든다. grouped 는 {도구: [버전]}, sizes 는 {설치 경로: KiB}(없는 경로는 빠진다).
     행은 dict(tool, version, path, kb, running) 이다. kb 는 설치 경로가 없으면 None 이다.
-    running 은 설치 경로 뒤에 `/` 를 붙여 명령줄에서 찾는다. `24.15.0` 이 `24.15.01` 에 걸리지 않게 한다."""
+    running 은 설치 경로 뒤에 `/` 를 붙여 명령줄에서 찾는다. `24.15.0` 이 `24.15.01` 에 걸리지 않게 한다.
+    aliases 는 {버전 경로: [별칭 링크 경로]} 이고, 별칭 경로(`installs/node/24.15/bin/node`)로 도는 프로세스도 실행중으로 본다."""
+    aliases = aliases or {}
     rows = []
     for tool, versions in grouped.items():
         for version in versions:
             path = os.path.join(data_dir, "installs", tool, version)
             rows.append({"tool": tool, "version": version, "path": path, "kb": sizes.get(path),
-                         "running": commands_using(ps_output, path + "/") > 0})
+                         "running": any(commands_using(ps_output, p + "/") > 0 for p in [path, *aliases.get(path, [])])})
     return rows
 
 
@@ -384,7 +403,8 @@ def survey_mise_prune():
                 found = du_kb(["-s", path])
                 if found:
                     sizes[path] = found[0][0]
-    rows = mise_version_rows(grouped, data_dir, sizes, run(["ps", "-axo", "command="]) or "")
+    rows = mise_version_rows(grouped, data_dir, sizes, run(["ps", "-axo", "command="]) or "",
+                            mise_aliases(data_dir, grouped))
     for row in rows:
         print(format_mise_row(row))
     keep = [r for r in rows if r["running"]]
