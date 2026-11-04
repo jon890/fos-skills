@@ -381,6 +381,19 @@ class HomePathTest(CheckReferencesTest):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("홈 경로", result.stdout)
 
+    def test_home_path_with_hangul_and_space_is_checked(self):
+        self.write("`~/문서/내 지침.md` 가 소유한다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[홈 경로] ~/문서/내 지침.md", result.stdout)
+
+    def test_existing_home_path_with_hangul_and_space_is_not_reported(self):
+        (self.home / "문서").mkdir()
+        (self.home / "문서/내 지침.md").write_text("# 문서\n")
+        self.write("`~/문서/내 지침.md` 가 소유한다.\n")
+        result = self.run_check()
+        self.assertNotIn("홈 경로", result.stdout)
+
     def test_warning_does_not_hide_a_broken_reference(self):
         self.write("`~/nowhere/x.md` 와 [링크](없다.md) 를 본다.\n")
         result = self.run_check()
