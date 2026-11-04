@@ -433,6 +433,18 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
     lacks(line, 'web')
   })
 
+  test('체크 확인 간격의 수는 같은 이름의 옵션이 되고 명령줄 값이 우선한다', async (t) => {
+    const c = setup(t)
+    c.writeConfig({ queue: { poll_min_sec: 30, poll_max_sec: 120, ci_expected_sec: 600 } })
+    await c.wrap(['--repo', c.tmp, '--no-finish', '449'])
+    has((await c.lines('queue'))[0], '--poll-min-sec 30 --poll-max-sec 120 --ci-expected-sec 600')
+    c.reset()
+    await c.wrap(['--repo', c.tmp, '--no-finish', '--poll-min-sec', '45', '449'])
+    const [line] = await c.lines('queue')
+    has(line, '--poll-min-sec 45')
+    lacks(line, '--poll-min-sec 30')
+  })
+
   test('명령줄 겹침 옵션이 queue 절보다 우선한다', async (t) => {
     const c = setup(t)
     c.writeConfig({ queue: { up_to_date_when: 'overlap', unit_prefix: 'apps/' } })
@@ -466,6 +478,9 @@ describe('merge-with-finish queue 절', { skip: !HAS_BASH && 'bash 가 필요하
       { shared_paths: [] },
       { require_up_to_date: 'yes' },
       { unit_groups: [] },
+      { poll_min_sec: '30' },
+      { poll_max_sec: 0 },
+      { ci_expected_sec: 1.5 },
       { unit_groups: ['web,bff'] },
       { unit_groups: [['web']] },
       { unit_groups: [['a,b', 'c']] },

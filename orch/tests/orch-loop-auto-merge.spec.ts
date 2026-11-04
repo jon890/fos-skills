@@ -581,6 +581,23 @@ describe('큐가 도는 동안', () => {
     assert.match(output, /^AUTO-MERGE-HELD pid 99999 차례 기록 없음: node merge_queue\.ts 9$/m)
   })
 
+  test('큐가 뺀 PR 의 이유를 QUEUE-DROPPED 로 한 번만 옮기고, 끝난 큐의 기록은 옮긴 뒤 지운다', () => {
+    writeFileSync(join(tmp, 'ps-lines.txt'), '99998 node merge_queue.ts 9 10\n')
+    const since = new Date().toISOString()
+    write(
+      orchFile('state', 'queue-turn', '99998.json'),
+      JSON.stringify({ pid: 99998, prs: [10], pr: 10, phase: '체크 대기', since, held: [{ pr: 9, reason: '9 실패한 체크 1 개' }] }),
+    )
+    write(orchFile('state', 'queue-turn', '99997.json'), JSON.stringify({ pid: 99997, prs: [], pr: null, phase: '끝', since, held: [{ pr: 8, reason: '8 HOOK-REJECT' }] }))
+    github([pr(1)])
+    const first = once()
+    const dropped = (text: string) => text.split('\n').filter((line) => line.startsWith('QUEUE-DROPPED'))
+    assert.deepEqual(dropped(first).sort(), ['QUEUE-DROPPED #8 pid 99997: 8 HOOK-REJECT', 'QUEUE-DROPPED #9 pid 99998: 9 실패한 체크 1 개'])
+    assert.equal(existsSync(orchFile('state', 'queue-turn', '99997.json')), false)
+    assert.equal(existsSync(orchFile('state', 'queue-turn', '99998.json')), true)
+    assert.deepEqual(dropped(once()), [])
+  })
+
   test('도는 큐의 차례 기록이 있으면 무엇을 기다리는지 AUTO-MERGE-HELD 한 줄로 남긴다', () => {
     writeFileSync(join(tmp, 'ps-lines.txt'), '99999 node merge-with-finish.ts 9 10\n99998 node merge_queue.ts 9 10\n')
     const since = new Date(Date.now() - 7 * 60_000).toISOString()

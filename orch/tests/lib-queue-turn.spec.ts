@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { clearTurn, readTurns, turnDir, turnFile, turnLine, writeTurn } from '../scripts/lib/queue-turn.ts'
+import { clearTurn, finishedTurns, readTurns, turnDir, turnFile, turnLine, writeTurn } from '../scripts/lib/queue-turn.ts'
 import type { QueueTurn } from '../scripts/lib/queue-turn.ts'
 
 const NOW = Date.parse('2026-11-04T12:00:00Z')
@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(() => rmSync(repo, { recursive: true, force: true }))
 
 function turn(extra: Partial<QueueTurn> = {}): QueueTurn {
-  return { pid: 4242, prs: [9, 10], pr: 9, phase: '체크 대기', since: new Date(NOW - 3 * 60_000).toISOString(), ...extra }
+  return { pid: 4242, prs: [9, 10], pr: 9, phase: '체크 대기', since: new Date(NOW - 3 * 60_000).toISOString(), held: [], ...extra }
 }
 
 describe('기록', () => {
@@ -46,6 +46,21 @@ describe('기록', () => {
 
   test('폴더가 없으면 빈 목록이다', () => {
     assert.deepEqual(readTurns(repo, () => true), [])
+    assert.deepEqual(finishedTurns(repo, () => true), [])
+  })
+
+  test('held 는 형식이 맞는 항목만 읽고 없으면 빈 목록이다. 끝난 큐의 기록은 finishedTurns 가 낸다', () => {
+    writeTurn(repo, turn({ held: [{ pr: 9, reason: '9 실패한 체크 1 개' }] }))
+    writeFileSync(join(turnDir(repo), '7.json'), JSON.stringify({ ...turn({ pid: 7 }), held: [{ pr: 'x' }, { pr: 8, reason: 'r' }] }))
+    writeFileSync(join(turnDir(repo), '6.json'), JSON.stringify({ pid: 6, prs: [], pr: null, phase: '끝', since: 'x' }))
+    writeFileSync(join(turnDir(repo), '5.json'), '{')
+    assert.deepEqual(readTurns(repo, (pid) => pid === 4242)[0].held, [{ pr: 9, reason: '9 실패한 체크 1 개' }])
+    const done = finishedTurns(repo, (pid) => pid === 4242)
+    assert.deepEqual(done.map((d) => [d.file.split('/').at(-1), d.turn?.held ?? null]), [
+      ['5.json', null],
+      ['6.json', []],
+      ['7.json', [{ pr: 8, reason: 'r' }]],
+    ])
   })
 })
 

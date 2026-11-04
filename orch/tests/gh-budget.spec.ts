@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { budgetGh, pollSeconds, readTtl } from '../scripts/lib/gh-budget.ts'
+import { budgetGh, pollSeconds, queuePollSeconds, readTtl } from '../scripts/lib/gh-budget.ts'
 import { run } from '../scripts/lib/proc.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
@@ -261,4 +261,15 @@ test('호출 수 명령은 UTC 날짜 경계를 넘어 최근 한 시간만 센�
   const result = run([process.execPath, '--input-type=module', '-e', code], { env: { ORCH_DIR: join(repo, '.orch') } })
   assert.equal(result.code, 0, result.stderr)
   assert.equal(result.stdout, 'GH-USAGE last-hour calls=1 cache-hits=1\n')
+})
+
+test('머지 큐의 확인 간격은 기본이 pollSeconds 와 같고, 보통 CI 시간이 다가오면 그 시각을 넘겨 자지 않는다', () => {
+  for (let attempt = 0; attempt < 6; attempt++) assert.equal(queuePollSeconds(attempt), pollSeconds(attempt))
+  assert.deepEqual([0, 1, 2, 3].map((a) => queuePollSeconds(a, 30, 120)), [30, 60, 120, 120])
+  // 보통 시간까지 100초 남았으면 300초가 아니라 100초 뒤에 본다
+  assert.equal(queuePollSeconds(5, 60, 300, 100), 100)
+  // 보통 시간을 지났으면 최소 간격으로 본다
+  assert.equal(queuePollSeconds(5, 60, 300, -30), 60)
+  // 남은 시간이 길면 백오프를 그대로 쓴다
+  assert.equal(queuePollSeconds(0, 60, 300, 900), 60)
 })

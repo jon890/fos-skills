@@ -119,6 +119,7 @@
 //     7. tick 이벤트. Run 마다 공통 필드 run 을 그 Run 으로 낸다. 입력은 tick(틱 번호), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null),
 //        primary(주 Run 이면 true)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     8. 자동 머지. 아래 「자동 머지」
+//     8-1. 큐 기록. 아래 「큐 기록」
 //     9. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
 //     9-1. 최신화. 아래 「최신화」. 충돌 처리가 받은 base 와 PR HEAD 를 쓰므로 그 뒤에 둔다
 //     10. 자리 보유 확인. 아래 「자리 보유 확인」
@@ -298,6 +299,12 @@
 //     resolveConflict 의 줄(`<dispatch> 에 알렸다` 따위)은 로그에 쓴다. send-to-worker 를 틱 자식 안에서 기다리는 동안에도
 //     부모의 생존 타이머가 alive_at 을 쓴다.
 //
+// 큐 기록: 열린 PR 과 상관없이 틱마다 돈다. lib/queue-turn.ts 의 차례 기록을 읽는다. 명령줄에 `merge_queue.` 가 든 프로세스의 기록은 도는 큐,
+//     아닌 pid 의 기록은 끝난 큐다. 두 쪽의 held 가운데 아직 옮기지 않은 항목마다 `QUEUE-DROPPED #<PR> pid <pid>: <이유>` 를 로그에 쓴다.
+//     옮긴 항목은 state/queue-dropped.json 의 `<pid>:<PR>` 키로 기억한다. 끝난 큐의 기록은 옮긴 뒤 지우고 그 pid 의 키도 지운다.
+//     머지 큐가 뺀 PR 과 이유를, 누가 큐를 걸었든 loop.log 하나에서 보게 하려는 것이다. 알림 파일에는 쓰지 않는다.
+//     PS 를 읽지 못하면 errors 의 queue-turn 에 `프로세스 목록을 읽지 못했다` 를 둔다
+//
 // 최신화(ADR-020): pipeline.refresh_slots 가 1 이상이고 열린 PR 을 읽은 틱에만 돈다. 머지 큐가 차례가 온 PR 에 할 update-branch 를 미리,
 //     PR 마다 따로 걸어 뒤처진 PR 의 CI 가 함께 돌게 한다. 머지는 지금처럼 머지 큐가 하나씩 한다. 판정과 설정은 lib/refresh.ts 가 소유한다.
 //     충돌 찾기가 실패한 틱은 건너뛰고 errors.refresh 를 그대로 둔다. 내 열린 PR 이 없으면 git fetch 없이 끝낸다.
@@ -352,11 +359,11 @@
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook, stalls)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
-//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, movement, auto-merge, conflicts, refresh, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
+//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, movement, auto-merge, conflicts, refresh, queue-turn, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
 //     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
 //     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
-//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리), refresh(최신화),
+//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리), refresh(최신화), queue-turn(큐 기록),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남), heavy-slot(자리 보유 확인. 알림의 kind 는 HEAVY-SLOT-HELD)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
 //     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 알림 파일의 text 는 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
@@ -429,7 +436,7 @@ import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './l
 import { isUserDecision, notifyDecisions } from './lib/decisions.ts'
 import { NO_WAIT_PREFIX, userActive } from './lib/user-active.ts'
 import type { ClosedLookup } from './lib/questions.ts'
-import { readTurns, turnLine } from './lib/queue-turn.ts'
+import { finishedTurns, readTurns, turnLine } from './lib/queue-turn.ts'
 import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshFile, refreshSettings, verdict as refreshVerdict, writeRefresh } from './lib/refresh.ts'
 import type { ForkFiles, RefreshSettings } from './lib/refresh.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
@@ -469,7 +476,7 @@ const NO_WAIT_SEC = Number(process.env.ORCH_NO_WAIT_SEC) || 300
 const NUDGE_TIMEOUT_MS = 90_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
-const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'auto-merge', 'conflicts', 'refresh', 'tick', 'heavy-slot'])
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'auto-merge', 'conflicts', 'refresh', 'queue-turn', 'tick', 'heavy-slot'])
 // pipeline.stall_ticks 의 기본값(머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
 const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze({ error: 2, idle: 0 })
 // 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
@@ -1981,6 +1988,43 @@ function queueTurns(repo: string, list: Proc[]): ReturnType<typeof readTurns> {
   return readTurns(repo, (pid) => list.some((p) => p.pid === pid && p.command.includes('merge_queue.')))
 }
 
+// 머리 주석의 「큐 기록」. 차례 기록의 held 가운데 아직 옮기지 않은 것을 QUEUE-DROPPED 줄로 로그에 쓰고, 끝난 큐의 기록을 지운다.
+// 옮긴 것은 state/queue-dropped.json 의 `<pid>:<PR>` 키로 기억한다. 기록을 지운 pid 의 키는 함께 지운다
+function watchQueueTurns(repo: string): string | null {
+  const list = processes()
+  if (!list) return '프로세스 목록을 읽지 못했다'
+  const isQueue = (pid: number) => list.some((p) => p.pid === pid && p.command.includes('merge_queue.'))
+  const file = join(pathOf('state', repo), 'queue-dropped.json')
+  let seen: Record<string, string> = {}
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    if (isObject(raw)) seen = Object.fromEntries(Object.entries(raw).filter(([, v]) => typeof v === 'string')) as Record<string, string>
+  } catch {
+    // 없거나 깨졌으면 빈 기록이다. 다시 옮겨도 로그 줄이 겹칠 뿐이다
+  }
+  const before = JSON.stringify(seen)
+  const copy = (turn: ReturnType<typeof readTurns>[number]) => {
+    for (const held of turn.held) {
+      const key = `${turn.pid}:${held.pr}`
+      if (Object.hasOwn(seen, key)) continue
+      log(`QUEUE-DROPPED #${held.pr} pid ${turn.pid}: ${held.reason}`)
+      seen[key] = iso()
+    }
+  }
+  for (const turn of readTurns(repo, isQueue)) copy(turn)
+  for (const { file: turnFile, turn } of finishedTurns(repo, isQueue)) {
+    if (turn) copy(turn)
+    rmSync(turnFile, { force: true })
+    const pid = basename(turnFile).replace(/\.json$/, '')
+    for (const key of Object.keys(seen)) if (key.startsWith(`${pid}:`)) delete seen[key]
+  }
+  if (JSON.stringify(seen) !== before) {
+    makeParent(file, repo)
+    writeFileSync(file, `${JSON.stringify(seen, null, 2)}\n`, 'utf8')
+  }
+  return null
+}
+
 // 도는 큐 때문에 이 틱의 자동 머지를 미룬다. 큐가 무엇을 기다리는지 로그에 한 줄씩 남긴다(머리 주석의 「자동 머지」 2)
 function logHeld(repo: string, list: Proc[]): void {
   const turns = queueTurns(repo, list)
@@ -2746,6 +2790,13 @@ async function tick(ctx: Context, n: number): Promise<number> {
     } catch (e) {
       report('auto-merge', oneLine(e))
     }
+  }
+
+  // 8-1. 큐 기록. 머지 큐가 뺀 PR 과 이유를 루프 로그에 옮기고 끝난 큐의 기록을 지운다
+  try {
+    report('queue-turn', watchQueueTurns(ctx.repo))
+  } catch (e) {
+    report('queue-turn', oneLine(e))
   }
 
   // 9. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다

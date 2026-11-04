@@ -25,6 +25,9 @@ export const QUEUE_VALUE_OPTIONS: readonly string[] = [
   '--sweep-arg',
   '--last-of-task',
   '--chain',
+  '--poll-min-sec',
+  '--poll-max-sec',
+  '--ci-expected-sec',
 ]
 
 // queue 절의 값을 받는 키와 머지 큐 옵션
@@ -36,7 +39,12 @@ export const QUEUE_VALUES: Readonly<Record<string, string>> = {
   up_to_date_when: '--up-to-date-when',
   shared_paths: '--shared-paths',
   unit_prefix: '--unit-prefix',
+  poll_min_sec: '--poll-min-sec',
+  poll_max_sec: '--poll-max-sec',
+  ci_expected_sec: '--ci-expected-sec',
 }
+// QUEUE_VALUES 가운데 수를 받는 키. merge-with-finish 가 양의 정수를 글자로 바꿔 넘긴다
+export const QUEUE_NUMBERS: readonly string[] = ['poll_min_sec', 'poll_max_sec', 'ci_expected_sec']
 // queue 절의 참거짓 키와 값 없는 머지 큐 옵션
 export const QUEUE_FLAGS: Readonly<Record<string, string>> = {
   skipped_is_missing: '--skipped-is-missing',

@@ -2,14 +2,16 @@
 //
 // 파일: <orch 루트>/state/queue-turn/<pid>.json. 머지 큐 프로세스 하나에 파일 하나다. 누가 큐를 걸었는지(루프의 자동 머지,
 //   코디네이터의 merge-with-finish)와 상관없이 같은 자리에 쓴다. 루프가 코디네이터가 건 큐도 같은 방법으로 읽게 하려는 것이다.
-//   값: { pid, prs, pr, phase, since }
+//   값: { pid, prs, pr, phase, since, held }
 //     pid    머지 큐 프로세스
 //     prs    아직 끝나지 않은 PR 번호. 큐의 순서이고 차례 PR 이 맨 앞이다. 머지했거나 뺀 PR 은 들지 않는다
 //     pr     차례 PR. 큐가 PR 을 보기 전과 마지막 PR 뒤에는 null 이다
 //     phase  차례 PR 의 단계 이름(TURN_PHASES)
 //     since  그 단계를 시작한 시각(ISO 8601 UTC)
+//     held   이번 실행에서 큐에서 뺀 PR 과 이유([{pr, reason}]). 이유는 STOP, CONFLICT, SKIP 줄의 본문이다. 옛 기록에 없으면 빈 목록이다
 //   쓰기는 옆 파일에 쓰고 rename 한다. 읽는 쪽이 반쯤 쓴 파일을 읽지 않게 하려는 것이다.
-//   큐가 끝나면 지운다. KILL 로 끝나 남은 파일은 그 pid 가 머지 큐가 아니면 읽는 쪽이 읽지 않는다(readTurns 의 isQueue).
+//   큐는 끝나도 지우지 않는다. 끝난 뒤 들어온 틱이 held 를 루프 로그에 옮긴 뒤 지운다(orch-loop.ts 머리 주석의 「큐 기록」).
+//   읽는 쪽은 pid 가 지금 머지 큐 프로세스인지로 도는 큐와 끝난 큐를 구분한다(readTurns 의 isQueue, finishedTurns).
 //
 // 쓰기 실패는 큐를 멈추지 않는다. 기록은 루프의 로그와 최신화 판정을 돕는 것이라, 쓰지 못해도 머지 결과는 같다.
 // 부르는 쪽(merge_queue.ts)이 첫 실패만 stderr 에 한 줄 남긴다.
@@ -27,9 +29,12 @@ export const TURN_PHASES = {
   before: '머지 전 명령',
   merge: '머지',
   after: '머지 뒤 정리',
+  overtake: '앞지르기 확인',
+  end: '끝',
 } as const
 
-export type QueueTurn = { pid: number; prs: number[]; pr: number | null; phase: string; since: string }
+export type Held = { pr: number; reason: string }
+export type QueueTurn = { pid: number; prs: number[]; pr: number | null; phase: string; since: string; held: Held[] }
 
 export function turnDir(repo: string): string {
   return join(pathOf('state', repo), 'queue-turn')
@@ -68,12 +73,43 @@ function parseTurn(text: string): QueueTurn | null {
   const row = raw as Record<string, unknown>
   if (!Number.isInteger(row.pid) || !Array.isArray(row.prs) || !row.prs.every((n) => Number.isInteger(n))) return null
   if (!(row.pr === null || Number.isInteger(row.pr)) || typeof row.phase !== 'string' || typeof row.since !== 'string') return null
-  return { pid: row.pid as number, prs: row.prs as number[], pr: row.pr as number | null, phase: row.phase, since: row.since }
+  const held = Array.isArray(row.held)
+    ? row.held.filter((h): h is Held => typeof h === 'object' && h !== null && Number.isInteger((h as Held).pr) && typeof (h as Held).reason === 'string')
+    : []
+  return { pid: row.pid as number, prs: row.prs as number[], pr: row.pr as number | null, phase: row.phase, since: row.since, held }
 }
 
 // 살아 있는 머지 큐의 차례 기록. isQueue 는 그 pid 가 지금 머지 큐 프로세스인지 판정한다(루프는 ps 의 명령줄로 본다).
 // 폴더가 없거나 읽지 못하는 파일, 형식이 틀린 파일, 머지 큐가 아닌 pid 의 파일은 넘어간다. 지우지 않는다
 export function readTurns(repo: string, isQueue: (pid: number) => boolean): QueueTurn[] {
+  return allTurns(repo).filter((turn) => isQueue(turn.pid))
+}
+
+// 끝난 머지 큐의 차례 기록(pid 가 머지 큐가 아니다). 형식이 틀린 파일은 file 만 있고 turn 이 null 이다. 지우는 것은 부르는 쪽이다
+export function finishedTurns(repo: string, isQueue: (pid: number) => boolean): { file: string; turn: QueueTurn | null }[] {
+  let names: string[]
+  try {
+    names = readdirSync(turnDir(repo))
+  } catch {
+    return []
+  }
+  const found: { file: string; turn: QueueTurn | null }[] = []
+  for (const name of names.filter((n) => /^\d+\.json$/.test(n)).sort()) {
+    if (isQueue(Number(name.slice(0, -'.json'.length)))) continue
+    const file = join(turnDir(repo), name)
+    let text = ''
+    try {
+      text = readFileSync(file, 'utf8')
+    } catch {
+      continue
+    }
+    const turn = parseTurn(text)
+    found.push({ file, turn: turn && `${turn.pid}.json` === name ? turn : null })
+  }
+  return found
+}
+
+function allTurns(repo: string): QueueTurn[] {
   let names: string[]
   try {
     names = readdirSync(turnDir(repo))
@@ -89,7 +125,7 @@ export function readTurns(repo: string, isQueue: (pid: number) => boolean): Queu
       continue
     }
     const turn = parseTurn(text)
-    if (turn && `${turn.pid}.json` === name && isQueue(turn.pid)) turns.push(turn)
+    if (turn && `${turn.pid}.json` === name) turns.push(turn)
   }
   return turns
 }

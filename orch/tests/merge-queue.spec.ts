@@ -219,7 +219,7 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     t.diagnostic(`기본 PR 머지의 gh 호출: ${c.log().split('\n').filter((line) => /^(pr|api) /.test(line)).length}`)
   })
 
-  test('도는 동안 차례 기록에 남은 PR, 차례 PR, 단계를 쓰고 끝나면 지운다', async (t) => {
+  test('도는 동안 차례 기록에 남은 PR, 차례 PR, 단계를 쓰고 끝나면 끝 단계로 남긴다', async (t) => {
     const c = setup(t)
     const dir = join(realpathSync(c.tmp), '.orch', 'state', 'queue-turn')
     const seen = join(c.tmp, 'seen.json')
@@ -228,7 +228,10 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     const turn = JSON.parse(readFileSync(seen, 'utf8')) as Json
     assert.deepEqual({ prs: turn.prs, pr: turn.pr, phase: turn.phase }, { prs: [1, 2], pr: 1, phase: '머지 전 명령' })
     assert.equal(typeof turn.pid, 'number')
-    assert.deepEqual(existsSync(dir) ? readdirSync(dir) : [], [])
+    const left = readdirSync(dir)
+    assert.equal(left.length, 1)
+    const end = JSON.parse(readFileSync(join(dir, left[0]), 'utf8')) as Json
+    assert.deepEqual({ prs: end.prs, pr: end.pr, phase: end.phase, held: end.held }, { prs: [], pr: null, phase: '끝', held: [] })
   })
 
   test('차례가 왔을 때 체크가 60초 넘게 전에 끝나 있었으면 다시 보는 대기를 건너뛴다. 끝난 시각을 모르면 기다린다', async (t) => {
@@ -255,12 +258,12 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     has(readFileSync(c.sweepLog, 'utf8'), `--repo ${realpathSync(c.tmp)} --base develop --apply --run run x`)
   })
 
-  test('--no-sweep 이나 보류로 멈추면 정리를 부르지 않는다', async (t) => {
+  test('--no-sweep 이나 --stop-on-hold 의 보류로 멈추면 정리를 부르지 않는다', async (t) => {
     const c = setup(t)
     let r = await c.runQueue({ '1': pr() }, ['--no-sweep', '1'])
     assert.equal(r.code, 0, both(r))
     assert.equal(existsSync(c.sweepLog), false)
-    r = await c.runQueue({ '1': pr() }, ['1'], '2')
+    r = await c.runQueue({ '1': pr() }, ['--stop-on-hold', '1'], '2')
     assert.equal(r.code, 1, both(r))
     assert.equal(existsSync(c.sweepLog), false)
   })
@@ -272,6 +275,17 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     has(r.stdout, 'threads=2')
     has(r.stdout, 'STOP 1\n')
     lacks(c.log(), 'pr merge')
+  })
+
+  test('worker 가 고쳐야 하는 보류는 worker 에게 알리려 하고, Run 이나 워크트리가 없으면 그 이유를 찍는다', async (t) => {
+    const c = setup(t)
+    let r = await c.runQueue({ '1': pr() }, ['1'], '2')
+    has(r.stdout, '1 worker 에게 알리지 않는다(Run 모름)')
+    r = await c.runQueue({ '1': pr() }, ['--sweep-arg', '--run', '--sweep-arg', 'run_x', '1'], '2')
+    has(r.stdout, '1 worker 에게 알리지 않았다: 워크트리 없음')
+    // 체크 실패는 루프의 CI 감시가 알리므로 큐는 알리지 않는다
+    r = await c.runQueue({ '1': pr({ statusCheckRollup: FAILED }) }, ['--sweep-arg', '--run', '--sweep-arg', 'run_x', '1'])
+    lacks(r.stdout, 'worker 에게')
   })
 
   test('실패한 체크가 있으면 멈춘다', async (t) => {
@@ -701,6 +715,59 @@ function overlapQueue(c: Ctx, verdict: string, code: number, extra: string[] = [
 }
 
 describe('merge_queue --up-to-date-when overlap', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  const settled = () => [{ ...check('backend'), completedAt: new Date(Date.now() - 5 * 60_000).toISOString() }]
+
+  test('차례 PR 이 갱신 뒤 체크를 기다리는 동안 준비된 뒤 PR 을 먼저 머지하고 돌아온다', async (t) => {
+    const c = setup(t)
+    fakeOverlapUnits(c, '갱신 필요(단위 겹침: api)', 1)
+    const first = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })
+    // 갱신 뒤 가짜 원격 HEAD 가 new 가 되므로 뒤 PR 의 HEAD 도 new 로 둔다
+    const second = pr({ headRefName: 'b', headRefOid: 'new', statusCheckRollup: settled() })
+    const r = await c.runQueue({ '1': first, '2': second, _behind: 2 }, [...UP_TO_DATE_OVERLAP, '1', '2'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '1 이 update-branch 뒤 체크를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다')
+    has(r.stdout, '2 차례 PR 1 보다 먼저 머지했다')
+    has(r.stdout, '1 차례로 돌아와 체크를 기다린다')
+    const log = c.log()
+    assert.ok(log.indexOf('pr merge 2') >= 0 && log.indexOf('pr merge 2') < log.indexOf('pr merge 1'), log)
+    has(log, 'pr merge 1 --merge --match-head-commit new')
+    assert.equal(count(log, 'update-branch'), 1)
+  })
+
+  test('뒤 PR 의 체크가 막 끝났거나 묶음에 들었으면 앞지르지 않고 제 차례에 머지한다', async (t) => {
+    const c = setup(t)
+    fakeOverlapUnits(c, '갱신 필요(단위 겹침: api)', 1)
+    const first = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })
+    const fresh = pr({ headRefName: 'b', headRefOid: 'new', statusCheckRollup: [{ ...check('backend'), completedAt: new Date().toISOString() }] })
+    const chained = pr({ headRefName: 'c', headRefOid: 'new', statusCheckRollup: settled() })
+    const r = await c.runQueue({ '1': first, '2': fresh, '3': chained, _behind: 2 }, [...UP_TO_DATE_OVERLAP, '--chain', '1,3', '1', '2', '3'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '2 앞지르지 않는다: 체크가 끝난 지 60초가 지나지 않았다')
+    lacks(r.stdout, '3 앞지르지 않는다')
+    const log = c.log()
+    assert.ok(log.indexOf('pr merge 1') < log.indexOf('pr merge 2') && log.indexOf('pr merge 2') < log.indexOf('pr merge 3'), log)
+  })
+
+  test('--stop-on-hold 면 앞지르지 않는다', async (t) => {
+    const c = setup(t)
+    fakeOverlapUnits(c, '갱신 필요(단위 겹침: api)', 1)
+    const first = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })
+    const second = pr({ headRefName: 'b', headRefOid: 'new', statusCheckRollup: settled() })
+    const r = await c.runQueue({ '1': first, '2': second, _behind: 2 }, [...UP_TO_DATE_OVERLAP, '--stop-on-hold', '1', '2'])
+    assert.equal(r.code, 0, both(r))
+    lacks(r.stdout, '앞지르')
+    const log = c.log()
+    assert.ok(log.indexOf('pr merge 1') < log.indexOf('pr merge 2'), log)
+  })
+
+  test('체크 확인 간격 옵션은 1 이상의 정수이고 최소가 최대보다 클 수 없다', async (t) => {
+    const c = setup(t)
+    for (const args of [['--poll-min-sec', '0'], ['--poll-max-sec', 'x'], ['--ci-expected-sec', '-1'], ['--poll-min-sec', '400']]) {
+      const r = await c.runQueue({ '1': pr() }, [...args, '1'])
+      assert.equal(r.code, 2, `${args.join(' ')}\n${both(r)}`)
+    }
+  })
+
   test('단위가 겹치지 않으면 갱신 없이 머지하고 판정 명령에 옵션을 = 로 붙여 넘긴다', async (t) => {
     const c = setup(t)
     const r = await overlapQueue(c, '바로 머지', 0, [
@@ -991,13 +1058,27 @@ describe('merge_queue --allow-fail 과 사용법 오류', { skip: !HAS_TOOLS && 
 })
 
 describe('merge_queue 보류', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
-  test('기본은 첫 보류에서 멈추고 정리를 부르지 않는다', async (t) => {
+  test('--stop-on-hold 는 첫 보류에서 멈추고 정리를 부르지 않는다', async (t) => {
     const c = setup(t)
-    const r = await c.runQueue({ '1': pr({ statusCheckRollup: FAILED }), '2': pr({ headRefName: 'b' }) }, ['1', '2'])
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: FAILED }), '2': pr({ headRefName: 'b' }) }, ['--stop-on-hold', '1', '2'])
     assert.equal(r.code, 1, both(r))
     lacks(c.log(), 'pr merge 2')
     lacks(r.stdout, 'QUEUE-')
     assert.equal(existsSync(c.sweepLog), false)
+  })
+
+  test('기본은 보류한 PR 만 빼고 뒤 PR 을 머지하며, 뺀 이유를 차례 기록의 held 에 남긴다', async (t) => {
+    const c = setup(t)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: FAILED }), '2': pr({ headRefName: 'b' }) }, ['1', '2'])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, 'STOP 1 실패한 체크 1 개')
+    has(r.stdout, '1 보류. 다음 PR 로 간다')
+    has(c.log(), 'pr merge 2 --merge')
+    has(r.stdout, 'QUEUE-HELD 1')
+    const dir = join(realpathSync(c.tmp), '.orch', 'state', 'queue-turn')
+    const [name] = readdirSync(dir)
+    const turn = JSON.parse(readFileSync(join(dir, name), 'utf8')) as Json
+    assert.deepEqual({ pr: turn.pr, phase: turn.phase, prs: turn.prs, held: turn.held }, { pr: null, phase: '끝', prs: [], held: [{ pr: 1, reason: '1 실패한 체크 1 개' }] })
   })
 
   test('--continue-on-hold 는 나머지를 머지하고 보류한 PR 을 알린다', async (t) => {

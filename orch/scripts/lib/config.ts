@@ -52,6 +52,9 @@ export const QUEUE_KEYS: readonly string[] = [
   'require_up_to_date',
   'sweep_args',
   'unit_groups',
+  'poll_min_sec',
+  'poll_max_sec',
+  'ci_expected_sec',
   ...QUEUE_LOOP_KEYS,
 ]
 
