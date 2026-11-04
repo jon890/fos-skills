@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.9.0 (2026-11-04)
+
+- `pipeline.refresh_slots` 를 켜면 상주 루프가 뒤처진 PR 의 `update-branch` 를 머지 차례 전에 PR 마다 걸어 CI 를 함께 돌린다. 판정은 머지 큐와 같은 `queue` 키로 한다
+- 머지 큐는 보류한 PR 만 빼고 다음 PR 로 가는 것이 기본이다(옛 동작은 `--stop-on-hold`). 뺀 이유는 `QUEUE-DROPPED` 로 남고 worker 가 고칠 보류는 그 worker 에게 간다
+- 차례 PR 이 update-branch 뒤 CI 를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다. 큐가 자동 머지를 막는 틱에는 `AUTO-MERGE-HELD` 를 남긴다
+- `queue.poll_min_sec`, `poll_max_sec`, `ci_expected_sec` 로 체크 확인 간격을 정한다. 체크가 이미 끝났으면 다시 보는 60초를 건너뛴다
+- 기능 완료 근거의 검증 커밋 뒤에 base 를 합친 merge 커밋만 있으면 통과로 보고, 지금 HEAD 의 CI 통과로 갈음한다
+
 ## 7.8.1 (2026-11-04)
 
 - 문서 표현만 고쳤다. 동작은 바뀌지 않았다

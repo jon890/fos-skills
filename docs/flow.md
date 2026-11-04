@@ -235,7 +235,9 @@ flowchart TD
 | 충돌 해결, CI 고침, 리뷰 반영 worker 가 보드에 새 항목을 만들고 충돌 지시서가 base 마다 쌓인다 | `launch-worker`, 충돌 처리, `finish-pr` | 지시서의 `중간 과정: PR #N` 줄을 보면 그 PR 의 기존 항목에 한 줄만 남긴다. 충돌 지시서는 PR 마다 `spec-conflict-<PR>.md` 하나이고, 마무리가 머지 뒤 지운다([ADR-015](adr/015-board-decide-clear.md)) |
 | 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. 알림 파일에 `QUEUE-CONFLICT` 를 쓴다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
 | 준비된 PR 이 코디네이터가 다른 일을 하는 동안 몇 시간씩 머지되지 않는다. 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨린다 | `orch-loop` 의 `tick` | `queue.auto_merge` 를 켠 저장소에서 틱이 머지할 수 있는 PR 을 골라 `merge-with-finish` 를 건다. 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같으면 걸지 않고 `MIGRATION-CLASH` 로 알린다([ADR-016](adr/016-orch-auto-merge.md)). 아래 「상주 루프의 자동 머지」 |
-| ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에만, 그리고 `pipeline.update_behind_drafts` 가 draft 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
+| ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에, `pipeline.update_behind_drafts` 가 draft 에, 상주 루프의 최신화가 머지 큐와 같은 판정으로 갱신이 필요한 ready PR 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
+| 머지 큐의 맨 앞 PR 이 막히면 뒤의 머지할 수 있는 PR 이 모두 기다린다 | `merge_queue` | 보류한 PR 은 큐에서 빼고 다음 PR 로 간다(기본. 옛 동작은 `--stop-on-hold`). 차례 PR 이 base 를 합쳐 CI 를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다. worker 가 고쳐야 하는 보류는 그 worker 에게 이유를 보낸다 |
+| 공용 경로를 건드린 PR 이 머지마다 차례가 와야 base 를 합치고 CI 를 다시 기다려, PR 마다 CI 한 번씩 줄을 선다 | `orch-loop` 의 `tick`, `merge_queue` | `pipeline.refresh_slots` 를 켠 저장소에서 틱이 뒤처진 PR 에 `update-branch` 를 미리 PR 마다 걸어 CI 를 함께 돌린다. 동시에 도는 수는 그 값까지다. 도는 머지 큐의 차례 PR 과 큐의 앞 PR 과 겹치는 PR 은 건드리지 않는다. 머지 큐는 지금처럼 하나씩 머지하되 차례가 온 PR 이 이미 최신이고 통과했으면 기다리지 않는다([ADR-020](adr/020-orch-loop-refresh.md)) |
 
 ### 갈래
 
@@ -305,7 +307,7 @@ flowchart TD
     M -->|더 낮은 번호의 열린 PR 이 큐 밖에 있거나 PR 없는 예약이 있음| B[기다림. blocked_after_sec 를 넘으면 MIGRATION-BLOCKED]
     M -->|백업 규칙 없음| WE[WATCH-ERROR auto-merge, 걸지 않음]
     M -->|없음이나 통과| O[준비 순, 같은 모듈은 번호 순으로 정렬하고 --chain 으로 묶음]
-    O --> L[첫 PR 의 Run 의 PR 만 merge-with-finish --run --continue-on-hold 로 분리 실행]
+    O --> L[첫 PR 의 Run 의 PR 만 merge-with-finish --run 으로 분리 실행]
     L --> A[PR 마다 AUTO-MERGE-BASIS 로그, AUTO-MERGE 알림, tried 에 기록]
 ```
 

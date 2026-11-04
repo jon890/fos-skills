@@ -207,6 +207,8 @@ orch/scripts/lib/queue-options.ts 머지 큐의 옵션 목록과 설정의 queue
 orch/scripts/lib/finish-options.ts finish-pr 이 받는 옵션 목록 한 벌. 사용처는 머리 주석이 소유한다
 orch/scripts/lib/conflicts.ts     열린 PR 의 충돌 판정과 처리, 알린 기록 한 벌. 함수와 사용처는 머리 주석이 소유한다
 orch/scripts/lib/auto-merge.ts    상주 루프의 자동 머지 판정 한 벌. 함수는 머리 주석이 소유한다. 부수 효과는 orch-loop.ts 가 한다
+orch/scripts/lib/refresh.ts       상주 루프의 뒤처진 PR 최신화 판정과 기록 한 벌. 부수 효과는 orch-loop.ts 가 한다
+orch/scripts/lib/queue-turn.ts    머지 큐의 차례 기록 한 벌. 머지 큐가 쓰고 상주 루프가 읽는다
 orch/scripts/lib/reservations.ts  마이그레이션 번호와 ADR 번호 예약 한 벌. 파일, 잠금, 함수와 사용처는 머리 주석이 소유한다
 orch/scripts/lib/spec.ts          지시서의 브랜치 줄과 허락 줄, 살아 있는 지시서 목록, 지시서 삭제 경로 한 벌
 orch/scripts/lib/completion.ts    worker_done 과 앞선 준비 상태 대조 한 벌. 사용처는 머리 주석이 소유한다
@@ -265,6 +267,7 @@ work-board 에서 orch 를 import 하는 곳은 `work-board/bin/worker-marks.ts`
 | 충돌 판정 | `lib/git.ts` 의 merge-tree 한 벌. 사용처는 `lib/conflicts.ts` 머리 주석이 소유한다 | 없음 |
 | 충돌한 PR | 기존 worker 에게 base 를 합치라는 지시. 끝난 dispatch 는 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 알림 | 없음 |
 | 뒤처진 draft 최신화 | 틱 | `pipeline.update_behind_drafts` |
+| 뒤처진 ready PR 미리 최신화 | 틱의 최신화(`lib/refresh.ts`), 머지 큐의 차례 기록(`lib/queue-turn.ts`) | `pipeline.refresh_slots`, `pipeline.refresh_worker_paths`, `queue.*` |
 | 질문 감시 | 루프의 틱과 `watch-questions.ts` | `worker-question.ts` |
 | 무거운 검사 대기열 | `heavy-slot.ts` | `heavy.*` 분류 정규식과 `wait_idle` |
 | 큐 옵션 | `queue` 절 | 검증 본문은 `verify-merged.ts` |

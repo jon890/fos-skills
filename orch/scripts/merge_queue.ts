@@ -1,11 +1,15 @@
 // 사용: merge_queue.ts [옵션] PR[:머지 전 명령] ...
 //
-// 받은 순서대로 PR 을 하나씩 머지한다. 한 PR 이라도 조건에 못 미치면 이유를 찍고 종료 코드 1 로 멈춘다.
-// base 와 충돌하는 PR 은 멈추지 않고 큐에서 빼고 다음 PR 로 간다(아래 「충돌」). 묶음(--chain) 안에서는 앞 PR 이 빠지면 뒤 PR 도 뺀다.
+// 받은 순서대로 PR 을 하나씩 머지한다. 조건에 못 미친 PR 은 이유를 찍고 큐에서 빼고 다음 PR 로 간다(아래 「보류」).
+// 끝에 뺀 PR 이 있으면 종료 코드 1 이다. --stop-on-hold 면 첫 보류에서 멈춘다.
+// base 와 충돌하는 PR 도 빼고 다음 PR 로 간다(아래 「충돌」). 묶음(--chain) 안에서는 앞 PR 이 빠지면 뒤 PR 도 뺀다.
+// 차례 PR 이 update-branch 뒤 체크를 기다려야 하면 그동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다(아래 「앞지르기」).
 // PR 마다 하는 일:
 //   1. 이미 MERGED 면 건너뛴다. OPEN 이 아니면 멈춘다
 //   2. 필수 체크가 모두 나타나고 끝날 때까지 기다린다(--check-timeout 분까지. 진행 중인 체크 없이 필수 체크가 --missing-timeout 분 동안 나타나지 않으면 먼저 멈춘다).
-//      PR 을 연 직후에는 체크 목록이 비어 있어 「대기 0」이 「모두 끝남」이 아니기 때문이다
+//      PR 을 연 직후에는 체크 목록이 비어 있어 「대기 0」이 「모두 끝남」이 아니기 때문이다.
+//      체크가 끝나면 새 체크가 붙는지 60초 뒤 다시 본다. 차례가 왔을 때 이미 모두 끝나 있었고 마지막 체크가 끝난 지
+//      60초가 지났으면 그 대기를 건너뛴다(`<PR> 체크가 60초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다`)
 //      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
 //      (--up-to-date-when overlap 이면 base 최신을 품지 않아도 단위가 겹치지 않으면 merge 없이 3 으로 간다)
 //   3. 실패한 체크, 미해결 리뷰 스레드가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
@@ -38,14 +42,38 @@
 //   이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue만 돌리고 정리(cleanup-sweep)는 부르지 않는다.
 //   보류로 멈출 때, 큐 끝의 after-queue 가 설정 오류를 낼 때와 같은 규칙이다
 //
+// 보류: 조건에 못 미친 PR 은 `STOP <PR> <이유>` 를 찍고 큐에서 뺀다. 기본은 다음 PR 로 가고(`<PR> 보류. 다음 PR 로 간다`),
+//   --stop-on-hold 면 그 자리에서 앞서 머지한 PR 의 after-queue 만 돌리고 1 로 끝난다. 뺀 PR 과 이유는 차례 기록의 held 에 남는다.
+//   worker 가 고쳐야 하는 보류(기능 완료 근거 블록 불일치, 미해결 리뷰 스레드, 합친 사본 검사 실패)는 그 PR 브랜치의 살아 있는 worker 에게
+//   `PR #<PR> 을 머지 큐에서 뺐다: <이유>. 고쳐 push 한 뒤 status 로 알린다.` 를 보낸다(lib/tell-worker.ts). Run 은 --sweep-arg 로 준 --run 이고,
+//   Run 이나 worker 가 없으면 `<PR> worker 에게 알리지 않…` 줄만 찍는다. 체크 실패와 충돌은 보내지 않는다. 상주 루프의 CI 감시와
+//   충돌 처리가 그 worker 에게 이미 보낸다
+//
+// 앞지르기: --require-up-to-date 와 --up-to-date-when overlap 이고 --stop-on-hold 가 아닐 때만 한다. 차례 PR 이 update-branch 로 base 를
+//   합쳐 체크를 다시 기다려야 하면, 기다리기 전에 그 뒤의 PR 을 차례로 보고 아래를 모두 채우는 PR 을 먼저 머지한다.
+//   묶음(--chain)에 들지 않았다. 필수 체크가 지금 모두 통과했고 마지막 체크가 끝난 지 60초가 지났다. base 최신화가 필요 없다.
+//   차례 PR 이 갈라진 뒤 바꾼 파일과 겹치지 않는다(lib/overlap.ts 의 judge. 읽지 못하면 겹친 것으로 본다).
+//   채우지 못한 PR 은 `<PR> 앞지르지 않는다: <이유>` 를 찍고 제 차례에 다시 본다. 채운 PR 은 보통 차례와 같은 확인을 거쳐 머지하거나 보류한다.
+//   그 뒤 `<PR> 차례로 돌아와 체크를 기다린다` 를 찍고 차례 PR 로 돌아온다. 앞질러 머지한 PR 은 차례 PR 과 겹치지 않으므로
+//   돌아온 차례 PR 은 다시 최신화하지 않는다. 겹치는 PR 을 앞질러 머지하면 차례 PR 이 다시 뒤처져 방금 돌린 CI 가 쓸모없어진다
+//
+// 체크 확인 간격: 진행 중인 체크를 다시 보기까지 --poll-min-sec(기본 60)에서 시작해 두 배씩 늘리고 --poll-max-sec(기본 300)에서 멈춘다.
+//   --ci-expected-sec 를 주면 지금 도는 체크 가운데 가장 먼저 시작한 것에서 그 초가 지나는 시각을 넘겨 자지 않고, 그 뒤로는 --poll-min-sec 마다 본다.
+//   CI 가 끝난 뒤 다음 확인까지 최대 간격만큼 늦게 알아채지 않게 하려는 것이다(lib/gh-budget.ts 의 queuePollSeconds)
+//
+// 차례 기록: 큐를 도는 동안 <orch 루트>/state/queue-turn/<pid>.json 에 남은 PR, 차례 PR, 단계, 단계 시작 시각을 적는다.
+//   형식과 단계 이름은 lib/queue-turn.ts 가 소유한다. 상주 루프가 읽어, 큐 때문에 자동 머지를 미룬 틱에 큐가 무엇을 기다리는지
+//   로그에 남기고(AUTO-MERGE-HELD), 차례 PR 은 미리 최신화하지 않는다. 차례 PR 의 HEAD 가 큐 밖에서 바뀌면 그 PR 이 STOP 으로 멈추기 때문이다.
+//   큐가 끝나거나 신호로 끝나면 단계를 `끝` 으로 남긴다. 지우는 것은 상주 루프다. 쓰지 못해도 머지는 이어 가고 첫 실패만 stderr 에 경고한다
+//
 // 충돌: update-branch 가 충돌로 실패하거나 mergeable 이 CONFLICTING 인 PR 은 `CONFLICT <PR> <이유>` 를 찍고 큐에서 뺀다.
-//   --continue-on-hold 가 없어도 다음 PR 로 간다. 충돌한 PR 하나 때문에 머지할 수 있는 뒤 PR 이 함께 멈추지 않게 하기 위해서다.
+//   --stop-on-hold 여도 다음 PR 로 간다. 충돌한 PR 하나 때문에 머지할 수 있는 뒤 PR 이 함께 멈추지 않게 하기 위해서다.
 //   상주 루프의 알림 파일(lib/loop.ts 의 appendEvent)에 `QUEUE-CONFLICT` 를 쓴다. Run 은 --sweep-arg 로 준 --run 이고, 없으면 Run 이 없는 루프의 파일이다.
 //   그 PR 의 worker 에게 base 를 합치라고 보내는 일은 상주 루프의 충돌 처리와 notify-conflicts.ts 가 한다(pr-conflict).
 //   충돌로 뺀 PR 은 큐 끝에 `QUEUE-CONFLICT 번호...` 로 다시 모으고 `QUEUE-HELD` 에도 든다. 종료 코드는 1 이다.
 //   update-branch 의 다른 실패(검사한 HEAD 와 다르다 같은 것)는 지금처럼 멈춘다
 // 묶음: `--chain 101,102,103` 은 앞 PR 이 먼저 머지돼야 하는 PR 들이다(마이그레이션 순서 같은 것). 묶음 안 앞 PR 이 머지되지 않고
-//   빠지면(충돌, --continue-on-hold 의 보류, 묶음으로 뺌) 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 를 찍고 머지하지 않는다.
+//   빠지면(충돌, 보류, 묶음으로 뺌) 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 를 찍고 머지하지 않는다.
 //   묶음 밖의 PR 은 이어 머지한다. 묶음의 PR 은 큐에 있어야 하고 큐의 순서와 같은 순서로 적는다. PR 하나는 묶음 하나에만 든다
 //
 // origin 은 PR 이 속한 저장소를 가리켜야 한다. fork 를 origin 으로 둔 체크아웃에서는 HEAD 대조가 STOP 으로 끝난다.
@@ -117,8 +145,10 @@
 //                         가리키는 링크라, 실경로를 요구하는 검사가 사본 경로를 거부한다. 검사 명령의 TMPDIR 도 실경로로 준다
 //                         사본 이름은 merge-queue-pr<PR>-<pid> 다. 시작할 때 이 폴더에서 pid 가 죽은 사본을 지운다.
 //                         SIGTERM 이나 SIGINT 로 끝나면 사본을 지우지만, KILL 로 끝나면 사본이 남기 때문이다
-//   --continue-on-hold    한 PR 이 조건에 못 미치면 멈추지 않고 STOP 줄을 찍은 뒤 다음 PR 로 간다. 끝에
-//                         `QUEUE-HELD 번호...` 를 찍고 정리를 부른 뒤 종료 코드 1 로 끝난다. 기본은 첫 보류에서 멈춘다
+//   --stop-on-hold        한 PR 이 조건에 못 미치면 STOP 줄을 찍고 그 자리에서 멈춘다(옛 기본). 정리는 부르지 않는다.
+//                         기본은 STOP 줄을 찍은 뒤 다음 PR 로 가고, 끝에 `QUEUE-HELD 번호...` 를 찍고 정리를 부른 뒤 종료 코드 1 로 끝난다
+//   --continue-on-hold    기본과 같다. 옛 호출을 위해 받는다
+//   --poll-min-sec N, --poll-max-sec N, --ci-expected-sec N  위 「체크 확인 간격」. 1 이상의 정수(초)다
 //   --skipped-is-missing  결론이 SKIPPED 인 체크는 나타나지 않은 것으로 본다. 필수 체크가 SKIPPED 로만 있으면
 //                         실제로 돌 때까지 기다린다. draft 에서는 CI 를 건너뛰게 둔 저장소용이다. 기본은 끔
 //                         (GitHub 처럼 SKIPPED 를 통과로 본다). 필수 체크 목록이 있어야 뜻이 있다
@@ -146,7 +176,7 @@
 // OWNER, REPO, GH_HOST(위 --hostname 과 같은 값)를 받는다.
 // 예: merge_queue.ts 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 //
-// 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(--continue-on-hold 면 보류한 PR 이 있음. 충돌이나 묶음으로 뺀 PR 이 있음.
+// 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(기본은 보류한 PR 이 있음. 충돌이나 묶음으로 뺀 PR 이 있음.
 //           3 보다 우선한다),
 //           2 사용법 오류(설정 파일 오류, 삭제한 옵션, 큐에 없는 --last-of-task 포함),
 //           3 모두 머지했지만 after-merge 나 after-queue가 하나라도 실패하거나 시간을 넘겼다,
@@ -158,19 +188,21 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
-import { featureBranch, featureEvidenceProblem } from './lib/feature-evidence.ts'
+import { baseMergesOnly, featureBranch, featureEvidenceProblem } from './lib/feature-evidence.ts'
 import { repoArgProblem } from './lib/git.ts'
 import { eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
 import { apiTarget, checkSnapshot, currentChecks, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, parseNames, RULES_JQ, rulesPlanLimited, updateBranch } from './lib/gh.ts'
-import { pollSeconds } from './lib/gh-budget.ts'
-import { groupMap, isDoc } from './lib/overlap.ts'
+import { queuePollSeconds } from './lib/gh-budget.ts'
+import { groupMap, isDoc, judge } from './lib/overlap.ts'
 import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { appendEvent } from './lib/loop.ts'
 import { alive } from './lib/process.ts'
 import { pyJson } from './lib/py.ts'
 import { QUEUE_VALUE_OPTIONS } from './lib/queue-options.ts'
+import { TURN_PHASES, writeTurn, writeTurnAt } from './lib/queue-turn.ts'
+import { tellBranchWorker } from './lib/tell-worker.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
@@ -192,6 +224,16 @@ const ROLL_NAMES_NO_SKIPPED = '[.statusCheckRollup[] | select((.conclusion // ""
 const PENDING =
   '[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING" ' +
   'or (.state // "") == "EXPECTED")] | length'
+// 롤업의 마지막 끝난 시각. 체크 실행은 completedAt, 커밋 상태는 startedAt 이다. 시각이 없는 체크가 하나라도 있으면 빈 값이다
+const SETTLED_JQ =
+  '[.statusCheckRollup[] | (.completedAt // .startedAt // "")] | ' +
+  'if length == 0 or any(.[]; . == "" or startswith("0001-")) then "" else max end'
+// 도는 체크 가운데 가장 먼저 시작한 시각. 없으면 빈 값이다
+const RUNNING_SINCE_JQ =
+  '[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING") | (.startedAt // "")] | ' +
+  'map(select(. != "" and (startswith("0001-") | not))) | if length == 0 then "" else min end'
+// 체크가 끝난 뒤 새 체크가 붙는지 다시 보기 전에 기다리는 초. waitChecks 의 nap(60) 과 같다
+const SETTLED_SEC = 60
 // 실패 판정의 목록은 상주 루프와 한 벌이다(lib/gh.ts 머리 주석의 「필수 체크 판정」)
 const FAIL_SEL =
   `select(((.conclusion // "") | test("${FAILED_CONCLUSIONS.join('|')}")) ` + `or ((.state // "") | test("${FAILED_STATES.join('|')}")))`
@@ -199,11 +241,42 @@ const FAIL_SEL =
 // 사용법 오류. 종료 코드 2 로 끝난다. 메시지가 비면 머리 주석을 찍는다
 class Usage extends Error {}
 
-// PR 하나가 조건에 못 미쳐 멈춘다. 종료 코드 1 이고 --continue-on-hold 면 다음 PR 로 간다
+// PR 하나가 조건에 못 미쳐 멈춘다. 종료 코드 1 이고 --stop-on-hold 가 아니면 다음 PR 로 간다
 class Stop extends Error {}
 
 // PR 하나가 base 와 충돌한다. 머리 주석의 「충돌」 대로 큐에서 빼고 다음 PR 로 간다
 class Conflict extends Stop {}
+
+// worker 가 고쳐야 하는 보류. 머리 주석의 「보류」 대로 그 PR 의 살아 있는 worker 에게 이유를 보낸다. why 가 보낼 이유다
+class WorkerFix extends Stop {
+  why: string
+  constructor(message: string, why: string) {
+    super(message)
+    this.why = why
+  }
+}
+
+// 차례 PR 이 update-branch 뒤 체크를 기다려야 한다. 머리 주석의 「앞지르기」 대로 그 대기를 미룬다. Stop 이 아니다
+class Deferred extends Error {
+  n: string
+  files: string[]
+  constructor(n: string, files: string[]) {
+    super(`${n} 앞지르기`)
+    this.n = n
+    this.files = files
+  }
+}
+
+// 앞지르기 시도에서 PR 이 아직 준비되지 않았다(체크가 돌거나 최신화가 필요하거나 미룬 PR 과 겹친다). 그 PR 은 제 차례에 다시 본다
+class NotReady extends Error {}
+
+type Mode = 'normal' | 'defer' | 'quick'
+type Attempt =
+  | { kind: 'merged' }
+  | { kind: 'held'; reason: string }
+  | { kind: 'config'; error: ConfigError }
+  | { kind: 'deferred'; deferred: Deferred }
+  | { kind: 'not-ready'; reason: string }
 
 type Options = {
   repo: string
@@ -226,6 +299,9 @@ type Options = {
   docsGlob: string
   updateDocs: boolean
   continueOnHold: boolean
+  pollMinSec: string
+  pollMaxSec: string
+  ciExpectedSec: string
   skippedMissing: boolean
   copyDir: string
   lastOfTask: string[]
@@ -338,7 +414,10 @@ function parseArgs(argv: string[]): Options {
     verifyWhen: 'overlap',
     docsGlob: '',
     updateDocs: false,
-    continueOnHold: false,
+    continueOnHold: true,
+    pollMinSec: '60',
+    pollMaxSec: '300',
+    ciExpectedSec: '',
     skippedMissing: false,
     copyDir: '',
     lastOfTask: [],
@@ -372,11 +451,15 @@ function parseArgs(argv: string[]): Options {
       else if (arg === '--sweep-arg') o.sweepArgs.push(value)
       else if (arg === '--last-of-task') o.lastOfTask.push(value)
       else if (arg === '--chain') o.chains.push(value.split(','))
+      else if (arg === '--poll-min-sec') o.pollMinSec = value
+      else if (arg === '--poll-max-sec') o.pollMaxSec = value
+      else if (arg === '--ci-expected-sec') o.ciExpectedSec = value
       continue
     }
     if (arg === '--require-up-to-date') o.upToDate = true
     else if (arg === '--keep-branch') o.keepBranch = true
     else if (arg === '--continue-on-hold') o.continueOnHold = true
+    else if (arg === '--stop-on-hold') o.continueOnHold = false
     else if (arg === '--skipped-is-missing') o.skippedMissing = true
     else if (arg === '--stop-on-overlap') o.overlap = true
     else if (arg === '--update-docs-on-overlap') o.updateDocs = o.overlap = true
@@ -393,6 +476,10 @@ function validate(o: Options): Options {
   if (!['merge', 'squash', 'rebase'].includes(o.method)) throw new Usage('--method 는 merge, squash, rebase 중 하나다')
   if (!isDigits(o.checkTimeout)) throw new Usage('--check-timeout 은 분 단위 정수다')
   if (!isDigits(o.missingTimeout)) throw new Usage('--missing-timeout 은 분 단위 정수다')
+  for (const [name, value] of [['--poll-min-sec', o.pollMinSec], ['--poll-max-sec', o.pollMaxSec], ['--ci-expected-sec', o.ciExpectedSec || '1']]) {
+    if (!isDigits(value) || Number(value) < 1) throw new Usage(`${name} 는 1 이상의 정수(초)다`)
+  }
+  if (Number(o.pollMinSec) > Number(o.pollMaxSec)) throw new Usage('--poll-min-sec 는 --poll-max-sec 보다 클 수 없다')
   if (!['overlap', 'code', 'always'].includes(o.verifyWhen)) throw new Usage('--verify-merged-when 은 overlap, code, always 중 하나다')
   if (!['always', 'overlap'].includes(o.upToDateWhen)) throw new Usage('--up-to-date-when 은 always, overlap 중 하나다')
   if (o.upToDateWhen === 'overlap') {
@@ -473,6 +560,17 @@ class Queue {
   ghRetrySeconds = 10
   pr: Pr | null = null
   q: { missing: string; failed: string; allowedFailed: string } = { missing: '', failed: '', allowedFailed: '' }
+  // 차례 기록(lib/queue-turn.ts)의 prs. 차례 PR 부터 큐 끝까지다
+  remaining: number[] = []
+  turnWarned = false
+  // 처음 쓴 차례 기록의 경로. 다음부터는 폴더와 git 무시 확인 없이 바로 쓴다
+  turnPath = ''
+  // 차례 기록의 held. 뺀 PR 과 이유다
+  heldReasons: { pr: number; reason: string }[] = []
+  // processPr 의 방식. defer 는 update-branch 뒤 대기를 미루고, quick 은 기다리지 않고 바로 머지할 수 있을 때만 머지한다
+  mode: Mode = 'normal'
+  // 앞지르기 중이면 미룬 차례 PR 이 바꾼 파일. quick 의 PR 이 이것과 겹치면 앞지르지 않는다
+  against: { n: string; files: string[] } | null = null
 
   constructor(opts: Options) {
     this.o = opts
@@ -659,6 +757,30 @@ class Queue {
     return [...new Set(mine)].filter((file) => other.has(file)).sort()
   }
 
+  // PR 이 base 에서 갈라진 뒤 바꾼 파일. 판정하지 못하면 null
+  prFiles(): string[] | null {
+    const p = this.p
+    if (!this.fetchPrRefs()) return null
+    const mb = git('merge-base', `origin/${p.base}`, p.ph)
+    return mb.code !== 0 ? null : this.names(mb.stdout.trim(), p.ph)
+  }
+
+  // 앞지르기 하려는 PR 이 미룬 차례 PR 과 겹치는지. 판정은 --up-to-date-when overlap 과 같다(lib/overlap.ts 의 judge). 읽지 못하면 겹친 것으로 본다
+  overlapsDeferred(): string | null {
+    const against = this.against
+    if (!against) return null
+    const mine = this.prFiles()
+    if (mine === null) return `#${against.n} 과 겹치는지 판정하지 못했다`
+    const o = this.o
+    const verdict = judge(mine, against.files, {
+      sharedPaths: o.sharedPaths,
+      unitPrefix: o.unitPrefix,
+      docsGlobs: o.docsGlob.split(',').filter((g) => g),
+      groups: o.unitGroups.map((group) => group.split(',')),
+    })
+    return verdict.update ? `#${against.n} 과 겹친다(${verdict.reason})` : null
+  }
+
   // PR 이 바꾼 파일이 모두 --docs-glob 에 맞으면 true. 바꾼 파일이 없거나 판정하지 못하면 false
   docsOnly(): boolean {
     const p = this.p
@@ -750,7 +872,9 @@ class Queue {
     this.dropCopy()
     // 핸들러를 큐 시작 뒤에 지웠으면 none 이다. 검사하지 않은 조합을 머지하지 않도록 통과로 읽지 않는다
     if (done.result === 'none') stop(`${p.n} 합친 사본의 검사 실패(hooks/verify-merged.ts 가 없다)`)
-    if (done.result !== 'pass') stop(`${p.n} 합친 사본의 검사 실패(종료 코드 ${failLabel(done)})`)
+    if (done.result !== 'pass') {
+      throw new WorkerFix(`${p.n} 합친 사본의 검사 실패(종료 코드 ${failLabel(done)})`, `base(${p.base}) 와 합친 사본의 검사(hooks/verify-merged.ts)가 실패했다`)
+    }
     // 검사하는 동안 base 가 움직였으면 검사한 조합과 머지할 조합이 다르다
     if (this.remoteBase() !== bh) stop(`${p.n} 검사하는 동안 base(${p.base}) 가 움직였다. 다시 돌린다`)
     log(`${p.n} 합친 사본의 검사 통과`)
@@ -769,6 +893,27 @@ class Queue {
 
   ctx(): FireContext {
     return { repo: this.repoDir, base: this.p.base, run: null }
+  }
+
+  // 차례 기록을 쓴다(머리 주석의 「차례 기록」). 쓰지 못해도 큐는 이어 간다. 첫 실패만 stderr 에 남긴다
+  turn(phase: string, pr: number | null = this.pr ? Number(this.pr.n) : null): void {
+    if (!this.repoDir) return
+    try {
+      const turn = { pid: process.pid, prs: this.remaining, pr, phase, since: new Date().toISOString(), held: this.heldReasons }
+      if (this.turnPath) writeTurnAt(this.turnPath, turn)
+      else this.turnPath = writeTurn(this.repoDir, turn)
+    } catch (e) {
+      if (this.turnWarned) return
+      this.turnWarned = true
+      process.stderr.write(`경고: 머지 큐 차례 기록을 쓰지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
+    }
+  }
+
+  // 끝난 큐의 기록을 남긴다. 지우지 않는다. 끝난 뒤 들어온 틱이 held 를 루프 로그에 옮기고 지운다(lib/queue-turn.ts)
+  endTurn(): void {
+    if (!this.turnPath) return
+    this.remaining = []
+    this.turn(TURN_PHASES.end, null)
   }
 
   // ---- PR 하나 ----------------------------------------------------------------------------------
@@ -853,11 +998,16 @@ class Queue {
 
     p.beforeHead = null
     p.judgments = 0
+    if (this.mode === 'quick') {
+      const clash = this.overlapsDeferred()
+      if (clash) throw new NotReady(clash)
+    }
     await this.readyToMerge(prCommand)
 
     // 머지 뒤에는 merge-base 가 바뀌어 문서 PR 인지 다시 판정할 수 없다. 머지 전에 정한다
     const kind = o.docsGlob && this.docsOnly() ? 'docs' : 'code'
     refuseWhenStopping(n)
+    this.turn(TURN_PHASES.merge)
     const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
     // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
     const last = chomp(merge.stdout + merge.stderr).split('\n').pop() ?? ''
@@ -923,6 +1073,7 @@ class Queue {
 
       log(`${n} fails=${f} threads=${t} mergeable=${m}`)
       if (m === 'CONFLICTING') throw new Conflict(`${n} base(${p.base}) 와 충돌한다(mergeable=CONFLICTING)`)
+      if (f === '0' && t !== '0' && m === 'MERGEABLE') throw new WorkerFix(n, `미해결 리뷰 스레드 ${t} 개`)
       if (f !== '0' || t !== '0' || m !== 'MERGEABLE') stop(n)
 
       p.ov = []
@@ -939,6 +1090,7 @@ class Queue {
             if (o.verifyWhen !== 'always' && o.docsGlob && this.docsOnly()) {
               log(`${n} 문서만 바꿨다(--docs-glob). 합친 사본 검사 없이 머지한다`)
             } else {
+              this.turn(TURN_PHASES.verify)
               await this.verifyMerged()
             }
           }
@@ -948,6 +1100,7 @@ class Queue {
       // 같은 HEAD 에는 한 번만 낸다. base 가 움직여 다시 판정해도 HEAD 가 같으면 다시 내지 않는다
       if (p.beforeHead !== p.ph) {
         p.beforeHead = p.ph
+        if (prCommand !== null || this.hooks.has('before-merge')) this.turn(TURN_PHASES.before)
         await this.beforeMerge(prCommand)
       }
 
@@ -955,8 +1108,10 @@ class Queue {
       if (p.ph !== ph2) stop(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
       const evidence = ghJson<{ body: string; headRefOid: string }>(['pr', 'view', n, '--json', 'body,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
       if (!evidence.ok || evidence.data.headRefOid !== p.ph) stop(`${n} 기능 완료 근거 또는 HEAD 조회 실패`)
-      const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch))
-      if (problem) stop(`${n} ${problem}`)
+      // 검증 커밋 뒤에 base 를 합친 merge 만 있으면(이 큐나 상주 루프의 update-branch) 받아들인다. 지금 HEAD 의 필수 체크는 위에서 기다렸다
+      const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false,
+        (verified) => this.fetchPrRefs() && baseMergesOnly(this.repoDir, p.ph, verified, p.base))
+      if (problem) throw new WorkerFix(`${n} ${problem}`, problem)
 
       // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
       const latestFailed = await this.field(n, 'statusCheckRollup', this.q.failed, true)
@@ -1026,9 +1181,34 @@ class Queue {
     return req
   }
 
+  // --ci-expected-sec 에서 지금 도는 체크 가운데 가장 먼저 시작한 것의 경과를 뺀 초. 옵션이 없거나 시작 시각을 모르면 null 이다
+  async expectedLeft(): Promise<number | null> {
+    if (!this.o.ciExpectedSec) return null
+    const started = await this.field(this.p.n, 'statusCheckRollup', RUNNING_SINCE_JQ)
+    const at = Date.parse(started)
+    if (!started || !Number.isFinite(at)) return null
+    return Number(this.o.ciExpectedSec) - (Date.now() - at) / 1000
+  }
+
+  // 롤업의 마지막 체크가 끝난 뒤 지난 초. 끝난 시각이 없는 체크(StatusContext 는 시작 시각을 쓴다)가 있거나 읽지 못하면 -1 이다
+  async settledSec(): Promise<number> {
+    const latest = await this.field(this.p.n, 'statusCheckRollup', SETTLED_JQ)
+    const at = Date.parse(latest)
+    return latest && Number.isFinite(at) ? (Date.now() - at) / 1000 : -1
+  }
+
   async waitChecks(): Promise<void> {
     const n = this.p.n
     const q = this.q
+    if (this.mode === 'quick') {
+      // 앞지르기는 기다리지 않는다. 지금 모두 통과했고 끝난 지 SETTLED_SEC 가 지났을 때만 이어 간다
+      const f = await this.field(n, 'statusCheckRollup', q.failed, true)
+      const pending = await this.field(n, 'statusCheckRollup', PENDING)
+      const missing = await this.field(n, 'statusCheckRollup', `${q.missing} | length`)
+      if (f !== '0' || pending !== '0' || missing !== '0') throw new NotReady(`체크가 끝나지 않았거나 실패했다(fails=${f || '?'} pending=${pending || '?'} missing=${missing || '?'})`)
+      if ((await this.settledSec()) < SETTLED_SEC) throw new NotReady(`체크가 끝난 지 ${SETTLED_SEC}초가 지나지 않았다`)
+      return
+    }
     const limit = Number(this.o.checkTimeout) * 60
     const missingLimit = Number(this.o.missingTimeout) * 60
     let waited = 0
@@ -1056,14 +1236,21 @@ class Queue {
             `PR 에 붙은 체크: ${seen || '[]'}. 필수 체크 이름이 틀렸을 수 있다(쉼표가 든 이름은 --required-check 로 준다)`,
         )
       }
-      const seconds = Math.min(pollSeconds(attempt++), Math.max(0, limit - waited),
+      const expectedLeft = pending !== '0' ? await this.expectedLeft() : null
+      const seconds = Math.min(queuePollSeconds(attempt++, Number(this.o.pollMinSec), Number(this.o.pollMaxSec), expectedLeft), Math.max(0, limit - waited),
         pending === '0' && missingLimit > 0 ? Math.max(0, missingLimit - idle) : Infinity)
       await nap(seconds)
       waited += seconds
       if (pending === '0') idle += seconds
       else idle = 0
     }
-    // 체크가 끝난 직후에 새 체크가 붙는 경우가 있어 잠시 뒤 다시 본다
+    // 체크가 끝난 직후에 새 체크가 붙는 경우가 있어 잠시 뒤 다시 본다.
+    // 차례가 왔을 때 이미 모두 끝나 있었고 마지막 체크가 끝난 지 SETTLED_SEC 초가 지났으면 그 기다림은 이미 지난 것이라 건너뛴다.
+    // 상주 루프가 미리 최신화해 CI 를 통과한 PR 이 차례마다 1분씩 더 기다리지 않게 한다
+    if (attempt === 0 && (await this.settledSec()) >= SETTLED_SEC) {
+      log(`${n} 체크가 ${SETTLED_SEC}초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다`)
+      return
+    }
     await nap(60)
     const pending = await this.field(n, 'statusCheckRollup', PENDING, true)
     const missing = await this.field(n, 'statusCheckRollup', `${q.missing} | length`)
@@ -1081,12 +1268,14 @@ class Queue {
     p.judgedBase = null
     for (;;) {
       p.judgedBase = null
+      this.turn(rounds > 0 ? TURN_PHASES.updated : TURN_PHASES.checks)
       await this.waitChecks()
       let updateDocs = false
       if (o.updateDocs) {
         const ov = this.overlapFiles()
         if (ov === null) stop(`${n} 문서 PR 의 겹침 판정 실패`)
         if (ov.length > 0 && this.docsOnly()) {
+          if (this.mode === 'quick') throw new NotReady('문서 PR 의 갱신이 필요하다')
           const ms = await this.field(n, 'mergeStateStatus', '.mergeStateStatus')
           if (ms !== 'CLEAN') stop(`${n} 문서 PR 을 갱신하려면 GitHub CLEAN 이 필요하다(현재 ${ms})`)
           updateDocs = true
@@ -1111,6 +1300,7 @@ class Queue {
         if (p.judgments > REJUDGE_LIMIT + 1) stop(`${n} 다시 판정을 ${REJUDGE_LIMIT}번 했는데도 base(${p.base}) 가 계속 움직인다`)
         if (!this.needsUpdate()) return
       }
+      if (this.mode === 'quick') throw new NotReady('base 최신화가 필요하다')
       rounds += 1
       if (rounds > (o.upToDateWhen === 'overlap' ? REJUDGE_LIMIT + 1 : 3)) {
         stop(`${n} base 를 ${rounds - 1}번 merge 해도 최신이 아니다. base 가 계속 움직인다`)
@@ -1136,6 +1326,11 @@ class Queue {
       }
       if (!next || next === p.ph) stop(`${n} update-branch 뒤 HEAD 가 바뀌지 않았다`)
       p.ph = next
+      // 체크를 기다리는 동안 뒤 PR 을 먼저 머지할 수 있게 대기를 미룬다(머리 주석의 「앞지르기」). 바꾼 파일을 읽지 못하면 미루지 않는다
+      if (this.mode === 'defer') {
+        const files = this.prFiles()
+        if (files !== null) throw new Deferred(n, files)
+      }
     }
   }
 
@@ -1268,53 +1463,150 @@ class Queue {
     return chain.slice(0, chain.indexOf(n)).find((m) => this.held.includes(m)) ?? null
   }
 
+  // PR 하나를 처리하고 결과를 낸다. 보류와 충돌의 줄(STOP, CONFLICT)은 여기서 찍는다
+  async attempt(item: string, mode: Mode): Promise<Attempt> {
+    const n = item.split(':')[0]
+    this.mode = mode
+    try {
+      await this.processPr(item)
+      return { kind: 'merged' }
+    } catch (e) {
+      // 설정 오류는 그 PR 의 보류가 아니라 사용법 오류다. 보류를 이어 가는 기본에서도 큐를 멈춘다
+      if (e instanceof ConfigError) return { kind: 'config', error: e }
+      if (e instanceof Deferred) return { kind: 'deferred', deferred: e }
+      if (e instanceof NotReady) return { kind: 'not-ready', reason: e.message }
+      if (e instanceof Conflict) {
+        out(`CONFLICT ${e.message}`)
+        this.conflicted.push(n)
+        this.notifyConflict(n, e.message)
+        return { kind: 'held', reason: e.message }
+      }
+      if (e instanceof Stop) {
+        out(`STOP ${e.message}`)
+        if (e instanceof WorkerFix) await this.tellHeld(n, e.why)
+        return { kind: 'held', reason: e instanceof WorkerFix ? `${e.message}: ${e.why}` : e.message }
+      }
+      // 예상 못 한 오류도 그 PR 의 보류로 다룬다
+      process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
+      out(`STOP ${n} 예상 못 한 오류`)
+      return { kind: 'held', reason: `${n} 예상 못 한 오류` }
+    } finally {
+      this.dropCopy()
+      this.mode = 'normal'
+    }
+  }
+
+  // 보류한 PR 의 살아 있는 worker 에게 이유를 보낸다(머리 주석의 「보류」). Run 을 모르거나 worker 가 없으면 로그만 남긴다
+  async tellHeld(n: string, why: string): Promise<void> {
+    const sweep = this.o.sweepArgs
+    const at = sweep.indexOf('--run')
+    const run = at >= 0 && at + 1 < sweep.length ? sweep[at + 1] : null
+    const branch = this.pr?.branch ?? ''
+    if (!run || !branch) {
+      log(`${n} worker 에게 알리지 않는다(${run ? '브랜치 모름' : 'Run 모름'})`)
+      return
+    }
+    const body = `PR #${n} 을 머지 큐에서 뺐다: ${why}. 고쳐 push 한 뒤 status 로 알린다.`
+    const told = await tellBranchWorker(this.repoDir, branch, run, body)
+    log(`${n} ${'sent' in told ? `${told.sent} 에 보류 이유를 보냈다` : `worker 에게 알리지 않았다: ${told.skipped}`}`)
+  }
+
+  // 그 차례 PR 의 update-branch 뒤 대기를 미뤄도 되는가(머리 주석의 「앞지르기」). 뒤에 앞지를 후보가 있어야 한다
+  canDefer(i: number, handled: Set<number>): boolean {
+    const o = this.o
+    if (!(o.upToDate && o.upToDateWhen === 'overlap' && o.continueOnHold)) return false
+    return o.items.some((item, j) => j > i && !handled.has(j) && !this.inChain(item.split(':')[0]))
+  }
+
+  inChain(n: string): boolean {
+    return this.o.chains.some((chain) => chain.includes(n))
+  }
+
+  // 미룬 차례 PR 뒤의 PR 가운데 기다리지 않고 머지할 수 있는 것을 머지한다(머리 주석의 「앞지르기」). 설정 오류면 그 결과를 낸다
+  async overtake(i: number, deferred: Deferred, handled: Set<number>): Promise<Attempt | null> {
+    const o = this.o
+    log(`${deferred.n} 이 update-branch 뒤 체크를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다`)
+    this.against = { n: deferred.n, files: deferred.files }
+    try {
+      for (const [j, item] of o.items.entries()) {
+        if (j <= i || handled.has(j)) continue
+        const m = item.split(':')[0]
+        if (this.inChain(m)) continue
+        this.remaining = this.left(i, handled)
+        this.turn(TURN_PHASES.overtake, Number(m))
+        const result = await this.attempt(item, 'quick')
+        if (result.kind === 'not-ready') {
+          log(`${m} 앞지르지 않는다: ${result.reason}`)
+          continue
+        }
+        if (result.kind === 'config') return result
+        handled.add(j)
+        if (result.kind === 'merged') log(`${m} 차례 PR ${deferred.n} 보다 먼저 머지했다`)
+        else if (result.kind === 'held') {
+          this.hold(m, result.reason)
+          log(this.conflicted.includes(m) ? `${m} 충돌. 큐에서 빼고 다음 PR 로 간다` : `${m} 보류. 다음 PR 로 간다`)
+        }
+      }
+    } finally {
+      this.against = null
+    }
+    return null
+  }
+
+  // 차례 기록의 prs. i 부터 끝까지에서 이미 처리한 PR 을 뺀다
+  left(i: number, handled: Set<number>): number[] {
+    return this.o.items.flatMap((item, j) => (j >= i && !handled.has(j) ? [Number(item.split(':')[0])] : []))
+  }
+
+  hold(n: string, reason: string): void {
+    this.held.push(n)
+    this.heldReasons.push({ pr: Number(n), reason })
+  }
+
   async run(): Promise<number> {
     const o = this.o
-    for (const item of o.items) {
+    // 앞지르기로 이미 처리한 자리
+    const handled = new Set<number>()
+    for (const [i, item] of o.items.entries()) {
+      if (handled.has(i)) continue
       const n = item.split(':')[0]
+      this.remaining = this.left(i, handled)
+      this.pr = null
+      this.turn(TURN_PHASES.start, Number(n))
       const before = this.droppedBefore(n)
       if (before !== null) {
         out(`SKIP ${n} 묶음의 앞 PR ${before} 가 머지되지 않았다`)
         this.held.push(n)
+        this.heldReasons.push({ pr: Number(n), reason: `묶음의 앞 PR ${before} 가 머지되지 않았다` })
         continue
       }
-      let code = 0
-      try {
-        await this.processPr(item)
-      } catch (e) {
-        // 설정 오류는 그 PR 의 보류가 아니라 사용법 오류다. --continue-on-hold 여도 큐를 멈춘다
-        if (e instanceof ConfigError) {
-          this.dropCopy()
-          return await this.stopOnConfig(e)
+      let result = await this.attempt(item, this.canDefer(i, handled) ? 'defer' : 'normal')
+      if (result.kind === 'deferred') {
+        const stopped = await this.overtake(i, result.deferred, handled)
+        if (stopped) result = stopped
+        else {
+          this.remaining = this.left(i, handled)
+          log(`${n} 차례로 돌아와 체크를 기다린다`)
+          result = await this.attempt(item, 'normal')
         }
-        if (e instanceof Conflict) {
-          out(`CONFLICT ${e.message}`)
-          this.conflicted.push(n)
-          this.notifyConflict(n, e.message)
-        } else if (e instanceof Stop) {
-          out(`STOP ${e.message}`)
-        } else {
-          // 예상 못 한 오류도 그 PR 의 보류로 다룬다
-          process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
-          out(`STOP ${n} 예상 못 한 오류`)
-        }
-        code = 1
-      } finally {
-        this.dropCopy()
       }
-      if (code === 0) continue
-      this.held.push(n)
+      if (result.kind === 'config') return await this.stopOnConfig(result.error)
+      if (result.kind !== 'held') continue
+      this.hold(n, result.reason)
       if (this.conflicted.includes(n)) {
         log(`${n} 충돌. 큐에서 빼고 다음 PR 로 간다`)
         continue
       }
       if (!o.continueOnHold) {
         // 보류로 멈춰도 앞에서 머지한 PR 의 머지 뒤 명령은 돌린다
+        this.turn(TURN_PHASES.after, null)
         await this.runAfterMerged()
         return 1
       }
       log(`${n} 보류. 다음 PR 로 간다`)
     }
+    this.remaining = []
+    this.turn(TURN_PHASES.after, null)
     if (this.conflicted.length > 0) out(`QUEUE-CONFLICT ${this.conflicted.join(' ')}`)
     out(this.held.length > 0 ? `QUEUE-HELD ${this.held.join(' ')}` : 'QUEUE-DONE')
     await this.runAfterMerged()
@@ -1342,6 +1634,7 @@ function onSignal(signal: NodeJS.Signals): void {
   exiting = true
   void stopChildren(signal).finally(() => {
     active?.dropCopy()
+    active?.endTurn()
     process.exit(signalCode(signal))
   })
 }
@@ -1379,6 +1672,7 @@ async function main(argv: string[]): Promise<number> {
     return 2
   } finally {
     queue.dropCopy()
+    queue.endTurn()
   }
 }
 
