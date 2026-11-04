@@ -132,7 +132,7 @@ const ROWS: Row[] = [
   { group: 'queue', verb: 'finish', script: 'finish-pr.ts', context: ['repo', 'run'], legacy: { name: 'finish-pr', flags: [] }, usage: 'orch queue finish <PR>' },
   { group: 'queue', verb: 'ready', script: 'ci-ready.ts', context: ['repo'], legacy: { name: 'ci-ready', flags: [] }, usage: 'orch queue ready <PR>...' },
   { group: 'queue', verb: 'conflicts', script: 'notify-conflicts.ts', context: ['repo', 'run'], legacy: { name: 'notify-conflicts', flags: [] }, usage: 'orch queue conflicts' },
-  { group: 'queue', verb: 'overlap', script: 'overlap_units.ts', legacy: { name: 'overlap_units', flags: [] }, usage: 'orch queue overlap --base <ref> --head <ref>' },
+  { group: 'queue', verb: 'overlap', script: 'overlap_units.ts', context: ['repo'], legacy: { name: 'overlap_units', flags: [] }, usage: 'orch queue overlap --base <ref> --head <ref>' },
   {
     group: 'queue', verb: 'reserve', script: 'reserve-migration.ts', context: ['repo'], forbid: ['--prune'],
     legacy: { name: 'reserve-migration', flags: [] }, usage: 'orch queue reserve --module <모듈> --name <이름>',

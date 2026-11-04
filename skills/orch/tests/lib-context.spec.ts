@@ -158,6 +158,10 @@ describe('채우기', () => {
     assert.deepEqual(filled(['worker', 'launch', '--worktree', worktree, '--spec', 's'], worktree).args, ['--run', 'run_ctx', '--worktree', worktree, '--spec', 's'])
   })
 
+  test('queue overlap 도 워크트리에서 주 checkout 을 채운다', () => {
+    assert.deepEqual(filled(['queue', 'overlap', '--base', 'main', '--head', 'HEAD'], worktree).args, ['--repo', main, '--base', 'main', '--head', 'HEAD'])
+  })
+
   test('worker worktree 의 위치 인자는 repo 의 명시다', () => {
     assert.deepEqual(filled(['worker', 'worktree', '/x', '--name', 'n'], worktree).args, ['--repo', '/x', '--name', 'n'])
   })

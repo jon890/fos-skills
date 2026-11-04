@@ -1,7 +1,7 @@
 // 명령 표(lib/commands.ts)가 새 꼴과 옛 꼴을 같은 스크립트와 인자로 푸는지 본다. 스크립트를 실행하지 않는다.
 
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { describe, test } from 'node:test'
@@ -31,6 +31,30 @@ describe('표의 행', () => {
     for (const c of COMMANDS) {
       assert.ok(existsSync(join(SCRIPTS, c.script)), `${form(c)} → ${c.script}`)
     }
+  })
+
+  test('스크립트가 받는 문맥 인자는 문맥 칸에 있다. 일부러 뺀 것은 이유가 있다', () => {
+    // 일부러 채우지 않는 문맥. 설계 「문맥 칸」 표와 스펙 DECISION23 이 정한다
+    const omitted: Record<string, string> = {
+      'orch wait ack-lost loop-repo': '끊긴 worker 의 처리 기록만 쓴다. 루프를 보지 않는다',
+      'orch loop stop specs-dir': '멈출 때는 지시서 폴더를 쓰지 않는다',
+      'orch loop status run': '루프에 등록된 Run 을 모두 본다',
+      'orch loop status specs-dir': '상태 조회는 지시서 폴더를 쓰지 않는다',
+      'orch loop stalled run': '스펙 DECISION23. 등록된 Run 을 모두 본다',
+      'orch worker ask run': 'worker 터미널은 Run 에 묶이지 않는다. check 결과에서 Run 을 읽는다',
+      'orch worker check repo': '워크트리를 위치 인자로 받아 저장소를 따로 쓰지 않는다',
+      'orch doctor run': '스펙 DECISION23. 스킬 첫 점검이 Run 별 점검을 하지 않는다',
+    }
+    const missing: string[] = []
+    for (const c of COMMANDS) {
+      const src = readFileSync(join(SCRIPTS, c.script), 'utf8')
+      for (const name of ['repo', 'run', 'specs-dir', 'loop-repo'] as const) {
+        const takes = new RegExp(`(?<![\\w-])['"]?${name}['"]?: \\{ type: 'string'`).test(src)
+        const key = `${form(c)} ${name}`
+        if (takes && !c.context.includes(name) && !c.passthrough && !(key in omitted)) missing.push(key)
+      }
+    }
+    assert.deepEqual(missing, [])
   })
 
   test('묶음 이름은 옛 스크립트 이름과 겹치지 않는다', () => {
