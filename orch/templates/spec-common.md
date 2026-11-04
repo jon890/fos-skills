@@ -86,6 +86,7 @@
 - 지시서 「할 일」 첫 줄이 `루프 없이: <이유>` 면(버그 수정, 정리·삭제, 설정 변경, 측정 같은 작은 일) spec 과 plan 없이 바로 구현하고, PR 본문에 확인한 방법과 결과를 적는다. 사용자 동작·권한·데이터 보존을 바꾸는 선택이 생기면 그 결정만 `--decision` 으로 묻는다.
 - 루프를 쓰지만 PR 하나로 끝나는 일은 `tasks/` 를 만들지 않는다. 이 지시서를 계획 입력으로 구현과 개발 테스트를 마치고 verify 의 독립 검토와 docs-consolidate 의 후보 추출 뒤 PR 을 연다.
 - 구현만 맡겼으면 구현 결과와 검증 증거를 코디네이터에게 넘긴다. 뒤의 검증·후보 추출·PR 생성은 지시서가 정한 담당자가 이어 간다.
+- critic, verify 검토자, docs-verifier 는 읽기 전용 하위 에이전트로 띄운다. 쓰기와 orca 명령은 금지한다. 이 줄이 머리말이 말하는 task 의 요청이다. <!-- orch-rule: review-subagents -->
 - 하위 에이전트는 `name` 없이 띄운다. 이름을 주면 팀원으로 등록되고 tmux pane 이 없는 worker 터미널에서 실패한다.
 - 저장소에 `.claude/plan-overlay.md` 나 `.claude/implementation-overlay.md` 가 있으면 경로는 그 파일을 따른다.
 - 보고에서 phase 를 가리킬 때는 계획 이름을 붙인다(`plan12-login phase 3`). 계획이 둘 이상 돌면 phase 번호만으로는 어느 계획인지 알 수 없다.
