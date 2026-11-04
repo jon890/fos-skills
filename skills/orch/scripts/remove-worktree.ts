@@ -9,7 +9,8 @@
 // 그때 --merged-head 를 주면 그 커밋의 조상은 원격에 있는 것으로 센다.
 // 유휴 셸: 점유 프로세스가 OMC session-end hook 뿐이 아니면, 먼저 lib/idle-shells.ts 의 idleShellVerdict 로 Orca 기본 셸만 쥐었는지 본다.
 // 닫을 것이면 소유 상태를 다시 읽고 그 터미널을 `orca terminal close` 로 닫은 뒤 셸이 끝나기를 IDLE_GRACE 초까지 기다린다.
-// 살아 있는 dispatch 의 터미널(모든 Run)은 닫지 않는다. 출력 줄은 `유휴 셸 터미널 닫음 <handle>` 이나
+// 살아 있는 dispatch 의 터미널(모든 Run)은 닫지 않는다. 그 워크트리에 끝난 worker dispatch 기록(resource.worktreeId)이 없으면
+// 사람이 연 셸일 수 있어 닫지 않는다. 아래 거부 조건(커밋 안 된 변경 등)에 걸리면 닫지 않고 그 거부 줄로 끝난다. 출력 줄은 `유휴 셸 터미널 닫음 <handle>` 이나
 // `유휴 셸 터미널을 닫지 않는다: <이유>` 다. 그 경로에 Orca 터미널이 없으면 아무 줄도 내지 않는다.
 // 출력 줄: 경로가 디렉터리가 아니면 `없음: <경로>`, 거부하면 `거부: <이유>`, 사용자 보유 터미널이나 소유 상태 조회 실패면
 // `남김: <이유> (<경로>)` 다. 소유 판정은 lib/ownership.ts 의 blocker 다.
@@ -47,6 +48,16 @@ const HOOK = /--omc-session-end-worker|hooks\/session-end\/worker\.js/
 const MAX_DEPTH = 50
 // 유휴 셸 터미널을 닫은 뒤 그 셸이 끝나기를 기다리는 시간(초)
 const IDLE_GRACE = 10
+
+function given(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== ''
+}
+
+// worker 행의 resource.worktreeId(`<저장소 id>::<경로>`). 없으면 빈 문자열이다
+function worktreeOf(row: Record<string, unknown>): string {
+  const resource = row.resource
+  return typeof resource === 'object' && resource !== null ? String((resource as Record<string, unknown>).worktreeId ?? '') : ''
+}
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`)
@@ -98,8 +109,30 @@ function hookHolders(holders: string[]): string[] | null {
   })
 }
 
+// 커밋 안 된 변경, --merged-head 와 맞지 않는 HEAD, 원격에 없는 커밋 가운데 걸린 것의 거부 줄. 지워도 되면 null 이다.
+// 유휴 셸을 닫기 전에도 부른다. 어차피 거부할 워크트리의 터미널을 먼저 닫지 않으려는 것이다
+function refusal(target: string, mergedHead: string): string | null {
+  const status = git(target, ['status', '--porcelain'])
+  if (status.code !== 0 || status.stdout.trim()) return `거부: ${target} 에 커밋 안 된 변경 또는 상태 조회 실패`
+  if (mergedHead && git(target, ['merge-base', '--is-ancestor', 'HEAD', mergedHead]).code !== 0) {
+    return `거부: ${target} 의 HEAD 가 머지된 커밋 ${mergedHead} 와 같지도 그 조상도 아니다`
+  }
+  const commits = git(target, ['rev-list', 'HEAD', '--not', '--remotes'])
+  if (commits.code !== 0) return '거부: 원격에 없는 커밋 조회 실패'
+  let lost = 0
+  for (const commit of commits.stdout.split('\n').filter((line) => line)) {
+    if (mergedHead && git(target, ['merge-base', '--is-ancestor', commit, mergedHead]).code === 0) continue
+    // rebase 하면 해시가 바뀌어 옛 커밋이 rev-list --not --remotes 에 남는다. 원격 어느 커밋 메시지에든 그 제목이
+    // 들어 있으면 같은 작업으로 보고 세지 않는다. -F 는 제목을 정규식이 아니라 글자 그대로 찾게 해 괄호나 점이 든 제목도 맞게 한다.
+    // squash 머지는 원격 커밋의 제목이 PR 제목이라 맞지 않는다. 그때는 위의 --merged-head 가 조상 관계로 센다.
+    const subject = git(target, ['log', '-1', '--format=%s', commit]).stdout.trim()
+    if (!git(target, ['log', '--remotes', '--format=%H', '-F', `--grep=${subject}`, '-1']).stdout.trim()) lost++
+  }
+  return lost ? `거부: ${target} 에 원격에 없는 커밋 ${lost} 개` : null
+}
+
 // 머리 주석의 「유휴 셸」. 닫았으면 true 다. 소유 상태를 다시 읽다 남길 이유가 생기면 그 이유를 낸다
-async function closeIdleShells(target: string, pids: string[]): Promise<boolean | { kept: string }> {
+async function closeIdleShells(target: string, pids: string[], mergedHead: string): Promise<boolean | { kept: string } | { refused: string }> {
   const listed = orcaTerminals()
   if (listed === null) {
     out('유휴 셸 터미널을 닫지 않는다: 터미널 목록 조회 실패')
@@ -114,8 +147,11 @@ async function closeIdleShells(target: string, pids: string[]): Promise<boolean 
     return false
   }
   let claimed: Set<unknown>
+  let finished: boolean
   try {
-    claimed = new Set((await allWorkers()).filter((row) => LIVE_DISPATCH.has(String(row.dispatchStatus))).flatMap((row) => [...rowHandles(row)]))
+    const rows = await allWorkers()
+    claimed = new Set(rows.filter((row) => LIVE_DISPATCH.has(String(row.dispatchStatus))).flatMap((row) => [...rowHandles(row)]))
+    finished = rows.some((row) => given(row.dispatchId) && !LIVE_DISPATCH.has(String(row.dispatchStatus)) && worktreeOf(row).endsWith(`::${target}`))
   } catch (e) {
     if (!(e instanceof LookupError)) throw e
     out('유휴 셸 터미널을 닫지 않는다: worker 목록 조회 실패')
@@ -126,6 +162,13 @@ async function closeIdleShells(target: string, pids: string[]): Promise<boolean 
     out(`유휴 셸 터미널을 닫지 않는다: ${verdict.keep}`)
     return false
   }
+  // 사람이 연 셸도 자식 없는 로그인 셸이다. worker 가 끝난 워크트리에서만 Orca 가 다시 띄운 기본 셸로 본다(2026-11-04 독립 리뷰)
+  if (!finished) {
+    out('유휴 셸 터미널을 닫지 않는다: 이 워크트리에 끝난 worker dispatch 기록이 없다(사람이 연 셸일 수 있다)')
+    return false
+  }
+  const refused = refusal(target, mergedHead)
+  if (refused) return { refused }
   // 앞의 소유 확인 뒤에 사용자가 넘겨받았을 수 있다. 닫기 바로 앞에서 다시 본다
   const reason = await blocker(target)
   if (reason) return { kept: reason }
@@ -221,8 +264,12 @@ async function main(argv: string[]): Promise<number> {
     const onlyHooks = hooks.length === holders.length
     if (!onlyHooks && !idleTried) {
       idleTried = true
-      const closed = await closeIdleShells(target, holders)
-      if (closed !== true && closed !== false) {
+      const closed = await closeIdleShells(target, holders, mergedHead)
+      if (typeof closed === 'object' && 'refused' in closed) {
+        out(closed.refused)
+        return 1
+      }
+      if (typeof closed === 'object') {
         out(`남김: ${closed.kept} (${target})`)
         return 1
       }
@@ -243,31 +290,9 @@ async function main(argv: string[]): Promise<number> {
     waited++
   }
 
-  const status = git(target, ['status', '--porcelain'])
-  if (status.code !== 0 || status.stdout.trim()) {
-    out(`거부: ${target} 에 커밋 안 된 변경 또는 상태 조회 실패`)
-    return 1
-  }
-  if (mergedHead && git(target, ['merge-base', '--is-ancestor', 'HEAD', mergedHead]).code !== 0) {
-    out(`거부: ${target} 의 HEAD 가 머지된 커밋 ${mergedHead} 와 같지도 그 조상도 아니다`)
-    return 1
-  }
-  const commits = git(target, ['rev-list', 'HEAD', '--not', '--remotes'])
-  if (commits.code !== 0) {
-    out('거부: 원격에 없는 커밋 조회 실패')
-    return 1
-  }
-  let lost = 0
-  for (const commit of commits.stdout.split('\n').filter((line) => line)) {
-    if (mergedHead && git(target, ['merge-base', '--is-ancestor', commit, mergedHead]).code === 0) continue
-    // rebase 하면 해시가 바뀌어 옛 커밋이 rev-list --not --remotes 에 남는다. 원격 어느 커밋 메시지에든 그 제목이
-    // 들어 있으면 같은 작업으로 보고 세지 않는다. -F 는 제목을 정규식이 아니라 글자 그대로 찾게 해 괄호나 점이 든 제목도 맞게 한다.
-    // squash 머지는 원격 커밋의 제목이 PR 제목이라 맞지 않는다. 그때는 위의 --merged-head 가 조상 관계로 센다.
-    const subject = git(target, ['log', '-1', '--format=%s', commit]).stdout.trim()
-    if (!git(target, ['log', '--remotes', '--format=%H', '-F', `--grep=${subject}`, '-1']).stdout.trim()) lost++
-  }
-  if (lost) {
-    out(`거부: ${target} 에 원격에 없는 커밋 ${lost} 개`)
+  const refused = refusal(target, mergedHead)
+  if (refused) {
+    out(refused)
     return 1
   }
   if (!(await owned())) return 1

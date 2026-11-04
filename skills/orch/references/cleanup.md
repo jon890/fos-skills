@@ -411,7 +411,7 @@ fi
 **작업이 끝난 워크트리는 `remove-worktree.ts` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
 활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
 거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
-**워크트리를 쥔 것이 자식 없는 Orca 기본 셸(「Terminal 1」 같은 에이전트 없는 로그인 셸)뿐이면 스스로 그 터미널을 닫고 지운다.** 에이전트 터미널, 살아 있는 dispatch 의 터미널, 자식이 있는 셸은 남긴다. 판정은 `scripts/lib/idle-shells.ts` 한 곳이 소유하고 `cleanup-sweep.ts` 도 같은 판정을 쓴다.
+**워크트리를 쥔 것이 자식 없는 Orca 기본 셸(「Terminal 1」 같은 에이전트 없는 로그인 셸)뿐이면 스스로 그 터미널을 닫고 지운다.** 끝난 worker 의 워크트리에서만 닫고, 에이전트 터미널, 살아 있는 dispatch 의 터미널, 자식이 있는 셸, worker 기록이 없는 워크트리의 셸(사람이 연 셸일 수 있다)은 남긴다. 커밋 안 된 변경처럼 어차피 거부할 워크트리면 셸을 닫기 전에 거부한다. 판정은 `scripts/lib/idle-shells.ts` 한 곳이 소유하고 `cleanup-sweep.ts` 도 같은 판정을 쓴다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
 거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. 위 판정이 「끝남」 인 워크트리(PR MERGED, PR 없이 끝남)의 남은 프로세스만 끈다. lsof 로 직접 찾아 끄지 않는다.
 
