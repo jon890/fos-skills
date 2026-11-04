@@ -133,6 +133,29 @@ function editStateCmd(c: Ctx, fields: Record<string, unknown>, target = ''): str
 }
 
 describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다', concurrency: 4 }, () => {
+  test('기능 PR 의 근거 누락·오래된 커밋·리뷰 대기를 막고 통과 근거만 머지한다', async (t) => {
+    const c = setup(t)
+    const head = 'a'.repeat(40)
+    c.env.FAKE_REMOTE_HEAD = head
+    mkdirSync(join(c.tmp, '.orch', 'specs'), { recursive: true })
+    writeFileSync(join(c.tmp, '.orch', 'specs', 'feature.md'), '브랜치: `feat`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+    const body = `<!-- fos-feature-evidence -->
+검증 커밋: ${head}
+인수 검증: 통과 | REQ1 API와 DB 상태 실행 기록
+문서 대조: 통과 | 설계 대조와 후보 없음의 근거
+독립 리뷰: 통과 | 독립 리뷰 결과 링크
+후속 검증: 없음 | 배포 대상 없는 도구 변경
+<!-- /fos-feature-evidence -->`
+    for (const invalid of ['', body.replace(head, 'b'.repeat(40)), body.replace('독립 리뷰: 통과', '독립 리뷰: 대기')]) {
+      const r = await c.runQueue({ '1': pr({ headRefOid: head, body: invalid }) }, ['1'])
+      assert.equal(r.code, 1, both(r))
+      assert.equal(c.state()['1'].state, 'OPEN')
+    }
+    const r = await c.runQueue({ '1': pr({ headRefOid: head, body }) }, ['1'])
+    assert.equal(r.code, 0, both(r))
+    assert.equal(c.state()['1'].state, 'MERGED')
+  })
+
   test('옛 completed 실패 캐시가 있어도 STOP 전에 새 실행의 성공을 읽는다', async (t) => {
     const c = setup(t)
     c.env.ORCH_GH_CACHE = '1'

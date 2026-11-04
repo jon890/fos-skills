@@ -415,3 +415,23 @@ export function deleteSpecs(opts: {
   }
   return { removed, kept }
 }
+
+// launch 검사와 완료 근거가 같은 할 일 첫 줄을 읽는다. 예시 블록은 제외한다.
+export function taskFirstLine(text: string): { text: string; line: number } | null {
+  let fence = ''
+  const lines = text.split('\n').map((line) => {
+    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+    if (mark) {
+      if (!fence) fence = mark
+      else if (mark[0] === fence[0] && mark.length >= fence.length) fence = ''
+      return ''
+    }
+    return fence ? '' : line
+  })
+  const at = lines.findIndex((line) => /^##\s+할 일(?:\s.*)?$/.test(line))
+  if (at < 0) return null
+  let index = at + 1
+  while (index < lines.length && !lines[index].trim()) index++
+  const raw = index < lines.length && !/^#{1,6}\s/.test(lines[index]) ? lines[index] : ''
+  return { text: raw.trim().replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/, '').replaceAll('**', '').trim(), line: raw ? index + 1 : at + 1 }
+}

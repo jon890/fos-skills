@@ -445,3 +445,5 @@ Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이�
 ```bash
 "$SKILL_DIR/bin/orch.ts" handoff-cleanup --repo "$REPO" --run "$RUN_ID" --apply
 ```
+
+기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. finish-pr 은 배포·후속 검증 뒤 정리하고, 근거 누락이나 대기는 FINISH-FAIL 로 남긴다. 후속 검증을 갱신한 뒤 같은 명령으로 재개한다. 기존 비기능 PR 의 정리 순서는 유지한다.

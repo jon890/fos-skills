@@ -336,6 +336,7 @@
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
+import { featureCompletionProblem } from './lib/feature-evidence.ts'
 import { homedir } from 'node:os'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
@@ -378,10 +379,10 @@ const MAX_VARIANTS = 4
 const SESSION_END_MARKS = ['--omc-session-end-worker', 'hooks/session-end/worker.js']
 const RUN_TIMEOUT_SEC = 120
 // title, isDraft, url 은 before-cleanup 의 pr 입력용이다. author 는 그 입력과 CLOSED PR 의 내 PR 판정에 쓴다
-const PR_FIELDS = 'number,state,headRefOid,headRefName,isCrossRepository,title,author,isDraft,url'
+const PR_FIELDS = 'number,state,headRefOid,headRefName,isCrossRepository,title,author,isDraft,url,body'
 const KEPT_BY_HOOK = '저장소 핸들러 거부'
 // --remote-branches 가 읽는 닫힌 PR 의 필드. --state closed 는 MERGED 와 CLOSED 를 함께 준다
-const CLOSED_FIELDS = 'number,state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt'
+const CLOSED_FIELDS = 'number,state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt,body'
 const OPEN_PR_LIMIT = 1000
 
 type Json = Record<string, unknown>
@@ -1254,7 +1255,7 @@ function releaseDispatches(mine: WorkerRow[], apply: boolean, log: Log, indent: 
   }
 }
 
-type ClosedPr = { number: number; state: string; headRefName: string; headRefOid: string; baseRefName: string; isCrossRepository: boolean }
+type ClosedPr = { body?: string; number: number; state: string; headRefName: string; headRefOid: string; baseRefName: string; isCrossRepository: boolean }
 
 // `gh pr list` 의 JSON 목록. 실패하거나 목록이 아니면 이유 문자열이다
 function ghList(repo: string, args: string[]): unknown[] | string {
@@ -1362,7 +1363,10 @@ function remoteVerdict(
   if (!pr) return { keep: '원격 끝점이 PR head 와 다르다' }
   if (open.bases.has(name)) return { keep: '열린 PR 의 base 다' }
   if (open.heads.has(name)) return { keep: '열린 PR 의 head 다' }
-  if (pr.state === 'MERGED') return { pr }
+  if (pr.state === 'MERGED') {
+    const pending = featureCompletionProblem(repo, String(pr.number), name, undefined, String(pr.body ?? ''))
+    return pending ? { keep: pending } : { pr }
+  }
   if (!hasCommit(repo, tip)) {
     git(repo, 'fetch', '-q', 'origin', pr.headRefName)
     if (!hasCommit(repo, tip)) return { keep: 'head 커밋을 받지 못했다' }
@@ -1459,6 +1463,10 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
       releaseDispatches(mine, args.apply, log, '')
     }
     return keep(m.why, `남김 ${path}: ${m.why}`)
+  }
+  if (m.pr?.state === 'MERGED') {
+    const pending = featureCompletionProblem(repo, String(m.pr.number), branch, specsDir ?? undefined, String(m.pr.body ?? ''))
+    if (pending) return keep(pending, `남김 ${path}: ${pending}`)
   }
   if (dirty(path)) return keep('커밋 안 된 변경', `건너뜀 ${path}: 커밋 안 된 변경`)
   const lost = unpushed(path, 'HEAD', m.mergedHead, m.mergedHead === null)
@@ -1607,6 +1615,10 @@ function sweepBranches(repo: string, args: Args, checkedOut: Set<string>, log: L
     if (checkedOut.has(branch) || protectedReason(repo, branch, args.base)) continue
     const m = merged(repo, branch, args.base)
     if (!m.ok) continue
+    if (m.pr?.state === 'MERGED') {
+      const pending = featureCompletionProblem(repo, String(m.pr.number), branch, args.specsDir ?? undefined, String(m.pr.body ?? ''))
+      if (pending) { log(`브랜치 남김 ${branch}: ${pending}`); continue }
+    }
     const lost = unpushed(repo, branch, m.mergedHead, m.mergedHead === null)
     if (lost) {
       log(`건너뜀 브랜치 ${branch}: 원격에 없는 커밋 ${lost > 0 ? lost : '확인 실패'}`)

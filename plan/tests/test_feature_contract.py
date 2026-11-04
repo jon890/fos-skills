@@ -48,6 +48,15 @@ class FeatureContractTest(unittest.TestCase):
                   'phases': [{'requirements': ['R1']}]}
         return result | updates
 
+    def test_domain_changes_must_be_confirmed_but_draft_may_wait(self):
+        table = '\n## 도메인 규칙 변경\n| 규칙 | 바꿀 내용 | 결정 상태 | 제안자 | 확정 근거 | 외부 검토 |\n| --- | --- | --- | --- | --- | --- |\n| docs/domain/jobs.md RULE1 | 분류 변경 | 확인 대기 | 기획 | 사용자 확인 예정 | 기획 확인 대기 |\n'
+        self.assertTrue(contract.check_spec(VALID + table)[1])
+        self.assertEqual([], contract.check_spec(VALID + table, draft=True)[1])
+        confirmed = table.replace('확인 대기 | 기획', '확정 | 기획').replace('사용자 확인 예정', '사용자 2026-11-04')
+        self.assertEqual([], contract.check_spec(VALID + confirmed)[1])
+        self.assertTrue(contract.check_spec(VALID + confirmed.replace('사용자 2026-11-04', '없음'))[1])
+        self.assertEqual([], contract.check_spec(VALID + '\n## 도메인 규칙 변경\n도메인 규칙 변경 없음: 기존 규칙 유지')[1])
+
     def test_partial_pr_does_not_need_all_feature_requirements(self):
         self.assertEqual([], contract.check_plan(self.plan(), self.root))
 

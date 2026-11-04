@@ -367,6 +367,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { featureEvidenceProblem, featureLoopRequested } from './lib/feature-evidence.ts'
 import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, REVIEW_WAIT, reservedFor, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from './lib/auto-merge.ts'
 import { context as questionContext } from './lib/completion.ts'
@@ -1847,6 +1848,7 @@ function judgeTarget(
   ctx: Context,
   pr: OwnPr,
   hold: string | null,
+  feature: boolean,
   ci: Record<string, CiEntry>,
   stale: Set<number>,
   state: AutoMergeState,
@@ -1878,16 +1880,23 @@ function judgeTarget(
   const review = ctx.autoMerge.review
   const watched = watchedDirs(ctx.autoMerge.dirs, ctx.autoMerge.watch)
   const noReview = 'queue.auto_review 없음'
-  if (!review && Object.keys(watched).length === 0) return { migrations: [], basis: noReview }
   // 모르는 조건이면 gh 를 부르지 않고 멈춘다
   if (review && review.unknown.length > 0) return { wait: unknownConditionsText(review.unknown) }
-  const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments,files'], { cwd: ctx.repo })
+  const got = ghJson<unknown>(['pr', 'view', String(pr.number), '--json', 'reviews,comments,files,body,headRefOid'], { cwd: ctx.repo })
   if (!got.ok) return { error: `#${pr.number} 의 리뷰와 파일을 읽지 못했다: ${oneLine(got.error)}` }
   const data = isObject(got.data) ? got.data : {}
+  feature = feature || typeof data.body === 'string' && data.body.includes('fos-feature-evidence')
+  if (feature && !review) return { wait: '기능 자동 머지는 queue.auto_review 의 독립 리뷰 정책이 필요하다' }
+  if (feature) {
+    if (typeof data.body !== 'string' || data.headRefOid !== pr.head) return { wait: '기능 완료 근거 또는 HEAD 조회 실패' }
+    const problem = featureEvidenceProblem(data.body, pr.head, feature)
+    if (problem) return { wait: problem }
+  }
   let basis = noReview
   if (review) {
     const notes = [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')]
-    const judged = judgeReview({ notes, ...prReviewScope(ctx, pr) }, review)
+    const rule = feature ? { ...review, require: [...new Set(['verdict-on-head' as const, ...review.require])] } : review
+    const judged = judgeReview({ notes, ...prReviewScope(ctx, pr) }, rule)
     if (!judged.ok) return judged.missing && judged.condition ? { wait: judged.wait, missing: judged.condition } : { wait: judged.wait }
     basis = judged.basis.join('; ')
   }
@@ -2027,12 +2036,12 @@ async function autoMergeStep(
   if (queueRunning(listed)) return
 
   // 3. 대상과 판정. 같은 브랜치는 앞 Run 의 지시서가 정한다
-  const targets = new Map<string, { run: string; hold: string | null }>()
+  const targets = new Map<string, { run: string; hold: string | null; feature: boolean }>()
   for (const { run, specsDir } of runs) {
     if (!run || !specsDir) continue
     for (const spec of specFiles(isAbsolute(specsDir) ? specsDir : join(ctx.repo, specsDir))) {
       const hold = specHold(spec.text)
-      for (const branch of branchesOf(spec.text)) if (!targets.has(branch)) targets.set(branch, { run, hold })
+      for (const branch of branchesOf(spec.text)) if (!targets.has(branch)) targets.set(branch, { run, hold, feature: featureLoopRequested(spec.text) })
     }
   }
   let board: { file: string; items: BoardItem[] } | null = null
@@ -2049,7 +2058,7 @@ async function autoMergeStep(
   for (const pr of mine) {
     const target = targets.get(pr.branch)
     if (!target) continue
-    const judged = judgeTarget(ctx, pr, target.hold, ci, stale, state, board)
+    const judged = judgeTarget(ctx, pr, target.hold, target.feature, ci, stale, state, board)
     if ('error' in judged) {
       errors.add(judged.error)
       continue

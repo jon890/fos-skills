@@ -7,7 +7,7 @@
 
 ![기능의 스펙·설계를 공유하며 PR 별 계획·구현·검증을 반복하는 개발 흐름](docs/images/development-loop.svg)
 
-파랑은 요구사항·설계, 보라는 실행 계획, 초록은 구현, 주황은 독립 검증, 청록은 문서 정리를 나타내요.
+파랑은 요구사항·설계·계획, 초록은 구현, 주황은 검증, 청록은 문서 정리, 보라는 orch 의 전이, 빨강은 미완료를 나타내요.
 `orch` 가 전체 전이를 조율해요. **인수 검증 계획은 구현 전에 plan 에서 만들고, verify 가 누락을 대조한 뒤 실제로 실행해요.**
 
 <details>
@@ -15,51 +15,44 @@
 
 ```mermaid
 flowchart TD
-    O["`**orch**
-전체 흐름 조율`"] --> S
+    A["orch · 요청과 변경 의미 분류"] --> B{"동작·도메인 의미·계약 변경?"}
+    B -->|있음| S["spec · 요구와 규칙 확정"]
+    S --> T["technical-design · 책임과 적용 위치"]
+    T --> P["plan · 작업과 인수 검증 계획"]
+    P --> I["implementation · 코드와 문서 반영"]
+    B -->|없음| L["작은 수정 · 범위와 확인 방법"]
+    L --> I
+    I --> V["verify · 실행 검증과 문서 검토"]
+    V -->|구현 결함| I
+    V -->|결정 누락| S
+    V -->|설계 결함| T
+    V --> D["docs-consolidate · 정합성과 공통 후보"]
+    D -->|필수 수정 누락| I
+    D --> PR["PR · 증거 보존과 CI"]
+    PR --> R["독립 코드 리뷰 · 사전 검토 또는 PR 자동 리뷰"]
+    R -->|수정 필요| I
+    R --> G["orch · 현재 변경의 완료 근거 확인"]
+    G --> M["머지와 필요한 배포"]
+    M --> Q{"필수 후속 검증이 남았나?"}
+    Q -->|있음| E["후속 검증 · 결과 보존"]
+    E -->|실패| H["미완료 · 복구 또는 수정 작업"]
+    E -->|통과| F["PR 마무리 · 정리"]
+    Q -->|없음| F
+    F -->|다음 PR| P
+    F -->|전체 요구사항 충족| DONE["기능 완료"]
 
-    subgraph FEATURE["기능 단위 · 스펙과 설계 공유"]
-        S["`**spec**
-요구사항 확정`"] --> T["`**technical-design**
-구조와 책임`"]
-    end
-
-    T --> P
-
-    subgraph PR["PR 단위 · 계획과 구현·검증 반복"]
-        P["`**plan**
-작업과 인수 검증 계획`"] --> I["`**implementation**
-구현과 개발 테스트`"]
-        I --> V["`**verify**
-독립 리뷰와 인수 검증`"]
-        V --> D["`**docs-consolidate**
-문서 대조와 공통 후보`"]
-        V -.->|구현 결함| I
-    end
-
-    V -.->|설계 결함| T
-    V -.->|요구사항 누락| S
-    D --> M["`**orch**
-PR 머지와 필요한 배포 검증`"]
-    M -->|다음 PR| P
-    M -->|전체 요구사항 검증 완료| F["기능 완료"]
-
-    classDef orchestrate fill:#e2e8f0,stroke:#cbd5e1,color:#172033,stroke-width:2px
-    classDef define fill:#dbeafe,stroke:#bfdbfe,color:#172554,stroke-width:2px
-    classDef plan fill:#ede9fe,stroke:#ddd6fe,color:#3b0764,stroke-width:2px
-    classDef implement fill:#dcfce7,stroke:#bbf7d0,color:#14532d,stroke-width:2px
-    classDef verify fill:#ffedd5,stroke:#fed7aa,color:#7c2d12,stroke-width:2px
-    classDef document fill:#ccfbf1,stroke:#99f6e4,color:#134e4a,stroke-width:2px
-    classDef complete fill:#166534,stroke:#14532d,color:#ffffff,stroke-width:2px
-    class O,M orchestrate
-    class S,T define
-    class P plan
+    classDef define fill:#dbeafe,stroke:#60a5fa,color:#172554
+    classDef implement fill:#dcfce7,stroke:#4ade80,color:#14532d
+    classDef verify fill:#ffedd5,stroke:#fb923c,color:#7c2d12
+    classDef docs fill:#ccfbf1,stroke:#2dd4bf,color:#134e4a
+    classDef control fill:#ede9fe,stroke:#a78bfa,color:#3b0764
+    classDef blocked fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+    class S,T,P define
     class I implement
-    class V verify
-    class D document
-    class F complete
-    style FEATURE fill:#f8fbff,stroke:#93c5fd,color:#172554
-    style PR fill:#faf8ff,stroke:#c4b5fd,color:#3b0764
+    class V,R,E verify
+    class D docs
+    class A,B,L,PR,G,M,Q,F,DONE control
+    class H blocked
 ```
 
 원본은 위 Mermaid 한곳에 두고, [렌더링 설정](docs/diagrams/development-loop.config.json)에서 손그림 스타일과 고정 seed 를 지정해요.
@@ -82,7 +75,7 @@ SVG 를 함께 저장해 GitHub 에서도 같은 손그림 모양으로 볼 수 
 스펙·설계는 기능 전체가 공유하고, 여러 PR 이면 plan → implementation → verify 를 반복해요.
 작은 변경의 기술 설계는 기존 구조를 유지하는 근거 몇 줄이면 돼요. 기능마다 전체 아키텍처를 다시 짜지 않아요.
 
-버그 수정, 정리, 설정 변경, 측정처럼 작은 일은 이 흐름을 쓰지 않고 바로 구현해요. 기준은 [orch 의 기능 루프](orch/references/feature-loop.md#루프를-쓸지-정한다)에 있어요.
+의미·계약을 유지하는 버그 수정, 정리, 허용 범위 안의 설정 값 조정은 짧은 경로를 써요. 작은 PR 이나 문서 변경이라도 도메인 판단 의미가 바뀌면 spec 부터 시작해요. 짧은 경로도 수정 확인과 필요한 독립 검토를 거쳐요. 기준은 [orch 의 기능 루프](orch/references/feature-loop.md#루프를-쓸지-정한다)에 있어요.
 spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 결정은 4개씩 선택지와 권장안으로 물어요. 결정이 닫히면 대화를 모르는 검토자가 빠진 결정을 찾아요. 절차는 [인터뷰 절차](spec/references/interview.md)에 있어요.
 
 기능 스펙 하나가 PR 여러 개로 나뉠 수 있어요. `plan 하나 = PR 하나` 는 유지하고, 마지막에 기능 전체의 인수 조건을 확인해요.
@@ -94,7 +87,7 @@ spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 
 새 기능은 `docs/features/<기능>/spec.md` 에 요구사항을, `design.md` 에 기술 설계를 둬요. 작은 변경은 스펙의 기술 설계 절로 충분해요.
 계획은 같은 기능의 `tasks/<계획>/index.json`, `phase-*.md` 에 나눠 두고 전역 번호나 기능 전체 진행표를 만들지 않아요.
 기능에 속하지 않는 정리·이전 작업과 기존 계획은 설정의 최상위 `tasks/` 도 사용할 수 있어요.
-공유 계약은 기존 원본 또는 `docs/contracts/` 가 소유하고 기능 문서는 참조해요.
+현재 도메인 규칙은 `docs/domain/`, 출력 계약은 `docs/contracts/` 또는 기존 원본이 소유하고 기능 문서는 참조해요. ADR 은 선택 이유를 남겨요. 규칙은 spec 에서 확정하고 구현 PR 에서 코드·문서·검증 사례에 함께 반영해요.
 전역 PRD·흐름·스키마를 기능마다 함께 고치거나 중앙 진행표에 기록하지 않아요.
 정확한 API·DB 스키마는 저장소의 원본을 참조하고, 문서에는 동작과 설계 이유를 남겨요.
 기존 문서는 일괄 이동하지 않고 관련 기능을 고칠 때 필요한 부분만 정리해요.
@@ -123,6 +116,15 @@ PRD 는 제품 범위, flow 는 공통 상호작용, 기능 spec/design 은 상�
 
 BMAD 의 요구사항 연결, Superpowers 의 스펙·실행 계획 분리와 설계 승인 관문, gstack 의 실제 동작 QA 원칙을 참고했어요.
 외부 프레임워크 전체를 설치하거나 중첩하지 않아요. [문서와 단계 인계](spec/references/feature-docs.md)에 상세 규칙이 있어요.
+
+### PR 전 검증과 머지·완료
+
+기능 루프는 PR 하나라도 짧은 기술 설계와 계획을 남겨요. 인수 검증 계획은 phase 에 포함할 수 있어요.
+PR 전에는 실행 인수 검증과 문서 대조를 마쳐요. 코드 리뷰를 PR 자동 리뷰에 맡겼으면 그 항목은 대기로 PR 을 열고, 실제 리뷰 결과를 받은 뒤 머지해요. 사전에 독립 리뷰를 받았으면 중복하지 않아요.
+
+[기능 PR 완료 근거 양식](orch/templates/feature-evidence.md)에 현재 HEAD, 인수 검증, 문서 대조, 독립 리뷰와 남은 후속 검증을 기록해요.
+머지 큐는 기록 누락·오래된 커밋·미완료 사전 검증을 막고, 코디네이터는 실제 증거를 읽어요. 지시서도 이 블록도 없는 기존 PR 은 호환 경로를 유지해요.
+필수 후속 검증이 남으면 머지는 가능하지만 기능 완료와 작업 공간 정리는 보류해요. 배포 성공 뒤 실제 검증 결과를 기록하고 마무리를 재개해요.
 
 ### 작업 취소 기능을 개발한다면
 

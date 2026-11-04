@@ -91,6 +91,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { taskFirstLine } from './lib/spec.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:path'
@@ -494,11 +495,9 @@ function selectionErrors(spec: Spec): string[] {
 
 // 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 plan 의 check_feature.py 를 따른다
 const LOOP_FORMAT = '`루프를 쓴다(스펙: <경로>)`, `루프를 쓴다(스펙: 새로 쓴다)`, `루프 없이: <이유>`'
-const LOOP_HEADING = /^##\s+할 일(?:\s.*)?$/
 const LOOP_SPEC = /^루프를 쓴다\s*\(스펙\s*:\s*(.*?)\s*\)/
 const LOOP_NONE = /^루프 없이\s*:(.*)$/
 const LOOP_NEW = '새로 쓴다'
-const LIST_MARK = /^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/
 const FENCE = /^\s*(```|~~~)/
 const CONFIRMED = /^확인:\s*(\d{4}-\d{2}-\d{2})\s*$/
 
@@ -555,14 +554,10 @@ function readLoopSpec(repoRoot: string, source: LoopSource, target: string): { t
 function loopErrors(spec: Spec, repoRoot: string, source: LoopSource): string[] {
   const text = spec.lines.join('\n')
   if (reviewPrOfSpec(text) !== null || interimOf(text) !== null) return []
-  const lines = outsideFences(spec.lines)
-  const at = lines.findIndex((line) => LOOP_HEADING.test(line))
-  if (at < 0) return [`${spec.name}:1: 루프: \`## 할 일\` 제목이 없다. 제목 아래 첫 줄에 ${LOOP_FORMAT} 가운데 하나를 적는다`]
-  let index = at + 1
-  while (index < lines.length && lines[index].trim() === '') index += 1
-  const raw = index < lines.length && !/^#{1,6}\s/.test(lines[index]) ? lines[index] : ''
-  const no = raw ? index + 1 : at + 1
-  const first = raw.trim().replace(LIST_MARK, '').replaceAll('**', '').trim()
+  const task = taskFirstLine(text)
+  if (!task) return [`${spec.name}:1: 루프: \`## 할 일\` 제목이 없다. 제목 아래 첫 줄에 ${LOOP_FORMAT} 가운데 하나를 적는다`]
+  const first = task.text
+  const no = task.line
   const where = `${spec.name}:${no}: 루프: `
   const none = LOOP_NONE.exec(first)
   if (none) return none[1].trim() ? [] : [`${where}\`루프 없이:\` 뒤에 이유가 없다. 루프 없이 가는 이유를 한 줄로 적는다`]

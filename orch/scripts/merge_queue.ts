@@ -158,6 +158,7 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from './lib/config.ts'
+import { featureBranch, featureEvidenceProblem } from './lib/feature-evidence.ts'
 import { repoArgProblem } from './lib/git.ts'
 import { eventTimeoutSec, fire, handlerFile } from './lib/events.ts'
 import type { FireContext, FireResult } from './lib/events.ts'
@@ -952,6 +953,11 @@ class Queue {
 
       const ph2 = await this.field(n, 'headRefOid', '.headRefOid')
       if (p.ph !== ph2) stop(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
+      const evidence = ghJson<{ body: string; headRefOid: string }>(['pr', 'view', n, '--json', 'body,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
+      if (!evidence.ok || evidence.data.headRefOid !== p.ph) stop(`${n} 기능 완료 근거 또는 HEAD 조회 실패`)
+      const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch))
+      if (problem) stop(`${n} ${problem}`)
+
       // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
       const latestFailed = await this.field(n, 'statusCheckRollup', this.q.failed, true)
       const latestPending = await this.field(n, 'statusCheckRollup', PENDING)
