@@ -129,6 +129,7 @@ class OrcaFailed extends Error {}
 
 // 짧은 출력(진입점의 orch worker send)의 줄 규칙. docs/features/orch-cli/design.md 「짧은 출력 (PR2)」 의 worker send 행이다
 const SHORT_RULES: Rule[] = [
+  [/^replied: (\S+) 에 답했다 \((\S+)\)\. 끝난 dispatch 라 깨우지 않았다/, (m) => `REPLIED ${m[1]} ${m[2] === 'None' ? '-' : m[2]} no-wake`],
   [/^replied: (\S+) 에 답했다 \((\S+)\)/, (m) => `REPLIED ${m[1]} ${m[2] === 'None' ? '-' : m[2]}`],
   [/^sent: .* dispatch:(\S+) 에 새 메시지로 보냈다 \((\S+)\)/, (m) => `SENT ${m[1]} ${m[2] === 'None' ? '-' : m[2]}`],
   [/^delivered: .*Orca 가 (\S+) 로 깨운다/, (m) => `DELIVERED ${m[1]}`],

@@ -154,6 +154,8 @@ class Stop extends Error {
 const SHORT_RULES: Rule[] = [
   [/^거부: ([^\n]*)/, (m) => `REFUSED ${m[1]}`],
   [/^((?:lint|dirty)-ack: .*)$/, (m) => m[1]],
+  // 다시 띄운 worker 도 멈추면 이 줄이 실패 이유다. 버리면 종료 코드 1 만 남는다
+  [/^(\S+) 가 \d+초 동안 (.*) 에서 넘어가지 않았다$/, (m) => `STALLED-START ${m[1]} ${m[2].replaceAll(' ', '-')}`],
 ]
 
 function out(line: string): void {

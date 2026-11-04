@@ -1770,6 +1770,14 @@ describe('짧은 출력', () => {
     assert.match(out[1], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
   })
 
+  test('다시 띄워도 멈추면 STALLED-START 줄로 이유를 남긴다', () => {
+    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^STALLED-START ctx_2 worktree_creating$/m)
+  })
+
   test('남은 터미널 거부는 REFUSED 한 줄이다', () => {
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', title: 'claude 앞 세션', worktreePath: worktree }] })
     env.ORCH_OUTPUT = 'short'

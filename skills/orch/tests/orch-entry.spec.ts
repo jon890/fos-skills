@@ -424,11 +424,11 @@ describe('짧은 출력 신호', () => {
     install(config, [{ scope: 'user', installPath: bundle('b') }])
   })
 
-  test('새 꼴과 옛 꼴 모두 ORCH_OUTPUT=short 를 넘기고 --full 이면 떼고 넘기지 않는다', () => {
+  test('새 꼴과 옛 꼴 모두 ORCH_OUTPUT=short 를 넘기고 --full 이면 떼고 full 을 넘긴다', () => {
     assert.equal(orch(['wait', 'user-active', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
     assert.equal(orch(['user-active', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
-    assert.equal(orch(['wait', 'user-active', '--full', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=')
-    assert.equal(orch(['user-active.ts', '--terminal', 't', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=')
+    assert.equal(orch(['wait', 'user-active', '--full', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=full')
+    assert.equal(orch(['user-active.ts', '--terminal', 't', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=full')
   })
 
   test('첫 -- 뒤의 --full 은 떼지 않는다', () => {
@@ -442,7 +442,7 @@ describe('짧은 출력 신호', () => {
 
   test('부모 환경의 ORCH_OUTPUT 은 --full 호출과 감싼 명령으로 새지 않는다', () => {
     const extra = { CLAUDE_CONFIG_DIR: config, ORCH_OUTPUT: 'short' }
-    assert.equal(orch(['wait', 'user-active', '--full'], extra).stdout.trim(), 'out=')
+    assert.equal(orch(['wait', 'user-active', '--full'], extra).stdout.trim(), 'out=full')
     assert.equal(orch(['slot', 'heavy', '--', 'x'], extra).stdout.trim(), '-- x out=')
   })
 

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -1419,5 +1419,30 @@ describe('짧은 출력', () => {
     const r = wait([{ ok: false, error: { code: 'waiter_exists', message: 'waiter exists' } }], ['--lost-interval-sec', '0'], {}, short)
     assert.equal(r.code, 4, r.stdout + r.stderr)
     assert.deepEqual(lines(r.stdout), ['WAITER-EXISTS run_x', 'LAST_DELIVERY -'])
+  })
+})
+
+describe('짧은 출력의 원문 정리와 --full', () => {
+  test('짧은 출력의 대기는 시작할 때 7일 지난 원문 파일만 지운다', () => {
+    const dir = join(tmp, '.orch', 'state', 'wait')
+    mkdirSync(dir, { recursive: true })
+    const old = join(dir, 'd_old.json')
+    const fresh = join(dir, 'd_new.json')
+    writeFileSync(old, '{}\n')
+    writeFileSync(fresh, '{}\n')
+    const past = (Date.now() - 8 * 24 * 3600 * 1000) / 1000
+    utimesSync(old, past, past)
+    wait([batch('d1', 'question')], ['--lost-interval-sec', '0'], {}, { ORCH_OUTPUT: 'short' })
+    assert.ok(!existsSync(old))
+    assert.ok(existsSync(fresh))
+  })
+
+  test('--full 로 건 대기(ORCH_OUTPUT=full)는 NEXT_WAIT 에 --full 을 잇고 지금 출력이다', () => {
+    const r = wait([batch('d1', 'question')], ['--lost-interval-sec', '0'], {}, { ORCH_OUTPUT: 'full' })
+    assert.equal(r.code, 0, r.stderr)
+    assert.match(r.stdout, /"deliveryId"/)
+    assert.match(nextWait(r.stderr), / --full( |$)/)
+    const plain = wait([batch('d2', 'question')], ['--lost-interval-sec', '0'])
+    assert.doesNotMatch(nextWait(plain.stderr), /--full/)
   })
 })

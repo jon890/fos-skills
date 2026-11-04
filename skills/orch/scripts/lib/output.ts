@@ -7,6 +7,7 @@
 //     3. fix 를 켠 명령은 두 칸 들여 쓴 고칠 줄을, 그 줄이 딸린 판정 줄(앞의 들여 쓰지 않은 마지막 줄)을 냈을 때 그대로 낸다.
 //        `  안내:` 줄은 고칠 줄이 아니라 버린다
 //     4. 나머지(설명과 진행 줄)는 버린다
+// 진입점이 `--full` 로 부르면 신호 값이 full 이다. short() 는 거짓이고, 대기가 다음 대기(NEXT_WAIT)에 --full 을 잇는 데만 쓴다(fullAsked).
 // 짧은 출력이 아니면 받은 글을 그대로 낸다. 스크립트를 경로로 직접 실행하면 신호가 없어 지금 출력 그대로다(스펙 DECISION16).
 import { orchOutput } from './bundle.ts'
 
@@ -24,6 +25,11 @@ function head(argv: string[]): string[] {
 export function short(argv: string[] = process.argv.slice(2)): boolean {
   if (orchOutput() !== 'short') return false
   return !head(argv).some((a) => a === '--help' || a === '-h' || a === '--json')
+}
+
+// 진입점에서 --full 로 불렸는가
+export function fullAsked(): boolean {
+  return orchOutput() === 'full'
 }
 
 export function isVerdict(line: string): boolean {

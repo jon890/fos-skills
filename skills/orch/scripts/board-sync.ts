@@ -301,9 +301,11 @@ function main(argv: string[]): number {
       const pendingFeature = merged && num ? featureCompletionProblem(repo, num, branch) : null
       if (pendingFeature) {
         out(`board-sync: ${id} 는 기능 검증이 남았다: ${pendingFeature}`)
+        brief(`BOARD ${id} pending-feature ${pendingFeature}`)
       } else if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
         // 마무리가 배포를 확인한 뒤 판정과 표시(PR!, PR~)로 이 항목을 고친다. 여기서 먼저 고치면 그 표시를 덮는다
         out(`board-sync: ${id} 는 PR ${num} 의 마무리(finish-pr)가 돌고 있어 그쪽에 맡긴다`)
+        brief(`BOARD ${id} finishing PR ${num}`)
       } else if (stages && (state === 'OPEN' || merged)) {
         const steps = boardSteps(boardBin, id, board)
         if (steps === null) {

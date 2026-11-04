@@ -176,7 +176,7 @@ import { isQuietStop } from './lib/stop-reports.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { isRegistered, loopStatus, readEvents, readLoop, recheckMs, writeCursor } from './lib/loop.ts'
 import { orcaBin, orcaJson, withFull } from './lib/orca.ts'
-import { short } from './lib/output.ts'
+import { fullAsked, short } from './lib/output.ts'
 import { shortLines, triage } from './triage-messages.ts'
 import { boardPath, makeParent, pathOf, warnLegacy } from './lib/paths.ts'
 import { run, signalCode } from './lib/proc.ts'
@@ -228,6 +228,7 @@ function err(line: string): void {
 //                   명시했거나 설정에서 온 Run 은 값이 같아도 적는다
 //     --lost-state  기본값을 쓰고 시작 폴더의 주 checkout 이 첫 --loop-repo 의 주 checkout 과 같으면 뺀다. 같은 저장소의 어느 폴더에서 다시 걸어도
 //                   같은 상태 파일이다. 다르거나, --loop-repo 가 없거나, 명시했으면 절대경로로 적는다
+//     --full        진입점이 --full 로 불렀으면(lib/output.ts 의 fullAsked) 붙인다. 다시 건 대기도 같은 출력 꼴이다
 //     나머지        parseArgs 의 기본값(DEFAULTS)과 다를 때만 적는다. --loop-repo 는 절대경로로 늘 적는다
 function nextWait(
   values: Record<string, string | boolean | string[] | undefined>,
@@ -243,6 +244,8 @@ function nextWait(
     if (String(values[name]) !== DEFAULTS[name]) args.push(`--${name}`, shQuote(String(values[name])))
   }
   if (values['kill-stale'] === true) args.push('--kill-stale')
+  // --full 로 건 대기는 다음 대기도 지금 출력이다
+  if (fullAsked()) args.push('--full')
   if (values['stop-reports'] === true) args.push('--stop-reports')
   for (const dispatch of values['ignore-lost'] as string[]) args.push('--ignore-lost', shQuote(dispatch))
   if (values['lost-state'] || loopRepos.length === 0 || loopRepos[0] !== start) args.push('--lost-state', shQuote(lostState))

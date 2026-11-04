@@ -760,6 +760,14 @@ describe('짧은 출력', () => {
     assert.deepEqual(r.stdout.trim().split('\n'), ['RESUMED ctx_1 term_w', 'LAUNCHED out=short'])
   })
 
+  test('끝난 dispatch 에 답만 달면 REPLIED 끝에 no-wake 를 붙인다', () => {
+    state({ dispatches: worker('succeeded'), terminals: [{ handle: 'term_w' }] })
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--body', '이렇게 한다', '--reply-to', 'm_esc')
+    assert.equal(r.code, 0, both(r))
+    assert.equal(r.stdout.trim(), 'REPLIED m_esc msg_new no-wake')
+  })
+
   test('끝나고 터미널도 없는 dispatch 는 ENDED 다', () => {
     state({ dispatches: worker('completed'), terminals: [] })
     env.ORCH_OUTPUT = 'short'

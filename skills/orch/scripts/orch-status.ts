@@ -15,6 +15,7 @@
 //     SKIP-WORKERS <Run> <이유>                       그 Run 의 worker 목록을 읽지 못했다
 //     BOARD doing=<수> decide=<수>                    보드 파일이 없으면 둘 다 0 이다
 //     SKIP-BOARD <이유>                               보드를 읽지 못했다
+//     SKIP-STAGES <이유>                              멈춘 단계를 판정하지 못했다
 //     STALLED …, STAGE …                              멈춘 worker 와 worker 없이 멈춘 보드 단계. 꼴은 stalled-workers 와 같다(lib/movement.ts 의 workerLine, stageLine)
 //
 // 짧은 출력과 --full 이 같다. 설명 줄이 없다.
@@ -110,8 +111,9 @@ function main(argv: string[]): number {
   for (const v of workers.verdicts) if (v.reason) out(workerLine(v))
   try {
     for (const s of collectStages(repo, workers.live, settings, now)) out(stageLine(s))
-  } catch {
-    // 보드를 읽지 못한 것은 위 SKIP-BOARD 가 알린다
+  } catch (e) {
+    failed = true
+    out(`SKIP-STAGES ${(e as Error).message.replace(/\s+/g, ' ')}`)
   }
   return failed ? 1 : 0
 }

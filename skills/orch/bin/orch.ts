@@ -23,7 +23,8 @@
 // 새 꼴은 ../scripts/lib/context.ts 가 빠진 문맥 인자(--repo, --run, --specs-dir, --loop-repo)를 채우고, 채운 출처를 stderr 한 줄과
 // 자식 환경 ORCH_CONTEXT(`run=run-current loop-repo=registered` 꼴)로 알린다. 스크립트는 lib/bundle.ts 의 orchContext() 로 읽는다.
 // 짧은 출력: 새 꼴과 옛 꼴 모두 자식 환경에 ORCH_OUTPUT=short 를 넣어 판정 줄만 내게 한다(../scripts/lib/output.ts).
-// 첫 `--` 앞의 `--full` 은 떼고 신호를 넣지 않아 지금 출력을 낸다. 감싼 명령(명령 표의 passthrough: slot heavy, slot mem)은 신호를 넣지 않고
+// 첫 `--` 앞의 `--full` 은 떼고 ORCH_OUTPUT=full 을 넣어 지금 출력을 낸다(대기는 이 값으로 NEXT_WAIT 에 --full 을 잇는다).
+// 진입점은 스크립트의 옵션 표를 몰라 옵션 값으로 준 `--full`(`--body --full`)도 뗀다. 그런 값은 `--body=--full` 꼴로 준다. 감싼 명령(명령 표의 passthrough: slot heavy, slot mem)은 신호를 넣지 않고
 // `--full` 도 떼지 않는다. 부모 환경의 ORCH_OUTPUT 은 먼저 지운다.
 //
 // 종료 코드:
@@ -217,7 +218,7 @@ async function main(argv: string[]): Promise<number> {
     if (filled.note) err(filled.note)
     const env = context.contextEnv(filled.sources)
     if (env) childEnv.ORCH_CONTEXT = env
-    if (!resolved.command.passthrough && !stripped.full) childEnv.ORCH_OUTPUT = 'short'
+    if (!resolved.command.passthrough) childEnv.ORCH_OUTPUT = stripped.full ? 'full' : 'short'
     return run(file, filled.args, childEnv)
   }
 
@@ -255,7 +256,7 @@ async function main(argv: string[]): Promise<number> {
   const wrapped = commands.COMMANDS.some((c) => c.passthrough && c.legacy?.name === bare)
   if (wrapped) return run(file, rest, childEnv)
   const stripped = stripFull(rest)
-  if (!stripped.full) childEnv.ORCH_OUTPUT = 'short'
+  childEnv.ORCH_OUTPUT = stripped.full ? 'full' : 'short'
   return run(file, stripped.args, childEnv)
 }
 
