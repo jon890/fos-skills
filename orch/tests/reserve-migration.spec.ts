@@ -497,6 +497,10 @@ describe('실패', () => {
     assert.equal(readFileSync(stateFile('migration-reservations.json'), 'utf8'), '{')
   })
 
+  test('--base 에 origin/ 을 붙여 줘도 브랜치 이름으로 받는다', () => {
+    assert.equal(ok(reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a', '--base', 'origin/main'])), 'RESERVED api V4 db/api/V4__add_index.sql\n')
+  })
+
   test('base 를 받지 못하면 LOOKUP-FAIL 과 1 이다', () => {
     const done = reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a', '--base', 'nope'])
     assert.equal(done.status, 1, done.stdout + done.stderr)

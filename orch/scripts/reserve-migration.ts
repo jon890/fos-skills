@@ -16,7 +16,7 @@
 //     --dir     --kind java 에서 그 모듈의 migrations.watch 폴더가 여럿일 때 고른다. 하나면 생략한다.
 //               목록에 없는 폴더, 여럿인데 생략, --kind sql 과 함께 주면 사용법 오류다
 //     --branch  예약할 브랜치. 기본은 작업 디렉터리의 `git branch --show-current` 다. worker 는 자기 worktree 에서 부른다. 비면 사용법 오류다
-//     --base    기준 브랜치. 기본은 origin/HEAD(lib/git.ts 의 defaultBase), 그것도 없으면 main 이다
+//     --base    기준 브랜치. 기본은 origin/HEAD(lib/git.ts 의 defaultBase), 그것도 없으면 main 이다. 앞의 `origin/` 은 뗀다(--base origin/develop 도 develop)
 //     --again   같은 브랜치, 모듈, 설명의 예약을 버리고 새 번호를 받는다
 //     --prune   번호를 받지 않고 정리만 한다. 형식이 틀린 예약도 파일에서 뺀다. --repo 밖의 옵션과 함께 주면 사용법 오류다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
@@ -307,7 +307,8 @@ async function main(argv: string[]): Promise<number> {
       }
       const branch = (values.branch as string | undefined) ?? git(process.cwd(), ['branch', '--show-current']).stdout.trim()
       if (!branch) throw new Usage('--branch 가 없고 작업 디렉터리의 현재 브랜치도 읽지 못했다')
-      const base = (values.base as string | undefined) || defaultBase(repo) || 'main'
+      // origin 에서 받으므로 `origin/develop` 처럼 원격 접두를 붙여 줘도 브랜치 이름만 쓴다. 붙인 채로 fetch 하면 실패한다
+      const base = ((values.base as string | undefined) || defaultBase(repo) || 'main').replace(/^origin\//, '')
       target = { module, name, kind, branch, base, again: values.again === true, dir, watched: watchedDirs(dirs, watch) }
     } catch (e) {
       if (!(e instanceof Usage)) throw e
