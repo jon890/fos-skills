@@ -472,23 +472,22 @@ function worktrees(repo: string): [string, string][] {
   return items.slice(1)
 }
 
-// `gh pr list --head` 를 JSON 으로 읽는다. 빈 목록은 ok 와 [] 다.
-// JSON 이 아니거나 목록이 아니거나 state 가 모르는 값이면 error 다.
-// 출력 문자열을 비교하지 않고 파싱한다. `null` 같은 문자열이 PR 로 읽히지 않게 한다.
+// 저장소마다 PR 조회를 묶는다(lib/pr-lookup.ts). 한 실행 안에서 같은 저장소는 같은 것을 쓴다
+const lookups = new Map<string, PrLookup>()
+
+function lookupOf(repo: string): PrLookup {
+  let found = lookups.get(repo)
+  if (!found) {
+    found = new PrLookup(repo, PR_FIELDS)
+    lookups.set(repo, found)
+  }
+  return found
+}
+
+// 그 이름을 head 로 둔 PR 목록. 빈 목록은 ok 와 [] 다.
+// JSON 이 아니거나 목록이 아니거나 state 가 모르는 값이면 ok 가 false 다. `null` 같은 문자열이 PR 로 읽히지 않게 한다.
 function prList(repo: string, head: string): { ok: boolean; prs: Pr[] } {
-  const done = gh(['pr', 'list', '--head', head, '--state', 'all', '--limit', '5', '--json', PR_FIELDS], { cwd: repo })
-  if (done.code !== 0) return { ok: false, prs: [] }
-  let prs: unknown
-  try {
-    prs = done.stdout.trim() ? JSON.parse(done.stdout) : []
-  } catch {
-    return { ok: false, prs: [] }
-  }
-  if (!Array.isArray(prs)) return { ok: false, prs: [] }
-  for (const pr of prs) {
-    if (!isObject(pr) || !PR_STATES.has(pr.state as string) || !Number.isInteger(pr.number)) return { ok: false, prs: [] }
-  }
-  return { ok: true, prs: prs as Pr[] }
+  return lookupOf(repo).list(head)
 }
 
 // 로컬 브랜치 `<user>/<접두>-<주제>` 에 대응할 법한 PR head 이름. `<접두>/<주제>` 가 대표적이다.
@@ -569,8 +568,17 @@ function belongsTo(repo: string, ref: string, base: string, pr: Pr): boolean {
 }
 
 // 그 브랜치의 PR. 조회 실패가 있었는지(failed), 이름만 같은 PR 이 있었는지(foreign)도 낸다.
+function branchTip(repo: string, branch: string): string {
+  const tip = git(repo, 'rev-parse', '--verify', '-q', `refs/heads/${branch}^{commit}`)
+  return tip.code === 0 ? tip.out : ''
+}
+
 function findPr(repo: string, branch: string, base: string): { pr: Pr | null; failed: boolean; foreign: boolean } {
+// 끝 커밋이 그대로인 브랜치의 MERGED PR 은 남긴 것을 쓰고 gh 를 부르지 않는다(lib/pr-lookup.ts 의 cachedMerged)
   let failed = false
+  const tip = branchTip(repo, branch)
+  const cached = tip ? cachedMerged(repo, branch, tip) : null
+  if (cached) return { pr: cached, failed: false, foreign: false }
   let foreign = false
   for (const [name] of prCandidates(repo, branch)) {
     const listed = prList(repo, name)
@@ -581,7 +589,10 @@ function findPr(repo: string, branch: string, base: string): { pr: Pr | null; fa
     for (const pr of listed.prs) {
       if (truthy(pr.isCrossRepository)) continue
       ensureCommit(repo, pr)
-      if (belongsTo(repo, `refs/heads/${branch}`, base, pr)) return { pr, failed, foreign }
+      if (belongsTo(repo, `refs/heads/${branch}`, base, pr)) {
+        if (pr.state === 'MERGED') rememberMerged(repo, branch, tip, pr)
+        return { pr, failed, foreign }
+      }
       foreign = true
     }
   }
@@ -589,6 +600,17 @@ function findPr(repo: string, branch: string, base: string): { pr: Pr | null; fa
 }
 
 // noPr: PR 이 없어서 정리하지 않은 것(조회 실패는 아니다). 「PR 없이 끝난 워크트리」 판정의 대상이다
+// 이번 실행에서 PR 을 찾을 브랜치들의 이름을 한 번에 읽어 둔다. 끝 커밋이 그대로인 MERGED 브랜치는 뺀다
+function prefetchPrs(repo: string, branches: Iterable<string>): void {
+  const names: string[] = []
+  for (const branch of branches) {
+    const tip = branchTip(repo, branch)
+    if (!tip || cachedMerged(repo, branch, tip)) continue
+    for (const [name] of prCandidates(repo, branch)) names.push(name)
+  }
+  lookupOf(repo).prefetch(names)
+}
+
 type Merged = { ok: boolean; mergedHead: string | null; why: string; pr: Pr | null; noPr?: boolean }
 
 function merged(repo: string, branch: string, base: string): Merged {
@@ -858,6 +880,9 @@ export async function stopHolders(
 function protectedReason(repo: string, branch: string, base: string): string | null {
   if (branch === base || branch.startsWith('release/')) return '기준 브랜치나 release 브랜치'
   const done = gh(['pr', 'list', '--state', 'open', '--base', branch, '--json', 'number', '--jq', 'length'], { cwd: repo })
+  // 열린 PR 의 base 목록을 저장소마다 한 번 읽는다. 읽지 못했거나 잘렸으면 이 이름만 따로 묻는다
+  const bases = lookupOf(repo).openBases()
+  if (bases) return bases.has(branch) ? '다른 열린 PR 의 base 이거나 조회 실패' : null
   if (done.code !== 0 || (done.stdout.trim() !== '' && done.stdout.trim() !== '0')) return '다른 열린 PR 의 base 이거나 조회 실패'
   return null
 }
@@ -1731,19 +1756,12 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
   }
 }
 
-// 머지 큐 로그 정리가 쓰는 실제 조회. PR 은 번호마다 `gh pr view` 로 읽고 읽지 못한 번호는 담지 않는다
+// 머지 큐 로그 정리가 쓰는 실제 조회. PR 상태는 번호를 묶어 한 번에 읽고(lib/pr-lookup.ts 의 states) 읽지 못한 번호는 담지 않는다
 function queueLogHost(repo: string) {
   return {
     now: () => Date.now(),
     openedBy: lsofOpenedBy,
-    prStates: (numbers: number[]) => {
-      const states = new Map<number, string>()
-      for (const n of numbers) {
-        const done = ghJson<{ state?: unknown }>(['pr', 'view', String(n), '--json', 'state'], { cwd: repo })
-        if (done.ok && isObject(done.data) && PR_STATES.has(done.data.state as string)) states.set(n, done.data.state as string)
-      }
-      return states
-    },
+    prStates: (numbers: number[]) => lookupOf(repo).states(numbers),
   }
 }
 
@@ -1783,7 +1801,15 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
     code = 2
   })
   const s: Sweep = { repo, args, workers, specsDir, log, report, owners }
-  for (const [path, branch] of worktrees(repo)) await sweepWorktree(s, path, branch, terminals)
+  const listed = worktrees(repo)
+  // PR 을 찾을 브랜치(살아 있는 worker 의 워크트리를 뺀 것과 워크트리 없는 로컬 브랜치)의 이름을 한 번에 읽어 둔다(lib/pr-lookup.ts)
+  const locals = lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)
+  const checkedOut = new Set([...listed.map(([, branch]) => branch), git(repo, 'branch', '--show-current').out])
+  prefetchPrs(repo, [
+    ...listed.filter(([path, branch]) => branch && !workersAt(workers, path).some(isLive)).map(([, branch]) => branch),
+    ...locals.filter((branch) => !checkedOut.has(branch) && branch !== base && !branch.startsWith('release/')),
+  ])
+  for (const [path, branch] of listed) await sweepWorktree(s, path, branch, terminals)
   const remaining = new Set(worktrees(repo).map(([, branch]) => branch))
   remaining.add(git(repo, 'branch', '--show-current').out)
   sweepBranches(repo, args, remaining, log)
@@ -1797,6 +1823,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
     // after-cleanup 의 실패를 2 에 섞으면 정리 자체가 실패한 경우와 구별할 수 없다
     await fire('after-cleanup', { removed: report.removed, skipped: report.skipped }, { repo, base, run: args.run, out: log })
   } catch (e) {
+  pruneMerged(repo, new Set(lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)))
     process.stderr.write(`cleanup-sweep: after-cleanup 을 내지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
   }
   return code
