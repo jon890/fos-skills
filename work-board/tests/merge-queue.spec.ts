@@ -1,4 +1,4 @@
-// bin/merge-queue.ts 가 orch 상태 파일과 루프 로그에서 머지 큐의 순서와 대기 이유를 내는지 본다. 상태 폴더는 임시 폴더다.
+// bin/merge-queue.ts 가 orch 설정, 상태 파일과 루프 로그에서 머지 큐의 순서, 머지 가능 여부, 대기 이유를 내는지 본다. 상태 폴더는 임시 폴더다.
 //
 // 실행: node --test work-board/tests/merge-queue.spec.ts
 
@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { clockAt, queueRows, readView, turnRows, waitRows } from '../bin/merge-queue.ts'
+import { autoMergeOn, clockAt, queueRows, readView, turnRows, waitRows } from '../bin/merge-queue.ts'
 
 const SCRIPT = fileURLToPath(new URL('../bin/merge-queue.ts', import.meta.url))
 
@@ -45,9 +45,12 @@ test('큐 밖 PR 은 자동 머지를 판정한 마지막 틱의 이유와 그 �
   })
 })
 
-test('마지막 판정 틱에 없는 PR 은 빠진다. 큐를 건 PR 은 이유가 없다', () => {
+test('마지막 판정 틱에 없는 PR 은 빠지고, 판정을 통과한 PR(AUTO-MERGE-BASIS)은 ready 다', () => {
   const log = `${LOOP_LOG}\ntick 5 2026-11-04T04:20:00.000Z\nAUTO-MERGE-WAIT #11 충돌\nAUTO-MERGE-BASIS #10 HEAD 1234 근거\nAUTO-MERGE #10 run=r log=l\n`
-  assert.deepEqual(waitRows(log), { 11: { place: 'out', rank: null, reason: '충돌', at: '2026-11-04T04:20:00.000Z' } })
+  assert.deepEqual(waitRows(log), {
+    10: { place: 'ready', rank: null, reason: null, at: '2026-11-04T04:20:00.000Z' },
+    11: { place: 'out', rank: null, reason: '충돌', at: '2026-11-04T04:20:00.000Z' },
+  })
 })
 
 test('차례 기록은 차례 PR 을 지금 차례로, 나머지를 적힌 순서대로 2 번째부터 낸다', () => {
@@ -98,7 +101,7 @@ test('살아 있는 차례 기록이 루프의 큐 기록보다 앞서고, 큐 �
   writeFileSync(join(state, 'queue-turn', '98.json'), JSON.stringify({ pid: 98, prs: [11], pr: 11, phase: '머지', since: 'S' }))
   writeFileSync(join(state, 'auto-merge.json'), JSON.stringify({ queue: { pid: 97, log: join(state, 'none.log'), prs: [12], at: 'A' } }))
   const alive = new Set([99, 97])
-  const view = readView(state, (pid) => alive.has(pid))
+  const view = readView(state, (pid) => alive.has(pid), true)
   assert.equal(view.running, true)
   assert.equal(view.error, null)
   assert.deepEqual(view.prs['10'], { place: 'turn', rank: 1, reason: '체크 대기', at: 'S' })
@@ -113,20 +116,55 @@ test('차례 기록이 없으면 루프가 건 큐를 쓰고, 그 큐의 명령�
   const view = readView(state, (_pid, marker) => {
     markers.push(marker)
     return marker === 'merge-with-finish.'
-  })
+  }, true)
   assert.deepEqual(markers, ['merge-with-finish.'])
   assert.deepEqual(view.prs, {
     12: { place: 'turn', rank: 1, reason: '차례 시작', at: 'A' },
     13: { place: 'queued', rank: 2, reason: '#12 차례 대기', at: 'A' },
   })
   // 큐 프로세스가 끝났으면 도는 큐가 없다
-  assert.deepEqual(readView(state, () => false), { running: false, prs: {}, error: null })
+  assert.deepEqual(readView(state, () => false, true), { enabled: true, running: false, prs: {}, error: null })
+})
+
+test('자동 머지가 꺼지고 차례 기록도 없으면 큐를 쓰지 않는 저장소라 줄이 하나도 없다', () => {
+  writeFileSync(join(state, 'loop.log'), LOOP_LOG)
+  writeFileSync(join(state, 'auto-merge.json'), JSON.stringify({ queue: { pid: 97, log: join(state, 'none.log'), prs: [12], at: 'A' } }))
+  assert.deepEqual(readView(state, () => true, false), { enabled: false, running: false, prs: {}, error: null })
+})
+
+test('자동 머지가 꺼져도 코디네이터가 건 큐의 차례 기록이 살아 있으면 큐 안 PR 만 보인다', () => {
+  writeFileSync(join(state, 'loop.log'), LOOP_LOG)
+  mkdirSync(join(state, 'queue-turn'))
+  writeFileSync(join(state, 'queue-turn', '99.json'), JSON.stringify({ pid: 99, prs: [20, 21], pr: 20, phase: '머지', since: 'S' }))
+  const view = readView(state, (pid, marker) => pid === 99 && marker === 'merge_queue.', false)
+  assert.equal(view.enabled, true)
+  assert.deepEqual(Object.keys(view.prs).sort(), ['20', '21'])
+})
+
+test('설정의 queue.auto_merge 가 true 일 때만 켜진 것으로 보고, 설정이 없거나 깨졌으면 꺼진 것으로 본다', () => {
+  const orch = join(tmp, 'orch')
+  mkdirSync(orch)
+  const env = process.env.ORCH_DIR
+  process.env.ORCH_DIR = orch
+  try {
+    assert.equal(autoMergeOn(tmp), false)
+    writeFileSync(join(orch, 'config.json'), JSON.stringify({ queue: { auto_merge: true } }))
+    assert.equal(autoMergeOn(tmp), true)
+    writeFileSync(join(orch, 'config.json'), JSON.stringify({ queue: { auto_merge: false } }))
+    assert.equal(autoMergeOn(tmp), false)
+    writeFileSync(join(orch, 'config.json'), '{')
+    assert.equal(autoMergeOn(tmp), false)
+  } finally {
+    if (env === undefined) delete process.env.ORCH_DIR
+    else process.env.ORCH_DIR = env
+  }
 })
 
 test('상태 폴더가 없으면 error 에 이유를 두고 0 으로 끝난다', () => {
   const got = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', tmp], { encoding: 'utf8', env: { ...process.env, ORCH_DIR: join(tmp, 'nowhere') } })
   assert.equal(got.status, 0, got.stderr)
   const out = JSON.parse(got.stdout)
+  assert.equal(out.enabled, false)
   assert.equal(out.running, false)
   assert.deepEqual(out.prs, {})
   assert.match(out.error, /orch 상태 폴더가 없다/)
