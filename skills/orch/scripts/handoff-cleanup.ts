@@ -60,6 +60,7 @@
 //
 // GH, GIT, ORCA 환경 변수로 실행 파일을 바꾼다.
 //
+// 짧은 출력(진입점의 orch cleanup handoff, lib/output.ts): WOULD-TRASH <파일>(dry-run), TRASHED <파일>, TRASH-DIR <폴더> 다. 지시서 줄도 같은 낱말이다.
 // 종료 코드: 0 돌았다(후보가 없어도 0), 2 사용법 오류이거나 orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
 import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
@@ -74,6 +75,8 @@ import { ghJson } from './lib/gh.ts'
 import { boardPath, orchDir, requireMigrated } from './lib/paths.ts'
 import { run } from './lib/proc.ts'
 import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths, runSpecPaths, specCandidates } from './lib/spec.ts'
+import { emit } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 
 const USAGE = '사용법: handoff-cleanup.ts [--repo DIR] [--config FILE] [--apply] [--gh-host HOST] [--run RUN] [--orch-dir DIR] [--previews DIR] [--board FILE] [--trash DIR] [--queue-days N] [--folder-days N] [--data-days N] [--data-ext LIST]'
 const QUEUE_DONE = /QUEUE-DONE|^STOP|FINISH-DONE|FINISH-FAIL/m
@@ -122,8 +125,17 @@ type Args = {
   apply: boolean
 }
 
+// 짧은 출력(진입점의 orch cleanup handoff)의 줄 규칙. 지시서 줄(lib/spec.ts 의 deleteSpecs)도 같은 낱말로 바꾼다
+const SHORT_RULES: Rule[] = [
+  [/^후보 (.*)$/, (m) => `WOULD-TRASH ${m[1]}`],
+  [/^옮김 (.*)$/, (m) => `TRASHED ${m[1]}`],
+  [/^휴지통 폴더: (.*)$/, (m) => `TRASH-DIR ${m[1]}`],
+  [/^(?:지시서를|PR 본문을) 휴지통으로 옮길 것 (\S+)/, (m) => `WOULD-TRASH ${m[1]}`],
+  [/^(?:지시서|PR 본문) 옮김 (\S+)/, (m) => `TRASHED ${m[1]}`],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line, SHORT_RULES)
 }
 
 function err(line: string): void {

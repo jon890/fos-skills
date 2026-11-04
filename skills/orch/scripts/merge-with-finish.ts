@@ -15,6 +15,8 @@
 //        머지 큐가 STOP 으로 멈춘 뒤 남은 PR 만 다시 걸어도 마무리가 겹치지 않는다
 //     2. `merge_queue.ts` 를 같은 인자로 돌리고 그 종료 코드로 끝난다.
 //        오래 걸리므로 Bash 도구의 run_in_background 로 건다. 셸의 `&` 나 nohup 은 쓰지 않는다
+//     짧은 출력(진입점의 orch queue merge, lib/output.ts)은 `마무리 시작` 줄 대신 `FINISH-STARTED <PR> <로그>`, 이미 돌면 `FINISH-RUNNING <PR> <pid 파일>` 이고,
+//        머지 큐에 신호를 넘겨 그 짧은 줄(MERGED, STOP, QUEUE-DONE 같은 것)이 잇는다. 마무리 로그는 지금 출력 그대로다
 //
 //     표시가 없는 PR 은 마무리가 배포를 확인한 뒤 업무의 마지막 PR 인지 스스로 판정한다(finish-pr.ts 머리 주석의 「마지막 PR 판정」).
 //     코디네이터가 PR 마다 마지막인지 정하지 않아도 된다. 판정을 덮어야 할 때만 표시를 붙인다.
@@ -85,6 +87,8 @@ import { makeParent, pathOf, requireMigrated } from './lib/paths.ts'
 import { NO_LIMIT_MS, runInherit, scriptCommand } from './lib/proc.ts'
 import { pidFileAlive } from './lib/process.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_NUMBERS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './lib/queue-options.ts'
+import { emit, shortEnv } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
@@ -107,8 +111,14 @@ type Wrapper = {
 // mark 는 `!`(마지막), `~`(중간), 없으면 null(마무리가 판정한다)이다
 type PrArg = { number: string; mark: '!' | '~' | null }
 
+// 짧은 출력(진입점의 orch queue merge)의 줄 규칙. 마무리 로그(finish-<PR>.out)는 신호 없이 띄워 지금 출력 그대로다
+const SHORT_RULES: Rule[] = [
+  [/^마무리 시작: PR (\d+) \(.*\) -> (.*)$/, (m) => `FINISH-STARTED ${m[1]} ${m[2]}`],
+  [/^마무리는 이미 돌고 있다: PR (\d+) \((.*)\)$/, (m) => `FINISH-RUNNING ${m[1]} ${m[2]}`],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line, SHORT_RULES)
 }
 
 function usageText(): string {
@@ -407,7 +417,8 @@ async function main(argv: string[]): Promise<number> {
   if (!wrapper.noFinish) {
     for (const pr of prs) if (!(await startFinish(wrapper, pr))) return 1
   }
-  const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || join(HERE, 'merge_queue.ts'), queue), { timeoutMs: NO_LIMIT_MS })
+  // 머지 큐의 출력은 이 명령의 출력에 그대로 이어진다. 짧은 출력이면 머지 큐도 짧은 출력이다(설계 DECISION9)
+  const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || join(HERE, 'merge_queue.ts'), queue), { timeoutMs: NO_LIMIT_MS, env: shortEnv() })
   return done.code
 }
 

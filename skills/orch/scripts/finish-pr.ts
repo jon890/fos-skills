@@ -75,6 +75,9 @@
 //     after-deploy 핸들러가 실패하거나 시간을 넘겼다,
 //     보드 명령이 실패했다
 //
+// 짧은 출력(진입점의 orch queue finish, lib/output.ts): 시각 붙은 진행 줄 대신 `LAST-PR <마지막|중간>` 과 끝 줄 `FINISH-DONE` 이나
+//     `FINISH-FAIL <이유>`(이유는 fail 에 준 것, 없으면 마지막 진행 줄)를 낸다. HOOK-FAIL 같은 판정 줄은 그대로다.
+//
 // 옵션 (저장소마다 다른 값이다. --config 의 JSON 키는 옵션 이름의 하이픈을 밑줄로 바꾼 것이다):
 //     --repo DIR            대상 저장소. 기본은 현재 디렉터리. git 작업 트리 안의 디렉터리가 아니면 사용법 오류다(lib/git.ts 의 repoArgProblem)
 //     --config FILE         옵션 값을 담은 JSON. 「finish」 절을 읽는다. 없으면 <orch 작업 폴더>/config.json 이 있을 때 쓴다. 명령줄이 우선한다.
@@ -139,6 +142,8 @@ import { run, runAsync, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from './lib/spec.ts'
 import { LIVE_DISPATCH, workerFor, workerRows } from './lib/workers.ts'
+import { emit, oneLine, short } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
@@ -180,9 +185,19 @@ type Deploy = 'none' | 'success' | 'failure' | 'timeout'
 
 class Usage extends Error {}
 
+// 짧은 출력(진입점의 orch queue finish)의 줄 규칙. 마지막 PR 판정만 남기고 시각 붙은 진행 줄은 버린다.
+// merge-with-finish 가 띄운 마무리(finish-<PR>.out)는 신호가 없어 지금 출력 그대로다
+const SHORT_RULES: Rule[] = [
+  [/^\d\d:\d\d 마지막 PR 판정: (마지막|중간)/, (m) => `LAST-PR ${m[1]}`],
+  [/^\d\d:\d\d /, () => null],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line, SHORT_RULES)
 }
+
+// 마지막으로 남긴 진행 줄(시각 뺀 것). 짧은 출력의 FINISH-FAIL 이 이유로 쓴다
+let lastLog = ''
 
 function now(): string {
   const d = new Date()
@@ -190,12 +205,15 @@ function now(): string {
 }
 
 function log(line: string): void {
+  lastLog = line
   out(`${now()} ${line}`)
 }
 
 function fail(reason?: string): number {
   if (reason) log(reason)
-  out('FINISH-FAIL')
+  // 짧은 출력은 진행 줄을 버리므로 이유를 판정 줄에 붙인다(설계 DECISION21)
+  const why = oneLine(reason || lastLog)
+  out(short() && why ? `FINISH-FAIL ${why}` : 'FINISH-FAIL')
   return 1
 }
 

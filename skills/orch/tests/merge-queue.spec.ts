@@ -1520,3 +1520,39 @@ describe('CI 조회', () => {
     assert.deepEqual(bad, [])
   })
 })
+
+describe('짧은 출력', () => {
+  test('시각 붙은 진행 줄 대신 MERGED 와 QUEUE-DONE 이고 정리에 신호를 넘긴다', async (t) => {
+    const c = setup(t)
+    const sweep = join(c.tmp, 'sweep-signal.py')
+    writeFileSync(sweep, `import os\nopen(${JSON.stringify(c.sweepLog)}, 'w').write('out=' + os.environ.get('ORCH_OUTPUT', ''))\n`)
+    c.env.CLEANUP_SWEEP = sweep
+    c.env.ORCH_OUTPUT = 'short'
+    const r = await c.runQueue({ '1': pr(), '2': pr({ state: 'MERGED' }) }, ['1', '2'])
+    assert.equal(r.code, 0, both(r))
+    const out = r.stdout.trim().split('\n')
+    assert.ok(out.every((l) => /^[A-Z]/.test(l)), r.stdout)
+    assert.ok(out.includes('MERGED 1') && out.includes('MERGED 2'), r.stdout)
+    assert.equal(out.at(-1), 'QUEUE-DONE')
+    assert.equal(readFileSync(c.sweepLog, 'utf8'), 'out=short')
+  })
+
+  test('머지하지 못하면 gh 의 마지막 줄을 STOP 의 이유로 붙인다', async (t) => {
+    const c = setup(t)
+    c.env.ORCH_OUTPUT = 'short'
+    const r = await c.runQueue({ '1': pr({ merge_delay: 99 }) }, ['1'])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^STOP 1 머지 실패: merged$/m)
+    assert.doesNotMatch(r.stdout, /^merged$/m)
+  })
+
+  test('신호가 없으면 지금처럼 시각 붙은 줄이고 정리에 신호가 없다', async (t) => {
+    const c = setup(t)
+    const sweep = join(c.tmp, 'sweep-signal.py')
+    writeFileSync(sweep, `import os\nopen(${JSON.stringify(c.sweepLog)}, 'w').write('out=' + os.environ.get('ORCH_OUTPUT', ''))\n`)
+    c.env.CLEANUP_SWEEP = sweep
+    const r = await c.runQueue({ '1': pr() }, ['1'])
+    assert.match(r.stdout, /^\d\d:\d\d 1 MERGED$/m)
+    assert.equal(readFileSync(c.sweepLog, 'utf8'), 'out=')
+  })
+})

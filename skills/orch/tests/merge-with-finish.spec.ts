@@ -790,3 +790,24 @@ describe('merge-with-finish 와 머지 큐 이벤트', { skip: !HAS_TOOLS && 'jq
     lacks(readFileSync(c.logFile, 'utf8'), 'pr merge 1')
   })
 })
+
+describe('짧은 출력', () => {
+  test('FINISH-STARTED 와 머지 큐의 줄만 내고, 머지 큐에만 신호를 넘기고 마무리에는 넘기지 않는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, 'queue.sh'), 'echo "queue out=${ORCH_OUTPUT:-}" >> "$FAKE_LOG"\necho QUEUE-DONE\n')
+    writeFileSync(join(c.tmp, 'finish.py'), FAKE_FINISH + 'open(os.environ["FAKE_LOG"], "a").write("finish-out=" + os.environ.get("ORCH_OUTPUT", "") + "\\n")\n')
+    const r = await c.wrap(['--repo', c.tmp, '12'], { ORCH_OUTPUT: 'short' })
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(r.stdout.trim().split('\n'), [`FINISH-STARTED 12 ${join(c.logs, 'finish-12.out')}`, 'QUEUE-DONE'])
+    assert.deepEqual(await c.lines('queue out='), ['queue out=short'])
+    assert.deepEqual(await c.lines('finish-out='), ['finish-out='])
+  })
+
+  test('신호가 없으면 마무리 시작 줄이고 머지 큐에도 신호가 없다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, 'queue.sh'), 'echo "queue out=${ORCH_OUTPUT:-}" >> "$FAKE_LOG"\n')
+    const r = await c.wrap(['--repo', c.tmp, '12'])
+    assert.match(r.stdout, /^마무리 시작: PR 12 /m)
+    assert.deepEqual(await c.lines('queue out='), ['queue out='])
+  })
+})

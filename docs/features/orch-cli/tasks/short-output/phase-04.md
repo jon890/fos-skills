@@ -64,6 +64,10 @@
   - 나머지(머리 줄 `cleanup-sweep …`, `정리 <경로> (…)` 는 경로만 기억, 진행 줄)는 버린다.
 - `정리 <경로>` 뒤 `removed`/`남김`/`건너뜀` 이 오지 않은 워크트리는 셈하지 않는다.
 
+### 7-1. `skills/orch/scripts/lib/docker.ts`
+
+Docker 정리 줄(`Docker <네트워크|컨테이너|이미지> 남김|삭제|지울 것 …`, `Docker 정리 건너뜀: …`)을 판정 줄로 바꾸는 `dockerShortLine(line)` 을 export 한다. `cleanup-sweep` 과 `remove-worktree` 가 같이 쓴다. 남김 줄의 이유에 든 「삭제 실패」 는 남김(`KEPT docker:<이름>`)으로 본다.
+
 ### 8. `skills/orch/scripts/remove-worktree.ts`
 
 `out` 이 `emit(line, RULES)` 를 부른다. 규칙: `^removed (\S+)` → `REMOVED $1`, `^deleted branch (\S+)` → `REMOVED branch:$1`, `^(?:브랜치 )?남김:? (.*) \((\S+)\)$` → `KEPT $2 $1`, `^브랜치 남김 (\S+): (.*)` → `KEPT branch:$1 $2`, `^없음: (\S+)` → `ABSENT $1`, `^git worktree 가 아니다: (\S+)` → `NOT-WORKTREE $1`, `^거부: (.*)` → `REFUSED $1`, `^유휴 셸 터미널 닫음 (\S+)` → `CLOSED $1`, `^유휴 셸 터미널 닫기 실패 (\S+)` → `FAILED terminal:$1`, `^Docker 정리 건너뜀: (.*)` → `KEPT docker $1`. 여러 줄 거부(`closed.refused`, `refused`)는 첫 줄을 `REFUSED` 로.
@@ -104,6 +108,7 @@ node --test skills/orch/tests/merge-queue.spec.ts skills/orch/tests/merge-with-f
 | `skills/orch/scripts/cleanup-sweep.ts` | 수정 |
 | `skills/orch/scripts/remove-worktree.ts` | 수정 |
 | `skills/orch/scripts/handoff-cleanup.ts` | 수정 |
+| `skills/orch/scripts/lib/docker.ts` | 수정 |
 | `skills/orch/tests/merge-queue.spec.ts` | 수정 |
 | `skills/orch/tests/merge-with-finish.spec.ts` | 수정 |
 | `skills/orch/tests/finish-pr.spec.ts` | 수정 |

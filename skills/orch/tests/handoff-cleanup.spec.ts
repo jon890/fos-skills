@@ -154,6 +154,17 @@ describe('handoff-cleanup', () => {
     assert.equal(existsSync(join(trash, '.orch/queue/q.out')), true)
   })
 
+  test('짧은 출력은 WOULD-TRASH, TRASHED, TRASH-DIR 판정 줄이다', () => {
+    make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
+    const finished = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
+    const dry = new Set(ok([], { ORCH_OUTPUT: 'short' }).stdout.split('\n').filter(Boolean))
+    assert.deepEqual(dry, new Set(['WOULD-TRASH .orch/queue/q.out', `WOULD-TRASH ${finished}`]))
+    const applied = ok(['--apply'], { ORCH_OUTPUT: 'short' }).stdout.split('\n').filter(Boolean)
+    assert.ok(applied.includes('TRASHED .orch/queue/q.out'), applied.join('\n'))
+    assert.ok(applied.includes(`TRASHED ${finished}`), applied.join('\n'))
+    assert.equal(applied.at(-1), `TRASH-DIR ${trash}`)
+  })
+
   test('.omc 가 없는 저장소도 돌고 .omc 를 만들지 않는다', () => {
     make('.orch/queue/q.out', 'QUEUE-DONE\n', 2)
     const finished = make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
