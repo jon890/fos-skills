@@ -190,8 +190,8 @@ describe('지시서 검사', () => {
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고, 공부 후보 보고,
-    // 검토 하위 에이전트 허락, 보드 고치기 금지, 마이그레이션 번호 예약 규칙에 표지를 단다
-    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates', 'review-subagents', 'no-board-edit', 'migration']) {
+    // 검토 하위 에이전트 허락, 보드 고치기 금지, 마이그레이션 번호 예약, ADR 번호 예약 규칙에 표지를 단다
+    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates', 'review-subagents', 'no-board-edit', 'migration', 'adr']) {
       assert.match(template, new RegExp(`<!-- orch-rule: ${rule} -->`))
     }
     const a = spec('spec-a', '담당: `src/a/**`')
@@ -202,9 +202,9 @@ describe('지시서 검사', () => {
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 .* 가 없다/m)
-    // migration 은 orch 설정에 migrations 가 있는 저장소에서만 요구한다
+    // migration 은 orch 설정에 migrations 가, adr 은 adr 이 있는 저장소에서만 요구한다
     for (const [, rule] of template.matchAll(/<!-- orch-rule: ([\w-]+) -->/g)) {
-      assert.equal(r.stdout.includes(`\`${rule}\``), rule !== 'migration', `${rule}\n${r.stdout}`)
+      assert.equal(r.stdout.includes(`\`${rule}\``), rule !== 'migration' && rule !== 'adr', `${rule}\n${r.stdout}`)
     }
     assert.match(r.stderr, /공통 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)
@@ -269,6 +269,21 @@ describe('지시서 검사', () => {
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /공통: 틀의 규칙 표지 `migration` 가 없다/)
+  })
+
+  test('ADR 표지는 orch 설정에 adr.dirs 가 있는 저장소에서만 빠진 것을 알린다', () => {
+    const template = readFileSync(TEMPLATE, 'utf8')
+    const without = template.replace(/^- 번호 붙은 ADR[\s\S]*?(?=^- )/m, '')
+    assert.notEqual(without, template)
+    assert.doesNotMatch(without, /orch-rule: adr/)
+    const a = spec('spec-a', '담당: `src/a/**`')
+    write(join(specs, 'spec-common.md'), without)
+    write(join(repo, '.orch', 'config.json'), JSON.stringify({ adr: { dirs: {} } }))
+    assert.deepEqual(lint([a]), { code: 0, stdout: '' })
+    write(join(repo, '.orch', 'config.json'), JSON.stringify({ adr: { dirs: { root: 'docs/adr' } } }))
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /공통: 틀의 규칙 표지 `adr` 가 없다/)
   })
 
   test('임시 폴더 아래 경로를 가리키면 임시 경고를 내고 종료 코드는 0 이다', () => {

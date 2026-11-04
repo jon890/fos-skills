@@ -38,6 +38,15 @@
   ```
 
   `MODULE` 은 orch 설정 `migrations.dirs` 의 모듈 이름이고 `NAME` 은 영문 설명이다. Java 마이그레이션은 `--kind java` 를 더하고 `NAME` 을 PascalCase 이름으로 준다. 줄 끝이 `renewed` 면 이미 만든 파일의 이름을 그 경로로 바꾼다. `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)나 1(조회 실패)이면 한 번 다시 부르고, 그래도 아니면 그 줄을 붙여 ask 로 묻는다. 2 면 바로 ask 로 묻는다. out-of-order 를 켜지 않는다. 코디네이터가 이 PR 이 막는 쪽이라고 알리면 `--again` 을 더해 새 번호를 받고 파일 이름을 바꾼다.
+- 번호 붙은 ADR 파일 이름은 직접 정하지 않는다. 만들기 전에 자기 워크트리에서 아래 블록으로 번호를 예약하고 `RESERVED` 줄의 경로로 만든다. 병렬 PR 이 같은 폴더에 같은 ADR 번호를 쓰지 않게 하려는 것이다. <!-- orch-rule: adr -->
+
+  ```bash
+  MODULE=""
+  NAME=""
+  ORCH_SCRIPTS=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";const e=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"].sort((a,b)=>(a.scope!=="user")-(b.scope!=="user"))[0];console.log(e.installPath+"/orch/scripts")') && node --disable-warning=ExperimentalWarning "$ORCH_SCRIPTS/reserve-migration.ts" --repo "$(git rev-parse --show-toplevel)" --kind adr --module "$MODULE" --name "$NAME"
+  ```
+
+  `MODULE` 은 orch 설정 `adr.dirs` 의 이름이고 `NAME` 은 영문 설명이다. 파일 이름의 설명 조각은 `NAME` 을 하이픈으로 이어 만든다. 줄 끝이 `renewed` 면 이미 만든 파일의 이름과 그 번호를 인용한 곳(INDEX, 본문 링크)을 그 경로로 바꾼다. `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)나 1(조회 실패)이면 한 번 다시 부르고, 그래도 아니면 그 줄을 붙여 ask 로 묻는다. 2 면 바로 ask 로 묻는다.
 - {{REMOTE_ACCESS_RULE}}
 - 다른 worker 가 동시에 다른 일을 한다. 지시서 범위 밖의 파일은 고치지 않는다.
 - 프로세스는 자기가 띄운 PID 로만 끈다. `pkill`, `killall` 은 다른 worker 의 호스트까지 꺼 쓰지 않는다(워크트리 권한 설정이 막는다). 스폰 프롬프트에 이 줄을 넣는다.

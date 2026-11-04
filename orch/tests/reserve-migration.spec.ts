@@ -508,3 +508,87 @@ describe('실패', () => {
     assert.equal(existsSync(stateFile('migration-reservations.json')), false)
   })
 })
+
+// main 에 docs/adr/017-a.md, docs/adr/INDEX.md, modules/api/docs/adr/003-b.md 를 더하고 adr.dirs 를 둔다.
+// 열린 PR 은 feat-b 가 docs/adr/018-x.md 와 db/api/V3__b.sql 을 더한 것이다
+describe('ADR 예약', () => {
+  function adrReservations(): Json[] {
+    return (JSON.parse(readFileSync(stateFile('adr-reservations.json'), 'utf8')) as { reservations: Json[] }).reservations
+  }
+
+  function adrEntry(branch: string, label: string, at: string): Json {
+    return { module: 'root', version: [Number(label.slice(4))], label, branch, name: 'old', path: `docs/adr/${label.slice(4)}-old.md`, at }
+  }
+
+  beforeEach(() => {
+    write(join(repo, 'docs', 'adr', '017-a.md'), '# a\n')
+    write(join(repo, 'docs', 'adr', 'INDEX.md'), '# 목록\n')
+    write(join(repo, 'modules', 'api', 'docs', 'adr', '003-b.md'), '# b\n')
+    git(['add', '.'])
+    git(['commit', '-q', '-m', 'adr'])
+    git(['push', '-q', 'origin', 'main'])
+    write(join(repo, '.orch', 'config.json'), JSON.stringify({
+      migrations: { dirs: { api: 'db/api' } },
+      adr: { dirs: { root: 'docs/adr', api: 'modules/api/docs/adr/' } },
+    }))
+    github({ open: [openPr(7, 'feat-b', 'docs/adr/018-x.md', 'db/api/V3__b.sql')] })
+  })
+
+  test('그 폴더의 base 최고와 열린 PR 을 넘는 번호를 ADR 예약 파일에만 둔다', () => {
+    const args = ['--kind', 'adr', '--module', 'root', '--name', 'Reserve ADR number', '--branch', 'feat-a']
+    assert.equal(ok(reserve(args)), 'RESERVED root ADR-019 docs/adr/019-reserve-adr-number.md\n')
+    assert.equal(ok(reserve(args)), 'RESERVED root ADR-019 docs/adr/019-reserve-adr-number.md reused\n')
+    assert.equal(ok(reserve(['--kind', 'adr', '--module', 'root', '--name', 'other', '--branch', 'feat-c'])), 'RESERVED root ADR-020 docs/adr/020-other.md\n')
+    assert.deepEqual(adrReservations().map((r) => [r.branch, r.label, r.name]), [['feat-a', 'ADR-019', 'reserve-adr-number'], ['feat-c', 'ADR-020', 'other']])
+    assert.equal(existsSync(stateFile('migration-reservations.json')), false, 'ADR 예약이 마이그레이션 예약 파일에 들어갔다')
+  })
+
+  test('폴더마다 번호가 따로다', () => {
+    ok(reserve(['--kind', 'adr', '--module', 'root', '--name', 'a', '--branch', 'feat-a']))
+    assert.equal(ok(reserve(['--kind', 'adr', '--module', 'api', '--name', 'b', '--branch', 'feat-a'])), 'RESERVED api ADR-004 modules/api/docs/adr/004-b.md\n')
+  })
+
+  test('마이그레이션 예약과 ADR 예약은 서로의 번호를 세지 않는다', () => {
+    seed([entry('feat-c', 'V20', '2026-10-27T00:00:00Z')])
+    assert.equal(ok(reserve(['--kind', 'adr', '--module', 'api', '--name', 'b', '--branch', 'feat-a'])), 'RESERVED api ADR-004 modules/api/docs/adr/004-b.md\n')
+    assert.equal(ok(reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-a'])), 'RESERVED api V21 db/api/V21__add_index.sql\n')
+    assert.deepEqual(reservations().map((r) => r.label), ['V20', 'V21'])
+    assert.deepEqual(adrReservations().map((r) => r.label), ['ADR-004'])
+  })
+
+  test('ADR 예약은 마이그레이션 예약 파일이 깨져도 받는다', () => {
+    write(stateFile('migration-reservations.json'), '{')
+    assert.equal(ok(reserve(['--kind', 'adr', '--module', 'root', '--name', 'a', '--branch', 'feat-a'])), 'RESERVED root ADR-019 docs/adr/019-a.md\n')
+  })
+
+  test('ADR 예약도 브랜치가 사라지면 다음 ADR 예약이 지운다', () => {
+    write(stateFile('adr-reservations.json'), JSON.stringify({ reservations: [adrEntry('feat-old', 'ADR-019', OLD)] }))
+    assert.equal(
+      ok(reserve(['--kind', 'adr', '--module', 'root', '--name', 'a', '--branch', 'feat-a'])),
+      'PRUNED root ADR-019 feat-old\nRESERVED root ADR-019 docs/adr/019-a.md\n',
+    )
+  })
+
+  test('--prune 은 두 예약 파일을 모두 정리하고 수를 합친다', () => {
+    seed([entry('feat-old', 'V4', OLD), entry('feat-a', 'V5', OLD)])
+    write(stateFile('adr-reservations.json'), JSON.stringify({ reservations: [adrEntry('feat-old', 'ADR-019', OLD), { module: 'root' }] }))
+    const done = reserve(['--prune'])
+    assert.equal(ok(done), 'PRUNED api V4 feat-old\nPRUNED root ADR-019 feat-old\nPRUNED-INVALID 1\nPRUNE-DONE 2\n')
+    assert.match(done.stderr, /경고: 형식이 틀린 ADR 예약 1 개를 건너뛴다/)
+    assert.deepEqual(reservations().map((r) => r.branch), ['feat-a'])
+    assert.deepEqual(adrReservations(), [])
+  })
+
+  test('adr.dirs 에 없는 모듈, --dir, adr 절이 없는 설정은 사용법 오류 2 다', () => {
+    const missing = reserve(['--kind', 'adr', '--module', 'web', '--name', 'a', '--branch', 'feat-a'])
+    assert.equal(missing.status, 2, missing.stdout + missing.stderr)
+    assert.match(missing.stderr, /adr\.dirs 의 폴더에 만든다. 모듈 web 이 없다. 있는 모듈: api, root/)
+    const dir = reserve(['--kind', 'adr', '--module', 'root', '--name', 'a', '--branch', 'feat-a', '--dir', 'docs/adr'])
+    assert.equal(dir.status, 2, dir.stdout + dir.stderr)
+    write(join(repo, '.orch', 'config.json'), JSON.stringify({ migrations: { dirs: { api: 'db/api' } } }))
+    const none = reserve(['--kind', 'adr', '--module', 'root', '--name', 'a', '--branch', 'feat-a'])
+    assert.equal(none.status, 2, none.stdout + none.stderr)
+    assert.match(none.stderr, /adr\.dirs 가 비었다/)
+    assert.equal(existsSync(stateFile('adr-reservations.json')), false)
+  })
+})

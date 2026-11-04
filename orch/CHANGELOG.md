@@ -1,5 +1,11 @@
 # CHANGELOG: orch
 
+## 7.7.0 (2026-11-04)
+
+- `reserve-migration` 에 `--kind adr` 를 더했다. orch 설정 `adr.dirs` 의 폴더마다 base, 열린 PR, 남은 예약을 넘는 ADR 번호를 예약하고 `<번호>-<설명>.md` 경로를 낸다
+- ADR 예약은 `state/adr-reservations.json` 에 따로 두고 자동 머지는 읽지 않는다. `--prune` 은 마이그레이션과 ADR 예약을 함께 정리한다
+- 공통 지시서 틀에 ADR 번호 예약 줄(`adr`)을 더했다. `spec-lint` 는 `adr.dirs` 가 있는 저장소에서만 그 표지를 요구한다
+
 ## 7.6.0 (2026-11-04)
 
 - 사용자와 대화 중이면(마지막 입력 10분 안) 코디네이터는 깨어난 대기를 다시 걸지 않는다. `user-active` 가 판정하고, 상주 루프는 그동안 `NO-WAIT` 와 `decision-pending` 전달을 미룬다
