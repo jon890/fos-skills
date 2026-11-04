@@ -29,6 +29,8 @@ console.log(JSON.stringify({ ok: true, result }))
   process.env.ORCA = orca
   process.env.ORCH_REAL_ORCA = orca
   process.env.RECEIVED = join(repo, 'received.jsonl')
+  // 사용자 입력 기록(lib/user-active.ts)을 이 머신의 폴더에서 읽지 않는다
+  process.env.ORCH_MACHINE_DIR = join(repo, 'machine')
 })
 afterEach(() => {
   for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
@@ -81,15 +83,62 @@ test('재전송 질문과 미완료 보드 줄은 한 번 알리고 새 결정�
   assert.equal(JSON.parse(events[0]).kind, 'DECISION-PENDING')
 })
 
-test('핸들러 실패는 다음 틱에 다시 보내고 알림 파일에는 같은 결정을 쌓지 않는다', async () => {
+test('핸들러 실패 뒤에는 기다렸다 다시 보내고 알림 파일에는 같은 결정을 쌓지 않는다', async () => {
+  process.env.ORCH_DECISION_RETRY_SEC = '600'
+  const t = Date.parse('2026-11-04T09:00:00Z')
   hook(1)
-  await assert.rejects(notifyDecisions(repo, 'r', [question()], false), /전달 실패/)
+  await assert.rejects(notifyDecisions(repo, 'r', [question()], false, t), /전달 실패: 종료 코드 1/)
   hook()
-  await notifyDecisions(repo, 'r', [question()], false)
-  await notifyDecisions(repo, 'r', [question()], false)
+  // 기다리는 동안에는 핸들러를 부르지 않고 같은 이유로 던진다. 루프가 같은 WATCH-ERROR 를 다시 쓰지 않는다
+  await assert.rejects(notifyDecisions(repo, 'r', [question()], false, t + 300_000), /전달 실패: 종료 코드 1/)
+  assert.equal(received().length, 1)
+  await notifyDecisions(repo, 'r', [question()], false, t + 600_000)
+  await notifyDecisions(repo, 'r', [question()], false, t + 700_000)
   assert.equal(received().length, 2)
   const events = readFileSync(join(repo, '.orch', 'state', 'loop-events', 'r.jsonl'), 'utf8').trim().split('\n')
   assert.equal(events.length, 1)
+})
+
+test('거듭 실패하면 기다리는 시간이 두 배씩 늘고 새 결정이 생기면 바로 보낸다', async () => {
+  process.env.ORCH_DECISION_RETRY_SEC = '600'
+  const t = Date.parse('2026-11-04T09:00:00Z')
+  hook(1)
+  await assert.rejects(notifyDecisions(repo, 'r', [question()], false, t))
+  await assert.rejects(notifyDecisions(repo, 'r', [question()], false, t + 600_000))
+  assert.equal(received().length, 2)
+  // 두 번째 실패 뒤에는 1200초를 기다린다
+  await assert.rejects(notifyDecisions(repo, 'r', [question()], false, t + 1_700_000))
+  assert.equal(received().length, 2)
+  await assert.rejects(notifyDecisions(repo, 'r', [question()], false, t + 1_800_000))
+  assert.equal(received().length, 3)
+  // 묶음이 바뀌면 기다리지 않는다
+  board([{ id: 'b', status: 'decide', details: ['새 결정'] }])
+  await assert.rejects(notifyDecisions(repo, 'r', [question()], true, t + 1_800_001))
+  assert.equal(received().length, 4)
+})
+
+test('보드 decide 항목의 참고: 줄은 결정으로 세지 않고, 참고 줄만 있으면 제목으로 묻는다', () => {
+  const items = [
+    { id: 'mixed', status: 'decide', details: ['참고: 배경 설명', '정할 것', { text: '참고 : 링크', done: false }] },
+    { id: 'notes', status: 'decide', title: '제목 결정', details: ['참고: 배경'] },
+    { id: 'settled', status: 'decide', details: [{ text: '끝난 결정', done: true }, '참고: 남은 배경'] },
+  ]
+  assert.deepEqual(decisionEntries([], items, []).map((e) => e.item), [{ id: 'mixed', text: '정할 것' }, { id: 'notes', text: '제목 결정' }])
+})
+
+test('코디네이터가 사용자와 대화 중이면 전달을 미루고 대화가 끝나면 보낸다', async () => {
+  hook()
+  process.env.ORCH_USER_ACTIVE_SEC = '600'
+  registerRun(repo, 'r', null, false, 'term_coordinator')
+  const t = Date.parse('2026-11-04T09:00:00Z')
+  mkdirSync(join(repo, 'machine', 'user-input'), { recursive: true })
+  writeFileSync(join(repo, 'machine', 'user-input', 'term_coordinator.json'), JSON.stringify({ at: t }))
+  await notifyDecisions(repo, 'r', [question()], false, t + 60_000)
+  assert.equal(received().length, 0)
+  // 알림 파일 줄은 미루지 않는다
+  assert.equal(readFileSync(join(repo, '.orch', 'state', 'loop-events', 'r.jsonl'), 'utf8').trim().split('\n').length, 1)
+  await notifyDecisions(repo, 'r', [question()], false, t + 600_000)
+  assert.equal(received().length, 1)
 })
 
 test('다른 Run 은 주 Run 의 보드 결정을 가져가지 않는다', async () => {

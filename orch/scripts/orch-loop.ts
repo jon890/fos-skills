@@ -300,6 +300,8 @@
 //     알림은 그 Run 의 알림 파일의 NO-WAIT(text `대기 없음: Run <Run> 에 살아 있는 dispatch <n> 개가 있는데 … 다시 건다`)와,
 //     Run 등록의 coordinator_terminal(term_)에 nudge-worker --text 로 넣는 같은 글이다. 대기가 없으니 알림 파일만으로는 아무도 깨지 않는다.
 //     등록된 터미널이 없으면 알림 파일에만 쓰고 로그에 남긴다. 대기가 다시 생기면 파일을 지워 다음 공백을 새로 센다.
+//     코디네이터가 사용자와 대화 중이면(lib/user-active.ts 의 「대화 중」) 알리지 않고 로그에 NO-WAIT-DEFER 줄만 남긴다.
+//     대화 중에는 코디네이터가 일부러 대기를 다시 걸지 않는다(references/waiting.md). 대화가 끝난 뒤의 틱이 한 번 알린다
 //     ps 를 읽지 못하면 errors 의 waiter@<Run> 에 이유를 둔다(아래 「오류 줄 억제」). worker-list 를 읽지 못한 틱은 로그에만 남기고 판정하지 않는다.
 //     같은 원인(Orca 꺼짐)을 질문 확인과 충돌 처리가 이미 알린다
 //
@@ -391,6 +393,7 @@ import type { RunResult } from './lib/proc.ts'
 import { alive } from './lib/process.ts'
 import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './lib/questions.ts'
 import { isUserDecision, notifyDecisions } from './lib/decisions.ts'
+import { NO_WAIT_PREFIX, userActive } from './lib/user-active.ts'
 import type { ClosedLookup } from './lib/questions.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
 import { isStructured, limitedScreen, structuredScreen } from './lib/sessions.ts'
@@ -2274,13 +2277,19 @@ async function watchWaiter(repo: string, run: string, pending: number | null): P
     return null
   }
   if (seen.notified || now - seen.since < NO_WAIT_SEC * 1000) return null
+  const coordinator = registeredRuns(repo).find((entry) => entry.run === run)?.coordinator_terminal
+  // 사용자와 대화 중이면 코디네이터가 일부러 대기를 걸지 않았다(lib/user-active.ts). 대화가 끝난 뒤의 틱이 알린다
+  const talking = userActive(typeof coordinator === 'string' ? coordinator : null, now)
+  if (talking.active) {
+    log(`NO-WAIT-DEFER Run ${run} 의 코디네이터가 사용자와 대화 중이라(마지막 입력 ${talking.ago}초 전) 대기 없음 알림을 미룬다`)
+    return null
+  }
   const minutes = Math.floor((now - seen.since) / 60_000)
   const text =
-    `대기 없음: Run ${run} 에 살아 있는 dispatch ${live.length} 개가 있는데 wait-important 대기가 ${minutes}분째 없다. ` +
+    `${NO_WAIT_PREFIX} Run ${run} 에 살아 있는 dispatch ${live.length} 개가 있는데 wait-important 대기가 ${minutes}분째 없다. ` +
     `미답변 질문 ${pending === null ? '확인 못 함' : `${pending} 개`}. 마지막 대기가 남긴 NEXT_WAIT 명령으로 wait-important 를 백그라운드로 다시 건다`
   appendEvent(repo, 'NO-WAIT', null, text, run)
   log(`NO-WAIT ${text}`)
-  const coordinator = registeredRuns(repo).find((entry) => entry.run === run)?.coordinator_terminal
   if (typeof coordinator === 'string' && coordinator.startsWith('term_')) {
     const nudge = process.env.NUDGE_WORKER || join(HERE, 'nudge-worker.ts')
     const done = await runAsync(scriptCommand(nudge, ['--terminal', coordinator, '--text', text]), { timeoutMs: NUDGE_TIMEOUT_MS })
