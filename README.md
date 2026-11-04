@@ -262,6 +262,7 @@ orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있어�
 | --- | --- |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정해요. 커밋을 고르는 `--source-ref` 는 머리 주석에 있어요 |
 | `scripts/install-hooks.sh` | `hooks/` 의 훅을 `.git/hooks` 에 걸어요 |
+| `scripts/run-node-tests.ts` | node 테스트 파일을 하나씩 자기 세션에서 돌리고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
 | `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾아요. 셸에 따라 죽는 이식성 결함이에요 |
 | `scripts/check-skill-docs.py` | 스킬 README 와 CHANGELOG 가 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
@@ -278,7 +279,9 @@ PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않아요.
 Python 테스트는 저장소 루트에서 `python3 -m unittest discover -s mac-cleanup/tests` 처럼 각 `tests/` 폴더를 주어 실행해요. 다른 위치에서 상대 경로로 부르면 `ImportError` 로 끝나는 스킬이 있어요.
-orch, work-board, inbox 의 TypeScript 테스트는 Node 24 이상에서 `node --test --test-concurrency=4 "orch/tests/*.spec.ts" "work-board/tests/*.spec.ts" "inbox/tests/*.spec.ts"` 로 실행해요.
+orch, work-board, inbox 의 TypeScript 테스트는 Node 24 이상에서 `node scripts/run-node-tests.ts` 로 실행해요.
+한 줄 `node --test` 로 모두 돌리면 프로세스 그룹에 신호를 보내는 테스트가 실행기까지 끝내 요약 없이 끝날 수 있어요. 이 실행기는 파일마다 세션을 나눠요.
+오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둬요.
 
 ### 고치는 동안
