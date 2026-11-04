@@ -96,6 +96,16 @@ describe('spec-common.md 의 스크립트 경로', () => {
     }
   })
 
+  test('틀의 모든 스크립트 경로 풀기가 같은 명령이고 마이그레이션 예약도 그 경로로 부른다', () => {
+    const resolvers = [...template().matchAll(/ORCH_SCRIPTS=\$\((node -e '.*?')\) &&/g)].map((m) => m[1])
+    assert.ok(resolvers.length >= 3, `경로 풀기가 ${resolvers.length}개다`)
+    assert.deepEqual(new Set(resolvers), new Set([resolver()]))
+    const item = template().split('\n- ').find((part) => part.includes('<!-- orch-rule: migration -->'))
+    assert.ok(item, '틀에 migration 표지 항목이 없다')
+    assert.match(item, /node --disable-warning=ExperimentalWarning "\$ORCH_SCRIPTS\/reserve-migration\.ts" --repo "\$\(git rev-parse --show-toplevel\)" --module "\$MODULE" --name "\$NAME"/)
+    assert.doesNotMatch(item, /\$SKILL_DIR/)
+  })
+
   test('CLAUDE_CONFIG_DIR 의 설치본을 쓰고 user scope 를 먼저 고른다', () => {
     const config = join(tmp, 'profile with space', 'home')
     writeInstalled(config, [

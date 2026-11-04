@@ -2,7 +2,7 @@
 //
 // 사용법:
 //     launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)
-//         [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] -- WORKER_ARGS...
+//         [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...
 //
 //     --spec           지시서. spec-line 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 거부한다.
 //                      `worker 선택:` 줄(형식은 lib/spec.ts 의 selectionsOf)이 없거나 빠진 요소가 있거나, 그 줄의 에이전트, 모델이
@@ -12,7 +12,13 @@
 //                      이유는 `lint-ack: <이유>` 줄로 출력하고 띄운 worker 의 기록(lib/launched.ts 의 lint_ack)에 남긴다
 //     --repo, --name   새 워크트리를 make-worktree 로 만든다. --base, --resume-remote 는 make-worktree 에 넘긴다
 //     --worktree       기존 워크트리(`path:` 접두를 받는다). 그 경로에 터미널이 남아 있으면 목록을 보이고 거부한다.
-//                      같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓인다. --terminal 로 이어 쓰는 터미널은 세지 않는다
+//                      같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓인다. --terminal 로 이어 쓰는 터미널은 세지 않는다.
+//                      커밋 안 된 변경(`git status --porcelain --untracked-files=all`)이 있어도 목록을 보이고 거부한다.
+//                      재사용한 워크트리에 다른 PR 의 변경이 남아 있으면 worker 가 그것을 자기 일로 알고 커밋한다.
+//                      make-worktree 가 복사한 .claude/settings.local.json 과 git 저장소가 아닌 폴더는 보지 않는다.
+//                      --terminal 로 이어 쓰면 그 에이전트가 하던 변경이라 보지 않는다. 리뷰 worker(`리뷰 PR:` 줄)는 차례 2-1 이 따로 본다
+//     --dirty-ack      커밋 안 된 변경이 이어 할 일의 것이라 그대로 띄우는 이유. 빈 값은 사용법 오류다.
+//                      이유는 `dirty-ack: <이유>` 줄로 출력한다. 끊긴 worker 를 이어 띄울 때 쓴다(references/launch.md 「끊긴 worker 다시 띄우기」)
 //     --run            worker-start 와 다시 띄우기에 줄 Run. 없으면 코디네이터에 묶인 Run 이다
 //     --watch          띄운 뒤 worker-show 의 단계를 볼 초. 기본 90. 0 이면 보지 않는다
 //     WORKER_ARGS      worker-start 에 그대로 넘긴다(--agent, --model, --effort, --terminal, --task 같은 것).
@@ -121,7 +127,7 @@ import { branchesOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from './lib
 
 const USAGE = [
   '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)',
-  '            [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] -- WORKER_ARGS...',
+  '            [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
 ].join('\n')
 const HERE = dirname(fileURLToPath(import.meta.url))
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
@@ -361,6 +367,17 @@ function isDir(target: string): boolean {
   }
 }
 
+// make-worktree 가 워크트리에 복사하는 파일이라 커밋 안 된 변경으로 세지 않는다
+const MADE_BY_LAUNCH = new Set(['.claude/settings.local.json'])
+const DIRTY_SHOWN = 50
+
+// --worktree 의 커밋 안 된 변경(porcelain 줄). git 저장소가 아니거나 읽지 못하면 빈 목록이다
+function uncommitted(worktree: string): string[] {
+  const done = git(worktree, ['status', '--porcelain', '--untracked-files=all'])
+  if (done.code !== 0) return []
+  return done.stdout.split('\n').filter((line) => line.trim() && !MADE_BY_LAUNCH.has(line.slice(3)))
+}
+
 type Args = {
   spec: string
   repo: string
@@ -370,6 +387,7 @@ type Args = {
   run: string
   watch: number
   lintAck: string | null
+  dirtyAck: string | null
   resumeRemote: boolean
   passthru: string[]
 }
@@ -386,12 +404,13 @@ function parse(argv: string[]): Args | 'help' {
     run: { type: 'string', default: '' },
     watch: { type: 'string', default: '90' },
     'lint-ack': { type: 'string' },
+    'dirty-ack': { type: 'string' },
     'resume-remote': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h' },
   } as const
   let values
   try {
-    values = parseArgs({ args: expandArgs(argv.slice(0, split), options, ['lint-ack']), options }).values
+    values = parseArgs({ args: expandArgs(argv.slice(0, split), options, ['lint-ack', 'dirty-ack']), options }).values
   } catch (e) {
     throw new Stop(`${USAGE}\nlaunch-worker: ${(e as Error).message}`, 2)
   }
@@ -402,6 +421,8 @@ function parse(argv: string[]): Args | 'help' {
   if (!/^\d+$/.test(watch)) throw usage('--watch 는 초 단위 정수다')
   const lintAck = values['lint-ack'] === undefined ? null : (values['lint-ack'] as string).trim()
   if (lintAck === '') throw usage('--lint-ack 에는 넘기는 이유를 적는다')
+  const dirtyAck = values['dirty-ack'] === undefined ? null : (values['dirty-ack'] as string).trim()
+  if (dirtyAck === '') throw usage('--dirty-ack 에는 그대로 띄우는 이유를 적는다')
   const resumeRemote = values['resume-remote'] as boolean
   if (values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
   if (!values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
@@ -414,6 +435,7 @@ function parse(argv: string[]): Args | 'help' {
     run: values.run as string,
     watch: Number(watch),
     lintAck,
+    dirtyAck,
     resumeRemote,
     passthru,
   }
@@ -510,6 +532,7 @@ async function main(argv: string[]): Promise<number> {
   const gate = await lintGate(a)
   if (gate.stop !== null) return gate.stop
 
+  const reviewPr = reviewPrOfSpec(readFileSync(a.spec, 'utf8'))
   const created = !a.worktree
   let worktree: string
   if (created) {
@@ -535,6 +558,17 @@ async function main(argv: string[]): Promise<number> {
       out(`거부: 이 워크트리에 터미널이 남아 있다. 끝났는지 보고 orca terminal close --terminal <handle> 로 닫은 뒤 다시 띄운다\n${left}`)
       return 1
     }
+    // --terminal 로 이어 쓰면 남은 변경은 그 에이전트가 하던 일이라 보지 않는다
+    const dirty = reviewPr === null && !passthru.includes('--terminal') ? uncommitted(worktree) : []
+    if (dirty.length > 0 && a.dirtyAck === null) {
+      const shown = dirty.slice(0, DIRTY_SHOWN).join('\n') + (dirty.length > DIRTY_SHOWN ? `\n... 외 ${dirty.length - DIRTY_SHOWN}개` : '')
+      out(
+        `거부: 이 워크트리에 커밋 안 된 변경이 ${dirty.length}개 있다. 다른 PR 의 변경이 남았을 수 있다. ` +
+          `무엇인지 보고 커밋하거나 정리한 뒤 다시 띄운다. 이어 할 일의 변경이면 --dirty-ack <이유> 를 준다\n${shown}`,
+      )
+      return 1
+    }
+    if (dirty.length > 0) out(`dirty-ack: ${a.dirtyAck}`)
   }
 
   if (passValue(passthru, '--agent') === 'codex') {
@@ -545,7 +579,6 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const repo = a.repo || mainCheckout(worktree)
-  const reviewPr = reviewPrOfSpec(readFileSync(a.spec, 'utf8'))
   if (reviewPr !== null) {
     let stopped: number | null
     try {

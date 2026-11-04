@@ -189,8 +189,9 @@ describe('지시서 검사', () => {
 
   test('공통 지시서에 틀의 규칙 표지가 빠졌으면 공통 경고를 내고, 틀을 옮긴 공통 지시서는 통과한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
-    // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고, 공부 후보 보고 규칙에 표지를 단다
-    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates']) {
+    // 틀은 준비됨 status, MERGED 확인 뒤 worker_done, worker-ask 로 묻기, 스킬 개선 후보 보고, 공부 후보 보고,
+    // 검토 하위 에이전트 허락, 보드 고치기 금지, 마이그레이션 번호 예약 규칙에 표지를 단다
+    for (const rule of ['ready-status', 'done-after-merged', 'worker-ask', 'skill-feedback', 'study-candidates', 'review-subagents', 'no-board-edit', 'migration']) {
       assert.match(template, new RegExp(`<!-- orch-rule: ${rule} -->`))
     }
     const a = spec('spec-a', '담당: `src/a/**`')
@@ -201,8 +202,9 @@ describe('지시서 검사', () => {
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /^.*spec-common\.md:1: 공통: 틀의 규칙 표지 .* 가 없다/m)
+    // migration 은 orch 설정에 migrations 가 있는 저장소에서만 요구한다
     for (const [, rule] of template.matchAll(/<!-- orch-rule: ([\w-]+) -->/g)) {
-      assert.ok(r.stdout.includes(`\`${rule}\``), r.stdout)
+      assert.equal(r.stdout.includes(`\`${rule}\``), rule !== 'migration', `${rule}\n${r.stdout}`)
     }
     assert.match(r.stderr, /공통 경고 1건/)
     assert.match(r.stderr, /경로 경고 0건/)
@@ -217,6 +219,83 @@ describe('지시서 검사', () => {
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /공통: 틀의 규칙 표지 `feature-loop` 가 없다/)
     assert.match(r.stderr, /공통 경고 1건/)
+  })
+
+  test('표지는 있지만 본문이 틀과 다른 규칙을 표지마다 그 항목 머리 줄로 경고한다', () => {
+    const template = readFileSync(TEMPLATE, 'utf8')
+    const a = spec('spec-a', '담당: `src/a/**`')
+    // 옛 사본: worker-ask 의 이어지는 설명에 --max-wait 안내가 없고, 보드 줄은 표지만 남긴 채 단계 체크를 시킨다
+    const sentence = /오래 기다릴 때는 `--max-wait`[^\n]*?\. /.exec(template)
+    assert.ok(sentence, '틀에서 --max-wait 안내를 찾지 못했다')
+    const board = /^- 진행 보드\(`board\.json`\)를 고치지 않는다\..*$/m.exec(template)
+    assert.ok(board, '틀에서 보드 줄을 찾지 못했다')
+    const old = template
+      .replace(sentence[0], '')
+      .replace(board[0], '- phase 가 끝나면 `board.ts step` 으로 보드 단계를 체크한다. <!-- orch-rule: no-board-edit -->')
+    const common = write(join(specs, 'spec-common.md'), old)
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    const lineOf = (text: string, needle: string) => text.slice(0, text.indexOf(needle)).split('\n').length
+    const askLine = lineOf(old, '- **ask 는 설치된 스킬의 `worker-ask` 로 보낸다.**')
+    const boardLine = lineOf(old, '- phase 가 끝나면 `board.ts step`')
+    assert.ok(r.stdout.includes(`${common}:${askLine}: 공통: 표지 \`worker-ask\` 가 붙은 규칙이 틀과 다르다`), r.stdout)
+    assert.ok(r.stdout.includes(`${common}:${boardLine}: 공통: 표지 \`no-board-edit\` 가 붙은 규칙이 틀과 다르다`), r.stdout)
+    assert.doesNotMatch(r.stdout, /틀의 규칙 표지 .* 가 없다/)
+    assert.match(r.stderr, /공통 경고 2건/)
+    // 줄 끝 공백과 빈 줄만 다르면 같은 규칙이다
+    write(join(specs, 'spec-common.md'), template.replace(/\n\n/g, '\n\n\n').replace(/\n/g, '  \n'))
+    assert.deepEqual(lint([a]), { code: 0, stdout: '' })
+  })
+
+  test('틀 본문의 {{...}} 는 저장소가 채운 값에 맞춘다', () => {
+    const template = write(join(tmp, 'template.md'), '- 검증은 `{{VERIFY_CMD}}` 로 한다. <!-- orch-rule: verify -->\n')
+    const a = spec('spec-a', '담당: `src/a/**`')
+    const withTemplate = () => spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, a], { env: { ...ENV, SPEC_TEMPLATE: template }, encoding: 'utf8' })
+    write(join(specs, 'spec-common.md'), '- 검증은 `bash scripts/verify.sh` 로 한다. <!-- orch-rule: verify -->\n')
+    assert.equal(withTemplate().stdout, '')
+    write(join(specs, 'spec-common.md'), '- 검증은 건너뛴다. <!-- orch-rule: verify -->\n')
+    assert.match(withTemplate().stdout, /공통: 표지 `verify` 가 붙은 규칙이 틀과 다르다/)
+  })
+
+  test('마이그레이션 표지는 orch 설정에 migrations 가 있는 저장소에서만 빠진 것을 알린다', () => {
+    const template = readFileSync(TEMPLATE, 'utf8')
+    const without = template.replace(/^- Flyway 마이그레이션[\s\S]*?(?=^- )/m, '')
+    assert.notEqual(without, template)
+    assert.doesNotMatch(without, /orch-rule: migration/)
+    const a = spec('spec-a', '담당: `src/a/**`')
+    write(join(specs, 'spec-common.md'), without)
+    assert.deepEqual(lint([a]), { code: 0, stdout: '' })
+    write(join(repo, '.orch', 'config.json'), JSON.stringify({ migrations: { dirs: { api: 'db/api' } } }))
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /공통: 틀의 규칙 표지 `migration` 가 없다/)
+  })
+
+  test('임시 폴더 아래 경로를 가리키면 임시 경고를 내고 종료 코드는 0 이다', () => {
+    const a = spec(
+      'spec-temp',
+      [
+        '회신은 `/tmp/reply-1.md` 에 있다.',
+        '목록: /private/tmp/list.txt, 결과는 $TMPDIR/out.json 과 ${TMPDIR}/a.log',
+        '초안: `/Users/me/.claude/scratchpad/draft.md`, /var/folders/x/T/notes.md',
+        'PR 본문 파일은 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 쓴다.',
+        '예외: 테스트는 `/tmp/fixture` 를 쓴다',
+      ].join('\n'),
+    )
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    for (const [no, path] of [
+      [1, '/tmp/reply-1.md'],
+      [2, '/private/tmp/list.txt'],
+      [2, '$TMPDIR/out.json'],
+      [2, '${TMPDIR}/a.log'],
+      [3, '/Users/me/.claude/scratchpad/draft.md'],
+      [3, '/var/folders/x/T/notes.md'],
+    ] as const) {
+      assert.ok(r.stdout.includes(`spec-temp.md:${no}: 임시: \`${path}\` 는 임시 폴더라`), `${path}\n${r.stdout}`)
+    }
+    assert.equal(count(r.stdout, ': 임시: '), 6, r.stdout)
+    assert.match(r.stderr, /임시 경고 6건/)
   })
 
   test('완료 기준에 PR 이 둘 이상이면 한 PR 기준을 가리키며 경고하고 종료 코드는 0 이다', () => {
@@ -322,7 +401,10 @@ describe('할 일 첫 줄의 루프 선택', () => {
     const good = write(join(tmp, 'drafts/good.md'), confirmed())
     const draft = write(join(tmp, 'drafts/draft.md'), confirmed('작성: 2026-11-02'))
     const badDate = write(join(tmp, 'drafts/bad-date.md'), confirmed('확인: 2026-02-30'))
-    assert.deepEqual(lint([task('spec-good', `## 할 일\n루프를 쓴다(스펙: \`${good}\`). plan 부터 한다`)]), { code: 0, stdout: '' })
+    // 테스트 스펙은 OS 임시 폴더에 있어 임시 경고가 붙는다. 그 밖의 발견이 없어야 한다
+    const passed = lint([task('spec-good', `## 할 일\n루프를 쓴다(스펙: \`${good}\`). plan 부터 한다`)])
+    assert.equal(passed.code, 0, passed.stdout)
+    assert.deepEqual(passed.stdout.split('\n').filter((line) => line && !line.includes(': 임시: ')), [])
     const r = lint([
       task('spec-draft', `## 할 일\n루프를 쓴다(스펙: ${draft})`),
       task('spec-date', `## 할 일\n루프를 쓴다(스펙: ${badDate})`),
