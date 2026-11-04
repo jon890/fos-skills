@@ -4,7 +4,8 @@
 <!-- 개별 지시서에는 `허락:` 줄과 `worker 선택:` 줄, `## 할 일` 제목을 적는다. 이 파일이 아니라 지시서마다 둔다. 형식은 orch/references/spec-writing.md 의 「넣을 것」 이다. -->
 <!-- `## 할 일` 아래 첫 줄에 루프 선택을 적는다. 꼴이 틀리면 launch-worker 가 띄우지 않는다. 꼴과 예는 orch/references/feature-loop.md 의 「루프를 쓸지 정한다」 가 소유한다. -->
 <!-- `루프 없이` 로 띄우면 코디네이터는 사용자에게 보내는 띄우기 보고에 그 이유를 한 줄로 적는다. -->
-<!-- `orch-rule:` 표지는 지우지 않는다. spec-lint 가 이 틀의 표지가 저장소 공통 지시서에 모두 있는지 보고, 빠졌으면 틀보다 낡았다고 경고한다. -->
+<!-- `orch-rule:` 표지는 지우지 않는다. spec-lint 가 이 틀의 표지가 저장소 공통 지시서에 모두 있는지, 표지가 붙은 항목의 본문이 틀과 같은지 보고, 다르면 틀보다 낡았다고 경고한다. 틀을 고치면 저장소 사본의 그 항목도 옮긴다. -->
+<!-- `migration` 표지 항목은 Flyway 마이그레이션이 없는 저장소면 지운다. spec-lint 는 orch 설정에 `migrations` 가 있는 저장소에서만 그 표지가 빠진 것을 알린다. -->
 
 - 대상 저장소는 {{REPO}} 다. 지정된 워크트리에서만 작업한다. 워크트리는 지시서의 `브랜치:` 이름으로 `origin/{{BASE}}` 최신 위에 만들어져 있다.
 - 브랜치 이름을 바꾸지 않는다. push 는 `git push -u origin HEAD` 로 한다.
@@ -22,12 +23,21 @@
 - PR 을 연 뒤 리뷰가 달리면 `review-fix` 스킬로 반영한다. 리뷰 회신과 resolve 는 허용한다. 반영하지 않을 지적이 있으면 회신 전에 ask 로 묻는다.
 - 머지는 하지 않는다. 코디네이터가 한다(워크트리 권한 설정이 `gh pr merge` 를 막는다). **그러나 PR 이 머지될 때까지 이 worker 가 맡는다.** 준비됨을 보낸 뒤에도 CI 실패, 충돌, 기준 브랜치 변경, 리뷰를 코디네이터의 지시를 기다리지 않고 직접 처리한다. 고쳐 push 하면 바뀐 head 로 `준비됨` 을 다시 보낸다.
 - 하위 에이전트는 orca 명령을 쓰지 않는다. 스폰 프롬프트에 이 줄을 넣는다.
-- 진행 보드(`board.json`)를 고치지 않는다. `board.ts step`, `mark`, `set` 을 부르지 않는다. 보드 단계는 스크립트가 PR, 머지, 배포로 끝내고 나머지는 코디네이터가 고친다. worker 가 단계를 체크하면 PR 전인데 끝난 것으로 보인다.
+- 진행 보드(`board.json`)를 고치지 않는다. `board.ts step`, `mark`, `set` 을 부르지 않는다. 보드 단계는 스크립트가 PR, 머지, 배포로 끝내고 나머지는 코디네이터가 고친다. worker 가 단계를 체크하면 PR 전인데 끝난 것으로 보인다. <!-- orch-rule: no-board-edit -->
 - 삭제처럼 되돌리기 어려운 쓰기는 하위 에이전트에 맡기지 않고 본체가 한다.
 - `worker_done` 은 본체가 한 번만 보낸다. PR 을 여는 일은 그 PR 이 MERGED 가 된 것을 `gh pr view` 로 확인한 뒤 보낸다. PR 번호와 머지 커밋을 적는다. PR 이 없는 일(허락이 push 까지인 일)은 완료 기준을 채운 뒤 보낸다. 중간 진행(PR 생성, 준비됨)은 status 메시지로 보낸다.
 - **status 는 PR 을 열었거나 고쳐 push 했을 때, 막혔을 때, 범위나 결정이 바뀌었을 때만 보낸다.** 검증 단계마다, 기다리는 중, 다시 돌리는 중 같은 진행 보고는 보내지 않는다. worker 가 여럿이면 코디네이터에게 알림이 쌓여 질문을 늦게 잡는다. 질문은 status 에 섞지 않고 ask 로 보낸다. <!-- orch-rule: status-only -->
 - 권한 확인 창이나 거부로 막히면 우회하지 말고 ask 로 알린다. 터미널에만 적고 기다리지 않는다.
 - 비밀값이 든 파일을 읽지 않고 비밀값을 출력하지 않는다. 공유 DB 에 마이그레이션을 적용하지 않는다.
+- Flyway 마이그레이션 파일 이름은 직접 정하지 않는다. 만들기 전에 자기 워크트리에서 아래 블록으로 번호를 예약하고 `RESERVED` 줄의 경로로 만든다. 다른 워크트리의 파일과 번호가 겹치지 않게 하려는 것이다. 경로는 아래 `worker-ask` 와 같이 설치본에서 푼다. <!-- orch-rule: migration -->
+
+  ```bash
+  MODULE=""
+  NAME=""
+  ORCH_SCRIPTS=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";const e=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"].sort((a,b)=>(a.scope!=="user")-(b.scope!=="user"))[0];console.log(e.installPath+"/orch/scripts")') && node --disable-warning=ExperimentalWarning "$ORCH_SCRIPTS/reserve-migration.ts" --repo "$(git rev-parse --show-toplevel)" --module "$MODULE" --name "$NAME"
+  ```
+
+  `MODULE` 은 orch 설정 `migrations.dirs` 의 모듈 이름이고 `NAME` 은 영문 설명이다. Java 마이그레이션은 `--kind java` 를 더하고 `NAME` 을 PascalCase 이름으로 준다. 줄 끝이 `renewed` 면 이미 만든 파일의 이름을 그 경로로 바꾼다. `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)나 1(조회 실패)이면 한 번 다시 부르고, 그래도 아니면 그 줄을 붙여 ask 로 묻는다. 2 면 바로 ask 로 묻는다. out-of-order 를 켜지 않는다. 코디네이터가 이 PR 이 막는 쪽이라고 알리면 `--again` 을 더해 새 번호를 받고 파일 이름을 바꾼다.
 - {{REMOTE_ACCESS_RULE}}
 - 다른 worker 가 동시에 다른 일을 한다. 지시서 범위 밖의 파일은 고치지 않는다.
 - 프로세스는 자기가 띄운 PID 로만 끈다. `pkill`, `killall` 은 다른 worker 의 호스트까지 꺼 쓰지 않는다(워크트리 권한 설정이 막는다). 스폰 프롬프트에 이 줄을 넣는다.

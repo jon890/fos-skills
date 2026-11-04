@@ -222,7 +222,8 @@ Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본�
 
 1. `worker-show --dispatch "$DISPATCH_ID"` 로 dispatch 상태를 보고, `task-list` 로 Task 상태를 본다
 2. 워크트리에서 `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD` 와 `git -C "$WORKTREE" status --short` 로 끝난 커밋과 작업 트리의 변경을 확인한다. 커밋 안 된 변경은 버리지 않고 그대로 둔다
-3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다
+3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다.
+   앞 worker 의 회신, 사용자 결정, 조사 결과는 내용을 이 절에 옮겨 적는다. 임시 폴더(`/tmp`, `$TMPDIR`, scratchpad)의 파일은 재부팅이나 세션 종료 뒤 사라져 새 worker 가 막힌다. `spec-lint` 가 그런 경로를 `임시` 경고로 알린다
 4. 표대로 띄운다. 워크트리를 `path:` 로 주면 같은 워크트리에 이어 붙는다
 5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 가 `identity_unproven` 으로 닫지 않으므로 `orca terminal close` 를 쓴다. 이 세션이 띄운 worker 의 터미널만 닫는다
 

@@ -53,11 +53,19 @@
 //                 확인받은 스펙 없이 기능 구현 worker 를 띄우는 일을 막는다. 지침만으로는 바쁠 때 건너뛰었다
 //     경로        백틱 안의 파일 경로(확장자가 있는 것)가 저장소에 없다. 파일 이름만 적었으면 어느 폴더에든 있으면 된다.
 //                 새로 만들 파일일 수 있어 경고이고 종료 코드에 넣지 않는다
-//     공통        지시서 폴더의 spec-common.md 에 틀(orch/templates/spec-common.md)의 `<!-- orch-rule: <이름> -->` 표지가 빠졌다.
+//     공통        지시서 폴더의 spec-common.md 에 틀(orch/templates/spec-common.md)의 `<!-- orch-rule: <이름> -->` 표지가 빠졌거나,
+//                 표지가 붙은 규칙의 본문이 틀과 다르다.
 //                 표지는 빠지면 worker 가 옛 방식으로 움직이는 규칙(완료 보고 시점, 질문 경로, 개선 후보 보고 같은 것)을 가리킨다.
 //                 공통 지시서가 틀보다 낡으면 worker 가 PR 을 열자마자 worker_done 을 보내거나 orca ask 를 직접 불러 status 답을 놓친다.
-//                 문장이 아니라 표지로 판정한다. 저장소가 그 규칙을 일부러 바꿨을 수
-//                 있어 경고이고 종료 코드에 넣지 않는다. 지시서 폴더에 spec-common.md 가 없으면 보지 않는다
+//                 표지가 있어도 본문이 옛것이면 같은 일이 난다(옛 종료 코드 설명, 틀이 금지한 명령).
+//                 본문은 표지가 든 목록 항목이다. 항목 머리 줄(들여쓰지 않은 줄)부터 들여쓴 이어지는 줄과 빈 줄까지 보고,
+//                 줄 끝 공백과 빈 줄은 빼고 비교한다. 틀 본문의 `{{...}}` 는 아무 글자에나 맞는다. 다른 표지는 한 줄에 하나씩 낸다.
+//                 조건부 표지(CONDITIONAL_RULES)는 조건이 맞는 저장소에서만 빠진 것을 알린다. `migration` 은 orch 설정의
+//                 migrations.dirs 나 migrations.watch 가 있는 저장소다. 조건이 맞지 않아도 표지가 있으면 본문은 비교한다.
+//                 저장소가 그 규칙을 일부러 바꿨을 수 있어 경고이고 종료 코드에 넣지 않는다. 지시서 폴더에 spec-common.md 가 없으면 보지 않는다
+//     임시        지시서가 임시 폴더 아래 경로(`/tmp/…`, `/private/tmp/…`, `/var/folders/…`, `$TMPDIR/…`, `…/scratchpad/…`)를 가리킨다.
+//                 세션이 끝나거나 재부팅하면 그 파일이 사라져 다시 띄운 worker 가 막힌다. 내용을 지시서 본문에 옮기거나 저장소나
+//                 orch 폴더에 둔다. `예외:` 줄은 보지 않는다. 경고이고 종료 코드에 넣지 않는다
 //     제목        `# ` 제목 줄도 `보드 항목 id:` 줄도 없다. 보드 항목 제목이 업무 연결 줄, `## 목표` 첫 문장, 워크트리 이름으로 밀려나
 //                 보드에 업무 목적이 보이지 않을 수 있다(lib/board.ts 의 specTitle). 경고이고 종료 코드에 넣지 않는다
 //     보드        `보드 항목 id:` 줄에 id 뒤 설명이 붙었다. id 는 백틱 안의 글이나 공백 앞 첫 토큰으로만 읽는다(lib/spec.ts 의 boardIdOf).
@@ -75,7 +83,7 @@
 //                 로컬에만 있는 스크립트를 오버레이가 부르면 다른 워크트리와 worker 에서 그 단계가 「파일 없음」 으로 멈춘다
 //
 // 종료 코드:
-//     0  막을 발견이 없다(경로, 공통, 제목, 보드, 완료 경고는 있을 수 있다)
+//     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료 경고는 있을 수 있다)
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 오버레이 중 하나 이상
 //     2  사용법 오류, 또는 저장소, 지시서, origin/<base>, config.json 을 읽지 못했다.
 //        --overlay 없이 orch 작업 폴더를 옮기기 전에 돌려도 2 다(lib/paths.ts 머리 주석의 「옛 구조」)
@@ -88,6 +96,7 @@ import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:pa
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { ConfigError, loadConfig } from './lib/config.ts'
 import { isFile } from './lib/fs.ts'
 import { defaultBase, git } from './lib/git.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
@@ -112,6 +121,9 @@ const PATHLIKE = new RegExp(`^(?:[${W}.\\-]+/)*[${W}\\-]+(?:\\.[${W}\\-]+)*\\.[A
 const TEMPLATE = process.env.SPEC_TEMPLATE || join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'spec-common.md')
 const COMMON = 'spec-common.md'
 const RULE_MARK = /<!--\s*orch-rule:\s*([A-Za-z0-9_-]+)\s*-->/g
+// 임시 폴더 아래 경로. 폴더 이름만 말한 것(「scratchpad 에 쓴다」)은 빼고 그 아래 파일이나 폴더를 가리킨 것만 잡는다
+const TEMP_PATH = /(?:^|[\s`'"(=])((?:\/private)?\/tmp\/[^\s`'"()]*|(?:\/private)?\/var\/folders\/[^\s`'"()]*|\$\{?TMPDIR\}?\/[^\s`'"()]*|[^\s`'"()]*\/scratchpad\/[^\s`'"()]*)/g
+const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사라진다. 내용을 지시서 본문에 옮기거나 저장소나 orch 폴더에 둔다'
 
 class UsageError extends Error {}
 
@@ -384,25 +396,84 @@ function ruleMarks(text: string): Set<string> {
   return new Set([...text.matchAll(RULE_MARK)].map((m) => m[1]))
 }
 
-// 머리 주석의 「공통」. 지시서 폴더마다 한 번 본다
-function staleCommon(specs: string[]): string[] {
-  let required: Set<string>
+// 머리 주석의 「공통」 의 조건부 표지. 조건이 거짓인 저장소에서는 그 표지가 빠져도 알리지 않는다
+const CONDITIONAL_RULES: Record<string, (repoRoot: string) => boolean> = {
+  migration: migrationsConfigured,
+}
+
+function migrationsConfigured(repoRoot: string): boolean {
+  let migrations: unknown
   try {
-    required = ruleMarks(readFileSync(TEMPLATE, 'utf8'))
+    migrations = loadConfig(repoRoot).migrations
+  } catch (e) {
+    if (e instanceof ConfigError) return false
+    throw e
+  }
+  if (typeof migrations !== 'object' || migrations === null) return false
+  const { dirs, watch } = migrations as Record<string, unknown>
+  const filled = (value: unknown) => typeof value === 'object' && value !== null && Object.keys(value).length > 0
+  return filled(dirs) || filled(watch)
+}
+
+// 표지마다 그 표지가 든 목록 항목의 본문과 머리 줄 번호. 머리 주석의 「공통」 이 범위를 정한다
+function ruleBodies(text: string): Map<string, { no: number; body: string }> {
+  const lines = splitLines(text)
+  const indented = (line: string) => /^\s/.test(line)
+  const found = new Map<string, { no: number; body: string }>()
+  lines.forEach((line, index) => {
+    for (const m of line.matchAll(RULE_MARK)) {
+      let head = index
+      while (head > 0 && indented(lines[head])) head -= 1
+      let end = index + 1
+      while (end < lines.length && (lines[end].trim() === '' || indented(lines[end]))) end += 1
+      const body = lines
+        .slice(head, end)
+        .map((l) => l.trimEnd())
+        .filter((l) => l !== '')
+        .join('\n')
+      found.set(m[1], { no: head + 1, body })
+    }
+  })
+  return found
+}
+
+// 틀 본문의 {{...}} 는 저장소가 채운 값이라 아무 글자에나 맞춘다
+function sameBody(template: string, copy: string): boolean {
+  const parts = template.split(/\{\{[^}]*\}\}/)
+  if (parts.length === 1) return template === copy
+  const pattern = parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s\\S]*?')
+  return new RegExp(`^${pattern}$`).test(copy)
+}
+
+// 머리 주석의 「공통」. 지시서 폴더마다 한 번 본다
+function staleCommon(specs: string[], repoRoot: string): string[] {
+  let template: Map<string, { no: number; body: string }>
+  try {
+    template = ruleBodies(readFileSync(TEMPLATE, 'utf8'))
   } catch {
     return []
   }
+  const required = [...template.keys()].filter((name) => !Object.hasOwn(CONDITIONAL_RULES, name) || CONDITIONAL_RULES[name](repoRoot))
   const found: string[] = []
   for (const dir of new Set(specs.map((s) => dirname(normalize(s))))) {
     const common = join(dir, COMMON)
     if (!isFile(common)) continue
-    const has = ruleMarks(readFileSync(common, 'utf8'))
-    const missing = [...required].filter((name) => !has.has(name))
+    const has = ruleBodies(readFileSync(common, 'utf8'))
+    const missing = required.filter((name) => !has.has(name))
     if (missing.length > 0) {
       found.push(
         `${common}:1: 공통: 틀의 규칙 표지 ${missing.map((m) => `\`${m}\``).join(', ')} 가 없다. ` +
           `공통 지시서가 틀(${TEMPLATE})보다 낡았을 수 있다. 틀에서 그 표지가 붙은 줄을 옮긴다`,
       )
+    }
+    for (const [name, mine] of has) {
+      const want = template.get(name)
+      if (want && !sameBody(want.body, mine.body)) {
+        found.push(
+          `${common}:${mine.no}: 공통: 표지 \`${name}\` 가 붙은 규칙이 틀과 다르다. ` +
+            `저장소가 일부러 바꾼 것이 아니면 틀(${TEMPLATE}:${want.no})의 그 항목으로 바꾼다`,
+        )
+      }
     }
   }
   return found
@@ -553,6 +624,10 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
     spec.lines.forEach((line, index) => {
       const no = index + 1
       if (field(line, '예외') !== null || field(line, '담당') !== null) return
+      for (const m of line.matchAll(TEMP_PATH)) {
+        const path = m[1].replace(/[.,;:]+$/, '')
+        warnings.push(`${spec.name}:${no}: 임시: \`${path}\` 는 ${TEMP_HINT}`)
+      }
       for (const phrase of forbidden) {
         if (line.includes(phrase) && !NEGATION.some((n) => line.includes(n))) {
           errors.push(`${spec.name}:${no}: 금지: \`${phrase.trim()}\` 를 요구한다`)
@@ -569,7 +644,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
       }
     })
   }
-  warnings.push(...staleCommon(specs))
+  warnings.push(...staleCommon(specs, repo.root))
   return { errors, warnings }
 }
 
@@ -626,13 +701,16 @@ function main(argv: string[]): number {
     const commons = warnings.filter((line) => line.includes(': 공통: ')).length
     const boards = warnings.filter((line) => line.includes(': 보드: ')).length
     const dones = warnings.filter((line) => line.includes(': 완료: ')).length
+    const temps = warnings.filter((line) => line.includes(': 임시: ')).length
     const tail =
       (overlaps > 0 ? `, 겹침 경고 ${overlaps}건` : '') +
       (titles > 0 ? `, 제목 경고 ${titles}건` : '') +
       (commons > 0 ? `, 공통 경고 ${commons}건` : '') +
       (boards > 0 ? `, 보드 경고 ${boards}건` : '') +
-      (dones > 0 ? `, 완료 경고 ${dones}건` : '')
-    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${warnings.length - titles - commons - boards - dones - overlaps}건${tail}\n`)
+      (dones > 0 ? `, 완료 경고 ${dones}건` : '') +
+      (temps > 0 ? `, 임시 경고 ${temps}건` : '')
+    const paths = warnings.length - titles - commons - boards - dones - overlaps - temps
+    process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${paths}건${tail}\n`)
     return errors.length > 0 ? 1 : 0
   } catch (e) {
     if (!(e instanceof UsageError)) throw e
