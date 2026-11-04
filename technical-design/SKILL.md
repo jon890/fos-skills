@@ -5,7 +5,7 @@ description: |
   "기술 설계", "아키텍처 설계", "모듈 경계", "스펙을 어떻게 구현할지 설계" 요청이나 spec 다음 단계에 쓴다.
   사용자 동작은 spec, PR 작업 분해는 plan, 구현은 implementation 이 맡는다.
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # technical-design
@@ -42,9 +42,11 @@ metadata:
 ```bash
 # cwd: 대상 저장소 루트. PLAN_SKILL_DIR 은 형제 plan 번들이다.
 python3 "$PLAN_SKILL_DIR/scripts/check_feature.py" "$SPEC" --design "$DESIGN"
+python3 "$PLAN_SKILL_DIR/scripts/run_doc_checks.py" --skill technical-design "$SPEC" "$DESIGN"
 ```
 
-검사는 형식과 요구사항 연결만 확인한다. 아키텍처의 적절성이나 독립 검토를 대신하지 않는다.
+`run_doc_checks.py` 는 레포 설정의 「문서 검사 명령」 을 돌린다. technical-design 오버레이에 없으면 spec 오버레이의 값을 쓰고, 둘 다 없으면 건너뛴다.
+두 명령 모두 종료 코드가 0 이어야 plan 으로 넘긴다. 검사는 형식과 요구사항 연결만 확인한다. 아키텍처의 적절성이나 독립 검토를 대신하지 않는다.
 검토자를 실행할 수 없으면 설계 작성은 끝내되 독립 검토는 미완료로 인계한다. 독립 검토를 자기 점검으로 통과 처리하지 않는다.
 
 ## 인계와 완료 기준

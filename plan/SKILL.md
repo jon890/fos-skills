@@ -5,7 +5,7 @@ description: |
   "계획 세워줘", "task 파일 만들어줘", "PR 로 나눠줘", "스펙 구현 계획", "리팩토링 계획", "plan" 요청에 쓴다.
   "이 기능 설계해 보자" 처럼 요구사항은 spec, 구조와 경계 설계는 technical-design 이 맡는다. 구현은 implementation 가 맡는다.
 metadata:
-  version: "5.3.0"
+  version: "5.4.0"
 ---
 # plan
 
@@ -60,6 +60,7 @@ python3 "$SKILL_DIR/scripts/check_feature.py" "$SPEC" --design "$DESIGN"
 ## 3. PR 범위
 
 [plan 크기](references/plan-size.md)에 맞춰 이번 PR 의 요구사항을 고른다. 가능한 한 API·데이터·테스트를 함께 완성하는 동작 단위로 자른다.
+레포 설정에 「PR 변경 파일 상한」 이나 「파일 길이 상한」 이 있으면 그 기준으로 자른다. 5단계 검사가 같은 값을 읽어 넘으면 경고한다.
 뒤 PR 은 목표와 선행 조건만 `deferred` 에 남기고 상세 phase 를 미리 쓰지 않는다.
 
 ## 4. task 작성

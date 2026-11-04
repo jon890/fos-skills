@@ -17,6 +17,9 @@ phase 안 Markdown 상대 링크는 phase 파일 위치 기준으로 풀어 없�
 작업 트리와 로컬, 원격 브랜치의 tasks 디렉터리를 본다. 보고에서 phase 번호가 어느 계획인지 갈리지 않게 된다.
 index.json 의 pr_scope(한 문장)와 deferred(뒤로 미룬 일) 칸을 보고, phase 가 6개를 넘으면 plan 을 나누게 한다.
 변경 파일이 40개를 넘으면 경고한다. 기준은 references/plan-size.md 가 소유한다.
+레포 설정에 「PR 변경 파일 상한」 이 있으면 40개 대신 그 값과 비교하고, 「파일 길이 상한」 이 있으면
+상한에 가까운 수정 파일을 경고한다. 값의 형식은 references/monorepo.md 의 「스크립트가 직접 읽는 값」 이 소유한다.
+`claude plugin test [dir]` 은 dir 아래의 `*.test.ts`, `*.test.tsx` 를 모두 실행하는 테스트 명령으로 본다.
 완료 표시는 요구하지 않는다. 계획의 수명은 references/plan-lifecycle.md 가 정한다.
 계획에 적힌 명령은 실행하지 않는다.
 
@@ -51,8 +54,13 @@ import re
 import shlex
 import subprocess
 import sys
+import importlib.util
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+_OVERLAY_SPEC = importlib.util.spec_from_file_location("overlay_values", Path(__file__).with_name("overlay_values.py"))
+overlay_values = importlib.util.module_from_spec(_OVERLAY_SPEC)
+_OVERLAY_SPEC.loader.exec_module(overlay_values)
 
 # task 생성 시 phase 파일에 필요한 필수 절을 검사한다.
 REQUIRED_SECTIONS = [
@@ -68,6 +76,8 @@ FORBIDDEN_KEYS = ("depends_on", "related_docs", "prerequisites")
 # plan 하나는 PR 하나로 끝나는 크기다. 기준은 references/plan-size.md 가 소유한다.
 MAX_PHASES = 6
 MAX_CHANGED_FILES = 40
+# 레포 설정이 파일 길이 상한을 주면, 수정할 파일이 상한의 이 비율 이상일 때 경고한다.
+FILE_LENGTH_RATIO = 0.95
 # 이 날짜 이후에 만든 plan 만 pr_scope, deferred 칸과 phase 수 상한을 위반으로 센다.
 PR_SCOPE_FROM = "2026-10-25"
 DEFERRED_KEYS = ("what", "why", "after")
@@ -488,6 +498,8 @@ def classify(command, entries, repo, cwd="", depth=0):
         found = True
     elif program in {"go", "cargo", "deno", "dotnet"}:
         found = bool(args) and args[0] == "test"
+    elif program == "claude":
+        found = plugin_test_dir(command) is not None
     elif program in {"make", "gmake"}:
         found = any(a in {"test", "check"} for a in args)
     if found is not None:
@@ -525,6 +537,19 @@ PACKAGE_TEST_VALUE_OPTIONS = {
     "--outputFile", "--output-file", "--reporter", "--reporters",
     "--maxWorkers", "-w", "--config", "-c", "--testTimeout", "--test-timeout",
 }
+
+
+# `claude plugin test [dir]` 은 dir(기본은 cwd) 아래의 `*.test.ts` 와 `*.test.tsx` 를 모두 실행한다. 파일 하나를 지정할 수 없다.
+PLUGIN_TEST_SUFFIXES = (".test.ts", ".test.tsx")
+
+
+def plugin_test_dir(command):
+    """`claude plugin test [dir]` 의 dir 이다. 그 명령이 아니면 None 이다."""
+    command = unwrap(command)
+    if not command or Path(command[0]).name != "claude" or command[1:3] != ["plugin", "test"]:
+        return None
+    rest = [arg for arg in command[3:] if not arg.startswith("-")]
+    return rest[0] if rest else "."
 
 
 def recursive_directory_runner(command):
@@ -971,12 +996,74 @@ def check_pr_scope(path: Path, data: dict, out: list, warnings: list) -> None:
                     f"plan 을 나누고 지금 할 plan 만 쓴다. 뒤의 일은 deferred 에 한 줄로 둔다{note}")
 
 
-def check_changed_file_count(path: Path, entries: set, warnings: list) -> None:
-    """docs/ 와 tasks/ 를 뺀 변경 파일이 PR 하나의 크기를 넘으면 경고한다."""
+def check_changed_file_count(path: Path, entries: set, warnings: list, limit=None, phases=(), plan_dir="") -> None:
+    """변경 파일이 PR 하나의 크기를 넘으면 경고한다.
+
+    limit 은 레포 설정이 준 (상한, 출처) 다. 있으면 저장소의 크기 측정처럼 계획 폴더만 빼고 모든 파일을 센다.
+    없으면 docs/ 와 tasks/ 를 뺀 파일을 MAX_CHANGED_FILES 와 비교한다. phases 는 (phase 파일, 변경 파일 집합) 목록이다.
+    """
+    if limit:
+        cap, source = limit
+        files = {rel for rel in entries if not (plan_dir and under(rel, plan_dir))}
+        if len(files) > cap:
+            split = ", ".join(f"{Path(phase).stem} {len(rels)}개" for phase, rels in phases)
+            warnings.append(f"{path} — 변경 파일이 {len(files)}개로 저장소의 PR 크기 기준({cap}개, {source})을 넘는다. "
+                            f"phase 별 변경 파일: {split}. 나눌 선을 정해 plan 을 나누거나, 저장소의 크기 예외 규칙을 따른다")
+        return
     files = {rel for rel in entries if not rel.startswith(("docs/", "tasks/")) and "/docs/" not in rel}
     if len(files) > MAX_CHANGED_FILES:
         warnings.append(f"{path} — 변경 파일이 {len(files)}개로 PR 하나의 크기({MAX_CHANGED_FILES}개)를 넘는다. "
                         "디렉터리 이동 같은 일괄 이동이 아니면 plan 을 나눈다. 일괄 이동이면 pr_scope 에 그렇게 적는다")
+
+
+def length_target(rel, globs):
+    """파일 길이 상한을 적용할 파일이다. `/` 없는 패턴은 파일 이름에 맞춘다. globs 가 없으면 코드 파일 전부다."""
+    if not globs:
+        return Path(rel).suffix in CODE_SUFFIXES
+    name = rel.rsplit("/", 1)[-1]
+    return any(matches(rel, g) if "/" in g else fnmatch.fnmatchcase(name, g) for g in globs)
+
+
+def check_file_length(path: Path, entries, repo: Path, limit, warnings: list) -> None:
+    """수정할 파일이 레포 설정의 파일 길이 상한에 가까우면 경고한다. limit 은 (상한, glob 목록, 출처) 다.
+
+    구현이 줄을 더하면 저장소 검사(Checkstyle FileLength 같은 것)가 실패하므로, 계획 단계에서 새 파일로 나눌지 정하게 한다.
+    """
+    cap, globs, source = limit
+    floor = int(cap * FILE_LENGTH_RATIO)
+    for rel, action in sorted(entries):
+        if "수정" not in action or is_glob(rel) or omitted(rel) or not length_target(rel, globs):
+            continue
+        try:
+            lines = len((repo / rel).read_text(encoding="utf-8", errors="replace").splitlines())
+        except OSError:
+            continue
+        if lines >= floor:
+            warnings.append(f"{path} — {rel} 이 {lines}줄로 저장소의 파일 길이 상한({cap}줄, {source})까지 {cap - lines}줄 남았다. "
+                            "더할 코드를 새 파일로 나눌지 계획에서 정한다")
+
+
+def repo_limits(repo: Path, plan_dir: str, warnings: list):
+    """레포 설정의 PR 변경 파일 상한과 파일 길이 상한을 읽는다. 없으면 None, 읽지 못하면 경고를 남기고 None 이다."""
+    sub = overlay_values.targets(repo, [plan_dir])[0]
+    skills = ["plan"]
+    files = length = None
+    value, source = overlay_values.lookup(repo, skills, "PR 변경 파일 상한", sub)
+    if value is not None:
+        try:
+            files = (overlay_values.number(repo, value), source)
+        except ValueError as exc:
+            warnings.append(f"{source} — 「PR 변경 파일 상한」 을 읽지 못해 기본 기준({MAX_CHANGED_FILES}개)을 쓴다: {exc}")
+    value, source = overlay_values.lookup(repo, skills, "파일 길이 상한", sub)
+    if value is not None:
+        try:
+            cap = overlay_values.number(repo, value)
+        except ValueError as exc:
+            warnings.append(f"{source} — 「파일 길이 상한」 을 읽지 못해 파일 길이를 보지 않는다: {exc}")
+        else:
+            globs, _ = overlay_values.lookup(repo, skills, "파일 길이 대상", sub)
+            length = (cap, overlay_values.codes(globs) if globs else [], source)
+    return files, length
 
 
 def check_plan_number(repo: Path, tasks_dir: str, plan: str, out: list, warnings: list) -> None:
@@ -1156,16 +1243,27 @@ def check_phase_prompt(path, text, out, entries=(), repo=None, warnings=None):
         if test_command(command, entries, repo) and recursive_directory_runner(command)
         for arg in directory_args(command) if not arg.startswith(("/", "-"))
     ]
+    plugin_dirs = [
+        posixpath.normpath(posixpath.join(cwd, directory))
+        for command, cwd in zip(commands, cwds)
+        if (directory := plugin_test_dir(command)) is not None and not directory.startswith("/")
+    ]
     # 보조 파일은 그것을 쓰는 테스트가 실행한다. 어느 테스트가 쓰는지는 구현 전이라 알 수 없어 파일 단위로 대조하지 않는다.
     runnable = [rel for rel in declared_tests if runnable_test(rel)]
-    if runnable and (targeted or directories) and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
+    if runnable and (targeted or directories or plugin_dirs) and not any(Path(command[0]).name in {"gradle", "gradlew", "mvn", "mvnw"} for command in runners):
         for rel in runnable:
             if not any(matches(rel, arg) or Path(rel).name == Path(arg).name or rel.startswith(arg.rstrip("/") + "/") for arg in targeted) \
-                    and not any(rel.startswith(directory + "/") for directory in directories):
+                    and not any(rel.startswith(directory + "/") for directory in directories) \
+                    and not any(under(rel, directory) and rel.endswith(PLUGIN_TEST_SUFFIXES) for directory in plugin_dirs):
                 out.append(f"{path} — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: {rel}")
     for command in runners:
         if any(arg.removeprefix("./").startswith("scripts/") for arg in command):
             warnings.append(f"{path} — 저장소 스크립트의 테스트 범위와 실패 종료 코드는 직접 확인한다: {' '.join(command)}")
+
+
+def under(rel, directory):
+    """rel 이 저장소 루트 기준 directory 아래다. `.` 은 저장소 전체다."""
+    return directory == "." or rel.removeprefix("./").startswith(directory.rstrip("/") + "/")
 
 
 MARKDOWN_LINK = re.compile(r"!?\[[^\]\n]*\]\(\s*(<[^>\n]+>|[^\s)]+)")
@@ -1323,7 +1421,7 @@ def main(argv: list) -> int:
             if remote.is_file():
                 check_remote_verification(remote, out, warnings)
             virtual, created, phase_entries = {}, [], []
-            all_files = set()
+            all_files, all_entries = set(), set()
             if args.audit:
                 warnings.append("구현 후 문서 검사: 신규/수정/삭제 파일의 구현 전 존재 조건은 대조하지 않는다")
             for path in phases:
@@ -1333,6 +1431,7 @@ def main(argv: list) -> int:
                         out.append(f"{path} — 필수 섹션 누락: {marker}")
                 entries = manifest(path, text, out, warnings)
                 all_files.update(rel for rel, _ in entries)
+                all_entries.update(entries)
                 if not args.audit:
                     check_file_state(path, entries, repo, virtual, out, warnings, legacy_manifest(text), created)
                 check_bash_cwd(path, text, out)
@@ -1348,7 +1447,12 @@ def main(argv: list) -> int:
                 check_human_verification(path, text, out)
                 check_phase_prompt(path, text, out, entries, repo, warnings)
                 phase_entries.append((path, section(text, "작업 항목"), entries))
-            check_changed_file_count(plan_dir / "index.json", all_files, warnings)
+            plan_rel = f"{args.tasks_dir.rstrip('/')}/{args.plan}"
+            file_limit, length_limit = repo_limits(repo, plan_rel, warnings)
+            check_changed_file_count(plan_dir / "index.json", all_files, warnings, file_limit,
+                                     [(phase, {rel for rel, _ in rels}) for phase, _, rels in phase_entries], plan_rel)
+            if length_limit and not args.audit:
+                check_file_length(plan_dir / "index.json", all_entries, repo, length_limit, warnings)
             if not args.audit:
                 check_callers(phase_entries, repo, args.tasks_dir, warnings)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:

@@ -1325,5 +1325,118 @@ class PrScopeTest(unittest.TestCase):
         self.assertEqual(1, len(warnings), warnings)
 
 
+class PluginTestRunnerTest(unittest.TestCase):
+    """`claude plugin test [dir]` 은 dir 아래 `*.test.ts`, `*.test.tsx` 를 모두 실행한다."""
+
+    # TaskRulesTest 를 상속하면 그 테스트가 두 번 돈다. 쓰는 도우미만 가져온다.
+    setUp, file, prompt, inspect, classify = (TaskRulesTest.setUp, TaskRulesTest.file, TaskRulesTest.prompt,
+                                              TaskRulesTest.inspect, TaskRulesTest.classify)
+
+    def test_plugin_test_is_a_test_command(self):
+        for line in ("claude plugin test .", "claude plugin test", "claude plugin test work-board"):
+            with self.subTest(line=line):
+                self.assertEqual(self.classify(line), "test")
+        for line in ("claude plugin list", "claude plugin test --help", "claude -p hi"):
+            with self.subTest(line=line):
+                self.assertEqual(self.classify(line), "other")
+
+    def test_plugin_test_runs_declared_test_ts_under_its_directory(self):
+        entries = [("work-board/pane.ts", "수정"), ("work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
+        work = "### 1. `work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
+        node = 'node --test "orch/tests/a.spec.ts"'
+        for command in ("claude plugin test .", "claude plugin test", "cd work-board && claude plugin test", "claude plugin test work-board"):
+            with self.subTest(command=command):
+                self.assertEqual(self.inspect(work, f"{command}\n{node}", entries), [])
+
+    def test_plugin_test_does_not_run_other_tests_or_other_directories(self):
+        entries = [("work-board/pane.ts", "수정"), ("work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
+        work = "### 1. `work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
+        out = self.inspect(work, "claude plugin test .", entries)
+        self.assertEqual(["phase.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: orch/tests/a.spec.ts"], out)
+        out = self.inspect(work, 'claude plugin test orch\nnode --test "orch/tests/a.spec.ts"', entries)
+        self.assertEqual(["phase.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: work-board/tests/pane.test.ts"], out)
+
+
+class RepoLimitsTest(unittest.TestCase):
+    """레포 설정의 PR 변경 파일 상한과 파일 길이 상한을 읽어 경고한다."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(dir="/tmp")
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name).resolve()
+
+    def file(self, rel, content=""):
+        path = self.repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    def overlay(self, *rows, rel=".claude/plan-overlay.md"):
+        table = "\n".join(f"| {name} | {value} |" for name, value in rows)
+        self.file(rel, f"# plan 레포 설정\n\n## 저장소 배치\n\n| 값 | 값 |\n| --- | --- |\n{table}\n")
+
+    def limits(self, plan_dir="tasks/p"):
+        warnings = []
+        return verify.repo_limits(self.repo, plan_dir, warnings), warnings
+
+    def test_without_overlay_values_the_defaults_apply(self):
+        self.overlay(("docs 경로", "`docs/`"))
+        self.assertEqual(((None, None), []), self.limits())
+
+    def test_file_limit_reads_integer_or_json_key(self):
+        self.overlay(("PR 변경 파일 상한", "`20`"))
+        self.assertEqual(((20, ".claude/plan-overlay.md"), None), self.limits()[0])
+        self.file(".github/pr-size.json", json.dumps({"grades": {"B": {"files": 15}}}))
+        self.overlay(("PR 변경 파일 상한", "`.github/pr-size.json#grades.B.files` (B 등급)"))
+        self.assertEqual(((15, ".claude/plan-overlay.md"), None), self.limits()[0])
+
+    def test_unreadable_file_limit_warns_and_keeps_default(self):
+        self.overlay(("PR 변경 파일 상한", "`.github/pr-size.json#grades.B.files`"))
+        (files, _), warnings = self.limits()
+        self.assertIsNone(files)
+        self.assertEqual(1, len(warnings), warnings)
+        self.assertIn("기본 기준", warnings[0])
+
+    def test_subproject_overlay_wins_for_its_plans(self):
+        self.overlay(("PR 변경 파일 상한", "`30`"))
+        self.overlay(("PR 변경 파일 상한", "`10`"), rel="frontend/.claude/plan-overlay.md")
+        self.assertEqual((10, "frontend/.claude/plan-overlay.md"), self.limits("frontend/tasks/p")[0][0])
+        self.assertEqual((30, ".claude/plan-overlay.md"), self.limits("tasks/p")[0][0])
+
+    def test_repo_file_limit_counts_all_files_but_the_plan_and_lists_phases(self):
+        entries = {f"src/f{n}.py" for n in range(3)} | {"docs/a.md", "tasks/p/index.json"}
+        phases = [("tasks/p/phase-01.md", {"src/f0.py", "docs/a.md"}), ("tasks/p/phase-02.md", {"src/f1.py", "src/f2.py"})]
+        warnings = []
+        verify.check_changed_file_count(Path("index.json"), entries, warnings, (4, "o.md"), phases, "tasks/p")
+        self.assertEqual([], warnings)
+        verify.check_changed_file_count(Path("index.json"), entries | {"src/extra.py"}, warnings, (4, "o.md"), phases, "tasks/p")
+        self.assertEqual(1, len(warnings), warnings)
+        self.assertIn("5개로 저장소의 PR 크기 기준(4개, o.md)", warnings[0])
+        self.assertIn("phase-01 2개, phase-02 2개", warnings[0])
+
+    def test_file_near_length_limit_warns_only_for_modified_targets(self):
+        self.overlay(("파일 길이 상한", "`600`"), ("파일 길이 대상", "`*.java`, `src/**/*.kt`"))
+        (_, length), _ = self.limits()
+        self.assertEqual((600, ["*.java", "src/**/*.kt"], ".claude/plan-overlay.md"), length)
+        for rel, lines in (("a/Big.java", 580), ("a/Small.java", 560), ("src/x/Big.kt", 599), ("a/Big.py", 599), ("a/New.java", 599)):
+            self.file(rel, "x\n" * lines)
+        entries = {("a/Big.java", "수정"), ("a/Small.java", "수정"), ("src/x/Big.kt", "수정"), ("a/Big.py", "수정"),
+                   ("a/New.java", "신규"), ("a/*.java", "신규·수정")}
+        warnings = []
+        verify.check_file_length(Path("index.json"), entries, self.repo, length, warnings)
+        self.assertEqual(2, len(warnings), warnings)
+        self.assertIn("a/Big.java 이 580줄", warnings[0])
+        self.assertIn("20줄 남았다", warnings[0])
+        self.assertIn("src/x/Big.kt 이 599줄", warnings[1])
+
+    def test_length_limit_without_targets_applies_to_code_files(self):
+        self.overlay(("파일 길이 상한", "`100`"))
+        (_, length), _ = self.limits()
+        self.file("a.py", "x\n" * 99)
+        self.file("a.md", "x\n" * 99)
+        warnings = []
+        verify.check_file_length(Path("index.json"), {("a.py", "수정"), ("a.md", "수정")}, self.repo, length, warnings)
+        self.assertEqual(1, len(warnings), warnings)
+
+
 if __name__ == "__main__":
     unittest.main()
