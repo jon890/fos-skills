@@ -160,6 +160,7 @@ describe('PR 없이 끝난 워크트리', () => {
     // 그 터미널이 user_takeover 로 남았고 화면이 작업 중이 아니라 사용자 보유로 본다
     has(out, `남김: 사용자 보유 터미널 (${path}). 근거: 사용자가 넘겨받은 터미널(ctx_o user_takeover`)
     lacks(calls(), '--head meas-5')
+    lacks(calls(), 'headRefName: "meas-5"')
   })
 
   test('failed dispatch 도 끝난 것으로 보고 치운다', () => {

@@ -83,6 +83,22 @@ if (has('repo', 'view')) {
 } else if (has('api', 'user')) {
   if (!st.gh_user) process.exit(1)
   console.log(st.gh_user)
+} else if (has('api', 'graphql')) {
+  // lib/pr-lookup.ts 의 묶음 조회. 이름마다 --head 조회와 같은 답을 별칭에 담는다. gh_raw 에 든 이름은 빼서 이름마다 다시 읽게 한다
+  if (st.graphql_fail) process.exit(1)
+  const q = a[a.indexOf('-f') + 1] || ''
+  const repo = {}
+  for (const m of q.matchAll(/(h\\d+): pullRequests\\(headRefName: ("(?:[^"\\\\]|\\\\.)*")/g)) {
+    const b = JSON.parse(m[2])
+    if (b in st.gh_raw) continue
+    const p = st.prs[b]
+    const author = b in st.pr_authors ? { login: st.pr_authors[b] } : null
+    repo[m[1]] = { nodes: p ? [{ number: 1, state: p[0], headRefOid: p[1], headRefName: b, isCrossRepository: p.length > 2 && p[2], author }] : [] }
+  }
+  for (const m of q.matchAll(/(n\\d+): pullRequest\\(number: (\\d+)\\)/g)) {
+    if (m[2] in st.pr_views) repo[m[1]] = { state: st.pr_views[m[2]].state }
+  }
+  console.log(JSON.stringify({ data: { repository: repo } }))
 } else if (has('pr', 'list') && a.includes('--head')) {
   const b = a[a.indexOf('--head') + 1]
   const p = st.prs[b]
