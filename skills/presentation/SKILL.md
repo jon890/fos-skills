@@ -7,13 +7,13 @@ description: |
   이미 만든 덱을 고치거나 제목을 검수하는 요청도 여기 해당한다.
   외부에 게시하는 본문은 `content-preview` 가, 문서 감사는 `docs-audit` 가 맡는다.
 metadata:
-  version: "1.3.2"
+  version: "1.3.3"
 ---
 
 # presentation
 
 **이 문서의 `scripts/`, `references/`, `assets/` 는 이 스킬 번들 기준 상대경로다.**
-하네스가 알려주는 스킬 base 디렉터리에 붙여 쓴다. 설치 위치를 가정하지 않는다.
+하네스가 알려주는 스킬 base 디렉터리를 `$SKILL_DIR` 로 두고 붙여 쓴다. 설치 위치를 가정하지 않는다.
 
 발표 자료를 HTML 한 파일로 만든다. 슬라이드 도구를 쓰지 않는 이유는 셋이다.
 장 구성을 명령으로 검사할 수 있고, 발표자 노트를 발표 중에 고칠 수 있고, git 으로 차이를 볼 수 있다.
@@ -49,7 +49,7 @@ metadata:
 3. 부 전환 장과 목차를 먼저 만든다. 전체 흐름이 여기서 정해진다.
 4. 장을 채운다. 한 장에 주장 하나다.
 5. 장마다 발표자 노트를 함께 쓴다. 화면 본문은 최소로 두고 말할 내용은 노트로 내린다.
-6. `python3 scripts/check-deck.py <파일> --browser` 로 검사한다.
+6. `python3 "$SKILL_DIR/scripts/check-deck.py" "$DECK" --browser` 로 검사한다.
 7. `references/slide-rules.md` 로 덱 전체를 훑는다.
 
 경로는 절대 경로로 쓴다. 덱은 저장소 밖에서 만들므로 상대 경로는 그 디렉터리를 가리켜

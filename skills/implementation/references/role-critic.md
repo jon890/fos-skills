@@ -3,7 +3,7 @@
 **critic 이 읽는 문서다.**
 
 기능 계획에서는 index 의 spec·design 과 requirements 를 함께 읽고 phase 가 해당 인수 조건을 검증하는지 확인한다.
-plan 이 이 검토를 소유하며 build 에서 같은 계획을 다시 검토하지 않는다.
+plan 이 이 검토를 소유하며 implementation 에서 같은 계획을 다시 검토하지 않는다.
 
 ## 목표
 

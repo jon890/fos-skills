@@ -1,5 +1,9 @@
 # CHANGELOG: technical-design
 
+## 1.3.1 (2026-11-05)
+
+- 소유 경계 ADR 의 기본 양식 링크를 technical-design 자신의 `templates/adr.md` 로 고쳤다
+
 ## 1.3.0 (2026-11-04)
 
 - 구조 검사 때 레포 설정의 「문서 검사 명령」 을 `run_doc_checks.py` 로 함께 돌려요. 자기 오버레이에 없으면 spec 오버레이의 값을 써요.

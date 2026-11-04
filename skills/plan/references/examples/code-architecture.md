@@ -1,6 +1,6 @@
 # 예시: docs/code-architecture.md
 
-6단계에서 새 코드가 앉을 자리를 정한 뒤 `docs/code-architecture.md` 를 만들거나 고칠 때 이 뼈대를 쓴다.
+4단계에서 새 코드가 앉을 자리를 정한 뒤 `docs/code-architecture.md` 를 만들거나 고칠 때 이 뼈대를 쓴다.
 이 문서는 현재 구조만 소유한다. 아래 예는 가상의 저장소이므로 이름과 경로를 그대로 복사하지 않는다.
 
 ## 뼈대

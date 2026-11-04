@@ -330,10 +330,10 @@ describe('set', () => {
 
   test('--task 는 http 나 https 주소만 받고 빈 값은 칸을 지운다', () => {
     write({ id: 'a', status: 'wait' })
-    const url = 'https://nhnent.dooray.com/project/tasks/4455909338652535899'
+    const url = 'https://example.dooray.com/project/tasks/1234567890123456789'
     assert.equal(board('set', 'a', '--task', url).code, 0)
     assert.equal(item('a').task, url)
-    const r = board('set', 'a', '--task', 'nhnent.dooray.com/project/tasks/1')
+    const r = board('set', 'a', '--task', 'example.dooray.com/project/tasks/1')
     assert.equal(r.code, 1)
     assert.ok(r.stderr.includes('--task'), r.stderr)
     assert.equal(item('a').task, url)
