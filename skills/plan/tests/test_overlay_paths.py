@@ -112,6 +112,21 @@ class OverlayPathsTest(unittest.TestCase):
         self.assertIn("docs-audit-overlay.md", result.stderr)
         self.assertIn("docs-audit 스킬 5.0.0", result.stderr)
 
+    def test_multiple_targets_warn_once_for_each_legacy_overlay(self):
+        self.monorepo()
+        self.write(".claude/docs-check-overlay.md", "공통")
+        for skill in ("docs-audit", "docs-consolidate"):
+            with self.subTest(skill=skill):
+                result = subprocess.run(["python3", str(SCRIPT), "--skill", skill,
+                                         "frontend/src/a.py", "backend/src/b.py"],
+                                        cwd=self.root, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0)
+                searches = json.loads(result.stdout)["search"]
+                for target in ("frontend", "backend"):
+                    self.assertIn(".claude/docs-check-overlay.md", searches[target])
+                self.assertEqual(len(result.stderr.splitlines()), 1)
+                self.assertIn(".claude/docs-check-overlay.md", result.stderr)
+
     def test_docs_audit_legacy_subproject_precedes_current_root(self):
         self.write(".claude/docs-audit-overlay.md", "루트")
         self.write("backend/.claude/docs-check-overlay.md", "하위")
