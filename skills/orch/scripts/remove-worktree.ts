@@ -7,6 +7,10 @@
 // 원격 어디에도 없는 커밋이 있다, HEAD 가 --merged-head 의 조상이 아니다. 이유를 출력한다.
 // 원격에 같은 제목의 커밋이 있으면 rebase 된 것으로 보지만 squash 머지는 제목이 달라 원격에 없는 커밋으로 센다.
 // 그때 --merged-head 를 주면 그 커밋의 조상은 원격에 있는 것으로 센다.
+// 유휴 셸: 점유 프로세스가 OMC session-end hook 뿐이 아니면, 먼저 lib/idle-shells.ts 의 idleShellVerdict 로 Orca 기본 셸만 쥐었는지 본다.
+// 닫을 것이면 소유 상태를 다시 읽고 그 터미널을 `orca terminal close` 로 닫은 뒤 셸이 끝나기를 IDLE_GRACE 초까지 기다린다.
+// 살아 있는 dispatch 의 터미널(모든 Run)은 닫지 않는다. 출력 줄은 `유휴 셸 터미널 닫음 <handle>` 이나
+// `유휴 셸 터미널을 닫지 않는다: <이유>` 다. 그 경로에 Orca 터미널이 없으면 아무 줄도 내지 않는다.
 // 출력 줄: 경로가 디렉터리가 아니면 `없음: <경로>`, 거부하면 `거부: <이유>`, 사용자 보유 터미널이나 소유 상태 조회 실패면
 // `남김: <이유> (<경로>)` 다. 소유 판정은 lib/ownership.ts 의 blocker 다.
 // --delete-branch: 워크트리가 브랜치에 있으면 그 브랜치를 지운다. detached 면(리뷰 worker 가 PR head 에서 리뷰한 경우)
@@ -29,7 +33,9 @@ import { expandArgs } from './lib/args.ts'
 import { dockerCleanup } from './lib/docker.ts'
 import { realPath } from './lib/fs.ts'
 import { git as gitIn } from './lib/git.ts'
-import { blocker } from './lib/ownership.ts'
+import { closeTerminal, holderRows, idleShellVerdict, orcaTerminals } from './lib/idle-shells.ts'
+import { LookupError, allWorkers, blocker, rowHandles } from './lib/ownership.ts'
+import { LIVE_DISPATCH } from './lib/workers.ts'
 import { liveReviews, originBranch, reviewKeepReason, reviewPrOfBranch, reviewPrState } from './lib/review.ts'
 import { NO_LIMIT_MS, run } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
@@ -39,6 +45,8 @@ const USAGE = '사용법: remove-worktree.ts DIR [--delete-branch] [--merged-hea
 const HOOK = /--omc-session-end-worker|hooks\/session-end\/worker\.js/
 // 조상을 따라 올라가는 최대 단계. ps 출력의 부모 고리가 꼬여도 끝나게 한다
 const MAX_DEPTH = 50
+// 유휴 셸 터미널을 닫은 뒤 그 셸이 끝나기를 기다리는 시간(초)
+const IDLE_GRACE = 10
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`)
@@ -88,6 +96,41 @@ function hookHolders(holders: string[]): string[] | null {
     }
     return false
   })
+}
+
+// 머리 주석의 「유휴 셸」. 닫았으면 true 다. 소유 상태를 다시 읽다 남길 이유가 생기면 그 이유를 낸다
+async function closeIdleShells(target: string, pids: string[]): Promise<boolean | { kept: string }> {
+  const listed = orcaTerminals()
+  if (listed === null) {
+    out('유휴 셸 터미널을 닫지 않는다: 터미널 목록 조회 실패')
+    return false
+  }
+  // Orca 가 준 경로와 target(실경로)을 같은 꼴로 맞춘다. macOS 임시 폴더는 /var 와 /private/var 로 갈린다
+  const terminals = listed.map((t) => (typeof t.worktreePath === 'string' ? { ...t, worktreePath: realPath(t.worktreePath) } : t))
+  if (!terminals.some((t) => t.worktreePath === target)) return false
+  const holders = holderRows(pids)
+  if (holders === null) {
+    out('유휴 셸 터미널을 닫지 않는다: 프로세스 조회 실패')
+    return false
+  }
+  let claimed: Set<unknown>
+  try {
+    claimed = new Set((await allWorkers()).filter((row) => LIVE_DISPATCH.has(String(row.dispatchStatus))).flatMap((row) => [...rowHandles(row)]))
+  } catch (e) {
+    if (!(e instanceof LookupError)) throw e
+    out('유휴 셸 터미널을 닫지 않는다: worker 목록 조회 실패')
+    return false
+  }
+  const verdict = idleShellVerdict({ path: target, terminals, holders, claimed })
+  if ('keep' in verdict) {
+    out(`유휴 셸 터미널을 닫지 않는다: ${verdict.keep}`)
+    return false
+  }
+  // 앞의 소유 확인 뒤에 사용자가 넘겨받았을 수 있다. 닫기 바로 앞에서 다시 본다
+  const reason = await blocker(target)
+  if (reason) return { kept: reason }
+  for (const handle of verdict.close) out(closeTerminal(handle) ? `유휴 셸 터미널 닫음 ${handle}` : `유휴 셸 터미널 닫기 실패 ${handle}`)
+  return true
 }
 
 // detached 워크트리를 만든 브랜치를 남길 이유(머리 주석의 --delete-branch). 지워도 되면 null
@@ -159,6 +202,9 @@ async function main(argv: string[]): Promise<number> {
   if (!(await owned())) return 1
 
   let waited = 0
+  // 유휴 셸을 닫았으면 그 셸이 끝나기를 이 초까지 기다린다. 닫기는 한 번만 시도한다
+  let grace = 0
+  let idleTried = false
   for (;;) {
     const listing = cwdHolders(target)
     if (!listing.ok) {
@@ -173,7 +219,16 @@ async function main(argv: string[]): Promise<number> {
       return 1
     }
     const onlyHooks = hooks.length === holders.length
-    const limit = onlyHooks ? Math.max(wait, Number(hookWait)) : wait
+    if (!onlyHooks && !idleTried) {
+      idleTried = true
+      const closed = await closeIdleShells(target, holders)
+      if (closed !== true && closed !== false) {
+        out(`남김: ${closed.kept} (${target})`)
+        return 1
+      }
+      if (closed) grace = waited + IDLE_GRACE
+    }
+    const limit = Math.max(onlyHooks ? Math.max(wait, Number(hookWait)) : wait, grace)
     const joined = holders.join(', ')
     if (waited >= limit) {
       const note = hooks.length ? ` 그중 OMC session-end hook ${hooks.join(', ')} 는 스스로 끝난다.` : ''
