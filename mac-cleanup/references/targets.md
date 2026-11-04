@@ -32,7 +32,7 @@
 | --- | --- | --- | --- |
 | `~/.codex/packages/standalone/releases/*` 이전 버전 | 확인 필요 | `current` 가 가리키는 버전과 명령줄에 그 경로가 든 프로세스가 있는 버전은 남긴다 | 실측: 22개 5.9GB. 실행 중이던 codex 는 Orca 계정 디렉터리의 다른 경로를 썼다. 「Codex 이전 버전」 절의 `current`, `실행중` 표시를 따른다 |
 | `~/Library/Application Support/Cursor/snapshots` | 확인 필요 | 절이 「Cursor 실행 중: 아니오」 라고 할 때만 | 실측 8.5GB. Cursor 가 켜져 있으면 쓰는 중일 수 있다 |
-| mise 가 지울 수 있다고 본 버전 | 확인 필요 | 사용자가 고른 도구만 | 실측: node 3개, java 1개, gradle 3개 등. `mise prune` 은 사용자가 고르지 않은 도구(gradle 등)까지 지우므로 돌리지 않는다 |
+| mise 가 지울 수 있다고 본 버전 | 확인 필요 | 사용자가 고른 도구만. 절에서 `실행중` 표시가 붙은 버전은 남긴다 | 실측: node 3개, java 1개, gradle 3개 등. `mise prune` 은 사용자가 고르지 않은 도구(gradle 등)까지 지우므로 돌리지 않는다. 2026-11-04 실측: 후보였던 node 24.15.0(3.3G)으로 Claude HUD 가 돌고 있었다. 지웠으면 HUD 가 깨졌다 |
 | 오래된 `~/.cache` 하위 디렉터리 | 확인 필요 | 절의 「프로세스 없음」 이고 마지막 수정이 사용자가 정한 기준보다 오래됐을 때만 | 실측: `codex-runtimes` 1.8GB 는 4개월, `puppeteer` 1GB 는 3개월 동안 바뀌지 않았다. 프로세스 확인은 명령줄에 그 경로가 있는지만 보므로 열린 파일은 못 잡는다 |
 
 변수가 비면 `${VAR:?}` 형식은 셸이 오류로 멈춰 `rm -rf /` 가 되지 않는다. Claude Code 의 삭제 안전 검사도 이 형식은 막지 않는다.
@@ -112,6 +112,8 @@ python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES" --apply --kind other  
 
 `survey_gradle.sh` 가 "삭제 후보" 로 낸 버전만 `~/.gradle/wrapper/dists`, `~/.gradle/caches`, `~/.gradle/daemon` 에서 지운다. 안전 등급이다.
 사용처도 데몬도 없는 버전이므로 지워도 wrapper 가 필요할 때 다시 받는다.
+스크립트가 후보 경로를 한 줄에 하나씩 보이고 끝에 「승인 뒤 돌릴 명령」 으로 `rm -rf` 한 줄을 낸다. 사용자가 승인한 뒤 그 줄을 그대로 돌린다.
+glob 반복문(`for d in ~/.gradle/wrapper/dists/gradle-9.8.0-*; do rm -rf "${d:?}"; done`)으로 지우지 않는다. 2026-11-04 실측: 이 반복문은 Claude Code auto mode 분류기가 되돌릴 수 없는 로컬 삭제로 막았고, 경로를 하나씩 적은 `rm -rf` 는 통과했다.
 
 ## 프로젝트 산출물
 

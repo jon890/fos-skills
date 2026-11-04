@@ -7,7 +7,7 @@ description: |
   "오래된 세션 정리", "머지된 브랜치 정리", "워크트리 정리", "disk cleanup" 같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, 스킬 문서) 정리는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "1.11.1"
+  version: "1.12.0"
 ---
 
 # mac-cleanup
@@ -50,7 +50,7 @@ python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek all --json-out "$VOLUMES"
 ```
 
 - `survey_git.py` 는 기본으로 `git fetch --prune` 과 머지된 PR 조회를 한다. 묻지 않고 켠 채로 돈다. 승인 뒤에 옵션을 바꿔 다시 돌리면 후보가 새로 나와 승인을 다시 받아야 하기 때문이다. 옵션은 스크립트 docstring 이 소유한다.
-- `survey_system.py` 는 기본 절 말고 설치 대기 업데이트가 든 updater 캐시, `~/.cache` 의 큰 하위 디렉터리, Codex 이전 버전, Cursor snapshots, `mise prune --dry-run` 후보를 절로 보인다. 등급과 지우는 조건은 `targets.md` 가 소유한다.
+- `survey_system.py` 는 기본 절 말고 설치 대기 업데이트가 든 updater 캐시, `~/.cache` 의 큰 하위 디렉터리, Codex 이전 버전, Cursor snapshots, `mise prune --dry-run` 후보(버전별 크기와 실행중 표시)를 절로 보인다. 등급과 지우는 조건은 `targets.md` 가 소유한다.
 - `docker_images.py` 와 `docker_volumes.py` 는 Docker 가 떠 있을 때만 돈다. 종료 코드 1 이면 먼저 `colima status` 를 본다. 시작 중이면 올라온 뒤 다시 돌린다.
   `docker_volumes.py` 의 옵션(`--peek all`, `--json-out`)과 후보 기준은 docstring 이 소유한다. 사용자에게 보인 목록과 `delete_volumes.py` 에 넘길 목록이 한 번의 조사에서 나오므로 따로 `--json` 을 돌리지 않는다.
 - **Colima 가 꺼져 있으면 건너뛰고 끝내지 않는다.** 실제 세션에서 건너뛴 뒤 켜 보니 전체 확보량 100Gi 가운데 50.9GiB 가 Docker 에서 나왔다. VM 디스크 파일의 점유 크기를 읽어 3단계에 보이고, 켜서 조사할지를 승인 묶음으로 묻는다. `survey_system.py` 의 Docker 절도 같은 이유로 건너뛰었으면 Colima 가 올라온 뒤 그 절만 다시 본다.
