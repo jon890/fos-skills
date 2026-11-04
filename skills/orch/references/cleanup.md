@@ -84,11 +84,13 @@ Run 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록
 orch queue merge 101 102 103!
 ```
 
+기본 출력은 PR 마다 `FINISH-STARTED <PR> <로그>` 와 머지 큐의 `MERGED <PR>`, `STOP <PR> <이유>`, `CONFLICT …`, 끝 줄 `QUEUE-DONE` 이나 `QUEUE-HELD …` 다. 머지 뒤 정리는 `cleanup sweep` 의 짧은 줄(`REMOVED`, `KEPT`, 끝 줄 `SWEEP`)로 이어진다. 진행 줄(`HH:MM …`)은 `--full` 이다.
+
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
 **머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식, 최신화 규칙, 정리 인자)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.ts` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.ts` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
-충돌 파일 출력과 알림 중복 방지는 스크립트 머리 주석이 소유한다.
+충돌 파일 출력과 알림 중복 방지는 스크립트 머리 주석이 소유한다. 기본 출력은 PR 마다 `CONFLICT <PR> <브랜치> <결과>`(notified, already, send-failed 같은 것)와 worker 없는 PR 의 `CONFLICT-ORPHAN` 이고, 충돌이 없으면 `NO-CONFLICT` 다.
 
 ```bash
 orch queue conflicts --base "$BASE"
@@ -129,7 +131,7 @@ PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대�
 orch queue ready 101 102
 ```
 
-`보류` 줄의 PR 은 겹친 PR 이 머지된 뒤 다시 돌린다. base 와 충돌하는 PR 은 그 worker 에게 base 를 합치게 한다.
+`HELD <PR> <이유>` 줄(`--full` 은 `보류`)의 PR 은 겹친 PR 이 머지된 뒤 다시 돌린다. ready 로 바꾼 PR 은 `READY <PR>` 이다. base 와 충돌하는 PR 은 그 worker 에게 base 를 합치게 한다.
 
 ### 쉼표가 든 체크 이름
 
@@ -322,6 +324,7 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 알린 뒤 `finish.worker_done_timeout`(분, 기본 10) 동안 dispatch 가 끝나기를 기다린다. 출력의 `notify: worker 남음` 줄이면 worker 가 끝내지 않았다는 뜻이다. 그 worker 의 화면을 보고 이어 가게 한다.
 
 출력은 `<로그 폴더>/finish-<PR>.out` 에 쌓이고 마지막 줄이 `FINISH-DONE` 이나 `FINISH-FAIL` 이다. 깨어날 때마다 그 줄을 본다.
+이 로그는 `orch queue merge` 가 신호 없이 띄워 지금 출력 그대로다. `FINISH-FAIL` 의 이유는 그 앞의 진행 줄에 있다. `orch queue finish <PR>` 로 직접 부르면 기본 출력이 `LAST-PR <마지막|중간>` 과 이유를 붙인 `FINISH-FAIL <이유>` 다.
 `FINISH-FAIL` 이면 출력의 이유를 읽고 사용자에게 알린다. 배포 실패나 업무 번호 없음처럼 사람이 정해야 하는 것은 스크립트가 다시 시도하지 않는다.
 머지 큐가 `STOP` 으로 멈춘 뒤 남은 PR 만 다시 걸어도 같은 PR 의 마무리는 겹쳐 돌지 않는다.
 
@@ -348,7 +351,7 @@ orch queue merge --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir
 **스크립트 머리 주석이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
 저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시).
 
-스크립트가 건너뛴 항목은 `건너뜀` 줄의 이유로 읽는다. 읽는 법은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 소유한다.
+스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다. 읽는 법은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 소유한다.
 
 **PR 을 머지한 직후 같은 흐름에서, 사용자 지시를 기다리지 않고 정리한다.**
 워크트리와 터미널이 쌓이면 다음 작업이 어느 것을 써야 할지 매번 판단해야 한다.
@@ -445,7 +448,7 @@ squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sw
 
 컨테이너는 `docker rm -f -v` 로 지운다. 익명 볼륨만 함께 지워지고 이름 있는 볼륨은 남는다.
 지운 것과 남긴 것(규칙에 맞았지만 PID 가 살아 있다, 최근 `keep` 개 안이다 같은 까닭)을 한 줄씩 낸다. `cleanup-sweep.ts` 는 `--apply` 가 없으면 지울 것만 낸다.
-Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이유>` 한 줄만 내고 나머지 정리는 그대로 한다.
+Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이유>`(기본 출력은 `KEPT docker <이유>`) 한 줄만 내고 나머지 정리는 그대로 한다.
 
 **아래는 orch 가 지우지 않는다.** 귀속을 알 수 없거나 운영 데이터일 수 있다.
 

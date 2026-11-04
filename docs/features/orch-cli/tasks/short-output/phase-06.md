@@ -44,7 +44,7 @@
 ### 4. worker 가 읽는 문서
 
 - `skills/orch/templates/spec-common.md` 70줄 근처: 「4 면 출력의 메시지 ID 로」 를 「4 면 `TIMEOUT <질문 id>` 줄의 id 로」, 「3 이면 … 아니면 Run 메일함」 을 「3 이면 첫 줄이 `answer: ` 면 status 답, `SENT-RUN <id>` 면 Run 메일함」 으로.
-- `skills/spec/references/interview.md`: `worker-ask` 의 `answer: ` 읽기가 그대로인지 보고, 시간 초과 문장이 있으면 `TIMEOUT` 으로 고친다.
+- `skills/spec/references/interview.md` 는 `worker-ask` 의 명령과 종료 코드를 공통 지시서에 맡겨(107줄 근처) 고칠 줄이 없다. 확인만 한다.
 
 ### 5. `skills/orch/references/feature-loop.md`
 
@@ -85,6 +85,5 @@ python3 export-only-skills/korean-check/scripts/korean-style-check.py skills/orc
 | `skills/orch/references/feature-loop.md` | 수정 |
 | `skills/orch/SKILL.md` | 수정 |
 | `skills/orch/templates/spec-common.md` | 수정 |
-| `skills/spec/references/interview.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
 | `skills/orch/changes/orch-cli-short-output.minor.md` | 신규 |

@@ -101,5 +101,7 @@ orch board release --release "$RELEASE_PR"
 orch board goal "$GOAL_ID"
 ```
 
+기본 출력은 `GOAL <목표> <완료/전체>` 한 줄이다. `orch board sync`, `orch board release` 는 바꾼 항목마다 `BOARD <id> …` 와 끝 줄 `BOARD-SYNC <수>`, `BOARD-RELEASE <수>` 다. 설명 줄과 세부 줄은 `--full` 이다.
+
 **mod 가 단계로 세면 이 스크립트는 걷어 낸다.** work-board mod 가 진행률을 단계 줄에서 직접 세는 기능을 갖게 되면 `goal-progress.ts` 와 `board-sync.ts` 의 `--goal` 을 지운다.
 보드 파일과 도구 위치, 추적 항목 목록(`--items-file`) 같은 하위 호환 옵션은 스크립트 머리 주석이 소유한다.

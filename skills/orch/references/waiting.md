@@ -7,7 +7,7 @@
 <!-- orch-compat -->
 옛 꼴 `"$SKILL_DIR/bin/orch.ts" wait-important …` 로 기억해 둔 `NEXT_WAIT` 도 같은 대기를 걸고, 그 대기가 새 꼴 `NEXT_WAIT` 를 낸다.
 
-- 받은 delivery 를 `orch wait triage` 로 읽고 질문·보고·알림을 처리한다
+- 대기 출력의 메시지 판정 줄(아래 「받은 메시지 읽기」)을 읽고 질문·보고·알림을 처리한다
 - 아래 「사용자와 대화 중일 때」 로 다시 걸지 정한다
 - 다시 걸면 stderr 의 `NEXT_WAIT` 명령을 하네스의 백그라운드 실행으로 건다
 - 미완료 dispatch 가 있는 동안 대기가 하나 살아 있는지 확인한 뒤 턴을 끝낸다. 대화 중이라 걸지 않은 때는 예외다
@@ -60,7 +60,7 @@ Run 을 읽지 못하고 `finish.run` 도 없으면 Run 이 하나라도 등록�
 **`orch loop start` 는 그 Run 의 코디네이터 세션(그 Run 에 묶인 터미널)에서 부른다.** 다른 세션의 루프를 `orch loop stop` 한 뒤 내 터미널에서 다시 띄우지 않는다. 새 루프가 내 Run 명의를 물려받아 원래 Run 의 질문을 읽지 못한다.
 도는 루프가 다른 Run 에 묶였으면 그 루프가 끝날 때까지 아래 Monitor 대안을 쓴다.
 
-**4 와 함께 `안내:` 줄이 오면 그 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다.** 다른 세션의 루프이므로 멈추지 않는다. 그 루프를 띄운 세션이나 사용자에게 다시 띄워 달라고 알리고, 그동안은 아래 Monitor 대안을 쓴다.
+**4 와 함께 `LOOP-LEGACY <pid> run=<Run>` 줄이 오면 그 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다.** `--full` 이면 이 줄 대신 `안내:` 줄이다. 다른 세션의 루프이므로 멈추지 않는다. 그 루프를 띄운 세션이나 사용자에게 다시 띄워 달라고 알리고, 그동안은 아래 Monitor 대안을 쓴다.
 
 루프는 `pipeline.tick_sec`(기본 300초)마다 아래를 차례로 한다. 판정과 순서는 `orch-loop.ts` 머리 주석이 소유한다.
 
@@ -126,7 +126,7 @@ orch wait --ack "$DELIVERY_ID"
 저장소가 둘 이상이면 `--loop-repo` 를 저장소마다 준다. 루프가 없는 저장소는 주지 않는다.
 종료 코드와 `TIMEOUT` 줄은 스크립트 머리 주석이 소유한다. 아래는 코디네이터가 할 일이다.
 
-- 종료 코드 6(`의심스러운 worker_done`)은 자동 ack 하지 않는다. [`verification.md`](verification.md) 의 「완료 전에 온 worker_done」 을 먼저 따른다
+- 종료 코드 6(`DONE-SUSPECT` 줄, 근거 없는 worker_done)은 자동 ack 하지 않는다. [`verification.md`](verification.md) 의 「완료 전에 온 worker_done」 을 먼저 따른다
 - PR 이 없는 읽기 전용 작업은 대기와 분류 양쪽에 `--completion-contract none` 을 준다
 - `TIMEOUT LAST_DELIVERY <id>` 는 실패가 아니다. 그 id 로 다시 건다
 - orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
@@ -207,13 +207,27 @@ orch cleanup sweep --repo "$REPO" --repo "$OTHER_REPO" --specs-dir .orch/specs -
 
 ## 받은 메시지 읽기
 
-**대기 결과는 `triage-messages` 로 읽는다.** 출력 파일을 눈으로 훑지 않는다.
-한 delivery 에 heartbeat 가 수십 건 섞이면 그 사이의 `worker_done` 하나를 놓친다. 출력 순서와 입력 형식은 스크립트 머리 주석이 소유한다.
-`$OUT` 은 백그라운드 작업의 출력 파일 경로다.
+**`orch wait` 의 출력이 분류까지 한다.** 받은 메시지마다 판정 줄 하나가 우선 차례로 오고, heartbeat 는 개수만 온다. `orch wait triage` 를 따로 부르지 않는다.
+한 delivery 에 heartbeat 가 수십 건 섞여도 `worker_done` 하나를 놓치지 않게 하려는 것이다. 줄 꼴과 차례는 `scripts/triage-messages.ts` 머리 주석의 「짧은 출력」 이 소유한다.
+
+```text
+DONE-SUSPECT <dispatch> <task> <본문 앞 120자>   근거 없는 worker_done. 종료 코드 6
+DONE <dispatch> <task> <본문 앞 120자>
+STOPPED, ESCALATION, QUESTION, STATUS …           같은 꼴
+HEARTBEAT <개수>
+RAW <원문 파일>
+LAST_DELIVERY <id>
+```
+
+**본문 전체가 필요하면 `RAW` 줄의 파일을 읽는다.** 원문은 `<orch 루트>/state/wait/<delivery>.json` 이고 다음 대기가 그 delivery 를 ack 하면 지워진다.
+`$RAW` 는 `RAW` 줄의 경로다. `--full` 을 빼면 같은 판정 줄이 나온다.
 
 ```bash
-orch wait triage "$OUT"
+orch wait triage --full "$RAW"
 ```
+
+<!-- orch-compat -->
+`--full` 로 건 대기와 옛 번들의 대기는 지금처럼 한 줄 JSON 을 낸다. 그 출력 파일도 `orch wait triage --full "$OUT"` 로 읽는다.
 
 **놓친 보고가 의심되면 지난 시각부터 다시 본다.** compact 나 세션 재시작 뒤, ack 를 먼저 하고 읽지 못한 경우가 여기 해당한다.
 `--live` 는 읽음 표시를 하지 않으므로 도는 대기의 delivery 를 건드리지 않는다.
