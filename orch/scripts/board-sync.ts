@@ -14,6 +14,10 @@
 //     - 그 PR 의 마무리(finish-pr)가 돌고 있으면(<orch 작업 폴더>/queue/finish-<PR>.pid 의 프로세스가 살아 있으면) 머지를 반영하지 않는다.
 //       마무리가 배포 뒤 판정과 표시(PR!, PR~)로 항목을 고친다. merge-with-finish --finish-log-dir 로 폴더를 바꾸면 보지 못한다
 //     - done 으로 바꿀 때는 남은 일 줄을 지운다
+//     - 단계를 모두 끝낸 doing 항목: 마일스톤 항목이 아니고, 열린 PR 이 없고(pr 칸이 비었거나 CLOSED), worktree 칸의 워크트리와
+//       branch 칸의 브랜치 워크트리가 git 목록에 없고, 남은 일 줄이 없고, 단계(steps)가 하나 이상이며 모두 끝났으면 done 으로 바꾼다.
+//       머지 뒤 남은 단계를 코디네이터가 직접 끝낸 항목이 doing 으로 남아 사용자가 물었다(2026-11-03). 워크트리 목록을 읽지 못하면
+//       worktree 칸이 빈 항목만 본다. 살아 있는 worker 는 워크트리가 있으므로 워크트리로 가린다
 //     - 단계 줄 판정과 끝내기는 보드 명령에 맡긴다. `steps` 로 단계 목록을 받고 `step <id> <n>` 으로 끝낸다.
 //       단계 줄 판정은 이 스크립트에서 하지 않는다. 옛 자동 줄을 지울 때만 완료 값을 CLI 입력 표시로 전달한다
 //     - 예전 버전이 남긴 「자동: 」 줄은 지운다
@@ -64,7 +68,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
-import { taggedBoardSteps, boardSteps, detailArgs, detailText as textOf, noteLine, prNumbers, prSteps, withNote } from './lib/board.ts'
+import { taggedBoardSteps, boardSteps, detailArgs, detailText as textOf, NOTE, noteLine, prNumbers, prSteps, withNote } from './lib/board.ts'
 import type { BoardDetail as Detail } from './lib/board.ts'
 import { deployVerdict, parseRuns } from './lib/deploy.ts'
 import type { DeployVerdict, RunRow } from './lib/deploy.ts'
@@ -210,6 +214,7 @@ function main(argv: string[]): number {
   }
   const branches = new Map([...worktreePaths(repo)].map(([branch, path]) => [basename(path), branch]))
   const names = worktreeNames(repo)
+  const liveBranches = new Set(branches.values())
   let rules: LastPrRules | null | undefined
   let settings: BoardSettings | null | undefined
   const runs: { runs: RunRow[] | null } = { runs: null }
@@ -350,6 +355,22 @@ function main(argv: string[]): number {
             // lib/board.ts 의 intermediateCommands 와 같은 순서다. 하위 항목은 위에서 한 번에 다시 쓴다
             const mergedPrs = [...new Set([...prNumbers(item['merged-pr']), num])].join(', ')
             after.push(...prSteps(steps, num).map((n) => ['step', id, String(n)]), ['set', id, '--pr', '', '--merged-pr', mergedPrs])
+          }
+        }
+      } else if (item.status === 'doing' && !stages && state !== 'OPEN' && (!num || state === 'CLOSED')) {
+        // 머리 주석의 「단계를 모두 끝낸 doing 항목」
+        const worktree = typeof item.worktree === 'string' ? item.worktree : ''
+        const working = (worktree !== '' && (names === null || names.has(worktree))) || (branch !== '' && liveBranches.has(branch))
+        if (!working && !details.some((d) => textOf(d).startsWith(NOTE))) {
+          const steps = boardSteps(boardBin, id, board)
+          if (steps === null) {
+            err(`board-sync: 단계 목록을 읽지 못했다: ${id}`)
+            return 1
+          }
+          if (steps.length > 0 && steps.every((one) => one.done)) {
+            finish = true
+            out(`board-sync: ${id} 는 단계를 모두 끝냈고 열린 PR, 워크트리, 남은 일 줄이 없어 done 으로 바꾼다`)
+            after.push(['set', id, 'done', '--worktree', ''])
           }
         }
       }

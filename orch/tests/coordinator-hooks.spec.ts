@@ -164,7 +164,13 @@ function sleepingOrca(ignoreTerm: boolean): { bin: string; kill: () => void } {
   return { bin, kill }
 }
 
-const sendEnv = (orca: string, extra: Record<string, string> = {}) => ({ ORCA: orca, ORCA_TERMINAL_HANDLE: 'term_coordinator', ...extra })
+// 판정 기억은 호출마다 새 파일이다. 기억을 보는 테스트만 같은 파일을 넘긴다
+const sendEnv = (orca: string, extra: Record<string, string> = {}) => ({
+  ORCA: orca,
+  ORCA_TERMINAL_HANDLE: 'term_coordinator',
+  ORCH_MACHINE_DIR: mkdtempSync(join(root, 'machine-')),
+  ...extra,
+})
 const argvs = (fake: FakeBin) => fake.calls().map((c) => c.argv.join(' '))
 
 describe('block-worker-terminal-send', () => {
@@ -270,10 +276,10 @@ describe('block-worker-terminal-send', () => {
     assert.equal(decide(HOOK, 'orca terminal send --terminal term_far --text x', sendEnv(fake.path)), 'deny')
     assert.ok(argvs(fake).some((a) => a.includes('worker-list') && a.includes('--cursor w2')), argvs(fake).join('\n'))
     assert.ok(!argvs(fake).some((a) => a.includes('run-list')), argvs(fake).join('\n'))
-    // all 범위에 없는 터미널은 worker 가 아니다. terminal show 도 부르지 않는다
-    const other = fakeOrca([{ args: ['worker-list'], stdout: workerList([WORKER], 'all') }])
+    // all 범위의 어느 살아 있는 상태에도 없는 에이전트 터미널은 worker 가 아니다. run-list 는 부르지 않는다
+    const other = fakeOrca([{ args: ['terminal', 'show'], stdout: terminalShow('claude') }, { args: ['worker-list'], stdout: workerList([WORKER], 'all') }])
     assert.equal(decide(HOOK, 'orca terminal send --terminal term_dev --text x', sendEnv(other.path)), 'pass')
-    assert.deepEqual(argvs(other).filter((a) => !a.includes('worker-list')), [])
+    assert.deepEqual(argvs(other).filter((a) => !a.includes('worker-list')), ['terminal show --terminal term_dev --json'])
   })
 
   test('bound 범위에 없고 에이전트가 없는 셸이면 run-list 없이 통과한다', () => {
@@ -358,10 +364,11 @@ describe('block-worker-terminal-send', () => {
     }
   })
 
-  test('끝난 dispatch 의 남은 터미널은 active 필터 없이 바로 찾아 이어받기를 안내한다', () => {
+  test('끝난 dispatch 의 남은 터미널은 active 밖의 살아 있는 상태에서 바로 찾아 이어받기를 안내한다', () => {
     const fake = fakeOrca([
       { args: ['worker-list', '--terminal-state', 'active'], stdout: workerList([], 'bound') },
-      { args: ['worker-list'], stdout: envelope({ workers: [{ agentTerminalHandle: 'term_old', dispatchId: 'ctx_old', dispatchStatus: 'failed', terminalState: 'retained' }], scope: { source: 'bound' } }) },
+      { args: ['worker-list', '--terminal-state', 'retained'], stdout: envelope({ workers: [{ agentTerminalHandle: 'term_old', dispatchId: 'ctx_old', dispatchStatus: 'failed', terminalState: 'retained' }], scope: { source: 'bound' } }) },
+      { args: ['worker-list'], stdout: workerList([], 'bound') },
       { args: ['terminal', 'show'], stdout: terminalShow('claude') },
       { args: ['run-list'], code: 1 },
     ])
@@ -369,7 +376,40 @@ describe('block-worker-terminal-send', () => {
     assert.equal(v.decision, 'deny')
     assert.match(v.reason, /worker 터미널\(term_old\)/)
     assert.match(v.reason, /adopt-sessions/)
-    assert.ok(!argvs(fake).some((args) => /run-list|terminal show|--terminal-state/.test(args)), argvs(fake).join('\n'))
+    assert.ok(!argvs(fake).some((args) => /run-list/.test(args)), argvs(fake).join('\n'))
+  })
+
+  test('에이전트 터미널은 살아 있는 터미널 상태만 읽고 released 와 상태 없는 전체 목록은 읽지 않는다', () => {
+    const fake = fakeOrca([{ args: ['terminal', 'show'], stdout: terminalShow('claude') }, { args: ['worker-list'], stdout: workerList([WORKER], 'all') }])
+    assert.equal(decide(HOOK, 'orca terminal send --terminal term_dev --text x', sendEnv(fake.path)), 'pass')
+    const states = argvs(fake).filter((a) => a.includes('worker-list')).map((a) => /--terminal-state (\S+)/.exec(a)?.[1] ?? '(없음)')
+    assert.deepEqual([...states].sort(), ['active', 'reclaimable', 'release_pending', 'release_unknown', 'retained'])
+  })
+
+  test('worker 가 아니라고 정한 터미널은 기한 안에 active 만 다시 읽는다', () => {
+    const fake = fakeOrca([
+      { args: ['terminal', 'show'], stdout: terminalShow('claude') },
+      { args: ['run-list'], stdout: runList(['run_a']) },
+      { args: ['worker-list'], stdout: workerList([], 'bound') },
+    ])
+    const env = sendEnv(fake.path)
+    assert.equal(decide(HOOK, 'orca terminal send --terminal term_demo --text x', env), 'pass')
+    const first = argvs(fake).length
+    assert.ok(argvs(fake).some((a) => a.includes('run-list')), argvs(fake).join('\n'))
+    assert.equal(decide(HOOK, 'orca terminal send --terminal term_demo --text y', env), 'pass')
+    assert.deepEqual(argvs(fake).slice(first).map((a) => /--terminal-state (\S+)/.exec(a)?.[1] ?? a), ['active', 'terminal show --terminal term_demo --json'])
+    // 그사이 worker 가 되면 active 에서 찾아 거부한다
+    fake.setRules([{ args: ['worker-list', '--terminal-state', 'active'], stdout: workerList([{ handle: 'term_demo', dispatch: 'ctx_new' }], 'bound') }])
+    assert.equal(decide(HOOK, 'orca terminal send --terminal term_demo --text z', env), 'deny')
+    // 기한이 지나면 다시 모두 읽는다
+    fake.setRules([
+      { args: ['terminal', 'show'], stdout: terminalShow('claude') },
+      { args: ['run-list'], stdout: runList(['run_a']) },
+      { args: ['worker-list'], stdout: workerList([], 'bound') },
+    ])
+    const before = argvs(fake).length
+    assert.equal(decide(HOOK, 'orca terminal send --terminal term_demo --text w', { ...env, ORCH_SEND_HOOK_CACHE_SEC: '0' }), 'pass')
+    assert.ok(argvs(fake).slice(before).some((a) => a.includes('run-list')), argvs(fake).join('\n'))
   })
 
   test('resource 에만 남은 터미널 handle 도 worker 로 판정한다', () => {
@@ -486,10 +526,39 @@ describe('require-spec-line', () => {
   })
 })
 
+describe('record-user-input', () => {
+  const HOOK = 'record-user-input.ts'
+  const input = (prompt: string) => JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt })
+  const dir = () => mkdtempSync(join(root, 'user-input-'))
+
+  test('Orca 터미널의 사용자 입력 시각을 그 터미널 파일에 남기고 출력 없이 0 으로 끝난다', () => {
+    const at = dir()
+    const r = runHook(HOOK, input('이거 왜 자꾸 날라오지?'), { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: 'term_coord-1' })
+    assert.deepEqual({ code: r.code, stdout: r.stdout }, { code: 0, stdout: '' })
+    const saved = JSON.parse(readFileSync(join(at, 'user-input', 'term_coord-1.json'), 'utf8'))
+    assert.ok(Math.abs(Date.now() - saved.at) < 60_000, JSON.stringify(saved))
+  })
+
+  test('orch 가 넣은 자동 입력, Orca 밖의 세션, 읽지 못한 입력은 남기지 않는다', () => {
+    const at = dir()
+    for (const prompt of ['대기 없음: Run r 에 살아 있는 dispatch 2 개가 있는데', '정할 것 묻기: Run r 에 사용자 결정이 남아 있다.', 'You have 3 orchestration messages']) {
+      const r = runHook(HOOK, input(prompt), { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: 'term_coord-1' })
+      assert.deepEqual({ code: r.code, stdout: r.stdout }, { code: 0, stdout: '' }, prompt)
+    }
+    // 이 테스트를 돌리는 세션의 ORCA_TERMINAL_HANDLE 을 비워 Orca 밖의 세션으로 만든다
+    const env: Record<string, string> = { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: '' }
+    const r = runHook(HOOK, input('사용자 말'), env)
+    assert.equal(r.code, 0)
+    assert.equal(runHook(HOOK, 'not json', { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: 'term_coord-1' }).code, 0)
+    assert.ok(!existsSync(join(at, 'user-input')) || readdirSync(join(at, 'user-input')).length === 0)
+  })
+})
+
 describe('hooks.json', () => {
   test('모든 hook 을 node 로 부르고 timeout 은 10초다', () => {
     const config = JSON.parse(readFileSync(join(HOOKS, 'hooks.json'), 'utf8'))
-    const hooks: { command: string; timeout: number }[] = config.hooks.PreToolUse.flatMap((e: { hooks: unknown[] }) => e.hooks)
+    // PreToolUse 와 UserPromptSubmit 을 함께 본다
+    const hooks: { command: string; timeout: number }[] = Object.values(config.hooks as Record<string, { hooks: unknown[] }[]>).flat().flatMap((e) => e.hooks) as { command: string; timeout: number }[]
     const scripts = readdirSync(HOOKS).filter((f) => f.endsWith('.ts') && f !== 'shell-text.ts')
     assert.ok(scripts.length > 0)
     for (const script of scripts) {

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ageSeconds, poll, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
+import { ageSeconds, dismissQuestion, poll, readDismissed, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/watch-questions.ts', import.meta.url))
 
@@ -79,6 +79,9 @@ beforeEach(() => {
   // lib 를 이 프로세스에서 부르는 테스트도 같은 가짜를 쓴다
   process.env.ORCA = env.ORCA
   process.env.FAKE_DIR = tmp
+  // 닫은 질문 기록을 이 머신의 폴더에서 읽지 않는다
+  env.ORCH_MACHINE_DIR = join(tmp, 'machine')
+  process.env.ORCH_MACHINE_DIR = env.ORCH_MACHINE_DIR
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -160,6 +163,15 @@ describe('snapshot', () => {
       ['check', '--run', 'r', '--peek', '--types', 'question,escalation'],
       ['inbox', '--terminal', 'dispatch:d', '--limit', String(REPLY_LIMIT)],
     ])
+  })
+
+  test('닫은 질문(send-to-worker 가 답할 수 없다고 적은 것)은 미답변에서 뺀다', () => {
+    const old = message('q_old')
+    const open = message('q_open')
+    fake({ all: { messages: [old, open] }, peek: { messages: [] } })
+    dismissQuestion('q_old', 'dispatch_inactive')
+    assert.deepEqual(snapshot('r').pending.map((m) => m.id), ['q_open'])
+    assert.deepEqual(readDismissed(), { q_old: 'dispatch_inactive' })
   })
 
   test('턴만 끝낸 멈춤 보고는 질문이 아니고, 오류로 멈춘 보고는 질문으로 남는다', () => {

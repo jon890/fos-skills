@@ -49,6 +49,9 @@ if (is('orchestration', 'reply')) {
   if (state.no_pane || (state.no_pane_scoped && (args.includes('--run') || args.includes('--from')))) {
     print(JSON.stringify({ ok: false, error: { code: 'stable_pane_required', message: 'The coordinator terminal has no stable pane identity' } }), 1)
   }
+  if ((state.inactive || []).includes(opt('--id'))) {
+    print(JSON.stringify({ ok: false, error: { code: 'dispatch_inactive', message: 'Dispatch ctx_1 is completed; its worker will never read that mailbox.' } }), 1)
+  }
   if ((state.answered || []).includes(opt('--id'))) {
     print(JSON.stringify({ ok: false, error: { message: 'Question ' + opt('--id') + ' already has a different answer' } }), 1)
   }
@@ -108,6 +111,8 @@ beforeEach(() => {
     FAKE_LOG: log,
     NUDGE_WORKER: join(tmp, 'nudge.sh'),
     LAUNCH_WORKER: launch,
+    // 닫은 질문 기록(lib/questions.ts)을 이 머신의 폴더에 쓰지 않게 한다
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
   }
   delete env.FAKE_OUT
   delete env.FAKE_EXIT
@@ -258,6 +263,15 @@ describe('살아 있는 dispatch', () => {
     assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_new'])
   })
 
+  test('이미 답한 question 은 닫은 질문으로 적어 루프가 다시 알리지 않게 한다', () => {
+    const inbox = [message('m_q', 'dispatch:ctx_1', 'question', 5), message('m_st', 'term_w', 'status', 3)]
+    state({ dispatches: worker('dispatched'), inbox, answered: ['m_q'] })
+    const r = send('--body', 'x')
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /^closed: m_q 는 answer_conflict 로 답할 수 없어 닫은 질문으로 적었다/m)
+    assert.deepEqual(JSON.parse(readFileSync(join(tmp, 'machine', 'questions-dismissed.json'), 'utf8')), { m_q: 'answer_conflict' })
+  })
+
   test('답이 보이는 question 은 시도하지 않는다', () => {
     const answer = { ...message('m_ans', 'run:run_x', 'status', 6), thread_id: 'm_q' }
     const question = { ...message('m_q', 'dispatch:ctx_1', 'question', 5), thread_id: 'm_q' }
@@ -384,6 +398,15 @@ describe('끝난 dispatch', () => {
     assert.equal(r.code, 3, both(r))
     assert.match(r.stdout, /^ended:/m)
     assert.deepEqual(lines('orca orchestration reply'), [])
+  })
+
+  test('reply 가 dispatch_inactive 로 거절되면 닫은 질문으로 적고 답할 곳이 없는 것으로 다룬다', () => {
+    state({ dispatches: worker('completed'), terminals: [], inbox: [message('m_old', 'dispatch:ctx_1', 'question', 5)], inactive: ['m_old'] })
+    const r = send('--body', '정리한다')
+    assert.equal(r.code, 3, both(r))
+    assert.match(r.stdout, /^closed: m_old 는 dispatch_inactive 로 답할 수 없어 닫은 질문으로 적었다/m)
+    assert.match(r.stdout, /^ended:/m)
+    assert.deepEqual(JSON.parse(readFileSync(join(tmp, 'machine', 'questions-dismissed.json'), 'utf8')), { m_old: 'dispatch_inactive' })
   })
 
   test('이 답을 unanswered() 가 답으로 세어 그 메시지를 뺀다', () => {

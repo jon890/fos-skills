@@ -8,7 +8,7 @@ description: |
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
   orca 명령 문법과 lifecycle 은 Orca 의 `orchestration` 스킬이 소유한다.
 metadata:
-  version: "7.6.0"
+  version: "7.7.0"
 ---
 
 # orch
@@ -32,6 +32,7 @@ metadata:
 `STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 「고를 공부 후보 <개수>개가 <폴더> 에 있다」 로 알리기만 하고 고르라고 재촉하지 않는다.
 사용자 질문이나 결정에서 일반 기술 개념이 판단을 바꿨으면(뜻을 물은 경우 포함) 그 자리에서 공부 후보로 적는다. 아무 주제나 적지 않고 네 기준을 모두 채운 것만 적는다. 기준, 적는 법, 사용자가 고른 후보를 글로 잇는 법은 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.
 `PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록(`installed_plugins.json`)이 가리키는 폴더가 없어 그 플러그인이 실리지 않았다는 뜻이다. 이 스킬이 실렸어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있다. 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다. 설정 폴더가 바뀐 세션에서 옛 폴더 경로가 남은 경우가 대표적이다.
+`ORCA-SHAPE worker-list <키>` 는 Orca 출력 형식이 바뀌어 orch 가 읽는 키가 없다는 뜻이다. worker 판정과 정리가 빈 값으로 엇나가므로 orch 를 갱신하고, 최신에도 나오면 사용자에게 알린다.
 설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
 
 ```bash
@@ -92,7 +93,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 비교한 후보, 고른 이유가 지시서의 `worker 선택:` 줄에 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다(`launch-worker` 도 띄우기 전에 한 번 더 돌려 막는다) | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
 | 3 | 띄우기 | `launch-worker` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
-| 4 | 기다리기 | 저장소마다 `orch-loop.ts --start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `wait-important` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다. 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 받은 delivery 를 `triage-messages` 로 읽었다 | [`references/waiting.md`](references/waiting.md) |
+| 4 | 기다리기 | 저장소마다 `orch-loop.ts --start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `wait-important` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다(사용자와 대화 중이면 `user-active` 가 `USER-ACTIVE` 이고 대기가 없다). 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 받은 delivery 를 `triage-messages` 로 읽었다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
 | 7 | 머지와 정리 | `merge-with-finish.ts` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
@@ -120,6 +121,7 @@ Task 성격으로 모델과 effort 를 고르고, 비교한 후보와 이유를 
 저장소마다 상주 루프 `orch-loop.ts` 를 띄운다. 루프가 틱마다 질문 확인, 정리, 보드 동기화, CI 감시, 멈춘 worker 와 worker 없이 남은 보드 단계 찾기, 충돌 PR 처리를 한다.
 `wait-important` 를 `--loop-repo` 와 함께 백그라운드로 하나만 걸고, 깨어나면 `triage-messages` 로 `worker_done`, `escalation`, `question` 을 먼저 본다. 루프의 알림(`LOOP-EVENT`)과 죽음(`LOOP-DEAD`)에도 이 대기가 깨어난다.
 받은 메시지와 알림을 처리하면 stderr 의 `NEXT_WAIT` 명령으로 즉시 다음 대기를 건다. 미완료 dispatch 가 있는 동안 대기 없이 턴을 끝내지 않는다.
+예외는 사용자와 대화 중일 때다. `user-active` 가 `USER-ACTIVE` 면 다시 걸지 않고 상주 루프의 `NO-WAIT` 에 맡긴다([`references/waiting.md`](references/waiting.md) 의 「사용자와 대화 중일 때」).
 루프가 새 사용자 결정 질문이나 보드의 남은 `decide` 줄을 찾으면 `decision-pending` 기본 핸들러가 코디네이터에게 「정할 것 묻기」 를 요청한다. 이미 물어 답을 기다리는 결정은 다시 묻지 않는다.
 압축 뒤에는 루프와 대기가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
 heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.

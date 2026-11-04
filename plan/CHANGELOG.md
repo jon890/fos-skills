@@ -1,5 +1,11 @@
 # CHANGELOG: plan
 
+## 5.4.0 (2026-11-04)
+
+- `verify_task.py` 가 `claude plugin test [dir]` 를 dir 아래 `*.test.ts`, `*.test.tsx` 를 실행하는 테스트 명령으로 봐요.
+- 레포 설정의 「PR 변경 파일 상한」 과 「파일 길이 상한」 을 `verify_task.py` 가 읽어 계획 단계에서 경고해요.
+- `run_doc_checks.py` 가 레포 설정의 「문서 검사 명령」 을 spec·technical-design 단계에서 실행해요.
+
 ## 5.3.0 (2026-11-03)
 
 - 도메인 규칙 변경이 있으면 도메인 문서·출력 계약 수정과 규칙별 확인 사례를 작업에 넣어요.

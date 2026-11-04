@@ -12,28 +12,37 @@
 //     - 어느 Run 의 worker 도 아니면 통과한다
 //
 // worker 판정 범위(앞 단계에서 정해지면 뒤 단계로 가지 않는다):
-//     1. `worker-list --limit 100` 을 page.nextCursor 끝까지 읽는다. 행의 agentTerminalHandle 이
-//        대상이면 worker 이고, 그 행의 dispatchId 로 첫 화면을 본다
-//     2. 없고 첫 응답의 scope.source 가 all 이면 worker 가 아니다
-//     3. 없고 all 이 아니면(묶인 Run 만 봤다) `orca terminal show --terminal <대상>` 의 agentIdentity 를 본다.
-//        비어 있으면(에이전트가 돌지 않는 셸) worker 가 아니다
-//     4. agentIdentity 가 있으면 `run-list --limit 100` 을 result.nextCursor 끝까지 읽어 updated_at 이 최근인 순서로 놓고,
-//        Run 마다 `worker-list --run <id> --limit 100` 을 page.nextCursor 끝까지 읽는다.
-//        동시 16개까지 부르고, 대상을 모두 찾으면 남은 호출을 기다리지 않는다. 모두 읽고도 없으면 worker 가 아니다
-//     Run 이 수백 개 쌓인 머신에서 모든 Run 을 늘 읽으면 시간 한도에 자주 닿는다(2026-10-24 실측 251개, 한 번 약 0.11초).
-//     그래서 전체 조회는 다른 Run 의 worker 일 수 있는 에이전트 터미널로 보낼 때만 한다.
-//     active 필터를 쓰면 끝난 dispatch 의 살아 있는 터미널을 못 찾아 모든 Run 을 훑고 시간 초과한다.
-//     끝난 dispatch 도 식별해 직접 입력을 막고 adopt-sessions 로 새 dispatch 에 연결하도록 안내한다.
+//     조회는 `worker-list ... --limit 100` 을 page.nextCursor 끝까지 읽는다. 행의 agentTerminalHandle(없으면 resource.terminalHandle)이
+//     대상이면 worker 이고, 그 행의 dispatchId 로 첫 화면을 본다.
+//     1. `worker-list --terminal-state active` 를 읽는다. 일하는 worker 와 막 띄운 worker 는 모두 여기 있다
+//     2. 없으면 `orca terminal show --terminal <대상>` 의 agentIdentity 를 본다. 비어 있으면(에이전트가 돌지 않는 셸) worker 가 아니다.
+//        막 띄워 에이전트를 아직 알아보지 못한 worker 는 1단계가 찾았다
+//     3. 에이전트 터미널이 아래 「판정 기억」 에 worker 가 아니라고 남아 있으면 worker 가 아니다
+//     4. 남은 터미널 상태(LIVE_STATES: reclaimable, release_unknown, release_pending, retained)를 동시에 읽는다.
+//        끝난 dispatch 가 남긴 살아 있는 터미널이 여기 있다. released 는 읽지 않는다. 터미널을 돌려준 행이라 지금 보내는 터미널의 행일 수 없다
+//        (2026-11-04 실측: released 2243행 가운데 살아 있는 터미널 0)
+//     5. 없고 1단계 응답의 scope.source 가 all 이면 worker 가 아니다
+//     6. all 이 아니면(묶인 Run 만 봤다) `run-list --limit 100` 을 result.nextCursor 끝까지 읽어 updated_at 이 최근인 순서로 놓고,
+//        Run 마다 `worker-list --run <id> --limit 100` 을 읽는다. 동시 16개까지 부르고, 대상을 모두 찾으면 남은 호출을 기다리지 않는다.
+//        모두 읽고도 없으면 worker 가 아니다
+//     상태 없이 모든 행을 읽던 때는 4천여 행 45쪽이 7초 한도를 넘어, worker 가 아닌 터미널로 보내도 10번 중 6~7번 거부됐다(2026-11-02).
+//     active 만 읽으면 끝난 dispatch 의 살아 있는 터미널을 놓친다. 끝난 dispatch 도 식별해 직접 입력을 막고 adopt-sessions 로 새 dispatch 에
+//     연결하도록 안내한다.
+//
+// 판정 기억: 4~6단계로 worker 가 아니라고 정한 에이전트 터미널은 머신 폴더(lib/machine.ts)의 send-hook-cache.json 에
+//     {handle: 정한 epoch ms} 로 남긴다. ORCH_SEND_HOOK_CACHE_SEC(기본 600)초 안에는 4~6단계를 건너뛴다. 1단계는 늘 읽으므로
+//     그사이 새 dispatch 가 그 터미널을 쓰면 찾는다. 읽지 못하거나 쓰지 못하면 기억 없이 판정한다. 시간 초과로 끝난 판정은 남기지 않는다
 //
 // 조회 실패와 시간 한도:
 //     - 종료 코드가 0 이 아니거나, JSON 이 아니거나, result.workers(run-list 는 result.runs, terminal show 는 result.terminal)
 //       꼴이 아니면 조회 실패로 거부한다
 //     - orca 호출은 모두 합쳐 hook 시작부터 7초 안에 끝낸다. 호출마다 남은 시간을 넘기고, 남은 시간이 없으면 부르지 않고 거부한다.
 //       hooks.json 의 timeout 이 10초이고, hook 이 시간을 넘겨 죽으면 Claude Code 는 막지 않고 명령을 실행하기 때문이다.
-//       Run 이 늘어 4단계가 한도를 넘으면 거부된다. fail-closed 의 의도된 비용이다
+//       Run 이 늘어 4~6단계가 한도를 넘으면 거부된다. fail-closed 의 의도된 비용이다
 //     - 조회는 runAsync 로만 한다. 동기 실행은 TERM 을 무시하는 자식이 끝날 때까지 돌아오지 않는다.
 //       판정을 낸 뒤 process.exit 로 끝내 아직 도는 조회가 hook 을 붙잡지 않게 한다
 //     - ORCH_SEND_HOOK_BUDGET_MS 는 7초 한도를 바꾼다. 테스트만 쓴다
+//     - 4단계의 상태별 조회는 동시에 돈다. 하나라도 실패하면 조회 실패다
 //     - ORCA_TERMINAL_HANDLE 은 빼지 않는다. 빼도 worker-list 의 범위가 넓어지지 않는다(lib/orca.ts 머리 주석)
 //
 // 오탐을 피하는 기준:
@@ -50,6 +59,9 @@
 // 입력은 stdin 의 hook JSON 이다. 거부할 때만 deny 결정을 stdout 으로 낸다. 읽지 못한 입력은 통과시킨다.
 // hooks.json 은 이 파일을 PATH 의 `node` 로 부른다. node 를 찾지 못하면 Claude Code 는 오류를 보이고 막지 않는다.
 
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { machineDir } from '../scripts/lib/machine.ts'
 import { orcaBin, withFull } from '../scripts/lib/orca.ts'
 import { runAsync } from '../scripts/lib/proc.ts'
 import type { RunResult } from '../scripts/lib/proc.ts'
@@ -64,6 +76,9 @@ const BODY_FLAG = /--(?:text|interrupt)\b/
 const ENTER_FLAG = /--enter\b/
 // Orca 가 첫 화면에서 사람을 기다린다고 알리는 이름. 사용자가 답할 화면이라 키 입력만 허용한다
 const FIRST_SCREEN = /agent-(?:trust-workspace|update-prompt|cwd-prompt|hooks-review-prompt)/
+
+// 4단계에서 동시에 읽는 터미널 상태. active 는 1단계가 먼저 읽는다
+const LIVE_STATES = ['reclaimable', 'release_unknown', 'release_pending', 'retained']
 
 const DEFAULT_BUDGET_MS = 7_000
 const PAGE_LIMIT = '100'
@@ -282,16 +297,58 @@ function scanRuns(ids: string[], wanted: Set<string>, found: Map<string, Worker>
   })
 }
 
-// 대상 가운데 worker 터미널인 것. {handle: 그 행}
+// 머리 주석의 「판정 기억」
+function cacheFile(): string {
+  return join(machineDir(), 'send-hook-cache.json')
+}
+
+function cacheMs(): number {
+  const raw = Number(process.env.ORCH_SEND_HOOK_CACHE_SEC)
+  return (Number.isFinite(raw) && raw >= 0 ? raw : 600) * 1000
+}
+
+function readCache(): Record<string, number> {
+  try {
+    const data: unknown = JSON.parse(readFileSync(cacheFile(), 'utf8'))
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return {}
+    return Object.fromEntries(Object.entries(data).filter(([, at]) => typeof at === 'number' && Number.isFinite(at))) as Record<string, number>
+  } catch {
+    return {}
+  }
+}
+
+// worker 가 아니라고 정한 대상을 남긴다. 기한이 지난 것은 지운다
+function rememberNonWorkers(handles: string[]): void {
+  if (handles.length === 0) return
+  const now = Date.now()
+  const kept = Object.fromEntries(Object.entries(readCache()).filter(([, at]) => now - at < cacheMs()))
+  for (const handle of handles) kept[handle] = now
+  try {
+    const file = cacheFile()
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(kept))
+    renameSync(`${file}.${process.pid}.tmp`, file)
+  } catch {
+    // 기억하지 못하면 다음 호출이 다시 조회할 뿐이다
+  }
+}
+
+// 대상 가운데 worker 터미널인 것. {handle: 그 행}. 단계는 머리 주석의 「worker 판정 범위」 다
 async function lookupWorkers(handles: string[]): Promise<Map<string, Worker>> {
   const found = new Map<string, Worker>()
-  const scope = await scanWorkers([], new Set(handles), found)
-  const left = handles.filter((h) => !found.has(h))
-  if (left.length === 0 || scope === 'all') return found
+  const scope = await scanWorkers(['--terminal-state', 'active'], new Set(handles), found)
   const agents: string[] = []
-  for (const handle of left) if (await hasAgent(handle)) agents.push(handle)
-  if (agents.length === 0) return found
-  await scanRuns(await runIds(), new Set(agents), found)
+  for (const handle of handles.filter((h) => !found.has(h))) if (await hasAgent(handle)) agents.push(handle)
+  const cache = readCache()
+  const now = Date.now()
+  const fresh = agents.filter((h) => cache[h] === undefined || now - cache[h] >= cacheMs())
+  if (fresh.length === 0) return found
+  const wanted = new Set(fresh)
+  const allFound = () => fresh.every((h) => found.has(h))
+  await Promise.all(LIVE_STATES.map((state) => scanWorkers(['--terminal-state', state], wanted, found, allFound)))
+  const left = fresh.filter((h) => !found.has(h))
+  if (left.length > 0 && scope !== 'all') await scanRuns(await runIds(), new Set(left), found)
+  rememberNonWorkers(left.filter((h) => !found.has(h)))
   return found
 }
 

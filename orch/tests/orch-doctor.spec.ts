@@ -611,6 +611,35 @@ describe('worker 판정', () => {
   })
 })
 
+describe('Orca 형식 판정', () => {
+  const full = { dispatchId: 'ctx_1', taskId: 'task_1', dispatchStatus: 'dispatched', workerState: 'ready', agentTerminalHandle: null, resource: { worktreeId: 'w::/x', ownershipState: 'orchestration_owned' } }
+  function run(rows: unknown[]) {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    const rowsFile = join(tmp, 'workers.json')
+    writeFileSync(rowsFile, JSON.stringify(rows))
+    return doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_WORKERS: rowsFile, FAKE_PS: join(tmp, 'none') } })
+  }
+
+  test('worker-list 행에 orch 가 읽는 키가 빠지면 ORCA-SHAPE 와 안내를 내고 종료 코드는 0 이다', () => {
+    const { workerState: _, resource: __, ...rest } = full
+    const r = run([{ ...rest, resource: { ownershipState: 'user_owned' } }])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = r.stdout.split('\n')
+    const at = out.indexOf('ORCA-SHAPE worker-list workerState,resource.worktreeId')
+    assert.ok(at >= 0, r.stdout)
+    assert.match(out[at + 1], /^ {2}안내: Orca 출력 형식이 바뀌어/)
+  })
+
+  test('키가 모두 있거나(null 값 포함) 행이 없거나 orca 가 실패하면 내지 않는다', () => {
+    assert.doesNotMatch(run([full]).stdout, /ORCA-SHAPE/)
+    assert.doesNotMatch(run([]).stdout, /ORCA-SHAPE/)
+    const skill = join(tmp, 'skill')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_FAIL: '1', FAKE_PS: join(tmp, 'none') } })
+    assert.doesNotMatch(r.stdout, /ORCA-SHAPE/)
+  })
+})
+
 describe('루프 번들 판정', () => {
   test('설치되지 않은 번들로 도는 루프만 LOOP-STALE 로 알리고, 다시 띄울 명령을 그 Run 의 세션에서 돌리라고 안내한다', () => {
     const skill = join(tmp, 'skill')
@@ -632,27 +661,67 @@ describe('루프 번들 판정', () => {
         `  111 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('aaaaaaa1')} --repo ${repo} --run r1 --foreground`,
         // 같은 루프의 틱 자식은 따로 세지 않는다
         `  112 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('aaaaaaa1')} --repo ${repo} --run r1 --tick --tick-number 3`,
-        // 설치된 번들(user 와 project 범위 모두 설치본이다)
+        // 지금 세션의 설치본(user 범위)
         `  222 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('bbbbbbb2')} --repo /r/b --run r2 --foreground`,
+        // project 범위 행만 있는 번들은 지금 세션이 싣는 번들이 아니다
         `  333 /usr/bin/node --disable-warning=ExperimentalWarning ${loopOf('ccccccc3')} --repo /r/c --run r3 --foreground`,
         // 저장소 체크아웃에서 띄운 개발 중인 루프
         '  444 /usr/bin/node --disable-warning=ExperimentalWarning /Users/me/fos-skills/orch/scripts/orch-loop.ts --repo /r/d --foreground',
         '',
       ].join('\n'),
     )
-    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile } })
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: dirname(plugins) } })
     // 경고라 종료 코드는 바꾸지 않는다
     assert.equal(r.code, 0, r.stdout + r.stderr)
     const out = r.stdout.split('\n')
     assert.deepEqual(
       out.filter((line) => line.startsWith('LOOP-STALE')),
-      [`LOOP-STALE ${repo} 111 aaaaaaa1`],
+      [`LOOP-STALE ${repo} 111 aaaaaaa1`, 'LOOP-STALE /r/c 333 ccccccc3'],
     )
     const at = out.indexOf(`LOOP-STALE ${repo} 111 aaaaaaa1`)
     assert.match(out[at + 1], /^ {2}안내: 이 루프는 설치되지 않은 번들\(aaaaaaa1\)로 돈다\. 아래 두 명령은 그 루프의 Run\(r1\) 코디네이터 세션에서 돌린다/)
     const fresh = join(bundle('bbbbbbb2'), 'orch', 'scripts', 'orch-loop.ts')
     assert.equal(out[at + 2], `  node --disable-warning=ExperimentalWarning "${fresh}" --repo '${repo}' --stop --all`)
     assert.equal(out[at + 3], `  node --disable-warning=ExperimentalWarning "${fresh}" --repo '${repo}' --run r1 --start`)
+  })
+
+  test('버전 이름의 캐시 폴더도 보고, 다른 프로필의 같은 버전 폴더는 같은 번들로 본다', () => {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    const config = join(tmp, 'profile', 'home')
+    const bundle = (root: string, version: string) => join(root, 'plugins', 'cache', 'fos-skills', 'fos-skills', version)
+    write(
+      join(config, 'plugins', 'installed_plugins.json'),
+      JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'user', installPath: bundle(config, '3.12.0') }, { scope: 'project', installPath: bundle(join(tmp, 'old'), '3.6.0') }] } }),
+    )
+    const loopOf = (root: string, version: string) => join(bundle(root, version), 'orch', 'scripts', 'orch-loop.ts')
+    const psFile = join(tmp, 'ps.txt')
+    writeFileSync(
+      psFile,
+      [
+        `  111 node ${loopOf(join(tmp, 'old'), '3.6.0')} --repo /r/a --run r1 --foreground`,
+        `  222 node ${loopOf(join(tmp, 'other-profile'), '3.12.0')} --repo /r/b --run r2 --foreground`,
+        `  333 node ${loopOf(config, '3.12.0')} --repo /r/c --run r3 --foreground`,
+        '',
+      ].join('\n'),
+    )
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: config } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.deepEqual(r.stdout.split('\n').filter((line) => line.startsWith('LOOP-STALE')), ['LOOP-STALE /r/a 111 3.6.0'])
+    const fresh = join(bundle(config, '3.12.0'), 'orch', 'scripts', 'orch-loop.ts')
+    assert.ok(r.stdout.includes(`"${fresh}" --repo /r/a --stop --all`), r.stdout)
+  })
+
+  test('지금 프로필에 user 범위 행이 없으면 판정하지 않는다', () => {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    const config = join(tmp, 'home')
+    const plugins = join(config, 'plugins')
+    write(join(plugins, 'installed_plugins.json'), JSON.stringify({ plugins: { 'fos-skills@mkt': [{ scope: 'project', installPath: join(plugins, 'cache', 'mkt', 'fos-skills', 'bbbbbbb2') }] } }))
+    const psFile = join(tmp, 'ps.txt')
+    writeFileSync(psFile, `  111 node ${join(plugins, 'cache', 'mkt', 'fos-skills', 'aaaaaaa1', 'orch', 'scripts', 'orch-loop.ts')} --repo /r/a --foreground\n`)
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: config } })
+    assert.doesNotMatch(r.stdout, /LOOP-STALE/)
   })
 
   test('installed_plugins.json 을 읽지 못하면 판정하지 않는다', () => {

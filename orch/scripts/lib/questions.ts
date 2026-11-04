@@ -8,6 +8,7 @@
 // 그 Run 에서는 조회마다 나오는 안내라 stdout 으로 내지 않는다(watch-questions 가 Monitor 를 깨우지 않게).
 // Orca 가 worker 대신 보낸 턴만 끝낸 멈춤 보고(lib/stop-reports.ts 의 quiet)는 escalation 이어도 질문으로 세지 않는다.
 // 답 판정: 질문의 스레드에 worker 쪽으로 간 메시지(받는 쪽이 있고 Run 이 아닌 것)가 있으면 답한 것이다(ADR-015).
+// 아래 「닫은 질문」 에 적힌 질문도 미답변에서 뺀다.
 // 보낸 쪽이 Run 인지 코디네이터 터미널인지는 보지 않는다. Orca 터미널에서는 `--from run:<run>` 이 거부돼 답의 보낸 쪽이 term_* 다.
 // 질문을 ack 했는지는 보지 않는다. worker 의 후속 메시지는 Run 으로 가서 답이 아니다.
 // 답은 질문을 보낸 쪽과 그 질문의 dispatch(`dispatch:<id>`)의 inbox 에서 각각 200건까지 읽는다.
@@ -20,8 +21,8 @@
 //
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
-import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { context, isoTime, readyOf } from './completion.ts'
 import { envMs } from './env.ts'
 import { fire } from './events.ts'
@@ -30,6 +31,7 @@ import { defaultBase, mainCheckout } from './git.ts'
 import { orcaJson } from './orca.ts'
 import { readLaunch } from './launched.ts'
 import type { Launch } from './launched.ts'
+import { machineDir } from './machine.ts'
 import { makeParent } from './paths.ts'
 import { pyJson, pyStr as text } from './py.ts'
 import { isQuietStop } from './stop-reports.ts'
@@ -108,7 +110,8 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
     if (rows.length >= REPLY_LIMIT) full.add(handle)
     replies.push(...rows.filter((m) => threads.has(m.thread_id)))
   }
-  const pending = unanswered([...candidates.values(), ...replies], run)
+  // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
+  const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run))
   // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
   if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {
     throw new Error('답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다')
@@ -322,4 +325,39 @@ export function writeClosed(file: string, closed: Closed, repo: string): void {
   const temporary = file.replace(/\.json$/, '') + '.tmp'
   writeFileSync(temporary, `${JSON.stringify(closed)}\n`)
   renameSync(temporary, file)
+}
+
+// 닫은 질문 ------------------------------------------------------------------
+// 답할 수 없거나 이미 답이 있는 질문이다. send-to-worker 가 reply 를 dispatch_inactive(끝난 dispatch)나
+// answer_conflict(Orca 에 다른 답이 이미 있다)로 거절받으면 적는다. 그 질문은 아무리 다시 답해도 닫히지 않아,
+// 루프를 다시 띄울 때마다 10월 질문 28건이 재알림됐다(2026-11-03).
+// 기록: 머신 폴더(lib/machine.ts)의 questions-dismissed.json, {<질문 id>: <이유>}. 메시지 id 는 Orca 전체에서 하나라 Run 으로 나누지 않는다.
+// 루프와 doctor 가 미답변 질문에서 뺀다. 루프는 이 파일을 쓰지 않는다(위 닫힌 기록은 루프가 틱마다 다시 쓴다).
+
+export function dismissedFile(): string {
+  return join(machineDir(), 'questions-dismissed.json')
+}
+
+export function readDismissed(): Record<string, string> {
+  try {
+    const data: unknown = JSON.parse(readFileSync(dismissedFile(), 'utf8'))
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return {}
+    return Object.fromEntries(Object.entries(data).filter(([, reason]) => typeof reason === 'string')) as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
+export function dismissQuestion(id: string, reason: string): void {
+  const file = dismissedFile()
+  const all = { ...readDismissed(), [id]: reason }
+  mkdirSync(dirname(file), { recursive: true })
+  const temporary = `${file}.${process.pid}.tmp`
+  writeFileSync(temporary, `${JSON.stringify(all)}\n`)
+  renameSync(temporary, file)
+}
+
+// 닫은 질문을 뺀 미답변 질문
+export function withoutDismissed(pending: Message[], dismissed = readDismissed()): Message[] {
+  return pending.filter((m) => !Object.hasOwn(dismissed, String(m.id)))
 }
