@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { EVENTS } from '../scripts/lib/events.ts'
 
 const ORCH = fileURLToPath(new URL('..', import.meta.url))
-const FLOW = join(ORCH, '..', 'docs', 'flow.md')
+const FLOW = join(ORCH, '..', '..', 'docs', 'flow.md')
 const EVENTS_TS = join(ORCH, 'scripts', 'lib', 'events.ts')
 const HOOKS = join(ORCH, 'references', 'hooks.md')
 

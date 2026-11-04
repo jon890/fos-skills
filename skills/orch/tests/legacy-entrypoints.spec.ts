@@ -21,6 +21,6 @@ describe('옛 진입점', () => {
   })
 
   test('work-board/bin 에 .py, .sh 가 없다', () => {
-    assert.deepEqual(legacy(join(ORCH, '..', 'work-board', 'bin')), [])
+    assert.deepEqual(legacy(join(ORCH, '..', '..', 'work-board', 'bin')), [])
   })
 })

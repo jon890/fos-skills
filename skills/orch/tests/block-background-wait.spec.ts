@@ -74,7 +74,7 @@ describe('block-background-wait', () => {
 
   test('플러그인 매니페스트가 hooks.json 을 싣고 hooks.json 이 이 hook 을 node 로 부른다', () => {
     const manifest = JSON.parse(readFileSync(PLUGIN, 'utf8'))
-    assert.ok(manifest.hooks.includes('./orch/hooks/hooks.json'), JSON.stringify(manifest.hooks))
+    assert.ok(manifest.hooks.includes('./skills/orch/hooks/hooks.json'), JSON.stringify(manifest.hooks))
     const entries = JSON.parse(readFileSync(HOOKS_JSON, 'utf8')).hooks.PreToolUse
     const commands: string[] = entries
       .filter((e: { matcher: string }) => e.matcher === 'Bash')
