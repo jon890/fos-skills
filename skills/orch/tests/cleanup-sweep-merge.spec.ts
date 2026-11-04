@@ -567,6 +567,8 @@ describe('짧은 출력', () => {
     assert.equal(sweepLine('정리 /w/a (feat-a, PR #1 MERGED)', ctx), null)
     assert.equal(sweepLine('  건너뜀: 커밋 안 된 변경. 다음 실행에서 다시 시도한다', ctx), 'KEPT /w/a 커밋 안 된 변경')
     assert.equal(sweepLine('  Docker 컨테이너 남김 web: 삭제 실패 (busy)', ctx), 'KEPT docker:web 삭제 실패 (busy)')
+    assert.equal(sweepLine('남김 /w/b: PR 없음, upstream 이 남아 있다. 치우지 않는 이유: 조회 실패', ctx), 'KEPT /w/b PR 없음, upstream 이 남아 있다. 치우지 않는 이유: 조회 실패')
+    assert.equal(sweepLine('  남김: 사용자 보유 터미널 (/w/c). 근거: 화면이 작업 중이다', ctx), 'KEPT /w/c 사용자 보유 터미널 근거: 화면이 작업 중이다')
     assert.equal(sweepLine('cleanup-sweep apply: /r (base main)', ctx), null)
     assert.equal(sweepLine('FINISH-MISSING #1 feat-a: 마무리', ctx), 'FINISH-MISSING #1 feat-a: 마무리')
   })
