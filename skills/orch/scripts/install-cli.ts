@@ -46,7 +46,14 @@ function main(argv: string[]): number {
   const target = resolve(values.target ?? join(homedir(), '.local', 'bin', 'orch'))
   const source = readFileSync(LAUNCHER, 'utf8')
   let verdict = 'CLI-INSTALLED'
-  if (existsSync(target) && lstatSync(target).isSymbolicLink()) {
+  let link = false
+  try {
+    link = lstatSync(target).isSymbolicLink()
+  } catch {
+    // 없으면 새로 깐다
+  }
+  // 대상이 없는 링크도 existsSync 는 false 라 lstat 으로 먼저 본다
+  if (link) {
     // 링크를 따라가 덮으면 그 대상(다른 체크아웃의 파일일 수 있다)을 고친다
     process.stdout.write(`CLI-CONFLICT ${target}\n`)
     process.stderr.write(`install-cli: ${target} 는 심볼릭 링크다. 덮지 않는다. 링크를 지운 뒤 다시 부른다\n`)

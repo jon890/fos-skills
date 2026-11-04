@@ -73,7 +73,8 @@ function workDir(): string {
   try {
     return process.cwd()
   } catch {
-    let dir = process.env.PWD ? resolve(process.env.PWD) : homedir()
+    // PWD 가 없으면 루트다. 홈 폴더가 git 저장소인 머신에서 홈을 문맥 저장소로 읽지 않게 한다
+    let dir = process.env.PWD ? resolve(process.env.PWD) : '/'
     while (!isDir(dir) && dirname(dir) !== dir) dir = dirname(dir)
     return dir
   }

@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -177,6 +177,16 @@ describe('install-cli', () => {
     assert.equal(r.code, 1)
     assert.equal(r.stdout.trim(), `CLI-CONFLICT ${target}`)
     assert.equal(readFileSync(real, 'utf8'), '#!/usr/bin/env node\n// fos-skills orch launcher\n// other\n')
+  })
+
+  test('대상이 없는 링크도 따라가 쓰지 않는다', () => {
+    const target = join(tmp, 'bin', 'orch')
+    mkdirSync(dirname(target), { recursive: true })
+    symlinkSync(join(tmp, 'nowhere', 'orch'), target)
+    const r = install(target)
+    assert.equal(r.code, 1)
+    assert.equal(r.stdout.trim(), `CLI-CONFLICT ${target}`)
+    assert.equal(existsSync(join(tmp, 'nowhere', 'orch')), false)
   })
 
   test('표지 없는 다른 orch 는 덮지 않고 CLI-CONFLICT 와 1 이다', () => {
