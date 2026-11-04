@@ -61,7 +61,7 @@ python3 scripts/check-skill-docs.py
 python3 skills/plan/scripts/check_feature.py docs/features/version-at-merge/spec.md --design docs/features/version-at-merge/design.md
 python3 export-only-skills/korean-check/scripts/korean-style-check.py docs/features/version-at-merge/spec.md docs/features/version-at-merge/design.md docs/adr/023-version-at-merge.md README.md
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/plugin-version.yml'))"
-! grep -rnE '(PR|버전).{0,20}(CHANGELOG).{0,20}직접 올' README.md docs/flow.md docs/code-architecture.md
+! grep -rn '바뀐 스킬 CHANGELOG 로 등급' README.md docs/flow.md docs/code-architecture.md
 ```
 
 ## 인수 검증 계획

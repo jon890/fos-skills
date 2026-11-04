@@ -29,7 +29,7 @@
 `apply_fragments(root, day) -> (적용한 [(단위, 새 버전)], 경고 [문자열])`:
 
 1. 조각 파일을 단위별로 모은다. 검사에 실패한 조각은 경고만 내고 건너뛴다.
-2. 순서는 `git log --reverse --first-parent -m --diff-filter=A --name-only --format=` 가 낸 경로의 첫 등장 순서다. 목록에 없으면 파일 이름순이다. 머지 커밋은 첫째 부모 기준 diff 라 PR 이 더한 파일이 머지 순서로 나온다.
+2. 순서는 `git log --reverse --first-parent -m --diff-filter=A --name-only --format=` 가 낸 경로의 마지막 등장 순서다(같은 슬러그를 지웠다 다시 쓰면 다시 더한 자리). 목록에 없으면 파일 이름순이다. 머지 커밋은 첫째 부모 기준 diff 라 PR 이 더한 파일이 머지 순서로 나온다.
 3. 조각마다 지금 버전에 등급을 적용한다(patch → Z+1, minor → Y+1 이고 Z 는 0). CHANGELOG 의 첫 `## ` 줄 앞에 `## X.Y.Z (day)`, 빈 줄, 조각 항목, 빈 줄을 넣는다. 파일 끝 빈 줄은 한 줄로 맞춘다. SKILL.md 가 있으면 `metadata.version` 줄을 바꾼다. 조각을 `git rm` 없이 파일로 지우면 workflow 의 `git commit -am` 이 삭제를 담는다.
 4. 날짜 `day` 는 호출자가 준다. 기본값은 `Asia/Seoul` 의 오늘이다(`zoneinfo`).
 
@@ -49,7 +49,7 @@ workflow: `Commit and push` 단계의 제목을 `git diff --quiet -- .claude-plu
 - 취소된 실행의 한계: 조각과 스킬 버전은 다음 실행이 복구하지만, 플러그인 CHANGELOG 줄의 PR 번호와 옛 방식 `호환성:` 신호는 push 범위만 보므로 취소된 실행 몫이 빠진다. 기존 한계이고 문서(ADR-023)에 적는다.
 - 사람이 plugin.json 을 직접 올린 push 에 조각이 함께 있으면 조각은 처리하지만 플러그인 CHANGELOG 줄에는 그 스킬 버전이 적히지 않는다.
 - 봇의 `git pull --rebase` 가 옛 방식 PR 과 CHANGELOG 에서 겹치면 3회 뒤 workflow 가 끝난다. 수동 복구다(ADR-023 에 적는다).
-- 스킬 폴더를 옮기면 조각 추가가 이름 변경으로 잡혀 `--diff-filter=A` 에 나오지 않는다. 이때와 같은 슬러그를 지웠다 다시 쓴 경우는 DECISION3 의 이름순 대체 순서(또는 옛 순서)를 받는다.
+- 스킬 폴더를 옮기면 조각 추가가 이름 변경으로 잡혀 `--diff-filter=A` 에 나오지 않는다. 이때는 DECISION3 의 이름순 대체 순서를 받는다.
 - 되돌리기: workflow 의 호출 줄을 되돌리면 조각이 쌓이기만 한다. 조각이 있어도 옛 방식 PR 은 그대로 머지된다.
 
 ## 검증 전략
@@ -68,5 +68,5 @@ workflow: `Commit and push` 단계의 제목을 `git diff --quiet -- .claude-plu
 | --- | --- | --- | --- | --- |
 | DECISION1 | 조각 규칙의 자리 | `scripts/skill_changes.py` 한 곳. 검사기와 bump 스크립트가 함께 쓴다 | 작성자 | 규칙이 둘로 갈라 낡지 않게 한다(`skill_paths.py` 와 같은 관례) |
 | DECISION2 | 지금 버전의 원본 | CHANGELOG 첫 버전 절. SKILL.md 가 있으면 함께 바꾼다 | 작성자 | work-board 확장은 SKILL.md 가 없다. 두 값의 일치는 `check-skill-docs.py` 가 지킨다 |
-| DECISION3 | 조각 순서 | 첫째 부모 기준 `git log` 에서 파일이 처음 나온 순서, 없으면 이름순 | 작성자 | 머지 순서가 버전 순서가 되고 squash, merge, rebase 머지 모두 같다 |
+| DECISION3 | 조각 순서 | 첫째 부모 기준 `git log` 에서 파일을 마지막으로 더한 순서, 없으면 이름순 | 작성자 | 머지 순서가 버전 순서가 되고 squash, merge, rebase 머지 모두 같다 |
 | DECISION4 | ADR 번호 | 023 을 쓴다. 이 저장소는 orch 의 `adr.dirs` 를 설정하지 않아 번호를 예약하지 못한다 | 작성자 | 열린 PR 에 ADR 변경이 없음을 `gh pr list` 로 확인했다 |

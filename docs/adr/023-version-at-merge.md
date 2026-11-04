@@ -2,7 +2,7 @@
 
 - **status**: `accepted`
 - **결정**: PR 은 스킬의 `metadata.version` 과 CHANGELOG 를 건드리지 않고 `<단위>/changes/<슬러그>.<등급>.md` 조각 파일만 더한다. 단위는 `skills/<이름>`, `export-only-skills/<이름>`, `extensions/<이름>` 이고 등급은 파일 이름 접미 `.patch.md`, `.minor.md` 둘뿐이다. 내용은 CHANGELOG 항목(`- ` 줄) 1~5개다.
-  main push 마다 `plugin-version.yml` 이 부르는 `scripts/bump-plugin-version.py` 가 먼저 main 트리의 조각을 모두 처리한다. 조각마다 버전 하나를 머지 순서(`git log --first-parent` 에서 처음 나온 순서)로 올려 CHANGELOG 맨 위에 `## X.Y.Z (한국 시간 실행일)` 절을 만들고 `SKILL.md` 가 있으면 `metadata.version` 도 바꾸며 조각 파일을 지운다. 조각이 있으면 플러그인 등급은 minor 이상이다.
+  main push 마다 `plugin-version.yml` 이 부르는 `scripts/bump-plugin-version.py` 가 먼저 main 트리의 조각을 모두 처리한다. 조각마다 버전 하나를 머지 순서(`git log --first-parent` 에서 그 파일을 마지막으로 더한 순서)로 올려 CHANGELOG 맨 위에 `## X.Y.Z (한국 시간 실행일)` 절을 만들고 `SKILL.md` 가 있으면 `metadata.version` 도 바꾸며 조각 파일을 지운다. 조각이 있으면 플러그인 등급은 minor 이상이다.
   major(`호환성:` 항목)는 조각으로 받지 않는다. PR 이 버전과 CHANGELOG 를 직접 올린다. 옛 방식 PR 도 그대로 머지되고, 조각이 없는 스킬은 workflow 가 건드리지 않는다.
   [ADR-019](019-plugin-version-auto-bump.md) 의 플러그인 version 규칙(등급, 형식, 봇 커밋)은 유지하고 그 입력에 조각을 더한다. 사용자 결정 2026-11-04.
 - **맥락**: 같은 스킬을 고치는 PR 이 여럿이면 먼저 머지된 PR 뒤의 PR 이 버전 줄과 CHANGELOG 절에서 충돌했다. orch `7.6.0` 절에서 두 PR 이 충돌해 7.7.0 으로 다시 올리고 CI 를 다시 기다렸고, 다른 PR 도 `work-board/CHANGELOG.md` 에서 CONFLICTING 이 났다.

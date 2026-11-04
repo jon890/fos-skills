@@ -373,7 +373,7 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)"
 **PR 은 스킬 버전과 CHANGELOG 를 직접 올리지 않아요.** 무엇이 바뀌었는지만 변경 이력 조각 파일로 남기고, 새 버전 번호는 main 에 머지될 때 workflow 가 정해요.
 같은 스킬을 고치는 PR 이 여럿이어도 버전 줄과 CHANGELOG 절로 충돌하지 않게 하려는 것이에요. 근거는 [ADR-023](docs/adr/023-version-at-merge.md) 에 있어요.
 
-- 조각은 `<스킬 폴더>/changes/<슬러그>.<등급>.md` 예요. `skills/<이름>`, `export-only-skills/<이름>`, `extensions/<이름>` 이 스킬 폴더예요. 슬러그는 브랜치 이름처럼 영문 소문자, 숫자, 하이픈이에요.
+- 조각은 `<스킬 폴더>/changes/<슬러그>.<등급>.md` 예요. `skills/<이름>`, `export-only-skills/<이름>`, `extensions/<이름>` 이 스킬 폴더예요. 슬러그는 영문 소문자, 숫자, 하이픈이에요. 두 PR 이 같은 파일을 더하면 충돌하므로 브랜치 이름처럼 PR 마다 겹치지 않게 지어요.
 - 등급은 파일 이름 끝의 `.patch.md` 나 `.minor.md` 둘뿐이에요. 기준은 아래 표를 따라요.
 - 내용은 CHANGELOG 항목 그대로 `- ` 줄 1~5개예요. 제목과 버전은 적지 않아요.
 - main 에 머지되면 `plugin-version.yml` 이 조각마다 버전 하나를 머지 순서대로 올려요. CHANGELOG 맨 위에 `## X.Y.Z (한국 시간 날짜)` 절을 만들고 `SKILL.md` 의 `metadata.version` 도 바꾸고 조각을 지워요.
