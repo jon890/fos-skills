@@ -83,6 +83,7 @@
 | 읽는 쪽 | 무엇을 읽나 | 새 꼴 출력이 바뀌면 |
 | --- | --- | --- |
 | 스크립트가 다른 스크립트를 부르는 자리 | `launch-worker` → `make-worktree`(경로 한 줄), `spec-line`, `spec-lint`. `send-to-worker` → `launch-worker`(`LAUNCHED`), `nudge-worker`(첫 낱말). `lib/conflicts.ts`, `lib/tell-worker.ts`, `finish-pr` → `send-to-worker`(종료 코드, `LAUNCHED`). `merge-with-finish` → `finish-pr`, `merge_queue`. `merge_queue` → `overlap_units`(`바로 머지`, 종료 코드), `cleanup-sweep`. `orch-loop` → `board-sync`, `cleanup-sweep`, `merge-with-finish`(큐 로그 끝 줄 `QUEUE-DONE`, `QUEUE-HELD`, `STOP`), `nudge-worker`, `send-to-worker`, `user-active`. `cleanup-sweep` → `remove-worktree`, `launch-worker`. `heavy-slot` → `mem-gate`. `board-sync` → `goal-progress`. `orch-doctor` → `orch-loop --status`, `spec-line`. `handlers/decision-pending.ts`, `lib/decisions.ts`, `lib/machine.ts` → `user-active`, `nudge-worker` | 스크립트 파일을 경로로 직접 실행해 `orch` 진입점을 거치지 않으므로 지금 출력 그대로다. 고치지 않는다 |
+| work-board 요청문 | `extensions/work-board/hooks/register.js` 가 코디네이터에게 `skills/orch/scripts/send-to-worker.ts` 직접 경로를 지시한다 | 요청문을 `orch worker send` 로 바꾼다(PR1). 테스트는 문자열 포함만 보므로 PR3 뒤 경로가 깨져도 통과한다 |
 | 훅 | `block-background-wait.ts` 가 명령 문자열의 `wait-important` 를 본다. `block-worker-terminal-send.ts` 가 `send-to-worker`, `nudge-worker`, `adopt-sessions` 를 안내한다. `require-spec-line.ts` 가 `spec-line` 을 본다 | 새 꼴(`orch wait`, `orch worker send` 같은 것)도 알아보게 고친다 |
 | 코디네이터가 읽는 문서 | `skills/orch/SKILL.md`, `references/` 의 `waiting.md`(`LAST_DELIVERY`, `NEXT_WAIT`, `LOOP-EVENT`, 종료 코드), `launch.md`(`LAUNCHED`), `cleanup.md`(`QUEUE-DONE`, `FINISH-DONE`, `FINISH-FAIL`), `replying.md`, `verification.md`(`일치`, `불일치`), `board.md`, `heavy-checks.md`, `hooks.md`, `overlay.md`, `spec-writing.md`, `study-candidates.md`, `gh-call-budget.md`, `agent-selection.md`, `feature-loop.md`. `templates/spec-common.md` 의 `worker-ask`, `study-candidates` 블록. `docs/flow.md`, `docs/code-architecture.md`, `docs/data-schema.md` | 호출을 새 꼴로 바꾸고, 읽으라고 적은 줄을 새 기본 출력에 맞춘다 |
 | worker 가 읽는 문서 | `skills/spec/references/interview.md`(`worker-ask` 의 `answer: `), `skills/implementation/references/legacy-workflow.md`, `skills/mac-cleanup/references/git-and-sessions.md` | 같다 |
@@ -97,8 +98,8 @@
 | 13개 저장소 `.orch/specs/spec-common.md` 사본 | worker 가 `$ORCH_SCRIPTS/worker-ask.ts`, `study-candidates.ts`, `heavy-slot.ts`, `reserve-migration.ts` 를 경로로 직접 부르고 `answer: ` 줄을 읽는다 | 없음(직접 실행) | 경로가 사라진다 | 틀(`templates/spec-common.md`)은 PR1 에서 새 꼴로 바꾼다. 사본은 doctor 가 알리고 코디네이터가 PR3 머지 전에 고친다(DECISION17) |
 | gersang-lab `.orch/overlay.md` | `$SKILL_DIR/scripts/merge-with-finish.ts`, `remove-worktree.ts` 를 경로로 직접 부른다 | 없음 | 경로가 사라진다 | doctor 가 알리고 코디네이터가 PR3 머지 전에 고친다(DECISION17) |
 | gersang-lab `.orch/bin/orch.mts`, `with-heavy-slot.sh` | 3.x 진입점 사본의 `--path mem-gate` 로 경로 한 줄을 읽는다 | 없음 | 3.x 사본은 `orch/scripts` 만 찾아 이미 엇나간다 | doctor 가 알린다 |
-| fos-assistant, fos-graphrag, fos-home-infra `.orch/hooks/after-cleanup.ts` | `<installPath>/orch/scripts/handoff-cleanup.ts` 를 박아 부르고 출력을 그대로 넘긴다 | 없음 | 4.0 이후 이미 깨져 있다 | 코디네이터가 지금 따로 고친다(사용자 2026-11-04). doctor 도 알린다 |
-| ai-analysis `.orch/bin/release.sh`, `.claude/skills/release/scripts/release.py` | `*/orch/scripts/board-release.ts` 를 찾는다 | 없음 | 4.0 이후 이미 깨져 있다 | 코디네이터가 지금 따로 고친다(사용자 2026-11-04). doctor 도 알린다 |
+| fos-assistant, fos-graphrag, fos-home-infra `.orch/hooks/after-cleanup.ts` | `<installPath>/orch/scripts/handoff-cleanup.ts` 를 박아 부르고 출력을 그대로 넘긴다 | 없음 | 경로가 사라진다(코디네이터가 2026-11-04 에 4.x 경로를 더했다) | doctor 가 알리고 코디네이터가 PR3 머지 전에 고친다(DECISION17) |
+| ai-analysis `.orch/bin/release.sh`, `.claude/skills/release/scripts/release.py` | `*/orch/scripts/board-release.ts` 를 찾는다 | 없음 | 경로가 사라진다(코디네이터가 2026-11-04 에 4.x 경로를 더했다) | doctor 가 알리고 코디네이터가 PR3 머지 전에 고친다(DECISION17) |
 | 다른 세션이 기억한 명령, 도는 루프와 대기 | 옛 꼴과 옛 `NEXT_WAIT` | 짧은 출력을 받는다 | 진입점 이름표가 새 경로로 넘긴다 | 바꿀 일 없음. 옛 번들로 도는 것은 doctor 의 `LOOP-STALE` 이 알린다 |
 
 이 저장소 안의 읽는 쪽(위 표)은 해당 PR 에서 고친다. 저장소 밖은 고치지 않고 doctor 가 판정 줄과 고칠 꼴을 알린다(REQ7). 고치는 일은 코디네이터가 그 저장소 worker 에게 맡긴다.
@@ -152,24 +153,22 @@
 
 ## 부록: 알려진 저장소의 직접 경로 호출
 
-실측 2026-11-04(코디네이터의 고침 반영 뒤). `.orch/` 가 있는 저장소의 `.orch/overlay.md`, `.orch/config.json`, `.orch/bin`, `.orch/hooks`, `.orch/specs/spec-common.md`, `.claude/skills`, `scripts`, `bin` 에서 orch 스크립트를 파일 경로로 부르는 곳이다. `installPath` 는 설치 기록의 번들 경로다. PR3 머지 전에 이 표를 다시 찾아 갱신하고, 모든 행이 새 꼴로 고쳐진 것을 PR3 머지 조건으로 본다(DECISION17).
+실측 2026-11-04(두 번째, technical-design 때 디스크의 파일을 다시 읽었다). `.orch/` 가 있는 저장소의 `.orch/overlay.md`, `.orch/config.json`, `.orch/bin`, `.orch/hooks`, `.orch/specs/spec-common.md`, `.claude/skills` 에서 orch 스크립트를 파일 경로로 부르는 곳이다. `installPath` 는 설치 기록의 번들 경로다. 「4.x 경로」 는 `installPath/skills/orch/...` 라 지금은 돈다는 뜻이고, 「옛 경로」 는 `installPath/orch/...` 라 4.0 이후 깨져 있다는 뜻이다. PR3 머지 전에 이 표를 다시 찾아 갱신하고, 모든 행이 새 꼴로 고쳐진 것을 PR3 머지 조건으로 본다(DECISION17).
 
-| 저장소 | 파일 | 부르는 경로 | 상태와 처리 |
+| 저장소 | 파일 | 부르는 경로 | 지금 상태 |
 | --- | --- | --- | --- |
-| ai-analysis | `.orch/specs/spec-common.md` | `installPath/orch/scripts` 의 `worker-ask.ts`, `study-candidates.ts`, `reserve-migration.ts` | 4.0 이후 이미 깨져 있다. PR3 머지 전에 새 꼴로 고친다 |
-| ai-analysis | `.orch/bin/release.sh`, `.claude/skills/release/scripts/release.py` | `orch/scripts/board-release.ts` 와 `skills/orch/scripts/board-release.ts` 를 차례로 찾는다 | 코디네이터가 2026-11-04 에 4.x 경로를 더했다. PR3 머지 전에 새 꼴로 고친다 |
-| AiSdtSkill | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | PR3 머지 전에 새 꼴로 고친다 |
-| dooray-cli | `.orch/specs/spec-common.md` | `installPath/orch/scripts/worker-ask.ts` | 4.0 이후 이미 깨져 있다. PR3 머지 전에 새 꼴로 고친다 |
-| fos-accountbook | `.orch/specs/spec-common.md` | `installPath/orch/scripts` 의 `worker-ask.ts`, `heavy-slot.ts` | 4.0 이후 이미 깨져 있다. PR3 머지 전에 새 꼴로 고친다 |
-| fos-agents | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts` 의 `worker-ask.ts`, `heavy-slot.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 머지 전에 새 꼴로 고친다 |
-| fos-assistant | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 머지 전에 새 꼴로 고친다 |
-| fos-blog | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts` 의 `worker-ask.ts`, `heavy-slot.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 머지 전에 새 꼴로 고친다 |
-| fos-graphrag | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 머지 전에 새 꼴로 고친다 |
-| fos-home-infra | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 머지 전에 새 꼴로 고친다 |
-| gersang-lab | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 머지 전에 새 꼴로 고친다 |
-| spring-next-starter | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 머지 전에 새 꼴로 고친다 |
-| nhncloud-cli | `.orch/specs/spec-common.md` | 옛 캐시 경로 `cache/fos-skills/fos-skills/88daf0fe2fe7/orch/scripts/worker-ask.ts` 를 직접 적었다 | 4.0 이후 이미 깨져 있다. PR3 머지 전에 새 꼴로 고친다 |
-| fos-assistant, fos-graphrag, fos-home-infra | `.orch/hooks/after-cleanup.ts` | `installPath/orch/scripts/handoff-cleanup.ts` 와 `installPath/skills/orch/scripts/handoff-cleanup.ts` | 코디네이터가 2026-11-04 에 4.x 경로를 더했다. PR3 머지 전에 새 꼴로 고친다 |
-| gersang-lab | `.orch/overlay.md` | `$SKILL_DIR/scripts/merge-with-finish.ts`, `$SKILL_DIR/scripts/remove-worktree.ts` | PR3 머지 전에 새 꼴로 고친다 |
-| gersang-lab | `.orch/bin/orch.mts`(진입점 사본) | `installPath/skills/orch/scripts/<이름>.ts` | 코디네이터가 2026-11-04 에 4.x 경로로 고쳤다. PR3 의 폴더 이동 뒤에는 이 사본이 새 경로를 모른다. PR3 머지 전에 `orch` 로 바꾸거나 새 진입점으로 다시 복사한다 |
-| fos-skills | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts` 의 `worker-ask.ts`, `study-candidates.ts` | PR1 이 틀(`templates/spec-common.md`)을 새 꼴로 바꾼 뒤 사본도 맞춘다 |
+| ai-analysis | `.orch/specs/spec-common.md` | `installPath/orch/scripts` 의 `worker-ask.ts`, `study-candidates.ts`, `reserve-migration.ts` | 옛 경로 |
+| ai-analysis | `.orch/bin/release.sh`, `.claude/skills/release/scripts/release.py` | `skills/orch/scripts/board-release.ts` 와 `orch/scripts/board-release.ts` 를 차례로 찾는다 | 4.x 경로 |
+| AiSdtSkill | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | 4.x 경로 |
+| dooray-cli | `.orch/specs/spec-common.md` | `installPath/orch/scripts/worker-ask.ts` | 옛 경로 |
+| fos-accountbook | `.orch/specs/spec-common.md` | `installPath/orch/scripts` 의 `worker-ask.ts`, `heavy-slot.ts` | 옛 경로 |
+| fos-agents, fos-blog | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts` 의 `worker-ask.ts`, `heavy-slot.ts` | 4.x 경로 |
+| fos-assistant | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts`. 18줄의 무거운 검사 블록은 `installPath/orch/bin/orch.ts heavy-slot` | 18줄은 옛 경로, 나머지는 4.x 경로 |
+| fos-graphrag, fos-home-infra, gersang-lab, spring-next-starter | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts/worker-ask.ts` | 4.x 경로 |
+| nhncloud-cli | `.orch/specs/spec-common.md` | 옛 캐시 경로 `cache/fos-skills/fos-skills/88daf0fe2fe7/orch/scripts/worker-ask.ts` 를 직접 적었다 | 옛 경로 |
+| fos-assistant, fos-graphrag, fos-home-infra | `.orch/hooks/after-cleanup.ts` | `installPath/orch/scripts/handoff-cleanup.ts` 와 `installPath/skills/orch/scripts/handoff-cleanup.ts` | 4.x 경로 |
+| gersang-lab | `.orch/overlay.md` | `$SKILL_DIR/scripts/merge-with-finish.ts`, `$SKILL_DIR/scripts/remove-worktree.ts` | 4.x 경로 |
+| gersang-lab | `.orch/bin/orch.mts`(진입점 사본), `.orch/bin/with-heavy-slot.sh` | `installPath/skills/orch/scripts/<이름>.ts` | 4.x 경로. PR3 의 폴더 이동 뒤에는 이 사본이 새 경로를 모른다. `orch` 로 바꾸거나 플러그인 루트의 실행기 `bin/orch` 를 복사한다(새 진입점은 lib 를 import 해 파일 하나로 돌지 않는다) |
+| fos-skills | `.orch/specs/spec-common.md` | `installPath/skills/orch/scripts` 의 `worker-ask.ts`, `study-candidates.ts` | 4.x 경로. PR1 이 틀(`templates/spec-common.md`)을 새 꼴로 바꾼 뒤 사본도 맞춘다 |
+
+모든 행은 PR3 머지 전에 새 꼴(`orch <묶음> <동작>`)로 고친다. 옛 경로 행은 지금도 깨져 있어 먼저 고칠 수 있다.
