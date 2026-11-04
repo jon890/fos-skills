@@ -15,7 +15,7 @@
 //   남은 방이 있으면 마지막으로 읽은 방의 updatedAt 을 cursor 로 내어 다음 받기가 거기서 잇는다. 놓치는 방이 없게 하려는 것이다.
 //   한 방의 logs LOG_COUNT 개가 모두 지난 받기 뒤의 것이면 MORE_LOG_COUNT 개로 다시 읽는다.
 //
-// 설정(inbox.json 의 adapters 항목): { "type": "dooray", "messenger": true, "webUrl": "https://nhnent.dooray.com" }
+// 설정(inbox.json 의 adapters 항목): { "type": "dooray", "messenger": true, "webUrl": "https://example.dooray.com" }
 //   messenger  false 면 메신저를 읽지 않는다. 기본 true
 //   webUrl     업무 링크의 앞부분. 없으면 링크 없이 보인다
 //

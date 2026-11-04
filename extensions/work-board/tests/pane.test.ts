@@ -175,7 +175,7 @@ test('열린 PR 에 작성자를 붙이고, a 로 한 작성자의 PR 만 거른
 })
 
 test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를 읽었으면 PR 번호에 밑줄 친 링크를 건다', async ($, on) => {
-  const task = 'https://nhnent.dooray.com/project/tasks/4455909338652535899'
+  const task = 'https://example.dooray.com/project/tasks/1234567890123456789'
   const board = JSON.stringify({ items: [
     { id: 't', title: '#342 감지상황 잇기', status: 'wait', pr: 877, task },
     { id: 'n', title: '#343 주소 없는 업무', status: 'wait' },
@@ -361,11 +361,11 @@ for (const [name, boardAt, liveAt] of [
 // 업무 알림 상자. inbox.ts board --json 의 출력을 가짜 process.run 이 돌려준다
 const INBOX_ITEMS = [
   { id: 'dooray:task:comment:c1', adapter: 'dooray', source: 'task', kind: 'mention', title: '어드민개발/81 어드민 권한 정리',
-    url: 'https://nhnent.dooray.com/project/tasks/p81', scope: [], from: { id: '1', name: '김철수' }, at: '2026-10-22T09:53:00+09:00',
+    url: 'https://example.dooray.com/project/tasks/p81', scope: [], from: { id: '1', name: '김철수' }, at: '2026-10-22T09:53:00+09:00',
     excerpt: '운영 계정도 같은 권한이 필요한지', target: {}, state: 'new' },
-  { id: 'dooray:task:post:p342', adapter: 'dooray', source: 'task', kind: 'assigned', title: 'AI-스마트홈-AI/342 배포 일정 조율',
+  { id: 'dooray:task:post:p342', adapter: 'dooray', source: 'task', kind: 'assigned', title: 'EXAMPLE-PROJECT/342 배포 일정 조율',
     url: '', scope: [], from: { id: '2', name: '이영희' }, at: '2026-10-22T09:00:00+09:00', excerpt: '', target: {}, state: 'new' },
-  { id: 'dooray:messenger:ch:l1', adapter: 'dooray', source: 'messenger', kind: 'mention', title: '스마트홈 개발',
+  { id: 'dooray:messenger:ch:l1', adapter: 'dooray', source: 'messenger', kind: 'mention', title: '예시 개발방',
     url: '', scope: [], from: { id: '3', name: '박민수' }, at: '2026-10-22T08:00:00+09:00', excerpt: '리뷰 부탁해요', target: {}, state: 'answered' },
 ]
 const inboxOutput = (value) => (argv) => String(argv[2] || '').endsWith('/inbox/scripts/inbox.ts')
@@ -681,7 +681,7 @@ test('넘기기(x) 모드에서는 항목 제목 줄을 눌러도 요청문을 �
 
 test('제목에 업무 링크가 있으면 링크는 Button 밖에 그리고 제목 글은 이어진다 (REQ5)', async ($, on) => {
   await start($, on, undefined, JSON.stringify({ updatedAt: '2026-10-22T10:00:00+09:00', items: [
-    { id: 't', title: '배포 #342 정리', status: 'doing', task: 'https://nhnent.dooray.com/task/342' },
+    { id: 't', title: '배포 #342 정리', status: 'doing', task: 'https://example.dooray.com/task/342' },
   ] }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const head = await ui.find({ type: 'Box', key: 'head' })

@@ -9,7 +9,7 @@
 ```json
 {
   "adapters": [
-    { "type": "dooray", "messenger": true, "webUrl": "https://nhnent.dooray.com" }
+    { "type": "dooray", "messenger": true, "webUrl": "https://example.dooray.com" }
   ],
   "intervalMinutes": 5,
   "days": 7,
@@ -43,8 +43,8 @@
 ```json
 {
   "dooray": {
-    "projects": ["4360962059627319964", "AI-스마트홈-AI"],
-    "channels": ["스마트홈 개발", "4401522693560154783"]
+    "projects": ["2345678901234567890", "EXAMPLE-PROJECT"],
+    "channels": ["예시 개발방", "3456789012345678901"]
   }
 }
 ```
