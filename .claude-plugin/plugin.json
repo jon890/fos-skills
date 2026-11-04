@@ -8,25 +8,25 @@
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
   "skills": [
-    "./browser",
-    "./docs-check",
-    "./docs-consolidate",
-    "./harness-cleanup",
-    "./implementation",
-    "./inbox",
-    "./mac-cleanup",
-    "./orch",
-    "./plan",
-    "./pr-review",
-    "./presentation",
-    "./report",
-    "./review-fix",
-    "./spec",
-    "./technical-design",
-    "./verify"
+    "./skills/browser",
+    "./skills/docs-check",
+    "./skills/docs-consolidate",
+    "./skills/harness-cleanup",
+    "./skills/implementation",
+    "./skills/inbox",
+    "./skills/mac-cleanup",
+    "./skills/orch",
+    "./skills/plan",
+    "./skills/pr-review",
+    "./skills/presentation",
+    "./skills/report",
+    "./skills/review-fix",
+    "./skills/spec",
+    "./skills/technical-design",
+    "./skills/verify"
   ],
   "hooks": [
-    "./orch/hooks/hooks.json",
+    "./skills/orch/hooks/hooks.json",
     "./work-board/hooks/hooks.json"
   ]
 }

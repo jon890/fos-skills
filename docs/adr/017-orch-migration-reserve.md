@@ -22,4 +22,4 @@
   - 얻는 것: 같은 PC 의 worker 들이 같은 모듈에 서로 다른 번호를 받는다. PR 을 열기 전의 번호도 자동 머지의 순서 판정에 든다.
   - 감당할 것: 예약만 하고 버린 브랜치의 번호는 그 브랜치가 원격과 로컬에서 사라질 때까지 남는다. 그동안 높은 번호 PR 이 기다리고 `MIGRATION-BLOCKED` 가 온다.
   - 감당할 것: 다른 PC 에서 만든 브랜치의 번호는 PR 을 열기 전까지 보이지 않는다. 열린 뒤에는 자동 머지의 겹침 판정이 잡는다.
-- **적용 범위**: 예약 파일과 잠금, ADR 번호 꼴은 `orch/scripts/lib/reservations.ts`, 명령은 `orch/scripts/reserve-migration.ts` 머리 주석, 지시서 문구는 공통 지시서 틀(`orch/templates/spec-common.md`)의 `migration`, `adr` 표지 항목이 소유한다. 옮기는 기준은 [`../../orch/references/spec-writing.md`](../../orch/references/spec-writing.md) 에 있다.
+- **적용 범위**: 예약 파일과 잠금, ADR 번호 꼴은 `orch/scripts/lib/reservations.ts`, 명령은 `orch/scripts/reserve-migration.ts` 머리 주석, 지시서 문구는 공통 지시서 틀(`orch/templates/spec-common.md`)의 `migration`, `adr` 표지 항목이 소유한다. 옮기는 기준은 [`../../orch/references/spec-writing.md`](../../skills/orch/references/spec-writing.md) 에 있다.

@@ -53,6 +53,31 @@ if [ ! -d "$TEAM_DIR/skills" ]; then
   exit 0
 fi
 
+# 옛 커밋도 내보낼 수 있게 그 원본에서 스킬의 실제 경로를 고른다.
+SHARED_PATHS=()
+while IFS= read -r path; do
+  SHARED_PATHS+=("$path")
+done < <(python3 - "$REPO_DIR" "${SOURCE_SHA:-}" "$SOURCE_REF" "${SHARED_SKILLS[@]}" <<'PYPATHS'
+import subprocess, sys
+from pathlib import Path
+repo = Path(sys.argv[1])
+sys.path.insert(0, str(repo / "scripts"))
+from skill_paths import source_path, SKILL_ROOTS
+if sys.argv[3]:
+    files = subprocess.check_output(["git", "-C", str(repo), "ls-tree", "-r", "--name-only", sys.argv[2]], text=True).splitlines()
+    for name in sys.argv[4:]:
+        for prefix in (*SKILL_ROOTS, ""):
+            candidate = (Path(prefix) / name).as_posix()
+            if any(f.startswith(candidate + "/") for f in files):
+                print(candidate)
+                break
+else:
+    for name in sys.argv[4:]:
+        print(source_path(repo, name).relative_to(repo).as_posix())
+PYPATHS
+)
+[ "${#SHARED_PATHS[@]}" -eq "${#SHARED_SKILLS[@]}" ] || { echo "그 원본에 내보낼 스킬 디렉터리가 없다" >&2; exit 2; }
+
 # 원본 디렉터리와 결과에 적을 원본 설명을 정한다.
 SRC_DIR="$REPO_DIR"
 if [ -n "$SOURCE_REF" ]; then
@@ -62,14 +87,14 @@ if [ -n "$SOURCE_REF" ]; then
   # 이 경로는 추적하는 파일만 원본으로 본다. 기본 경로는 작업 트리의 추적하지 않는 파일도 본다.
   # 내보내는 디렉터리만 풀어 양을 줄인다.
   # 그 커밋에 내보낼 디렉터리가 없으면 pathspec 오류이므로 기본 경로와 같게 종료 코드 2 로 끝낸다.
-  git -C "$REPO_DIR" archive "$SOURCE_SHA" -- "${SHARED_SKILLS[@]}" "${SHARED_TOOLS[@]/#/tools/}" | tar -x -C "$SRC_DIR" \
+  git -C "$REPO_DIR" archive "$SOURCE_SHA" -- "${SHARED_PATHS[@]}" "${SHARED_TOOLS[@]/#/tools/}" | tar -x -C "$SRC_DIR" \
     || { echo "그 커밋에 내보낼 디렉터리가 없다: $SOURCE_REF" >&2; exit 2; }
   SOURCE_DESC="$SOURCE_REF ($SOURCE_SHA)"
 else
   # git archive 로 푼 사본처럼 git 저장소가 아니어도 기본 경로는 돌아야 한다. SHA 와 변경 표시만 생략한다.
   if SOURCE_SHA="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)"; then
     SOURCE_DESC="작업 트리 (HEAD $SOURCE_SHA)"
-    if [ -n "$(git -C "$REPO_DIR" status --porcelain -- "${SHARED_SKILLS[@]}" "${SHARED_TOOLS[@]/#/tools/}")" ]; then
+    if [ -n "$(git -C "$REPO_DIR" status --porcelain -- "${SHARED_PATHS[@]}" "${SHARED_TOOLS[@]/#/tools/}")" ]; then
       SOURCE_DESC="$SOURCE_DESC, 커밋하지 않은 변경 있음"
     fi
   else
@@ -78,13 +103,16 @@ else
 fi
 echo "원본: $SOURCE_DESC"
 
-REPO_DIR="$SRC_DIR" TEAM_DIR="$TEAM_DIR" APPLY="$APPLY" \
+EXPORT_SCRIPTS="$REPO_DIR/scripts" REPO_DIR="$SRC_DIR" TEAM_DIR="$TEAM_DIR" APPLY="$APPLY" \
 SHARED="${SHARED_SKILLS[*]}" TOOLS="${SHARED_TOOLS[*]}" EXCLUDES="${EXCLUDE[*]}" python3 - <<'PYEOF'
 import os
 import pathlib
 import re
 import shutil
 import sys
+
+sys.path.insert(0, os.environ["EXPORT_SCRIPTS"])
+from skill_paths import source_path
 
 repo = pathlib.Path(os.environ["REPO_DIR"])
 team = pathlib.Path(os.environ["TEAM_DIR"])
@@ -95,7 +123,7 @@ excludes = set(os.environ["EXCLUDES"].split())
 
 # 내보낼 (이 저장소 기준 경로, 팀 저장소 기준 경로) 쌍.
 # 스킬은 repo/<이름> 이 team/skills/<이름> 이 되고, 도구는 tools/ 아래에서 이름이 같다.
-PAIRS = [(name, f"skills/{name}") for name in skills]
+PAIRS = [(source_path(repo, name).relative_to(repo).as_posix(), f"skills/{name}") for name in skills]
 PAIRS += [(f"tools/{name}", f"tools/{name}") for name in tools]
 
 
@@ -140,9 +168,26 @@ def to_team_frontmatter(text: str) -> str:
 
 def rendered(src: pathlib.Path, rel: str) -> bytes:
     raw = src.read_bytes()
+    if src.suffix not in (".md", ".py", ".ts", ".js", ".sh", ".json"):
+        return raw
+    text = raw.decode("utf-8")
     if rel == "SKILL.md":
-        return to_team_frontmatter(raw.decode("utf-8")).encode("utf-8")
-    return raw
+        text = to_team_frontmatter(text)
+    # 원본의 두 스킬 루트를 팀의 skills/ 한곳으로 내보낼 때 상대 참조도 함께 옮긴다.
+    import posixpath
+    source_file = src.relative_to(repo).as_posix()
+    target_file = next(dst + source_file[len(prefix):] for prefix, dst in PAIRS if source_file.startswith(prefix + "/"))
+    def relocate(match):
+        value = match[0]
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(source_file), value))
+        for before, after in PAIRS:
+            if resolved == before or resolved.startswith(before + "/"):
+                target = after + resolved[len(before):]
+                result = posixpath.relpath(target, posixpath.dirname(target_file))
+                return "./" + result if value.startswith("./") and not result.startswith(".") else result
+        return value
+    text = re.sub(r"(?<![\w./-])(?:\.{1,2}/)+(?:[A-Za-z0-9_.*-]+/?)+", relocate, text)
+    return text.encode("utf-8")
 
 
 # 방향 보호. 이 저장소가 원본이라는 전제는 이쪽 버전이 뒤처지지 않았을 때만 성립한다.

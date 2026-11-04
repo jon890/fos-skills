@@ -231,7 +231,7 @@ function localIso(now: Date): string {
 }
 
 // json.dumps(ensure_ascii=False) 의 꼴. 구분자가 `, ` 와 `: ` 다. steps 출력을 읽는 쪽과 바이트를 맞춘다.
-// orch/scripts/lib/py.ts 의 pyJson 과 같다. board.ts 는 orch 를 import 하지 않아(orch 의 lib/paths.ts 가 board.ts 를 import 해 고리가 생긴다) 복사해 두었다.
+// skills/orch/scripts/lib/py.ts 의 pyJson 과 같다. board.ts 는 orch 를 import 하지 않아(orch 의 lib/paths.ts 가 board.ts 를 import 해 고리가 생긴다) 복사해 두었다.
 // 바꾸면 함께 고친다
 function pyJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(pyJson).join(', ')}]`
@@ -244,7 +244,7 @@ function pyJson(value: unknown): string {
 }
 
 // 고유 접두로 줄인 긴 옵션을 온 이름으로 펼친다. `--` 뒤는 건드리지 않는다.
-// orch/scripts/lib/args.ts 의 expandArgs 에 문자열 옵션을 모두 join 으로 준 것과 같다. 복사한 까닭은 pyJson 과 같다.
+// skills/orch/scripts/lib/args.ts 의 expandArgs 에 문자열 옵션을 모두 join 으로 준 것과 같다. 복사한 까닭은 pyJson 과 같다.
 // 바꾸면 함께 고친다. flags 는 값을 받지 않는 옵션이다
 function expand(argv: string[], names: string[], flags: string[]): string[] {
   const out: string[] = []

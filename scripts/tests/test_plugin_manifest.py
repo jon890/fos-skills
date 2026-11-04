@@ -3,10 +3,13 @@
 import json
 import os
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+from skill_paths import skill_dirs
 PLUGIN = ROOT / ".claude-plugin" / "plugin.json"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
 CODEX_PLUGIN = ROOT / ".codex-plugin" / "plugin.json"
@@ -15,10 +18,9 @@ EXPORT_ONLY = set(json.loads((ROOT / "scripts" / "export-only-skills.json").read
 
 def skill_diff(array, root):
     """내보내기 전용 원본을 제외하고 array 와 비교해 (빠진 것, 남는 것) 을 돌려준다."""
-    found = {f"./{child.name}" for child in Path(root).iterdir() if (child / "SKILL.md").is_file()}
-    found |= {f"./work-board/{child.name}" for child in (Path(root) / "work-board").glob("*") if (child / "SKILL.md").is_file()}
+    found = {"./" + path.relative_to(root).as_posix() for path in skill_dirs(root, legacy=True).values()}
     declared = set(array)
-    expected = found - EXPORT_ONLY
+    expected = {p for p in found if p not in EXPORT_ONLY and Path(p).name not in {Path(v).name for v in EXPORT_ONLY}}
     return sorted(expected - declared), sorted(declared - expected)
 
 
