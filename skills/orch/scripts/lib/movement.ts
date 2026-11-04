@@ -29,12 +29,12 @@
 // 조회(collectWorkers, collectStages)는 worker 목록, 워크트리 파일, git, 보드를 읽어 판정 함수에 넘긴다. 쓰지 않는다.
 
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { readBoard } from './board.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, section } from './config.ts'
 import { git } from './git.ts'
-import { boardPath } from './paths.ts'
+import { boardPath, pathOf } from './paths.ts'
 import { LIVE_DISPATCH, worktreePaths } from './workers.ts'
 import type { workerRows } from './workers.ts'
 
@@ -332,4 +332,23 @@ export function collectStages(repo: string, live: ReadonlySet<string>, settings:
     return ms !== null && now - ms < settings.idleMin * 60_000
   }
   return stalledStages(items, live, worktreePaths(repo), recent)
+}
+
+// 화면 기록(<orch 루트>/state/movement.json 의 screens)을 읽는다. 상주 루프가 쓰고 stalled-workers, orch-status 는 읽기만 한다. 없거나 읽지 못하면 빈 기록이다
+export function screenMarks(repo: string): ReturnType<typeof readRecords>['screens'] {
+  try {
+    return readRecords(JSON.parse(readFileSync(join(pathOf('state', repo), 'movement.json'), 'utf8'))).screens
+  } catch {
+    return {}
+  }
+}
+
+// 사람과 코디네이터가 읽는 판정 줄(탭으로 나눈다). 꼴은 stalled-workers.ts 머리 주석의 「출력」 이 소유한다
+export function workerLine(v: WorkerVerdict): string {
+  const mark = v.reason ? 'STALLED' : 'MOVING'
+  return [mark, v.dispatch, v.reason ?? '-', v.idleMin ?? '-', v.worktree ? basename(v.worktree) : '-', v.run].join('\t')
+}
+
+export function stageLine(s: StageVerdict): string {
+  return ['STAGE', s.id, s.worktree ?? s.branch ?? '-', s.step].join('\t')
 }

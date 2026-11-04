@@ -884,6 +884,13 @@ describe('루프 번들 판정', () => {
     assert.match(out[at + 1], /^ {2}안내: 이 루프는 설치되지 않은 번들\(aaaaaaa1\)로 돈다\. 아래 두 명령은 그 루프의 Run\(r1\) 코디네이터 세션에서 돌린다/)
     assert.equal(out[at + 2], `  ${WORD} loop stop --repo '${repo}' --all`)
     assert.equal(out[at + 3], `  ${WORD} loop start --repo '${repo}' --run r1`)
+    // 짧은 출력은 판정 줄과 고칠 명령 줄만 남기고 안내 줄을 뺀다
+    const brief = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: dirname(plugins), ORCH_OUTPUT: 'short' } })
+    assert.equal(brief.code, 0, brief.stdout + brief.stderr)
+    const lines = brief.stdout.split('\n').filter(Boolean)
+    const head = lines.indexOf(`LOOP-STALE ${repo} 111 aaaaaaa1`)
+    assert.deepEqual(lines.slice(head, head + 3), [`LOOP-STALE ${repo} 111 aaaaaaa1`, `  ${WORD} loop stop --repo '${repo}' --all`, `  ${WORD} loop start --repo '${repo}' --run r1`])
+    assert.ok(lines.every((l) => /^[A-Z]/.test(l) || (/^ {2}\S/.test(l) && !l.startsWith('  안내:'))), brief.stdout)
   })
 
   test('버전 이름의 캐시 폴더도 보고, 다른 프로필의 같은 버전 폴더는 같은 번들로 본다', () => {

@@ -24,18 +24,15 @@
 // 종료 코드: 0 멈춘 것이 없다, 3 멈춘 worker 나 단계가 있다, 1 worker 목록이나 보드를 하나라도 읽지 못했다(멈춘 것이 있어도 1),
 //           2 사용법이나 설정 오류
 
-import { readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { ConfigError, loadConfig, section } from './lib/config.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
 import { real } from './lib/fs.ts'
 import { registeredRuns } from './lib/loop.ts'
-import { collectStages, collectWorkers, movementSettings, readRecords } from './lib/movement.ts'
+import { collectStages, collectWorkers, movementSettings, screenMarks, stageLine, workerLine } from './lib/movement.ts'
 import type { StageVerdict, WorkerVerdict } from './lib/movement.ts'
 import { short } from './lib/output.ts'
-import { pathOf } from './lib/paths.ts'
 import { workerRows } from './lib/workers.ts'
 
 const USAGE = '사용법: stalled-workers.ts --repo DIR [--run ID]... [--idle-min N] [--json]'
@@ -49,23 +46,6 @@ function runsOf(repo: string, given: string[]): string[] {
   const run = section<Record<string, unknown>>(loadConfig(repo), 'finish', FINISH_KEYS).run
   if (typeof run === 'string' && run) return [run]
   throw new Usage('--run 이 필요하다. 루프에 등록된 Run 도 finish.run 도 없다')
-}
-
-function screens(repo: string): ReturnType<typeof readRecords>['screens'] {
-  try {
-    return readRecords(JSON.parse(readFileSync(join(pathOf('state', repo), 'movement.json'), 'utf8'))).screens
-  } catch {
-    return {}
-  }
-}
-
-function workerLine(v: WorkerVerdict): string {
-  const mark = v.reason ? 'STALLED' : 'MOVING'
-  return [mark, v.dispatch, v.reason ?? '-', v.idleMin ?? '-', v.worktree ? basename(v.worktree) : '-', v.run].join('\t')
-}
-
-function stageLine(s: StageVerdict): string {
-  return ['STAGE', s.id, s.worktree ?? s.branch ?? '-', s.step].join('\t')
 }
 
 function main(argv: string[]): number {
@@ -108,7 +88,7 @@ function main(argv: string[]): number {
     return 2
   }
   const now = Date.now()
-  const workers = collectWorkers({ runs, rowsOf: (run) => workerRows(run), settings, now, screens: screens(repo) })
+  const workers = collectWorkers({ runs, rowsOf: (run) => workerRows(run), settings, now, screens: screenMarks(repo) })
   let failed = workers.errors.size > 0
   for (const [run, reason] of workers.errors) process.stderr.write(`stalled-workers: ${run}: ${reason}\n`)
   let stages: StageVerdict[] = []

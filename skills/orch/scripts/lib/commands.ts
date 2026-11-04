@@ -178,6 +178,8 @@ const ROWS: Row[] = [
   { group: 'doctor', verb: 'install-cli', script: 'install-cli.ts', legacy: null, usage: 'orch doctor install-cli' },
   // paths
   { group: 'paths', verb: null, script: 'orch_paths.ts', context: ['repo'], legacy: { name: 'orch_paths', flags: [] }, usage: 'orch paths <이름> | orch paths check' },
+  // status. Run 은 문맥으로 채우지 않는다(스펙 DECISION22). 주지 않으면 루프에 등록된 Run 을 모두 본다
+  { group: 'status', verb: null, script: 'orch-status.ts', context: ['repo'], legacy: null, usage: 'orch status [--run <Run>]' },
   // slot
   { group: 'slot', verb: 'heavy', script: 'heavy-slot.ts', passthrough: true, legacy: { name: 'heavy-slot', flags: [] }, usage: 'orch slot heavy -- <명령>' },
   { group: 'slot', verb: 'mem', script: 'mem-gate.ts', passthrough: true, legacy: { name: 'mem-gate', flags: [] }, usage: 'orch slot mem -- <명령>' },

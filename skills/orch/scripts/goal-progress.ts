@@ -19,6 +19,7 @@
 // 보드에 없는 추적 항목은 끝나지 않은 것으로 세고 stderr 로 알린다.
 // 머지 뒤 정리에서 항목을 지웠다면 지우지 말고 done 으로 두거나, 추적 목록에서도 뺀다.
 //
+// 짧은 출력(진입점의 orch board goal, lib/output.ts): `GOAL <목표> <완료/전체>` 이나 `GOAL-SKIP <목표>` 한 줄이다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드나 명령을 읽지 못했다, 2 사용법 오류
 
 import { readFileSync } from 'node:fs'
@@ -29,6 +30,7 @@ import { expandArgs } from './lib/args.ts'
 import { boardPath } from './lib/paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './lib/proc.ts'
 import { LINE_BREAK } from './lib/spec.ts'
+import { short } from './lib/output.ts'
 
 const USAGE = '사용법: goal-progress.ts GOAL_ID [ITEM_ID ...] [--items-file FILE] [--board PATH] [--board-bin PATH] [--details] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -162,7 +164,7 @@ function main(argv: string[]): number {
     details = found.steps
     total = details.length
     if (total === 0) {
-      out(`${goal} 단계 줄이 없어 진행률을 건드리지 않았다`)
+      out(short() ? `GOAL-SKIP ${goal}` : `${goal} 단계 줄이 없어 진행률을 건드리지 않았다`)
       return 0
     }
     // 단계 줄이 곧 하위 줄이라 다시 쓰지 않는다. 참고 줄을 지우지 않기 위해서다
@@ -170,8 +172,9 @@ function main(argv: string[]): number {
   }
   if (missing.length > 0) err(`보드에 없는 추적 항목(끝나지 않은 것으로 셈): ${missing.join(', ')}`)
   const value = `${done}/${total}`
-  out(`${goal} ${value}`)
-  if (withDetails) for (const detail of details) out(`  ${textOf(detail)}`)
+  // 짧은 출력(진입점의 orch board goal)은 판정 줄 하나다. 세부 줄은 --full 이다
+  out(short() ? `GOAL ${goal} ${value}` : `${goal} ${value}`)
+  if (withDetails && !short()) for (const detail of details) out(`  ${textOf(detail)}`)
   if (values['dry-run']) return 0
 
   const binPath = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../../extensions/work-board/bin/board.ts')

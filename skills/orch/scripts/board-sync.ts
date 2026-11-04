@@ -59,6 +59,7 @@
 // 후속 단계가 남아 비운 머지 PR 은 merged-pr 에 기록해 다시 연결하지 않는다.
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
+// 짧은 출력(진입점의 orch board sync, lib/output.ts): 바꾼 항목마다 `BOARD <id> done|updated`(dry-run 은 would-done, would-update), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
 import { featureCompletionProblem } from './lib/feature-evidence.ts'
@@ -85,6 +86,7 @@ import { boardPath, pathOf } from './lib/paths.ts'
 import { run, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
 import { parseEventTag } from '../../../extensions/work-board/hooks/event-tags.js'
+import { emit, short } from './lib/output.ts'
 
 const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--goal GOAL_ID [--goal-items FILE]] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -102,8 +104,13 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
 } as const
 
+// 짧은 출력(진입점의 orch board sync)은 아래 brief 줄만 낸다. `board-sync: …` 설명 줄은 판정 줄이 아니라 버린다
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line)
+}
+
+function brief(line: string): void {
+  if (short()) process.stdout.write(`${line}\n`)
 }
 
 function err(line: string): void {
@@ -386,7 +393,8 @@ function main(argv: string[]): number {
     if (cmds.length === 0) continue
     changed.push(id)
     if (dryRun) {
-      out([id + (finish ? ' -> done' : ''), ...cmds.map((c) => c.join(' '))].join('\n  '))
+      if (short()) brief(`BOARD ${id} ${finish ? 'would-done' : 'would-update'}`)
+      else out([id + (finish ? ' -> done' : ''), ...cmds.map((c) => c.join(' '))].join('\n  '))
       continue
     }
     for (const cmd of cmds) {
@@ -397,6 +405,7 @@ function main(argv: string[]): number {
         return 1
       }
     }
+    brief(`BOARD ${id} ${finish ? 'done' : 'updated'}`)
   }
   if (values.goal && !dryRun) {
     const cmd = [values.goal, '--board', board, '--board-bin', boardBin]
@@ -404,7 +413,8 @@ function main(argv: string[]): number {
     const done = run(scriptCommand(join(HERE, 'goal-progress.ts'), cmd), { killSignal: 'SIGKILL' })
     if (done.stderr) process.stderr.write(done.stderr)
   }
-  out(`board-sync: ${changed.join(', ') || '바뀐 항목 없음'}`)
+  if (short()) brief(`BOARD-SYNC ${changed.length}`)
+  else out(`board-sync: ${changed.join(', ') || '바뀐 항목 없음'}`)
   return 0
 }
 

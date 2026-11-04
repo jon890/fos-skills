@@ -70,6 +70,8 @@
 //       - complete_cmd 는 있는데 task_pattern 이 없다, complete_cmd 를 나누지 못하거나 {number} 가 없다
 //       - task_pattern 을 JS 정규식으로 바꾸지 못했거나 그룹이 없다. JS 정규식으로 고쳐 task_pattern 에 다시 적고 다시 돌린다
 //
+// 짧은 출력(진입점의 orch doctor migrate, migrate-hooks, lib/output.ts): MOVED, WOULD-MOVE, CONFLICT, NOT-MOVED, REWRITE, WOULD-REWRITE, REMOVED,
+// WOULD-REMOVE, KEPT <보드> board, HANDLER, WOULD-HANDLER, CONFIG-REMOVED, WOULD-CONFIG-REMOVE, TRACKED <명령>, NOTHING 줄만 낸다(SHORT_RULES).
 // 종료 코드: 0 옮겼거나 옮길 것이 없다, 1 겹침이 있거나 추적 파일이 남았거나 옮기다 실패했다(겹침이 있으면 아무것도 옮기지 않는다),
 //            --hooks 면 옮기지 못한 칸이 있다, 2 사용법 오류(--hooks 에서 옛 위치가 남았거나 설정 파일이 깨졌다), 3 막는 조건이 있다
 //
@@ -104,6 +106,8 @@ import { DEFAULT_MOVES, ensureIgnored, hasFiles, LEGACY_MARKERS, legacyPaths, NA
 import { run } from './lib/proc.ts'
 import { pyRegExp, pyStr, shSplit } from './lib/py.ts'
 import { LINE_BREAK, liveSpecPaths } from './lib/spec.ts'
+import { emit } from './lib/output.ts'
+import type { Rule as ShortRule } from './lib/output.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
@@ -127,8 +131,29 @@ class Usage extends Error {}
 
 type Pair = [string, string]
 
+// 짧은 출력(진입점의 orch doctor migrate, migrate-hooks)의 줄 규칙. 참조 표본 줄과 안내 줄은 --full 이다.
+// 옮기지 못한 것과 겹침은 실패라 판정 낱말을 붙여 남긴다(설계 DECISION21)
+const SHORT_RULES: ShortRule[] = [
+  [/^옮김 (\S+) -> (\S+)$/, (m) => `MOVED ${m[1]} ${m[2]}`],
+  [/^옮길 것 (\S+) -> (\S+)$/, (m) => `WOULD-MOVE ${m[1]} ${m[2]}`],
+  [/^겹침 (\S+) -> (\S+) 이 이미 있다/, (m) => `CONFLICT ${m[1]} ${m[2]}`],
+  [/^겹침 (\S+) 이 이미 있다\. (.*) 를 옮기지 않았다/, (m) => `CONFLICT ${m[1]} ${m[2]}`],
+  [/^옮기지 못함 (.*?): (.*)$/, (m) => `NOT-MOVED ${m[1]} ${m[2]}`],
+  [/^옛 경로를 바꿈 (\S+) (\d+)곳$/, (m) => `REWRITE ${m[1]} ${m[2]}`],
+  [/^바꿀 옛 경로 (\S+) (\d+)곳$/, (m) => `WOULD-REWRITE ${m[1]} ${m[2]}`],
+  [/^빈 폴더를 지움 (\S+)$/, (m) => `REMOVED ${m[1]}`],
+  [/^지울 빈 폴더 (\S+)$/, (m) => `WOULD-REMOVE ${m[1]}`],
+  [/^남김 (\S+) \(보드/, (m) => `KEPT ${m[1]} board`],
+  [/^핸들러를 만듦 (\S+)/, (m) => `HANDLER ${m[1]}`],
+  [/^만들 핸들러 (\S+)/, (m) => `WOULD-HANDLER ${m[1]}`],
+  [/^설정에서 지움 (\S+)$/, (m) => `CONFIG-REMOVED ${m[1]}`],
+  [/^설정에서 지울 키 (\S+)$/, (m) => `WOULD-CONFIG-REMOVE ${m[1]}`],
+  [/^(?:옮길 것이 없다|옮길 칸이 없다)$/, () => 'NOTHING'],
+  [/^추적 파일 (.*?) {2}\(/, (m) => `TRACKED ${m[1]}`],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line, SHORT_RULES)
 }
 
 function err(line: string): void {
@@ -1102,7 +1127,7 @@ function main(argv: string[]): number {
     return 2
   }
   if (values.help) {
-    out(usageText())
+    process.stdout.write(`${usageText()}\n`)
     return 0
   }
   let extra: Pair[]

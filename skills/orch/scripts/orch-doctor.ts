@@ -152,6 +152,8 @@
 //     WAIT-STALE <pid> <번들 sha 나 버전>          지금 세션의 설치본이 아닌 번들로 도는 대기. 다음 줄에 다시 거는 안내가 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
+// 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
+//
 // 종료 코드:
 //     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*, OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
@@ -184,6 +186,7 @@ import { missingRowKeys, workerRows } from './lib/workers.ts'
 import { orcaJson } from './lib/orca.ts'
 import { adoptHint } from './lib/sessions.ts'
 import { isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
+import { emit } from './lib/output.ts'
 
 const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
@@ -796,7 +799,8 @@ async function main(argv: string[]): Promise<number> {
       : []
   const workerLines = runId ? checkWorkers(runId, repo) : []
   const shapeLines = checkOrcaShape()
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines].join('\n')}\n`)
+  // 짧은 출력(진입점의 orch doctor)은 판정 줄과 들여 쓴 고칠 줄만 낸다. `  안내:` 줄은 --full 이다(lib/output.ts 의 emit)
+  emit(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines].join('\n')}`, [], { fix: true })
 
   if (runId) {
     try {

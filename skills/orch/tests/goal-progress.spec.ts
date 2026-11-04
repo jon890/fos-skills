@@ -53,6 +53,12 @@ describe('goal-progress', () => {
     assert.match(r.stderr, /보드에 없는 추적 항목\(끝나지 않은 것으로 셈\): gone/)
   })
 
+  test('짧은 출력은 GOAL 한 줄이고 세부 줄이 없다', () => {
+    const r = goal(['goal', 'a', 'b', 'gone', '--board', board, '--board-bin', fakeBin, '--details', '--dry-run'], { env: { ORCH_OUTPUT: 'short' } })
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout, 'GOAL goal 1/3\n')
+  })
+
   test('진행률과 하위 줄을 보드 명령으로 넣는다', () => {
     writeFileSync(join(tmp, 'items.txt'), '# 오늘\na\n\nb\n')
     const r = goal(['goal', '--items-file', join(tmp, 'items.txt'), '--board', board, '--board-bin', fakeBin, '--details'])
