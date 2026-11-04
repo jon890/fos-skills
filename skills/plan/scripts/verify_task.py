@@ -13,7 +13,7 @@ Python 테스트 파일 이름이 모듈 이름이 될 수 없으면 경로로 �
 검사하는 계획이 아직 커밋 전이면 위반이고, 이미 커밋된 계획끼리 겹치면 경고다.
 새 겹침만 막고, 이미 진행 중인 계획의 폴더 이름을 바꾸게 하지 않는다.
 phase 안 Markdown 상대 링크는 phase 파일 위치 기준으로 풀어 없는 파일이면 위반이다.
-변경 파일 표에 「신규」 로 적은 docs 가 커밋 전 파일이면(7단계에서 먼저 쓴 것) 위반 대신 경고다.
+변경 파일 표에 「신규」 로 적은 docs 가 커밋 전 파일이면(4단계에서 먼저 쓴 것) 위반 대신 경고다.
 작업 트리와 로컬, 원격 브랜치의 tasks 디렉터리를 본다. 보고에서 phase 번호가 어느 계획인지 갈리지 않게 된다.
 index.json 의 pr_scope(한 문장)와 deferred(뒤로 미룬 일) 칸을 보고, phase 가 6개를 넘으면 plan 을 나누게 한다.
 변경 파일이 40개를 넘으면 경고한다. 기준은 references/plan-size.md 가 소유한다.
@@ -277,7 +277,7 @@ def is_glob(rel):
 
 
 def uncommitted_docs(repo, rel):
-    """7단계에서 먼저 쓴 docs 다. docs 아래이고 git 저장소에서 HEAD 에 아직 없는 파일이다."""
+    """4단계에서 먼저 쓴 docs 다. docs 아래이고 git 저장소에서 HEAD 에 아직 없는 파일이다."""
     if not (rel.startswith("docs/") or "/docs/" in rel):
         return False
     inside = subprocess.run(["git", "-C", str(repo), "rev-parse", "--git-dir"], capture_output=True, text=True)
@@ -319,7 +319,7 @@ def check_file_state(path, entries, repo, virtual, out, warnings, legacy=False, 
             warnings.append(f"{path} — 신규 glob 은 구체 파일의 부재를 보장하지 못한다: {rel}")
             created.append(rel)
         elif action == "신규" and exists and uncommitted_docs(repo, rel):
-            warnings.append(f"{path} — 7단계에서 먼저 쓴 docs 로 보여 신규 존재를 허용한다: {rel} "
+            warnings.append(f"{path} — 4단계에서 먼저 쓴 docs 로 보여 신규 존재를 허용한다: {rel} "
                             "(이미 쓴 docs 는 변경 파일 표에 넣지 않는다)")
         elif action == "신규" and exists:
             out.append(f"{path} — 신규 파일이 이미 존재한다: {rel} (구현 후 검사는 --audit)")

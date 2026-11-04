@@ -12,7 +12,7 @@ metadata:
 
 [기능 문서와 단계 인계](../spec/references/feature-docs.md)를 읽는다.
 입력은 스펙, 기술 설계, plan, 인수 검증 계획, 작업 공간, 기준 브랜치, 검증할 커밋, 개발 검증 결과와 원격 검증 목록이다.
-`.claude/verify-overlay.md`, 없으면 implementation 오버레이와 저장소 지침에서 검증 환경·명령을 읽는다.
+`.claude/verify-overlay.md`, 없으면 `.claude/implementation-overlay.md`(옛 이름 `build-with-teams-overlay.md` 도 받는다)와 저장소 지침에서 검증 환경·명령을 읽는다.
 
 작성 전에 [검증 결과 양식](templates/verification-result.md)을 읽는다. 인수 검증 계획의 표 형식은 [plan 의 양식](../plan/templates/verification-plan.md)이 소유한다.
 계획과 결과의 수명은 [계획 수명 규칙](../plan/references/plan-lifecycle.md)을 따른다.
