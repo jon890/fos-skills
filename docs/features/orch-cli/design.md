@@ -47,7 +47,7 @@ PATH 의 orch (실행기: 플러그인 bin/orch, ~/.local/bin/orch 사본)
 
 ```ts
 type Command = {
-  group: string; verb: string | null   // `orch wait` 은 verb null
+  group: string; verb: string | null   // `orch wait` 은 verb null. 두 낱말 동작(`reserve prune`)은 공백으로 잇고 긴 것부터 맞춘다
   script: string                        // scripts 기준 상대경로. PR3 에서 `wait/wait-important.ts` 꼴
   prepend: string[]                     // 예: loop start → ['--start']
   positional: { flag: string; repeat: boolean } | null
@@ -55,6 +55,12 @@ type Command = {
                                         // worker screen → --terminal <값> (prepend 의 --state 와 함께),
                                         // worker worktree → --repo <값>. 위치 인자로 준 값은 그 문맥의 명시로 본다
   context: Array<'repo' | 'run' | 'specs-dir' | 'loop-repo'>
+  required: Array<'repo' | 'run' | 'specs-dir'>
+                                        // 스크립트가 지금 반드시 받는 문맥 인자(실측 2026-11-04: wait 의 run).
+                                        // 명시도 문맥도 설정도 없으면 진입점이 「--run <Run> 을 준다」 처럼 줄 값을 알리고 2 로 끝난다(REQ3)
+  runFrom: 'any' | 'run-current'        // run 을 채울 출처. worker send 는 run-current 만 쓴다. 설정의 finish.run 이 dispatch 의
+                                        // 실제 Run 보다 앞서지 않게 하려는 것이다(send-to-worker.ts 의 `a.run || described.runId`)
+  allow: string[]                       // 금지 플래그의 접두지만 스크립트의 옵션인 이름(wait 의 `--ack`)
   skip: (args: string[]) => Array<'repo' | 'run' | 'specs-dir' | 'loop-repo'>
                                         // 인자에 따라 채우지 않는 문맥. 아래 표의 「예외」 칸(`--live` 없음, `--apply` 없음,
                                         // `--all`, `--worktree`, `--repo` 하나라도)을 이 함수로 적는다. 없으면 빈 배열
@@ -62,7 +68,10 @@ type Command = {
                                         // 이 꼴이 있으면 그 문맥을 명시로 본다. queue merge 의 run:
                                         // `--run`, `--finish-arg=--run`, `--finish-arg --run`, `--sweep-arg --run`
   forbid: string[]                      // 새 꼴에서 받지 않는 옛 모드 플래그. 줄여 쓴 꼴(`--ack-l`)도 접두로 맞춰 거부한다.
-                                        // 스크립트의 expandArgs 가 접두를 펼쳐 금지를 우회하기 때문이다
+                                        // 스크립트의 expandArgs 가 접두를 펼쳐 금지를 우회하기 때문이다. 단 스크립트의 다른 옵션과
+                                        // 이름이 정확히 같은 낱말(`--ack` 는 `--ack-lost` 의 접두지만 옵션이다)은 금지하지 않는다.
+                                        // 그 이름은 아래 `allow` 에 적는다
+                                        // 금지 검사는 위치 인자 변환과 prepend 보다 먼저, 사용자가 준 인자에만 한다
   passthrough: boolean                  // slot heavy, slot mem. --full 을 떼지 않고 문맥도 채우지 않는다
   legacy: { name: string; flags: string[] } | null
                                         // 옛 이름과 그 동작을 고르는 옛 모드 플래그. orch-loop --start 는 { name: 'orch-loop', flags: ['--start'] }.
@@ -75,18 +84,19 @@ type Command = {
 
 | 새 꼴 | 문맥 칸 | 예외 |
 | --- | --- | --- |
-| `wait` | run, loop-repo | `--ack-lost` 계열(`wait ack-lost`)은 run 만 |
+| `wait` | run, loop-repo | `--ack-lost` 계열(`wait ack-lost`)은 run 만. run 은 required |
 | `wait questions` | run, repo | |
 | `wait triage` | run(`--live` 일 때만) | |
 | `loop start`, `loop run` | repo, run, specs-dir | |
 | `loop stop` | repo, run | `stop --all` 이면 run 을 채우지 않는다 |
 | `loop status`, `loop stalled` | repo | `loop stalled` 는 run 을 채우지 않는다. 스크립트가 루프 등록 Run 을 모두 보는 지금 동작이 사람용 확인에 맞다(DECISION22 와 같은 이유) |
 | `worker launch` | run, repo | `--worktree` 를 주면 repo 를 채우지 않는다(둘은 함께 못 쓴다) |
-| `worker send`, `worker adopt` | run(adopt 는 `--apply` 일 때만), repo(adopt) | |
+| `worker send`, `worker adopt` | run(adopt 는 `--apply` 일 때만), repo(adopt) | worker send 의 run 은 run-current 에서만 채운다 |
 | `queue merge`, `queue conflicts`, `queue ready`, `queue finish` | repo, run(ready 빼고) | queue merge 는 `explicit` 의 `--finish-arg`, `--sweep-arg` 안의 `--run` 도 명시로 본다 |
 | `queue run`, `queue overlap`, `queue reserve`, `worker worktree`, `doctor gh-usage` | repo | |
 | `cleanup sweep` | repo, run, specs-dir | `--repo` 를 하나라도 주면 repo 를 채우지 않는다 |
-| `cleanup handoff`, `doctor`, `doctor migrate`, `doctor migrate-hooks` | repo, run | |
+| `cleanup handoff`, `doctor migrate`, `doctor migrate-hooks` | repo, run | |
+| `doctor` | repo | run 을 채우지 않는다. 스킬 첫 점검(`--run` 없이 부른다)이 지금처럼 Run 별 점검과 `session-resume` 을 하지 않게 한다. Run 을 보려면 `--run` 을 준다 |
 | `board sync`, `board release`, `study …`, `spec lint`, `paths` | repo | |
 | `worker ask` | 없음 | worker 터미널은 Run 에 묶이지 않고, `worker-ask` 는 `check` 결과에서 Run 을 읽는다 |
 | 그 밖 | 없음 | |
@@ -95,12 +105,14 @@ type Command = {
 
 - 저장소: `mainCheckout(cwd)`. git 저장소 밖이면 채우지 않는다. 스크립트가 지금처럼 판정한다(대부분 cwd 기본값이나 사용법 오류).
 - Run: `orca orchestration run-current --json --full` 의 `run.id`(5초 제한). 못 읽으면 저장소 설정의 `finish.run`. 둘 다 없으면 채우지 않는다.
+- 기준 저장소: 설정(`finish.run`, `finish.specs_dir`), 지시서 폴더, 루프 저장소는 명시한 `--repo` 가 있으면 그 저장소에서, 없으면 위에서 채운 저장소에서 읽는다. `--repo` 가 둘 이상이면(`cleanup sweep`) 지시서 폴더를 채우지 않는다. 한 절대경로가 여러 저장소의 지시서 지우기에 쓰이지 않게 하려는 것이다.
 - 지시서 폴더: `finish.specs_dir`, 없으면 `pathOf('specs', repo)`.
 - 루프 저장소: 위 저장소의 루프 기록에 위 Run 이 등록돼 있으면(`lib/loop.ts` 의 `isRegistered`) 루프가 살았는지와 상관없이 그 저장소. 루프가 죽었으면 `wait-important` 가 `--loop-repo` 로 `LOOP-DEAD` 를 내야 하기 때문이다.
 - `--ack` 가 있는 `wait` 은 `run-current` 를 읽지 못하면 설정의 `finish.run` 으로 대신하지 않는다. 다른 Run 의 delivery 를 ack 하지 않게 한다. 일시 지연으로 대기가 끊기지 않도록 이 경우만 제한을 15초로 늘려 한 번 더 읽고, 그래도 못 읽으면 사용법 오류(2)와 `--run <Run>` 을 붙이라는 줄을 낸다.
 - 넣는 자리: 앞 인자(`prepend`) 바로 뒤, 첫 `--` 앞이다. `worker launch` 의 `-- WORKER_ARGS` 처럼 `--` 뒤는 다른 명령에 넘어가는 인자라 읽지도 넣지도 않는다.
 - 명시 판정: 첫 `--` 앞에서 `--<이름>`, `--<이름>=…` 과 `explicit` 의 꼴, 그 문맥으로 바꾼 위치 인자를 찾는다. 한계: 진입점은 옵션의 값과 옵션을 가리지 못한다. `--body --ru` 처럼 값이 문맥 이름의 앞부분이면 사용법 오류로 걸리고, `--sweep-arg --repo` 의 값은 명시로 본다. 값은 `--body=--ru` 꼴로 주면 피한다. 새 꼴에서는 그 명령의 문맥 칸에 든 인자를 줄여 쓰지 못한다. 첫 `--` 앞에서 그 이름의 앞부분만 준 옵션(`--re`, `--ru`)은 사용법 오류다. 문맥 칸에 specs-dir 이 있는 명령(`loop start`, `loop run`, `cleanup sweep`)에는 `--spec` 옵션이 없어 부딪치지 않는다. 줄여 쓴 옵션을 모른 채 값을 하나 더 넣으면 `cleanup-sweep` 의 여러 번 받는 `--repo` 에 저장소가 하나 더 붙는다. 옛 꼴은 지금처럼 `lib/args.ts` 가 펼친다.
 - stderr: `orch: 문맥 repo=<경로>(작업 폴더) run=<id>(run-current) specs-dir=<경로>(설정)`. 채운 값이 없으면 내지 않는다.
+- 필수 문맥: 명령 표의 `required` 에 든 인자를 명시도 문맥도 설정도 주지 못하면 진입점이 `orch: --run <Run> 이 필요하다. 코디네이터 터미널에서 부르거나 --run 을 준다` 꼴로 알리고 2 로 끝난다(REQ3). 그 밖의 인자는 스크립트가 지금처럼 기본값을 쓴다.
 
 ### 옛 꼴 안내와 `--help`, `--path`
 
@@ -111,7 +123,7 @@ type Command = {
 ### PATH 가 없는 셸
 
 Codex 는 플러그인 `bin/` 을 PATH 에 넣지 않는다. `install-cli` 전에는 `orch` 가 없으므로 `orch doctor` 도 `orch doctor install-cli` 도 돌지 않는다.
-`skills/orch/SKILL.md` 의 첫 점검 한 곳에 `command -v orch >/dev/null || orch() { node --disable-warning=ExperimentalWarning "$SKILL_DIR/bin/orch.ts" "$@"; }` 를 두고, 그다음 줄에서 `orch doctor` 를 부른다. 셸 함수는 그 Bash 호출 안에서만 산다. 다른 문서는 이 자리를 가리키고 같은 줄을 되풀이하지 않는다.
+`skills/orch/SKILL.md` 의 첫 점검 한 곳에 `command -v orch >/dev/null || orch() { node "$SKILL_DIR/../../bin/orch" "$@"; }` 를 두고(실행기를 불러 낮은 node 에서도 `NODE-TOO-OLD` 가 나온다), 그다음 줄에서 `orch doctor` 를 부른다. 셸 함수는 그 Bash 호출 안에서만 산다. 다른 문서는 이 자리를 가리키고 같은 줄을 되풀이하지 않는다.
 worker 가 읽는 공통 지시서 틀은 `$SKILL_DIR` 이 없으므로 설치 기록에서 진입점을 푸는 한 줄로 같은 셸 함수를 둔다(DECISION10).
 
 ### 옛 꼴과 직접 경로 판정
@@ -120,20 +132,20 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 
 | 판정 | 보는 파일 | 찾는 꼴 | 고칠 줄 |
 | --- | --- | --- | --- |
-| `OLD-CALL <파일>:<줄> <옛 이름>` | `.orch/overlay.md`, `.orch/config.json`, `.orch/specs/spec-common.md`, `.orch/bin/*`, `.orch/hooks/*`, `.claude/skills/**` 의 텍스트 파일 | `orch.ts` 나 `orch.mts` 뒤의 옛 이름(따옴표, `"$ORCH"` 변수 꼴 포함), `orch.ts --path <옛 이름>`, `orch-doctor.py` | 명령 표의 새 꼴 한 줄 |
+| `OLD-CALL <파일>:<줄> <옛 이름>` | `.orch/overlay.md`, `.orch/config.json`, `.orch/specs/spec-common.md`, `.orch/bin/*`, `.orch/hooks/*`, `.claude/skills/**` 의 텍스트 파일 | `orch.ts` 나 `orch.mts` 뒤의 옛 이름(따옴표, `"$ORCH"` 변수 꼴 포함), `orch.ts --path <옛 이름>` 과 `orch.mts --path <옛 이름>`, `orch-doctor.py` | 명령 표의 새 꼴 한 줄 |
 | `DIRECT-PATH <파일>:<줄> <스크립트>` | 같다 | `orch/scripts/<이름>.ts`, `skills/orch/scripts/<이름>.ts`, `$SKILL_DIR/scripts/<이름>.ts`, `$ORCH_SCRIPTS/<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')` 꼴. `<이름>` 이 명령 표의 `script` 인 것만 | 같다 |
 
 - 한 줄에 둘이 함께 걸리면 `OLD-CALL` 하나로 낸다.
-- 예외 표지: 같은 줄이나 바로 윗줄에 `orch-compat` 가 있으면 내지 않는다(호환을 설명하는 자리). 플러그인 문서의 예외(REQ8)도 같은 표지를 쓴다.
+- 예외 표지: 같은 줄이나 바로 윗줄에 `orch-compat` 가 있으면 내지 않는다(호환을 설명하는 자리). Markdown 본문은 `<!-- orch-compat -->`, 코드 블록 안은 셸 주석 `# orch-compat` 로 단다. 플러그인 문서의 예외(REQ8)도 같은 표지를 쓴다.
 - 대기 출력 JSON 을 읽는 저장소 스크립트(ai-analysis `.orch/bin/wait-summary.py`)는 경로를 부르지 않아 이 판정에 걸리지 않는다. PR2 의 짧은 출력과 함께 다룬다.
 - 이 판정이 0건인 것이 옛 이름을 지우는 PR(스펙 DECISION13)을 여는 조건이므로, 오탐을 줄이려고 `<이름>` 을 명령 표의 스크립트로 한정한다.
 
 ### NEXT_WAIT (PR1)
 
-`NEXT_WAIT <앞> wait --ack <id> [기본값과 다른 인자] --lost-state <절대경로> --loop-repo <절대경로>...`.
-`<앞>` 은 `lib/commands.ts` 의 `orchWord()` 다. PATH 의 `orch` 가 표지 주석이 있는 실행기면 `orch`, 아니면 진입점 절대경로(`'<번들>/skills/orch/bin/orch.ts'`)다.
+`NEXT_WAIT <앞> wait --ack <id> [기본값과 다른 인자] [--lost-state <절대경로>] --loop-repo <절대경로>...`.
+`<앞>` 은 `lib/commands.ts` 의 `orchWord()` 다. PATH 를 읽으므로 테스트는 PATH 를 고정한다. PATH 의 `orch` 가 표지 주석이 있는 실행기면 `orch`, 아니면 진입점 절대경로(`'<번들>/skills/orch/bin/orch.ts'`)다.
 `--run` 은 출처로만 정한다. `orchContext()` 가 run 을 run-current 에서 채웠다고 알렸을 때만 빼고, 명시했거나 설정에서 온 Run 은 값이 run-current 와 같아도 적는다.
-`--lost-state` 의 기본값(시작 폴더의 주 checkout 의 `state/wait-important-lost.json`)은 바꾸지 않고 절대경로로 늘 적는다. 다음 대기를 다른 폴더에서 걸어도 같은 상태 파일을 읽게 하려는 것이다. 기본값을 루프 저장소 기준으로 바꾸면 `orch wait ack-lost` 와 상태 파일이 갈라지고 판정이 바뀐다(스펙 「범위 밖」).
+`--lost-state` 의 기본값(시작 폴더의 주 checkout 의 `state/wait-important-lost.json`)은 바꾸지 않는다. 기본값을 쓴 대기에서 시작 폴더의 주 checkout 이 첫 `--loop-repo` 의 주 checkout 과 같으면 `--lost-state` 를 뺀다. 다음 대기를 같은 저장소의 어느 폴더(지워진 워크트리 포함, `wait-important` 가 루프 저장소로 옮긴다)에서 걸어도 같은 상태 파일이다. 다르거나, `--loop-repo` 가 하나도 없거나, `--lost-state` 를 명시했으면 절대경로로 적는다. 다른 저장소 폴더에서 빠진 꼴을 다시 걸면 그 저장소의 상태 파일을 읽어 끊긴 worker 를 한 번 더 알릴 수 있다. 판정이 아니라 알림 한 번의 차이라 받아들인다. 기본값을 루프 저장소 기준으로 바꾸면 `orch wait ack-lost` 와 상태 파일이 갈라지고 판정이 바뀐다(스펙 「범위 밖」).
 `--types`, `--timeout-ms`, `--lost-interval-sec`, `--completion-contract` 는 parseArgs 의 기본값과 다를 때만 적는다. 기본값은 한 상수에서 읽는다.
 
 ### 짧은 출력 (PR2)
@@ -168,7 +180,8 @@ PR2 계획이 스크립트마다 지금 출력 줄을 위 꼴로 대응시키고
 ## 실패와 일관성
 
 - 번들 고르기(원본 `lib/install-record.ts` 의 `selectBundle`, 사본은 실행기와 틀): `ORCH_SCRIPTS_DIR` 이 있으면 그 폴더의 번들. 아니면 설치 기록에 user 범위 항목이 있으면 그 항목만 보고, 그 번들에 `skills/orch/scripts` 가 없으면 다른 범위로 넘어가지 않고 3 이다(REQ6). 3.x 배치(`orch/scripts`)만 있는 user 번들도 3 이고 이유에 플러그인 갱신을 적는다. user 항목이 없으면 지금처럼 다른 범위를 기록 순서대로 보고, 그래도 없으면 실행기·진입점이 든 번들(`claude --plugin-dir` 개발 설치)을 쓴다. `~/.local/bin` 사본은 든 번들이 없어 이유와 `claude plugin install fos-skills@fos-skills` 을 내고 3 이다. user 항목이 있으면 `--plugin-dir` 로 실은 체크아웃의 실행기도 설치본으로 넘긴다(지금 진입점과 같다). 체크아웃을 확인할 때는 지금처럼 `ORCH_SCRIPTS_DIR` 을 준다.
-- STALE-BUNDLE 판정의 예외(설치 캐시 `plugins/cache` 밖의 체크아웃은 판정하지 않는다)는 경고에만 쓴다. 진입점의 넘기기에는 쓰지 않는다.
+- STALE-BUNDLE 판정의 예외(설치 캐시 `plugins/cache` 밖의 체크아웃은 판정하지 않는다)는 경고에만 쓴다. 진입점의 넘기기에는 쓰지 않는다. `selectBundle` 이 오류면 STALE-BUNDLE 과 doctor 의 `staleBundle` 은 판정하지 않는다(설치 기록 문제는 doctor 의 `PLUGIN-PATH-MISSING` 과 진입점의 3 이 알린다).
+- 진입점이 넘길 대상 번들에 진입점이나 `skills/orch/scripts/lib/commands.ts` 가 없으면(이 기능 이전 번들) 실행기와 같이 넘기지 않고 이유와 플러그인 갱신 명령을 내고 3 으로 끝난다.
 - 루트 `bin/` 을 막는 `scripts/tests/test_plugin_manifest.py` 의 검사는 「루트 `bin/` 에는 `orch` 하나만 있고 실행 비트가 있다」 로 바꾼다. `bin/orch` 는 git 모드 100755 로 커밋하고 `install-cli` 는 복사한 뒤 0755 로 둔다.
 - `CLI-MISSING` 판정: doctor 는 Claude 세션의 Bash(플러그인 `bin/` 이 PATH 에 있다)에서 돌아 사람 셸의 PATH 를 볼 수 없다. 그래서 `~/.local/bin/orch` 가 없거나 표지가 없으면 `CLI-MISSING`, 있는데 PATH 에서 플러그인 `bin/` 폴더를 뺀 나머지에 `~/.local/bin` 이 없으면 `CLI-NOT-ON-PATH` 를 낸다. 표지가 있는데 내용이 현재 번들의 `bin/orch` 와 다르면 `CLI-STALE` 과 `orch doctor install-cli` 를 낸다. 넘기기 규칙 덕에 동작은 맞지만 실행기 자체의 고침(신호, 버전 점검)을 받으려는 것이다.
 - `~/.local/bin/orch` 가 이미 있고 표지 주석이 없으면 `install-cli` 는 덮지 않고 `CLI-CONFLICT <경로>` 와 1 로 끝난다. 표지가 있으면 덮어 갱신한다.
@@ -210,7 +223,8 @@ PR2 계획이 스크립트마다 지금 출력 줄을 위 꼴로 대응시키고
 | DECISION11 | 핸들러가 orch 를 부르는 통로 | `ORCH_BIN`(진입점 절대경로)을 더하고 문서 예시를 새 꼴로 바꾼다. `ORCH_SCRIPTS` 는 유지한다 | 작성자 | 핸들러 환경의 PATH 앞에는 가드 폴더가 있고 `orch` 가 PATH 에 있다고 볼 수 없다. 진입점 경로를 넘기면 폴더 이동과 상관없이 돈다 |
 | DECISION8 | ADR | ADR-004 를 고쳐 루트 `bin/` 에 `orch` 하나만 허용한다. 새 ADR 은 만들지 않는다 | 사용자 2026-11-04 | 스펙 DECISION4 |
 | DECISION12 | 스크립트의 안내 줄 | 다른 orch 스크립트를 부르라고 안내하는 줄은 PR1 에서 새 꼴로 바꾼다. 스펙 DECISION16 의 예외다. `사용법:` 줄과 판정 줄은 바꾸지 않는다 | 작성자 | 이 줄은 사람과 에이전트가 붙여 넣는 안내라 읽는 코드가 없다. 옛 꼴로 남으면 옛 이름을 지우는 PR 뒤 안내가 사용법 오류를 부른다 |
-| DECISION13 | `--lost-state` 기본값 | 바꾸지 않는다. `NEXT_WAIT` 에 절대경로로 남긴다 | 작성자 | 기본값을 루프 저장소 기준으로 바꾸면 `wait ack-lost` 와 상태 파일이 갈라지고 같은 입력의 판정이 바뀐다(스펙 「범위 밖」). 독립 검토(2026-11-04)의 지적이다 |
+| DECISION13 | `--lost-state` 기본값 | 바꾸지 않는다. 시작 폴더와 루프 저장소가 같은 저장소면 `NEXT_WAIT` 에서 빼고, 아니면 절대경로로 남긴다 | 작성자 | 기본값을 루프 저장소 기준으로 바꾸면 `wait ack-lost` 와 상태 파일이 갈라지고 같은 입력의 판정이 바뀐다(스펙 「범위 밖」). 독립 검토(2026-11-04)의 지적이다 |
 | DECISION14 | 번들 고르기 규칙의 원본 | `lib/install-record.ts` 의 `selectBundle`. 실행기와 틀의 JS 사본은 같은 사례 표 테스트로 묶는다 | 작성자 | 이 기능의 발단(3.x 진입점이 user 4.0.1 을 건너뜀)이 사본마다 규칙이 달라서 난 일이다. CommonJS 실행기와 셸 한 줄은 TS 를 import 할 수 없어 사본을 없앨 수는 없다 |
 | DECISION15 | 프로세스 사슬이 늘어난 것 | 고아 대기 판정이 실행기와 진입점을 셸처럼 통과하는 노드로 본다. 진입점을 `exec` 처럼 대체하지 않는다 | 작성자 | node 는 프로세스를 바꿔치기할 수 없다. 대기 찾기(`lib/waiters.ts`)는 자식 `wait-important` 의 명령줄로 그대로 찾는다 |
 | DECISION16 | PR1 의 크기 | 스펙 DECISION14 대로 PR 하나로 두고 plan 의 phase 마다 테스트를 통과한 커밋 하나로 나눈다. 변경 파일 40개 초과는 문서 일괄 교체 몫이다 | 사용자 2026-11-04 | 스펙 DECISION14 다. 독립 검토가 PR 을 둘로 나누자고 했으나 사용자 결정을 바꿀 새 근거는 아니다. 문서 교체는 명령 표가 생긴 뒤에야 검사할 수 있어 같은 PR 이 맞다 |
+| DECISION17 | 필수 문맥과 doctor 의 Run | 스크립트가 지금 반드시 받는 인자만 `required` 로 두고 진입점이 알린다. `doctor` 는 Run 을 문맥으로 채우지 않는다 | 작성자 | 스펙 REQ3 의 실패 인수 조건을 스크립트를 고치지 않고 채운다. doctor 에 Run 을 채우면 스킬 첫 점검마다 Run 별 점검과 `session-resume` 핸들러가 돌아 지금 동작이 바뀐다. 계획 critic(2026-11-04)의 지적이다 |
