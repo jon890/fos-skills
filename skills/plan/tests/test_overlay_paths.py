@@ -83,6 +83,25 @@ class OverlayPathsTest(unittest.TestCase):
                     if current:
                         self.assertNotIn(old, paths)
 
+    def test_docs_consolidate_uses_audit_fallback_only_without_own_overlay(self):
+        for own, current, legacy in ((False, False, True), (False, True, True),
+                                     (True, False, True), (True, True, True),
+                                     (False, False, False)):
+            with self.subTest(own=own, current=current, legacy=legacy):
+                for name, exists in (("docs-consolidate", own), ("docs-audit", current), ("docs-check", legacy)):
+                    rel = f".claude/{name}-overlay.md"
+                    (self.root / rel).unlink(missing_ok=True)
+                    if exists:
+                        self.write(rel, "설정")
+                result = subprocess.run(["python3", str(SCRIPT), "--skill", "docs-consolidate"],
+                                        cwd=self.root, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0)
+                existing = [p for p in json.loads(result.stdout)["search"]["."] if not p.startswith("(없음)")]
+                self.assertEqual(".claude/docs-consolidate-overlay.md" in existing, own)
+                self.assertEqual(".claude/docs-audit-overlay.md" in existing, current and not own)
+                self.assertEqual(".claude/docs-check-overlay.md" in existing, legacy and not current and not own)
+                self.assertEqual(bool(result.stderr), legacy and not current and not own)
+
     def test_docs_audit_cli_keeps_json_on_stdout_and_warning_on_stderr(self):
         self.write(".claude/docs-check-overlay.md", "설정")
         result = subprocess.run(["python3", str(SCRIPT), "--skill", "docs-audit"],

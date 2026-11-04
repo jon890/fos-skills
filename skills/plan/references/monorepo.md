@@ -25,6 +25,8 @@ git diff --name-only origin/main...HEAD | python3 "$PLAN_SKILL_DIR/scripts/overl
 
 `docs-audit` 는 같은 위치에 새 이름 오버레이가 없을 때만 `docs-check-overlay.md` 를 읽고 stderr 에 경고한다. 이 호환은 docs-audit 의 다음 major(5.0.0)에서 제거한다.
 
+`docs-consolidate` 도 이 탐색기를 사용한다. 같은 위치에 자기 오버레이가 있으면 그것을 읽고, 없으면 docs-audit 의 폴백과 경고를 따른다.
+
 ## 단일 저장소
 
 저장소 루트 하나가 프로젝트 하나인 경우다. 아래 순서로 찾는다.

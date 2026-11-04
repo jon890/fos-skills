@@ -67,15 +67,21 @@ def search_order(root: Path, skill: str, sub: str | None) -> list[str]:
     """값 하나마다 이 순서로 찾는다. 앞의 파일에 있으면 그것을 쓴다."""
     aliases = {"plan": "planning", "implementation": "build-with-teams", "docs-audit": "docs-check"}
     names = [skill] + ([aliases[skill]] if skill in aliases else [])
+    if skill == "docs-consolidate":
+        names += ["docs-audit", "docs-check"]
     order = []
     if sub:
         order += [f"{sub}/.claude/{name}-overlay.md" for name in names]
     order += [f".claude/{name}-overlay.md" for name in names]
-    if skill == "docs-audit":
+    if skill in ("docs-audit", "docs-consolidate"):
         for scope in ([sub, None] if sub else [None]):
             directory = f"{scope}/.claude" if scope else ".claude"
-            current = f"{directory}/{skill}-overlay.md"
-            legacy = f"{directory}/{aliases[skill]}-overlay.md"
+            current = f"{directory}/docs-audit-overlay.md"
+            legacy = f"{directory}/docs-check-overlay.md"
+            if skill == "docs-consolidate" and (root / f"{directory}/{skill}-overlay.md").is_file():
+                order.remove(current)
+                order.remove(legacy)
+                continue
             if (root / current).is_file():
                 order.remove(legacy)
             elif (root / legacy).is_file():

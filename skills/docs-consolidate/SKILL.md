@@ -11,7 +11,9 @@ metadata:
 **목표: 기능 문서를 현재 구현에 맞추고 실제로 반복되는 규칙만 공통화한다.**
 
 [문서 소유권](../spec/references/feature-docs.md)을 읽는다.
-`.claude/docs-consolidate-overlay.md`, 없으면 docs-audit 오버레이와 저장소 지침에서 경로·검사 명령을 읽는다.
+plan 번들의 `scripts/overlay_paths.py --skill docs-consolidate` 를 대상 저장소 루트에서 실행하고 출력의 `search` 순서대로 경로·검사 명령을 읽는다.
+감사 범위가 정해졌으면 그 파일 경로도 인자로 넘긴다. 모노레포 판정과 종료 코드는 [오버레이 탐색 규칙](../plan/references/monorepo.md)을 따른다.
+같은 위치에서 `docs-consolidate-overlay.md` 를 먼저 읽고, 없으면 docs-audit 의 새 이름 → 옛 이름 폴백과 경고를 따른다.
 
 [문서 소유권](../spec/references/document-ownership.md)과 [문서 대조 양식](templates/document-review.md)을 먼저 읽는다.
 계획 정리는 [계획 수명 규칙](../plan/references/plan-lifecycle.md)을 따른다.
