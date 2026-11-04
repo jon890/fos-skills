@@ -2,10 +2,14 @@
 
 import importlib.util
 import tempfile
+import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+import skill_changes
 SPEC = importlib.util.spec_from_file_location("check_skill_docs", ROOT / "scripts" / "check-skill-docs.py")
 docs = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(docs)
@@ -69,6 +73,32 @@ class RepositorySkillsTest(unittest.TestCase):
             (skill / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
             problems = docs.check_skill("demo", Path(tmp))
         self.assertTrue(problems and all(problem.startswith("demo/README.md: ") for problem in problems), problems)
+
+
+class FragmentCheckTest(unittest.TestCase):
+    def test_main_passes_on_the_repository_fragments(self):
+        self.assertEqual(docs.main([]), 0)
+
+    def test_main_reports_bad_fragments_only_for_the_named_skill(self):
+        problems = ["skills/plan/changes/bad.md: 이름이 틀렸다", "extensions/work-board/changes/x.md: 이름이 틀렸다"]
+        with mock.patch.object(docs, "check_changes", return_value=problems), mock.patch.object(docs, "check_skill", return_value=[]):
+            self.assertEqual(docs.main(["plan"]), 1)
+            self.assertEqual(docs.main(["orch"]), 0)
+            self.assertEqual(docs.main([]), 1)
+
+    def test_changelog_after_applying_fragments_still_follows_the_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "skills" / "demo"
+            (skill / "changes").mkdir(parents=True)
+            (skill / "SKILL.md").write_text('---\nmetadata:\n  version: "2.1.0"\n---\n', encoding="utf-8")
+            (skill / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+            (skill / "changes" / "five.minor.md").write_text("".join(f"- 항목 {n}\n" for n in range(5)), encoding="utf-8")
+            applied, warnings = skill_changes.apply_fragments(Path(tmp), "2026-11-04")
+            text = (skill / "CHANGELOG.md").read_text(encoding="utf-8")
+            version = (skill / "SKILL.md").read_text(encoding="utf-8")
+        self.assertEqual((applied, warnings), ([("demo", "2.2.0")], []))
+        self.assertIn('version: "2.2.0"', version)
+        self.assertEqual(docs.check_changelog("demo", text, "2.2.0"), [])
 
 
 class ReadmeTest(unittest.TestCase):

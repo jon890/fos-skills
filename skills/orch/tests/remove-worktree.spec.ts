@@ -14,13 +14,18 @@ import { fileURLToPath } from 'node:url'
 const SCRIPT = fileURLToPath(new URL('../scripts/remove-worktree.ts', import.meta.url))
 const HOOK = 'node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}'
 
-type Proc = { pid: number; cwd: string; command: string; gone?: number; ppid?: number }
+// terminal 은 그 프로세스를 띄운 Orca 터미널이다. 가짜 orca 가 그 터미널을 닫으면 프로세스도 끝난다
+type Proc = { pid: number; cwd: string; command: string; gone?: number; ppid?: number; terminal?: string }
 type State = {
   procs?: Proc[]
   terminals?: unknown[]
   workers?: unknown[]
   takeoverAt?: number
   orcaFail?: boolean
+  // 가짜 orca 가 닫은 터미널 handle
+  closed?: string[]
+  // terminal close 를 받은 뒤 worker 행의 소유 상태를 이 값으로 바꾼다. 닫기 바로 앞의 다시 읽기를 본다
+  takeoverOnList?: boolean
   // 리뷰 브랜치 판정이 읽는 것. gh pr view 의 응답(PR 번호에서)과 task-list 의 Task
   prViews?: Record<string, unknown>
   tasks?: unknown[]
@@ -89,7 +94,20 @@ beforeEach(() => {
     bin,
     'orca',
     `if (st.orcaFail) process.exit(1)
-if (argv.includes('terminal') && argv.includes('list')) console.log(JSON.stringify({ result: { terminals: st.terminals || [] } }))
+if (argv.includes('terminal') && argv.includes('list')) {
+  console.log(JSON.stringify({ result: { terminals: st.terminals || [] } }))
+  st.lists = (st.lists || 0) + 1
+  // 두 번째 목록(유휴 셸 판정) 뒤에 사용자가 넘겨받는다. 닫기 바로 앞의 소유 확인(세 번째 목록)이 잡아야 한다
+  if (st.takeoverOnList && st.lists === 2) for (const w of st.workers || []) w.resource.ownershipState = 'user_owned'
+  fs.writeFileSync(file, JSON.stringify(st))
+}
+else if (argv.includes('terminal') && argv.includes('close')) {
+  const handle = argv[argv.indexOf('--terminal') + 1]
+  st.closed = [...(st.closed || []), handle]
+  st.procs = (st.procs || []).filter((q) => q.terminal !== handle)
+  fs.writeFileSync(file, JSON.stringify(st))
+  console.log(JSON.stringify({ ok: true, result: {} }))
+}
 else if (argv.includes('worker-list')) console.log(JSON.stringify({ result: { scope: { source: 'all' }, workers: st.workers || [], page: {} } }))
 else if (argv.includes('task-list')) {
   if (st.tasksFail) process.exit(1)
@@ -131,7 +149,7 @@ fs.writeFileSync(file, JSON.stringify(st))
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
-function proc(pid: number, command: string, opts: { gone?: number; ppid?: number } = {}): Proc {
+function proc(pid: number, command: string, opts: { gone?: number; ppid?: number; terminal?: string } = {}): Proc {
   return { pid, cwd: wt, command, ...opts }
 }
 
@@ -147,8 +165,8 @@ function removeWorktree(state: State, args: string[] = [], opts: { hookWait?: nu
       ? ['bash', '-c', 'exec "$@"', 'remove-worktree', ...node]
       : node
   const done = spawnSync(command[0], command.slice(1), { env: runEnv, encoding: 'utf8' })
-  const slept = (JSON.parse(readFileSync(stateFile, 'utf8')) as { slept: number }).slept
-  return { code: done.status, stdout: done.stdout, out: done.stdout + done.stderr, slept }
+  const after = JSON.parse(readFileSync(stateFile, 'utf8')) as { slept: number; closed?: string[] }
+  return { code: done.status, stdout: done.stdout, out: done.stdout + done.stderr, slept: after.slept, closed: after.closed ?? [] }
 }
 
 function has(text: string, part: string): void {
@@ -216,6 +234,80 @@ describe('작업 디렉터리를 쥔 프로세스 대기', () => {
     assert.equal(r.code, 0, r.out)
     assert.equal(r.slept, 2)
     assert.equal(existsSync(wt), false)
+  })
+})
+
+// Orca 가 워크트리를 화면에서 열 때 띄운 「Terminal 1」(에이전트 없는 `zsh -l`)이 워크트리를 쥔 경우(2026-11-04 ai-analysis)
+describe('Orca 기본 셸', () => {
+  const shell = (handle = 'term_1') => ({ handle, worktreePath: wt, title: 'Terminal 1' })
+  // 이 워크트리에서 일하고 끝난 worker 의 행. 그 worker 의 터미널(term_w)은 이미 닫혔고 Orca 가 기본 셸(term_1)을 다시 띄웠다
+  const done = () => [{ dispatchId: 'ctx_w', dispatchStatus: 'completed', agentTerminalHandle: 'term_w', resource: { worktreeId: `repo-id::${wt}`, terminalHandle: 'term_w', ownershipState: 'owned' } }]
+
+  test('끝난 worker 의 워크트리를 자식 없는 로그인 셸만 쥐었으면 그 터미널을 닫고 지운다', () => {
+    const r = removeWorktree({ procs: [proc(42, '-zsh', { terminal: 'term_1' })], terminals: [shell()], workers: done() })
+    assert.equal(r.code, 0, r.out)
+    has(r.out, '유휴 셸 터미널 닫음 term_1')
+    assert.deepEqual(r.closed, ['term_1'])
+    assert.equal(existsSync(wt), false)
+  })
+
+  test('자식이 있는 셸은 닫지 않고 거부한다', () => {
+    const procs = [proc(42, '-zsh', { terminal: 'term_1' }), { pid: 43, cwd: tmp, command: 'vim', ppid: 42 }]
+    const r = removeWorktree({ procs, terminals: [shell()], workers: done() })
+    assert.equal(r.code, 1, r.out)
+    has(r.out, '유휴 셸 터미널을 닫지 않는다: 자식이 있는 셸 42')
+    assert.deepEqual(r.closed, [])
+    assert.equal(existsSync(wt), true)
+  })
+
+  test('에이전트 터미널은 닫지 않는다', () => {
+    const r = removeWorktree({ procs: [proc(42, '-zsh', { terminal: 'term_1' })], terminals: [{ ...shell(), agentIdentity: { agent: 'claude' } }], workers: done() })
+    assert.equal(r.code, 1, r.out)
+    has(r.out, '유휴 셸 터미널을 닫지 않는다: 에이전트 터미널 term_1')
+    assert.deepEqual(r.closed, [])
+  })
+
+  test('살아 있는 dispatch 의 터미널은 닫지 않는다', () => {
+    const workers = [...done(), { dispatchId: 'ctx_r', dispatchStatus: 'running', agentTerminalHandle: 'term_1', resource: { terminalHandle: 'term_1', ownershipState: 'owned' } }]
+    const r = removeWorktree({ procs: [proc(42, '-zsh', { terminal: 'term_1' })], terminals: [shell()], workers })
+    assert.equal(r.code, 1, r.out)
+    has(r.out, '유휴 셸 터미널을 닫지 않는다: worker 터미널 term_1')
+    assert.deepEqual(r.closed, [])
+  })
+
+  test('닫기 바로 앞에 사용자가 넘겨받았으면 닫지 않고 남긴다', () => {
+    const workers = [{ dispatchId: 'ctx_w', dispatchStatus: 'completed', agentTerminalHandle: 'term_1', resource: { worktreeId: `repo-id::${wt}`, terminalHandle: 'term_1', ownershipState: 'owned' } }]
+    const r = removeWorktree({ procs: [proc(42, '-zsh', { terminal: 'term_1' })], terminals: [shell()], workers, takeoverOnList: true })
+    assert.equal(r.code, 1, r.out)
+    has(r.out, `남김: 사용자 보유 터미널 (${wt})`)
+    assert.deepEqual(r.closed, [])
+    assert.equal(existsSync(wt), true)
+  })
+
+  // 사람이 연 셸도 자식 없는 로그인 셸이다. worker 기록이 없는 워크트리의 셸은 닫지 않는다(2026-11-04 PR #337 독립 리뷰의 재현)
+  test('끝난 worker 기록이 없는 워크트리의 셸은 사람이 연 것일 수 있어 닫지 않는다', () => {
+    const human = { handle: 'human', worktreePath: wt, title: 'My interactive terminal' }
+    const r = removeWorktree({ procs: [proc(42, '-zsh', { terminal: 'human' })], terminals: [human], workers: [] })
+    assert.equal(r.code, 1, r.out)
+    has(r.out, '유휴 셸 터미널을 닫지 않는다: 이 워크트리에 끝난 worker dispatch 기록이 없다')
+    assert.deepEqual(r.closed, [])
+    assert.equal(existsSync(wt), true)
+  })
+
+  test('어차피 거부할 워크트리면 셸을 닫기 전에 거부한다', () => {
+    writeFileSync(join(wt, 'draft.txt'), 'wip\n')
+    const r = removeWorktree({ procs: [proc(42, '-zsh', { terminal: 'term_1' })], terminals: [shell()], workers: done() })
+    assert.equal(r.code, 1, r.out)
+    has(r.out, `거부: ${wt} 에 커밋 안 된 변경`)
+    assert.deepEqual(r.closed, [])
+    assert.equal(existsSync(join(wt, 'draft.txt')), true)
+  })
+
+  test('그 경로에 Orca 터미널이 없으면 닫지 않고 판정 줄도 내지 않는다', () => {
+    const r = removeWorktree({ procs: [proc(42, '-zsh')] })
+    assert.equal(r.code, 1, r.out)
+    lacks(r.out, '유휴 셸')
+    assert.deepEqual(r.closed, [])
   })
 })
 

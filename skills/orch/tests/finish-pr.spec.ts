@@ -252,7 +252,7 @@ function inputs(file: string): Json[] {
 const DEPLOY = ['--deploy-workflow', 'deploy.yml', '--deploy-branch', 'main']
 
 describe('finish-pr 흐름', { concurrency: 4 }, () => {
-  test('기능 후속 검증이 대기면 작업 공간·지시서·보드를 남기고 근거 갱신 뒤 마무리한다', async (t) => {
+  test('기능 후속 검증이 대기면 워크트리는 지우고 지시서·업무 완료를 남기고 근거 갱신 뒤 마무리한다', async (t) => {
     const c = setup(t)
     c.state.pr.body = `<!-- fos-feature-evidence -->
 검증 커밋: ${c.state.pr.head}
@@ -265,9 +265,10 @@ describe('finish-pr 흐름', { concurrency: 4 }, () => {
     const args = ['--specs-dir', c.specs, '--complete']
     const waiting = await c.finish(args)
     assert.equal(waiting.code, 1, both(waiting))
-    assert.equal(existsSync(c.wt), true)
+    // 사용자 결정(2026-11-04): 워크트리와 브랜치는 MERGED 직후 지운다. 지시서와 업무 완료만 후속 검증 뒤로 남긴다
+    assert.equal(existsSync(c.wt), false)
     assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
-    assert.equal(c.calls().some((line) => line.startsWith('sweep ')), false)
+    assert.equal(c.calls().some((line) => line.startsWith('sweep ')), true)
     assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), false)
     c.state.pr.body = String(c.state.pr.body).replace('후속 검증: 대기', '후속 검증: 통과')
     const done = await c.finish(args)
@@ -543,6 +544,26 @@ describe('finish-pr 시간 제한 설정', { concurrency: 4 }, () => {
 })
 
 describe('finish-pr 배포 판정', { concurrency: 4 }, () => {
+  test('워크트리는 배포를 기다리기 전에 지운다', async (t) => {
+    const c = setup(t)
+    const r = await c.finish(DEPLOY)
+    assert.equal(r.code, 0, both(r))
+    const calls = c.calls()
+    const sweep = calls.findIndex((line) => line.startsWith('sweep '))
+    const deploy = calls.findIndex((line) => line.startsWith('gh run list'))
+    assert.ok(sweep >= 0 && deploy > sweep, calls.join('\n'))
+  })
+
+  test('끝 커밋에 포함됐다는 근거 줄은 바뀔 때만 한 번 남긴다', async (t) => {
+    const c = setup(t)
+    c.state.runs = runs([c.merge, 'completed', 'skipped'])
+    // 공통 설정의 배포 대기(0.005분)로는 확인이 한 번에 끝날 수 있다. 여러 번 확인하도록 3초를 준다. 뒤의 값이 앞 값을 덮는다
+    const r = await c.finish([...DEPLOY, '--deploy-timeout', '0.05'])
+    const said = r.stdout.split('\n').filter((line) => line.includes('배포 판정: 뒤 커밋'))
+    assert.equal(said.length, 1, both(r))
+    assert.ok(c.calls().filter((line) => line.startsWith('gh run list')).length > 1, c.calls().join('\n'))
+  })
+
   // 머지 커밋(merge), 그 뒤 커밋(later), 머지 커밋보다 앞 커밋(init), 저장소에 없는 커밋(x)의 실행으로 판정을 본다
   const cases: { name: string; runs: (c: Ctx) => Json[]; want: (c: Ctx) => string; deploy: string }[] = [
     { name: '머지 커밋 자신의 성공', runs: (c) => runs([c.merge, 'completed', 'success']), want: (c) => `배포 성공 ${c.merge.slice(0, 9)}`, deploy: 'success' },
@@ -564,7 +585,19 @@ describe('finish-pr 배포 판정', { concurrency: 4 }, () => {
       want: () => '배포를 기다리다 시간이 지났다',
       deploy: 'timeout',
     },
-    { name: 'skipped 만 있다', runs: (c) => runs([c.merge, 'completed', 'skipped']), want: () => '배포를 기다리다 시간이 지났다', deploy: 'timeout' },
+    // 배포 브랜치의 끝 커밋은 later 다. 연달아 머지해 머지 커밋의 배포가 건너뛰어지면 뒤 커밋의 배포를 기다린다
+    {
+      name: '머지 커밋만 skipped 면 끝 커밋에 포함된 것으로 보고 그 배포를 기다린다',
+      runs: (c) => runs([c.merge, 'completed', 'skipped']),
+      want: (c) => `배포 판정: 뒤 커밋 ${c.later} 에 포함됨, 그 배포를 기다린다`,
+      deploy: 'timeout',
+    },
+    {
+      name: '끝 커밋의 배포까지 skipped 면 기다리지 않고 실패다',
+      runs: (c) => runs([c.later, 'completed', 'skipped'], [c.merge, 'completed', 'skipped']),
+      want: (c) => `배포 실패 ${c.later.slice(0, 9)} (근거: 배포가 건너뛰어졌다)`,
+      deploy: 'failure',
+    },
     {
       name: '성공도 진행 중도 없이 실패가 있다. 저장소에 없는 커밋의 성공은 세지 않는다',
       runs: (c) => runs([c.merge, 'completed', 'failure'], ['0'.repeat(40), 'completed', 'success']),

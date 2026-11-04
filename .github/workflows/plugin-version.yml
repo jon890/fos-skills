@@ -1,6 +1,8 @@
 name: Plugin version
 
 # main 에 들어온 변경마다 .claude-plugin/plugin.json 의 version 을 올리고 플러그인 CHANGELOG 에 한 줄을 더한다.
+# 같은 실행이 main 에 남은 변경 이력 조각(<스킬>/changes/*.md)으로 스킬 metadata.version 과 CHANGELOG 절도 올리고 조각을 지운다
+# (docs/adr/023-version-at-merge.md).
 # version 이 바뀌어야 설치한 쪽의 claude plugin update 가 새 복사본을 받는다(docs/adr/019-plugin-version-auto-bump.md).
 # GITHUB_TOKEN 으로 push 한 커밋은 workflow 를 다시 띄우지 않아 루프가 생기지 않는다.
 
@@ -27,7 +29,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - name: Bump version and changelog
+      - name: Bump skill versions, plugin version and changelogs
         env:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
@@ -38,10 +40,15 @@ jobs:
             echo "올릴 것이 없다"
             exit 0
           fi
-          version=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -am "chore(plugin): 플러그인 버전을 ${version} 으로 올린다"
+          if git diff --quiet -- .claude-plugin/plugin.json; then
+            # 사람이 plugin.json 을 직접 올린 머지라 스킬 버전만 올랐다
+            git commit -am "chore(skills): 스킬 버전을 올린다"
+          else
+            version=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+            git commit -am "chore(plugin): 플러그인 버전을 ${version} 으로 올린다"
+          fi
           for attempt in 1 2 3; do
             if git push origin HEAD:main; then exit 0; fi
             git pull --rebase origin main
