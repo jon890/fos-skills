@@ -106,6 +106,13 @@ describe('spec-common.md 의 스크립트 경로', () => {
     assert.doesNotMatch(item, /\$SKILL_DIR/)
   })
 
+  test('ADR 표지 항목은 같은 경로 풀기로 reserve-migration.ts --kind adr 를 부른다', () => {
+    const item = template().split('\n- ').find((part) => part.includes('<!-- orch-rule: adr -->'))
+    assert.ok(item, '틀에 adr 표지 항목이 없다')
+    assert.ok(item.includes(`ORCH_SCRIPTS=$(${resolver()}) &&`), '경로 풀기가 다른 항목과 다르다')
+    assert.match(item, /node --disable-warning=ExperimentalWarning "\$ORCH_SCRIPTS\/reserve-migration\.ts" --repo "\$\(git rev-parse --show-toplevel\)" --kind adr --module "\$MODULE" --name "\$NAME"/)
+  })
+
   test('CLAUDE_CONFIG_DIR 의 설치본을 쓰고 user scope 를 먼저 고른다', () => {
     const config = join(tmp, 'profile with space', 'home')
     writeInstalled(config, [

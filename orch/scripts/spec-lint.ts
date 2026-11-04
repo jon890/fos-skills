@@ -61,7 +61,8 @@
 //                 본문은 표지가 든 목록 항목이다. 항목 머리 줄(들여쓰지 않은 줄)부터 들여쓴 이어지는 줄과 빈 줄까지 보고,
 //                 줄 끝 공백과 빈 줄은 빼고 비교한다. 틀 본문의 `{{...}}` 는 아무 글자에나 맞는다. 다른 표지는 한 줄에 하나씩 낸다.
 //                 조건부 표지(CONDITIONAL_RULES)는 조건이 맞는 저장소에서만 빠진 것을 알린다. `migration` 은 orch 설정의
-//                 migrations.dirs 나 migrations.watch 가 있는 저장소다. 조건이 맞지 않아도 표지가 있으면 본문은 비교한다.
+//                 migrations.dirs 나 migrations.watch 가 있는 저장소, `adr` 은 adr.dirs 가 있는 저장소다.
+//                 조건이 맞지 않아도 표지가 있으면 본문은 비교한다.
 //                 저장소가 그 규칙을 일부러 바꿨을 수 있어 경고이고 종료 코드에 넣지 않는다. 지시서 폴더에 spec-common.md 가 없으면 보지 않는다
 //     임시        지시서가 임시 폴더 아래 경로(`/tmp/…`, `/private/tmp/…`, `/var/folders/…`, `$TMPDIR/…`, `…/scratchpad/…`)를 가리킨다.
 //                 세션이 끝나거나 재부팅하면 그 파일이 사라져 다시 띄운 worker 가 막힌다. 내용을 지시서 본문에 옮기거나 저장소나
@@ -398,21 +399,22 @@ function ruleMarks(text: string): Set<string> {
 
 // 머리 주석의 「공통」 의 조건부 표지. 조건이 거짓인 저장소에서는 그 표지가 빠져도 알리지 않는다
 const CONDITIONAL_RULES: Record<string, (repoRoot: string) => boolean> = {
-  migration: migrationsConfigured,
+  migration: (repoRoot) => configured(repoRoot, 'migrations', ['dirs', 'watch']),
+  adr: (repoRoot) => configured(repoRoot, 'adr', ['dirs']),
 }
 
-function migrationsConfigured(repoRoot: string): boolean {
-  let migrations: unknown
+// 설정 절의 keys 가운데 하나라도 비지 않은 객체인지. 설정을 읽지 못하면 거짓이다
+function configured(repoRoot: string, name: 'migrations' | 'adr', keys: string[]): boolean {
+  let body: unknown
   try {
-    migrations = loadConfig(repoRoot).migrations
+    body = loadConfig(repoRoot)[name]
   } catch (e) {
     if (e instanceof ConfigError) return false
     throw e
   }
-  if (typeof migrations !== 'object' || migrations === null) return false
-  const { dirs, watch } = migrations as Record<string, unknown>
+  if (typeof body !== 'object' || body === null) return false
   const filled = (value: unknown) => typeof value === 'object' && value !== null && Object.keys(value).length > 0
-  return filled(dirs) || filled(watch)
+  return keys.some((key) => filled((body as Record<string, unknown>)[key]))
 }
 
 // 표지마다 그 표지가 든 목록 항목의 본문과 머리 줄 번호. 머리 주석의 「공통」 이 범위를 정한다
