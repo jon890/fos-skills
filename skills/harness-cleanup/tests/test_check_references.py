@@ -354,5 +354,40 @@ class FenceAndBranchTest(CheckReferencesTest):
         self.assertIn("[경로] docs/branch-naming.md", result.stdout)
 
 
+class HomePathTest(CheckReferencesTest):
+    """`~/` 경로는 이 머신의 홈에 없으면 실패가 아니라 경고로 낸다."""
+
+    def write(self, text):
+        (self.repo / "CLAUDE.md").write_text(text)
+
+    def test_missing_home_path_is_a_warning_not_a_failure(self):
+        self.write("규칙은 `~/.claude/references/missing.md` 가 소유한다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("깨진 참조 0건", result.stdout)
+        self.assertIn("CLAUDE.md:1  [홈 경로] ~/.claude/references/missing.md", result.stdout)
+
+    def test_existing_home_path_is_not_reported(self):
+        (self.home / ".claude/references").mkdir(parents=True)
+        (self.home / ".claude/references/present.md").write_text("# 문서\n")
+        self.write("규칙은 `~/.claude/references/present.md` 가 소유한다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("홈 경로", result.stdout)
+
+    def test_placeholder_and_fenced_home_paths_are_skipped(self):
+        self.write("`~/projects/<저장소>/AGENTS.md` 와 `~/.claude/*.md` 를 본다.\n\n```\n`~/nowhere/x.md`\n```\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("홈 경로", result.stdout)
+
+    def test_warning_does_not_hide_a_broken_reference(self):
+        self.write("`~/nowhere/x.md` 와 [링크](없다.md) 를 본다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("[링크] 없다.md", result.stdout)
+        self.assertIn("[홈 경로] ~/nowhere/x.md", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

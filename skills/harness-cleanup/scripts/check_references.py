@@ -20,6 +20,10 @@
 브랜치 이름처럼 경로가 아닌 백틱 표기는 2번에서 건너뛴다. 확장자도 끝 슬래시도 없는 표기가
 브랜치를 말하는 줄(「브랜치」, `branch`, `checkout`, `switch`, `worktree`)에 있을 때다.
 
+  6. 홈 경로 — 백틱으로 감싼 `~/…` 경로가 이 머신의 홈 아래에 있는지. 없으면 실패가 아니라 경고로 낸다.
+     다른 사람의 머신 경로이거나 지침 작성자만 가진 파일일 수 있어 깨진 참조로 단정하지 못한다.
+     경고는 종료 코드를 바꾸지 않고 깨진 참조 결과 뒤에 낸다.
+
 5번은 두 범위를 본다. 감사 대상 지침 전부와, git 이 추적하는 텍스트 파일 가운데
 가리키는 파일이 감사 대상 지침인 참조다. 지침의 절 이름을 바꾸면 코드 주석과 프롬프트의
 참조가 깨지기 때문이다. 바이너리와 디코딩이 안 되는 파일은 건너뛴다.
@@ -28,7 +32,7 @@
 `--scope` 는 읽는 파일을 그 아래로 제한한다. 두 범위 모두 같다.
 
 Usage: python3 check_references.py [repo-root] [--scope <저장소 안 경로>]
-종료 코드: 0 깨진 참조 없음, 1 깨진 참조 있음, 2 `--scope` 인자 오류.
+종료 코드: 0 깨진 참조 없음, 1 깨진 참조 있음, 2 `--scope` 인자 오류. 경고만 있으면 0 이다.
 """
 import json
 import pathlib
@@ -48,6 +52,8 @@ except ValueError as error:
 
 # 경로처럼 보이는 백틱 조각. 디렉터리 구분자를 포함해야 경로로 본다.
 PATH_IN_BACKTICK = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)`")
+# 홈 경로. `~/` 뒤로 경로 글자만 이어지는 백틱 표기다. 자리표시자(`<>{}*$`)가 든 표기는 잡지 않는다.
+HOME_PATH = re.compile(r"`(~/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?)`")
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 # 확장자와 무관한 링크 한 개. 링크 문구의 백틱 경로를 2번 검사에서 가릴 때 쓴다.
 LINK_SPAN = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
@@ -273,6 +279,8 @@ def main():
     plugins = plugin_names()
     siblings = skill_dirs()
     broken = []
+    warnings = []
+    home = pathlib.Path.home()
     instructions = {path.resolve() for path in iter_targets(ROOT)}
     scanned = set()
 
@@ -332,6 +340,11 @@ def main():
                 )):
                     broken.append((rel, i, "경로", cand))
 
+            # 6) 홈 경로 — 이 머신에 없으면 경고
+            for cand in HOME_PATH.findall(line):
+                if not (home / cand[2:]).exists():
+                    warnings.append((rel, i, cand))
+
             # 3) 섹션 참조
             for doc, section, kind in SECTION_REF.findall(line):
                 if SKIP.search(doc):
@@ -360,14 +373,18 @@ def main():
             for name, title in broken_guide_refs(f, line, instructions):
                 broken.append((f.relative_to(ROOT), i, "절 제목", f"{name} → 「{title}」"))
 
-    if not broken:
+    if broken:
+        print(f"깨진 참조 {len(broken)}건\n")
+        for rel, i, kind, what in broken:
+            print(f"  {rel}:{i}  [{kind}] {what}")
+    else:
         print("깨진 참조 0건")
-        return 0
 
-    print(f"깨진 참조 {len(broken)}건\n")
-    for rel, i, kind, what in broken:
-        print(f"  {rel}:{i}  [{kind}] {what}")
-    return 1
+    if warnings:
+        print(f"\n경고 {len(warnings)}건 — 이 머신의 홈에 없는 경로. 다른 사람의 경로일 수 있어 실패로 세지 않는다\n")
+        for rel, i, cand in warnings:
+            print(f"  {rel}:{i}  [홈 경로] {cand}")
+    return 1 if broken else 0
 
 
 if __name__ == "__main__":
