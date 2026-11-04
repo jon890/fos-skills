@@ -394,6 +394,28 @@ class HomePathTest(CheckReferencesTest):
         result = self.run_check()
         self.assertNotIn("홈 경로", result.stdout)
 
+    def test_home_path_followed_by_option_is_cut_before_checking(self):
+        (self.home / "bin").mkdir()
+        (self.home / "bin/run.py").write_text("print()\n")
+        self.write("`~/bin/run.py --apply --scope x` 와 `~/bin/run.py -n` 을 돌린다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("홈 경로", result.stdout)
+
+    def test_missing_home_path_with_option_reports_only_the_path(self):
+        self.write("`~/bin/nowhere.py --apply` 를 돌린다.\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[홈 경로] ~/bin/nowhere.py\n", result.stdout)
+        self.assertNotIn("--apply", result.stdout)
+
+    def test_home_path_with_space_and_hangul_after_dash_is_kept_whole(self):
+        (self.home / "문서").mkdir()
+        (self.home / "문서/내 지침 -초안.md").write_text("# 문서\n")
+        self.write("`~/문서/내 지침 -초안.md` 가 소유한다.\n")
+        result = self.run_check()
+        self.assertNotIn("홈 경로", result.stdout)
+
     def test_warning_does_not_hide_a_broken_reference(self):
         self.write("`~/nowhere/x.md` 와 [링크](없다.md) 를 본다.\n")
         result = self.run_check()
