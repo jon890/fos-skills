@@ -1,5 +1,9 @@
 # CHANGELOG: technical-design
 
+## 1.3.2 (2026-11-05)
+
+- 워크플로우 개요 표를 더했다
+
 ## 1.3.1 (2026-11-05)
 
 - 소유 경계 ADR 의 기본 양식 링크를 technical-design 자신의 `templates/adr.md` 로 고쳤다

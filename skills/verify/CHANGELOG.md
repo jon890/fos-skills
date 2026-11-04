@@ -1,5 +1,10 @@
 # CHANGELOG: verify
 
+## 1.5.2 (2026-11-05)
+
+- 워크플로우 개요 표를 더했다
+- PR 자동 리뷰 대기 규칙의 중복 문장을 줄였다
+
 ## 1.5.1 (2026-11-05)
 
 - 오버레이를 찾는 순서를 `verify-overlay.md`, `implementation-overlay.md`, 옛 `build-with-teams-overlay.md` 로 정확히 적었다
