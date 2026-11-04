@@ -1,5 +1,7 @@
 # 테스트: node 테스트 묶음의 시간을 줄인다
 
+확인: 2026-11-04
+
 ## 목표
 
 fos-skills 의 node 테스트 묶음(`skills/orch/tests`, `extensions/work-board/tests`, `skills/inbox/tests`)이 개발의 병목이 되지 않게 한다.
