@@ -1,6 +1,6 @@
 // 직접 부른 스크립트도 설치 기록과 다른 번들이면 stderr 에 한 줄 알린다.
 // args.ts 와 proc.ts 가 함께 import 한다. ESM 모듈은 한 번만 실행되어 경고도 한 번이다.
-// 진입점의 문맥 신호 ORCH_CONTEXT 도 여기서 읽고 지운다(아래 orchContext). 모든 진입 스크립트가 먼저 지나는 자리다.
+// 진입점의 문맥 신호 ORCH_CONTEXT 와 짧은 출력 신호 ORCH_OUTPUT 도 여기서 읽고 지운다(아래 orchContext, orchOutput). 모든 진입 스크립트가 먼저 지나는 자리다.
 // 체크아웃·링크 설치는 갱신 전 검증에 쓰므로 plugins/cache 안의 복사본만 판정한다.
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -34,4 +34,13 @@ delete process.env.ORCH_CONTEXT
 
 export function orchContext(): Record<string, string> {
   return { ...context }
+}
+
+// 진입점이 넘긴 짧은 출력 신호(ORCH_OUTPUT=short). 판정은 lib/output.ts 의 short() 다.
+// 읽은 뒤 환경에서 지워 이 스크립트가 띄우는 자식으로 새지 않게 한다. 출력을 그대로 잇는 자식에는 부르는 쪽이 shortEnv() 로 다시 넘긴다
+const output = process.env.ORCH_OUTPUT ?? ''
+delete process.env.ORCH_OUTPUT
+
+export function orchOutput(): string {
+  return output
 }

@@ -303,6 +303,7 @@ export function helpText(group?: string): string {
         '사용법: orch <묶음> <동작> [인자]',
         '',
         '저장소(--repo), Run(--run), 지시서 폴더(--specs-dir), 대기의 루프 저장소(--loop-repo)는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽는다.',
+        '기본 출력은 판정 줄이다. --full 을 주면 스크립트의 지금 출력을 낸다.',
         '옛 꼴 `orch.ts <스크립트 이름> [인자]` 와 `orch.ts --path [이름]` 도 받는다.',
         '',
         ...GROUPS.flatMap((g) => [`${g}:`, ...COMMANDS.filter((c) => c.group === g).map((c) => `  ${c.usage}`)]),

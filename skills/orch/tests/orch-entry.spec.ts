@@ -24,7 +24,7 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 // 번들 하나. 이 체크아웃의 진입점과 lib 사본을 넣어, 다른 번들에서 넘겨받은 진입점이 돌게 한다(lib: false 면 이 기능 이전 번들이다).
 // hello 스크립트가 자기 이름과 받은 인자, 종료 코드 요청을 낸다. wait-important 와 orch-loop 는 새 꼴의 대상이 되는 같은 꼴의 가짜다.
-// sleeper 는 ready 를 내고 신호를 기다린다
+// sleeper 는 ready 를 내고 신호를 기다린다. user-active 와 heavy-slot 은 받은 인자와 짧은 출력 신호(out=)를 낸다
 function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): string {
   const root = join(opts.base ?? join(tmp, 'cache'), name)
   const scripts = join(root, 'skills', 'orch', 'scripts')
@@ -33,6 +33,8 @@ function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): stri
   writeFileSync(join(scripts, 'hello.ts'), `console.log('${name}', process.argv.slice(2).join(' '))\nprocess.exitCode = Number(process.env.HELLO_EXIT ?? 0)\n`)
   for (const fake of ['wait-important.ts', 'orch-loop.ts']) writeFileSync(join(scripts, fake), echo)
   writeFileSync(join(scripts, 'sleeper.ts'), "console.log('ready')\nsetInterval(() => {}, 1000)\n")
+  const signal = "console.log(process.argv.slice(2).join(' '), 'out=' + (process.env.ORCH_OUTPUT ?? ''))\n"
+  for (const fake of ['user-active.ts', 'heavy-slot.ts']) writeFileSync(join(scripts, fake), signal)
   if (opts.lib !== false) {
     mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
     copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
@@ -52,7 +54,7 @@ function install(configDir: string, entries: Entry[]): void {
 function env(extra: Record<string, string>): NodeJS.ProcessEnv {
   // 새 꼴의 문맥 채우기가 진짜 orca 의 run-current 를 읽지 않게 없는 실행 파일을 준다
   const base: NodeJS.ProcessEnv = { ...process.env, ORCA: join(tmp, 'no-orca'), ...extra, HOME: join(tmp, 'nohome') }
-  for (const key of ['CLAUDE_CONFIG_DIR', 'ORCH_SCRIPTS_DIR', 'ORCH_CONTEXT', 'ORCH_ENTRY_HOP']) if (!(key in extra)) delete base[key]
+  for (const key of ['CLAUDE_CONFIG_DIR', 'ORCH_SCRIPTS_DIR', 'ORCH_CONTEXT', 'ORCH_ENTRY_HOP', 'ORCH_OUTPUT']) if (!(key in extra)) delete base[key]
   // 직접 실행할 때 shebang 의 env 가 이 테스트의 node 를 찾게 한다
   base.PATH = `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`
   return base
@@ -238,7 +240,7 @@ describe('사용법 오류', () => {
   test('없는 이름은 쓸 수 있는 이름을 알리고 2 다', () => {
     const r = orch(['nope'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 2)
-    assert.match(r.stderr, /쓸 수 있는 이름: hello orch-loop sleeper wait-important$/m)
+    assert.match(r.stderr, /쓸 수 있는 이름: heavy-slot hello orch-loop sleeper user-active wait-important$/m)
   })
 
   test('경로 구분자나 .. 이 든 이름은 거부한다', () => {
@@ -412,5 +414,40 @@ describe('overlay.md 의 실행기 경로 한 줄', () => {
     const done = spawnSync(process.execPath, [launcher, 'hello', 'via-snippet'], { env: env({ CLAUDE_CONFIG_DIR: config }), encoding: 'utf8', cwd: tmp })
     assert.equal(done.status, 0, done.stderr)
     assert.equal(done.stdout.trim(), 'real via-snippet')
+  })
+})
+
+describe('짧은 출력 신호', () => {
+  let config: string
+  beforeEach(() => {
+    config = join(tmp, 'profile')
+    install(config, [{ scope: 'user', installPath: bundle('b') }])
+  })
+
+  test('새 꼴과 옛 꼴 모두 ORCH_OUTPUT=short 를 넘기고 --full 이면 떼고 넘기지 않는다', () => {
+    assert.equal(orch(['wait', 'user-active', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
+    assert.equal(orch(['user-active', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
+    assert.equal(orch(['wait', 'user-active', '--full', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=')
+    assert.equal(orch(['user-active.ts', '--terminal', 't', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=')
+  })
+
+  test('첫 -- 뒤의 --full 은 떼지 않는다', () => {
+    assert.equal(orch(['wait', 'user-active', '--', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '-- --full out=short')
+  })
+
+  test('감싼 명령에는 신호를 넘기지 않고 --full 도 떼지 않는다', () => {
+    assert.equal(orch(['slot', 'heavy', '--full', '--', 'x'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--full -- x out=')
+    assert.equal(orch(['heavy-slot', '--full', '--', 'x'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--full -- x out=')
+  })
+
+  test('부모 환경의 ORCH_OUTPUT 은 --full 호출과 감싼 명령으로 새지 않는다', () => {
+    const extra = { CLAUDE_CONFIG_DIR: config, ORCH_OUTPUT: 'short' }
+    assert.equal(orch(['wait', 'user-active', '--full'], extra).stdout.trim(), 'out=')
+    assert.equal(orch(['slot', 'heavy', '--', 'x'], extra).stdout.trim(), '-- x out=')
+  })
+
+  test('--path 와 --help 는 신호와 상관없이 지금처럼 돈다', () => {
+    assert.match(orch(['--path', 'user-active'], { CLAUDE_CONFIG_DIR: config }).stdout, /user-active\.ts$/m)
+    assert.match(orch(['--help'], { CLAUDE_CONFIG_DIR: config }).stdout, /--full/)
   })
 })
