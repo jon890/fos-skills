@@ -67,6 +67,7 @@
 | `queue` | `skipped_is_missing` | `--skipped-is-missing`. true 나 false 다 |
 | `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
 | `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `shared_paths` 는 정규식 목록도 받아 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
+| `queue` | `poll_min_sec`, `poll_max_sec`, `ci_expected_sec` | 머지 큐가 진행 중인 체크를 다시 보는 간격(초, 1 이상의 정수). `poll_min_sec`(기본 60)에서 시작해 두 배씩 늘리고 `poll_max_sec`(기본 300)에서 멈춘다. `ci_expected_sec`(기본 없음)는 그 저장소의 보통 PR CI 시간이다. 주면 지금 도는 체크가 시작된 뒤 그 초가 지나는 시각을 넘겨 자지 않고, 그 뒤로는 `poll_min_sec` 마다 본다. 없으면 지금 동작과 같다. 각각 `--poll-min-sec`, `--poll-max-sec`, `--ci-expected-sec` 가 된다 |
 | `queue` | `unit_groups` | 한 단위로 세는 단위 이름의 목록의 목록(`[["web", "bff"]]`). 안쪽 목록마다 `--unit-group a,b` 가 된다 |
 | `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 문자열 목록. 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
 | `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |

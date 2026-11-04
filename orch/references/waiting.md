@@ -68,6 +68,7 @@ hook 을 싣지 않은 세션(Codex 코디네이터 같은)은 기록이 없어 
 - Run 마다 그 Run 이 띄운 살아 있는 worker 의 움직임 확인. 워크트리 파일, 브랜치의 마지막 커밋, 화면이 `pipeline.idle_min`(기본 30분)분 넘게 그대로이거나 프로세스가 끝났으면(`exited`) `WORKER-IDLE` 을 쓴다. 보드의 `doing` 항목에 끝나지 않은 단계가 있는데 그 항목의 worker 가 없으면 `STAGE-STALLED` 를 쓴다. 화면 상태를 읽지 못하는 structured worker 도 이 확인으로 잡는다
 - Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
 - `queue.auto_merge` 를 켠 저장소에서 머지할 수 있는 PR 을 머지 큐에 건다. 다른 큐가 돌아 걸지 못한 틱에는 그 큐가 무엇을 기다리는지 `AUTO-MERGE-HELD` 한 줄을 루프 로그에 남긴다
+- 머지 큐가 뺀 PR 과 이유를 차례 기록에서 읽어 루프 로그에 `QUEUE-DROPPED` 로 한 번씩 옮긴다. 끝난 큐의 차례 기록은 옮긴 뒤 지운다
 - 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기. 끝난 dispatch 에 이어 쓰는 동안(최대 65분)은 다음 틱이 밀린다
 - `pipeline.refresh_slots` 를 켠 저장소에서 base 에 뒤처진 내 PR 을 머지 차례 전에 최신화한다. 루프 로그에만 남기고 알림 파일에는 쓰지 않는다([`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」)
 

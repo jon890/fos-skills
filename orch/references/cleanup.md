@@ -106,7 +106,15 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 ```bash
 "$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --run "$RUN_ID" --chain 101,102 101 102 103
 ```
-`--continue-on-hold` 를 주면 보류한 PR 의 `STOP` 줄만 찍고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다. 서로 무관한 PR 여럿을 한 번에 걸 때 쓴다. 뒤 PR 이 앞 PR 에 기대면 쓰지 않는다.
+**보류한 PR 은 큐를 멈추지 않는다(orch 7.9.0 부터 기본).** 체크 실패, 근거 블록 불일치처럼 조건에 못 미친 PR 은 `STOP` 줄을 찍고 그 PR 만 빼고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다.
+맨 앞 PR 하나가 차례에 base 를 합친 뒤 테스트에 실패해 뒤의 머지할 수 있는 PR 셋이 함께 머지되지 않은 일이 있었다(2026-11-04).
+뒤 PR 이 앞 PR 에 기대면 `--chain` 으로 묶는다. 첫 보류에서 멈추는 옛 동작이 필요하면 `--stop-on-hold` 를 준다. `--continue-on-hold` 는 기본과 같아 그대로 받는다.
+뺀 PR 과 이유는 차례 기록(`state/queue-turn/<pid>.json`)의 `held` 에 남고, 상주 루프가 `state/loop.log` 에 `QUEUE-DROPPED #<PR> pid <pid>: <이유>` 한 줄로 옮긴다.
+worker 가 고쳐야 하는 보류(근거 블록 불일치, 미해결 리뷰 스레드, 합친 사본 검사 실패)는 큐가 그 PR 의 살아 있는 worker 에게 이유를 보낸다. Run 은 정리 인자의 `--run` 이다. 체크 실패와 충돌은 루프의 CI 감시와 충돌 처리가 보내므로 큐는 보내지 않는다.
+
+**차례 PR 이 base 를 합친 뒤 CI 를 기다려야 하면, 그동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다.** `--require-up-to-date` 와 `--up-to-date-when overlap` 일 때만 한다.
+먼저 머지하는 PR 은 묶음(`--chain`)에 들지 않았고, 필수 체크가 이미 모두 통과했고, 최신화가 필요 없고, 차례 PR 과 단위가 겹치지 않는 PR 이다. 겹치는 PR 을 먼저 머지하면 차례 PR 이 다시 뒤처져 방금 돌린 CI 가 쓸모없어진다.
+`<PR> 앞지르지 않는다: <이유>` 와 `<PR> 차례 PR <번호> 보다 먼저 머지했다` 줄로 무엇을 먼저 머지했는지 보인다. 판정은 `merge_queue.ts` 머리 주석의 「앞지르기」 가 소유한다..
 
 PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대기, 충돌과 미해결 스레드, 머지 결과 확인)의 순서와 종료 코드는 `merge_queue.ts` 머리 주석이 소유한다.
 
@@ -168,6 +176,13 @@ PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대�
 
 루프 로그(`state/loop.log`)의 `REFRESH`, `REFRESH-WAIT`, `REFRESH-WORKER`, `REFRESH-ORPHAN` 줄이 무엇을 걸었고 왜 미뤘는지 보인다. 알림 파일에는 쓰지 않는다.
 자리 수와 runner 의 관계, 설정 예시는 [`overlay.md`](overlay.md) 의 「뒤처진 PR 미리 최신화」 가, 판정 순서는 `orch-loop.ts` 머리 주석의 「최신화」 가 소유한다.
+
+### 체크 확인 간격
+
+머지 큐는 진행 중인 체크를 60초에서 시작해 두 배씩 늘린 간격(최대 300초)으로 다시 본다. CI 가 끝난 뒤에도 다음 확인까지 최대 5분을 더 기다릴 수 있다.
+`queue.ci_expected_sec` 에 그 저장소의 보통 PR CI 시간을 두면 체크가 시작된 뒤 그 시간이 지나는 시각을 넘겨 자지 않고, 그 뒤로는 `queue.poll_min_sec` 마다 본다.
+간격 자체는 `queue.poll_min_sec`, `queue.poll_max_sec` 로 바꾼다. 값이 없으면 지금 동작과 같다. 키 뜻은 [`overlay.md`](overlay.md) 의 queue 행이 소유한다.
+간격을 줄이면 PR 하나를 기다리는 동안 gh 호출이 는다. 호출 예산은 [`gh-call-budget.md`](gh-call-budget.md) 를 본다.
 
 ### 겹치지 않는 PR 은 최신화하지 않기
 

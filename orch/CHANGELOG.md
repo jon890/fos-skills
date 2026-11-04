@@ -2,11 +2,11 @@
 
 ## 7.9.0 (2026-11-04)
 
-- 상주 루프가 `pipeline.refresh_slots` 를 켠 저장소에서 base 에 뒤처진 PR 의 `update-branch` 를 머지 차례 전에 PR 마다 걸어 CI 를 함께 돌린다. 판정은 머지 큐와 같은 `queue` 키로 하고, 동시에 도는 수는 그 값까지다
-- 도는 머지 큐의 차례 PR 은 건드리지 않고, 큐의 앞 PR 과 겹치는 PR 은 그 머지 뒤로 미룬다. `pipeline.refresh_worker_paths` 에 맞는 파일을 양쪽이 바꾼 PR 은 살아 있는 worker 에게 합치기를 보낸다
-- 머지 큐가 `state/queue-turn/<pid>.json` 에 차례 PR 과 단계를 적는다. 루프는 큐 때문에 자동 머지를 미룬 틱에 `AUTO-MERGE-HELD` 한 줄로 그 큐가 무엇을 기다리는지 남긴다
-- 머지 큐는 차례가 왔을 때 체크가 이미 60초 넘게 전에 끝나 있었으면 새 체크를 기다리는 60초를 건너뛴다
-- 기능 완료 근거의 검증 커밋 뒤에 base 쪽 변경만 들여온 merge 커밋만 있으면 머지 큐, 자동 머지, 마무리가 통과로 본다. 차례의 `update-branch` 가 HEAD 를 바꿔 늘 `STOP` 하던 일을 막는다. 머지 조건은 지금 HEAD 의 CI 통과로 갈음한다
+- `pipeline.refresh_slots` 를 켜면 상주 루프가 뒤처진 PR 의 `update-branch` 를 머지 차례 전에 PR 마다 걸어 CI 를 함께 돌린다. 판정은 머지 큐와 같은 `queue` 키로 한다
+- 머지 큐는 보류한 PR 만 빼고 다음 PR 로 가는 것이 기본이다(옛 동작은 `--stop-on-hold`). 뺀 이유는 `QUEUE-DROPPED` 로 남고 worker 가 고칠 보류는 그 worker 에게 간다
+- 차례 PR 이 update-branch 뒤 CI 를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다. 큐가 자동 머지를 막는 틱에는 `AUTO-MERGE-HELD` 를 남긴다
+- `queue.poll_min_sec`, `poll_max_sec`, `ci_expected_sec` 로 체크 확인 간격을 정한다. 체크가 이미 끝났으면 다시 보는 60초를 건너뛴다
+- 기능 완료 근거의 검증 커밋 뒤에 base 를 합친 merge 커밋만 있으면 통과로 보고, 지금 HEAD 의 CI 통과로 갈음한다
 
 ## 7.8.1 (2026-11-04)
 
