@@ -315,7 +315,7 @@ test('progress 가 있으면 단계 수보다 우선한다', () => {
   expect(itemProgress({ title: 'x' })).toBe(null)
 })
 
-test('details 와 next 를 줄마다 나눠 끝낸 줄, 지금 단계, 남은 단계, 참고 줄로 가른다', () => {
+test('details 와 next 를 줄마다 나눠 끝낸 줄, 지금 단계, 남은 단계, 참고 줄로 나눈다', () => {
   const rows = stepRows({ details: ['✓ 1 a', '[x] 2 b', '▶ 3 c', '◇ 4 d', '참고: x'], next: '머지 뒤 갱신' })
   expect(rows).toEqual([
     { text: '1 a', state: 'done', step: true, counted: true },

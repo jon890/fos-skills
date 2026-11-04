@@ -206,7 +206,7 @@
 //
 // 넘겨받은 터미널 (--close-own-taken-over 와 --run):
 //     worker 가 끝나 claude 가 빠진 뒤 그 터미널에 입력이 들어가면 Orca 가 `user_owned` / `user_takeover` 로 기록한다.
-//     사용자가 의도해 넘겨받은 것과 이 자동 기록은 Orca 의 필드로 가를 수 없어, 기본은 남긴다.
+//     사용자가 의도해 넘겨받은 것과 이 자동 기록은 Orca 의 필드로 구분할 수 없어, 기본은 남긴다.
 //     코디네이터가 그 워크트리가 자기 worker 것임을 알고 옵션을 켰을 때만, 아래가 모두 참인 터미널을 소유 확인에서 뺀다.
 //       - --run 으로 찾은 dispatch 이고 `dispatchStatus` 가 completed 다(workerState 는 succeeded)
 //       - 그 터미널의 `ownershipState` 가 user_owned, `retainedReason` 이 user_takeover 다

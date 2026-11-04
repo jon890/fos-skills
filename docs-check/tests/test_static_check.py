@@ -63,7 +63,7 @@ class TestUnit(unittest.TestCase):
                 self.assertEqual(found, [])
 
     def test_bare_pipe_in_code_span_still_counts(self):
-        """GFM 은 백틱 안의 맨 파이프도 셀을 가른다. 그래서 이것은 진짜 어긋남이다."""
+        """GFM 은 백틱 안의 맨 파이프도 셀을 나눈다. 그래서 이것은 진짜 어긋남이다."""
         body = "| 머리 | 값 |\n| --- | --- |\n| `a|b` | 1 |"
         found = sc.check_markdown(Path("t.md"), lines(body))
         self.assertEqual(len(found), 1)

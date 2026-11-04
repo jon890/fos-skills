@@ -45,7 +45,7 @@ python3 "$SKILL_DIR/scripts/extract_skill_usage.py" --skill "$SKILL" --since "$S
 python3 "$SKILL_DIR/scripts/render_session.py" "$SID" --from "$TS" --out "$SCRATCH/sessions/$SID.txt"
 ```
 
-발췌 파일을 읽고 마찰의 원인을 한 줄로 적는다. 원인은 지침의 문장, 스크립트, 사용자 정정 중 무엇인지 가른다.
+발췌 파일을 읽고 마찰의 원인을 한 줄로 적는다. 원인은 지침의 문장, 스크립트, 사용자 정정 중 무엇인지 구분한다.
 **판정표에는 발췌를 옮기지 않는다.** 세션 id 앞 8자와 시각만 적는다. 대화 기록에는 비밀값이 섞인다.
 
 ## 4. 해결 여부 대조

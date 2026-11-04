@@ -1,7 +1,7 @@
 // launch-worker.ts 가 띄운 worker 의 기록. cleanup-sweep.ts 가 「코디네이터가 띄운 터미널」 을 가리는 근거다.
 //
-// Orca 는 worker 가 끝난 터미널에 입력이 들어가면 `user_owned` 로 기록한다. 사람이 넘겨받은 것과 이 자동 기록을 필드로 가를 수 없어,
-// 코디네이터가 띄운 터미널도 사람 터미널로 보고 워크트리를 남겼다. 띄운 쪽이 기록을 남기면 sweep 이 그 기록으로 가른다.
+// Orca 는 worker 가 끝난 터미널에 입력이 들어가면 `user_owned` 로 기록한다. 사람이 넘겨받은 것과 이 자동 기록을 필드로 구분할 수 없어,
+// 코디네이터가 띄운 터미널도 사람 터미널로 보고 워크트리를 남겼다. 띄운 쪽이 기록을 남기면 sweep 이 그 기록으로 구분한다.
 //
 // 위치: <orch 루트>/state/launched-workers/<dispatch>.json. dispatch 마다 파일 하나라 병렬로 띄워도 서로 덮지 않는다.
 // 내용: { dispatch, task, terminal, worktree, branch, run, spec, lint_ack }. task, terminal, branch, run, spec, lint_ack 은 모르면 null 이다. spec 은 그 dispatch 에 준 지시서의 절대경로다.
