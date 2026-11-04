@@ -14,7 +14,7 @@ verify 가 호출하면 정확성·실패 처리·동시성·안전의 발견 �
 
 **모든 phase 가 끝난 누적 diff 를 `tasks/` 의 phase 파일과 대조한다.**
 발견마다 **어느 phase 의 변경인지**를 적는다. team-lead 가 그 phase 의 executor 를 다시 띄운다.
-task 없이 리뷰부터 도는 경로(SKILL.md)면 phase 파일 대신 team-lead 가 넘긴 지시서나 ADR 과 대조하고, phase 자리에 `-` 를 쓴다.
+task 없이 리뷰부터 도는 경로([`legacy-workflow.md`](legacy-workflow.md) 「task 없이 리뷰부터 도는 경로」)면 phase 파일 대신 team-lead 가 넘긴 지시서나 ADR 과 대조하고, phase 자리에 `-` 를 쓴다.
 
 이번 plan 이 변경한 파일만 본다. 범위는 **3-dot** 으로 잡는다.
 `$BASE_BRANCH`는 team-lead가 사전 검사에서 정해 전달한 기준 브랜치다.

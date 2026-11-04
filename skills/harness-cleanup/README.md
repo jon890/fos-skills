@@ -58,5 +58,5 @@ CLAUDE.md, AGENTS.md, 스킬 문서 같은 하네스 지침이 지금 환경과 
 
 ## 함께 쓰는 스킬
 
-- 일반 제품 문서와 plan 산출물이 코드와 맞는지는 `docs-check` 가 맡는다
+- 일반 제품 문서와 plan 산출물이 코드와 맞는지는 `docs-audit` 가 맡는다
 - 스킬을 새로 만들거나 파일 구조를 바꾸는 일은 `skill-creator` 가 맡는다

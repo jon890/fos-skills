@@ -1121,7 +1121,7 @@ class TaskRulesTest(unittest.TestCase):
 
 
 class CheckerRefinementTest(unittest.TestCase):
-    """7단계 docs, 상대 링크, 흔한 이름 호출자 경고를 검증한다."""
+    """4단계 docs, 상대 링크, 흔한 이름 호출자 경고를 검증한다."""
 
     setUp = TaskRulesTest.setUp
     file = TaskRulesTest.file

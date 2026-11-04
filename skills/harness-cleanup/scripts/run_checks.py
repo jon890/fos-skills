@@ -12,7 +12,7 @@ ROOT 는 감사 대상 저장소 루트다.
 collect_targets, check_references, check_facts, check_duplication, check_rename_drift 를 돌린다.
 --min-run 은 check_duplication 의 최소 연속 줄 수(기본 5)다.
 --base 가 없으면 check_rename_drift 는 HEAD 와 작업 트리를 비교한다.
-docs-check 2단계는 그 스킬의 `scripts/run_static_check.py` 가 같은 방식으로 맡는다. 두 스킬의 배포 경로가 달라 스크립트를 나눴다.
+docs-audit 2단계는 그 스킬의 `scripts/run_static_check.py` 가 같은 방식으로 맡는다. 두 스킬의 배포 경로가 달라 스크립트를 나눴다.
 
 출력은 표가 먼저고, 이어 검사마다 표준 출력과 표준 오류를 그대로 붙인다.
 판정 낱말은 다음과 같다.

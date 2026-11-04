@@ -34,8 +34,9 @@ team-lead 가 아래 팀원을 부른다. 각자의 판정 기준은 자기 문�
 레포 고유의 값은 아래 순서로 찾는다. 앞에서 찾으면 뒤를 보지 않는다.
 
 1. `<repo-root>/.claude/implementation-overlay.md`
-2. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
-3. 어디에도 없으면 사용자에게 확인한다
+2. 옛 이름 `<repo-root>/.claude/build-with-teams-overlay.md`
+3. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
+4. 어디에도 없으면 사용자에게 확인한다
 
 모노레포 판정과 하위 프로젝트 오버레이 탐색은 [plan 의 `references/monorepo.md`](../../plan/references/monorepo.md) 를 따른다.
 

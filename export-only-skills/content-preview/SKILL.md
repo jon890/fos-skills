@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.21.0"
+  version: "3.21.1"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -110,7 +110,7 @@ bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 
 본문과 함께 제목, 그리고 개인 문체 참조가 있으면 그 점검 항목을 함께 본다.
 
-`korean-check` 가 어디 있는지는 아래 명령이 낸다. 저장소마다 배치가 한 단 다르다.
+`korean-check` 가 어디 있는지는 아래 명령이 낸다.
 
 ```bash
 bash "$SKILL_DIR/scripts/style-check.sh" --where

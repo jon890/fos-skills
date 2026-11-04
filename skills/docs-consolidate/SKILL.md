@@ -1,19 +1,20 @@
 ---
 name: docs-consolidate
 description: |
-  검증한 기능의 문서를 맞추고 공통화 후보를 추출하거나, 모인 후보를 공유 계약으로 정리한다. "공통 후보 추출", "기능 문서 정리", "공유 계약 정리", "docs-consolidate" 요청에 쓴다. 일반 문서 감사는 docs-check 가 맡는다.
+  검증한 기능의 문서를 맞추고 공통화 후보를 추출하거나, 모인 후보를 공유 계약으로 정리한다. "공통 후보 추출", "기능 문서 정리", "공유 계약 정리", "docs-consolidate" 요청에 쓴다. 일반 문서 감사는 docs-audit 가 맡는다.
 metadata:
-  version: "1.3.0"
+  version: "1.5.0"
 ---
 
 # docs-consolidate
 
 **목표: 기능 문서를 현재 구현에 맞추고 실제로 반복되는 규칙만 공통화한다.**
 
-[문서 소유권](../spec/references/feature-docs.md)을 읽는다.
-`.claude/docs-consolidate-overlay.md`, 없으면 docs-check 오버레이와 저장소 지침에서 경로·검사 명령을 읽는다.
+[기능 문서와 단계 인계](../spec/references/feature-docs.md)와 [문서 소유권과 변경](../spec/references/document-ownership.md), [문서 대조 양식](templates/document-review.md)을 먼저 읽는다.
+plan 번들의 `scripts/overlay_paths.py --skill docs-consolidate` 를 대상 저장소 루트에서 실행하고 출력의 `search` 순서대로 경로·검사 명령을 읽는다.
+감사 범위가 정해졌으면 그 파일 경로도 인자로 넘긴다. 모노레포 판정과 종료 코드는 [오버레이 탐색 규칙](../plan/references/monorepo.md)을 따른다.
+같은 위치에서 `docs-consolidate-overlay.md` 를 먼저 읽고, 없으면 docs-audit 의 새 이름 → 옛 이름 폴백과 경고를 따른다.
 
-[문서 소유권](../spec/references/document-ownership.md)과 [문서 대조 양식](templates/document-review.md)을 먼저 읽는다.
 계획 정리는 [계획 수명 규칙](../plan/references/plan-lifecycle.md)을 따른다.
 
 ## 기능 검증 뒤: 후보 추출
@@ -54,4 +55,4 @@ metadata:
 후보 추출은 기능 문서가 구현과 맞고 후보의 근거 또는 후보 없음이 남으면 끝난다.
 공통화는 지정한 후보들의 판정이 있고, 채택한 내용이 한곳에 있으며 문서 검증을 통과하면 끝난다.
 공통화 후보가 남아 있어도 기능 완료를 막지 않는다. 실제 모순이 동작을 바꾸는 경우는 예외로 verify 에 돌려보낸다.
-새 스케줄이나 상주 프로세스를 만들지 않는다. orch 가 관련 기능 묶음을 마쳤거나 후보 검토를 요청할 때 실행한다.
+orch 가 관련 기능 묶음을 마쳤거나 후보 검토를 요청할 때 실행한다.

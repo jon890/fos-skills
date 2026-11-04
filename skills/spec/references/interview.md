@@ -104,4 +104,4 @@ orch worker 처럼 사용자와 대화하지 못하는 세션은 코디네이터
 3. 결정 표가 닫히고 독립 검토자 검사를 마치면, 스펙 경로와 전문을 붙인 「스펙 확인 요청」 을 형식 없이 `worker-ask` 로 보낸다.
 4. 코디네이터가 사용자의 확인을 돌려주면 확인 줄을 적고 technical-design 으로 간다. **확인 답을 받기 전에는 plan 과 구현을 시작하지 않는다.**
 
-`worker-ask` 를 부르는 명령과 종료 코드는 공통 지시서가 정한다. 코디네이터 쪽 중계는 orch 의 `references/replying.md` 가 정한다.
+`worker-ask` 를 부르는 명령과 종료 코드는 공통 지시서가 정한다. 코디네이터 쪽 중계는 orch 의 [「spec 인터뷰를 중계한다」](../../orch/references/replying.md#spec-인터뷰를-중계한다)가 정한다.

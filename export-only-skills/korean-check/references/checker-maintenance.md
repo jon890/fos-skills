@@ -43,9 +43,10 @@
 그 글자로 시작하는 금지어는 모두 앞 글자가 한글이면 건너뛴다.
 **앞에 붙은 합성어를 잡아야 하는 금지어는 첫 글자를 더하지 않는다.** `시험` 의 첫 글자 `시` 를 더하면 `재시험` 이 건너뛰어져 위에서 말한 동작이 사라진다.
 더하기 전에 같은 글자로 시작하는 금지어를 찾아, 모두 앞 글자 경계를 받아도 되는지 본다.
+`$SKILL_DIR` 은 이 스킬 번들 경로다.
 
 ```bash
-grep -n '^| 시' export-only-skills/korean-check/references/korean-style.md
+grep -n '^| 시' "$SKILL_DIR/references/korean-style.md"
 ```
 
 막아야 하는 구절과 통과해야 하는 합성어를 테스트에 함께 넣는다.

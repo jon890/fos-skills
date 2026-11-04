@@ -1,6 +1,6 @@
 # 예시: docs/code-architecture.md
 
-6단계에서 새 코드가 앉을 자리를 정한 뒤 `docs/code-architecture.md` 를 만들거나 고칠 때 이 뼈대를 쓴다.
+4단계에서 새 코드가 앉을 자리를 정한 뒤 `docs/code-architecture.md` 를 만들거나 고칠 때 이 뼈대를 쓴다.
 이 문서는 현재 구조만 소유한다. 아래 예는 가상의 저장소이므로 이름과 경로를 그대로 복사하지 않는다.
 
 ## 뼈대
@@ -118,4 +118,4 @@ config.yaml      런타임 설정. 항목은 파일의 주석이 소유한다
 ## 근거
 
 사용자 저장소 다섯 곳의 `docs/code-architecture.md` 가 같은 이름과 이 다섯 절을 공통으로 쓴다.
-`docs-check` 스킬도 이 파일 이름을 전제한다.
+`docs-audit` 스킬도 이 파일 이름을 전제한다.

@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "2.15.0"
+  version: "2.15.2"
 ---
 
 # review-fix
@@ -31,7 +31,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 리뷰 수집 | PR 번호와 대상 하위 프로젝트가 정해졌고 네 소스의 리뷰를 모았다 | `scripts/collect_review.py` |
+| 1 | 리뷰 수집 | PR 번호와 대상 하위 프로젝트가 정해졌고 `collect_review.py` 가 내는 소스별 리뷰를 모았다 | `scripts/collect_review.py` |
 | 2 | 작업 트리 정렬 | 현재 브랜치가 PR head 브랜치이고 base 브랜치 이름을 받았고 conflict 가 없다 | `references/conflict-resolution.md` |
 | 3 | 분류 | 모든 지적에 등급이 붙었고 처리 범위를 사용자가 확정했다 | `references/severity.md` |
 | 4 | 수정 | 처리하기로 한 지적이 반영되고 지적마다 커밋이 나뉘어 남았다 | `references/severity.md` |
@@ -55,7 +55,7 @@ base 에는 열린 PR 이 없기 때문이다. 그때는 둘째 명령의 오픈
 
 **루트 바로 아래 디렉터리에 `.claude/*-overlay.md` 가 있으면 모노레포다.**
 PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 정하고, 그 오버레이를 루트 오버레이보다 먼저 읽는다.
-`$PLAN_SKILL_DIR` 은 plan 번들이고 이 스킬 번들의 형제 디렉터리다. 이 스킬 번들 경로를 `$SKILL_DIR` 이라 하면 값은 `$SKILL_DIR/../plan` 이다.
+`$SKILL_DIR` 은 이 스킬 번들 경로(하네스가 알려 주는 base 디렉터리)다. `$PLAN_SKILL_DIR` 은 plan 번들이고 이 스킬 번들의 형제 디렉터리라 값은 `$SKILL_DIR/../plan` 이다.
 
 **PR 번호와 저장소는 변수로 두고 이후 명령에서 같은 이름을 쓴다.** `PR` 은 위에서 정한 PR 번호, `OWNER` 와 `REPO` 는 아래 명령의 출력(`owner/repo`)을 나눈 값이다.
 
@@ -75,13 +75,12 @@ REPO=""    # 첫 명령 출력의 repo 쪽
 PR_URL=""  # 받은 PR URL. 번호만 받았으면 대상 워크트리에서 gh pr view 로 구한다
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
 gh pr view "$PR" --json url --jq .url
-python3 scripts/collect_review.py "$PR_URL"
+python3 "$SKILL_DIR/scripts/collect_review.py" "$PR_URL"
 ```
 
 **명령마다 서 있어야 할 디렉터리가 다르다.**
 `gh` 명령은 현재 디렉터리의 저장소를 읽으므로 대상 저장소의 워크트리에서 돌린다.
-Python 명령의 `scripts/` 는 이 스킬 디렉터리를 전제하므로 그 경로를 절대경로로 주거나
-스킬 디렉터리에서 돌린다. 출력에서 읽은 PR URL 을 `PR_URL` 에 넣는다. 받은 URL 이 있으면 URL 조회를 건너뛴다.
+Python 명령은 `$SKILL_DIR/scripts/` 로 부르므로 cwd 를 바꾸지 않는다. 출력에서 읽은 PR URL 을 `PR_URL` 에 넣는다. 받은 URL 이 있으면 URL 조회를 건너뛴다.
 URL 의 호스트만 조회하므로 다른 로그인 호스트의 응답을 기다리지 않는다.
 기존 `OWNER REPO PR` 형식도 받는다. 이 형식은 origin 이 대상 저장소와 같으면 그 호스트를 먼저 쓴다.
 
@@ -89,22 +88,22 @@ URL 의 호스트만 조회하므로 다른 로그인 호스트의 응답을 기
 스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 아래처럼 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
 
 ```bash
-gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" "repos/$OWNER/$REPO/..."
+gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" "repos/$OWNER/$REPO/..."
 ```
 
 **이전 PR 에서 「다음 PR 에서 반영」 으로 미룬 지적이 있으면** 그 PR 번호를 `--carried-from` 으로 준다.
-회신에 「다음 PR」 이 든 스레드를 다섯째 소스로 모은다. resolve 된 것도 나온다. 다른 문구는 `--carried-marker` 로 준다.
+회신에 「다음 PR」 이 든 스레드를 추가 소스로 모은다. resolve 된 것도 나온다. 다른 문구는 `--carried-marker` 로 준다.
 
 ```bash
 PREV=""    # 이전 PR 번호
-python3 scripts/collect_review.py "$PR_URL" --carried-from "$PREV"
+python3 "$SKILL_DIR/scripts/collect_review.py" "$PR_URL" --carried-from "$PREV"
 ```
 
 **미해결 스레드의 `head` 는 120자에서 잘린다.** 지적의 근거나 권장안이 잘렸으면 스레드 ID 로 전체를 읽는다.
 `gh api graphql` 을 직접 부르지 않는다.
 
 ```bash
-python3 scripts/review_threads.py show --repo "$OWNER/$REPO" "$THREAD_ID"
+python3 "$SKILL_DIR/scripts/review_threads.py" show --repo "$OWNER/$REPO" "$THREAD_ID"
 ```
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
@@ -118,7 +117,7 @@ python3 scripts/review_threads.py show --repo "$OWNER/$REPO" "$THREAD_ID"
 ### 2. 작업 트리 정렬
 
 ```bash
-python3 scripts/checkout_pr.py "$PR"
+python3 "$SKILL_DIR/scripts/checkout_pr.py" "$PR"
 ```
 
 종료 코드 1 은 작업 트리가 dirty 하다는 뜻이다. 변경 내용을 보여주고 사용자에게 확인받는다.
@@ -231,7 +230,7 @@ GitHub formal review, 인라인 댓글, 일반 코멘트를 모두 본다.
 ```bash
 CAUSE=$(git rev-parse HEAD~1)   # 원인이 된 커밋으로 바꾼다
 git add -u
-bash scripts/fold_fixup.sh "$CAUSE"
+bash "$SKILL_DIR/scripts/fold_fixup.sh" "$CAUSE"
 ```
 
 종료 코드 1 은 겹치는 수정이 충돌한 것이다. 스크립트가 rebase 를 중단했고 fixup 커밋이 HEAD 에 남아 있다.
@@ -284,8 +283,8 @@ push 직후 `mergeable` 을 다시 조회한다. fix push 와 base 갱신의 시
 # cwd: 대상 저장소 루트. OWNER, REPO, PR 은 1단계 값이다
 MAP=""     # 줄마다 `THREAD_ID<탭>본문파일` 인 map 파일의 경로
 BODY=""    # 회신 본문 파일의 경로. 본문 파일마다 검사를 돌린다
-python3 scripts/check_reply_body.py "$BODY"
-python3 scripts/review_threads.py reply-batch --repo "$OWNER/$REPO" "$MAP"
+python3 "$SKILL_DIR/scripts/check_reply_body.py" "$BODY"
+python3 "$SKILL_DIR/scripts/review_threads.py" reply-batch --repo "$OWNER/$REPO" "$MAP"
 ```
 
 | 명령 | 종료 코드 |
@@ -300,9 +299,9 @@ python3 scripts/review_threads.py reply-batch --repo "$OWNER/$REPO" "$MAP"
 ```bash
 # cwd: 대상 저장소 루트
 IDS=""     # 처리한 THREAD_ID 를 공백이나 줄로 이은 값. 대응 표에서 모은다
-python3 scripts/review_threads.py list "$OWNER" "$REPO" "$PR"
-printf '%s\n' "$IDS" | python3 scripts/review_threads.py resolve --repo "$OWNER/$REPO" -
-python3 scripts/review_threads.py list --count "$OWNER" "$REPO" "$PR"
+python3 "$SKILL_DIR/scripts/review_threads.py" list "$OWNER" "$REPO" "$PR"
+printf '%s\n' "$IDS" | python3 "$SKILL_DIR/scripts/review_threads.py" resolve --repo "$OWNER/$REPO" -
+python3 "$SKILL_DIR/scripts/review_threads.py" list --count "$OWNER" "$REPO" "$PR"
 ```
 
 `list --count` 가 낸 정수가 0 이 아니면 머지 가능으로 보고하지 않는다. 종료 코드 1 은 조회 실패이거나 스레드가 한 번에 조회하는 수를 넘은 것이라 0 으로 읽지 않는다.

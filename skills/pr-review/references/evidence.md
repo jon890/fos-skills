@@ -21,8 +21,10 @@
 돌고 있는 JVM 에 붙일 수 있다. 코드를 고치지 않고 에이전트도 필요 없다.
 
 ```bash
-jcmd -l | grep <애플리케이션 클래스>
-jcmd <pid> JFR.start name=probe settings=profile filename=/tmp/probe.jfr duration=180s
+APP_CLASS=""   # 애플리케이션 클래스 이름
+PID=""         # jcmd -l 출력에서 읽은 프로세스 id
+jcmd -l | grep "$APP_CLASS"
+jcmd "$PID" JFR.start name=probe settings=profile filename=/tmp/probe.jfr duration=180s
 jfr summary /tmp/probe.jfr
 jfr print --events jdk.SocketRead /tmp/probe.jfr
 jfr print --events jdk.ExecutionSample /tmp/probe.jfr

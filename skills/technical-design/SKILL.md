@@ -5,12 +5,23 @@ description: |
   "기술 설계", "아키텍처 설계", "모듈 경계", "스펙을 어떻게 구현할지 설계" 요청이나 spec 다음 단계에 쓴다.
   사용자 동작은 spec, PR 작업 분해는 plan, 구현은 implementation 이 맡는다.
 metadata:
-  version: "1.3.0"
+  version: "1.3.2"
 ---
 
 # technical-design
 
 **목표: 요구사항을 구현할 구조와 책임을 정해, plan 이 중요한 기술 결정을 추측하지 않게 한다.**
+
+## 워크플로우 개요
+
+| 단계 | 이름 | 통과 조건 | reference |
+| --- | --- | --- | --- |
+| 1 | 경로 읽기 | 요구사항 ID 마다 호출·데이터 변경 경로를 읽었고, 기존 경계를 재사용할지 바꿀지 적었다 | [`ownership-boundaries.md`](references/ownership-boundaries.md) |
+| 2 | 설계 | 책임·경계, 인터페이스·데이터, 실패·일관성, 검증 전략, 도메인 규칙 각각에 설계나 「해당 없음과 이유」 가 있다 | |
+| 3 | 원칙 대조 | 기존 원칙·공유 계약·ADR 과 대조한 결과와 선택 이유가 설계에 있다 | |
+| 4 | 결정 분류 | 사용자가 정할 결정은 spec 으로 반환했거나 확인받았고, 나머지는 근거가 적혀 있다 | |
+| 5 | 설계 문서 | `design.md` 또는 스펙의 `## 기술 설계` 절이 양식의 필수 절을 채웠다 | [`templates/design.md`](templates/design.md) |
+| 6 | 독립 검토와 검사 | 검토자의 발견이 모두 해결됐고 아래 두 명령의 종료 코드가 0 이다. 검토자를 실행하지 못했으면 「독립 검토 미완료」 가 인계에 적혀 있다 | [`team-spawn.md`](../implementation/references/team-spawn.md) |
 
 [기능 문서와 단계 인계](../spec/references/feature-docs.md)를 읽는다.
 [설정 탐색](../plan/references/monorepo.md)으로 `.claude/technical-design-overlay.md` 와 저장소 지침을 읽는다.
@@ -21,6 +32,8 @@ metadata:
 [문서 소유권](../spec/references/document-ownership.md)으로 이번 기능이 바꾸는 책임 문서만 식별한다. 영향 없는 전역 문서는 수정하지 않는다.
 
 ## 절차
+
+번호는 위 개요 표의 단계와 같다.
 
 1. 스펙의 REQ1 같은 요구사항과 실제 호출·데이터 변경 경로를 읽는다. 기존 경계를 재사용할지 바꿀지 정한다.
    새 업무 영역이면 [소유 경계 검토](references/ownership-boundaries.md)의 분리 신호를 대조하고, 신호가 있으면 ADR 초안·독립 검토 뒤 사용자에게 선택을 확인받는다.
