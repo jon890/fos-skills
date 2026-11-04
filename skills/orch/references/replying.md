@@ -36,7 +36,7 @@ question 이 아닌 메시지에는 전환하지 않고 5 로 끝난다. 세션�
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --body "$BODY"
+orch worker send --dispatch "$DISPATCH_ID" --body "$BODY"
 ```
 
 `send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤에는 `recipient_run_mismatch`, 끝난 dispatch 에는 `dispatch_inactive` 로 거절된다.
@@ -44,7 +44,7 @@ question 이 아닌 메시지에는 전환하지 않고 5 로 끝난다. 세션�
 
 ## spec 인터뷰를 중계한다
 
-worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하나로 보내면 아래로 중계한다. worker 쪽 절차는 spec 의 `references/interview.md` 가 정한다.
+worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하나로 보내면 아래로 중계한다. worker 쪽 절차는 spec 스킬의 [`references/interview.md`](../../spec/references/interview.md) 가 정한다.
 
 1. 블록을 `AskUserQuestion` 한 번에 4개씩 나눠 묻는다. 블록의 배경, 선택지와 영향, 권장을 그대로 옮긴다. 첫 라운드의 열린 질문은 선택지 없이 묻는다.
 2. 모든 블록의 답을 모은 뒤 원래 질문에 한 번 답한다. 답은 `D1=<고른 답>` 처럼 결정마다 한 줄이고, 사용자가 덧붙인 말은 그대로 붙인다.
@@ -63,7 +63,7 @@ dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an acti
 `$MSG_ID` 는 방금 보낸 메시지 id 다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" nudge-worker --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
+orch worker nudge --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
 ```
 
 종료 코드 4 는 입력란에 쓰다 만 글이 있거나 권한 확인 창이라 입력하지 않은 것이다. `terminal read --screen` 으로 화면을 보고, 권한 확인 창이면 4단계의 「권한 확인 창」 을 따른다.
@@ -158,7 +158,7 @@ worker 의 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claud
 `$DISPATCH_ID` 는 PR 을 만든 worker 의 끝난 dispatch, `$SPEC_FILE` 은 후속 지시서다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE" --run "$RUN_ID"
+orch worker send --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE"
 ```
 
 - 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다

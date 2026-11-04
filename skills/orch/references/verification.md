@@ -11,7 +11,7 @@
   다른 이름으로 올렸으면 PR 과 정리 스크립트가 그 브랜치를 찾지 못한다. 지시서 이름으로 다시 push 하게 하고, 잘못 만든 원격 브랜치는 지우게 한다
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" make-worktree --check "$WORKTREE" --spec "$SPEC_FILE"
+orch worker check "$WORKTREE" --spec "$SPEC_FILE"
 ```
 - diff 를 직접 읽고 검사를 다시 돌린다. 완료 보고는 근거가 아니다
 - 무거운 검사(로컬 CI, 브라우저, 큰 테스트)는 [`heavy-checks.md`](heavy-checks.md) 의 `heavy-slot.ts` 로 감싸 Bash 의 run_in_background 로 돌린다. worker 여럿이 함께 돌리다 머신이 꺼진 일이 있었다
@@ -62,7 +62,7 @@ git diff "origin/$BASE" -- "$FILE"
 `$SPEC_FILE` 은 남은 일만 적은 지시서다. `send-to-worker` 가 끝난 dispatch 의 남은 터미널에 새 Task 로 띄운다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
+orch worker send --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
 ```
 
 기능 PR 은 [완료 근거 양식](../templates/feature-evidence.md)의 현재 HEAD, 인수 검증·문서 대조·독립 리뷰를 대조한다. PR 자동 리뷰가 대기면 PR 은 열 수 있지만 머지하지 않는다. `후속 검증: 대기` 는 머지 뒤 담당과 실행 위치로 이어 주고 실제 결과를 확인하기 전에는 기능을 완료하지 않는다.

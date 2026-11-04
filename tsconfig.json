@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["skills/orch/scripts/**/*.ts", "skills/orch/hooks/**/*.ts", "extensions/work-board/**/*.ts", "skills/inbox/scripts/**/*.ts", "scripts/**/*.ts"],
+  "include": ["skills/orch/scripts/**/*.ts", "skills/orch/bin/**/*.ts", "skills/orch/hooks/**/*.ts", "extensions/work-board/**/*.ts", "skills/inbox/scripts/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["extensions/work-board/tests"]
 }

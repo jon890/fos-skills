@@ -28,7 +28,6 @@ const GIT_ENV: Record<string, string> = {
   GIT_COMMITTER_EMAIL: 'orch-test@example.com',
 }
 const saved: Record<string, string | undefined> = {}
-const MIGRATE = join(import.meta.dirname, '../scripts/migrate-orch-dir.ts')
 
 let tmp: string
 let repo: string
@@ -235,7 +234,8 @@ describe('옛 구조', () => {
     const { value, text } = captureStderr(() => requireMigrated(repo, 'finish-pr'))
     assert.equal(value, false)
     assert.match(text, /^finish-pr: orch 작업 폴더를 옮기기 전이다\. 옛 위치가 남아 있다: \.omc\/handoffs\/specs$/m)
-    assert.ok(text.includes(`node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${repo} --apply`), `옮기는 명령이 없다: ${text}`)
+    // 앞 낱말은 PATH 에 따라 orch 나 진입점 경로다(lib/commands.ts 의 orchWord)
+    assert.ok(text.includes(` doctor migrate --repo ${repo} --apply`), `옮기는 명령이 없다: ${text}`)
     assert.ok(text.includes('설정 파일을 --config 로 직접 준다'), `우회 방법 줄이 없다: ${text}`)
   })
 
@@ -250,6 +250,6 @@ describe('옛 구조', () => {
     write('.claude/orch-finish.json', '{}')
     const { text } = captureStderr(() => warnLegacy(repo, 'wait-important'))
     assert.ok(text.startsWith('wait-important: 옛 위치가 남아 있다(.claude/orch-finish.json)'), text)
-    assert.ok(text.includes(`node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${repo} 로 옮긴다`), text)
+    assert.ok(text.includes(` doctor migrate --repo ${repo} 로 옮긴다`), text)
   })
 })

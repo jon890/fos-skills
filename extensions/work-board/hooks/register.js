@@ -1419,11 +1419,11 @@ export const DECIDE_PROMPT = [
   '1. 보드의 결정 필요(decide) 항목과 그 줄, 답하지 않은 worker 질문, 이번 대화에서 미룬 결정을 모아 줘.',
   '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
   '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
-  '4. 답한 보드 줄은 fos-skills 플러그인의 extensions/work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 skills/orch/scripts/send-to-worker.ts 로 전해 줘.',
+  '4. 답한 보드 줄은 fos-skills 플러그인의 extensions/work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 orch worker send 로 전해 줘.',
   '5. worker 가 직접 올린 막힘은 먼저 확인해서 네가 처리할 수 있으면 처리하고, 사람이 정할 것만 결정으로 물어봐 줘.',
   '6. Orca 자동 알림(「Worker stopped without reporting」 같은 멈춤, 「Agent hit an error」 같은 오류)은 나에게 묻지 말고 처리한 결과만 한 줄로 알려 줘.',
   '7. 자동 알림 가운데 계정 한도에 걸렸거나 터미널이 종료된 worker 는 묻지 말고 같은 워크트리에서 다시 띄우고, 멈춘 worker 는 상태를 확인해 필요하면 깨워 줘.',
-  '8. 처리한 막힘은 이어갈 일이 있는 worker 면 send-to-worker.ts 답장으로 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
+  '8. 처리한 막힘은 이어갈 일이 있는 worker 면 orch worker send 답장으로 깨우고, 일이 끝난 worker 는 답장 대신 orca orchestration worker-release 해제로 닫아 줘. 답장은 끝난 worker 를 다시 깨운다.',
 ].join('\n')
 
 // 창 닫기(ui.close)가 확인 모드만 끄고 창을 남길지. 사람이 닫을 때(Esc, 닫기 표시)만이고 엔진의 unload 는 닫는다

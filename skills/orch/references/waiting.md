@@ -2,9 +2,12 @@
 
 ## 상주 루프와 압축 뒤 복구
 
-**대기가 깨어나면 메시지와 알림을 처리한 직후 다시 건다.** `wait-important` 는 stderr 의 `NEXT_WAIT` 에 방금 받은 delivery 를 `--ack` 로 넘기는 다음 명령을 낸다. 표준 출력의 마지막 줄 `LAST_DELIVERY` 계약은 유지한다.
+**대기가 깨어나면 메시지와 알림을 처리한 직후 다시 건다.** `orch wait` 는 stderr 의 `NEXT_WAIT` 에 방금 받은 delivery 를 `--ack` 로 넘기는 다음 명령을 낸다. 표준 출력의 마지막 줄 `LAST_DELIVERY` 계약은 유지한다.
+`NEXT_WAIT` 는 `orch wait --ack <id> [기본값과 다른 인자] --loop-repo <절대경로>` 꼴이다. 코디네이터 터미널의 Run 에서 읽은 `--run` 은 빠지고, 시작 폴더와 루프 저장소가 다른 저장소면 `--lost-state <절대경로>` 가 붙는다. `orch` 가 PATH 에 없으면 앞 낱말이 진입점 절대경로다. 꼴의 원본은 `scripts/wait-important.ts` 의 `nextWait` 머리 주석이다.
+<!-- orch-compat -->
+옛 꼴 `"$SKILL_DIR/bin/orch.ts" wait-important …` 로 기억해 둔 `NEXT_WAIT` 도 같은 대기를 걸고, 그 대기가 새 꼴 `NEXT_WAIT` 를 낸다.
 
-- 받은 delivery 를 `triage-messages` 로 읽고 질문·보고·알림을 처리한다
+- 받은 delivery 를 `orch wait triage` 로 읽고 질문·보고·알림을 처리한다
 - 아래 「사용자와 대화 중일 때」 로 다시 걸지 정한다
 - 다시 걸면 stderr 의 `NEXT_WAIT` 명령을 하네스의 백그라운드 실행으로 건다
 - 미완료 dispatch 가 있는 동안 대기가 하나 살아 있는지 확인한 뒤 턴을 끝낸다. 대화 중이라 걸지 않은 때는 예외다
@@ -18,7 +21,7 @@
 깨어난 대기를 처리한 뒤 아래 명령의 줄을 본다. `USER-ACTIVE` 면 다시 걸지 않고 사용자에게 답한다. `USER-IDLE` 이면 `NEXT_WAIT` 로 다시 건다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" user-active
+orch wait user-active
 ```
 
 다음 `LAST_DELIVERY` id 는 기억해 두었다가 다시 걸 때 `--ack` 로 넘긴다. 사용자의 말에 답하는 턴에는 대기를 걸지 않는다.
@@ -34,27 +37,27 @@ hook 을 싣지 않은 세션(Codex 코디네이터 같은)은 기록이 없어 
 코디네이터가 사용자와 대화 중이면 전달을 미루고 대화가 끝난 뒤의 틱이 전달한다(아래 「사용자와 대화 중일 때」).
 이미 사용자에게 물어 답을 기다리는 결정은 다시 묻지 않는다. 답이 오면 [`replying.md`](replying.md) 의 답장과 보드 정리를 마친다.
 
-기본 핸들러는 `--start` 할 때 등록한 코디네이터 터미널을 쓴다. 압축이나 세션 전환 뒤에는 현재 코디네이터 세션에서 `--start --run` 을 다시 실행해 등록을 갱신한다. 등록값이 없거나 입력란에 글·권한 확인 창이 있으면 입력하지 않고 실패를 알린다. 저장소에서 전달 방법을 바꾸려면 [`hooks.md`](hooks.md) 의 `decision-pending` 핸들러를 둔다.
+기본 핸들러는 `orch loop start` 할 때 등록한 코디네이터 터미널을 쓴다. 압축이나 세션 전환 뒤에는 현재 코디네이터 세션에서 `orch loop start` 를 다시 실행해 등록을 갱신한다. 등록값이 없거나 입력란에 글·권한 확인 창이 있으면 입력하지 않고 실패를 알린다. 저장소에서 전달 방법을 바꾸려면 [`hooks.md`](hooks.md) 의 `decision-pending` 핸들러를 둔다.
 
 **저장소마다 상주 루프 `orch-loop.ts` 를 하나 띄우고, 세션은 자기 Run 을 그 루프에 등록한다.** 루프는 하네스의 백그라운드 명령이 아니라 분리된 프로세스라 시간 한도에 묶이지 않고, 세션이 끝나도 살아 있다.
 같은 저장소를 쓰는 다른 세션이 이미 루프를 띄웠으면 그 루프에 자기 Run 을 더한다. 루프는 Run 마다 그 Run 범위로 질문을 확인하고 정리하며, 알림도 Run 마다 나뉜다([ADR-012](../../../docs/adr/012-orch-loop-multi-run.md)).
-`$SKILL_DIR` 과 `$REPO` 는 절대경로로, `$RUN_ID` 는 현재 Run 으로 바꾼다. `--run` 과 `--specs-dir` 은 `.orch/config.json` 의 `finish.run`, `finish.specs_dir` 로 대신할 수 있다.
+저장소, Run, 지시서 폴더는 작업 폴더와 코디네이터 터미널에서 읽는다(Run 을 읽지 못하면 `.orch/config.json` 의 `finish.run`, 지시서 폴더는 `finish.specs_dir`, 없으면 `.orch/specs`). 다른 저장소의 루프면 `--repo`, 다른 Run 이면 `--run` 을 준다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" orch-loop --repo "$REPO" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --start
-"$SKILL_DIR/bin/orch.ts" orch-loop --repo "$REPO" --status
-"$SKILL_DIR/bin/orch.ts" orch-loop --repo "$REPO" --run "$RUN_ID" --stop
+orch loop start
+orch loop status
+orch loop stop
 ```
 
-`--start` 는 루프를 띄우면 `LOOP-STARTED` 와 0, 살아 있는 루프에 이 Run 을 더하면 `LOOP-JOINED` 와 0 으로 끝난다.
+`orch loop start` 는 루프를 띄우면 `LOOP-STARTED` 와 0, 살아 있는 루프에 이 Run 을 더하면 `LOOP-JOINED` 와 0 으로 끝난다.
 이 Run 이 이미 등록돼 있으면 `LOOP-RUNNING <pid> run=<Run id>` 와 4 다. 할 일은 없다.
-**세션의 일이 끝나면 `--stop --run` 으로 자기 Run 만 뺀다.** 다른 Run 이 남으면 루프는 그대로 돌고(`LOOP-LEFT`), 마지막 Run 이 빠지면 루프가 끝난다.
-`--run` 없는 `--stop` 은 `finish.run` 도 없으면 Run 이 하나라도 등록돼 있을 때 `LOOP-STOP-SHARED` 와 1 로 멈추지 않는다. 다른 세션의 루프를 끊지 않는다. 모두 멈추라는 사용자 지시가 있을 때만 `--stop --all` 을 쓴다.
-**`--stop` 이 1 로 끝나면(`LOOP-STOP-UNKNOWN`, `LOOP-STOP-TIMEOUT`) 그 pid 가 루프인지 `ps -o command= -p <pid>` 로 직접 확인한다.** 루프면 끝낸 뒤 다시 `--start` 한다. 다른 프로세스면 끝내지 않는다.
+**세션의 일이 끝나면 `orch loop stop` 으로 자기 Run 만 뺀다.** Run 은 코디네이터 터미널에서 읽는다. 다른 Run 이 남으면 루프는 그대로 돌고(`LOOP-LEFT`), 마지막 Run 이 빠지면 루프가 끝난다.
+Run 을 읽지 못하고 `finish.run` 도 없으면 Run 이 하나라도 등록돼 있을 때 `LOOP-STOP-SHARED` 와 1 로 멈추지 않는다. 다른 세션의 루프를 끊지 않는다. 모두 멈추라는 사용자 지시가 있을 때만 `orch loop stop --all` 을 쓴다.
+**`orch loop stop` 이 1 로 끝나면(`LOOP-STOP-UNKNOWN`, `LOOP-STOP-TIMEOUT`) 그 pid 가 루프인지 `ps -o command= -p <pid>` 로 직접 확인한다.** 루프면 끝낸 뒤 다시 `orch loop start` 한다. 다른 프로세스면 끝내지 않는다.
 
 **5(`LOOP-START-FENCED <Run> <묶인 Run>`)면 띄우지도 합류하지도 않았다.** Orca 는 호출자를 그 프로세스가 나온 터미널로 정하고, 루프는 띄운 터미널의 명의를 물려받는다.
 부른 터미널이 다른 Run 에 묶였거나, 도는 루프가 다른 Run 에 묶였거나 명의를 알 수 없는 옛 루프(`unknown`)라 이 Run 의 질문을 읽지 못한다는 뜻이다.
-**`--start` 는 그 Run 의 코디네이터 세션(그 Run 에 묶인 터미널)에서 부른다.** 다른 세션의 루프를 `--stop` 한 뒤 내 터미널에서 다시 띄우지 않는다. 새 루프가 내 Run 명의를 물려받아 원래 Run 의 질문을 읽지 못한다.
+**`orch loop start` 는 그 Run 의 코디네이터 세션(그 Run 에 묶인 터미널)에서 부른다.** 다른 세션의 루프를 `orch loop stop` 한 뒤 내 터미널에서 다시 띄우지 않는다. 새 루프가 내 Run 명의를 물려받아 원래 Run 의 질문을 읽지 못한다.
 도는 루프가 다른 Run 에 묶였으면 그 루프가 끝날 때까지 아래 Monitor 대안을 쓴다.
 
 **4 와 함께 `안내:` 줄이 오면 그 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다.** 다른 세션의 루프이므로 멈추지 않는다. 그 루프를 띄운 세션이나 사용자에게 다시 띄워 달라고 알리고, 그동안은 아래 Monitor 대안을 쓴다.
@@ -78,12 +81,12 @@ CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체�
 
 **Monitor 로 `watch-questions.ts` 를 띄우는 것은 루프를 쓸 수 없을 때의 대안이다.** `--run "$RUN_ID" --repo "$REPO"` 를 주고, 질문과 재알림을 한 줄씩 받는다. 이때는 아래 「깨어날 때마다 정리와 보드 동기화」 의 수동 명령도 돌려야 한다.
 
-**압축이나 세션 재시작 뒤 첫 작업은 루프와 대기 복구다.** doctor 에 `--repo` 와 `--run` 을 주면 루프가 죽었을 때 `LOOP-DEAD <repo> <이유>` 줄과 다시 띄울 명령을 낸다. 꺼진 루프는 그 명령으로 다시 띄운다.
+**압축이나 세션 재시작 뒤 첫 작업은 루프와 대기 복구다.** doctor 에 `--run` 을 주면(저장소는 작업 폴더에서 읽는다) 루프가 죽었을 때 `LOOP-DEAD <repo> <이유>` 줄과 다시 띄울 명령을 낸다. 꺼진 루프는 그 명령으로 다시 띄운다.
 완료 대기는 이 문서의 「이전 세션의 대기」 절차로 복구한다. 이미 켜진 루프와 대기는 두 번째로 띄우지 않는다.
 
 ```bash
 ps -eo pid,command | grep -E "orch-loop|wait-important|orchestration check" | grep -v grep
-python3 "$SKILL_DIR/scripts/orch-doctor.py" --repo "$REPO" --run "$RUN_ID"
+orch doctor --run "$RUN_ID"
 ```
 
 **doctor 의 `LOOP-STALE <repo> <pid> <번들 해시나 버전>` 은 지금 세션 프로필의 user 범위 설치본이 아닌 번들로 도는 루프다.** 플러그인을 갱신했거나 계정을 바꾼 뒤에 생긴다. 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
@@ -117,7 +120,7 @@ Claude Code 의 백그라운드 Bash 는 따로 정하지 않으면 30분 뒤 �
 Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `--timeout-ms` 는 기본값 7000000 을 쓴다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --ack "$DELIVERY_ID" --loop-repo "$REPO"
+orch wait --ack "$DELIVERY_ID"
 ```
 
 저장소가 둘 이상이면 `--loop-repo` 를 저장소마다 준다. 루프가 없는 저장소는 주지 않는다.
@@ -159,8 +162,8 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 `--ack-lost` 는 기록만 쓴 뒤 종료 코드 0 으로 끝나므로 대기는 따로 건다. `--ignore-lost` 와의 차이와 실패 처리는 스크립트 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --ack-lost "$DISPATCH_ID"
-"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID" --ack "$DELIVERY_ID" --kill-stale
+orch wait ack-lost "$DISPATCH_ID"
+orch wait --ack "$DELIVERY_ID" --kill-stale
 ```
 
 ## 깨어날 때마다 정리와 보드 동기화
@@ -177,15 +180,15 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 `$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" cleanup-sweep --repo "$REPO" --base "$BASE" --run "$RUN_ID" --specs-dir "$SPECS_DIR" --kill-holders --apply
-"$SKILL_DIR/bin/orch.ts" board-sync --repo "$REPO" --goal "$GOAL_ID"
+orch cleanup sweep --base "$BASE" --kill-holders --apply
+orch board sync --goal "$GOAL_ID"
 ```
 
 멈춘 worker 와 멈춘 단계도 같은 주기에 `stalled-workers` 로 본다. 루프가 있는 저장소에서도 지금 상태를 직접 볼 때 쓴다.
 종료 코드 3 이면 `STALLED` 와 `STAGE` 줄을 위 `WORKER-IDLE`, `STAGE-STALLED` 처럼 처리한다. 출력 형식과 종료 코드는 스크립트 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" stalled-workers --repo "$REPO" --run "$RUN_ID"
+orch loop stalled --run "$RUN_ID"
 ```
 
 머지 큐를 걸어 둔 동안에는 `finish-*.out` 의 마지막 줄도 본다. `FINISH-FAIL` 이면 출력의 이유를 사용자에게 알린다. 읽는 법은 [`cleanup.md`](cleanup.md) 의 「머지 뒤 마무리」 가 소유한다.
@@ -195,7 +198,7 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 `--specs-dir` 에 상대경로를 주면 저장소마다 그 저장소 기준으로 읽는다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" cleanup-sweep --repo "$REPO" --repo "$OTHER_REPO" --run "$RUN_ID" --specs-dir .orch/specs --kill-holders --apply
+orch cleanup sweep --repo "$REPO" --repo "$OTHER_REPO" --specs-dir .orch/specs --kill-holders --apply
 ```
 
 `cleanup-sweep.ts` 가 다루는 경우와 건너뛰는 조건은 그 파일 머리 주석이 소유한다. 스크립트가 다루는 경우를 코디네이터가 직접 지우지 않는다.
@@ -209,14 +212,14 @@ Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `-
 `$OUT` 은 백그라운드 작업의 출력 파일 경로다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" triage-messages "$OUT"
+orch wait triage "$OUT"
 ```
 
 **놓친 보고가 의심되면 지난 시각부터 다시 본다.** compact 나 세션 재시작 뒤, ack 를 먼저 하고 읽지 못한 경우가 여기 해당한다.
 `--live` 는 읽음 표시를 하지 않으므로 도는 대기의 delivery 를 건드리지 않는다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" triage-messages --live --run "$RUN_ID" --since 3h
+orch wait triage --live --since 3h
 ```
 
 ## 대기가 바로 끝나거나 남음

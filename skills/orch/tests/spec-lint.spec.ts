@@ -236,7 +236,7 @@ describe('지시서 검사', () => {
     const r = run(['--repo', repo, a])
     assert.equal(r.code, 0, r.stdout)
     const lineOf = (text: string, needle: string) => text.slice(0, text.indexOf(needle)).split('\n').length
-    const askLine = lineOf(old, '- **ask 는 설치된 스킬의 `worker-ask` 로 보낸다.**')
+    const askLine = lineOf(old, '- **ask 는 설치된 스킬의 `worker-ask`(`orch worker ask`)로 보낸다.**')
     const boardLine = lineOf(old, '- phase 가 끝나면 `board.ts step`')
     assert.ok(r.stdout.includes(`${common}:${askLine}: 공통: 표지 \`worker-ask\` 가 붙은 규칙이 틀과 다르다`), r.stdout)
     assert.ok(r.stdout.includes(`${common}:${boardLine}: 공통: 표지 \`no-board-edit\` 가 붙은 규칙이 틀과 다르다`), r.stdout)

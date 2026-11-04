@@ -4,13 +4,16 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/orch-doctor.ts', import.meta.url))
+const LAUNCHER = fileURLToPath(new URL('../../../bin/orch', import.meta.url))
+// 안내 줄의 앞 낱말. beforeEach 가 표지 있는 실행기를 PATH 에 두므로 orch 다(lib/commands.ts 의 orchWord)
+const WORD = 'orch'
 
 const GIT_ENV = {
   GIT_CONFIG_GLOBAL: '/dev/null',
@@ -95,8 +98,10 @@ beforeEach(() => {
   env = {
     ...process.env,
     ...GIT_ENV,
-    // 가짜 orca 의 #! 줄이 이 테스트의 node 를 쓰게 한다
-    PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
+    // 가짜 orca 의 #! 줄이 이 테스트의 node 를 쓰게 한다. 안내 줄의 앞 낱말과 CLI 판정이 PATH 와 HOME 에 따라 바뀌므로
+    // 사용자 PATH 를 물려받지 않고, HOME 에는 최신 ~/.local/bin/orch 를 깔아 둔 PATH 를 준다
+    PATH: [dirname(process.execPath), join(tmp, 'home', '.local', 'bin'), '/usr/bin', '/bin'].join(delimiter),
+    HOME: join(tmp, 'home'),
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(binDir, 'orca'),
@@ -105,6 +110,8 @@ beforeEach(() => {
     CLAUDE_CONFIG_DIR: join(tmp, 'no-config'),
   }
   delete env.ORCH_DIR
+  mkdirSync(join(tmp, 'home', '.local', 'bin'), { recursive: true })
+  copyFileSync(LAUNCHER, join(tmp, 'home', '.local', 'bin', 'orch'))
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -322,6 +329,122 @@ describe('스크립트 판정', () => {
   })
 })
 
+describe('orch 명령 판정', () => {
+  // 플러그인 루트에 실행기가 있는 번들의 스킬. CLI 판정은 이 실행기와 ~/.local/bin/orch 를 비교한다
+  function pluginSkill(): string {
+    const root = join(tmp, 'bundle')
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(LAUNCHER, join(root, 'bin', 'orch'))
+    write(join(root, 'skills', 's', 'SKILL.md'), '# 스킬\n')
+    return join(root, 'skills', 's')
+  }
+
+  test('~/.local/bin/orch 가 없거나, 낡았거나, PATH 에 없으면 알리고 종료 코드는 바꾸지 않는다', () => {
+    const skill = pluginSkill()
+    const copy = join(tmp, 'home', '.local', 'bin', 'orch')
+    const ok = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(ok.code, 0, ok.stdout + ok.stderr)
+    assert.doesNotMatch(ok.stdout, /CLI-/)
+    rmSync(copy)
+    const missing = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(missing.code, 0)
+    // PATH 에 실행기가 없으니 고칠 명령의 앞 낱말은 진입점 절대경로다
+    assert.match(missing.stdout, new RegExp(`^CLI-MISSING ${copy}\n  고칠 명령: \\S+/skills/orch/bin/orch\\.ts doctor install-cli$`, 'm'))
+    writeFileSync(copy, '#!/usr/bin/env node\n// fos-skills orch launcher\n// old\n')
+    const stale = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.match(stale.stdout, new RegExp(`^CLI-STALE ${copy}$`, 'm'))
+    copyFileSync(LAUNCHER, copy)
+    const offPath = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter) } })
+    assert.equal(offPath.code, 0)
+    assert.match(offPath.stdout, new RegExp(`^CLI-NOT-ON-PATH ${dirname(copy)}\n  셸 설정`, 'm'))
+  })
+
+  test('저장소 파일의 옛 꼴과 스크립트 직접 경로를 고칠 새 꼴과 함께 알린다', () => {
+    const repo = join(tmp, 'repo')
+    write(
+      join(repo, '.orch', 'overlay.md'),
+      [
+        '"$SKILL_DIR/bin/orch.ts" wait-important --run "$RUN_ID"',
+        'node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/merge-with-finish.ts" --repo /r 12',
+        '<!-- orch-compat -->',
+        '"$SKILL_DIR/bin/orch.ts" orch-loop --start',
+        'node "$SKILL_DIR/scripts/remove-worktree.ts" /w # orch-compat',
+        'orch queue merge 12',
+        '',
+      ].join('\n'),
+    )
+    write(
+      join(repo, '.orch', 'specs', 'spec-common.md'),
+      [
+        'ORCH_SCRIPTS=$(node -e \'...\') && node --disable-warning=ExperimentalWarning "$ORCH_SCRIPTS/worker-ask.ts" --from "$FROM"',
+        'ORCH=$(node -e \'...\') && "$ORCH" heavy-slot -- make',
+        'node /Users/me/.claude/plugins/cache/fos-skills/fos-skills/88daf0fe2fe7/orch/scripts/worker-ask.ts --from x',
+        'python3 "$SKILL_DIR/scripts/orch-doctor.py"',
+        'ORCH_SCRIPTS=$(node -e \'...\') && node "$ORCH_SCRIPTS/study-candidates.ts" add --slug s',
+        '',
+      ].join('\n'),
+    )
+    write(join(repo, '.orch', 'hooks', 'worker-stalled.ts'), "const nudge = join(process.env.ORCH_SCRIPTS, 'nudge-worker.ts')\nspawnSync('node', [join(ORCH_SCRIPTS, 'nudge-worker.ts')])\n")
+    write(join(repo, '.orch', 'bin', 'with-heavy-slot.sh'), 'GATE=$(node /r/.orch/bin/orch.mts --path mem-gate)\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', pluginSkill(), '--repo', repo])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const lines = r.stdout.split('\n').filter((l) => /^(OLD-CALL|DIRECT-PATH|  새 꼴)/.test(l))
+    assert.deepEqual(lines, [
+      'OLD-CALL .orch/overlay.md:1 wait-important',
+      '  새 꼴: orch wait',
+      'DIRECT-PATH .orch/overlay.md:2 merge-with-finish.ts',
+      '  새 꼴: orch queue merge',
+      'DIRECT-PATH .orch/specs/spec-common.md:1 worker-ask.ts',
+      '  새 꼴: orch worker ask',
+      'OLD-CALL .orch/specs/spec-common.md:2 heavy-slot',
+      '  새 꼴: orch slot heavy',
+      'DIRECT-PATH .orch/specs/spec-common.md:3 worker-ask.ts',
+      '  새 꼴: orch worker ask',
+      'OLD-CALL .orch/specs/spec-common.md:4 orch-doctor',
+      '  새 꼴: orch doctor',
+      'DIRECT-PATH .orch/specs/spec-common.md:5 study-candidates.ts',
+      '  새 꼴: orch study add',
+      'OLD-CALL .orch/bin/with-heavy-slot.sh:1 mem-gate',
+      '  새 꼴: orch slot mem',
+      'DIRECT-PATH .orch/hooks/worker-stalled.ts:2 nudge-worker.ts',
+      '  새 꼴: orch worker nudge',
+    ])
+  })
+
+  test('옛 번들로 도는 대기는 WAIT-STALE 로 알린다', () => {
+    const config = join(tmp, 'profile')
+    const bundle = (v: string) => join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', v)
+    write(join(config, 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'user', installPath: bundle('4.6.0') }] } }))
+    mkdirSync(join(bundle('4.6.0'), 'skills', 'orch', 'scripts'), { recursive: true })
+    const psFile = join(tmp, 'ps.txt')
+    writeFileSync(
+      psFile,
+      [
+        `  501 node --disable-warning=ExperimentalWarning ${join(bundle('4.2.0'), 'skills', 'orch', 'scripts', 'wait-important.ts')} --run r --ack d`,
+        `  502 node ${join(bundle('4.6.0'), 'skills', 'orch', 'scripts', 'wait-important.ts')} --run r`,
+        `  503 orca orchestration check --run r --wait ${join(bundle('4.2.0'), 'skills', 'orch', 'scripts', 'wait-important.ts')}`,
+        '',
+      ].join('\n'),
+    )
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', join(tmp, 'skill')], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: config } })
+    write(join(tmp, 'skill', 'SKILL.md'), '# 스킬\n')
+    const again = doctor(['--skip-version', '--skip-questions', '--skill-dir', join(tmp, 'skill')], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: config } })
+    assert.equal(r.code, 2)
+    assert.equal(again.code, 0, again.stdout + again.stderr)
+    const out = again.stdout.split('\n')
+    assert.deepEqual(out.filter((l) => l.startsWith('WAIT-STALE')), ['WAIT-STALE 501 4.2.0'])
+    assert.match(out[out.indexOf('WAIT-STALE 501 4.2.0') + 1], /kill 501\) orch wait --ack/)
+  })
+
+  test('문서의 새 꼴은 명령 표로 확인하고 산문은 보지 않는다', () => {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '`orch loop start` 로 띄운다. orch 루트는 `.orch` 다.\n```bash\norch wait --ack "$D"\norch nope x\n```\n`orch loop nope` 와 `orch` 스킬\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.equal(r.stdout, 'MISSING SKILL.md:4 orch nope x\nMISSING SKILL.md:6 orch loop nope\n')
+  })
+})
+
 describe('질문 판정', () => {
   let skill: string
   beforeEach(() => {
@@ -391,7 +514,7 @@ describe('저장소 판정', () => {
     write(join(tmp, '.orch', 'config.json'), JSON.stringify({ queue: { before: 'make check' } }))
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 1, r.stdout + r.stderr)
-    assert.match(r.stdout, /INVALID-CONFIG .*queue.before.*migrate-orch-dir/)
+    assert.match(r.stdout, /INVALID-CONFIG .*queue.before.* doctor migrate-hooks --repo /)
     assert.doesNotMatch(r.stdout, /DEPRECATED/)
   })
 
@@ -470,7 +593,7 @@ describe('저장소 판정', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
-    assert.match(r.stderr, /옛 공부 후보 표 파일이 남아 있다. study-candidates migrate 로 옮긴다: .*candidates\.md/)
+    assert.match(r.stderr, /옛 공부 후보 표 파일이 남아 있다. \S+ study migrate 로 옮긴다: .*candidates\.md/)
     assert.match(r.stderr, /공부 후보 파일의 머리를 읽지 못했다: .*broken\.md/)
   })
 
@@ -562,7 +685,7 @@ describe('session-resume', () => {
     const out = r.stdout.split('\n')
     const at = out.indexOf(`LOOP-DEAD ${tmp} pid ${ended.stdout} 종료`)
     assert.ok(at >= 0, r.stdout)
-    assert.equal(out[at + 1], `  node --disable-warning=ExperimentalWarning "${join(skill, 'scripts', 'orch-loop.ts')}" --repo ${tmp} --run r --start`)
+    assert.equal(out[at + 1], `  ${WORD} loop start --repo ${tmp} --run r`)
     assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, false)
   })
 
@@ -584,7 +707,7 @@ describe('session-resume', () => {
     const out = r.stdout.split('\n')
     const at = out.indexOf(`LOOP-DEAD ${tmp} run r 미등록`)
     assert.ok(at >= 0, r.stdout)
-    assert.equal(out[at + 1], `  node --disable-warning=ExperimentalWarning "${join(skill, 'scripts', 'orch-loop.ts')}" --repo ${tmp} --run r --start`)
+    assert.equal(out[at + 1], `  ${WORD} loop start --repo ${tmp} --run r`)
     assert.equal(JSON.parse(readFileSync(received, 'utf8')).loop_alive, false)
     write(join(tmp, '.orch', 'state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: '2026-01-02T00:00:00Z' }))
     const joined = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_PS: psFile, RECEIVED: received } })
@@ -711,11 +834,13 @@ describe('루프 번들 판정', () => {
     write(join(skill, 'SKILL.md'), '# 스킬\n')
     // 프로필 경로에 빈칸이 있다(macOS 의 Application Support)
     const plugins = join(tmp, 'Application Support', 'plugins')
-    const bundle = (sha: string) => join(plugins, 'cache', 'mkt', 'fos-skills', sha)
+    const bundle = (sha: string) => join(plugins, 'cache', 'fos-skills', 'fos-skills', sha)
     write(
       join(plugins, 'installed_plugins.json'),
-      JSON.stringify({ plugins: { 'fos-skills@mkt': [{ scope: 'project', installPath: bundle('ccccccc3') }, { scope: 'user', installPath: bundle('bbbbbbb2') }] } }),
+      JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'project', installPath: bundle('ccccccc3') }, { scope: 'user', installPath: bundle('bbbbbbb2') }] } }),
     )
+    // 현재 설치본은 lib/install-record.ts 의 규칙으로 고르므로 스크립트 폴더가 있어야 한다
+    mkdirSync(join(bundle('bbbbbbb2'), 'skills', 'orch', 'scripts'), { recursive: true })
     const repo = join(tmp, 'my repo')
     write(join(repo, '.orch', 'state', 'loop.json'), JSON.stringify({ pid: 111, run: 'r0', bound_run: 'r1', runs: ['r0', 'r1'] }))
     const loopOf = (sha: string) => join(bundle(sha), 'orch', 'scripts', 'orch-loop.ts')
@@ -745,9 +870,8 @@ describe('루프 번들 판정', () => {
     )
     const at = out.indexOf(`LOOP-STALE ${repo} 111 aaaaaaa1`)
     assert.match(out[at + 1], /^ {2}안내: 이 루프는 설치되지 않은 번들\(aaaaaaa1\)로 돈다\. 아래 두 명령은 그 루프의 Run\(r1\) 코디네이터 세션에서 돌린다/)
-    const fresh = join(bundle('bbbbbbb2'), 'orch', 'scripts', 'orch-loop.ts')
-    assert.equal(out[at + 2], `  node --disable-warning=ExperimentalWarning "${fresh}" --repo '${repo}' --stop --all`)
-    assert.equal(out[at + 3], `  node --disable-warning=ExperimentalWarning "${fresh}" --repo '${repo}' --run r1 --start`)
+    assert.equal(out[at + 2], `  ${WORD} loop stop --repo '${repo}' --all`)
+    assert.equal(out[at + 3], `  ${WORD} loop start --repo '${repo}' --run r1`)
   })
 
   test('버전 이름의 캐시 폴더도 보고, 다른 프로필의 같은 버전 폴더는 같은 번들로 본다', () => {
@@ -759,6 +883,7 @@ describe('루프 번들 판정', () => {
       join(config, 'plugins', 'installed_plugins.json'),
       JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'user', installPath: bundle(config, '3.12.0') }, { scope: 'project', installPath: bundle(join(tmp, 'old'), '3.6.0') }] } }),
     )
+    mkdirSync(join(bundle(config, '3.12.0'), 'skills', 'orch', 'scripts'), { recursive: true })
     const loopOf = (root: string, version: string) => join(bundle(root, version), 'orch', 'scripts', 'orch-loop.ts')
     const psFile = join(tmp, 'ps.txt')
     writeFileSync(
@@ -773,8 +898,7 @@ describe('루프 번들 판정', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: config } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.deepEqual(r.stdout.split('\n').filter((line) => line.startsWith('LOOP-STALE')), ['LOOP-STALE /r/a 111 3.6.0'])
-    const fresh = join(bundle(config, '3.12.0'), 'orch', 'scripts', 'orch-loop.ts')
-    assert.ok(r.stdout.includes(`"${fresh}" --repo /r/a --stop --all`), r.stdout)
+    assert.ok(r.stdout.includes(`${WORD} loop stop --repo /r/a --all`), r.stdout)
   })
 
   test('지금 프로필에 user 범위 행이 없으면 판정하지 않는다', () => {

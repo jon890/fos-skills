@@ -78,10 +78,10 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 }
 ```
 
-`--run "$RUN_ID"` 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록 한정한다. 빠지면 정리 단계가 Run 으로 한정되지 않는다는 경고가 난다.
+Run 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록 한정한다. 새 꼴은 코디네이터 터미널의 Run 을 문맥에서 채운다. 다른 Run 의 PR 이면 `--run <Run>` 을 준다. Run 을 끝내 읽지 못하면 정리 단계가 Run 으로 한정되지 않는다는 경고가 난다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --run "$RUN_ID" 101 102 103!
+orch queue merge 101 102 103!
 ```
 
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
@@ -91,7 +91,7 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 충돌 파일 출력과 알림 중복 방지는 스크립트 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" notify-conflicts --repo "$REPO" --base "$BASE" --run "$RUN_ID"
+orch queue conflicts --base "$BASE"
 ```
 
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
@@ -104,7 +104,7 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 **앞 PR 이 먼저 들어가야 하는 PR 들은 `--chain 101,102` 로 묶는다.** 마이그레이션 순서가 있는 PR 이 예다. 묶음 안 앞 PR 이 머지되지 않고 빠지면 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 로 머지하지 않는다. 묶음 밖의 PR 은 이어 머지한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --run "$RUN_ID" --chain 101,102 101 102 103
+orch queue merge --chain 101,102 101 102 103
 ```
 **보류한 PR 은 큐를 멈추지 않는다(orch 7.9.0 부터 기본).** 체크 실패, 근거 블록 불일치처럼 조건에 못 미친 PR 은 `STOP` 줄을 찍고 그 PR 만 빼고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다.
 맨 앞 PR 하나가 차례에 base 를 합친 뒤 테스트에 실패해 뒤의 머지할 수 있는 PR 셋이 함께 머지되지 않은 일이 있었다(2026-11-04).
@@ -126,7 +126,7 @@ PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대�
 판정과 종료 코드는 스크립트 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" ci-ready --repo "$REPO" 101 102
+orch queue ready 101 102
 ```
 
 `보류` 줄의 PR 은 겹친 PR 이 머지된 뒤 다시 돌린다. base 와 충돌하는 PR 은 그 worker 에게 base 를 합치게 한다.
@@ -145,7 +145,7 @@ PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대�
 필수 체크는 허용할 수 없고, 목록에 없는 체크가 실패하면 멈춘다. 판정은 스크립트 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --required test,browser --allow-fail claude-review 101
+orch queue merge --required test,browser --allow-fail claude-review 101
 ```
 
 ### base 최신 여부
@@ -159,7 +159,7 @@ PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대�
 - 머지 큐에서 앞선 PR 이 머지되면 뒤 PR 은 base 가 달라진 것이므로 이 옵션이 뒤 PR 마다 다시 base 를 merge 한다. 시간이 더 걸리는 대신 base 가 깨지지 않는다
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --require-up-to-date --required backend,frontend 101 102
+orch queue merge --require-up-to-date --required backend,frontend 101 102
 ```
 
 ### 머지 차례 전에 미리 최신화하기
@@ -242,7 +242,7 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 같은 PR 의 항목이 둘 이상이면 건너뛴다. `--board-item PR=ID` 로 준 항목은 판정과 상관없이 done 으로 바꾼다. 규칙은 `finish-pr.ts` 머리 주석의 「보드 항목」 이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" 492 '495:./bin/backup-db.sh orders "before-pr-$PR"'
+orch queue merge 492 '495:./bin/backup-db.sh orders "before-pr-$PR"'
 ```
 
 ### 같은 파일을 고친 PR
@@ -273,7 +273,7 @@ PR 차례마다 `<PR> 판정: 바로 머지` 나 `<PR> 판정: 갱신 필요(이
 `$COPY_DIR` 은 오버레이의 값이고, 검증 명령은 `hooks/verify-merged.ts` 에 둔다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --copy-dir "$COPY_DIR" 101 102
+orch queue merge --copy-dir "$COPY_DIR" 101 102
 ```
 
 ### draft 때 건너뛴 필수 체크
@@ -288,7 +288,7 @@ ready 로 바꾼 직후 새 실행이 붙기 전에 머지 큐가 그 체크를 
 문서 PR 만 머지했을 때 배포를 건너뛰려면 핸들러가 `code_prs` 입력을 본다. 입력과 실패 처리는 `merge_queue.ts` 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --docs-glob 'docs/*,*.md' 101 102
+orch queue merge --docs-glob 'docs/*,*.md' 101 102
 ```
 
 저장소의 검증과 배포 명령은 그 저장소의 오버레이가 소유한다.
@@ -302,7 +302,7 @@ DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하�
 백업 스크립트는 저장소마다 서버와 DB 가 달라 이 스킬에 두지 않는다. 저장소의 오버레이가 경로와 인자를 정한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
+orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 ```
 
 백업 스크립트를 저장소에 둘 때 지킬 것이다.
@@ -342,7 +342,7 @@ DB 마이그레이션이 든 PR 을 머지하기 전에 개발 DB 를 백업하�
 판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" merge-with-finish --repo "$REPO" --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
+orch queue merge --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
 ```
 
 **스크립트 머리 주석이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
@@ -383,12 +383,12 @@ gh pr view "$PR" --json state --jq .state
 
 ### 다른 저장소에 맡긴 PR 을 직접 머지했을 때
 
-`merge-with-finish.ts` 의 마무리는 머지 큐를 건 저장소만 정리한다. 다른 저장소에 맡긴 PR 을 코디네이터가 `gh pr merge` 로 머지했으면 바로 이어서 정리한다.
+`orch queue merge` 의 마무리는 머지 큐를 건 저장소만 정리한다. 다른 저장소에 맡긴 PR 을 코디네이터가 `gh pr merge` 로 머지했으면 바로 이어서 정리한다.
 값을 채운다: `$OTHER_REPO` 는 그 저장소의 주 checkout, `$RUN_ID` 는 worker 를 띄운 Run, `$PR` 은 PR 번호, `$WORKER_TERM` 은 그 worker 의 터미널 handle(`worker-show`), `$WORKTREE` 는 그 워크트리 경로다.
-먼저 `cleanup-sweep.ts` 로 정리한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
+먼저 `orch cleanup sweep` 으로 정리한다. worker 를 띄운 Run 이 지금 코디네이터 터미널의 Run 과 다를 수 있어 `--run` 은 명시한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" cleanup-sweep --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
+orch cleanup sweep --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
 ```
 
 스크립트가 건너뛴 것만 아래 묶음으로 직접 지운다. 묶음은 PR 이 `MERGED` 일 때만 돈다.
@@ -399,7 +399,7 @@ if [ "$(cd "$OTHER_REPO" && gh pr view "$PR" --json state --jq .state)" = MERGED
   BRANCH=$(git -C "$WORKTREE" branch --show-current)
   PR_HEAD=$(cd "$OTHER_REPO" && gh pr view "$PR" --json headRefOid --jq .headRefOid)
   orca terminal close --terminal "$WORKER_TERM"
-  "$SKILL_DIR/bin/orch.ts" remove-worktree "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
+  orch cleanup worktree "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
   if git -C "$OTHER_REPO" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
     git -C "$OTHER_REPO" push origin --delete "$BRANCH"
   fi
@@ -416,7 +416,7 @@ fi
 거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. 위 판정이 「끝남」 인 워크트리(PR MERGED, PR 없이 끝남)의 남은 프로세스만 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" remove-worktree "$WORKTREE" --delete-branch
+orch cleanup worktree "$WORKTREE" --delete-branch
 ```
 
 squash 머지된 PR 이면 `--merged-head "$PR_HEAD"` 를 더한다. `cleanup-sweep.ts` 는 이 값을 스스로 넘긴다.
@@ -479,7 +479,7 @@ Docker 가 없거나 데몬이 꺼져 있으면 `Docker 정리 건너뜀: <이�
 `tick` 이나 `after-cleanup` 핸들러에서 부르면 입력의 `run` 을 넘긴다. 큐 로그, 폴더, csv 는 Run 에 묶을 수 없어 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" handoff-cleanup --repo "$REPO" --run "$RUN_ID" --apply
+orch cleanup handoff --apply
 ```
 
 기능 PR 의 완료 근거는 [기능 루프](feature-loop.md#pr-과-완료-근거)를 따른다. finish-pr 은 기능 PR 도 배포 확인 전에 워크트리·브랜치·빈 터미널을 지운다. 근거 누락이나 대기면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 로 끝난다. 후속 검증을 갱신한 뒤 같은 명령으로 재개한다.

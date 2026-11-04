@@ -117,9 +117,10 @@ class PluginManifestTest(unittest.TestCase):
     def test_author_name_present(self):
         self.assertTrue(load(PLUGIN)["author"]["name"])
 
-    def test_no_bin_directory(self):
-        # PATH 명령은 nhn-dev 가 소유한다. 근거는 docs/adr/004-no-plugin-bin.md
-        self.assertFalse(os.path.lexists(ROOT / "bin"), "루트에 bin 을 두지 않는다. docs/adr/004-no-plugin-bin.md")
+    def test_bin_has_only_orch_launcher(self):
+        # 루트 bin/ 에는 orch 실행기 하나만 둔다. 공용 도구의 PATH 명령은 nhn-dev 가 소유한다. 근거는 docs/adr/004-no-plugin-bin.md
+        self.assertEqual(["orch"], sorted(os.listdir(ROOT / "bin")), "루트 bin/ 에는 orch 하나만 둔다. docs/adr/004-no-plugin-bin.md")
+        self.assertTrue(os.access(ROOT / "bin" / "orch", os.X_OK), "bin/orch 에 실행 비트가 있어야 한다")
 
 
 if __name__ == "__main__":

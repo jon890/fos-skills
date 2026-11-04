@@ -1,0 +1,1 @@
+- 결정 요청문이 worker 에게 답을 전하는 명령을 `orch worker send` 로 안내해요

@@ -15,13 +15,30 @@ beforeEach(() => {
   config = join(root, 'profile with space')
   old = join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', 'old')
   current = join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', 'new')
-  mkdirSync(join(current, 'orch', 'scripts'), { recursive: true })
+  mkdirSync(join(current, 'skills', 'orch', 'scripts'), { recursive: true })
   mkdirSync(dirname(join(config, 'plugins', 'installed_plugins.json')), { recursive: true })
   writeFileSync(join(config, 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'fos-skills@fos-skills': [
     { scope: 'project', installPath: '/missing' }, { scope: 'user', installPath: current },
   ] } }))
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+function record(entries: { scope: string; installPath: string }[]): void {
+  writeFileSync(join(config, 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'fos-skills@fos-skills': entries } }))
+}
+
+test('user 범위 항목이 있으면 같은 번들의 project 범위 항목이 있어도 user 와 다르면 경고한다', () => {
+  mkdirSync(join(old, 'skills', 'orch', 'scripts'), { recursive: true })
+  record([{ scope: 'project', installPath: old }, { scope: 'user', installPath: current }])
+  assert.match(staleBundleWarning(old, config)!, /new\/skills\/orch\/bin\/orch\.ts/)
+})
+
+test('user 범위 설치본이 3.x 배치(orch/scripts)면 현재 설치본을 고르지 못해 경고하지 않는다', () => {
+  const legacy = join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', 'legacy')
+  mkdirSync(join(legacy, 'orch', 'scripts'), { recursive: true })
+  record([{ scope: 'user', installPath: legacy }, { scope: 'project', installPath: current }])
+  assert.equal(staleBundleWarning(old, config), null)
+})
 test('다른 캐시이면 한 줄 경고하고 현재 설치본과 체크아웃은 조용하다', () => {
   const warning = staleBundleWarning(old, config)
   assert.match(warning!, /^STALE-BUNDLE orch: .*현재 진입점:/)
@@ -42,7 +59,7 @@ test('진입점을 거치지 않은 스크립트 호출도 stderr 에 한 번만
   assert.equal(run.status, 0, run.stderr)
   assert.equal(run.stdout, 'ready\n')
   assert.equal(run.stderr.split('\n').filter((line) => line.startsWith('STALE-BUNDLE')).length, 1)
-  assert.match(run.stderr, /new\/orch\/bin\/orch\.ts/)
+  assert.match(run.stderr, /new\/skills\/orch\/bin\/orch\.ts/)
 })
 test('모든 직접 실행 스크립트가 공용 경고 모듈에 닿는다', () => {
   function reaches(file: string, visited = new Set<string>()): boolean {
@@ -57,7 +74,6 @@ test('모든 직접 실행 스크립트가 공용 경고 모듈에 닿는다', (
 })
 
 test('새 skills 배치의 직접 호출도 플러그인 루트와 현재 진입점을 대조한다', () => {
-  mkdirSync(join(current, 'skills', 'orch', 'scripts'), { recursive: true })
   cpSync(SCRIPTS, join(old, 'skills', 'orch', 'scripts'), { recursive: true })
   const probe = join(old, 'skills', 'orch', 'scripts', 'probe.ts')
   writeFileSync(probe, "import './lib/args.ts'\nconsole.log('ready')\n")
@@ -66,3 +82,18 @@ test('새 skills 배치의 직접 호출도 플러그인 루트와 현재 진입
   assert.match(run.stderr, /new\/skills\/orch\/bin\/orch\.ts/)
   assert.equal(staleBundleWarning(current, config), null)
 })
+
+test('ORCH_CONTEXT 는 스크립트가 읽고 지워 자식에 물려주지 않는다', () => {
+  const probe = join(root, 'probe.ts')
+  writeFileSync(
+    probe,
+    `import { orchContext } from ${JSON.stringify(join(SCRIPTS, 'lib', 'bundle.ts'))}\n` +
+      "import { spawnSync } from 'node:child_process'\n" +
+      'console.log(JSON.stringify(orchContext()))\n' +
+      "console.log(spawnSync(process.execPath, ['-e', 'console.log(process.env.ORCH_CONTEXT ?? \"none\")'], { encoding: 'utf8' }).stdout.trim())\n",
+  )
+  const run = spawnSync(process.execPath, [probe], { encoding: 'utf8', env: { ...process.env, ORCH_CONTEXT: 'run=run-current loop-repo=registered' } })
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(run.stdout, '{"run":"run-current","loop-repo":"registered"}\nnone\n')
+})
+

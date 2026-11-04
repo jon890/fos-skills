@@ -518,7 +518,7 @@ describe('finish-pr 사용법 오류', { concurrency: 4 }, () => {
     const again = await c.finish(['--complete'])
     assert.equal(again.code, 2, both(again))
     has(again.stderr, 'finish.complete_cmd')
-    has(again.stderr, 'migrate-orch-dir')
+    has(again.stderr, 'doctor migrate')
     assert.deepEqual(c.calls(), [])
   })
 })

@@ -33,13 +33,13 @@ kill -TERM $PIDS
 `survey_git.py` 가 기본으로 도는 PR 조회(`--no-check-prs` 로 끈다)로 나온 "제거 후보(PR 머지됨)" 는 머지됨 대신 머지된 PR 이 있는 것이고, 나머지 조건은 같다.
 기준 브랜치와 같은 커밋에서 막 만든 워크트리도 머지됨으로 잡히므로, 경과 일수가 짧은 것은 사용자에게 한 번 더 확인한다.
 
-**먼저 그 워크트리에 Orca 터미널이 붙어 있는지 본다.** `orch` 가 띄운 worker 의 워크트리는 `orch` 의 정리가 지운다. 이 스킬이 `git worktree remove` 로 지우면 활동 중인 worker 가 종료된다.
+**먼저 그 워크트리에 Orca 터미널이 붙어 있는지 본다.** `orch` 가 띄운 worker 의 워크트리는 `orch` 의 정리(`orch cleanup worktree`)가 지운다. 이 스킬이 `git worktree remove` 로 지우면 활동 중인 worker 가 종료된다.
 
 ```bash
 orca terminal list --json
 ```
 
-- `worktreePath` 가 `$WT` 이거나 그 아래인 터미널이 하나라도 있으면 이 스킬이 지우지 않는다. 사용자에게 `orch` 의 정리(`remove-worktree.ts`, `cleanup-sweep.ts`)로 넘기라고 알리고 건너뛴다.
+- `worktreePath` 가 `$WT` 이거나 그 아래인 터미널이 하나라도 있으면 이 스킬이 지우지 않는다. 사용자에게 `orch` 의 정리(`orch cleanup worktree`, `orch cleanup sweep`)로 넘기라고 알리고 건너뛴다.
 - `orca` 가 응답하지 않아 목록을 읽지 못해도 건너뛴다. 확인하지 못한 워크트리는 지우지 않는다.
 - 붙은 터미널이 없고 PR 이 머지된 워크트리만 아래로 지운다.
 
