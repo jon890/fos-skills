@@ -34,7 +34,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url'
 import { defaultBoardPath } from '../../../../extensions/work-board/bin/board.ts'
 import { inside, real } from './fs.ts'
-import { git, gitMemoKey, hasGitMarker, mainCheckout } from './git.ts'
+import { git, gitMemoKey, gitMayFind, mainCheckout } from './git.ts'
 
 const DEFAULT_ROOT = '.orch'
 
@@ -105,8 +105,8 @@ const ignoredMemo = new Map<string, 'ignored' | 'no-git'>()
 // 루트를 git 이 무시하게 한다. 더한 줄이 있으면 그 줄, 없으면 null.
 // 같은 프로세스에서 같은 주 checkout 과 루트를 다시 받으면 git 을 띄우지 않고 null 이다. 앞 결과를 쓰는 조건은 둘이다.
 //   무시됨(이미 무시했거나, 같은 줄이 있었거나, 방금 더했다): 주 checkout 이 아직 있다.
-//   저장소 아님(rev-parse --git-dir 실패): 주 checkout 과 조상에 .git 이 없다. git init 으로 .git 이 생기면 다시 묻는다.
-// 그 사이에 누가 무시 줄을 지우면 이 프로세스는 다시 더하지 않는다. 다음 명령이 더한다.
+//   저장소 아님(rev-parse --git-dir 실패): GIT_DIR 이 없고 주 checkout 과 조상에 .git 이 없다. git init 으로 .git 이 생기면 다시 묻는다.
+// 그 사이에 무시 규칙이 바뀌거나(.gitignore 의 pull, checkout) 누가 무시 줄을 지우면 이 프로세스는 다시 더하지 않는다. 다음 명령이 더한다.
 export function ensureIgnored(repo: string): string | null {
   const root = orchDir(repo)
   const top = mainCheckout(repo)
@@ -115,11 +115,11 @@ export function ensureIgnored(repo: string): string | null {
   if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
   const key = gitMemoKey(top, root)
   const memo = ignoredMemo.get(key)
-  if (memo && (memo === 'ignored' ? existsSync(top) : !hasGitMarker(top))) return null
+  if (memo && (memo === 'ignored' ? existsSync(top) : !gitMayFind(top))) return null
   ignoredMemo.delete(key)
   const relPosix = rel.split(sep).join('/')
   if (git(top, ['rev-parse', '--git-dir']).code !== 0) {
-    if (!hasGitMarker(top)) ignoredMemo.set(key, 'no-git')
+    if (!gitMayFind(top)) ignoredMemo.set(key, 'no-git')
     return null
   }
   if (git(top, ['check-ignore', '-q', '--no-index', `${relPosix}/`]).code === 0) {

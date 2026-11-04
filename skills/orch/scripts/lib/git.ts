@@ -10,9 +10,10 @@ export function git(repo: string, args: string[], opts?: RunOptions): RunResult 
   return run(['git', '-C', repo, ...args], opts)
 }
 
-// dir 이나 그 조상에 .git(파일이나 폴더)이 있는지. 없는 폴더도 받는다.
-// git 탐색의 ceiling 과 파일시스템 경계는 보지 않는다. git 보다 넓게 찾아, 아래 기억을 덜 쓸 뿐 틀린 값을 내지 않는다.
-export function hasGitMarker(dir: string): boolean {
+// git 이 dir 에서 저장소를 찾을 수도 있는지. GIT_DIR 이 있거나 dir 이나 그 조상에 .git(파일이나 폴더)이 있으면 true 다.
+// 없는 폴더도 받는다. git 탐색의 ceiling 과 파일시스템 경계는 보지 않는다. git 보다 넓게 잡아, 아래 기억을 덜 쓸 뿐 틀린 값을 내지 않는다.
+export function gitMayFind(dir: string): boolean {
+  if (process.env.GIT_DIR) return true
   let current = resolve(dir)
   for (;;) {
     if (existsSync(join(current, '.git'))) return true
@@ -33,16 +34,16 @@ const mainCheckoutMemo = new Map<string, { main: string; found: boolean }>()
 // repo 의 주 checkout. git 밖이거나 bare 저장소면 받은 폴더(realpath)다.
 // 같은 프로세스에서 같은 폴더를 다시 물으면 git 을 띄우지 않고 앞 답을 쓴다. 앞 답을 쓰는 조건은 둘이다.
 //   git 이 찾은 답: 받은 폴더와 주 checkout 이 둘 다 아직 있다. 워크트리를 지웠거나 주 checkout 을 옮겼으면 다시 묻는다.
-//   받은 폴더를 그대로 돌려준 답: 그 폴더와 조상에 .git 이 없다. 기억할 때도 같은 조건을 본다. 워크트리를 만들거나
+//   받은 폴더를 그대로 돌려준 답: GIT_DIR 이 없고 그 폴더와 조상에 .git 이 없다. 기억할 때도 같은 조건을 본다. 워크트리를 만들거나
 //   git init 으로 .git 이 생기면 다시 묻는다. 조상이 bare 저장소가 되어도 답은 받은 폴더 그대로라 따로 보지 않는다.
 export function mainCheckout(repo: string): string {
   const self = real(repo)
   const key = gitMemoKey(self)
   const memo = mainCheckoutMemo.get(key)
-  if (memo && (memo.found ? existsSync(self) && existsSync(memo.main) : !hasGitMarker(self))) return memo.main
+  if (memo && (memo.found ? existsSync(self) && existsSync(memo.main) : !gitMayFind(self))) return memo.main
   mainCheckoutMemo.delete(key)
   const remember = (main: string, found: boolean): string => {
-    if (found || !hasGitMarker(self)) mainCheckoutMemo.set(key, { main, found })
+    if (found || !gitMayFind(self)) mainCheckoutMemo.set(key, { main, found })
     return main
   }
   const common = git(self, ['rev-parse', '--path-format=absolute', '--git-common-dir'])

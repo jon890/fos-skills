@@ -187,6 +187,15 @@ describe('ensure 와 makeParent', () => {
     const lines = readFileSync(join(plain, '.git/info/exclude'), 'utf8').split('\n')
     assert.equal(lines.filter((line) => line === '/.orch/').length, 1)
   })
+
+  test('같은 프로세스에서 무시됨을 확인한 루트는 다시 묻지 않는다', () => {
+    ensure('queue', repo)
+    const file = join(repo, '.git/info/exclude')
+    // 줄을 지워도 다시 더하지 않으면 git 에 다시 묻지 않은 것이다. 다음 명령이 더한다(lib/paths.ts 의 ensureIgnored 위 주석)
+    writeFileSync(file, exclude().filter((line) => line !== '/.orch/').join('\n'))
+    ensure('state', repo)
+    assert.ok(!exclude().includes('/.orch/'))
+  })
 })
 
 describe('boardPath', () => {
