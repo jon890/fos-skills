@@ -1,0 +1,2 @@
+- feature-docs.md 의 계획 경로 규칙과 인계 표를 소유 문서(task-create, orch feature-loop)를 가리키도록 줄였다
+- 「참고한 원칙」 절과 연속 빈 줄을 지웠다
