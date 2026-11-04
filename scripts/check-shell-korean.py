@@ -42,7 +42,7 @@ macOS 기본 `/bin/bash` 가 3.2 이고 기본 로그인 셸인 zsh 도 죽는�
 
 **주석 줄을 건너뛰는 이유는 자기참조다.** 이 규칙을 설명하는 주석이 위반으로 잡혔다.
 `harness-cleanup` 의 「죽은 검출」 축이 그 경우를 다루고,
-`korean-check/scripts/check-readability.py` 의 docstring 도 같은 경험을 적고 있다.
+`export-only-skills/korean-check/scripts/check-readability.py` 의 docstring 도 같은 경험을 적고 있다.
 
 **줄 끝에 붙은 주석은 잘라내지 않는다.** `echo "안전" # 설명: $n개` 의 위반은 평가되지 않아
 무해하지만, 문자열 안의 `#` 과 주석 시작을 가리려면 따옴표를 추적해야 한다.

@@ -28,4 +28,4 @@
   - 감당할 것: 같은 업무의 PR 둘을 한 큐에 넣으면 앞 PR 의 마무리가 판정할 때 뒤 PR 이 이미 머지돼 둘 다 마지막으로 볼 수 있다. 업무 완료 명령이 두 번 돈다. 완료 명령은 같은 업무에 두 번 불려도 되는 것이어야 한다.
   - 감당할 것: 판정은 머지 뒤 상태로 본다. 아직 지시서도 PR 도 없는 뒤 작업은 모른다. 그때는 `PR~` 를 붙인다.
   - 감당할 것: 머지 큐와 상주 루프가 같은 알림 파일에 잠금 없이 쓴다. 같은 순간에 쓰면 두 줄이 같은 seq 를 받을 수 있다.
-- **적용 범위**: 판정은 `orch/scripts/lib/last-pr.ts`, 마무리 순서와 보드 항목은 `orch/scripts/finish-pr.ts`, 충돌과 묶음은 `orch/scripts/merge_queue.ts` 머리 주석, 코디네이터의 쓰는 법은 [`../../orch/references/cleanup.md`](../../orch/references/cleanup.md) 의 「머지」 가 소유한다.
+- **적용 범위**: 판정은 `orch/scripts/lib/last-pr.ts`, 마무리 순서와 보드 항목은 `orch/scripts/finish-pr.ts`, 충돌과 묶음은 `orch/scripts/merge_queue.ts` 머리 주석, 코디네이터의 쓰는 법은 [`../../orch/references/cleanup.md`](../../skills/orch/references/cleanup.md) 의 「머지」 가 소유한다.

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# 공용 스킬을 고쳐 커밋하면, 사본을 두고 쓰는 저장소에 반영이 필요함을 알린다.
+#
+# 왜 필요한가 (실측):
+#   같은 스킬을 이 저장소와 팀 저장소에 나눠 두고 각각 커밋한 적이 있다.
+#   어느 쪽이 최신인지 알 방법이 없어 낡은 판이 조용히 남았다.
+#
+# 알리기만 하고 고치지 않는다. 다른 저장소의 작업 트리를 말없이 건드리면
+# 그쪽이 dirty 하거나 다른 브랜치일 때 사고가 난다.
+#
+# 설치: scripts/install-hooks.sh
+# 팀 저장소 위치는 TEAM_SKILLS_DIR 로 바꾼다 (export-to-team.sh 가 읽는다).
+set -u
+
+SYNC="$(git rev-parse --show-toplevel)/scripts/export-to-team.sh"
+
+# 내보내기 도구가 없으면 조용히 지나간다.
+[ -x "$SYNC" ] || exit 0
+
+# 이번 커밋이 건드린 최상위 디렉터리 가운데 팀에 전파하는 것이 있는지 본다.
+changed=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | awk -F/ '{print ($1 == "skills" || $1 == "export-only-skills") ? $2 : $1}'  | sort -u)
+[ -n "$changed" ] || exit 0
+
+shared=$(sed -n 's/^SHARED_SKILLS=(\(.*\))$/\1/p' "$SYNC" | tr ' ' '\n')
+[ -n "$shared" ] || exit 0
+
+touched=()
+for s in $shared; do
+  printf '%s\n' "$changed" | grep -qx "$s" && touched+=("$s")
+done
+[ ${#touched[@]} -gt 0 ] || exit 0
+
+# 같으면 조용히 지나간다. 커밋마다 알림이 뜨면 읽지 않게 된다.
+# 방금 만든 커밋을 원본으로 비교한다. 작업 트리를 보면 커밋하지 않은 변경 때문에 어긋났다고 알린다.
+if out=$("$SYNC" --source-ref HEAD 2>&1); then
+  exit 0
+fi
+
+# 어긋남이 많으면 이번 커밋의 것이 가려진다. 이번에 건드린 스킬의 파일만 자세히 내고 나머지는 개수만 낸다.
+# 어긋남 줄의 형식은 「  다름|없음|남음   <경로>」 이고, 경로에 /<스킬>/ 이 들어 있으면 그 스킬의 것이다.
+drift_re='^  (다름|없음|남음) '
+mine_re="^  (다름|없음|남음) +[^ ]*/($(IFS='|'; echo "${touched[*]}"))/"
+mine=$(printf '%s\n' "$out" | grep -E "$mine_re")
+others=$(printf '%s\n' "$out" | grep -E "$drift_re" | grep -vcE "$mine_re")
+
+echo
+if [ -n "$mine" ]; then
+  echo "── 이번 커밋이 건드린 공용 스킬이 팀 저장소와 어긋난다."
+  printf '%s\n' "$out" | sed -n '/^원본:/p'
+  printf '%s\n' "$mine"
+  echo "반영: scripts/export-to-team.sh --source-ref HEAD --apply"
+else
+  echo "── 이번 커밋이 건드린 공용 스킬은 팀 저장소와 같다."
+fi
+[ "$others" -gt 0 ] && echo "다른 스킬의 어긋난 파일 ${others}개 (이번 커밋과 무관). 전체는 scripts/export-to-team.sh 로 본다."
+echo "──"
+exit 0

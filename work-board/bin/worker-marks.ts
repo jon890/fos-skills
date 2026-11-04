@@ -2,7 +2,7 @@
 // mod 는 TypeScript 와 node:fs 를 import 하지 못해, 이 명령을 $.process.run 으로 불러 JSON 출력만 읽는다.
 //
 // work-board 가 orch 를 import 하는 곳은 이 파일과 bin/merge-queue.ts(상태 폴더 경로와 설정 읽기)다. 멈춤 판정을 orch 상주 루프와 한 벌로 두려는 것이다
-// (docs/features/board-decision-box/spec.md 의 D11). 판정은 orch/scripts/lib/movement.ts 머리 주석이 소유한다.
+// (docs/features/board-decision-box/spec.md 의 D11). 판정은 skills/orch/scripts/lib/movement.ts 머리 주석이 소유한다.
 // board.ts 는 orch 를 import 하지 않는다. orch 의 lib/paths.ts 가 board.ts 를 import 해 고리가 생긴다.
 //
 // 사용법:
@@ -29,12 +29,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { ConfigError } from '../../orch/scripts/lib/config.ts'
-import { real } from '../../orch/scripts/lib/fs.ts'
-import { judgeWorker, lastCommitMs, latestMtime, movementSettings, openRows, readRecords, worktreeOf } from '../../orch/scripts/lib/movement.ts'
-import type { MovementSettings, ScreenMark } from '../../orch/scripts/lib/movement.ts'
-import { pathOf } from '../../orch/scripts/lib/paths.ts'
-import { workerRows } from '../../orch/scripts/lib/workers.ts'
+import { ConfigError } from '../../skills/orch/scripts/lib/config.ts'
+import { real } from '../../skills/orch/scripts/lib/fs.ts'
+import { judgeWorker, lastCommitMs, latestMtime, movementSettings, openRows, readRecords, worktreeOf } from '../../skills/orch/scripts/lib/movement.ts'
+import type { MovementSettings, ScreenMark } from '../../skills/orch/scripts/lib/movement.ts'
+import { pathOf } from '../../skills/orch/scripts/lib/paths.ts'
+import { workerRows } from '../../skills/orch/scripts/lib/workers.ts'
 
 type Json = Record<string, unknown>
 

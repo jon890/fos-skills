@@ -15,7 +15,7 @@ import { STEP, hideEventTag } from './event-tags.js'
 //   2. 실제 상태: orca orchestration(이 세션이 묶인 run 의 worker 와 답을 기다리는 질문)과 gh(열린 PR, CI).
 //      결정 필요 상자에는 worker 의 question 과 worker 가 직접 보낸 escalation 만 넣는다. Orca 자동 알림(autoAlertKind)은 빼고,
 //      그 worker 의 줄에 상태로 붙인다(docs/features/board-decision-box/spec.md).
-//   3. 업무 알림: 같은 플러그인의 inbox/scripts/inbox.ts board 출력. 받기와 저장소 필터는 inbox 가 하고 창은 그리기만 한다.
+//   3. 업무 알림: 같은 플러그인의 skills/inbox/scripts/inbox.ts board 출력. 받기와 저장소 필터는 inbox 가 하고 창은 그리기만 한다.
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
 //   3-1. 머지 줄: 같은 플러그인의 bin/merge-queue.ts 출력. orch 설정, 상태 파일과 루프 로그에서 PR 마다 머지 가능 여부와 대기 이유를 읽고
 //        gh 는 부르지 않는다. 열린 PR 상자의 PR 아래 한 줄로 붙인다. 큐를 쓰지 않는 저장소에서는 붙이지 않는다.
@@ -246,7 +246,7 @@ export function autoAlertKind(m) {
 
 const notAutoAlert = (m) => !autoAlertKind(m)
 
-// 턴만 끝낸 멈춤 보고인가. orch/scripts/lib/stop-reports.ts 의 stopReason 과 같은 규칙이다(mod 는 그 파일을 import 하지 못한다).
+// 턴만 끝낸 멈춤 보고인가. skills/orch/scripts/lib/stop-reports.ts 의 stopReason 과 같은 규칙이다(mod 는 그 파일을 import 하지 못한다).
 // payload 의 stopReason 이 있으면 그 값, 없으면 제목으로 정한 값이 finished 면 참이다
 const STOP_SUBJECTS = {
   'Worker stopped without reporting': 'finished',
@@ -274,7 +274,7 @@ export function alertNoteText(m) {
   return ''
 }
 
-// 계정 한도 문구. orch/scripts/lib/sessions.ts 의 LIMIT_LINE 과 같다
+// 계정 한도 문구. skills/orch/scripts/lib/sessions.ts 의 LIMIT_LINE 과 같다
 const LIMIT_LINE = /usage limit reached|you['’]ve hit your\b.*\blimit|out of credits/iu
 
 // 오류 알림의 요약. 분류어(계정 한도, 모델 용량 부족)나, 분류하지 못하면 오류 첫 줄이다(스펙 D14)
@@ -630,7 +630,7 @@ export function mergeVerdict(pr) {
     : { label: pr.merge || '상태 모름', color: 'yellow', rank: 1 }
 }
 
-// CI 를 통과했는가. orch 루프의 ciState(orch/scripts/lib/gh.ts)처럼 선택 검사를 포함해 실패가 하나라도 있으면 통과가 아니다
+// CI 를 통과했는가. orch 루프의 ciState(skills/orch/scripts/lib/gh.ts)처럼 선택 검사를 포함해 실패가 하나라도 있으면 통과가 아니다
 export function ciPassed(pr) {
   return pr.pass + pr.fail + pr.pending > 0 && pr.fail === 0 && pr.pending === 0
 }
@@ -676,7 +676,7 @@ export function parseQueueView(stdout) {
   return { enabled: value.enabled, running: value.running, prs: value.prs, error: value.error || null }
 }
 
-// 루프의 AUTO-MERGE-WAIT 이유(orch/scripts/orch-loop.ts 의 judgeTarget, lib/auto-merge.ts 의 judgeReview)를 사람이 읽는 말로.
+// 루프의 AUTO-MERGE-WAIT 이유(skills/orch/scripts/orch-loop.ts 의 judgeTarget, lib/auto-merge.ts 의 judgeReview)를 사람이 읽는 말로.
 // 모르는 이유는 그대로 둔다. 루프가 이유를 더해도 줄이 빠지지 않게 하려는 것이다
 const WAIT_TEXTS = [
   [/^draft$/, () => 'Draft'],
@@ -1236,7 +1236,7 @@ async function loadInbox($) {
   let stale = false
   try {
     const root = (await boardRoot($)) || (await $.session.cwd())
-    const script = $.plugin.root + '/inbox/scripts/inbox.ts'
+    const script = $.plugin.root + '/skills/inbox/scripts/inbox.ts'
     const value = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json'], INBOX_TIMEOUT_MS))
     stale = generation !== inboxGeneration
     if (!stale) {
@@ -1260,7 +1260,7 @@ export async function dismissInbox($, id) {
   if (dismissBusy) return $.ui.invalidate('ui.render')
   dismissBusy = true
   try {
-    await run($, dismissArgv($.plugin.root + '/inbox/scripts/inbox.ts', id))
+    await run($, dismissArgv($.plugin.root + '/skills/inbox/scripts/inbox.ts', id))
     inboxGeneration++
     inbox = withoutItems(inbox, [id])
     dismissUndo.push(id)
@@ -1279,7 +1279,7 @@ export async function undoDismiss($) {
   if (dismissBusy || !id) return
   dismissBusy = true
   try {
-    await run($, dismissArgv($.plugin.root + '/inbox/scripts/inbox.ts', id, true))
+    await run($, dismissArgv($.plugin.root + '/skills/inbox/scripts/inbox.ts', id, true))
     inboxGeneration++
     dismissUndo.pop()
     $.ui.toast('넘김을 되돌렸어요')
@@ -1419,7 +1419,7 @@ export const DECIDE_PROMPT = [
   '1. 보드의 결정 필요(decide) 항목과 그 줄, 답하지 않은 worker 질문, 이번 대화에서 미룬 결정을 모아 줘.',
   '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
   '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
-  '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 orch/scripts/send-to-worker.ts 로 전해 줘.',
+  '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 skills/orch/scripts/send-to-worker.ts 로 전해 줘.',
   '5. worker 가 직접 올린 막힘은 먼저 확인해서 네가 처리할 수 있으면 처리하고, 사람이 정할 것만 결정으로 물어봐 줘.',
   '6. Orca 자동 알림(「Worker stopped without reporting」 같은 멈춤, 「Agent hit an error」 같은 오류)은 나에게 묻지 말고 처리한 결과만 한 줄로 알려 줘.',
   '7. 자동 알림 가운데 계정 한도에 걸렸거나 터미널이 종료된 worker 는 묻지 말고 같은 워크트리에서 다시 띄우고, 멈춘 worker 는 상태를 확인해 필요하면 깨워 줘.',

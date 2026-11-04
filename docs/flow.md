@@ -138,10 +138,10 @@ flowchart TD
 
 이 절은 orch 개편 뒤의 흐름이다([ADR-009](adr/009-orch-event-handlers.md)).
 상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
-이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 핸들러의 입력과 종료 코드는 [data-schema.md](data-schema.md) 의 「orch 이벤트 핸들러 입력」, 코어와 핸들러의 경계는 [code-architecture.md](code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
 
-orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
+orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.skills/orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"'Noto Sans KR', sans-serif","fontSize":"14px","lineColor":"#7A8594","primaryTextColor":"#1D1F23","edgeLabelBackground":"#FFFFFF","clusterBkg":"#FAFAFA"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":60,"padding":14}}}%%
@@ -262,7 +262,7 @@ flowchart TD
 ### 머지 뒤 마지막 PR 판정
 
 머지 큐는 PR 마다 마무리를 함께 걸고, 마무리가 배포를 확인한 뒤 업무의 마지막 PR 인지 정한다.
-판정 조건은 `orch/scripts/lib/last-pr.ts` 머리 주석이, 표시와 쓰는 때는 `orch/references/cleanup.md` 의 「머지」 가 소유한다.
+판정 조건은 `skills/orch/scripts/lib/last-pr.ts` 머리 주석이, 표시와 쓰는 때는 `skills/orch/references/cleanup.md` 의 「머지」 가 소유한다.
 
 ```mermaid
 flowchart TD
@@ -287,7 +287,7 @@ flowchart TD
 ### 상주 루프의 자동 머지
 
 `queue.auto_merge` 가 true 이면 틱이 CI 감시 뒤, 충돌 처리 앞에 한 번 돈다. 대상 조건, 순서, 알림 text 는 `orch-loop.ts` 머리 주석의 「자동 머지」 가,
-판정 함수는 `orch/scripts/lib/auto-merge.ts` 가 소유한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
+판정 함수는 `skills/orch/scripts/lib/auto-merge.ts` 가 소유한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
 
 ```mermaid
 flowchart TD
@@ -319,7 +319,7 @@ flowchart TD
 | 다른 Run 의 낮은 번호 PR 이 이번 큐에서 빠진다 | 그 PR 을 기다리는 같은 모듈의 높은 번호 PR 도 이번 큐에서 뺀다. 남는 집합이 더 바뀌지 않을 때까지 다시 본다 |
 | 보드 파일을 읽지 못했다 | 보류 표시를 볼 수 없어 그 틱에는 걸지 않는다 |
 | 리뷰 뒤에 커밋이 더해졌거나 리뷰 봇이 결과 없이 실패했다 | `queue.auto_review.require` 를 적지 않은 저장소(`verdict-on-head`)는 옛 HEAD 의 `pass` 로 걸지 않는다. 더한 커밋이 기준 브랜치를 합친 merge 커밋뿐이면 앞 리뷰를 인정한다. 지금 HEAD 의 판정이 없으면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 코디네이터가 받은 독립 리뷰 결과를 이 HEAD 에 `pass` 문구로 남기면 다음 틱이 건다 |
-| 「머지 가능」 판정 뒤 P3 이하만 반영한 커밋을 올렸다 | `last-verdict-pass` 를 조합에 넣은 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 건다. `rereview-after-block` 을 함께 넣으면 `block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋의 `pass` 가 나올 때까지 기다린다. 조합 예시는 [orch 오버레이](../orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
+| 「머지 가능」 판정 뒤 P3 이하만 반영한 커밋을 올렸다 | `last-verdict-pass` 를 조합에 넣은 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 건다. `rereview-after-block` 을 함께 넣으면 `block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋의 `pass` 가 나올 때까지 기다린다. 조합 예시는 [orch 오버레이](../skills/orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
 | 루프가 건 큐가 도는 동안 루프가 멈췄다 | 큐는 분리 실행이라 이어 돈다. 다시 뜬 루프는 기록의 pid 로 끝을 보고 `AUTO-MERGE-END` 를 쓴다 |
 | 대상 PR 이 여러 Run 의 것이다 | 큐 첫 PR 의 Run 것만 건다. 나머지는 그 큐가 끝난 뒤 다음 틱에 건다 |
 | PR 의 리뷰, 스레드, 파일을 읽지 못했다 | 그 PR 만 넘어가고 다른 PR 은 건다. 열린 PR 의 마이그레이션 목록이나 마이그레이션 예약 파일을 읽지 못하면 마이그레이션이 든 PR 만 뺀다. 이유는 `WATCH-ERROR auto-merge` 로 알린다 |

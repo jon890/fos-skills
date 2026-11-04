@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hooks/commit-msg 가 금지어가 든 커밋 메시지를 커밋 전에 막는지 검사한다.
+"""githooks/commit-msg 가 금지어가 든 커밋 메시지를 커밋 전에 막는지 검사한다.
 
 임시 저장소에 훅, install-hooks.sh, korean-check 를 복사해 실제 `git commit` 으로 확인한다.
 install-hooks.sh 가 commit-msg 도 걸어야 이 테스트가 통과한다.
@@ -22,13 +22,13 @@ class CommitMsgHookTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.repo = Path(tmp.name).resolve()
-        (self.repo / "hooks").mkdir()
-        shutil.copy2(ROOT / "hooks" / "commit-msg", self.repo / "hooks" / "commit-msg")
+        (self.repo / "githooks").mkdir()
+        shutil.copy2(ROOT / "githooks" / "commit-msg", self.repo / "githooks" / "commit-msg")
         (self.repo / "scripts").mkdir()
         shutil.copy2(ROOT / "scripts" / "install-hooks.sh", self.repo / "scripts" / "install-hooks.sh")
-        shutil.copytree(ROOT / "korean-check" / "scripts", self.repo / "korean-check" / "scripts",
+        shutil.copytree(ROOT / "export-only-skills" / "korean-check" / "scripts", self.repo / "export-only-skills" / "korean-check" / "scripts",
                         ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copytree(ROOT / "korean-check" / "references", self.repo / "korean-check" / "references")
+        shutil.copytree(ROOT / "export-only-skills" / "korean-check" / "references", self.repo / "export-only-skills" / "korean-check" / "references")
         self.git("init", "-q")
         installed = subprocess.run(["bash", "scripts/install-hooks.sh"], cwd=self.repo, env=ENV, capture_output=True, text=True)
         self.assertEqual(0, installed.returncode, installed.stderr)
@@ -69,7 +69,7 @@ class CommitMsgHookTest(unittest.TestCase):
         self.assertNotEqual(0, done.returncode)
 
     def test_missing_checker_does_not_block(self):
-        shutil.rmtree(self.repo / "korean-check")
+        shutil.rmtree(self.repo / "export-only-skills" / "korean-check")
         done = self.commit("feat: 매트릭스를 고친다\n")
         self.assertEqual(0, done.returncode, done.stderr)
 

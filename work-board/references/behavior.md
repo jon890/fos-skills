@@ -36,7 +36,7 @@
   - 숫자 단축키를 알림과 함께 쓰므로 `c` 와 `x` 는 함께 켜지지 않는다. 하나를 켜면 다른 하나가 꺼진다. 확인 모드 동안 알림 상자의 번호는 같은 자리에 흐리게 남지만 눌리지 않는다
 - 훅이 직접 보내지 않는 이유: 훅의 `prompt.submit` 과 `command.run` 의 `text` 는 코디네이터 모델에 닿지 않는다. 그래서 입력란을 채우고 사람이 Enter 로 보낸다. `/board` 외의 명령은 등록하지 않는다
 - 상태 줄: 프롬프트 아래에 개수 요약이 5초마다 갱신된다. 글이 바뀔 때만 보낸다. SDK(`stream-json`)로 실린 세션은 상태 줄마다 `ui_status` 메시지를 host 에 보내기 때문이다. 보드 파일, 실제 상태, 새 업무 알림이 모두 없으면 나오지 않는다. 새 업무 알림이 있으면 맨 앞에 「알림 n」 이 붙는다
-- 업무 알림: 결정 필요 아래의 「알림」 상자. 1분마다 같은 플러그인의 `inbox/scripts/inbox.ts board --repo <주 checkout> --json` 을 불러 그린다. 받기, 저장소 필터, 답함 판정은 [`inbox`](../../inbox/README.md) 스킬이 하고 창은 그리기만 한다. 알림함 설정이 없거나 그 저장소의 필터가 `"enabled": false` 면 상자도 상태 줄의 「알림 n」 도 `i` 도 없다
+- 업무 알림: 결정 필요 아래의 「알림」 상자. 1분마다 같은 플러그인의 `skills/inbox/scripts/inbox.ts board --repo <주 checkout> --json` 을 불러 그린다. 받기, 저장소 필터, 답함 판정은 [`inbox`](../../skills/inbox/README.md) 스킬이 하고 창은 그리기만 한다. 알림함 설정이 없거나 그 저장소의 필터가 `"enabled": false` 면 상자도 상태 줄의 「알림 n」 도 `i` 도 없다
   - 머리 「알림 n · HH:MM 확인」 의 n 은 새 항목 수다. 받지 못한 출처는 「두레이 메신저 확인 불가: …」 처럼 빨간 줄로, 이 세션에서 알림함이 켜진 것을 본 뒤 명령 자체가 실패하면 「알림함 확인 불가: …」 로 보이고 직전 항목은 남는다. 켜진 적이 없으면 상자를 그리지 않는다
   - 항목 줄: 새 항목 「●」, 제목, 머리말 링크(「[두레이]」, 「[메신저]」), 보낸 사람 · 종류(멘션·담당·참조) · 시각. 멘션은 본문 앞부분을 흐리게 한 줄 붙인다
   - 답한 항목(`state: answered`)은 목록에서 빼고 상자 끝에 「답함 n」 수만 흐리게 보인다
@@ -63,11 +63,11 @@
 - 진행률: 하위 항목(details)의 단계 줄을 세고, details 에 단계가 없으면 다음 할 일(next)의 줄을 센다. `progress` 필드(「7/10」)가 있으면 그 값이 우선한다. 단계로 나타낼 수 없을 때만 쓴다
 - 진행률 표시: 창 맨 위에 진행 중 항목들의 끝낸 단계 합 / 전체 단계 합을 전체 막대로 그린다. 완료가 아닌 항목마다 제목 바로 아래 줄에 막대를 그리고(제목 길이와 상관없이 같은 자리), 진행률이 없는 옛 항목은 「진행률 없음」 으로 보인다. `board.ts list` 도 항목마다 「n/m (p%)」 를 붙인다
 - 진행률 필수: `board.ts set` 은 doing 항목에 단계 줄이나 `--progress N/M` 이 없으면 거절하고 보드를 고치지 않는다. `--next` 를 여러 번 주면 줄로 이어 단계 줄을 적을 수 있다
-- 마일스톤 단계: orch 가 띄울 때 만드는 항목은 지시서의 할 일이 아니라 사용자 마일스톤 단계(기본 「PR」, 「머지」)를 갖는다. `stages` 필드(「pr=1,merge=2」)가 어느 단계를 어느 사건이 끝내는지 기억하고, `board.ts set --stages` 로 쓴다. 사건은 `pr`, `merge`, `deploy`, `release` 다. 단계를 끝내는 시점은 [갱신 담당 표](../../orch/references/board.md#갱신-담당)가 소유한다
+- 마일스톤 단계: orch 가 띄울 때 만드는 항목은 지시서의 할 일이 아니라 사용자 마일스톤 단계(기본 「PR」, 「머지」)를 갖는다. `stages` 필드(「pr=1,merge=2」)가 어느 단계를 어느 사건이 끝내는지 기억하고, `board.ts set --stages` 로 쓴다. 사건은 `pr`, `merge`, `deploy`, `release` 다. 단계를 끝내는 시점은 [갱신 담당 표](../../skills/orch/references/board.md#갱신-담당)가 소유한다
 - 직접 작성한 사건 단계: `3. develop 머지 (#665 merge)`, `4. dev 배포 (#665 deploy)`, `5. real 반영 (#665 release)` 처럼 줄 끝에 `(#PR번호 사건)` 을 붙인다. 사건은 `pr`, `merge`, `deploy`, `release` 다. 꼬리표가 있는 항목은 goal 도 사건별 단계만 끝내며, 꼬리표 없는 줄과 항목 상태는 자동으로 바꾸지 않는다. 진행률을 세는 쪽의 단계가 대상이다. 창에서는 꼬리표를 숨기고 파일과 `board.ts steps` 출력에는 보존한다
 - 단계 끝내기: `board.ts step <id> <n>` 이 진행률을 세는 줄에서 n 번 단계를 끝낸다. `done` 값만 `true` 로 바꾼다(`--undo` 는 `false`). `set --progress auto` 는 `progress` 값을 지워 단계 수로 세게 한다. `board.ts steps <id>` 는 진행률을 세는 단계 줄을 JSON 으로 낸다. orch 의 `board-sync.ts` 가 이것으로 단계를 판정한다. 단계 밖의 줄(참고 줄, 세지 않는 쪽의 줄)은 JSON 에 넣지 않고 stderr 에 「단계 밖의 줄(mark 번호):」 머리와 함께 낸다
 - 줄 끝내기: `board.ts mark <id> <n>` 은 번호 없는 줄도 끝낸다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고, 빈 줄(공백뿐 포함)은 건너뛴다. `done` 값만 바꾼다(`--undo` 는 되돌린다). `board.ts list` 는 항목 줄 아래에 모든 줄을 `    <n> ✓ <text>`(끝냄)나 `    <n>   <text>`(안 끝냄)로 보이고, n 은 `mark` 의 번호와 같다. `step` 의 단계 번호와 `mark` 의 줄 번호는 다르다
-- 갱신: orch 의 띄우기와 루프가 자동 반영한다. 시점과 담당은 [갱신 담당 표](../../orch/references/board.md#갱신-담당)를 따른다. 수동 보정은 `node --disable-warning=ExperimentalWarning "$BOARD_BIN" set <id> doing --title "..." --next "..."`. `$BOARD_BIN` 은 `work-board/bin/board.ts` 다
+- 갱신: orch 의 띄우기와 루프가 자동 반영한다. 시점과 담당은 [갱신 담당 표](../../skills/orch/references/board.md#갱신-담당)를 따른다. 수동 보정은 `node --disable-warning=ExperimentalWarning "$BOARD_BIN" set <id> doing --title "..." --next "..."`. `$BOARD_BIN` 은 `work-board/bin/board.ts` 다
 
 ## 저장 형식
 

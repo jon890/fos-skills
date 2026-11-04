@@ -1,10 +1,10 @@
 # 저장 모델
 
 이 저장소는 데이터베이스를 쓰지 않는다. 이 문서는 orch 가 저장소와 주고받는 파일 계약을 소유한다.
-지금 쓰는 `.orch/` 폴더 구조와 설정 키는 [`orch/references/overlay.md`](../orch/references/overlay.md) 가 소유하고, 이 문서는 개편으로 바뀌는 부분만 적는다.
+지금 쓰는 `.orch/` 폴더 구조와 설정 키는 [`skills/orch/references/overlay.md`](../skills/orch/references/overlay.md) 가 소유하고, 이 문서는 개편으로 바뀌는 부분만 적는다.
 아래는 개편 뒤의 계약이다([ADR-009](adr/009-orch-event-handlers.md), [ADR-010](adr/010-orch-typescript.md)).
 상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
-이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 
 ## orch 이벤트 핸들러 입력
 
@@ -35,7 +35,7 @@
 
 ### 공통 필드와 이벤트별 필드
 
-입력 필드의 표는 `orch/scripts/lib/events.ts` 머리 주석이 소유한다. 「공통 필드」 와 「이벤트별 필드」 가 그것이다.
+입력 필드의 표는 `skills/orch/scripts/lib/events.ts` 머리 주석이 소유한다. 「공통 필드」 와 「이벤트별 필드」 가 그것이다.
 
 5.2.0 전 설정의 환경 변수와 입력 필드 대응이다. `migrate-orch-dir.ts --hooks`가 만드는 핸들러는 이 대응대로 이전 설정의 명령에 환경 변수를 채워 부른다.
 
@@ -99,7 +99,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `heavy` | `wait_idle` | 정규식 목록 | 빈 목록 | 자리를 잡기 전에, 명령줄이 이 정규식에 맞는 프로세스가 없을 때까지 기다린다. 이미지 빌드처럼 대기열 밖에서 도는 무거운 프로세스가 대상이다 |
 | `review` | `prepare` | bash 명령 문자열. 문자열이 아니면 사용법 오류다 | 없음(준비하지 않는다) | `launch-worker` 가 지시서에 `리뷰 PR: #<N>` 줄이 있는 리뷰 worker 의 워크트리를 PR head 에 둔 뒤 그 워크트리에서 한 번 돌리는 생성물 준비 명령. 실패해도 worker 는 뜬다. 차례와 환경 변수는 `launch-worker.ts` 머리 주석의 2-1 이 소유한다 |
 | `queue` | `auto_merge` | bool | false | 상주 루프가 머지할 수 있는 PR 을 스스로 `merge-with-finish.ts` 에 건다. 대상과 순서는 `orch-loop.ts` 머리 주석의 「자동 머지」 가, 근거는 [ADR-016](adr/016-orch-auto-merge.md) 가 소유한다. `pipeline.enabled` 와 무관하다 |
-| `queue` | `auto_review` | `{"pass": 정규식, "block": 정규식, "require": [조건 이름]}`. `pass`, `block` 은 비지 않은 문자열이고 `require` 는 없거나 비지 않은 문자열의 비지 않은 목록이다 | 없음(리뷰 판정을 보지 않는다). `require` 가 없으면 `["verdict-on-head"]` | 자동 리뷰의 판정 문구와 판정 조건의 조합. `pass` 나 `block` 에 맞는 리뷰나 댓글이 「판정」 이고 둘 다 맞으면 `block` 이다. Python 정규식이고 본문 어디든 맞으면 된다. `require` 의 조건을 모두 만족해야 자동 머지 대상이다. 조건은 `verdict-on-head`(지금 HEAD 범위의 마지막 판정이 `pass`), `verdict-seen`(PR 에 판정이 하나 이상), `last-verdict-pass`(PR 전체의 마지막 판정이 `pass`. HEAD 가 달라도 된다), `rereview-after-block`(마지막 `block` 뒤에 같은 커밋이나 그 뒤 커밋의 `pass` 가 있다. `block` 이 없으면 통과)이다. 조건의 정확한 뜻은 `lib/auto-merge.ts` 머리 주석의 「judgeReview」, HEAD 범위는 「reviewScope」 가 소유한다. 미해결 스레드 0 은 조합에 넣지 않고 늘 본다. 모르는 조건 이름은 사용법 오류가 아니다. 상주 루프는 PR 을 걸지 않고 이유를 로그에 남기며, `orch-doctor` 가 `INVALID-CONFIG` 로 알린다. 판정 문구가 든 본문이 없어 멈추면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 조합 예시는 `orch/references/overlay.md` 의 「자동 머지 리뷰 조건」 에 있다 |
+| `queue` | `auto_review` | `{"pass": 정규식, "block": 정규식, "require": [조건 이름]}`. `pass`, `block` 은 비지 않은 문자열이고 `require` 는 없거나 비지 않은 문자열의 비지 않은 목록이다 | 없음(리뷰 판정을 보지 않는다). `require` 가 없으면 `["verdict-on-head"]` | 자동 리뷰의 판정 문구와 판정 조건의 조합. `pass` 나 `block` 에 맞는 리뷰나 댓글이 「판정」 이고 둘 다 맞으면 `block` 이다. Python 정규식이고 본문 어디든 맞으면 된다. `require` 의 조건을 모두 만족해야 자동 머지 대상이다. 조건은 `verdict-on-head`(지금 HEAD 범위의 마지막 판정이 `pass`), `verdict-seen`(PR 에 판정이 하나 이상), `last-verdict-pass`(PR 전체의 마지막 판정이 `pass`. HEAD 가 달라도 된다), `rereview-after-block`(마지막 `block` 뒤에 같은 커밋이나 그 뒤 커밋의 `pass` 가 있다. `block` 이 없으면 통과)이다. 조건의 정확한 뜻은 `lib/auto-merge.ts` 머리 주석의 「judgeReview」, HEAD 범위는 「reviewScope」 가 소유한다. 미해결 스레드 0 은 조합에 넣지 않고 늘 본다. 모르는 조건 이름은 사용법 오류가 아니다. 상주 루프는 PR 을 걸지 않고 이유를 로그에 남기며, `orch-doctor` 가 `INVALID-CONFIG` 로 알린다. 판정 문구가 든 본문이 없어 멈추면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 조합 예시는 `skills/orch/references/overlay.md` 의 「자동 머지 리뷰 조건」 에 있다 |
 | `migrations` | `dirs` | 모듈 이름에서 저장소 루트 기준 폴더로. 폴더는 비지 않은 문자열이다 | 없음(마이그레이션을 보지 않는다) | `reserve-migration.ts` 가 그 모듈의 SQL 예약 경로를 만드는 폴더다. 자동 머지는 이 폴더도 감시한다. Flyway 버전 마이그레이션(`V<버전>__<설명>`)의 버전은 `.` 과 `_` 로 나눈 숫자 목록으로 비교한다 |
 | `migrations` | `watch` | 모듈 이름에서 저장소 루트 기준 추가 감시 폴더의 문자열 목록으로. 목록의 폴더는 비지 않은 문자열이다 | 빈 객체 | `dirs`에 자동으로 더해 자동 머지의 번호 충돌과 순서를 판정할 감시 전용 폴더다. 예를 들어 `src/main/java/db/migration`을 같은 모듈에 넣을 수 있다. `reserve-migration.ts --kind java` 는 이 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 경로를 예약한다. `watch`에만 있는 모듈은 `--kind java` 로만 번호를 받는다 |
 | `migrations` | `before` | 모듈 이름에서 셸 명령으로. `*` 는 나머지 모듈의 명령이고 `{module}` 을 모듈 이름으로 바꾼다 | 없음(머지 전 명령을 붙이지 않는다) | 마이그레이션이 든 PR 을 자동 머지할 때 붙일 머지 전 명령(DB 백업). 모듈이 여럿이면 ` && ` 로 잇는다. 이 키가 있는데 규칙이 없는 모듈의 PR 은 걸지 않는다. 명령은 `merge_queue.ts` 의 `PR:명령` 처럼 돈다 |
@@ -117,7 +117,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
-| `hooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
+| `githooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
 | `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
 | `state/hooks/<이벤트>.lock` | 핸들러 잠금 | 실행이 끝나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다 |
 | `state/loop.json` | 상주 루프의 상태. `pid`, `run`(주 Run id 또는 null), `repo`, `tick_sec`, `started_at`, `alive_at`(생존 타이머가 쓴 마지막 시각), `runs`(마지막 틱이 본 등록된 Run id 목록. 앞이 주 Run 이다. 이 키가 없으면 Run 등록을 모르는 옛 루프다), `bound_run`(루프 프로세스가 묶인 Run id. Orca 는 호출자를 그 프로세스가 나온 터미널로 정한다. 묶이지 않았으면 null 이고, 시작할 때 `run-current` 를 읽지 못했으면 키가 없다. `--start` 는 이 값이 합류하려는 Run 과 다르거나 키가 없으면 합류하지 않는다), `last_tick`(마지막으로 끝난 틱의 시각 또는 null), `ticks`, `errors`(출처마다 마지막 오류 이유 또는 null. 키는 `<출처>@<Run>` 이고, 저장소 공유 일의 출처(`prs`, `board`, `ci`, `auto-merge`, `conflicts`, `tick`)는 Run 자리에 주 Run 을 둔다. Run 이 없는 루프는 출처 이름 그대로다), `ci`(PR 번호에서 `{ head, state }`. `head` 는 판정한 HEAD SHA, `state` 는 `passed`, `failed`, `pending`), `stalls`(dispatch id 에서 `{ run, terminal, state, hash, errors, since, ticks, fired }`. `state` 는 `error` 나 `idle`, `hash` 는 마지막 메시지 묶음과 화면의 오류 줄 수로 만든 해시, `errors` 는 그 멈춤에서 본 가장 많은 오류 줄 수, `since` 는 그 상태를 처음 본 시각(같은 상태에서 hash 만 바뀌면 그대로다), `ticks` 는 같은 상태와 같은 hash 를 본 틱 수, `fired` 는 `worker-stalled` 를 냈는지. 오류 줄 수가 `errors` 보다 늘 때만 다시 false 가 된다). 시각은 ISO 8601 UTC 다 | 루프의 부모 프로세스만 옆 파일에 쓴 뒤 rename 으로 덮어쓴다. 같은 실패를 두 번 알리지 않는 데 쓴다. `ci` 는 같은 HEAD 의 같은 상태를, `stalls` 는 같은 멈춤을 두 번 알리지 않는 데 쓴다 |
@@ -140,11 +140,11 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 
 ## 머신 폴더에 두는 파일
 
-저장소가 아니라 이 머신의 orch 상태다. 루트는 `ORCH_MACHINE_DIR`, 없으면 `~/.cache/orch` 다(`orch/scripts/lib/machine.ts`).
+저장소가 아니라 이 머신의 orch 상태다. 루트는 `ORCH_MACHINE_DIR`, 없으면 `~/.cache/orch` 다(`skills/orch/scripts/lib/machine.ts`).
 터미널 handle 과 메시지 id 는 Orca 전체에서 하나라 저장소마다 나누지 않는다. 지워지면 예전 동작으로 돌아갈 뿐인 값만 둔다.
 
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
-| `user-input/<터미널>.json` | 그 터미널의 마지막 사용자 입력 시각 `{"at": <epoch ms>}`. UserPromptSubmit hook(`orch/hooks/record-user-input.ts`)이 쓰고, 상주 루프와 `user-active` 가 대화 중인지 판정한다. orch 가 넣은 자동 입력은 쓰지 않는다 | 쓸 때마다 7일 넘은 파일을 지운다 |
+| `user-input/<터미널>.json` | 그 터미널의 마지막 사용자 입력 시각 `{"at": <epoch ms>}`. UserPromptSubmit hook(`skills/orch/hooks/record-user-input.ts`)이 쓰고, 상주 루프와 `user-active` 가 대화 중인지 판정한다. orch 가 넣은 자동 입력은 쓰지 않는다 | 쓸 때마다 7일 넘은 파일을 지운다 |
 | `questions-dismissed.json` | 닫은 질문 `{<질문 id>: <이유>}`. 이유는 `dispatch_inactive` 나 `answer_conflict` 다. `send-to-worker` 가 reply 를 그 코드로 거절받으면 쓰고, 질문 조회(`lib/questions.ts` 의 `snapshot`)가 미답변에서 뺀다 | 지우지 않는다 |
 | `send-hook-cache.json` | worker 터미널 send hook 이 worker 가 아니라고 정한 에이전트 터미널 `{<handle>: <epoch ms>}` | 쓸 때마다 기한(`ORCH_SEND_HOOK_CACHE_SEC`, 기본 600초)이 지난 항목을 지운다 |

@@ -66,7 +66,9 @@ def bump(version, level):
 
 
 def added_lines(base, head, path, root=ROOT):
-    diff = git("diff", "-U0", base, head, "--", path, root=root)
+    names = git("diff", "--name-status", "--find-renames", base, head, root=root).splitlines()
+    old = next((parts[1] for line in names if (parts := line.split("\t"))[0].startswith("R") and len(parts) == 3 and parts[2] == path), None)
+    diff = git("diff", "--find-renames", "-U0", base, head, "--", *([old, path] if old else [path]), root=root)
     return [line[1:] for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++")]
 
 
@@ -77,7 +79,7 @@ def classify(base, head, changed, root=ROOT):
     for path in changed:
         if not path.endswith("/CHANGELOG.md") or path in OWN_FILES:
             continue
-        skill = path[: -len("/CHANGELOG.md")]
+        skill = Path(path).parent.name
         for line in added_lines(base, head, path, root):
             heading = VERSION_HEADING.match(line)
             if heading:

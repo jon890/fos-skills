@@ -188,7 +188,7 @@ else
       fail "내보내기 전용 원본: $name/SKILL.md 가 캐시에 없다"
     fi
     case "$SKILLS_LINE" in
-      *"$name"*) fail "내보내기 전용 원본: $name 이 스킬로 인식됐다" ;;
+      *"${name##*/}"*) fail "내보내기 전용 원본: $name 이 스킬로 인식됐다" ;;
       *) ok "내보내기 전용 원본: $name 이 스킬 목록에 없다" ;;
     esac
   done
@@ -205,15 +205,15 @@ else
   fi
 
   # 형제 참조
-  if [ -f "$CACHE/content-preview/../korean-check/references/review-axes.md" ]; then
-    ok "형제 참조: content-preview 에서 korean-check/references/review-axes.md 로 닿는다"
+  if [ -f "$CACHE/export-only-skills/content-preview/../korean-check/references/review-axes.md" ]; then
+    ok "형제 참조: content-preview 에서 export-only-skills/korean-check/references/review-axes.md 로 닿는다"
   else
     fail "형제 참조: content-preview/../korean-check/references/review-axes.md 가 없다"
   fi
 
   # 검사기 탐색
-  EXPECT_CHECK="$(cd "$CACHE/korean-check" && pwd -P)"
-  run env KOREAN_CHECK= bash "$CACHE/content-preview/scripts/style-check.sh" --where
+  EXPECT_CHECK="$(cd "$CACHE/export-only-skills/korean-check" && pwd -P)"
+  run env KOREAN_CHECK= bash "$CACHE/export-only-skills/content-preview/scripts/style-check.sh" --where
   if [ "$RC" -eq 0 ] && [ "$(cd "$OUT" 2>/dev/null && pwd -P)" = "$EXPECT_CHECK" ]; then
     ok "검사기 탐색: style-check.sh --where 가 설치된 korean-check 를 가리킨다"
   else
@@ -228,9 +228,9 @@ else
   fi
 
   # 스크립트 실행
-  run python3 "$CACHE/plan/scripts/verify_task.py" --help
+  run python3 "$CACHE/skills/plan/scripts/verify_task.py" --help
   if [ "$RC" -eq 0 ]; then
-    ok "스크립트 실행: plan/scripts/verify_task.py --help 가 종료 코드 0 이다"
+    ok "스크립트 실행: skills/plan/scripts/verify_task.py --help 가 종료 코드 0 이다"
   else
     fail "스크립트 실행: verify_task.py --help 가 종료 코드 $RC 로 끝났다"
     printf '%s\n' "$OUT"

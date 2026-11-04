@@ -38,6 +38,7 @@ class ExportToTeamScriptTest(unittest.TestCase):
 
         (self.repo / "scripts").mkdir(parents=True)
         shutil.copy2(SCRIPT, self.repo / "scripts" / "export-to-team.sh")
+        shutil.copy2(SCRIPT.with_name("skill_paths.py"), self.repo / "scripts" / "skill_paths.py")
         self.skill = shared_names("SHARED_SKILLS")[0]
         dirs = shared_names("SHARED_SKILLS") + [f"tools/{t}" for t in shared_names("SHARED_TOOLS")]
         for d in dirs:
@@ -60,6 +61,22 @@ class ExportToTeamScriptTest(unittest.TestCase):
 
     def edit_working_tree(self):
         (self.repo / self.skill / "NOTE.md").write_text("uncommitted\n", encoding="utf-8")
+
+    def test_nested_sources_rebase_cross_root_links_for_the_team(self):
+        names = shared_names("SHARED_SKILLS")
+        for name in names:
+            prefix = "export-only-skills" if name in ("content-preview", "korean-check") else "skills"
+            (self.repo / prefix).mkdir(exist_ok=True)
+            self.repo.joinpath(name).rename(self.repo / prefix / name)
+        source = self.repo / "skills/spec/NOTE.md"
+        source.write_text("[규칙](../../export-only-skills/korean-check/NOTE.md)\n")
+        self.run_script("--apply")
+        self.assertEqual("[규칙](../korean-check/NOTE.md)\n", (self.team / "skills/spec/NOTE.md").read_text())
+        self.assertEqual(0, self.run_script().returncode)
+        self.git_commit = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "add", "-A")
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "move sources")
+        self.assertEqual(0, self.run_script("--source-ref", "HEAD").returncode)
 
     def test_unknown_argument_exits_2(self):
         result = self.run_script("--nope")

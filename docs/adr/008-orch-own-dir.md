@@ -21,4 +21,4 @@
   - 감당할 것: 쓰던 저장소는 머지 큐와 worker 가 돌지 않을 때 `migrate-orch-dir.ts --apply` 를 한 번 돌려야 한다. 옮기기 전에는 스크립트가 옛 위치의 설정과 지시서를 읽지 않는다.
   - 감당할 것: `.orch/` 는 스크립트가 `.git/info/exclude` 에 더해 git 이 무시한다. 오버레이와 설정을 저장소에 커밋하려면 `git add -f` 로 추적한다.
   - 감당할 것: 저장소 코드나 옮긴 포장 스크립트가 옛 경로를 직접 적은 곳은 옮기는 스크립트가 보이기만 하고 고치지 않는다. 그 저장소가 고친다.
-- **적용 범위**: 폴더 구조와 옮기는 방법은 [`orch/references/overlay.md`](../../orch/references/overlay.md) 가 소유한다.
+- **적용 범위**: 폴더 구조와 옮기는 방법은 [`orch/references/overlay.md`](../../skills/orch/references/overlay.md) 가 소유한다.
