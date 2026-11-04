@@ -4,6 +4,10 @@
 등급은 그 머지에서 바뀐 스킬 CHANGELOG 로 정한다. `호환성:` 항목이 있으면 major, 새 버전 절이 있으면 minor, 그 밖은 patch 다.
 규칙과 근거는 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 3.23.0 (2026-11-04)
+
+- work-board 1.18.0 (#327)
+
 ## 3.22.0 (2026-11-04)
 
 - harness-cleanup 3.22.1, implementation 7.5.1, korean-check 1.36.0, mac-cleanup 1.13.1, orch 7.8.1, plan 5.5.1, pr-review 1.8.1, presentation 1.3.1, spec 3.4.1, work-board 1.17.1 (#326)
