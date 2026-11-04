@@ -60,6 +60,7 @@ python3 "$SKILL_DIR/scripts/check_feature.py" "$SPEC" --design "$DESIGN"
 ## 3. PR 범위
 
 [plan 크기](references/plan-size.md)에 맞춰 이번 PR 의 요구사항을 고른다. 가능한 한 API·데이터·테스트를 함께 완성하는 동작 단위로 자른다.
+레포 설정에 「PR 변경 파일 상한」 이나 「파일 길이 상한」 이 있으면 그 기준으로 자른다. 5단계 검사가 같은 값을 읽어 넘으면 경고한다.
 뒤 PR 은 목표와 선행 조건만 `deferred` 에 남기고 상세 phase 를 미리 쓰지 않는다.
 
 ## 4. task 작성
