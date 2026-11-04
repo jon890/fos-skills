@@ -23,7 +23,7 @@
 같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `spec`, `technical-design` 으로 만든 요구사항·설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
-worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask` 가 두 경우를 종료 코드로 가른다.
+worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동안 도구 호출이 시간 초과되고, 끝난 Dispatch 에서는 ask 자체가 거절된다. `worker-ask` 가 두 경우를 종료 코드로 구분한다.
 저장소 고유 규칙(검증 명령, 원격 접속, 비밀값)은 오버레이에 두고 공통 지시서가 가리키게 한다.
 
 ## 넣을 것
@@ -145,4 +145,4 @@ worker 가 스킬을 쓰다 막힌 곳을 모으게 하려면 공통 지시서 �
 후보는 worker 가 아니라 코디네이터가 사용자와 정한 뒤 반영한다. worker 가 스킬 파일을 직접 고치면 같은 스킬을 쓰는 다른 worker 의 절차가 도중에 바뀐다.
 쌓인 후보를 다시 보는 주기와 판정 기준은 [`feedback-review.md`](feedback-review.md) 가 소유한다.
 
-worker 가 판단을 가른 일반 기술 개념을 공부 후보로 적게 하려면 「공부 후보 보고」 절을 남긴다. 표지가 빠지면 같은 `공통` 경고가 난다. 후보 기준과 글로 잇는 법은 [`study-candidates.md`](study-candidates.md) 가 소유한다.
+worker 가 판단을 정한 일반 기술 개념을 공부 후보로 적게 하려면 「공부 후보 보고」 절을 남긴다. 표지가 빠지면 같은 `공통` 경고가 난다. 후보 기준과 글로 잇는 법은 [`study-candidates.md`](study-candidates.md) 가 소유한다.

@@ -242,6 +242,30 @@ class TestManualAndFilterTerm(Base):
         self.assertPassed("메일함 필터링 조건을 추가하고 직접 확인한다.\n")
 
 
+class TestGarudaTerm(Base):
+    """비유로 쓴 「가르다」 활용형은 막고, 「가르치다」 와 「갈라지다」 는 막지 않는다."""
+
+    def test_phrases_are_caught(self):
+        for text, term in (("원인을 가르지 못한다.", "가르지"),
+                           ("둘을 가르는 기준이다.", "가르는"),
+                           ("두 경우를 가른다.", "가른"),
+                           ("둘을 가를 수 없다.", "가를"),
+                           ("판단을 갈랐다.", "갈랐"),
+                           ("먼저 갈라야 한다.", "갈라야"),
+                           ("승패를 가름한다.", "가름")):
+            with self.subTest(text=text):
+                self.assertCaught(text + "\n", term)
+
+    def test_ordinary_words_pass(self):
+        for text in ("후배를 가르치는 일이다.", "방법을 가르쳐 준다.", "브랜치가 갈라진다.",
+                     "갈라진 두 갈래를 합친다.", "승패는 판가름이 난다.", "첫 평가를 남긴다."):
+            with self.subTest(text=text):
+                self.assertPassed(text + "\n")
+
+    def test_recommended_terms_pass(self):
+        self.assertPassed("원인을 확인하지 않았다. 두 경우를 구분한다.\n")
+
+
 class TestCompareTerm(Base):
     """「견주다」 활용형은 막고, 「견」 이 든 다른 말은 막지 않는다."""
 
@@ -328,7 +352,6 @@ class TestRemovedTerms(Base):
     def test_plain_korean_passes(self):
         samples = (
             "원인을 좁혀 나간다.",
-            "두 경우를 가른다.",
             "테스트가 이 경우를 덮는다.",
             "응답 시간을 잰다.",
             "로그 레벨을 강등한다.",

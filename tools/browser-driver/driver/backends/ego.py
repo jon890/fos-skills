@@ -177,7 +177,7 @@ class EgoBackend(Backend):
                 "ego 스크립트가 끝까지 돌지 않았다. 브라우저 서비스에 붙지 못했을 수 있다.\n"
                 + (out.strip() or "(출력이 없다)"))
         head, _, result = out.rpartition(MARKER + "\n")
-        # 알림은 반환값 뒤에 줄바꿈 없이 붙는다. 가르지 않으면 grep -v 로 알림을 빼는 호출이
+        # 알림은 반환값 뒤에 줄바꿈 없이 붙는다. 구분하지 않으면 grep -v 로 알림을 빼는 호출이
         # 결과까지 잃는다. 반환값 앞에 붙은 알림도 함께 stderr 로 보낸다.
         notices = []
         for part in (head, result):

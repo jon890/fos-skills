@@ -157,7 +157,7 @@ describe('merge-with-finish PR 인자 해석', { skip: !HAS_BASH && 'bash 가 �
     assert.equal(existsSync(c.logFile), false)
   })
 
-  test('래퍼 옵션과 머지 큐 옵션을 가른다', async (t) => {
+  test('래퍼 옵션과 머지 큐 옵션을 구분한다', async (t) => {
     const c = setup(t)
     const r = await c.wrap([
       '--repo',

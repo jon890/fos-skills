@@ -27,7 +27,7 @@ def plugin_data_dir(module_file, env=None, home=None):
     """본체가 플러그인 설치 캐시 안에 있으면 그 플러그인의 데이터 폴더를 낸다. 아니면 None.
 
     <루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/tools/browser-driver/driver/config.py
-    꼴일 때만 데이터 폴더를 돌려준다. 어느 도구의 설치본인지는 <루트>/config.toml 로 가른다.
+    꼴일 때만 데이터 폴더를 돌려준다. 어느 도구의 설치본인지는 <루트>/config.toml 로 구분한다.
       - config.toml 이 파일이면 Codex 설치본이다. Codex 에는 데이터 폴더가 없어서
         두 도구를 함께 쓰는 사람의 설정이 하나가 되도록 Claude 설정 폴더의 것을 쓴다.
         <Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/

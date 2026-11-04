@@ -22,7 +22,7 @@ const takeover = { ownershipState: 'user_owned', retainedReason: 'user_takeover'
 const screens = (state: ScreenState) => new Map<unknown, ScreenState>([['term_a', state]])
 
 describe('행의 분류', () => {
-  test('살아 있는 dispatch 와 끝난 dispatch 를 가른다', () => {
+  test('살아 있는 dispatch 와 끝난 dispatch 를 구분한다', () => {
     assert.ok(isLive(row({ dispatchStatus: 'dispatched', workerState: 'ready' })))
     assert.ok(isLive(row({ workerState: 'working' })))
     assert.ok(!isLive(row({ dispatchStatus: 'dispatched', workerState: 'abandoned' })))

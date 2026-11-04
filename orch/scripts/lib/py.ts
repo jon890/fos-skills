@@ -2,7 +2,7 @@
 //
 //     pyStr    Python 의 str(). 없는 값은 None, 참거짓은 True 와 False 다
 //     pyJson   json.dumps(value, ensure_ascii=False) 의 꼴. 구분자가 `, ` 와 `: ` 이고 한글을 \u 로 바꾸지 않는다.
-//              정수와 문자열은 Python 과 같은 바이트다. 실수는 JSON.parse 가 정수와 실수를 가르지 않아
+//              정수와 문자열은 Python 과 같은 바이트다. 실수는 JSON.parse 가 정수와 실수를 구분하지 않아
 //              정수 값의 실수(1.0)는 1 로, 지수 꼴의 경계가 다른 수(1e16)는 JS 의 꼴로 나온다. orca 와 orch 의 기록에는 그런 수가 없다
 //     shQuote  shlex.quote. 사람이 그대로 붙여 넣을 명령을 낸다
 //     shSplit  POSIX 모드 shlex.split 의 꼴로 나눈다. 옛 설정 칸(finish.complete_cmd)의 명령 틀을 셸 없이 argv 로 나누려는 것이다.

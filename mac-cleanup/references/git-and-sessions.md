@@ -108,7 +108,7 @@ PR 조회(`--check-prs`, 기본값)가 머지된 PR 의 `headRefOid` 와 로컬 
 python3 "$SKILL_DIR/scripts/check_pr_branches.py" "$SURVEY"
 ```
 
-판정은 원격에 없는 로컬 커밋 수로 가른다.
+판정은 원격에 없는 로컬 커밋 수로 정한다.
 
 - `잃는 커밋 없음`(0개): 지워도 잃는 커밋이 없다. PR 이 머지 없이 닫힌 브랜치(`CLOSED`, head 가 tip 과 같음)도 이 수로 판단한다. 사용자 승인 뒤 지운다.
 - `로컬 커밋 N개, 사용자 판단`: 지우면 그 커밋을 잃는다. 사용자가 정한다.

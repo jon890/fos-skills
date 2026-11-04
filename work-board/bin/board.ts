@@ -200,7 +200,7 @@ function lineText(number: number, line: Line): string {
   return `    ${number} ${line.done ? '✓' : ' '} ${line.text}\n`
 }
 
-// stepAt 을 바꿀지 가르는 값. normalizeItem 뒤에 부르므로 줄은 {text, done} 객체다
+// stepAt 을 바꿀지 정하는 값. normalizeItem 뒤에 부르므로 줄은 {text, done} 객체다
 function stepKey(item: Item): string {
   return JSON.stringify([item.status ?? null, item.details ?? null, item.next ?? null])
 }
