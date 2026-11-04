@@ -367,7 +367,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { featureEvidenceProblem, featureLoopRequested } from './lib/feature-evidence.ts'
+import { featureEvidenceProblem, featureLoopRequested, fetchedBaseMerges } from './lib/feature-evidence.ts'
 import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, REVIEW_WAIT, reservedFor, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from './lib/auto-merge.ts'
 import { context as questionContext } from './lib/completion.ts'
@@ -1889,7 +1889,8 @@ function judgeTarget(
   if (feature && !review) return { wait: '기능 자동 머지는 queue.auto_review 의 독립 리뷰 정책이 필요하다' }
   if (feature) {
     if (typeof data.body !== 'string' || data.headRefOid !== pr.head) return { wait: '기능 완료 근거 또는 HEAD 조회 실패' }
-    const problem = featureEvidenceProblem(data.body, pr.head, feature)
+    // 검증 커밋 뒤에 base 를 합친 merge 만 있으면 받아들인다. 위에서 지금 HEAD 의 CI 가 passed 인 것을 보았다
+    const problem = featureEvidenceProblem(data.body, pr.head, feature, false, (verified) => fetchedBaseMerges(ctx.repo, pr.head, verified, pr.base))
     if (problem) return { wait: problem }
   }
   let basis = noReview

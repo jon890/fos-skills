@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { ghJson } from './gh.ts'
 import { loadConfig } from './config.ts'
+import { git } from './git.ts'
 import { pathOf } from './paths.ts'
 import { specsOnBranch, taskFirstLine } from './spec.ts'
 
@@ -40,7 +41,43 @@ export function featureBranch(repo: string, branch: string, explicit?: string): 
   })
 }
 
-export function featureEvidenceProblem(body: string, head: string, required = false, afterMerge = false): string | null {
+// 검증 커밋 뒤 HEAD 까지 base 를 합친 merge 커밋만 있는지. 머지 큐 차례와 상주 루프의 최신화가 부르는 update-branch 는
+// 검증 커밋 위에 base 를 합친 merge 커밋을 더해 HEAD 를 바꾼다. 그 merge 가 base 쪽 변경만 들여왔으면 검증한 코드는 그대로다.
+// HEAD 부터 첫 부모를 따라 BASE_MERGE_LIMIT 개까지 보고, 지나는 커밋이 모두 아래를 채우고 검증 커밋에 닿으면 true 다.
+//   부모가 둘이다. 둘째 부모가 origin/<base> 에 든다(base 쪽이다).
+//   커밋의 tree 가 두 부모를 `git merge-tree --write-tree` 로 합친 tree 와 같다. 충돌을 풀거나 merge 커밋에 손댄 변경은 다르다.
+// 커밋이 로컬에 없거나 git 이 실패하면 false 다. 부르는 쪽은 origin/<base> 와 PR HEAD 를 받아 둔다.
+// 이 경우 머지 조건은 지금 HEAD 의 CI 통과로 갈음한다. 머지 큐와 자동 머지는 지금 HEAD 의 필수 체크 통과를 따로 본다.
+export const BASE_MERGE_LIMIT = 50
+
+export function baseMergesOnly(repo: string, head: string, verified: string, base: string): boolean {
+  const line = (args: string[]): string | null => {
+    const done = git(repo, args)
+    return done.code === 0 ? done.stdout.trim() : null
+  }
+  let commit = head
+  for (let i = 0; i < BASE_MERGE_LIMIT; i++) {
+    if (commit === verified) return i > 0
+    const parents = line(['rev-list', '--parents', '-n', '1', commit])?.split(/\s+/) ?? []
+    if (parents.length !== 3) return false
+    const [, first, second] = parents
+    if (git(repo, ['merge-base', '--is-ancestor', second, `refs/remotes/origin/${base}`]).code !== 0) return false
+    const tree = line(['rev-parse', `${commit}^{tree}`])
+    const merged = line(['merge-tree', '--write-tree', '--no-messages', first, second])?.split('\n')[0]
+    if (!tree || !merged || tree !== merged) return false
+    commit = first
+  }
+  return false
+}
+
+// acceptVerified 는 검증 커밋이 현재 HEAD 와 다를 때 그 검증 커밋을 받아들일지 정한다(baseMergesOnly 를 감싼 것).
+export function featureEvidenceProblem(
+  body: string,
+  head: string,
+  required = false,
+  afterMerge = false,
+  acceptVerified?: (verified: string) => boolean,
+): string | null {
   const plain = withoutExamples(body)
   if (!required && !plain.includes(EVIDENCE_START)) return null // 기존 PR 은 읽기 호환
   const parts = plain.split(EVIDENCE_START)
@@ -53,7 +90,11 @@ export function featureEvidenceProblem(body: string, head: string, required = fa
     if (fields.has(match[1])) return `기능 완료 근거의 ${match[1]} 이 중복됐다`
     fields.set(match[1], match[2].trim())
   }
-  if (!/^[a-f0-9]{40}$/i.test(head) || fields.get('검증 커밋') !== head) return '기능 완료 근거의 검증 커밋이 현재 PR HEAD 와 다르다'
+  const verified = fields.get('검증 커밋') ?? ''
+  if (!/^[a-f0-9]{40}$/i.test(head)) return '기능 완료 근거의 검증 커밋이 현재 PR HEAD 와 다르다'
+  if (verified !== head && !(/^[a-f0-9]{40}$/i.test(verified) && acceptVerified?.(verified))) {
+    return '기능 완료 근거의 검증 커밋이 현재 PR HEAD 와 다르다'
+  }
   for (const key of ['인수 검증', '문서 대조', '독립 리뷰', '후속 검증']) {
     const value = fields.get(key) ?? ''
     const match = /^(통과|대기|없음)\s*\|\s*(.+)$/.exec(value)
@@ -73,5 +114,20 @@ export function featureCompletionProblem(repo: string, number: string, branch = 
   const body = typeof got.data.body === 'string' ? got.data.body : ''
   const discovered = typeof got.data.headRefName === 'string' ? got.data.headRefName : branch
   if (!required && !body.includes(EVIDENCE_START) && !featureBranch(repo, discovered, specsDir)) return null
-  return featureEvidenceProblem(body, String(got.data.headRefOid ?? ''), true, true)
+  const head = String(got.data.headRefOid ?? '')
+  // base 는 검증 커밋이 HEAD 와 다를 때만 따로 읽는다
+  const accept = (verified: string): boolean => {
+    const got = ghJson<{ baseRefName?: unknown }>(['pr', 'view', number, '--json', 'baseRefName'], { cwd: repo, cache: false })
+    const base = got.ok && got.data && typeof got.data.baseRefName === 'string' ? got.data.baseRefName : ''
+    return fetchedBaseMerges(repo, head, verified, base)
+  }
+  return featureEvidenceProblem(body, head, true, true, accept)
+}
+
+// origin/<base> 와 HEAD 를 받은 뒤 baseMergesOnly 로 본다. 정리와 마무리처럼 미리 받아 두지 않은 쪽이 쓴다
+export function fetchedBaseMerges(repo: string, head: string, verified: string, base: string): boolean {
+  if (!base) return false
+  git(repo, ['fetch', '-q', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`])
+  if (git(repo, ['cat-file', '-e', `${head}^{commit}`]).code !== 0) git(repo, ['fetch', '-q', 'origin', head])
+  return baseMergesOnly(repo, head, verified, base)
 }
