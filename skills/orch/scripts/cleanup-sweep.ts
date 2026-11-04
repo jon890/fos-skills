@@ -337,6 +337,8 @@
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
 import { featureCompletionProblem } from './lib/feature-evidence.ts'
+import { idleShellVerdict } from './lib/idle-shells.ts'
+import type { Holder } from './lib/idle-shells.ts'
 import { homedir } from 'node:os'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
@@ -1063,20 +1065,23 @@ function idleAgentPath(args: Args, path: string): boolean {
   return globMatch(basename(path), args.agentGlob) && onlyIdleShells(holderPids(path, REAL_HOST), REAL_HOST)
 }
 
-// theirs 가 모두 Orca 가 다시 연 빈 셸이면 true. 하나라도 확인하지 못하면 false.
+// 그 경로를 작업 디렉터리로 쓰는 프로세스의 명령과 자식 유무(lib/idle-shells.ts 의 Holder)
+function holdersOf(path: string, host: Host): Holder[] {
+  const rows = host.psRows()
+  const parents = new Set([...rows.values()].map(([ppid]) => ppid))
+  return holderPids(path, host)
+    .filter((pid) => rows.has(pid))
+    .map((pid) => ({ pid, command: (rows.get(pid) as [string, string])[1], hasChildren: parents.has(pid) }))
+}
+
+// theirs 가 모두 Orca 기본 셸이면 true. 판정은 lib/idle-shells.ts 의 idleShellVerdict 한 곳이다.
 // Orca 는 PTY pid 를 주지 않아 `agentIdentity` 와 그 경로를 쓰는 프로세스로 판정한다.
-//   - 이 Run 의 dispatch 가 쓴 워크트리다(mine). 그 터미널에 에이전트가 없다(`agentIdentity` 없음)
-//   - 그 경로를 작업 디렉터리로 쓰는 프로세스가 모두 자식 없는 로그인 셸이고, 터미널마다 셸이 하나씩 있다
-// 터미널 수보다 셸이 적으면 작업 폴더를 옮긴 터미널이 있다는 뜻이라 닫지 않는다.
-function emptyShells(path: string, mine: WorkerRow[], theirs: string[], terminals: Terminal[]): boolean {
-  if (mine.length === 0 || theirs.length === 0) return false
-  const entries = new Map(terminals.map((t) => [t.handle, t] as const))
-  for (const handle of theirs) {
-    const entry = entries.get(handle)
-    if (!entry || truthy(entry.agentIdentity) || entry.worktreePath !== path) return false
-  }
-  const pids = holderPids(path, REAL_HOST)
-  return pids.length >= theirs.length && onlyIdleShells(pids, REAL_HOST)
+// 어느 dispatch 의 터미널인지 몰라도 에이전트가 없고 자식 없는 로그인 셸뿐이면 닫는다(2026-11-04 ai-analysis 의 「Terminal 1」)
+function emptyShells(path: string, theirs: string[], terminals: Terminal[]): boolean {
+  if (theirs.length === 0) return false
+  const mine = terminals.filter((t) => theirs.includes(t.handle as string))
+  if (mine.length !== theirs.length) return false
+  return 'close' in idleShellVerdict({ path, terminals: mine, holders: holdersOf(path, REAL_HOST) })
 }
 
 // --close-own-taken-over 로 소유 확인에서 뺄 터미널 handle 집합. 조건 하나라도 어긋나면 빈 집합이다.
@@ -1491,7 +1496,7 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     log(`  ${path}: 하위 에이전트 워크트리의 빈 셸 터미널이라 다른 Run 의 것으로 세지 않는다`)
     theirs = []
   }
-  if (theirs.length && args.foreign === null && byDone && emptyShells(path, mine, theirs, terminals)) {
+  if (theirs.length && args.foreign === null && byDone && emptyShells(path, theirs, terminals)) {
     // 코디네이터가 worker 터미널을 닫으면 Orca 가 그 탭에 빈 셸을 다시 연다. 어느 Run 의 것도 아니다
     for (const handle of theirs) {
       if (args.apply) log(closeTerminal(handle) ? `  빈 셸을 닫았다: ${handle}` : `  빈 셸 닫기 실패 ${handle}`)
@@ -1556,15 +1561,15 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
 
   let pids = await waitFree(path, args.wait, args.pollInterval)
   if (pids.length && byDone && onlyIdleShells(pids, REAL_HOST)) {
-    // worker 를 반납한 뒤 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 터미널과 worker 를 다시 읽어 그 터미널을 닫는다.
+    // worker 를 반납한 뒤나 워크트리를 화면에서 열 때 Orca 가 띄운 빈 셸이 폴더를 붙잡는다. 터미널과 worker 를 다시 읽어 그 터미널을 닫는다.
     // 소유 상태는 캐시를 거치지 않고 새로 읽는다. 기다리는 사이 사용자가 넘겨받았을 수 있다
     const again = await ownershipBlocker(path, taken, allWorkers)
     if (again) return keep(again, `남김: ${again} (${path})`)
-    const foreign = args.foreign ?? new Set<unknown>()
-    const handles = terminalsAt(liveTerminals(), path).filter((h) => !foreign.has(h))
-    if (handles.length) {
+    const listed = liveTerminals() ?? []
+    const verdict = idleShellVerdict({ path, terminals: listed, holders: holdersOf(path, REAL_HOST), claimed: args.foreign ?? new Set() })
+    if ('close' in verdict) {
       log(`  남은 프로세스 ${pids.length} 개가 유휴 셸뿐이다. Orca 터미널을 닫고 다시 시도한다`)
-      closeTerminals(handles, true, log, '유휴 셸 터미널')
+      closeTerminals(verdict.close, true, log, '유휴 셸 터미널')
       pids = await waitFree(path, args.wait, args.pollInterval)
     }
   }
@@ -1600,6 +1605,8 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     return
   }
   report.removed.push(path)
+    } else {
+      log(`  유휴 셸 터미널을 닫지 않는다: ${verdict.keep}`)
   deleteRemote(repo, plan, args.base, true, log)
   trashLaunchedSpecs(repo, specsDir, path, true, log, args.liveSpecs, args.trash)
   deleteSpecFiles(specsDir, name, true, log, args.liveSpecs, branch, m.pr)
