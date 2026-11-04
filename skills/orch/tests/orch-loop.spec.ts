@@ -566,7 +566,7 @@ describe('마무리 빠짐과 대기 확인', () => {
     const missing = events().filter((line) => line.kind === 'FINISH-MISSING')
     assert.equal(missing.length, 1, JSON.stringify(events()))
     assert.equal(missing[0].pr, 7)
-    assert.match(String(missing[0].text), /^feat-x: 머지 뒤 마무리\(finish-pr\)가 돈 적이 없다\. 마무리를 뒤늦게 돌리려면 orch\.ts finish-pr 7 --repo .* --run r$/)
+    assert.match(String(missing[0].text), /^feat-x: 머지 뒤 마무리\(finish-pr\)가 돈 적이 없다\. 마무리를 뒤늦게 돌리려면 \S+ queue finish 7 --repo .* --run r$/)
   })
 
   // ps 가짜. PS_OUT 을 낸다

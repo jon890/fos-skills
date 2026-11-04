@@ -120,6 +120,7 @@ import { requireMigrated } from './lib/paths.ts'
 import { readScreen, screenLines } from './lib/screen.ts'
 import { runAsync, scriptCommand } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
+import { orchWord } from './lib/commands.ts'
 import { shQuote } from './lib/py.ts'
 import { configureSshAgent } from './lib/ssh-agent.ts'
 import { reviewPrOfSpec } from './lib/review.ts'
@@ -513,7 +514,7 @@ async function main(argv: string[]): Promise<number> {
     const profile = selectedReadiness(profilesRoot())
     if (profile && profile.missing.length > 0) {
       err(`거부: 선택된 Orca 의 Claude 프로필 ${profile.id} 에 ${profile.missing.join(', ')} 가 없어 worker 에게 플러그인과 지침이 보이지 않는다. 아래 명령으로 맞춘 뒤 다시 띄운다(--apply 를 빼면 목록만 본다)`)
-      err(`${shQuote(resolve(HERE, '../bin/orch.ts'))} link-claude-profile ${profile.id} --apply`)
+      err(`${orchWord()} worker link-profile ${profile.id} --apply`)
       return 1
     }
   }

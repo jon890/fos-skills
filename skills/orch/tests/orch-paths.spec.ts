@@ -111,7 +111,7 @@ describe('옛 구조', () => {
     ] as const) {
       const r = cmd(script, [...args])
       assert.equal(r.code, 2, `${script}: ${r.stdout}${r.stderr}`)
-      assert.ok(r.stderr.includes('migrate-orch-dir.ts'), `${script}: ${r.stderr}`)
+      assert.ok(r.stderr.includes('doctor migrate'), `${script}: ${r.stderr}`)
     }
   })
 
@@ -120,7 +120,7 @@ describe('옛 구조', () => {
     for (const args of [['check'], ['--ensure', 'specs']]) {
       const r = cmd('orch_paths.ts', ['--repo', repo, ...args])
       assert.equal(r.code, 2, args.join(' '))
-      assert.ok(r.stderr.includes('migrate-orch-dir.ts'), r.stderr)
+      assert.ok(r.stderr.includes('doctor migrate'), r.stderr)
     }
     assert.equal(existsSync(join(repo, '.orch')), false)
     assert.equal(cmd('orch_paths.ts', ['--repo', repo, 'specs']).stdout, `${join(repo, '.orch/specs')}\n`)
@@ -138,7 +138,7 @@ describe('옛 구조', () => {
       env: { ...ENV, ORCA: '/nonexistent/orca' },
     })
     assert.equal(r.code, 2, r.stdout + r.stderr)
-    assert.ok(r.stderr.includes('migrate-orch-dir.ts'), r.stderr)
+    assert.ok(r.stderr.includes('doctor migrate'), r.stderr)
     const fake = join(tmp, 'orca')
     writeFileSync(fake, '#!/bin/sh\necho \'{"result": {"terminals": [], "tasks": [], "workers": []}}\'\n')
     chmodSync(fake, 0o755)

@@ -140,7 +140,7 @@ describe('삭제한 설정', () => {
       for (const value of ['', 'echo dangerous', null]) {
         const target = file(JSON.stringify({ [name]: { [key]: value } }))
         assert.throws(() => loadConfig(repo, { file: target }), (error: unknown) =>
-          error instanceof ConfigError && error.message.includes(`${name}.${key}`) && error.message.includes('migrate-orch-dir')
+          error instanceof ConfigError && error.message.includes(`${name}.${key}`) && error.message.includes('doctor migrate-hooks')
         )
       }
     }

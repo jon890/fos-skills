@@ -3,12 +3,12 @@
 // 모든 Run 을 읽지 못하면 실패시킨다. 현재 Run 에 없다는 이유만으로 다른 worker 를 가져오지 않는다.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { ghJson } from './gh.ts'
 import { orcaJson } from './orca.ts'
 import { allWorkers, rowHandles } from './ownership.ts'
 import type { WorkerRow } from './ownership.ts'
 import { pathOf } from './paths.ts'
+import { orchWord } from './commands.ts'
 import { shQuote } from './py.ts'
 import { classify, LINE_BREAK, screenLines, screenTail } from './screen.ts'
 import type { Screen, ScreenState } from './screen.ts'
@@ -22,7 +22,7 @@ export type Session = {
 }
 
 export function adoptHint(repo: string): string {
-  return `  이어받기: ${shQuote(fileURLToPath(new URL('../../bin/orch.ts', import.meta.url)))} adopt-sessions --repo ${shQuote(repo)}`
+  return `  이어받기: ${orchWord()} worker adopt --repo ${shQuote(repo)}`
 }
 
 export function activeHandles(rows: WorkerRow[]): Set<unknown> {

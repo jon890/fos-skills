@@ -11,7 +11,6 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
-import { adoptHint } from '../scripts/lib/sessions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/wait-important.ts', import.meta.url))
 const ORCH_BIN = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
@@ -223,6 +222,11 @@ function lostEntries(): Json {
   return JSON.parse(readFileSync(lostState, 'utf8')).run_x as Json
 }
 
+// 이어받기 안내 줄. 자식의 PATH 에 실행기가 없으니 앞 낱말은 진입점 절대경로다(lib/sessions.ts 의 adoptHint)
+function adoptLine(repo: string): string {
+  return `  이어받기: ${ORCH_BIN} worker adopt --repo ${repo}`
+}
+
 function nextWait(stderr: string): string {
   return lines(stderr).find((line) => line.startsWith('NEXT_WAIT ')) ?? ''
 }
@@ -335,7 +339,7 @@ describe('끊긴 worker', () => {
       ],
     })
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_a stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY d0'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_a stage=terminal_missing', adoptLine(tmp), 'LAST_DELIVERY d0'])
   })
 
   test('열린 dispatch 인데 liveness 가 exited 면 끊긴 것이다', () => {
@@ -389,7 +393,7 @@ describe('끊긴 worker', () => {
   test('시작할 때 처리하지 않은 끊긴 dispatch 가 있으면 check 없이 끝낸다', () => {
     const r = lostAtStart(['--ack', 'd0'])
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY d0'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptLine(tmp), 'LAST_DELIVERY d0'])
     assert.deepEqual(calls(), [])
   })
 
@@ -598,7 +602,7 @@ describe('끊긴 worker', () => {
       latest: { t1: 'ctx_bad' },
     })
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY -'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptLine(tmp), 'LAST_DELIVERY -'])
     const pages = allCalls().filter((c) => c.includes('worker-list'))
     assert.equal(pages.length, 2, JSON.stringify(pages))
     assert.ok(!pages[0].includes('--cursor'), JSON.stringify(pages[0]))

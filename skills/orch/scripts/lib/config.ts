@@ -19,8 +19,10 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { orchWord } from './commands.ts'
 import { isFile } from './fs.ts'
 import { pathOf } from './paths.ts'
+import { shQuote } from './py.ts'
 
 export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'board' | 'review' | 'docker'
 export type Config = Partial<Record<Section, Record<string, unknown>>>
@@ -123,7 +125,7 @@ export function loadConfig(repo: string, opts: { file?: string } = {}): Config {
   const removed = REMOVED_CONFIG_KEYS.filter(({ section, key }) => Object.hasOwn((parsed[section] ?? {}) as object, key))
   if (removed.length > 0) {
     const names = removed.map(({ section, key }) => `${section}.${key}`).join(', ')
-    throw new RemovedConfigError(`orch 5.2.0 에서 삭제한 설정: ${names}. bin/orch.ts migrate-orch-dir --repo ${repo} --hooks --apply 로 핸들러에 옮긴다`)
+    throw new RemovedConfigError(`orch 5.2.0 에서 삭제한 설정: ${names}. ${orchWord()} doctor migrate-hooks --repo ${shQuote(repo)} --apply 로 핸들러에 옮긴다`)
   }
   return parsed as Config
 }

@@ -407,6 +407,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { orchWord } from './lib/commands.ts'
+import { shQuote } from './lib/py.ts'
 import { featureEvidenceProblem, featureLoopRequested, fetchedBaseMerges } from './lib/feature-evidence.ts'
 import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, REVIEW_WAIT, reservedFor, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from './lib/auto-merge.ts'
@@ -2170,7 +2172,7 @@ function migrationContext(
     return { ok: false, error: `마이그레이션 예약을 읽지 못했다: ${oneLine(e)}` }
   }
   // 형식이 틀린 예약을 버린 채 보면 그 번호보다 높은 PR 을 건다
-  if (read.skipped > 0) return { ok: false, error: `마이그레이션 예약 ${read.skipped} 개의 형식이 틀렸다. reserve-migration.ts --prune 으로 뺀다` }
+  if (read.skipped > 0) return { ok: false, error: `마이그레이션 예약 ${read.skipped} 개의 형식이 틀렸다. ${orchWord()} queue reserve prune 으로 뺀다` }
   for (const r of read.list) {
     const migration: Migration = { module: r.module, version: r.version, label: r.label, path: r.path }
     const entry = reserved.find((item) => item.branch === r.branch)
@@ -2385,7 +2387,7 @@ async function autoMergeStep(
     if (!entry.fired && waited > ctx.autoMerge.blockedAfterSec * 1000) {
       const text =
         `${blocker.module} ${blocker.mine} 이 ${holder} 을 ${Math.floor(waited / 60_000)}분 기다린다. ` +
-        '막는 쪽 worker 가 reserve-migration.ts --again 으로 번호를 다시 받는다. 막는 브랜치를 버렸으면 지운 뒤 reserve-migration.ts --prune'
+        `막는 쪽 worker 가 ${orchWord()} queue reserve --again 으로 번호를 다시 받는다. 막는 브랜치를 버렸으면 지운 뒤 ${orchWord()} queue reserve prune`
       if (notifyAutoMerge(ctx, 'MIGRATION-BLOCKED', c.pr.number, text, c.run)) entry.fired = true
     } else {
       log(`AUTO-MERGE-WAIT #${c.pr.number} ${blocker.module} ${blocker.mine} 이 ${holder} 을 기다린다`)
@@ -2481,7 +2483,7 @@ function relayFinishMissing(repo: string, stdout: string, run: string | null): v
   let changed = false
   for (const m of found) {
     if (Object.hasOwn(seen, m[1])) continue
-    const hint = `마무리를 뒤늦게 돌리려면 orch.ts finish-pr ${m[1]} --repo ${repo}${run ? ` --run ${run}` : ''}`
+    const hint = `마무리를 뒤늦게 돌리려면 ${orchWord()} queue finish ${m[1]} --repo ${shQuote(repo)}${run ? ` --run ${run}` : ''}`
     try {
       appendEvent(repo, 'FINISH-MISSING', Number(m[1]), `${m[2]}. ${hint}`, run)
       seen[m[1]] = iso()

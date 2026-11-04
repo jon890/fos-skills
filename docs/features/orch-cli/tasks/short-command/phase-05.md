@@ -79,3 +79,5 @@ python3 -m unittest scripts/tests/test_doc_script_refs.py
 | `skills/orch/tests/finish-pr.spec.ts` | 수정 |
 | `skills/orch/tests/merge-with-finish.spec.ts` | 수정 |
 | `skills/orch/tests/orch-loop-auto-merge.spec.ts` | 수정 |
+| `skills/orch/tests/orch-paths.spec.ts` | 수정 |
+| `skills/orch/tests/wait-important.spec.ts` | 수정 |

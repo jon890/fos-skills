@@ -31,9 +31,10 @@
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { defaultBoardPath } from '../../../../extensions/work-board/bin/board.ts'
+import { orchWord } from './commands.ts'
 import { inside, real } from './fs.ts'
+import { shQuote } from './py.ts'
 import { git, gitMemoKey, gitMayFind, mainCheckout } from './git.ts'
 
 const DEFAULT_ROOT = '.orch'
@@ -70,7 +71,6 @@ export const DEFAULT_MOVES: ReadonlyArray<readonly [string, string]> = [
 // 남아 있으면 옮기기 전이라고 보는 옛 위치. 설정과 지시서가 여기 있으면 명령이 그 값 없이 돌게 된다.
 export const LEGACY_MARKERS: readonly string[] = ['.claude/orch-overlay.md', '.claude/orch-finish.json', '.omc/orch', '.omc/handoffs/specs']
 
-const MIGRATE = fileURLToPath(new URL('../migrate-orch-dir.ts', import.meta.url))
 const DEFAULT_BYPASS = '설정 파일을 --config 로 직접 준다'
 
 function expandUser(value: string): string {
@@ -193,7 +193,7 @@ export function requireMigrated(repo: string, script: string, bypass: string | n
   const lines = [
     `${script}: orch 작업 폴더를 옮기기 전이다. 옛 위치가 남아 있다: ${left.join(', ')}`,
     `  새 위치(${orchDir(repo)})의 설정과 지시서만 읽으므로 이대로 돌면 저장소 값이 빠진다.`,
-    `  머지 큐와 worker 가 돌지 않을 때 옮긴다: node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${mainCheckout(repo)} --apply`,
+    `  머지 큐와 worker 가 돌지 않을 때 옮긴다: ${orchWord()} doctor migrate --repo ${shQuote(mainCheckout(repo))} --apply`,
     '  이미 옮겼는데 다시 나오면 옮긴 포장 스크립트(bin)나 다른 도구가 옛 폴더를 다시 만든 것이다. ' +
       '그 스크립트의 옛 경로를 고친 뒤 다시 옮긴다.',
   ]
@@ -207,6 +207,6 @@ export function warnLegacy(repo: string, script: string): void {
   const left = legacyPaths(repo)
   if (left.length === 0) return
   process.stderr.write(
-    `${script}: 옛 위치가 남아 있다(${left.join(', ')}). 대기가 끝나면 node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${mainCheckout(repo)} 로 옮긴다\n`,
+    `${script}: 옛 위치가 남아 있다(${left.join(', ')}). 대기가 끝나면 ${orchWord()} doctor migrate --repo ${shQuote(mainCheckout(repo))} 로 옮긴다\n`,
   )
 }
