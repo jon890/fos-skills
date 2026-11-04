@@ -117,7 +117,7 @@ python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES" --apply --kind other  
 사용처도 데몬도 없는 버전이므로 지워도 wrapper 가 필요할 때 다시 받는다.
 스크립트가 후보 경로를 한 줄에 하나씩 보이고 끝에 「승인 뒤 돌릴 명령」 으로 `rm -rf` 한 줄을 낸다. 사용자가 승인한 뒤 그 줄을 그대로 돌린다.
 glob 반복문(`for d in ~/.gradle/wrapper/dists/gradle-9.8.0-*; do rm -rf "${d:?}"; done`)으로 지우지 않는다.
-2026-11-04 실측: auto mode 분류기가 glob 반복문과 npm, brew, pnpm, mise 정리를 한 명령에 묶은 것을 되돌릴 수 없는 로컬 삭제로 막았다. 원인이 반복문인지 묶음인지는 가르지 않았다. 경로를 하나씩 적은 `rm -rf` 는 통과했다.
+2026-11-04 실측: auto mode 분류기가 glob 반복문과 npm, brew, pnpm, mise 정리를 한 명령에 묶은 것을 되돌릴 수 없는 로컬 삭제로 막았다. 원인이 반복문인지 묶음인지는 확인하지 않았다. 경로를 하나씩 적은 `rm -rf` 는 통과했다.
 스크립트가 낸 `rm -rf` 한 줄을 그대로 돌리는 규칙은 남긴다. 사용자가 승인한 목록과 실행 명령이 같아지기 때문이다.
 
 ## 프로젝트 산출물

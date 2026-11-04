@@ -23,7 +23,7 @@
 // 시간 제한(기본 600초)을 다 기다리지 않게 하려는 것이다. 끊은 ask 의 질문은 Orca 에 답 없이 남는다.
 // 기다리는 동안에는 질문 메시지 ID 를 모르므로 스레드가 아니라 받는 곳으로만 판정하고, ask 를 부르기 전에 이미 있던 status 는 뺀다.
 //
-// ask 실패의 종류: 실패한 ask 출력의 `error.code`(JSON 이 없으면 글 속의 코드 낱말)로 가른다.
+// ask 실패의 종류: 실패한 ask 출력의 `error.code`(JSON 이 없으면 글 속의 코드 낱말)로 구분한다.
 //     바쁨(BUSY_CODES, 글에 `retry with backoff` 가 든 것)  Orca 가 요청을 받지 않았다. dispatch 는 살아 있다.
 //                 ORCH_ASK_BUSY_MS(기본 5000)부터 두 배씩 늘려 BUSY_TRIES 번까지 같은 ask 를 다시 부른다. 그래도 바쁘면 2 다
 //     끝난 dispatch(DISPATCH_GONE)이거나 코드를 읽지 못함  Run 메일함으로 대신 보낸다(아래 「대신 보내기」). 코드 없는 옛 출력도 여기다

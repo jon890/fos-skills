@@ -1457,7 +1457,7 @@ export function register(on) {
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
     const { Box, Text, Button, Link } = $.ui.resolve(e)
-    // 머리말(「두레이」나 「업무」, 「PR」)과 번호를 대괄호로 감싸 제목과 가르고, 밑줄 친 링크와 색으로도 가린다. 주소가 없으면 글자만 그린다
+    // 머리말(「두레이」나 「업무」, 「PR」)과 번호를 대괄호로 감싸 제목과 구분하고, 밑줄 친 링크와 색으로도 가린다. 주소가 없으면 글자만 그린다
     const TAG_COLORS = { PR: 'magenta' }
     const tagged = (key, tag, href, label) => {
       const look = { underline: Boolean(href), color: TAG_COLORS[tag] || 'cyan' }

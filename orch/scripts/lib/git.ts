@@ -60,7 +60,7 @@ export function defaultBase(repo: string): string | null {
 export function conflicts(repo: string, base: string, head: string): { ok: true; conflict: boolean; files: string[] } | { ok: false; error: string } {
   const done = git(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', base, head])
   if (done.code === 0) return { ok: true, conflict: false, files: [] }
-  // merge-tree 는 없는 커밋을 받아도 1 로 끝난다. 그때는 첫 줄에 트리 id 가 없으므로 그것으로 충돌과 가른다(git 2.50 실측).
+  // merge-tree 는 없는 커밋을 받아도 1 로 끝난다. 그때는 첫 줄에 트리 id 가 없으므로 그것으로 충돌과 구분한다(git 2.50 실측).
   const lines = done.stdout.split('\n')
   if (done.code === 1 && /^[0-9a-f]{40,64}$/.test(lines[0])) {
     const files = [...new Set(lines.slice(1).filter((line) => line))].sort()

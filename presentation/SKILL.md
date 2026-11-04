@@ -7,7 +7,7 @@ description: |
   이미 만든 덱을 고치거나 제목을 검수하는 요청도 여기 해당한다.
   외부에 게시하는 본문은 `content-preview` 가, 문서 감사는 `docs-check` 가 맡는다.
 metadata:
-  version: "1.3.0"
+  version: "1.3.1"
 ---
 
 # presentation

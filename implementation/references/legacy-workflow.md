@@ -181,7 +181,7 @@ python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
 executor 가 `git mv` 를 staged 로 남겼으면 team-lead 는 그 phase 의 경로만 더 stage 한 뒤 대조한다. `git add -A` 는 그 경로에만 쓴다.
 
 종료 코드 0이면 커밋한다. 경고가 나오면 그 파일을 바꾸지 않아도 되는지 확인한다.
-1이면 출력대로 바로잡는다. 계획의 파일 목록에 없는 파일이 나오면 그 파일이 phase 목표 안인지 가른다.
+1이면 출력대로 바로잡는다. 계획의 파일 목록에 없는 파일이 나오면 그 파일이 phase 목표 안인지 확인한다.
 
 | 파일 | 대응 |
 | --- | --- |
