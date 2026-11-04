@@ -1309,9 +1309,9 @@ describe('보드 항목 제목과 같은 업무', () => {
   })
 
   test('업무 연결 줄만 있으면 그 줄의 제목 앞에 업무 번호를 붙인다', () => {
-    writeFileSync(spec, '공통 지시서를 먼저 읽는다.\n허락: push\n두레이 업무: AI-스마트홈-AI/271 「일별 집계 끝내기」\n')
+    writeFileSync(spec, '공통 지시서를 먼저 읽는다.\n허락: push\n두레이 업무: EXAMPLE-PROJECT/271 「일별 집계 끝내기」\n')
     run()
-    assert.equal(items()[0].title, 'AI-스마트홈-AI/271 일별 집계 끝내기')
+    assert.equal(items()[0].title, 'EXAMPLE-PROJECT/271 일별 집계 끝내기')
   })
 
   test('board.task_line 정규식이 업무 연결 줄의 꼴을 바꾼다', () => {
@@ -1325,16 +1325,16 @@ describe('보드 항목 제목과 같은 업무', () => {
   test('같은 업무 번호의 끝나지 않은 항목은 다른 워크트리여도 이어 쓰고 단계는 그대로 둔다', () => {
     const first = {
       id: 'attention',
-      title: 'AI-스마트홈-AI/282 주의 확인 화면',
+      title: 'EXAMPLE-PROJECT/282 주의 확인 화면',
       status: 'doing',
       worktree: 'pr1-wt',
       branch: 'feat/pr1',
       stages: 'pr=1,merge=2',
       details: [{ text: '1. PR', done: true }, { text: '2. 머지', done: false }],
     }
-    const other = { id: 'other', title: 'AI-스마트홈-AI/2821 다른 일', status: 'doing', worktree: 'x', details: [{ text: '1. PR', done: false }] }
+    const other = { id: 'other', title: 'EXAMPLE-PROJECT/2821 다른 일', status: 'doing', worktree: 'x', details: [{ text: '1. PR', done: false }] }
     writeFileSync(file, JSON.stringify({ items: [other, first] }))
-    writeFileSync(spec, '# 두 번째 PR\n허락: push\n두레이 업무: AI-스마트홈-AI/282\n')
+    writeFileSync(spec, '# 두 번째 PR\n허락: push\n두레이 업무: EXAMPLE-PROJECT/282\n')
     run()
     const after = items()
     assert.deepEqual(after.map((i) => i.id), ['other', 'attention'])
@@ -1345,7 +1345,7 @@ describe('보드 항목 제목과 같은 업무', () => {
   })
 
   test('업무 번호도 제목 줄도 목표 절도 없으면 id 를 제목으로 쓰고 번호가 든 항목에 붙지 않는다', () => {
-    writeFileSync(file, JSON.stringify({ items: [{ id: 'task', title: 'AI-스마트홈-AI/282 업무', status: 'doing', worktree: 'x', details: [{ text: '1. PR', done: false }] }] }))
+    writeFileSync(file, JSON.stringify({ items: [{ id: 'task', title: 'EXAMPLE-PROJECT/282 업무', status: 'doing', worktree: 'x', details: [{ text: '1. PR', done: false }] }] }))
     writeFileSync(spec, '공통 지시서를 먼저 읽는다.\n허락: push\n\n## 할 일\n- 고친다\n')
     run()
     const after = items()
