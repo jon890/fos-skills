@@ -1236,7 +1236,7 @@ async function loadInbox($) {
   let stale = false
   try {
     const root = (await boardRoot($)) || (await $.session.cwd())
-    const script = $.plugin.root + '/inbox/scripts/inbox.ts'
+    const script = $.plugin.root + '/skills/inbox/scripts/inbox.ts'
     const value = parseInbox(await run($, ['node', '--disable-warning=ExperimentalWarning', script, 'board', '--repo', root, '--json'], INBOX_TIMEOUT_MS))
     stale = generation !== inboxGeneration
     if (!stale) {
@@ -1260,7 +1260,7 @@ export async function dismissInbox($, id) {
   if (dismissBusy) return $.ui.invalidate('ui.render')
   dismissBusy = true
   try {
-    await run($, dismissArgv($.plugin.root + '/inbox/scripts/inbox.ts', id))
+    await run($, dismissArgv($.plugin.root + '/skills/inbox/scripts/inbox.ts', id))
     inboxGeneration++
     inbox = withoutItems(inbox, [id])
     dismissUndo.push(id)
@@ -1279,7 +1279,7 @@ export async function undoDismiss($) {
   if (dismissBusy || !id) return
   dismissBusy = true
   try {
-    await run($, dismissArgv($.plugin.root + '/inbox/scripts/inbox.ts', id, true))
+    await run($, dismissArgv($.plugin.root + '/skills/inbox/scripts/inbox.ts', id, true))
     inboxGeneration++
     dismissUndo.pop()
     $.ui.toast('넘김을 되돌렸어요')

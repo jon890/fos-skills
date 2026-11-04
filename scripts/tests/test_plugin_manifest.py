@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import tempfile
 import sys
 import unittest
@@ -76,6 +77,13 @@ class PluginManifestTest(unittest.TestCase):
         self.assertIn("./work-board/hooks/hooks.json", hooks)
         for path in hooks:
             self.assertTrue((ROOT / path).is_file(), path)
+
+    def test_board_plugin_root_scripts_exist(self):
+        source = (ROOT / "work-board/hooks/register.js").read_text()
+        paths = re.findall(r"\$\.plugin\.root \+ ['\"](/[^'\"]+\.(?:ts|js))['\"]", source)
+        self.assertGreaterEqual(len(paths), 5)
+        for path in paths:
+            self.assertTrue((ROOT / path.lstrip("/")).is_file(), path)
 
     def test_codex_manifest_carries_the_same_skills_without_hooks(self):
         """Codex 는 .codex-plugin 이 있으면 .claude-plugin 을 읽지 않는다. hook 은 Claude 전용이라 싣지 않는다.
