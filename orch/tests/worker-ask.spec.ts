@@ -10,14 +10,14 @@ import { fileURLToPath } from 'node:url'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker-ask.ts', import.meta.url))
 
-// ask 는 FAKE_ASK_SLEEP 초 잔 뒤 ask.out 을 내고 FAKE_ASK_RC 로 끝난다. check 는 n 번째 호출에 checkN.json, 없으면 check.json 을 낸다.
+// ask 는 n 번째 호출에 askN.out 이 있으면 그것을 내고 askN.rc(없으면 0)로 끝난다. 없으면 FAKE_ASK_SLEEP 초 잔 뒤 ask.out 을 내고 FAKE_ASK_RC 로 끝난다. check 는 n 번째 호출에 checkN.json, 없으면 check.json 을 낸다.
 // 받은 인자는 [인자] 를 이어 한 줄로 기록한다. 여러 줄 인자는 로그에서 줄이 나뉜다.
 const FAKE_ORCA = `#!/usr/bin/env bash
 for a in "$@"; do printf '[%s]' "$a" >> "$FAKE_LOG"; done; echo >> "$FAKE_LOG"
 case "$2" in
   ask)
     n=$(($(cat "$FAKE_DIR/ask-n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/ask-n"
-    if [ -f "$FAKE_DIR/ask$n.out" ]; then cat "$FAKE_DIR/ask$n.out"; echo; exit 0; fi
+    if [ -f "$FAKE_DIR/ask$n.out" ]; then cat "$FAKE_DIR/ask$n.out"; echo; exit "$(cat "$FAKE_DIR/ask$n.rc" 2>/dev/null || echo 0)"; fi
     sleep "\${FAKE_ASK_SLEEP:-0}"; cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
   check)
     n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
@@ -425,10 +425,65 @@ describe('ask 실패 뒤 대신 보내기', () => {
     assert.match(r.stderr, /메시지 ID 를 내지 않았다/)
   })
 
+  test('끝난 dispatch 코드(dispatch_inactive)로 실패하면 대신 보낸다', () => {
+    fake('{"ok":false,"error":{"code":"dispatch_inactive","message":"Dispatch ctx_1 is completed"}}', 1)
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 3, r.stderr)
+    assert.ok(r.calls.at(-1)?.includes('[--to][run:run_x]'), r.calls.at(-1))
+  })
+
+  test('끝난 dispatch 가 아닌 코드로 실패하면 대신 보내지 않고 2 다', () => {
+    fake('{"ok":false,"error":{"code":"invalid_argument","message":"bad"}}', 1)
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
+    assert.match(r.stderr, /invalid_argument 로 실패했다/)
+    assert.ok(!r.calls.some((c) => c.includes('[send]')))
+  })
+
   test('--resume 이 실패하면 대신 보내지 않고 2 다', () => {
     fake('unknown message', 1)
     const r = ask('--from', 'term_w', '--resume', 'm1')
     assert.deepEqual([r.code, r.calls.length], [2, 2])
+    assert.ok(!r.calls.some((c) => c.includes('[send]')))
+  })
+})
+
+describe('바쁜 Orca', () => {
+  const BUSY = '{"ok":false,"error":{"code":"runtime_busy","message":"Remote runtime subscription request capacity reached."}}'
+
+  test('runtime_busy 면 기다렸다 같은 질문을 다시 묻고 메일함으로 보내지 않는다', () => {
+    fake('{"result":{"answer":"됐다"}}', 0)
+    writeFileSync(join(tmp, 'ask1.out'), BUSY)
+    writeFileSync(join(tmp, 'ask1.rc'), '1')
+    env.ORCH_ASK_BUSY_MS = '10'
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(firstLine(r.stdout), 'answer: 됐다')
+    const asked = r.calls.filter((c) => c.includes('[ask]'))
+    assert.equal(asked.length, 2)
+    for (const call of asked) assert.match(call, /\[--question\]\[q\]/)
+    assert.match(r.stderr, /바빠\(runtime_busy\)/)
+    assert.ok(!r.calls.some((c) => c.includes('[send]')))
+  })
+
+  test('코드 없이 retry with backoff 만 있어도 바쁨으로 본다', () => {
+    fake('{"result":{"answer":"됐다"}}', 0)
+    writeFileSync(join(tmp, 'ask1.out'), 'error: capacity reached; retry with backoff')
+    writeFileSync(join(tmp, 'ask1.rc'), '1')
+    env.ORCH_ASK_BUSY_MS = '10'
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 0, r.stderr)
+    assert.ok(!r.calls.some((c) => c.includes('[send]')))
+  })
+
+  test('다시 불러도 계속 바쁘면 2 이고 메일함으로 보내지 않는다', () => {
+    fake(BUSY, 1)
+    env.ORCH_ASK_BUSY_MS = '1'
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
+    // 처음 한 번과 다시 부른 5 번
+    assert.equal(r.calls.filter((c) => c.includes('[ask]')).length, 6)
+    assert.match(r.stderr, /메일함으로 보내지 않는다/)
     assert.ok(!r.calls.some((c) => c.includes('[send]')))
   })
 })
