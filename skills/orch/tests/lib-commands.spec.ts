@@ -28,8 +28,6 @@ function fails(argv: string[]): string {
 describe('표의 행', () => {
   test('모든 행의 스크립트가 있다', () => {
     for (const c of COMMANDS) {
-      // install-cli.ts 는 phase 03 에서 생긴다
-      if (c.script === 'install-cli.ts' && !existsSync(join(SCRIPTS, c.script))) continue
       assert.ok(existsSync(join(SCRIPTS, c.script)), `${form(c)} → ${c.script}`)
     }
   })

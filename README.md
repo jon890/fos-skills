@@ -270,7 +270,7 @@ ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/s
 | `tools/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview` |
 
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
-이 플러그인은 `bin/` 을 두지 않아 `browser-driver` 를 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
+이 플러그인의 루트 `bin/` 에는 orch 실행기 `orch` 하나만 있어요. `browser-driver` 는 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
 
 `extensions/work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 예요.
 orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여기 있어요. 동작은 [`extensions/work-board/README.md`](extensions/work-board/README.md) 에 있어요.

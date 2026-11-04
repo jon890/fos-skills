@@ -64,7 +64,7 @@ Claude 세션의 Bash 는 플러그인 루트 `bin/orch` 로, Codex 와 사람�
 ```bash
 node --test skills/orch/tests/orch-launcher.spec.ts skills/orch/tests/orch-entry.spec.ts skills/orch/tests/lib-commands.spec.ts
 python3 -m unittest scripts/tests/test_plugin_manifest.py
-python3 skills/plan/scripts/check_adr_layout.py docs/adr
+python3 skills/plan/scripts/check_adr_layout.py docs/adr --flat
 ```
 
 ## 변경 파일
@@ -77,5 +77,6 @@ python3 skills/plan/scripts/check_adr_layout.py docs/adr
 | `skills/orch/tests/lib-commands.spec.ts` | 수정 |
 | `scripts/tests/test_plugin_manifest.py` | 수정 |
 | `docs/adr/004-no-plugin-bin.md` | 수정 |
+| `docs/adr/INDEX.md` | 수정 |
 | `docs/code-architecture.md` | 수정 |
 | `README.md` | 수정 |
