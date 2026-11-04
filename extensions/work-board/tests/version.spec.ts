@@ -1,6 +1,6 @@
 // 플러그인 버전 표시와 갱신 명령을 정하는 순수 함수를 본다. 화면은 version.test.ts 가 본다.
 //
-// 실행: node --test work-board/tests/version.spec.ts
+// 실행: node --test extensions/work-board/tests/version.spec.ts
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
@@ -182,5 +182,5 @@ test('directory 설치본의 갱신 명령은 그 폴더에서 origin main 을 f
 test('main 이 아니거나 추적 파일 변경이 있으면 받지 않는 이유를 돌려준다 (R3)', () => {
   assert.equal(directoryRefusal('main\n', ''), '')
   assert.match(directoryRefusal('feat/x\n', ''), /main 이 아니/)
-  assert.match(directoryRefusal('main\n', ' M work-board/hooks/register.js\n'), /고치는 중인 파일/)
+  assert.match(directoryRefusal('main\n', ' M extensions/work-board/hooks/register.js\n'), /고치는 중인 파일/)
 })

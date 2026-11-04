@@ -13,7 +13,7 @@
 | 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
 | 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `scripts/`, `githooks/`, `docs/` |
 | 플러그인이 싣는 훅 | `skills/orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 배열이 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
-| 플러그인이 싣는 mod | `work-board/hooks/hooks.json` 의 hooks 모듈. 작업 현황 창 `/board` 를 그린다. `hooks` 배열이 가리킨다([ADR-006](adr/006-work-board-in-plugin.md)) |
+| 플러그인이 싣는 mod | `extensions/work-board/hooks/hooks.json` 의 hooks 모듈. 작업 현황 창 `/board` 를 그린다. `hooks` 배열이 가리킨다([ADR-006](adr/006-work-board-in-plugin.md)) |
 | Codex 가 싣는 것 | `.codex-plugin/plugin.json` 의 `skills` 배열뿐이다. 훅과 mod 는 Claude Code 전용이라 싣지 않는다([ADR-007](adr/007-codex-manifest-without-hooks.md)) |
 | 플러그인이 설치하지 않는다 | 한국어 검사 `PostToolUse` 훅, `~/.claude/rules/` 의 규칙 파일, `~/.claude/scripts/` 의 링크 |
 
@@ -26,7 +26,7 @@
 | `.claude-plugin/`, `.codex-plugin/` | 저장소 루트를 배포하는 하네스별 매니페스트 |
 | `skills/<이름>/` | 설치 스킬과 그 스킬의 references·templates·scripts·hooks·tests |
 | `export-only-skills/<이름>/` | 자동 로드하지 않는 팀 내보내기 원본 |
-| `work-board/` | 보드 확장 기능. 별도 변경에서 extensions 아래로 이동 |
+| `extensions/work-board/` | 보드 확장 기능과 그 전용 훅·명령·테스트 |
 | `tools/` | 여러 스킬이 쓰는 공용 도구 |
 | `scripts/` | 이 저장소의 설치·검사·내보내기·버전 관리 |
 | `githooks/` | Git commit-msg 와 post-commit. Claude 훅이 아님 |
@@ -70,7 +70,7 @@
 | `scripts/bump-plugin-version.py` | main push 범위의 스킬 CHANGELOG 로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다 | `.github/workflows/plugin-version.yml` |
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
-| `work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
+| `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.sh` |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
 | `scripts/test-plugin-install.sh` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
@@ -141,8 +141,8 @@
 | 명령 | 확인하는 것 |
 | --- | --- |
 | `python3 -m unittest discover -s scripts/tests` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `test_export_to_team.py` 가 `export-to-team.sh` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
-| `node --test --test-concurrency=4 "skills/orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"` | orch 와 work-board 의 node:test. 파일마다 프로세스가 나뉜다 |
-| `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 스킬 여섯 개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
+| `node --test --test-concurrency=4 "skills/orch/tests/*.spec.ts" "extensions/work-board/tests/*.spec.ts"` | orch 와 work-board 의 node:test. 파일마다 프로세스가 나뉜다 |
+| `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 설치 스킬 16개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
 `claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.
 설치 테스트가 `claude plugin validate . --json` 의 결과에서 오류가 없고 경고가 버전 경고 하나뿐인지를 확인한다.
@@ -215,13 +215,13 @@ skills/orch/hooks/<이름>.ts             PreToolUse hook. hooks.json 이 node �
 skills/orch/hooks/shell-text.ts          hook 이 함께 쓰는 셸 글자 처리 모듈. hook 이 아니다
 skills/orch/tests/<이름>.spec.ts        node:test. claude plugin test 가 고르는 *.test.ts 와 겹치지 않게 이름을 둔다
 skills/orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
-work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
+extensions/work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
 ```
 
 `skills/orch/scripts/` 의 명령은 `lib/` 만 import 한다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
-예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `work-board/bin/board.ts` 에서 import 한다.
-work-board 에서 orch 를 import 하는 곳은 `work-board/bin/worker-marks.ts` 하나다. 보드 worker 줄의 멈춤 판정을 상주 루프와 한 벌로 두려는 것이다.
-`work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/paths.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.
+예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `extensions/work-board/bin/board.ts` 에서 import 한다.
+work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worker-marks.ts` 하나다. 보드 worker 줄의 멈춤 판정을 상주 루프와 한 벌로 두려는 것이다.
+`extensions/work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/paths.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.
 옛 코드는 하이픈이 든 파일을 `importlib` 로 읽어 함수를 빌려 썼다. 그 함수는 `lib/` 로 옮긴다.
 
 ### 실행 규칙
@@ -232,7 +232,7 @@ work-board 에서 orch 를 import 하는 곳은 `work-board/bin/worker-marks.ts`
 | 실행 | `"$SKILL_DIR/bin/orch.ts" <명령>`. 진입점이 설치 기록의 현재 번들에서 `scripts/<명령>.ts` 를 `node --disable-warning=ExperimentalWarning` 으로 실행한다. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다. 경로 규칙은 `skills/orch/bin/orch.ts` 머리 주석이 소유한다 |
 | 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
 | 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
-| 테스트 | `node --test --test-concurrency=4 "skills/orch/tests/*.spec.ts" "work-board/tests/*.spec.ts"`. 파일마다 프로세스가 나뉘어 격리 러너가 필요 없다. CI 는 `Plugin tests` job 에 이 단계를 더한다. 필수 체크 이름이 바뀌지 않는다 |
+| 테스트 | `node --test --test-concurrency=4 "skills/orch/tests/*.spec.ts" "extensions/work-board/tests/*.spec.ts"`. 파일마다 프로세스가 나뉘어 격리 러너가 필요 없다. CI 는 `Plugin tests` job 에 이 단계를 더한다. 필수 체크 이름이 바뀌지 않는다 |
 | 오류 출력 | 조회 실패처럼 코디네이터가 알아야 하는 것은 stdout 에 대문자 접두 줄(`WATCH-ERROR`, `HOOK-FAIL`)로 낸다. 하네스는 stderr 를 알림으로 보내지 않는다 |
 | 주석 | 한국어로 쓴다. 함정에는 이유 주석을 단다. 머리 주석이 사용법, 옵션, 종료 코드를 소유하고 문서는 그것을 옮겨 적지 않는다 |
 

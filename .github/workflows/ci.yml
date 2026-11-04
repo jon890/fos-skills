@@ -39,7 +39,7 @@ jobs:
         # 명령마다 .ts 를 다시 컴파일하지 않게 캐시를 둔다. Node 24 부터 타입을 제거한 .ts 에 듣는다(docs/adr/011-node-24-minimum.md)
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
-        run: node --test --test-concurrency=4 "skills/orch/tests/*.spec.ts" "work-board/tests/*.spec.ts" "skills/inbox/tests/*.spec.ts"
+        run: node --test --test-concurrency=4 "skills/orch/tests/*.spec.ts" "extensions/work-board/tests/*.spec.ts" "skills/inbox/tests/*.spec.ts"
 
   python:
     name: Python tests
@@ -64,7 +64,7 @@ jobs:
           for suite in scripts/tests skills/*/tests export-only-skills/*/tests tools/*/tests; do
             # orch, work-board, inbox 의 테스트는 node:test 라 Plugin tests job 이 돌린다.
             # 세 폴더에 Python 테스트가 없고, 빈 폴더에서 unittest 는 종료 코드 5 로 실패한다
-            if [[ "$suite" == "skills/orch/tests" || "$suite" == "work-board/tests" || "$suite" == "skills/inbox/tests" ]]; then
+            if [[ "$suite" == "skills/orch/tests" || "$suite" == "extensions/work-board/tests" || "$suite" == "skills/inbox/tests" ]]; then
               continue
             fi
             echo "Testing $suite"

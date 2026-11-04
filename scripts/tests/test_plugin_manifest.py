@@ -74,12 +74,12 @@ class PluginManifestTest(unittest.TestCase):
 
     def test_hook_files_exist(self):
         hooks = load(PLUGIN)["hooks"]
-        self.assertIn("./work-board/hooks/hooks.json", hooks)
+        self.assertIn("./extensions/work-board/hooks/hooks.json", hooks)
         for path in hooks:
             self.assertTrue((ROOT / path).is_file(), path)
 
     def test_board_plugin_root_scripts_exist(self):
-        source = (ROOT / "work-board/hooks/register.js").read_text()
+        source = (ROOT / "extensions/work-board/hooks/register.js").read_text()
         paths = re.findall(r"\$\.plugin\.root \+ ['\"](/[^'\"]+\.(?:ts|js))['\"]", source)
         self.assertGreaterEqual(len(paths), 5)
         for path in paths:

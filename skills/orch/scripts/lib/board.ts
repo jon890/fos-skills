@@ -3,7 +3,7 @@
 // `보드 항목 id:` 로 정한 항목이 done 이면 doing 으로 다시 열고 지난 단계 뒤에 새 단계를 잇는다(ADR-015).
 // id 는 백틱 안의 글이나 공백 앞 첫 토큰이다(lib/spec.ts 의 boardIdOf). 설명이 붙었는데 보드에 없는 id 면 항목을 만들지 않는다
 // 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018)
-import { parseEventTag } from '../../../../work-board/hooks/event-tags.js'
+import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,7 +13,7 @@ import { boardPath } from './paths.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
 import { boardIdOf, interimOf } from './spec.ts'
 
-export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../work-board/bin/board.ts')
+export const BOARD_BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../extensions/work-board/bin/board.ts')
 export type BoardItem = Record<string, unknown> & { id: string }
 export function readBoard(file: string): BoardItem[] {
   const raw = JSON.parse(readFileSync(file, 'utf8')).items

@@ -11,7 +11,7 @@
 //     --pr          릴리스에 든 PR 번호를 직접 준다. 여러 번 준다. pr 칸이나 merged-pr 칸에 그 번호가 든 항목이 대상이다
 //     --repo        gh 와 git 을 돌릴 저장소. 기본은 현재 디렉터리
 //     --board       board.json. 기본은 work-board 의 board.ts 가 정한 위치
-//     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
+//     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 extensions/work-board/bin/board.ts
 //     --dry-run     보드를 고치지 않고 바뀔 항목과 부를 보드 명령만 낸다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
@@ -38,7 +38,7 @@ import { ghJson } from './lib/gh.ts'
 import { boardSettings, mergedCommands, stagesOf } from './lib/milestones.ts'
 import { boardPath } from './lib/paths.ts'
 import { run, scriptCommand } from './lib/proc.ts'
-import { parseEventTag } from '../../../work-board/hooks/event-tags.js'
+import { parseEventTag } from '../../../extensions/work-board/hooks/event-tags.js'
 
 const USAGE = '사용법: board-release.ts (--release PR | --pr N [--pr N ...]) [--repo DIR] [--board PATH] [--board-bin PATH] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -117,7 +117,7 @@ function main(argv: string[]): number {
   }
   const repo = resolve(values.repo ?? '.')
   const board = values.board ? resolve(values.board) : boardPath(repo)
-  const boardBin = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../../work-board/bin/board.ts')
+  const boardBin = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../../extensions/work-board/bin/board.ts')
   const dryRun = values['dry-run'] === true
   let doneAfter
   try {

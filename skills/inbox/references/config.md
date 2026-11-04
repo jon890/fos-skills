@@ -70,4 +70,4 @@
 2. `scripts/adapters/index.ts` 의 표에 `slack` 줄을 더한다.
 3. 설정의 `adapters` 에 `{ "type": "slack" }` 을, 저장소 필터에 `"slack": { "channels": [...] }` 를 더한다.
 
-보드, 요청문, `inbox.ts` 명령은 바뀌지 않는다. 보드의 머리말을 「Slack」 으로 바꾸려면 `work-board/hooks/register.js` 의 `inboxTag` 에 한 줄을 더한다.
+보드, 요청문, `inbox.ts` 명령은 바뀌지 않는다. 보드의 머리말을 「Slack」 으로 바꾸려면 `extensions/work-board/hooks/register.js` 의 `inboxTag` 에 한 줄을 더한다.

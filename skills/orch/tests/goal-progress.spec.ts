@@ -1,5 +1,5 @@
 // goal-progress.ts 를 임시 보드와 인자를 기록하는 가짜 보드 명령으로 돌려 본다. orca 와 GitHub 에는 닿지 않는다.
-// 기본 보드 명령(work-board/bin/board.ts)을 쓰는 사례 하나만 실제 보드 명령으로 임시 보드를 고친다.
+// 기본 보드 명령(extensions/work-board/bin/board.ts)을 쓰는 사례 하나만 실제 보드 명령으로 임시 보드를 고친다.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -101,7 +101,7 @@ describe('goal-progress', () => {
     assert.deepEqual(recorded(), ['set', 'goal', '--progress', '1/1', '--file', board])
   })
 
-  test('--board-bin 과 BOARD_BIN 이 없으면 work-board/bin/board.ts 로 보드 파일을 고친다', () => {
+  test('--board-bin 과 BOARD_BIN 이 없으면 extensions/work-board/bin/board.ts 로 보드 파일을 고친다', () => {
     const r = goal(['goal', 'a', 'b', '--board', board])
     assert.equal(r.code, 0, r.stderr)
     const saved = JSON.parse(readFileSync(board, 'utf8')) as { items: { id: string; progress?: string }[] }

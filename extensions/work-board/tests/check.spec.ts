@@ -1,6 +1,6 @@
 // c 다음 번호가 고르는 항목과 채우는 상태 확인 요청문을 본다 (docs/features/board-item-check REQ1~REQ3).
 //
-// 실행: node --test work-board/tests/check.spec.ts
+// 실행: node --test extensions/work-board/tests/check.spec.ts
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'

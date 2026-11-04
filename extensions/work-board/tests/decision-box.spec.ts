@@ -1,7 +1,7 @@
 // 「결정 필요」 상자에 사람이 답할 것만 남기고, Orca 자동 알림을 worker 줄의 상태로 옮기는 순수 함수를 본다.
 // 스펙: docs/features/board-decision-box/spec.md. 테스트 이름 끝의 (R…) 가 그 요구사항이다.
 //
-// 실행: node --test work-board/tests/decision-box.spec.ts
+// 실행: node --test extensions/work-board/tests/decision-box.spec.ts
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'

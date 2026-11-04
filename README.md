@@ -164,7 +164,7 @@ fos-skills 는 소프트웨어 개발의 각 단계를 연결하는 종합 스�
 | --- | --- |
 | `skills/<이름>/` | 설치해서 쓰는 스킬. 절차·참조·양식·스크립트·테스트를 함께 둬요 |
 | `export-only-skills/<이름>/` | 팀 저장소로 내보내는 원본. 기본 스킬 탐색에는 넣지 않아요 |
-| `work-board/` | 작업 현황 창과 보드 명령. 다음 배치 변경에서 확장 기능 폴더로 옮겨요 |
+| `extensions/work-board/` | 작업 현황 창과 보드 명령 |
 | `tools/` | 여러 스킬이 사용하는 공용 도구 |
 | `scripts/` | 저장소 검사·설치·내보내기·버전 관리 |
 | `githooks/` | 이 저장소를 개발할 때 쓰는 Git 훅 |
@@ -272,8 +272,8 @@ ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/s
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
 이 플러그인은 `bin/` 을 두지 않아 `browser-driver` 를 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
 
-`work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 예요.
-orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있어요. 동작은 [`work-board/README.md`](work-board/README.md) 에 있어요.
+`extensions/work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 예요.
+orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여기 있어요. 동작은 [`extensions/work-board/README.md`](extensions/work-board/README.md) 에 있어요.
 
 `scripts/` 에는 이 저장소를 관리하는 명령과, 어느 스킬도 소유하지 않는 검사기를 둬요.
 

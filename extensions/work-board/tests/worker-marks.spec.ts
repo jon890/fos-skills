@@ -1,7 +1,7 @@
 // bin/worker-marks.ts 가 orch 상주 루프와 같은 판정(lib/movement.ts 의 judgeWorker)과 같은 기다림 입력으로 멈춤을 내는지 본다.
 // 스펙: docs/features/board-decision-box/spec.md 의 R4, R5. 워크트리는 임시 폴더다.
 //
-// 실행: node --test work-board/tests/worker-marks.spec.ts
+// 실행: node --test extensions/work-board/tests/worker-marks.spec.ts
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'

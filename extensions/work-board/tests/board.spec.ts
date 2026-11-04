@@ -1,6 +1,6 @@
 // bin/board.ts 를 임시 보드 파일로 실행해 단계 줄 처리와 set 규칙, 기본 보드 위치를 확인한다.
 //
-// 실행: node --test work-board/tests/board.spec.ts
+// 실행: node --test extensions/work-board/tests/board.spec.ts
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'

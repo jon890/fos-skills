@@ -1,7 +1,7 @@
 # 진행 보드
 
 work-board 형식의 `board.json` 으로 worker 와 PR 현황을 보여 주는 환경에서만 쓴다. 보드가 없으면 이 절차를 건너뛴다.
-보드 파일은 work-board 소유다. 기본 위치는 [`work-board/README.md`](../../../work-board/README.md) 가 정하고, 다른 곳이면 `.orch/config.json` 의 `finish.board` 로 준다.
+보드 파일은 work-board 소유다. 기본 위치는 [`extensions/work-board/README.md`](../../../extensions/work-board/README.md) 가 정하고, 다른 곳이면 `.orch/config.json` 의 `finish.board` 로 준다.
 
 **하위 줄은 사용자 마일스톤 단계만 둔다.** 지시서 「할 일」 의 구현 세부는 보드에 올리지 않는다. 구현 세부는 머지와 배포로 끝낼 수 없어 진행률이 멈춘다.
 단계 줄은 `1. PR`, `2. 머지` 처럼 번호로 시작하고, 저장할 때는 줄마다 `{"text": "1. PR", "done": false}` 객체를 쓴다.

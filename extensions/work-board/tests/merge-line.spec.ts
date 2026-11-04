@@ -1,7 +1,7 @@
 // 열린 PR 아래에 붙이는 머지 줄의 판정(mergeLine)과 대기 이유를 옮기는 말(waitText)을 본다.
 // 세 경우(큐를 쓰지 않음, 큐를 쓰고 기록이 있음, 큐를 쓰고 기록이 없음)를 한 판정 함수로 묶는다.
 //
-// 실행: node --test work-board/tests/merge-line.spec.ts
+// 실행: node --test extensions/work-board/tests/merge-line.spec.ts
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'

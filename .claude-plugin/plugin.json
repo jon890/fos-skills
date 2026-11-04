@@ -27,6 +27,6 @@
   ],
   "hooks": [
     "./skills/orch/hooks/hooks.json",
-    "./work-board/hooks/hooks.json"
+    "./extensions/work-board/hooks/hooks.json"
   ]
 }

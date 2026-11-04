@@ -46,7 +46,7 @@
 //     board-sync.ts [--board PATH] [--repo DIR] [--goal GOAL_ID --goal-items FILE] [--dry-run]
 //
 //     --board       board.json. 기본은 work-board 의 board.ts 가 정한 위치
-//     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
+//     --board-bin   항목을 고치는 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 extensions/work-board/bin/board.ts
 //     --repo        gh 를 돌릴 저장소. 기본은 현재 디렉터리
 //     --open-prs    루프가 이미 읽은 열린 PR JSON 목록(number, headRefName). 없으면 직접 조회한다
 //     --goal, --goal-items
@@ -84,7 +84,7 @@ import { gh, ghJson } from './lib/gh.ts'
 import { boardPath, pathOf } from './lib/paths.ts'
 import { run, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
-import { parseEventTag } from '../../../work-board/hooks/event-tags.js'
+import { parseEventTag } from '../../../extensions/work-board/hooks/event-tags.js'
 
 const USAGE = '사용법: board-sync.ts [--board PATH] [--board-bin PATH] [--repo DIR] [--goal GOAL_ID [--goal-items FILE]] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -187,7 +187,7 @@ function main(argv: string[]): number {
     err('board-sync: --goal-items 는 --goal 과 함께 준다')
     return 2
   }
-  const boardBin = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../../work-board/bin/board.ts')
+  const boardBin = values['board-bin'] || process.env.BOARD_BIN || resolve(HERE, '../../../extensions/work-board/bin/board.ts')
   const board = values.board ? resolve(values.board) : boardPath(resolve(values.repo ?? '.'))
   const repo = resolve(values.repo ?? '.')
   const dryRun = values['dry-run'] === true

@@ -8,7 +8,7 @@
 
 ## 범위
 
-- 대상은 work-board 의 `/board` 창과 그 등록 훅(`work-board/hooks/register.js`)이다.
+- 대상은 work-board 의 `/board` 창과 그 등록 훅(`extensions/work-board/hooks/register.js`)이다.
 - 범위 밖: 완료(done) 항목과 펼친 보기의 상세 줄, 요청문을 자동으로 보내기(훅의 텍스트는 코디네이터 모델에 닿지 않아 사람이 Enter 로 보낸다).
 
 ## 요구사항과 인수 조건

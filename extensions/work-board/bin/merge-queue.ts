@@ -37,9 +37,9 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { loadConfig } from '../../skills/orch/scripts/lib/config.ts'
-import { real } from '../../skills/orch/scripts/lib/fs.ts'
-import { pathOf } from '../../skills/orch/scripts/lib/paths.ts'
+import { loadConfig } from '../../../skills/orch/scripts/lib/config.ts'
+import { real } from '../../../skills/orch/scripts/lib/fs.ts'
+import { pathOf } from '../../../skills/orch/scripts/lib/paths.ts'
 
 export type QueueRow = { place: 'turn' | 'queued' | 'ready' | 'out'; rank: number | null; reason: string | null; at: string | null }
 export type QueueView = { enabled: boolean; running: boolean; prs: Record<string, QueueRow>; error: string | null }

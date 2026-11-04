@@ -1,6 +1,6 @@
 // bin/merge-queue.ts 가 orch 설정, 상태 파일과 루프 로그에서 머지 큐의 순서, 머지 가능 여부, 대기 이유를 내는지 본다. 상태 폴더는 임시 폴더다.
 //
-// 실행: node --test work-board/tests/merge-queue.spec.ts
+// 실행: node --test extensions/work-board/tests/merge-queue.spec.ts
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'

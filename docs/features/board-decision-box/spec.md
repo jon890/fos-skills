@@ -13,7 +13,7 @@
 
 이번 범위:
 
-- work-board 질문 상자의 모으기·제외와 표시(`work-board/hooks/register.js` 의 `queryQuestions`, 상자 그리기)
+- work-board 질문 상자의 모으기·제외와 표시(`extensions/work-board/hooks/register.js` 의 `queryQuestions`, 상자 그리기)
 - 항목의 worker 줄에 멈춤·오류 상태 붙이기, 「worker 없음」 줄에 멈춘 시간 붙이기
 - 「정할 것 묻기」 요청문(`DECIDE_PROMPT`) 강화
 - 모든 저장소 보드의 기본 동작으로 바꾼다. 저장소별 설정은 두지 않는다

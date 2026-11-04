@@ -29,12 +29,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { ConfigError } from '../../skills/orch/scripts/lib/config.ts'
-import { real } from '../../skills/orch/scripts/lib/fs.ts'
-import { judgeWorker, lastCommitMs, latestMtime, movementSettings, openRows, readRecords, worktreeOf } from '../../skills/orch/scripts/lib/movement.ts'
-import type { MovementSettings, ScreenMark } from '../../skills/orch/scripts/lib/movement.ts'
-import { pathOf } from '../../skills/orch/scripts/lib/paths.ts'
-import { workerRows } from '../../skills/orch/scripts/lib/workers.ts'
+import { ConfigError } from '../../../skills/orch/scripts/lib/config.ts'
+import { real } from '../../../skills/orch/scripts/lib/fs.ts'
+import { judgeWorker, lastCommitMs, latestMtime, movementSettings, openRows, readRecords, worktreeOf } from '../../../skills/orch/scripts/lib/movement.ts'
+import type { MovementSettings, ScreenMark } from '../../../skills/orch/scripts/lib/movement.ts'
+import { pathOf } from '../../../skills/orch/scripts/lib/paths.ts'
+import { workerRows } from '../../../skills/orch/scripts/lib/workers.ts'
 
 type Json = Record<string, unknown>
 
