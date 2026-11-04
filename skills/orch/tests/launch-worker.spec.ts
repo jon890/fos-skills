@@ -1778,6 +1778,15 @@ describe('짧은 출력', () => {
     assert.match(r.stdout, /^STALLED-START ctx_2 worktree_creating$/m)
   })
 
+  test('worker-start 가 실패하면 receipt 전체를 START-FAIL 한 줄로 남긴다', () => {
+    state({ start_fails: true })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    const line = r.stdout.split('\n').find((l) => l.startsWith('START-FAIL ')) ?? ''
+    assert.deepEqual(JSON.parse(line.slice('START-FAIL '.length)), { ok: false, result: { failedStage: 'agent_readiness' } })
+  })
+
   test('남은 터미널 거부는 REFUSED 한 줄이다', () => {
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', title: 'claude 앞 세션', worktreePath: worktree }] })
     env.ORCH_OUTPUT = 'short'

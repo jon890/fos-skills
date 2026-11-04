@@ -83,7 +83,7 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
 **띄운 뒤 `worktree_creating` 에서 넘어가지 않으면 스크립트가 abandon 하고 같은 Task 를 `--retry-of` 로 한 번 다시 띄운다.** 기본으로 90초를 본다(`--watch`).
 abandon 하기 전에 일하는 흔적(heartbeat, 워크트리 변경, 작업 중 화면)을 보고, 있으면 다시 띄우지 않고 그대로 `LAUNCHED` 로 끝낸다. 살아 일하는 worker 옆에 같은 일의 worker 를 하나 더 띄워 한 워크트리에서 커밋이 섞인 일이 있었다. 근거 목록은 스크립트 머리 주석이 소유한다.
 다시 띄워도 멈추면 종료 코드 1 이다. 그때는 아래 「첫 화면에서 멈춤」 처럼 `worker-show` 의 `lastFailure` 를 본다.
-`worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다.
+`worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다. 기본 출력의 `START-FAIL <receipt>` 줄이 실패 단계(`failedStage`)와 남은 자원을 담는다. 다시 불러 확인하지 않는다.
 
 ## 띄운 직후 확인
 
