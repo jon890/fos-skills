@@ -1,0 +1,87 @@
+{
+  "name": "short-command",
+  "description": "짧은 orch 명령(새 꼴, 문맥 기본값, PATH 실행기, 번들 범위 규칙, 훅, NEXT_WAIT, doctor 판정, 문서 호출)",
+  "pr_scope": "orch 를 PATH 의 `orch <묶음> <동작>` 으로 부르게 하고(실행기, 명령 표, 문맥 기본값, user 범위 번들 규칙, 훅, 새 NEXT_WAIT, doctor 판정) 문서 호출을 새 꼴로 일괄 교체한다(변경 파일 40개 초과는 문서 일괄 교체와 기존 테스트 기대값 몫이다).",
+  "deferred": [
+    {
+      "what": "명령마다 짧은 판정 줄 출력과 --full, 대기의 메시지별 분류 줄과 원문 저장, 사람용 요약 orch status(REQ4 의 짧은 출력, REQ5 의 옛 꼴 짧은 출력, REQ10, REQ11)",
+      "why": "출력 계약을 명령마다 바꾸는 일이라 명령 꼴과 섞으면 PR 하나에 들어가지 않고, 새 꼴이 먼저 자리 잡아야 출력 신호를 진입점에서 켤 수 있다",
+      "after": "이 PR(PR1)이 머지된 뒤"
+    },
+    {
+      "what": "진입 스크립트를 scripts/<묶음>/ 폴더로 옮기고 스크립트끼리 부르는 경로를 명령 표의 scriptPath 로 바꾼다(REQ9)",
+      "why": "다른 저장소의 직접 경로 호출(스펙 부록)이 모두 새 꼴로 고쳐진 뒤에야 머지할 수 있다",
+      "after": "PR2 가 머지되고 스펙 부록의 모든 행이 새 꼴로 고쳐진 뒤"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-04",
+  "spec": "docs/features/orch-cli/spec.md",
+  "design": "docs/features/orch-cli/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ6",
+    "REQ7",
+    "REQ8"
+  ],
+  "total_phases": 6,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ2",
+        "REQ5",
+        "REQ6"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ3"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ6"
+      ]
+    },
+    {
+      "number": 4,
+      "file": "phase-04.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ4"
+      ]
+    },
+    {
+      "number": 5,
+      "file": "phase-05.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ7"
+      ]
+    },
+    {
+      "number": 6,
+      "file": "phase-06.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ8"
+      ]
+    }
+  ]
+}
