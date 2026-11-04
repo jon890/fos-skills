@@ -85,7 +85,7 @@ def search_order(root: Path, skill: str, sub: str | None) -> list[str]:
             if (root / current).is_file():
                 order.remove(legacy)
             elif (root / legacy).is_file():
-                print(f"경고: {legacy} 는 옛 이름입니다. {current} 로 옮겨 주세요 (5.0.0에서 호환 제거).", file=sys.stderr)
+                print(f"경고: {legacy} 는 옛 이름입니다. {current} 로 옮겨 주세요 (docs-audit 스킬 5.0.0에서 호환 제거).", file=sys.stderr)
     if sub:
         order += [f"{sub}/{name}" for name in HARNESS]
     order += list(HARNESS)

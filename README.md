@@ -235,7 +235,7 @@ claude plugin install fos-skills@fos-skills
 `planning` 은 `plan`, `build-with-teams` 는 `implementation` 으로 바뀌었어요. 예전 명령 대신 새 이름으로 불러요.
 기존 계획 경로와 R1/D1 ID 는 읽기 호환으로 유지해요. 기존 planning/build-with-teams 오버레이도 읽으며 새 이름의 값이 우선해요.
 
-문서 감사는 `/fos-skills:docs-audit` 로 불러요. 옛 이름 `docs-check` 의 오버레이는 새 이름 파일이 없을 때만 읽고 경고하며, 다음 major(5.0.0)에서 호환을 제거해요.
+문서 감사는 `/fos-skills:docs-audit` 로 불러요. 옛 이름 `docs-check` 의 오버레이는 새 이름 파일이 없을 때만 읽고 경고하며, docs-audit 스킬의 다음 major(5.0.0)에서 호환을 제거해요.
 
 ### 갱신
 

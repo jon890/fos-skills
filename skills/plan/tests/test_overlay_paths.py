@@ -110,6 +110,7 @@ class OverlayPathsTest(unittest.TestCase):
         self.assertIn(".claude/docs-check-overlay.md", json.loads(result.stdout)["search"]["."])
         self.assertEqual(len(result.stderr.splitlines()), 1)
         self.assertIn("docs-audit-overlay.md", result.stderr)
+        self.assertIn("docs-audit 스킬 5.0.0", result.stderr)
 
     def test_docs_audit_legacy_subproject_precedes_current_root(self):
         self.write(".claude/docs-audit-overlay.md", "루트")
