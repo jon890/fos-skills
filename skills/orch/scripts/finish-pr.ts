@@ -17,7 +17,8 @@
 //        보내지 못했으면(send-to-worker 의 3, 5 같은 것) 기다리지 않는다. worker 목록을 읽지 못하면 알리지 않고 그 사실을 남긴다.
 //        출력 줄은 `notify: ` 로 시작한다
 //     3. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
-//        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다
+//        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
+//        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 지시서만 남긴다
 //     4. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
 //        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 lib/deploy.ts 의 deployVerdict 가 소유한다
@@ -33,6 +34,10 @@
 //     7. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
 //     8. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
 //     9. 보드 항목을 고친다(아래 「보드 항목」)
+//
+// 기능 PR(지시서가 기능 루프이거나 본문에 완료 근거 블록이 있다): 단계 5 의 판정 뒤, after-deploy 앞에서 PR 본문을 새로 읽어 완료 근거를 검사한다.
+//     근거가 빠졌거나 후속 검증이 대기·실패면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 워크트리는 단계 3 에서 이미 지웠다.
+//     근거를 갱신한 뒤 같은 명령으로 재개한다
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
 //     이 표시가 없으면 FINISH-MISSING 을 낸다(`gh pr merge` 로 바로 머지해 마무리가 빠진 PR). 남기지 못하면 stderr 에 한 줄 남기고 계속한다
@@ -577,7 +582,9 @@ async function finish(args: Args, repo: string): Promise<number> {
   const worktree = branch ? worktreePath(repo, branch) : null
   if (worktree && args.run) await tellMerged(args, args.run, worktree, merge)
   const feature = featureBranch(repo, branch, args.specsDir ?? undefined) || merged.body.includes(EVIDENCE_START)
-  if (!feature && !(await cleanupWorker(args, repo, branch))) {
+  // 워크트리는 배포를 기다리기 전에 지운다. 배포 브랜치에 연달아 머지하면 배포 확인이 길어져 머지된 워크트리가 한 시간 넘게 남았다(2026-11-04).
+  // 기능 PR 도 같다. 후속 검증이 대기여도 cleanup-sweep 은 워크트리와 브랜치만 지우고 지시서를 남긴다(사용자 결정 2026-11-04)
+  if (!(await cleanupWorker(args, repo, branch))) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
   }
 
@@ -623,9 +630,6 @@ async function finish(args: Args, repo: string): Promise<number> {
   }
 
   if (!deployed || feature && problems.length > 0) return fail(problems.join('; '))
-  if (feature) {
-    if (!(await cleanupWorker(args, repo, branch))) log(`정리 남음: ${branch}`)
-  }
   deleteConflictSpecs(args, repo)
   if (args.specsDir) {
     if (last) deleteBranchSpecs(args, repo, branch)
