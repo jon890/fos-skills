@@ -33,8 +33,7 @@ kill -TERM $PIDS
 `survey_git.py` 가 기본으로 도는 PR 조회(`--no-check-prs` 로 끈다)로 나온 "제거 후보(PR 머지됨)" 는 머지됨 대신 머지된 PR 이 있는 것이고, 나머지 조건은 같다.
 기준 브랜치와 같은 커밋에서 막 만든 워크트리도 머지됨으로 잡히므로, 경과 일수가 짧은 것은 사용자에게 한 번 더 확인한다.
 
-**먼저 그 워크트리에 Orca 터미널이 붙어 있는지 본다.** `orch` 가 띄운 worker 의 워크트리를 `git worktree remove` 로 지워 활동 중인 worker 가 종료된 사고가 있었다.
-`orch` 는 `skills/orch/scripts/remove-worktree.ts` 로만 지운다. 그 스크립트는 `orca terminal list` 에서 `worktreePath` 가 워크트리 안인 터미널을 찾아 소유 상태가 `owned` 가 아니면 남긴다.
+**먼저 그 워크트리에 Orca 터미널이 붙어 있는지 본다.** `orch` 가 띄운 worker 의 워크트리는 `orch` 의 정리가 지운다. 이 스킬이 `git worktree remove` 로 지우면 활동 중인 worker 가 종료된다.
 
 ```bash
 orca terminal list --json
@@ -90,7 +89,7 @@ python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged --apply
 사용자 체크아웃(로컬 main pull 등)은 이 때문에 바꾸지 않는다.
 
 **PR 머지됨(`-D`)은 squash 머지처럼 `--is-ancestor` 로 보이지 않는 머지다.**
-PR 조회(`--check-prs`, 기본값)가 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조해 낸 분류다.
+PR 조회(`survey_git.py` 의 기본 동작)가 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조해 낸 분류다.
 조사와 실행 사이에 커밋이 생길 수 있으므로, 실행 직전 `git rev-parse` 값이 조사 JSON 의 `tip` 과 같을 때만 `-D` 를 쓴다. 다르면 지우지 않는다.
 
 **스크립트가 건드리지 않는 것.**
