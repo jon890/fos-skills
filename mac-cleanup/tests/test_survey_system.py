@@ -121,6 +121,57 @@ class MiseTest(unittest.TestCase):
         self.assertEqual(sy.parse_mise_prunable("mise scanning tracked configs ✓ done\n"), [])
 
 
+class MiseRowsTest(unittest.TestCase):
+    D = "/h/.local/share/mise"
+
+    def test_running_version_is_marked_and_sized(self):
+        grouped = {"node": ["22.23.4", "24.15.0"]}
+        sizes = {f"{self.D}/installs/node/24.15.0": 3 * 1024 * 1024, f"{self.D}/installs/node/22.23.4": 208 * 1024}
+        ps = f"{self.D}/installs/node/24.15.0/bin/node /h/.claude/hud/omc-hud.mjs\n"
+        rows = sy.mise_version_rows(grouped, self.D, sizes, ps)
+        self.assertEqual([(r["version"], r["running"]) for r in rows], [("22.23.4", False), ("24.15.0", True)])
+        self.assertEqual(sy.format_mise_row(rows[1]), "  3.0G  node 24.15.0  실행중")
+        self.assertEqual(sy.format_mise_row(rows[0]), "  208M  node 22.23.4")
+
+    def test_version_prefix_overlap_is_not_running(self):
+        grouped = {"node": ["24.15.0"]}
+        ps = f"{self.D}/installs/node/24.15.01/bin/node x\n"
+        self.assertFalse(sy.mise_version_rows(grouped, self.D, {}, ps)[0]["running"])
+
+    def test_missing_install_path_has_no_size(self):
+        rows = sy.mise_version_rows({"gradle": ["9.8.0"]}, self.D, {}, "")
+        self.assertIsNone(rows[0]["kb"])
+        self.assertEqual(sy.format_mise_row(rows[0]), "    없음  gradle 9.8.0")
+
+    def test_alias_path_process_is_running(self):
+        v = f"{self.D}/installs/node/24.15.0"
+        aliases = {v: [f"{self.D}/installs/node/24.15"]}
+        ps = f"{self.D}/installs/node/24.15/bin/node /h/.claude/hud/omc-hud.mjs\n"
+        self.assertTrue(sy.mise_version_rows({"node": ["24.15.0"]}, self.D, {}, ps, aliases)[0]["running"])
+        self.assertFalse(sy.mise_version_rows({"node": ["24.15.0"]}, self.D, {}, ps)[0]["running"])
+
+    def test_alias_of_other_version_is_not_running(self):
+        aliases = {f"{self.D}/installs/node/24.22.1": [f"{self.D}/installs/node/24"]}
+        ps = f"{self.D}/installs/node/24/bin/node x\n"
+        rows = sy.mise_version_rows({"node": ["24.15.0", "24.22.1"]}, self.D, {}, ps, aliases)
+        self.assertEqual([(r["version"], r["running"]) for r in rows], [("24.15.0", False), ("24.22.1", True)])
+
+    def test_mise_aliases_reads_symlinks(self):
+        import os, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            tool = os.path.join(d, "installs", "node")
+            os.makedirs(os.path.join(tool, "24.15.0"))
+            os.makedirs(os.path.join(tool, "24.22.1"))
+            os.symlink("./24.15.0", os.path.join(tool, "24.15"))
+            os.symlink("./24.22.1", os.path.join(tool, "24"))
+            got = sy.mise_aliases(d, {"node": ["24.15.0"]})
+            self.assertEqual(got, {os.path.join(tool, "24.15.0"): [os.path.join(tool, "24.15")]})
+
+    def test_data_dir_env_overrides_default(self):
+        self.assertEqual(sy.mise_data_dir({"MISE_DATA_DIR": "/x/mise"}), "/x/mise")
+        self.assertTrue(sy.mise_data_dir({}).endswith("/.local/share/mise"))
+
+
 class ProcessMatchTest(unittest.TestCase):
     PS = "/Applications/Cursor.app/Contents/MacOS/Cursor --x\n/bin/zsh -l\nnode /home/u/.cache/puppeteer/chrome/run\n"
 

@@ -1,12 +1,20 @@
 # CHANGELOG: orch
 
-## 7.5.0 (2026-11-04)
+## 7.6.0 (2026-11-04)
 
 - 사용자와 대화 중이면(마지막 입력 10분 안) 코디네이터는 깨어난 대기를 다시 걸지 않는다. `user-active` 가 판정하고, 상주 루프는 그동안 `NO-WAIT` 와 `decision-pending` 전달을 미룬다
 - `decision-pending` 전달이 실패하면 10분부터 두 배씩 기다렸다 다시 낸다. 보드 decide 항목의 `참고:` 줄은 결정으로 세지 않는다
 - `send-to-worker` 가 `dispatch_inactive`, `answer_conflict` 로 거절된 질문을 닫은 질문으로 적는다. `worker-ask` 는 `runtime_busy` 면 기다렸다 다시 묻고, 끝난 dispatch 의 오류일 때만 Run 메일함으로 보낸다
 - doctor 의 `LOOP-STALE` 이 지금 세션 프로필의 user 범위 설치본과 비교한다. `ORCA-SHAPE` 로 Orca 출력 형식 변경을 알린다. worker 터미널 send hook 은 살아 있는 터미널 상태만 읽고 판정을 10분 기억한다
 - `board-sync` 가 단계를 모두 끝냈고 열린 PR, 워크트리, 남은 일 줄이 없는 doing 항목을 done 으로 바꾼다
+
+## 7.5.0 (2026-11-04)
+
+- 공통 지시서 틀에 검토 하위 에이전트를 요청하는 줄(`review-subagents`)을 더했다. Codex worker 도 하위 에이전트로 검토자를 띄운다
+- `spec-lint` 가 표지 붙은 항목의 본문을 틀과 비교해 다르면 `공통` 경고를 낸다. 보드 고치기 금지 줄에 `no-board-edit` 표지를 달았다
+- 마이그레이션 번호 예약 문구를 틀로 옮겼다(`migration`). orch 설정에 `migrations` 가 있을 때만 요구하고, `reserve-migration` 은 `--base` 의 `origin/` 을 뗀다
+- `spec-lint` 가 지시서의 임시 폴더 경로를 `임시` 경고로 알린다. 재개 절은 회신 내용을 본문에 옮겨 적는다
+- `launch-worker --worktree` 가 커밋 안 된 변경이 있으면 거부한다. 이어받을 때는 `--dirty-ack <이유>` 를 준다
 
 ## 7.4.0 (2026-11-03)
 

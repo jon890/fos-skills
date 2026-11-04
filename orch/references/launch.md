@@ -65,6 +65,8 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다. 실패한 띄우기가 그 워크트리에 터미널을 남겼으면 그 목록도 함께 낸다. 이 세션이 띄운 것인지 보고 닫은 뒤 부른다.
 **그 워크트리에 터미널이 남아 있으면 스크립트가 목록을 보여 주고 거부한다.** 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
 목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다.
+**그 워크트리에 커밋 안 된 변경이 있어도 목록을 보여 주고 거부한다.** 재사용한 워크트리에 다른 PR 을 되돌린 변경 35개가 남아 있던 일이 있었다.
+무엇인지 보고 커밋하거나 정리한 뒤 다시 부른다. 끊긴 worker 의 변경을 새 worker 가 이어받는 일이면 `--dirty-ack <이유>` 를 준다. `--terminal` 로 이어 쓸 때와 리뷰 worker 는 보지 않는다.
 끝난 dispatch 의 터미널을 이어 쓰는 일은 `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서>` 가 한다.
 터미널이 남았으면 그 터미널을 이어 쓴다. 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. 터미널도 없으면 종료 코드 3 이다. 판정은 `send-to-worker` 머리 주석이 소유한다.
 **충돌과 리뷰 반영에는 닫고 새로 띄우지 않고 [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 를 따른다.**
@@ -222,7 +224,8 @@ Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본�
 
 1. `worker-show --dispatch "$DISPATCH_ID"` 로 dispatch 상태를 보고, `task-list` 로 Task 상태를 본다
 2. 워크트리에서 `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD` 와 `git -C "$WORKTREE" status --short` 로 끝난 커밋과 작업 트리의 변경을 확인한다. 커밋 안 된 변경은 버리지 않고 그대로 둔다
-3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다
+3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다.
+   앞 worker 의 회신, 사용자 결정, 조사 결과는 내용을 이 절에 옮겨 적는다. 임시 폴더(`/tmp`, `$TMPDIR`, scratchpad)의 파일은 재부팅이나 세션 종료 뒤 사라져 새 worker 가 막힌다. `spec-lint` 가 그런 경로를 `임시` 경고로 알린다
 4. 표대로 띄운다. 워크트리를 `path:` 로 주면 같은 워크트리에 이어 붙는다
 5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 가 `identity_unproven` 으로 닫지 않으므로 `orca terminal close` 를 쓴다. 이 세션이 띄운 worker 의 터미널만 닫는다
 
