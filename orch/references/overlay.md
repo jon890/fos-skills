@@ -75,6 +75,7 @@
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 문자열 목록. 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
+| `pipeline` | `refresh_slots`, `refresh_worker_paths` | 상주 루프가 머지 차례 전에 뒤처진 PR 에 base 를 미리 합치는 최신화. 아래 「뒤처진 PR 미리 최신화」 |
 | `pipeline` | `enabled`, `docs_merge`, `after_queue_interval_sec`, `ci_missing_after_sec`, `update_behind_drafts` | 상주 루프의 자동 진행에 쓸 값이다. 키는 사용법 오류 없이 받지만 아직 읽는 명령이 없다 |
 | `heavy` | `exclusive`, `normal`, `light`, `wait_idle` | 정규식 목록이다. `heavy-slot.ts` 가 읽는다. 사용법은 [`heavy-checks.md`](heavy-checks.md) 가 소유한다 |
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
@@ -111,6 +112,33 @@
 ```
 
 업무 완료와 합친 사본 검사 명령은 설정 칸이 아니라 `.orch/hooks/after-deploy.ts`, `.orch/hooks/verify-merged.ts` 에 둔다. 쓰는 법은 [`hooks.md`](hooks.md) 다.
+
+### 뒤처진 PR 미리 최신화
+
+**`pipeline.refresh_slots` 는 상주 루프가 건 최신화 가운데 동시에 CI 가 도는 PR 수의 상한이다. 기본 0 이고 0 이면 끈다.**
+켜면 루프가 틱마다 base 에 뒤처진 내 PR 을 찾아, 머지 큐가 차례에 할 `update-branch` 를 미리 PR 마다 따로 건다.
+뒤처진 PR 들의 CI 가 함께 돌고, 머지 큐는 지금처럼 하나씩 머지하되 차례가 온 PR 이 이미 최신이면 기다리지 않는다.
+최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
+대상과 미루는 경우는 `orch-loop.ts` 머리 주석의 「최신화」 가, 근거는 저장소 `docs/adr/020-orch-loop-refresh.md` 가 소유한다.
+
+**값은 CI runner 수보다 작게 둔다.** 최신화 하나가 PR CI 한 벌을 돌린다. worker 의 push, 머지 큐 차례의 CI, base 브랜치의 CI 도 같은 runner 를 쓰므로 runner 를 모두 주면 그쪽이 줄을 선다.
+runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함께 돌려 runner 를 여럿 쓰면 그만큼 줄인다.
+
+**`pipeline.refresh_worker_paths` 는 PR 과 base 가 모두 바꾼 파일이 맞으면 `update-branch` 대신 그 PR 의 살아 있는 worker 에게 합치기를 보낸다.** 계약 버전처럼 글자 충돌이 없어도 worker 가 판단해야 하는 파일을 적는다. worker 가 없으면 루프 로그에 `REFRESH-ORPHAN` 만 남긴다.
+
+```json
+{
+  "pipeline": {
+    "refresh_slots": 2,
+    "refresh_worker_paths": ["^contracts/.*version"]
+  },
+  "queue": {
+    "require_up_to_date": true,
+    "up_to_date_when": "overlap",
+    "shared_paths": ["^contracts/", "^modules/common/"]
+  }
+}
+```
 
 ## orch 작업 폴더
 
