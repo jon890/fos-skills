@@ -68,6 +68,8 @@ export const PIPELINE_KEYS: readonly string[] = [
   'stall_ticks',
   'idle_min',
   'idle_exited',
+  'refresh_slots',
+  'refresh_worker_paths',
 ]
 
 // heavy 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 heavy 행이다. 값은 정규식 문자열 목록이고 heavy-slot.ts 가 읽는다.

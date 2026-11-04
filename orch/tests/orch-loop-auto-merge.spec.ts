@@ -573,10 +573,25 @@ describe('큐가 도는 동안', () => {
   test('명령줄에 merge_queue. 가 든 프로세스가 있으면 걸지 않는다', () => {
     writeFileSync(join(tmp, 'ps-lines.txt'), '99999 node merge_queue.ts 9\n')
     github([pr(1)])
-    once()
+    const output = once()
     assert.deepEqual(events('AUTO-MERGE'), [])
     assert.equal(autoMergeState().queue, null)
     assert.deepEqual(queueCalls(), [])
+    // 차례 기록이 없는 큐는 명령줄을 옮겨 적는다
+    assert.match(output, /^AUTO-MERGE-HELD pid 99999 차례 기록 없음: node merge_queue\.ts 9$/m)
+  })
+
+  test('도는 큐의 차례 기록이 있으면 무엇을 기다리는지 AUTO-MERGE-HELD 한 줄로 남긴다', () => {
+    writeFileSync(join(tmp, 'ps-lines.txt'), '99999 node merge-with-finish.ts 9 10\n99998 node merge_queue.ts 9 10\n')
+    const since = new Date(Date.now() - 7 * 60_000).toISOString()
+    write(orchFile('state', 'queue-turn', '99998.json'), JSON.stringify({ pid: 99998, prs: [9, 10], pr: 9, phase: 'update-branch 뒤 체크 대기', since }))
+    // 머지 큐가 아닌 pid 의 남은 기록은 읽지 않는다
+    write(orchFile('state', 'queue-turn', '99997.json'), JSON.stringify({ pid: 99997, prs: [8], pr: 8, phase: '체크 대기', since }))
+    github([pr(1)])
+    const output = once()
+    assert.deepEqual(queueCalls(), [])
+    const held = output.split('\n').filter((line) => line.startsWith('AUTO-MERGE-HELD'))
+    assert.deepEqual(held, ['AUTO-MERGE-HELD pid 99998 #9 update-branch 뒤 체크 대기 7분 남은 #9 #10'])
   })
 })
 

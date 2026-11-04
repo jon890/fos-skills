@@ -219,6 +219,34 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     t.diagnostic(`기본 PR 머지의 gh 호출: ${c.log().split('\n').filter((line) => /^(pr|api) /.test(line)).length}`)
   })
 
+  test('도는 동안 차례 기록에 남은 PR, 차례 PR, 단계를 쓰고 끝나면 지운다', async (t) => {
+    const c = setup(t)
+    const dir = join(realpathSync(c.tmp), '.orch', 'state', 'queue-turn')
+    const seen = join(c.tmp, 'seen.json')
+    const r = await c.runQueue({ '1': pr(), '2': pr({ headRefName: 'feat2' }) }, [`1:cat ${dir}/*.json > ${seen}`, '2'])
+    assert.equal(r.code, 0, both(r))
+    const turn = JSON.parse(readFileSync(seen, 'utf8')) as Json
+    assert.deepEqual({ prs: turn.prs, pr: turn.pr, phase: turn.phase }, { prs: [1, 2], pr: 1, phase: '머지 전 명령' })
+    assert.equal(typeof turn.pid, 'number')
+    assert.deepEqual(existsSync(dir) ? readdirSync(dir) : [], [])
+  })
+
+  test('차례가 왔을 때 체크가 60초 넘게 전에 끝나 있었으면 다시 보는 대기를 건너뛴다. 끝난 시각을 모르면 기다린다', async (t) => {
+    const old = new Date(Date.now() - 5 * 60_000).toISOString()
+    const c = setup(t)
+    const settled = await c.runQueue({ '1': pr({ statusCheckRollup: [{ ...check('verify'), completedAt: old }] }) }, ['--required', 'verify', '1'])
+    assert.equal(settled.code, 0, both(settled))
+    has(settled.stdout, '1 체크가 60초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다')
+    const d = setup(t)
+    const recent = await d.runQueue({ '1': pr({ statusCheckRollup: [{ ...check('verify'), completedAt: new Date().toISOString() }] }) }, ['--required', 'verify', '1'])
+    assert.equal(recent.code, 0, both(recent))
+    lacks(recent.stdout, '다시 보는 대기를 건너뛴다')
+    const e = setup(t)
+    const unknown = await e.runQueue({ '1': pr({ statusCheckRollup: [{ ...check('verify'), completedAt: old }, check('lint')] }) }, ['--required', 'verify', '1'])
+    assert.equal(unknown.code, 0, both(unknown))
+    lacks(unknown.stdout, '다시 보는 대기를 건너뛴다')
+  })
+
   test('머지가 끝나면 정리를 base 와 --sweep-arg 로 부른다', async (t) => {
     const c = setup(t)
     const r = await c.runQueue({ '1': pr({ baseRefName: 'develop' }) }, ['--sweep-arg', '--run', '--sweep-arg', 'run x', '1'])

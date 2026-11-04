@@ -5,7 +5,9 @@
 // PR 마다 하는 일:
 //   1. 이미 MERGED 면 건너뛴다. OPEN 이 아니면 멈춘다
 //   2. 필수 체크가 모두 나타나고 끝날 때까지 기다린다(--check-timeout 분까지. 진행 중인 체크 없이 필수 체크가 --missing-timeout 분 동안 나타나지 않으면 먼저 멈춘다).
-//      PR 을 연 직후에는 체크 목록이 비어 있어 「대기 0」이 「모두 끝남」이 아니기 때문이다
+//      PR 을 연 직후에는 체크 목록이 비어 있어 「대기 0」이 「모두 끝남」이 아니기 때문이다.
+//      체크가 끝나면 새 체크가 붙는지 60초 뒤 다시 본다. 차례가 왔을 때 이미 모두 끝나 있었고 마지막 체크가 끝난 지
+//      60초가 지났으면 그 대기를 건너뛴다(`<PR> 체크가 60초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다`)
 //      --require-up-to-date 이면 PR 이 base 최신을 품는지 보고, 아니면 base 를 merge 한 뒤 2 를 다시 한다
 //      (--up-to-date-when overlap 이면 base 최신을 품지 않아도 단위가 겹치지 않으면 merge 없이 3 으로 간다)
 //   3. 실패한 체크, 미해결 리뷰 스레드가 있으면 멈춘다. 충돌(mergeable 이 CONFLICTING)이면 큐에서 뺀다.
@@ -37,6 +39,11 @@
 //   큐 도중에 설정 오류가 나면(핸들러 파일을 그 사이에 더했다 같은 것) 그 자리에서 멈추고 종료 코드 2 다.
 //   이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue만 돌리고 정리(cleanup-sweep)는 부르지 않는다.
 //   보류로 멈출 때, 큐 끝의 after-queue 가 설정 오류를 낼 때와 같은 규칙이다
+//
+// 차례 기록: 큐를 도는 동안 <orch 루트>/state/queue-turn/<pid>.json 에 남은 PR, 차례 PR, 단계, 단계 시작 시각을 적는다.
+//   형식과 단계 이름은 lib/queue-turn.ts 가 소유한다. 상주 루프가 읽어, 큐 때문에 자동 머지를 미룬 틱에 큐가 무엇을 기다리는지
+//   로그에 남기고(AUTO-MERGE-HELD), 차례 PR 은 미리 최신화하지 않는다. 차례 PR 의 HEAD 가 큐 밖에서 바뀌면 그 PR 이 STOP 으로 멈추기 때문이다.
+//   큐가 끝나거나 신호로 끝나면 지운다. 쓰지 못해도 머지는 이어 가고 첫 실패만 stderr 에 경고한다
 //
 // 충돌: update-branch 가 충돌로 실패하거나 mergeable 이 CONFLICTING 인 PR 은 `CONFLICT <PR> <이유>` 를 찍고 큐에서 뺀다.
 //   --continue-on-hold 가 없어도 다음 PR 로 간다. 충돌한 PR 하나 때문에 머지할 수 있는 뒤 PR 이 함께 멈추지 않게 하기 위해서다.
@@ -171,6 +178,7 @@ import { appendEvent } from './lib/loop.ts'
 import { alive } from './lib/process.ts'
 import { pyJson } from './lib/py.ts'
 import { QUEUE_VALUE_OPTIONS } from './lib/queue-options.ts'
+import { TURN_PHASES, writeTurn, writeTurnAt } from './lib/queue-turn.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
@@ -192,6 +200,12 @@ const ROLL_NAMES_NO_SKIPPED = '[.statusCheckRollup[] | select((.conclusion // ""
 const PENDING =
   '[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED" or (.state // "") == "PENDING" ' +
   'or (.state // "") == "EXPECTED")] | length'
+// 롤업의 마지막 끝난 시각. 체크 실행은 completedAt, 커밋 상태는 startedAt 이다. 시각이 없는 체크가 하나라도 있으면 빈 값이다
+const SETTLED_JQ =
+  '[.statusCheckRollup[] | (.completedAt // .startedAt // "")] | ' +
+  'if length == 0 or any(.[]; . == "" or startswith("0001-")) then "" else max end'
+// 체크가 끝난 뒤 새 체크가 붙는지 다시 보기 전에 기다리는 초. waitChecks 의 nap(60) 과 같다
+const SETTLED_SEC = 60
 // 실패 판정의 목록은 상주 루프와 한 벌이다(lib/gh.ts 머리 주석의 「필수 체크 판정」)
 const FAIL_SEL =
   `select(((.conclusion // "") | test("${FAILED_CONCLUSIONS.join('|')}")) ` + `or ((.state // "") | test("${FAILED_STATES.join('|')}")))`
@@ -473,6 +487,11 @@ class Queue {
   ghRetrySeconds = 10
   pr: Pr | null = null
   q: { missing: string; failed: string; allowedFailed: string } = { missing: '', failed: '', allowedFailed: '' }
+  // 차례 기록(lib/queue-turn.ts)의 prs. 차례 PR 부터 큐 끝까지다
+  remaining: number[] = []
+  turnWarned = false
+  // 처음 쓴 차례 기록의 경로. 다음부터는 폴더와 git 무시 확인 없이 바로 쓴다
+  turnPath = ''
 
   constructor(opts: Options) {
     this.o = opts
@@ -771,6 +790,29 @@ class Queue {
     return { repo: this.repoDir, base: this.p.base, run: null }
   }
 
+  // 차례 기록을 쓴다(머리 주석의 「차례 기록」). 쓰지 못해도 큐는 이어 간다. 첫 실패만 stderr 에 남긴다
+  turn(phase: string, pr: number | null = this.pr ? Number(this.pr.n) : null): void {
+    if (!this.repoDir) return
+    try {
+      const turn = { pid: process.pid, prs: this.remaining, pr, phase, since: new Date().toISOString() }
+      if (this.turnPath) writeTurnAt(this.turnPath, turn)
+      else this.turnPath = writeTurn(this.repoDir, turn)
+    } catch (e) {
+      if (this.turnWarned) return
+      this.turnWarned = true
+      process.stderr.write(`경고: 머지 큐 차례 기록을 쓰지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
+    }
+  }
+
+  dropTurn(): void {
+    if (!this.turnPath) return
+    try {
+      rmSync(this.turnPath, { force: true })
+    } catch {
+      // 남은 파일은 pid 가 머지 큐가 아니면 루프가 읽지 않는다(lib/queue-turn.ts)
+    }
+  }
+
   // ---- PR 하나 ----------------------------------------------------------------------------------
 
   async processPr(item: string): Promise<void> {
@@ -858,6 +900,7 @@ class Queue {
     // 머지 뒤에는 merge-base 가 바뀌어 문서 PR 인지 다시 판정할 수 없다. 머지 전에 정한다
     const kind = o.docsGlob && this.docsOnly() ? 'docs' : 'code'
     refuseWhenStopping(n)
+    this.turn(TURN_PHASES.merge)
     const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
     // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
     const last = chomp(merge.stdout + merge.stderr).split('\n').pop() ?? ''
@@ -939,6 +982,7 @@ class Queue {
             if (o.verifyWhen !== 'always' && o.docsGlob && this.docsOnly()) {
               log(`${n} 문서만 바꿨다(--docs-glob). 합친 사본 검사 없이 머지한다`)
             } else {
+              this.turn(TURN_PHASES.verify)
               await this.verifyMerged()
             }
           }
@@ -948,6 +992,7 @@ class Queue {
       // 같은 HEAD 에는 한 번만 낸다. base 가 움직여 다시 판정해도 HEAD 가 같으면 다시 내지 않는다
       if (p.beforeHead !== p.ph) {
         p.beforeHead = p.ph
+        if (prCommand !== null || this.hooks.has('before-merge')) this.turn(TURN_PHASES.before)
         await this.beforeMerge(prCommand)
       }
 
@@ -1028,6 +1073,13 @@ class Queue {
     return req
   }
 
+  // 롤업의 마지막 체크가 끝난 뒤 지난 초. 끝난 시각이 없는 체크(StatusContext 는 시작 시각을 쓴다)가 있거나 읽지 못하면 -1 이다
+  async settledSec(): Promise<number> {
+    const latest = await this.field(this.p.n, 'statusCheckRollup', SETTLED_JQ)
+    const at = Date.parse(latest)
+    return latest && Number.isFinite(at) ? (Date.now() - at) / 1000 : -1
+  }
+
   async waitChecks(): Promise<void> {
     const n = this.p.n
     const q = this.q
@@ -1065,7 +1117,13 @@ class Queue {
       if (pending === '0') idle += seconds
       else idle = 0
     }
-    // 체크가 끝난 직후에 새 체크가 붙는 경우가 있어 잠시 뒤 다시 본다
+    // 체크가 끝난 직후에 새 체크가 붙는 경우가 있어 잠시 뒤 다시 본다.
+    // 차례가 왔을 때 이미 모두 끝나 있었고 마지막 체크가 끝난 지 SETTLED_SEC 초가 지났으면 그 기다림은 이미 지난 것이라 건너뛴다.
+    // 상주 루프가 미리 최신화해 CI 를 통과한 PR 이 차례마다 1분씩 더 기다리지 않게 한다
+    if (attempt === 0 && (await this.settledSec()) >= SETTLED_SEC) {
+      log(`${n} 체크가 ${SETTLED_SEC}초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다`)
+      return
+    }
     await nap(60)
     const pending = await this.field(n, 'statusCheckRollup', PENDING, true)
     const missing = await this.field(n, 'statusCheckRollup', `${q.missing} | length`)
@@ -1083,6 +1141,7 @@ class Queue {
     p.judgedBase = null
     for (;;) {
       p.judgedBase = null
+      this.turn(rounds > 0 ? TURN_PHASES.updated : TURN_PHASES.checks)
       await this.waitChecks()
       let updateDocs = false
       if (o.updateDocs) {
@@ -1272,8 +1331,11 @@ class Queue {
 
   async run(): Promise<number> {
     const o = this.o
-    for (const item of o.items) {
+    for (const [i, item] of o.items.entries()) {
       const n = item.split(':')[0]
+      this.remaining = o.items.slice(i).map((rest) => Number(rest.split(':')[0]))
+      this.pr = null
+      this.turn(TURN_PHASES.start, Number(n))
       const before = this.droppedBefore(n)
       if (before !== null) {
         out(`SKIP ${n} 묶음의 앞 PR ${before} 가 머지되지 않았다`)
@@ -1317,6 +1379,8 @@ class Queue {
       }
       log(`${n} 보류. 다음 PR 로 간다`)
     }
+    this.remaining = []
+    this.turn(TURN_PHASES.after, null)
     if (this.conflicted.length > 0) out(`QUEUE-CONFLICT ${this.conflicted.join(' ')}`)
     out(this.held.length > 0 ? `QUEUE-HELD ${this.held.join(' ')}` : 'QUEUE-DONE')
     await this.runAfterMerged()
@@ -1344,6 +1408,7 @@ function onSignal(signal: NodeJS.Signals): void {
   exiting = true
   void stopChildren(signal).finally(() => {
     active?.dropCopy()
+    active?.dropTurn()
     process.exit(signalCode(signal))
   })
 }
@@ -1381,6 +1446,7 @@ async function main(argv: string[]): Promise<number> {
     return 2
   } finally {
     queue.dropCopy()
+    queue.dropTurn()
   }
 }
 
