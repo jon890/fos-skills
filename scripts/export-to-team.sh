@@ -136,6 +136,7 @@ def is_junk(rel: str) -> bool:
         or ".omc" in parts
         or ".orch" in parts
         or ".DS_Store" in parts
+        or rel.startswith("changes/")  # 머지 때 workflow 가 지우는 변경 이력 조각(docs/adr/023-version-at-merge.md)
         or rel.endswith((".pyc", ".pyo"))
     )
 
