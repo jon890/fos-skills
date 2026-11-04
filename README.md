@@ -75,8 +75,8 @@ SVG 를 함께 저장해 GitHub 에서도 같은 손그림 모양으로 볼 수 
 스펙·설계는 기능 전체가 공유하고, 여러 PR 이면 plan → implementation → verify 를 반복해요.
 작은 변경의 기술 설계는 기존 구조를 유지하는 근거 몇 줄이면 돼요. 기능마다 전체 아키텍처를 다시 짜지 않아요.
 
-의미·계약을 유지하는 버그 수정, 정리, 허용 범위 안의 설정 값 조정은 짧은 경로를 써요. 작은 PR 이나 문서 변경이라도 도메인 판단 의미가 바뀌면 spec 부터 시작해요. 짧은 경로도 수정 확인과 필요한 독립 검토를 거쳐요. 기준은 [orch 의 기능 루프](orch/references/feature-loop.md#루프를-쓸지-정한다)에 있어요.
-spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 결정은 4개씩 선택지와 권장안으로 물어요. 결정이 닫히면 대화를 모르는 검토자가 빠진 결정을 찾아요. 절차는 [인터뷰 절차](spec/references/interview.md)에 있어요.
+의미·계약을 유지하는 버그 수정, 정리, 허용 범위 안의 설정 값 조정은 짧은 경로를 써요. 작은 PR 이나 문서 변경이라도 도메인 판단 의미가 바뀌면 spec 부터 시작해요. 짧은 경로도 수정 확인과 필요한 독립 검토를 거쳐요. 기준은 [orch 의 기능 루프](skills/orch/references/feature-loop.md#루프를-쓸지-정한다)에 있어요.
+spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 결정은 4개씩 선택지와 권장안으로 물어요. 결정이 닫히면 대화를 모르는 검토자가 빠진 결정을 찾아요. 절차는 [인터뷰 절차](skills/spec/references/interview.md)에 있어요.
 
 기능 스펙 하나가 PR 여러 개로 나뉠 수 있어요. `plan 하나 = PR 하나` 는 유지하고, 마지막에 기능 전체의 인수 조건을 확인해요.
 공통 후보는 기능마다 추출하고, 실제 공통화는 관련 기능 묶음이 끝났거나 정리를 요청했을 때 별도 작업으로 해요.
@@ -94,12 +94,12 @@ spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 
 
 ### 문서 양식과 인수 검증 계획
 
-작성 스킬의 `templates/` 에 샘플 양식을 한 벌씩 둬요. [문서별 양식과 소유권](spec/references/document-ownership.md)을 보고 필요한 양식만 읽어요.
+작성 스킬의 `templates/` 에 샘플 양식을 한 벌씩 둬요. [문서별 양식과 소유권](skills/spec/references/document-ownership.md)을 보고 필요한 양식만 읽어요.
 기존 PRD·flow·ADR 양식이 있으면 우선하고, 기존 문서를 일괄 재작성하지 않아요.
 plan 은 개발 테스트와 별도로 인수 검증의 준비 조건·실행 절차·기대 결과·환경·시점을 정해요.
 기본은 계획 폴더의 `verification-plan.md`, 작은 계획은 phase 의 인수 검증 계획 절이에요.
 verify 는 스펙·설계와 대조해 누락을 보완한 뒤 실행하고, 실제 결과·커밋·증거를 PR 에 남겨요.
-계획을 지울 때도 검증 절차와 증거는 남겨요. 기준은 [계획 수명 규칙](plan/references/plan-lifecycle.md)이 소유해요.
+계획을 지울 때도 검증 절차와 증거는 남겨요. 기준은 [계획 수명 규칙](skills/plan/references/plan-lifecycle.md)이 소유해요.
 
 PRD 는 제품 범위, flow 는 공통 상호작용, 기능 spec/design 은 상세 요구사항·설계를 소유해요.
 이번 기능이 바꾼 공통 사실은 해당 PR 에 맞추고, 반복 표현 공통화는 별도 후보로 남겨요.
@@ -115,14 +115,14 @@ PRD 는 제품 범위, flow 는 공통 상호작용, 기능 spec/design 은 상�
 ```
 
 BMAD 의 요구사항 연결, Superpowers 의 스펙·실행 계획 분리와 설계 승인 관문, gstack 의 실제 동작 QA 원칙을 참고했어요.
-외부 프레임워크 전체를 설치하거나 중첩하지 않아요. [문서와 단계 인계](spec/references/feature-docs.md)에 상세 규칙이 있어요.
+외부 프레임워크 전체를 설치하거나 중첩하지 않아요. [문서와 단계 인계](skills/spec/references/feature-docs.md)에 상세 규칙이 있어요.
 
 ### PR 전 검증과 머지·완료
 
 기능 루프는 PR 하나라도 짧은 기술 설계와 계획을 남겨요. 인수 검증 계획은 phase 에 포함할 수 있어요.
 PR 전에는 실행 인수 검증과 문서 대조를 마쳐요. 코드 리뷰를 PR 자동 리뷰에 맡겼으면 그 항목은 대기로 PR 을 열고, 실제 리뷰 결과를 받은 뒤 머지해요. 사전에 독립 리뷰를 받았으면 중복하지 않아요.
 
-[기능 PR 완료 근거 양식](orch/templates/feature-evidence.md)에 현재 HEAD, 인수 검증, 문서 대조, 독립 리뷰와 남은 후속 검증을 기록해요.
+[기능 PR 완료 근거 양식](skills/orch/templates/feature-evidence.md)에 현재 HEAD, 인수 검증, 문서 대조, 독립 리뷰와 남은 후속 검증을 기록해요.
 머지 큐는 기록 누락·오래된 커밋·미완료 사전 검증을 막고, 코디네이터는 실제 증거를 읽어요. 지시서도 이 블록도 없는 기존 PR 은 호환 경로를 유지해요.
 필수 후속 검증이 남으면 머지는 가능하지만 기능 완료와 작업 공간 정리는 보류해요. 배포 성공 뒤 실제 검증 결과를 기록하고 마무리를 재개해요.
 
@@ -158,6 +158,23 @@ fos-skills 는 소프트웨어 개발의 각 단계를 연결하는 종합 스�
 - **사용하며 개선:** 공통 후보와 실제 실패에서 배워 필요한 규칙만 더해요. 공통화는 근거가 쌓였을 때 해요
 - **공통 절차와 프로젝트 맥락:** 개발 절차는 함께 쓰고 검증 명령·환경·도메인 차이는 오버레이로 적용해요
 
+## 저장소 구조
+
+| 경로 | 책임 |
+| --- | --- |
+| `skills/<이름>/` | 설치해서 쓰는 스킬. 절차·참조·양식·스크립트·테스트를 함께 둬요 |
+| `export-only-skills/<이름>/` | 팀 저장소로 내보내는 원본. 기본 스킬 탐색에는 넣지 않아요 |
+| `extensions/work-board/` | 작업 현황 창과 보드 명령 |
+| `tools/` | 여러 스킬이 사용하는 공용 도구 |
+| `scripts/` | 저장소 검사·설치·내보내기·버전 관리 |
+| `githooks/` | 이 저장소를 개발할 때 쓰는 Git 훅 |
+| `docs/` | 개발 흐름·아키텍처·ADR |
+| `.claude-plugin/`, `.codex-plugin/` | 하네스별 배포 매니페스트 |
+
+스킬 전용 훅과 스크립트는 그 스킬 안에 둬요. Git 훅과 Claude 실행 훅을 같은 폴더에 모으지 않아요.
+스킬 이름과 호출 명령은 유지돼요. 플러그인은 갱신하면 새 배치를 받고, 직접 걸었던 개인 심볼릭 링크는 새 경로로 바꿔요.
+옛 경로의 스킬 사본이나 호환 링크는 저장소에 남기지 않아요. 팀 내보내기는 팀의 `skills/<이름>/` 구조를 유지하고 상대 참조도 맞춰요.
+
 ## 화면
 
 worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 것, 진행 중인 일을 한눈에 볼 수 있어요.
@@ -165,7 +182,7 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 
 ![/board 창. 전체 진행률, 단축키, 오늘 목표, 결정 필요 항목이 보인다](docs/images/board.png)
 
-데모 저장소에서 2026-10-27 에 찍은 화면이에요. 실제 저장소의 설정과 대화 예시는 [`orch/README.md`](orch/README.md) 에 있어요.
+데모 저장소에서 2026-10-27 에 찍은 화면이에요. 실제 저장소의 설정과 대화 예시는 [`skills/orch/README.md`](skills/orch/README.md) 에 있어요.
 
 ## 스킬 목록
 
@@ -173,25 +190,25 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 
 | 스킬 | 하는 일 |
 | --- | --- |
-| [`spec`](spec/README.md) | 사용자를 인터뷰해 기능의 결정을 닫고, 확인받은 스펙을 남겨요 |
-| [`technical-design`](technical-design/README.md) | 기능의 구조·책임·데이터 소유권과 검증 전략을 정해요 |
-| [`plan`](plan/README.md) | 확정한 기술 설계를 PR 하나의 실행 계획으로 나눠요 |
-| [`implementation`](implementation/README.md) | 구현과 개발 테스트를 수행해요 |
-| [`verify`](verify/README.md) | 독립 리뷰와 스펙 기준 실행 검증을 해요 |
-| [`docs-consolidate`](docs-consolidate/README.md) | 기능 문서를 맞추고 공통 후보를 추출하거나 별도 공통화를 해요 |
-| [`orch`](orch/README.md) | 전체 개발 루프의 전이와 worker 실행·PR·머지·정리를 조율해요 |
-| [`pr-review`](pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록해요 |
-| [`review-fix`](review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영해요 |
-| [`inbox`](inbox/README.md) | 업무 도구에서 나를 태그한 알림을 `/board` 에 모으고, 확인받은 답변만 등록해요 |
-| [`docs-check`](docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |
-| [`harness-cleanup`](harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 승인받은 것만 고쳐요 |
-| [`mac-cleanup`](mac-cleanup/README.md) | 맥의 디스크, 메모리, 스왑과 오래된 세션, 머지된 브랜치를 조사하고 승인받은 것만 정리해요 |
-| [`presentation`](presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고, 장 수와 노트, 금지어, 세로 넘침을 검사해요 |
-| [`report`](report/README.md) | 있는 내용을 결론이 먼저 보이는 HTML 보고서 한 파일로 만들어 브라우저로 띄워요 |
-| [`browser`](browser/README.md) | CLI 나 API 로 안 되는 웹 작업을 `browser-driver` 로 브라우저를 조작해 끝내요. 로그인과 되돌리기 어려운 버튼만 사람이 확인해요 |
+| [`spec`](skills/spec/README.md) | 사용자를 인터뷰해 기능의 결정을 닫고, 확인받은 스펙을 남겨요 |
+| [`technical-design`](skills/technical-design/README.md) | 기능의 구조·책임·데이터 소유권과 검증 전략을 정해요 |
+| [`plan`](skills/plan/README.md) | 확정한 기술 설계를 PR 하나의 실행 계획으로 나눠요 |
+| [`implementation`](skills/implementation/README.md) | 구현과 개발 테스트를 수행해요 |
+| [`verify`](skills/verify/README.md) | 독립 리뷰와 스펙 기준 실행 검증을 해요 |
+| [`docs-consolidate`](skills/docs-consolidate/README.md) | 기능 문서를 맞추고 공통 후보를 추출하거나 별도 공통화를 해요 |
+| [`orch`](skills/orch/README.md) | 전체 개발 루프의 전이와 worker 실행·PR·머지·정리를 조율해요 |
+| [`pr-review`](skills/pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록해요 |
+| [`review-fix`](skills/review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영해요 |
+| [`inbox`](skills/inbox/README.md) | 업무 도구에서 나를 태그한 알림을 `/board` 에 모으고, 확인받은 답변만 등록해요 |
+| [`docs-check`](skills/docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |
+| [`harness-cleanup`](skills/harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 승인받은 것만 고쳐요 |
+| [`mac-cleanup`](skills/mac-cleanup/README.md) | 맥의 디스크, 메모리, 스왑과 오래된 세션, 머지된 브랜치를 조사하고 승인받은 것만 정리해요 |
+| [`presentation`](skills/presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고, 장 수와 노트, 금지어, 세로 넘침을 검사해요 |
+| [`report`](skills/report/README.md) | 있는 내용을 결론이 먼저 보이는 HTML 보고서 한 파일로 만들어 브라우저로 띄워요 |
+| [`browser`](skills/browser/README.md) | CLI 나 API 로 안 되는 웹 작업을 `browser-driver` 로 브라우저를 조작해 끝내요. 로그인과 되돌리기 어려운 버튼만 사람이 확인해요 |
 
 플러그인은 위 표의 스킬과 `/board` 창을 함께 실어요.
-[`content-preview`](content-preview/README.md) 와 [`korean-check`](korean-check/README.md) 의 원본도 여기 있지만, 스킬로는 팀 저장소의 플러그인으로 받아요.
+[`content-preview`](export-only-skills/content-preview/README.md) 와 [`korean-check`](export-only-skills/korean-check/README.md) 의 원본도 여기 있지만, 스킬로는 팀 저장소의 플러그인으로 받아요.
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않아요.
 
 ## 처음 써 보기
@@ -211,7 +228,7 @@ claude plugin install fos-skills@fos-skills
 리뷰 달린 거 반영해 줘
 ```
 
-**3.** 일을 worker 에게 나눠 맡기려면 Orca 앱과 `gh` 로그인이 필요해요. 준비물은 [`orch/README.md`](orch/README.md) 의 「준비」 에 있어요.
+**3.** 일을 worker 에게 나눠 맡기려면 Orca 앱과 `gh` 로그인이 필요해요. 준비물은 [`skills/orch/README.md`](skills/orch/README.md) 의 「준비」 에 있어요.
 
 ### 단계 이름 변경
 
@@ -231,7 +248,7 @@ claude plugin update fos-skills@fos-skills
 플러그인 시스템이 없는 에이전트에서는 스킬 디렉터리를 글로벌 스킬 디렉터리에 심링크해요.
 
 ```bash
-ln -sfn ~/personal/fos-skills/plan ~/.claude/skills/plan
+ln -sfn ~/personal/fos-skills/skills/plan ~/.claude/skills/plan
 ```
 
 플러그인과 같은 이름의 링크를 함께 두면 스킬이 둘씩 떠요.
@@ -255,15 +272,15 @@ ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/s
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
 이 플러그인은 `bin/` 을 두지 않아 `browser-driver` 를 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
 
-`work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 예요.
-orch 스킬이 보드를 고치는 `work-board/bin/board.ts` 도 여기 있어요. 동작은 [`work-board/README.md`](work-board/README.md) 에 있어요.
+`extensions/work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 예요.
+orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여기 있어요. 동작은 [`extensions/work-board/README.md`](extensions/work-board/README.md) 에 있어요.
 
 `scripts/` 에는 이 저장소를 관리하는 명령과, 어느 스킬도 소유하지 않는 검사기를 둬요.
 
 | 스크립트 | 하는 일 |
 | --- | --- |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정해요. 커밋을 고르는 `--source-ref` 는 머리 주석에 있어요 |
-| `scripts/install-hooks.sh` | `hooks/` 의 훅을 `.git/hooks` 에 걸어요. `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
+| `scripts/install-hooks.sh` | `githooks/` 의 훅을 `.git/hooks` 에 걸어요. `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
 | `scripts/run-node-tests.ts` | node 테스트 파일을 하나씩 자기 세션에서 돌리고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
 | `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾아요. 셸에 따라 죽는 이식성 결함이에요 |
@@ -280,7 +297,7 @@ PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않아요.
-Python 테스트는 저장소 루트에서 `python3 -m unittest discover -s mac-cleanup/tests` 처럼 각 `tests/` 폴더를 주어 실행해요. 다른 위치에서 상대 경로로 부르면 `ImportError` 로 끝나는 스킬이 있어요.
+Python 테스트는 저장소 루트에서 `python3 -m unittest discover -s skills/mac-cleanup/tests` 처럼 각 `tests/` 폴더를 주어 실행해요. 다른 위치에서 상대 경로로 부르면 `ImportError` 로 끝나는 스킬이 있어요.
 orch, work-board, inbox 의 TypeScript 테스트는 Node 24 이상에서 `node scripts/run-node-tests.ts` 로 실행해요.
 한 줄 `node --test` 로 모두 돌리면 프로세스 그룹에 신호를 보내는 테스트가 실행기까지 끝내 요약 없이 끝날 수 있어요. 이 실행기는 파일마다 세션을 나눠요.
 오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.

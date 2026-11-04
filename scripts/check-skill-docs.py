@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from skill_paths import skill_dirs, source_path
 
 README_SECTIONS = ("이럴 때 쓴다", "사용 예시", "받는 것", "함께 쓰는 스킬")
 README_FORBIDDEN = ("구성",)
@@ -98,7 +100,7 @@ def check_changelog(name, text, skill_version):
 
 
 def check_skill(name, root=ROOT):
-    skill_dir = root / name
+    skill_dir = source_path(root, name)
     match = SKILL_VERSION.search((skill_dir / "SKILL.md").read_text(encoding="utf-8"))
     readme = (skill_dir / "README.md").read_text(encoding="utf-8")
     changelog = (skill_dir / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -109,7 +111,7 @@ def check_skill(name, root=ROOT):
 
 
 def skill_names(root=ROOT):
-    return sorted(child.name for child in root.iterdir() if (child / "SKILL.md").is_file())
+    return sorted(skill_dirs(root, legacy=True))
 
 
 def main(argv):

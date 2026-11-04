@@ -14,7 +14,7 @@
 
 ## 책임과 경계
 
-- 바뀌는 곳은 `work-board/hooks/register.js` 하나다. 보드 파일 형식과 `board.ts` 는 바꾸지 않는다.
+- 바뀌는 곳은 `extensions/work-board/hooks/register.js` 하나다. 보드 파일 형식과 `board.ts` 는 바꾸지 않는다.
 - 요청문은 입력란을 채울 뿐이다. 보내기는 사람이 Enter 로 한다(훅의 텍스트는 모델에 닿지 않는다).
 
 ## 인터페이스와 데이터
@@ -36,8 +36,8 @@
 
 ## 검증 전략
 
-- `work-board/tests/check.spec.ts`: `checkTargets` 의 순서와 9개 제한, `checkPrompt` 의 내용.
-- `work-board/tests/pane.test.ts`: `c` 진입과 해제(다시 `c`, 창 닫기), 번호별 요청문, 대상 없음일 때 `c` 숨김, 확인 모드에서 알림 번호의 글자가 그대로이고 hotkey 가 겹치지 않음. 클릭 경로(REQ5)는 `c` 없이 누르기, 완료·결정 항목과 펼친 보기의 상세 줄이 Button 이 아님, 넘기기 모드에서 누르기, 업무 링크가 있는 제목의 머리 줄 구성을 본다.
+- `extensions/work-board/tests/check.spec.ts`: `checkTargets` 의 순서와 9개 제한, `checkPrompt` 의 내용.
+- `extensions/work-board/tests/pane.test.ts`: `c` 진입과 해제(다시 `c`, 창 닫기), 번호별 요청문, 대상 없음일 때 `c` 숨김, 확인 모드에서 알림 번호의 글자가 그대로이고 hotkey 가 겹치지 않음. 클릭 경로(REQ5)는 `c` 없이 누르기, 완료·결정 항목과 펼친 보기의 상세 줄이 Button 이 아님, 넘기기 모드에서 누르기, 업무 링크가 있는 제목의 머리 줄 구성을 본다.
 
 ## 결정
 

@@ -1,6 +1,6 @@
 {
   "name": "fos-skills",
-  "version": "3.23.0",
+  "version": "4.0.1",
   "description": "기능 스펙·설계, 구현, 독립 검증과 문서 개선을 orch 루프로 연결하는 소프트웨어 엔지니어링 스킬 모음",
   "author": {
     "name": "jon890"
@@ -8,25 +8,25 @@
   "homepage": "https://github.com/jon890/fos-skills",
   "repository": "https://github.com/jon890/fos-skills",
   "skills": [
-    "./browser",
-    "./docs-check",
-    "./docs-consolidate",
-    "./harness-cleanup",
-    "./implementation",
-    "./inbox",
-    "./mac-cleanup",
-    "./orch",
-    "./plan",
-    "./pr-review",
-    "./presentation",
-    "./report",
-    "./review-fix",
-    "./spec",
-    "./technical-design",
-    "./verify"
+    "./skills/browser",
+    "./skills/docs-check",
+    "./skills/docs-consolidate",
+    "./skills/harness-cleanup",
+    "./skills/implementation",
+    "./skills/inbox",
+    "./skills/mac-cleanup",
+    "./skills/orch",
+    "./skills/plan",
+    "./skills/pr-review",
+    "./skills/presentation",
+    "./skills/report",
+    "./skills/review-fix",
+    "./skills/spec",
+    "./skills/technical-design",
+    "./skills/verify"
   ],
   "hooks": [
-    "./orch/hooks/hooks.json",
-    "./work-board/hooks/hooks.json"
+    "./skills/orch/hooks/hooks.json",
+    "./extensions/work-board/hooks/hooks.json"
   ]
 }

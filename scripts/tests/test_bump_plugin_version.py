@@ -26,8 +26,8 @@ class BumpPluginVersionTest(unittest.TestCase):
         self.git("config", "user.name", "t")
         self.write(".claude-plugin/plugin.json", MANIFEST)
         self.write(".claude-plugin/CHANGELOG.md", PLUGIN_LOG)
-        self.write("orch/CHANGELOG.md", SKILL_LOG)
-        self.write("orch/SKILL.md", "orch\n")
+        self.write("skills/orch/CHANGELOG.md", SKILL_LOG)
+        self.write("skills/orch/SKILL.md", "orch\n")
         self.base = self.commit("init")
 
     def tearDown(self):
@@ -56,7 +56,7 @@ class BumpPluginVersionTest(unittest.TestCase):
         return (self.root / ".claude-plugin/CHANGELOG.md").read_text(encoding="utf-8")
 
     def test_new_skill_version_is_minor_and_lists_skill_and_pr(self):
-        self.write("orch/CHANGELOG.md", SKILL_LOG.replace("## 5.15.0", "## 5.16.0 (2026-11-02)\n\n- 새 기능\n\n## 5.15.0"))
+        self.write("skills/orch/CHANGELOG.md", SKILL_LOG.replace("## 5.15.0", "## 5.16.0 (2026-11-02)\n\n- 새 기능\n\n## 5.15.0"))
         head = self.commit("Merge pull request #286 from jon890/feat/x")
         self.assertEqual(self.run_bump(head), "1.5.0")
         self.assertEqual(self.version(), "1.5.0")
@@ -64,8 +64,14 @@ class BumpPluginVersionTest(unittest.TestCase):
         # 키 순서와 들여쓰기는 그대로다
         self.assertEqual((self.root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"), MANIFEST.replace("1.4.0", "1.5.0"))
 
+    def test_moving_a_changelog_does_not_replay_old_versions(self):
+        self.git("mv", "skills/orch", "orch")
+        head = self.commit("refactor: move skill")
+        self.assertEqual(self.run_bump(head), "1.4.1")
+        self.assertNotIn("orch 5.15.0 (#", self.changelog().split("## 1.4.0")[0])
+
     def test_compat_line_is_major(self):
-        self.write("orch/CHANGELOG.md", SKILL_LOG.replace("## 5.15.0", "## 6.0.0 (2026-11-02)\n\n- 호환성: 단계가 바뀐다\n\n## 5.15.0"))
+        self.write("skills/orch/CHANGELOG.md", SKILL_LOG.replace("## 5.15.0", "## 6.0.0 (2026-11-02)\n\n- 호환성: 단계가 바뀐다\n\n## 5.15.0"))
         head = self.commit("feat(orch): 단계를 바꾼다 (#287)")
         self.assertEqual(self.run_bump(head), "2.0.0")
         self.assertIn("- orch 6.0.0 (#287)", self.changelog())

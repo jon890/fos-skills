@@ -105,7 +105,7 @@ Slack adapter 를 더하면 adapter 파일 하나와 등록 줄 하나, 필터 �
 | `${XDG_STATE_HOME:-~/.local/state}/fos-skills/inbox/` | 사람 | 받은 항목 캐시와 받은 시각, 넘김 기록, 이름 캐시, 필터를 가진 저장소 목록 |
 | `<orch 폴더>/config/notification.json` | 저장소 | adapter 별 키 아래 볼 범위. 두레이는 `projects`(id 나 코드)와 `channels`(id 나 이름), Slack 은 `channels` |
 
-orch 폴더는 주 checkout 의 `.orch` 다(`ORCH_DIR` 이 있으면 그 값). 워크트리에서 불러도 같은 파일을 읽는다. 해석은 `orch/scripts/lib/paths.ts` 의 `orchDir` 이 소유한다.
+orch 폴더는 주 checkout 의 `.orch` 다(`ORCH_DIR` 이 있으면 그 값). 워크트리에서 불러도 같은 파일을 읽는다. 해석은 `skills/orch/scripts/lib/paths.ts` 의 `orchDir` 이 소유한다.
 `.orch/` 는 이 저장소와 ai-analysis 에서 git 이 무시해 사내 id 가 커밋되지 않는다.
 「미분류」 는 필터 파일을 가진 저장소 가운데 어느 필터에도 들지 않는 항목이다. 보드가 받기를 부를 때 자기 저장소를 상태 폴더의 저장소 목록에 적는다.
 
@@ -119,7 +119,7 @@ orch 폴더는 주 checkout 의 `.orch` 다(`ORCH_DIR` 이 있으면 그 값). �
 
 ### 답변 흐름 (R4, R10)
 
-보드 훅은 모델에 직접 요청을 보내지 못해(`work-board/references/behavior.md` 「훅이 직접 보내지 않는 이유」) 입력란에 요청문을 채운다.
+보드 훅은 모델에 직접 요청을 보내지 못해(`extensions/work-board/references/behavior.md` 「훅이 직접 보내지 않는 이유」) 입력란에 요청문을 채운다.
 `1`~`9` 는 그 항목의 답변 요청문을, `i` 는 새 항목 전체를 훑어 답할 것과 넘길 것을 나누는 요청문을 채운다.
 요청문은 맥락 읽기, 초안, 미리보기, 사용자 확인, `inbox.ts reply --yes` 순서를 담는다. 절차 문서는 `inbox` 스킬이 소유한다.
 

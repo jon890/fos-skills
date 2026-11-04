@@ -2,7 +2,7 @@
 // node 테스트 파일을 하나씩 자기 세션에서 돌리고, 결과를 파일에 남긴다.
 //
 // 왜 필요한가 (실측):
-//   `node --test "orch/tests/*.spec.ts" ...` 한 줄은 신호를 보내는 테스트가 같은 프로세스 그룹의 실행기까지 끝내
+//   `node --test "skills/orch/tests/*.spec.ts" ...` 한 줄은 신호를 보내는 테스트가 같은 프로세스 그룹의 실행기까지 끝내
 //   요약과 끝 줄 없이 끝났다. 끝까지 돌아도 이 머신에서 600초를 넘어 Bash 도구의 전경 제한에 걸렸다.
 //   파일마다 새 세션(detached)으로 돌리면 테스트가 보낸 신호가 실행기에 닿지 않는다.
 //   결과 폴더에 요약을 남기므로 백그라운드로 띄우고 --wait 로 끝 줄을 나눠 기다릴 수 있다.
@@ -35,7 +35,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // 저장소의 node:test 묶음이다. 새 묶음을 더하면 여기와 CI 의 node 테스트 명령을 함께 고친다.
-export const DEFAULT_PATTERNS = ["orch/tests/*.spec.ts", "work-board/tests/*.spec.ts", "inbox/tests/*.spec.ts"];
+export const DEFAULT_PATTERNS = ["skills/orch/tests/*.spec.ts", "extensions/work-board/tests/*.spec.ts", "skills/inbox/tests/*.spec.ts"];
 export const END_PREFIX = "결과: ";
 const SUMMARY = "summary.txt";
 const PID_FILE = "runner.pid";

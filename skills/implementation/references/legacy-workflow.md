@@ -1,0 +1,260 @@
+# 기존 계획의 호환 절차
+
+`spec` 필드가 없는 기존 계획을 이어 갈 때만 읽는다. 새 기능에는 적용하지 않는다.
+이 문서의 `$SKILL_DIR` 은 계속 implementation 번들 루트다.
+
+# implementation
+
+**목표: plan 이 만든 `tasks/` 를 읽어 구현하고, 검토를 거쳐 PR 을 만든다.**
+
+- 계획에 결함이 있으면 구현 전에 찾아낸다.
+- plan 하나는 PR 하나다. PR 하나에 들어가지 않는 크기면 구현 전에 plan 을 나누게 돌려보낸다(기준은 `plan` 의 `plan-size.md` 가 소유한다). `orch` worker 가 이 스킬을 돌 때도 그 PR 이 머지되면 끝낸다. 뒤 plan 은 코디네이터가 새 worker 로 띄운다.
+- 구현된 코드가 계획한 것과 같아야 한다.
+- 코드가 `docs/` 에 적힌 결정과 어긋나지 않아야 한다.
+- 남기는 코드와 문서가 계획서를 번호로 가리키지 않아야 한다. 계획 수명은 [공통 규칙](../../plan/references/plan-lifecycle.md)을 따른다.
+
+team-lead 가 아래 팀원을 부른다. 각자의 판정 기준은 자기 문서가 소유한다.
+
+| 팀원 | 시점 | 검사 대상 | 판정 | 기준 |
+| --- | --- | --- | --- | --- |
+| **critic** | 구현 전 한 번 | plan 의 모든 phase | `APPROVE` / `REVISE` | `references/role-critic.md` |
+| **executor** | phase 마다 | 배정받은 phase 하나 | 완료 보고 | `references/role-executor.md` |
+| **code-reviewer** | 모든 phase 뒤 한 번 | 누적 diff 와 `tasks/` | `PASS` / `FIX_NEEDED` | `references/role-code-reviewer.md` |
+| **docs-verifier** | 모든 phase 뒤 한 번 | 누적 diff 와 `docs/` | `PASS` / `UPDATE_NEEDED` / `VIOLATION` | `references/role-docs-verifier.md` |
+
+**team-lead 는 조율, phase 단위 커밋, 검토 결과의 분류, PR 생성을 한다.**
+구현과 검토는 규모와 무관하게 팀원에게 맡긴다.
+
+**팀원마다 어느 에이전트를 쓸지는 오버레이가 지정한다.**
+지정이 없으면 그 하네스에 설치된 에이전트 중 역할에 맞는 것을 쓰고, 무엇을 골랐는지 실행 보고에 남긴다.
+전용 에이전트가 있으면 그 정의가 위 기준 문서보다 우선한다.
+
+## 레포 설정
+
+레포 고유의 값은 아래 순서로 찾는다. 앞에서 찾으면 뒤를 보지 않는다.
+
+1. `<repo-root>/.claude/implementation-overlay.md`
+2. 그 저장소의 하네스 지침 파일. `AGENTS.md` 와 `CLAUDE.md` 를 본다
+3. 어디에도 없으면 사용자에게 확인한다
+
+모노레포 판정과 하위 프로젝트 오버레이 탐색은 [plan 의 `references/monorepo.md`](../../plan/references/monorepo.md) 를 따른다.
+
+| 설정 값 | 쓰는 단계 |
+| --- | --- |
+| 통합 검증 명령 (lint, 타입 검사, 테스트, 빌드) | 6 |
+| 기준 브랜치 (사전 검사, 리뷰, PR에 같은 값 사용) | 1, 2, 5, 6 |
+| 브랜치 이름 형식, 작업 공간을 만들고 정리하는 방법 | 1, 2, 6 |
+| 네 역할에 쓸 전용 에이전트 이름 | 3, 4, 5 |
+| `index.json` 필드와 phase 파일 규격의 레포 변형 | 3 |
+| 반복 함정 목록 경로 (기본값 `docs/pitfalls/`). 읽기만 하고 새로 쓰지 않는다 | 3, 5, 6 |
+| docs 경로와 tasks 경로 (기본값 `docs/`, `tasks/`) | 1, 3, 5, 6 |
+| 커밋 컨벤션, 반복될 실패를 규칙으로 넣을 위치 | 4, 6 |
+| 의존성 설치와 환경 파일 준비 | 2 |
+| 계획서 보존 여부 ([계획 수명 규칙](../../plan/references/plan-lifecycle.md)) | 6 |
+
+## 실행 절차
+
+각 단계는 진입 시 해당 reference 를 읽고 수행한다. 통과 조건을 확인한 뒤 다음으로 간다.
+
+| 단계 | 이름 | 통과 조건 | reference |
+| --- | --- | --- | --- |
+| 1 | 재실행 확인 | `plan_precheck.py` 종료 코드 0, 또는 발견 사항에 대한 사용자 확정 | `scripts/plan_precheck.py` |
+| 2 | 작업 공간 준비 | 작업 공간이 plan 브랜치 위에 있고, main 워킹 디렉터리와 분리됐고, 팀원에게 줄 절대경로가 있다 | 오버레이 |
+| 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
+| 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
+| 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
+| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획 수명 규칙에 맞춘 PR 이 있고, `pr_mergeable.sh` 가 0 으로 끝났고, 팀원이 남지 않았다 | `references/step-finish.md` |
+
+task 없이 리뷰만 도는 경로는 아래 「task 없이 리뷰부터 도는 경로」 의 표를 따른다.
+발동 조건: 일이 PR 하나로 끝나고, `tasks/` 에 그 일의 plan 이 없고, 계획 입력으로 쓸 지시서나 ADR 이 있다.
+
+**팀원을 스폰하기 전에 [`references/team-spawn.md`](team-spawn.md)를 읽는다.**
+
+절차 어디서든 **결정 결과가 회수 비용이 크거나, 사용자 의도에 따라 갈리거나, plan 범위를 벗어나면**
+옵션과 트레이드오프를 붙여 질문한다.
+
+### 1. 재실행 확인
+
+plan 인자를 받으면 가장 먼저 돌린다.
+`$SKILL_DIR`은 이 스킬 번들, `$PLAN`은 task 디렉터리 이름, `$REPO`는 대상 저장소다.
+`$TASKS_DIR`과 `$DOCS_DIR`은 레포 설정의 tasks 경로와 docs 경로이고, 지정이 없으면 `tasks`와 `docs`다.
+레포 설정에서 기준 브랜치를 찾으면 `$BASE_BRANCH`에 담고 `--base`로 넘긴다.
+없으면 `--base`를 생략한다.
+검사 결과의 `branch.base`를 이후 단계와 검토자에게 전달한다.
+
+```bash
+# cwd: 대상 저장소 root
+# 레포 설정에서 기준 브랜치를 찾았을 때
+python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" \
+  --tasks-dir "${TASKS_DIR:-tasks}" --docs-dir "${DOCS_DIR:-docs}" --json
+# 찾지 못했을 때
+python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" \
+  --tasks-dir "${TASKS_DIR:-tasks}" --docs-dir "${DOCS_DIR:-docs}" --json
+```
+
+| 종료 코드 | 대응 |
+| --- | --- |
+| 0 | 2단계로 간다. `notes` 에 로컬에만 있는 브랜치가 나오면 push 전 브랜치다. 그 브랜치에서 이어 가고 PR 때 push 한다 |
+| 1 | 출력한 발견 사항을 사용자에게 보여주고, 이어서 할지 새로 시작할지 확정받는다. 지운 계획서로 나오면 이미 구현된 plan 이다 |
+| 2 | 출력한 원인을 해소하고 다시 돌린다. `gh` 인증 실패와 `index.json` 부재가 여기 해당한다 |
+
+브랜치 이름이 task 디렉터리 이름과 다르면 `--branch` 로 넘긴다.
+이미 만들어진 작업 공간과 브랜치 위에서 시작했으면(예: orch 의 `launch-worker` 가 지시서의 `브랜치:` 이름으로 worker 마다 브랜치를 미리 만든다) 그 브랜치를 plan 브랜치로 쓰고 `--branch <그 이름>` 으로 넘긴다.
+모노레포에서 루트 `docs/` 도 기획 문서로 쓰면 `--docs-dir` 를 한 번 더 준다.
+
+### 2. 작업 공간 준비
+
+만드는 방법은 오버레이가 소유한다. 이 스킬이 요구하는 것은 아래와 같다.
+
+- plan 브랜치 위에서 작업한다. 1단계가 로컬에만 있는 브랜치라고 알렸으면 그 로컬 브랜치를 쓴다.
+- 이미 만들어진 작업 공간과 브랜치 위에서 시작했으면 그 브랜치를 그대로 쓴다.
+- main 워킹 디렉터리와 분리한다.
+- 팀원에게 줄 절대경로를 확보한다.
+
+plan 브랜치가 원격 기준 브랜치보다 뒤처졌으면 갱신할지 사용자에게 확인한다.
+
+### 3. 계획 검토
+
+`index.json` 과 `phase-*.md`, 그것이 가리키는 docs 를 읽는다.
+critic 을 띄우기 전에 계획서 형식을 검사한다. `$PLAN_SKILL_DIR` 은 아래 「커밋 전 대조」 에서 정한 값이다.
+종료 코드 1 이면 출력한 위반을 계획서에서 고치고 다시 돌린다.
+이어서 하는 plan 이면 앞 phase 가 이미 만든 파일에 「신규 파일이 이미 존재한다」 가 나온다. 그 위반은 고치지 않는다.
+
+```bash
+# cwd: plan 작업 공간(worktree) root
+python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
+```
+
+critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 목록 경로)를 담는다.
+**plan 의 모든 phase 를 한 번에 넘긴다.**
+
+회신에 **실행 형태가 없으면 재요청한다.**
+
+발견 목록을 team-lead 가 아래로 나눈다.
+
+- 계획을 고쳐야 하는 것 → `REVISE` 로 되돌린다.
+- 구현하며 챙기면 되는 것 → `critic minor notes` 로 executor 스폰 프롬프트에 넘긴다.
+- 이번 plan 밖의 것 → 마감 단계 보고에 합친다.
+
+`APPROVE` 를 받으면 **plan 규모를 한 번 판정한다.**
+[`references/executor-routing.md`](executor-routing.md)의 규모별 기본 등급 표에서 고르고,
+그 값을 phase 구현 단계의 등급 출발값으로 쓴다.
+
+### 4. phase 구현
+
+`index.json` 의 `current_phase` 부터 마지막 phase 까지 순서대로 돈다.
+**순서대로가 기본이다.** 두 phase 의 변경 파일이 겹치지 않고 뒤 phase 가 앞 phase 결과에 기대지 않을 때만 나란히 돌린다.
+나란히 돌릴 때는 [`references/executor-routing.md`](executor-routing.md#phase-를-나란히-돌리는-조건)의 조건과 지킬 것을 따른다.
+**한 phase 의 작업 순서는 다음과 같다.**
+
+1. **실행 형태를 판정한다.** 3단계에서 받은 critic 의 그 phase 판정과 team-lead 직접 점검 중
+   더 엄격한 쪽을 고른다. `HIGH_RISK` 차단 조건에 걸리거나 근거가 부족하면 실행 형태를 한 단계 더 올린다.
+2. **실행 등급을 정한다.** 출발값을 고르고 실행 형태의 최소 등급까지 끌어올린다. 등급을 낮추는 방향은 없다.
+3. **executor 를 스폰한다.** 이름은 `executor-p{N}` 이고 **등급을 명시 지정한다.**
+   호출 인자로 phase 파일 절대경로, **1항에서 정한 실행 형태**, `critic minor notes` 를 담는다.
+4. **executor 가 구현하고 검증한 뒤 회신한다.**
+5. **team-lead 가 그 phase 만 커밋한다.** 아래 「커밋 전 대조」를 통과한 파일만 커밋한다.
+6. **커밋 후 그 phase 의 executor 를 정리한다.**
+
+**phase 안에서는 구현, 작업 공간 안의 검증, 커밋만 한다.**
+push, 배포, 원격 호스트 접속이 있어야 끝나는 검증은 phase 안에서 돌리지 않는다.
+그 검증을 끝내려면 먼저 커밋하고 push 해야 해서, 실패를 고친 커밋이 phase 밖에 생긴다.
+phase 「검증」 절에 그런 명령이 있으면 executor 에게 실행하지 말라고 스폰 프롬프트에 적고,
+그 명령을 원격 검증 목록에 선행 조건과 시점을 붙여 더한다. 값은 [plan 의 「원격 검증 목록」](../../plan/references/task-create.md#원격-검증-목록)이 정한다.
+목록은 6단계에서 다룬다.
+
+phase 가 실패하면 원인을 분석한다.
+phase 자체를 고쳐야 하면 3단계로 돌아가고, 단순 에러면 그 phase 를 다시 구현한다.
+
+#### 커밋 전 대조
+
+`git status`로 변경을 확인하고 해당 phase의 경로만 stage한다.
+executor의 테스트 실행 결과가 모두 통과했는지 확인한 뒤 목록과 staged 파일을 대조한다.
+`$PLAN_SKILL_DIR`은 plan 번들이고 이 스킬 번들의 형제 디렉터리다. 값은 `$SKILL_DIR/../plan` 이다.
+`$PHASE_FILE`은 해당 phase 파일의 경로다.
+
+```bash
+# cwd: plan 작업 공간(worktree) root
+python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
+```
+
+executor 가 `git mv` 를 staged 로 남겼으면 team-lead 는 그 phase 의 경로만 더 stage 한 뒤 대조한다. `git add -A` 는 그 경로에만 쓴다.
+
+종료 코드 0이면 커밋한다. 경고가 나오면 그 파일을 바꾸지 않아도 되는지 확인한다.
+1이면 출력대로 바로잡는다. 계획의 파일 목록에 없는 파일이 나오면 그 파일이 phase 목표 안인지 확인한다.
+
+| 파일 | 대응 |
+| --- | --- |
+| phase 목표 안 | 파일 목록 표에 더하고 커밋 메시지에 밝힌다 |
+| phase 목표 밖 | 3단계로 돌아간다 |
+
+2이면 실행 오류를 해소하고 다시 대조한다.
+변경 파일 목록의 작성 규칙은 [plan의 task 작성 규칙](../../plan/references/task-create.md#변경-파일-작성)을 따른다.
+
+### 5. 코드 리뷰와 문서 정합성 검토
+
+**모든 phase 가 끝난 뒤에 code-reviewer 와 docs-verifier 를 함께 스폰한다.** 두 검토는 병렬로 돈다.
+
+스폰 프롬프트에 담을 것이다.
+
+- code-reviewer: 반복 함정 목록 경로
+- docs-verifier: 오버레이가 추가한 문서 경로
+
+두 검토자에게 1단계에서 정한 기준 브랜치도 전달한다.
+
+**의도한 설계를 미리 알려주지 않는다.**
+
+| 판정 | 누가 고치나 | 다음 |
+| --- | --- | --- |
+| `FIX_NEEDED` | 그 phase 의 executor 를 다시 띄운다 | 변경 범위 재평가 |
+| `UPDATE_NEEDED` | team-lead 가 docs 를 고친다 | 변경 범위 재평가 |
+| `VIOLATION` | 그 phase 의 executor 를 다시 띄운다 | 변경 범위 재평가 |
+
+**재스폰 등급은 그 phase 의 원래 등급을 그대로 쓴다.** 실행 형태가 올라갔으면 그 하한을 따른다.
+이 단계의 수정은 **검토 반영 커밋 하나로 묶는다.** phase 커밋과 구분되게 메시지에 밝힌다.
+
+code-reviewer 회신의 「team-lead 가 정할 것」 목록에서 무엇을 고칠지 team-lead 가 정한다.
+고치지 않기로 한 것은 6단계 보고에 남긴다.
+
+**리뷰 반영 뒤에는 바뀐 파일과 영향을 받는 판정 축만 다시 본다.**
+docs 를 건드렸으면 그 범위로 docs-verifier 에게 재요청한다.
+변경의 영향을 받지 않은 판정은 유지하고, 회신에 재평가 범위를 남긴다.
+
+재투입 요청에는 **어느 파일의 어느 라인이 어떻게 바뀌었는지**를 담는다.
+회신이 직전 판정과 같으면 바뀐 실제 라인을 `grep` 으로 출력해 증거로 붙인다.
+
+같은 지적이 반복되면 계획이 틀렸다는 신호다. 절차를 멈추고 사용자에게 넘긴다.
+
+```text
+PHASE_BLOCKED: <phase NN 또는 단계 이름>
+반복된 지적: <무엇이 몇 번 같게 돌아왔는지>
+지금까지 한 것: <커밋된 phase 와 반영한 수정>
+필요한 결정: <사용자가 정해야 하는 것>
+```
+
+phase 파일의 「Blocked 조건」 에 걸려 executor 가 같은 값을 회신했을 때도 같은 형식으로 올린다.
+
+### 6. 통합 검증과 PR
+
+[`references/step-finish.md`](step-finish.md)를 읽고 수행한다.
+기준 브랜치 확인, 통합 검증, 원격 검증 목록, 계획서 삭제, PR, 팀 종료, 작업 공간 정리, 보고, 반복될 실패를 저장소 규칙으로 옮기는 일이 거기 있다.
+
+## task 없이 리뷰부터 도는 경로
+
+PR 하나로 끝나는 작은 일에 `tasks/` 를 만들면 머지 뒤 지울 파일만 는다.
+이 경로는 지시서나 ADR 을 계획 입력으로 받아, 부른 쪽이 구현한 뒤의 검토와 PR 만 맡는다.
+PR 이 둘 이상이거나 세션 재시작, 계정 전환을 넘길 수 있는 일이면 이 경로를 쓰지 않고 `plan` 으로 `tasks/` 를 만든다.
+다음 실행자가 계획과 phase 커밋으로 이어받아야 하기 때문이다.
+
+`$PLAN_INPUT` 은 계획 입력으로 쓸 지시서나 ADR 의 절대경로다.
+
+| 단계 | 이름 | 통과 조건 | reference |
+| --- | --- | --- | --- |
+| 1 | 작업 공간 확인 | 위 2단계의 요구를 채운 작업 공간에 구현이 커밋돼 있다 | 오버레이 |
+| 2 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
+| 3 | 통합 검증과 PR | 위 6단계의 통과 조건에서 계획서 삭제 커밋을 뺀 것을 채웠다 | `references/step-finish.md` |
+
+- 재실행 확인, 계획 검토, phase 구현(위 1, 3, 4단계)은 돌지 않는다. 계획서가 없어 `plan_precheck.py` 와 `verify_task.py` 가 볼 것이 없다.
+- 2단계는 위 5단계와 같다. code-reviewer 에게 phase 파일 대신 `$PLAN_INPUT` 을 넘긴다. 발견의 phase 자리에는 `-` 를 쓴다.
+  `FIX_NEEDED` 와 `VIOLATION` 은 executor 를 하나 띄워 고치고, 수정은 검토 반영 커밋 하나로 묶는다.
+- 3단계는 `references/step-finish.md` 에서 「원격 검증 목록」 과 「커밋 검토와 계획서 삭제」 를 건너뛴다. 지울 계획서가 없다.

@@ -37,7 +37,7 @@
 
 ## 설계
 
-- 위치: `fos-skills/report/`. `SKILL.md`(목표, 개요 표, 단계), `references/layouts.md`(세 구성의 절 순서), `assets/template.html`(공통 CSS 와 부품 예시), `scripts/check-report.(ts|py)`(R2, R7 검사)
+- 위치: `fos-skills/skills/report/`. `SKILL.md`(목표, 개요 표, 단계), `references/layouts.md`(세 구성의 절 순서), `assets/template.html`(공통 CSS 와 부품 예시), `scripts/check-report.(ts|py)`(R2, R7 검사)
 - 본보기: 2026-11-03 의 메모리 사례 보고서(`fos-assistant/.omc/previews/agent-memory-report.html`)의 구성과 CSS 를 틀의 출발점으로 쓴다. 그 파일의 내용은 옮기지 않는다
 - 단계: 1 재료 모으기(넘겨받은 내용만) → 2 구성 고르기 → 3 틀에 채우기 → 4 검사 스크립트와 korean-check → 5 띄우고 경로 알리기
 - 스킬을 만들 때 `skill-creator` 를 쓰고 `~/.claude/references/skill-structure.md`, `skill-sync.md` 를 따른다. 플러그인 버전과 CHANGELOG 는 저장소 규칙대로 한다

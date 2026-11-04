@@ -1,0 +1,87 @@
+---
+name: korean-check
+metadata:
+  version: "1.36.1"
+description: |
+  한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
+  어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
+  파일, PR 본문, 커밋 메시지, 업무와 위키, 게시글, 아티팩트가 모두 대상이다.
+---
+
+# korean-check
+
+**목표: 한국어 산출물이 나가기 전에 누가 봐도 어색한 말은 검사기로 막고, 나머지는 경고와 의미 점검으로 보고 발견과 확인 범위를 남긴다.**
+
+두 층으로 나뉜다.
+
+| 층 | 무엇 | 판정 수단 | 축의 소유자 |
+| --- | --- | --- | --- |
+| 검사기 | 매핑 표의 금지어는 실패, 문장 구성 일부는 경고 | 종료 코드와 경고 줄 | 두 검사기의 docstring |
+| 의미 점검 | 검사기가 판정하지 못하는 것 | 발견 목록과 확인 범위 | `references/review-axes.md` 의 「축」 |
+
+## 어느 파일을 언제 읽나
+
+| 판단할 것 | 읽을 파일 |
+| --- | --- |
+| 어떤 낱말을 쓸지, 문장을 어떻게 맺을지 | `references/korean-style.md` |
+| 문서를 쓰거나 검토할 때 고쳐 쓴 예시와 되돌린 표기 | `references/korean-examples.md` |
+| 헤더와 표를 쓸지, 밖으로 나가는 글인지 | `references/writing-structure.md` |
+| 검사기가 무엇을 건너뛰는지, 훅이 언제 돌지 않는지 | `references/markdown-readability.md` |
+| 이 매체에서 어떻게 렌더될지 | [`../content-preview/references/render-traps.md`](../content-preview/references/render-traps.md) |
+| 검사기가 잡지 못하는 축과 발견을 처리하는 방법 | [`references/review-axes.md`](references/review-axes.md) |
+
+## 검사기를 돌린다
+
+`$SKILL_DIR` 은 이 스킬 번들 경로이고, `$FILE` 은 검사할 `.md` 파일이다.
+**스크립트는 스킬 번들에 있고 cwd 는 어디든 된다.** 상대 경로로 부르면 검사 대상 저장소에서 찾지 못한다.
+
+```bash
+# cwd: 아무 곳
+bash "$SKILL_DIR/scripts/check.sh" "$FILE"
+bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
+```
+
+**실패(종료 코드 1)로 막는 것은 매핑 표의 금지어뿐이다.**
+경고 줄은 문맥을 보고 고칠지 판단한다. 맞는 표현이면 그대로 둔다.
+종료 코드 규약과 나머지 인자는 `check.sh` 의 머리말이 소유한다.
+
+**만든 방법과 무관하게 파일 경로로 직접 돌린다.**
+훅이 어떤 파일을 놓치는지와 검사를 등록과 묶으면 무엇이 일어나는지는
+`references/markdown-readability.md` 의 「훅이 잡지 못하는 것」 이 소유한다.
+
+파일이 아닌 것은 `--text` 로 검사한다. 업무와 위키 제목, PR 과 이슈 제목, 커밋 메시지가 그 경로로 들어온다.
+
+**남이 함께 고치는 기존 문서는 이번에 더한 줄만 판정한다.**
+파일 전체를 돌리면 손대지 않은 문장의 금지어까지 실패로 막힌다.
+`--diff` 는 발견을 「이번 변경」 과 「기존 줄」 로 나눠 내고, 종료 코드는 이번 변경 몫만 본다.
+cwd 는 검사할 저장소 안이다. `$BASE` 는 비교 기준이고, 브랜치 전체를 보려면 `origin/main` 같은 기준 브랜치를 준다.
+
+```bash
+# cwd: 검사할 저장소 안
+bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE"
+bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE" -- "$FILE"
+```
+
+기존 줄의 발견은 완료 보고에 범위 밖 발견으로 남긴다. 기준을 생략하면 커밋하지 않은 변경만 본다.
+
+## 검사기가 잡지 못하는 축을 본다
+
+**검사기의 종료 코드 0 은 본문이 통과했다는 뜻이 아니다.**
+축과 발견 형식, 통과 조건은 [`references/review-axes.md`](references/review-axes.md) 가 소유한다.
+
+**긴 문서와 정형 양식은 메인이 축 목록으로 직접 점검한다.**
+완료 보고에 확인한 범위와 반영하지 않은 발견을 남긴다.
+PR 본문과 Dooray 업무 본문은 짧아도 정형 양식이라 이 층을 건너뛰지 않는다.
+이 층을 건너뛰는 것은 짧은 댓글 한 줄뿐이고, 검사기 통과로 끝낸다.
+분량 구간의 판정 기준은 `references/writing-structure.md` 가 소유한다.
+
+**별도 검토 역할에 넘기는 것은 아티팩트 페이지를 발행하기 전, 사용자가 요청했을 때, 부르는 스킬이 요구할 때다.**
+별도 검토에도 같은 축과 발견 형식을 쓴다.
+
+검사기에 넣을 파일이 없고 제목처럼 한 줄도 아닌 산출물은 이 층만 적용한다.
+채팅 답변이 그렇다.
+
+## 훅에 걸기
+
+편집 직후 자동 검사는 하네스 설정이 소유하고, 거는 방법은 `README.md` 가 소유한다.
+훅 모드의 동작은 `references/markdown-readability.md` 가 소유한다.

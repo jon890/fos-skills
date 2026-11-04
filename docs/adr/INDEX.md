@@ -1,6 +1,6 @@
 # ADR 목록
 
-- [ADR-001](001-plugin-from-repo-root.md): 저장소 루트를 플러그인으로 삼고 스킬 디렉터리는 옮기지 않는다 (`accepted`)
+- [ADR-001](001-plugin-from-repo-root.md): 저장소 루트를 플러그인으로 삼고 스킬 디렉터리는 옮기지 않는다 (`superseded`, ADR-020)
 - [ADR-002](002-plugin-version-is-commit-sha.md): 플러그인 버전을 쓰지 않고 커밋 SHA 를 버전으로 삼는다 (`superseded`, ADR-019)
 - [ADR-003](003-export-only-skills.md): 내보내기 전용 원본을 플러그인 스킬 목록에서 제외한다 (`accepted`)
 - [ADR-004](004-no-plugin-bin.md): 공용 도구의 PATH 명령은 이 플러그인에 두지 않는다 (`accepted`)
@@ -19,3 +19,6 @@
 - [ADR-017](017-orch-migration-reserve.md): 마이그레이션 번호는 worker 가 만들기 전에 잠금을 걸고 예약한다 (`accepted`)
 - [ADR-018](018-board-milestone-steps.md): 보드 단계는 사건 꼬리표가 붙은 마일스톤이고, 스크립트가 PR, 머지, 배포, 릴리스로 끝낸다 (`accepted`)
 - [ADR-019](019-plugin-version-auto-bump.md): 플러그인 version 을 두고 main 에 머지될 때마다 GitHub Actions 가 올린다 (`accepted`)
+- [ADR-020](020-orch-loop-refresh.md): 상주 루프가 뒤처진 PR 의 최신화를 머지 차례 전에 PR 마다 걸고, 머지는 머지 큐가 하나씩 한다 (`accepted`)
+- [ADR-021](021-skill-directory-layout.md): 스킬 원본과 저장소 관리 영역을 나눈다 (`accepted`)
+- [ADR-022](022-extension-directory-layout.md): 보드를 확장 기능 디렉터리에 둔다 (`accepted`)

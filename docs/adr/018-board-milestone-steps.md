@@ -27,4 +27,4 @@
   - 감당할 것: `finish-pr.ts` 는 마지막 PR 을 판정하지 못하면 중간 PR 로 본다. 실제로 마지막 PR 이었으면 항목이 doing 으로 남아 코디네이터가 done 으로 바꾼다. `board-sync.ts` 는 판정하지 못하면 마지막으로 보지만, 뒤 PR 의 수동 단계가 남은 항목은 done 이 되지 않는다(2026-11-03, 뒤 PR 단계가 남은 항목이 두 번 done 이 된 일 뒤에 바꿨다).
   - 감당할 것: 배포를 기다리는 항목은 틱마다 PR 상태와 배포 실행 목록을 한 번씩 읽는다.
   - 감당할 것: `[release]` 단계를 둔 저장소가 `board-release.ts` 를 부르지 않으면 그 항목은 doing 으로 남는다.
-- **적용 범위**: 단계 정의와 사건 규칙은 `orch/scripts/lib/milestones.ts`, 사건 반영은 `orch/scripts/board-sync.ts`, `orch/scripts/finish-pr.ts`, `orch/scripts/board-release.ts` 의 머리 주석, 띄울 때 만들기는 `orch/scripts/lib/board.ts` 의 `registerBoard`, 코디네이터의 쓰는 법은 [`../../orch/references/board.md`](../../orch/references/board.md) 가 소유한다.
+- **적용 범위**: 단계 정의와 사건 규칙은 `orch/scripts/lib/milestones.ts`, 사건 반영은 `orch/scripts/board-sync.ts`, `orch/scripts/finish-pr.ts`, `orch/scripts/board-release.ts` 의 머리 주석, 띄울 때 만들기는 `orch/scripts/lib/board.ts` 의 `registerBoard`, 코디네이터의 쓰는 법은 [`../../orch/references/board.md`](../../skills/orch/references/board.md) 가 소유한다.

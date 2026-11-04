@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hooks/post-commit 의 출력 범위 검사.
+"""githooks/post-commit 의 출력 범위 검사.
 
 커밋 훅이 팀 저장소와의 어긋남을 전부 내면 이번 변경이 가려진다.
 이번 커밋이 건드린 스킬의 어긋남만 자세히 내고 나머지는 개수로만 낸다.
@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-HOOK = Path(__file__).resolve().parents[2] / "hooks" / "post-commit"
+HOOK = Path(__file__).resolve().parents[2] / "githooks" / "post-commit"
 
 FAKE_SYNC = """#!/usr/bin/env bash
 echo "원본: HEAD (abc)"
@@ -47,7 +47,7 @@ class PostCommitHookTest(unittest.TestCase):
 
     def commit_touching(self, *dirs):
         for d in dirs:
-            (self.repo / d).mkdir(exist_ok=True)
+            (self.repo / d).mkdir(parents=True, exist_ok=True)
             (self.repo / d / "f.txt").write_text(d, encoding="utf-8")
         self.git("add", "-A")
         self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c", "--no-verify")
@@ -57,6 +57,12 @@ class PostCommitHookTest(unittest.TestCase):
             ["bash", str(HOOK)], cwd=self.repo, capture_output=True, text=True,
             env={**os.environ, "PATH": os.environ["PATH"]},
         )
+
+    def test_nested_source_roots_report_the_touched_skill(self):
+        self.commit_touching("skills/alpha", "export-only-skills/beta")
+        out = self.run_hook().stdout
+        self.assertIn("skills/alpha/SKILL.md", out)
+        self.assertIn("skills/beta/scripts/x.py", out)
 
     def test_only_touched_skill_is_listed_in_detail(self):
         self.commit_touching("alpha")

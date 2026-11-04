@@ -1,0 +1,509 @@
+// bin/board.ts 를 임시 보드 파일로 실행해 단계 줄 처리와 set 규칙, 기본 보드 위치를 확인한다.
+//
+// 실행: node --test extensions/work-board/tests/board.spec.ts
+
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { defaultBoardPath } from '../bin/board.ts'
+
+const BOARD = fileURLToPath(new URL('../bin/board.ts', import.meta.url))
+
+type Json = Record<string, unknown>
+type Result = { code: number | null; stdout: string; stderr: string }
+
+let tmp: string
+let file: string
+
+const rows = (...values: [string, boolean][]) => values.map(([text, done]) => ({ text, done }))
+
+function write(...items: Json[]): void {
+  writeFileSync(file, JSON.stringify({ items }), 'utf8')
+}
+
+function board(...args: string[]): Result {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', BOARD, ...args, '--file', file], { encoding: 'utf8' })
+  return { code: done.status, stdout: done.stdout, stderr: done.stderr }
+}
+
+function items(): Json[] {
+  return (JSON.parse(readFileSync(file, 'utf8')) as { items: Json[] }).items
+}
+
+function item(id: string): Json {
+  const found = items().find((row) => row.id === id)
+  assert.ok(found, `항목이 없다: ${id}`)
+  return found
+}
+
+beforeEach(() => {
+  tmp = realpathSync(mkdtempSync(join(tmpdir(), 'board-')))
+  file = join(tmp, 'board.json')
+})
+
+afterEach(() => rmSync(tmp, { recursive: true, force: true }))
+
+describe('step 과 steps', () => {
+  test('사건 꼬리표는 steps 출력과 단계 완료 뒤에도 남는다', () => {
+    const text = '3. 배포 (#665 deploy)'
+    write({ id: 'g', status: 'goal', details: [text] })
+    let r = board('steps', 'g')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(JSON.parse(r.stdout), [{ number: 3, done: false, text }])
+    r = board('step', 'g', '3')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('g').details, [{ text, done: true }])
+  })
+
+  test('번호 붙은 next 줄을 찾아 끝내고 --undo 로 되돌린다', () => {
+    write({ id: 'up', status: 'doing', next: '1. 구현\n2. 리뷰 반영\n3. 머지' })
+    const r = board('step', 'up', '1')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('up').next, rows(['1. 구현', true], ['2. 리뷰 반영', false], ['3. 머지', false]))
+    board('step', 'up', '1', '--undo')
+    assert.deepEqual(item('up').next, rows(['1. 구현', false], ['2. 리뷰 반영', false], ['3. 머지', false]))
+  })
+
+  test('details 에 단계가 있으면 next 보다 앞선다', () => {
+    write({ id: 'g', status: 'doing', next: '1. 할 일 목록', details: ['1 a', '2 b'] })
+    board('step', 'g', '1')
+    assert.deepEqual(item('g').details, rows(['1 a', true], ['2 b', false]))
+    assert.deepEqual(item('g').next, rows(['1. 할 일 목록', false]))
+  })
+
+  test('체크 상자 줄의 done 값을 바꾼다', () => {
+    write({ id: 'c', status: 'doing', details: ['[ ] 1. a', '[ ] 2) b'] })
+    board('step', 'c', '2')
+    assert.deepEqual(item('c').details, rows(['1. a', false], ['2) b', true]))
+    board('step', 'c', '2', '--undo')
+    assert.deepEqual(item('c').details, rows(['1. a', false], ['2) b', false]))
+  })
+
+  test('진행 중 표시를 떼고 done 값으로 바꾼다', () => {
+    write({ id: 'm', status: 'doing', details: ['▶ 1 a', '◇ 2 b'] })
+    board('step', 'm', '1')
+    assert.deepEqual(item('m').details, rows(['1 a', true], ['2 b', false]))
+  })
+
+  test('없는 번호는 단계 줄 쓰는 법을 알린다', () => {
+    write({ id: 'x', status: 'doing', next: '1. a' })
+    const r = board('step', 'x', '4')
+    assert.equal(r.code, 1, r.stderr)
+    assert.ok(r.stderr.includes('4 번 단계 줄이 없다'), r.stderr)
+    assert.ok(r.stderr.includes('「4. …」'), r.stderr)
+  })
+
+  test('steps 는 세는 줄만 JSON 으로 내고 파일을 고치지 않는다', () => {
+    write({ id: 's', status: 'doing', details: ['참고: x', '✓ 1 a', '[ ] 2. b #7'] })
+    const before = readFileSync(file, 'utf8')
+    const r = board('steps', 's')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout, '[{"number": 1, "done": true, "text": "1 a"}, {"number": 2, "done": false, "text": "2. b #7"}]\n')
+    assert.equal(readFileSync(file, 'utf8'), before)
+    assert.equal(board('steps', 'none').code, 1)
+  })
+
+  test('steps 는 단계 밖의 줄을 stderr 에 mark 번호와 함께 내고 stdout JSON 은 그대로다', () => {
+    write({ id: 's', status: 'doing', details: ['참고: x', '✓ 1 a'], next: ['결정: y'] })
+    const r = board('steps', 's')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout, '[{"number": 1, "done": true, "text": "1 a"}]\n')
+    assert.equal(r.stderr, '단계 밖의 줄(mark 번호):\n    1   참고: x\n    3   결정: y\n')
+  })
+
+  test('steps 는 단계 밖의 줄이 없으면 stderr 를 비운다', () => {
+    write({ id: 's', status: 'doing', next: '1. a\n2. b' })
+    const r = board('steps', 's')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stderr, '')
+  })
+})
+
+describe('mark', () => {
+  test('번호 없는 줄을 끝내고 --undo 로 되돌린다. 번호는 details 다음 next 순서다', () => {
+    write({ id: 'n', status: 'wait', details: ['참고 a', '1 b'], next: ['결정 c'] })
+    let r = board('mark', 'n', '3')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('n').details, rows(['참고 a', false], ['1 b', false]))
+    assert.deepEqual(item('n').next, rows(['결정 c', true]))
+    r = board('mark', 'n', '1')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('n').details, rows(['참고 a', true], ['1 b', false]))
+    board('mark', 'n', '3', '--undo')
+    assert.deepEqual(item('n').next, rows(['결정 c', false]))
+    assert.equal(item('n').status, 'wait')
+  })
+
+  test('decide 항목의 마지막 줄을 끝내면 done 이 되고 --undo 는 status 를 바꾸지 않는다', () => {
+    write({ id: 'd', status: 'decide', details: ['A 를 고를지', 'B 를 고를지'] })
+    board('mark', 'd', '1')
+    assert.equal(item('d').status, 'decide')
+    assert.equal(board('mark', 'd', '2').code, 0)
+    assert.equal(item('d').status, 'done')
+    board('mark', 'd', '2', '--undo')
+    assert.deepEqual(item('d').details, rows(['A 를 고를지', true], ['B 를 고를지', false]))
+    assert.equal(item('d').status, 'done')
+  })
+
+  test('빈 줄은 mark 번호에서 건너뛰고, 남은 줄을 모두 끝내면 빈 줄이 있어도 done 이 된다', () => {
+    write({ id: 'd', status: 'decide', details: ['A 를 고를지', '', '   '], next: ['B 를 고를지'] })
+    assert.equal(board('mark', 'd', '1').code, 0)
+    assert.equal(item('d').status, 'decide')
+    const r = board('mark', 'd', '2')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('d').next, rows(['B 를 고를지', true]))
+    assert.equal(item('d').status, 'done')
+    const missing = board('mark', 'd', '3')
+    assert.equal(missing.code, 1)
+    assert.ok(missing.stderr.includes('줄은 2 개다'), missing.stderr)
+  })
+
+  test('step 으로 decide 항목의 줄을 모두 끝내도 done 이 된다', () => {
+    write({ id: 'd', status: 'decide', next: '1. 정하기' })
+    assert.equal(board('step', 'd', '1').code, 0)
+    assert.equal(item('d').status, 'done')
+  })
+
+  test('decide 가 아닌 항목은 줄이 모두 끝나도 status 를 바꾸지 않는다', () => {
+    write({ id: 'w', status: 'wait', next: '확인' })
+    board('mark', 'w', '1')
+    assert.equal(item('w').status, 'wait')
+  })
+
+  test('없는 줄 번호는 거절하고 보드를 고치지 않는다', () => {
+    write({ id: 'x', status: 'decide', next: '결정' })
+    const before = readFileSync(file)
+    for (const n of ['0', '2']) {
+      const r = board('mark', 'x', n)
+      assert.equal(r.code, 1, `${n}: ${r.stderr}`)
+      assert.ok(r.stderr.includes(`${n} 번 줄이 없다`), r.stderr)
+    }
+    assert.equal(board('mark', 'x').code, 1)
+    assert.equal(board('mark', 'none', '1').code, 1)
+    assert.deepEqual(readFileSync(file), before)
+  })
+})
+
+describe('set', () => {
+  test('진행률 없는 doing 은 거절하고 보드를 고치지 않는다', () => {
+    write({ id: 'old', status: 'wait', title: '옛 항목' })
+    let r = board('set', 'old', 'doing')
+    assert.equal(r.code, 1, r.stderr)
+    assert.ok(r.stderr.includes('진행률이 필요하다'), r.stderr)
+    assert.ok(r.stderr.includes("--next '1. 구현'"), r.stderr)
+    assert.ok(r.stderr.includes('--progress'), r.stderr)
+    assert.equal(item('old').status, 'wait')
+    r = board('set', 'new', 'doing', '--title', '새 항목')
+    assert.equal(r.code, 1, r.stderr)
+    assert.deepEqual(
+      items().map((row) => row.id),
+      ['old'],
+    )
+  })
+
+  test('단계 줄이나 --progress 가 있으면 doing 을 받는다', () => {
+    write()
+    const r = board('set', 'a', 'doing', '--next', '1. 구현', '--next', '2. 머지')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('a').next, rows(['1. 구현', false], ['2. 머지', false]))
+    assert.equal(board('set', 'b', 'doing', '--progress', '2/5').code, 0)
+    assert.equal(board('set', 'c', 'doing', '--detail', '✓ 1 a', '--detail', '2 b').code, 0)
+  })
+
+  test('표시를 done 값으로 바꾸고 빈 값은 칸을 지운다', () => {
+    let r = board('set', 'a', 'doing', '--next', '[X] 1. 구현\n[ ] 2. 머지', '--detail', '✓ 참고', '--detail', '▶ 3 검증', '--detail', '◇ 4 배포')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('a').next, rows(['1. 구현', true], ['2. 머지', false]))
+    assert.deepEqual(item('a').details, rows(['참고', true], ['3 검증', false], ['4 배포', false]))
+    r = board('set', 'a', 'wait', '--next', '', '--detail', '')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal('next' in item('a'), false)
+    assert.equal('details' in item('a'), false)
+  })
+
+  test('섞인 형식은 쓸 때 옮기고 객체의 done 값은 지킨다', () => {
+    write(
+      { id: 'a', status: 'doing', details: ['[x] 1 a', { text: '2 b', done: false }, { text: '3 c', done: true }, '참고'] },
+      { id: 'b', status: 'wait', next: '✓ 1 d' },
+    )
+    let before = readFileSync(file)
+    assert.ok(board('list').stdout.split('\n')[0].endsWith('2/3 (67%)'))
+    assert.deepEqual(readFileSync(file), before)
+    const r = board('step', 'a', '2')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('a').details, rows(['1 a', true], ['2 b', true], ['3 c', true], ['참고', false]))
+    assert.deepEqual(item('b').next, rows(['1 d', true]))
+    before = readFileSync(file)
+    assert.equal(board('step', 'a', '9').code, 1)
+    assert.deepEqual(readFileSync(file), before)
+  })
+
+  test('--progress 는 분수여야 한다', () => {
+    write()
+    const r = board('set', 'a', 'doing', '--progress', '거의 완료')
+    assert.equal(r.code, 1, r.stderr)
+    assert.ok(r.stderr.includes('끝낸단계/전체단계'), r.stderr)
+  })
+
+  test('옛 doing 항목은 set 할 때까지 그대로 둔다', () => {
+    write({ id: 'old', status: 'doing', progress: '거의 완료' }, { id: 'w', status: 'wait' })
+    assert.equal(board('set', 'w', '--title', '대기').code, 0)
+    assert.equal(item('old').status, 'doing')
+    assert.equal(board('set', 'old', '--pr', '#1').code, 1)
+    assert.equal(board('set', 'old', 'done').code, 0)
+  })
+
+  test('쓴 파일은 한 칸 들여쓰기에 한글을 그대로 둔다', () => {
+    write({ id: 'old', status: 'wait', title: '옛 항목', note: { tags: [], n: 2 } })
+    const r = board('set', 'a', 'doing', '--next', '1. 구현', '--pr', '#1')
+    assert.equal(r.code, 0, r.stderr)
+    const text = readFileSync(file, 'utf8')
+    const at = /"updatedAt": "([^"]+)"/.exec(text)
+    assert.ok(at, text)
+    assert.match(at[1], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+    // 한 칸 들여쓰기, 빈 목록은 [], 한글은 그대로, 끝 줄바꿈 없음
+    const expected = [
+      '{',
+      ' "items": [',
+      '  {',
+      '   "id": "old",',
+      '   "status": "wait",',
+      '   "title": "옛 항목",',
+      '   "note": {',
+      '    "tags": [],',
+      '    "n": 2',
+      '   }',
+      '  },',
+      '  {',
+      '   "id": "a",',
+      '   "title": "a",',
+      '   "status": "doing",',
+      '   "pr": 1,',
+      '   "next": [',
+      '    {',
+      '     "text": "1. 구현",',
+      '     "done": false',
+      '    }',
+      '   ],',
+      '   "stepAt": "<at>"',
+      '  }',
+      ' ],',
+      ' "updatedAt": "<at>"',
+      '}',
+    ].join('\n')
+    assert.equal(text.replaceAll(at[1], '<at>'), expected)
+  })
+
+  test('--pr 과 --merged-pr 은 # 유무와 상관없이 PR 번호 하나는 숫자로, 여럿은 문자열로 저장한다', () => {
+    write({ id: 'a', status: 'wait' })
+    const cases: [string, unknown][] = [
+      ['#555', 555],
+      ['555', 555],
+      [' #492, #495 ', '492, 495'],
+      ['492/495', '492, 495'],
+      ['곧 연다', '곧 연다'],
+    ]
+    for (const [given, want] of cases) {
+      assert.equal(board('set', 'a', '--pr', given, '--merged-pr', given).code, 0)
+      const item = JSON.parse(readFileSync(file, 'utf8')).items[0]
+      assert.deepEqual([item.pr, item['merged-pr']], [want, want], given)
+    }
+  })
+
+  test('--stages 는 사건과 단계 번호의 짝만 받고 빈 값은 칸을 지운다', () => {
+    write({ id: 'a', status: 'wait' })
+    assert.equal(board('set', 'a', '--stages', 'pr=1,merge=2,deploy=3,release=4').code, 0)
+    assert.equal(item('a').stages, 'pr=1,merge=2,deploy=3,release=4')
+    for (const bad of ['qa=1', 'pr=x', 'pr=1;merge=2']) {
+      const r = board('set', 'a', '--stages', bad)
+      assert.equal(r.code, 1, bad)
+      assert.ok(r.stderr.includes('--stages'), r.stderr)
+    }
+    assert.equal(item('a').stages, 'pr=1,merge=2,deploy=3,release=4')
+    assert.equal(board('set', 'a', '--stages', '').code, 0)
+    assert.equal('stages' in item('a'), false)
+  })
+
+  test('--task 는 http 나 https 주소만 받고 빈 값은 칸을 지운다', () => {
+    write({ id: 'a', status: 'wait' })
+    const url = 'https://nhnent.dooray.com/project/tasks/4455909338652535899'
+    assert.equal(board('set', 'a', '--task', url).code, 0)
+    assert.equal(item('a').task, url)
+    const r = board('set', 'a', '--task', 'nhnent.dooray.com/project/tasks/1')
+    assert.equal(r.code, 1)
+    assert.ok(r.stderr.includes('--task'), r.stderr)
+    assert.equal(item('a').task, url)
+    assert.equal(board('set', 'a', '--task', '').code, 0)
+    assert.equal('task' in item('a'), false)
+  })
+
+  test('id 는 타입까지 같을 때만 맞는다', () => {
+    write({ id: 1, status: 'wait', title: '숫자 id' })
+    const r = board('steps', '1')
+    assert.equal(r.code, 1, r.stderr)
+    assert.ok(r.stderr.includes('항목이 없다: 1'), r.stderr)
+    assert.equal(board('del', '1').code, 0)
+    assert.deepEqual(
+      items().map((row) => row.id),
+      [1],
+    )
+  })
+
+  test('옵션은 고유 접두로 줄여 쓸 수 있다', () => {
+    write()
+    const r = board('set', 'a', 'wait', '--tit', '줄임')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(item('a').title, '줄임')
+  })
+})
+
+describe('사용법', () => {
+  for (const flag of ['--help', '-h', '--he']) {
+    test(`${flag} 는 사용법을 stdout 에 내고 0 이다`, () => {
+      const r = board('set', flag)
+      assert.equal(r.code, 0, r.stderr)
+      assert.ok(r.stdout.startsWith('사용법: board.ts {set,step,steps,mark,del,list}'), r.stdout)
+      assert.ok(r.stdout.includes('board.ts steps <id>'), r.stdout)
+      assert.ok(r.stdout.includes('board.ts mark <id> <n>'), r.stdout)
+      assert.equal(existsSync(file), false, '도움말인데 보드를 만들었다')
+    })
+  }
+
+  test('모르는 명령과 옵션은 사용법 오류 2 이고 보드를 만들지 않는다', () => {
+    for (const args of [['show'], ['list', '--bogus'], ['set', 'a', 'wait', '--p', 'x']]) {
+      const r = board(...args)
+      assert.equal(r.code, 2, `${args.join(' ')}: ${r.stderr}`)
+      assert.ok(r.stderr.startsWith('사용법: board.ts'), r.stderr)
+    }
+    assert.equal(existsSync(file), false)
+  })
+})
+
+describe('list', () => {
+  test('항목마다 진행률을 붙인다', () => {
+    write({ id: 'a', status: 'doing', next: '✓ 1. a\n[x] 2. b\n3. c' }, { id: 'b', status: 'doing', progress: '1/4' }, { id: 'c', status: 'wait' })
+    // 줄 표시는 들여쓰기로 시작하므로 항목 줄만 고른다
+    const lines = board('list')
+      .stdout.split('\n')
+      .filter((line) => line && !line.startsWith(' '))
+    assert.ok(lines[0].endsWith('2/3 (67%)'), lines[0])
+    assert.ok(lines[1].endsWith('1/4 (25%)'), lines[1])
+    assert.ok(lines[2].endsWith('진행률 없음'), lines[2])
+  })
+
+  test('항목 줄 아래에 details 와 next 의 모든 줄을 mark 번호와 끝냄 표시로 낸다', () => {
+    write({ id: 'a', status: 'decide', details: ['✓ 1. a', '참고 b'], next: ['결정 c'] }, { id: 'b', status: 'wait' })
+    const lines = board('list').stdout.split('\n')
+    assert.ok(lines[0].startsWith('decide  a'), lines[0])
+    assert.deepEqual(lines.slice(1, 4), ['    1 ✓ 1. a', '    2   참고 b', '    3   결정 c'])
+    assert.ok(lines[4].startsWith('wait    b'), lines[4])
+    assert.equal(lines[5], '')
+  })
+
+  test('딱 반인 백분율은 옛 명령처럼 짝수 쪽으로 반올림한다', () => {
+    write({ id: 'a', status: 'doing', progress: '1/8' })
+    assert.ok(board('list').stdout.split('\n')[0].endsWith('1/8 (12%)'))
+  })
+})
+
+describe('기본 보드 위치', () => {
+  function git(cwd: string, ...args: string[]): void {
+    const done = spawnSync('git', args, { cwd, encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stderr)
+  }
+
+  test('git 작업 트리의 .omc/board.json 이고 옛 .omc/handoffs/board.json 이 있으면 그것이다', () => {
+    const repo = join(tmp, 'repo')
+    mkdirSync(join(repo, 'sub'), { recursive: true })
+    git(repo, 'init', '-q')
+    assert.equal(defaultBoardPath(join(repo, 'sub')), join(repo, '.omc/board.json'))
+    mkdirSync(join(repo, '.omc/handoffs'), { recursive: true })
+    writeFileSync(join(repo, '.omc/handoffs/board.json'), '{}')
+    assert.equal(defaultBoardPath(repo), join(repo, '.omc/handoffs/board.json'))
+  })
+
+  test('git 밖의 폴더면 그 폴더의 .omc/board.json 이다', () => {
+    const plain = join(tmp, 'plain')
+    mkdirSync(plain)
+    // tmp 위로 git 저장소를 찾아 올라가지 않게 막는다
+    const prev = process.env.GIT_CEILING_DIRECTORIES
+    process.env.GIT_CEILING_DIRECTORIES = tmp
+    try {
+      assert.equal(defaultBoardPath(plain), join(plain, '.omc/board.json'))
+    } finally {
+      if (prev === undefined) delete process.env.GIT_CEILING_DIRECTORIES
+      else process.env.GIT_CEILING_DIRECTORIES = prev
+    }
+  })
+
+  test('import 해도 명령이 돌지 않는다', () => {
+    const repo = join(tmp, 'repo')
+    mkdirSync(repo)
+    git(repo, 'init', '-q')
+    const done = spawnSync(
+      process.execPath,
+      ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', `import { defaultBoardPath } from ${JSON.stringify(BOARD)}; defaultBoardPath(process.cwd())`],
+      { cwd: repo, encoding: 'utf8' },
+    )
+    assert.equal(done.status, 0, done.stderr)
+    assert.equal(done.stdout, '')
+    assert.equal(existsSync(join(repo, '.omc')), false)
+  })
+
+  test('--file 이 없으면 기본 위치에 쓴다', () => {
+    const repo = join(tmp, 'repo')
+    mkdirSync(repo)
+    git(repo, 'init', '-q')
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', BOARD, 'set', 'a', 'wait'], { cwd: repo, encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stderr)
+    const saved = JSON.parse(readFileSync(join(repo, '.omc/board.json'), 'utf8')) as { items: Json[]; updatedAt: string }
+    assert.deepEqual(saved.items, [{ id: 'a', title: 'a', status: 'wait', stepAt: saved.updatedAt }])
+    assert.match(saved.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+  })
+})
+
+describe('stepAt', () => {
+  const OLD = '2000-01-01T00:00:00+09:00'
+  const board_ = () => JSON.parse(readFileSync(file, 'utf8')) as { updatedAt: string; items: Json[] }
+
+  test('새 항목은 stepAt 을 updatedAt 과 같은 시각으로 남긴다 (docs/features/board-decision-box R6)', () => {
+    writeFileSync(file, JSON.stringify({ items: [] }), 'utf8')
+    const r = board('set', 'n', 'doing', '--next', '1. a')
+    assert.equal(r.code, 0, r.stderr)
+    const saved = board_()
+    assert.ok(saved.items[0].stepAt)
+    assert.equal(saved.items[0].stepAt, saved.updatedAt)
+  })
+
+  test('step 과 mark 와 status 바꾸기는 stepAt 을 새로 남긴다 (R6)', () => {
+    for (const args of [['step', 'n', '1'], ['mark', 'n', '1'], ['set', 'n', 'wait']]) {
+      write({ id: 'n', status: 'doing', next: rows(['1. a', false], ['2. b', false]), stepAt: OLD })
+      const r = board(...args)
+      assert.equal(r.code, 0, r.stderr)
+      assert.notEqual(item('n').stepAt, OLD, args.join(' '))
+    }
+  })
+
+  test('제목만 바꾸거나 같은 줄을 다시 쓰면 stepAt 이 그대로다 (R6)', () => {
+    write({ id: 'n', status: 'doing', next: rows(['1. a', false]), stepAt: OLD }, { id: 'm', status: 'wait', title: 'm', stepAt: OLD })
+    let r = board('set', 'n', '--title', '새 제목')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(item('n').stepAt, OLD)
+    r = board('set', 'n', 'doing', '--next', '1. a')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(item('n').stepAt, OLD)
+    // 다른 항목을 고쳐도 그대로다
+    assert.equal(item('m').stepAt, OLD)
+  })
+
+  test('옛 문자열 줄을 객체로 바꾸는 것은 변화로 세지 않는다 (R6)', () => {
+    write({ id: 'n', status: 'doing', next: '1. a' })
+    const r = board('set', 'n', '--title', '새 제목')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal('stepAt' in item('n'), false)
+  })
+})

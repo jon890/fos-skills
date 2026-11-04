@@ -138,10 +138,10 @@ flowchart TD
 
 이 절은 orch 개편 뒤의 흐름이다([ADR-009](adr/009-orch-event-handlers.md)).
 상주 루프의 자동 진행(ready 슬롯, base 합치기, 순서 머지, 문서 PR 머지)과 배포 묶기, `ci-missing` 은 아직 구현하지 않았다.
-이 문서의 그 부분은 설계이고, 지금 동작은 `orch/SKILL.md` 와 `orch/references/` 가 소유한다.
+이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 핸들러의 입력과 종료 코드는 [data-schema.md](data-schema.md) 의 「orch 이벤트 핸들러 입력」, 코어와 핸들러의 경계는 [code-architecture.md](code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
 
-orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
+orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.skills/orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"'Noto Sans KR', sans-serif","fontSize":"14px","lineColor":"#7A8594","primaryTextColor":"#1D1F23","edgeLabelBackground":"#FFFFFF","clusterBkg":"#FAFAFA"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":60,"padding":14}}}%%
@@ -235,7 +235,9 @@ flowchart TD
 | 충돌 해결, CI 고침, 리뷰 반영 worker 가 보드에 새 항목을 만들고 충돌 지시서가 base 마다 쌓인다 | `launch-worker`, 충돌 처리, `finish-pr` | 지시서의 `중간 과정: PR #N` 줄을 보면 그 PR 의 기존 항목에 한 줄만 남긴다. 충돌 지시서는 PR 마다 `spec-conflict-<PR>.md` 하나이고, 마무리가 머지 뒤 지운다([ADR-015](adr/015-board-decide-clear.md)) |
 | 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. 알림 파일에 `QUEUE-CONFLICT` 를 쓴다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
 | 준비된 PR 이 코디네이터가 다른 일을 하는 동안 몇 시간씩 머지되지 않는다. 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨린다 | `orch-loop` 의 `tick` | `queue.auto_merge` 를 켠 저장소에서 틱이 머지할 수 있는 PR 을 골라 `merge-with-finish` 를 건다. 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같으면 걸지 않고 `MIGRATION-CLASH` 로 알린다([ADR-016](adr/016-orch-auto-merge.md)). 아래 「상주 루프의 자동 머지」 |
-| ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에만, 그리고 `pipeline.update_behind_drafts` 가 draft 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
+| ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에, `pipeline.update_behind_drafts` 가 draft 에, 상주 루프의 최신화가 머지 큐와 같은 판정으로 갱신이 필요한 ready PR 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
+| 머지 큐의 맨 앞 PR 이 막히면 뒤의 머지할 수 있는 PR 이 모두 기다린다 | `merge_queue` | 보류한 PR 은 큐에서 빼고 다음 PR 로 간다(기본. 옛 동작은 `--stop-on-hold`). 차례 PR 이 base 를 합쳐 CI 를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다. worker 가 고쳐야 하는 보류는 그 worker 에게 이유를 보낸다 |
+| 공용 경로를 건드린 PR 이 머지마다 차례가 와야 base 를 합치고 CI 를 다시 기다려, PR 마다 CI 한 번씩 줄을 선다 | `orch-loop` 의 `tick`, `merge_queue` | `pipeline.refresh_slots` 를 켠 저장소에서 틱이 뒤처진 PR 에 `update-branch` 를 미리 PR 마다 걸어 CI 를 함께 돌린다. 동시에 도는 수는 그 값까지다. 도는 머지 큐의 차례 PR 과 큐의 앞 PR 과 겹치는 PR 은 건드리지 않는다. 머지 큐는 지금처럼 하나씩 머지하되 차례가 온 PR 이 이미 최신이고 통과했으면 기다리지 않는다([ADR-020](adr/020-orch-loop-refresh.md)) |
 
 ### 갈래
 
@@ -260,7 +262,7 @@ flowchart TD
 ### 머지 뒤 마지막 PR 판정
 
 머지 큐는 PR 마다 마무리를 함께 걸고, 마무리가 배포를 확인한 뒤 업무의 마지막 PR 인지 정한다.
-판정 조건은 `orch/scripts/lib/last-pr.ts` 머리 주석이, 표시와 쓰는 때는 `orch/references/cleanup.md` 의 「머지」 가 소유한다.
+판정 조건은 `skills/orch/scripts/lib/last-pr.ts` 머리 주석이, 표시와 쓰는 때는 `skills/orch/references/cleanup.md` 의 「머지」 가 소유한다.
 
 ```mermaid
 flowchart TD
@@ -285,7 +287,7 @@ flowchart TD
 ### 상주 루프의 자동 머지
 
 `queue.auto_merge` 가 true 이면 틱이 CI 감시 뒤, 충돌 처리 앞에 한 번 돈다. 대상 조건, 순서, 알림 text 는 `orch-loop.ts` 머리 주석의 「자동 머지」 가,
-판정 함수는 `orch/scripts/lib/auto-merge.ts` 가 소유한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
+판정 함수는 `skills/orch/scripts/lib/auto-merge.ts` 가 소유한다. 설정 키는 [data-schema.md](data-schema.md) 의 「config.json 에 더하는 절」 이다.
 
 ```mermaid
 flowchart TD
@@ -305,7 +307,7 @@ flowchart TD
     M -->|더 낮은 번호의 열린 PR 이 큐 밖에 있거나 PR 없는 예약이 있음| B[기다림. blocked_after_sec 를 넘으면 MIGRATION-BLOCKED]
     M -->|백업 규칙 없음| WE[WATCH-ERROR auto-merge, 걸지 않음]
     M -->|없음이나 통과| O[준비 순, 같은 모듈은 번호 순으로 정렬하고 --chain 으로 묶음]
-    O --> L[첫 PR 의 Run 의 PR 만 merge-with-finish --run --continue-on-hold 로 분리 실행]
+    O --> L[첫 PR 의 Run 의 PR 만 merge-with-finish --run 으로 분리 실행]
     L --> A[PR 마다 AUTO-MERGE-BASIS 로그, AUTO-MERGE 알림, tried 에 기록]
 ```
 
@@ -317,7 +319,7 @@ flowchart TD
 | 다른 Run 의 낮은 번호 PR 이 이번 큐에서 빠진다 | 그 PR 을 기다리는 같은 모듈의 높은 번호 PR 도 이번 큐에서 뺀다. 남는 집합이 더 바뀌지 않을 때까지 다시 본다 |
 | 보드 파일을 읽지 못했다 | 보류 표시를 볼 수 없어 그 틱에는 걸지 않는다 |
 | 리뷰 뒤에 커밋이 더해졌거나 리뷰 봇이 결과 없이 실패했다 | `queue.auto_review.require` 를 적지 않은 저장소(`verdict-on-head`)는 옛 HEAD 의 `pass` 로 걸지 않는다. 더한 커밋이 기준 브랜치를 합친 merge 커밋뿐이면 앞 리뷰를 인정한다. 지금 HEAD 의 판정이 없으면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 코디네이터가 받은 독립 리뷰 결과를 이 HEAD 에 `pass` 문구로 남기면 다음 틱이 건다 |
-| 「머지 가능」 판정 뒤 P3 이하만 반영한 커밋을 올렸다 | `last-verdict-pass` 를 조합에 넣은 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 건다. `rereview-after-block` 을 함께 넣으면 `block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋의 `pass` 가 나올 때까지 기다린다. 조합 예시는 [orch 오버레이](../orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
+| 「머지 가능」 판정 뒤 P3 이하만 반영한 커밋을 올렸다 | `last-verdict-pass` 를 조합에 넣은 저장소는 마지막 판정이 `pass` 면 HEAD 가 달라도 건다. `rereview-after-block` 을 함께 넣으면 `block` 을 받은 PR 은 같은 커밋이나 그 뒤 커밋의 `pass` 가 나올 때까지 기다린다. 조합 예시는 [orch 오버레이](../skills/orch/references/overlay.md) 의 「자동 머지 리뷰 조건」 이 소유한다 |
 | 루프가 건 큐가 도는 동안 루프가 멈췄다 | 큐는 분리 실행이라 이어 돈다. 다시 뜬 루프는 기록의 pid 로 끝을 보고 `AUTO-MERGE-END` 를 쓴다 |
 | 대상 PR 이 여러 Run 의 것이다 | 큐 첫 PR 의 Run 것만 건다. 나머지는 그 큐가 끝난 뒤 다음 틱에 건다 |
 | PR 의 리뷰, 스레드, 파일을 읽지 못했다 | 그 PR 만 넘어가고 다른 PR 은 건다. 열린 PR 의 마이그레이션 목록이나 마이그레이션 예약 파일을 읽지 못하면 마이그레이션이 든 PR 만 뺀다. 이유는 `WATCH-ERROR auto-merge` 로 알린다 |

@@ -1,6 +1,7 @@
 ## ADR-001: 저장소 루트를 플러그인으로 삼고 스킬 디렉터리는 옮기지 않는다
 
-- **status**: `accepted`
+- **status**: `superseded`
+- **대체**: [ADR-020](021-skill-directory-layout.md). 저장소 루트를 플러그인 소스로 쓰는 결정은 유지하고 스킬 배치를 바꾼다.
 - **결정**: 이 저장소가 마켓플레이스 `fos-skills` 와 플러그인 `fos-skills` 를 함께 갖는다.
   플러그인의 소스는 저장소 루트(`./`)다. 스킬 디렉터리는 루트에 그대로 두고 `.claude-plugin/plugin.json` 의 `skills` 배열에 경로를 하나씩 적는다.
   최초 결정에서는 이 저장소의 스킬 일곱 개를 모두 담았다.
