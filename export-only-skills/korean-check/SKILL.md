@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.36.1"
+  version: "1.36.2"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -63,6 +63,13 @@ bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE" -- "$FILE"
 ```
 
 기존 줄의 발견은 완료 보고에 범위 밖 발견으로 남긴다. 기준을 생략하면 커밋하지 않은 변경만 본다.
+
+**저장소 전체 테스트에서 외부 패키지 사본을 제외하려면 `.claude/korean-check-exclude.txt` 에 적는다.**
+저장소 루트 기준으로 한 줄에 파일 경로나 `/` 로 끝나는 디렉터리 경로를 쓴다.
+빈 줄과 `#` 로 시작하는 줄은 무시하며, 와일드카드와 상위 경로는 받지 않는다.
+예를 들어 `plugins/vendor/skills/package/` 를 적으면 그 아래 문서를 제외한다.
+이 목록은 `test_repo_markdown_passes` 에만 적용한다. 파일을 직접 넘기는 검사와 훅은 그대로 검사한다.
+낱말을 허용하는 `.claude/korean-check-allow.txt` 와는 별개다.
 
 ## 검사기가 잡지 못하는 축을 본다
 

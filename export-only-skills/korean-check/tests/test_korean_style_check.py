@@ -720,6 +720,80 @@ class TestHookMode(Base):
         self.assertEqual(done.stdout, "")
 
 
+def repository_markdown_files(root):
+    """추적 문서에서 과거 이력과 저장소가 지정한 외부 사본만 제외한다.
+
+    .claude/korean-check-exclude.txt 는 저장소 기준 파일 경로나 / 로 끝나는 디렉터리를 받는다.
+    문자열 허용 목록과 분리해, 이 저장소 검사 외의 직접 검사에는 영향을 주지 않는다.
+    """
+    config = root / ".claude/korean-check-exclude.txt"
+    exclusions = []
+    if config.is_file():
+        for number, line in enumerate(config.read_text(encoding="utf-8").splitlines(), 1):
+            entry = line.strip()
+            if not entry or entry.startswith("#"):
+                continue
+            parts = entry.rstrip("/").split("/")
+            if any(part in ("", ".", "..") for part in parts) or any(c in entry for c in "*?[]\\"):
+                raise ValueError(f"{config}:{number}: 저장소 기준 파일이나 디렉터리 경로를 쓴다: {entry}")
+            exclusions.append(entry)
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.md"], cwd=root,
+        capture_output=True, text=True, check=True,
+    ).stdout.split("\0")
+    return [
+        name for name in tracked if name and Path(name).name != "CHANGELOG.md"
+        and not any(name.startswith(entry) if entry.endswith("/") else name == entry for entry in exclusions)
+    ]
+
+
+class TestRepositoryExclusions(Base):
+    def setUp(self):
+        super().setUp()
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        for name in ("owned.md", "with space.md", "CHANGELOG.md",
+                     "plugins/nhn-dev/skills/nhncloud-cli/references/rds-mysql.md",
+                     "plugins/nhn-dev/skills/nhncloud-cli-extra/owned.md"):
+            target = self.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("장애를 트리아지한다.\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+
+    def exclude(self, text):
+        (self.root / ".claude").mkdir(exist_ok=True)
+        (self.root / ".claude/korean-check-exclude.txt").write_text(text, encoding="utf-8")
+
+    def test_without_config_keeps_owned_and_package_documents(self):
+        files = repository_markdown_files(self.root)
+        self.assertIn("owned.md", files)
+        self.assertIn("with space.md", files)
+        self.assertIn("plugins/nhn-dev/skills/nhncloud-cli/references/rds-mysql.md", files)
+        self.assertNotIn("CHANGELOG.md", files)
+
+    def test_directory_exclusion_does_not_hide_sibling_or_owned_files(self):
+        self.exclude("# 외부 패키지 사본\n\nplugins/nhn-dev/skills/nhncloud-cli/\n")
+        files = repository_markdown_files(self.root)
+        self.assertNotIn("plugins/nhn-dev/skills/nhncloud-cli/references/rds-mysql.md", files)
+        self.assertIn("plugins/nhn-dev/skills/nhncloud-cli-extra/owned.md", files)
+        self.assertIn("owned.md", files)
+
+    def test_exact_file_exclusion_and_direct_check(self):
+        self.exclude("with space.md\n")
+        files = repository_markdown_files(self.root)
+        self.assertNotIn("with space.md", files)
+        self.assertIn("owned.md", files)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(checker.check([str(self.root / "with space.md")], RULES, MATCHERS), 1)
+
+    def test_invalid_exclusion_fails_instead_of_hiding_documents(self):
+        for entry in ("/tmp/", "../", ".", "./", "plugins/../", "**/*.md"):
+            with self.subTest(entry=entry):
+                self.exclude(entry + "\n")
+                with self.assertRaises(ValueError):
+                    repository_markdown_files(self.root)
+
+
 class TestRepository(unittest.TestCase):
     """이 저장소 자신이 자기 규칙을 지키는지 본다.
 
@@ -741,12 +815,8 @@ class TestRepository(unittest.TestCase):
             if "not a git repository" not in inside.stderr:
                 self.fail(f"git 이 저장소를 읽지 못했다: {inside.stderr}")
             self.skipTest("git 저장소 밖이라 추적 중인 .md 목록을 얻을 수 없다")
-        files = subprocess.run(
-            ["git", "ls-files", "*.md"], cwd=root,
-            capture_output=True, text=True, check=True,
-        ).stdout.split()
         # 과거 변경 이력의 표현은 수정하지 않는다. 새 이력은 직접 검사한다.
-        files = [path for path in files if Path(path).name != "CHANGELOG.md"]
+        files = repository_markdown_files(root)
         self.assertTrue(files, "검사할 .md 를 찾지 못했다")
         done = subprocess.run(
             ["python3", str(SCRIPT), *files], cwd=root,
