@@ -125,6 +125,7 @@ import { real, realPath } from './lib/fs.ts'
 import { gh } from './lib/gh.ts'
 import { repoArgProblem } from './lib/git.ts'
 import { pollSeconds } from './lib/gh-budget.ts'
+import { EVIDENCE_START, featureBranch, featureEvidenceProblem } from './lib/feature-evidence.ts'
 import { boardPath, pathOf, requireMigrated } from './lib/paths.ts'
 import { run, runAsync, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
@@ -139,7 +140,7 @@ const RUN_TIMEOUT_MS = 300_000
 const SWEEP_TIMEOUT_MS = 600_000
 // send-to-worker 는 nudge-worker 를 5분까지 기다린다
 const SEND_TIMEOUT_MS = 600_000
-const PR_FIELDS = 'state,mergeCommit,headRefName,title,number,headRefOid,author,isDraft,url,baseRefName'
+const PR_FIELDS = 'state,mergeCommit,headRefName,title,number,headRefOid,author,isDraft,url,baseRefName,body'
 
 type Args = {
   pr: string
@@ -166,7 +167,7 @@ type Args = {
   pidFile: string | null
 }
 
-type Merged = { merge: string; branch: string; title: string; pr: Record<string, unknown>; base: string }
+type Merged = { merge: string; branch: string; title: string; pr: Record<string, unknown>; base: string; body: string }
 type Deploy = 'none' | 'success' | 'failure' | 'timeout'
 
 class Usage extends Error {}
@@ -339,7 +340,7 @@ async function waitMerged(args: Args, repo: string): Promise<Merged | null> {
         draft: data.isDraft === true,
         url: text('url') || null,
       }
-      return { merge, branch: text('headRefName'), title: text('title'), pr, base: text('baseRefName') }
+      return { merge, branch: text('headRefName'), title: text('title'), pr, base: text('baseRefName'), body: text('body') }
     }
     if (state === 'CLOSED') {
       log(`PR ${args.pr} 가 머지 없이 닫혔다`)
@@ -575,7 +576,8 @@ async function finish(args: Args, repo: string): Promise<number> {
   // 보드 항목을 워크트리 이름으로도 찾는다. 정리가 워크트리를 지우므로 그 전에 읽는다
   const worktree = branch ? worktreePath(repo, branch) : null
   if (worktree && args.run) await tellMerged(args, args.run, worktree, merge)
-  if (!(await cleanupWorker(args, repo, branch))) {
+  const feature = featureBranch(repo, branch, args.specsDir ?? undefined) || merged.body.includes(EVIDENCE_START)
+  if (!feature && !(await cleanupWorker(args, repo, branch))) {
     log(`정리 남음: ${branch} 의 워크트리나 로컬 브랜치가 남았다. cleanup-sweep.ts 출력을 본다`)
   }
 
@@ -592,10 +594,14 @@ async function finish(args: Args, repo: string): Promise<number> {
   const verdict = judgeLast(args, repo, merged)
   const last = verdict.last
   log(`마지막 PR 판정: ${last ? '마지막' : '중간'}(${verdict.reason})`)
-  deleteConflictSpecs(args, repo)
-  if (args.specsDir) {
-    if (last) deleteBranchSpecs(args, repo, branch)
-    else log('지시서 유지: 업무의 마지막 PR 이 아니다')
+
+  if (feature) {
+    // 코디네이터가 후속 검증 근거를 PR 에 갱신할 수 있어 새로 읽는다.
+    const fresh = gh(['pr', 'view', args.pr, '--json', 'body'], { cwd: repo, cache: false })
+    let body = ''
+    try { if (fresh.code === 0) body = JSON.parse(fresh.stdout).body } catch { /* 아래 검사로 실패 */ }
+    const problem = typeof body === 'string' ? featureEvidenceProblem(body, String(merged.pr.head ?? ''), true, true) : '기능 완료 근거 조회 실패'
+    if (problem) return fail(problem)
   }
 
   const problems: string[] = []
@@ -615,7 +621,16 @@ async function finish(args: Args, repo: string): Promise<number> {
     problems.push('after-deploy 핸들러가 실패했다')
   }
 
-  if (!deployed) return fail(problems.join('; '))
+  if (!deployed || feature && problems.length > 0) return fail(problems.join('; '))
+  if (feature) {
+    if (!(await cleanupWorker(args, repo, branch))) log(`정리 남음: ${branch}`)
+  }
+  deleteConflictSpecs(args, repo)
+  if (args.specsDir) {
+    if (last) deleteBranchSpecs(args, repo, branch)
+    else log('지시서 유지: 업무의 마지막 PR 이 아니다')
+  }
+
   const item = args.boardId ? { id: args.boardId, by: 'id' as const } : pickBoardItem(args, repo, branch, worktree ? basename(worktree) : null)
   const stages = item && item.by !== 'id' ? milestoneStages(args, repo, item.id) : null
   if (item && taggedBoardItem(args, repo, item.id)) {

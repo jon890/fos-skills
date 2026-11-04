@@ -826,3 +826,30 @@ describe('여러 Run', () => {
     assert.deepEqual(autoMergeState().blocked, {})
   })
 })
+
+// 기능 경로는 리뷰 설정이 없어도 인수·문서 근거를 확인한다.
+test('기능 지시서의 근거 누락은 자동 큐를 막고 현재 커밋의 근거로 다시 건다', async () => {
+  config({ queue: { auto_review: { pass: 'PASS', block: 'FIX' } } })
+  spec('specs', 'spec-a.md', ['feat-1'], ['## 할 일', '루프를 쓴다(스펙: 새로 쓴다)'])
+  github([pr(1)], { views: { 1: { body: '', headRefOid: HEAD_A } } })
+  const missing = once()
+  assert.match(missing, /기능 완료 근거/)
+  assert.equal(queueCalls().length, 0)
+  const body = `<!-- fos-feature-evidence -->
+검증 커밋: ${HEAD_A}
+인수 검증: 통과 | REQ1 실제 실행 로그
+문서 대조: 통과 | 설계 대조와 후보 없음 근거
+독립 리뷰: 통과 | 별도 리뷰 결과
+후속 검증: 없음 | 배포 없는 변경
+<!-- /fos-feature-evidence -->`
+  github([pr(1)], { views: { 1: { body, headRefOid: HEAD_A, reviews: [{ body: 'PASS', commit: { oid: HEAD_A }, submittedAt: '2026-11-04T00:00:00Z' }] } } })
+  once()
+  await queued(1)
+})
+
+test('지시서 없이 본문으로 식별한 기능 PR 도 자동 머지에는 실제 리뷰 정책이 필요하다', () => {
+  github([pr(1)], { views: { 1: { body: '<!-- fos-feature-evidence -->', headRefOid: HEAD_A } } })
+  const output = once()
+  assert.match(output, /queue.auto_review/)
+  assert.equal(queueCalls().length, 0)
+})

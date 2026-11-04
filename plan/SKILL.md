@@ -5,7 +5,7 @@ description: |
   "계획 세워줘", "task 파일 만들어줘", "PR 로 나눠줘", "스펙 구현 계획", "리팩토링 계획", "plan" 요청에 쓴다.
   "이 기능 설계해 보자" 처럼 요구사항은 spec, 구조와 경계 설계는 technical-design 이 맡는다. 구현은 implementation 가 맡는다.
 metadata:
-  version: "5.4.0"
+  version: "5.5.0"
 ---
 # plan
 
@@ -94,7 +94,7 @@ verification_plan 은 index.json 의 부모 기준 상대경로다. spec/design 
 
 `$PLAN` 은 계획 디렉터리명이다. 새 기능의 `$TASKS_DIR` 은 `<기능 폴더>/tasks` 다. 기존 계획이나 기능 없는 작업은 설정의 tasks 경로를 쓴다.
 기능 계획이면 이 검사가 스펙의 확인 줄과 요구사항 연결도 함께 본다.
-아래 명령은 새 기능 계획용이다. 기능 없는 작업과 기존 계획 재개는 --require-verification 을 빼고 실행한다.
+아래 명령은 새 기능 계획용이다. PR 하나라도 기능 계획과 인수 검증 계획을 남긴다. 기능 없는 작업과 기존 계획 재개는 --require-verification 을 빼고 실행한다.
 
 ```bash
 python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "$TASKS_DIR" --require-verification

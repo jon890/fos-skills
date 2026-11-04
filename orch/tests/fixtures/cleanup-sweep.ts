@@ -62,7 +62,7 @@ export type Fixture = {
   // `terminal read --screen` 이 줄 화면. handle 에서 화면 줄로. 없는 handle 은 빈 화면이다
   screens: Record<string, string[]>
   // 리뷰 흔적 정리가 읽는 `gh pr view <N> --json state,headRefOid`. PR 번호에서 응답으로. 없는 번호는 조회가 실패한다
-  prViews: Record<string, { state: string; headRefOid?: string }>
+  prViews: Record<string, { state: string; headRefOid?: string; headRefName?: string; body?: string }>
 }
 export const fx = {} as Fixture
 
@@ -98,8 +98,11 @@ if (has('repo', 'view')) {
 } else if (has('pr', 'list') && a[a.indexOf('--state') + 1] === 'open') {
   const rows = [...st.open_bases.map((b) => ({ baseRefName: b, headRefName: 'open-head' })), ...st.open_heads.map((h) => ({ baseRefName: 'main', headRefName: h }))]
   console.log(JSON.stringify(rows))
-} else if (has('pr', 'view') && a.includes('state,headRefOid')) {
-  if (!(a[2] in st.pr_views)) process.exit(1)
+} else if (has('pr', 'view') && (a.includes('state,headRefOid') || a.includes('body,headRefOid,headRefName'))) {
+  if (!(a[2] in st.pr_views)) {
+    if (a.includes('body,headRefOid,headRefName')) { console.log('{}'); process.exit(0) }
+    process.exit(1)
+  }
   console.log(JSON.stringify(st.pr_views[a[2]]))
 } else if (has('pr', 'view') && a[2] in st.pr_commits) {
   console.log(JSON.stringify({ commits: st.pr_commits[a[2]].map((oid) => ({ oid })) }))

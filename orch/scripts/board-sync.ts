@@ -61,6 +61,7 @@
 //
 // 종료 코드: 0 반영했다(또는 --dry-run), 1 보드를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류
 
+import { featureCompletionProblem } from './lib/feature-evidence.ts'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -251,6 +252,7 @@ function main(argv: string[]): number {
         const tag = parseEventTag(step.text)!
         if (tag.event === 'release') continue
         const state = stateFor(tag.pr)
+        if (state === 'MERGED' && featureCompletionProblem(repo, tag.pr, String(item.branch || ''))) continue
         let reached = tag.event === 'pr' ? state === 'OPEN' || state === 'MERGED' : tag.event === 'merge' && state === 'MERGED'
         if (tag.event === 'deploy' && state === 'MERGED') {
           if (settings === undefined) {
@@ -289,7 +291,10 @@ function main(argv: string[]): number {
       details = old.filter((d) => !textOf(d).startsWith(LEGACY_AUTO))
       const num = prNumber(item.pr)
       const stages = stagesOf(item)
-      if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
+      const pendingFeature = merged && num ? featureCompletionProblem(repo, num, branch) : null
+      if (pendingFeature) {
+        out(`board-sync: ${id} 는 기능 검증이 남았다: ${pendingFeature}`)
+      } else if (merged && pidFileAlive(join(pathOf('queue', repo), `finish-${num}.pid`))) {
         // 마무리가 배포를 확인한 뒤 판정과 표시(PR!, PR~)로 이 항목을 고친다. 여기서 먼저 고치면 그 표시를 덮는다
         out(`board-sync: ${id} 는 PR ${num} 의 마무리(finish-pr)가 돌고 있어 그쪽에 맡긴다`)
       } else if (stages && (state === 'OPEN' || merged)) {

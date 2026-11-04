@@ -8,6 +8,31 @@ import { describe, test } from 'node:test'
 import { type Row, branches, calls, exists, freshGoneBranch, fx, git, gone, has, lacks, mergedWorkerWithTerminal, remoteBranches, renamedWorktree, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
 describe('머지 판정과 기본 정리', () => {
+  test('머지돼도 기능 후속 검증이 대기면 자동 정리가 작업 공간과 지시서를 보존한다', () => {
+    const path = worktree('feat-domain')
+    squashMerge('feat-domain', path)
+    const specs = join(fx.repo, '.orch/specs')
+    mkdirSync(specs, { recursive: true })
+    const spec = join(specs, 'spec-feature.md')
+    writeFileSync(spec, '브랜치: `feat-domain`\n## 할 일 · 기능\n1. 루프를 쓴다(스펙: 새로 쓴다)\n')
+    const head = String(fx.prs['feat-domain'][1])
+    fx.prViews['1'] = { state: 'MERGED', headRefOid: head, headRefName: 'feat-domain', body: `<!-- fos-feature-evidence -->
+검증 커밋: ${head}
+인수 검증: 통과 | 실제 API 검증 로그
+문서 대조: 통과 | 설계 대조와 후보 없음 근거
+독립 리뷰: 통과 | 별도 리뷰 결과
+후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
+<!-- /fos-feature-evidence -->` }
+    const pending = runSweep(['--specs-dir', '.orch/specs', '--apply'])
+    exists(path, pending)
+    assert.equal(existsSync(spec), true)
+    has(pending, '후속 검증')
+    fx.prViews['1'].body = fx.prViews['1'].body!.replace('후속 검증: 대기', '후속 검증: 통과')
+    const complete = runSweep(['--specs-dir', '.orch/specs', '--apply'])
+    gone(path, complete)
+    assert.equal(existsSync(spec), false)
+  })
+
   test('squash 머지된 worktree 를 터미널, dispatch, 지시서와 함께 정리한다', () => {
     const path = worktree('feat-a')
     squashMerge('feat-a', path)
@@ -268,7 +293,7 @@ describe('PR 커밋 목록으로 브랜치 인정', () => {
     const out = runSweep(['--run', 'run_x', '--apply'])
     gone(path, out)
     has(calls(), 'terminal close --terminal term_s')
-    lacks(calls(), 'pr view')
+    lacks(calls(), '--json commits')
   })
 })
 

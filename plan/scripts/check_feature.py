@@ -105,6 +105,29 @@ def check_confirmed(head):
     return ['사용자 확인 줄(제목 아래 「확인: YYYY-MM-DD」)이 없다. 사용자가 스펙을 확인하기 전에는 계획을 만들지 않는다']
 
 
+def check_domain_changes(body, draft=False):
+    """변경 표가 있는 스펙만 검사한다. 기존 스펙에 새 절을 강제하지 않는다."""
+    body = re.sub(r'<!--.*?-->', '', body, flags=re.S).strip()
+    if not body or body.startswith('도메인 규칙 변경 없음:'):
+        return []
+    rows = [cells for cells in table_rows(body)
+            if cells and re.search(r'\bRULE[1-9][0-9]*\b', cells[0])]
+    if not rows:
+        return ['도메인 규칙 변경 절에 RULE ID 의 변경 표 또는 「도메인 규칙 변경 없음: 이유」 가 필요하다']
+    problems = []
+    for cells in rows:
+        if len(cells) != 6 or any(not cell or cell.lower() in OPEN_ANSWERS for cell in cells):
+            problems.append(f'{cells[0]}: 규칙, 변경 내용, 결정 상태, 제안자, 확정 근거, 외부 검토가 필요하다')
+            continue
+        if cells[2] not in ('제안', '확인 대기', '확정'):
+            problems.append(f'{cells[0]}: 모르는 결정 상태 {cells[2]}')
+        elif not draft and cells[2] != '확정':
+            problems.append(f'{cells[0]}: 도메인 규칙이 확정되지 않았다({cells[2]})')
+        if cells[2] == '확정' and cells[4].lower() in ('없음', '미정', 'tbd'):
+            problems.append(f'{cells[0]}: 확정 근거가 필요하다')
+    return problems
+
+
 def check_spec(text, draft=False):
     found, problems, ids = sections(text), [], []
     if '미결정' in found and '결정' not in found:
@@ -125,6 +148,7 @@ def check_spec(text, draft=False):
         problems.append('요구사항 표에 REQ1 같은 ID 와 인수 조건이 필요하다')
     if found.get('결정'):
         problems += check_decisions(found['결정'])
+    problems += check_domain_changes(found.get('도메인 규칙 변경', ''), draft)
     if not draft:
         problems += check_confirmed(found.get('', ''))
     return set(ids), problems

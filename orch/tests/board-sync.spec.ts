@@ -23,6 +23,10 @@ const args = process.argv.slice(2)
 const say = (value) => fs.writeSync(1, (typeof value === 'string' ? value : JSON.stringify(value)) + '\\n')
 const head = args.includes('--head') ? args[args.indexOf('--head') + 1] : null
 if (args[0] === 'run' && args[1] === 'list') say(state.runs || [])
+else if (args[1] === 'view' && args.includes('body,headRefOid,headRefName')) {
+  if (state.evidenceFails) process.exit(1)
+  say(state['evidence:' + args[2]] || {})
+}
 else if (args[1] === 'view' && args.includes('mergeCommit')) {
   if (!state['merge:' + args[2]]) process.exit(1)
   say(state['merge:' + args[2]])
@@ -563,4 +567,33 @@ describe('손으로 쓴 사건 단계', () => {
       assert.deepEqual(r.board.g.details, details().map((d, i) => ({ ...d, done: i < (conclusion === 'success' ? 3 : 2) })))
     }
   })
+})
+
+test('마무리 PID 가 없어도 후속 검증이 남은 기능 항목은 done 으로 바꾸지 않는다', () => {
+  states['7'] = 'MERGED'
+  const head = 'a'.repeat(40)
+  const evidence = { headRefOid: head, headRefName: 'feat/domain', body: `<!-- fos-feature-evidence -->
+검증 커밋: ${head}
+인수 검증: 통과 | REQ1 실제 실행 결과
+문서 대조: 통과 | 설계 대조와 후보 없음 근거
+독립 리뷰: 통과 | 독립 검토 결과
+후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
+<!-- /fos-feature-evidence -->` }
+  states['evidence:7'] = evidence
+  const items = [{ id: 'a', status: 'doing', pr: '#7', branch: 'feat/domain', details: ['1. 머지와 검증'] }]
+  const pending = sync(items)
+  assert.equal(pending.code, 0, pending.result.stderr)
+  assert.equal(pending.board.a.status, 'doing')
+  evidence.body = evidence.body.replace('후속 검증: 대기', '후속 검증: 통과')
+  const complete = sync(items)
+  assert.equal(complete.board.a.status, 'done')
+})
+
+test('MERGED 조회 뒤 근거 조회가 실패해도 기능 여부를 추측해 완료하지 않는다', () => {
+  states['7'] = 'MERGED'
+  states.evidenceFails = true
+  const result = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['1. 머지와 검증'] }])
+  assert.equal(result.code, 0, result.result.stderr)
+  assert.equal(result.board.a.status, 'doing')
+  assert.match(result.result.stdout, /근거 조회 실패/)
 })

@@ -31,7 +31,7 @@ const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
 if (args[0] === 'pr' && args[1] === 'view') {
   const pr = state.pr
   say(1, JSON.stringify({ number: Number(args[2]), state: pr.state, mergeCommit: pr.merge ? { oid: pr.merge } : null, headRefName: pr.branch,
-    title: pr.title, headRefOid: pr.head, author: { login: 'me' }, isDraft: false, url: 'https://git.example.com/owner/repo/pull/' + args[2], baseRefName: 'main' }))
+    body: pr.body || '', title: pr.title, headRefOid: pr.head, author: { login: 'me' }, isDraft: false, url: 'https://git.example.com/owner/repo/pull/' + args[2], baseRefName: 'main' }))
   process.exit(0)
 }
 // 마지막 PR 판정의 조회. 열린 PR 은 state.open, --head 의 MERGED PR 은 state.merged(브랜치 목록)에 있는지로 답한다
@@ -252,6 +252,30 @@ function inputs(file: string): Json[] {
 const DEPLOY = ['--deploy-workflow', 'deploy.yml', '--deploy-branch', 'main']
 
 describe('finish-pr 흐름', { concurrency: 4 }, () => {
+  test('기능 후속 검증이 대기면 작업 공간·지시서·보드를 남기고 근거 갱신 뒤 마무리한다', async (t) => {
+    const c = setup(t)
+    c.state.pr.body = `<!-- fos-feature-evidence -->
+검증 커밋: ${c.state.pr.head}
+인수 검증: 통과 | REQ1 실행 로그
+문서 대조: 통과 | 설계 문서 대조, 후보 없음 근거
+독립 리뷰: 통과 | 별도 코드 검토 결과
+후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
+<!-- /fos-feature-evidence -->`
+    hook(c, taskCompleter())
+    const args = ['--specs-dir', c.specs, '--complete']
+    const waiting = await c.finish(args)
+    assert.equal(waiting.code, 1, both(waiting))
+    assert.equal(existsSync(c.wt), true)
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), true)
+    assert.equal(c.calls().some((line) => line.startsWith('sweep ')), false)
+    assert.equal(c.calls().some((line) => line.startsWith('task-cli ')), false)
+    c.state.pr.body = String(c.state.pr.body).replace('후속 검증: 대기', '후속 검증: 통과')
+    const done = await c.finish(args)
+    assert.equal(done.code, 0, both(done))
+    assert.equal(existsSync(c.wt), false)
+    assert.equal(existsSync(join(c.specs, 'spec-x.md')), false)
+  })
+
   test('worker 를 정리하고 배포를 기다리고 업무를 완료 처리하고 보드를 바꾼다', async (t) => {
     const c = setup(t)
     hook(c, taskCompleter())

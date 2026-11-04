@@ -12,7 +12,7 @@
 - 먼저 {{READ_FIRST}} 를 읽는다.
 - 커밋은 관심사별로 나눈다. 제목 형식은 {{COMMIT_FORMAT}} 이다. 코드를 고친 뒤 `{{FORMAT_CMD}}` 를 돌린다.
 - 커밋 메시지 끝에는 세션이 받은 attribution 지침(`Co-Authored-By` 줄)을 그대로 붙인다. 모델 이름은 이 파일에 적지 않는다. 지침이 없으면 그 줄을 붙이지 않는다.
-- 구현이 docs 계약과 달라지면 같은 커밋에서 그 문서를 고친다. 고치기 전에 ask 로 알린다.
+- 확정된 변경은 코드와 책임 문서에 함께 반영한다. 문서와 구현의 의미가 다르면 원인을 확인하고, 새 제품 결정만 spec 으로 돌려보낸다.
 - 끝까지 진행하고 판단이 필요한 것만 ask 로 묻는다. 검증 명령(`{{VERIFY_CMD}}`)을 실제로 실행한다.
 - CI 를 기다릴 때는 `gh pr checks --watch --interval 60` 이상을 쓴다. `gh run watch` 에도 `--interval 60` 이상을 준다.
 - 파일 수정은 `sed -i` 대신 Edit 나 python 으로 한다.
@@ -94,16 +94,16 @@
 
 - 새 기능은 `spec → technical-design → plan → implementation → verify → docs-consolidate 후보 추출` 순서로 진행한다. 스펙이나 계획이 있으면 필요한 단계부터 시작한다. 상세 인계는 orch 의 `references/feature-loop.md` 를 따른다. <!-- orch-rule: feature-loop -->
 - spec 단계는 `spec` 스킬의 인터뷰 절차(`references/interview.md` 「직접 묻지 못할 때」)대로 결정 블록은 `worker-ask --decision` 으로, 스펙 확인 요청은 형식 없이 `worker-ask` 로 보낸다. 혼자 정하고 넘어가지 않는다. 코디네이터가 사용자의 확인을 돌려주기 전에는 plan 과 구현을 시작하지 않는다. <!-- orch-rule: spec-interview -->
-- `implementation` 는 PR 을 열지 않는다. verify 통과와 후보 추출(후보 없음 포함)을 마친 뒤, PR 생성이 허락됐으면 worker 가 위 공통 규칙에 따라 PR 을 연다.
+- `implementation` 는 PR 을 열지 않는다. PR 전 인수 검증과 문서 대조·후보 추출을 마친 뒤, PR 생성이 허락됐으면 worker 가 위 공통 규칙에 따라 PR 을 연다.
 
 - `plan` 과 `implementation` 는 사용자와 대화하는 세션을 전제로 한다. worker 는 사용자에게 묻지 못하므로 아래로 바꿔 읽는다.
 - 사용자에게 확인하라는 단계는 위 「판단이 필요할 때」 의 기준으로 가른다. 기술 판단은 권장안으로 진행하고, ask 대상만 `worker-ask` 로 묻는다. `AskUserQuestion` 은 쓰지 않는다.
 - 설계와 근거 문서는 `{{DESIGN_DIR}}` 에 둔다.
-- plan 하나는 PR 하나다. 큰 일은 plan 을 나누고 계획서는 그 plan 을 구현한 PR 에서 지운다(`plan` 의 `plan-size.md` 가 소유).
+- plan 하나는 PR 하나다. 큰 일은 plan 을 나눈다. 계획의 보존·삭제와 증거 인계는 `plan/references/plan-lifecycle.md` 를 따른다.
 - 세션 재시작, 계정 전환을 넘길 수 있는 일은 `plan` 으로 `tasks/` 를 만든다. 끊긴 뒤 다음 worker 가 계획과 phase 커밋으로 이어받는다.
-- 지시서 「할 일」 첫 줄이 `루프를 쓴다(스펙: <경로>)` 면 그 스펙은 사용자가 확인한 것이라 plan 부터 한다. `루프를 쓴다(스펙: 새로 쓴다)` 면 spec 인터뷰부터 하고, 사용자가 확인하기 전에는 plan 과 구현을 하지 않는다.
-- 지시서 「할 일」 첫 줄이 `루프 없이: <이유>` 면(버그 수정, 정리·삭제, 설정 변경, 측정 같은 작은 일) spec 과 plan 없이 바로 구현하고, PR 본문에 확인한 방법과 결과를 적는다. 사용자 동작·권한·데이터 보존을 바꾸는 선택이 생기면 그 결정만 `--decision` 으로 묻는다.
-- 루프를 쓰지만 PR 하나로 끝나는 일은 `tasks/` 를 만들지 않는다. 이 지시서를 계획 입력으로 구현과 개발 테스트를 마치고 verify 의 독립 검토와 docs-consolidate 의 후보 추출 뒤 PR 을 연다.
+- 지시서 「할 일」 첫 줄이 `루프를 쓴다(스펙: <경로>)` 면 그 스펙은 사용자가 확인한 것이다. technical-design 을 수행하거나 기존 설계의 유효성과 독립 검토를 확인한 뒤 plan 으로 간다. `루프를 쓴다(스펙: 새로 쓴다)` 면 spec 인터뷰부터 하고, 사용자가 확인하기 전에는 plan 과 구현을 하지 않는다.
+- 지시서 「할 일」 첫 줄이 `루프 없이: <이유>` 면(제품·도메인 의미와 계약을 바꾸지 않는 버그 수정, 정리·삭제, 설정 값 조정 같은 작은 일) spec 과 plan 없이 바로 구현하고, PR 본문에 확인한 방법과 결과, 필요한 독립 검토를 적는다. 사용자 동작·권한·데이터 보존을 바꾸는 선택이 생기면 그 결정만 `--decision` 으로 묻는다.
+- 기능 루프는 PR 하나라도 짧은 설계와 plan 을 남긴다. 인수 검증 계획은 phase 에 포함할 수 있다. PR 본문에는 orch 의 `templates/feature-evidence.md` 를 채운다. PR 자동 리뷰를 쓰면 독립 리뷰는 대기로 PR 을 열고, 실제 결과를 받은 뒤 통과 근거로 갱신한다. 머지 전 모든 사전 검증과 독립 리뷰를 마친다. <!-- orch-rule: feature-evidence -->
 - 구현만 맡겼으면 구현 결과와 검증 증거를 코디네이터에게 넘긴다. 뒤의 검증·후보 추출·PR 생성은 지시서가 정한 담당자가 이어 간다.
 - critic, verify 검토자, docs-verifier 는 읽기 전용 하위 에이전트로 띄운다. 쓰기와 orca 명령은 금지한다. 이 줄이 머리말이 말하는 task 의 요청이다. <!-- orch-rule: review-subagents -->
 - 하위 에이전트는 `name` 없이 띄운다. 이름을 주면 팀원으로 등록되고 tmux pane 이 없는 worker 터미널에서 실패한다.

@@ -1,5 +1,9 @@
 # CHANGELOG: plan
 
+## 5.5.0 (2026-11-04)
+
+- 기능 PR 하나라도 계획과 인수 검증 계획을 남기고 도메인 변경 표의 확정 상태를 검사해요.
+
 ## 5.4.0 (2026-11-04)
 
 - `verify_task.py` 가 `claude plugin test [dir]` 를 dir 아래 `*.test.ts`, `*.test.tsx` 를 실행하는 테스트 명령으로 봐요.

@@ -64,3 +64,5 @@ git diff "origin/$BASE" -- "$FILE"
 ```bash
 "$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --body "남은 일" --spec "$SPEC_FILE"
 ```
+
+기능 PR 은 [완료 근거 양식](../templates/feature-evidence.md)의 현재 HEAD, 인수 검증·문서 대조·독립 리뷰를 대조한다. PR 자동 리뷰가 대기면 PR 은 열 수 있지만 머지하지 않는다. `후속 검증: 대기` 는 머지 뒤 담당과 실행 위치로 이어 주고 실제 결과를 확인하기 전에는 기능을 완료하지 않는다.
