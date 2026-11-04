@@ -89,14 +89,14 @@ type Command = {
 | `wait triage` | run(`--live` 일 때만) | |
 | `loop start`, `loop run` | repo, run, specs-dir | |
 | `loop stop` | repo, run | `stop --all` 이면 run 을 채우지 않는다 |
-| `loop status`, `loop stalled` | repo | `loop stalled` 는 run 을 채우지 않는다. 스크립트가 루프 등록 Run 을 모두 보는 지금 동작이 사람용 확인에 맞다(DECISION22 와 같은 이유) |
+| `loop status`, `loop stalled` | repo | `loop stalled` 는 run 을 채우지 않는다(스펙 DECISION23). 스크립트가 루프 등록 Run 을 모두 보는 지금 동작이 사람용 확인에 맞다 |
 | `worker launch` | run, repo | `--worktree` 를 주면 repo 를 채우지 않는다(둘은 함께 못 쓴다) |
 | `worker send`, `worker adopt` | run(adopt 는 `--apply` 일 때만), repo(adopt) | worker send 의 run 은 run-current 에서만 채운다 |
 | `queue merge`, `queue conflicts`, `queue ready`, `queue finish` | repo, run(ready 빼고) | queue merge 는 `explicit` 의 `--finish-arg`, `--sweep-arg` 안의 `--run` 도 명시로 본다 |
 | `queue run`, `queue overlap`, `queue reserve`, `worker worktree`, `doctor gh-usage` | repo | |
 | `cleanup sweep` | repo, run, specs-dir | `--repo` 를 하나라도 주면 repo 를 채우지 않는다 |
 | `cleanup handoff`, `doctor migrate`, `doctor migrate-hooks` | repo, run | |
-| `doctor` | repo | run 을 채우지 않는다. 스킬 첫 점검(`--run` 없이 부른다)이 지금처럼 Run 별 점검과 `session-resume` 을 하지 않게 한다. Run 을 보려면 `--run` 을 준다 |
+| `doctor` | repo | run 을 채우지 않는다(스펙 DECISION23). 스킬 첫 점검(`--run` 없이 부른다)이 지금처럼 Run 별 점검과 `session-resume` 을 하지 않게 한다. Run 을 보려면 `--run` 을 준다 |
 | `board sync`, `board release`, `study …`, `spec lint`, `paths` | repo | |
 | `worker ask` | 없음 | worker 터미널은 Run 에 묶이지 않고, `worker-ask` 는 `check` 결과에서 Run 을 읽는다 |
 | 그 밖 | 없음 | |

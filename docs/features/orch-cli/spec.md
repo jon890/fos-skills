@@ -110,7 +110,7 @@
 | --- | --- | --- |
 | REQ1 | Claude 세션의 Bash 도구와, `orch doctor install-cli` 를 한 번 돌린 머신의 셸(Codex, 사람)에서 `orch` 가 PATH 에 있다 | 새 셸에서 `orch loop status` 가 번들 경로 없이 돈다. PATH 의 어느 `orch` 사본이 먼저 와도 같은 번들의 스크립트가 돈다 |
 | REQ2 | 위 「명령 표」 의 새 꼴이 그 스크립트를 부르고, 동작으로 바뀐 모드 플래그는 새 꼴에서 받지 않는다 | 표의 행마다 새 꼴과 옛 꼴이 같은 입력에 같은 판정과 종료 코드를 낸다. `orch loop --start` 는 사용법 오류다 |
-| REQ3 | `--repo`, `--run`, `--specs-dir`, `--loop-repo` 를 받는 새 꼴 명령은 그 값을 주지 않으면 명시 > 문맥 > 설정 순서로 읽고(DECISION18), 명시하지 않은 값을 어디서 읽었는지 stderr 에 한 줄 남긴다 | 주 checkout 이나 워크트리 안에서 인자 없이 부른 결과가 명시한 결과와 같다. 문맥도 설정도 없으면 사용법 오류로 무엇을 줘야 하는지 알린다 |
+| REQ3 | `--repo`, `--run`, `--specs-dir`, `--loop-repo` 를 받는 새 꼴 명령은(DECISION23 의 예외 빼고) 그 값을 주지 않으면 명시 > 문맥 > 설정 순서로 읽고(DECISION18), 명시하지 않은 값을 어디서 읽었는지 stderr 에 한 줄 남긴다 | 주 checkout 이나 워크트리 안에서 인자 없이 부른 결과가 명시한 결과와 같다. 문맥도 설정도 없으면 사용법 오류로 무엇을 줘야 하는지 알린다 |
 | REQ4 | 새 꼴의 기본 출력은 판정 줄이고 `--full` 은 지금 출력이다(DECISION20). `NEXT_WAIT` 는 `orch wait --ack <id>` 에 기본값과 다른 인자와 루프 저장소만 붙인 꼴이다(DECISION19) | 명령마다 기본 출력에 설명 줄이 없고 `--full` 출력이 옛 꼴 출력과 같다. 기본값만 쓰고 루프 저장소가 하나인 대기의 `NEXT_WAIT` 는 `orch wait --ack <id> --loop-repo <저장소>` 다. `orch` 가 PATH 에 없는 셸에서는 같은 인자를 진입점 절대경로 앞에 붙인 꼴이다 |
 | REQ5 | 옛 꼴(`"$SKILL_DIR/bin/orch.ts" <옛 이름>`, 옛 `NEXT_WAIT`)이 호환 기간 동안 같은 스크립트를 같은 인자로 부르고, 새 꼴과 같은 짧은 출력을 내며, stderr 에 새 꼴을 한 줄 안내한다 | 옛 꼴의 판정과 종료 코드가 새 꼴과 같고 stderr 에 `orch: 새 꼴: orch …` 한 줄이 있다 |
 | REQ6 | 진입점은 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 설치 기록에서 user 범위 항목이 있으면 그 번들만 쓰고, 그 번들에 스크립트가 없으면 다른 범위로 넘어가지 않고 실패한다. user 범위 항목이 없을 때의 차례(project 범위, 진입점이 든 번들)는 지금과 같다 | user 범위 설치본에 스크립트 폴더가 없는 설치 기록에서 이유와 새 진입점 경로를 내고 종료 코드 3 으로 끝난다 |
@@ -140,11 +140,12 @@
 | DECISION14 | PR 나누기 | PR1 명령(새 꼴, 문맥, PATH, 범위 규칙, 훅, `NEXT_WAIT` 줄이기, 문서 호출) → PR2 명령마다 짧은 출력과 `--full`, `orch status` → PR3 폴더 이동. PR1 동안 새 꼴은 지금 출력을 낸다 | 사용자 2026-11-04 | 권장안 |
 | DECISION15 | `~/.local/bin/orch` 설치 방식 | doctor 는 `CLI-MISSING` 과 `orch doctor install-cli` 명령을 알리기만 하고 설치는 그 명령이 한다. 다른 `orch` 가 있으면 덮지 않는다 | 사용자 2026-11-04 | 권장안 |
 | DECISION17 | 폴더 이동 때 경로로 직접 부르는 곳 | 옛 경로에 사본을 두지 않고 옮긴다. doctor 가 직접 경로 호출을 알린다. 알려진 저장소(부록)는 코디네이터가 PR3 머지 전에 worker 로 고치고, 그 고침이 끝난 것이 PR3 머지 조건이다 | 사용자 2026-11-04 | 권장안(옛 경로에 사본)이 아니다 |
-| DECISION18 | 문맥 기본값을 쓰는 명령 | 「명령 표」 에서 `--repo`, `--run`, `--specs-dir`, `--loop-repo` 를 받는 모든 새 꼴 명령. `orch loop stop` 은 문맥의 Run 하나만 빼고, 모두 멈추려면 `--all` 을 준다 | 작성자 | DECISION2 를 명령마다 적용한 것이다. 옛 꼴은 지금처럼 문맥을 읽지 않는다. 자기 Run 만 빼는 것은 다른 세션의 루프를 끊지 않는 지금 규칙과 같다 |
+| DECISION18 | 문맥 기본값을 쓰는 명령 | 「명령 표」 에서 `--repo`, `--run`, `--specs-dir`, `--loop-repo` 를 받는 모든 새 꼴 명령. `orch loop stop` 은 문맥의 Run 하나만 빼고, 모두 멈추려면 `--all` 을 준다. 예외는 DECISION23 이다 | 작성자 | DECISION2 를 명령마다 적용한 것이다. 옛 꼴은 지금처럼 문맥을 읽지 않는다. 자기 Run 만 빼는 것은 다른 세션의 루프를 끊지 않는 지금 규칙과 같다 |
 | DECISION19 | `NEXT_WAIT` 에 남기는 인자 | `--run` 은 빼고(코디네이터 터미널에 묶인 Run 이라 다시 걸어도 같다), `--loop-repo` 는 절대경로로 늘 적는다. 다시 걸 때의 작업 폴더가 지워진 워크트리일 수 있다(`references/waiting.md` 「wait-important 는 시작하면 작업 폴더를 옮긴다」). `orch` 가 PATH 에 없으면 진입점 절대경로로 낸다 | 작성자 | 다시 건 대기가 다른 저장소를 보지 않게 하고, PATH 가 없는 Codex 코디네이터에서도 그대로 돈다 |
 | DECISION20 | 판정 줄이 아닌 결과를 내는 명령 | 경로나 데이터가 결과인 명령(`orch paths`, `orch worker worktree`, `orch spec line`, `orch study list`)과 감싼 명령의 출력(`orch slot heavy`, `orch slot mem`)은 결과를 그대로 낸다. 설명 줄만 뺀다. `--json` 의 출력은 바꾸지 않는다 | 작성자 | 셸이 `$(orch paths specs)` 로 받고 worker 가 감싼 검사의 실패 출력을 읽는다. 판정 낱말을 붙이면 그 쓰임이 깨진다 |
 | DECISION21 | `orch wait` 의 짧은 출력 | 대기가 분류까지 한다. 메시지마다 판정 줄을 triage 와 같은 차례(의심스러운 worker_done, worker_done, 멈춘 worker, escalation, question)로 내고 `LAST_DELIVERY`, `NEXT_WAIT` 로 끝낸다. 원문 JSON 은 `--full` 이나 저장한 파일 경로로 본다 | 사용자 2026-11-04 | 권장안 |
 | DECISION22 | Run 문맥 없는 `orch status` | 작업 폴더 저장소의 루프에 등록된 Run 을 모두 요약한다. Run 을 주면 그 Run 만 본다 | 사용자 2026-11-04 | 권장안 |
+| DECISION23 | Run 을 문맥으로 채우지 않는 명령 | `orch doctor` 와 `orch loop stalled` 는 Run 을 문맥으로 채우지 않고 지금처럼 동작한다. Run 을 보려면 `--run` 을 준다 | 사용자 2026-11-04 | 권장안. 스킬 첫 점검이 `--run` 없이 doctor 를 불러 Run 별 점검과 `session-resume` 을 하지 않고, `loop stalled` 는 등록된 Run 을 모두 본다. 계획 검토가 DECISION18 과의 어긋남을 찾았다 |
 | DECISION16 | 스크립트끼리 부를 때의 출력 | 지금 출력 그대로. 스크립트는 다른 스크립트 파일을 경로로 직접 실행해 `orch` 진입점을 거치지 않는다. 짧은 출력은 진입점이 새 꼴로 부를 때만 켠다 | 작성자 | 읽는 쪽 코드와 테스트를 고치지 않고 판정을 지킨다. 내부 이름과 배치의 선택이다 |
 
 ## 도메인 규칙 변경
