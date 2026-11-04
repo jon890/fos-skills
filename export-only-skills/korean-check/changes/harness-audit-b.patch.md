@@ -1,0 +1,1 @@
+- exclude 파일 설명을 references/markdown-readability.md 로 내리고 질문형 제목을 고쳤다
