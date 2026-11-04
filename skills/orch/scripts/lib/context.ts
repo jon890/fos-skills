@@ -6,7 +6,7 @@
 //     run        `orca orchestration run-current` 의 run.id(5초 제한), 못 읽으면 기준 저장소 설정의 finish.run.
 //                runFrom 이 run-current 인 명령(worker send)은 설정으로 대신하지 않는다.
 //                `--ack` 가 있는 wait 은 설정으로 대신하지 않고, 15초로 한 번 더 읽는다. 다른 Run 의 delivery 를 ack 하지 않게 한다
-//     specs-dir  기준 저장소 설정의 finish.specs_dir(저장소 기준 상대경로), 없으면 pathOf('specs', 기준 저장소)
+//     specs-dir  기준 저장소 설정의 finish.specs_dir(주 checkout 기준 상대경로), 없으면 pathOf('specs', 기준 저장소)
 //     loop-repo  기준 저장소의 루프 기록에 위 Run 이 등록돼 있으면(isRegistered) 그 저장소. 루프가 살았는지와 상관없다
 // 기준 저장소는 명시한 --repo 가 하나면 그 저장소, 아니면 위에서 채운 저장소다. --repo 가 둘 이상이면 specs-dir 를 채우지 않는다.
 // 설정을 읽다 ConfigError 가 나면 설정 출처를 건너뛴다. 오류는 스크립트가 지금처럼 알린다.
@@ -111,7 +111,8 @@ export function fillContext(
 
   if (wanted.includes('specs-dir') && !explicit(command, args, 'specs-dir') && repo && repos.length <= 1) {
     if (typeof finish.specs_dir === 'string' && finish.specs_dir) {
-      filled['specs-dir'] = resolve(repo, finish.specs_dir)
+      // 설정은 주 checkout 의 것이라 상대경로도 주 checkout 기준이다. 명시한 --repo 가 워크트리나 하위 폴더여도 같다
+      filled['specs-dir'] = resolve(mainCheckout(repo), finish.specs_dir)
       source['specs-dir'] = 'config'
     } else {
       filled['specs-dir'] = pathOf('specs', repo)

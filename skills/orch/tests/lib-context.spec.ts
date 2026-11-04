@@ -137,6 +137,16 @@ describe('채우기', () => {
     assert.deepEqual(filled(['queue', 'merge', '--repo', other, '3'], main).args, ['--run', 'run_other', '--repo', other, '3'])
   })
 
+  test('워크트리나 저장소 하위 폴더를 --repo 로 줘도 설정의 상대 지시서 폴더는 주 checkout 기준이다', () => {
+    config(main, { specs_dir: 'docs/specs' })
+    delete process.env.FAKE_RUN
+    mkdirSync(join(main, 'sub'), { recursive: true })
+    for (const given of [worktree, join(main, 'sub')]) {
+      const r = filled(['loop', 'start', '--repo', given], outside).args
+      assert.deepEqual(r, ['--start', '--specs-dir', join(main, 'docs', 'specs'), '--repo', given], given)
+    }
+  })
+
   test('--repo 가 둘 이상인 cleanup sweep 은 지시서 폴더를 채우지 않는다', () => {
     const r = filled(['cleanup', 'sweep', '--repo', 'a', '--repo', 'b'], main).args
     assert.ok(!r.includes('--specs-dir'), r.join(' '))
