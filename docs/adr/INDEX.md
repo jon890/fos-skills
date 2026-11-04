@@ -22,3 +22,4 @@
 - [ADR-020](020-orch-loop-refresh.md): 상주 루프가 뒤처진 PR 의 최신화를 머지 차례 전에 PR 마다 걸고, 머지는 머지 큐가 하나씩 한다 (`accepted`)
 - [ADR-021](021-skill-directory-layout.md): 스킬 원본과 저장소 관리 영역을 나눈다 (`accepted`)
 - [ADR-022](022-extension-directory-layout.md): 보드를 확장 기능 디렉터리에 둔다 (`accepted`)
+- [ADR-023](023-version-at-merge.md): 스킬 버전과 CHANGELOG 절은 PR 이 아니라 머지 때 조각 파일로 정한다 (`accepted`)
