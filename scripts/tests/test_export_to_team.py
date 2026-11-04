@@ -78,6 +78,22 @@ class ExportToTeamScriptTest(unittest.TestCase):
         git(self.repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "move sources")
         self.assertEqual(0, self.run_script("--source-ref", "HEAD").returncode)
 
+    def test_change_fragments_are_not_exported_or_reported_as_drift(self):
+        fragment = self.repo / self.skill / "changes" / "add-x.minor.md"
+        fragment.parent.mkdir()
+        fragment.write_text("- 새 기능\n", encoding="utf-8")
+        self.assertEqual(0, self.run_script("--apply").returncode)
+        self.assertTrue((self.team / "skills" / self.skill / "NOTE.md").is_file())
+        self.assertFalse((self.team / "skills" / self.skill / "changes").exists())
+        self.assertEqual(0, self.run_script().returncode)
+
+    def test_change_fragments_already_in_the_team_copy_are_not_drift(self):
+        self.assertEqual(0, self.run_script("--apply").returncode)
+        stale = self.team / "skills" / self.skill / "changes" / "old.minor.md"
+        stale.parent.mkdir()
+        stale.write_text("- 옛 조각\n", encoding="utf-8")
+        self.assertEqual(0, self.run_script().returncode)
+
     def test_unknown_argument_exits_2(self):
         result = self.run_script("--nope")
         self.assertEqual(2, result.returncode, result.stderr)
