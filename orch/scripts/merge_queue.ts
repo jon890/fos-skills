@@ -1542,7 +1542,7 @@ class Queue {
         if (result.kind === 'config') return result
         handled.add(j)
         if (result.kind === 'merged') log(`${m} 차례 PR ${deferred.n} 보다 먼저 머지했다`)
-        else {
+        else if (result.kind === 'held') {
           this.hold(m, result.reason)
           log(this.conflicted.includes(m) ? `${m} 충돌. 큐에서 빼고 다음 PR 로 간다` : `${m} 보류. 다음 PR 로 간다`)
         }
