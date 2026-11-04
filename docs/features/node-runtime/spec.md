@@ -100,6 +100,35 @@
 | REQ9 | 새 스크립트의 언어 규칙이 저장소 문서에 있고 저장소 테스트가 지킨다 | 새 ADR 과 `docs/code-architecture.md` 의 저장소 전체 「실행 규칙」 이 규칙을 적는다. 새 `.py` 나 `.sh` 를 더하면 저장소 테스트가 그 파일 이름을 내며 실패한다 |
 | REQ10 | 대상이 없어진 셸 검사기가 지워진다 | `scripts/check-shell-korean.py`, `scripts/samples/shell-korean-*.sh`, README 의 두 줄이 없다 |
 
+## 열린 결정
+
+스펙 확인 때 사용자가 함께 정한다. 결정 표의 DECISION17, DECISION18 이 이 답을 받는다.
+
+### DECISION17 옛 이름 진입 셋을 지우는 시점
+
+`korean-style-check.py`, `check-readability.py`, `browser_driver.py` 의 node 진입을 언제 지우는가.
+영역 PR 의 `호환성:` 항목이 곧 그 스킬의 major 라(ADR-019, ADR-023) 이 저장소의 버전으로 세면 다음 major 가 마지막 팀 PR 보다 먼저 올 수 있다. 그러면 팀원은 진입을 받지 못하고 훅이 조용히 깨진다. `tools/browser-driver` 에는 스킬 버전이 없다.
+
+| 선택지 | 결과 |
+| --- | --- |
+| 마지막 팀 PR 머지 한 달 뒤 따로 낸 PR 로 셋을 함께 지운다(권장) | 팀원이 새 이름으로 바꿀 기간이 생긴다. 지우는 PR 이 korean-check 의 major 와 `호환성:` 항목을 갖고 팀에도 내보낸다 |
+| 이 저장소의 다음 major 에서 지운다 | ADR-010 과 같은 규칙이다. 팀원 보호 기간이 0일 수 있다 |
+| 지우지 않는다 | 깨지는 일이 없다. `.py` 이름의 node 파일 셋이 영구히 남는다 |
+
+권장 이유: 진입을 둔 이유가 팀원 훅이라 팀 반영을 기준으로 센다.
+
+### DECISION18 옛 이름 진입의 안내 자리와 훅에서 Node 가 낮을 때
+
+훅 모드(`--hook`)는 늘 종료 코드 0 으로 끝나고 발견을 stdout JSON 의 `additionalContext` 로 낸다(`export-only-skills/korean-check/scripts/korean-style-check.py` 383~440줄). 종료 코드 0 인 PostToolUse 훅의 stderr 는 사람에게도 모델에게도 보이지 않는다. 같은 까닭으로 훅에서 Node 가 낮아 실패해도 검사가 조용히 멈춘다.
+
+| 선택지 | 결과 |
+| --- | --- |
+| 훅 모드의 옛 이름 진입만 `additionalContext` 에 안내를 더한다(권장) | 「이 훅 경로는 <날짜> 에 없어진다. 새 명령: ...」 한 줄을 발견 앞에 붙인다. Node 가 24 보다 낮으면 같은 자리에 「Node 24 이상이 필요해 한국어 검사를 건너뛰었다」 를 낸다. 새 이름의 훅과 일반 명령 모드는 출력이 그대로다 |
+| stderr 에만 낸다 | 출력이 새 구현과 바이트까지 같다. 훅에서는 안내가 아무에게도 닿지 않는다 |
+| 옛 이름 진입이 훅 모드에서 종료 코드 2 로 막는다 | 사용자가 바로 알아챈다. 편집마다 막혀 작업이 멈춘다 |
+
+권장 이유: 보이는 자리는 그것 하나고, 새 이름으로 바꾼 사람의 출력은 바뀌지 않는다.
+
 ## 결정
 
 | ID | 결정 | 답 | 누가 | 근거 |
@@ -120,8 +149,8 @@
 | DECISION14 | orch doctor 의 Node 버전 안내 | 타입 문법 없는 `.mjs` 진입이 버전을 보고 24 미만이면 지금처럼 `NODE-TOO-OLD` 와 127 을 낸다. node 가 없으면 셸이 127 로 끝낸다 | 작성자 | DECISION2 는 안내 없이 실패해도 된다고 했다. Python 없이 지금 출력을 지킬 수 있어 출력 계약을 바꾸지 않는다 |
 | DECISION15 | 명령마다 Node 버전 검사 | 하지 않는다. README 와 doctor 가 Node 24 요구를 알린다 | 작성자 | DECISION2. 낮은 Node 는 0 이 아닌 종료 코드와 오류로 끝나 조용히 지나가지 않는다 |
 | DECISION16 | `python3 -c` 로 JSON 을 읽는 workflow 줄 | `node -e` 로 바꾼다 | 작성자 | DECISION1 의 python3 없는 환경 |
-| DECISION17 | 옛 이름 진입 셋을 지우는 시점 | 미정 | 사용자 | 팀 사본은 마지막 팀 PR 에서야 바뀌어(DECISION7), 이 저장소의 스킬 major 로 세면 팀원은 보호 기간이 없을 수 있다. `tools/browser-driver` 에는 스킬 버전이 없다 |
-| DECISION18 | 옛 이름 진입의 안내가 보이는 자리 | 미정 | 사용자 | 훅 모드는 늘 0 으로 끝나 stderr 가 사람에게도 모델에게도 보이지 않는다. 발견은 stdout JSON 의 `additionalContext` 로 낸다(`korean-style-check.py` 383~440줄) |
+| DECISION17 | 옛 이름 진입 셋을 지우는 시점 | 미정(「열린 결정」) | 사용자 | 팀 사본은 마지막 팀 PR 에서야 바뀌어(DECISION7), 이 저장소의 스킬 major 로 세면 팀원은 보호 기간이 없을 수 있다. `tools/browser-driver` 에는 스킬 버전이 없다 |
+| DECISION18 | 옛 이름 진입의 안내가 보이는 자리와 훅에서 Node 가 낮을 때 | 미정(「열린 결정」) | 사용자 | 훅 모드는 늘 0 으로 끝나 stderr 가 사람에게도 모델에게도 보이지 않는다. 발견은 stdout JSON 의 `additionalContext` 로 낸다(`korean-style-check.py` 383~440줄) |
 | DECISION19 | 쓰는 파일과 JSON 출력의 같음 | stdout 과 명령이 쓰는 파일(CHANGELOG, SKILL.md, plugin.json, `--json-out`, 기록 파일)은 바이트까지 같다. JSON 의 키 순서, 들여쓰기, 한글을 그대로 두는 표기를 맞춘다. 옛 구현이 쓴 파일을 새 구현이 읽는다 | 작성자 | 출력 계약을 바꾸지 않는 쪽이다. orch 전환이 같은 방식(`skills/orch/scripts/lib/py.ts`)으로 맞췄다 |
 | DECISION20 | argparse 가 주던 옵션 동작 | 긴 옵션의 고유 접두 줄임, `--opt=value`, 사용법 오류의 종료 코드 2 를 그대로 둔다. `--help` 문구는 뜻만 같고 글자는 바뀔 수 있다 | 작성자 | 저장소의 argparse 26곳이 `allow_abbrev=False` 없이 줄임을 받는다. orch 전환의 `skills/orch/scripts/lib/args.ts` 를 재사용한다. 도움말은 사람이 읽는 글이라 바이트 대조에서 뺀다 |
 | DECISION21 | 이행 뒤 새 설치 안내 | README 와 설치 명령은 새 이름(직접 실행하는 `.ts`)만 안내한다. 옛 이름 진입은 이미 설치한 쪽만 지킨다 | 작성자 | DECISION3 의 진입은 기간을 둔 호환이라, 새 설치자가 거기에 기대면 지울 때 함께 깨진다 |
