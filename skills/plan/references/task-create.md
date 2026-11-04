@@ -10,7 +10,7 @@ task 를 쓰기 전에 스펙의 인수 조건(스펙 없는 계획이면 사용
 그 디렉터리도 없으면 사전 확인 항목을 건너뛴다.
 이 스킬은 그 목록에 새로 쓰지 않는다. 목록의 항목은 저장소 규칙으로 옮길 후보이고, 옮기는 일은 `docs-consolidate` 의 별도 공통화가 맡는다. 넣을 곳은 [`rule-placement.md`](rule-placement.md) 가 정한다.
 
-기능 계획은 `spec`, `requirements` 와 phase 별 `requirements` 를 더한다. 값과 검사는 [plan](../SKILL.md)의 「4. task 작성」 을 따른다.
+기능 계획은 `spec`, `design`, `requirements` 와 phase 별 `requirements` 를 더한다. 요구사항 ID 는 REQ1 형식이다. 값과 검사는 [plan](../SKILL.md)의 「4. task 작성」 을 따른다.
 기능의 인수 조건은 스펙, 구조와 검증 전략은 기술 설계가 소유한다. 아래 기존 ADR·전역 문서 규칙은 해당 문서를 실제로 바꿀 때만 적용한다.
 
 ## 기능 계획 경로
@@ -19,13 +19,13 @@ task 를 쓰기 전에 스펙의 인수 조건(스펙 없는 계획이면 사용
 예: `docs/features/job-cancel/tasks/cancel-api/`. 전역 번호는 쓰지 않는다. 같은 기능 안에서 이름 충돌을 확인하고 자기 계획 폴더만 만든다.
 `name` 은 `cancel-api`, 브랜치는 `feat/job-cancel-cancel-api` 처럼 기능과 계획을 함께 넣는다.
 명령에는 `PLAN=cancel-api`, `TASKS_DIR=docs/features/job-cancel/tasks` 를 전달한다. 다른 기능의 같은 이름을 자동 선택하지 않는다.
-명시한 기존 계획 경로나 오버레이 경로는 그대로 사용하고 일괄 이동하지 않는다.
-기능 계획은 `spec`, `design`, `requirements` 와 phase 별 `requirements` 를 기록한다. 요구사항 ID 는 REQ1 형식이다.
+명시한 기존 계획 경로나 오버레이 경로는 그대로 사용하고 일괄 이동하지 않는다. 기존 계획의 ID 도 일괄 변환하지 않는다.
+각 worker 는 자기 계획 폴더만 갱신한다. spec/design 은 의미가 실제로 바뀔 때만 고치고, 기능 전체 진행용 index 는 만들지 않는다.
+인계에는 저장소 상대경로인 계획 전체 경로를 남긴다.
 
 ## 기존 계획과 기능 없는 작업의 번호
 
-다음 번호 절차는 기존 배치 또는 기능에 속하지 않는 작업에만 적용한다. 새 기능 계획에는 실행하지 않는다.
-
+다음 번호 절차는 기존 배치 또는 기능에 속하지 않는 작업(이전·정리 작업과 기존 계획)에만 적용한다. 새 기능 계획에는 실행하지 않는다.
 
 `tasks/{접두사}plan{N}-<kebab-slug>/` 아래 `index.json` 과 `phase-*.md` 를 만든다.
 접두사와 tasks 경로는 레포 설정이 지정한다. 지정이 없으면 접두사 없이 `tasks/` 다.
@@ -63,12 +63,10 @@ squash 머지 뒤에는 git 이력에 계획서가 남지 않아, 스크립트�
 다른 형식이면 그 번호를 읽지 못한다. 마지막 줄 앞에 `PR 이력을 보지 못했다` 가 나오면 `gh` 인증을 고치고 다시 돌린다.
 
 - 저장소가 번호 확보 관례를 따로 두면 그것을 따른다. 없으면 이 스크립트의 결과를 쓴다.
-- ADR 목록처럼 여러 plan 이 함께 고치는 색인 파일(레포 설정이 지정)은 끝에 덧붙인다. 동시에 도는 다른 plan 과 같은 줄을 고치지 않기 위해서다.
 
 ## index.json 스키마
 
 새 기능은 [index 양식](../templates/index.json)을 읽고 스펙·설계·요구사항·검증 계획 경로를 채운다. 기능 없는 기존 작업은 spec/design/requirements/verification_plan 을 생략할 수 있다.
-
 
 `pr_scope` 와 `deferred` 는 [`plan-size.md`](plan-size.md) 가 소유한다. 2026-10-25 이후에 만든 plan 은 둘이 없으면 `verify_task.py` 가 위반으로 센다.
 
@@ -135,7 +133,6 @@ python3 "$SKILL_DIR/scripts/check_adr_layout.py" "${ADR_DIR:-docs/adr}" --flat
 
 새 문서는 [기술 설계의 ADR 양식](../../technical-design/templates/adr.md)을 읽고 쓴다. 기존 ADR 양식이 있으면 우선한다.
 
-
 확정한 ADR 의 `status` 는 둘뿐이다. 승인 전 초안은 현재 결정으로 읽지 않고, 기술 설계에서 합의한 뒤 확정한다.
 
 | 값            | 뜻                              |
@@ -162,8 +159,7 @@ python3 "$SKILL_DIR/scripts/check_adr_layout.py" "${ADR_DIR:-docs/adr}" --flat
 - 전체가 대체된 ADR 은 남은 본문 앞에 그것이 당시의 맥락임을 한 줄로 밝힌다.
 - 코드와 경로는 결정을 가리키는 데 필요한 만큼만 인용한다. 구현 호출 방법, 작업 내역,
 스택 규칙 반복은 넣지 않는다. 결정과 근거만 남긴다.
-- **계획서를 번호로 가리키지 않는다.** ADR 은 계획서보다 오래 남는다.
-  근거는 다른 ADR 번호나 PR 번호로 적고, 그것으로 부족하면 내용을 본문에 옮긴다.
+- 계획서 번호를 적지 않는다. ADR 은 계획서보다 오래 남으므로 위 「계획서를 가리키지 않는다」 를 따르고, 근거는 다른 ADR 번호나 PR 번호로 적고 부족하면 내용을 본문에 옮긴다.
 
 ---
 
@@ -198,7 +194,6 @@ push, 배포, 원격 호스트 접속이 있어야 끝나는 검증은 phase 에
 ### phase 파일 구조
 
 작성 전에 [phase 양식](../templates/phase.md)을 읽는다. 명령은 작업 공간에서 실행할 수 있어야 하며 실제 코드·테스트 경로를 쓴다.
-
 
 ### 변경 파일 작성
 

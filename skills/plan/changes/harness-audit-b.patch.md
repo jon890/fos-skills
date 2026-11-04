@@ -1,0 +1,2 @@
+- 기능 계획 경로 규칙을 task-create 한 곳에 모으고 SKILL 의 index 필드 JSON, 문서 소유권 표를 지웠다
+- check_feature 를 한 번만 부르게 하고 ADR 색인 중복 문장과 연속 빈 줄을 정리했다

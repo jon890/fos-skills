@@ -19,7 +19,7 @@ description: |
 | 검사기 | 매핑 표의 금지어는 실패, 문장 구성 일부는 경고 | 종료 코드와 경고 줄 | 두 검사기의 docstring |
 | 의미 점검 | 검사기가 판정하지 못하는 것 | 발견 목록과 확인 범위 | `references/review-axes.md` 의 「축」 |
 
-## 어느 파일을 언제 읽나
+## 읽을 파일
 
 | 판단할 것 | 읽을 파일 |
 | --- | --- |
@@ -64,12 +64,7 @@ bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE" -- "$FILE"
 
 기존 줄의 발견은 완료 보고에 범위 밖 발견으로 남긴다. 기준을 생략하면 커밋하지 않은 변경만 본다.
 
-**저장소 전체 테스트에서 외부 패키지 사본을 제외하려면 `.claude/korean-check-exclude.txt` 에 적는다.**
-저장소 루트 기준으로 한 줄에 파일 경로나 `/` 로 끝나는 디렉터리 경로를 쓴다.
-빈 줄과 `#` 로 시작하는 줄은 무시하며, 와일드카드와 상위 경로는 받지 않는다.
-예를 들어 `plugins/vendor/skills/package/` 를 적으면 그 아래 문서를 제외한다.
-이 목록은 `test_repo_markdown_passes` 에만 적용한다. 파일을 직접 넘기는 검사와 훅은 그대로 검사한다.
-낱말을 허용하는 `.claude/korean-check-allow.txt` 와는 별개다.
+저장소 전체 테스트에서 외부 패키지 사본을 제외하는 `.claude/korean-check-exclude.txt` 는 `references/markdown-readability.md` 의 「표기」 가 소유한다.
 
 ## 검사기가 잡지 못하는 축을 본다
 

@@ -10,7 +10,7 @@
 //              읽지 못한 방은 dooray-retry-channels 캐시에 적어 다음 받기에 다시 읽고, 커서는 앞으로 옮긴다
 // 출처마다 커서(FetchResult.cursors)를 따로 내므로 한 출처의 실패가 다른 출처의 받기를 멈추지 않는다.
 // 토큰 오류처럼 나를 읽지 못하면 auth 오류 한 줄만 낸다.
-// 멘션 판정: 본문의 `dooray://{orgId}/members/{내 id}` 링크. 메신저 본문의 표기는 실제 로그로 확인하지 못해 같은 링크로 가정했다.
+// 멘션 판정: 본문의 `dooray://{orgId}/members/{내 id}` 링크. 메신저 본문도 같은 링크 표기다(화면 실측은 content-preview 의 messenger-rendering.md).
 // 메신저 호출 줄이기(D14): 봇 방과 나와의 대화는 건너뛰고, 바뀐 방을 오래된 순으로 MAX_CHANNELS 개까지만 읽는다.
 //   남은 방이 있으면 마지막으로 읽은 방의 updatedAt 을 cursor 로 내어 다음 받기가 거기서 잇는다. 놓치는 방이 없게 하려는 것이다.
 //   한 방의 logs LOG_COUNT 개가 모두 지난 받기 뒤의 것이면 MORE_LOG_COUNT 개로 다시 읽는다.

@@ -31,7 +31,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 리뷰 수집 | PR 번호와 대상 하위 프로젝트가 정해졌고 네 소스의 리뷰를 모았다 | `scripts/collect_review.py` |
+| 1 | 리뷰 수집 | PR 번호와 대상 하위 프로젝트가 정해졌고 `collect_review.py` 가 내는 소스별 리뷰를 모았다 | `scripts/collect_review.py` |
 | 2 | 작업 트리 정렬 | 현재 브랜치가 PR head 브랜치이고 base 브랜치 이름을 받았고 conflict 가 없다 | `references/conflict-resolution.md` |
 | 3 | 분류 | 모든 지적에 등급이 붙었고 처리 범위를 사용자가 확정했다 | `references/severity.md` |
 | 4 | 수정 | 처리하기로 한 지적이 반영되고 지적마다 커밋이 나뉘어 남았다 | `references/severity.md` |
@@ -92,7 +92,7 @@ gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" 
 ```
 
 **이전 PR 에서 「다음 PR 에서 반영」 으로 미룬 지적이 있으면** 그 PR 번호를 `--carried-from` 으로 준다.
-회신에 「다음 PR」 이 든 스레드를 다섯째 소스로 모은다. resolve 된 것도 나온다. 다른 문구는 `--carried-marker` 로 준다.
+회신에 「다음 PR」 이 든 스레드를 추가 소스로 모은다. resolve 된 것도 나온다. 다른 문구는 `--carried-marker` 로 준다.
 
 ```bash
 PREV=""    # 이전 PR 번호

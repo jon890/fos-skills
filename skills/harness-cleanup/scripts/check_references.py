@@ -21,6 +21,7 @@
 브랜치를 말하는 줄(「브랜치」, `branch`, `checkout`, `switch`, `worktree`)에 있을 때다.
 
   6. 홈 경로 — 백틱으로 감싼 `~/…` 경로가 이 머신의 홈 아래에 있는지. 없으면 실패가 아니라 경고로 낸다.
+     경로 뒤에 공백과 `-` 옵션 낱말(`--apply`, `-n`)이 오면 거기서 잘라 경로만 본다.
      다른 사람의 머신 경로이거나 지침 작성자만 가진 파일일 수 있어 깨진 참조로 단정하지 못한다.
      경고는 종료 코드를 바꾸지 않고 깨진 참조 결과 뒤에 낸다.
 
@@ -55,6 +56,9 @@ PATH_IN_BACKTICK = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)`")
 # 홈 경로. 백틱 안이 `~/` 로 시작하는 표기다. 한글과 공백이 든 경로도 본다.
 # 자리표시자(`<>{}*$`)가 든 표기는 잡지 않는다.
 HOME_PATH = re.compile(r"`(~/[^`<>{}*$\n]+)`")
+# 경로 뒤에 옵션이 붙은 명령 줄(`~/x/run.py --apply`)은 공백과 `-옵션` 낱말 앞에서 자른다.
+# 영문자로 시작하는 옵션만 자른다. `내 지침 -초안.md` 같은 한글 파일 이름은 경로로 남는다.
+HOME_PATH_OPTION = re.compile(r"\s+--?[A-Za-z].*$")
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]+)?)\)")
 # 확장자와 무관한 링크 한 개. 링크 문구의 백틱 경로를 2번 검사에서 가릴 때 쓴다.
 LINK_SPAN = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
@@ -343,6 +347,7 @@ def main():
 
             # 6) 홈 경로 — 이 머신에 없으면 경고
             for cand in HOME_PATH.findall(line):
+                cand = HOME_PATH_OPTION.sub("", cand).rstrip()
                 if not (home / cand[2:]).exists():
                     warnings.append((rel, i, cand))
 
