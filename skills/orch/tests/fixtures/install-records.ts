@@ -22,6 +22,9 @@ export function layout(root: string, c: Case): { config: string; path: (name: st
     mkdirSync(join(path(name), 'skills', 'orch', 'scripts'), { recursive: true })
     mkdirSync(join(path(name), 'skills', 'orch', 'bin'), { recursive: true })
     writeFileSync(join(path(name), 'skills', 'orch', 'bin', 'orch.ts'), '')
+    // 플러그인 루트의 실행기. 틀과 overlay 의 한 줄 풀이는 이것이 있는 번들만 고른다
+    mkdirSync(join(path(name), 'bin'), { recursive: true })
+    writeFileSync(join(path(name), 'bin', 'orch'), '')
   }
   for (const name of c.legacy) mkdirSync(join(path(name), 'orch', 'scripts'), { recursive: true })
   const config = join(root, 'config')

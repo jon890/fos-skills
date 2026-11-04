@@ -15,8 +15,8 @@ function template(): string {
   return readFileSync(TEMPLATE, 'utf8')
 }
 
-// 틀의 블록 첫 줄 `command -v orch >/dev/null || orch() { node "$(node -e '…')" "$@"; }` 의 실행기 경로를 푸는 명령
-const FN = /command -v orch >\/dev\/null \|\| orch\(\) \{ node "\$\((node -e '.*?')\)" "\$@"; \}/g
+// 틀의 블록 첫 줄 `command -v orch >/dev/null || orch() { _o="$(node -e '…')" || return 3; node "$_o" "$@"; }` 의 실행기 경로를 푸는 명령
+const FN = /command -v orch >\/dev\/null \|\| orch\(\) \{ _o="\$\((node -e '.*?')\)" \|\| return 3; node "\$_o" "\$@"; \}/g
 
 function resolver(): string {
   const m = new RegExp(FN.source).exec(template())
@@ -130,6 +130,8 @@ describe('spec-common.md 의 스크립트 경로', () => {
     const home = join(tmp, 'h')
     const bundle = join(tmp, 'home-bundle')
     mkdirSync(join(bundle, 'skills', 'orch', 'scripts'), { recursive: true })
+    mkdirSync(join(bundle, 'bin'), { recursive: true })
+    writeFileSync(join(bundle, 'bin', 'orch'), '')
     writeInstalled(join(home, '.claude'), [{ scope: 'user', installPath: bundle }])
     const r = resolve({}, home)
     assert.equal(r.code, 0, r.stderr)

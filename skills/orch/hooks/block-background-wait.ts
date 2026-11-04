@@ -21,7 +21,8 @@ import { hookCommand, QUOTED, stripHeredocs } from './shell-text.ts'
 const CHECK_WAIT = /\borchestration\s+check\b.*\s--wait\b|\bwait-important\b/
 // 새 꼴 대기. `orch wait`, `.../bin/orch wait`, `'.../orch.ts' wait` 이고 뒤에 wait 묶음의 다른 동작이 오지 않는 것
 const WAIT_VERBS = COMMANDS.filter((c) => c.group === 'wait' && c.verb !== null).map((c) => c.verb as string)
-const NEW_WAIT = new RegExp(`(?:^|[\\s/'"])orch(?:\\.ts)?['"]?\\s+wait(?=\\s|$)(?!\\s+(?:${WAIT_VERBS.join('|')})(?:\\s|$))`)
+// 변수로 부른 진입점(`"$ORCH" wait`, `"$ORCH_BIN" wait`)도 같다
+const NEW_WAIT = new RegExp(`(?:(?:^|[\\s/'"])orch(?:\\.ts)?|\\$\\{?ORCH(?:_BIN)?\\}?)['"]?\\s+wait(?=\\s|$)(?!\\s+(?:${WAIT_VERBS.join('|')})(?:\\s|$))`)
 const DETACH = /(^|[\s;|&(])(nohup|setsid|disown)\b/
 // 리다이렉션(`2>&1`, `>&2`, `&>`, `&>>`)과 `&&` 를 지운 뒤 남은 `&` 가 백그라운드 실행이다
 const NOT_BACKGROUND = /\d*>&\d*-?|&>>?|&&|\|&/g

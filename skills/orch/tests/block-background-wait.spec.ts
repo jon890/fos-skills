@@ -40,6 +40,8 @@ describe('block-background-wait', () => {
       'nohup orch wait --loop-repo /r',
       "'/p/skills/orch/bin/orch.ts' wait --ack d1 &",
       '"$PLUGIN/bin/orch" wait --ack d1 &',
+      'node "$ORCH_BIN" wait --ack d1 &',
+      '"$ORCH" wait &',
     ]) {
       assert.equal(decide(command), 'deny', command)
     }

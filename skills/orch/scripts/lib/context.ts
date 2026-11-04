@@ -75,7 +75,7 @@ export function fillContext(
   const wanted = command.context.filter((c) => !command.skip(args).includes(c))
   if (command.passthrough || wanted.length === 0) return { args, note: null, sources: {} }
   for (const token of beforeDashes(args)) {
-    if (!token.startsWith('--') || token.length < 4) continue
+    if (!token.startsWith('--') || token.length < 3) continue
     const name = token.includes('=') ? token.slice(2, token.indexOf('=')) : token.slice(2)
     const short = command.context.find((c) => c !== name && c.startsWith(name))
     if (short) return { error: `${token} 는 --${short} 를 줄여 쓴 것이다. 새 꼴에서는 문맥 인자를 줄여 쓰지 않는다` }

@@ -89,11 +89,10 @@
 //     `ps -axo pid=,command=`(PS 환경 변수로 바꾼다)에서 `orch-loop.ts` 와 `--foreground` 가 든 행(상주 루프의 부모)을 읽는다.
 //     --tick 자식과 --start 는 뺀다. 스크립트 경로는 첫 낱말(node) 뒤 처음 `/` 로 시작하는 곳부터 `orch-loop.ts` 까지다(경로에 빈칸이 있을 수 있다).
 //     그 경로가 설치 캐시 꼴(`<plugins>/cache/<마켓플레이스>/<플러그인>/<sha 나 버전>/orch/scripts/orch-loop.ts`)이면
-//     지금 세션 프로필(`CLAUDE_CONFIG_DIR`, 없으면 `~/.claude`)의 설치 기록에서 lib/install-record.ts 의 selectBundle 로 현재 설치본을 고른다.
-//     user 범위로 고른 것만 판정한다. fos-skills@fos-skills 의 번들만 본다.
+//     지금 세션 프로필(`CLAUDE_CONFIG_DIR`, 없으면 `~/.claude`)의 installed_plugins.json 에서 `<플러그인>@<마켓플레이스>` 의 user 범위 installPath 를 읽는다.
 //     그 installPath 가 루프의 번들 폴더와 같지 않고 마지막 폴더 이름도 다르면 LOOP-STALE 이다. 이미 고친 결함이 옛 번들의 루프에서 계속 난다.
 //     project 범위 행은 보지 않는다. 다른 프로필이 남긴 옛 행(3.6.0)과 같다고 옛 번들의 루프를 통과시킨 일이 있었다(2026-11-04).
-//     user 범위 행이 없거나 고르지 못하면(user 설치본에 스크립트 폴더가 없다) 판정하지 않는다.
+//     user 범위 행이 없으면 판정하지 않는다. 판정 규칙은 이 기능 전과 같다(진입점의 번들 고르기 lib/install-record.ts 와 따로 둔다).
 //     캐시 꼴이 아니면(저장소 체크아웃에서 띄운 개발 중인 루프) 보지 않는다. installed_plugins.json 을 읽지 못하면 판정하지 않는다.
 //     다시 띄우는 명령은 그 루프의 Run 코디네이터 세션에서 돌리라는 안내와 함께 낸다. 루프는 띄운 터미널의 Run 명의를 물려받는다
 //     (orch-loop.ts 머리 주석의 「명의」). Run 은 그 저장소 loop.json 의 bound_run, 없으면 run 이다. 경고라 종료 코드를 바꾸지 않는다.
@@ -173,7 +172,6 @@ import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from './lib/loop.ts'
 import { orchDir, pathOf } from './lib/paths.ts'
-import { selectBundle } from './lib/install-record.ts'
 import { isOpen, scan as scanStudy } from './lib/study.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
@@ -494,16 +492,22 @@ function staleBundle(script: string, configDir: string): { sha: string; installe
   const layout = installLayout(skillDir, true)
   if (!layout) return null
   const [, marketplace, plugin, sha] = layout
-  if (`${plugin}@${marketplace}` !== 'fos-skills@fos-skills') return null
+  let entries: unknown
+  try {
+    entries = (JSON.parse(readFileSync(join(configDir, 'plugins', 'installed_plugins.json'), 'utf8')) as { plugins?: Record<string, unknown> }).plugins?.[
+      `${plugin}@${marketplace}`
+    ]
+  } catch {
+    return null
+  }
+  if (!Array.isArray(entries)) return null
+  // 다른 범위(project)의 옛 행은 지금 세션이 싣는 번들이 아니다. 그 행과 같다고 통과시키면 옛 번들의 루프를 놓친다
+  const rows = (entries as { installPath?: unknown; scope?: unknown }[]).filter((e) => e?.scope === 'user' && typeof e.installPath === 'string' && e.installPath)
+  if (rows.length === 0) return null
   const bundle = real(bundleRoot(skillDir))
-  // 현재 설치본은 lib/install-record.ts 의 selectBundle 로 정한다. user 범위로 고른 것만 판정한다.
-  // 다른 범위(project)의 옛 행은 지금 세션이 싣는 번들이 아니다. 그 행과 같다고 통과시키면 옛 번들의 루프를 놓친다.
-  // 고르지 못하면(설치 기록 오류) 판정하지 않는다. 그 경우는 진입점의 종료 코드 3 과 설치 기록 판정이 알린다
-  const chosen = selectBundle(configDir, bundle)
-  if ('error' in chosen || chosen.source !== 'user') return null
   // 프로필마다 캐시 폴더가 달라도 같은 번들이면 마지막 폴더 이름(sha 나 버전)이 같다
-  if (real(chosen.bundle) === bundle || basename(chosen.bundle) === sha) return null
-  return { sha, installed: join(chosen.bundle, relative(bundle, skillDir)) }
+  if (rows.some((e) => real(e.installPath as string) === bundle || basename(e.installPath as string) === sha)) return null
+  return { sha, installed: join(rows[0].installPath as string, relative(bundle, skillDir)) }
 }
 
 function staleLoops(configDir: string): string[] {

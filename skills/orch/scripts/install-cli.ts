@@ -15,16 +15,15 @@
 //
 // 종료 코드: 0 깔았거나 이미 같다, 1 CLI-CONFLICT 나 쓰기 실패, 2 사용법 오류
 
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { LAUNCHER_MARK as MARK } from './lib/commands.ts'
 
 const USAGE = '사용법: install-cli.ts [--target FILE]'
-// 실행기 둘째 줄의 표지. lib/commands.ts 의 orchWord 와 doctor 도 같은 글자로 가린다
-const MARK = 'fos-skills orch launcher'
 const LAUNCHER = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'bin', 'orch')
 
 function main(argv: string[]): number {
@@ -47,6 +46,12 @@ function main(argv: string[]): number {
   const target = resolve(values.target ?? join(homedir(), '.local', 'bin', 'orch'))
   const source = readFileSync(LAUNCHER, 'utf8')
   let verdict = 'CLI-INSTALLED'
+  if (existsSync(target) && lstatSync(target).isSymbolicLink()) {
+    // 링크를 따라가 덮으면 그 대상(다른 체크아웃의 파일일 수 있다)을 고친다
+    process.stdout.write(`CLI-CONFLICT ${target}\n`)
+    process.stderr.write(`install-cli: ${target} 는 심볼릭 링크다. 덮지 않는다. 링크를 지운 뒤 다시 부른다\n`)
+    return 1
+  }
   if (existsSync(target)) {
     let current = ''
     try {

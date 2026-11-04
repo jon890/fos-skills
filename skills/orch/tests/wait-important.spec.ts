@@ -881,8 +881,9 @@ describe('남은 대기', () => {
         psRows,
         [
           psLine(601, 1, '/bin/zsh'),
-          psLine(602, 601, '/usr/local/bin/node /p/bin/orch wait --ack d0'),
-          psLine(603, 602, '/usr/local/bin/node --disable-warning=ExperimentalWarning /p/skills/orch/bin/orch.ts wait --ack d0'),
+          // 설치 경로에 빈칸이 있다(macOS 의 Application Support)
+          psLine(602, 601, '/usr/local/bin/node /Users/me/Library/Application Support/p/bin/orch wait --ack d0'),
+          psLine(603, 602, '/usr/local/bin/node --disable-warning=ExperimentalWarning /Users/me/Library/Application Support/p/skills/orch/bin/orch.ts wait --ack d0'),
           psLine(orphan.pid ?? 0, 603, 'node --disable-warning=ExperimentalWarning /p/skills/orch/scripts/wait-important.ts --run run_x --ack d0'),
         ].join('\n') + '\n',
       )

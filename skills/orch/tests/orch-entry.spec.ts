@@ -320,6 +320,19 @@ describe('새 꼴과 옛 꼴', () => {
     assert.doesNotMatch(old.stderr, /문맥/)
   })
 
+  test('지워진 작업 폴더에서 부른 새 꼴도 PWD 의 남은 윗 폴더로 문맥을 읽고 돈다', () => {
+    const gone = join(tmp, 'repo', 'wt')
+    mkdirSync(join(tmp, 'repo'))
+    spawnSync('git', ['init', '-q', join(tmp, 'repo')])
+    const done = spawnSync('sh', ['-c', 'mkdir -p "$GONE" && cd "$GONE" && rmdir "$GONE" && PWD="$GONE" exec "$@"', 'sh', process.execPath, '--disable-warning=ExperimentalWarning', ENTRY, 'loop', 'status'], {
+      env: { ...env({ CLAUDE_CONFIG_DIR: config }), GONE: gone },
+      cwd: tmp,
+      encoding: 'utf8',
+    })
+    assert.equal(done.status, 0, done.stderr)
+    assert.equal(done.stdout.trim(), `b --status --repo ${realpathSync(join(tmp, 'repo'))} hop=`)
+  })
+
   test('줄여 쓴 문맥 인자는 사용법 오류다', () => {
     assert.equal(orch(['loop', 'start', '--re', 'x'], { CLAUDE_CONFIG_DIR: config }).code, 2)
   })
@@ -365,6 +378,11 @@ describe('overlay.md 의 실행기 경로 한 줄', () => {
     const b = join(tmp, 'profile with space', 'home')
     const ua = bundle('u-a')
     const ub = bundle('u-b')
+    // 한 줄 풀이는 실행기(bin/orch)가 있는 번들만 고른다
+    for (const root of [ua, ub]) {
+      mkdirSync(join(root, 'bin'), { recursive: true })
+      copyFileSync(LAUNCHER, join(root, 'bin', 'orch'))
+    }
     install(a, [{ scope: 'project', installPath: bundle('p-old') }, { scope: 'user', installPath: ua }])
     install(b, [{ scope: 'user', installPath: ub }])
     assert.equal(resolved(a).stdout.trim(), join(ua, 'bin', 'orch'))

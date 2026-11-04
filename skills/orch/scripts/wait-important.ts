@@ -187,7 +187,8 @@ const LIVE_STATUSES = new Set(['pending', 'dispatched', 'running'])
 const LOST_WORKER_STATES = new Set(['abandoned', 'failed', 'stopped'])
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish'])
 // 실행기(bin/orch)와 진입점(bin/orch.ts)을 node 로 띄운 행. 대기를 넘기기만 하므로 고아 대기 판정에서 셸처럼 통과하는 노드로 본다
-const ORCH_HOP = /^\S*node\S*(?:\s+--\S+)*\s+\S*\/bin\/orch(?:\.ts)?(?:\s|$)/
+// 경로에 빈칸이 있을 수 있다(macOS 의 Application Support). 첫 낱말 node 뒤 처음 `/` 부터 `/bin/orch` 나 `/bin/orch.ts` 까지를 경로로 본다
+const ORCH_HOP = /^\S*node\S*(?:\s+--\S+)*\s+\/.*?\/bin\/orch(?:\.ts)?(?:\s|$)/
 const HISTORY_TIMEOUT_MS = 30_000
 // 완료 근거를 다시 찾을 때 읽는 inbox 행 수. 11-01 실측으로 630행을 1초에 읽었다
 const INBOX_LIMIT = 3000

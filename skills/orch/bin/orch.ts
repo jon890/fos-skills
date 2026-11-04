@@ -67,6 +67,18 @@ function err(line: string): void {
   process.stderr.write(`${line}\n`)
 }
 
+// 작업 폴더. 머지 뒤 정리로 셸의 폴더가 지워졌으면 process.cwd() 가 던진다.
+// 그때는 셸이 남긴 PWD 에서 남아 있는 가장 가까운 윗 폴더를 쓴다(wait-important 의 startDir 와 같은 규칙)
+function workDir(): string {
+  try {
+    return process.cwd()
+  } catch {
+    let dir = process.env.PWD ? resolve(process.env.PWD) : homedir()
+    while (!isDir(dir) && dirname(dir) !== dir) dir = dirname(dir)
+    return dir
+  }
+}
+
 function run(file: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', file, ...args], { stdio: 'inherit', env })
   const forward = (signal: NodeJS.Signals) => () => child.kill(signal)
@@ -95,7 +107,13 @@ async function locate(argv: string[]): Promise<{ dir: string } | { code: number 
       return { code: 3 }
     }
     const entry = join(forced, '..', 'bin', 'orch.ts')
-    if (!hopped && existsSync(entry) && real(entry) !== real(SELF)) return { code: await hop(entry, argv) }
+    if (!hopped && existsSync(entry) && real(entry) !== real(SELF)) {
+      if (!existsSync(join(forced, 'lib', 'commands.ts'))) {
+        err(`orch: ORCH_SCRIPTS_DIR 의 체크아웃에 명령 표가 없다(이 기능 이전 체크아웃이다): ${forced}`)
+        return { code: 3 }
+      }
+      return { code: await hop(entry, argv) }
+    }
     return { dir: forced }
   }
   let record: InstallRecord
@@ -120,7 +138,8 @@ async function locate(argv: string[]): Promise<{ dir: string } | { code: number 
     }
     return { code: await hop(entry, argv) }
   }
-  return { dir: record.scriptsDirOf(chosen.bundle) }
+  // 넘겨받은 진입점은 자기 명령 표와 같은 번들의 스크립트를 쓴다. 두 판의 고르기 규칙이 달라도 표와 스크립트가 섞이지 않는다
+  return { dir: hopped ? OWN_SCRIPTS : record.scriptsDirOf(chosen.bundle) }
 }
 
 function names(dir: string): string {
@@ -166,12 +185,13 @@ async function main(argv: string[]): Promise<number> {
       err(`orch: ${file} 가 없다`)
       return 2
     }
-    if (resolved.user.includes('--help') || resolved.user.includes('-h')) {
+    const lead = commands.beforeDashes(resolved.user)[0]
+    if (lead === '--help' || lead === '-h') {
       err(`${resolved.command.usage}\n옵션은 아래 스크립트 사용법을 따른다. 동작으로 바뀐 옛 모드 플래그(${resolved.command.forbid.join(', ') || '없음'})는 쓰지 않는다.`)
       return run(file, resolved.args, childEnv)
     }
     const context = (await import(pathToFileURL(join(OWN_SCRIPTS, 'lib', 'context.ts')).href)) as Context
-    const filled = context.fillContext(resolved.command, resolved.args, process.cwd())
+    const filled = context.fillContext(resolved.command, resolved.args, workDir())
     if ('error' in filled) {
       err(`orch: ${filled.error}`)
       return 2
