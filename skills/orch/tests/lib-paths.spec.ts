@@ -168,6 +168,25 @@ describe('ensure 와 makeParent', () => {
     assert.ok(statSync(join(repo, '.orch/state')).isDirectory())
     assert.ok(exclude().includes('/.orch/'))
   })
+
+  test('같은 프로세스에서 ORCH_DIR 을 바꾸면 그 루트의 줄도 더한다', () => {
+    ensure('queue', repo)
+    process.env.ORCH_DIR = 'work/orch'
+    ensure('queue', repo)
+    assert.ok(exclude().includes('/.orch/'))
+    assert.ok(exclude().includes('/work/orch/'))
+  })
+
+  test('git 밖 폴더도 git init 뒤 다시 부르면 줄을 더한다', () => {
+    const plain = join(tmp, 'plain')
+    mkdirSync(plain)
+    ensure('queue', plain)
+    assert.equal(existsSync(join(plain, '.git')), false)
+    sh(tmp, 'init', '-q', plain)
+    ensure('queue', plain)
+    const lines = readFileSync(join(plain, '.git/info/exclude'), 'utf8').split('\n')
+    assert.equal(lines.filter((line) => line === '/.orch/').length, 1)
+  })
 })
 
 describe('boardPath', () => {

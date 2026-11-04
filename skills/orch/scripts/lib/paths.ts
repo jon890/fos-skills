@@ -26,6 +26,7 @@
 //
 // git 무시: 루트가 저장소 안에 있고 git 이 아직 무시하지 않으면 `git rev-parse --git-path info/exclude` 파일에
 // /<루트>/ 한 줄을 더한다. 저장소의 .gitignore 는 바꾸지 않는다. 그 파일은 워크트리끼리 함께 쓴다.
+// 같은 프로세스에서 무시됨을 확인한 루트와 저장소가 아님을 확인한 주 checkout 은 다시 git 에 묻지 않는다(ensureIgnored 위 주석).
 
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -33,7 +34,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url'
 import { defaultBoardPath } from '../../../../extensions/work-board/bin/board.ts'
 import { inside, real } from './fs.ts'
-import { git, mainCheckout } from './git.ts'
+import { git, gitMemoKey, hasGitMarker, mainCheckout } from './git.ts'
 
 const DEFAULT_ROOT = '.orch'
 
@@ -99,24 +100,44 @@ export function boardPath(repo: string, explicit?: string | null): string {
   return defaultBoardPath(real(repo))
 }
 
+const ignoredMemo = new Map<string, 'ignored' | 'no-git'>()
+
 // 루트를 git 이 무시하게 한다. 더한 줄이 있으면 그 줄, 없으면 null.
+// 같은 프로세스에서 같은 주 checkout 과 루트를 다시 받으면 git 을 띄우지 않고 null 이다. 앞 결과를 쓰는 조건은 둘이다.
+//   무시됨(이미 무시했거나, 같은 줄이 있었거나, 방금 더했다): 주 checkout 이 아직 있다.
+//   저장소 아님(rev-parse --git-dir 실패): 주 checkout 과 조상에 .git 이 없다. git init 으로 .git 이 생기면 다시 묻는다.
+// 그 사이에 누가 무시 줄을 지우면 이 프로세스는 다시 더하지 않는다. 다음 명령이 더한다.
 export function ensureIgnored(repo: string): string | null {
   const root = orchDir(repo)
   const top = mainCheckout(repo)
   const rel = relative(top, root)
   // 루트가 저장소 밖이면 무시할 것이 없다. 루트가 주 checkout 자신이면 저장소 전체를 무시하게 되므로 더하지 않는다.
   if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
+  const key = gitMemoKey(top, root)
+  const memo = ignoredMemo.get(key)
+  if (memo && (memo === 'ignored' ? existsSync(top) : !hasGitMarker(top))) return null
+  ignoredMemo.delete(key)
   const relPosix = rel.split(sep).join('/')
-  if (git(top, ['rev-parse', '--git-dir']).code !== 0) return null
-  if (git(top, ['check-ignore', '-q', '--no-index', `${relPosix}/`]).code === 0) return null
+  if (git(top, ['rev-parse', '--git-dir']).code !== 0) {
+    if (!hasGitMarker(top)) ignoredMemo.set(key, 'no-git')
+    return null
+  }
+  if (git(top, ['check-ignore', '-q', '--no-index', `${relPosix}/`]).code === 0) {
+    ignoredMemo.set(key, 'ignored')
+    return null
+  }
   const found = git(top, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])
   const exclude = found.stdout.trim()
   if (found.code !== 0 || !exclude) return null
   const line = `/${relPosix}/`
   mkdirSync(dirname(exclude), { recursive: true })
   const text = existsSync(exclude) && statSync(exclude).isFile() ? readFileSync(exclude, 'utf8') : ''
-  if (text.split(/\r\n|\r|\n/).includes(line)) return null
+  if (text.split(/\r\n|\r|\n/).includes(line)) {
+    ignoredMemo.set(key, 'ignored')
+    return null
+  }
   appendFileSync(exclude, `${!text || text.endsWith('\n') ? '' : '\n'}${line}\n`, 'utf8')
+  ignoredMemo.set(key, 'ignored')
   return line
 }
 
