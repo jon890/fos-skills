@@ -18,8 +18,12 @@ metadata:
 명령 문법과 lifecycle 은 Orca 의 `orchestration` 가이드(`orca skills get orchestration`)가 소유한다.
 이 스킬은 그 가이드에 없는 코디네이터의 판단과, 각 단계에서 같은 실패를 피하는 규칙을 담는다.
 `$SKILL_DIR` 은 이 스킬 번들 경로다.
-스크립트는 진입점 `"$SKILL_DIR/bin/orch.ts" <이름> [인자]` 로 부른다. 부를 때마다 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 설치 기록에서 지금 설치된 번들을 읽어 그 번들의 `scripts/<이름>.ts` 를 실행한다.
-갱신이나 프로필 전환 뒤에도 기억해 둔 명령이 옛 번들을 부르지 않는다. 저장소 스크립트가 진입점을 부르는 방법은 [`references/overlay.md`](references/overlay.md) 의 「저장소 스크립트에서 orch 부르기」 가 소유한다.
+스크립트는 `orch <묶음> <동작> [인자]` 로 부른다. 묶음과 동작은 `orch --help` 가 보이고, 원본은 명령 표 `scripts/lib/commands.ts` 다.
+저장소(`--repo`), Run(`--run`), 지시서 폴더(`--specs-dir`), 대기의 루프 저장소(`--loop-repo`)는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽고, 무엇을 읽었는지 stderr 에 한 줄 남긴다. 다른 저장소나 다른 Run 이면 그 값을 준다.
+`orch` 는 부를 때마다 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 설치 기록에서 지금 설치된 번들을 골라 그 번들의 스크립트를 실행한다. user 범위 설치본이 있으면 그것만 쓴다. 갱신이나 프로필 전환 뒤에도 기억해 둔 명령이 옛 번들을 부르지 않는다.
+Claude 세션의 Bash 는 플러그인 `bin/` 이 PATH 에 있어 `orch` 를 그대로 부른다. PATH 에 없으면(Codex, 사람 셸) 아래 첫 점검의 한 줄이 셸 함수를 두고, `orch doctor install-cli` 를 한 번 돌리면 `~/.local/bin/orch` 가 생긴다.
+<!-- orch-compat -->
+옛 꼴 `"$SKILL_DIR/bin/orch.ts" <스크립트 이름> [인자]` 도 같은 스크립트를 같은 인자로 부르고 stderr 에 새 꼴을 안내한다. 옛 이름을 지우는 PR 까지 받는다. 저장소 스크립트가 orch 를 부르는 방법은 [`references/overlay.md`](references/overlay.md) 의 「저장소 스크립트에서 orch 부르기」 가 소유한다.
 캐시의 스크립트를 직접 불러 현재 설치 기록과 다르면 stderr 에 `STALE-BUNDLE` 경고와 현재 진입점 경로가 나온다.
 **`orca orchestration` 조회를 직접 부를 때는 `--full` 을 붙인다.** Orca 1.4.246 부터 `--full` 이 없으면 줄인 보기라 `dispatchStatus`, `resource`, `thread_id` 처럼 판정에 쓰는 키가 빠진다. 스크립트는 스스로 붙인다(`scripts/lib/orca.ts` 의 `withFull`).
 
@@ -36,10 +40,16 @@ metadata:
 설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/orch-doctor.py"
+command -v orch >/dev/null || orch() { node "$SKILL_DIR/../../bin/orch" "$@"; }
+orch doctor
 ```
 
-새 세션을 시작하거나 압축·계정 전환 뒤에는 `"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO"` 로 이전 세션에서 떨어진 터미널을 확인한다. `$REPO` 는 대상 저장소 경로다. 목록을 검토한 뒤 이어받을 때만 `--apply` 를 쓴다. 상세는 [`references/launch.md`](references/launch.md) 의 「이전 세션 이어받기」 를 따른다.
+`orch` 가 PATH 에 없는 셸은 첫 줄의 셸 함수로 실행기를 부른다. 셸 함수는 그 Bash 호출 안에서만 살아, 다른 문서의 `orch` 명령도 같은 셸에서는 이 줄을 먼저 둔다.
+`CLI-MISSING`, `CLI-STALE` 은 Codex 와 사람 셸이 쓸 `~/.local/bin/orch` 가 없거나 낡았다는 뜻이다. 다음 줄의 `orch doctor install-cli` 를 한 번 돌린다. 다른 `orch` 가 있으면 덮지 않고 `CLI-CONFLICT` 로 끝나니 사용자에게 알린다. `CLI-NOT-ON-PATH` 면 셸 설정 안내를 사용자에게 보인다.
+`OLD-CALL`, `DIRECT-PATH` 는 작업 디렉터리 저장소의 오버레이·공통 지시서·핸들러가 옛 꼴이나 스크립트 경로로 orch 를 부른다는 뜻이다. 다음 줄의 새 꼴로 그 저장소 worker 에게 고치게 한다. 진행을 막지 않는다.
+`LOOP-STALE`, `WAIT-STALE` 은 지금 설치본이 아닌 번들로 도는 상주 루프와 대기다. 다음 줄의 안내대로 그 Run 의 코디네이터 세션에서 다시 띄운다.
+
+새 세션을 시작하거나 압축·계정 전환 뒤에는 `orch worker adopt` 로 이전 세션에서 떨어진 터미널을 확인한다. 저장소는 작업 폴더에서 읽고, 다른 저장소면 `--repo` 를 준다. 목록을 검토한 뒤 이어받을 때만 `--apply` 를 쓴다. 상세는 [`references/launch.md`](references/launch.md) 의 「이전 세션 이어받기」 를 따른다.
 
 ## 기능 단위 개발
 
@@ -93,10 +103,10 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 비교한 후보, 고른 이유가 지시서의 `worker 선택:` 줄에 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다(`launch-worker` 도 띄우기 전에 한 번 더 돌려 막는다) | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
 | 3 | 띄우기 | `launch-worker` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `launch.effective` 가 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
-| 4 | 기다리기 | 저장소마다 `orch-loop.ts --start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `wait-important` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다(사용자와 대화 중이면 `user-active` 가 `USER-ACTIVE` 이고 대기가 없다). 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 받은 delivery 를 `triage-messages` 로 읽었다 | [`references/waiting.md`](references/waiting.md) |
+| 4 | 기다리기 | 저장소마다 `orch loop start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `orch wait` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다(사용자와 대화 중이면 `orch wait user-active` 가 `USER-ACTIVE` 이고 대기가 없다). 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 받은 delivery 를 `triage-messages` 로 읽었다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
-| 7 | 머지와 정리 | `merge-with-finish.ts` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
+| 7 | 머지와 정리 | `orch queue merge` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
 
 진행 보드가 있으면 띄우기와 루프가 항목, PR 연결, 머지를 자동 반영한다. 코디네이터는 결정과 다음 단계를 관리한다([보드 갱신 담당](references/board.md)). 보드가 없으면 건너뛴다.
 
@@ -147,9 +157,9 @@ PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 
 ## 7. 머지와 정리
 
-`merge-with-finish.ts` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다. `queue.auto_merge` 를 켠 저장소는 상주 루프가 머지할 수 있는 PR 을 스스로 건다(`references/cleanup.md` 의 「머지」).
+`orch queue merge` 로 머지 큐를 걸면 PR 마다 머지 뒤 마무리(worker 정리, 배포 확인, 업무 완료, 보드 done)가 함께 돈다. 사용자가 말하지 않아도 이 스크립트로 건다. `queue.auto_merge` 를 켠 저장소는 상주 루프가 머지할 수 있는 PR 을 스스로 건다(`references/cleanup.md` 의 「머지」).
 앞 PR 머지마다 뒤 PR 을 최신화하느라 CI 를 다시 기다리는 저장소는 `--up-to-date-when overlap` 으로 겹치지 않는 PR 의 최신화를 생략한다. 쓸 수 있는 저장소와 규칙은 `references/cleanup.md` 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다.
 그래도 겹치는 PR 이 차례마다 CI 를 기다리면 `pipeline.refresh_slots` 로 상주 루프가 뒤처진 PR 을 머지 차례 전에 최신화하게 한다(`references/cleanup.md` 의 「머지 차례 전에 미리 최신화하기」).
-머지 큐가 끝나면 `notify-conflicts.ts` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 인지는 마무리가 배포 뒤에 판정하므로 PR 마다 `!` 를 정하지 않는다. 판정을 덮을 때만 `!`(마지막)나 `~`(중간)를 붙인다. 워크트리는 `remove-worktree.ts` 로만 지운다. 끝난 handoff 산출물은 묻지 않고 `handoff-cleanup.ts --apply` 로 휴지통 폴더에 옮긴다.
-뒤 PR 이 남았으면 머지한 뒤 같은 흐름에서 그 지시서를 써 새 worker 를 띄운다. 절차는 `references/cleanup.md` 의 「다음 PR 은 새 worker 로 띄운다」 가 소유한다.
+머지 큐가 끝나면 `orch queue conflicts` 로 충돌한 열린 PR 의 worker 에게 알린다. 업무의 마지막 PR 인지는 마무리가 배포 뒤에 판정하므로 PR 마다 `!` 를 정하지 않는다. 판정을 덮을 때만 `!`(마지막)나 `~`(중간)를 붙인다. 워크트리는 `orch cleanup worktree` 로만 지운다. 끝난 handoff 산출물은 묻지 않고 `orch cleanup handoff --apply` 로 휴지통 폴더에 옮긴다.
+뒤 PR 이 남았으면 머지한 뒤 같은 흐름에서 그 지시서를 써 새 worker 를 띄운다. 절차는 `references/cleanup.md` 의 「정리」 절에 있는 「다음 PR 은 새 worker 로 띄운다」 문단이 소유한다.
 맡긴 작업은 다른 저장소의 것이어도 머지한 자리에서 정리하고, 다른 세션이 띄운 것은 건드리지 않는다. 원칙과 직접 머지했을 때의 명령은 `references/cleanup.md` 의 「정리」 가 소유한다.

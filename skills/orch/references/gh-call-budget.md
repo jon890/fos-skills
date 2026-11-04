@@ -62,7 +62,7 @@ CI 루프는 PR 목록의 HEAD 와 체크를 한 번에 새로 읽는다. 판정
 캐시 적중 줄은 실제 gh 프로세스를 띄우지 않은 조회다. 기록 파일은 자동 삭제하지 않는다.
 
 ```bash
-node "$SKILL_DIR/bin/orch.ts" gh-usage --repo "$REPO"
+orch doctor gh-usage --repo "$REPO"
 ```
 
 출력은 `GH-USAGE last-hour calls=... cache-hits=...` 다. 최근 한 시간의 실제 호출과 캐시 적중을 나눠 센다.

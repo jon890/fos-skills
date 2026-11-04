@@ -54,14 +54,19 @@
 - `scripts/tests/test_doc_script_refs.py`: 저장소 문서(`skills/**/*.md`, `docs/**/*.md`, `README.md`, 단 `docs/features/orch-cli/`, `skills/orch/CHANGELOG.md`, `docs/adr/` 와 `orch-compat` 표지 줄 제외)에 위 grep 꼴의 호출이 없다는 테스트를 더한다. work-board 요청문(`extensions/work-board/hooks/register.js`)도 본다. `skills/orch/scripts/<이름>.ts` 꼴은 register.js 에만 쓴다. Markdown 에 쓰면 `docs/code-architecture.md` 185줄 근처의 파일 배치 줄(호출이 아니다)이 걸린다. `template-script-path.spec.ts` 는 `reserve-migration` 블록 사례도 새 꼴로 고친다.
 - doctor 문서 판정(phase 05)이 새 꼴을 모두 명령 표에서 찾는다: `python3 -m unittest scripts/tests/test_doc_script_refs.py` 가 이것을 돈다.
 
-### 4. 버전과 CHANGELOG
+### 4. 버전과 변경 이력 조각
 
-README 「버전과 변경 이력」 기준을 그때 다시 읽고 따른다(조각 방식 PR #335 가 먼저 머지됐으면 그 방식). 기능 추가라 orch 는 minor 를 올린다(`skills/orch/SKILL.md` 의 `metadata.version` 7.10.x → 7.11.0, `skills/orch/CHANGELOG.md`). 바꾼 다른 스킬(mac-cleanup)은 patch 를 올린다. work-board 의 버전 규칙도 README 를 따른다. CHANGELOG 항목: 짧은 `orch <묶음> <동작>` 명령과 PATH 실행기, 문맥 기본값, 옛 꼴 안내, user 범위 설치본만 쓰는 규칙, 새 `NEXT_WAIT`, doctor 의 새 판정, 핸들러 `ORCH_BIN`.
+README 「버전과 변경 이력」 대로 버전과 CHANGELOG 는 직접 올리지 않고 조각을 남긴다(ADR-023). orch 는 `skills/orch/changes/orch-cli-short-command.minor.md`, 바꾼 mac-cleanup 과 work-board 는 각자 `changes/orch-cli-short-command.patch.md` 다.
+
+### 5. 문서 교체 중 찾은 것
+
+- `--sweep-arg --run` 처럼 값을 따로 준 Run 도 명시로 본다(`skills/orch/scripts/lib/context.ts` 의 `explicit`, 설계 「명령 표 항목」 의 `explicit`). 문서의 `orch queue merge --sweep-arg --run …` 예시가 Run 을 두 번 받지 않게 한다.
+- 코디네이터 추가 범위(2026-11-05): `SKILL.md` 가 가리키는 `cleanup.md` 의 「다음 PR 은 새 worker 로 띄운다」 는 절이 아니라 「정리」 절의 문단이라 그렇게 적는다. `replying.md` 의 `references/interview.md` 는 spec 스킬로 가는 상대 링크로 바꾼다. 틀 110줄 근처의 오버레이 이름에 옛 이름(`planning-overlay.md`, `build-with-teams-overlay.md`)을 더한다.
 
 ## 검증
 
 ```bash
-node --test skills/orch/tests/template-script-path.spec.ts skills/orch/tests/orch-doctor.spec.ts skills/orch/tests/orch-entry.spec.ts skills/orch/tests/orch-loop-stall.spec.ts skills/orch/tests/events-doc.spec.ts extensions/work-board/tests/prompts.spec.ts
+node --test skills/orch/tests/template-script-path.spec.ts skills/orch/tests/orch-doctor.spec.ts skills/orch/tests/orch-entry.spec.ts skills/orch/tests/orch-loop-stall.spec.ts skills/orch/tests/events-doc.spec.ts skills/orch/tests/lib-context.spec.ts extensions/work-board/tests/prompts.spec.ts
 python3 -m unittest scripts/tests/test_doc_script_refs.py scripts/tests/test_skill_docs.py
 python3 scripts/check-skill-docs.py
 python3 export-only-skills/korean-check/scripts/korean-style-check.py skills/orch/SKILL.md skills/orch/references/waiting.md skills/orch/references/cleanup.md skills/orch/templates/spec-common.md skills/orch/CHANGELOG.md
@@ -72,19 +77,20 @@ python3 export-only-skills/korean-check/scripts/korean-style-check.py skills/orc
 | 파일 | 변경 |
 |---|---|
 | `skills/orch/SKILL.md` | 수정 |
-| `skills/orch/CHANGELOG.md` | 수정 |
+| `skills/orch/changes/orch-cli-short-command.minor.md` | 신규 |
 | `skills/orch/references/*.md` | 수정 |
 | `skills/orch/templates/spec-common.md` | 수정 |
 | `skills/orch/tests/template-script-path.spec.ts` | 수정 |
-| `skills/mac-cleanup/SKILL.md` | 수정 |
-| `skills/mac-cleanup/CHANGELOG.md` | 수정 |
+| `skills/orch/tests/orch-entry.spec.ts` | 수정 |
+| `skills/orch/tests/orch-loop-stall.spec.ts` | 수정 |
+| `skills/orch/scripts/lib/context.ts` | 수정 |
+| `skills/orch/tests/lib-context.spec.ts` | 수정 |
+| `skills/mac-cleanup/changes/orch-cli-short-command.patch.md` | 신규 |
 | `skills/mac-cleanup/references/git-and-sessions.md` | 수정 |
 | `extensions/work-board/hooks/register.js` | 수정 |
 | `extensions/work-board/tests/prompts.spec.ts` | 수정 |
-| `extensions/work-board/CHANGELOG.md` | 수정 |
+| `extensions/work-board/changes/orch-cli-short-command.patch.md` | 신규 |
 | `docs/code-architecture.md` | 수정 |
 | `docs/data-schema.md` | 수정 |
 | `README.md` | 수정 |
-| `skills/orch/tests/orch-entry.spec.ts` | 수정 |
-| `skills/orch/tests/orch-loop-stall.spec.ts` | 수정 |
 | `scripts/tests/test_doc_script_refs.py` | 수정 |

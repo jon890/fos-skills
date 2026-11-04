@@ -40,7 +40,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
+orch worker launch --spec "$SPEC_FILE" --name "$NAME" --base "$BASE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -57,7 +57,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 로컬 브랜치나 경로가 있으면 덮어쓰지 않으며 기존 워크트리는 `--worktree` 로 이어 쓴다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --resume-remote --run "$RUN_ID" \
+orch worker launch --spec "$SPEC_FILE" --name "$NAME" --resume-remote \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -73,7 +73,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
+orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -144,7 +144,7 @@ Orca 는 Claude 계정마다 `~/Library/Application Support/orca/claude-profiles
 `$PROFILE_ID` 는 거부 메시지에 나온 프로필 id 다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" link-claude-profile "$PROFILE_ID"
+orch worker link-profile "$PROFILE_ID"
 ```
 
 무엇을 링크하고 복사하는지, 세션 상태와 로그인 정보를 옮기지 않는 이유, 백업 이름은 `scripts/lib/claude-profile.ts` 머리 주석이 소유한다.
@@ -189,8 +189,8 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 `$REPO` 는 대상 저장소, `$TERMINAL` 은 목록에서 고른 handle, `$RUN_ID` 는 현재 코디네이터의 Run 이다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO"
-"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO" --apply "$TERMINAL" --run "$RUN_ID"
+orch worker adopt
+orch worker adopt --apply "$TERMINAL"
 ```
 
 목록의 지시서 후보를 확인한다. 후보가 없거나 여럿이면 `--spec` 으로 해당 브랜치의 지시서를 고른다. 사람의 셸과 작업·권한·초안 대기 화면은 자동으로 이어 붙이지 않는다. 원래 허락 범위와 막힌 결정을 먼저 확인한다.

@@ -60,7 +60,10 @@ function valuesOf(args: string[], name: string): string[] {
 
 function explicit(command: Command, args: string[], name: ContextName): boolean {
   if (hasFlag(args, name)) return true
-  return (command.explicit[name] ?? []).some((re) => beforeDashes(args).some((a) => re.test(a)))
+  const head = beforeDashes(args)
+  // `--finish-arg=--run` 꼴과, 값을 따로 준 `--finish-arg --run` 꼴을 같은 명시로 본다
+  const joined = head.map((a, i) => (/^--[a-z-]+-arg$/.test(a) && i + 1 < head.length ? `${a}=${head[i + 1]}` : a))
+  return (command.explicit[name] ?? []).some((re) => joined.some((a) => re.test(a)))
 }
 
 export function fillContext(

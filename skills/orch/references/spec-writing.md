@@ -7,7 +7,7 @@
 지시서 폴더의 기본은 `<repo>/.orch/specs/` 다(`orch_paths.ts specs`). 오버레이가 다른 폴더를 정하면 그것을 따른다.
 
 - 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.ts --specs-dir` 가 이 이름과, 지시서의 `브랜치:` 줄이 가리키는 머지된 브랜치를 보고 머지 뒤 지시서를 지운다. 후속 지시서처럼 이름이 워크트리와 달라도 `브랜치:` 줄이 있으면 지워진다. 그 줄이 없는 지시서는 이름이 워크트리 이름과 같아야 지워진다.
-- 폴더는 `"$SKILL_DIR/bin/orch.ts" orch_paths --repo "$REPO" --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
+- 폴더는 `orch paths --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
 - scratchpad 에 쓰지 않는다. **실측으로** 코디네이터 세션이 다시 시작되면서 scratchpad 가 정리돼 전날 쓴 지시서가 사라졌다. worker 는 받은 경로를 계속 읽으므로, 도중에 사라지면 읽을 곳을 잃는다.
 
 **개별 지시서의 첫 줄은 `# <업무 목적 한 문장>` 이다.** `launch-worker` 가 이 줄을 보드 항목 제목으로 쓴다.
@@ -103,7 +103,7 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
 지시서끼리 담당 파일이 겹치거나, 가리킨 함수가 없거나, 금지 명령을 요구하는 것을 띄운 뒤에 알면 worker 가 ask 로 멈추거나 뒤 PR 이 충돌한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" spec-lint --repo "$REPO" --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
+orch spec lint --check-overlay "$SPECS_DIR"/spec-a.md "$SPECS_DIR"/spec-b.md
 ```
 
 `launch-worker` 도 띄우기 전에 같은 검사를 한 번 더 한다. 이 지시서와, 같은 폴더에서 살아 있는 dispatch 의 지시서를 함께 넘겨 겹침을 보고, 막을 발견이 있으면 워크트리를 만들기 전에 종료 코드 5 로 멈춘다. 두 명령을 한 줄에 이어 써서 앞 검사의 실패를 지나쳐도 worker 는 뜨지 않는다. 아직 띄우지 않은 지시서끼리의 겹침은 이 단계의 한 번에 검사하는 호출이 잡는다.

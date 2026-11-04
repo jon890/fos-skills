@@ -344,13 +344,14 @@ test('git 저장소 밖에서 부르면 진입점은 repo 를 채우지 않고 �
   assert.doesNotMatch(r.stderr, /문맥 repo=/)
 })
 
-describe('overlay.md 의 진입점 경로 한 줄', () => {
+describe('overlay.md 의 실행기 경로 한 줄', () => {
   const OVERLAY = fileURLToPath(new URL('../references/overlay.md', import.meta.url))
+  const LAUNCHER = fileURLToPath(new URL('../../../bin/orch', import.meta.url))
 
   // 저장소 스크립트가 붙여 쓰는 줄. `ORCH=$(...) && "$ORCH" <명령>` 꼴이라 앞의 대입만 떼어 쓴다
   function resolver(): string {
     const m = /ORCH=\$\((node -e '.*?')\) && "\$ORCH"/.exec(readFileSync(OVERLAY, 'utf8'))
-    assert.ok(m, 'overlay.md 에서 진입점을 푸는 줄을 찾지 못했다')
+    assert.ok(m, 'overlay.md 에서 실행기를 푸는 줄을 찾지 못했다')
     return m[1]
   }
 
@@ -359,22 +360,29 @@ describe('overlay.md 의 진입점 경로 한 줄', () => {
     return { code: done.status, stdout: done.stdout, stderr: done.stderr }
   }
 
-  test('설정 폴더마다 그 설치본의 진입점 경로를 낸다', () => {
+  test('설정 폴더마다 그 설치본의 실행기 경로를 내고, user 설치본에 스크립트가 없으면 3 이다', () => {
     const a = join(tmp, 'profile-a')
     const b = join(tmp, 'profile with space', 'home')
-    install(a, [{ scope: 'project', installPath: '/p/old' }, { scope: 'user', installPath: '/u/a' }])
-    install(b, [{ scope: 'user', installPath: '/u/b' }])
-    assert.equal(resolved(a).stdout.trim(), '/u/a/skills/orch/bin/orch.ts')
-    assert.equal(resolved(b).stdout.trim(), '/u/b/skills/orch/bin/orch.ts')
+    const ua = bundle('u-a')
+    const ub = bundle('u-b')
+    install(a, [{ scope: 'project', installPath: bundle('p-old') }, { scope: 'user', installPath: ua }])
+    install(b, [{ scope: 'user', installPath: ub }])
+    assert.equal(resolved(a).stdout.trim(), join(ua, 'bin', 'orch'))
+    assert.equal(resolved(b).stdout.trim(), join(ub, 'bin', 'orch'))
+    const c = join(tmp, 'profile-c')
+    install(c, [{ scope: 'user', installPath: join(tmp, 'gone') }, { scope: 'project', installPath: ua }])
+    assert.equal(resolved(c).code, 3)
   })
 
-  test('풀린 경로의 진입점이 설치본의 스크립트를 부른다', () => {
+  test('풀린 실행기가 설치본의 진입점으로 스크립트를 부른다', () => {
     const config = join(tmp, 'profile')
     const root = bundle('real')
-    mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
-    copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(LAUNCHER, join(root, 'bin', 'orch'))
     install(config, [{ scope: 'user', installPath: root }])
-    const entry = resolved(config).stdout.trim()
-    assert.equal(orch(['hello', 'via-snippet'], { CLAUDE_CONFIG_DIR: config }, entry).stdout.trim(), 'real via-snippet')
+    const launcher = resolved(config).stdout.trim()
+    const done = spawnSync(process.execPath, [launcher, 'hello', 'via-snippet'], { env: env({ CLAUDE_CONFIG_DIR: config }), encoding: 'utf8', cwd: tmp })
+    assert.equal(done.status, 0, done.stderr)
+    assert.equal(done.stdout.trim(), 'real via-snippet')
   })
 })

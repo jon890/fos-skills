@@ -109,6 +109,8 @@ describe('채우기', () => {
     assert.deepEqual(filled(['loop', 'stop', '--run', 'mine'], worktree).args, ['--stop', '--repo', main, '--run', 'mine'])
     const merge = filled(['queue', 'merge', '--finish-arg=--run', '--finish-arg=x', '12'], worktree).args
     assert.ok(!merge.includes('run_ctx'), merge.join(' '))
+    const split = filled(['queue', 'merge', '--sweep-arg', '--run', '--sweep-arg', 'x', '12'], worktree).args
+    assert.ok(!split.includes('run_ctx'), split.join(' '))
   })
 
   test('run-current 가 없으면 설정의 finish.run 과 finish.specs_dir 를 쓴다', () => {

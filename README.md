@@ -313,6 +313,12 @@ orch, work-board, inbox 의 TypeScript 테스트는 Node 24 이상에서 `node s
 claude --plugin-dir "$(git rev-parse --show-toplevel)"
 ```
 
+설치 기록에 user 범위 설치본이 있으면 `orch` 실행기는 `--plugin-dir` 로 실은 작업 트리가 아니라 설치본으로 넘겨요. 작업 트리의 orch 스크립트를 돌리려면 `ORCH_SCRIPTS_DIR` 을 줘요.
+
+```bash
+ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loop status
+```
+
 로드가 맞는지 판정하는 방법은 [고치는 동안의 확인](docs/flow.md#고치는-동안의-확인) 에 있어요.
 
 ### 스킬을 더할 때
