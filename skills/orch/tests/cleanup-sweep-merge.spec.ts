@@ -8,7 +8,7 @@ import { describe, test } from 'node:test'
 import { type Row, branches, calls, exists, freshGoneBranch, fx, git, gone, has, lacks, mergedWorkerWithTerminal, remoteBranches, renamedWorktree, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
 describe('머지 판정과 기본 정리', () => {
-  test('머지돼도 기능 후속 검증이 대기면 자동 정리가 작업 공간과 지시서를 보존한다', () => {
+  test('머지됐고 기능 후속 검증이 대기면 워크트리는 지우고 지시서만 남긴다', () => {
     const path = worktree('feat-domain')
     squashMerge('feat-domain', path)
     const specs = join(fx.repo, '.orch/specs')
@@ -23,14 +23,13 @@ describe('머지 판정과 기본 정리', () => {
 독립 리뷰: 통과 | 별도 리뷰 결과
 후속 검증: 대기 | 배포 후 smoke, 코디네이터, CI 실행기
 <!-- /fos-feature-evidence -->` }
+    // 사용자 결정(2026-11-04): 후속 검증 대기는 워크트리와 브랜치를 붙잡지 않는다. 지시서만 그 뒤로 남긴다
     const pending = runSweep(['--specs-dir', '.orch/specs', '--apply'])
-    exists(path, pending)
+    gone(path, pending)
+    assert.ok(!branches().has('feat-domain'))
     assert.equal(existsSync(spec), true)
+    has(pending, '지시서 남김')
     has(pending, '후속 검증')
-    fx.prViews['1'].body = fx.prViews['1'].body!.replace('후속 검증: 대기', '후속 검증: 통과')
-    const complete = runSweep(['--specs-dir', '.orch/specs', '--apply'])
-    gone(path, complete)
-    assert.equal(existsSync(spec), false)
   })
 
   test('squash 머지된 worktree 를 터미널, dispatch, 지시서와 함께 정리한다', () => {
@@ -451,6 +450,17 @@ describe('PR 찾기', () => {
     gone(path, out)
     assert.ok(!branches().has('dev/proj-topic'))
     assert.ok(!remoteBranches().has('proj/topic'))
+    // 이름별 조회는 GraphQL 한 번에 묶는다(lib/pr-lookup.ts). 묶음이 답했으면 이름마다 --head 로 다시 묻지 않는다
+    has(calls(), 'headRefName: "proj/topic"')
+    lacks(calls(), '--head')
+  })
+
+  test('묶음 조회가 실패하면 이름마다 --head 로 읽고 upstream 이름에서 멈춘다', () => {
+    const path = renamedWorktree('dev/proj-topic', 'proj/topic')
+    fx.prs['proj/topic'] = ['MERGED', git('-C', path, 'rev-parse', 'HEAD')]
+    fx.ghFailOn = ['graphql']
+    const out = runSweep(['--apply'])
+    gone(path, out)
     has(calls(), '--head proj/topic')
     lacks(calls(), '--head dev/proj-topic')
   })
