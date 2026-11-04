@@ -17,7 +17,8 @@ import { STEP, hideEventTag } from './event-tags.js'
 //      그 worker 의 줄에 상태로 붙인다(docs/features/board-decision-box/spec.md).
 //   3. 업무 알림: 같은 플러그인의 inbox/scripts/inbox.ts board 출력. 받기와 저장소 필터는 inbox 가 하고 창은 그리기만 한다.
 //      inbox 설정이 없으면 출력이 {"enabled": false} 라 알림 상자와 단축키를 그리지 않는다.
-//   3-1. 머지 큐: 같은 플러그인의 bin/merge-queue.ts 출력. orch 상태 파일과 루프 로그에서 큐 순서와 대기 이유를 읽고 gh 는 부르지 않는다.
+//   3-1. 머지 줄: 같은 플러그인의 bin/merge-queue.ts 출력. orch 설정, 상태 파일과 루프 로그에서 PR 마다 머지 가능 여부와 대기 이유를 읽고
+//        gh 는 부르지 않는다. 열린 PR 상자의 PR 아래 한 줄로 붙인다. 큐를 쓰지 않는 저장소에서는 붙이지 않는다.
 //   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
 // 파일은 FILE_MS, 명령은 LIVE_MS, 알림은 INBOX_MS, 최신 버전은 VERSION_MS 마다 다시 읽는다. 창을 열 때도 명령, 알림, 최신 버전을 한 번 읽는다.
 
@@ -663,47 +664,72 @@ export function parseMarks(stdout) {
   return { settings, marks, error: value.error || null }
 }
 
-// ---- 머지 큐 ----
+// ---- 머지 줄 ----
 
 // bin/merge-queue.ts 의 출력. 형식이 다르면 던진다
 export function parseQueueView(stdout) {
   const value = JSON.parse(stdout)
-  if (!value || typeof value !== 'object' || typeof value.running !== 'boolean' || !value.prs || typeof value.prs !== 'object') {
+  if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean' || typeof value.running !== 'boolean'
+    || !value.prs || typeof value.prs !== 'object') {
     throw new Error('머지 큐 출력 형식이 달라요')
   }
-  return { running: value.running, prs: value.prs, error: value.error || null }
+  return { enabled: value.enabled, running: value.running, prs: value.prs, error: value.error || null }
 }
 
-// PR 하나의 큐 줄. 출력에 없는 PR 이나 출력을 읽지 못했을 때는 「큐 상태 모름」 이다
-export function queueRowOf(view, number) {
-  const row = view && view.prs ? view.prs[String(number)] : null
-  return row && ['turn', 'queued', 'out'].includes(row.place) ? row : { place: 'unknown', rank: null, reason: null, at: null }
+// 루프의 AUTO-MERGE-WAIT 이유(orch/scripts/orch-loop.ts 의 judgeTarget, lib/auto-merge.ts 의 judgeReview)를 사람이 읽는 말로.
+// 모르는 이유는 그대로 둔다. 루프가 이유를 더해도 줄이 빠지지 않게 하려는 것이다
+const WAIT_TEXTS = [
+  [/^draft$/, () => 'Draft'],
+  [/^CI 없음$/, () => '체크 결과 없음'],
+  [/^CI pending$/, () => '체크 대기'],
+  [/^CI failed$/, () => '체크 실패'],
+  [/^CI 규칙을 읽지 못했다$/, () => '체크 규칙을 읽지 못함'],
+  [/^이미 건 HEAD$/, () => '같은 HEAD 로 이미 머지 시도'],
+  [/^지시서 보류: /, () => '지시서 보류'],
+  [/^보드 보류: /, () => '보드 보류'],
+  [/^미해결 스레드 (\d+)$/, (m) => '미해결 대화 ' + m[1]],
+  [/^재리뷰 대기: /, () => '재리뷰 대기'],
+  [/^queue\.auto_review\.require 에 모르는 조건/, () => '리뷰 설정 오류'],
+  [/^기능 자동 머지는 queue\.auto_review/, () => '독립 리뷰 설정 없음'],
+  [/^기능 완료 근거 또는 HEAD 조회 실패$/, () => '기능 완료 근거 조회 실패'],
+  [/^기능 완료 근거|^(?:인수 검증|문서 대조|독립 리뷰|후속 검증) 이 완료되지 않았다/, () => '기능 완료 근거 없음'],
+  [/^마이그레이션 겹침: /, () => '마이그레이션 겹침'],
+  [/ 이 (.+) 을 기다린다$/, (m) => '마이그레이션 순서 대기(' + m[1] + ')'],
+]
+
+export function waitText(reason) {
+  const text = String(reason || '').trim()
+  for (const [pattern, say] of WAIT_TEXTS) {
+    const m = pattern.exec(text)
+    if (m) return say(m)
+  }
+  return text
 }
 
-// 큐 안의 순서를 짧게: 「지금 차례」, 「n 번째」, 「큐 밖」, 「큐 상태 모름」
-export function queuePlace(row) {
-  if (row.place === 'turn') return '지금 차례'
-  if (row.place === 'queued') return row.rank + ' 번째'
-  return row.place === 'out' ? '큐 밖' : '큐 상태 모름'
+// ISO 시각을 지역 시각 「HH:MM」 으로. 읽지 못하면 빈 글이다
+export function clockOf(at) {
+  const time = Date.parse(at || '')
+  if (!time) return ''
+  const date = new Date(time)
+  return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
 }
 
-const QUEUE_ORDER = { turn: 0, queued: 1, out: 2, unknown: 3 }
-
-// 머지 큐 상자의 줄. 지금 차례, 큐 안(순서대로), 큐 밖, 모름 순이고 같은 자리는 PR 번호 순이다
-export function queueRows(prs, view) {
-  return (prs || []).map((pr) => ({ pr, row: queueRowOf(view, pr.number) }))
-    .sort((a, b) => QUEUE_ORDER[a.row.place] - QUEUE_ORDER[b.row.place]
-      || (a.row.rank || 0) - (b.row.rank || 0) || a.pr.number - b.pr.number)
-}
-
-// 항목 머리 줄 옆의 짧은 큐 표시. 항목의 PR 가운데 열린 PR 만 「#877 큐 2 번째」 처럼 잇는다. 열린 PR 을 읽지 못했으면 빈 글이다
-export function itemQueueText(item, prs, view) {
-  if (!Array.isArray(prs)) return ''
-  const open = new Set(prs.map((pr) => pr.number))
-  return prNumbers(item.pr).filter((n) => open.has(n)).map((n) => {
-    const place = queuePlace(queueRowOf(view, n))
-    return '#' + n + ' ' + (place.startsWith('큐') ? place : '큐 ' + place)
-  }).join(' · ')
+// 열린 PR 아래에 붙일 머지 줄. 붙이지 않으면 null 이다.
+// 큐를 쓰지 않는 저장소(enabled false), 출력을 읽지 못했을 때, 그 PR 의 기록이 없을 때는 붙이지 않는다
+export function mergeLine(view, number) {
+  if (!view || !view.enabled || !view.prs) return null
+  const row = view.prs[String(number)]
+  if (!row || typeof row !== 'object') return null
+  const at = clockOf(row.at)
+  const since = at ? at + ' 부터' : ''
+  if (row.place === 'turn') {
+    const phase = row.reason && row.reason !== '머지' ? row.reason : ''
+    return { text: '머지 중' + (phase ? ' · ' + phase : ''), color: 'green', since }
+  }
+  if (row.place === 'queued' && Number.isInteger(row.rank)) return { text: '머지 큐 ' + row.rank + ' 번째', color: 'cyan', since }
+  if (row.place === 'ready') return { text: '머지 가능', color: 'green', since }
+  if (row.place === 'out' && row.reason) return { text: '대기: ' + waitText(row.reason), color: 'yellow', since }
+  return null
 }
 
 // 경과 분을 「N분」, 「N시간」, 「N일」 로
@@ -1178,7 +1204,7 @@ async function loadLive($) {
     } catch (failure) {
       next.errors.marks = String(failure.message || failure)
     }
-    // 머지 큐의 순서와 대기 이유. orch 상태 파일과 로그만 읽는다(bin/merge-queue.ts 머리 주석)
+    // 열린 PR 마다의 머지 줄. orch 설정, 상태 파일과 로그만 읽는다(bin/merge-queue.ts 머리 주석)
     try {
       const root = await boardRoot($)
       if (root) {
@@ -1589,8 +1615,6 @@ export function register(on) {
             columnGap: !done && checkable(item) ? 0 : 1,
             children: [
               ...headChildren(item, section, done, worker),
-              ...(!done && itemQueueText(item, live.prs, live.queue)
-                ? [Text({ key: 'queue', dimColor: true, children: ['  ' + itemQueueText(item, live.prs, live.queue)] })] : []),
             ],
           }),
           ...(done ? [] : [indent('bar', 2, bar
@@ -1647,12 +1671,7 @@ export function register(on) {
     // 업무 알림: inbox 설정이 있을 때만 그린다. 새 항목 먼저, 앞 INBOX_ROWS 개에 숫자 단축키를 붙인다
     const alerts = inboxSummary(inbox)
     const { shown: inboxItems, answered: answeredCount } = inboxRows(alerts.show ? inbox.items : [])
-    const clock = (at) => {
-      const time = Date.parse(at || '')
-      if (!time) return ''
-      const date = new Date(time)
-      return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
-    }
+    const clock = clockOf
     const inboxRow = (item, index) => {
       const answered = item.state === 'answered'
       const meta = [item.from && (item.from.name || item.from.id), INBOX_KIND_LABELS[item.kind] || item.kind, answered ? '답함' : ago(item.at)]
@@ -1720,8 +1739,12 @@ export function register(on) {
         ? [dim('pe', '읽지 못했어요: ' + live.errors.prs)]
         : shownPrs.length === 0
           ? [dim('p0', '열린 PR 이 없어요')]
-          : sortPullRequests(shownPrs).map((pr) => {
+          : [
+            // 큐를 쓰는 저장소에서 루프 로그를 읽지 못했을 때만 한 번 알린다. PR 줄마다 「모름」 을 쓰지 않는다
+            ...(live.queue && live.queue.enabled && live.errors.queue ? [dim('qe', '머지 대기 이유를 읽지 못했어요: ' + live.errors.queue)] : []),
+            ...sortPullRequests(shownPrs).map((pr) => {
             const verdict = mergeVerdict(pr)
+            const line = mergeLine(live.queue, pr.number)
             return Box({
               key: 'pr-' + pr.number,
               flexDirection: 'column',
@@ -1744,27 +1767,18 @@ export function register(on) {
                     Text({ key: 'ci', dimColor: true, children: ['  ·  ' + checkSummary(pr)] }),
                   ],
                 }),
+                ...(line ? [Box({
+                  key: 'merge-line',
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  children: [
+                    Text({ key: 'state', color: line.color, wrap: 'wrap', children: ['  ' + line.text] }),
+                    ...(line.since ? [Text({ key: 'since', dimColor: true, children: ['  ·  ' + line.since] })] : []),
+                  ],
+                })] : []),
               ],
             })
-          }))]
-
-    // 머지 큐: 열린 PR 마다 큐 안의 순서, 대기 이유, 마지막으로 바뀐 시각. 열린 PR 상자와 같은 작성자 거르기를 쓴다
-    const queueBox = !shownPrs || shownPrs.length === 0 ? [] : [box('live-queue', 'magenta',
-      '머지 큐  ' + (live.queue ? (live.queue.running ? '도는 중' : '도는 큐 없음') : '상태 모름'), [
-        ...(live.errors.queue ? [dim('qe', '큐 상태를 읽지 못했어요: ' + live.errors.queue)] : []),
-        ...queueRows(shownPrs, live.queue).map(({ pr, row }) => Box({
-          key: 'queue-' + pr.number,
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          children: [
-            Text({ key: 'place', bold: row.place === 'turn', color: row.place === 'turn' ? 'green' : row.place === 'queued' ? 'cyan' : undefined,
-              dimColor: row.place === 'unknown', children: [queuePlace(row)] }),
-            Text({ key: 'pr', wrap: 'wrap', children: ['  ', prLink(pr.number), ' ' + pr.title] }),
-            ...(row.reason ? [Text({ key: 'reason', color: row.place === 'out' ? 'yellow' : undefined, children: ['  ·  ' + row.reason] })] : []),
-            ...(clock(row.at) ? [Text({ key: 'at', dimColor: true, children: ['  ·  ' + clock(row.at) + ' 부터'] })] : []),
-          ],
-        })),
-      ])]
+          })])]
 
     // 수동 항목: 진행, 대기, 완료
     const manualView = (section) => {
@@ -1911,7 +1925,6 @@ export function register(on) {
         ...inboxView,
         ...workerView,
         ...prView,
-        ...queueBox,
         ...SECTIONS.slice(2).flatMap(manualView),
       ],
     })

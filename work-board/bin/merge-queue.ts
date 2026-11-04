@@ -1,4 +1,4 @@
-// 보드 창(hooks/register.js)이 열린 PR 마다 머지 큐 안의 순서와 대기 이유를 그릴 수 있게 orch 의 상태 파일과 로그를 읽어 낸다. 읽기만 한다.
+// 보드 창(hooks/register.js)이 열린 PR 마다 머지 가능 여부와 그 이유를 한 줄로 그릴 수 있게 orch 의 설정, 상태 파일과 로그를 읽어 낸다. 읽기만 한다.
 // gh 를 부르지 않는다. 열린 PR 목록은 창이 이미 읽은 것과 합친다. gh 호출 예산을 늘리지 않으려는 것이다.
 // mod 는 TypeScript 와 node:fs 를 import 하지 못해, 이 명령을 $.process.run 으로 불러 JSON 출력만 읽는다.
 //
@@ -7,7 +7,11 @@
 //
 //     --repo  orch 상태 폴더(<orch 루트>/state)를 찾을 저장소(주 checkout)
 //
-// 읽는 곳. 모두 <orch 루트>/state 아래다. 형식은 쓰는 쪽(orch/scripts/orch-loop.ts, merge_queue.ts)이 소유한다.
+// 큐를 쓰는 저장소인가(enabled): <orch 루트>/config.json 의 queue.auto_merge 가 true 이거나, 아래 1 의 살아 있는 차례 기록이 있으면 쓴다.
+//     설정 파일이 없거나 읽지 못하면 auto_merge 는 꺼진 것으로 본다. 쓰지 않으면 prs 는 비고 아래 3 도 읽지 않는다.
+//     auto_merge 가 꺼져 있으면 코디네이터가 건 큐(1)만 보이고 3 은 읽지 않는다. 예전에 켰을 때 남은 루프 로그의 이유를 보이지 않으려는 것이다.
+//
+// 읽는 곳. 아래는 모두 <orch 루트>/state 아래다. 형식은 쓰는 쪽(orch/scripts/orch-loop.ts, merge_queue.ts)이 소유한다.
 //     1. queue-turn/<pid>.json: 머지 큐가 도는 동안 적는 차례 기록 { pid, prs, pr, phase, since }(orch 의 lib/queue-turn.ts).
 //        pid 의 명령줄(ps)에 `merge_queue.` 가 있는 파일만 쓴다. 차례 PR 은 지금 차례, prs 의 나머지는 적힌 순서대로 n 번째다.
 //     2. 1 이 없으면 auto-merge.json 의 queue { pid, log, prs, at } 와 그 큐 로그(auto-merge/<시각>.log). 루프가 건 큐만 여기 남는다.
@@ -16,14 +20,16 @@
 //        단계는 그 PR 의 마지막 줄로 정한다(update-branch → `update-branch 뒤 체크 대기`, 판정·체크 줄 → `체크 대기`, 없으면 `차례 시작`).
 //     3. loop.log(앞에 loop.log.1)의 `tick <n> <ISO>` 줄과 `AUTO-MERGE-WAIT #<PR> <이유>` 줄. 자동 머지 판정을 한 마지막 틱
 //        (AUTO-MERGE-WAIT, AUTO-MERGE-BASIS, AUTO-MERGE 줄이 있는 틱)의 이유를 큐 밖 PR 의 대기 이유로 쓴다.
+//        그 틱에 `AUTO-MERGE-BASIS #<PR>` 줄이 있는 PR 은 판정을 통과한 것이라 ready 로 낸다.
 //        마지막으로 바뀐 시각은 그 PR 의 이유가 지금 값으로 바뀐 틱의 시각이다. 판정 틱마다 이유가 같으면 처음 그 이유가 나온 틱이다.
 //     큐 안의 PR 은 1, 2 가 3 보다 앞선다. 큐가 돌면 루프는 판정하지 않아(AUTO-MERGE-HELD) 3 의 이유가 큐를 걸기 전 값이기 때문이다.
 //
 // 출력(stdout 한 줄 JSON):
-//     {"running": b, "prs": {"<PR>": QueueRow}, "error": null | "<읽지 못한 이유>"}
-//     QueueRow = {"place": "turn"|"queued"|"out", "rank": n|null, "reason": string|null, "at": ISO|null}
-//     turn 은 지금 차례(rank 1), queued 는 큐 안에서 기다리는 PR(rank 2 부터), out 은 큐 밖이다. 어디에도 없는 PR 은 넣지 않는다.
-//     창은 넣지 않은 PR 을 「큐 상태 모름」 으로 보인다. error 는 상태 폴더나 로그를 읽지 못했을 때만 둔다
+//     {"enabled": b, "running": b, "prs": {"<PR>": QueueRow}, "error": null | "<읽지 못한 이유>"}
+//     QueueRow = {"place": "turn"|"queued"|"ready"|"out", "rank": n|null, "reason": string|null, "at": ISO|null}
+//     turn 은 지금 차례(rank 1), queued 는 큐 안에서 기다리는 PR(rank 2 부터), ready 는 판정을 통과한 큐 밖 PR(reason null),
+//     out 은 큐 밖에서 기다리는 PR 이다. 어디에도 없는 PR 은 넣지 않고, 창은 그 PR 에 줄을 붙이지 않는다.
+//     error 는 상태 폴더나 로그를 읽지 못했을 때만 둔다
 //
 // 종료 코드: 0 냈다(읽지 못해도 error 에 이유를 두고 0), 1 예기치 못한 오류, 2 사용법 오류(stderr 에 이유)
 
@@ -31,11 +37,12 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { loadConfig } from '../../orch/scripts/lib/config.ts'
 import { real } from '../../orch/scripts/lib/fs.ts'
 import { pathOf } from '../../orch/scripts/lib/paths.ts'
 
-export type QueueRow = { place: 'turn' | 'queued' | 'out'; rank: number | null; reason: string | null; at: string | null }
-export type QueueView = { running: boolean; prs: Record<string, QueueRow>; error: string | null }
+export type QueueRow = { place: 'turn' | 'queued' | 'ready' | 'out'; rank: number | null; reason: string | null; at: string | null }
+export type QueueView = { enabled: boolean; running: boolean; prs: Record<string, QueueRow>; error: string | null }
 
 type Turn = { pid: number; prs: number[]; pr: number | null; phase: string; since: string }
 type Queue = { pid: number; log: string; prs: number[]; at: string }
@@ -129,7 +136,7 @@ export function queueRows(queue: Queue, logText: string): Record<string, QueueRo
   return turnRows({ pid: queue.pid, prs: [turn, ...left.filter((n) => n !== turn)], pr: turn, phase, since: seen?.at ?? latestAt ?? queue.at })
 }
 
-// 루프 로그에서 큐 밖 PR 의 대기 이유. 자동 머지 판정을 한 마지막 틱의 AUTO-MERGE-WAIT 줄만 남긴다
+// 루프 로그에서 큐 밖 PR 의 대기 이유. 자동 머지 판정을 한 마지막 틱의 AUTO-MERGE-WAIT 줄과 AUTO-MERGE-BASIS 줄(통과, reason null)만 남긴다
 export function waitRows(logText: string): Record<string, QueueRow> {
   let tickAt: string | null = null
   let history = new Map<string, { reason: string; at: string | null }>()
@@ -146,14 +153,18 @@ export function waitRows(logText: string): Record<string, QueueRow> {
       continue
     }
     const wait = /^AUTO-MERGE-WAIT #(\d+) (.+)$/.exec(line)
+    const passed = /^AUTO-MERGE-BASIS #(\d+) /.exec(line)
     if (wait || /^AUTO-MERGE(?:-BASIS)? #?\d/.test(line)) current ??= new Map()
-    if (!wait || !current) continue
-    const before = history.get(wait[1])
-    current.set(wait[1], { reason: wait[2], at: before && before.reason === wait[2] ? before.at : tickAt })
+    const n = wait?.[1] ?? passed?.[1]
+    if (!n || !current) continue
+    // 통과는 이유 자리에 빈 글을 둔다. 이유가 바뀐 시각을 셀 때 대기 이유와 같은 규칙을 쓰려는 것이다
+    const reason = wait ? wait[2] : ''
+    const before = history.get(n)
+    current.set(n, { reason, at: before && before.reason === reason ? before.at : tickAt })
   }
   close()
   const rows: Record<string, QueueRow> = {}
-  for (const [n, row] of history) rows[n] = { place: 'out', rank: null, reason: row.reason, at: row.at }
+  for (const [n, row] of history) rows[n] = row.reason ? { place: 'out', rank: null, reason: row.reason, at: row.at } : { place: 'ready', rank: null, reason: null, at: row.at }
   return rows
 }
 
@@ -163,6 +174,15 @@ function commandOf(pid: number): string | null {
   return got.status === 0 && got.stdout.trim() ? got.stdout.trim() : null
 }
 
+// 설정의 queue.auto_merge. 설정 파일이 없거나 읽지 못하면 꺼진 것으로 본다
+export function autoMergeOn(repo: string): boolean {
+  try {
+    return loadConfig(repo).queue?.auto_merge === true
+  } catch {
+    return false
+  }
+}
+
 function readTail(files: string[]): string {
   const text = files.filter((file) => existsSync(file)).map((file) => readFileSync(file, 'utf8')).join('\n')
   if (text.length <= LOG_TAIL_BYTES) return text
@@ -170,8 +190,9 @@ function readTail(files: string[]): string {
   return tail.slice(tail.indexOf('\n') + 1)
 }
 
-export function readView(state: string, isQueue: (pid: number, marker: string) => boolean): QueueView {
-  if (!existsSync(state) || !statSync(state).isDirectory()) return { running: false, prs: {}, error: `orch 상태 폴더가 없다: ${state}` }
+// autoMerge 는 설정의 queue.auto_merge 다(머리 주석의 「큐를 쓰는 저장소인가」)
+export function readView(state: string, isQueue: (pid: number, marker: string) => boolean, autoMerge: boolean): QueueView {
+  if (!existsSync(state) || !statSync(state).isDirectory()) return { enabled: autoMerge, running: false, prs: {}, error: `orch 상태 폴더가 없다: ${state}` }
   let queued: Record<string, QueueRow> = {}
   let running = false
   const turnDir = join(state, 'queue-turn')
@@ -188,7 +209,7 @@ export function readView(state: string, isQueue: (pid: number, marker: string) =
     // 큐가 둘이면 앞 파일의 순서를 둔다
     queued = { ...turnRows(turn), ...queued }
   }
-  if (!running) {
+  if (!running && autoMerge) {
     const record = join(state, 'auto-merge.json')
     const queue = existsSync(record) ? parseQueue(readFileSync(record, 'utf8')) : null
     if (queue && isQueue(queue.pid, 'merge-with-finish.')) {
@@ -202,6 +223,7 @@ export function readView(state: string, isQueue: (pid: number, marker: string) =
       queued = queueRows(queue, logText)
     }
   }
+  if (!autoMerge) return { enabled: running, running, prs: queued, error: null }
   let waits: Record<string, QueueRow> = {}
   let error: string | null = null
   try {
@@ -209,7 +231,7 @@ export function readView(state: string, isQueue: (pid: number, marker: string) =
   } catch (e) {
     error = `루프 로그를 읽지 못했다: ${(e as Error).message}`
   }
-  return { running, prs: { ...waits, ...queued }, error }
+  return { enabled: true, running, prs: { ...waits, ...queued }, error }
 }
 
 function main(argv: string[]): number {
@@ -228,8 +250,8 @@ function main(argv: string[]): number {
     process.stderr.write(`${USAGE}\nmerge-queue: --repo 가 필요하다\n`)
     return 2
   }
-  const state = pathOf('state', real(values.repo))
-  const view = readView(state, (pid, marker) => (commandOf(pid) ?? '').includes(marker))
+  const repo = real(values.repo)
+  const view = readView(pathOf('state', repo), (pid, marker) => (commandOf(pid) ?? '').includes(marker), autoMergeOn(repo))
   process.stdout.write(`${JSON.stringify(view)}\n`)
   return 0
 }
