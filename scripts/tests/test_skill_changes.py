@@ -226,6 +226,18 @@ class ApplyTest(RepoCase):
         applied, _ = self.apply()
         self.assertEqual(applied, [("orch2", "5.15.1"), ("orch2", "5.16.0")])
 
+    def test_reused_slug_takes_the_position_of_its_latest_addition(self):
+        self.write("skills/orch/changes/fix-docs.patch.md", "- 옛 조각\n")
+        self.commit("old fix-docs")
+        self.git("rm", "-q", "skills/orch/changes/fix-docs.patch.md")
+        self.commit("bot: processed")
+        self.write("skills/orch/changes/zzz.minor.md", "- 먼저 머지\n")
+        self.commit("zzz")
+        self.write("skills/orch/changes/fix-docs.patch.md", "- 다시 쓴 조각\n")
+        self.commit("fix-docs again")
+        self.assertEqual(self.apply()[0], [("orch", "5.16.0"), ("orch", "5.16.1")])
+        self.assertIn("## 5.16.1 (2026-11-04)\n\n- 다시 쓴 조각", self.read("skills/orch/CHANGELOG.md"))
+
     def test_fragment_on_top_of_a_directly_bumped_version(self):
         self.write("skills/orch/CHANGELOG.md", "# CHANGELOG: orch\n\n## 5.16.0 (2026-11-02)\n\n- 직접 올림\n\n## 5.15.0 (2026-11-01)\n\n- 앞 변경\n")
         self.write("skills/orch/SKILL.md", SKILL_MD.replace("5.15.0", "5.16.0"))

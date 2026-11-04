@@ -87,7 +87,7 @@ def today_seoul():
 
 
 def _added_order(root):
-    """main 첫째 부모 기준으로 파일이 처음 더해진 순서. 머지 커밋은 PR 이 더한 파일을 머지 순서로 낸다."""
+    """main 첫째 부모 기준으로 파일이 마지막에 더해진 순서. 머지 커밋은 PR 이 더한 파일을 머지 순서로 낸다."""
     try:
         out = subprocess.run(
             ["git", "log", "--reverse", "--first-parent", "-m", "--diff-filter=A", "--name-only", "--format=", "--", *UNIT_ROOTS],
@@ -95,11 +95,8 @@ def _added_order(root):
         ).stdout
     except (subprocess.CalledProcessError, FileNotFoundError):
         return {}
-    order = {}
-    for line in out.splitlines():
-        if line and line not in order:
-            order[line] = len(order)
-    return order
+    # 같은 경로를 지웠다 다시 더한 경우(슬러그 재사용)는 마지막에 더한 자리를 쓴다
+    return {line: index for index, line in enumerate(out.splitlines()) if line}
 
 
 def fragments(root, unit):
