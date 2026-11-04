@@ -1,5 +1,6 @@
 """스킬 변경 이력 조각(`scripts/skill_changes.py`)의 검사와 버전 상향을 임시 git 저장소로 검증한다."""
 
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,13 @@ import skill_changes as sc
 SKILL_MD = '---\nname: orch\nmetadata:\n  version: "5.15.0"\n---\n본문\n'
 CHANGELOG = "# CHANGELOG: orch\n\n## 5.15.0 (2026-11-01)\n\n- 앞 변경\n"
 BOARD_LOG = "# CHANGELOG: work-board\n\n소개 문단.\n\n## 1.4.2 (2026-11-01)\n\n- 앞 변경\n"
+
+
+def load_checker():
+    spec = importlib.util.spec_from_file_location("check_skill_docs", ROOT / "scripts" / "check-skill-docs.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class FragmentCheckTest(unittest.TestCase):
@@ -29,6 +37,10 @@ class FragmentCheckTest(unittest.TestCase):
 
     def test_empty_fragment_is_reported(self):
         self.assertTrue(any("항목이 없다" in p for p in sc.check_fragment("a.patch.md", "\n")))
+
+    def test_blank_bullet_is_reported(self):
+        for text in ("- 정상\n- \n", "- 정상\n-   \n- 둘\n"):
+            self.assertTrue(any("내용이 빈 항목" in p for p in sc.check_fragment("a.patch.md", text)), repr(text))
 
     def test_too_many_bullets_are_reported(self):
         text = "".join(f"- 항목 {n}\n" for n in range(6))
@@ -166,6 +178,19 @@ class ApplyTest(RepoCase):
         self.assertIn("skills/orch/changes/bad.minor.md", warnings[0])
         self.assertTrue((self.root / "skills/orch/changes/bad.minor.md").exists())
         self.assertIn('version: "5.15.0"', self.read("skills/orch/SKILL.md"))
+
+    def test_fragment_with_trailing_blank_bullet_is_skipped_and_result_passes_changelog_check(self):
+        self.write("skills/orch/changes/empty.patch.md", "- valid change\n- \n")
+        self.write("skills/plan/changes/ok.patch.md", "- 정상\n")
+        self.commit("blank bullet")
+        applied, warnings = self.apply()
+        self.assertEqual(applied, [("plan", "2.0.1")])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("skills/orch/changes/empty.patch.md", warnings[0])
+        self.assertTrue((self.root / "skills/orch/changes/empty.patch.md").exists())
+        self.assertEqual(self.read("skills/orch/CHANGELOG.md"), CHANGELOG)
+        checker = load_checker()
+        self.assertEqual(checker.check_changelog("plan", self.read("skills/plan/CHANGELOG.md"), "2.0.1"), [])
 
     def test_no_fragments_changes_nothing_and_second_run_is_idempotent(self):
         self.assertEqual(self.apply(), ([], []))

@@ -50,6 +50,9 @@ def check_fragment(name, text):
         problems.append("항목이 없다")
     if len(bullets) > MAX_BULLETS:
         problems.append(f"항목이 {len(bullets)}개로 상한 {MAX_BULLETS}개를 넘는다")
+    if any(not bullet[2:].strip() for bullet in bullets):
+        # 적용 때 절 끝 공백을 지우면 `-` 만 남아 CHANGELOG 검사에서 실패한다
+        problems.append("내용이 빈 항목(`- `)이 있다")
     for bullet in bullets:
         if len(bullet) - 2 > MAX_BULLET_CHARS:
             problems.append(f"{MAX_BULLET_CHARS}자를 넘는 항목이 있다: {bullet[:40]}…")
