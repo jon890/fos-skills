@@ -734,6 +734,28 @@ describe('merge_queue --up-to-date-when overlap', { skip: !HAS_TOOLS && 'jq 와 
     assert.equal(count(log, 'update-branch'), 1)
   })
 
+  test('옛 경로의 단위와 겹치는 뒤 PR 은 앞지르지 않는다', async (t) => {
+    const c = setup(t)
+    fakeOverlapUnits(c, '갱신 필요(단위 겹침: api)', 1)
+    const first = pr({ statusCheckRollup: [check('backend')], after_update: [check('backend')] })
+    const second = pr({ headRefName: 'b', headRefOid: 'new', statusCheckRollup: settled() })
+    const r = await c.runQueue(
+      {
+        '1': first,
+        '2': second,
+        _behind: 2,
+        _diff_sequence: [['modules/api/A.java', 'modules/web/A.java'], ['modules/api/B.java']],
+      },
+      [...UP_TO_DATE_OVERLAP, '1', '2'],
+    )
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '2 앞지르지 않는다: #1 과 겹친다(단위 겹침: api)')
+    lacks(r.stdout, '2 차례 PR 1 보다 먼저 머지했다')
+    const log = c.log()
+    assert.ok(log.indexOf('pr merge 1') >= 0 && log.indexOf('pr merge 1') < log.indexOf('pr merge 2'), log)
+    has(log, 'diff --name-only --no-renames')
+  })
+
   test('뒤 PR 의 체크가 막 끝났거나 묶음에 들었으면 앞지르지 않고 제 차례에 머지한다', async (t) => {
     const c = setup(t)
     fakeOverlapUnits(c, '갱신 필요(단위 겹침: api)', 1)

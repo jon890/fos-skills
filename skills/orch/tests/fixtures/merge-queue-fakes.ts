@@ -126,6 +126,15 @@ process.exit(3)
 export const FAKE_GIT = `const fs = require('node:fs')
 const args = process.argv.slice(2)
 fs.appendFileSync(process.env.FAKE_LOG, 'git ' + args.join(' ') + '\\n')
+if (args[0] === 'diff' && args[1] === '--name-only') {
+  const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
+  const index = state._diff_index ?? 0
+  const files = state._diff_sequence ? state._diff_sequence[index] ?? [] : state._diff_files?.[args.at(-1)] ?? []
+  if (state._diff_sequence) state._diff_index = index + 1
+  fs.writeFileSync(process.env.FAKE_STATE, JSON.stringify(state))
+  if (files.length) fs.writeSync(1, files.join('\\n') + '\\n')
+  process.exit(0)
+}
 // --repo 검사(lib/git.ts 의 repoArgProblem)에는 작업 트리라고 답한다
 if (args.includes('--is-inside-work-tree')) {
   fs.writeSync(1, 'true\\n')

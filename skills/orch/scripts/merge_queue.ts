@@ -52,7 +52,7 @@
 // 앞지르기: --require-up-to-date 와 --up-to-date-when overlap 이고 --stop-on-hold 가 아닐 때만 한다. 차례 PR 이 update-branch 로 base 를
 //   합쳐 체크를 다시 기다려야 하면, 기다리기 전에 그 뒤의 PR 을 차례로 보고 아래를 모두 채우는 PR 을 먼저 머지한다.
 //   묶음(--chain)에 들지 않았다. 필수 체크가 지금 모두 통과했고 마지막 체크가 끝난 지 60초가 지났다. base 최신화가 필요 없다.
-//   차례 PR 이 갈라진 뒤 바꾼 파일과 겹치지 않는다(lib/overlap.ts 의 judge. 읽지 못하면 겹친 것으로 본다).
+//   차례 PR 이 갈라진 뒤 바꾼 파일과 겹치지 않는다. 이름 변경은 --no-renames 로 옛 경로까지 본다(lib/overlap.ts 의 judge. 읽지 못하면 겹친 것으로 본다).
 //   채우지 못한 PR 은 `<PR> 앞지르지 않는다: <이유>` 를 찍고 제 차례에 다시 본다. 채운 PR 은 보통 차례와 같은 확인을 거쳐 머지하거나 보류한다.
 //   그 뒤 `<PR> 차례로 돌아와 체크를 기다린다` 를 찍고 차례 PR 로 돌아온다. 앞질러 머지한 PR 은 차례 PR 과 겹치지 않으므로
 //   돌아온 차례 PR 은 다시 최신화하지 않는다. 겹치는 PR 을 앞질러 머지하면 차례 PR 이 다시 뒤처져 방금 돌린 CI 가 쓸모없어진다
@@ -740,7 +740,8 @@ class Queue {
   }
 
   names(...args: string[]): string[] | null {
-    const done = git('diff', '--name-only', ...args)
+    // 겹침·문서 전용·합친 사본 검사는 이동 전 경로도 변경 목록에 포함해야 한다
+    const done = git('diff', '--name-only', '--no-renames', ...args)
     return done.code !== 0 ? null : done.stdout.split('\n').filter((x) => x)
   }
 
