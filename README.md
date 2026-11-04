@@ -200,7 +200,7 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | [`pr-review`](skills/pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록해요 |
 | [`review-fix`](skills/review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영해요 |
 | [`inbox`](skills/inbox/README.md) | 업무 도구에서 나를 태그한 알림을 `/board` 에 모으고, 확인받은 답변만 등록해요 |
-| [`docs-check`](skills/docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |
+| [`docs-audit`](skills/docs-audit/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |
 | [`harness-cleanup`](skills/harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 승인받은 것만 고쳐요 |
 | [`mac-cleanup`](skills/mac-cleanup/README.md) | 맥의 디스크, 메모리, 스왑과 오래된 세션, 머지된 브랜치를 조사하고 승인받은 것만 정리해요 |
 | [`presentation`](skills/presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고, 장 수와 노트, 금지어, 세로 넘침을 검사해요 |
@@ -234,6 +234,8 @@ claude plugin install fos-skills@fos-skills
 
 `planning` 은 `plan`, `build-with-teams` 는 `implementation` 으로 바뀌었어요. 예전 명령 대신 새 이름으로 불러요.
 기존 계획 경로와 R1/D1 ID 는 읽기 호환으로 유지해요. 기존 planning/build-with-teams 오버레이도 읽으며 새 이름의 값이 우선해요.
+
+문서 감사는 `/fos-skills:docs-audit` 로 불러요. 옛 이름 `docs-check` 의 오버레이는 새 이름 파일이 없을 때만 읽고 경고하며, 다음 major(5.0.0)에서 호환을 제거해요.
 
 ### 갱신
 

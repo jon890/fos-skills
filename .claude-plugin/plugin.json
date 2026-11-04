@@ -9,7 +9,7 @@
   "repository": "https://github.com/jon890/fos-skills",
   "skills": [
     "./skills/browser",
-    "./skills/docs-check",
+    "./skills/docs-audit",
     "./skills/docs-consolidate",
     "./skills/harness-cleanup",
     "./skills/implementation",

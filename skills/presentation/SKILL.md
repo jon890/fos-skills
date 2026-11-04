@@ -5,7 +5,7 @@ description: |
   "발표 자료", "발표 준비", "슬라이드", "슬라이드 덱", "세미나 자료", "발표 스크립트",
   "발표 장 검수", "deck", "presentation" 을 언급하면 이 스킬을 쓴다.
   이미 만든 덱을 고치거나 제목을 검수하는 요청도 여기 해당한다.
-  외부에 게시하는 본문은 `content-preview` 가, 문서 감사는 `docs-check` 가 맡는다.
+  외부에 게시하는 본문은 `content-preview` 가, 문서 감사는 `docs-audit` 가 맡는다.
 metadata:
   version: "1.3.2"
 ---

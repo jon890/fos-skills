@@ -2,7 +2,7 @@
 """작업 대상 하위 프로젝트를 정하고 레포 설정을 읽을 순서를 낸다.
 
 판정 규칙은 references/monorepo.md 가 소유한다. 이 스크립트는 그 규칙을 그대로 실행한다.
-plan, implementation, docs-check, review-fix 가 함께 쓴다.
+plan, implementation, docs-audit, review-fix 가 함께 쓴다.
 
 사용법:
     python3 scripts/overlay_paths.py --skill review-fix [--sub DIR] [--plan NAME] [PATH ...]
@@ -65,12 +65,21 @@ def owner(path: str, subs: list[str]) -> str | None:
 
 def search_order(root: Path, skill: str, sub: str | None) -> list[str]:
     """값 하나마다 이 순서로 찾는다. 앞의 파일에 있으면 그것을 쓴다."""
-    aliases = {"plan": "planning", "implementation": "build-with-teams"}
+    aliases = {"plan": "planning", "implementation": "build-with-teams", "docs-audit": "docs-check"}
     names = [skill] + ([aliases[skill]] if skill in aliases else [])
     order = []
     if sub:
         order += [f"{sub}/.claude/{name}-overlay.md" for name in names]
     order += [f".claude/{name}-overlay.md" for name in names]
+    if skill == "docs-audit":
+        for scope in ([sub, None] if sub else [None]):
+            directory = f"{scope}/.claude" if scope else ".claude"
+            current = f"{directory}/{skill}-overlay.md"
+            legacy = f"{directory}/{aliases[skill]}-overlay.md"
+            if (root / current).is_file():
+                order.remove(legacy)
+            elif (root / legacy).is_file():
+                print(f"경고: {legacy} 는 옛 이름입니다. {current} 로 옮겨 주세요 (5.0.0에서 호환 제거).", file=sys.stderr)
     if sub:
         order += [f"{sub}/{name}" for name in HARNESS]
     order += list(HARNESS)

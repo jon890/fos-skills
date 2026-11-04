@@ -59,6 +59,48 @@ class OverlayPathsTest(unittest.TestCase):
                 self.assertLess(paths.index(f'backend/.claude/{name}-overlay.md'),
                                 paths.index(f'backend/.claude/{old}-overlay.md'))
 
+    def test_docs_audit_overlay_fallback_matrix(self):
+        for scope in (None, "backend"):
+            for current, legacy in ((True, False), (False, True), (True, True), (False, False)):
+                with self.subTest(scope=scope, current=current, legacy=legacy):
+                    directory = f"{scope}/.claude" if scope else ".claude"
+                    new = f"{directory}/docs-audit-overlay.md"
+                    old = f"{directory}/docs-check-overlay.md"
+                    for rel, exists in ((new, current), (old, legacy)):
+                        (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+                        (self.root / rel).unlink(missing_ok=True)
+                        if exists:
+                            self.write(rel, "설정")
+                    with contextlib.redirect_stderr(io.StringIO()) as err:
+                        paths = op.search_order(self.root, "docs-audit", scope)
+                    existing = [p for p in paths if not p.startswith("(없음)")]
+                    self.assertEqual(new in existing, current)
+                    self.assertEqual(old in existing, legacy and not current)
+                    self.assertEqual(bool(err.getvalue()), legacy and not current)
+                    if legacy and not current:
+                        self.assertEqual(len(err.getvalue().splitlines()), 1)
+                        self.assertIn(old, err.getvalue())
+                    if current:
+                        self.assertNotIn(old, paths)
+
+    def test_docs_audit_cli_keeps_json_on_stdout_and_warning_on_stderr(self):
+        self.write(".claude/docs-check-overlay.md", "설정")
+        result = subprocess.run(["python3", str(SCRIPT), "--skill", "docs-audit"],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(".claude/docs-check-overlay.md", json.loads(result.stdout)["search"]["."])
+        self.assertEqual(len(result.stderr.splitlines()), 1)
+        self.assertIn("docs-audit-overlay.md", result.stderr)
+
+    def test_docs_audit_legacy_subproject_precedes_current_root(self):
+        self.write(".claude/docs-audit-overlay.md", "루트")
+        self.write("backend/.claude/docs-check-overlay.md", "하위")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            paths = op.search_order(self.root, "docs-audit", "backend")
+        self.assertLess(paths.index("backend/.claude/docs-check-overlay.md"),
+                        paths.index(".claude/docs-audit-overlay.md"))
+        self.assertEqual(len(err.getvalue().splitlines()), 1)
+
     def test_single_repo_keeps_previous_order(self):
         code, result = self.run_main("src/app.ts")
         self.assertEqual(code, 0)

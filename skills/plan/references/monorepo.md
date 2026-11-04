@@ -1,6 +1,6 @@
 # 레포 설정 탐색과 하위 프로젝트
 
-`plan`, `implementation`, `docs-check`, `review-fix` 가 레포 설정을 찾는 방법이다.
+`plan`, `implementation`, `docs-audit`, `review-fix` 가 레포 설정을 찾는 방법이다.
 네 스킬은 시작할 때 이 문서를 따라 오버레이를 찾고, 자기 스킬 이름만 바꿔 읽는다.
 
 ## 명령으로 판정한다
@@ -22,6 +22,8 @@ git diff --name-only origin/main...HEAD | python3 "$PLAN_SKILL_DIR/scripts/overl
 
 새 이름 `plan` 은 `planning-overlay.md`, `implementation` 은 `build-with-teams-overlay.md` 를 읽기 호환으로 받는다.
 하위 프로젝트의 새 이름, 옛 이름, 루트의 새 이름, 옛 이름 순으로 값을 찾는다. 새 이름의 값이 우선이며 사본을 만들지 않는다.
+
+`docs-audit` 는 같은 위치에 새 이름 오버레이가 없을 때만 `docs-check-overlay.md` 를 읽고 stderr 에 경고한다. 이 호환은 docs-audit 의 다음 major(5.0.0)에서 제거한다.
 
 ## 단일 저장소
 

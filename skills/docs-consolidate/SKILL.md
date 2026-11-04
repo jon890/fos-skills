@@ -1,7 +1,7 @@
 ---
 name: docs-consolidate
 description: |
-  검증한 기능의 문서를 맞추고 공통화 후보를 추출하거나, 모인 후보를 공유 계약으로 정리한다. "공통 후보 추출", "기능 문서 정리", "공유 계약 정리", "docs-consolidate" 요청에 쓴다. 일반 문서 감사는 docs-check 가 맡는다.
+  검증한 기능의 문서를 맞추고 공통화 후보를 추출하거나, 모인 후보를 공유 계약으로 정리한다. "공통 후보 추출", "기능 문서 정리", "공유 계약 정리", "docs-consolidate" 요청에 쓴다. 일반 문서 감사는 docs-audit 가 맡는다.
 metadata:
   version: "1.3.0"
 ---
@@ -11,7 +11,7 @@ metadata:
 **목표: 기능 문서를 현재 구현에 맞추고 실제로 반복되는 규칙만 공통화한다.**
 
 [문서 소유권](../spec/references/feature-docs.md)을 읽는다.
-`.claude/docs-consolidate-overlay.md`, 없으면 docs-check 오버레이와 저장소 지침에서 경로·검사 명령을 읽는다.
+`.claude/docs-consolidate-overlay.md`, 없으면 docs-audit 오버레이와 저장소 지침에서 경로·검사 명령을 읽는다.
 
 [문서 소유권](../spec/references/document-ownership.md)과 [문서 대조 양식](templates/document-review.md)을 먼저 읽는다.
 계획 정리는 [계획 수명 규칙](../plan/references/plan-lifecycle.md)을 따른다.
