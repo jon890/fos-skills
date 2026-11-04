@@ -227,6 +227,48 @@ describe('거부와 사용법', () => {
     assert.deepEqual(lines('orca orchestration worker-start'), [])
   })
 
+  test('기존 워크트리에 커밋 안 된 변경이 있으면 목록과 함께 거부하고 --dirty-ack 이면 이유를 남기고 띄운다', () => {
+    spawnSync('git', ['init', '-q', worktree], { env })
+    writeFileSync(join(worktree, 'kept.txt'), 'a\n')
+    spawnSync('git', ['-C', worktree, 'add', 'kept.txt'], { env })
+    spawnSync('git', ['-C', worktree, 'commit', '-q', '-m', 'init'], { env })
+    writeFileSync(join(worktree, 'kept.txt'), 'b\n')
+    mkdirSync(join(worktree, 'other'))
+    writeFileSync(join(worktree, 'other', 'revert.ts'), 'x\n')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /거부: 이 워크트리에 커밋 안 된 변경이 2개 있다/)
+    assert.match(r.stdout, /^ M kept\.txt$/m)
+    assert.match(r.stdout, /^\?\? other\/revert\.ts$/m)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+    const acked = launch(['--worktree', worktree, '--dirty-ack', '끊긴 worker 의 변경을 이어받는다', '--', ...CLAUDE])
+    assert.equal(acked.code, 0, both(acked))
+    assert.match(acked.stdout, /^dirty-ack: 끊긴 worker 의 변경을 이어받는다$/m)
+    assert.equal(lines('orca orchestration worker-start').length, 1)
+  })
+
+  test('커밋 안 된 변경 검사는 launch 가 복사한 설정 파일과 --terminal 이어 쓰기를 보지 않는다', () => {
+    spawnSync('git', ['init', '-q', worktree], { env })
+    spawnSync('git', ['-C', worktree, 'commit', '-q', '--allow-empty', '-m', 'init'], { env })
+    mkdirSync(join(worktree, '.claude'))
+    writeFileSync(join(worktree, '.claude', 'settings.local.json'), '{}\n')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    writeFileSync(join(worktree, 'wip.txt'), 'x\n')
+    state({ next_ids: ['ctx_2'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_2: shown('input_accepted') } })
+    const reused = launch(['--worktree', worktree, '--', '--terminal', 'term_old'])
+    assert.equal(reused.code, 0, both(reused))
+    assert.doesNotMatch(both(reused), /커밋 안 된 변경/)
+  })
+
+  test('--dirty-ack 에 빈 이유를 주면 사용법 오류다', () => {
+    const r = launch(['--worktree', worktree, '--dirty-ack', ' ', '--', ...CLAUDE])
+    assert.equal(r.code, 2, both(r))
+    assert.match(r.stderr, /--dirty-ack 에는 그대로 띄우는 이유를 적는다/)
+  })
+
   test('--terminal 로 이어 쓰는 터미널은 남은 터미널로 세지 않는다', () => {
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--worktree', worktree, '--', '--terminal', 'term_old'])
@@ -1116,6 +1158,8 @@ describe('중간 과정과 다시 열기', () => {
     const git = (...args: string[]) => assert.equal(spawnSync('git', args, { env }).status, 0, args.join(' '))
     rmSync(worktree, { recursive: true, force: true })
     git('init', '-q', '-b', 'feat/x', worktree)
+    // 실제 저장소처럼 보드와 orch 설정 폴더는 git 이 무시한다. 무시하지 않으면 커밋 안 된 변경으로 거부된다
+    writeFileSync(join(worktree, '.git', 'info', 'exclude'), '.orch/\n.omc/\n')
     mkdirSync(dirname(file), { recursive: true })
     const target = { id: 'feat', title: '기능', status: 'doing', branch: 'feat/x', worktree: 'old-wt', details: [{ text: '1. 구현', done: false }] }
     const decide = { id: 'ask', title: '정할 것', status: 'decide', branch: 'feat/x', details: [{ text: '이름', done: false }] }

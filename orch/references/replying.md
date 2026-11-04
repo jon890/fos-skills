@@ -116,7 +116,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 1. 앞 worker 의 작업이 push 됐는지 본다. `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD`, `git -C "$WORKTREE" status --short`, `git ls-remote origin "$BRANCH"` 를 본다. 커밋하지 않은 변경은 워크트리에 남아 있으니 버리지 않는다
 2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `orca terminal close --terminal "$OLD_TERMINAL_HANDLE"` 로 닫는다. 다른 세션이나 사용자의 터미널은 닫지 않는다
 3. 후속 지시서에 이어받는 상태를 적는다. 끝난 커밋, 커밋 안 된 변경, 앞 worker 의 마지막 status 다. 새 worker 는 앞 대화를 모른다
-4. 같은 워크트리에 `--terminal` 없이 `launch-worker --worktree "$WORKTREE" ... -- --agent ... --model ... --effort ...` 로 띄운다
+4. 같은 워크트리에 `--terminal` 없이 `launch-worker --worktree "$WORKTREE" ... -- --agent ... --model ... --effort ...` 로 띄운다. 1 에서 본 커밋 안 된 변경을 새 worker 가 이어받을 것이면 `--dirty-ack <이유>` 를 준다. 주지 않으면 `launch-worker` 가 변경 목록을 내고 거부한다
 
 worker 세션이 커밋 전에 끝나 dispatch 가 `failed`, liveness 가 `exited` 가 된 경우도 같은 순서다. 커밋하지 않은 변경이 워크트리에 남으므로 새 worker 가 이어받아 끝낸다.
 
