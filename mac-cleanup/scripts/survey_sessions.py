@@ -2,10 +2,15 @@
 """에이전트 세션 프로세스, 반복 helper 프로세스, 대화 기록 크기를 조사한다. 읽기 전용이다.
 
 사용법:
-  survey_sessions.py [--min-age-hours 24] [--log-age-days 30] [--json]
+  survey_sessions.py [--min-age-hours 24] [--log-age-days 30] [--json] [--json-out FILE]
 
 종료 코드: 0 조사 완료, 2 인자 오류.
 현재 세션과 그 조상 PID 는 항상 제외 표시한다.
+
+「워크트리가 사라진 대화 기록」 절은 Claude 기록 폴더(`~/.claude/projects`, `CLAUDE_CONFIG_DIR` 이 있으면 그 `projects`)의
+하위 폴더 가운데, 안의 `.jsonl` 을 이름순으로 열어 앞 50줄에서 처음 나온 `cwd` 경로가 이미 없는 폴더를 센다.
+`cwd` 를 읽지 못한 폴더는 후보에 넣지 않는다. 경과일은 폴더 안 파일의 가장 늦은 수정 시각으로 잰다.
+--json-out 은 이 후보를 `delete_sessions.py` 입력 형식으로 파일에 쓴다.
 """
 
 import argparse
@@ -20,6 +25,9 @@ from collections import defaultdict
 AGENT_NAMES = ("claude", "codex")
 HELPER_PREFIX_LEN = 150
 HELPER_MIN_COUNT = 10
+CWD_SCAN_LINES = 50
+ORPHAN_AGE_BUCKETS = (3, 7, 14, 30)
+ORPHAN_EXAMPLES = 5
 LOG_DIRS = (
     "~/.claude/projects",
     "~/.codex/sessions",
@@ -134,6 +142,80 @@ def expand_log_dirs():
     return out
 
 
+def claude_projects_dir(environ=None):
+    """Claude 대화 기록 폴더. CLAUDE_CONFIG_DIR 이 있으면 그 아래 projects 다."""
+    env = os.environ if environ is None else environ
+    base = env.get("CLAUDE_CONFIG_DIR") or "~/.claude"
+    return os.path.join(os.path.expanduser(base), "projects")
+
+
+def read_cwd(folder, max_lines=CWD_SCAN_LINES):
+    """폴더의 `.jsonl` 을 이름순으로 열어 앞 max_lines 줄에서 처음 나온 `cwd` 값을 돌려준다. 못 읽으면 None."""
+    try:
+        names = sorted(n for n in os.listdir(folder) if n.endswith(".jsonl"))
+    except OSError:
+        return None
+    for name in names:
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as fh:
+                for _, line in zip(range(max_lines), fh):
+                    try:
+                        obj = json.loads(line)
+                    except ValueError:
+                        continue
+                    cwd = obj.get("cwd") if isinstance(obj, dict) else None
+                    if isinstance(cwd, str) and cwd:
+                        return cwd
+        except OSError:
+            continue
+    return None
+
+
+def folder_stats(folder):
+    """폴더 아래 전체 바이트와 파일의 가장 늦은 수정 시각을 돌려준다. 파일이 없으면 시각은 None."""
+    total, newest = 0, None
+    for root, _, files in os.walk(folder):
+        for name in files:
+            try:
+                st = os.lstat(os.path.join(root, name))
+            except OSError:
+                continue
+            total += st.st_size
+            if newest is None or st.st_mtime > newest:
+                newest = st.st_mtime
+    return total, newest
+
+
+def find_orphan_sessions(base):
+    """base 의 하위 폴더 가운데 기록 안의 cwd 경로가 없는 것을 크기 큰 순으로 돌려준다."""
+    out = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for name in names:
+        folder = os.path.join(base, name)
+        if os.path.islink(folder) or not os.path.isdir(folder):
+            continue
+        cwd = read_cwd(folder)
+        if cwd is None or os.path.exists(cwd):
+            continue
+        size, newest = folder_stats(folder)
+        if newest is None:
+            continue
+        out.append({"path": folder, "cwd": cwd, "newest_mtime": newest, "size_bytes": size})
+    return sorted(out, key=lambda o: -o["size_bytes"])
+
+
+def orphan_buckets(orphans, now, buckets=ORPHAN_AGE_BUCKETS):
+    """N일 넘은 후보의 {일수: (개수, 바이트)}. 큰 일수가 작은 일수 묶음에 포함된다."""
+    result = {}
+    for days in buckets:
+        picked = [o for o in orphans if o["newest_mtime"] < now - days * 86400]
+        result[days] = (len(picked), sum(o["size_bytes"] for o in picked))
+    return result
+
+
 def human(num):
     for unit in ("B", "KB", "MB", "GB"):
         if num < 1024 or unit == "GB":
@@ -146,6 +228,7 @@ def main(argv=None):
     ap.add_argument("--min-age-hours", type=float, default=24)
     ap.add_argument("--log-age-days", type=int, default=30)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--json-out", metavar="FILE", help="워크트리가 사라진 대화 기록 후보를 delete_sessions.py 입력으로 쓴다")
     args = ap.parse_args(argv)
 
     rows = parse_ps(run(["ps", "-axo", "pid=,ppid=,etime=,tty=,rss=,pcpu=,command="]))
@@ -164,6 +247,17 @@ def main(argv=None):
     for base in expand_log_dirs():
         total, old = dir_sizes(base, args.log_age_days)
         logs.append({"dir": base, "total": total, "older_than_days": old})
+
+    projects = claude_projects_dir()
+    orphans = find_orphan_sessions(projects) if os.path.isdir(projects) else []
+    now = time.time()
+    if args.json_out:
+        try:
+            with open(args.json_out, "w", encoding="utf-8") as fh:
+                json.dump({"base": projects, "created": now, "orphans": orphans}, fh, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            print(f"--json-out 을 쓸 수 없다: {exc}", file=sys.stderr)
+            return 2
 
     if args.json:
         json.dump({"sessions": sessions, "helpers": helpers, "logs": logs}, sys.stdout, ensure_ascii=False, indent=2)
@@ -186,6 +280,15 @@ def main(argv=None):
         print(f"{human(item['total']):>9} 중 오래된 것 {human(item['older_than_days']):>9}  {item['dir']}")
     if not logs:
         print("없음")
+    print(f"\n## 워크트리가 사라진 대화 기록 ({projects})")
+    if not orphans:
+        print("없음")
+    else:
+        for days, (count, size) in orphan_buckets(orphans, now).items():
+            print(f"{days:>3}일 넘은 것 {count:>5}개 {human(size):>9}")
+        print(f"전체 {len(orphans)}개 {human(sum(o['size_bytes'] for o in orphans)):>9}. 크기 상위 {min(ORPHAN_EXAMPLES, len(orphans))}개:")
+        for o in orphans[:ORPHAN_EXAMPLES]:
+            print(f"{human(o['size_bytes']):>9} {(now - o['newest_mtime']) / 86400:>5.0f}일 전  {o['cwd']}")
     return 0
 
 
