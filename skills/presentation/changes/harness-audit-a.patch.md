@@ -1,0 +1,1 @@
+- 검사 명령을 `$SKILL_DIR/scripts/check-deck.py` 로 바꿔 덱이 있는 디렉터리에서도 돈다
