@@ -1,0 +1,1 @@
+- 소유 경계 ADR 의 기본 양식 링크를 technical-design 자신의 `templates/adr.md` 로 고쳤다

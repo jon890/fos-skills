@@ -7,6 +7,7 @@ description: |
   사용자가 브라우저를 말하지 않아도, 웹 화면에서만 되는 일을 「사람이 할 일」 로 넘기려는 순간 이 스킬로 할 수 있는지 먼저 본다.
   명령 목록과 반환값은 `browser-driver help`, 백엔드 함정은 `tools/browser-driver/README.md` 가 소유한다.
   외부에 게시할 본문을 렌더링해 보이는 일은 `content-preview`, HTML 보고서를 띄우는 일은 `report` 가 맡는다.
+  `ego-browser` 스킬이 같이 설치돼 있어도 에이전트의 웹 작업은 이 스킬이 먼저다. ego 는 browser-driver 가 쓰는 백엔드이고, 공간 분리, 로그인, 되돌리기 어려운 버튼의 확인은 이 스킬이 소유한다. ego 의 명령 문법만 필요할 때 `ego-browser` 스킬을 읽는다.
 metadata:
   version: "1.0.1"
 ---

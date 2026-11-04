@@ -9,8 +9,12 @@
 메시지가 `Not Found` 뿐이라 권한 문제로 오인하기 쉽다.
 
 ```bash
-git remote -v                                   # 호스트 확인
-GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/<N>/comments
+HOST=""   # git remote -v 로 확인한 호스트
+OWNER=""
+REPO=""
+PR=""
+git remote -v
+GH_HOST="$HOST" gh api "repos/$OWNER/$REPO/pulls/$PR/comments"
 ```
 
 `gh api graphql` 도 같다. `--repo` 를 받지 않으므로 `GH_HOST` 가 없으면 `NOT_FOUND` 다.
@@ -71,7 +75,11 @@ zsh 의 `noclobber` 는 기존 payload 파일 덮어쓰기를 `file exists` 한 
 댓글을 지우면 그 리뷰에 댓글이 남지 않아 리뷰도 함께 사라진다.
 
 ```bash
-GH_HOST=<호스트> gh api repos/<owner>/<repo>/pulls/comments/<댓글id> -X DELETE
+HOST=""        # 위 「호스트」 절의 값
+OWNER=""
+REPO=""
+COMMENT_ID=""  # 지울 댓글 id
+GH_HOST="$HOST" gh api "repos/$OWNER/$REPO/pulls/comments/$COMMENT_ID" -X DELETE
 ```
 
 지운 뒤 올바른 본문으로 다시 등록한다. 사용자에게 무엇을 왜 지웠는지 알린다.

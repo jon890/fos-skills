@@ -1,0 +1,1 @@
+- 오버레이를 찾는 순서를 `verify-overlay.md`, `implementation-overlay.md`, 옛 `build-with-teams-overlay.md` 로 정확히 적었다

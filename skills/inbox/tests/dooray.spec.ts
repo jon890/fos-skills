@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { createDooray, excerptOf, LOG_COUNT, MAX_CHANNELS, messageText, MORE_LOG_COUNT, mentions, plainText } from '../scripts/adapters/dooray.ts'
 import type { Adapter, Cache, RunResult } from '../scripts/lib/model.ts'
 
-const ME = '3421415092208840539'
-const ORG = '1387695619080878080'
+const ME = '4567890123456789012'
+const ORG = '5678901234567890123'
 const KIM = '1111'
 const LEE = '2222'
 const link = (id: string, name: string) => `[@${name}](dooray://${ORG}/members/${id} "member")`
@@ -39,12 +39,12 @@ const STREAM = [
 
 const POSTS: Record<string, unknown> = {
   p81: { id: 'p81', taskNumber: '어드민개발/81', subject: '어드민 권한 정리', project: { id: 'proj-admin', code: '어드민개발' }, body: { content: '권한 정리 본문' } },
-  p342: { id: 'p342', taskNumber: 'AI-스마트홈-AI/342', subject: '배포 일정 조율', project: { id: 'proj-home', code: 'AI-스마트홈-AI' } },
+  p342: { id: 'p342', taskNumber: 'EXAMPLE-PROJECT/342', subject: '배포 일정 조율', project: { id: 'proj-home', code: 'EXAMPLE-PROJECT' } },
   p77: { id: 'p77', taskNumber: '어드민개발/77', subject: '로그 보존 기간', project: { id: 'proj-admin', code: '어드민개발' } },
 }
 
 const CHANNELS = [
-  { id: 'ch-dev', title: '스마트홈 개발', type: 'private', updatedAt: '2026-11-02T14:30:00+09:00' },
+  { id: 'ch-dev', title: '예시 개발방', type: 'private', updatedAt: '2026-11-02T14:30:00+09:00' },
   { id: 'ch-bot', title: '배포 알림', type: 'bot', updatedAt: '2026-11-02T14:31:00+09:00' },
   { id: 'ch-me', title: '', type: 'me', updatedAt: '2026-11-02T14:32:00+09:00' },
   { id: 'ch-dm', title: '', type: 'direct', updatedAt: '2026-11-02T14:20:00+09:00' },
@@ -109,7 +109,7 @@ function runner(argv: string[]): RunResult {
 }
 
 function adapter(config: Record<string, unknown> = {}): Adapter {
-  return createDooray({ type: 'dooray', webUrl: 'https://nhnent.dooray.com/', ...config },
+  return createDooray({ type: 'dooray', webUrl: 'https://example.dooray.com/', ...config },
     { run: runner, cache: new MemoryCache(), now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
 }
 
@@ -147,7 +147,7 @@ describe('받기', () => {
     const mention = byId['dooray:task:comment:c1']
     assert.equal(mention.kind, 'mention')
     assert.equal(mention.title, '어드민개발/81 어드민 권한 정리')
-    assert.equal(mention.url, 'https://nhnent.dooray.com/project/tasks/p81')
+    assert.equal(mention.url, 'https://example.dooray.com/project/tasks/p81')
     assert.deepEqual(mention.scope, ['proj-admin', '어드민개발'])
     assert.deepEqual(mention.from, { id: KIM, name: '김철수' })
     assert.equal(mention.at, '2026-11-02T05:00:00.000Z')
@@ -169,7 +169,7 @@ describe('받기', () => {
     const messenger = result.items.filter((row) => row.source === 'messenger')
     assert.deepEqual(messenger.map((row) => row.id).sort(), ['dooray:messenger:ch-dev:l1', 'dooray:messenger:ch-dm:l9'])
     const dev = messenger.find((row) => row.id.endsWith('l1'))
-    assert.deepEqual(dev?.scope, ['ch-dev', '스마트홈 개발'])
+    assert.deepEqual(dev?.scope, ['ch-dev', '예시 개발방'])
     assert.deepEqual(dev?.from, { id: LEE, name: '이영희' })
     assert.equal(messenger.find((row) => row.id.endsWith('l9'))?.title, '김철수 대화')
     assert.equal(messenger.find((row) => row.id.endsWith('l9'))?.excerpt, '@김병태 잠깐 통화 가능?')
@@ -220,7 +220,7 @@ describe('받기', () => {
   test('대화방 하나의 logs 가 실패하면 그 방만 빼고 오류를 남긴다', () => {
     failing.add('messenger logs ch-dev -n 50')
     const result = adapter().fetch({ since: SINCE, cursors: {} })
-    assert.match(result.errors.messenger, /대화방 1개 읽기 실패: 스마트홈 개발/)
+    assert.match(result.errors.messenger, /대화방 1개 읽기 실패: 예시 개발방/)
     assert.deepEqual(result.items.filter((row) => row.source === 'messenger').map((row) => row.id), ['dooray:messenger:ch-dm:l9'])
   })
 
@@ -238,7 +238,7 @@ describe('부분 실패와 이름 (검토 반영)', () => {
     const make = () => createDooray({ type: 'dooray' }, { run: runner, cache, now: () => new Date('2026-11-02T06:00:00.000Z'), tmpDir: dir })
     failing.add('messenger logs ch-dev -n 50')
     const first = make().fetch({ since: SINCE, cursors: {} })
-    assert.match(first.errors.messenger, /스마트홈 개발/)
+    assert.match(first.errors.messenger, /예시 개발방/)
     assert.equal(first.cursors.messenger, '2026-11-02T06:00:00.000Z')
     assert.equal(first.cursors.task, '2026-11-02T06:00:00.000Z')
     failing.clear()
@@ -342,7 +342,7 @@ describe('맥락, 답함, 답변', () => {
     const text = target.compose(row, '운영 계정은 필요 없습니다.\n', '🤖 서명')
     assert.equal(text, `[@김철수](dooray://${ORG}/members/${KIM} "member") 운영 계정은 필요 없습니다.\n\n🤖 서명`)
     assert.equal(target.compose(row, '네', ''), `[@김철수](dooray://${ORG}/members/${KIM} "member") 네`)
-    assert.equal(target.reply(row, text), 'https://nhnent.dooray.com/project/tasks/p81')
+    assert.equal(target.reply(row, text), 'https://example.dooray.com/project/tasks/p81')
     assert.deepEqual(sent[0].argv.slice(0, 6), ['dooray', 'post', 'comment', 'add', '--id', 'p81'])
     assert.equal(sent[0].body, text)
   })

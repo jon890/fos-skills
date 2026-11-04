@@ -59,7 +59,7 @@
 - **여러 줄 블록을 정규식으로 지우지 않는다.** 같은 주석이 CSS 와 JS 양쪽에 있어 엉뚱한 쪽이 지워진다.
   줄 번호로 경계를 확인하고 그 범위만 자른다.
 - 큰 편집 전에 사본을 뜬다.
-- 편집 뒤 `scripts/check-deck.py <파일>` 을 돌린다.
+- 편집 뒤 `scripts/check-deck.py` 를 돌린다.
 - 문자열 교체는 `count == 1` 을 확인한 뒤 바꾼다. 여러 곳이 걸리면 의도가 아니다.
 
 파일을 잃었을 때 브라우저 탭이 아직 열려 있으면 `document.documentElement.outerHTML` 로 되찾을 수 있다.
@@ -68,8 +68,9 @@
 ## 검사
 
 ```bash
-python3 scripts/check-deck.py <deck.html>            # 구조·JS·금지어
-python3 scripts/check-deck.py <deck.html> --browser  # 세로 넘침까지
+DECK=""   # 검사할 덱 HTML 의 절대 경로
+python3 "$SKILL_DIR/scripts/check-deck.py" "$DECK"            # 구조·JS·금지어
+python3 "$SKILL_DIR/scripts/check-deck.py" "$DECK" --browser  # 세로 넘침까지
 ```
 
 `--browser` 는 이 저장소의 `tools/browser-driver` 를 먼저 찾고, 없으면 `~/.claude/scripts/browser-driver` 를 쓴다. 둘 다 없으면 그 항목만 건너뛴다.
