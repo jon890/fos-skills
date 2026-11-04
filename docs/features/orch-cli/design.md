@@ -54,6 +54,8 @@ type Command = {
                                         // 위치 인자를 옵션으로 바꾼다. wait ack-lost → 값마다 --ack-lost,
                                         // worker screen → --terminal <값> (prepend 의 --state 와 함께),
                                         // worker worktree → --repo <값>. 위치 인자로 준 값은 그 문맥의 명시로 본다
+                                        // required 면 위치 인자도 그 옵션도 없을 때 사용법 오류다(wait ack-lost, worker screen, worker check).
+                                        // 없이 돌면 동작을 고르는 옵션이 빠져 다른 동작(일반 대기)이 된다
   context: Array<'repo' | 'run' | 'specs-dir' | 'loop-repo'>
   required: Array<'repo' | 'run' | 'specs-dir'>
                                         // 스크립트가 지금 반드시 받는 문맥 인자(실측 2026-11-04: wait 의 run).
@@ -106,7 +108,7 @@ type Command = {
 - 저장소: `mainCheckout(cwd)`. git 저장소 밖이면 채우지 않는다. 스크립트가 지금처럼 판정한다(대부분 cwd 기본값이나 사용법 오류).
 - Run: `orca orchestration run-current --json --full` 의 `run.id`(5초 제한). 못 읽으면 저장소 설정의 `finish.run`. 둘 다 없으면 채우지 않는다.
 - 기준 저장소: 설정(`finish.run`, `finish.specs_dir`), 지시서 폴더, 루프 저장소는 명시한 `--repo` 가 있으면 그 저장소에서, 없으면 위에서 채운 저장소에서 읽는다. `--repo` 가 둘 이상이면(`cleanup sweep`) 지시서 폴더를 채우지 않는다. 한 절대경로가 여러 저장소의 지시서 지우기에 쓰이지 않게 하려는 것이다.
-- 지시서 폴더: `finish.specs_dir`, 없으면 `pathOf('specs', repo)`.
+- 지시서 폴더: `finish.specs_dir`(설정이 주 checkout 의 것이라 주 checkout 기준 상대경로), 없으면 `pathOf('specs', repo)`.
 - 루프 저장소: 위 저장소의 루프 기록에 위 Run 이 등록돼 있으면(`lib/loop.ts` 의 `isRegistered`) 루프가 살았는지와 상관없이 그 저장소. 루프가 죽었으면 `wait-important` 가 `--loop-repo` 로 `LOOP-DEAD` 를 내야 하기 때문이다.
 - `--ack` 가 있는 `wait` 은 `run-current` 를 읽지 못하면 설정의 `finish.run` 으로 대신하지 않는다. 다른 Run 의 delivery 를 ack 하지 않게 한다. 일시 지연으로 대기가 끊기지 않도록 이 경우만 제한을 15초로 늘려 한 번 더 읽고, 그래도 못 읽으면 사용법 오류(2)와 `--run <Run>` 을 붙이라는 줄을 낸다.
 - 넣는 자리: 앞 인자(`prepend`) 바로 뒤, 첫 `--` 앞이다. `worker launch` 의 `-- WORKER_ARGS` 처럼 `--` 뒤는 다른 명령에 넘어가는 인자라 읽지도 넣지도 않는다.
