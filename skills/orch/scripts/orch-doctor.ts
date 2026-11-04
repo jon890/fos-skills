@@ -649,7 +649,8 @@ const DIRECT_PATH = new RegExp(
 )
 
 function hintFor(name: string, rest: string): string {
-  const tokens = rest.split(/\s+/).filter(Boolean)
+  // 경로를 감싼 따옴표와 괄호의 닫는 글자가 남으면 동작 낱말을 읽지 못한다
+  const tokens = rest.replace(/^["')]+/, '').split(/\s+/).filter(Boolean)
   const legacy = resolveLegacy(name, tokens) ?? resolveLegacy(name, [])
   const row = legacy?.command ?? COMMANDS.find((c) => c.script === `${name}.ts`)
   return row ? `  새 꼴: ${legacy?.hint ?? ['orch', row.group, ...(row.verb ? [row.verb] : [])].join(' ')}` : ''

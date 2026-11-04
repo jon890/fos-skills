@@ -380,6 +380,7 @@ describe('orch 명령 판정', () => {
         'ORCH=$(node -e \'...\') && "$ORCH" heavy-slot -- make',
         'node /Users/me/.claude/plugins/cache/fos-skills/fos-skills/88daf0fe2fe7/orch/scripts/worker-ask.ts --from x',
         'python3 "$SKILL_DIR/scripts/orch-doctor.py"',
+        'ORCH_SCRIPTS=$(node -e \'...\') && node "$ORCH_SCRIPTS/study-candidates.ts" add --slug s',
         '',
       ].join('\n'),
     )
@@ -401,6 +402,8 @@ describe('orch 명령 판정', () => {
       '  새 꼴: orch worker ask',
       'OLD-CALL .orch/specs/spec-common.md:4 orch-doctor',
       '  새 꼴: orch doctor',
+      'DIRECT-PATH .orch/specs/spec-common.md:5 study-candidates.ts',
+      '  새 꼴: orch study add',
       'OLD-CALL .orch/bin/with-heavy-slot.sh:1 mem-gate',
       '  새 꼴: orch slot mem',
       'DIRECT-PATH .orch/hooks/worker-stalled.ts:2 nudge-worker.ts',
