@@ -6,7 +6,7 @@
 // (첫 줄 `결정:` 과 비지 않은 제목, `- ` 선택지 둘 이상, `권장:` 줄 하나)을 따르는지 보고, 어긋나면 묻지 않고 줄마다 stderr 에 낸다.
 // `결정:` 줄이 여럿이면 그 줄마다 블록을 나눠 블록마다 같은 규칙을 보고, 위반 줄 앞에 `결정 블록 N:` 을 붙인다.
 // `--resume` 으로 재개할 때는 검사하지 않는다.
-// 종료: 0 답 수신, 2 사용법·실행 오류(--decision 형식 위반 포함), 3 status 답 또는 Run 메일함으로 대신 보냄,
+// 종료: 0 답 수신, 2 사용법·실행 오류(--decision 형식 위반, 다시 불러도 바쁜 Orca, 끝난 dispatch 가 아닌 ask 실패 포함), 3 status 답 또는 Run 메일함으로 대신 보냄,
 // 4 시간 초과(출력의 ID로 재개), 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
 // 2 에는 질문이 닿았는지 확인하지 못한 경우도 든다. ask 가 0 으로 끝났는데 답도 질문 ID 도 없거나,
 // Run 메일함으로 대신 보낸 send 가 메시지 ID 를 내지 않은 경우다. 답 없이 `answer: ` 빈 줄로 0 을 내면 worker 가 물었다고 믿고 넘어간다.
@@ -22,6 +22,12 @@
 // ask 를 끊고 시간 초과 뒤의 status 답과 같게 3 으로 끝난다(첫 줄 `answer: <본문>`). 코디네이터가 reply 대신 status 로 답해도
 // 시간 제한(기본 600초)을 다 기다리지 않게 하려는 것이다. 끊은 ask 의 질문은 Orca 에 답 없이 남는다.
 // 기다리는 동안에는 질문 메시지 ID 를 모르므로 스레드가 아니라 받는 곳으로만 판정하고, ask 를 부르기 전에 이미 있던 status 는 뺀다.
+//
+// ask 실패의 종류: 실패한 ask 출력의 `error.code`(JSON 이 없으면 글 속의 코드 낱말)로 가른다.
+//     바쁨(BUSY_CODES, 글에 `retry with backoff` 가 든 것)  Orca 가 요청을 받지 않았다. dispatch 는 살아 있다.
+//                 ORCH_ASK_BUSY_MS(기본 5000)부터 두 배씩 늘려 BUSY_TRIES 번까지 같은 ask 를 다시 부른다. 그래도 바쁘면 2 다
+//     끝난 dispatch(DISPATCH_GONE)이거나 코드를 읽지 못함  Run 메일함으로 대신 보낸다(아래 「대신 보내기」). 코드 없는 옛 출력도 여기다
+//     그 밖의 코드  대신 보내지 않고 2 다. 살아 있는 dispatch 의 질문을 메일함으로 보내면 답이 ask 스레드에 오지 않는다(2026-11-02)
 //
 // 시간 초과: ask 출력의 timedOut 이나 `timed out` 말고도, ask 가 --timeout-ms 에 여유(2분)를 더한 시간 안에 끝나지 않아
 // 이 명령이 끊은 경우도 시간 초과(4, status 답이 있으면 3)다. 실패로 보고 Run 메일함으로 대신 보내면 같은 질문이 두 번 간다.
@@ -63,6 +69,13 @@ const ORCA_MAX_TIMEOUT_MS = 1_800_000
 // ask 를 기다리는 동안 status 답을 찾는 간격. ORCH_ASK_POLL_MS 로 바꾼다(테스트가 줄인다)
 const POLL_MS = Number(process.env.ORCH_ASK_POLL_MS) || 30_000
 // Python 의 str.splitlines 와 같은 줄 경계다. 결정 질문 형식 판정이 옛 명령과 같게 한다
+// Orca 가 요청을 받지 않고 돌려보낸 바쁨 코드. 받지 않았으니 같은 질문을 다시 보내도 두 번 가지 않는다
+const BUSY_CODES = new Set(['runtime_busy', 'remote_runtime_busy', 'runtime_rpc_queue_overloaded'])
+// 이 코드로 실패한 ask 만 끝난 dispatch 로 보고 Run 메일함으로 대신 보낸다
+const DISPATCH_GONE = new Set(['dispatch_inactive', 'dispatch_not_found'])
+const BUSY_TRIES = 5
+// 바쁨 재시도의 첫 대기. ORCH_ASK_BUSY_MS 로 바꾼다(테스트가 줄인다)
+const BUSY_MS = Number(process.env.ORCH_ASK_BUSY_MS) || 5_000
 const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/u
 
 type Json = Record<string, unknown>
@@ -119,6 +132,15 @@ function messageIdOf(output: string): string {
 function sentIdOf(output: string): string {
   const result = load(output)
   return String(obj(result.message)?.id || result.messageId || result.id || '').trim()
+}
+
+// 실패한 ask 의 오류 코드. JSON 의 error.code, 없으면 글 속의 알려진 코드 낱말이다. 못 읽으면 빈 문자열이다
+function errorCodeOf(output: string): string {
+  const code = obj(load(output).error)?.code
+  if (typeof code === 'string' && code) return code
+  const word = /\b(?:remote_)?runtime_busy\b|\bruntime_rpc_queue_overloaded\b|\bdispatch_(?:inactive|not_found)\b/.exec(output)
+  if (word) return word[0]
+  return /retry with backoff/i.test(output) ? 'runtime_busy' : ''
 }
 
 function runIdOf(output: string): string {
@@ -277,6 +299,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const before = idsOf(first)
   const started = Date.now()
+  let busy = 0
   while (true) {
     const remainingMs = maxWaitMs === undefined ? timeoutMs : Math.max(1, maxWaitMs - (Date.now() - started))
     const attemptMs = Math.min(timeoutMs, remainingMs)
@@ -356,12 +379,29 @@ async function main(argv: string[]): Promise<number> {
       )
       return 2
     }
+    const code = errorCodeOf(output)
+    if (BUSY_CODES.has(code)) {
+      if (busy < BUSY_TRIES) {
+        const delay = BUSY_MS * 2 ** busy
+        busy++
+        err(`worker-ask: Orca 가 바빠(${code}) ask 를 받지 않았다. ${delay}ms 뒤 같은 ask 를 다시 부른다(${busy}/${BUSY_TRIES})`)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        continue
+      }
+      err(output)
+      err(`worker-ask: Orca 가 ${BUSY_TRIES} 번 다시 불러도 바빠(${code}) 묻지 못했다. dispatch 는 살아 있어 메일함으로 보내지 않는다. 잠시 뒤 같은 명령을 다시 부른다`)
+      return 2
+    }
     err(output)
+    if (code && !DISPATCH_GONE.has(code)) {
+      err(`worker-ask: ask 가 ${code} 로 실패했다. 끝난 dispatch 의 오류가 아니라 Run 메일함으로 대신 보내지 않는다`)
+      return 2
+    }
     if (resume) {
       err('worker-ask: --resume 이 실패했다. 대신 보낼 질문 본문이 없어 멈춘다')
       return 2
     }
-    err('worker-ask: ask 가 실패했다. Dispatch 가 끝났을 수 있어 Run 메일함으로 대신 보낸다')
+    err(`worker-ask: ask 가 실패했다(${code || '코드 없음'}). Dispatch 가 끝났을 수 있어 Run 메일함으로 대신 보낸다`)
     const runId = (values.run as string) || runIdOf(peek())
     if (!runId) {
       err('worker-ask: Run 을 찾지 못했다. --run 으로 준다')

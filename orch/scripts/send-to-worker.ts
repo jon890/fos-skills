@@ -6,10 +6,12 @@
 //
 //     dispatch 가 살아 있다   가장 늦은 미답변 question/escalation 에 `reply` 하고 `nudge-worker` 로 깨운다.
 //                             질문이 없으면 마지막 status 를 쓴다. --reply-to 는 지정한 메시지를 먼저 쓰고, --no-reply 는 새 메시지로 보낸다.
-//                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」 로 거부하면
-//                             다음 후보 메시지로 한 번 더 시도한다. reply 할 후보가 없거나 시도한 후보가 모두 그 문구로 거부되면
+//                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」(answer_conflict)로 거부하면
+//                             그 메시지를 닫은 질문으로 적고(`closed:` 줄) 다음 후보 메시지로 한 번 더 시도한다. reply 할 후보가 없거나 시도한 후보가 모두 그 문구로 거부되면
 //                             `send --to dispatch:<id> --subject <본문 첫 줄> --body <본문>` 으로 새 메시지를 보내고
 //                             `sent: ...` 한 줄을 찍은 뒤 `nudge-worker --msg-id <새 메시지>` 로 깨운다
+//     reply 가 dispatch_inactive 로 거부되면 그 메시지를 닫은 질문으로 적고(`closed:` 줄) 답할 곳이 없는 것으로 다룬다.
+//     닫은 질문은 lib/questions.ts 의 「닫은 질문」 이 루프와 doctor 의 미답변에서 뺀다
 //     끝났고 답할 메시지가 있다  `--reply-to`(없으면 그 worker 의 미답변 question 과 escalation 중 마지막)에 `reply` 한다.
 //                             worker 가 없어 깨우지는 않는다. `--spec` 이 없으면 답만 달고 0 으로 끝나고, 있으면 아래처럼 이어 띄운다
 //     끝났고 터미널이 남았다  `--spec` 의 지시서로 `launch-worker --worktree <그 워크트리> -- --terminal <그 터미널>` 을 부른다.
@@ -80,6 +82,7 @@ import { context } from './lib/completion.ts'
 import { orca } from './lib/orca.ts'
 import { runAsync, runInherit, scriptCommand } from './lib/proc.ts'
 import { pyStr, shQuote } from './lib/py.ts'
+import { dismissQuestion } from './lib/questions.ts'
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
@@ -92,6 +95,9 @@ const LAUNCH_WORKER = process.env.LAUNCH_WORKER || `${HERE}/launch-worker.ts`
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
 // 이미 답한 question 에 다시 reply 하면 orca 가 이 문구로 거부한다
 const ANSWERED = 'already has a different answer'
+// 답할 수 없는 질문의 거절 코드. 이 코드로 거절된 메시지는 닫은 질문으로 적는다(lib/questions.ts 의 「닫은 질문」)
+const ANSWER_CONFLICT = 'answer_conflict'
+const INACTIVE = 'dispatch_inactive'
 // Orca 터미널 안에서 `--from run:<run>` 을 붙이면 orca 가 이 코드로 거부한다
 const FENCED = 'consumer_fenced'
 // 코디네이터 터미널의 pane 신원이 없을 때 reply 가 이 코드나 문구로 거부된다
@@ -280,12 +286,19 @@ function sendNew(dispatchId: string, body: string, run: string): string {
 
 // 이미 답한 question 이면 다음 후보로 한 번만 더 시도한다. 답을 단 메시지 id 와 새 답의 id 를 낸다.
 // 시도한 후보가 모두 이미 답한 question 이면 null 이다
+// dispatch_inactive 로 거절되면 그 메시지를 닫은 질문으로 적고 null 이다. 같은 dispatch 의 다른 후보도 같은 이유로 거절된다
 function replyFirst(targets: string[], body: string, run: string, dispatchId: string): { target: string; sent: string } | null {
   for (const [attempt, candidate] of targets.slice(0, 2).entries()) {
     try {
       return { target: candidate, sent: reply(candidate, body, run, dispatchId) }
     } catch (e) {
-      if (!(e instanceof OrcaFailed) || !e.message.includes(ANSWERED)) throw e
+      if (!(e instanceof OrcaFailed)) throw e
+      if (e.message.includes(INACTIVE)) {
+        dismiss(candidate, INACTIVE)
+        return null
+      }
+      if (!e.message.includes(ANSWERED) && !e.message.includes(ANSWER_CONFLICT)) throw e
+      dismiss(candidate, ANSWER_CONFLICT)
       if (attempt === 1 || targets.length < 2) {
         out(`skipped: ${candidate} 는 이미 답한 question 이다`)
         return null
@@ -294,6 +307,16 @@ function replyFirst(targets: string[], body: string, run: string, dispatchId: st
     }
   }
   return null
+}
+
+// 답할 수 없는 메시지를 닫은 질문으로 적는다. 루프와 doctor 가 다시 알리지 않는다. 적지 못해도 보내기는 이어 간다
+function dismiss(msgId: string, reason: string): void {
+  try {
+    dismissQuestion(msgId, reason)
+    out(`closed: ${msgId} 는 ${reason} 로 답할 수 없어 닫은 질문으로 적었다. 루프가 다시 알리지 않는다`)
+  } catch (e) {
+    out(`send-to-worker: ${msgId} 를 닫은 질문으로 적지 못했다: ${(e as Error).message}`)
+  }
 }
 
 // 자식의 출력을 그대로 흘리고 종료 코드를 낸다

@@ -469,6 +469,53 @@ describe('board-sync 마일스톤 항목', () => {
   })
 })
 
+describe('단계를 모두 끝낸 doing 항목', () => {
+  test('열린 PR, 워크트리, 남은 일 줄이 없고 단계가 모두 끝났으면 done 으로 바꾼다', () => {
+    states['5'] = 'CLOSED'
+    const r = sync([
+      { id: 'a', status: 'doing', details: [step('1. 구현', true), '✓ 2. dev 화면 확인', '참고: 배경'] },
+      { id: 'closed', status: 'doing', pr: '5', details: [step('1. 정리', true)] },
+    ])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.a.status, 'done')
+    assert.equal(r.board.closed.status, 'done')
+    assert.match(r.result.stdout, /board-sync: a 는 단계를 모두 끝냈고 열린 PR, 워크트리, 남은 일 줄이 없어 done 으로 바꾼다/)
+  })
+
+  test('남은 단계, 열린 PR, 남은 일 줄, 단계 없음이면 그대로 둔다', () => {
+    states['8'] = 'OPEN'
+    const items = [
+      { id: 'left', status: 'doing', details: [step('1. 구현', true), step('2. 확인', false)] },
+      { id: 'open', status: 'doing', pr: '8', details: [step('1. 구현', true)] },
+      { id: 'noted', status: 'doing', details: [step('1. PR', true), step('남은 일: PR #9', false)] },
+      { id: 'empty', status: 'doing', details: ['참고: 배경만 있다'] },
+      { id: 'unknown', status: 'doing', pr: '99', details: [step('1. 구현', true)] },
+    ]
+    const before = JSON.stringify({ items })
+    const r = sync(items)
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(readFileSync(board, 'utf8'), before)
+  })
+
+  test('worker 의 워크트리가 남아 있으면 그대로 둔다', () => {
+    const git = (...args: string[]) => {
+      const done = spawnSync('git', ['-C', tmp, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' })
+      assert.equal(done.status, 0, done.stderr)
+    }
+    git('init', '-q', '-b', 'main')
+    git('commit', '-q', '--allow-empty', '-m', 'init')
+    const r = sync([
+      { id: 'here', status: 'doing', worktree: basename(tmp), details: [step('1. 구현', true)] },
+      { id: 'branch', status: 'doing', branch: 'main', details: [step('1. 구현', true)] },
+      { id: 'gone', status: 'doing', worktree: 'removed-wt', details: [step('1. 구현', true)] },
+    ])
+    assert.equal(r.code, 0, r.result.stderr)
+    assert.equal(r.board.here.status, 'doing')
+    assert.equal(r.board.branch.status, 'doing')
+    assert.equal(r.board.gone.status, 'done')
+  })
+})
+
 describe('손으로 쓴 사건 단계', () => {
   const details = () => ['1. PR (#7 pr)', '2. 머지 (#7 merge)', '3. 배포 (#7 deploy)', '4. 반영 (#7 release)', '5. 사람이 확인'].map((text) => step(text, false))
   test('항목의 PR 과 무관하게 꼬리표의 PR 을 읽고 goal 과 next 도 처리한다', () => {

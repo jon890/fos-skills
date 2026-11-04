@@ -126,6 +126,8 @@ beforeEach(() => {
     RECEIVED_DIR: join(tmp, 'received'),
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: tmp,
+    // 사용자 입력 기록과 닫은 질문(lib/machine.ts)을 이 머신의 폴더에서 읽지 않는다
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
   }
   delete env.ORCH_DIR
   delete env.ORCH_LOOP_ALIVE_SEC
@@ -604,6 +606,23 @@ describe('마무리 빠짐과 대기 확인', () => {
     // 대기가 다시 생기면 기록을 지워 다음 공백을 새로 센다
     once({ ...extra, PS: fakePs('  20 node /x/wait-important.ts --run r --loop-repo /r\n') })
     assert.ok(!existsSync(file))
+  })
+
+  test('코디네이터가 사용자와 대화 중이면 대기 없음 알림을 미루고 대화가 끝난 뒤 알린다', () => {
+    orca({ workers: [{ dispatchId: 'ctx_1', dispatchStatus: 'dispatched' }] })
+    write(orchFile('state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: new Date().toISOString(), coordinator_terminal: 'term_coord' }))
+    write(orchFile('state', 'no-wait', 'r.json'), JSON.stringify({ since: Date.now() - 600_000, notified: false }))
+    const input = join(tmp, 'machine', 'user-input', 'term_coord.json')
+    write(input, JSON.stringify({ at: Date.now() - 60_000 }))
+    const extra = { PS: fakePs('  10 node other.js\n'), NUDGE_WORKER: nudge() }
+    once(extra)
+    assert.deepEqual(events().filter((line) => line.kind === 'NO-WAIT'), [])
+    assert.ok(!existsSync(join(tmp, 'nudge.jsonl')))
+    assert.match(logText(), /NO-WAIT-DEFER Run r 의 코디네이터가 사용자와 대화 중이라\(마지막 입력 \d+초 전\)/)
+    write(input, JSON.stringify({ at: Date.now() - 700_000 }))
+    once(extra)
+    assert.equal(events().filter((line) => line.kind === 'NO-WAIT').length, 1, JSON.stringify(events()))
+    assert.equal((jsonl(join(tmp, 'nudge.jsonl')) as unknown as string[][]).length, 1)
   })
 
   test('살아 있는 dispatch 가 없으면 대기가 없어도 알리지 않는다', () => {

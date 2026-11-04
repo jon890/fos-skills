@@ -66,12 +66,19 @@
 // 루프 번들 판정(늘 본다):
 //     `ps -axo pid=,command=`(PS 환경 변수로 바꾼다)에서 `orch-loop.ts` 와 `--foreground` 가 든 행(상주 루프의 부모)을 읽는다.
 //     --tick 자식과 --start 는 뺀다. 스크립트 경로는 첫 낱말(node) 뒤 처음 `/` 로 시작하는 곳부터 `orch-loop.ts` 까지다(경로에 빈칸이 있을 수 있다).
-//     그 경로가 설치 캐시 꼴(`<plugins>/cache/<마켓플레이스>/<플러그인>/<sha>/orch/scripts/orch-loop.ts`)이면 같은 `<plugins>` 의
-//     installed_plugins.json 에서 `<플러그인>@<마켓플레이스>` 의 installPath 를 읽는다. 루프마다 그 루프를 띄운 프로필의 설치본과 비교한다.
-//     installPath 가운데 그 `<sha>` 폴더가 없으면 LOOP-STALE 이다. 이미 고친 결함이 옛 번들의 루프에서 계속 난다.
+//     그 경로가 설치 캐시 꼴(`<plugins>/cache/<마켓플레이스>/<플러그인>/<sha 나 버전>/orch/scripts/orch-loop.ts`)이면
+//     지금 세션 프로필(`CLAUDE_CONFIG_DIR`, 없으면 `~/.claude`)의 installed_plugins.json 에서 `<플러그인>@<마켓플레이스>` 의 user 범위 installPath 를 읽는다.
+//     그 installPath 가 루프의 번들 폴더와 같지 않고 마지막 폴더 이름도 다르면 LOOP-STALE 이다. 이미 고친 결함이 옛 번들의 루프에서 계속 난다.
+//     project 범위 행은 보지 않는다. 다른 프로필이 남긴 옛 행(3.6.0)과 같다고 옛 번들의 루프를 통과시킨 일이 있었다(2026-11-04).
+//     user 범위 행이 없으면 판정하지 않는다.
 //     캐시 꼴이 아니면(저장소 체크아웃에서 띄운 개발 중인 루프) 보지 않는다. installed_plugins.json 을 읽지 못하면 판정하지 않는다.
 //     다시 띄우는 명령은 그 루프의 Run 코디네이터 세션에서 돌리라는 안내와 함께 낸다. 루프는 띄운 터미널의 Run 명의를 물려받는다
 //     (orch-loop.ts 머리 주석의 「명의」). Run 은 그 저장소 loop.json 의 bound_run, 없으면 run 이다. 경고라 종료 코드를 바꾸지 않는다.
+//
+// Orca 형식 판정(늘 본다):
+//     `orca orchestration worker-list --limit 1 --full --json` 의 첫 행에 lib/workers.ts 의 ROW_KEYS 가 모두 있는지 본다.
+//     빠진 키가 있으면 ORCA-SHAPE 줄과 안내 줄을 낸다. Orca 가 자동 갱신으로 출력 형식을 바꾸면 스크립트는 오류 없이 빈 값으로 판정한다.
+//     orca 를 10초 안에 읽지 못했거나 행이 없으면 판정하지 않는다(다른 판정이 조회 실패를 알린다). 경고라 종료 코드를 바꾸지 않는다.
 //
 // worker 판정(--run 을 줄 때):
 //     그 Run 의 worker-list 행 가운데 살아 있는 dispatch 이고 터미널의 ownershipState 가 user_owned 인 것을 lib/worker-state.ts 로 판정한다.
@@ -107,15 +114,16 @@
 //     PLUGIN-PATH-MISSING <플러그인> <scope> <경로>   설치 기록의 installPath 가 없다. 이어서 현재 설정 폴더에 같은 상대 경로가 있으면 그 경로,
 //                                                고치는 방법과 `/reload-plugins` 안내가 온다
 //     LOOP-DEAD <repo> <이유>                    --run 을 줬는데 상주 루프가 죽었다. 다음 줄에 다시 띄울 명령이 온다
-//     LOOP-STALE <repo> <pid> <번들 sha>          설치되지 않은 번들의 스크립트로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
+//     LOOP-STALE <repo> <pid> <번들 sha 나 버전>  지금 세션의 설치본이 아닌 번들로 도는 상주 루프. 다음 줄에 안내와 다시 띄울 명령이 온다
 //     WORKER-STATE <dispatch> <상태> <근거>       --run 의 살아 있는 dispatch 가운데 user_owned 로 표시된 것의 판정(위 「worker 판정」)
 //     SKIP-WORKERS <이유>                         worker 판정을 하지 못했다
 //     FEEDBACK-OPEN <개수> <폴더>                 다시 보지 않은 스킬 개선 후보 파일이 있다(위 「개선 후보 판정」)
 //     STUDY-OPEN <개수> <폴더>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
+//     ORCA-SHAPE worker-list <키,키>              worker-list 행에 orch 가 읽는 키가 없다(위 「Orca 형식 판정」). 다음 줄에 안내가 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -141,13 +149,15 @@ import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
 import { ageSeconds, closedReason, snapshot } from './lib/questions.ts'
 import { waiterPids as findWaiters } from './lib/waiters.ts'
-import { workerRows } from './lib/workers.ts'
+import { missingRowKeys, workerRows } from './lib/workers.ts'
+import { orcaJson } from './lib/orca.ts'
 import { adoptHint } from './lib/sessions.ts'
 import { isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
 
 const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
 const SHA = /^[0-9a-f]{7,40}$/
+const VERSION_DIR = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
 const REF = /(?:\$(?:(?<sibling>[A-Z][A-Z0-9_]*)_)?SKILL_DIR\/|\]\((?<up>(?:\.\.\/)*))scripts\/(?<name>[A-Za-z0-9_.-]+)/g
 // 진입점(bin/orch.ts)이 부르는 스크립트. `"$SKILL_DIR/bin/orch.ts" wait-important --run ...` 의 이름이 scripts/ 의 .ts 다
 const BIN_REF = /\$SKILL_DIR\/bin\/(?<name>[A-Za-z0-9_.-]+)/g
@@ -155,6 +165,7 @@ const VIA_ENTRY = /\$SKILL_DIR\/bin\/orch\.ts"?\s+(?<name>[A-Za-z0-9_][A-Za-z0-9
 const GIT_TIMEOUT_MS = 20_000
 const OVERDUE_SEC = 600
 const WORKERS_TIMEOUT_MS = 30_000
+const SHAPE_TIMEOUT_MS = 10_000
 
 type Checked = { lines: string[]; code: number }
 
@@ -185,13 +196,16 @@ function treeHash(directory: string, excludes: string): string | null {
 }
 
 // [plugins 디렉터리, 마켓플레이스, 플러그인, 설치 sha]. 설치 캐시가 아니면 null.
-function installLayout(skillDir: string): [string, string, string, string] | null {
+// versions 면 `<sha>` 자리에 플러그인 버전(3.12.0)도 받는다. plugin.json 에 version 이 생긴 뒤 캐시 폴더 이름이 버전이 됐다.
+// 설치본 판정은 커밋과 비교하므로 sha 만 받고, 루프 번들 판정은 폴더 이름만 비교하므로 둘 다 받는다
+function installLayout(skillDir: string, versions = false): [string, string, string, string] | null {
   const parents: string[] = []
   for (let dir = dirname(skillDir); parents.length < 5; dir = dirname(dir)) {
     parents.push(dir)
     if (dirname(dir) === dir) break
   }
-  if (parents.length < 5 || basename(parents[3]) !== 'cache' || !SHA.test(basename(parents[0]))) return null
+  const name = parents.length < 5 ? '' : basename(parents[0])
+  if (parents.length < 5 || basename(parents[3]) !== 'cache' || !(SHA.test(name) || (versions && VERSION_DIR.test(name)))) return null
   return [parents[4], basename(parents[2]), basename(parents[1]), basename(parents[0])]
 }
 
@@ -408,30 +422,30 @@ function waiterPids(runId: string): number[] {
 }
 
 // 머리 주석의 「루프 번들 판정」. 설치 캐시가 아닌 경로나 판정하지 못한 경로는 null 이다
-function staleBundle(script: string): { sha: string; installed: string } | null {
+function staleBundle(script: string, configDir: string): { sha: string; installed: string } | null {
   const skillDir = dirname(dirname(script))
-  const layout = installLayout(skillDir)
+  const layout = installLayout(skillDir, true)
   if (!layout) return null
-  const [plugins, marketplace, plugin, sha] = layout
+  const [, marketplace, plugin, sha] = layout
   let entries: unknown
   try {
-    entries = (JSON.parse(readFileSync(join(plugins, 'installed_plugins.json'), 'utf8')) as { plugins?: Record<string, unknown> }).plugins?.[
+    entries = (JSON.parse(readFileSync(join(configDir, 'plugins', 'installed_plugins.json'), 'utf8')) as { plugins?: Record<string, unknown> }).plugins?.[
       `${plugin}@${marketplace}`
     ]
   } catch {
     return null
   }
   if (!Array.isArray(entries)) return null
-  const rows = (entries as { installPath?: unknown; scope?: unknown }[]).filter((e) => typeof e?.installPath === 'string')
+  // 다른 범위(project)의 옛 행은 지금 세션이 싣는 번들이 아니다. 그 행과 같다고 통과시키면 옛 번들의 루프를 놓친다
+  const rows = (entries as { installPath?: unknown; scope?: unknown }[]).filter((e) => e?.scope === 'user' && typeof e.installPath === 'string' && e.installPath)
   if (rows.length === 0) return null
-  // 다시 띄울 번들은 worker-ask 와 같이 user 범위를 먼저 고른다
-  rows.sort((a, b) => Number(a.scope !== 'user') - Number(b.scope !== 'user'))
   const bundle = real(dirname(skillDir))
-  if (rows.some((e) => real(e.installPath as string) === bundle)) return null
+  // 프로필마다 캐시 폴더가 달라도 같은 번들이면 마지막 폴더 이름(sha 나 버전)이 같다
+  if (rows.some((e) => real(e.installPath as string) === bundle || basename(e.installPath as string) === sha)) return null
   return { sha, installed: join(rows[0].installPath as string, basename(skillDir)) }
 }
 
-function staleLoops(): string[] {
+function staleLoops(configDir: string): string[] {
   const done = run([process.env.PS || 'ps', '-axo', 'pid=,command='], { env: { LC_ALL: 'C' } })
   if (done.code !== 0) return []
   const lines: string[] = []
@@ -440,7 +454,7 @@ function staleLoops(): string[] {
     if (!m || !/\s--foreground(\s|$)/.test(m[3]) || /\s--tick(\s|$)/.test(m[3])) continue
     const found = /(?:^|\s)(\/.*?orch-loop\.ts)(?=\s|$)/.exec(m[3])
     if (!found) continue
-    const stale = staleBundle(found[1])
+    const stale = staleBundle(found[1], configDir)
     if (!stale) continue
     const repo = /\s--repo\s+(.+?)(?=\s--|$)/.exec(m[3])?.[1] ?? '<repo>'
     const state = repo === '<repo>' ? null : readLoop(repo)
@@ -456,6 +470,20 @@ function staleLoops(): string[] {
     )
   }
   return lines
+}
+
+// 머리 주석의 「Orca 형식 판정」. 읽지 못했거나 행이 없으면 빈 목록이다
+function checkOrcaShape(): string[] {
+  const got = orcaJson<{ workers?: unknown }>(['orchestration', 'worker-list', '--limit', '1'], { timeoutMs: SHAPE_TIMEOUT_MS })
+  if (!got.ok || !Array.isArray(got.data?.workers)) return []
+  const row = got.data.workers[0]
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) return []
+  const missing = missingRowKeys(row as Record<string, unknown>)
+  if (missing.length === 0) return []
+  return [
+    `ORCA-SHAPE worker-list ${missing.join(',')}`,
+    '  안내: Orca 출력 형식이 바뀌어 orch 가 읽는 키가 없다. worker 판정, 정리, 질문 감시가 빈 값으로 엇나갈 수 있다. orch 를 갱신하고, 최신에도 나오면 사용자에게 알린다',
+  ]
 }
 
 // 머리 주석의 「worker 판정」. 살아 있는 dispatch 가운데 터미널이 user_owned 로 표시된 것만 판정해 낸다
@@ -508,7 +536,8 @@ async function main(argv: string[]): Promise<number> {
 
   const version = values['skip-version'] ? { lines: [], code: 0 } : checkVersion(skillDir, values.remote, values.branch as string)
   const scripts = checkScripts(skillDir)
-  const installLines = checkInstallPaths(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'))
+  const configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+  const installLines = checkInstallPaths(configDir)
   const repoLines = [...checkRepo(repo), ...checkFeedback(repo), ...checkStudy(repo)]
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId, repo)
   let loop = runId ? loopStatus(repo, Date.now()) : null
@@ -526,7 +555,8 @@ async function main(argv: string[]): Promise<number> {
         ]
       : []
   const workerLines = runId ? checkWorkers(runId, repo) : []
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(), ...workerLines].join('\n')}\n`)
+  const shapeLines = checkOrcaShape()
+  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...workerLines, ...shapeLines].join('\n')}\n`)
 
   if (runId) {
     try {
