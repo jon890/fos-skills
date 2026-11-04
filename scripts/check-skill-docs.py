@@ -2,7 +2,7 @@
 """스킬 README 와 CHANGELOG 가 저장소 README 의 「스킬 README」, 「버전과 변경 이력」 형식을 따르는지 검사한다.
 
 사용: python3 scripts/check-skill-docs.py [스킬 이름 ...]
-인자가 없으면 SKILL.md 가 있는 모든 디렉터리를 본다. 위반을 한 줄씩 내고, 하나라도 있으면 종료 코드 1 이다.
+인자가 없으면 SKILL.md 가 있는 모든 디렉터리와 모든 변경 이력 조각(`<단위>/changes/`, scripts/skill_changes.py)을 본다. 위반을 한 줄씩 내고, 하나라도 있으면 종료 코드 1 이다.
 """
 
 import re
@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+from skill_changes import check_changes
 from skill_paths import skill_dirs, source_path
 
 README_SECTIONS = ("이럴 때 쓴다", "사용 예시", "받는 것", "함께 쓰는 스킬")
@@ -116,6 +117,9 @@ def skill_names(root=ROOT):
 
 def main(argv):
     problems = [problem for name in (argv or skill_names()) for problem in check_skill(name)]
+    problems += [
+        problem for problem in check_changes(ROOT) if not argv or any(f"/{name}/changes/" in problem for name in argv)
+    ]
     for problem in problems:
         print(problem)
     return 1 if problems else 0

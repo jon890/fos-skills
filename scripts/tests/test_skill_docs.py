@@ -71,6 +71,24 @@ class RepositorySkillsTest(unittest.TestCase):
         self.assertTrue(problems and all(problem.startswith("demo/README.md: ") for problem in problems), problems)
 
 
+class FragmentCheckTest(unittest.TestCase):
+    def test_main_passes_on_the_repository_fragments(self):
+        self.assertEqual(docs.main([]), 0)
+
+    def test_main_reports_bad_fragment_of_the_named_skill(self):
+        folder = ROOT / "skills" / "plan" / "changes"
+        bad = folder / "bad-name.md"
+        folder.mkdir(exist_ok=True)
+        try:
+            bad.write_text("- a\n", encoding="utf-8")
+            self.assertEqual(docs.main(["plan"]), 1)
+            self.assertEqual(docs.main(["orch"]), 0)
+        finally:
+            bad.unlink(missing_ok=True)
+            if folder.is_dir() and not any(folder.iterdir()):
+                folder.rmdir()
+
+
 class ReadmeTest(unittest.TestCase):
     def test_valid_readme_passes(self):
         self.assertEqual([], docs.check_readme("demo", README))
