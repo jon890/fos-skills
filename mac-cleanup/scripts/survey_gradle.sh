@@ -50,7 +50,8 @@ if [ -s "$running" ]; then cat "$running"; else echo "없음"; fi
 echo
 echo "## 삭제 후보 (사용처도 데몬도 없는 버전)"
 # 경로는 한 줄에 하나씩, 실제로 있는 것만 낸다. 지우는 명령은 glob 반복문이 아니라 이 경로를 그대로 적은 한 줄이다.
-tilde() { printf '%s' "${1/#$HOME/~}"; }
+# bash 버전마다 치환 문자열의 ~ 처리가 달라 case 로 자른다.
+tilde() { case "$1" in "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;; *) printf '%s' "$1" ;; esac; }
 paths=()
 while IFS= read -r v; do
   if ! grep -qx "$v" "$used" && ! grep -qx "$v" "$running"; then
