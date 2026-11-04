@@ -339,6 +339,7 @@
 import { featureCompletionProblem } from './lib/feature-evidence.ts'
 import { idleShellVerdict } from './lib/idle-shells.ts'
 import type { Holder } from './lib/idle-shells.ts'
+import { cachedMerged, PrLookup, pruneMerged, rememberMerged } from './lib/pr-lookup.ts'
 import { homedir } from 'node:os'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
@@ -567,18 +568,18 @@ function belongsTo(repo: string, ref: string, base: string, pr: Pr): boolean {
   return git(repo, 'merge-base', '--is-ancestor', ref, String(head)).code === 0
 }
 
-// 그 브랜치의 PR. 조회 실패가 있었는지(failed), 이름만 같은 PR 이 있었는지(foreign)도 낸다.
 function branchTip(repo: string, branch: string): string {
   const tip = git(repo, 'rev-parse', '--verify', '-q', `refs/heads/${branch}^{commit}`)
   return tip.code === 0 ? tip.out : ''
 }
 
-function findPr(repo: string, branch: string, base: string): { pr: Pr | null; failed: boolean; foreign: boolean } {
+// 그 브랜치의 PR. 조회 실패가 있었는지(failed), 이름만 같은 PR 이 있었는지(foreign)도 낸다.
 // 끝 커밋이 그대로인 브랜치의 MERGED PR 은 남긴 것을 쓰고 gh 를 부르지 않는다(lib/pr-lookup.ts 의 cachedMerged)
-  let failed = false
+function findPr(repo: string, branch: string, base: string): { pr: Pr | null; failed: boolean; foreign: boolean } {
   const tip = branchTip(repo, branch)
   const cached = tip ? cachedMerged(repo, branch, tip) : null
   if (cached) return { pr: cached, failed: false, foreign: false }
+  let failed = false
   let foreign = false
   for (const [name] of prCandidates(repo, branch)) {
     const listed = prList(repo, name)
@@ -599,7 +600,6 @@ function findPr(repo: string, branch: string, base: string): { pr: Pr | null; fa
   return { pr: null, failed, foreign }
 }
 
-// noPr: PR 이 없어서 정리하지 않은 것(조회 실패는 아니다). 「PR 없이 끝난 워크트리」 판정의 대상이다
 // 이번 실행에서 PR 을 찾을 브랜치들의 이름을 한 번에 읽어 둔다. 끝 커밋이 그대로인 MERGED 브랜치는 뺀다
 function prefetchPrs(repo: string, branches: Iterable<string>): void {
   const names: string[] = []
@@ -611,6 +611,7 @@ function prefetchPrs(repo: string, branches: Iterable<string>): void {
   lookupOf(repo).prefetch(names)
 }
 
+// noPr: PR 이 없어서 정리하지 않은 것(조회 실패는 아니다). 「PR 없이 끝난 워크트리」 판정의 대상이다
 type Merged = { ok: boolean; mergedHead: string | null; why: string; pr: Pr | null; noPr?: boolean }
 
 function merged(repo: string, branch: string, base: string): Merged {
@@ -879,10 +880,10 @@ export async function stopHolders(
 
 function protectedReason(repo: string, branch: string, base: string): string | null {
   if (branch === base || branch.startsWith('release/')) return '기준 브랜치나 release 브랜치'
-  const done = gh(['pr', 'list', '--state', 'open', '--base', branch, '--json', 'number', '--jq', 'length'], { cwd: repo })
   // 열린 PR 의 base 목록을 저장소마다 한 번 읽는다. 읽지 못했거나 잘렸으면 이 이름만 따로 묻는다
   const bases = lookupOf(repo).openBases()
   if (bases) return bases.has(branch) ? '다른 열린 PR 의 base 이거나 조회 실패' : null
+  const done = gh(['pr', 'list', '--state', 'open', '--base', branch, '--json', 'number', '--jq', 'length'], { cwd: repo })
   if (done.code !== 0 || (done.stdout.trim() !== '' && done.stdout.trim() !== '0')) return '다른 열린 PR 의 base 이거나 조회 실패'
   return null
 }
@@ -1393,10 +1394,7 @@ function remoteVerdict(
   if (!pr) return { keep: '원격 끝점이 PR head 와 다르다' }
   if (open.bases.has(name)) return { keep: '열린 PR 의 base 다' }
   if (open.heads.has(name)) return { keep: '열린 PR 의 head 다' }
-  if (pr.state === 'MERGED') {
-    const pending = featureCompletionProblem(repo, String(pr.number), name, undefined, String(pr.body ?? ''))
-    return pending ? { keep: pending } : { pr }
-  }
+  if (pr.state === 'MERGED') return { pr }
   if (!hasCommit(repo, tip)) {
     git(repo, 'fetch', '-q', 'origin', pr.headRefName)
     if (!hasCommit(repo, tip)) return { keep: 'head 커밋을 받지 못했다' }
@@ -1448,6 +1446,19 @@ function sweepRemoteBranches(repo: string, base: string, apply: boolean, owners:
 
 type Sweep = { repo: string; args: Args; workers: WorkerRow[]; specsDir: string | null; log: Log; report: Report; owners: Owners }
 
+// 기능 PR 의 후속 검증이 끝나지 않았으면 지시서를 남긴다(머리 주석의 「기능 PR」). 남기면 true 다.
+// 지울 지시서 후보가 있을 때만 PR 본문을 읽는다. 워크트리와 브랜치는 후속 검증과 상관없이 지운다
+function specsKept(s: Sweep, path: string, name: string, branch: string, pr: Pr | null): boolean {
+  const { repo, specsDir, log } = s
+  if (!specsDir || pr?.state !== 'MERGED') return false
+  const { specs: named, prBodies } = specCandidates({ specsDir, name, branch, prNumber: pr.number })
+  const launched = launchesAt(repo, path).flatMap((launch) => (launch.spec ? [launch.spec] : []))
+  if (named.length + prBodies.length + launched.length + specsOnBranch(specsDir, branch).length === 0) return false
+  const pending = featureCompletionProblem(repo, String(pr.number), branch, specsDir, String(pr.body ?? ''))
+  if (pending) log(`  지시서 남김: ${pending}`)
+  return pending !== null
+}
+
 async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Terminal[]): Promise<void> {
   const { repo, args, workers, specsDir, log, report } = s
   let terminals = listed
@@ -1493,10 +1504,6 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
       releaseDispatches(mine, args.apply, log, '')
     }
     return keep(m.why, `남김 ${path}: ${m.why}`)
-  }
-  if (m.pr?.state === 'MERGED') {
-    const pending = featureCompletionProblem(repo, String(m.pr.number), branch, specsDir ?? undefined, String(m.pr.body ?? ''))
-    if (pending) return keep(pending, `남김 ${path}: ${pending}`)
   }
   if (dirty(path)) return keep('커밋 안 된 변경', `건너뜀 ${path}: 커밋 안 된 변경`)
   const lost = unpushed(path, 'HEAD', m.mergedHead, m.mergedHead === null)
@@ -1579,8 +1586,10 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     }
     log(`  worktree 와 로컬 브랜치를 지울 것 ${branch}`)
     deleteRemote(repo, plan, args.base, false, log)
-    trashLaunchedSpecs(repo, specsDir, path, false, log, args.liveSpecs, args.trash)
-    deleteSpecFiles(specsDir, name, false, log, args.liveSpecs, branch, m.pr)
+    if (!specsKept(s, path, name, branch, m.pr)) {
+      trashLaunchedSpecs(repo, specsDir, path, false, log, args.liveSpecs, args.trash)
+      deleteSpecFiles(specsDir, name, false, log, args.liveSpecs, branch, m.pr)
+    }
     return
   }
 
@@ -1596,6 +1605,8 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
       log(`  남은 프로세스 ${pids.length} 개가 유휴 셸뿐이다. Orca 터미널을 닫고 다시 시도한다`)
       closeTerminals(verdict.close, true, log, '유휴 셸 터미널')
       pids = await waitFree(path, args.wait, args.pollInterval)
+    } else {
+      log(`  유휴 셸 터미널을 닫지 않는다: ${verdict.keep}`)
     }
   }
   if (pids.length && args.killHolders) {
@@ -1630,11 +1641,11 @@ async function sweepWorktree(s: Sweep, path: string, branch: string, listed: Ter
     return
   }
   report.removed.push(path)
-    } else {
-      log(`  유휴 셸 터미널을 닫지 않는다: ${verdict.keep}`)
   deleteRemote(repo, plan, args.base, true, log)
-  trashLaunchedSpecs(repo, specsDir, path, true, log, args.liveSpecs, args.trash)
-  deleteSpecFiles(specsDir, name, true, log, args.liveSpecs, branch, m.pr)
+  if (!specsKept(s, path, name, branch, m.pr)) {
+    trashLaunchedSpecs(repo, specsDir, path, true, log, args.liveSpecs, args.trash)
+    deleteSpecFiles(specsDir, name, true, log, args.liveSpecs, branch, m.pr)
+  }
   // 지시서를 옮긴 뒤 지운다. 그 워크트리를 가리키는 다른 Run 의 기록도 워크트리와 함께 끝났다
   for (const w of mine) if (typeof w.dispatchId === 'string') forgetLaunch(repo, w.dispatchId)
   for (const launch of launchesAt(repo, path)) forgetLaunch(repo, launch.dispatch)
@@ -1647,10 +1658,6 @@ function sweepBranches(repo: string, args: Args, checkedOut: Set<string>, log: L
     if (checkedOut.has(branch) || protectedReason(repo, branch, args.base)) continue
     const m = merged(repo, branch, args.base)
     if (!m.ok) continue
-    if (m.pr?.state === 'MERGED') {
-      const pending = featureCompletionProblem(repo, String(m.pr.number), branch, args.specsDir ?? undefined, String(m.pr.body ?? ''))
-      if (pending) { log(`브랜치 남김 ${branch}: ${pending}`); continue }
-    }
     const lost = unpushed(repo, branch, m.mergedHead, m.mergedHead === null)
     if (lost) {
       log(`건너뜀 브랜치 ${branch}: 원격에 없는 커밋 ${lost > 0 ? lost : '확인 실패'}`)
@@ -1816,6 +1823,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   sweepReviews(repo, args, remaining, specsDir, log)
   if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, remaining, log)) code = 2
   sweepQueueLogs({ dir: pathOf('queue', repo), trash: args.trash, apply: args.apply, log, host: queueLogHost(repo) })
+  pruneMerged(repo, new Set(lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)))
   if (!sweepDocker(repo, args.apply, log)) code = 2
   if (!args.apply) return code
   try {
@@ -1823,7 +1831,6 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
     // after-cleanup 의 실패를 2 에 섞으면 정리 자체가 실패한 경우와 구별할 수 없다
     await fire('after-cleanup', { removed: report.removed, skipped: report.skipped }, { repo, base, run: args.run, out: log })
   } catch (e) {
-  pruneMerged(repo, new Set(lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)))
     process.stderr.write(`cleanup-sweep: after-cleanup 을 내지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
   }
   return code
