@@ -121,8 +121,9 @@ beforeEach(() => {
   lostState = join(tmp, 'lost.json')
   env = {
     ...process.env,
-    // 가짜 orca 의 #! 줄과 이벤트 핸들러가 이 테스트의 node 를 쓰게 한다
-    PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
+    // 가짜 orca 의 #! 줄과 이벤트 핸들러가 이 테스트의 node 를 쓰게 한다. NEXT_WAIT 의 앞 낱말이 PATH 의 orch 에 따라 바뀌므로
+    // 사용자 PATH 는 물려받지 않는다
+    PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter),
     ORCA: orcaPath,
     PS: psPath,
     FAKE_STATE: stateFile,
@@ -231,7 +232,57 @@ describe('다음 대기 안내', () => {
     const r = wait([batch('d1', 'question')], ['--types', 'question,status', '--timeout-ms', '1234', '--lost-interval-sec', '0'])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(lastLine(r.stdout), 'LAST_DELIVERY d1')
-    assert.equal(nextWait(r.stderr), `NEXT_WAIT ${ORCH_BIN} wait-important --run run_x --ack d1 --types question,status --timeout-ms 1234 --lost-interval-sec 0 --completion-contract none --lost-state ${lostState}`)
+    assert.equal(nextWait(r.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d1 --run run_x --types question,status --timeout-ms 1234 --lost-interval-sec 0 --completion-contract none --lost-state ${lostState}`)
+  })
+
+  // 기본값만 쓰는 대기. wait() 는 --lost-state 와 --completion-contract 를 늘 붙이므로 여기서 직접 띄운다
+  function plain(args: string[], cwd: string, extraEnv: NodeJS.ProcessEnv = {}): Result {
+    writeFileSync(stateFile, JSON.stringify({ replies: [batch('d1', 'question')], workers: [], tasks: [], latest: {}, history: [], inbox: [], history_fail: false, screens: {} }))
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--lost-interval-sec', '60', ...args], {
+      env: { ...env, ...extraEnv },
+      cwd,
+      encoding: 'utf8',
+      timeout: 120_000,
+    })
+    return { code: done.status, stdout: done.stdout, stderr: done.stderr }
+  }
+
+  function repo(name: string): string {
+    const dir = join(tmp, name)
+    mkdirSync(dir)
+    spawnSync('git', ['init', '-q', dir])
+    return realpathSync(dir)
+  }
+
+  function launcherOnPath(marked: boolean): string {
+    const dir = join(tmp, 'pathbin')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'orch'), marked ? '#!/usr/bin/env node\n// fos-skills orch launcher\n' : '#!/bin/sh\n')
+    chmodSync(join(dir, 'orch'), 0o755)
+    return `${dir}${delimiter}${env.PATH}`
+  }
+
+  test('run-current 에서 채운 Run 과 같은 저장소의 기본 상태 파일은 NEXT_WAIT 에서 빠진다', () => {
+    const r1 = repo('r1')
+    // 루프가 없는 저장소라 LOOP-DEAD(8)로 바로 끝나고 앞 delivery 를 다시 넘긴다
+    const r = plain(['--run', 'run_x', '--ack', 'd0', '--loop-repo', r1], r1, { ORCH_CONTEXT: 'run=run-current loop-repo=registered', PATH: launcherOnPath(true) })
+    assert.equal(r.code, 8, r.stdout + r.stderr)
+    assert.equal(nextWait(r.stderr), `NEXT_WAIT orch wait --ack d0 --loop-repo ${r1}`)
+  })
+
+  test('PATH 의 orch 가 실행기가 아니면 진입점 절대경로로 내고, 명시한 Run 은 적는다', () => {
+    const r1 = repo('r1')
+    const r = plain(['--run', 'run_x', '--ack', 'd0', '--loop-repo', r1], r1, { PATH: launcherOnPath(false) })
+    assert.equal(nextWait(r.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d0 --run run_x --loop-repo ${r1}`)
+  })
+
+  test('루프 저장소가 시작 폴더와 다른 저장소이거나 없으면 --lost-state 를 절대경로로 적는다', () => {
+    const r1 = repo('r1')
+    const r2 = repo('r2')
+    const other = plain(['--run', 'run_x', '--ack', 'd0', '--loop-repo', r2], r1, { ORCH_CONTEXT: 'run=run-current' })
+    assert.equal(nextWait(other.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d0 --lost-state ${join(r1, '.orch', 'state', 'wait-important-lost.json')} --loop-repo ${r2}`)
+    const none = plain(['--run', 'run_x'], r1, { ORCH_CONTEXT: 'run=run-current' })
+    assert.equal(nextWait(none.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d1 --lost-state ${join(r1, '.orch', 'state', 'wait-important-lost.json')}`)
   })
 
   test('시간 초과와 루프 wake는 앞 delivery를 다시 넘기는 명령을 남긴다', () => {
@@ -814,6 +865,28 @@ describe('남은 대기', () => {
       assert.equal(await exited(orphan, 5000), true)
       assert.ok(r.stderr.includes(`PID ${orphan.pid} 를 종료했다`), r.stderr)
       assert.ok(!r.stderr.includes('PID 501 를 종료했다'), r.stderr)
+    } finally {
+      await reap(orphan)
+    }
+  })
+
+  test('--kill-stale 은 실행기와 진입점이 낀 고아 대기도 따라간다', async () => {
+    const orphan = sleeper()
+    try {
+      writeFileSync(
+        psRows,
+        [
+          psLine(601, 1, '/bin/zsh'),
+          psLine(602, 601, '/usr/local/bin/node /p/bin/orch wait --ack d0'),
+          psLine(603, 602, '/usr/local/bin/node --disable-warning=ExperimentalWarning /p/skills/orch/bin/orch.ts wait --ack d0'),
+          psLine(orphan.pid ?? 0, 603, 'node --disable-warning=ExperimentalWarning /p/skills/orch/scripts/wait-important.ts --run run_x --ack d0'),
+        ].join('\n') + '\n',
+      )
+      const r = wait([WAITER_EXISTS], ['--kill-stale'])
+      assert.equal(r.code, 4, r.stderr)
+      assert.equal(await exited(orphan, 5000), true)
+      assert.ok(r.stderr.includes(`PID ${orphan.pid} 를 종료했다`), r.stderr)
+      for (const pid of ['601', '602', '603']) assert.ok(!r.stderr.includes(`PID ${pid} 를 종료했다`), pid)
     } finally {
       await reap(orphan)
     }

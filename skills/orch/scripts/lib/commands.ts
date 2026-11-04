@@ -10,8 +10,10 @@
 //     3. 위치 인자를 옵션으로 바꾼다(positional). 그다음 prepend 를 앞에 붙인다
 // 옛 이름은 인자를 바꾸지 않는다. resolveLegacy 는 새 꼴 안내 문자열만 만든다.
 
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { shQuote } from './py.ts'
 
 export type ContextName = 'repo' | 'run' | 'specs-dir' | 'loop-repo'
 
@@ -302,4 +304,40 @@ export function helpText(group?: string): string {
         ...GROUPS.flatMap((g) => [`${g}:`, ...COMMANDS.filter((c) => c.group === g).map((c) => `  ${c.usage}`)]),
       ]
   return `${lines.join('\n')}\n`
+}
+
+// 플러그인 루트 실행기(bin/orch)의 둘째 줄 표지. install-cli 와 doctor 도 같은 글자로 가린다
+export const LAUNCHER_MARK = 'fos-skills orch launcher'
+const ENTRY = fileURLToPath(new URL('../../bin/orch.ts', import.meta.url))
+const words = new Map<string, string>()
+
+// PATH 의 첫 orch 파일이 표지 있는 실행기인가
+export function launcherOnPath(pathValue: string | undefined = process.env.PATH): string | null {
+  for (const dir of (pathValue ?? '').split(delimiter)) {
+    if (!dir) continue
+    const file = join(dir, 'orch')
+    try {
+      if (!statSync(file).isFile()) continue
+    } catch {
+      continue
+    }
+    try {
+      return readFileSync(file, 'utf8').slice(0, 400).includes(LAUNCHER_MARK) ? file : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+// 안내 줄과 NEXT_WAIT 의 앞 낱말. PATH 의 첫 orch 가 표지 있는 실행기면 `orch`, 아니면 진입점 절대경로(셸 따옴표)다.
+// 같은 PATH 값에는 프로세스 안에서 한 번만 훑는다. 테스트는 PATH 를 고정한다
+export function orchWord(pathValue: string | undefined = process.env.PATH): string {
+  const key = pathValue ?? ''
+  let word = words.get(key)
+  if (word === undefined) {
+    word = launcherOnPath(pathValue) ? 'orch' : shQuote(ENTRY)
+    words.set(key, word)
+  }
+  return word
 }

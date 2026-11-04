@@ -158,9 +158,10 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { fileURLToPath } from 'node:url'
 import { expandArgs } from './lib/args.ts'
 import { linkBoardPr } from './lib/board.ts'
+import { orchContext } from './lib/bundle.ts'
+import { orchWord } from './lib/commands.ts'
 import { classify, context, payload } from './lib/completion.ts'
 import { fire, handlerFile } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
@@ -185,12 +186,15 @@ const DEFAULT_TYPES = 'worker_done,question,escalation,status'
 const LIVE_STATUSES = new Set(['pending', 'dispatched', 'running'])
 const LOST_WORKER_STATES = new Set(['abandoned', 'failed', 'stopped'])
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish'])
+// 실행기(bin/orch)와 진입점(bin/orch.ts)을 node 로 띄운 행. 대기를 넘기기만 하므로 고아 대기 판정에서 셸처럼 통과하는 노드로 본다
+const ORCH_HOP = /^\S*node\S*(?:\s+--\S+)*\s+\S*\/bin\/orch(?:\.ts)?(?:\s|$)/
 const HISTORY_TIMEOUT_MS = 30_000
 // 완료 근거를 다시 찾을 때 읽는 inbox 행 수. 11-01 실측으로 630행을 1초에 읽었다
 const INBOX_LIMIT = 3000
 // orca 는 --timeout-ms 에 끝난다. 그 뒤에도 남은 check 를 끝내기까지 더 기다리는 시간
 const CHECK_GRACE_MS = 30_000
-const ORCH_BIN = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
+// parseArgs 의 기본값. NEXT_WAIT 가 기본값과 다른 인자만 적으려고 같은 값을 읽는다
+const DEFAULTS = { types: DEFAULT_TYPES, 'timeout-ms': '7000000', 'lost-interval-sec': '60', 'completion-contract': 'ready' } as const
 
 type Json = Record<string, unknown>
 type Lost = [string, unknown]
@@ -209,17 +213,30 @@ function err(line: string): void {
 
 // 대기를 끝낸 뒤에도 코디네이터가 같은 Run을 계속 감시할 수 있게 다음 호출을 stderr에 남긴다.
 // stdout의 JSON과 LAST_DELIVERY 계약은 자동 처리기가 읽으므로 건드리지 않는다.
-function nextWait(values: Record<string, string | boolean | string[] | undefined>, ack: string | null, loopRepos: string[], lostState: string): void {
-  const args = [shQuote(ORCH_BIN), 'wait-important', '--run', shQuote(String(values.run))]
+// 꼴은 `<앞> wait --ack <id> [기본값과 다른 인자] [--lost-state <절대경로>] --loop-repo <절대경로>...` 다(docs/features/orch-cli/design.md 「NEXT_WAIT」).
+//     <앞>          lib/commands.ts 의 orchWord(). PATH 의 orch 가 실행기면 orch, 아니면 진입점 절대경로
+//     --run         진입점이 run-current 에서 채웠으면(ORCH_CONTEXT 의 run=run-current) 뺀다. 다시 걸어도 코디네이터 터미널의 같은 Run 이다.
+//                   명시했거나 설정에서 온 Run 은 값이 같아도 적는다
+//     --lost-state  기본값을 쓰고 시작 폴더의 주 checkout 이 첫 --loop-repo 의 주 checkout 과 같으면 뺀다. 같은 저장소의 어느 폴더에서 다시 걸어도
+//                   같은 상태 파일이다. 다르거나, --loop-repo 가 없거나, 명시했으면 절대경로로 적는다
+//     나머지        parseArgs 의 기본값(DEFAULTS)과 다를 때만 적는다. --loop-repo 는 절대경로로 늘 적는다
+function nextWait(
+  values: Record<string, string | boolean | string[] | undefined>,
+  ack: string | null,
+  loopRepos: string[],
+  lostState: string,
+  start: string,
+): void {
+  const args = [orchWord(), 'wait']
   if (ack) args.push('--ack', shQuote(ack))
-  args.push('--types', shQuote(String(values.types)))
-  args.push('--timeout-ms', shQuote(String(values['timeout-ms'])))
-  args.push('--lost-interval-sec', shQuote(String(values['lost-interval-sec'])))
-  args.push('--completion-contract', shQuote(String(values['completion-contract'])))
+  if (orchContext().run !== 'run-current') args.push('--run', shQuote(String(values.run)))
+  for (const name of ['types', 'timeout-ms', 'lost-interval-sec', 'completion-contract'] as const) {
+    if (String(values[name]) !== DEFAULTS[name]) args.push(`--${name}`, shQuote(String(values[name])))
+  }
   if (values['kill-stale'] === true) args.push('--kill-stale')
   if (values['stop-reports'] === true) args.push('--stop-reports')
   for (const dispatch of values['ignore-lost'] as string[]) args.push('--ignore-lost', shQuote(dispatch))
-  args.push('--lost-state', shQuote(lostState))
+  if (values['lost-state'] || loopRepos.length === 0 || loopRepos[0] !== start) args.push('--lost-state', shQuote(lostState))
   for (const repo of loopRepos) args.push('--loop-repo', shQuote(repo))
   err(`NEXT_WAIT ${args.join(' ')}`)
 }
@@ -682,7 +699,7 @@ function stalePids(procs: Proc[], all: Proc[]): Set<number> {
   // 앱도 init 의 자식이다. 일반 셸과 해당 Run 의 대기만 따라가 앱의 살아 있는 세션은 보존한다
   const parent = new Map<number, number>()
   for (const [pid, ppid, , command] of all) {
-    if (waiters.has(pid) || SHELLS.has(basename(command.split(/\s+/)[0]).replace(/^-+/, ''))) parent.set(pid, ppid)
+    if (waiters.has(pid) || SHELLS.has(basename(command.split(/\s+/)[0]).replace(/^-+/, '')) || ORCH_HOP.test(command)) parent.set(pid, ppid)
   }
   const stale = new Set([...parent].filter(([, ppid]) => ppid === 1).map(([pid]) => pid))
   for (let grew = true; grew; ) {
@@ -911,14 +928,14 @@ async function main(argv: string[]): Promise<number> {
     const options = {
       run: { type: 'string' },
       ack: { type: 'string' },
-      types: { type: 'string', default: DEFAULT_TYPES },
-      'timeout-ms': { type: 'string', default: '7000000' },
+      types: { type: 'string', default: DEFAULTS.types },
+      'timeout-ms': { type: 'string', default: DEFAULTS['timeout-ms'] },
       'kill-stale': { type: 'boolean', default: false },
-      'lost-interval-sec': { type: 'string', default: '60' },
+      'lost-interval-sec': { type: 'string', default: DEFAULTS['lost-interval-sec'] },
       'ignore-lost': { type: 'string', multiple: true, default: [] as string[] },
       'lost-state': { type: 'string' },
       'ack-lost': { type: 'string', multiple: true, default: [] as string[] },
-      'completion-contract': { type: 'string', default: 'ready' },
+      'completion-contract': { type: 'string', default: DEFAULTS['completion-contract'] },
       'loop-repo': { type: 'string', multiple: true, default: [] as string[] },
       'stop-reports': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h' },
@@ -952,7 +969,7 @@ async function main(argv: string[]): Promise<number> {
   repoBase = cwd
   if (!values['lost-state']) warnLegacy(cwd, 'wait-important')
   const state = values['lost-state'] ? resolve(base, values['lost-state']) : join(pathOf('state', cwd), 'wait-important-lost.json')
-  const continueWait = (delivery: string | null) => nextWait(values as Record<string, string | boolean | string[] | undefined>, delivery, loopRepos, state)
+  const continueWait = (delivery: string | null) => nextWait(values as Record<string, string | boolean | string[] | undefined>, delivery, loopRepos, state, cwd)
   const ignoreLost = values['ignore-lost'] as string[]
   const ackLost = values['ack-lost'] as string[]
   if (ackLost.length) {

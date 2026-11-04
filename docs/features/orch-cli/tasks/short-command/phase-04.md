@@ -78,3 +78,4 @@ node --test skills/orch/tests/lib-commands.spec.ts skills/orch/tests/wait-import
 | `skills/orch/tests/block-background-wait.spec.ts` | 수정 |
 | `skills/orch/tests/coordinator-hooks.spec.ts` | 수정 |
 | `skills/orch/tests/lib-events.spec.ts` | 수정 |
+| `skills/orch/tests/lib-commands.spec.ts` | 수정 |

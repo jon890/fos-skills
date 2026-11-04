@@ -84,13 +84,13 @@ const DEFAULT_BUDGET_MS = 7_000
 const PAGE_LIMIT = '100'
 const RUN_CONCURRENCY = 16
 
-const SEND_TO_WORKER = '`node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts" --dispatch <id> --body ...` 로 보낸다.'
+const SEND_TO_WORKER = '`orch worker send --dispatch <id> --body ...` 로 보낸다.'
 const RESEND = 'worker 가 아니면 `--terminal term_...` 처럼 handle 을 그대로 적어 다시 부른다.'
 const REASON = {
   worker: (handle: string) =>
     `orch: worker 터미널(${handle})에 \`orca terminal send\` 로 직접 쓰지 않는다. ` +
     '작업 중이면 입력이 섞이고, 끝난 dispatch 면 지시가 어느 Task 에도 묶이지 않는다. ' +
-    `${SEND_TO_WORKER} 깨우기만 하려면 \`nudge-worker\` 를 쓴다. 끝난 dispatch 는 \`adopt-sessions\` 로 이어 붙인다.`,
+    `${SEND_TO_WORKER} 깨우기만 하려면 \`orch worker nudge\` 를 쓴다. 끝난 dispatch 는 \`orch worker adopt\` 로 이어 붙인다.`,
   firstScreen: (handle: string, why: string) =>
     `orch: worker 터미널(${handle})이 첫 화면 대기가 아니라 \`--enter\` 를 보내지 않는다(${why}). ` +
     `${SEND_TO_WORKER} 첫 화면 승인이면 handle 을 그대로 적어 다시 부른다.`,
@@ -104,7 +104,7 @@ const REASON = {
     'orch: `--environment` 나 `--pairing-code` 로 원격 서버의 터미널에 보내는 `orca terminal send` 는 ' +
     `이 hook 이 worker 터미널인지 확인할 수 없다. worker 면 ${SEND_TO_WORKER} 아니면 그 서버의 셸에서 보낸다.`,
   failed: (why: string) => `orch: worker 터미널인지 확인하는 orca 조회가 실패했다: ${why}. ${RESEND}`,
-  timeout: (ms: number) => `orch: worker 터미널인지 확인하는 orca 조회가 ${ms}ms 안에 끝나지 않았다(시간 초과, 경과 ${Date.now() - startedAt}ms, 조회 ${queries}회, 완료 ${completed}회, 마지막 ${lastQuery}). \`adopt-sessions\` 로 연결 상태를 먼저 확인한다. ${RESEND}`,
+  timeout: (ms: number) => `orch: worker 터미널인지 확인하는 orca 조회가 ${ms}ms 안에 끝나지 않았다(시간 초과, 경과 ${Date.now() - startedAt}ms, 조회 ${queries}회, 완료 ${completed}회, 마지막 ${lastQuery}). \`orch worker adopt\` 로 연결 상태를 먼저 확인한다. ${RESEND}`,
   unexpected: (why: string) => `orch: worker 터미널인지 판정하다 예상 밖 오류가 났다: ${why}. ${RESEND}`,
 }
 

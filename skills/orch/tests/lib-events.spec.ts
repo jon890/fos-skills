@@ -236,7 +236,7 @@ describe('unknownHandlers', () => {
 
 describe('핸들러 환경', () => {
   const DUMP = `const e = process.env
-console.log(JSON.stringify({ PATH: e.PATH, ORCA: e.ORCA, GH: e.GH, ORCH_REAL_ORCA: e.ORCH_REAL_ORCA ?? null, ORCH_REAL_GH: e.ORCH_REAL_GH ?? null, ORCH_EVENT: e.ORCH_EVENT, ORCH_REPO: e.ORCH_REPO, ORCH_DIR: e.ORCH_DIR }))
+console.log(JSON.stringify({ PATH: e.PATH, ORCA: e.ORCA, GH: e.GH, ORCH_REAL_ORCA: e.ORCH_REAL_ORCA ?? null, ORCH_REAL_GH: e.ORCH_REAL_GH ?? null, ORCH_EVENT: e.ORCH_EVENT, ORCH_REPO: e.ORCH_REPO, ORCH_DIR: e.ORCH_DIR, ORCH_BIN: e.ORCH_BIN ?? null }))
 `
   function dumped(lines: string[], event: string): Record<string, string | null> {
     const line = lines.find((l) => l.startsWith(PREFIXED(event, '{')))
@@ -258,6 +258,9 @@ console.log(JSON.stringify({ PATH: e.PATH, ORCA: e.ORCA, GH: e.GH, ORCH_REAL_ORC
     assert.equal(env.ORCH_REAL_GH, fake.gh.path)
     for (const key of ['ORCH_REAL_ORCA', 'ORCH_REAL_GH']) assert.equal(String(env[key]).startsWith(GUARD + sep), false, `${key} 가 가드 폴더 안이다`)
     assert.deepEqual([env.ORCH_EVENT, env.ORCH_REPO, env.ORCH_DIR], ['tick', repo, join(repo, '.orch')])
+    // 핸들러가 새 꼴로 부르는 진입점 절대경로
+    assert.equal(env.ORCH_BIN, fileURLToPath(new URL('../bin/orch.ts', import.meta.url)))
+    assert.ok(existsSync(String(env.ORCH_BIN)))
   })
 
   test('ORCA 가 이름이면 PATH 에서 가드 폴더를 건너뛰고 찾으며, 찾지 못하면 ORCH_REAL_* 를 넘기지 않는다', async () => {

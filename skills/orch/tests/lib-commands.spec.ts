@@ -1,11 +1,12 @@
 // 명령 표(lib/commands.ts)가 새 꼴과 옛 꼴을 같은 스크립트와 인자로 푸는지 본다. 스크립트를 실행하지 않는다.
 
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { COMMANDS, GROUPS, form, isGroup, resolveLegacy, resolveNew, scriptPath, type Command } from '../scripts/lib/commands.ts'
+import { COMMANDS, GROUPS, form, isGroup, orchWord, resolveLegacy, resolveNew, scriptPath, type Command } from '../scripts/lib/commands.ts'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 
@@ -123,4 +124,24 @@ test('scriptPath 는 옛 이름과 파일 이름을 그 폴더의 경로로 푼�
   assert.equal(scriptPath(SCRIPTS, 'wait-important'), join(SCRIPTS, 'wait-important.ts'))
   assert.equal(scriptPath(SCRIPTS, 'wait-important.ts'), join(SCRIPTS, 'wait-important.ts'))
   assert.equal(scriptPath(SCRIPTS, 'nope'), null)
+})
+
+test('orchWord 는 PATH 의 첫 orch 가 표지 있는 실행기면 orch, 아니면 진입점 경로다', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'orch-word-'))
+  try {
+    const entry = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
+    const marked = join(tmp, 'marked')
+    const other = join(tmp, 'other')
+    for (const [dir, body] of [[marked, '#!/usr/bin/env node\n// fos-skills orch launcher\n'], [other, '#!/bin/sh\n']]) {
+      mkdirSync(dir)
+      writeFileSync(join(dir, 'orch'), body)
+      chmodSync(join(dir, 'orch'), 0o755)
+    }
+    assert.equal(orchWord([marked, '/usr/bin'].join(delimiter)), 'orch')
+    // 앞에 다른 orch 가 있으면 그것이 불리므로 실행기가 아니다
+    assert.equal(orchWord([other, marked].join(delimiter)), entry)
+    assert.equal(orchWord([join(tmp, 'none'), '/usr/bin'].join(delimiter)), entry)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
 })
