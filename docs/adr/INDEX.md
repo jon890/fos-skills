@@ -21,3 +21,4 @@
 - [ADR-019](019-plugin-version-auto-bump.md): 플러그인 version 을 두고 main 에 머지될 때마다 GitHub Actions 가 올린다 (`accepted`)
 
 - [ADR-020: 스킬 원본과 저장소 관리 영역을 나눈다](020-skill-directory-layout.md)
+- [ADR-021](021-extension-directory-layout.md): 보드를 확장 기능 디렉터리에 둔다 (`accepted`)

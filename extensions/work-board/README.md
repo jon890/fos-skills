@@ -4,7 +4,7 @@
 Claude Code 안에서 `/board` 를 열면 보드 파일의 항목, 일하는 worker, 열린 PR, 답하지 않은 질문, 업무 알림이 한곳에 모여요.
 창의 단축키는 다음에 보낼 요청문을 입력란에 채워 줘요. 내용을 보고 Enter 만 누르면 코디네이터에게 가요.
 
-![/board 창. 전체 진행률, 단축키, 오늘 목표, 결정 필요 항목이 보인다](../docs/images/board.png)
+![/board 창. 전체 진행률, 단축키, 오늘 목표, 결정 필요 항목이 보인다](../../docs/images/board.png)
 
 위 화면은 데모 저장소에서 2026-10-27 에 찍었어요.
 
@@ -41,7 +41,7 @@ Claude Code 안에서 `/board` 를 열면 보드 파일의 항목, 일하는 wor
 - worker: order-api  PR #877 CI 12/12
 - PR: #877
 1. PR·CI·배포·worker 보고·업무 상태와 대조해 지금 상태를 확인하고, 멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘.
-2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.
+2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.
 3. 확인한 상태, 진행한 것, 내가 정할 것만 짧게 보고해 줘.
 ```
 
@@ -56,7 +56,7 @@ Claude Code 안에서 `/board` 를 열면 보드 파일의 항목, 일하는 wor
 1. 기다리던 것(답, 결정, 배포, 외부 회신)이 왔는지 업무 댓글, 메신저, PR, 배포 상태로 확인해 줘.
 2. 왔으면 그 내용으로 다음 단계를 진행하고 이 항목을 진행 중(doing)으로 올려 줘.
 3. 아직 오지 않았으면 무엇을 누구에게 기다리는지 적고, 재촉하거나 우회할 방법을 제안해 줘.
-4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.
+4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.
 5. 확인한 것, 진행한 것, 내가 정할 것만 짧게 보고해 줘.
 ```
 
@@ -64,7 +64,7 @@ Claude Code 안에서 `/board` 를 열면 보드 파일의 항목, 일하는 wor
 
 **보드가 실제와 어긋나 보일 때** `u` 를 눌러요. 확인한 근거로만 보드를 고치고, 바뀐 것과 정할 것만 보고받아요.
 
-**업무 알림이 왔을 때** 알림 상자의 번호를 누르면 그 알림의 답변 초안을 만들고 미리보기로 확인받는 요청문이 채워져요. 답할 필요가 없는 알림은 `x` 다음 번호로 넘기고, 잘못 넘겼으면 `z` 로 되돌려요. 알림함 설정은 [inbox](../skills/inbox/README.md) 에 있어요.
+**업무 알림이 왔을 때** 알림 상자의 번호를 누르면 그 알림의 답변 초안을 만들고 미리보기로 확인받는 요청문이 채워져요. 답할 필요가 없는 알림은 `x` 다음 번호로 넘기고, 잘못 넘겼으면 `z` 로 되돌려요. 알림함 설정은 [inbox](../../skills/inbox/README.md) 에 있어요.
 
 ## 화면 읽기
 
@@ -108,10 +108,10 @@ worker 줄 끝의 빨간 글은 손이 필요하다는 뜻이에요. 「멈춤 4
 ## 보드에 항목 적기
 
 보드 파일은 저장소 git 루트의 `.omc/board.json` 이에요. orch 가 worker 를 띄우고 PR 을 머지할 때마다 항목과 단계를 자동으로 고쳐요.
-직접 적을 때는 `board.ts` 를 써요. 경로는 플러그인 안의 `work-board/bin/board.ts` 예요.
+직접 적을 때는 `board.ts` 를 써요. 경로는 플러그인 안의 `extensions/work-board/bin/board.ts` 예요.
 
 ```bash
-BOARD_BIN="<플러그인 경로>/work-board/bin/board.ts"
+BOARD_BIN="<플러그인 경로>/extensions/work-board/bin/board.ts"
 node --disable-warning=ExperimentalWarning "$BOARD_BIN" set order-api doing --title "주문 이력 조회 API" --pr 877 \
   --next "1. 구현" --next "2. 리뷰" --next "3. 머지"
 node --disable-warning=ExperimentalWarning "$BOARD_BIN" step order-api 1   # 1번 단계를 끝내요
@@ -135,8 +135,8 @@ work-board 를 고치는 동안에는 저장소 루트 README 의 「고치는 �
 
 ## 함께 쓰는 스킬
 
-- [orch](../skills/orch/README.md): worker 를 띄우고 보드의 항목과 단계를 자동으로 고쳐요. 언제 무엇을 고치는지는 [갱신 담당 표](../skills/orch/references/board.md#갱신-담당)에 있어요
-- [inbox](../skills/inbox/README.md): 알림을 받아 오고 답변을 등록해요. 창은 그리기만 해요
+- [orch](../../skills/orch/README.md): worker 를 띄우고 보드의 항목과 단계를 자동으로 고쳐요. 언제 무엇을 고치는지는 [갱신 담당 표](../../skills/orch/references/board.md#갱신-담당)에 있어요
+- [inbox](../../skills/inbox/README.md): 알림을 받아 오고 답변을 등록해요. 창은 그리기만 해요
 
 창이 무엇을 어떤 규칙으로 그리는지(멈춤 판정, 질문 조회 범위, 저장 형식)는 [동작 세부](references/behavior.md)에 있어요. 창이나 보드 명령을 고칠 때 읽어요.
-기존 `~/.claude/mods/work-board` 를 쓰던 사람이 옮겨 오는 순서는 [ADR-006](../docs/adr/006-work-board-in-plugin.md) 에 있어요.
+기존 `~/.claude/mods/work-board` 를 쓰던 사람이 옮겨 오는 순서는 [ADR-006](../../docs/adr/006-work-board-in-plugin.md) 에 있어요.

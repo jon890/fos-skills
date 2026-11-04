@@ -35,7 +35,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // 저장소의 node:test 묶음이다. 새 묶음을 더하면 여기와 CI 의 node 테스트 명령을 함께 고친다.
-export const DEFAULT_PATTERNS = ["skills/orch/tests/*.spec.ts", "work-board/tests/*.spec.ts", "skills/inbox/tests/*.spec.ts"];
+export const DEFAULT_PATTERNS = ["skills/orch/tests/*.spec.ts", "extensions/work-board/tests/*.spec.ts", "skills/inbox/tests/*.spec.ts"];
 export const END_PREFIX = "결과: ";
 const SUMMARY = "summary.txt";
 const PID_FILE = "runner.pid";

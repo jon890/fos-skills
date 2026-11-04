@@ -36,7 +36,7 @@
 
 ## 설계
 
-- 표시: `work-board/hooks/register.js` 의 머리 줄 Box(`updated-at`)가 「HH:MM 업데이트  ·  <버전 글>」 을 줄바꿈 허용으로 그린다. 버전 글과 색은 `versionLabel` 이 정한다.
+- 표시: `extensions/work-board/hooks/register.js` 의 머리 줄 Box(`updated-at`)가 「HH:MM 업데이트  ·  <버전 글>」 을 줄바꿈 허용으로 그린다. 버전 글과 색은 `versionLabel` 이 정한다.
 - 읽는 시점: 세션 시작에 설치본을 한 번 읽고(`loadInstall`), main 은 세션 시작, `/board` 열 때, 30분마다(`VERSION_MS`), 갱신 직후에 읽는다(`loadLatest`). 명령마다 10초 시간 초과다.
 - 최신 version: `git ls-remote` 로 받은 커밋의 `plugin.json` 을 `https://raw.githubusercontent.com/<owner>/<repo>/<커밋>/.claude-plugin/plugin.json` 에서 `curl` 로 읽는다. 커밋 주소라 CDN 캐시에 낡은 값이 남지 않는다. 읽지 못하면 커밋으로만 비교한다.
 - version 으로 비교하는 이유: version 을 올리지 않은 커밋은 `update` 가 받지 않는다. 커밋으로 비교하면 받을 것이 없는데도 「p 로 갱신」 이 계속 보인다.

@@ -1,4 +1,4 @@
-// board-release.ts 를 임시 git 저장소, 임시 보드, 가짜 gh, 저장소의 실제 work-board/bin/board.ts 로 돌려 본다. GitHub 에는 닿지 않는다.
+// board-release.ts 를 임시 git 저장소, 임시 보드, 가짜 gh, 저장소의 실제 extensions/work-board/bin/board.ts 로 돌려 본다. GitHub 에는 닿지 않는다.
 //
 // 가짜 gh 는 작업 폴더의 state.json 에서 `pr view N` 의 JSON 을 state[N] 으로 읽는다. 없는 번호는 조회 실패다.
 

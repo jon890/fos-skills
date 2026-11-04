@@ -88,7 +88,7 @@
 //     --intermediate        이 PR 이 업무의 중간 PR 이다. 판정하지 않는다. --complete 와 함께 쓸 수 없다
 //     --board FILE          보드 파일. 기본은 work-board 의 board.ts 가 정한 위치. 상대경로면 주 checkout 기준
 //     --board-id ID         판정과 상관없이 done 으로 바꿀 보드 항목. 없으면 보드 파일에서 찾는다(위 「보드 항목」)
-//     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 work-board/bin/board.ts
+//     --board-bin PATH      보드 명령. 기본은 BOARD_BIN 환경 변수, 없으면 이 저장소의 extensions/work-board/bin/board.ts
 //     --merge-timeout MIN   머지 대기 한도(분). 기본 180
 //     --deploy-timeout MIN  배포 대기 한도(분). 기본 120
 //     --poll-interval SEC   확인 간격(초). 기본 60
@@ -296,7 +296,7 @@ function parse(argv: string[]): Args | null {
     intermediate: values.intermediate === true || (values.complete !== true && configIntermediate === true),
     board: pick('board'),
     boardId: pick('board-id'),
-    boardBin: pick('board-bin') ?? (process.env.BOARD_BIN || resolve(HERE, '../../../work-board/bin/board.ts')),
+    boardBin: pick('board-bin') ?? (process.env.BOARD_BIN || resolve(HERE, '../../../extensions/work-board/bin/board.ts')),
     mergeTimeout: num('merge-timeout', 180),
     deployTimeout: num('deploy-timeout', 120),
     pollInterval: num('poll-interval', 60),

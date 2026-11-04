@@ -143,7 +143,7 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 고치는 중인 체크아웃의 스크립트를 테스트하려면 `ORCH_SCRIPTS_DIR` 에 그 체크아웃의 `skills/orch/scripts` 를 준다. 설치 기록보다 앞선다.
 진입점 파일은 Node 내장 모듈만 쓰는 한 파일이라 저장소에 복사해 두고 써도 설치 기록을 따라간다. 복사본은 번들이 아니라 진입점만 고정한다.
 
-보드(`board.json`)는 work-board 소유라 여기 두지 않는다. 위치는 `work-board/README.md` 가 정하고, 다른 곳이면 `finish.board` 로 준다.
+보드(`board.json`)는 work-board 소유라 여기 두지 않는다. 위치는 `extensions/work-board/README.md` 가 정하고, 다른 곳이면 `finish.board` 로 준다.
 
 스크립트가 `.orch/` 아래를 처음 만들 때 `.git/info/exclude` 에 `/.orch/` 를 더해 git 이 무시하게 한다. 저장소의 `.gitignore` 는 바꾸지 않는다.
 오버레이와 설정을 저장소에 커밋해 함께 쓰려면 `git add -f .orch/overlay.md` 로 추적한다.

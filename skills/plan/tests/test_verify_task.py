@@ -1341,20 +1341,20 @@ class PluginTestRunnerTest(unittest.TestCase):
                 self.assertEqual(self.classify(line), "other")
 
     def test_plugin_test_runs_declared_test_ts_under_its_directory(self):
-        entries = [("work-board/pane.ts", "수정"), ("work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
-        work = "### 1. `work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
+        entries = [("extensions/work-board/pane.ts", "수정"), ("extensions/work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
+        work = "### 1. `extensions/work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
         node = 'node --test "orch/tests/a.spec.ts"'
         for command in ("claude plugin test .", "claude plugin test", "cd work-board && claude plugin test", "claude plugin test work-board"):
             with self.subTest(command=command):
                 self.assertEqual(self.inspect(work, f"{command}\n{node}", entries), [])
 
     def test_plugin_test_does_not_run_other_tests_or_other_directories(self):
-        entries = [("work-board/pane.ts", "수정"), ("work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
-        work = "### 1. `work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
+        entries = [("extensions/work-board/pane.ts", "수정"), ("extensions/work-board/tests/pane.test.ts", "신규"), ("orch/tests/a.spec.ts", "신규")]
+        work = "### 1. `extensions/work-board/tests/pane.test.ts` 추가\n### 2. `orch/tests/a.spec.ts` 추가"
         out = self.inspect(work, "claude plugin test .", entries)
         self.assertEqual(["phase.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: orch/tests/a.spec.ts"], out)
         out = self.inspect(work, 'claude plugin test orch\nnode --test "orch/tests/a.spec.ts"', entries)
-        self.assertEqual(["phase.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: work-board/tests/pane.test.ts"], out)
+        self.assertEqual(["phase.md — 검증 명령이 작업 항목의 테스트를 실행하지 않는다: extensions/work-board/tests/pane.test.ts"], out)
 
 
 class RepoLimitsTest(unittest.TestCase):

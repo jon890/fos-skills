@@ -884,7 +884,7 @@ export function checkable(item) {
 // 항목 상태 확인 요청문의 지시 부분. checkPrompt 가 항목 정보 뒤에 붙인다
 export const CHECK_PROMPT = [
   '1. PR·CI·배포·worker 보고·업무 상태와 대조해 지금 상태를 확인하고, 멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘.',
-  '2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.',
+  '2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.',
   '3. 확인한 상태, 진행한 것, 내가 정할 것만 짧게 보고해 줘.',
 ].join('\n')
 
@@ -915,7 +915,7 @@ export const RESUME_PROMPT = [
   '1. 기다리던 것(답, 결정, 배포, 외부 회신)이 왔는지 업무 댓글, 메신저, PR, 배포 상태로 확인해 줘.',
   '2. 왔으면 그 내용으로 다음 단계를 진행하고 이 항목을 진행 중(doing)으로 올려 줘.',
   '3. 아직 오지 않았으면 무엇을 누구에게 기다리는지 적고, 재촉하거나 우회할 방법을 제안해 줘.',
-  '4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.',
+  '4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.',
   '5. 확인한 것, 진행한 것, 내가 정할 것만 짧게 보고해 줘.',
 ].join('\n')
 
@@ -1194,7 +1194,7 @@ async function loadLive($) {
     try {
       const root = await boardRoot($)
       if (root) {
-        const argv = marksArgv($.plugin.root + '/work-board/bin/worker-marks.ts', root, next.workers ? next.runId : '', asking,
+        const argv = marksArgv($.plugin.root + '/extensions/work-board/bin/worker-marks.ts', root, next.workers ? next.runId : '', asking,
           mergingIds(next.workers || [], next.prs), Boolean(next.errors.questions))
         const marks = parseMarks(await run($, argv, MARKS_TIMEOUT_MS))
         next.marks = marks.marks
@@ -1209,7 +1209,7 @@ async function loadLive($) {
       const root = await boardRoot($)
       if (root) {
         next.queue = parseQueueView(await run($, ['node', '--disable-warning=ExperimentalWarning',
-          $.plugin.root + '/work-board/bin/merge-queue.ts', '--repo', root]))
+          $.plugin.root + '/extensions/work-board/bin/merge-queue.ts', '--repo', root]))
         if (next.queue.error) next.errors.queue = next.queue.error
       }
     } catch (failure) {
@@ -1419,7 +1419,7 @@ export const DECIDE_PROMPT = [
   '1. 보드의 결정 필요(decide) 항목과 그 줄, 답하지 않은 worker 질문, 이번 대화에서 미룬 결정을 모아 줘.',
   '2. 이미 정했거나 외부 답을 기다리는 것은 빼고, 뺀 이유를 한 줄씩 적어 줘.',
   '3. 항목마다 배경, 선택지, 권장안과 이유를 먼저 보여 준 뒤 AskUserQuestion 으로 4개씩 물어봐 줘. 권장안은 첫 선택지에 (Recommended) 를 붙여 줘.',
-  '4. 답한 보드 줄은 fos-skills 플러그인의 work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 skills/orch/scripts/send-to-worker.ts 로 전해 줘.',
+  '4. 답한 보드 줄은 fos-skills 플러그인의 extensions/work-board/bin/board.ts mark <id> <n> 으로 끝내고, 답을 기다리는 worker 에게는 fos-skills 플러그인의 skills/orch/scripts/send-to-worker.ts 로 전해 줘.',
   '5. worker 가 직접 올린 막힘은 먼저 확인해서 네가 처리할 수 있으면 처리하고, 사람이 정할 것만 결정으로 물어봐 줘.',
   '6. Orca 자동 알림(「Worker stopped without reporting」 같은 멈춤, 「Agent hit an error」 같은 오류)은 나에게 묻지 말고 처리한 결과만 한 줄로 알려 줘.',
   '7. 자동 알림 가운데 계정 한도에 걸렸거나 터미널이 종료된 worker 는 묻지 말고 같은 워크트리에서 다시 띄우고, 멈춘 worker 는 상태를 확인해 필요하면 깨워 줘.',

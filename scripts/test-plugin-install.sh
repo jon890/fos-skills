@@ -236,6 +236,22 @@ else
     printf '%s\n' "$OUT"
   fi
 
+  # 확장 기능의 상대 모듈과 스킬 참조도 설치 캐시에서 실행한다.
+  run node "$CACHE/extensions/work-board/bin/board.ts" --help
+  if [ "$RC" -eq 0 ]; then
+    ok "보드 명령: 설치 캐시에서 --help 가 실행된다"
+  else
+    fail "보드 명령: 종료 코드 $RC"
+    printf '%s\n' "$OUT"
+  fi
+  run node --input-type=module -e 'await import(process.argv[1])' "$CACHE/extensions/work-board/hooks/register.js"
+  if [ "$RC" -eq 0 ]; then
+    ok "보드 훅: 설치 캐시에서 모듈을 읽는다"
+  else
+    fail "보드 훅: 종료 코드 $RC"
+    printf '%s\n' "$OUT"
+  fi
+
   # 링크 없음
   LINKS="$(find "$CACHE" -type l)"
   if [ -z "$LINKS" ]; then

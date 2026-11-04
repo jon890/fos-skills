@@ -18,7 +18,7 @@
 //   feedback     feedback/          worker 가 쌓은 스킬 개선 후보(references/feedback-review.md)
 //   study        study/             일하다 생긴 공부 후보(references/study-candidates.md)
 //
-// 보드는 work-board 소유라 여기 없다. boardPath 의 기본 위치는 work-board/bin/board.ts 의 defaultBoardPath 를 import 해 쓴다.
+// 보드는 work-board 소유라 여기 없다. boardPath 의 기본 위치는 extensions/work-board/bin/board.ts 의 defaultBoardPath 를 import 해 쓴다.
 //
 // 옛 구조: .claude/orch-overlay.md, .claude/orch-finish.json, .omc/orch/, .omc/handoffs/specs/ 가 남아 있으면
 // (폴더는 안에 파일이 있을 때만 센다) requireMigrated 가 옮기는 명령(migrate-orch-dir.ts)을 알린다.
@@ -31,7 +31,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFile
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defaultBoardPath } from '../../../../work-board/bin/board.ts'
+import { defaultBoardPath } from '../../../../extensions/work-board/bin/board.ts'
 import { inside, real } from './fs.ts'
 import { git, mainCheckout } from './git.ts'
 

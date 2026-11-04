@@ -1,6 +1,6 @@
 // 알림 상자가 쓰는 순수 함수를 본다. 화면은 pane.test.ts 가 본다.
 //
-// 실행: node --test work-board/tests/inbox.spec.ts
+// 실행: node --test extensions/work-board/tests/inbox.spec.ts
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'

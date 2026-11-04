@@ -1,6 +1,6 @@
 // directory 설치본 갱신을 실제 Git 임시 저장소로 본다. 모의 process.run 은 임시 저장소로 향한 git 만 실행한다.
 //
-// 실행: node --test work-board/tests/directory-update.spec.ts
+// 실행: node --test extensions/work-board/tests/directory-update.spec.ts
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
