@@ -1,14 +1,14 @@
 ---
-name: docs-check
+name: docs-audit
 description: |
   저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다.
-  "문서 점검", "docs 감사", "stale ADR", "코드와 문서 불일치", "ADR Index 동기화"
+  "문서 점검", "docs 감사", "stale ADR", "코드와 문서 불일치", "ADR Index 동기화", "docs-audit"
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
 metadata:
-  version: "3.9.0"
+  version: "4.0.0"
 ---
-# docs-check
+# docs-audit
 
 **목표: 문서가 현재 코드와 결정을 복원할 수 있는지 감사하고, 사용자가 승인한 것만 고친다.**
 
@@ -19,7 +19,8 @@ metadata:
 
 ## 레포 오버레이
 
-`<repo-root>/.claude/docs-check-overlay.md` 가 있으면 **먼저 읽고** 코어보다 우선한다.
+`<repo-root>/.claude/docs-audit-overlay.md` 가 있으면 **먼저 읽고** 코어보다 우선한다.
+새 이름이 없으면 같은 위치의 `docs-check-overlay.md` 를 읽고 stderr 에 옛 이름 경고를 낸다. 이 호환은 다음 major(5.0.0)에서 제거한다.
 오버레이는 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 을 소유한다.
 없으면 그 저장소의 하네스 지침 파일(`AGENTS.md`, `CLAUDE.md`)에서 문서 경계와 검증 명령을 찾는다.
 
@@ -28,7 +29,7 @@ metadata:
 
 ```bash
 # cwd: 감사 대상 저장소 루트
-python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-check $SCOPE_PATHS
+python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-audit $SCOPE_PATHS
 ```
 
 출력의 `search` 순서대로 오버레이를 읽는다. 하위 프로젝트 오버레이가 루트 오버레이보다 먼저다.

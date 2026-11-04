@@ -5,7 +5,7 @@ description: |
   대상은 AGENTS.md, CLAUDE.md, rules, 역할 정의, 스킬, 오버레이다.
   "하네스 정리", "지침 감사", "스킬 지침 점검", "프롬프트 교정", "사용 기록으로 스킬 평가" 같은 요청이면 이 스킬을 쓴다.
   일반 hook 설정 추가, 제품 문서 수정과 보통 코드 수정은 대상이 아니다.
-  일반 제품 문서가 코드와 맞는지는 `docs-check` 가 맡는다.
+  일반 제품 문서가 코드와 맞는지는 `docs-audit` 가 맡는다.
 metadata:
   version: "3.23.0"
 ---
@@ -73,7 +73,7 @@ python3 "$SKILL_DIR/scripts/collect_targets.py" "$ROOT" --scope "$SCOPE"
 경고는 종료 코드를 바꾸지 않고 파일도 지우지 않는다.
 경고가 났으면 이후 검증 실패의 원인 후보로 적어 두고, 지울지는 사용자에게 묻는다.
 
-일반 `docs/` 와 plan 산출물의 코드 정합성은 `docs-check` 로 보낸다.
+일반 `docs/` 와 plan 산출물의 코드 정합성은 `docs-audit` 로 보낸다.
 저장소 밖을 가리키는 심볼릭 링크는 표시만 하고 수정하지 않는다.
 
 ## 2. 실측

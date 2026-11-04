@@ -118,4 +118,4 @@ config.yaml      런타임 설정. 항목은 파일의 주석이 소유한다
 ## 근거
 
 사용자 저장소 다섯 곳의 `docs/code-architecture.md` 가 같은 이름과 이 다섯 절을 공통으로 쓴다.
-`docs-check` 스킬도 이 파일 이름을 전제한다.
+`docs-audit` 스킬도 이 파일 이름을 전제한다.
