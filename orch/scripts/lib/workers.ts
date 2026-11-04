@@ -1,6 +1,6 @@
 // 브랜치의 워크트리와 그 워크트리의 worker-list 행 찾기 한 벌이다.
 // 사용처: notify-conflicts.ts(충돌한 PR 의 worker 에게 알리기), orch-loop.ts(체크가 실패한 PR 의 worker 에게 알리기),
-// orch-doctor.ts(--run 의 worker 판정. workerRows 만 쓴다).
+// orch-doctor.ts(--run 의 worker 판정은 workerRows, Orca 형식 점검은 missingRowKeys 를 쓴다).
 
 import { git } from './git.ts'
 import { orcaJson } from './orca.ts'
@@ -13,6 +13,18 @@ export const LIVE_DISPATCH = new Set(['pending', 'dispatched', 'running'])
 
 function obj(value: unknown): Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : {}
+}
+
+// orch 가 worker-list 행에서 읽는 키. `resource.` 는 그 안의 키다. Orca 출력 형식이 바뀌어 하나라도 빠지면 판정이 조용히 빈 값이 된다
+// (2026-11-02 줄인 보기 전환으로 하루 동안 중복 띄우기, 정리 누락, 질문 놓침). orch-doctor 가 ORCA-SHAPE 로 알린다
+export const ROW_KEYS = ['dispatchId', 'taskId', 'dispatchStatus', 'workerState', 'agentTerminalHandle', 'resource.worktreeId', 'resource.ownershipState'] as const
+
+// 행에 없는 ROW_KEYS. 값이 null 인 것은 있는 것으로 본다(끝난 dispatch 의 터미널 handle 처럼 비어 있을 수 있다)
+export function missingRowKeys(row: Json): string[] {
+  return ROW_KEYS.filter((key) => {
+    const [head, tail] = key.split('.')
+    return tail === undefined ? !(head in row) : !(tail in obj(row[head]))
+  })
 }
 
 // {브랜치: 워크트리 경로}.
