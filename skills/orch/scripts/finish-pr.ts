@@ -125,7 +125,7 @@ import { real, realPath } from './lib/fs.ts'
 import { gh } from './lib/gh.ts'
 import { repoArgProblem } from './lib/git.ts'
 import { pollSeconds } from './lib/gh-budget.ts'
-import { EVIDENCE_START, featureBranch, featureEvidenceProblem } from './lib/feature-evidence.ts'
+import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges } from './lib/feature-evidence.ts'
 import { boardPath, pathOf, requireMigrated } from './lib/paths.ts'
 import { run, runAsync, scriptCommand } from './lib/proc.ts'
 import { pyStr } from './lib/py.ts'
@@ -600,7 +600,8 @@ async function finish(args: Args, repo: string): Promise<number> {
     const fresh = gh(['pr', 'view', args.pr, '--json', 'body'], { cwd: repo, cache: false })
     let body = ''
     try { if (fresh.code === 0) body = JSON.parse(fresh.stdout).body } catch { /* 아래 검사로 실패 */ }
-    const problem = typeof body === 'string' ? featureEvidenceProblem(body, String(merged.pr.head ?? ''), true, true) : '기능 완료 근거 조회 실패'
+    const problem = typeof body === 'string' ? featureEvidenceProblem(body, String(merged.pr.head ?? ''), true, true,
+      (verified) => fetchedBaseMerges(repo, String(merged.pr.head ?? ''), verified, merged.base)) : '기능 완료 근거 조회 실패'
     if (problem) return fail(problem)
   }
 

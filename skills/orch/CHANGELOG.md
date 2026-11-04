@@ -1,8 +1,16 @@
 # CHANGELOG: orch
 
-## 7.9.0 (2026-11-04)
+## 7.10.0 (2026-11-04)
 
 - 호환성: 설치 경로가 skills/orch 로 바뀌어요. 직접 참조와 개인 링크는 새 경로로 바꾸고 플러그인을 갱신해요.
+
+## 7.9.0 (2026-11-04)
+
+- `pipeline.refresh_slots` 를 켜면 상주 루프가 뒤처진 PR 의 `update-branch` 를 머지 차례 전에 PR 마다 걸어 CI 를 함께 돌린다. 판정은 머지 큐와 같은 `queue` 키로 한다
+- 머지 큐는 보류한 PR 만 빼고 다음 PR 로 가는 것이 기본이다(옛 동작은 `--stop-on-hold`). 뺀 이유는 `QUEUE-DROPPED` 로 남고 worker 가 고칠 보류는 그 worker 에게 간다
+- 차례 PR 이 update-branch 뒤 CI 를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다. 큐가 자동 머지를 막는 틱에는 `AUTO-MERGE-HELD` 를 남긴다
+- `queue.poll_min_sec`, `poll_max_sec`, `ci_expected_sec` 로 체크 확인 간격을 정한다. 체크가 이미 끝났으면 다시 보는 60초를 건너뛴다
+- 기능 완료 근거의 검증 커밋 뒤에 base 를 합친 merge 커밋만 있으면 통과로 보고, 지금 HEAD 의 CI 통과로 갈음한다
 
 ## 7.8.1 (2026-11-04)
 
@@ -93,7 +101,7 @@
 
 ## 3.x
 
-- 명령이 TypeScript 로 돌고 단계마다 이벤트를 낸다. 저장소 고유 일은 `.orch/hooks/<이벤트>.ts` 가 맡고, 옛 `.py` 경로는 shim 으로 남는다
+- 명령이 TypeScript 로 돌고 단계마다 이벤트를 낸다. 저장소 고유 일은 `.skills/orch/hooks/<이벤트>.ts` 가 맡고, 옛 `.py` 경로는 shim 으로 남는다
 - 업무 완료는 `after-deploy` 핸들러가 한다. `migrate-orch-dir --hooks` 가 옛 셸 명령 칸을 핸들러로 바꾸며 worker 가 작업 중이어도 적용한다. 옛 폴더 옮기기는 다른 저장소의 지시서에 막히지 않는다
 - 저장소마다 상주 루프 `orch-loop.ts` 가 질문 확인, 정리, 보드 동기화, 내 PR 의 CI 감시, 충돌 PR 알림을 하고 `wait-important --loop-repo` 를 깨운다
 - worker 가 PR 이 머지될 때까지 맡고, 완료 검증은 `준비됨` 을 받은 때 한다. 지시서 하나는 PR 하나로 끝나는 크기로 쓴다

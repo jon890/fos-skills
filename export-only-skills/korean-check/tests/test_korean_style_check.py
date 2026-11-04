@@ -503,20 +503,27 @@ class TestRulesFileItself(Base):
 
 
 class TestNonMarkdown(Base):
-    """`.md` 가 아닌 경로는 이 검사기가 조용히 건너뛴다.
+    """명령행으로 직접 넘긴 파일은 확장자와 상관없이 검사한다.
 
-    `check.sh` 가 앞에서 2 로 막으므로 실사용에서는 드러나지 않는다.
-    직접 부르는 쪽은 검사되지 않은 것이 통과로 보이므로 현재 동작을 고정한다.
+    `.md` 한정은 `--hook` 모드에만 남는다. 훅은 모든 파일 쓰기에서 돌기 때문이다.
+    `check.sh` 는 확장자가 `.md` 가 아니면 앞에서 2 로 막는다. 이 검사기를 직접 부르는 쪽은 그 막음을 거치지 않는다.
     """
 
-    def test_txt_is_skipped_here(self):
-        path = self.write("a.txt", "트리아지 자리다.\n")
+    def test_txt_is_scanned_when_passed_directly(self):
+        path = self.write("a.txt", "매트릭스 자리다.\n")
         done = subprocess.run(
             ["python3", str(SCRIPT), str(path)],
             capture_output=True, text=True,
             env={"KOREAN_STYLE_RULES": str(RULES), "PATH": "/usr/bin:/bin"},
         )
-        self.assertEqual(done.returncode, 0)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("매트릭스", done.stdout)
+
+    def test_txt_violation_is_caught_in_process(self):
+        self.assertCaught("매트릭스 자리다.\n", "매트릭스", name="a.txt")
+
+    def test_txt_clean_file_passes(self):
+        self.assertPassed("문제가 없는 문장이다.\n", name="a.txt")
 
     def test_txt_is_rejected_by_check_sh(self):
         path = self.write("a.txt", "트리아지 자리다.\n")
@@ -706,6 +713,11 @@ class TestHookMode(Base):
         done = self.hook(self.write("CHANGELOG.md", "예전에 장애를 트리아지했다.\n"))
         self.assertEqual(done.returncode, 0)
         self.assertIn("트리아지", done.stdout)
+
+    def test_non_markdown_is_skipped_in_hook(self):
+        done = self.hook(self.write("a.txt", "# 장애를 트리아지한다\n"))
+        self.assertEqual(done.returncode, 0)
+        self.assertEqual(done.stdout, "")
 
 
 class TestRepository(unittest.TestCase):

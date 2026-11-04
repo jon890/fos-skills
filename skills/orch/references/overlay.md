@@ -67,6 +67,7 @@
 | `queue` | `skipped_is_missing` | `--skipped-is-missing`. true 나 false 다 |
 | `queue` | `require_up_to_date`, `up_to_date_when` | `--require-up-to-date` 와 `--up-to-date-when`. `require_up_to_date` 는 true 나 false 이고, `up_to_date_when` 은 `always` 나 `overlap` 이다 |
 | `queue` | `shared_paths`, `unit_prefix` | `--shared-paths` 와 `--unit-prefix`. `shared_paths` 는 정규식 목록도 받아 `\|` 로 잇는다. 의미는 [`cleanup.md`](cleanup.md) 의 「겹치지 않는 PR 은 최신화하지 않기」 가 소유한다 |
+| `queue` | `poll_min_sec`, `poll_max_sec`, `ci_expected_sec` | 머지 큐가 진행 중인 체크를 다시 보는 간격(초, 1 이상의 정수). `poll_min_sec`(기본 60)에서 시작해 두 배씩 늘리고 `poll_max_sec`(기본 300)에서 멈춘다. `ci_expected_sec`(기본 없음)는 그 저장소의 보통 PR CI 시간이다. 주면 지금 도는 체크가 시작된 뒤 그 초가 지나는 시각을 넘겨 자지 않고, 그 뒤로는 `poll_min_sec` 마다 본다. 없으면 지금 동작과 같다. 각각 `--poll-min-sec`, `--poll-max-sec`, `--ci-expected-sec` 가 된다 |
 | `queue` | `unit_groups` | 한 단위로 세는 단위 이름의 목록의 목록(`[["web", "bff"]]`). 안쪽 목록마다 `--unit-group a,b` 가 된다 |
 | `queue` | `sweep_args` | 머지 뒤 정리(`cleanup-sweep.ts`)에 넘길 인자의 문자열 목록. 항목마다 `--sweep-arg` 가 된다. 명령줄에 `--sweep-arg` 가 있으면 쓰지 않는다 |
 | `queue` | `update_docs_on_overlap` | true 면 `--update-docs-on-overlap`. CLEAN 인 문서 PR 의 겹침은 base 를 합친 뒤 필수 CI 로 확인한다 |
@@ -75,6 +76,7 @@
 | `pipeline` | `authors` | 「내 PR」 로 볼 작성자의 문자열 목록. 없으면 gh 의 현재 사용자다. 머지 큐의 쌓인 PR base 옮기기, `notify-conflicts.ts`, `ci-ready.ts`, 상주 루프가 이 PR 만 본다 |
 | `pipeline` | `ready_slots` | 동시에 ready 로 둘 내 PR 수. 1 이상의 정수이고 기본 1 이다. `ci-ready.ts` 가 읽는다 |
 | `pipeline` | `tick_sec` | 상주 루프의 틱 간격(초)이다. 양수이고 기본 300 이다. `orch-loop.ts` 가 읽는다 |
+| `pipeline` | `refresh_slots`, `refresh_worker_paths` | 상주 루프가 머지 차례 전에 뒤처진 PR 에 base 를 미리 합치는 최신화. 아래 「뒤처진 PR 미리 최신화」 |
 | `pipeline` | `enabled`, `docs_merge`, `after_queue_interval_sec`, `ci_missing_after_sec`, `update_behind_drafts` | 상주 루프의 자동 진행에 쓸 값이다. 키는 사용법 오류 없이 받지만 아직 읽는 명령이 없다 |
 | `heavy` | `exclusive`, `normal`, `light`, `wait_idle` | 정규식 목록이다. `heavy-slot.ts` 가 읽는다. 사용법은 [`heavy-checks.md`](heavy-checks.md) 가 소유한다 |
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
@@ -110,7 +112,34 @@
 }
 ```
 
-업무 완료와 합친 사본 검사 명령은 설정 칸이 아니라 `.orch/hooks/after-deploy.ts`, `.orch/hooks/verify-merged.ts` 에 둔다. 쓰는 법은 [`hooks.md`](hooks.md) 다.
+업무 완료와 합친 사본 검사 명령은 설정 칸이 아니라 `.skills/orch/hooks/after-deploy.ts`, `.skills/orch/hooks/verify-merged.ts` 에 둔다. 쓰는 법은 [`hooks.md`](hooks.md) 다.
+
+### 뒤처진 PR 미리 최신화
+
+**`pipeline.refresh_slots` 는 상주 루프가 건 최신화 가운데 동시에 CI 가 도는 PR 수의 상한이다. 기본 0 이고 0 이면 끈다.**
+켜면 루프가 틱마다 base 에 뒤처진 내 PR 을 찾아, 머지 큐가 차례에 할 `update-branch` 를 미리 PR 마다 따로 건다.
+뒤처진 PR 들의 CI 가 함께 돌고, 머지 큐는 지금처럼 하나씩 머지하되 차례가 온 PR 이 이미 최신이면 기다리지 않는다.
+최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
+대상과 미루는 경우는 `orch-loop.ts` 머리 주석의 「최신화」 가, 근거는 저장소 `docs/adr/020-orch-loop-refresh.md` 가 소유한다.
+
+**값은 CI runner 수보다 작게 둔다.** 최신화 하나가 PR CI 한 벌을 돌린다. worker 의 push, 머지 큐 차례의 CI, base 브랜치의 CI 도 같은 runner 를 쓰므로 runner 를 모두 주면 그쪽이 줄을 선다.
+runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함께 돌려 runner 를 여럿 쓰면 그만큼 줄인다.
+
+**`pipeline.refresh_worker_paths` 는 PR 과 base 가 모두 바꾼 파일이 맞으면 `update-branch` 대신 그 PR 의 살아 있는 worker 에게 합치기를 보낸다.** 계약 버전처럼 글자 충돌이 없어도 worker 가 판단해야 하는 파일을 적는다. worker 가 없으면 루프 로그에 `REFRESH-ORPHAN` 만 남긴다.
+
+```json
+{
+  "pipeline": {
+    "refresh_slots": 2,
+    "refresh_worker_paths": ["^contracts/.*version"]
+  },
+  "queue": {
+    "require_up_to_date": true,
+    "up_to_date_when": "overlap",
+    "shared_paths": ["^contracts/", "^modules/common/"]
+  }
+}
+```
 
 ## orch 작업 폴더
 
@@ -132,7 +161,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 
 ## 저장소 스크립트에서 orch 부르기
 
-**저장소의 `.orch/bin/` 스크립트와 `.orch/queue-env.sh` 같은 파일은 번들 경로를 박지 않는다.** 플러그인 경로는 프로필과 버전마다 바뀌어(`<설정 폴더>/plugins/cache/<마켓플레이스>/<플러그인>/<해시>/`), 박아 둔 경로는 갱신 뒤 옛 스크립트를 조용히 부른다. 저장소 체크아웃 경로도 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
+**저장소의 `.skills/orch/bin/` 스크립트와 `.orch/queue-env.sh` 같은 파일은 번들 경로를 박지 않는다.** 플러그인 경로는 프로필과 버전마다 바뀌어(`<설정 폴더>/plugins/cache/<마켓플레이스>/<플러그인>/<해시>/`), 박아 둔 경로는 갱신 뒤 옛 스크립트를 조용히 부른다. 저장소 체크아웃 경로도 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
 아래 한 줄이 설치 기록에서 진입점의 위치를 풀고, 스크립트는 `"$ORCH" <이름> [인자]` 로 부른다. 진입점이 그 호출의 설치 기록을 다시 읽어 현재 번들의 스크립트를 실행한다. 스크립트마다 새 셸이 뜨면 스크립트마다 이 줄을 둔다.
 
 ```bash
@@ -206,7 +235,7 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
   "migrations": {
     "dirs": { "api": "modules/api/src/main/resources/db/migration" },
     "watch": { "api": ["src/main/java/db/migration"] },
-    "before": { "*": ".orch/bin/backup-db.sh {module} \"pre-$PR\"" }
+    "before": { "*": ".skills/orch/bin/backup-db.sh {module} \"pre-$PR\"" }
   }
 }
 ```

@@ -51,6 +51,7 @@
 // shared_paths 는 정규식 목록도 받아 `|` 로 잇는다.
 // skipped_is_missing, update_docs_on_overlap, require_up_to_date 는 true 면 같은 이름의 옵션을 붙이는 참거짓 값이다.
 // unit_groups 는 단위 이름 목록의 목록이고 안쪽 목록마다 `--unit-group a,b` 가 된다.
+// poll_min_sec, poll_max_sec, ci_expected_sec 는 1 이상의 정수(초)이고 같은 이름의 옵션(`--poll-min-sec` 따위)이 된다.
 // sweep_args 는 문자열 목록이고 항목마다 `--sweep-arg` 로 넘어간다. 명령줄에 `--sweep-arg` 가 하나라도 있으면 목록은 쓰지 않는다.
 // 명령줄에 준 옵션이 우선한다. 모르는 키가 있으면 사용법 오류다.
 // 저장소마다 같은 옵션을 매번 옮겨 적다 빠뜨리는 일을 막는다.
@@ -83,7 +84,7 @@ import { repoArgProblem } from './lib/git.ts'
 import { makeParent, pathOf, requireMigrated } from './lib/paths.ts'
 import { NO_LIMIT_MS, runInherit, scriptCommand } from './lib/proc.ts'
 import { pidFileAlive } from './lib/process.ts'
-import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './lib/queue-options.ts'
+import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_NUMBERS, QUEUE_REPEATED, QUEUE_VALUE_OPTIONS, QUEUE_VALUES } from './lib/queue-options.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const HERE = dirname(SCRIPT)
@@ -262,6 +263,11 @@ function queueDefaults(path: string, queue: string[], config: Config): string[] 
       continue
     }
     if (Array.isArray(value) && key in QUEUE_LISTS && value.every((v) => typeof v === 'string')) value = value.join(QUEUE_LISTS[key])
+    if (QUEUE_NUMBERS.includes(key)) {
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new ConfigError(`${path} 의 queue.${key} 는 1 이상의 정수(초)여야 한다`)
+      extra.push(option, String(value))
+      continue
+    }
     if (typeof value !== 'string' || !value) throw new ConfigError(`${path} 의 queue.${key} 는 비지 않은 문자열이어야 한다`)
     extra.push(option, value)
   }

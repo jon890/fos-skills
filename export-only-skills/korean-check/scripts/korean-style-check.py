@@ -7,8 +7,8 @@
 다른 위치의 표를 쓰려면 `KOREAN_STYLE_RULES` 로 경로를 준다.
 
 사용법:
-    korean-style-check.py <파일.md> [<파일.md>...]
-    korean-style-check.py --hook          # PostToolUse 훅 모드 (stdin 으로 JSON)
+    korean-style-check.py <파일> [<파일>...]     # 확장자와 상관없이 검사한다
+    korean-style-check.py --hook          # PostToolUse 훅 모드 (stdin 으로 JSON, .md 만 검사)
 
 위반과 경고 줄을 stdout 으로 출력한다. 경고만 있으면 통과다.
 실패로 막는 것은 매핑 표의 금지어뿐이다. 문장 구성 규칙은 지침이라 경고로만 알린다.
@@ -366,8 +366,8 @@ def check(paths, rules, matchers):
             print(f"korean-style-check: 파일이 없다: {path}", file=sys.stderr)
             status = 2
             continue
-        if not path.endswith(".md"):
-            continue
+        # 명령행으로 직접 넘긴 파일은 확장자와 상관없이 검사한다. .md 한정은 --hook 모드에만 남는다.
+        # 확장자로 건너뛰면 .txt 같은 파일이 금지어가 있어도 0 으로 끝난다 (실측).
         # 규칙 파일 자신은 건너뛴다 — 매핑 표가 곧 금지어 목록이라 전부 위반으로 잡힌다.
         if rules.is_file() and os.path.samefile(path, rules):
             continue
