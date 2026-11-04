@@ -557,7 +557,8 @@ describe('finish-pr 배포 판정', { concurrency: 4 }, () => {
   test('끝 커밋에 포함됐다는 근거 줄은 바뀔 때만 한 번 남긴다', async (t) => {
     const c = setup(t)
     c.state.runs = runs([c.merge, 'completed', 'skipped'])
-    const r = await c.finish(DEPLOY)
+    // 공통 설정의 배포 대기(0.005분)로는 확인이 한 번에 끝날 수 있다. 여러 번 확인하도록 3초를 준다. 뒤의 값이 앞 값을 덮는다
+    const r = await c.finish([...DEPLOY, '--deploy-timeout', '0.05'])
     const said = r.stdout.split('\n').filter((line) => line.includes('배포 판정: 뒤 커밋'))
     assert.equal(said.length, 1, both(r))
     assert.ok(c.calls().filter((line) => line.startsWith('gh run list')).length > 1, c.calls().join('\n'))
