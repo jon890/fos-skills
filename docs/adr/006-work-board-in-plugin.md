@@ -1,7 +1,7 @@
 # ADR-006: 작업 현황 창(work-board)을 이 플러그인의 구성 요소로 싣는다
 
 - **status**: `accepted`
-- **배치 변경**: 현재 파일 위치는 [ADR-021](021-extension-directory-layout.md)의 `extensions/work-board/`를 따른다.
+- **배치 변경**: 현재 파일 위치는 [ADR-021](022-extension-directory-layout.md)의 `extensions/work-board/`를 따른다.
 - **결정**: `~/.claude/mods/work-board` 에 있던 mod 를 저장소 루트의 `work-board/` 로 옮기고, `.claude-plugin/plugin.json` 의 `hooks` 배열에 `./work-board/hooks/hooks.json` 을 더한다.
   별도 플러그인으로 나누지 않는다. 사용자 결정 2026-10-22.
 - **맥락**: orch 의 `board-sync.py`, `finish-pr.py`, `goal-progress.py` 는 보드를 고칠 때 mod 의 `bin/board.py` 를 부른다.

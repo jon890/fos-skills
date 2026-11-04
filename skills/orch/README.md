@@ -66,7 +66,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 - `gh` 에 로그인돼 있어야 PR 을 확인하고 머지한다
 - 같은 PC 의 무거운 검사를 대기열로 돌리는 `heavy-slot` 은 perl 이 PATH 에 있어야 한다
 - 스킬을 열 때 설치본이 원본 main 보다 낡았으면 갱신 명령을 보여 준다
-- 저장소마다 다른 기준 브랜치, 검증 명령, 머지 조건은 `<저장소>/.orch/overlay.md` 에, 배포 워크플로와 보드 위치는 `.orch/config.json` 에, 업무 완료 같은 저장소 고유 동작은 `.orch/hooks/<이벤트>.ts` 에 둔다. 없으면 기본값으로 동작한다
+- 저장소마다 다른 기준 브랜치, 검증 명령, 머지 조건은 `<저장소>/.orch/overlay.md` 에, 배포 워크플로와 보드 위치는 `.orch/config.json` 에, 업무 완료 같은 저장소 고유 동작은 `.skills/orch/hooks/<이벤트>.ts` 에 둔다. 없으면 기본값으로 동작한다
 
 ## 설정한 저장소의 예
 
@@ -96,7 +96,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
   },
   "migrations": {
     "dirs": { "order-api": "modules/order-api/src/main/resources/db/migration" },
-    "before": { "order-api": ".orch/bin/backup-db.sh order pre-auto" }
+    "before": { "order-api": ".skills/orch/bin/backup-db.sh order pre-auto" }
   }
 }
 ```
@@ -106,10 +106,11 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 | `finish.deploy_workflow`, `deploy_branch` | 머지 뒤 `develop` 의 dev 배포가 성공할 때까지 기다린 다음 업무와 보드를 마무리한다 |
 | `queue.auto_merge`, `auto_review` | 필수 체크가 통과하고, 미해결 스레드가 없고, 자동 리뷰 판정이 `auto_review.require` 의 조건을 모두 만족하는 PR 을 상주 루프가 스스로 머지 큐에 건다. `require` 가 없으면 지금 HEAD 의 판정이 `pass` 여야 한다. 판정 문구가 든 리뷰가 없으면 걸지 않고 `AUTO-MERGE-NO-REVIEW` 로 알린다. 조건과 조합 예시는 [`references/overlay.md`](references/overlay.md) 의 「자동 머지 리뷰 조건」 에 있다 |
 | `queue.up_to_date_when: overlap` | 앞 PR 과 바꾼 모듈이 겹치지 않으면 base 를 다시 합치지 않고 바로 머지한다. `shared_paths` 를 건드린 PR 은 늘 겹친 것으로 본다 |
+| `pipeline.refresh_slots` | 상주 루프가 뒤처진 PR 에 base 를 머지 차례 전에 미리 합쳐 CI 를 함께 돌린다. 값은 동시에 도는 최신화의 상한이라 CI runner 수보다 작게 둔다. 머지는 머지 큐가 하나씩 한다 |
 | `migrations.dirs`, `before` | 마이그레이션이 든 PR 은 번호 순서를 지켜 머지하고, 머지 직전에 그 모듈의 DB 를 백업한다 |
 
 `.orch/overlay.md` 에는 검증 명령(`./gradlew :<모듈>:build` 와 통합 테스트), 마이그레이션 파일을 고치지 않는 규칙, CI runner 장애 대응처럼 설정 값으로 적을 수 없는 절차를 둔다.
-`.orch/hooks/after-deploy.ts` 는 dev 배포가 끝나면 업무 상태를 바꾸고 태그를 단다.
+`.skills/orch/hooks/after-deploy.ts` 는 dev 배포가 끝나면 업무 상태를 바꾸고 태그를 단다.
 키 전체는 [`references/overlay.md`](references/overlay.md) 가 소유한다.
 
 이렇게 설정하면 worker 를 띄운 뒤에는 코디네이터에게 알릴 일이 있을 때만 대화가 이어진다.

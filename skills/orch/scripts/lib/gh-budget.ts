@@ -63,6 +63,15 @@ export function pollSeconds(attempt: number, base = 60): number {
   return Math.min(300, minimum * 2 ** Math.min(attempt, 10))
 }
 
+// 머지 큐의 체크 확인 간격. min 에서 시작해 두 배씩 늘리고 max 에서 멈춘다. 기본(60, 300)은 pollSeconds(attempt) 와 같다.
+// expectedLeft 를 주면(저장소의 보통 CI 시간에서 지금 도는 체크의 경과를 뺀 초) 그 시각을 넘겨 자지 않는다.
+// 보통 시간이 지난 뒤에는 min 간격으로 본다. CI 가 끝난 뒤 max 만큼 늦게 알아채지 않게 하려는 것이다
+export function queuePollSeconds(attempt: number, min = 60, max = 300, expectedLeft: number | null = null): number {
+  const backoff = Math.min(max, min * 2 ** Math.min(attempt, 10))
+  if (expectedLeft === null) return backoff
+  return Math.min(backoff, Math.max(min, expectedLeft))
+}
+
 type Entry = { expires: number; generation: string; result: RunResult }
 const roots = new Map<string, string>()
 

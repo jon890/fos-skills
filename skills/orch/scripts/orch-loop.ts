@@ -83,7 +83,7 @@
 //     PR 에 붙는 알림(CI-FAILED, CONFLICT-ORPHAN)은 그 PR 워크트리의 worker 를 띄운 Run(아래 「worker 찾기」)에, 주인을 모르면 주 Run 에 쓴다.
 //     AUTO-MERGE, AUTO-MERGE-END 는 루프가 건 큐의 Run(state/auto-merge.json 의 queue.run)에, AUTO-MERGE-NO-REVIEW, MIGRATION-CLASH, MIGRATION-BLOCKED 는
 //     그 PR 지시서의 Run 에 쓴다(아래 「자동 머지」).
-//     공유 일(열린 PR 조회, 보드, CI 규칙, 자동 머지, 충돌 처리)의 WATCH-ERROR, 보드 결정의 REMINDER, 부모의 WATCH-ERROR tick 은 주 Run 에 쓴다.
+//     공유 일(열린 PR 조회, 보드, CI 규칙, 자동 머지, 충돌 처리, 최신화)의 WATCH-ERROR, 보드 결정의 REMINDER, 부모의 WATCH-ERROR tick 은 주 Run 에 쓴다.
 //     Run 없는 한 칸이면 옛 파일(state/loop-events.jsonl)에 쓴다.
 //     worker 찾기: 맡은 Run 마다 worker-list --run 을 읽어(한 틱에 Run 마다 한 번) 그 워크트리의 worker 를 찾는다. 살아 있는 dispatch 가
 //     있는 Run 을 먼저 고르고, 없으면 처음 찾은 Run 이다. 살아 있는 dispatch 를 못 찾았고 읽지 못한 Run 이 있으면 읽지 못한 것으로 본다.
@@ -103,7 +103,7 @@
 //        사용자 결정 재알림은 로그만 남기고 decision-pending 의 중복 억제를 따른다.
 //        새 질문(QUESTION)은 알림 파일에 쓰지 않는다. 코디네이터의 wait-important 가 question 메시지로 이미 깨어난다
 //        닫힌 질문(lib/questions.ts 의 「닫힌 질문」)의 REMINDER 는 내지 않고, 처음 닫힌 것으로 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓴다
-//     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 자동 머지, 충돌 처리가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
+//     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 자동 머지, 충돌 처리, 최신화가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     3. 보드 동기화(워크트리 정리 전). 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
 //        새 사용자 결정 질문과 보드의 남은 decide 줄은 lib/decisions.ts 가 DECISION-PENDING 과 decision-pending 을 낸다.
 //        기본 핸들러가 --start 로 등록한 현재 코디네이터에게 묻기를 요청한다. 같은 결정은 해결될 때까지 다시 깨우지 않는다.
@@ -119,7 +119,9 @@
 //     7. tick 이벤트. Run 마다 공통 필드 run 을 그 Run 으로 낸다. 입력은 tick(틱 번호), open_prs(내 열린 PR 번호 목록. 읽지 못하면 null),
 //        primary(주 Run 이면 true)다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 //     8. 자동 머지. 아래 「자동 머지」
+//     8-1. 큐 기록. 아래 「큐 기록」
 //     9. 충돌 처리. 아래 「충돌 처리」. 끝난 dispatch 에 이어 쓰면 65분까지 걸려 마지막에 둔다. 밀리는 것은 다음 틱뿐이다
+//     9-1. 최신화. 아래 「최신화」. 충돌 처리가 받은 base 와 PR HEAD 를 쓰므로 그 뒤에 둔다
 //     10. 자리 보유 확인. 아래 「자리 보유 확인」
 //     11. 대기 확인. 아래 「대기 확인」
 //     틱 자식은 loop.json 을 읽기만 한다(이전 errors, ci, stalls 를 보려고). 부모가 결과 줄을 합쳐 last_tick(결과의 tick_at), ticks, errors,
@@ -220,6 +222,10 @@
 //        AUTO-MERGE-END(pr null, text `<끝 줄> log=<로그>`. 로그를 읽지 못하면 끝 줄 자리에 `로그 없음`)를 기록의 run 으로 쓰고 기록을 비운다.
 //        아직 돌면 이 틱에는 걸지 않는다. 명령줄에 `merge_queue.`, `merge-queue.sh`, `merge-with-finish.` 가 든 줄이 있어도 걸지 않는다.
 //        머신 전체를 보므로 다른 저장소의 큐나 테스트 실행도 막는다. 거는 쪽으로는 틀리지 않아 그대로 둔다
+//        걸지 않은 틱에는 큐가 무엇을 기다리는지 로그에 한 줄씩 쓴다. 명령줄에 `merge_queue.` 가 든 프로세스의 차례 기록(lib/queue-turn.ts)마다
+//        `AUTO-MERGE-HELD pid <pid> #<차례 PR> <단계> <분>분 남은 #a #b` 이고, 차례 기록이 하나도 없으면 도는 큐 프로세스마다
+//        `AUTO-MERGE-HELD pid <pid> 차례 기록 없음: <명령줄 앞 160자>` 다. 코디네이터가 따로 건 큐가 자동 머지를 막을 때 무엇을 기다리는지
+//        loop.log 로 알게 하려는 것이다. 알림 파일에는 쓰지 않는다. 도는 큐에 PR 을 덧붙이지 않는 이유는 docs/adr/020-orch-loop-refresh.md 에 있다
 //     3. 대상: Run id 와 지시서 폴더가 둘 다 있는 Run 의 지시서(lib/last-pr.ts 의 specFiles)의 `브랜치:` 줄에 든 내 열린 PR 이다.
 //        같은 브랜치는 앞 Run 의 것이다. Run id 가 없는 칸은 큐의 --run 과 알림의 Run 을 정할 수 없어 보지 않는다.
 //        보드 파일이 있으면 한 번 읽는다. 읽지 못하면 `보드를 읽지 못했다: <이유>` 로 걸지 않는다. 보류 표시를 놓친 채 걸지 않으려는 것이다.
@@ -267,7 +273,7 @@
 //        `#<PR> 의 모듈 <모듈> 에 migrations.before 규칙이 없다` 로 걸지 않는다
 //     5. 순서: queueOrder 로 정하고 첫 PR 의 Run 의 PR 만 남긴다. 빠진 PR 이 lower 인 PR 도 빼고, 남는 집합이 바뀌지 않을 때까지
 //        queueOrder 부터 되풀이한다. 되풀이로 빠진 PR 은 blocked 에 두지 않고 다음 틱에 다시 본다. 묶음은 남은 PR 로 줄이고 둘 미만이면 뺀다
-//     6. 띄우기: 직전에 2 의 프로세스 목록을 한 번 더 읽어, 도는 큐가 있으면 띄우지 않는다. 판정하는 사이 코디네이터가 큐를 걸었을 수 있다.
+//     6. 띄우기: 직전에 2 의 프로세스 목록을 한 번 더 읽어, 도는 큐가 있으면 띄우지 않고 2 와 같은 AUTO-MERGE-HELD 줄을 쓴다. 판정하는 사이 코디네이터가 큐를 걸었을 수 있다.
 //        MERGE_WITH_FINISH --repo <repo> --run <Run> --continue-on-hold [--chain a,b]... [--sweep-arg <값>]... <PR>[:<머지 전 명령>]... 를
 //        작업 디렉터리 repo, stdin 무시, stdout 과 stderr 는 큐 로그로 분리(detached, unref)해 띄운다. --sweep-arg 는 queue.sweep_args 가
 //        목록일 때 sweepArgs 로 --run 을 큐의 Run 으로 맞춘 항목이다. 머지 전 명령은 beforeCommand 의 명령이다.
@@ -292,6 +298,39 @@
 //        notify-conflicts 는 2 로 끝나지만 루프는 끝내지 않는다. 끝내면 질문 확인도 멈춘다
 //     resolveConflict 의 줄(`<dispatch> 에 알렸다` 따위)은 로그에 쓴다. send-to-worker 를 틱 자식 안에서 기다리는 동안에도
 //     부모의 생존 타이머가 alive_at 을 쓴다.
+//
+// 큐 기록: 열린 PR 과 상관없이 틱마다 돈다. lib/queue-turn.ts 의 차례 기록을 읽는다. 명령줄에 `merge_queue.` 가 든 프로세스의 기록은 도는 큐,
+//     아닌 pid 의 기록은 끝난 큐다. 두 쪽의 held 가운데 아직 옮기지 않은 항목마다 `QUEUE-DROPPED #<PR> pid <pid>: <이유>` 를 로그에 쓴다.
+//     옮긴 항목은 state/queue-dropped.json 의 `<pid>:<PR>` 키로 기억한다. 끝난 큐의 기록은 옮긴 뒤 지우고 그 pid 의 키도 지운다.
+//     머지 큐가 뺀 PR 과 이유를, 누가 큐를 걸었든 loop.log 하나에서 보게 하려는 것이다. 알림 파일에는 쓰지 않는다.
+//     PS 를 읽지 못하면 errors 의 queue-turn 에 `프로세스 목록을 읽지 못했다` 를 둔다
+//
+// 최신화(ADR-020): pipeline.refresh_slots 가 1 이상이고 열린 PR 을 읽은 틱에만 돈다. 머지 큐가 차례가 온 PR 에 할 update-branch 를 미리,
+//     PR 마다 따로 걸어 뒤처진 PR 의 CI 가 함께 돌게 한다. 머지는 지금처럼 머지 큐가 하나씩 한다. 판정과 설정은 lib/refresh.ts 가 소유한다.
+//     충돌 찾기가 실패한 틱은 건너뛰고 errors.refresh 를 그대로 둔다. 내 열린 PR 이 없으면 git fetch 없이 끝낸다.
+//     queue.require_up_to_date 가 false 면 아무것도 하지 않고 `WATCH-ERROR refresh: pipeline.refresh_slots 를 켰지만 …` 을 낸다.
+//     기록은 state/refresh.json 이다(lib/refresh.ts 의 「기록」). 이번 틱의 내 열린 PR 이 아닌 PR 의 항목은 지운다.
+//     자리: 기록 가운데 lib/refresh.ts 의 inFlight 가 참인 것의 수가 쓴 자리다. 이번 틱에 건 것도 더한다.
+//     대상은 내 열린 PR 가운데 번호 순으로, draft 가 아니고 base 가 기준 브랜치(충돌 처리와 같다)이고 충돌하지 않는 같은 저장소의 PR 이다.
+//     충돌 찾기가 읽은 HEAD 와 열린 PR 조회의 HEAD 가 다르면 이 틱에는 넘어간다. PR 마다 아래를 차례로 보고, 처음 걸린 곳에서 그 PR 을 넘긴다.
+//     1. 기록에 그 PR 의 같은 base SHA 가 있으면 넘어간다. 같은 (PR, base SHA) 에는 두 번 걸지 않는다
+//     2. lib/refresh.ts 의 forkFiles 와 verdict 로 판정한다. 최신이거나 머지 큐가 바로 머지할 PR 은 조용히 넘어간다
+//     3. 아래는 `REFRESH-WAIT #<PR> <이유>(<판정 이유>)` 를 로그에 쓰고 넘어간다. 도는 머지 큐(명령줄에 `merge_queue.` 가 든 프로세스의
+//        차례 기록)의 차례 PR 이면 `머지 큐의 차례다`. 큐 밖에서 HEAD 가 바뀌면 그 PR 이 STOP 으로 멈추기 때문이다.
+//        이번 틱의 CI 가 그 HEAD 에서 passed 가 아니면 `CI <상태 또는 없음>`. 도는 CI 를 끊거나 실패를 덮지 않으려는 것이다.
+//        lib/refresh.ts 의 aheadInQueue 가 큐의 앞 PR 을 내면 `머지 큐의 앞 PR #<번호> 이 머지된 뒤 최신화한다`.
+//        쓴 자리가 refresh_slots 이상이면 `최신화 자리 <쓴 수>/<상한> 가 찼다`. 부르기 직전에 차례 기록을 다시 읽어 차례 PR 이 되었으면 차례다
+//     4. update: lib/gh.ts 의 updateBranch(이유 refresh, expected_head_sha 는 판정한 HEAD)를 부른다. 성공하면 기록의 value 가 updated 이고
+//        `REFRESH #<PR> update-branch base <브랜치>(<SHA 앞 8자리>) HEAD <앞 8자리>: <판정 이유>` 를 로그에 쓴다.
+//        실패하면 value 가 failed 이고 `#<PR> update-branch 실패: …` 를 오류 이유로 둔다. 같은 base 에는 다시 부르지 않는다
+//     5. worker: 브랜치의 워크트리와 worker(위 「worker 찾기」)가 살아 있는 dispatch 면 send-to-worker --dispatch <d> --body <글> --no-reply [--run <Run>] 으로
+//        `PR #<PR> 이 base <브랜치>(<SHA 앞 8자리>) 에 뒤처졌다. <판정 이유>. origin/<브랜치> 를 합쳐 검증하고 한 번 push 한다. 끝나면 status 로 알린다.` 를 보낸다.
+//        보냈으면(0, 1, 4) value 가 dispatch 이고 `REFRESH-WORKER #<PR> <dispatch> 에 합치기를 보냈다…` 를 로그에 쓴다.
+//        워크트리나 살아 있는 dispatch 가 없거나 send-to-worker 가 3 이면 value 가 orphan 이고 `REFRESH-ORPHAN #<PR> <이유>: <판정 이유>` 를 로그에만 쓴다.
+//        새 worker 는 띄우지 않는다. 2 면 그 틱의 최신화를 멈추고 `send-to-worker 사용법 오류`, 그 밖의 종료 코드와 worker 목록을 읽지 못한 것은
+//        기록하지 않고 오류 이유로 둔다. 다음 틱이 다시 본다
+//     충돌 처리(pr-conflict)와 메시지와 기록을 합치지 않는다. 충돌한 PR 은 충돌 찾기의 clean 에 없어 이 단계에 오지 않는다.
+//     오류 이유는 `; ` 로 이어 errors 의 refresh 에 둔다(아래 「오류 줄 억제」)
 //
 // 대기 확인: 맡은 Run 마다, Run id 가 있을 때만. 코디네이터가 wait-important 를 다시 걸지 않으면 질문과 알림을 받을 대기가 없다
 //     (2026-11-02 80분 동안 대기가 없어 결정 질문 9개가 묻혔다). lib/waiters.ts 로 그 Run 의 wait-important, watch-questions 프로세스를 찾는다.
@@ -320,11 +359,11 @@
 //
 // 오류 줄 억제: errors 는 출처마다 마지막 오류 이유다. Run 마다 도는 출처(questions, cleanup, hook, stalls)는 `<출처>@<Run>` 키다
 //     (Run 없는 한 칸이면 출처 이름 그대로). 주 Run 이 바뀌어도 다른 Run 의 이전 값과 비교하지 않게 하려는 것이다.
-//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, movement, auto-merge, conflicts, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
+//     공유 출처(SHARED_SOURCES: prs, board, ci, merged, movement, auto-merge, conflicts, refresh, queue-turn, tick, heavy-slot)는 `<출처>@<주 Run>` 키다. 알림이 주 Run 에 가므로, 주 Run 이 바뀌면
 //     진행 중인 실패가 새 주 Run 에 한 번 가야 한다. 출처 이름만 키로 두면 앞 주 Run 이 받은 값에 막혀 새 주 Run 에 오지 않는다.
 //     부모는 등록에서 빠진 Run 의 키, 주 Run 이 아닌 Run 의 공유 키, 주 Run 이 있을 때의 `@` 없는 공유 키(Run 없던 루프나 옛 루프가
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
-//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리),
+//     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리), refresh(최신화), queue-turn(큐 기록),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남), heavy-slot(자리 보유 확인. 알림의 kind 는 HEAVY-SLOT-HELD)이다.
 //     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
 //     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 알림 파일의 text 는 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
@@ -340,16 +379,17 @@
 // 설정: pipeline.tick_sec(양수, 기본 300), pipeline.stall_ticks({"error": 0 이상의 정수, "idle": 0 이상의 정수}. 위 「멈춤 확인」),
 //     pipeline.idle_min, pipeline.idle_exited(위 「움직임 확인」. lib/movement.ts 의 movementSettings 가 읽는다), finish.run, finish.specs_dir, queue.required, queue.skipped_is_missing(true 나 false),
 //     queue.auto_merge, queue.auto_review, migrations.dirs, migrations.before, migrations.blocked_after_sec(lib/auto-merge.ts 의 autoMergeConfig 가 읽는다.
-//     위 「자동 머지」), queue.sweep_args(자동 머지가 큐에 --sweep-arg 로 넘긴다).
+//     위 「자동 머지」), queue.sweep_args(자동 머지가 큐에 --sweep-arg 로 넘긴다),
+//     pipeline.refresh_slots, pipeline.refresh_worker_paths 와 머지 큐의 최신화 키(lib/refresh.ts 의 refreshSettings 가 읽는다. 위 「최신화」).
 //     finish 절은 lib/finish-options.ts 의 FINISH_KEYS 로, queue 절은 lib/config.ts 의 QUEUE_KEYS 로 읽는다.
 //     pipeline.enabled 는 읽지 않는다. 이 루프가 하는 일은 모두 그 값과 무관하게 돈다.
 //
 // 환경 변수: ORCA(orca 실행 파일), GH(gh 실행 파일), HEAVY_SLOT_DIR, HEAVY_HOLD_MAX(자리 보유 확인), CLEANUP_SWEEP(정리 명령. 기본은 이 폴더의 cleanup-sweep.ts),
 //     BOARD_SYNC(보드 동기화 명령. 기본은 이 폴더의 board-sync.ts), SEND_TO_WORKER(worker 에게 보내는 명령. CI 감시와 충돌 처리가
-//     쓴다. 기본은 이 폴더의 send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격),
+//     쓴다. 최신화도 쓴다. 기본은 이 폴더의 send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격),
 //     MERGE_WITH_FINISH(자동 머지가 띄우는 큐 명령. 기본은 이 폴더의 merge-with-finish.ts),
 //     THREADS_CMD(미해결 스레드 수를 내는 bash 명령. 환경 변수 OWNER, REPO, PR, GH_HOST 를 받는다. 기본은 머지 큐의 기본 --threads-cmd 와
-//     같은 review-fix 의 review_threads.py), PS(프로세스 목록 명령. 기본 ps), NUDGE_WORKER(대기 없음을 코디네이터 터미널에 넣는 명령.
+//     같은 review-fix 의 review_threads.py), PS(프로세스 목록 명령. 자동 머지와 최신화가 쓴다. 기본 ps), NUDGE_WORKER(대기 없음을 코디네이터 터미널에 넣는 명령.
 //     기본은 이 폴더의 nudge-worker.ts), ORCH_NO_WAIT_SEC(대기 확인의 기다리는 초)
 //
 // 종료 코드:
@@ -367,19 +407,19 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { featureEvidenceProblem, featureLoopRequested } from './lib/feature-evidence.ts'
+import { featureEvidenceProblem, featureLoopRequested, fetchedBaseMerges } from './lib/feature-evidence.ts'
 import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, REVIEW_WAIT, reservedFor, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from './lib/auto-merge.ts'
 import { context as questionContext } from './lib/completion.ts'
 import { ConfigError, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, section } from './lib/config.ts'
 import { concludeConflict, findConflicts, loadNotified, notifiedFile, notifiedKey, resolveConflict, SEND_MS } from './lib/conflicts.ts'
-import type { OpenPr, WorkerFound } from './lib/conflicts.ts'
+import type { Found, OpenPr, WorkerFound } from './lib/conflicts.ts'
 import { fire, reclaim } from './lib/events.ts'
 import { finishStarted } from './lib/finish-marks.ts'
 import { FINISH_KEYS } from './lib/finish-options.ts'
 import { isFile } from './lib/fs.ts'
 import { holdMaxSec, overHeld } from './lib/heavy-hold.ts'
-import { baseWorkflowFailed, apiTarget, cancelledOnly, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames } from './lib/gh.ts'
+import { baseWorkflowFailed, apiTarget, cancelledOnly, ciState, failedCheck, ghJson, isOwnPr, ownAuthors, requiredNames, updateBranch } from './lib/gh.ts'
 import type { CiCheck, Names } from './lib/gh.ts'
 import { defaultBase, git, mainCheckout } from './lib/git.ts'
 import { specFiles } from './lib/last-pr.ts'
@@ -396,6 +436,9 @@ import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from './l
 import { isUserDecision, notifyDecisions } from './lib/decisions.ts'
 import { NO_WAIT_PREFIX, userActive } from './lib/user-active.ts'
 import type { ClosedLookup } from './lib/questions.ts'
+import { finishedTurns, readTurns, turnLine } from './lib/queue-turn.ts'
+import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshFile, refreshSettings, verdict as refreshVerdict, writeRefresh } from './lib/refresh.ts'
+import type { ForkFiles, RefreshSettings } from './lib/refresh.ts'
 import { addedPaths, readReservations } from './lib/reservations.ts'
 import { isStructured, limitedScreen, structuredScreen } from './lib/sessions.ts'
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
@@ -433,13 +476,15 @@ const NO_WAIT_SEC = Number(process.env.ORCH_NO_WAIT_SEC) || 300
 const NUDGE_TIMEOUT_MS = 90_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
-const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'auto-merge', 'conflicts', 'tick', 'heavy-slot'])
+const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'auto-merge', 'conflicts', 'refresh', 'queue-turn', 'tick', 'heavy-slot'])
 // pipeline.stall_ticks 의 기본값(머리 주석의 「멈춤 확인」). idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 끈다
 const DEFAULT_STALL_TICKS: Readonly<Record<StallState, number>> = Object.freeze({ error: 2, idle: 0 })
 // 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
 const AUTO_MERGE_LOG_KEEP_MS = 7 * 24 * 60 * 60 * 1000
 // 명령줄에 이 글자가 들면 도는 머지 큐로 본다(머리 주석의 「자동 머지」 2)
 const QUEUE_COMMANDS: readonly string[] = ['merge_queue.', 'merge-queue.sh', 'merge-with-finish.']
+// AUTO-MERGE-HELD 줄에 옮기는 명령줄의 앞 글자 수
+const HELD_COMMAND_CHARS = 160
 // 마이그레이션을 보는 열린 PR 조회의 최대 줄 수. 이만큼 오면 잘렸을 수 있다(머리 주석의 「자동 머지」 4)
 const MIGRATION_PR_LIMIT = 200
 // 리뷰 범위를 볼 때 HEAD 부터 첫 부모를 따라 읽는 커밋 수. merge 커밋이 이만큼 이어지는 일은 없다
@@ -456,6 +501,8 @@ type Context = {
   // pipeline.idle_min, pipeline.idle_exited(머리 주석의 「움직임 확인」)
   movement: MovementSettings
   autoMerge: AutoMergeConfig
+  // pipeline.refresh_slots 와 머지 큐의 최신화 기준(머리 주석의 「최신화」, lib/refresh.ts 의 refreshSettings)
+  refresh: RefreshSettings
   // config 의 queue.sweep_args 그대로. 자동 머지가 lib/auto-merge.ts 의 sweepArgs 로 큐의 Run 에 맞춘다
   sweepArgs: unknown
 }
@@ -545,6 +592,7 @@ function context(repo: string, run: string | undefined, specsDir: string | undef
     stallTicks: stallTicks(pipeline.stall_ticks),
     movement: movementSettings(repo),
     autoMerge: autoMergeConfig(config),
+    refresh: refreshSettings(config),
     sweepArgs: queue.sweep_args,
   }
 }
@@ -1624,10 +1672,7 @@ function watchMovement(
 }
 
 // 충돌 처리(머리 주석의 「충돌 처리」). 결과는 errors.conflicts 에 둘 이유다
-async function handleConflicts(ctx: Context, lookup: Lookup): Promise<string | null> {
-  const base = defaultBase(ctx.repo) ?? 'main'
-  const found = findConflicts(ctx.repo, base)
-  if (!found.ok) return oneLine(found.error)
+async function handleConflicts(ctx: Context, lookup: Lookup, base: string, found: Found): Promise<string | null> {
   const { baseSha } = found
   const authors = new Map<string, string[]>()
   const mine: { pr: OpenPr; files: string[] }[] = []
@@ -1682,6 +1727,150 @@ async function handleConflicts(ctx: Context, lookup: Lookup): Promise<string | n
     }
   }
   return errors.size > 0 ? [...errors].join('; ') : null
+}
+
+// 최신화 ------------------------------------------------------------------
+
+// 머리 주석의 「최신화」. 오류가 있으면 이유를 `; ` 로 이어 내고, 없으면 null 이다
+async function refreshBehind(ctx: Context, mine: OwnPr[], ci: Record<string, CiEntry>, base: string, found: Found, lookup: Lookup): Promise<string | null> {
+  const settings = ctx.refresh
+  if (!settings.upToDate) return 'pipeline.refresh_slots 를 켰지만 queue.require_up_to_date 가 false 라 머지 큐가 최신화하지 않는다. 최신화도 하지 않는다'
+  const file = refreshFile(ctx.repo)
+  const records = readRefresh(file)
+  const byNumber = new Map(mine.map((pr) => [pr.number, pr]))
+  for (const key of Object.keys(records)) if (!byNumber.has(Number(key))) delete records[key]
+  const ciOf = (pr: OwnPr) => (ci[String(pr.number)]?.head === pr.head ? ci[String(pr.number)].state : null)
+  const now = Date.now()
+  let used = Object.entries(records).filter(([key, record]) => {
+    const pr = byNumber.get(Number(key))
+    return pr ? inFlight(record, pr.head, ciOf(pr), now) : false
+  }).length
+  const listed = processes()
+  if (!listed) {
+    writeRefresh(file, ctx.repo, records)
+    return '프로세스 목록을 읽지 못했다'
+  }
+  const turns = queueTurns(ctx.repo, listed)
+  const queue = turns.flatMap((turn) => turn.prs)
+  const fresh = new Map(found.clean.map((pr) => [pr.number, pr]))
+  const changed = new Map<number, string[] | null>()
+  const filesOf = (n: number): string[] | null => {
+    if (!changed.has(n)) {
+      const head = fresh.get(n)?.headRefOid
+      const got = head ? forkFiles(ctx.repo, found.baseSha, head) : null
+      changed.set(n, got?.ok ? got.files.pr : null)
+    }
+    return changed.get(n) ?? null
+  }
+  const errors = new Set<string>()
+  const wait = (pr: OwnPr, why: string) => log(`REFRESH-WAIT #${pr.number} ${why}`)
+  for (const pr of [...mine].sort((a, b) => a.number - b.number)) {
+    const seen = fresh.get(pr.number)
+    // 충돌한 PR 과 다른 base 의 PR 은 충돌 찾기의 clean 에 없다. 충돌은 충돌 처리가 맡는다
+    if (pr.draft || pr.base !== base || !seen || seen.isCrossRepository) continue
+    if (seen.headRefOid !== pr.head) continue
+    const record = records[String(pr.number)]
+    if (record && record.base === found.baseSha) continue
+    const got = forkFiles(ctx.repo, found.baseSha, pr.head)
+    if (!got.ok) {
+      errors.add(`#${pr.number} 의 변경을 읽지 못했다: ${oneLine(got.error)}`)
+      continue
+    }
+    const files: ForkFiles = got.files
+    const judged = refreshVerdict(files, settings)
+    if (judged.action === 'skip') continue
+    if (turns.some((turn) => turn.pr === pr.number)) {
+      wait(pr, `머지 큐의 차례다(${judged.reason})`)
+      continue
+    }
+    const state = ciOf(pr)
+    if (state !== 'passed') {
+      wait(pr, `CI ${state ?? '없음'}(${judged.reason})`)
+      continue
+    }
+    const ahead = aheadInQueue(pr.number, files, queue, filesOf, settings)
+    if (ahead !== null) {
+      wait(pr, `머지 큐의 앞 PR #${ahead} 이 머지된 뒤 최신화한다(${judged.reason})`)
+      continue
+    }
+    if (used >= settings.slots) {
+      wait(pr, `최신화 자리 ${used}/${settings.slots} 가 찼다(${judged.reason})`)
+      continue
+    }
+    // 판정하는 사이 큐가 이 PR 차례로 넘어왔을 수 있다. 차례 기록만 다시 읽는다
+    if (queueTurns(ctx.repo, listed).some((turn) => turn.pr === pr.number)) {
+      wait(pr, `머지 큐의 차례다(${judged.reason})`)
+      continue
+    }
+    const at = iso()
+    if (judged.action === 'update') {
+      const done = updateBranch(pr.slug, { number: pr.number, isDraft: pr.draft }, 'refresh', { host: pr.host, expectedHead: pr.head })
+      if (done.code === 0) {
+        records[String(pr.number)] = { base: found.baseSha, from: pr.head, at, action: 'update', value: 'updated' }
+        used += 1
+        log(`REFRESH #${pr.number} update-branch base ${base}(${found.baseSha.slice(0, 8)}) HEAD ${pr.head.slice(0, 8)}: ${judged.reason}`)
+      } else {
+        records[String(pr.number)] = { base: found.baseSha, from: pr.head, at, action: 'update', value: 'failed' }
+        errors.add(`#${pr.number} update-branch 실패: ${oneLine(done.stderr || done.stdout || `종료 코드 ${done.code}`)}`)
+      }
+      continue
+    }
+    const told = await tellRefresh(ctx, pr, base, found.baseSha, judged.reason, lookup)
+    if (told.usage) {
+      errors.add('send-to-worker 사용법 오류')
+      break
+    }
+    if (told.error) {
+      errors.add(told.error)
+      continue
+    }
+    records[String(pr.number)] = { base: found.baseSha, from: pr.head, at, action: 'worker', value: told.value }
+    if (told.value === 'orphan') {
+      log(`REFRESH-ORPHAN #${pr.number} ${told.why}: ${judged.reason}`)
+    } else {
+      used += 1
+      log(`REFRESH-WORKER #${pr.number} ${told.value} 에 합치기를 보냈다${told.why}: ${judged.reason}`)
+    }
+  }
+  try {
+    writeRefresh(file, ctx.repo, records)
+  } catch (e) {
+    errors.add(`state/refresh.json 을 쓰지 못했다: ${oneLine(e)}`)
+  }
+  return errors.size > 0 ? [...errors].join('; ') : null
+}
+
+// 최신화에 worker 판단이 필요한 PR 의 살아 있는 dispatch 에 base 합치기를 보낸다(머리 주석의 「최신화」).
+// value 는 보낸 dispatch 이거나 orphan(worker 없음)이다. error 면 기록하지 않고 다음 틱이 다시 본다
+async function tellRefresh(
+  ctx: Context,
+  pr: OwnPr,
+  base: string,
+  baseSha: string,
+  reason: string,
+  lookup: Lookup,
+): Promise<{ usage?: true; error?: string; value: string; why: string }> {
+  lookup.paths ??= worktreePaths(ctx.repo)
+  const path = lookup.paths.get(pr.branch)
+  if (!path) return { value: 'orphan', why: '워크트리 없음' }
+  const owner = ownerOf(path, lookup)
+  if (!owner.ok) return { error: `worker 목록을 읽지 못했다: ${oneLine(owner.error)}`, value: '', why: '' }
+  const row = owner.found?.row
+  if (!row || !LIVE_DISPATCH.has(String(row.dispatchStatus))) return { value: 'orphan', why: '살아 있는 dispatch 없음' }
+  const dispatch = String(row.dispatchId)
+  const body =
+    `PR #${pr.number} 이 base ${base}(${baseSha.slice(0, 8)}) 에 뒤처졌다. ${reason}. ` +
+    `origin/${base} 를 합쳐 검증하고 한 번 push 한다. 끝나면 status 로 알린다.`
+  const args = ['--dispatch', dispatch, '--body', body, '--no-reply']
+  if (owner.found?.run) args.push('--run', owner.found.run)
+  const send = process.env.SEND_TO_WORKER || join(HERE, 'send-to-worker.ts')
+  const sent = await runAsync(scriptCommand(send, args), { cwd: ctx.repo, timeoutMs: SEND_MS })
+  relay(sent)
+  if (sent.code === 2) return { usage: true, value: '', why: '' }
+  if (sent.code === 3) return { value: 'orphan', why: `${dispatch} 에 보낼 수 없다(send-to-worker 종료 코드 3)` }
+  if (sent.code === 0) return { value: dispatch, why: '' }
+  if (sent.code === 1 || sent.code === 4) return { value: dispatch, why: `(깨우지 못했다, 종료 코드 ${sent.code})` }
+  return { error: `#${pr.number} 를 ${dispatch} 에 보내지 못했다(send-to-worker 종료 코드 ${sent.code})`, value: '', why: '' }
 }
 
 // 자동 머지 ------------------------------------------------------------------
@@ -1794,6 +1983,60 @@ function queueRunning(list: Proc[]): boolean {
   return list.some((p) => QUEUE_COMMANDS.some((name) => p.command.includes(name)))
 }
 
+// 차례 기록(lib/queue-turn.ts)의 pid 가 지금 머지 큐 프로세스인지. 명령줄로 본다. pid 를 다른 프로세스가 다시 받았을 수 있다
+function queueTurns(repo: string, list: Proc[]): ReturnType<typeof readTurns> {
+  return readTurns(repo, (pid) => list.some((p) => p.pid === pid && p.command.includes('merge_queue.')))
+}
+
+// 머리 주석의 「큐 기록」. 차례 기록의 held 가운데 아직 옮기지 않은 것을 QUEUE-DROPPED 줄로 로그에 쓰고, 끝난 큐의 기록을 지운다.
+// 옮긴 것은 state/queue-dropped.json 의 `<pid>:<PR>` 키로 기억한다. 기록을 지운 pid 의 키는 함께 지운다
+function watchQueueTurns(repo: string): string | null {
+  const list = processes()
+  if (!list) return '프로세스 목록을 읽지 못했다'
+  const isQueue = (pid: number) => list.some((p) => p.pid === pid && p.command.includes('merge_queue.'))
+  const file = join(pathOf('state', repo), 'queue-dropped.json')
+  let seen: Record<string, string> = {}
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    if (isObject(raw)) seen = Object.fromEntries(Object.entries(raw).filter(([, v]) => typeof v === 'string')) as Record<string, string>
+  } catch {
+    // 없거나 깨졌으면 빈 기록이다. 다시 옮겨도 로그 줄이 겹칠 뿐이다
+  }
+  const before = JSON.stringify(seen)
+  const copy = (turn: ReturnType<typeof readTurns>[number]) => {
+    for (const held of turn.held) {
+      const key = `${turn.pid}:${held.pr}`
+      if (Object.hasOwn(seen, key)) continue
+      log(`QUEUE-DROPPED #${held.pr} pid ${turn.pid}: ${held.reason}`)
+      seen[key] = iso()
+    }
+  }
+  for (const turn of readTurns(repo, isQueue)) copy(turn)
+  for (const { file: turnFile, turn } of finishedTurns(repo, isQueue)) {
+    if (turn) copy(turn)
+    rmSync(turnFile, { force: true })
+    const pid = basename(turnFile).replace(/\.json$/, '')
+    for (const key of Object.keys(seen)) if (key.startsWith(`${pid}:`)) delete seen[key]
+  }
+  if (JSON.stringify(seen) !== before) {
+    makeParent(file, repo)
+    writeFileSync(file, `${JSON.stringify(seen, null, 2)}\n`, 'utf8')
+  }
+  return null
+}
+
+// 도는 큐 때문에 이 틱의 자동 머지를 미룬다. 큐가 무엇을 기다리는지 로그에 한 줄씩 남긴다(머리 주석의 「자동 머지」 2)
+function logHeld(repo: string, list: Proc[]): void {
+  const turns = queueTurns(repo, list)
+  if (turns.length > 0) {
+    for (const turn of turns) log(`AUTO-MERGE-HELD ${turnLine(turn, Date.now())}`)
+    return
+  }
+  for (const p of list.filter((row) => QUEUE_COMMANDS.some((name) => row.command.includes(name)))) {
+    log(`AUTO-MERGE-HELD pid ${p.pid} 차례 기록 없음: ${p.command.slice(0, HELD_COMMAND_CHARS)}`)
+  }
+}
+
 // 끝난 큐 로그의 끝 줄(머리 주석의 「자동 머지」 2)
 function queueEndLine(file: string): string {
   let text: string
@@ -1889,7 +2132,8 @@ function judgeTarget(
   if (feature && !review) return { wait: '기능 자동 머지는 queue.auto_review 의 독립 리뷰 정책이 필요하다' }
   if (feature) {
     if (typeof data.body !== 'string' || data.headRefOid !== pr.head) return { wait: '기능 완료 근거 또는 HEAD 조회 실패' }
-    const problem = featureEvidenceProblem(data.body, pr.head, feature)
+    // 검증 커밋 뒤에 base 를 합친 merge 만 있으면 받아들인다. 위에서 지금 HEAD 의 CI 가 passed 인 것을 보았다
+    const problem = featureEvidenceProblem(data.body, pr.head, feature, false, (verified) => fetchedBaseMerges(ctx.repo, pr.head, verified, pr.base))
     if (problem) return { wait: problem }
   }
   let basis = noReview
@@ -2029,11 +2273,17 @@ async function autoMergeStep(
   }
   if (state.queue) {
     const queue = state.queue
-    if (listed.some((p) => p.pid === queue.pid && p.command.includes('merge-with-finish.'))) return
+    if (listed.some((p) => p.pid === queue.pid && p.command.includes('merge-with-finish.'))) {
+      logHeld(ctx.repo, listed)
+      return
+    }
     if (!notifyAutoMerge(ctx, 'AUTO-MERGE-END', null, `${queueEndLine(queue.log)} log=${queue.log}`, queue.run)) return
     state.queue = null
   }
-  if (queueRunning(listed)) return
+  if (queueRunning(listed)) {
+    logHeld(ctx.repo, listed)
+    return
+  }
 
   // 3. 대상과 판정. 같은 브랜치는 앞 Run 의 지시서가 정한다
   const targets = new Map<string, { run: string; hold: string | null; feature: boolean }>()
@@ -2185,7 +2435,10 @@ async function autoMergeStep(
     errors.add('프로세스 목록을 읽지 못했다')
     return
   }
-  if (queueRunning(again)) return
+  if (queueRunning(again)) {
+    logHeld(ctx.repo, again)
+    return
+  }
   const args = ['--repo', ctx.repo, '--run', queueRun, '--continue-on-hold']
   for (const chain of chains) args.push('--chain', chain.join(','))
   for (const arg of sweepArgs(ctx.sweepArgs, queueRun) ?? []) args.push('--sweep-arg', arg)
@@ -2539,12 +2792,35 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
   }
 
+  // 8-1. 큐 기록. 머지 큐가 뺀 PR 과 이유를 루프 로그에 옮기고 끝난 큐의 기록을 지운다
+  try {
+    report('queue-turn', watchQueueTurns(ctx.repo))
+  } catch (e) {
+    report('queue-turn', oneLine(e))
+  }
+
   // 9. 충돌 처리. 내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛰고 errors.conflicts 를 그대로 둔다
+  // 9-1. 최신화. 충돌 찾기가 받은 base 와 PR HEAD 를 쓴다. 충돌 찾기가 실패한 틱은 건너뛰고 errors.refresh 를 그대로 둔다
   if (prs.ok) {
+    const conflictBase = defaultBase(ctx.repo) ?? 'main'
+    let found: Found | null = null
     try {
-      report('conflicts', prs.mine.length > 0 ? await handleConflicts(ctx, lookup) : null)
+      if (prs.mine.length > 0) {
+        const got = findConflicts(ctx.repo, conflictBase)
+        if (got.ok) found = got
+        report('conflicts', got.ok ? await handleConflicts(ctx, lookup, conflictBase, got) : oneLine(got.error))
+      } else {
+        report('conflicts', null)
+      }
     } catch (e) {
       report('conflicts', oneLine(e))
+    }
+    if (ctx.refresh.slots > 0 && (found || prs.mine.length === 0)) {
+      try {
+        report('refresh', found ? await refreshBehind(ctx, prs.mine, ci ?? {}, conflictBase, found, lookup) : null)
+      } catch (e) {
+        report('refresh', oneLine(e))
+      }
     }
   }
 

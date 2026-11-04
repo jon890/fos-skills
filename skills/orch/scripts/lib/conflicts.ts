@@ -72,21 +72,26 @@ export function fetchPrHead(repo: string, pr: Pick<OpenPr, 'number' | 'headRefNa
 }
 
 // base 와 충돌하는 열린 PR 과 충돌 파일. 작성자로 고르지 않는다. 내 PR 판정은 부르는 쪽이 lib/gh.ts 로 한다.
-export function findConflicts(repo: string, base: string): { ok: true; baseSha: string; found: { pr: OpenPr; files: string[] }[] } | Failure {
+// clean 은 충돌하지 않은 열린 PR 이다. HEAD 를 이미 받아 두었으므로 상주 루프의 최신화(lib/refresh.ts)가 다시 받지 않고 쓴다.
+export type Found = { ok: true; baseSha: string; found: { pr: OpenPr; files: string[] }[]; clean: OpenPr[] }
+
+export function findConflicts(repo: string, base: string): Found | Failure {
   const head = baseHead(repo, base)
   if (!head.ok) return head
   const listed = ghJson<OpenPr[]>(['pr', 'list', '--state', 'open', '--base', base, '--limit', '200', '--json', PR_FIELDS], { cwd: repo })
   if (!listed.ok) return listed
   if (!Array.isArray(listed.data)) return { ok: false, error: 'gh pr list 의 출력이 목록이 아니다' }
   const found: { pr: OpenPr; files: string[] }[] = []
+  const clean: OpenPr[] = []
   for (const pr of listed.data) {
     const fetched = fetchPrHead(repo, pr)
     if (!fetched.ok) return { ok: false, error: `#${pr.number} 를 base 와 합쳐 보지 못했다: ${fetched.error}` }
     const merged = conflicts(repo, head.sha, pr.headRefOid)
     if (!merged.ok) return { ok: false, error: `#${pr.number} 를 base 와 합쳐 보지 못했다: ${merged.error}` }
     if (merged.conflict) found.push({ pr, files: merged.files })
+    else clean.push(pr)
   }
-  return { ok: true, baseSha: head.sha, found }
+  return { ok: true, baseSha: head.sha, found, clean }
 }
 
 // PR 의 충돌 후속 지시서 경로(머리 주석의 「후속 지시서 이름」)
