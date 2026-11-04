@@ -67,7 +67,8 @@
 | --- | --- | --- |
 | `.claude-plugin/marketplace.json` | 마켓플레이스 이름과 플러그인 소스 | `claude plugin marketplace add` |
 | `.claude-plugin/plugin.json` | 플러그인 이름, version, 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
-| `scripts/bump-plugin-version.py` | main push 범위의 스킬 CHANGELOG 로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다 | `.github/workflows/plugin-version.yml` |
+| `scripts/bump-plugin-version.py` | main 트리의 변경 이력 조각을 적용해 스킬 버전을 올리고, push 범위의 스킬 CHANGELOG 와 조각으로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다 | `.github/workflows/plugin-version.yml` |
+| `scripts/skill_changes.py` | 변경 이력 조각(`<스킬>/changes/<슬러그>.<등급>.md`)의 형식 검사, 머지 순서 정렬, 스킬 버전과 CHANGELOG 절 적용 | `scripts/check-skill-docs.py`, `scripts/bump-plugin-version.py` |
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |

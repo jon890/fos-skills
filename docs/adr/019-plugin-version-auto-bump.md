@@ -22,4 +22,4 @@
   - 감당할 것: workflow 가 실패하면 그 머지는 version 이 오르지 않아 `update` 가 받지 않는다. 다음 머지가 올리면 함께 받는다.
   - 감당할 것: 설치 캐시 폴더 이름이 커밋 SHA 대신 version 이 된다. `claude plugin validate` 의 version 경고가 없어진다.
   - 감당할 것: main 에 보호 규칙을 걸면 봇의 push 를 허용해야 한다.
-- **적용 범위**: 스킬 버전의 등급 기준과 CHANGELOG 형식은 저장소 README 「버전과 변경 이력」 이 소유한다. 갱신 순서는 [flow.md](../flow.md) 가 소유한다.
+- **적용 범위**: 스킬 버전과 CHANGELOG 절을 머지 때 조각으로 정하는 규칙은 [ADR-023](023-version-at-merge.md) 이 소유한다. 스킬 버전의 등급 기준과 CHANGELOG 형식은 저장소 README 「버전과 변경 이력」 이 소유한다. 갱신 순서는 [flow.md](../flow.md) 가 소유한다.
