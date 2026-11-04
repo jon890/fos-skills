@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.3.4 (2026-11-05)
+
+- 문서 감사 스킬 참조를 새 이름 `docs-audit` 로 맞췄어요.
+
 ## 1.3.3 (2026-11-05)
 
 - 검사 명령을 `$SKILL_DIR/scripts/check-deck.py` 로 바꿔 덱이 있는 디렉터리에서도 돈다
