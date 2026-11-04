@@ -21,7 +21,10 @@
 //        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 지시서만 남긴다
 //     4. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
-//        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. 판정은 lib/deploy.ts 의 deployVerdict 가 소유한다
+//        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. skipped 만 남으면 배포 브랜치의 원격 끝 커밋으로 판정한다.
+//        끝 커밋이 뒤 커밋이면 `배포 판정: 뒤 커밋 <sha> 에 포함됨, 그 배포를 기다린다` 를 남기고 기다리고,
+//        끝 커밋의 실행도 skipped 면 `배포 실패 <sha> (근거: 배포가 건너뛰어졌다)` 로 끝낸다.
+//        판정은 lib/deploy.ts 의 deployVerdict 가 소유한다
 //     5. 이 PR 이 업무의 마지막 PR 인지 판정하고 `마지막 PR 판정: <마지막|중간>(근거)` 한 줄을 낸다(아래 「마지막 PR 판정」).
 //        배포가 실패하거나 시간이 지나도 판정한다
 //     6. --specs-dir 를 줬고 마지막 PR 이면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
@@ -464,20 +467,26 @@ function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; k
   return { last: verdict.last === true, known: verdict.last !== null, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
 }
 
-async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ deploy: Deploy; sha: string }> {
+// 머리 주석의 단계 4. note 는 lib/deploy.ts 의 판정 근거다. 바뀔 때마다 `배포 판정: <근거>` 한 줄을 남긴다
+async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ deploy: Deploy; sha: string; note: string }> {
   const deadline = Date.now() + args.deployTimeout * 60_000
   const branch = args.deployBranch as string
   let attempt = 0
+  let said = ''
   const isAncestor = (ancestor: string, sha: string) => git(repo, ['merge-base', '--is-ancestor', ancestor, sha]).code === 0
   for (;;) {
     git(repo, ['fetch', '-q', 'origin', branch])
+    const tipped = git(repo, ['rev-parse', '--verify', '-q', `refs/remotes/origin/${branch}^{commit}`])
+    const tip = tipped.code === 0 ? tipped.stdout.trim() : ''
     const done = gh(['run', 'list', '--branch', branch, '--workflow', args.deployWorkflow as string, '--limit', '15', '--json', 'headSha,status,conclusion'], {
       cwd: repo,
       timeoutMs: RUN_TIMEOUT_MS,
     })
-    const { verdict, sha } = deployVerdict(done.code === 0 ? parseRuns(done.stdout) : [], merge, isAncestor)
-    if (verdict !== 'wait') return { deploy: verdict, sha }
-    if (Date.now() >= deadline) return { deploy: 'timeout', sha: '' }
+    const { verdict, sha, note } = deployVerdict(done.code === 0 ? parseRuns(done.stdout) : [], merge, isAncestor, tip)
+    if (verdict !== 'wait') return { deploy: verdict, sha, note }
+    if (note && note !== said) log(`배포 판정: ${note}`)
+    said = note
+    if (Date.now() >= deadline) return { deploy: 'timeout', sha: '', note: '' }
     await sleep((args.pollInterval < 60 ? args.pollInterval : pollSeconds(attempt++, args.pollInterval)) * 1000)
   }
 }
@@ -593,7 +602,7 @@ async function finish(args: Args, repo: string): Promise<number> {
     const got = await waitDeployed(args, repo, merge)
     deploy = got.deploy
     if (deploy === 'success') log(`배포 성공 ${got.sha.slice(0, 9)}`)
-    else if (deploy === 'failure') log(`배포 실패 ${got.sha.slice(0, 9)}`)
+    else if (deploy === 'failure') log(`배포 실패 ${got.sha.slice(0, 9)}${got.note ? ` (근거: ${got.note})` : ''}`)
     else log('배포를 기다리다 시간이 지났다')
   }
   const deployed = deploy === 'success' || deploy === 'none'
