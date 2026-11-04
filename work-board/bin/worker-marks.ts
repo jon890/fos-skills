@@ -1,7 +1,7 @@
 // 보드 창(hooks/register.js)이 worker 줄에 붙일 멈춤 판정을 낸다. 읽기만 한다.
 // mod 는 TypeScript 와 node:fs 를 import 하지 못해, 이 명령을 $.process.run 으로 불러 JSON 출력만 읽는다.
 //
-// work-board 가 orch 를 import 하는 곳은 이 파일 하나다. 멈춤 판정을 orch 상주 루프와 한 벌로 두려는 것이다
+// work-board 가 orch 를 import 하는 곳은 이 파일과 bin/merge-queue.ts(상태 폴더 경로만)다. 멈춤 판정을 orch 상주 루프와 한 벌로 두려는 것이다
 // (docs/features/board-decision-box/spec.md 의 D11). 판정은 orch/scripts/lib/movement.ts 머리 주석이 소유한다.
 // board.ts 는 orch 를 import 하지 않는다. orch 의 lib/paths.ts 가 board.ts 를 import 해 고리가 생긴다.
 //
