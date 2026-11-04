@@ -53,6 +53,8 @@
 `bash` 와 `python3` 가 필요하다. 검사기는 표준 라이브러리만 쓴다.
 매핑 표는 `references/korean-style.md` 다. 다른 위치의 표를 쓰려면 `KOREAN_STYLE_RULES` 로 경로를 준다.
 
+검사기에 파일을 직접 넘기면(`korean-style-check.py <파일>...`) 확장자와 상관없이 검사한다. `--hook` 모드는 편집 훅에서 돌아 `.md` 만 검사한다.
+
 금지어를 품은 고유명사가 있는 저장소는 `.claude/korean-check-allow.txt` 에 한 줄에 하나씩 적는다.
 검사기는 그 문자열 안의 발견을 건너뛰고, 문자열 밖의 금지어는 그대로 잡는다.
 
