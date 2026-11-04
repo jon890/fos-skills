@@ -1757,3 +1757,23 @@ describe('Codex worker 의 ssh-agent 설정', () => {
     assert.match(r.stderr, /SSH-AGENT 건너뜀/)
   })
 })
+
+describe('짧은 출력', () => {
+  test('LAUNCHED 에 터미널을 넣고 worker-start JSON 과 단계 줄을 내지 않는다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    const out = r.stdout.trim().split('\n')
+    assert.equal(out.length, 1, r.stdout)
+    assert.match(out[0], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+  })
+
+  test('남은 터미널 거부는 REFUSED 한 줄이다', () => {
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', title: 'claude 앞 세션', worktreePath: worktree }] })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^REFUSED 이 워크트리에 터미널이 남아 있다.*\n$/)
+  })
+})

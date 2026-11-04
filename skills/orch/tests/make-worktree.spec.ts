@@ -297,6 +297,23 @@ describe('--check', () => {
     assert.match(runScript(['--check', wt(), '--spec', spec], 1), /upstream origin\/dev\/x/)
   })
 
+  test('짧은 출력은 MATCH, MISMATCH 판정 줄이다', () => {
+    make()
+    git('-C', wt(), 'commit', '-q', '--allow-empty', '-m', 'work')
+    git('-C', wt(), 'push', '-q', '-u', 'origin', 'HEAD:dev/x')
+    env.ORCH_OUTPUT = 'short'
+    try {
+      const out = node(SCRIPT, ['--check', wt(), '--spec', spec])
+      assert.equal(out.status, 1)
+      assert.match(out.stdout, /^MISMATCH upstream origin\/dev\/x origin\/feature\/x$/m)
+      assert.ok(out.stdout.split('\n').filter(Boolean).every((l) => l.startsWith('MISMATCH ')), out.stdout)
+      git('-C', wt(), 'push', '-q', '-u', 'origin', 'HEAD:feature/x')
+      assert.match(node(SCRIPT, ['--check', wt(), '--spec', spec]).stdout, /^MATCH feature\/x [0-9a-f]{40}$/m)
+    } finally {
+      delete env.ORCH_OUTPUT
+    }
+  })
+
   test('push 전이면 불일치다', () => {
     make()
     assert.match(runScript(['--check', wt(), '--spec', spec], 1), /\(없음\)/)

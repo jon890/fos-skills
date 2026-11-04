@@ -95,6 +95,22 @@ describe('연결', () => {
     assert.equal(existsSync(join(home('dst'), 'settings.json')), false)
   })
 
+  test('짧은 출력의 dry-run 은 항목마다 판정 줄과 PROFILE 끝 줄이다', () => {
+    process.env.ORCH_OUTPUT = 'short'
+    try {
+      const r = link([])
+      assert.equal(r.code, 0, r.stderr)
+      const out = r.stdout.trim().split('\n')
+      assert.ok(out.includes('WOULD-LINK plugins'), r.stdout)
+      assert.ok(out.includes('WOULD-COPY settings.json'), r.stdout)
+      assert.ok(out.includes('SKIPPED projects state'), r.stdout)
+      assert.equal(out.at(-1), 'PROFILE dst 4 dry-run')
+      assert.ok(out.every((l) => /^[A-Z]/.test(l)), r.stdout)
+    } finally {
+      delete process.env.ORCH_OUTPUT
+    }
+  })
+
   test('--apply 는 있던 것을 백업 이름으로 옮기고 맞춘다. 다시 돌리면 바꿀 것이 없다', () => {
     const r = link(['dst', '--apply'])
     assert.equal(r.code, 0, r.stderr)

@@ -917,6 +917,15 @@ describe('--start, --status, --stop', () => {
     assert.equal(pidAlive(pid), true)
   })
 
+  test('짧은 출력은 옛 루프 안내 대신 LOOP-LEGACY 판정 줄을 내고 안내 줄을 내지 않는다', async (t) => {
+    const pid = await fakeLoop(t)
+    const now = new Date().toISOString()
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid, run: 'r1', repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} }))
+    const again = loop(['--run', 'r2', '--start'], { ORCH_OUTPUT: 'short' })
+    assert.equal(again.code, 4, again.stdout + again.stderr)
+    assert.deepEqual(again.stdout.trim().split('\n'), [`LOOP-RUNNING ${pid} run=r1`, `LOOP-LEGACY ${pid} run=r1`])
+  })
+
   test('마지막 Run 의 등록이 사라지면 다음 틱 전에 LOOP-EMPTY 로 끝난다', { timeout: 60_000 }, async () => {
     config({ pipeline: { tick_sec: 1 } })
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r1', '--foreground'], { env, cwd: tmp })

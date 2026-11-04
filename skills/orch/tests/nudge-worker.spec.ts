@@ -314,3 +314,24 @@ describe('사용법', () => {
     assert.equal(nudge(['--terminal', 't', '--msg-id', 'm', '--bogus']).code, 2)
   })
 })
+
+describe('짧은 출력', () => {
+  beforeEach(() => {
+    env.ORCH_OUTPUT = 'short'
+  })
+
+  test('첫 낱말을 대문자로 하고 request id 만 남긴다', () => {
+    assert.equal(runNudge([screen(CLAUDE_IDLE), receipt(['input_accepted', 'turn_started'])]).stdout, 'NUDGED req_1\n')
+    if (existsSync(log)) unlinkSync(log)
+    assert.equal(runNudge([screen(CODEX_IDLE), receipt(['input_accepted']), receipt(['input_accepted'])]).stdout, 'UNOBSERVED req_1\n')
+    assert.equal(runNudge([screen(CODEX_WORKING)]).stdout, 'WORKING\n')
+    assert.equal(runNudge([screen(CLAUDE_DRAFT)]).stdout, 'DRAFT\n')
+  })
+
+  test('--state 의 상태 낱말은 그대로이고 orca 오류는 ORCA-ERROR 한 줄이다', () => {
+    assert.equal(withReplies([screen(CODEX_WORKING)], ['--state']).stdout, 'working\n')
+    const r = runNudge([{ ok: false, error: { code: 'terminal_not_found' } }])
+    assert.equal(r.code, 5)
+    assert.match(r.stdout, /^ORCA-ERROR .*terminal_not_found.*\n$/)
+  })
+})

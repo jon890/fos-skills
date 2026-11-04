@@ -15,11 +15,15 @@
 // 무엇을 옮기고 무엇을 두는지, 백업 이름은 lib/claude-profile.ts 머리 주석이 소유한다.
 // ORCA_CLAUDE_PROFILES 로 프로필 폴더를 바꾼다.
 //
+// 짧은 출력(진입점의 orch worker link-profile, lib/output.ts): 항목마다 LINK, COPY(dry-run 은 WOULD-LINK, WOULD-COPY) <이름>,
+// 건너뛴 세션 상태는 SKIPPED <이름> state, 끝 줄은 PROFILE <대상> <건수> applied 또는 dry-run 이다.
+//
 // 종료 코드: 0 맞췄다(또는 dry-run, 바꿀 것 없음), 1 대상이나 기준 프로필이 없다, 2 사용법 오류
 
 import { statSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { short } from './lib/output.ts'
 import { apply, homeOf, pickSource, plan, profilesRoot, selectedProfile, stamp } from './lib/claude-profile.ts'
 
 const USAGE = '사용법: link-claude-profile.ts [TARGET] [--from ID] [--include-state] [--apply]'
@@ -97,17 +101,20 @@ function main(argv: string[]): number {
     err(`link-claude-profile: 기준 프로필에 plugins 링크가 없다: ${source} (${(e as Error).message})`)
     return 1
   }
-  out(`기준 ${sourceId} → 대상 ${selected}: ${result.steps.length}건`)
-  for (const name of result.skipped) out(`  건너뜀 ${name}: 세션 상태가 있다. 그 계정의 세션을 끈 뒤 --include-state 로 다시 돌린다`)
+  // 짧은 출력(진입점의 orch worker link-profile, lib/output.ts)은 항목마다 판정 줄과 끝 줄 PROFILE <대상> <건수> <applied 또는 dry-run> 이다
+  const brief = short()
+  if (!brief) out(`기준 ${sourceId} → 대상 ${selected}: ${result.steps.length}건`)
+  for (const name of result.skipped) out(brief ? `SKIPPED ${name} state` : `  건너뜀 ${name}: 세션 상태가 있다. 그 계정의 세션을 끈 뒤 --include-state 로 다시 돌린다`)
   for (const step of result.steps) {
-    out(`  ${step.kind === 'link' ? '링크' : '복사'} ${step.name} ← ${step.origin}${step.replaces ? ' (있던 것은 백업)' : ''}`)
+    const word = `${values.apply ? '' : 'WOULD-'}${step.kind === 'link' ? 'LINK' : 'COPY'}`
+    out(brief ? `${word} ${step.name}` : `  ${step.kind === 'link' ? '링크' : '복사'} ${step.name} ← ${step.origin}${step.replaces ? ' (있던 것은 백업)' : ''}`)
   }
   if (!values.apply) {
-    out('dry-run 이다. --apply 를 주면 바꾼다')
+    out(brief ? `PROFILE ${selected} ${result.steps.length} dry-run` : 'dry-run 이다. --apply 를 주면 바꾼다')
     return 0
   }
   apply(target, result.steps, stamp())
-  out('적용했다. 그 계정의 Claude 세션을 다시 시작하면 반영된다')
+  out(brief ? `PROFILE ${selected} ${result.steps.length} applied` : '적용했다. 그 계정의 Claude 세션을 다시 시작하면 반영된다')
   return 0
 }
 

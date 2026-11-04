@@ -9,6 +9,8 @@
 // --spec 은 그 브랜치의 지시서 후보여야 한다. 후보가 하나면 자동 선택하고, 없거나 여럿이면 명시하도록 거부한다.
 // CLI 에 재연결 기능이 없으면 임시 폴더에 이어받기 뼈대를 쓰고 수동 교체 방법만 안내한다. 닫거나 입력하지 않는다.
 // worker-start 실패 뒤에는 재시도하지 않는다. receipt 의 실패 단계와 잔여 자원을 확인해야 하기 때문이다.
+// 짧은 출력(진입점의 orch worker adopt, lib/output.ts): SESSION 은 `SESSION <터미널> <화면 상태> <브랜치> specs=<지시서 후보를 쉼표로 또는 ->` 한 줄(JSON 은 --full),
+// ADOPTED 는 `ADOPTED <터미널> <지시서>`, ADOPT-MANUAL 은 첫 줄만이다. LIMITED, RESTART 와 그 들여 쓴 명령 줄은 그대로다.
 // 종료 코드: 0 목록/연결 성공, 1 조회/연결 실패, 2 사용법 오류, 3 안전하게 연결할 수 없거나 수동 이어받기가 필요함.
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,6 +19,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { mainCheckout } from './lib/git.ts'
 import { orca } from './lib/orca.ts'
+import { emit, short } from './lib/output.ts'
 import { discoverAll, discoverSessions, handover } from './lib/sessions.ts'
 
 const USAGE = '사용법: adopt-sessions.ts [--repo DIR] [--json] [--apply TERMINAL --run RUN [--spec FILE]]'
@@ -33,12 +36,14 @@ async function main(): Promise<number> {
       const { sessions, limited, restartable } = await discoverAll(repo)
       if (values.json) console.log(JSON.stringify({ repo, sessions, limited, restartable }))
       else {
-        if (!sessions.length) console.log('NO-SESSIONS 살아 있는 dispatch 에서 떨어진 터미널이 없다')
-        for (const session of sessions) console.log(`SESSION ${session.terminal}\n${JSON.stringify(session, null, 2)}`)
+        if (!sessions.length) emit('NO-SESSIONS 살아 있는 dispatch 에서 떨어진 터미널이 없다')
+        for (const session of sessions) {
+          emit(short() ? `SESSION ${session.terminal} ${session.state} ${session.branch || '-'} specs=${session.specs.join(',') || '-'}` : `SESSION ${session.terminal}\n${JSON.stringify(session, null, 2)}`)
+        }
         for (const stuck of [...limited, ...restartable]) {
           const head = stuck.kind === 'limited' ? `LIMITED ${stuck.terminal}` : 'RESTART'
-          console.log(`${head} dispatch=${stuck.dispatch} task=${stuck.task} run=${stuck.run ?? '-'} branch=${stuck.branch}`)
-          for (const command of stuck.commands) console.log(`  ${command}`)
+          // 들여 쓴 줄은 차례로 부를 명령이라 짧은 출력에서도 판정 줄 뒤에 남긴다
+          emit([`${head} dispatch=${stuck.dispatch} task=${stuck.task} run=${stuck.run ?? '-'} branch=${stuck.branch}`, ...stuck.commands.map((c) => `  ${c}`)].join('\n'), [], { fix: true })
         }
       }
       return 0
@@ -56,7 +61,7 @@ async function main(): Promise<number> {
     const file = join(mkdtempSync(join(tmpdir(), 'orch-adopt-')), 'handover.md')
     writeFileSync(file, handover(selected, spec))
     if (!help.stdout.includes('--terminal') || !help.stdout.includes('--worktree')) {
-      console.log(`ADOPT-MANUAL ${file}\n현재 CLI 는 재연결을 지원하지 않는다. 사용자 확인 뒤 이 터미널을 정리하고 같은 워크트리에 이 지시서를 읽는 새 worker 를 띄운다.`)
+      emit(`ADOPT-MANUAL ${file}\n현재 CLI 는 재연결을 지원하지 않는다. 사용자 확인 뒤 이 터미널을 정리하고 같은 워크트리에 이 지시서를 읽는 새 worker 를 띄운다.`)
       return 3
     }
     // 실패 receipt 의 잔여 자원과 request id 를 자르지 않는다. 연결이 이미 일어났을 수도 있어 자동 재시도하지 않는다.
@@ -65,7 +70,7 @@ async function main(): Promise<number> {
     if (result.code !== 0) throw new Error(`${result.stdout}\n${result.stderr}\n이어받기 지시서: ${file}. 자동 재시도하지 않고 receipt 를 확인한다`)
     const receipt = JSON.parse(result.stdout)
     if (receipt?.ok !== true || !receipt.result) throw new Error(`연결 결과를 확인하지 못했다: ${result.stdout}. 자동 재시도하지 않는다. 지시서: ${file}`)
-    console.log(`ADOPTED ${selected.terminal} ${file}\n${JSON.stringify(receipt.result)}`)
+    emit(short() ? `ADOPTED ${selected.terminal} ${spec}` : `ADOPTED ${selected.terminal} ${file}\n${JSON.stringify(receipt.result)}`)
     return 0
   } catch (error) { console.error(`ADOPT-ERROR ${(error as Error).message}`); return 1 }
 }

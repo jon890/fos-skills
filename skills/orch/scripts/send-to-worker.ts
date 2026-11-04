@@ -21,6 +21,10 @@
 //                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
 //     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
 //
+// 짧은 출력(진입점의 orch worker send, lib/output.ts): 위 소문자 줄 대신 REPLIED <메시지> <보낸 id>, SENT <dispatch> <보낸 id>, DELIVERED <id>,
+// RESUMED <dispatch> <터미널>, RESTARTED <터미널>, ENDED <dispatch> <상태>[ no-terminal], NOTE <내용>, FAIL <내용> 을 낸다.
+// 깨우는 nudge-worker 와 이어 띄우는 launch-worker 는 stdio 를 이어 받으므로 짧은 출력 신호를 넘겨 그 짧은 줄이 뒤따른다.
+//
 // 구조화 worker: worker-show 의 startOptions.mode.mode 가 structured 이거나 터미널 handle 이 structworker_ 로 시작하는 worker 다.
 // 화면이 없어 nudge-worker 가 입력할 곳을 판정하지 못한다(늘 unknown 이라 4 였다). Orca 가 dispatch 로 온 새 메시지마다 그 worker 의
 // 턴을 깨우므로, 살아 있는 dispatch 에 reply 나 새 메시지를 보낸 뒤 깨우기를 건너뛰고 `delivered: ...` 한 줄과 0 으로 끝난다.
@@ -80,6 +84,8 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { context } from './lib/completion.ts'
 import { orca } from './lib/orca.ts'
+import { emit, oneLine, shortEnv } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 import { runAsync, runInherit, scriptCommand } from './lib/proc.ts'
 import { pyStr, shQuote } from './lib/py.ts'
 import { dismissQuestion } from './lib/questions.ts'
@@ -121,8 +127,20 @@ type Settings = Record<string, unknown>
 
 class OrcaFailed extends Error {}
 
+// 짧은 출력(진입점의 orch worker send)의 줄 규칙. docs/features/orch-cli/design.md 「짧은 출력 (PR2)」 의 worker send 행이다
+const SHORT_RULES: Rule[] = [
+  [/^replied: (\S+) 에 답했다 \((\S+)\)/, (m) => `REPLIED ${m[1]} ${m[2] === 'None' ? '-' : m[2]}`],
+  [/^sent: .* dispatch:(\S+) 에 새 메시지로 보냈다 \((\S+)\)/, (m) => `SENT ${m[1]} ${m[2] === 'None' ? '-' : m[2]}`],
+  [/^delivered: .*Orca 가 (\S+) 로 깨운다/, (m) => `DELIVERED ${m[1]}`],
+  [/^relaunch: 끝난 (\S+) 의 터미널 (\S+) 에/, (m) => `RESUMED ${m[1]} ${m[2]}`],
+  [/^restart: (\S+) 을 닫고/, (m) => `RESTARTED ${m[1]}`],
+  [/^ended: (\S+) 가 끝났(고|다)\(([^)]*)\)/, (m) => `ENDED ${m[1]} ${m[3]}${m[2] === '고' ? ' no-terminal' : ''}`],
+  [/^(?:closed|retry|fallback|skipped|warning|note): (.*)/, (m) => `NOTE ${oneLine(m[1])}`],
+  [/^send-to-worker: (.*)/, (m) => `FAIL ${oneLine(m[1])}`],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line, SHORT_RULES)
 }
 
 function err(line: string): void {
@@ -319,14 +337,14 @@ function dismiss(msgId: string, reason: string): void {
   }
 }
 
-// 자식의 출력을 그대로 흘리고 종료 코드를 낸다
+// 자식의 출력을 그대로 흘리고 종료 코드를 낸다. 짧은 출력이면 자식도 짧은 출력이다(lib/output.ts 의 shortEnv)
 async function passThrough(argv: string[], timeoutMs: number): Promise<number> {
-  return (await runInherit(argv, { timeoutMs })).code
+  return (await runInherit(argv, { timeoutMs, env: shortEnv() })).code
 }
 
 // nudge-worker 로 깨운다. 제한 시간에 끊기면 124 대신 1 이다. 종료 코드 계약에 124 가 없고, 보냈지만 턴 시작을 보지 못한 경우다
 async function nudge(args: string[]): Promise<number> {
-  const done = await runInherit(scriptCommand(NUDGE_WORKER, args), { timeoutMs: NUDGE_MS })
+  const done = await runInherit(scriptCommand(NUDGE_WORKER, args), { timeoutMs: NUDGE_MS, env: shortEnv() })
   if (done.timedOut) {
     out(`send-to-worker: nudge-worker 가 ${NUDGE_MS / 1000}초 안에 끝나지 않아 끊었다`)
     return 1

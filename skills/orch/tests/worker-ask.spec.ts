@@ -549,3 +549,43 @@ test('잘못된 대기 시간은 Orca 를 부르기 전에 거절한다', () => 
     }
   }
 })
+
+describe('짧은 출력', () => {
+  // fake() 가 env 를 새로 만들므로 부르기 직전에 신호를 넣는다
+  const shortAsk = (...args: string[]) => {
+    env.ORCH_OUTPUT = 'short'
+    return ask(...args)
+  }
+
+  test('답이 있으면 answer: 한 줄만 낸다', () => {
+    fake('{"result":{"answer":"그렇게 한다","messageId":"m1"}}', 0)
+    const r = shortAsk('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, r.stdout], [0, 'answer: 그렇게 한다\n'])
+  })
+
+  test('여러 줄 답은 모든 줄을 남기고 ask JSON 만 뺀다', () => {
+    fake('{"result":{"answer":"첫 줄\\n둘째 줄","messageId":"m1"}}', 0)
+    const r = shortAsk('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, r.stdout], [0, 'answer: 첫 줄\n둘째 줄\n'])
+  })
+
+  test('시간 초과는 재개할 질문 id 를 TIMEOUT 줄로 낸다', () => {
+    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
+    const r = shortAsk('--from', 'term_w', '--question', 'q', '--timeout-ms', '1000')
+    assert.deepEqual([r.code, r.stdout], [4, 'TIMEOUT m1\n'])
+  })
+
+  test('status 답도 answer: 한 줄이다', () => {
+    const reply = message({ body: 'status 로 답한다: B', thread: 'm1', to: 'run:run_x' })
+    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(reply)] })
+    const r = shortAsk('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, r.stdout], [3, 'answer: status 로 답한다: B\n'])
+  })
+
+  test('Run 메일함으로 대신 보내면 SENT-RUN 과 보낸 id 다', () => {
+    fake('dispatch is not active', 1)
+    const r = shortAsk('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 3, r.stderr)
+    assert.match(r.stdout, /^SENT-RUN \S+\n$/)
+  })
+})

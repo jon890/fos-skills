@@ -34,6 +34,7 @@ import { real } from './lib/fs.ts'
 import { registeredRuns } from './lib/loop.ts'
 import { collectStages, collectWorkers, movementSettings, readRecords } from './lib/movement.ts'
 import type { StageVerdict, WorkerVerdict } from './lib/movement.ts'
+import { short } from './lib/output.ts'
 import { pathOf } from './lib/paths.ts'
 import { workerRows } from './lib/workers.ts'
 
@@ -126,7 +127,8 @@ function main(argv: string[]): number {
   if (values.json) {
     process.stdout.write(`${JSON.stringify({ workers: sorted, stages, errors: Object.fromEntries(workers.errors) })}\n`)
   } else {
-    for (const v of sorted) process.stdout.write(`${workerLine(v)}\n`)
+    // 짧은 출력(orch loop stalled)은 멈춘 것만 낸다. MOVING 은 --full 이다
+    for (const v of sorted) if (!short() || v.reason) process.stdout.write(`${workerLine(v)}\n`)
     for (const s of stages) process.stdout.write(`${stageLine(s)}\n`)
   }
   if (failed) return 1
