@@ -1354,3 +1354,70 @@ describe('작업 폴더', () => {
     assert.ok(!existsSync(join(repo, 'rel-lost.json')))
   })
 })
+
+describe('짧은 출력', () => {
+  const short = { ORCH_OUTPUT: 'short' }
+  const ready = { type: 'status', subject: `준비됨 #123, head ${SHA}`, created_at: '2026-10-23T00:00:00Z', task_id: 'task_a', dispatch_id: 'ctx_a', from_handle: 'term_a' }
+  // 차례가 섞인 묶음. 완료 근거 있는 worker_done, 근거 없는 worker_done, escalation, question, heartbeat
+  function mixed(delivery = 'd_mix'): Json {
+    const messages = [
+      { id: 'm1', type: 'question', task_id: 'task_q', dispatch_id: 'ctx_q', from_handle: 'term_q', body: '무엇을\n고를까?' },
+      { id: 'm2', type: 'heartbeat', from_handle: 'term_a' },
+      { id: 'm3', type: 'worker_done', task_id: 'task_a', dispatch_id: 'ctx_a', from_handle: 'term_a', created_at: '2026-10-23T00:00:01Z', body: 'PR #123 머지' },
+      { id: 'm4', type: 'escalation', task_id: 'task_e', dispatch_id: 'ctx_e', from_handle: 'term_e', subject: '막혔다', body: '' },
+      { id: 'm5', type: 'worker_done', task_id: 'task_b', dispatch_id: 'ctx_b', from_handle: 'term_b', created_at: '2026-10-23T00:00:02Z', body: '끝' },
+    ]
+    return { ok: true, result: { deliveryId: delivery, timedOut: false, messages } }
+  }
+  const rawDir = () => join(tmp, '.orch', 'state', 'wait')
+
+  test('메시지마다 판정 줄을 triage 차례로 내고 RAW 와 LAST_DELIVERY 로 끝난다', () => {
+    const r = wait([mixed()], ['--lost-interval-sec', '0'], { contract: 'ready', history: [ready] }, short)
+    assert.equal(r.code, 6, r.stdout + r.stderr)
+    const out = lines(r.stdout)
+    assert.deepEqual(out.slice(0, 5), [
+      'DONE-SUSPECT ctx_b task_b 끝',
+      'DONE ctx_a task_a PR #123 머지',
+      'ESCALATION ctx_e task_e 막혔다',
+      'QUESTION ctx_q task_q 무엇을 고를까?',
+      'HEARTBEAT 1',
+    ])
+    assert.match(out[5], /^RAW \/.+\/d_mix\.json$/)
+    assert.equal(out[6], 'LAST_DELIVERY d_mix')
+    assert.equal(out.length, 7)
+    assert.doesNotMatch(r.stdout, /의심스러운 worker_done|"ok"/)
+  })
+
+  test('RAW 파일을 triage-messages 로 읽은 짧은 줄이 대기의 메시지 줄과 같다', () => {
+    const r = wait([mixed()], ['--lost-interval-sec', '0'], { contract: 'ready', history: [ready] }, short)
+    const out = lines(r.stdout)
+    const raw = out.find((l) => l.startsWith('RAW '))?.slice(4) ?? ''
+    assert.ok(existsSync(raw), raw)
+    // 나중에 읽어도 같은 분류다. 대기가 붙인 완료 판정을 그대로 쓴다
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', TRIAGE, raw], { env: { ...env, ...short }, cwd: tmp, encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stderr)
+    assert.deepEqual(lines(done.stdout), [...out.slice(0, 5), 'DELIVERY d_mix'])
+  })
+
+  test('다음 대기가 그 delivery 를 ack 하면 원문 파일을 지운다', () => {
+    wait([mixed('d_a')], ['--lost-interval-sec', '0'], { contract: 'none' }, short)
+    assert.ok(existsSync(join(rawDir(), 'd_a.json')))
+    const next = wait([batch('d_b', 'question')], ['--ack', 'd_a', '--lost-interval-sec', '0'], { contract: 'none' }, short)
+    assert.equal(next.code, 0, next.stderr)
+    assert.ok(!existsSync(join(rawDir(), 'd_a.json')))
+    assert.ok(existsSync(join(rawDir(), 'd_b.json')))
+  })
+
+  test('신호가 없으면 지금처럼 JSON 한 줄이고 원문 파일을 쓰지 않는다', () => {
+    const r = wait([mixed()], ['--lost-interval-sec', '0'], { contract: 'ready', history: [ready] })
+    assert.match(r.stdout, /"suspicious_worker_done"/)
+    assert.match(r.stdout, /의심스러운 worker_done/)
+    assert.ok(!existsSync(rawDir()))
+  })
+
+  test('대기 자리가 있으면 orca JSON 대신 WAITER-EXISTS 다', () => {
+    const r = wait([{ ok: false, error: { code: 'waiter_exists', message: 'waiter exists' } }], ['--lost-interval-sec', '0'], {}, short)
+    assert.equal(r.code, 4, r.stdout + r.stderr)
+    assert.deepEqual(lines(r.stdout), ['WAITER-EXISTS run_x', 'LAST_DELIVERY -'])
+  })
+})

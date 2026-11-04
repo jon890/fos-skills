@@ -26,8 +26,11 @@
 // (JSON 의 quiet_stops), 오류로 멈춤, 입력 대기, 프로세스 끝남은 「멈춘 worker」(JSON 의 groups.stopped_worker)로 따로 모은다.
 // --stop-reports 를 주면 턴만 끝낸 보고도 「멈춘 worker」 에 본문째 낸다.
 // 같은 메시지 id 는 한 번만 센다. 사람이 읽는 출력의 payload 줄은 옛 명령의 json.dumps 꼴(lib/py.ts 의 pyJson)로 앞 200자를 낸다.
+// 짧은 출력(진입점의 orch wait triage, lib/output.ts 의 short): 묶음 차례대로 메시지마다 `<종류> <dispatch 또는 -> <task 또는 -> <본문 앞 120자>`
+// 한 줄(shortLines, 종류는 DONE-SUSPECT, DONE, STOPPED, ESCALATION, QUESTION, 그 밖은 type 을 대문자로)과 `HEARTBEAT <합>`, `QUIET-STOP <합>`,
+// `DELIVERY <id …>` 를 낸다. 메시지가 하나도 없으면 `NO-MESSAGES` 다. 본문 전체는 `--full` 이다. wait-important 의 짧은 출력이 같은 줄을 낸다.
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
-// 테스트가 parseObjects 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
+// 테스트와 wait-important 가 parseObjects, collect, triage, shortLines 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 //
 // 종료 코드:
 //     0  읽었다. 메시지가 없어도 0 이다
@@ -37,15 +40,16 @@
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
-import { classify, isoTime } from './lib/completion.ts'
+import { classify, context, isoTime } from './lib/completion.ts'
 import { mainCheckout } from './lib/git.ts'
 import { orca } from './lib/orca.ts'
+import { oneLine, short } from './lib/output.ts'
 import { isQuietStop, stopDispatch, stopReason } from './lib/stop-reports.ts'
 import { pyJson, pyStr as text } from './lib/py.ts'
 import { reviewPrOfDispatch } from './lib/review.ts'
 
 type Json = Record<string, unknown>
-type Triage = { groups: Record<string, Json[]>; heartbeats: Record<string, number>; quiet_stops: Record<string, number> }
+export type Triage = { groups: Record<string, Json[]>; heartbeats: Record<string, number>; quiet_stops: Record<string, number> }
 
 const USAGE = [
   '사용법: triage-messages.ts FILE [FILE ...] [--since WHEN] [--width N] [--json] [--completion-contract ready|none] [--stop-reports]',
@@ -137,12 +141,13 @@ export function collect(objects: Json[]): { deliveries: string[]; messages: Json
   return { deliveries, messages }
 }
 
-function triage(messages: Json[], since: number | null, contract: string, stopReports = false): Triage {
+// repo 는 리뷰 dispatch 의 띄우기 기록을 읽을 저장소다. 없으면 작업 디렉터리의 저장소다
+export function triage(messages: Json[], since: number | null, contract: string, stopReports = false, opts: { repo?: string } = {}): Triage {
   const groups: Record<string, Json[]> = {}
   const heartbeats: Record<string, number> = {}
   const quietStops: Record<string, number> = {}
-  // 리뷰 dispatch 는 결과 status 를 근거로 센다(lib/completion.ts 의 「리뷰 dispatch」). 띄우기 기록은 작업 디렉터리의 저장소에서 읽는다
-  const repo = mainCheckout(process.cwd())
+  // 리뷰 dispatch 는 결과 status 를 근거로 센다(lib/completion.ts 의 「리뷰 dispatch」)
+  const repo = opts.repo ?? mainCheckout(process.cwd())
   const checked = contract === 'ready' ? classify(messages, [], { isReview: (dispatch) => reviewPrOfDispatch(repo, dispatch) !== null }) : messages
   for (const m of checked) {
     // 시각을 읽지 못한 메시지는 뺄지 정할 수 없어 남긴다
@@ -219,6 +224,36 @@ function render(deliveries: string[], result: Triage, width: number): string {
   return lines.join('\n')
 }
 
+// 짧은 출력의 판정 낱말. 머리 주석의 「짧은 출력」
+function shortKind(kind: string): string {
+  if (kind === 'suspicious_worker_done') return 'DONE-SUSPECT'
+  if (kind === 'worker_done') return 'DONE'
+  if (kind === 'stopped_worker') return 'STOPPED'
+  const word = kind.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return /^[A-Z]/.test(word) ? word : `TYPE-${word || 'UNKNOWN'}`
+}
+
+// 짧은 출력의 줄. last 면 대기의 출력이라 delivery 와 빈 결과 줄을 내지 않는다(대기는 LAST_DELIVERY 로 끝난다)
+export function shortLines(deliveries: string[], result: Triage, opts: { last?: boolean } = {}): string[] {
+  const lines: string[] = []
+  for (const [kind, items] of Object.entries(result.groups)) {
+    for (const m of items) {
+      const [task, dispatch] = context(m)
+      const body = payloadText(m.body) || field(m, 'subject')
+      lines.push([shortKind(kind), dispatch ? text(dispatch) : '-', task ? text(task) : '-', oneLine(body, 120)].join(' ').trimEnd())
+    }
+  }
+  const heartbeats = Object.values(result.heartbeats).reduce((sum, n) => sum + n, 0)
+  if (heartbeats > 0) lines.push(`HEARTBEAT ${heartbeats}`)
+  const stops = Object.values(result.quiet_stops).reduce((sum, n) => sum + n, 0)
+  if (stops > 0) lines.push(`QUIET-STOP ${stops}`)
+  if (!opts.last) {
+    if (deliveries.length) lines.push(`DELIVERY ${deliveries.join(' ')}`)
+    if (lines.length === 0) lines.push('NO-MESSAGES')
+  }
+  return lines
+}
+
 function readLive(runId: string | undefined, terminal: string | undefined): string | null {
   const args = ['orchestration', 'check', '--all', '--json']
   if (runId) args.push('--run', runId)
@@ -287,6 +322,7 @@ function main(argv: string[]): number {
   }
   const result = triage(messages, since, values['completion-contract'] as string, values['stop-reports'] === true)
   if (values.json) process.stdout.write(`${JSON.stringify({ deliveries, ...result }, null, 1)}\n`)
+  else if (short()) process.stdout.write(`${shortLines(deliveries, result).join('\n')}\n`)
   else process.stdout.write(`${render(deliveries, result, width)}\n`)
   return 0
 }
