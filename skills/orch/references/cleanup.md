@@ -78,7 +78,7 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 }
 ```
 
-`--run "$RUN_ID"` 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록 한정한다. 빠지면 정리 단계가 Run 으로 한정되지 않는다는 경고가 난다.
+Run 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록 한정한다. 새 꼴은 코디네이터 터미널의 Run 을 문맥에서 채운다. 다른 Run 의 PR 이면 `--run <Run>` 을 준다. Run 을 끝내 읽지 못하면 정리 단계가 Run 으로 한정되지 않는다는 경고가 난다.
 
 ```bash
 orch queue merge 101 102 103!
@@ -383,12 +383,12 @@ gh pr view "$PR" --json state --jq .state
 
 ### 다른 저장소에 맡긴 PR 을 직접 머지했을 때
 
-`merge-with-finish.ts` 의 마무리는 머지 큐를 건 저장소만 정리한다. 다른 저장소에 맡긴 PR 을 코디네이터가 `gh pr merge` 로 머지했으면 바로 이어서 정리한다.
+`orch queue merge` 의 마무리는 머지 큐를 건 저장소만 정리한다. 다른 저장소에 맡긴 PR 을 코디네이터가 `gh pr merge` 로 머지했으면 바로 이어서 정리한다.
 값을 채운다: `$OTHER_REPO` 는 그 저장소의 주 checkout, `$RUN_ID` 는 worker 를 띄운 Run, `$PR` 은 PR 번호, `$WORKER_TERM` 은 그 worker 의 터미널 handle(`worker-show`), `$WORKTREE` 는 그 워크트리 경로다.
-먼저 `cleanup-sweep.ts` 로 정리한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
+먼저 `orch cleanup sweep` 으로 정리한다. worker 를 띄운 Run 이 지금 코디네이터 터미널의 Run 과 다를 수 있어 `--run` 은 명시한다. 터미널 소유 확인, 끝난 dispatch 반납, 워크트리와 로컬, 원격 브랜치 삭제를 한 번에 한다.
 
 ```bash
-orch cleanup sweep --repo "$OTHER_REPO" --kill-holders --apply
+orch cleanup sweep --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
 ```
 
 스크립트가 건너뛴 것만 아래 묶음으로 직접 지운다. 묶음은 PR 이 `MERGED` 일 때만 돈다.

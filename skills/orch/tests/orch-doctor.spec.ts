@@ -593,7 +593,7 @@ describe('저장소 판정', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
-    assert.match(r.stderr, /옛 공부 후보 표 파일이 남아 있다. study-candidates migrate 로 옮긴다: .*candidates\.md/)
+    assert.match(r.stderr, /옛 공부 후보 표 파일이 남아 있다. \S+ study migrate 로 옮긴다: .*candidates\.md/)
     assert.match(r.stderr, /공부 후보 파일의 머리를 읽지 못했다: .*broken\.md/)
   })
 

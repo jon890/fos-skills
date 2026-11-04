@@ -121,7 +121,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 | `HOOK-FAIL <이벤트> <종료 코드>` | 핸들러가 10 이 아닌 값으로 끝났다. 시그널로 죽으면 128 더하기 신호 번호다 | 바로 위의 `[hook <이벤트>]` 줄에서 예외를 찾아 핸들러를 고친다 |
 | `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
-| `INVALID-CONFIG ... migrate-orch-dir ... --hooks --apply` | `orch-doctor`가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
+| `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
 | `INVALID-CONFIG queue.auto_review.require 에 모르는 조건이 있다: ...` | 자동 머지 리뷰 조건에 모르는 이름이 있다. 상주 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | `config.json` 의 이름을 줄에 나온 「쓸 수 있는 조건」 가운데 하나로 고친다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」) |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.

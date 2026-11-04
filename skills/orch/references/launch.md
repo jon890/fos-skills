@@ -184,9 +184,9 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 
 ## 이전 세션 이어받기
 
-코디네이터가 바뀌거나 계정을 전환한 뒤에는 `adopt-sessions` 로 기존 터미널을 먼저 확인한다. 기본 실행은 다른 Run 의 살아 있는 dispatch 를 제외한 목록을 내며 터미널에 입력하거나 닫지 않는다.
+코디네이터가 바뀌거나 계정을 전환한 뒤에는 `orch worker adopt` 로 기존 터미널을 먼저 확인한다. 기본 실행은 다른 Run 의 살아 있는 dispatch 를 제외한 목록을 내며 터미널에 입력하거나 닫지 않는다.
 
-`$REPO` 는 대상 저장소, `$TERMINAL` 은 목록에서 고른 handle, `$RUN_ID` 는 현재 코디네이터의 Run 이다.
+`$TERMINAL` 은 목록에서 고른 handle 이다. 저장소는 작업 폴더에서, `--apply` 의 Run 은 코디네이터 터미널에서 읽는다.
 
 ```bash
 orch worker adopt

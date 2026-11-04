@@ -5,7 +5,8 @@
 // 갱신 명령을 보여 주는 것까지만 하고 갱신은 하지 않는다. 다른 세션이 같은 캐시를 쓰고 있을 수 있다.
 //
 // Node 버전은 여기서 보지 않는다. 타입 제거를 지원하지 않는 낮은 node 는 이 파일을 읽지 못하고 ERR_UNKNOWN_FILE_EXTENSION 으로 죽는다.
-// 그래서 SKILL.md 가 doctor 를 부르기 전에 셸에서 node 버전을 보고, 낮으면 NODE-TOO-OLD 줄을 내고 doctor 를 부르지 않는다.
+// 그래서 SKILL.md 가 부르는 `orch doctor` 의 실행기(플러그인 루트 bin/orch, CommonJS)가 먼저 버전을 보고 낮으면 NODE-TOO-OLD 를 낸다.
+// 옛 진입점 `orch-doctor.py` 는 ts_shim.py 로 같은 판정을 한다.
 //
 // 사용법:
 //     orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]
@@ -58,7 +59,7 @@
 //     --repo 의 <orch 루트>/study/ 의 후보 파일 가운데 상태가 `후보` 나 `리뷰함` 인 것을 센다. 파일 형식은 lib/study.ts 가 소유한다.
 //     하나 이상이면 STUDY-OPEN 줄을 낸다. 알리는 말과 고른 뒤의 절차는 references/study-candidates.md 가 소유한다.
 //     폴더가 없으면 내지 않는다. 머리를 읽지 못한 파일과 옛 표 파일(candidates.md)은 세지 않고 stderr 에 알린다.
-//     옛 표 파일은 study-candidates.ts migrate 로 옮기라고 알린다. 경고라 종료 코드를 바꾸지 않는다.
+//     옛 표 파일은 `orch study migrate` 로 옮기라고 알린다. 경고라 종료 코드를 바꾸지 않는다.
 //
 // 설치 기록 판정(늘 본다):
 //     `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에 적힌 모든 플러그인의 installPath 가 실제로 있는지 본다.
@@ -453,7 +454,7 @@ function checkFeedback(repo: string): string[] {
 function checkStudy(repo: string): string[] {
   const dir = pathOf('study', repo)
   const found = scanStudy(dir)
-  if (found.legacy) process.stderr.write(`orch-doctor: 옛 공부 후보 표 파일이 남아 있다. study-candidates migrate 로 옮긴다: ${found.legacy}\n`)
+  if (found.legacy) process.stderr.write(`orch-doctor: 옛 공부 후보 표 파일이 남아 있다. ${orchWord()} study migrate 로 옮긴다: ${found.legacy}\n`)
   for (const file of found.broken) process.stderr.write(`orch-doctor: 공부 후보 파일의 머리를 읽지 못했다: ${file}\n`)
   const count = found.candidates.filter(isOpen).length
   return count > 0 ? [`STUDY-OPEN ${count} ${dir}`] : []
