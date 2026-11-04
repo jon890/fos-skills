@@ -204,6 +204,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 ### `orch status` (PR2)
 
 - `scripts/orch-status.ts` 는 읽기만 한다. 저장소는 문맥(작업 폴더의 주 checkout)이나 `--repo` 다. Run 은 문맥으로 채우지 않는다(스펙 DECISION22). `--run` 을 주면 그 Run 만, 없으면 `lib/loop.ts` 의 `registeredRuns` 를 모두, 그것도 없으면 설정의 `finish.run` 을 본다. 셋 다 없으면 Run 줄 없이 루프와 보드만 낸다.
+- worker 는 그 저장소의 워크트리(주 checkout 이 이 저장소인 폴더, 지워진 폴더는 저장소 경로 아래)에 있는 행만 센다. Run 하나가 여러 저장소의 worker 를 맡아(ADR-012) Run 의 행을 그대로 세면 다른 저장소 worker 를 이 저장소 설정과 화면 기록으로 판정한다.
 - 루프는 `loopStatus`(재확인이 필요한 오래된 alive_at 도 그대로 `LOOP-DEAD`), worker 와 멈춤은 `lib/movement.ts` 의 `collectWorkers`, `collectStages`(`stalled-workers` 와 같은 설정과 화면 기록), 보드는 `readBoard(boardPath(repo))` 의 status 수다. 줄 꼴(`STALLED`, `STAGE`)은 `stalled-workers` 와 같은 함수로 낸다.
 - 종료 코드는 0 이다. 조회 실패는 `SKIP-WORKERS <Run> <이유>`, `SKIP-BOARD <이유>` 줄로 알리고 1 이다. 판정이 아니라 요약이라 멈춘 worker 가 있어도 0 이다.
 - 짧은 출력과 `--full` 이 같다(설명 줄이 없다). `--json` 은 두지 않는다.

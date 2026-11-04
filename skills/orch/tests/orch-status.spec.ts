@@ -47,9 +47,9 @@ function write(rel: string, body: unknown): void {
   writeFileSync(target, typeof body === 'string' ? body : JSON.stringify(body))
 }
 
-// 수정 시각이 minutes 분 전인 파일 하나를 둔 워크트리 폴더
-function worktree(name: string, minutes: number): string {
-  const path = join(tmp, name)
+// 수정 시각이 minutes 분 전인 파일 하나를 둔 워크트리 폴더. 기본은 이 저장소 아래(<repo>/worktrees/<name>)다
+function worktree(name: string, minutes: number, root = join(repo, 'worktrees')): string {
+  const path = join(root, name)
   mkdirSync(path, { recursive: true })
   writeFileSync(join(path, 'a.txt'), 'x')
   const sec = (Date.now() - minutes * 60_000) / 1000
@@ -100,6 +100,20 @@ describe('orch status', () => {
     assert.match(r.lines[0], new RegExp(`^LOOP-ALIVE ${process.pid} runs=r1,r2 last_tick=\\S+$`))
     assert.deepEqual(r.lines.slice(1), ['RUN r1 workers=2 stalled=1', 'RUN r2 workers=0 stalled=0', 'BOARD doing=2 decide=1', 'STALLED\td1\tidle\t45\twt-old\tr1'])
     assert.deepEqual(snapshot(), before)
+  })
+
+  test('같은 Run 이 다른 저장소의 worker 도 맡아도 이 저장소의 worker 만 센다', () => {
+    scene()
+    const other = join(tmp, 'other')
+    mkdirSync(other)
+    assert.equal(spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: other, env }).status, 0)
+    const rows = JSON.parse(readFileSync(join(tmp, 'orca.json'), 'utf8')) as { workers_by_run: Record<string, Json[]> }
+    rows.workers_by_run.r1.push(row('d9', worktree('wt-b', 50, join(other, 'worktrees'))))
+    writeFileSync(join(tmp, 'orca.json'), JSON.stringify(rows))
+    const r = status(['--run', 'r1'])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.ok(r.lines.includes('RUN r1 workers=2 stalled=1'), r.stdout)
+    assert.ok(!r.stdout.includes('d9'), r.stdout)
   })
 
   test('--run 을 주면 그 Run 만 본다', () => {

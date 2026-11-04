@@ -11,7 +11,7 @@
 // 출력(한 줄에 판정 하나):
 //     LOOP-ALIVE <pid> runs=<등록된 Run 을 쉼표로 또는 -> last_tick=<시각 또는 ->   루프가 살았다
 //     LOOP-DEAD <repo> <이유>                         루프가 없거나 죽었다(lib/loop.ts 의 loopStatus. 재확인을 기다리지 않는다)
-//     RUN <id> workers=<열린 dispatch 수> stalled=<멈춘 수>
+//     RUN <id> workers=<이 저장소 워크트리의 열린 dispatch 수> stalled=<멈춘 수>   같은 Run 의 다른 저장소 worker 는 세지 않는다
 //     SKIP-WORKERS <Run> <이유>                       그 Run 의 worker 목록을 읽지 못했다
 //     BOARD doing=<수> decide=<수>                    보드 파일이 없으면 둘 다 0 이다
 //     SKIP-BOARD <이유>                               보드를 읽지 못했다
@@ -23,6 +23,7 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { existsSync } from 'node:fs'
+import { resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { readBoard } from './lib/board.ts'
@@ -31,7 +32,7 @@ import { FINISH_KEYS } from './lib/finish-options.ts'
 import { real } from './lib/fs.ts'
 import { mainCheckout } from './lib/git.ts'
 import { loopStatus, registeredRuns } from './lib/loop.ts'
-import { collectStages, collectWorkers, movementSettings, screenMarks, stageLine, workerLine } from './lib/movement.ts'
+import { collectStages, collectWorkers, movementSettings, screenMarks, stageLine, workerLine, worktreeOf } from './lib/movement.ts'
 import { boardPath } from './lib/paths.ts'
 import { workerRows } from './lib/workers.ts'
 
@@ -41,6 +42,16 @@ class Usage extends Error {}
 
 function out(line: string): void {
   process.stdout.write(`${line}\n`)
+}
+
+// worker 행의 워크트리가 이 저장소의 것인가. Run 하나가 여러 저장소의 worker 를 맡을 수 있어(ADR-012) Run 의 행을 그대로 세면
+// 다른 저장소의 worker 를 이 저장소 설정과 화면 기록으로 판정하게 된다. 폴더가 있으면 그 주 checkout 으로, 없으면 경로 접두로 가린다
+function ownWorktree(repo: string, row: Record<string, unknown>): boolean {
+  const path = worktreeOf(row)
+  if (!path) return false
+  const full = resolve(path)
+  if (existsSync(full)) return mainCheckout(full) === repo
+  return full === repo || full.startsWith(repo + sep)
 }
 
 function runsOf(repo: string, given: string[]): string[] {
@@ -88,7 +99,12 @@ function main(argv: string[]): number {
     out(`LOOP-DEAD ${repo} ${loop.reason}`)
   }
   let failed = false
-  const workers = collectWorkers({ runs, rowsOf: (run) => workerRows(run), settings, now, screens: screenMarks(repo) })
+  // 이 저장소의 워크트리에 있는 worker 만 센다(ownWorktree)
+  const rowsOf = (run: string) => {
+    const got = workerRows(run)
+    return got.ok ? { ok: true as const, rows: got.rows.filter((row) => ownWorktree(repo, row)) } : got
+  }
+  const workers = collectWorkers({ runs, rowsOf, settings, now, screens: screenMarks(repo) })
   for (const run of runs) {
     const reason = workers.errors.get(run)
     if (reason !== undefined) {
