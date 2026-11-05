@@ -42,10 +42,10 @@
 // 사용법 오류는 2 다. 재시도와 자동 대체(새 worker 띄우기)는 하지 않는다.
 //
 // 잠금(<orch 루트>/state/resume/<dispatch>/lock): 이미 있으면 그 pid 가 살아 있거나 그 terminal 이 열려 있을 때 RESUME-FAIL target 이다.
-// 둘 다 아니면 옛 폴더를 지우고 새로 잡는다. 그래서 link 실패로 남은 터미널이 열려 있는 동안 같은 세션에 두 번째 프로세스를 띄우지 않는다.
+// 둘 다 아니면 옛 폴더를 비우고 새로 잡는다. 회수는 reclaim 파일을 잡은 실행 하나만 한다. 그래서 link 실패로 남은 터미널이 열려 있는 동안 같은 세션에 두 번째 프로세스를 띄우지 않는다.
 
 import { randomUUID } from 'node:crypto'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
@@ -202,25 +202,45 @@ function judge(dispatchId: string, runFlag: string | undefined, repo: string): T
   throw targetFail(`dispatch 상태 ${status || '-'}, Task 상태 ${taskStatus || '-'} 는 resume 대상이 아니다`, adopt)
 }
 
-// 잠금. 앞 실행이 살아 있거나 그 결과 터미널이 열려 있으면 거부한다
+// 잠금. 앞 실행이 살아 있거나 그 결과 터미널이 열려 있으면 거부한다.
+// 낡은 잠금의 회수는 reclaim 파일(O_EXCL)을 잡은 실행 하나만 하고, 잡은 뒤 잠금을 다시 읽어 판정한다.
+// 두 실행이 같은 낡은 잠금을 읽고 차례로 지우면 뒤 실행이 앞 실행의 새 잠금까지 지워 같은 세션을 둘이 띄운다(PR #359 리뷰)
+const RECLAIM = 'reclaim'
+
+function tryLock(file: string): boolean {
+  try {
+    const fd = openSync(file, 'wx')
+    writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), terminal: null }))
+    closeSync(fd)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    return false
+  }
+}
+
+function readJson(file: string): Json {
+  try {
+    return obj(JSON.parse(readFileSync(file, 'utf8')))
+  } catch {
+    // 쓰다 만 파일은 pid 와 터미널이 없는 것으로 본다
+    return {}
+  }
+}
+
 function lock(dir: string): void {
   const file = join(dir, LOCK)
-  for (let attempt = 0; attempt < 2; attempt++) {
-    mkdirSync(dir, { recursive: true })
-    try {
-      const fd = openSync(file, 'wx')
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), terminal: null }))
-      closeSync(fd)
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    }
-    let held: Json = {}
-    try {
-      held = obj(JSON.parse(readFileSync(file, 'utf8')))
-    } catch {
-      // 쓰다 만 잠금은 pid 와 터미널이 없는 것으로 본다
-    }
+  mkdirSync(dir, { recursive: true })
+  if (tryLock(file)) return
+  const guard = join(dir, RECLAIM)
+  if (!tryLock(guard)) {
+    const other = readJson(guard)
+    throw targetFail(pidAlive(other.pid) ? '다른 실행이 낡은 잠금을 정리하고 있다' : `낡은 잠금을 정리하던 실행이 끝나지 않고 사라졌다(${guard})`,
+      pidAlive(other.pid) ? '그 실행이 끝난 뒤 같은 명령' : `앞 실행의 터미널이 남지 않았는지 확인하고 rm ${shQuote(guard)} 뒤 같은 명령`)
+  }
+  try {
+    // 회수 권한을 잡은 뒤의 잠금이 판정 대상이다. 그사이 다른 실행이 새로 잡았을 수 있다
+    const held = readJson(file)
     const terminal = text(held.terminal)
     let open: Set<string>
     try {
@@ -232,9 +252,11 @@ function lock(dir: string): void {
       throw targetFail(`앞 실행이 진행 중이거나 결과 터미널 ${terminal || '-'} 이 열려 있다`,
         terminal ? `orca terminal read --terminal ${shQuote(terminal)} --screen 로 확인하고, 에이전트가 붙어 있으면 그 터미널로 잇는다` : '앞 실행이 끝날 때까지 기다린 뒤 같은 명령')
     }
-    rmSync(dir, { recursive: true, force: true })
+    for (const name of readdirSync(dir)) if (name !== RECLAIM) rmSync(join(dir, name), { recursive: true, force: true })
+    if (!tryLock(file)) throw targetFail('잠금을 잡지 못했다', '같은 명령')
+  } finally {
+    rmSync(guard, { force: true })
   }
-  throw targetFail('잠금을 잡지 못했다', '같은 명령')
 }
 
 function setLockTerminal(dir: string, terminal: string): void {

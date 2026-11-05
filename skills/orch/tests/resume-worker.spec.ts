@@ -2,7 +2,7 @@
 // 가짜 orca 는 FAKE_STATE(JSON)로 답하고 호출마다 FAKE_LOG 에 인자와 그때 요청 폴더에 go 가 있었는지를 적는다.
 // terminal create 는 사례가 정한 found.json 을 요청 폴더에 쓰고 새 터미널을 목록에 더한다(실행기 대신). 실제 Orca 에는 닿지 않는다.
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
@@ -52,6 +52,7 @@ else if (has('task-list')) say({ tasks: s.tasks })
 else if (has('dispatch-show')) say({ dispatch: { id: s.latest, status: s.dispatch.status } })
 else if (has('worker-start')) {
   if (s.fail.start) fail('outcome_unknown')
+  s.latest = 'ctx_new'; save()
   say({ dispatch: { id: 'ctx_new', taskId: s.dispatch.taskId } })
 } else { fs.writeSync(2, 'unknown ' + args.join(' ')); process.exit(9) }
 `
@@ -237,6 +238,45 @@ test('정상 작업 중인 dispatch, 구조화 worker, 다른 에이전트, 더 
     assert.match(r.stdout, /^NEXT /m, name)
     assert.equal(writes().length, 0, name)
   }
+})
+
+function runAsync(): Promise<{ code: number | null; stdout: string }> {
+  return new Promise((done) => {
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--dispatch', 'ctx_old'], {
+      env: { ...process.env, ORCA: join(bin, 'orca'), FAKE_STATE: stateFile, FAKE_LOG: logFile, FAKE_VIEW: view,
+        CLAUDE_CONFIG_DIR: join(root, 'config'), ORCH_OUTPUT: '', PATH: `${bin}${delimiter}${dirname(process.execPath)}${delimiter}${process.env.PATH}` },
+    })
+    let stdout = ''
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.on('exit', (code) => done({ code, stdout }))
+  })
+}
+
+test('죽은 잠금을 두 실행이 동시에 회수해도 새 터미널은 하나만 연다', async () => {
+  setState((s) => { s.dispatch.status = 'failed'; s.tasks[0].status = 'ready'; s.terminals = [] })
+  for (let round = 0; round < 3; round++) {
+    rmSync(logFile, { force: true })
+    setState((s) => { s.dispatch.status = 'failed'; s.tasks[0].status = 'ready'; s.terminals = [] })
+    // 끝난 프로세스의 pid 를 가진 낡은 잠금
+    const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
+    mkdirSync(reqDir, { recursive: true })
+    writeFileSync(join(reqDir, 'lock'), JSON.stringify({ pid: Number(dead), startedAt: '2026-01-01T00:00:00Z', terminal: null }))
+    const [a, b] = await Promise.all([runAsync(), runAsync()])
+    assert.equal(calls('terminal', 'create').length, 1, `${a.stdout}\n---\n${b.stdout}`)
+    assert.equal([a, b].filter((r) => r.code === 0).length, 1, `${a.stdout}\n---\n${b.stdout}`)
+    assert.equal([a, b].filter((r) => /^RESUME-FAIL target /m.test(r.stdout)).length, 1)
+  }
+})
+
+test('낡은 잠금을 정리하던 실행이 살아 있으면 회수하지 않는다', () => {
+  mkdirSync(reqDir, { recursive: true })
+  writeFileSync(join(reqDir, 'lock'), JSON.stringify({ pid: 999999, terminal: null }))
+  writeFileSync(join(reqDir, 'reclaim'), JSON.stringify({ pid: process.pid }))
+  const r = run()
+  assert.equal(r.status, 3)
+  assert.match(r.stdout, /^RESUME-FAIL target 다른 실행이 낡은 잠금을 정리하고 있다/m)
+  assert.equal(JSON.parse(readFileSync(join(reqDir, 'lock'), 'utf8')).pid, 999999)
+  assert.equal(calls('terminal', 'create').length, 0)
 })
 
 test('잘못된 --dispatch 는 2 이고 요청 폴더를 만들지 않는다', () => {
