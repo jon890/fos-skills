@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,4 +92,35 @@ test('쓰기 명령과 잘못된 인자를 받으면 gh 를 실행하지 않는�
   const f = fixture(t)
   for (const query of ['merge', 'constructor', 'toString', '']) assert.equal((await f.run(query)).code, 2)
   assert.equal(f.fake.calls().length, 0)
+})
+
+test('orch 없는 저장소는 외부 사용자 캐시를 세션·워크트리가 공유하고 .orch 를 만들지 않는다', async (t) => {
+  const f = fixture(t)
+  const cache = mkdtempSync(join(tmpdir(), 'board-user-cache-'))
+  t.after(() => rmSync(cache, { recursive: true, force: true }))
+  const wt = join(f.dir, 'worktree')
+  f.git('worktree', 'add', '-b', 'outside-cache', wt)
+  const env = { ORCH_DIR: undefined, XDG_CACHE_HOME: cache }
+  const [one, two, three] = await Promise.all([f.run('prs', env), f.run('prs', env), f.run('prs', env, wt)])
+  assert.equal(one.code, 0, one.stderr)
+  assert.deepEqual(one, two)
+  assert.deepEqual(two, three)
+  assert.equal(f.fake.calls().length, 1)
+  assert.equal(existsSync(join(f.dir, '.orch')), false)
+  assert.equal(existsSync(join(wt, '.orch')), false)
+  const folders = readdirSync(join(cache, 'fos-skills', 'work-board'))
+  assert.equal(folders.length, 1)
+  assert.match(folders[0], /^[a-f0-9]{64}$/)
+  assert.ok(existsSync(join(cache, 'fos-skills', 'work-board', folders[0], 'state', 'gh', 'cache')))
+})
+
+test('기존 .orch 가 있으면 ORCH_DIR 없이도 기존 orch 캐시 경로를 쓴다', async (t) => {
+  const f = fixture(t)
+  mkdirSync(join(f.dir, '.orch'))
+  const first = await f.run('prs', { ORCH_DIR: undefined })
+  const second = await f.run('prs', { ORCH_DIR: undefined })
+  assert.equal(first.code, 0, first.stderr)
+  assert.deepEqual(first, second)
+  assert.equal(f.fake.calls().length, 1)
+  assert.ok(existsSync(join(f.dir, '.orch', 'state', 'gh', 'cache')))
 })

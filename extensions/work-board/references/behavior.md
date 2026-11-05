@@ -94,6 +94,10 @@ PR 과 URL 은 `bin/github.ts prs|url` 이 orch 의 `lib/gh.ts` 를 부른다.
 별도 캐시 키나 잠금은 만들지 않는다. 같은 인자의 orch 조회와 같은 저장소의 워크트리·세션이
 `state/gh/cache/` 와 잠금을 공유한다. 인증 환경과 호스트 구분, 쓰기 뒤 무효화와 캐시 비활성화는
 [orch 호출 예산](../../../skills/orch/references/gh-call-budget.md) 을 따른다.
+기존 `.orch` 가 없고 `ORCH_DIR` 도 지정하지 않았으면 저장소 밖의 사용자 캐시를 쓴다.
+위치는 `$XDG_CACHE_HOME/fos-skills/work-board/<주 checkout 경로의 SHA-256>/` 이고,
+절대경로인 `XDG_CACHE_HOME` 이 없으면 `~/.cache/` 를 쓴다. 이 경우에도 같은 저장소의
+세션·워크트리가 잠금과 응답을 공유하며 저장소에 `.orch/` 를 만들지 않는다.
 창을 다시 열어도 유효한 공유 응답이 있으면 서버를 부르지 않는다.
 조회 주기와 공유 응답의 남은 TTL 이 겹치면 표시용 PR 상태 반영에 약 10분이 걸릴 수 있다.
 
