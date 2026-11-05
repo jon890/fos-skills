@@ -1,0 +1,40 @@
+{
+  "name": "script-folders",
+  "description": "orch 진입 스크립트를 명령 묶음과 같은 scripts/<묶음>/ 폴더로 옮기고 스크립트끼리 부르는 경로를 명령 표로 푼다",
+  "pr_scope": "skills/orch/scripts 의 진입 스크립트를 git mv 로 scripts/<묶음>/ 에 옮기고, 명령 표의 script 를 <묶음>/<파일> 로 바꾼다. 스크립트끼리 부르는 경로는 명령 표의 scriptPath(이름) 으로 풀고, 진입점·doctor(LOOP-STALE, DIRECT-PATH)·orch-doctor.py·핸들러 환경(ORCH_SCRIPTS, ORCH_BIN)이 새 배치에서 그대로 돌게 한다. 스킬 문서와 저장소 코드의 경로를 새 배치로 맞추고, 옛 배치 경로가 남지 않는지 보는 테스트를 더한다. 판정 규칙과 출력은 바꾸지 않는다.",
+  "deferred": [
+    {
+      "what": "옛 이름을 지우는 PR(스펙 DECISION13). 옛 꼴은 사용법 오류가 되고 `- 호환성:` 줄로 메이저를 올린다",
+      "why": "doctor 가 다른 저장소에서 옛 꼴(OLD-CALL, DIRECT-PATH)을 찾지 못한 뒤에 연다",
+      "after": "이 PR(PR3)이 머지되고 doctor 의 옛 꼴 판정이 0건일 때"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/orch-cli/spec.md",
+  "design": "docs/features/orch-cli/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ9"
+  ],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ9"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ9"
+      ]
+    }
+  ]
+}
