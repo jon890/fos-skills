@@ -52,6 +52,7 @@
 // 색인 (write-index): ADR 폴더마다 INDEX.md 를 「현행」·「대체됨」 두 표로 쓴다. 열은 번호, 결정, 상태, 대체 관계다.
 //   status 가 superseded 면 「대체됨」, 그 밖은 「현행」 이다. 대체 관계는 `- **대체된 부분**:` 항목 안의 링크 가운데
 //   링크 글에 ADR 식별자가 들어 있고 대상이 ADR 파일인 것이며, 링크 글이 아니라 대상 파일의 식별자를 적는다.
+//   결정 칸은 ADR 제목이고 제목 안 링크는 링크 글만 옮긴다(링크 기준 폴더가 달라 깨진다).
 //   내용이 같으면 파일을 다시 쓰지 않는다. check 는 어떤 파일도 쓰지 않는다.
 //
 // 종료 코드
@@ -430,7 +431,8 @@ function metaOf(repo: Repo, adr: AdrFile, byPath: Map<string, AdrFile>): AdrMeta
   lines.forEach((line, i) => {
     if (title === null) {
       const h = /^ {0,3}#{1,2}\s+ADR-[^:]*:\s*(.+?)\s*$/.exec(line);
-      if (h) title = h[1];
+      // 제목 안 링크는 ADR 파일 기준 경로라 색인 자리에서 깨진다. 링크 글만 옮긴다
+      if (h) title = replaceLinks(h[1], (l) => l.text);
     }
     if (status === null) {
       const s = STATUS.exec(line);

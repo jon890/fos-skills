@@ -310,6 +310,13 @@ describe("색인 생성", () => {
     assert.equal(r.code, 0);
   });
 
+  test("제목 안 링크는 링크 글만 색인에 옮긴다", () => {
+    const root = repo({ "README.md": "# 가\n", "docs/adr/superseded/001-a.md": "## ADR-001: [설명](../../../README.md) 을 따른다\n\n- **status**: `superseded`\n" });
+    run(root, "write-index");
+    assert.match(readFileSync(join(root, "docs/adr/INDEX.md"), "utf8"), /\| \[ADR-001\]\(superseded\/001-a\.md\) \| 설명 을 따른다 \| superseded \| - \|/);
+    assert.equal(run(root, "check", "--index", "generated").code, 0);
+  });
+
   test("「대체된 부분」 뒤 빈 줄과 일반 문단의 링크는 대체 관계가 아니다", () => {
     const root = repo({
       "docs/adr/001-a.md": "## ADR-001: 가\n\n- **status**: `superseded`\n- **대체된 부분**: [ADR-002](002-b.md)\n\n참고: [ADR-003](003-c.md)\n",
