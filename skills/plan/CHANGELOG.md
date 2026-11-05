@@ -1,5 +1,9 @@
 # CHANGELOG: plan
 
+## 5.8.0 (2026-11-05)
+
+- 합의한 결정 기록과 현재 원본 갱신, 확인 사례를 같은 PR 의 작업으로 묶는다.
+
 ## 5.7.0 (2026-11-05)
 
 - ADR 을 남길 조건과 대체·이동 규약을 technical-design 의 `adr-rules.md` 로 옮기고 task-create 는 그쪽을 가리킨다
