@@ -63,7 +63,7 @@
 - 전환 안에서는 작은 것부터 영역 하나에 PR 하나로 간다(DECISION6).
   1. 저장소 기반: 언어 규칙 ADR, 남은 Python·셸 목록을 줄여 가는 저장소 테스트, CI 구성
   2. `scripts/` 와 `githooks/`, workflow 의 Python 호출
-  3. 작은 스킬 묶음: `pr-review`, `implementation`, `docs-check`, `report`, `presentation`, `browser`, orch doctor 진입
+  3. 작은 스킬 묶음: `pr-review`, `implementation`, `docs-check`, `report`, `presentation`, `browser`. orch doctor 의 옛 Python 진입은 orch-cli 의 옛 이름 정리 PR 이 지운다(DECISION14)
   4. `review-fix` 와 그것을 부르는 orch 호출
   5. `content-preview`
   6. `korean-check`
@@ -119,7 +119,7 @@
 | DECISION11 | 동작이 같다는 것을 보이는 방법 | 명령 경계 테스트를 먼저 `node:test` 로 써서 Python 구현에서 통과시키고, 같은 PR 의 다음 커밋에서 구현만 바꾼다. 옵션, stdout, 종료 코드를 같게 지키고, stderr 는 문서나 테스트가 읽는 문구만 지킨다 | 사용자 2026-11-04 | 같은 테스트가 두 구현에서 통과한다. JS 의 `\w` 는 한글을 잡지 않는 등 정규식 차이가 있어 정규식 중심 검사기는 문서 전체 비교를 더한다 |
 | DECISION12 | 테스트 실행기 | `node --test` 와 `node:test`. 의존성 0 을 지킨다 | 작성자 | ADR-010, test-speed 스펙 DECISION1 |
 | DECISION13 | git 훅 진입의 꼴 | 확장자 없는 node shebang JS 가 같은 이름의 `.ts` 를 `import()` 한다. 타입 문법은 `.ts` 에만 둔다 | 작성자 | git 은 확장자 없는 이름을 실행하고, node 는 확장자 없는 파일의 타입을 지우지 않는다. orch 가드 shim(`skills/orch/scripts/lib/guard/orca`)과 같은 꼴이다(2026-11-05 실험) |
-| DECISION14 | orch doctor 의 Node 버전 안내 | 타입 문법 없는 `.mjs` 진입이 버전을 보고 24 미만이면 지금처럼 `NODE-TOO-OLD` 와 127 을 낸다. node 가 없으면 셸이 127 로 끝낸다 | 작성자 | DECISION2 는 안내 없이 실패해도 된다고 했다. Python 없이 지금 출력을 지킬 수 있어 출력 계약을 바꾸지 않는다 |
+| DECISION14 | orch doctor 의 Node 버전 안내 | 새 진입을 두지 않는다. doctor 는 `orch doctor` 로 불리고 플러그인 `bin/orch` 실행기가 이미 `NODE-TOO-OLD` 를 낸다. 옛 진입 `orch-doctor.py`, `ts_shim.py` 는 orch-cli 의 옛 이름 정리 PR 이 지운다 | 작성자 | 2026-11-05 설계 검토에서 고쳤다(처음 답은 `.mjs` 진입). orch-cli 스펙 DECISION13 이 옛 이름을 끝내는 때를 소유한다. 사용자에게 보이는 출력은 바뀌지 않는다 |
 | DECISION15 | 명령마다 Node 버전 검사 | 하지 않는다. README 와 doctor 가 Node 24 요구를 알린다 | 작성자 | DECISION2. 낮은 Node 는 0 이 아닌 종료 코드와 오류로 끝나 조용히 지나가지 않는다 |
 | DECISION16 | `python3 -c` 로 JSON 을 읽는 workflow 줄 | `node -e` 로 바꾼다 | 작성자 | DECISION1 의 python3 없는 환경 |
 | DECISION17 | 옛 이름 진입 셋을 지우는 시점 | 이 저장소의 다음 major 에서 지운다. korean-check 의 두 파일은 korean-check 스킬이 영역 PR 다음으로 major 를 올릴 때, `browser_driver.py` 는 버전이 없는 도구라 그것을 쓰는 `browser` 스킬이 browser-driver 영역 PR 다음으로 major 를 올릴 때 지운다. 팀원 보호 기간이 0일 수 있음을 감수한다 | 사용자 2026-11-05 | 권장안(팀 반영 한 달 뒤)과 다르다. ADR-010 과 같은 규칙이다. `browser` 스킬로 셈하는 것은 작성자가 정했다 |
