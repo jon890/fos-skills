@@ -12,7 +12,7 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/board-sync.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/board/board-sync.ts', import.meta.url))
 
 // 배포 확인의 조회: \`pr view N --json mergeCommit\` 은 state['merge:N'], \`run list\` 는 state.runs 를 낸다.
 // 마지막 PR 판정의 조회: \`pr view N --json title,headRefName\` 은 state['info:N'], 열린 PR 목록(\`--json number,title\`)은 state.open,

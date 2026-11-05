@@ -2,16 +2,20 @@
 // doctor 의 Node 버전 점검에 필요한 Python 파일만 남긴다. 명령은 `bin/orch.ts <이름>` 이나 같은 이름의 .ts 로 부른다.
 
 import assert from 'node:assert/strict'
-import { readdirSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const ORCH = fileURLToPath(new URL('..', import.meta.url))
 
-function legacy(dir: string): string[] {
+// 묶음 폴더(scripts/<묶음>/)와 lib 아래까지 내려가 폴더 기준 상대경로로 낸다
+function legacy(dir: string, prefix = ''): string[] {
   return readdirSync(dir)
-    .filter((name) => ['.py', '.sh'].includes(extname(name)))
+    .flatMap((name) => {
+      if (statSync(join(dir, name)).isDirectory()) return legacy(join(dir, name), `${prefix}${name}/`)
+      return ['.py', '.sh'].includes(extname(name)) ? [`${prefix}${name}`] : []
+    })
     .sort()
 }
 

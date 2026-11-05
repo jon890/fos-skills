@@ -9,7 +9,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/notify-conflicts.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/notify-conflicts.ts', import.meta.url))
 
 // 상태 파일의 workers 를 worker-list 로 내는 가짜 orca. 확장자가 없어 타입 문법 없이 쓴다.
 const FAKE_ORCA = `#!/usr/bin/env node

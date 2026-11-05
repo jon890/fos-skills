@@ -10,7 +10,7 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ageSeconds, dismissQuestion, poll, readDismissed, REPLY_LIMIT, snapshot, unanswered } from '../scripts/lib/questions.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/watch-questions.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/wait/watch-questions.ts', import.meta.url))
 
 // state.json 을 읽어 답한다. raw 가 있으면 그것을 그대로 내고 rc 로 끝난다.
 // check --all 은 부를 때마다 checkSeq 의 다음 값(ok 나 fail)을 따른다. 다 쓰면 마지막 값을 되풀이한다.

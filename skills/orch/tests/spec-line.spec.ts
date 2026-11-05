@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/spec-line.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/spec/spec-line.ts', import.meta.url))
 
 let tmp: string
 let spec: string

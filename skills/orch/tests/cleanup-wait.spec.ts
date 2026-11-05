@@ -8,10 +8,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { stopHolders, waitFree } from '../scripts/cleanup-sweep.ts'
-import type { Host } from '../scripts/cleanup-sweep.ts'
+import { stopHolders, waitFree } from '../scripts/cleanup/cleanup-sweep.ts'
+import type { Host } from '../scripts/cleanup/cleanup-sweep.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/cleanup-sweep.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/cleanup/cleanup-sweep.ts', import.meta.url))
 
 // holders 의 답을 차례로 내고, 다 쓰면 마지막 답을 되풀이한다. 부른 횟수와 쉰 시간, 보낸 신호를 기록한다
 function fakeHost(holders: string[][]) {

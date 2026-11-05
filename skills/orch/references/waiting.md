@@ -3,7 +3,7 @@
 ## 상주 루프와 압축 뒤 복구
 
 **대기가 깨어나면 메시지와 알림을 처리한 직후 다시 건다.** `orch wait` 는 stderr 의 `NEXT_WAIT` 에 방금 받은 delivery 를 `--ack` 로 넘기는 다음 명령을 낸다. 표준 출력의 마지막 줄 `LAST_DELIVERY` 계약은 유지한다.
-`NEXT_WAIT` 는 `orch wait --ack <id> [기본값과 다른 인자] --loop-repo <절대경로>` 꼴이다. 코디네이터 터미널의 Run 에서 읽은 `--run` 은 빠지고, 시작 폴더와 루프 저장소가 다른 저장소면 `--lost-state <절대경로>` 가 붙는다. `orch` 가 PATH 에 없으면 앞 낱말이 진입점 절대경로다. 꼴의 원본은 `scripts/wait-important.ts` 의 `nextWait` 머리 주석이다.
+`NEXT_WAIT` 는 `orch wait --ack <id> [기본값과 다른 인자] --loop-repo <절대경로>` 꼴이다. 코디네이터 터미널의 Run 에서 읽은 `--run` 은 빠지고, 시작 폴더와 루프 저장소가 다른 저장소면 `--lost-state <절대경로>` 가 붙는다. `orch` 가 PATH 에 없으면 앞 낱말이 진입점 절대경로다. 꼴의 원본은 `scripts/wait/wait-important.ts` 의 `nextWait` 머리 주석이다.
 <!-- orch-compat -->
 옛 꼴 `"$SKILL_DIR/bin/orch.ts" wait-important …` 로 기억해 둔 `NEXT_WAIT` 도 같은 대기를 걸고, 그 대기가 새 꼴 `NEXT_WAIT` 를 낸다.
 
@@ -208,7 +208,7 @@ orch cleanup sweep --repo "$REPO" --repo "$OTHER_REPO" --specs-dir .orch/specs -
 ## 받은 메시지 읽기
 
 **`orch wait` 의 출력이 분류까지 한다.** 받은 메시지마다 판정 줄 하나가 우선 차례로 오고, heartbeat 는 개수만 온다. `orch wait triage` 를 따로 부르지 않는다.
-한 delivery 에 heartbeat 가 수십 건 섞여도 `worker_done` 하나를 놓치지 않게 하려는 것이다. 줄 꼴과 차례는 `scripts/triage-messages.ts` 머리 주석의 「짧은 출력」 이 소유한다.
+한 delivery 에 heartbeat 가 수십 건 섞여도 `worker_done` 하나를 놓치지 않게 하려는 것이다. 줄 꼴과 차례는 `scripts/wait/triage-messages.ts` 머리 주석의 「짧은 출력」 이 소유한다.
 
 ```text
 DONE-SUSPECT <dispatch> <task> <본문 앞 120자>   근거 없는 worker_done. 종료 코드 6

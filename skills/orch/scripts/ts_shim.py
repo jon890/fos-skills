@@ -1,4 +1,4 @@
-"""doctor 의 Python 진입점에서 Node 버전을 검사하고 같은 이름의 .ts 로 넘긴다.
+"""doctor 의 Python 진입점에서 Node 버전을 검사하고 .ts 로 넘긴다.
 
 Node 24 미만은 .ts 를 읽지 못하므로 Python 에서 먼저 판정한다(ADR-011).
 Node 가 없거나 실행할 수 없으면 stderr 안내와 127, 낮거나 읽지 못한 버전이면
@@ -34,9 +34,10 @@ def _no_node(detail: str = "") -> None:
     sys.exit(127)
 
 
-def exec_ts(shim_file: str, deprecated: bool = True) -> None:
+def exec_ts(shim_file: str, deprecated: bool = True, target: str | None = None) -> None:
+    """target 을 주지 않으면 같은 폴더의 같은 이름 .ts 로 넘긴다."""
     shim = Path(shim_file).resolve()
-    target = shim.with_suffix(".ts")
+    ts = Path(target).resolve() if target else shim.with_suffix(".ts")
     try:
         done = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=10)
         version = done.stdout.strip()
@@ -52,11 +53,11 @@ def exec_ts(shim_file: str, deprecated: bool = True) -> None:
         sys.stdout.flush()
         sys.exit(127)
     if deprecated:
-        print(f"DEPRECATED python3 {shim.name} → node {NODE_FLAG} {target}", file=sys.stderr)
+        print(f"DEPRECATED python3 {shim.name} → node {NODE_FLAG} {ts}", file=sys.stderr)
     sys.stdout.flush()
     sys.stderr.flush()
     try:
-        os.execvp("node", ["node", NODE_FLAG, str(target), *sys.argv[1:]])
+        os.execvp("node", ["node", NODE_FLAG, str(ts), *sys.argv[1:]])
     except FileNotFoundError:
         _no_node()
     except OSError as exc:

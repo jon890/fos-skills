@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { FAKE_GH, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/merge_queue.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/merge_queue.ts', import.meta.url))
 const SUCCESS = { status: 'COMPLETED', conclusion: 'SUCCESS' }
 const CI = { name: 'CI', ...SUCCESS }
 const FIVE = '1\n2\n3\n4\n5\n'

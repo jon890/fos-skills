@@ -11,7 +11,7 @@
 //     설정 파일이 없거나 읽지 못하면 auto_merge 는 꺼진 것으로 본다. 쓰지 않으면 prs 는 비고 아래 3 도 읽지 않는다.
 //     auto_merge 가 꺼져 있으면 코디네이터가 건 큐(1)만 보이고 3 은 읽지 않는다. 예전에 켰을 때 남은 루프 로그의 이유를 보이지 않으려는 것이다.
 //
-// 읽는 곳. 아래는 모두 <orch 루트>/state 아래다. 형식은 쓰는 쪽(skills/orch/scripts/orch-loop.ts, merge_queue.ts)이 소유한다.
+// 읽는 곳. 아래는 모두 <orch 루트>/state 아래다. 형식은 쓰는 쪽(skills/orch/scripts/loop/orch-loop.ts, queue/merge_queue.ts)이 소유한다.
 //     1. queue-turn/<pid>.json: 머지 큐가 도는 동안 적는 차례 기록 { pid, prs, pr, phase, since }(orch 의 lib/queue-turn.ts).
 //        pid 의 명령줄(ps)에 `merge_queue.` 가 있는 파일만 쓴다. 차례 PR 은 지금 차례, prs 의 나머지는 적힌 순서대로 n 번째다.
 //     2. 1 이 없으면 auto-merge.json 의 queue { pid, log, prs, at } 와 그 큐 로그(auto-merge/<시각>.log). 루프가 건 큐만 여기 남는다.

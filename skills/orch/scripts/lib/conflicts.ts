@@ -23,8 +23,7 @@
 //   그 PR 의 마무리(finish-pr.ts)가 머지 뒤 conflictSpecFiles 로 찾아 지운다. 옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md 도 그 목록에 든다.
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { INTERIM } from './board.ts'
 import { fire } from './events.ts'
 import type { FireContext } from './events.ts'
@@ -33,6 +32,7 @@ import { ghJson } from './gh.ts'
 import { makeParent, pathOf } from './paths.ts'
 import { runAsync, scriptCommand } from './proc.ts'
 import { LIVE_DISPATCH } from './workers.ts'
+import { scriptPath } from './commands.ts'
 
 export type OpenPr = {
   number: number
@@ -253,7 +253,7 @@ export async function resolveConflict(args: {
     sendArgs.push('--spec', worker.spec)
   }
   if (run) sendArgs.push('--run', run)
-  const send = process.env.SEND_TO_WORKER || join(dirname(dirname(fileURLToPath(import.meta.url))), 'send-to-worker.ts')
+  const send = process.env.SEND_TO_WORKER || scriptPath('send-to-worker')
   const sent = await runAsync(scriptCommand(send, sendArgs), { timeoutMs: SEND_MS })
   const shown = (sent.stdout + sent.stderr).trim()
   if (shown) out(`  ${shown.replaceAll('\n', '\n  ')}`)

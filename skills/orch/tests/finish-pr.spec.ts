@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/finish-pr.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
 const NODE = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
 // 정리 스크립트를 다시 부르는 횟수. finish-pr.ts 의 동작 규칙 값이다
 const CLEANUP_TRIES = 5

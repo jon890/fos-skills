@@ -5,7 +5,7 @@
 //
 // 사용법:
 //     orch <묶음> <동작> [인자...]   새 꼴. 명령 표가 스크립트와 앞 인자를 정한다. `orch --help` 가 목록을 낸다
-//     orch.ts NAME [인자...]         옛 꼴. scripts/NAME.ts 를 같은 인자로 실행하고 stderr 에 새 꼴을 한 줄 안내한다
+//     orch.ts NAME [인자...]         옛 꼴. 명령 표가 NAME 을 푼 scripts/<묶음>/NAME.ts 를 같은 인자로 실행하고 stderr 에 새 꼴을 한 줄 안내한다
 //     orch.ts --path [NAME]          옛 꼴. 스크립트 폴더를, NAME 을 주면 그 스크립트 파일 경로를 한 줄로 낸다. 실행하지 않는다
 //     orch.ts --help
 //
@@ -156,12 +156,14 @@ function stripFull(args: string[]): { args: string[]; full: boolean } {
   return { args: [...kept, ...tail], full: kept.length !== head.length }
 }
 
-function names(dir: string): string {
-  return readdirSync(dir)
+// 옛 꼴로 부를 수 있는 이름. 명령 표의 옛 이름과 스크립트 파일 이름 가운데 그 폴더에 파일이 있는 것과 폴더 바로 아래의 .ts 다
+function names(commands: Commands, dir: string): string {
+  const flat = readdirSync(dir)
     .filter((f) => f.endsWith('.ts'))
     .map((f) => f.slice(0, -'.ts'.length))
-    .sort()
-    .join(' ')
+  const table = [...commands.legacyNames(), ...commands.COMMANDS.map((c) => c.script.slice(c.script.lastIndexOf('/') + 1, -'.ts'.length))]
+  const listed = table.filter((n) => commands.scriptIn(dir, n) !== null)
+  return [...new Set([...listed, ...flat])].sort().join(' ')
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -199,9 +201,9 @@ async function main(argv: string[]): Promise<number> {
       err(commands.helpText(first).trimEnd())
       return 2
     }
-    const file = join(dir, resolved.command.script)
-    if (!existsSync(file)) {
-      err(`orch: ${file} 가 없다`)
+    const file = commands.scriptIn(dir, resolved.command.script)
+    if (file === null) {
+      err(`orch: ${join(dir, resolved.command.script)} 가 없다`)
       return 2
     }
     const lead = commands.beforeDashes(resolved.user)[0]
@@ -241,9 +243,9 @@ async function main(argv: string[]): Promise<number> {
     err(`${USAGE}\norch: 스크립트 이름이 아니다: ${given}`)
     return 2
   }
-  const file = commands.scriptPath(dir, bare)
+  const file = commands.scriptIn(dir, bare)
   if (file === null) {
-    err(`orch: ${join(dir, `${bare}.ts`)} 가 없다. 쓸 수 있는 이름: ${names(dir)}`)
+    err(`orch: ${join(dir, `${bare}.ts`)} 가 없다. 쓸 수 있는 이름: ${names(commands, dir)}`)
     return 2
   }
   const legacy = commands.resolveLegacy(bare, printing ? [] : rest)

@@ -29,7 +29,7 @@
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
 | 지시서 폴더 | `cleanup-sweep.ts --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더에 남은 옛 위치의 PR 본문 파일 `pr-<이름>.md` 를 지운다. 새 PR 본문 파일은 worker 세션 임시 폴더에 있어 이 폴더에 생기지 않는다 (예: `.orch/specs/`) | 4, 7 |
-| spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
+| spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
 | 공부 후보 | 사용자가 고른 후보를 글로 쓸 스킬 이름과 글이 놓일 저장소. 없으면 글을 쓸 때 어디에 쓸지 묻는다. 절차는 [`study-candidates.md`](study-candidates.md) | - |
 | 진행 보드 | 보드 파일 위치, 목표 항목 id(`board-sync.ts --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
 | 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
@@ -144,7 +144,7 @@ runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함�
 ## orch 작업 폴더
 
 orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
-경로는 `scripts/orch_paths.ts` 가 정하고, 셸과 문서에서는 `orch paths specs` 처럼 이름으로 받는다.
+경로는 `scripts/paths/orch_paths.ts` 가 정하고, 셸과 문서에서는 `orch paths specs` 처럼 이름으로 받는다.
 루트를 옮기려면 `ORCH_DIR` 을 orch 스크립트를 부르는 모든 환경(코디네이터 셸, 훅)에 같은 값으로 둔다.
 
 | 경로 | 담는 것 |

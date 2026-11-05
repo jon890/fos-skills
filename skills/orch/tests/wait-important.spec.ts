@@ -12,9 +12,9 @@ import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/wait-important.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/wait/wait-important.ts', import.meta.url))
 const ORCH_BIN = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
-const TRIAGE = fileURLToPath(new URL('../scripts/triage-messages.ts', import.meta.url))
+const TRIAGE = fileURLToPath(new URL('../scripts/wait/triage-messages.ts', import.meta.url))
 const SHA = 'a'.repeat(40)
 
 // 차례로 응답을 하나씩 낸다. 부를 때마다 인자를 기록한다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다.

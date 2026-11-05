@@ -9,7 +9,7 @@ import { delimiter, dirname, join, resolve } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/launch-worker.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))
 
 // 상태 파일로 움직이는 가짜 orca. 받은 인자를 한 줄씩 기록한다. 확장자가 없어 타입 문법 없이 쓴다.
 // macOS 에서 파이프로 가는 process.stdout 쓰기는 비동기라 process.exit 가 출력을 자를 수 있어 writeSync 로 쓴다.
@@ -1586,7 +1586,7 @@ describe('spec-lint 관문', () => {
   })
 
   test('다른 활성 지시서끼리만 겹치면 경고를 보이고 새 worker 를 띄운다', () => {
-    env.SPEC_LINT = join(dirname(SCRIPT), 'spec-lint.ts')
+    env.SPEC_LINT = join(dirname(SCRIPT), '..', 'spec', 'spec-lint.ts')
     const proj = join(tmp, 'proj')
     spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
     const first = join(tmp, 'spec-first.md')
@@ -1605,7 +1605,7 @@ describe('spec-lint 관문', () => {
   })
 
   test('살아 있는 dispatch 의 지시서와 담당이 겹치면 진짜 spec-lint 가 막는다', () => {
-    env.SPEC_LINT = join(dirname(SCRIPT), 'spec-lint.ts')
+    env.SPEC_LINT = join(dirname(SCRIPT), '..', 'spec', 'spec-lint.ts')
     const proj = join(tmp, 'proj')
     spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
     spawnSync('git', ['-C', proj, 'commit', '-q', '--allow-empty', '-m', 'i'], { env })
@@ -1657,7 +1657,7 @@ describe('spec-lint 관문', () => {
     let proj: string
 
     beforeEach(() => {
-      env.SPEC_LINT = join(dirname(SCRIPT), 'spec-lint.ts')
+      env.SPEC_LINT = join(dirname(SCRIPT), '..', 'spec', 'spec-lint.ts')
       proj = join(tmp, 'proj')
       spawnSync('git', ['init', '-q', '-b', 'main', proj], { env })
       mkdirSync(join(proj, 'docs/features/a'), { recursive: true })

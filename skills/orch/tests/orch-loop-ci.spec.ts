@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const RULES_PATH = 'repos/o/r/rules/branches/main'
 const HEAD_A = 'a'.repeat(40)
 const HEAD_B = 'b'.repeat(40)

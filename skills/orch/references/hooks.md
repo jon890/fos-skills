@@ -66,7 +66,7 @@ if (live.length >= LIMIT) {
 ### 멈춘 worker 다시 시도시키기
 
 상주 루프는 멈춘 worker 를 알리기만 하고 입력하지 않는다. 다시 시도시킬지와 몇 번까지 할지는 저장소의 `worker-stalled` 핸들러가 정한다.
-판정 기준과 틱 수는 `scripts/orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
+판정 기준과 틱 수는 `scripts/loop/orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
 
 아래는 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 멈춤마다 세 번까지 「계속 진행해」 를 넣는 핸들러다. `.orch/hooks/worker-stalled.ts` 에 둔다.
 
@@ -108,7 +108,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 - **사람이 Esc 로 끊은 화면(`interrupted`)에는 불리지 않는다.** 사람이 일부러 멈춘 작업을 다시 돌리지 않는다.
 - **입력은 코어 명령(`orch worker nudge`, `orch worker send`)으로만 한다.** `node "$ORCH_BIN" worker nudge …` 처럼 진입점 절대경로 `ORCH_BIN` 으로 부른다. 그 명령은 진짜 orca(`ORCH_REAL_ORCA`)로 입력해 가드에 막히지 않는다. 플러그인 설치 경로는 커밋마다 바뀌므로 경로를 핸들러에 적지 않는다.
   <!-- orch-compat -->
-  `ORCH_SCRIPTS`(스크립트 폴더)도 계속 넘기지만 그 아래 스크립트 파일을 직접 부르는 핸들러는 폴더 이동 뒤 깨진다. doctor 가 `DIRECT-PATH` 로 알린다.
+  `ORCH_SCRIPTS`(스크립트 폴더)도 계속 넘기지만 스크립트는 그 아래 묶음 폴더(`worker/nudge-worker.ts` 꼴)로 옮겼다. `$ORCH_SCRIPTS/<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')` 꼴은 파일이 없어 깨진다. 핸들러는 `node "$ORCH_BIN" <묶음> <동작>` 으로 부른다. doctor 가 `DIRECT-PATH` 로 알린다.
 - 코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다. 그 판정을 쓰려면 `config.json` 의 `pipeline.stall_ticks.idle` 을 켠다.
 
 ## 실패 줄 읽기
@@ -152,7 +152,7 @@ orch 5.2.0에서 `config.json`의 `queue.before`, `queue.verify_merged`, `queue.
 
 - 폴더를 옮기기 전이면 `--hooks` 는 아무것도 바꾸지 않고 종료 코드 2 로 멈춘다. 먼저 [`overlay.md`](overlay.md) 의 「옛 구조에서 옮기기」 를 한다
 - `PR번호:명령` 은 그 PR 하나에만 붙이는 명령이라 옮기지 않는다
-- 판정과 종료 코드는 `scripts/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다
+- 판정과 종료 코드는 `scripts/doctor/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다
 
 ## 가드가 막는 호출
 

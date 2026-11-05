@@ -16,8 +16,8 @@ import { loopStatus } from '../scripts/lib/loop.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
-const NOTIFY = fileURLToPath(new URL('../scripts/notify-conflicts.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+const NOTIFY = fileURLToPath(new URL('../scripts/queue/notify-conflicts.ts', import.meta.url))
 
 // 질문 조회와 worker-list 에 답하는 가짜 orca. orca.json 의 workers 를 내고, workers_fail 이면 worker-list 만 실패한다.
 // 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다

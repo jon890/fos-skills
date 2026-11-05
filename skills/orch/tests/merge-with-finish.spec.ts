@@ -17,7 +17,7 @@ import { QUEUE_VALUE_OPTIONS } from '../scripts/lib/queue-options.ts'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/merge-with-finish.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/merge-with-finish.ts', import.meta.url))
 const NODE = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
 const HAS_BASH = spawnSync('sh', ['-c', 'command -v bash']).status === 0
 

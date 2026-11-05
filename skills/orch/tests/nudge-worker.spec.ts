@@ -8,7 +8,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/nudge-worker.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/worker/nudge-worker.ts', import.meta.url))
 const GUARD_ORCA = fileURLToPath(new URL('../scripts/lib/guard/orca', import.meta.url))
 
 const CLAUDE_FOOTER = (input: string) => `───────────────────────────────────────────────────────────────

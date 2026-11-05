@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/reserve-migration.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/reserve-migration.ts', import.meta.url))
 const OPEN_ARGS = ['pr', 'list', 'number,headRefName,baseRefName,files']
 const OLD = '2020-01-01T00:00:00Z'
 const LATER = '2099-01-01T00:00:00Z'

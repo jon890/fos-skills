@@ -59,130 +59,130 @@ const LOOP_FORBID = ['--start', '--stop', '--status', '--foreground', '--tick']
 const ROWS: Row[] = [
   // wait
   {
-    group: 'wait', verb: null, script: 'wait-important.ts', context: ['run', 'loop-repo'], required: ['run'],
+    group: 'wait', verb: null, script: 'wait/wait-important.ts', context: ['run', 'loop-repo'], required: ['run'],
     forbid: ['--ack-lost'], allow: ['--ack'], legacy: { name: 'wait-important', flags: [] },
     usage: 'orch wait [--ack <delivery>] [--types …] [--timeout-ms …] [--loop-repo <저장소>]',
   },
   {
-    group: 'wait', verb: 'ack-lost', script: 'wait-important.ts', positional: { flag: '--ack-lost', repeat: true, required: true, what: 'dispatch' }, context: ['run'], required: ['run'],
+    group: 'wait', verb: 'ack-lost', script: 'wait/wait-important.ts', positional: { flag: '--ack-lost', repeat: true, required: true, what: 'dispatch' }, context: ['run'], required: ['run'],
     legacy: { name: 'wait-important', flags: ['--ack-lost'] }, usage: 'orch wait ack-lost <dispatch>...',
   },
   {
-    group: 'wait', verb: 'triage', script: 'triage-messages.ts', context: ['run'], skip: (a) => (hasFlag(a, 'live') ? [] : ['run']),
+    group: 'wait', verb: 'triage', script: 'wait/triage-messages.ts', context: ['run'], skip: (a) => (hasFlag(a, 'live') ? [] : ['run']),
     legacy: { name: 'triage-messages', flags: [] }, usage: 'orch wait triage <파일>... | orch wait triage --live',
   },
-  { group: 'wait', verb: 'user-active', script: 'user-active.ts', legacy: { name: 'user-active', flags: [] }, usage: 'orch wait user-active [--terminal <터미널>]' },
-  { group: 'wait', verb: 'questions', script: 'watch-questions.ts', context: ['run', 'repo'], legacy: { name: 'watch-questions', flags: [] }, usage: 'orch wait questions [--once]' },
+  { group: 'wait', verb: 'user-active', script: 'wait/user-active.ts', legacy: { name: 'user-active', flags: [] }, usage: 'orch wait user-active [--terminal <터미널>]' },
+  { group: 'wait', verb: 'questions', script: 'wait/watch-questions.ts', context: ['run', 'repo'], legacy: { name: 'watch-questions', flags: [] }, usage: 'orch wait questions [--once]' },
   // loop
   {
-    group: 'loop', verb: 'start', script: 'orch-loop.ts', prepend: ['--start'], context: ['repo', 'run', 'specs-dir'], forbid: LOOP_FORBID,
+    group: 'loop', verb: 'start', script: 'loop/orch-loop.ts', prepend: ['--start'], context: ['repo', 'run', 'specs-dir'], forbid: LOOP_FORBID,
     legacy: { name: 'orch-loop', flags: ['--start'] }, usage: 'orch loop start',
   },
   {
-    group: 'loop', verb: 'stop', script: 'orch-loop.ts', prepend: ['--stop'], context: ['repo', 'run'], forbid: LOOP_FORBID,
+    group: 'loop', verb: 'stop', script: 'loop/orch-loop.ts', prepend: ['--stop'], context: ['repo', 'run'], forbid: LOOP_FORBID,
     skip: (a) => (hasFlag(a, 'all') ? ['run'] : []), legacy: { name: 'orch-loop', flags: ['--stop'] }, usage: 'orch loop stop [--all]',
   },
   {
-    group: 'loop', verb: 'status', script: 'orch-loop.ts', prepend: ['--status'], context: ['repo'], forbid: LOOP_FORBID,
+    group: 'loop', verb: 'status', script: 'loop/orch-loop.ts', prepend: ['--status'], context: ['repo'], forbid: LOOP_FORBID,
     legacy: { name: 'orch-loop', flags: ['--status'] }, usage: 'orch loop status',
   },
   {
-    group: 'loop', verb: 'run', script: 'orch-loop.ts', prepend: ['--foreground'], context: ['repo', 'run', 'specs-dir'], forbid: LOOP_FORBID,
+    group: 'loop', verb: 'run', script: 'loop/orch-loop.ts', prepend: ['--foreground'], context: ['repo', 'run', 'specs-dir'], forbid: LOOP_FORBID,
     legacy: { name: 'orch-loop', flags: ['--foreground'] }, usage: 'orch loop run [--once]',
   },
-  { group: 'loop', verb: 'stalled', script: 'stalled-workers.ts', context: ['repo'], legacy: { name: 'stalled-workers', flags: [] }, usage: 'orch loop stalled [--json]' },
+  { group: 'loop', verb: 'stalled', script: 'loop/stalled-workers.ts', context: ['repo'], legacy: { name: 'stalled-workers', flags: [] }, usage: 'orch loop stalled [--json]' },
   // worker
   {
-    group: 'worker', verb: 'launch', script: 'launch-worker.ts', context: ['run', 'repo'], skip: (a) => (hasFlag(a, 'worktree') ? ['repo'] : []),
+    group: 'worker', verb: 'launch', script: 'worker/launch-worker.ts', context: ['run', 'repo'], skip: (a) => (hasFlag(a, 'worktree') ? ['repo'] : []),
     legacy: { name: 'launch-worker', flags: [] }, usage: 'orch worker launch --spec <지시서> --name <이름> [-- <worker 인자>]',
   },
   {
-    group: 'worker', verb: 'send', script: 'send-to-worker.ts', context: ['run'], runFrom: 'run-current',
+    group: 'worker', verb: 'send', script: 'worker/send-to-worker.ts', context: ['run'], runFrom: 'run-current',
     legacy: { name: 'send-to-worker', flags: [] }, usage: 'orch worker send --dispatch <id> (--body <글> | --body-file <파일>)',
   },
   {
-    group: 'worker', verb: 'nudge', script: 'nudge-worker.ts', forbid: ['--state'], legacy: { name: 'nudge-worker', flags: [] },
+    group: 'worker', verb: 'nudge', script: 'worker/nudge-worker.ts', forbid: ['--state'], legacy: { name: 'nudge-worker', flags: [] },
     usage: 'orch worker nudge --terminal <터미널> [--text <글>]',
   },
   {
-    group: 'worker', verb: 'screen', script: 'nudge-worker.ts', prepend: ['--state'], positional: { flag: '--terminal', repeat: false, required: true, what: '터미널' }, forbid: ['--state'],
+    group: 'worker', verb: 'screen', script: 'worker/nudge-worker.ts', prepend: ['--state'], positional: { flag: '--terminal', repeat: false, required: true, what: '터미널' }, forbid: ['--state'],
     legacy: { name: 'nudge-worker', flags: ['--state'] }, usage: 'orch worker screen <터미널>',
   },
-  { group: 'worker', verb: 'ask', script: 'worker-ask.ts', legacy: { name: 'worker-ask', flags: [] }, usage: 'orch worker ask --from <터미널> --question <질문> [--decision]' },
+  { group: 'worker', verb: 'ask', script: 'worker/worker-ask.ts', legacy: { name: 'worker-ask', flags: [] }, usage: 'orch worker ask --from <터미널> --question <질문> [--decision]' },
   {
-    group: 'worker', verb: 'adopt', script: 'adopt-sessions.ts', context: ['run', 'repo'], skip: (a) => (hasFlag(a, 'apply') ? [] : ['run']),
+    group: 'worker', verb: 'adopt', script: 'worker/adopt-sessions.ts', context: ['run', 'repo'], skip: (a) => (hasFlag(a, 'apply') ? [] : ['run']),
     legacy: { name: 'adopt-sessions', flags: [] }, usage: 'orch worker adopt [--apply <터미널>]',
   },
   {
-    group: 'worker', verb: 'worktree', script: 'make-worktree.ts', positional: { flag: '--repo', repeat: false, context: 'repo' }, context: ['repo'], forbid: ['--check'],
+    group: 'worker', verb: 'worktree', script: 'worker/make-worktree.ts', positional: { flag: '--repo', repeat: false, context: 'repo' }, context: ['repo'], forbid: ['--check'],
     legacy: { name: 'make-worktree', flags: [] }, usage: 'orch worker worktree [<저장소>] --name <이름>',
   },
   {
-    group: 'worker', verb: 'check', script: 'make-worktree.ts', positional: { flag: '--check', repeat: false, required: true, what: '워크트리' }, forbid: ['--check'],
+    group: 'worker', verb: 'check', script: 'worker/make-worktree.ts', positional: { flag: '--check', repeat: false, required: true, what: '워크트리' }, forbid: ['--check'],
     legacy: { name: 'make-worktree', flags: ['--check'] }, usage: 'orch worker check <워크트리> --spec <지시서>',
   },
-  { group: 'worker', verb: 'deny', script: 'worktree-deny.ts', legacy: { name: 'worktree-deny', flags: [] }, usage: 'orch worker deny <워크트리>' },
-  { group: 'worker', verb: 'link-profile', script: 'link-claude-profile.ts', legacy: { name: 'link-claude-profile', flags: [] }, usage: 'orch worker link-profile [대상] [--apply]' },
+  { group: 'worker', verb: 'deny', script: 'worker/worktree-deny.ts', legacy: { name: 'worktree-deny', flags: [] }, usage: 'orch worker deny <워크트리>' },
+  { group: 'worker', verb: 'link-profile', script: 'worker/link-claude-profile.ts', legacy: { name: 'link-claude-profile', flags: [] }, usage: 'orch worker link-profile [대상] [--apply]' },
   // queue
   {
-    group: 'queue', verb: 'merge', script: 'merge-with-finish.ts', context: ['repo', 'run'],
+    group: 'queue', verb: 'merge', script: 'queue/merge-with-finish.ts', context: ['repo', 'run'],
     explicit: { run: [/^--finish-arg=--run(=|$)/, /^--sweep-arg=--run(=|$)/] }, legacy: { name: 'merge-with-finish', flags: [] },
     usage: 'orch queue merge <PR>...',
   },
-  { group: 'queue', verb: 'run', script: 'merge_queue.ts', context: ['repo'], legacy: { name: 'merge_queue', flags: [] }, usage: 'orch queue run <PR>...' },
-  { group: 'queue', verb: 'finish', script: 'finish-pr.ts', context: ['repo', 'run'], legacy: { name: 'finish-pr', flags: [] }, usage: 'orch queue finish <PR>' },
-  { group: 'queue', verb: 'ready', script: 'ci-ready.ts', context: ['repo'], legacy: { name: 'ci-ready', flags: [] }, usage: 'orch queue ready <PR>...' },
-  { group: 'queue', verb: 'conflicts', script: 'notify-conflicts.ts', context: ['repo', 'run'], legacy: { name: 'notify-conflicts', flags: [] }, usage: 'orch queue conflicts' },
-  { group: 'queue', verb: 'overlap', script: 'overlap_units.ts', context: ['repo'], legacy: { name: 'overlap_units', flags: [] }, usage: 'orch queue overlap --base <ref> --head <ref>' },
+  { group: 'queue', verb: 'run', script: 'queue/merge_queue.ts', context: ['repo'], legacy: { name: 'merge_queue', flags: [] }, usage: 'orch queue run <PR>...' },
+  { group: 'queue', verb: 'finish', script: 'queue/finish-pr.ts', context: ['repo', 'run'], legacy: { name: 'finish-pr', flags: [] }, usage: 'orch queue finish <PR>' },
+  { group: 'queue', verb: 'ready', script: 'queue/ci-ready.ts', context: ['repo'], legacy: { name: 'ci-ready', flags: [] }, usage: 'orch queue ready <PR>...' },
+  { group: 'queue', verb: 'conflicts', script: 'queue/notify-conflicts.ts', context: ['repo', 'run'], legacy: { name: 'notify-conflicts', flags: [] }, usage: 'orch queue conflicts' },
+  { group: 'queue', verb: 'overlap', script: 'queue/overlap_units.ts', context: ['repo'], legacy: { name: 'overlap_units', flags: [] }, usage: 'orch queue overlap --base <ref> --head <ref>' },
   {
-    group: 'queue', verb: 'reserve', script: 'reserve-migration.ts', context: ['repo'], forbid: ['--prune'],
+    group: 'queue', verb: 'reserve', script: 'queue/reserve-migration.ts', context: ['repo'], forbid: ['--prune'],
     legacy: { name: 'reserve-migration', flags: [] }, usage: 'orch queue reserve --module <모듈> --name <이름>',
   },
   {
-    group: 'queue', verb: 'reserve prune', script: 'reserve-migration.ts', prepend: ['--prune'], context: ['repo'], forbid: ['--prune'],
+    group: 'queue', verb: 'reserve prune', script: 'queue/reserve-migration.ts', prepend: ['--prune'], context: ['repo'], forbid: ['--prune'],
     legacy: { name: 'reserve-migration', flags: ['--prune'] }, usage: 'orch queue reserve prune',
   },
   // cleanup
   {
-    group: 'cleanup', verb: 'sweep', script: 'cleanup-sweep.ts', context: ['repo', 'run', 'specs-dir'],
+    group: 'cleanup', verb: 'sweep', script: 'cleanup/cleanup-sweep.ts', context: ['repo', 'run', 'specs-dir'],
     skip: (a) => [...(hasFlag(a, 'repo') ? (['repo'] as ContextName[]) : []), ...(countFlag(a, 'repo') > 1 ? (['specs-dir'] as ContextName[]) : [])],
     legacy: { name: 'cleanup-sweep', flags: [] }, usage: 'orch cleanup sweep [--apply]',
   },
-  { group: 'cleanup', verb: 'worktree', script: 'remove-worktree.ts', legacy: { name: 'remove-worktree', flags: [] }, usage: 'orch cleanup worktree <워크트리>' },
-  { group: 'cleanup', verb: 'handoff', script: 'handoff-cleanup.ts', context: ['repo', 'run'], legacy: { name: 'handoff-cleanup', flags: [] }, usage: 'orch cleanup handoff [--apply]' },
+  { group: 'cleanup', verb: 'worktree', script: 'cleanup/remove-worktree.ts', legacy: { name: 'remove-worktree', flags: [] }, usage: 'orch cleanup worktree <워크트리>' },
+  { group: 'cleanup', verb: 'handoff', script: 'cleanup/handoff-cleanup.ts', context: ['repo', 'run'], legacy: { name: 'handoff-cleanup', flags: [] }, usage: 'orch cleanup handoff [--apply]' },
   // board
-  { group: 'board', verb: 'sync', script: 'board-sync.ts', context: ['repo'], legacy: { name: 'board-sync', flags: [] }, usage: 'orch board sync' },
-  { group: 'board', verb: 'release', script: 'board-release.ts', context: ['repo'], legacy: { name: 'board-release', flags: [] }, usage: 'orch board release --pr <N>' },
-  { group: 'board', verb: 'goal', script: 'goal-progress.ts', legacy: { name: 'goal-progress', flags: [] }, usage: 'orch board goal <목표 id>' },
+  { group: 'board', verb: 'sync', script: 'board/board-sync.ts', context: ['repo'], legacy: { name: 'board-sync', flags: [] }, usage: 'orch board sync' },
+  { group: 'board', verb: 'release', script: 'board/board-release.ts', context: ['repo'], legacy: { name: 'board-release', flags: [] }, usage: 'orch board release --pr <N>' },
+  { group: 'board', verb: 'goal', script: 'board/goal-progress.ts', legacy: { name: 'goal-progress', flags: [] }, usage: 'orch board goal <목표 id>' },
   // study
   ...(['list', 'add', 'set', 'migrate'] as const).map(
     (verb): Row => ({
-      group: 'study', verb, script: 'study-candidates.ts', prepend: [verb], context: ['repo'],
+      group: 'study', verb, script: 'study/study-candidates.ts', prepend: [verb], context: ['repo'],
       legacy: { name: 'study-candidates', flags: [verb] }, usage: `orch study ${verb}`,
     }),
   ),
   // spec
-  { group: 'spec', verb: 'lint', script: 'spec-lint.ts', context: ['repo'], legacy: { name: 'spec-lint', flags: [] }, usage: 'orch spec lint' },
-  { group: 'spec', verb: 'line', script: 'spec-line.ts', legacy: { name: 'spec-line', flags: [] }, usage: 'orch spec line <지시서> [--require-permission]' },
+  { group: 'spec', verb: 'lint', script: 'spec/spec-lint.ts', context: ['repo'], legacy: { name: 'spec-lint', flags: [] }, usage: 'orch spec lint' },
+  { group: 'spec', verb: 'line', script: 'spec/spec-line.ts', legacy: { name: 'spec-line', flags: [] }, usage: 'orch spec line <지시서> [--require-permission]' },
   // doctor. Run 은 문맥으로 채우지 않는다(스펙 DECISION23)
-  { group: 'doctor', verb: null, script: 'orch-doctor.ts', context: ['repo'], legacy: { name: 'orch-doctor', flags: [] }, usage: 'orch doctor [--run <Run>]' },
+  { group: 'doctor', verb: null, script: 'doctor/orch-doctor.ts', context: ['repo'], legacy: { name: 'orch-doctor', flags: [] }, usage: 'orch doctor [--run <Run>]' },
   {
-    group: 'doctor', verb: 'migrate', script: 'migrate-orch-dir.ts', context: ['repo', 'run'], forbid: ['--hooks'],
+    group: 'doctor', verb: 'migrate', script: 'doctor/migrate-orch-dir.ts', context: ['repo', 'run'], forbid: ['--hooks'],
     legacy: { name: 'migrate-orch-dir', flags: [] }, usage: 'orch doctor migrate [--apply]',
   },
   {
-    group: 'doctor', verb: 'migrate-hooks', script: 'migrate-orch-dir.ts', prepend: ['--hooks'], context: ['repo', 'run'], forbid: ['--hooks'],
+    group: 'doctor', verb: 'migrate-hooks', script: 'doctor/migrate-orch-dir.ts', prepend: ['--hooks'], context: ['repo', 'run'], forbid: ['--hooks'],
     legacy: { name: 'migrate-orch-dir', flags: ['--hooks'] }, usage: 'orch doctor migrate-hooks [--apply]',
   },
-  { group: 'doctor', verb: 'gh-usage', script: 'gh-usage.ts', legacy: { name: 'gh-usage', flags: [] }, usage: 'orch doctor gh-usage' },
-  { group: 'doctor', verb: 'install-cli', script: 'install-cli.ts', legacy: null, usage: 'orch doctor install-cli' },
+  { group: 'doctor', verb: 'gh-usage', script: 'doctor/gh-usage.ts', legacy: { name: 'gh-usage', flags: [] }, usage: 'orch doctor gh-usage' },
+  { group: 'doctor', verb: 'install-cli', script: 'doctor/install-cli.ts', legacy: null, usage: 'orch doctor install-cli' },
   // paths
-  { group: 'paths', verb: null, script: 'orch_paths.ts', context: ['repo'], legacy: { name: 'orch_paths', flags: [] }, usage: 'orch paths <이름> | orch paths check' },
+  { group: 'paths', verb: null, script: 'paths/orch_paths.ts', context: ['repo'], legacy: { name: 'orch_paths', flags: [] }, usage: 'orch paths <이름> | orch paths check' },
   // status. Run 은 문맥으로 채우지 않는다(스펙 DECISION22). 주지 않으면 루프에 등록된 Run 을 모두 본다
-  { group: 'status', verb: null, script: 'orch-status.ts', context: ['repo'], legacy: null, usage: 'orch status [--run <Run>]' },
+  { group: 'status', verb: null, script: 'status/orch-status.ts', context: ['repo'], legacy: null, usage: 'orch status [--run <Run>]' },
   // slot
-  { group: 'slot', verb: 'heavy', script: 'heavy-slot.ts', passthrough: true, legacy: { name: 'heavy-slot', flags: [] }, usage: 'orch slot heavy -- <명령>' },
-  { group: 'slot', verb: 'mem', script: 'mem-gate.ts', passthrough: true, legacy: { name: 'mem-gate', flags: [] }, usage: 'orch slot mem -- <명령>' },
+  { group: 'slot', verb: 'heavy', script: 'slot/heavy-slot.ts', passthrough: true, legacy: { name: 'heavy-slot', flags: [] }, usage: 'orch slot heavy -- <명령>' },
+  { group: 'slot', verb: 'mem', script: 'slot/mem-gate.ts', passthrough: true, legacy: { name: 'mem-gate', flags: [] }, usage: 'orch slot mem -- <명령>' },
 ]
 
 export const COMMANDS: Command[] = ROWS.map((r) => ({
@@ -288,12 +288,29 @@ export function resolveLegacy(name: string, args: string[]): { command: Command;
   return { command: best, hint: form(best) }
 }
 
-// 옛 이름이나 스크립트 파일 이름을 그 폴더의 파일 경로로 푼다. 없으면 null 이다
-export function scriptPath(dir: string, name: string): string | null {
+// 이 번들의 스크립트 폴더(skills/orch/scripts). 진입 스크립트는 그 아래 `<묶음>/` 에 있다(스펙 DECISION6)
+export const SCRIPTS_DIR = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
+
+function rowOf(name: string): Command | undefined {
   const bare = name.endsWith('.ts') ? name.slice(0, -3) : name
-  const row = COMMANDS.find((c) => c.legacy?.name === bare || c.script === `${bare}.ts`)
-  const file = join(dir, row ? row.script : `${bare}.ts`)
-  return existsSync(file) ? file : null
+  return COMMANDS.find((c) => c.legacy?.name === bare || c.script === `${bare}.ts` || c.script.endsWith(`/${bare}.ts`))
+}
+
+// 스크립트끼리 부를 때 쓰는 경로. 옛 이름이나 파일 이름(`merge_queue`, `merge_queue.ts`)을 이 번들의 절대경로로 푼다.
+// 파일이 있는지는 보지 않는다. 표에 없는 이름은 부르는 쪽의 잘못이라 던진다
+export function scriptPath(name: string): string {
+  const row = rowOf(name)
+  if (!row) throw new Error(`명령 표에 없는 스크립트다: ${name}`)
+  return join(SCRIPTS_DIR, row.script)
+}
+
+// 옛 이름이나 스크립트 파일 이름을 dir(고른 번들의 스크립트 폴더) 아래 파일 경로로 푼다. 명령 표의 경로(`<묶음>/<파일>`)를 먼저 보고,
+// 없으면 dir 바로 아래 같은 이름(표에 없는 스크립트, 폴더 이동 전 배치의 체크아웃)을 본다. 둘 다 없으면 null 이다
+export function scriptIn(dir: string, name: string): string | null {
+  const bare = name.endsWith('.ts') ? name.slice(0, -3) : name
+  const row = rowOf(bare)
+  const files = [...(row ? [join(dir, row.script)] : []), join(dir, `${bare}.ts`)]
+  return files.find((f) => existsSync(f)) ?? null
 }
 
 // 사람이 읽는 사용법. 묶음을 주면 그 묶음만 낸다

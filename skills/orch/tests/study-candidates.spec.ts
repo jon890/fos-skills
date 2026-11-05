@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { localDate, parse, parseLegacy, sameTopic, statusOf, validSlug } from '../scripts/lib/study.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/study-candidates.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/study/study-candidates.ts', import.meta.url))
 // ai-analysis 의 .orch/study/candidates.md 를 2026-11-01 에 복사한 것이다. 원본은 고치지 않는다
 const FIXTURE = fileURLToPath(new URL('./fixtures/study/candidates.md', import.meta.url))
 

@@ -5,8 +5,8 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { sweepLine } from '../scripts/cleanup-sweep.ts'
-import type { SweepContext } from '../scripts/cleanup-sweep.ts'
+import { sweepLine } from '../scripts/cleanup/cleanup-sweep.ts'
+import type { SweepContext } from '../scripts/cleanup/cleanup-sweep.ts'
 import { type Row, branches, calls, exists, freshGoneBranch, fx, git, gone, has, lacks, mergedWorkerWithTerminal, remoteBranches, renamedWorktree, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
 describe('머지 판정과 기본 정리', () => {

@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { collect, parseObjects } from '../scripts/triage-messages.ts'
+import { collect, parseObjects } from '../scripts/wait/triage-messages.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/triage-messages.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/wait/triage-messages.ts', import.meta.url))
 
 type Json = Record<string, unknown>
 type Result = { code: number | null; stdout: string; stderr: string }

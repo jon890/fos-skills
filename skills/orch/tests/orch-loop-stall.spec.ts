@@ -14,7 +14,7 @@ import { fakeBin } from './fixtures/fake-bin.ts'
 import { tailHash } from '../scripts/lib/movement.ts'
 import { screenLines, screenTail } from '../scripts/lib/screen.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const HOOKS_DOC = fileURLToPath(new URL('../references/hooks.md', import.meta.url))
 
 // 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
@@ -332,7 +332,7 @@ describe('error 멈춤', () => {
     assert.ok(!Number.isNaN(Date.parse(String(input.since))), String(input.since))
     assert.ok((input.lines as string[]).includes('■ Selected model is at capacity. Please try a different model.'), JSON.stringify(input.lines))
     // 핸들러가 코어 명령(nudge-worker, send-to-worker)을 찾는 폴더다
-    assert.deepEqual(received('worker-stalled.env'), [{ ORCH_SCRIPTS: dirname(SCRIPT) }])
+    assert.deepEqual(received('worker-stalled.env'), [{ ORCH_SCRIPTS: dirname(dirname(SCRIPT)) }])
   })
 
   test('hooks.md 예시 핸들러는 같은 오류 화면에 상한까지 다시 시도시키고, 상한에서 10 으로 넘겨 WORKER-STALLED 를 한 번 쓴다', () => {
