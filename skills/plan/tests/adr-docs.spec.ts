@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -96,6 +96,45 @@ describe("BROKEN_LINK", () => {
   test("대상이 있으면 0 이다", () => {
     const root = repo({ "README.md": "[가이드](docs/guide.md)\n", "docs/guide.md": "# 가이드\n" });
     assert.deepEqual(run(root, "check"), { code: 0, out: [], err: "ADR 폴더를 찾지 못해 ADR 검사를 건너뛴다: docs/adr\n검사한 Markdown: 2개, ADR 폴더: 0개\n" });
+  });
+});
+
+describe("Markdown 꼴", () => {
+  test("각주, 들여 쓴 펜스, setext 제목, HTML 앵커, 단축 참조 링크", () => {
+    const root = repo({
+      "docs/adr/001-a.md": adr("ADR-001", "가"),
+      "a.md": "제목\n===\n\n<a id=\"Custom\"></a>\n",
+      "README.md": [
+        "본문[^1] 과 [ADR-001] 을 본다.",
+        "",
+        "[^1]: 각주 설명이다.",
+        "[ADR-001]: docs/adr/001-a.md",
+        "",
+        "- 목록",
+        "",
+        "      ```",
+        "      [안](nope.md)",
+        "      ```",
+        "",
+        "[가](a.md#제목) [나](a.md#custom)",
+      ].join("\n"),
+    });
+    const r = run(root, "check");
+    assert.deepEqual(r.out, []);
+    assert.equal(r.code, 0);
+  });
+
+  test("대소문자가 다른 링크는 대소문자를 가리지 않는 파일 시스템에서도 깨진 링크다", () => {
+    const root = repo({ "Guide.md": "# 가\n", "README.md": "[가이드](guide.md)\n" });
+    assert.deepEqual(run(root, "check").out, ["README.md:1: BROKEN_LINK guide.md"]);
+  });
+
+  test("파이프로 받아도 큰 출력이 잘리지 않는다", () => {
+    const body = Array.from({ length: 3000 }, (_, i) => `[깨짐](missing-${i}-${"x".repeat(20)}.md)`).join("\n");
+    const root = repo({ "README.md": `${body}\n` });
+    const r = run(root, "check");
+    assert.equal(r.out.length, 3000);
+    assert.equal(r.code, 1);
   });
 });
 
@@ -223,10 +262,33 @@ describe("색인 생성", () => {
     assert.deepEqual(run(root, "check", "--index", "generated").out, []);
     assert.equal(run(root, "check", "--index", "generated").code, 0);
 
-    const mtime = statSync(index).mtimeMs;
-    spawnSync("sleep", ["0.05"]);
+    // 읽기 전용으로 막아 두면 다시 쓰려 할 때 2 로 끝난다. mtime 해상도에 기대지 않는다
+    chmodSync(index, 0o444);
     assert.equal(run(root, "write-index").code, 0);
-    assert.equal(statSync(index).mtimeMs, mtime);
+    chmodSync(index, 0o644);
+  });
+
+  test("제목에 다른 식별자와 링크가 든 ADR 도 생성 색인 뒤 검사가 0 이다", () => {
+    const root = repo({
+      "docs/adr/001-a.md": adr("ADR-001", "가"),
+      "docs/adr/002-b.md": adr("ADR-002", "ADR-001 을 [README](../../README.md) 대로 되돌린다"),
+      "README.md": "# 가\n",
+    });
+    run(root, "write-index");
+    const r = run(root, "check", "--index", "generated");
+    assert.deepEqual(r.out, []);
+    assert.equal(r.code, 0);
+  });
+
+  test("「대체된 부분」 뒤 빈 줄과 일반 문단의 링크는 대체 관계가 아니다", () => {
+    const root = repo({
+      "docs/adr/001-a.md": "## ADR-001: 가\n\n- **status**: `superseded`\n- **대체된 부분**: [ADR-002](002-b.md)\n\n참고: [ADR-003](003-c.md)\n",
+      "docs/adr/002-b.md": adr("ADR-002", "나"),
+      "docs/adr/003-c.md": adr("ADR-003", "다"),
+    });
+    run(root, "write-index");
+    const text = readFileSync(join(root, "docs/adr/INDEX.md"), "utf8");
+    assert.match(text, /\| superseded \| \[ADR-002\]\(002-b\.md\) \|/);
   });
 
   test("직접 고친 색인과 없는 색인은 INDEX_STALE 이다", () => {
@@ -309,6 +371,24 @@ describe("--changed-since", () => {
     write(root, { "docs/adr/002-b.md": adr("ADR-002", "나") });
     const r = run(root, "check", "--changed-since", "main");
     assert.deepEqual(r.out, ["docs/adr/INDEX.md:1: INDEX_DESYNC 색인에 없다: ADR-002"]);
+    assert.equal(r.code, 1);
+  });
+
+  test("stage 한 이름 바꾸기, 작업 트리 삭제, 대상 제목 변경은 바뀐 쪽이다", () => {
+    const root = repo({
+      "docs/adr/001-a.md": adr("ADR-001", "가"),
+      "gone.md": "# 가\n",
+      "target.md": "# 옛 제목\n",
+      "a.md": "[ADR-001](docs/adr/001-a.md)\n",
+      "b.md": "[가](gone.md)\n",
+      "c.md": "[가](target.md#옛-제목)\n",
+    });
+    git(root, "checkout", "-qb", "feature");
+    git(root, "mv", "docs/adr/001-a.md", "docs/adr/001-b.md");
+    rmSync(join(root, "gone.md"));
+    write(root, { "target.md": "# 새 제목\n" });
+    const r = run(root, "check", "--changed-since", "main");
+    assert.deepEqual(r.out, ["a.md:1: BROKEN_LINK docs/adr/001-a.md", "b.md:1: BROKEN_LINK gone.md", "c.md:1: BROKEN_ANCHOR target.md#옛-제목"]);
     assert.equal(r.code, 1);
   });
 

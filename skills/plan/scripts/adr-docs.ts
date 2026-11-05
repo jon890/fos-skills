@@ -16,7 +16,8 @@
 //   --flat              대체된 ADR 을 superseded/ 로 옮기지 않는 저장소. ADR_PLACEMENT 를 하지 않는다
 //   --index MODE        generated: INDEX.md 가 write-index 결과와 글자까지 같아야 한다.
 //                       ids (기본): 파일 이름의 식별자 집합과 INDEX.md 가 링크로 가리키는 ADR 집합만 맞춘다.
-//                       INDEX.md 가 없는 폴더는 ids 에서 건너뛰고, generated 에서 INDEX_STALE 이다
+//                       INDEX.md 가 없는 폴더는 ids 에서 건너뛰고, generated 에서 INDEX_STALE 이다.
+//                       generated 에서는 ADR 폴더의 INDEX.md 에 링크·식별자 검사를 하지 않는다(INDEX_STALE 이 보증한다)
 //   --changed-since REF `git diff --name-status REF...HEAD` 와 작업 트리 변경(미추적 포함)을 바뀐 파일로 본다.
 //                       바뀐 파일의 위반을 먼저 내고 나머지는 `PR 밖 위반:` 줄 뒤에 낸다. 종료 코드는 바뀐 쪽만 센다.
 //                       색인·중복 위반은 그 ADR 폴더 안 파일이 하나라도 바뀌었으면, 깨진 링크·앵커는 링크 대상이
@@ -24,7 +25,9 @@
 //   --scope PATH        결과를 그 경로 아래 문서로 좁힌다. 링크 대상은 범위 밖이어도 찾는다
 //   write-index 는 --flat, --index 를 받기만 하고 쓰지 않는다. 부르는 쪽이 같은 인자 묶음을 넘길 수 있게 한다.
 //
-// 검사 대상: git 이 추적하거나, 추적하지 않았어도 무시하지 않는 .md 파일. 코드 블록과 코드 스팬 안은 보지 않는다.
+// 검사 대상: git 이 추적하거나, 추적하지 않았어도 무시하지 않는 .md 파일. 코드 블록(들여 쓴 펜스 포함)과 코드 스팬 안은 보지 않는다.
+//   각주 정의(`[^1]:`)는 링크가 아니다. 저장소 안 링크 대상은 대소문자까지 맞아야 한다.
+//   앵커는 # 제목, setext 제목, <a id|name=...> 에서 만든다.
 //
 // ADR 파일: ADR 폴더와 그 하위 폴더에서 이름이 아래 꼴인 .md
 //   NNN-slug.md              식별자 ADR-NNN
@@ -112,7 +115,8 @@ export function parseArgs(argv: string[]): Options {
 
 // ---------- Markdown 읽기 ----------
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+// 목록 안에 4칸 넘게 들여 쓴 펜스도 펜스로 본다. 들여쓴 블록 안 예시 링크를 본문으로 읽지 않게 한다.
+const FENCE = /^\s*(`{3,}|~{3,})/;
 
 // 코드 블록 줄을 빈 줄로, 코드 스팬을 빈 글로 바꾼다. 줄 번호는 그대로다.
 export function prose(text: string, stripSpans = true): string[] {
@@ -133,7 +137,12 @@ export function prose(text: string, stripSpans = true): string[] {
 
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*$/;
 const INLINE_LINK = /\[([^\]\n]*)\]\(\s*(<[^>\n]+>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
-const REFERENCE_DEF = /^ {0,3}\[[^\]\n]+\]:\s*(<[^>]+>|\S+)/;
+// 각주 정의(`[^1]: 설명`)는 링크가 아니다
+const REFERENCE_DEF = /^ {0,3}\[(?!\^)([^\]\n]+)\]:\s*(<[^>]+>|\S+)/;
+const SETEXT = /^ {0,3}(=+|-+)\s*$/;
+const HTML_ANCHOR = /<a\s[^>]*?\b(?:id|name)\s*=\s*["']([^"']+)["']/gi;
+// setext 밑줄 앞 줄이 될 수 없는 줄: 빈 줄, 제목, 목록, 표, 인용
+const NOT_PARAGRAPH = /^\s*$|^ {0,3}(?:#|[-*+]\s|\d+[.)]\s|\||>)/;
 
 export function slugify(heading: string): string {
   const text = heading
@@ -148,14 +157,19 @@ export function slugify(heading: string): string {
 export function anchorsOf(text: string): Set<string> {
   const found = new Set<string>();
   const counts = new Map<string, number>();
-  for (const line of prose(text, false)) {
+  const lines = prose(text, false);
+  lines.forEach((line, i) => {
+    for (const a of line.matchAll(HTML_ANCHOR)) found.add(a[1].toLowerCase());
+    let heading: string | null = null;
     const m = HEADING.exec(line);
-    if (!m) continue;
-    const base = slugify(m[2]);
+    if (m) heading = m[2];
+    else if (i > 0 && SETEXT.test(line) && !NOT_PARAGRAPH.test(lines[i - 1]) && !SETEXT.test(lines[i - 1])) heading = lines[i - 1].trim();
+    if (heading === null) return;
+    const base = slugify(heading);
     const n = counts.get(base) ?? 0;
     counts.set(base, n + 1);
     found.add(n === 0 ? base : `${base}-${n}`);
-  }
+  });
   return found;
 }
 
@@ -165,7 +179,7 @@ export function linksOf(lines: string[]): Link[] {
   const links: Link[] = [];
   lines.forEach((line, i) => {
     const def = REFERENCE_DEF.exec(line);
-    if (def) links.push({ line: i + 1, text: null, target: def[1].replace(/^<|>$/g, "") });
+    if (def) links.push({ line: i + 1, text: null, target: def[2].replace(/^<|>$/g, "") });
     for (const m of line.matchAll(INLINE_LINK)) links.push({ line: i + 1, text: m[1], target: m[2].replace(/^<|>$/g, "") });
   });
   return links;
@@ -288,6 +302,7 @@ type Repo = {
   adrDirs: string[];
   adrs: AdrFile[];
   text: Map<string, string>;
+  dirs: Map<string, Set<string>>;
 };
 
 function loadRepo(root: string, globs: string[]): Repo {
@@ -303,7 +318,7 @@ function loadRepo(root: string, globs: string[]): Repo {
     const parsed = parseAdrName(posix.basename(path));
     if (parsed) adrs.push({ ...parsed, path, dir });
   }
-  return { root, markdown, adrDirs, adrs, text: new Map() };
+  return { root, markdown, adrDirs, adrs, text: new Map(), dirs: new Map() };
 }
 
 function read(repo: Repo, path: string) {
@@ -343,6 +358,8 @@ function metaOf(repo: Repo, adr: AdrFile, byPath: Map<string, AdrFile>): AdrMeta
     }
     if (REPLACED_PART.test(line)) inReplaced = true;
     else if (/^- /.test(line) || /^#{1,6}\s/.test(line)) inReplaced = false;
+    // 빈 줄 뒤 들여쓰지 않은 문단은 목록 항목 밖이다
+    else if (i > 0 && lines[i - 1].trim() === "" && /^\S/.test(line)) inReplaced = false;
     if (!inReplaced) return;
     // 코드 스팬 안 링크는 링크가 아니다
     const visible = line.replace(/(`+)[\s\S]*?\1/g, "");
@@ -394,12 +411,12 @@ function byName(a: AdrFile, b: AdrFile) {
   return x < y ? -1 : x > y ? 1 : a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 }
 
-function indexFor(repo: Repo, dir: string, byPath: Map<string, AdrFile>, metas: Map<string, AdrMeta>) {
+function indexFor(repo: Repo, dir: string, metas: Map<string, AdrMeta>) {
   const rows = repo.adrs
     .filter((a) => a.dir === dir)
     .sort(byName)
     .map((adr) => {
-      const meta = metas.get(adr.path) ?? metaOf(repo, adr, byPath);
+      const meta = metas.get(adr.path)!;
       return {
         id: adr.id,
         link: linkFrom(dir, adr.path),
@@ -413,6 +430,29 @@ function indexFor(repo: Repo, dir: string, byPath: Map<string, AdrFile>, metas: 
 
 // ---------- 검사 ----------
 
+// 저장소 안 경로는 조각마다 실제 이름과 대소문자까지 맞춘다. macOS 는 대소문자를 가리지 않아
+// existsSync 만 보면 GitHub 에서 깨지는 링크를 통과시킨다. 저장소 밖은 existsSync 로 본다.
+function existsExact(repo: Repo, abs: string) {
+  if (!existsSync(abs)) return false;
+  const relPath = relative(repo.root, abs);
+  if (!relPath || relPath.startsWith("..")) return true;
+  let dir = repo.root;
+  for (const part of relPath.split(sep)) {
+    let names = repo.dirs.get(dir);
+    if (!names) {
+      try {
+        names = new Set(readdirSync(dir));
+      } catch {
+        names = new Set();
+      }
+      repo.dirs.set(dir, names);
+    }
+    if (!names.has(part)) return false;
+    dir = join(dir, part);
+  }
+  return true;
+}
+
 function checkLinks(repo: Repo, path: string, lines: string[], anchors: Map<string, Set<string>>): Violation[] {
   const out: Violation[] = [];
   for (const link of linksOf(lines)) {
@@ -423,7 +463,7 @@ function checkLinks(repo: Repo, path: string, lines: string[], anchors: Map<stri
     if (file) {
       const abs = resolve(repo.root, posix.dirname(path), file);
       targetPath = rel(repo.root, abs);
-      if (!existsSync(abs)) {
+      if (!existsExact(repo, abs)) {
         out.push({ path, line: link.line, code: "BROKEN_LINK", message: link.target, target: targetPath });
         continue;
       }
@@ -458,12 +498,15 @@ function checkUnlinked(repo: Repo, path: string, lines: string[], pattern: strin
   const heading = new RegExp(String.raw`^ {0,3}#{1,6}\s+(?:${pattern})\s*:`);
   const find = new RegExp(pattern, "g");
   const docDir = posix.dirname(path);
+  // 단축 참조 링크(`[ADR-001]` 와 `[ADR-001]: 경로`)도 링크다
+  const defs = new Set(lines.map((l) => REFERENCE_DEF.exec(l)?.[1].toLowerCase()).filter((x): x is string => !!x));
   lines.forEach((line, i) => {
     if (heading.test(line)) return;
     const outside = line
       .replace(/!?\[[^\]\n]*\]\([^)\n]*\)/g, "")
       .replace(/\[[^\]\n]*\]\[[^\]\n]*\]/g, "")
-      .replace(REFERENCE_DEF, "");
+      .replace(REFERENCE_DEF, "")
+      .replace(/\[([^\]\n]+)\]/g, (all, name: string) => (defs.has(name.toLowerCase()) ? "" : all));
     for (const m of outside.matchAll(find)) {
       const id = normalizeId(m[0]);
       const candidates = repo.adrs
@@ -488,7 +531,7 @@ function checkAdrDirs(repo: Repo, opts: Options): Violation[] {
     const indexAbs = join(repo.root, index);
 
     if (opts.index === "generated") {
-      const want = indexFor(repo, dir, byPath, metas);
+      const want = indexFor(repo, dir, metas);
       const have = isFile(indexAbs) ? readFileSync(indexAbs, "utf8") : null;
       if (have !== want)
         out.push({ path: index, line: 1, code: "INDEX_STALE", message: have === null ? "INDEX.md 가 없다. write-index 를 돌린다" : "write-index 결과와 다르다. write-index 를 돌린다", adrDir: dir });
@@ -617,9 +660,13 @@ export function runCheck(root: string, opts: Options): CheckResult {
   const anchors = new Map<string, Set<string>>();
   const violations: Violation[] = [];
   let checked = 0;
+  // 생성 색인은 INDEX_STALE 이 보증한다. ADR 제목에 다른 식별자나 링크가 있으면 색인 칸이
+  // ADR_UNLINKED·BROKEN_LINK 로 걸리는데, 색인은 직접 고치지 않으므로 풀 길이 없다.
+  const generated = new Set(opts.index === "generated" ? repo.adrDirs.map((d) => `${d}/INDEX.md`) : []);
   for (const path of repo.markdown) {
     if (!inScope(path, scope)) continue;
     checked++;
+    if (generated.has(path)) continue;
     const lines = prose(read(repo, path));
     violations.push(...checkLinks(repo, path, lines, anchors));
     if (pattern) violations.push(...checkUnlinked(repo, path, lines, pattern));
@@ -640,9 +687,10 @@ export function runWriteIndex(root: string, opts: Options): string[] {
   if (repo.adrDirs.length === 0) throw new UsageError(`색인을 쓸 ADR 폴더가 없다: ${opts.adrDirs.join(", ")}`);
   const byPath = new Map(repo.adrs.map((a) => [a.path, a]));
   const metas = new Map<string, AdrMeta>();
+  for (const adr of repo.adrs) metas.set(adr.path, metaOf(repo, adr, byPath));
   const written: string[] = [];
   for (const dir of repo.adrDirs) {
-    const content = indexFor(repo, dir, byPath, metas);
+    const content = indexFor(repo, dir, metas);
     const abs = join(root, dir, "INDEX.md");
     const have = isFile(abs) ? readFileSync(abs, "utf8") : null;
     if (have === content) continue;
@@ -660,16 +708,18 @@ function main(argv: string[]) {
     const root = top.trim();
     if (opts.command === "write-index") {
       for (const path of runWriteIndex(root, opts)) process.stderr.write(`썼다: ${path}\n`);
-      process.exit(0);
+      process.exitCode = 0;
+      return;
     }
     const result = runCheck(root, opts);
     if (result.lines.length) process.stdout.write(`${result.lines.join("\n")}\n`);
     for (const line of result.notice) process.stderr.write(`${line}\n`);
     process.stderr.write(`검사한 Markdown: ${result.checked}개, ADR 폴더: ${result.adrDirs}개\n`);
-    process.exit(result.failed ? 1 : 0);
+    // process.exit 는 파이프에 아직 쓰지 못한 출력을 버린다. 종료 코드만 두고 이벤트 루프가 비우게 한다
+    process.exitCode = result.failed ? 1 : 0;
   } catch (error) {
     process.stderr.write(`adr-docs: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exit(2);
+    process.exitCode = 2;
   }
 }
 

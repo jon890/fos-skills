@@ -81,6 +81,7 @@ docs/adr/
 ## 색인 일치 검사
 
 색인과 파일이 어긋나면 링크가 깨지거나 ADR 이 목록에서 빠진다. 저장소마다 테스트를 따로 두지 않고 plan 번들의 `adr-docs.ts check` 가 잡는다.
+생성을 켜지 않은 저장소(`--index ids`)에서는 식별자 집합과 링크만 본다. status 일치, 「현행」·「대체됨」 구분, 정렬까지 보증하려면 색인 생성을 켠다.
 spec, technical-design, review-fix, docs-audit 가 작성 단계에서 부르므로 CI 에 사본을 두지 않는다.
 인자와 판정(날짜 식별자 포함)은 [plan 의 monorepo.md 「ADR 문서 검사」](../../plan/references/monorepo.md#adr-문서-검사)와 검사기 머리 주석이 소유한다.
 
