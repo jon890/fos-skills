@@ -52,7 +52,7 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
 - 내보내지 않는 영역(`scripts/`, `mac-cleanup`, `harness-cleanup`, `report`, `browser`, `pr-review`)의 테스트는 testkit 을 그 자리에서 import 한다.
 - 내보내는 영역의 테스트는 testkit 의 필요한 파일을 `kit` 과 같은 방식으로 `<단위>/tests/kit/` 에 복사하고 `kit-copies.spec.ts` 가 같은지 본다.
 - testkit 은 사용자가 fos-test-speed 의 몫으로 정했다(스펙 DECISION5). 그러나 2026-11-05 의 `docs/features/test-speed/` 문서는 testkit 의 범위와 위치를 아직 적지 않았다. 코디네이터가 그 기능과 맞춘다.
-- PR1 은 테스트 helper 가 필요 없다. 처음 helper 가 필요한 PR2 를 시작할 때 testkit 이 없으면 그 PR 의 worker 가 코디네이터에게 묻는다. 이 기능이 testkit 을 따로 만들지 않는다. 같은 helper 가 두 벌 생긴다.
+- PR1 은 테스트 helper 를 쓰지 않는다. 그래도 시작 시점은 스펙 DECISION5 대로 testkit 머지 뒤다. 처음 helper 를 쓰는 PR2 에서 testkit 의 위치가 분명하지 않으면 그 PR 의 worker 가 코디네이터에게 묻는다. 이 기능이 testkit 을 따로 만들지 않는다. 같은 helper 가 두 벌 생긴다.
 - 복사본 대조에 쓰는 원본 위치는 처음 복사하는 PR 이 `scripts/runtime-policy.json` 의 `kit_sources` 에 적는다.
 
 ### 진입 파일
@@ -64,7 +64,7 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
 | 옛 이름 진입 | `korean-style-check.py`, `check-readability.py`, `browser_driver.py` 자리에 같은 꼴의 node shebang JS. 「옛 이름 진입」 절 | 스펙 DECISION3 |
 | orch doctor | 새 진입을 두지 않는다. 지금 doctor 는 `orch doctor` 로 불리고, 플러그인 `bin/orch` 실행기가 이미 `NODE-TOO-OLD` 를 낸다(`bin/orch` 33줄, 92줄). 옛 진입 `orch-doctor.py` 와 `ts_shim.py` 는 orch-cli 의 옛 이름 정리 PR(그 스펙의 DECISION13)이 지운다 | 스펙 DECISION14. 옛 이름을 끝내는 때는 orch-cli 스펙이 소유한다. 이 기능이 먼저 지우면 그 결정과 겹친다 |
 
-`.mjs` 와 확장자 없는 JS 는 타입 제거가 닿지 않는 진입에만 쓴다. 새 ADR 이 이 예외를 적고 `runtime-policy.spec.ts` 가 목록(`entry_js`) 밖의 `.js`, `.mjs`, `.cjs` 를 막는다. 이미 있는 JS(work-board 의 hooks 모듈, orch 가드 shim, 플러그인 `bin/orch`)는 PR1 이 그 목록에 적는다.
+JS(`.js`, `.mjs`, `.cjs`, 확장자 없는 JS)는 타입 제거가 닿지 않는 진입에만 쓴다. 새 ADR 이 이 예외를 적고 `runtime-policy.spec.ts` 가 목록(`entry_js`) 밖의 `.js`, `.mjs`, `.cjs` 를 막는다. 이미 있는 JS(work-board 의 hooks 모듈, orch 가드 shim, 플러그인 `bin/orch`)는 PR1 이 그 목록에 적는다.
 
 최소 Node 버전은 여러 진입이 각자 본다(`bin/orch` 의 `MIN_NODE`, 옛 이름 진입). 서로 import 할 수 없어(위 경계) 값의 원본은 `scripts/runtime-policy.json` 의 `min_node` 로 두고, `runtime-policy.spec.ts` 가 `const MIN_NODE = [<major>, <minor>]` 꼴의 줄을 모두 찾아 그 값과 같은지 본다. 지금 `bin/orch` 와 `ts_shim.py` 를 대조하는 `skills/orch/tests/orch-launcher.spec.ts` 의 사례는 `ts_shim.py` 가 지워질 때 이 검사로 넘어간다.
 
@@ -166,7 +166,7 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
   - `skills/orch/tests/legacy-entrypoints.spec.ts` 가 orch 의 `.py`, `.sh` 를 따로 막는다. `runtime-policy.spec.ts` 와 같은 사실을 둘이 갖게 되므로 PR1 이 이 파일을 지우고, `orch-doctor.py` 와 `ts_shim.py` 는 `pending` 의 `orch-legacy` 영역으로 둔다. 그 영역은 orch-cli 의 옛 이름 정리 PR 이 지운다.
 - 플러그인을 이행 중간에 갱신한 쪽은 그 커밋의 상태를 받는다. 각 커밋에서 호출과 파일이 맞으므로 따로 할 일이 없다.
 - 영역 PR 의 `호환성:` 항목은 그 스킬을 major 로 올린다(ADR-023). major 는 조각이 아니라 PR 이 `metadata.version` 과 CHANGELOG 를 직접 올린다. `tools/browser-driver` 는 버전이 없어 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17).
-- 같은 파일을 만지는 다른 기능: orch 구조 개편이 끝난 뒤 시작하므로(스펙 DECISION5) PR4 는 옮겨진 폴더의 경로를 쓴다. fos-test-speed 의 testkit 이 없으면 PR1 을 시작하지 않는다.
+- 같은 파일을 만지는 다른 기능: orch 구조 개편이 끝난 뒤 시작하므로(스펙 DECISION5) PR4 는 옮겨진 폴더의 경로를 쓴다. testkit 을 실제로 쓰는 것은 PR2 부터지만, 스펙 DECISION5 대로 PR1 도 testkit 과 orch 폴더 이동이 main 에 들어온 뒤 시작한다.
 
 ## 검증 전략
 
