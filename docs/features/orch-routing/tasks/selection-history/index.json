@@ -1,0 +1,43 @@
+{
+  "name": "selection-history",
+  "description": "선택 검사와 띄우기 이력",
+  "pr_scope": "설계 PR-B: 선택 검사, 실험 배정, 영구 이력과 재시도 경로",
+  "deferred": [
+    {
+      "what": "PR-C routing 기록",
+      "why": "설계가 후속 PR 로 분리했다",
+      "after": "PR-B 머지"
+    },
+    {
+      "what": "PR-D 보고 명령",
+      "why": "설계가 후속 PR 로 분리했다",
+      "after": "PR-B 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/orch-routing/spec.md",
+  "design": "docs/features/orch-routing/design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ1",
+    "REQ4",
+    "REQ6",
+    "REQ8"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ4",
+        "REQ6",
+        "REQ8"
+      ]
+    }
+  ]
+}
