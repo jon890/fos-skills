@@ -3,6 +3,11 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.17.0 (2026-11-06)
+
+- 5단계 검증에서 plan 의 `adr-docs.ts check --changed-since` 를 돌리고, PR 이 바꾼 파일의 위반만 고친다
+- 결과 보고에 「PR 밖 위반」 자리를 더했다
+
 ## 2.16.0 (2026-11-05)
 
 - 반복될 지적을 저장소 규칙 파일로 옮기지 않고 결과 보고에 후보로 적는다. 옮기는 일은 docs-consolidate 가 한다

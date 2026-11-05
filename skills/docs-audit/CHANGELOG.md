@@ -3,6 +3,12 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.2.0 (2026-11-06)
+
+- 깨진 링크·앵커와 ADR 색인 검사를 `static_check.py` 에서 빼고 2단계가 plan 의 `adr-docs.ts check --scope` 를 함께 부른다
+- `static_check.py` 의 첫 인자 `ADR_DIR` 은 받기만 하고 쓰지 않는다. 다음 major 에서 없앤다
+- ADR 폴더와 색인 생성 여부를 루트 plan 오버레이에서 읽는다
+
 ## 4.1.0 (2026-11-05)
 
 - ADR 감사에서 확정된 과거 맥락을 보존하고 기존 타입 누락을 오류로 보지 않는다.

@@ -1,3 +1,0 @@
-- 깨진 링크·앵커와 ADR 색인 검사를 `static_check.py` 에서 빼고 2단계가 plan 의 `adr-docs.ts check --scope` 를 함께 부른다
-- `static_check.py` 의 첫 인자 `ADR_DIR` 은 받기만 하고 쓰지 않는다. 다음 major 에서 없앤다
-- ADR 폴더와 색인 생성 여부를 루트 plan 오버레이에서 읽는다

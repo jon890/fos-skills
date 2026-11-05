@@ -5,6 +5,10 @@
 규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
 플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 6.0.0 (2026-11-06)
+
+- docs-audit 4.2.0, review-fix 2.17.0, spec 3.7.0, technical-design 1.6.0, plan 6.0.0 (#360)
+
 ## 5.14.0 (2026-11-06)
 
 - orch 7.16.0 (#359)
