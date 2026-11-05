@@ -2,9 +2,10 @@
 // 사용법: adopt-sessions.ts [--repo DIR] [--json] [--apply TERMINAL --run RUN [--spec FILE]]
 // 기본은 읽기만 한다. 사람의 셸도 목록에는 보이지만 apply 는 확인된 에이전트의 빈 입력 대기/오류/중단 화면에만 허용한다.
 // 읽기 전용 실행은 다시 띄울 worker 도 낸다. 명령은 안내만 하고 부르지 않는다.
-//   LIMITED <터미널>  살아 있는 dispatch 인데 화면이 사용 한도 안내에서 멈췄다(계정 전환 뒤 이전 계정의 worker). abandon, --retry-of 로 다시 띄우기, 옛 터미널 닫기
-//   RESTART          Task 가 ready 인데 마지막 dispatch 가 failed 다(재부팅). --retry-of 없이 다시 띄우기
-//   줄 아래 들여 쓴 줄이 차례로 부를 명령이다. --json 은 limited, restartable 목록으로 낸다
+//   LIMITED <터미널>  살아 있는 dispatch 인데 화면이 사용 한도 안내에서 멈췄다(계정 전환 뒤 이전 계정의 worker)
+//   RESTART          Task 가 ready 인데 마지막 dispatch 가 failed 이고 그 터미널이 열려 있지 않다(재부팅)
+//   줄 아래 들여 쓴 줄의 `orch worker resume --dispatch <id>` 를 부른다. 같은 워크트리에서 앞 세션을 resume 해 같은 Task 에 잇는다.
+//   --json 은 limited, restartable 목록으로 낸다
 // apply 는 모든 Run 과 현재 화면을 다시 읽고 worker-start --terminal --worktree 로 새 Task/dispatch 를 만든다.
 // --spec 은 그 브랜치의 지시서 후보여야 한다. 후보가 하나면 자동 선택하고, 없거나 여럿이면 명시하도록 거부한다.
 // CLI 에 재연결 기능이 없으면 임시 폴더에 이어받기 뼈대를 쓰고 수동 교체 방법만 안내한다. 닫거나 입력하지 않는다.
@@ -42,7 +43,7 @@ async function main(): Promise<number> {
         }
         for (const stuck of [...limited, ...restartable]) {
           const head = stuck.kind === 'limited' ? `LIMITED ${stuck.terminal}` : 'RESTART'
-          // 들여 쓴 줄은 차례로 부를 명령이라 짧은 출력에서도 판정 줄 뒤에 남긴다
+          // 들여 쓴 줄은 부를 명령이라 짧은 출력에서도 판정 줄 뒤에 남긴다
           emit([`${head} dispatch=${stuck.dispatch} task=${stuck.task} run=${stuck.run ?? '-'} branch=${stuck.branch}`, ...stuck.commands.map((c) => `  ${c}`)].join('\n'), [], { fix: true })
         }
       }

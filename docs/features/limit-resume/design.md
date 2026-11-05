@@ -16,7 +16,7 @@
 
 - **`lib/resume.ts`(새 파일)**: 세션 찾기, 실행 줄 만들기, 요청 폴더의 파일 형식과 잠금을 소유한다. 바깥 명령(orca, git, gh)을 부르지 않고 다른 orch lib 를 import 하지 않는다. 실행기가 새 터미널에서 가볍게 뜨고, 단위 테스트가 가짜 폴더만으로 돌게 하려는 것이다.
   - `claudeProjectDir(home, worktree)`: `<home>/projects/<실경로의 영숫자 밖 글자를 - 로 바꾼 이름>`. 실측: `/private/var/.../T/resume-spike-UT1n` 이 `-private-var-...-T-resume-spike-UT1n` 이 됐고 `_` 도 `-` 가 된다.
-  - `findClaudeSession(home, worktree, dispatch)`: 그 폴더의 `*.jsonl` 가운데 dispatch id 문자열이 든 파일을 고친 시각 내림차순으로 고른다. 세션 id 는 파일 이름이다.
+  - `findClaudeSession(home, worktree, dispatch)`: 그 폴더의 `*.jsonl` 가운데 dispatch id 문자열이 들고 기록의 `cwd` 가 그 워크트리(또는 그 아래)인 파일을 고친 시각 내림차순으로 고른다. 세션 id 는 파일 이름이다. 폴더 이름은 a-b 와 a/b 처럼 다른 워크트리가 겹칠 수 있어 `cwd` 로 한 번 더 대조한다(PR #359 리뷰).
   - `findCodexSession(home, worktree, dispatch)`: `<home>/state_5.sqlite` 의 `threads` 에서 `cwd` 가 워크트리 실경로인 행을 `updated_at` 내림차순으로 읽고, `rollout_path` 파일에 dispatch id 가 든 첫 행의 `id` 를 고른다. sqlite 는 Node 24 의 `node:sqlite` 를 읽기 전용으로 연다. DB 가 없거나 열지 못하거나 맞는 행이 없으면 `sessions/` 아래 최근 14일 날짜 폴더의 `rollout-*.jsonl` 첫 줄(`session_meta` 의 `cwd`, `id`)로 찾는다.
   - `claudeResumeArgv(session, launch, pluginDir)`: `claude --plugin-dir <pluginDir> --permission-mode auto --model <m> --effort <e> --resume <id>`.
   - `codexResumeArgv(session, launch, env)`: `codex resume <id> --no-daemon -c shell_environment_policy.set.ORCA_*=<터미널 자신의 값> -c check_for_update_on_startup=false -c disable_paste_burst=true --dangerously-bypass-approvals-and-sandbox -m <m> -c model_reasoning_effort=<e>`. ORCA_* 는 `ORCA_USER_DATA_PATH`, `ORCA_WORKSPACE_ID`, `ORCA_WORKTREE_ID`, `ORCA_PANE_KEY`, `ORCA_TERMINAL_HANDLE` 이고 실행기의 환경에서 읽는다.
@@ -71,12 +71,12 @@ orch worker resume --dispatch <옛 dispatch id> [--run <Run>] [--repo DIR] [--ti
 | 파일 | 쓰는 쪽 | 내용 |
 | --- | --- | --- |
 | `lock` | 코디네이터 | `O_EXCL` 로 만든다. `{ pid, startedAt, terminal }`(`terminal` 은 새 터미널을 연 뒤 채운다) |
-| `request.json` | 코디네이터 | `{ dispatch, worktree, agent, model, effort, pluginDir, goDeadline }` |
+| `request.json` | 코디네이터 | `{ dispatch, worktree, agent, model, effort, pluginDir, goDeadline, nonce }`. `nonce` 는 실행마다 새로 만든다 |
 | `found.json` | 실행기 | `{ ok: true, session, home, terminal }` 또는 `{ ok: false, reason }` |
-| `go` | 코디네이터 | 빈 파일. 옛 dispatch 정리를 마쳤다는 신호 |
+| `go` | 코디네이터 | 내용이 `request.json` 의 `nonce` 인 파일. 옛 dispatch 정리를 마쳤다는 신호다. 실행기는 자기 `nonce` 와 같을 때만 출발해, 앞 실행이 남긴 고아 실행기가 다음 실행의 신호로 함께 출발하지 않는다 |
 | `launch.sh` | 실행기 | `exec …` 한 줄 |
 
-잠금 판정: 명령 시작 때 `lock` 이 있으면, 그 `pid` 가 살아 있거나 `terminal` 이 `terminal list` 에 열려 있으면 앞 실행이 진행 중이거나 그 결과 터미널이 남은 것으로 보고 `RESUME-FAIL target` 을 낸다. 둘 다 아니면 옛 폴더를 지우고 새로 잡는다. 그래서 `link` 실패로 남은 터미널이 열려 있는 동안에는 같은 명령이 같은 세션에 두 번째 프로세스를 띄우지 않는다.
+잠금 판정: 명령 시작 때 `lock` 이 있으면, 그 `pid` 가 살아 있거나 `terminal` 이 `terminal list` 에 열려 있으면 앞 실행이 진행 중이거나 그 결과 터미널이 남은 것으로 보고 `RESUME-FAIL target` 을 낸다. 둘 다 아니면 옛 폴더를 비우고 새로 잡는다. 이 회수는 `reclaim` 파일을 `O_EXCL` 로 잡은 실행 하나만 하고, 잡은 뒤 잠금을 다시 읽어 판정한다. 두 실행이 같은 낡은 잠금을 읽고 차례로 지우면 뒤 실행이 앞 실행의 새 잠금까지 지워 같은 세션을 둘이 띄운다(PR #359 리뷰). 그래서 `link` 실패로 남은 터미널이 열려 있는 동안에는 같은 명령이 같은 세션에 두 번째 프로세스를 띄우지 않는다.
 
 ### 대상 판정
 
@@ -89,8 +89,8 @@ orch worker resume --dispatch <옛 dispatch id> [--run <Run>] [--repo DIR] [--ti
 | `settled` | dispatch 가 `abandoned`, 그 Task 의 마지막 dispatch, 그 dispatch 의 터미널이 열려 있지 않음 | 화면·abandon·닫기 건너뜀(스펙 DECISION12 의 다시 부르기) |
 | 거부 | 그 밖(정상 작업 중인 살아 있는 dispatch, 터미널이 열린 failed·abandoned dispatch, 구조화 worker, 더 새 dispatch 가 있음) | `RESUME-FAIL target` |
 
-에이전트, 모델, effort 는 `worker.startOptions.launch.effective` 다. 없으면 `requested`, 그것도 없으면 `RESUME-FAIL target`.
-`limited` 의 Claude worker 는 옛 터미널의 에이전트 프로세스 실행 줄(`ps`, 터미널 `processId` 의 자손 가운데 `claude`)에서 `--plugin-dir` 값을 읽어 `pluginDir` 로 넘긴다. 못 읽으면 비워 두고 실행기가 2단계 규칙으로 정한다.
+에이전트, 모델, effort 는 그 dispatch 의 `launched-workers` 기록에 적힌 값이 먼저다. 없으면 `worker.startOptions.launch.effective`, 그다음 `requested` 이고, 모두 없으면 `RESUME-FAIL target`. `worker-start --terminal` 로 이은 dispatch 는 Orca 가 실행 설정을 모르므로, resume 은 새 dispatch 의 기록에 옛 값을 옮겨 적는다. 그래야 한 worker 가 한도에 두 번 걸려도 다시 resume 할 수 있다(실제 Orca 검증 2026-11-06).
+`limited` 의 Claude worker 는 옛 터미널의 에이전트 프로세스 실행 줄에서 `--plugin-dir` 값을 읽어 `pluginDir` 로 넘긴다. Orca 의 `terminal show`, `terminal list` 에 프로세스 id 가 없어(Orca 1.4.247 실측) 자기 사용자의 프로세스를 `ps -E` 로 읽고, 환경의 `ORCA_TERMINAL_HANDLE` 이 옛 터미널인 `claude` 프로세스의 pid 만 고른다. 값은 그 pid 의 실행 줄을 환경 없이 다시 읽어 얻는다. 환경 문자열은 메모리에서 대조에만 쓰고 출력, 기록, 테스트 스냅숏에 남기지 않는다. 못 읽으면 비워 두고 실행기가 2단계 규칙으로 정한다.
 
 ## 호출과 상태
 

@@ -113,6 +113,8 @@ const ROWS: Row[] = [
     group: 'worker', verb: 'adopt', script: 'worker/adopt-sessions.ts', context: ['run', 'repo'], skip: (a) => (hasFlag(a, 'apply') ? [] : ['run']),
     legacy: { name: 'adopt-sessions', flags: [] }, usage: 'orch worker adopt [--apply <터미널>]',
   },
+  // Run 은 옛 dispatch 의 runId 를 쓴다. 문맥이 지금 Run 을 채우면 다른 Run 의 worker 를 엉뚱한 Run 으로 잇는다
+  { group: 'worker', verb: 'resume', script: 'worker/resume-worker.ts', context: ['repo'], usage: 'orch worker resume --dispatch <id>' },
   {
     group: 'worker', verb: 'worktree', script: 'worker/make-worktree.ts', positional: { flag: '--repo', repeat: false, context: 'repo' }, context: ['repo'], forbid: ['--check'],
     legacy: { name: 'make-worktree', flags: [] }, usage: 'orch worker worktree [<저장소>] --name <이름>',

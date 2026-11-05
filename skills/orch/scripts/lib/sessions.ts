@@ -50,7 +50,8 @@ export async function discoverSessions(repo: string): Promise<Session[]> {
 }
 
 // 다시 띄울 worker. limited 는 살아 있는 dispatch 인데 화면이 사용 한도 안내에서 멈춘 것, restart 는 Task 가 ready 인데
-// 마지막 dispatch 가 failed 인 것(재부팅으로 터미널과 루프가 사라진 경우)이다. commands 는 차례로 부를 명령이다
+// 마지막 dispatch 가 failed 이고 그 터미널이 열려 있지 않은 것(재부팅으로 터미널과 루프가 사라진 경우)이다.
+// commands 는 부를 명령 한 줄(`orch worker resume --dispatch <id>`)이다. 같은 워크트리에서 앞 세션을 resume 해 같은 Task 에 잇는다
 export type Stuck = {
   kind: 'limited' | 'restart'; terminal: string | null; dispatch: string; task: string; run: string | null
   worktree: string; branch: string; agent: string | null; model: string | null; commands: string[]
@@ -99,14 +100,17 @@ function provider(row: WorkerRow): { agent: string | null; model: string | null 
   return { agent: typeof found.id === 'string' ? found.id : null, model: typeof found.model === 'string' ? found.model : null }
 }
 
-function startCommand(task: string, worktree: string, retryOf: string | null, who: { agent: string | null; model: string | null }): string {
-  return ['orca', 'orchestration', 'worker-start', '--task', task, ...(retryOf ? ['--retry-of', retryOf] : []), '--worktree', `path:${worktree}`,
-    ...(who.agent ? ['--agent', who.agent] : []), ...(who.model ? ['--model', who.model] : []), '--json'].map(shQuote).join(' ')
+function resumeCommand(dispatch: string): string {
+  return `${orchWord()} worker resume --dispatch ${shQuote(dispatch)}`
+}
+
+function openTerminals(terminals: Json[]): Set<unknown> {
+  return new Set(terminals.filter((t) => t.connected !== false && t.status !== 'exited').map((t) => t.handle))
 }
 
 // 살아 있는 dispatch 가운데 화면이 한도 안내에서 멈춘 것. heartbeat 는 계속 와 대기로는 알 수 없다
 function limitedWorkers(workers: WorkerRow[], paths: Map<string, string>, terminals: Json[]): Stuck[] {
-  const open = new Set(terminals.filter((t) => t.connected !== false && t.status !== 'exited').map((t) => t.handle))
+  const open = openTerminals(terminals)
   const found: Stuck[] = []
   for (const row of workers) {
     if (!LIVE_DISPATCH.has(String(row.dispatchStatus)) || typeof row.dispatchId !== 'string' || typeof row.taskId !== 'string') continue
@@ -118,17 +122,14 @@ function limitedWorkers(workers: WorkerRow[], paths: Map<string, string>, termin
     if (!screen.ok || !limitedScreen(screenLines(screen.data))) continue
     const who = provider(row)
     found.push({ kind: 'limited', terminal, dispatch: row.dispatchId, task: row.taskId, run: typeof row.runId === 'string' ? row.runId : null, worktree, branch, ...who,
-      commands: [
-        ['orca', 'orchestration', 'worker-abandon', '--dispatch', row.dispatchId, '--json'].map(shQuote).join(' '),
-        startCommand(row.taskId, worktree, row.dispatchId, who),
-        ['orca', 'terminal', 'close', '--terminal', terminal].map(shQuote).join(' '),
-      ] })
+      commands: [resumeCommand(row.dispatchId)] })
   }
   return found
 }
 
-// Task 가 ready 인데 마지막 dispatch 가 failed 인 것. --retry-of 는 task_not_startable 로 거절되므로 없이 띄운다(references/launch.md 「끊긴 worker 다시 띄우기」)
-function restartable(workers: WorkerRow[], paths: Map<string, string>): Stuck[] {
+// Task 가 ready 인데 마지막 dispatch 가 failed 이고 그 터미널이 열려 있지 않은 것. 터미널이 열려 있으면 resume 한 세션과 겹치므로 내지 않는다
+function restartable(workers: WorkerRow[], paths: Map<string, string>, terminals: Json[]): Stuck[] {
+  const open = openTerminals(terminals)
   const live = new Set(workers.filter((row) => LIVE_DISPATCH.has(String(row.dispatchStatus))).map((row) => row.taskId))
   const failed = new Map<string, WorkerRow>()
   for (const row of workers) {
@@ -150,10 +151,11 @@ function restartable(workers: WorkerRow[], paths: Map<string, string>): Stuck[] 
     const dispatch = latest.ok ? ((latest.data?.dispatch ?? {}) as Json) : {}
     if (typeof dispatch.id !== 'string' || dispatch.status !== 'failed') continue
     const latestRow = workers.find((r) => r.dispatchId === dispatch.id) ?? row
+    if ([...rowHandles(latestRow)].some((handle) => open.has(handle))) continue
     const worktree = rowWorktree(latestRow) || rowWorktree(row)
     const who = provider(latestRow)
     found.push({ kind: 'restart', terminal: null, dispatch: dispatch.id, task, run, worktree, branch: paths.get(worktree) ?? '', ...who,
-      commands: [startCommand(task, worktree, null, who)] })
+      commands: [resumeCommand(dispatch.id)] })
   }
   return found
 }
@@ -184,7 +186,7 @@ export async function discoverAll(repo: string, recover = true): Promise<{ sessi
     })
   }
   if (!recover) return { sessions, limited: [], restartable: [] }
-  return { sessions, limited: limitedWorkers(workers, paths, terminals), restartable: restartable(workers, paths) }
+  return { sessions, limited: limitedWorkers(workers, paths, terminals), restartable: restartable(workers, paths, terminals) }
 }
 
 export function handover(session: Session, spec: string | null): string {

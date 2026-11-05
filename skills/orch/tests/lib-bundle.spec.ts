@@ -70,7 +70,16 @@ test('모든 직접 실행 스크립트가 공용 경고 모듈에 닿는다', (
     return [...source.matchAll(/^import\s+(?!type\b)(?:[^'"\n]*from\s*)?['"](\.[^'"]+)['"]/gm)]
       .some((m) => reaches(resolve(dirname(file), m[1]), visited))
   }
-  for (const name of readdirSync(SCRIPTS).filter((name) => name.endsWith('.ts'))) assert.ok(reaches(join(SCRIPTS, name)), name)
+  // 일부러 닿지 않는 스크립트와 이유
+  const exempt: Record<string, string> = {
+    'worker/resume-exec.ts': '새 터미널에서 lib/resume.ts 만으로 뜨는 실행기다. 경고 모듈과 orca 조회 없이 세션을 찾고 끝난다',
+  }
+  // 직접 실행 스크립트는 묶음 폴더 아래에 있다(lib, handlers 는 진입 스크립트가 아니다)
+  const groups = readdirSync(SCRIPTS, { withFileTypes: true }).filter((d) => d.isDirectory() && !['lib', 'handlers'].includes(d.name)).map((d) => d.name)
+  const names = groups.flatMap((group) => readdirSync(join(SCRIPTS, group)).filter((name) => name.endsWith('.ts')).map((name) => `${group}/${name}`))
+  assert.ok(names.length > 0)
+  for (const name of Object.keys(exempt)) assert.ok(names.includes(name), `예외 목록의 ${name} 이 없다`)
+  for (const name of names.filter((name) => !(name in exempt))) assert.ok(reaches(join(SCRIPTS, name)), name)
 })
 
 test('새 skills 배치의 직접 호출도 플러그인 루트와 현재 진입점을 대조한다', () => {

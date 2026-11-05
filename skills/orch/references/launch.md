@@ -196,12 +196,32 @@ orch worker adopt --apply "$TERMINAL"
 목록의 `SESSION <터미널> <화면 상태> <브랜치> specs=<지시서 후보>` 줄에서 지시서 후보를 확인한다(세션의 전체 기록은 `--full`). 후보가 없거나 여럿이면 `--spec` 으로 해당 브랜치의 지시서를 고른다. 사람의 셸과 작업·권한·초안 대기 화면은 자동으로 이어 붙이지 않는다. 원래 허락 범위와 막힌 결정을 먼저 확인한다.
 기본 실행은 다시 띄울 worker 도 낸다. 명령은 안내만 하고 부르지 않는다.
 
-- `LIMITED <터미널>`: 살아 있는 dispatch 인데 화면이 사용 한도 안내(`Usage limit reached`, `You've hit your ... limit`)에서 멈췄다. 계정을 바꾼 뒤 이전 계정의 worker 가 이렇게 남는다. heartbeat 는 계속 와 대기로는 알 수 없다. 아래 줄의 `worker-abandon`, `worker-start --retry-of`, `terminal close` 를 차례로 부른다
-- `RESTART`: Task 가 `ready` 인데 가장 최근 dispatch 가 `failed` 다. 아래 「끊긴 worker 다시 띄우기」 표의 셋째 줄이다
+- `LIMITED <터미널>`: 살아 있는 dispatch 인데 화면이 사용 한도 안내(`Usage limit reached`, `You've hit your ... limit`)에서 멈췄다. 계정을 바꾼 뒤 이전 계정의 worker 가 이렇게 남는다. heartbeat 는 계속 와 대기로는 알 수 없다. 아래 줄의 `orch worker resume` 을 부른다(아래 「한도나 재부팅으로 멈춘 worker 이어 가기」)
+- `RESTART`: Task 가 `ready` 인데 가장 최근 dispatch 가 `failed` 이고 그 터미널이 열려 있지 않다. 아래 줄의 `orch worker resume` 을 부른다
 
 명령이 `ADOPT-MANUAL` 을 내면 CLI 에 재연결 기능이 없는 것이다. 출력된 임시 이어받기 지시서를 검토하고, 사용자가 교체를 고른 뒤 같은 워크트리에 새 worker 를 띄운다. `ADOPT-ERROR` 면 잔여 자원과 실패 단계를 확인하고 자동으로 다시 띄우지 않는다.
 
+## 한도나 재부팅으로 멈춘 worker 이어 가기
+
+사용 한도나 재부팅으로 멈춘 worker 는 새 worker 를 띄우기 전에 같은 세션을 이어 간다.
+`orch worker resume` 은 같은 워크트리에 새 터미널을 열고 앞 세션을 `claude --resume` / `codex resume` 으로 다시 열어 같은 Task 에 잇는다.
+새 worker 는 앞 대화를 그대로 이어 가므로 재개 절을 쓰지 않는다. 지시서의 `worker 선택:` 도 바꾸지 않는다.
+
+```bash
+orch worker resume --dispatch "$DISPATCH_ID"
+```
+
+- 대상은 `orch worker adopt` 의 `LIMITED`, `RESTART` 줄과, 앞 실행이 정리한 뒤 실패해 `abandoned` 로 남은 그 Task 의 마지막 dispatch 다. 터미널이 열린 `failed`, `abandoned` dispatch 와 정상 작업 중인 worker 는 거부한다.
+- 한도라면 먼저 사용자에게 계정 전환을 요청하고, 바꾼 뒤 부른다. Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 이어지고, Codex 는 같은 계정에서만 이어진다([`agent-selection.md`](agent-selection.md) 「사용 한도에 걸렸을 때」).
+- 명령은 세션을 찾은 뒤에야 옛 dispatch 를 abandon 하고 옛 터미널을 닫는다. 기록을 찾지 못하면 옛 worker 를 건드리지 않고 끝난다.
+- 찾기와 에이전트 준비의 시한이 기본 100초이고, 그 뒤 같은 Task 에 잇는 호출이 붙는다. 대개 2분 안에 끝나지만 넘길 수 있으니 Bash 도구의 `timeout` 을 300000 으로 주고 전경으로 부른다. 중간에 끊겨도 잠금이 같은 세션의 두 번째 실행을 막는다.
+- 출력 줄과 단계별 종료 코드, `NEXT` 의 원본은 `scripts/worker/resume-worker.ts` 머리 주석이다. `RESUME-FAIL` 이 나면 같은 출력의 `NEXT` 를 따른다.
+- `RESUME-FAIL link` 뒤에는 `NEXT` 의 `worker-start --terminal` 한 줄만 부르고 같은 명령을 다시 부르지 않는다. 남은 터미널에 이미 resume 한 에이전트가 붙어 있어, 같은 명령은 한 세션에 두 번째 프로세스를 띄우려다 잠금으로 거부된다.
+- resume 이 실패했거나 제공자를 바꿔야 하면 아래 「끊긴 worker 다시 띄우기」 로 새 worker 를 띄우고 재개 절을 쓴다.
+
 ## 끊긴 worker 다시 띄우기
+
+같은 제공자로 이어 갈 수 있으면 먼저 위 「한도나 재부팅으로 멈춘 worker 이어 가기」 의 `orch worker resume` 을 쓴다. 이 절은 resume 이 실패했거나 제공자를 바꿀 때다.
 
 기기가 재시작되어 worker 터미널이 사라지면 `worker-show` 가 `[abandoned] stage=terminal_missing` 으로 보인다.
 `wait-important` 는 이때 `WORKER_LOST <dispatch> stage=terminal_missing` 줄을 내고 종료 코드 5 로 끝난다.
@@ -217,7 +237,7 @@ orch worker adopt --apply "$TERMINAL"
 | --- | --- | --- |
 | `failed` 또는 `blocked` | 가장 최근 settled dispatch 가 `agent_readiness` 같은 시작 실패 | `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID"` (위 「시작 직후 실패」) |
 | `ready` | `abandoned` (`terminal_missing`) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"` |
-| `ready` | 가장 최근 dispatch 가 `failed` (재부팅으로 터미널과 루프가 함께 사라졌다) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"`. `adopt-sessions` 가 `RESTART` 줄과 이 명령을 낸다 |
+| `ready` | 가장 최근 dispatch 가 `failed` (재부팅으로 터미널과 루프가 함께 사라졌다) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"`. `adopt-sessions` 는 이 경우 `RESTART` 줄과 `orch worker resume` 을 낸다. 이 명령은 resume 이 실패했을 때 쓴다 |
 | `dispatched` | 살아 있는 dispatch | 다시 띄우지 않는다. 같은 worker 에 `send-to-worker` 로 보낸다 |
 
 Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본다. 상태를 모르고 `--retry-of` 를 주면 `task_not_startable`(「--retry-of must name the latest settled Dispatch of a failed or blocked Task」)로 거절된다. 거절되면 표의 둘째 줄로 간다.

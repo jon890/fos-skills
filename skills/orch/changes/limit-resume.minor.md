@@ -1,0 +1,2 @@
+- `orch worker resume --dispatch <id>` 를 더했다. 사용 한도나 재부팅으로 멈춘 worker 를 같은 워크트리에서 `claude --resume` / `codex resume` 으로 다시 띄워 같은 Task 에 잇는다.
+- `orch worker adopt` 의 `LIMITED`, `RESTART` 아래 줄과 상주 루프의 `WORKER-LIMITED` 알림이 계정 전환 뒤 이 명령을 안내한다.
