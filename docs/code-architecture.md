@@ -11,7 +11,7 @@
 | --- | --- |
 | 플러그인에 담는다 | `.claude-plugin/plugin.json` 의 `skills` 배열에 등록한 스킬 |
 | 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
-| 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `scripts/`, `githooks/`, `docs/` |
+| 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `modules/`, `scripts/`, `githooks/`, `docs/` |
 | 플러그인이 싣는 훅 | `skills/orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 배열이 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
 | 플러그인이 싣는 mod | `extensions/work-board/hooks/hooks.json` 의 hooks 모듈. 작업 현황 창 `/board` 를 그린다. `hooks` 배열이 가리킨다([ADR-006](adr/006-work-board-in-plugin.md)) |
 | Codex 가 싣는 것 | `.codex-plugin/plugin.json` 의 `skills` 배열뿐이다. 훅과 mod 는 Claude Code 전용이라 싣지 않는다([ADR-007](adr/007-codex-manifest-without-hooks.md)) |
@@ -28,12 +28,14 @@
 | `export-only-skills/<이름>/` | 자동 로드하지 않는 팀 내보내기 원본 |
 | `extensions/work-board/` | 보드 확장 기능과 그 전용 훅·명령·테스트 |
 | `tools/` | 여러 스킬이 쓰는 공용 도구 |
+| `modules/` | 여러 영역의 테스트와 코드가 함께 쓰는 공용 모듈. 스킬이 아니다. 팀 저장소로 내보내지 않는다 |
 | `scripts/` | 이 저장소의 설치·검사·내보내기·버전 관리 |
 | `githooks/` | Git commit-msg 와 post-commit. Claude 훅이 아님 |
 | `docs/` | 이 저장소의 책임 문서와 결정 이력 |
 
 배치의 결정은 [ADR-020](adr/021-skill-directory-layout.md)이 소유한다. 스킬별 자산은 소유 스킬과 함께 이동한다.
 `skills/` 자동 탐색에 내보내기 전용 원본이 섞이지 않게 별도 루트로 둔다. 두 매니페스트의 설치 스킬 목록은 계속 일치시킨다.
+`modules/` 는 test-speed 스펙([`docs/features/test-speed/spec.md`](features/test-speed/spec.md)) DECISION7 이 정했다.
 
 ## 매니페스트
 
