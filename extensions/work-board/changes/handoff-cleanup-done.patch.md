@@ -1,0 +1,1 @@
+- 오늘 시작 요청문이 done 항목을 비우기 전에 `orch cleanup handoff --apply` 로 끝난 지시서를 먼저 정리하게 한다

@@ -1454,7 +1454,7 @@ function ago(at) {
 // 훅이 직접 보내는 prompt.submit 은 모델에 닿지 않아 쓰지 않는다
 export const START_PROMPT = [
   '오늘 작업을 시작하자.',
-  '1. .omc/board.json 을 오늘 기준으로 갱신하고 done 항목은 비워 줘.',
+  '1. 먼저 orch cleanup handoff --apply 로 끝난 지시서를 정리해 줘. 그다음 .omc/board.json 을 오늘 기준으로 갱신하고 done 항목은 비워 줘.',
   '2. 남은 워크트리, 세션, 머지된 브랜치 정리는 상주 루프의 cleanup-sweep 이 맡는다. 루프가 정리하지 못하고 남긴 것만 알려 줘.',
   '3. orch 상주 루프와 대기(wait-important)가 꺼져 있으면 다시 띄우고, 쌓인 worker 보고를 처리해 줘.',
   '4. 열린 PR 의 CI 와 리뷰, 막힌 것, 내가 정할 것을 짧게 보고하고 정할 것은 바로 물어봐 줘.',

@@ -8,8 +8,9 @@
 // 옮기는 것 (<orch> 는 orch 작업 폴더다. lib/paths.ts 의 orchDir 이 정한다):
 //     - <orch>/queue/*.out: QUEUE-DONE, STOP, FINISH-DONE, FINISH-FAIL 중 하나로 끝났고 --queue-days 일 넘게 지난 로그
 //     - <orch>/specs/spec-*.md: 아래가 모두 참인 지시서. spec-common.md 는 남긴다
-//         · 지시서의 `보드 항목 id: \`x\`` 항목이 보드에서 done 이다. 보드에 항목이 없거나 done 이 아니면
-//           아직 쓰는 지시서다(띄우기 전, PR 이 여럿인 일의 중간). 그 줄이 없는 지시서는 이 조건을 건너뛴다
+//         · 지시서의 `보드 항목 id: \`x\`` 항목이 보드에서 done 이다. 보드를 읽었고 항목이 done 이 아니면
+//           아직 쓰는 지시서다(띄우기 전, PR 이 여럿인 일의 중간). 보드를 읽지 못해도 남긴다. 보드에 항목이 없으면(done 을 먼저
+//           비운 경우) 지시서를 만든 뒤에 머지된 PR 이 있을 때만 끝난 것으로 본다(같은 브랜치 이름을 다시 쓴 새 지시서를 지키려는 것). 그 줄이 없는 지시서는 이 조건을 건너뛴다
 //           `**보드 항목 id**:` 처럼 굵은 꼴도 같은 줄로 본다. 브랜치 줄은 굵은 꼴을 받는데 이 줄만 놓치면 보드 조건 없이 옮긴다
 //         · 지시서의 `브랜치:` 가 원격과 워크트리에 없고 그 브랜치의 열린 PR 도 없다.
 //           `git ls-remote --exit-code` 의 2(그 이름의 브랜치가 없다)만 원격에 없다고 본다. 그 밖의 실패는 원격에 있다고 보고 남긴다
@@ -161,14 +162,15 @@ function queueLogFinished(text: string): boolean {
 }
 
 // 보드 JSON 에서 id 별 status. items 는 목록이나 id 로 묶은 객체다. 읽지 못하면 빈 Map 이다.
-function boardStatuses(boardText: string): Map<unknown, unknown> {
+function boardStatuses(boardText: string): Map<unknown, unknown> | null {
   const found = new Map<unknown, unknown>()
   let items: unknown
   try {
     items = (JSON.parse(boardText) as { items?: unknown }).items
   } catch {
-    return found
+    return null
   }
+  if (items === undefined) return null
   const rows = Array.isArray(items) ? items : typeof items === 'object' && items !== null ? Object.values(items) : []
   for (const row of rows) {
     if (typeof row === 'object' && row !== null && !Array.isArray(row) && Object.hasOwn(row, 'id')) {
@@ -182,15 +184,23 @@ function boardStatuses(boardText: string): Map<unknown, unknown> {
 // 지시서가 끝난 작업의 것인지. 살아 있는 dispatch 가 쓰는지는 여기서 보지 않는다. deleteSpecs 가 판정한다.
 function specFinished(
   text: string,
-  statuses: Map<unknown, unknown>,
+  statuses: Map<unknown, unknown> | null,
   openHeads: Set<string>,
   remoteHas: (branch: string) => boolean,
   worktreeHas: (branch: string) => boolean,
+  mergedHas: (branch: string, since: number) => boolean,
+  specMtime: number,
 ): boolean {
   const branch = branchesOf(text)[0]
   if (branch === undefined) return false
   const boardId = BOARD_ID_LINE.exec(text)
-  if (boardId && statuses.get(boardId[1]) !== 'done') return false
+  if (boardId) {
+    if (statuses === null) return false
+    const status = statuses.get(boardId[1])
+    if (status !== undefined && status !== 'done') return false
+    // 보드에 항목이 없으면 done 을 먼저 비운 것일 수도, 아직 띄우지 않은 것일 수도 있다. 머지된 PR 이 있어야 끝난 것으로 본다
+    if (status === undefined && !mergedHas(branch, specMtime)) return false
+  }
   if (openHeads.has(branch)) return false
   return !remoteHas(branch) && !worktreeHas(branch)
 }
@@ -367,9 +377,19 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
         // --exit-code 는 그 이름의 브랜치가 없을 때만 2 다. 네트워크나 인증 실패를 원격에 없다고 읽으면 쓰는 지시서를 옮긴다
         const remoteHas = (b: string) => runOut([gitBin(), 'ls-remote', '--exit-code', '--heads', 'origin', b], repo).code !== 2
         const worktreeHas = (b: string) => worktrees.includes(`[${b}]`)
+        // 읽지 못하면 머지되지 않은 것으로 본다. 쓰는 지시서를 옮기는 쪽보다 남기는 쪽이 안전하다
+        // 지시서를 만든 뒤에 머지된 PR 만 센다. 같은 브랜치 이름을 다시 쓴 새 지시서가 옛 PR 때문에 옮겨지지 않게 한다
+        const mergedHas = (b: string, since: number) => {
+          const got = ghJson<unknown>(['pr', 'list', '--state', 'merged', '--head', b, '--limit', '20', '--json', 'mergedAt'], { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
+          if (!got.ok || !Array.isArray(got.data)) return false
+          return got.data.some((row) => {
+            const at = Date.parse((row as { mergedAt?: unknown } | null)?.mergedAt as string)
+            return Number.isFinite(at) && at / 1000 > since
+          })
+        }
         for (const spec of judged) {
           const text = readFileSync(spec, 'utf8')
-          if (!specFinished(text, statuses, heads, remoteHas, worktreeHas)) continue
+          if (!specFinished(text, statuses, heads, remoteHas, worktreeHas, mergedHas, mtimeSec(spec))) continue
           finished.push(spec)
           if (args.run !== null) prBodies.set(spec, prBodiesOf(spec, text))
         }

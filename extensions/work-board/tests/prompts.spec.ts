@@ -10,7 +10,7 @@ import { START_PROMPT, DECIDE_PROMPT } from '../hooks/register.js'
 const read = (path: string) => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8')
 
 test('오늘 시작 요청문은 보드 갱신, 정리, 감시, 보고, 확인 단계 확인을 담는다', () => {
-  for (const text of ['done 항목은 비워', 'cleanup-sweep 이 맡는다', 'wait-important', '정할 것은 바로 물어봐', '확인 단계', '사람이 할 확인만']) {
+  for (const text of ['orch cleanup handoff --apply', 'done 항목은 비워', 'cleanup-sweep 이 맡는다', 'wait-important', '정할 것은 바로 물어봐', '확인 단계', '사람이 할 확인만']) {
     assert.ok(START_PROMPT.includes(text), text)
   }
 })
