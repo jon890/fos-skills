@@ -136,7 +136,10 @@ def runnable_test(rel):
     """
     if not is_test(rel):
         return False
-    name = rel.removeprefix("./").split("/")[-1]
+    parts = rel.removeprefix("./").rstrip("/").split("/")
+    if any(part == "fixtures" and TEST_DIRS.intersection(parts[:i]) for i, part in enumerate(parts)):
+        return False
+    name = parts[-1]
     if name in TEST_DIRS or is_glob(name):
         return True
     return Path(name).suffix in CODE_SUFFIXES and bool(TEST_NAME.search(name) or RUNNABLE_NAME.search(name))
@@ -1339,6 +1342,29 @@ def exclude_prefixes(exclude):
     return tuple(rel.rstrip("/") + "/" for rel in exclude if not Path(rel).suffix)
 
 
+def owns_call_name(file, name):
+    """TS/JS 는 export 한 이름만, 다른 언어는 기존 낱말 대조로 주인을 찾는다."""
+    source = file.read_text(encoding="utf-8", errors="ignore")
+    if file.suffix not in {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}:
+        return bool(re.search(rf"\b{re.escape(name)}\b", source))
+    # 주석과 문자열 속 export 예시는 공개 선언이 아니다. 템플릿 문자열도 함께 뺀다.
+    source = re.sub(r"//[^\n]*|/\*[\s\S]*?\*/|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`",
+                    " ", source)
+    identifier = r"[A-Za-z_$][\w$]*"
+    declarations = re.findall(
+        rf"\bexport\s+(?:default\s+)?(?:async\s+)?(?:function\s*\*?\s*|const\s+|let\s+|var\s+|class\s+)({identifier})",
+        source,
+    )
+    defaults = re.findall(rf"\bexport\s+default\s+({identifier})\s*(?=;|$)", source, re.M)
+    exported = set(declarations + defaults)
+    for listing in re.findall(r"\bexport\s*\{([^}]*)\}", source):
+        for item in listing.split(","):
+            match = re.fullmatch(rf"\s*({identifier})(?:\s+as\s+({identifier}))?\s*", item)
+            if match:
+                exported.add(match[2] or match[1])
+    return name in exported
+
+
 def check_callers(phase_entries, repo, tasks_dir, warnings):
     """수정하는 함수의 호출자가 plan 의 변경 파일에 빠졌는지 본다.
 
@@ -1357,8 +1383,7 @@ def check_callers(phase_entries, repo, tasks_dir, warnings):
                               if n not in COMMON_CALL_NAMES and len(n) >= MIN_CALL_NAME_LENGTH)
         too_common = []
         for name in names:
-            owners = [rel for rel in modified if (repo / rel).is_file()
-                      and re.search(rf"\b{re.escape(name)}\b", (repo / rel).read_text(encoding="utf-8", errors="ignore"))]
+            owners = [rel for rel in modified if (repo / rel).is_file() and owns_call_name(repo / rel, name)]
             if not owners:
                 continue
             callers = git_grep_files(repo, name, planned)

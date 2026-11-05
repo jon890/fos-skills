@@ -135,6 +135,50 @@ class TaskRulesTest(unittest.TestCase):
         verify.check_callers(phases, self.repo, "tasks", warnings)
         self.assertEqual(warnings, [])
 
+    def test_js_callers_require_an_exported_owner(self):
+        cases = (
+            ("function triage() {}", "triage", False),
+            ("const oneLine = () => '';", "oneLine", False),
+            ("export function triage() {}", "triage", True),
+            ("export async function triage() {}", "triage", True),
+            ("export const oneLine = () => '';", "oneLine", True),
+            ("function triage() {}\nexport { triage };", "triage", True),
+            ("export { localName as triage } from './other';", "triage", True),
+            ("export { triage as publicName };", "triage", False),
+            ("export default function triage() {}", "triage", True),
+            ("const triage = () => {};\nexport default triage;", "triage", True),
+            ("// export function triage() {}", "triage", False),
+            ('const text = "export function triage() {}";', "triage", False),
+        )
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        for suffix in ("ts", "tsx", "js", "jsx", "mjs", "cjs"):
+            for source, name, exported in cases:
+                with self.subTest(suffix=suffix, source=source):
+                    owner = f"src/repo.{suffix}"
+                    self.file(owner, source)
+                    self.file("src/api.js", f"{name}();\n")
+                    subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
+                    warnings = []
+                    verify.check_callers([(Path("phase.md"), f"`{name}()`", [(owner, "수정")])],
+                                         self.repo, "tasks", warnings)
+                    self.assertEqual(bool(warnings), exported, warnings)
+
+    def test_fixture_paths_and_globs_are_not_runnable(self):
+        for rel in ("skills/orch/tests/fixtures/**", "tests/fixtures/*", "./tests/fixtures/test_*.py",
+                    "tests/fixtures/test_sample.py", "tests/fixtures", "tests/fixtures/"):
+            with self.subTest(rel=rel):
+                self.assertFalse(verify.runnable_test(rel))
+        for rel in ("tests/test_*.py", "skills/orch/tests/*.spec.ts", "tests/**", "tests/test_sample.py",
+                    "src/fixtures/tests/test_sample.py"):
+            with self.subTest(rel=rel):
+                self.assertTrue(verify.runnable_test(rel))
+
+    def test_fixture_glob_does_not_need_a_separate_test_command(self):
+        entries = [("src/app.ts", "수정"), ("tests/fixtures/**", "수정"), ("tests/app.test.ts", "신규")]
+        work = "### 1. `tests/fixtures/**`\n### 2. `tests/app.test.ts`"
+        out = self.inspect(work, "node --test tests/app.test.ts", entries)
+        self.assertEqual(out, [])
+
     def test_common_call_name_is_not_reported_even_when_defined_in_modified_file(self):
         self.file("src/repo.py", "def print(x):\n    pass\n")
         self.file("src/api.py", "print(1)\n")
