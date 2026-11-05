@@ -12,9 +12,10 @@
 //        (resume 한 화면은 앞 대화의 한도 오류 줄이 다시 그려져 error 로 보일 수 있다)
 //     7. worker-start --task <T> --terminal <새> --worktree path:<W> --run <Run> 으로 같은 Task 에 잇는다.
 //        Task 가 failed, blocked 면 --retry-of <옛 dispatch> 를 붙인다
-//     8. launched-workers 기록을 쓰고 RESUMED 를 낸다. 요청 폴더를 지운다. 실패하면 진단을 위해 남긴다
+//     8. launched-workers 기록(실행 설정 agent, model, effort 포함)을 쓰고 RESUMED 를 낸다. 요청 폴더를 지운다. 실패하면 진단을 위해 남긴다
 // Run 은 옛 dispatch 의 runId 다. --run 을 주면 그 값과 같은지만 본다. 다른 Run 의 worker 를 지금 Run 으로 잇지 않는다.
 //
+// 실행 설정은 그 dispatch 의 launched-workers 기록(앞 resume 이 적은 것)을 먼저, 없으면 worker-show 의 launch.effective, requested 를 본다.
 // 대상 판정(worker-show, task-list, dispatch-show, terminal list):
 //     limited  살아 있는 dispatch, 터미널이 열려 있고 화면이 사용 한도 안내(lib/sessions.ts 의 limitedScreen)    1~8 전부
 //     restart  failed dispatch, Task 가 ready, 그 Task 의 마지막 dispatch, 그 터미널이 열려 있지 않음          화면·abandon·닫기 건너뜀
@@ -170,9 +171,11 @@ function judge(dispatchId: string, runFlag: string | undefined, repo: string): T
   const launch = obj(options.launch)
   const effective = obj(launch.effective)
   const requested = obj(launch.requested)
-  const agent = text(effective.agent) || text(requested.agent) || text(options.agent)
-  const model = text(effective.model) || text(requested.model)
-  const effort = text(effective.effort) || text(requested.effort) || null
+  // worker resume 이 `worker-start --terminal` 로 이은 dispatch 는 Orca 가 실행 설정을 모른다. 그때 적어 둔 기록을 먼저 본다
+  const recorded = readLaunch(repo, dispatchId)
+  const agent = recorded?.agent || text(effective.agent) || text(requested.agent) || text(options.agent)
+  const model = recorded?.model || text(effective.model) || text(requested.model)
+  const effort = (recorded?.agent ? recorded.effort : null) || text(effective.effort) || text(requested.effort) || null
   if (agent !== 'claude' && agent !== 'codex') throw targetFail(`에이전트 ${agent || '-'} 는 resume 대상이 아니다(claude, codex 만)`, 'references/launch.md 「끊긴 worker 다시 띄우기」')
   if (!model) throw targetFail('dispatch 의 launch 기록에 모델이 없다', 'references/launch.md 「끊긴 worker 다시 띄우기」')
   const worktreeId = text(worker.worktreeId) || text(options.resolvedWorktreeId)
@@ -365,7 +368,9 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     const branch = [...worktreePaths(repo)].find(([, path]) => real(path) === target.worktree)?.[0] ?? null
     const spec = readLaunch(repo, dispatchId)?.spec ?? null
     if (!spec) emit('RESUME-WARN spec 기록 없음')
-    recordLaunch(repo, { dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec })
+    // 실행 설정을 옮겨 적어 이 dispatch 가 다시 멈췄을 때도 resume 할 수 있게 한다
+    recordLaunch(repo, { dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec,
+      agent: target.agent, model: target.model, effort: target.effort })
   } catch (error) {
     emit(`RESUME-WARN launched-workers 기록을 쓰지 못했다: ${(error as Error).message}`)
   }

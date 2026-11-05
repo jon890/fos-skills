@@ -157,6 +157,8 @@ test('limited Claude: 새 터미널, abandon, 옛 터미널 닫기, 잇기 순�
   assert.ok(command.includes(process.execPath))
   const launch = readLaunch(repo, 'ctx_new')!
   assert.equal(launch.branch, 'feat/old'); assert.equal(launch.spec, '/specs/old.md'); assert.equal(launch.terminal, 'term_new')
+  // 다음 resume 이 쓸 실행 설정을 옮겨 적는다
+  assert.equal(launch.agent, 'claude'); assert.equal(launch.model, 'claude-haiku-5-5'); assert.equal(launch.effort, 'low')
   assert.ok(!existsSync(reqDir), '성공하면 요청 폴더를 지운다')
   // ps -E 의 환경 문자열은 출력과 요청 파일에 남지 않는다
   assert.doesNotMatch(r.stdout + r.stderr + JSON.stringify(order[0].request), /SECRET_TOKEN|HOME=\/h/)
@@ -173,6 +175,23 @@ test('limited Codex: 같은 흐름이고 pluginDir 이 null 이다. 앞 기록�
   assert.equal(create.request!.agent, 'codex'); assert.equal(create.request!.pluginDir, null)
   assert.match(r.stdout, /^RESUME-WARN spec 기록 없음$/m)
   assert.match(r.stdout, /^RESUMED ctx_new term_new sess-1$/m)
+})
+
+test('resume 으로 이은 dispatch 는 Orca 의 launch 가 비어도 기록의 실행 설정으로 다시 resume 한다', () => {
+  // worker-start --terminal 로 이은 dispatch 처럼 launch 와 agent 가 없다
+  setState((s) => {
+    s.dispatch.status = 'failed'; s.tasks[0].status = 'ready'; s.terminals = []
+    s.worker.startOptions = { mode: { mode: 'terminal' } }
+    s.newIdentity = 'codex'; s.newScreen = ['› ']
+  })
+  recordLaunch(repo, { dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: null,
+    agent: 'codex', model: 'gpt-6-luna', effort: 'high' })
+  const r = run()
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /agent=codex/)
+  const req = calls('terminal', 'create')[0].request!
+  assert.equal(req.model, 'gpt-6-luna'); assert.equal(req.effort, 'high')
+  assert.equal(readLaunch(repo, 'ctx_new')!.model, 'gpt-6-luna')
 })
 
 test('restart: 터미널 없는 failed dispatch 는 abandon 과 닫기 없이 잇고, 옛 터미널이 열려 있으면 거부한다', () => {

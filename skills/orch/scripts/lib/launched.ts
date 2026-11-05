@@ -4,7 +4,9 @@
 // 코디네이터가 띄운 터미널도 사람 터미널로 보고 워크트리를 남겼다. 띄운 쪽이 기록을 남기면 sweep 이 그 기록으로 구분한다.
 //
 // 위치: <orch 루트>/state/launched-workers/<dispatch>.json. dispatch 마다 파일 하나라 병렬로 띄워도 서로 덮지 않는다.
-// 내용: { dispatch, task, terminal, worktree, branch, run, spec, lint_ack }. task, terminal, branch, run, spec, lint_ack 은 모르면 null 이다. spec 은 그 dispatch 에 준 지시서의 절대경로다.
+// 내용: { dispatch, task, terminal, worktree, branch, run, spec, lint_ack, agent, model, effort }. worktree 밖은 모르면 null 이거나 없다. spec 은 그 dispatch 에 준 지시서의 절대경로다.
+// agent, model, effort 는 worker resume 이 `worker-start --terminal` 로 이은 dispatch 에 적는다. Orca 가 그 dispatch 의 실행 설정을 모르므로
+// 다음 resume 이 이 값으로 같은 에이전트를 다시 띄운다.
 // branch 는 워크트리와 지시서가 정리된 뒤에도 질문의 PR 종료를 확인할 때 쓴다. 옛 기록에는 없을 수 있다.
 // lint_ack 은 spec-lint 가 막을 발견을 냈는데 `--lint-ack` 으로 넘기고 띄운 이유다.
 // 다시 띄우기(--retry-of)와 `--terminal` 이어 쓰기는 새 dispatch 를 만들어 새 파일이 생긴다. send-to-worker 의 이어 쓰기도 launch-worker 를 부르므로 같다.
@@ -21,7 +23,10 @@ import { join } from 'node:path'
 import { realPath } from './fs.ts'
 import { ensure, pathOf } from './paths.ts'
 
-export type Launch = { branch?: string | null; dispatch: string; task?: string | null; terminal: string | null; worktree: string; run: string | null; spec?: string | null; lint_ack?: string | null }
+export type Launch = {
+  branch?: string | null; dispatch: string; task?: string | null; terminal: string | null; worktree: string; run: string | null; spec?: string | null; lint_ack?: string | null
+  agent?: string | null; model?: string | null; effort?: string | null
+}
 
 const DIR = 'launched-workers'
 
@@ -50,7 +55,7 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
     const v = data as Record<string, unknown>
     if (v.dispatch !== dispatch || typeof v.worktree !== 'string') return null
     const text = (x: unknown) => (typeof x === 'string' && x ? x : null)
-    return { dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack) }
+    return { dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort) }
   } catch {
     return null
   }
