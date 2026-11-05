@@ -114,7 +114,7 @@
 | `skills/docs-audit/SKILL.md` 3단계 「구조 무결성」 | 깨진 링크와 ADR 번호·INDEX 의 판정 출처를 `adr-docs.ts` 로 |
 | `skills/review-fix/SKILL.md` 5단계, `references/finish.md` 결과 보고 양식 | 검사 명령과 「PR 밖 위반」 자리 |
 | `skills/spec/SKILL.md` 4·5단계, `skills/technical-design/SKILL.md` 6단계 | `run_doc_checks.py` 옆에 검사 명령 |
-| `docs/features/node-runtime/tasks/repo-base/phase-02.md:76` | `check_adr_layout.py docs/adr --flat` 검증 줄을 `adr-docs.ts check` 로 |
+| `docs/features/node-runtime/tasks/repo-base/phase-02.md:76` | `check_adr_layout.py docs/adr --flat` 검증 줄을 `adr-docs.ts check` 로. 구현 때 그 계획이 이미 지워져(PR 358) 대상이 없었다 |
 | `docs/features/node-runtime/spec.md` 「선행 조건과 순서」 | 영역 3·7 의 옮길 목록에서 지운 검사기를 뺀다는 한 줄(스펙 DECISION7) |
 | `docs/code-architecture.md` | plan 번들 `scripts/` 의 `.ts` 가 생긴 것과 `tsconfig.json` 범위 |
 | `tsconfig.json` `include` | `skills/plan/scripts/**/*.ts` 를 더한다(node-runtime 설계의 「처음 `.ts` 를 들이는 PR 이 더한다」) |
