@@ -2,14 +2,15 @@
 // 저장소의 node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌고 결과를 파일에 남긴다.
 //
 // 왜 필요한가:
-//   두 언어와 tsc 를 명령 하나로 돈다. 묶음 목록과 TypeScript 버전의 원본이다. CI 와 로컬 검증이 이 명령 하나를 부른다.
+//   두 언어와 tsc 를 명령 하나로 돈다. 묶음 목록과 TypeScript 버전의 원본이다. CI 와 로컬 검증은 테스트와 tsc 를
+//   이 명령 하나로 돈다(`claude plugin test .` 는 따로 부른다).
 //   결과 폴더에 요약을 남기므로 백그라운드로 띄우고 --wait 로 끝 줄을 나눠 기다릴 수 있다.
 //
 // 묶음 (인자가 없을 때)
 //   git 이 추적하거나 무시하지 않는 파일 가운데 tests/ 아래 *.spec.ts 를 `node --test` 한 번으로 돌고,
 //   tests/test_*.py 를 가진 tests 폴더마다 `python3 -m unittest discover -s <폴더>` 를 돈다. tsc 도 함께 돈다.
 //   인자를 주면 그 파일이나 glob, 폴더만 돈다(tsc 는 돌지 않는다). test_*.py 파일이나 그것을 바로 가진 폴더는
-//   Python 묶음, 그 밖의 폴더는 그 아래 *.spec.ts, 나머지 파일은 node 파일이다.
+//   Python 묶음만 돈다(그 폴더의 *.spec.ts 는 파일로 따로 준다). 그 밖의 폴더는 그 아래 *.spec.ts, 나머지 파일은 node 파일이다.
 //
 // tsc:
 //   node 는 타입을 지우기만 해서 잘못된 속성 접근이 실행 때까지 드러나지 않는다. 저장소에 package.json 과
@@ -25,7 +26,8 @@
 // 옵션
 //   --concurrency N   node --test 의 동시 파일 수. Python 묶음은 ceil(N/2) 개씩 함께 돈다 (기본 4)
 //   --timeout SEC     node 테스트 하나의 제한(--test-timeout), node 단계의 무진행 감시, Python 묶음 하나와
-//                     tsc 의 제한 (기본 600). 넘으면 그 프로세스 그룹을 통째로 끝내고 실패로 센다
+//                     tsc 의 제한 (기본 600). 넘으면 그 프로세스 그룹을 통째로 끝내고 실패로 센다.
+//                     node 단계는 파일 완료 보고가 SEC 초 동안 없을 때 끊고, 보고가 없는 파일을 모두 시간 초과로 센다
 //   --out DIR         결과 폴더 (기본: 임시 폴더 아래 새 폴더)
 //   --max-wait SEC    --wait 가 기다릴 최대 시간 (기본 540, Bash 도구의 600초 안)
 //
@@ -36,7 +38,8 @@
 // 종료 코드
 //   0  모두 통과했다 (--background 는 띄우는 데 성공했다)
 //   1  실패한 것이 있다
-//   2  실행하지 못했다. 인자 오류, 대상 없음, 인자 없이 git 저장소 밖, 결과 폴더 없음, 실행기가 끝 줄 없이 멈췄다
+//   2  실행하지 못했다. 인자 오류, 대상 없음, 인자 없이 git 저장소 밖, 결과 폴더 없음, 실행기가 끝 줄 없이 멈췄다,
+//      SIGINT·SIGTERM 으로 중단됐다
 //   3  --wait 가 최대 시간까지 끝 줄을 보지 못했다. 같은 명령으로 다시 기다린다
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -69,6 +72,9 @@ const SUMMARY = "summary.txt";
 const PID_FILE = "runner.pid";
 const REPORTER = fileURLToPath(new URL("./run-tests-reporter.ts", import.meta.url));
 const PY_TEST = /^test_.*\.py$/;
+
+// 띄운 단계들. 신호나 예외로 끝날 때 그룹을 모두 정리한다.
+const running = new Set<ChildProcess>();
 
 type Options = { concurrency: number; timeout: number; out?: string; maxWait: number; background: boolean; wait?: string; patterns: string[] };
 export type Targets = { node: string[]; python: string[]; tsc: boolean };
@@ -140,10 +146,10 @@ export function expand(patterns: string[], cwd: string): Targets {
   const node = new Set<string>();
   const python = new Set<string>();
   for (const pattern of patterns) {
-    const found = /[*?[]/.test(pattern) ? globSync(pattern, { cwd }) : existsSync(join(cwd, pattern)) ? [pattern] : [];
+    const found = /[*?[]/.test(pattern) ? globSync(pattern, { cwd }) : existsSync(resolve(cwd, pattern)) ? [pattern] : [];
     for (const raw of found) {
       const item = clean(raw);
-      const full = join(cwd, item);
+      const full = resolve(cwd, item);
       if (isDir(full)) {
         if (hasPythonTests(full)) python.add(item);
         else for (const file of globSync("**/*.spec.ts", { cwd: full })) node.add(join(item, file));
@@ -219,6 +225,24 @@ function why(exit: Exit) {
   return exit.timedOut ? "시간 초과" : exit.signal ? `신호 ${exit.signal}` : `종료 코드 ${exit.code}`;
 }
 
+export type Line = { ok: false; name: string; why: string };
+
+// 대조: 보고가 없는 파일은 끊긴 것이다. 끊긴 실행이 끝 줄에서 실패 0 으로 읽히지 않게 한다.
+// 감시가 끊었으면 시간 초과, 아니면 보고 없음이다. 종료 코드가 0 이 아닌데 실패가 하나도 없으면 단계 줄을 더한다.
+export function reconcile(
+  files: string[],
+  reported: Set<string>,
+  failures: number,
+  exit: { code: number | null; signal: string | null },
+  stalled: boolean,
+): Line[] {
+  const lines: Line[] = files.filter((file) => !reported.has(file)).map((name) => ({ ok: false, name, why: stalled ? "시간 초과" : "보고 없음" }));
+  if (exit.code !== 0 && failures + lines.length === 0) {
+    lines.push({ ok: false, name: "node 단계", why: exit.signal ? `신호 ${exit.signal}` : `종료 코드 ${exit.code}` });
+  }
+  return lines;
+}
+
 async function nodePhase(r: Runner, files: string[], concurrency: number) {
   const log = join(r.out, "node.log");
   writeFileSync(log, "");
@@ -242,11 +266,13 @@ async function nodePhase(r: Runner, files: string[], concurrency: number) {
   const reported = new Set<string>();
   let failures = 0;
   let stalled = false;
+  let exited = false;
   let timer: NodeJS.Timeout;
   // 무진행 감시: 파일 완료 사건이 --timeout 초 동안 오지 않으면 그룹을 끝낸다.
   // stdio 를 쥔 손자 프로세스가 남으면 --test-timeout 으로도 node --test 가 끝나지 않는다.
   const arm = () => {
     clearTimeout(timer);
+    if (exited) return;
     timer = setTimeout(() => {
       stalled = true;
       killGroup(child);
@@ -259,6 +285,9 @@ async function nodePhase(r: Runner, files: string[], concurrency: number) {
     try {
       event = JSON.parse(line);
     } catch {
+      event = null as any;
+    }
+    if (!event || typeof event !== "object") {
       appendFileSync(log, line + "\n");
       return;
     }
@@ -279,6 +308,7 @@ async function nodePhase(r: Runner, files: string[], concurrency: number) {
     child.on("error", () => done({ code: null, signal: null }));
     child.on("exit", (code, signal) => done({ code, signal }));
   });
+  exited = true;
   clearTimeout(timer!);
   // 손자 프로세스가 stdout 을 쥐고 있으면 끝나지 않으므로 그룹을 정리하고 남은 줄을 읽는다.
   killGroup(child);
@@ -295,13 +325,7 @@ async function nodePhase(r: Runner, files: string[], concurrency: number) {
   });
   r.running.delete(child);
   closeSync(fd);
-  // 대조: 보고가 없는 파일은 끊긴 것이다. 끊긴 실행이 끝 줄에서 실패 0 으로 읽히지 않게 한다.
-  for (const file of files) {
-    if (reported.has(file)) continue;
-    failures++;
-    r.record(false, file, 0, stalled ? "시간 초과" : "보고 없음", log);
-  }
-  if (exit.code !== 0 && failures === 0) r.record(false, "node 단계", 0, exit.signal ? `신호 ${exit.signal}` : `종료 코드 ${exit.code}`, log);
+  for (const line of reconcile(files, reported, failures, exit, stalled)) r.record(false, line.name, 0, line.why, log);
 }
 
 async function pythonPhase(r: Runner, suites: string[], concurrency: number) {
@@ -357,8 +381,8 @@ async function tscPhase(r: Runner) {
   const started = Date.now();
   const dir = tscDir();
   const bin = (root: string) => join(root, "node_modules", ".bin", "tsc");
+  sweepStaleInstalls(dir);
   if (!existsSync(bin(dir))) {
-    sweepStaleInstalls(dir);
     const tmp = `${dir}.tmp-${process.pid}`;
     rmSync(tmp, { recursive: true, force: true });
     mkdirSync(tmp, { recursive: true });
@@ -373,7 +397,7 @@ async function tscPhase(r: Runner) {
       renameSync(tmp, dir);
     } catch {
       rmSync(tmp, { recursive: true, force: true });
-      if (!existsSync(bin(dir))) return r.record(false, "tsc", seconds(started), `TypeScript 설치 폴더를 옮기지 못했다: ${dir}`, log);
+      if (!existsSync(bin(dir))) return r.record(false, "tsc", seconds(started), `TypeScript 설치 폴더를 옮기지 못했다. ${dir} 를 지우고 다시 돌린다`, log);
     }
   }
   const exit = await runGroup(r, bin(dir), ["-p", "tsconfig.json", "--typeRoots", join(dir, "node_modules", "@types")], log);
@@ -407,7 +431,6 @@ async function run(opts: Options, cwd: string): Promise<number> {
     `결과 폴더: ${out} (node 파일 ${targets.node.length}개, Python 묶음 ${targets.python.length}개${targets.tsc ? ", tsc" : ""}, 동시 ${opts.concurrency}개)`,
   );
 
-  const running = new Set<ChildProcess>();
   const stop = () => {
     for (const child of running) killGroup(child);
     process.exit(2);
@@ -452,6 +475,13 @@ export async function wait(dir: string, maxWait: number, pollMs = 2000): Promise
     }
     const pid = Number(existsSync(join(dir, PID_FILE)) ? readFileSync(join(dir, PID_FILE), "utf8") : NaN);
     if (Number.isInteger(pid) && !alive(pid)) {
+      // 요약을 읽은 뒤 실행기가 끝 줄을 쓰고 끝났을 수 있다. 한 번 더 읽는다.
+      const again = readFileSync(summary, "utf8").split("\n").filter(Boolean);
+      const late = again.find((line) => line.startsWith(END_PREFIX));
+      if (late) {
+        console.log(again.join("\n"));
+        return / 실패 0,/.test(late) ? 0 : 1;
+      }
       console.log(lines.join("\n"));
       console.error(`실행기(pid ${pid})가 끝 줄 없이 멈췄다. 로그: ${join(dir, "runner.log")}`);
       return 2;
@@ -499,5 +529,12 @@ async function main(argv: string[]): Promise<number> {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv.slice(2)).then((code) => process.exit(code));
+  main(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (error) => {
+      for (const child of running) killGroup(child);
+      console.error(`실행기가 멈췄다: ${(error as Error).stack ?? error}`);
+      process.exit(2);
+    },
+  );
 }

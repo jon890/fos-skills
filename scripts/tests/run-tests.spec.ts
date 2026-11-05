@@ -8,9 +8,9 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { reconcile } from "../run-tests.ts";
 
 const RUNNER = fileURLToPath(new URL("../run-tests.ts", import.meta.url));
-const NODE_DIR = dirname(process.execPath);
 
 const PASS = "import test from 'node:test';\ntest('ok', () => {});\n";
 const FAIL = "import test from 'node:test';\nimport assert from 'node:assert';\ntest('no', () => { assert.equal(1, 2); });\n";
@@ -150,12 +150,15 @@ describe("run-tests", { concurrency: true }, () => {
     write(root, "x/tests/a.spec.ts", PASS);
     write(root, "x/tests/deep/b.spec.ts", PASS);
     write(root, "y/tests/test_ok.py", PY_OK);
-    const done = await runner(root, ["x/tests/", "y/tests"]);
+    write(root, "z/one.spec.mjs", PASS);
+    const done = await runner(root, ["x/tests/", "y/tests", join(root, "z/one.spec.mjs")]);
     assert.equal(done.code, 0, done.out + done.err);
     assert.match(done.out, /^통과 x\/tests\/a\.spec\.ts /m);
     assert.match(done.out, /^통과 x\/tests\/deep\/b\.spec\.ts /m);
     assert.match(done.out, /^통과 y\/tests /m);
-    assert.match(done.out, /^결과: 통과 3, 실패 0, 전체 3, /m);
+    const absolute = join(root, "z/one.spec.mjs");
+    assert.ok(done.out.split("\n").some((line) => line.startsWith(`통과 ${absolute} `)), done.out);
+    assert.match(done.out, /^결과: 통과 4, 실패 0, 전체 4, /m);
   });
 
   test("process.exit 로 끝나는 파일과 그룹에 신호를 보내 끊긴 실행은 실패 0 이 아니다", async () => {
@@ -185,7 +188,8 @@ describe("run-tests", { concurrency: true }, () => {
     write(root, "b/tests/test_ok.py", PY_OK);
     write(root, "e/tests/test_ok.py", PY_OK);
     write(root, "f/tests/test_ok.py", PY_OK);
-    const done = await runner(root, ["--concurrency", "2", "b/tests", "e/tests", "f/tests"], { PATH: NODE_DIR });
+    // 실행기는 node 를 process.execPath 로 띄우고 인자 모드는 git 이 필요 없어 빈 PATH 로 돈다.
+    const done = await runner(root, ["--concurrency", "2", "b/tests", "e/tests", "f/tests"], { PATH: tempDir("run-tests-bin-") });
     assert.equal(done.code, 1, done.out + done.err);
     for (const suite of ["b", "e", "f"]) assert.match(done.out, new RegExp(`^실패 ${suite}/tests 0\\.0s \\(python3 가 없다\\)`, "m"));
   });
@@ -262,5 +266,25 @@ describe("run-tests", { concurrency: true }, () => {
     const done = await runner(root, ["t/a.spec.mjs"], { NODE_TEST_CONTEXT: "child-v8" });
     assert.equal(done.code, 0, done.out + done.err);
     assert.match(done.out, /^통과 t\/a\.spec\.mjs [\d.]+s$/m);
+  });
+});
+
+describe("reconcile", () => {
+  const files = ["a.spec.ts", "b.spec.ts"];
+
+  test("보고가 없는 파일은 보고 없음, 감시가 끊었으면 시간 초과다", () => {
+    assert.deepEqual(reconcile(files, new Set(["a.spec.ts"]), 0, { code: 1, signal: null }, false), [{ ok: false, name: "b.spec.ts", why: "보고 없음" }]);
+    assert.deepEqual(reconcile(files, new Set(), 0, { code: null, signal: "SIGKILL" }, true), [
+      { ok: false, name: "a.spec.ts", why: "시간 초과" },
+      { ok: false, name: "b.spec.ts", why: "시간 초과" },
+    ]);
+  });
+
+  test("모두 보고됐는데 종료 코드가 0 이 아니고 실패가 없으면 node 단계 줄을 더한다", () => {
+    const all = new Set(files);
+    assert.deepEqual(reconcile(files, all, 0, { code: 7, signal: null }, false), [{ ok: false, name: "node 단계", why: "종료 코드 7" }]);
+    assert.deepEqual(reconcile(files, all, 0, { code: null, signal: "SIGTERM" }, false), [{ ok: false, name: "node 단계", why: "신호 SIGTERM" }]);
+    assert.deepEqual(reconcile(files, all, 1, { code: 1, signal: null }, false), []);
+    assert.deepEqual(reconcile(files, all, 0, { code: 0, signal: null }, false), []);
   });
 });
