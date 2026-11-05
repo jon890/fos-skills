@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.15.0 (2026-11-06)
+
+- 진입 스크립트를 명령 묶음과 같은 `scripts/<묶음>/` 폴더로 옮겼다(`queue/merge_queue.ts` 꼴). `orch` 명령과 옛 꼴 이름은 그대로다.
+- `orch-doctor.py` 와 `ts_shim.py` 는 `scripts/` 바로 아래에 남는다.
+- `$ORCH_SCRIPTS/<이름>.ts`, 핸들러의 `join(ORCH_SCRIPTS, '<이름>.ts')` 처럼 파일 경로로 부르던 곳은 이제 파일이 없다.
+- 핸들러는 `node "$ORCH_BIN" <묶음> <동작>` 으로 부른다. `orch doctor` 가 직접 경로를 `DIRECT-PATH` 와 새 꼴 한 줄로 알린다.
+- 저장소 체크아웃에서 띄워 둔 상주 루프는 이 변경을 받은 뒤 다시 띄운다.
+
 ## 7.14.2 (2026-11-05)
 
 - 미해결 리뷰 스레드와 검사 뒤 HEAD 변경으로 보류한 PR 을 정리 전에 한 번 다시 판정한다. 재판정의 CI 대기는 PR 마다 최대 5분이며, 더 짧은 `--check-timeout` 을 우선한다.
