@@ -148,9 +148,9 @@ test('열린 PR 에 작성자를 붙이고, a 로 한 작성자의 PR 만 거른
     { number: 7, title: '하나', headRefName: 'x', author: { login: 'bifos' }, statusCheckRollup: [] },
     { number: 8, title: '둘', headRefName: 'y', author: { login: 'kim' }, statusCheckRollup: [] },
   ])
-  await start($, on, (argv) => argv[0] === 'gh' && argv[1] === 'pr'
+  await start($, on, (argv) => String(argv[2]).endsWith('/github.ts') && argv[3] === 'prs'
     ? { exitCode: 0, stdout: list, stderr: '' }
-    : argv[0] === 'gh' && argv[1] === 'repo'
+    : String(argv[2]).endsWith('/github.ts') && argv[3] === 'url'
       ? { exitCode: 0, stdout: 'https://github.com/o/r\n', stderr: '' }
       : { exitCode: 1, stdout: '', stderr: '없음' })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -180,7 +180,7 @@ test('업무 주소가 있으면 제목의 업무 번호에, 저장소 주소를
     { id: 't', title: '#342 감지상황 잇기', status: 'wait', pr: 877, task },
     { id: 'n', title: '#343 주소 없는 업무', status: 'wait' },
   ] })
-  const repo = (argv) => argv[0] === 'gh' && argv[1] === 'repo'
+  const repo = (argv) => String(argv[2]).endsWith('/github.ts') && argv[3] === 'url'
     ? { exitCode: 0, stdout: 'https://github.com/o/r\n', stderr: '' }
     : { exitCode: 1, stdout: '', stderr: '없음' }
   await start($, on, repo, board)
@@ -710,7 +710,7 @@ test('큐를 쓰는 저장소에서 열린 PR 아래에 머지 줄을 붙이고,
   const calls = []
   await start($, on, (argv) => {
     calls.push(argv)
-    if (argv[0] === 'gh' && argv[1] === 'pr') return { exitCode: 0, stdout: list, stderr: '' }
+    if (String(argv[2]).endsWith('/github.ts') && argv[3] === 'prs') return { exitCode: 0, stdout: list, stderr: '' }
     if (argv[0] === 'node' && String(argv[2]).endsWith('/work-board/bin/merge-queue.ts')) return { exitCode: 0, stdout: queue, stderr: '' }
     return { exitCode: 1, stdout: '', stderr: '없음' }
   }, board)
@@ -729,10 +729,10 @@ test('큐를 쓰는 저장소에서 열린 PR 아래에 머지 줄을 붙이고,
   expect(await lineOf(6)).toBeNull()
   expect(await ui.find({ type: 'Box', key: 'live-queue' })).toBeFalsy()
   expect(await ui.find({ type: 'Text', text: /#8 큐|큐 상태 모름/ })).toBeFalsy()
-  // 머지 줄은 gh 를 부르지 않는다. gh 는 읽기마다 열린 PR 목록과 저장소 주소만 부른다
-  expect(calls.filter((argv) => argv[0] === 'gh' && !(argv[1] === 'pr' && argv[2] === 'list') && argv[1] !== 'repo')).toEqual([])
-  expect(calls.filter((argv) => argv[0] === 'gh' && argv[1] === 'pr').length)
-    .toBe(calls.filter((argv) => String(argv[2]).endsWith('merge-queue.ts')).length)
+  // 머지 줄은 gh 를 부르지 않는다. PR 은 별도 주기로 orch 공유 캐시를 읽는다.
+  expect(calls.filter((argv) => argv[0] === 'gh')).toEqual([])
+  expect(calls.filter((argv) => String(argv[2]).endsWith('/github.ts') && argv[3] === 'prs').length)
+    .toBeGreaterThan(0)
   expect(calls.find((argv) => String(argv[2]).endsWith('merge-queue.ts'))).toEqual(
     ['node', '--disable-warning=ExperimentalWarning', expect.stringContaining('merge-queue.ts'), '--repo', '/repo'])
   await ui.unmount()
@@ -742,7 +742,7 @@ for (const [name, queue] of [['큐를 쓰지 않는 저장소', JSON.stringify({
   test(name + '는 열린 PR 상자에 큐에 관한 말이 없다', async ($, on) => {
     const list = JSON.stringify([{ number: 7, title: '하나', headRefName: 'x', author: { login: 'bifos' }, statusCheckRollup: [] }])
     await start($, on, (argv) => {
-      if (argv[0] === 'gh' && argv[1] === 'pr') return { exitCode: 0, stdout: list, stderr: '' }
+      if (String(argv[2]).endsWith('/github.ts') && argv[3] === 'prs') return { exitCode: 0, stdout: list, stderr: '' }
       if (queue && argv[0] === 'node' && String(argv[2]).endsWith('/work-board/bin/merge-queue.ts')) return { exitCode: 0, stdout: queue, stderr: '' }
       return { exitCode: 1, stdout: '', stderr: '없음' }
     })
