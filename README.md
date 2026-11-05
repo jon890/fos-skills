@@ -291,6 +291,7 @@ orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여�
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정해요. 커밋을 고르는 `--source-ref` 는 머리 주석에 있어요 |
 | `scripts/install-hooks.sh` | `githooks/` 의 훅을 `.git/hooks` 에 걸어요. `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
 | `scripts/run-tests.ts` | node, Python 테스트와 tsc 를 함께 돌고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
+| `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용한 JS 진입을 `scripts/runtime-policy.json` 과 대조해 새 파일을 막아요. 새 스크립트는 TypeScript 로 써요([ADR-025](docs/adr/025-script-runtime-typescript.md)) |
 | `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾아요. 셸에 따라 죽는 이식성 결함이에요 |
 | `scripts/check-skill-docs.py` | 스킬 README 와 CHANGELOG, 변경 이력 조각이 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
@@ -307,7 +308,7 @@ PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않아요.
-나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
+나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. 저장소 전체의 `tests/` 아래 node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌아요. 새 테스트 폴더를 더해도 CI 를 고치지 않아요. CI 의 `Tests` job 도 같은 명령을 불러요.
 `claude plugin test .` 는 이 명령에 들지 않으니 따로 돌려요.
 한 파일이나 폴더만 돌릴 때는 `node scripts/run-tests.ts skills/mac-cleanup/tests` 처럼 인자로 줘요. 인자를 주면 tsc 는 돌지 않아요.
 `test_*.py` 가 있는 폴더를 주면 Python 묶음만 돌아요. 그 폴더의 `*.spec.ts` 는 파일 경로로 따로 줘요.
