@@ -8,10 +8,10 @@
 | --- | --- | --- |
 | REQ1 | `lib/spec.ts` 의 `selectionsOf` 가 `high 근거:` 조각을 읽는다. 판정은 새 공용 함수 `selectionVerdict`(`lib/selection.ts`) 하나가 한다. Opus 에 `high`, `xhigh`, `max` 면 근거를 요구하고, `medium 실패 <dispatch>` 는 띄우기 이력(`lib/launch-history.ts`)에서 그 dispatch 가 Opus `medium` 인지 대조한다. `spec-lint` 의 `선택` 발견과 `launch-worker` 의 차례 0(`selectionReject`)이 같은 함수를 부른다. 차례 0 은 `--lint-ack` 으로 넘길 수 없고, `--effort` 도 지시서와 대조한다 | PR-B |
 | REQ2 | `agent-selection.md` 의 모델 표에 행 id 열, Opus `high` 허용 조건, Codex 행 조건을 더하고, 「비교 근거」 표에 `모델 id` 열을 더하며, 「실측 기록」 절을 근거 링크와 측정일·표본 수로 고친다 | PR-A |
-| REQ3 | 공통 지시서 틀에 새 `orch-rule: no-reconfirm` 항목과 `ready-status` 옆 escalation 문장을 더한다. `spec-lint` 의 `공통` 경고는 표지를 틀에서 읽으므로 코드 변경이 없다 | PR-A |
+| REQ3 | 공통 지시서 틀에 새 `orch-rule: no-reconfirm` 항목과, `status-only` 항목 뒤 새 `orch-rule: status-not-escalation` 항목을 더한다. `spec-lint` 의 `공통` 경고는 표지를 틀에서 읽으므로 코드 변경이 없다 | PR-A |
 | REQ4 | `lib/launched.ts` 의 `Launch` 에 `agent`, `model`, `effort`, `effective`, `experiment` 를 더한다. `launch-worker` 가 `recordLaunch` 와 같은 자리에서 이력에도 한 줄을 더한다 | PR-B |
 | REQ5 | 새 `lib/routing-log.ts` 가 한 줄을 모으고 쓴다. `finish-pr` 가 MERGED 확인 직후·정리 전에, `cleanup-sweep` 이 CLOSED PR 을 만났을 때 부른다 | PR-C |
-| REQ6 | `lib/spec.ts` 에 `experimentOf` 를 더한다. 꼴과 「`worker 선택:` 이 후보 안」, 다음 후보 대조를 `selectionVerdict` 가 한다. 다음 후보 대조는 이력이 필요해 `launch-worker` 차례 0 에서만 본다 | PR-B |
+| REQ6 | `spec-writing.md` 의 `experiment:` 줄 안내와 `lib/spec.ts` 의 `experimentOf` 를 함께 더한다. 꼴과 「`worker 선택:` 이 후보 안」, 다음 후보 대조를 `selectionVerdict` 가 한다. 다음 후보 대조는 이력이 필요해 `launch-worker` 차례 0 에서만 본다. 안내를 PR-A 에 먼저 두면 배정 도구 없이 Opus `high` 근거 면제만 열려 우회 길이 되므로 PR-B 에 함께 둔다 | PR-B |
 | REQ7 | 새 진입 명령 `orch routing report` 가 저장소 여럿의 `routing-log.jsonl` 을 모아 표를 낸다 | PR-D |
 | REQ8 | `agent-selection.md` 모델 표의 `id` 열을 원본으로 두고, `lib/spec.ts` 가 `행:` 조각을 읽고 `spec-lint` 가 번들의 표에서 id 를 읽어 대조한다 | 문서 PR-A, 검사 PR-B |
 

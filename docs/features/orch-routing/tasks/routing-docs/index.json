@@ -1,0 +1,53 @@
+{
+  "name": "routing-docs",
+  "description": "orch 모델 선택 지침과 공통 지시서 틀을 실측과 확정한 결정에 맞춘다",
+  "pr_scope": "agent-selection.md 의 모델 표·effort·비교 근거·실측 기록 절, spec-writing.md 의 worker 선택 줄과 experiment 줄, 공통 지시서 틀의 질문·status 규칙을 고친다. 스크립트는 고치지 않는다.",
+  "deferred": [
+    {
+      "what": "routing-check: 공용 selectionVerdict(행 id, high 근거, effort 대조, experiment 배정), 띄우기 이력 launch-history.jsonl, launched-workers 새 키, launch-worker 의 --task --retry-of 다시 띄우기 꼴과 직접 worker-start --task 거부 hook, spec-writing.md 의 experiment: 줄 안내, lib/spec.ts 의 SELECTION_FORMAT 을 새 꼴(행:, high 근거:)로 갱신하고 세 문서(spec-writing.md, agent-selection.md, SKILL.md)의 「지금 검사는 … 만 본다」 문장을 검사 문장으로 바꾼다",
+      "why": "REQ1, REQ4, REQ6, REQ8 의 검사와 기록. 설계 DECISION8, DECISION9",
+      "after": "orch-cli PR3(스크립트 폴더 이동) 머지와 이 계획(routing-docs) 머지"
+    },
+    {
+      "what": "routing-log: lib/routing-log.ts 수집기와 쓰기, finish-pr 2단계 뒤 기록, cleanup-sweep 의 닫힌 PR 과 FINISH-MISSING 기록, config.json routing 절",
+      "why": "REQ5. 설계 「routing 기록」",
+      "after": "routing-check 머지"
+    },
+    {
+      "what": "routing-report: orch routing report 집계 명령과 agent-selection.md 실측 기록 절의 명령 안내",
+      "why": "REQ7. 스펙 DECISION8, DECISION19",
+      "after": "routing-log 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-05",
+  "spec": "docs/features/orch-routing/spec.md",
+  "design": "docs/features/orch-routing/design.md",
+  "verification_plan": "phase-02.md",
+  "requirements": [
+    "REQ2",
+    "REQ3",
+    "REQ8"
+  ],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ2",
+        "REQ8"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ3"
+      ]
+    }
+  ]
+}
