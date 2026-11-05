@@ -108,6 +108,19 @@ describe('board-release', () => {
     assert.match(r.result.stdout, /board-release: in$/m)
   })
 
+  test('짧은 출력은 BOARD <id> release 와 BOARD-RELEASE 판정 줄이다', () => {
+    states['100'] = { state: 'MERGED', mergeCommit: { oid: commits.release }, headRefOid: commits.release }
+    states['7'] = { state: 'MERGED', mergeCommit: { oid: commits.feature } }
+    process.env.ORCH_OUTPUT = 'short'
+    try {
+      const r = release([{ id: 'in', status: 'doing', pr: 7, 'merged-pr': 7, stages: STAGES, details: four(2) }], ['--release', '#100'])
+      assert.equal(r.code, 0, r.result.stderr)
+      assert.deepEqual(r.result.stdout.trim().split('\n'), ['BOARD in release PR 7 done', 'BOARD-RELEASE 1'])
+    } finally {
+      delete process.env.ORCH_OUTPUT
+    }
+  })
+
   test('--pr 은 pr 칸이나 merged-pr 칸에 그 번호가 든 항목을 끝낸다', () => {
     const r = release(
       [

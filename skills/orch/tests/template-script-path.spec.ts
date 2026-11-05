@@ -7,6 +7,7 @@ import { homedir, tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { CASES, layout } from './fixtures/install-records.ts'
 
 const TEMPLATE = fileURLToPath(new URL('../templates/spec-common.md', import.meta.url))
 
@@ -14,9 +15,12 @@ function template(): string {
   return readFileSync(TEMPLATE, 'utf8')
 }
 
+// 틀의 블록 첫 줄 `command -v orch >/dev/null || orch() { _o="$(node -e '…')" || return 3; node "$_o" "$@"; }` 의 실행기 경로를 푸는 명령
+const FN = /command -v orch >\/dev\/null \|\| orch\(\) \{ _o="\$\((node -e '.*?')\)" \|\| return 3; node "\$_o" "\$@"; \}/g
+
 function resolver(): string {
-  const m = /ORCH_SCRIPTS=\$\((node -e '.*?')\) &&/.exec(template())
-  assert.ok(m, '틀에서 경로를 푸는 명령을 찾지 못했다')
+  const m = new RegExp(FN.source).exec(template())
+  assert.ok(m, '틀에서 실행기 경로를 푸는 명령을 찾지 못했다')
   return m[1]
 }
 
@@ -96,40 +100,56 @@ describe('spec-common.md 의 스크립트 경로', () => {
     }
   })
 
-  test('틀의 모든 스크립트 경로 풀기가 같은 명령이고 마이그레이션 예약도 그 경로로 부른다', () => {
-    const resolvers = [...template().matchAll(/ORCH_SCRIPTS=\$\((node -e '.*?')\) &&/g)].map((m) => m[1])
-    assert.ok(resolvers.length >= 3, `경로 풀기가 ${resolvers.length}개다`)
+  test('틀의 모든 블록이 같은 셸 함수 줄을 두고 새 꼴로 부른다', () => {
+    const resolvers = [...template().matchAll(FN)].map((m) => m[1])
+    assert.equal(resolvers.length, 4, `셸 함수 줄이 ${resolvers.length}개다`)
     assert.deepEqual(new Set(resolvers), new Set([resolver()]))
-    const item = template().split('\n- ').find((part) => part.includes('<!-- orch-rule: migration -->'))
-    assert.ok(item, '틀에 migration 표지 항목이 없다')
-    assert.match(item, /node --disable-warning=ExperimentalWarning "\$ORCH_SCRIPTS\/reserve-migration\.ts" --repo "\$\(git rev-parse --show-toplevel\)" --module "\$MODULE" --name "\$NAME"/)
-    assert.doesNotMatch(item, /\$SKILL_DIR/)
+    assert.doesNotMatch(template(), /ORCH_SCRIPTS|\$SKILL_DIR|bin\/orch\.ts/)
+    const item = (marker: string) => template().split('\n- ').find((part) => part.includes(`<!-- orch-rule: ${marker} -->`)) ?? ''
+    assert.match(item('migration'), /\n {2}orch queue reserve --repo "\$\(git rev-parse --show-toplevel\)" --module "\$MODULE" --name "\$NAME"\n/)
+    assert.match(item('adr'), /\n {2}orch queue reserve --repo "\$\(git rev-parse --show-toplevel\)" --kind adr --module "\$MODULE" --name "\$NAME"\n/)
+    assert.match(item('worker-ask'), /\n {2}orch worker ask --from "\$FROM" --question "\$QUESTION"\n/)
   })
 
-  test('ADR 표지 항목은 같은 경로 풀기로 reserve-migration.ts --kind adr 를 부른다', () => {
-    const item = template().split('\n- ').find((part) => part.includes('<!-- orch-rule: adr -->'))
-    assert.ok(item, '틀에 adr 표지 항목이 없다')
-    assert.ok(item.includes(`ORCH_SCRIPTS=$(${resolver()}) &&`), '경로 풀기가 다른 항목과 다르다')
-    assert.match(item, /node --disable-warning=ExperimentalWarning "\$ORCH_SCRIPTS\/reserve-migration\.ts" --repo "\$\(git rev-parse --show-toplevel\)" --kind adr --module "\$MODULE" --name "\$NAME"/)
-  })
-
-  test('CLAUDE_CONFIG_DIR 의 설치본을 쓰고 user scope 를 먼저 고른다', () => {
-    const config = join(tmp, 'profile with space', 'home')
-    writeInstalled(config, [
-      { scope: 'project', installPath: '/p/old' },
-      { scope: 'user', installPath: '/u/new' },
-    ])
-    const r = resolve({ CLAUDE_CONFIG_DIR: config }, join(tmp, 'nohome'))
-    assert.equal(r.code, 0, r.stderr)
-    assert.equal(r.stdout.trim(), '/u/new/skills/orch/scripts')
-  })
+  // 틀에는 「부르는 쪽이 든 번들」 이 없다. 사례 표의 own 은 틀에서 실패(3)다
+  for (const c of CASES) {
+    test(`사례 표: ${c.name}`, () => {
+      const { config, path } = layout(tmp, c)
+      const r = resolve({ CLAUDE_CONFIG_DIR: config }, join(tmp, 'nohome'))
+      if ('error' in c.expect || c.expect.bundle === 'own') {
+        assert.equal(r.code, 3, r.stdout)
+        assert.match(r.stderr, /claude plugin update fos-skills@fos-skills/)
+      } else {
+        assert.equal(r.code, 0, r.stderr)
+        assert.equal(r.stdout.trim(), join(path(c.expect.bundle), 'bin', 'orch'))
+      }
+    })
+  }
 
   test('CLAUDE_CONFIG_DIR 가 없으면 ~/.claude 를 쓴다', () => {
     const home = join(tmp, 'h')
-    writeInstalled(join(home, '.claude'), [{ scope: 'user', installPath: '/home/bundle' }])
+    const bundle = join(tmp, 'home-bundle')
+    mkdirSync(join(bundle, 'skills', 'orch', 'scripts'), { recursive: true })
+    mkdirSync(join(bundle, 'bin'), { recursive: true })
+    writeFileSync(join(bundle, 'bin', 'orch'), '')
+    writeInstalled(join(home, '.claude'), [{ scope: 'user', installPath: bundle }])
     const r = resolve({}, home)
     assert.equal(r.code, 0, r.stderr)
-    assert.equal(r.stdout.trim(), '/home/bundle/skills/orch/scripts')
+    assert.equal(r.stdout.trim(), join(bundle, 'bin', 'orch'))
+  })
+
+  test('orch 가 PATH 에 없으면 셸 함수가 풀린 실행기에 인자를 넘긴다', () => {
+    const config = join(tmp, 'profile')
+    const bundle = join(tmp, 'b')
+    mkdirSync(join(bundle, 'skills', 'orch', 'scripts'), { recursive: true })
+    mkdirSync(join(bundle, 'bin'), { recursive: true })
+    writeFileSync(join(bundle, 'bin', 'orch'), "console.log('launcher', process.argv.slice(2).join(' '))\n")
+    writeInstalled(config, [{ scope: 'user', installPath: bundle }])
+    const line = new RegExp(FN.source).exec(template())![0]
+    const env: NodeJS.ProcessEnv = { ...process.env, CLAUDE_CONFIG_DIR: config, HOME: join(tmp, 'nohome'), PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter) }
+    const done = spawnSync('sh', ['-c', `${line}\norch worker ask --from "a b" --question q`], { env, encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stderr)
+    assert.equal(done.stdout.trim(), 'launcher worker ask --from a b --question q')
   })
 
   test('이 기기의 설치본으로 풀린다', (t) => {
@@ -143,7 +163,7 @@ describe('spec-common.md 의 스크립트 경로', () => {
       t.skip('fos-skills 항목이 없다')
       return
     }
-    assert.ok(r.stdout.trim().endsWith('/orch/scripts'), r.stdout)
+    assert.ok(r.stdout.trim().endsWith('/bin/orch'), r.stdout)
   })
 })
 

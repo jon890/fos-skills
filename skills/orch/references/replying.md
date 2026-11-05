@@ -24,19 +24,20 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 **worker 에게 보내는 답과 후속 지시는 `send-to-worker` 로 보낸다.** worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
 작업 중인 worker 의 입력란에 글이 섞이고, 끝난 dispatch 의 터미널에 쓴 지시는 Task 기록 없이 사라진다.
 스크립트가 dispatch 상태를 보고 경로를 고른다. 상태별 경로와 종료 코드는 스크립트 머리 주석이 소유한다.
-종료 코드 3 이면 표준 출력이 다음에 할 일을 말한다. 끝난 dispatch 에 `--spec` 을 주지 않았거나 터미널이 없는 경우다.
-살아 있는 dispatch 인데 reply 할 메시지가 없거나 모두 이미 답한 question 이면 스크립트가 그 dispatch 에 새 메시지로 보내고 깨운다(`sent:` 줄). `orca orchestration send` 와 `nudge-worker` 를 직접 잇지 않는다.
+기본 출력은 `REPLIED <메시지> <보낸 id>`, `SENT <dispatch> <보낸 id>`, `DELIVERED <id>`, `RESUMED`, `RESTARTED`, `ENDED <dispatch> <상태>`, `NOTE <내용>`, `FAIL <내용>` 같은 판정 줄이고, 깨운 결과(`NUDGED <id>`, `WORKING`, `QUEUED` 같은 것)나 이어 띄운 결과(`LAUNCHED …`)가 뒤따른다. 설명이 든 소문자 줄(`sent:`, `closed:` 같은 것)은 `--full` 이다.
+종료 코드 3 이면 `ENDED` 줄이다. 끝난 dispatch 에 `--spec` 을 주지 않았거나(`ENDED <dispatch> <상태>`), 터미널이 없는 경우(`... no-terminal`)다. 다음에 할 명령은 `--full` 의 안내 줄에 있다.
+살아 있는 dispatch 인데 reply 할 메시지가 없거나 모두 이미 답한 question 이면 스크립트가 그 dispatch 에 새 메시지로 보내고 깨운다(`SENT` 줄). `orca orchestration send` 와 `nudge-worker` 를 직접 잇지 않는다.
 
-**끝난 dispatch 의 질문은 보드에서 제외한다.** 질문 감시와 doctor 는 같은 Task 의 다른 dispatch 가 알린 PR 도 종료 근거로 쓴다. PR 이 `MERGED` 나 `CLOSED` 이고 준비 상태의 HEAD 가 PR 커밋에 있어야 한다. 준비 상태가 없으면 질문을 보낸 dispatch 의 워크트리와 git 브랜치를 대조해 그 브랜치의 PR 종료 상태를 확인한다. 이 경로는 Task 가 달라도 쓴다. git 목록에서 브랜치를 찾지 못하면 띄우기 기록의 branch 를 쓴다. branch 없는 옛 기록은 끝난 dispatch 의 워크트리 경로가 기록과 같고 실제로 삭제됐을 때만 닫는다. 기록이 없거나 경로가 다르면 닫지 않는다. 살아 있는 dispatch 의 질문은 이 근거로 닫지 않는다. Orca 가 `dispatch_inactive` 나 `answer_conflict`(이미 다른 답이 있다)로 답장을 거부하면 `send-to-worker` 가 그 질문을 닫은 질문으로 적는다(`closed:` 줄). 루프와 doctor 는 그 질문을 미답변으로 세지 않는다. 닫으려고 같은 답을 반복하지 않는다. 실제 후속 일이 있으면 `send-to-worker --spec` 으로 이어 쓴다.
+**끝난 dispatch 의 질문은 보드에서 제외한다.** 질문 감시와 doctor 는 같은 Task 의 다른 dispatch 가 알린 PR 도 종료 근거로 쓴다. PR 이 `MERGED` 나 `CLOSED` 이고 준비 상태의 HEAD 가 PR 커밋에 있어야 한다. 준비 상태가 없으면 질문을 보낸 dispatch 의 워크트리와 git 브랜치를 대조해 그 브랜치의 PR 종료 상태를 확인한다. 이 경로는 Task 가 달라도 쓴다. git 목록에서 브랜치를 찾지 못하면 띄우기 기록의 branch 를 쓴다. branch 없는 옛 기록은 끝난 dispatch 의 워크트리 경로가 기록과 같고 실제로 삭제됐을 때만 닫는다. 기록이 없거나 경로가 다르면 닫지 않는다. 살아 있는 dispatch 의 질문은 이 근거로 닫지 않는다. Orca 가 `dispatch_inactive` 나 `answer_conflict`(이미 다른 답이 있다)로 답장을 거부하면 `send-to-worker` 가 그 질문을 닫은 질문으로 적는다(`NOTE` 줄, `--full` 은 `closed:` 줄). 루프와 doctor 는 그 질문을 미답변으로 세지 않는다. 닫으려고 같은 답을 반복하지 않는다. 실제 후속 일이 있으면 `send-to-worker --spec` 으로 이어 쓴다.
 `send-to-worker` 는 `--from run:<run>` 을 붙여 보내고, Orca 터미널 안이라 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보낸다.
 질문 감시는 질문의 스레드에 worker 쪽으로 간 답이면 보낸 쪽과 상관없이 답한 것으로 센다(ADR-015).
-**세션을 다시 시작하면 코디네이터 터미널의 pane 신원이 없어 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.** `send-to-worker` 는 먼저 `--run` 과 `--from` 을 뺀 plain `reply` 를 한 번 보내고 `retry:` 줄로 알린다. 이 답은 질문을 바로 닫는다. plain reply 도 거부되고 그 메시지가 question 이면 같은 스레드에 status 로 `answer: <첫 줄>` 제목과 본문을 `send --to dispatch:<id>` 로 보내고 `fallback:` 줄로 알린다. 직접 우회하지 않는다. `worker-ask` 가 그 status 의 본문을 답으로 읽는다(종료 코드 3).
+**세션을 다시 시작하면 코디네이터 터미널의 pane 신원이 없어 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.** `send-to-worker` 는 먼저 `--run` 과 `--from` 을 뺀 plain `reply` 를 한 번 보내고 `NOTE` 줄(`--full` 은 `retry:`)로 알린다. 이 답은 질문을 바로 닫는다. plain reply 도 거부되고 그 메시지가 question 이면 같은 스레드에 status 로 `answer: <첫 줄>` 제목과 본문을 `send --to dispatch:<id>` 로 보내고 `NOTE` 줄(`--full` 은 `fallback:`)로 알린다. 직접 우회하지 않는다. `worker-ask` 가 그 status 의 본문을 답으로 읽는다(종료 코드 3).
 question 이 아닌 메시지에는 전환하지 않고 5 로 끝난다. 세션이 바뀐 뒤 reply 가 계속 거부되면 사용자에게 알린다.
 
 `$DISPATCH_ID` 는 그 worker 의 dispatch, `$BODY` 는 보낼 글이다. 답할 메시지를 정해야 하면 `--reply-to "$MSG_ID"` 를 더한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --body "$BODY"
+orch worker send --dispatch "$DISPATCH_ID" --body "$BODY"
 ```
 
 `send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤에는 `recipient_run_mismatch`, 끝난 dispatch 에는 `dispatch_inactive` 로 거절된다.
@@ -44,7 +45,7 @@ question 이 아닌 메시지에는 전환하지 않고 5 로 끝난다. 세션�
 
 ## spec 인터뷰를 중계한다
 
-worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하나로 보내면 아래로 중계한다. worker 쪽 절차는 spec 의 `references/interview.md` 가 정한다.
+worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하나로 보내면 아래로 중계한다. worker 쪽 절차는 spec 스킬의 [`references/interview.md`](../../spec/references/interview.md) 가 정한다.
 
 1. 블록을 `AskUserQuestion` 한 번에 4개씩 나눠 묻는다. 블록의 배경, 선택지와 영향, 권장을 그대로 옮긴다. 첫 라운드의 열린 질문은 선택지 없이 묻는다.
 2. 모든 블록의 답을 모은 뒤 원래 질문에 한 번 답한다. 답은 `D1=<고른 답>` 처럼 결정마다 한 줄이고, 사용자가 덧붙인 말은 그대로 붙인다.
@@ -58,12 +59,12 @@ worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하
 **worker 가 status 를 보내고 입력 대기로 멈춰 있으면 `reply` 와 `send` 가 그 worker 를 깨우지 않는다.**
 worker 는 메시지를 다음 턴의 `check` 에서 읽는데, 입력 대기인 worker 에게는 다음 턴이 오지 않는다.
 dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an active dispatch` 로 거절된다.
-구조화 worker(터미널 handle 이 `structworker_` 로 시작)는 화면이 없고 Orca 가 새 메시지로 직접 깨운다. `send-to-worker` 는 이 worker 에게 보낸 뒤 `delivered:` 한 줄로 끝나고 `nudge-worker` 를 부르지 않는다.
+구조화 worker(터미널 handle 이 `structworker_` 로 시작)는 화면이 없고 Orca 가 새 메시지로 직접 깨운다. `send-to-worker` 는 이 worker 에게 보낸 뒤 `DELIVERED` 한 줄로 끝나고 `nudge-worker` 를 부르지 않는다.
 **`send-to-worker` 가 아니라 `reply` 나 `send` 를 직접 보냈으면 그 직후에 `nudge-worker` 를 부른다.** 화면 판정과 재시도는 스크립트 머리 주석이 소유한다.
 `$MSG_ID` 는 방금 보낸 메시지 id 다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" nudge-worker --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
+orch worker nudge --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
 ```
 
 종료 코드 4 는 입력란에 쓰다 만 글이 있거나 권한 확인 창이라 입력하지 않은 것이다. `terminal read --screen` 으로 화면을 보고, 권한 확인 창이면 4단계의 「권한 확인 창」 을 따른다.
@@ -158,7 +159,7 @@ worker 의 변경 파일에 자동 리뷰 workflow(예: `.github/workflows/claud
 `$DISPATCH_ID` 는 PR 을 만든 worker 의 끝난 dispatch, `$SPEC_FILE` 은 후속 지시서다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" send-to-worker --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE" --run "$RUN_ID"
+orch worker send --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE"
 ```
 
 - 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다

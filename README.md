@@ -200,7 +200,7 @@ worker 여럿에게 일을 맡기면 `/board` 창에서 오늘 목표, 정할 �
 | [`pr-review`](skills/pr-review/README.md) | 남의 PR 에 코드 리뷰를 쓰고 등록해요 |
 | [`review-fix`](skills/review-fix/README.md) | PR 에 이미 달린 리뷰를 읽고 코드에 반영해요 |
 | [`inbox`](skills/inbox/README.md) | 업무 도구에서 나를 태그한 알림을 `/board` 에 모으고, 확인받은 답변만 등록해요 |
-| [`docs-check`](skills/docs-check/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |
+| [`docs-audit`](skills/docs-audit/README.md) | 저장소 문서가 코드와 맞는지 감사하고, 승인받은 것만 고쳐요 |
 | [`harness-cleanup`](skills/harness-cleanup/README.md) | 하네스 지침이 현재 설정과 실행 결과에 맞는지 감사하고, 승인받은 것만 고쳐요 |
 | [`mac-cleanup`](skills/mac-cleanup/README.md) | 맥의 디스크, 메모리, 스왑과 오래된 세션, 머지된 브랜치를 조사하고 승인받은 것만 정리해요 |
 | [`presentation`](skills/presentation/README.md) | 발표 자료를 HTML 슬라이드 덱 한 파일로 만들고, 장 수와 노트, 금지어, 세로 넘침을 검사해요 |
@@ -234,6 +234,8 @@ claude plugin install fos-skills@fos-skills
 
 `planning` 은 `plan`, `build-with-teams` 는 `implementation` 으로 바뀌었어요. 예전 명령 대신 새 이름으로 불러요.
 기존 계획 경로와 R1/D1 ID 는 읽기 호환으로 유지해요. 기존 planning/build-with-teams 오버레이도 읽으며 새 이름의 값이 우선해요.
+
+문서 감사는 `/fos-skills:docs-audit` 로 불러요. 옛 이름 `docs-check` 의 오버레이는 새 이름 파일이 없을 때만 읽고 경고하며, docs-audit 스킬의 다음 major(5.0.0)에서 호환을 제거해요.
 
 ### 갱신
 
@@ -270,7 +272,7 @@ ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/s
 | `tools/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview` |
 
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
-이 플러그인은 `bin/` 을 두지 않아 `browser-driver` 를 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
+이 플러그인의 루트 `bin/` 에는 orch 실행기 `orch` 하나만 있어요. `browser-driver` 는 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
 
 `extensions/work-board/` 는 작업 현황 창 `/board` 를 그리는 mod 예요.
 orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여기 있어요. 동작은 [`extensions/work-board/README.md`](extensions/work-board/README.md) 에 있어요.
@@ -311,6 +313,12 @@ orch, work-board, inbox 의 TypeScript 테스트는 Node 24 이상에서 `node s
 
 ```bash
 claude --plugin-dir "$(git rev-parse --show-toplevel)"
+```
+
+설치 기록에 user 범위 설치본이 있으면 `orch` 실행기는 `--plugin-dir` 로 실은 작업 트리가 아니라 설치본으로 넘겨요. 작업 트리의 orch 스크립트를 돌리려면 `ORCH_SCRIPTS_DIR` 을 줘요.
+
+```bash
+ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loop status
 ```
 
 로드가 맞는지 판정하는 방법은 [고치는 동안의 확인](docs/flow.md#고치는-동안의-확인) 에 있어요.

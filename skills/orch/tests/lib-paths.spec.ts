@@ -28,7 +28,6 @@ const GIT_ENV: Record<string, string> = {
   GIT_COMMITTER_EMAIL: 'orch-test@example.com',
 }
 const saved: Record<string, string | undefined> = {}
-const MIGRATE = join(import.meta.dirname, '../scripts/migrate-orch-dir.ts')
 
 let tmp: string
 let repo: string
@@ -168,6 +167,34 @@ describe('ensure 와 makeParent', () => {
     assert.ok(statSync(join(repo, '.orch/state')).isDirectory())
     assert.ok(exclude().includes('/.orch/'))
   })
+
+  test('같은 프로세스에서 ORCH_DIR 을 바꾸면 그 루트의 줄도 더한다', () => {
+    ensure('queue', repo)
+    process.env.ORCH_DIR = 'work/orch'
+    ensure('queue', repo)
+    assert.ok(exclude().includes('/.orch/'))
+    assert.ok(exclude().includes('/work/orch/'))
+  })
+
+  test('git 밖 폴더도 git init 뒤 다시 부르면 줄을 더한다', () => {
+    const plain = join(tmp, 'plain')
+    mkdirSync(plain)
+    ensure('queue', plain)
+    assert.equal(existsSync(join(plain, '.git')), false)
+    sh(tmp, 'init', '-q', plain)
+    ensure('queue', plain)
+    const lines = readFileSync(join(plain, '.git/info/exclude'), 'utf8').split('\n')
+    assert.equal(lines.filter((line) => line === '/.orch/').length, 1)
+  })
+
+  test('같은 프로세스에서 무시됨을 확인한 루트는 다시 묻지 않는다', () => {
+    ensure('queue', repo)
+    const file = join(repo, '.git/info/exclude')
+    // 줄을 지워도 다시 더하지 않으면 git 에 다시 묻지 않은 것이다. 다음 명령이 더한다(lib/paths.ts 의 ensureIgnored 위 주석)
+    writeFileSync(file, exclude().filter((line) => line !== '/.orch/').join('\n'))
+    ensure('state', repo)
+    assert.ok(!exclude().includes('/.orch/'))
+  })
 })
 
 describe('boardPath', () => {
@@ -207,7 +234,8 @@ describe('옛 구조', () => {
     const { value, text } = captureStderr(() => requireMigrated(repo, 'finish-pr'))
     assert.equal(value, false)
     assert.match(text, /^finish-pr: orch 작업 폴더를 옮기기 전이다\. 옛 위치가 남아 있다: \.omc\/handoffs\/specs$/m)
-    assert.ok(text.includes(`node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${repo} --apply`), `옮기는 명령이 없다: ${text}`)
+    // 앞 낱말은 PATH 에 따라 orch 나 진입점 경로다(lib/commands.ts 의 orchWord)
+    assert.ok(text.includes(` doctor migrate --repo ${repo} --apply`), `옮기는 명령이 없다: ${text}`)
     assert.ok(text.includes('설정 파일을 --config 로 직접 준다'), `우회 방법 줄이 없다: ${text}`)
   })
 
@@ -222,6 +250,6 @@ describe('옛 구조', () => {
     write('.claude/orch-finish.json', '{}')
     const { text } = captureStderr(() => warnLegacy(repo, 'wait-important'))
     assert.ok(text.startsWith('wait-important: 옛 위치가 남아 있다(.claude/orch-finish.json)'), text)
-    assert.ok(text.includes(`node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${repo} 로 옮긴다`), text)
+    assert.ok(text.includes(` doctor migrate --repo ${repo} 로 옮긴다`), text)
   })
 })

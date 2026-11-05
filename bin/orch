@@ -1,0 +1,120 @@
+#!/usr/bin/env node
+// fos-skills orch launcher
+// PATH 의 `orch` 명령이다. 설치 기록에서 지금 쓸 fos-skills 번들을 골라 그 번들의 진입점(skills/orch/bin/orch.ts)에 인자를 그대로 넘기기만 한다.
+// 명령 표는 갖지 않는다. 그래서 `orch doctor install-cli` 가 복사한 `~/.local/bin/orch` 사본이 낡아도 새 명령을 모르는 일이 없다.
+// 위 둘째 줄의 표지(fos-skills orch launcher)로 doctor 와 NEXT_WAIT 가 PATH 의 orch 가 이 실행기인지 가린다. 지우지 않는다.
+//
+// 타입 문법이 없는 CommonJS 이고 Node 내장 모듈만 쓴다. 확장자 없는 파일이라 node 가 타입을 지우지 않고, 낮은 node 에서도 읽혀 버전을 알릴 수 있다.
+// 파일 하나로 돈다. 저장소에 복사해 써도 설치 기록을 따라간다.
+//
+// 번들을 고르는 규칙은 skills/orch/scripts/lib/install-record.ts 의 selectBundle 과 같다(그 파일이 원본이다).
+// skills/orch/tests/fixtures/install-records.json 의 사례 표로 두 구현을 대조한다. 규칙을 바꾸면 함께 고친다.
+//     1. ORCH_SCRIPTS_DIR 가 있으면 그 폴더의 ../bin/orch.ts
+//     2. `$CLAUDE_CONFIG_DIR`(없으면 ~/.claude)의 plugins/installed_plugins.json 에 user 범위 항목이 있으면 그것만 본다.
+//        skills/orch/scripts 가 있는 첫 항목이고, 없으면 다른 범위로 넘어가지 않고 3 이다
+//     3. user 항목이 없으면 다른 범위를 기록 순서로
+//     4. 그래도 없으면 이 실행기가 든 번들(플러그인 루트의 bin/orch 일 때)
+// 고른 번들에 진입점이나 명령 표(skills/orch/scripts/lib/commands.ts)가 없으면(이 기능 이전 번들) 넘기지 않고 3 이다.
+//
+// 자식은 표준 입출력을 상속한다. SIGINT, SIGTERM, SIGHUP 을 받으면 자식에게 전하고 자식이 끝나기를 기다린다.
+//
+// 종료 코드:
+//     자식의 종료 코드(신호로 끝나면 128 + 신호 번호)
+//     3  node 가 낮거나, 번들이나 진입점을 찾지 못했다
+'use strict'
+
+const { spawn } = require('node:child_process')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+const PLUGIN = 'fos-skills@fos-skills'
+// skills/orch/scripts/ts_shim.py 의 MIN_NODE 와 같아야 한다(테스트가 대조한다)
+const MIN_NODE = [24, 0]
+
+function fail(line) {
+  process.stderr.write(`orch: ${line}\n`)
+  process.exitCode = 3
+}
+
+function isDir(p) {
+  try {
+    return fs.statSync(p).isDirectory()
+  } catch (e) {
+    return false
+  }
+}
+
+function scriptsDirOf(bundle) {
+  return path.join(bundle, 'skills', 'orch', 'scripts')
+}
+
+function entryOf(bundle) {
+  return path.join(bundle, 'skills', 'orch', 'bin', 'orch.ts')
+}
+
+function rows(configDir) {
+  let entries
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(configDir, 'plugins', 'installed_plugins.json'), 'utf8'))
+    entries = data && data.plugins && data.plugins[PLUGIN]
+  } catch (e) {
+    return []
+  }
+  if (!Array.isArray(entries)) return []
+  return entries.filter((e) => e && typeof e.installPath === 'string' && e.installPath !== '')
+}
+
+function selectBundle(configDir, own) {
+  const all = rows(configDir)
+  const users = all.filter((e) => e.scope === 'user')
+  const record = path.join(configDir, 'plugins', 'installed_plugins.json')
+  if (users.length > 0) {
+    const found = users.find((e) => isDir(scriptsDirOf(e.installPath)))
+    if (found) return { bundle: found.installPath }
+    const first = users[0].installPath
+    const old = isDir(path.join(first, 'orch', 'scripts')) ? ' 옛 배치(orch/scripts)의 번들이다.' : ''
+    return {
+      error:
+        `${record} 의 user 범위 설치본 ${first} 에 skills/orch/scripts 가 없다.${old} ` +
+        `다른 범위의 번들로 넘어가지 않는다. claude plugin update ${PLUGIN} 으로 갱신한다. 현재 진입점이어야 할 경로: ${entryOf(first)}`,
+    }
+  }
+  const other = all.find((e) => isDir(scriptsDirOf(e.installPath)))
+  if (other) return { bundle: other.installPath }
+  if (own && isDir(scriptsDirOf(own))) return { bundle: own }
+  return { error: `${PLUGIN} 의 skills/orch/scripts 를 찾지 못했다. ${record} 를 확인하거나 claude plugin install ${PLUGIN} 을 한다` }
+}
+
+function main(argv) {
+  const m = /^v(\d+)\.(\d+)/.exec(process.version)
+  const now = m ? [Number(m[1]), Number(m[2])] : [0, 0]
+  if (now[0] < MIN_NODE[0] || (now[0] === MIN_NODE[0] && now[1] < MIN_NODE[1])) {
+    process.stdout.write(`NODE-TOO-OLD ${process.version} ${MIN_NODE[0]} 이상이 필요하다\n`)
+    process.exitCode = 3
+    return
+  }
+  let entry
+  const forced = process.env.ORCH_SCRIPTS_DIR
+  if (forced) {
+    entry = path.join(forced, '..', 'bin', 'orch.ts')
+    if (!fs.existsSync(entry)) return fail(`ORCH_SCRIPTS_DIR 옆에 진입점이 없다: ${entry}`)
+  } else {
+    const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+    // 이 실행기가 플러그인 루트의 bin/orch 면 그 루트가 번들이다. ~/.local/bin 사본이면 그 자리에 번들이 없다
+    const chosen = selectBundle(configDir, path.resolve(__dirname, '..'))
+    if (chosen.error) return fail(chosen.error)
+    entry = entryOf(chosen.bundle)
+    if (!fs.existsSync(entry) || !fs.existsSync(path.join(scriptsDirOf(chosen.bundle), 'lib', 'commands.ts'))) {
+      return fail(`설치본 ${chosen.bundle} 에 새 진입점이 없다(이 기능 이전 번들이다). claude plugin update ${PLUGIN} 으로 갱신한다`)
+    }
+  }
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', entry, ...argv], { stdio: 'inherit' })
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => child.kill(signal))
+  child.on('error', (e) => fail(`${entry} 를 실행하지 못했다: ${e.message}`))
+  child.on('close', (code, signal) => {
+    process.exitCode = code !== null ? code : 128 + (signal ? os.constants.signals[signal] || 0 : 0)
+  })
+}
+
+main(process.argv.slice(2))

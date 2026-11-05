@@ -518,7 +518,7 @@ describe('finish-pr 사용법 오류', { concurrency: 4 }, () => {
     const again = await c.finish(['--complete'])
     assert.equal(again.code, 2, both(again))
     has(again.stderr, 'finish.complete_cmd')
-    has(again.stderr, 'migrate-orch-dir')
+    has(again.stderr, 'doctor migrate')
     assert.deepEqual(c.calls(), [])
   })
 })
@@ -1056,5 +1056,25 @@ describe('finish-pr 머지 알림', { concurrency: 4 }, () => {
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(starting(c.calls(), 'send-to-worker '), [])
     lacks(r.stdout, 'notify:')
+  })
+})
+
+describe('짧은 출력', () => {
+  test('머지 없이 닫힌 PR 은 이유를 붙인 FINISH-FAIL 한 줄이다', async (t) => {
+    const c = setup(t)
+    Object.assign(c.state.pr, { state: 'CLOSED', merge: null })
+    const r = await c.finish(['--run', 'run_1'], { ORCH_OUTPUT: 'short' })
+    assert.equal(r.code, 1, both(r))
+    assert.equal(r.stdout.trim(), 'FINISH-FAIL PR 77 가 머지 없이 닫혔다')
+  })
+
+  test('끝까지 가면 LAST-PR 과 FINISH-DONE 이고 시각 붙은 진행 줄이 없다', async (t) => {
+    const c = setup(t)
+    const r = await c.finish(['--run', 'run_1', ...COMPLETE], { ORCH_OUTPUT: 'short' })
+    assert.equal(r.code, 0, both(r))
+    const out = r.stdout.trim().split('\n')
+    assert.ok(out.includes('LAST-PR 마지막'), r.stdout)
+    assert.equal(out.at(-1), 'FINISH-DONE')
+    assert.ok(out.every((l) => !/^\d\d:\d\d /.test(l)), r.stdout)
   })
 })

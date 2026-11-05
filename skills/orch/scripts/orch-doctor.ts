@@ -5,7 +5,8 @@
 // 갱신 명령을 보여 주는 것까지만 하고 갱신은 하지 않는다. 다른 세션이 같은 캐시를 쓰고 있을 수 있다.
 //
 // Node 버전은 여기서 보지 않는다. 타입 제거를 지원하지 않는 낮은 node 는 이 파일을 읽지 못하고 ERR_UNKNOWN_FILE_EXTENSION 으로 죽는다.
-// 그래서 SKILL.md 가 doctor 를 부르기 전에 셸에서 node 버전을 보고, 낮으면 NODE-TOO-OLD 줄을 내고 doctor 를 부르지 않는다.
+// 그래서 SKILL.md 가 부르는 `orch doctor` 의 실행기(플러그인 루트 bin/orch, CommonJS)가 먼저 버전을 보고 낮으면 NODE-TOO-OLD 를 낸다.
+// 옛 진입점 `orch-doctor.py` 는 ts_shim.py 로 같은 판정을 한다.
 //
 // 사용법:
 //     orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]
@@ -37,6 +38,9 @@
 //     (변수 이름의 `_SKILL_DIR` 앞을 소문자로 바꾸고 `_` 를 `-` 로 바꾼 디렉터리).
 //     백틱 안의 `scripts/verify.sh` 처럼 앞에 아무것도 없는 경로는 저장소 쪽 예시일 수 있어 보지 않는다.
 //     진입점으로 부르는 `$SKILL_DIR/bin/orch.ts <이름>` 은 `bin/orch.ts` 와 `scripts/<이름>.ts` 를 모두 본다.
+//     새 꼴 `orch <묶음> <동작>` 은 백틱 안이나 코드 블록 안에서 `orch ` 뒤에 ASCII 소문자 낱말이 오는 것만 명령으로 본다(산문의 「orch 루트」 는 보지 않는다).
+//     그 낱말이 명령 표(lib/commands.ts)의 묶음이 아니거나 동작을 풀지 못하거나 그 스크립트가 orch 의 scripts 에 없으면 MISSING 이다.
+//     줄이나 바로 윗줄에 `orch-compat` 가 있으면 보지 않는다(옛 꼴의 호환을 설명하는 자리).
 //
 // 저장소 판정(--repo):
 //     <orch 루트>/hooks/ 바로 아래의 .ts 가운데 이벤트 이름이 아닌 파일은 UNKNOWN-HOOK 이다(lib/events.ts 의 unknownHandlers).
@@ -55,7 +59,7 @@
 //     --repo 의 <orch 루트>/study/ 의 후보 파일 가운데 상태가 `후보` 나 `리뷰함` 인 것을 센다. 파일 형식은 lib/study.ts 가 소유한다.
 //     하나 이상이면 STUDY-OPEN 줄을 낸다. 알리는 말과 고른 뒤의 절차는 references/study-candidates.md 가 소유한다.
 //     폴더가 없으면 내지 않는다. 머리를 읽지 못한 파일과 옛 표 파일(candidates.md)은 세지 않고 stderr 에 알린다.
-//     옛 표 파일은 study-candidates.ts migrate 로 옮기라고 알린다. 경고라 종료 코드를 바꾸지 않는다.
+//     옛 표 파일은 `orch study migrate` 로 옮기라고 알린다. 경고라 종료 코드를 바꾸지 않는다.
 //
 // 설치 기록 판정(늘 본다):
 //     `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `plugins/installed_plugins.json` 에 적힌 모든 플러그인의 installPath 가 실제로 있는지 본다.
@@ -65,6 +69,24 @@
 //     installPath 에서 `/plugins/` 뒤를 현재 설정 폴더의 plugins 아래에 붙인 경로가 있으면 그 경로를 함께 낸다(복사본이 옮겨 간 경우).
 //     기록 파일이 없거나 읽지 못하면 판정하지 않는다. 파일은 고치지 않는다. 경고라 종료 코드를 바꾸지 않는다.
 //
+// orch 명령 판정(늘 본다):
+//     Claude 세션의 Bash 는 플러그인 bin/ 이 PATH 에 있어 사람 셸(Codex 포함)의 PATH 를 볼 수 없다. 그래서 ~/.local/bin/orch 사본을 본다.
+//     스킬 번들의 플러그인 루트에 실행기 bin/orch 가 없으면(이 기능 이전 배치) 판정하지 않는다.
+//     사본이 없거나 표지(fos-skills orch launcher)가 없으면 CLI-MISSING, 내용이 지금 실행기와 다르면 CLI-STALE 이고 다음 줄에 고칠 명령이 온다.
+//     PATH 에서 플러그인 bin/ 폴더를 뺀 나머지에 ~/.local/bin 이 없으면 CLI-NOT-ON-PATH 와 셸 설정 안내다. 경고라 종료 코드를 바꾸지 않는다.
+//
+// 옛 꼴과 직접 경로 판정(늘 본다):
+//     --repo 의 <orch 루트>/overlay.md, config.json, specs/spec-common.md, bin/*, hooks/* 와 저장소의 .claude/skills/** 를 줄마다 본다.
+//     진입점 옛 꼴(`orch.ts` 나 `orch.mts`, `"$ORCH"` 뒤의 옛 이름, `--path <옛 이름>`, orch-doctor.py)은 OLD-CALL,
+//     orch 스크립트 파일 경로 호출(`orch/scripts/<이름>.ts`, `$SKILL_DIR/scripts/<이름>.ts`, `$ORCH_SCRIPTS/<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')`)은
+//     DIRECT-PATH 다. <이름> 은 명령 표의 스크립트로 한정한다. 한 줄에 둘이 걸리면 OLD-CALL 하나다. 다음 줄에 새 꼴이 온다.
+//     줄이나 바로 윗줄에 `orch-compat` 가 있으면 내지 않는다. 고치는 일은 코디네이터가 그 저장소 worker 에게 맡긴다. 경고라 종료 코드를 바꾸지 않는다.
+//     같은 파일 가운데 Markdown 과 JSON 이 아닌 파일(저장소 스크립트)이 대기 출력의 `LAST_DELIVERY` 를 읽는 줄은 WAIT-READER 다.
+//     짧은 출력의 orch wait 은 JSON 대신 메시지마다 판정 줄을 내므로, JSON 을 읽던 스크립트는 그 줄을 쓰거나 RAW 파일을 읽어야 한다. 다음 줄에 고칠 것이 온다.
+//
+// 대기 번들 판정(늘 본다):
+//     아래 루프 번들 판정과 같은 규칙을 ps 의 wait-important.ts 행(그것이 띄운 orchestration check 행은 뺀다)에 쓴다. 판정이면 WAIT-STALE 이다.
+//
 // 루프 번들 판정(늘 본다):
 //     `ps -axo pid=,command=`(PS 환경 변수로 바꾼다)에서 `orch-loop.ts` 와 `--foreground` 가 든 행(상주 루프의 부모)을 읽는다.
 //     --tick 자식과 --start 는 뺀다. 스크립트 경로는 첫 낱말(node) 뒤 처음 `/` 로 시작하는 곳부터 `orch-loop.ts` 까지다(경로에 빈칸이 있을 수 있다).
@@ -72,7 +94,7 @@
 //     지금 세션 프로필(`CLAUDE_CONFIG_DIR`, 없으면 `~/.claude`)의 installed_plugins.json 에서 `<플러그인>@<마켓플레이스>` 의 user 범위 installPath 를 읽는다.
 //     그 installPath 가 루프의 번들 폴더와 같지 않고 마지막 폴더 이름도 다르면 LOOP-STALE 이다. 이미 고친 결함이 옛 번들의 루프에서 계속 난다.
 //     project 범위 행은 보지 않는다. 다른 프로필이 남긴 옛 행(3.6.0)과 같다고 옛 번들의 루프를 통과시킨 일이 있었다(2026-11-04).
-//     user 범위 행이 없으면 판정하지 않는다.
+//     user 범위 행이 없으면 판정하지 않는다. 판정 규칙은 이 기능 전과 같다(진입점의 번들 고르기 lib/install-record.ts 와 따로 둔다).
 //     캐시 꼴이 아니면(저장소 체크아웃에서 띄운 개발 중인 루프) 보지 않는다. installed_plugins.json 을 읽지 못하면 판정하지 않는다.
 //     다시 띄우는 명령은 그 루프의 Run 코디네이터 세션에서 돌리라는 안내와 함께 낸다. 루프는 띄운 터미널의 Run 명의를 물려받는다
 //     (orch-loop.ts 머리 주석의 「명의」). Run 은 그 저장소 loop.json 의 bound_run, 없으면 run 이다. 경고라 종료 코드를 바꾸지 않는다.
@@ -87,11 +109,11 @@
 //     새 세션에서 띄운 worker 를 Orca 가 user_takeover 로 적어, 일하는 worker 가 사용자에게 넘어간 것처럼 보인다.
 //     그 터미널 화면을 읽어 에이전트가 작업 중이면 working, 아니면 taken_over 다. 판정마다 WORKER-STATE 줄을 낸다.
 //     worker-list 를 30초 안에 읽지 못하면 SKIP-WORKERS 다. 경고라 종료 코드를 바꾸지 않는다.
-//     실패한 dispatch 나 작업 중이 아닌 user_owned 터미널이 있으면 adopt-sessions 를 안내한다.
+//     실패한 dispatch 나 작업 중이 아닌 user_owned 터미널이 있으면 `orch worker adopt` 를 안내한다.
 //
 // session-resume 이벤트(--run 을 줄 때, lib/events.ts 머리 주석의 「이벤트별 필드」):
 //     loop_alive  --repo 의 주 checkout 에서 상주 루프가 살아 있는지(lib/loop.ts 의 loopStatus).
-//                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 orch-loop.ts --start 명령을 낸다. 종료 코드는 바꾸지 않는다.
+//                 죽었으면 `LOOP-DEAD <repo> <이유>` 줄과, 다음 줄에 다시 띄울 `orch loop start` 명령을 낸다. 종료 코드는 바꾸지 않는다.
 //                 Run 등록을 아는 살아 있는 루프(loop.json 에 runs 가 있다)에 이 Run 이 등록되지 않았으면 그 루프는 이 Run 을 맡지 않는다.
 //                 false 로 보고 `LOOP-DEAD <repo> run <Run> 미등록` 줄과 같은 --start 명령을 낸다(wait-important 의 미등록 판정과 같다).
 //                 pid 가 살아 있는 루프 프로세스인데 alive_at 만 오래됐으면(loopStatus 의 recheck) lib/loop.ts 의 recheckMs 를
@@ -122,10 +144,18 @@
 //     FEEDBACK-OPEN <개수> <폴더>                 다시 보지 않은 스킬 개선 후보 파일이 있다(위 「개선 후보 판정」)
 //     STUDY-OPEN <개수> <폴더>                    글을 쓰지도 빼지도 않은 공부 후보가 있다(위 「공부 후보 판정」)
 //     ORCA-SHAPE worker-list <키,키>              worker-list 행에 orch 가 읽는 키가 없다(위 「Orca 형식 판정」). 다음 줄에 안내가 온다
+//     CLI-MISSING <경로>, CLI-STALE <경로>        ~/.local/bin/orch 가 없거나 낡았다(위 「orch 명령 판정」). 다음 줄에 고칠 명령이 온다
+//     CLI-NOT-ON-PATH <폴더>                      그 폴더가 셸 PATH 에 없다. 다음 줄에 셸 설정 안내가 온다
+//     OLD-CALL <파일>:<줄> <옛 이름>              저장소 파일이 진입점 옛 꼴로 부른다(위 「옛 꼴과 직접 경로 판정」). 다음 줄에 새 꼴이 온다
+//     DIRECT-PATH <파일>:<줄> <스크립트>          저장소 파일이 orch 스크립트를 파일 경로로 부른다. 다음 줄에 새 꼴이 온다
+//     WAIT-READER <파일>:<줄>                    저장소 스크립트가 대기 출력(LAST_DELIVERY)을 읽는다(위 「옛 꼴과 직접 경로 판정」). 다음 줄에 고칠 것이 온다
+//     WAIT-STALE <pid> <번들 sha 나 버전>          지금 세션의 설치본이 아닌 번들로 도는 대기. 다음 줄에 다시 거는 안내가 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
+// 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
+//
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*, OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -133,19 +163,20 @@
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { autoMergeConfig, unknownConditionsText } from './lib/auto-merge.ts'
+import { COMMANDS, isGroup, LAUNCHER_MARK, legacyNames, orchWord, resolveLegacy, resolveNew } from './lib/commands.ts'
 import { ConfigError, RemovedConfigError, loadConfig } from './lib/config.ts'
 import type { Config } from './lib/config.ts'
 import { fire, unknownHandlers } from './lib/events.ts'
 import { isFile, real, realPath } from './lib/fs.ts'
 import { defaultBase, mainCheckout } from './lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from './lib/loop.ts'
-import { pathOf } from './lib/paths.ts'
+import { orchDir, pathOf } from './lib/paths.ts'
 import { isOpen, scan as scanStudy } from './lib/study.ts'
 import { run } from './lib/proc.ts'
 import { shQuote } from './lib/py.ts'
@@ -155,6 +186,7 @@ import { missingRowKeys, workerRows } from './lib/workers.ts'
 import { orcaJson } from './lib/orca.ts'
 import { adoptHint } from './lib/sessions.ts'
 import { isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
+import { emit } from './lib/output.ts'
 
 const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
@@ -329,6 +361,7 @@ function checkScripts(skillDir: string): Checked {
   const seen = new Set<string>()
   for (const doc of markdownFiles(skillDir)) {
     const rows = readFileSync(doc, 'utf8').split(/\r\n|\r|\n/)
+    lines.push(...newFormMissing(doc, rows, skillDir, seen))
     rows.forEach((text, index) => {
       const entry = [
         ...[...text.matchAll(BIN_REF)].map((m) => ['bin', `bin/${m.groups?.name}`] as const),
@@ -425,7 +458,7 @@ function checkFeedback(repo: string): string[] {
 function checkStudy(repo: string): string[] {
   const dir = pathOf('study', repo)
   const found = scanStudy(dir)
-  if (found.legacy) process.stderr.write(`orch-doctor: 옛 공부 후보 표 파일이 남아 있다. study-candidates migrate 로 옮긴다: ${found.legacy}\n`)
+  if (found.legacy) process.stderr.write(`orch-doctor: 옛 공부 후보 표 파일이 남아 있다. ${orchWord()} study migrate 로 옮긴다: ${found.legacy}\n`)
   for (const file of found.broken) process.stderr.write(`orch-doctor: 공부 후보 파일의 머리를 읽지 못했다: ${file}\n`)
   const count = found.candidates.filter(isOpen).length
   return count > 0 ? [`STUDY-OPEN ${count} ${dir}`] : []
@@ -498,13 +531,12 @@ function staleLoops(configDir: string): string[] {
     const state = repo === '<repo>' ? null : readLoop(repo)
     const named = typeof state?.bound_run === 'string' && state.bound_run ? state.bound_run : state?.run
     const runId = typeof named === 'string' && named ? named : '<Run>'
-    const script = join(stale.installed, 'scripts', 'orch-loop.ts')
     lines.push(
       `LOOP-STALE ${repo} ${m[1]} ${stale.sha}`,
       `  안내: 이 루프는 설치되지 않은 번들(${stale.sha})로 돈다. 아래 두 명령은 그 루프의 Run(${runId}) 코디네이터 세션에서 돌린다. ` +
         '다른 세션에서 띄우면 새 루프가 그 세션의 Run 명의를 물려받아 원래 Run 의 질문을 읽지 못한다',
-      `  node --disable-warning=ExperimentalWarning "${script}" --repo ${shQuote(repo)} --stop --all`,
-      `  node --disable-warning=ExperimentalWarning "${script}" --repo ${shQuote(repo)} --run ${shQuote(runId)} --start`,
+      `  ${orchWord()} loop stop --repo ${shQuote(repo)} --all`,
+      `  ${orchWord()} loop start --repo ${shQuote(repo)} --run ${shQuote(runId)}`,
     )
   }
   return lines
@@ -542,6 +574,179 @@ function checkWorkers(runId: string, repo: string): string[] {
   return lines
 }
 
+// 머리 주석의 「orch 명령 판정」. Claude 세션의 Bash 는 플러그인 bin/ 이 PATH 에 있어 사람 셸의 PATH 를 볼 수 없다.
+// 그래서 ~/.local/bin/orch 사본이 있는지, 지금 실행기와 같은지, 플러그인 bin/ 을 뺀 PATH 에 그 폴더가 있는지를 본다
+function checkCli(skillDir: string): string[] {
+  const launcher = join(bundleRoot(skillDir), 'bin', 'orch')
+  if (!isFile(launcher)) return []
+  const file = join(homedir(), '.local', 'bin', 'orch')
+  const fix = `  고칠 명령: ${orchWord()} doctor install-cli`
+  let body = ''
+  try {
+    body = readFileSync(file, 'utf8')
+  } catch {
+    // 없거나 읽지 못하면 깔리지 않은 것이다
+  }
+  if (!body.slice(0, 400).includes(LAUNCHER_MARK)) return [`CLI-MISSING ${file}`, fix]
+  const lines: string[] = []
+  if (body !== readFileSync(launcher, 'utf8')) lines.push(`CLI-STALE ${file}`, fix)
+  const pluginBin = real(dirname(launcher))
+  const dirs = (process.env.PATH ?? '').split(delimiter).filter((dir) => dir && real(dir) !== pluginBin)
+  if (!dirs.some((dir) => real(dir) === real(dirname(file)))) {
+    lines.push(`CLI-NOT-ON-PATH ${dirname(file)}`, `  셸 설정(~/.zshrc 같은 것)에 export PATH="${dirname(file)}:$PATH" 를 더한다`)
+  }
+  return lines
+}
+
+// 머리 주석의 「대기 번들 판정」. 루프 번들 판정과 같은 규칙을 wait-important 프로세스에 쓴다
+function staleWaiters(configDir: string): string[] {
+  const done = run([process.env.PS || 'ps', '-axo', 'pid=,command='], { env: { LC_ALL: 'C' } })
+  if (done.code !== 0) return []
+  const lines: string[] = []
+  for (const row of done.stdout.split('\n')) {
+    const m = /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(row)
+    if (!m || /\borchestration\s+check\b/.test(m[3])) continue
+    const found = /(?:^|\s)(\/.*?wait-important\.ts)(?=\s|$)/.exec(m[3])
+    if (!found) continue
+    const stale = staleBundle(found[1], configDir)
+    if (!stale) continue
+    lines.push(
+      `WAIT-STALE ${m[1]} ${stale.sha}`,
+      `  안내: 이 대기는 설치되지 않은 번들(${stale.sha})로 돈다. 그 대기의 코디네이터 세션에서 끝내고(kill ${m[1]}) ${orchWord()} wait --ack <마지막 delivery> 로 다시 건다`,
+    )
+  }
+  return lines
+}
+
+// 머리 주석의 「옛 꼴과 직접 경로 판정」이 보는 파일. 저장소 루트 기준 상대경로와 절대경로다
+function callFiles(repo: string): string[] {
+  const root = mainCheckout(repo)
+  const orch = orchDir(root)
+  const files: string[] = []
+  const walk = (dir: string, depth: number) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory() && depth > 0 && entry.name !== 'node_modules') walk(full, depth - 1)
+      else if (entry.isFile()) files.push(full)
+    }
+  }
+  for (const name of ['overlay.md', 'config.json', join('specs', 'spec-common.md')]) {
+    if (isFile(join(orch, name))) files.push(join(orch, name))
+  }
+  walk(join(orch, 'bin'), 0)
+  walk(join(orch, 'hooks'), 0)
+  walk(join(root, '.claude', 'skills'), 6)
+  return files
+}
+
+function escapeRe(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 옛 이름과 스크립트 파일 이름. 긴 이름부터 맞춘다(merge_queue 와 merge-with-finish, orch-doctor 와 orch)
+const LEGACY = [...legacyNames(), 'orch-doctor'].filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => b.length - a.length)
+const SCRIPTS = [...new Set(COMMANDS.map((c) => c.script.replace(/\.ts$/, '')))].sort((a, b) => b.length - a.length)
+const OLD_CALL = new RegExp(
+  `(?:orch\\.m?ts['"]?|"\\$ORCH"|\\$ORCH|\\$\\{ORCH\\})\\s+(?:--path\\s+)?(${LEGACY.map(escapeRe).join('|')})(?:\\.ts)?(?![\\w-])|(orch-doctor)\\.py`,
+)
+const DIRECT_PATH = new RegExp(
+  `(?:orch/scripts/|\\$SKILL_DIR/scripts/|\\$\\{?ORCH_SCRIPTS\\}?/)(${SCRIPTS.map(escapeRe).join('|')})\\.ts|join\\(\\s*ORCH_SCRIPTS\\s*,\\s*['"](${SCRIPTS.map(escapeRe).join('|')})\\.ts['"]`,
+)
+
+function hintFor(name: string, rest: string): string {
+  // 경로를 감싼 따옴표와 괄호의 닫는 글자가 남으면 동작 낱말을 읽지 못한다
+  const tokens = rest.replace(/^["')]+/, '').split(/\s+/).filter(Boolean)
+  const legacy = resolveLegacy(name, tokens) ?? resolveLegacy(name, [])
+  const row = legacy?.command ?? COMMANDS.find((c) => c.script === `${name}.ts`)
+  return row ? `  새 꼴: ${legacy?.hint ?? ['orch', row.group, ...(row.verb ? [row.verb] : [])].join(' ')}` : ''
+}
+
+const WAIT_READER_FIX = '  고칠 것: orch wait 의 짧은 출력은 메시지마다 판정 줄을 낸다. 원문 JSON 이 필요하면 RAW 줄의 파일을 orch wait triage --full 로 읽는다'
+
+function checkCalls(repo: string): string[] {
+  const root = mainCheckout(repo)
+  const lines: string[] = []
+  for (const file of callFiles(root)) {
+    const script = !/\.(?:md|json)$/i.test(file)
+    let rows: string[]
+    try {
+      rows = readFileSync(file, 'utf8').split(/\r\n|\r|\n/)
+    } catch {
+      continue
+    }
+    rows.forEach((text, i) => {
+      if (text.includes('orch-compat') || (i > 0 && rows[i - 1].includes('orch-compat'))) return
+      const where = `${relative(root, file)}:${i + 1}`
+      const old = OLD_CALL.exec(text)
+      if (old) {
+        const name = old[1] ?? old[2]
+        lines.push(`OLD-CALL ${where} ${name}`)
+        const hint = hintFor(name, text.slice(old.index + old[0].length))
+        if (hint) lines.push(hint)
+        return
+      }
+      const direct = DIRECT_PATH.exec(text)
+      if (direct) {
+        const name = direct[1] ?? direct[2]
+        lines.push(`DIRECT-PATH ${where} ${name}.ts`)
+        const hint = hintFor(name, text.slice(direct.index + direct[0].length))
+        if (hint) lines.push(hint)
+        return
+      }
+      if (script && text.includes('LAST_DELIVERY')) lines.push(`WAIT-READER ${where}`, WAIT_READER_FIX)
+    })
+  }
+  return lines
+}
+
+// 문서의 새 꼴 호출. 백틱 안이나 코드 블록 안에서 `orch ` 뒤에 ASCII 소문자 낱말이 오는 것만 명령으로 본다
+const NEW_FORM = /(?:^|[\s(;|&{"'`$])orch\s+([a-z][a-z0-9-]*(?:\s+[^\s`;|&)]+)*)/g
+const ORCH_SCRIPTS_DIR = fileURLToPath(new URL('.', import.meta.url))
+
+function codeParts(rows: string[]): { index: number; text: string }[] {
+  const parts: { index: number; text: string }[] = []
+  let fenced = false
+  rows.forEach((row, index) => {
+    if (/^\s*(```|~~~)/.test(row)) {
+      fenced = !fenced
+      return
+    }
+    if (fenced) parts.push({ index, text: row })
+    else for (const m of row.matchAll(/`([^`]+)`/g)) parts.push({ index, text: m[1] })
+  })
+  return parts
+}
+
+function newFormMissing(doc: string, rows: string[], skillDir: string, seen: Set<string>): string[] {
+  const lines: string[] = []
+  for (const { index, text } of codeParts(rows)) {
+    if (text.includes('orch-compat') || (index > 0 && rows[index - 1].includes('orch-compat'))) continue
+    for (const m of text.matchAll(NEW_FORM)) {
+      const tokens = m[1].split(/\s+/)
+      const shown = `orch ${tokens.slice(0, 2).join(' ')}`
+      if (!isGroup(tokens[0])) {
+        lines.push(`MISSING ${relative(skillDir, doc)}:${index + 1} ${shown}`)
+        continue
+      }
+      const resolved = resolveNew(tokens)
+      if ('error' in resolved) {
+        lines.push(`MISSING ${relative(skillDir, doc)}:${index + 1} ${shown}`)
+        continue
+      }
+      const target = join(ORCH_SCRIPTS_DIR, resolved.command.script)
+      seen.add(target)
+      if (!exists(target)) lines.push(`MISSING ${relative(skillDir, doc)}:${index + 1} ${shown}`)
+    }
+  }
+  return lines
+}
+
 async function main(argv: string[]): Promise<number> {
   let values
   try {
@@ -576,7 +781,7 @@ async function main(argv: string[]): Promise<number> {
   const version = values['skip-version'] ? { lines: [], code: 0 } : checkVersion(skillDir, values.remote, values.branch as string, configDir)
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
-  const repoLines = [...checkRepo(repo), ...checkFeedback(repo), ...checkStudy(repo)]
+  const repoLines = [...checkRepo(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId, repo)
   let loop = runId ? loopStatus(repo, Date.now()) : null
   if (loop && !loop.alive && loop.recheck) {
@@ -589,12 +794,13 @@ async function main(argv: string[]): Promise<number> {
     loop && (!loop.alive || unregistered)
       ? [
           loop.alive ? `LOOP-DEAD ${repo} run ${runId} 미등록` : `LOOP-DEAD ${repo} ${loop.reason}`,
-          `  node --disable-warning=ExperimentalWarning "${join(skillDir, 'scripts', 'orch-loop.ts')}" --repo ${shQuote(repo)} --run ${shQuote(runId as string)} --start`,
+          `  ${orchWord()} loop start --repo ${shQuote(repo)} --run ${shQuote(runId as string)}`,
         ]
       : []
   const workerLines = runId ? checkWorkers(runId, repo) : []
   const shapeLines = checkOrcaShape()
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...workerLines, ...shapeLines].join('\n')}\n`)
+  // 짧은 출력(진입점의 orch doctor)은 판정 줄과 들여 쓴 고칠 줄만 낸다. `  안내:` 줄은 --full 이다(lib/output.ts 의 emit)
+  emit(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines].join('\n')}`, [], { fix: true })
 
   if (runId) {
     try {

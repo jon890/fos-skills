@@ -26,7 +26,8 @@
 //                    새로 쓴다. 뜨는 루프가 앞 루프의 alive_at 이전 등록을 지울 때 이 Run 을 지우지 않게 하려는 것이다.
 //                    이미 등록됐거나 Run 이 없으면 LOOP-RUNNING <pid> run=<Run id> 와 4.
 //                    Run 등록을 모르는 옛 루프(loop.json 에 runs 가 없다)면 등록하지 않고 LOOP-RUNNING 과 4 이고, Run 이 다르면
-//                    `안내: …` 한 줄을 더 낸다. 그 루프를 띄운 세션이 --stop 뒤 새 orch 로 다시 띄워야 한다
+//                    `안내: …` 한 줄을 더 낸다. 그 루프를 띄운 세션이 --stop 뒤 새 orch 로 다시 띄워야 한다.
+//                    짧은 출력(진입점의 orch loop …, lib/output.ts)은 `안내:` 줄을 내지 않고, 옛 루프 안내만 `LOOP-LEGACY <pid> run=<그 루프의 Run>` 으로 낸다
 //     --stop         --run 을 주면 그 Run 의 등록만 지운다. 다른 Run 이 남으면 루프를 멈추지 않고
 //                    LOOP-LEFT <pid> run=<Run id> runs=<남은 Run 목록> 와 0, 등록돼 있지 않았으면 LOOP-NOT-REGISTERED run=<Run id> 와 0.
 //                    옛 루프가 다른 Run 의 것이면 멈추지 않고 LOOP-NOT-REGISTERED 와 안내 줄, 0 이다.
@@ -407,6 +408,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
+import { orchWord } from './lib/commands.ts'
+import { shQuote } from './lib/py.ts'
 import { featureEvidenceProblem, featureLoopRequested, fetchedBaseMerges } from './lib/feature-evidence.ts'
 import { autoMergeConfig, beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, REVIEW_WAIT, reservedFor, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from './lib/auto-merge.ts'
 import type { AutoMergeConfig, ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from './lib/auto-merge.ts'
@@ -444,6 +447,7 @@ import { isStructured, limitedScreen, structuredScreen } from './lib/sessions.ts
 import { readScreen, screenLines, screenTail, stallHash } from './lib/screen.ts'
 import { collectStages, collectWorkers, idleNotices, markScreen, movementSettings, readRecords, stageNotices, tailHash } from './lib/movement.ts'
 import type { MovementSettings, ScreenMark } from './lib/movement.ts'
+import { emit, short } from './lib/output.ts'
 import { branchesOf } from './lib/spec.ts'
 import { waiterPids } from './lib/waiters.ts'
 import { LIVE_DISPATCH, workerFor, workerRows, worktreePaths } from './lib/workers.ts'
@@ -537,7 +541,8 @@ function log(line: string): void {
       process.stderr.write(`orch-loop: ${logFile} 에 쓰지 못했다: ${(e as Error).message}\n`)
     }
   }
-  process.stdout.write(`${line}\n`)
+  // 짧은 출력(진입점의 orch loop …)이면 LOOP-* 같은 판정 줄만 낸다. 로그 파일은 늘 전부다
+  emit(line)
 }
 
 function oneLine(value: unknown): string {
@@ -704,6 +709,11 @@ function legacyLoop(state: LoopState | null, pid?: number): boolean {
 
 const LEGACY_HINT = '안내: 이 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다. 그 루프를 띄운 세션이 --stop 한 뒤 새 orch 로 --start 하면 여러 Run 을 함께 맡는다'
 
+// 옛 루프 안내. 짧은 출력(진입점의 orch loop …)은 안내 줄을 내지 않으므로, 정상 루프의 LOOP-RUNNING 과 가리게 판정 줄로 낸다
+function legacyHint(pid: unknown, run: unknown): void {
+  log(short() ? `LOOP-LEGACY ${pid ?? '-'} run=${run || '-'}` : LEGACY_HINT)
+}
+
 // 살아 있는 루프에 이 Run 을 더한다. 이미 맡고 있거나 Run 이 없으면 전처럼 LOOP-RUNNING 이다(머리 주석의 --start).
 // raced 는 띄운 자식이 다른 --start 의 루프에 잠금을 져 4 로 끝난 경우다. 이 Run 은 띄우기 전에 등록했으므로 합류로 본다.
 // loop.json 의 pid 가 찾은 pid 와 다르면 루프가 막 뜨는 중이다. 그 루프는 시작할 때 앞 루프의 alive_at 이전 등록을 지우므로,
@@ -716,7 +726,7 @@ async function joinLoop(ctx: Context, found: { pid: number; run: string }, raced
     // 옛 루프는 등록을 읽지 않는다. 띄우기 전에 쓴 등록을 남기지 않는다
     if (raced) unregisterRun(ctx.repo, ctx.run)
     log(`LOOP-RUNNING ${found.pid} run=${found.run}`)
-    if (found.run !== ctx.run) log(LEGACY_HINT)
+    if (found.run !== ctx.run) legacyHint(found.pid, found.run)
     return 4
   }
   if (ctx.run && (raced || !registered)) {
@@ -871,7 +881,7 @@ async function stop(repo: string, run: string | null, all: boolean): Promise<num
     if (legacyLoop(state) && state?.run && state.run !== run && isLoopProcess(Number(state.pid)) !== false) {
       // 옛 루프는 다른 Run 의 것이다. 그 세션의 루프를 끊지 않는다
       log(`LOOP-NOT-REGISTERED run=${run}`)
-      log(LEGACY_HINT)
+      legacyHint(state.pid, state.run)
       return 0
     }
     const removed = unregisterRun(repo, run)
@@ -2170,7 +2180,7 @@ function migrationContext(
     return { ok: false, error: `마이그레이션 예약을 읽지 못했다: ${oneLine(e)}` }
   }
   // 형식이 틀린 예약을 버린 채 보면 그 번호보다 높은 PR 을 건다
-  if (read.skipped > 0) return { ok: false, error: `마이그레이션 예약 ${read.skipped} 개의 형식이 틀렸다. reserve-migration.ts --prune 으로 뺀다` }
+  if (read.skipped > 0) return { ok: false, error: `마이그레이션 예약 ${read.skipped} 개의 형식이 틀렸다. ${orchWord()} queue reserve prune 으로 뺀다` }
   for (const r of read.list) {
     const migration: Migration = { module: r.module, version: r.version, label: r.label, path: r.path }
     const entry = reserved.find((item) => item.branch === r.branch)
@@ -2385,7 +2395,7 @@ async function autoMergeStep(
     if (!entry.fired && waited > ctx.autoMerge.blockedAfterSec * 1000) {
       const text =
         `${blocker.module} ${blocker.mine} 이 ${holder} 을 ${Math.floor(waited / 60_000)}분 기다린다. ` +
-        '막는 쪽 worker 가 reserve-migration.ts --again 으로 번호를 다시 받는다. 막는 브랜치를 버렸으면 지운 뒤 reserve-migration.ts --prune'
+        `막는 쪽 worker 가 ${orchWord()} queue reserve --again 으로 번호를 다시 받는다. 막는 브랜치를 버렸으면 지운 뒤 ${orchWord()} queue reserve prune`
       if (notifyAutoMerge(ctx, 'MIGRATION-BLOCKED', c.pr.number, text, c.run)) entry.fired = true
     } else {
       log(`AUTO-MERGE-WAIT #${c.pr.number} ${blocker.module} ${blocker.mine} 이 ${holder} 을 기다린다`)
@@ -2481,7 +2491,7 @@ function relayFinishMissing(repo: string, stdout: string, run: string | null): v
   let changed = false
   for (const m of found) {
     if (Object.hasOwn(seen, m[1])) continue
-    const hint = `마무리를 뒤늦게 돌리려면 orch.ts finish-pr ${m[1]} --repo ${repo}${run ? ` --run ${run}` : ''}`
+    const hint = `마무리를 뒤늦게 돌리려면 ${orchWord()} queue finish ${m[1]} --repo ${shQuote(repo)}${run ? ` --run ${run}` : ''}`
     try {
       appendEvent(repo, 'FINISH-MISSING', Number(m[1]), `${m[2]}. ${hint}`, run)
       seen[m[1]] = iso()

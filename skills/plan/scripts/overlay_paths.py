@@ -2,7 +2,7 @@
 """작업 대상 하위 프로젝트를 정하고 레포 설정을 읽을 순서를 낸다.
 
 판정 규칙은 references/monorepo.md 가 소유한다. 이 스크립트는 그 규칙을 그대로 실행한다.
-plan, implementation, docs-check, review-fix 가 함께 쓴다.
+plan, implementation, docs-audit, review-fix 가 함께 쓴다.
 
 사용법:
     python3 scripts/overlay_paths.py --skill review-fix [--sub DIR] [--plan NAME] [PATH ...]
@@ -63,14 +63,32 @@ def owner(path: str, subs: list[str]) -> str | None:
     return first[0] if first and first[0] in subs else None
 
 
-def search_order(root: Path, skill: str, sub: str | None) -> list[str]:
+def search_order(root: Path, skill: str, sub: str | None, warned: set[str] | None = None) -> list[str]:
     """값 하나마다 이 순서로 찾는다. 앞의 파일에 있으면 그것을 쓴다."""
-    aliases = {"plan": "planning", "implementation": "build-with-teams"}
+    if warned is None:
+        warned = set()
+    aliases = {"plan": "planning", "implementation": "build-with-teams", "docs-audit": "docs-check"}
     names = [skill] + ([aliases[skill]] if skill in aliases else [])
+    if skill == "docs-consolidate":
+        names += ["docs-audit", "docs-check"]
     order = []
     if sub:
         order += [f"{sub}/.claude/{name}-overlay.md" for name in names]
     order += [f".claude/{name}-overlay.md" for name in names]
+    if skill in ("docs-audit", "docs-consolidate"):
+        for scope in ([sub, None] if sub else [None]):
+            directory = f"{scope}/.claude" if scope else ".claude"
+            current = f"{directory}/docs-audit-overlay.md"
+            legacy = f"{directory}/docs-check-overlay.md"
+            if skill == "docs-consolidate" and (root / f"{directory}/{skill}-overlay.md").is_file():
+                order.remove(current)
+                order.remove(legacy)
+                continue
+            if (root / current).is_file():
+                order.remove(legacy)
+            elif (root / legacy).is_file() and legacy not in warned:
+                warned.add(legacy)
+                print(f"경고: {legacy} 는 옛 이름입니다. {current} 로 옮겨 주세요 (docs-audit 스킬 5.0.0에서 호환 제거).", file=sys.stderr)
     if sub:
         order += [f"{sub}/{name}" for name in HARNESS]
     order += list(HARNESS)
@@ -122,12 +140,13 @@ def main(argv: list[str]) -> int:
     except ValueError as exc:
         print(f"실행하지 못했다: {exc}", file=sys.stderr)
         return 2
+    warned: set[str] = set()
     result = {
         "monorepo": bool(subs),
         "subprojects": subs,
         "targets": targets,
         "reason": reason,
-        "search": {t: search_order(root, args.skill, t) for t in targets} if targets else {".": search_order(root, args.skill, None)},
+        "search": {t: search_order(root, args.skill, t, warned) for t in targets} if targets else {".": search_order(root, args.skill, None, warned)},
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 1 if subs and not targets else 0

@@ -149,6 +149,20 @@ describe('migrate-orch-dir 폴더 옮기기', { concurrency: 4 }, () => {
     assert.deepEqual(listing(c.repo), before)
   })
 
+  test('짧은 출력의 미리보기는 WOULD-MOVE 판정 줄이고 참조는 위치만 남긴다', async (t) => {
+    const c = setup(t)
+    handoffsLayout(c)
+    const { stdout } = await c.migrate([], { env: { ORCH_OUTPUT: 'short' } })
+    const lines = stdout.trim().split('\n')
+    assert.ok(lines.includes('WOULD-MOVE .claude/orch-overlay.md .orch/overlay.md'), stdout)
+    assert.ok(lines.includes('WOULD-MOVE .omc/handoffs/specs .orch/specs'), stdout)
+    assert.ok(lines.every((l) => /^[A-Z]/.test(l)), stdout)
+    assert.ok(!stdout.includes('옛 경로 참조'), stdout)
+    // 고칠 참조는 위치만 남긴다
+    assert.ok(lines.includes('WOULD-REWRITE .omc/handoffs/specs/spec-a.md:1'), stdout)
+    assert.ok(lines.includes('OLD-REF-SCRIPT .omc/handoffs/bin/merge.sh:1'), stdout)
+  })
+
   test('--apply 는 옮기고 옛 경로를 바꾸며 다른 도구의 파일은 남긴다', async (t) => {
     const c = setup(t)
     handoffsLayout(c)

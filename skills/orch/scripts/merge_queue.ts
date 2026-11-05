@@ -176,6 +176,10 @@
 // OWNER, REPO, GH_HOST(위 --hostname 과 같은 값)를 받는다.
 // 예: merge_queue.ts 101 102:'./bin/backup-db.sh orders "pr-$PR"' 103
 //
+// 짧은 출력(진입점의 orch queue run, 또는 merge-with-finish 가 이어 준 신호, lib/output.ts): 시각 붙은 진행 줄 대신 `MERGED <PR>` 을 내고,
+// 머지 실패는 gh 의 마지막 줄을 붙인 `STOP <PR> 머지 실패: <그 줄>`, `경고:` 줄은 `WARN <내용>` 이다. 정리(cleanup-sweep)에 신호를 넘긴다.
+// 상주 루프는 이 명령을 경로로 불러 지금 출력 그대로 읽는다.
+//
 // 종료 코드: 0 모두 머지(또는 이미 MERGED), 1 어느 PR 에서 멈춤(기본은 보류한 PR 이 있음. 충돌이나 묶음으로 뺀 PR 이 있음.
 //           3 보다 우선한다),
 //           2 사용법 오류(설정 파일 오류, 삭제한 옵션, 큐에 없는 --last-of-task 포함),
@@ -200,6 +204,8 @@ import type { RunResult } from './lib/proc.ts'
 import { appendEvent } from './lib/loop.ts'
 import { alive } from './lib/process.ts'
 import { pyJson } from './lib/py.ts'
+import { emit, oneLine, short, shortEnv } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 import { QUEUE_VALUE_OPTIONS } from './lib/queue-options.ts'
 import { TURN_PHASES, writeTurn, writeTurnAt } from './lib/queue-turn.ts'
 import { tellBranchWorker } from './lib/tell-worker.ts'
@@ -336,8 +342,16 @@ function now(): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+// 짧은 출력(진입점의 orch queue run, merge-with-finish 가 이어 준 신호)의 줄 규칙. 시각 붙은 진행 줄은 머지 결과만 남긴다.
+// 상주 루프는 이 스크립트를 경로로 불러 로그 끝 줄을 읽으므로 지금 출력 그대로다(lib/output.ts 머리 주석)
+const SHORT_RULES: Rule[] = [
+  [/^\d\d:\d\d (\d+) (?:이미 )?MERGED$/, (m) => `MERGED ${m[1]}`],
+  [/^\d\d:\d\d /, () => null],
+  [/^경고: (.*)/, (m) => `WARN ${m[1]}`],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line, SHORT_RULES)
 }
 
 function log(message: string): void {
@@ -1012,7 +1026,8 @@ class Queue {
     const merge = gh(['pr', 'merge', n, `--${o.method}`, '--match-head-commit', p.ph], { timeoutMs: NO_LIMIT_MS })
     // 옛 명령은 stderr 를 stdout 에 합쳐 마지막 줄만 찍었다
     const last = chomp(merge.stdout + merge.stderr).split('\n').pop() ?? ''
-    if (last) out(last)
+    // 짧은 출력은 gh 의 줄을 따로 내지 않는다. 머지하지 못하면 아래 STOP 의 이유로 붙인다(설계 DECISION21)
+    if (last && !short()) out(last)
     let merged = false
     for (let i = 0; i < 3; i++) {
       await nap(5)
@@ -1021,7 +1036,7 @@ class Queue {
         break
       }
     }
-    if (!merged) stop(`${n} 머지 실패`)
+    if (!merged) stop(short() && last ? `${n} 머지 실패: ${oneLine(last)}` : `${n} 머지 실패`)
     log(`${n} MERGED`)
     this.merged.push([n, kind])
     // 머지 뒤 원격 추적 브랜치를 갱신해야 remove-worktree.ts 가 워크트리 커밋을 원격에 있다고 본다
@@ -1423,9 +1438,10 @@ class Queue {
   // 머지가 끝난 뒤 cleanup-sweep --apply 로 정리한다. 실패해도 머지 결과는 그대로라 경고만 찍는다
   async sweep(): Promise<void> {
     const sweep = process.env.CLEANUP_SWEEP ?? `${HERE}/cleanup-sweep.ts`
+    // 정리의 출력은 이 큐의 출력에 그대로 이어진다. 짧은 출력이면 정리도 짧은 출력이다
     const done = await runInherit(
       scriptCommand(sweep, ['--repo', process.cwd(), '--base', this.sweepBase || 'main', '--apply', ...this.o.sweepArgs]),
-      { timeoutMs: NO_LIMIT_MS },
+      { timeoutMs: NO_LIMIT_MS, env: shortEnv() },
     )
     if (done.code !== 0) out('경고: cleanup-sweep.ts 가 실패했다. 머지 결과는 그대로다')
   }

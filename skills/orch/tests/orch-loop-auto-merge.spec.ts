@@ -698,7 +698,7 @@ describe('마이그레이션', () => {
     assert.equal(blocked[0].pr, 2)
     assert.match(
       String(blocked[0].text),
-      /^api V4 이 #1 V3 을 \d+분 기다린다\. 막는 쪽 worker 가 reserve-migration\.ts --again 으로 번호를 다시 받는다\. 막는 브랜치를 버렸으면 지운 뒤 reserve-migration\.ts --prune$/,
+      /^api V4 이 #1 V3 을 \d+분 기다린다\. 막는 쪽 worker 가 \S+ queue reserve --again 으로 번호를 다시 받는다\. 막는 브랜치를 버렸으면 지운 뒤 \S+ queue reserve prune$/,
     )
     assert.deepEqual(events('AUTO-MERGE'), [])
   })
@@ -734,7 +734,7 @@ describe('마이그레이션 예약', () => {
     assert.equal(blocked.length, 1, JSON.stringify(events()))
     assert.equal(blocked[0].pr, 1)
     assert.match(String(blocked[0].text), /^api V4 이 feat\/x 의 예약 V3 을 \d+분 기다린다\. /)
-    assert.match(String(blocked[0].text), /reserve-migration\.ts --again/)
+    assert.match(String(blocked[0].text), / queue reserve --again/)
     assert.deepEqual(events('AUTO-MERGE'), [])
     assert.deepEqual(queueCalls(), [])
   })
@@ -790,7 +790,7 @@ describe('마이그레이션 예약', () => {
     once()
     assert.deepEqual(events('AUTO-MERGE'), [])
     assert.deepEqual(queueCalls(), [])
-    assert.match(migrationError(), /auto-merge: 마이그레이션 예약 1 개의 형식이 틀렸다\. reserve-migration\.ts --prune 으로 뺀다/)
+    assert.match(migrationError(), /auto-merge: 마이그레이션 예약 1 개의 형식이 틀렸다\. \S+ queue reserve prune 으로 뺀다/)
   })
 
   test('열린 PR 조회가 200 줄이면 목록이 잘렸을 수 있어 마이그레이션이 든 PR 을 걸지 않는다', () => {

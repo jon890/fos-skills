@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { conflicts, defaultBase, mainCheckout, repoArgProblem } from '../scripts/lib/git.ts'
+import { renameSync } from 'node:fs'
 
 // CI 에는 git 작성자 설정이 없어 커밋이 실패하고, 로컬의 전역 설정은 결과를 바꿀 수 있어 둘 다 고정한다.
 // 라이브러리가 부르는 git 도 같은 값을 받도록 process.env 에 둔다. 테스트 파일마다 프로세스가 나뉘어 다른 파일에 새지 않는다.
@@ -139,6 +140,71 @@ describe('mainCheckout', () => {
     const outside = join(tmp, 'outside')
     mkdirSync(outside)
     assert.equal(mainCheckout(outside), outside)
+  })
+
+  // 아래는 같은 프로세스 안의 기억이 기억 없을 때와 같은 값을 내는지 본다(lib/git.ts 의 mainCheckout 위 주석).
+  function withCeiling(fn: () => void) {
+    const saved = process.env.GIT_CEILING_DIRECTORIES
+    process.env.GIT_CEILING_DIRECTORIES = tmp
+    try {
+      fn()
+    } finally {
+      if (saved === undefined) delete process.env.GIT_CEILING_DIRECTORIES
+      else process.env.GIT_CEILING_DIRECTORIES = saved
+    }
+  }
+
+  test('없는 경로로 받은 답은 그 자리에 워크트리가 생기면 다시 묻는다', () => {
+    withCeiling(() => {
+      const later = join(tmp, 'later-wt')
+      assert.equal(mainCheckout(later), later)
+      sh(repo, 'worktree', 'add', '-q', '-b', 'later-wt', later, 'trunk')
+      assert.equal(mainCheckout(later), repo)
+    })
+  })
+
+  test('git 밖 하위 폴더로 받은 답은 조상에 저장소가 생기면 다시 묻는다', () => {
+    withCeiling(() => {
+      const parent = join(tmp, 'plain-parent')
+      const sub = join(parent, 'sub')
+      mkdirSync(sub, { recursive: true })
+      assert.equal(mainCheckout(sub), sub)
+      sh(tmp, 'init', '-q', parent)
+      assert.equal(mainCheckout(sub), parent)
+    })
+  })
+
+  test('주 checkout 을 옮기면 워크트리에서 다시 물어 그 워크트리 폴더다', () => {
+    const main = join(tmp, 'moved-main')
+    const wt = join(tmp, 'moved-main-wt')
+    sh(tmp, 'init', '-q', '-b', 'trunk', main)
+    sh(main, 'commit', '-q', '--allow-empty', '-m', 'init')
+    sh(main, 'worktree', 'add', '-q', '-b', 'moved', wt)
+    assert.equal(mainCheckout(wt), main)
+    renameSync(main, join(tmp, 'moved-main-renamed'))
+    assert.equal(mainCheckout(wt), wt)
+  })
+
+  test('지운 워크트리를 다시 물으면 그 경로다', () => {
+    const wt = join(tmp, 'removed-wt')
+    sh(repo, 'worktree', 'add', '-q', '-b', 'removed-wt', wt, 'trunk')
+    assert.equal(mainCheckout(wt), repo)
+    sh(repo, 'worktree', 'remove', '--force', wt)
+    assert.equal(mainCheckout(wt), wt)
+  })
+
+  test('같은 폴더를 다시 물으면 git 을 띄우지 않는다', () => {
+    const wt = join(tmp, 'memo-wt')
+    sh(repo, 'worktree', 'add', '-q', '-b', 'memo-wt', wt, 'trunk')
+    assert.equal(mainCheckout(wt), repo)
+    const savedPath = process.env.PATH
+    // git 을 찾지 못하면 run 이 127 로 끝나 기억이 없을 때는 받은 폴더가 나온다
+    process.env.PATH = mkdtempSync(join(tmp, 'empty-path-'))
+    try {
+      assert.equal(mainCheckout(wt), repo)
+    } finally {
+      process.env.PATH = savedPath
+    }
   })
 })
 

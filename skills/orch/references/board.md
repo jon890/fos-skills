@@ -59,7 +59,7 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 `--release <PR>` 은 그 PR 의 머지 커밋이 품은 PR 을 `pr` 필드에 둔 항목을, `--pr <N>` 은 그 번호가 `pr` 이나 `merged-pr` 필드에 든 항목을 끝낸다. `--dry-run` 은 보드를 고치지 않는다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" board-release --repo "$REPO" --release "$RELEASE_PR"
+orch board release --release "$RELEASE_PR"
 ```
 
 **PR 머지 반영과 목표 진행률은 `board-sync.ts` 에 맡긴다.** 판정은 스크립트 머리 주석이 소유한다.
@@ -98,8 +98,10 @@ PR 상태, CI, 커밋, worker 화면 같은 상태 줄은 쓰지 않는다. 단�
 `$GOAL_ID` 는 목표 항목 id 다. 무엇을 단계로 세는지는 스크립트 머리 주석이 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" goal-progress "$GOAL_ID"
+orch board goal "$GOAL_ID"
 ```
+
+기본 출력은 `GOAL <목표> <완료/전체>` 한 줄이다. `orch board sync`, `orch board release` 는 바꾼 항목마다 `BOARD <id> …` 와 끝 줄 `BOARD-SYNC <수>`, `BOARD-RELEASE <수>` 다. 설명 줄과 세부 줄은 `--full` 이다.
 
 **mod 가 단계로 세면 이 스크립트는 걷어 낸다.** work-board mod 가 진행률을 단계 줄에서 직접 세는 기능을 갖게 되면 `goal-progress.ts` 와 `board-sync.ts` 의 `--goal` 을 지운다.
 보드 파일과 도구 위치, 추적 항목 목록(`--items-file`) 같은 하위 호환 옵션은 스크립트 머리 주석이 소유한다.

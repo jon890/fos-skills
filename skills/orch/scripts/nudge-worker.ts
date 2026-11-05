@@ -39,12 +39,17 @@
 //     5  orca 가 오류를 냈다. 그 출력을 그대로 낸다
 //     2  사용법 오류
 //
+// 짧은 출력(진입점의 orch worker nudge, lib/output.ts): 첫 낱말을 대문자로 하고 request id 만 붙인다(NUDGED <id>, QUEUED, WORKING,
+// PERMISSION <id>, UNOBSERVED <id>, DRAFT 같은 화면 상태). orca 오류는 ORCA-ERROR <한 줄> 이다. --state 와 --classify 의 상태 낱말은 그대로다.
+//
 // 옵션은 고유 접두로 줄여 쓸 수 있고 `--text "-x"` 처럼 값이 - 로 시작해도 받는다(lib/args.ts).
 
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { orcaBin, withFull } from './lib/orca.ts'
+import { emit, oneLine, short } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 import { run } from './lib/proc.ts'
 import { classify, LINE_BREAK, screenLines as tailOf } from './lib/screen.ts'
 
@@ -59,7 +64,20 @@ const ORCA_SLACK_MS = 60_000
 
 type Prompt = { stages?: unknown; observation?: unknown; requestId?: unknown }
 
+// 짧은 출력(진입점의 orch worker nudge)의 줄. 첫 낱말을 대문자로 하고 request id 만 붙인다(None 이면 뺀다).
+// 직접 실행은 지금 줄이다. send-to-worker 와 핸들러가 첫 낱말을 읽는다
+const id = (value: string) => (value === 'None' ? '' : ` ${value}`)
+const SHORT_RULES: Rule[] = [
+  [/^(nudged|permission|unobserved): .*?\((\S+)\)/, (m) => `${m[1].toUpperCase()}${id(m[2])}`],
+  [/^([a-z]+): /, (m) => m[1].toUpperCase()],
+]
+
 function out(line: string): void {
+  emit(line, SHORT_RULES)
+}
+
+// 판정이 아니라 데이터(--state, --classify 의 상태 낱말)다. 짧은 출력에서도 그대로 낸다
+function plain(line: string): void {
   process.stdout.write(`${line}\n`)
 }
 
@@ -74,7 +92,9 @@ function orcaJson(args: string[], timeoutMs?: number): Record<string, unknown> |
   }
   const body = typeof data === 'object' && data !== null && !Array.isArray(data) ? (data as { ok?: unknown; result?: unknown }) : null
   if (!body || !body.ok) {
-    out((done.stdout + done.stderr).trim() || `nudge-worker: orca ${args[0]} ${args[1]} 출력이 JSON 이 아니다`)
+    const failed = (done.stdout + done.stderr).trim() || `nudge-worker: orca ${args[0]} ${args[1]} 출력이 JSON 이 아니다`
+    if (short()) plain(`ORCA-ERROR ${oneLine(failed, 200)}`)
+    else out(failed)
     return null
   }
   return (body.result as Record<string, unknown>) || {}
@@ -155,7 +175,7 @@ function main(argv: string[]): number {
     return 2
   }
   if (values.help) {
-    out(USAGE)
+    plain(USAGE)
     return 0
   }
   const waitText = (values['wait-submit'] as string).trim()
@@ -165,13 +185,13 @@ function main(argv: string[]): number {
   }
   const waitSubmit = Number(waitText)
   if (values.classify) {
-    out(classify(readFileSync(0, 'utf8').split(LINE_BREAK)))
+    plain(classify(readFileSync(0, 'utf8').split(LINE_BREAK)))
     return 0
   }
   if (values.state && values.terminal) {
     const lines = screenLines(values.terminal)
     if (lines === null) return 5
-    out(classify(lines))
+    plain(classify(lines))
     return 0
   }
   if (!values.terminal || Boolean(values['msg-id']) === Boolean(values.text) || waitSubmit <= 0) {

@@ -29,7 +29,7 @@ const SPEC_LINE = /^지시서 \/\S.*?\.md 를 끝까지 읽고 수행한다\..*�
 const REASON =
   'orch: `worker-start --spec` 에는 `spec-line` 이 만든 한 줄만 준다. ' +
   '본문을 직접 넣으면 잘리거나 `허락:` 줄이 빠진다. ' +
-  '`launch-worker` 로 띄우거나, `--spec "$(node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-line.ts" "$SPEC" --require-permission)"` 로 넘긴다.'
+  '`orch worker launch` 로 띄우거나, `--spec "$(orch spec line "$SPEC" --require-permission)"` 로 넘긴다.'
 
 type SpecValue = { single?: string; double?: string; bare?: string }
 

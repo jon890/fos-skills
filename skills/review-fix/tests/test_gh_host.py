@@ -13,8 +13,8 @@ gh_host = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gh_host)
 
 # 사내 호스트의 토큰 확인이 timeout 나면 gh auth status 는 종료 코드 1 이다. github.com 은 정상이다.
-PARTIAL_FAILURE = """github.nhnent.com
-  X Timeout trying to log in to github.nhnent.com account dev-user (keyring)
+PARTIAL_FAILURE = """github.example.com
+  X Timeout trying to log in to github.example.com account dev-user (keyring)
   - Active account: true
 
 github.com
@@ -31,7 +31,7 @@ class FakeDone:
 class TestLoggedInHosts(unittest.TestCase):
     def test_hosts_are_read_even_when_auth_status_exits_nonzero(self):
         with patch.object(gh_host.subprocess, "run", return_value=FakeDone(1, "", PARTIAL_FAILURE)):
-            self.assertEqual(gh_host.logged_in_hosts(), ["github.nhnent.com", "github.com"])
+            self.assertEqual(gh_host.logged_in_hosts(), ["github.example.com", "github.com"])
 
     def test_no_output_means_no_hosts(self):
         with patch.object(gh_host.subprocess, "run", return_value=FakeDone(1, "")):

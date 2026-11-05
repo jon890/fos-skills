@@ -17,21 +17,11 @@
 | `docs/domain/<영역>.md` | 여러 기능이 참조하는 지금 유효한 도메인 규칙. ADR 은 결정 이유만 갖고 이 문서를 링크함([규칙](document-ownership.md#adr-과-도메인-문서)) |
 | PR 본문 또는 PR 별 증거 파일 | 검증 결과·검증 커밋·공통 후보·후속 작업 |
 
-기능 계획의 기본 경로는 `docs/features/<기능>/tasks/<계획>/` 이다. `<계획>` 은 `cancel-api` 같은 목적이 드러나는 이름이다.
-`index.json` 의 name 은 디렉터리명이다. 기능 계획은 전역 번호를 확보하지 않는다. 브랜치는 `feat/<기능>-<계획>` 처럼 기능까지 포함해 구분한다.
-각 worker 는 자기 계획 폴더만 갱신한다. spec/design 은 의미가 실제로 바뀔 때만 고친다. 기능 전체 진행용 index 는 만들지 않는다.
-기능에 속하지 않는 이전·정리 작업과 기존 계획은 설정의 `tasks/` 를 계속 쓴다. 기존 계획을 일괄 이동하거나 ID 를 일괄 변환하지 않는다.
-
-`TASKS_DIR` 은 계획의 부모 디렉터리, `PLAN` 은 그 아래 디렉터리명이다. 명령에는 둘을 함께 전달한다.
-예: `--tasks-dir docs/features/job-cancel/tasks` 와 `cancel-api`. 명시한 기존 계획 경로는 새 기본값보다 우선한다.
-인계에는 저장소 상대경로인 계획 전체 경로를 남긴다. 같은 이름의 다른 기능 계획을 자동 검색해 선택하지 않는다.
-
-계획의 검증 계획도 실행 기록이다. 제거 전에 절차·기대값·실제 결과를 PR 또는 PR 별 증거 파일로 보존한다.
+기능 계획의 경로, 이름, `PLAN`·`TASKS_DIR` 은 [plan 의 task-create 「기능 계획 경로」](../../plan/references/task-create.md#기능-계획-경로)가 소유한다.
 
 ## 스펙 템플릿
 
 작성 전에 [spec.md 양식](../templates/spec.md)을 읽는다. 필수 절과 짧은 작성 예시는 이 양식 한곳이 소유한다.
-
 
 `확인:` 줄은 사용자가 요구사항을 확인한 날이다. 제목과 첫 `##` 사이에 두고 확인 전에는 쓰지 않는다.
 결정 표와 질문은 [인터뷰 절차](interview.md)가 소유한다. spec 완료는 제품 결정이 닫힌 것이며 기술 설계 완료가 아니다.
@@ -40,8 +30,7 @@ REQ1 과 DECISION1 처럼 의미를 드러내는 ID 를 쓴다. 기능 간 ID �
 
 ## 기술 설계 템플릿
 
-작성 전에 [design.md 양식](../../technical-design/templates/design.md)을 읽는다. 필수 절과 짧은 작성 예시는 이 양식 한곳이 소유한다.
-
+작성 전에 [design.md 양식](../../technical-design/templates/design.md)을 읽는다.
 
 작은 변경은 `spec.md` 의 `## 기술 설계` 아래 위 제목들을 `###` 로 써도 된다. plan 의 design 필드는 이때 spec 경로다.
 설계의 결정 표도 DECISION1 형식을 쓴다. 파일별 ID 이므로 제품 결정은 재작성하지 않고 원본을 참조한다.
@@ -66,13 +55,3 @@ REQ1 과 DECISION1 처럼 의미를 드러내는 ID 를 쓴다. 기능 간 ID �
 기능이 여러 PR 이면 spec/design 을 공유하며 plan → implementation → verify 를 반복한다.
 마지막에는 orch 가 전체 요구사항의 통합 증거와 남은 원격 검증을 모아 기능 완료를 판단한다.
 부분 PR 의 PASS 나 MERGED 는 기능 전체 완료와 다르다. 명령 실패·환경 부재·독립 검토 미실행을 통과로 보고하지 않는다.
-
-## 참고한 원칙
-
-- BMAD: 서로 독립적으로 정하면 충돌할 경계·상태·공유 데이터 소유권을 기록한다. https://docs.bmad-method.org/plan/design-ux-and-architecture/
-- Kiro: 요구사항 뒤 기술 설계, 그다음 실행 작업을 만든다. https://kiro.dev/docs/specs/feature-specs/requirements-first/
-- Spec Kit: 설계 전후 프로젝트 원칙을 대조한다. https://github.com/github/spec-kit/blob/main/templates/plan-template.md
-- Superpowers: 사용자 의도와 설계를 확인하고 실행 계획으로 잇는다. https://github.com/obra/superpowers/blob/main/skills/brainstorming/SKILL.md
-- gstack: 테스트 전략을 실제 경계의 실행 검증으로 잇는다. https://github.com/garrytan/gstack/blob/main/docs/skills.md
-
-외부 프레임워크를 자동 설치하거나 중첩 호출하지 않는다.

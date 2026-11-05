@@ -97,8 +97,8 @@ retries[dispatch] = { since: input.since, tries: tries + 1 }
 writeFileSync(`${file}.tmp`, JSON.stringify(retries))
 renameSync(`${file}.tmp`, file)
 
-const nudge = join(process.env.ORCH_SCRIPTS!, 'nudge-worker.ts')
-execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--terminal', input.worker.terminal, '--text', '계속 진행해'], { stdio: 'inherit' })
+// ORCH_BIN 은 orch 진입점 절대경로다. 핸들러의 PATH 앞에는 가드 폴더가 있어 PATH 의 orch 를 믿지 않는다
+execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_BIN!, 'worker', 'nudge', '--terminal', input.worker.terminal, '--text', '계속 진행해'], { stdio: 'inherit' })
 ```
 
 - **0 으로 끝나면 코디네이터를 깨우지 않는다.** 0 이 아니면 루프가 그 Run 의 알림 파일에 `WORKER-STALLED` 를 써 코디네이터가 깨어난다.
@@ -106,7 +106,9 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--termina
 - **횟수는 멈춤마다 센다.** 같은 상태가 이어지는 동안 입력의 `since` 가 그대로이고, 작업 중 화면을 거쳐 다시 멈추면 `since` 가 바뀐다. dispatch 수명 전체로 세면 앞 멈춤에서 쓴 횟수 때문에 다음 멈춤을 다시 시도시키지 못한다.
 - **0 으로 끝나면 같은 화면이 기준 틱 수만큼 더 이어질 때 다시 불린다.** 다시 시도한 worker 의 화면이 그대로일 수 있어서다. 화면에 오류 줄이 늘어도 다시 불린다. 0 이 아니면 그 화면에는 다시 불리지 않는다.
 - **사람이 Esc 로 끊은 화면(`interrupted`)에는 불리지 않는다.** 사람이 일부러 멈춘 작업을 다시 돌리지 않는다.
-- **입력은 `ORCH_SCRIPTS` 의 코어 명령(`nudge-worker`, `send-to-worker`)으로만 한다.** 그 명령은 진짜 orca(`ORCH_REAL_ORCA`)로 입력해 가드에 막히지 않는다. 플러그인 설치 경로는 커밋마다 바뀌므로 경로를 핸들러에 적지 않는다.
+- **입력은 코어 명령(`orch worker nudge`, `orch worker send`)으로만 한다.** `node "$ORCH_BIN" worker nudge …` 처럼 진입점 절대경로 `ORCH_BIN` 으로 부른다. 그 명령은 진짜 orca(`ORCH_REAL_ORCA`)로 입력해 가드에 막히지 않는다. 플러그인 설치 경로는 커밋마다 바뀌므로 경로를 핸들러에 적지 않는다.
+  <!-- orch-compat -->
+  `ORCH_SCRIPTS`(스크립트 폴더)도 계속 넘기지만 그 아래 스크립트 파일을 직접 부르는 핸들러는 폴더 이동 뒤 깨진다. doctor 가 `DIRECT-PATH` 로 알린다.
 - 코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다. 그 판정을 쓰려면 `config.json` 의 `pipeline.stall_ticks.idle` 을 켠다.
 
 ## 실패 줄 읽기
@@ -119,7 +121,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', nudge, '--termina
 | `HOOK-FAIL <이벤트> <종료 코드>` | 핸들러가 10 이 아닌 값으로 끝났다. 시그널로 죽으면 128 더하기 신호 번호다 | 바로 위의 `[hook <이벤트>]` 줄에서 예외를 찾아 핸들러를 고친다 |
 | `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
-| `INVALID-CONFIG ... migrate-orch-dir ... --hooks --apply` | `orch-doctor`가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
+| `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
 | `INVALID-CONFIG queue.auto_review.require 에 모르는 조건이 있다: ...` | 자동 머지 리뷰 조건에 모르는 이름이 있다. 상주 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | `config.json` 의 이름을 줄에 나온 「쓸 수 있는 조건」 가운데 하나로 고친다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」) |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
@@ -136,13 +138,13 @@ orch 5.2.0에서 `config.json`의 `queue.before`, `queue.verify_merged`, `queue.
 1. 미리보기로 만들 핸들러와 지울 키를 본다. `옮기지 못함` 이나 `겹침` 줄이 있으면 그 이유를 먼저 푼다
 
    ```bash
-   "$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO" --hooks
+   orch doctor migrate-hooks
    ```
 
 2. 핸들러를 쓰고 설정에서 그 키를 지운다
 
    ```bash
-   "$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO" --hooks --apply
+   orch doctor migrate-hooks --apply
    ```
 
 3. 만든 `.orch/hooks/<이벤트>.ts` 를 열어 옛 명령이 그대로 들었는지 본다. 그 파일은 저장소의 것이라 고쳐 써도 된다.

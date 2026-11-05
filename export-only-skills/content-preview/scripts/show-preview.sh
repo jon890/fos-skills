@@ -43,7 +43,7 @@ FILE_URL="file://$ABS"
 # BROWSER_DRIVER=ego 를 셸에 둔 사람이 여기서는 실행 파일 경로로 해석되는 값을 주게 된다.
 #
 # 위로 올라가며 찾는 이유는 저장소마다 배치가 달라서다.
-# 개인 공용은 <repo>/content-preview/scripts, 팀 공용은 <repo>/skills/content-preview/scripts 라
+# 이 저장소는 export-only-skills/content-preview/scripts, 팀 사본은 skills/content-preview/scripts 라
 # tools/ 까지의 거리가 한 단 다르다. 고정 상대경로로는 둘 다 맞출 수 없다 (실측).
 # pwd -P 로 실체 경로를 잡는다. 스킬 디렉터리가 심링크라 논리 경로로는 저장소 밖으로 나간다.
 find_bundled_driver() {

@@ -176,7 +176,7 @@ const argvs = (fake: FakeBin) => fake.calls().map((c) => c.argv.join(' '))
 describe('block-worker-terminal-send', () => {
   const HOOK = 'block-worker-terminal-send.ts'
 
-  test('묶인 Run 의 worker 터미널로 보내면 거부하고 send-to-worker 를 안내한다', () => {
+  test('묶인 Run 의 worker 터미널로 보내면 거부하고 orch worker send 를 안내한다', () => {
     const fake = fakeOrca(BASE_RULES)
     for (const command of [
       'orca terminal send --terminal term_worker-1 --text "main 을 합쳐라" --enter',
@@ -185,10 +185,10 @@ describe('block-worker-terminal-send', () => {
       const v = verdict(HOOK, command, sendEnv(fake.path))
       assert.equal(v.decision, 'deny', command)
       assert.match(v.reason, /term_worker-1/)
-      assert.match(v.reason, /send-to-worker/)
-      assert.match(v.reason, /nudge-worker/)
+      assert.match(v.reason, /orch worker send/)
+      assert.match(v.reason, /orch worker nudge/)
       // 안내하는 호출은 옮긴 .ts 를 node 로 부르는 꼴이다
-      assert.ok(v.reason.includes('node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/send-to-worker.ts"'), v.reason)
+      assert.ok(v.reason.includes('`orch worker send --dispatch <id> --body ...`'), v.reason)
       assert.doesNotMatch(v.reason, /\.py\b/)
     }
     // 범위를 바꾸려고 ORCA_TERMINAL_HANDLE 을 빼지 않는다
@@ -355,7 +355,7 @@ describe('block-worker-terminal-send', () => {
         assert.equal(v.decision, 'deny', `ignoreTerm=${ignoreTerm}`)
         assert.match(v.reason, /시간 초과/)
         assert.match(v.reason, /조회 \d+회, 완료 \d+회, 마지막 orca orchestration worker-list/)
-        assert.match(v.reason, /adopt-sessions/)
+        assert.match(v.reason, /orch worker adopt/)
         // 한도 500ms 에 node 기동을 더해도 5초에 못 미친다. 잠든 자식이나 KILL 유예(10초)를 기다리면 넘는다
         assert.ok(v.ms < 5_000, `ignoreTerm=${ignoreTerm}: hook 이 ${v.ms}ms 걸렸다`)
       } finally {
@@ -375,7 +375,7 @@ describe('block-worker-terminal-send', () => {
     const v = verdict(HOOK, 'orca terminal send --terminal term_old --text resume', sendEnv(fake.path))
     assert.equal(v.decision, 'deny')
     assert.match(v.reason, /worker 터미널\(term_old\)/)
-    assert.match(v.reason, /adopt-sessions/)
+    assert.match(v.reason, /orch worker adopt/)
     assert.ok(!argvs(fake).some((args) => /run-list/.test(args)), argvs(fake).join('\n'))
   })
 
@@ -501,10 +501,10 @@ describe('require-spec-line', () => {
     }
   })
 
-  test('거부 이유는 spec-line.ts 를 node 로 부르는 꼴을 안내한다', () => {
+  test('거부 이유는 orch spec line 으로 만드는 꼴을 안내한다', () => {
     const v = verdict(HOOK, 'orca orchestration worker-start --task t1 --spec "본문"')
     assert.equal(v.decision, 'deny')
-    assert.ok(v.reason.includes('"$(node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-line.ts" "$SPEC" --require-permission)"'), v.reason)
+    assert.ok(v.reason.includes('"$(orch spec line "$SPEC" --require-permission)"'), v.reason)
     assert.doesNotMatch(v.reason, /\.py\b/)
   })
 
@@ -515,6 +515,7 @@ describe('require-spec-line', () => {
       'orca orchestration worker-start --task t1 --spec "$LINE"',
       'orca orchestration worker-start --task t1 --spec "$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC")"',
       'orca orchestration worker-start --task t1 --spec "$(node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-line.ts" "$SPEC")"',
+      'orca orchestration worker-start --task t1 --spec "$(orch spec line "$SPEC" --require-permission)"',
       'python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC" --repo /repo --name a -- --task t1',
       'orca orchestration task-create --spec "본문"',
       "git commit -m 'orchestration worker-start --spec 본문 금지'",

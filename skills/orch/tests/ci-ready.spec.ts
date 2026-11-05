@@ -237,6 +237,18 @@ describe('ci-ready 판정', () => {
     assert.deepEqual(readied(), [])
   })
 
+  test('짧은 출력은 PR 마다 READY, WOULD-READY, HELD 판정 줄이다', () => {
+    env.ORCH_OUTPUT = 'short'
+    try {
+      let r = ready([pr(1, ['a.py']), pr(2, ['a.py']), pr(3, ['c.py'], { isDraft: false })], ['--dry-run', '1', '2', '3'])
+      assert.deepEqual(r.stdout.trim().split('\n'), ['WOULD-READY 1', 'HELD 2 ready PR 과 겹친다 #1(a.py)', 'READY 3 already'])
+      r = ready([pr(1, ['a.py'])], ['1'])
+      assert.equal(r.stdout.trim(), 'READY 1')
+    } finally {
+      delete env.ORCH_OUTPUT
+    }
+  })
+
   test('이미 ready 인 PR 은 건너뛰고 OPEN 이 아닌 PR 은 보류한다', () => {
     const r = ready([pr(1, ['a.py'], { isDraft: false }), pr(2, ['b.py'], { state: 'MERGED' })], ['1', '2'])
     assert.equal(r.code, 1, r.both)

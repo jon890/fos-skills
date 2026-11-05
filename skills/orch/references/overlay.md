@@ -144,7 +144,7 @@ runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함�
 ## orch 작업 폴더
 
 orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
-경로는 `scripts/orch_paths.ts` 가 정하고, 셸과 문서에서는 `"$SKILL_DIR/bin/orch.ts" orch_paths specs` 처럼 이름으로 받는다.
+경로는 `scripts/orch_paths.ts` 가 정하고, 셸과 문서에서는 `orch paths specs` 처럼 이름으로 받는다.
 루트를 옮기려면 `ORCH_DIR` 을 orch 스크립트를 부르는 모든 환경(코디네이터 셸, 훅)에 같은 값으로 둔다.
 
 | 경로 | 담는 것 |
@@ -162,15 +162,17 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 ## 저장소 스크립트에서 orch 부르기
 
 **저장소의 `.skills/orch/bin/` 스크립트와 `.orch/queue-env.sh` 같은 파일은 번들 경로를 박지 않는다.** 플러그인 경로는 프로필과 버전마다 바뀌어(`<설정 폴더>/plugins/cache/<마켓플레이스>/<플러그인>/<해시>/`), 박아 둔 경로는 갱신 뒤 옛 스크립트를 조용히 부른다. 저장소 체크아웃 경로도 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
-아래 한 줄이 설치 기록에서 진입점의 위치를 풀고, 스크립트는 `"$ORCH" <이름> [인자]` 로 부른다. 진입점이 그 호출의 설치 기록을 다시 읽어 현재 번들의 스크립트를 실행한다. 스크립트마다 새 셸이 뜨면 스크립트마다 이 줄을 둔다.
+아래 한 줄이 설치 기록에서 orch 실행기(플러그인 루트의 `bin/orch`)의 위치를 풀고, 스크립트는 `"$ORCH" <묶음> <동작> [인자]` 로 부른다. 저장소 스크립트는 PATH 의 `orch` 를 믿을 수 없어(Codex, 훅, cron) 경로를 푼다. 실행기가 그 호출의 설치 기록을 다시 읽어 현재 번들의 진입점에 넘긴다. 스크립트마다 새 셸이 뜨면 스크립트마다 이 줄을 둔다.
+고르는 규칙은 `scripts/lib/install-record.ts` 의 `selectBundle` 과 같다. user 범위 설치본이 있으면 그것만 보고, 스크립트 폴더가 없으면 다른 범위로 넘어가지 않고 3 으로 끝난다.
 
 ```bash
-ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";const e=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"].sort((a,b)=>(a.scope!=="user")-(b.scope!=="user"))[0];console.log(e.installPath+"/skills/orch/bin/orch.ts")') && "$ORCH" mem-gate --help
+ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")') && "$ORCH" slot mem --help
 ```
 
-`"$ORCH" --path` 는 현재 번들의 스크립트 폴더를, `--path <이름>` 은 그 스크립트의 파일 경로를 낸다. 스크립트를 `node` 가 아닌 다른 방식으로 불러야 할 때 쓴다.
-고치는 중인 체크아웃의 스크립트를 테스트하려면 `ORCH_SCRIPTS_DIR` 에 그 체크아웃의 `skills/orch/scripts` 를 준다. 설치 기록보다 앞선다.
-진입점 파일은 Node 내장 모듈만 쓰는 한 파일이라 저장소에 복사해 두고 써도 설치 기록을 따라간다. 복사본은 번들이 아니라 진입점만 고정한다.
+<!-- orch-compat -->
+옛 꼴 `"$ORCH" --path [이름]`(진입점 경로를 풀던 예전 한 줄)도 스크립트 폴더와 그 스크립트의 파일 경로를 낸다. 스크립트를 `node` 가 아닌 다른 방식으로 불러야 할 때 쓴다.
+고치는 중인 체크아웃의 스크립트를 확인하려면 `ORCH_SCRIPTS_DIR` 에 그 체크아웃의 `skills/orch/scripts` 를 준다. 설치 기록보다 앞서고, 실행기와 진입점이 그 체크아웃의 진입점으로 넘긴다.
+저장소에 복사해 둘 것은 실행기 `bin/orch` 다. Node 내장 모듈만 쓰는 한 파일이라 복사해도 설치 기록을 따라간다. 진입점 `skills/orch/bin/orch.ts` 는 같은 번들의 lib 를 읽어 한 파일로 돌지 않는다.
 
 보드(`board.json`)는 work-board 소유라 여기 두지 않는다. 위치는 `extensions/work-board/README.md` 가 정하고, 다른 곳이면 `finish.board` 로 준다.
 
@@ -193,21 +195,21 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 | `launch-worker` | 늘. 셸 스크립트는 `orch_paths.ts check` 로 같은 검사를 한다 |
 | `orch_paths.ts --ensure` | 늘 |
 
-`wait-important` 와 `notify-conflicts.ts` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
+`orch wait` 와 `orch queue conflicts` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
 
 머지 큐와 worker 가 모두 끝난 때에 옮긴다. 먼저 미리보기로 옮길 것과 옛 경로를 적은 파일을 본다.
 `$REPO` 는 대상 저장소의 주 checkout 이다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO"
-"$SKILL_DIR/bin/orch.ts" migrate-orch-dir --repo "$REPO" --apply
+orch doctor migrate --repo "$REPO"
+orch doctor migrate --repo "$REPO" --apply
 ```
 
 - 기본으로 옮기는 쌍과 판정은 스크립트 머리 주석과 `scripts/lib/paths.ts` 의 `DEFAULT_MOVES` 가 소유한다. 다른 곳에 둔 파일은 `--move 옛=새` 로 더한다
 - 살아 있는 dispatch, 터미널을 쥔 worker, 돌고 있는 머지 큐나 마무리가 있으면 `--apply` 를 거부한다(종료 코드 3). worker 는 지시서를 절대경로로 읽으므로 그 사이에 옮기면 끊긴다
-- 「옛 경로 참조」 로 나온 파일(포장 스크립트, 추적 문서, 로컬 설정)은 바꾸지 않는다. 그 저장소가 고친다
-- 「추적 파일」 로 나온 것은 보인 `git mv` 명령으로 옮겨 커밋한다. 대상 폴더는 `--apply` 가 만들어 둔다
-- 「스크립트」 가 붙은 옛 경로 참조는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 위 진입점이 다시 멈춘다
+- 「옛 경로 참조」 로 나온 파일(포장 스크립트, 추적 문서, 로컬 설정)은 바꾸지 않는다. 그 저장소가 고친다. 기본 출력은 `OLD-REF <파일>:<줄>` 이고 줄 내용은 `--full` 이다
+- 「추적 파일」 로 나온 것(기본 출력의 `TRACKED <명령>`)은 보인 `git mv` 명령으로 옮겨 커밋한다. 대상 폴더는 `--apply` 가 만들어 둔다
+- 「스크립트」 가 붙은 옛 경로 참조(`OLD-REF-SCRIPT`)는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 위 진입점이 다시 멈춘다
 - 옮기다 실패하면 그때까지 옮긴 것을 보이고 멈춘다. 원인을 고친 뒤 다시 돌리면 남은 것을 옮기고, 옮긴 뒤 고치는 단계는 `.orch` 전체를 다시 본다
 - 폴더를 옮긴 뒤 `config.json` 에 5.2.0에서 지운 칸이 남았으면 `--hooks --apply`로 핸들러로 바꾼다. 순서는 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 가 소유한다
 

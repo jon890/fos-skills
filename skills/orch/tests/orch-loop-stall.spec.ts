@@ -100,6 +100,8 @@ beforeEach(() => {
   env = {
     ...process.env,
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
+    // hooks.md 의 핸들러 예시가 ORCH_BIN 진입점을 부른다. 이 머신의 설치본으로 넘기지 않고 이 체크아웃을 쓴다
+    ORCH_SCRIPTS_DIR: fileURLToPath(new URL('../scripts', import.meta.url)),
     ORCA: join(binDir, 'orca'),
     GH: gh.path,
     CLEANUP_SWEEP: join(binDir, 'sweep.ts'),

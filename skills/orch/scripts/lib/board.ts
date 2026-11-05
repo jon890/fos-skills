@@ -133,7 +133,7 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
 
 export type SpecTask = { number: string; title: string | null }
 
-// 지시서의 업무 연결 줄(`두레이 업무: AI-스마트홈-AI/282 「제목」`)에서 읽은 업무 번호와 제목. 줄이 없으면 null 이다.
+// 지시서의 업무 연결 줄(`두레이 업무: EXAMPLE-PROJECT/282 「제목」`)에서 읽은 업무 번호와 제목. 줄이 없으면 null 이다.
 // pattern 은 board.task_line(lib/milestones.ts 의 boardSettings)이고 없으면 DEFAULT_TASK_LINE 이다.
 // 이름 붙은 묶음 number 가 번호, title 이 제목이다. 제목 묶음이 없거나 비었으면 title 은 null 이다
 export function taskOf(text: string, pattern: RegExp | null = null): SpecTask | null {

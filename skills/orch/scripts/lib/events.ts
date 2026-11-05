@@ -54,7 +54,10 @@
 //   ORCA, GH    가드 폴더의 shim 절대경로
 //   ORCH_REAL_ORCA, ORCH_REAL_GH  진짜 실행 파일의 절대경로. 찾지 못하면 넘기지 않는다
 //   ORCH_SCRIPTS  orch 의 scripts 폴더 절대경로. 플러그인 설치 경로는 커밋마다 바뀌어 핸들러가 코어 명령(nudge-worker, send-to-worker)을 찾는 데 쓴다.
-//                 worker 에게 입력하는 코어 명령은 ORCH_REAL_ORCA 로 orca 를 부르므로 가드에 막히지 않는다. 핸들러는 그 명령으로만 입력한다
+//                 worker 에게 입력하는 코어 명령은 ORCH_REAL_ORCA 로 orca 를 부르므로 가드에 막히지 않는다. 핸들러는 그 명령으로만 입력한다.
+//                 다른 저장소 핸들러가 쓰는 공개 계약이라 유지한다. 폴더 이동(scripts/<묶음>/) 뒤에는 그 바로 아래의 파일이 없을 수 있다
+//   ORCH_BIN    orch 진입점(skills/orch/bin/orch.ts) 절대경로. 핸들러는 `node "$ORCH_BIN" worker nudge …` 처럼 새 꼴로 부른다.
+//               PATH 맨 앞이 가드 폴더라 PATH 의 orch 를 믿을 수 없어 경로를 넘긴다
 //   진짜 실행 파일은 가드 폴더를 PATH 에 넣기 전에 찾는다. orcaBin(), ghBin() 의 기본값은 이름이라, 그대로 넘기면
 //   shim 이 PATH 맨 앞의 자기 자신을 다시 불러 node 프로세스가 끝없이 생긴다. `/` 가 든 값은 절대경로로 바꾸고
 //   (그 실경로가 가드 폴더 안이면 버리고 이름으로 찾는다), 이름이면 PATH 를 앞에서부터 보며 가드 폴더가 아닌 곳의 실행 파일을 고른다.
@@ -192,6 +195,7 @@ const LOG_LIMIT = 1_048_576
 
 const GUARD_DIR = fileURLToPath(new URL('./guard', import.meta.url))
 const SCRIPTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const ORCH_BIN = resolve(SCRIPTS_DIR, '..', 'bin', 'orch.ts')
 
 function insideGuard(target: string): boolean {
   return inside(real(target), real(GUARD_DIR))
@@ -236,6 +240,7 @@ function handlerEnv(event: string, repo: string, root: string, checkout: string)
   env.ORCH_DIR = root
   env.ORCH_CHECKOUT = checkout
   env.ORCH_SCRIPTS = SCRIPTS_DIR
+  env.ORCH_BIN = ORCH_BIN
   env.PATH = process.env.PATH ? `${GUARD_DIR}${delimiter}${process.env.PATH}` : GUARD_DIR
   env.ORCA = join(GUARD_DIR, 'orca')
   env.GH = join(GUARD_DIR, 'gh')

@@ -6,7 +6,7 @@
 
 ## 후보 파일
 
-후보 하나가 `<orch 루트>/study/<slug>.md` 파일 하나다. 폴더 경로는 `"$SKILL_DIR/bin/orch.ts" orch_paths study` 로 받는다.
+후보 하나가 `<orch 루트>/study/<slug>.md` 파일 하나다. 폴더 경로는 `orch paths study` 로 받는다.
 파일은 `---` 사이의 머리와 그 뒤의 본문으로 나뉜다. 머리는 명령이 고치고, 본문은 근거, 메모, 글 초안 경로를 자유롭게 쌓는 자리라 에이전트가 직접 고친다.
 
 ```markdown
@@ -42,7 +42,7 @@ slug 가 같거나 주제가 같으면(빈칸, 대소문자, 한글 정규화 �
 머리는 명령으로 고친다. 칸 이름이나 상태 낱말이 틀리면 명령과 doctor 가 그 후보를 세지 못하기 때문이다. 명령의 옵션과 출력은 `--help` 가 소유한다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" study-candidates list --open
+orch study list --open
 ```
 
 ## 모으기
@@ -79,7 +79,7 @@ slug 가 같거나 주제가 같으면(빈칸, 대소문자, 한글 정규화 �
 ### 적는 명령
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" study-candidates add --slug "$SLUG" --topic "$TOPIC" --question "$QUESTION" --origin "$ORIGIN" --ref "$REF" --memo "$MEMO"
+orch study add --slug "$SLUG" --topic "$TOPIC" --question "$QUESTION" --origin "$ORIGIN" --ref "$REF" --memo "$MEMO"
 ```
 
 `$TOPIC`, `$QUESTION`, `$ORIGIN`, `$REF` 는 위 표의 네 칸이다. `$MEMO` 는 본문이 되고, 네 기준의 근거 한 줄을 담는다.
@@ -99,8 +99,8 @@ worker 도 같은 기준과 명령으로 적는다. 공통 지시서 틀의 「�
 사용자가 어떤 후보를 빼라고 말했을 때만 `뺌` 으로 바꾼다. 뺀 개념은 같은 후보 판정에 걸려 다시 적히지 않는다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" study-candidates list --open
-"$SKILL_DIR/bin/orch.ts" study-candidates set --slug "$SLUG" --status 뺌 --note "$REASON"
+orch study list --open
+orch study set --slug "$SLUG" --status 뺌 --note "$REASON"
 ```
 
 `$SLUG` 는 `list` 가 낸 첫 칸, `$REASON` 은 사용자가 뺀 이유다. 아래 「고르면 글로 잇기」 표에 없는 전이는 명령이 거부한다.
@@ -115,8 +115,8 @@ worker 도 같은 기준과 명령으로 적는다. 공통 지시서 틀의 「�
 4. 글을 실제로 쓰면 상태를 `글 씀: <글 경로>` 로 바꾼다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" study-candidates set --slug "$SLUG" --status 리뷰함 --note "사용자가 고름"
-"$SKILL_DIR/bin/orch.ts" study-candidates set --slug "$SLUG" --status "글 씀" --note "$POST"
+orch study set --slug "$SLUG" --status 리뷰함 --note "사용자가 고름"
+orch study set --slug "$SLUG" --status "글 씀" --note "$POST"
 ```
 
 `$POST` 는 쓴 글의 경로다. 글의 범위와 공개 판단은 글 쓰기 스킬이 소유하고, 글 초안 경로는 후보 본문에 적어 둔다.
@@ -135,7 +135,7 @@ orch 5.16.0 전에는 `study/candidates.md` 한 파일의 표 한 줄이 후보 
 줄마다 slug 를 지어 한 번 옮긴다. 번호는 표의 위에서부터 1 이다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" study-candidates migrate --slug 1=minio-object-key-length --slug 2=... --slug 8=expand-contract
+orch study migrate --slug 1=minio-object-key-length --slug 2=... --slug 8=expand-contract
 ```
 
 slug 가 빠진 줄이 있으면 `NEED-SLUG <번호> <주제>` 를 내고 아무 파일도 만들지 않는다. 그 목록을 보고 slug 를 채워 다시 부른다.

@@ -4,14 +4,13 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
-import { adoptHint } from '../scripts/lib/sessions.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/wait-important.ts', import.meta.url))
 const ORCH_BIN = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
@@ -121,8 +120,9 @@ beforeEach(() => {
   lostState = join(tmp, 'lost.json')
   env = {
     ...process.env,
-    // 가짜 orca 의 #! 줄과 이벤트 핸들러가 이 테스트의 node 를 쓰게 한다
-    PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
+    // 가짜 orca 의 #! 줄과 이벤트 핸들러가 이 테스트의 node 를 쓰게 한다. NEXT_WAIT 의 앞 낱말이 PATH 의 orch 에 따라 바뀌므로
+    // 사용자 PATH 는 물려받지 않는다
+    PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter),
     ORCA: orcaPath,
     PS: psPath,
     FAKE_STATE: stateFile,
@@ -222,6 +222,11 @@ function lostEntries(): Json {
   return JSON.parse(readFileSync(lostState, 'utf8')).run_x as Json
 }
 
+// 이어받기 안내 줄. 자식의 PATH 에 실행기가 없으니 앞 낱말은 진입점 절대경로다(lib/sessions.ts 의 adoptHint)
+function adoptLine(repo: string): string {
+  return `  이어받기: ${ORCH_BIN} worker adopt --repo ${repo}`
+}
+
 function nextWait(stderr: string): string {
   return lines(stderr).find((line) => line.startsWith('NEXT_WAIT ')) ?? ''
 }
@@ -231,7 +236,57 @@ describe('다음 대기 안내', () => {
     const r = wait([batch('d1', 'question')], ['--types', 'question,status', '--timeout-ms', '1234', '--lost-interval-sec', '0'])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(lastLine(r.stdout), 'LAST_DELIVERY d1')
-    assert.equal(nextWait(r.stderr), `NEXT_WAIT ${ORCH_BIN} wait-important --run run_x --ack d1 --types question,status --timeout-ms 1234 --lost-interval-sec 0 --completion-contract none --lost-state ${lostState}`)
+    assert.equal(nextWait(r.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d1 --run run_x --types question,status --timeout-ms 1234 --lost-interval-sec 0 --completion-contract none --lost-state ${lostState}`)
+  })
+
+  // 기본값만 쓰는 대기. wait() 는 --lost-state 와 --completion-contract 를 늘 붙이므로 여기서 직접 띄운다
+  function plain(args: string[], cwd: string, extraEnv: NodeJS.ProcessEnv = {}): Result {
+    writeFileSync(stateFile, JSON.stringify({ replies: [batch('d1', 'question')], workers: [], tasks: [], latest: {}, history: [], inbox: [], history_fail: false, screens: {} }))
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--lost-interval-sec', '60', ...args], {
+      env: { ...env, ...extraEnv },
+      cwd,
+      encoding: 'utf8',
+      timeout: 120_000,
+    })
+    return { code: done.status, stdout: done.stdout, stderr: done.stderr }
+  }
+
+  function repo(name: string): string {
+    const dir = join(tmp, name)
+    mkdirSync(dir)
+    spawnSync('git', ['init', '-q', dir])
+    return realpathSync(dir)
+  }
+
+  function launcherOnPath(marked: boolean): string {
+    const dir = join(tmp, 'pathbin')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'orch'), marked ? '#!/usr/bin/env node\n// fos-skills orch launcher\n' : '#!/bin/sh\n')
+    chmodSync(join(dir, 'orch'), 0o755)
+    return `${dir}${delimiter}${env.PATH}`
+  }
+
+  test('run-current 에서 채운 Run 과 같은 저장소의 기본 상태 파일은 NEXT_WAIT 에서 빠진다', () => {
+    const r1 = repo('r1')
+    // 루프가 없는 저장소라 LOOP-DEAD(8)로 바로 끝나고 앞 delivery 를 다시 넘긴다
+    const r = plain(['--run', 'run_x', '--ack', 'd0', '--loop-repo', r1], r1, { ORCH_CONTEXT: 'run=run-current loop-repo=registered', PATH: launcherOnPath(true) })
+    assert.equal(r.code, 8, r.stdout + r.stderr)
+    assert.equal(nextWait(r.stderr), `NEXT_WAIT orch wait --ack d0 --loop-repo ${r1}`)
+  })
+
+  test('PATH 의 orch 가 실행기가 아니면 진입점 절대경로로 내고, 명시한 Run 은 적는다', () => {
+    const r1 = repo('r1')
+    const r = plain(['--run', 'run_x', '--ack', 'd0', '--loop-repo', r1], r1, { PATH: launcherOnPath(false) })
+    assert.equal(nextWait(r.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d0 --run run_x --loop-repo ${r1}`)
+  })
+
+  test('루프 저장소가 시작 폴더와 다른 저장소이거나 없으면 --lost-state 를 절대경로로 적는다', () => {
+    const r1 = repo('r1')
+    const r2 = repo('r2')
+    const other = plain(['--run', 'run_x', '--ack', 'd0', '--loop-repo', r2], r1, { ORCH_CONTEXT: 'run=run-current' })
+    assert.equal(nextWait(other.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d0 --lost-state ${join(r1, '.orch', 'state', 'wait-important-lost.json')} --loop-repo ${r2}`)
+    const none = plain(['--run', 'run_x'], r1, { ORCH_CONTEXT: 'run=run-current' })
+    assert.equal(nextWait(none.stderr), `NEXT_WAIT ${ORCH_BIN} wait --ack d1 --lost-state ${join(r1, '.orch', 'state', 'wait-important-lost.json')}`)
   })
 
   test('시간 초과와 루프 wake는 앞 delivery를 다시 넘기는 명령을 남긴다', () => {
@@ -284,7 +339,7 @@ describe('끊긴 worker', () => {
       ],
     })
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_a stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY d0'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_a stage=terminal_missing', adoptLine(tmp), 'LAST_DELIVERY d0'])
   })
 
   test('열린 dispatch 인데 liveness 가 exited 면 끊긴 것이다', () => {
@@ -338,7 +393,7 @@ describe('끊긴 worker', () => {
   test('시작할 때 처리하지 않은 끊긴 dispatch 가 있으면 check 없이 끝낸다', () => {
     const r = lostAtStart(['--ack', 'd0'])
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY d0'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptLine(tmp), 'LAST_DELIVERY d0'])
     assert.deepEqual(calls(), [])
   })
 
@@ -547,7 +602,7 @@ describe('끊긴 worker', () => {
       latest: { t1: 'ctx_bad' },
     })
     assert.equal(r.code, 5, r.stdout + r.stderr)
-    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptHint(tmp), 'LAST_DELIVERY -'])
+    assert.deepEqual(lines(r.stdout), ['WORKER_LOST ctx_bad stage=terminal_missing', adoptLine(tmp), 'LAST_DELIVERY -'])
     const pages = allCalls().filter((c) => c.includes('worker-list'))
     assert.equal(pages.length, 2, JSON.stringify(pages))
     assert.ok(!pages[0].includes('--cursor'), JSON.stringify(pages[0]))
@@ -814,6 +869,29 @@ describe('남은 대기', () => {
       assert.equal(await exited(orphan, 5000), true)
       assert.ok(r.stderr.includes(`PID ${orphan.pid} 를 종료했다`), r.stderr)
       assert.ok(!r.stderr.includes('PID 501 를 종료했다'), r.stderr)
+    } finally {
+      await reap(orphan)
+    }
+  })
+
+  test('--kill-stale 은 실행기와 진입점이 낀 고아 대기도 따라간다', async () => {
+    const orphan = sleeper()
+    try {
+      writeFileSync(
+        psRows,
+        [
+          psLine(601, 1, '/bin/zsh'),
+          // 설치 경로에 빈칸이 있다(macOS 의 Application Support)
+          psLine(602, 601, '/usr/local/bin/node /Users/me/Library/Application Support/p/bin/orch wait --ack d0'),
+          psLine(603, 602, '/usr/local/bin/node --disable-warning=ExperimentalWarning /Users/me/Library/Application Support/p/skills/orch/bin/orch.ts wait --ack d0'),
+          psLine(orphan.pid ?? 0, 603, 'node --disable-warning=ExperimentalWarning /p/skills/orch/scripts/wait-important.ts --run run_x --ack d0'),
+        ].join('\n') + '\n',
+      )
+      const r = wait([WAITER_EXISTS], ['--kill-stale'])
+      assert.equal(r.code, 4, r.stderr)
+      assert.equal(await exited(orphan, 5000), true)
+      assert.ok(r.stderr.includes(`PID ${orphan.pid} 를 종료했다`), r.stderr)
+      for (const pid of ['601', '602', '603']) assert.ok(!r.stderr.includes(`PID ${pid} 를 종료했다`), pid)
     } finally {
       await reap(orphan)
     }
@@ -1274,5 +1352,97 @@ describe('작업 폴더', () => {
     assert.equal(done.status, 0, done.stdout + done.stderr)
     assert.ok(existsSync(join(other, 'rel-lost.json')))
     assert.ok(!existsSync(join(repo, 'rel-lost.json')))
+  })
+})
+
+describe('짧은 출력', () => {
+  const short = { ORCH_OUTPUT: 'short' }
+  const ready = { type: 'status', subject: `준비됨 #123, head ${SHA}`, created_at: '2026-10-23T00:00:00Z', task_id: 'task_a', dispatch_id: 'ctx_a', from_handle: 'term_a' }
+  // 차례가 섞인 묶음. 완료 근거 있는 worker_done, 근거 없는 worker_done, escalation, question, heartbeat
+  function mixed(delivery = 'd_mix'): Json {
+    const messages = [
+      { id: 'm1', type: 'question', task_id: 'task_q', dispatch_id: 'ctx_q', from_handle: 'term_q', body: '무엇을\n고를까?' },
+      { id: 'm2', type: 'heartbeat', from_handle: 'term_a' },
+      { id: 'm3', type: 'worker_done', task_id: 'task_a', dispatch_id: 'ctx_a', from_handle: 'term_a', created_at: '2026-10-23T00:00:01Z', body: 'PR #123 머지' },
+      { id: 'm4', type: 'escalation', task_id: 'task_e', dispatch_id: 'ctx_e', from_handle: 'term_e', subject: '막혔다', body: '' },
+      { id: 'm5', type: 'worker_done', task_id: 'task_b', dispatch_id: 'ctx_b', from_handle: 'term_b', created_at: '2026-10-23T00:00:02Z', body: '끝' },
+    ]
+    return { ok: true, result: { deliveryId: delivery, timedOut: false, messages } }
+  }
+  const rawDir = () => join(tmp, '.orch', 'state', 'wait')
+
+  test('메시지마다 판정 줄을 triage 차례로 내고 RAW 와 LAST_DELIVERY 로 끝난다', () => {
+    const r = wait([mixed()], ['--lost-interval-sec', '0'], { contract: 'ready', history: [ready] }, short)
+    assert.equal(r.code, 6, r.stdout + r.stderr)
+    const out = lines(r.stdout)
+    assert.deepEqual(out.slice(0, 5), [
+      'DONE-SUSPECT ctx_b task_b 끝',
+      'DONE ctx_a task_a PR #123 머지',
+      'ESCALATION ctx_e task_e 막혔다',
+      'QUESTION ctx_q task_q 무엇을 고를까?',
+      'HEARTBEAT 1',
+    ])
+    assert.match(out[5], /^RAW \/.+\/d_mix\.json$/)
+    assert.equal(out[6], 'LAST_DELIVERY d_mix')
+    assert.equal(out.length, 7)
+    assert.doesNotMatch(r.stdout, /의심스러운 worker_done|"ok"/)
+  })
+
+  test('RAW 파일을 triage-messages 로 읽은 짧은 줄이 대기의 메시지 줄과 같다', () => {
+    const r = wait([mixed()], ['--lost-interval-sec', '0'], { contract: 'ready', history: [ready] }, short)
+    const out = lines(r.stdout)
+    const raw = out.find((l) => l.startsWith('RAW '))?.slice(4) ?? ''
+    assert.ok(existsSync(raw), raw)
+    // 나중에 읽어도 같은 분류다. 대기가 붙인 완료 판정을 그대로 쓴다
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', TRIAGE, raw], { env: { ...env, ...short }, cwd: tmp, encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stderr)
+    assert.deepEqual(lines(done.stdout), [...out.slice(0, 5), 'DELIVERY d_mix'])
+  })
+
+  test('다음 대기가 그 delivery 를 ack 하면 원문 파일을 지운다', () => {
+    wait([mixed('d_a')], ['--lost-interval-sec', '0'], { contract: 'none' }, short)
+    assert.ok(existsSync(join(rawDir(), 'd_a.json')))
+    const next = wait([batch('d_b', 'question')], ['--ack', 'd_a', '--lost-interval-sec', '0'], { contract: 'none' }, short)
+    assert.equal(next.code, 0, next.stderr)
+    assert.ok(!existsSync(join(rawDir(), 'd_a.json')))
+    assert.ok(existsSync(join(rawDir(), 'd_b.json')))
+  })
+
+  test('신호가 없으면 지금처럼 JSON 한 줄이고 원문 파일을 쓰지 않는다', () => {
+    const r = wait([mixed()], ['--lost-interval-sec', '0'], { contract: 'ready', history: [ready] })
+    assert.match(r.stdout, /"suspicious_worker_done"/)
+    assert.match(r.stdout, /의심스러운 worker_done/)
+    assert.ok(!existsSync(rawDir()))
+  })
+
+  test('대기 자리가 있으면 orca JSON 대신 WAITER-EXISTS 다', () => {
+    const r = wait([{ ok: false, error: { code: 'waiter_exists', message: 'waiter exists' } }], ['--lost-interval-sec', '0'], {}, short)
+    assert.equal(r.code, 4, r.stdout + r.stderr)
+    assert.deepEqual(lines(r.stdout), ['WAITER-EXISTS run_x', 'LAST_DELIVERY -'])
+  })
+})
+
+describe('짧은 출력의 원문 정리와 --full', () => {
+  test('짧은 출력의 대기는 시작할 때 7일 지난 원문 파일만 지운다', () => {
+    const dir = join(tmp, '.orch', 'state', 'wait')
+    mkdirSync(dir, { recursive: true })
+    const old = join(dir, 'd_old.json')
+    const fresh = join(dir, 'd_new.json')
+    writeFileSync(old, '{}\n')
+    writeFileSync(fresh, '{}\n')
+    const past = (Date.now() - 8 * 24 * 3600 * 1000) / 1000
+    utimesSync(old, past, past)
+    wait([batch('d1', 'question')], ['--lost-interval-sec', '0'], {}, { ORCH_OUTPUT: 'short' })
+    assert.ok(!existsSync(old))
+    assert.ok(existsSync(fresh))
+  })
+
+  test('--full 로 건 대기(ORCH_OUTPUT=full)는 NEXT_WAIT 에 --full 을 잇고 지금 출력이다', () => {
+    const r = wait([batch('d1', 'question')], ['--lost-interval-sec', '0'], {}, { ORCH_OUTPUT: 'full' })
+    assert.equal(r.code, 0, r.stderr)
+    assert.match(r.stdout, /"deliveryId"/)
+    assert.match(nextWait(r.stderr), / --full( |$)/)
+    const plain = wait([batch('d2', 'question')], ['--lost-interval-sec', '0'])
+    assert.doesNotMatch(nextWait(plain.stderr), /--full/)
   })
 })

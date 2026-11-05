@@ -5,6 +5,8 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
+import { sweepLine } from '../scripts/cleanup-sweep.ts'
+import type { SweepContext } from '../scripts/cleanup-sweep.ts'
 import { type Row, branches, calls, exists, freshGoneBranch, fx, git, gone, has, lacks, mergedWorkerWithTerminal, remoteBranches, renamedWorktree, runSweep, squashMerge, sweepCalls, worktree } from './fixtures/cleanup-sweep.ts'
 
 describe('머지 판정과 기본 정리', () => {
@@ -528,5 +530,51 @@ describe('PR 찾기', () => {
     runSweep(['--apply'])
     assert.ok(existsSync(path))
     assert.ok(branches().has('feat-n'))
+  })
+})
+
+describe('짧은 출력', () => {
+  test('지운 것은 REMOVED, 끝 줄은 SWEEP <지운 수> <남긴 수> 다', () => {
+    const path = worktree('feat-a')
+    squashMerge('feat-a', path)
+    fx.terminals = [{ handle: 'term_a', worktreePath: path }]
+    fx.workers = [{ dispatchId: 'ctx_a', workerState: 'succeeded', resource: { worktreeId: `x::${path}`, releaseState: 'retained' } }]
+    fx.env.ORCH_OUTPUT = 'short'
+    const out = runSweep(['--run', 'run_x', '--apply']).trim().split('\n')
+    assert.ok(out.includes(`REMOVED ${path}`), out.join('\n'))
+    assert.ok(out.includes('REMOVED terminal:term_a'), out.join('\n'))
+    assert.ok(out.every((l) => /^[A-Z]/.test(l)), out.join('\n'))
+    const removed = out.filter((l) => l.startsWith('REMOVED ')).length
+    const kept = out.filter((l) => l.startsWith('KEPT ')).length
+    assert.equal(out.at(-1), `SWEEP ${removed} ${kept}`)
+  })
+
+  test('dry-run 은 WOULD-REMOVE 와 SWEEP-DRY 이고 아무것도 바꾸지 않는다', () => {
+    const path = worktree('feat-a')
+    squashMerge('feat-a', path)
+    fx.env.ORCH_OUTPUT = 'short'
+    const out = runSweep().trim().split('\n')
+    assert.ok(out.includes(`WOULD-REMOVE ${path}`), out.join('\n'))
+    assert.match(out.at(-1) ?? '', /^SWEEP-DRY [1-9]\d* \d+$/)
+    exists(path, out.join('\n'))
+  })
+
+  test('sweepLine 은 실패 줄을 지움 줄보다 먼저 보고, 지시서 남김과 건너뜀을 KEPT 로 바꾼다', () => {
+    const ctx: SweepContext = { path: null }
+    assert.equal(sweepLine('원격 브랜치 삭제 실패 b: e', ctx), 'FAILED b e')
+    assert.equal(sweepLine('  터미널 닫기 실패 term_x', ctx), 'FAILED terminal:term_x')
+    assert.equal(sweepLine('  지시서를 남긴다 s.md: 살아 있는 dispatch 가 쓴다', ctx), 'KEPT s.md 살아 있는 dispatch 가 쓴다')
+    assert.equal(sweepLine('정리 /w/a (feat-a, PR #1 MERGED)', ctx), null)
+    assert.equal(sweepLine('  건너뜀: 커밋 안 된 변경. 다음 실행에서 다시 시도한다', ctx), 'KEPT /w/a 커밋 안 된 변경')
+    assert.equal(sweepLine('  Docker 컨테이너 남김 web: 삭제 실패 (busy)', ctx), 'KEPT docker:web 삭제 실패 (busy)')
+    assert.equal(sweepLine('남김 /w/b: PR 없음, upstream 이 남아 있다. 치우지 않는 이유: 조회 실패', ctx), 'KEPT /w/b PR 없음, upstream 이 남아 있다. 치우지 않는 이유: 조회 실패')
+    assert.equal(sweepLine('  남김: 사용자 보유 터미널 (/w/c). 근거: 화면이 작업 중이다', ctx), 'KEPT /w/c 사용자 보유 터미널 근거: 화면이 작업 중이다')
+    assert.equal(sweepLine('건너뜀 /w/e: 커밋 안 된 변경', ctx), 'KEPT /w/e 커밋 안 된 변경')
+    assert.equal(sweepLine('건너뜀 detached /w/d: HEAD 가 원격에 없다', ctx), 'KEPT /w/d HEAD 가 원격에 없다')
+    assert.equal(sweepLine('  거부: /w/a 에 원격에 없는 커밋 2 개', ctx), 'KEPT /w/a 에 원격에 없는 커밋 2 개')
+    assert.equal(sweepLine('  dispatch release 실패 ctx_1', ctx), 'FAILED dispatch:ctx_1')
+    assert.equal(sweepLine('  건너뜀 리뷰 워크트리 /w/r (#3): gh 조회 실패 (x)', ctx), 'KEPT /w/r gh 조회 실패 (x)')
+    assert.equal(sweepLine('cleanup-sweep apply: /r (base main)', ctx), null)
+    assert.equal(sweepLine('FINISH-MISSING #1 feat-a: 마무리', ctx), 'FINISH-MISSING #1 feat-a: 마무리')
   })
 })

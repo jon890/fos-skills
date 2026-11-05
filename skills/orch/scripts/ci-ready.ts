@@ -37,6 +37,7 @@
 //
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
+// 짧은 출력(진입점의 orch queue ready, lib/output.ts): PR 마다 `READY <PR>`, `READY <PR> already`, `WOULD-READY <PR>`(dry-run), `HELD <PR> <이유>` 다.
 // 종료 코드: 0 모두 ready(이미 ready 포함), 1 보류한 PR 이 있다, 2 사용법 오류(설정 파일 오류 포함)나 조회 실패
 
 import { resolve } from 'node:path'
@@ -48,6 +49,8 @@ import { fire } from './lib/events.ts'
 import type { FireContext } from './lib/events.ts'
 import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { conflicts } from './lib/git.ts'
+import { emit } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 
 const USAGE = '사용법: ci-ready.ts [--repo DIR] [--dry-run] PR [PR ...]'
 const FILES_LIMIT = 300
@@ -69,8 +72,16 @@ type Pr = {
 }
 type ReadyPr = { number: number; isDraft: boolean; url: string; author: { login: string } | null }
 
+// 짧은 출력(진입점의 orch queue ready)의 줄 규칙. PR 마다 판정 낱말 줄이다
+const SHORT_RULES: Rule[] = [
+  [/^(\d+) 보류: (.*)$/, (m) => `HELD ${m[1]} ${m[2]}`],
+  [/^(\d+) 이미 ready$/, (m) => `READY ${m[1]} already`],
+  [/^(\d+) ready 로 바꿀 것$/, (m) => `WOULD-READY ${m[1]}`],
+  [/^(\d+) ready 로 바꿈/, (m) => `READY ${m[1]}`],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line, SHORT_RULES)
 }
 
 function err(line: string): void {

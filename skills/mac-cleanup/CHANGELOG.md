@@ -3,6 +3,14 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.13.3 (2026-11-05)
+
+- orch 의 워크트리 정리 명령을 새 꼴 `orch cleanup worktree`, `orch cleanup sweep` 으로 안내해요
+
+## 1.13.2 (2026-11-05)
+
+- 낡은 `--check-prs` 표기를 고치고 orch 내부 동작 설명을 줄였다
+
 ## 1.13.1 (2026-11-04)
 
 - 문서 표현만 고쳤다. 동작은 바뀌지 않았다

@@ -1,4 +1,4 @@
-# docs-check
+# docs-audit
 
 코드를 바꾼 뒤 문서가 따라왔는지 파일마다 열어 대조하는 수고를 덜어 준다.
 ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와 앵커, 계획서 번호 참조는 정적 검사로 찾는다.
@@ -54,7 +54,7 @@ ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와
 - 검사할 저장소 루트에서 부른다. git 저장소가 아니면 정적 검사가 종료 코드 2 로 멈춘다
 - `python3` 가 필요하다. 정적 검사가 Python 으로 돈다
 - ADR 디렉터리가 있으면 경로를 알려 준다. 없으면 Index 동기화 검사를 건너뛴다
-- 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 은 `<repo-root>/.claude/docs-check-overlay.md` 에 적을 수 있다. 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 본다
+- 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 은 `<repo-root>/.claude/docs-audit-overlay.md` 에 적을 수 있다. 없으면 같은 위치의 `docs-check-overlay.md` 를 읽고 경고한다. 둘 다 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 본다
 
 ## 함께 쓰는 스킬
 

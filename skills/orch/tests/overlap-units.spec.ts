@@ -208,6 +208,13 @@ describe('overlap_units 명령', () => {
     assert.deepEqual(cli(), [0, '바로 머지', ''])
   })
 
+  test('짧은 출력은 MERGE-NOW, UPDATE-NEEDED 다', () => {
+    diverge('modules/api/B.java', 'modules/api/C.java')
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--base', 'main', '--head', 'feature', '--shared-paths', SHARED], { encoding: 'utf8', env: { ...GIT_ENV, ORCH_OUTPUT: 'short' } })
+    assert.equal(done.status, 1, done.stderr)
+    assert.match(done.stdout, /^UPDATE-NEEDED \S/)
+  })
+
   test('PR 쪽 공용 경로', () => {
     diverge('modules/common/U.java', 'modules/web/C.java')
     const [code, out] = cli()

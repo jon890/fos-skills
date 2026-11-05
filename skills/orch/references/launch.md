@@ -40,7 +40,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --base "$BASE" --run "$RUN_ID" \
+orch worker launch --spec "$SPEC_FILE" --name "$NAME" --base "$BASE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -57,15 +57,15 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 로컬 브랜치나 경로가 있으면 덮어쓰지 않으며 기존 워크트리는 `--worktree` 로 이어 쓴다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --repo "$REPO" --name "$NAME" --resume-remote --run "$RUN_ID" \
+orch worker launch --spec "$SPEC_FILE" --name "$NAME" --resume-remote \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
 **`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree` 가 「경로가 이미 있다」 로 거부한다.
 스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다. 실패한 띄우기가 그 워크트리에 터미널을 남겼으면 그 목록도 함께 낸다. 이 세션이 띄운 것인지 보고 닫은 뒤 부른다.
-**그 워크트리에 터미널이 남아 있으면 스크립트가 목록을 보여 주고 거부한다.** 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
+**그 워크트리에 터미널이 남아 있으면 스크립트가 거부한다.** 기본 출력은 `REFUSED <이유>` 한 줄이고 남은 터미널 목록은 `--full` 에 있다. 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
 목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다.
-**그 워크트리에 커밋 안 된 변경이 있어도 목록을 보여 주고 거부한다.** 재사용한 워크트리에 다른 PR 을 되돌린 변경 35개가 남아 있던 일이 있었다.
+**그 워크트리에 커밋 안 된 변경이 있어도 거부한다(`REFUSED`, 변경 목록은 `--full`).** 재사용한 워크트리에 다른 PR 을 되돌린 변경 35개가 남아 있던 일이 있었다.
 무엇인지 보고 커밋하거나 정리한 뒤 다시 부른다. 끊긴 worker 의 변경을 새 worker 가 이어받는 일이면 `--dirty-ack <이유>` 를 준다. `--terminal` 로 이어 쓸 때와 리뷰 worker 는 보지 않는다.
 끝난 dispatch 의 터미널을 이어 쓰는 일은 `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서>` 가 한다.
 터미널이 남았으면 그 터미널을 이어 쓴다. 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. 터미널도 없으면 종료 코드 3 이다. 판정은 `send-to-worker` 머리 주석이 소유한다.
@@ -73,7 +73,7 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" launch-worker --spec "$SPEC_FILE" --worktree "$WORKTREE" --run "$RUN_ID" \
+orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
@@ -83,11 +83,11 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 **띄운 뒤 `worktree_creating` 에서 넘어가지 않으면 스크립트가 abandon 하고 같은 Task 를 `--retry-of` 로 한 번 다시 띄운다.** 기본으로 90초를 본다(`--watch`).
 abandon 하기 전에 일하는 흔적(heartbeat, 워크트리 변경, 작업 중 화면)을 보고, 있으면 다시 띄우지 않고 그대로 `LAUNCHED` 로 끝낸다. 살아 일하는 worker 옆에 같은 일의 worker 를 하나 더 띄워 한 워크트리에서 커밋이 섞인 일이 있었다. 근거 목록은 스크립트 머리 주석이 소유한다.
 다시 띄워도 멈추면 종료 코드 1 이다. 그때는 아래 「첫 화면에서 멈춤」 처럼 `worker-show` 의 `lastFailure` 를 본다.
-`worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다.
+`worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다. 기본 출력의 `START-FAIL <receipt>` 줄이 실패 단계(`failedStage`)와 남은 자원을 담는다. 다시 불러 확인하지 않는다.
 
 ## 띄운 직후 확인
 
-- `worker-start` 응답의 `launch.effective` 가 1단계에서 고른 모델, effort 와 같다
+- `worker-start` 응답의 `launch.effective`(기본 출력의 `LAUNCH-EFFECTIVE` 줄)가 1단계에서 고른 모델, effort 와 같다. 기본 출력의 `LAUNCHED <dispatch> <터미널> <워크트리>` 에서 터미널을 읽는다
 - `git -C "$REPO" status --short` 에 `worktrees/` 가 없다
 
 **사용자에게 띄웠다고 보고할 때, 「할 일」 첫 줄이 `루프 없이: <이유>` 인 worker 는 그 이유를 한 줄로 함께 적는다.** 예: 「`orch-log-typo` 를 루프 없이 띄웠다. 이유: 로그 오타만 고치는 버그 수정이다.」
@@ -144,7 +144,7 @@ Orca 는 Claude 계정마다 `~/Library/Application Support/orca/claude-profiles
 `$PROFILE_ID` 는 거부 메시지에 나온 프로필 id 다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" link-claude-profile "$PROFILE_ID"
+orch worker link-profile "$PROFILE_ID"
 ```
 
 무엇을 링크하고 복사하는지, 세션 상태와 로그인 정보를 옮기지 않는 이유, 백업 이름은 `scripts/lib/claude-profile.ts` 머리 주석이 소유한다.
@@ -184,16 +184,16 @@ orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --ag
 
 ## 이전 세션 이어받기
 
-코디네이터가 바뀌거나 계정을 전환한 뒤에는 `adopt-sessions` 로 기존 터미널을 먼저 확인한다. 기본 실행은 다른 Run 의 살아 있는 dispatch 를 제외한 목록을 내며 터미널에 입력하거나 닫지 않는다.
+코디네이터가 바뀌거나 계정을 전환한 뒤에는 `orch worker adopt` 로 기존 터미널을 먼저 확인한다. 기본 실행은 다른 Run 의 살아 있는 dispatch 를 제외한 목록을 내며 터미널에 입력하거나 닫지 않는다.
 
-`$REPO` 는 대상 저장소, `$TERMINAL` 은 목록에서 고른 handle, `$RUN_ID` 는 현재 코디네이터의 Run 이다.
+`$TERMINAL` 은 목록에서 고른 handle 이다. 저장소는 작업 폴더에서, `--apply` 의 Run 은 코디네이터 터미널에서 읽는다.
 
 ```bash
-"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO"
-"$SKILL_DIR/bin/orch.ts" adopt-sessions --repo "$REPO" --apply "$TERMINAL" --run "$RUN_ID"
+orch worker adopt
+orch worker adopt --apply "$TERMINAL"
 ```
 
-목록의 지시서 후보를 확인한다. 후보가 없거나 여럿이면 `--spec` 으로 해당 브랜치의 지시서를 고른다. 사람의 셸과 작업·권한·초안 대기 화면은 자동으로 이어 붙이지 않는다. 원래 허락 범위와 막힌 결정을 먼저 확인한다.
+목록의 `SESSION <터미널> <화면 상태> <브랜치> specs=<지시서 후보>` 줄에서 지시서 후보를 확인한다(세션의 전체 기록은 `--full`). 후보가 없거나 여럿이면 `--spec` 으로 해당 브랜치의 지시서를 고른다. 사람의 셸과 작업·권한·초안 대기 화면은 자동으로 이어 붙이지 않는다. 원래 허락 범위와 막힌 결정을 먼저 확인한다.
 기본 실행은 다시 띄울 worker 도 낸다. 명령은 안내만 하고 부르지 않는다.
 
 - `LIMITED <터미널>`: 살아 있는 dispatch 인데 화면이 사용 한도 안내(`Usage limit reached`, `You've hit your ... limit`)에서 멈췄다. 계정을 바꾼 뒤 이전 계정의 worker 가 이렇게 남는다. heartbeat 는 계속 와 대기로는 알 수 없다. 아래 줄의 `worker-abandon`, `worker-start --retry-of`, `terminal close` 를 차례로 부른다

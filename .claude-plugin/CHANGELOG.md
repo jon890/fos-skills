@@ -5,6 +5,30 @@
 규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
 플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 5.3.0 (2026-11-05)
+
+- orch 7.13.0 (#342)
+
+## 5.2.0 (2026-11-05)
+
+- mac-cleanup 1.13.3, orch 7.12.0, work-board 1.18.1 (#341)
+
+## 5.1.0 (2026-11-05)
+
+- docs-audit 4.0.1, docs-consolidate 1.5.0, harness-cleanup 3.24.0, implementation 7.5.3, inbox 1.2.2, mac-cleanup 1.13.2, plan 5.6.1, pr-review 1.8.3, presentation 1.3.5, report 1.0.2, review-fix 2.15.2, spec 3.4.3, technical-design 1.3.2, verify 1.5.2, content-preview 3.21.1, korean-check 1.36.4 (#340)
+
+## 5.0.0 (2026-11-05)
+
+- docs-consolidate 1.4.0, harness-cleanup 3.23.1, plan 5.6.0, presentation 1.3.4, docs-audit 4.0.0 (#339)
+
+## 4.6.0 (2026-11-05)
+
+- browser 1.1.0, harness-cleanup 3.23.0, implementation 7.5.2, inbox 1.2.1, plan 5.5.2, pr-review 1.8.2, presentation 1.3.3, review-fix 2.15.1, spec 3.4.2, technical-design 1.3.1, verify 1.5.1, korean-check 1.36.3 (#338)
+
+## 4.5.0 (2026-11-05)
+
+- orch 7.11.1 (#336)
+
 ## 4.4.0 (2026-11-05)
 
 - orch 7.11.0 (#337)

@@ -16,7 +16,7 @@ test('오늘 시작 요청문은 보드 갱신, 정리, 감시, 보고, 확인 �
 })
 
 test('정할 것 묻기 요청문은 결정 모으기, 질문, 보드와 worker 반영을 담는다', () => {
-  for (const text of ['결정 필요(decide)', 'AskUserQuestion', '(Recommended)', 'board.ts mark', 'skills/orch/scripts/send-to-worker.ts']) {
+  for (const text of ['결정 필요(decide)', 'AskUserQuestion', '(Recommended)', 'board.ts mark', 'orch worker send']) {
     assert.ok(DECIDE_PROMPT.includes(text), text)
   }
 })

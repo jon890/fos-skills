@@ -26,14 +26,16 @@
 //
 // git 무시: 루트가 저장소 안에 있고 git 이 아직 무시하지 않으면 `git rev-parse --git-path info/exclude` 파일에
 // /<루트>/ 한 줄을 더한다. 저장소의 .gitignore 는 바꾸지 않는다. 그 파일은 워크트리끼리 함께 쓴다.
+// 같은 프로세스에서 무시됨을 확인한 루트와 저장소가 아님을 확인한 주 checkout 은 다시 git 에 묻지 않는다(ensureIgnored 위 주석).
 
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { defaultBoardPath } from '../../../../extensions/work-board/bin/board.ts'
+import { orchWord } from './commands.ts'
 import { inside, real } from './fs.ts'
-import { git, mainCheckout } from './git.ts'
+import { shQuote } from './py.ts'
+import { git, gitMemoKey, gitMayFind, mainCheckout } from './git.ts'
 
 const DEFAULT_ROOT = '.orch'
 
@@ -69,7 +71,6 @@ export const DEFAULT_MOVES: ReadonlyArray<readonly [string, string]> = [
 // 남아 있으면 옮기기 전이라고 보는 옛 위치. 설정과 지시서가 여기 있으면 명령이 그 값 없이 돌게 된다.
 export const LEGACY_MARKERS: readonly string[] = ['.claude/orch-overlay.md', '.claude/orch-finish.json', '.omc/orch', '.omc/handoffs/specs']
 
-const MIGRATE = fileURLToPath(new URL('../migrate-orch-dir.ts', import.meta.url))
 const DEFAULT_BYPASS = '설정 파일을 --config 로 직접 준다'
 
 function expandUser(value: string): string {
@@ -99,24 +100,44 @@ export function boardPath(repo: string, explicit?: string | null): string {
   return defaultBoardPath(real(repo))
 }
 
+const ignoredMemo = new Map<string, 'ignored' | 'no-git'>()
+
 // 루트를 git 이 무시하게 한다. 더한 줄이 있으면 그 줄, 없으면 null.
+// 같은 프로세스에서 같은 주 checkout 과 루트를 다시 받으면 git 을 띄우지 않고 null 이다. 앞 결과를 쓰는 조건은 둘이다.
+//   무시됨(이미 무시했거나, 같은 줄이 있었거나, 방금 더했다): 주 checkout 이 아직 있다.
+//   저장소 아님(rev-parse --git-dir 실패): GIT_DIR 이 없고 주 checkout 과 조상에 .git 이 없다. git init 으로 .git 이 생기면 다시 묻는다.
+// 그 사이에 무시 규칙이 바뀌거나(.gitignore 의 pull, checkout) 누가 무시 줄을 지우면 이 프로세스는 다시 더하지 않는다. 다음 명령이 더한다.
 export function ensureIgnored(repo: string): string | null {
   const root = orchDir(repo)
   const top = mainCheckout(repo)
   const rel = relative(top, root)
   // 루트가 저장소 밖이면 무시할 것이 없다. 루트가 주 checkout 자신이면 저장소 전체를 무시하게 되므로 더하지 않는다.
   if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
+  const key = gitMemoKey(top, root)
+  const memo = ignoredMemo.get(key)
+  if (memo && (memo === 'ignored' ? existsSync(top) : !gitMayFind(top))) return null
+  ignoredMemo.delete(key)
   const relPosix = rel.split(sep).join('/')
-  if (git(top, ['rev-parse', '--git-dir']).code !== 0) return null
-  if (git(top, ['check-ignore', '-q', '--no-index', `${relPosix}/`]).code === 0) return null
+  if (git(top, ['rev-parse', '--git-dir']).code !== 0) {
+    if (!gitMayFind(top)) ignoredMemo.set(key, 'no-git')
+    return null
+  }
+  if (git(top, ['check-ignore', '-q', '--no-index', `${relPosix}/`]).code === 0) {
+    ignoredMemo.set(key, 'ignored')
+    return null
+  }
   const found = git(top, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])
   const exclude = found.stdout.trim()
   if (found.code !== 0 || !exclude) return null
   const line = `/${relPosix}/`
   mkdirSync(dirname(exclude), { recursive: true })
   const text = existsSync(exclude) && statSync(exclude).isFile() ? readFileSync(exclude, 'utf8') : ''
-  if (text.split(/\r\n|\r|\n/).includes(line)) return null
+  if (text.split(/\r\n|\r|\n/).includes(line)) {
+    ignoredMemo.set(key, 'ignored')
+    return null
+  }
   appendFileSync(exclude, `${!text || text.endsWith('\n') ? '' : '\n'}${line}\n`, 'utf8')
+  ignoredMemo.set(key, 'ignored')
   return line
 }
 
@@ -172,7 +193,7 @@ export function requireMigrated(repo: string, script: string, bypass: string | n
   const lines = [
     `${script}: orch 작업 폴더를 옮기기 전이다. 옛 위치가 남아 있다: ${left.join(', ')}`,
     `  새 위치(${orchDir(repo)})의 설정과 지시서만 읽으므로 이대로 돌면 저장소 값이 빠진다.`,
-    `  머지 큐와 worker 가 돌지 않을 때 옮긴다: node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${mainCheckout(repo)} --apply`,
+    `  머지 큐와 worker 가 돌지 않을 때 옮긴다: ${orchWord()} doctor migrate --repo ${shQuote(mainCheckout(repo))} --apply`,
     '  이미 옮겼는데 다시 나오면 옮긴 포장 스크립트(bin)나 다른 도구가 옛 폴더를 다시 만든 것이다. ' +
       '그 스크립트의 옛 경로를 고친 뒤 다시 옮긴다.',
   ]
@@ -186,6 +207,6 @@ export function warnLegacy(repo: string, script: string): void {
   const left = legacyPaths(repo)
   if (left.length === 0) return
   process.stderr.write(
-    `${script}: 옛 위치가 남아 있다(${left.join(', ')}). 대기가 끝나면 node --disable-warning=ExperimentalWarning ${MIGRATE} --repo ${mainCheckout(repo)} 로 옮긴다\n`,
+    `${script}: 옛 위치가 남아 있다(${left.join(', ')}). 대기가 끝나면 ${orchWord()} doctor migrate --repo ${shQuote(mainCheckout(repo))} 로 옮긴다\n`,
   )
 }

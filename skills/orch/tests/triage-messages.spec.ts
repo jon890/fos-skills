@@ -188,3 +188,49 @@ describe('--live', () => {
     assert.match(r.stderr, /runtime_unavailable/)
   })
 })
+
+describe('짧은 출력', () => {
+  function shortRun(args: string[]): Result {
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], { env: { ...env, ORCH_OUTPUT: 'short' }, encoding: 'utf8', timeout: 60_000 })
+    return { code: done.status, stdout: done.stdout, stderr: done.stderr }
+  }
+
+  test('메시지마다 판정 줄을 우선 종류 차례로 내고 heartbeat 합과 delivery 로 끝난다', () => {
+    const messages = [
+      { ...msg('q', 'question'), task_id: 'tq', dispatch_id: 'cq' },
+      msg('h1', 'heartbeat'),
+      msg('h2', 'heartbeat', undefined, 'term_b'),
+      { ...msg('e', 'escalation', undefined, 'term_e', ''), task_id: 'te', dispatch_id: 'ce' },
+      { ...msg('w', 'worker_done', undefined, 'term_w', '끝냈다\n둘째 줄'), task_id: 'tw', dispatch_id: 'cw' },
+      msg('s', 'status'),
+    ]
+    const r = shortRun([file(batch(messages)), '--completion-contract', 'none'])
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(r.stdout.trim().split('\n'), [
+      'DONE cw tw 끝냈다 둘째 줄',
+      'ESCALATION ce te se',
+      'QUESTION cq tq 본문',
+      'STATUS - - 본문',
+      'HEARTBEAT 2',
+      'DELIVERY d1',
+    ])
+  })
+
+  test('근거 없는 worker_done 은 DONE-SUSPECT 로 맨 앞이다', () => {
+    const r = shortRun([file(batch([msg('q', 'question'), { ...msg('w', 'worker_done'), task_id: 't', dispatch_id: 'c' }]))])
+    assert.equal(r.stdout.split('\n')[0], 'DONE-SUSPECT c t 본문')
+  })
+
+  test('읽을 메시지가 없으면 NO-MESSAGES 다', () => {
+    const r = shortRun([file(JSON.stringify({ ok: true, result: { messages: [] } }))])
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout.trim(), 'NO-MESSAGES')
+  })
+
+  test('--json 과 신호 없는 실행은 지금 출력이다', () => {
+    const input = file(batch([msg('q', 'question')]))
+    assert.match(triage([input]).stdout, /== question 1건/)
+    const r = shortRun([input, '--json'])
+    assert.ok(JSON.parse(r.stdout).groups.question)
+  })
+})

@@ -29,6 +29,7 @@ import { expandArgs } from './lib/args.ts'
 import { git } from './lib/git.ts'
 import { groupMap, judge, splitGlobs, verdictText } from './lib/overlap.ts'
 import { pyRegExp } from './lib/py.ts'
+import { short } from './lib/output.ts'
 
 const USAGE = [
   '사용법: overlap_units.ts --base REF --head REF [--shared-paths 정규식] [--unit-prefix 접두] [--unit-group a,b ...]',
@@ -95,7 +96,9 @@ function main(argv: string[]): number {
     docsGlobs: splitGlobs(values['docs-glob']),
     groups,
   })
-  process.stdout.write(`${verdictText(verdict)}\n`)
+  // 짧은 출력(진입점의 orch queue overlap)은 판정 낱말이다. merge_queue 는 경로로 불러 지금 줄을 읽는다
+  const shown = short() ? (verdict.update ? `UPDATE-NEEDED ${verdict.reason}` : 'MERGE-NOW') : verdictText(verdict)
+  process.stdout.write(`${shown}\n`)
   return verdict.update ? 1 : 0
 }
 

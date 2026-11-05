@@ -14,7 +14,7 @@
 봇의 발견사항이 리뷰 스레드로 달렸는지 인라인 댓글로 달렸는지 먼저 본다. 변수와 명령은 `SKILL.md` 의 「회신」, 「마무리」 단계가 소유한다.
 
 ```bash
-python3 scripts/review_threads.py list "$OWNER" "$REPO" "$PR"
+python3 "$SKILL_DIR/scripts/review_threads.py" list "$OWNER" "$REPO" "$PR"
 ```
 
 | 상태 | 회신 경로 |
@@ -34,7 +34,7 @@ python3 scripts/review_threads.py list "$OWNER" "$REPO" "$PR"
 
 ```bash
 COMMENT_ID=""
-gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" \
+gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" \
   "repos/$OWNER/$REPO/pulls/$PR/comments/$COMMENT_ID/replies" \
   -X POST -F body=@"$BODY"
 ```
@@ -82,6 +82,6 @@ gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" \
 
 ```bash
 COMMENT_ID=""   # 교체할 댓글 id. 인라인 댓글이면 경로가 pulls/comments/$COMMENT_ID 다
-gh api --hostname "$(python3 scripts/gh_host.py "$OWNER" "$REPO")" \
+gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" \
   "repos/$OWNER/$REPO/issues/comments/$COMMENT_ID" -X PATCH -F body=@"$BODY"
 ```

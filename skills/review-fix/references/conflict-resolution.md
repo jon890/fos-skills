@@ -31,10 +31,11 @@ CONFLICTING 인 채로 fix 를 push 하면 여전히 머지 불가라 fix 효과
 lockfile 이 충돌하지 않았으면 이 절을 건너뛴다.
 
 ```bash
-git checkout --theirs <lockfile>   # merge 중에는 --theirs 가 base 다
-git checkout --ours   <lockfile>   # rebase 중에는 --ours 가 base 다
-<재생성 명령>
-git add <lockfile>
+LOCKFILE=""   # 충돌한 lockfile 경로
+git checkout --theirs "$LOCKFILE"   # merge 중에는 --theirs 가 base 다
+git checkout --ours   "$LOCKFILE"   # rebase 중에는 --ours 가 base 다
+# 위 표의 재생성 명령을 여기서 부른다
+git add "$LOCKFILE"
 ```
 
 ## 해결 확인

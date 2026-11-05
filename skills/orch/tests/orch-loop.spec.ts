@@ -566,7 +566,7 @@ describe('마무리 빠짐과 대기 확인', () => {
     const missing = events().filter((line) => line.kind === 'FINISH-MISSING')
     assert.equal(missing.length, 1, JSON.stringify(events()))
     assert.equal(missing[0].pr, 7)
-    assert.match(String(missing[0].text), /^feat-x: 머지 뒤 마무리\(finish-pr\)가 돈 적이 없다\. 마무리를 뒤늦게 돌리려면 orch\.ts finish-pr 7 --repo .* --run r$/)
+    assert.match(String(missing[0].text), /^feat-x: 머지 뒤 마무리\(finish-pr\)가 돈 적이 없다\. 마무리를 뒤늦게 돌리려면 \S+ queue finish 7 --repo .* --run r$/)
   })
 
   // ps 가짜. PS_OUT 을 낸다
@@ -915,6 +915,15 @@ describe('--start, --status, --stop', () => {
     assert.equal(stop.code, 0, stop.stdout + stop.stderr)
     assert.match(stop.stdout, /^LOOP-NOT-REGISTERED run=r2$/m)
     assert.equal(pidAlive(pid), true)
+  })
+
+  test('짧은 출력은 옛 루프 안내 대신 LOOP-LEGACY 판정 줄을 내고 안내 줄을 내지 않는다', async (t) => {
+    const pid = await fakeLoop(t)
+    const now = new Date().toISOString()
+    write(orchFile('state', 'loop.json'), JSON.stringify({ pid, run: 'r1', repo, tick_sec: 300, started_at: now, alive_at: now, last_tick: null, ticks: 0, errors: {} }))
+    const again = loop(['--run', 'r2', '--start'], { ORCH_OUTPUT: 'short' })
+    assert.equal(again.code, 4, again.stdout + again.stderr)
+    assert.deepEqual(again.stdout.trim().split('\n'), [`LOOP-RUNNING ${pid} run=r1`, `LOOP-LEGACY ${pid} run=r1`])
   })
 
   test('마지막 Run 의 등록이 사라지면 다음 틱 전에 LOOP-EMPTY 로 끝난다', { timeout: 60_000 }, async () => {
