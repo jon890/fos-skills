@@ -76,8 +76,10 @@
 최근 사용자 입력 후 10분이 지나지 않은 상태다. 닫힌 창, 다른 플러그인에 가려진 창,
 그릴 표면이 없는 SDK 세션은 자동 조회를 하지 않는다. OS 창의 최소화 여부는 이 API 로 알 수 없다.
 
-입력은 `prompt.change`, `prompt.submit`, `ui.press`, `ui.input`, `ui.select`, `ui.focus` 의
-`origin.kind === 'person'` 으로 판정한다. `/board` 열기와 세션 시작도 기한을 시작한다.
+입력은 엔진의 이벤트 종류와 출처로 판정한다. `prompt.submit` 의 `composer`·`bridge`,
+`prompt.edit`(타이핑·붙여넣기), `prompt.change` 의 `history`·`undo`, 출처 필드가 없는
+`ui.press`·`ui.input`·`ui.select`, `ui.focus` 의 `person` 을 사용자 입력으로 센다.
+`/board` 열기와 세션 시작도 기한을 시작한다.
 모델의 도구 실행, 플러그인의 입력란 채우기와 정기 렌더링은 기한을 늘리지 않는다.
 활성 상태가 돌아오면 다음 5초 확인에서 주기가 지난 조회를 재개한다. 실패도 다음 주기까지 기다린다.
 

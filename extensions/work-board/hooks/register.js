@@ -1484,9 +1484,21 @@ function fillPrompt($, text) {
   $.ui.toast('입력란에 요청문을 채웠어요. Enter 를 누르면 보내요')
 }
 
-async function onPersonInput($, e, next) {
-  if (e.origin?.kind === 'person') networkPoll.input(await $.clock.now())
+async function recordInput($, e, next) {
+  networkPoll.input(await $.clock.now())
   return next(e)
+}
+
+function onPromptSubmit($, e, next) {
+  return ['composer', 'bridge'].includes(e.origin?.kind) ? recordInput($, e, next) : next(e)
+}
+
+function onPromptChange($, e, next) {
+  return ['history', 'undo'].includes(e.origin?.kind) ? recordInput($, e, next) : next(e)
+}
+
+function onPaneFocus($, e, next) {
+  return e.origin?.kind === 'person' ? recordInput($, e, next) : next(e)
 }
 
 export function register(on) {
@@ -1517,12 +1529,13 @@ export function register(on) {
   on('ui.close', onPaneClose)
 
   // plugin 의 prompt.fill 과 정기 render 는 무조작 기한을 늘리지 않는다.
-  on('prompt.change', onPersonInput)
-  on('prompt.submit', onPersonInput)
-  on('ui.press', onPersonInput)
-  on('ui.input', onPersonInput)
-  on('ui.select', onPersonInput)
-  on('ui.focus', onPersonInput)
+  on('prompt.change', onPromptChange)
+  on('prompt.submit', onPromptSubmit)
+  on('prompt.edit', recordInput)
+  on('ui.press', recordInput)
+  on('ui.input', recordInput)
+  on('ui.select', recordInput)
+  on('ui.focus', onPaneFocus)
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)

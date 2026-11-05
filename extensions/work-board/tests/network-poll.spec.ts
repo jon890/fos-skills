@@ -131,12 +131,46 @@ test('등록 훅은 창 표시와 사람 입력을 확인하고, PR 을 로컬 4
   await hooks.get('prompt.change')!($, { origin: { kind: 'plugin' } }, next)
   await tick(5000)
   assert.equal(prs(), 2, '프로그램 입력은 무입력 기한을 늘리지 않는다')
-  await hooks.get('prompt.change')!($, { origin: { kind: 'person' } }, next)
+  await hooks.get('prompt.submit')!($, { text: 'hi', origin: { kind: 'composer' } }, next)
   await tick(5000)
   assert.equal(prs(), 3)
+  // Claude Code 2.1.318 claude-code.d.ts 의 실제 이벤트 표본이다.
+  const site = { plugin: 'fos-skills', element: 'start', component: 'Pane', requestId: 'work-board', surface: 'terminal' }
+  for (const [event, input] of [
+    ['prompt.submit', { text: 'hi', origin: { kind: 'bridge' } }],
+    ['prompt.edit', { text: '', cursor: 0, start: 0, end: 0, inputText: 'x', origin: { kind: 'composer' } }],
+    ['prompt.change', { text: 'hi', cursor: 2, origin: { kind: 'history' } }],
+    ['prompt.change', { text: '', cursor: 0, origin: { kind: 'undo' } }],
+    ['ui.press', site],
+    ['ui.input', { ...site, value: 'x', kind: 'change' }],
+    ['ui.select', { ...site, value: 'x' }],
+    ['ui.focus', { ...site, origin: { kind: 'person' } }],
+  ] as const) {
+    at += IDLE_MS
+    const previous = prs()
+    await tick(5000)
+    assert.equal(prs(), previous, event + ' 전에는 무입력으로 멈춘다')
+    await hooks.get(event)!($, input, next)
+    await tick(5000)
+    assert.equal(prs(), previous + 1, event + ' 뒤에는 재개한다')
+  }
+  for (const [event, input] of [
+    ...['plugin', 'sdk', 'scheduled-trigger', 'coordinator', 'peer', 'task-notification'].map((kind) =>
+      ['prompt.submit', { text: 'auto', origin: { kind } }] as const),
+    ...['plugin', 'app', 'engine', 'clear'].map((kind) =>
+      ['prompt.change', { text: '', cursor: 0, origin: { kind } }] as const),
+    ['ui.focus', { ...site, origin: { kind: 'plugin', name: 'fos-skills' } }],
+  ] as const) {
+    at += IDLE_MS
+    const previous = prs()
+    await hooks.get(event)!($, input, next)
+    await tick(5000)
+    assert.equal(prs(), previous, event + ' 프로그램 입력으로는 재개하지 않는다')
+  }
   at++
+  const previous = prs()
   await hooks.get('command.run')!($, {})
   await flush()
-  assert.equal(prs(), 4, '/board 는 주기 안에서도 캐시를 읽는다')
+  assert.equal(prs(), previous + 1, '/board 는 숨김·무입력 상태에서도 캐시를 읽는다')
   assert.equal(calls.some((a) => a[0] === 'gh'), false, '직접 gh 로 우회하지 않는다')
 })
