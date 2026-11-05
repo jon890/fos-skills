@@ -1,0 +1,29 @@
+{
+  "name": "test-runner",
+  "description": "두 언어와 tsc 를 도는 실행기 하나, CI job 하나, 로컬 검증 문서",
+  "pr_scope": "scripts/run-tests.ts 가 tsc, node --test 한 번, Python 묶음을 함께 돌고 지금 실행기의 출력 계약을 지키며, CI 와 로컬 검증이 그 명령 하나를 부르고 scripts/run-node-tests.ts 를 지운다.",
+  "deferred": [
+    {
+      "what": "파일 묶음마다 가짜 재사용, 템플릿 저장소, 함수 주입 전환(merge-queue, orch-loop 계열, cleanup-sweep 계열, launch-worker 와 나머지)",
+      "why": "orch-cli PR3 이 테스트의 스크립트 경로를 고친 뒤에 한다(스펙 DECISION10)",
+      "after": "orch-cli PR3 머지"
+    },
+    {
+      "what": "대기 옵션(--background, --wait, --max-wait) 정리와 2분 목표 확인(REQ4)",
+      "why": "실행기 전체가 600초 아래인 것을 잰 뒤에 한다(스펙 DECISION21, DECISION22)",
+      "after": "위 전환 PR 들 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-05",
+  "spec": "docs/features/test-speed/spec.md",
+  "design": "docs/features/test-speed/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": ["REQ1", "REQ3", "REQ7", "REQ8", "REQ10"],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ7", "REQ10"] },
+    { "number": 2, "file": "phase-02.md", "execution_profile": "standard", "requirements": ["REQ1", "REQ3", "REQ8", "REQ10"] }
+  ]
+}
