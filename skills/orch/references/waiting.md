@@ -67,7 +67,7 @@ Run 을 읽지 못하고 `finish.run` 도 없으면 Run 이 하나라도 등록�
 - 등록된 Run 마다 질문 확인. 기술 질문과 일반 escalation은 답이 없는 채 재알림 시간이 지나면 알림 파일에 `REMINDER` 를 쓴다. 사용자 결정 질문의 재알림은 루프 로그에만 남기고, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING` 알림과 단일 notifier가 맡는다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
 - Run 마다 그 Run 범위의 정리(`cleanup-sweep --run`), 원격 브랜치 정리와 보드 동기화(`board-sync`)는 틱마다 한 번
 - 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 같은 워크플로의 base 최신 완료된 push 실행을 공유 캐시로 확인한다. base 의 실패가 6시간 이내면 `CI-FAILED` 에 `<base> 도 실패` 를 남겨 코디네이터에게만 알리고, 그 밖에는 그 PR 의 worker 에게 알린다. 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알린다. `queue.auto_merge` 를 켠 저장소에서는 머지할 수 있는 PR 을 머지 큐에 건다(`orch-loop.ts` 머리 주석의 「자동 머지」)
-- Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 사용 한도 화면은 `stall_ticks` 와 무관하게 dispatch 마다 `WORKER-LIMITED` 알림을 한 번 쓴다. 알림의 dispatch 와 터미널로 대상을 찾고 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
+- Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 사용 한도 화면은 `stall_ticks` 와 무관하게 dispatch 마다 `WORKER-LIMITED` 알림을 한 번 쓴다. 터미널 worker 의 알림은 계정 전환 요청과 `orch worker resume --dispatch <id>` 를 안내하고, 구조화 worker 의 알림은 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」 만 가리킨다. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
 - Run 마다 그 Run 이 띄운 살아 있는 worker 의 움직임 확인. 워크트리 파일, 브랜치의 마지막 커밋, 화면이 `pipeline.idle_min`(기본 30분)분 넘게 그대로이거나 프로세스가 끝났으면(`exited`) `WORKER-IDLE` 을 쓴다. 보드의 `doing` 항목에 끝나지 않은 단계가 있는데 그 항목의 worker 가 없으면 `STAGE-STALLED` 를 쓴다. 화면 상태를 읽지 못하는 structured worker 도 이 확인으로 잡는다
 - Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
 - `queue.auto_merge` 를 켠 저장소에서 머지할 수 있는 PR 을 머지 큐에 건다. 다른 큐가 돌아 걸지 못한 틱에는 그 큐가 무엇을 기다리는지 `AUTO-MERGE-HELD` 한 줄을 루프 로그에 남긴다
@@ -146,7 +146,7 @@ orch wait --ack "$DELIVERY_ID"
   - `MIGRATION-BLOCKED`: 더 낮은 번호가 오래 막혀 있다. 막는 쪽은 열린 PR 이거나 PR 없는 예약이다. 막는 쪽 worker 에게 `reserve-migration.ts --again` 으로 번호를 다시 받아 파일 이름을 바꾸게 한다. 루프는 파일 이름을 바꾸지 않는다
     막는 쪽 브랜치를 버렸으면 그 브랜치를 지운 뒤 `reserve-migration.ts --repo <저장소> --prune` 을 부른다. 다음 틱에 막힘이 풀린다
     알림은 한 번만 오므로 기다리는 PR 은 그 뒤 알림 없이 기다린다
-  - `WORKER-LIMITED`: 사용 한도로 멈춘 dispatch 와 터미널이다. [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 같은 dispatch 는 한 번만 알리며 자동 재시도하지 않는다
+  - `WORKER-LIMITED`: 사용 한도로 멈춘 dispatch 와 터미널이다. 터미널 worker 면 사용자에게 계정 전환을 요청하고, 바꾼 뒤 알림의 `orch worker resume --dispatch <id>` 를 부른다. 바꿀 계정이 없거나 resume 이 실패하면, 그리고 구조화 worker 면 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 같은 dispatch 는 한 번만 알리며 자동 재시도하지 않는다
   - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `nudge-worker.ts --terminal <터미널> --state` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
   - `WORKER-IDLE`: 내용은 `<dispatch> <idle 또는 exited> <분>분 <워크트리> <터미널>` 이다. 그 worker 가 그 분 동안 파일, 커밋, 화면 어느 것도 바꾸지 않았거나(`idle`) 프로세스가 끝났는데 dispatch 가 열려 있다(`exited`). 미답변 질문을 보낸 worker 와 CI 를 통과해 머지를 기다리는 worker 는 오지 않는다. `idle` 이면 `nudge-worker.ts --terminal <터미널> --state` 로 화면을 보고 `send-to-worker` 로 진행을 묻는다. `exited` 면 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 멈춤은 한 번만 오고, 그 뒤에 움직였다 다시 멈추면 다시 온다
   - `STAGE-STALLED`: 내용은 `<보드 항목 id> <worktree 또는 branch> <분>분 <끝나지 않은 첫 단계>` 이다. 보드의 `doing` 항목에 남은 단계가 있는데 그 항목의 worker 가 없이 그 분이 지났다. 평가 결과를 기다리던 단계처럼 코디네이터가 다음 worker 를 띄우거나 직접 처리할 차례다. 기다리는 것이 맞으면 그 항목을 `wait` 로 바꾼다. 같은 단계는 한 번만 온다
@@ -291,6 +291,11 @@ heartbeat 의 `payload.phase` 는 worker 가 스스로 적는 값이다.
 heartbeat 와 liveness 는 `live` 로 남아 대기만으로는 알 수 없다. `terminal read --screen` 으로 화면을 본다.
 한도 안내가 떠 있으면 그 worker 는 더 진행하지 않는다는 근거다.
 
+먼저 [`agent-selection.md`](agent-selection.md) 「사용 한도에 걸렸을 때」 의 1번 차례대로 사용자에게 계정 전환을 요청하고, 바꾼 뒤 `orch worker resume --dispatch "$DISPATCH_ID"` 로 같은 세션을 잇는다([`launch.md`](launch.md) 「한도나 재부팅으로 멈춘 worker 이어 가기」).
+
+#### resume 이 안 될 때
+
+바꿀 계정이 없거나 `RESUME-FAIL` 이 나면 다른 제공자로 새로 띄운다.
 `worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝나고, 이 상태의 Task 에 `--retry-of` 를 주면 `task_not_startable` 로 거절된다.
 `worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
 `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다. `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker` 를 쓰지 않는 3단계의 예외다.
