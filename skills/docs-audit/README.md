@@ -58,5 +58,5 @@ ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와
 
 ## 함께 쓰는 스킬
 
-- CLAUDE.md, AGENTS.md, rules, 스킬 같은 하네스 지침의 감사는 `harness-cleanup` 이 맡는다
+- CLAUDE.md, AGENTS.md, rules, 스킬 같은 하네스 지침의 감사는 `harness-cleanup` 스킬이 설치돼 있으면 그쪽이 맡는다
 - 기능의 설계를 확정하는 일은 `spec`, 구현 PR 이 바꾸는 전역 문서와 ADR 을 갱신하는 일은 `plan` 이 맡는다. 어느 문서가 무엇을 담는지의 기본값은 `spec` 의 기능 문서 규칙을 따른다

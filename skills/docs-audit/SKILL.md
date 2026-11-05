@@ -4,7 +4,7 @@ description: |
   저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다.
   "문서 점검", "docs 감사", "stale ADR", "코드와 문서 불일치", "ADR Index 동기화", "docs-audit"
   같은 요청이면 이 스킬을 쓴다.
-  하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
+  하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 스킬이 설치돼 있으면 그쪽이 맡는다.
 metadata:
   version: "4.0.1"
 ---
