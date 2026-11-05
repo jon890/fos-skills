@@ -8,7 +8,7 @@
 | --- | --- |
 | REQ1 | 각 PR 은 테스트가 보는 동작을 바꾸지 않는다. 스크립트 수정(PR1)은 기존 테스트를 그대로 두고, 테스트 수정(뒤 PR)은 지운 프로세스 테스트와 같은 판정을 보는 함수 테스트를 같은 PR 에 남긴다 |
 | REQ2 | PR1 의 기억은 git 이 같은 답을 낼 조건이 그대로일 때만 꺼낸다(「PR1: 기억을 다시 확인하는 조건」). 기존 테스트 파일은 케이스를 더하기만 하고, 기존 케이스를 고치지 않은 채 통과시킨다 |
-| REQ3 | 측정은 「측정 방법」 절의 두 가지(사본 그대로의 벽시계, preload 로 센 기동 수)로 같은 머신에서 전후를 번갈아 잰다. 결과는 PR 본문에 적는다 |
+| REQ3 | 측정은 「측정 방법」 절의 두 가지로 같은 머신에서 전후를 번갈아 잰다. 하나는 사본 그대로 돌린 실제 걸린 시간(wall-clock, 시작부터 끝까지 흐른 시간. CPU 시간 합계와 다르다)이고, 다른 하나는 preload 로 센 기동 수다. 결과는 PR 본문에 적는다 |
 | REQ4 | DECISION5 의 순서로 원인을 하나씩 줄이고, 마지막 PR(실행기 제거) 전에 부하가 낮은 때 `node --test --test-concurrency=4` 로 묶음 전체를 잰다 |
 
 ## 책임과 경계
@@ -37,7 +37,7 @@
 ### 측정 방법
 
 - 대상 파일은 스펙 「느린 파일과 원인」 표의 10개다. PR 마다 그 PR 이 바꾸는 원인의 파일을 더 고를 수 있다.
-- 시간: 전과 후 커밋을 각각 `git archive` 로 임시 폴더에 풀고, 같은 파일을 `node --test <파일>` 로 혼자 돌린 벽시계 시간을 잰다. 부하 차이를 줄이려고 전과 후를 파일마다 번갈아 돌린다.
+- 시간: 전과 후 커밋을 각각 `git archive` 로 임시 폴더에 풀고, 같은 파일을 `node --test <파일>` 로 혼자 돌린 실제 걸린 시간을 잰다. 부하 차이를 줄이려고 전과 후를 파일마다 번갈아 돌린다.
 - 기동 수: 같은 사본에서 `delete env.NODE_OPTIONS` 줄만 지우고, preload 를 `NODE_OPTIONS=--import` 로 모든 node 프로세스에 건다. preload 는 `child_process` 의 spawn, spawnSync, execFile, execFileSync, exec, execSync 를 감싸 pid 와 argv 를 파일에 한 줄씩 덧붙이고 `syncBuiltinESMExports()` 로 named import 에도 반영한다. 기동 수는 부하와 무관하므로 한 번만 잰다.
 - 「같은 git 조회」 로 세는 것: `lib/git.ts` 의 `git()` 이 띄우는 `git -C <경로>` 형태의 `rev-parse --path-format=absolute --git-common-dir`, `rev-parse --show-toplevel`, `rev-parse --git-dir`, `check-ignore -q --no-index`, `rev-parse --path-format=absolute --git-path info/exclude`. 같은 pid 에서 argv 가 같은 호출이 두 번째부터 중복이다. `-C` 없이 cwd 로 띄우는 `extensions/work-board/bin/board.ts` 의 `--show-toplevel` 은 이 PR 이 건드리지 않으므로 따로 센다.
 - 측정 스크립트는 한 번 쓰고 끝나므로 세션 임시 폴더에 둔다. 방법은 이 절이 소유한다.
