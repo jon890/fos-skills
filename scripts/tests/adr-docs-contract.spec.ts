@@ -1,12 +1,13 @@
 // spec, technical-design, review-fix, docs-audit 가 같은 검사기 adr-docs.ts 를 부르고,
-// 지운 옛 ADR 검사기를 부르는 문서가 남지 않았는지 본다. 스킬 문서는 이 번들의 형제 폴더에 있다.
+// 지운 옛 ADR 검사기를 부르는 문서가 남지 않았는지 본다. 여러 스킬에 걸친 계약이라 저장소 테스트에 둔다.
+// plan 은 팀으로 내보내는 스킬이라 그 tests/ 는 자기 폴더 밖을 읽지 않는다(scripts/tests/exported-imports.spec.ts).
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const SKILLS = fileURLToPath(new URL("../../", import.meta.url));
+const SKILLS = fileURLToPath(new URL("../../skills/", import.meta.url));
 const read = (path: string) => readFileSync(`${SKILLS}${path}`, "utf8");
 const OLD = "check_adr_layout";
 

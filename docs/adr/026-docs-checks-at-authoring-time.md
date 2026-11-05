@@ -19,4 +19,4 @@
 - **결과**:
   - 얻는 것: 판정 규칙의 원본이 한 파일이고, 저장소는 ADR 폴더와 색인 생성 여부만 오버레이에 적는다. 링크 없는 번호는 후보 경로와 함께 나와 작성자가 바로 고친다.
   - 감당할 것: 스킬을 거치지 않고 고친 문서의 깨진 링크는 다음 스킬 실행까지 남는다. 검사기를 바꾸면 이를 쓰는 모든 저장소의 판정이 함께 바뀐다.
-- **확인 방법**: `skills/plan/tests/adr-docs.spec.ts` 가 검사 코드마다 위반과 통과 표본을 보고, `adr-docs-contract.spec.ts` 가 네 스킬 문서의 호출을 본다. 이 저장소는 `node skills/plan/scripts/adr-docs.ts check --index generated` 가 0 이다.
+- **확인 방법**: `skills/plan/tests/adr-docs.spec.ts` 가 검사 코드마다 위반과 통과 표본을 보고, `scripts/tests/adr-docs-contract.spec.ts` 가 네 스킬 문서의 호출을 본다. 이 저장소는 `node skills/plan/scripts/adr-docs.ts check --index generated` 가 0 이다.
