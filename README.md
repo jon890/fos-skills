@@ -308,7 +308,7 @@ PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않아요.
-나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. 저장소 전체의 `tests/` 아래 node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌아요. 새 테스트 폴더를 더해도 CI 를 고치지 않아요. CI 의 `Tests` job 도 같은 명령을 불러요.
+나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
 `claude plugin test .` 는 이 명령에 들지 않으니 따로 돌려요.
 한 파일이나 폴더만 돌릴 때는 `node scripts/run-tests.ts skills/mac-cleanup/tests` 처럼 인자로 줘요. 인자를 주면 tsc 는 돌지 않아요.
 `test_*.py` 가 있는 폴더를 주면 Python 묶음만 돌아요. 그 폴더의 `*.spec.ts` 는 파일 경로로 따로 줘요.

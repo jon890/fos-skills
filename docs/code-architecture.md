@@ -173,7 +173,7 @@
 | 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
 | import 범위 | 스킬과 도구는 자기 폴더와 Node 내장 모듈만 import 한다. 팀 저장소와 플러그인 캐시가 폴더 밖 배치를 보장하지 않는다 |
 | 호출 꼴 | 문서는 `node "$SKILL_DIR/scripts/<이름>.ts"` 로 부른다 |
-| 테스트 | `node:test` 의 `*.spec.ts` 를 `tests/` 아래 둔다. `node scripts/run-tests.ts` 가 git 의 파일 목록에서 `tests/` 아래를 스스로 찾고 Python 묶음, tsc 와 함께 돈다. CI 의 `Tests` job 도 같은 명령을 부르므로 영역을 옮겨도 CI 를 고치지 않는다. `*.test.ts` 는 `claude plugin test .` 가 고르므로 쓰지 않는다 |
+| 테스트 | `node:test` 의 `*.spec.ts` 를 `tests/` 아래 둔다. 돌리는 명령은 `node scripts/run-tests.ts` 이고 묶음 찾기는 그 머리 주석이 소유한다. `*.test.ts` 는 `claude plugin test .` 가 고르므로 쓰지 않는다 |
 | 주석 | 한국어로 쓴다. 함정에는 이유 주석을 단다. 머리 주석이 사용법, 옵션, 종료 코드를 소유하고 문서는 그것을 옮겨 적지 않는다 |
 | 저장소 검사 | `node scripts/runtime-policy.ts`. 허용 목록 밖의 새 Python·셸 파일과 JS 진입을 파일 이름과 함께 낸다. `scripts/tests/runtime-policy.spec.ts` 가 테스트로 돌린다 |
 

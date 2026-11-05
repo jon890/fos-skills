@@ -89,7 +89,7 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
 
 JS(`.js`, `.mjs`, `.cjs`, 확장자 없는 JS)는 타입 제거가 닿지 않는 진입에만 쓴다. 새 ADR 이 이 예외를 적고 `runtime-policy.spec.ts` 가 목록(`entry_js`) 밖의 `.js`, `.mjs`, `.cjs` 를 막는다. 이미 있는 JS(work-board 의 hooks 모듈, orch 가드 shim, 플러그인 `bin/orch`)는 PR1 이 그 목록에 적는다.
 
-최소 Node 버전은 여러 진입이 각자 본다(`bin/orch` 의 `MIN_NODE`, 옛 이름 진입). 서로 import 할 수 없어(위 경계) 값의 원본은 `scripts/runtime-policy.json` 의 `min_node` 로 두고, `runtime-policy.spec.ts` 가 `const MIN_NODE = [<major>, <minor>]` 꼴의 줄을 모두 찾아 그 값과 같은지 본다. 지금 `bin/orch` 와 `ts_shim.py` 를 대조하는 `skills/orch/tests/orch-launcher.spec.ts` 의 사례는 `ts_shim.py` 가 지워질 때 이 검사로 넘어간다.
+최소 Node 버전은 여러 진입이 각자 본다(`bin/orch` 의 `MIN_NODE`, 옛 이름 진입). 서로 import 할 수 없어(위 경계) 값의 원본은 `scripts/runtime-policy.json` 의 `min_node` 로 두고, `scripts/runtime-policy.ts` 가 `const MIN_NODE = [<major>, <minor>]` 꼴의 줄을 모두 찾아 그 값과 같은지 본다. 지금 `bin/orch` 와 `ts_shim.py` 를 대조하는 `skills/orch/tests/orch-launcher.spec.ts` 의 사례는 `ts_shim.py` 가 지워질 때 이 검사로 넘어간다.
 
 ### 호출 꼴
 
@@ -107,7 +107,7 @@ node "$SKILL_DIR/scripts/<이름>.ts" <인자>
 
 ### 저장소 정책 파일 `scripts/runtime-policy.json`
 
-PR1 이 만든다. 정확한 키와 의미는 그 파일과 명령 `scripts/runtime-policy.ts` 의 머리 주석이 소유한다. 이 설계는 뜻만 정한다.
+PR1 이 만든다. 키의 정확한 뜻과 판정은 명령 `scripts/runtime-policy.ts` 의 머리 주석이 소유한다. 이 설계는 뜻만 정한다.
 
 | 키 | 뜻 | 바뀌는 때 |
 | --- | --- | --- |
@@ -233,7 +233,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 | DECISION4 | 문서의 호출 꼴 | `node "$SKILL_DIR/scripts/<이름>.ts"` | 작성자 | 실행 권한이 빠진 복사에서도 돈다. Node 24 는 경고를 내지 않는다 |
 | DECISION5 | 명령 파일 이름 | 옛 이름에서 확장자만 바꾼다 | 작성자 | 문서와 다른 저장소의 고칠 곳이 확장자 하나다 |
 | DECISION6 | 이행 상태의 원본 | `scripts/runtime-policy.json` 하나. 테스트가 그것을 읽는다 | 작성자 | 영역 PR 이 자기 줄만 지워 충돌이 작다. 남은 일이 파일 하나에 보인다 |
-| DECISION7 | CI 의 테스트 선택 | 폴더 패턴 다섯과 `test_*.py` 없는 폴더 건너뛰기 | 작성자 | 영역 PR 이 CI 를 고치지 않는다. 필수 검사가 없어 job 이름과 무관하다. 2026-11-06 PR1 착수 때 테스트 실행기(#355)가 `tests/` 아래를 스스로 찾고 빈 Python 폴더를 빼는 것을 확인해, 패턴 대신 실행기의 탐색으로 같은 목적을 이룬다(「CI」 절) |
+| DECISION7 | CI 의 테스트 선택 | 테스트 실행기(`scripts/run-tests.ts`)의 `tests/` 탐색. `test_*.py` 없는 폴더는 Python 묶음에서 빠진다 | 작성자 | 영역 PR 이 CI 를 고치지 않는다. 필수 검사가 없어 job 이름과 무관하다. 처음 답은 「CI 의 폴더 패턴 다섯과 `test_*.py` 없는 폴더 건너뛰기」 였다. 2026-11-06 PR1 착수 때 실행기(#355)가 같은 일을 이미 하는 것을 확인해 바꿨다(「CI」 절) |
 | DECISION8 | 허용하는 JS | 타입 제거가 닿지 않는 진입만, `entry_js` 목록으로 | 작성자 | 스펙 REQ9 의 언어 규칙을 지키면서 git 훅과 doctor 진입을 node 로 둔다 |
 | DECISION9 | orch 의 `lib/args.ts`, `lib/py.ts` | 이번에 바꾸지 않는다. `kit` 은 그 상위 집합이고 같은 함수의 출력을 테스트가 대조한다 | 작성자 | orch 구조 개편이 lib 를 다룬다. 합치면 그 기능과 같은 파일을 만진다 |
 | DECISION10 | orch doctor 의 옛 진입 | 이 기능이 지우지 않는다. orch-cli 의 옛 이름 정리 PR 이 지운다. 버전 안내는 `bin/orch` 가 맡는다 | 작성자 | orch-cli 스펙 DECISION13 이 옛 이름을 끝내는 때를 소유한다. `bin/orch` 가 이미 `NODE-TOO-OLD` 를 낸다 |
