@@ -17,6 +17,8 @@ export function staleBundleWarning(bundle: string, configDir: string): string | 
   return `STALE-BUNDLE orch: ${bundle} 는 현재 설치본과 다르다. 현재 진입점: ${entryOf(chosen.bundle)}`
 }
 
+export function bundleRoot(): string { return resolve(dirname(fileURLToPath(import.meta.url)), '../..') }
+
 const skill = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const parent = dirname(skill)
 const bundle = ['skills', 'export-only-skills'].includes(basename(parent)) ? dirname(parent) : parent

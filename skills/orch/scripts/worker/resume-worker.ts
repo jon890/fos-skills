@@ -36,7 +36,7 @@
 //                  새 터미널을 열지 못한 것도 이 단계다(NEXT 는 같은 명령)
 //     cleanup      3 / abandon 이 실패했으면 그대로 / 닫는다 / 같은 명령(옛 터미널 닫기가 실패했으면 그것부터)
 //     start-agent  3 / 정리됨 / 닫는다 / 같은 명령(정리된 dispatch 를 settled 로 받는다)
-//     link         1 / 정리됨 / 닫지 않고 handle 을 낸다 / worker-start --task … --terminal <새> 하나. 같은 명령은 안내하지 않는다.
+//     link         1 / 정리됨 / 닫지 않고 handle 을 낸다 / orch worker launch --task … -- --terminal <새> 하나. 같은 명령은 안내하지 않는다.
 //                  잇기 전 Task 상태를 읽지 못한 것도 이 단계다(NEXT 는 상태 확인 뒤 worker-start)
 //     3~6 단계에서 새 터미널을 닫지 못하면 RESUME-WARN 으로 그 handle 을 알린다. 잇기 뒤 기록 실패는 RESUME-WARN 으로 내고 RESUMED 를 낸다.
 // 사용법 오류는 2 다. 재시도와 자동 대체(새 worker 띄우기)는 하지 않는다.
@@ -360,16 +360,18 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     throw asStage(stage, error, again)
   }
   // 7. 같은 Task 에 잇는다. 실패하면 연결이 이미 일어났을 수 있어 터미널을 닫지 않고 재시도하지 않는다
+  const recoverySpec = readLaunch(repo, dispatchId)?.spec ?? '<지시서 경로>'
+  const recovery = [orchWord(), 'worker', 'launch', '--spec', recoverySpec, '--repo', repo, '--task', target.task, '--run', target.run]
   const tasks = orcaJson<Json>(['orchestration', 'task-list', '--run', target.run])
   if (!tasks.ok) {
     // Task 상태를 모르면 --retry-of 를 정하지 못한다. 터미널은 남긴다
     throw new Fail('link', `Task 상태를 읽지 못했다(터미널 ${fresh} 은 남긴다): ${tasks.error}`,
-      `orca orchestration task-list --run ${shQuote(target.run)} --json 로 Task 상태를 보고, failed·blocked 면 --retry-of ${shQuote(dispatchId)} 를 붙여 orca orchestration worker-start --task ${shQuote(target.task)} --terminal ${shQuote(fresh)} --worktree ${shQuote(`path:${target.worktree}`)} --run ${shQuote(target.run)} --json`, 1)
+      `orca orchestration task-list --run ${shQuote(target.run)} --json 로 Task 상태를 보고, failed·blocked 면 --retry-of ${shQuote(dispatchId)} 를 -- 앞에 붙여 ${[...recovery, '--', '--terminal', fresh].map(shQuote).join(' ')}`, 1)
   }
   const taskStatus = text(obj((Array.isArray(tasks.data.tasks) ? tasks.data.tasks : []).find((t) => obj(t).id === target.task)).status)
   const retry = taskStatus === 'failed' || taskStatus === 'blocked' ? ['--retry-of', dispatchId] : []
   const startArgs = ['orchestration', 'worker-start', '--task', target.task, ...retry, '--terminal', fresh, '--worktree', `path:${target.worktree}`, '--run', target.run, '--json']
-  const linkNext = ['orca', ...startArgs].map(shQuote).join(' ')
+  const linkNext = [...recovery, ...retry, '--', '--terminal', fresh].map(shQuote).join(' ')
   const linked = orca(startArgs)
   let receipt: Json = {}
   try {

@@ -303,7 +303,7 @@ resume 이 옛 dispatch 를 이미 정리했으면(`cleanup` 뒤의 실패, 출�
 
 ```bash
 orca orchestration worker-abandon --dispatch "$DISPATCH_ID" --json
-orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --worktree "id:$WORKTREE_ID" --agent "$AGENT" --model "$MODEL" --effort "$EFFORT" --json
+orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$DISPATCH_ID" -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
 ## 기다리는 동안 worker 워크트리를 고치지 않는다

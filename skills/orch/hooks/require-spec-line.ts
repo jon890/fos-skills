@@ -1,10 +1,12 @@
-// PreToolUse(Bash) hook: `worker-start --spec` 값이 `spec-line` 이 만드는 한 줄 꼴이 아니면 거부한다.
+// PreToolUse(Bash) hook: `worker-start --task` 직접 호출을 거부하고, `worker-start --spec` 값이 `spec-line` 이 만드는 한 줄 꼴이 아니면 거부한다.
 //
 // `--spec` 에 지시 본문을 직접 넣으면 길이 제한과 따옴표에서 잘리고, 지시서의 `허락:` 줄이 빠져
 // Codex worker 가 push 와 PR 생성을 사용자의 허락으로 보지 않고 멈춘다.
 // `spec-line` 은 `지시서 <경로> 를 끝까지 읽고 수행한다. <허락 문구> 못 읽으면 escalation 으로 알린다.` 를 낸다.
 //
 // 판정:
+//     같은 명령 조각의 --task 는 거부한다. 재시도도 launch-worker 의 선택 검사와 이력을 거친다.
+//     resume-worker 내부의 worker-start 는 Bash 도구 호출이 아니므로 그대로 실행한다.
 //     명령에 `orchestration worker-start` 가 있고 `--spec` 값이 따옴표로 감싼 글자 그대로면,
 //     그 값이 `지시서 /<경로>.md 를 끝까지 읽고 수행한다.` 로 시작하고 `못 읽으면 escalation 으로 알린다.` 로 끝나야 한다.
 //
@@ -50,6 +52,14 @@ function specValues(command: string): SpecValue[] {
   return values
 }
 
+function rawRetry(command: string): boolean {
+  const masked = mask(stripHeredocs(command))
+  return pieces(masked).some(({ start, end }) => {
+    const piece = masked.slice(start, end)
+    return WORKER_START.test(piece) && /--task(?:\s|=)/.test(piece)
+  })
+}
+
 function rawSpec(command: string): boolean {
   for (const { single, double, bare } of specValues(command)) {
     const value = single ?? double ?? bare ?? ''
@@ -60,7 +70,7 @@ function rawSpec(command: string): boolean {
 }
 
 const command = hookCommand()
-if (command !== null && rawSpec(command)) {
-  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: REASON }
+if (command !== null && (rawSpec(command) || rawRetry(command))) {
+  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: rawRetry(command) ? 'orch: 다시 띄우기는 선택 검사와 이력 기록을 거치는 `orch worker launch --spec FILE --repo DIR --task ID --retry-of ID -- ...` 를 쓴다.' : REASON }
   process.stdout.write(JSON.stringify({ hookSpecificOutput: decision }) + '\n')
 }

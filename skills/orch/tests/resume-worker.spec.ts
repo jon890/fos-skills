@@ -338,12 +338,13 @@ test('start-agent: 화면이 계속 working 이면 닫고 3, error 화면은 통
   assert.equal(calls('worker-start').length, 0)
 })
 
-test('link 실패: 새 터미널을 남기고 worker-start 명령 하나를 낸다. 같은 명령은 잠금으로 거부한다', () => {
+test('link 실패: 새 터미널을 남기고 launch 명령 하나를 낸다. 같은 명령은 잠금으로 거부한다', () => {
+  recordLaunch(repo, { dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, run: 'run_a', spec: '/specs/old.md' })
   setState((s) => { s.fail.start = true })
   const r = run()
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /^RESUME-FAIL link /m)
-  assert.match(r.stdout, /^NEXT orca orchestration worker-start --task task_a --terminal term_new --worktree '?path:\S+ --run run_a --json$/m)
+  assert.match(r.stdout, /^NEXT (?:orch|\S+\/orch\.ts) worker launch --spec \/specs\/old\.md --repo \S+ --task task_a --run run_a -- --terminal term_new$/m)
   assert.ok(!calls('terminal', 'close').some((e) => e.args.includes('term_new')))
   const again = run()
   assert.equal(again.status, 3)

@@ -491,18 +491,25 @@ describe('require-spec-line', () => {
   const HOOK = 'require-spec-line.ts'
   const LINE = '지시서 /repo/.orch/specs/spec-a.md 를 끝까지 읽고 수행한다. push 는 허락했다. 못 읽으면 escalation 으로 알린다.'
 
+  test('같은 Task 직접 재시도는 거부하고 wrapper 와 인용은 통과한다', () => {
+    assert.equal(decide(HOOK, 'orca orchestration worker-start --task task_x --retry-of ctx_x'), 'deny')
+    assert.equal(decide(HOOK, 'orca orchestration worker-start --task=task_x --terminal term_x'), 'deny')
+    assert.equal(decide(HOOK, 'orch worker launch --spec /repo/s.md --task task_x --retry-of ctx_x -- --agent codex'), 'pass')
+    assert.equal(decide(HOOK, "echo 'orca orchestration worker-start --task task_x'"), 'pass')
+  })
+
   test('글자 그대로 넣은 지시 본문은 거부한다', () => {
     for (const command of [
-      'orca orchestration worker-start --task t1 --spec "a.ts 를 고치고 PR 을 연다"',
-      'orca orchestration worker-start --task t1 --spec /repo/.orch/specs/spec-a.md',
-      "orca orchestration worker-start --task t1 --spec '지시서 /repo/spec-a.md 를 읽는다'",
+      'orca orchestration worker-start --spec "a.ts 를 고치고 PR 을 연다"',
+      'orca orchestration worker-start --spec /repo/.orch/specs/spec-a.md',
+      "orca orchestration worker-start --spec '지시서 /repo/spec-a.md 를 읽는다'",
     ]) {
       assert.equal(decide(HOOK, command), 'deny', command)
     }
   })
 
   test('거부 이유는 orch spec line 으로 만드는 꼴을 안내한다', () => {
-    const v = verdict(HOOK, 'orca orchestration worker-start --task t1 --spec "본문"')
+    const v = verdict(HOOK, 'orca orchestration worker-start --spec "본문"')
     assert.equal(v.decision, 'deny')
     assert.ok(v.reason.includes('"$(orch spec line "$SPEC" --require-permission)"'), v.reason)
     assert.doesNotMatch(v.reason, /\.py\b/)
@@ -510,12 +517,12 @@ describe('require-spec-line', () => {
 
   test('spec-line 꼴과 실행해야 알 수 있는 값은 통과한다', () => {
     for (const command of [
-      `orca orchestration worker-start --task t1 --spec "${LINE}"`,
-      `orca orchestration worker-start --task t1 --spec='${LINE}'`,
-      'orca orchestration worker-start --task t1 --spec "$LINE"',
-      'orca orchestration worker-start --task t1 --spec "$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC")"',
-      'orca orchestration worker-start --task t1 --spec "$(node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-line.ts" "$SPEC")"',
-      'orca orchestration worker-start --task t1 --spec "$(orch spec line "$SPEC" --require-permission)"',
+      `orca orchestration worker-start --spec "${LINE}"`,
+      `orca orchestration worker-start --spec='${LINE}'`,
+      'orca orchestration worker-start --spec "$LINE"',
+      'orca orchestration worker-start --spec "$(python3 "$SKILL_DIR/scripts/spec-line.py" "$SPEC")"',
+      'orca orchestration worker-start --spec "$(node --disable-warning=ExperimentalWarning "$SKILL_DIR/scripts/spec-line.ts" "$SPEC")"',
+      'orca orchestration worker-start --spec "$(orch spec line "$SPEC" --require-permission)"',
       'python3 "$SKILL_DIR/scripts/launch-worker.py" --spec "$SPEC" --repo /repo --name a -- --task t1',
       'orca orchestration task-create --spec "본문"',
       "git commit -m 'orchestration worker-start --spec 본문 금지'",

@@ -1,15 +1,17 @@
 // 워크트리를 만들거나 확인한 뒤 허락 줄이 있는 지시서로 Orca worker 를 띄운다.
 //
 // 사용법:
-//     launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)
-//         [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...
+//     launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)
+//         [--task ID [--retry-of DISPATCH]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...
 //
 //     --spec           지시서. spec-line 으로 첫 지시 줄을 만든다. `허락:` 줄이 없으면 거부한다.
-//                      `worker 선택:` 줄(형식은 lib/spec.ts 의 selectionsOf)이 없거나 빠진 요소가 있거나, 그 줄의 에이전트, 모델이
-//                      WORKER_ARGS 의 --agent, --model 과 다르면 거부한다. 둘 가운데 하나를 빠뜨려도 거부한다.
-//                      --terminal 로 이어 쓰면 처음 띄울 때의 선택을 쓰므로 보지 않는다. --lint-ack 으로 넘길 수 없다
+//                      `worker 선택:` 줄(형식은 lib/spec.ts 의 selectionsOf)이 없거나 빠진 요소가 있거나, 그 줄의 에이전트, 모델, effort 가
+//                      WORKER_ARGS 의 --agent, --model, --effort 와 다르면 거부한다. effort `기본` 은 옵션을 주지 않는다.
+//                      --terminal 도 선택 정책은 검사한다. --lint-ack 으로 넘길 수 없다
 //     --lint-ack       spec-lint 가 막을 발견을 냈지만 의도한 것이라 넘기는 이유. 이유 없이 넘기는 옵션은 없다(빈 값은 사용법 오류).
 //                      이유는 `lint-ack: <이유>` 줄로 출력하고 띄운 worker 의 기록(lib/launched.ts 의 lint_ack)에 남긴다
+//     --task           같은 Task 다시 띄우기. failed/blocked 는 --retry-of 를 함께 주고 ready 는 생략한다.
+//                      워크트리는 이전 이력에서 읽는다. 이력 도입 전 기록은 launched-workers 에서 읽는다
 //     --repo, --name   새 워크트리를 make-worktree 로 만든다. --base, --resume-remote 는 make-worktree 에 넘긴다
 //     --worktree       기존 워크트리(`path:` 접두를 받는다). 그 경로에 터미널이 남아 있으면 목록을 보이고 거부한다.
 //                      같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓인다. --terminal 로 이어 쓰는 터미널은 세지 않는다.
@@ -21,11 +23,11 @@
 //                      이유는 `dirty-ack: <이유>` 줄로 출력한다. 끊긴 worker 를 이어 띄울 때 쓴다(references/launch.md 「끊긴 worker 다시 띄우기」)
 //     --run            worker-start 와 다시 띄우기에 줄 Run. 없으면 코디네이터에 묶인 Run 이다
 //     --watch          띄운 뒤 worker-show 의 단계를 볼 초. 기본 90. 0 이면 보지 않는다
-//     WORKER_ARGS      worker-start 에 그대로 넘긴다(--agent, --model, --effort, --terminal, --task 같은 것).
+//     WORKER_ARGS      worker-start 에 그대로 넘긴다(--agent, --model, --effort, --terminal 같은 것).
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
 //
 // 차례:
-//     0. --terminal 이 아니면 지시서의 `worker 선택:` 줄을 --agent, --model 과 대조한다. 어긋나면 1 이다
+//     0. selectionVerdict 로 지시서의 행, 근거, 실험을 검사한다. 새 실행은 agent/model/effort 도 대조한다. 어긋나면 1 이다
 //     0-1. --agent codex 면 `codex debug models` 로 --model, --effort 를 검사한다(lib/model-check.ts). 조회하지 못하거나 claude 면 경고만 낸다
 //     0-2. --agent claude 면 지금 선택된 Orca 의 Claude 프로필에 plugins 링크와 settings.json 이 있는지 본다(lib/claude-profile.ts).
 //        없으면 link-claude-profile.ts 로 맞추는 명령 한 줄을 내고 1 이다. 고치지는 않는다. 프로필 폴더나 selected-host 가 없으면 건너뛴다
@@ -87,8 +89,8 @@
 //     repo     --repo, --worktree 로 불렀으면 그 경로의 주 checkout
 //     base     --base, 없으면 origin/HEAD 의 브랜치, 그것도 없으면 빈 문자열. 앞의 `origin/` 은 뗀다(--base origin/main 도 main)
 //     run      --run, 없으면 null
-//     worker   task, dispatch, terminal, worktree(절대경로), spec(절대경로). before-launch 의 task 와 terminal 은 WORKER_ARGS 의
-//              --task, --terminal 이고 dispatch 는 null 이다. worker-launched 의 task 는 worker-start 결과, dispatch 는 LAUNCHED 의 id,
+//     worker   task, dispatch, terminal, worktree(절대경로), spec(절대경로). before-launch 의 task 는 --task, terminal 은 WORKER_ARGS 의
+//              --terminal 이고 dispatch 는 null 이다. worker-launched 의 task 는 worker-start 결과, dispatch 는 LAUNCHED 의 id,
 //              terminal 은 마지막 worker-show 의 worker.agentTerminalHandle, dispatch.assigneeHandle, WORKER_ARGS 의 --terminal 순이다
 //     branch   워크트리의 현재 브랜치. 없으면 null
 //     agent, model, effort   WORKER_ARGS 의 값. 없으면 null
@@ -117,7 +119,7 @@ import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
-import { recordLaunch } from '../lib/launched.ts'
+import { latestTaskLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
 import { orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
@@ -129,11 +131,13 @@ import { emit, oneLine, short } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
 import { configureSshAgent } from '../lib/ssh-agent.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
-import { branchesOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { latestTerminal, launchHistory, recordHistory } from '../lib/launch-history.ts'
+import { selectionVerdict } from '../lib/selection.ts'
+import { branchesOf, experimentOf, liveSpecPaths, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
 
 const USAGE = [
-  '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR)',
-  '            [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
+  '사용법: launch-worker.ts --spec FILE (--repo DIR --name NAME | --worktree DIR | --repo DIR --task ID)',
+  '            [--task ID [--retry-of DISPATCH]] [--base BRANCH] [--resume-remote] [--run ID] [--watch SEC] [--lint-ack REASON] [--dirty-ack REASON] -- WORKER_ARGS...',
 ].join('\n')
 // worker-start 는 에이전트가 뜰 때까지, make-worktree 는 fetch 와 worktree add 가 끝날 때까지 기다린다. 기본 60초로는 모자랄 수 있다
 const LONG_MS = 600_000
@@ -270,7 +274,7 @@ function passValue(passthru: string[], name: string): string | null {
 }
 
 // 그 워크트리에 붙은 터미널(handle 과 제목). reuse 는 이어 쓸 터미널이라 뺀다. 읽지 못하면 Stop(1).
-function leftTerminals(worktree: string, reuse = ''): string {
+function leftTerminals(worktree: string, reuse = '', previous = ''): string {
   const done = orca(['terminal', 'list', '--json'])
   if (done.code !== 0) throw new Stop('거부: orca terminal list 를 읽지 못해 남은 터미널을 확인할 수 없다', 1)
   let rows: Record<string, unknown>[]
@@ -282,7 +286,7 @@ function leftTerminals(worktree: string, reuse = ''): string {
     throw new Stop('거부: 터미널 목록을 해석하지 못했다', 1)
   }
   return rows
-    .filter((t) => t?.worktreePath === worktree && t?.handle !== reuse)
+    .filter((t) => t?.worktreePath === worktree && t?.handle !== reuse && t?.handle !== previous)
     .map((t) => `${t.handle} ${Array.from(String(t.title ?? '')).slice(0, 60).join('')}`)
     .join('\n')
 }
@@ -364,18 +368,18 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
 
 // 지시서의 worker 선택 줄과 WORKER_ARGS 를 대조한다. 머리 주석의 「0」. 어긋나면 거부 문구, 맞으면 null 이다.
 // 지시서를 읽지 못하면 null 이다. 그 실패는 다음 단계의 spec-line 이 사용법 오류로 알린다.
-function selectionReject(specPath: string, passthru: string[]): string | null {
+function selectionReject(specPath: string, passthru: string[], repo: string, retry: boolean): string | null {
   let text: string
   try {
     text = readFileSync(specPath, 'utf8')
   } catch {
     return null
   }
+  const verdict = selectionVerdict(text, repo, { launch: true, retry })
+  if (verdict.length) return `${verdict.join('; ')}. 형식: ${SELECTION_FORMAT}`
   const [selection] = selectionsOf(text)
-  if (!selection) return `지시서에 \`worker 선택:\` 줄이 없다. 비교한 후보와 고른 이유를 적는다(agent-selection.md). 형식: ${SELECTION_FORMAT}`
-  if (selection.problems.length > 0) return `지시서 ${selection.no}번 줄의 \`worker 선택:\` 에 ${selection.problems.join(', ')} 가 빠졌다. 형식: ${SELECTION_FORMAT}`
   const mismatched: string[] = []
-  for (const [name, want] of [['--agent', selection.agent], ['--model', selection.model]] as const) {
+  for (const [name, want] of [['--agent', selection.agent], ['--model', selection.model], ['--effort', selection.effort === '기본' ? null : selection.effort]] as const) {
     const given = passValue(passthru, name)
     if (given !== want) mismatched.push(`${name} ${given ?? '(없음)'}, 지시서 ${want}`)
   }
@@ -404,6 +408,8 @@ function uncommitted(worktree: string): string[] {
 
 type Args = {
   spec: string
+  task: string
+  retryOf: string
   repo: string
   name: string
   base: string
@@ -421,6 +427,8 @@ function parse(argv: string[]): Args | 'help' {
   const passthru = argv.slice(split + 1)
   const options = {
     spec: { type: 'string' },
+    task: { type: 'string', default: '' },
+    'retry-of': { type: 'string', default: '' },
     repo: { type: 'string', default: '' },
     name: { type: 'string', default: '' },
     base: { type: 'string', default: '' },
@@ -448,10 +456,14 @@ function parse(argv: string[]): Args | 'help' {
   const dirtyAck = values['dirty-ack'] === undefined ? null : (values['dirty-ack'] as string).trim()
   if (dirtyAck === '') throw usage('--dirty-ack 에는 그대로 띄우는 이유를 적는다')
   const resumeRemote = values['resume-remote'] as boolean
-  if (values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
-  if (!values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
+  if (!values.task && values['retry-of']) throw usage('--task 와 --retry-of 를 함께 준다')
+  if (values.task && (values.worktree || values.name)) throw usage('다시 띄우기의 워크트리는 이력에서 읽는다')
+  if (!values.task && values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
+  if (!values.task && !values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
   return {
     spec: values.spec,
+    task: values.task as string,
+    retryOf: values['retry-of'] as string,
     repo: values.repo as string,
     name: values.name as string,
     base: values.base as string,
@@ -515,13 +527,26 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   const { passthru } = a
+  if (passValue(passthru, '--task') || passValue(passthru, '--retry-of')) throw new Stop('--task 와 --retry-of 는 -- 앞에 준다', 2)
+  let retryRepo = a.repo || process.cwd()
+  let retryDispatch: string | null = null
+  let retryTerminal: string | null = null
+  if (a.task) {
+    const prior = a.retryOf ? launchHistory(retryRepo).find(row => row.dispatch === a.retryOf) ?? readLaunch(retryRepo, a.retryOf) : launchHistory(retryRepo).filter(row => row.task === a.task).at(-1) ?? latestTaskLaunch(retryRepo, a.task)
+    if (!prior || prior.task !== a.task) throw new Stop('다시 띄울 dispatch 와 Task 를 이력에서 찾지 못했다', 1)
+    retryDispatch = prior.dispatch
+    retryTerminal = prior.terminal
+    a.worktree = prior.worktree
+    a.run ||= prior.run ?? ''
+  }
+  retryRepo = a.repo || mainCheckout(a.worktree.replace(/^path:/, '') || process.cwd())
   const reuseOpts = passthru.filter((x) => x === '--agent' || x === '--model' || x === '--effort')
   if (passthru.includes('--terminal') && reuseOpts.length > 0) {
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
   }
   if (!passthru.includes('--terminal')) {
-    const rejected = selectionReject(a.spec, passthru)
+    const rejected = selectionReject(a.spec, passthru, retryRepo, !!a.task)
     if (rejected) {
       err(`거부: ${rejected}`)
       return 1
@@ -541,6 +566,11 @@ async function main(argv: string[]): Promise<number> {
       return 1
     }
   }
+  if (passthru.includes('--terminal')) {
+    const text = readFileSync(a.spec, 'utf8')
+    const rejected = selectionVerdict(text, retryRepo, { launch: true, retry: !!a.task })
+    if (rejected.length) throw new Stop(rejected.join('; '), 1)
+  }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
   const poll = seconds('LAUNCH_POLL', '5')
   const wtWait = seconds('LAUNCH_WT_WAIT', '30')
@@ -556,7 +586,8 @@ async function main(argv: string[]): Promise<number> {
   const gate = await lintGate(a)
   if (gate.stop !== null) return gate.stop
 
-  const reviewPr = reviewPrOfSpec(readFileSync(a.spec, 'utf8'))
+  const specText = readFileSync(a.spec, 'utf8')
+  const reviewPr = reviewPrOfSpec(specText)
   const created = !a.worktree
   let worktree: string
   if (created) {
@@ -577,7 +608,7 @@ async function main(argv: string[]): Promise<number> {
       return 1
     }
     worktree = target
-    const left = leftTerminals(worktree, passValue(passthru, '--terminal') ?? '')
+    const left = leftTerminals(worktree, passValue(passthru, '--terminal') ?? '', retryTerminal ?? '')
     if (left) {
       out(`거부: 이 워크트리에 터미널이 남아 있다. 끝났는지 보고 orca terminal close --terminal <handle> 로 닫은 뒤 다시 띄운다\n${left}`)
       return 1
@@ -632,7 +663,7 @@ async function main(argv: string[]): Promise<number> {
   try {
     const before = await fire(
       'before-launch',
-      { worker: { task: passValue(passthru, '--task'), dispatch: null, terminal: passValue(passthru, '--terminal'), ...worker }, ...common },
+      { worker: { task: a.task || null, dispatch: null, terminal: passValue(passthru, '--terminal'), ...worker }, ...common },
       ctx,
     )
     if (before.result !== 'pass' && before.result !== 'none') {
@@ -694,7 +725,7 @@ async function main(argv: string[]): Promise<number> {
     }
 
     const runArgs = a.run ? ['--run', a.run] : []
-    let result = await start([...runArgs, '--spec', specLine.stdout.trim(), '--worktree', `path:${worktree}`, ...passthru])
+    let result = await start([...runArgs, ...(a.task ? ['--task', a.task, ...(a.retryOf ? ['--retry-of', a.retryOf] : [])] : ['--spec', specLine.stdout.trim()]), '--worktree', `path:${worktree}`, ...passthru])
     if (result.code !== 0) {
       const output = result.stdout + result.stderr
       if (passthru.includes('--terminal') && output.includes('agent_unconfigured')) {
@@ -742,13 +773,44 @@ async function main(argv: string[]): Promise<number> {
       if (!dispatch || !(await watch(dispatch))) return 1
     }
     // worker-show 결과의 터미널 키는 send-to-worker 가 읽는 키와 같다.
-    const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || passValue(passthru, '--terminal')
+    const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || jget(result.stdout, 'worker.agentTerminalHandle|dispatch.assigneeHandle|launch.terminalHandle') || passValue(passthru, '--terminal')
     // 짧은 출력은 터미널을 함께 낸다. 직접 실행(send-to-worker 가 읽는다)은 지금 꼴이다
     out(short() ? `LAUNCHED ${dispatch} ${terminal || '-'} ${worktree}` : `LAUNCHED ${dispatch} ${worktree}`)
+    const text = specText
+    let effective = null
     try {
-      recordLaunch(repo, { dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch, run: a.run || null, spec: resolve(a.spec), ...(gate.acked ? { lint_ack: gate.acked } : {}) })
+      const value = JSON.parse(result.stdout)?.result?.launch?.effective
+      if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
+    } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
+    const reused = passValue(passthru, '--terminal')
+    let inherited: ReturnType<typeof latestTerminal> = null
+    if (reused) {
+      try { inherited = latestTerminal(repo, reused) }
+      catch (e) { err(`launch-worker: 터미널의 이전 선택을 읽지 못했다: ${(e as Error).message}`) }
+    }
+    const launch = {
+      dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch,
+      run: a.run || jget(result.stdout, 'dispatch.runId|task.runId|run.id|worker.runId') || null,
+      spec: resolve(a.spec),
+      agent: reused ? inherited?.agent ?? null : common.agent,
+      model: reused ? inherited?.model ?? null : common.model,
+      effort: reused ? inherited?.effort ?? null : common.effort,
+      effective,
+      experiment: experimentOf(text)?.name ?? null,
+      ...(gate.acked ? { lint_ack: gate.acked } : {}),
+    }
+    try {
+      recordLaunch(repo, launch)
     } catch (e) {
       err(`launch-worker: 띄운 worker 를 기록하지 못했다. cleanup-sweep 이 이 터미널을 코디네이터의 것으로 알아보지 못한다: ${(e as Error).message}`)
+    }
+    try {
+      recordHistory(repo, {
+        ...launch, at: new Date().toISOString(), title: /^#\s+(.+)$/m.exec(text)?.[1] ?? null,
+        row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch,
+      })
+    } catch (e) {
+      err(`launch-worker: 띄우기 이력을 기록하지 못했다: ${(e as Error).message}`)
     }
 
     try {

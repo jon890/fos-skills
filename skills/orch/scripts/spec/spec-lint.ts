@@ -105,6 +105,8 @@ import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { reviewPrOfSpec } from '../lib/review.ts'
 import { boardIdOfLine, interimOf, LINE_BREAK, SELECTION_FORMAT, selectionsOf } from '../lib/spec.ts'
+import { bundleRoot } from '../lib/bundle.ts'
+import { selectionVerdict } from '../lib/selection.ts'
 import { short } from '../lib/output.ts'
 
 const USAGE = [
@@ -122,7 +124,7 @@ const CALL = new RegExp(`^(?:[A-Za-z_][${W}]*\\.)*([A-Za-z_][${W}]*)\\(\\)$`, 'u
 const PATHLIKE = new RegExp(`^(?:[${W}.\\-]+/)*[${W}\\-]+(?:\\.[${W}\\-]+)*\\.[A-Za-z]{1,5}$`, 'u')
 
 // 저장소 공통 지시서가 따라야 할 틀. SPEC_TEMPLATE 은 테스트가 바꾼다
-const TEMPLATE = process.env.SPEC_TEMPLATE || join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates', 'spec-common.md')
+const TEMPLATE = process.env.SPEC_TEMPLATE || join(bundleRoot(), 'templates', 'spec-common.md')
 const COMMON = 'spec-common.md'
 const RULE_MARK = /<!--\s*orch-rule:\s*([A-Za-z0-9_-]+)\s*-->/g
 // 임시 폴더 아래 경로. 폴더 이름만 말한 것(「scratchpad 에 쓴다」)은 빼고 그 아래 파일이나 폴더를 가리킨 것만 잡는다
@@ -485,14 +487,8 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
 }
 
 // 머리 주석의 「선택」. 줄이 없으면 1번 줄에 낸다
-function selectionErrors(spec: Spec): string[] {
-  const found = selectionsOf(spec.lines.join('\n'))
-  if (found.length === 0) return [`${spec.name}:1: 선택: \`worker 선택:\` 줄이 없다. 형식: ${SELECTION_FORMAT}`]
-  const errors: string[] = []
-  for (const extra of found.slice(1)) errors.push(`${spec.name}:${extra.no}: 선택: \`worker 선택:\` 줄이 둘 이상이다. 하나만 둔다`)
-  const [first] = found
-  if (first.problems.length > 0) errors.push(`${spec.name}:${first.no}: 선택: ${first.problems.join(', ')} 가 빠졌다. 형식: ${SELECTION_FORMAT}`)
-  return errors
+function selectionErrors(spec: Spec, repo: string): string[] {
+  return selectionVerdict(spec.lines.join('\n'), repo).map(error => `${spec.name}:1: 선택: ${error}. 형식: ${SELECTION_FORMAT}`)
 }
 
 // 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 plan 의 check_feature.py 를 따른다
@@ -600,7 +596,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
   }
 
   for (const spec of parsed) {
-    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec), ...loopErrors(spec, repo.root, source))
+    if (!launched.has(spec.path)) errors.push(...selectionErrors(spec, repo.root), ...loopErrors(spec, repo.root, source))
     if (!spec.lines.some((line) => /^#\s+\S/.test(line) || field(line, '보드 항목 id') !== null)) {
       warnings.push(`${spec.name}:1: 제목: ${TITLE_HINT}`)
     }

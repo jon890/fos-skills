@@ -114,7 +114,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 
 ## 1. 에이전트 고르기
 
-Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비교한 후보, 이유를 지시서의 `worker 선택:` 줄에 남긴다. `spec-lint` 와 `launch-worker` 가 이 줄을 검사한다. 지금은 행 id 와 high 근거를 보지 않는다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
+Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비교한 후보, 이유를 지시서의 `worker 선택:` 줄에 남긴다. `spec-lint` 와 `launch-worker` 가 이 줄을 검사한다. 행 id 는 모델 표와, high 근거는 저장소의 띄우기 이력과 대조한다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
 
 ## 2. 지시서 쓰기
 
@@ -124,7 +124,7 @@ Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비�
 ## 3. 띄우기
 
 원격을 갱신한 뒤 `launch-worker` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, `worker 선택:` 줄과 `--agent`, `--model` 이 다르면 거부하고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
-새로 띄우기는 `launch-worker`, 후속 지시는 `send-to-worker` 로 한다. `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다. `launch-worker` 는 `--spec` 이 필수라 늘 Task 를 새로 만들기 때문이다.
+새로 띄우기는 `launch-worker`, 후속 지시는 `send-to-worker` 로 한다. 같은 Task 를 다시 띄울 때도 `launch-worker --spec <지시서> --repo <저장소> --task <Task>` 를 쓴다. 실패한 Task 는 `--retry-of <dispatch>` 를 함께 주고, ready Task 는 생략한다. 워크트리는 이력에서 읽는다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
 

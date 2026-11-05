@@ -1,0 +1,4 @@
+- 새 지시서의 행 id 와 Opus 높은 effort 의 근거를 lint 와 launch 가 함께 검사한다. 이미 띄운 지시서는 호환한다.
+- 실험 후보를 배정 이력 수로 고르고 요청값과 effective 를 영구 이력에 남긴다.
+- 같은 Task 의 다시 띄우기도 launch-worker 를 거쳐 선택 검사와 이력 기록을 받는다.
+- resume link 실패의 NEXT 를 직접 worker-start 대신 orch worker launch 로 안내한다. resume 내부 연결 호출은 유지한다.

@@ -79,3 +79,4 @@ node scripts/run-tests.ts
 | `skills/orch/changes/selection-history.minor.md` | 신규 |
 | `skills/orch/scripts/worker/resume-worker.ts` | 수정 |
 | `skills/orch/tests/resume-worker.spec.ts` | 수정 |
+| `skills/orch/tests/orch-paths.spec.ts` | 수정 |

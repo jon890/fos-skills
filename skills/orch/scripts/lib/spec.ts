@@ -25,12 +25,14 @@ const SELECTION = /^\s*(?:[-*]\s+)?(?:\*\*)?worker 선택\s*:\s*(?:\*\*)?\s*(.+?
 const TICK = /`([^`]+)`/g
 
 // worker 선택 줄의 값. 줄 판정과 형식은 selectionsOf 가 소유한다
-export type Selection = { no: number; agent: string | null; model: string | null; effort: string | null; problems: string[] }
+export type Candidate = { agent: string | null; model: string | null; effort: string | null }
+export type HighReason = { kind: 'dispatch'; id: string } | { kind: 'user'; date: string }
+export type Selection = { row: string | null; highReason: HighReason | null; no: number; agent: string | null; model: string | null; effort: string | null; problems: string[] }
 
 // 형식 예: worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: ...
 // `effort` 뒤의 백틱 값이 effort 이고, 그 밖의 백틱 값 가운데 첫째가 에이전트, 둘째가 모델이다.
 // problems 에는 빠진 요소를 적는다. `비교:` 와 `이유:` 는 낱말이 있는지만 본다. 코디네이터가 비교 없이 고른 일을 막으려는 것이다.
-export const SELECTION_FORMAT = 'worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 비교: <다른 후보>. 이유: <고른 이유>.'
+export const SELECTION_FORMAT = 'worker 선택: `<에이전트>` `<모델>` effort `<effort>`. 행: <id>. 비교: <다른 후보>. 이유: <고른 이유>.'
 
 export function selectionsOf(text: string): Selection[] {
   const found: Selection[] = []
@@ -41,15 +43,45 @@ export function selectionsOf(text: string): Selection[] {
     const effortAt = /effort\s*`([^`]+)`/.exec(body)
     const rest = effortAt ? body.slice(0, effortAt.index) + body.slice(effortAt.index + effortAt[0].length) : body
     const values = [...rest.matchAll(TICK)].map((t) => t[1].trim())
+    const row = /행:\s*([a-z][a-z0-9-]*)(?=\s|[.]|$)/.exec(body)?.[1] ?? null
+    const reason = /high 근거:\s*(medium 실패\s+(ctx_[\w-]+)|사용자 지정\s+(\d{4}-\d{2}-\d{2}))(?=\s|[.]|$)/.exec(body)
+    const highReason: HighReason | null = reason?.[2] ? { kind: 'dispatch', id: reason[2] } : reason?.[3] ? { kind: 'user', date: reason[3] } : null
     const problems: string[] = []
+    if (!row) problems.push('행')
+    if (body.includes('high 근거:') && !highReason) problems.push('high 근거')
     if (values.length < 1) problems.push('에이전트')
     if (values.length < 2) problems.push('모델')
     if (!effortAt) problems.push('effort')
     if (!/비교\s*:/.test(body)) problems.push('비교')
     if (!/이유\s*:/.test(body)) problems.push('이유')
-    found.push({ no: index + 1, agent: values[0] ?? null, model: values[1] ?? null, effort: effortAt?.[1].trim() ?? null, problems })
+    found.push({ row, highReason, no: index + 1, agent: values[0] ?? null, model: values[1] ?? null, effort: effortAt?.[1].trim() ?? null, problems })
   })
   return found
+}
+
+
+export type Experiment = { no: number; name: string; candidates: Candidate[]; problems: string[] }
+
+export function experimentOf(text: string): Experiment | null {
+  const found = lines(text).flatMap((line, index) => {
+    const m = /^\s*(?:[-*]\s+)?experiment:\s*(.*)$/.exec(line)
+    return m ? [{ no: index + 1, body: m[1] }] : []
+  })
+  if (!found.length) return null
+  const { no, body } = found[0]
+  const head = /^([a-zA-Z0-9][\w-]*)\.\s*후보:\s*(.*?)\.?\s*$/.exec(body)
+  const problems: string[] = []
+  const candidates: Candidate[] = []
+  if (found.length > 1) problems.push('experiment 줄은 하나만 둔다')
+  if (!head) problems.push('experiment 이름과 후보 형식이 틀렸다')
+  for (const part of (head?.[2] ?? '').split('/')) {
+    const m = /^\s*`([^`]+)`\s+`([^`]+)`\s+effort\s+`([^`]+)`\s*$/.exec(part)
+    if (!m) { problems.push('experiment 후보 형식이 틀렸다'); continue }
+    candidates.push({ agent: m[1], model: m[2], effort: m[3] })
+  }
+  if (candidates.length < 2) problems.push('experiment 후보는 둘 이상이어야 한다')
+  if (new Set(candidates.map(c => JSON.stringify(c))).size !== candidates.length) problems.push('experiment 후보가 겹친다')
+  return { no, name: head?.[1] ?? '', candidates, problems }
 }
 
 // spec 줄에서 / 로 시작하고 .md 로 끝나는 경로. 뒤에 글자나 점이 이어지면 경로의 끝이 아니다.
