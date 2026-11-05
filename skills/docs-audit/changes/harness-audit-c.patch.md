@@ -1,0 +1,2 @@
+- 하네스 지침 감사를 `harness-cleanup` 이 맡는다는 경계 문장을 그 스킬이 설치돼 있을 때만 성립하는 조건부 문장으로 바꿨다
+- ADR 대체 규약의 소유 문서를 technical-design 의 `adr-rules.md` 로 가리킨다

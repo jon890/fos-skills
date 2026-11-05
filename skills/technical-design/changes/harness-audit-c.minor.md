@@ -1,0 +1,1 @@
+- ADR 을 남길 조건과 대체·이동 규약, 병렬 PR 용 예시를 `references/adr-rules.md`, `adr-parallel.md` 로 받았다. 원래 plan 이 갖고 있었다
