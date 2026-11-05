@@ -202,4 +202,4 @@ CI 는 지금 `node --test` 를 폴더 목록으로 돈다(`.github/workflows/ci
 
 | 결정 | 종류 | ADR 또는 필요 없음의 이유 | 현재 규칙의 원본 |
 | --- | --- | --- | --- |
-| 문서 링크·ADR 검사의 소유와 실행 시점(스펙 DECISION1, DECISION5) | engineering-process | 새 ADR(DECISION12). 첫 PR 이 쓴다 | 각 스킬 SKILL.md 의 검사 단계, `adr-docs.ts` 머리 주석 |
+| 문서 링크·ADR 검사의 소유와 실행 시점(스펙 DECISION1, DECISION5) | engineering-process | 새 ADR(DECISION12). 첫 PR 이 [ADR-026](../../adr/026-docs-checks-at-authoring-time.md) 으로 썼다 | 각 스킬 SKILL.md 의 검사 단계, `adr-docs.ts` 머리 주석 |
