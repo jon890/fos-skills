@@ -186,11 +186,17 @@ function specFinished(
   openHeads: Set<string>,
   remoteHas: (branch: string) => boolean,
   worktreeHas: (branch: string) => boolean,
+  mergedHas: (branch: string) => boolean,
 ): boolean {
   const branch = branchesOf(text)[0]
   if (branch === undefined) return false
   const boardId = BOARD_ID_LINE.exec(text)
-  if (boardId && statuses.get(boardId[1]) !== 'done') return false
+  if (boardId) {
+    const status = statuses.get(boardId[1])
+    if (status !== undefined && status !== 'done') return false
+    // 보드에 항목이 없으면 done 을 먼저 비운 것일 수도, 아직 띄우지 않은 것일 수도 있다. 머지된 PR 이 있어야 끝난 것으로 본다
+    if (status === undefined && !mergedHas(branch)) return false
+  }
   if (openHeads.has(branch)) return false
   return !remoteHas(branch) && !worktreeHas(branch)
 }
@@ -367,9 +373,14 @@ function candidates(args: Args, repo: string, orch: string, previews: string | n
         // --exit-code 는 그 이름의 브랜치가 없을 때만 2 다. 네트워크나 인증 실패를 원격에 없다고 읽으면 쓰는 지시서를 옮긴다
         const remoteHas = (b: string) => runOut([gitBin(), 'ls-remote', '--exit-code', '--heads', 'origin', b], repo).code !== 2
         const worktreeHas = (b: string) => worktrees.includes(`[${b}]`)
+        // 읽지 못하면 머지되지 않은 것으로 본다. 쓰는 지시서를 옮기는 쪽보다 남기는 쪽이 안전하다
+        const mergedHas = (b: string) => {
+          const got = ghJson<unknown>(['pr', 'list', '--state', 'merged', '--head', b, '--limit', '1', '--json', 'number'], { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
+          return got.ok && Array.isArray(got.data) && got.data.length > 0
+        }
         for (const spec of judged) {
           const text = readFileSync(spec, 'utf8')
-          if (!specFinished(text, statuses, heads, remoteHas, worktreeHas)) continue
+          if (!specFinished(text, statuses, heads, remoteHas, worktreeHas, mergedHas)) continue
           finished.push(spec)
           if (args.run !== null) prBodies.set(spec, prBodiesOf(spec, text))
         }

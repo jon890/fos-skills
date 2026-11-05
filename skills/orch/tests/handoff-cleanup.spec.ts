@@ -18,6 +18,13 @@ const DAY = 86400
 // 열린 PR 의 head 는 FAKE_OPEN(JSON 목록)이다. FAKE_GH_FAILS=1 이면 실패한다
 const FAKE_GH = `const fs = require('node:fs')
 if (process.env.FAKE_GH_FAILS === '1') process.exit(1)
+const args = process.argv.slice(2)
+if (args.includes('merged')) {
+  const head = args[args.indexOf('--head') + 1]
+  const merged = JSON.parse(process.env.FAKE_MERGED || '[]')
+  fs.writeSync(1, JSON.stringify(merged.includes(head) ? [{ number: 1 }] : []) + '\\n')
+  process.exit(0)
+}
 const heads = JSON.parse(process.env.FAKE_OPEN || '[]')
 fs.writeSync(1, JSON.stringify(heads.map((headRefName) => ({ headRefName }))) + '\\n')
 `
@@ -219,6 +226,15 @@ describe('handoff-cleanup', () => {
     for (const name of ['spec-common.md', 'spec-not-yet.md', 'spec-open-pr.md', 'spec-remote.md', 'spec-unknown-item.md', 'spec-no-branch.md']) {
       assert.equal(existsSync(join(orch, 'specs', name)), true, name)
     }
+  })
+
+  test('보드에서 done 을 먼저 비웠어도 머지된 PR 이 있는 지시서는 옮기고, 띄우기 전 지시서는 남긴다', () => {
+    const finished = make('.orch/specs/spec-swept.md', spec('feat/swept', 'item-swept'))
+    const unlaunched = make('.orch/specs/spec-unlaunched.md', spec('feat/unlaunched', 'item-unlaunched'))
+    ok(['--apply'], { FAKE_MERGED: JSON.stringify(['feat/swept']) })
+    assert.equal(existsSync(join(trash, '.orch/specs/spec-swept.md')), true)
+    assert.equal(existsSync(finished), false)
+    assert.equal(existsSync(unlaunched), true)
   })
 
   test('보드 항목 줄이 없는 지시서는 그 조건을 건너뛴다', () => {
