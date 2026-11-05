@@ -32,11 +32,11 @@ git grep -n "001-plugin-from-repo-root\|002-plugin-version-is-commit-sha" -- ':!
 ## 검증
 
 ```bash
-node skills/plan/scripts/adr-docs.ts check --index ids --changed-since HEAD
+! node skills/plan/scripts/adr-docs.ts check --index ids --changed-since HEAD | grep -E "BROKEN_LINK|BROKEN_ANCHOR|ADR_PLACEMENT"
 test -f docs/adr/superseded/001-plugin-from-repo-root.md && test -f docs/adr/superseded/002-plugin-version-is-commit-sha.md
 ```
 
-첫 줄은 이 phase 가 바꾼 파일에 위반이 없어 종료 코드 0 이다(`ADR_PLACEMENT` 포함).
+첫 줄은 이 phase 가 바꾼 파일에 링크·앵커·위치 위반이 없으면 통과한다. 링크 없는 식별자(`ADR_UNLINKED`)는 phase 04 몫이라 여기서 보지 않는다.
 
 ## 변경 파일
 
