@@ -6,11 +6,13 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, before, beforeEach, afterEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { copyRepo } from '../../../../modules/testkit/git.ts'
+import { linkBin } from '../../../../modules/testkit/fake-bin.ts'
 
 export const SCRIPT = fileURLToPath(new URL('../../scripts/cleanup-sweep.ts', import.meta.url))
 export const REMOVE = fileURLToPath(new URL('../../scripts/remove-worktree.ts', import.meta.url))
@@ -66,8 +68,7 @@ export type Fixture = {
 }
 export const fx = {} as Fixture
 
-export const FAKE_HEAD = `#!/usr/bin/env node
-const fs = require('node:fs')
+export const FAKE_HEAD = `const fs = require('node:fs')
 const file = process.env.FAKE_STATE
 const st = JSON.parse(fs.readFileSync(file, 'utf8'))
 const a = process.argv.slice(2)
@@ -201,12 +202,10 @@ before(() => {
   fx.bin = realpathSync(mkdtempSync(join(tmpdir(), 'cleanup-sweep-bin-')))
   for (const [name, body] of Object.entries(FAKES)) {
     const head = FAKE_HEAD + `fs.appendFileSync(process.env.FAKE_LOG, ['${name}', ...a].join(' ') + '\\n')\n`
-    writeFileSync(join(fx.bin, name), head + body)
-    chmodSync(join(fx.bin, name), 0o755)
+    linkBin(fx.bin, name, head + body)
   }
   // remove-worktree.ts 의 Docker 정리가 이 PC 의 docker 를 부르지 않게 한다. 컨테이너가 없다고 답한다
-  writeFileSync(join(fx.bin, 'docker'), '#!/usr/bin/env node\n')
-  chmodSync(join(fx.bin, 'docker'), 0o755)
+  linkBin(fx.bin, 'docker', '')
 })
 
 after(() => rmSync(fx.bin, { recursive: true, force: true }))
@@ -280,24 +279,9 @@ export function git(...args: string[]): string {
   return sh('git', ...args)
 }
 
-// 처음 부를 때 origin 과 clone 을 한 벌 만들어 두고, 그 뒤로는 복사해 origin 주소만 바꾼다.
-// git init, clone, commit, push 를 테스트마다 치르지 않는다. 템플릿은 가짜 폴더와 함께 지워진다.
-let template: { origin: string; dir: string } | null = null
-
+// testkit 의 템플릿 저장소를 복사하고 origin 주소만 바꾼다. 작업 폴더는 `<이름>`, origin 은 `<이름>-origin.git` 이다.
 export function makeRepo(name: string): string {
-  if (!template) {
-    template = { origin: join(fx.bin, 'template-origin.git'), dir: join(fx.bin, 'template') }
-    git('init', '-q', '--bare', '-b', 'main', template.origin)
-    git('clone', '-q', template.origin, template.dir)
-    git('-C', template.dir, 'commit', '-q', '--allow-empty', '-m', 'init')
-    git('-C', template.dir, 'push', '-q', '-u', 'origin', 'main')
-  }
-  const origin = join(fx.tmp, `${name}-origin.git`)
-  const dir = join(fx.tmp, name)
-  cpSync(template.origin, origin, { recursive: true })
-  cpSync(template.dir, dir, { recursive: true })
-  git('-C', dir, 'remote', 'set-url', 'origin', origin)
-  return dir
+  return copyRepo(join(fx.tmp, name)).dir
 }
 
 export function save(): void {
