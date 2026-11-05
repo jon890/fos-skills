@@ -49,7 +49,7 @@
       "after": "PR9 머지"
     },
     {
-      "what": "PR11 Python tests job 삭제와 pending 비우기",
+      "what": "PR11 테스트 실행기의 Python 부분 삭제와 pending 비우기",
       "why": "스펙 REQ5",
       "after": "PR10 머지와 orch-cli 의 옛 이름 정리 PR 머지(pending 의 orch-legacy 영역이 그 PR 에서 빈다)"
     },

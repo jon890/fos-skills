@@ -11,7 +11,7 @@
 | REQ2 | 같은 테스트가 `.sh`, `.bash`, `.zsh` 와 셸 shebang 을 찾는다. git 훅은 「진입 파일」 절의 확장자 없는 JS 진입으로 바꾸고, 임시 저장소 테스트가 `install-hooks.ts` 로 건 훅이 `git commit` 에서 도는지 본다 |
 | REQ3 | 「동등성 확인」 절의 두 커밋 방식과 공통 꼴 모듈(`kit`)로 stdout, 쓰는 파일, 종료 코드를 맞춘다 |
 | REQ4 | 영역 PR 이 그 영역 문서의 호출을 「호출 꼴」 절대로 같은 커밋에서 바꾼다. 기존 `scripts/tests/test_doc_script_refs.py`(PR2 에서 `doc-script-refs.spec.ts`)가 문서가 부르는 스크립트의 존재를 본다. `runtime-policy.spec.ts` 가 이행을 마친 영역의 문서에 `python3 `, `bash "$SKILL_DIR` 꼴이 남으면 실패한다 |
-| REQ5 | 「CI」 절. node 테스트를 폴더 패턴 하나로 돌고, Python 루프는 `test_*.py` 가 없는 폴더를 건너뛴다. PR11 에서 Python job 을 지운다 |
+| REQ5 | 「CI」 절. node 테스트를 폴더 패턴 하나로 돌고, Python 루프는 `test_*.py` 가 없는 폴더를 건너뛴다. PR11 에서 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22) |
 | REQ6 | 「옛 이름 진입」 절. 같은 이름의 node shebang JS 가 새 `.ts` 를 import 한다. 훅 모드의 안내는 DECISION18 대로 `additionalContext` 에 붙인다 |
 | REQ7 | 영역 PR 의 계획이 스펙 「다른 저장소의 옛 호출」 의 그 영역 행을 머지 조건 뒤의 후속 작업으로 갖는다. 코디네이터가 orch worker 로 고친다 |
 | REQ8 | 「팀 저장소」 절. PR11 머지 뒤 팀 PR 하나 |
@@ -159,7 +159,7 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 - `Plugin tests` job 의 node 테스트 단계가 `node --test --test-concurrency=4` 에 `scripts/tests/*.spec.ts`, `skills/*/tests/*.spec.ts`, `export-only-skills/*/tests/*.spec.ts`, `tools/*/tests/*.spec.ts`, `extensions/*/tests/*.spec.ts` 다섯 패턴을 준다. 영역을 옮기면 CI 를 고치지 않아도 그 테스트가 들어간다. 예외는 폴더 자리까지 옮기는 PR10 이다(「browser-driver 를 browser 스킬 안으로 옮긴다」).
 - 타입 검사의 `tsconfig.json` 은 테스트가 아닌 실행 코드를 본다. 영역 PR 이 처음 `.ts` 를 들일 때 `include` 에 `<단위>/scripts/**/*.ts` 와 진입 `.ts`(`githooks/*.ts`)를 더한다. 테스트 폴더는 지금처럼 넣지 않는다. `extensions/work-board/tests/*.test.ts` 가 `claude-code/testing` 을 import 해 검사가 깨진다.
 - `Python tests` job 의 루프는 `test_*.py` 가 하나도 없는 폴더를 건너뛴다. 지금의 이름 목록 건너뛰기는 지운다.
-- PR11 이 `Python tests` job 을 통째로 지운다. `jq` 설치도 함께 없어진다. `zsh` 는 `harness-cleanup` 의 문서 코드 블록 실행(`run_doc_snippets`, bash 와 zsh 양쪽에서 돈다)이 쓴다. PR8 이 그 테스트를 옮기며 `Plugin tests` job 에 `zsh` 설치를 옮긴다.
+- PR11 이 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22). 머지 조건의 job 이름은 testkit 계획이 정한 이름을 따르며 `Python tests` job 을 따로 지우지 않는다. `jq` 설치도 함께 없어진다. `zsh` 는 `harness-cleanup` 의 문서 코드 블록 실행(`run_doc_snippets`, bash 와 zsh 양쪽에서 돈다)이 쓴다. PR8 이 그 테스트를 옮기며 `Plugin tests` job 에 `zsh` 설치를 옮긴다.
 - `plugin-version.yml` 은 PR2 가 고친다. `python3` 두 줄을 `node` 로 바꾸고(스펙 DECISION16), `actions/setup-node` 의 `node-version: '24'` 단계를 더한다. 지금은 setup-node 가 없어 runner 기본 node 로 돈다. 이 workflow 는 main push 에서만 돌아 PR CI 로 미리 잡히지 않는다.
 - 테스트 묶음의 원본은 CI 의 다섯 패턴이다. `scripts/run-node-tests.ts` 가 남아 있으면 그 `DEFAULT_PATTERNS`, README 「기여」 의 로컬 실행 안내, `.orch/overlay.md` 의 로컬 검증 줄을 PR1 이 같은 다섯 패턴으로 맞춘다. 실행기를 fos-test-speed 가 이미 지웠으면 그 PR 이 정한 안내를 따른다.
 

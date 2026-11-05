@@ -71,7 +71,7 @@
   8. `harness-cleanup`
   9. `mac-cleanup`
   10. `tools/browser-driver`
-  11. 마무리: `Python tests` job 제거, 저장소 테스트의 남은 목록이 빈 것 확인
+  11. 마무리: 테스트 실행기의 Python 부분 제거(머지 조건의 job 이름은 testkit 계획이 정한 이름을 따른다), 저장소 테스트의 남은 목록이 빈 것 확인
 - 팀 저장소 반영은 11 이 머지된 뒤 팀 PR 하나로 한다(DECISION7). 그동안 팀 사본은 옛 Python 에 머물고 `githooks/post-commit` 이 어긋남을 계속 알린다. main 을 그대로 내보낼 수 없으므로 이 기간의 급한 수정은 DECISION10 대로 내보낸다.
 
 ## 다른 저장소의 옛 호출
@@ -95,7 +95,7 @@
 | REQ2 | 셸 파일이 남지 않는다. git 훅처럼 이름이 정해진 진입 파일도 node 로 돈다 | 마지막 PR 뒤 `.sh`, `.bash`, `.zsh` 파일과 셸 shebang 을 가진 파일이 없다(저장소 테스트). 임시 저장소에서 `install-hooks` 로 건 `commit-msg`, `post-commit` 훅이 `git commit` 때 node 로 돌아, 금지어가 든 메시지는 막고 공용 스킬 변경은 알린다 |
 | REQ3 | 옮긴 명령의 옵션, stdout, 쓰는 파일, 종료 코드가 옮기기 전과 같다 | 영역 PR 마다 명령 경계 테스트가 옮기기 전 구현(첫 커밋)과 옮긴 구현(다음 커밋) 모두에서 통과하고, 두 실행 결과가 PR 본문에 있다. 정규식이 판정의 중심인 검사기(korean-check, plan 의 문서 검사기)는 저장소 문서 전체를 옛 명령과 새 명령에 돌린 출력이 같다는 비교가 PR 본문에 있다. stderr 는 문서나 테스트가 읽는 문구만 같다. 같음의 정도는 DECISION19, DECISION20 이다 |
 | REQ4 | 문서가 새 명령을 부른다 | 영역 PR 뒤 그 영역 문서에 `python3`, `bash ...sh` 호출이 없다(`git grep`). 문서가 부르는 스크립트가 모두 있다(`orch-doctor.ts --skip-version --skill-dir`) |
-| REQ5 | 이행 중 CI 가 두 언어의 테스트를 모두 돌고, 끝나면 node 테스트만 돈다 | 이행 중 PR 마다 CI 가 남은 Python 테스트와 옮긴 node 테스트를 함께 돌아 통과한다. Python 테스트가 없어진 폴더 때문에 CI 가 실패하지 않는다. 마지막 PR 에서 `Python tests` job 과 jq, zsh 설치가 없어진다 |
+| REQ5 | 이행 중 CI 가 두 언어의 테스트를 모두 돌고, 끝나면 node 테스트만 돈다 | 이행 중 PR 마다 CI 가 남은 Python 테스트와 옮긴 node 테스트를 함께 돌아 통과한다. Python 테스트가 없어진 폴더 때문에 CI 가 실패하지 않는다. 마지막 PR 에서 테스트 실행기의 Python 부분과 jq, zsh 설치가 없어지고, 머지 조건의 job 이름은 testkit 계획이 정한 이름을 따른다 |
 | REQ6 | 저장소 밖에서 옛 이름을 직접 실행하는 곳이 정한 기간 동안 돈다 | `korean-style-check.py --hook`, `check-readability.py --hook`, `browser_driver.py` 를 링크나 직접 실행으로 부르면 새 구현과 같은 결과를 내고, DECISION18 의 자리에 새 명령을 알린다. 이행 뒤 설치 안내(README, `browser_driver install`)는 새 이름만 가리킨다(DECISION21). 셋을 지우는 시점은 DECISION17 이다 |
 | REQ7 | 인터프리터로 옛 이름을 부르는 다른 저장소가 깨진 채 남지 않는다 | 영역 PR 이 머지된 뒤 「다른 저장소의 옛 호출」 의 그 영역 행마다 그 저장소에서 새 명령으로 바꾼 커밋이 있다. 바뀐 이름은 스킬 CHANGELOG 의 `호환성:` 항목에 새 명령과 함께 있다 |
 | REQ8 | 팀 저장소에서 내보낸 스킬이 새 런타임으로 돈다 | 마지막 팀 PR 에서 팀 CI 가 Node 24 runner 로 내보낸 스킬의 node 테스트를 돌아 통과하고, 팀 README 와 변경 이력이 Node 24 이상을 요구한다. 팀 PR 본문이 팀원에게 바뀐 명령과 훅 경로를 안내한다 |
@@ -127,6 +127,7 @@
 | DECISION19 | 쓰는 파일과 JSON 출력의 같음 | stdout 과 명령이 쓰는 파일(CHANGELOG, SKILL.md, plugin.json, `--json-out`, 기록 파일)은 바이트까지 같다. JSON 의 키 순서, 들여쓰기, 한글을 그대로 두는 표기를 맞춘다. 옛 구현이 쓴 파일을 새 구현이 읽는다 | 작성자 | 출력 계약을 바꾸지 않는 쪽이다. orch 전환이 같은 방식(`skills/orch/scripts/lib/py.ts`)으로 맞췄다 |
 | DECISION20 | argparse 가 주던 옵션 동작 | 긴 옵션의 고유 접두 줄임, `--opt=value`, 사용법 오류의 종료 코드 2 를 그대로 둔다. `--help` 문구는 뜻만 같고 글자는 바뀔 수 있다 | 작성자 | 저장소의 argparse 26곳이 `allow_abbrev=False` 없이 줄임을 받는다. orch 전환의 `skills/orch/scripts/lib/args.ts` 를 재사용한다. 도움말은 사람이 읽는 글이라 바이트 대조에서 뺀다 |
 | DECISION21 | 이행 뒤 새 설치 안내 | README 와 설치 명령은 새 이름(직접 실행하는 `.ts`)만 안내한다. 옛 이름 진입은 이미 설치한 쪽만 지킨다 | 작성자 | DECISION3 의 진입은 기간을 둔 호환이라, 새 설치자가 거기에 기대면 지울 때 함께 깨진다 |
+| DECISION22 | CI 의 마지막 정리 | CI 는 한 job 이 새 테스트 실행기를 옵션 없이 불러 node 와 Python 을 함께 돈다(testkit 인터뷰 결정). 그래서 마지막 PR 은 `Python tests` job 을 지우지 않고 테스트 실행기의 Python 부분을 지운다. 머지 조건의 job 이름은 testkit 계획이 정한 이름을 따른다 | 사용자 2026-11-05 | testkit 인터뷰 결정과 어긋나던 REQ5 를 맞춘다 |
 
 ## 도메인 규칙 변경
 
