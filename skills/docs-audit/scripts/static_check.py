@@ -4,7 +4,9 @@
 사용법:
     static_check.py [ADR_DIR] [DOC_SCOPE]
 
-`ADR_DIR` 을 생략하면 ADR Index 동기화 검사를 건너뛴다.
+`ADR_DIR` 은 옛 호출을 깨지 않으려고 받기만 하고 쓰지 않는다. 주면 표준 오류에 안내 한 줄을 낸다.
+깨진 링크·앵커, ADR 색인과 번호 검사는 plan 스킬의 `scripts/adr-docs.ts` 가 맡는다.
+이 인자는 docs-audit 의 다음 major 에서 없앤다.
 `DOC_SCOPE` 는 검사할 파일이나 디렉터리이고 기본값은 저장소 전체다.
 검사 대상 저장소 루트에서 실행한다.
 
@@ -25,8 +27,6 @@ from pathlib import Path
 
 FENCE = re.compile(r"^\s*```")
 HEADING = re.compile(r"^(#+)\s+(.*)$")
-CODE_SPAN = re.compile(r"`[^`\n]*`")
-LINK = re.compile(r"\]\(([^)\s]+)\)")
 TABLE_SEP = re.compile(r"^\s*\|\s*:?-")
 TABLE_ROW = re.compile(r"^\s*\|")
 # 표의 열을 세기 전에 역슬래시 이스케이프를 지운다.
@@ -39,19 +39,6 @@ TABLE_ROW = re.compile(r"^\s*\|")
 #   백틱 안의 파이프도 구분자로 동작한다. 그래서 GFM 은 코드 스팬 안에서도 이스케이프를
 #   요구한다. 코드 스팬을 지우면 백틱 안의 맨 파이프가 만드는 진짜 어긋남을 놓친다.
 ESCAPE = re.compile(r"\\.")
-
-# 본문 ADR 번호는 헤딩만 센다.
-#   아무 곳의 ADR-NNN 을 다 세면 "향후 ADR은 ADR-009부터 추가" 같은 안내 문장이
-#   실재하지 않는 ADR 로 잡혀 항상 불일치가 난다.
-ADR_BODY = re.compile(r"^#+\s+.*?(ADR-\d+)")
-# INDEX 번호는 등재 항목만 센다. 목록형과 표형, 링크 있음과 없음을 모두 받는다.
-#   표만 읽으면 목록형 저장소에서 0 개를 뽑아 본문 번호 전체를 "누락" 으로 보고한다.
-#   표 칸에 링크를 건 `| [ADR-001](...)` 형도 있어 표 쪽에도 `[` 를 받는다.
-#   이것을 못 받으면 ADR 전부가 "본문에만 있다" 로 나온다.
-ADR_INDEX = re.compile(r"^\s*(?:[-*]\s+|\|\s*)\[?(ADR-\d+)")
-# 링크 문구가 파일 이름인 `[001-slug.md](001-slug.md)` 형. 번호는 `ADR-001` 로 읽는다.
-#   ADR_INDEX 는 `ADR-` 로 시작하는 문구만 받아서, 이 형식이면 ADR 전부가 "본문에만 있다" 로 나왔다.
-ADR_INDEX_FILE = re.compile(r"^\s*(?:[-*]\s+|\|\s*)\[(\d+)-[^\]]*\.md\]")
 
 # 문서가 `tasks/` 의 계획서를 번호로 가리키는 자리를 찾는다.
 #   계획서는 구현이 끝나면 제거되므로, 번호로 가리킨 자리는 그때 깨진 참조가 된다.
@@ -119,43 +106,6 @@ def outside_fence(lines):
             continue
         if not in_fence:
             yield lineno, line
-
-
-def check_index(adr_dir):
-    """본문 ADR 번호 집합과 INDEX.md 의 등재 번호 집합이 같은가.
-
-    INDEX.md 가 없는 구조(단일 파일 ADR 등)에서는 건너뛴다.
-    없는 파일을 빈 Index 로 취급하면 본문 번호 전체가 누락으로 잡혀 항상 불일치가 난다.
-    """
-    index = adr_dir / "INDEX.md"
-    if not index.is_file():
-        return []
-
-    body = set()
-    for path in sorted(adr_dir.rglob("*.md")):
-        for line in read_lines(path):
-            m = ADR_BODY.match(line)
-            if m:
-                body.add(m.group(1))
-
-    listed = set()
-    for line in read_lines(index):
-        m = ADR_INDEX.match(line)
-        if m:
-            listed.add(m.group(1))
-            continue
-        m = ADR_INDEX_FILE.match(line)
-        if m:
-            listed.add(f"ADR-{m.group(1)}")
-
-    if body == listed:
-        return []
-    out = [f"INDEX_DESYNC: {adr_dir} — 본문과 INDEX.md 의 ADR 번호 집합이 다르다"]
-    for num in sorted(body - listed):
-        out.append(f"  본문에만 있다: {num}")
-    for num in sorted(listed - body):
-        out.append(f"  INDEX.md 에만 있다: {num}")
-    return out
 
 
 def check_markdown(path, lines):
@@ -268,84 +218,12 @@ def check_listed_items(path, lines):
     ]
 
 
-def links_of(lines):
-    """코드 블록과 코드 스팬 밖의 (줄번호, 대상) 목록."""
-    for lineno, line in outside_fence(lines):
-        for m in LINK.finditer(CODE_SPAN.sub("", line)):
-            yield lineno, m.group(1)
-
-
-def is_local(target):
-    """로컬 파일을 가리키는 링크인가.
-
-    URL 스킴은 로컬 파일이 아니다. http 와 mailto 만 예외 처리하면
-    `dooray://` 같은 앱 스킴을 상대 경로로 취급해 정상 링크를 전부 깨진 링크로 보고한다.
-    `/` 로 시작하는 경로는 발행 사이트의 루트 기준 URL 관례라 로컬 파일이 아니다.
-    """
-    if not target or "://" in target or target.startswith(("/", "mailto:", "#")):
-        return False
-    return True
-
-
-def slug(text):
-    """GitHub 의 헤딩 앵커 규칙."""
-    text = CODE_SPAN.sub(lambda m: m.group(0).strip("`"), text).strip()
-    kept = "".join(c for c in text.lower() if c.isalnum() or c in " -_")
-    return kept.replace(" ", "-")
-
-
-def anchors_of(lines):
-    """그 파일이 제공하는 앵커. 중복 헤딩은 GitHub 처럼 번호를 붙인다."""
-    found = set()
-    counts = {}
-    for _, line in outside_fence(lines):
-        m = HEADING.match(line)
-        if not m:
-            continue
-        base = slug(m.group(2))
-        n = counts.get(base, 0)
-        counts[base] = n + 1
-        found.add(base if n == 0 else f"{base}-{n}")
-    return found
-
-
-def check_links(path, lines, cache):
-    """상대 링크가 실제 파일을 가리키는가. `#앵커` 가 실제 헤딩을 가리키는가."""
-    out = []
-    for lineno, target in links_of(lines):
-        filepart, _, anchor = target.partition("#")
-
-        if filepart and is_local(filepart):
-            owner = path.parent / filepart
-            if not owner.exists():
-                out.append(f"{path}: 깨진 링크 → {target}")
-                continue
-        elif filepart:
-            continue  # 외부 URL 과 사이트 루트 경로
-        else:
-            owner = path  # 같은 파일 안의 앵커
-
-        if not anchor:
-            continue
-        owner = owner.resolve()
-        if not owner.is_file():
-            continue
-        if owner not in cache:
-            cache[owner] = anchors_of(read_lines(owner))
-        if anchor not in cache[owner]:
-            out.append(f"{path}:{lineno}: 없는 앵커 → {target}")
-    return out
-
-
 def main(argv):
     adr_dir = argv[1] if len(argv) > 1 else ""
     scope = argv[2] if len(argv) > 2 else "."
 
     if git("rev-parse", "--show-toplevel") is None:
         print("사용법 오류: Git 저장소 루트에서 실행해야 한다.", file=sys.stderr)
-        return 2
-    if adr_dir and not Path(adr_dir).is_dir():
-        print(f"사용법 오류: ADR 디렉터리를 찾을 수 없다: {adr_dir}", file=sys.stderr)
         return 2
     if not Path(scope).exists():
         print(f"사용법 오류: 문서 범위를 찾을 수 없다: {scope}", file=sys.stderr)
@@ -354,9 +232,8 @@ def main(argv):
     results = []
     warnings = []
     if adr_dir:
-        results += check_index(Path(adr_dir))
+        print("안내: ADR 검사는 plan 의 adr-docs.ts 가 맡는다. ADR_DIR 인자는 쓰지 않는다.", file=sys.stderr)
 
-    cache = {}
     checked = 0
     for path in md_files(scope):
         if not path.is_file():
@@ -364,7 +241,6 @@ def main(argv):
         checked += 1
         lines = read_lines(path)
         results += check_markdown(path, lines)
-        results += check_links(path, lines, cache)
         results += check_plan_ref(path, lines)
         warnings += check_listed_items(path, lines)
 

@@ -46,7 +46,7 @@
 
 조사 결과는 아래와 같다.
 
-- 설치본 위치: mod 의 `$.plugin.root` 가 설치본 폴더다. 마켓플레이스 설치본은 `<설정 폴더>/plugins/cache/fos-skills/fos-skills/<커밋 앞 12자리>` 다([ADR-002](../../adr/002-plugin-version-is-commit-sha.md)).
+- 설치본 위치: mod 의 `$.plugin.root` 가 설치본 폴더다. 마켓플레이스 설치본은 `<설정 폴더>/plugins/cache/fos-skills/fos-skills/<커밋 앞 12자리>` 다([ADR-002](../../adr/superseded/002-plugin-version-is-commit-sha.md)).
   `<설정 폴더>/plugins/installed_plugins.json` 의 같은 `installPath` 항목에 `gitCommitSha` 40자리와 `scope` 가 있다.
 - 최신 커밋: `git ls-remote https://github.com/jon890/fos-skills refs/heads/main` 이 인증 없이 0.5초 안팎에 끝난다(2026-11-02 실측 0.46초). 저장소 주소는 설치본의 `plugin.json` 의 `repository` 에서 읽는다.
   `<설정 폴더>/plugins/marketplaces/fos-skills` 의 HEAD 는 마켓플레이스를 갱신할 때만 바뀌어 최신 판정에 쓰지 않는다.
@@ -61,7 +61,7 @@
 | D1 | 버전 표시 위치와 형식 | 머리 줄에 붙인다. 뒤처지면 노란색과 「p 로 갱신」, 형식은 「fos-skills 1.4.0 (b1e2c09)」 | 사용자 2026-11-02 | 창 높이가 늘지 않고 뒤처졌을 때만 눈에 띈다 |
 | D2 | 최신 확인 시점과 오프라인 동작 | 세션 시작, `/board` 열 때, 30분마다, 갱신 직후. 실패(시간 초과 10초)하면 「최신 확인 불가」 를 흐리게 보인다 | 사용자 2026-11-02 | 네트워크 호출이 시간당 두세 번이다 |
 | D3 | 갱신 단축키 키와 실행 방식 | `p`. 보드가 그 세션 설치본의 scope 로 `claude plugin update` 를 직접 돌리고 성공하면 입력란에 `/reload-plugins` 를 채운다. 최신일 때는 숨긴다 | 사용자 2026-11-02 | 모델 턴 없이 끝나고, 설치본이 scope 마다 다를 수 있다 |
-| D4 | plugin.json version 도입 | 둔다. 변경마다 올린다. ADR-002 를 ADR-019 로 대체한다 | 사용자 2026-11-02 | 플러그인 버전을 사람이 읽는 값으로 관리하고 싶다 |
+| D4 | plugin.json version 도입 | 둔다. 변경마다 올린다. [ADR-002](../../adr/superseded/002-plugin-version-is-commit-sha.md) 를 [ADR-019](../../adr/019-plugin-version-auto-bump.md) 로 대체한다 | 사용자 2026-11-02 | 플러그인 버전을 사람이 읽는 값으로 관리하고 싶다 |
 | D5 | 좁은 폭의 단축키 배치 | 줄바꿈을 허용한다 | 사용자 2026-11-02 | 넓은 창은 지금과 같다 |
 | D6 | version 을 자동으로 올리는 방식 | main push 때 GitHub Actions 가 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다. 바뀐 스킬 CHANGELOG 에 `호환성:` 항목이 있으면 major, 새 버전 절이 있으면 minor, 그 밖은 patch | 사용자 2026-11-02 | 동시 PR 끼리 충돌하지 않고 머지 경로와 상관없이 빠지지 않는다 |
 | D7 | directory 소스 마켓플레이스 설치본의 갱신 | 따로 판정(`kind: 'directory'`)하고 `p` 가 폴더에서 `git pull --ff-only origin main` 을 돌린다. 막을 이유(main 아님, 추적 파일 변경, fast-forward 불가)는 받기 전에 toast 로 보인다. 그 이유를 보이려고 뒤처졌으면 이유와 상관없이 `p` 를 보인다 | 사용자 2026-11-03 | `claude plugin update` 는 folder 에서 읽은 마켓플레이스에서 받을 것이 없다. 작업 중인 변경은 덮지 않는다 |

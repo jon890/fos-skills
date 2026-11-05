@@ -31,11 +31,11 @@ class RunStaticCheckTest(unittest.TestCase):
         self.assertIn("| static_check | 0 | 통과 | 0 |", done.stdout)
 
     def test_violation_is_finding_with_exit_1(self):
-        self.write("docs/a.md", "# 제목\n\n[깨짐](없다.md)\n")
+        self.write("docs/a.md", "# 제목\n\n### 건너뜀\n")
         done = self.invoke("", "docs")
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertIn("| static_check | 1 | 발견 |", done.stdout)
-        self.assertIn("없다.md", done.stdout)
+        self.assertIn("헤딩 레벨 건너뜀", done.stdout)
 
     def test_warn_only_passes_with_warning_count(self):
         self.write("docs/code-architecture.md", "# 구조\n\n```text\ncore/   도메인 (A, B, C)\n```\n")

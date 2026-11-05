@@ -21,7 +21,7 @@ metadata:
 | 3 | 원칙 대조 | 기존 원칙·공유 계약·ADR 과 대조한 결과와 선택 이유가 설계에 있다 | |
 | 4 | 결정 분류 | 사용자가 정할 결정은 spec 으로 반환했거나 확인받았고, 나머지는 근거가 적혀 있다 | |
 | 5 | 설계 문서 | `design.md` 또는 스펙의 `## 기술 설계` 절이 양식의 필수 절을 채웠다 | [`templates/design.md`](templates/design.md) |
-| 6 | 독립 검토와 검사 | 검토자의 발견이 모두 해결됐고 아래 두 명령의 종료 코드가 0 이다. 검토자를 실행하지 못했으면 「독립 검토 미완료」 가 인계에 적혀 있다 | [`team-spawn.md`](../implementation/references/team-spawn.md) |
+| 6 | 독립 검토와 검사 | 검토자의 발견이 모두 해결됐고 아래 검사 명령의 종료 코드가 모두 0 이다. 검토자를 실행하지 못했으면 「독립 검토 미완료」 가 인계에 적혀 있다 | [`team-spawn.md`](../implementation/references/team-spawn.md) |
 
 [기능 문서와 단계 인계](../spec/references/feature-docs.md)를 읽는다.
 [설정 탐색](../plan/references/monorepo.md)으로 `.claude/technical-design-overlay.md` 와 저장소 지침을 읽는다.
@@ -57,10 +57,13 @@ metadata:
 # cwd: 대상 저장소 루트. PLAN_SKILL_DIR 은 형제 plan 번들이다.
 python3 "$PLAN_SKILL_DIR/scripts/check_feature.py" "$SPEC" --design "$DESIGN"
 python3 "$PLAN_SKILL_DIR/scripts/run_doc_checks.py" --skill technical-design "$SPEC" "$DESIGN"
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index $ADR_DIRS     # ADR 을 만들거나 대체했고 색인 생성을 켠 저장소만
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_ARGS
 ```
 
 `run_doc_checks.py` 는 레포 설정의 「문서 검사 명령」 을 돌린다. technical-design 오버레이에 없으면 spec 오버레이의 값을 쓰고, 둘 다 없으면 건너뛴다.
-두 명령 모두 종료 코드가 0 이어야 plan 으로 넘긴다. 검사는 형식과 요구사항 연결만 확인한다. 아키텍처의 적절성이나 독립 검토를 대신하지 않는다.
+`adr-docs.ts` 는 깨진 링크·앵커, 링크 없는 ADR 번호, ADR 색인과 위치를 본다. 인자를 만드는 법은 [plan 의 monorepo.md 「ADR 문서 검사」](../plan/references/monorepo.md#adr-문서-검사)가 소유한다. `PR 밖 위반:` 아래 줄은 고치지 않는다.
+검사 명령의 종료 코드가 모두 0 이어야 plan 으로 넘긴다. 검사는 형식과 요구사항 연결만 확인한다. 아키텍처의 적절성이나 독립 검토를 대신하지 않는다.
 검토자를 실행할 수 없으면 설계 작성은 끝내되 독립 검토는 미완료로 인계한다. 독립 검토를 자기 점검으로 통과 처리하지 않는다.
 
 ## 인계와 완료 기준

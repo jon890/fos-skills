@@ -33,7 +33,7 @@
 | `githooks/` | Git commit-msg 와 post-commit. Claude 훅이 아님 |
 | `docs/` | 이 저장소의 책임 문서와 결정 이력 |
 
-배치의 결정은 [ADR-020](adr/021-skill-directory-layout.md)이 소유한다. 스킬별 자산은 소유 스킬과 함께 이동한다.
+배치의 결정은 [ADR-021](adr/021-skill-directory-layout.md)이 소유한다. 스킬별 자산은 소유 스킬과 함께 이동한다.
 `skills/` 자동 탐색에 내보내기 전용 원본이 섞이지 않게 별도 루트로 둔다. 두 매니페스트의 설치 스킬 목록은 계속 일치시킨다.
 `modules/` 는 test-speed 스펙([`docs/features/test-speed/spec.md`](features/test-speed/spec.md)) DECISION7 이 정했다.
 
@@ -74,6 +74,7 @@
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
+| `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.sh` |
 | `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용 진입을 정책 파일과 대조한다. 출력 줄과 종료 코드는 머리 주석이 소유한다 | `scripts/tests/runtime-policy.spec.ts`, CI, worker |

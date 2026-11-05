@@ -1,7 +1,7 @@
 # docs-audit
 
 코드를 바꾼 뒤 문서가 따라왔는지 파일마다 열어 대조하는 수고를 덜어 준다.
-ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와 앵커, 계획서 번호 참조는 정적 검사로 찾는다.
+표 열 수, 헤딩 레벨, 코드 펜스, 계획서 번호 참조는 이 스킬의 정적 검사로 찾는다. 깨진 링크와 앵커, 링크 없는 ADR 번호, ADR Index 동기화와 번호 중복은 plan 의 `adr-docs.ts` 로 찾는다.
 그 밖의 어긋남은 부패, 과대화, 추론성, 중복, 자명성, 구조 무결성 축으로 코드와 대조해 판정한다.
 
 발견마다 그것을 증명한 코드나 명령을 붙여 리포트로 보이고, 사용자가 승인한 항목만 고친다.
@@ -24,7 +24,7 @@ ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와
 ```text
 나:   docs 감사해줘
 
-스킬: 범위는 docs/ 와 README.md, ADR 디렉터리는 docs/adr 로 잡았습니다.
+스킬: 범위는 docs/ 와 README.md, ADR 폴더는 plan 오버레이 기본값 docs/adr 로 잡았습니다.
       정적 검사에서 1곳이 걸렸고, 각 축으로 코드와 대조했습니다.
         Critical  [부패] docs/flow.md:42
                   문서는 재시도 3회, 코드는 5회 (RetryPolicy.java:18)
@@ -39,6 +39,7 @@ ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와
 
 스킬: 두 항목만 고치고 정적 검사와 코드 대조를 다시 돌렸습니다.
         static_check.py  종료 코드 0
+        adr-docs.ts      종료 코드 0
       Warning 항목은 손대지 않았습니다.
 ```
 
@@ -52,8 +53,8 @@ ADR Index 동기화, 표 열 수, 헤딩 레벨, 코드 펜스, 깨진 링크와
 ## 준비
 
 - 검사할 저장소 루트에서 부른다. git 저장소가 아니면 정적 검사가 종료 코드 2 로 멈춘다
-- `python3` 가 필요하다. 정적 검사가 Python 으로 돈다
-- ADR 디렉터리가 있으면 경로를 알려 준다. 없으면 Index 동기화 검사를 건너뛴다
+- `python3` 와 Node 24 가 필요하다. 구조 검사는 Python, 링크·ADR 검사는 plan 번들의 TypeScript 로 돈다
+- ADR 폴더가 `docs/adr` 가 아니거나 여럿이면 루트 `.claude/plan-overlay.md` 의 「ADR 폴더」 에 적는다. 맞는 폴더가 없으면 ADR 검사를 건너뛰고 링크만 본다
 - 문서 경계, 검증 명령, 저장소 특화 코드 대조 grep 은 `<repo-root>/.claude/docs-audit-overlay.md` 에 적을 수 있다. 없으면 같은 위치의 `docs-check-overlay.md` 를 읽고 경고한다. 둘 다 없으면 `AGENTS.md` 와 `CLAUDE.md` 를 본다
 
 ## 함께 쓰는 스킬

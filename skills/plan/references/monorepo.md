@@ -84,7 +84,9 @@ plan 접두사처럼 하나만 골라야 하는 값은 사용자에게 묻는다
 | tasks 경로 | 새 기능은 `<기능 폴더>/tasks/`, 기존·기능 없는 작업은 `tasks/` | `tasks/` | `plan_number.sh --tasks-dir`, `verify_task.py --tasks-dir`, `plan_precheck.py --tasks-dir` |
 | plan 접두사 | 없음 | `fe-` | `plan_number.sh --prefix` |
 | plan 이름 형식 | `{접두사}plan{N}-` | `area-(\d{3})-` | `plan_number.sh --name-regex` (접두사 대신 준다) |
-| ADR 대체 배치 | `superseded/` 폴더 | 폴더 없음(색인으로 구분) | `check_adr_layout.py --flat` |
+| ADR 폴더 | `docs/adr` | `` `docs/adr` `modules/*/docs/adr` `` | `adr-docs.ts --adr-dir` (인라인 코드 하나마다 하나) |
+| ADR 색인 생성 | 하지 않는다(번호 집합만 맞춘다) | 한다 | `adr-docs.ts --index generated` |
+| ADR 대체 배치 | `superseded/` 폴더 | 폴더 없음(색인으로 구분) | `adr-docs.ts --flat` |
 
 오버레이에는 아래처럼 적는다.
 
@@ -105,6 +107,27 @@ plan 접두사처럼 하나만 골라야 하는 값은 사용자에게 묻는다
 
 phase 파일의 경로는 하위 프로젝트 안의 파일도 저장소 루트 기준으로 적는다.
 `src/app.ts` 가 아니라 `frontend/src/app.ts` 다. 커밋 전 대조가 `git diff --cached` 의 루트 기준 경로와 맞추기 때문이다.
+
+### ADR 문서 검사
+
+spec, technical-design, review-fix, docs-audit 는 `$PLAN_SKILL_DIR/scripts/adr-docs.ts` 를 같은 인자로 부른다.
+판정, 출력 줄, 종료 코드는 그 파일 머리 주석이 소유한다.
+
+- ADR 세 값은 **루트** `.claude/plan-overlay.md` 에서만 읽는다. 검사기가 저장소 전체를 보므로 하위 프로젝트 오버레이에 나눠 적지 않는다.
+- `$ADR_DIRS` 는 「ADR 폴더」 의 인라인 코드마다 `--adr-dir <값>` 이다. 값이 없으면 비운다(기본 `docs/adr`).
+- `$ADR_ARGS` 는 `$ADR_DIRS` 에 「ADR 색인 생성」 이 「한다」 면 `--index generated`, 「ADR 대체 배치」 가 「폴더 없음」 이면 `--flat` 을 더한 것이다.
+- `$BASE` 는 orch 지시서의 base 브랜치(`origin/<base>`)다. review-fix 는 그 PR 의 base 브랜치다. 둘 다 없으면 `git symbolic-ref --short refs/remotes/origin/HEAD` 다.
+- `$ADR_DIRS`, `$ADR_ARGS` 는 인자 목록을 가리키는 표기다. 문자열 변수 하나에 담아 펼치지 않고 인자를 하나씩 적는다. zsh 는 변수를 낱말로 나누지 않아 인자 하나로 넘어간다. `*` 가 든 값은 셸이 먼저 풀지 않게 따옴표로 감싼다(`--adr-dir 'modules/*/docs/adr'`).
+
+```bash
+# cwd: 대상 저장소 루트
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index $ADR_DIRS          # 색인 생성을 켠 저장소에서 ADR 을 바꿨을 때
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_ARGS
+```
+
+`PR 밖 위반:` 의 뜻과 귀속 규칙은 검사기 머리 주석이 소유한다. 부르는 스킬은 그 아래 줄을 고치지 않는다.
+링크 없는 ADR 식별자(`ADR_UNLINKED`)는 후보 경로를 보고 작성자가 링크를 건다. 검사기는 본문을 고치지 않는다.
+색인 생성을 켠 저장소는 `INDEX.md` 를 직접 고치지 않고 `write-index` 를 다시 돌린다.
 
 ## 스크립트가 직접 읽는 값
 

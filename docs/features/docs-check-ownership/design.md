@@ -75,7 +75,8 @@
 
 - 제목은 첫 `#`/`##` 제목의 `ADR-식별자:`(날짜 꼴은 `ADR-식별자 / 슬러그:`) 뒤 글이다. 링크 글도 식별자 그대로다(날짜 꼴은 `ADR-20261007 / slug`). 없으면 `제목 확인 필요` 다. 상태는 `- **status**: \`값\`` 이고 없으면 `accepted` 다. ai-analysis 생성기와 같다.
 - 「대체됨」 은 상태가 `superseded` 인 ADR 이다. 나머지는 「현행」 이다. 일부만 대체된 `accepted` 는 「현행」 에 남는다.
-- 대체 관계는 이 ADR 을 대체한 ADR 이다. `- **대체된 부분**:` 와 `- **대체**:` 항목(다음 `- ` 항목이나 `##` 전까지) 안의 링크 가운데 링크 글에 ADR 식별자가 있고 대상이 ADR 파일인 것을 순서대로 중복 없이 적는다. 색인에 적는 글은 링크 글이 아니라 **대상 파일의 식별자**다. 링크 글과 대상이 어긋난 링크(`001-plugin-from-repo-root.md:4` 의 `[ADR-020](021-...)`)에서도 실제 파일을 가리킨다. 어긋남 자체를 위반으로 보는 검사는 이번 범위가 아니다. 없으면 `-` 다.
+- 대체 관계는 이 ADR 을 대체한 ADR 이다. `- **대체된 부분**:` 항목(다음 `- ` 항목이나 제목 전까지) 안의 링크 가운데 링크 글에 ADR 식별자가 있고 대상이 ADR 파일인 것을 순서대로 중복 없이 적는다. 색인에 적는 글은 링크 글이 아니라 **대상 파일의 식별자**다. 링크 글과 대상이 어긋난 링크(`001-plugin-from-repo-root.md:4` 의 `[ADR-020](021-...)`)에서도 실제 파일을 가리킨다. 어긋남 자체를 위반으로 보는 검사는 이번 범위가 아니다. 없으면 `-` 다.
+  `- **대체**:` 항목은 읽지 않는다. 이 저장소에서 「나를 대체한 ADR」(옛 001·002)과 「내가 대체한 ADR」(021·022) 두 뜻으로 쓰여 대체 관계가 뒤집힌다. 전체 대체도 「대체된 부분」 에 적는다는 [adr-rules.md 「대체와 이동」](../../../skills/technical-design/references/adr-rules.md#대체와-이동)과 ADR 양식을 따른다(코디네이터 확인 2026-11-06).
 - 행 순서는 파일 이름 순서다. 한 절에 행이 없으면 표 대신 `없음` 한 줄을 둔다.
 - 링크는 `INDEX.md` 기준 상대 경로라 `superseded/` 안 파일도 그대로 가리킨다.
 - 생성을 켠 저장소는 이 형식이 색인의 원본이다. [adr-parallel.md 「INDEX.md」](../../../skills/technical-design/references/adr-parallel.md#indexmd) 의 세 열 형식과 [adr-rules.md 「구조」](../../../skills/technical-design/references/adr-rules.md#구조) 의 「끝에 새 행만 덧붙인다」 는 생성을 켜지 않은 저장소의 규칙으로 남긴다. 두 문서에 「생성을 켠 저장소는 `write-index` 를 돌리고 행을 직접 고치지 않는다」 를 더한다.
@@ -113,7 +114,7 @@
 | `skills/docs-audit/SKILL.md` 3단계 「구조 무결성」 | 깨진 링크와 ADR 번호·INDEX 의 판정 출처를 `adr-docs.ts` 로 |
 | `skills/review-fix/SKILL.md` 5단계, `references/finish.md` 결과 보고 양식 | 검사 명령과 「PR 밖 위반」 자리 |
 | `skills/spec/SKILL.md` 4·5단계, `skills/technical-design/SKILL.md` 6단계 | `run_doc_checks.py` 옆에 검사 명령 |
-| `docs/features/node-runtime/tasks/repo-base/phase-02.md:76` | `check_adr_layout.py docs/adr --flat` 검증 줄을 `adr-docs.ts check` 로 |
+| `docs/features/node-runtime/tasks/repo-base/phase-02.md:76` | `check_adr_layout.py docs/adr --flat` 검증 줄을 `adr-docs.ts check` 로. 구현 때 그 계획이 이미 지워져(PR 358) 대상이 없었다 |
 | `docs/features/node-runtime/spec.md` 「선행 조건과 순서」 | 영역 3·7 의 옮길 목록에서 지운 검사기를 뺀다는 한 줄(스펙 DECISION7) |
 | `docs/code-architecture.md` | plan 번들 `scripts/` 의 `.ts` 가 생긴 것과 `tsconfig.json` 범위 |
 | `tsconfig.json` `include` | `skills/plan/scripts/**/*.ts` 를 더한다(node-runtime 설계의 「처음 `.ts` 를 들이는 PR 이 더한다」) |
@@ -128,7 +129,7 @@
 ### fos-skills 첫 적용
 
 - `.claude/plan-overlay.md` 가 없어 새로 만든다. 값은 「ADR 색인 생성: 한다」 하나다. 「ADR 폴더」 와 「ADR 대체 배치」 는 기본값(`docs/adr`, `superseded/` 폴더)이다.
-- `superseded` 인 [ADR-001](../../adr/001-plugin-from-repo-root.md), [ADR-002](../../adr/002-plugin-version-is-commit-sha.md) 가 `docs/adr` 바로 아래에 있다. 이 저장소 규칙(adr-rules 「대체와 이동」, 사용자 결정 2026-10-24)대로 `docs/adr/superseded/` 로 옮기고 가리키는 상대 링크(7곳, `git grep`)를 고친다.
+- `superseded` 인 [ADR-001](../../adr/superseded/001-plugin-from-repo-root.md), [ADR-002](../../adr/superseded/002-plugin-version-is-commit-sha.md) 가 `docs/adr` 바로 아래에 있다. 이 저장소 규칙(adr-rules 「대체와 이동」, 사용자 결정 2026-10-24)대로 `docs/adr/superseded/` 로 옮기고 가리키는 상대 링크(7곳, `git grep`)를 고친다.
 - 저장소 전체를 검사해 나온 위반(계획서 밖 링크 없는 `ADR-NNN` 30여 곳 등)을 같은 PR 의 별도 커밋에서 고친다. 이 저장소가 첫 사용처라 전체가 0 이어야 생성과 검사를 함께 검증한다(스펙 DECISION15).
 - 그다음 `write-index` 로 `docs/adr/INDEX.md` 를 두 표로 다시 만든다.
 
@@ -201,4 +202,4 @@ CI 는 지금 `node --test` 를 폴더 목록으로 돈다(`.github/workflows/ci
 
 | 결정 | 종류 | ADR 또는 필요 없음의 이유 | 현재 규칙의 원본 |
 | --- | --- | --- | --- |
-| 문서 링크·ADR 검사의 소유와 실행 시점(스펙 DECISION1, DECISION5) | engineering-process | 새 ADR(DECISION12). 첫 PR 이 쓴다 | 각 스킬 SKILL.md 의 검사 단계, `adr-docs.ts` 머리 주석 |
+| 문서 링크·ADR 검사의 소유와 실행 시점(스펙 DECISION1, DECISION5) | engineering-process | 새 ADR(DECISION12). 첫 PR 이 [ADR-026](../../adr/026-docs-checks-at-authoring-time.md) 으로 썼다 | 각 스킬 SKILL.md 의 검사 단계, `adr-docs.ts` 머리 주석 |

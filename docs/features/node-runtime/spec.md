@@ -72,6 +72,7 @@
   9. `mac-cleanup`
   10. `tools/browser-driver`
   11. 마무리: 테스트 실행기의 Python 부분 제거(머지 조건의 job 이름은 testkit 계획이 정한 이름을 따른다), 저장소 테스트의 남은 목록이 빈 것 확인
+- 영역 3 의 `docs-audit` `static_check.py` 링크·색인 검사와 영역 7 의 `plan` ADR 위치·링크 검사기는 옮기지 않는다. [docs-check-ownership](../docs-check-ownership/spec.md) 이 지우고 TypeScript 검사기 `skills/plan/scripts/adr-docs.ts` 로 대신했다(그 스펙 DECISION7).
 - 팀 저장소 반영은 11 이 머지된 뒤 팀 PR 하나로 한다(DECISION7). 그동안 팀 사본은 옛 Python 에 머물고 `githooks/post-commit` 이 어긋남을 계속 알린다. main 을 그대로 내보낼 수 없으므로 이 기간의 급한 수정은 DECISION10 대로 내보낸다.
 
 ## 다른 저장소의 옛 호출
@@ -117,12 +118,12 @@
 | DECISION9 | 언어 규칙의 자리와 지키는 법 | 새 ADR 과 저장소 테스트. `docs/code-architecture.md` 의 「실행 규칙」 을 저장소 전체로 넓힌다 | 사용자 2026-11-04 | 개인 지침이 「그 저장소가 쓰는 쪽」 을 따르라고 하므로 저장소 문서가 규칙을 가져야 한다 |
 | DECISION10 | 이행 중 팀에 급히 내보낼 수정 | 전환 첫 PR 직전 main 커밋에서 `team-export` 브랜치를 만든다. 급한 수정은 main 과 그 브랜치에 함께 넣고(그 영역을 이미 옮겼으면 브랜치에는 Python 으로 쓴다) `export-to-team.sh --apply --source-ref team-export` 로 내보낸다. 브랜치는 마지막 팀 PR 뒤에 지운다 | 사용자 2026-11-05 | 기존 `--source-ref` 를 그대로 쓰고, 원본이 하나라는 팀 규칙(팀 `CLAUDE.md` 「사본을 여기서 고치지 않는다」)을 지킨다 |
 | DECISION11 | 동작이 같다는 것을 보이는 방법 | 명령 경계 테스트를 먼저 `node:test` 로 써서 Python 구현에서 통과시키고, 같은 PR 의 다음 커밋에서 구현만 바꾼다. 옵션, stdout, 종료 코드를 같게 지키고, stderr 는 문서나 테스트가 읽는 문구만 지킨다 | 사용자 2026-11-04 | 같은 테스트가 두 구현에서 통과한다. JS 의 `\w` 는 한글을 잡지 않는 등 정규식 차이가 있어 정규식 중심 검사기는 문서 전체 비교를 더한다 |
-| DECISION12 | 테스트 실행기 | `node --test` 와 `node:test`. 의존성 0 을 지킨다 | 작성자 | ADR-010, test-speed 스펙 DECISION1 |
+| DECISION12 | 테스트 실행기 | `node --test` 와 `node:test`. 의존성 0 을 지킨다 | 작성자 | [ADR-010](../../adr/010-orch-typescript.md), test-speed 스펙 DECISION1 |
 | DECISION13 | git 훅 진입의 꼴 | 확장자 없는 node shebang JS 가 같은 이름의 `.ts` 를 `import()` 한다. 타입 문법은 `.ts` 에만 둔다 | 작성자 | git 은 확장자 없는 이름을 실행하고, node 는 확장자 없는 파일의 타입을 지우지 않는다. orch 가드 shim(`skills/orch/scripts/lib/guard/orca`)과 같은 꼴이다(2026-11-05 실험) |
 | DECISION14 | orch doctor 의 Node 버전 안내 | 새 진입을 두지 않는다. doctor 는 `orch doctor` 로 불리고 플러그인 `bin/orch` 실행기가 이미 `NODE-TOO-OLD` 를 낸다. 옛 진입 `orch-doctor.py`, `ts_shim.py` 는 orch-cli 의 옛 이름 정리 PR 이 지운다 | 작성자 | 2026-11-05 설계 검토에서 고쳤다(처음 답은 `.mjs` 진입). orch-cli 스펙 DECISION13 이 옛 이름을 끝내는 때를 소유한다. 사용자에게 보이는 출력은 바뀌지 않는다 |
 | DECISION15 | 명령마다 Node 버전 검사 | 하지 않는다. README 와 doctor 가 Node 24 요구를 알린다 | 작성자 | DECISION2. 낮은 Node 는 0 이 아닌 종료 코드와 오류로 끝나 조용히 지나가지 않는다 |
 | DECISION16 | `python3 -c` 로 JSON 을 읽는 workflow 줄 | `node -e` 로 바꾼다 | 작성자 | DECISION1 의 python3 없는 환경 |
-| DECISION17 | 옛 이름 진입 셋을 지우는 시점 | 이 저장소의 다음 major 에서 지운다. korean-check 의 두 파일은 korean-check 스킬이 영역 PR 다음으로 major 를 올릴 때, `browser_driver.py` 는 버전이 없는 도구라 그것을 쓰는 `browser` 스킬이 browser-driver 영역 PR 다음으로 major 를 올릴 때 지운다. 팀원 보호 기간이 0일 수 있음을 감수한다 | 사용자 2026-11-05 | 권장안(팀 반영 한 달 뒤)과 다르다. ADR-010 과 같은 규칙이다. `browser` 스킬로 셈하는 것은 작성자가 정했다 |
+| DECISION17 | 옛 이름 진입 셋을 지우는 시점 | 이 저장소의 다음 major 에서 지운다. korean-check 의 두 파일은 korean-check 스킬이 영역 PR 다음으로 major 를 올릴 때, `browser_driver.py` 는 버전이 없는 도구라 그것을 쓰는 `browser` 스킬이 browser-driver 영역 PR 다음으로 major 를 올릴 때 지운다. 팀원 보호 기간이 0일 수 있음을 감수한다 | 사용자 2026-11-05 | 권장안(팀 반영 한 달 뒤)과 다르다. [ADR-010](../../adr/010-orch-typescript.md) 과 같은 규칙이다. `browser` 스킬로 셈하는 것은 작성자가 정했다 |
 | DECISION18 | 옛 이름 진입의 안내 자리와 훅에서 Node 가 낮을 때 | 훅 모드의 옛 이름 진입만 `additionalContext` 에 안내 한 줄을 발견 앞에 붙인다(「이 훅 경로는 다음 major 에 없어진다. 새 명령: ...」). Node 가 24 보다 낮으면 같은 자리에 「Node 24 이상이 필요해 한국어 검사를 건너뛰었다」 를 낸다. 새 이름의 훅과 일반 명령 모드의 출력은 그대로다 | 사용자 2026-11-05 | 훅 모드는 늘 0 으로 끝나 stderr 가 보이지 않는다(`korean-style-check.py` 383~440줄) |
 | DECISION19 | 쓰는 파일과 JSON 출력의 같음 | stdout 과 명령이 쓰는 파일(CHANGELOG, SKILL.md, plugin.json, `--json-out`, 기록 파일)은 바이트까지 같다. JSON 의 키 순서, 들여쓰기, 한글을 그대로 두는 표기를 맞춘다. 옛 구현이 쓴 파일을 새 구현이 읽는다 | 작성자 | 출력 계약을 바꾸지 않는 쪽이다. orch 전환이 같은 방식(`skills/orch/scripts/lib/py.ts`)으로 맞췄다 |
 | DECISION20 | argparse 가 주던 옵션 동작 | 긴 옵션의 고유 접두 줄임, `--opt=value`, 사용법 오류의 종료 코드 2 를 그대로 둔다. `--help` 문구는 뜻만 같고 글자는 바뀔 수 있다 | 작성자 | 저장소의 argparse 26곳이 `allow_abbrev=False` 없이 줄임을 받는다. orch 전환의 `skills/orch/scripts/lib/args.ts` 를 재사용한다. 도움말은 사람이 읽는 글이라 바이트 대조에서 뺀다 |

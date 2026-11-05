@@ -112,7 +112,7 @@
 - `.orch/overlay.md` 의 머지 조건은 「`Tests` 가 통과해야 한다」 가 되고, 로컬 검증은 `claude plugin test .` 와 `node scripts/run-tests.ts` 둘이 된다. 600초를 넘기면 `--background` 와 `--wait` 를 쓰라는 안내는 대기 옵션을 정리할 때까지 남긴다.
 - node-runtime 스펙과 설계의 「`Python tests` job 을 지운다」(REQ5)는 「실행기의 Python 단계와 CI 의 Python, jq, zsh 설치 단계를 지운다」 가 된다. 그쪽 문서는 이미 그 꼴로 맞춰졌다(bb61fd3, node-runtime REQ5 와 DECISION22). 이 기능의 PR3 은 node-runtime 문서를 고치지 않는다.
 - PR3 이 고칠 문서: README 「기여」 절의 테스트 명령과 세션 분리 설명, 「scripts」 표의 `run-node-tests.ts` 행. `docs/code-architecture.md` 의 「모듈 책임」 표에 실행기 행을 더하고, 「검증」 표의 node 줄과 「실행 규칙」 의 「테스트」 행(`Plugin tests` job, 「필수 체크 이름이 바뀌지 않는다」)을 고친다.
-- PR2 가 고칠 문서: `docs/code-architecture.md` 의 「범위」 표 「플러그인과 함께 복사되지만 스킬이 아니다」 칸과 「디렉터리 배치」 표에 `modules/` 를 더한다. 배치 행의 근거는 스펙 DECISION7 이다. 「디렉터리 배치」 아래 「배치의 결정은 ADR-020 이 소유한다」 문장 옆에 `modules/` 는 스펙 DECISION7 이 정했다고 적는다.
+- PR2 가 고칠 문서: `docs/code-architecture.md` 의 「범위」 표 「플러그인과 함께 복사되지만 스킬이 아니다」 칸과 「디렉터리 배치」 표에 `modules/` 를 더한다. 배치 행의 근거는 스펙 DECISION7 이다. 「디렉터리 배치」 아래 「배치의 결정은 [ADR-021](../../adr/021-skill-directory-layout.md) 이 소유한다」 문장 옆에 `modules/` 는 스펙 DECISION7 이 정했다고 적는다.
 - PR2 는 새 node 테스트가 PR3 전에도 돌게 CI 의 node 테스트 줄과 `scripts/run-node-tests.ts` 의 `DEFAULT_PATTERNS` 에 `modules/testkit/tests/*.spec.ts`, `scripts/tests/*.spec.ts` 를 더하고, `tsconfig.json` 의 `include` 에 `modules/**/*.ts` 를 더한다.
 
 ### 내보내기 경계 검사

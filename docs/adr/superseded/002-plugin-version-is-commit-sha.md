@@ -1,10 +1,10 @@
 ## ADR-002: 플러그인 버전을 쓰지 않고 커밋 SHA 를 버전으로 삼는다
 
 - **status**: `superseded`
-- **대체**: [ADR-019](019-plugin-version-auto-bump.md) 가 plugin.json 에 version 을 두고 main 머지마다 자동으로 올리기로 바꿨다(사용자 결정 2026-11-02). 아래 실측은 그 결정의 근거로 남긴다.
 - **결정**: `.claude-plugin/plugin.json` 에 `version` 을 쓰지 않는다. 마켓플레이스 항목에도 쓰지 않는다.
   마켓플레이스는 GitHub 저장소 `jon890/fos-skills` 를 git 소스로 등록한다. 스킬을 만든 머신도 같은 방식으로 설치한다.
   스킬마다 두는 `metadata.version` 과 `CHANGELOG.md` 는 변경 추적용으로 그대로 둔다.
+- **대체된 부분**: [ADR-019](../019-plugin-version-auto-bump.md) 가 plugin.json 에 version 을 두고 main 머지마다 자동으로 올리기로 바꿨다(사용자 결정 2026-11-02). 아래 실측은 그 결정의 근거로 남긴다.
 - **맥락**: `version` 을 쓰면 그 문자열이 바뀌어야 설치한 쪽이 새 복사본을 받는다. 이 저장소는 스킬 하나를 며칠에 한 번꼴로 고치므로, 고칠 때마다 스킬 버전과 플러그인 버전을 함께 올려야 한다.
   README 는 스킬 버전을 배포 핀이 아니라 변경 추적으로 정했고 git 태그도 만들지 않는다.
   2026-10-01 에 Claude Code 2.1.286 과 격리된 `CLAUDE_CONFIG_DIR` 로 확인한 동작은 다음과 같다.
@@ -26,4 +26,4 @@
   - 감당할 것: `claude plugin validate --strict` 를 쓰지 못한다. 검증은 `--json` 출력에서 오류가 없고 경고가 버전 경고 하나뿐인지를 본다.
   - 감당할 것: 설치한 쪽은 main 의 모든 커밋을 받는다. 특정 시점에 고정하려면 마켓플레이스를 등록할 때 ref 를 지정해야 한다.
   - 감당할 것: `~/.claude/scripts/` 와 `~/.claude/rules/` 의 개인 링크는 로컬 체크아웃을 가리키므로 체크아웃의 현재 내용을 바로 읽는다. 설치본과 체크아웃의 내용이 push 전까지 다를 수 있다.
-- **적용 범위**: 갱신과 개발 중 확인의 순서는 [flow.md](../flow.md) 가 소유한다. 배치 결정은 [ADR-001](001-plugin-from-repo-root.md) 이 소유한다.
+- **적용 범위**: 갱신과 개발 중 확인의 순서는 [flow.md](../../flow.md) 가 소유한다. 배치 결정은 [ADR-001](001-plugin-from-repo-root.md) 이 소유한다.

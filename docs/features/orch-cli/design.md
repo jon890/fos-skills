@@ -205,7 +205,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 ### `orch status` (PR2)
 
 - `scripts/orch-status.ts` 는 읽기만 한다. 저장소는 문맥(작업 폴더의 주 checkout)이나 `--repo` 다. Run 은 문맥으로 채우지 않는다(스펙 DECISION22). `--run` 을 주면 그 Run 만, 없으면 `lib/loop.ts` 의 `registeredRuns` 를 모두, 그것도 없으면 설정의 `finish.run` 을 본다. 셋 다 없으면 Run 줄 없이 루프와 보드만 낸다.
-- worker 는 그 저장소의 워크트리(주 checkout 이 이 저장소인 폴더, 지워진 폴더는 저장소 경로 아래)에 있는 행만 센다. Run 하나가 여러 저장소의 worker 를 맡아(ADR-012) Run 의 행을 그대로 세면 다른 저장소 worker 를 이 저장소 설정과 화면 기록으로 판정한다.
+- worker 는 그 저장소의 워크트리(주 checkout 이 이 저장소인 폴더, 지워진 폴더는 저장소 경로 아래)에 있는 행만 센다. Run 하나가 여러 저장소의 worker 를 맡아([ADR-012](../../adr/012-orch-loop-multi-run.md)) Run 의 행을 그대로 세면 다른 저장소 worker 를 이 저장소 설정과 화면 기록으로 판정한다.
 - 루프는 `loopStatus`(재확인이 필요한 오래된 alive_at 도 그대로 `LOOP-DEAD`), worker 와 멈춤은 `lib/movement.ts` 의 `collectWorkers`, `collectStages`(`stalled-workers` 와 같은 설정과 화면 기록), 보드는 `readBoard(boardPath(repo))` 의 status 수다. 줄 꼴(`STALLED`, `STAGE`)은 `stalled-workers` 와 같은 함수로 낸다.
 - 종료 코드는 0 이다. 조회 실패는 `SKIP-WORKERS <Run> <이유>`, `SKIP-BOARD <이유>` 줄로 알리고 1 이다. 판정이 아니라 요약이라 멈춘 worker 가 있어도 0 이다.
 - 짧은 출력과 `--full` 이 같다(설명 줄이 없다). `--json` 은 두지 않는다.
@@ -250,7 +250,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | ID | 결정 | 답 | 누가 | 근거 |
 | --- | --- | --- | --- | --- |
 | DECISION1 | 실행기와 진입점을 나눈다 | PATH 의 `orch` 는 번들을 찾아 넘기기만 하고 명령 표는 번들의 진입점이 갖는다 | 작성자 | `~/.local/bin` 사본은 갱신되지 않는다. 표를 사본에 두면 새 명령을 모른다 |
-| DECISION2 | 실행기 언어 | 확장자 없는 CommonJS JavaScript | 작성자 | 플러그인 `bin/` 은 확장자 없는 실행 파일이라야 맨 이름으로 불린다. 타입 문법이 없어야 node 가 그대로 읽고, CommonJS 라 낮은 node 에서도 `NODE-TOO-OLD` 를 낼 수 있다(ADR-011) |
+| DECISION2 | 실행기 언어 | 확장자 없는 CommonJS JavaScript | 작성자 | 플러그인 `bin/` 은 확장자 없는 실행 파일이라야 맨 이름으로 불린다. 타입 문법이 없어야 node 가 그대로 읽고, CommonJS 라 낮은 node 에서도 `NODE-TOO-OLD` 를 낼 수 있다([ADR-011](../../adr/011-node-24-minimum.md)) |
 | DECISION3 | 문맥을 채우는 방법 | 진입점이 빠진 인자를 명령줄에 더한다. 스크립트의 인자 처리는 고치지 않는다 | 작성자 | 「명시 > 문맥 > 설정」 이 스크립트마다 다시 구현되지 않는다. 스크립트는 지금처럼 명시 인자 > 설정 순서로 읽으므로 진입점이 더한 값이 설정보다 앞선다 |
 | DECISION4 | 새 꼴의 문맥 인자 줄여 쓰기 | 받지 않는다(사용법 오류) | 작성자 | 줄여 쓴 옵션을 진입점이 모르면 같은 인자가 둘 들어간다. 옛 꼴의 줄여 쓰기 호환(lib/args.ts)은 그대로다 |
 | DECISION5 | 짧은 출력 신호 | 환경 변수 `ORCH_OUTPUT=short` 를 스크립트가 시작할 때 읽고 지운다 | 작성자 | 플래그로 넘기면 `merge-with-finish` 처럼 인자를 다른 스크립트에 그대로 넘기는 명령이 그 플래그를 흘린다. 지우지 않으면 자식 스크립트가 물려받는다 |
@@ -259,7 +259,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | DECISION9 | 진입점 신호(`ORCH_CONTEXT` 는 PR1, `ORCH_OUTPUT` 은 PR2)를 지우는 자리 | `lib/bundle.ts`(모든 진입 스크립트가 `lib/args.ts`, `lib/proc.ts` 로 먼저 import 한다). 출력을 그대로 넘기는 `merge_queue` 에만 부모가 짧은 출력 신호를 명시해 넘긴다 | 작성자 | 신호를 읽는 모듈만 지우면 출력을 바꾸지 않는 스크립트(heavy-slot)의 자식에 새고, `merge-with-finish` 는 자식 출력을 거를 수 없다 |
 | DECISION10 | 템플릿의 `orch` 부르기 | `templates/spec-common.md` 는 `orch worker ask …` 로 쓰고, `command -v orch` 가 없을 때 쓸 한 줄(설치 기록에서 진입점을 풀어 `orch` 셸 함수로 두기)을 함께 둔다 | 작성자 | `install-cli` 를 하지 않은 머신의 Codex worker 셸에도 `orch` 가 없을 수 있다 |
 | DECISION11 | 핸들러가 orch 를 부르는 통로 | `ORCH_BIN`(진입점 절대경로)을 더하고 문서 예시를 새 꼴로 바꾼다. `ORCH_SCRIPTS` 는 유지한다 | 작성자 | 핸들러 환경의 PATH 앞에는 가드 폴더가 있고 `orch` 가 PATH 에 있다고 볼 수 없다. 진입점 경로를 넘기면 폴더 이동과 상관없이 돈다 |
-| DECISION8 | ADR | ADR-004 를 고쳐 루트 `bin/` 에 `orch` 하나만 허용한다. 새 ADR 은 만들지 않는다 | 사용자 2026-11-04 | 스펙 DECISION4 |
+| DECISION8 | ADR | [ADR-004](../../adr/004-no-plugin-bin.md) 를 고쳐 루트 `bin/` 에 `orch` 하나만 허용한다. 새 ADR 은 만들지 않는다 | 사용자 2026-11-04 | 스펙 DECISION4 |
 | DECISION12 | 스크립트의 안내 줄 | 다른 orch 스크립트를 부르라고 안내하는 줄은 PR1 에서 새 꼴로 바꾼다. 스펙 DECISION16 의 예외다. `사용법:` 줄과 판정 줄은 바꾸지 않는다 | 작성자 | 이 줄은 사람과 에이전트가 붙여 넣는 안내라 읽는 코드가 없다. 옛 꼴로 남으면 옛 이름을 지우는 PR 뒤 안내가 사용법 오류를 부른다 |
 | DECISION13 | `--lost-state` 기본값 | 바꾸지 않는다. 시작 폴더와 루프 저장소가 같은 저장소면 `NEXT_WAIT` 에서 빼고, 아니면 절대경로로 남긴다 | 작성자 | 기본값을 루프 저장소 기준으로 바꾸면 `wait ack-lost` 와 상태 파일이 갈라지고 같은 입력의 판정이 바뀐다(스펙 「범위 밖」). 독립 검토(2026-11-04)의 지적이다 |
 | DECISION14 | 번들 고르기 규칙의 원본 | `lib/install-record.ts` 의 `selectBundle`. 실행기와 틀의 JS 사본은 같은 사례 표 테스트로 묶는다 | 작성자 | 이 기능의 발단(3.x 진입점이 user 4.0.1 을 건너뜀)이 사본마다 규칙이 달라서 난 일이다. CommonJS 실행기와 셸 한 줄은 TS 를 import 할 수 없어 사본을 없앨 수는 없다 |
