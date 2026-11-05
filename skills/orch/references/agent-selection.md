@@ -2,7 +2,7 @@
 
 **모델과 effort 는 Task 마다 성능과 가격을 비교해 고르고, 비교한 후보와 고른 이유를 지시서의 `worker 선택:` 줄에 남긴다.**
 기본값을 두지 않는다. 사용자가 지정하면 그것을 따른다.
-줄의 형식은 [`spec-writing.md`](spec-writing.md) 의 「넣을 것」 이 소유한다. `spec-lint` 가 줄이 없는 지시서를 막고, `launch-worker` 가 줄과 다른 `--agent`, `--model` 을 거부한다.
+줄의 형식은 [`spec-writing.md`](spec-writing.md) 의 「넣을 것」 이 소유한다. `spec-lint` 가 줄이 없는 지시서를 막고, `launch-worker` 가 줄과 다른 `--agent`, `--model` 을 거부한다. 지금 검사는 에이전트·모델·effort·비교·이유만 본다. `행:` 과 `high 근거:` 는 코디네이터가 확인한다.
 문서의 명령 예시는 이 단계에서 고른 값을 `$AGENT`, `$MODEL`, `$EFFORT` 변수로 받는다.
 기본으로 뺀 모델은 아래 「기본 후보에서 뺀 모델」 이 정하고, 사용자나 오버레이가 지정하면 그것을 따른다.
 사용 한도에 걸렸을 때의 모델 변경은 아래 「사용 한도에 걸렸을 때」 표를 따른다.
@@ -24,16 +24,29 @@
 계획서의 구체성과 필요한 탐색에 따라 고른다.
 인증과 권한 작업도 계획서에 수정 위치와 검증 명령이 있으면 첫 행을 따른다.
 
-| Task 성격 | 모델 | effort |
-| --- | --- | --- |
-| 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `medium` |
-| 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화, 작은 분기와 단위 테스트) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
-| 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
-| 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | `medium`, 같은 Task 가 실패하면 `high` |
-| 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium` 시작, sol `high` |
-| 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작. 실측 전이다. 두세 작업에 써 본 뒤 확정한다 |
-| 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델. 실제로 다른 제공자가 되는지는 아래 「리뷰 제공자」 를 본다 | `medium` |
-| 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
+| id | Task 성격 | 모델 | effort |
+| --- | --- | --- | --- |
+| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`(결정이 닫혀 질문 없이 끝낼 Task 만), Claude Sonnet 5.5 | sol `low`, Sonnet `medium` |
+| `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화, 작은 분기와 단위 테스트) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
+| `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
+| `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`(결정이 닫혀 질문 없이 끝낼 Task 만), Claude Sonnet 5.5 | `medium`, 같은 Task 가 실패하면 `high` |
+| `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
+| `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작. 실측 전이다. 두세 작업에 써 본 뒤 확정한다 |
+| `review` | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델. 실제로 다른 제공자가 되는지는 아래 「리뷰 제공자」 를 본다 | `medium` |
+| `security-review` | 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
+
+- 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
+- sol 은 사용자 결정이 남은 Task 에 맞지 않는다. sol `high` 는 질문이 PR 당 2.17, 코디네이터 지시가 3.94 로 가장 많았다([표 2](../../../docs/features/orch-routing/evidence.md)). 결정이 남은 Task 는 Claude 로 띄운다.
+
+### Opus `high`
+
+Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄에 「high 근거: medium 실패 <dispatch id>」 나 「high 근거: 사용자 지정 YYYY-MM-DD」 를 적는다.
+
+- 근거로 적는 dispatch 는 그 저장소에서 Opus `medium` 으로 띄운 dispatch 다. 브랜치는 달라도 된다. 실패였는지는 코디네이터가 판단한다.
+- 같은 크기에서 Opus `high` 는 `medium` 보다 준비가 두 배 늦고 비용이 두 배 남짓인데, 품질 차이는 없었다.
+- 지시서의 83% 가 Opus `high` 였고, 사용 한도에 걸린 PR 은 모두 Opus 였다.
+- 수치와 표본은 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다(측정 2026-11-05, ai-analysis PR 486건).
+- Sonnet `high` 와 sol `high` 는 이 규칙 밖이다. 위 표의 effort 칸을 따른다.
 
 ### 두 모델을 나란히 둔 행
 
@@ -83,15 +96,15 @@
 
 비교 근거다(2026-10-01 공식 자료 조사, Claude 행은 2026-10-30 claude-api 스킬로 재확인, `gpt-6.1-sol` 과 `gpt-6-astra` 행은 2026-10-30 공식 문서와 `codex debug models`(codex-cli 0.166.0)로 확인, `gpt-6.1-terra` 행은 2026-10-28 확인. 값이 바뀌면 아래 출처에서 다시 확인한다).
 
-| 모델 | 공식 권장 용도 | 공식 effort 시작점 | 입력 / 출력 ($/1M 토큰) | 상대 속도 |
-| --- | --- | --- | --- | --- |
-| `gpt-6-astra` | 가장 어려운 작업. 복잡한 추론, 코딩, 컴퓨터 사용, 조사, 문서 작성 | 공식 문서에 기본값 없음. `codex debug models` 기본값은 `medium` | 10 / 50 | 공식 수치 없음 |
-| `gpt-6.1-sol` | 복잡한 코딩, 컴퓨터 사용, 전문 작업. 공식 설명은 「astra 에 가까운 성능을 낮은 가격에」 | 공식 문서와 `codex debug models` 모두 `medium`(기본) | 2 / 10 | Fast 2배(사용량 증가) |
-| `gpt-6.1-terra` | 시각 추론, 정밀한 컴퓨터 사용, 분명하고 자연스러운 글쓰기 | 기본 `medium`. Codex 안내에 시작점이 없고 `codex debug models` 기본값은 `low` | 1 / 5 | 공식 수치 없음 |
-| `gpt-6-luna` | 집중된 대량 작업, focused coding | `high` | 0.10 / 0.50 | Fast 1.5배 |
-| Claude Sonnet 5.5 | 일상 코딩과 에이전트 | 잘 정의된 Task 는 `medium`, 어렵거나 긴 Task 는 `high`(기본) | 2 / 10 | Fast |
-| Claude Opus 5.5 | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
-| Claude Haiku 5.5 | 분류, 추출, 라우팅 같은 대량·저지연 작업 | `medium`(기본). 짧은 도구 작업은 `low`, 긴 에이전트 작업은 `high` | 0.10 / 0.50 (프롬프트 10만 토큰 초과 요청은 0.50 / 2.50) | Fastest |
+| 모델 | 모델 id | 공식 권장 용도 | 공식 effort 시작점 | 입력 / 출력 ($/1M 토큰) | 상대 속도 |
+| --- | --- | --- | --- | --- | --- |
+| `gpt-6-astra` | `gpt-6-astra` | 가장 어려운 작업. 복잡한 추론, 코딩, 컴퓨터 사용, 조사, 문서 작성 | 공식 문서에 기본값 없음. `codex debug models` 기본값은 `medium` | 10 / 50 | 공식 수치 없음 |
+| `gpt-6.1-sol` | `gpt-6.1-sol` | 복잡한 코딩, 컴퓨터 사용, 전문 작업. 공식 설명은 「astra 에 가까운 성능을 낮은 가격에」 | 공식 문서와 `codex debug models` 모두 `medium`(기본) | 2 / 10 | Fast 2배(사용량 증가) |
+| `gpt-6.1-terra` | `gpt-6.1-terra` | 시각 추론, 정밀한 컴퓨터 사용, 분명하고 자연스러운 글쓰기 | 기본 `medium`. Codex 안내에 시작점이 없고 `codex debug models` 기본값은 `low` | 1 / 5 | 공식 수치 없음 |
+| `gpt-6-luna` | `gpt-6-luna` | 집중된 대량 작업, focused coding | `high` | 0.10 / 0.50 | Fast 1.5배 |
+| Claude Sonnet 5.5 | `claude-sonnet-5-5` | 일상 코딩과 에이전트 | 잘 정의된 Task 는 `medium`, 어렵거나 긴 Task 는 `high`(기본) | 2 / 10 | Fast |
+| Claude Opus 5.5 | `claude-opus-5-5` | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
+| Claude Haiku 5.5 | `claude-haiku-5-5` | 분류, 추출, 라우팅 같은 대량·저지연 작업 | `medium`(기본). 짧은 도구 작업은 `low`, 긴 에이전트 작업은 `high` | 0.10 / 0.50 (프롬프트 10만 토큰 초과 요청은 0.50 / 2.50) | Fastest |
 
 - 보안 리뷰 행의 근거: 2026-10-20 인프라 저장소의 PR 리뷰를 Codex worker 에 맡겼더니 symlink 덮어쓰기, 토큰 유출 경로, 컨테이너 권한 같은 공격 경로를 재현하는 내용에서 OpenAI 의 보안 요청 제한(「This content can't be shown」)에 걸려 리뷰가 끝나지 않았다. Claude Sonnet 하위 에이전트로 옮기자 끝났다. 구현한 쪽이 Claude 라서 다른 제공자 리뷰어가 필요하면, 공격 재현이 필요 없는 범위만 Codex 에 맡기고 나머지는 구현에 관여하지 않은 Claude 에이전트가 본다
 - worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
@@ -106,10 +119,11 @@
 
 공식 자료만으로는 같은 Task 에서 어느 모델이 나은지 알 수 없다. terra 처럼 「실측 전」 인 행을 확정하려면 PR 마다 실측이 쌓여야 한다.
 
-- **형식.** PR 하나에 JSON 한 줄이다. 필드는 `pr`, `repo`, `agent`, `model`, `effort`, `task`(위 모델 표의 행 이름), `additions`, `deletions`, `review_rounds`(리뷰 판정 횟수), `ci_failures`(CI 실패 횟수), `minutes`(띄운 때부터 머지까지), `merged_at` 이다
-- **쓰는 자리.** orch 상태 폴더의 `routing-log.jsonl` 이다. 띄운 worker 기록(`state/launched-workers/<dispatch>.json`)에 지금은 에이전트, 모델, effort 가 없어 함께 더한다
-- **쓰는 주체.** `finish-pr` 나 머지 큐가 머지 직후 그 기록과 PR 정보를 합쳐 쓴다. 구현은 후속으로 남겼다
-- **다시 보는 주기.** 기록이 한 행에 열 건 쌓이거나 한 달이 지나면 행별로 모아 이 표의 후보와 effort 를 다시 본다
+- **첫 측정.** 2026-11-05, ai-analysis 저장소 orch worker PR 486건. 결과 품질은 모델과 effort 사이 차이가 작았고, Opus `high` 는 같은 크기에서 준비와 비용이 `medium` 의 두 배쯤이었다. 한 저장소만 본 표라 Task 를 무작위로 배정하지 않았다. 표와 한계는 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다
+- **형식.** PR 하나에 JSON 한 줄이다. 키는 스펙 [「기록 항목」](../../../docs/features/orch-routing/spec.md) 을 따른다. 토큰만 남기고 금액은 집계 때 그때의 가격표로 계산하며, 메시지와 지시서 본문은 남기지 않는다
+- **쓰는 자리.** `<orch 루트>/state/routing-log.jsonl` 이다
+- **쓰는 주체.** 머지된 PR 은 `finish-pr` 가, 머지 없이 닫힌 PR 과 마무리가 빠진 머지 PR 은 `cleanup-sweep` 이 쓴다. 구현 중이다. 스펙은 [`spec.md`](../../../docs/features/orch-routing/spec.md) 다
+- **다시 보는 주기.** 기록이 한 행에 열 건 쌓이거나 한 달이 지나면 행별로 모아 이 표의 후보와 effort 를 다시 본다. 수치마다 측정일과 표본 수를 함께 적는다
 
 ## effort
 
@@ -119,8 +133,8 @@
 | --- | --- |
 | `low` | 계획서에 수정 위치와 검증 명령이 정해진 sol 구현. Claude 에서는 속도와 가격이 중요한 단순 Task 와 서브에이전트 |
 | `medium` | 지연, 성능, 비용의 균형점. 모델과 Task 에 따라 위 선택 표를 따른다 |
-| `high` | 어려운 디버깅이나 깊은 계획. 같은 Task 가 `medium` 에서 실패했을 때 올린다 |
-| `xhigh`, `max` | 기본으로 쓰지 않는다. 같은 Task 에서 `high` 보다 낫다는 결과가 있을 때만 |
+| `high` | 어려운 디버깅이나 깊은 계획. 같은 Task 가 `medium` 에서 실패했을 때 올린다. Opus 는 위 「Opus `high`」 의 근거가 있을 때만 |
+| `xhigh`, `max` | 기본으로 쓰지 않는다. 같은 Task 에서 `high` 보다 낫다는 결과가 있을 때만. Opus 는 `high` 와 같은 「Opus `high`」 근거가 필요하다 |
 | `ultra` | worker 에 쓰지 않는다. 스스로 subagent 를 띄워 코디네이터가 모르는 작업자가 생긴다 |
 
 높은 effort 는 추가 작업과 비용을 늘릴 수 있다.
