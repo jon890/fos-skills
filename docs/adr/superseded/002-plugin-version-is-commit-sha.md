@@ -1,10 +1,10 @@
 ## ADR-002: 플러그인 버전을 쓰지 않고 커밋 SHA 를 버전으로 삼는다
 
 - **status**: `superseded`
-- **대체된 부분**: [ADR-019](../019-plugin-version-auto-bump.md) 가 plugin.json 에 version 을 두고 main 머지마다 자동으로 올리기로 바꿨다(사용자 결정 2026-11-02). 아래 실측은 그 결정의 근거로 남긴다.
 - **결정**: `.claude-plugin/plugin.json` 에 `version` 을 쓰지 않는다. 마켓플레이스 항목에도 쓰지 않는다.
   마켓플레이스는 GitHub 저장소 `jon890/fos-skills` 를 git 소스로 등록한다. 스킬을 만든 머신도 같은 방식으로 설치한다.
   스킬마다 두는 `metadata.version` 과 `CHANGELOG.md` 는 변경 추적용으로 그대로 둔다.
+- **대체된 부분**: [ADR-019](../019-plugin-version-auto-bump.md) 가 plugin.json 에 version 을 두고 main 머지마다 자동으로 올리기로 바꿨다(사용자 결정 2026-11-02). 아래 실측은 그 결정의 근거로 남긴다.
 - **맥락**: `version` 을 쓰면 그 문자열이 바뀌어야 설치한 쪽이 새 복사본을 받는다. 이 저장소는 스킬 하나를 며칠에 한 번꼴로 고치므로, 고칠 때마다 스킬 버전과 플러그인 버전을 함께 올려야 한다.
   README 는 스킬 버전을 배포 핀이 아니라 변경 추적으로 정했고 git 태그도 만들지 않는다.
   2026-10-01 에 Claude Code 2.1.286 과 격리된 `CLAUDE_CONFIG_DIR` 로 확인한 동작은 다음과 같다.

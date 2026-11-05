@@ -217,7 +217,7 @@ base 동기화 커밋은 지적에 대응하지 않으므로 이 수에 넣지 �
 검증 명령이 문서화돼 있지 않으면 어떤 명령으로 검증할지 사용자에게 묻는다.
 
 **문서 링크와 ADR 은 저장소 명령과 별도로 plan 번들의 검사기로 본다.** 저장소 CI 에 이 검사의 사본이 없어 이 단계가 마지막 관문이다.
-`$BASE` 는 1단계에서 받은 PR 의 base 브랜치(`origin/<base>`)다. `$ADR_DIRS`, `$ADR_ARGS` 를 만드는 법은 [plan 의 monorepo.md 「ADR 문서 검사」](../plan/references/monorepo.md#adr-문서-검사)가 소유한다.
+`$BASE`, `$ADR_DIRS`, `$ADR_ARGS` 를 만드는 법은 [plan 의 monorepo.md 「ADR 문서 검사」](../plan/references/monorepo.md#adr-문서-검사)가 소유한다.
 
 ```bash
 # cwd: 대상 저장소 루트

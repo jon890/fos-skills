@@ -116,7 +116,8 @@ spec, technical-design, review-fix, docs-audit 는 `$PLAN_SKILL_DIR/scripts/adr-
 - ADR 세 값은 **루트** `.claude/plan-overlay.md` 에서만 읽는다. 검사기가 저장소 전체를 보므로 하위 프로젝트 오버레이에 나눠 적지 않는다.
 - `$ADR_DIRS` 는 「ADR 폴더」 의 인라인 코드마다 `--adr-dir <값>` 이다. 값이 없으면 비운다(기본 `docs/adr`).
 - `$ADR_ARGS` 는 `$ADR_DIRS` 에 「ADR 색인 생성」 이 「한다」 면 `--index generated`, 「ADR 대체 배치」 가 「폴더 없음」 이면 `--flat` 을 더한 것이다.
-- `$BASE` 는 orch 지시서의 base 브랜치(`origin/<base>`)다. 지시서가 없으면 `git symbolic-ref --short refs/remotes/origin/HEAD` 다.
+- `$BASE` 는 orch 지시서의 base 브랜치(`origin/<base>`)다. review-fix 는 그 PR 의 base 브랜치다. 둘 다 없으면 `git symbolic-ref --short refs/remotes/origin/HEAD` 다.
+- `$ADR_DIRS`, `$ADR_ARGS` 는 인자 목록을 가리키는 표기다. 문자열 변수 하나에 담아 펼치지 않고 인자를 하나씩 적는다. zsh 는 변수를 낱말로 나누지 않아 인자 하나로 넘어간다. `*` 가 든 값은 셸이 먼저 풀지 않게 따옴표로 감싼다(`--adr-dir 'modules/*/docs/adr'`).
 
 ```bash
 # cwd: 대상 저장소 루트
@@ -124,7 +125,7 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index $ADR_DIRS          # 색�
 node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_ARGS
 ```
 
-`--changed-since` 는 바뀐 파일의 위반만 종료 코드로 세고, 나머지는 `PR 밖 위반:` 아래에 낸다.
+`PR 밖 위반:` 의 뜻과 귀속 규칙은 검사기 머리 주석이 소유한다. 부르는 스킬은 그 아래 줄을 고치지 않는다.
 링크 없는 ADR 식별자(`ADR_UNLINKED`)는 후보 경로를 보고 작성자가 링크를 건다. 검사기는 본문을 고치지 않는다.
 색인 생성을 켠 저장소는 `INDEX.md` 를 직접 고치지 않고 `write-index` 를 다시 돌린다.
 

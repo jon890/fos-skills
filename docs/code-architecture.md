@@ -74,7 +74,7 @@
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
-| `skills/plan/scripts/adr-docs.ts` | 저장소 Markdown 의 링크·앵커, 링크 없는 ADR 식별자, ADR 색인, 번호 중복, 대체된 ADR 위치를 검사하고 색인을 만든다. 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다. `tsconfig.json` 이 `skills/plan/scripts/**/*.ts` 를 타입 검사한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
+| `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.sh` |
 | `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용 진입을 정책 파일과 대조한다. 출력 줄과 종료 코드는 머리 주석이 소유한다 | `scripts/tests/runtime-policy.spec.ts`, CI, worker |

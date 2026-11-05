@@ -24,7 +24,7 @@
 ```text
 나:   docs 감사해줘
 
-스킬: 범위는 docs/ 와 README.md, ADR 디렉터리는 docs/adr 로 잡았습니다.
+스킬: 범위는 docs/ 와 README.md, ADR 폴더는 plan 오버레이 기본값 docs/adr 로 잡았습니다.
       정적 검사에서 1곳이 걸렸고, 각 축으로 코드와 대조했습니다.
         Critical  [부패] docs/flow.md:42
                   문서는 재시도 3회, 코드는 5회 (RetryPolicy.java:18)

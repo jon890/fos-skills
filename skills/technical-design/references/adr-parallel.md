@@ -52,7 +52,7 @@ docs/adr/
 
 ## INDEX.md
 
-색인 생성을 켠 저장소는 `adr-docs.ts write-index` 가 만든 형식(「현행」·「대체됨」 두 표, 열 넷)이 원본이다. 행을 직접 고치지 않고, 충돌하면 `write-index` 를 다시 돌린다.
+색인 생성을 켠 저장소는 `adr-docs.ts write-index` 가 만든 형식이 원본이다(형식은 검사기 머리 주석). 행을 직접 고치지 않고, 충돌하면 `write-index` 를 다시 돌린다.
 아래는 생성을 켜지 않은 저장소의 형식이다.
 
 색인은 ADR 마다 한 행이다. 열은 식별자, 한 줄 요약, status 다. 식별자 칸은 그 ADR 파일로 가는 링크로 쓴다.
@@ -82,7 +82,7 @@ docs/adr/
 
 색인과 파일이 어긋나면 링크가 깨지거나 ADR 이 목록에서 빠진다. 저장소마다 테스트를 따로 두지 않고 plan 번들의 `adr-docs.ts check` 가 잡는다.
 spec, technical-design, review-fix, docs-audit 가 작성 단계에서 부르므로 CI 에 사본을 두지 않는다.
-날짜 식별자(`ADR-YYYYMMDD-slug.md`)는 파일 이름에서 읽고, 같은 날 ADR 은 슬러그로 갈린다. 인자와 판정은 [plan 의 monorepo.md 「ADR 문서 검사」](../../plan/references/monorepo.md#adr-문서-검사)와 검사기 머리 주석이 소유한다.
+인자와 판정(날짜 식별자 포함)은 [plan 의 monorepo.md 「ADR 문서 검사」](../../plan/references/monorepo.md#adr-문서-검사)와 검사기 머리 주석이 소유한다.
 
 ## 사용자 결정 로그와의 관계
 
