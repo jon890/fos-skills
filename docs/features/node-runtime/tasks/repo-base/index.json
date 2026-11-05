@@ -45,7 +45,7 @@
     },
     {
       "what": "PR10 tools/browser-driver 와 옛 이름 진입 하나",
-      "why": "스펙 DECISION6, DECISION3. 위치는 보드 browser-driver-placement 가 정한다",
+      "why": "스펙 DECISION6, DECISION3. 먼저 skills/browser/browser-driver/ 로 이름만 바꾸는 이동을 한다(설계 DECISION13)",
       "after": "PR9 머지"
     },
     {

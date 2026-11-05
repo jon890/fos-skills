@@ -47,7 +47,7 @@
   - `plan`: `skills/plan/`
   - `harness-cleanup`: `skills/harness-cleanup/`
   - `mac-cleanup`: `skills/mac-cleanup/`
-  - `browser-driver`: `tools/browser-driver/`
+  - `browser-driver`: `tools/browser-driver/`(PR10 이 `skills/browser/browser-driver/` 로 옮긴다. 설계 DECISION13)
   - 위 목록에 없는 위반 파일이 나오면 가장 가까운 영역에 넣고 PR 본문에 적는다.
 - `legacy`: 빈 배열. 옛 이름 진입(node shebang 의 JS)의 경로를 담는다.
 - `entry_js`: 지금 있는 JS 진입. `bin/orch`, `extensions/work-board/hooks/event-tags.js`, `extensions/work-board/hooks/register.js`, `skills/orch/scripts/lib/guard/gh`, `skills/orch/scripts/lib/guard/orca`. 착수 때 2의 분류로 다시 모아 맞춘다.

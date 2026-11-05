@@ -53,7 +53,7 @@
 - 저장소 밖 개인 파일(`~/.claude/scripts/` 의 개인 `.py` 훅). korean-check README 가 팀원에게 안내하는 훅 경로는 범위 안이다.
 - 스킬이 다른 저장소의 `.py`, `.sh` 를 감사하는 기능(`harness-cleanup` 의 스크립트 감사 등). 구현 언어만 바뀌고 감사 대상은 그대로다.
 - orch 가 저장소 핸들러로 받은 사용자 스크립트를 확장자로 띄우는 경로(`skills/orch/scripts/lib/proc.ts` 의 `scriptCommand`).
-- `tools/browser-driver` 의 위치. 보드 `browser-driver-placement` 에서 따로 정한다. 이 기능은 그 결정을 전제로 삼지 않는다.
+- `tools/browser-driver` 의 위치를 정하는 일. 보드 `browser-driver-placement` 에서 사용자가 정했다(2026-11-05). 영역 10 이 `skills/browser/` 안으로 옮기고, 팀 사본 자리는 `tools/browser-driver` 로 둔다. 자세한 것은 설계 DECISION13 이다.
 - node 테스트의 속도 개선과 공통 testkit. `docs/features/test-speed/` 가 맡는다. 이 전환은 그 testkit 을 쓴다.
 - 팀 저장소 자체의 Python(팀 스킬 `create-pr`, `weekly-report` 등과 팀 `scripts/`).
 

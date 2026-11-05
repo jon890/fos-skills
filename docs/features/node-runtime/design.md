@@ -56,13 +56,36 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
 - PR1 은 테스트 helper 를 쓰지 않는다. 그래도 시작 시점은 스펙 DECISION5 대로 testkit 머지 뒤다. 이 기능이 testkit 을 따로 만들지 않는다. 같은 helper 가 두 벌 생긴다.
 - 복사본 대조에 쓰는 `kit` 원본 위치(`modules/kit/`)는 처음 복사하는 PR 이 `scripts/runtime-policy.json` 의 `kit_sources` 에 적는다.
 
+### browser-driver 를 browser 스킬 안으로 옮긴다
+
+사용자가 2026-11-05 보드 `browser-driver-placement` 에서 정했다(DECISION13). 옮기는 일은 영역 10(PR10)이 한다.
+
+- PR10 이 `tools/browser-driver/` 를 `skills/browser/browser-driver/` 로 옮긴다. 폴더 안의 배치(`browser_driver.py`, `driver/`, `tests/`, README)는 그대로 둔다. 내보내기가 폴더 하나를 팀 경로로 옮기면 되고, 이동 커밋이 경로 앞부분만 바꾼다.
+- PR10 의 커밋 순서는 다음과 같다. 이동을 먼저 끝내야 옛 구현과 새 구현을 같은 자리에서 비교할 수 있다(REQ3).
+  1. 이름만 바꾸는 이동(`git mv`). 내용을 고치지 않아 git 이 이력을 잇는다. 이 커밋에서는 부르는 쪽이 아직 옛 자리를 가리킨다. 다음 커밋과 함께 머지되므로 PR 머지 기준으로는 깨지지 않는다.
+  2. 아래 깨지는 곳을 새 자리로 고친다.
+  3. 이후는 「동등성 확인」 의 두 커밋 방식이다. 명령 경계 테스트가 처음에는 새 자리의 옛 `.py` 를 가리킨다.
+- 2026-11-05 조사로 찾은 깨지는 곳이다. 앞 영역 PR 이 옮긴 파일은 `.ts` 이름으로 바뀌어 있다. PR10 은 머지 전에 `git grep -n 'tools/browser-driver'` 를 다시 돌려 이 목록을 갱신한다.
+  - `driver/config.py` 41~45줄: 플러그인 캐시 안의 경로를 `tools/browser-driver/driver` 깊이로 판정한다. 새 자리는 경로 조각이 하나 더 많다.
+  - `skills/browser/SKILL.md` 64줄: 드라이버 후보 `$SKILL_DIR/../../tools/browser-driver/browser_driver.py`
+  - `export-only-skills/content-preview/scripts/show-preview.sh` 54줄: 위로 올라가며 `tools/browser-driver/` 를 찾는다
+  - `skills/presentation/scripts/check-deck.py` 163줄
+  - `scripts/export-to-team.sh` 의 `SHARED_TOOLS` 와 `tools/` 접두
+  - `scripts/test-plugin-install.sh` 224줄: 캐시의 `tools/browser-driver/browser_driver.py` 실행 권한
+  - CI 의 `tools/*/tests` 패턴(node 테스트와 Python 루프 둘 다). 새 자리 `skills/browser/browser-driver/tests` 는 `skills/*/tests` 패턴에 걸리지 않으므로 PR10 이 패턴을 더한다
+  - `~/.claude/scripts/browser-driver` 링크. README 「링크로 설치」 의 `ln` 줄과 `docs/code-architecture.md` 의 드라이버 찾는 순서·링크 행을 새 자리로 고친다. 사용자의 개인 링크는 REQ7 과 같이 머지 뒤 후속 작업으로 바꾼다
+- 팀 사본 자리는 `tools/browser-driver` 로 고정한다. 내보내기가 원본 경로(`skills/browser/browser-driver/`)와 팀 경로(`tools/browser-driver/`)를 나눠 갖는다. `browser` 스킬은 내보내지 않으므로 드라이버 폴더만 팀 경로로 싣는다. 그래서 팀 래퍼와 팀 테스트의 경로는 그대로이고, 본체 이름만 마지막 팀 PR 이 바꾼다(「팀 저장소」 절).
+- 옛 이름 진입 `browser_driver.py` 는 옛 자리 `tools/browser-driver/browser_driver.py` 에 둔다. 개인 링크와 저장소 밖 호출이 이 경로를 부른다. 이 진입은 새 자리의 `.ts` 를 import 한다. DECISION1 의 경계 밖이지만 내보내지 않는 진입이고, 플러그인 캐시는 저장소 루트 전체를 가져 경로가 깨지지 않는다. 팀 사본에도 옛 이름 진입이 필요한지는 PR10 의 계획이 팀 저장소를 다시 찾아 정한다.
+- `tools/` 폴더는 DECISION17 의 major(이 저장소 다음 major)에 옛 이름 진입과 함께 지운다. 그 PR 이 CI 의 `tools/*/tests` 패턴과 이 설계의 「도구(`tools/<이름>`)」 경계 문구도 지운다.
+- ADR-021 과의 관계: ADR-021 은 「스킬 전용 코드는 소유 스킬 안에 둔다」 이다. browser-driver 는 `browser`, `content-preview`, `presentation` 이 함께 쓰지만 소유자는 `browser` 스킬 하나다. `browser` 스킬이 드라이버의 사용 절차와 공간 분리·로그인 규칙을 갖고, 드라이버의 변경 이력도 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17). 나머지 둘은 드라이버를 import 하지 않고 자식 프로세스로 부른다(DECISION1). 그래서 `browser` 스킬 안에 두는 것이 ADR-021 의 소유 스킬 규칙에 맞는다. 다른 단위가 import 해야 하는 공용 코드였다면 `modules/` 의 몫이다.
+
 ### 진입 파일
 
 | 종류 | 꼴 | 근거 |
 | --- | --- | --- |
 | 명령 | `<이름>.ts`. 첫 줄 `#!/usr/bin/env node`, 실행 권한. 이름은 옛 파일의 확장자만 바꾼다(`korean-style-check.ts`, `check_feature.ts`) | 스펙 REQ3 은 옵션과 출력만 지키지만, 이름을 바꾸지 않아야 문서와 다른 저장소 호출의 바꿀 곳이 확장자 하나다 |
 | git 훅 | `githooks/<훅 이름>`. 확장자 없는 node shebang JS 가 `fs.realpathSync(__filename)` 기준으로 `githooks/<훅 이름>.ts` 를 `import()` 한다. 타입 문법은 `.ts` 에만 둔다 | git 은 정해진 이름만 실행한다. node 는 확장자 없는 파일의 타입을 지우지 않는다. `.git/hooks` 의 링크로 불려도 realpath 기준이라 원본 옆의 `.ts` 를 찾는다(2026-11-05 실험). orch 가드 shim 과 같은 꼴이다 |
-| 옛 이름 진입 | `korean-style-check.py`, `check-readability.py`, `browser_driver.py` 자리에 같은 꼴의 node shebang JS. 「옛 이름 진입」 절 | 스펙 DECISION3 |
+| 옛 이름 진입 | `korean-style-check.py`, `check-readability.py`, `browser_driver.py` 자리에 같은 꼴의 node shebang JS. `browser_driver.py` 는 옮기기 전 자리 `tools/browser-driver/` 에 둔다. 「옛 이름 진입」 절 | 스펙 DECISION3 |
 | orch doctor | 새 진입을 두지 않는다. 지금 doctor 는 `orch doctor` 로 불리고, 플러그인 `bin/orch` 실행기가 이미 `NODE-TOO-OLD` 를 낸다(`bin/orch` 33줄, 92줄). 옛 진입 `orch-doctor.py` 와 `ts_shim.py` 는 orch-cli 의 옛 이름 정리 PR(그 스펙의 DECISION13)이 지운다 | 스펙 DECISION14. 옛 이름을 끝내는 때는 orch-cli 스펙이 소유한다. 이 기능이 먼저 지우면 그 결정과 겹친다 |
 
 JS(`.js`, `.mjs`, `.cjs`, 확장자 없는 JS)는 타입 제거가 닿지 않는 진입에만 쓴다. 새 ADR 이 이 예외를 적고 `runtime-policy.spec.ts` 가 목록(`entry_js`) 밖의 `.js`, `.mjs`, `.cjs` 를 막는다. 이미 있는 JS(work-board 의 hooks 모듈, orch 가드 shim, 플러그인 `bin/orch`)는 PR1 이 그 목록에 적는다.
@@ -133,7 +156,7 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 
 `.github/workflows/ci.yml` 은 PR1 이 아래처럼 바꾼다. 필수 검사(branch protection)가 없어(스펙 실측) job 이름을 바꿔도 머지가 막히지 않지만, 이름은 그대로 둔다.
 
-- `Plugin tests` job 의 node 테스트 단계가 `node --test --test-concurrency=4` 에 `scripts/tests/*.spec.ts`, `skills/*/tests/*.spec.ts`, `export-only-skills/*/tests/*.spec.ts`, `tools/*/tests/*.spec.ts`, `extensions/*/tests/*.spec.ts` 다섯 패턴을 준다. 영역을 옮기면 CI 를 고치지 않아도 그 테스트가 들어간다.
+- `Plugin tests` job 의 node 테스트 단계가 `node --test --test-concurrency=4` 에 `scripts/tests/*.spec.ts`, `skills/*/tests/*.spec.ts`, `export-only-skills/*/tests/*.spec.ts`, `tools/*/tests/*.spec.ts`, `extensions/*/tests/*.spec.ts` 다섯 패턴을 준다. 영역을 옮기면 CI 를 고치지 않아도 그 테스트가 들어간다. 예외는 폴더 자리까지 옮기는 PR10 이다(「browser-driver 를 browser 스킬 안으로 옮긴다」).
 - 타입 검사의 `tsconfig.json` 은 테스트가 아닌 실행 코드를 본다. 영역 PR 이 처음 `.ts` 를 들일 때 `include` 에 `<단위>/scripts/**/*.ts` 와 진입 `.ts`(`githooks/*.ts`)를 더한다. 테스트 폴더는 지금처럼 넣지 않는다. `extensions/work-board/tests/*.test.ts` 가 `claude-code/testing` 을 import 해 검사가 깨진다.
 - `Python tests` job 의 루프는 `test_*.py` 가 하나도 없는 폴더를 건너뛴다. 지금의 이름 목록 건너뛰기는 지운다.
 - PR11 이 `Python tests` job 을 통째로 지운다. `jq` 설치도 함께 없어진다. `zsh` 는 `harness-cleanup` 의 문서 코드 블록 실행(`run_doc_snippets`, bash 와 zsh 양쪽에서 돈다)이 쓴다. PR8 이 그 테스트를 옮기며 `Plugin tests` job 에 `zsh` 설치를 옮긴다.
@@ -200,7 +223,7 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 | 7 | `plan` | `plan_number.sh` 는 원격 브랜치를 읽는다. 다른 문서가 가장 많이 부르는 영역이다 |
 | 8 | `harness-cleanup` | 다른 저장소의 `.py`, `.sh` 를 감사하는 판정은 그대로 둔다. 감사 대상 확장자 목록을 옮기며 바꾸지 않는다. `run_doc_snippets` 가 zsh 를 쓰므로 `Plugin tests` job 에 zsh 설치를 옮긴다 |
 | 9 | `mac-cleanup` | 테스트 대부분이 내부 함수 테스트다. 명령 경계로 관측되는 사례부터 옮긴다. `survey_gradle.sh` 는 읽기 전용이다 |
-| 10 | `tools/browser-driver` | 백엔드 넷(ego, orca, cmux, agent_browser)과 `install` 이 거는 링크. 위치 결정(`browser-driver-placement`)이 이때까지 나면 그 결정을 따른다 |
+| 10 | `tools/browser-driver` | 백엔드 넷(ego, orca, cmux, agent_browser)과 `install` 이 거는 링크. 먼저 `skills/browser/browser-driver/` 로 이름만 바꾸는 이동을 하고 옮긴다. 커밋 순서와 깨지는 곳은 「browser-driver 를 browser 스킬 안으로 옮긴다」 |
 | 11 | 마무리 | Python job 삭제, `pending` 비우기, README 와 `docs/code-architecture.md` 의 남은 `python3` 줄 정리 |
 
 ## 결정
@@ -219,3 +242,4 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 | DECISION10 | orch doctor 의 옛 진입 | 이 기능이 지우지 않는다. orch-cli 의 옛 이름 정리 PR 이 지운다. 버전 안내는 `bin/orch` 가 맡는다 | 작성자 | orch-cli 스펙 DECISION13 이 옛 이름을 끝내는 때를 소유한다. `bin/orch` 가 이미 `NODE-TOO-OLD` 를 낸다 |
 | DECISION11 | 최소 Node 버전의 원본 | `scripts/runtime-policy.json` 의 `min_node`. 진입들의 `MIN_NODE` 줄을 저장소 테스트가 대조한다 | 작성자 | 진입끼리 import 할 수 없어 값이 여러 곳에 있다 |
 | DECISION12 | 옛 이름 진입과 새 구현의 접점 | 새 `.ts` 가 `main`, `runHook` 을 export 하고 `import.meta.main` 일 때만 스스로 돈다 | 작성자 | 진입이 훅 JSON 에 안내를 끼우려면 결과를 받아야 한다. orch 가드 shim 의 꼴이다 |
+| DECISION13 | browser-driver 의 자리 | PR10 이 `skills/browser/browser-driver/` 로 옮긴다. 첫 커밋은 이름만 바꾸는 이동이다. 팀 사본 자리는 `tools/browser-driver` 로 고정하고, `tools/` 폴더는 DECISION17 의 major 에 옛 이름 진입과 함께 지운다 | 사용자 2026-11-05 | 보드 `browser-driver-placement` 의 결정이다. git 이력과 REQ3 의 옛 구현·새 구현 비교를 지킨다. 소유자가 `browser` 스킬 하나라 ADR-021 의 소유 스킬 규칙에 맞는다. 폴더 안 배치를 그대로 두는 것은 작성자가 정했다 |
