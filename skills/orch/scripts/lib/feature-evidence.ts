@@ -1,12 +1,14 @@
 // 기능 PR 의 완료 근거 형식. 의미와 실행 사실은 코디네이터가 확인한다.
 // 새 상태 저장소 없이 PR 본문을 읽고, 현재 HEAD 의 기록과 필수 검토 누락을 막는다.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { ghJson } from './gh.ts'
 import { loadConfig } from './config.ts'
 import { git } from './git.ts'
 import { pathOf } from './paths.ts'
 import { specsOnBranch, taskFirstLine } from './spec.ts'
+import { readLaunch } from './launched.ts'
+import { worktreePaths } from './workers.ts'
 
 export const EVIDENCE_START = '<!-- fos-feature-evidence -->'
 const END = '<!-- /fos-feature-evidence -->'
@@ -28,16 +30,33 @@ function withoutExamples(text: string): string {
   }).join('\n')
 }
 
-// 머지 큐를 직접 부른 경우에도 기본/설정 지시서에서 기능 경로를 찾는다.
+function implementationRequested(text: string): boolean {
+  return featureLoopRequested(text) && !/구현과 PR 은 코디네이터가 새 지시서로/.test(withoutExamples(text))
+}
+
+// 같은 브랜치를 이어 쓴 경우 마지막 dispatch 의 지시서를 우선한다. 기록은 dispatch 마다 한 번 쓰므로
+// 파일 수정 시각으로 순서를 정한다. 옛 기록에 branch 가 없으면 worktree 로 연결한다.
 export function featureBranch(repo: string, branch: string, explicit?: string): boolean {
   const config = loadConfig(repo)
   const configured = config.finish?.specs_dir
   if (configured !== undefined && typeof configured !== 'string') throw new Error('finish.specs_dir 는 경로 문자열이어야 한다')
+  const records = join(pathOf('state', repo), 'launched-workers')
+  if (existsSync(records)) {
+    const worktree = worktreePaths(repo).get(branch)
+    const launches = readdirSync(records).filter((name) => name.endsWith('.json')).flatMap((name) => {
+      const launch = readLaunch(repo, name.slice(0, -5))
+      if (!launch || !(launch.branch === branch || (!launch.branch && launch.worktree === worktree))) return []
+      return [{ launch, time: statSync(join(records, name)).mtimeMs }]
+    }).sort((a, b) => b.time - a.time)
+    const spec = launches[0]?.launch.spec
+    if (spec && existsSync(spec)) return implementationRequested(readFileSync(spec, 'utf8'))
+  }
+  // 띄운 기록이 없으면 기존처럼 기본/설정 폴더의 브랜치 지시서를 모두 본다.
   const dirs = [pathOf('specs', repo), explicit, configured].filter((v): v is string => Boolean(v))
   return dirs.some((dir) => {
     const full = isAbsolute(dir) ? dir : join(repo, dir)
     if (!existsSync(full)) return false
-    return specsOnBranch(full, branch).some((file) => featureLoopRequested(readFileSync(file, 'utf8')))
+    return specsOnBranch(full, branch).some((file) => implementationRequested(readFileSync(file, 'utf8')))
   })
 }
 

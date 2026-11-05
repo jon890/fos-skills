@@ -1,12 +1,37 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { baseMergesOnly, featureEvidenceProblem, featureLoopRequested } from '../scripts/lib/feature-evidence.ts'
+import { baseMergesOnly, featureBranch, featureEvidenceProblem, featureLoopRequested } from '../scripts/lib/feature-evidence.ts'
+import { recordLaunch } from '../scripts/lib/launched.ts'
 
 const HEAD = 'a'.repeat(40)
+test('dispatch 지시서를 우선 보고 기록이 없을 때만 브랜치 지시서를 모은다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-branch-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const loop = join(specs, 'spec-loop.md')
+  const docs = join(specs, 'spec-docs.md')
+  writeFileSync(loop, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+  writeFileSync(docs, '브랜치: `feat/test`\n## 할 일\n루프 없이: 문서 정정\n')
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+  recordLaunch(repo, { dispatch: 'old', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: loop })
+  utimesSync(join(repo, '.orch/state/launched-workers/old.json'), 1, 1)
+  recordLaunch(repo, { dispatch: 'new', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: docs })
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  writeFileSync(docs, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+  // 계획 전용 지시서는 구현 PR 의 완료 근거를 요구하지 않는다.
+  writeFileSync(docs, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n구현과 PR 은 코디네이터가 새 지시서로 맡긴다.\n')
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  rmSync(join(repo, '.orch/state/launched-workers'), { recursive: true })
+  writeFileSync(loop, readFileSync(docs, 'utf8'))
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+})
 const BODY = `<!-- fos-feature-evidence -->
 검증 커밋: ${HEAD}
 인수 검증: 통과 | REQ1 API 응답과 DB 상태 확인, PR 본문의 실행 기록
