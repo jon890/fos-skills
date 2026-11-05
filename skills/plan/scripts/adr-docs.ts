@@ -153,10 +153,12 @@ export function slugify(heading: string): string {
   return text.replace(/[^\p{L}\p{N}\p{M} _-]/gu, "").replace(/ /g, "-");
 }
 
-// 그 파일이 내는 앵커. 코드 블록 안 제목은 빼고, 같은 슬러그는 GitHub 처럼 번호를 붙인다.
+// 그 파일이 내는 앵커. 코드 블록 안 제목은 빼고, 같은 슬러그는 GitHub(github-slugger)처럼 번호를 붙인다.
+// 번호는 이미 쓴 앵커와 겹치지 않을 때까지 올린다. `foo`, `foo`, `foo-1` 이면 `foo`, `foo-1`, `foo-1-1` 이다.
 export function anchorsOf(text: string): Set<string> {
   const found = new Set<string>();
   const counts = new Map<string, number>();
+  const used = new Set<string>();
   const lines = prose(text, false);
   lines.forEach((line, i) => {
     for (const a of line.matchAll(HTML_ANCHOR)) found.add(a[1].toLowerCase());
@@ -166,9 +168,15 @@ export function anchorsOf(text: string): Set<string> {
     else if (i > 0 && SETEXT.test(line) && !NOT_PARAGRAPH.test(lines[i - 1]) && !SETEXT.test(lines[i - 1])) heading = lines[i - 1].trim();
     if (heading === null) return;
     const base = slugify(heading);
-    const n = counts.get(base) ?? 0;
-    counts.set(base, n + 1);
-    found.add(n === 0 ? base : `${base}-${n}`);
+    let slug = base;
+    if (used.has(base)) {
+      let n = counts.get(base) ?? 0;
+      do slug = `${base}-${++n}`;
+      while (used.has(slug));
+      counts.set(base, n);
+    }
+    used.add(slug);
+    found.add(slug);
   });
   return found;
 }

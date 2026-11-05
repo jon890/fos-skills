@@ -57,6 +57,10 @@ describe("순수 함수", () => {
     assert.equal(slugify("PR 크기 (예외)"), "pr-크기-예외");
   });
 
+  test("번호를 붙인 앵커와 겹치는 뒤 제목은 번호를 하나 더 붙인다", () => {
+    assert.deepEqual([...anchorsOf("# foo\n# foo\n# foo-1\n# foo\n")].sort(), ["foo", "foo-1", "foo-1-1", "foo-2"]);
+  });
+
   test("중복 제목은 -1 을 붙이고 코드 블록 안 제목은 뺀다", () => {
     const anchors = anchorsOf("# 절\n\n## 절\n\n```\n# 안\n```\n");
     assert.deepEqual([...anchors].sort(), ["절", "절-1"]);
