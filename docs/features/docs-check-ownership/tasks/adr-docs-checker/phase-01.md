@@ -24,12 +24,19 @@ plan 번들에 링크·앵커, 링크 없는 ADR 식별자, 색인, 번호 중�
 - plan 은 팀으로 내보내는 스킬이다. 검사기와 테스트는 자기 폴더와 Node 내장 모듈만 import 한다(설계 DECISION9). orch 의 `tests/fixtures/` 나 testkit 을 import 하지 않는다.
 - 테스트 꼴은 `skills/orch/tests/*.spec.ts` 처럼 `node:test` 와 `spawnSync` 로 임시 git 저장소에서 명령을 실행한다.
 
+## Blocked 조건
+
+- orch PR3(orch 스크립트 폴더 이동)이 main 에 머지되지 않았다 → `PHASE_BLOCKED: orch PR3 미머지`(스펙 DECISION7). `git log origin/main --oneline` 과 보드의 `orch-scripts-restructure` 로 확인한다.
+
 ## 의도 메모
 
 - 오버레이를 TypeScript 로 읽지 않는다. 값은 인자다(설계 DECISION2).
 - `--changed-since` 는 `git diff --name-status <ref>...HEAD` 와 `git status --porcelain -z`(미추적 포함)로 바뀐 파일과 지운·옮긴 파일을 안다. 지운 파일을 가리키는 깨진 링크는 바뀐 파일의 위반으로 친다(설계 DECISION4).
 - 색인 대체 관계에는 링크 글이 아니라 대상 파일의 식별자를 적는다. 링크 글과 대상이 어긋나도 위반으로 내지 않는다.
 - `write-index` 는 내용이 같으면 쓰지 않는다.
+- `--index ids` 의 색인 등재 집합: `INDEX.md` 의 모든 Markdown 링크 가운데 대상이 그 ADR 폴더(하위 폴더 포함)의 ADR 파일인 것을 모아, **대상 파일 이름의 식별자**를 등재로 본다. 목록형(`- [ADR-001](001-x.md): ...`)과 표형, 링크 글이 파일 이름인 꼴(`[001-x.md](001-x.md)`)을 모두 받고 식별자 세 꼴에 같게 동작한다. 링크가 없는 등재 줄은 세지 않는다. `INDEX.md` 가 없는 폴더는 색인 검사를 건너뛴다(`static_check.py` 의 `check_index` 와 같다). 생성 모드에서 `INDEX.md` 가 없으면 `INDEX_STALE` 다.
+- `check` 는 어떤 파일도 쓰지 않는다(스펙 REQ4).
+- 시작할 때 `scripts/run-node-tests.ts` 의 `DEFAULT_PATTERNS` 와 `.github/workflows/ci.yml` 의 `node --test` 줄을 읽어 지금 대상 묶음을 확인한다.
 
 ## 작업 항목
 
@@ -53,13 +60,16 @@ plan 번들에 링크·앵커, 링크 없는 ADR 식별자, 색인, 번호 중�
 - `ADR_PLACEMENT`: 대체됨이 폴더 밖이면 위반, `--flat` 이면 통과.
 - 색인: `write-index` 뒤 `check --index generated` 가 0, 행 하나를 고치면 `INDEX_STALE`, 두 표 분류(`superseded` 와 일부 대체 `accepted`), 빈 절 `없음`, 접두 링크 글(`[analysis-api ADR-057](...)`)의 대체 관계, 같은 내용이면 파일 mtime 이 그대로. `--index ids` 에서 등재 누락은 `INDEX_DESYNC`.
 - `--changed-since`: 바뀐 파일의 위반만 종료 코드 1, 다른 파일 위반은 `PR 밖 위반:` 아래로 나오고 0. ADR 파일 이름을 바꾼 커밋 뒤 그 파일을 가리키던 바뀌지 않은 문서의 깨진 링크는 바뀐 쪽으로 센다.
+- `--index ids`: 목록형·표형·파일 이름 링크 글 색인에서 누락과 남는 등재가 `INDEX_DESYNC`, `ADR-M01` 과 날짜 꼴 색인, `INDEX.md` 가 없는 폴더는 통과.
+- `check` 실행 전후로 표본 저장소의 `git status --porcelain` 이 같다(본문을 고치지 않는다).
 - 실패: git 밖에서 2, 모르는 옵션 2.
 
-### 3. `tsconfig.json`, `.github/workflows/ci.yml`, `scripts/run-node-tests.ts`
+### 3. `tsconfig.json`, `.github/workflows/ci.yml`, `scripts/run-node-tests.ts`, 테스트 묶음을 적은 문서
 
 - `tsconfig.json` `include` 에 `skills/plan/scripts/**/*.ts` 를 더한다.
 - CI 의 `node --test` 줄과 `scripts/run-node-tests.ts` 의 기본 파일 묶음에 `skills/plan/tests/*.spec.ts` 를 더한다. testkit 실행기가 먼저 머지돼 있으면 그 실행기의 대상에 더한다.
 - CI Python 루프는 `skills/plan/tests` 에 Python 테스트가 남아 있어 그대로 둔다.
+- 테스트 묶음을 적은 곳에 plan 을 더한다: `README.md` 의 「orch, work-board, inbox 의 TypeScript 테스트」 문장, CI 단계 이름(`Run orch, work-board and inbox node tests` 와 그 위 타입 검사 단계 이름), `docs/code-architecture.md` 「실행 규칙」 의 테스트 명령.
 
 ## 검증
 
@@ -80,3 +90,5 @@ python3 -m unittest discover -s skills/plan/tests
 | `tsconfig.json` | 수정 |
 | `.github/workflows/ci.yml` | 수정 |
 | `scripts/run-node-tests.ts` | 수정 |
+| `README.md` | 수정 |
+| `docs/code-architecture.md` | 수정 |

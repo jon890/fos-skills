@@ -128,7 +128,7 @@
 ### fos-skills 첫 적용
 
 - `.claude/plan-overlay.md` 가 없어 새로 만든다. 값은 「ADR 색인 생성: 한다」 하나다. 「ADR 폴더」 와 「ADR 대체 배치」 는 기본값(`docs/adr`, `superseded/` 폴더)이다.
-- `superseded` 인 ADR-001, ADR-002 가 `docs/adr` 바로 아래에 있다. 이 저장소 규칙(adr-rules 「대체와 이동」, 사용자 결정 2026-10-24)대로 `docs/adr/superseded/` 로 옮기고 가리키는 상대 링크(7곳, `git grep`)를 고친다.
+- `superseded` 인 [ADR-001](../../adr/001-plugin-from-repo-root.md), [ADR-002](../../adr/002-plugin-version-is-commit-sha.md) 가 `docs/adr` 바로 아래에 있다. 이 저장소 규칙(adr-rules 「대체와 이동」, 사용자 결정 2026-10-24)대로 `docs/adr/superseded/` 로 옮기고 가리키는 상대 링크(7곳, `git grep`)를 고친다.
 - 저장소 전체를 검사해 나온 위반(계획서 밖 링크 없는 `ADR-NNN` 30여 곳 등)을 같은 PR 의 별도 커밋에서 고친다. 이 저장소가 첫 사용처라 전체가 0 이어야 생성과 검사를 함께 검증한다(스펙 DECISION15).
 - 그다음 `write-index` 로 `docs/adr/INDEX.md` 를 두 표로 다시 만든다.
 
@@ -170,7 +170,7 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index [--adr-dir GLOB]...
 | REQ | 경계 | 방법 |
 | --- | --- | --- |
 | REQ1 | 명령 경계 | `skills/plan/tests/adr-docs.spec.ts`(`node:test`)가 임시 git 저장소에 표본을 만들고 명령을 실행해 stdout 줄과 종료 코드를 본다. 검사 코드마다 위반 하나와 통과 하나, 코드 블록·코드 스팬·계획서 폴더 예외, 한글 제목 앵커와 중복 제목 `-1` 을 넣는다 |
-| REQ1 | ai-analysis 대조 | 두 번째 PR 이 같은 ai-analysis 커밋에서 옛 `check-docs.py` 의 링크·앵커·번호 참조·중복 위반 목록과 새 검사기의 목록을 비교해 PR 본문에 붙인다. 새 검사기가 더 잡는 줄은 범위가 넓어진 것인지(스펙 DECISION18) 분류한다 |
+| REQ1 | ai-analysis 대조 | 첫 PR 의 verify 가 ai-analysis 를 읽기만 해 한 번 대조하고, 두 번째 PR 이 이전 뒤 다시 한다. 같은 ai-analysis 커밋에서 옛 `check-docs.py` 의 링크·앵커·번호 참조·중복 위반 목록과 새 검사기의 목록을 비교해 PR 본문에 붙인다. 새 검사기가 더 잡는 줄은 범위가 넓어진 것인지(스펙 DECISION18) 분류한다 |
 | REQ2 | 명령 경계 | 같은 테스트에 `modules/*/docs/adr` 두 폴더(같은 번호 겹침), `ADR-M01`, `ADR-20261007` 표본을 둔다 |
 | REQ3 | 명령 경계 | `write-index` 뒤 `check` 가 0, 직접 고친 색인이면 `INDEX_STALE`, 접두 링크 글의 대체 관계, 「대체됨」 분류, 빈 절의 `없음` 을 본다 |
 | REQ4 | 문서 계약 | 기존 계약 테스트(`skills/plan/tests/test_technical_design_contract.py` 등)의 꼴로 네 스킬 문서가 `adr-docs.ts` 를 부르는지, `check_adr_layout` 을 부르는 문서가 없는지 본다. `git grep check_adr_layout` 이 변경 이력 밖에서 비어야 한다 |
@@ -195,7 +195,7 @@ CI 는 지금 `node --test` 를 폴더 목록으로 돈다(`.github/workflows/ci
 | DECISION9 | 테스트 의존 | `adr-docs.spec.ts` 는 Node 내장 모듈만 쓰고 testkit 을 import 하지 않는다 | 작성자 | plan 은 팀으로 내보내는 스킬이다([node-runtime 설계 「공통 testkit」](../node-runtime/design.md#공통-testkit)) |
 | DECISION10 | 생성 색인과 adr-parallel 형식 | 생성을 켠 저장소는 생성 형식이 원본이고, adr-parallel 의 세 열 형식은 생성을 켜지 않은 저장소에 남긴다 | 작성자 | 스펙 DECISION4 가 열 넷을 정했다. 생성 저장소에서 「한 줄만 더한다」 는 `write-index` 가 대신한다 |
 | DECISION11 | fos-skills 의 대체된 ADR 둘 | `docs/adr/superseded/` 로 옮긴다 | 작성자 | 이 저장소 규칙(adr-rules 「대체와 이동」, 사용자 결정 2026-10-24)이 이미 정했다. 「폴더 없음」 으로 바꾸면 그 결정을 뒤집는다 |
-| DECISION12 | 결정 기록 | fos-skills 에 새 ADR 하나(engineering-process): 문서 링크·ADR 검사는 plan 번들 검사기 하나가 소유하고 작성 단계에서 돈다. CI 사본을 두지 않는다 | 작성자 | 독립 검토 지적. ADR-024 는 이 저장소 ADR 이 절차 결정을 담는다고 정했고, 기각한 대안(CI 사본, 저장소 스크립트 유지)이 있다(adr-rules 「남길 조건」) |
+| DECISION12 | 결정 기록 | fos-skills 에 새 ADR 하나(engineering-process): 문서 링크·ADR 검사는 plan 번들 검사기 하나가 소유하고 작성 단계에서 돈다. CI 사본을 두지 않는다 | 작성자 | 독립 검토 지적. [ADR-024](../../adr/024-decision-record-classification.md) 는 이 저장소 ADR 이 절차 결정을 담는다고 정했고, 기각한 대안(CI 사본, 저장소 스크립트 유지)이 있다(adr-rules 「남길 조건」) |
 
 ## 결정 기록 연결
 
