@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 스킬이 설치돼 있으면 그쪽이 맡는다.
 metadata:
-  version: "4.0.1"
+  version: "4.0.2"
 ---
 # docs-audit
 

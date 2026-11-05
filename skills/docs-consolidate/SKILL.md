@@ -3,7 +3,7 @@ name: docs-consolidate
 description: |
   검증한 기능의 문서를 맞추고 공통화 후보를 추출하거나, 모인 후보를 공유 계약으로 정리한다. "공통 후보 추출", "기능 문서 정리", "공유 계약 정리", "docs-consolidate" 요청에 쓴다. 일반 문서 감사는 docs-audit 가 맡는다.
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
 ---
 
 # docs-consolidate

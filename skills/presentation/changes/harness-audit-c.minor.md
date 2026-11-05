@@ -1,1 +1,0 @@
-- 혼자 읽는 HTML 보고서는 `report` 스킬이 설치돼 있으면 그쪽이 맡는다는 경계를 description 과 README 에 더했다
