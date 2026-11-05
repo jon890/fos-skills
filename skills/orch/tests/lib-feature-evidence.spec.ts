@@ -1,12 +1,96 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { baseMergesOnly, featureEvidenceProblem, featureLoopRequested } from '../scripts/lib/feature-evidence.ts'
+import { baseMergesOnly, featureBranch, featureEvidenceProblem, featureLoopRequested } from '../scripts/lib/feature-evidence.ts'
+import { recordLaunch } from '../scripts/lib/launched.ts'
 
 const HEAD = 'a'.repeat(40)
+test('dispatch 지시서를 우선 보고 기록이 없을 때만 브랜치 지시서를 모은다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-branch-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const loop = join(specs, 'spec-loop.md')
+  const docs = join(specs, 'spec-docs.md')
+  writeFileSync(loop, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+  writeFileSync(docs, '브랜치: `feat/test`\n## 할 일\n루프 없이: 문서 정정\n')
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+  // 오래된 계획 지시서와 새 문서 지시서를 함께 보아도 구현 PR 로 분류하지 않는다.
+  writeFileSync(loop, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n구현과 PR 은 코디네이터가 새 지시서로 맡긴다.\n')
+  recordLaunch(repo, { dispatch: 'old', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: loop })
+  utimesSync(join(repo, '.orch/state/launched-workers/old.json'), 1, 1)
+  recordLaunch(repo, { dispatch: 'new', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: docs })
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  writeFileSync(docs, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+  // 계획 전용 지시서는 구현 PR 의 완료 근거를 요구하지 않는다.
+  writeFileSync(docs, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n구현과 PR 은 코디네이터가 새 지시서로 맡긴다.\n')
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  rmSync(join(repo, '.orch/state/launched-workers'), { recursive: true })
+  writeFileSync(loop, readFileSync(docs, 'utf8'))
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+})
+test('구현 dispatch 뒤에 후속·충돌 해소 dispatch 가 붙어도 기능 PR 판정을 유지한다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-followup-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const implementation = join(specs, 'spec-implementation.md')
+  const followup = join(specs, 'spec-followup.md')
+  writeFileSync(implementation, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+  recordLaunch(repo, { dispatch: 'implementation', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: implementation })
+  utimesSync(join(repo, '.orch/state/launched-workers/implementation.json'), 1, 1)
+  for (const reason of ['후속 지적 반영', '기준 브랜치와 충돌 해소']) {
+    writeFileSync(followup, `브랜치: \`feat/test\`\n## 할 일\n루프 없이: ${reason}\n`)
+    recordLaunch(repo, { dispatch: 'followup', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: followup })
+    assert.equal(featureBranch(repo, 'feat/test'), true)
+  }
+})
+test('실제 계획 전용 지시서 문구는 기록 유무와 관계없이 구현 PR 에서 제외한다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-plan-only-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const spec = join(specs, 'spec-plan.md')
+  const handoff = '구현과 PR 은 코디네이터가 계획을 보고 새 지시서로 띄운다.'
+  for (const permission of [`이 지시서는 계획까지만 맡는다. ${handoff}`, handoff]) {
+    const body = `브랜치: \`feat/test\`\n허락: ${permission}\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n`
+    writeFileSync(spec, body)
+    assert.equal(featureBranch(repo, 'feat/test'), false)
+    recordLaunch(repo, { dispatch: 'plan', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec })
+    assert.equal(featureBranch(repo, 'feat/test'), false)
+    rmSync(join(repo, '.orch/state/launched-workers'), { recursive: true })
+  }
+  writeFileSync(spec, `브랜치: \`feat/test\`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n\n\`\`\`md\n${handoff}\n\`\`\`\n`)
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+})
+test('branch 없는 옛 기록을 워크트리로 찾고, 누락되거나 다른 브랜치로 바뀐 지시서는 제외한다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-record-fallback-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', '-b', 'feat/test', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const fallback = join(specs, 'spec-fallback.md')
+  const linked = join(repo, 'linked.md')
+  const implementation = '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n'
+  writeFileSync(fallback, '브랜치: `feat/test`\n## 할 일\n루프 없이: 문서 정정\n')
+  writeFileSync(linked, implementation)
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  recordLaunch(repo, { dispatch: 'legacy', worktree: repo, terminal: null, run: null, spec: linked })
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+  writeFileSync(linked, implementation.replace('feat/test', 'feat/other'))
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  rmSync(linked)
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  writeFileSync(fallback, implementation)
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+})
 const BODY = `<!-- fos-feature-evidence -->
 검증 커밋: ${HEAD}
 인수 검증: 통과 | REQ1 API 응답과 DB 상태 확인, PR 본문의 실행 기록

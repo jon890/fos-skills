@@ -266,6 +266,20 @@ describe('지시서 검사', () => {
     assert.match(withTemplate().stdout, /공통: 표지 `verify` 가 붙은 규칙이 틀과 다르다/)
   })
 
+  test('공통 규칙의 머리 목록 기호만 무시하고 본문 변경은 경고한다', () => {
+    const template = write(join(tmp, 'template.md'), '5. PR 준비를 알린다. <!-- orch-rule: ready-status -->\n  이어지는 설명은 그대로 둔다.\n')
+    const a = spec('spec-a', '담당: `src/a/**`')
+    const check = () => spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, a], {
+      env: { ...ENV, SPEC_TEMPLATE: template }, encoding: 'utf8',
+    })
+    for (const prefix of ['- ', '* ', '27. ']) {
+      write(join(specs, 'spec-common.md'), `${prefix}PR 준비를 알린다. <!-- orch-rule: ready-status -->\n  이어지는 설명은 그대로 둔다.\n`)
+      assert.equal(check().stdout, '')
+    }
+    write(join(specs, 'spec-common.md'), '- PR 준비를 알린다. <!-- orch-rule: ready-status -->\n  설명을 바꿨다.\n')
+    assert.match(check().stdout, /표지 `ready-status` 가 붙은 규칙이 틀과 다르다/)
+  })
+
   test('마이그레이션 표지는 orch 설정에 migrations 가 있는 저장소에서만 빠진 것을 알린다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     const without = template.replace(/^- Flyway 마이그레이션[\s\S]*?(?=^- )/m, '')

@@ -433,7 +433,7 @@ function ruleBodies(text: string): Map<string, { no: number; body: string }> {
       while (end < lines.length && (lines[end].trim() === '' || indented(lines[end]))) end += 1
       const body = lines
         .slice(head, end)
-        .map((l) => l.trimEnd())
+        .map((l, i) => (i === 0 ? l.replace(/^(?:[-*]|\d+\.)\s+/, '') : l).trimEnd())
         .filter((l) => l !== '')
         .join('\n')
       found.set(m[1], { no: head + 1, body })
