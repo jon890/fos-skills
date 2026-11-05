@@ -76,7 +76,7 @@
 | DECISION10 | 머지 대기 알림의 통로 | `준비됨` 과 머지 대기는 status 로 보내고 escalation 은 막혔을 때만 쓴다는 문장을 틀의 `ready-status` 항목 옆에 더한다 | 작성자 | 사용자 요청 2. 틀이 이미 `준비됨` 을 status 로 정했고(`ready-status`), escalation 은 머리말이 「막혔을 때」 로 정했다 |
 | DECISION11 | 기록을 쓰는 시점 | 마무리(`finish-pr`)가 MERGED 를 확인한 직후, worker 정리 전 | 작성자 | 정리(`cleanup-sweep`)가 띄운 worker 기록을 지운다(`lib/launched.ts` 의 `forgetLaunch`). 머지 직후가 사용자 요청이다 |
 | DECISION12 | 띄운 worker 기록의 `branch` | 이미 있다. 이번에는 `agent`, `model`, `effort`, `effective`, `experiment` 만 더한다 | 작성자 | `lib/launched.ts` 의 `Launch` 형에 `branch` 가 있다 |
-| DECISION13 | 크기 등급의 출처 | 저장소에 PR 크기 기준 파일(plan 의 「PR 변경 파일 상한」 설정이 가리키는 JSON)이 있으면 그 등급, 없으면 `null` | 작성자 | `skills/plan/references/monorepo.md` 의 `.github/pr-size.json#grades.B.files` 예. 등급을 새로 정의하지 않는다 |
+| DECISION13 | 크기 등급의 출처 | 저장소가 낸 등급을 읽는다. orch 설정에 그 저장소의 첫 CI 리뷰 본문에서 등급을 읽는 꼴을 두고, 없으면 `null` 이다. orch 가 등급을 새로 정의하거나 다시 계산하지 않는다 | 작성자 | 등급 계산 규칙이 저장소마다 다르고, 근거 표의 저장소는 CI 리뷰 본문에 등급을 적는다. 기술 설계에서 고쳤다(design.md DECISION3) |
 | DECISION14 | `high` 보다 높은 effort | Opus 의 `xhigh`, `max` 도 `high` 와 같이 DECISION1 의 근거가 있어야 한다 | 작성자 | 독립 검토 발견 1. `agent-selection.md` 「effort」 표가 `xhigh`, `max` 를 `high` 보다 나은 결과가 있을 때만 쓰게 한다. 높은 값으로 우회하는 길을 막는다 |
 | DECISION15 | 띄운 기록을 오래 두는 곳 | `launch-worker` 가 띄울 때마다 저장소의 orch 상태 폴더에 지우지 않는 띄우기 이력 한 줄을 더 남긴다. 정리는 `launched-workers` 만 지우고 이 이력은 지우지 않는다. DECISION1 의 대조와 DECISION7 의 수 세기는 이 이력을 본다. 세는 범위는 그 저장소다 | 작성자 | 독립 검토 발견 2, 3. 정리가 `launched-workers` 기록을 지워(`lib/launched.ts` 의 `forgetLaunch`) 실패한 medium 기록과 실험 수가 사라진다. DECISION6 이 저장소별 자리를 정했다 |
 | DECISION16 | 기록에 쓰는 PR 의 범위 | 띄우기 이력에 그 PR 브랜치의 dispatch 가 있는 PR 만 쓴다. 사람이 연 PR 은 쓰지 않는다. 닫힌 PR 은 정리가 `--run` 여부와 상관없이 이력의 브랜치로 찾는다 | 작성자 | 독립 검토 발견 6. 이 기록은 worker 모델 선택을 비교하려는 것이다. 닫힌 PR 을 빠뜨리면 DECISION5 의 목적이 깨진다 |
