@@ -51,6 +51,25 @@ test('구현 dispatch 뒤에 후속·충돌 해소 dispatch 가 붙어도 기능
     assert.equal(featureBranch(repo, 'feat/test'), true)
   }
 })
+test('실제 계획 전용 지시서 문구는 기록 유무와 관계없이 구현 PR 에서 제외한다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-plan-only-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const spec = join(specs, 'spec-plan.md')
+  const handoff = '구현과 PR 은 코디네이터가 계획을 보고 새 지시서로 띄운다.'
+  for (const permission of [`이 지시서는 계획까지만 맡는다. ${handoff}`, handoff]) {
+    const body = `브랜치: \`feat/test\`\n허락: ${permission}\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n`
+    writeFileSync(spec, body)
+    assert.equal(featureBranch(repo, 'feat/test'), false)
+    recordLaunch(repo, { dispatch: 'plan', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec })
+    assert.equal(featureBranch(repo, 'feat/test'), false)
+    rmSync(join(repo, '.orch/state/launched-workers'), { recursive: true })
+  }
+  writeFileSync(spec, `브랜치: \`feat/test\`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n\n\`\`\`md\n${handoff}\n\`\`\`\n`)
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+})
 const BODY = `<!-- fos-feature-evidence -->
 검증 커밋: ${HEAD}
 인수 검증: 통과 | REQ1 API 응답과 DB 상태 확인, PR 본문의 실행 기록

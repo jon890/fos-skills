@@ -31,7 +31,10 @@ function withoutExamples(text: string): string {
 }
 
 function implementationRequested(text: string): boolean {
-  return featureLoopRequested(text) && !/구현과 PR 은 코디네이터가 새 지시서로/.test(withoutExamples(text))
+  const plain = withoutExamples(text)
+  const planningOnly = /이 지시서는\s*계획까지만 맡는다/.test(plain) ||
+    /구현과\s+PR\s*은\s+코디네이터가\s+(?:계획을\s+보고\s+)?새\s+지시서로/.test(plain)
+  return featureLoopRequested(text) && !planningOnly
 }
 
 // 브랜치에 연결된 dispatch 지시서를 우선한다. 구현 뒤 후속·충돌 해소 지시서가 붙어도
