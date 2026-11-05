@@ -5,7 +5,7 @@ description: |
   "기술 설계", "아키텍처 설계", "모듈 경계", "스펙을 어떻게 구현할지 설계" 요청이나 spec 다음 단계에 쓴다.
   사용자 동작은 spec, PR 작업 분해는 plan, 구현은 implementation 이 맡는다.
 metadata:
-  version: "1.5.0"
+  version: "1.5.1"
 ---
 
 # technical-design
