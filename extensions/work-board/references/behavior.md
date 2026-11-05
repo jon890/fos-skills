@@ -14,7 +14,7 @@
 - 머리 줄: `live.at`(실제 상태를 읽은 시각)과 보드 파일의 `updatedAt` 중 늦은 쪽을 「HH:MM 업데이트」 한 줄로 보인다. 둘 다 없으면 「읽는 중」이다. Run ID 와 수동·자동 구분은 보이지 않는다
 - 플러그인 버전: 머리 줄의 시각 뒤에 지금 세션이 읽은 설치본을 「fos-skills 1.4.0 (b1e2c09)」 처럼 version 과 커밋 앞 7자리로 보인다. `--plugin-dir` 로 읽은 작업 트리는 「작업 트리」 와 HEAD 커밋이다. main 과 같으면 「최신」 을 흐리게, 다르면 「→ 최신 1.5.0 (…) · p 로 갱신」 을 노란색으로, 읽지 못하면 「최신 확인 불가」 를 흐리게 붙인다
   - 설치본은 `$.plugin.root`(마켓플레이스 캐시 폴더)와 같은 설정 폴더의 `plugins/installed_plugins.json` 에서 scope 와 커밋을 읽는다
-  - main 은 `git ls-remote <plugin.json 의 repository> refs/heads/main` 과 그 커밋의 `plugin.json` 원문(`curl`)으로 읽는다. 세션 시작, `/board` 열 때, 30분마다, 갱신 직후에 읽고 명령마다 10초를 기다린다
+  - main 은 `git ls-remote <plugin.json 의 repository> refs/heads/main` 과 그 커밋의 `plugin.json` 원문(`curl`)으로 읽는다. 세션 시작, `/board` 열 때, 활성 상태에서 30분마다, 갱신 직후에 읽고 명령마다 10초를 기다린다. 활성 상태는 아래 「네트워크 조회」 를 따른다
   - 둘 다 version 이 있으면 version 으로 비교한다. version 을 올리지 않은 커밋은 `update` 가 받지 않기 때문이다. 어느 한쪽에 없으면 커밋으로 비교한다
 - 플러그인 갱신: `p` 는 그 설치본의 scope 로 `claude plugin update fos-skills@fos-skills --scope <scope>` 를 돌린다(project·local scope 는 그 프로젝트 폴더에서). 성공하면 입력란에 `/reload-plugins` 를 채우고 Enter 로 새 설치본을 읽는다. 실패하면 toast 에 이유를 보이고 입력란은 그대로다. directory 소스 마켓플레이스의 폴더를 그대로 읽은 설치본(`known_marketplaces.json` 의 directory path 가 `$.plugin.root` 와 같고 어떻게 읽었든(`--plugin-dir` 포함) 같은 설치본이다. 등록되지 않은 다른 폴더만 작업 트리다)은 `claude plugin update` 가 받을 것이 없으므로, `p` 가 그 폴더에서 현재 브랜치가 main 인지, 추적 파일 변경이 없는지, `git fetch origin main` 뒤 fast-forward 할 수 있는지 보고 `git pull --ff-only origin main` 을 돌린다. 하나라도 어긋나면 받지 않고 toast 에 「main 이 아니라서」, 「고치는 중인 파일이 있어서」, 「fast-forward 할 수 없어서」 중 이유를 보인다. 받은 뒤 설치본을 다시 읽어 머리 줄이 새 version 을 보인다. 최신으로 확인됐거나 작업 트리면 `p` 가 없다
 - 단축키 상자: 「단축키」 제목의 테두리 상자 하나에 `s` 오늘 시작, `q` 정할 것 묻기, `i` 알림 답변(알림함이 켜졌을 때), `x` 알림 넘기기(보이는 알림이 있을 때), `z` 넘김 되돌리기(이 세션에서 넘긴 알림이 있을 때), `c` 항목 상태 확인(진행 중이나 대기 항목이 있을 때), `a` PR 작성자 필터, `d` 펼치기, `p` 플러그인 갱신(뒤처졌거나 확인하지 못했을 때) 버튼을 모은다. 버튼 폭의 합이 상자보다 넓으면 다음 줄로 넘어간다
@@ -36,7 +36,7 @@
   - 숫자 단축키를 알림과 함께 쓰므로 `c` 와 `x` 는 함께 켜지지 않는다. 하나를 켜면 다른 하나가 꺼진다. 확인 모드 동안 알림 상자의 번호는 같은 자리에 흐리게 남지만 눌리지 않는다
 - 훅이 직접 보내지 않는 이유: 훅의 `prompt.submit` 과 `command.run` 의 `text` 는 코디네이터 모델에 닿지 않는다. 그래서 입력란을 채우고 사람이 Enter 로 보낸다. `/board` 외의 명령은 등록하지 않는다
 - 상태 줄: 프롬프트 아래에 개수 요약이 5초마다 갱신된다. 글이 바뀔 때만 보낸다. SDK(`stream-json`)로 실린 세션은 상태 줄마다 `ui_status` 메시지를 host 에 보내기 때문이다. 보드 파일, 실제 상태, 새 업무 알림이 모두 없으면 나오지 않는다. 새 업무 알림이 있으면 맨 앞에 「알림 n」 이 붙는다
-- 업무 알림: 결정 필요 아래의 「알림」 상자. 1분마다 같은 플러그인의 `skills/inbox/scripts/inbox.ts board --repo <주 checkout> --json` 을 불러 그린다. 받기, 저장소 필터, 답함 판정은 [`inbox`](../../../skills/inbox/README.md) 스킬이 하고 창은 그리기만 한다. 알림함 설정이 없거나 그 저장소의 필터가 `"enabled": false` 면 상자도 상태 줄의 「알림 n」 도 `i` 도 없다
+- 업무 알림: 결정 필요 아래의 「알림」 상자. 활성 상태에서 1분마다 같은 플러그인의 `skills/inbox/scripts/inbox.ts board --repo <주 checkout> --json` 을 불러 그린다. 받기, 저장소 필터, 답함 판정은 [`inbox`](../../../skills/inbox/README.md) 스킬이 하고 창은 그리기만 한다. 알림함 설정이 없거나 그 저장소의 필터가 `"enabled": false` 면 상자도 상태 줄의 「알림 n」 도 `i` 도 없다
   - 머리 「알림 n · HH:MM 확인」 의 n 은 새 항목 수다. 받지 못한 출처는 「두레이 메신저 확인 불가: …」 처럼 빨간 줄로, 이 세션에서 알림함이 켜진 것을 본 뒤 명령 자체가 실패하면 「알림함 확인 불가: …」 로 보이고 직전 항목은 남는다. 켜진 적이 없으면 상자를 그리지 않는다
   - 항목 줄: 새 항목 「●」, 제목, 머리말 링크(「[두레이]」, 「[메신저]」), 보낸 사람 · 종류(멘션·담당·참조) · 시각. 멘션은 본문 앞부분을 흐리게 한 줄 붙인다
   - 답한 항목(`state: answered`)은 목록에서 빼고 상자 끝에 「답함 n」 수만 흐리게 보인다
@@ -68,6 +68,44 @@
 - 단계 끝내기: `board.ts step <id> <n>` 이 진행률을 세는 줄에서 n 번 단계를 끝낸다. `done` 값만 `true` 로 바꾼다(`--undo` 는 `false`). `set --progress auto` 는 `progress` 값을 지워 단계 수로 세게 한다. `board.ts steps <id>` 는 진행률을 세는 단계 줄을 JSON 으로 낸다. orch 의 `board-sync.ts` 가 이것으로 단계를 판정한다. 단계 밖의 줄(참고 줄, 세지 않는 쪽의 줄)은 JSON 에 넣지 않고 stderr 에 「단계 밖의 줄(mark 번호):」 머리와 함께 낸다
 - 줄 끝내기: `board.ts mark <id> <n>` 은 번호 없는 줄도 끝낸다. n 은 details 다음 next 순서로 1부터 센 줄 번호이고, 빈 줄(공백뿐 포함)은 건너뛴다. `done` 값만 바꾼다(`--undo` 는 되돌린다). `board.ts list` 는 항목 줄 아래에 모든 줄을 `    <n> ✓ <text>`(끝냄)나 `    <n>   <text>`(안 끝냄)로 보이고, n 은 `mark` 의 번호와 같다. `step` 의 단계 번호와 `mark` 의 줄 번호는 다르다
 - 갱신: orch 의 띄우기와 루프가 자동 반영한다. 시점과 담당은 [갱신 담당 표](../../../skills/orch/references/board.md#갱신-담당)를 따른다. 수동 보정은 `node --disable-warning=ExperimentalWarning "$BOARD_BIN" set <id> doing --title "..." --next "..."`. `$BOARD_BIN` 은 `extensions/work-board/bin/board.ts` 다
+
+## 네트워크 조회
+
+세션 시작과 `/board` 열기는 네트워크 상태를 한 번 읽는다. 진행 중인 같은 조회는 겹치지 않는다.
+자동 조회의 활성 상태는 `$.ui.panes()` 에서 보드의 `isPlaced` 와 `isShown` 이 모두 참이고,
+최근 사용자 입력 후 10분이 지나지 않은 상태다. 닫힌 창, 다른 플러그인에 가려진 창,
+그릴 표면이 없는 SDK 세션은 자동 조회를 하지 않는다. OS 창의 최소화 여부는 이 API 로 알 수 없다.
+
+입력은 엔진의 이벤트 종류와 출처로 판정한다. `prompt.submit` 의 `composer`·`bridge`,
+`prompt.edit`(타이핑·붙여넣기), `prompt.change` 의 `history`·`undo`, 출처 필드가 없는
+`ui.press`·`ui.input`·`ui.select`, `ui.focus` 의 `person` 을 사용자 입력으로 센다.
+`/board` 열기와 세션 시작도 기한을 시작한다.
+모델의 도구 실행, 플러그인의 입력란 채우기와 정기 렌더링은 기한을 늘리지 않는다.
+활성 상태가 돌아오면 다음 5초 확인에서 주기가 지난 조회를 재개한다. 실패도 다음 주기까지 기다린다.
+
+| 조회 | 이전 자동 주기 | 현재 자동 주기와 공유 |
+| --- | --- | --- |
+| 열린 PR 목록과 CI 롤업 | 세션마다 45초 | 활성 상태에서 5분. orch 공유 캐시 TTL 5분 |
+| PR 링크의 저장소 URL | 주소를 얻을 때까지 45초 | PR 조회 때 주소가 없으면 읽음. orch 공유 캐시 TTL 5분 |
+| 플러그인 main 커밋과 manifest | 세션마다 30분 | 활성 상태에서 30분. 기존 git·curl 경로 유지 |
+| 업무 알림 | 세션마다 1분 | 활성 상태에서 1분. 실제 받기와 공유는 inbox 가 소유 |
+
+PR 과 URL 은 `bin/github.ts prs|url` 이 orch 의 `lib/gh.ts` 를 부른다.
+별도 캐시 키나 잠금은 만들지 않는다. 같은 인자의 orch 조회와 같은 저장소의 워크트리·세션이
+`state/gh/cache/` 와 잠금을 공유한다. 인증 환경과 호스트 구분, 쓰기 뒤 무효화와 캐시 비활성화는
+[orch 호출 예산](../../../skills/orch/references/gh-call-budget.md) 을 따른다.
+기존 `.orch` 가 없고 `ORCH_DIR` 도 지정하지 않았으면 저장소 밖의 사용자 캐시를 쓴다.
+위치는 `$XDG_CACHE_HOME/fos-skills/work-board/<주 checkout 경로의 SHA-256>/` 이고,
+절대경로인 `XDG_CACHE_HOME` 이 없으면 `~/.cache/` 를 쓴다. 이 경우에도 같은 저장소의
+세션·워크트리가 잠금과 응답을 공유하며 저장소에 `.orch/` 를 만들지 않는다.
+창을 다시 열어도 유효한 공유 응답이 있으면 서버를 부르지 않는다.
+조회 주기와 공유 응답의 남은 TTL 이 겹치면 표시용 PR 상태 반영에 약 10분이 걸릴 수 있다.
+
+PR 조회는 45초마다 읽는 Orca 상태·머지 줄과 분리한다. 로컬 보드 파일은 5초마다 계속 읽는다.
+네트워크를 쉬는 동안에는 직전 결과를 보인다. `p` 갱신, 알림 넘기기와 되돌리기 같은 명시적 동작은 바로 실행한다.
+상태 줄의 PR·CI 수와 알림 수에는 각각 마지막 확인 시각과 「조회 쉼」 을 붙인다.
+PR 은 목록 조회에 성공한 시각, 알림은 inbox 가 넘긴 `fetchedAt` 을 쓴다. 시각을 모르면 「조회 쉼」 만 붙인다.
+로컬 파일이나 Orca 상태만 읽어도 이 시각을 바꾸지 않으며, 자동 조회가 재개되면 쉼 표기를 지운다.
 
 ## 저장 형식
 

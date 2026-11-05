@@ -1,5 +1,11 @@
 # CHANGELOG: plan
 
+## 5.7.0 (2026-11-05)
+
+- ADR 을 남길 조건과 대체·이동 규약을 technical-design 의 `adr-rules.md` 로 옮기고 task-create 는 그쪽을 가리킨다
+- PR 순서와 단위는 spec 인터뷰가 정한 대로 따르고, 크기 때문에 더 나눌 때만 어디서 자를지 묻는다
+- `rule-placement.md` 는 docs-consolidate 가 후보를 옮길 때 따르는 문서로 호출 주체를 바꿨다
+
 ## 5.6.1 (2026-11-05)
 
 - 기능 계획 경로 규칙을 task-create 한 곳에 모으고 SKILL 의 index 필드 JSON, 문서 소유권 표를 지웠다

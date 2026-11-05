@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.36.5 (2026-11-05)
+
+- 금지어 매핑 유지보수 문서의 `판`, `가르다` 이력을 결정 한 줄로 줄이고 경위는 git 이력에 맡겼다
+
 ## 1.36.4 (2026-11-05)
 
 - exclude 파일 설명을 references/markdown-readability.md 로 내리고 질문형 제목을 고쳤다

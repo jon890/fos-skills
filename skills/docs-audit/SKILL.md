@@ -4,9 +4,9 @@ description: |
   저장소 문서가 코드와 맞는지 감사하고, 사용자 승인을 받아 고친다.
   "문서 점검", "docs 감사", "stale ADR", "코드와 문서 불일치", "ADR Index 동기화", "docs-audit"
   같은 요청이면 이 스킬을 쓴다.
-  하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 이 맡는다.
+  하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 스킬이 설치돼 있으면 그쪽이 맡는다.
 metadata:
-  version: "4.0.1"
+  version: "4.0.2"
 ---
 # docs-audit
 
@@ -136,7 +136,7 @@ ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에
 ### 5. 수정과 재검증
 
 - 현재 사실은 책임 문서 한곳에만 남기고 나머지는 그것을 가리킨다.
-- ADR 에 남길 것은 `references/six-axis.md` 의 B(과대화), E(자명성) 축이 소유한다. 대체된 ADR 은 지우지 않는다. 표기와 위치, 링크·색인 갱신 규약은 [plan 의 task-create.md](../plan/references/task-create.md) 가 소유한다.
+- ADR 에 담을 것, 남길 조건, 대체와 이동 규약은 [technical-design 의 adr-rules.md](../technical-design/references/adr-rules.md) 가 소유한다. 감사의 B(과대화), E(자명성) 축은 그 문서를 적용한다. 대체된 ADR 은 지우지 않는다.
 - ADR 파일과 `INDEX.md` 를 함께 고친다.
 - 고친 Markdown 에 그 저장소의 표현과 가독성 검사를 실행한다.
 

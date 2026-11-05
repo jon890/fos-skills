@@ -1,4 +1,5 @@
 import { STEP, hideEventTag } from './event-tags.js'
+import { PR_MS, createNetworkPoll } from './network-poll.js'
 
 // 저장소의 작업 현황을 창과 상태 줄에 보여 준다.
 // 두 곳에서 읽는다.
@@ -20,11 +21,11 @@ import { STEP, hideEventTag } from './event-tags.js'
 //   3-1. 머지 줄: 같은 플러그인의 bin/merge-queue.ts 출력. orch 설정, 상태 파일과 루프 로그에서 PR 마다 머지 가능 여부와 대기 이유를 읽고
 //        gh 는 부르지 않는다. 열린 PR 상자의 PR 아래 한 줄로 붙인다. 큐를 쓰지 않는 저장소에서는 붙이지 않는다.
 //   4. 플러그인 버전: 이 mod 가 실린 설치본($.plugin.root)과 원격 main 의 커밋, plugin.json version 을 비교한다.
-// 파일은 FILE_MS, 명령은 LIVE_MS, 알림은 INBOX_MS, 최신 버전은 VERSION_MS 마다 다시 읽는다. 창을 열 때도 명령, 알림, 최신 버전을 한 번 읽는다.
+// 파일과 로컬 명령은 계속 읽는다. 네트워크 조회는 network-poll.js 가 창 표시와 최근 입력, 조회별 주기로 제한한다.
 
 const PANE = 'work-board'
 
-// PR 번호를 링크로 그릴 때 쓰는 저장소 주소. 실제 상태를 읽을 때마다 비어 있으면 `gh repo view` 로 읽는다
+// PR 번호를 링크로 그릴 때 쓰는 저장소 주소. PR 조회 때 비어 있으면 orch 공유 캐시로 읽는다.
 let repoUrl = ''
 
 let repoUrlLoading = false
@@ -33,7 +34,7 @@ let repoUrlLoading = false
 function loadRepoUrl($) {
   if (repoUrl || repoUrlLoading) return
   repoUrlLoading = true
-  run($, ['gh', 'repo', 'view', '--json', 'url', '--jq', '.url'])
+  github($, 'url')
     .then((stdout) => {
       repoUrl = stdout.trim()
       if (repoUrl) $.ui.invalidate('ui.render')
@@ -71,13 +72,15 @@ const BOARD_PATHS = ['.omc/board.json', '.omc/handoffs/board.json']
 const FILE_MS = 5000
 const LIVE_MS = 45000
 const COMMAND_TIMEOUT_MS = 20000
+// orch 의 저장소 잠금 대기(최대 65초) 뒤 gh 가 끝날 시간도 확보한다.
+const GITHUB_TIMEOUT_MS = 90000
 // bin/worker-marks.ts 는 worker 목록을 다시 읽고 워크트리마다 파일을 훑는다
 const MARKS_TIMEOUT_MS = 30000
 // inbox.ts 는 1분마다 부르고, 두레이에서 받기는 inbox 설정의 주기(기본 5분)가 지났을 때만 한다(D15)
 const INBOX_MS = 60000
 // 받는 주기에는 두레이 호출이 수십 번 들 수 있어 다른 명령보다 길게 기다린다
 const INBOX_TIMEOUT_MS = 90000
-// main 의 최신 커밋은 세션 시작, /board 열 때, 이 주기, 갱신 직후에 읽는다(D2). 네트워크 호출이 시간당 두세 번이다
+// main 의 최신 커밋은 세션 시작, /board 열 때, 활성 상태에서 이 주기, 갱신 직후에 읽는다(D2).
 const VERSION_MS = 30 * 60 * 1000
 const VERSION_TIMEOUT_MS = 10000
 // claude plugin update 는 저장소를 받아 캐시에 복사한다
@@ -106,6 +109,9 @@ let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈
 // queue 는 bin/merge-queue.ts 의 출력(parseQueueView)이다. 읽지 못했으면 null 이고 이유는 errors.queue 다
 let live = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, queue: null, alertNotes: [], errors: {} }
 let liveBusy = false
+const networkPoll = createNetworkPoll()
+let networkPaused = true
+let prsReadAt = ''
 
 // 업무 알림. inbox.ts board --json 의 출력이다. 읽지 못하면 inboxError 에 이유를 두고 직전 값을 그린다
 let inbox = null
@@ -1061,18 +1067,23 @@ export function updateVisible(install, latest) {
 }
 
 // 상태 줄 한 줄. 실제 상태와 수동 항목을 함께 센다. 새 업무 알림이 있으면 맨 앞에 「알림 n」 을 붙인다
-export function statusLine(items, state, inboxState = null) {
+export function statusLine(items, state, inboxState = null, freshness = null) {
   const count = (status) => items.filter((item) => item.status === status).length
+  const pausedLabel = (at) => {
+    if (!freshness?.paused) return ''
+    const stamp = clockOf(at)
+    return ' (' + (stamp ? stamp + ' 기준 · ' : '') + '조회 쉼)'
+  }
   const parts = []
   const alerts = inboxSummary(inboxState).newCount
-  if (alerts > 0) parts.push('알림 ' + alerts)
+  if (alerts > 0) parts.push('알림 ' + alerts + pausedLabel(inboxState?.fetchedAt))
   const decide = decideCount(items) + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
   if (state.errors && state.errors.questions) parts.push('결정 필요 확인 불가')
   else if (decide > 0 || state.questionsLimited) parts.push('결정 필요 ' + decide + (state.questionsLimited ? '(최근 질문 기준)' : ''))
   if (Array.isArray(state.workers)) parts.push('worker ' + state.workers.length)
   if (Array.isArray(state.prs)) {
     const failing = state.prs.filter((pr) => pr.fail > 0).length
-    parts.push('PR ' + state.prs.length + (failing > 0 ? '(CI 실패 ' + failing + ')' : ''))
+    parts.push('PR ' + state.prs.length + (failing > 0 ? '(CI 실패 ' + failing + ')' : '') + pausedLabel(freshness?.prsAt))
   }
   if (count('doing') > 0) parts.push('진행 ' + count('doing'))
   if (count('wait') > 0) parts.push('대기 ' + count('wait'))
@@ -1088,12 +1099,17 @@ async function run($, argv, timeoutMs = COMMAND_TIMEOUT_MS) {
   return stdout
 }
 
+function github($, query) {
+  return run($, ['node', '--disable-warning=ExperimentalWarning',
+    $.plugin.root + '/extensions/work-board/bin/github.ts', query], GITHUB_TIMEOUT_MS)
+}
+
 // 상태 줄은 글이 바뀔 때만 보낸다. SDK(stream-json)로 실린 세션은 $.ui.status 마다 ui_status 메시지를 host 에 보내고,
 // 그 메시지를 그리지 못하는 host(Orca 의 채팅 view 등)에서는 같은 원문 JSON 줄이 5초마다 쌓인다
 let sentStatus
 function refreshStatus($) {
   const items = board && Array.isArray(board.items) ? board.items : []
-  const text = statusLine(items, live, inbox)
+  const text = statusLine(items, live, inbox, { paused: networkPaused, prsAt: prsReadAt })
   if (sentStatus !== text) {
     sentStatus = text
     $.ui.status(text)
@@ -1155,7 +1171,7 @@ async function loadFile($) {
 async function loadLive($) {
   if (liveBusy) return
   liveBusy = true
-  const next = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, queue: null, alertNotes: [], errors: {} }
+  const next = { at: 0, runId: '', workers: null, questions: null, prs: live.prs, marks: null, movement: null, queue: null, alertNotes: [], errors: {} }
   let asking = []
   try {
     try {
@@ -1182,13 +1198,6 @@ async function loadLive($) {
       } catch (failure) {
         next.errors.questions = String(failure.message || failure)
       }
-    }
-    loadRepoUrl($)
-    try {
-      next.prs = parsePullRequests(await run($, ['gh', 'pr', 'list', '--state', 'open', '--limit', '30',
-        '--json', 'number,title,isDraft,mergeStateStatus,headRefName,statusCheckRollup,author']))
-    } catch (failure) {
-      next.errors.prs = String(failure.message || failure)
     }
     // worker 줄의 멈춤 판정. orch 상주 루프와 같은 함수와 같은 입력이다(bin/worker-marks.ts 머리 주석)
     try {
@@ -1221,11 +1230,49 @@ async function loadLive($) {
       // 세션이 끝난 뒤 늦게 끝난 읽기다. host 가 호출을 거절하므로 앞 상태를 그대로 둔다
       return
     }
+    // 로컬 상태를 읽는 사이에 끝난 PR 조회의 결과와 오류를 덮지 않는다.
+    next.prs = live.prs
+    if (live.errors.prs) next.errors.prs = live.errors.prs
     live = next
   } finally {
     liveBusy = false
   }
   refreshStatus($)
+}
+
+async function loadGithub($) {
+  loadRepoUrl($)
+  let succeeded = false
+  try {
+    live.prs = parsePullRequests(await github($, 'prs'))
+    delete live.errors.prs
+    succeeded = true
+  } catch (failure) {
+    live.errors.prs = String(failure.message || failure)
+  }
+  try { live.at = await $.clock.now() } catch { return }
+  if (succeeded) prsReadAt = new Date(live.at).toISOString()
+  refreshStatus($)
+}
+
+// isShown 은 다른 플러그인 창에 가려진 경우도 거른다. 표면이 없는 SDK 세션은 isPlaced 가 false 다.
+async function pollNetwork($, force = false) {
+  let at
+  try { at = await $.clock.now() } catch { return }
+  let visible = false
+  if (!force) {
+    try { visible = (await $.ui.panes()).some((pane) => pane.id === PANE && pane.isPlaced && pane.isShown) } catch {}
+  }
+  const paused = !networkPoll.active(at, visible)
+  if (paused !== networkPaused) {
+    networkPaused = paused
+    refreshStatus($)
+  }
+  return networkPoll.poll(at, visible, [
+    { key: 'prs', every: PR_MS, read: () => loadGithub($) },
+    { key: 'inbox', every: INBOX_MS, read: () => loadInbox($) },
+    { key: 'version', every: VERSION_MS, read: () => loadLatest($) },
+  ], force, () => $.clock.now())
 }
 
 // 업무 알림을 읽는다. 받기와 필터는 inbox.ts 가 하고, 여기서는 주 checkout 경로만 넘긴다
@@ -1452,16 +1499,32 @@ function fillPrompt($, text) {
   $.ui.toast('입력란에 요청문을 채웠어요. Enter 를 누르면 보내요')
 }
 
+async function recordInput($, e, next) {
+  networkPoll.input(await $.clock.now())
+  return next(e)
+}
+
+function onPromptSubmit($, e, next) {
+  return ['composer', 'bridge'].includes(e.origin?.kind) ? recordInput($, e, next) : next(e)
+}
+
+function onPromptChange($, e, next) {
+  return ['history', 'undo'].includes(e.origin?.kind) ? recordInput($, e, next) : next(e)
+}
+
+function onPaneFocus($, e, next) {
+  return e.origin?.kind === 'person' ? recordInput($, e, next) : next(e)
+}
+
 export function register(on) {
   on('session.start', async ($, e, next) => {
     await loadFile($)
+    networkPoll.input(await $.clock.now())
     $.clock.every(FILE_MS, () => loadFile($))
+    $.clock.every(FILE_MS, () => pollNetwork($))
     $.clock.every(LIVE_MS, () => loadLive($))
-    $.clock.every(INBOX_MS, () => loadInbox($))
-    $.clock.every(VERSION_MS, () => loadLatest($))
     loadLive($)
-    loadInbox($)
-    void loadInstall($).then(() => loadLatest($))
+    void loadInstall($).then(() => pollNetwork($, true))
     await $.command.register({ name: 'board', description: '작업 현황 창 열기', immediate: true })
     return next(e)
   })
@@ -1470,15 +1533,24 @@ export function register(on) {
     dismissMode = false
     checkMode = false
     await loadFile($)
+    networkPoll.input(await $.clock.now())
     loadLive($)
-    loadInbox($)
-    loadLatest($)
+    void pollNetwork($, true)
     await $.ui.open({ id: PANE, title: '작업 현황', closeOnEscape: true })
     return {}
   })
 
   // 확인 모드에서 Esc(사람이 닫기)는 창을 닫지 않고 번호만 지운다. 엔진이 내리는 unload 는 그대로 닫는다
   on('ui.close', onPaneClose)
+
+  // plugin 의 prompt.fill 과 정기 render 는 무조작 기한을 늘리지 않는다.
+  on('prompt.change', onPromptChange)
+  on('prompt.submit', onPromptSubmit)
+  on('prompt.edit', recordInput)
+  on('ui.press', recordInput)
+  on('ui.input', recordInput)
+  on('ui.select', recordInput)
+  on('ui.focus', onPaneFocus)
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)

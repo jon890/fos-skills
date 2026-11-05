@@ -131,6 +131,7 @@ node --disable-warning=ExperimentalWarning "$BOARD_BIN" list               # 모
 ## 갱신
 
 main 에 머지된 새 버전은 창의 `p` 로 받아요. `claude plugin update fos-skills@fos-skills` 를 돌린 뒤 입력란에 채워지는 `/reload-plugins` 를 Enter 로 보내면 돼요.
+창을 닫거나 오래 입력하지 않으면 자동 네트워크 조회를 쉬어요. 상태 줄에는 PR과 알림을 확인한 시각과 「조회 쉼」을 붙여요. `/board` 를 다시 열면 상태를 읽고, 같은 저장소를 보는 세션은 PR 조회 결과를 나눠 써요.
 work-board 를 고치는 동안에는 저장소 루트 README 의 「고치는 동안」 대로 작업 트리를 `--plugin-dir` 로 실어요. 테스트는 저장소 루트에서 `claude plugin test .` 로 돌려요.
 
 ## 함께 쓰는 스킬
