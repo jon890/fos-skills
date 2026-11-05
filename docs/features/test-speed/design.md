@@ -60,15 +60,15 @@
 
 | 파일 | 내보내는 것 | 규칙 |
 | --- | --- | --- |
-| `temp.ts` | `tempDir(prefix)` | `realpathSync(mkdtempSync(...))` 를 돌려준다. 만든 폴더를 모아 `after` 훅(테스트 밖에서 부르면 프로세스 `exit`)에서 지운다. `TESTKIT_KEEP=1` 이면 지우지 않고 경로를 stderr 에 한 줄 낸다(스펙 DECISION18) |
-| `git.ts` | `gitEnv(base)`, `git(cwd, ...args)`, `templateRepo(opts)`, `copyRepo(template, dest)` | `gitEnv` 는 `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, 작성자와 커미터 이름·메일을 더한 사본을 돌려준다. `GIT_CEILING_DIRECTORIES` 는 인자로 받을 때만 건다. `git` 은 종료 코드가 0 이 아니면 stderr 를 담아 throw 하고 stdout 을 trim 해 돌려준다. `templateRepo` 는 bare origin 과 첫 커밋을 push 한 clone 한 벌을 프로세스마다 처음 한 번만 만든다. 기본 브랜치는 `main` 이다. `copyRepo` 는 `cpSync` 로 두 폴더를 복사하고 origin 주소만 바꾼다(`fixtures/cleanup-sweep.ts` 의 `makeRepo` 와 같은 방법) |
+| `temp.ts` | `tempDir(prefix, t?)` | `realpathSync(mkdtempSync(...))` 를 돌려준다. 만든 폴더는 모듈 수준 목록에 모은다. 모듈을 처음 평가할 때(테스트 파일 최상위 import, 루트 문맥) 루트 `after` 하나와 `process.on('exit')` 를 걸어 목록을 한꺼번에 지운다. `t`(TestContext)를 주면 그 테스트의 `t.after` 에서 바로 지운다. `beforeEach`, `before` 안에서 부른 `after` 는 그 훅이 끝나자마자 돌아(2026-11-05 실험: 테스트 본문보다 먼저 정리됨) 쓰지 않는다. `TESTKIT_KEEP=1` 이면 지우지 않고 경로를 stderr 에 한 줄 낸다(스펙 DECISION18). `node:test` 를 import 하는 testkit 파일은 이것 하나다 |
+| `git.ts` | `gitEnv(base)`, `git(cwd, ...args)`, `templateRepo(opts)`, `copyRepo(template, dest)` | `gitEnv` 는 `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, 작성자와 커미터 이름·메일을 더한 사본을 돌려준다. `GIT_CEILING_DIRECTORIES` 는 인자로 받을 때만 건다. `git` 은 종료 코드가 0 이 아니면 stderr 를 담아 throw 하고 stdout 을 trim 해 돌려준다. `templateRepo` 는 bare origin 과 첫 커밋을 push 한 clone 한 벌을 프로세스마다 처음 한 번만 만든다. 템플릿은 `temp.ts` 의 프로세스 단위 목록(루트 정리)에 두고, 테스트 단위 정리에 넣지 않는다. 기본 브랜치는 `main` 이다. `copyRepo` 는 `cpSync` 로 두 폴더를 복사하고 origin 주소만 바꾼다(`fixtures/cleanup-sweep.ts` 의 `makeRepo` 와 같은 방법) |
 | `fake-bin.ts` | `fakeBin(dir, name, rules, opts)`, `linkBin(dir, name, body)`, 규칙 꼴 `FakeRule` | 아래 「가짜 실행 파일」 |
-| `command.ts` | `runCommand(argv, opts)`, `runCommandAsync(argv, opts)` | `opts` 는 cwd, env, input, timeoutMs 다. 결과는 `{ code, signal, stdout, stderr, timedOut }` 이다. 신호로 끝나면 `code` 는 null 이다. 스크립트는 `[process.execPath, 스크립트, ...인자]` 로 부른다. 명령 경계 테스트(node-runtime 스펙 DECISION11)가 `python3 x.py` 와 `node x.ts` 를 같은 꼴로 부를 수 있게 argv 를 그대로 받는다 |
-| `fake-run.ts` | `fakeRun(rules)` | `{ run, calls, setRules }` 를 돌려준다. `run(argv, opts)` 는 `FakeRule` 을 위에서부터 보고 `args` 의 문자열이 argv 에 모두 든 첫 규칙의 `{ code, stdout, stderr, timedOut: false }` 를 돌려준다. 맞는 규칙이 없으면 code 0 과 빈 출력이다. `calls()` 는 받은 argv 와 opts 의 배열이다. orch 의 `lib/proc.ts` 를 import 하지 않고, 결과 꼴이 `RunResult` 와 구조로 맞는다 |
+| `command.ts` | `runCommand(argv, opts)`, `runCommandAsync(argv, opts)` | `opts` 는 cwd, env, input, timeoutMs 다. 자식 환경에서 `NODE_TEST_CONTEXT` 를 지운다. 테스트 안에서 띄운 `node --test` 가 이 값을 물려받으면 reporter 출력이 사라진다(검토 실험). 결과는 `{ code, signal, stdout, stderr, timedOut }` 이다. 신호로 끝나면 `code` 는 null 이다. 스크립트는 `[process.execPath, 스크립트, ...인자]` 로 부른다. 명령 경계 테스트(node-runtime 스펙 DECISION11)가 `python3 x.py` 와 `node x.ts` 를 같은 꼴로 부를 수 있게 argv 를 그대로 받는다 |
+| `fake-run.ts` | `fakeRun(rulesByCommand)` | `{ run, calls, setRules }` 를 돌려준다. 규칙은 `{ gh: FakeRule[], git: FakeRule[] }` 처럼 명령 이름별로 받는다. `run(argv, opts)` 는 `basename(argv[0])` 으로 규칙 묶음을 고르고, `argv.slice(1)` 에 대해 `FakeRule` 을 위에서부터 보아 `args` 의 문자열이 모두 든 첫 규칙의 `{ code, stdout, stderr, timedOut: false }` 를 돌려준다. 가짜 실행 파일이 `process.argv.slice(2)` 에 맞추는 것과 같은 인자 범위다. 맞는 규칙이 없으면 code 0 과 빈 출력이다. `calls()` 는 받은 argv 와 opts 의 배열이다. orch 의 `lib/proc.ts` 를 import 하지 않고, 결과 꼴이 `RunResult` 와 구조로 맞는다 |
 | `measure.ts` | 명령 `node modules/testkit/measure.ts` | 아래 「측정 명령」 |
 
-- `fake-bin.ts` 와 `fake-run.ts` 는 같은 `FakeRule` 꼴과 같은 맞춤 규칙을 쓴다. 가짜 실행 파일의 본문은 JS 문자열이라 맞춤 함수를 import 할 수 없다. 그래서 같은 규칙 사례 표를 두 구현에 돌리는 테스트로 묶는다.
-- testkit 은 `node:test` 의 `after` 를 쓰므로 테스트 파일 안에서 import 한다. `measure.ts` 만 명령으로 실행한다.
+- `fake-bin.ts` 와 `fake-run.ts` 는 같은 `FakeRule` 꼴과 같은 맞춤 규칙을 쓴다. 명령 하나의 규칙 목록은 두 쪽에 그대로 옮길 수 있다(가짜 실행 파일 `gh` 의 규칙이 `fakeRun({ gh: ... })` 의 규칙이다). 가짜 실행 파일의 본문은 JS 문자열이라 맞춤 함수를 import 할 수 없다. 그래서 같은 사례 표(명령, 규칙, 인자, 기대 결과)를 두 구현에 돌리는 테스트로 묶는다.
+- `temp.ts` 는 `node:test` 를 import 하므로 테스트 파일 안에서만 쓴다. 일반 스크립트가 쓰면 stdout 끝에 node:test 요약이 붙는다(검토 실험). `measure.ts` 는 명령이라 `temp.ts` 를 쓰지 않고 자기 정리를 한다.
 
 ### 가짜 실행 파일
 
@@ -86,33 +86,40 @@
 | 옵션 | 뜻 |
 | --- | --- |
 | `--concurrency N` | `node --test --test-concurrency=N`. Python 묶음은 `ceil(N/2)` 개씩 함께 돈다. 기본 4 |
-| `--timeout SEC` | `node --test --test-timeout=SEC*1000`, Python 묶음 하나와 `tsc` 의 시간 제한. 기본 600. node 의 제한은 파일이 아니라 테스트 하나에 걸린다 |
+| `--timeout SEC` | 기본 600. `node --test --test-timeout=SEC*1000`(테스트 하나의 제한), node 단계의 무진행 감시, Python 묶음 하나와 `tsc` 의 제한에 함께 쓴다(아래 node 단계) |
 | `--out DIR` | 결과 폴더. 기본은 임시 폴더 아래 새 폴더 |
 | `--background`, `--wait DIR`, `--max-wait SEC` | 지금과 같다. 결과 폴더의 `summary.txt`, `runner.pid`, `runner.log` 꼴도 같다. 기다리기 안내 줄은 `node scripts/run-tests.ts --wait "<폴더>"` 다 |
 
-- 묶음 찾기(스펙 DECISION13): `git ls-files --cached --others --exclude-standard` 의 목록에서 `tests/` 아래 `*.spec.ts` 를 node 파일로, `tests/test_*.py` 를 가진 `tests` 폴더를 Python 묶음으로 고른다. 2026-11-05 에 이 규칙으로 고른 Python 묶음은 CI 의 반복문이 돌던 12개와 같았다. git 저장소가 아니면 2 로 끝난다.
-- 인자를 주면 그 파일이나 glob 에 맞는 node 파일과, 그 경로에 든 Python 묶음만 돈다. `tsc` 는 인자가 없을 때만 돈다. 맞는 것이 없으면 지금처럼 「돌릴 테스트 파일이 없다」 와 2 다.
-- 단계: `tsc`, node, Python 묶음을 동시에 띄운다(스펙 DECISION14). 각 단계의 출력은 결과 폴더의 단계별 로그에 쓰고 섞지 않는다.
-- node 단계: `node --test --test-concurrency=N --test-timeout=MS --test-reporter=<파일별 reporter> --test-reporter-destination=stdout --test-reporter=spec --test-reporter-destination=<로그> <파일...>` 를 새 세션(detached)으로 한 번 띄운다. 테스트가 프로세스 그룹에 보낸 신호가 실행기에 닿지 않게 하려는 것이다. 끝나면 그룹 전체를 SIGKILL 로 정리한다. `NODE_COMPILE_CACHE` 가 없으면 결과 폴더 밖의 고정 캐시 폴더를 준다.
-- 파일별 reporter(`scripts/run-tests-reporter.ts`): Node 24 는 파일 하나가 끝나면 nesting 0, 이름이 파일 이름인 `test:complete` 와 그 파일의 `test:summary`(`success`, `duration_ms`)를 낸다(2026-11-05 실험). reporter 는 `test:summary` 마다 한 줄을 낸다. 실행기는 그 줄을 지금 꼴(`통과 <파일> <초>s`, `실패 <파일> <초>s (<이유>) 로그: <로그>`)로 바꿔 `summary.txt` 와 stdout 에 적는다.
+- 묶음 찾기(스펙 DECISION13): 인자가 없을 때 `git ls-files --cached --others --exclude-standard` 의 목록을 `existsSync` 로 다시 확인하고(지웠지만 커밋하지 않은 파일을 뺀다) `tests/` 아래 `*.spec.ts` 를 node 파일로, `tests/test_*.py` 를 가진 `tests` 폴더를 Python 묶음으로 고른다. 2026-11-05 에 이 규칙으로 고른 Python 묶음은 CI 의 반복문이 돌던 12개와 같았다. 인자 없이 git 저장소 밖에서 부르면 2 로 끝난다.
+- 인자를 주면 지금 `expand` 처럼 파일 시스템에서 푼다(glob 문자가 있으면 `globSync`, 없으면 있는 경로). git 은 필요 없다. 풀린 것 가운데 `test_*.py` 파일이나 그것을 가진 폴더는 그 `tests` 폴더의 Python 묶음이 되고, 나머지 파일은 node 파일이 된다(확장자를 따지지 않는다. 지금 실행기 테스트가 `*.spec.mjs` 를 쓴다). `tsc` 는 인자가 없을 때만 돈다. 맞는 것이 없으면 지금처럼 「돌릴 테스트 파일이 없다」 와 2 다.
+- 단계: `tsc`, node, Python 묶음을 동시에 띄운다(스펙 DECISION14). 모든 단계를 새 세션(detached)으로 띄우고, 끝나면 그 프로세스 그룹을 SIGKILL 로 정리한다. 자식 환경에서 `NODE_TEST_CONTEXT` 를 지운다. 각 단계의 출력은 결과 폴더의 단계별 로그에 쓰고 섞지 않는다.
+- node 단계: `node --test --test-concurrency=N --test-timeout=MS --test-reporter=<파일별 reporter> --test-reporter-destination=stdout --test-reporter=spec --test-reporter-destination=<로그> <파일...>` 를 한 번 띄운다. `NODE_COMPILE_CACHE` 가 없으면 사용자 캐시 폴더 아래 고정 폴더를 준다.
+- 그룹 신호의 격리를 지금 실행기만큼 지키지 않는다. 새 세션은 실행기 자신만 지킨다. `node --test` 가 띄운 파일 프로세스는 부모와 같은 그룹이라, 테스트가 그룹에 신호를 보내면 `node --test` 가 남은 파일을 취소하고 끝난다(검토 실험). 이 격리가 필요했던 경우는 재현되지 않았다(스펙 「실행기」, DECISION1). 대신 끊긴 실행이 통과로 보이지 않게 아래 대조로 실패를 드러낸다. 지금 `test_run_node_tests.py` 의 「그룹 신호를 보내는 파일이 섞여도 나머지가 돈다」 사례는 「끊기면 남은 파일이 `보고 없음` 실패로 센다」 로 바꿔 옮긴다.
+- 무진행 감시: node 단계에서 파일 완료 사건이 `--timeout` 초 동안 하나도 오지 않으면 그룹을 SIGKILL 한다. 테스트가 남긴 손자 프로세스가 stdio 를 쥐면 `--test-timeout` 과 `--test-force-exit` 로도 `node --test` 가 끝나지 않는다(검토 실험). 감시가 끊은 뒤 보고가 없는 파일은 `시간 초과` 로 센다.
+- 파일별 reporter(`scripts/run-tests-reporter.ts`): 파일 하나가 끝나면 Node 24 는 nesting 0, `name` 이 파일 이름(`basename(file)`)인 `test:complete` 를 낸다. 이 사건에는 `details.passed`, `details.duration_ms`(기동 포함), 실패면 `details.error` 의 `failureType`, `exitCode`, `signal` 이 있다. 파일별 `test:summary` 는 프로세스가 `process.exit` 로 끝나거나, 신호로 죽거나, import 에 실패한 파일에는 오지 않는다(검토 실험). 그래서 reporter 는 파일 단위 `test:complete` 마다 한 줄(JSON)을 낸다.
+- 실행기는 그 줄을 지금 꼴(`통과 <파일> <초>s`, `실패 <파일> <초>s (<이유>) 로그: <로그>`)로 바꿔 `summary.txt` 와 stdout 에 적는다. 이유는 `종료 코드 N`, `신호 S`, 하위 테스트의 `testTimeoutFailure` 면 `시간 초과`, 그 밖은 `테스트 실패` 다.
+- 대조: node 단계가 끝나면 넘긴 파일 목록과 보고를 맞춘다. 보고가 없는 파일은 `실패 <파일> 0.0s (보고 없음)` 으로 센다. `node --test` 가 0 이 아닌 코드로 끝났는데 실패가 하나도 없으면 `실패 node 단계 (종료 코드 N)` 한 줄을 더한다. 끊긴 실행이 끝 줄에서 ` 실패 0,` 으로 읽히지 않게 하려는 것이다.
 - Python 단계: 묶음마다 `python3 -m unittest discover -s <폴더>` 를 저장소 루트에서 띄운다. 요약 줄은 파일 대신 폴더 이름을 쓴다. `python3` 가 없으면 남은 묶음마다 실패 줄(「python3 가 없다」)을 낸다(스펙 DECISION15).
-- `tsc` 단계: 실행기 상수 `TYPESCRIPT = 'typescript@5.9.3'`, `NODE_TYPES = '@types/node@24'` 로 설치 폴더를 정한다. 기본은 `${XDG_CACHE_HOME:-~/.cache}/fos-skills/tsc/<두 값의 해시>` 이고 `FOS_TSC_DIR` 로 바꾼다. 폴더가 없으면 형제 임시 폴더에 `npm install --no-save --no-audit --no-fund --prefix` 로 설치한 뒤 `rename` 으로 옮긴다. 두 실행기가 함께 설치해도 하나만 이기고 다른 하나는 진 폴더를 지운다. 그다음 `<폴더>/node_modules/.bin/tsc -p tsconfig.json --typeRoots <폴더>/node_modules/@types` 를 돈다. npm 이 없거나 설치가 실패하면 실패 줄(이유 한 줄)을 낸다(스펙 DECISION20). 요약 줄은 `tsc` 를 파일 이름 자리에 쓴다.
-- 끝 줄: `결과: 통과 P, 실패 F, 전체 T, 걸린 시간 Ss`. 셈의 단위는 요약 줄 하나(node 파일, Python 묶음, `tsc`)다. `--wait` 의 판정(` 실패 0,`)과 「결과: 」 접두는 그대로다. 걸린 시간은 실행기 시작부터 끝 줄까지다(스펙 DECISION22).
-- 종료 코드: 0 통과, 1 실패가 있음, 2 실행하지 못함(인자 오류, 대상 없음, git 저장소 아님, 결과 폴더 없음, 끝 줄 없이 멈춤), 3 `--wait` 가 최대 시간까지 끝 줄을 보지 못함.
+- `tsc` 단계: 실행기 상수 `TYPESCRIPT = 'typescript@5.9.3'`, `NODE_TYPES = '@types/node@24.19.2'` 로 설치 폴더를 정한다. 둘 다 정확한 버전이다. 범위(`@24`)로 두면 로컬 캐시는 처음 설치한 버전을 계속 쓰고 CI 는 새 버전을 받아 다시 어긋난다. 2026-11-05 의 `@types/node@24` 최신이 24.19.2 다. 버전을 올릴 때는 이 상수만 고친다. 기본 폴더는 `${XDG_CACHE_HOME:-~/.cache}/fos-skills/tsc/<두 값의 해시>` 이고 `FOS_TSC_DIR` 로 바꾼다. 설치됨은 `<폴더>/node_modules/.bin/tsc` 가 있는지로 본다. 없으면 형제 임시 폴더 `<폴더>.tmp-<pid>` 에 `npm install --no-save --no-audit --no-fund --prefix` 로 설치한 뒤 `rename` 으로 옮긴다. 두 실행기가 함께 설치하면 먼저 옮긴 쪽이 이기고, 진 쪽은 자기 임시 폴더를 지운다. 다른 pid 의 임시 폴더는 그 pid 가 죽었을 때만 지운다. worker 여럿이 워크트리마다 실행기를 함께 돌리기 때문이다. 그다음 `<폴더>/node_modules/.bin/tsc -p tsconfig.json --typeRoots <폴더>/node_modules/@types` 를 돈다. npm 이 없거나 설치가 실패하면 실패 줄(이유 한 줄)을 낸다(스펙 DECISION20). 요약 줄은 `tsc` 를 파일 이름 자리에 쓴다.
+- 끝 줄: `결과: 통과 P, 실패 F, 전체 T, 걸린 시간 Ss`. 셈의 단위는 요약 줄 하나(node 파일, Python 묶음, `tsc`, 대조가 더한 줄)다. `--wait` 의 판정(` 실패 0,`)과 「결과: 」 접두는 그대로다. 걸린 시간은 실행기 시작부터 끝 줄까지다(스펙 DECISION22).
+- 종료 코드: 0 통과, 1 실패가 있음, 2 실행하지 못함(인자 오류, 대상 없음, 인자 없이 git 저장소 밖, 결과 폴더 없음, 끝 줄 없이 멈춤), 3 `--wait` 가 최대 시간까지 끝 줄을 보지 못함.
 - `claude plugin test .` 는 돌지 않는다(스펙 「범위 밖」).
 
 ### CI 와 로컬 검증
 
-- `.github/workflows/ci.yml` 은 job 하나(`Tests`)가 된다. 순서: checkout, setup-node 24, setup-python 3.12, `jq`·`zsh` 설치, Claude Code CLI 설치, `claude plugin test .`, `node scripts/run-tests.ts`. 실행기 밖의 `tsc` 단계와 node 테스트 줄, Python 반복문은 지운다. `FOS_TSC_DIR` 과 `NODE_COMPILE_CACHE` 는 `${{ runner.temp }}` 아래로 준다. 제한 시간은 지금 두 job 중 긴 쪽인 15분이다.
+- `.github/workflows/ci.yml` 은 job 하나(`Tests`)가 된다. 순서: checkout, setup-node 24, setup-python 3.12, `jq`·`zsh` 설치, Claude Code CLI 설치, `claude plugin test .`, `node scripts/run-tests.ts`. 실행기 밖의 `tsc` 단계와 node 테스트 줄, Python 반복문은 지운다. `FOS_TSC_DIR`, `NODE_COMPILE_CACHE` 같은 값은 주지 않고 실행기 기본값을 쓴다(값의 원본은 실행기다). 제한 시간은 지금 두 job 중 긴 쪽인 15분이다.
 - `.orch/overlay.md` 의 머지 조건은 「`Tests` 가 통과해야 한다」 가 되고, 로컬 검증은 `claude plugin test .` 와 `node scripts/run-tests.ts` 둘이 된다. 600초를 넘기면 `--background` 와 `--wait` 를 쓰라는 안내는 대기 옵션을 정리할 때까지 남긴다.
-- node-runtime 스펙과 설계의 「`Python tests` job 을 지운다」(REQ5)는 「실행기의 Python 단계와 CI 의 Python, jq, zsh 설치 단계를 지운다」 가 된다. 그쪽 문서는 코디네이터가 그쪽 worker 로 맞춘다(스펙 DECISION11). 이 기능의 PR3 은 node-runtime 문서를 고치지 않는다.
-- README 「기여」 절의 테스트 명령, 「scripts」 표의 `run-node-tests.ts` 행, `docs/code-architecture.md` 「모듈 책임」 표에 실행기 행을 고친다.
+- node-runtime 스펙과 설계의 「`Python tests` job 을 지운다」(REQ5)는 「실행기의 Python 단계와 CI 의 Python, jq, zsh 설치 단계를 지운다」 가 된다. 그쪽 문서는 이미 그 꼴로 맞춰졌다(bb61fd3, node-runtime REQ5 와 DECISION22). 이 기능의 PR3 은 node-runtime 문서를 고치지 않는다.
+- PR3 이 고칠 문서: README 「기여」 절의 테스트 명령과 세션 분리 설명, 「scripts」 표의 `run-node-tests.ts` 행. `docs/code-architecture.md` 의 「모듈 책임」 표에 실행기 행을 더하고, 「검증」 표의 node 줄과 「실행 규칙」 의 「테스트」 행(`Plugin tests` job, 「필수 체크 이름이 바뀌지 않는다」)을 고친다.
+- PR2 가 고칠 문서: `docs/code-architecture.md` 의 「범위」 표 「플러그인과 함께 복사되지만 스킬이 아니다」 칸과 「디렉터리 배치」 표에 `modules/` 를 더한다. 배치 행의 근거는 스펙 DECISION7 이다. 「디렉터리 배치」 아래 「배치의 결정은 ADR-020 이 소유한다」 문장 옆에 `modules/` 는 스펙 DECISION7 이 정했다고 적는다.
+- PR2 는 새 node 테스트가 PR3 전에도 돌게 CI 의 node 테스트 줄과 `scripts/run-node-tests.ts` 의 `DEFAULT_PATTERNS` 에 `modules/testkit/tests/*.spec.ts`, `scripts/tests/*.spec.ts` 를 더하고, `tsconfig.json` 의 `include` 에 `modules/**/*.ts` 를 더한다.
 
 ### 내보내기 경계 검사
 
 - `scripts/tests/exported-imports.spec.ts`(node 테스트). `scripts/export-to-team.sh` 에서 `SHARED_SKILLS=(...)` 와 `SHARED_TOOLS=(...)` 줄을 읽어 폴더를 고른다. 스킬 이름은 `skills/<이름>`, `export-only-skills/<이름>` 순으로 찾고(`scripts/skill_paths.py` 와 같은 순서), 도구는 `tools/<이름>` 이다.
-- 그 폴더의 `.ts`, `.mts`, `.js`, `.mjs` 파일에서 `from '...'`, `import('...')`, `require('...')` 의 상대 경로를 그 파일 기준으로 풀어, 폴더 밖이면 `<파일>: <import 경로>` 를 모아 실패한다(스펙 DECISION19).
-- 지금 내보내는 폴더에는 TypeScript 가 거의 없어 통과한다. node-runtime 전환이 옮겨 오는 파일부터 이 검사에 걸린다.
+- 그 폴더의 `.ts`, `.mts`, `.cts`, `.js`, `.mjs`, `.cjs` 파일에서 상대 경로 문자열을 찾는다. 꼴은 `import ... from '...'`, `export ... from '...'`, 부수 효과 `import '...'`, `import('...')`, `require('...')`, `new URL('...', import.meta.url)` 이다. 그 파일 기준으로 풀어 폴더 밖이면 `<파일>: <import 경로>` 를 모아 실패한다(스펙 DECISION19).
+- 목록의 이름에 맞는 폴더가 없으면 조용히 넘어가지 않고 실패한다. browser-driver 가 node-runtime 영역 10 에서 `skills/browser` 로 옮겨 가면 이 검사가 먼저 알린다.
+- 지금 내보내는 폴더에는 TS·JS 파일이 없어 검사가 비어 있다(검토 확인). 그래서 임시 폴더의 가짜 내보내는 폴더로 검사 함수가 잡는지를 따로 본다. node-runtime 전환이 옮겨 오는 파일부터 실제로 걸린다.
 
 ### 측정 명령
 
@@ -121,7 +128,8 @@
 - 두 커밋을 `git archive` 로 각각 임시 폴더에 푼다. 파일마다 전과 후를 번갈아 N 번(기본 3) `node --test <파일>` 로 돌려 실제 걸린 시간의 가운데 값을 낸다.
 - 기동 수는 사본에서 `delete <무엇>.NODE_OPTIONS` 꼴의 줄을 지운 뒤 preload 로 한 번 센다. preload 는 측정 명령이 임시 폴더에 쓴다.
 - 출력은 PR 본문에 붙일 markdown 표 하나다. 열은 파일, 전 시간, 후 시간, 전 기동 수, 후 기동 수, 실패 여부다. 표 위에 두 커밋과 `uptime` 의 load average 를 적는다.
-- 실행기 PR 과 마지막 PR 의 묶음 전체 시간은 실행기 끝 줄의 걸린 시간으로 잰다.
+- 실행기 PR 과 마지막 PR 의 묶음 전체 시간은 실행기 끝 줄의 걸린 시간으로 잰다. 실행기 PR 의 「전」 은 옛 실행기 끝 줄에 시간이 없으므로, `node scripts/run-node-tests.ts` 와 CI 의 Python 반복문을 차례로 돈 바깥 시간(셸의 `time`)으로 잰다.
+- 측정 명령도 자식 환경에서 `NODE_TEST_CONTEXT` 를 지운다.
 
 ### 측정 방법
 
@@ -140,7 +148,8 @@
 - 배포 순서: 설치본은 main 머지 뒤 플러그인 갱신으로 바뀐다. 기억은 출력과 종료 코드를 바꾸지 않으므로 옛 설치본과 새 설치본이 섞여 돌아도 상태 파일 형식은 같다.
 - testkit 의 원본 보관소와 템플릿 저장소는 프로세스마다 따로라 동시 실행(`--test-concurrency`)에서 경쟁하지 않는다. 테스트 파일 하나 안에서 `node:test` 가 테스트를 동시에 돌려도(`concurrency` 옵션) 원본 쓰기는 처음 한 번의 동기 호출이라 겹치지 않는다.
 - 하드 링크 원본을 테스트가 고쳐 쓰면 모든 링크가 함께 바뀐다. 그래서 `fakeBin` 과 `linkBin` 은 원본에 쓰지 않고, 같은 경로에 다시 걸 때는 링크를 지우고 새로 건다. 테스트가 가짜 경로에 직접 `writeFileSync` 하면 원본이 바뀌므로, 그런 테스트는 testkit 을 쓰지 않고 지금처럼 자기 파일을 쓴다.
-- 실행기가 SIGINT, SIGTERM 을 받으면 띄운 모든 단계의 프로세스 그룹을 끝내고 2 로 끝난다(지금과 같다). `tsc` 설치 중이면 형제 임시 폴더가 남을 수 있고 다음 설치가 그것을 지운다.
+- 실행기가 SIGINT, SIGTERM 을 받으면 띄운 모든 단계의 프로세스 그룹을 끝내고 2 로 끝난다(지금과 같다). `tsc` 설치 중이면 자기 pid 의 임시 폴더가 남고, 다음 실행기가 그 pid 가 죽은 것을 보고 지운다.
+- 감시나 끝 정리가 node 단계를 SIGKILL 하면 testkit 의 `exit` 정리가 돌지 않아 임시 폴더가 남는다. 테스트의 `TMPDIR` 을 결과 폴더로 옮기면 남지 않지만, macOS 의 unix 소켓 경로 길이 제한(104바이트)에 걸리는 테스트가 생길 수 있어 옮기지 않는다. 운영체제의 임시 폴더 정리에 맡긴다.
 - 옮기는 동안의 호환: PR3 은 `scripts/run-node-tests.ts` 를 같은 PR 에서 지운다. 다른 저장소나 worker 지시서가 옛 명령을 부르면 「모듈 없음」 오류로 끝난다. 저장소 파일 가운데 부르는 곳은 `.orch/overlay.md`, README, `scripts/tests/test_run_node_tests.py` 뿐이다(2026-11-05 `git grep run-node-tests`). 저장소 밖에서는 코디네이터의 지시서(`.orch/specs/` 아래)가 이 명령을 적는다. PR3 을 머지할 때 코디네이터가 남은 지시서를 새 명령으로 바꾼다.
 - PR2 와 orch-cli PR3 의 충돌: PR2 는 `skills/orch/tests/fixtures/` 둘과 그것을 쓰는 테스트의 import 만 건드린다. PR3 은 테스트의 스크립트 경로를 고친다. 같은 줄을 고치지 않아 git 이 합친다. 먼저 머지된 쪽 위로 다른 쪽이 rebase 한다.
 
@@ -150,11 +159,11 @@
 - 기억의 경계는 `lib-git.spec.ts`, `lib-paths.spec.ts` 에 더한 테스트가 본다. 기억이 실제로 쓰이는지는 첫 호출 뒤 `PATH` 를 빈 폴더로 바꿔 git 을 띄울 수 없게 하고 같은 답이 나오는지로 본다. 측정 도구를 저장소에 들이지 않는다.
 - REQ3: PR 본문의 전후 표로 확인한다. PR2 부터는 `modules/testkit/measure.ts` 의 출력이다.
 - REQ4: 마지막 PR 에서 부하가 낮을 때(load average 를 표 위에 적는다) 실행기 끝 줄의 걸린 시간으로 확인한다.
-- REQ5: `modules/testkit/tests/*.spec.ts` 가 도우미마다 동작을 본다. 임시 폴더가 `after` 뒤 사라지고 `TESTKIT_KEEP=1` 이면 남는지, `gitEnv` 아래 커밋이 전역 설정을 읽지 않는지, 템플릿 복사본의 origin 이 사본을 가리키고 push 가 되는지, `runCommand` 가 종료 코드, 신호, stdin, 시간 초과를 돌려주는지 본다. fixtures 이전은 그것을 쓰는 기존 orch 테스트(`fakeBin` 을 쓰는 20개 파일과 cleanup-sweep 계열)가 고치지 않은 채 통과하는지로 본다.
+- REQ5: `modules/testkit/tests/*.spec.ts` 가 도우미마다 동작을 본다. `beforeEach` 에서 만든 임시 폴더가 테스트 본문에서 아직 있고 파일이 끝난 뒤 사라지는지, `t` 를 주면 그 테스트 뒤 사라지는지, `TESTKIT_KEEP=1` 이면 남는지, `gitEnv` 아래 커밋이 전역 설정을 읽지 않는지, 템플릿 복사본의 origin 이 사본을 가리키고 push 가 되는지, `runCommand` 가 종료 코드, 신호, stdin, 시간 초과를 돌려주는지 본다. fixtures 이전은 그것을 쓰는 기존 orch 테스트(`fakeBin` 을 쓰는 20개 파일과 cleanup-sweep 계열)가 고치지 않은 채 통과하는지로 본다.
 - REQ6: 같은 테스트 파일에서 `fakeBin` 을 두 폴더에 만들고 `statSync(...).ino` 가 같은지 본다. 규칙과 기록이 폴더마다 따로인지도 본다.
 - 가짜 실행 파일과 가짜 `run()` 의 맞춤 규칙: 같은 사례 표(규칙 목록, argv, 기대 결과)를 두 구현에 돌린다.
-- REQ7: `scripts/tests/run-tests.spec.ts` 가 임시 git 저장소에 통과·실패하는 node 파일, Python 묶음, 빈 `tests` 폴더를 만들고 실행기를 돌린다. 요약 줄 꼴, 끝 줄, 종료 코드 0, 1, 2, `--background` 와 `--wait` 의 3, 인자로 고르기, python3 없음(PATH 에서 뺌)을 본다. `tsc` 단계는 `FOS_TSC_DIR` 에 가짜 `tsc` 를 둔 폴더로 통과와 실패를 본다. 실제 설치는 CI 와 로컬 실행에서 본다. 지금 `test_run_node_tests.py` 가 보던 경우를 모두 옮긴다.
-- REQ8: PR3 의 CI 실행이 `Tests` job 하나로 통과한다. `git grep run-node-tests` 가 비어 있다.
+- REQ7: `scripts/tests/run-tests.spec.ts` 가 임시 git 저장소에 통과·실패하는 node 파일, Python 묶음, 빈 `tests` 폴더를 만들고 실행기를 돌린다. 요약 줄 꼴, 끝 줄, 종료 코드 0, 1, 2, `--background` 와 `--wait` 의 3, 인자로 고르기, python3 없음(PATH 에서 뺌)을 본다. 보고 없음 대조(`process.exit(3)` 하는 파일, 그룹에 신호를 보내는 파일), 무진행 감시(stdio 를 쥔 손자를 남기는 파일과 짧은 `--timeout`), 테스트 안에서 실행기를 띄워도 출력이 나오는지(`NODE_TEST_CONTEXT`)를 본다. `tsc` 단계는 `FOS_TSC_DIR` 에 가짜 `tsc` 를 둔 폴더로 통과와 실패를 본다. 실제 설치는 CI 와 로컬 실행에서 본다. 지금 `test_run_node_tests.py` 가 보던 경우를 모두 옮긴다.
+- REQ8: PR3 의 CI 실행이 `Tests` job 하나로 통과한다. `git grep -l run-node-tests -- ':!docs/features/'` 가 비어 있다(기능 문서는 경위로 이름을 남긴다).
 - REQ9: `scripts/tests/exported-imports.spec.ts` 가 지금 저장소에서 통과하고, 임시 폴더에 밖으로 나가는 import 를 가진 가짜 내보내는 폴더를 두면 그 파일 이름을 내며 실패하는지 본다(검사 함수를 따로 내보내 임시 폴더에 돌린다).
 - REQ10: 로컬에서 타입 오류 하나를 넣은 상태로 실행기를 돌려 `실패 tsc` 줄과 종료 코드 1 을 보고, 되돌려 통과를 본다. PR3 의 CI 로그에 실행기의 `tsc` 줄이 있다.
 
@@ -169,9 +178,11 @@
 | DECISION5 | 열쇠의 환경 변수 | git 탐색에 닿는 네 변수를 열쇠에 넣는다 | 작성자 | 같은 프로세스에서 `GIT_CEILING_DIRECTORIES` 를 바꾸는 테스트가 있다(`lib-git.spec.ts`, `lib-movement.spec.ts`). 지금은 `mainCheckout` 을 부르지 않지만 가정에 기대지 않는다 |
 | DECISION6 | testkit 의 파일 나눔 | 도우미 묶음마다 파일 하나(`temp`, `git`, `fake-bin`, `command`, `fake-run`, `measure`). 색인 파일(`index.ts`)은 두지 않는다 | 작성자 | 테스트가 필요한 것만 import 해 import 비용과 의존을 작게 둔다. 저장소의 lib 모듈도 기능마다 파일이다 |
 | DECISION7 | 실행기의 자리와 이름 | `scripts/run-tests.ts` 와 `scripts/run-tests-reporter.ts` | 작성자 | 지금 실행기(`scripts/run-node-tests.ts`)의 자리를 잇는다. 실행기는 저장소 검증 명령이라 testkit(테스트 안에서 쓰는 모듈)과 책임이 다르다 |
-| DECISION8 | 파일별 요약 줄을 얻는 법 | 사용자 정의 reporter 가 파일마다 오는 `test:summary` 를 한 줄로 낸다 | 작성자 | TAP 의 최상위 항목은 파일이 아니라 테스트였다(2026-11-05 실험). 지금 꼴의 파일별 줄을 지키려면 파일 단위 사건이 필요하다 |
-| DECISION9 | `tsc` 설치 자리 | 사용자 캐시 폴더 아래 버전 해시 폴더. 형제 임시 폴더에 설치하고 `rename` 한다 | 작성자 | 실행마다 npm 설치를 하지 않고, 버전을 바꾸면 새 폴더가 생긴다. `rename` 은 같은 파일 시스템에서 원자적이라 동시 설치가 서로 깨뜨리지 않는다 |
+| DECISION8 | 파일별 요약 줄을 얻는 법 | 사용자 정의 reporter 가 파일 단위 `test:complete`(nesting 0, 이름이 파일 이름)를 한 줄로 내고, 실행기가 넘긴 파일 목록과 대조한다 | 작성자 | TAP 의 최상위 항목은 파일이 아니라 테스트였다(2026-11-05 실험). 파일별 `test:summary` 는 비정상 종료한 파일에 오지 않아 쓰지 않는다(검토 실험) |
+| DECISION9 | `tsc` 설치 자리 | 사용자 캐시 폴더 아래 버전 해시 폴더. 두 버전은 정확한 값으로 고정한다. pid 를 붙인 형제 임시 폴더에 설치하고 `rename` 한다 | 작성자 | 실행마다 npm 설치를 하지 않고, 버전을 바꾸면 새 폴더가 생긴다. `rename` 은 같은 파일 시스템에서 원자적이라 동시 설치가 서로 깨뜨리지 않는다 |
 | DECISION10 | Python 묶음의 동시 수 | `ceil(concurrency/2)` | 작성자 | node 단계와 함께 돌아 CPU 를 나눈다. 차례로 101초인 Python 이 node 가 빨라진 뒤 가장 긴 단계가 되지 않게 둘 이상으로 돈다 |
 | DECISION11 | 내보내기 경계 검사의 언어와 자리 | node 테스트 `scripts/tests/exported-imports.spec.ts` | 작성자 | 새 Python 을 더하면 node-runtime 이 곧 다시 옮긴다. 실행기가 `scripts/tests` 의 두 언어를 함께 찾으므로 같은 폴더에 둘 수 있다 |
 | DECISION12 | 함수 주입 PR 의 설계 | 그 PR 을 띄울 때 이 설계에 절을 더한다. 주입 자리의 꼴은 orch-cli 의 lib 추상화(어댑터 층)를 따른다 | 작성자 | 스펙 DECISION10 으로 orch-cli PR3 뒤에 간다. 지금 정하면 PR3 의 폴더 이동과 어댑터 경계에 맞지 않을 수 있다 |
 | DECISION13 | `modules/` 의 ADR | 새 ADR 을 두지 않는다. `docs/code-architecture.md` 「디렉터리 배치」 표에 행을 더한다 | 작성자 | 사용자가 표에 더하라고 정했다(스펙 DECISION7). 분리 신호가 걸리지 않아 소유 경계 ADR 초안 조건이 아니다 |
+| DECISION14 | 그룹 신호의 격리 | 파일마다 세션을 나누지 않는다. `node --test` 한 번으로 돌고, 끊기면 보고 없음 대조와 무진행 감시로 실패를 드러낸다 | 작성자 | 스펙 DECISION1 이 「격리가 필요한 경우가 재현되지 않았다」 를 근거로 node --test 유지를 정했다. 파일마다 `node --test` 를 띄우면 파일 수만큼 기동이 늘어 2분 목표와 어긋난다. 신호 테스트 11개 파일은 `node --test --test-concurrency=4` 로 끝 요약까지 돌았다 |
+| DECISION15 | 임시 폴더의 정리 시점 | 기본은 테스트 파일이 끝날 때 한꺼번에. `t` 를 주면 그 테스트 뒤 | 작성자 | `beforeEach` 안의 `after` 는 테스트 본문 전에 돈다(실험). 기존 fixtures 는 `beforeEach` 에서 저장소를 만든다 |
