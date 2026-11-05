@@ -119,7 +119,10 @@ Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄
 
 공식 자료만으로는 같은 Task 에서 어느 모델이 나은지 알 수 없다. terra 처럼 「실측 전」 인 행을 확정하려면 PR 마다 실측이 쌓여야 한다.
 
-- **첫 측정.** 2026-11-05, ai-analysis 저장소 orch worker PR 486건. 결과 품질은 모델과 effort 사이 차이가 작았고, Opus `high` 는 같은 크기에서 준비와 비용이 `medium` 의 두 배쯤이었다. 한 저장소만 본 표라 Task 를 무작위로 배정하지 않았다. 표와 한계는 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다
+- **첫 측정일.** 2026-11-05 이다.
+- **대상.** 저장소 하나(ai-analysis)의 orch worker PR 486건이다.
+- **요지.** 결과 품질은 모델과 effort 사이 차이가 작았고, Opus `high` 는 같은 크기에서 준비와 비용이 `medium` 의 두 배쯤이었다. Task 를 무작위로 배정하지 않았다.
+- **근거.** 표와 한계는 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다
 - **형식.** PR 하나에 JSON 한 줄이다. 키는 스펙 [「기록 항목」](../../../docs/features/orch-routing/spec.md) 을 따른다. 토큰만 남기고 금액은 집계 때 그때의 가격표로 계산하며, 메시지와 지시서 본문은 남기지 않는다
 - **쓰는 자리.** `<orch 루트>/state/routing-log.jsonl` 이다
 - **쓰는 주체.** 머지된 PR 은 `finish-pr` 가, 머지 없이 닫힌 PR 과 마무리가 빠진 머지 PR 은 `cleanup-sweep` 이 쓴다. 구현 중이다. 스펙은 [`spec.md`](../../../docs/features/orch-routing/spec.md) 다
