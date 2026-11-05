@@ -293,7 +293,7 @@ export const SCRIPTS_DIR = fileURLToPath(new URL('..', import.meta.url)).replace
 
 function rowOf(name: string): Command | undefined {
   const bare = name.endsWith('.ts') ? name.slice(0, -3) : name
-  return COMMANDS.find((c) => c.legacy?.name === bare || c.script.endsWith(`/${bare}.ts`))
+  return COMMANDS.find((c) => c.legacy?.name === bare || c.script === `${bare}.ts` || c.script.endsWith(`/${bare}.ts`))
 }
 
 // 스크립트끼리 부를 때 쓰는 경로. 옛 이름이나 파일 이름(`merge_queue`, `merge_queue.ts`)을 이 번들의 절대경로로 푼다.

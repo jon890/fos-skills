@@ -156,12 +156,13 @@ function stripFull(args: string[]): { args: string[]; full: boolean } {
   return { args: [...kept, ...tail], full: kept.length !== head.length }
 }
 
-// 옛 꼴로 부를 수 있는 이름. 명령 표의 옛 이름 가운데 그 폴더에 파일이 있는 것과 폴더 바로 아래의 .ts 다
+// 옛 꼴로 부를 수 있는 이름. 명령 표의 옛 이름과 스크립트 파일 이름 가운데 그 폴더에 파일이 있는 것과 폴더 바로 아래의 .ts 다
 function names(commands: Commands, dir: string): string {
   const flat = readdirSync(dir)
     .filter((f) => f.endsWith('.ts'))
     .map((f) => f.slice(0, -'.ts'.length))
-  const listed = commands.legacyNames().filter((n) => commands.scriptIn(dir, n) !== null)
+  const table = [...commands.legacyNames(), ...commands.COMMANDS.map((c) => c.script.slice(c.script.lastIndexOf('/') + 1, -'.ts'.length))]
+  const listed = table.filter((n) => commands.scriptIn(dir, n) !== null)
   return [...new Set([...listed, ...flat])].sort().join(' ')
 }
 
@@ -244,7 +245,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const file = commands.scriptIn(dir, bare)
   if (file === null) {
-    err(`orch: ${bare} 스크립트가 ${dir} 에 없다. 쓸 수 있는 이름: ${names(commands, dir)}`)
+    err(`orch: ${join(dir, `${bare}.ts`)} 가 없다. 쓸 수 있는 이름: ${names(commands, dir)}`)
     return 2
   }
   const legacy = commands.resolveLegacy(bare, printing ? [] : rest)

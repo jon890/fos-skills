@@ -1,3 +1,3 @@
 - 진입 스크립트를 명령 묶음과 같은 `scripts/<묶음>/` 폴더로 옮겼다(`queue/merge_queue.ts` 꼴). `orch` 명령과 옛 꼴 이름은 그대로다.
 - `orch-doctor.py` 와 `ts_shim.py` 는 `scripts/` 바로 아래에 남는다.
-- 스크립트를 파일 경로로 부르던 곳(`$ORCH_SCRIPTS/<이름>.ts`)은 이제 파일이 없다. `orch doctor` 가 `DIRECT-PATH` 와 새 꼴 한 줄로 알린다.
+- 스크립트를 파일 경로로 부르던 곳(`$ORCH_SCRIPTS/<이름>.ts`)은 이제 파일이 없다. `orch doctor` 가 `DIRECT-PATH` 와 새 꼴 한 줄로 알린다. 저장소 체크아웃에서 띄워 둔 상주 루프는 이 변경을 받은 뒤 다시 띄운다.

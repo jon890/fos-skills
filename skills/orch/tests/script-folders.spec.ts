@@ -49,13 +49,16 @@ describe('스크립트 폴더', () => {
       /resolve\(HERE,\s*'([^']+)'\)/g,
       /new URL\('(\.[^']+)',\s*import\.meta\.url\)/g,
       /^import [^'\n]*'(\.\.?\/[^']+)'/gm,
+      // join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates', …) 처럼 조각을 나열한 꼴
+      /(?:join|resolve)\(dirname\(fileURLToPath\(import\.meta\.url\)\),\s*((?:'[^']+'\s*,?\s*)+)\)/g,
     ]
     const missing: string[] = []
     for (const file of [...FILES, ...readdirSync(join(SCRIPTS, 'handlers')).map((n) => `handlers/${n}`)]) {
       const text = readFileSync(join(SCRIPTS, file), 'utf8')
       for (const form of forms) {
         for (const m of text.matchAll(form)) {
-          if (!existsSync(resolve(SCRIPTS, dirname(file), m[1]))) missing.push(`${file}: ${m[1]}`)
+          const rel = m[1].startsWith("'") ? join(...[...m[1].matchAll(/'([^']+)'/g)].map((p) => p[1])) : m[1]
+          if (!existsSync(resolve(SCRIPTS, dirname(file), rel))) missing.push(`${file}: ${m[1]}`)
         }
       }
     }
@@ -64,7 +67,8 @@ describe('스크립트 폴더', () => {
 
   test('저장소의 코드와 문서가 옛 배치 경로(scripts/<파일>.ts)를 가리키지 않는다', () => {
     const names = [...new Set(FILES.map((f) => basename(f, '.ts')))].sort((a, b) => b.length - a.length)
-    const old = new RegExp(`(?<![\\w-])scripts/(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\.ts\\b`)
+    // scripts/<이름>.ts 와 $ORCH_SCRIPTS/<이름>.ts, join(ORCH_SCRIPTS, '<이름>.ts') 꼴
+    const old = new RegExp(`(?:(?<![\\w-])scripts/|ORCH_SCRIPTS\\}?/|ORCH_SCRIPTS\\s*,\\s*['"])(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\.ts\\b`)
     const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)
     const found: string[] = []
     for (const rel of tracked) {
