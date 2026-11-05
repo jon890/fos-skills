@@ -290,7 +290,7 @@ orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여�
 | --- | --- |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정해요. 커밋을 고르는 `--source-ref` 는 머리 주석에 있어요 |
 | `scripts/install-hooks.sh` | `githooks/` 의 훅을 `.git/hooks` 에 걸어요. `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
-| `scripts/run-node-tests.ts` | node 테스트 파일을 하나씩 자기 세션에서 돌리고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
+| `scripts/run-tests.ts` | node, Python 테스트와 tsc 를 함께 돌고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
 | `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾아요. 셸에 따라 죽는 이식성 결함이에요 |
 | `scripts/check-skill-docs.py` | 스킬 README 와 CHANGELOG, 변경 이력 조각이 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
@@ -307,9 +307,10 @@ PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않아요.
-Python 테스트는 저장소 루트에서 `python3 -m unittest discover -s skills/mac-cleanup/tests` 처럼 각 `tests/` 폴더를 주어 실행해요. 다른 위치에서 상대 경로로 부르면 `ImportError` 로 끝나는 스킬이 있어요.
-orch, work-board, inbox 의 TypeScript 테스트는 Node 24 이상에서 `node scripts/run-node-tests.ts` 로 실행해요.
-한 줄 `node --test` 로 모두 돌리면 프로세스 그룹에 신호를 보내는 테스트가 실행기까지 끝내 요약 없이 끝날 수 있어요. 이 실행기는 파일마다 세션을 나눠요.
+나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
+`claude plugin test .` 는 이 명령에 들지 않으니 따로 돌려요.
+한 파일이나 폴더만 돌릴 때는 `node scripts/run-tests.ts skills/mac-cleanup/tests` 처럼 인자로 줘요. 인자를 주면 tsc 는 돌지 않아요.
+`test_*.py` 가 있는 폴더를 주면 Python 묶음만 돌아요. 그 폴더의 `*.spec.ts` 는 파일 경로로 따로 줘요.
 오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둬요.
 
@@ -339,7 +340,7 @@ ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loo
 - 이 README 의 스킬 목록 표
 - 팀에도 내보낼 스킬이면 `scripts/export-to-team.sh` 의 `SHARED_SKILLS`
 
-두 `skills` 배열 가운데 하나라도 빠뜨리면 `python3 -m unittest discover -s scripts/tests` 가 실패해요.
+두 `skills` 배열 가운데 하나라도 빠뜨리면 `node scripts/run-tests.ts scripts/tests` 가 실패해요.
 내보내기 전용 원본은 [`scripts/export-only-skills.json`](scripts/export-only-skills.json) 에 적고 배열에서 빼요.
 
 ### 코어와 오버레이
@@ -416,7 +417,7 @@ main 에 머지될 때마다 `.github/workflows/plugin-version.yml` 이 등급�
 - 경위, 실측 수치, 내부 리팩터링, 테스트 추가는 적지 않아요. 커밋 메시지와 PR 본문이 이것을 가져요.
 - major 를 올리면 이전 major 의 버전들을 `## N.x` 한 절로 줄여요.
 
-항목 수와 줄 길이의 상한은 `scripts/check-skill-docs.py` 가 소유하고, `python3 -m unittest discover -s scripts/tests` 가 README 형식과 함께 검사해요.
+항목 수와 줄 길이의 상한은 `scripts/check-skill-docs.py` 가 소유하고, `node scripts/run-tests.ts scripts/tests` 가 README 형식과 함께 검사해요.
 
 이력을 두는 자리와 태그는 아래를 따라요.
 
