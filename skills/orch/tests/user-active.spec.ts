@@ -9,7 +9,7 @@ import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { inputDir, isAutoPrompt, lastInput, recordInput, userActive } from '../scripts/lib/user-active.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/user-active.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/wait/user-active.ts', import.meta.url))
 let tmp: string
 const saved = { ...process.env }
 

@@ -8,7 +8,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/worker-ask.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/worker/worker-ask.ts', import.meta.url))
 
 // ask 는 n 번째 호출에 askN.out 이 있으면 그것을 내고 askN.rc(없으면 0)로 끝난다. 없으면 FAKE_ASK_SLEEP 초 잔 뒤 ask.out 을 내고 FAKE_ASK_RC 로 끝난다. check 는 n 번째 호출에 checkN.json, 없으면 check.json 을 낸다.
 // 받은 인자는 [인자] 를 이어 한 줄로 기록한다. 여러 줄 인자는 로그에서 줄이 나뉜다.

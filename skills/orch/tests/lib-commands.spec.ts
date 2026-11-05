@@ -3,10 +3,10 @@
 import assert from 'node:assert/strict'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { COMMANDS, GROUPS, form, isGroup, orchWord, resolveLegacy, resolveNew, scriptPath, type Command } from '../scripts/lib/commands.ts'
+import { COMMANDS, GROUPS, form, isGroup, orchWord, resolveLegacy, resolveNew, scriptIn, scriptPath, SCRIPTS_DIR, type Command } from '../scripts/lib/commands.ts'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 
@@ -62,13 +62,14 @@ describe('표의 행', () => {
     const r = resolveNew(['status', '--run', 'R'])
     assert.ok(!('error' in r))
     if ('error' in r) return
-    assert.equal(r.command.script, 'orch-status.ts')
+    assert.equal(r.command.script, 'status/orch-status.ts')
     assert.deepEqual(r.command.context, ['repo'])
     assert.deepEqual(r.args, ['--run', 'R'])
   })
 
   test('묶음 이름은 옛 스크립트 이름과 겹치지 않는다', () => {
-    const scripts = readdirSync(SCRIPTS).filter((f) => /\.(ts|py)$/.test(f)).map((f) => f.replace(/\.(ts|py)$/, ''))
+    // 명령 표의 스크립트(묶음 폴더 아래)와 scripts 바로 아래의 Python 진입점 이름이다
+    const scripts = [...COMMANDS.map((c) => basename(c.script, '.ts')), ...readdirSync(SCRIPTS).filter((f) => f.endsWith('.py')).map((f) => f.slice(0, -3))]
     for (const g of GROUPS) assert.ok(!scripts.includes(g), g)
   })
 
@@ -168,10 +169,34 @@ describe('금지 플래그', () => {
   })
 })
 
-test('scriptPath 는 옛 이름과 파일 이름을 그 폴더의 경로로 푼다', () => {
-  assert.equal(scriptPath(SCRIPTS, 'wait-important'), join(SCRIPTS, 'wait-important.ts'))
-  assert.equal(scriptPath(SCRIPTS, 'wait-important.ts'), join(SCRIPTS, 'wait-important.ts'))
-  assert.equal(scriptPath(SCRIPTS, 'nope'), null)
+test('scriptIn 은 옛 이름과 파일 이름을 그 폴더의 묶음 폴더 경로로 푼다', () => {
+  assert.equal(scriptIn(SCRIPTS, 'wait-important'), join(SCRIPTS, 'wait', 'wait-important.ts'))
+  assert.equal(scriptIn(SCRIPTS, 'wait-important.ts'), join(SCRIPTS, 'wait', 'wait-important.ts'))
+  // 옛 이름이 없는 행도 파일 이름으로 푼다
+  assert.equal(scriptIn(SCRIPTS, 'orch-status'), join(SCRIPTS, 'status', 'orch-status.ts'))
+  assert.equal(scriptIn(SCRIPTS, 'nope'), null)
+})
+
+test('scriptIn 은 묶음 폴더에 없으면 폴더 바로 아래 같은 이름을 본다(폴더 이동 전 배치)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-flat-'))
+  try {
+    writeFileSync(join(dir, 'merge_queue.ts'), '')
+    assert.equal(scriptIn(dir, 'merge_queue'), join(dir, 'merge_queue.ts'))
+    assert.equal(scriptIn(dir, 'finish-pr'), null)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('scriptPath 는 모든 행의 스크립트를 이 번들의 묶음 폴더 아래 있는 파일로 푼다', () => {
+  assert.equal(SCRIPTS_DIR, SCRIPTS.replace(/\/$/, ''))
+  for (const c of COMMANDS) {
+    const file = scriptPath(basename(c.script))
+    assert.ok(existsSync(file), file)
+    assert.equal(basename(dirname(file)), c.group, form(c))
+    if (c.legacy) assert.equal(scriptPath(c.legacy.name), file)
+  }
+  assert.throws(() => scriptPath('nope'), /명령 표에 없는 스크립트다: nope/)
 })
 
 test('orchWord 는 PATH 의 첫 orch 가 표지 있는 실행기면 orch, 아니면 진입점 경로다', () => {

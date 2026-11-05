@@ -8,8 +8,8 @@ import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/make-worktree.ts', import.meta.url))
-const DENY_SCRIPT = fileURLToPath(new URL('../scripts/worktree-deny.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/worker/make-worktree.ts', import.meta.url))
+const DENY_SCRIPT = fileURLToPath(new URL('../scripts/worker/worktree-deny.ts', import.meta.url))
 const DENY = ['Bash(pkill:*)', 'Bash(killall:*)', 'Bash(gh pr merge:*)']
 
 let tmp: string

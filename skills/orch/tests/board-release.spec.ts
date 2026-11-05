@@ -11,7 +11,7 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/board-release.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/board/board-release.ts', import.meta.url))
 
 const FAKE_GH = `const fs = require('node:fs')
 const state = JSON.parse(fs.readFileSync('state.json', 'utf8'))

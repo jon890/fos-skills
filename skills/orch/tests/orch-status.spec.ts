@@ -9,7 +9,7 @@ import { delimiter, dirname, join, relative } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/orch-status.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/status/orch-status.ts', import.meta.url))
 const ENTRY = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
 
 // 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
@@ -140,7 +140,7 @@ describe('orch status', () => {
   test('진입점의 orch status 는 작업 폴더 저장소를 채우고 Run 은 채우지 않는다', () => {
     scene()
     const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', ENTRY, 'status'], {
-      env: { ...env, ORCH_SCRIPTS_DIR: dirname(SCRIPT), HOME: join(tmp, 'home') },
+      env: { ...env, ORCH_SCRIPTS_DIR: dirname(dirname(SCRIPT)), HOME: join(tmp, 'home') },
       cwd: repo,
       encoding: 'utf8',
     })

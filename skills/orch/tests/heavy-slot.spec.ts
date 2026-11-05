@@ -12,11 +12,11 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { classify, compileHeavy, Queue } from '../scripts/heavy-slot.ts'
+import { classify, compileHeavy, Queue } from '../scripts/slot/heavy-slot.ts'
 import { DEFAULT_HOLD_MAX_SEC, holdMaxSec, overHeld } from '../scripts/lib/heavy-hold.ts'
-import type { Heavy } from '../scripts/heavy-slot.ts'
+import type { Heavy } from '../scripts/slot/heavy-slot.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/heavy-slot.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/slot/heavy-slot.ts', import.meta.url))
 const NODE = process.execPath
 const CLEAR = ['HEAVY_SLOT_DIR', 'HEAVY_SLOT_HELD', 'HEAVY_SLOTS', 'HEAVY_EXCLUSIVE', 'HEAVY_POLL', 'HEAVY_IDLE_WAIT', 'MEM_GATE', 'ORCH_DIR']
 const GIT_ENV = {

@@ -256,7 +256,7 @@ test('호출 수 명령은 UTC 날짜 경계를 넘어 최근 한 시간만 센�
     { time: '2026-01-01T22:00:00Z', cacheHit: false },
   ].map((row) => JSON.stringify(row)).join('\n'))
   writeFileSync(join(logs, '2026-01-02.jsonl'), JSON.stringify({ time: '2026-01-02T00:15:00Z', cacheHit: true }) + '\n{partial')
-  const module = fileURLToPath(new URL('../scripts/gh-usage.ts', import.meta.url))
+  const module = fileURLToPath(new URL('../scripts/doctor/gh-usage.ts', import.meta.url))
   const code = `Date.now=()=>Date.parse('2026-01-02T00:30:00Z'); process.argv=['node','gh-usage','--repo',${JSON.stringify(repo)}]; await import(${JSON.stringify(module)})`
   const result = run([process.execPath, '--input-type=module', '-e', code], { env: { ORCH_DIR: join(repo, '.orch') } })
   assert.equal(result.code, 0, result.stderr)

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/orch-loop.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
 const RULES_PATH = 'repos/o/r/rules/branches/main'
 const RUN = 'run_t'
 const HEAD_A = 'a'.repeat(40)
@@ -579,6 +579,15 @@ describe('큐가 도는 동안', () => {
     assert.deepEqual(queueCalls(), [])
     // 차례 기록이 없는 큐는 명령줄을 옮겨 적는다
     assert.match(output, /^AUTO-MERGE-HELD pid 99999 차례 기록 없음: node merge_queue\.ts 9$/m)
+  })
+
+  test('묶음 폴더 경로(scripts/queue/merge_queue.ts)로 도는 큐도 merge_queue. 로 가려 걸지 않는다', () => {
+    writeFileSync(join(tmp, 'ps-lines.txt'), '99999 node --disable-warning=ExperimentalWarning /p/fos-skills/5.13.0/skills/orch/scripts/queue/merge_queue.ts 9\n')
+    github([pr(1)])
+    const output = once()
+    assert.deepEqual(events('AUTO-MERGE'), [])
+    assert.deepEqual(queueCalls(), [])
+    assert.match(output, /^AUTO-MERGE-HELD pid 99999 차례 기록 없음: .*\/scripts\/queue\/merge_queue\.ts 9$/m)
   })
 
   test('큐가 뺀 PR 의 이유를 QUEUE-DROPPED 로 한 번만 옮기고, 끝난 큐의 기록은 옮긴 뒤 지운다', () => {

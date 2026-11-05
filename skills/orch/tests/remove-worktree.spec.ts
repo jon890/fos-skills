@@ -11,7 +11,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/remove-worktree.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/cleanup/remove-worktree.ts', import.meta.url))
 const HOOK = 'node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}'
 
 // terminal 은 그 프로세스를 띄운 Orca 터미널이다. 가짜 orca 가 그 터미널을 닫으면 프로세스도 끝난다

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { CASES, layout } from './fixtures/install-records.ts'
 
 const LAUNCHER = fileURLToPath(new URL('../../../bin/orch', import.meta.url))
-const INSTALL = fileURLToPath(new URL('../scripts/install-cli.ts', import.meta.url))
+const INSTALL = fileURLToPath(new URL('../scripts/doctor/install-cli.ts', import.meta.url))
 const SHIM = fileURLToPath(new URL('../scripts/ts_shim.py', import.meta.url))
 
 type Result = { code: number | null; stdout: string; stderr: string }

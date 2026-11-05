@@ -31,10 +31,15 @@ function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): stri
   mkdirSync(scripts, { recursive: true })
   const echo = `console.log('${name}', process.argv.slice(2).join(' '), 'hop=' + (process.env.ORCH_ENTRY_HOP ?? ''))\nprocess.exitCode = Number(process.env.HELLO_EXIT ?? 0)\n`
   writeFileSync(join(scripts, 'hello.ts'), `console.log('${name}', process.argv.slice(2).join(' '))\nprocess.exitCode = Number(process.env.HELLO_EXIT ?? 0)\n`)
-  for (const fake of ['wait-important.ts', 'orch-loop.ts']) writeFileSync(join(scripts, fake), echo)
+  // 명령 표의 스크립트는 묶음 폴더 아래에 둔다(지금 배치). hello, sleeper 는 표에 없는 이름이라 폴더 바로 아래다
+  const put = (file: string, body: string) => {
+    mkdirSync(dirname(join(scripts, file)), { recursive: true })
+    writeFileSync(join(scripts, file), body)
+  }
+  for (const fake of ['wait/wait-important.ts', 'loop/orch-loop.ts']) put(fake, echo)
   writeFileSync(join(scripts, 'sleeper.ts'), "console.log('ready')\nsetInterval(() => {}, 1000)\n")
   const signal = "console.log(process.argv.slice(2).join(' '), 'out=' + (process.env.ORCH_OUTPUT ?? ''))\n"
-  for (const fake of ['user-active.ts', 'heavy-slot.ts']) writeFileSync(join(scripts, fake), signal)
+  for (const fake of ['wait/user-active.ts', 'slot/heavy-slot.ts']) put(fake, signal)
   if (opts.lib !== false) {
     mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
     copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
@@ -316,7 +321,7 @@ describe('새 꼴과 옛 꼴', () => {
   test('--path 는 옛 이름을 명령 표로 푼다', () => {
     const r = orch(['--path', 'wait-important'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 0, r.stderr)
-    assert.equal(r.stdout.trim(), join(tmp, 'cache', 'b', 'skills', 'orch', 'scripts', 'wait-important.ts'))
+    assert.equal(r.stdout.trim(), join(tmp, 'cache', 'b', 'skills', 'orch', 'scripts', 'wait', 'wait-important.ts'))
   })
 
   test('새 꼴은 작업 폴더 저장소를 채워 넘기고 stderr 에 출처를 남기며, 옛 꼴은 채우지 않는다', () => {

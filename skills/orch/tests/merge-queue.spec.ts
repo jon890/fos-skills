@@ -15,8 +15,8 @@ import { readEvents } from '../scripts/lib/loop.ts'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/merge_queue.ts', import.meta.url))
-const SCRIPTS = dirname(SCRIPT)
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/merge_queue.ts', import.meta.url))
+const SCRIPTS = dirname(dirname(SCRIPT))
 const NODE = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
 
 type Json = Record<string, unknown>
@@ -1555,21 +1555,19 @@ describe('merge_queue 신호', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
 // 「실행 없음」 으로 머지를 보류한다(2026-10-23 실측). 커밋의 실행은 actions/runs?head_sha= 로 읽는다.
 // 명령이 .ts 로 옮겨 가므로 .py, .sh 에 더해 .ts 와 lib/ 아래 .ts 도 본다
 describe('CI 조회', () => {
-  function scripts(dir: string, recurse: boolean): string[] {
+  // 묶음 폴더(queue/ 같은 것)와 lib/ 까지 모두 내려간다
+  function scripts(dir: string): string[] {
     const found: string[] = []
     for (const name of readdirSync(dir).sort()) {
       const path = join(dir, name)
-      if (statSync(path).isDirectory()) {
-        if (recurse || name === 'lib') found.push(...scripts(path, true))
-      } else if (recurse ? extname(name) === '.ts' : ['.py', '.sh', '.ts'].includes(extname(name))) {
-        found.push(path)
-      }
+      if (statSync(path).isDirectory()) found.push(...scripts(path))
+      else if (['.py', '.sh', '.ts'].includes(extname(name))) found.push(path)
     }
     return found
   }
 
   test('어느 스크립트도 run list 를 커밋으로 필터링하지 않는다', () => {
-    const files = scripts(SCRIPTS, false)
+    const files = scripts(SCRIPTS)
     assert.ok(files.includes(SCRIPT), '훑은 목록에 merge_queue.ts 가 없다')
     assert.ok(files.includes(join(SCRIPTS, 'lib', 'gh.ts')), '훑은 목록에 lib/gh.ts 가 없다')
     const pattern = /run["', ]+list[^\n]*--commit/

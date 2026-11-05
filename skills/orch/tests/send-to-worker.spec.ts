@@ -9,9 +9,9 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { unanswered } from '../scripts/lib/questions.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/send-to-worker.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/worker/send-to-worker.ts', import.meta.url))
 // 다시 띄우라는 안내 줄이 가리키는 명령. 실행 규칙의 꼴이다
-const LAUNCH_HINT = `node --disable-warning=ExperimentalWarning ${fileURLToPath(new URL('../scripts/launch-worker.ts', import.meta.url))}`
+const LAUNCH_HINT = `node --disable-warning=ExperimentalWarning ${fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))}`
 
 // 상태 파일로 움직이는 가짜 orca. 받은 인자를 한 줄씩 기록한다. 확장자가 없어 타입 문법 없이 쓴다.
 // macOS 에서 파이프로 가는 process.stdout 쓰기는 비동기라 process.exit 가 출력을 자를 수 있어 writeSync 로 쓴다.

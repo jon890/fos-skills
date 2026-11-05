@@ -9,7 +9,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/stalled-workers.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/loop/stalled-workers.ts', import.meta.url))
 
 // 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
 const FAKE_ORCA = `#!/usr/bin/env node

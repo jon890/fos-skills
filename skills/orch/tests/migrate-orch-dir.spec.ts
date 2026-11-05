@@ -18,8 +18,8 @@ import { fire } from '../scripts/lib/events.ts'
 import { spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/migrate-orch-dir.ts', import.meta.url))
-const ORCH_PATHS = fileURLToPath(new URL('../scripts/orch_paths.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/doctor/migrate-orch-dir.ts', import.meta.url))
+const ORCH_PATHS = fileURLToPath(new URL('../scripts/paths/orch_paths.ts', import.meta.url))
 
 const FAKE_ORCA = `const fs = require('node:fs')
 if (process.env.FAKE_ORCA_FAILS === '1') process.exit(1)

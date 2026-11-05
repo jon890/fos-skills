@@ -10,7 +10,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/orch-doctor.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/doctor/orch-doctor.ts', import.meta.url))
 const LAUNCHER = fileURLToPath(new URL('../../../bin/orch', import.meta.url))
 // 안내 줄의 앞 낱말. beforeEach 가 표지 있는 실행기를 PATH 에 두므로 orch 다(lib/commands.ts 의 orchWord)
 const WORD = 'orch'
@@ -408,6 +408,34 @@ describe('orch 명령 판정', () => {
       '  새 꼴: orch slot mem',
       'DIRECT-PATH .orch/hooks/worker-stalled.ts:2 nudge-worker.ts',
       '  새 꼴: orch worker nudge',
+    ])
+  })
+
+  test('묶음 폴더가 든 지금 배치의 직접 경로도 DIRECT-PATH 로 알린다', () => {
+    const repo = join(tmp, 'repo')
+    write(
+      join(repo, '.orch', 'overlay.md'),
+      [
+        'node "$SKILL_DIR/scripts/queue/merge-with-finish.ts" --repo /r 12',
+        'node "$ORCH_SCRIPTS/worker/worker-ask.ts" --from x',
+        'node /c/plugins/cache/fos-skills/fos-skills/5.12.0/skills/orch/scripts/cleanup/handoff-cleanup.ts --apply',
+        '',
+      ].join('\n'),
+    )
+    write(join(repo, '.orch', 'hooks', 'worker-stalled.ts'), "spawnSync('node', [join(ORCH_SCRIPTS, 'worker', 'nudge-worker.ts')])\nspawnSync('node', [join(ORCH_SCRIPTS, 'worker/send-to-worker.ts')])\n")
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', pluginSkill(), '--repo', repo])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.deepEqual(r.stdout.split('\n').filter((l) => /^(OLD-CALL|DIRECT-PATH|  새 꼴)/.test(l)), [
+      'DIRECT-PATH .orch/overlay.md:1 merge-with-finish.ts',
+      '  새 꼴: orch queue merge',
+      'DIRECT-PATH .orch/overlay.md:2 worker-ask.ts',
+      '  새 꼴: orch worker ask',
+      'DIRECT-PATH .orch/overlay.md:3 handoff-cleanup.ts',
+      '  새 꼴: orch cleanup handoff',
+      'DIRECT-PATH .orch/hooks/worker-stalled.ts:1 nudge-worker.ts',
+      '  새 꼴: orch worker nudge',
+      'DIRECT-PATH .orch/hooks/worker-stalled.ts:2 send-to-worker.ts',
+      '  새 꼴: orch worker send',
     ])
   })
 
@@ -891,6 +919,32 @@ describe('루프 번들 판정', () => {
     const head = lines.indexOf(`LOOP-STALE ${repo} 111 aaaaaaa1`)
     assert.deepEqual(lines.slice(head, head + 3), [`LOOP-STALE ${repo} 111 aaaaaaa1`, `  ${WORD} loop stop --repo '${repo}' --all`, `  ${WORD} loop start --repo '${repo}' --run r1`])
     assert.ok(lines.every((l) => /^[A-Z]/.test(l) || (/^ {2}\S/.test(l) && !l.startsWith('  안내:'))), brief.stdout)
+  })
+
+  test('묶음 폴더 배치(scripts/loop/, scripts/wait/)로 도는 옛 번들의 루프와 대기도 같은 규칙으로 본다', () => {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    const config = join(tmp, 'profile')
+    const bundle = (v: string) => join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', v)
+    write(join(config, 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'fos-skills@fos-skills': [{ scope: 'user', installPath: bundle('5.13.0') }] } }))
+    mkdirSync(join(bundle('5.13.0'), 'skills', 'orch', 'scripts', 'loop'), { recursive: true })
+    const at = (v: string, ...rest: string[]) => join(bundle(v), 'skills', 'orch', 'scripts', ...rest)
+    const psFile = join(tmp, 'ps.txt')
+    writeFileSync(
+      psFile,
+      [
+        `  111 node --disable-warning=ExperimentalWarning ${at('5.12.0', 'loop', 'orch-loop.ts')} --repo /r/a --run r1 --foreground`,
+        `  222 node --disable-warning=ExperimentalWarning ${at('5.13.0', 'loop', 'orch-loop.ts')} --repo /r/b --run r2 --foreground`,
+        `  333 node --disable-warning=ExperimentalWarning ${at('5.12.0', 'wait', 'wait-important.ts')} --run r1`,
+        `  444 node --disable-warning=ExperimentalWarning ${at('5.13.0', 'wait', 'wait-important.ts')} --run r2`,
+        '',
+      ].join('\n'),
+    )
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: config } })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = r.stdout.split('\n')
+    assert.deepEqual(out.filter((l) => l.startsWith('LOOP-STALE')), ['LOOP-STALE /r/a 111 5.12.0'])
+    assert.deepEqual(out.filter((l) => l.startsWith('WAIT-STALE')), ['WAIT-STALE 333 5.12.0'])
   })
 
   test('버전 이름의 캐시 폴더도 보고, 다른 프로필의 같은 버전 폴더는 같은 번들로 본다', () => {

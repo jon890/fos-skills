@@ -10,9 +10,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, st
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { scriptPath } from '../scripts/lib/commands.ts'
 
-const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 const ENV: NodeJS.ProcessEnv = {
   ...process.env,
   GIT_CONFIG_GLOBAL: '/dev/null',
@@ -41,7 +40,7 @@ function git(...args: string[]): string {
 
 // skills/orch/scripts 의 .ts 명령을 node 로 부른다
 function cmd(script: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Result {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', join(SCRIPTS, script), ...args], {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', scriptPath(script), ...args], {
     cwd: opts.cwd,
     env: opts.env ?? ENV,
     encoding: 'utf8',

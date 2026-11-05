@@ -12,7 +12,7 @@ import { after, before, beforeEach, afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/handoff-cleanup.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/cleanup/handoff-cleanup.ts', import.meta.url))
 const DAY = 86400
 
 // 열린 PR 의 head 는 FAKE_OPEN(JSON 목록)이다. FAKE_GH_FAILS=1 이면 실패한다

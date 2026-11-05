@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/spec-lint.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/spec/spec-lint.ts', import.meta.url))
 const TEMPLATE = fileURLToPath(new URL('../templates/spec-common.md', import.meta.url))
 // 로컬의 전역 git 설정이 결과를 바꾸지 않게 하고, CI 에 없는 작성자 설정을 채운다.
 const ENV: NodeJS.ProcessEnv = {

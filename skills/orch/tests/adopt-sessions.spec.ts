@@ -10,7 +10,7 @@ import { activeHandles, handover, matchingSpecs } from '../scripts/lib/sessions.
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/adopt-sessions.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/worker/adopt-sessions.ts', import.meta.url))
 const envelope = (result: unknown) => JSON.stringify({ ok: true, result })
 let root: string, repo: string, worktree: string, spec: string, orca: FakeBin, gh: FakeBin
 let rules: FakeRule[]

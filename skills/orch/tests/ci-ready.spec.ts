@@ -10,7 +10,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/ci-ready.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/ci-ready.ts', import.meta.url))
 
 // 상태 파일로 움직이는 가짜 gh. 받은 인자를 한 줄씩 기록한다. 확장자가 없어 타입 문법 없이 쓴다.
 const FAKE_GH = `#!/usr/bin/env node

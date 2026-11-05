@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url)).replace(/\/$/, '')
 const SHIM = join(SCRIPTS, 'orch-doctor.py')
-const TARGET = join(SCRIPTS, 'orch-doctor.ts')
+const TARGET = join(SCRIPTS, 'doctor', 'orch-doctor.ts')
 const NO_NODE = 'node 24 이상이 PATH 에 필요하다'
 const FLAG = '--disable-warning=ExperimentalWarning'
 

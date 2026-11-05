@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { missingItems, pickSource, selectedProfile, selectedReadiness, stamp } from '../scripts/lib/claude-profile.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/link-claude-profile.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/worker/link-claude-profile.ts', import.meta.url))
 
 let tmp: string
 let root: string

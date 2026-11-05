@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { groupMap, judge as judgeRaw, unitOf, verdictText } from '../scripts/lib/overlap.ts'
 import type { JudgeOptions } from '../scripts/lib/overlap.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/overlap_units.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/queue/overlap_units.ts', import.meta.url))
 const SHARED = '^(modules/common/|build\\.gradle$|\\.github/)'
 const DOCS = ['docs/*', '*.md']
 

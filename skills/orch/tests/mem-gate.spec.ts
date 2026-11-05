@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/mem-gate.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/slot/mem-gate.ts', import.meta.url))
 const KEYS = ['EASY_FREE_PCT', 'MIN_FREE_PCT', 'MAX_SWAP_MB', 'MAX_WAIT', 'POLL']
 
 let tmp: string

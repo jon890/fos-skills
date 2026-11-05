@@ -9,7 +9,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/goal-progress.ts', import.meta.url))
+const SCRIPT = fileURLToPath(new URL('../scripts/board/goal-progress.ts', import.meta.url))
 
 let tmp: string
 let board: string
