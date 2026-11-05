@@ -1,5 +1,7 @@
 # ADR 링크·색인·번호 검사를 fos-skills 가 소유한다
 
+확인: 2026-11-05
+
 ## 목표
 
 문서를 쓰거나 고치는 단계(spec, technical-design, review-fix, docs-audit)에서 fos-skills 의 검사기 하나가 ADR 색인을 다시 만들고, 링크 없는 ADR 번호 참조와 깨진 링크·앵커, 번호 중복을 잡는다. 저장소는 같은 규칙을 따로 유지하지 않고 CI 에서 다시 검사하지 않는다(DECISION5).
