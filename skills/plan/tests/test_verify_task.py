@@ -137,6 +137,15 @@ class TaskRulesTest(unittest.TestCase):
 
     def test_js_callers_require_an_exported_owner(self):
         cases = (
+            ("function triage() {}\nmodule.exports = { triage };", "triage", True),
+            ("exports.triage = () => {};", "triage", True),
+            ("module.exports.triage = () => {};", "triage", True),
+            ("module.exports = { triage() {} };", "triage", True),
+            ("const repo = { triage() {} };\nmodule.exports = repo;", "triage", True),
+            ("module.exports = { method() { function triage() {} } };", "triage", False),
+            ("function triage() {}\nmodule.exports = { otherName };", "triage", False),
+            ("// exports.triage = () => {};", "triage", False),
+            ('const text = "module.exports = { triage }";', "triage", False),
             ("export class Repo { triage() {} }", "triage", True),
             ("export const repo = { triage() {} };", "triage", True),
             ("class Repo { triage() {} }", "triage", False),

@@ -1378,6 +1378,9 @@ def owns_call_name(file, name):
     )
     defaults = re.findall(rf"\bexport\s+default\s+({identifier})\s*(?=;|$)", source, re.M)
     exported = set(declarations + defaults)
+    commonjs = r"(?<![\w$.])(?:module\s*\.\s*exports|exports)"
+    exported.update(re.findall(rf"{commonjs}\s*\.\s*({identifier})\s*=(?!=|>)", source))
+    exported.update(re.findall(rf"{commonjs}\s*=\s*({identifier})\s*(?=;|$)", source, re.M))
     containers = set(exported)
     for listing in re.findall(r"\bexport\s*\{([^}]*)\}", source):
         for item in listing.split(","):
@@ -1392,6 +1395,9 @@ def owns_call_name(file, name):
             if name in js_members(source, container.end() - 1):
                 return True
     for container in re.finditer(r"\bexport\s+default\s+(?:class\s*)?\{", source):
+        if name in js_members(source, container.end() - 1):
+            return True
+    for container in re.finditer(rf"{commonjs}\s*=\s*\{{", source):
         if name in js_members(source, container.end() - 1):
             return True
     return name in exported
