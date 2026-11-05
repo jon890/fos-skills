@@ -163,4 +163,4 @@ orch 5.2.0에서 `config.json`의 `queue.before`, `queue.verify_merged`, `queue.
 
 막히면 stderr 에 이유를 내고 종료 코드 126 으로 끝난다. 판정의 원본은 `scripts/lib/guard/guard.ts` 머리 주석이다.
 worker 에게 입력하는 코어 명령(`nudge-worker`, `send-to-worker`)은 `ORCH_REAL_ORCA` 로 진짜 orca 를 불러 가드를 거치지 않는다.
-가드는 보안 경계가 아니다. 진짜 실행 파일 경로(`ORCH_REAL_ORCA`, `ORCH_REAL_GH`)가 환경에 보이므로 일부러 부르면 우회된다. 근거는 ADR-013 이 소유한다.
+가드는 보안 경계가 아니다. 진짜 실행 파일 경로(`ORCH_REAL_ORCA`, `ORCH_REAL_GH`)가 환경에 보이므로 일부러 부르면 우회된다. 근거는 [ADR-013](../../../docs/adr/013-orch-worker-stalled.md) 이 소유한다.

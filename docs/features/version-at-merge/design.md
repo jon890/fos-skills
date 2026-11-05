@@ -11,7 +11,7 @@
 | REQ5 | `bump-plugin-version.py` 의 `run` 이 조각 적용 결과를 받아 등급을 minor 이상으로 하고 요약 줄에 새 버전을 적는다 |
 | REQ6 | 조각 검사 함수 `check_fragment` 를 `skill_changes.py` 에 두고 `check-skill-docs.py` 가 불러 PR 의 CI(`scripts/tests`)가 저장소 전체를 검사한다 |
 | REQ7 | `export-to-team.sh` 의 `is_junk` 가 `changes/` 아래를 제외한다 |
-| REQ8 | README, flow.md, code-architecture.md, 새 ADR-023, ADR-019 의 적용 범위 줄을 고친다 |
+| REQ8 | README, flow.md, code-architecture.md, 새 [ADR-023](../../adr/023-version-at-merge.md), [ADR-019](../../adr/019-plugin-version-auto-bump.md) 의 적용 범위 줄을 고친다 |
 
 ## 책임과 경계
 
@@ -46,9 +46,9 @@ workflow: `Commit and push` 단계의 제목을 `git diff --quiet -- .claude-plu
 - CHANGELOG 의 첫 버전 절을 읽을 수 없거나 `SKILL.md` 가 있는데 `metadata.version` 줄이 없는 단위는 조각을 지우지 않고 건너뛰며 경고한다. 두 파일이 어긋나는 것을 막는다.
 - 옛 방식 PR 과의 공존: 옛 방식이 올린 버전 위에 조각이 올라간다. 한 PR 안에서 직접 올림과 조각을 섞지 않는 것은 README 규칙이다(검사하지 않는다).
 - 이 PR 은 옛 방식으로 올린다. 새 workflow 는 머지 뒤 처음 돈다. 머지 직후 main 에 조각이 없어 첫 실행은 플러그인 patch 로 끝난다.
-- 취소된 실행의 한계: 조각과 스킬 버전은 다음 실행이 복구하지만, 플러그인 CHANGELOG 줄의 PR 번호와 옛 방식 `호환성:` 신호는 push 범위만 보므로 취소된 실행 몫이 빠진다. 기존 한계이고 문서(ADR-023)에 적는다.
+- 취소된 실행의 한계: 조각과 스킬 버전은 다음 실행이 복구하지만, 플러그인 CHANGELOG 줄의 PR 번호와 옛 방식 `호환성:` 신호는 push 범위만 보므로 취소된 실행 몫이 빠진다. 기존 한계이고 문서([ADR-023](../../adr/023-version-at-merge.md))에 적는다.
 - 사람이 plugin.json 을 직접 올린 push 에 조각이 함께 있으면 조각은 처리하지만 플러그인 CHANGELOG 줄에는 그 스킬 버전이 적히지 않는다.
-- 봇의 `git pull --rebase` 가 옛 방식 PR 과 CHANGELOG 에서 겹치면 3회 뒤 workflow 가 끝난다. 수동 복구다(ADR-023 에 적는다).
+- 봇의 `git pull --rebase` 가 옛 방식 PR 과 CHANGELOG 에서 겹치면 3회 뒤 workflow 가 끝난다. 수동 복구다([ADR-023](../../adr/023-version-at-merge.md) 에 적는다).
 - 스킬 폴더를 옮기면 조각 추가가 이름 변경으로 잡혀 `--diff-filter=A` 에 나오지 않는다. 이때는 DECISION3 의 이름순 대체 순서를 받는다.
 - 되돌리기: workflow 의 호출 줄을 되돌리면 조각이 쌓이기만 한다. 조각이 있어도 옛 방식 PR 은 그대로 머지된다.
 

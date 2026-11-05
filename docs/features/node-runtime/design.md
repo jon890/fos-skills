@@ -76,7 +76,7 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
 - 팀 사본 자리는 `tools/browser-driver` 로 고정한다. 내보내기가 원본 경로(`skills/browser/browser-driver/`)와 팀 경로(`tools/browser-driver/`)를 나눠 갖는다. `browser` 스킬은 내보내지 않으므로 드라이버 폴더만 팀 경로로 싣는다. 그래서 팀 래퍼와 팀 테스트의 경로는 그대로이고, 본체 이름만 마지막 팀 PR 이 바꾼다(「팀 저장소」 절).
 - 옛 이름 진입 `browser_driver.py` 는 옛 자리 `tools/browser-driver/browser_driver.py` 에 둔다. 개인 링크와 저장소 밖 호출이 이 경로를 부른다. 이 진입은 새 자리의 `.ts` 를 import 한다. DECISION1 의 경계 밖이지만 내보내지 않는 진입이고, 플러그인 캐시는 저장소 루트 전체를 가져 경로가 깨지지 않는다. 팀 사본에도 옛 이름 진입이 필요한지는 PR10 의 계획이 팀 저장소를 다시 찾아 정한다.
 - `tools/` 폴더는 DECISION17 의 major(이 저장소 다음 major)에 옛 이름 진입과 함께 지운다. 그 PR 이 이 설계의 「도구(`tools/<이름>`)」 경계 문구도 지운다. 테스트 실행기는 `tests/` 아래를 스스로 찾으므로 CI 는 고치지 않는다.
-- ADR-021 과의 관계: ADR-021 은 「스킬 전용 코드는 소유 스킬 안에 둔다」 이다. browser-driver 는 `browser`, `content-preview`, `presentation` 이 함께 쓰지만 소유자는 `browser` 스킬 하나다. `browser` 스킬이 드라이버의 사용 절차와 공간 분리·로그인 규칙을 갖고, 드라이버의 변경 이력도 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17). 나머지 둘은 드라이버를 import 하지 않고 자식 프로세스로 부른다(DECISION1). 그래서 `browser` 스킬 안에 두는 것이 ADR-021 의 소유 스킬 규칙에 맞는다. 다른 단위가 import 해야 하는 공용 코드였다면 `modules/` 의 몫이다.
+- [ADR-021](../../adr/021-skill-directory-layout.md) 과의 관계: [ADR-021](../../adr/021-skill-directory-layout.md) 은 「스킬 전용 코드는 소유 스킬 안에 둔다」 이다. browser-driver 는 `browser`, `content-preview`, `presentation` 이 함께 쓰지만 소유자는 `browser` 스킬 하나다. `browser` 스킬이 드라이버의 사용 절차와 공간 분리·로그인 규칙을 갖고, 드라이버의 변경 이력도 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17). 나머지 둘은 드라이버를 import 하지 않고 자식 프로세스로 부른다(DECISION1). 그래서 `browser` 스킬 안에 두는 것이 [ADR-021](../../adr/021-skill-directory-layout.md) 의 소유 스킬 규칙에 맞는다. 다른 단위가 import 해야 하는 공용 코드였다면 `modules/` 의 몫이다.
 
 ### 진입 파일
 
@@ -116,7 +116,7 @@ PR1 이 만든다. 키의 정확한 뜻과 판정은 명령 `scripts/runtime-pol
 | `entry_js` | 허용하는 `.js`, `.mjs`, `.cjs`, 확장자 없는 JS | 진입이 생기거나 없어질 때 |
 | `migrated_docs` | 문서 호출 검사를 켤 영역 | 영역 PR 이 자기 영역을 더한다 |
 | `kit_sources` | `kit` 원본 위치(`modules/kit/`). testkit 은 복사하지 않아 적지 않는다 | 처음 복사하는 PR 이 더한다 |
-| `min_node` | 진입들이 보는 최소 Node 버전 | ADR-011 을 바꿀 때 |
+| `min_node` | 진입들이 보는 최소 Node 버전 | [ADR-011](../../adr/011-node-24-minimum.md) 을 바꿀 때 |
 
 ### 동등성 확인
 
@@ -186,7 +186,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
   - `skills/browser/tests/test_skill_doc.py` 22~23줄이 `browser_driver.py` 경로를 본다. PR3 가 옮기고 PR10 이 경로를 바꾼다.
   - `skills/orch/tests/legacy-entrypoints.spec.ts` 가 orch 의 `.py`, `.sh` 를 따로 막는다. `runtime-policy.spec.ts` 와 같은 사실을 둘이 갖게 되므로 PR1 이 이 파일을 지우고, `orch-doctor.py` 와 `ts_shim.py` 는 `pending` 의 `orch-legacy` 영역으로 둔다. 그 영역은 orch-cli 의 옛 이름 정리 PR 이 지운다.
 - 플러그인을 이행 중간에 갱신한 쪽은 그 커밋의 상태를 받는다. 각 커밋에서 호출과 파일이 맞으므로 따로 할 일이 없다.
-- 영역 PR 의 `호환성:` 항목은 그 스킬을 major 로 올린다(ADR-023). major 는 조각이 아니라 PR 이 `metadata.version` 과 CHANGELOG 를 직접 올린다. `tools/browser-driver` 는 버전이 없어 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17).
+- 영역 PR 의 `호환성:` 항목은 그 스킬을 major 로 올린다([ADR-023](../../adr/023-version-at-merge.md)). major 는 조각이 아니라 PR 이 `metadata.version` 과 CHANGELOG 를 직접 올린다. `tools/browser-driver` 는 버전이 없어 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17).
 - 같은 파일을 만지는 다른 기능: orch 구조 개편이 끝난 뒤 시작하므로(스펙 DECISION5) PR4 는 옮겨진 폴더의 경로를 쓴다. testkit 을 실제로 쓰는 것은 PR2 부터지만, 스펙 DECISION5 대로 PR1 도 testkit 과 orch 폴더 이동이 main 에 들어온 뒤 시작한다.
 
 ## 검증 전략
@@ -211,7 +211,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 
 | PR | 영역 | 메모 |
 | --- | --- | --- |
-| 1 | 저장소 기반 | ADR-010, ADR-011 의 적용 범위를 저장소 전체로 넓히는 결정이다. `legacy-entrypoints.spec.ts` 를 지우고 `orch-legacy` 영역을 둔다 |
+| 1 | 저장소 기반 | [ADR-010](../../adr/010-orch-typescript.md), [ADR-011](../../adr/011-node-24-minimum.md) 의 적용 범위를 저장소 전체로 넓히는 결정이다. `legacy-entrypoints.spec.ts` 를 지우고 `orch-legacy` 영역을 둔다 |
 | 2 | `scripts/`, `githooks/` | `plugin-version.yml` 의 setup-node 24. `export-to-team.sh` 의 Python heredoc 과 `skill_paths.py` 를 함께 옮긴다. `bump-plugin-version.py` 는 main push 에서만 돌아 PR CI 로 실제 동작을 보지 못하므로 명령 경계 테스트를 임시 저장소로 넉넉히 둔다. `test-plugin-install.sh` 는 `claude` CLI 가 필요하다. `kit` 원본을 여기서 만든다 |
 | 3 | 작은 스킬 묶음 | orch 의 두 `.py` 는 들지 않는다(`orch-legacy`). `skills/browser/tests/test_skill_doc.py` 의 `browser_driver.py` 경로 확인을 옮긴다 |
 | 4 | `review-fix` | `fold_fixup.sh` 는 git 상태를 바꾸는 명령이라 임시 저장소 테스트만 쓴다 |
@@ -228,7 +228,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 | ID | 결정 | 답 | 누가 | 근거 |
 | --- | --- | --- | --- | --- |
 | DECISION1 | 스킬과 도구의 import 범위 | 자기 폴더와 Node 내장 모듈만 | 작성자 | 팀 저장소 배치와 플러그인 캐시가 폴더 밖을 갖지 않는다. 지금 Python 과 같은 경계다 |
-| DECISION2 | 공통 꼴 helper 의 자리 | 원본은 `modules/kit/`, 스킬과 도구는 복사본을 두고 테스트가 같은지 본다 | 사용자 2026-11-05 | 공용 코드는 `modules/` 한 곳에 둔다(실행용 `modules/kit`, 테스트용 `modules/testkit`). 처음 설계의 `scripts/kit/` 을 testkit 인터뷰에서 사용자가 바꿨고, 복사본과 대조 테스트는 그대로 두었다. 기각: `package.json` workspaces 패키지(ADR-010 이 `package.json` 과 npm 의존을 두지 않기로 했다), `tools/kit` 을 import 한다(팀의 nhn-dev 플러그인 안 스킬에서 경로가 깨진다), 영역마다 따로 쓴다(같은 꼴이 여러 벌로 갈라진다. ADR-010 이 고친 문제다), 내보내기가 복사본을 만든다(이 저장소 안 설치본이 원본을 import 해 두 경로가 생긴다) |
+| DECISION2 | 공통 꼴 helper 의 자리 | 원본은 `modules/kit/`, 스킬과 도구는 복사본을 두고 테스트가 같은지 본다 | 사용자 2026-11-05 | 공용 코드는 `modules/` 한 곳에 둔다(실행용 `modules/kit`, 테스트용 `modules/testkit`). 처음 설계의 `scripts/kit/` 을 testkit 인터뷰에서 사용자가 바꿨고, 복사본과 대조 테스트는 그대로 두었다. 기각: `package.json` workspaces 패키지([ADR-010](../../adr/010-orch-typescript.md) 이 `package.json` 과 npm 의존을 두지 않기로 했다), `tools/kit` 을 import 한다(팀의 nhn-dev 플러그인 안 스킬에서 경로가 깨진다), 영역마다 따로 쓴다(같은 꼴이 여러 벌로 갈라진다. [ADR-010](../../adr/010-orch-typescript.md) 이 고친 문제다), 내보내기가 복사본을 만든다(이 저장소 안 설치본이 원본을 import 해 두 경로가 생긴다) |
 | DECISION3 | 테스트 helper | fos-test-speed 의 testkit(`modules/testkit/`). 이 저장소 테스트만 쓰고 팀에 싣지 않는다. 내보내는 스킬의 테스트는 Node 내장 모듈만 쓴다 | 사용자 2026-11-05 | 스펙 DECISION5. 팀 CI 가 팀 저장소 안에서 돈다. 처음 설계의 「내보내는 영역은 복사본」 을 testkit 인터뷰에서 사용자가 바꿨다 |
 | DECISION4 | 문서의 호출 꼴 | `node "$SKILL_DIR/scripts/<이름>.ts"` | 작성자 | 실행 권한이 빠진 복사에서도 돈다. Node 24 는 경고를 내지 않는다 |
 | DECISION5 | 명령 파일 이름 | 옛 이름에서 확장자만 바꾼다 | 작성자 | 문서와 다른 저장소의 고칠 곳이 확장자 하나다 |
@@ -239,4 +239,4 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 | DECISION10 | orch doctor 의 옛 진입 | 이 기능이 지우지 않는다. orch-cli 의 옛 이름 정리 PR 이 지운다. 버전 안내는 `bin/orch` 가 맡는다 | 작성자 | orch-cli 스펙 DECISION13 이 옛 이름을 끝내는 때를 소유한다. `bin/orch` 가 이미 `NODE-TOO-OLD` 를 낸다 |
 | DECISION11 | 최소 Node 버전의 원본 | `scripts/runtime-policy.json` 의 `min_node`. 진입들의 `MIN_NODE` 줄을 저장소 테스트가 대조한다 | 작성자 | 진입끼리 import 할 수 없어 값이 여러 곳에 있다 |
 | DECISION12 | 옛 이름 진입과 새 구현의 접점 | 새 `.ts` 가 `main`, `runHook` 을 export 하고 `import.meta.main` 일 때만 스스로 돈다 | 작성자 | 진입이 훅 JSON 에 안내를 끼우려면 결과를 받아야 한다. orch 가드 shim 의 꼴이다 |
-| DECISION13 | browser-driver 의 자리 | PR10 이 `skills/browser/browser-driver/` 로 옮긴다. 첫 커밋은 이름만 바꾸는 이동이다. 팀 사본 자리는 `tools/browser-driver` 로 고정하고, `tools/` 폴더는 DECISION17 의 major 에 옛 이름 진입과 함께 지운다 | 사용자 2026-11-05 | 보드 `browser-driver-placement` 의 결정이다. git 이력과 REQ3 의 옛 구현·새 구현 비교를 지킨다. 소유자가 `browser` 스킬 하나라 ADR-021 의 소유 스킬 규칙에 맞는다. 폴더 안 배치를 그대로 두는 것은 작성자가 정했다 |
+| DECISION13 | browser-driver 의 자리 | PR10 이 `skills/browser/browser-driver/` 로 옮긴다. 첫 커밋은 이름만 바꾸는 이동이다. 팀 사본 자리는 `tools/browser-driver` 로 고정하고, `tools/` 폴더는 DECISION17 의 major 에 옛 이름 진입과 함께 지운다 | 사용자 2026-11-05 | 보드 `browser-driver-placement` 의 결정이다. git 이력과 REQ3 의 옛 구현·새 구현 비교를 지킨다. 소유자가 `browser` 스킬 하나라 [ADR-021](../../adr/021-skill-directory-layout.md) 의 소유 스킬 규칙에 맞는다. 폴더 안 배치를 그대로 두는 것은 작성자가 정했다 |

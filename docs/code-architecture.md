@@ -33,7 +33,7 @@
 | `githooks/` | Git commit-msg 와 post-commit. Claude 훅이 아님 |
 | `docs/` | 이 저장소의 책임 문서와 결정 이력 |
 
-배치의 결정은 [ADR-020](adr/021-skill-directory-layout.md)이 소유한다. 스킬별 자산은 소유 스킬과 함께 이동한다.
+배치의 결정은 [ADR-021](adr/021-skill-directory-layout.md)이 소유한다. 스킬별 자산은 소유 스킬과 함께 이동한다.
 `skills/` 자동 탐색에 내보내기 전용 원본이 섞이지 않게 별도 루트로 둔다. 두 매니페스트의 설치 스킬 목록은 계속 일치시킨다.
 `modules/` 는 test-speed 스펙([`docs/features/test-speed/spec.md`](features/test-speed/spec.md)) DECISION7 이 정했다.
 

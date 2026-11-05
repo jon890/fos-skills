@@ -30,7 +30,7 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 
 **끝난 dispatch 의 질문은 보드에서 제외한다.** 질문 감시와 doctor 는 같은 Task 의 다른 dispatch 가 알린 PR 도 종료 근거로 쓴다. PR 이 `MERGED` 나 `CLOSED` 이고 준비 상태의 HEAD 가 PR 커밋에 있어야 한다. 준비 상태가 없으면 질문을 보낸 dispatch 의 워크트리와 git 브랜치를 대조해 그 브랜치의 PR 종료 상태를 확인한다. 이 경로는 Task 가 달라도 쓴다. git 목록에서 브랜치를 찾지 못하면 띄우기 기록의 branch 를 쓴다. branch 없는 옛 기록은 끝난 dispatch 의 워크트리 경로가 기록과 같고 실제로 삭제됐을 때만 닫는다. 기록이 없거나 경로가 다르면 닫지 않는다. 살아 있는 dispatch 의 질문은 이 근거로 닫지 않는다. Orca 가 `dispatch_inactive` 나 `answer_conflict`(이미 다른 답이 있다)로 답장을 거부하면 `send-to-worker` 가 그 질문을 닫은 질문으로 적는다(`NOTE` 줄, `--full` 은 `closed:` 줄). 루프와 doctor 는 그 질문을 미답변으로 세지 않는다. 닫으려고 같은 답을 반복하지 않는다. 실제 후속 일이 있으면 `send-to-worker --spec` 으로 이어 쓴다.
 `send-to-worker` 는 `--from run:<run>` 을 붙여 보내고, Orca 터미널 안이라 `consumer_fenced` 로 거부되면 `--from` 없이 한 번 다시 보낸다.
-질문 감시는 질문의 스레드에 worker 쪽으로 간 답이면 보낸 쪽과 상관없이 답한 것으로 센다(ADR-015).
+질문 감시는 질문의 스레드에 worker 쪽으로 간 답이면 보낸 쪽과 상관없이 답한 것으로 센다([ADR-015](../../../docs/adr/015-board-decide-clear.md)).
 **세션을 다시 시작하면 코디네이터 터미널의 pane 신원이 없어 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.** `send-to-worker` 는 먼저 `--run` 과 `--from` 을 뺀 plain `reply` 를 한 번 보내고 `NOTE` 줄(`--full` 은 `retry:`)로 알린다. 이 답은 질문을 바로 닫는다. plain reply 도 거부되고 그 메시지가 question 이면 같은 스레드에 status 로 `answer: <첫 줄>` 제목과 본문을 `send --to dispatch:<id>` 로 보내고 `NOTE` 줄(`--full` 은 `fallback:`)로 알린다. 직접 우회하지 않는다. `worker-ask` 가 그 status 의 본문을 답으로 읽는다(종료 코드 3).
 question 이 아닌 메시지에는 전환하지 않고 5 로 끝난다. 세션이 바뀐 뒤 reply 가 계속 거부되면 사용자에게 알린다.
 
