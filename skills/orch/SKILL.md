@@ -102,7 +102,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 에이전트 고르기 | 에이전트, 모델, effort 와 비교한 후보, 고른 이유가 지시서의 `worker 선택:` 줄에 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
+| 1 | 에이전트 고르기 | 에이전트, 모델, effort, 모델 표의 행 id 와 비교한 후보, 고른 이유가 지시서의 `worker 선택:` 줄에 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다(`launch-worker` 도 띄우기 전에 한 번 더 돌려 막는다) | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
 | 3 | 띄우기 | `orch worker launch` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `LAUNCH-EFFECTIVE` 줄(`launch.effective`)이 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
 | 4 | 기다리기 | 저장소마다 `orch loop start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `orch wait` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다(사용자와 대화 중이면 `orch wait user-active` 가 `USER-ACTIVE` 이고 대기가 없다). 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 대기 출력의 메시지 판정 줄을 처리했다 | [`references/waiting.md`](references/waiting.md) |
@@ -114,7 +114,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 
 ## 1. 에이전트 고르기
 
-Task 성격으로 모델과 effort 를 고르고, 비교한 후보와 이유를 지시서의 `worker 선택:` 줄에 남긴다. `spec-lint` 와 `launch-worker` 가 이 줄을 검사한다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
+Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비교한 후보, 이유를 지시서의 `worker 선택:` 줄에 남긴다. `spec-lint` 와 `launch-worker` 가 이 줄을 검사한다. 지금은 행 id 와 high 근거를 보지 않는다. 선택 표와 Codex 에 넘기는 방법은 reference 가 소유한다.
 
 ## 2. 지시서 쓰기
 
