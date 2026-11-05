@@ -62,7 +62,7 @@
 | REQ2 | 저장소마다 다른 ADR 배치를 설정으로 받는다 | ai-analysis(모듈 폴더 7곳), fos-accountbook(`ADR-M01`), 날짜 식별자 표본에서 설정만 바꿔 오탐 없이 돈다 |
 | REQ3 | 색인 생성을 켠 저장소에서 작성 단계가 색인을 다시 만든다 | technical-design 이 ADR 을 만들거나 대체한 뒤 쓰기 모드를 돌리고, 그 뒤 검사 모드가 0 이다. 색인은 「현행」·「대체됨」 두 표이고 두 표 모두 대체 관계 열이 있다. 접두 링크 글(`analysis-api ADR-057`)이 대체 관계에 들어간다. 생성을 켜지 않은 저장소는 본문과 색인의 번호 집합만 맞춘다 |
 | REQ4 | spec·technical-design·review-fix·docs-audit 가 같은 검사기를 부른다 | 네 스킬 문서가 이 검사기를 부르는 단계를 갖고, `check_adr_layout.py` 가 없으며 `static_check.py` 에 링크·색인 검사가 없다. 링크 없는 번호 참조는 후보 경로와 함께 위반으로 나오고 본문은 고쳐지지 않는다. review-fix 결과 보고에 PR 밖 위반이 따로 적힌다 |
-| REQ5 | 기존 두 검사기의 호출자가 깨지지 않는다 | `check_adr_layout.py`, `static_check.py` 를 부르던 이 저장소 문서와 다른 저장소 오버레이(구현 PR 이 검색해 목록을 남긴다)가 새 검사기나 줄어든 `static_check.py` 를 부르고, 바뀐 명령이 해당 스킬 변경 조각의 호환성 항목에 있다 |
+| REQ5 | 기존 두 검사기의 호출자가 깨지지 않는다 | `check_adr_layout.py`, `static_check.py` 를 부르던 이 저장소 문서와 다른 저장소 오버레이(구현 PR 이 검색해 목록을 남긴다)가 새 검사기나 줄어든 `static_check.py` 를 부르고, 지운 명령과 새 명령이 plan CHANGELOG 의 `호환성:` 항목에 있다(README 「버전과 변경 이력」 이 major 를 조각으로 받지 않는다) |
 | REQ6 | ai-analysis 가 일반 검사를 따로 유지하지 않는다 | 이전 PR 뒤 `check-docs.py` 에 링크·앵커·ADR 번호·색인·번호 중복 코드가 없고 저장소 고유 검사만 남는다. 오버레이에 ADR 폴더와 색인 생성 값이 있고, 새 검사기의 쓰기 모드로 다시 만든 색인 7개가 커밋돼 있다. `scripts/verify.sh docs` 가 통과한다 |
 | REQ7 | fos-skills 자기 색인을 생성한다 | fos-skills 오버레이가 색인 생성을 켜고, `docs/adr/INDEX.md` 가 쓰기 모드로 만든 두 표이며 검사 모드가 0 이다 |
 
