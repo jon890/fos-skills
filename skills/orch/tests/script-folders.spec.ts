@@ -37,9 +37,13 @@ describe('스크립트 폴더', () => {
     assert.deepEqual(dirs, [...GROUPS, 'handlers', 'lib'].sort())
   })
 
-  test('묶음 폴더의 .ts 는 모두 명령 표의 스크립트다', () => {
+  test('묶음 폴더의 .ts 는 명령 표의 스크립트이거나 그 스크립트가 부르는 보조 스크립트다', () => {
+    // 명령 표에 넣지 않는 보조 스크립트와 그 이유
+    const helpers: Record<string, string> = {
+      'worker/resume-exec.ts': 'worker/resume-worker.ts 가 연 새 터미널의 셸이 부르는 실행기다. 코디네이터가 직접 부르지 않는다',
+    }
     const found = GROUPS.flatMap((g) => readdirSync(join(SCRIPTS, g)).filter((n) => n.endsWith('.ts')).map((n) => `${g}/${n}`)).sort()
-    assert.deepEqual(found, FILES)
+    assert.deepEqual(found, [...FILES, ...Object.keys(helpers)].sort())
   })
 
   test('옮긴 스크립트가 자기 위치 기준으로 적은 파일 경로가 모두 있다', () => {

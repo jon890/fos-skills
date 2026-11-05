@@ -43,6 +43,7 @@ describe('표의 행', () => {
       'orch loop stalled run': '스펙 DECISION23. 등록된 Run 을 모두 본다',
       'orch worker ask run': 'worker 터미널은 Run 에 묶이지 않는다. check 결과에서 Run 을 읽는다',
       'orch worker check repo': '워크트리를 위치 인자로 받아 저장소를 따로 쓰지 않는다',
+      'orch worker resume run': '옛 dispatch 의 runId 를 쓴다. 문맥의 지금 Run 으로 채우면 다른 Run 의 worker 를 잘못 잇는다',
       'orch doctor run': '스펙 DECISION23. 스킬 첫 점검이 Run 별 점검을 하지 않는다',
       'orch status run': '스펙 DECISION22. 주지 않으면 루프에 등록된 Run 을 모두 요약한다',
     }

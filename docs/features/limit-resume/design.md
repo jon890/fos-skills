@@ -90,7 +90,7 @@ orch worker resume --dispatch <옛 dispatch id> [--run <Run>] [--repo DIR] [--ti
 | 거부 | 그 밖(정상 작업 중인 살아 있는 dispatch, 터미널이 열린 failed·abandoned dispatch, 구조화 worker, 더 새 dispatch 가 있음) | `RESUME-FAIL target` |
 
 에이전트, 모델, effort 는 `worker.startOptions.launch.effective` 다. 없으면 `requested`, 그것도 없으면 `RESUME-FAIL target`.
-`limited` 의 Claude worker 는 옛 터미널의 에이전트 프로세스 실행 줄(`ps`, 터미널 `processId` 의 자손 가운데 `claude`)에서 `--plugin-dir` 값을 읽어 `pluginDir` 로 넘긴다. 못 읽으면 비워 두고 실행기가 2단계 규칙으로 정한다.
+`limited` 의 Claude worker 는 옛 터미널의 에이전트 프로세스 실행 줄에서 `--plugin-dir` 값을 읽어 `pluginDir` 로 넘긴다. Orca 의 `terminal show`, `terminal list` 에 프로세스 id 가 없어(Orca 1.4.247 실측) 자기 사용자의 프로세스를 `ps -E` 로 읽고, 환경의 `ORCA_TERMINAL_HANDLE` 이 옛 터미널인 `claude` 프로세스의 pid 만 고른다. 값은 그 pid 의 실행 줄을 환경 없이 다시 읽어 얻는다. 환경 문자열은 메모리에서 대조에만 쓰고 출력, 기록, 테스트 스냅숏에 남기지 않는다. 못 읽으면 비워 두고 실행기가 2단계 규칙으로 정한다.
 
 ## 호출과 상태
 
