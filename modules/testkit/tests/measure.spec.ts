@@ -32,6 +32,20 @@ describe('measure.ts', () => {
     assert.equal(cells[6], '0')
   })
 
+  it('기동 수를 세는 실행만 실패하면 표에 적고 1 로 끝난다', () => {
+    const { dir } = copyRepo(join(tempDir(), 'r'))
+    mkdirSync(join(dir, 't'))
+    writeFileSync(
+      join(dir, 't/only-count.spec.ts'),
+      "import { it } from 'node:test'\nit('x', () => { if (process.env.TESTKIT_MEASURE_LOG) throw new Error('계측 때만 실패') })\n",
+    )
+    git(dir, ['add', '-A'])
+    git(dir, ['commit', '-q', '-m', 'add'])
+    const done = runCommand([process.execPath, MEASURE, '--before', 'HEAD', '--after', 'HEAD', '--runs', '1', 't/only-count.spec.ts'], { cwd: dir })
+    assert.equal(done.code, 1, done.stdout + done.stderr)
+    assert.match(done.stdout, /기동 수 계측 실패\(전, 후\)/)
+  })
+
   it('모르는 옵션이면 2 다', () => {
     const done = runCommand([process.execPath, MEASURE, '--bogus'])
     assert.equal(done.code, 2)

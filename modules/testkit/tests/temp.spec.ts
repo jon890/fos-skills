@@ -43,6 +43,19 @@ describe('tempDir', () => {
     return { dir, stderr: done.stdout + done.stderr }
   }
 
+  it('t 를 준 폴더도 테스트가 process.exit 로 끝나면 지운다', () => {
+    const work = tempDir('testkit-spec-exit-')
+    const file = join(work, 'exit.spec.ts')
+    writeFileSync(
+      file,
+      `import { it } from 'node:test'\nimport { tempDir } from ${JSON.stringify(TEMP)}\nit('x', (t) => { console.log('DIR=' + tempDir('testkit-exit-', t)); process.exit(1) })\n`,
+    )
+    const done = runCommand([process.execPath, '--test', file], { env: { ...process.env, TESTKIT_KEEP: '' } })
+    const dir = /DIR=(\S+)/.exec(done.stdout)?.[1] ?? ''
+    assert.ok(dir, done.stdout)
+    assert.ok(!existsSync(dir))
+  })
+
   it('파일이 끝난 뒤 폴더가 없다', () => {
     const { dir } = child({ TESTKIT_KEEP: '' })
     assert.ok(!existsSync(dir))

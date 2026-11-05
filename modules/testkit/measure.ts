@@ -6,7 +6,7 @@
 //   --runs N           파일마다 전후를 번갈아 돌릴 횟수(기본 3). 시간은 성공한 실행의 가운데 값(초)이다
 // 기동 수: 사본의 `delete <무엇>.NODE_OPTIONS` 줄을 지우고 preload 를 `NODE_OPTIONS=--import` 로 걸어
 //   node 프로세스가 spawn, spawnSync, execFile, execFileSync, exec, execSync 로 띄운 수를 센다. 파일마다 한 번 잰다.
-// 종료 코드: 0 측정 끝, 1 측정 중 테스트 실패가 있음, 2 인자 오류나 실행 오류.
+// 종료 코드: 0 측정 끝, 1 측정 중 테스트 실패가 있음(기동 수를 세는 실행의 실패 포함, 그 칸에 적는다), 2 인자 오류나 실행 오류.
 //
 // 표 위에 두 커밋의 짧은 SHA 와 load average 를 적는다. 부하가 높으면 시간은 비율로 본다. 기동 수는 부하와 무관하다.
 // stdout 에 node:test 요약이 붙지 않도록 temp.ts, git.ts 를 거치지 않고 command.ts 만 쓴다.
@@ -112,14 +112,15 @@ function timeRun(copy: string, file: string): { seconds: number; ok: boolean } {
   return { seconds, ok: done.code === 0 && !done.timedOut }
 }
 
-function countSpawns(copy: string, file: string, preload: string, log: string): number {
+function countSpawns(copy: string, file: string, preload: string, log: string): { count: number; ok: boolean } {
   rmSync(log, { force: true })
-  runCommand([process.execPath, '--test', file], {
+  const done = runCommand([process.execPath, '--test', file], {
     cwd: copy,
     env: { ...process.env, NODE_OPTIONS: `--import=${preload}`, TESTKIT_MEASURE_LOG: log },
     timeoutMs: RUN_TIMEOUT_MS,
   })
-  return existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0
+  const count = existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0
+  return { count, ok: done.code === 0 && !done.timedOut }
 }
 
 function main(argv: string[]): number {
@@ -153,10 +154,14 @@ function main(argv: string[]): number {
         }
       }
       const spawns = { before: countSpawns(counted.before, file, preload, log), after: countSpawns(counted.after, file, preload, log) }
-      if (fails.before || fails.after) failed = true
+      const countFailed = !spawns.before.ok || !spawns.after.ok
+      if (fails.before || fails.after || countFailed) failed = true
       const fmt = (v: number | null) => (v === null ? '-' : v.toFixed(2))
-      const failCell = fails.before || fails.after ? `전 ${fails.before}/${args.runs}, 후 ${fails.after}/${args.runs}` : '0'
-      rows.push(`| ${file} | ${fmt(median(times.before))} | ${fmt(median(times.after))} | ${spawns.before} | ${spawns.after} | ${failCell} |`)
+      const parts: string[] = []
+      if (fails.before || fails.after) parts.push(`전 ${fails.before}/${args.runs}, 후 ${fails.after}/${args.runs}`)
+      if (countFailed) parts.push(`기동 수 계측 실패(${[!spawns.before.ok && '전', !spawns.after.ok && '후'].filter(Boolean).join(', ')})`)
+      const failCell = parts.length ? parts.join('; ') : '0'
+      rows.push(`| ${file} | ${fmt(median(times.before))} | ${fmt(median(times.after))} | ${spawns.before.count} | ${spawns.after.count} | ${failCell} |`)
     }
     const load = loadavg().map((v) => v.toFixed(2)).join(' ')
     console.log(`전 ${shortBefore}, 후 ${shortAfter}, load average ${load}, 실행 ${args.runs}회`)

@@ -31,7 +31,13 @@ process.on('exit', cleanupAll)
 
 export function tempDir(prefix = 'testkit-', t?: { after(fn: () => void): void }): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
-  if (t) t.after(() => removeOrKeep(dir))
-  else folders.push(dir)
+  folders.push(dir) // t 가 있어도 목록에 둔다. 테스트가 process.exit 로 끝나도 exit 정리가 지운다
+  if (t) {
+    t.after(() => {
+      const at = folders.indexOf(dir)
+      if (at >= 0) folders.splice(at, 1)
+      removeOrKeep(dir)
+    })
+  }
   return dir
 }

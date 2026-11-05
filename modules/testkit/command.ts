@@ -26,24 +26,35 @@ export function runCommand(argv: string[], opts: CommandOptions = {}): CommandRe
 
 export function runCommandAsync(argv: string[], opts: CommandOptions = {}): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'] })
+    // 새 프로세스 그룹으로 띄워 시간이 지나면 손자까지 함께 죽인다
+    const child = spawn(argv[0], argv.slice(1), { cwd: opts.cwd, env: childEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'], detached: true })
     let stdout = ''
     let stderr = ''
     let timedOut = false
     let spawnError = ''
+    let settled = false
+    const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      resolve({ code, signal, stdout, stderr: stderr + spawnError, timedOut })
+    }
     child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
     child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
     const timer = opts.timeoutMs
       ? setTimeout(() => {
           timedOut = true
-          child.kill('SIGKILL')
+          try {
+            if (child.pid) process.kill(-child.pid, 'SIGKILL')
+          } catch {
+            child.kill('SIGKILL')
+          }
+          // 손자가 파이프를 쥐고 있어도 close 를 기다리지 않고 제한 시간 안에 돌려준다
+          finish(null, 'SIGKILL')
         }, opts.timeoutMs)
       : null
     child.on('error', (error) => (spawnError = error.message))
-    child.on('close', (code, signal) => {
-      if (timer) clearTimeout(timer)
-      resolve({ code, signal, stdout, stderr: stderr + spawnError, timedOut })
-    })
+    child.on('close', finish)
     child.stdin.on('error', () => {})
     child.stdin.end(opts.input ?? '')
   })

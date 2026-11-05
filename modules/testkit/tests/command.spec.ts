@@ -45,6 +45,14 @@ describe('runCommandAsync', () => {
     assert.deepEqual([r.code, r.stdout, r.stderr, r.timedOut], [0, 'in', 'e', false])
   })
 
+  it('손자가 파이프를 쥐고 있어도 제한 시간 안에 돌려준다', async () => {
+    const code = `require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { stdio: ['ignore', 'inherit', 'inherit'] }); setTimeout(() => {}, 5000)`
+    const start = Date.now()
+    const r = await runCommandAsync(node(code), { timeoutMs: 150 })
+    assert.equal(r.timedOut, true)
+    assert.ok(Date.now() - start < 2000, `${Date.now() - start}ms`)
+  })
+
   it('시간이 지나면 SIGKILL 하고 timedOut 이다', async () => {
     const r = await runCommandAsync(node('setTimeout(() => {}, 30000)'), { timeoutMs: 200 })
     assert.equal(r.timedOut, true)
