@@ -197,6 +197,7 @@ class TaskRulesTest(unittest.TestCase):
             with self.subTest(rel=rel):
                 self.assertFalse(verify.runnable_test(rel))
         for rel in ("tests/test_*.py", "skills/orch/tests/*.spec.ts", "tests/**", "tests/test_sample.py",
+                    "tests/", "src/test/",
                     "src/fixture/tests/test_sample.py", "src/__fixtures__/tests/test_sample.py",
                     "src/fixtures/tests/test_sample.py"):
             with self.subTest(rel=rel):
