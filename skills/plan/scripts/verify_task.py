@@ -1369,7 +1369,7 @@ def owns_call_name(file, name):
     if file.suffix not in {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}:
         return bool(re.search(rf"\b{re.escape(name)}\b", source))
     # 주석과 문자열 속 export 예시는 공개 선언이 아니다. 템플릿 문자열도 함께 뺀다.
-    source = re.sub(r"//[^\n]*|/\*[\s\S]*?\*/|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`",
+    source = re.sub(r"//[^\n]*|/\*[\s\S]*?\*/|(?<![\w$])'(?:\\.|[^'\\\n])*'|\"(?:\\.|[^\"\\\n])*\"|`(?:\\.|[^`\\])*`",
                     " ", source)
     identifier = r"[A-Za-z_$][\w$]*"
     declarations = re.findall(

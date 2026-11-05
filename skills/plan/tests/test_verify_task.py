@@ -137,6 +137,7 @@ class TaskRulesTest(unittest.TestCase):
 
     def test_js_callers_require_an_exported_owner(self):
         cases = (
+            ("const a = <p>It's</p>;\nexport function triage() {}\nconst b = <p>won't</p>;", "triage", True),
             ("function triage() {}\nmodule.exports = { triage };", "triage", True),
             ("exports.triage = () => {};", "triage", True),
             ("module.exports.triage = () => {};", "triage", True),
