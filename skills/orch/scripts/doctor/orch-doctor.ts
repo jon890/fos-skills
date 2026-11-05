@@ -37,7 +37,7 @@
 //     형제 번들 변수 `$PLAN_SKILL_DIR/scripts/<이름>` 은 같은 플러그인의 `skills/plan/scripts/<이름>` 으로 본다
 //     (변수 이름의 `_SKILL_DIR` 앞을 소문자로 바꾸고 `_` 를 `-` 로 바꾼 디렉터리).
 //     백틱 안의 `scripts/verify.sh` 처럼 앞에 아무것도 없는 경로는 저장소 쪽 예시일 수 있어 보지 않는다.
-//     진입점으로 부르는 `$SKILL_DIR/bin/orch.ts <이름>` 은 `bin/orch.ts` 와 `scripts/<이름>.ts` 를 모두 본다.
+//     진입점으로 부르는 `$SKILL_DIR/bin/orch.ts <이름>` 은 `bin/orch.ts` 와 명령 표가 푼 `scripts/<묶음>/<이름>.ts` 를 모두 본다.
 //     새 꼴 `orch <묶음> <동작>` 은 백틱 안이나 코드 블록 안에서 `orch ` 뒤에 ASCII 소문자 낱말이 오는 것만 명령으로 본다(산문의 「orch 루트」 는 보지 않는다).
 //     그 낱말이 명령 표(lib/commands.ts)의 묶음이 아니거나 동작을 풀지 못하거나 그 스크립트가 orch 의 scripts 에 없으면 MISSING 이다.
 //     줄이나 바로 윗줄에 `orch-compat` 가 있으면 보지 않는다(옛 꼴의 호환을 설명하는 자리).
@@ -91,6 +91,7 @@
 // 루프 번들 판정(늘 본다):
 //     `ps -axo pid=,command=`(PS 환경 변수로 바꾼다)에서 `orch-loop.ts` 와 `--foreground` 가 든 행(상주 루프의 부모)을 읽는다.
 //     --tick 자식과 --start 는 뺀다. 스크립트 경로는 첫 낱말(node) 뒤 처음 `/` 로 시작하는 곳부터 `orch-loop.ts` 까지다(경로에 빈칸이 있을 수 있다).
+//     아래 줄은 옛 번들의 경로 꼴을 그대로 적는다(orch-compat).
 //     그 경로가 설치 캐시 꼴(`<plugins>/cache/<마켓플레이스>/<플러그인>/<sha 나 버전>/orch/scripts/orch-loop.ts`, 묶음 폴더가 든 `…/scripts/loop/orch-loop.ts` 도 같다.
 //     스킬 폴더는 경로의 마지막 `/scripts/` 앞이다)이면
 //     지금 세션 프로필(`CLAUDE_CONFIG_DIR`, 없으면 `~/.claude`)의 installed_plugins.json 에서 `<플러그인>@<마켓플레이스>` 의 user 범위 installPath 를 읽는다.

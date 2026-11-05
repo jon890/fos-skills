@@ -682,7 +682,7 @@ export function parseQueueView(stdout) {
   return { enabled: value.enabled, running: value.running, prs: value.prs, error: value.error || null }
 }
 
-// 루프의 AUTO-MERGE-WAIT 이유(skills/orch/scripts/orch-loop.ts 의 judgeTarget, lib/auto-merge.ts 의 judgeReview)를 사람이 읽는 말로.
+// 루프의 AUTO-MERGE-WAIT 이유(skills/orch/scripts/loop/orch-loop.ts 의 judgeTarget, lib/auto-merge.ts 의 judgeReview)를 사람이 읽는 말로.
 // 모르는 이유는 그대로 둔다. 루프가 이유를 더해도 줄이 빠지지 않게 하려는 것이다
 const WAIT_TEXTS = [
   [/^draft$/, () => 'Draft'],

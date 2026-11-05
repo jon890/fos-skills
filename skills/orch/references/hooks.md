@@ -66,7 +66,7 @@ if (live.length >= LIMIT) {
 ### 멈춘 worker 다시 시도시키기
 
 상주 루프는 멈춘 worker 를 알리기만 하고 입력하지 않는다. 다시 시도시킬지와 몇 번까지 할지는 저장소의 `worker-stalled` 핸들러가 정한다.
-판정 기준과 틱 수는 `scripts/orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
+판정 기준과 틱 수는 `scripts/loop/orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
 
 아래는 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 멈춤마다 세 번까지 「계속 진행해」 를 넣는 핸들러다. `.orch/hooks/worker-stalled.ts` 에 둔다.
 
@@ -152,7 +152,7 @@ orch 5.2.0에서 `config.json`의 `queue.before`, `queue.verify_merged`, `queue.
 
 - 폴더를 옮기기 전이면 `--hooks` 는 아무것도 바꾸지 않고 종료 코드 2 로 멈춘다. 먼저 [`overlay.md`](overlay.md) 의 「옛 구조에서 옮기기」 를 한다
 - `PR번호:명령` 은 그 PR 하나에만 붙이는 명령이라 옮기지 않는다
-- 판정과 종료 코드는 `scripts/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다
+- 판정과 종료 코드는 `scripts/doctor/migrate-orch-dir.ts` 머리 주석의 「--hooks」 가 소유한다
 
 ## 가드가 막는 호출
 
