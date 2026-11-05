@@ -310,6 +310,7 @@ CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `
 나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
 `claude plugin test .` 는 이 명령에 들지 않으니 따로 돌려요.
 한 파일이나 폴더만 돌릴 때는 `node scripts/run-tests.ts skills/mac-cleanup/tests` 처럼 인자로 줘요. 인자를 주면 tsc 는 돌지 않아요.
+`test_*.py` 가 있는 폴더를 주면 Python 묶음만 돌아요. 그 폴더의 `*.spec.ts` 는 파일 경로로 따로 줘요.
 오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둬요.
 

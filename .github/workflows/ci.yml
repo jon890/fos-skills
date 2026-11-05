@@ -35,5 +35,7 @@ jobs:
       - name: Run plugin tests from repository root
         run: claude plugin test .
       - name: Run repository test runner
-        # 묶음 목록, TypeScript 버전, 캐시 폴더는 실행기가 소유한다(scripts/run-tests.ts 머리 주석)
+        # 묶음 목록, TypeScript 버전, 캐시 폴더는 실행기가 소유한다(scripts/run-tests.ts 머리 주석).
+        # plugin test 가 실패해도 돌려 같은 실행에서 두 결과를 함께 본다
+        if: ${{ !cancelled() }}
         run: node scripts/run-tests.ts

@@ -73,7 +73,7 @@
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.sh` |
-| `scripts/run-tests.ts` | 저장소의 검증 명령. 묶음 찾기, tsc·node·Python 단계, 요약과 끝 줄. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
+| `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
 | `scripts/test-plugin-install.sh` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
 | `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보낸다. 플러그인 배포와 무관하게 그대로 동작한다. 인자는 스크립트 머리 주석이 소유한다 | 사람, `githooks/post-commit` |
@@ -142,7 +142,8 @@
 
 | 명령 | 확인하는 것 |
 | --- | --- |
-| `node scripts/run-tests.ts` | 저장소의 모든 node·Python 테스트와 tsc. `scripts/tests` 에서는 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `test_export_to_team.py` 가 `export-to-team.sh` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
+| `node scripts/run-tests.ts` | 저장소의 모든 node·Python 테스트와 tsc |
+| `node scripts/run-tests.ts scripts/tests` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `test_export_to_team.py` 가 `export-to-team.sh` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
 | `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 설치 스킬 16개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
 `claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.
@@ -233,7 +234,7 @@ work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worke
 | 실행 | `orch <묶음> <동작>`. PATH 의 실행기 `bin/orch`(또는 `~/.local/bin/orch` 사본)가 설치 기록에서 번들을 골라 그 번들의 진입점 `skills/orch/bin/orch.ts` 에 넘기고, 진입점이 명령 표 `scripts/lib/commands.ts` 로 스크립트와 인자를 풀어 `node --disable-warning=ExperimentalWarning` 으로 실행한다. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다. 번들 고르기의 원본은 `scripts/lib/install-record.ts`, 넘기기와 문맥 채우기는 진입점 머리 주석이 소유한다. 스크립트끼리는 진입점을 거치지 않고 파일 경로로 직접 부른다. 진입점은 자식에게 짧은 출력 신호 `ORCH_OUTPUT=short` 를 넘기고(`--full` 이면 넘기지 않는다), 스크립트는 `scripts/lib/output.ts` 로 판정 줄만 낸다. 경로로 직접 부른 스크립트는 지금 출력 그대로다 |
 | 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
 | 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
-| 테스트 | `node scripts/run-tests.ts`. `node --test` 한 번과 Python 묶음, tsc 를 함께 돈다. CI 는 `Tests` job 이 같은 명령을 부른다 |
+| 테스트 | `node scripts/run-tests.ts`. `node --test` 한 번과 Python 묶음, tsc 를 함께 돈다. CI 는 `Tests` job 이 같은 명령을 부른다. `claude plugin test .` 는 이 명령에 들지 않고 같은 job 에서 따로 돈다 |
 | 오류 출력 | 조회 실패처럼 코디네이터가 알아야 하는 것은 stdout 에 대문자 접두 줄(`WATCH-ERROR`, `HOOK-FAIL`)로 낸다. 하네스는 stderr 를 알림으로 보내지 않는다 |
 | 주석 | 한국어로 쓴다. 함정에는 이유 주석을 단다. 머리 주석이 사용법, 옵션, 종료 코드를 소유하고 문서는 그것을 옮겨 적지 않는다 |
 
