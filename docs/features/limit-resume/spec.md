@@ -48,7 +48,7 @@
 | --- | --- | --- |
 | REQ1 | 코디네이터가 멈춘 dispatch 하나를 명령 하나로 resume 해 다시 띄운다 | 한도로 멈춘 Claude worker 의 dispatch 로 명령을 부르면, 같은 워크트리에 `claude --resume <그 세션 id>` 로 연 터미널이 생기고 같은 Task 의 새 dispatch 를 받는다. 새 worker 에게 앞 대화의 내용을 물으면 답한다. Codex worker 는 `codex resume <세션 id>` 로 같다 |
 | REQ2 | 재부팅으로 끊긴 worker 도 같은 명령으로 다시 띄운다 | `RESTART` 대상 dispatch 로 부르면 화면 읽기와 정리를 건너뛰고(DECISION11) REQ1 과 같이 열린다 |
-| REQ3 | 옛 터미널이 새 세션과 겹치지 않는다 | 세션 id 와 마지막 화면을 읽어 출력에 남긴 뒤 옛 dispatch 를 abandon 하고 옛 터미널을 닫고 나서 새 터미널을 연다. 같은 세션 기록에 두 프로세스가 동시에 붙지 않는다 |
+| REQ3 | 옛 터미널이 새 세션과 겹치지 않는다 | 세션 id 와 마지막 화면을 읽어 출력에 남기고, 옛 dispatch 를 abandon 하고 옛 터미널을 닫은 뒤에야 resume 한 에이전트가 세션에 붙는다. 같은 세션 기록에 두 프로세스가 동시에 붙지 않는다 |
 | REQ4 | 실패를 숨기지 않는다 | 세션 기록을 찾지 못하거나(지금 프로필에서 보이지 않음 포함), 터미널 열기나 `worker-start --terminal` 이 실패하면 실패한 단계와 이유, 다음에 부를 명령을 내고 0 이 아닌 종료 코드로 끝난다. 자동으로 새 worker 를 띄우지 않고 다시 시도하지 않는다 |
 | REQ5 | 안내가 새 명령을 가리킨다 | `adopt-sessions` 의 `LIMITED`, `RESTART` 판정 줄 아래 들여 쓴 줄이 새 명령 한 줄이다. 판정 줄 형식은 그대로다. 상주 루프의 `WORKER-LIMITED` 알림과 `agent-selection.md` 「사용 한도에 걸렸을 때」 가 DECISION13 의 순서(계정 전환 요청 뒤 resume, 안 되면 제공자·모델 변경)를 안내한다 |
 
@@ -65,7 +65,7 @@
 | DECISION7 | 세션 기록을 찾는 열쇠 | 지금 환경의 기록 폴더에서 그 워크트리의 기록 가운데 옛 dispatch id 가 든 것. 여럿이면 가장 최근 것 | 작성자 | 기록 안에 dispatch 머리말이 남는다(실측). 한 세션에 dispatch 여럿이 쌓일 수 있어 dispatch id 로 고른다 |
 | DECISION8 | 다시 여는 실행 줄의 모델, effort, 권한 | 모델과 effort 는 옛 dispatch 의 `launch.effective` 값을 쓴다. 권한 모드와 Orca 인자(`--plugin-dir … orca-agent-view`, Codex 의 `-c` 와 승인 옵션)는 Orca 가 처음 띄울 때와 같게 둔다 | 작성자 | resume 은 같은 worker 를 잇는 것이라 지시서의 `worker 선택:` 을 바꾸지 않는다. 권한이 다르면 resume 한 worker 가 매번 승인을 묻는다 |
 | DECISION9 | resume 한 세션이 받을 dispatch | 같은 Task 를 `worker-start --task <Task> --terminal <새 터미널>` 로 잇는다. Orca 가 넣는 머리말과 원래 지시서를 그대로 받는다 | 작성자 | `--spec` 은 새 Task 를 만들어 보드와 기록이 갈린다. 앞 대화가 남아 있어 worker 는 끝난 일을 기록에서 본다 |
-| DECISION10 | 세션 기록을 찾는 환경 | 새 터미널이 실제로 쓸 계정의 기록 폴더. Claude 는 Orca 가 지금 고른 프로필(`selected-host`)의 `projects`, Codex 는 Orca 가 지금 고른 계정의 `CODEX_HOME` | 작성자 | 코디네이터 셸의 환경과 새 터미널의 계정이 다를 수 있다. 새 터미널이 열 수 있는 기록만 찾아야 「찾았는데 열리지 않음」 이 없다 |
+| DECISION10 | 세션 기록을 찾는 환경 | 새 터미널이 실제로 쓸 계정의 기록 폴더. 새 터미널 안에서 그 터미널의 `CLAUDE_CONFIG_DIR`(`projects`)과 `CODEX_HOME` 으로 찾는다 | 작성자 | 코디네이터 셸의 환경과 새 터미널의 계정이 다를 수 있다. 새 터미널이 열 수 있는 기록만 찾아야 「찾았는데 열리지 않음」 이 없다 |
 | DECISION11 | 대상별로 하는 단계 | `LIMITED` 는 화면 읽기, abandon, 옛 터미널 닫기, 열기, 잇기를 모두 한다. `RESTART` 는 dispatch 가 이미 `failed` 이고 터미널이 없으므로 화면 읽기, abandon, 닫기를 건너뛰고 열기와 잇기만 한다 | 작성자 | `lib/sessions.ts` 의 `restartable` 은 터미널 없는 failed dispatch 만 고른다 |
 | DECISION12 | 정리한 뒤 실패했을 때 낼 다음 명령 | 옛 dispatch 를 정리한 뒤 실패하면 같은 명령을 다시 부르라고 낸다. 명령은 정리된(abandoned, failed) 옛 dispatch 도 그 Task 의 마지막 dispatch 이면 받는다. 터미널은 열렸는데 `worker-start --terminal` 만 실패하면 그 터미널을 닫지 않고 handle 을 출력에 남긴다 | 작성자 | 정리 뒤에는 `LIMITED`, `RESTART` 판정에 걸리지 않는다. 잇기 실패 뒤에는 연결이 이미 일어났을 수 있어 닫지 않는다(DECISION4) |
 | DECISION13 | 한도 알림이 안내할 기본 대응 | 먼저 사용자에게 계정 전환을 요청하고, 바꾼 뒤 resume 명령을 부른다. 바꿀 계정이 없거나 resume 이 실패하면 지금처럼 같은 등급의 다른 제공자나 한 단계 아래 모델로 새로 띄우고 재개 절은 코디네이터가 쓴다 | 사용자 2026-11-05 | 사용자 운영(계정 전환 뒤 이어 가기)을 기본으로 두고, 계정이 모두 찼을 때는 지침의 한도 표가 길을 준다 |
