@@ -6,7 +6,7 @@
 
 새 터미널 안에서 그 터미널의 계정 환경으로 이전 worker 의 Claude·Codex 세션을 찾고, 출발 신호 뒤 셸이 `exec` 로 resume 할 한 줄을 쓰는 순수 모듈과 실행기를 만든다.
 
-**범위 외**: 코디네이터 쪽 명령(`resume-worker.ts`), Orca 호출, 명령 표, 문서. phase-02 와 phase-03 이 맡는다.
+**범위 외**: 코디네이터 쪽 명령(`resume-worker.ts`), Orca 호출, 명령 표, 문서. phase-02 부터 phase-04 까지가 맡는다.
 
 ## 컨텍스트
 
