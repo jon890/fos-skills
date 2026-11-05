@@ -163,7 +163,55 @@ export function prose(text: string, stripSpans = true): string[] {
 }
 
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*$/;
-const INLINE_LINK = /\[([^\]\n]*)\]\(\s*(<[^>\n]+>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
+export type InlineLink = { start: number; end: number; text: string; target: string };
+
+// 한 줄의 인라인 링크(이미지 포함). 대상 안의 짝이 맞는 괄호는 경로의 일부다(GFM). `guide(v2).md` 를 자르지 않는다.
+export function inlineLinks(line: string): InlineLink[] {
+  const found: InlineLink[] = [];
+  const open = /!?\[([^\]\n]*)\]\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = open.exec(line))) {
+    let i = m.index + m[0].length;
+    while (line[i] === " ") i++;
+    let target = "";
+    if (line[i] === "<") {
+      const close = line.indexOf(">", i);
+      if (close < 0) continue;
+      target = line.slice(i + 1, close);
+      i = close + 1;
+    } else {
+      let depth = 0;
+      const from = i;
+      for (; i < line.length; i++) {
+        const c = line[i];
+        if (c === "\\") i++;
+        else if (c === "(") depth++;
+        else if (c === ")") {
+          if (depth === 0) break;
+          depth--;
+        } else if (/\s/.test(c)) break;
+      }
+      target = line.slice(from, i);
+    }
+    const tail = /^\s*(?:(?:"[^"]*"|'[^']*')\s*)?\)/.exec(line.slice(i));
+    if (!tail || !target) continue;
+    const end = i + tail[0].length;
+    found.push({ start: m.index, end, text: m[1], target });
+    open.lastIndex = end;
+  }
+  return found;
+}
+
+// 인라인 링크를 바꾼 글. fn 이 링크마다 바꿀 글을 낸다.
+export function replaceLinks(line: string, fn: (link: InlineLink) => string): string {
+  let out = "";
+  let at = 0;
+  for (const link of inlineLinks(line)) {
+    out += line.slice(at, link.start) + fn(link);
+    at = link.end;
+  }
+  return out + line.slice(at);
+}
 // 각주 정의(`[^1]: 설명`)는 링크가 아니다
 const REFERENCE_DEF = /^ {0,3}\[(?!\^)([^\]\n]+)\]:\s*(<[^>]+>|\S+)/;
 const SETEXT = /^ {0,3}(=+|-+)\s*$/;
@@ -174,7 +222,7 @@ const NOT_PARAGRAPH = /^\s*$|^ {0,3}(?:#|[-*+]\s|\d+[.)]\s|\||>)/;
 export function slugify(heading: string): string {
   const text = heading
     .replace(/\s+#+\s*$/, "")
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^[\s\S]*$/, (all) => replaceLinks(all, (l) => l.text))
     .replace(/`/g, "")
     .toLowerCase();
   return text.replace(/[^\p{L}\p{N}\p{M} _-]/gu, "").replace(/ /g, "-");
@@ -215,7 +263,7 @@ export function linksOf(lines: string[]): Link[] {
   lines.forEach((line, i) => {
     const def = REFERENCE_DEF.exec(line);
     if (def) links.push({ line: i + 1, text: null, target: def[2].replace(/^<|>$/g, "") });
-    for (const m of line.matchAll(INLINE_LINK)) links.push({ line: i + 1, text: m[1], target: m[2].replace(/^<|>$/g, "") });
+    for (const l of inlineLinks(line)) links.push({ line: i + 1, text: l.text, target: l.target });
   });
   return links;
 }
@@ -398,9 +446,9 @@ function metaOf(repo: Repo, adr: AdrFile, byPath: Map<string, AdrFile>): AdrMeta
     if (!inReplaced) return;
     // 코드 스팬 안 링크는 링크가 아니다
     const visible = line.replace(/(`+)[\s\S]*?\1/g, "");
-    for (const m of visible.matchAll(INLINE_LINK)) {
-      if (!/ADR-[A-Za-z]*\d/.test(m[1])) continue;
-      const local = splitLocal(m[2].replace(/^<|>$/g, ""));
+    for (const l of inlineLinks(visible)) {
+      if (!/ADR-[A-Za-z]*\d/.test(l.text)) continue;
+      const local = splitLocal(l.target);
       if (!local || !local[0]) continue;
       const target = byPath.get(rel(repo.root, resolve(repo.root, posix.dirname(adr.path), local[0])));
       if (target && !replacedBy.includes(target)) replacedBy.push(target);
@@ -537,8 +585,7 @@ function checkUnlinked(repo: Repo, path: string, lines: string[], pattern: strin
   const defs = new Set(lines.map((l) => REFERENCE_DEF.exec(l)?.[1].toLowerCase()).filter((x): x is string => !!x));
   lines.forEach((line, i) => {
     if (heading.test(line)) return;
-    const outside = line
-      .replace(/!?\[[^\]\n]*\]\([^)\n]*\)/g, "")
+    const outside = replaceLinks(line, () => "")
       .replace(/\[[^\]\n]*\]\[[^\]\n]*\]/g, "")
       .replace(REFERENCE_DEF, "")
       .replace(/\[([^\]\n]+)\]/g, (all, name: string) => (defs.has(name.toLowerCase()) ? "" : all));

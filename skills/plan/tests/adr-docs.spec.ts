@@ -97,6 +97,11 @@ describe("BROKEN_LINK", () => {
     assert.match(r.err, /ADR 폴더를 찾지 못해/);
   });
 
+  test("대상 안의 짝이 맞는 괄호는 경로의 일부다", () => {
+    const root = repo({ "docs/guide(v2).md": "# 가\n", "README.md": "[가이드](docs/guide(v2).md) [제목](<docs/guide(v2).md> \"t\") [깨짐](docs/none(v2).md)\n" });
+    assert.deepEqual(run(root, "check").out, ["README.md:1: BROKEN_LINK docs/none(v2).md"]);
+  });
+
   test("대상이 있으면 0 이다", () => {
     const root = repo({ "README.md": "[가이드](docs/guide.md)\n", "docs/guide.md": "# 가이드\n" });
     assert.deepEqual(run(root, "check"), { code: 0, out: [], err: "ADR 폴더를 찾지 못해 ADR 검사를 건너뛴다: docs/adr\n검사한 Markdown: 2개, ADR 폴더: 0개\n" });
