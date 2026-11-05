@@ -64,7 +64,7 @@ phase-01 의 8개 테스트 머리 「명령 경계」 묶음만 새 파일로 �
 - `tsconfig.json` 의 `include` 에 `githooks/*.ts`
 - `.github/workflows/plugin-version.yml`: `actions/setup-node@v4` 의 `node-version: '24'` 단계, `node scripts/bump-plugin-version.ts`, version 읽기는 `node -p`(스펙 DECISION16)
 - `scripts/tests/exported-imports.spec.ts`: `export-to-team.ts` 에서 `sharedLists` 로 읽는다
-- README(59, 177, 290~302, 342, 421줄 근처), `docs/code-architecture.md`(배치 표, 스크립트 표, 검증 표), ADR-019·023 의 소유 문장, `docs/features/*/tasks/*` 의 `python3 scripts/check-skill-docs.py` 줄
+- README(59, 177, 290~302, 342, 421줄 근처), `docs/code-architecture.md`(배치 표, 스크립트 표, 검증 표), ADR-019·023 의 소유 문장, `docs/features/*/tasks/*` 의 `node scripts/check-skill-docs.ts` 줄
 
 ## 검증
 

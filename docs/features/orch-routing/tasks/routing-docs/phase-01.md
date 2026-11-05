@@ -77,7 +77,7 @@
 
 ```bash
 python3 export-only-skills/korean-check/scripts/korean-style-check.py skills/orch/references/agent-selection.md skills/orch/references/spec-writing.md skills/orch/SKILL.md skills/orch/changes/routing-guide.minor.md
-python3 scripts/check-skill-docs.py orch
+node scripts/check-skill-docs.ts orch
 python3 -m unittest discover -s scripts/tests
 python3 skills/plan/scripts/run_doc_checks.py --skill spec docs/features/orch-routing/spec.md
 awk '/^## 모델/,/^### 두 모델/' skills/orch/references/agent-selection.md | grep -c '^| `[a-z-]*` |'

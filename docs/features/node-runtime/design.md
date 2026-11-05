@@ -164,7 +164,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 
 스펙 DECISION7, DECISION10 을 따른다. 팀 저장소 일은 코디네이터가 orch worker 로 맡긴다.
 
-- `team-export` 브랜치: PR1 을 머지하기 직전 코디네이터가 그때의 `origin/main` 에서 만들어 push 한다. SHA 를 보드 항목에 적는다. 이행 중 급한 수정은 main 과 이 브랜치에 함께 넣고 `export-to-team --apply --source-ref team-export` 로 낸다. PR2 이후의 내보내기 명령은 TypeScript 지만 `--source-ref` 로 고른 커밋의 Python 사본을 그대로 복사하므로 이 경로가 계속 돈다.
+- `team-export` 브랜치: PR1 을 머지하기 직전 코디네이터가 그때의 `origin/main` 에서 만들어 push 한다. SHA 를 보드 항목에 적는다. 이행 중 급한 수정은 main 과 이 브랜치에 함께 넣고 `export-to-team --apply --source-ref team-export` 로 낸다. PR2 이후의 내보내기 명령은 TypeScript 지만 `--source-ref` 로 고른 커밋의 Python 사본을 그대로 복사하므로 이 경로가 계속 돈다. main 의 체크아웃에서는 `node scripts/export-to-team.ts --apply --source-ref team-export` 로 낸다. `team-export` 브랜치를 체크아웃해 거기서 돌릴 때는 그 브랜치의 `scripts/export-to-team.sh` 다(2026-11-06 PR2).
 - 마지막 팀 PR(PR11 머지 뒤)이 바꾸는 것: 내보내기 결과 전체, `validate.yml` 의 내보낸 스킬 줄(`python3 -m unittest discover -s ...` 를 `node --test` 패턴으로), runner 의 Node 24, `plugins/nhn-dev/bin/browser-driver` 가 부르는 본체 이름과 그 안의 `python3 -c` JSON 읽기, 팀 README 의 「Node.js 20 이상」, 팀 변경 이력. PR 본문이 팀원에게 바뀐 명령과 korean-check 훅 경로를 알린다.
 - 팀이 소유한 파일 가운데 옛 이름을 부르는 곳도 그 팀 PR 이 고친다. 2026-11-05 에 찾은 것:
   - `plugins/nhn-dev/bin/browser-driver` 11줄, `plugins/nhn-dev/bin/nhn-dev-doctor` 498줄, `tests/plugin/test_bin_wrappers.py` 105줄: `browser_driver.py`

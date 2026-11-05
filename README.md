@@ -56,7 +56,7 @@ flowchart TD
 ```
 
 원본은 위 Mermaid 한곳에 두고, [렌더링 설정](docs/diagrams/development-loop.config.json)에서 손그림 스타일과 고정 seed 를 지정해요.
-Mermaid CLI 12.2.0 을 준비한 뒤 `python3 scripts/render-development-loop.py --mmdc /path/to/mmdc` 로 SVG 를 갱신해요.
+Mermaid CLI 12.2.0 을 준비한 뒤 `node scripts/render-development-loop.ts --mmdc /path/to/mmdc` 로 SVG 를 갱신해요.
 SVG 를 함께 저장해 GitHub 에서도 같은 손그림 모양으로 볼 수 있어요.
 
 </details>
@@ -288,19 +288,17 @@ orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여�
 
 | 스크립트 | 하는 일 |
 | --- | --- |
-| `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정해요. 커밋을 고르는 `--source-ref` 는 머리 주석에 있어요 |
-| `scripts/install-hooks.sh` | `githooks/` 의 훅을 `.git/hooks` 에 걸어요. `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
+| `scripts/export-to-team.ts` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정해요. 커밋을 고르는 `--source-ref` 는 머리 주석에 있어요 |
+| `scripts/install-hooks.ts` | `githooks/` 의 훅을 `.git/hooks` 에 걸어요. `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
 | `scripts/run-tests.ts` | node, Python 테스트와 tsc 를 함께 돌고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용한 JS 진입을 `scripts/runtime-policy.json` 과 대조해 새 파일을 막아요. 새 스크립트는 TypeScript 로 써요([ADR-025](docs/adr/025-script-runtime-typescript.md)) |
-| `scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
-| `scripts/check-shell-korean.py` | 셸 스크립트에서 `$변수` 뒤에 한글이 붙은 자리를 찾아요. 셸에 따라 죽는 이식성 결함이에요 |
-| `scripts/check-skill-docs.py` | 스킬 README 와 CHANGELOG, 변경 이력 조각이 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
-| `scripts/skill_changes.py` | 변경 이력 조각의 이름·내용 규칙과 조각으로 스킬 버전과 CHANGELOG 를 올리는 코드예요. 검사기와 `bump-plugin-version.py` 가 같이 써요 |
-| `scripts/render-development-loop.py` | 이 README 의 Mermaid 원본으로 손그림 SVG 를 다시 그려요 |
-| `scripts/bump-plugin-version.py` | main 에 들어온 변경 이력 조각과 변경으로 스킬 버전, 플러그인 version, `.claude-plugin/CHANGELOG.md` 를 올려요. `plugin-version.yml` workflow 가 불러요 |
+| `scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
+| `scripts/check-skill-docs.ts` | 스킬 README 와 CHANGELOG, 변경 이력 조각이 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
+| `scripts/skill_changes.ts` | 변경 이력 조각의 이름·내용 규칙과 조각으로 스킬 버전과 CHANGELOG 를 올리는 코드예요. 검사기와 `bump-plugin-version.ts` 가 같이 써요 |
+| `scripts/render-development-loop.ts` | 이 README 의 Mermaid 원본으로 손그림 SVG 를 다시 그려요 |
+| `scripts/bump-plugin-version.ts` | main 에 들어온 변경 이력 조각과 변경으로 스킬 버전, 플러그인 version, `.claude-plugin/CHANGELOG.md` 를 올려요. `plugin-version.yml` workflow 가 불러요 |
 
-`check-shell-korean.py` 가 `korean-check` 에 없는 것은 그 스킬이 마크다운 전용으로 경계를 정해 두었기 때문이에요.
-판정 근거는 그 파일의 docstring 에 있어요.
+명령은 `node scripts/<이름>.ts` 로 불러요. 옵션과 종료 코드는 각 파일의 머리 주석에 있어요.
 
 ## 기여
 
@@ -339,7 +337,7 @@ ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loo
 - `.claude-plugin/plugin.json` 의 `skills` 배열
 - `.codex-plugin/plugin.json` 의 `skills` 배열. Codex 가 읽는 매니페스트라 hook 은 싣지 않아요([ADR-007](docs/adr/007-codex-manifest-without-hooks.md))
 - 이 README 의 스킬 목록 표
-- 팀에도 내보낼 스킬이면 `scripts/export-to-team.sh` 의 `SHARED_SKILLS`
+- 팀에도 내보낼 스킬이면 `scripts/export-to-team.ts` 의 `SHARED_SKILLS`
 
 두 `skills` 배열 가운데 하나라도 빠뜨리면 `node scripts/run-tests.ts scripts/tests` 가 실패해요.
 내보내기 전용 원본은 [`scripts/export-only-skills.json`](scripts/export-only-skills.json) 에 적고 배열에서 빼요.
@@ -418,7 +416,7 @@ main 에 머지될 때마다 `.github/workflows/plugin-version.yml` 이 등급�
 - 경위, 실측 수치, 내부 리팩터링, 테스트 추가는 적지 않아요. 커밋 메시지와 PR 본문이 이것을 가져요.
 - major 를 올리면 이전 major 의 버전들을 `## N.x` 한 절로 줄여요.
 
-항목 수와 줄 길이의 상한은 `scripts/check-skill-docs.py` 가 소유하고, `node scripts/run-tests.ts scripts/tests` 가 README 형식과 함께 검사해요.
+항목 수와 줄 길이의 상한은 `scripts/check-skill-docs.ts` 가 소유하고, `node scripts/run-tests.ts scripts/tests` 가 README 형식과 함께 검사해요.
 
 이력을 두는 자리와 태그는 아래를 따라요.
 
