@@ -44,6 +44,7 @@ describe('표의 행', () => {
       'orch worker ask run': 'worker 터미널은 Run 에 묶이지 않는다. check 결과에서 Run 을 읽는다',
       'orch worker check repo': '워크트리를 위치 인자로 받아 저장소를 따로 쓰지 않는다',
       'orch doctor run': '스펙 DECISION23. 스킬 첫 점검이 Run 별 점검을 하지 않는다',
+      'orch status run': '스펙 DECISION22. 주지 않으면 루프에 등록된 Run 을 모두 요약한다',
     }
     const missing: string[] = []
     for (const c of COMMANDS) {
@@ -55,6 +56,15 @@ describe('표의 행', () => {
       }
     }
     assert.deepEqual(missing, [])
+  })
+
+  test('orch status 는 orch-status.ts 로 풀리고 Run 을 문맥으로 채우지 않는다', () => {
+    const r = resolveNew(['status', '--run', 'R'])
+    assert.ok(!('error' in r))
+    if ('error' in r) return
+    assert.equal(r.command.script, 'orch-status.ts')
+    assert.deepEqual(r.command.context, ['repo'])
+    assert.deepEqual(r.args, ['--run', 'R'])
   })
 
   test('묶음 이름은 옛 스크립트 이름과 겹치지 않는다', () => {

@@ -411,6 +411,18 @@ describe('orch 명령 판정', () => {
     ])
   })
 
+  test('대기 출력의 LAST_DELIVERY 를 읽는 저장소 스크립트는 WAIT-READER 로 알리고 문서와 표지 줄은 보지 않는다', () => {
+    const repo = join(tmp, 'repo')
+    write(join(repo, '.orch', 'bin', 'summary.py'), "import json\nfor line in open(path):\n    if line.startswith('LAST_DELIVERY'):\n        pass\n")
+    write(join(repo, '.orch', 'bin', 'keep.sh'), 'grep LAST_DELIVERY out.txt # orch-compat\n')
+    write(join(repo, '.orch', 'overlay.md'), '대기 출력의 마지막 줄 `LAST_DELIVERY` 를 읽는다\n')
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', pluginSkill(), '--repo', repo])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    const out = r.stdout.split('\n')
+    assert.deepEqual(out.filter((l) => l.startsWith('WAIT-READER')), ['WAIT-READER .orch/bin/summary.py:3'])
+    assert.match(out[out.indexOf('WAIT-READER .orch/bin/summary.py:3') + 1], /^  고칠 것: orch wait 의 짧은 출력/)
+  })
+
   test('옛 번들로 도는 대기는 WAIT-STALE 로 알린다', () => {
     const config = join(tmp, 'profile')
     const bundle = (v: string) => join(config, 'plugins', 'cache', 'fos-skills', 'fos-skills', v)
@@ -872,6 +884,13 @@ describe('루프 번들 판정', () => {
     assert.match(out[at + 1], /^ {2}안내: 이 루프는 설치되지 않은 번들\(aaaaaaa1\)로 돈다\. 아래 두 명령은 그 루프의 Run\(r1\) 코디네이터 세션에서 돌린다/)
     assert.equal(out[at + 2], `  ${WORD} loop stop --repo '${repo}' --all`)
     assert.equal(out[at + 3], `  ${WORD} loop start --repo '${repo}' --run r1`)
+    // 짧은 출력은 판정 줄과 고칠 명령 줄만 남기고 안내 줄을 뺀다
+    const brief = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill], { env: { FAKE_PS: psFile, CLAUDE_CONFIG_DIR: dirname(plugins), ORCH_OUTPUT: 'short' } })
+    assert.equal(brief.code, 0, brief.stdout + brief.stderr)
+    const lines = brief.stdout.split('\n').filter(Boolean)
+    const head = lines.indexOf(`LOOP-STALE ${repo} 111 aaaaaaa1`)
+    assert.deepEqual(lines.slice(head, head + 3), [`LOOP-STALE ${repo} 111 aaaaaaa1`, `  ${WORD} loop stop --repo '${repo}' --all`, `  ${WORD} loop start --repo '${repo}' --run r1`])
+    assert.ok(lines.every((l) => /^[A-Z]/.test(l) || (/^ {2}\S/.test(l) && !l.startsWith('  안내:'))), brief.stdout)
   })
 
   test('버전 이름의 캐시 폴더도 보고, 다른 프로필의 같은 버전 폴더는 같은 번들로 본다', () => {

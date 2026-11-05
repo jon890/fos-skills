@@ -9,13 +9,13 @@
 | REQ1 | 플러그인 루트 `bin/orch` 실행기(CommonJS 한 파일)를 둔다. `orch doctor install-cli`(`scripts/install-cli.ts`)가 같은 파일을 `~/.local/bin/orch` 에 복사한다. 실행기는 설치 기록에서 현재 번들을 찾아 그 번들의 `skills/orch/bin/orch.ts` 에 인자를 그대로 넘기기만 한다. Codex 와 PATH 없는 셸은 SKILL.md 한 곳의 셸 함수 한 줄로 시작한다(아래 「PATH 가 없는 셸」) | PR1 |
 | REQ2 | `skills/orch/scripts/lib/commands.ts` 의 명령 표가 `<묶음> <동작>` 을 스크립트 파일과 앞에 붙일 인자로 푼다. 새 꼴에서 동작으로 바뀐 모드 플래그는 표의 `forbid` 목록으로 거부한다 | PR1 |
 | REQ3 | `skills/orch/scripts/lib/context.ts` 가 명령 표의 `context` 칸에 적힌 인자만 채운다. 채운 값과 출처를 stderr 한 줄로 낸다 | PR1 |
-| REQ4 | `NEXT_WAIT` 는 PR1 에서 새 꼴로 바꾼다. `--lost-state` 의 기본값은 바꾸지 않고 절대경로로 남긴다. 명령마다의 짧은 출력은 PR2 에서 `lib/output.ts` 와 스크립트별 출력 함수로 낸다 | PR1, PR2 |
+| REQ4 | `NEXT_WAIT` 는 PR1 에서 새 꼴로 바꾼다. `--lost-state` 의 기본값은 바꾸지 않고 절대경로로 남긴다. 명령마다의 짧은 출력은 PR2 에서 `lib/output.ts` 와 스크립트별 규칙표로 낸다(아래 「짧은 출력 (PR2)」). doctor 의 `WAIT-READER` 가 대기 출력을 읽는 저장소 파일을 알린다 | PR1, PR2 |
 | REQ5 | 진입점이 옛 이름을 명령 표의 `legacy` 칸으로 찾아 같은 스크립트를 같은 인자로 부르고 stderr 에 새 꼴을 안내한다. PR2 부터 옛 꼴도 짧은 출력이다 | PR1, PR2 |
 | REQ6 | 번들 고르기의 원본 `lib/install-record.ts` 의 `selectBundle()` 이 user 범위 항목이 있으면 그 항목만 본다. 진입점과 `lib/bundle.ts` 가 이것을 쓰고, 실행기와 틀의 JS 사본은 같은 사례 표 테스트로 묶는다 | PR1 |
 | REQ7 | doctor 에 `CLI-MISSING`, `CLI-NOT-ON-PATH`, `CLI-STALE`, `OLD-CALL`, `DIRECT-PATH`, `WAIT-STALE` 판정을 더한다. 검사 범위와 꼴은 아래 「옛 꼴과 직접 경로 판정」 이다. `CLI-CONFLICT` 는 doctor 가 아니라 `install-cli` 의 출력이다 | PR1 |
 | REQ8 | 문서의 `"$SKILL_DIR/bin/orch.ts" <이름>` 과 `python3 "$SKILL_DIR/scripts/orch-doctor.py"` 를 새 꼴로 바꾸고, doctor 의 문서 스크립트 판정이 새 꼴을 명령 표로 확인한다. work-board 의 요청문(`extensions/work-board/hooks/register.js` 의 `send-to-worker.ts` 직접 경로)도 `orch worker send` 로 바꾼다 | PR1 |
 | REQ9 | 진입 스크립트를 `scripts/<묶음>/` 으로 옮긴다. 스크립트끼리 부르는 경로(`join(HERE, '<이름>.ts')` 20여 곳, `../bin/orch.ts` 같은 상대경로, doctor 의 `LOOP-STALE` 경로 꼴, work-board 프롬프트 테스트)는 명령 표의 `scriptPath(이름)` 으로 바꾼다. 이벤트 핸들러 환경의 `ORCH_SCRIPTS` 는 아래 「핸들러 환경」 을 따른다 | PR3 |
-| REQ10 | `scripts/status.ts`(PR3 에서 `scripts/status/` 로 옮긴다)가 `lib/loop.ts`, `lib/movement.ts`, `lib/board.ts` 를 읽어 판정 줄을 낸다 | PR2 |
+| REQ10 | `scripts/orch-status.ts`(PR3 에서 `scripts/status/` 로 옮긴다)가 `lib/loop.ts`, `lib/movement.ts`, `lib/board.ts` 를 읽어 판정 줄을 낸다. 파일 이름은 묶음 이름 `status` 와 겹치지 않게 한다(옛 스크립트 이름과 묶음 이름이 겹치면 옛 꼴과 새 꼴을 가리지 못한다) | PR2 |
 | REQ11 | `wait-important` 의 짧은 출력이 `triage-messages` 의 분류 함수를 가져다 메시지마다 한 줄을 낸다. 원문 JSON 은 `<orch 루트>/state/wait/<delivery>.json` 에 저장하고 경로 한 줄을 낸다 | PR2 |
 
 ## 책임과 경계
@@ -37,7 +37,7 @@ PATH 의 orch (실행기: 플러그인 bin/orch, ~/.local/bin/orch 사본)
 - **명령 표 `lib/commands.ts`**: 이름과 경로의 유일한 원본이다. 진입점, doctor(문서 판정), 훅(대기 판정)이 이것을 읽는다. PR3 의 폴더 이동은 이 표의 경로만 바꾼다.
 - **문맥 `lib/context.ts`**: 저장소, Run, 지시서 폴더, 루프 저장소를 푼다. 기존 `lib/git.ts` 의 `mainCheckout`, `lib/paths.ts` 의 `pathOf`, `lib/config.ts` 의 `loadConfig`·`section`, `lib/loop.ts` 의 `isRegistered` 를 쓴다. 새 규칙을 만들지 않는다. `loadConfig` 가 `ConfigError` 나 `RemovedConfigError` 를 던지면 설정 출처를 건너뛰고 지나간다. 오류는 스크립트가 지금처럼 알린다.
 - **문맥 신호 `ORCH_CONTEXT`(PR1)**: 진입점이 채운 인자와 출처(예: `run=run-current loop-repo=registered`)를 자식 환경에 넣는다. `lib/bundle.ts` 가 import 될 때 읽어 `process.env` 에서 지우고 `orchContext()` 로 export 한다. 모든 진입 스크립트가 지나는 자리라 상주 루프와 핸들러로 새지 않는다. PR2 의 `ORCH_OUTPUT` 도 같은 자리에서 같은 방식으로 다룬다.
-- **출력 신호(PR2)**: `ORCH_OUTPUT` 을 읽고 `process.env` 에서 지우는 일은 `lib/bundle.ts` 가 맡는다. `lib/args.ts` 와 `lib/proc.ts` 가 이미 import 해 모든 진입 스크립트가 먼저 지나는 자리다(실측: `gh-usage.ts` 만 둘 다 import 하지 않아 PR2 에서 더한다). 판정 함수는 `lib/output.ts` 의 `short()` 다. 출력을 그대로 넘기는 자식은 부모가 짧은 출력일 때 신호를 명시해 넘긴다: `merge-with-finish` → `merge_queue`(stdio 상속, `merge-with-finish.ts` 의 `runInherit`). 감싼 명령(`slot heavy`, `slot mem`)과 그 밖의 자식에는 넘기지 않는다. PR2 테스트가 모든 진입 스크립트가 신호를 지우는 모듈을 import 하는지 정적으로 본다.
+- **출력 신호(PR2)**: `ORCH_OUTPUT` 을 읽고 `process.env` 에서 지우는 일은 `lib/bundle.ts` 가 맡는다. `lib/args.ts` 와 `lib/proc.ts` 가 이미 import 해 모든 진입 스크립트가 먼저 지나는 자리다(실측: `gh-usage.ts` 만 둘 다 import 하지 않아 PR2 에서 더한다). 판정 함수는 `lib/output.ts` 의 `short()` 다. 출력을 그대로 넘기는 자식은 부모가 짧은 출력일 때 신호를 명시해 넘긴다: `merge-with-finish` → `merge_queue`(stdio 상속, `merge-with-finish.ts` 의 `runInherit`). 감싼 명령(`slot heavy`, `slot mem`)과 그 밖의 자식에는 넘기지 않는다. 모든 진입 스크립트가 신호를 지우는 모듈에 닿는지는 기존 `tests/lib-bundle.spec.ts` 의 정적 검사가 본다(실측: `gh-usage.ts` 는 `lib/paths.ts` → `lib/git.ts` → `lib/proc.ts` 로 이미 닿아 import 를 더하지 않았다).
 - **스크립트**: 판정과 동작은 바꾸지 않는다. PR1 에서 고치는 것은 `wait-important.ts`(NEXT_WAIT, 고아 대기 판정의 통과 노드), `orch-doctor.ts`(판정 추가, 문서 판정), 훅 셋의 거부 문구, 그리고 사람이 읽는 안내 줄이다. 안내 줄의 범위는 목록이 아니라 규칙으로 정한다: `skills/orch/scripts` 와 `skills/orch/hooks` 의 문자열 가운데 다른 orch 스크립트를 옛 이름(`bin/orch.ts <이름>`, `<이름>.ts` 경로, `--path <이름>`)으로 부르라고 안내하는 것. `git grep -nE "orch\.ts['\"]?\)?\}? +[a-z_-]+|scripts/[a-z_-]+\.ts|[a-z_-]+\.ts --" skills/orch/scripts skills/orch/hooks` 로 찾고, 실측(2026-11-04)으로는 `launch-worker.ts`(link-claude-profile), `lib/sessions.ts`(adopt-sessions), `lib/config.ts`(migrate-orch-dir), `lib/paths.ts` 의 `warnLegacy`·`requireMigrated`(migrate-orch-dir), `orch-loop.ts`(finish-pr, `reserve-migration --prune/--again`), `remove-worktree.ts`(`cleanup-sweep --kill-holders`), `orch-doctor.ts` 의 `LOOP-DEAD`·`LOOP-STALE` 고칠 줄, `lib/bundle.ts` 의 STALE-BUNDLE 이다. 이 줄들은 판정 줄이 아니라 사람과 에이전트가 붙여 넣는 안내라 스펙 DECISION16(직접 실행은 지금 출력 그대로)의 예외로 둔다(아래 DECISION12). 앞 낱말은 `NEXT_WAIT` 와 같은 `orchWord()` 규칙을 쓴다. 각 스크립트의 `사용법:` 줄은 그 스크립트를 직접 부르는 꼴이라 바꾸지 않는다. 옛 이름을 지우는 PR(스펙 DECISION13) 전에 이 안내가 옛 꼴로 남으면 지운 뒤 안내가 사용법 오류를 부른다.
 - **핸들러 환경**: `lib/events.ts` 가 핸들러에 주는 `ORCH_SCRIPTS`(스크립트 폴더)는 다른 저장소 핸들러가 쓰는 공개 계약이다(`references/hooks.md`, 실측: fos-assistant, fos-graphrag, fos-home-infra, ai-analysis 의 `.orch/hooks/worker-stalled.ts` 가 `join(ORCH_SCRIPTS, 'nudge-worker.ts')`). PR1 에서 `ORCH_BIN`(진입점 절대경로)을 더하고 hooks.md 의 예시를 `node $ORCH_BIN worker nudge …` 로 바꾼다. `ORCH_SCRIPTS` 는 PR3 뒤에도 스크립트 폴더를 가리킨다. 그 바로 아래의 스크립트 파일은 사라지므로 핸들러의 직접 경로는 스펙 DECISION17 의 직접 경로 호출과 같게 다룬다(doctor 의 `DIRECT-PATH`, 스펙 부록, PR3 머지 전 고침).
 
@@ -153,31 +153,65 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 
 ### 짧은 출력 (PR2)
 
-- 진입점이 자식에게 `ORCH_OUTPUT=short` 를 넘긴다. `--full` 은 진입점이 떼고 넘기지 않는다. 스크립트는 `lib/output.ts` 의 `short()` 가 참일 때 설명과 진행 줄을 내지 않는다.
-- 판정 낱말이 이미 있는 줄은 그대로 남긴다. 판정 낱말이 없는 명령은 아래로 새로 정한다. 경로와 데이터가 결과인 명령과 감싼 명령의 출력은 그대로다(스펙 DECISION20).
+**신호와 공통 규칙**
 
-| 명령 | 짧은 출력 |
-| --- | --- |
-| `wait` | 메시지마다 `<종류> <dispatch> <task> <본문 앞 120자>`(종류: `DONE-SUSPECT`, `DONE`, `STOPPED`, `ESCALATION`, `QUESTION`, `STATUS`). 이어서 `HEARTBEAT <개수>`, `RAW <원문 파일>`, `LAST_DELIVERY <id>`. `LOOP-EVENT`, `LOOP-DEAD`, `TIMEOUT`, `WATCH-ERROR` 줄은 그대로 |
-| `loop start/stop/status` | 지금의 `LOOP-*` 줄 하나. `안내:` 줄은 `--full` 에만 |
-| `loop stalled` | 지금의 `STALLED`, `STAGE` 줄. `MOVING` 은 `--full` 에만 |
-| `worker launch` | `LAUNCHED <dispatch> <터미널> <워크트리>` 와 `lint-ack:`, `dirty-ack:` 줄. 단계 감시 진행 줄은 `--full` 에만 |
-| `worker send` | `REPLIED`, `SENT`, `RESUMED`, `QUEUED`, `DELIVERED` 가운데 하나와 대상 id. 지금의 `closed:`, `retry:`, `fallback:` 은 `NOTE <내용>` 한 줄로 |
-| `worker nudge`, `worker screen` | 지금처럼 첫 낱말 한 줄 |
-| `worker ask` | 지금처럼 첫 줄 `answer: …`. ask 의 JSON 은 `--full` 에만 |
-| `queue merge`, `queue run` | PR 마다 `MERGED <PR>`, `STOP <PR> <이유>`, 끝 줄 `QUEUE-DONE` 이나 `QUEUE-HELD …`. 마무리 시작은 `FINISH-STARTED <PR> <로그>` |
-| `queue finish` | `FINISH-DONE` 이나 `FINISH-FAIL <이유>` 와 `LAST-PR <마지막/중간>` |
-| `queue ready` | PR 마다 `READY <PR>` 이나 `HELD <PR> <이유>` |
-| `queue conflicts` | 지금의 `#<PR> CONFLICTING …` 줄을 `CONFLICT <PR> <브랜치> <결과>` 로. `CONFLICT-ORPHAN` 은 그대로 |
-| `cleanup sweep`, `cleanup worktree`, `cleanup handoff` | 지운 것 `REMOVED <경로>`, 남긴 것 `KEPT <경로> <이유 한 낱말>`, 끝 줄 `SWEEP <지운 수> <남긴 수>` |
-| `board …`, `study …`, `spec lint`, `doctor` | 지금 줄이 이미 판정 줄이다. 설명 줄만 `--full` 로 |
-| `status` | 저장소마다 `LOOP-ALIVE`/`LOOP-DEAD`, Run 마다 `RUN <id> workers=<살아 있는 수> stalled=<수>`, 보드 `BOARD doing=<수> decide=<수>`, 멈춘 것마다 `STALLED`, `STAGE` |
+- 진입점은 새 꼴과 옛 꼴 모두에서 자식에게 `ORCH_OUTPUT=short` 를 넘긴다. 첫 `--` 앞에 `--full` 이 있으면 떼고 `ORCH_OUTPUT=full` 을 넘긴다. 스크립트는 지금 출력을 내고, 대기는 `NEXT_WAIT` 에 `--full` 을 이어 다시 건 대기도 같은 꼴이 되게 한다. 진입점은 스크립트의 옵션 표를 몰라 옵션 값으로 준 `--full` 도 뗀다. 그런 값은 `--body=--full` 꼴로 준다. 감싼 명령(`slot heavy`, `slot mem`)에는 넘기지 않고 `--full` 도 떼지 않는다. `--path` 와 `--help` 는 신호와 상관없다.
+- 스크립트는 `lib/output.ts` 의 `short()` 로 판정한다. 신호가 있고 첫 `--` 앞 인자에 `--help`, `-h`, `--json` 이 없을 때 참이다. `--json` 출력과 사용법은 짧은 출력에서도 그대로다.
+- 짧은 출력의 줄은 `lib/output.ts` 의 `emit(text, rules)` 가 필터링한다. 규칙표에 맞는 줄은 바꾼 줄을 내고, 판정 줄(대문자 낱말로 시작하는 줄, `^[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)*(?=\s|$)`)은 그대로 내고, 나머지는 버린다. 들여 쓴 고칠 줄(`  고칠 명령: …`, `  새 꼴: …`, 명령 줄)은 그 명령이 `fix` 를 켠 경우에만, 딸린 판정 줄(앞의 들여 쓰지 않은 마지막 줄)을 남겼을 때 둔다(`doctor`, `wait` 의 `이어받기:`, `worker adopt`). `  안내:` 로 시작하는 줄은 고칠 줄이 아니다.
+- 출력을 그대로 잇는 자식은 부모가 짧은 출력일 때 `lib/output.ts` 의 `shortEnv()` 로 신호를 명시해 넘긴다: `merge-with-finish` → `merge_queue`, `merge_queue` → `cleanup-sweep`, `send-to-worker` → `launch-worker`, `nudge-worker`. 출력을 받아 읽는 자식(대부분의 스크립트 호출)에는 넘기지 않는다. 머지 전 명령(`prCommand`)과 감싼 명령은 사용자 명령이라 넘기지 않는다.
+- 판정 낱말이 이미 있는 줄은 그대로 남긴다. 경로와 데이터가 결과인 명령과 감싼 명령의 출력은 그대로다(스펙 DECISION20). 실패를 알리는 설명 줄은 버리지 않고 판정 낱말을 붙인다. 버리면 짧은 출력에서 실패 이유가 사라진다.
+- 같은 판정 낱말이 짧은 출력과 `--full` 에서 칸이 다를 수 있다(`LAUNCHED`). `--full` 은 지금 출력이다(REQ4).
 
-PR2 계획이 스크립트마다 지금 출력 줄을 위 꼴로 대응시키고, 대응이 없는 줄은 `--full` 로 보낸다.
+**명령별 짧은 출력**
+
+「읽는 쪽」 은 진입점(`orch …`, 옛 꼴 `bin/orch.ts <이름>`)으로 부른 출력을 읽는 곳이다. 스크립트끼리는 파일 경로로 직접 불러 지금 출력 그대로라 적지 않는다(스펙 DECISION16). 저장소 밖에서 출력을 읽던 ai-analysis `.orch/bin/wait-summary.py` 는 실측(2026-11-05)으로 지워져 있다. doctor 가 `.orch/bin`, `.orch/hooks`, `.claude/skills` 에서 대기 출력을 읽는 파일을 `WAIT-READER <파일>:<줄>` 로 알린다.
+
+| 명령 | 지금 출력에서 바뀌는 줄 | 짧은 출력 | 읽는 쪽 |
+| --- | --- | --- | --- |
+| `wait` | `check --json` 한 줄 JSON, `의심스러운 worker_done: …` 설명, waiter_exists 의 orca JSON | 메시지마다 `<종류> <dispatch 또는 -> <task 또는 -> <본문 앞 120자>`(종류: `DONE-SUSPECT`, `DONE`, `STOPPED`, `ESCALATION`, `QUESTION`, `STATUS`, 그 밖은 type 을 대문자로). 차례는 `triage-messages` 와 같다. 이어서 `HEARTBEAT <개수>`, `QUIET-STOP <개수>`(0 이면 내지 않는다), `RAW <원문 파일>`, `LAST_DELIVERY <id>`. waiter_exists 는 `WAITER-EXISTS <Run>`. `WORKER_LOST`, `ACK_LOST`, `TIMEOUT`, `LOOP-EVENT`, `LOOP-DEAD`, `WATCH-ERROR` 와 `이어받기:` 고칠 줄은 그대로 | `references/waiting.md`, 훅 `block-background-wait`(명령 문자열만) |
+| `wait triage` | `== 종류 N건` 묶음과 본문 | `wait` 과 같은 메시지 줄, `HEARTBEAT`, `QUIET-STOP`, `DELIVERY <id…>`, 메시지가 없으면 `NO-MESSAGES`. 본문 전체는 `--full` | `references/waiting.md` |
+| `loop start`, `stop`, `status`, `run` | `안내: …` | 지금의 `LOOP-*` 줄. 옛 루프(Run 등록을 모른다)의 안내는 `LOOP-LEGACY <pid> run=<Run>` 판정 줄로 낸다. 정상 루프와 같은 `LOOP-RUNNING` 과 4 라 안내 없이는 가릴 수 없다. `state/loop.log` 는 늘 전부다 | `references/waiting.md`, `SKILL.md` |
+| `loop stalled` | `MOVING` | `STALLED`, `STAGE` | `references/waiting.md` |
+| `worker launch` | `워크트리를 만들었다`, worker-start JSON, 단계 감시 줄, `거부: …` | `LAUNCHED <dispatch> <터미널 또는 -> <워크트리>`, worker-start JSON 대신 `LAUNCH-EFFECTIVE <launch.effective 의 JSON 한 줄>`(코디네이터가 고른 모델과 대조한다)과 실패한 시작의 `START-FAIL <receipt 한 줄>`(다시 부르면 Task 가 하나 더 생겨 receipt 를 버리지 않는다), `REFUSED <이유 첫 줄>`, 다시 띄워도 멈추면 `STALLED-START <dispatch> <단계>`, `lint-ack:`, `dirty-ack:` 와 `REVIEW-*`, `SSH-AGENT` 줄 | `references/launch.md`, `SKILL.md` 3단계 |
+| `worker send` | `replied:`, `sent:`, `delivered:`, `relaunch:`, `restart:`, `ended:`, `closed:`, `retry:`, `fallback:`, `skipped:`, `warning:`, `note:`, `send-to-worker: …` | `REPLIED <메시지> <보낸 id>`(끝난 dispatch 라 깨우지 않았으면 끝에 `no-wake`), `SENT <dispatch> <보낸 id>`, `DELIVERED <깨운 id>`, `RESUMED <dispatch> <터미널>`, `RESTARTED <터미널>`, `ENDED <dispatch> <상태>`, `NOTE <내용>`, `FAIL <내용>`. 깨우기와 이어 띄우기는 자식의 짧은 줄(`NUDGED …`, `LAUNCHED …`)이 잇는다 | `references/replying.md` |
+| `worker nudge` | `queued: …` 같은 첫 낱말과 설명 | 첫 낱말을 대문자로 하고 request id 만 붙인다(`NUDGED <id>`, `QUEUED`, `WORKING`, `PERMISSION <id>`, `UNOBSERVED <id>`, 화면 상태 `DRAFT` 같은 것). orca 오류는 `ORCA-ERROR <한 줄>` | `references/replying.md` |
+| `worker screen` | 없음 | 상태 한 낱말 그대로(데이터) | `references/replying.md` |
+| `worker ask` | 답 뒤의 ask JSON, 시간 초과·빈 답·대신 보내기의 JSON | `answer: <답 전체>`(뒤의 ask JSON 만 뺀다). 답이 없으면 `TIMEOUT <질문 id 또는 ->`, `NO-ANSWER <질문 id 또는 ->`, `SENT-RUN <보낸 id>`. 종료 코드 5 의 읽지 않은 메시지는 그대로(데이터) | `templates/spec-common.md`, `skills/spec/references/interview.md` |
+| `worker adopt` | `SESSION` 뒤 JSON, `ADOPTED` 뒤 JSON, `ADOPT-MANUAL` 뒤 설명 | `SESSION <터미널> <상태> <브랜치> specs=<지시서 후보 또는 ->`, `ADOPTED <터미널> <지시서>`, `ADOPT-MANUAL <지시서>`. `LIMITED`, `RESTART` 와 그 고칠 명령 줄은 그대로 | `references/launch.md` |
+| `worker check` | `일치: …`, `불일치: …` | `MATCH <브랜치> <HEAD>`, `MISMATCH <항목> <실제> <지시서>` | `references/verification.md` |
+| `worker link-profile` | 요약과 항목 줄 | 항목마다 `LINK <이름>`, `COPY <이름>`(dry-run 은 `WOULD-LINK`, `WOULD-COPY`), `SKIPPED <이름> state`. 끝 줄 `PROFILE <대상> <건수> applied` 나 `PROFILE <대상> <건수> dry-run` | `references/launch.md` |
+| `queue merge` | `마무리 시작: …`, `마무리는 이미 돌고 있다: …` 와 `merge_queue` 의 진행 줄 | `FINISH-STARTED <PR> <로그>`, `FINISH-RUNNING <PR> <pid 파일>` 과 아래 `queue run` 의 줄 | `references/cleanup.md` |
+| `queue run` | `HH:MM <PR> MERGED` 같은 시각 붙은 진행 줄, `경고: …` | `MERGED <PR>`, `WARN <내용>`. 머지 실패는 gh 의 마지막 줄을 붙인 `STOP <PR> 머지 실패: <그 줄>`. `STOP`, `CONFLICT`, `SKIP`, `HOOK-FAIL`, `AFTER-MERGED-FAILED`, `QUEUE-CONFLICT`, `QUEUE-DONE`, `QUEUE-HELD` 는 그대로. 정리는 `cleanup sweep` 의 짧은 줄 | `references/cleanup.md` |
+| `queue finish` | 시각 붙은 진행 줄, 이유 없는 `FINISH-FAIL` | `LAST-PR <마지막 또는 중간>`, `FINISH-DONE`, `FINISH-FAIL <이유>`, `HOOK-FAIL …` | `references/cleanup.md` |
+| `queue ready` | `<PR> 보류: …`, `<PR> 이미 ready`, `<PR> ready 로 바꿀 것`, `<PR> ready 로 바꿈(CI 시작)` | `HELD <PR> <이유>`, `READY <PR> already`, `WOULD-READY <PR>`, `READY <PR>` | `references/cleanup.md` |
+| `queue conflicts` | `충돌한 열린 PR 이 없다`, `#<PR> CONFLICTING …` 과 그 뒤 들여 쓴 결과 줄 | `NO-CONFLICT <base> <SHA 앞 8자리>`, PR 마다 `CONFLICT <PR> <브랜치> <결과>`(결과: `notified`, `already`, `would-notify`, `would-relaunch`, `send-failed`, `workers-unread`). 워크트리나 dispatch 가 없는 PR 은 `CONFLICT-ORPHAN` 한 줄만 낸다 | `references/cleanup.md` |
+| `queue overlap` | `바로 머지`, `갱신 필요(…)` | `MERGE-NOW`, `UPDATE-NEEDED <이유>` | 없음(merge_queue 는 경로로 부른다) |
+| `cleanup sweep` | 저장소 머리 줄, 진행 줄, 지운 것과 남긴 것의 한국어 줄 | 지운 것 `REMOVED <대상>`, dry-run 의 지울 것 `WOULD-REMOVE <대상>`, 남긴 것 `KEPT <대상> <이유>`, 실패 `FAILED <대상> <이유>`(남김 줄, 실패 줄, 지움 줄 차례로 본다. 이유에 「실패」 가 든 남김 줄은 KEPT 다). `FINISH-MISSING` 은 그대로. 끝 줄 `SWEEP <지운 수> <남긴 수>`(dry-run 은 `SWEEP-DRY <지울 수> <남길 수>`) | `references/cleanup.md` |
+| `cleanup worktree` | `removed …`, `deleted branch …`, `남김:`, `없음:`, `거부:`, `대기:`, 유휴 셸 줄 | `REMOVED <경로>`, `REMOVED <브랜치>`, `KEPT <대상> <이유>`, `ABSENT <경로>`, `NOT-WORKTREE <경로>`, `REFUSED <이유>`, `CLOSED <터미널>` | `references/cleanup.md` |
+| `cleanup handoff` | `후보 …`, `옮김 …`, `휴지통 폴더: …` 와 지시서 지우기 줄 | `WOULD-TRASH <파일>`, `TRASHED <파일>`, `TRASH-DIR <폴더>` 와 `cleanup sweep` 과 같은 지시서 줄 | `references/cleanup.md` |
+| `board sync`, `board release` | `board-sync: …` 설명, 항목과 들여 쓴 board 명령, 끝 요약 | 항목마다 `BOARD <id> <바뀐 것>`(`done`, `updated`, 바꾸지 않은 이유 `pending-feature`, `finishing`), 끝 줄 `BOARD-SYNC <바뀐 항목 수>` 나 `BOARD-RELEASE <바뀐 항목 수>` | `references/board.md` |
+| `board goal` | `<목표> <값>`, `<목표> 단계 줄이 없어 …` | `GOAL <목표> <값>`, `GOAL-SKIP <목표>` | `references/board.md` |
+| `study …` | 없음 | 지금 줄(`ADDED`, `SET`, `MIGRATED`, `TRASHED`, `list` 의 탭 줄)이 이미 판정 줄이나 데이터다 | `references/study-candidates.md` |
+| `spec lint` | `<지시서>: <발견>` | `SPEC-ERROR <지시서>: <발견>`, `SPEC-WARN <지시서>: <발견>` | `references/spec-writing.md` |
+| `doctor` | `  안내: …` | 판정 줄과 들여 쓴 고칠 줄 | `SKILL.md` |
+| `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `TRACKED <명령>`, `NOTHING`, 고칠 참조의 위치 `OLD-REF <파일>:<줄>`, `OLD-REF-SCRIPT`, `WOULD-REWRITE <파일>:<줄>` | `references/overlay.md` |
+| `queue reserve`, `wait user-active`, `wait questions`, `wait ack-lost`, `doctor gh-usage`, `doctor install-cli` | 없음 | 지금 줄이 판정 줄이다 | |
+| `paths`, `worker worktree`, `spec line`, `slot heavy`, `slot mem` | 없음 | 결과 그대로(스펙 DECISION20) | |
+| `status` | (새로) | 저장소의 `LOOP-ALIVE …` 나 `LOOP-DEAD …`, Run 마다 `RUN <id> workers=<살아 있는 수> stalled=<수>`, `BOARD doing=<수> decide=<수>`, 멈춘 것마다 `STALLED`, `STAGE`(`loop stalled` 와 같은 줄). 조회 실패는 `SKIP-WORKERS`, `SKIP-BOARD`, `SKIP-STAGES` | `SKILL.md` |
+
+한 명령의 규칙은 그 스크립트가 소유한다(`emit` 에 넘기는 규칙표나 짧은 출력 분기). 규칙이 없는 줄은 판정 줄만 남는다.
+
+### `orch status` (PR2)
+
+- `scripts/orch-status.ts` 는 읽기만 한다. 저장소는 문맥(작업 폴더의 주 checkout)이나 `--repo` 다. Run 은 문맥으로 채우지 않는다(스펙 DECISION22). `--run` 을 주면 그 Run 만, 없으면 `lib/loop.ts` 의 `registeredRuns` 를 모두, 그것도 없으면 설정의 `finish.run` 을 본다. 셋 다 없으면 Run 줄 없이 루프와 보드만 낸다.
+- worker 는 그 저장소의 워크트리(주 checkout 이 이 저장소인 폴더, 지워진 폴더는 저장소 경로 아래)에 있는 행만 센다. Run 하나가 여러 저장소의 worker 를 맡아(ADR-012) Run 의 행을 그대로 세면 다른 저장소 worker 를 이 저장소 설정과 화면 기록으로 판정한다.
+- 루프는 `loopStatus`(재확인이 필요한 오래된 alive_at 도 그대로 `LOOP-DEAD`), worker 와 멈춤은 `lib/movement.ts` 의 `collectWorkers`, `collectStages`(`stalled-workers` 와 같은 설정과 화면 기록), 보드는 `readBoard(boardPath(repo))` 의 status 수다. 줄 꼴(`STALLED`, `STAGE`)은 `stalled-workers` 와 같은 함수로 낸다.
+- 종료 코드는 0 이다. 조회 실패는 `SKIP-WORKERS <Run> <이유>`, `SKIP-BOARD <이유>` 줄로 알리고 1 이다. 판정이 아니라 요약이라 멈춘 worker 가 있어도 0 이다.
+- 짧은 출력과 `--full` 이 같다(설명 줄이 없다). `--json` 은 두지 않는다.
 
 ### 저장 파일
 
-- `<orch 루트>/state/wait/<delivery>.json`(PR2): 짧은 대기 출력의 원문. orch 루트는 `--lost-state` 와 같은 시작 폴더의 주 checkout 이다. `orch wait triage` 가 읽는다. 다음 대기가 그 delivery 를 ack 하면 지우고, ack 하지 못하고 세션이 끝난 파일은 `wait-important` 가 시작할 때 7일 지난 것을 지운다.
+- `<orch 루트>/state/wait/<delivery>.json`(PR2): 짧은 대기 출력의 원문. 처리할 묶음을 낸 대기가 `check --json` 결과(완료 판정을 붙인 것)를 한 줄로 쓴다. orch 루트는 `--lost-state` 와 같은 시작 폴더의 주 checkout 이다. `orch wait triage <파일>` 이 읽는다. 다음 대기가 그 delivery 를 `--ack` 로 넘겨 check 가 성공하면 지우고, ack 하지 못하고 세션이 끝난 파일은 `wait-important` 가 시작할 때 7일 지난 것을 지운다. 쓰지 못하면 stderr 에 한 줄 남기고 `RAW -` 를 낸다. `--full` 대기는 원문을 stdout 에 내므로 파일을 쓰지 않는다.
 - 그 밖의 상태 파일은 바뀌지 않는다.
 
 ## 실패와 일관성
@@ -231,3 +265,7 @@ PR2 계획이 스크립트마다 지금 출력 줄을 위 꼴로 대응시키고
 | DECISION15 | 프로세스 사슬이 늘어난 것 | 고아 대기 판정이 실행기와 진입점을 셸처럼 통과하는 노드로 본다. 진입점을 `exec` 처럼 대체하지 않는다 | 작성자 | node 는 프로세스를 바꿔치기할 수 없다. 대기 찾기(`lib/waiters.ts`)는 자식 `wait-important` 의 명령줄로 그대로 찾는다 |
 | DECISION16 | PR1 의 크기 | 스펙 DECISION14 대로 PR 하나로 두고 plan 의 phase 마다 테스트를 통과한 커밋 하나로 나눈다. 변경 파일 40개 초과는 문서 일괄 교체 몫이다 | 사용자 2026-11-04 | 스펙 DECISION14 다. 독립 검토가 PR 을 둘로 나누자고 했으나 사용자 결정을 바꿀 새 근거는 아니다. 문서 교체는 명령 표가 생긴 뒤에야 검사할 수 있어 같은 PR 이 맞다 |
 | DECISION17 | 필수 문맥과 doctor 의 Run | 스크립트가 지금 반드시 받는 인자만 `required` 로 두고 진입점이 알린다. `doctor` 는 Run 을 문맥으로 채우지 않는다 | 작성자 | 스펙 REQ3 의 실패 인수 조건을 스크립트를 고치지 않고 채운다. doctor 에 Run 을 채우면 스킬 첫 점검마다 Run 별 점검과 `session-resume` 핸들러가 돌아 지금 동작이 바뀐다. 계획 critic(2026-11-04)의 지적이다 |
+| DECISION18 | 짧은 출력을 내는 자리 | 스크립트의 출력 함수(`out`, `log`)가 `lib/output.ts` 의 `emit(text, rules)` 를 부르고, 스크립트마다 줄 규칙표를 둔다. 규칙이 없는 줄은 판정 줄만 남긴다. 출력이 데이터인 줄과 구조가 다른 출력(`wait`, `wait triage`, `worker ask`)만 분기한다 | 작성자 | 한 스크립트에 출력 지점이 수십 곳이라 지점마다 분기하면 빠뜨린다. 진입점이 자식 stdout 을 필터링하는 안은 `wait` 의 원문 저장과 완료 판정 결과를 진입점이 알 수 없고, 설계 DECISION5(스크립트가 신호를 읽는다)와 갈라진다 |
+| DECISION19 | 출력을 그대로 잇는 자식 | `merge_queue` 말고도 `merge_queue` → `cleanup-sweep`, `send-to-worker` → `launch-worker`, `nudge-worker` 에 신호를 명시해 넘긴다 | 작성자 | 이 자식들은 stdio 를 상속해 부모가 필터링할 수 없다. 넘기지 않으면 짧은 출력 사이에 지금 출력이 섞인다(DECISION9 를 넓힌 것) |
+| DECISION20 | `worker nudge` 의 짧은 출력 | 첫 낱말을 대문자로 바꾸고 request id 만 남긴다 | 작성자 | 처음 표는 「지금처럼 첫 낱말 한 줄」 이었다. 지금 줄은 소문자 낱말 뒤에 설명이 붙어 스펙 「출력」 의 대문자 판정 낱말 규칙에 맞지 않는다. 스크립트끼리 읽는 첫 낱말은 경로 호출이라 그대로다 |
+| DECISION21 | 실패를 알리는 설명 줄 | 버리지 않고 판정 낱말을 붙인다(`REFUSED`, `FAIL`, `FAILED`, `FINISH-FAIL <이유>`) | 작성자 | 짧은 출력에서 실패 이유가 사라지면 코디네이터가 `--full` 로 다시 불러야 하고, 다시 부를 수 없는 동작(머지, 정리)도 있다 |

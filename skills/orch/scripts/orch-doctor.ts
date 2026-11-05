@@ -81,6 +81,8 @@
 //     orch 스크립트 파일 경로 호출(`orch/scripts/<이름>.ts`, `$SKILL_DIR/scripts/<이름>.ts`, `$ORCH_SCRIPTS/<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')`)은
 //     DIRECT-PATH 다. <이름> 은 명령 표의 스크립트로 한정한다. 한 줄에 둘이 걸리면 OLD-CALL 하나다. 다음 줄에 새 꼴이 온다.
 //     줄이나 바로 윗줄에 `orch-compat` 가 있으면 내지 않는다. 고치는 일은 코디네이터가 그 저장소 worker 에게 맡긴다. 경고라 종료 코드를 바꾸지 않는다.
+//     같은 파일 가운데 Markdown 과 JSON 이 아닌 파일(저장소 스크립트)이 대기 출력의 `LAST_DELIVERY` 를 읽는 줄은 WAIT-READER 다.
+//     짧은 출력의 orch wait 은 JSON 대신 메시지마다 판정 줄을 내므로, JSON 을 읽던 스크립트는 그 줄을 쓰거나 RAW 파일을 읽어야 한다. 다음 줄에 고칠 것이 온다.
 //
 // 대기 번들 판정(늘 본다):
 //     아래 루프 번들 판정과 같은 규칙을 ps 의 wait-important.ts 행(그것이 띄운 orchestration check 행은 뺀다)에 쓴다. 판정이면 WAIT-STALE 이다.
@@ -146,11 +148,14 @@
 //     CLI-NOT-ON-PATH <폴더>                      그 폴더가 셸 PATH 에 없다. 다음 줄에 셸 설정 안내가 온다
 //     OLD-CALL <파일>:<줄> <옛 이름>              저장소 파일이 진입점 옛 꼴로 부른다(위 「옛 꼴과 직접 경로 판정」). 다음 줄에 새 꼴이 온다
 //     DIRECT-PATH <파일>:<줄> <스크립트>          저장소 파일이 orch 스크립트를 파일 경로로 부른다. 다음 줄에 새 꼴이 온다
+//     WAIT-READER <파일>:<줄>                    저장소 스크립트가 대기 출력(LAST_DELIVERY)을 읽는다(위 「옛 꼴과 직접 경로 판정」). 다음 줄에 고칠 것이 온다
 //     WAIT-STALE <pid> <번들 sha 나 버전>          지금 세션의 설치본이 아닌 번들로 도는 대기. 다음 줄에 다시 거는 안내가 온다
 //     질문이 많은 Run 의 조회 범위 안내는 stderr 로 낸다(lib/questions.ts 머리 주석).
 //
+// 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
+//
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*, OLD-CALL, DIRECT-PATH, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*, OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -181,6 +186,7 @@ import { missingRowKeys, workerRows } from './lib/workers.ts'
 import { orcaJson } from './lib/orca.ts'
 import { adoptHint } from './lib/sessions.ts'
 import { isLive, judge, readScreens, screenHandles } from './lib/worker-state.ts'
+import { emit } from './lib/output.ts'
 
 const USAGE =
   '사용법: orch-doctor.ts [--skill-dir DIR] [--remote URL] [--branch main] [--skip-version] [--run ID] [--skip-questions] [--repo DIR]'
@@ -661,10 +667,13 @@ function hintFor(name: string, rest: string): string {
   return row ? `  새 꼴: ${legacy?.hint ?? ['orch', row.group, ...(row.verb ? [row.verb] : [])].join(' ')}` : ''
 }
 
+const WAIT_READER_FIX = '  고칠 것: orch wait 의 짧은 출력은 메시지마다 판정 줄을 낸다. 원문 JSON 이 필요하면 RAW 줄의 파일을 orch wait triage --full 로 읽는다'
+
 function checkCalls(repo: string): string[] {
   const root = mainCheckout(repo)
   const lines: string[] = []
   for (const file of callFiles(root)) {
+    const script = !/\.(?:md|json)$/i.test(file)
     let rows: string[]
     try {
       rows = readFileSync(file, 'utf8').split(/\r\n|\r|\n/)
@@ -688,7 +697,9 @@ function checkCalls(repo: string): string[] {
         lines.push(`DIRECT-PATH ${where} ${name}.ts`)
         const hint = hintFor(name, text.slice(direct.index + direct[0].length))
         if (hint) lines.push(hint)
+        return
       }
+      if (script && text.includes('LAST_DELIVERY')) lines.push(`WAIT-READER ${where}`, WAIT_READER_FIX)
     })
   }
   return lines
@@ -788,7 +799,8 @@ async function main(argv: string[]): Promise<number> {
       : []
   const workerLines = runId ? checkWorkers(runId, repo) : []
   const shapeLines = checkOrcaShape()
-  process.stdout.write(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines].join('\n')}\n`)
+  // 짧은 출력(진입점의 orch doctor)은 판정 줄과 들여 쓴 고칠 줄만 낸다. `  안내:` 줄은 --full 이다(lib/output.ts 의 emit)
+  emit(`${[...version.lines, ...scripts.lines, ...installLines, ...checkCli(skillDir), ...repoLines, ...questions.lines, ...loopLines, ...staleLoops(configDir), ...staleWaiters(configDir), ...workerLines, ...shapeLines].join('\n')}`, [], { fix: true })
 
   if (runId) {
     try {

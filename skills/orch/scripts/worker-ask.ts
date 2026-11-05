@@ -17,6 +17,8 @@
 // 그러면 그 ID 로 --resume 해 같은 질문의 답을 기다린다(--resume 은 늘 기다린다). 질문을 두 번 보내지 않는다.
 //
 // 출력: 답을 받으면 첫 줄이 `answer: <답 본문>` 이고 그 뒤에 ask 의 출력이 온다.
+// 짧은 출력(진입점의 orch worker ask, lib/output.ts): 답이 있으면 `answer: <답 본문>` 만 낸다. 시간 초과는 `TIMEOUT <질문 id 또는 ->`,
+// 빈 답은 `NO-ANSWER <질문 id 또는 ->`, Run 메일함으로 대신 보내기는 `SENT-RUN <보낸 id>` 다. 종료 코드 5 의 읽지 않은 메시지는 그대로다.
 //
 // status 답 기다리기: ask 를 기다리는 동안 ORCH_ASK_POLL_MS(기본 30000)마다 check --peek 을 다시 읽는다. 아래 「status 답」 이 오면
 // ask 를 끊고 시간 초과 뒤의 status 답과 같게 3 으로 끝난다(첫 줄 `answer: <본문>`). 코디네이터가 reply 대신 status 로 답해도
@@ -53,7 +55,13 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { orcaBin, withFull } from './lib/orca.ts'
 import { run, runAsync } from './lib/proc.ts'
+import { short } from './lib/output.ts'
 import { pyStr as text } from './lib/py.ts'
+
+// 답을 받은 출력. 첫 줄이 `answer: <답>` 이고, 지금 출력은 그 뒤에 ask 의 출력을 잇는다. 짧은 출력은 첫 줄만이다
+function answered(answer: string, output: string): void {
+  process.stdout.write(short() ? `answer: ${answer}\n` : `answer: ${answer}\n${output}\n`)
+}
 
 const USAGE = [
   '사용: worker-ask.ts --from HANDLE (--question TEXT | --resume ID)',
@@ -335,7 +343,7 @@ async function main(argv: string[]): Promise<number> {
     await watching
     const output = asked.stdout + asked.stderr
     if (early) {
-      process.stdout.write(`answer: ${early}\n${output}\n`)
+      answered(early, output)
       err('worker-ask: ask 를 기다리는 동안 코디네이터가 status 로 답해 ask 를 끊었다. 첫 줄이 그 본문이다')
       return 3
     }
@@ -344,7 +352,7 @@ async function main(argv: string[]): Promise<number> {
     if (asked.timedOut || /"timedOut"\s*:\s*true|timed out/.test(output)) {
       const reply = replyOf(peek(), sender, messageIdOf(output) || resume, before)
       if (reply) {
-        process.stdout.write(`answer: ${reply}\n${output}\n`)
+        answered(reply, output)
         err('worker-ask: ask 에는 답이 없지만 코디네이터가 status 로 답했다. 첫 줄이 그 본문이다')
         return 3
       }
@@ -354,14 +362,14 @@ async function main(argv: string[]): Promise<number> {
         err(`worker-ask: 시간 제한으로 같은 메시지 ${resume} 의 답을 다시 기다린다`)
         continue
       }
-      process.stdout.write(`${output}\n`)
+      process.stdout.write(short() ? `TIMEOUT ${messageId || '-'}\n` : `${output}\n`)
       err(`worker-ask: 시간 제한으로 답을 받지 못했다. ${messageId ? `--resume ${messageId} 로 다시 기다린다` : '출력에 메시지 ID 가 없어 자동 재개하지 않았다'}`)
       return 4
     }
     if (asked.code === 0) {
       const answer = answerOf(output)
       if (answer) {
-        process.stdout.write(`answer: ${answer}\n${output}\n`)
+        answered(answer, output)
         return 0
       }
       // 머리 주석의 「바로 돌아온 ask」. 질문 ID 가 있으면 그 질문의 답을 기다린다(--resume 은 늘 기다린다)
@@ -371,7 +379,7 @@ async function main(argv: string[]): Promise<number> {
         err(`worker-ask: 질문 ${messageId} 를 보냈다. ask 가 답을 기다리지 않고 돌아와 같은 질문의 답을 기다린다`)
         continue
       }
-      process.stdout.write(`${output}\n`)
+      process.stdout.write(short() ? `NO-ANSWER ${messageId || '-'}\n` : `${output}\n`)
       err(
         messageId
           ? `worker-ask: ask 가 0 으로 끝났지만 답이 비었다. --resume ${messageId} 로 다시 기다린다`
@@ -409,7 +417,7 @@ async function main(argv: string[]): Promise<number> {
     }
     const body = question + (options ? `\n선택지: ${options}` : '')
     const sent = run([orca, ...withFull(['orchestration', 'send', '--from', sender, '--to', `run:${runId}`, '--type', 'question', '--subject', '질문 (ask 대신 보냄)', '--body', body, '--json'])])
-    process.stdout.write(sent.stdout)
+    if (!short()) process.stdout.write(sent.stdout)
     process.stderr.write(sent.stderr)
     if (sent.code !== 0) {
       err('worker-ask: 대신 보내기도 실패했다')
@@ -420,6 +428,7 @@ async function main(argv: string[]): Promise<number> {
       err('worker-ask: 대신 보낸 send 가 메시지 ID 를 내지 않았다. 질문이 코디네이터에 닿았는지 알 수 없어 실패로 끝낸다')
       return 2
     }
+    if (short()) process.stdout.write(`SENT-RUN ${sentId}\n`)
     err(`worker-ask: run:${runId} 으로 보냈다(${sentId}). 답은 orca orchestration check --terminal ${sender} 로 읽는다`)
     return 3
   }

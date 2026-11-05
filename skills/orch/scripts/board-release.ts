@@ -24,6 +24,7 @@
 //     done 지점(board.done_after, 기본 merge)에 닿았으면 그 번호까지의 남은 단계를 끝내고 done 으로 바꾼다
 // GH 환경 변수로 gh 실행 파일을 바꾼다.
 //
+// 짧은 출력(진입점의 orch board release, lib/output.ts): 항목마다 `BOARD <id> release PR <N>[ done]`(dry-run 은 would-release), 끝 줄 `BOARD-RELEASE <바뀐 항목 수>` 다.
 // 종료 코드: 0 반영했다(또는 --dry-run, 대상 없음), 1 보드나 gh 를 읽지 못했거나 보드 명령이 실패했다, 2 사용법 오류(설정 파일 오류 포함)
 
 import { readFileSync } from 'node:fs'
@@ -39,6 +40,7 @@ import { boardSettings, mergedCommands, stagesOf } from './lib/milestones.ts'
 import { boardPath } from './lib/paths.ts'
 import { run, scriptCommand } from './lib/proc.ts'
 import { parseEventTag } from '../../../extensions/work-board/hooks/event-tags.js'
+import { emit, short } from './lib/output.ts'
 
 const USAGE = '사용법: board-release.ts (--release PR | --pr N [--pr N ...]) [--repo DIR] [--board PATH] [--board-bin PATH] [--dry-run]'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -56,8 +58,13 @@ const OPTIONS = {
 
 type Pr = { state?: unknown; mergeCommit?: { oid?: unknown } | null; headRefOid?: unknown }
 
+// 짧은 출력(진입점의 orch board release)은 아래 brief 줄만 낸다. 설명 줄은 버린다
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  emit(line)
+}
+
+function brief(line: string): void {
+  if (short()) process.stdout.write(`${line}\n`)
 }
 
 function err(line: string): void {
@@ -186,13 +193,16 @@ function main(argv: string[]): number {
           if (!found) continue
         } else if (!prs.includes(tag.pr)) continue
         const cmd = ['step', String(item.id), String(step.number)]
-        if (dryRun) out(`${item.id} (PR #${tag.pr})\n  ${cmd.join(' ')}`)
-        else {
+        if (dryRun) {
+          if (short()) brief(`BOARD ${item.id} would-release PR ${tag.pr}`)
+          else out(`${item.id} (PR #${tag.pr})\n  ${cmd.join(' ')}`)
+        } else {
           const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { killSignal: 'SIGKILL' })
           if (done.code !== 0) {
             err(`board-release: 보드 명령이 실패했다: ${item.id}: ${done.stderr}`)
             return 1
           }
+          brief(`BOARD ${item.id} release PR ${tag.pr}`)
         }
         if (!changed.includes(String(item.id))) changed.push(String(item.id))
       }
@@ -226,7 +236,8 @@ function main(argv: string[]): number {
     const made = mergedCommands(item, steps, stages, pr, 'release', { last: true, doneAfter, note: null })
     changed.push(id)
     if (dryRun) {
-      out([`${id}${made.done ? ' -> done' : ''} (PR #${pr})`, ...made.cmds.map((c) => c.join(' '))].join('\n  '))
+      if (short()) brief(`BOARD ${id} would-release PR ${pr}${made.done ? ' done' : ''}`)
+      else out([`${id}${made.done ? ' -> done' : ''} (PR #${pr})`, ...made.cmds.map((c) => c.join(' '))].join('\n  '))
       continue
     }
     for (const cmd of made.cmds) {
@@ -238,8 +249,10 @@ function main(argv: string[]): number {
       }
     }
     out(`board-release: ${id} 의 [release] 단계를 끝냈다 (PR #${pr})${made.done ? ', done' : ''}`)
+    brief(`BOARD ${id} release PR ${pr}${made.done ? ' done' : ''}`)
   }
-  out(`board-release: ${changed.join(', ') || '바뀐 항목 없음'}`)
+  if (short()) brief(`BOARD-RELEASE ${changed.length}`)
+  else out(`board-release: ${changed.join(', ') || '바뀐 항목 없음'}`)
   return 0
 }
 

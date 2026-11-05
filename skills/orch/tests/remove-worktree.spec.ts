@@ -336,6 +336,23 @@ describe('인자', () => {
   })
 })
 
+describe('짧은 출력', () => {
+  test('지우면 REMOVED, 없으면 ABSENT 판정 줄이다', () => {
+    env.ORCH_OUTPUT = 'short'
+    try {
+      const r = removeWorktree({})
+      assert.equal(r.code, 0, r.out)
+      assert.match(r.stdout, new RegExp(`^REMOVED ${wt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'))
+      assert.ok(r.stdout.split('\n').filter(Boolean).every((l) => /^[A-Z]/.test(l)), r.stdout)
+      const again = removeWorktree({})
+      assert.equal(again.code, 1, again.out)
+      assert.equal(again.stdout, `ABSENT ${wt}\n`)
+    } finally {
+      delete env.ORCH_OUTPUT
+    }
+  })
+})
+
 describe('bash 로 띄우기', () => {
   test('사용법 오류가 node 로 바로 띄운 것과 같다', () => {
     const direct = removeWorktree({}, ['--wait', 'soon'])

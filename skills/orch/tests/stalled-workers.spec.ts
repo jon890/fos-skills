@@ -80,6 +80,14 @@ describe('stalled-workers', () => {
     ])
   })
 
+  test('짧은 출력은 MOVING 을 빼고 STALLED 만 낸다', () => {
+    orca({ A: [row('d1', worktree('wt-old', 45)), row('d2', worktree('wt-new', 2))] })
+    env.ORCH_OUTPUT = 'short'
+    const got = run('--run', 'A')
+    assert.equal(got.code, 3, got.stderr)
+    assert.deepEqual(got.lines, [['STALLED', 'd1', 'idle', '45', 'wt-old', 'A']])
+  })
+
   test('멈춘 것이 없으면 0 이고, --idle-min 으로 기준을 바꾼다', () => {
     orca({ A: [row('d1', worktree('wt', 45))] })
     assert.equal(run('--run', 'A', '--idle-min', '60').code, 0)

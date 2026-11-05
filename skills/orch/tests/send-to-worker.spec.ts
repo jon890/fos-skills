@@ -729,3 +729,50 @@ describe('오류', () => {
     assert.equal(send('--body', 'x', '--bogus').code, 2)
   })
 })
+
+describe('짧은 출력', () => {
+  beforeEach(() => {
+    // 가짜 자식은 이어 받은 짧은 출력 신호를 찍는다. 신호를 넘기지 않으면 out= 이 빈다
+    writeFileSync(join(tmp, 'nudge.sh'), 'echo "nudge $*" >> "$FAKE_LOG"\necho "NUDGED out=${ORCH_OUTPUT:-}"\n')
+    writeFileSync(launch, 'echo "launch $*" >> "$FAKE_LOG"\necho "LAUNCHED out=${ORCH_OUTPUT:-}"\n')
+  })
+
+  test('답한 뒤 REPLIED 와 깨운 자식의 짧은 줄만 내고 자식에 신호를 넘긴다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)] })
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--body', '그렇게 한다')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(r.stdout.trim().split('\n'), ['REPLIED m_q msg_new', 'NUDGED out=short'])
+  })
+
+  test('신호가 없으면 지금 줄이고 자식에도 신호가 없다', () => {
+    state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)] })
+    const r = send('--body', '그렇게 한다')
+    assert.match(r.stdout, /^replied: m_q 에 답했다/m)
+    assert.match(r.stdout, /^NUDGED out=$/m)
+  })
+
+  test('끝난 dispatch 를 이어 띄우면 RESUMED 와 띄운 자식의 짧은 줄이고 자식에 신호를 넘긴다', () => {
+    state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--spec', '/s/next.md')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(r.stdout.trim().split('\n'), ['RESUMED ctx_1 term_w', 'LAUNCHED out=short'])
+  })
+
+  test('끝난 dispatch 에 답만 달면 REPLIED 끝에 no-wake 를 붙인다', () => {
+    state({ dispatches: worker('succeeded'), terminals: [{ handle: 'term_w' }] })
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--body', '이렇게 한다', '--reply-to', 'm_esc')
+    assert.equal(r.code, 0, both(r))
+    assert.equal(r.stdout.trim(), 'REPLIED m_esc msg_new no-wake')
+  })
+
+  test('끝나고 터미널도 없는 dispatch 는 ENDED 다', () => {
+    state({ dispatches: worker('completed'), terminals: [] })
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--body', 'x')
+    assert.equal(r.code, 3, both(r))
+    assert.equal(r.stdout.trim(), 'ENDED ctx_1 completed no-terminal')
+  })
+})

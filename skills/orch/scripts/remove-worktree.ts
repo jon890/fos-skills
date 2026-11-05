@@ -3,6 +3,8 @@
 // 사용: remove-worktree.ts DIR [--delete-branch] [--merged-head SHA] [--wait SEC]
 // OMC session-end hook과 자손은 ORCH_HOOK_WAIT초(기본 180초)까지 기다린다.
 // 원격 브랜치는 지우지 않는다. 종료: 0 삭제, 1 거부, 2 인자 오류.
+// 짧은 출력(진입점의 orch cleanup worktree, lib/output.ts): REMOVED <경로>, REMOVED branch:<브랜치>, KEPT <대상> <이유>, ABSENT <경로>,
+// NOT-WORKTREE <경로>, REFUSED <이유 첫 줄>, CLOSED <터미널> 과 Docker 줄의 판정(lib/docker.ts 의 dockerShortLine)만 낸다.
 // 거부하는 경우: 그 경로를 쓰는 프로세스가 --wait 초 뒤에도 남았다, 커밋 안 된 변경이 있다,
 // 원격 어디에도 없는 커밋이 있다, HEAD 가 --merged-head 의 조상이 아니다. 이유를 출력한다.
 // 원격에 같은 제목의 커밋이 있으면 rebase 된 것으로 보지만 squash 머지는 제목이 달라 원격에 없는 커밋으로 센다.
@@ -32,7 +34,7 @@ import { dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from './lib/args.ts'
 import { orchWord } from './lib/commands.ts'
-import { dockerCleanup } from './lib/docker.ts'
+import { dockerCleanup, dockerShortLine } from './lib/docker.ts'
 import { realPath } from './lib/fs.ts'
 import { git as gitIn } from './lib/git.ts'
 import { closeTerminal, holderRows, idleShellVerdict, orcaTerminals } from './lib/idle-shells.ts'
@@ -42,6 +44,8 @@ import { liveReviews, originBranch, reviewKeepReason, reviewPrOfBranch, reviewPr
 import { NO_LIMIT_MS, run } from './lib/proc.ts'
 import type { RunResult } from './lib/proc.ts'
 import { cwdHolders } from './lib/process.ts'
+import { emit, short } from './lib/output.ts'
+import type { Rule } from './lib/output.ts'
 
 const USAGE = '사용법: remove-worktree.ts DIR [--delete-branch] [--merged-head SHA] [--wait SEC]'
 const HOOK = /--omc-session-end-worker|hooks\/session-end\/worker\.js/
@@ -60,8 +64,23 @@ function worktreeOf(row: Record<string, unknown>): string {
   return typeof resource === 'object' && resource !== null ? String((resource as Record<string, unknown>).worktreeId ?? '') : ''
 }
 
+// 짧은 출력(진입점의 orch cleanup worktree)의 줄 규칙. cleanup-sweep 은 이 스크립트를 경로로 불러 지금 줄을 읽는다
+const SHORT_RULES: Rule[] = [
+  [/^removed (\S+)/, (m) => `REMOVED ${m[1]}`],
+  [/^deleted branch (\S+)/, (m) => `REMOVED branch:${m[1]}`],
+  [/^브랜치 남김 (\S+): (.*)/, (m) => `KEPT branch:${m[1]} ${m[2]}`],
+  [/^남김: (.*?) \((\S+)\)(?:\. 근거: (.*))?$/, (m) => `KEPT ${m[2]} ${m[1]}${m[3] ? ` 근거: ${m[3]}` : ''}`],
+  [/^없음: (\S+)/, (m) => `ABSENT ${m[1]}`],
+  [/^git worktree 가 아니다: (\S+)/, (m) => `NOT-WORKTREE ${m[1]}`],
+  [/^거부: ([^\n]*)/, (m) => `REFUSED ${m[1]}`],
+  [/^유휴 셸 터미널 닫음 (\S+)/, (m) => `CLOSED ${m[1]}`],
+  [/^유휴 셸 터미널 닫기 실패 (\S+)/, (m) => `FAILED terminal:${m[1]}`],
+  [/^Docker /, (m) => dockerShortLine(m.input) ?? null],
+]
+
 function out(line: string): void {
-  process.stdout.write(`${line}\n`)
+  // 여러 줄 거부는 첫 줄만 규칙을 탄다
+  emit(short() ? line.split('\n')[0] : line, SHORT_RULES)
 }
 
 function err(line: string): void {

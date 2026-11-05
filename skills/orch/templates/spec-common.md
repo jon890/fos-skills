@@ -67,7 +67,7 @@
   orch worker ask --from "$FROM" --question "$QUESTION"
   ```
 
-  위 블록은 `FROM` 과 `QUESTION` 을 채운 뒤 한 번에 붙여 넣는다. `FROM` 은 머리말의 `--from` 값이고 `QUESTION` 은 질문 문장이다. 값을 채우지 않고 돌리면 `worker-ask` 가 사용법 오류(종료 코드 2)로 끝난다. Claude 는 Bash 의 `run_in_background` 로 돌리고 완료 알림을 기다린다. 백그라운드 실행이 없으면 `--timeout-ms` 를 도구 시간 제한보다 짧게 준다. 답은 출력 첫 줄의 `answer: ` 뒤에 있다. 종료 코드 5 면 읽지 않은 코디네이터 메시지가 출력에 있으니 먼저 읽고, 그래도 물어야 하면 같은 명령을 다시 부른다(한 번 보여 준 메시지로는 다시 막지 않는다). 3 이면 첫 줄이 `answer: ` 일 때는 코디네이터가 status 로 보낸 답이고, 아니면 Run 메일함으로 대신 보낸 것이니 `orca orchestration check` 로 답을 읽는다. 4 면 출력의 메시지 ID 로 `--resume` 한다. 오래 기다릴 때는 `--max-wait` 에 총 대기 시간(밀리초)을 주면 같은 질문으로 다시 기다린다. 호출별 대기 시간은 `--timeout-ms` 이고 Orca 상한을 넘으면 상한으로 줄인다.
+  위 블록은 `FROM` 과 `QUESTION` 을 채운 뒤 한 번에 붙여 넣는다. `FROM` 은 머리말의 `--from` 값이고 `QUESTION` 은 질문 문장이다. 값을 채우지 않고 돌리면 `worker-ask` 가 사용법 오류(종료 코드 2)로 끝난다. Claude 는 Bash 의 `run_in_background` 로 돌리고 완료 알림을 기다린다. 백그라운드 실행이 없으면 `--timeout-ms` 를 도구 시간 제한보다 짧게 준다. 답은 출력 첫 줄의 `answer: ` 뒤에 있다. 종료 코드 5 면 읽지 않은 코디네이터 메시지가 출력에 있으니 먼저 읽고, 그래도 물어야 하면 같은 명령을 다시 부른다(한 번 보여 준 메시지로는 다시 막지 않는다). 3 이면 첫 줄이 `answer: ` 일 때는 코디네이터가 status 로 보낸 답이고, `SENT-RUN <id>` 면 Run 메일함으로 대신 보낸 것이니 `orca orchestration check` 로 답을 읽는다. 4 면 `TIMEOUT <질문 id>` 줄의 id 로 `--resume` 한다. 오래 기다릴 때는 `--max-wait` 에 총 대기 시간(밀리초)을 주면 같은 질문으로 다시 기다린다. 호출별 대기 시간은 `--timeout-ms` 이고 Orca 상한을 넘으면 상한으로 줄인다.
 - **사용자가 정할 결정은 아래 형식으로 쓰고 `--decision` 을 붙인다.** 보드의 결정 필요 항목이 첫 줄을 제목으로, `권장:` 줄을 그 아래에 보인다. 형식이 어긋나면 `worker-ask` 가 묻지 않고 종료 코드 2 로 끝난다. 기술 질문과 막힘 보고는 형식 없이 묻는다.
 
   ```text

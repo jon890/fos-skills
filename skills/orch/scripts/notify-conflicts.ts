@@ -55,6 +55,10 @@
 //
 // GH, ORCA, SEND_TO_WORKER 환경 변수로 실행 파일과 스크립트 경로를 바꾼다. 스크립트는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //
+// 짧은 출력(진입점의 orch queue conflicts, lib/output.ts): 위 줄 대신 PR 마다 `CONFLICT <PR> <브랜치> <결과>` 한 줄이다. 결과는 notified, resumed,
+//     already(이미 알렸다), would-notify, would-relaunch(--dry-run), send-failed, workers-unread 다. worker 가 없는 PR 은 `CONFLICT-ORPHAN` 한 줄만 낸다.
+//     충돌한 내 PR 이 없으면 `NO-CONFLICT <base> <SHA 앞 8자리>` 다.
+//
 // 종료 코드: 0 충돌한 내 PR 이 없다, 1 충돌한 내 PR 이 있다(알렸든 못 알렸든), 2 사용법 오류(설정 파일 오류 포함)나 조회 실패
 
 import { resolve } from 'node:path'
@@ -68,6 +72,7 @@ import { apiTarget, isOwnPr, ownAuthors } from './lib/gh.ts'
 import { defaultBase } from './lib/git.ts'
 import { warnLegacy } from './lib/paths.ts'
 import { workerFor, workerRows, worktreePaths } from './lib/workers.ts'
+import { short } from './lib/output.ts'
 
 const USAGE = '사용법: notify-conflicts.ts [--repo DIR] [--base BRANCH] [--run RUN] [--state FILE] [--dry-run]'
 
@@ -140,9 +145,12 @@ async function main(argv: string[]): Promise<number> {
     if (isOwnPr({ author: { login: item.pr.author?.login ?? '' } }, authors.get(host) ?? [])) mine.push(item)
   }
   if (mine.length === 0) {
-    out(`충돌한 열린 PR 이 없다(base ${base} ${baseSha.slice(0, 8)})`)
+    out(short() ? `NO-CONFLICT ${base} ${baseSha.slice(0, 8)}` : `충돌한 열린 PR 이 없다(base ${base} ${baseSha.slice(0, 8)})`)
     return 0
   }
+  // 짧은 출력(진입점의 orch queue conflicts)은 PR 마다 결과가 정해진 뒤 `CONFLICT <PR> <브랜치> <결과>` 한 줄이다.
+  // resolveConflict 가 내는 들여 쓴 줄로 결과를 정하고, CONFLICT-ORPHAN 은 그 줄 하나만 낸다(머리 주석의 「짧은 출력」)
+  const brief = short()
 
   const state = loadNotified(statePath)
   const paths = worktreePaths(repo)
@@ -151,10 +159,27 @@ async function main(argv: string[]): Promise<number> {
 
   for (const { pr, files } of mine) {
     const number = pr.number
-    out(`#${number} CONFLICTING ${pr.headRefName}: ${files.join(' ')}`)
+    let result = ''
+    const report = () => {
+      if (brief && result && result !== 'orphan') out(`CONFLICT ${number} ${pr.headRefName} ${result}`)
+    }
+    // resolveConflict 의 줄. 짧은 출력이면 결과 낱말만 기억하고 CONFLICT-ORPHAN 만 그대로 낸다
+    const told = (line: string) => {
+      if (!brief) return out(line)
+      if (line.startsWith('CONFLICT-ORPHAN ')) {
+        result = 'orphan'
+        out(line)
+      } else if (/ 에 알릴 것: /.test(line)) result = 'would-notify'
+      else if (/ 에 이어 쓸 것: /.test(line)) result = 'would-relaunch'
+      else if (/ 에 보내지 못했다\(/.test(line)) result = 'send-failed'
+      else if (/^ {2}\S+ 에 알렸다/.test(line)) result ||= 'notified'
+    }
+    if (!brief) out(`#${number} CONFLICTING ${pr.headRefName}: ${files.join(' ')}`)
     const key = notifiedKey(number, baseSha)
     if (Object.hasOwn(state, key)) {
-      out(`  이미 알렸다(${state[key]})`)
+      if (!brief) out(`  이미 알렸다(${state[key]})`)
+      result = 'already'
+      report()
       continue
     }
     let target: WorkerFound
@@ -164,14 +189,18 @@ async function main(argv: string[]): Promise<number> {
     } else {
       workers ??= workerRows(a.run)
       if (!workers.ok) {
-        out(`  worker 목록을 읽지 못해 알리지 않았다: ${workers.error}`)
+        if (!brief) out(`  worker 목록을 읽지 못해 알리지 않았다: ${workers.error}`)
         err(`notify-conflicts: #${number} 는 기록하지 않는다. 다음 실행이 다시 본다`)
+        result = 'workers-unread'
+        report()
         continue
       }
       const row = workerFor(workers.rows, path)
       target = row ? { path, row } : { orphan: '그 워크트리의 dispatch 없음. 새 worker 는 띄우지 않는다' }
     }
-    const outcome = await resolveConflict({ repo, base, baseSha, pr, files, found: target, run: a.run || null, dryRun: a.dryRun, out })
+    const outcome = await resolveConflict({ repo, base, baseSha, pr, files, found: target, run: a.run || null, dryRun: a.dryRun, out: told })
+    if (outcome.kind === 'record' && outcome.action !== 'orphan') result = outcome.action
+    report()
     if (outcome.kind === 'usage') return 2
     if (outcome.kind === 'record') await concludeConflict(statePath, repo, ctx, pr, files, baseSha, outcome)
   }

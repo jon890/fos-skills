@@ -59,6 +59,17 @@ test('살아 있는 dispatch, 끝난 dispatch, 사람 셸을 구분하고 기본
   assert.equal(sessions[0].previous[0].dispatch, 'ctx_failed')
   assert.ok(orca.calls().every((c) => ['list', 'read', 'worker-list'].includes(c.argv[1])))
 })
+test('짧은 출력의 SESSION 은 상태, 브랜치, 지시서 후보를 한 줄로 내고 JSON 을 내지 않는다', () => {
+  process.env.ORCH_OUTPUT = 'short'
+  try {
+    const r = run([])
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, new RegExp(`^SESSION term_old idle feat/old specs=${spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'))
+    assert.doesNotMatch(r.stdout, /[{}]/)
+  } finally {
+    delete process.env.ORCH_OUTPUT
+  }
+})
 test('브랜치 줄로만 지시서를 짝짓고 resource handle 의 살아 있는 dispatch 도 제외한다', () => {
   writeFileSync(join(dirname(spec), 'spec-old.md'), '브랜치: `feat/other`\n')
   assert.deepEqual(matchingSpecs(dirname(spec), 'feat/old'), [spec])

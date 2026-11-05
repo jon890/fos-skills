@@ -178,6 +178,8 @@ const ROWS: Row[] = [
   { group: 'doctor', verb: 'install-cli', script: 'install-cli.ts', legacy: null, usage: 'orch doctor install-cli' },
   // paths
   { group: 'paths', verb: null, script: 'orch_paths.ts', context: ['repo'], legacy: { name: 'orch_paths', flags: [] }, usage: 'orch paths <이름> | orch paths check' },
+  // status. Run 은 문맥으로 채우지 않는다(스펙 DECISION22). 주지 않으면 루프에 등록된 Run 을 모두 본다
+  { group: 'status', verb: null, script: 'orch-status.ts', context: ['repo'], legacy: null, usage: 'orch status [--run <Run>]' },
   // slot
   { group: 'slot', verb: 'heavy', script: 'heavy-slot.ts', passthrough: true, legacy: { name: 'heavy-slot', flags: [] }, usage: 'orch slot heavy -- <명령>' },
   { group: 'slot', verb: 'mem', script: 'mem-gate.ts', passthrough: true, legacy: { name: 'mem-gate', flags: [] }, usage: 'orch slot mem -- <명령>' },
@@ -303,6 +305,7 @@ export function helpText(group?: string): string {
         '사용법: orch <묶음> <동작> [인자]',
         '',
         '저장소(--repo), Run(--run), 지시서 폴더(--specs-dir), 대기의 루프 저장소(--loop-repo)는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽는다.',
+        '기본 출력은 판정 줄이다. --full 을 주면 스크립트의 지금 출력을 낸다.',
         '옛 꼴 `orch.ts <스크립트 이름> [인자]` 와 `orch.ts --path [이름]` 도 받는다.',
         '',
         ...GROUPS.flatMap((g) => [`${g}:`, ...COMMANDS.filter((c) => c.group === g).map((c) => `  ${c.usage}`)]),

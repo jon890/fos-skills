@@ -15,6 +15,7 @@
 //       worktree-deny.ts 로 deny 규칙을 더한다. deny 규칙을 더하지 못해도 워크트리는 낸다(경고 한 줄).
 //     검사(--check): 워크트리의 브랜치, upstream, 원격 끝이 지시서 브랜치와 HEAD 에 맞는지 본다.
 //       맞으면 `일치: <브랜치> (HEAD <sha>)`, 아니면 어긋난 것마다 `불일치: <항목> <실제>, 지시서 <기대>` 를 stdout 에 낸다.
+//       짧은 출력(진입점의 orch worker check, lib/output.ts)은 `MATCH <브랜치> <sha>` 와 `MISMATCH <항목> <실제 또는 -> <기대>` 다
 //
 // 종료 코드: 0 성공, 1 거부, 불일치, git 실패, 2 사용법 오류, 지시서 오류
 //
@@ -30,6 +31,7 @@ import { defaultBase, git } from './lib/git.ts'
 import { repoVisibility, repoVisibilityActions } from './lib/orca.ts'
 import { run, scriptCommand } from './lib/proc.ts'
 import { branchesOf } from './lib/spec.ts'
+import { short } from './lib/output.ts'
 
 const USAGE = [
   '사용법: make-worktree.ts --repo DIR --spec FILE --name NAME [--base BRANCH] [--resume-remote]',
@@ -58,10 +60,11 @@ function check(worktree: string, branch: string): number {
     ['원격 끝', read(['ls-remote', 'origin', `refs/heads/${branch}`]).split('\t')[0], head],
   ]
   for (const [label, actual, expected] of checks) {
-    if (actual !== expected) out(`불일치: ${label} ${actual || '(없음)'}, 지시서 ${expected}`)
+    // 짧은 출력(진입점의 orch worker check)은 판정 낱말 줄이다. 항목 이름의 빈칸은 하이픈으로 잇는다
+    if (actual !== expected) out(short() ? `MISMATCH ${label.replaceAll(' ', '-')} ${actual || '-'} ${expected}` : `불일치: ${label} ${actual || '(없음)'}, 지시서 ${expected}`)
   }
   if (checks.every(([, actual, expected]) => actual === expected)) {
-    out(`일치: ${branch} (HEAD ${head})`)
+    out(short() ? `MATCH ${branch} ${head}` : `일치: ${branch} (HEAD ${head})`)
     return 0
   }
   return 1

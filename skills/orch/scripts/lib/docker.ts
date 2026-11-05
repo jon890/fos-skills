@@ -357,3 +357,18 @@ export function dockerCleanup(opts: CleanupOptions): void {
     opts.log(`Docker 정리 건너뜀: ${e.message}`)
   }
 }
+
+// 짧은 출력(lib/output.ts)에서 위 정리 줄을 판정 줄로 바꾼다. Docker 줄이 아니면 undefined 다.
+// cleanup-sweep 과 remove-worktree 가 같은 규칙을 쓴다. 남김 줄의 이유에 든 「삭제 실패」 는 남김으로 본다
+export function dockerShortLine(line: string): string | null | undefined {
+  const text = line.trim()
+  let m = /^Docker (?:네트워크|컨테이너|이미지) 남김 (\S+?):? (.*)$/.exec(text)
+  if (m) return `KEPT docker:${m[1]} ${m[2]}`
+  m = /^Docker (?:네트워크|컨테이너|이미지) 삭제 (\S+?):/.exec(text)
+  if (m) return `REMOVED docker:${m[1]}`
+  m = /^Docker (?:네트워크|컨테이너|이미지) 지울 것 (\S+?):/.exec(text)
+  if (m) return `WOULD-REMOVE docker:${m[1]}`
+  m = /^Docker 정리 건너뜀: (.*)$/.exec(text)
+  if (m) return `KEPT docker ${m[1]}`
+  return undefined
+}

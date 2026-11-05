@@ -244,6 +244,19 @@ describe('살아 있는 dispatch', () => {
     assert.equal(sent().length, 1)
   })
 
+  test('짧은 출력은 PR 마다 CONFLICT <PR> <브랜치> <결과> 한 줄이다', () => {
+    setupConflict()
+    env.ORCH_OUTPUT = 'short'
+    try {
+      const r = notify('--run', 'run_x')
+      assert.equal(r.code, 1, r.both)
+      assert.equal(r.stdout.trim(), 'CONFLICT 7 feat notified')
+      assert.equal(notify('--run', 'run_x').stdout.trim(), 'CONFLICT 7 feat already')
+    } finally {
+      delete env.ORCH_OUTPUT
+    }
+  })
+
   test('base 가 움직이면 다시 알린다', () => {
     setupConflict()
     notify()
@@ -479,6 +492,17 @@ describe('그 밖', () => {
     const r = notify()
     assert.equal(r.code, 0, r.both)
     assert.match(r.stdout, /충돌한 열린 PR 이 없다/)
+  })
+
+  test('짧은 출력에서 충돌이 없으면 NO-CONFLICT 다', () => {
+    const other = branch('other', { 'd.txt': 'd\n' })
+    prs([8, 'other', other.head])
+    env.ORCH_OUTPUT = 'short'
+    try {
+      assert.match(notify().stdout.trim(), /^NO-CONFLICT main [0-9a-f]{8}$/)
+    } finally {
+      delete env.ORCH_OUTPUT
+    }
   })
 
   test('gh 가 실패하면 2 다', () => {

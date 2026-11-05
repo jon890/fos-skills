@@ -101,6 +101,15 @@ describe('지시서 검사', () => {
     assert.match(r.stdout, /spec-net\.md:1: 겹침: `src\/net\/\*\*` 와 spec-retry\.md 의 `src\/net\/retry\.ts`/)
   })
 
+  test('짧은 출력은 막을 발견에 SPEC-ERROR 를 붙인다', () => {
+    const a = spec('spec-net', '담당: `src/net/**`\n')
+    const b = spec('spec-retry', '- 담당: `src/net/retry.ts`\n')
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, a, b], { env: { ...ENV, ORCH_OUTPUT: 'short' }, encoding: 'utf8' })
+    assert.equal(done.status, 1, done.stdout)
+    assert.match(done.stdout, /^SPEC-ERROR .*spec-net\.md:1: 겹침: /m)
+    assert.ok(done.stdout.split('\n').filter(Boolean).every((l) => /^SPEC-(?:ERROR|WARN) /.test(l)), done.stdout)
+  })
+
   test('따로인 담당 경로는 통과한다', () => {
     const a = spec('spec-net', '담당: `src/net/**`\n')
     const b = spec('spec-ui', '담당: `src/ui/**`, `docs/ui.md`\n')

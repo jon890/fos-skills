@@ -1757,3 +1757,41 @@ describe('Codex worker 의 ssh-agent 설정', () => {
     assert.match(r.stderr, /SSH-AGENT 건너뜀/)
   })
 })
+
+describe('짧은 출력', () => {
+  test('LAUNCHED 에 터미널을 넣고 worker-start JSON 대신 LAUNCH-EFFECTIVE 만 남기며 단계 줄을 내지 않는다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 0, both(r))
+    const out = r.stdout.trim().split('\n')
+    assert.equal(out.length, 2, r.stdout)
+    assert.equal(out[0], 'LAUNCH-EFFECTIVE {}')
+    assert.match(out[1], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+  })
+
+  test('다시 띄워도 멈추면 STALLED-START 줄로 이유를 남긴다', () => {
+    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^STALLED-START ctx_2 worktree_creating$/m)
+  })
+
+  test('worker-start 가 실패하면 receipt 전체를 START-FAIL 한 줄로 남긴다', () => {
+    state({ start_fails: true })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    const line = r.stdout.split('\n').find((l) => l.startsWith('START-FAIL ')) ?? ''
+    assert.deepEqual(JSON.parse(line.slice('START-FAIL '.length)), { ok: false, result: { failedStage: 'agent_readiness' } })
+  })
+
+  test('남은 터미널 거부는 REFUSED 한 줄이다', () => {
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', title: 'claude 앞 세션', worktreePath: worktree }] })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^REFUSED 이 워크트리에 터미널이 남아 있다.*\n$/)
+  })
+})

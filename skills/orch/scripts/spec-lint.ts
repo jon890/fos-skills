@@ -83,6 +83,7 @@
 //                 오버레이에서 `예외:` 로 시작하는 줄은 건너뛴다.
 //                 로컬에만 있는 스크립트를 오버레이가 부르면 다른 워크트리와 worker 에서 그 단계가 「파일 없음」 으로 멈춘다
 //
+// 짧은 출력(진입점의 orch spec lint, lib/output.ts): 막을 발견은 `SPEC-ERROR <줄>`, 경고는 `SPEC-WARN <줄>` 이다. stderr 의 요약은 그대로다.
 // 종료 코드:
 //     0  막을 발견이 없다(경로, 공통, 임시, 제목, 보드, 완료 경고는 있을 수 있다)
 //     1  겹침, 코디네이터, 소유, 없음, 금지, 선택, 루프, 오버레이 중 하나 이상
@@ -104,6 +105,7 @@ import { defaultBase, git } from './lib/git.ts'
 import { pathOf, requireMigrated } from './lib/paths.ts'
 import { reviewPrOfSpec } from './lib/review.ts'
 import { boardIdOfLine, interimOf, LINE_BREAK, SELECTION_FORMAT, selectionsOf } from './lib/spec.ts'
+import { short } from './lib/output.ts'
 
 const USAGE = [
   '사용법: spec-lint.ts --repo DIR [--overlay FILE] [--base BRANCH] [--spec-ref REF | --spec-root DIR] [--active FILE ...] SPEC [SPEC ...]',
@@ -692,7 +694,10 @@ function main(argv: string[]): number {
     const source: LoopSource = specRoot ? { root: specRoot } : { ref: values['spec-ref'] ?? `origin/${loopBase}` }
     const { errors, warnings } = specs.length > 0 ? lint(repo, specs, overlay, active, source) : { errors: [], warnings: [] }
     if (values['check-overlay']) errors.push(...checkOverlay(values.repo, overlay, values.base ?? 'main'))
-    for (const line of [...errors, ...warnings]) process.stdout.write(`${line}\n`)
+    // 짧은 출력(진입점의 orch spec lint)은 발견마다 판정 낱말을 붙인다
+    const brief = short()
+    for (const line of errors) process.stdout.write(`${brief ? 'SPEC-ERROR ' : ''}${line}\n`)
+    for (const line of warnings) process.stdout.write(`${brief ? 'SPEC-WARN ' : ''}${line}\n`)
     const overlaps = warnings.filter((line) => line.includes(': 겹침 경고: ')).length
     const titles = warnings.filter((line) => line.includes(': 제목: ')).length
     const commons = warnings.filter((line) => line.includes(': 공통: ')).length

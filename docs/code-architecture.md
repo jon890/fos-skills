@@ -230,7 +230,7 @@ work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worke
 | 항목 | 규칙 |
 | --- | --- |
 | Node 버전 | 24 이상. 고른 이유는 [ADR-011](adr/011-node-24-minimum.md) 이 소유한다. 버전은 CommonJS 실행기 `bin/orch` 와 옛 진입점 `orch-doctor.py` 가 부르는 `ts_shim.py` 에서 본다. 두 곳의 최소 버전은 같은 값이고 `skills/orch/tests/orch-launcher.spec.ts` 가 대조한다. 낮으면 TypeScript 를 부르지 않고 `NODE-TOO-OLD` 줄을 낸다. `.ts` 안에서는 판정하지 않는다. 낮은 node 는 `.ts` 를 읽지 못해 `ERR_UNKNOWN_FILE_EXTENSION` 으로 죽어 그 판정에 닿지 못한다 |
-| 실행 | `orch <묶음> <동작>`. PATH 의 실행기 `bin/orch`(또는 `~/.local/bin/orch` 사본)가 설치 기록에서 번들을 골라 그 번들의 진입점 `skills/orch/bin/orch.ts` 에 넘기고, 진입점이 명령 표 `scripts/lib/commands.ts` 로 스크립트와 인자를 풀어 `node --disable-warning=ExperimentalWarning` 으로 실행한다. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다. 번들 고르기의 원본은 `scripts/lib/install-record.ts`, 넘기기와 문맥 채우기는 진입점 머리 주석이 소유한다. 스크립트끼리는 진입점을 거치지 않고 파일 경로로 직접 부른다 |
+| 실행 | `orch <묶음> <동작>`. PATH 의 실행기 `bin/orch`(또는 `~/.local/bin/orch` 사본)가 설치 기록에서 번들을 골라 그 번들의 진입점 `skills/orch/bin/orch.ts` 에 넘기고, 진입점이 명령 표 `scripts/lib/commands.ts` 로 스크립트와 인자를 풀어 `node --disable-warning=ExperimentalWarning` 으로 실행한다. 22.x 의 타입 제거 실험 경고가 hook 출력과 명령 출력에 섞이지 않게 한다. 번들 고르기의 원본은 `scripts/lib/install-record.ts`, 넘기기와 문맥 채우기는 진입점 머리 주석이 소유한다. 스크립트끼리는 진입점을 거치지 않고 파일 경로로 직접 부른다. 진입점은 자식에게 짧은 출력 신호 `ORCH_OUTPUT=short` 를 넘기고(`--full` 이면 넘기지 않는다), 스크립트는 `scripts/lib/output.ts` 로 판정 줄만 낸다. 경로로 직접 부른 스크립트는 지금 출력 그대로다 |
 | 문법 | 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않는다. 상대 import 에 `.ts` 를 적고, 타입만 가져오면 `import type` 이다 |
 | 의존 | Node 내장 모듈만 쓴다. `package.json` 과 `node_modules` 를 두지 않는다 |
 | 테스트 | `node --test --test-concurrency=4 "skills/orch/tests/*.spec.ts" "extensions/work-board/tests/*.spec.ts"`. 파일마다 프로세스가 나뉘어 격리 러너가 필요 없다. CI 는 `Plugin tests` job 에 이 단계를 더한다. 필수 체크 이름이 바뀌지 않는다 |

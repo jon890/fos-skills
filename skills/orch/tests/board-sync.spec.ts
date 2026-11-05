@@ -92,6 +92,16 @@ describe('board-sync', () => {
     assert.equal(r.board.a.status, 'done')
   })
 
+  test('짧은 출력은 BOARD <id> 와 BOARD-SYNC 판정 줄이고 설명 줄이 없다', () => {
+    states['7'] = 'MERGED'
+    writeFileSync(join(tmp, 'state.json'), JSON.stringify(states))
+    writeFileSync(board, JSON.stringify({ items: [{ id: 'a', status: 'doing', pr: '#7', details: ['1. 구현'] }] }))
+    const r = run(['--board', board, '--repo', tmp], { env: { ORCH_OUTPUT: 'short' } })
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(r.stdout.trim().split('\n'), ['BOARD a done', 'BOARD-SYNC 1'])
+    assert.equal(load().a.status, 'done')
+  })
+
   test('머지된 PR 은 남은 단계를 끝내고 항목을 done 으로 바꾼다', () => {
     states['7'] = 'MERGED'
     const r = sync([{ id: 'a', status: 'doing', pr: '#7', details: ['✓ 1. 구현', '2. PR 리뷰 반영', '✓ 3. 머지'] }])

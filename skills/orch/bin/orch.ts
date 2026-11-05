@@ -22,6 +22,10 @@
 // 신호(SIGINT, SIGTERM, SIGHUP)를 받으면 자식에게 전하고 자식이 끝나기를 기다린다. 스크립트 자식의 환경에서는 ORCH_ENTRY_HOP 을 지운다.
 // 새 꼴은 ../scripts/lib/context.ts 가 빠진 문맥 인자(--repo, --run, --specs-dir, --loop-repo)를 채우고, 채운 출처를 stderr 한 줄과
 // 자식 환경 ORCH_CONTEXT(`run=run-current loop-repo=registered` 꼴)로 알린다. 스크립트는 lib/bundle.ts 의 orchContext() 로 읽는다.
+// 짧은 출력: 새 꼴과 옛 꼴 모두 자식 환경에 ORCH_OUTPUT=short 를 넣어 판정 줄만 내게 한다(../scripts/lib/output.ts).
+// 첫 `--` 앞의 `--full` 은 떼고 ORCH_OUTPUT=full 을 넣어 지금 출력을 낸다(대기는 이 값으로 NEXT_WAIT 에 --full 을 잇는다).
+// 진입점은 스크립트의 옵션 표를 몰라 옵션 값으로 준 `--full`(`--body --full`)도 뗀다. 그런 값은 `--body=--full` 꼴로 준다. 감싼 명령(명령 표의 passthrough: slot heavy, slot mem)은 신호를 넣지 않고
+// `--full` 도 떼지 않는다. 부모 환경의 ORCH_OUTPUT 은 먼저 지운다.
 //
 // 종료 코드:
 //     자식의 종료 코드(신호로 끝나면 128 + 신호 번호)
@@ -143,6 +147,15 @@ async function locate(argv: string[]): Promise<{ dir: string } | { code: number 
   return { dir: hopped ? OWN_SCRIPTS : record.scriptsDirOf(chosen.bundle) }
 }
 
+// 첫 `--` 앞의 `--full` 을 모두 뗀다. 있었는지를 함께 낸다
+function stripFull(args: string[]): { args: string[]; full: boolean } {
+  const cut = args.indexOf('--')
+  const head = cut < 0 ? args : args.slice(0, cut)
+  const tail = cut < 0 ? [] : args.slice(cut)
+  const kept = head.filter((a) => a !== '--full')
+  return { args: [...kept, ...tail], full: kept.length !== head.length }
+}
+
 function names(dir: string): string {
   return readdirSync(dir)
     .filter((f) => f.endsWith('.ts'))
@@ -165,6 +178,8 @@ async function main(argv: string[]): Promise<number> {
   delete childEnv.ORCH_ENTRY_HOP
   // 문맥 신호는 새 꼴에서만 넘긴다. 옛 꼴과 그 밖의 자식에는 물려주지 않는다
   delete childEnv.ORCH_CONTEXT
+  // 짧은 출력 신호는 아래에서 이 호출의 `--full` 로 정한다. 부모 환경의 값을 물려주지 않는다
+  delete childEnv.ORCH_OUTPUT
 
   if (first === '--help' || first === '-h') {
     process.stdout.write(commands.helpText())
@@ -175,7 +190,10 @@ async function main(argv: string[]): Promise<number> {
       process.stdout.write(commands.helpText(first))
       return 0
     }
-    const resolved = commands.resolveNew(argv)
+    const stripped = stripFull(rest)
+    let resolved = commands.resolveNew([first, ...stripped.args])
+    // 감싼 명령은 `--full` 을 떼지 않는다. 감싼 명령의 인자일 수 있다
+    if (!('error' in resolved) && resolved.command.passthrough) resolved = commands.resolveNew(argv)
     if ('error' in resolved) {
       err(`orch: ${resolved.error}`)
       err(commands.helpText(first).trimEnd())
@@ -200,6 +218,7 @@ async function main(argv: string[]): Promise<number> {
     if (filled.note) err(filled.note)
     const env = context.contextEnv(filled.sources)
     if (env) childEnv.ORCH_CONTEXT = env
+    if (!resolved.command.passthrough) childEnv.ORCH_OUTPUT = stripped.full ? 'full' : 'short'
     return run(file, filled.args, childEnv)
   }
 
@@ -233,7 +252,12 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(`${file}\n`)
     return 0
   }
-  return run(file, rest, childEnv)
+  // 옛 꼴도 새 꼴과 같은 짧은 출력이다(스펙 DECISION11). 감싼 명령의 옛 이름(heavy-slot, mem-gate)은 그대로 넘긴다
+  const wrapped = commands.COMMANDS.some((c) => c.passthrough && c.legacy?.name === bare)
+  if (wrapped) return run(file, rest, childEnv)
+  const stripped = stripFull(rest)
+  childEnv.ORCH_OUTPUT = stripped.full ? 'full' : 'short'
+  return run(file, stripped.args, childEnv)
 }
 
 Promise.resolve(main(process.argv.slice(2))).then((code) => {
