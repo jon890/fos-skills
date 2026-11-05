@@ -1,0 +1,65 @@
+{
+  "name": "scripts-githooks",
+  "description": "node-runtime 영역 2: scripts/ 와 githooks/, plugin-version workflow 의 Python·셸을 TypeScript 로 옮긴다",
+  "pr_scope": "scripts/ 의 Python·셸 명령과 githooks/ 의 두 훅을 같은 옵션·stdout·종료 코드의 TypeScript 로 옮기고, workflow 의 python3 호출과 부르는 문서를 바꾸고, check-shell-korean 과 표본을 지운다. 명령 경계 테스트를 먼저 옛 구현에서 통과시킨 뒤 구현만 바꾼다. 변경 파일의 절반은 옛 Python·셸과 그 테스트의 삭제라 한 PR 로 둔다(스펙 DECISION6).",
+  "deferred": [
+    {
+      "what": "PR3 이후 영역(작은 스킬 묶음부터 browser-driver, 마무리까지)",
+      "why": "스펙 DECISION6 의 영역 하나에 PR 하나",
+      "after": "이 PR 머지"
+    },
+    {
+      "what": "commit-msg 훅이 korean-check 검사기를 새 꼴(node .ts)로 부르기",
+      "why": "korean-check 는 영역 6 이다. 그때까지 훅은 옛 검사기를 python3 로 부른다(설계 「실패와 일관성」)",
+      "after": "영역 6(korean-check) PR"
+    },
+    {
+      "what": "test-plugin-install 의 style-check.sh, verify_task.py, browser_driver.py 줄",
+      "why": "각 영역(5, 7, 10)이 자기 명령을 옮길 때 고친다(설계 「실패와 일관성」)",
+      "after": "영역 5, 7, 10 PR"
+    },
+    {
+      "what": "modules/kit 복사본 대조(kit_sources, sync-kit.ts)",
+      "why": "복사본이 처음 생기는 영역이 더한다(설계 「공통 꼴 모듈 kit」)",
+      "after": "처음 kit 을 복사하는 영역 PR"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/node-runtime/spec.md",
+  "design": "docs/features/node-runtime/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ10"
+  ],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ3"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ4",
+        "REQ5",
+        "REQ10"
+      ]
+    }
+  ]
+}
