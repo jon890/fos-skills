@@ -23,23 +23,6 @@ def lines(text):
 
 
 class TestUnit(unittest.TestCase):
-    def test_slug_drops_punctuation_and_keeps_hangul(self):
-        self.assertEqual(sc.slug("E. ADR 자명성"), "e-adr-자명성")
-        self.assertEqual(sc.slug("A. 부패"), "a-부패")
-
-    def test_anchors_number_duplicate_headings(self):
-        found = sc.anchors_of(lines("## 같은 이름\n## 같은 이름\n## 같은 이름"))
-        self.assertEqual(found, {"같은-이름", "같은-이름-1", "같은-이름-2"})
-
-    def test_anchors_skip_code_fence(self):
-        self.assertEqual(sc.anchors_of(lines("```\n## 가짜\n```")), set())
-
-    def test_is_local_rejects_schemes_and_site_root(self):
-        for target in ("https://a/b", "dooray://task/1", "/nhncloud/ko", "mailto:a@b"):
-            self.assertFalse(sc.is_local(target), target)
-        for target in ("other.md", "../a/b.md", "sub/c.md"):
-            self.assertTrue(sc.is_local(target), target)
-
     def test_table_column_mismatch(self):
         body = "| 머리 | 값 |\n| --- | --- |\n| 하나 |"
         found = sc.check_markdown(Path("t.md"), lines(body))
@@ -188,19 +171,19 @@ class TestRepo(unittest.TestCase):
 
     def test_hangul_filename_is_checked(self):
         """git ls-files 가 비ASCII 경로를 이스케이프해 통째로 빠지던 자리다."""
-        self.write("한글 이름.md", "# 제목\n\n[깨짐](없다.md)\n")
+        self.write("한글 이름.md", "# 제목\n\n### 건너뜀\n")
         done = self.invoke()
         self.assertEqual(done.returncode, 1)
         self.assertIn("한글 이름.md", done.stdout)
         self.assertIn("1개", done.stderr)
 
     def test_untracked_file_is_checked(self):
-        self.write("새문서.md", "# 제목\n\n[깨짐](없다.md)\n")
+        self.write("새문서.md", "# 제목\n\n### 건너뜀\n")
         self.assertEqual(self.invoke().returncode, 1)
 
     def test_gitignored_file_is_skipped(self):
         self.write(".gitignore", "무시.md\n")
-        self.write("무시.md", "# 제목\n\n[깨짐](없다.md)\n")
+        self.write("무시.md", "# 제목\n\n### 건너뜀\n")
         self.write("정상.md", "# 제목\n")
         done = self.invoke()
         self.assertEqual(done.returncode, 0, done.stdout)
@@ -210,81 +193,16 @@ class TestRepo(unittest.TestCase):
         done = self.invoke()
         self.assertEqual(done.returncode, 2)
 
-    def test_index_desync_detected(self):
-        self.write("docs/adr/ADR-001.md", "# 하나\n\n## ADR-001 첫 결정\n")
-        self.write("docs/adr/ADR-002.md", "# 둘\n\n## ADR-002 둘째 결정\n")
-        self.write("docs/adr/INDEX.md", "# INDEX\n\n- [ADR-001](ADR-001.md)\n")
-        done = self.invoke("docs/adr")
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("INDEX_DESYNC", done.stdout)
-        self.assertIn("ADR-002", done.stdout)
-
-    def test_index_in_sync_passes_with_list_and_table_forms(self):
-        self.write("docs/adr/ADR-001.md", "# 하나\n\n## ADR-001 첫 결정\n")
-        self.write("docs/adr/ADR-002.md", "# 둘\n\n## ADR-002 둘째 결정\n")
-        self.write(
-            "docs/adr/INDEX.md",
-            "# INDEX\n\n- [ADR-001](ADR-001.md)\n\n| 번호 | 제목 |\n| --- | --- |\n"
-            "| ADR-002 | 둘째 |\n\n향후 ADR은 ADR-009부터 추가한다.\n",
-        )
-        done = self.invoke("docs/adr")
-        self.assertEqual(done.returncode, 0, done.stdout)
-
-    def test_index_in_sync_passes_with_all_four_entry_forms(self):
-        for n in range(1, 5):
-            self.write(f"docs/adr/ADR-00{n}.md", f"# 결정\n\n## ADR-00{n} 결정\n")
-        self.write(
-            "docs/adr/INDEX.md",
-            "# INDEX\n\n- ADR-001 목록 링크 없음\n- [ADR-002](ADR-002.md) 목록 링크 있음\n\n"
-            "| 번호 | 제목 |\n| --- | --- |\n"
-            "| ADR-003 | 표 링크 없음 |\n| [ADR-004](ADR-004.md) | 표 링크 있음 |\n",
-        )
-        done = self.invoke("docs/adr")
-        self.assertEqual(done.returncode, 0, done.stdout)
-
-    def test_index_with_file_name_link_text_is_in_sync(self):
-        for n in range(1, 4):
-            self.write(f"docs/adr/00{n}-slug.md", f"## ADR-00{n}: 결정\n")
-        self.write(
-            "docs/adr/INDEX.md",
-            "# INDEX\n\n- [001-slug.md](001-slug.md): 요약\n- [002-slug.md](002-slug.md): 요약\n\n"
-            "| 번호 | 제목 |\n| --- | --- |\n| [003-slug.md](003-slug.md) | 표 링크 |\n",
-        )
-        done = self.invoke("docs/adr")
-        self.assertEqual(done.returncode, 0, done.stdout)
-
-    def test_index_with_file_name_link_text_still_detects_missing_entry(self):
-        self.write("docs/adr/001-slug.md", "## ADR-001: 결정\n")
-        self.write("docs/adr/002-slug.md", "## ADR-002: 결정\n")
-        self.write("docs/adr/INDEX.md", "# INDEX\n\n- [001-slug.md](001-slug.md): 요약\n")
-        done = self.invoke("docs/adr")
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("본문에만 있다: ADR-002", done.stdout)
-        self.assertNotIn("ADR-001", done.stdout)
-
-    def test_missing_index_skips_the_check(self):
-        self.write("docs/adr/ADR-001.md", "# 하나\n\n## ADR-001 첫 결정\n")
-        done = self.invoke("docs/adr")
-        self.assertEqual(done.returncode, 0, done.stdout)
-
-    def test_index_includes_archived_adrs(self):
-        self.write("docs/adr/current.md", "## ADR-001 current\n")
-        self.write("docs/adr/superseded/old.md", "## ADR-002 old\n- **status**: `superseded`\n")
-        self.write("docs/adr/INDEX.md", "# INDEX\n\n## 현행\n\n- [ADR-001](current.md)\n\n"
-                   "## 대체됨\n\n- [ADR-002](superseded/old.md)\n")
-        done = self.invoke("docs/adr")
-        self.assertEqual(done.returncode, 0, done.stdout)
-
-    def test_unlisted_archived_adr_is_detected(self):
-        self.write("docs/adr/superseded/old.md", "## ADR-002 old\n")
+    def test_adr_dir_is_accepted_but_unused(self):
+        """옛 두 인자 호출이 깨지지 않는다. ADR 검사는 plan 의 adr-docs.ts 로 옮겼다."""
+        self.write("docs/adr/001-a.md", "## ADR-001: 결정\n")
         self.write("docs/adr/INDEX.md", "# INDEX\n")
-        done = self.invoke("docs/adr")
+        self.write("a.md", "# 제목\n\n[깨짐](없다.md)\n\n### 건너뜀\n")
+        done = self.invoke("docs/adr", ".")
         self.assertEqual(done.returncode, 1)
-        self.assertIn("본문에만 있다: ADR-002", done.stdout)
-
-    def test_missing_adr_dir_is_usage_error(self):
-        self.write("a.md", "# 제목\n")
-        self.assertEqual(self.invoke("없는디렉터리").returncode, 2)
+        self.assertEqual(done.stdout.splitlines(), ["a.md:5: 헤딩 레벨 건너뜀 (h1 → h3)"])
+        self.assertIn("adr-docs.ts", done.stderr)
+        self.assertEqual(self.invoke("없는디렉터리").returncode, 1)
 
     def test_missing_scope_is_usage_error(self):
         self.write("a.md", "# 제목\n")
@@ -298,14 +216,6 @@ class TestRepo(unittest.TestCase):
             )
             self.assertEqual(done.returncode, 2)
 
-    def test_cross_file_anchor(self):
-        self.write("a.md", "# 하나\n\n[정상](b.md#비-절)\n[깨짐](b.md#없다)\n")
-        self.write("b.md", "# 비\n\n## 비 절\n")
-        done = self.invoke()
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("b.md#없다", done.stdout)
-        self.assertNotIn("b.md#비-절", done.stdout)
-
     def test_listed_items_warn_without_failing(self):
         self.write(
             "docs/code-architecture.md",
@@ -318,11 +228,11 @@ class TestRepo(unittest.TestCase):
     def test_listed_items_warn_alongside_violation(self):
         self.write(
             "docs/code-architecture.md",
-            "# 구조\n\n| 경로 | 소유하는 것 |\n| --- | --- |\n| `a/` | 설정 (가, 나, 다) |\n\n[깨짐](없다.md)\n",
+            "# 구조\n\n| 경로 | 소유하는 것 |\n| --- | --- |\n| `a/` | 설정 (가, 나, 다) |\n\n### 건너뜀\n",
         )
         done = self.invoke()
         self.assertEqual(done.returncode, 1)
-        self.assertIn("깨진 링크", done.stdout)
+        self.assertIn("헤딩 레벨 건너뜀", done.stdout)
         self.assertIn("WARN LISTED_ITEMS", done.stdout)
 
 
