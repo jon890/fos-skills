@@ -43,7 +43,7 @@
 Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄에 「high 근거: medium 실패 <dispatch id>」 나 「high 근거: 사용자 지정 YYYY-MM-DD」 를 적는다.
 
 - 근거로 적는 dispatch 는 그 저장소에서 Opus `medium` 으로 띄운 dispatch 다. 브랜치는 달라도 된다. 실패였는지는 코디네이터가 판단한다.
-- 같은 크기에서 Opus `high` 는 `medium` 보다 준비가 두 배 늦고 비용이 두 배 남짓인데, 품질 차이는 없었다.
+- 크기 C 에서는 Opus `high` 가 `medium` 보다 준비가 두 배 남짓 늦고 비용도 두 배 남짓이었다. 이 표본에서 `high` 의 품질 개선 신호는 관측되지 않았다. 크기 B 는 차이가 더 작다.
 - 지시서의 83% 가 Opus `high` 였고, 사용 한도에 걸린 PR 은 모두 Opus 였다.
 - 수치와 표본은 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다(측정 2026-11-05, ai-analysis PR 486건).
 - Sonnet `high` 와 sol `high` 는 이 규칙 밖이다. 위 표의 effort 칸을 따른다.
