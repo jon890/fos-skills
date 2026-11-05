@@ -76,6 +76,8 @@ ADR 은 선택과 이유를 소유하고, 정확한 값·API·운영 명령은 �
 파일명은 `docs/adr/NNN-<슬러그>.md` 다. 한 파일에 결정 하나만 담는다.
 여러 에이전트가 동시에 PR 을 여는 저장소는 파일 이름과 색인을 [`adr-parallel.md`](adr-parallel.md) 로 정한다.
 
+색인 생성을 켠 저장소(루트 plan 오버레이 「ADR 색인 생성: 한다」)는 `adr-docs.ts write-index` 를 돌리고 행을 직접 고치지 않는다. 아래 두 문장은 생성을 켜지 않은 저장소의 규칙이다.
+
 ADR 목록처럼 여러 plan 이 함께 고치는 색인은 기본적으로 끝에 새 행만 덧붙이고, 동시에 도는 다른 plan 과 같은 줄을 고치지 않는다.
 저장소가 정렬 순서를 정했거나 [병렬 ADR 규약](adr-parallel.md)을 쓰면 그 순서에 새 행만 더한다. 관련 없는 기존 행의 재정렬·정리는 같은 PR 에 섞지 않는다.
 
@@ -113,20 +115,15 @@ ADR 목록처럼 여러 plan 이 함께 고치는 색인은 기본적으로 끝�
 
 ## 대체한 뒤 검사
 
-ADR 을 대체한 뒤 위치와 저장소 Markdown 의 ADR 상대 링크를 검사한다. 종료 코드 0 이어야 한다.
-검사기는 plan 번들에 있다. `$PLAN_SKILL_DIR` 은 plan 스킬 번들 경로이고, `$ADR_DIR` 은 오버레이가 정한 ADR 경로다. 지정이 없으면 `docs/adr` 다.
+ADR 을 만들거나 대체하거나 이름을 바꾼 뒤 색인을 다시 만들고 저장소 문서를 검사한다. 검사의 종료 코드가 0 이어야 한다.
+검사기는 plan 번들의 `adr-docs.ts` 다. `$ADR_DIRS`, `$ADR_ARGS`, `$BASE` 를 만드는 법은 [plan 의 monorepo.md 「ADR 문서 검사」](../../plan/references/monorepo.md#adr-문서-검사)가 소유한다.
 
 ```bash
 # cwd: 타깃 레포 root
-python3 "$PLAN_SKILL_DIR/scripts/check_adr_layout.py" "${ADR_DIR:-docs/adr}"
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index $ADR_DIRS     # 색인 생성을 켠 저장소만
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_ARGS
 ```
 
-오버레이가 「superseded 폴더 사용 안 함」 으로 정한 저장소(대체된 ADR 을 `docs/adr` 에 그대로 두고 색인으로 구분)는 `--flat` 을 붙인다.
-`--flat` 은 폴더 위치와 `status` 검사를 건너뛰고 링크 검사만 한다. 오버레이가 정하지 않았으면 붙이지 않는다.
-
-```bash
-# cwd: 타깃 레포 root
-python3 "$PLAN_SKILL_DIR/scripts/check_adr_layout.py" "${ADR_DIR:-docs/adr}" --flat
-```
-
-코드 주석의 링크와 색인의 「현행」·「대체됨」 구분은 변경 diff 에서 확인한다.
+검사는 대체된 ADR 의 위치와 `status`, 옮긴 ADR 을 가리키던 상대 링크, 링크 없는 ADR 번호, 색인을 함께 본다.
+오버레이가 「ADR 대체 배치: 폴더 없음」 으로 정한 저장소는 `$ADR_ARGS` 에 `--flat` 이 들어가 위치 검사를 건너뛴다.
+코드 주석의 링크는 검사 대상이 아니라 변경 diff 에서 확인한다.

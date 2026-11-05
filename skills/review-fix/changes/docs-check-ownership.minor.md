@@ -1,0 +1,2 @@
+- 5단계 검증에서 plan 의 `adr-docs.ts check --changed-since` 를 돌리고, PR 이 바꾼 파일의 위반만 고친다
+- 결과 보고에 「PR 밖 위반」 자리를 더했다

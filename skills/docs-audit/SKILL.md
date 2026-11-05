@@ -22,8 +22,8 @@ metadata:
 
 | 단계  | 이름      | 통과 조건                                           | reference                 |
 | --- | ------- | ----------------------------------------------- | ------------------------- |
-| 1   | 범위 판정   | 감사할 파일 목록과 ADR 디렉터리 경로가 정해졌다                    | 오버레이                      |
-| 2   | 정적 검사   | `run_static_check.py` 표의 판정이 통과다. 발견이면 걸린 줄이 모두 발견으로 올랐거나 `references/six-axis.md` 의 유지 유형으로 분류됐다. 실행 실패는 통과가 아니다 | `scripts/run_static_check.py` |
+| 1   | 범위 판정   | 감사할 파일 목록과 ADR 검사 인자(`$ADR_ARGS`)가 정해졌다            | 오버레이                      |
+| 2   | 정적 검사   | `run_static_check.py` 표의 판정이 통과고 `adr-docs.ts check` 종료 코드가 0 이다. 발견이면 걸린 줄이 모두 발견으로 올랐거나 `references/six-axis.md` 의 유지 유형으로 분류됐다. 실행 실패(종료 코드 2)는 통과가 아니다 | `scripts/run_static_check.py`, plan 의 `scripts/adr-docs.ts` |
 | 3   | 의미 검사   | 모든 축을 대상 파일에 적용했고 발견마다 증명 근거가 있다                | `references/six-axis.md`  |
 | 4   | 리포트와 승인 | 리포트가 나갔고 사용자가 고칠 항목을 정했다                        |                           |
 | 5   | 수정과 재검증 | 승인 항목만 고쳤고 정적 검사와 코드 대조를 다시 통과했다                |                           |
@@ -61,7 +61,10 @@ python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-audit $SCOPE_PAT
 선언이 없으면 [기능 문서 소유권](../spec/references/feature-docs.md)을 기본값으로 쓴다.
 기존 전역 문서도 실제 소유 범위를 확인한다. 기능 문서의 내용을 전역 파일에 복제하라고 요구하지 않는다.
 
-여기에 범위의 `README.md` 와 책임 문서, `docs/adr/INDEX.md` 를 더한다.
+여기에 범위의 `README.md` 와 책임 문서, ADR 폴더의 `INDEX.md` 를 더한다.
+
+**ADR 폴더, 색인 생성, 대체 배치는 루트 plan 오버레이에서 읽어 `$ADR_ARGS` 를 만든다.**
+읽는 법은 [plan 의 monorepo.md 「ADR 문서 검사」](../plan/references/monorepo.md#adr-문서-검사)가 소유한다. docs-audit 오버레이의 ADR 디렉터리 줄은 읽지 않는다.
 
 **`tasks/` 의 계획서도 범위에 넣는다.** [계획 수명 규칙](../plan/references/plan-lifecycle.md)으로 완료·보존 정책·증거 인계를 확인한 뒤에만 제거 후보로 본다.
 판정 절차는 `references/six-axis.md` 의 「완료된 plan 은 제거 후보다」 가 소유한다.
@@ -79,8 +82,13 @@ python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-audit $SCOPE_PAT
 
 ```bash
 # cwd: 검사 대상 저장소 루트
-python3 "$SKILL_DIR/scripts/run_static_check.py" "$ADR_DIR" "$SCOPE"
+python3 "$SKILL_DIR/scripts/run_static_check.py" "" "$SCOPE"
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --scope "$SCOPE" $ADR_ARGS
 ```
+
+`run_static_check.py` 는 표 열 수, 제목 단계, 코드 펜스, 계획서 번호 참조, 책임 설명 목록을 본다.
+깨진 링크·앵커, 링크 없는 ADR 식별자, ADR 색인, 번호 중복, 대체된 ADR 위치는 `adr-docs.ts` 가 본다. 출력 줄과 종료 코드는 그 파일 머리 주석이 소유한다.
+`adr-docs.ts` 는 `--changed-since` 없이 감사 범위 전체를 리포트에 올린다. `--scope` 는 결과만 좁히고 링크 대상은 범위 밖에서도 찾는다.
 
 모노레포면 `$SCOPE` 에 `frontend/docs` 처럼 하위 프로젝트의 docs 경로를 준다. cwd 는 그대로 저장소 루트다.
 이 스크립트가 `static_check.py` 를 하위 프로세스로 돌리고 종료 코드와 판정을 표로 낸다.
@@ -94,7 +102,7 @@ python3 "$SKILL_DIR/scripts/run_static_check.py" "$ADR_DIR" "$SCOPE"
 `LISTED_ITEMS` 는 `docs/code-architecture.md` 의 책임 설명에 늘어놓은 목록이다.
 고칠지는 [plan 예시의 「디렉터리 책임」](../plan/references/examples/code-architecture.md#디렉터리-책임) 절로 판정한다.
 
-ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에 합친다.
+ADR 폴더가 여러 개면 `$ADR_ARGS` 에 `--adr-dir` 를 여러 번 넣어 한 번에 돈다.
 
 **걸린 자리가 검사기의 오탐이면 그 위치와 근거를 리포트에 적는다.**
 검사기 수정은 이 스킬 저장소의 별도 작업으로 넘긴다.
@@ -110,7 +118,7 @@ ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에
 코드와 문서의 실제 소비 관계를 읽고 축별로 판정한다.
 위임한 조사는 정해진 범위만 보고 발견 형식으로 회신한다.
 축은 부패, 과대화, 추론성, 중복, 자명성이다. 각 축의 정의와 판정 기준은 `references/six-axis.md` 가 소유한다.
-구조 무결성(깨진 링크, 표 열 수, 코드 펜스, 헤딩 레벨, ADR 번호와 INDEX)은 2단계 정적 검사가 판정하므로 이 단계에서 다시 보지 않는다. 리포트에는 그 발견을 `[구조 무결성]` 으로 적는다.
+구조 무결성(표 열 수, 코드 펜스, 헤딩 레벨은 `static_check.py`, 깨진 링크·앵커와 ADR 번호·INDEX 는 `adr-docs.ts`)은 2단계 정적 검사가 판정하므로 이 단계에서 다시 보지 않는다. 리포트에는 그 발견을 `[구조 무결성]` 으로 적는다.
 
 **줄 수만으로 과대화를 판정하지 않는다.**
 고정 개수와 목록은 계약인지 단순 복제인지 코드와 대조한다.
@@ -137,7 +145,7 @@ ADR 디렉터리가 여러 개면 각각 실행하되 결과를 한 리포트에
 
 - 현재 사실은 책임 문서 한곳에만 남기고 나머지는 그것을 가리킨다.
 - ADR 에 담을 것, 남길 조건, 대체와 이동 규약은 [technical-design 의 adr-rules.md](../technical-design/references/adr-rules.md) 가 소유한다. 감사의 B(과대화), E(자명성) 축은 그 문서를 적용한다. 대체된 ADR 은 지우지 않는다.
-- ADR 파일과 `INDEX.md` 를 함께 고친다.
+- ADR 파일과 `INDEX.md` 를 함께 고친다. 색인 생성을 켠 저장소는 ADR 을 고친 뒤 `adr-docs.ts write-index $ADR_DIRS` 로 색인을 다시 만든다. 색인 행을 직접 고치지 않는다.
 - 고친 Markdown 에 그 저장소의 표현과 가독성 검사를 실행한다.
 
 수정 뒤 정적 검사와 코드 대조를 다시 실행하고, 승인받지 않은 변경이 없는지 확인한다.

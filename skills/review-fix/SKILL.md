@@ -35,7 +35,7 @@ metadata:
 | 2 | 작업 트리 정렬 | 현재 브랜치가 PR head 브랜치이고 base 브랜치 이름을 받았고 conflict 가 없다 | `references/conflict-resolution.md` |
 | 3 | 분류 | 모든 지적에 등급이 붙었고 처리 범위를 사용자가 확정했다 | `references/severity.md` |
 | 4 | 수정 | 처리하기로 한 지적이 반영되고 지적마다 커밋이 나뉘어 남았다 | `references/severity.md` |
-| 5 | 검증 | 그 저장소의 검증 명령이 통과했다 | 오버레이 |
+| 5 | 검증 | 그 저장소의 검증 명령이 통과했고 `adr-docs.ts check` 종료 코드가 0 이다 | 오버레이, plan 의 `scripts/adr-docs.ts` |
 | 6 | 커밋과 push | 지적과 커밋 해시의 대응 표가 만들어졌고 PR head 브랜치에 push 됐고 conflict 가 없다 | |
 | 7 | 회신 | 처리 대상 지적마다 회신이 하나씩 달리고 그 지적을 반영한 커밋 해시가 들어갔다 | `references/reply.md` |
 | 8 | 마무리 | 처리한 스레드가 resolve 됐고 결과 보고가 나갔다 | `references/finish.md` |
@@ -215,6 +215,19 @@ base 동기화 커밋은 지적에 대응하지 않으므로 이 수에 넣지 �
 - 모노레포에서 PR 이 두 하위 프로젝트에 걸치면 두 오버레이의 검증 명령을 모두 실행한다.
 
 검증 명령이 문서화돼 있지 않으면 어떤 명령으로 검증할지 사용자에게 묻는다.
+
+**문서 링크와 ADR 은 저장소 명령과 별도로 plan 번들의 검사기로 본다.** 저장소 CI 에 이 검사의 사본이 없어 이 단계가 마지막 관문이다.
+`$BASE` 는 1단계에서 받은 PR 의 base 브랜치(`origin/<base>`)다. `$ADR_DIRS`, `$ADR_ARGS` 를 만드는 법은 [plan 의 monorepo.md 「ADR 문서 검사」](../plan/references/monorepo.md#adr-문서-검사)가 소유한다.
+
+```bash
+# cwd: 대상 저장소 루트
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index $ADR_DIRS     # ADR 을 고친 지적이 있고 색인 생성을 켠 저장소만
+node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_ARGS
+```
+
+- 검사는 저장소 전체를 보되 PR 이 바꾼 파일의 위반만 종료 코드로 센다. 그 위반만 고친다.
+- `PR 밖 위반:` 아래 줄은 고치지 않고 결과 보고의 「PR 밖 위반」 에 적는다. 리뷰 반영 PR 에 무관한 변경을 섞지 않는다.
+- `write-index` 가 바꾼 `INDEX.md` 는 ADR 을 고친 지적의 커밋에 접어 넣는다. 접는 방법은 아래 실패 처리와 같다.
 
 검증은 커밋마다 돌리지 않고 이 단계에서 한 번 돌린다.
 **실패하면 원인이 된 커밋에 수정을 접어 넣는다.**

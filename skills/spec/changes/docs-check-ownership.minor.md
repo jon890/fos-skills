@@ -1,0 +1,1 @@
+- 4·5단계가 plan 의 `adr-docs.ts check --changed-since` 로 깨진 링크와 링크 없는 ADR 번호를 본다

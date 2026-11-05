@@ -72,6 +72,7 @@
   9. `mac-cleanup`
   10. `tools/browser-driver`
   11. 마무리: 테스트 실행기의 Python 부분 제거(머지 조건의 job 이름은 testkit 계획이 정한 이름을 따른다), 저장소 테스트의 남은 목록이 빈 것 확인
+- 영역 3 의 `docs-audit` `static_check.py` 링크·색인 검사와 영역 7 의 `plan` ADR 위치·링크 검사기는 옮기지 않는다. [docs-check-ownership](../docs-check-ownership/spec.md) 이 지우고 TypeScript 검사기 `skills/plan/scripts/adr-docs.ts` 로 대신했다(그 스펙 DECISION7).
 - 팀 저장소 반영은 11 이 머지된 뒤 팀 PR 하나로 한다(DECISION7). 그동안 팀 사본은 옛 Python 에 머물고 `githooks/post-commit` 이 어긋남을 계속 알린다. main 을 그대로 내보낼 수 없으므로 이 기간의 급한 수정은 DECISION10 대로 내보낸다.
 
 ## 다른 저장소의 옛 호출
