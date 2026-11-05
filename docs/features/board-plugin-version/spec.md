@@ -46,7 +46,7 @@
 
 조사 결과는 아래와 같다.
 
-- 설치본 위치: mod 의 `$.plugin.root` 가 설치본 폴더다. 마켓플레이스 설치본은 `<설정 폴더>/plugins/cache/fos-skills/fos-skills/<커밋 앞 12자리>` 다([ADR-002](../../adr/002-plugin-version-is-commit-sha.md)).
+- 설치본 위치: mod 의 `$.plugin.root` 가 설치본 폴더다. 마켓플레이스 설치본은 `<설정 폴더>/plugins/cache/fos-skills/fos-skills/<커밋 앞 12자리>` 다([ADR-002](../../adr/superseded/002-plugin-version-is-commit-sha.md)).
   `<설정 폴더>/plugins/installed_plugins.json` 의 같은 `installPath` 항목에 `gitCommitSha` 40자리와 `scope` 가 있다.
 - 최신 커밋: `git ls-remote https://github.com/jon890/fos-skills refs/heads/main` 이 인증 없이 0.5초 안팎에 끝난다(2026-11-02 실측 0.46초). 저장소 주소는 설치본의 `plugin.json` 의 `repository` 에서 읽는다.
   `<설정 폴더>/plugins/marketplaces/fos-skills` 의 HEAD 는 마켓플레이스를 갱신할 때만 바뀌어 최신 판정에 쓰지 않는다.

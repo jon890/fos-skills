@@ -129,7 +129,7 @@
 ### fos-skills 첫 적용
 
 - `.claude/plan-overlay.md` 가 없어 새로 만든다. 값은 「ADR 색인 생성: 한다」 하나다. 「ADR 폴더」 와 「ADR 대체 배치」 는 기본값(`docs/adr`, `superseded/` 폴더)이다.
-- `superseded` 인 [ADR-001](../../adr/001-plugin-from-repo-root.md), [ADR-002](../../adr/002-plugin-version-is-commit-sha.md) 가 `docs/adr` 바로 아래에 있다. 이 저장소 규칙(adr-rules 「대체와 이동」, 사용자 결정 2026-10-24)대로 `docs/adr/superseded/` 로 옮기고 가리키는 상대 링크(7곳, `git grep`)를 고친다.
+- `superseded` 인 [ADR-001](../../adr/superseded/001-plugin-from-repo-root.md), [ADR-002](../../adr/superseded/002-plugin-version-is-commit-sha.md) 가 `docs/adr` 바로 아래에 있다. 이 저장소 규칙(adr-rules 「대체와 이동」, 사용자 결정 2026-10-24)대로 `docs/adr/superseded/` 로 옮기고 가리키는 상대 링크(7곳, `git grep`)를 고친다.
 - 저장소 전체를 검사해 나온 위반(계획서 밖 링크 없는 `ADR-NNN` 30여 곳 등)을 같은 PR 의 별도 커밋에서 고친다. 이 저장소가 첫 사용처라 전체가 0 이어야 생성과 검사를 함께 검증한다(스펙 DECISION15).
 - 그다음 `write-index` 로 `docs/adr/INDEX.md` 를 두 표로 다시 만든다.
 
