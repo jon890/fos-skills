@@ -192,10 +192,12 @@ class TaskRulesTest(unittest.TestCase):
 
     def test_fixture_paths_and_globs_are_not_runnable(self):
         for rel in ("skills/orch/tests/fixtures/**", "tests/fixtures/*", "./tests/fixtures/test_*.py",
+                    "tests/fixture/test_*.py", "tests/__fixtures__/test_sample.py", "tests/__fixtures__/**",
                     "tests/fixtures/test_sample.py", "tests/fixtures", "tests/fixtures/"):
             with self.subTest(rel=rel):
                 self.assertFalse(verify.runnable_test(rel))
         for rel in ("tests/test_*.py", "skills/orch/tests/*.spec.ts", "tests/**", "tests/test_sample.py",
+                    "src/fixture/tests/test_sample.py", "src/__fixtures__/tests/test_sample.py",
                     "src/fixtures/tests/test_sample.py"):
             with self.subTest(rel=rel):
                 self.assertTrue(verify.runnable_test(rel))

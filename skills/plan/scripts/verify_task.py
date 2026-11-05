@@ -137,7 +137,8 @@ def runnable_test(rel):
     if not is_test(rel):
         return False
     parts = rel.removeprefix("./").rstrip("/").split("/")
-    if any(part == "fixtures" and TEST_DIRS.intersection(parts[:i]) for i, part in enumerate(parts)):
+    if any(part in {"fixture", "fixtures", "__fixtures__"} and TEST_DIRS.intersection(parts[:i])
+           for i, part in enumerate(parts)):
         return False
     name = parts[-1]
     if name in TEST_DIRS or is_glob(name):
