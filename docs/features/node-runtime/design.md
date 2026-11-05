@@ -11,7 +11,7 @@
 | REQ2 | 같은 테스트가 `.sh`, `.bash`, `.zsh` 와 셸 shebang 을 찾는다. git 훅은 「진입 파일」 절의 확장자 없는 JS 진입으로 바꾸고, 임시 저장소 테스트가 `install-hooks.ts` 로 건 훅이 `git commit` 에서 도는지 본다 |
 | REQ3 | 「동등성 확인」 절의 두 커밋 방식과 공통 꼴 모듈(`kit`)로 stdout, 쓰는 파일, 종료 코드를 맞춘다 |
 | REQ4 | 영역 PR 이 그 영역 문서의 호출을 「호출 꼴」 절대로 같은 커밋에서 바꾼다. 기존 `scripts/tests/test_doc_script_refs.py`(PR2 에서 `doc-script-refs.spec.ts`)가 문서가 부르는 스크립트의 존재를 본다. `runtime-policy.spec.ts` 가 이행을 마친 영역의 문서에 `python3 `, `bash "$SKILL_DIR` 꼴이 남으면 실패한다 |
-| REQ5 | 「CI」 절. node 테스트를 폴더 패턴 하나로 돌고, Python 루프는 `test_*.py` 가 없는 폴더를 건너뛴다. PR11 에서 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22) |
+| REQ5 | 「CI」 절. 테스트 실행기가 `tests/` 아래 node 테스트를 스스로 찾고, `test_*.py` 가 없는 폴더는 Python 묶음에서 뺀다. PR11 에서 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22) |
 | REQ6 | 「옛 이름 진입」 절. 같은 이름의 node shebang JS 가 새 `.ts` 를 import 한다. 훅 모드의 안내는 DECISION18 대로 `additionalContext` 에 붙인다 |
 | REQ7 | 영역 PR 의 계획이 스펙 「다른 저장소의 옛 호출」 의 그 영역 행을 머지 조건 뒤의 후속 작업으로 갖는다. 코디네이터가 orch worker 로 고친다 |
 | REQ8 | 「팀 저장소」 절. PR11 머지 뒤 팀 PR 하나 |
@@ -72,11 +72,10 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
   - `skills/presentation/scripts/check-deck.py` 163줄
   - `scripts/export-to-team.sh` 의 `SHARED_TOOLS` 와 `tools/` 접두
   - `scripts/test-plugin-install.sh` 224줄: 캐시의 `tools/browser-driver/browser_driver.py` 실행 권한
-  - CI 의 `tools/*/tests` 패턴(node 테스트와 Python 루프 둘 다). 새 자리 `skills/browser/browser-driver/tests` 는 `skills/*/tests` 패턴에 걸리지 않으므로 PR10 이 패턴을 더한다
   - `~/.claude/scripts/browser-driver` 링크. README 「링크로 설치」 의 `ln` 줄과 `docs/code-architecture.md` 의 드라이버 찾는 순서·링크 행을 새 자리로 고친다. 사용자의 개인 링크는 REQ7 과 같이 머지 뒤 후속 작업으로 바꾼다
 - 팀 사본 자리는 `tools/browser-driver` 로 고정한다. 내보내기가 원본 경로(`skills/browser/browser-driver/`)와 팀 경로(`tools/browser-driver/`)를 나눠 갖는다. `browser` 스킬은 내보내지 않으므로 드라이버 폴더만 팀 경로로 싣는다. 그래서 팀 래퍼와 팀 테스트의 경로는 그대로이고, 본체 이름만 마지막 팀 PR 이 바꾼다(「팀 저장소」 절).
 - 옛 이름 진입 `browser_driver.py` 는 옛 자리 `tools/browser-driver/browser_driver.py` 에 둔다. 개인 링크와 저장소 밖 호출이 이 경로를 부른다. 이 진입은 새 자리의 `.ts` 를 import 한다. DECISION1 의 경계 밖이지만 내보내지 않는 진입이고, 플러그인 캐시는 저장소 루트 전체를 가져 경로가 깨지지 않는다. 팀 사본에도 옛 이름 진입이 필요한지는 PR10 의 계획이 팀 저장소를 다시 찾아 정한다.
-- `tools/` 폴더는 DECISION17 의 major(이 저장소 다음 major)에 옛 이름 진입과 함께 지운다. 그 PR 이 CI 의 `tools/*/tests` 패턴과 이 설계의 「도구(`tools/<이름>`)」 경계 문구도 지운다.
+- `tools/` 폴더는 DECISION17 의 major(이 저장소 다음 major)에 옛 이름 진입과 함께 지운다. 그 PR 이 이 설계의 「도구(`tools/<이름>`)」 경계 문구도 지운다. 테스트 실행기는 `tests/` 아래를 스스로 찾으므로 CI 는 고치지 않는다.
 - ADR-021 과의 관계: ADR-021 은 「스킬 전용 코드는 소유 스킬 안에 둔다」 이다. browser-driver 는 `browser`, `content-preview`, `presentation` 이 함께 쓰지만 소유자는 `browser` 스킬 하나다. `browser` 스킬이 드라이버의 사용 절차와 공간 분리·로그인 규칙을 갖고, 드라이버의 변경 이력도 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17). 나머지 둘은 드라이버를 import 하지 않고 자식 프로세스로 부른다(DECISION1). 그래서 `browser` 스킬 안에 두는 것이 ADR-021 의 소유 스킬 규칙에 맞는다. 다른 단위가 import 해야 하는 공용 코드였다면 `modules/` 의 몫이다.
 
 ### 진입 파일
@@ -108,7 +107,7 @@ node "$SKILL_DIR/scripts/<이름>.ts" <인자>
 
 ### 저장소 정책 파일 `scripts/runtime-policy.json`
 
-PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec.ts` 머리 주석이 소유한다. 이 설계는 뜻만 정한다.
+PR1 이 만든다. 정확한 키와 의미는 그 파일과 명령 `scripts/runtime-policy.ts` 의 머리 주석이 소유한다. 이 설계는 뜻만 정한다.
 
 | 키 | 뜻 | 바뀌는 때 |
 | --- | --- | --- |
@@ -154,14 +153,12 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 
 ### CI
 
-`.github/workflows/ci.yml` 은 PR1 이 아래처럼 바꾼다. 필수 검사(branch protection)가 없어(스펙 실측) job 이름을 바꿔도 머지가 막히지 않지만, 이름은 그대로 둔다.
+CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵션 없이 부른다(fos-test-speed, #355). 실행기가 git 의 파일 목록에서 `tests/` 아래 `*.spec.ts` 를 모두 찾고, `test_*.py` 를 가진 `tests` 폴더만 Python 묶음으로 돈다. 그래서 PR1 은 `ci.yml` 을 고치지 않는다. 처음 설계는 CI 에 폴더 패턴 다섯을 두고 Python 루프가 빈 폴더를 건너뛰게 바꾸려 했으나, 실행기가 먼저 머지돼 같은 결과를 이미 낸다(2026-11-06 PR1 착수 때 확인).
 
-- `Plugin tests` job 의 node 테스트 단계가 `node --test --test-concurrency=4` 에 `scripts/tests/*.spec.ts`, `skills/*/tests/*.spec.ts`, `export-only-skills/*/tests/*.spec.ts`, `tools/*/tests/*.spec.ts`, `extensions/*/tests/*.spec.ts` 다섯 패턴을 준다. 영역을 옮기면 CI 를 고치지 않아도 그 테스트가 들어간다. 예외는 폴더 자리까지 옮기는 PR10 이다(「browser-driver 를 browser 스킬 안으로 옮긴다」).
-- 타입 검사의 `tsconfig.json` 은 테스트가 아닌 실행 코드를 본다. 영역 PR 이 처음 `.ts` 를 들일 때 `include` 에 `<단위>/scripts/**/*.ts` 와 진입 `.ts`(`githooks/*.ts`)를 더한다. 테스트 폴더는 지금처럼 넣지 않는다. `extensions/work-board/tests/*.test.ts` 가 `claude-code/testing` 을 import 해 검사가 깨진다.
-- `Python tests` job 의 루프는 `test_*.py` 가 하나도 없는 폴더를 건너뛴다. 지금의 이름 목록 건너뛰기는 지운다.
-- PR11 이 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22). 머지 조건의 job 이름은 testkit 계획이 정한 이름을 따르며 `Python tests` job 을 따로 지우지 않는다. `jq` 설치도 함께 없어진다. `zsh` 는 `harness-cleanup` 의 문서 코드 블록 실행(`run_doc_snippets`, bash 와 zsh 양쪽에서 돈다)이 쓴다. PR8 이 그 테스트를 옮기며 `Plugin tests` job 에 `zsh` 설치를 옮긴다.
+- 영역을 옮기거나 폴더 자리를 바꿔도(PR10 의 `skills/browser/browser-driver/tests` 포함) 테스트 묶음 때문에 CI 나 실행기를 고치지 않는다. 테스트 묶음의 원본은 실행기 머리 주석이다.
+- 타입 검사의 `tsconfig.json` 은 실행 코드를 본다. 영역 PR 이 처음 `.ts` 를 들일 때 `include` 에 `<단위>/scripts/**/*.ts` 와 진입 `.ts`(`githooks/*.ts`)를 더한다. 테스트 폴더는 지금처럼 넣지 않는다. `extensions/work-board/tests/*.test.ts` 가 `claude-code/testing` 을 import 해 검사가 깨진다.
+- PR11 이 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22). 머지 조건의 job 이름은 `Tests` 다. `jq` 설치도 함께 없어진다. `zsh` 는 `harness-cleanup` 의 문서 코드 블록 실행(`run_doc_snippets`, bash 와 zsh 양쪽에서 돈다)이 쓴다. PR8 이 그 테스트를 옮길 때 `zsh` 설치가 계속 필요한지 본다.
 - `plugin-version.yml` 은 PR2 가 고친다. `python3` 두 줄을 `node` 로 바꾸고(스펙 DECISION16), `actions/setup-node` 의 `node-version: '24'` 단계를 더한다. 지금은 setup-node 가 없어 runner 기본 node 로 돈다. 이 workflow 는 main push 에서만 돌아 PR CI 로 미리 잡히지 않는다.
-- 테스트 묶음의 원본은 CI 의 다섯 패턴이다. `scripts/run-node-tests.ts` 가 남아 있으면 그 `DEFAULT_PATTERNS`, README 「기여」 의 로컬 실행 안내, `.orch/overlay.md` 의 로컬 검증 줄을 PR1 이 같은 다섯 패턴으로 맞춘다. 실행기를 fos-test-speed 가 이미 지웠으면 그 PR 이 정한 안내를 따른다.
 
 ### 팀 저장소
 
@@ -200,7 +197,7 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 | REQ2 의 훅 | 임시 저장소에 `install-hooks.ts` 로 훅을 걸고 금지어 메시지 커밋이 막히는지, 공용 스킬 파일 커밋에서 알림이 나는지 본다(기존 `test_commit_msg_hook.py`, `test_post_commit_hook.py` 를 명령 경계 테스트로 옮긴다) |
 | REQ3 | 영역 PR 마다 두 커밋의 명령 경계 테스트 결과와, 정규식 중심 검사기의 문서 전체 비교 |
 | REQ4 | `doc-script-refs.spec.ts` 와 `runtime-policy.spec.ts` 의 `migrated_docs` 검사 |
-| REQ5 | 각 PR 의 CI. PR1 에서 Python 테스트가 없는 폴더가 생겨도 Python job 이 통과하는지 임시 사본으로 확인한다 |
+| REQ5 | 각 PR 의 CI. Python 테스트가 없는 폴더가 생겨도 `Tests` job 이 통과한다 |
 | REQ6 | 옛 이름 진입마다 명령 경계 테스트. korean-check 둘의 일반 모드 결과가 새 명령과 바이트까지 같다. `browser_driver.py` 는 stdout 과 종료 코드가 같고 stderr 에 안내가 있다. 훅 모드는 발견이 있을 때 `additionalContext` 첫 줄이 안내이고, 발견이 없으면 출력이 없다. 낮은 node 흉내(`--import` 로 `process.versions.node` 를 `Object.defineProperty` 로 덮은 실행. 단순 대입은 무시된다)에서 건너뛰기 안내가 나온다 |
 | REQ7 | 영역 PR 머지 뒤 코디네이터가 그 영역 행의 저장소 커밋을 PR 마무리 근거에 적는다 |
 | REQ8 | 마지막 팀 PR 의 팀 CI 결과와 README diff |
@@ -236,7 +233,7 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 | DECISION4 | 문서의 호출 꼴 | `node "$SKILL_DIR/scripts/<이름>.ts"` | 작성자 | 실행 권한이 빠진 복사에서도 돈다. Node 24 는 경고를 내지 않는다 |
 | DECISION5 | 명령 파일 이름 | 옛 이름에서 확장자만 바꾼다 | 작성자 | 문서와 다른 저장소의 고칠 곳이 확장자 하나다 |
 | DECISION6 | 이행 상태의 원본 | `scripts/runtime-policy.json` 하나. 테스트가 그것을 읽는다 | 작성자 | 영역 PR 이 자기 줄만 지워 충돌이 작다. 남은 일이 파일 하나에 보인다 |
-| DECISION7 | CI 의 테스트 선택 | 폴더 패턴 다섯과 `test_*.py` 없는 폴더 건너뛰기 | 작성자 | 영역 PR 이 CI 를 고치지 않는다. 필수 검사가 없어 job 이름과 무관하다 |
+| DECISION7 | CI 의 테스트 선택 | 폴더 패턴 다섯과 `test_*.py` 없는 폴더 건너뛰기 | 작성자 | 영역 PR 이 CI 를 고치지 않는다. 필수 검사가 없어 job 이름과 무관하다. 2026-11-06 PR1 착수 때 테스트 실행기(#355)가 `tests/` 아래를 스스로 찾고 빈 Python 폴더를 빼는 것을 확인해, 패턴 대신 실행기의 탐색으로 같은 목적을 이룬다(「CI」 절) |
 | DECISION8 | 허용하는 JS | 타입 제거가 닿지 않는 진입만, `entry_js` 목록으로 | 작성자 | 스펙 REQ9 의 언어 규칙을 지키면서 git 훅과 doctor 진입을 node 로 둔다 |
 | DECISION9 | orch 의 `lib/args.ts`, `lib/py.ts` | 이번에 바꾸지 않는다. `kit` 은 그 상위 집합이고 같은 함수의 출력을 테스트가 대조한다 | 작성자 | orch 구조 개편이 lib 를 다룬다. 합치면 그 기능과 같은 파일을 만진다 |
 | DECISION10 | orch doctor 의 옛 진입 | 이 기능이 지우지 않는다. orch-cli 의 옛 이름 정리 PR 이 지운다. 버전 안내는 `bin/orch` 가 맡는다 | 작성자 | orch-cli 스펙 DECISION13 이 옛 이름을 끝내는 때를 소유한다. `bin/orch` 가 이미 `NODE-TOO-OLD` 를 낸다 |
