@@ -30,6 +30,9 @@ describe('classify', () => {
     ['export-only-skills/korean-check/scripts/korean-style-check.py', '#!/usr/bin/env node', 'js-entry'],
     ['scripts/run-tests.ts', '#!/usr/bin/env node', null],
     ['README.md', '#!/usr/bin/env bash', 'shell'],
+    ['githooks/a', '#!/usr/bin/env PYTHONUNBUFFERED=1 python3', 'python'],
+    ['githooks/b', '#!/usr/bin/env -u FOO node', 'js-entry'],
+    ['githooks/c', '#!/bin/dash', 'shell'],
     ['docs/guide.md', '# 제목', null],
   ]
   for (const [path, firstLine, expected] of cases) {
@@ -99,6 +102,15 @@ describe('checkMinNode', () => {
     ])
   })
 
+  test('export 와 타입 표기, 다른 공백 꼴도 값을 읽는다', () => {
+    const text = 'export const MIN_NODE: [number, number] = [22,0]\n'
+    assert.deepEqual(checkMinNode([24, 0], [{ path: 'a.ts', text }]), ['MIN-NODE a.ts:1 [22, 0]'])
+  })
+
+  test('값을 읽지 못한 선언은 ? 로 낸다', () => {
+    assert.deepEqual(checkMinNode([24, 0], [{ path: 'a.ts', text: 'const MIN_NODE = MIN\n' }]), ['MIN-NODE a.ts:1 ?'])
+  })
+
   test('줄 머리가 아닌 같은 글자는 보지 않는다', () => {
     assert.deepEqual(checkMinNode([24, 0], [{ path: 'a.ts', text: '// 예: const MIN_NODE = [22, 0]\n' }]), [])
   })
@@ -118,6 +130,11 @@ describe('checkDocs', () => {
     ])
   })
 
+  test('명령 치환 안의 python3 호출도 낸다', () => {
+    const text = 'gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py")"\n'
+    assert.equal(checkDocs(prefixes, [{ path: 'skills/plan/SKILL.md', text }]).length, 1)
+  })
+
   test('CHANGELOG.md, changes/ 아래, 접두 밖 문서는 보지 않는다', () => {
     const text = 'python3 "$SKILL_DIR/scripts/x.py"\n'
     const docs = [
@@ -132,6 +149,15 @@ describe('checkDocs', () => {
 describe('parsePolicy', () => {
   test('min_node 가 정수 둘이 아니면 거부한다', () => {
     assert.throws(() => parsePolicy(JSON.stringify({ ...policy(), min_node: [24] })), /min_node/)
+  })
+
+  test('한 pending 접두가 다른 접두를 덮으면 거부한다', () => {
+    const pending = [{ area: 'a', prefix: 'skills/' }, { area: 'plan', prefix: 'skills/plan/' }]
+    assert.throws(() => parsePolicy(JSON.stringify({ ...policy(), pending })), /skills\/ 가 skills\/plan\//)
+  })
+
+  test('entry_js 에 같은 경로가 두 번 있으면 거부한다', () => {
+    assert.throws(() => parsePolicy(JSON.stringify({ ...policy(), entry_js: ['bin/orch', 'bin/orch'] })), /entry_js/)
   })
 
   test('pending 항목에 prefix 가 없으면 거부한다', () => {
