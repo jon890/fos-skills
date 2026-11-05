@@ -1373,7 +1373,7 @@ def owns_call_name(file, name):
                     " ", source)
     identifier = r"[A-Za-z_$][\w$]*"
     declarations = re.findall(
-        rf"\bexport\s+(?:default\s+)?(?:async\s+)?(?:function\s*\*?\s*|const\s+|let\s+|var\s+|class\s+)({identifier})",
+        rf"\bexport\s+(?:default\s+)?(?:(?:async|abstract|declare)\s+)*(?:function\s*\*?\s*|const\s+|let\s+|var\s+|class\s+)({identifier})",
         source,
     )
     defaults = re.findall(rf"\bexport\s+default\s+({identifier})\s*(?=;|$)", source, re.M)
