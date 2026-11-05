@@ -277,6 +277,53 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     lacks(c.log(), 'pr merge')
   })
 
+  test('뒤 PR 을 처리하는 동안 풀린 스레드는 정리 전에 한 번 더 판정한다', async (t) => {
+    const c = setup(t)
+    const marker = join(c.tmp, 'resolved')
+    const r = await c.runQueue({ '1': pr(), '2': pr() }, [
+      '--threads-cmd', `if [ "$PR" = 1 ] && [ ! -f ${marker} ]; then echo 1; else echo 0; fi`,
+      '1', `2:touch ${marker}`,
+    ])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, 'QUEUE-DONE')
+    has(r.stdout, '1 MERGED')
+    assert.equal(count(c.log(), 'pr merge 1 '), 1)
+  })
+
+  test('HEAD 변경은 새 HEAD 의 CI 를 기다려 다시 판정한다', async (t) => {
+    const c = setup(t)
+    const change = join(c.tmp, 'change.py')
+    writeFileSync(change, `import json\np=${JSON.stringify(c.stateFile)}\nd=json.load(open(p))\nif d['1']['headRefOid'] == 'abc':\n d['1']['headRefOid']='new'\n d['1']['appear']={'left':12,'checks':[{'name':'ci','status':'COMPLETED','conclusion':'SUCCESS'}]}\n d['1']['statusCheckRollup']=[]\njson.dump(d,open(p,'w'))\n`)
+    const r = await c.runQueue({ '1': pr({ statusCheckRollup: [check('ci')] }), _remote_head: 'new' }, ['--required-check', 'ci', `1:python3 ${change}`])
+    assert.equal(r.code, 0, both(r))
+    has(r.stdout, '1 MERGED')
+    has(c.log(), '--match-head-commit new')
+  })
+
+  test('해소되지 않은 스레드는 한 번만 재판정하고 계속 도는 새 CI 는 한도에서 보류한다', async (t) => {
+    const c = setup(t)
+    const calls = join(c.tmp, 'calls')
+    let r = await c.runQueue({ '1': pr() }, ['--threads-cmd', `echo hit >> ${calls}; echo 1`, '1'])
+    assert.equal(r.code, 1, both(r))
+    assert.equal(readFileSync(calls, 'utf8'), 'hit\nhit\n')
+    const change = join(c.tmp, 'pending.py')
+    writeFileSync(change, `import json\np=${JSON.stringify(c.stateFile)}\nd=json.load(open(p))\nd['1']['headRefOid']='new'\nd['1']['statusCheckRollup']=[{'status':'IN_PROGRESS'}]\njson.dump(d,open(p,'w'))\n`)
+    r = await c.runQueue({ '1': pr(), _remote_head: 'new' }, [`1:python3 ${change}`])
+    assert.equal(r.code, 1, both(r))
+    has(r.stdout, '체크 대기 5분 초과')
+    lacks(c.log(), 'pr merge')
+  })
+
+  test('실패한 체크와 완료 근거 불일치는 재판정하지 않는다', async (t) => {
+    for (const fields of [{ statusCheckRollup: FAILED }, { body: '<!-- fos-feature-evidence -->' }]) {
+      const c = setup(t)
+      const r = await c.runQueue({ '1': pr(fields) }, ['1'])
+      assert.equal(r.code, 1, both(r))
+      lacks(r.stdout, '보류 사유를 다시 판정한다')
+      lacks(c.log(), 'pr merge')
+    }
+  })
+
   test('worker 가 고쳐야 하는 보류는 worker 에게 알리려 하고, Run 이나 워크트리가 없으면 그 이유를 찍는다', async (t) => {
     const c = setup(t)
     let r = await c.runQueue({ '1': pr() }, ['1'], '2')

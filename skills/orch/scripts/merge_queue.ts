@@ -44,6 +44,8 @@
 //
 // 보류: 조건에 못 미친 PR 은 `STOP <PR> <이유>` 를 찍고 큐에서 뺀다. 기본은 다음 PR 로 가고(`<PR> 보류. 다음 PR 로 간다`),
 //   --stop-on-hold 면 그 자리에서 앞서 머지한 PR 의 after-queue 만 돌리고 1 로 끝난다. 뺀 PR 과 이유는 차례 기록의 held 에 남는다.
+//   기본 모드에서는 미해결 스레드와 검사 뒤 HEAD 변경으로 뺀 PR 만 정리 전에 한 번 다시 판정한다.
+//   재판정의 CI 대기 합계는 PR 마다 최대 5분(--check-timeout 이 더 짧으면 그 값)이고, 실패한 체크 등 다른 보류는 다시 보지 않는다.
 //   worker 가 고쳐야 하는 보류(기능 완료 근거 블록 불일치, 미해결 리뷰 스레드, 합친 사본 검사 실패)는 그 PR 브랜치의 살아 있는 worker 에게
 //   `PR #<PR> 을 머지 큐에서 뺐다: <이유>. 고쳐 push 한 뒤 status 로 알린다.` 를 보낸다(lib/tell-worker.ts). Run 은 --sweep-arg 로 준 --run 이고,
 //   Run 이나 worker 가 없으면 `<PR> worker 에게 알리지 않…` 줄만 찍는다. 체크 실패와 충돌은 보내지 않는다. 상주 루프의 CI 감시와
@@ -250,15 +252,19 @@ class Usage extends Error {}
 // PR 하나가 조건에 못 미쳐 멈춘다. 종료 코드 1 이고 --stop-on-hold 가 아니면 다음 PR 로 간다
 class Stop extends Error {}
 
+class HeadChanged extends Stop {}
+
 // PR 하나가 base 와 충돌한다. 머리 주석의 「충돌」 대로 큐에서 빼고 다음 PR 로 간다
 class Conflict extends Stop {}
 
 // worker 가 고쳐야 하는 보류. 머리 주석의 「보류」 대로 그 PR 의 살아 있는 worker 에게 이유를 보낸다. why 가 보낼 이유다
 class WorkerFix extends Stop {
   why: string
-  constructor(message: string, why: string) {
+  retryable: boolean
+  constructor(message: string, why: string, retryable = false) {
     super(message)
     this.why = why
+    this.retryable = retryable
   }
 }
 
@@ -279,7 +285,7 @@ class NotReady extends Error {}
 type Mode = 'normal' | 'defer' | 'quick'
 type Attempt =
   | { kind: 'merged' }
-  | { kind: 'held'; reason: string }
+  | { kind: 'held'; reason: string; retryable?: boolean }
   | { kind: 'config'; error: ConfigError }
   | { kind: 'deferred'; deferred: Deferred }
   | { kind: 'not-ready'; reason: string }
@@ -585,6 +591,10 @@ class Queue {
   mode: Mode = 'normal'
   // 앞지르기 중이면 미룬 차례 PR 이 바꾼 파일. quick 의 PR 이 이것과 겹치면 앞지르지 않는다
   against: { n: string; files: string[] } | null = null
+  // 마지막 재판정에서만 CI 대기를 최대 5분으로 줄인다. 보통 차례의 대기 설정은 그대로다.
+  rechecking = false
+  recheckWaited = 0
+  retryItems = new Set<string>()
 
   constructor(opts: Options) {
     this.o = opts
@@ -1089,7 +1099,7 @@ class Queue {
 
       log(`${n} fails=${f} threads=${t} mergeable=${m}`)
       if (m === 'CONFLICTING') throw new Conflict(`${n} base(${p.base}) 와 충돌한다(mergeable=CONFLICTING)`)
-      if (f === '0' && t !== '0' && m === 'MERGEABLE') throw new WorkerFix(n, `미해결 리뷰 스레드 ${t} 개`)
+      if (f === '0' && t !== '0' && m === 'MERGEABLE') throw new WorkerFix(n, `미해결 리뷰 스레드 ${t} 개`, true)
       if (f !== '0' || t !== '0' || m !== 'MERGEABLE') stop(n)
 
       p.ov = []
@@ -1121,7 +1131,7 @@ class Queue {
       }
 
       const ph2 = await this.field(n, 'headRefOid', '.headRefOid')
-      if (p.ph !== ph2) stop(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
+      if (p.ph !== ph2) throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
       const evidence = ghJson<{ body: string; headRefOid: string }>(['pr', 'view', n, '--json', 'body,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
       if (!evidence.ok || evidence.data.headRefOid !== p.ph) stop(`${n} 기능 완료 근거 또는 HEAD 조회 실패`)
       // 검증 커밋 뒤에 base 를 합친 merge 만 있으면(이 큐나 상주 루프의 update-branch) 받아들인다. 지금 HEAD 의 필수 체크는 위에서 기다렸다
@@ -1225,7 +1235,8 @@ class Queue {
       if ((await this.settledSec()) < SETTLED_SEC) throw new NotReady(`체크가 끝난 지 ${SETTLED_SEC}초가 지나지 않았다`)
       return
     }
-    const limit = Number(this.o.checkTimeout) * 60
+    const timeout = this.rechecking ? Math.min(5, Number(this.o.checkTimeout)) : Number(this.o.checkTimeout)
+    const limit = Math.max(0, timeout * 60 - (this.rechecking ? this.recheckWaited : 0))
     const missingLimit = Number(this.o.missingTimeout) * 60
     let waited = 0
     // 진행 중인 체크가 없는데 나타나지 않은 필수 체크가 남은 채로 지난 초
@@ -1241,7 +1252,7 @@ class Queue {
       if (pending === '0' && missing === '0') break
       if (waited >= limit) {
         const names = await this.field(n, 'statusCheckRollup', `${q.missing} | join(",")`)
-        stop(`${n} 체크 대기 ${this.o.checkTimeout}분 초과(진행 중 ${pending}, 나타나지 않은 필수 체크 ${names})`)
+        stop(`${n} 체크 대기 ${timeout}분 초과(진행 중 ${pending}, 나타나지 않은 필수 체크 ${names})`)
       }
       if (pending !== '0') idle = 0
       if (missingLimit > 0 && idle >= missingLimit) {
@@ -1256,6 +1267,7 @@ class Queue {
       const seconds = Math.min(queuePollSeconds(attempt++, Number(this.o.pollMinSec), Number(this.o.pollMaxSec), expectedLeft), Math.max(0, limit - waited),
         pending === '0' && missingLimit > 0 ? Math.max(0, missingLimit - idle) : Infinity)
       await nap(seconds)
+      if (this.rechecking) this.recheckWaited += seconds
       waited += seconds
       if (pending === '0') idle += seconds
       else idle = 0
@@ -1267,7 +1279,10 @@ class Queue {
       log(`${n} 체크가 ${SETTLED_SEC}초 넘게 전에 끝나 있어 다시 보는 대기를 건너뛴다`)
       return
     }
-    await nap(60)
+    const settle = this.rechecking ? Math.min(60, Math.max(0, timeout * 60 - this.recheckWaited)) : 60
+    if (this.rechecking && settle < 60) stop(`${n} 체크 대기 ${timeout}분 초과(체크 안정화 대기 포함)`)
+    await nap(settle)
+    if (this.rechecking) this.recheckWaited += settle
     const pending = await this.field(n, 'statusCheckRollup', PENDING, true)
     const missing = await this.field(n, 'statusCheckRollup', `${q.missing} | length`)
     if (!(pending === '0' && missing === '0')) {
@@ -1501,7 +1516,8 @@ class Queue {
       if (e instanceof Stop) {
         out(`STOP ${e.message}`)
         if (e instanceof WorkerFix) await this.tellHeld(n, e.why)
-        return { kind: 'held', reason: e instanceof WorkerFix ? `${e.message}: ${e.why}` : e.message }
+        return { kind: 'held', reason: e instanceof WorkerFix ? `${e.message}: ${e.why}` : e.message,
+          retryable: e instanceof HeadChanged || (e instanceof WorkerFix && e.retryable) }
       }
       // 예상 못 한 오류도 그 PR 의 보류로 다룬다
       process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
@@ -1561,6 +1577,7 @@ class Queue {
         if (result.kind === 'merged') log(`${m} 차례 PR ${deferred.n} 보다 먼저 머지했다`)
         else if (result.kind === 'held') {
           this.hold(m, result.reason)
+          if (result.retryable) this.retryItems.add(item)
           log(this.conflicted.includes(m) ? `${m} 충돌. 큐에서 빼고 다음 PR 로 간다` : `${m} 보류. 다음 PR 로 간다`)
         }
       }
@@ -1610,6 +1627,7 @@ class Queue {
       if (result.kind === 'config') return await this.stopOnConfig(result.error)
       if (result.kind !== 'held') continue
       this.hold(n, result.reason)
+      if (result.retryable) this.retryItems.add(item)
       if (this.conflicted.includes(n)) {
         log(`${n} 충돌. 큐에서 빼고 다음 PR 로 간다`)
         continue
@@ -1622,6 +1640,25 @@ class Queue {
       }
       log(`${n} 보류. 다음 PR 로 간다`)
     }
+    // 다른 PR 을 처리하는 동안 worker 가 고친 보류만 정리 전에 한 번 다시 판정한다.
+    this.rechecking = true
+    for (const item of this.retryItems) {
+      const n = item.split(':')[0]
+      this.recheckWaited = 0
+      this.remaining = [...this.retryItems].map((entry) => Number(entry.split(':')[0]))
+      this.turn(TURN_PHASES.start, Number(n))
+      log(`${n} 보류 사유를 다시 판정한다(CI 대기 최대 ${Math.min(5, Number(o.checkTimeout))}분)`)
+      const result = await this.attempt(item, 'normal')
+      if (result.kind === 'config') return await this.stopOnConfig(result.error)
+      if (result.kind === 'merged') {
+        this.held = this.held.filter((held) => held !== n)
+        this.heldReasons = this.heldReasons.filter((held) => held.pr !== Number(n))
+      } else if (result.kind === 'held') {
+        this.heldReasons = this.heldReasons.map((held) => held.pr === Number(n) ? { pr: held.pr, reason: result.reason } : held)
+      }
+      this.retryItems.delete(item)
+    }
+    this.rechecking = false
     this.remaining = []
     this.turn(TURN_PHASES.after, null)
     if (this.conflicted.length > 0) out(`QUEUE-CONFLICT ${this.conflicted.join(' ')}`)
