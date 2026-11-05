@@ -10,8 +10,8 @@ import { tempDir } from '../../modules/testkit/temp.ts'
 import { copyFromRepo } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['python3', 'scripts/render-development-loop.py']
-const FILES = ['scripts/render-development-loop.py']
+const COMMAND = ['node', 'scripts/render-development-loop.ts']
+const FILES = ['scripts/render-development-loop.ts', 'modules/kit/args.ts']
 // ──
 
 const README = '# 제목\n\n```mermaid\nflowchart TD\n    A --> B\n```\n\n뒤 문단\n\n```mermaid\nflowchart LR\n    X\n```\n'

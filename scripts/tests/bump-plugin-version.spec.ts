@@ -12,8 +12,8 @@ import { tempDir } from '../../modules/testkit/temp.ts'
 import { copyFromRepo } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['python3', 'scripts/bump-plugin-version.py']
-const FILES = ['scripts/bump-plugin-version.py', 'scripts/skill_changes.py', 'scripts/skill_paths.py']
+const COMMAND = ['node', 'scripts/bump-plugin-version.ts']
+const FILES = ['scripts/bump-plugin-version.ts', 'scripts/skill_changes.ts', 'scripts/skill_paths.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
 // ──
 
 const MANIFEST = '{\n  "name": "demo",\n  "version": "1.4.0",\n  "skills": ["./orch"]\n}\n'

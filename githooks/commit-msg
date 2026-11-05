@@ -1,60 +1,17 @@
-#!/usr/bin/env python3
-"""커밋 메시지를 korean-check 의 검사기로 점검하고, 금지어가 있으면 커밋을 막는다.
+#!/usr/bin/env node
+// git 이 부르는 commit-msg 훅 진입이다. 동작과 종료 코드는 commit-msg.ts 머리 주석이 소유한다.
+// 확장자가 없어 node 가 CommonJS 로 읽고 타입 문법을 지우지 않는다. 그래서 타입 문법 없이 import() 로 본체를 부른다.
+// .git/hooks 의 링크로 불려도 원본 옆의 본체를 찾도록 실제 경로 기준으로 고른다.
+'use strict'
+const { realpathSync } = require('node:fs')
+const { pathToFileURL } = require('node:url')
 
-왜 필요한가 (실측):
-    커밋을 만든 뒤에 메시지를 점검하면 금지어가 걸렸을 때 rebase 로 이력을 다시 써야 했다.
-    push 뒤면 force push 까지 든다. 커밋 전에 막으면 메시지만 고쳐 다시 커밋하면 된다.
-
-검사기는 `.md` 파일만 읽으므로 메시지를 임시 `.md` 파일로 옮겨 넘긴다.
-`--verbose` 의 잘라내기 줄 아래(diff)는 검사하지 않는다.
-`#` 주석 줄은 검사한다. `-m` 과 `-F` 로 준 메시지는 git 이 주석 줄을 지우지 않아 그대로 커밋에 남는다.
-검사기가 없거나 돌지 못하면(종료 코드 2) 알리기만 하고 막지 않는다. 도구 고장으로 모든 커밋이 막히지 않게 한다.
-
-설치: scripts/install-hooks.sh
-"""
-
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
-
-SCISSORS = "------------------------ >8 ------------------------"
-
-
-def message_text(text: str) -> str:
-    """잘라내기 줄 위만 낸다. 그 아래는 git 이 커밋에 남기지 않는 diff 다."""
-    kept = []
-    for line in text.splitlines():
-        if SCISSORS in line:
-            break
-        kept.append(line)
-    return "\n".join(kept) + "\n"
-
-
-def main(argv: list) -> int:
-    if len(argv) < 2:
-        return 0
-    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-    checker = Path(root) / "export-only-skills" / "korean-check" / "scripts" / "korean-style-check.py"
-    if not checker.is_file():
-        return 0
-    text = message_text(Path(argv[1]).read_text(encoding="utf-8"))
-    with tempfile.TemporaryDirectory() as tmp:
-        msg = Path(tmp) / "COMMIT_EDITMSG.md"
-        msg.write_text(text, encoding="utf-8")
-        proc = subprocess.run([sys.executable, str(checker), str(msg)], capture_output=True, text=True)
-    report = (proc.stdout + proc.stderr).replace(str(msg), "커밋 메시지").strip()
-    if proc.returncode == 1:
-        print(report, file=sys.stderr)
-        print("커밋 메시지에 금지어가 있어 커밋하지 않았다. 메시지를 고쳐 다시 커밋한다.", file=sys.stderr)
-        print(f"쓴 메시지: {argv[1]}", file=sys.stderr)
-        return 1
-    if proc.returncode != 0:
-        print(f"commit-msg: 한국어 검사기가 돌지 못해 점검을 건너뛴다.\n{report}", file=sys.stderr)
-    elif report:
-        print(report, file=sys.stderr)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+import(pathToFileURL(realpathSync(__filename) + '.ts').href).then(
+  (hook) => {
+    process.exitCode = hook.main(process.argv.slice(2))
+  },
+  (err) => {
+    process.stderr.write('commit-msg 훅을 읽지 못했다: ' + (err && err.message ? err.message : String(err)) + '\n')
+    process.exitCode = 126
+  },
+)

@@ -9,7 +9,7 @@ import { tempDir } from '../../modules/testkit/temp.ts'
 import { REPO_ROOT } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['/bin/bash', join(REPO_ROOT, 'scripts/test-plugin-install.sh')]
+const COMMAND = [process.execPath, join(REPO_ROOT, 'scripts/test-plugin-install.ts')]
 // ──
 
 function which(name: string): string {

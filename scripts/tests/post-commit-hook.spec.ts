@@ -13,14 +13,14 @@ import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const HOOK = join(REPO_ROOT, 'githooks/post-commit')
-const SYNC = 'scripts/export-to-team.sh'
+const SYNC = 'scripts/export-to-team.ts'
 // 내보내기 명령의 가짜. 공용 스킬 목록과 출력 줄, 종료 코드를 받는다
 function fakeSync(skills: string[], lines: string[], code: number): string {
-  return `#!/usr/bin/env bash\nSHARED_SKILLS=(${skills.join(' ')})\n${lines.map((line) => `echo '${line}'`).join('\n')}\nexit ${code}\n`
+  return `export const SHARED_SKILLS = [${skills.map((s) => `'${s}'`).join(', ')}]\nexport const SHARED_TOOLS = []\nprocess.stdout.write(${JSON.stringify(lines.map((line) => `${line}\n`).join(''))})\nprocess.exitCode = ${code}\n`
 }
 // 설치 명령과 훅 파일
-const INSTALL = ['bash', 'scripts/install-hooks.sh']
-const HOOK_FILES = ['scripts/install-hooks.sh', 'githooks/post-commit']
+const INSTALL = ['node', 'scripts/install-hooks.ts']
+const HOOK_FILES = ['scripts/install-hooks.ts', 'scripts/skill_paths.ts', 'scripts/export-lists.ts', 'modules/kit/py.ts', 'githooks/post-commit', 'githooks/post-commit.ts']
 // ──
 
 const DRIFT = [

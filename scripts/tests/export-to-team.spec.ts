@@ -9,17 +9,18 @@ import { describe, test } from 'node:test'
 import { runCommand } from '../../modules/testkit/command.ts'
 import { git, gitEnv } from '../../modules/testkit/git.ts'
 import { tempDir } from '../../modules/testkit/temp.ts'
+import { sharedLists } from '../export-lists.ts'
 import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const INTERPRETER = ['/bin/bash']
-const SCRIPT = 'scripts/export-to-team.sh'
-const FILES = ['scripts/export-to-team.sh', 'scripts/skill_paths.py']
+const INTERPRETER = ['node']
+const SCRIPT = 'scripts/export-to-team.ts'
+const FILES = ['scripts/export-to-team.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts']
 // 내보내는 목록을 명령 파일에서 읽는다. 목록을 테스트에 다시 적지 않는다
 function sharedNames(variable: 'SHARED_SKILLS' | 'SHARED_TOOLS'): string[] {
-  const match = new RegExp(`^${variable}=\\(([^)]*)\\)$`, 'm').exec(readFileSync(join(REPO_ROOT, SCRIPT), 'utf8'))
-  if (!match) throw new Error(`${variable} 를 찾지 못했다`)
-  return match[1].split(/\s+/).filter(Boolean)
+  const lists = sharedLists(readFileSync(join(REPO_ROOT, SCRIPT), 'utf8'))
+  if (!lists) throw new Error(`${variable} 를 찾지 못했다`)
+  return variable === 'SHARED_SKILLS' ? lists.skills : lists.tools
 }
 // ──
 

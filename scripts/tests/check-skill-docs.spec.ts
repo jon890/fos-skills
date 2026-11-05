@@ -7,11 +7,12 @@ import { dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { runCommand } from '../../modules/testkit/command.ts'
 import { tempDir } from '../../modules/testkit/temp.ts'
+import { checkChangelog, checkReadme, MAX_BULLET_CHARS, MAX_VERSION_BULLETS } from '../check-skill-docs.ts'
 import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['python3', 'scripts/check-skill-docs.py']
-const FILES = ['scripts/check-skill-docs.py', 'scripts/skill_changes.py', 'scripts/skill_paths.py']
+const COMMAND = ['node', 'scripts/check-skill-docs.ts']
+const FILES = ['scripts/check-skill-docs.ts', 'scripts/skill_changes.ts', 'scripts/skill_paths.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
 // ──
 
 const README = (name: string) =>
@@ -109,4 +110,35 @@ describe('check-skill-docs 명령', () => {
     rmSync(join(root, 'skills/demo/README.md'))
     assert.equal(check(root).code, 1)
   })
+})
+
+// 아래는 함수의 세부 판정이다. 명령 경계 사례와 달리 구현 파일을 import 한다
+
+describe('checkReadme', () => {
+  const readme = README('demo')
+  test('맞는 README 는 통과한다', () => assert.deepEqual(checkReadme('demo', readme), []))
+  test('빠진 절', () => assert.ok(checkReadme('demo', readme.replace('## 사용 예시', '## 예시')).some((p) => p.includes('`## 사용 예시`'))))
+  test('절 순서', () => {
+    const swapped = readme.replace('## 이럴 때 쓴다', '## TMP').replace('## 받는 것', '## 이럴 때 쓴다').replace('## TMP', '## 받는 것')
+    assert.ok(checkReadme('demo', swapped).some((p) => p.includes('순서')))
+  })
+  test('파일 구성 절', () => assert.ok(checkReadme('demo', readme + '\n## 구성\n\n- `SKILL.md`\n').some((p) => p.includes('`## 구성`'))))
+  test('첫 문단 없음', () => assert.ok(checkReadme('demo', readme.replace('반복하던 수고를 덜어 준다.\n', '')).some((p) => p.includes('첫 문단'))))
+  test('제목이 다름', () => assert.ok(checkReadme('other', readme).length > 0))
+})
+
+describe('checkChangelog', () => {
+  const log = CHANGELOG('demo')
+  test('맞는 CHANGELOG 는 통과한다', () => assert.deepEqual(checkChangelog('demo', log, '2.1.0'), []))
+  test('SKILL.md 와 버전이 다름', () => assert.ok(checkChangelog('demo', log, '2.2.0').some((p) => p.includes('SKILL.md'))))
+  test('날짜 없는 절', () => assert.ok(checkChangelog('demo', log.replace('2.0.0 (2026-10-20)', '2.0.0'), '2.1.0').some((p) => p.includes('`## 2.0.0`'))))
+  test('이전 major 의 버전 절', () => assert.ok(checkChangelog('demo', log.replace('## 1.x', '## 1.3.0 (2026-10-01)'), '2.1.0').some((p) => p.includes('`## 1.x`'))))
+  test('현재 major 의 요약 절', () => assert.ok(checkChangelog('demo', log.replace('## 1.x', '## 2.x'), '2.1.0').some((p) => p.includes('현재 major'))))
+  test('항목 수 상한', () => {
+    const bullets = Array.from({ length: MAX_VERSION_BULLETS + 1 }, (_, n) => `- 항목 ${n}\n`).join('')
+    assert.ok(checkChangelog('demo', log.replace('- 단계를 줄였다\n', bullets), '2.1.0').some((p) => p.includes('상한')))
+  })
+  test('긴 항목', () => assert.ok(checkChangelog('demo', log.replace('- 단계를 줄였다', '- ' + '가'.repeat(MAX_BULLET_CHARS + 1)), '2.1.0').some((p) => p.includes('자를 넘는'))))
+  test('목록이 아닌 줄', () => assert.ok(checkChangelog('demo', log.replace('- 단계를 줄였다', '단계를 줄였다.'), '2.1.0').some((p) => p.includes('목록 항목이 아닌'))))
+  test('버전 절이 없음', () => assert.deepEqual(checkChangelog('demo', '# CHANGELOG: demo\n\n소개\n', '1.0.0'), ['버전 절이 없다']))
 })
