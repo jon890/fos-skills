@@ -45,7 +45,7 @@
 
 ```bash
 NAMES=$(cd skills/orch/scripts && ls *.ts | sed 's/\.ts$//' | paste -sd'|' -)
-git grep -nE "join\(HERE|resolve\(HERE|new URL\(|'\.\.'" -- 'skills/orch/scripts/*.ts' skills/orch/scripts/handlers
+git grep -nE "join\(HERE|resolve\(HERE|\\\$\{HERE\}/|new URL\(|'\.\.'|\.\./\.\./" -- 'skills/orch/scripts/*.ts' skills/orch/scripts/handlers
 git grep -nE "($NAMES)\.ts" -- skills/orch/scripts/lib skills/orch/scripts/handlers skills/orch/hooks skills/orch/bin extensions bin | grep -vE '^[^:]+:[0-9]+:\s*(//|\*)'
 git grep -nE "scripts/($NAMES)\.ts|\.\./scripts/" -- skills/orch/tests scripts/tests extensions
 ```
@@ -55,17 +55,22 @@ git grep -nE "scripts/($NAMES)\.ts|\.\./scripts/" -- skills/orch/tests scripts/t
 | 자리 | 지금 | 바꿀 것 |
 | --- | --- | --- |
 | 옮긴 스크립트의 import | `'./lib/…'` | `'../lib/…'`. 같은 묶음의 다른 스크립트 import(`wait-important.ts` → `./triage-messages.ts`)는 그대로 |
-| 스크립트끼리 부르는 경로 | `join(HERE, '<이름>.ts')` 14곳(`board-sync`, `cleanup-sweep`, `finish-pr` 2, `heavy-slot`, `merge-with-finish` 2, `orch-loop` 7) | `scriptPath('<이름>')`. 환경 변수 덮어쓰기(`SEND_TO_WORKER` 등)는 그대로 앞에 둔다 |
+| 스크립트끼리 부르는 경로 | `join(HERE, '<이름>.ts')` 14곳(`board-sync`, `cleanup-sweep`, `finish-pr` 2, `heavy-slot`, `merge-with-finish` 2, `orch-loop` 7)과 템플릿 꼴 `${HERE}/<이름>.ts` 8곳(`launch-worker` 4, `send-to-worker` 3, `merge_queue` 2). 묶음이 달라 이동 뒤 깨지는 것은 `launch-worker` → `spec-lint`·`spec-line`, `merge_queue` → `cleanup-sweep` 이다 | `scriptPath('<이름>')`. 환경 변수 덮어쓰기(`SEND_TO_WORKER` 등)는 그대로 앞에 둔다. 안내 줄의 경로(`launch-worker` 의 다시 띄우기 안내)도 같다 |
 | 같은 꼴의 다른 자리 | `make-worktree.ts` 의 `new URL('./worktree-deny.ts')`, `handlers/decision-pending.ts` 의 `new URL('../nudge-worker.ts')`, `lib/conflicts.ts`·`lib/tell-worker.ts` 의 `join(dirname(dirname(…)), 'send-to-worker.ts')` | `scriptPath(…)` |
+| 다른 스킬 파일 | `merge_queue.ts`, `orch-loop.ts` 의 `${HERE}/../../review-fix/scripts/review_threads.py` | `..` 하나를 더한다(`${HERE}/../../../review-fix/…`). 테스트는 `THREADS_CMD` 로 덮어 이 경로를 보지 않으므로 phase-02 의 검사가 파일이 있는지 본다 |
+| work-board 모듈 import | `board-release.ts`, `board-sync.ts` 의 `'../../../extensions/work-board/hooks/event-tags.js'` | `'../../../../extensions/…'` |
 | 보드 실행기 | `board-release`, `board-sync`, `finish-pr`, `goal-progress` 의 `resolve(HERE, '../../../extensions/…')` | 한 단계 더 올라간다(`'../../../../extensions/…'`). 그 파일에 `lib/board.ts` 의 `BOARD_BIN` 이 있으면 그것을 쓴다 |
 | 스킬 폴더 기준 경로 | `spec-lint.ts` 의 `'..', 'templates'`, `install-cli.ts` 의 `'..', '..', '..', 'bin', 'orch'`, `orch-doctor.ts` 의 `new URL('.')`(스크립트 폴더)·`new URL('..')`(스킬 폴더) | 한 단계씩 더 올린다. doctor 의 스크립트 폴더는 `SCRIPTS_DIR`(아래 1)을 쓴다 |
 | 진입점 `bin/orch.ts` | `commands.scriptPath(dir, bare)`, 없는 이름일 때 `names(dir)` 가 `dir` 의 `.ts` 를 나열 | `scriptIn(dir, bare)`. 이름 목록은 명령 표의 옛 이름에서 그 폴더에 파일이 있는 것 |
 | `orch-doctor.py` | `ts_shim.exec_ts(__file__)` 가 같은 이름 `.ts` 로 넘긴다 | `exec_ts` 에 넘길 대상 경로 인자를 더하고 `doctor/orch-doctor.ts` 를 준다 |
-| doctor `LOOP-STALE` | `staleLoops` 가 ps 의 `…/orch-loop.ts` 를 찾고 `staleBundle` 이 `dirname(dirname(script))` 를 스킬 폴더로 본다 | 스킬 폴더는 경로의 마지막 `/scripts/` 앞이다. 옛 배치(`scripts/orch-loop.ts`)와 새 배치(`scripts/loop/orch-loop.ts`)를 모두 같은 스킬 폴더로 읽는다. 옛 번들의 루프가 이 판정의 대상이기 때문이다 |
+| doctor 의 명령 표 비교 | `SCRIPTS`(직접 경로 정규식의 이름 목록), `hintFor` 가 `c.script` 를 파일 이름과 같은지로 본다 | `basename(c.script)` 로 비교한다. 명령 표의 `rowOf` 도 `script` 의 끝 `/<이름>.ts` 로 찾는다(옛 이름이 없는 `orch-status`, `install-cli` 가 풀린다) |
+| doctor 의 문서 판정 | `checkScripts` 의 `"$SKILL_DIR/bin/orch.ts" <이름>` 대상이 `scripts/<이름>.ts` | `scriptIn` 으로 푼다 |
+| doctor `LOOP-STALE`, `WAIT-STALE` | 둘이 함께 쓰는 `staleBundle`. `staleLoops` 가 ps 의 `…/orch-loop.ts` 를 찾고 `staleBundle` 이 `dirname(dirname(script))` 를 스킬 폴더로 본다 | 스킬 폴더는 경로의 마지막 `/scripts/` 앞이다. 옛 배치(`scripts/orch-loop.ts`)와 새 배치(`scripts/loop/orch-loop.ts`)를 모두 같은 스킬 폴더로 읽는다. 옛 번들의 루프가 이 판정의 대상이기 때문이다 |
 | doctor `DIRECT-PATH` | `orch/scripts/`, `$SKILL_DIR/scripts/`, `$ORCH_SCRIPTS/` 바로 뒤의 `<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')` | 그 사이에 묶음 폴더 하나(`<묶음>/`, `join` 은 `'<묶음>', ` 이나 `'<묶음>/<이름>.ts'`)가 있어도 찾는다. 새 배치의 직접 경로도 직접 경로 호출이기 때문이다 |
 | 테스트 | `skills/orch/tests/*.spec.ts` 의 `'../scripts/<이름>.ts'`(import, `new URL`) 60여 곳 | `'../scripts/<묶음>/<이름>.ts'`. doctor 와 훅 테스트의 입력 문자열(옛 경로를 판정하는 사례)은 그대로 |
-| 테스트의 폴더 읽기 | `lib-bundle.spec.ts`(모든 직접 실행 스크립트가 `lib/bundle.ts` 에 닿는다), `lib-commands.spec.ts`(묶음 이름과 옛 스크립트 이름이 겹치지 않는다)가 `readdirSync(SCRIPTS)` 로 한 층만 읽는다 | 명령 표의 `script` 로 파일을 모은다. 폴더가 바뀌어도 빠지는 스크립트가 없게 한다 |
-| `scripts/tests/test_doc_script_refs.py` | `DOCTOR = scripts/orch-doctor.ts`, 이름 목록을 `scripts/*.ts` 에서 읽는다 | `doctor/orch-doctor.ts`, 이름은 `scripts/*/*.ts` 와 `scripts/*.py` 에서 읽는다 |
+| 테스트의 폴더 읽기 | `lib-bundle.spec.ts`(모든 직접 실행 스크립트가 `lib/bundle.ts` 에 닿는다), `lib-commands.spec.ts`(묶음 이름과 옛 스크립트 이름이 겹치지 않는다), `merge-queue.spec.ts` 「CI 조회」, `legacy-entrypoints.spec.ts` 가 한 층만 읽는다 | 명령 표의 `script` 로 모으거나 묶음 폴더까지 내려간다 |
+| 진입점 테스트의 가짜 번들 | `orch-entry.spec.ts` 의 `bundle()` 이 가짜 스크립트를 폴더 바로 아래에 둔다 | 명령 표의 스크립트는 묶음 폴더 아래에 둔다. 표에 없는 `hello`, `sleeper` 는 그대로 |
+| `scripts/tests/test_doc_script_refs.py` | `DOCTOR = scripts/orch-doctor.ts`, 이름 목록을 `scripts/*.ts` 에서 읽고, 옛 꼴 정규식이 `scripts/` 바로 뒤의 이름만 찾는다 | `doctor/orch-doctor.ts`, 이름은 묶음 폴더(`lib`, `handlers` 제외)의 `.ts` 와 `scripts/*.py`. 정규식은 `scripts/<묶음>/<이름>.ts` 도 찾는다 |
 
 ## 의도 메모
 
@@ -73,6 +78,7 @@ git grep -nE "scripts/($NAMES)\.ts|\.\./scripts/" -- skills/orch/tests scripts/t
 - 명령 표에 `scriptPath(name)` 을 더하고 지금의 두 인자 함수는 `scriptIn(dir, name)` 으로 이름을 바꾼다. 설계가 스크립트끼리 부르는 함수를 `scriptPath(이름)` 으로 적었고, 진입점은 고른 번들의 폴더를 따로 받아야 하기 때문이다. `scriptPath` 는 이 번들의 스크립트 폴더 기준 절대경로를 내고 파일이 있는지 보지 않는다. 표에 없는 이름이면 던진다(프로그래밍 오류다).
 - 스크립트가 `lib/commands.ts` 를 import 해도 부수 효과는 없다. 모듈 수준에서 `ENTRY` 경로 계산과 빈 `Map` 하나만 만든다(실측: `orchWord` 는 부를 때만 PATH 를 읽는다).
 - `HERE` 가 남는 곳이 없으면 선언도 지운다.
+- `scriptIn` 은 명령 표의 경로에 파일이 없으면 폴더 바로 아래 같은 이름을 본다. `ORCH_SCRIPTS_DIR` 이 진입점 없는 폴더 이동 전 체크아웃을 가리킬 때 옛 이름 호출이 지금처럼 돌게 하려는 것이다. 옛 경로에 사본을 두는 것과 달리 이 번들의 배치는 바뀌지 않는다.
 
 ## 작업 항목
 
@@ -97,7 +103,8 @@ git grep -nE "scripts/($NAMES)\.ts|\.\./scripts/" -- skills/orch/tests scripts/t
 
 - 옮긴 스크립트를 가리키는 테스트 경로를 새 배치로 바꾼다.
 - `lib-commands.spec.ts`: `scriptIn` 사례(새 배치의 경로, 없는 이름은 `null`)와 `scriptPath` 사례(모든 행의 파일이 있고 `dirname` 이 묶음 이름이다)를 더한다.
-- `orch-doctor.spec.ts`: 새 배치 경로의 `DIRECT-PATH` 사례(`$SKILL_DIR/scripts/queue/merge-with-finish.ts`, `join(ORCH_SCRIPTS, 'worker', 'nudge-worker.ts')`)와, ps 에 새 배치 경로(`…/skills/orch/scripts/loop/orch-loop.ts`)로 도는 옛 번들 루프가 `LOOP-STALE` 로 나오는 사례를 더한다. 옛 배치 경로 사례는 그대로 통과한다.
+- `orch-doctor.spec.ts`: 새 배치 경로의 `DIRECT-PATH` 사례(`$SKILL_DIR/scripts/queue/merge-with-finish.ts`, `join(ORCH_SCRIPTS, 'worker', 'nudge-worker.ts')`)와, ps 에 새 배치 경로(`…/scripts/loop/orch-loop.ts`, `…/scripts/wait/wait-important.ts`)로 도는 옛 번들 루프와 대기가 `LOOP-STALE`, `WAIT-STALE` 로 나오는 사례를 더한다. 옛 배치 경로 사례는 그대로 통과한다.
+- `orch-loop-auto-merge.spec.ts`: ps 줄이 전체 경로(`…/scripts/queue/merge_queue.ts`)인 큐도 `merge_queue.` 로 가리는 사례를 더한다.
 - `ts-shim.spec.ts` 나 `orch-doctor.spec.ts`: `python3 skills/orch/scripts/orch-doctor.py --help` 가 0 으로 끝나는 사례가 없으면 더한다.
 
 ## 검증
