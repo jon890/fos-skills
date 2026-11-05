@@ -95,7 +95,7 @@ spec 은 묻기 전에 코드를 읽고, 첫 라운드는 열린 질문, 이후 
 ### 결정 기록은 종류와 현재 원본을 구분해요
 
 ADR 에는 장기 선택의 이유와 기각한 대안, 감당할 비용을 남겨요. 새 문서는 `decision-type` 을 architecture, domain-policy, engineering-process 중 하나로 쓰고 보안·운영 같은 관심사는 선택 태그로 적어요.
-현재 규칙과 정확한 값은 spec·도메인 문서·계약·설정·절차 문서가 소유하고 ADR 에서 연결해요. 정책은 spec, 구조는 technical-design, 절차는 해당 작업의 결정 주체가 정해요. 구현 PR 이 문서와 코드를 함께 고치고 verify 가 대조해요.
+현재 규칙과 정확한 값은 spec·도메인 문서·계약·설정·절차 문서가 소유하고 ADR 에서 연결해요. 정책은 spec, 구조는 technical-design, 장기 절차 결정은 사용자 또는 저장소 지침이 명시한 위임 결정자가 정해요. 구현 PR 이 문서와 코드를 함께 고치고 verify 가 대조해요.
 [작성 기준](skills/technical-design/references/adr-rules.md), [세 종류의 작성 예시](skills/technical-design/references/adr-examples.md), [단계별 책임](skills/spec/references/document-ownership.md#결정-기록의-단계별-책임)을 참고해요.
 기존 ADR 의 경로·식별자는 유지하고 건드리는 영역부터 적용해요. 다른 저장소의 분류 도입은 그 저장소 관례를 확인한 별도 작업으로 진행해요.
 
