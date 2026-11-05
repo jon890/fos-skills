@@ -10,4 +10,4 @@
 | REQ6 | PR 브랜치 | `modules/testkit/tests/fake-bin.spec.ts` 의 inode 사례를 돌린다 | 두 폴더의 같은 가짜가 같은 inode 다 | 로컬 macOS | 없음 | PR 전 |
 | REQ9 | PR 브랜치 | `node --test scripts/tests/exported-imports.spec.ts` | 저장소 검사가 비어 통과하고, 임시 폴더의 여섯 꼴이 잡힌다 | 로컬 | 없음 | PR 전 |
 | REQ3 | PR 브랜치와 origin/main | `node modules/testkit/measure.ts --before origin/main --after HEAD <대상 파일>` | 대상 파일마다 전후 시간과 기동 수가 있는 표가 나오고 PR 본문에 있다 | 로컬 macOS, 부하는 표 머리의 load average 로 남긴다 | 없음 | PR 전 |
-| REQ1 | PR | CI 의 `Plugin tests`, `Python tests` | 둘 다 통과한다. 새 node 테스트 줄이 CI 로그에 있다 | GitHub Actions | push | PR 뒤 |
+| REQ1 | PR | CI 의 `Plugin tests`, `Python tests`(계획 test-runner 가 먼저 머지됐으면 `Tests` 하나) | 모두 통과한다. 새 node 테스트 파일이 CI 로그에 있다 | GitHub Actions | push | PR 뒤 |

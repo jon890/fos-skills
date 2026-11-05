@@ -49,7 +49,7 @@
 ### 4. 이 phase 를 검증하는 `modules/testkit/tests/temp.spec.ts`, `git.spec.ts`, `command.spec.ts`
 
 - temp: `beforeEach` 에서 만든 폴더가 테스트 본문에서 있다. 자식 프로세스로 작은 테스트 파일을 `node --test` 로 돌려, 그 파일이 만든 폴더(경로를 stdout 에 냄)가 파일이 끝난 뒤 없다. 같은 자식을 `TESTKIT_KEEP=1` 로 돌리면 폴더가 남고 stderr 에 경로가 있다(검사 뒤 지운다). `t` 를 준 폴더는 그 테스트의 `after` 뒤 없다.
-- git: `gitEnv` 아래 `git config user.name` 이 testkit 값이다. `copyRepo` 두 번이 서로 다른 origin 을 가리키고, 사본에서 커밋해 `push` 하면 그 사본의 origin 에만 들어간다. 실패한 명령(`git rev-parse --verify nope`)은 throw 하고 메시지에 stderr 가 있다.
+- git: `gitEnv` 아래에서 커밋하면 `git log -1 --format=%an%n%ae` 가 testkit 값이다. base env 의 `GIT_CONFIG_GLOBAL` 에 `user.name` 을 적은 임시 파일을 줘도 `gitEnv` 가 그 값을 `/dev/null` 로 덮어 무시된다(`git config user.name` 이 1 로 끝난다). `copyRepo` 두 번이 서로 다른 origin 을 가리키고, 사본에서 커밋해 `push` 하면 그 사본의 origin 에만 들어간다. 실패한 명령(`git rev-parse --verify nope`)은 throw 하고 메시지에 stderr 가 있다.
 - command: 종료 코드 3, 신호로 끝남(`process.kill(process.pid, 'SIGTERM')`), stdin 을 그대로 돌려줌, 시간 초과(`timeoutMs: 200` 으로 오래 자는 자식)에서 `timedOut: true`. 부모에 `NODE_TEST_CONTEXT` 가 있어도 자식 `node -e` 가 그 값을 보지 못한다.
 
 ### 5. 새 테스트가 돌게 하는 설정
@@ -68,10 +68,10 @@
 ```bash
 node --test modules/testkit/tests/temp.spec.ts modules/testkit/tests/git.spec.ts modules/testkit/tests/command.spec.ts
 python3 -m unittest discover -s scripts/tests
-git grep -n "modules/testkit/tests" -- .github/workflows/ci.yml scripts/run-node-tests.ts
+git grep -n "modules/testkit/tests" -- .github/workflows/ci.yml scripts/run-node-tests.ts scripts/run-tests.ts
 ```
 
-`tsc` 는 CI 와 같은 명령으로 돌린다(임시 폴더 설치).
+셋째 줄은 계획 test-runner 가 먼저 머지됐으면 `scripts/run-tests.ts` 만 남아 매치가 없어도 된다(작업 항목 5). `tsc` 는 CI 와 같은 명령으로 돌린다(임시 폴더 설치).
 
 ```bash
 npm install --no-save --no-audit --no-fund --prefix "$TMPDIR/tsc" typescript@5.9.3 @types/node@24 && "$TMPDIR/tsc/node_modules/.bin/tsc" -p tsconfig.json --typeRoots "$TMPDIR/tsc/node_modules/@types"

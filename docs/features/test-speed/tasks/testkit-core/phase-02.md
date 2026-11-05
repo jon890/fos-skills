@@ -31,6 +31,7 @@
 ### 1. `modules/testkit/fake-bin.ts`
 
 - `export type FakeRule = { args?: string[]; stdout?: string; stderr?: string; code?: number }`, `FakeCall = { argv: string[]; env: Record<string, string | null>; cwd: string }`, `FakeBin = { path: string; calls(): FakeCall[]; setRules(rules: FakeRule[]): void }`. 지금 orch fixture 의 꼴과 같다.
+- 원본 보관소: 모듈 수준 변수에 처음 쓸 때 `realpathSync(mkdtempSync(join(tmpdir(), 'testkit-bin-')))` 로 만들고 `process.on('exit')` 에서 `rmSync(..., { recursive: true, force: true })` 한다. `temp.ts` 의 목록에 넣지 않는다(이 파일이 `node:test` 를 import 하지 않게 한다).
 - `linkBin(dir: string, name: string, body: string): string`: 본문 앞에 `#!${process.execPath}\n` 을 붙인 내용의 sha256 으로 보관소의 원본 이름을 정해 처음 한 번만 쓰고 `chmod 0o755` 한다. `dir/name` 이 있으면 지우고 `linkSync(원본, dir/name)`. 실패하면 `copyFileSync` 와 `chmod`.
 - `fakeBin(dir, name, rules, opts: { recordEnv?: string[] } = {})`: `<dir>/<name>.rules.json` 에 `{ rules, recordEnv }` 를 쓰고 공용 규칙 본문을 `linkBin` 한다. 공용 본문은 `process.argv[1]` 에서 두 파일 이름을 만들고, 기록에 `{ argv: process.argv.slice(2), env, cwd }` 를 덧붙이고, `args` 가 모두 argv 에 든 첫 규칙의 stdout, stderr, 종료 코드를 낸다. 맞는 규칙이 없으면 아무것도 내지 않고 0 이다. 출력은 `fs.writeSync` 로 쓴다(파이프가 비동기인 macOS 에서 끝나기 전에 다 나가게 한다. `merge-queue-fakes.ts` 머리 주석).
 - `setRules` 는 `recordEnv` 를 유지한 채 규칙만 바꾼다. `calls` 는 지금과 같다.
@@ -58,11 +59,11 @@
 
 ```bash
 node --test modules/testkit/tests/fake-bin.spec.ts modules/testkit/tests/fake-run.spec.ts modules/testkit/tests/fake-rules.spec.ts
-node scripts/run-node-tests.ts $(grep -l "fixtures/fake-bin\|fixtures/cleanup-sweep" skills/orch/tests/*.spec.ts)
+node --test --test-concurrency=4 $(grep -l "fixtures/fake-bin\|fixtures/cleanup-sweep" skills/orch/tests/*.spec.ts)
 git diff --stat origin/main -- skills/orch/tests/*.spec.ts
 ```
 
-마지막 줄은 비어 있어야 한다(fixtures 를 쓰는 테스트 파일을 고치지 않았다). 두 번째 줄이 600초를 넘기면 `--background` 로 띄우고 출력된 `--wait` 명령을 끝 줄이 나올 때까지 다시 부른다.
+마지막 줄은 비어 있어야 한다(fixtures 를 쓰는 테스트 파일을 고치지 않았다). 두 번째 줄이 Bash 도구의 600초 제한을 넘길 것 같으면 같은 파일 목록을 실행기의 `--background` 로 띄우고 출력된 `--wait` 명령을 끝 줄이 나올 때까지 다시 부른다(실행기는 `scripts/run-node-tests.ts`, 계획 test-runner 가 먼저 머지됐으면 `scripts/run-tests.ts`).
 
 ## 변경 파일
 

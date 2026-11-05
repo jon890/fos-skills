@@ -29,7 +29,7 @@ CI 가 job 하나(`Tests`)에서 `claude plugin test .` 와 `node scripts/run-te
 ### 1. `.github/workflows/ci.yml`
 
 - jobs 를 `tests`(name `Tests`, `timeout-minutes: 15`) 하나로 합친다. 단계: checkout(`persist-credentials: false`), setup-node 24(`check-latest: true`), setup-python 3.12, `sudo apt-get update && sudo apt-get install --yes jq zsh`, `npm install --global @anthropic-ai/claude-code@2.1.309`, `claude plugin test .`, `node scripts/run-tests.ts`.
-- 기존 주석 가운데 아직 맞는 것(typescript 를 임시 폴더에 설치하는 이유)은 실행기 머리 주석으로 옮겼는지 확인하고 workflow 에서 지운다.
+- 기존 주석 가운데 typescript 를 임시 폴더에 설치하는 이유는 phase 01 이 실행기 머리 주석에 옮겼다. workflow 의 그 주석과 node 테스트 단계 주석을 지운다.
 
 ### 2. `.orch/overlay.md`
 
@@ -50,8 +50,9 @@ CI 가 job 하나(`Tests`)에서 `claude plugin test .` 와 `node scripts/run-te
 
 ### 5. 측정과 PR 본문
 
-- 전: origin/main 에서 `time node scripts/run-node-tests.ts` 와 CI 의 Python 반복문(`for suite in ...; do python3 -m unittest discover -s "$suite"; done`)을 차례로 돈 바깥 시간.
-- 후: 이 브랜치에서 `node scripts/run-tests.ts` 끝 줄의 걸린 시간.
+- 전: `git worktree add "$TMPDIR/before" origin/main` 으로 만든 임시 워크트리에서 `time node scripts/run-node-tests.ts`, CI 의 Python 반복문(`for suite in ...; do python3 -m unittest discover -s "$suite"; done`), CI 의 tsc 명령을 차례로 돈 바깥 시간. 셋을 따로 적고 합을 낸다. 끝나면 `git worktree remove "$TMPDIR/before"` 로 지운다.
+- 후: 이 브랜치에서 `node scripts/run-tests.ts` 끝 줄의 걸린 시간(tsc 포함).
+- 이 PR 은 테스트 파일을 바꾸지 않아 REQ3 의 파일별 전후 표를 두지 않는다. 그 사실을 PR 본문에 적는다.
 - 두 값과 `uptime` 을 PR 본문 표에 적는다(스펙 DECISION12, REQ3). CI 의 job 시간(전: 두 job 중 긴 쪽, 후: `Tests`)도 적는다.
 
 ## 검증
