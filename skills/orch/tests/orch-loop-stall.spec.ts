@@ -432,7 +432,11 @@ describe('구조화 worker', () => {
     orca({ workers_by_run: { A: [worker('d1', 'structworker_a')] }, shows: { d1: show({ message: 'Agent hit an error: You have reached your session limit' }) } })
     tick()
     tick()
-    assert.equal(runEvents('A').filter((row) => row.kind === 'WORKER-LIMITED').length, 1)
+    const limited = runEvents('A').filter((row) => row.kind === 'WORKER-LIMITED')
+    assert.equal(limited.length, 1)
+    // 구조화 worker 는 터미널이 없어 resume 을 안내하지 않는다
+    assert.doesNotMatch(String(limited[0].text), /worker resume/)
+    assert.match(String(limited[0].text), /agent-selection\.md/)
     assert.deepEqual(stalledEvents('A'), [])
   })
 
@@ -670,6 +674,8 @@ test('크레딧 소진은 멈춤 감시를 꺼도 dispatch 마다 한 번 알린
   const notices = runEvents('A').filter((row) => String(row.text).includes('사용 한도'))
   assert.equal(notices.length, 1)
   assert.match(String(notices[0].text), /d1.*tA.*agent-selection.md/u)
+  // 터미널 worker 는 계정 전환 뒤 resume 을 먼저 안내한다
+  assert.match(String(notices[0].text), /계정 전환.*worker resume --dispatch d1/u)
   assert.deepEqual(sends(), [])
 })
 

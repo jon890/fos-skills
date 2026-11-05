@@ -167,7 +167,9 @@
 //     `orca orchestration worker-show` 의 worker.stage 와 worker.lastError 로 판정한다(lib/sessions.ts 의 structuredScreen).
 //     lastError 가 있으면 error 멈춤이고, 한도 문구면 사용 한도다. 움직임 확인에 넘길 화면은 없다. worker-show 를 읽지 못하면 화면을 읽지 못한 것과 같다.
 //     입력하지 않는다. 다시 시도시키는 일과 그 횟수 상한은 저장소의 worker-stalled 핸들러가 정한다(references/hooks.md, ADR-013).
-//     사용 한도 화면은 stall_ticks 와 무관하게 dispatch 마다 WORKER-LIMITED 알림을 한 번 쓴다. agent-selection.md 의 한도 복구를 안내한다.
+//     사용 한도 화면은 stall_ticks 와 무관하게 dispatch 마다 WORKER-LIMITED 알림을 한 번 쓴다. 터미널 worker 는 사용자에게 계정 전환을 요청한 뒤
+//     `orch worker resume --dispatch <id>` 를 부르고, 바꿀 계정이 없거나 resume 이 실패하면 agent-selection.md 의 한도 복구로 가라고 안내한다.
+//     구조화 worker 는 resume 대상이 아니라 agent-selection.md 의 한도 복구만 안내한다. 루프는 입력하지 않는다.
 //     멈춤은 error(모델 오류로 멈춘 화면)와 idle(입력란이 빈 화면)이다. pipeline.stall_ticks 가 상태마다 기준 틱 수를 정하고, 0 이면 보지 않는다.
 //     interrupted(사람이 Esc 로 끊은 화면)는 멈춤이 아니다. 사람이 일부러 멈춘 작업을 핸들러가 다시 돌리지 않게 한다.
 //     기본은 error 2, idle 0 이다. idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 기본으로 끈다.
@@ -1509,7 +1511,10 @@ async function watchStalls(
       // 사용 한도는 설정과 관계없이 dispatch 생애에 한 번 알린다. 회복한 화면에서도 기록을 유지한다.
       let limitedNotified = previous[dispatch]?.limitedNotified === true
       if (limited && !limitedNotified) {
-        const text = `사용 한도 ${dispatch} ${terminal}: references/agent-selection.md 의 「사용 한도에 걸렸을 때」에 따라 제공자나 모델을 바꿔 이어받는다`
+        // 터미널 worker 는 계정을 바꾼 뒤 resume 으로 같은 세션을 잇는다. 구조화 worker 는 터미널이 없어 resume 대상이 아니다
+        const text = isStructured(terminal, row.startOptions)
+          ? `사용 한도 ${dispatch} ${terminal}: references/agent-selection.md 의 「사용 한도에 걸렸을 때」에 따라 제공자나 모델을 바꿔 이어받는다`
+          : `사용 한도 ${dispatch} ${terminal}: 사용자에게 계정 전환을 요청하고, 바꾼 뒤 ${orchWord()} worker resume --dispatch ${shQuote(dispatch)}. 바꿀 계정이 없거나 resume 이 실패하면 references/agent-selection.md 의 「사용 한도에 걸렸을 때」`
         try {
           appendEvent(ctx.repo, 'WORKER-LIMITED', null, text, run)
           limitedNotified = true

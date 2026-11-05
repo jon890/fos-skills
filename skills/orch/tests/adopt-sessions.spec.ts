@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { orchWord } from '../scripts/lib/commands.ts'
 import { activeHandles, handover, matchingSpecs } from '../scripts/lib/sessions.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
@@ -43,10 +44,11 @@ beforeEach(() => {
   gh = fakeBin(root, 'gh', [{ stdout: JSON.stringify([{ number: 8, url: 'https://example.com/pr/8', headRefName: 'feat/old' }]) }])
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
+const PATH = `${dirname(process.execPath)}${delimiter}${process.env.PATH}`
 function run(args: string[] = []) {
   return spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, ...args], {
     encoding: 'utf8', env: { ...process.env, ORCA: orca.path, GH: gh.path, CLAUDE_CONFIG_DIR: join(root, 'config'),
-      PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH}`, ORCH_GH_CACHE: '0' },
+      PATH, ORCH_GH_CACHE: '0' },
   })
 }
 test('살아 있는 dispatch, 끝난 dispatch, 사람 셸을 구분하고 기본 실행은 읽기만 한다', () => {
@@ -182,9 +184,8 @@ test('살아 있는 dispatch 의 화면이 사용 한도 안내면 LIMITED 와 �
   const out = r.stdout.split('\n')
   const at = out.indexOf(`LIMITED term_live dispatch=ctx_live task=task_live run=run_a branch=feat/old`)
   assert.ok(at >= 0, r.stdout)
-  assert.equal(out[at + 1], '  orca orchestration worker-abandon --dispatch ctx_live --json')
-  assert.equal(out[at + 2], `  orca orchestration worker-start --task task_live --retry-of ctx_live --worktree ${JSON.stringify(`path:${worktree}`).replaceAll('"', "'")} --agent claude --model claude-opus-5-5 --json`)
-  assert.equal(out[at + 3], '  orca terminal close --terminal term_live')
+  assert.equal(out[at + 1], `  ${orchWord(PATH)} worker resume --dispatch ctx_live`)
+  assert.ok(!out[at + 2]?.startsWith('  '), '들여 쓴 명령 줄은 하나다')
   // 한도 안내가 없거나 작업 중이면 내지 않는다
   for (const tail of [['⏺ 고친다.', '❯'], ['Usage limit reached', '✳ Thinking… (4s · esc to interrupt)']]) {
     orca.setRules([
@@ -215,7 +216,7 @@ test('Task 가 ready 이고 마지막 dispatch 가 failed 면 RESTART 와 --retr
   const found = JSON.parse(r.stdout).restartable
   assert.equal(found.length, 1, r.stdout)
   assert.equal(found[0].dispatch, 'ctx_f2')
-  assert.deepEqual(found[0].commands, [`orca orchestration worker-start --task task_r --worktree 'path:${worktree}' --agent codex --model gpt-6.1-sol --json`])
+  assert.deepEqual(found[0].commands, [`${orchWord(PATH)} worker resume --dispatch ctx_f2`])
   assert.equal(orca.calls().filter((c) => c.argv.includes('task-list')).length, 1)
   // 같은 Task 에 살아 있는 dispatch 가 있으면 다시 띄우지 않는다
   orca.setRules([
@@ -225,4 +226,15 @@ test('Task 가 ready 이고 마지막 dispatch 가 failed 면 RESTART 와 --retr
   const text = run()
   assert.equal(text.status, 0, text.stderr)
   assert.doesNotMatch(text.stdout, /^RESTART/m)
+  // 마지막 failed dispatch 의 터미널이 열려 있으면 resume 한 세션과 겹치므로 내지 않는다
+  orca.setRules([
+    { args: ['terminal', 'list'], stdout: envelope({ terminals: [{ handle: 'term_gone', worktreePath: worktree, agentIdentity: 'codex' }] }) },
+    { args: ['worker-list'], stdout: envelope({ scope: { source: 'all' }, workers }) },
+    { args: ['task-list', '--run', 'run_a'], stdout: envelope({ tasks: [{ id: 'task_r', status: 'ready' }] }) },
+    { args: ['dispatch-show', '--task', 'task_r'], stdout: envelope({ dispatch: { id: 'ctx_f2', status: 'failed' } }) },
+    ...rules,
+  ])
+  const open = run(['--json'])
+  assert.equal(open.status, 0, open.stderr)
+  assert.deepEqual(JSON.parse(open.stdout).restartable, [])
 })
