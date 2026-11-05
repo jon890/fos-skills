@@ -36,7 +36,7 @@ function request(agent: 'claude' | 'codex', deadlineMs = 10_000, pluginDir: stri
 function claudeHome(): string {
   const home = join(root, 'claude')
   mkdirSync(claudeProjectDir(home, worktree), { recursive: true })
-  writeFileSync(join(claudeProjectDir(home, worktree), 'sess-1.jsonl'), '{"text":"Dispatch ID is: ctx_target"}\n')
+  writeFileSync(join(claudeProjectDir(home, worktree), 'sess-1.jsonl'), `${JSON.stringify({ cwd: worktree, text: 'Dispatch ID is: ctx_target' })}\n`)
   return home
 }
 

@@ -32,15 +32,32 @@ test('findClaudeSession 은 dispatch id 가 든 기록의 세션 id 를 낸다',
   const home = join(root, 'claude')
   const dir = claudeProjectDir(home, worktree)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'a.jsonl'), '{"text":"Dispatch ID is: ctx_other"}\n')
-  writeFileSync(join(dir, 'b.jsonl'), '{"text":"Dispatch ID is: ctx_target"}\n')
+  const at = (cwd: string, text: string) => `${JSON.stringify({ cwd, text })}\n`
+  writeFileSync(join(dir, 'a.jsonl'), at(worktree, 'Dispatch ID is: ctx_other'))
+  writeFileSync(join(dir, 'b.jsonl'), at(worktree, 'Dispatch ID is: ctx_target'))
   assert.equal(findClaudeSession(home, worktree, 'ctx_target'), 'b')
   assert.equal(findClaudeSession(home, worktree, 'ctx_missing'), null)
   assert.equal(findClaudeSession(join(root, 'none'), worktree, 'ctx_target'), null)
   // 여럿이면 가장 최근 것
-  writeFileSync(join(dir, 'c.jsonl'), '{"text":"ctx_target 다시"}\n')
+  writeFileSync(join(dir, 'c.jsonl'), at(join(worktree, 'sub'), 'ctx_target 다시'))
   utimesSync(join(dir, 'b.jsonl'), new Date(1000), new Date(1000))
   assert.equal(findClaudeSession(home, worktree, 'ctx_target'), 'c')
+})
+
+test('findClaudeSession 은 이름이 같은 프로젝트 폴더를 쓰는 다른 워크트리의 기록을 고르지 않는다', () => {
+  // my_repo.wt/feat 와 my-repo-wt/feat 는 같은 프로젝트 폴더 이름이 된다
+  const other = join(root, 'my-repo-wt', 'feat')
+  mkdirSync(other, { recursive: true })
+  const home = join(root, 'claude')
+  const dir = claudeProjectDir(home, worktree)
+  assert.equal(claudeProjectDir(home, other), dir)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'mine.jsonl'), `${JSON.stringify({ cwd: worktree, text: 'Dispatch ID is: ctx_target' })}\n`)
+  utimesSync(join(dir, 'mine.jsonl'), new Date(1000), new Date(1000))
+  // 더 최근에 쓴 다른 워크트리의 기록이 같은 dispatch 를 언급한다
+  writeFileSync(join(dir, 'theirs.jsonl'), `${JSON.stringify({ cwd: other, text: `review old ctx_target, cwd ${worktree}` })}\n`)
+  assert.equal(findClaudeSession(home, worktree, 'ctx_target'), 'mine')
+  assert.equal(findClaudeSession(home, other, 'ctx_target'), 'theirs')
 })
 
 test('findCodexSession 은 threads 에서 rollout 에 dispatch 가 든 행을 고르고, DB 가 없으면 rollout 첫 줄로 찾는다', () => {

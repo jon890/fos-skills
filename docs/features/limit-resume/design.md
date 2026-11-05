@@ -16,7 +16,7 @@
 
 - **`lib/resume.ts`(새 파일)**: 세션 찾기, 실행 줄 만들기, 요청 폴더의 파일 형식과 잠금을 소유한다. 바깥 명령(orca, git, gh)을 부르지 않고 다른 orch lib 를 import 하지 않는다. 실행기가 새 터미널에서 가볍게 뜨고, 단위 테스트가 가짜 폴더만으로 돌게 하려는 것이다.
   - `claudeProjectDir(home, worktree)`: `<home>/projects/<실경로의 영숫자 밖 글자를 - 로 바꾼 이름>`. 실측: `/private/var/.../T/resume-spike-UT1n` 이 `-private-var-...-T-resume-spike-UT1n` 이 됐고 `_` 도 `-` 가 된다.
-  - `findClaudeSession(home, worktree, dispatch)`: 그 폴더의 `*.jsonl` 가운데 dispatch id 문자열이 든 파일을 고친 시각 내림차순으로 고른다. 세션 id 는 파일 이름이다.
+  - `findClaudeSession(home, worktree, dispatch)`: 그 폴더의 `*.jsonl` 가운데 dispatch id 문자열이 들고 기록의 `cwd` 가 그 워크트리(또는 그 아래)인 파일을 고친 시각 내림차순으로 고른다. 세션 id 는 파일 이름이다. 폴더 이름은 a-b 와 a/b 처럼 다른 워크트리가 겹칠 수 있어 `cwd` 로 한 번 더 대조한다(PR #359 리뷰).
   - `findCodexSession(home, worktree, dispatch)`: `<home>/state_5.sqlite` 의 `threads` 에서 `cwd` 가 워크트리 실경로인 행을 `updated_at` 내림차순으로 읽고, `rollout_path` 파일에 dispatch id 가 든 첫 행의 `id` 를 고른다. sqlite 는 Node 24 의 `node:sqlite` 를 읽기 전용으로 연다. DB 가 없거나 열지 못하거나 맞는 행이 없으면 `sessions/` 아래 최근 14일 날짜 폴더의 `rollout-*.jsonl` 첫 줄(`session_meta` 의 `cwd`, `id`)로 찾는다.
   - `claudeResumeArgv(session, launch, pluginDir)`: `claude --plugin-dir <pluginDir> --permission-mode auto --model <m> --effort <e> --resume <id>`.
   - `codexResumeArgv(session, launch, env)`: `codex resume <id> --no-daemon -c shell_environment_policy.set.ORCA_*=<터미널 자신의 값> -c check_for_update_on_startup=false -c disable_paste_burst=true --dangerously-bypass-approvals-and-sandbox -m <m> -c model_reasoning_effort=<e>`. ORCA_* 는 `ORCA_USER_DATA_PATH`, `ORCA_WORKSPACE_ID`, `ORCA_WORKTREE_ID`, `ORCA_PANE_KEY`, `ORCA_TERMINAL_HANDLE` 이고 실행기의 환경에서 읽는다.

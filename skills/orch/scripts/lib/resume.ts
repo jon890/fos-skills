@@ -76,7 +76,16 @@ export function claudeProjectDir(home: string, worktree: string): string {
   return join(home, 'projects', real(worktree).replace(/[^A-Za-z0-9]/g, '-'))
 }
 
-// 그 워크트리의 기록 가운데 dispatch id 가 든 가장 최근 세션 id. 없으면 null
+// 기록이 그 워크트리(또는 그 아래 폴더)에서 쓰였는가. 기록의 줄은 줄바꿈 없는 JSON 이라 `"cwd":"<경로>` 꼴로 대조한다.
+// 프로젝트 폴더 이름은 영숫자 밖 글자를 - 로 바꿔 만들어 a-b 와 a/b, a_b 가 같은 폴더를 쓴다. 폴더만 믿으면 다른 워크트리의 세션을 고른다
+function writtenIn(text: string, cwds: string[]): boolean {
+  return cwds.some((cwd) => {
+    const head = `"cwd":${JSON.stringify(cwd).slice(0, -1)}`
+    return text.includes(`${head}"`) || text.includes(`${head}/`)
+  })
+}
+
+// 그 워크트리의 기록 가운데 dispatch id 가 든 가장 최근 세션 id. 다른 워크트리에서 쓴 기록은 고르지 않는다. 없으면 null
 export function findClaudeSession(home: string, worktree: string, dispatch: string): string | null {
   const dir = claudeProjectDir(home, worktree)
   let names: string[]
@@ -85,7 +94,16 @@ export function findClaudeSession(home: string, worktree: string, dispatch: stri
   } catch {
     return null
   }
-  const hit = newestFirst(names.map((name) => join(dir, name))).find((file) => contains(file, dispatch))
+  const cwds = [...new Set([real(worktree), worktree])]
+  const hit = newestFirst(names.map((name) => join(dir, name))).find((file) => {
+    let text: string
+    try {
+      text = readFileSync(file, 'utf8')
+    } catch {
+      return false
+    }
+    return text.includes(dispatch) && writtenIn(text, cwds)
+  })
   return hit ? hit.slice(dir.length + 1, -'.jsonl'.length) : null
 }
 
