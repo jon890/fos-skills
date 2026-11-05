@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.13.0 (2026-11-05)
+
+- `orch` 명령의 기본 출력이 판정 줄(대문자 낱말로 시작하는 줄)이 돼요. 설명과 진행 줄은 `--full` 로 봐요. 경로로 직접 부른 스크립트는 지금 출력 그대로예요
+- `orch wait` 가 받은 메시지마다 `DONE`, `QUESTION` 같은 판정 줄을 내고 `RAW <원문 파일>`, `LAST_DELIVERY` 로 끝나요. `orch wait triage` 를 따로 부르지 않아도 돼요
+- 루프, Run 마다의 worker, 보드를 한 번에 보는 `orch status` 가 생겨요
+- doctor 가 대기 출력을 읽는 저장소 스크립트를 `WAIT-READER` 로 알려요
+- 기능 루프의 단계 인계 표는 spec 의 `feature-docs.md` 를 가리키는 한 줄로 줄여요
+
 ## 7.12.0 (2026-11-05)
 
 - 스크립트를 `orch <묶음> <동작>` 으로 불러요. 플러그인 루트 `bin/orch` 가 PATH 에 실리고, Codex 와 사람 셸은 `orch doctor install-cli` 로 `~/.local/bin/orch` 를 깔아요
