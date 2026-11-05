@@ -43,6 +43,7 @@ plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 기존 계획�
 3. executor 는 구현과 phase 테스트를 실행한다. 버그 수정은 증상을 재현하는 테스트가 수정 전 실패하고 수정 후 통과하는지 확인한다.
    team-lead 는 변경 파일을 대조하고 phase 별로 커밋한다. phase 는 기본 순서대로 실행한다.
    도메인 규칙 변경이 있으면 코드, 프롬프트, 설정, 평가 사례와 같은 PR 에서 도메인 문서와 출력 계약을 고친다([문서 소유권의 「단계별 책임」](../spec/references/document-ownership.md#단계별-책임)).
+   ADR 이 필요한 변경은 [결정 기록의 단계별 책임](../spec/references/document-ownership.md#결정-기록의-단계별-책임)에 따라 합의한 기록과 현재 원본을 함께 반영한다. 새 결정은 앞 단계로 반환한다.
 4. 누적 변경에 저장소의 개발 검증 명령을 실행한다. 실패는 구현에서 해결하고, 요구사항 문제는 spec, 구조 문제는 technical-design, 계획 결함은 plan 으로 돌린다.
 5. 남은 executor 를 종료하고 아래 인계 정보를 orch 에 보낸다. 작업 공간과 계획서는 verify 가 쓸 수 있게 남긴다.
 

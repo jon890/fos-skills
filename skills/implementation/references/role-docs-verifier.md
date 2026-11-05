@@ -19,6 +19,7 @@
 - **결정 위반.** → `VIOLATION`
 `docs/adr/` 의 accepted ADR 과 레포 지침의 레이어 규칙을 이번 변경과 대조한다.
 **`docs/` 를 코드에 맞춰 고치는 것으로 처리하지 않는다.**
+변경한 ADR 은 [ADR 규칙](../../technical-design/references/adr-rules.md)의 종류·현재 원본·대체 관계를 함께 본다. 기존 타입 누락은 위반이 아니다. 확정된 과거 맥락을 현재 코드와 다르다는 이유로 다시 쓰게 하지 않는다.
 - **docs 에 남은 옛 내용.** → `UPDATE_NEEDED`
 코드에서 제거되거나 이름이 바뀐 함수, 경로, 필드, 화면이 `docs/` 에 남아 있는지 `grep -rn` 으로 찾는다.
 - **docs 에 없는 새 결정.** → `UPDATE_NEEDED`
