@@ -38,8 +38,8 @@
 
 **문구는 실제로 받은 리뷰의 소제목을 그대로 읽어 쓴다.**
 
-`pr-review` 스킬로 등록한 리뷰는 본문 첫 줄에 등급을 적고, P4 에 `🔵` 를 쓴다.
-그 표기는 [pr-review 의 grading.md](../../pr-review/references/grading.md) 가 소유한다.
+`pr-review` 스킬로 등록한 리뷰는 본문 첫 줄에 `🔴 **P1 치명**`, `🟠 **P2 높음**`, `🟡 **P3 보통**`, `🔵 **P4 낮음**`, `⚪ **P5 참고**` 가운데 하나를 적는다.
+봇의 P4 는 `🟢` 이고 이 표기의 P4 는 `🔵` 이다. 표기의 원본은 `pr-review` 스킬이 설치돼 있으면 그 `references/grading.md` 가 소유한다.
 
 ## Low, Medium, High
 

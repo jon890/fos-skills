@@ -1,7 +1,7 @@
 # 예시: 병렬 PR 용 ADR 파일과 색인
 
-4단계에서 ADR 을 만들 때, 여러 에이전트나 사람이 같은 저장소에 동시에 PR 을 여는 저장소라면 이 형식을 쓴다.
-기본 템플릿은 [`task-create.md`](../task-create.md) 의 ADR 구조 템플릿 절이고, 이 예시는 파일 이름과 색인만 다르게 한다.
+ADR 을 만들 때, 여러 에이전트나 사람이 같은 저장소에 동시에 PR 을 여는 저장소라면 이 형식을 쓴다.
+기본 규칙은 [`adr-rules.md`](adr-rules.md) 이고, 이 예시는 파일 이름과 색인만 다르게 한다.
 작업 PR 이 한 번에 하나뿐인 저장소는 기본의 `NNN-<슬러그>.md` 로 충분하다.
 
 ## 왜 번호를 쓰지 않는가
@@ -32,8 +32,8 @@ docs/adr/
 
 - 파일 이름은 `ADR-YYYYMMDD-slug.md` 다. 날짜는 결정한 날이고 파일 안의 `Date` 와 같다.
 - 슬러그는 내용을 나타내는 짧은 소문자 영문, 숫자, 하이픈이다.
-- `superseded` 가 되면 기본 템플릿의 위치 규약에 따라 옮기고 링크를 고친다. 파일 이름과 식별자는 유지한다.
-- 머리는 `task-create.md` 와 같은 불릿형이다. 결정, 맥락, 대안 기각, 결과가 한 화면에 들어와야 한다.
+- `superseded` 가 되면 [`adr-rules.md`](adr-rules.md) 의 이동 규약에 따라 옮기고 링크를 고친다. 파일 이름과 식별자는 유지한다.
+- 머리는 [ADR 양식](../templates/adr.md)과 같은 불릿형이다. 결정, 맥락, 대안 기각, 결과가 한 화면에 들어와야 한다.
 
 ```markdown
 ## ADR-20261007 / cache-key-scheme: 캐시 키에 테넌트 id 를 접두사로 둔다
@@ -88,7 +88,7 @@ docs/adr/
 | 파일 안의 status 와 색인의 status 가 같다 | 대체된 ADR 이 accepted 로 남음 |
 | 파일 안의 status 와 색인의 「현행」·「대체됨」 구분이 같다 | 대체된 ADR 이 현행 목록에 남음 |
 
-테스트는 새 파일을 읽어야 하므로 [`test-boundaries.md`](test-boundaries.md) 의 `convention` 디렉터리에 둔다.
+테스트는 새 파일을 읽어야 하므로 plan 의 [`test-boundaries.md`](../../plan/references/examples/test-boundaries.md) 의 `convention` 디렉터리에 둔다.
 파일 이름에서 식별자를 얻는 함수 하나만 정확하면 나머지 검사는 그 함수의 결과를 비교하는 일이다.
 
 ## 사용자 결정 로그와의 관계
@@ -96,7 +96,7 @@ docs/adr/
 사용자가 정한 취향과 범위를 한 줄씩 남기는 결정 로그(`DECISIONS.md` 같은 표)를 따로 두는 저장소가 있다.
 짧은 기록은 그 표에 두고, 이유와 기각한 대안이 필요한 기술 결정만 ADR 로 옮긴 뒤 표의 행에서 ADR 을 가리킨다.
 같은 결정을 두 곳에 풀어 쓰지 않는다.
-ADR 감인지 정하는 두 조건은 [`task-create.md`](../task-create.md#문서-영향과-adr) 의 「문서 영향과 ADR」 이 소유한다.
+ADR 감인지 정하는 두 조건은 [`adr-rules.md`](adr-rules.md#남길-조건) 의 「남길 조건」 이 소유한다.
 
 ## 근거
 
