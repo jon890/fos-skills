@@ -23,7 +23,7 @@
 | `export-only-skills/korean-check` | 847 | 1,147 | `check.sh` |
 | `scripts/` | 723 | 1,313 | `export-to-team.sh`, `install-hooks.sh`, `test-plugin-install.sh`, 표본 둘 |
 | `skills/review-fix` | 864 | 490 | `fold_fixup.sh` |
-| 나머지(`docs-check`, `implementation`, `content-preview`, `report`, `presentation`, `browser`, `pr-review`, `orch`) | 약 1,900 | 약 1,000 | `pr_mergeable.sh`, `show-preview.sh`, `style-check.sh`, `gh-*.sh` 셋 |
+| 나머지(`docs-audit`, `implementation`, `content-preview`, `report`, `presentation`, `browser`, `pr-review`, `orch`) | 약 1,900 | 약 1,000 | `pr_mergeable.sh`, `show-preview.sh`, `style-check.sh`, `gh-*.sh` 셋 |
 | `githooks/` | `commit-msg`(python3) | | `post-commit`(bash) |
 
 - Python 파일 124개, 약 2만 3천 줄. 제3자 패키지는 없다. 테스트 파일 54개 가운데 40개가 명령을 subprocess 로 실행한다.
@@ -63,7 +63,7 @@
 - 전환 안에서는 작은 것부터 영역 하나에 PR 하나로 간다(DECISION6).
   1. 저장소 기반: 언어 규칙 ADR, 남은 Python·셸 목록을 줄여 가는 저장소 테스트, CI 구성
   2. `scripts/` 와 `githooks/`, workflow 의 Python 호출
-  3. 작은 스킬 묶음: `pr-review`, `implementation`, `docs-check`, `report`, `presentation`, `browser`. orch doctor 의 옛 Python 진입은 orch-cli 의 옛 이름 정리 PR 이 지운다(DECISION14)
+  3. 작은 스킬 묶음: `pr-review`, `implementation`, `docs-audit`, `report`, `presentation`, `browser`. orch doctor 의 옛 Python 진입은 orch-cli 의 옛 이름 정리 PR 이 지운다(DECISION14)
   4. `review-fix` 와 그것을 부르는 orch 호출
   5. `content-preview`
   6. `korean-check`
