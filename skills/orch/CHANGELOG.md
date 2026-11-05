@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.15.1 (2026-11-06)
+
+- 핸들러 문법 규칙의 원본을 `docs/code-architecture.md` 「저장소 실행 규칙」 으로 가리킨다.
+
 ## 7.15.0 (2026-11-06)
 
 - 진입 스크립트를 명령 묶음과 같은 `scripts/<묶음>/` 폴더로 옮겼다(`queue/merge_queue.ts` 꼴). `orch` 명령과 옛 꼴 이름은 그대로다.

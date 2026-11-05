@@ -1,1 +1,0 @@
-- 핸들러 문법 규칙의 원본을 `docs/code-architecture.md` 「저장소 실행 규칙」 으로 가리킨다.
