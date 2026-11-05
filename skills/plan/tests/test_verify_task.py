@@ -137,6 +137,19 @@ class TaskRulesTest(unittest.TestCase):
 
     def test_js_callers_require_an_exported_owner(self):
         cases = (
+            ("export class Repo { triage() {} }", "triage", True),
+            ("export const repo = { triage() {} };", "triage", True),
+            ("class Repo { triage() {} }", "triage", False),
+            ("const repo = { triage() {} };", "triage", False),
+            ("export class Repo { private triage() {} }", "triage", False),
+            ("export class Repo { method() { function triage() {} } }", "triage", False),
+            ("class Repo { triage() {} }\nexport { Repo as PublicRepo };", "triage", True),
+            ("export class Repo { other() {}\n triage() {} }", "triage", True),
+            ("export class Repo { static triage() {} }", "triage", True),
+            ("export const repo = { triage: () => {} };", "triage", True),
+            ("export default { triage() {} };", "triage", True),
+            ("export default class { triage() {} }", "triage", True),
+            ("const repo = { triage() {} };\nexport default repo;", "triage", True),
             ("function triage() {}", "triage", False),
             ("const oneLine = () => '';", "oneLine", False),
             ("export function triage() {}", "triage", True),

@@ -1342,6 +1342,27 @@ def exclude_prefixes(exclude):
     return tuple(rel.rstrip("/") + "/" for rel in exclude if not Path(rel).suffix)
 
 
+def js_members(source, opening):
+    """클래스나 객체의 직속 멤버 이름을 찾는다. 중첩된 지역 함수는 뺀다."""
+    depth, end = 1, opening + 1
+    while end < len(source) and depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    body = source[opening + 1:end - 1]
+    depths, depth = [], 0
+    for char in body:
+        depths.append(depth)
+        depth += (char in "{([") - (char in "})]")
+    members = set()
+    for match in re.finditer(
+        r"(?:^|[;,\n}])\s*(?:(?:public|static|async|get|set|readonly|abstract|declare)\s+)*"
+        r"([A-Za-z_$][\w$]*)\s*(?=[(:=,]|$)", body,
+    ):
+        if depths[match.start(1)] == 0:
+            members.add(match[1])
+    return members
+
+
 def owns_call_name(file, name):
     """TS/JS 는 export 한 이름만, 다른 언어는 기존 낱말 대조로 주인을 찾는다."""
     source = file.read_text(encoding="utf-8", errors="ignore")
@@ -1357,11 +1378,22 @@ def owns_call_name(file, name):
     )
     defaults = re.findall(rf"\bexport\s+default\s+({identifier})\s*(?=;|$)", source, re.M)
     exported = set(declarations + defaults)
+    containers = set(exported)
     for listing in re.findall(r"\bexport\s*\{([^}]*)\}", source):
         for item in listing.split(","):
             match = re.fullmatch(rf"\s*({identifier})(?:\s+as\s+({identifier}))?\s*", item)
             if match:
                 exported.add(match[2] or match[1])
+                containers.add(match[1])
+    for container in re.finditer(
+        rf"\b(?:class\s+({identifier})[^{{;]*|(?:const|let|var)\s+({identifier})\s*=\s*)\{{", source,
+    ):
+        if (container[1] or container[2]) in containers:
+            if name in js_members(source, container.end() - 1):
+                return True
+    for container in re.finditer(r"\bexport\s+default\s+(?:class\s*)?\{", source):
+        if name in js_members(source, container.end() - 1):
+            return True
     return name in exported
 
 
