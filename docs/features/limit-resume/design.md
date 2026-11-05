@@ -23,14 +23,14 @@
   - `shellLine(argv)`: 실행 줄을 `exec` 로 시작하는 셸 한 줄로 쓴다(낱말마다 작은따옴표).
 - **실행기 `resume-exec.ts`(새 파일)**: `lib/resume.ts` 만 import 한다. 새 터미널의 셸이 `node <resume-exec.ts> <요청 폴더> && . <요청 폴더>/launch.sh` 로 부른다.
   1. `request.json` 을 읽고, 자기 `CLAUDE_CONFIG_DIR`(없으면 `~/.claude`) 또는 `CODEX_HOME`(없으면 `~/.codex`)에서 세션을 찾는다.
-  2. Claude 면 `--plugin-dir` 폴더를 정한다. `request.json` 의 `pluginDir`(옛 에이전트 프로세스의 실행 줄에서 읽은 값)이 있고 폴더가 있으면 그것, 없으면 `<ORCA_USER_DATA_PATH>/claude-agent-view/*/orca-agent-view` 가 하나일 때만 그것이다. 못 정하면 실패로 쓴다.
+  2. Claude 면 `--plugin-dir` 폴더를 정한다. 자기 환경의 `ORCA_CLAUDE_AGENT_VIEW_PLUGIN_DIR` 이 있고 폴더가 있으면 그것, 없으면 `request.json` 의 `pluginDir`(옛 에이전트 프로세스의 실행 줄에서 읽은 값)이다. 둘 다 없으면 실패로 쓴다. 실측(2026-11-05): 일반 Orca 터미널의 환경에 이 변수가 있고 값이 Orca 가 띄운 Claude 의 `--plugin-dir` 과 같았다. 이 기계의 `claude-agent-view` 아래에는 해시 폴더가 다섯 개라 폴더 고르기로는 정할 수 없다. Codex 면 `ORCA_WORKSPACE_ID`, `ORCA_WORKTREE_ID`, `ORCA_PANE_KEY`, `ORCA_TERMINAL_HANDLE`, `ORCA_USER_DATA_PATH` 가 모두 있어야 하고, 하나라도 없으면 실패로 쓴다.
   3. `found.json` 에 결과(성공이면 세션 id, 기록 폴더, 자기 터미널 handle)를 쓴다. 실패면 0 이 아닌 코드로 끝나 셸이 `launch.sh` 를 부르지 않는다.
   4. `go` 를 기다린다. 시한은 `request.json` 의 `goDeadline`(절대 시각)이다. 시한이 지나면 `launch.sh` 를 쓰지 않고 0 이 아닌 코드로 끝난다.
   5. `launch.sh` 에 `shellLine(argv)` 를 쓰고 0 으로 끝난다. 셸이 그 파일을 읽어 `exec` 로 에이전트가 된다. 에이전트가 터미널의 직접 프로세스라 node 래퍼가 남지 않고 Ctrl-C 같은 신호도 에이전트가 받는다.
-- **`resume-worker.ts`(새 진입 스크립트, 명령 표의 `worker resume`)**: 코디네이터 쪽 차례를 돈다. Orca 호출은 `lib/orca.ts`, 화면 판정은 `lib/screen.ts`, 한도 판정은 `lib/sessions.ts` 의 `limitedScreen`, 터미널 목록은 `terminalRows` 를 쓴다.
-- **명령 표 `lib/commands.ts`**: `worker resume` 한 행을 더한다. 문맥은 `repo`, `run` 이다. 스크립트 경로는 구현 시점(orch-cli PR3 뒤)의 폴더 배치를 따른다. `resume-exec.ts` 는 명령 표에 넣지 않고 `resume-worker.ts` 와 같은 폴더에 둔다.
+- **`resume-worker.ts`(새 진입 스크립트, 명령 표의 `worker resume`)**: 코디네이터 쪽 차례를 돈다. `--dispatch` 값은 `lib/launched.ts` 와 같은 규칙(`^[\w.-]+$`, `.` 으로 시작하지 않음)으로 검사한다. 요청 폴더 경로와 재귀 삭제에 쓰이기 때문이다. 새 터미널의 명령은 이 프로세스의 node(`process.execPath`)로 실행기를 부른다. 로그인 셸의 PATH 에 있는 node 는 `node:sqlite` 와 타입 제거를 보장하지 못한다. Orca 호출은 `lib/orca.ts`, 화면 판정은 `lib/screen.ts`, 한도 판정은 `lib/sessions.ts` 의 `limitedScreen`, 터미널 목록은 `terminalRows` 를 쓴다.
+- **명령 표 `lib/commands.ts`**: `worker resume` 한 행을 더한다. 문맥은 `repo` 만이다. Run 은 옛 dispatch 의 `runId` 를 쓴다. 문맥이 지금 Run 을 채우면 다른 Run 의 worker(`adopt-sessions` 는 모든 Run 에서 대상을 찾는다)를 엉뚱한 Run 으로 조회하거나 이을 수 있다. `--run` 을 주면 `runId` 와 같은지만 보고 다르면 `target` 에서 거부한다. 스크립트 경로는 구현 시점(orch-cli PR3 뒤)의 폴더 배치를 따른다. `resume-exec.ts` 는 명령 표에 넣지 않고 `resume-worker.ts` 와 같은 폴더에 둔다.
 - **`lib/sessions.ts`**: `limitedWorkers`, `restartable` 의 `commands` 를 `` `${orchWord()} worker resume --dispatch ${shQuote(id)}` `` 한 줄로 바꾼다(스펙 DECISION5, 같은 파일의 `adoptHint` 와 같은 앞 낱말 규칙). 판정 줄과 `Stuck` 의 다른 키는 그대로다. `restartable` 에 「그 dispatch 의 터미널이 열려 있지 않음」 조건을 더한다.
-- **`orch-loop.ts`**: `WORKER-LIMITED` 알림 본문만 바꾼다(스펙 DECISION13). 루프는 여전히 입력하지 않는다.
+- **`orch-loop.ts`**: `WORKER-LIMITED` 알림 본문만 바꾼다(스펙 DECISION13). 구조화 worker(터미널 없음)는 resume 대상이 아니므로 지금 문구(제공자나 모델을 바꿔 이어받기)를 그대로 낸다. 루프는 여전히 입력하지 않는다.
 - **`lib/launched.ts`**: 새 dispatch 를 `recordLaunch` 로 기록한다. `spec` 은 옛 dispatch 의 기록(`readLaunch`)에서, `branch` 는 git 의 워크트리 목록(`worktreePaths`)에서 채운다. 옛 기록이 없어 `spec` 을 못 채우면 `RESUME-WARN spec 기록 없음` 을 낸다.
 
 의존 방향: `resume-worker.ts` → `lib/resume.ts`, `lib/sessions.ts`, `lib/screen.ts`, `lib/orca.ts`, `lib/launched.ts`. `resume-exec.ts` → `lib/resume.ts` 만.
@@ -80,7 +80,7 @@ orch worker resume --dispatch <옛 dispatch id> [--run <Run>] [--repo DIR] [--ti
 
 ### 대상 판정
 
-`worker-show --dispatch <id> --full`, `task-list --run <Run>`, `terminal list` 로 정한다.
+`worker-show --dispatch <id> --full`, `task-list --run <dispatch 의 runId>`, `terminal list` 로 정한다. 조회가 실패하면(`terminalRows` 의 예외 포함) 종료 코드 1 이다.
 
 | 판정 | 조건 | 할 단계 |
 | --- | --- | --- |
@@ -167,5 +167,6 @@ sequenceDiagram
 | DECISION4 | 정리된 dispatch 받기 | 그 Task 의 마지막 dispatch 이고 터미널이 닫혔으면 `settled` 로 받는다 | 작성자 | 스펙 DECISION12 의 「같은 명령을 다시 부른다」 |
 | DECISION5 | 새 명령 이름 | `orch worker resume` | 작성자 | 같은 묶음의 `worker adopt` 옆이다. 짧은 명령 체계(`docs/features/orch-cli/design.md`)를 따른다 |
 | DECISION6 | 에이전트를 띄우는 주체 | 실행기는 `launch.sh` 를 쓰고 끝나며, 셸이 `exec` 로 에이전트가 된다 | 작성자 | node 래퍼 아래 자식으로 두면 래퍼가 worker 수명 내내 남고 Ctrl-C 가 래퍼를 먼저 끝낼 수 있다. 실측한 인식 경로(셸에 입력한 `claude`)와 같다 |
-| DECISION7 | `--plugin-dir` 값 | 옛 에이전트의 실행 줄에서 읽고, 없으면 폴더가 하나일 때만 쓰며, 못 정하면 `find` 에서 실패 | 작성자 | 해시가 여럿이면 최근 폴더 고르기가 틀릴 수 있다. 정리 전에 실패해야 옛 worker 가 남는다 |
+| DECISION7 | `--plugin-dir` 값 | 새 터미널의 `ORCA_CLAUDE_AGENT_VIEW_PLUGIN_DIR`, 없으면 옛 에이전트의 실행 줄. 둘 다 없으면 `find` 에서 실패 | 작성자 | Orca 가 터미널마다 넣는 값이라 짐작이 없다(실측). 해시 폴더가 여럿이라 폴더 고르기는 쓸 수 없다. 정리 전에 실패해야 옛 worker 가 남는다 |
+| DECISION9 | 명령의 Run | 옛 dispatch 의 `runId`. 명령 표 문맥에서 `run` 을 뺀다 | 작성자 | 다른 Run 의 worker 를 지금 Run 으로 잇지 않게 한다 |
 | DECISION8 | 실행기의 출발 신호 대기 | `goDeadline` 까지만 기다린다 | 작성자 | 코디네이터가 중간에 끝나면 실행기가 영원히 기다려 터미널이 남는다 |

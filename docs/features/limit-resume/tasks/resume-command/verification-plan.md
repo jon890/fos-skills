@@ -1,0 +1,14 @@
+# resume 명령 인수 검증 계획
+
+## 인수 검증 계획
+
+| 요구사항 | 준비 조건 | 실행 절차 | 기대 결과 | 실행 환경 | 선행 조건 | 시점 |
+| --- | --- | --- | --- | --- | --- | --- |
+| REQ1 | 임시 워크트리 하나, Run 하나. 명령은 체크아웃의 것을 쓰도록 `ORCH_SCRIPTS_DIR=<이 워크트리>/skills/orch/scripts orch …` 로 부른다(진입점이 설치본으로 넘기지 않게) | `orca orchestration worker-start --spec "코디네이터가 보내는 메시지를 기다렸다가 답한다" --agent claude --model claude-haiku-5-5 --worktree path:<W>` 로 띄운다. `orch worker send` 로 지시서에 없는 단어(실행 때 무작위로 고른다)를 기억하고 OK 만 답하라고 보낸다. 답을 받으면 그 dispatch 를 `worker-abandon` 하고 터미널을 닫는다. `orch worker resume --dispatch <그 dispatch>` 를 부르고, 새 worker 에게 `orch worker send` 로 「기억한 단어를 답하라」 를 보낸다 | `RESUME-TARGET … kind=settled`, `RESUME-SESSION`, `RESUMED` 줄과 종료 코드 0. 새 터미널의 실행 프로세스가 `claude … --resume <세션 id>` 이고 worker 가 그 단어를 답한다. `state/launched-workers/<새 dispatch>.json` 이 있다 | 로컬 Orca, 이 저장소의 임시 워크트리 | 없음(앞선 커밋: phase-01, phase-02 커밋) | PR 전 |
+| REQ1 | 같은 준비, 에이전트만 Codex | 위 절차를 `--agent codex --model gpt-6-luna` 로 돌린다 | `RESUMED` 와 종료 코드 0. 새 터미널이 `agentIdentity: codex` 이고 실행 프로세스가 `codex resume <세션 id>` 이며 worker 가 그 단어를 답한다 | 로컬 Orca | 없음(실행 중 Codex 계정을 바꾸지 않는다) | PR 전 |
+| REQ2 | 가짜 `orca` 가 failed dispatch, ready Task, 닫힌 터미널을 낸다 | `skills/orch/tests/resume-worker.spec.ts` 의 `restart` 사례 | `worker-abandon`, `terminal close` 호출 없이 `RESUMED`. 옛 터미널이 열려 있으면 `RESUME-FAIL target` | 로컬 node 테스트 | 없음(앞선 커밋: phase-02) | PR 전 |
+| REQ3 | 가짜 `orca` 가 한도 화면의 살아 있는 dispatch 를 낸다 | `resume-worker.spec.ts` 의 `limited` 사례에서 가짜 orca 의 호출 기록(호출마다 그때 `go` 가 있었는지)을 본다 | `worker-abandon` 과 옛 `terminal close` 기록은 `go` 가 없던 때이고 `worker-start` 기록은 있던 때다. 출력에 `RESUME-SCREEN`, `RESUME-SESSION` 이 정리 전에 나온다. `go` 전에는 `launch.sh` 가 없다(`resume-exec.spec.ts`) | 로컬 node 테스트 | 없음(앞선 커밋: phase-01, phase-02) | PR 전 |
+| REQ4 | 단계별 실패를 주입하는 가짜 `orca` 와 가짜 홈 | `resume-worker.spec.ts` 의 `target`(정상 작업 중 worker), `find`, `cleanup`, `start-agent`, `link` 실패 사례와 잠금 사례 | 단계 이름이 든 `RESUME-FAIL`, `NEXT`, 설계 표의 종료 코드(3, 3, 3, 3, 1). `target` 은 새 터미널을 열지 않고 옛 dispatch 를 건드리지 않는다. `find`·`cleanup`·`start-agent` 는 새 터미널을 닫고 `link` 는 남긴다. `link` 뒤 같은 명령은 `RESUME-FAIL target` | 로컬 node 테스트 | 없음(앞선 커밋: phase-02) | PR 전 |
+| REQ4 | 실제 Orca, 기록이 없는 워크트리 | 위 REQ1 절차에서 resume 전에 그 세션 기록 파일을 임시 폴더로 옮겨 두고 명령을 부른 뒤 되돌린다 | `RESUME-FAIL find` 와 종료 코드 3. 새 터미널이 남지 않는다 | 로컬 Orca | 없음(REQ1 첫 행의 준비를 다시 쓴다) | PR 전 |
+| REQ5 | 가짜 `orca` 의 한도 화면과 failed dispatch | `skills/orch/tests/adopt-sessions.spec.ts` 의 `LIMITED`, `RESTART` 사례, `skills/orch/tests/orch-loop-stall.spec.ts` 의 사용 한도 사례 | 판정 줄 형식은 그대로이고 아래 줄이 `orch worker resume --dispatch <id>` 하나다. 터미널 worker 의 루프 알림이 계정 전환 요청과 그 명령을 담고, 구조화 worker 의 알림에는 그 명령이 없다 | 로컬 node 테스트 | 없음(앞선 커밋: phase-02) | PR 전 |
+| REQ5 | 고친 참조 문서 | phase-04 검증의 `grep -q "worker resume"` 세 줄 | `agent-selection.md`, `launch.md`, `waiting.md` 가 계정 전환 뒤 resume 순서를 안내한다 | 로컬 | 없음(앞선 커밋: phase-04) | PR 전 |
