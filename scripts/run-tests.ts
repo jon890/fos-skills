@@ -14,7 +14,7 @@
 //
 // tsc:
 //   node 는 타입을 지우기만 해서 잘못된 속성 접근이 실행 때까지 드러나지 않는다. 저장소에 package.json 과
-//   node_modules 를 두지 않으므로(docs/code-architecture.md 「실행 규칙」 의 「의존」) TypeScript 는 저장소 밖
+//   node_modules 를 두지 않으므로(docs/code-architecture.md 「저장소 실행 규칙」 의 「의존」) TypeScript 는 저장소 밖
 //   사용자 캐시 폴더에 설치한다. 버전은 TYPESCRIPT, NODE_TYPES 상수가 소유하고, 폴더는 FOS_TSC_DIR 로 바꾼다.
 //
 // 사용법 (cwd: 저장소 루트)

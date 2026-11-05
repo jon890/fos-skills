@@ -24,3 +24,4 @@
 - [ADR-022](022-extension-directory-layout.md): 보드를 확장 기능 디렉터리에 둔다 (`accepted`)
 - [ADR-023](023-version-at-merge.md): 스킬 버전과 CHANGELOG 절은 PR 이 아니라 머지 때 조각 파일로 정한다 (`accepted`)
 - [ADR-024](024-decision-record-classification.md): 결정 기록은 종류를 나누고 현재 규칙의 원본을 연결한다 (`accepted`)
+- [ADR-025](025-script-runtime-typescript.md): 저장소의 스크립트와 테스트를 TypeScript(Node 24) 하나로 둔다 (`accepted`)

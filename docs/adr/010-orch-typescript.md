@@ -22,4 +22,4 @@
   - 감당할 것: 타입 제거가 지우는 문법만 쓴다. `enum`, `namespace`, 생성자 매개변수 속성을 쓰지 않고, 상대 import 에 `.ts` 확장자를 적고, 타입만 가져올 때 `import type` 을 쓴다.
   - 감당할 것: Node 22.x 는 타입 제거에 실험 경고를 낸다. 명령과 hook 은 `node --disable-warning=ExperimentalWarning` 으로 부른다.
   - 감당할 것: 다른 저장소의 오버레이와 포장 스크립트가 적은 `python3 .../x.py` 는 shim 이 있는 동안 동작하고 stderr 에 새 명령을 알린다. 다음 major 에서 shim 을 지운다.
-- **적용 범위**: 모듈 배치와 실행 규칙은 [`../code-architecture.md`](../code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
+- **적용 범위**: 모듈 배치와 실행 규칙은 [`../code-architecture.md`](../code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다. 저장소 전체로 넓힌 규칙은 [ADR-025](025-script-runtime-typescript.md) 가 소유한다.
