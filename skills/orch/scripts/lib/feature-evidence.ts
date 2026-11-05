@@ -6,7 +6,7 @@ import { ghJson } from './gh.ts'
 import { loadConfig } from './config.ts'
 import { git } from './git.ts'
 import { pathOf } from './paths.ts'
-import { specsOnBranch, taskFirstLine } from './spec.ts'
+import { branchesOf, specsOnBranch, taskFirstLine } from './spec.ts'
 import { readLaunch } from './launched.ts'
 import { worktreePaths } from './workers.ts'
 
@@ -51,10 +51,14 @@ export function featureBranch(repo: string, branch: string, explicit?: string): 
       if (!launch || !(launch.branch === branch || (!launch.branch && launch.worktree === worktree))) return []
       return [launch]
     })
-    const texts = launches.flatMap(({ spec }) => spec && existsSync(spec) ? [readFileSync(spec, 'utf8')] : [])
+    const texts = launches.flatMap(({ spec }) => {
+      if (!spec || !existsSync(spec)) return []
+      const text = readFileSync(spec, 'utf8')
+      return branchesOf(text).includes(branch) ? [text] : []
+    })
     if (texts.length > 0) return texts.some(implementationRequested)
   }
-  // 띄운 기록이 없으면 기존처럼 기본/설정 폴더의 브랜치 지시서를 모두 본다.
+  // 읽을 수 있는 연결 지시서가 없으면 기존처럼 기본/설정 폴더의 브랜치 지시서를 모두 본다.
   const dirs = [pathOf('specs', repo), explicit, configured].filter((v): v is string => Boolean(v))
   return dirs.some((dir) => {
     const full = isAbsolute(dir) ? dir : join(repo, dir)

@@ -70,6 +70,27 @@ test('실제 계획 전용 지시서 문구는 기록 유무와 관계없이 구
   writeFileSync(spec, `브랜치: \`feat/test\`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n\n\`\`\`md\n${handoff}\n\`\`\`\n`)
   assert.equal(featureBranch(repo, 'feat/test'), true)
 })
+test('branch 없는 옛 기록을 워크트리로 찾고, 누락되거나 다른 브랜치로 바뀐 지시서는 제외한다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-record-fallback-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', '-b', 'feat/test', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const fallback = join(specs, 'spec-fallback.md')
+  const linked = join(repo, 'linked.md')
+  const implementation = '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n'
+  writeFileSync(fallback, '브랜치: `feat/test`\n## 할 일\n루프 없이: 문서 정정\n')
+  writeFileSync(linked, implementation)
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  recordLaunch(repo, { dispatch: 'legacy', worktree: repo, terminal: null, run: null, spec: linked })
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+  writeFileSync(linked, implementation.replace('feat/test', 'feat/other'))
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  rmSync(linked)
+  assert.equal(featureBranch(repo, 'feat/test'), false)
+  writeFileSync(fallback, implementation)
+  assert.equal(featureBranch(repo, 'feat/test'), true)
+})
 const BODY = `<!-- fos-feature-evidence -->
 검증 커밋: ${HEAD}
 인수 검증: 통과 | REQ1 API 응답과 DB 상태 확인, PR 본문의 실행 기록

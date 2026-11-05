@@ -314,6 +314,16 @@ describe('merge_queue 기본 흐름', { skip: !HAS_TOOLS && 'jq 와 bash 가 필
     lacks(c.log(), 'pr merge')
   })
 
+  test('--stop-on-hold 는 재판정 대상 스레드도 한 번만 보고 끝낸다', async (t) => {
+    const c = setup(t)
+    const calls = join(c.tmp, 'calls')
+    const r = await c.runQueue({ '1': pr() }, ['--stop-on-hold', '--threads-cmd', `echo hit >> ${calls}; echo 1`, '1'])
+    assert.equal(r.code, 1, both(r))
+    assert.equal(readFileSync(calls, 'utf8'), 'hit\n')
+    lacks(r.stdout, '보류 사유를 다시 판정한다')
+    assert.equal(existsSync(c.sweepLog), false)
+  })
+
   test('실패한 체크와 완료 근거 불일치는 재판정하지 않는다', async (t) => {
     for (const fields of [{ statusCheckRollup: FAILED }, { body: '<!-- fos-feature-evidence -->' }]) {
       const c = setup(t)
