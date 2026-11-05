@@ -7,7 +7,7 @@
 //     lock         코디네이터가 O_EXCL 로 만든다. { pid, startedAt, terminal }. terminal 은 새 터미널을 연 뒤 채운다
 //     request.json 코디네이터가 쓴다. ResumeRequest
 //     found.json   실행기가 쓴다. Found
-//     go           코디네이터가 옛 dispatch 정리를 마친 뒤 쓰는 빈 파일. 실행기의 출발 신호다
+//     go           코디네이터가 옛 dispatch 정리를 마친 뒤 쓰는 파일. 내용은 request.json 의 nonce 다. 실행기의 출발 신호다
 //     launch.sh    실행기가 go 를 본 뒤 쓴다. `exec …` 한 줄. 셸이 source 해 에이전트가 된다
 //
 // 세션 기록:
@@ -21,7 +21,9 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
 export type Agent = 'claude' | 'codex'
-export type ResumeRequest = { dispatch: string; worktree: string; agent: Agent; model: string; effort: string | null; pluginDir: string | null; goDeadline: number }
+// nonce 는 실행마다 새로 만든다. go 파일 내용이 같은 nonce 일 때만 실행기가 출발한다.
+// 앞 실행의 고아 실행기가 같은 폴더의 새 go 를 보고 함께 출발하지 않게 하려는 것이다
+export type ResumeRequest = { dispatch: string; worktree: string; agent: Agent; model: string; effort: string | null; pluginDir: string | null; goDeadline: number; nonce: string }
 export type Found = { ok: true; session: string; home: string; terminal: string | null } | { ok: false; reason: string }
 
 export const REQUEST = 'request.json'
@@ -192,7 +194,7 @@ function writeAtomic(file: string, text: string): void {
 export function readRequest(dir: string): ResumeRequest {
   const data = JSON.parse(readFileSync(join(dir, REQUEST), 'utf8')) as ResumeRequest
   if (typeof data?.dispatch !== 'string' || typeof data.worktree !== 'string' || (data.agent !== 'claude' && data.agent !== 'codex')
-    || typeof data.model !== 'string' || typeof data.goDeadline !== 'number') throw new Error(`${REQUEST} 형식이 잘못됐다`)
+    || typeof data.model !== 'string' || typeof data.goDeadline !== 'number' || typeof data.nonce !== 'string' || !data.nonce) throw new Error(`${REQUEST} 형식이 잘못됐다`)
   return data
 }
 
@@ -210,6 +212,15 @@ export function readFound(dir: string): Found | null {
     return typeof data?.ok === 'boolean' ? data : null
   } catch {
     return null
+  }
+}
+
+// go 파일이 이 nonce 의 출발 신호인가
+export function goFor(dir: string, nonce: string): boolean {
+  try {
+    return readFileSync(join(dir, GO), 'utf8').trim() === nonce
+  } catch {
+    return false
   }
 }
 

@@ -43,7 +43,7 @@ async function main(): Promise<number> {
         }
         for (const stuck of [...limited, ...restartable]) {
           const head = stuck.kind === 'limited' ? `LIMITED ${stuck.terminal}` : 'RESTART'
-          // 들여 쓴 줄은 차례로 부를 명령이라 짧은 출력에서도 판정 줄 뒤에 남긴다
+          // 들여 쓴 줄은 부를 명령이라 짧은 출력에서도 판정 줄 뒤에 남긴다
           emit([`${head} dispatch=${stuck.dispatch} task=${stuck.task} run=${stuck.run ?? '-'} branch=${stuck.branch}`, ...stuck.commands.map((c) => `  ${c}`)].join('\n'), [], { fix: true })
         }
       }

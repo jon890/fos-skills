@@ -1514,7 +1514,7 @@ async function watchStalls(
         // 터미널 worker 는 계정을 바꾼 뒤 resume 으로 같은 세션을 잇는다. 구조화 worker 는 터미널이 없어 resume 대상이 아니다
         const text = isStructured(terminal, row.startOptions)
           ? `사용 한도 ${dispatch} ${terminal}: references/agent-selection.md 의 「사용 한도에 걸렸을 때」에 따라 제공자나 모델을 바꿔 이어받는다`
-          : `사용 한도 ${dispatch} ${terminal}: 사용자에게 계정 전환을 요청하고, 바꾼 뒤 ${orchWord()} worker resume --dispatch ${shQuote(dispatch)}. 바꿀 계정이 없거나 resume 이 실패하면 references/agent-selection.md 의 「사용 한도에 걸렸을 때」`
+          : `사용 한도 ${dispatch} ${terminal}: 사용자에게 계정 전환을 요청하고, 바꾼 뒤 ${orchWord()} worker resume --dispatch ${shQuote(dispatch)}. resume 이 실패하면 출력의 NEXT 를 먼저 따르고, 바꿀 계정이 없거나 그래도 안 되면 references/agent-selection.md 의 「사용 한도에 걸렸을 때」`
         try {
           appendEvent(ctx.repo, 'WORKER-LIMITED', null, text, run)
           limitedNotified = true

@@ -7,7 +7,7 @@
 //     2. request.json 을 쓰고 같은 워크트리에 새 터미널을 연다. 그 셸이 `node resume-exec.ts <폴더> && . <폴더>/launch.sh` 를 돈다
 //     3. 새 터미널의 실행기가 자기 계정 환경에서 찾은 세션(found.json)을 기다린다(시한의 3할)
 //     4. limited 면 옛 dispatch 를 abandon 하고 옛 터미널을 닫는다
-//     5. go 를 쓴다. 이때부터 셸이 exec 로 에이전트가 되어 세션에 붙는다. 옛 터미널을 닫은 뒤라 한 세션에 두 프로세스가 붙지 않는다
+//     5. 이번 실행의 nonce 를 담은 go 를 쓴다. 이때부터 셸이 exec 로 에이전트가 되어 세션에 붙는다. 옛 터미널을 닫은 뒤라 한 세션에 두 프로세스가 붙지 않는다
 //     6. 새 터미널의 agentIdentity 가 요청 에이전트이고 화면이 idle, error, interrupted 가 될 때까지 기다린다
 //        (resume 한 화면은 앞 대화의 한도 오류 줄이 다시 그려져 error 로 보일 수 있다)
 //     7. worker-start --task <T> --terminal <새> --worktree path:<W> --run <Run> 으로 같은 Task 에 잇는다.
@@ -29,18 +29,21 @@
 //     RESUMED <새 dispatch> <새 터미널> <세션 id>   성공. 종료 코드 0
 //     RESUME-FAIL <단계> <이유> 다음 NEXT <명령>    실패
 //
-// 단계별 실패:
-//     단계         종료 코드          옛 dispatch          새 터미널                 NEXT
-//     target       3(조회 실패는 1)    그대로               없음                      대상이 아닌 이유에 맞는 명령(orch worker adopt, 열린 터미널 확인)
-//     find         3                  그대로               닫는다                    계정을 옛 worker 의 계정으로 되돌린 뒤 같은 명령, 안 되면 launch.md 「끊긴 worker 다시 띄우기」
-//     cleanup      3                  abandon 실패면 그대로 닫는다                    같은 명령(옛 터미널 닫기가 실패했으면 그것부터)
-//     start-agent  3                  정리됨               닫는다                    같은 명령(정리된 dispatch 를 settled 로 받는다)
-//     link         1                  정리됨               닫지 않는다. handle 을 낸다 worker-start --task … --terminal <새> 하나. 같은 명령은 안내하지 않는다
+// 단계별 실패(단계: 종료 코드 / 옛 dispatch / 새 터미널 / NEXT):
+//     target       3, 조회 실패는 1 / 그대로 / 없음 / 대상이 아닌 이유에 맞는 명령(orch worker adopt, 열린 터미널 확인)
+//     find         3 / 그대로 / 닫는다 / 계정을 옛 worker 의 계정으로 되돌린 뒤 같은 명령, 안 되면 launch.md 「끊긴 worker 다시 띄우기」.
+//                  새 터미널을 열지 못한 것도 이 단계다(NEXT 는 같은 명령)
+//     cleanup      3 / abandon 이 실패했으면 그대로 / 닫는다 / 같은 명령(옛 터미널 닫기가 실패했으면 그것부터)
+//     start-agent  3 / 정리됨 / 닫는다 / 같은 명령(정리된 dispatch 를 settled 로 받는다)
+//     link         1 / 정리됨 / 닫지 않고 handle 을 낸다 / worker-start --task … --terminal <새> 하나. 같은 명령은 안내하지 않는다.
+//                  잇기 전 Task 상태를 읽지 못한 것도 이 단계다(NEXT 는 상태 확인 뒤 worker-start)
+//     3~6 단계에서 새 터미널을 닫지 못하면 RESUME-WARN 으로 그 handle 을 알린다. 잇기 뒤 기록 실패는 RESUME-WARN 으로 내고 RESUMED 를 낸다.
 // 사용법 오류는 2 다. 재시도와 자동 대체(새 worker 띄우기)는 하지 않는다.
 //
 // 잠금(<orch 루트>/state/resume/<dispatch>/lock): 이미 있으면 그 pid 가 살아 있거나 그 terminal 이 열려 있을 때 RESUME-FAIL target 이다.
 // 둘 다 아니면 옛 폴더를 지우고 새로 잡는다. 그래서 link 실패로 남은 터미널이 열려 있는 동안 같은 세션에 두 번째 프로세스를 띄우지 않는다.
 
+import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -186,11 +189,11 @@ function judge(dispatchId: string, runFlag: string | undefined, repo: string): T
   if (LIVE_DISPATCH.has(status)) {
     if (!oldOpen) throw targetFail('살아 있는 dispatch 인데 터미널이 열려 있지 않다', adopt)
     const screen = screenOf(handle!)
-    if (screen === null) throw targetFail(`옛 터미널 ${handle} 의 화면을 읽지 못했다`, `orca terminal read --terminal ${handle} --screen`, 1)
+    if (screen === null) throw targetFail(`옛 터미널 ${handle} 의 화면을 읽지 못했다`, `orca terminal read --terminal ${shQuote(handle!)} --screen`, 1)
     if (!limitedScreen(screen)) throw targetFail('살아 있는 dispatch 가 사용 한도 화면에서 멈춰 있지 않다(정상 작업 중일 수 있다)', adopt)
     return { ...base, kind: 'limited', screen }
   }
-  if (oldOpen) throw targetFail(`${status} dispatch 의 터미널 ${handle} 이 아직 열려 있다. 같은 세션에 두 프로세스가 붙지 않게 거부한다`, `orca terminal close --terminal ${handle} 뒤 같은 명령, 또는 ${adopt}`)
+  if (oldOpen) throw targetFail(`${status} dispatch 의 터미널 ${handle} 이 아직 열려 있다. 같은 세션에 두 프로세스가 붙지 않게 거부한다`, `orca terminal close --terminal ${shQuote(handle!)} 뒤 같은 명령, 또는 ${adopt}`)
   if (status === 'failed' && taskStatus === 'ready') return { ...base, kind: 'restart', screen: [] }
   if (status === 'abandoned') return { ...base, kind: 'settled', screen: [] }
   throw targetFail(`dispatch 상태 ${status || '-'}, Task 상태 ${taskStatus || '-'} 는 resume 대상이 아니다`, adopt)
@@ -224,7 +227,7 @@ function lock(dir: string): void {
     }
     if (pidAlive(held.pid) || (terminal && open.has(terminal))) {
       throw targetFail(`앞 실행이 진행 중이거나 결과 터미널 ${terminal || '-'} 이 열려 있다`,
-        terminal ? `orca terminal read --terminal ${terminal} --screen 로 확인하고, 에이전트가 붙어 있으면 그 터미널로 잇는다` : '앞 실행이 끝날 때까지 기다린 뒤 같은 명령')
+        terminal ? `orca terminal read --terminal ${shQuote(terminal)} --screen 로 확인하고, 에이전트가 붙어 있으면 그 터미널로 잇는다` : '앞 실행이 끝날 때까지 기다린 뒤 같은 명령')
     }
     rmSync(dir, { recursive: true, force: true })
   }
@@ -237,8 +240,14 @@ function setLockTerminal(dir: string, terminal: string): void {
   writeFileSync(file, JSON.stringify({ ...held, terminal }))
 }
 
+// 새 터미널을 닫는다. 닫지 못하면 남은 handle 을 알린다(그 터미널에 resume 한 에이전트가 붙어 있을 수 있다)
 function closeTerminal(handle: string): void {
-  orca(['terminal', 'close', '--terminal', handle, '--json'])
+  if (orca(['terminal', 'close', '--terminal', handle, '--json']).code !== 0) emit(`RESUME-WARN 새 터미널 ${handle} 을 닫지 못했다. orca terminal close --terminal ${shQuote(handle)} 로 닫는다`)
+}
+
+// 3~6 단계의 Fail 이 아닌 예외를 그 단계 이름으로 감싼다
+function asStage(stage: Stage, error: unknown, next: string): Fail {
+  return error instanceof Fail ? error : new Fail(stage, (error as Error).message, next)
 }
 
 async function waitFound(dir: string, until: number) {
@@ -284,7 +293,8 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   const pluginDir = target.kind === 'limited' && target.agent === 'claude' && target.oldTerminal ? oldPluginDir(target.oldTerminal) : null
   // 2. 요청을 쓰고 새 터미널을 연다
   for (const name of [FOUND, GO]) rmSync(join(dir, name), { force: true })
-  writeRequest(dir, { dispatch: dispatchId, worktree: target.worktree, agent: target.agent, model: target.model, effort: target.effort, pluginDir, goDeadline: deadline + GO_GRACE_MS })
+  const nonce = randomUUID()
+  writeRequest(dir, { dispatch: dispatchId, worktree: target.worktree, agent: target.agent, model: target.model, effort: target.effort, pluginDir, goDeadline: deadline + GO_GRACE_MS, nonce })
   const execPath = join(dirname(import.meta.filename), 'resume-exec.ts')
   const command = `${shQuote(process.execPath)} --disable-warning=ExperimentalWarning ${shQuote(execPath)} ${shQuote(dir)} && . ${shQuote(join(dir, 'launch.sh'))}`
   const created = orcaJson<Json>(['terminal', 'create', '--worktree', `path:${target.worktree}`, '--title', 'resume', '--command', command])
@@ -292,6 +302,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   if (!fresh) throw new Fail('find', `새 터미널을 열지 못했다: ${created.ok ? '응답에 handle 이 없다' : created.error}`, again)
   setLockTerminal(dir, fresh)
   let session = ''
+  let stage: Stage = 'find'
   try {
     // 3. 새 터미널의 실행기가 찾은 세션
     const found = await waitFound(dir, started + Math.floor(timeoutMs * 0.3))
@@ -302,14 +313,17 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     session = found.session
     emit(`RESUME-SESSION ${session} home=${found.home} terminal=${fresh}`)
     // 4. 옛 dispatch 정리
+    stage = 'cleanup'
     if (target.kind === 'limited') {
       const abandoned = orcaJson<Json>(['orchestration', 'worker-abandon', '--dispatch', dispatchId])
       if (!abandoned.ok) throw new Fail('cleanup', `옛 dispatch 를 abandon 하지 못했다: ${abandoned.error}`, again)
       const closed = orcaJson<Json>(['terminal', 'close', '--terminal', target.oldTerminal!])
-      if (!closed.ok) throw new Fail('cleanup', `옛 터미널을 닫지 못했다: ${closed.error}`, `orca terminal close --terminal ${target.oldTerminal} && ${again}`)
+      if (!closed.ok) throw new Fail('cleanup', `옛 터미널을 닫지 못했다: ${closed.error}`, `orca terminal close --terminal ${shQuote(target.oldTerminal!)} && ${again}`)
     }
     // 5. 출발 신호
-    writeFileSync(join(dir, GO), '')
+    // 내용은 이번 실행의 nonce 다. 앞 실행의 고아 실행기는 이 go 로 출발하지 않는다
+    stage = 'start-agent'
+    writeFileSync(join(dir, GO), nonce)
     // 6. 에이전트 준비
     const ready = await waitAgent(fresh, target.agent, deadline)
     if (!ready.ready) {
@@ -318,11 +332,16 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   } catch (error) {
     // 3~6 단계의 실패는 새 터미널을 닫아 남는 자원이 없게 한다
     closeTerminal(fresh)
-    throw error
+    throw asStage(stage, error, again)
   }
   // 7. 같은 Task 에 잇는다. 실패하면 연결이 이미 일어났을 수 있어 터미널을 닫지 않고 재시도하지 않는다
   const tasks = orcaJson<Json>(['orchestration', 'task-list', '--run', target.run])
-  const taskStatus = tasks.ok ? text(obj((Array.isArray(tasks.data.tasks) ? tasks.data.tasks : []).find((t) => obj(t).id === target.task)).status) : ''
+  if (!tasks.ok) {
+    // Task 상태를 모르면 --retry-of 를 정하지 못한다. 터미널은 남긴다
+    throw new Fail('link', `Task 상태를 읽지 못했다(터미널 ${fresh} 은 남긴다): ${tasks.error}`,
+      `orca orchestration task-list --run ${shQuote(target.run)} --json 로 Task 상태를 보고, failed·blocked 면 --retry-of ${shQuote(dispatchId)} 를 붙여 orca orchestration worker-start --task ${shQuote(target.task)} --terminal ${shQuote(fresh)} --worktree ${shQuote(`path:${target.worktree}`)} --run ${shQuote(target.run)} --json`, 1)
+  }
+  const taskStatus = text(obj((Array.isArray(tasks.data.tasks) ? tasks.data.tasks : []).find((t) => obj(t).id === target.task)).status)
   const retry = taskStatus === 'failed' || taskStatus === 'blocked' ? ['--retry-of', dispatchId] : []
   const startArgs = ['orchestration', 'worker-start', '--task', target.task, ...retry, '--terminal', fresh, '--worktree', `path:${target.worktree}`, '--run', target.run, '--json']
   const linkNext = ['orca', ...startArgs].map(shQuote).join(' ')
@@ -336,14 +355,20 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
   const result = obj(receipt.result)
   const newDispatch = text(obj(result.dispatch).id) || text(result.dispatchId) || text(obj(result.worker).dispatchId)
   if (linked.code !== 0 || receipt.ok !== true || !newDispatch) {
-    const detail = `${linked.stdout} ${linked.stderr}`.trim().replace(/\s+/g, ' ').slice(0, 500)
+    // receipt 의 잔여 자원과 request id 를 자르지 않는다(adopt-sessions, launch-worker 와 같다)
+    const detail = `${linked.stdout} ${linked.stderr}`.trim().replace(/\s+/g, ' ')
     throw new Fail('link', `worker-start --terminal ${fresh} 가 실패했다(터미널은 남긴다): ${detail || `종료 코드 ${linked.code}`}`, linkNext, 1)
   }
   // 8. 기록
-  const branch = [...worktreePaths(repo)].find(([, path]) => real(path) === target.worktree)?.[0] ?? null
-  const spec = readLaunch(repo, dispatchId)?.spec ?? null
-  if (!spec) emit('RESUME-WARN spec 기록 없음')
-  recordLaunch(repo, { dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec })
+  // 이미 이어졌으므로 기록이 실패해도 RESUMED 를 낸다. 실패로 알리면 이어진 worker 옆에 새 worker 를 띄울 수 있다
+  try {
+    const branch = [...worktreePaths(repo)].find(([, path]) => real(path) === target.worktree)?.[0] ?? null
+    const spec = readLaunch(repo, dispatchId)?.spec ?? null
+    if (!spec) emit('RESUME-WARN spec 기록 없음')
+    recordLaunch(repo, { dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec })
+  } catch (error) {
+    emit(`RESUME-WARN launched-workers 기록을 쓰지 못했다: ${(error as Error).message}`)
+  }
   emit(`RESUMED ${newDispatch} ${fresh} ${session}`)
   rmSync(dir, { recursive: true, force: true })
   return 0

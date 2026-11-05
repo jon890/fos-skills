@@ -214,7 +214,7 @@ orch worker resume --dispatch "$DISPATCH_ID"
 - 대상은 `orch worker adopt` 의 `LIMITED`, `RESTART` 줄과, 앞 실행이 정리한 뒤 실패해 `abandoned` 로 남은 그 Task 의 마지막 dispatch 다. 터미널이 열린 `failed`, `abandoned` dispatch 와 정상 작업 중인 worker 는 거부한다.
 - 한도라면 먼저 사용자에게 계정 전환을 요청하고, 바꾼 뒤 부른다. Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 이어지고, Codex 는 같은 계정에서만 이어진다([`agent-selection.md`](agent-selection.md) 「사용 한도에 걸렸을 때」).
 - 명령은 세션을 찾은 뒤에야 옛 dispatch 를 abandon 하고 옛 터미널을 닫는다. 기록을 찾지 못하면 옛 worker 를 건드리지 않고 끝난다.
-- 찾기와 에이전트 준비를 합쳐 기본 100초 안팎 걸린다. Bash 도구의 전경 제한(120초) 안이라 전경으로 부른다.
+- 찾기와 에이전트 준비의 시한이 기본 100초이고, 그 뒤 같은 Task 에 잇는 호출이 붙는다. 대개 2분 안에 끝나지만 넘길 수 있으니 Bash 도구의 `timeout` 을 300000 으로 주고 전경으로 부른다. 중간에 끊겨도 잠금이 같은 세션의 두 번째 실행을 막는다.
 - 출력 줄과 단계별 종료 코드, `NEXT` 의 원본은 `scripts/worker/resume-worker.ts` 머리 주석이다. `RESUME-FAIL` 이 나면 같은 출력의 `NEXT` 를 따른다.
 - `RESUME-FAIL link` 뒤에는 `NEXT` 의 `worker-start --terminal` 한 줄만 부르고 같은 명령을 다시 부르지 않는다. 남은 터미널에 이미 resume 한 에이전트가 붙어 있어, 같은 명령은 한 세션에 두 번째 프로세스를 띄우려다 잠금으로 거부된다.
 - resume 이 실패했거나 제공자를 바꿔야 하면 아래 「끊긴 worker 다시 띄우기」 로 새 worker 를 띄우고 재개 절을 쓴다.

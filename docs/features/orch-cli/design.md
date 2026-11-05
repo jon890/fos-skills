@@ -94,6 +94,7 @@ type Command = {
 | `loop status`, `loop stalled` | repo | `loop stalled` 는 run 을 채우지 않는다(스펙 DECISION23). 스크립트가 루프 등록 Run 을 모두 보는 지금 동작이 사람용 확인에 맞다 |
 | `worker launch` | run, repo | `--worktree` 를 주면 repo 를 채우지 않는다(둘은 함께 못 쓴다) |
 | `worker send`, `worker adopt` | run(adopt 는 `--apply` 일 때만), repo(adopt) | worker send 의 run 은 run-current 에서만 채운다 |
+| `worker resume` | repo | run 은 채우지 않는다. 옛 dispatch 의 runId 를 쓰며, 지금 Run 으로 채우면 다른 Run 의 worker 를 잘못 잇는다(docs/features/limit-resume/design.md DECISION9) |
 | `queue merge`, `queue conflicts`, `queue ready`, `queue finish` | repo, run(ready 빼고) | queue merge 는 `explicit` 의 `--finish-arg`, `--sweep-arg` 안의 `--run` 도 명시로 본다 |
 | `queue run`, `queue overlap`, `queue reserve`, `worker worktree`, `doctor gh-usage` | repo | |
 | `cleanup sweep` | repo, run, specs-dir | `--repo` 를 하나라도 주면 repo 를 채우지 않는다 |

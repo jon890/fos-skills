@@ -48,6 +48,7 @@
 | | `orch worker nudge`, `orch worker screen <터미널>` | `nudge-worker`, `nudge-worker --state` | `--state` 가 동작으로 |
 | | `orch worker ask` | `worker-ask` | 없음 |
 | | `orch worker adopt [--apply <터미널>]` | `adopt-sessions` | 없음 |
+| | `orch worker resume --dispatch <id>` | `resume-worker` | 없음(새 명령, docs/features/limit-resume) |
 | | `orch worker worktree <저장소> --name …`, `orch worker check <워크트리> --spec …` | `make-worktree`, `make-worktree --check` | `--check` 가 동작으로 |
 | | `orch worker deny <워크트리>` | `worktree-deny` | 없음 |
 | | `orch worker link-profile [대상]` | `link-claude-profile` | 없음 |

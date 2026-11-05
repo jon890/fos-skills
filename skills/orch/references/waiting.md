@@ -295,7 +295,8 @@ heartbeat 와 liveness 는 `live` 로 남아 대기만으로는 알 수 없다. 
 
 #### resume 이 안 될 때
 
-바꿀 계정이 없거나 `RESUME-FAIL` 이 나면 다른 제공자로 새로 띄운다.
+`RESUME-FAIL` 이 나면 먼저 출력의 `NEXT` 를 따른다. 바꿀 계정이 없거나 `NEXT` 로도 이어 가지 못하면 다른 제공자로 새로 띄운다.
+resume 이 옛 dispatch 를 이미 정리했으면(`cleanup` 뒤의 실패, 출력의 `RESUME-TARGET` 이 `limited` 였다) 아래 `worker-abandon` 을 건너뛰고, [`launch.md`](launch.md) 「끊긴 worker 다시 띄우기」 표의 Task 상태에 맞는 줄을 따른다. `RESUME-FAIL link` 뒤라면 새 worker 를 띄우지 않는다. 남은 터미널에 resume 한 에이전트가 붙어 있다.
 `worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝나고, 이 상태의 Task 에 `--retry-of` 를 주면 `task_not_startable` 로 거절된다.
 `worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
 `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다. `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker` 를 쓰지 않는 3단계의 예외다.

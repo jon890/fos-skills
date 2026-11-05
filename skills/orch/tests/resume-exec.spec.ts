@@ -29,7 +29,7 @@ function cleanEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
 }
 
 function request(agent: 'claude' | 'codex', deadlineMs = 10_000, pluginDir: string | null = null): void {
-  const req: ResumeRequest = { dispatch: 'ctx_target', worktree, agent, model: 'm1', effort: 'low', pluginDir, goDeadline: Date.now() + deadlineMs }
+  const req: ResumeRequest = { dispatch: 'ctx_target', worktree, agent, model: 'm1', effort: 'low', pluginDir, goDeadline: Date.now() + deadlineMs, nonce: 'n1' }
   writeRequest(dir, req)
 }
 
@@ -74,7 +74,7 @@ test('Claude 세션을 찾고 go 뒤에 claude --resume 줄을 쓴다', async ()
   let beforeGo = true
   const r = await exec(cleanEnv({ CLAUDE_CONFIG_DIR: claudeHome(), ORCA_CLAUDE_AGENT_VIEW_PLUGIN_DIR: view, ORCA_TERMINAL_HANDLE: 'term_new' }), () => {
     beforeGo = !existsSync(join(dir, 'launch.sh'))
-    writeFileSync(join(dir, 'go'), '')
+    writeFileSync(join(dir, 'go'), 'n1')
   })
   assert.equal(r.code, 0, r.stderr)
   assert.ok(beforeGo, 'go 전에 launch.sh 가 있었다')
@@ -85,7 +85,7 @@ test('Claude 세션을 찾고 go 뒤에 claude --resume 줄을 쓴다', async ()
 
 test('Codex 세션을 찾고 go 뒤에 codex resume 줄을 쓴다. ORCA_* 가 빠지면 3', async () => {
   request('codex')
-  const r = await exec(cleanEnv({ CODEX_HOME: codexHome(), ...orcaEnv() }), () => writeFileSync(join(dir, 'go'), ''))
+  const r = await exec(cleanEnv({ CODEX_HOME: codexHome(), ...orcaEnv() }), () => writeFileSync(join(dir, 'go'), 'n1'))
   assert.equal(r.code, 0, r.stderr)
   assert.ok(launch().startsWith("exec 'codex' 'resume' 'thread-9'"), launch())
   rmSync(join(dir, 'launch.sh')); rmSync(join(dir, 'go'))
@@ -97,6 +97,14 @@ test('Codex 세션을 찾고 go 뒤에 codex resume 줄을 쓴다. ORCA_* 가 �
   assert.ok(!existsSync(join(dir, 'launch.sh')))
 })
 
+test('request.json 을 읽지 못하면 2 이고 이유를 found.json 에 남긴다', async () => {
+  writeFileSync(join(dir, 'request.json'), '{broken')
+  const r = await exec(cleanEnv({}))
+  assert.equal(r.code, 2)
+  assert.equal(found().ok, false)
+  assert.match(found().reason, /요청을 읽지 못했다/)
+})
+
 test('세션이 없으면 3 이고 launch.sh 를 쓰지 않는다', async () => {
   request('claude')
   const r = await exec(cleanEnv({ CLAUDE_CONFIG_DIR: join(root, 'empty'), ORCA_CLAUDE_AGENT_VIEW_PLUGIN_DIR: view }))
@@ -106,9 +114,9 @@ test('세션이 없으면 3 이고 launch.sh 를 쓰지 않는다', async () => 
   assert.ok(!existsSync(join(dir, 'launch.sh')))
 })
 
-test('출발 신호 시한이 지나면 4 이고 launch.sh 를 쓰지 않는다', async () => {
-  request('claude', 300)
-  const r = await exec(cleanEnv({ CLAUDE_CONFIG_DIR: claudeHome(), ORCA_CLAUDE_AGENT_VIEW_PLUGIN_DIR: view }))
+test('출발 신호 시한이 지나면 4 이고, 다른 실행의 nonce 가 든 go 로는 출발하지 않는다', async () => {
+  request('claude', 600)
+  const r = await exec(cleanEnv({ CLAUDE_CONFIG_DIR: claudeHome(), ORCA_CLAUDE_AGENT_VIEW_PLUGIN_DIR: view }), () => writeFileSync(join(dir, 'go'), 'other-run'))
   assert.equal(r.code, 4)
   assert.equal(found().ok, true)
   assert.ok(!existsSync(join(dir, 'launch.sh')))
@@ -121,7 +129,7 @@ test('--plugin-dir 을 정하지 못하면 3, 요청의 값이 있으면 그것�
   assert.match(found().reason, /--plugin-dir/)
   rmSync(join(dir, 'found.json'))
   request('claude', 10_000, view)
-  const ok = await exec(cleanEnv({ CLAUDE_CONFIG_DIR: claudeHome() }), () => writeFileSync(join(dir, 'go'), ''))
+  const ok = await exec(cleanEnv({ CLAUDE_CONFIG_DIR: claudeHome() }), () => writeFileSync(join(dir, 'go'), 'n1'))
   assert.equal(ok.code, 0, ok.stderr)
   assert.ok(launch().includes(`'--plugin-dir' '${view}'`))
 })

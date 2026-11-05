@@ -158,6 +158,8 @@ test('limited Claude: 새 터미널, abandon, 옛 터미널 닫기, 잇기 순�
   const launch = readLaunch(repo, 'ctx_new')!
   assert.equal(launch.branch, 'feat/old'); assert.equal(launch.spec, '/specs/old.md'); assert.equal(launch.terminal, 'term_new')
   assert.ok(!existsSync(reqDir), '성공하면 요청 폴더를 지운다')
+  // ps -E 의 환경 문자열은 출력과 요청 파일에 남지 않는다
+  assert.doesNotMatch(r.stdout + r.stderr + JSON.stringify(order[0].request), /SECRET_TOKEN|HOME=\/h/)
 })
 
 test('limited Codex: 같은 흐름이고 pluginDir 이 null 이다. 앞 기록이 없으면 RESUME-WARN', () => {
@@ -246,6 +248,25 @@ test('cleanup 실패: abandon 이 실패하면 새 터미널을 닫고 go 를 �
   assert.ok(!existsSync(join(reqDir, 'go')))
   assert.deepEqual(calls('terminal', 'close').map((e) => e.args[e.args.indexOf('--terminal') + 1]), ['term_new'])
   assert.equal(calls('worker-start').length, 0)
+})
+
+test('cleanup 실패: 옛 터미널 닫기가 실패하면 그 닫기부터 하라는 NEXT 를 낸다', () => {
+  setState((s) => { s.fail.close = true })
+  const r = run()
+  assert.equal(r.status, 3, r.stdout + r.stderr)
+  assert.match(r.stdout, /^RESUME-FAIL cleanup 옛 터미널을 닫지 못했다/m)
+  assert.match(r.stdout, /^NEXT orca terminal close --terminal term_old && .*worker resume --dispatch ctx_old$/m)
+  assert.ok(!existsSync(join(reqDir, 'go')))
+  assert.ok(calls('terminal', 'close').some((e) => e.args.includes('term_new')))
+})
+
+test('새 터미널을 열지 못하면 find 실패로 옛 dispatch 를 건드리지 않는다', () => {
+  setState((s) => { s.fail.create = true })
+  const r = run()
+  assert.equal(r.status, 3, r.stdout + r.stderr)
+  assert.match(r.stdout, /^RESUME-FAIL find 새 터미널을 열지 못했다/m)
+  assert.equal(calls('worker-abandon').length, 0)
+  assert.equal(calls('terminal', 'close').length, 0)
 })
 
 test('start-agent: 화면이 계속 working 이면 닫고 3, error 화면은 통과한다', () => {

@@ -64,8 +64,11 @@ test('findCodexSession 은 threads 에서 rollout 에 dispatch 가 든 행을 �
   db.close()
   // DB 의 id 를 쓴다(rollout 첫 줄의 id 와 다르게 두어 어느 쪽에서 왔는지 본다)
   assert.equal(findCodexSession(home, worktree, 'ctx_target'), 'db-2')
-  // DB 에 맞는 행이 없으면 rollout 파일로 찾는다
   assert.equal(findCodexSession(home, worktree, 'ctx_other'), 'db-1')
+  // DB 는 있는데 맞는 행이 없으면 rollout 파일로 찾는다(DB 행이 다른 rollout 을 가리키게 둔다)
+  const three = join(day, 'rollout-3.jsonl')
+  writeFileSync(three, `${JSON.stringify({ type: 'session_meta', payload: { id: 'thread-3', cwd: worktree } })}\n{"text":"ctx_only_file"}\n`)
+  assert.equal(findCodexSession(home, worktree, 'ctx_only_file'), 'thread-3')
   rmSync(join(home, 'state_5.sqlite'))
   writeFileSync(join(home, 'state_5.sqlite'), 'not a database')
   assert.equal(findCodexSession(home, worktree, 'ctx_target'), 'thread-2')

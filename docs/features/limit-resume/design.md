@@ -71,9 +71,9 @@ orch worker resume --dispatch <옛 dispatch id> [--run <Run>] [--repo DIR] [--ti
 | 파일 | 쓰는 쪽 | 내용 |
 | --- | --- | --- |
 | `lock` | 코디네이터 | `O_EXCL` 로 만든다. `{ pid, startedAt, terminal }`(`terminal` 은 새 터미널을 연 뒤 채운다) |
-| `request.json` | 코디네이터 | `{ dispatch, worktree, agent, model, effort, pluginDir, goDeadline }` |
+| `request.json` | 코디네이터 | `{ dispatch, worktree, agent, model, effort, pluginDir, goDeadline, nonce }`. `nonce` 는 실행마다 새로 만든다 |
 | `found.json` | 실행기 | `{ ok: true, session, home, terminal }` 또는 `{ ok: false, reason }` |
-| `go` | 코디네이터 | 빈 파일. 옛 dispatch 정리를 마쳤다는 신호 |
+| `go` | 코디네이터 | 내용이 `request.json` 의 `nonce` 인 파일. 옛 dispatch 정리를 마쳤다는 신호다. 실행기는 자기 `nonce` 와 같을 때만 출발해, 앞 실행이 남긴 고아 실행기가 다음 실행의 신호로 함께 출발하지 않는다 |
 | `launch.sh` | 실행기 | `exec …` 한 줄 |
 
 잠금 판정: 명령 시작 때 `lock` 이 있으면, 그 `pid` 가 살아 있거나 `terminal` 이 `terminal list` 에 열려 있으면 앞 실행이 진행 중이거나 그 결과 터미널이 남은 것으로 보고 `RESUME-FAIL target` 을 낸다. 둘 다 아니면 옛 폴더를 지우고 새로 잡는다. 그래서 `link` 실패로 남은 터미널이 열려 있는 동안에는 같은 명령이 같은 세션에 두 번째 프로세스를 띄우지 않는다.

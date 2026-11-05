@@ -71,7 +71,7 @@ Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄
 
 1. 사용자에게 한도에 걸린 계정을 다른 계정으로 바꿔 달라고 요청한다.
 2. 바꾼 뒤 `orch worker resume --dispatch <id>` 를 부른다. 같은 워크트리에서 앞 세션을 `claude --resume` / `codex resume` 으로 열어 같은 Task 에 잇는다. 단계와 실패 대응은 [`launch.md`](launch.md) 의 「한도나 재부팅으로 멈춘 worker 이어 가기」 를 따른다.
-3. 바꿀 계정이 없거나 `RESUME-FAIL` 이 나면 아래 표대로 제공자나 모델을 바꿔 새로 띄우고 재개 절을 쓴다([`launch.md`](launch.md) 「끊긴 worker 다시 띄우기」).
+3. `RESUME-FAIL` 이 나면 먼저 출력의 `NEXT` 를 따른다. 바꿀 계정이 없거나 `NEXT` 로도 이어 가지 못하면 아래 표대로 제공자나 모델을 바꿔 새로 띄우고 재개 절을 쓴다([`launch.md`](launch.md) 「끊긴 worker 다시 띄우기」).
 
 Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 앞 세션이 이어진다. Codex 는 계정마다 세션 기록이 따로라 같은 계정(재부팅, 한도가 풀린 뒤)에서만 이어진다. 계정을 바꾼 Codex worker 의 resume 은 `RESUME-FAIL find` 로 끝난다.
 

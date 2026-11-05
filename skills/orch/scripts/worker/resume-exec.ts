@@ -9,15 +9,14 @@
 //     2. Claude 면 --plugin-dir 을 정한다(ORCA_CLAUDE_AGENT_VIEW_PLUGIN_DIR, 없으면 request.json 의 pluginDir).
 //        Codex 면 ORCA_* 다섯이 모두 있어야 한다
 //     3. found.json 에 결과를 쓴다
-//     4. go 를 goDeadline 까지 200ms 간격으로 기다린다
+//     4. 내용이 자기 nonce 인 go 를 goDeadline 까지 200ms 간격으로 기다린다. 다른 실행의 go 로는 출발하지 않는다
 //     5. launch.sh 에 exec 한 줄을 쓴다
 // 종료 코드: 0 launch.sh 를 썼다, 2 사용법이나 request.json 오류, 3 세션이나 실행 인자를 찾지 못했다, 4 출발 신호 시한이 지났다.
 // 0 이 아니면 launch.sh 가 없어 셸이 에이전트를 띄우지 않는다.
 
-import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { claudeResumeArgv, codexResumeArgv, findClaudeSession, findCodexSession, GO, pickPluginDir, readRequest, writeFound, writeLaunch } from '../lib/resume.ts'
+import { claudeResumeArgv, codexResumeArgv, findClaudeSession, findCodexSession, goFor, pickPluginDir, readRequest, writeFound, writeLaunch } from '../lib/resume.ts'
 import type { ResumeRequest } from '../lib/resume.ts'
 
 const POLL_MS = 200
@@ -38,6 +37,12 @@ async function main(): Promise<number> {
   try {
     req = readRequest(dir)
   } catch (error) {
+    // 코디네이터가 시한까지 기다리지 않고 이유를 보게 found.json 에도 남긴다
+    try {
+      writeFound(dir, { ok: false, reason: `요청을 읽지 못했다: ${(error as Error).message}` })
+    } catch {
+      // 폴더가 없으면 남길 곳이 없다
+    }
     process.stderr.write(`RESUME-EXEC-FAIL ${(error as Error).message}\n`)
     return 2
   }
@@ -54,7 +59,7 @@ async function main(): Promise<number> {
     if (!argv) return fail(dir, 'Orca 가 Codex 에 넘길 ORCA_* 환경 변수가 이 터미널에 다 있지 않다')
   }
   writeFound(dir, { ok: true, session, home, terminal: process.env.ORCA_TERMINAL_HANDLE ?? null })
-  while (!existsSync(join(dir, GO))) {
+  while (!goFor(dir, req.nonce)) {
     if (Date.now() > req.goDeadline) {
       process.stderr.write('RESUME-EXEC-FAIL 출발 신호를 시한 안에 받지 못했다. 에이전트를 띄우지 않는다\n')
       return 4
