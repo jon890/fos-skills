@@ -110,6 +110,8 @@ let authorFilter = '' // a: 열린 PR 을 이 작성자의 것만 보인다. 빈
 let live = { at: 0, runId: '', workers: null, questions: null, prs: null, marks: null, movement: null, queue: null, alertNotes: [], errors: {} }
 let liveBusy = false
 const networkPoll = createNetworkPoll()
+let networkPaused = true
+let prsReadAt = ''
 
 // 업무 알림. inbox.ts board --json 의 출력이다. 읽지 못하면 inboxError 에 이유를 두고 직전 값을 그린다
 let inbox = null
@@ -1065,18 +1067,23 @@ export function updateVisible(install, latest) {
 }
 
 // 상태 줄 한 줄. 실제 상태와 수동 항목을 함께 센다. 새 업무 알림이 있으면 맨 앞에 「알림 n」 을 붙인다
-export function statusLine(items, state, inboxState = null) {
+export function statusLine(items, state, inboxState = null, freshness = null) {
   const count = (status) => items.filter((item) => item.status === status).length
+  const pausedLabel = (at) => {
+    if (!freshness?.paused) return ''
+    const stamp = clockOf(at)
+    return ' (' + (stamp ? stamp + ' 기준 · ' : '') + '조회 쉼)'
+  }
   const parts = []
   const alerts = inboxSummary(inboxState).newCount
-  if (alerts > 0) parts.push('알림 ' + alerts)
+  if (alerts > 0) parts.push('알림 ' + alerts + pausedLabel(inboxState?.fetchedAt))
   const decide = decideCount(items) + (Array.isArray(state.questions) ? state.questions.length : state.questions || 0)
   if (state.errors && state.errors.questions) parts.push('결정 필요 확인 불가')
   else if (decide > 0 || state.questionsLimited) parts.push('결정 필요 ' + decide + (state.questionsLimited ? '(최근 질문 기준)' : ''))
   if (Array.isArray(state.workers)) parts.push('worker ' + state.workers.length)
   if (Array.isArray(state.prs)) {
     const failing = state.prs.filter((pr) => pr.fail > 0).length
-    parts.push('PR ' + state.prs.length + (failing > 0 ? '(CI 실패 ' + failing + ')' : ''))
+    parts.push('PR ' + state.prs.length + (failing > 0 ? '(CI 실패 ' + failing + ')' : '') + pausedLabel(freshness?.prsAt))
   }
   if (count('doing') > 0) parts.push('진행 ' + count('doing'))
   if (count('wait') > 0) parts.push('대기 ' + count('wait'))
@@ -1102,7 +1109,7 @@ function github($, query) {
 let sentStatus
 function refreshStatus($) {
   const items = board && Array.isArray(board.items) ? board.items : []
-  const text = statusLine(items, live, inbox)
+  const text = statusLine(items, live, inbox, { paused: networkPaused, prsAt: prsReadAt })
   if (sentStatus !== text) {
     sentStatus = text
     $.ui.status(text)
@@ -1235,13 +1242,16 @@ async function loadLive($) {
 
 async function loadGithub($) {
   loadRepoUrl($)
+  let succeeded = false
   try {
     live.prs = parsePullRequests(await github($, 'prs'))
     delete live.errors.prs
+    succeeded = true
   } catch (failure) {
     live.errors.prs = String(failure.message || failure)
   }
   try { live.at = await $.clock.now() } catch { return }
+  if (succeeded) prsReadAt = new Date(live.at).toISOString()
   refreshStatus($)
 }
 
@@ -1252,6 +1262,11 @@ async function pollNetwork($, force = false) {
   let visible = false
   if (!force) {
     try { visible = (await $.ui.panes()).some((pane) => pane.id === PANE && pane.isPlaced && pane.isShown) } catch {}
+  }
+  const paused = !networkPoll.active(at, visible)
+  if (paused !== networkPaused) {
+    networkPaused = paused
+    refreshStatus($)
   }
   return networkPoll.poll(at, visible, [
     { key: 'prs', every: PR_MS, read: () => loadGithub($) },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { IDLE_MS, PR_MS, createNetworkPoll } from '../hooks/network-poll.js'
-import { register } from '../hooks/register.js'
+import { clockOf, register, statusLine } from '../hooks/register.js'
 
 test('PR 주기 경계 전에는 멈추고 경계에서는 읽는다', async () => {
   const poll = createNetworkPoll()
@@ -88,11 +88,25 @@ test('실패해도 자동 재시도는 주기를 지키고, 다른 종류의 조
   assert.equal(attempts, 2)
 })
 
+test('조회가 멈춘 상태 줄은 PR·CI와 알림의 확인 시각을 따로 보이고 활성 상태에서는 숨긴다', () => {
+  const prsAt = '2026-11-05T04:05:00.000Z'
+  const fetchedAt = '2026-11-05T04:09:00.000Z'
+  const state = { prs: [{ fail: 1 }], at: Date.parse('2026-11-05T05:00:00.000Z') }
+  const inbox = { enabled: true, newCount: 2, items: [], fetchedAt }
+  const line = statusLine([], state, inbox, { paused: true, prsAt })
+  assert.ok(line.includes('알림 2 (' + clockOf(fetchedAt) + ' 기준 · 조회 쉼)'))
+  assert.ok(line.includes('PR 1(CI 실패 1) (' + clockOf(prsAt) + ' 기준 · 조회 쉼)'))
+  assert.ok(!line.includes(clockOf('2026-11-05T05:00:00.000Z')), '로컬 상태를 읽은 시각과 구분한다')
+  assert.equal(statusLine([], state, inbox, { paused: false, prsAt }), '알림 2 · PR 1(CI 실패 1)   /board')
+  assert.equal(statusLine([], { prs: [] }, null, { paused: true }), 'PR 0 (조회 쉼)   /board')
+})
+
 // 실제 register 의 타이머와 입력 이벤트를 연결한다. 외부 서비스는 모의 process.run 만 받는다.
 test('등록 훅은 창 표시와 사람 입력을 확인하고, PR 을 로컬 45초 조회에서 분리한다', async () => {
   const hooks = new Map<string, Function>()
   const timers = new Map<number, Function[]>()
   const calls: string[][] = []
+  const statuses: string[] = []
   let at = 0
   let panes: object[] = []
   register((event, filter, handler) => { hooks.set(event, handler || filter) })
@@ -102,7 +116,7 @@ test('등록 훅은 창 표시와 사람 입력을 확인하고, PR 을 로컬 4
     clock: { now: async () => at, every: (ms, fn) => timers.set(ms, [...(timers.get(ms) || []), fn]) },
     fs: { exists: async () => false, read: async () => { throw Error('missing') } },
     command: { register: async () => {} },
-    ui: { invalidate: () => {}, status: () => {}, panes: async () => panes, open: async () => ({ isPlaced: true }) },
+    ui: { invalidate: () => {}, status: (text) => statuses.push(text), panes: async () => panes, open: async () => ({ isPlaced: true }) },
     process: { run: async (argv: string[]) => {
       calls.push(argv)
       return { exitCode: 0, stdout: argv.at(-1) === 'prs' ? '[]' : '', stderr: '' }
@@ -124,6 +138,7 @@ test('등록 훅은 창 표시와 사람 입력을 확인하고, PR 을 로컬 4
   panes = [{ id: 'work-board', isPlaced: true, isShown: true }]
   await tick(5000)
   assert.equal(prs(), 2)
+  assert.ok(!statuses.at(-1)!.includes('조회 쉼'), '활성 상태가 되면 쉼 표기를 지운다')
   at += 45_000
   await tick(45000)
   assert.equal(prs(), 2, 'Orca 로컬 갱신은 gh 를 읽지 않는다')
@@ -131,6 +146,7 @@ test('등록 훅은 창 표시와 사람 입력을 확인하고, PR 을 로컬 4
   await hooks.get('prompt.change')!($, { origin: { kind: 'plugin' } }, next)
   await tick(5000)
   assert.equal(prs(), 2, '프로그램 입력은 무입력 기한을 늘리지 않는다')
+  assert.match(statuses.at(-1)!, /기준 · 조회 쉼/, '멈춘 상태 줄에 기존 정보의 확인 시각을 붙인다')
   await hooks.get('prompt.submit')!($, { text: 'hi', origin: { kind: 'composer' } }, next)
   await tick(5000)
   assert.equal(prs(), 3)

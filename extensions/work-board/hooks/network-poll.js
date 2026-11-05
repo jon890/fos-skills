@@ -6,10 +6,12 @@ export function createNetworkPoll() {
   let inputAt = null
   const attempts = new Map()
   const busy = new Set()
+  const active = (at, visible) => Boolean(visible && inputAt !== null && at - inputAt < IDLE_MS)
   return {
     input(at) { inputAt = at },
+    active,
     async poll(at, visible, tasks, force = false, clock = async () => at) {
-      if (!force && (!visible || inputAt === null || at - inputAt >= IDLE_MS)) return
+      if (!force && !active(at, visible)) return
       await Promise.all(tasks.map(async ({ key, every, read }) => {
         if (busy.has(key) || (!force && attempts.has(key) && at - attempts.get(key) < every)) return
         attempts.set(key, at)
