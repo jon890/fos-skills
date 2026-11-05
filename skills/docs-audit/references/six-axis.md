@@ -9,7 +9,7 @@
 
 **대신 대체 표기와 위치, 링크·색인 갱신 규약을 지켰는지 본다.** 어긋난 자리가 발견이다.
 `status` 가 없는 ADR 을 어떻게 읽는지를 포함해 규약은
-[plan 의 task-create.md](../../plan/references/task-create.md) 가 소유한다.
+[technical-design 의 adr-rules.md](../../technical-design/references/adr-rules.md) 가 소유한다.
 
 ## 완료된 plan 은 제거 후보다
 
