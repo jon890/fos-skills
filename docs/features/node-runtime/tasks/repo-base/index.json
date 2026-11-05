@@ -4,7 +4,7 @@
   "pr_scope": "새 Python·셸 파일을 막고 남은 파일을 허용 목록으로 추적하는 저장소 검사와, 영역을 옮겨도 고치지 않아도 되는 CI 구성, 그 규칙을 적은 ADR 과 실행 규칙 문서를 더한다.",
   "deferred": [
     {
-      "what": "PR2 scripts/ 와 githooks/, workflow 의 python3 호출, check-shell-korean 삭제, kit 원본",
+      "what": "PR2 scripts/ 와 githooks/, workflow 의 python3 호출, check-shell-korean 삭제, modules/kit 원본",
       "why": "스펙 DECISION6 의 영역 하나에 PR 하나",
       "after": "이 PR 머지"
     },

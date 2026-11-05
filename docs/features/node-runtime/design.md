@@ -28,14 +28,15 @@
 
 - 스킬(`skills/<이름>`, `export-only-skills/<이름>`)과 도구(`tools/<이름>`)의 `.ts` 는 자기 폴더와 Node 내장 모듈만 import 한다.
 - 다른 스킬의 명령이 필요하면 지금처럼 자식 프로세스로 부르고, 경로는 지금의 탐색 순서(환경 변수, 형제 디렉터리, 개인 링크)를 그대로 옮긴다. 예: `content-preview` 가 `korean-check` 를 찾는 순서([code-architecture.md](../../code-architecture.md) 「스킬 사이의 경로 참조」).
-- `scripts/` 와 `githooks/` 는 저장소 관리 영역이라 `scripts/` 아래를 import 해도 된다. 팀으로 나가지 않는다.
+- `scripts/` 와 `githooks/` 는 저장소 관리 영역이라 `scripts/` 와 `modules/` 아래를 import 해도 된다. 팀으로 나가지 않는다.
+- 저장소 안의 공용 코드는 `modules/` 한 곳에 둔다. 실행용은 `modules/kit/`, 테스트용은 `modules/testkit/` 이다(DECISION2, DECISION3).
 
 ### 공통 꼴 모듈 `kit`
 
 옛 Python 과 같은 바이트를 내는 helper 가 영역마다 필요하다. 옵션의 고유 접두 펼치기(DECISION20), `json.dumps` 꼴(DECISION19), `shlex.quote` 가 그것이다.
 orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을 한다. 그러나 위 경계 때문에 다른 스킬이 그것을 import 할 수 없다.
 
-- 원본은 `scripts/kit/` 한 곳이다. 처음 쓰는 PR2 가 orch 의 두 파일에서 orch 전용 import(`./bundle.ts`)를 뺀 꼴로 만들고, `docs/code-architecture.md` 의 배치 표에 `scripts/kit/` 을 더한다.
+- 원본은 `modules/kit/` 한 곳이다. 처음 쓰는 PR2 가 orch 의 두 파일에서 orch 전용 import(`./bundle.ts`)를 뺀 꼴로 만들고, `docs/code-architecture.md` 의 배치 표에 `modules/kit/` 을 더한다.
 - `kit` 은 orch `lib/py.ts` 의 상위 집합이다. `pyJson` 에 `json.dumps` 의 `indent`, `ensure_ascii` 선택을 더한다. 옛 명령이 쓰던 꼴(들여쓴 JSON, `\u` 이스케이프)을 내야 하는 영역이 처음 필요할 때 그 PR 이 더한다. 같은 이름의 함수가 orch 와 `kit` 에서 같은 입력에 같은 글자를 내는지 `kit-copies.spec.ts` 가 함께 본다.
 - `kit` 은 정규식을 실행 중에 바꾸는 함수를 갖지 않는다. 옮길 때 사람이 정규식을 고치는 기준은 아래 「동등성 확인」 의 표다. orch 의 `pyRegExp`(옵션으로 받은 정규식 글자를 바꾸되 `\w` 같은 글자는 그대로 둔다)는 orch 에만 남는다.
 - 스킬과 도구는 원본을 `<단위>/scripts/kit/` 에 복사해 둔다. 복사본은 필요한 파일만 가진다.
@@ -46,14 +47,14 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
 
 ### 공통 testkit
 
-테스트 helper(임시 git 저장소 템플릿, 가짜 실행 파일 재사용, 명령 실행)는 fos-test-speed 가 만드는 testkit 을 쓴다(스펙 DECISION5).
-같은 경계가 테스트에도 걸린다. 팀 CI 는 내보낸 스킬의 `tests/` 를 팀 저장소 안에서 돈다. 그래서 내보내는 스킬의 테스트는 orch 의 `tests/fixtures/` 를 import 할 수 없다.
+테스트 helper(임시 git 저장소 템플릿, 가짜 실행 파일 재사용, 명령 실행)는 fos-test-speed 가 만드는 testkit 을 쓴다(스펙 DECISION5). 자리는 `modules/testkit/` 이다(사용자 2026-11-05).
+같은 경계가 테스트에도 걸린다. 팀 CI 는 내보낸 스킬의 `tests/` 를 팀 저장소 안에서 돈다. 그래서 내보내는 스킬의 테스트는 orch 의 `tests/fixtures/` 도, `modules/testkit/` 도 import 할 수 없다.
 
-- 내보내지 않는 영역(`scripts/`, `mac-cleanup`, `harness-cleanup`, `report`, `browser`, `pr-review`)의 테스트는 testkit 을 그 자리에서 import 한다.
-- 내보내는 영역의 테스트는 testkit 의 필요한 파일을 `kit` 과 같은 방식으로 `<단위>/tests/kit/` 에 복사하고 `kit-copies.spec.ts` 가 같은지 본다.
-- testkit 은 사용자가 fos-test-speed 의 몫으로 정했다(스펙 DECISION5). 그러나 2026-11-05 의 `docs/features/test-speed/` 문서는 testkit 의 범위와 위치를 아직 적지 않았다. 코디네이터가 그 기능과 맞춘다.
-- PR1 은 테스트 helper 를 쓰지 않는다. 그래도 시작 시점은 스펙 DECISION5 대로 testkit 머지 뒤다. 처음 helper 를 쓰는 PR2 에서 testkit 의 위치가 분명하지 않으면 그 PR 의 worker 가 코디네이터에게 묻는다. 이 기능이 testkit 을 따로 만들지 않는다. 같은 helper 가 두 벌 생긴다.
-- 복사본 대조에 쓰는 원본 위치는 처음 복사하는 PR 이 `scripts/runtime-policy.json` 의 `kit_sources` 에 적는다.
+- testkit 은 이 저장소의 테스트만 쓰고 팀에 싣지 않는다(사용자 2026-11-05). 복사본도 두지 않는다.
+- 내보내지 않는 영역(`scripts/`, `mac-cleanup`, `harness-cleanup`, `report`, `browser`, `pr-review`)의 테스트는 `modules/testkit/` 을 import 한다.
+- 팀으로 내보내는 스킬의 테스트는 Node 내장 모듈만 쓴다. 필요한 helper 는 그 테스트 파일 안에 둔다.
+- PR1 은 테스트 helper 를 쓰지 않는다. 그래도 시작 시점은 스펙 DECISION5 대로 testkit 머지 뒤다. 이 기능이 testkit 을 따로 만들지 않는다. 같은 helper 가 두 벌 생긴다.
+- 복사본 대조에 쓰는 `kit` 원본 위치(`modules/kit/`)는 처음 복사하는 PR 이 `scripts/runtime-policy.json` 의 `kit_sources` 에 적는다.
 
 ### 진입 파일
 
@@ -92,7 +93,7 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 | `legacy` | 옛 이름 진입 셋 | 옮긴 영역 PR 이 더하고, DECISION17 의 다음 major PR 이 지운다 |
 | `entry_js` | 허용하는 `.js`, `.mjs`, `.cjs`, 확장자 없는 JS | 진입이 생기거나 없어질 때 |
 | `migrated_docs` | 문서 호출 검사를 켤 영역 | 영역 PR 이 자기 영역을 더한다 |
-| `kit_sources` | `kit` 과 testkit 원본 위치 | 처음 복사하는 PR 이 더한다 |
+| `kit_sources` | `kit` 원본 위치(`modules/kit/`). testkit 은 복사하지 않아 적지 않는다 | 처음 복사하는 PR 이 더한다 |
 | `min_node` | 진입들이 보는 최소 Node 버전 | ADR-011 을 바꿀 때 |
 
 ### 동등성 확인
@@ -207,8 +208,8 @@ PR1 이 만든다. 정확한 키와 의미는 그 파일과 `runtime-policy.spec
 | ID | 결정 | 답 | 누가 | 근거 |
 | --- | --- | --- | --- | --- |
 | DECISION1 | 스킬과 도구의 import 범위 | 자기 폴더와 Node 내장 모듈만 | 작성자 | 팀 저장소 배치와 플러그인 캐시가 폴더 밖을 갖지 않는다. 지금 Python 과 같은 경계다 |
-| DECISION2 | 공통 꼴 helper 의 자리 | 원본은 `scripts/kit/`, 스킬과 도구는 복사본을 두고 테스트가 같은지 본다 | 작성자 | 기각: `tools/kit` 을 import 한다(팀의 nhn-dev 플러그인 안 스킬에서 경로가 깨진다), 영역마다 따로 쓴다(같은 꼴이 여러 벌로 갈라진다. ADR-010 이 고친 문제다), 내보내기가 복사본을 만든다(이 저장소 안 설치본이 원본을 import 해 두 경로가 생긴다) |
-| DECISION3 | 테스트 helper | fos-test-speed 의 testkit. 내보내는 영역은 복사본 | 작성자 | 스펙 DECISION5. 팀 CI 가 팀 저장소 안에서 돈다 |
+| DECISION2 | 공통 꼴 helper 의 자리 | 원본은 `modules/kit/`, 스킬과 도구는 복사본을 두고 테스트가 같은지 본다 | 사용자 2026-11-05 | 공용 코드는 `modules/` 한 곳에 둔다(실행용 `modules/kit`, 테스트용 `modules/testkit`). 처음 설계의 `scripts/kit/` 을 testkit 인터뷰에서 사용자가 바꿨고, 복사본과 대조 테스트는 그대로 두었다. 기각: `package.json` workspaces 패키지(ADR-010 이 `package.json` 과 npm 의존을 두지 않기로 했다), `tools/kit` 을 import 한다(팀의 nhn-dev 플러그인 안 스킬에서 경로가 깨진다), 영역마다 따로 쓴다(같은 꼴이 여러 벌로 갈라진다. ADR-010 이 고친 문제다), 내보내기가 복사본을 만든다(이 저장소 안 설치본이 원본을 import 해 두 경로가 생긴다) |
+| DECISION3 | 테스트 helper | fos-test-speed 의 testkit(`modules/testkit/`). 이 저장소 테스트만 쓰고 팀에 싣지 않는다. 내보내는 스킬의 테스트는 Node 내장 모듈만 쓴다 | 사용자 2026-11-05 | 스펙 DECISION5. 팀 CI 가 팀 저장소 안에서 돈다. 처음 설계의 「내보내는 영역은 복사본」 을 testkit 인터뷰에서 사용자가 바꿨다 |
 | DECISION4 | 문서의 호출 꼴 | `node "$SKILL_DIR/scripts/<이름>.ts"` | 작성자 | 실행 권한이 빠진 복사에서도 돈다. Node 24 는 경고를 내지 않는다 |
 | DECISION5 | 명령 파일 이름 | 옛 이름에서 확장자만 바꾼다 | 작성자 | 문서와 다른 저장소의 고칠 곳이 확장자 하나다 |
 | DECISION6 | 이행 상태의 원본 | `scripts/runtime-policy.json` 하나. 테스트가 그것을 읽는다 | 작성자 | 영역 PR 이 자기 줄만 지워 충돌이 작다. 남은 일이 파일 하나에 보인다 |

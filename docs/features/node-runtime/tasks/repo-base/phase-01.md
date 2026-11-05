@@ -6,7 +6,7 @@
 
 저장소에 Python·셸 파일과 허용하지 않은 JS 진입이 새로 생기면 파일 이름과 함께 실패하는 검사를 더하고, 영역을 옮길 때 CI 를 고치지 않아도 되게 테스트 선택을 폴더 패턴으로 바꾼다.
 
-**범위 외**: 실제 Python·셸 파일을 옮기는 일(뒤 PR), ADR 과 문서(phase-02), `scripts/kit/`(PR2), orch 의 옛 Python 진입 삭제(orch-cli 의 옛 이름 정리 PR).
+**범위 외**: 실제 Python·셸 파일을 옮기는 일(뒤 PR), ADR 과 문서(phase-02), `modules/kit/`(PR2), orch 의 옛 Python 진입 삭제(orch-cli 의 옛 이름 정리 PR).
 
 ## 컨텍스트
 
@@ -22,7 +22,7 @@
 ## Blocked 조건
 
 - 착수 때 `git fetch origin` 뒤 orch 구조 개편의 폴더 이동(orch-cli 스펙 DECISION14 의 PR3)이 `origin/main` 에 없으면(`git ls-tree -d origin/main skills/orch/scripts/` 에 명령 묶음 폴더가 없으면. 묶음 이름은 orch-cli 스펙 「명령 표」 를 본다) → `PHASE_BLOCKED: orch 폴더 이동 전` 을 내고 코디네이터에게 묻는다. 스펙 DECISION5 의 선행 조건이다.
-- fos-test-speed 의 TypeScript testkit 이 `origin/main` 에 없으면 → `PHASE_BLOCKED: testkit 머지 전` 을 내고 코디네이터에게 묻는다. 이 PR 은 testkit 을 쓰지 않지만 스펙 DECISION5 가 전환 전체의 시작을 testkit 뒤로 정했다. testkit 의 위치가 문서에 없어 머지 여부를 정할 수 없으면 코디네이터에게 위치를 묻는다.
+- fos-test-speed 의 TypeScript testkit(`modules/testkit/`)이 `origin/main` 에 없으면 → `PHASE_BLOCKED: testkit 머지 전` 을 내고 코디네이터에게 묻는다. 이 PR 은 testkit 을 쓰지 않지만 스펙 DECISION5 가 전환 전체의 시작을 testkit 뒤로 정했다.
 
 ## 의도 메모
 
