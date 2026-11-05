@@ -128,6 +128,27 @@ describe("Markdown 꼴", () => {
     assert.equal(r.code, 0);
   });
 
+  test("들여 쓴 코드 블록과 여러 줄 코드 스팬 안은 보지 않는다. 목록 안 들여쓴 줄은 본문이다", () => {
+    const root = repo({
+      "docs/adr/001-a.md": adr("ADR-001", "가"),
+      "README.md": [
+        "문단",
+        "",
+        "    [example](missing.md) ADR-001",
+        "",
+        "앞 `",
+        "[span](missing2.md) ADR-001",
+        "` 뒤",
+        "",
+        "- 목록",
+        "",
+        "    [이어짐](missing3.md)",
+      ].join("\n"),
+    });
+    const r = run(root, "check");
+    assert.deepEqual(r.out, ["README.md:11: BROKEN_LINK missing3.md"]);
+  });
+
   test("대소문자가 다른 링크는 대소문자를 가리지 않는 파일 시스템에서도 깨진 링크다", () => {
     const root = repo({ "Guide.md": "# 가\n", "README.md": "[가이드](guide.md)\n" });
     assert.deepEqual(run(root, "check").out, ["README.md:1: BROKEN_LINK guide.md"]);

@@ -118,21 +118,48 @@ export function parseArgs(argv: string[]): Options {
 // 목록 안에 4칸 넘게 들여 쓴 펜스도 펜스로 본다. 들여쓴 블록 안 예시 링크를 본문으로 읽지 않게 한다.
 const FENCE = /^\s*(`{3,}|~{3,})/;
 
+// 목록 항목의 머리. 목록 안에서 들여 쓴 줄은 코드 블록이 아니라 항목의 이어지는 내용이다.
+const LIST_ITEM = /^ {0,3}(?:[-*+]|\d+[.)])(?:\s|$)/;
+const INDENTED = /^(?: {4}|\t)/;
+
 // 코드 블록 줄을 빈 줄로, 코드 스팬을 빈 글로 바꾼다. 줄 번호는 그대로다.
+//   펜스 블록과, 빈 줄 뒤 4칸(탭) 들여 쓴 코드 블록을 지운다. 목록 안의 들여쓴 줄은 코드 블록으로 보지 않는다.
+//   코드 스팬은 한 문단 안에서 여러 줄에 걸칠 수 있어 줄을 이은 뒤 지운다.
 export function prose(text: string, stripSpans = true): string[] {
   const out: string[] = [];
   let fence: string | null = null;
+  let inList = false;
+  let indented = false;
+  let prevBlank = true;
   for (const line of text.split(/\r?\n/)) {
+    const blank = line.trim() === "";
     const m = FENCE.exec(line);
-    if (m) {
-      const token = m[1];
-      if (fence === null) fence = token;
-      else if (token[0] === fence[0] && token.length >= fence.length && line.trim() === token) fence = null;
+    if (fence === null && !indented && m) {
+      fence = m[1];
       out.push("");
-    } else if (fence !== null) out.push("");
-    else out.push(stripSpans ? line.replace(/(`+)[\s\S]*?\1/g, "") : line);
+    } else if (fence !== null) {
+      const token = m?.[1];
+      if (token && token[0] === fence[0] && token.length >= fence.length && line.trim() === token) fence = null;
+      out.push("");
+    } else if (indented && (blank || INDENTED.test(line))) {
+      out.push("");
+    } else if (!inList && prevBlank && INDENTED.test(line) && !blank) {
+      indented = true;
+      out.push("");
+    } else {
+      indented = false;
+      if (LIST_ITEM.test(line)) inList = true;
+      else if (!blank && !/^\s/.test(line)) inList = false;
+      out.push(line);
+    }
+    prevBlank = blank;
   }
-  return out;
+  if (!stripSpans) return out;
+  // 여러 줄 코드 스팬: 빈 줄을 넘지 않는 짝 백틱 사이를 지우고 줄 바꿈은 남긴다
+  return out
+    .join("\n")
+    .replace(/(`+)((?:(?!\n[ \t]*\n)[\s\S])*?)\1(?!`)/g, (all) => all.replace(/[^\n]/g, ""))
+    .split("\n");
 }
 
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*$/;
