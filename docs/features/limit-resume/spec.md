@@ -1,5 +1,7 @@
 # orch: 사용 한도로 멈춘 worker 를 resume 으로 다시 띄운다
 
+확인: 2026-11-05
+
 ## 목표
 
 사용자가 한도에 걸린 계정을 다른 계정으로 바꾼 뒤, 코디네이터가 명령 하나로 멈춘 worker 를 `claude --resume <세션 id>` 나 `codex resume <세션 id>` 로 같은 워크트리에 다시 띄워 Task 에 잇는다. 새 worker 는 이전 대화를 그대로 이어 간다.
@@ -65,7 +67,7 @@
 | DECISION9 | resume 한 세션이 받을 dispatch | 같은 Task 를 `worker-start --task <Task> --terminal <새 터미널>` 로 잇는다. Orca 가 넣는 머리말과 원래 지시서를 그대로 받는다 | 작성자 | `--spec` 은 새 Task 를 만들어 보드와 기록이 갈린다. 앞 대화가 남아 있어 worker 는 끝난 일을 기록에서 본다 |
 | DECISION10 | 세션 기록을 찾는 환경 | 새 터미널이 실제로 쓸 계정의 기록 폴더. Claude 는 Orca 가 지금 고른 프로필(`selected-host`)의 `projects`, Codex 는 Orca 가 지금 고른 계정의 `CODEX_HOME` | 작성자 | 코디네이터 셸의 환경과 새 터미널의 계정이 다를 수 있다. 새 터미널이 열 수 있는 기록만 찾아야 「찾았는데 열리지 않음」 이 없다 |
 | DECISION11 | 대상별로 하는 단계 | `LIMITED` 는 화면 읽기, abandon, 옛 터미널 닫기, 열기, 잇기를 모두 한다. `RESTART` 는 dispatch 가 이미 `failed` 이고 터미널이 없으므로 화면 읽기, abandon, 닫기를 건너뛰고 열기와 잇기만 한다 | 작성자 | `lib/sessions.ts` 의 `restartable` 은 터미널 없는 failed dispatch 만 고른다 |
-| DECISION12 | 정리한 뒤 실패했을 때 낼 다음 명령 | 옛 dispatch 를 정리한 뒤 실패하면 다시 부를 수 있는 명령(같은 명령에 Task 와 세션 id 를 직접 주는 꼴)을 낸다. 터미널은 열렸는데 `worker-start --terminal` 만 실패하면 그 터미널을 닫지 않고 handle 을 출력에 남긴다 | 작성자 | 정리 뒤에는 `LIMITED`, `RESTART` 판정에 걸리지 않는다. 잇기 실패 뒤에는 연결이 이미 일어났을 수 있어 닫지 않는다(DECISION4) |
+| DECISION12 | 정리한 뒤 실패했을 때 낼 다음 명령 | 옛 dispatch 를 정리한 뒤 실패하면 같은 명령을 다시 부르라고 낸다. 명령은 정리된(abandoned, failed) 옛 dispatch 도 그 Task 의 마지막 dispatch 이면 받는다. 터미널은 열렸는데 `worker-start --terminal` 만 실패하면 그 터미널을 닫지 않고 handle 을 출력에 남긴다 | 작성자 | 정리 뒤에는 `LIMITED`, `RESTART` 판정에 걸리지 않는다. 잇기 실패 뒤에는 연결이 이미 일어났을 수 있어 닫지 않는다(DECISION4) |
 | DECISION13 | 한도 알림이 안내할 기본 대응 | 먼저 사용자에게 계정 전환을 요청하고, 바꾼 뒤 resume 명령을 부른다. 바꿀 계정이 없거나 resume 이 실패하면 지금처럼 같은 등급의 다른 제공자나 한 단계 아래 모델로 새로 띄우고 재개 절은 코디네이터가 쓴다 | 사용자 2026-11-05 | 사용자 운영(계정 전환 뒤 이어 가기)을 기본으로 두고, 계정이 모두 찼을 때는 지침의 한도 표가 길을 준다 |
 | DECISION14 | Codex 계정을 바꾼 뒤의 이어받기 | 하지 않는다. 기록이 보이지 않아 실패로 알린다. Codex 이어받기는 같은 계정(재부팅, 한도가 풀린 뒤)에서만 된다 | 사용자 2026-11-05 | Codex 는 계정마다 `sessions` 폴더와 `state_5.sqlite` 가 따로다(계정 2개 확인). 기록 옮기기는 범위 밖이다(DECISION1) |
 
