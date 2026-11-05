@@ -1,2 +1,3 @@
 - 모델 표에 행 id 를 더하고 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적게 했다.
 - Opus `high` 이상은 `high 근거:` 가 있을 때만 고르게 하고, 실측 근거(2026-11-05, PR 486건)와 sol 후보 조건을 지침에 적었다.
+- 공통 지시서 틀에 no-reconfirm, status-not-escalation 규칙을 더했다.
