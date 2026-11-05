@@ -21,8 +21,8 @@ if (process.env.FAKE_GH_FAILS === '1') process.exit(1)
 const args = process.argv.slice(2)
 if (args.includes('merged')) {
   const head = args[args.indexOf('--head') + 1]
-  const merged = JSON.parse(process.env.FAKE_MERGED || '[]')
-  fs.writeSync(1, JSON.stringify(merged.includes(head) ? [{ number: 1 }] : []) + '\\n')
+  const merged = JSON.parse(process.env.FAKE_MERGED || '{}')
+  fs.writeSync(1, JSON.stringify(merged[head] ? [{ mergedAt: merged[head] }] : []) + '\\n')
   process.exit(0)
 }
 const heads = JSON.parse(process.env.FAKE_OPEN || '[]')
@@ -231,10 +231,21 @@ describe('handoff-cleanup', () => {
   test('보드에서 done 을 먼저 비웠어도 머지된 PR 이 있는 지시서는 옮기고, 띄우기 전 지시서는 남긴다', () => {
     const finished = make('.orch/specs/spec-swept.md', spec('feat/swept', 'item-swept'))
     const unlaunched = make('.orch/specs/spec-unlaunched.md', spec('feat/unlaunched', 'item-unlaunched'))
-    ok(['--apply'], { FAKE_MERGED: JSON.stringify(['feat/swept']) })
+    const reused = make('.orch/specs/spec-reused.md', spec('feat/reused', 'item-reused'))
+    const future = new Date(Date.now() + 3600_000).toISOString()
+    const past = new Date(Date.now() - 3600_000 * 24).toISOString()
+    ok(['--apply'], { FAKE_MERGED: JSON.stringify({ 'feat/swept': future, 'feat/reused': past }) })
     assert.equal(existsSync(join(trash, '.orch/specs/spec-swept.md')), true)
     assert.equal(existsSync(finished), false)
     assert.equal(existsSync(unlaunched), true)
+    assert.equal(existsSync(reused), true, '지시서보다 먼저 머지된 PR 은 끝남의 근거가 아니다')
+  })
+
+  test('보드를 읽지 못하면 머지된 PR 이 있어도 보드 항목 줄이 있는 지시서를 남긴다', () => {
+    writeFileSync(join(repo, 'board.json'), 'not json')
+    const target = make('.orch/specs/spec-swept.md', spec('feat/swept', 'item-swept'))
+    ok(['--apply'], { FAKE_MERGED: JSON.stringify({ 'feat/swept': new Date(Date.now() + 3600_000).toISOString() }) })
+    assert.equal(existsSync(target), true)
   })
 
   test('보드 항목 줄이 없는 지시서는 그 조건을 건너뛴다', () => {
