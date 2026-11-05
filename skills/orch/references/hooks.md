@@ -60,7 +60,7 @@ if (live.length >= LIMIT) {
 
 - **거부는 종료 코드 10 이다.** 1 은 node 가 잡지 않은 예외에 내는 값이라 거부로 읽지 않는다.
 - **거부 이유는 stdout 의 마지막 줄이다.** 명령이 그 줄을 `HOOK-REJECT before-launch <이유>` 로 옮겨 낸다.
-- **타입 제거가 지우는 문법만 쓴다.** 핸들러도 `node --disable-warning=ExperimentalWarning` 으로 뜬다. 문법 규칙은 `docs/code-architecture.md` 「실행 규칙」 이 소유한다.
+- **타입 제거가 지우는 문법만 쓴다.** 핸들러도 `node --disable-warning=ExperimentalWarning` 으로 뜬다. 문법 규칙은 `docs/code-architecture.md` 「저장소 실행 규칙」 이 소유한다.
 - **`orca` 와 `gh` 는 `ORCA`, `GH` 환경 변수로 부른다.** 그 값이 아래 「가드가 막는 호출」 의 shim 이다.
 
 ### 멈춘 worker 다시 시도시키기
