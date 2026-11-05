@@ -28,6 +28,7 @@ metadata:
 입력은 사용자가 확인한 스펙, 관련 코드와 기존 공유 계약·ADR 이다.
 
 작성 전에 [설계 양식](templates/design.md)을 읽는다. ADR 을 남기거나 대체할 때는 [ADR 규칙](references/adr-rules.md)(남길 조건, 대체와 이동 규약)과 [ADR 양식](templates/adr.md)을 읽는다.
+[결정 기록 샘플](references/adr-examples.md)로 종류와 원본 연결을 확인한다. 정책 결정이 열려 있으면 spec 으로 반환하고, 분류를 이유로 ADR 을 늘리지 않는다.
 시스템 공통 흐름 문서가 실제로 필요할 때는 [flow 기본 양식](templates/system-flow.md), 결과를 쓰는 쪽과의 계약은 [출력 계약 양식](templates/output-contract.md)을 참고한다. 기존 저장소 양식이 우선이다.
 [문서 소유권](../spec/references/document-ownership.md)으로 이번 기능이 바꾸는 책임 문서만 식별한다. 영향 없는 전역 문서는 수정하지 않는다.
 
