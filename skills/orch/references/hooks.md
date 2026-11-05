@@ -108,7 +108,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 - **사람이 Esc 로 끊은 화면(`interrupted`)에는 불리지 않는다.** 사람이 일부러 멈춘 작업을 다시 돌리지 않는다.
 - **입력은 코어 명령(`orch worker nudge`, `orch worker send`)으로만 한다.** `node "$ORCH_BIN" worker nudge …` 처럼 진입점 절대경로 `ORCH_BIN` 으로 부른다. 그 명령은 진짜 orca(`ORCH_REAL_ORCA`)로 입력해 가드에 막히지 않는다. 플러그인 설치 경로는 커밋마다 바뀌므로 경로를 핸들러에 적지 않는다.
   <!-- orch-compat -->
-  `ORCH_SCRIPTS`(스크립트 폴더)도 계속 넘기지만 그 아래 스크립트 파일을 직접 부르는 핸들러는 폴더 이동 뒤 깨진다. doctor 가 `DIRECT-PATH` 로 알린다.
+  `ORCH_SCRIPTS`(스크립트 폴더)도 계속 넘기지만 스크립트는 그 아래 묶음 폴더(`worker/nudge-worker.ts` 꼴)로 옮겼다. `$ORCH_SCRIPTS/<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')` 꼴은 파일이 없어 깨진다. 핸들러는 `node "$ORCH_BIN" <묶음> <동작>` 으로 부른다. doctor 가 `DIRECT-PATH` 로 알린다.
 - 코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다. 그 판정을 쓰려면 `config.json` 의 `pipeline.stall_ticks.idle` 을 켠다.
 
 ## 실패 줄 읽기
