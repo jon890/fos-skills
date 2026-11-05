@@ -1,6 +1,6 @@
 // 기능 PR 의 완료 근거 형식. 의미와 실행 사실은 코디네이터가 확인한다.
 // 새 상태 저장소 없이 PR 본문을 읽고, 현재 HEAD 의 기록과 필수 검토 누락을 막는다.
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { ghJson } from './gh.ts'
 import { loadConfig } from './config.ts'
@@ -34,8 +34,8 @@ function implementationRequested(text: string): boolean {
   return featureLoopRequested(text) && !/구현과 PR 은 코디네이터가 새 지시서로/.test(withoutExamples(text))
 }
 
-// 같은 브랜치를 이어 쓴 경우 마지막 dispatch 의 지시서를 우선한다. 기록은 dispatch 마다 한 번 쓰므로
-// 파일 수정 시각으로 순서를 정한다. 옛 기록에 branch 가 없으면 worktree 로 연결한다.
+// 브랜치에 연결된 dispatch 지시서를 우선한다. 구현 뒤 후속·충돌 해소 지시서가 붙어도
+// 구현을 맡은 기록이 하나라도 있으면 기능 PR 로 본다. 옛 기록에 branch 가 없으면 worktree 로 연결한다.
 export function featureBranch(repo: string, branch: string, explicit?: string): boolean {
   const config = loadConfig(repo)
   const configured = config.finish?.specs_dir
@@ -46,10 +46,10 @@ export function featureBranch(repo: string, branch: string, explicit?: string): 
     const launches = readdirSync(records).filter((name) => name.endsWith('.json')).flatMap((name) => {
       const launch = readLaunch(repo, name.slice(0, -5))
       if (!launch || !(launch.branch === branch || (!launch.branch && launch.worktree === worktree))) return []
-      return [{ launch, time: statSync(join(records, name)).mtimeMs }]
-    }).sort((a, b) => b.time - a.time)
-    const spec = launches[0]?.launch.spec
-    if (spec && existsSync(spec)) return implementationRequested(readFileSync(spec, 'utf8'))
+      return [launch]
+    })
+    const texts = launches.flatMap(({ spec }) => spec && existsSync(spec) ? [readFileSync(spec, 'utf8')] : [])
+    if (texts.length > 0) return texts.some(implementationRequested)
   }
   // 띄운 기록이 없으면 기존처럼 기본/설정 폴더의 브랜치 지시서를 모두 본다.
   const dirs = [pathOf('specs', repo), explicit, configured].filter((v): v is string => Boolean(v))

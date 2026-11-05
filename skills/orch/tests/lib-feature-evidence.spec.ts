@@ -19,6 +19,8 @@ test('dispatch 지시서를 우선 보고 기록이 없을 때만 브랜치 지�
   writeFileSync(loop, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
   writeFileSync(docs, '브랜치: `feat/test`\n## 할 일\n루프 없이: 문서 정정\n')
   assert.equal(featureBranch(repo, 'feat/test'), true)
+  // 오래된 계획 지시서와 새 문서 지시서를 함께 보아도 구현 PR 로 분류하지 않는다.
+  writeFileSync(loop, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n구현과 PR 은 코디네이터가 새 지시서로 맡긴다.\n')
   recordLaunch(repo, { dispatch: 'old', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: loop })
   utimesSync(join(repo, '.orch/state/launched-workers/old.json'), 1, 1)
   recordLaunch(repo, { dispatch: 'new', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: docs })
@@ -31,6 +33,23 @@ test('dispatch 지시서를 우선 보고 기록이 없을 때만 브랜치 지�
   rmSync(join(repo, '.orch/state/launched-workers'), { recursive: true })
   writeFileSync(loop, readFileSync(docs, 'utf8'))
   assert.equal(featureBranch(repo, 'feat/test'), false)
+})
+test('구현 dispatch 뒤에 후속·충돌 해소 dispatch 가 붙어도 기능 PR 판정을 유지한다', (t) => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'feature-followup-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
+  spawnSync('git', ['init', '-q', repo])
+  const specs = join(repo, '.orch/specs')
+  mkdirSync(specs, { recursive: true })
+  const implementation = join(specs, 'spec-implementation.md')
+  const followup = join(specs, 'spec-followup.md')
+  writeFileSync(implementation, '브랜치: `feat/test`\n## 할 일\n루프를 쓴다(스펙: 새로 쓴다)\n')
+  recordLaunch(repo, { dispatch: 'implementation', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: implementation })
+  utimesSync(join(repo, '.orch/state/launched-workers/implementation.json'), 1, 1)
+  for (const reason of ['후속 지적 반영', '기준 브랜치와 충돌 해소']) {
+    writeFileSync(followup, `브랜치: \`feat/test\`\n## 할 일\n루프 없이: ${reason}\n`)
+    recordLaunch(repo, { dispatch: 'followup', branch: 'feat/test', worktree: repo, terminal: null, run: null, spec: followup })
+    assert.equal(featureBranch(repo, 'feat/test'), true)
+  }
 })
 const BODY = `<!-- fos-feature-evidence -->
 검증 커밋: ${HEAD}
