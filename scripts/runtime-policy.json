@@ -1,6 +1,5 @@
 {
   "pending": [
-    { "area": "small-skills", "prefix": "skills/docs-audit/" },
     { "area": "small-skills", "prefix": "skills/report/" },
     { "area": "small-skills", "prefix": "skills/presentation/" },
     { "area": "small-skills", "prefix": "skills/browser/" },
