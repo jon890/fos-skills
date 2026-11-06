@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
@@ -8,7 +8,7 @@ import { readPrices, reportRows } from '../scripts/lib/routing-report.ts'
 import type { RoutingRecord } from '../scripts/lib/routing-log.ts'
 
 let dir: string
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'routing-report-')) })
+beforeEach(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'routing-report-'))) })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 const sol = { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' }
 const opus = { agent: 'claude', model: 'claude-opus-5-5', effort: 'medium' }
@@ -125,14 +125,21 @@ test('10건부터 표본 적음 표시를 없애며 누락 effective는 요청 �
   assert.equal(row.estimated_cost_usd_median, null)
 })
 
-test('기록이 없는 저장소는 빈 JSON이고 파일 읽기 실패는 1이다', () => {
-  assert.equal(cli(['--repo', resolve(dir, 'empty'), '--json']).stdout.trim(), '[]')
+test('없는 폴더와 기록 파일마다 경고하며 빈 JSON을 내고 읽기 실패는 1이다', () => {
+  const missing = resolve(dir, 'empty')
   const a = repo('a', [])
-  rmSync(join(a, '.orch/state/routing-log.jsonl'))
-  mkdirSync(join(a, '.orch/state/routing-log.jsonl'))
+  const file = join(a, '.orch/state/routing-log.jsonl')
+  rmSync(file)
+  const result = cli(['--repo', missing, '--repo', a, '--json'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '[]')
+  assert.deepEqual(result.stderr.trim().split('\n').sort(), [
+    `ROUTING-LOG-WARN ${join(missing, '.orch/state/routing-log.jsonl')}: 기록 없음`,
+    `ROUTING-LOG-WARN ${file}: 기록 없음`,
+  ].sort())
+  mkdirSync(file)
   assert.equal(cli(['--repo', a]).status, 1)
 })
-
 
 test('Codex 캐시 쓰기는 30분 배수이며 배수를 모르는 새 모델의 캐시 비용은 비운다', () => {
   const r = record(1, { tokens: { input: 0, output: 0, cache_read: 0, cache_write: 1_000_000 } })

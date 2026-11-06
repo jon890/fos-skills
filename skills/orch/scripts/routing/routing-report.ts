@@ -2,6 +2,7 @@
 // 비용은 PR 전체 토큰에 PR을 연 모델의 현재 단가를 적용한 추정이다. dispatch별 비용은 기록에 없다.
 // 종료 코드: 0 성공(손상 줄 경고 포함), 1 파일 읽기 실패, 2 사용법 오류.
 import { parseArgs } from 'node:util'
+import { statSync } from 'node:fs'
 import { expandArgs } from '../lib/args.ts'
 import { routingRecords, type RoutingRecord } from '../lib/routing-log.ts'
 import { readPrices, reportable, reportRows, type ReportRow } from '../lib/routing-report.ts'
@@ -33,8 +34,15 @@ function main(): number {
   const repos = new Set((args.repo ?? [process.cwd()]).map(repo => mainCheckout(real(repo))))
   for (const repo of repos) {
     const warn = (e: Error) => process.stderr.write(`ROUTING-LOG-WARN ${e.message}\n`)
+    const file = join(pathOf('state', repo), 'routing-log.jsonl')
+    try { statSync(file) }
+    catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+      warn(new Error(`${file}: 기록 없음`))
+      continue
+    }
     for (const record of routingRecords(repo, warn)) {
-      if (!reportable(record)) { warn(new Error(`${join(pathOf('state', repo), 'routing-log.jsonl')}: PR ${record.pr}: 집계 필드 형식 오류`)); continue }
+      if (!reportable(record)) { warn(new Error(`${file}: PR ${record.pr}: 집계 필드 형식 오류`)); continue }
       if (args.since && Date.parse(record.merged_at ?? record.closed_at!) < Date.parse(args.since)) continue
       const key = JSON.stringify([record.repo, record.pr])
       const previous = records.get(key)
