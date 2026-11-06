@@ -24,7 +24,7 @@ export function parseCli(argv: string[], spec: Spec): { values: Parsed } | { exi
     write(2, `${spec.usage}${spec.prog}: error: ${message}\n`)
     return { exit: 2 }
   }
-  const options = { help: { type: 'boolean' as const, short: 'h' }, ...Object.fromEntries(Object.entries(spec.options).map(([name, o]) => [name, { type: o.type, ...(o.multiple ? { multiple: true } : {}) }])) }
+  const options = { help: { type: 'boolean' as const, short: 'h' }, ...Object.fromEntries(Object.entries(spec.options).map(([name, o]) => [name, { type: o.type, ...(o.multiple || o.choices ? { multiple: true } : {}) }])) }
   const joined = Object.entries(spec.options).filter(([, o]) => o.type === 'string').map(([name]) => name)
   let values: Parsed
   try {
@@ -38,9 +38,13 @@ export function parseCli(argv: string[], spec: Spec): { values: Parsed } | { exi
   }
   const missing = Object.entries(spec.options).filter(([name, o]) => o.required && values[name] === undefined).map(([name]) => `--${name}`)
   if (missing.length) return fail(`the following arguments are required: ${missing.join(', ')}`)
+  // 선택형 옵션은 거듭 줘도 등장한 값마다 choices 를 검사한다(argparse 는 파싱하는 때마다 검사한다). 값은 마지막 것이다
   for (const [name, o] of Object.entries(spec.options)) {
-    const value = values[name]
-    if (o.choices && typeof value === 'string' && !o.choices.includes(value)) return fail(`argument --${name}: invalid choice: '${value}' (choose from ${o.choices.map((c) => `'${c}'`).join(', ')})`)
+    if (!o.choices || o.multiple) continue
+    const given = values[name] as string[] | undefined
+    if (given === undefined) continue
+    for (const value of given) if (!o.choices.includes(value)) return fail(`argument --${name}: invalid choice: '${value}' (choose from ${o.choices.map((c) => `'${c}'`).join(', ')})`)
+    values[name] = given.at(-1)
   }
   return { values }
 }
