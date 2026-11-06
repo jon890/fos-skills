@@ -108,6 +108,23 @@ test('동적 라우트 조각은 문자 그대로의 경로다', () => {
   assert.ok(has(check(new Repo(), [[['src/.../[id]/route.ts', '수정']]]).violations, '생략하지 않은 경로가 필요하다'))
 })
 
+test('glob 의 ? 와 문자 클래스는 보조 평면 문자도 한 글자로 센다', () => {
+  for (const pattern of ['docs/?.md', 'docs/[😀].md', 'docs/*.md']) {
+    const repo = new Repo()
+    repo.file('docs/😀.md')
+    const r = check(repo, [[[pattern, '수정']]])
+    assert.deepEqual(state(r.violations), [], pattern)
+  }
+})
+
+test('glob 문자 클래스의 역순 범위는 오류가 아니라 Python fnmatch 의 규칙을 따른다', () => {
+  const repo = new Repo()
+  repo.file('docs/a.md')
+  const r = check(repo, [[['docs/[!z-a].md', '수정']]])
+  assert.equal(r.code === 2, false, r.stderr)
+  assert.deepEqual(state(r.violations), [])
+})
+
 test('앞 phase 가 신규로 둔 glob 은 존재로 센다', () => {
   const r = check(new Repo(), [
     [['src/dto/*.java', '신규']],

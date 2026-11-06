@@ -299,3 +299,20 @@ test('스펙과 설계 양식은 실제 사용자 확인을 요구한다', () =>
   const r = check(repo, 'spec.md', '--design', 'design.md')
   assert.equal(r.code, 0, r.stdout)
 })
+
+test('경로는 심볼릭 링크를 먼저 따라간 뒤 `..` 를 처리한다', () => {
+  const repo = new Repo('plan-symlink-')
+  repo.file('docs/nested/.keep')
+  repo.file('docs/spec.md', UNCONFIRMED)
+  repo.file('spec.md', VALID)
+  symlinkSync(join(repo.root, 'docs/nested'), join(repo.root, 'alias'))
+  assert.equal(check(repo, 'alias/../spec.md').code, 1)
+  assert.equal(check(repo, 'spec.md').code, 0)
+})
+
+test('확인 줄의 공백은 Python 의 공백 집합으로 본다', () => {
+  const withGap = (gap: string) => VALID.replace('확인: 2026-11-02', `확인:${gap}2026-11-02`)
+  assert.equal(check(feature(withGap('﻿')), SPEC).code, 1)
+  assert.equal(check(feature(withGap('\u001F')), SPEC).code, 0)
+  assert.equal(check(feature(withGap(' ')), SPEC).code, 0)
+})
