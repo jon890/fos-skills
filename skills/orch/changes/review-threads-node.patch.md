@@ -1,1 +1,0 @@
-- 기본 미해결 스레드 명령이 review-fix 의 `review_threads.ts` 를 `node` 로 부른다. 머지 큐의 `--threads-cmd` 와 상주 루프의 `THREADS_CMD` 를 직접 준 호출은 그대로 쓴다
