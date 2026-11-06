@@ -1,18 +1,18 @@
 # CHANGELOG: plan
 
-## 6.0.2 (2026-11-06)
+## 7.0.0 (2026-11-06)
 
-- 모노레포 안내와 주석이 옮긴 `plan_precheck.ts`, `static_check.ts` 의 새 이름을 가리킨다
+- 호환성: 스크립트 일곱을 Node 24 의 `.ts` 로 바꿨다(`verify_task`, `check_feature`, `run_doc_checks`, `overlay_paths`, `overlay_values`, `plan_number`, `plan_numbers`)
+- `plan_number.sh` 는 `plan_number.ts` 가 됐다. `node "$SKILL_DIR/scripts/verify_task.ts" …` 처럼 확장자만 바꿔 부른다. Node 24 이상이 필요하다
+- 옵션, 출력, 종료 코드는 그대로다. 저장소의 스펙 13개와 계획 폴더 16개(뒤튼 phase 포함)에서 옛 구현과 같은 결과를 확인했다
+- 옛 `python3 …/verify_task.py` 와 `bash …/plan_number.sh` 호출(허용 규칙과 오버레이 포함)은 새 이름으로 바꿔야 한다
 
-## 6.0.1 (2026-11-06)
-
-- `adr-docs.ts write-index` 가 다른 ADR 폴더의 ADR 을 대체 관계 칸에 접두와 함께 적는다. 링크 글에 접두가 있으면 그 글을, 없으면 폴더 이름을 식별자 앞에 붙인다
-
-## 6.0.0 (2026-11-06)
+## 6.x
 
 - 호환성: `scripts/check_adr_layout.py` 를 지웠다. ADR 위치와 링크는 `node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check` 로 본다
-- `scripts/adr-docs.ts` 가 링크·앵커, 링크 없는 ADR 번호, 색인, 번호 중복, 대체된 ADR 위치를 검사하고 `write-index` 로 「현행」·「대체됨」 두 표 색인을 만든다
+- `adr-docs.ts` 가 링크·앵커, 링크 없는 ADR 번호, 색인, 번호 중복, 대체된 ADR 위치를 검사하고 `write-index` 로 두 표 색인을 만든다
 - 오버레이 값 「ADR 폴더」, 「ADR 색인 생성」 을 더했다. 「ADR 대체 배치」 는 `adr-docs.ts --flat` 으로 넘긴다
+- 모노레포 안내와 주석이 옮긴 `plan_precheck.ts`, `static_check.ts` 의 새 이름을 가리킨다
 
 ## 5.x
 

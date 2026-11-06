@@ -45,10 +45,10 @@
 
 실행할 명령과 기대값. 레포의 lint, type, test, build 명령과 구체 grep 기준을 적는다.
 위에서 만든 테스트를 실행하는 명령을 함께 적는다.
-**명령은 bash 코드 블록에 적는다.** `verify_task.py` 는 셸 코드 블록만 명령으로 읽는다. 목록이나 인라인 코드로 적은 명령은 없는 것으로 센다.
+**명령은 bash 코드 블록에 적는다.** `verify_task.ts` 는 셸 코드 블록만 명령으로 읽는다. 목록이나 인라인 코드로 적은 명령은 없는 것으로 센다.
 
 ```bash
-python3 -m unittest discover -s tests
+node --test tests/application.spec.ts
 ```
 
 검증 절의 각 줄은 저장소 루트에서 실행한다. 디렉터리가 필요하면 그 줄을 `cd <dir> && ...` 로 시작한다. 한 줄 안의 `&&` 체인은 같은 셸에서 실행한다.
@@ -60,5 +60,5 @@ python3 -m unittest discover -s tests
 
 | 파일 | 변경 |
 |---|---|
-| `src/application.py` | 신규 |
-| `tests/test_application.py` | 신규 |
+| `src/application.ts` | 신규 |
+| `tests/application.spec.ts` | 신규 |

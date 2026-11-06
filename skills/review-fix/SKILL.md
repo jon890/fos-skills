@@ -62,7 +62,7 @@ PR 번호를 정한 뒤 PR 의 변경 경로로 대상 하위 프로젝트를 �
 ```bash
 # cwd: 대상 저장소 루트
 PR=""      # 위에서 정한 PR 번호로 채운다
-gh pr diff "$PR" --name-only | python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill review-fix -
+gh pr diff "$PR" --name-only | node "$PLAN_SKILL_DIR/scripts/overlay_paths.ts" --skill review-fix -
 ```
 
 `targets` 가 둘 이상이면 PR 이 두 하위 프로젝트에 걸친 것이다.
@@ -80,7 +80,7 @@ node "$SKILL_DIR/scripts/collect_review.ts" "$PR_URL"
 
 **명령마다 서 있어야 할 디렉터리가 다르다.**
 `gh` 명령은 현재 디렉터리의 저장소를 읽으므로 대상 저장소의 워크트리에서 돌린다.
-Python 명령은 `$SKILL_DIR/scripts/` 로 부르므로 cwd 를 바꾸지 않는다. 출력에서 읽은 PR URL 을 `PR_URL` 에 넣는다. 받은 URL 이 있으면 URL 조회를 건너뛴다.
+명령은 `$SKILL_DIR/scripts/` 로 부르므로 cwd 를 바꾸지 않는다. 출력에서 읽은 PR URL 을 `PR_URL` 에 넣는다. 받은 URL 이 있으면 URL 조회를 건너뛴다.
 URL 의 호스트만 조회하므로 다른 로그인 호스트의 응답을 기다리지 않는다.
 기존 `OWNER REPO PR` 형식도 받는다. 이 형식은 origin 이 대상 저장소와 같으면 그 호스트를 먼저 쓴다.
 

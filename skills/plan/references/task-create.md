@@ -35,7 +35,7 @@ task 를 쓰기 전에 스펙의 인수 조건(스펙 없는 계획이면 사용
 
 ```bash
 # cwd: 타깃 레포 root
-bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir "${TASKS_DIR:-tasks}" ${PLAN_PREFIX:+--prefix} ${PLAN_PREFIX:+"$PLAN_PREFIX"}
+node "$SKILL_DIR/scripts/plan_number.ts" --tasks-dir "${TASKS_DIR:-tasks}" ${PLAN_PREFIX:+--prefix} ${PLAN_PREFIX:+"$PLAN_PREFIX"}
 ```
 
 `--prefix` 와 값을 따로 펼친다. `${PLAN_PREFIX:+--prefix "$PLAN_PREFIX"}` 로 묶으면 zsh 가 낱말을 나누지 않아 `--prefix plan` 한 낱말로 넘어간다.
@@ -45,7 +45,7 @@ bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir "${TASKS_DIR:-tasks}" ${PLA
 
 ```bash
 # cwd: 타깃 레포 root
-bash "$SKILL_DIR/scripts/plan_number.sh" --tasks-dir tasks --name-regex 'area-(\d{3})-'
+node "$SKILL_DIR/scripts/plan_number.ts" --tasks-dir tasks --name-regex 'area-(\d{3})-'
 ```
 
 `tasks/` 이력에 계획 디렉터리가 있는데 이름 형식으로 읽은 번호가 0개면 스크립트는 종료 코드 2 로 끝난다.
@@ -68,7 +68,7 @@ squash 머지 뒤에는 git 이력에 계획서가 남지 않아, 스크립트�
 
 새 기능은 [index 양식](../templates/index.json)을 읽고 스펙·설계·요구사항·검증 계획 경로를 채운다. 기능 없는 기존 작업은 spec/design/requirements/verification_plan 을 생략할 수 있다.
 
-`pr_scope` 와 `deferred` 는 [`plan-size.md`](plan-size.md) 가 소유한다. 2026-10-25 이후에 만든 plan 은 둘이 없으면 `verify_task.py` 가 위반으로 센다.
+`pr_scope` 와 `deferred` 는 [`plan-size.md`](plan-size.md) 가 소유한다. 2026-10-25 이후에 만든 plan 은 둘이 없으면 `verify_task.ts` 가 위반으로 센다.
 
 ## 문서 영향과 ADR
 
@@ -186,7 +186,7 @@ implementation 은 이 목록을 verify 에 인계한다. orch 가 기록을 보
 
 ### 검사기와 작성자가 확인할 범위
 
-검사기가 잡는 것과 경고 문구는 `verify_task.py` 가 소유한다. 걸리면 출력이 고칠 방법을 알려준다.
+검사기가 잡는 것과 경고 문구는 `verify_task.ts` 가 소유한다. 걸리면 출력이 고칠 방법을 알려준다.
 아래는 작성할 때 먼저 지키면 재작성이 줄어드는 규칙이다.
 
 - 검증 절에는 같은 phase 의 테스트를 실행하는 명령을 적는다. lint 나 grep 만으로는 통과하지 않는다.
@@ -213,7 +213,7 @@ implementation 은 이 목록을 verify 에 인계한다. orch 가 기록을 보
 | 여러 phase 에 걸친 이전이 각 phase 커밋에서 모든 호출부의 동작을 이전과 같게 둔다 | 기존 메서드를 새 메서드에 위임한다고 적기 전에 호출부를 `git grep` 으로 세고 반환 형식 차이를 확인한다. 중간 커밋에서 호출부 동작이 바뀌면 구현자가 멈춘다 |
 
 `Critical Files`라는 기존 절 이름은 읽기 호환으로 받는다. 새 계획은 「변경 파일」을 쓴다.
-검사기의 구현 후 문서 검사와 커밋 전 대조 인자는 `verify_task.py --help`가 설명한다.
+검사기의 구현 후 문서 검사와 커밋 전 대조 인자는 `verify_task.ts --help`가 설명한다.
 
 ## task 를 만든 직후 검사한다
 
@@ -225,14 +225,14 @@ task 파일을 만든 직후, 구현 전 상태에서 스크립트를 돌린다.
 
 ```bash
 # cwd: 타깃 레포 root
-python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
+node "$SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
 ```
 
 구현이 끝난 뒤, 그리고 구현 PR 에서 계획서를 검증할 때는 같은 명령에 `--audit` 를 붙인다.
 붙이지 않으면 phase 「변경 파일」에 신규로 적은 파일이 이미 있어 위반으로 센다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}" --audit
+node "$SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}" --audit
 ```
 
 형식 위반은 고치고 다시 돌린다. 합의한 범위나 결정을 바꿔야 하는 위반은 spec 으로 돌려보낸다. 스펙 없는 계획이면 선택지를 붙여 사용자에게 묻는다.

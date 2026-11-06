@@ -5,13 +5,13 @@
 
 ## 명령으로 판정한다
 
-아래 절의 판정과 탐색 순서를 `scripts/overlay_paths.py` 가 그대로 실행한다.
+아래 절의 판정과 탐색 순서를 `scripts/overlay_paths.ts` 가 그대로 실행한다.
 `$PLAN_SKILL_DIR` 은 plan 번들 경로이고, `$SKILL` 은 부르는 스킬 이름이다.
 변경 경로를 알면 인자로 넘기고, plan 이름을 알면 `--plan` 으로 넘긴다.
 
 ```bash
 # cwd: 대상 저장소 루트
-git diff --name-only origin/main...HEAD | python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill "$SKILL" -
+git diff --name-only origin/main...HEAD | node "$PLAN_SKILL_DIR/scripts/overlay_paths.ts" --skill "$SKILL" -
 ```
 
 | 종료 코드 | 뜻 |
@@ -81,9 +81,9 @@ plan 접두사처럼 하나만 골라야 하는 값은 사용자에게 묻는다
 | 값 | 기본값 | 예 | 받는 스크립트 인자 |
 | --- | --- | --- | --- |
 | docs 경로 | `docs/` | `frontend/docs/` | `plan_precheck.ts --docs-dir` |
-| tasks 경로 | 새 기능은 `<기능 폴더>/tasks/`, 기존·기능 없는 작업은 `tasks/` | `tasks/` | `plan_number.sh --tasks-dir`, `verify_task.py --tasks-dir`, `plan_precheck.ts --tasks-dir` |
-| plan 접두사 | 없음 | `fe-` | `plan_number.sh --prefix` |
-| plan 이름 형식 | `{접두사}plan{N}-` | `area-(\d{3})-` | `plan_number.sh --name-regex` (접두사 대신 준다) |
+| tasks 경로 | 새 기능은 `<기능 폴더>/tasks/`, 기존·기능 없는 작업은 `tasks/` | `tasks/` | `plan_number.ts --tasks-dir`, `verify_task.ts --tasks-dir`, `plan_precheck.ts --tasks-dir` |
+| plan 접두사 | 없음 | `fe-` | `plan_number.ts --prefix` |
+| plan 이름 형식 | `{접두사}plan{N}-` | `area-(\d{3})-` | `plan_number.ts --name-regex` (접두사 대신 준다) |
 | ADR 폴더 | `docs/adr` | `` `docs/adr` `modules/*/docs/adr` `` | `adr-docs.ts --adr-dir` (인라인 코드 하나마다 하나) |
 | ADR 색인 생성 | 하지 않는다(번호 집합만 맞춘다) | 한다 | `adr-docs.ts --index generated` |
 | ADR 대체 배치 | `superseded/` 폴더 | 폴더 없음(색인으로 구분) | `adr-docs.ts --flat` |
@@ -137,11 +137,11 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_AR
 
 | 값 | 둘 오버레이 | 형식 | 예 | 읽는 스크립트 |
 | --- | --- | --- | --- | --- |
-| PR 변경 파일 상한 | plan | 정수, 또는 `<JSON 파일>#<키.키>` | `` `.github/pr-size.json#grades.B.files` `` | `verify_task.py`. 기본 기준 40개 대신 쓴다 |
-| 파일 길이 상한 | plan | 정수, 또는 `<JSON 파일>#<키.키>` | `` `600` `` | `verify_task.py` |
-| 파일 길이 대상 | plan | 인라인 코드로 적은 glob 목록. `/` 없는 패턴은 파일 이름에 맞춘다 | `` `*.java` `` | `verify_task.py`. 없으면 코드 파일 전부다 |
+| PR 변경 파일 상한 | plan | 정수, 또는 `<JSON 파일>#<키.키>` | `` `.github/pr-size.json#grades.B.files` `` | `verify_task.ts`. 기본 기준 40개 대신 쓴다 |
+| 파일 길이 상한 | plan | 정수, 또는 `<JSON 파일>#<키.키>` | `` `600` `` | `verify_task.ts` |
+| 파일 길이 대상 | plan | 인라인 코드로 적은 glob 목록. `/` 없는 패턴은 파일 이름에 맞춘다 | `` `*.java` `` | `verify_task.ts`. 없으면 코드 파일 전부다 |
 | PR 크기 예외 | plan | 저장소의 크기 예외 규칙을 가리키는 링크나 한 문장 | `` [크기 예외](../docs/contributing/pull-request.md#pr-크기) `` | critic 이 읽는다([critic 계약](../../implementation/references/role-critic.md) 7) |
-| 문서 검사 명령 | spec 또는 technical-design | 인라인 코드 하나가 명령 하나다. 저장소 루트에서 실행한다 | `` `scripts/verify.sh docs` `` | `run_doc_checks.py`. technical-design 은 자기 오버레이에 없으면 spec 오버레이를 읽는다 |
+| 문서 검사 명령 | spec 또는 technical-design | 인라인 코드 하나가 명령 하나다. 저장소 루트에서 실행한다 | `` `scripts/verify.sh docs` `` | `run_doc_checks.ts`. technical-design 은 자기 오버레이에 없으면 spec 오버레이를 읽는다 |
 
 크기 기준은 원본 설정 파일이 따로 있으면 `<JSON 파일>#<키>` 로 가리킨다. 숫자를 오버레이에 옮겨 적으면 원본만 바뀌었을 때 두 값이 어긋난다.
 「PR 변경 파일 상한」 이 있으면 저장소의 크기 측정처럼 계획 폴더만 빼고 변경 파일을 모두 센다.

@@ -55,13 +55,13 @@ metadata:
 
 ```bash
 # cwd: 대상 저장소 루트. PLAN_SKILL_DIR 은 형제 plan 번들이다.
-python3 "$PLAN_SKILL_DIR/scripts/check_feature.py" "$SPEC" --design "$DESIGN"
-python3 "$PLAN_SKILL_DIR/scripts/run_doc_checks.py" --skill technical-design "$SPEC" "$DESIGN"
+node "$PLAN_SKILL_DIR/scripts/check_feature.ts" "$SPEC" --design "$DESIGN"
+node "$PLAN_SKILL_DIR/scripts/run_doc_checks.ts" --skill technical-design "$SPEC" "$DESIGN"
 node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" write-index $ADR_DIRS     # ADR 을 만들거나 대체했고 색인 생성을 켠 저장소만
 node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_ARGS
 ```
 
-`run_doc_checks.py` 는 레포 설정의 「문서 검사 명령」 을 돌린다. technical-design 오버레이에 없으면 spec 오버레이의 값을 쓰고, 둘 다 없으면 건너뛴다.
+`run_doc_checks.ts` 는 레포 설정의 「문서 검사 명령」 을 돌린다. technical-design 오버레이에 없으면 spec 오버레이의 값을 쓰고, 둘 다 없으면 건너뛴다.
 `adr-docs.ts` 는 깨진 링크·앵커, 링크 없는 ADR 번호, ADR 색인과 위치를 본다. 인자를 만드는 법은 [plan 의 monorepo.md 「ADR 문서 검사」](../plan/references/monorepo.md#adr-문서-검사)가 소유한다. `PR 밖 위반:` 아래 줄은 고치지 않는다.
 검사 명령의 종료 코드가 모두 0 이어야 plan 으로 넘긴다. 검사는 형식과 요구사항 연결만 확인한다. 아키텍처의 적절성이나 독립 검토를 대신하지 않는다.
 검토자를 실행할 수 없으면 설계 작성은 끝내되 독립 검토는 미완료로 인계한다. 독립 검토를 자기 점검으로 통과 처리하지 않는다.

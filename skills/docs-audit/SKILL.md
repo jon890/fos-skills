@@ -43,7 +43,7 @@ metadata:
 
 ```bash
 # cwd: 감사 대상 저장소 루트
-python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-audit $SCOPE_PATHS
+node "$PLAN_SKILL_DIR/scripts/overlay_paths.ts" --skill docs-audit $SCOPE_PATHS
 ```
 
 출력의 `search` 순서대로 오버레이를 읽는다. 하위 프로젝트 오버레이가 루트 오버레이보다 먼저다.
