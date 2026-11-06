@@ -22,7 +22,7 @@
 
 ### 1. 구현과 회귀 검증
 
-fixture 의 동기 CommonJS 가짜를 같은 본문의 함수로 실행한다. 실제 git·hook·remove-worktree 경계를 유지하고 호출별 프로세스 격리를 남긴다. notify-conflicts 초기 저장소를 파일을 넣은 템플릿으로 복사하고 실행 파일은 linkBin 으로 재사용한다. 대응 테스트와 CLI 대표 테스트로 성공·실패·예외·출력·상태를 대조한다. 전체 검사와 measure.ts 의 전후 시간·기동 수를 남긴다.
+fixture 의 동기 CommonJS 가짜를 같은 본문의 함수로 실행한다. `skills/orch/tests/cleanup-sweep-run.spec.ts` 에 같은 본문의 성공·실패·pid·출력·종료·기록 대응 검증을 더한다. 실제 git·hook·remove-worktree 경계를 유지하고 호출별 프로세스 격리를 남긴다. notify-conflicts 초기 저장소를 파일을 넣은 템플릿으로 복사하고 실행 파일은 linkBin 으로 재사용한다. 대응 테스트와 CLI 대표 테스트로 성공·실패·예외·출력·상태를 대조한다. 전체 검사와 measure.ts 의 전후 시간·기동 수를 남긴다.
 
 ### 2. 기존 테스트 실행
 

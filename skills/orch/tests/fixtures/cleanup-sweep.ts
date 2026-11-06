@@ -1,8 +1,8 @@
-// cleanup-sweep.ts 를 실제 git 저장소와 가짜 gh, orca, lsof, ps, kill 로 본다. GitHub 와 Orca 에는 닿지 않는다.
+// cleanup-sweep.ts 의 main 을 실제 git 저장소와 함수 가짜 gh, orca, lsof, ps, kill 로 본다. GitHub 와 Orca 에는 닿지 않는다.
 //
 // 가짜 실행 파일은 모든 테스트가 함께 쓰고(macOS 의 첫 실행 검사를 테스트마다 치르지 않게 한다), 상태와 호출 기록은
 // 테스트마다 따로 둔다. 가짜는 FAKE_STATE 의 JSON 을 읽어 답하고 FAKE_LOG 에 `<이름> <인자>` 한 줄을 더한다.
-// 프로세스의 pid 가 SWEEP 이면 cleanup-sweep.ts 자신이다. lsof 와 ps 가짜는 그 명령이 바로 띄우므로 부모 pid 가 곧 그 pid 다.
+// pid 가 SWEEP 이면 main 을 실행하는 프로세스 자신이다. 함수 가짜도 실제 가짜 자식과 같은 부모 pid 를 준다.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -15,6 +15,7 @@ import { copyRepo } from '../../../../modules/testkit/git.ts'
 import { linkBin } from '../../../../modules/testkit/fake-bin.ts'
 
 export const SCRIPT = fileURLToPath(new URL('../../scripts/cleanup/cleanup-sweep.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./cleanup-sweep-run.ts', import.meta.url))
 export const REMOVE = fileURLToPath(new URL('../../scripts/cleanup/remove-worktree.ts', import.meta.url))
 export const HOOK = 'node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}'
 
@@ -224,6 +225,7 @@ beforeEach(() => {
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',
     GIT_COMMITTER_EMAIL: 't@example.com',
+    CLEANUP_FAKE_BIN: fx.bin,
     FAKE_STATE: join(fx.tmp, 'state.json'),
     FAKE_LOG: fx.logFile,
     HOOK_LOG: fx.hookLog,
@@ -344,7 +346,7 @@ export function runSweepFull(args: string[] = [], opts: { code?: number; repos?:
   const flags = (opts.repos ?? [fx.repo]).flatMap((r) => ['--repo', r])
   const done = spawnSync(
     process.execPath,
-    ['--disable-warning=ExperimentalWarning', SCRIPT, ...flags, '--wait', '0.01', '--poll-interval', '0.01', ...args],
+    ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, ...flags, '--wait', '0.01', '--poll-interval', '0.01', ...args],
     { env: fx.env, encoding: 'utf8' },
   )
   assert.equal(done.status, opts.code ?? 0, `종료 코드가 다르다\nstdout:\n${done.stdout}\nstderr:\n${done.stderr}`)

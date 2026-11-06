@@ -3,17 +3,21 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, test } from 'node:test'
+import { afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+
+import { copyRepo, gitEnv, templateRepo, type Repo } from '../../../modules/testkit/git.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/notify-conflicts.ts', import.meta.url))
 
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/notify-conflicts-run.ts', import.meta.url))
+
 // 상태 파일의 workers 를 worker-list 로 내는 가짜 orca. 확장자가 없어 타입 문법 없이 쓴다.
-const FAKE_ORCA = `#!/usr/bin/env node
-const fs = require('node:fs')
+const FAKE_ORCA = `const fs = require('node:fs')
 const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
 const args = process.argv.slice(2)
 fs.appendFileSync(process.env.FAKE_LOG, 'orca ' + args.join(' ') + '\\n')
@@ -29,8 +33,7 @@ process.exit(3)
 `
 
 // pr list 에 prs.json 을, api user 에 me 를 내는 가짜 gh.
-const FAKE_GH = `#!/usr/bin/env node
-const fs = require('node:fs')
+const FAKE_GH = `const fs = require('node:fs')
 const args = process.argv.slice(2)
 if (process.env.GH_FAILS) process.exit(1)
 if (args[0] === 'api' && args[1] === 'user') fs.writeSync(1, 'me\\n')
@@ -53,16 +56,6 @@ function recordingHook(code: number): string {
     "appendFileSync(process.env.HOOK_LOG, JSON.stringify(JSON.parse(readFileSync(0, 'utf8'))) + '\\n')",
     `process.exitCode = ${code}`,
   ].join('\n')
-}
-
-// CI 에는 git 작성자 설정이 없고, 로컬의 전역 설정은 결과를 바꿀 수 있어 고정한다.
-const GIT_ENV: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
-  GIT_AUTHOR_NAME: 't',
-  GIT_AUTHOR_EMAIL: 't@example.com',
-  GIT_COMMITTER_NAME: 't',
-  GIT_COMMITTER_EMAIL: 't@example.com',
 }
 
 let tmp: string
@@ -126,9 +119,13 @@ function workers(...rows: { id: string; status: string; path: string }[]): void 
   writeFileSync(join(tmp, 'state.json'), JSON.stringify({ workers: list }))
 }
 
-function notify(...args: string[]) {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--base', 'main', ...args], { encoding: 'utf8', env })
+function notifyWith(script: string, args: string[]) {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', script, '--repo', repo, '--base', 'main', ...args], { encoding: 'utf8', env })
   return { code: done.status, stdout: done.stdout, stderr: done.stderr, both: `${done.stdout}\n${done.stderr}` }
+}
+
+function notify(...args: string[]) {
+  return notifyWith(FUNCTION_SCRIPT, args)
 }
 
 function sent(): string[][] {
@@ -184,6 +181,19 @@ function setupConflict(): string {
   return feat.path
 }
 
+let template: Repo
+before(() => {
+  const source = templateRepo()
+  // testkit 의 템플릿은 공유하므로 사본에 파일 커밋을 더한 뒤 재사용한다.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'notify-template-')))
+  template = copyRepo(join(root, 'repo'), source)
+  env = gitEnv()
+  commit(template.dir, { 'a.txt': '1\n2\n3\n', 'b.txt': 'b\n' }, 'files')
+  git(template.dir, 'push', '-q', 'origin', 'main')
+  git(template.dir, 'remote', 'set-head', 'origin', 'main')
+  process.on('exit', () => rmSync(root, { recursive: true, force: true }))
+})
+
 beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'notify-conflicts-')))
   sendLog = join(tmp, 'send.jsonl')
@@ -192,19 +202,18 @@ beforeEach(() => {
     ['orca', FAKE_ORCA],
     ['gh', FAKE_GH],
   ]) {
-    writeFileSync(join(tmp, name), body)
-    chmodSync(join(tmp, name), 0o755)
+    linkBin(tmp, name, body)
   }
   writeFileSync(join(tmp, 'send.ts'), FAKE_SEND)
   writeFileSync(join(tmp, 'state.json'), '{}')
   env = {
-    ...process.env,
-    ...GIT_ENV,
+    ...gitEnv(),
     // 가짜 orca 와 gh 의 #! 줄이 이 테스트의 node 를 쓰게 한다
     PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`,
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(tmp, 'orca'),
     GH: join(tmp, 'gh'),
+    ORCH_GH_CACHE: '0', // 테스트 중 바꾼 PR 목록을 매번 읽는다.
     SEND_TO_WORKER: join(tmp, 'send.ts'),
     FAKE_STATE: join(tmp, 'state.json'),
     FAKE_LOG: join(tmp, 'orca.log'),
@@ -214,11 +223,7 @@ beforeEach(() => {
   }
   delete env.ORCH_DIR
   delete env.GH_HOST
-  git(tmp, 'init', '-q', '--bare', '-b', 'main', join(tmp, 'origin.git'))
-  repo = join(tmp, 'repo')
-  git(tmp, 'clone', '-q', join(tmp, 'origin.git'), repo)
-  commit(repo, { 'a.txt': '1\n2\n3\n', 'b.txt': 'b\n' }, 'init')
-  git(repo, 'push', '-q', 'origin', 'HEAD:main')
+  repo = copyRepo(join(tmp, 'repo'), template).dir
 })
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
@@ -509,5 +514,29 @@ describe('그 밖', () => {
     prs()
     env.GH_FAILS = '1'
     assert.equal(notify().code, 2)
+  })
+})
+
+describe('실제 notify CLI 대표 경계', () => {
+  test('help 와 인자 오류의 출력·종료 코드', () => {
+    const help = notifyWith(SCRIPT, ['--help'])
+    assert.equal(help.code, 0, help.both)
+    assert.match(help.stdout, /사용법:/)
+    const bad = notifyWith(SCRIPT, ['--unknown-option'])
+    assert.equal(bad.code, 2)
+    assert.match(bad.stderr, /사용법:/)
+  })
+
+  test('충돌 없음은 0, 충돌과 알림은 1, 조회 실패는 2 다', () => {
+    prs()
+    const clear = notifyWith(SCRIPT, [])
+    assert.equal(clear.code, 0, clear.both)
+    assert.match(clear.stdout, /충돌한 열린 PR 이 없다/)
+    setupConflict()
+    const conflict = notifyWith(SCRIPT, [])
+    assert.equal(conflict.code, 1, conflict.both)
+    assert.match(conflict.stdout, /#7 CONFLICTING feat: a\.txt/)
+    env.GH_FAILS = '1'
+    assert.equal(notifyWith(SCRIPT, []).code, 2)
   })
 })
