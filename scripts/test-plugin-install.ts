@@ -163,8 +163,8 @@ function check(T: string): number {
 
   // 내보내기 전용 원본만 배열에서 빠질 수 있다. 다른 스킬 누락은 설치 전에 잡는다
   let r = run([process.execPath, '--test', join(src, 'scripts/tests/plugin-manifest.spec.ts')], { cwd: src, env })
-  if (r.rc === 0) ok('매니페스트 테스트: 내보내기 전용 원본만 스킬 목록에서 제외된다')
-  else fail('매니페스트 테스트가 실패했다', r.out)
+  if (r.rc === 0) ok('매니페스트 시험: 내보내기 전용 원본만 스킬 목록에서 제외된다')
+  else fail('매니페스트 시험이 실패했다', r.out)
 
   const exportOnly: string[] = JSON.parse(readFileSync(join(src, 'scripts/export-only-skills.json'), 'utf8')).map(strip).filter(Boolean)
 
