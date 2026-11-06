@@ -16,6 +16,7 @@ import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixture
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/merge_queue.ts', import.meta.url))
+const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/merge-queue-run.ts', import.meta.url))
 const SCRIPTS = dirname(dirname(SCRIPT))
 const NODE = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
 
@@ -54,6 +55,7 @@ function setup(t: TestContext): Ctx {
     FAKE_STATE: stateFile,
     FAKE_LOG: logFile,
     FAKE_REMOTE_HEAD: 'abc',
+    MERGE_QUEUE_FAKE_GIT: '1',
     MERGE_QUEUE_SLEEP_SCALE: '0',
     CLEANUP_SWEEP: sweep,
   }
@@ -72,7 +74,7 @@ function setup(t: TestContext): Ctx {
     writeState,
     runQueue: (state, args, threads = '0') => {
       writeState(state)
-      return spawnDone([...NODE, '--repo', tmp, '--threads-cmd', `echo ${threads}`, ...args], { env })
+      return spawnDone([process.execPath, FUNCTION_RUNNER, '--repo', tmp, '--threads-cmd', `echo ${threads}`, ...args], { env })
     },
   }
 }

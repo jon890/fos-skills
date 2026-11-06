@@ -17,8 +17,7 @@ process.env.ORCH_GH_CACHE = '0'
 // 끝나기 전에 다 나가도록 fs.writeSync 로 쓴다.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { linkBin } from '../../../../modules/testkit/fake-bin.ts'
 
 export const FAKE_GH = `const fs = require('node:fs')
 const { spawnSync } = require('node:child_process')
@@ -156,10 +155,7 @@ export const HAS_TOOLS = ['jq', 'bash'].every((tool) => spawnSync('sh', ['-c', `
 
 // 이 테스트를 도는 node 를 shebang 에 박는다. PATH 의 node 가 버전 관리 도구의 shim 이면 호출마다 느려진다
 export function writeNodeBin(dir: string, name: string, body: string): string {
-  const path = join(dir, name)
-  writeFileSync(path, `#!${process.execPath}\n${body}`)
-  chmodSync(path, 0o755)
-  return path
+  return linkBin(dir, name, body)
 }
 
 export type Done = { code: number | null; stdout: string; stderr: string }

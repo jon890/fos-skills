@@ -45,3 +45,4 @@ node scripts/run-tests.ts skills/orch/tests/merge-queue.spec.ts skills/orch/test
 | `skills/orch/tests/fixtures/merge-queue-fakes.ts` | 수정 |
 | `skills/orch/tests/fixtures/merge-queue-run.ts` | 신규 |
 | `skills/orch/tests/merge-queue-runner.spec.ts` | 수정 |
+| `docs/features/test-speed/design.md` | 수정 |
