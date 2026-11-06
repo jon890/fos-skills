@@ -504,6 +504,20 @@ describe('선택 정책과 영구 이력', () => {
     assert.equal(launch(args, 'bash', false).code, 0)
   })
 
+  test('resume NEXT 새 터미널은 이전 dispatch 의 모델을 물려받고 잘못된 high 근거가 되지 않는다', () => {
+    select('claude', 'claude-sonnet-5-5', 'medium')
+    recordLaunch(tmp, prior({ agent: 'claude', model: 'claude-sonnet-5-5' }))
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_new', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--repo', tmp, '--task', 'task_1', '--', '--terminal', 'term_new'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    const recorded = JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8'))
+    assert.deepEqual([recorded.agent, recorded.model, recorded.effort], ['claude', 'claude-sonnet-5-5', 'medium'])
+    select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_1.')
+    const raised = launch(['--repo', tmp, '--name', 'raised', '--', '--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'high'], 'bash', false)
+    assert.equal(raised.code, 1, both(raised))
+    assert.match(raised.stderr, /Opus medium/)
+  })
+
   test('모델 없는 옛 Launch 를 근거로 Opus high 를 띄울 수 있다', () => {
     select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_old.')
     recordLaunch(worktree, { dispatch: 'ctx_old', terminal: null, worktree, run: null })

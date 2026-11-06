@@ -531,9 +531,11 @@ async function main(argv: string[]): Promise<number> {
   let retryRepo = a.repo || process.cwd()
   let retryDispatch: string | null = null
   let retryTerminal: string | null = null
+  let retryLaunch: ReturnType<typeof readLaunch> = null
   if (a.task) {
     const prior = a.retryOf ? launchHistory(retryRepo).find(row => row.dispatch === a.retryOf) ?? readLaunch(retryRepo, a.retryOf) : launchHistory(retryRepo).filter(row => row.task === a.task).at(-1) ?? latestTaskLaunch(retryRepo, a.task)
     if (!prior || prior.task !== a.task) throw new Stop('다시 띄울 dispatch 와 Task 를 이력에서 찾지 못했다', 1)
+    retryLaunch = prior
     retryDispatch = prior.dispatch
     retryTerminal = prior.terminal
     a.worktree = prior.worktree
@@ -785,7 +787,7 @@ async function main(argv: string[]): Promise<number> {
     const reused = passValue(passthru, '--terminal')
     let inherited: ReturnType<typeof latestTerminal> = null
     if (reused) {
-      try { inherited = latestTerminal(repo, reused) }
+      try { inherited = latestTerminal(repo, reused) ?? retryLaunch }
       catch (e) { err(`launch-worker: 터미널의 이전 선택을 읽지 못했다: ${(e as Error).message}`) }
     }
     const launch = {

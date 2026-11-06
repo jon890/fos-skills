@@ -38,7 +38,7 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
         const prior = history ?? readLaunch(repo, reason.id)
         const model = prior?.effective?.model ?? prior?.model
         const effort = prior?.effective?.effort ?? prior?.effort
-        if (!prior || (model && (!/^claude-opus-/.test(model) || effort !== 'medium'))) errors.push(`high 근거 dispatch 가 Opus medium 이 아니다: ${reason.id}`)
+        if (!prior || (history && !model) || (model && (!/^claude-opus-/.test(model) || effort !== 'medium'))) errors.push(`high 근거 dispatch 가 Opus medium 이 아니다: ${reason.id}`)
       }
     }
     if (options.launch && experiment && !experiment.problems.length && !options.retry) {

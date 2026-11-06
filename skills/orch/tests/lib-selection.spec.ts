@@ -86,3 +86,8 @@ test('실험의 기본 effort 는 옵션을 주지 않은 이력으로 집계한
   recordHistory(repo, row({ model: 'haiku', effort: null, experiment: 'default-effort' }))
   assert.deepEqual(selectionVerdict(`${sol}\n${experiment}`, repo, { launch: true }), [])
 })
+
+test('새 영구 이력의 모델 null 은 모델 없는 옛 Launch 와 구별해 근거로 거부한다', () => {
+  recordHistory(repo, row({ model: null, effort: null }))
+  assert.match(selectionVerdict(opus('high', 'high 근거: medium 실패 ctx_old.'), repo).join(), /Opus medium/)
+})
