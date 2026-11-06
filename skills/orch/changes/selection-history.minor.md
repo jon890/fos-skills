@@ -1,5 +1,0 @@
-- 행 id 와 Opus 높은 effort 의 근거를 lint 와 launch 가 함께 검사하며, 이미 띄운 옛 지시서는 연결 경로에서 호환한다.
-- 비교 실험의 최소 배정과 동률 순서를 검사하고 같은 Task 와 터미널의 이어 쓰기는 배정 수에서 뺀다.
-- 요청값과 effective 를 영구 이력에 남기고 resume 은 이전 dispatch 의 설정을 물려받는다. 손상된 줄은 경고하고 새 기록의 줄 경계를 지킨다.
-- 같은 Task 의 재시도도 launch-worker 를 거친다. 이전 터미널이 열려 있으면 닫거나 명시적으로 이어 쓴다.
-- 직접 재시도 hook 의 인용 처리와 ready Task 안내를 고친다. resume 내부 연결은 유지하고 link 실패의 NEXT 는 launch 명령으로 안내한다.
