@@ -2,3 +2,4 @@
 - 실험 후보를 배정 이력 수로 고르고 요청값과 effective 를 영구 이력에 남긴다.
 - 같은 Task 의 다시 띄우기도 launch-worker 를 거쳐 선택 검사와 이력 기록을 받는다.
 - resume link 실패의 NEXT 를 직접 worker-start 대신 orch worker launch 로 안내한다. resume 내부 연결 호출은 유지한다.
+- 실험의 terminal 이어 쓰기는 새 후보 배정 없이 연결하고 재배정 수에 세지 않는다.

@@ -432,6 +432,17 @@ describe('선택 정책과 영구 이력', () => {
     assert.equal(history()[0].effective, null)
   })
 
+  test('experiment terminal 이어 쓰기는 다음 후보를 요구하지 않고 배정 수에서 제외한다', () => {
+    select()
+    writeFileSync(spec, readFileSync(spec, 'utf8') + 'experiment: continue-trial. 후보: `codex` `gpt-6.1-sol` effort `medium` / `claude` `claude-sonnet-5-5` effort `medium`.\n')
+    recordHistory(worktree, prior({ experiment: 'continue-trial' }))
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--worktree', worktree, '--', '--terminal', 'term_old'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.equal(history()[1].retry_of, 'ctx_old')
+    assert.equal(history().filter(row => row.experiment === 'continue-trial' && !row.retry_of).length, 1)
+  })
+
   test('terminal 이어 쓰기는 마지막 이력의 요청값을 물려받는다', () => {
     select()
     recordHistory(worktree, prior())

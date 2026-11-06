@@ -568,7 +568,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (passthru.includes('--terminal')) {
     const text = readFileSync(a.spec, 'utf8')
-    const rejected = selectionVerdict(text, retryRepo, { launch: true, retry: !!a.task })
+    const rejected = selectionVerdict(text, retryRepo, { launch: true, retry: true })
     if (rejected.length) throw new Stop(rejected.join('; '), 1)
   }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
@@ -807,7 +807,7 @@ async function main(argv: string[]): Promise<number> {
     try {
       recordHistory(repo, {
         ...launch, at: new Date().toISOString(), title: /^#\s+(.+)$/m.exec(text)?.[1] ?? null,
-        row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch,
+        row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch ?? inherited?.dispatch ?? null,
       })
     } catch (e) {
       err(`launch-worker: 띄우기 이력을 기록하지 못했다: ${(e as Error).message}`)
