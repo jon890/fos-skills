@@ -156,6 +156,8 @@ const ROWS: Row[] = [
   { group: 'board', verb: 'sync', script: 'board/board-sync.ts', context: ['repo'], legacy: { name: 'board-sync', flags: [] }, usage: 'orch board sync' },
   { group: 'board', verb: 'release', script: 'board/board-release.ts', context: ['repo'], legacy: { name: 'board-release', flags: [] }, usage: 'orch board release --pr <N>' },
   { group: 'board', verb: 'goal', script: 'board/goal-progress.ts', legacy: { name: 'goal-progress', flags: [] }, usage: 'orch board goal <목표 id>' },
+  // routing
+  { group: 'routing', verb: 'report', script: 'routing/routing-report.ts', context: ['repo'], usage: 'orch routing report [--repo DIR]... [--since YYYY-MM-DD] [--json | --full]' },
   // study
   ...(['list', 'add', 'set', 'migrate'] as const).map(
     (verb): Row => ({
