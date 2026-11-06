@@ -1,226 +1,48 @@
-#!/usr/bin/env python3
-"""마크다운 가독성 규칙 중 스크립트로 판정할 수 있는 축을 경고로 알린다.
+#!/usr/bin/env node
+// 옛 이름 진입 — 이 파일은 `check-readability.ts` 의 자리를 이어 주는 node shebang JS 다.
+//
+// 이 머신과 팀원의 훅 설정이 `~/.claude/scripts/check-readability.py` 링크로 이 검사기를 `--hook` 으로 부른다.
+// 이름을 바꾸면 훅이 조용히 깨지므로(훅 실패는 작업을 막지 않아 눈에 띄지 않는다) 한 major 동안 같은 이름을 남긴다.
+// 이 저장소의 다음 major 에서 지운다(docs/features/node-runtime/spec.md DECISION17).
+//
+// 일반 명령 모드의 출력과 종료 코드는 새 명령과 같다. 훅 모드는 발견이 있을 때만 출력하고,
+// additionalContext 맨 앞에 새 명령을 알리는 한 줄을 붙인다. 발견이 없으면 새 명령처럼 아무것도 쓰지 않는다.
+// Node 가 MIN_NODE 보다 낮으면 `.ts` 를 불러오지 않는다. 훅 모드는 발견과 상관없이 건너뛰었다는 한 줄을
+// additionalContext 로 내고 0 으로 끝난다. 일반 모드는 같은 문장을 stderr 에 내고 127 로 끝난다.
+//
+// 링크로 불려도 실체 옆의 `.ts` 를 찾는다(fs.realpathSync(__filename)).
+'use strict'
 
-**이 파일이 검사 축의 단일 소스다.** references 파일을 읽지 않고 축을 코드에 담는다.
-사람이 보는 몫은 `references/` 가 소유한다.
-korean-style.md 가 언어, korean-examples.md 가 언어 예시, writing-structure.md 가 구조, markdown-readability.md 가 검사 제외 대상이다.
+const fs = require('node:fs')
+const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 
-사용법:
-    check-readability.py <파일.md> [<파일.md>...]
-    check-readability.py --text "<제목이나 커밋 메시지>"   # 파일이 아닌 문자열
-    check-readability.py --hook          # PostToolUse 훅 모드 (stdin 으로 JSON)
+// scripts/runtime-policy.json 의 min_node 와 같아야 한다(runtime-policy.ts 가 대조한다)
+const MIN_NODE = [24, 0]
+const TARGET = path.join(path.dirname(fs.realpathSync(__filename)), 'check-readability.ts')
+const args = process.argv.slice(2)
+const isHook = args[0] === '--hook'
 
-경고 줄을 stdout 으로 출력한다. 경고가 있어도 종료 코드는 0 이다.
-사용법 오류이거나 넘긴 경로에 파일이 없으면 2 로 끝난다.
+function tooOld() {
+  const parts = process.versions.node.split('.').map(Number)
+  return parts[0] < MIN_NODE[0] || (parts[0] === MIN_NODE[0] && parts[1] < MIN_NODE[1])
+}
 
-**이 검사기는 실패로 막지 않는다.** 실패로 막는 것은 `korean-style-check.py` 의 금지어뿐이다.
-아래 축은 지침이라, 걸린 줄을 보고 문맥에 맞으면 그대로 둔다.
-
-검사하는 축은 넷이다.
-
-    NEST   괄호 2겹 중첩
-    SECT   `§` 사용
-    TILDE  한 단락에 이스케이프하지 않은 물결표 2개 이상 (취소선 오작동)
-    DASH   제목과 평문의 엠대시 (목록과 표의 이름-설명 구분은 허용)
-
-나머지 축은 다른 곳이 맡는다.
-
-- 매핑 표의 금지어는 `korean-style-check.py` 가 실패로 막고, 인라인 `+` 연결은 같은 검사기가 경고로 알린다
-- 렌더러 고유 동작과 게시 대상 고유 형식은 그 매체를 쓰는 저장소의 검사기가 강제한다
-- 한 문장 한 줄, `=` 와 `→` 압축, bullet 다중 속성은 의미 판단이 필요해 사람이 본다
-
-**코드 블록과 표와 링크와 frontmatter 는 검사에서 제외한다.**
-규칙이 이들을 미적용 대상으로 정했다. 맨 grep 은 그것을 거르지 않아
-규칙 자신을 적은 문서까지 잡는 오탐만 낸다.
-"""
-
-import json
-import re
-import os
-import sys
-import tempfile
-from pathlib import Path
-
-# 여는 괄호 안에서 다시 괄호가 열리고 닫히는 형태만 잡는다.
-NESTED_PAREN = re.compile(r"\([^()]*\([^()]*\)")
-
-# 목록 항목. 이름과 설명을 엠대시로 나누는 용도가 규칙상 허용이라 DASH 검사에서 뺀다.
-LIST_ITEM = re.compile(r"^([-*+]|\d+\.)\s")
-
-# 홈 경로의 물결표는 범위 표기가 아니다.
-HOME_PATH = re.compile(r"~/[\w./-]+")
-
-# 검사 전에 줄에서 지울 것. 남기면 이들 안의 문자가 위반으로 잡힌다.
-CODE_SPAN = re.compile(r"`[^`]*`")
-MD_LINK = re.compile(r"\[[^\]]*\]\([^)]*\)")
-
-
-def strip_noise(line):
-    """코드 스팬과 마크다운 링크를 지운다.
-
-    링크를 먼저 지운다. `[텍스트](경로)` 는 괄호를 품고 있어
-    코드 스팬만 지우면 중첩 괄호로 오인된다.
-    """
-    return CODE_SPAN.sub("", MD_LINK.sub("", line))
-
-
-def check(path):
-    """한 파일을 검사해 (경로, 줄번호, 코드, 메시지) 목록을 반환한다."""
-    found = []
-    in_fence = False
-    in_front = False
-    para = []  # 물결표는 단락 단위로 세야 한다. 취소선이 단락 안에서 짝지어지기 때문이다.
-
-    def flush(para):
-        if not para:
-            return
-        first = para[0][0]
-        text = " ".join(t for _, t in para).replace("\\~", "")
-        if HOME_PATH.sub("", text).count("~") >= 2:
-            found.append((path, first, "TILDE",
-                          "한 단락에 물결표가 2개 이상이다: 취소선으로 렌더될 수 있어 이스케이프하거나 표현을 바꾼다"))
-
-    try:
-        lines = open(path, encoding="utf-8").read().splitlines()
-    except OSError as e:
-        print(f"{path}: 읽기 실패, {e}", file=sys.stderr)
-        return found
-
-    for n, raw in enumerate(lines, 1):
-        stripped = raw.strip()
-
-        # YAML frontmatter 는 건너뛴다.
-        # skill 과 agent 의 description 은 트리거 예시를 괄호로 감싸는 형식이라 규칙이 과적용된다.
-        if stripped == "---" and (n == 1 or in_front):
-            in_front = n == 1
-            continue
-        if in_front:
-            continue
-
-        # 코드 블록 안은 통째로 건너뛴다.
-        if stripped.startswith("```"):
-            in_fence = not in_fence
-            flush(para)
-            para = []
-            continue
-        if in_fence:
-            continue
-
-        # 표 행도 건너뛴다. 이미 구조화돼 있어 규칙이 과적용된다.
-        if stripped.startswith("|"):
-            continue
-
-        line = strip_noise(raw)
-        body = line.lstrip("> ").strip()
-
-        if not body:
-            flush(para)
-            para = []
-            continue
-
-        para.append((n, body))
-
-        if NESTED_PAREN.search(line):
-            found.append((path, n, "NEST", "괄호 2겹 중첩: 별도 문장으로 나눈다"))
-
-        if "§" in line:
-            found.append((path, n, "SECT", "§ 대신 섹션이나 장, 또는 번호를 쓴다"))
-
-        # 엠대시. 목록 항목과 표 행에서 이름과 설명을 나누는 용도는 규칙이 허용한다.
-        if "\u2014" in body and not LIST_ITEM.match(body):
-            if body.startswith("#"):
-                found.append((path, n, "DASH",
-                              "제목의 엠대시: 부제를 떼고 한 문장으로 쓴다"))
-            else:
-                found.append((path, n, "DASH",
-                              "평문의 엠대시: 콜론이나 접속사로 바꾼다"))
-
-    flush(para)
-    return found
-
-
-def run_hook():
-    """PostToolUse 훅 모드.
-
-    stdin 의 tool 입력 JSON 에서 편집된 파일 하나를 뽑아 검사하고,
-    위반이 있을 때만 모델 컨텍스트로 되돌릴 JSON 을 낸다. 작업을 막지 않는다.
-    """
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError):
-        return 0
-
-    target = payload.get("tool_input", {}).get("file_path") or payload.get(
-        "tool_response", {}
-    ).get("filePath")
-
-    if not target or not target.endswith(".md"):
-        return 0
-
-    found = check(target)
-    if not found:
-        return 0
-
-    lines = "\n".join(f"{p}:{n}  경고 [{c}] {m}" for p, n, c, m in found)
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": (
-                        "마크다운 가독성 경고 — 방금 편집한 파일에서 발견했다. 문맥을 보고 고칠지 판단한다.\n"
-                        + lines
-                    ),
-                }
-            },
-            ensure_ascii=False,
-        )
-    )
-    return 0
-
-
-def main():
-    if len(sys.argv) < 2:
-        print(__doc__, file=sys.stderr)
-        return 2
-
-    if sys.argv[1] == "--hook":
-        return run_hook()
-
-    found = []
-    # 파일이 아닌 문자열도 검사한다. 제목과 커밋 메시지가 이 경로로 들어온다.
-    if sys.argv[1] == "--text":
-        text = " ".join(sys.argv[2:])
-        tmp = Path(tempfile.gettempdir()) / f"readability-text-{os.getpid()}.md"
-        tmp.write_text(text + "\n", encoding="utf-8")
-        try:
-            found = check(tmp)
-        finally:
-            tmp.unlink(missing_ok=True)
-        for item in found:
-            code, msg = item[-2], item[-1]
-            print(f"(문자열)  경고 [{code}] {msg}")
-        return 0
-
-    unknown = [a for a in sys.argv[1:] if a.startswith("-")]
-    if unknown:
-        print(f"check-readability: 다루지 않는 옵션이다: {' '.join(unknown)}", file=sys.stderr)
-        return 2
-
-    missing = False
-    for path in sys.argv[1:]:
-        # 없는 경로를 0 으로 넘기면 오타 난 경로가 통과로 보인다.
-        if not os.path.isfile(path):
-            print(f"{path}: 파일이 없다", file=sys.stderr)
-            missing = True
-            continue
-        found.extend(check(path))
-
-    for path, n, code, msg in found:
-        print(f"{path}:{n}  경고 [{code}] {msg}")
-
-    return 2 if missing else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+if (tooOld()) {
+  const line = 'Node ' + MIN_NODE[0] + ' 이상이 필요해 한국어 검사를 건너뛰었다'
+  if (isHook) {
+    // Python json.dumps(ensure_ascii=False) 와 같은 꼴이다
+    const context = JSON.stringify(line)
+    process.stdout.write('{"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": ' + context + '}}\n')
+  } else {
+    process.stderr.write('check-readability.py: ' + line + '\n')
+    process.exitCode = 127
+  }
+} else {
+  const notice = '이 훅 경로는 다음 major 에 없어진다. 새 명령: node ' + TARGET + ' --hook'
+  import(pathToFileURL(TARGET).href)
+    .then((mod) => mod.main(args, { hookNotice: notice }))
+    .then((code) => {
+      process.exitCode = code
+    })
+}

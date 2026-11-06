@@ -13,10 +13,10 @@ export const SCRIPTS_DIR = join(SKILL_DIR, 'scripts')
 export const RULES = join(SKILL_DIR, 'references', 'korean-style.md')
 
 // 명령 경계. 실행 argv 의 앞부분이다
-export const STYLE = ['python3', join(SCRIPTS_DIR, 'korean-style-check.py')]
-export const READABILITY = ['python3', join(SCRIPTS_DIR, 'check-readability.py')]
-export const DIFF = ['python3', join(SCRIPTS_DIR, 'check-diff.py')]
-export const CHECK = ['bash', join(SCRIPTS_DIR, 'check.sh')]
+export const STYLE = [process.execPath, join(SCRIPTS_DIR, 'korean-style-check.ts')]
+export const READABILITY = [process.execPath, join(SCRIPTS_DIR, 'check-readability.ts')]
+export const DIFF = [process.execPath, join(SCRIPTS_DIR, 'check-diff.ts')]
+export const CHECK = [process.execPath, join(SCRIPTS_DIR, 'check.ts')]
 
 export type Result = { code: number | null; stdout: string; stderr: string }
 type T = { after(fn: () => void): void }
