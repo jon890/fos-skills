@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { copyRepo, git as templateGit, templateRepo } from '../../../modules/testkit/git.ts'
 import type { Repo } from '../../../modules/testkit/git.ts'
+import { tempDir } from '../../../modules/testkit/temp.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/doctor/orch-doctor.ts', import.meta.url))
 const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/orch-doctor-run.ts', import.meta.url))
@@ -151,7 +152,7 @@ describe('설치본 판정', () => {
   }
 
   before(() => {
-    template = templateRepo()
+    template = copyRepo(join(tempDir('doctor-template-'), 'repo'), templateRepo())
     write(join(template.dir, '.gitignore'), '__pycache__/\n')
     write(join(template.dir, 'orch', 'SKILL.md'), '```bash\npython3 "$SKILL_DIR/scripts/a.py"\n```\n')
     write(join(template.dir, 'orch', 'scripts', 'a.py'), '')
@@ -172,6 +173,10 @@ describe('설치본 판정', () => {
     skill = join(tmp, 'plugins', 'cache', 'mkt', 'plug', installed.slice(0, 12), 'orch')
     cpSync(join(dev, 'orch'), skill, { recursive: true })
     write(join(skill, 'scripts', '__pycache__', 'a.cpython-313.pyc'), 'x')
+  })
+
+  test('설치본 준비가 공유 기본 템플릿의 파일을 바꾸지 않는다', () => {
+    assert.equal(templateGit(templateRepo().dir, ['ls-tree', '--name-only', 'HEAD']), '')
   })
 
   test('skills 아래 설치 캐시도 같은 커밋과 스크립트를 확인한다', () => {
