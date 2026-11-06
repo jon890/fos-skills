@@ -15,7 +15,7 @@ import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const INTERPRETER = ['node']
 const SCRIPT = 'scripts/export-to-team.ts'
-const FILES = ['scripts/export-to-team.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts']
+const FILES = ['scripts/export-to-team.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts']
 // 내보내는 목록을 명령 파일에서 읽는다. 목록을 테스트에 다시 적지 않는다
 function sharedNames(variable: 'SHARED_SKILLS' | 'SHARED_TOOLS'): string[] {
   const lists = sharedLists(readFileSync(join(REPO_ROOT, SCRIPT), 'utf8'))

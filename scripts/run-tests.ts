@@ -63,6 +63,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, normalize, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { isMainModule } from "./is-main.ts";
 
 // tsc 단계의 버전. 범위(@24)로 두면 로컬 캐시와 CI 가 어긋난다. 올릴 때는 이 두 값만 고친다.
 export const TYPESCRIPT = "typescript@5.9.3";
@@ -528,7 +529,7 @@ async function main(argv: string[]): Promise<number> {
   return run(opts, process.cwd());
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url, import.meta.main)) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (error) => {

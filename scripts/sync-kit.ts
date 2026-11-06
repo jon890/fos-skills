@@ -25,8 +25,8 @@
 //   2  실행하지 못했다. 모르는 인자, 원본이 없다, 정책 파일을 읽지 못했다
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, relative } from 'node:path'
+import { isMainModule } from './is-main.ts'
 
 const REPO_ROOT = join(import.meta.dirname, '..')
 const UNIT_ROOTS = ['skills', 'export-only-skills', 'tools']
@@ -115,5 +115,5 @@ export function main(argv: string[], root: string = REPO_ROOT): number {
   }
 }
 
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = main(process.argv.slice(2))

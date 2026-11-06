@@ -20,7 +20,7 @@ function fakeSync(skills: string[], lines: string[], code: number): string {
 }
 // 설치 명령과 훅 파일
 const INSTALL = ['node', 'scripts/install-hooks.ts']
-const HOOK_FILES = ['scripts/install-hooks.ts', 'scripts/skill_paths.ts', 'scripts/export-lists.ts', 'modules/kit/py.ts', 'githooks/post-commit', 'githooks/post-commit.ts']
+const HOOK_FILES = ['scripts/install-hooks.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'scripts/export-lists.ts', 'modules/kit/py.ts', 'githooks/post-commit', 'githooks/post-commit.ts']
 // ──
 
 const DRIFT = [

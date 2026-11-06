@@ -32,10 +32,10 @@
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, posix, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, posix } from 'node:path'
 import { PY_SPACE, pyDecode, pyPathCompare, pyReadText, pySplitLines } from '../modules/kit/py.ts'
 import { isDir, isFile, SKILL_ROOTS, sourcePath } from './skill_paths.ts'
+import { isMainModule } from './is-main.ts'
 
 // 팀 저장소로 내보내는 스킬. 늘어나면 여기에 추가한다
 export const SHARED_SKILLS = ['content-preview', 'spec', 'technical-design', 'plan', 'implementation', 'verify', 'docs-consolidate', 'docs-audit', 'review-fix', 'korean-check', 'presentation']
@@ -377,5 +377,5 @@ function run(argv: string[]): number {
 }
 
 // import.meta.main 은 Node 24.2 부터 있다. 24.0·24.1 에서 아무것도 하지 않고 0 으로 끝나지 않게 경로로도 본다
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = run(process.argv.slice(2))

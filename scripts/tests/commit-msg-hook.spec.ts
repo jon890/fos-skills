@@ -12,7 +12,7 @@ import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const INSTALL = ['node', 'scripts/install-hooks.ts']
-const FILES = ['scripts/install-hooks.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts', 'githooks/commit-msg', 'githooks/commit-msg.ts']
+const FILES = ['scripts/install-hooks.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts', 'githooks/commit-msg', 'githooks/commit-msg.ts']
 // ──
 
 const KOREAN_CHECK = 'export-only-skills/korean-check'
