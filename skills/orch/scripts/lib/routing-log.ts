@@ -54,15 +54,27 @@ function pages(repo: string, host: string, endpoint: string, key?: string): Json
   })
 }
 
-export function routingRecords(repo: string): RoutingRecord[] {
+// onInvalid 를 준 읽기 전용 보고서는 손상 줄만 건너뛴다. 쓰기는 기본 예외로 원본을 보존한다.
+export function routingRecords(repo: string, onInvalid?: (error: Error) => void): RoutingRecord[] {
+  const file = join(pathOf('state', repo), 'routing-log.jsonl')
   let text: string
-  try { text = readFileSync(join(pathOf('state', repo), 'routing-log.jsonl'), 'utf8') }
+  try { text = readFileSync(file, 'utf8') }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e }
-  return text.split('\n').filter(line => line.trim()).map(line => {
-    const row = JSON.parse(line)
-    if (!object(row) || !Number.isInteger(row.pr) || !['merged', 'closed'].includes(row.outcome)) throw new Error('routing 기록 형식 오류')
-    return row as RoutingRecord
-  })
+  const rows: RoutingRecord[] = []
+  for (const [index, line] of text.split('\n').entries()) {
+    if (!line.trim()) continue
+    try {
+      const row = JSON.parse(line)
+      if (!object(row) || !Number.isInteger(row.pr) || !['merged', 'closed'].includes(row.outcome)) throw new Error('routing 기록 형식 오류')
+      rows.push(row as RoutingRecord)
+    } catch {
+      // JSON 원문에는 뜻하지 않은 본문이 섞일 수 있어 오류에 출력하지 않는다.
+      const error = new Error(`${file}:${index + 1}: routing 기록 형식 오류`)
+      if (!onInvalid) throw error
+      onInvalid(error)
+    }
+  }
+  return rows
 }
 
 // 같은 outcome은 보존하고 closed → merged만 바꾼다. 잠금 뒤 다시 읽어 동시 PR도 보존한다.

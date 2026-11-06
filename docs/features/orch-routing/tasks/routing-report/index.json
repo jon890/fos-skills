@@ -1,0 +1,34 @@
+{
+  "name": "routing-report",
+  "description": "routing 기록의 저장소별 집계와 손상 진단",
+  "pr_scope": "REQ7 집계 명령과 기록 읽기 오류 진단",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/orch-routing/spec.md",
+  "design": "docs/features/orch-routing/design.md",
+  "verification_plan": "phase-02.md",
+  "requirements": [
+    "REQ7"
+  ],
+  "total_phases": 2,
+  "current_phase": 2,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ7"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ7"
+      ]
+    }
+  ]
+}

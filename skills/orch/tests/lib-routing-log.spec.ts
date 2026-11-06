@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
-import { MAX_MESSAGE_LIMIT, MESSAGE_LIMIT, dispatchesFor, recordRouting, reviewCounts, writeRoutingRecord } from '../scripts/lib/routing-log.ts'
+import { MAX_MESSAGE_LIMIT, MESSAGE_LIMIT, dispatchesFor, recordRouting, routingRecords, reviewCounts, writeRoutingRecord } from '../scripts/lib/routing-log.ts'
 import { fixture, launch, msg, PR } from './fixtures/routing-fakes.ts'
 
 let f: ReturnType<typeof fixture>
@@ -226,4 +226,18 @@ test('push에 밀려 취소되거나 stale인 실행은 CI 실패에서 뺀다',
   f.save()
   await recordRouting(f.dir, 7, 'merged')
   assert.equal(f.rows()[0].ci_failures, 3)
+})
+
+
+test('읽기 보고서는 손상 줄을 건너뛰고 쓰기는 경로와 줄 번호로 실패하며 원본을 보존한다', async () => {
+  await recordRouting(f.dir, 7, 'merged')
+  const file = join(f.dir, '.orch/state/routing-log.jsonl')
+  const row = f.rows()[0]
+  const original = '\n{PRIVATE broken\n' + JSON.stringify(row) + '\n'
+  writeFileSync(file, original)
+  const warnings: string[] = []
+  assert.equal(routingRecords(f.dir, e => warnings.push(e.message)).length, 1)
+  assert.deepEqual(warnings, [`${file}:2: routing 기록 형식 오류`])
+  await assert.rejects(writeRoutingRecord(f.dir, { ...row, pr: 8 }), { message: `${file}:2: routing 기록 형식 오류` })
+  assert.equal(readFileSync(file, 'utf8'), original)
 })
