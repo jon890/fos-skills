@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -13,8 +13,11 @@ import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import { tailHash } from '../scripts/lib/movement.ts'
 import { screenLines, screenTail } from '../scripts/lib/screen.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { loopRepo } from './fixtures/orch-loop-repo.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 const HOOKS_DOC = fileURLToPath(new URL('../references/hooks.md', import.meta.url))
 
 // 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
@@ -82,8 +85,7 @@ let env: NodeJS.ProcessEnv
 
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'orch-loop-stall-bin-')))
-  writeFileSync(join(binDir, 'orca'), FAKE_ORCA)
-  chmodSync(join(binDir, 'orca'), 0o755)
+  linkBin(binDir, 'orca', FAKE_ORCA.replace(/^#![^\n]*\n/, ''))
   writeFileSync(join(binDir, 'sweep.ts'), 'process.exitCode = 0\n')
 })
 after(() => rmSync(binDir, { recursive: true, force: true }))
@@ -92,7 +94,6 @@ beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'orch-loop-stall-')))
   repo = join(tmp, 'repo')
   mkdirSync(join(tmp, 'received'), { recursive: true })
-  mkdirSync(repo)
   const gh = fakeBin(tmp, 'gh', [
     { args: ['pr', 'list'], stdout: '[]\n' },
     { args: ['api', 'user'], stdout: 'me\n' },
@@ -112,10 +113,7 @@ beforeEach(() => {
   delete env.ORCH_DIR
   delete env.ORCH_REAL_ORCA
   delete env.NODE_OPTIONS
-  for (const args of [['init', '-q', '-b', 'main'], ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'init']]) {
-    const done = spawnSync('git', args, { cwd: repo, encoding: 'utf8', env })
-    assert.equal(done.status, 0, done.stderr)
-  }
+  loopRepo(repo)
 })
 
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
@@ -197,7 +195,7 @@ function screenReads(): string[] {
 
 // 틱 자식을 한 번 돌리고, 부모가 하듯 결과의 stalls 와 errors 를 loop.json 에 옮긴다
 function tick(): Json {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], {
     env,
     cwd: tmp,
     encoding: 'utf8',
@@ -646,7 +644,7 @@ describe('움직임 확인', () => {
   test('pipeline.idle_min 이 틀리면 설정 오류다', () => {
     write(orchFile('config.json'), JSON.stringify({ pipeline: { idle_min: 'x' } }))
     orca({})
-    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8' })
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8' })
     assert.equal(done.status, 2, done.stdout + done.stderr)
     assert.match(done.stderr, /pipeline\.idle_min/)
   })
@@ -658,7 +656,7 @@ describe('설정', () => {
     orca({})
     for (const value of [{ eror: 2 }, { error: -1 }, { idle: 1.5 }, 3]) {
       write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_ticks: value } }))
-      const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8' })
+      const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8' })
       assert.equal(done.status, 2, `${JSON.stringify(value)}: ${done.stdout}${done.stderr}`)
       assert.match(done.stderr, /pipeline\.stall_ticks/)
     }

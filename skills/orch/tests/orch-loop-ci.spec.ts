@@ -5,15 +5,18 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { loopRepo } from './fixtures/orch-loop-repo.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 const RULES_PATH = 'repos/o/r/rules/branches/main'
 const HEAD_A = 'a'.repeat(40)
 const HEAD_B = 'b'.repeat(40)
@@ -67,8 +70,7 @@ let gh: FakeBin
 
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'orch-loop-ci-bin-')))
-  writeFileSync(join(binDir, 'orca'), FAKE_ORCA)
-  chmodSync(join(binDir, 'orca'), 0o755)
+  linkBin(binDir, 'orca', FAKE_ORCA.replace(/^#![^\n]*\n/, ''))
   writeFileSync(join(binDir, 'sweep.ts'), fakeScript('sweep'))
   writeFileSync(join(binDir, 'send.ts'), fakeScript('send'))
   writeFileSync(join(binDir, 'preload.mjs'), PRELOAD)
@@ -84,7 +86,6 @@ beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'orch-loop-ci-')))
   repo = join(tmp, 'repo')
   mkdirSync(join(tmp, 'received'), { recursive: true })
-  mkdirSync(repo)
   gh = fakeBin(tmp, 'gh', [])
   env = {
     ...process.env,
@@ -105,12 +106,8 @@ beforeEach(() => {
   delete env.ORCH_DIR
   delete env.ORCH_LOOP_ALIVE_SEC
   delete env.NODE_OPTIONS
-  git(['init', '-q', '-b', 'main'])
-  git(['commit', '-q', '--allow-empty', '-m', 'init'])
-  // 틱의 충돌 처리가 git fetch origin 을 하므로 origin 을 둔다. 충돌을 보는 gh pr list --base 는 빈 목록이다(github())
-  git(['init', '-q', '--bare', '-b', 'main', join(tmp, 'origin.git')], tmp)
-  git(['remote', 'add', 'origin', join(tmp, 'origin.git')])
-  git(['push', '-q', 'origin', 'main'])
+  // origin 도 복사하고 충돌 확인의 fetch 는 실제 git 을 쓴다.
+  loopRepo(repo)
   writeFileSync(join(tmp, 'orca.json'), JSON.stringify({}))
   hook('ci-passed')
   hook('ci-failed')
@@ -166,7 +163,7 @@ function github(rows: Json[], rules: FakeRule = { stdout: '["test"]\n' }, listCo
 }
 
 function once(extra: NodeJS.ProcessEnv = {}): void {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', extra.NODE_OPTIONS ? SCRIPT : FUNCTION_SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], {
     env: { ...env, ...extra },
     cwd: tmp,
     encoding: 'utf8',
@@ -229,7 +226,7 @@ describe('여러 Run', () => {
     writeFileSync(orchFile('state', 'loop-runs', 'B.json'), JSON.stringify({ run: 'B', specs_dir: null, registered_at: '2026-01-02T00:00:00Z' }))
     github([pr(1, [check('test', 'FAILURE')])])
     // 새로 뜬 루프는 앞 루프의 등록을 지우므로 등록된 Run 을 맡는 틱 자식을 바로 돌린다
-    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8', timeout: 60_000 })
+    const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, '--repo', repo, '--tick', '--tick-number', '1'], { env, cwd: tmp, encoding: 'utf8', timeout: 60_000 })
     assert.equal(done.status, 0, done.stdout + done.stderr)
     const [argv] = sends()
     assert.deepEqual(argv.slice(0, 2), ['--dispatch', 'd1'])

@@ -55,3 +55,4 @@ node scripts/run-tests.ts
 | `skills/orch/tests/orch-loop-conflict.spec.ts` | 수정 |
 | `skills/orch/tests/orch-loop-refresh.spec.ts` | 수정 |
 | `skills/orch/changes/testkit-orch-loop.patch.md` | 신규 |
+| `skills/orch/tests/fixtures/orch-loop-repo.ts` | 신규 |

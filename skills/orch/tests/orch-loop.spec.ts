@@ -14,8 +14,10 @@ import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 
 // 질문 조회에 답하는 가짜 orca. state.json 을 읽는다. by_run 이 있으면 --run 의 Run 에 그 목록으로 답한다.
 // statuses 는 status 조회에, workers 는 worker-list 에 답한다. fail 이면 실패로, sleep 이 있으면 그 초만큼 잔 뒤 답한다.
@@ -100,8 +102,7 @@ const spawned: ChildProcess[] = []
 
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'orch-loop-bin-')))
-  writeFileSync(join(binDir, 'orca'), FAKE_ORCA)
-  chmodSync(join(binDir, 'orca'), 0o755)
+  linkBin(binDir, 'orca', FAKE_ORCA.replace(/^#![^\n]*\n/, ''))
   writeFileSync(join(binDir, 'sweep.ts'), fakeScript('sweep'))
   writeFileSync(join(binDir, 'board.ts'), fakeScript('board'))
   writeFileSync(join(binDir, 'preload.mjs'), PRELOAD)
@@ -193,7 +194,7 @@ function board(): void {
 }
 
 function loop(args: string[], extra: NodeJS.ProcessEnv = {}): Result {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, ...args], {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', extra.NODE_OPTIONS || args.includes('--start') ? SCRIPT : FUNCTION_SCRIPT, '--repo', repo, ...args], {
     env: { ...env, ...extra },
     cwd: tmp,
     encoding: 'utf8',
