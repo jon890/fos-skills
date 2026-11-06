@@ -3,6 +3,14 @@ import { test } from 'node:test'
 import { fakeRun } from '../../../modules/testkit/fake-run.ts'
 import { run, runProcess, withRun } from '../scripts/lib/proc.ts'
 import { main } from '../scripts/queue/merge_queue.ts'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { tempDir } from '../../../modules/testkit/temp.ts'
+import { runCommand } from '../../../modules/testkit/command.ts'
+import { FAKE_GH, FAKE_GIT, HAS_TOOLS, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
+import { statefulRun } from './fixtures/merge-queue-run.ts'
 
 test('주입은 비동기 호출 범위에만 남고 실제 실행으로 넘길 수 있다', async () => {
   const left = fakeRun({ probe: [{ stdout: 'left' }] })
@@ -23,14 +31,6 @@ test('큐를 import 하면 CLI 와 신호 처리기를 실행하지 않는다', 
   assert.equal(process.listeners('SIGINT').some((listener) => listener.name === 'onSignal'), false)
 })
 
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { tmpdir } from 'node:os'
-import { fileURLToPath } from 'node:url'
-import { tempDir } from '../../../modules/testkit/temp.ts'
-import { runCommand } from '../../../modules/testkit/command.ts'
-import { FAKE_GH, FAKE_GIT, HAS_TOOLS, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
-import { statefulRun } from './fixtures/merge-queue-run.ts'
 
 const script = fileURLToPath(new URL('../scripts/queue/merge_queue.ts', import.meta.url))
 const open = {
@@ -73,7 +73,7 @@ for (const [label, fields, args, code, output] of [
   ['성공', {}, ['--no-sweep', '1'], 0, /QUEUE-DONE/],
   ['보류', { mergeable: 'CONFLICTING' }, ['--no-sweep', '1'], 1, /QUEUE-CONFLICT 1/],
   ['후처리 실패', {}, ['--no-sweep', '1'], 3, /AFTER-MERGED-FAILED 1/],
-  ['사용법 오류', {}, ['--unknown'], 2, /모르는 옵션|알 수 없는 옵션/],
+  ['사용법 오류', {}, ['--unknown'], 2, /모르는 옵션: --unknown/],
 ] as const) {
   test(`실제 CLI 의 ${label} 종료 코드와 출력`, { skip: !HAS_TOOLS }, (t) => {
     const dir = tempDir('queue-cli-', t)
