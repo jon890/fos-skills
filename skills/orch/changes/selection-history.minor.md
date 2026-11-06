@@ -1,9 +1,5 @@
-- 새 지시서의 행 id 와 Opus 높은 effort 의 근거를 lint 와 launch 가 함께 검사한다. 이미 띄운 지시서는 호환한다.
-- 실험 후보를 배정 이력 수로 고르고 요청값과 effective 를 영구 이력에 남긴다.
-- 같은 Task 의 다시 띄우기도 launch-worker 를 거쳐 선택 검사와 이력 기록을 받는다.
-- resume link 실패의 NEXT 를 직접 worker-start 대신 orch worker launch 로 안내한다. resume 내부 연결 호출은 유지한다.
-- 실험의 terminal 이어 쓰기는 새 후보 배정 없이 연결하고 재배정 수에 세지 않는다.
-- resume 의 새 터미널은 이전 dispatch 의 실행 설정을 물려받고 새 이력의 모델 불명은 high 근거로 쓰지 않는다.
-- 이미 띄운 옛 지시서는 같은 Task 와 기록된 터미널에서 이어 쓸 때 행 누락을 허용한다.
-- 손상된 이력 줄은 경고하고 건너뛴다. 잘린 마지막 줄 뒤의 새 기록은 줄 경계를 보존한다.
-- 이전 dispatch 의 터미널이 열려 있으면 닫거나 명시적으로 이어 쓴 뒤에만 같은 워크트리에 연결한다.
+- 행 id 와 Opus 높은 effort 의 근거를 lint 와 launch 가 함께 검사하며, 이미 띄운 옛 지시서는 연결 경로에서 호환한다.
+- 비교 실험의 최소 배정과 동률 순서를 검사하고 같은 Task 와 터미널의 이어 쓰기는 배정 수에서 뺀다.
+- 요청값과 effective 를 영구 이력에 남기고 resume 은 이전 dispatch 의 설정을 물려받는다. 손상된 줄은 경고하고 새 기록의 줄 경계를 지킨다.
+- 같은 Task 의 재시도도 launch-worker 를 거친다. 이전 터미널이 열려 있으면 닫거나 명시적으로 이어 쓴다.
+- 직접 재시도 hook 의 인용 처리와 ready Task 안내를 고친다. resume 내부 연결은 유지하고 link 실패의 NEXT 는 launch 명령으로 안내한다.

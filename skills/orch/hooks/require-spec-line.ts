@@ -53,10 +53,25 @@ function specValues(command: string): SpecValue[] {
 }
 
 function rawRetry(command: string): boolean {
-  const masked = mask(stripHeredocs(command))
+  const text = stripHeredocs(command)
+  const masked = mask(text)
   return pieces(masked).some(({ start, end }) => {
-    const piece = masked.slice(start, end)
-    return WORKER_START.test(piece) && /--task(?:\s|=)/.test(piece)
+    if (!masked.slice(start, end).trim()) return false
+    // 명령과 옵션의 리터럴 인용은 풀되 shell 확장이나 eval 은 실행하지 않는다.
+    const words = (text.slice(start, end).match(/(?:[^\s"'\\]|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g) ?? [])
+      .map(word => word.replace(/'([^']*)'|"((?:\\.|[^"\\])*)"/g, (_, single, double) => single ?? double).replace(/\\(.)/g, '$1'))
+    while (words.length) {
+      if (/^[A-Za-z_]\w*=/.test(words[0])) { words.shift(); continue }
+      if (['env', 'command', 'exec'].includes(words[0])) {
+        words.shift()
+        while (words[0]?.startsWith('-')) words.shift()
+        continue
+      }
+      break
+    }
+    const executable = words[0] ?? ''
+    const orca = /(?:^|\/)orca(?:-dev|-ide)?$/.test(executable) || /^\$\{?ORCA(?:_CLI_COMMAND)?\}?$/.test(executable)
+    return orca && words[1] === 'orchestration' && words[2] === 'worker-start' && words.slice(3).some(word => word === '--task' || word.startsWith('--task='))
   })
 }
 
@@ -71,6 +86,6 @@ function rawSpec(command: string): boolean {
 
 const command = hookCommand()
 if (command !== null && (rawSpec(command) || rawRetry(command))) {
-  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: rawRetry(command) ? 'orch: 다시 띄우기는 선택 검사와 이력 기록을 거치는 `orch worker launch --spec FILE --repo DIR --task ID --retry-of ID -- ...` 를 쓴다.' : REASON }
+  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: rawRetry(command) ? 'orch: 다시 띄우기는 선택 검사와 이력 기록을 거치는 `orch worker launch --spec FILE --repo DIR --task ID [--retry-of ID] -- ...` 를 쓴다. failed·blocked Task 만 --retry-of 를 주고 ready Task 는 생략한다.' : REASON }
   process.stdout.write(JSON.stringify({ hookSpecificOutput: decision }) + '\n')
 }

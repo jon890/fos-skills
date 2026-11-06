@@ -498,6 +498,19 @@ describe('require-spec-line', () => {
     assert.equal(decide(HOOK, "echo 'orca orchestration worker-start --task task_x'"), 'pass')
   })
 
+  test('인용된 명령·task 옵션도 검사하고 echo 의 명령 설명은 통과한다', () => {
+    for (const command of [
+      'orca orchestration "worker-start" "--task" task_x',
+      '"orca" orchestration worker-start "--task=task_x"',
+      'command orca orchestration worker-start --task task_x',
+      'env A=x orca orchestration worker-start --task task_x',
+    ]) assert.equal(decide(HOOK, command), 'deny', command)
+    assert.equal(decide(HOOK, 'echo orca orchestration worker-start --task task_x'), 'pass')
+    const reason = verdict(HOOK, 'orca orchestration worker-start --task task_x').reason
+    assert.match(reason, /ready/)
+    assert.match(reason, /failed.*blocked/)
+  })
+
   test('글자 그대로 넣은 지시 본문은 거부한다', () => {
     for (const command of [
       'orca orchestration worker-start --spec "a.ts 를 고치고 PR 을 연다"',
