@@ -47,15 +47,19 @@ SQL 로그가 있으면 구문별로 센다. 건수와 합계를 같이 낸다.
 
 ```bash
 # 대상 호스트로 TCP 연결 왕복을 20 번 재서 중앙값을 낸다
-python3 - <<'PY'
-import socket, statistics, time
-HOST, PORT = "db.example.internal", 5432
-d = []
-for _ in range(20):
-    s = socket.socket(); t = time.perf_counter()
-    s.connect((HOST, PORT)); d.append((time.perf_counter() - t) * 1000); s.close()
-print(f"중앙값 {statistics.median(d):.2f}ms  최소 {min(d):.2f}ms  최대 {max(d):.2f}ms")
-PY
+node --input-type=module - <<'JS'
+import net from 'node:net'
+const HOST = 'db.example.internal', PORT = 5432
+const times = []
+for (let i = 0; i < 20; i++) {
+  const start = performance.now()
+  await new Promise((resolve, reject) => net.connect(PORT, HOST).once('connect', function () { this.destroy(); resolve() }).once('error', reject))
+  times.push(performance.now() - start)
+}
+times.sort((a, b) => a - b)
+const median = (times[9] + times[10]) / 2
+console.log(`중앙값 ${median.toFixed(2)}ms  최소 ${times[0].toFixed(2)}ms  최대 ${times[19].toFixed(2)}ms`)
+JS
 ```
 
 ### 인덱스

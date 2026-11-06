@@ -13,10 +13,10 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const SCRIPTS = join(import.meta.dirname, '..', 'scripts')
 const COMMANDS = {
-  host: ['bash', join(SCRIPTS, 'gh-host.sh')],
-  list: ['bash', join(SCRIPTS, 'gh-review-list.sh')],
-  post: ['bash', join(SCRIPTS, 'gh-review-post.sh')],
-  render: ['python3', join(SCRIPTS, 'render-comments.py')],
+  host: ['node', join(SCRIPTS, 'gh-host.ts')],
+  list: ['node', join(SCRIPTS, 'gh-review-list.ts')],
+  post: ['node', join(SCRIPTS, 'gh-review-post.ts')],
+  render: ['node', join(SCRIPTS, 'render-comments.ts')],
 }
 // ──
 

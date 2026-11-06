@@ -1,6 +1,5 @@
 {
   "pending": [
-    { "area": "small-skills", "prefix": "skills/pr-review/" },
     { "area": "small-skills", "prefix": "skills/implementation/" },
     { "area": "small-skills", "prefix": "skills/docs-audit/" },
     { "area": "small-skills", "prefix": "skills/report/" },
@@ -27,7 +26,7 @@
     "skills/orch/scripts/lib/guard/gh",
     "skills/orch/scripts/lib/guard/orca"
   ],
-  "migrated_docs": ["githooks/", "scripts/"],
+  "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/"],
   "kit_sources": ["modules/kit/"],
   "min_node": [24, 0]
 }
