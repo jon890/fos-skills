@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, test } from 'node:test'
+import { afterEach, beforeEach, mock, test } from 'node:test'
 import { selectionVerdict } from '../scripts/lib/selection.ts'
 import { experimentOf, selectionsOf } from '../scripts/lib/spec.ts'
 import { launchHistory, latestTerminal, recordHistory, type LaunchHistory } from '../scripts/lib/launch-history.ts'
@@ -90,4 +90,20 @@ test('실험의 기본 effort 는 옵션을 주지 않은 이력으로 집계한
 test('새 영구 이력의 모델 null 은 모델 없는 옛 Launch 와 구별해 근거로 거부한다', () => {
   recordHistory(repo, row({ model: null, effort: null }))
   assert.match(selectionVerdict(opus('high', 'high 근거: medium 실패 ctx_old.'), repo).join(), /Opus medium/)
+})
+
+test('손상된 JSON 과 잘못된 필드 줄은 경고하고 정상 이력의 근거와 배정은 유지한다', () => {
+  recordHistory(repo, row({ experiment: 'trial-a', effort: 'high' }))
+  recordHistory(repo, row({ dispatch: 'ctx_medium', effort: 'medium' }))
+  appendFileSync(join(repo, 'orch/state/launch-history.jsonl'), '{"dispatch":\n{"dispatch":"ctx_bad","at":"bad"}\n{"dispatch":')
+  const warnings: string[] = []
+  const mocked = mock.method(process.stderr, 'write', (chunk: unknown) => { warnings.push(String(chunk)); return true })
+  try {
+    assert.deepEqual(launchHistory(repo).map(row => row.dispatch), ['ctx_old', 'ctx_medium'])
+    assert.deepEqual(selectionVerdict(opus('high', 'high 근거: medium 실패 ctx_medium.'), repo), [])
+    assert.deepEqual(selectionVerdict(`${sol}\n${experiment}`, repo, { launch: true }), [])
+    recordHistory(repo, row({ dispatch: 'ctx_new' }))
+    assert.deepEqual(launchHistory(repo).map(row => row.dispatch), ['ctx_old', 'ctx_medium', 'ctx_new'])
+    assert.match(warnings.join(''), /LAUNCH-HISTORY-SKIP/)
+  } finally { mocked.mock.restore() }
 })

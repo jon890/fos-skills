@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { recordHistory } from '../scripts/lib/launch-history.ts'
+import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))
@@ -542,6 +542,19 @@ describe('선택 정책과 영구 이력', () => {
       assert.equal(recorded.retry_of, 'ctx_old')
     })
   }
+
+  test('이력의 마지막 손상 줄은 경고하고 정상 dispatch 로 다시 띄운다', () => {
+    select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_old.')
+    recordHistory(tmp, prior({ agent: 'claude', model: 'claude-opus-5-5' }))
+    const file = join(tmp, '.orch/state/launch-history.jsonl')
+    writeFileSync(file, readFileSync(file, 'utf8') + '{"dispatch":')
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'claude', '--model', 'claude-opus-5-5', '--effort', 'high'], 'bash', false)
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /LAUNCH-HISTORY-SKIP/)
+    assert.match(readFileSync(file, 'utf8'), /"dispatch":"ctx_1"/)
+    assert.equal(launchHistory(tmp).at(-1)?.dispatch, 'ctx_1')
+  })
 
   test('모델 없는 옛 Launch 를 근거로 Opus high 를 띄울 수 있다', () => {
     select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_old.')
