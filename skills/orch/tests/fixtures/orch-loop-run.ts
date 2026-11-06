@@ -2,6 +2,7 @@
 // argv/env/cwd, 출력과 종료만 제공한다. 신호·지연·자식 생명주기와 ESM 스크립트는 실제 실행을 쓴다.
 // 함수 본문은 동기 실행과 절대 파일 경로만 지원한다. 비동기 출력·상대 경로 파일 접근은 runProcess 로 직접 검증한다.
 // fs 가로채기는 require('node:fs') 에만 적용한다. 다른 모듈은 실제 require 를 쓴다.
+// lib/loop.ts 의 isLoopProcess 가 명령줄의 orch-loop 로 루프를 가린다. 자식 진입점인 이 파일 이름에도 그 문자열을 유지한다.
 import * as fs from 'node:fs'
 import { Console } from 'node:console'
 import { createRequire } from 'node:module'
