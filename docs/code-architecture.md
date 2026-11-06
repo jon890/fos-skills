@@ -77,7 +77,7 @@
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
-| `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.sh` |
+| `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts` |
 | `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용 진입을 정책 파일과 대조한다. 출력 줄과 종료 코드는 머리 주석이 소유한다 | `scripts/tests/runtime-policy.spec.ts`, CI, worker |
 | `scripts/runtime-policy.json` | TypeScript 이행 상태의 원본(남은 영역, 허용 JS 진입, 최소 Node) | `scripts/runtime-policy.ts` |
@@ -96,8 +96,8 @@
 | 스킬 본문의 `$SKILL_DIR` | 스킬을 로드할 때 붙는 `Base directory for this skill` 줄의 값이다. 캐시 안의 스킬 디렉터리를 가리킨다 |
 | 스킬 문서의 `../export-only-skills/korean-check` 같은 형제 경로 | 캐시 안에서 그대로 풀린다 |
 | `implementation` 와 `review-fix` 의 `$PLAN_SKILL_DIR` | 자기 번들의 형제 디렉터리 `plan` 이다. 값은 `$SKILL_DIR/../plan` 이다 |
-| `export-only-skills/content-preview/scripts/style-check.sh` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
-| `export-only-skills/content-preview/scripts/show-preview.sh` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `tools/` 에서 찾는다 |
+| `export-only-skills/content-preview/scripts/style-check.ts` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
+| `export-only-skills/content-preview/scripts/show-preview.ts` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `tools/` 에서 찾는다 |
 | `skills/browser/SKILL.md` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, `$SKILL_DIR/../tools/browser-driver/`, `~/.claude/scripts/browser-driver`, PATH 의 `browser-driver` 순이다. 캐시에서는 형제인 루트의 `tools/` 에서 찾는다 |
 | `skills/harness-cleanup/scripts/check_references.py` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
 
