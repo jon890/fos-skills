@@ -23,8 +23,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { writeSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { isMainModule } from './is-main.ts'
 
 // 파이프가 가득 차 EAGAIN 이 나도 다 쓴다. 자식 프로세스와 같은 fd 에 쓰므로 순서가 바뀌지 않게 동기로 쓴다
 export function write(fd: 1 | 2, text: string): void {
@@ -73,5 +72,5 @@ export function main(): number {
   }
 }
 
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = main()
