@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { copyRepo } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/cleanup/remove-worktree.ts', import.meta.url))
 const HOOK = 'node /x/oh-my-claudecode/dist/hooks/session-end/worker.js --omc-session-end-worker {}'
@@ -48,14 +50,12 @@ function git(...args: string[]): string {
 }
 
 function fake(bin: string, name: string, body: string): void {
-  const head = `#!/usr/bin/env node
-const fs = require('node:fs')
-const file = ${JSON.stringify(stateFile)}
+  const head = `const fs = require('node:fs')
+const file = process.env.FAKE_STATE
 const st = JSON.parse(fs.readFileSync(file, 'utf8'))
 const argv = process.argv.slice(2)
 `
-  writeFileSync(join(bin, name), head + body)
-  chmodSync(join(bin, name), 0o755)
+  linkBin(bin, name, head + body)
 }
 
 beforeEach(() => {
@@ -73,6 +73,7 @@ beforeEach(() => {
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',
     GIT_COMMITTER_EMAIL: 't@example.com',
+    FAKE_STATE: stateFile,
     ORCA: join(bin, 'orca'),
     GH: join(bin, 'gh'),
     DOCKER: join(bin, 'docker'),
@@ -81,12 +82,8 @@ beforeEach(() => {
   // Orca 터미널 안에서 돌려도 이 변수가 가짜 orca 로 새지 않게 한다. 대기 시간은 테스트가 직접 정한다
   delete env.ORCA_TERMINAL_HANDLE
   delete env.ORCH_HOOK_WAIT
-  const origin = join(tmp, 'origin.git')
   repo = join(tmp, 'repo')
-  git('init', '-q', '--bare', '-b', 'main', origin)
-  git('clone', '-q', origin, repo)
-  git('-C', repo, 'commit', '-q', '--allow-empty', '-m', 'init')
-  git('-C', repo, 'push', '-q', '-u', 'origin', 'main')
+  copyRepo(repo)
   wt = join(tmp, 'wt')
   git('-C', repo, 'worktree', 'add', '-q', '-b', 'feat', wt, 'origin/main')
   git('-C', wt, 'push', '-q', '-u', 'origin', 'feat')
@@ -481,7 +478,7 @@ describe('detached 워크트리의 브랜치', () => {
   function detachToPrHead(branch = 'review/pr-7'): void {
     git('-C', wt, 'branch', '-m', branch)
     const other = join(tmp, 'other')
-    git('clone', '-q', join(tmp, 'origin.git'), other)
+    git('clone', '-q', git('-C', repo, 'remote', 'get-url', 'origin'), other)
     git('-C', other, 'commit', '-q', '--allow-empty', '-m', 'pr head')
     git('-C', other, 'push', '-q', 'origin', 'HEAD:refs/heads/topic', 'HEAD:refs/pull/7/head')
     git('-C', wt, 'fetch', '-q', 'origin')

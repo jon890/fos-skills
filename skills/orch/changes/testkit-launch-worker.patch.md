@@ -1,1 +1,1 @@
-공통 가짜 평가기를 분리하고 launch-worker 와 doctor 테스트의 명령 기동 비용을 줄인다.
+- 공통 가짜 평가기를 분리하고 launch-worker 와 doctor 테스트의 명령 기동 비용을 줄인다.

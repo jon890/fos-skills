@@ -36,6 +36,10 @@
 
 공통 평가기를 분리할 때 지연 판정용 상태 파일의 파싱 예외도 실제 명령 실패로 돌려준다.
 
+### 4. `skills/orch/tests/remove-worktree.spec.ts` 의 반복 준비를 줄인다
+
+전체 기준 실행에서 launch 다음으로 느린 파일이다. 초기 저장소는 copyRepo 로 복사하고 가짜 상태 경로를 환경 변수로 옮겨 linkBin 으로 재사용한다. 실제 CLI 와 기존 단언은 유지한다.
+
 ## 검증
 
 ```bash
@@ -63,3 +67,5 @@ node scripts/run-tests.ts skills/orch/tests/launch-worker.spec.ts skills/orch/te
 | `skills/orch/changes/testkit-launch-worker.patch.md` | 신규 |
 | `skills/orch/tests/fixtures/orch-loop-run.ts` | 수정 |
 | `skills/orch/tests/orch-loop-run.spec.ts` | 수정 |
+| `skills/orch/tests/remove-worktree.spec.ts` | 수정 |
+| `docs/features/test-speed/design.md` | 수정 |

@@ -256,13 +256,15 @@ REQ1, REQ2, REQ3, REQ6 을 맡는다. 운영 출력·종료·상태 계약은 �
 - launch-worker 와 orch-doctor 는 `main(argv, runner?)` 과 기존 오류 처리기를 내보내고 직접 실행 판정에 `import.meta.main` 및 realpath 비교를 쓴다. 첫 주입 커밋에서는 기존 테스트를 그대로 실행한다(DECISION16).
 - 테스트는 호출마다 별도 fixture 프로세스를 유지한다. 환경·cwd·캐시·pid 격리는 그대로이고 orca 와 doctor 의 ps 대역만 함수로 부른다. launch 의 make-worktree, spec-line, spec-lint, 이벤트 핸들러와 doctor 의 실제 git·shallow clone·지연은 프로세스 경계를 유지한다. 운영 기본 환경은 바꾸지 않는다.
 - 같은 가짜 실행 파일은 `linkBin` 으로 재사용한다. doctor 의 설치본 테스트는 파일을 넣고 커밋한 템플릿 저장소를 한 번 만들고 `copyRepo` 로 복사한다. shallow 마켓플레이스 clone 은 매번 실제 `git clone --depth 1 file://...` 로 만든다.
+- 전체 기준 실행에서 launch-worker 다음으로 느린 remove-worktree 도 포함한다. `copyRepo` 로 초기 bare origin 과 clone 을 복사하고, 가짜 본문의 상태 경로는 `FAKE_STATE` 환경 변수로 받아 `linkBin` 으로 재사용한다. main 의 빈 커밋·upstream 은 기존과 같고 origin 의 임시 경로만 바뀐다. 실제 worktree 추가·push·삭제·소유 확인·hook 대기는 그대로다.
 - merge-queue-overlap 은 PR4 에서 gh 함수 주입과 템플릿 복사가 이미 적용됐다. 실제 겹침·merge·worktree·origin 이동 검증에 필요한 git 비용을 남기며, 재측정으로 남은 비중을 확인한다. 전체 실행기의 느린 파일도 함께 재측정하고 추가 변경은 실제 원인이 같은 경우에만 한다.
 
 | 기존 관측 경계 | 전환 뒤 같은 판정과 남기는 경계 |
 | --- | --- |
 | launch 도우미의 거부·선택·Run·재시도·준비·hook·감시 | 같은 인자·출력·종료·상태 단언을 유지하고 fixture 의 main 을 호출한다. bash/zsh 인자 전달은 그대로다 |
 | doctor 도우미의 설치본·질문·루프·환경·hook | 같은 단언을 유지하고 orca/ps 만 함수로 실행한다. 직접 spawn 하는 생명주기 사례와 지연은 실제 CLI 로 유지한다 |
-| 초기 저장소 상태 | doctor 템플릿에는 파일 커밋 앞의 빈 커밋과 main upstream 이 추가된다. shallow clone 여부와 설치 tree 비교는 유지한다. merge-queue-overlap 은 기존 템플릿 그대로다 |
+| remove-worktree 의 정리·소유·브랜치·docker·hook | 기존 실제 CLI 와 단언을 유지한다. 준비 저장소와 가짜 본문만 재사용하고 종료·대기·실제 git 경계는 바꾸지 않는다 |
+| 초기 저장소 상태 | remove-worktree 는 기존 빈 커밋·upstream 을 유지한다. doctor 템플릿에는 파일 커밋 앞의 빈 커밋과 main upstream 이 추가된다. shallow clone 여부와 설치 tree 비교는 유지한다. merge-queue-overlap 은 기존 템플릿 그대로다 |
 | CLI 인자·stdout·stderr·종료 코드 | 실제 진입점에서 성공·사용법 오류·거부·조회 실패의 대표 사례를 남기고 함수 진입점과 대조한다 |
 | 가짜 평가의 env·cwd·출력·종료·상태 | 기존 루프·정리 대응 테스트를 유지하고 launch/doctor 가 쓰는 가짜도 실행 파일과 같은 결과·기록을 내는지 대조한다 |
 
