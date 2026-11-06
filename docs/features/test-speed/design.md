@@ -225,3 +225,25 @@ REQ1, REQ2, REQ3, REQ6 을 맡는다. `orch-loop*.spec.ts` 의 판정과 실제 
 | 가짜 명령 실행 파일과 함수의 출력·종료·기록 | 대응 테스트로 gh 규칙, orca 성공·실패, ps 출력, 본문 예외를 비교한다 |
 
 첫 구현 커밋은 주입 자리만 더하고 기존 테스트를 그대로 실행한다(DECISION16). 다음 커밋에서 fixture 와 준비 코드를 전환한다. 운영 상태 형식·출력·배포 계약과 도메인 규칙은 바뀌지 않아 새 ADR 은 필요 없다. 검증과 전후 측정은 PR4 와 같은 실행기와 측정 명령을 쓴다. 독립 검토는 지시서대로 PR 생성 뒤 코디네이터가 마련하며, 그 전에는 대기로 기록한다.
+
+
+## PR6: cleanup-sweep 계열의 명령 주입과 저장소 준비
+
+REQ1, REQ2, REQ3, REQ6 을 맡는다. PR4·PR5 의 `withRun` 경계를 재사용하고 운영 출력·종료 코드·정리 판정은 유지한다.
+
+- `cleanup-sweep.ts` 와 `notify-conflicts.ts` 의 `main` 은 선택 인자로 실행 함수를 받는다. `AsyncLocalStorage` 범위 안에서 기존 본문을 호출하고 기본값은 기존 실행이다. CLI 는 `import.meta.main` 일 때만 호출한다.
+- fixture 는 호출마다 별도 프로세스에서 `main` 을 함수로 실행한다. cleanup-sweep 는 pid 와 프로세스 조회 결과를 함께 판정하므로 이 격리를 유지한다. gh, orca, lsof, ps, kill, docker 의 동기 CommonJS 가짜 본문은 실행 파일과 함수가 공유한다. 함수는 본문을 한 번 컴파일하고 argv·env·출력·종료를 제공한다. `SWEEP` 의 부모 pid 는 함수가 실행되는 정리 프로세스 pid 로 대응한다.
+- 실제 git, remove-worktree 자식, hook 과 send-to-worker 대역의 ESM 실행은 기존 실행기로 보낸다. 신호·지연·비동기 출력·상대 경로 파일 접근은 함수 가짜의 지원 범위 밖이다. 없는 경로와 실행 권한·shebang 이 다른 파일은 실제 실행으로 넘긴다. 본문 예외는 종료 코드 1 과 stderr 로 돌려준다. `exitCode` 뒤 `exit()` 와 console 출력도 보존한다.
+- cleanup-sweep 의 초기 저장소는 기존 `copyRepo` 를 유지한다. notify-conflicts 는 초기 파일을 커밋한 템플릿을 파일 프로세스마다 한 번 만들고 테스트마다 `copyRepo` 로 복사한다. 가짜 실행 파일은 경로를 본문에 넣지 않고 `linkBin` 으로 재사용한다.
+
+| 기존 관측 경계 | 전환 뒤 같은 판정과 남기는 경계 |
+| --- | --- |
+| cleanup-sweep 의 merge·holders·reviews·docker·remote·state·routing·repos·launched 의 `runSweep` | 기존 단언·상태 파일·호출 기록을 유지한다. fixture 가 `main` 을 함수로 호출하고 동기 가짜 명령만 함수로 실행한다. 실제 git·remove-worktree·hook 은 유지한다 |
+| cleanup-sweep 를 직접 띄우는 인자·오류와 remove-worktree 경계 | 실제 진입점을 유지한다. 대표 성공·사용법 오류·실행 오류의 stdout·stderr·종료 코드를 실제 CLI 로 대조한다 |
+| notify-conflicts 의 충돌·알림·재시도·orphan·dry-run·hook | 기존 단언과 실제 git 충돌 판정을 유지하고 gh·orca 만 함수로 실행한다. send-to-worker 대역과 hook 은 실제 자식이다 |
+| 초기 저장소 상태 | cleanup-sweep 는 기존 템플릿 그대로다. notify-conflicts 의 main upstream 은 기존 empty clone 과 같고, origin/HEAD 와 파일 커밋 앞의 빈 커밋이 추가된다. 충돌 입력 파일과 테스트별 변경 커밋은 유지한다 |
+| 가짜 실행 파일과 함수의 출력·종료·기록 | 같은 본문을 양쪽에서 실행해 성공·실패·상태 변화·예외·출력·없는 경로를 대조한다 |
+
+첫 구현 커밋은 주입 자리만 더하고 기존 테스트를 그대로 실행한다(DECISION16). 다음 커밋에서 fixture 와 준비 코드를 옮긴다. 검증은 실행기로 대상 파일과 proc 회귀 테스트를 돌리고 전체 검사로 잇는다. 전후 시간과 preload 기동 수는 「측정 방법」의 명령으로 같은 머신에서 번갈아 잰다. 독립 설계·계획·코드·문서 검토는 PR 생성 뒤 코디네이터가 마련하며 그 전에는 대기로 기록한다.
+
+운영 상태 형식·도메인 규칙·배포 계약과 데이터 소유권은 바뀌지 않는다. 새 ADR 과 트랜잭션·재시도 정책은 필요 없다. 함수 가짜가 지원하지 않는 실행은 실제 실행 경계에 남긴다.

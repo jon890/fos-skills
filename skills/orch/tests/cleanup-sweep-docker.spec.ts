@@ -2,9 +2,10 @@
 // 가짜 실행 파일, 상태와 공통 도우미는 fixtures/cleanup-sweep.ts 가 소유한다. 여기서는 docker 만 상태를 가진 가짜로 바꾼다.
 
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, test } from 'node:test'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { fx, has, runSweep, runSweepFull } from './fixtures/cleanup-sweep.ts'
 
 let dockerState: string
@@ -29,12 +30,12 @@ beforeEach(() => {
     { Id: 'company', Name: '/mysql-migration-check-1', Image: 'sha256:m', State: { Running: true }, Config: { Labels: {} } },
   ]
   writeFileSync(dockerState, JSON.stringify({ containers, calls: [] }))
-  const bin = join(fx.tmp, 'docker')
-  writeFileSync(
-    bin,
-    `#!/usr/bin/env node
+  const bin = linkBin(
+    fx.tmp,
+    'docker',
+    `
 const fs = require('node:fs')
-const file = ${JSON.stringify(dockerState)}
+const file = process.env.DOCKER_STATE
 const st = JSON.parse(fs.readFileSync(file, 'utf8'))
 const argv = process.argv.slice(2)
 st.calls.push(argv.join(' '))
@@ -43,7 +44,7 @@ if (argv[0] === 'ps') console.log(st.containers.map((c) => c.Id).join('\\n'))
 else if (argv[0] === 'container' && argv[1] === 'inspect') console.log(JSON.stringify(st.containers))
 `,
   )
-  chmodSync(bin, 0o755)
+  fx.env.DOCKER_STATE = dockerState
   fx.env.DOCKER = bin
 })
 

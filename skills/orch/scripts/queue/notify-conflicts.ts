@@ -61,6 +61,8 @@
 //
 // 종료 코드: 0 충돌한 내 PR 이 없다, 1 충돌한 내 PR 이 있다(알렸든 못 알렸든), 2 사용법 오류(설정 파일 오류 포함)나 조회 실패
 
+import { withRun } from '../lib/proc.ts'
+import type { Runner } from '../lib/proc.ts'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
@@ -106,7 +108,11 @@ function parse(argv: string[]): Args | 'help' | null {
   return { repo: values.repo, base: values.base, run: values.run, state: values.state, dryRun: values['dry-run'] }
 }
 
-async function main(argv: string[]): Promise<number> {
+export function main(argv: string[], runner?: Runner): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+}
+
+async function executeMain(argv: string[]): Promise<number> {
   const a = parse(argv)
   if (a === null) return 2
   if (a === 'help') {
@@ -207,17 +213,21 @@ async function main(argv: string[]): Promise<number> {
   return 1
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e: unknown) => {
-    if (e instanceof ConfigError) {
-      err(`notify-conflicts: ${e.message}`)
-      process.exitCode = 2
-    } else {
-      err(`notify-conflicts: ${(e as Error)?.stack ?? String(e)}`)
-      process.exitCode = 1
-    }
-  },
-)
+export function reportError(e: unknown): void {
+  if (e instanceof ConfigError) {
+    err(`notify-conflicts: ${e.message}`)
+    process.exitCode = 2
+  } else {
+    err(`notify-conflicts: ${(e as Error)?.stack ?? String(e)}`)
+    process.exitCode = 1
+  }
+}
+
+if (import.meta.main) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code
+    },
+    reportError,
+  )
+}
