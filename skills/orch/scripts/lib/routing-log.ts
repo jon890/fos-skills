@@ -8,7 +8,7 @@ import { loadConfig, ROUTING_KEYS, section } from './config.ts'
 import { context, payload, readyOf } from './completion.ts'
 import { finishStarted } from './finish-marks.ts'
 import { acquireLock, releaseLock } from './events.ts'
-import { apiTarget, FAILED_CONCLUSIONS, ghJson } from './gh.ts'
+import { apiTarget, ghJson } from './gh.ts'
 import { launchHistory, type LaunchHistory } from './launch-history.ts'
 import { orcaJson } from './orca.ts'
 import { ensure, pathOf } from './paths.ts'
@@ -28,6 +28,7 @@ export type RoutingRecord = {
   minutes_to_ready: number | null; minutes_waiting_user: number | null; tokens: Tokens | null
 }
 
+const CI_FAILURES = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE'])
 const FIELDS = 'number,url,headRefName,headRefOid,createdAt,closedAt,mergedAt,state'
 export const MESSAGE_LIMIT = 200
 export const MAX_MESSAGE_LIMIT = MESSAGE_LIMIT * 32
@@ -250,7 +251,7 @@ async function collect(repo: string, pr: number, outcome: Outcome): Promise<void
         seen.add(key)
         const result = n === attempts ? run : github<Json>(repo, ['api', '--hostname', target.host, `repos/${target.slug}/actions/runs/${run.id}/attempts/${n}`])
         if (!Object.hasOwn(result, 'conclusion') || result.conclusion !== null && typeof result.conclusion !== 'string') throw new Error('CI 판정 누락')
-        if (FAILED_CONCLUSIONS.includes(String(result.conclusion).toUpperCase())) failures++
+        if (CI_FAILURES.has(String(result.conclusion).toUpperCase())) failures++
       }
     }
     return failures

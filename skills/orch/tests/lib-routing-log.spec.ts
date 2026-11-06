@@ -220,3 +220,10 @@ test('조회 상한까지 창 안에서 가득 차면 값을 0으로 꾸미지 �
   assert.equal(f.rows()[0].questions, null)
   assert.equal(f.rows()[0].minutes_to_ready, null)
 })
+
+test('push에 밀려 취소되거나 stale인 실행은 CI 실패에서 뺀다', async () => {
+  f.state.runs.head1 = ['failure', 'timed_out', 'startup_failure', 'cancelled', 'stale', 'action_required', 'success'].map((conclusion, i) => ({ id: i + 10, conclusion }))
+  f.save()
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows()[0].ci_failures, 3)
+})
