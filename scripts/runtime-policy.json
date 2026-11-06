@@ -28,5 +28,6 @@
     "skills/orch/scripts/lib/guard/orca"
   ],
   "migrated_docs": ["githooks/", "scripts/"],
+  "kit_sources": ["modules/kit/"],
   "min_node": [24, 0]
 }
