@@ -71,3 +71,14 @@ test('마무리 표시가 있어도 머지 없이 닫힌 PR은 sweep이 기록�
   await sweepRouting(f.dir, NOW)
   assert.equal(f.rows()[0].outcome, 'closed')
 })
+
+test('브랜치 하나의 조회가 실패해도 다음 브랜치를 기록한다', async () => {
+  f.history(launch(), launch({ dispatch: 'ctx_b', branch: 'feat/b' }))
+  Object.assign(f.state.pr, { number: 8, headRefName: 'feat/b' })
+  f.state.fail = '--head feat/a'
+  f.save()
+  await sweepRouting(f.dir, NOW)
+  assert.equal(f.rows().length, 1)
+  assert.equal(f.rows()[0].pr, 8)
+  assert.equal(f.rows()[0].branch, 'feat/b')
+})

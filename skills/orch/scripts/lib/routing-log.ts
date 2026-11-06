@@ -286,13 +286,17 @@ export async function sweepRouting(repo: string, now = Date.now()): Promise<void
     const branches = new Set(history.filter(row => !records.some(record => record.branch === row.branch &&
       record.dispatches.some(dispatch => dispatch.dispatch === row.dispatch))).map(row => row.branch!))
     for (const branch of branches) {
-      const prs = github<Json[]>(repo, ['pr', 'list', '--head', branch, '--state', 'closed', '--limit', '1000', '--json', FIELDS])
-      if (!Array.isArray(prs) || prs.length >= 1000) throw new Error('종료 PR 조회 한도 도달')
-      for (const pr of prs) {
-        if (pr.state !== 'CLOSED' && pr.state !== 'MERGED') continue
-        if (pr.state === 'MERGED' && finishStarted(repo, pr.number)) continue
-        if (!dispatchesFor(pr, prs, allHistory).length) continue
-        await recordRouting(repo, pr.number, pr.state === 'MERGED' ? 'merged' : 'closed')
+      try {
+        const prs = github<Json[]>(repo, ['pr', 'list', '--head', branch, '--state', 'closed', '--limit', '1000', '--json', FIELDS])
+        if (!Array.isArray(prs) || prs.length >= 1000) throw new Error('종료 PR 조회 한도 도달')
+        for (const pr of prs) {
+          if (pr.state !== 'CLOSED' && pr.state !== 'MERGED') continue
+          if (pr.state === 'MERGED' && finishStarted(repo, pr.number)) continue
+          if (!dispatchesFor(pr, prs, allHistory).length) continue
+          await recordRouting(repo, pr.number, pr.state === 'MERGED' ? 'merged' : 'closed')
+        }
+      } catch (e) {
+        process.stderr.write(`ROUTING-LOG-FAIL ${branch} ${String((e as Error).message).replace(/\s+/g, ' ')}\n`)
       }
     }
   } catch (e) { process.stderr.write(`ROUTING-LOG-FAIL sweep ${String((e as Error).message).replace(/\s+/g, ' ')}\n`) }
