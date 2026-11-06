@@ -252,7 +252,7 @@ REQ1, REQ2, REQ3, REQ6 을 맡는다. PR4·PR5 의 `withRun` 경계를 재사용
 
 REQ1, REQ2, REQ3, REQ6 을 맡는다. 운영 출력·종료·상태 계약은 유지하고 PR4~PR6 의 `withRun` 경계를 재사용한다.
 
-- 먼저 orch fixtures 의 `stateful-run.ts` 에 동기 CommonJS 가짜 평가를 모은다. 허용 명령과 PATH 해석, 부모 pid, 실제 실행으로 보낼 조건은 호출자가 정한다. 루프·정리·알림의 진입점과 분리해 알림이 정리 스크립트를 import 하지 않게 한다. 본문 예외는 명령 실패로 돌려주며 `exitCode` 뒤 `exit()` 와 console 출력을 보존한다. 지원하지 않는 지연·신호·비동기 출력·상대 파일 접근은 머리 주석과 실제 실행 대응 테스트로 경계를 남긴다.
+- 먼저 orch fixtures 의 `stateful-run.ts` 에 동기 CommonJS 가짜 평가를 모은다. 허용 명령과 PATH 해석, 실제 실행으로 보낼 조건은 호출자가 정한다. 가짜 자식의 부모 pid 는 main 을 실행하는 현재 프로세스다. 루프·정리·알림의 진입점과 분리해 알림이 정리 스크립트를 import 하지 않게 한다. 본문 예외는 명령 실패로 돌려주며 `exitCode` 뒤 `exit()` 와 console 출력을 보존한다. 지원하지 않는 지연·신호·비동기 출력·상대 파일 접근은 머리 주석과 실제 실행 대응 테스트로 경계를 남긴다.
 - launch-worker 와 orch-doctor 는 `main(argv, runner?)` 과 기존 오류 처리기를 내보내고 직접 실행 판정에 `import.meta.main` 및 realpath 비교를 쓴다. 첫 주입 커밋에서는 기존 테스트를 그대로 실행한다(DECISION16).
 - 테스트는 호출마다 별도 fixture 프로세스를 유지한다. 환경·cwd·캐시·pid 격리는 그대로이고 orca 와 doctor 의 ps 대역만 함수로 부른다. launch 의 make-worktree, spec-line, spec-lint, 이벤트 핸들러와 doctor 의 실제 git·shallow clone·지연은 프로세스 경계를 유지한다. 운영 기본 환경은 바꾸지 않는다.
 - 같은 가짜 실행 파일은 `linkBin` 으로 재사용한다. doctor 의 설치본 테스트는 파일을 넣고 커밋한 템플릿 저장소를 한 번 만들고 `copyRepo` 로 복사한다. shallow 마켓플레이스 clone 은 매번 실제 `git clone --depth 1 file://...` 로 만든다.

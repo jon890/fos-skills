@@ -1,5 +1,5 @@
 // 동기 CommonJS 가짜 실행 파일만 같은 프로세스에서 평가한다.
-// 허용 목록·PATH 해석·부모 pid·실제 실행 조건은 호출자가 정한다.
+// 허용 목록·PATH 해석·실제 실행 조건은 호출자가 정한다.
 // argv/env/cwd, console·writeSync 출력과 exitCode/exit 만 지원한다.
 // 비동기 출력·신호·자식 생명주기·상대 파일 접근은 실제 실행으로 검증해야 한다.
 // require('node:fs') 의 writeSync 만 가로채며 나머지 모듈은 실제 require 다.
@@ -15,7 +15,6 @@ const require = createRequire(import.meta.url)
 const bodies = new Map<string, Function>()
 type Options = {
   resolveCommand: (argv: string[], env: NodeJS.ProcessEnv) => string | undefined
-  ppid?: () => number
 }
 
 export function createStatefulRun(options: Options): Runner {
@@ -47,7 +46,7 @@ export function createStatefulRun(options: Options): Runner {
     const fake = {
       argv: [process.execPath, command, ...argv.slice(1)], env,
       // 실제 가짜 자식의 부모는 지금 main 을 실행 중인 프로세스다.
-      ppid: options.ppid?.() ?? process.pid,
+      ppid: process.pid,
       cwd: () => opts.cwd ?? process.cwd(),
       stdout: { write: (data: string) => { output(1, data); return true } },
       stderr: { write: (data: string) => { output(2, data); return true } },
