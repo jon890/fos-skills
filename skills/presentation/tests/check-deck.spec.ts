@@ -11,8 +11,8 @@ import { after, describe, test } from 'node:test'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const SKILL = join(import.meta.dirname, '..')
-const RUNNER = ['python3']
-const SCRIPTS = ['check-deck.py']
+const RUNNER = ['node']
+const SCRIPTS = ['check-deck.ts', 'io.ts']
 // ──
 
 // 전역 금지어 표를 가진 korean-check. 저장소의 내보내기 전용 원본을 쓴다
@@ -235,7 +235,7 @@ describe('인자', () => {
     const s = setup()
     for (const args of [[], ['--browser']]) {
       const done = s.run(args)
-      assert.deepEqual([done.code, done.stdout, done.stderr], [2, '', '사용법: check-deck.py <deck.html> [--browser]\n'])
+      assert.deepEqual([done.code, done.stdout, done.stderr], [2, '', `사용법: ${SCRIPTS[0]} <deck.html> [--browser]\n`])
     }
   })
 
