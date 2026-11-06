@@ -347,7 +347,7 @@
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
-import type { RunOptions, RunResult } from '../lib/proc.ts'
+import type { Runner } from '../lib/proc.ts'
 import { sweepRouting } from '../lib/routing-log.ts'
 
 import { featureCompletionProblem } from '../lib/feature-evidence.ts'
@@ -1932,7 +1932,7 @@ export function sweepLine(line: string, ctx: SweepContext): string | null {
   return isVerdict(text) ? text : null
 }
 
-export function main(argv: string[], runner?: (argv: string[], opts?: RunOptions) => RunResult): Promise<number> {
+export function main(argv: string[], runner?: Runner): Promise<number> {
   return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
 }
 

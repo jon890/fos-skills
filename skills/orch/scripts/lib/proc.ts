@@ -168,7 +168,7 @@ function overflow(stdout: string, stderr: string, maxBuffer: number): RunResult 
   return { code: 1, stdout, stderr: stderr ? `${stderr}\n${reason}` : reason, timedOut: false }
 }
 
-type Runner = (argv: string[], opts?: RunOptions) => RunResult
+export type Runner = (argv: string[], opts?: RunOptions) => RunResult
 const runners = new AsyncLocalStorage<Runner>()
 
 // 주입한 실행 함수는 이 호출에서 시작한 비동기 흐름에만 적용한다.
