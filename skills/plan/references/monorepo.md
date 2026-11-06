@@ -80,8 +80,8 @@ plan 접두사처럼 하나만 골라야 하는 값은 사용자에게 묻는다
 
 | 값 | 기본값 | 예 | 받는 스크립트 인자 |
 | --- | --- | --- | --- |
-| docs 경로 | `docs/` | `frontend/docs/` | `plan_precheck.py --docs-dir` |
-| tasks 경로 | 새 기능은 `<기능 폴더>/tasks/`, 기존·기능 없는 작업은 `tasks/` | `tasks/` | `plan_number.sh --tasks-dir`, `verify_task.py --tasks-dir`, `plan_precheck.py --tasks-dir` |
+| docs 경로 | `docs/` | `frontend/docs/` | `plan_precheck.ts --docs-dir` |
+| tasks 경로 | 새 기능은 `<기능 폴더>/tasks/`, 기존·기능 없는 작업은 `tasks/` | `tasks/` | `plan_number.sh --tasks-dir`, `verify_task.py --tasks-dir`, `plan_precheck.ts --tasks-dir` |
 | plan 접두사 | 없음 | `fe-` | `plan_number.sh --prefix` |
 | plan 이름 형식 | `{접두사}plan{N}-` | `area-(\d{3})-` | `plan_number.sh --name-regex` (접두사 대신 준다) |
 | ADR 폴더 | `docs/adr` | `` `docs/adr` `modules/*/docs/adr` `` | `adr-docs.ts --adr-dir` (인라인 코드 하나마다 하나) |

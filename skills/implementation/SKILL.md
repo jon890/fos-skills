@@ -5,7 +5,7 @@ description: |
   "task 실행해줘", "phase 실행", "agent team 으로 빌드", "implementation" 요청에 쓴다.
   독립 리뷰와 인수 검증은 verify, PR·머지와 정리는 orch 가 조율한다.
 metadata:
-  version: "7.7.0"
+  version: "8.0.0"
 ---
 # implementation
 
@@ -15,7 +15,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 사전 확인 | `plan_precheck.py` 가 중복 실행을 찾지 못했고, 계획 브랜치의 분리된 작업 공간이 있다. 이어 하는 작업이면 `current_phase` 와 기존 커밋을 대조했다 | `scripts/plan_precheck.py` |
+| 1 | 사전 확인 | `plan_precheck.ts` 가 중복 실행을 찾지 못했고, 계획 브랜치의 분리된 작업 공간이 있다. 이어 하는 작업이면 `current_phase` 와 기존 커밋을 대조했다 | `scripts/plan_precheck.ts` |
 | 2 | 읽기와 위임 | 스펙·설계·phase 를 읽었고 executor 에게 맡길지 순차로 할지 정했다 | [`team-spawn.md`](references/team-spawn.md), [`role-executor.md`](references/role-executor.md), [`executor-routing.md`](references/executor-routing.md) |
 | 3 | phase 구현 | phase 마다 phase 테스트가 통과했고, `verify_task.py --staged` 종료 코드가 0 이며, 한 커밋으로 끝났다 | [`step-finish.md`](references/step-finish.md) |
 | 4 | 누적 개발 검증 | 누적 변경에 저장소의 개발 검증 명령 종료 코드가 0 이다 | |
@@ -32,7 +32,7 @@ plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 기존 계획�
 
 번호는 위 개요 표의 단계와 같다.
 
-1. `scripts/plan_precheck.py` 로 중복 실행을 확인하고, 계획 브랜치의 분리된 작업 공간을 준비한다.
+1. `scripts/plan_precheck.ts` 로 중복 실행을 확인하고, 계획 브랜치의 분리된 작업 공간을 준비한다.
    처음 구현할 때는 기본 verify_task 검사를 쓴다. 일부 phase 가 이미 구현됐거나 verify 에서 돌아왔으면
    `--audit` 로 계획을 검사하고 기존 커밋과 `current_phase` 를 대조해 남은 phase 또는 지적받은 부분만 이어 간다.
    완료한 phase 를 처음부터 다시 실행하지 않는다. 각 phase 커밋에 다음 phase 를 `current_phase` 로 기록하고,
@@ -53,7 +53,7 @@ plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 기존 계획�
 첫 명령에 `--resume`, 두 번째 명령에 `--audit` 를 붙인다. 완료·중단·삭제된 계획은 재개하지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" --branch "$BRANCH" --tasks-dir "$TASKS_DIR" --docs-dir "$DOCS_DIR" --json
+node "$SKILL_DIR/scripts/plan_precheck.ts" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" --branch "$BRANCH" --tasks-dir "$TASKS_DIR" --docs-dir "$DOCS_DIR" --json
 python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "$TASKS_DIR"
 ```
 

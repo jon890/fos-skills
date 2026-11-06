@@ -1,0 +1,1 @@
+- 모노레포 안내가 `plan_precheck` 의 새 이름(`plan_precheck.ts`)을 가리킨다

@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { after, describe, test } from 'node:test'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['bash', join(import.meta.dirname, '..', 'scripts', 'pr_mergeable.sh')]
+const COMMAND = ['node', join(import.meta.dirname, '..', 'scripts', 'pr_mergeable.ts')]
 // ──
 
 const roots: string[] = []
