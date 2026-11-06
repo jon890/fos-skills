@@ -1,3 +1,5 @@
+// 함수 평가에는 timeoutMs·input·maxBuffer 를 적용하지 않는다.
+// 지연·입력·출력 한도를 검증하는 가짜는 resolveCommand 에서 undefined 를 돌려 실제 실행으로 넘긴다.
 // launch 의 호출별 격리와 실제 비동기 도구·hook 을 유지한다. 동기 orca 만 함수로 부른다.
 import * as fs from 'node:fs'
 import { fileURLToPath } from 'node:url'

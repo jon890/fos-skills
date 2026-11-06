@@ -1,3 +1,5 @@
+// 함수 평가에는 timeoutMs·input·maxBuffer 를 적용하지 않는다.
+// 지연·입력·출력 한도를 검증하는 가짜는 resolveCommand 에서 undefined 를 돌려 실제 실행으로 넘긴다.
 // 동기 CommonJS 가짜 실행 파일만 같은 프로세스에서 평가한다.
 // 허용 목록·PATH 해석·실제 실행 조건은 호출자가 정한다.
 // argv/env/cwd, console·writeSync 출력과 exitCode/exit 만 지원한다.
