@@ -1,7 +1,7 @@
 // 루프 자식의 진입점 이름을 유지하며 지연 orca 는 실제 실행으로 보낸다.
 import * as fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { main } from '../../scripts/loop/orch-loop.ts'
+import { main, reportError } from '../../scripts/loop/orch-loop.ts'
 import { createStatefulRun } from './stateful-run.ts'
 
 export const statefulRun = createStatefulRun({
@@ -24,6 +24,6 @@ const SELF = fileURLToPath(import.meta.url)
 if (import.meta.main || (process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1]) === SELF)) {
   main(process.argv.slice(2), statefulRun, SELF).then(
     (code) => { process.exitCode = code },
-    (error) => { console.error(error); process.exitCode = 1 },
+    reportError,
   )
 }

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -111,4 +113,26 @@ test('상대 실행 경로는 opts.cwd 에서 실제 명령으로 실행한다',
   linkBin(dir, 'gh', "process.stdout.write('relative\\n')")
   const opts = { cwd: dir, env: { GH: './gh' } }
   assert.deepEqual(statefulRun(['./gh'], opts), runProcess(['./gh'], opts))
+})
+
+test('루프 CLI 와 fixture 는 같은 예외 처리기로 출력·종료한다', (t) => {
+  const dir = tempDir('loop-main-error-', t)
+  const preload = join(dir, 'error.cjs')
+  writeFileSync(preload, `const write = process.stdout.write
+let once = true
+process.stdout.write = function (...args) {
+  if (once) { once = false; throw new Error('forced-main-error') }
+  return write.apply(this, args)
+}`)
+  const results = ['../scripts/loop/orch-loop.ts', './fixtures/orch-loop-run.ts'].map((relative) =>
+    spawnSync(process.execPath, [fileURLToPath(new URL(relative, import.meta.url)), '--status', '--repo', dir], {
+      encoding: 'utf8', env: { ...process.env, ORCH_OUTPUT: 'full', NODE_OPTIONS: `--require=${preload}` },
+    }),
+  )
+  for (const done of results) {
+    assert.equal(done.status, 1, done.stderr)
+    assert.match(done.stdout, /^orch-loop: Error: forced-main-error/)
+    assert.equal(done.stderr, '')
+  }
+  assert.equal(results[0].stdout.split('\n')[0], results[1].stdout.split('\n')[0])
 })
