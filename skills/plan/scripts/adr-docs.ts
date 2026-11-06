@@ -51,7 +51,8 @@
 //
 // 색인 (write-index): ADR 폴더마다 INDEX.md 를 「현행」·「대체됨」 두 표로 쓴다. 열은 번호, 결정, 상태, 대체 관계다.
 //   status 가 superseded 면 「대체됨」, 그 밖은 「현행」 이다. 대체 관계는 `- **대체된 부분**:` 항목 안의 링크 가운데
-//   링크 글에 ADR 식별자가 들어 있고 대상이 ADR 파일인 것이며, 링크 글이 아니라 대상 파일의 식별자를 적는다.
+//   링크 글에 ADR 식별자가 들어 있고 대상이 ADR 파일인 것이며, 같은 ADR 폴더의 대상은 링크 글이 아니라 대상 파일의 식별자를 적는다.
+//   다른 ADR 폴더의 대상은 링크 글에 식별자와 접두가 같이 있으면 그 글을, 아니면 폴더 이름(끝의 adr, docs 를 뗀 마지막 층, 루트면 root)을 식별자 앞에 붙인다.
 //   결정 칸은 ADR 제목이고 제목 안 링크는 링크 글만 옮긴다(링크 기준 폴더가 달라 깨진다).
 //   내용이 같으면 파일을 다시 쓰지 않는다. check 는 어떤 파일도 쓰지 않는다.
 //
@@ -419,14 +420,14 @@ function read(repo: Repo, path: string) {
 const STATUS = /^- \*\*status\*\*:\s*`([^`]+)`/;
 const REPLACED_PART = /^- \*\*대체된 부분\*\*:/;
 
-export type AdrMeta = { title: string; status: string; statusLine: number; replacedBy: AdrFile[] };
+export type AdrMeta = { title: string; status: string; statusLine: number; replacedBy: { adr: AdrFile; text: string }[] };
 
 function metaOf(repo: Repo, adr: AdrFile, byPath: Map<string, AdrFile>): AdrMeta {
   const lines = prose(read(repo, adr.path), false);
   let title: string | null = null;
   let status: string | null = null;
   let statusLine = 1;
-  const replacedBy: AdrFile[] = [];
+  const replacedBy: { adr: AdrFile; text: string }[] = [];
   let inReplaced = false;
   lines.forEach((line, i) => {
     if (title === null) {
@@ -453,7 +454,7 @@ function metaOf(repo: Repo, adr: AdrFile, byPath: Map<string, AdrFile>): AdrMeta
       const local = splitLocal(l.target);
       if (!local || !local[0]) continue;
       const target = byPath.get(rel(repo.root, resolve(repo.root, posix.dirname(adr.path), local[0])));
-      if (target && !replacedBy.includes(target)) replacedBy.push(target);
+      if (target && !replacedBy.some((x) => x.adr === target)) replacedBy.push({ adr: target, text: l.text.trim() });
     }
   });
   return { title: title ?? "제목 확인 필요", status: status ?? "accepted", statusLine, replacedBy };
@@ -466,13 +467,14 @@ function cell(text: string) {
   return text.replace(/\|/g, "\\|");
 }
 
-export type IndexRow = { id: string; link: string; title: string; status: string; replacedBy: { id: string; link: string }[] };
+// label 이 있으면 번호 대신 그 글을 적는다(다른 ADR 폴더의 ADR 이라 접두가 필요한 경우)
+export type IndexRow = { id: string; link: string; title: string; status: string; replacedBy: { id: string; link: string; label?: string }[] };
 
 export function renderIndex(rows: IndexRow[]): string {
   const table = (items: IndexRow[]) => {
     if (items.length === 0) return "없음\n";
     const body = items.map((r) => {
-      const relation = r.replacedBy.map((x) => `[${x.id}](${x.link})`).join(", ") || "-";
+      const relation = r.replacedBy.map((x) => `[${cell(x.label ?? x.id)}](${x.link})`).join(", ") || "-";
       return `| [${r.id}](${r.link}) | ${cell(r.title)} | ${cell(r.status)} | ${relation} |\n`;
     });
     return `| 번호 | 결정 | 상태 | 대체 관계 |\n| --- | --- | --- | --- |\n${body.join("")}`;
@@ -496,6 +498,21 @@ function byName(a: AdrFile, b: AdrFile) {
   return x < y ? -1 : x > y ? 1 : a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 }
 
+// ADR 폴더를 가리키는 이름: 끝의 adr, docs 를 떼고 남은 마지막 층. 저장소 루트면 root
+function folderName(dir: string) {
+  const parts = dir.split("/");
+  if (parts[parts.length - 1] === "adr") parts.pop();
+  if (parts[parts.length - 1] === "docs") parts.pop();
+  return parts[parts.length - 1] || "root";
+}
+
+// 다른 ADR 폴더의 ADR 은 번호만으로 어느 것인지 모른다. 링크 글에 접두가 있으면 그 글을, 없으면 폴더 이름을 붙인다
+function relationLabel(dir: string, target: AdrFile, text: string) {
+  if (target.dir === dir) return undefined;
+  if (text.includes(target.id) && text !== target.id && !/[[\]]/.test(text)) return text;
+  return `${folderName(target.dir)} ${target.id}`;
+}
+
 function indexFor(repo: Repo, dir: string, metas: Map<string, AdrMeta>) {
   const rows = repo.adrs
     .filter((a) => a.dir === dir)
@@ -507,7 +524,7 @@ function indexFor(repo: Repo, dir: string, metas: Map<string, AdrMeta>) {
         link: linkFrom(dir, adr.path),
         title: meta.title,
         status: meta.status,
-        replacedBy: meta.replacedBy.map((t) => ({ id: t.id, link: linkFrom(dir, t.path) })),
+        replacedBy: meta.replacedBy.map((t) => ({ id: t.adr.id, link: linkFrom(dir, t.adr.path), label: relationLabel(dir, t.adr, t.text) })),
       };
     });
   return renderIndex(rows);

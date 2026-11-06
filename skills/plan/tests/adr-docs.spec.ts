@@ -298,6 +298,20 @@ describe("색인 생성", () => {
     chmodSync(index, 0o644);
   });
 
+  test("다른 ADR 폴더의 대체 관계는 접두와 함께 적고, 같은 폴더는 번호만 적는다", () => {
+    const root = repo({
+      "README.md": "# 가\n",
+      "docs/adr/001-a.md": adr("ADR-001", "가", "- **대체된 부분**: [ADR-002](002-b.md), [ADR-001](../../modules/api/docs/adr/001-x.md), [analysis-api ADR-002](../../modules/api/docs/adr/002-y.md)\n"),
+      "docs/adr/002-b.md": adr("ADR-002", "나"),
+      "modules/api/docs/adr/001-x.md": adr("ADR-001", "다"),
+      "modules/api/docs/adr/002-y.md": adr("ADR-002", "라"),
+    });
+    assert.equal(run(root, "write-index", "--adr-dir", "docs/adr", "--adr-dir", "modules/*/docs/adr").code, 0);
+    const text = readFileSync(join(root, "docs/adr/INDEX.md"), "utf8");
+    assert.match(text, /\| \[ADR-001\]\(001-a\.md\) \| 가 \| accepted \| \[ADR-002\]\(002-b\.md\), \[api ADR-001\]\(\.\.\/\.\.\/modules\/api\/docs\/adr\/001-x\.md\), \[analysis-api ADR-002\]\(\.\.\/\.\.\/modules\/api\/docs\/adr\/002-y\.md\) \|/);
+    assert.equal(run(root, "check", "--index", "generated", "--adr-dir", "docs/adr", "--adr-dir", "modules/*/docs/adr").code, 0);
+  });
+
   test("제목에 다른 식별자와 링크가 든 ADR 도 생성 색인 뒤 검사가 0 이다", () => {
     const root = repo({
       "docs/adr/001-a.md": adr("ADR-001", "가"),
