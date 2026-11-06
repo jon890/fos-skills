@@ -25,7 +25,7 @@
 //
 // HTML 해석: Node 에 내장 해석기가 없어 이 파일에 작은 해석기를 둔다. 옛 Python html.parser 와 같은 규칙으로
 //   태그를 열고 닫고, script·style(과 title·textarea)의 안쪽은 끝 태그까지 글로 보고, 글과 속성 값의 문자 참조를 푼다.
-//   이름 문자 참조는 자주 쓰는 것(ENTITIES)만 풀고 모르는 이름은 그대로 둔다.
+//   이름 문자 참조는 entities.ts 의 HTML5 표(2231개)로 푼다.
 //
 // 종료 코드: 0 통과, 1 위반, 2 검사기가 돌지 못함 (인자가 틀렸거나 파일이 없음, --korean 에서 korean-check 를 못 찾음)
 
@@ -34,6 +34,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync, writeSync } f
 import { homedir, tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { HTML5 } from './entities.ts'
 import { PY_SPACE, pyReadText } from './kit/py.ts'
 
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
@@ -95,44 +96,28 @@ function write(fd: 1 | 2, text: string): void {
 
 // ── 문자 참조 ──
 
-const ENTITIES: Record<string, string> = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\xa0', copy: '©', reg: '®', trade: '™', hellip: '…', mdash: '—', ndash: '–', lsquo: '‘', rsquo: '’',
-  ldquo: '“', rdquo: '”', bull: '•', middot: '·', rarr: '→', larr: '←', uarr: '↑', darr: '↓', harr: '↔', times: '×', divide: '÷', plusmn: '±', deg: '°',
-  laquo: '«', raquo: '»', euro: '€', cent: '¢', pound: '£', yen: '¥', sect: '§', para: '¶', micro: 'µ', ne: '≠', le: '≤', ge: '≥', infin: '∞', check: '✓',
-  sup1: '¹', sup2: '²', sup3: '³', frac12: '½', frac14: '¼', frac34: '¾', shy: '\xad', ensp: ' ', emsp: ' ', thinsp: ' ', zwj: '‍', zwnj: '‌',
-  lrarr: '⇆', rArr: '⇒', lArr: '⇐', hArr: '⇔', minus: '−', radic: '√', sum: '∑', asymp: '≈', equiv: '≡', hearts: '♥', star: '☆', starf: '★', AMP: '&', LT: '<', GT: '>', QUOT: '"',
-}
-// 끝의 ; 없이도 푸는 이름(HTML 의 옛 이름)
-const LEGACY = new Set(['amp', 'lt', 'gt', 'quot', 'nbsp', 'copy', 'reg', 'deg', 'laquo', 'raquo', 'middot', 'plusmn', 'times', 'divide', 'sect', 'para', 'micro', 'cent', 'pound', 'yen', 'sup1', 'sup2', 'sup3', 'frac12', 'frac14', 'frac34', 'shy', 'AMP', 'LT', 'GT', 'QUOT'])
 const CP1252 = [0x20ac, 0x81, 0x201a, 0x192, 0x201e, 0x2026, 0x2020, 0x2021, 0x2c6, 0x2030, 0x160, 0x2039, 0x152, 0x8d, 0x17d, 0x8f, 0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x2dc, 0x2122, 0x161, 0x203a, 0x153, 0x9d, 0x17e, 0x178]
 
 function invalidCodepoint(num: number): boolean {
   return (num >= 0x1 && num <= 0x8) || num === 0xb || (num >= 0xe && num <= 0x1f) || (num >= 0x7f && num <= 0x9f) || (num >= 0xfdd0 && num <= 0xfdef) || (num & 0xfffe) === 0xfffe
 }
 
-function lookup(name: string): string | undefined {
-  const base = name.endsWith(';') ? name.slice(0, -1) : name
-  if (!Object.hasOwn(ENTITIES, base)) return undefined
-  return name.endsWith(';') || LEGACY.has(base) ? ENTITIES[base] : undefined
-}
-
-// html.unescape. 숫자 참조와 ENTITIES 의 이름 참조를 푼다
+// html.unescape. 숫자 참조와 HTML5 이름 참조를 푼다. 이름은 정확히 맞는 것을 먼저, 없으면 가장 긴 앞부분(;없는 옛 이름)을 푼다
 export function unescape(text: string): string {
   return text.replace(/&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)/g, (all, s: string) => {
     if (s[0] === '#') {
       const num = s[1] === 'x' || s[1] === 'X' ? Number.parseInt(s.slice(2).replace(/;$/, ''), 16) : Number.parseInt(s.slice(1).replace(/;$/, ''), 10)
-      if (num === 0) return '�'
+      if (num === 0) return '\ufffd'
       if (num === 0x0d) return '\r'
       if (num >= 0x80 && num <= 0x9f) return String.fromCodePoint(CP1252[num - 0x80])
-      if ((num >= 0xd800 && num <= 0xdfff) || num > 0x10ffff) return '�'
+      if ((num >= 0xd800 && num <= 0xdfff) || num > 0x10ffff) return '\ufffd'
       if (invalidCodepoint(num)) return ''
       return String.fromCodePoint(num)
     }
-    const exact = lookup(s)
-    if (exact !== undefined) return exact
+    if (Object.hasOwn(HTML5, s)) return HTML5[s]
     for (let x = s.length - 1; x > 1; x--) {
-      const prefix = lookup(s.slice(0, x))
-      if (prefix !== undefined) return prefix + s.slice(x)
+      const prefix = s.slice(0, x)
+      if (Object.hasOwn(HTML5, prefix)) return HTML5[prefix] + s.slice(x)
     }
     return all
   })
@@ -238,14 +223,26 @@ export function parseHtml(text: string, handlers: Handlers): void {
       i = parsed.end
     } else if (next === '/') {
       const gt = text.indexOf('>', i)
-      if (gt < 0) break
+      if (gt < 0) {
+        // 끝에서 잘린 `</` 는 글이고, `</p` 처럼 글자가 이어지면 버린다
+        if (i + 2 === n) handlers.data('</', lineAt(i))
+        break
+      }
       const named = /^<\/([a-zA-Z][^\t\n\r\f />\0]*)/.exec(text.slice(i, gt + 1))
       // `</` 뒤에 글자가 없으면 주석처럼 읽어 건너뛴다
       if (named) handlers.end(named[1].toLowerCase(), lineAt(i))
       i = gt + 1
     } else if (text.startsWith('<!--', i)) {
-      const close = text.indexOf('-->', i + 4)
-      i = close < 0 ? n : close + 3
+      // 닫는 꼴은 `-->` 와 `--!>` 다. 뒤에 그런 꼴이 없을 때만 `<!-->`, `<!--->` 가 빈 주석으로 닫힌다
+      const close = /--!?>/.exec(text.slice(i + 4))
+      if (close) i = i + 4 + close.index + close[0].length
+      else if (text[i + 4] === '>') i += 5
+      else if (text.startsWith('->', i + 4)) i += 6
+      else i = n
+    } else if (text.startsWith('<![CDATA[', i)) {
+      const close = text.indexOf(']]>', i + 9)
+      if (close < 0) break
+      i = close + 3
     } else if (next === '!' || next === '?') {
       const gt = text.indexOf('>', i)
       if (gt < 0) break

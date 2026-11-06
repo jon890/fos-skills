@@ -201,6 +201,26 @@ describe('--text', () => {
     assert.deepEqual(done.stdout, 'a b & cAB &unknownref; d e\n')
   })
 
+  test('HTML5 이름 참조를 모두 푼다', (t) => {
+    const s = setup(t)
+    const done = s.run('--text', s.write('<html><body><p>&alpha; &eacute; &notit; &Eacute; &lrarr; &#x1F600;</p></body></html>'))
+    assert.equal(done.stdout, 'α é ¬it; É ⇆ 😀\n')
+  })
+
+  test('주석은 닫는 꼴 `-->`, `--!>` 까지이고 뒤에 그런 꼴이 없을 때만 `<!-->` 가 빈 주석이다', (t) => {
+    const s = setup(t)
+    assert.equal(s.run('--text', s.write('<html><body><!-- a --!> <p>b</p> --></body></html>')).stdout, 'b\n-->\n')
+    assert.equal(s.run('--text', s.write('<html><body><!--><p>b</p></body></html>')).stdout, 'b\n')
+    assert.equal(s.run('--text', s.write('<html><body><!--><p>b</p> --><i>c</i></body></html>')).stdout, 'c\n')
+  })
+
+  test('CDATA 구역은 `]]>` 까지 건너뛰고, 끝에서 잘린 `</` 는 글이다', (t) => {
+    const s = setup(t)
+    assert.equal(s.run('--text', s.write('<html><body><![CDATA[ <p> ]]><p>b</p></body></html>')).stdout, 'b\n')
+    assert.equal(s.run('--text', s.write('<p>x</')).stdout, 'x</\n')
+    assert.equal(s.run('--text', s.write('<p>x</p')).stdout, 'x\n')
+  })
+
   test('인라인 요소는 줄을 나누지 않고 br 은 나눈다', (t) => {
     const s = setup(t)
     const done = s.run('--text', s.write('<html><body><p>앞 <b>굵게</b> 뒤<br>다음 줄</p><ul><li>하나</li><li>둘</li></ul><pre>숨김</pre><template>숨김2</template></body></html>'))
