@@ -50,6 +50,7 @@
 
 | 절 | 키 | 담는 것 |
 | --- | --- | --- |
+| `routing` | `review_author`, `review_pattern`, `size_pattern` | PR 관측값을 읽을 자동 리뷰 계정과 본문 꼴. 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다 |
 | `finish` | `gh_host` | gh 에 줄 호스트. github.com 이 아닌 저장소에서만 |
 | `finish` | `run` | worker 를 찾을 Orca Run id |
 | `finish` | `base_branch` | `cleanup-sweep.ts` 의 기준 브랜치. 없으면 origin/HEAD |
@@ -245,6 +246,26 @@ orch doctor migrate --repo "$REPO" --apply
 `dirs`는 `reserve-migration.ts`가 SQL 파일 경로를 만드는 자리이고 자동 감시에도 들어간다. `watch`는 같은 모듈에 더할 감시 폴더 목록이다. 따라서 위 설정은 Java 경로의 Flyway 번호도 SQL 예약과 같은 번호 공간으로 본다.
 Java 마이그레이션은 `reserve-migration.ts --kind java` 로 받는다. 그 모듈의 `watch` 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 를 낸다. Flyway 는 클래스 이름을 파일 이름으로 쓰므로 이름은 대소문자를 지키고, Java 식별자가 아니면 사용법 오류다.
 `watch`에만 적은 모듈은 `--kind java` 로만 예약할 수 있다.
+
+### 모델 선택 관측 설정
+
+`routing` 절은 이 절을 지원하는 새 번들을 설치한 뒤 저장소 `config.json`에 더한다.
+옛 번들은 모르는 최상위 절을 설정 오류로 거부한다.
+키와 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다.
+
+```json
+{
+  "routing": {
+    "review_author": "review-bot[bot]",
+    "size_pattern": "PR 크기 등급: \\**([A-D])"
+  }
+}
+```
+
+`review_pattern`을 생략하면 P1~P5가 열 머리인 Markdown 표에서 첫 수 행을 읽는다.
+다른 표를 쓰는 저장소는 P1부터 P5까지의 수를 차례로 캡처하는 정규식을 준다.
+등급을 읽을 꼴이 없으면 `size_grade`는 null이다.
+본문·질문 글·금액은 기록하지 않는다.
 
 ### 자동 머지 리뷰 조건
 

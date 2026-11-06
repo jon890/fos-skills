@@ -544,7 +544,13 @@ async function main(argv: string[]): Promise<number> {
   const terminalLaunch = reusedTerminal
     ? latestTerminal(retryRepo, reusedTerminal) ?? launchesAt(retryRepo, a.worktree.replace(/^path:/, '')).filter(row => row.terminal === reusedTerminal).at(-1) ?? null
     : null
-  const continuation = !!a.task || !!terminalLaunch && (!terminalLaunch.spec || realPath(terminalLaunch.spec) === realPath(a.spec))
+  const priorSelection = terminalLaunch ?? retryLaunch
+  const sameSpec = !!priorSelection && (!priorSelection.spec || realPath(priorSelection.spec) === realPath(a.spec))
+  const sameSettings = !!priorSelection && ['agent', 'model', 'effort'].every(name => {
+    const previous = priorSelection[name as 'agent' | 'model' | 'effort'] ?? null
+    return reusedTerminal || previous === passValue(passthru, `--${name}`)
+  })
+  const continuation = sameSpec && sameSettings
   const reuseOpts = passthru.filter((x) => x === '--agent' || x === '--model' || x === '--effort')
   if (passthru.includes('--terminal') && reuseOpts.length > 0) {
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)

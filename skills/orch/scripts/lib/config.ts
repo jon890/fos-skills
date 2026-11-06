@@ -24,10 +24,10 @@ import { isFile } from './fs.ts'
 import { pathOf } from './paths.ts'
 import { shQuote } from './py.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'board' | 'review' | 'docker'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'board' | 'review' | 'docker' | 'routing'
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'board', 'review', 'docker']
+const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'board', 'review', 'docker', 'routing']
 
 export class ConfigError extends Error {}
 
@@ -91,6 +91,9 @@ export const BOARD_KEYS: readonly string[] = ['steps', 'done_after', 'task_line'
 
 // review 절의 아는 키. docs/data-schema.md 「config.json 에 더하는 절」 표의 review 행이다. launch-worker 가 리뷰 worker 를 띄울 때 읽는다.
 export const REVIEW_KEYS: readonly string[] = ['prepare']
+
+// PR 종료 관측값의 저장소별 읽기 규칙.
+export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern', 'size_pattern']
 
 // event 는 그 키가 하던 일을 옮겨 받을 핸들러의 이벤트 이름이다(<orch 루트>/hooks/<event>.ts).
 export const REMOVED_CONFIG_KEYS: ReadonlyArray<{ section: Section; key: string; event: string }> = [

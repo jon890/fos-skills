@@ -543,6 +543,28 @@ describe('선택 정책과 영구 이력', () => {
     })
   }
 
+  test('옛 지시서라도 모델을 바꿔 재시도하면 행이 필요하다', () => {
+    select('claude', 'claude-sonnet-5-5', 'medium')
+    writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-planned.', ''))
+    recordHistory(tmp, prior({ spec }))
+    const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'claude', '--model', 'claude-sonnet-5-5', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stderr, /행/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
+  })
+
+  for (const change of ['effort', 'spec'] as const) {
+    test(`옛 선택 줄도 ${change}를 바꿔 재시도하면 행이 필요하다`, () => {
+      select('codex', 'gpt-6.1-sol', change === 'effort' ? 'high' : 'medium')
+      writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-planned.', ''))
+      recordHistory(tmp, prior({ spec: change === 'spec' ? join(tmp, 'previous-spec.md') : spec }))
+      const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', change === 'effort' ? 'high' : 'medium'], 'bash', false)
+      assert.equal(r.code, 1, both(r))
+      assert.match(r.stderr, /행/)
+      assert.deepEqual(lines('orca orchestration worker-start'), [])
+    })
+  }
+
   test('이력의 마지막 손상 줄은 경고하고 정상 dispatch 로 다시 띄운다', () => {
     select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_old.')
     recordHistory(tmp, prior({ agent: 'claude', model: 'claude-opus-5-5' }))
