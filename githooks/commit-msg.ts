@@ -14,10 +14,11 @@
 // 설치: node scripts/install-hooks.ts
 
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { normalizeNewlines, pySplitLines, pyStrip } from '../modules/kit/py.ts'
+import { isFile } from '../scripts/skill_paths.ts'
 
 const SCISSORS = '------------------------ >8 ------------------------'
 
@@ -29,14 +30,6 @@ export function messageText(text: string): string {
     kept.push(line)
   }
   return kept.join('\n') + '\n'
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile()
-  } catch {
-    return false
-  }
 }
 
 export function main(argv: string[]): number {

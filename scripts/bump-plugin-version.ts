@@ -35,7 +35,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../modules/kit/args.ts'
-import { normalizeNewlines, PY_SPACE, pyReadText, pySplitLines } from '../modules/kit/py.ts'
+import { normalizeNewlines, PY_SPACE, pyReadText, pyInt, pySplitLines, pyStrCompare } from '../modules/kit/py.ts'
 import { applyFragments, type Applied, CHANGES_DIR, todaySeoul, UNIT_ROOTS } from './skill_changes.ts'
 
 const ROOT = join(import.meta.dirname, '..')
@@ -81,7 +81,7 @@ function fileAt(ref: string, path: string, root: string): string {
 export function bump(version: string, level: string): string {
   const match = SEMVER.exec(version || '')
   if (!match) throw new Fatal(`bump-plugin-version: ${MANIFEST} 의 version 이 X.Y.Z 가 아니에요: '${version}'`)
-  const [major, minor, patch] = match.slice(1, 4).map(Number)
+  const [major, minor, patch] = match.slice(1, 4).map(pyInt)
   if (level === 'major') return `${major + 1}.0.0`
   if (level === 'minor') return `${major}.${minor + 1}.0`
   return `${major}.${minor}.${patch + 1}`
@@ -136,7 +136,7 @@ function prNumbers(base: string, head: string, root: string): string[] {
 function summary(entries: Applied[], changed: string[], prs: string[]): string {
   let body: string
   if (entries.length > 0) body = entries.map(([skill, version]) => `${skill} ${version}`).join(', ')
-  else body = '바뀐 곳: ' + [...new Set(changed.map((path) => path.split('/')[0]))].sort().join(', ')
+  else body = '바뀐 곳: ' + [...new Set(changed.map((path) => path.split('/')[0]))].sort(pyStrCompare).join(', ')
   const refs = prs.map((number) => `#${number}`).join(' ')
   return `- ${body}` + (refs ? ` (${refs})` : '')
 }

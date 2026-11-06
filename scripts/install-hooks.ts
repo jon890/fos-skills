@@ -12,7 +12,7 @@
 //
 // 사용: node scripts/install-hooks.ts
 // 출력: 건 훅마다 `  걸었다: <이름>`
-// 종료 코드: 0 걸었다, 1 git 이 공용 폴더를 알려 주지 못했다, 2 원본 체크아웃에 githooks/ 가 없다
+// 종료 코드: 0 걸었다, 2 원본 체크아웃에 githooks/ 가 없다, 그 밖은 git 이 공용 폴더를 알려 주지 못했을 때 git 의 종료 코드
 
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
@@ -25,8 +25,9 @@ const HERE = join(import.meta.dirname, '..')
 export function main(): number {
   const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: HERE, encoding: 'utf8' })
   if (common.error || common.status !== 0) {
-    process.stderr.write(`git 공용 폴더를 찾지 못했다: ${common.stderr ?? common.error}\n`)
-    return 1
+    // 옛 셸은 set -e 로 git 의 종료 코드를 그대로 냈다
+    process.stderr.write(common.stderr ?? `${common.error}\n`)
+    return common.status ?? 1
   }
   const commonDir = common.stdout.trim()
   const src = join(dirname(commonDir), 'githooks')
@@ -38,7 +39,7 @@ export function main(): number {
   mkdirSync(dst, { recursive: true })
   for (const name of readdirSync(src).sort()) {
     const hook = join(src, name)
-    if (name.startsWith('.') || name.includes('.') || !isFile(hook)) continue
+    if (name.includes('.') || !isFile(hook)) continue
     rmSync(join(dst, name), { force: true })
     symlinkSync(hook, join(dst, name))
     process.stdout.write(`  걸었다: ${name}\n`)

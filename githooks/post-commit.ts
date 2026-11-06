@@ -15,21 +15,14 @@
 // 설치: node scripts/install-hooks.ts
 
 import { spawnSync } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isFile } from '../scripts/skill_paths.ts'
 import { pySplitLines } from '../modules/kit/py.ts'
 import { sharedLists } from '../scripts/export-lists.ts'
 
 const SYNC_NAME = 'scripts/export-to-team.ts'
 const DRIFT = /^ {2}(다름|없음|남음) /
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile()
-  } catch {
-    return false
-  }
-}
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

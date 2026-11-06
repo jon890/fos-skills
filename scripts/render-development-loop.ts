@@ -11,12 +11,13 @@
 // 종료 코드: 0 만들었다, 1 mmdc 가 실패했거나 90초를 넘겼다, 2 사용법 오류나 README 에 Mermaid 원본이 없다
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../modules/kit/args.ts'
+import { pyReadText } from '../modules/kit/py.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const USAGE = 'usage: render-development-loop.ts [-h] [--mmdc MMDC] [--puppeteer-config PUPPETEER_CONFIG] [--preview PREVIEW]'
@@ -53,7 +54,8 @@ export function main(argv: string[], root: string = ROOT): number {
     process.stdout.write(`${USAGE}\n\nREADME 의 Mermaid 원본에서 손그림 SVG 를 다시 만든다. 자세한 것은 이 파일의 머리 주석에 있다.\n`)
     return 0
   }
-  const source = /^```mermaid\n([\s\S]*?)\n```/m.exec(readFileSync(join(root, 'README.md'), 'utf8').replace(/\r\n?/g, '\n'))
+  // re.M | re.S 의 ^ 다. JS 의 m 플래그는 \r, \u2028 도 줄 경계로 본다
+  const source = /(?<![^\n])```mermaid\n([\s\S]*?)\n```/.exec(pyReadText(join(root, 'README.md')))
   if (!source) return usageError('README 에 Mermaid 원본이 없다')
   const output = join(root, 'docs/images/development-loop.svg')
   mkdirSync(dirname(output), { recursive: true })

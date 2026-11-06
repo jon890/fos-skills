@@ -31,6 +31,7 @@ import {
 } from 'node:fs'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isDir } from './skill_paths.ts'
 
 const REPO_DIR = join(import.meta.dirname, '..')
 const FAKE_URL = 'https://marketplace.test/fos-skills.git'
@@ -195,14 +196,16 @@ function check(T: string): number {
   // 스킬 인식
   r = run(['claude', 'plugin', 'details', PLUGIN_ID], { env })
   const skillsLine = r.out.split('\n').find((line) => /Skills \([0-9]+\)/.test(line)) ?? ''
-  const count = /Skills \(([0-9]+)\)/.exec(skillsLine)?.[1] ?? ''
+  // 옛 sed 의 탐욕 매칭처럼 줄의 마지막 Skills (N) 을 고른다
+  const count = /.*Skills \(([0-9]+)\)/.exec(skillsLine)?.[1] ?? ''
   const missing = skills.filter((name) => !skillsLine.includes(basename(name)))
   if (r.rc === 0 && count === String(expected) && missing.length === 0) ok(`스킬 인식: ${count}개가 모두 인식된다`)
   else fail(`스킬 인식: 기대 ${expected}개, 인식 ${count || '없음'}개, 빠진 이름:${missing.length ? missing.map((n) => ` ${n}`).join('') : ' 없음'}`, r.out)
 
   // 캐시 디렉터리
   const cacheRoot = join(config, 'plugins/cache/fos-skills/fos-skills')
-  const caches = existsSync(cacheRoot) ? readdirSync(cacheRoot).filter((name) => lstatSync(join(cacheRoot, name)).isDirectory()).sort() : []
+  // 옛 셸의 "$CACHE_ROOT"/* 와 [ -d ] 다. 점으로 시작하는 이름은 빼고 링크는 따라간다
+  const caches = existsSync(cacheRoot) ? readdirSync(cacheRoot).filter((name) => !name.startsWith('.') && isDir(join(cacheRoot, name))).sort() : []
   const version = manifest.version
   let cache = ''
   if (caches.length === 1 && caches[0] === version) {

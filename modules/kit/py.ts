@@ -8,11 +8,13 @@
 //                     keepends 면 줄 끝 글자를 남긴다. 끝이 줄바꿈이면 빈 줄을 더하지 않는다
 //     pyLen           len(str). UTF-16 단위가 아니라 코드 포인트 수다
 //     pyHead          str[:n]. 앞 n 개 코드 포인트다
-//     pyReadText      Path.read_text() 와 subprocess(text=True). 둘 다 줄바꿈을 \r\n, \r 에서 \n 으로 바꿔 읽는다
+//     pyReadText      Path.read_text() 와 subprocess(text=True). 둘 다 줄바꿈을 \r\n, \r 에서 \n 으로 바꿔 읽는다.
+//                     UTF-8 이 아닌 바이트는 옛 명령처럼 오류로 멈춘다(pyDecode)
 //     PY_SPACE        str 정규식의 \s 와 str.isspace 가 공백으로 보는 글자의 클래스. JS 의 \s 와 달리 \x1c~\x1f, \x85 가 들고 \ufeff 가 빠진다
 //     pyStrip         str.strip(). PY_SPACE 의 글자를 양끝에서 지운다
 //     정규식의 re.M 은 플래그 없이 ^ 를 (?<![^\n]), $ 를 (?![^\n]) 로 쓴다. JS 의 m 플래그는 \r, \u2028 도 줄 경계로 본다.
 //     re.M 없는 $ 는 끝 또는 끝 줄바꿈 앞이라 (?=\n?$) 로 쓴다
+//     pyInt           int(str). \p{Nd} 숫자(아랍 숫자 등)도 값으로 읽는다. 정규식이 \d 를 \p{Nd} 로 옮긴 자리의 짝이다
 //     pyStrCompare    str 의 < 비교. 코드 포인트 순이다
 //     pyPathCompare   sorted(Path 목록) 의 비교. 같은 뿌리 아래 상대 경로를 / 로 나눈 조각 단위로 견준다.
 //                     그래서 a/b 가 a-c 보다 앞이다(문자열 비교는 - 가 / 보다 앞이다)
@@ -91,7 +93,12 @@ export function shSplit(text: string): string[] {
 }
 
 export function pyReadText(path: string): string {
-  return normalizeNewlines(readFileSync(path, 'utf8'))
+  return normalizeNewlines(pyDecode(readFileSync(path)))
+}
+
+// bytes.decode('utf-8'). 잘못된 바이트는 U+FFFD 로 바꾸지 않고 던진다. BOM 은 지우지 않는다
+export function pyDecode(bytes: Uint8Array): string {
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
 }
 
 export function normalizeNewlines(text: string): string {
@@ -127,6 +134,26 @@ export function pyLen(text: string): number {
 
 export function pyHead(text: string, n: number): string {
   return Array.from(text).slice(0, n).join('')
+}
+
+const DIGIT = /^\p{Nd}$/u
+
+// 유니코드의 십진 숫자는 0~9 가 이어진 자리에 열 개씩 놓여 있다. 이어진 숫자 줄의 처음에서 떨어진 거리를 10 으로 나눈 나머지가 값이다
+function digitValue(ch: string): number {
+  let cp = ch.codePointAt(0)!
+  if (cp >= 0x30 && cp <= 0x39) return cp - 0x30
+  const start = cp
+  while (DIGIT.test(String.fromCodePoint(cp - 1))) cp--
+  return (start - cp) % 10
+}
+
+export function pyInt(text: string): number {
+  let value = 0
+  for (const ch of text) {
+    if (!DIGIT.test(ch)) throw new Error(`정수가 아니다: ${JSON.stringify(text)}`)
+    value = value * 10 + digitValue(ch)
+  }
+  return value
 }
 
 export function pyStrCompare(a: string, b: string): number {

@@ -206,6 +206,14 @@ describe('export-to-team 이 내보내지 않는 파일과 권한', () => {
     }
   })
 
+  test('UTF-8 이 아닌 Markdown 은 깨진 글자로 내보내지 않고 1 로 멈춘다', (t) => {
+    const e = setup(t)
+    mkdirSync(join(e.repo, e.skill, 'zz'), { recursive: true })
+    writeFileSync(join(e.repo, e.skill, 'zz', 'bad.md'), Buffer.from([0x61, 0xff, 0x0a]))
+    assert.equal(run(e, '--apply').code, 1)
+    assert.ok(!existsSync(join(e.team, 'skills', e.skill, 'zz', 'bad.md')))
+  })
+
   test('실행 비트를 함께 옮긴다', (t) => {
     const e = setup(t)
     write(join(e.repo, e.skill, 'run.sh'), 'x\n')

@@ -34,7 +34,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PY_SPACE, pyPathCompare, pyReadText, pySplitLines } from '../modules/kit/py.ts'
+import { PY_SPACE, pyDecode, pyPathCompare, pyReadText, pySplitLines } from '../modules/kit/py.ts'
 import { isDir, isFile, SKILL_ROOTS, sourcePath } from './skill_paths.ts'
 
 // 팀 저장소로 내보내는 스킬. 늘어나면 여기에 추가한다
@@ -132,7 +132,7 @@ function escapeRegExp(text: string): string {
 function rendered(repo: string, pairs: Pair[], src: string, rel: string): Buffer {
   const raw = readFileSync(src)
   if (posix.extname(posix.basename(src)) !== '.md' || rel.split('/').includes('tests')) return raw
-  let text = raw.toString('utf8')
+  let text = pyDecode(raw)
   if (rel === 'SKILL.md') text = toTeamFrontmatter(text)
   // 원본의 두 스킬 루트를 팀의 skills/ 한곳으로 내보낼 때 상대 참조도 함께 옮긴다
   const sourceFile = src.slice(repo.length + 1)
@@ -202,7 +202,7 @@ function pathlibForm(path: string): string {
 function exportFiles(repo: string, teamDir: string, apply: boolean): number {
   const team = pathlibForm(teamDir)
   const pairs: Pair[] = [
-    ...SHARED_SKILLS.map((name): Pair => [sourcePath(repo, name).slice(repo.length + 1).split('\\').join('/'), `skills/${name}`]),
+    ...SHARED_SKILLS.map((name): Pair => [sourcePath(repo, name).slice(repo.length + 1), `skills/${name}`]),
     ...SHARED_TOOLS.map((name): Pair => [`tools/${name}`, `tools/${name}`]),
   ]
 

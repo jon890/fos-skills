@@ -9,7 +9,7 @@
 import { spawnSync } from 'node:child_process'
 import { readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
-import { normalizeNewlines, pyHead, pyLen, pyReadText, pySplitLines, pyStrCompare, pyStrip, PY_SPACE } from '../modules/kit/py.ts'
+import { normalizeNewlines, pyHead, pyInt, pyLen, pyReadText, pySplitLines, pyStrCompare, pyStrip, PY_SPACE } from '../modules/kit/py.ts'
 import { isDir, isFile, SKILL_ROOTS, sortedChildren } from './skill_paths.ts'
 
 export const UNIT_ROOTS = [...SKILL_ROOTS, 'extensions'] as const
@@ -78,7 +78,7 @@ export function checkChanges(root: string): string[] {
 }
 
 export function nextVersion(version: string, level: string): string {
-  const [major, minor, patch] = version.split('.').map(Number)
+  const [major, minor, patch] = version.split('.').map(pyInt)
   if (level === 'minor') return `${major}.${minor + 1}.0`
   return `${major}.${minor}.${patch + 1}`
 }

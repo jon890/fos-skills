@@ -11,7 +11,7 @@
 
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PY_SPACE, pyHead, pyLen, pyReadText, pySplitLines, pyStrCompare, pyStrip } from '../modules/kit/py.ts'
+import { PY_SPACE, pyHead, pyInt, pyLen, pyReadText, pySplitLines, pyStrCompare, pyStrip } from '../modules/kit/py.ts'
 import { checkChanges } from './skill_changes.ts'
 import { skillDirs, sourcePath } from './skill_paths.ts'
 
@@ -73,17 +73,17 @@ export function checkChangelog(name: string, text: string, skillVersion: string)
   const first = VERSION_HEADING.exec(sections[0][0])
   if (!first) return [...problems, `첫 절 \`## ${sections[0][0]}\` 이 \`## X.Y.Z (YYYY-MM-DD)\` 꼴이 아니다`]
   if (sections[0][0].split(new RegExp(`${PY_SPACE}+`))[0] !== skillVersion) problems.push(`첫 절의 버전이 SKILL.md 의 ${skillVersion} 과 다르다`)
-  const current = Number(first[1])
+  const current = pyInt(first[1])
   for (const [heading, body] of sections) {
     const version = VERSION_HEADING.exec(heading)
     const summary = SUMMARY_HEADING.exec(heading)
     let limit: number
     if (version) {
       limit = MAX_VERSION_BULLETS
-      if (Number(version[1]) !== current) problems.push(`\`## ${heading}\`: 이전 major 는 \`## ${version[1]}.x\` 한 절로 줄인다`)
+      if (pyInt(version[1]) !== current) problems.push(`\`## ${heading}\`: 이전 major 는 \`## ${version[1]}.x\` 한 절로 줄인다`)
     } else if (summary) {
       limit = MAX_SUMMARY_BULLETS
-      if (Number(summary[1]) >= current) problems.push(`\`## ${heading}\`: 현재 major 는 버전마다 절을 둔다`)
+      if (pyInt(summary[1]) >= current) problems.push(`\`## ${heading}\`: 현재 major 는 버전마다 절을 둔다`)
     } else {
       problems.push(`\`## ${heading}\`: \`X.Y.Z (YYYY-MM-DD)\` 나 \`N.x\` 꼴이 아니다`)
       continue
