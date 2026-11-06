@@ -14,7 +14,7 @@
 봇의 발견사항이 리뷰 스레드로 달렸는지 인라인 댓글로 달렸는지 먼저 본다. 변수와 명령은 `SKILL.md` 의 「회신」, 「마무리」 단계가 소유한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/review_threads.py" list "$OWNER" "$REPO" "$PR"
+node "$SKILL_DIR/scripts/review_threads.ts" list "$OWNER" "$REPO" "$PR"
 ```
 
 | 상태 | 회신 경로 |
@@ -34,7 +34,7 @@ python3 "$SKILL_DIR/scripts/review_threads.py" list "$OWNER" "$REPO" "$PR"
 
 ```bash
 COMMENT_ID=""
-gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" \
+gh api --hostname "$(node "$SKILL_DIR/scripts/gh_host.ts" "$OWNER" "$REPO")" \
   "repos/$OWNER/$REPO/pulls/$PR/comments/$COMMENT_ID/replies" \
   -X POST -F body=@"$BODY"
 ```
@@ -70,7 +70,7 @@ gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" 
 
 ## 등록 전 검사
 
-`check_reply_body.py` 를 본문 파일마다 돌린다. 명령과 종료 코드는 `SKILL.md` 의 「회신」 단계가 소유하고, 걸리는 것과 대응은 그 스크립트가 소유한다.
+`check_reply_body.ts` 를 본문 파일마다 돌린다. 명령과 종료 코드는 `SKILL.md` 의 「회신」 단계가 소유하고, 걸리는 것과 대응은 그 스크립트가 소유한다.
 
 의도한 참조인지 사고인지는 자동으로 가릴 수 없다.
 걸린 위치를 사용자에게 보여주고 구조화 질문 도구가 있으면 그것으로 확인받는다.
@@ -82,6 +82,6 @@ gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" 
 
 ```bash
 COMMENT_ID=""   # 교체할 댓글 id. 인라인 댓글이면 경로가 pulls/comments/$COMMENT_ID 다
-gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" \
+gh api --hostname "$(node "$SKILL_DIR/scripts/gh_host.ts" "$OWNER" "$REPO")" \
   "repos/$OWNER/$REPO/issues/comments/$COMMENT_ID" -X PATCH -F body=@"$BODY"
 ```

@@ -138,7 +138,7 @@ worker 의 `gh pr create` 와 GitHub 회신은 권한 분류기에 자주 막힌
 
 - PR 은 그 본문 파일로 연다. 본문 끝의 서명 줄은 저장소 지침을 따른다.
   본문 파일이 없으면 브랜치 diff 를 읽고 직접 쓴 뒤 `gh pr edit --body-file` 로 넣는다
-- 리뷰 회신은 스레드 id 와 회신 파일을 받아 `review-fix` 스킬의 `review_threads.py reply` 로 달고, 반영한 스레드만 `resolve` 한다.
+- 리뷰 회신은 스레드 id 와 회신 파일을 받아 `review-fix` 스킬의 `review_threads.ts reply` 로 달고, 반영한 스레드만 `resolve` 한다.
   `reply` 와 `resolve` 는 스레드 id 만 받으므로 대상 저장소 밖에서 돌릴 때는 `--repo "$OWNER/$REPO"` 를 준다
 
 ## 자동 리뷰 workflow 를 바꾼 PR
