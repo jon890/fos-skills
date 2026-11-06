@@ -70,3 +70,37 @@ test('셸 ps 와 지연된 orca 는 실제 실행과 시간 제한을 유지한�
   assert.equal(done.code, 124)
   assert.equal(done.timedOut, true)
 })
+
+test('없는 파일과 실행 권한·셰뱅이 없는 파일은 실제 실행 결과를 유지한다', (t) => {
+  const dir = tempDir('loop-run-invalid-', t)
+  const notExecutable = join(dir, 'not-executable')
+  writeFileSync(notExecutable, `#!${process.execPath}\nprocess.exitCode = 0\n`)
+  const noShebang = join(dir, 'no-shebang')
+  writeFileSync(noShebang, 'process.exitCode = 0\n')
+  chmodSync(noShebang, 0o755)
+  for (const bin of [join(dir, 'missing'), notExecutable, noShebang]) {
+    const opts = { cwd: dir, env: { GH: bin } }
+    assert.deepEqual(statefulRun([bin], opts), runProcess([bin], opts), bin)
+  }
+})
+
+test('인자 없는 exit 은 앞서 정한 exitCode 를 유지한다', (t) => {
+  const dir = tempDir('loop-run-exit-', t)
+  const gh = linkBin(dir, 'gh', 'process.exitCode = 3; process.exit()')
+  const opts = { env: { GH: gh } }
+  assert.deepEqual(statefulRun([gh], opts), runProcess([gh], opts))
+})
+
+test('console 의 동기 출력은 가짜 stdout 과 stderr 에 모인다', (t) => {
+  const dir = tempDir('loop-run-console-', t)
+  const gh = linkBin(dir, 'gh', "console.log('value %d', 3); console.info({ ok: true }); console.warn('warn'); console.error('error')")
+  const opts = { env: { GH: gh } }
+  assert.deepEqual(statefulRun([gh], opts), runProcess([gh], opts))
+})
+
+test('상대 실행 경로는 opts.cwd 에서 실제 명령으로 실행한다', (t) => {
+  const dir = tempDir('loop-run-relative-', t)
+  linkBin(dir, 'gh', "process.stdout.write('relative\\n')")
+  const opts = { cwd: dir, env: { GH: './gh' } }
+  assert.deepEqual(statefulRun(['./gh'], opts), runProcess(['./gh'], opts))
+})
