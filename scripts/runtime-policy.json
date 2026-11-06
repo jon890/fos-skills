@@ -2,7 +2,6 @@
   "pending": [
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/orch-doctor.py" },
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/ts_shim.py" },
-    { "area": "content-preview", "prefix": "export-only-skills/content-preview/" },
     { "area": "korean-check", "prefix": "export-only-skills/korean-check/" },
     { "area": "plan", "prefix": "skills/plan/" },
     { "area": "harness-cleanup", "prefix": "skills/harness-cleanup/" },
@@ -20,7 +19,7 @@
     "skills/orch/scripts/lib/guard/gh",
     "skills/orch/scripts/lib/guard/orca"
   ],
-  "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/", "skills/report/", "skills/presentation/", "skills/browser/"],
+  "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/", "skills/report/", "skills/presentation/", "skills/browser/", "export-only-skills/content-preview/"],
   "kit_sources": ["modules/kit/"],
   "min_node": [24, 0]
 }

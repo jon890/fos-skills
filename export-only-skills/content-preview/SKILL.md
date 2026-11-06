@@ -1,7 +1,7 @@
 ---
 name: content-preview
 metadata:
-  version: "3.21.1"
+  version: "4.0.0"
 description: |
   외부에 게시하거나 등록할 본문을 등록 전에 렌더링해 사용자에게 보여준다.
   Dooray 댓글과 업무·메신저, GitHub 이슈와 PR, 메일, 슬랙 메시지, 위키가 대상이다.
@@ -31,9 +31,9 @@ description: |
 | --- | --- | --- | --- |
 | 1 | 수신자와 문체 | 누가 읽는지 정했고, 개인 문체 참조가 있으면 본문을 쓰기 전에 읽었다 | `references/persona.md` |
 | 2 | 본문 작성 | 본문 파일의 첫 줄이 새 내용이다 | `references/render-traps.md` |
-| 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.sh` |
+| 3 | 표기 검사 | 검사기가 종료 코드 0 으로 끝났다 | `scripts/style-check.ts` |
 | 4 | 검토 | 의미 점검의 통과 조건을 채웠다. 짧은 글이면 건너뛴 것을 알렸다 | [`../korean-check/references/review-axes.md`](../korean-check/references/review-axes.md) |
-| 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$PREVIEW_DIR/preview.html` 을 생성했다 | `scripts/show-preview.sh` |
+| 5 | 미리보기 | 사용자가 보는 워크트리의 탭에 새 본문이 떠 있다. dispatch 워커는 새 본문으로 `$PREVIEW_DIR/preview.html` 을 생성했다 | `scripts/show-preview.ts` |
 | 6 | 등록 | 사용자가 읽고 응답한 다음 턴이다. 이 본문의 등록을 사용자가 미리 승인했으면 그 승인이 대화에 있다 | |
 
 이 세션이 에이전트 조율 도구의 dispatch 로 일을 받았으면 5단계와 6단계는 「보는 사람이 없는 세션에서 등록할 때」 를 따른다.
@@ -81,7 +81,7 @@ head -3 "$PREVIEW_DIR/body.md"
 
 ```bash
 # cwd: 아무 곳
-bash "$SKILL_DIR/scripts/style-check.sh" "$PREVIEW_DIR/body.md"
+node "$SKILL_DIR/scripts/style-check.ts" "$PREVIEW_DIR/body.md"
 ```
 
 | 코드 | 무엇을 한다 |
@@ -98,7 +98,7 @@ bash "$SKILL_DIR/scripts/style-check.sh" "$PREVIEW_DIR/body.md"
 제목도 함께 검사한다.
 
 ```bash
-bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
+node "$SKILL_DIR/scripts/style-check.ts" --text "$TITLE"
 ```
 
 ### 4. 검토
@@ -113,7 +113,7 @@ bash "$SKILL_DIR/scripts/style-check.sh" --text "$TITLE"
 `korean-check` 가 어디 있는지는 아래 명령이 낸다.
 
 ```bash
-bash "$SKILL_DIR/scripts/style-check.sh" --where
+node "$SKILL_DIR/scripts/style-check.ts" --where
 ```
 
 ### 5. 미리보기
@@ -138,20 +138,20 @@ Dooray 의 `--mode comment` 는 댓글과 진행 기록, 주간보고에, GitHub
 
 ```bash
 # cwd: 아무 곳. $REPO 는 owner/repo 형태다
-python3 "$SKILL_DIR/scripts/dooray-preview/generate.py" \
+node "$SKILL_DIR/scripts/dooray-preview/generate.ts" \
   --mode comment --author "$AUTHOR" \
   --title "주간보고 2026년 8월 4주차" \
   --md-file "$PREVIEW_DIR/body.md" --out "$PREVIEW_DIR/preview.html"
 
-python3 "$SKILL_DIR/scripts/github-preview/generate.py" \
+node "$SKILL_DIR/scripts/github-preview/generate.ts" \
   --type pr --repo "$REPO" \
   --title "$TITLE" \
   --md-file "$PREVIEW_DIR/body.md" --out "$PREVIEW_DIR/preview.html"
 
-bash "$SKILL_DIR/scripts/show-preview.sh" "$PREVIEW_DIR/preview.html"
+node "$SKILL_DIR/scripts/show-preview.ts" "$PREVIEW_DIR/preview.html"
 ```
 
-**`show-preview.sh` 로 띄운다. 브라우저를 직접 열지 않는다.**
+**`show-preview.ts` 로 띄운다. 브라우저를 직접 열지 않는다.**
 어느 브라우저에 띄울지, 기존 탭을 어떻게 다시 쓰는지, 그렇게 하는 이유는
 그 스크립트가 소유한다.
 
@@ -163,7 +163,7 @@ bash "$SKILL_DIR/scripts/show-preview.sh" "$PREVIEW_DIR/preview.html"
 
 ```bash
 # cwd: 아무 곳
-ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview.sh" "$PREVIEW_DIR/preview.html"
+ORCA_WORKTREE="path:$HOME/projects/MyRepo" node "$SKILL_DIR/scripts/show-preview.ts" "$PREVIEW_DIR/preview.html"
 ```
 
 #### 본문이 여럿일 때
@@ -212,7 +212,7 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" bash "$SKILL_DIR/scripts/show-preview
 받은 지시문에 dispatch 머리말(`You are a dispatched worker`)이 있으면 dispatch 로 받은 것이다.
 
 **5단계는 대상 생성기로 `$PREVIEW_DIR/preview.html` 을 만드는 것까지 수행한다.**
-`show-preview.sh` 는 호출하지 않는다. 지시한 쪽이 읽을 미리보기 파일이 생성되면 5단계를 통과한다.
+`show-preview.ts` 는 호출하지 않는다. 지시한 쪽이 읽을 미리보기 파일이 생성되면 5단계를 통과한다.
 
 - 지시한 쪽이 그 본문의 등록을 지시문에 적었으면 사용자 응답을 기다리지 않고 이 턴에 등록한다. 「PR 을 연다」 가 그 예다.
   등록한 뒤 보고서에 `$PREVIEW_DIR/preview.html` 의 절대경로와 등록한 URL 을 적는다.
