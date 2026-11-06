@@ -114,6 +114,18 @@ describe('구조 검사', () => {
     assert.equal(done.stdout, `· 장 2개\n${bad('노트가 1개, 장이 2개다. 장마다 노트가 있어야 한다')}`)
   })
 
+  test('옛 내용의 글자는 Python repr 로 낸다(출력할 수 없는 글자는 이스케이프)', () => {
+    const s = setup()
+    const done = s.run([s.write(DECK.replace('<div id="pageno"></div>', '<div id="pageno">a\u00a0b\u200bc\'d</div>'))])
+    assert.equal(done.stdout, `· 장 2개\n${bad('쪽 표시(pageno) 에 옛 내용이 박혀 있다: "a\\xa0b\\u200bc\'d"')}`)
+  })
+
+  test('BOM 뒤의 첫 줄 주석은 줄 머리가 아니라 세지 않는다', () => {
+    const s = setup()
+    const done = s.run([s.write(`\ufeff<!-- 03 -->\n${DECK}`)])
+    assert.deepEqual([done.code, done.stdout], [0, '· 장 2개\n통과\n'])
+  })
+
   test('옛 하드코딩 값이 남았다', () => {
     const s = setup()
     const done = s.run([s.write(DECK.replace('<div id="pageno"></div>', '<div id="pageno">3 / 8</div>').replace('<div id="sv-body"></div>', '<div id="sv-body"><p>옛</p></div>'))])

@@ -50,7 +50,7 @@ const splitLines = (text: string) => {
   return parts
 }
 
-// Python repr(str) 의 글자. 작은따옴표를 우선하고, 제어 문자는 이스케이프한다
+// Python repr(str) 의 글자. 작은따옴표를 우선하고, 출력할 수 없는 글자(제어·서식·공백류 글자)는 이스케이프한다
 export function pyRepr(text: string): string {
   const quote = text.includes("'") && !text.includes('"') ? '"' : "'"
   let out = ''
@@ -61,8 +61,9 @@ export function pyRepr(text: string): string {
     else if (ch === '\n') out += '\\n'
     else if (ch === '\r') out += '\\r'
     else if (ch === '\t') out += '\\t'
-    else if (code < 0x20 || (code >= 0x7f && code < 0xa0)) out += `\\x${code.toString(16).padStart(2, '0')}`
-    else out += ch
+    else if (ch !== ' ' && /[\p{C}\p{Z}]/u.test(ch)) {
+      out += code < 0x100 ? `\\x${code.toString(16).padStart(2, '0')}` : code < 0x10000 ? `\\u${code.toString(16).padStart(4, '0')}` : `\\U${code.toString(16).padStart(8, '0')}`
+    } else out += ch
   }
   return `${quote}${out}${quote}`
 }
@@ -92,7 +93,7 @@ function globalBanned(prose: string): string[] | null {
 
 // 파일을 UTF-8 로 읽고 줄바꿈을 \n 으로 바꾼다. UTF-8 이 아니면 옛 명령처럼 오류로 멈춘다
 function readText(path: string): string {
-  return new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path)).replace(/\r\n?/g, '\n')
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(path)).replace(/\r\n?/g, '\n')
 }
 
 const WORD = '[\\p{L}\\p{N}_]'
@@ -207,7 +208,7 @@ function drive(driver: string, args: string[], seconds: number): { status: numbe
   const done = spawnSync(driver, args, { encoding: 'utf8', timeout: seconds * 1000, maxBuffer: 64 * 1024 * 1024 })
   if (done.error) {
     const code = (done.error as NodeJS.ErrnoException).code
-    throw new Error(code === 'ETIMEDOUT' ? `Command '${JSON.stringify([driver, ...args])}' timed out after ${seconds} seconds` : done.error.message)
+    throw new Error(code === 'ETIMEDOUT' ? `Command '[${[driver, ...args].map(pyRepr).join(', ')}]' timed out after ${seconds} seconds` : done.error.message)
   }
   return { status: done.status, stdout: done.stdout ?? '', stderr: done.stderr ?? '' }
 }
