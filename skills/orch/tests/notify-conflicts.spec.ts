@@ -213,7 +213,6 @@ beforeEach(() => {
     GIT_CEILING_DIRECTORIES: tmp,
     ORCA: join(tmp, 'orca'),
     GH: join(tmp, 'gh'),
-    ORCH_GH_CACHE: '0', // 테스트 중 바꾼 PR 목록을 매번 읽는다.
     SEND_TO_WORKER: join(tmp, 'send.ts'),
     FAKE_STATE: join(tmp, 'state.json'),
     FAKE_LOG: join(tmp, 'orca.log'),
@@ -528,6 +527,7 @@ describe('실제 notify CLI 대표 경계', () => {
   })
 
   test('충돌 없음은 0, 충돌과 알림은 1, 조회 실패는 2 다', () => {
+    env.ORCH_GH_CACHE = '0' // 이 대표 사례 안에서만 바꾼 PR 목록을 매번 읽는다.
     prs()
     const clear = notifyWith(SCRIPT, [])
     assert.equal(clear.code, 0, clear.both)
