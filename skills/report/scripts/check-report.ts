@@ -68,13 +68,16 @@ const BLOCK = new Set([
   'li', 'main', 'nav', 'ol', 'p', 'section', 'summary', 'table', 'td', 'th', 'tr', 'ul', 'br',
 ])
 const HIDDEN = new Set(['script', 'style', 'code', 'pre', 'template'])
-// 안쪽을 태그로 읽지 않는 요소. script, style 은 원문 그대로, title, textarea 는 문자 참조만 푼다
-const RAW_TEXT = new Set(['script', 'style'])
+// 안쪽을 태그로 읽지 않는 요소. script, style, xmp, iframe, noembed, noframes 는 원문 그대로, title, textarea 는 문자 참조만 푼다.
+// plaintext 는 시작 태그 뒤 파일 끝까지가 원문이다
+const RAW_TEXT = new Set(['script', 'style', 'xmp', 'iframe', 'noembed', 'noframes'])
 const RCDATA = new Set(['title', 'textarea'])
 
 const SPACE = new RegExp(PY_SPACE)
 const SPACES = new RegExp(`${PY_SPACE}+`)
 const isSpace = (ch: string | undefined) => ch !== undefined && SPACE.test(ch)
+// 태그 안의 공백. 옛 html.parser 는 NBSP 같은 글자를 속성 값에 남긴다
+const isTagSpace = (ch: string | undefined) => ch !== undefined && /[\t\n\r\f ]/.test(ch)
 
 const USAGE = `사용법:
     check-report.ts <파일.html>          검사한다
@@ -142,20 +145,20 @@ function readStartTag(text: string, from: number): { tag: string; attrs: Attrs; 
   const tag = text.slice(nameStart, i).toLowerCase()
   const attrs: Attrs = []
   for (;;) {
-    while (i < n && (isSpace(text[i]) || (text[i] === '/' && text[i + 1] !== '>'))) i++
+    while (i < n && (isTagSpace(text[i]) || (text[i] === '/' && text[i + 1] !== '>'))) i++
     if (i >= n) return null
     if (text[i] === '>') return { tag, attrs, end: i + 1, selfClosing: false }
     if (text[i] === '/') return { tag, attrs, end: i + 2, selfClosing: true }
     const attrStart = i
     i++
-    while (i < n && !isSpace(text[i]) && !'/=>'.includes(text[i])) i++
+    while (i < n && !isTagSpace(text[i]) && !'/=>'.includes(text[i])) i++
     const name = text.slice(attrStart, i).toLowerCase()
     let j = i
-    while (j < n && isSpace(text[j])) j++
+    while (j < n && isTagSpace(text[j])) j++
     let value: string | null = null
     if (text[j] === '=') {
       while (text[j] === '=') j++
-      while (j < n && isSpace(text[j])) j++
+      while (j < n && isTagSpace(text[j])) j++
       if (text[j] === '"' || text[j] === "'") {
         const close = text.indexOf(text[j], j + 1)
         if (close < 0) return null
@@ -163,7 +166,7 @@ function readStartTag(text: string, from: number): { tag: string; attrs: Attrs; 
         i = close + 1
       } else {
         const valueStart = j
-        while (j < n && text[j] !== '>' && !isSpace(text[j])) j++
+        while (j < n && text[j] !== '>' && !isTagSpace(text[j])) j++
         value = unescape(text.slice(valueStart, j))
         i = j
       }
@@ -215,6 +218,10 @@ export function parseHtml(text: string, handlers: Handlers): void {
         handlers.startend(parsed.tag, parsed.attrs, at)
       } else {
         handlers.start(parsed.tag, parsed.attrs, at)
+        if (parsed.tag === 'plaintext') {
+          if (parsed.end < n) handlers.data(text.slice(parsed.end), lineAt(parsed.end))
+          break
+        }
         if (RAW_TEXT.has(parsed.tag) || RCDATA.has(parsed.tag)) {
           raw = parsed.tag
           rawKind = RAW_TEXT.has(parsed.tag) ? 'raw' : 'rcdata'

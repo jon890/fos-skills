@@ -126,6 +126,22 @@ describe('검사', () => {
     assert.equal(done.code, 0, done.stdout)
   })
 
+  test('따옴표 없는 속성 값의 끝은 HTML 공백이라 NBSP 는 값에 남는다', (t) => {
+    const s = setup(t)
+    const done = s.run(s.write('<html><body><p id=x\u00a0>target</p><a href=#x>link</a></body></html>'))
+    assert.equal(done.code, 1)
+    assert.match(done.stdout, /: ref: #x 를 가리키지만 그 id 가 없다/)
+  })
+
+  test('xmp 같은 원문 요소 안은 태그로 읽지 않고, plaintext 는 파일 끝까지 원문이다', (t) => {
+    const s = setup(t)
+    assert.equal(s.run(s.write('<html><body><xmp><img src="https://example.com/a.png"></xmp></body></html>')).code, 0)
+    assert.equal(s.run('--text', s.write('<html><body><xmp><b>x</b></xmp><iframe><i>y</i></iframe></body></html>')).stdout, '\\<b>x</b><i>y</i>\n')
+    const plain = s.run(s.write('<html><body><plaintext>hello</plaintext></body></html>'))
+    assert.equal(plain.code, 1)
+    assert.match(plain.stdout, /<body> 가 닫히지 않았다/)
+  })
+
   test('문자 참조가 든 속성 값은 풀어서 본다', (t) => {
     const s = setup(t)
     const body = OK_BODY.replace('<nav>', '<nav id="a&amp;b"><a href="#a&amp;b">').replace('</nav>', '</a></nav>')
