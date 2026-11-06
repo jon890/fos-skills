@@ -241,7 +241,7 @@ REQ1, REQ2, REQ3, REQ6 을 맡는다. PR4·PR5 의 `withRun` 경계를 재사용
 | cleanup-sweep 의 merge·holders·reviews·docker·remote·state·routing·repos·launched 의 `runSweep` | 기존 단언·상태 파일·호출 기록을 유지한다. fixture 가 `main` 을 함수로 호출하고 동기 가짜 명령만 함수로 실행한다. 실제 git·remove-worktree·hook 은 유지한다 |
 | cleanup-sweep 를 직접 띄우는 인자·오류와 remove-worktree 경계 | 실제 진입점을 유지한다. 대표 성공·사용법 오류·실행 오류의 stdout·stderr·종료 코드를 실제 CLI 로 대조한다 |
 | notify-conflicts 의 충돌·알림·재시도·orphan·dry-run·hook | 기존 단언과 실제 git 충돌 판정을 유지하고 gh·orca 만 함수로 실행한다. send-to-worker 대역과 hook 은 실제 자식이다 |
-| 초기 저장소 상태 | cleanup-sweep 는 기존 템플릿 그대로다. notify-conflicts 템플릿에는 main upstream, origin/HEAD 와 파일 커밋 앞의 빈 커밋이 추가된다. 충돌 입력 파일과 테스트별 변경 커밋은 유지한다 |
+| 초기 저장소 상태 | cleanup-sweep 는 기존 템플릿 그대로다. notify-conflicts 의 main upstream 은 기존 empty clone 과 같고, origin/HEAD 와 파일 커밋 앞의 빈 커밋이 추가된다. 충돌 입력 파일과 테스트별 변경 커밋은 유지한다 |
 | 가짜 실행 파일과 함수의 출력·종료·기록 | 같은 본문을 양쪽에서 실행해 성공·실패·상태 변화·예외·출력·없는 경로를 대조한다 |
 
 첫 구현 커밋은 주입 자리만 더하고 기존 테스트를 그대로 실행한다(DECISION16). 다음 커밋에서 fixture 와 준비 코드를 옮긴다. 검증은 실행기로 대상 파일과 proc 회귀 테스트를 돌리고 전체 검사로 잇는다. 전후 시간과 preload 기동 수는 「측정 방법」의 명령으로 같은 머신에서 번갈아 잰다. 독립 설계·계획·코드·문서 검토는 PR 생성 뒤 코디네이터가 마련하며 그 전에는 대기로 기록한다.
