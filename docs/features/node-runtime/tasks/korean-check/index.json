@@ -1,0 +1,39 @@
+{
+  "name": "korean-check",
+  "description": "node-runtime 영역 6: korean-check 의 Python·셸 스크립트 넷과 테스트를 TypeScript 로 옮기고 옛 이름 진입 둘을 둔다",
+  "pr_scope": "korean-check 의 korean-style-check, check-readability, check-diff, check 를 같은 옵션·stdout·종료 코드의 TypeScript 로 옮긴다. 옛 이름 진입 korean-style-check.py, check-readability.py 를 node shebang JS 로 두고 runtime-policy 의 legacy 에 적는다. 스킬 문서와 README, 부르는 쪽(commit-msg 훅, content-preview 의 style-check, presentation 의 check-deck, report 의 check-report, 설치 점검)과 runtime-policy 의 korean-check 줄을 바꾼다. 명령 경계 테스트를 먼저 옛 구현에서 통과시킨 뒤 구현만 바꾼다. 영역 하나에 PR 하나다(스펙 DECISION6).",
+  "deferred": [
+    {
+      "what": "plan, harness-cleanup, mac-cleanup, browser-driver 영역과 마무리",
+      "why": "스펙 DECISION6 의 영역 하나에 PR 하나",
+      "after": "이 PR 머지"
+    },
+    {
+      "what": "다른 저장소의 옛 호출(gersang-lab, fos-study, ai-playground-docu-parser)과 사용자 홈의 `~/.claude/scripts/` 링크 둘",
+      "why": "스펙 REQ7. 링크 둘은 옛 이름 진입이 덮어 고치지 않고 PR 본문에 적는다. 나머지는 머지 뒤 코디네이터가 worker 로 고친다",
+      "after": "이 PR 머지"
+    },
+    {
+      "what": "팀 저장소 반영",
+      "why": "스펙 DECISION7. 전환이 끝난 뒤 팀 PR 하나로 한다",
+      "after": "영역 11"
+    },
+    {
+      "what": "옛 이름 진입 둘과 `legacy` 항목 삭제",
+      "why": "스펙 DECISION17. 이 저장소 다음 major 에서 지운다",
+      "after": "다음 major"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/node-runtime/spec.md",
+  "design": "docs/features/node-runtime/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": ["REQ1", "REQ2", "REQ3", "REQ4", "REQ5", "REQ6", "REQ7"],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ3", "REQ6"] },
+    { "number": 2, "file": "phase-02.md", "execution_profile": "standard", "requirements": ["REQ1", "REQ2", "REQ3", "REQ4", "REQ5", "REQ6", "REQ7"] }
+  ]
+}
