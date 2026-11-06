@@ -6,7 +6,7 @@ description: |
   "봇 코멘트 반영", "리뷰 코멘트 확인해서 수정", "리뷰 처리해줘" 같은 요청이면 이 스킬을 쓴다.
   남의 PR 에 리뷰를 새로 쓰고 등록하는 일은 `pr-review` 스킬이 설치돼 있으면 그쪽이 맡는다. 방향이 반대다.
 metadata:
-  version: "2.17.0"
+  version: "3.0.0"
 ---
 
 # review-fix
@@ -31,7 +31,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 리뷰 수집 | PR 번호와 대상 하위 프로젝트가 정해졌고 `collect_review.py` 가 내는 소스별 리뷰를 모았다 | `scripts/collect_review.py` |
+| 1 | 리뷰 수집 | PR 번호와 대상 하위 프로젝트가 정해졌고 `collect_review.ts` 가 내는 소스별 리뷰를 모았다 | `scripts/collect_review.ts` |
 | 2 | 작업 트리 정렬 | 현재 브랜치가 PR head 브랜치이고 base 브랜치 이름을 받았고 conflict 가 없다 | `references/conflict-resolution.md` |
 | 3 | 분류 | 모든 지적에 등급이 붙었고 처리 범위를 사용자가 확정했다 | `references/severity.md` |
 | 4 | 수정 | 처리하기로 한 지적이 반영되고 지적마다 커밋이 나뉘어 남았다 | `references/severity.md` |
@@ -75,7 +75,7 @@ REPO=""    # 첫 명령 출력의 repo 쪽
 PR_URL=""  # 받은 PR URL. 번호만 받았으면 대상 워크트리에서 gh pr view 로 구한다
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
 gh pr view "$PR" --json url --jq .url
-python3 "$SKILL_DIR/scripts/collect_review.py" "$PR_URL"
+node "$SKILL_DIR/scripts/collect_review.ts" "$PR_URL"
 ```
 
 **명령마다 서 있어야 할 디렉터리가 다르다.**
@@ -85,10 +85,10 @@ URL 의 호스트만 조회하므로 다른 로그인 호스트의 응답을 기
 기존 `OWNER REPO PR` 형식도 받는다. 이 형식은 origin 이 대상 저장소와 같으면 그 호스트를 먼저 쓴다.
 
 이 스킬의 스크립트는 호스트를 스스로 구한다.
-스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 아래처럼 호스트를 붙인다. 이유는 `scripts/gh_host.py` 가 소유한다.
+스크립트를 거치지 않고 `gh api` 를 직접 부를 때만 아래처럼 호스트를 붙인다. 이유는 `scripts/gh_host.ts` 가 소유한다.
 
 ```bash
-gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" "repos/$OWNER/$REPO/..."
+gh api --hostname "$(node "$SKILL_DIR/scripts/gh_host.ts" "$OWNER" "$REPO")" "repos/$OWNER/$REPO/..."
 ```
 
 **이전 PR 에서 「다음 PR 에서 반영」 으로 미룬 지적이 있으면** 그 PR 번호를 `--carried-from` 으로 준다.
@@ -96,14 +96,14 @@ gh api --hostname "$(python3 "$SKILL_DIR/scripts/gh_host.py" "$OWNER" "$REPO")" 
 
 ```bash
 PREV=""    # 이전 PR 번호
-python3 "$SKILL_DIR/scripts/collect_review.py" "$PR_URL" --carried-from "$PREV"
+node "$SKILL_DIR/scripts/collect_review.ts" "$PR_URL" --carried-from "$PREV"
 ```
 
 **미해결 스레드의 `head` 는 120자에서 잘린다.** 지적의 근거나 권장안이 잘렸으면 스레드 ID 로 전체를 읽는다.
 `gh api graphql` 을 직접 부르지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/review_threads.py" show --repo "$OWNER/$REPO" "$THREAD_ID"
+node "$SKILL_DIR/scripts/review_threads.ts" show --repo "$OWNER/$REPO" "$THREAD_ID"
 ```
 
 댓글과 봇 리뷰가 없으면 사용자에게 알리고 종료한다.
@@ -117,7 +117,7 @@ python3 "$SKILL_DIR/scripts/review_threads.py" show --repo "$OWNER/$REPO" "$THRE
 ### 2. 작업 트리 정렬
 
 ```bash
-python3 "$SKILL_DIR/scripts/checkout_pr.py" "$PR"
+node "$SKILL_DIR/scripts/checkout_pr.ts" "$PR"
 ```
 
 종료 코드 1 은 작업 트리가 dirty 하다는 뜻이다. 변경 내용을 보여주고 사용자에게 확인받는다.
@@ -236,14 +236,14 @@ node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --changed-since "$BASE" $ADR_AR
 
 원인이 HEAD 면 고친 파일을 `git add` 하고 `git commit --amend --no-edit` 를 쓴다.
 
-**원인이 HEAD 가 아닌 앞 커밋일 때는 `scripts/fold_fixup.sh` 를 쓴다.**
+**원인이 HEAD 가 아닌 앞 커밋일 때는 `scripts/fold_fixup.ts` 를 쓴다.**
 대화형 rebase 는 이 환경에서 쓸 수 없다. 이 스크립트가 `commit --fixup` 과 `rebase --autosquash` 를 편집기 없이 돈다.
 `CAUSE` 는 접어 넣을 커밋의 해시다. 스테이징하지 않은 변경은 그대로 남는다.
 
 ```bash
 CAUSE=$(git rev-parse HEAD~1)   # 원인이 된 커밋으로 바꾼다
 git add -u
-bash "$SKILL_DIR/scripts/fold_fixup.sh" "$CAUSE"
+node "$SKILL_DIR/scripts/fold_fixup.ts" "$CAUSE"
 ```
 
 종료 코드 1 은 겹치는 수정이 충돌한 것이다. 스크립트가 rebase 를 중단했고 fixup 커밋이 HEAD 에 남아 있다.
@@ -296,13 +296,13 @@ push 직후 `mergeable` 을 다시 조회한다. fix push 와 base 갱신의 시
 # cwd: 대상 저장소 루트. OWNER, REPO, PR 은 1단계 값이다
 MAP=""     # 줄마다 `THREAD_ID<탭>본문파일` 인 map 파일의 경로
 BODY=""    # 회신 본문 파일의 경로. 본문 파일마다 검사를 돌린다
-python3 "$SKILL_DIR/scripts/check_reply_body.py" "$BODY"
-python3 "$SKILL_DIR/scripts/review_threads.py" reply-batch --repo "$OWNER/$REPO" "$MAP"
+node "$SKILL_DIR/scripts/check_reply_body.ts" "$BODY"
+node "$SKILL_DIR/scripts/review_threads.ts" reply-batch --repo "$OWNER/$REPO" "$MAP"
 ```
 
 | 명령 | 종료 코드 |
 | --- | --- |
-| `check_reply_body.py` | 0 걸린 것 없음. 1 걸림(위치를 사용자에게 보이고 확인받는다). 2 파일 읽기 실패 |
+| `check_reply_body.ts` | 0 걸린 것 없음. 1 걸림(위치를 사용자에게 보이고 확인받는다). 2 파일 읽기 실패 |
 | `reply-batch` | 0 전부 등록. 1 일부 실패(끝에 실패한 줄이 나온다. 그 줄만 남긴 map 으로 다시 돌린다). 2 map 오류 |
 
 ### 8. 마무리
@@ -312,9 +312,9 @@ python3 "$SKILL_DIR/scripts/review_threads.py" reply-batch --repo "$OWNER/$REPO"
 ```bash
 # cwd: 대상 저장소 루트
 IDS=""     # 처리한 THREAD_ID 를 공백이나 줄로 이은 값. 대응 표에서 모은다
-python3 "$SKILL_DIR/scripts/review_threads.py" list "$OWNER" "$REPO" "$PR"
-printf '%s\n' "$IDS" | python3 "$SKILL_DIR/scripts/review_threads.py" resolve --repo "$OWNER/$REPO" -
-python3 "$SKILL_DIR/scripts/review_threads.py" list --count "$OWNER" "$REPO" "$PR"
+node "$SKILL_DIR/scripts/review_threads.ts" list "$OWNER" "$REPO" "$PR"
+printf '%s\n' "$IDS" | node "$SKILL_DIR/scripts/review_threads.ts" resolve --repo "$OWNER/$REPO" -
+node "$SKILL_DIR/scripts/review_threads.ts" list --count "$OWNER" "$REPO" "$PR"
 ```
 
 `list --count` 가 낸 정수가 0 이 아니면 머지 가능으로 보고하지 않는다. 종료 코드 1 은 조회 실패이거나 스레드가 한 번에 조회하는 수를 넘은 것이라 0 으로 읽지 않는다.

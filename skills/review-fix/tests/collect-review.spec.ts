@@ -7,7 +7,7 @@ import { describe, test } from 'node:test'
 import { setup, threadsResponse, type Rule } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['python3', join(import.meta.dirname, '..', 'scripts', 'collect_review.py')]
+const COMMAND = ['node', join(import.meta.dirname, '..', 'scripts', 'collect_review.ts')]
 // ──
 
 const REVIEW_JQ = '[.[] | {id, body: .body[0:1000], state, author: .user.login}]'

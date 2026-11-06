@@ -8,7 +8,7 @@ import { describe, test } from 'node:test'
 import { run, tempDir, writeBody } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['python3', join(import.meta.dirname, '..', 'scripts', 'check_reply_body.py')]
+const COMMAND = ['node', join(import.meta.dirname, '..', 'scripts', 'check_reply_body.ts')]
 // ──
 
 const GUIDE = '\n의도한 참조면 백틱으로 감싸고, 아니면 평문으로 바꾼다.\n이미 등록한 댓글이면 gh api 로 body 를 PATCH 한다.\n'

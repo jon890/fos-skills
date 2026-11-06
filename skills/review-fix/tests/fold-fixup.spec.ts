@@ -8,7 +8,7 @@ import { describe, test } from 'node:test'
 import { git, gitEnv, run, tempDir } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['bash', join(import.meta.dirname, '..', 'scripts', 'fold_fixup.sh')]
+const COMMAND = ['node', join(import.meta.dirname, '..', 'scripts', 'fold_fixup.ts')]
 // ──
 
 function repo(t: Parameters<typeof tempDir>[1]) {
@@ -138,7 +138,7 @@ describe('fold_fixup', () => {
     for (const args of [[], ['a', 'b']]) {
       const done = r.fold(...args)
       assert.deepEqual([done.code, done.stdout], [2, ''])
-      assert.match(done.stderr, /fold_fixup\.sh <원인커밋>/)
+      assert.match(done.stderr, /fold_fixup\.\w+ <원인커밋>/)
     }
   })
 })

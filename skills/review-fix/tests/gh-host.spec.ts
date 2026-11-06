@@ -7,7 +7,7 @@ import { describe, test } from 'node:test'
 import { setup } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['python3', join(import.meta.dirname, '..', 'scripts', 'gh_host.py')]
+const COMMAND = ['node', join(import.meta.dirname, '..', 'scripts', 'gh_host.ts')]
 // ──
 
 // 사내 호스트의 토큰 확인이 timeout 나면 gh auth status 는 종료 코드 1 이다. github.com 은 정상이다
