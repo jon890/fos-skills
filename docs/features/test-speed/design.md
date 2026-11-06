@@ -61,7 +61,7 @@
 | 파일 | 내보내는 것 | 규칙 |
 | --- | --- | --- |
 | `temp.ts` | `tempDir(prefix, t?)` | `realpathSync(mkdtempSync(...))` 를 돌려준다. 만든 폴더는 모듈 수준 목록에 모은다. 모듈을 처음 평가할 때(테스트 파일 최상위 import, 루트 문맥) 루트 `after` 하나와 `process.on('exit')` 를 걸어 목록을 한꺼번에 지운다. `t`(TestContext)를 주면 그 테스트의 `t.after` 에서 바로 지운다. `beforeEach`, `before` 안에서 부른 `after` 는 그 훅이 끝나자마자 돌아(2026-11-05 실험: 테스트 본문보다 먼저 정리됨) 쓰지 않는다. `TESTKIT_KEEP=1` 이면 지우지 않고 경로를 stderr 에 한 줄 낸다(스펙 DECISION18). `node:test` 를 import 하는 testkit 파일은 이것 하나다 |
-| `git.ts` | `gitEnv(base)`, `git(cwd, ...args)`, `templateRepo(opts)`, `copyRepo(template, dest)` | `gitEnv` 는 `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, 작성자와 커미터 이름·메일을 더한 사본을 돌려준다. `GIT_CEILING_DIRECTORIES` 는 인자로 받을 때만 건다. `git` 은 종료 코드가 0 이 아니면 stderr 를 담아 throw 하고 stdout 을 trim 해 돌려준다. `templateRepo` 는 bare origin 과 첫 커밋을 push 한 clone 한 벌을 프로세스마다 처음 한 번만 만든다. 템플릿은 `temp.ts` 의 프로세스 단위 목록(루트 정리)에 두고, 테스트 단위 정리에 넣지 않는다. 기본 브랜치는 `main` 이다. `copyRepo` 는 `cpSync` 로 두 폴더를 복사하고 origin 주소만 바꾼다(`fixtures/cleanup-sweep.ts` 의 `makeRepo` 와 같은 방법) |
+| `git.ts` | `gitEnv(base)`, `git(cwd, ...args)`, `templateRepo(opts)`, `copyRepo(dest, source)` | `gitEnv` 는 `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, 작성자와 커미터 이름·메일을 더한 사본을 돌려준다. `GIT_CEILING_DIRECTORIES` 는 인자로 받을 때만 건다. `git` 은 종료 코드가 0 이 아니면 stderr 를 담아 throw 하고 stdout 을 trim 해 돌려준다. `templateRepo` 는 bare origin 과 첫 커밋을 push 한 clone 한 벌을 프로세스마다 처음 한 번만 만든다. 템플릿은 `temp.ts` 의 프로세스 단위 목록(루트 정리)에 두고, 테스트 단위 정리에 넣지 않는다. 기본 브랜치는 `main` 이다. `copyRepo` 는 `cpSync` 로 두 폴더를 복사하고 origin 주소만 바꾼다(`fixtures/cleanup-sweep.ts` 의 `makeRepo` 와 같은 방법) |
 | `fake-bin.ts` | `fakeBin(dir, name, rules, opts)`, `linkBin(dir, name, body)`, 규칙 꼴 `FakeRule` | 아래 「가짜 실행 파일」 |
 | `command.ts` | `runCommand(argv, opts)`, `runCommandAsync(argv, opts)` | `opts` 는 cwd, env, input, timeoutMs 다. 자식 환경에서 `NODE_TEST_CONTEXT` 를 지운다. 테스트 안에서 띄운 `node --test` 가 이 값을 물려받으면 reporter 출력이 사라진다(검토 실험). 결과는 `{ code, signal, stdout, stderr, timedOut }` 이다. 신호로 끝나면 `code` 는 null 이다. 스크립트는 `[process.execPath, 스크립트, ...인자]` 로 부른다. 명령 경계 테스트(node-runtime 스펙 DECISION11)가 `python3 x.py` 와 `node x.ts` 를 같은 꼴로 부를 수 있게 argv 를 그대로 받는다 |
 | `fake-run.ts` | `fakeRun(rulesByCommand)` | `{ run, calls, setRules }` 를 돌려준다. 규칙은 `{ gh: FakeRule[], git: FakeRule[] }` 처럼 명령 이름별로 받는다. `run(argv, opts)` 는 `basename(argv[0])` 으로 규칙 묶음을 고르고, `argv.slice(1)` 에 대해 `FakeRule` 을 위에서부터 보아 `args` 의 문자열이 모두 든 첫 규칙의 `{ code, stdout, stderr, timedOut: false }` 를 돌려준다. 가짜 실행 파일이 `process.argv.slice(2)` 에 맞추는 것과 같은 인자 범위다. 맞는 규칙이 없으면 code 0 과 빈 출력이다. `calls()` 는 받은 argv 와 opts 의 배열이다. orch 의 `lib/proc.ts` 를 import 하지 않고, 결과 꼴이 `RunResult` 와 구조로 맞는다 |
@@ -187,3 +187,23 @@
 | DECISION13 | `modules/` 의 ADR | 새 ADR 을 두지 않는다. `docs/code-architecture.md` 「디렉터리 배치」 표에 행을 더한다 | 작성자 | 사용자가 표에 더하라고 정했다(스펙 DECISION7). 분리 신호가 걸리지 않아 소유 경계 ADR 초안 조건이 아니다 |
 | DECISION14 | 그룹 신호의 격리 | 파일마다 세션을 나누지 않는다. `node --test` 한 번으로 돌고, 끊기면 보고 없음 대조와 무진행 감시로 실패를 드러낸다 | 작성자 | 스펙 DECISION1 이 「격리가 필요한 경우가 재현되지 않았다」 를 근거로 node --test 유지를 정했다. 파일마다 `node --test` 를 띄우면 파일 수만큼 기동이 늘어 2분 목표와 어긋난다. 신호 테스트 11개 파일은 `node --test --test-concurrency=4` 로 끝 요약까지 돌았다 |
 | DECISION15 | 임시 폴더의 정리 시점 | 기본은 테스트 파일이 끝날 때 한꺼번에. `t` 를 주면 그 테스트 뒤 | 작성자 | `beforeEach` 안의 `after` 는 테스트 본문 전에 돈다(실험). 기존 fixtures 는 `beforeEach` 에서 저장소를 만든다 |
+
+
+## PR4: merge-queue 테스트의 준비와 명령 주입
+
+REQ1, REQ2, REQ3, REQ6 을 맡는다. 큐의 인자·출력·종료 코드 계약과 판정은 유지한다.
+
+- `lib/proc.ts` 는 `withRun` 으로 비동기 호출 범위 안의 동기 실행 함수를 받는다. `AsyncLocalStorage` 로 범위를 묶어 다른 실행과 섞지 않고, 주입하지 않으면 기존 실행을 그대로 쓴다. `merge_queue.ts` 는 `main` 을 내보내고 직접 실행할 때만 CLI 와 신호 처리기를 연결한다.
+- 첫 커밋은 이 주입 자리와 import 경계만 더하고 기존 테스트를 그대로 실행한다(DECISION16). 다음 커밋에서 테스트의 판정 호출을 `main` 에 가짜 실행 함수를 주는 fixture 로 옮긴다. 큐는 환경·작업 디렉터리·신호 상태를 가지므로 호출마다 별도 프로세스에서 fixture 함수를 실행한다. 이 격리는 남기되 반복되는 가짜 gh/git 프로세스는 없앤다.
+- 상태를 바꾸는 가짜 gh/git 의 본문은 실행 파일과 함수 양쪽이 공유한다. 함수 쪽은 본문을 한 번 컴파일하고, 호출마다 argv·env·출력·종료를 제공한다. gh 의 `--jq` 식은 기존처럼 실제 jq 로 평가해 계약을 확인한다. 실제 git 과 사용자 명령·이벤트 핸들러는 기존 실행기로 보낸다.
+- 실행 파일은 testkit `linkBin` 을 쓴다. 상태와 기록은 기존 환경 변수가 지정하는 테스트별 파일에 두므로 원본을 재사용해도 섞이지 않는다.
+- 겹침 테스트의 초기 파일을 넣은 origin/clone 템플릿을 파일 프로세스마다 한 번 만들고 `copyRepo` 로 테스트 폴더에 복사한다. feat/main 의 변경 커밋과 합친 사본 검사는 계속 실제 git 으로 실행한다.
+
+| 기존 관측 경계 | 전환 뒤 같은 판정과 남기는 경계 |
+| --- | --- |
+| `merge-queue.spec.ts` 의 `runQueue`: 체크·최신화·보류·앞지르기·완료 근거·hook·정리 | 기존 단언을 유지하고 fixture 가 `main` 을 함수로 호출한다. gh/git 만 함수 가짜이며 실제 jq·hook·명령 실행은 남긴다 |
+| `merge-queue-overlap.spec.ts` 의 `runQueue`: 겹침·합친 사본·정리 | 기존 단언과 실제 git 을 유지하고 gh 만 함수 가짜로 바꾼다 |
+| 직접 CLI 호출: 인자 오류, 호스트 전달, 신호와 자식 종료 | 실제 진입점을 계속 실행한다. 성공·보류·사용법 오류의 대표 종료 코드와 stdout 을 추가로 CLI 에서 확인한다 |
+| 가짜 실행 파일과 함수의 상태 변화·stdout·stderr·종료 코드 | 같은 본문을 양쪽에서 실행하는 대응 테스트로 성공·실패·상태 변화 사례를 비교한다 |
+
+검증은 `node scripts/run-tests.ts` 로 대상 파일과 proc 회귀 테스트를 실행하고 저장소 전체 검사를 잇는다. 시간과 기동 수는 「측정 방법」의 `modules/testkit/measure.ts` 로 기준 커밋과 구현 커밋을 같은 머신에서 번갈아 잰다. 독립 설계·계획·코드·문서 검토는 코디네이터에게 넘기며 자기 점검으로 통과 처리하지 않는다.

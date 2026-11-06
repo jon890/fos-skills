@@ -16,9 +16,13 @@ process.env.ORCH_GH_CACHE = '0'
 // 확장자 없는 실행 파일은 타입 제거 대상이 아니라 타입 문법을 쓰지 않는다. 출력은 파이프가 비동기인 macOS 에서도
 // 끝나기 전에 다 나가도록 fs.writeSync 로 쓴다.
 
+// 함수 가짜(statefulRun)는 process 의 argv, env, exit 만 제공한다.
+// 가짜 호출의 cwd, input, timeoutMs 는 쓰지 않는다. 실제 명령으로 넘긴 호출은 proc 의 옵션을 따른다.
+// env 는 얕게 합치므로 undefined 키도 남는다. undefined 키를 지우는 proc 의 childEnv 와 다르다.
+// 함수 가짜의 본문 예외는 종료 코드 1 과 stderr 로 반환한다.
+
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { linkBin } from '../../../../modules/testkit/fake-bin.ts'
 
 export const FAKE_GH = `const fs = require('node:fs')
 const { spawnSync } = require('node:child_process')
@@ -156,10 +160,7 @@ export const HAS_TOOLS = ['jq', 'bash'].every((tool) => spawnSync('sh', ['-c', `
 
 // 이 테스트를 도는 node 를 shebang 에 박는다. PATH 의 node 가 버전 관리 도구의 shim 이면 호출마다 느려진다
 export function writeNodeBin(dir: string, name: string, body: string): string {
-  const path = join(dir, name)
-  writeFileSync(path, `#!${process.execPath}\n${body}`)
-  chmodSync(path, 0o755)
-  return path
+  return linkBin(dir, name, body)
 }
 
 export type Done = { code: number | null; stdout: string; stderr: string }

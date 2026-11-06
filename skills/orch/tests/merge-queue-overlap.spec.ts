@@ -10,10 +10,13 @@ import { dirname, join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { copyRepo, git as templateGit, templateRepo } from '../../../modules/testkit/git.ts'
+import type { Repo } from '../../../modules/testkit/git.ts'
 import { FAKE_GH, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/merge_queue.ts', import.meta.url))
+const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/merge-queue-run.ts', import.meta.url))
 const SUCCESS = { status: 'COMPLETED', conclusion: 'SUCCESS' }
 const CI = { name: 'CI', ...SUCCESS }
 const FIVE = '1\n2\n3\n4\n5\n'
@@ -35,9 +38,17 @@ type Ctx = {
 }
 
 let bindir = ''
+let template: Repo
 before(() => {
   bindir = mkdtempSync(join(tmpdir(), 'merge-queue-overlap-bin-'))
   writeNodeBin(bindir, 'gh', FAKE_GH)
+  // testkit 의 빈 초기 커밋 위에 이 묶음의 공통 파일을 한 번만 만든다.
+  template = templateRepo()
+  writeFileSync(join(template.dir, 'a.txt'), FIVE)
+  writeFileSync(join(template.dir, 'b.txt'), 'b\n')
+  templateGit(template.dir, ['add', '-A'])
+  templateGit(template.dir, ['commit', '-q', '-m', 'merge queue fixture'])
+  templateGit(template.dir, ['push', '-q', 'origin', 'main'])
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
 
@@ -56,6 +67,7 @@ function setup(t: TestContext): Ctx {
     FAKE_STATE: stateFile,
     FAKE_LOG: logFile,
     TMPDIR: tmp,
+    MERGE_QUEUE_FAKE_GIT: '0',
     GIT_CONFIG_GLOBAL: gitconfig,
     GIT_CONFIG_NOSYSTEM: '1',
     MERGE_QUEUE_SLEEP_SCALE: '0',
@@ -85,10 +97,7 @@ function setup(t: TestContext): Ctx {
   }
   const logText = () => (existsSync(logFile) ? readFileSync(logFile, 'utf8') : '')
   const writeState = (state: Json) => writeFileSync(stateFile, JSON.stringify(state))
-  git(['init', '-q', '--bare', '-b', 'main', join(tmp, 'origin.git')], tmp)
-  git(['clone', '-q', join(tmp, 'origin.git'), repo], tmp)
-  write({ 'a.txt': FIVE, 'b.txt': 'b\n' }, 'init')
-  git(['push', '-q', 'origin', 'HEAD:main'])
+  copyRepo(repo, template)
   git(['checkout', '-q', '-b', 'feat'])
   return {
     tmp,
@@ -126,7 +135,7 @@ function setup(t: TestContext): Ctx {
       writeState({ '1': pr })
     },
     runQueue: (args) =>
-      spawnDone([process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--threads-cmd', 'echo 0', '--no-sweep', ...args, '1'], {
+      spawnDone([process.execPath, FUNCTION_RUNNER, '--repo', repo, '--threads-cmd', 'echo 0', '--no-sweep', ...args, '1'], {
         env,
       }),
   }
@@ -524,7 +533,7 @@ describe('merge_queue 와 진짜 판정 명령', { skip: !HAS_TOOLS && 'jq 와 b
   function pushFromAnotherClone(c: Ctx, name: string, text: string): string {
     const other = join(c.tmp, 'other')
     return (
-      `git clone -q ${join(c.tmp, 'origin.git')} ${other} && cd ${other} && mkdir -p $(dirname ${name}) ` +
+      `git clone -q ${c.git(['remote', 'get-url', 'origin'])} ${other} && cd ${other} && mkdir -p $(dirname ${name}) ` +
       `&& echo ${text} > ${name} && git add -A && git commit -q -m moved && git push -q origin HEAD:main`
     )
   }

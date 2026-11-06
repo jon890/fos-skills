@@ -373,7 +373,7 @@ import type { WorkerRow } from '../lib/ownership.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from '../lib/queue-logs.ts'
 import { finishStarted } from '../lib/finish-marks.ts'
-import { run as runProcess, scriptCommand } from '../lib/proc.ts'
+import { run as runCommand, scriptCommand } from '../lib/proc.ts'
 import { liveReviewPrs, originBranch, reviewKeepReason, reviewPrOf, reviewPrOfBranch, reviewPrState } from '../lib/review.ts'
 import { allLiveSpecPaths, deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from '../lib/spec.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from '../lib/worker-state.ts'
@@ -452,7 +452,7 @@ function lines(text: string): string[] {
 // 옛 명령의 run 과 같게 stdout 과 stderr 의 앞뒤 공백을 지운다. 시간을 넘기면 1 과 그 이유다
 function run(argv: string[], opts: { cwd?: string; timeoutSec?: number } = {}): { code: number; out: string; err: string } {
   const seconds = opts.timeoutSec ?? RUN_TIMEOUT_SEC
-  const done = runProcess(argv, { cwd: opts.cwd, timeoutMs: seconds * 1000 })
+  const done = runCommand(argv, { cwd: opts.cwd, timeoutMs: seconds * 1000 })
   if (done.timedOut) return { code: 1, out: '', err: `${argv.join(' ')} 가 ${seconds}초 안에 끝나지 않았다` }
   return { code: done.code, out: done.stdout.trim(), err: done.stderr.trim() }
 }

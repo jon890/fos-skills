@@ -40,6 +40,7 @@
 // run 으로 쓰기 호출(머지 같은 것)을 할 수 있으므로, 그 자리는 부르는 쪽이 stopping() 을 보고 막는다.
 
 import './bundle.ts'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { accessSync, closeSync, constants as fsConstants, openSync, readSync, statSync } from 'node:fs'
@@ -167,7 +168,22 @@ function overflow(stdout: string, stderr: string, maxBuffer: number): RunResult 
   return { code: 1, stdout, stderr: stderr ? `${stderr}\n${reason}` : reason, timedOut: false }
 }
 
+type Runner = (argv: string[], opts?: RunOptions) => RunResult
+const runners = new AsyncLocalStorage<Runner>()
+
+// 주입한 실행 함수는 이 호출에서 시작한 비동기 흐름에만 적용한다.
+export function withRun<T>(runner: Runner, action: () => T): T {
+  return runners.run(runner, action)
+}
+
 export function run(argv: string[], opts: RunOptions = {}): RunResult {
+  const runner = runners.getStore()
+  if (runner) return runner(argv, opts)
+  return runProcess(argv, opts)
+}
+
+// 주입한 함수가 실제 명령으로 넘길 때 다시 자기 자신을 부르지 않는 실행 경계다.
+export function runProcess(argv: string[], opts: RunOptions = {}): RunResult {
   const maxBuffer = opts.maxBuffer ?? DEFAULT_MAX_BUFFER
   const done = spawnSync(argv[0], argv.slice(1), {
     cwd: opts.cwd,

@@ -190,7 +190,7 @@
 //
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
 
-import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../lib/config.ts'
@@ -201,7 +201,7 @@ import type { FireContext, FireResult } from '../lib/events.ts'
 import { apiTarget, checkSnapshot, currentChecks, FAILED_CONCLUSIONS, FAILED_STATES, gh, ghJson, isOwnPr, ownAuthors, parseNames, RULES_JQ, rulesPlanLimited, updateBranch } from '../lib/gh.ts'
 import { queuePollSeconds } from '../lib/gh-budget.ts'
 import { groupMap, isDoc, judge } from '../lib/overlap.ts'
-import { NO_LIMIT_MS, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from '../lib/proc.ts'
+import { NO_LIMIT_MS, withRun, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from '../lib/proc.ts'
 import type { RunResult } from '../lib/proc.ts'
 import { appendEvent } from '../lib/loop.ts'
 import { alive } from '../lib/process.ts'
@@ -1693,10 +1693,13 @@ function onSignal(signal: NodeJS.Signals): void {
     process.exit(signalCode(signal))
   })
 }
-process.on('SIGTERM', onSignal)
-process.on('SIGINT', onSignal)
+// active, sleepScale, exiting 은 이 모듈의 상태다. main 은 프로세스마다 한 번만 호출한다.
+// 같은 프로세스에서 재호출하거나 동시에 호출하지 않는다. 테스트도 호출별 프로세스로 격리한다.
+export function main(argv: string[], runner?: typeof run): Promise<number> {
+  return runner ? withRun(runner, () => mainImpl(argv)) : mainImpl(argv)
+}
 
-async function main(argv: string[]): Promise<number> {
+async function mainImpl(argv: string[]): Promise<number> {
   let queue: Queue
   try {
     const scale = process.env.MERGE_QUEUE_SLEEP_SCALE ?? '1'
@@ -1731,12 +1734,17 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e) => {
-    process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
-    process.exitCode = 1
-  },
-)
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  process.on('SIGTERM', onSignal)
+  process.on('SIGINT', onSignal)
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code
+    },
+    (e) => {
+      process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
+      process.exitCode = 1
+    },
+  )
+
+}
