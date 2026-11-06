@@ -40,6 +40,17 @@ test('실제 cleanup CLI 의 조회 실패는 stderr 와 종료 코드 2 다', (
   assert.match(done.stderr, /orca terminal list/)
 })
 
+test('실제 cleanup CLI 의 예상하지 못한 출력 예외는 종료 코드 1 이다', () => {
+  save()
+  const preload = join(fx.tmp, 'output-error.cjs')
+  // CLI 의 출력 경계만 실패시킨다. 가짜 명령 자식의 출력은 그대로 둔다.
+  writeFileSync(preload, `if (process.argv[1] === ${JSON.stringify(SCRIPT)}) process.stdout.write = () => { throw new Error('forced-output-error') }`)
+  fx.env.NODE_OPTIONS = `${fx.env.NODE_OPTIONS ?? ''} --require=${preload}`.trim()
+  const done = cli(['--repo', fx.repo])
+  assert.equal(done.status, 1)
+  assert.match(done.stderr, /cleanup-sweep: Error: forced-output-error/)
+})
+
 test('공유 가짜의 성공·실패·상태 변화·SWEEP pid 가 실행 파일과 같다', () => {
   fx.processes = [{ pid: 'SWEEP', cwd: fx.repo, command: 'cleanup-sweep' }, { pid: 501, cwd: fx.repo, command: 'zsh' }]
   fx.terminals = [{ handle: 'term_shell', worktreePath: fx.repo }]
