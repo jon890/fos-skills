@@ -1,1 +1,0 @@
-- plan 의 `overlay_paths.ts` 를 node 로 부르고 Python 요구를 없앴다

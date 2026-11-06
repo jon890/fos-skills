@@ -1,5 +1,9 @@
 # CHANGELOG: technical-design
 
+## 1.6.1 (2026-11-06)
+
+- plan 의 `check_feature.ts`, `run_doc_checks.ts` 를 node 로 부른다
+
 ## 1.6.0 (2026-11-06)
 
 - ADR 을 만들거나 대체한 뒤 plan 의 `adr-docs.ts` 로 색인을 다시 만들고 검사한다. 옛 Python 위치 검사 명령은 지웠다

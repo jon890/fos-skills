@@ -1,5 +1,9 @@
 # CHANGELOG: implementation
 
+## 8.0.2 (2026-11-06)
+
+- plan 의 `verify_task.ts` 를 node 로 부른다
+
 ## 8.0.1 (2026-11-06)
 
 - 심볼릭 링크로 부른 진입도 import.meta.main 이 없는 Node 24.0·24.1 에서 일을 하도록 직접 실행 판정을 실체 경로로 비교한다

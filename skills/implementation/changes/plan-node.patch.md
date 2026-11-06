@@ -1,1 +1,0 @@
-- plan 의 `verify_task.ts` 를 node 로 부른다

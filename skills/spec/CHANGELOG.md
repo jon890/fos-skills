@@ -1,5 +1,9 @@
 # CHANGELOG: spec
 
+## 3.7.1 (2026-11-06)
+
+- plan 의 `check_feature.ts`, `run_doc_checks.ts` 를 node 로 부른다
+
 ## 3.7.0 (2026-11-06)
 
 - 4·5단계가 plan 의 `adr-docs.ts check --changed-since` 로 깨진 링크와 링크 없는 ADR 번호를 본다
