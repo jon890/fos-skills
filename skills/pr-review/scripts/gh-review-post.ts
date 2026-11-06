@@ -31,12 +31,21 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { detectHost, HostError, write } from './gh-host.ts'
-import { PY_SPACE, pyJson, pyReadText, pyStr } from './kit/py.ts'
+import { PY_SPACE, pyInt, pyJson, pyReadText, pyStr } from './kit/py.ts'
 
 const GRADE_RE = /^(🔴 \*\*P1 치명|🟠 \*\*P2 높음|🟡 \*\*P3 보통|🔵 \*\*P4 낮음|⚪ \*\*P5 참고)\*\*$/
 const AI_NOTICE = '🤖 이 리뷰는 AI 가 작성했고, 등록 전에 사람이 확인했습니다.'
-const BOT_TOKEN = /(^|[^`])(\/review|@claude|@github-actions|@dependabot)\b/
+// 옛 셸의 grep -E `\b` 는 UTF-8 로케일에서 한글도 낱말 글자로 본다. 그래서 `@claude가` 는 토큰 뒤에 낱말이 이어진 것이다
+const BOT_TOKEN = /(^|[^`])(\/review|@claude|@github-actions|@dependabot)(?![\p{L}\p{N}_])/u
 const RSTRIP = new RegExp(`${PY_SPACE}+$`)
+const INT = new RegExp(`^${PY_SPACE}*([+-]?)(\\p{Nd}+)${PY_SPACE}*$`, 'u')
+
+// Python int(str). 부호와 앞뒤 공백을 받고 정수가 아니면 던진다
+function pyIntOf(text: string): number {
+  const m = INT.exec(text)
+  if (!m) throw new Error(`invalid literal for int() with base 10: ${JSON.stringify(text)}`)
+  return (m[1] === '-' ? -1 : 1) * pyInt(m[2])
+}
 
 type Mode = 'review' | 'reply' | 'summary' | 'batch' | 'edit'
 
@@ -209,7 +218,8 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
         const rest = spec.slice(0, at)
         const text = withNotice(rstrip(pyReadText(spec.slice(at + 1))), (n) => `\n\n<sub>${n}</sub>`)
         const split = rest.lastIndexOf(':')
-        return { path: rest.slice(0, split), line: Number(rest.slice(split + 1)), side: 'RIGHT', body: text }
+        // rpartition 처럼 콜론이 없으면 경로는 빈 글자다
+        return { path: split < 0 ? '' : rest.slice(0, split), line: pyIntOf(rest.slice(split + 1)), side: 'RIGHT', body: text }
       })
       const result = send({ event: 'COMMENT', body: summaryBody(), comments })
       write(1, `등록 완료: 리뷰 ${pyStr(result.id)}\n`)
@@ -223,7 +233,14 @@ export function run(argv: string[], env: NodeJS.ProcessEnv = process.env): void 
       write(1, `등록 완료: 요약 리뷰 ${pyStr(result.id)} ${pyStr(result.html_url)}\n`)
     } else if (mode === 'review') {
       const text = withNotice(rstrip(pyReadText(bodyFile)), (n) => `\n\n<sub>${n}</sub>`)
-      const result = send({ event: 'COMMENT', comments: [{ path: filePath, line: Number(line), side: 'RIGHT', body: text }] })
+      let lineNumber: number
+      try {
+        lineNumber = pyIntOf(line)
+      } catch (error) {
+        write(2, `ValueError: ${(error as Error).message}\n`)
+        throw new Exit(1)
+      }
+      const result = send({ event: 'COMMENT', comments: [{ path: filePath, line: lineNumber, side: 'RIGHT', body: text }] })
       write(1, `등록 완료: 리뷰 ${pyStr(result.id)}\n`)
       verifyInline(host, repo, pr, pyStr(result.id), 1)
     } else {

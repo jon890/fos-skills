@@ -213,6 +213,22 @@ describe('gh-review-post', () => {
         assert.equal(s.calls().length, 0)
       })
     }
+    test('봇 토큰 바로 뒤의 한글은 낱말이 이어진 것이라 막지 않고, 공백이나 문장 부호가 오면 막는다', (t) => {
+      const s = setup(t)
+      const dry = { DRY_RUN: '1' }
+      assert.equal(post(s, ['o/r', '5', 'a.ts', '1', s.write('b.md', `${REVIEW}@claude가 봐줘\n`), '낱말A'], dry).code, 0)
+      assert.equal(post(s, ['o/r', '5', 'a.ts', '1', s.write('b2.md', `${REVIEW}/review.\n`), '낱말A'], dry).code, 1)
+    })
+
+    test('줄 번호가 정수가 아니면 등록 전에 1', (t) => {
+      const s = setup(t)
+      for (const line of ['abc', '1e3', '12.0', '0x10']) {
+        const done = post(s, ['o/r', '5', 'a.ts', line, s.write('b.md', REVIEW), '낱말A'])
+        assert.equal(done.code, 1, line)
+      }
+      assert.deepEqual(s.calls(), [])
+    })
+
     test('빠진 인자', (t) => {
       const s = setup(t)
       assert.equal(post(s, ['o/r']).code, 1)
