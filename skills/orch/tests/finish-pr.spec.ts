@@ -29,6 +29,7 @@ const say = (fd, text) => fs.writeSync(fd, text + '\\n')
 const FAKE_GH = `${LOG}fs.appendFileSync(process.env.FAKE_LOG, 'gh ' + args.join(' ') + '\\n')
 const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
 if (args[0] === 'pr' && args[1] === 'view') {
+  if (args[args.indexOf('--json') + 1].includes('createdAt') && state.routing) { say(1, JSON.stringify(state.routing)); process.exit(0) }
   const pr = state.pr
   say(1, JSON.stringify({ number: Number(args[2]), state: pr.state, mergeCommit: pr.merge ? { oid: pr.merge } : null, headRefName: pr.branch,
     body: pr.body || '', title: pr.title, headRefOid: pr.head, author: { login: 'me' }, isDraft: false, url: 'https://git.example.com/owner/repo/pull/' + args[2], baseRefName: 'main' }))
@@ -37,6 +38,7 @@ if (args[0] === 'pr' && args[1] === 'view') {
 // 마지막 PR 판정의 조회. 열린 PR 은 state.open, --head 의 MERGED PR 은 state.merged(브랜치 목록)에 있는지로 답한다
 if (args[0] === 'pr' && args[1] === 'list') {
   if (state.listFails) process.exit(1)
+  if (args[args.indexOf('--json') + 1].includes('createdAt') && state.routing) { say(1, JSON.stringify([state.routing])); process.exit(0) }
   const head = args.includes('--head') ? args[args.indexOf('--head') + 1] : null
   say(1, JSON.stringify(head === null ? state.open || [] : (state.merged || []).includes(head) ? [{ number: 1 }] : []))
   process.exit(0)
@@ -63,6 +65,13 @@ else process.exit(3)
 `
 const FAKE_SWEEP = `import os, subprocess, sys
 open(os.environ["FAKE_LOG"], "a").write("sweep " + " ".join(sys.argv[1:]) + "\\n")
+if os.environ.get("EXPECT_ROUTING") == "1":
+    import json
+    repo = sys.argv[sys.argv.index("--repo") + 1]
+    row = json.loads(open(os.path.join(repo, ".orch/state/routing-log.jsonl")).readline())
+    assert row["outcome"] == "merged"
+    assert all(w["dispatchStatus"] == "succeeded" for w in json.load(open(os.environ["FAKE_STATE"]))["orca"]["workers"])
+    open(os.environ["FAKE_LOG"], "a").write("routing-before-cleanup\\n")
 if os.environ.get("FAKE_SWEEP_REMOVES") == "1":
     wt = os.environ["FAKE_WORKTREE"]
     repo = sys.argv[sys.argv.index("--repo") + 1]
@@ -1011,6 +1020,27 @@ describe('finish-pr 머지 알림', { concurrency: 4 }, () => {
   const live = (c: Ctx, status = 'running') => {
     c.state.orca = { workers: [{ dispatchId: 'ctx_w', dispatchStatus: status, resource: { worktreeId: `repo::${c.wt}` } }] }
   }
+
+  test('routing 기록 쓰기가 실패해도 worker 정리를 마친다', async (t) => {
+    const c = setup(t)
+    mkdirSync(join(c.repo, '.orch/state/routing-log.jsonl'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch/state/launch-history.jsonl'), JSON.stringify({ dispatch: 'ctx_w', at: '2026-11-06T01:00:00Z', worktree: c.wt, branch: 'feat/x' }) + '\n')
+    const r = await c.finish(['--complete'])
+    assert.equal(r.code, 0, both(r))
+    has(r.stderr, 'ROUTING-LOG-FAIL 77')
+    assert.equal(existsSync(c.wt), false)
+  })
+
+  test('worker 종료를 기다린 뒤 routing 기록을 남기고 정리를 시작한다', async (t) => {
+    const c = setup(t)
+    live(c)
+    c.state.routing = { number: 77, url: 'https://git.example.com/owner/repo/pull/77', headRefName: 'feat/x', headRefOid: 'head', state: 'MERGED', createdAt: '2026-11-06T01:10:00Z', mergedAt: '2026-11-06T02:00:00Z', closedAt: null }
+    mkdirSync(join(c.repo, '.orch/state'), { recursive: true })
+    writeFileSync(join(c.repo, '.orch/state/launch-history.jsonl'), JSON.stringify({ dispatch: 'ctx_w', at: '2026-11-06T01:00:00Z', worktree: c.wt, branch: 'feat/x', run: 'run_1', terminal: 'term_w', row: 'impl-explore' }) + '\n')
+    const r = await c.finish(['--run', 'run_1', '--complete'], { FAKE_SEND_ENDS: '1', EXPECT_ROUTING: '1', ORCA_USAGE_DIR: join(c.tmp, 'missing-usage') })
+    assert.equal(r.code, 0, both(r))
+    assert.ok(c.calls().includes('routing-before-cleanup'), c.calls().join('\n'))
+  })
 
   test('그 워크트리의 살아 있는 worker 에게 머지를 알리고, 끝나기를 기다린 뒤 정리한다', async (t) => {
     const c = setup(t)

@@ -38,8 +38,10 @@ finish와 cleanup에 연결하고 fake gh/orca·임시 사용량 파일로 검�
 ```bash
 node scripts/run-tests.ts skills/orch/tests/lib-routing-log.spec.ts skills/orch/tests/finish-pr.spec.ts skills/orch/tests/cleanup-sweep-routing.spec.ts skills/orch/tests/lib-config.spec.ts
 node scripts/run-tests.ts
-claude plugin test .
 ```
+
+저장소 플러그인 검사는 별도로 `claude plugin test .`을 실행한다.
+계획 검사기는 새 실행기의 대상 파일을 해석하지 못하므로 실제 결과 로그로 실행 범위를 대조한다.
 
 ## 인수 검증 계획
 
@@ -63,6 +65,8 @@ claude plugin test .
 | `skills/orch/scripts/queue/finish-pr.ts` | 수정 |
 | `skills/orch/scripts/cleanup/cleanup-sweep.ts` | 수정 |
 | `skills/orch/tests/lib-routing-log.spec.ts` | 신규 |
+| `skills/orch/tests/fixtures/routing-fakes.ts` | 신규 |
+| `skills/orch/tests/fixtures/cleanup-sweep.ts` | 수정 |
 | `skills/orch/tests/finish-pr.spec.ts` | 수정 |
 | `skills/orch/tests/cleanup-sweep-routing.spec.ts` | 신규 |
 | `skills/orch/tests/lib-config.spec.ts` | 수정 |

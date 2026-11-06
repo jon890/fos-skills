@@ -115,7 +115,7 @@ if (has('repo', 'view')) {
 } else if (has('pr', 'list') && a[a.indexOf('--state') + 1] === 'open') {
   const rows = [...st.open_bases.map((b) => ({ baseRefName: b, headRefName: 'open-head' })), ...st.open_heads.map((h) => ({ baseRefName: 'main', headRefName: h }))]
   console.log(JSON.stringify(rows))
-} else if (has('pr', 'view') && (a.includes('state,headRefOid') || a.includes('body,headRefOid,headRefName'))) {
+} else if (has('pr', 'view') && (a.includes('state,headRefOid') || a.includes('body,headRefOid,headRefName') || a[a.indexOf('--json') + 1]?.includes('createdAt'))) {
   if (!(a[2] in st.pr_views)) {
     if (a.includes('body,headRefOid,headRefName')) { console.log('{}'); process.exit(0) }
     process.exit(1)

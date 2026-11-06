@@ -78,6 +78,9 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 
 | 절 | 키 | 타입 | 기본값 | 담는 것 |
 | --- | --- | --- | --- | --- |
+| `routing` | `review_author` | GitHub 로그인 문자열 | 없음 | 첫 자동 리뷰를 남기는 계정. 절이 없으면 첫 리뷰와 크기 등급은 null이다 |
+| `routing` | `review_pattern` | 정규식 문자열. P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |
+| `routing` | `size_pattern` | 정규식 문자열. 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 초로. 모르는 이벤트 이름이나 양수가 아닌 값은 사용법 오류다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
 | `pipeline` | `enabled` | bool | false | 상주 루프의 자동 진행(ready 슬롯, 문서 PR 바로 머지, 배포 묶기)을 켠다. 질문 확인과 원격 브랜치 정리는 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | number | 300 | 틱 간격 |
@@ -118,6 +121,8 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
 | `state/launch-history.jsonl` | 띄울 때마다 남기는 영구 이력. `dispatch`, `task`, `run`, `terminal`, `at`, `branch`, `worktree`, `spec`, `title`, `agent`, `model`, `effort`, `effective`, `row`, `experiment`, `retry_of`. 모르는 값은 null. 필드와 선택 검사 계약은 [orch-routing 설계](features/orch-routing/design.md) 가 소유한다 | 자동으로 지우지 않는다. launched-workers 정리와 별개다 |
+| `state/routing-log.jsonl` | worker PR이 머지되거나 닫힐 때 남기는 관측 기록. 필드는 [orch-routing 스펙의 기록 항목](features/orch-routing/spec.md#기록-항목), 수집과 쓰기는 [설계](features/orch-routing/design.md)가 소유한다. `version`과 `recorded_at`을 함께 둔다. 토큰 키는 `input`, `output`, `cache_read`, `cache_write`이고 입력은 캐시 읽기를 제외한 값이다 | PR마다 한 줄. 같은 결과는 보존하고 closed에서 merged로 바뀌면 교체한다. 자동으로 지우지 않는다 |
+| `state/routing-log.lock` | routing 기록을 원자적으로 바꿀 때 잡는 pid 잠금 | 쓰기를 끝내면 반납하고 죽은 잠금은 회수한다 |
 | `githooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
 | `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
 | `state/hooks/<이벤트>.lock` | 핸들러 잠금 | 실행이 끝나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다 |

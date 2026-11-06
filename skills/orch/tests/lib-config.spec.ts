@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ConfigError, REMOVED_CONFIG_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
+import { ConfigError, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
@@ -50,6 +50,7 @@ describe('loadConfig', () => {
       hooks: { timeouts: { 'before-merge': 900 } },
       pipeline: { enabled: true, ready_slots: 2 },
       heavy: { exclusive: ['docker build'] },
+      routing: { review_author: 'review-bot', size_pattern: 'grade: ([A-D])' },
     }
     assert.deepEqual(loadConfig(repo, { file: file(JSON.stringify(body)) }), body)
   })
@@ -177,4 +178,10 @@ describe('QUEUE_KEYS', () => {
     const typo = loadConfig(repo, { file: file(JSON.stringify({ queue: { requird: 'test' } })) })
     assert.throws(() => section(typo, 'queue', QUEUE_KEYS), (e: unknown) => e instanceof ConfigError && /queue 절에 모르는 키가 있다: requird$/.test(e.message))
   })
+})
+
+test('routing 절의 알려진 키만 읽는다', () => {
+  const body = { review_author: 'bot', review_pattern: '(1)(2)(3)(4)(5)', size_pattern: '([A-D])' }
+  assert.deepEqual(section({ routing: body }, 'routing', ROUTING_KEYS), body)
+  assert.throws(() => section({ routing: { typo: true } }, 'routing', ROUTING_KEYS), ConfigError)
 })

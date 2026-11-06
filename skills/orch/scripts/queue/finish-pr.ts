@@ -115,6 +115,7 @@
 // 종료 코드: 0 FINISH-DONE, 1 FINISH-FAIL, 2 사용법 오류(설정 파일 오류, 업무 완료 명령과 핸들러가 함께 있음 포함)이거나
 //           orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
+import { recordRouting } from '../lib/routing-log.ts'
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -608,6 +609,7 @@ async function finish(args: Args, repo: string): Promise<number> {
   // 보드 항목을 워크트리 이름으로도 찾는다. 정리가 워크트리를 지우므로 그 전에 읽는다
   const worktree = branch ? worktreePath(repo, branch) : null
   if (worktree && args.run) await tellMerged(args, args.run, worktree, merge)
+  await recordRouting(repo, Number(args.pr), 'merged')
   const feature = featureBranch(repo, branch, args.specsDir ?? undefined) || merged.body.includes(EVIDENCE_START)
   // 워크트리는 배포를 기다리기 전에 지운다. 배포 브랜치에 연달아 머지하면 배포 확인이 길어져 머지된 워크트리가 한 시간 넘게 남았다(2026-11-04).
   // 기능 PR 도 같다. 후속 검증이 대기여도 cleanup-sweep 은 워크트리와 브랜치만 지우고 지시서를 남긴다(사용자 결정 2026-11-04)

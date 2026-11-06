@@ -246,6 +246,26 @@ orch doctor migrate --repo "$REPO" --apply
 Java 마이그레이션은 `reserve-migration.ts --kind java` 로 받는다. 그 모듈의 `watch` 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 를 낸다. Flyway 는 클래스 이름을 파일 이름으로 쓰므로 이름은 대소문자를 지키고, Java 식별자가 아니면 사용법 오류다.
 `watch`에만 적은 모듈은 `--kind java` 로만 예약할 수 있다.
 
+### 모델 선택 관측 설정
+
+`routing` 절은 이 절을 지원하는 새 번들을 설치한 뒤 저장소 `config.json`에 더한다.
+옛 번들은 모르는 최상위 절을 설정 오류로 거부한다.
+키와 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다.
+
+```json
+{
+  "routing": {
+    "review_author": "review-bot[bot]",
+    "size_pattern": "PR 크기 등급: \\**([A-D])"
+  }
+}
+```
+
+`review_pattern`을 생략하면 P1~P5가 열 머리인 Markdown 표에서 첫 수 행을 읽는다.
+다른 표를 쓰는 저장소는 P1부터 P5까지의 수를 차례로 캡처하는 정규식을 준다.
+등급을 읽을 꼴이 없으면 `size_grade`는 null이다.
+본문·질문 글·금액은 기록하지 않는다.
+
 ### 자동 머지 리뷰 조건
 
 `queue.auto_review.require` 에 조건 이름을 적어 저장소마다 리뷰 판정을 조합한다.

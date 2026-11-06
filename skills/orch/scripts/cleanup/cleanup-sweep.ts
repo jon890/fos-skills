@@ -342,6 +342,8 @@
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
+import { sweepRouting } from '../lib/routing-log.ts'
+
 import { featureCompletionProblem } from '../lib/feature-evidence.ts'
 import { idleShellVerdict } from '../lib/idle-shells.ts'
 import type { Holder } from '../lib/idle-shells.ts'
@@ -1815,6 +1817,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
     code = 2
   })
   const s: Sweep = { repo, args, workers, specsDir, log, report, owners }
+  if (args.apply) await sweepRouting(repo)
   const listed = worktrees(repo)
   // PR 을 찾을 브랜치(살아 있는 worker 의 워크트리를 뺀 것과 워크트리 없는 로컬 브랜치)의 이름을 한 번에 읽어 둔다(lib/pr-lookup.ts)
   const locals = lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)
