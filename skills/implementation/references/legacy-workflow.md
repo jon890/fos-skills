@@ -59,12 +59,12 @@ team-lead 가 아래 팀원을 부른다. 각자의 판정 기준은 자기 문�
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 재실행 확인 | `plan_precheck.py` 종료 코드 0, 또는 발견 사항에 대한 사용자 확정 | `scripts/plan_precheck.py` |
+| 1 | 재실행 확인 | `plan_precheck.ts` 종료 코드 0, 또는 발견 사항에 대한 사용자 확정 | `scripts/plan_precheck.ts` |
 | 2 | 작업 공간 준비 | 작업 공간이 plan 브랜치 위에 있고, main 워킹 디렉터리와 분리됐고, 팀원에게 줄 절대경로가 있다 | 오버레이 |
 | 3 | 계획 검토 | critic 이 `APPROVE` 와 phase 별 실행 형태를 함께 회신했다 | `references/role-critic.md` |
 | 4 | phase 구현 | 모든 phase 가 커밋됐고 남아 있는 executor 가 없다 | `references/role-executor.md`, `references/executor-routing.md` |
 | 5 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
-| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획 수명 규칙에 맞춘 PR 이 있고, `pr_mergeable.sh` 가 0 으로 끝났고, 팀원이 남지 않았다 | `references/step-finish.md` |
+| 6 | 통합 검증과 PR | 기준 브랜치가 반영된 상태에서 통합 검증이 통과했고, `PR 전` 원격 검증의 결과와 나머지 원격 검증 목록이 PR 본문에 있고, 계획 수명 규칙에 맞춘 PR 이 있고, `pr_mergeable.ts` 가 0 으로 끝났고, 팀원이 남지 않았다 | `references/step-finish.md` |
 
 task 없이 리뷰만 도는 경로는 아래 「task 없이 리뷰부터 도는 경로」 의 표를 따른다.
 발동 조건: 일이 PR 하나로 끝나고, `tasks/` 에 그 일의 plan 이 없고, 계획 입력으로 쓸 지시서나 ADR 이 있다.
@@ -86,10 +86,10 @@ plan 인자를 받으면 가장 먼저 돌린다.
 ```bash
 # cwd: 대상 저장소 root
 # 레포 설정에서 기준 브랜치를 찾았을 때
-python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" \
+node "$SKILL_DIR/scripts/plan_precheck.ts" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" \
   --tasks-dir "${TASKS_DIR:-tasks}" --docs-dir "${DOCS_DIR:-docs}" --json
 # 찾지 못했을 때
-python3 "$SKILL_DIR/scripts/plan_precheck.py" "$PLAN" --repo "$REPO" \
+node "$SKILL_DIR/scripts/plan_precheck.ts" "$PLAN" --repo "$REPO" \
   --tasks-dir "${TASKS_DIR:-tasks}" --docs-dir "${DOCS_DIR:-docs}" --json
 ```
 
@@ -255,7 +255,7 @@ PR 이 둘 이상이거나 세션 재시작, 계정 전환을 넘길 수 있는 
 | 2 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
 | 3 | 통합 검증과 PR | 위 6단계의 통과 조건에서 계획서 삭제 커밋을 뺀 것을 채웠다 | `references/step-finish.md` |
 
-- 재실행 확인, 계획 검토, phase 구현(위 1, 3, 4단계)은 돌지 않는다. 계획서가 없어 `plan_precheck.py` 와 `verify_task.py` 가 볼 것이 없다.
+- 재실행 확인, 계획 검토, phase 구현(위 1, 3, 4단계)은 돌지 않는다. 계획서가 없어 `plan_precheck.ts` 와 `verify_task.py` 가 볼 것이 없다.
 - 2단계는 위 5단계와 같다. code-reviewer 에게 phase 파일 대신 `$PLAN_INPUT` 을 넘긴다. 발견의 phase 자리에는 `-` 를 쓴다.
   `FIX_NEEDED` 와 `VIOLATION` 은 executor 를 하나 띄워 고치고, 수정은 검토 반영 커밋 하나로 묶는다.
 - 3단계는 `references/step-finish.md` 에서 「원격 검증 목록」 과 「커밋 검토와 계획서 삭제」 를 건너뛴다. 지울 계획서가 없다.

@@ -6,7 +6,7 @@ description: |
   "리뷰 남겨줘", "이 PR 봐줘", "리뷰 초안", "리뷰 댓글 달아줘" 같은 요청이면 이 스킬을 쓴다.
   이미 달린 리뷰를 코드에 반영하는 일은 `review-fix` 가 맡는다. 방향이 반대다.
 metadata:
-  version: "1.8.3"
+  version: "2.0.0"
 ---
 
 # pr-review
@@ -28,7 +28,7 @@ metadata:
 - 오버레이가 채우는 것: git 호스트, 등급 기준(이 저장소에서 P2 는 무엇인가), 후속 업무를 등록할 곳,
   저장소 고유 점검 항목, 사용자 문체 파일의 경로.
 - **등급 표기는 오버레이가 바꾸지 않는다.** `references/grading.md` 가 소유하고
-  `scripts/gh-review-post.sh` 가 등록 직전에 강제한다.
+  `scripts/gh-review-post.ts` 가 등록 직전에 강제한다.
 - 없으면 레포 `CLAUDE.md` 와 `REVIEW.md` 를 본다. 셋 다 없으면 사용자에게 확인한다.
 - 오버레이는 코어를 덮어쓰지 않고 채운다. 아래 실행 절차의 단계는 생략할 수 없다.
 
@@ -43,7 +43,7 @@ metadata:
 | 2 | 근거 확보 | 지적마다 주장의 종류에 맞는 근거가 붙었거나 질문형으로 바뀌었다 | [evidence.md](references/evidence.md) |
 | 3 | 등급과 범위 판정 | 지적마다 등급과 행선지(리뷰 또는 후속 업무)가 정해졌다 | [grading.md](references/grading.md), [scope.md](references/scope.md) |
 | 4 | 미리보기 | 본문 전부의 미리보기 파일이 만들어졌다. 사용자와 대화하는 세션은 미리보기를 띄우고 턴을 끝냈다. dispatch 로 받은 세션은 `preview.html` 을 만들고 그 경로를 보고에 적었다 | `content-preview` 스킬 |
-| 5 | 등록과 검증 | 사용자가 등록을 확인했거나(dispatch 로 받은 세션은 지시문에 등록 지시가 있고) `gh-review-post.sh` 가 종료 코드 0 으로 끝났다 | [posting.md](references/posting.md) |
+| 5 | 등록과 검증 | 사용자가 등록을 확인했거나(dispatch 로 받은 세션은 지시문에 등록 지시가 있고) `gh-review-post.ts` 가 종료 코드 0 으로 끝났다 | [posting.md](references/posting.md) |
 
 각 단계를 건너뛰면 되돌리는 비용이 크다. 잘못 등록한 리뷰는 작성자가 읽은 뒤에야 지울 수 있다.
 
@@ -86,7 +86,7 @@ gh pr list --state open --limit 20
 
 [posting.md](references/posting.md) 를 따른다. 등록 뒤에는 반드시 확인한다.
 
-모드와 인자는 `scripts/gh-review-post.sh` 의 머리 주석이, 조회는 `scripts/gh-review-list.sh` 의 머리 주석이 소유한다.
+모드와 인자는 `scripts/gh-review-post.ts` 의 머리 주석이, 조회는 `scripts/gh-review-list.ts` 의 머리 주석이 소유한다.
 지적이 둘 이상이면 `--batch` 로 요약과 인라인을 리뷰 하나로 묶는다.
 요약 형식은 [grading.md](references/grading.md) 의 「요약 리뷰」 가 소유한다.
 

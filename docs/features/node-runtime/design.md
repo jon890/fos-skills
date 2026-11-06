@@ -69,7 +69,7 @@ orch 가 이미 `skills/orch/scripts/lib/args.ts`, `lib/py.ts` 로 같은 일을
   - `driver/config.py` 41~45줄: 플러그인 캐시 안의 경로를 `tools/browser-driver/driver` 깊이로 판정한다. 새 자리는 경로 조각이 하나 더 많다.
   - `skills/browser/SKILL.md` 64줄: 드라이버 후보 `$SKILL_DIR/../../tools/browser-driver/browser_driver.py`
   - `export-only-skills/content-preview/scripts/show-preview.sh` 54줄: 위로 올라가며 `tools/browser-driver/` 를 찾는다
-  - `skills/presentation/scripts/check-deck.py` 163줄
+  - `skills/presentation/scripts/check-deck.ts` 의 `findDriver`(영역 3 에서 `.py` 를 옮겼다)
   - `scripts/export-to-team.sh` 의 `SHARED_TOOLS` 와 `tools/` 접두
   - `scripts/test-plugin-install.sh` 224줄: 캐시의 `tools/browser-driver/browser_driver.py` 실행 권한
   - `~/.claude/scripts/browser-driver` 링크. README 「링크로 설치」 의 `ln` 줄과 `docs/code-architecture.md` 의 드라이버 찾는 순서·링크 행을 새 자리로 고친다. 사용자의 개인 링크는 REQ7 과 같이 머지 뒤 후속 작업으로 바꾼다
@@ -180,10 +180,11 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 - 다른 영역이 부르는 명령을 옮기면 부르는 쪽도 같은 PR 에서 고친다. 영역 PR 은 머지 전에 옮긴 옛 이름마다 `git grep -n '<옛 이름>'` 을 코드, 테스트, 문서 전체에 돌려 남은 곳을 고치거나 다음 영역의 몫으로 PR 본문에 적는다. 2026-11-05 에 알려진 곳:
   - `review-fix/scripts/review_threads.py` 를 orch 의 `merge_queue.ts`(610줄 근처), `orch-loop.ts`(2116줄 근처)가 `python3` 로 부른다. PR4 가 `node` 와 `.ts` 로 바꾼다. orch 구조 개편 뒤 줄 번호는 바뀐다.
   - `githooks/commit-msg` 가 korean-check 검사기를, `content-preview/scripts/style-check.sh` 가 `korean-check/scripts/check.sh` 를 부른다. 부르는 쪽(PR2, PR5)이 먼저 옮겨져도 그때는 옛 검사기를 옛 꼴로 부르고, PR6 이 부르는 쪽까지 새 꼴로 바꾼다.
-  - `plan` 의 검사기를 spec, technical-design, implementation, review-fix 문서가 부른다. PR7 이 그 문서들의 호출을 함께 바꾼다.
+  - `plan` 의 검사기를 spec, technical-design, implementation, review-fix 문서가 부른다. PR7 이 그 문서들의 호출을 함께 바꾼다. 영역 3 의 `implementation`, `docs-audit` 는 `verify_task.py`, `overlay_paths.py` 를 부르는 줄이 남아 PR7 전까지 `migrated_docs` 에 들이지 않는다.
+  - `presentation` 의 `check-deck.ts` 는 korean-check 의 `korean-style-check.py` 를 옛 꼴(`python3 <경로>`, 새 `.ts` 가 생기면 그것을 먼저)로 자식 프로세스로 부른다. 옛 구현은 그 파일을 Python 모듈로 불러 매처를 빌렸다. PR6 이 부르는 꼴을 정한다.
   - `scripts/test-plugin-install.sh`(PR2 에서 `.ts`)가 `style-check.sh --where`, `browser_driver.py` 의 실행 권한, `verify_task.py --help` 를 본다. PR5, PR7, PR10 이 그 줄을 함께 고친다.
   - `scripts/tests/test_export_to_team.py`(PR2 에서 `.spec.ts`) 109줄이 `skills/plan/tests/test_verify_task.py` 의 바이트를 fixture 로 읽는다. PR2 가 옮길 때 fixture 를 테스트 안의 내용으로 바꿔 다른 영역 파일에 기대지 않게 한다.
-  - `skills/browser/tests/test_skill_doc.py` 22~23줄이 `browser_driver.py` 경로를 본다. PR3 가 옮기고 PR10 이 경로를 바꾼다.
+  - `skills/browser/tests/skill-doc.spec.ts` 의 `DRIVER_ENTRY` 가 `browser_driver.py` 경로를 본다. PR3 가 옮겼고 PR10 이 경로를 바꾼다.
   - `skills/orch/tests/legacy-entrypoints.spec.ts` 가 orch 의 `.py`, `.sh` 를 따로 막는다. `runtime-policy.spec.ts` 와 같은 사실을 둘이 갖게 되므로 PR1 이 이 파일을 지우고, `orch-doctor.py` 와 `ts_shim.py` 는 `pending` 의 `orch-legacy` 영역으로 둔다. 그 영역은 orch-cli 의 옛 이름 정리 PR 이 지운다.
 - 플러그인을 이행 중간에 갱신한 쪽은 그 커밋의 상태를 받는다. 각 커밋에서 호출과 파일이 맞으므로 따로 할 일이 없다.
 - 영역 PR 의 `호환성:` 항목은 그 스킬을 major 로 올린다([ADR-023](../../adr/023-version-at-merge.md)). major 는 조각이 아니라 PR 이 `metadata.version` 과 CHANGELOG 를 직접 올린다. `tools/browser-driver` 는 버전이 없어 `browser` 스킬의 CHANGELOG 에 적는다(스펙 DECISION17).

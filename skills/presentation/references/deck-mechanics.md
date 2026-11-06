@@ -59,7 +59,7 @@
 - **여러 줄 블록을 정규식으로 지우지 않는다.** 같은 주석이 CSS 와 JS 양쪽에 있어 엉뚱한 쪽이 지워진다.
   줄 번호로 경계를 확인하고 그 범위만 자른다.
 - 큰 편집 전에 사본을 뜬다.
-- 편집 뒤 `scripts/check-deck.py` 를 돌린다.
+- 편집 뒤 `scripts/check-deck.ts` 를 돌린다.
 - 문자열 교체는 `count == 1` 을 확인한 뒤 바꾼다. 여러 곳이 걸리면 의도가 아니다.
 
 파일을 잃었을 때 브라우저 탭이 아직 열려 있으면 `document.documentElement.outerHTML` 로 되찾을 수 있다.
@@ -69,8 +69,8 @@
 
 ```bash
 DECK=""   # 검사할 덱 HTML 의 절대 경로
-python3 "$SKILL_DIR/scripts/check-deck.py" "$DECK"            # 구조·JS·금지어
-python3 "$SKILL_DIR/scripts/check-deck.py" "$DECK" --browser  # 세로 넘침까지
+node "$SKILL_DIR/scripts/check-deck.ts" "$DECK"            # 구조·JS·금지어
+node "$SKILL_DIR/scripts/check-deck.ts" "$DECK" --browser  # 세로 넘침까지
 ```
 
 `--browser` 는 이 저장소의 `tools/browser-driver` 를 먼저 찾고, 없으면 `~/.claude/scripts/browser-driver` 를 쓴다. 둘 다 없으면 그 항목만 건너뛴다.
@@ -91,6 +91,6 @@ python3 "$SKILL_DIR/scripts/check-deck.py" "$DECK" --browser  # 세로 넘침까
 | --- | --- | --- |
 | 발표자 노트가 비어 보인다 | `template.textContent` 는 빈 문자열이다 | `t.content.textContent` 를 읽는다 |
 | 개요 버튼이 두 배로 늘어난다 | JS 가 `appendChild` 만 하는데 HTML 에 옛 목록이 박혀 있다 | 컨테이너를 빈 채로 두고 JS 가 채우게 한다 |
-| 장 하나가 다음 장을 삼킨다 | `</section>` 이 빠졌다 | `check-deck.py` 의 장 수로 잡는다 |
+| 장 하나가 다음 장을 삼킨다 | `</section>` 이 빠졌다 | `check-deck.ts` 의 장 수로 잡는다 |
 | 두 칸 배치가 깨진다 | `.split{display:grid}` 위에 `.asks{display:flex}` 를 같은 요소에 얹었다 | 바깥에 `.split.two`, 안쪽에 다른 클래스를 둔다 |
 | 전체 화면 버튼을 누른 뒤 스페이스바가 안 먹는다 | 버튼에 포커스가 남았다 | 누른 뒤 `blur()` 한다 |

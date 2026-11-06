@@ -8,12 +8,12 @@ description: |
   외부에 게시하는 본문은 `content-preview` 가, 문서 감사는 `docs-audit` 가 맡는다.
   혼자 읽는 HTML 보고서는 `report` 스킬이 설치돼 있으면 그쪽이 맡는다.
 metadata:
-  version: "1.4.0"
+  version: "2.0.0"
 ---
 
 # presentation
 
-**목표: 발표 자료가 HTML 한 파일로 만들어져 `check-deck.py` 와 `references/slide-rules.md` 의 훑기를 통과하고, 사용자가 확정한 장은 그대로 남는다.**
+**목표: 발표 자료가 HTML 한 파일로 만들어져 `check-deck.ts` 와 `references/slide-rules.md` 의 훑기를 통과하고, 사용자가 확정한 장은 그대로 남는다.**
 
 **이 문서의 `scripts/`, `references/`, `assets/` 는 이 스킬 번들 기준 상대경로다.**
 하네스가 알려주는 스킬 base 디렉터리를 `$SKILL_DIR` 로 두고 붙여 쓴다. 설치 위치를 가정하지 않는다.
@@ -52,7 +52,7 @@ metadata:
 3. 부 전환 장과 목차를 먼저 만든다. 전체 흐름이 여기서 정해진다.
 4. 장을 채운다. 한 장에 주장 하나다.
 5. 장마다 발표자 노트를 함께 쓴다.
-6. `python3 "$SKILL_DIR/scripts/check-deck.py" "$DECK" --browser` 로 검사한다.
+6. `node "$SKILL_DIR/scripts/check-deck.ts" "$DECK" --browser` 로 검사한다.
 7. `references/slide-rules.md` 로 덱 전체를 훑는다. 판정 가능한 규칙 목록이다. 언어 규칙은 `korean-check` 스킬의 `references/korean-style.md` 와 `references/writing-structure.md` 가 소유하고, 이 목록은 그 위에 얹히는 발표 고유 판정만 담는다.
 
 경로는 절대 경로로 쓴다. 덱은 저장소 밖에서 만들므로 상대 경로는 그 디렉터리를 가리켜

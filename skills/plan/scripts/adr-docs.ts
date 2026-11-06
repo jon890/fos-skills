@@ -322,7 +322,7 @@ function matchesId(adr: AdrFile, id: string) {
   return adr.id === id || (adr.kind === "date" && adr.date === id);
 }
 
-// 계획서 폴더: 경로 조각이 tasks 이거나 static_check.py 의 PLAN_DIR 꼴(하위 프로젝트 접두 포함)
+// 계획서 폴더: 경로 조각이 tasks 이거나 docs-audit 의 static_check.ts 의 PLAN_DIR 꼴(하위 프로젝트 접두 포함)
 const PLAN_DIR = /^(?:[A-Za-z0-9]+-)?plan[-_]?\d{2,}(?:-.*)?$/;
 export function inPlanDir(path: string) {
   return path.split("/").slice(0, -1).some((part) => part === "tasks" || PLAN_DIR.test(part));

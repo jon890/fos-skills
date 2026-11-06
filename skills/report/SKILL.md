@@ -7,7 +7,7 @@ description: |
   청중 앞에서 넘기며 말하는 발표는 `presentation`, 외부에 게시할 글은 `content-preview`, 혼자 읽는 설명과 보고서는 `report` 가 맡는다.
   웹 조사는 하지 않는다. 조사가 필요하면 조사를 먼저 하고 그 결과를 넘긴다.
 metadata:
-  version: "1.0.2"
+  version: "2.0.0"
 ---
 
 # report
@@ -28,7 +28,7 @@ metadata:
 | 1 | 재료 모으기 | 보고서에 넣을 원문(대화, 파일, 조사 결과)의 범위가 정해졌다 | |
 | 2 | 구성 고르기 | 세 구성 가운데 하나를 골랐고 고른 이유가 한 줄로 있다 | [`layouts.md`](references/layouts.md) |
 | 3 | 틀에 채우기 | `$OUT` 에 틀을 복사해 내용을 채웠다 | [`template.html`](assets/template.html) |
-| 4 | 검사 | `check-report.py "$OUT"` 와 `--korean` 이 종료 코드 0 이다 | |
+| 4 | 검사 | `check-report.ts "$OUT"` 와 `--korean` 이 종료 코드 0 이다 | |
 | 5 | 띄우고 알리기 | `open` 을 불렀고 응답에 경로, 구성, 검사 결과가 있다 | |
 
 4단계에서 구조 검사를 끝내 통과하지 못하면 5단계로 가지 않고 실패 내용을 알린다.
@@ -77,8 +77,8 @@ cp "$SKILL_DIR/assets/template.html" "$OUT"
 구조 검사(태그 짝, 각주와 출처의 짝, 외부 자원, 파일 이름)와 표기 검사(korean-check 의 금지어)를 돈다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/check-report.py" "$OUT"
-python3 "$SKILL_DIR/scripts/check-report.py" --korean "$OUT"
+node "$SKILL_DIR/scripts/check-report.ts" "$OUT"
+node "$SKILL_DIR/scripts/check-report.ts" --korean "$OUT"
 ```
 
 **구조 검사가 실패하면 출력의 줄과 종류를 보고 고쳐 다시 검사한다. 고쳐 다시 검사하는 것은 두 번까지다.**

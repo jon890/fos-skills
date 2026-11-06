@@ -6,7 +6,7 @@ description: |
   같은 요청이면 이 스킬을 쓴다.
   하네스 지침(CLAUDE.md, AGENTS.md, rules, 스킬)의 감사는 `harness-cleanup` 스킬이 설치돼 있으면 그쪽이 맡는다.
 metadata:
-  version: "4.2.0"
+  version: "5.0.0"
 ---
 # docs-audit
 
@@ -23,7 +23,7 @@ metadata:
 | 단계  | 이름      | 통과 조건                                           | reference                 |
 | --- | ------- | ----------------------------------------------- | ------------------------- |
 | 1   | 범위 판정   | 감사할 파일 목록과 ADR 검사 인자(`$ADR_ARGS`)가 정해졌다            | 오버레이                      |
-| 2   | 정적 검사   | `run_static_check.py` 표의 판정이 통과고 `adr-docs.ts check` 종료 코드가 0 이다. 발견이면 걸린 줄이 모두 발견으로 올랐거나 `references/six-axis.md` 의 유지 유형으로 분류됐다. 실행 실패(종료 코드 2)는 통과가 아니다 | `scripts/run_static_check.py`, plan 의 `scripts/adr-docs.ts` |
+| 2   | 정적 검사   | `run_static_check.ts` 표의 판정이 통과고 `adr-docs.ts check` 종료 코드가 0 이다. 발견이면 걸린 줄이 모두 발견으로 올랐거나 `references/six-axis.md` 의 유지 유형으로 분류됐다. 실행 실패(종료 코드 2)는 통과가 아니다 | `scripts/run_static_check.ts`, plan 의 `scripts/adr-docs.ts` |
 | 3   | 의미 검사   | 모든 축을 대상 파일에 적용했고 발견마다 증명 근거가 있다                | `references/six-axis.md`  |
 | 4   | 리포트와 승인 | 리포트가 나갔고 사용자가 고칠 항목을 정했다                        |                           |
 | 5   | 수정과 재검증 | 승인 항목만 고쳤고 정적 검사와 코드 대조를 다시 통과했다                |                           |
@@ -82,18 +82,18 @@ python3 "$PLAN_SKILL_DIR/scripts/overlay_paths.py" --skill docs-audit $SCOPE_PAT
 
 ```bash
 # cwd: 검사 대상 저장소 루트
-python3 "$SKILL_DIR/scripts/run_static_check.py" "" "$SCOPE"
+node "$SKILL_DIR/scripts/run_static_check.ts" "" "$SCOPE"
 node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check --scope "$SCOPE" $ADR_ARGS
 ```
 
-`run_static_check.py` 는 표 열 수, 제목 단계, 코드 펜스, 계획서 번호 참조, 책임 설명 목록을 본다.
+`run_static_check.ts` 는 표 열 수, 제목 단계, 코드 펜스, 계획서 번호 참조, 책임 설명 목록을 본다.
 깨진 링크·앵커, 링크 없는 ADR 식별자, ADR 색인, 번호 중복, 대체된 ADR 위치는 `adr-docs.ts` 가 본다. 출력 줄과 종료 코드는 그 파일 머리 주석이 소유한다.
 `adr-docs.ts` 는 `--changed-since` 없이 감사 범위 전체를 리포트에 올린다. `--scope` 는 결과만 좁히고 링크 대상은 범위 밖에서도 찾는다.
 
 모노레포면 `$SCOPE` 에 `frontend/docs` 처럼 하위 프로젝트의 docs 경로를 준다. cwd 는 그대로 저장소 루트다.
-이 스크립트가 `static_check.py` 를 하위 프로세스로 돌리고 종료 코드와 판정을 표로 낸다.
+이 스크립트가 `static_check.ts` 를 하위 프로세스로 돌리고 종료 코드와 판정을 표로 낸다.
 검사를 파이프로 자르거나 `echo $?` 로 읽지 않는다. 종료 코드가 뒤 명령의 것으로 바뀌어 통과로 잘못 읽는다.
-종료 코드의 뜻은 `static_check.py` 머리 주석이 소유한다.
+종료 코드의 뜻은 `static_check.ts` 머리 주석이 소유한다.
 
 `PLAN_REF` 로 걸린 자리는 유형을 가려야 처리가 정해진다.
 분류표와 예외는 `references/six-axis.md` 가 소유한다.
@@ -118,7 +118,7 @@ ADR 폴더가 여러 개면 `$ADR_ARGS` 에 `--adr-dir` 를 여러 번 넣어 �
 코드와 문서의 실제 소비 관계를 읽고 축별로 판정한다.
 위임한 조사는 정해진 범위만 보고 발견 형식으로 회신한다.
 축은 부패, 과대화, 추론성, 중복, 자명성이다. 각 축의 정의와 판정 기준은 `references/six-axis.md` 가 소유한다.
-구조 무결성(표 열 수, 코드 펜스, 헤딩 레벨은 `static_check.py`, 깨진 링크·앵커와 ADR 번호·INDEX 는 `adr-docs.ts`)은 2단계 정적 검사가 판정하므로 이 단계에서 다시 보지 않는다. 리포트에는 그 발견을 `[구조 무결성]` 으로 적는다.
+구조 무결성(표 열 수, 코드 펜스, 헤딩 레벨은 `static_check.ts`, 깨진 링크·앵커와 ADR 번호·INDEX 는 `adr-docs.ts`)은 2단계 정적 검사가 판정하므로 이 단계에서 다시 보지 않는다. 리포트에는 그 발견을 `[구조 무결성]` 으로 적는다.
 
 **줄 수만으로 과대화를 판정하지 않는다.**
 고정 개수와 목록은 계약인지 단순 복제인지 코드와 대조한다.

@@ -104,7 +104,7 @@ PR 을 올린 뒤 사람이 선행 조건(push, 머지, 배포)이 채워진 시
 
 ```bash
 # cwd: 대상 저장소
-bash "$SKILL_DIR/scripts/pr_mergeable.sh" "$PR"
+node "$SKILL_DIR/scripts/pr_mergeable.ts" "$PR"
 ```
 
 종료 코드 1 이면 충돌이다. 기준 브랜치를 plan 브랜치에 병합해 풀고, 통합 검증을 다시 돌린 뒤 일반 push 로 올린다.

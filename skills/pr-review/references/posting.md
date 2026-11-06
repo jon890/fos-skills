@@ -33,7 +33,7 @@ GH_HOST="$HOST" gh api "repos/$OWNER/$REPO/pulls/$PR/comments"
 삭제 경로에는 PR 번호가 없다. 둘이 달라서 헷갈린다.
 
 조회와 답글도 스크립트를 쓴다. 경로와 호스트를 매번 직접 맞추지 않는다.
-인자는 `scripts/gh-review-list.sh` 와 `scripts/gh-review-post.sh` 의 머리 주석이 소유한다.
+인자는 `scripts/gh-review-list.ts` 와 `scripts/gh-review-post.ts` 의 머리 주석이 소유한다.
 
 ## 등록은 리뷰 단위로 한다
 
@@ -58,14 +58,15 @@ GH_HOST="$HOST" gh api "repos/$OWNER/$REPO/pulls/$PR/comments"
 
 ## 등록은 스크립트로 한다
 
-**`gh api` 를 직접 부르지 않고 `gh-review-post.sh` 로 등록한다.**
+**`gh api` 를 직접 부르지 않고 `gh-review-post.ts` 로 등록한다.**
+호출은 `node "$SKILL_DIR/scripts/gh-review-post.ts" <인자>` 꼴이다. 조회는 `gh-review-list.ts` 가 같은 꼴이다.
 zsh 의 `noclobber` 는 기존 payload 파일 덮어쓰기를 `file exists` 한 줄로 거부하고,
 뒤이은 `gh api` 는 그대로 성공해 이전 payload 를 다시 등록한다.
 스크립트는 매번 새 임시 파일을 쓰고 등록 직전에 본문을 검증한다.
 
 ## 등록 뒤 확인
 
-`gh-review-post.sh` 가 등록 뒤에 붙은 위치와 첫 줄을 조회해 출력한다.
+`gh-review-post.ts` 가 등록 뒤에 붙은 위치와 첫 줄을 조회해 출력한다.
 **종료 코드 1 은 등록한 인라인 일부가 줄에 붙지 않았다는 뜻이다.** 그 줄이 diff 에 있는지 확인한다.
 
 ## 잘못 등록했을 때
