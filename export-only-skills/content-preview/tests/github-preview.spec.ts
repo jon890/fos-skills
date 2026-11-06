@@ -88,6 +88,17 @@ describe('github-preview', () => {
     }
   })
 
+  test('같은 선택형 옵션을 거듭 주면 앞뒤 어느 값이 틀려도 사용법 오류이고 이전 산출물은 그대로다', () => {
+    for (const types of [['bogus', 'pr'], ['pr', 'bogus']]) {
+      const done = generate(COMMAND, ['--type', types[0], '--type', types[1], '--title', 't', '--md-file', '-'], { input: 'x', stale: 'STALE' })
+      assert.equal(done.code, 2, types.join(' '))
+      assert.equal(done.html, 'STALE', types.join(' '))
+    }
+    const last = generate(COMMAND, ['--type', 'issue', '--type', 'pr', '--title', 't', '--md-file', '-'], { input: 'x' })
+    assert.equal(last.code, 0)
+    assert.ok(last.html.includes('Pull Request'))
+  })
+
   test('--help 는 사용법을 stdout 에 내고 0 으로 끝난다', () => {
     const done = generate(COMMAND, ['--help'])
     assert.equal(done.code, 0)
