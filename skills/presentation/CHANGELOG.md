@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.0.1 (2026-11-06)
+
+- 전역 금지어 검사가 korean-check 의 `korean-style-check.py` 대신 `korean-style-check.ts` 를 node 로 부른다
+
 ## 2.0.0 (2026-11-06)
 
 - 호환성: 검사 스크립트를 `check-deck.py` 에서 Node 24 의 `check-deck.ts` 로 바꿨다. `node "$SKILL_DIR/scripts/check-deck.ts"` 로 부른다

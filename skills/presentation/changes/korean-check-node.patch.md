@@ -1,1 +1,0 @@
-- 전역 금지어 검사가 korean-check 의 `korean-style-check.py` 대신 `korean-style-check.ts` 를 node 로 부른다

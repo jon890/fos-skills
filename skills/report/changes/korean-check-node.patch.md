@@ -1,1 +1,0 @@
-- `--korean` 이 korean-check 의 `check.sh` 대신 `check.ts` 를 node 로 부른다

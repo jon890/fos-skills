@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 4.0.1 (2026-11-06)
+
+- 표기 검사가 korean-check 의 `check.sh` 대신 `check.ts` 를 node 로 부른다. 실행 권한은 필요 없다
+
 ## 4.0.0 (2026-11-06)
 
 - 호환성: 스크립트 다섯(`dooray-preview/generate`, `github-preview/generate`, `preview_output`, `show-preview`, `style-check`)을 Node 24 의 `.ts` 로 바꿨다
