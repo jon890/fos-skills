@@ -1,5 +1,9 @@
 # CHANGELOG: implementation
 
+## 8.0.1 (2026-11-06)
+
+- 심볼릭 링크로 부른 진입도 import.meta.main 이 없는 Node 24.0·24.1 에서 일을 하도록 직접 실행 판정을 실체 경로로 비교한다
+
 ## 8.0.0 (2026-11-06)
 
 - 호환성: 스크립트 둘을 `.sh`, `.py` 에서 Node 24 의 `.ts` 로 바꿨다. `node "$SKILL_DIR/scripts/plan_precheck.ts"` 처럼 확장자만 바꿔 부른다

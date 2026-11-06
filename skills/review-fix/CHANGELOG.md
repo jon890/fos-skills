@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 3.0.1 (2026-11-06)
+
+- 심볼릭 링크로 부른 진입도 import.meta.main 이 없는 Node 24.0·24.1 에서 일을 하도록 직접 실행 판정을 실체 경로로 비교한다
+
 ## 3.0.0 (2026-11-06)
 
 - 호환성: 스크립트 여섯(`gh_host`, `review_threads`, `collect_review`, `checkout_pr`, `check_reply_body`, `fold_fixup`)을 Node 24 의 `.ts` 로 바꿨다

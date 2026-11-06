@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.0.2 (2026-11-06)
+
+- 심볼릭 링크로 부른 진입도 import.meta.main 이 없는 Node 24.0·24.1 에서 일을 하도록 직접 실행 판정을 실체 경로로 비교한다
+
 ## 2.0.1 (2026-11-06)
 
 - 전역 금지어 검사가 korean-check 의 `korean-style-check.py` 대신 `korean-style-check.ts` 를 node 로 부른다
