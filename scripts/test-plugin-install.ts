@@ -29,9 +29,9 @@ import {
   rmSync,
   symlinkSync,
 } from 'node:fs'
-import { basename, delimiter, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { isDir } from './skill_paths.ts'
+import { isMainModule } from './is-main.ts'
 
 const REPO_DIR = join(import.meta.dirname, '..')
 const FAKE_URL = 'https://marketplace.test/fos-skills.git'
@@ -283,5 +283,5 @@ function check(T: string): number {
 }
 
 // import.meta.main 은 Node 24.2 부터 있다. 24.0·24.1 에서 아무것도 하지 않고 0 으로 끝나지 않게 경로로도 본다
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = main(process.argv.slice(2))

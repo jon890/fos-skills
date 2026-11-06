@@ -16,9 +16,9 @@
 
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { isDir, isFile } from './skill_paths.ts'
+import { isMainModule } from './is-main.ts'
 
 const HERE = join(import.meta.dirname, '..')
 
@@ -48,5 +48,5 @@ export function main(): number {
 }
 
 // import.meta.main 은 Node 24.2 부터 있다. 24.0·24.1 에서 아무것도 하지 않고 0 으로 끝나지 않게 경로로도 본다
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = main()

@@ -30,7 +30,7 @@
 // 종료 코드: 0 통과, 1 위반, 2 검사기가 돌지 못함 (인자가 틀렸거나 파일이 없음, --korean 에서 korean-check 를 못 찾음)
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -487,5 +487,14 @@ export function main(argv: string[]): number {
   return 0
 }
 
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+// 심볼릭 링크로 불리면 argv[1] 은 링크 경로이고 import.meta.url 은 실체 경로라 둘 다 실체로 바꿔 비교한다
+function entryIsThisFile(): boolean {
+  if (process.argv[1] === undefined) return false
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+const isMain = import.meta.main || entryIsThisFile()
 if (isMain) process.exitCode = main(process.argv.slice(2))

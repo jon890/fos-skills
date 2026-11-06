@@ -9,11 +9,11 @@
 //       조각은 `<저장소 상대 경로>: <이유>` 다.
 // 종료 코드: 0 위반 없음, 1 위반이 있거나 스킬·README·CHANGELOG 를 읽지 못했다
 
-import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { PY_SPACE, pyHead, pyInt, pyLen, pyReadText, pySplitLines, pyStrCompare, pyStrip } from '../modules/kit/py.ts'
 import { checkChanges } from './skill_changes.ts'
 import { skillDirs, sourcePath } from './skill_paths.ts'
+import { isMainModule } from './is-main.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 export const README_SECTIONS = ['이럴 때 쓴다', '사용 예시', '받는 것', '함께 쓰는 스킬']
@@ -129,5 +129,5 @@ export function main(argv: string[], root: string = ROOT): number {
 }
 
 // import.meta.main 은 Node 24.2 부터 있다. 24.0·24.1 에서 아무것도 하지 않고 0 으로 끝나지 않게 경로로도 본다
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = main(process.argv.slice(2))

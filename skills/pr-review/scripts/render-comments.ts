@@ -6,10 +6,10 @@
 // 종료 코드: 0 낸다, 1 인자가 모자라거나 파일을 읽지 못했다
 
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+
 import { pyHead, pyLen, pyStr } from './kit/py.ts'
 import { write } from './gh-host.ts'
+import { isMainModule } from './is-main.ts'
 
 export type Comment = { id: number; in_reply_to_id?: number | null; user: { login: string }; path: string; line?: number | null; body: string }
 
@@ -49,5 +49,5 @@ export function main(argv: string[]): number {
   return 0
 }
 
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = main(process.argv.slice(2))

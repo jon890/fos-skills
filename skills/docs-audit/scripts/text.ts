@@ -1,8 +1,7 @@
 // 두 명령이 함께 쓰는 Python 꼴 문자열 함수와 출력, 진입 판정.
 // Python 의 str.splitlines, str.strip, 정규식 \s 와 같은 글자를 공백과 줄 끝으로 본다(JS 의 \s 와 \x1c~\x1f, \x85, \ufeff 가 다르다).
 
-import { writeSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { realpathSync, writeSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 // str 정규식의 \s 와 str.isspace 가 공백으로 보는 글자의 클래스
@@ -32,7 +31,14 @@ export function write(fd: 1 | 2, text: string): void {
   }
 }
 
-// import.meta.main 은 Node 24.2 부터 있다. 24.0·24.1 에서 아무것도 하지 않고 0 으로 끝나지 않게 경로로도 본다
+// import.meta.main 은 Node 24.2 부터 있다. 24.0·24.1 에서 아무것도 하지 않고 0 으로 끝나지 않게 경로로도 본다.
+// 심볼릭 링크로 불리면 argv[1] 은 링크 경로이고 import.meta.url 은 실체 경로라 둘 다 실체로 바꿔 비교한다
 export function isMain(url: string, flag: boolean | undefined): boolean {
-  return Boolean(flag) || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(url))
+  if (flag) return true
+  if (process.argv[1] === undefined) return false
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(url))
+  } catch {
+    return false
+  }
 }

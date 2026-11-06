@@ -9,10 +9,10 @@
 // 종료 코드: 0 낸다, 1 인자 오류나 호스트를 못 찾음이나 gh 실패
 
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+
 import { detectHost, HostError, write } from './gh-host.ts'
 import { renderComments, type Comment } from './render-comments.ts'
+import { isMainModule } from './is-main.ts'
 
 function die(message: string): number {
   write(2, `${message}\n`)
@@ -72,5 +72,5 @@ export function main(argv: string[]): number {
   return 0
 }
 
-const isMain = import.meta.main || (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+const isMain = isMainModule(import.meta.url, import.meta.main)
 if (isMain) process.exitCode = main(process.argv.slice(2))

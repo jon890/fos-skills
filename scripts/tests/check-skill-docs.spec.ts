@@ -12,7 +12,7 @@ import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const COMMAND = ['node', 'scripts/check-skill-docs.ts']
-const FILES = ['scripts/check-skill-docs.ts', 'scripts/skill_changes.ts', 'scripts/skill_paths.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
+const FILES = ['scripts/check-skill-docs.ts', 'scripts/is-main.ts', 'scripts/skill_changes.ts', 'scripts/skill_paths.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
 // ──
 
 const README = (name: string) =>

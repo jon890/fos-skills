@@ -11,7 +11,7 @@ import { copyFromRepo } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const COMMAND = ['node', 'scripts/render-development-loop.ts']
-const FILES = ['scripts/render-development-loop.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
+const FILES = ['scripts/render-development-loop.ts', 'scripts/is-main.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
 // ──
 
 const README = '# 제목\n\n```mermaid\nflowchart TD\n    A --> B\n```\n\n뒤 문단\n\n```mermaid\nflowchart LR\n    X\n```\n'

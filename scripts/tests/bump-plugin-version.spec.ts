@@ -13,7 +13,7 @@ import { copyFromRepo } from './boundary.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const COMMAND = ['node', 'scripts/bump-plugin-version.ts']
-const FILES = ['scripts/bump-plugin-version.ts', 'scripts/skill_changes.ts', 'scripts/skill_paths.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
+const FILES = ['scripts/bump-plugin-version.ts', 'scripts/is-main.ts', 'scripts/skill_changes.ts', 'scripts/skill_paths.ts', 'modules/kit/args.ts', 'modules/kit/py.ts']
 // ──
 
 const MANIFEST = '{\n  "name": "demo",\n  "version": "1.4.0",\n  "skills": ["./orch"]\n}\n'
