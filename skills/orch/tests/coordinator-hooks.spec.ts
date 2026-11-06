@@ -511,6 +511,18 @@ describe('require-spec-line', () => {
     assert.match(reason, /failed.*blocked/)
   })
 
+  test('전역 옵션과 셸 제어문으로 감싼 직접 재시도도 거부한다', () => {
+    for (const command of [
+      'orca --json orchestration worker-start --task t',
+      '( orca orchestration worker-start --task t )',
+      'if orca orchestration worker-start --task t; then echo done; fi',
+      'if true; then orca orchestration worker-start --task t; fi',
+      'time orca orchestration worker-start --task t',
+      'time -p command orca --full --json orchestration worker-start --task=t',
+    ]) assert.equal(decide(HOOK, command), 'deny', command)
+    assert.equal(decide(HOOK, 'echo time orca --json orchestration worker-start --task t'), 'pass')
+  })
+
   test('글자 그대로 넣은 지시 본문은 거부한다', () => {
     for (const command of [
       'orca orchestration worker-start --spec "a.ts 를 고치고 PR 을 연다"',

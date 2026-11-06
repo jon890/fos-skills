@@ -1,5 +1,9 @@
 # CHANGELOG: plan
 
+## 6.0.1 (2026-11-06)
+
+- `adr-docs.ts write-index` 가 다른 ADR 폴더의 ADR 을 대체 관계 칸에 접두와 함께 적는다. 링크 글에 접두가 있으면 그 글을, 없으면 폴더 이름을 식별자 앞에 붙인다
+
 ## 6.0.0 (2026-11-06)
 
 - 호환성: `scripts/check_adr_layout.py` 를 지웠다. ADR 위치와 링크는 `node "$PLAN_SKILL_DIR/scripts/adr-docs.ts" check` 로 본다

@@ -38,6 +38,11 @@
 //     --apply       실제로 정리한다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
+// routing 기록 (--apply일 때, --run과 무관):
+//     최근 띄우기 이력의 브랜치에서 머지 없이 닫힌 PR과 마무리 표시가 없는 머지 PR만 기록한다.
+//     마무리가 worker 종료를 기다리는 동안에는 finish-pr이 기록하도록 맡긴다. 기록 실패는 정리를 막지 않는다.
+//     ORCA_USAGE_DIR로 토큰 사용량 폴더를 바꾼다. 기록 형식과 수집은 lib/routing-log.ts가 소유한다.
+//
 // 일하는 중 (--run 을 줬을 때, 워크트리마다 맨 처음):
 //     worker 상태는 lib/worker-state.ts 의 판정이 정한다. 그 경로의 이 Run worker 행 가운데 살아 있는 dispatch 가 있으면
 //     터미널 소유 확인과 PR 조회(gh) 앞에서 건너뛴다. 워크트리가 많을 때 그 조회가 루프의 제한 시간을 다 썼다.
@@ -341,6 +346,8 @@
 //        그 동작만 하지 않고 2 다
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
+
+import { sweepRouting } from '../lib/routing-log.ts'
 
 import { featureCompletionProblem } from '../lib/feature-evidence.ts'
 import { idleShellVerdict } from '../lib/idle-shells.ts'
@@ -1815,6 +1822,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
     code = 2
   })
   const s: Sweep = { repo, args, workers, specsDir, log, report, owners }
+  if (args.apply) await sweepRouting(repo)
   const listed = worktrees(repo)
   // PR 을 찾을 브랜치(살아 있는 worker 의 워크트리를 뺀 것과 워크트리 없는 로컬 브랜치)의 이름을 한 번에 읽어 둔다(lib/pr-lookup.ts)
   const locals = lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)
