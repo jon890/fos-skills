@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, describe, test } from 'node:test'
@@ -95,6 +95,28 @@ describe('판정과 출력', () => {
     planBranch(s)
     const done = s.run(['plan001', '--repo', s.repo, '--base', 'main'])
     assert.deepEqual([done.code, done.stdout, done.stderr], [0, `plan001-x: ${PENDING}\n`, ''])
+  })
+
+  test('계획 이름 끝의 / 는 경로처럼 무시한다', () => {
+    const s = setup()
+    planBranch(s)
+    const done = s.run(['plan001-x/', '--repo', s.repo, '--base', 'main'])
+    assert.deepEqual([done.code, done.stdout], [0, `plan001-x: ${PENDING}\n`])
+  })
+
+  test('심볼릭 링크로 준 --repo 는 링크를 따라간 경로로 낸다', () => {
+    const s = setup()
+    planBranch(s)
+    const link = join(s.root, 'link')
+    symlinkSync(s.repo, link)
+    const done = s.run(['plan001', '--repo', link, '--base', 'main', '--json'])
+    assert.equal(JSON.parse(done.stdout).task, join(s.repo, 'tasks/plan001-x'))
+  })
+
+  test('사유가 빈 목록이면 사유 없음이다', () => {
+    const s = setup()
+    planBranch(s, { extra: { status: 'cancelled', blocked_reason: [], error_message: '' } })
+    assert.equal(s.run(['plan001', '--repo', s.repo, '--base', 'main']).stdout, 'plan001-x: 사용자 결정이 필요하다.\n  - index.json 상태가 `cancelled` 다: 사유 없음\n')
   })
 
   test('기준 브랜치는 origin HEAD 에서 읽는다', () => {

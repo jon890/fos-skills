@@ -50,7 +50,7 @@ export function main(argv: string[]): number {
     write(2, 'pr_mergeable: PR 번호가 필요하다\n')
     return 2
   }
-  if (!/^\d+$/.test(tries) || !/^\d+(\.\d+)?$/.test(interval)) {
+  if (!/^\d+$/.test(tries) || !/^(\d+\.?\d*|\.\d+)$/.test(interval)) {
     write(2, 'pr_mergeable: --tries 는 정수, --interval 은 초 단위 숫자여야 한다\n')
     return 2
   }

@@ -74,6 +74,11 @@ describe('pr_mergeable', () => {
     assert.equal(run([UNKNOWN]).calls, 10)
   })
 
+  test('--interval 은 소수도 받는다', () => {
+    const done = run([UNKNOWN, CLEAN], ['--interval', '.01'])
+    assert.deepEqual([done.code, done.calls], [0, 2])
+  })
+
   test('gh 가 실패하면 2', () => {
     const done = run(['x'], [], 1)
     assert.deepEqual([done.code, done.stdout, done.stderr], [2, '', 'pr_mergeable: gh pr view 가 실패했다\n'])

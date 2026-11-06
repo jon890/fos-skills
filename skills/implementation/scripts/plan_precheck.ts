@@ -19,8 +19,8 @@
 //   2  검사기가 돌지 못함, 또는 사용법 오류
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { isMain, write } from './io.ts'
 import { expandArgs } from './kit/args.ts'
@@ -40,6 +40,8 @@ const SPACE = '[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u20
 const STRIP = new RegExp(`^${SPACE}+|${SPACE}+$`, 'g')
 const strip = (text: string) => text.replace(STRIP, '')
 const lines = (text: string) => text.split('\n')
+// Python 의 참·거짓. 빈 목록과 빈 객체도 거짓이다
+const truthy = (value: unknown) => !(value === undefined || value === null || value === false || value === 0 || value === '' || (Array.isArray(value) && value.length === 0) || (typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length === 0))
 const fmt = (value: unknown) => (value === undefined || value === null ? 'None' : String(value))
 
 type Facts = {
@@ -81,7 +83,7 @@ const isFile = (path: string) => existsSync(path) && statSync(path).isFile()
 export function findLocal(repo: string, plan: string, tasksDir = 'tasks'): string | null {
   const tasks = join(repo, tasksDir)
   if (!isDir(tasks)) return null
-  const exact = join(tasks, plan)
+  const exact = join(tasks, plan).replace(/(?<=.)\/+$/, '')
   if (isFile(join(exact, 'index.json'))) return exact
   const hits = readdirSync(tasks)
     .sort()
@@ -244,7 +246,7 @@ export function judge(index: Index, branch: Facts, prs: Pr[], resume = false): s
   if (status !== undefined && DONE_STATUS.has(status)) {
     found.push('index.json 상태가 completed 다. 이미 끝난 plan 을 다시 도는 중일 수 있다.')
   } else if (status !== undefined && STOPPED_STATUS.has(status)) {
-    const reason = index.blocked_reason || index.error_message || '사유 없음'
+    const reason = truthy(index.blocked_reason) ? index.blocked_reason : truthy(index.error_message) ? index.error_message : '사유 없음'
     found.push(`index.json 상태가 \`${status}\` 다: ${reason}`)
   }
 
@@ -306,7 +308,8 @@ export function main(argv: string[]): number {
   const plan = positionals[0]
   if (values.resume && !values.branch) return usageError('--resume 은 인계된 --branch 를 명시해야 한다')
 
-  const repo = resolve(values.repo)
+  // Path.resolve() 처럼 심볼릭 링크를 따라간 경로다
+  const repo = existsSync(values.repo) ? realpathSync(resolve(values.repo)) : resolve(values.repo)
   const tasksDir = values['tasks-dir'].replace(/\/+$/, '')
   const prefixes = [tasksDir, ...(values['docs-dir']?.length ? values['docs-dir'] : ['docs'])].map((d) => `${d.replace(/\/+$/, '')}/`)
   let taskDir: string | null
@@ -319,7 +322,7 @@ export function main(argv: string[]): number {
   let mergedPrs: Pr[]
   try {
     taskDir = findLocal(repo, plan, tasksDir)
-    name = taskDir ? taskDir.split('/').at(-1)! : plan
+    name = taskDir ? basename(taskDir) : plan
     const base = resolveBase(repo, values.base)
     branch = branchFacts(repo, values.branch || name, base, prefixes)
     prs = branch.remote_exists ? openPr(repo, branch.branch) : []
