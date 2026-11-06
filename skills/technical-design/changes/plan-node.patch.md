@@ -1,0 +1,1 @@
+- plan 의 `check_feature.ts`, `run_doc_checks.ts` 를 node 로 부른다
