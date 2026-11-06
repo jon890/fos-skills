@@ -23,8 +23,9 @@ test('큐를 import 하면 CLI 와 신호 처리기를 실행하지 않는다', 
   assert.equal(process.listeners('SIGINT').some((listener) => listener.name === 'onSignal'), false)
 })
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { runCommand } from '../../../modules/testkit/command.ts'
@@ -97,3 +98,15 @@ for (const [label, fields, args, code, output] of [
     assert.equal(existsSync(join(dir, '.git')), false)
   })
 }
+
+
+test('링크 경로로 직접 실행해도 사용법 오류를 반환한다', (t) => {
+  const dir = tempDir('queue-link-', t)
+  const linked = join(dir, 'queue.ts')
+  symlinkSync(script, linked)
+  for (const entry of new Set([linked, join(tmpdir(), basename(dir), 'queue.ts')])) {
+    const result = runCommand([process.execPath, entry, '--unknown'])
+    assert.equal(result.code, 2, result.stdout + result.stderr)
+    assert.equal(result.stderr, '모르는 옵션: --unknown\n')
+  }
+})

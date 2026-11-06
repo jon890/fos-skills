@@ -190,8 +190,8 @@
 //
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
 
-import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../lib/config.ts'
 import { baseMergesOnly, featureBranch, featureEvidenceProblem } from '../lib/feature-evidence.ts'
@@ -1732,7 +1732,7 @@ async function mainImpl(argv: string[]): Promise<number> {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
   process.on('SIGTERM', onSignal)
   process.on('SIGINT', onSignal)
   main(process.argv.slice(2)).then(

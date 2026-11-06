@@ -2,7 +2,7 @@
 // 실제 CLI 와 신호 경계 테스트는 merge_queue.ts 를 직접 실행한다.
 import * as fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { basename, resolve } from 'node:path'
+import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { main } from '../../scripts/queue/merge_queue.ts'
 import { runProcess } from '../../scripts/lib/proc.ts'
@@ -47,7 +47,7 @@ export function statefulRun(fakeGit: boolean) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main || (process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2), statefulRun(process.env.MERGE_QUEUE_FAKE_GIT === '1')).then(
     (code) => { process.exitCode = code },
     (error) => { console.error(error); process.exitCode = 1 },
