@@ -347,6 +347,7 @@
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
+import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { sweepRouting } from '../lib/routing-log.ts'
 
 import { featureCompletionProblem } from '../lib/feature-evidence.ts'
@@ -373,7 +374,7 @@ import type { WorkerRow } from '../lib/ownership.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { lsofOpenedBy, sweepQueueLogs } from '../lib/queue-logs.ts'
 import { finishStarted } from '../lib/finish-marks.ts'
-import { run as runCommand, scriptCommand } from '../lib/proc.ts'
+import { run as runCommand, scriptCommand, withRun } from '../lib/proc.ts'
 import { liveReviewPrs, originBranch, reviewKeepReason, reviewPrOf, reviewPrOfBranch, reviewPrState } from '../lib/review.ts'
 import { allLiveSpecPaths, deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from '../lib/spec.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from '../lib/worker-state.ts'
@@ -1931,7 +1932,11 @@ export function sweepLine(line: string, ctx: SweepContext): string | null {
   return isVerdict(text) ? text : null
 }
 
-export async function main(argv: string[]): Promise<number> {
+export function main(argv: string[], runner?: (argv: string[], opts?: RunOptions) => RunResult): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+}
+
+async function executeMain(argv: string[]): Promise<number> {
   const options = {
     repo: { type: 'string', multiple: true },
     base: { type: 'string' },

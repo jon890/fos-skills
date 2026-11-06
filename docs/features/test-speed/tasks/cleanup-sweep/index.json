@@ -1,0 +1,39 @@
+{
+  "name": "cleanup-sweep",
+  "description": "정리 테스트의 가짜 명령 기동과 저장소 준비를 줄인다",
+  "pr_scope": "cleanup-sweep 계열과 notify-conflicts 테스트를 전환하고 전후 측정을 남긴다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/test-speed/spec.md",
+  "design": "docs/features/test-speed/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ6"
+  ],
+  "total_phases": 2,
+  "current_phase": 2,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ2"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ3",
+        "REQ6"
+      ]
+    }
+  ]
+}
