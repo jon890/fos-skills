@@ -5,15 +5,17 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { loopRepo } from './fixtures/orch-loop-repo.ts'
 
-const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 
 // 질문 조회와 worker-list 에 답하는 가짜 orca. orca.json 의 workers 를 낸다. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
 const FAKE_ORCA = `#!/usr/bin/env node
@@ -53,8 +55,7 @@ before(() => {
     ['orca', FAKE_ORCA],
     ['ps', FAKE_PS],
   ]) {
-    writeFileSync(join(binDir, name), text)
-    chmodSync(join(binDir, name), 0o755)
+    linkBin(binDir, name, text.replace(/^#![^\n]*\n/, ''))
   }
   writeFileSync(join(binDir, 'send.ts'), FAKE_SEND)
   writeFileSync(join(binDir, 'noop.ts'), NOOP)
@@ -118,12 +119,8 @@ beforeEach(() => {
   delete env.NODE_OPTIONS
   delete env.GH_HOST
   writeFileSync(join(tmp, 'orca.json'), '{}')
-  git(tmp, 'init', '-q', '--bare', '-b', 'main', join(tmp, 'origin.git'))
   repo = join(tmp, 'repo')
-  git(tmp, 'clone', '-q', join(tmp, 'origin.git'), repo)
-  commit(repo, { 'contracts/a.yaml': 'a\n', 'contracts/version.txt': '1\n2\n3\n', 'modules/api/A.java': 'a\n', 'modules/web/W.java': 'w\n' }, 'init')
-  git(repo, 'push', '-q', 'origin', 'HEAD:main')
-  git(repo, 'remote', 'set-head', 'origin', 'main')
+  loopRepo(repo, { 'contracts/a.yaml': 'a\n', 'contracts/version.txt': '1\n2\n3\n', 'modules/api/A.java': 'a\n', 'modules/web/W.java': 'w\n' })
   config()
 })
 
@@ -187,7 +184,7 @@ function workers(rows: { id: string; status: string; path: string }[]): void {
 }
 
 function once(): string {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], {
     env,
     cwd: tmp,
     encoding: 'utf8',

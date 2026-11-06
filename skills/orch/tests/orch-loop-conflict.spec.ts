@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -15,8 +15,11 @@ import { fileURLToPath } from 'node:url'
 import { loopStatus } from '../scripts/lib/loop.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { loopRepo } from './fixtures/orch-loop-repo.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 const NOTIFY = fileURLToPath(new URL('../scripts/queue/notify-conflicts.ts', import.meta.url))
 
 // 질문 조회와 worker-list 에 답하는 가짜 orca. orca.json 의 workers 를 내고, workers_fail 이면 worker-list 만 실패한다.
@@ -67,8 +70,7 @@ const spawned: ChildProcess[] = []
 
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'orch-loop-conflict-bin-')))
-  writeFileSync(join(binDir, 'orca'), FAKE_ORCA)
-  chmodSync(join(binDir, 'orca'), 0o755)
+  linkBin(binDir, 'orca', FAKE_ORCA.replace(/^#![^\n]*\n/, ''))
   writeFileSync(join(binDir, 'send.ts'), FAKE_SEND)
   writeFileSync(join(binDir, 'sweep.ts'), FAKE_SWEEP)
 })
@@ -121,11 +123,8 @@ beforeEach(() => {
   delete env.NODE_OPTIONS
   delete env.GH_HOST
   writeFileSync(join(tmp, 'orca.json'), '{}')
-  git(tmp, 'init', '-q', '--bare', '-b', 'main', join(tmp, 'origin.git'))
   repo = join(tmp, 'repo')
-  git(tmp, 'clone', '-q', join(tmp, 'origin.git'), repo)
-  commit(repo, { 'a.txt': '1\n2\n3\n', 'b.txt': 'b\n' }, 'init')
-  git(repo, 'push', '-q', 'origin', 'HEAD:main')
+  loopRepo(repo, { 'a.txt': '1\n2\n3\n', 'b.txt': 'b\n' })
   write(orchFile('config.json'), JSON.stringify({ queue: { required: ['test'] } }))
   write(orchFile('hooks', 'pr-conflict.ts'), HOOK)
 })
@@ -196,7 +195,7 @@ function setupConflict(status: string): string {
 }
 
 function loop(args: string[], extra: NodeJS.ProcessEnv = {}) {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', ...args], {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT, '--repo', repo, '--run', 'r', ...args], {
     env: { ...env, ...extra },
     cwd: tmp,
     encoding: 'utf8',

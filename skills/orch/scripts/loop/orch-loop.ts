@@ -404,7 +404,7 @@
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
 import { spawn } from 'node:child_process'
-import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -434,8 +434,8 @@ import { orcaJson } from '../lib/orca.ts'
 import { findBoardItems, readBoard } from '../lib/board.ts'
 import type { BoardItem } from '../lib/board.ts'
 import { boardPath, makeParent, pathOf } from '../lib/paths.ts'
-import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping } from '../lib/proc.ts'
-import type { RunResult } from '../lib/proc.ts'
+import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping, withRun } from '../lib/proc.ts'
+import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
@@ -810,7 +810,7 @@ async function loopBound(repo: string, pid: number): Promise<string | null> {
   }
 }
 
-async function start(ctx: Context): Promise<number> {
+async function start(ctx: Context, entrypoint: string): Promise<number> {
   if (ctx.run) {
     // 띄운 루프는 이 프로세스의 명의를 물려받는다. 이 Run 을 읽지 못하면 띄우지도 합류하지도 않는다(머리 주석의 「명의」)
     const bound = callerFenced(ctx.run)
@@ -826,7 +826,7 @@ async function start(ctx: Context): Promise<number> {
   if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, true, process.env.ORCA_TERMINAL_HANDLE)
   // 자식은 이 프로세스의 명의를 물려받는다. 명의 조회는 느릴 수 있어 START_WAIT_MS 를 쓰기 전에 여기서 한 번 읽어 넘긴다(머리 주석의 「명의」)
   const bound = boundRun()
-  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SELF, ...passArgs(ctx), '--foreground'], {
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', entrypoint, ...passArgs(ctx), '--foreground'], {
     cwd: ctx.repo,
     env: { ...process.env, [BOUND_ENV]: JSON.stringify(bound === undefined ? {} : { run: bound }) },
     detached: true,
@@ -1000,7 +1000,7 @@ function tickResult(done: RunResult): { result: TickResult | null; reason: strin
   return { result, reason: null }
 }
 
-async function foreground(ctx: Context, once: boolean, interval: number): Promise<number> {
+async function foreground(ctx: Context, once: boolean, interval: number, entrypoint: string): Promise<number> {
   const lock = lockFile(ctx.repo)
   const holder = await takeLock(lock, ctx.repo)
   if (holder !== null) {
@@ -1066,7 +1066,7 @@ async function foreground(ctx: Context, once: boolean, interval: number): Promis
       state.runs = runs
       state.run = runs[0] ?? ctx.run
       log(`tick ${n} ${iso()}`)
-      const done = await runAsync(scriptCommand(SELF, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), {
+      const done = await runAsync(scriptCommand(entrypoint, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), {
         cwd: ctx.repo,
         timeoutMs: NO_LIMIT_MS,
         group: true,
@@ -2896,7 +2896,12 @@ function fatal(e: unknown): void {
   void stopChildren('SIGTERM', stopGraceMs).finally(() => process.exit(1))
 }
 
-async function main(argv: string[]): Promise<number> {
+// 실행 범위만 주입한다. 기본 진입점과 자식 실행은 실제 CLI 그대로다.
+export function main(argv: string[], runner?: (argv: string[], opts?: RunOptions) => RunResult, entrypoint = SELF): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv, entrypoint)) : executeMain(argv, entrypoint)
+}
+
+async function executeMain(argv: string[], entrypoint: string): Promise<number> {
   let values
   let mode: Mode
   let tickNumber = 0
@@ -2962,7 +2967,7 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(`orch-loop: ${e.message}\n`)
     return 2
   }
-  if (mode === 'start') return start(ctx)
+  if (mode === 'start') return start(ctx, entrypoint)
   process.on('SIGTERM', onSignal)
   process.on('SIGINT', onSignal)
   process.on('SIGHUP', onSignal)
@@ -2975,15 +2980,17 @@ async function main(argv: string[]): Promise<number> {
   stopGraceMs = TICK_STOP_GRACE_MS
   logFile = join(pathOf('state', repo), 'loop.log')
   makeParent(logFile, repo)
-  return foreground(ctx, values.once as boolean, interval)
+  return foreground(ctx, values.once as boolean, interval, entrypoint)
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e: unknown) => {
-    log(`orch-loop: ${(e as Error)?.stack ?? String(e)}`)
-    process.exitCode = 1
-  },
-)
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === SELF)) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code
+    },
+    (e: unknown) => {
+      log(`orch-loop: ${(e as Error)?.stack ?? String(e)}`)
+      process.exitCode = 1
+    },
+  )
+}

@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -15,8 +15,11 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin, FakeRule } from './fixtures/fake-bin.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { loopRepo } from './fixtures/orch-loop-repo.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/loop/orch-loop.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/orch-loop-run.ts', import.meta.url))
 const RULES_PATH = 'repos/o/r/rules/branches/main'
 const RUN = 'run_t'
 const HEAD_A = 'a'.repeat(40)
@@ -70,8 +73,7 @@ before(() => {
     ['orca', FAKE_ORCA],
     ['ps', FAKE_PS],
   ]) {
-    writeFileSync(join(binDir, name), text)
-    chmodSync(join(binDir, name), 0o755)
+    linkBin(binDir, name, text.replace(/^#![^\n]*\n/, ''))
   }
   writeFileSync(join(binDir, 'fake-merge-with-finish.ts'), FAKE_QUEUE)
   writeFileSync(join(binDir, 'noop.ts'), NOOP)
@@ -86,7 +88,6 @@ function git(args: string[], cwd = repo): void {
 beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'orch-loop-auto-merge-')))
   repo = join(tmp, 'repo')
-  mkdirSync(repo)
   gh = fakeBin(tmp, 'gh', [])
   env = {
     ...process.env,
@@ -110,13 +111,7 @@ beforeEach(() => {
   delete env.ORCH_LOOP_ALIVE_SEC
   delete env.NODE_OPTIONS
   delete env.FAKE_QUEUE_HOLD_MS
-  git(['init', '-q', '-b', 'main'])
-  write(join(repo, 'db', 'api', 'V2__a.sql'), 'select 1;\n')
-  git(['add', '.'])
-  git(['commit', '-q', '-m', 'init'])
-  git(['init', '-q', '--bare', '-b', 'main', join(tmp, 'origin.git')], tmp)
-  git(['remote', 'add', 'origin', join(tmp, 'origin.git')])
-  git(['push', '-q', 'origin', 'main'])
+  loopRepo(repo, { 'db/api/V2__a.sql': 'select 1;\n' })
   config()
   spec('specs', 'spec-a.md', ['feat-1'])
 })
@@ -198,7 +193,7 @@ function github(rows: Json[], opts: { views?: Record<number, Json>; open?: Json[
 }
 
 function loop(extra: NodeJS.ProcessEnv = {}): { status: number | null; output: string } {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--foreground', '--once'], {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', extra.NODE_OPTIONS ? SCRIPT : FUNCTION_SCRIPT, '--repo', repo, '--foreground', '--once'], {
     env: { ...env, ...extra },
     cwd: tmp,
     encoding: 'utf8',
