@@ -117,6 +117,15 @@ describe('export-to-team 원본과 어긋남', () => {
     )
   })
 
+  test('어긋남 출력의 팀 경로는 겹친 / 와 . 조각, 끝 / 를 지운 꼴이다', (t) => {
+    const e = setup(t)
+    const team = e.team
+    e.team = team.replace(/\/team$/, '//./team/')
+    const done = run(e)
+    assert.equal(done.code, 1)
+    assert.ok(done.stdout.includes(`\n팀 저장소: ${team}\n`), done.stdout)
+  })
+
   test('작업 트리의 커밋하지 않은 변경을 원본 줄에 적는다', (t) => {
     const e = setup(t)
     write(join(e.repo, e.skill, 'NOTE.md'), 'uncommitted\n')

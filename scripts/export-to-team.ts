@@ -192,7 +192,15 @@ function walkFiles(base: string): string[] {
   return found.sort(pyPathCompare)
 }
 
-function exportFiles(repo: string, team: string, apply: boolean): number {
+// pathlib.Path 의 꼴. 겹친 / 와 . 조각, 끝의 / 를 지우고 .. 는 그대로 둔다. 옛 명령의 팀 경로 출력이 이 꼴이었다
+function pathlibForm(path: string): string {
+  const parts = path.split('/').filter((part, i) => (part !== '' || i === 0) && part !== '.')
+  const joined = parts.join('/')
+  return joined === '' ? (path.startsWith('/') ? '/' : '.') : joined
+}
+
+function exportFiles(repo: string, teamDir: string, apply: boolean): number {
+  const team = pathlibForm(teamDir)
   const pairs: Pair[] = [
     ...SHARED_SKILLS.map((name): Pair => [sourcePath(repo, name).slice(repo.length + 1).split('\\').join('/'), `skills/${name}`]),
     ...SHARED_TOOLS.map((name): Pair => [`tools/${name}`, `tools/${name}`]),
