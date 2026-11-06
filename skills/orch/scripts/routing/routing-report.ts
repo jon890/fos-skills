@@ -25,6 +25,7 @@ function main(): number {
   let args: { repo?: string[]; since?: string; json?: boolean; full?: boolean; help?: boolean }
   try {
     args = parseArgs({ args: expandArgs(process.argv.slice(2), options), options }).values
+    if (args.json && (args.full || fullAsked())) throw new Error('--json 과 --full 은 함께 쓸 수 없다')
     if (args.since && (!/^\d{4}-\d{2}-\d{2}$/.test(args.since) || !Number.isFinite(Date.parse(args.since)) || new Date(args.since).toISOString().slice(0, 10) !== args.since)) throw new Error('--since 는 YYYY-MM-DD 날짜다')
   } catch (e) { process.stderr.write(`${USAGE}\n${(e as Error).message}\n`); return 2 }
   if (args.help) { process.stdout.write(`${USAGE}\n`); return 0 }

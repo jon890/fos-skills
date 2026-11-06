@@ -154,3 +154,14 @@ test('PR을 연 뒤 붙은 후속 dispatch는 다시 띄운 PR로 세지 않는�
     assert.equal(row.retried_pr_ratio, 0)
   }
 })
+
+
+test('JSON과 전체 표 출력을 함께 고르면 진입점에서 사용법 오류로 끝낸다', () => {
+  const a = repo('a', [record(1)])
+  for (const flags of [['--json', '--full'], ['--full', '--json']]) {
+    const result = cli(['--repo', a, ...flags])
+    assert.equal(result.status, 2)
+    assert.equal(result.stdout, '')
+    assert.match(result.stderr, /--json 과 --full 은 함께 쓸 수 없다/)
+  }
+})
