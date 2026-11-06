@@ -1,0 +1,44 @@
+{
+  "name": "content-preview",
+  "description": "node-runtime 영역 5: content-preview 의 Python·셸 스크립트 다섯과 테스트를 TypeScript 로 옮긴다",
+  "pr_scope": "content-preview 의 dooray-preview/generate, github-preview/generate, preview_output, show-preview, style-check 를 같은 옵션·stdout·쓰는 파일·종료 코드의 TypeScript 로 옮기고, 스킬 문서와 저장소 문서·설치 점검의 호출, runtime-policy 의 content-preview 줄을 바꾼다. 명령 경계 테스트를 먼저 옛 구현에서 통과시킨 뒤 구현만 바꾼다. 영역 하나에 PR 하나다(스펙 DECISION6).",
+  "deferred": [
+    {
+      "what": "korean-check, plan, harness-cleanup, mac-cleanup, browser-driver 영역과 마무리",
+      "why": "스펙 DECISION6 의 영역 하나에 PR 하나",
+      "after": "이 PR 머지"
+    },
+    {
+      "what": "style-check 가 부르는 korean-check 의 check.sh, show-preview 가 부르는 browser_driver.py 를 새 꼴로 부르기",
+      "why": "두 명령은 아직 셸·Python 이다. 설계 「실패와 일관성」 이 정한 대로 옛 꼴로 부르고, 부르는 쪽 정리는 영역 6(korean-check)과 영역 10(browser-driver)이 한다",
+      "after": "영역 6, 영역 10"
+    },
+    {
+      "what": "tools/browser-driver/tests/test_config_path.py 의 show-preview.sh 경로 후보",
+      "why": "후보 경로가 이미 어느 배치에도 맞지 않아 그 테스트 클래스는 건너뛰고 있다. 드라이버 폴더를 옮기는 영역 10 이 후보를 show-preview.ts 로 바로잡는다",
+      "after": "영역 10"
+    },
+    {
+      "what": "다른 저장소의 옛 호출. 스펙 표에는 이 영역 행이 없다. 2026-11-06 에 `show-preview`, `style-check.sh`, `dooray-preview`, `github-preview` 로 이 머신의 `~/personal/*`, `~/projects/*` 지침과 사용자 홈(`~/.claude/scripts/`, `~/.agents`, `~/.claude/references`)을 다시 훑는다",
+      "why": "스펙 REQ7. 찾은 곳이 있으면 PR 본문에 적고 머지 뒤 코디네이터가 고친다",
+      "after": "이 PR 머지"
+    },
+    {
+      "what": "팀 저장소 반영과 팀이 소유한 `grm` 스킬(`SKILL.md`, `scripts/preview.py`)·팀 테스트의 `show-preview.sh`, `style-check.sh` 호출",
+      "why": "스펙 DECISION7. 전환이 끝난 뒤 팀 PR 하나로 한다. 설계 「팀 저장소」 절이 그 줄을 이미 적고 있다",
+      "after": "영역 11"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/node-runtime/spec.md",
+  "design": "docs/features/node-runtime/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": ["REQ1", "REQ2", "REQ3", "REQ4", "REQ5", "REQ7"],
+  "total_phases": 2,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ3"] },
+    { "number": 2, "file": "phase-02.md", "execution_profile": "standard", "requirements": ["REQ1", "REQ2", "REQ3", "REQ4", "REQ5", "REQ7"] }
+  ]
+}
