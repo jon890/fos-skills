@@ -12,11 +12,11 @@ export const SKILL_DIR = join(import.meta.dirname, '..')
 export const SCRIPTS_DIR = join(SKILL_DIR, 'scripts')
 
 // 명령 경계. 실행 argv 의 앞부분이다
-export const VERIFY = ['python3', join(SCRIPTS_DIR, 'verify_task.py')]
-export const FEATURE = ['python3', join(SCRIPTS_DIR, 'check_feature.py')]
-export const DOC_CHECKS = ['python3', join(SCRIPTS_DIR, 'run_doc_checks.py')]
-export const OVERLAY = ['python3', join(SCRIPTS_DIR, 'overlay_paths.py')]
-export const PLAN_NUMBER = ['bash', join(SCRIPTS_DIR, 'plan_number.sh')]
+export const VERIFY = [process.execPath, join(SCRIPTS_DIR, 'verify_task.ts')]
+export const FEATURE = [process.execPath, join(SCRIPTS_DIR, 'check_feature.ts')]
+export const DOC_CHECKS = [process.execPath, join(SCRIPTS_DIR, 'run_doc_checks.ts')]
+export const OVERLAY = [process.execPath, join(SCRIPTS_DIR, 'overlay_paths.ts')]
+export const PLAN_NUMBER = [process.execPath, join(SCRIPTS_DIR, 'plan_number.ts')]
 
 export type Result = { code: number | null; stdout: string; stderr: string }
 
