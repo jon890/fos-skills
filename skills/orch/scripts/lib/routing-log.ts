@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { loadConfig, ROUTING_KEYS, section } from './config.ts'
 import { context, payload, readyOf } from './completion.ts'
+import { finishStarted } from './finish-marks.ts'
 import { acquireLock, releaseLock } from './events.ts'
 import { apiTarget, FAILED_CONCLUSIONS, ghJson } from './gh.ts'
 import { launchHistory, type LaunchHistory } from './launch-history.ts'
@@ -284,6 +285,7 @@ export async function sweepRouting(repo: string, now = Date.now()): Promise<void
       if (!Array.isArray(prs) || prs.length >= 1000) throw new Error('종료 PR 조회 한도 도달')
       for (const pr of prs) {
         if (pr.state !== 'CLOSED' && pr.state !== 'MERGED') continue
+        if (pr.state === 'MERGED' && finishStarted(repo, pr.number)) continue
         if (!dispatchesFor(pr, prs, allHistory).length) continue
         await recordRouting(repo, pr.number, pr.state === 'MERGED' ? 'merged' : 'closed')
       }

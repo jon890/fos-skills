@@ -3,7 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fx, runSweepFull } from './fixtures/cleanup-sweep.ts'
 import { afterEach, beforeEach, test } from 'node:test'
-import { sweepRouting } from '../scripts/lib/routing-log.ts'
+import { recordRouting, sweepRouting } from '../scripts/lib/routing-log.ts'
+import { markFinishStarted } from '../scripts/lib/finish-marks.ts'
 import { fixture, launch, PR } from './fixtures/routing-fakes.ts'
 
 let f: ReturnType<typeof fixture>
@@ -48,4 +49,25 @@ test('cleanup CLI가 apply일 때만 run 없이 routing을 쓴다', () => {
   const recorded = JSON.parse(readFileSync(join(state, 'routing-log.jsonl'), 'utf8'))
   assert.equal(recorded.pr, 7)
   assert.equal(recorded.outcome, 'closed')
+})
+
+test('finish가 worker 종료를 기다리는 동안 sweep이 먼저 값을 굳히지 않는다', async () => {
+  f.history(launch())
+  markFinishStarted(f.dir, 7)
+  f.usage('codex', [{ firstTimestamp: '2026-11-06T01:01:00Z', primaryWorktreeId: 'wt_a', totalInputTokens: 100, totalCachedInputTokens: 40, totalOutputTokens: 30 }])
+  await sweepRouting(f.dir, NOW)
+  assert.deepEqual(f.rows(), [])
+  // worker가 끝난 뒤 사용량이 늘어난 상태에서 finish가 기록한다.
+  f.usage('codex', [{ firstTimestamp: '2026-11-06T01:01:00Z', primaryWorktreeId: 'wt_a', totalInputTokens: 1000, totalCachedInputTokens: 400, totalOutputTokens: 300 }])
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows().length, 1)
+  assert.equal(f.rows()[0].tokens?.input, 600)
+})
+
+test('마무리 표시가 있어도 머지 없이 닫힌 PR은 sweep이 기록한다', async () => {
+  f.history(launch())
+  markFinishStarted(f.dir, 7)
+  Object.assign(f.state.pr, { state: 'CLOSED', mergedAt: null, closedAt: PR.mergedAt }); f.save()
+  await sweepRouting(f.dir, NOW)
+  assert.equal(f.rows()[0].outcome, 'closed')
 })
