@@ -2,7 +2,7 @@
 
 - **status**: `accepted`
 - **결정**: `.claude-plugin/plugin.json` 에 `version`(X.Y.Z)을 둔다. 1.0.0 에서 시작한다.
-  main push 마다 `.github/workflows/plugin-version.yml` 이 `scripts/bump-plugin-version.py` 로 version 을 올리고 `.claude-plugin/CHANGELOG.md` 에 한 줄을 더한 커밋을 main 에 push 한다.
+  main push 마다 `.github/workflows/plugin-version.yml` 이 `scripts/bump-plugin-version.ts` 로 version 을 올리고 `.claude-plugin/CHANGELOG.md` 에 한 줄을 더한 커밋을 main 에 push 한다.
   등급은 그 push 범위(push 전 커밋..push 뒤 커밋)에서 바뀐 스킬 CHANGELOG 의 더한 줄로 정한다. `- 호환성:` 줄이 있으면 major, 새 버전 절(`## X.Y.Z (날짜)`)이 있으면 minor, 그 밖은 patch 다.
   CHANGELOG 줄은 「orch 5.16.0, work-board 1.5.0 (#286)」 처럼 새 스킬 버전과 PR 번호다. 스킬 버전이 없으면 「바뀐 곳: docs, scripts (#287)」 다.
   push 범위가 version 을 이미 바꿨으면 올리지 않는다. 사람이 직접 정한 version 이 우선한다.

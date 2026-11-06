@@ -45,7 +45,7 @@ phase 01 의 `skills/orch/changes/routing-guide.minor.md` 에 「공통 지시�
 
 ```bash
 python3 export-only-skills/korean-check/scripts/korean-style-check.py skills/orch/templates/spec-common.md
-python3 scripts/check-skill-docs.py orch
+node scripts/check-skill-docs.ts orch
 grep -c 'orch-rule: no-reconfirm\|orch-rule: status-not-escalation' skills/orch/templates/spec-common.md
 node scripts/run-node-tests.ts skills/orch/tests/spec-lint.spec.ts skills/orch/tests/template-script-path.spec.ts
 T=$(mktemp -d) && git show origin/main:skills/orch/templates/spec-common.md > $T/spec-common.md && printf '# 표본\n\n브랜치: `feat/sample`\n허락: 없음.\nworker 선택: `claude` `claude-sonnet-5-5` effort `medium`. 비교: sol. 이유: 표본.\n\n## 할 일\n\n루프 없이: 표본이다.\n' > $T/spec-sample.md && node --disable-warning=ExperimentalWarning skills/orch/scripts/spec-lint.ts --repo . $T/spec-sample.md > $T/out.txt 2>&1; grep '틀의 규칙 표지' $T/out.txt | grep 'no-reconfirm' | grep -c 'status-not-escalation'; grep -c '가 붙은 규칙이 틀과 다르다' $T/out.txt

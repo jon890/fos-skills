@@ -1,7 +1,5 @@
 {
   "pending": [
-    { "area": "scripts-githooks", "prefix": "scripts/" },
-    { "area": "scripts-githooks", "prefix": "githooks/" },
     { "area": "small-skills", "prefix": "skills/pr-review/" },
     { "area": "small-skills", "prefix": "skills/implementation/" },
     { "area": "small-skills", "prefix": "skills/docs-audit/" },
@@ -21,12 +19,14 @@
   "legacy": [],
   "entry_js": [
     "bin/orch",
+    "githooks/commit-msg",
+    "githooks/post-commit",
     "extensions/work-board/hooks/event-tags.js",
     "extensions/work-board/hooks/network-poll.js",
     "extensions/work-board/hooks/register.js",
     "skills/orch/scripts/lib/guard/gh",
     "skills/orch/scripts/lib/guard/orca"
   ],
-  "migrated_docs": [],
+  "migrated_docs": ["githooks/", "scripts/"],
   "min_node": [24, 0]
 }

@@ -29,11 +29,15 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          check-latest: true
       - name: Bump skill versions, plugin version and changelogs
         env:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
-        run: python3 scripts/bump-plugin-version.py --base "$BEFORE" --head "$AFTER"
+        run: node scripts/bump-plugin-version.ts --base "$BEFORE" --head "$AFTER"
       - name: Commit and push
         run: |
           if git diff --quiet; then
@@ -46,7 +50,7 @@ jobs:
             # 사람이 plugin.json 을 직접 올린 머지라 스킬 버전만 올랐다
             git commit -am "chore(skills): 스킬 버전을 올린다"
           else
-            version=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+            version=$(node -p 'JSON.parse(require("node:fs").readFileSync(".claude-plugin/plugin.json", "utf8")).version')
             git commit -am "chore(plugin): 플러그인 버전을 ${version} 으로 올린다"
           fi
           for attempt in 1 2 3; do

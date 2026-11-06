@@ -6,10 +6,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, join, relative, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { tempDir } from '../../modules/testkit/temp.ts'
+import { sharedLists } from '../export-lists.ts'
+import { SKILL_ROOTS } from '../skill_paths.ts'
 
 const EXTENSIONS = /\.(?:ts|mts|cts|js|mjs|cjs)$/
 const SKIP_DIRS = new Set(['node_modules', '.git'])
-const SKILL_ROOTS = ['skills', 'export-only-skills'] // scripts/skill_paths.py 의 SKILL_ROOTS 와 같은 순서
 
 // 각 꼴에서 `.` 로 시작하는 경로 문자열을 잡는다
 const SPECIFIER_PATTERNS = [
@@ -50,14 +51,11 @@ export function outsideImports(root: string, folders: string[]): string[] {
   return outside
 }
 
-// scripts/export-to-team.sh 의 SHARED_SKILLS, SHARED_TOOLS 를 읽어 폴더로 바꾼다. 찾지 못한 이름이 있으면 던진다
+// scripts/export-to-team.ts 의 SHARED_SKILLS, SHARED_TOOLS 를 읽어 폴더로 바꾼다. 찾지 못한 이름이 있으면 던진다
 export function exportedFolders(root: string): string[] {
-  const script = readFileSync(join(root, 'scripts/export-to-team.sh'), 'utf8')
-  const names = (variable: string): string[] => {
-    const match = new RegExp(`^${variable}=\\(([^)]*)\\)`, 'm').exec(script)
-    if (!match) throw new Error(`export-to-team.sh 에서 ${variable} 를 찾지 못했다`)
-    return match[1].split(/\s+/).filter(Boolean)
-  }
+  const lists = sharedLists(readFileSync(join(root, 'scripts/export-to-team.ts'), 'utf8'))
+  if (!lists) throw new Error('export-to-team.ts 에서 SHARED_SKILLS, SHARED_TOOLS 를 찾지 못했다')
+  const names = (variable: 'SHARED_SKILLS' | 'SHARED_TOOLS') => (variable === 'SHARED_SKILLS' ? lists.skills : lists.tools)
   const folders: string[] = []
   for (const name of names('SHARED_SKILLS')) {
     const found = SKILL_ROOTS.map((r) => `${r}/${name}`).find((p) => existsSync(join(root, p)))
@@ -118,7 +116,7 @@ describe('내보내는 폴더의 바깥 import', () => {
 
   it('exportedFolders 는 목록의 폴더를 고른다', () => {
     const root = tempDir()
-    write(root, 'scripts/export-to-team.sh', 'SHARED_SKILLS=(alpha beta)\nSHARED_TOOLS=(drv)\n')
+    write(root, 'scripts/export-to-team.ts', "export const SHARED_SKILLS = ['alpha', 'beta']\nexport const SHARED_TOOLS = ['drv']\n")
     mkdirSync(join(root, 'skills/alpha'), { recursive: true })
     mkdirSync(join(root, 'export-only-skills/beta'), { recursive: true })
     mkdirSync(join(root, 'tools/drv'), { recursive: true })
@@ -127,9 +125,9 @@ describe('내보내는 폴더의 바깥 import', () => {
 
   it('목록에 없는 폴더 이름이면 exportedFolders 가 던진다', () => {
     const root = tempDir()
-    write(root, 'scripts/export-to-team.sh', 'SHARED_SKILLS=(missing)\nSHARED_TOOLS=()\n')
+    write(root, 'scripts/export-to-team.ts', "export const SHARED_SKILLS = ['missing']\nexport const SHARED_TOOLS = []\n")
     assert.throws(() => exportedFolders(root), /missing/)
-    write(root, 'scripts/export-to-team.sh', 'SHARED_SKILLS=()\nSHARED_TOOLS=(nope)\n')
+    write(root, 'scripts/export-to-team.ts', "export const SHARED_SKILLS = []\nexport const SHARED_TOOLS = ['nope']\n")
     assert.throws(() => exportedFolders(root), /nope/)
   })
 })

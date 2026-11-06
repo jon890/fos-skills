@@ -17,5 +17,5 @@
     플러그인 없이는 [README](../../README.md) 의 링크 설치로 `~/.claude/scripts/browser-driver` 를 건다. 이 링크는 PATH 명령이 아니라 스킬이 마지막에 찾는 자리다.
   - 스킬이 드라이버를 찾는 순서는 바꾸지 않는다. 캐시에서는 위로 올라가며 찾은 `tools/browser-driver/` 를 쓴다.
   - Claude 세션의 Bash 에서 `orch` 가 PATH 에 있다. Codex 와 사람 셸은 `orch doctor install-cli` 로 `~/.local/bin/orch` 에 실행기를 복사한다.
-  - `python3 -m unittest discover -s scripts/tests` 가 루트 `bin/` 에 `orch` 밖의 파일이 생기거나 `orch` 의 실행 비트가 빠지면 실패한다.
+  - `node scripts/run-tests.ts scripts/tests` 가 루트 `bin/` 에 `orch` 밖의 파일이 생기거나 `orch` 의 실행 비트가 빠지면 실패한다.
 - **적용 범위**: 도구 배치는 [code-architecture.md](../code-architecture.md) 가 소유한다.

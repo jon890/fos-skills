@@ -29,8 +29,10 @@
 | `extensions/work-board/` | 보드 확장 기능과 그 전용 훅·명령·테스트 |
 | `tools/` | 여러 스킬이 쓰는 공용 도구 |
 | `modules/` | 여러 영역의 테스트와 코드가 함께 쓰는 공용 모듈. 스킬이 아니다. 팀 저장소로 내보내지 않는다 |
+| `modules/kit/` | 옛 Python 명령과 같은 글자를 내는 실행용 helper(argparse 꼴 옵션 펼치기, `str.splitlines` 같은 Python 꼴). `scripts/` 와 `githooks/` 는 import 하고, 스킬과 도구는 복사본을 둔다(설계 [`features/node-runtime/design.md`](features/node-runtime/design.md) 「공통 꼴 모듈 kit」) |
+| `modules/testkit/` | 테스트용 helper. 이 저장소의 테스트만 쓴다 |
 | `scripts/` | 이 저장소의 설치·검사·내보내기·버전 관리 |
-| `githooks/` | Git commit-msg 와 post-commit. Claude 훅이 아님 |
+| `githooks/` | Git commit-msg 와 post-commit. 확장자 없는 node 진입이 같은 이름의 `.ts` 본체를 부른다. Claude 훅이 아님 |
 | `docs/` | 이 저장소의 책임 문서와 결정 이력 |
 
 배치의 결정은 [ADR-021](adr/021-skill-directory-layout.md)이 소유한다. 스킬별 자산은 소유 스킬과 함께 이동한다.
@@ -57,7 +59,7 @@
 ```
 
 등록한 스킬의 정확한 목록은 `.claude-plugin/plugin.json` 과 `.codex-plugin/plugin.json` 이 소유한다.
-이 문서에 배열 사본을 두지 않는다. 두 매니페스트의 일치는 `scripts/tests/test_plugin_manifest.py` 가 확인한다.
+이 문서에 배열 사본을 두지 않는다. 두 매니페스트의 일치는 `scripts/tests/plugin-manifest.spec.ts` 가 확인한다.
 
 `skills` 배열은 이름순으로 둔다. 스킬을 더하거나 이름을 바꾸면 이 배열을 함께 고친다.
 [`../scripts/export-only-skills.json`](../scripts/export-only-skills.json) 에 명시한 내보내기 전용 원본만 배열에서 제외한다.
@@ -69,8 +71,8 @@
 | --- | --- | --- |
 | `.claude-plugin/marketplace.json` | 마켓플레이스 이름과 플러그인 소스 | `claude plugin marketplace add` |
 | `.claude-plugin/plugin.json` | 플러그인 이름, version, 담을 스킬의 경로 | `claude plugin install`, 세션 시작 |
-| `scripts/bump-plugin-version.py` | main 트리의 변경 이력 조각을 적용해 스킬 버전을 올리고, push 범위의 스킬 CHANGELOG 와 조각으로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다 | `.github/workflows/plugin-version.yml` |
-| `scripts/skill_changes.py` | 변경 이력 조각(`<스킬>/changes/<슬러그>.<등급>.md`)의 형식 검사, 머지 순서 정렬, 스킬 버전과 CHANGELOG 절 적용 | `scripts/check-skill-docs.py`, `scripts/bump-plugin-version.py` |
+| `scripts/bump-plugin-version.ts` | main 트리의 변경 이력 조각을 적용해 스킬 버전을 올리고, push 범위의 스킬 CHANGELOG 와 조각으로 플러그인 version 과 `.claude-plugin/CHANGELOG.md` 를 올린다 | `.github/workflows/plugin-version.yml` |
+| `scripts/skill_changes.ts` | 변경 이력 조각(`<스킬>/changes/<슬러그>.<등급>.md`)의 형식 검사, 머지 순서 정렬, 스킬 버전과 CHANGELOG 절 적용 | `scripts/check-skill-docs.ts`, `scripts/bump-plugin-version.ts` |
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
@@ -79,9 +81,10 @@
 | `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용 진입을 정책 파일과 대조한다. 출력 줄과 종료 코드는 머리 주석이 소유한다 | `scripts/tests/runtime-policy.spec.ts`, CI, worker |
 | `scripts/runtime-policy.json` | TypeScript 이행 상태의 원본(남은 영역, 허용 JS 진입, 최소 Node) | `scripts/runtime-policy.ts` |
-| `scripts/tests/test_plugin_manifest.py` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
-| `scripts/test-plugin-install.sh` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
-| `scripts/export-to-team.sh` | 공용 스킬을 팀 저장소로 내보낸다. 플러그인 배포와 무관하게 그대로 동작한다. 인자는 스크립트 머리 주석이 소유한다 | 사람, `githooks/post-commit` |
+| `scripts/tests/plugin-manifest.spec.ts` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같은지, `version` 이 X.Y.Z 이고 마켓플레이스와 Codex 매니페스트에는 없는지 확인한다 | 사람, 구현 검증 |
+| `scripts/test-plugin-install.ts` | 격리된 `CLAUDE_CONFIG_DIR` 에 설치해 스킬 인식과 캐시 안의 경로 참조를 확인한다 | 사람, 구현 검증 |
+| `scripts/export-to-team.ts` | 공용 스킬을 팀 저장소로 내보낸다. 플러그인 배포와 무관하게 그대로 동작한다. 인자는 스크립트 머리 주석이 소유한다 | 사람, `githooks/post-commit` |
+| `scripts/export-lists.ts` | `export-to-team.ts` 의 내보내는 목록을 그 파일의 글에서 읽는다 | `githooks/post-commit.ts`, `scripts/tests/exported-imports.spec.ts` |
 
 ## 스킬 사이의 경로 참조
 
@@ -131,7 +134,7 @@
 그 플러그인을 받을 수 없는 환경에서는 두 스킬이 목록에 뜨지 않는다.
 이 플러그인은 두 원본 디렉터리를 캐시에 복사하되 `skills` 배열에서 제외하므로 함께 설치해도 중복으로 뜨지 않는다.
 
-- 사본은 `scripts/export-to-team.sh` 가 원본과 같은 내용으로 유지한다.
+- 사본은 `scripts/export-to-team.ts` 가 원본과 같은 내용으로 유지한다.
 - 팀 양식 스킬은 자기 플러그인 안의 사본을 상대 경로로 읽는다. 이 플러그인의 유무와 무관하다.
 - 팀 플러그인은 이 플러그인에 기대지 않는다. 두 플러그인을 함께 켜는 사람은 두 저장소를 모두 쓰는 한 명이다.
 
@@ -149,8 +152,8 @@
 | --- | --- |
 | `node scripts/run-tests.ts` | 저장소의 모든 node·Python 테스트와 tsc |
 | `node scripts/runtime-policy.ts --pending` | 허용 목록 밖의 새 Python·셸 파일과 JS 진입이 없다. 영역마다 남은 파일 수를 낸다 |
-| `node scripts/run-tests.ts scripts/tests` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `test_export_to_team.py` 가 `export-to-team.sh` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
-| `bash scripts/test-plugin-install.sh` | 격리된 설정 폴더에서 설치 스킬 16개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
+| `node scripts/run-tests.ts scripts/tests` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `export-to-team.spec.ts` 가 `export-to-team.ts` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
+| `node scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 설치 스킬 16개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
 
 `claude plugin validate --strict` 는 쓰지 않는다. `version` 이 없다는 경고로 실패하기 때문이다.
 설치 테스트가 `claude plugin validate . --json` 의 결과에서 오류가 없고 경고가 버전 경고 하나뿐인지를 확인한다.
