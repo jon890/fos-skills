@@ -1,5 +1,9 @@
 # CHANGELOG: plan
 
+## 6.0.2 (2026-11-06)
+
+- 모노레포 안내와 주석이 옮긴 `plan_precheck.ts`, `static_check.ts` 의 새 이름을 가리킨다
+
 ## 6.0.1 (2026-11-06)
 
 - `adr-docs.ts write-index` 가 다른 ADR 폴더의 ADR 을 대체 관계 칸에 접두와 함께 적는다. 링크 글에 접두가 있으면 그 글을, 없으면 폴더 이름을 식별자 앞에 붙인다

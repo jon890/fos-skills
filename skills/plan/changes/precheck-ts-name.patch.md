@@ -1,1 +1,0 @@
-- 모노레포 안내와 주석이 옮긴 `plan_precheck.ts`, `static_check.ts` 의 새 이름을 가리킨다
