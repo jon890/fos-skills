@@ -4,3 +4,4 @@
 - resume link 실패의 NEXT 를 직접 worker-start 대신 orch worker launch 로 안내한다. resume 내부 연결 호출은 유지한다.
 - 실험의 terminal 이어 쓰기는 새 후보 배정 없이 연결하고 재배정 수에 세지 않는다.
 - resume 의 새 터미널은 이전 dispatch 의 실행 설정을 물려받고 새 이력의 모델 불명은 high 근거로 쓰지 않는다.
+- 이미 띄운 옛 지시서는 같은 Task 와 기록된 터미널에서 이어 쓸 때 행 누락을 허용한다.

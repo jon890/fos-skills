@@ -6,12 +6,12 @@ import { launchHistory } from './launch-history.ts'
 import { readLaunch } from './launched.ts'
 import { experimentOf, selectionsOf, type Candidate } from './spec.ts'
 
-export function selectionVerdict(text: string, repo: string, options: { launch?: boolean; table?: string; retry?: boolean } = {}): string[] {
+export function selectionVerdict(text: string, repo: string, options: { launch?: boolean; table?: string; retry?: boolean; continuation?: boolean } = {}): string[] {
   const choices = selectionsOf(text)
   if (!choices.length) return ['`worker 선택:` 줄이 없다']
   const selection = choices[0]
   const errors = choices.length > 1 ? ['`worker 선택:` 줄은 하나만 둔다'] : []
-  errors.push(...selection.problems.map(p => `${p} 가 빠졌거나 형식이 틀렸다`))
+  errors.push(...selection.problems.filter(p => !(options.continuation && p === '행')).map(p => `${p} 가 빠졌거나 형식이 틀렸다`))
   let table: string
   try { table = readFileSync(options.table ?? join(bundleRoot(), 'references', 'agent-selection.md'), 'utf8') }
   catch { return [...errors, '모델 표를 읽지 못했다'] }

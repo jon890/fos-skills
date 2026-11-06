@@ -518,6 +518,31 @@ describe('선택 정책과 영구 이력', () => {
     assert.match(raised.stderr, /Opus medium/)
   })
 
+  for (const mode of ['task-retry', 'resume-terminal', 'terminal'] as const) {
+    test(`옛 선택 줄의 행 누락은 이미 띄운 지시서의 ${mode} 경로에서 호환한다`, () => {
+      select()
+      writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-planned.', ''))
+      env.GIT_CEILING_DIRECTORIES = dirname(tmp)
+      spawnSync('git', ['init', '-q', '-b', 'main', tmp], { env })
+      writeFileSync(join(tmp, '.gitignore'), '*\n')
+      spawnSync('git', ['-C', tmp, 'add', '-f', '.gitignore'], { env })
+      spawnSync('git', ['-C', tmp, 'commit', '-qm', 'initial'], { env })
+      spawnSync('git', ['-C', tmp, 'update-ref', 'refs/remotes/origin/main', 'HEAD'], { env })
+      recordHistory(tmp, prior({ spec }))
+      env.SPEC_LINT = fileURLToPath(new URL('../scripts/spec/spec-lint.ts', import.meta.url))
+      const terminal = mode === 'resume-terminal' ? 'term_new' : 'term_old'
+      state({ next_ids: ['ctx_1'], terminals: [{ handle: terminal, worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+      const args = mode === 'terminal' ? ['--worktree', worktree, '--', '--terminal', terminal]
+        : mode === 'resume-terminal' ? ['--repo', tmp, '--task', 'task_1', '--', '--terminal', terminal]
+        : ['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium']
+      const r = launch(args, 'bash', false)
+      assert.equal(r.code, 0, both(r))
+      const recorded = readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line)).at(-1)
+      assert.equal(recorded.row, null)
+      assert.equal(recorded.retry_of, 'ctx_old')
+    })
+  }
+
   test('모델 없는 옛 Launch 를 근거로 Opus high 를 띄울 수 있다', () => {
     select('claude', 'claude-opus-5-5', 'high', 'high 근거: medium 실패 ctx_old.')
     recordLaunch(worktree, { dispatch: 'ctx_old', terminal: null, worktree, run: null })

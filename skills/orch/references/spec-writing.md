@@ -57,7 +57,8 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
   예: 「worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Claude Sonnet 5.5. 이유: 계획서가 수정 위치를 정했고 CI 리뷰가 Claude 라 제공자를 나눈다.」
   후보와 고르는 규칙은 [`agent-selection.md`](agent-selection.md) 가 소유한다. 비교 없이 익숙한 제공자로 기우는 것을 막으려고 줄을 강제한다.
   `spec-lint` 는 줄이 없거나 요소가 빠지면 `선택` 발견으로 막고(모델 표의 행 id 와 Opus 높은 effort 의 근거도 검사한다), `launch-worker` 는 그 지시서를 거부하며 `--agent`, `--model`, `--effort` 가 줄의 값과 다를 때도 거부한다. `--lint-ack` 으로 넘기지 못한다.
-  `--terminal` 로 이어 쓸 때도 지시서의 선택을 검사한다. 요청한 실행 값은 그 터미널의 가장 최근 이력에서 물려받고, 이력이 없으면 null 로 기록한다.
+  같은 Task 를 다시 띄우거나 이미 기록된 터미널에서 같은 지시서를 이어 쓸 때는 옛 지시서의 행 누락을 허용한다. 새로 띄우는 지시서에는 행이 필수다.
+  `--terminal` 로 이어 쓸 때도 나머지 선택 정책을 검사한다. 요청한 실행 값은 그 터미널의 가장 최근 이력에서 물려받고, 이력이 없으면 null 로 기록한다.
 - 비교 실험은 다음처럼 `experiment:` 줄 하나를 더한다. 후보는 `/` 로 나누며 둘 이상이고 중복 없이 agent, model, effort 를 적는다. `worker 선택:` 은 후보 중 하나여야 한다.
 
   ```text

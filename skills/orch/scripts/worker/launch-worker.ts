@@ -119,7 +119,7 @@ import { isFile, realPath } from '../lib/fs.ts'
 import { profilesRoot, selectedReadiness } from '../lib/claude-profile.ts'
 import { checkLaunchSettings } from '../lib/model-check.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
-import { latestTaskLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
+import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch } from '../lib/launched.ts'
 import { orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
@@ -340,7 +340,7 @@ function loopSource(a: Args, specPath: string): string[] {
 
 // spec-lint 로 이 지시서를 검사한다. 머리 주석의 「1-1」. 막으면 종료 코드, 통과하거나 넘기면 null 이다.
 // acked 는 --lint-ack 으로 넘긴 발견의 이유다. 넘길 발견이 없으면 null 이라 기록에 남지 않는다.
-async function lintGate(a: Args): Promise<{ stop: number | null; acked: string | null }> {
+async function lintGate(a: Args, continuation: boolean): Promise<{ stop: number | null; acked: string | null }> {
   const specPath = resolve(a.spec)
   const repo = a.repo || mainCheckout(realPath(a.worktree.replace(/^path:/, '')))
   const live = liveSpecPaths(a.run || null)
@@ -350,7 +350,7 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
   // 루프 검사가 상대경로 스펙을 worker 가 시작할 곳에서 읽게 한다. 머리 주석의 「1-1」
   const base = (a.base || defaultBase(repo) || '').replace(/^origin\//, '')
   const source = loopSource(a, specPath)
-  const args = ['--repo', repo, ...(base ? ['--base', base] : []), ...source, ...others.flatMap((file) => ['--active', file]), specPath]
+  const args = ['--repo', repo, ...(base ? ['--base', base] : []), ...source, ...others.flatMap((file) => ['--active', file]), ...(continuation ? ['--active', specPath] : []), specPath]
   const done = await runAsync(scriptCommand(process.env.SPEC_LINT || scriptPath('spec-lint'), args))
   if (done.code !== 1) {
     if (done.code === 0 && done.stdout.trim()) err(done.stdout.trim())
@@ -368,14 +368,14 @@ async function lintGate(a: Args): Promise<{ stop: number | null; acked: string |
 
 // 지시서의 worker 선택 줄과 WORKER_ARGS 를 대조한다. 머리 주석의 「0」. 어긋나면 거부 문구, 맞으면 null 이다.
 // 지시서를 읽지 못하면 null 이다. 그 실패는 다음 단계의 spec-line 이 사용법 오류로 알린다.
-function selectionReject(specPath: string, passthru: string[], repo: string, retry: boolean): string | null {
+function selectionReject(specPath: string, passthru: string[], repo: string, retry: boolean, continuation: boolean): string | null {
   let text: string
   try {
     text = readFileSync(specPath, 'utf8')
   } catch {
     return null
   }
-  const verdict = selectionVerdict(text, repo, { launch: true, retry })
+  const verdict = selectionVerdict(text, repo, { launch: true, retry, continuation })
   if (verdict.length) return `${verdict.join('; ')}. 형식: ${SELECTION_FORMAT}`
   const [selection] = selectionsOf(text)
   const mismatched: string[] = []
@@ -542,13 +542,18 @@ async function main(argv: string[]): Promise<number> {
     a.run ||= prior.run ?? ''
   }
   retryRepo = a.repo || mainCheckout(a.worktree.replace(/^path:/, '') || process.cwd())
+  const reusedTerminal = passValue(passthru, '--terminal')
+  const terminalLaunch = reusedTerminal
+    ? latestTerminal(retryRepo, reusedTerminal) ?? launchesAt(retryRepo, a.worktree.replace(/^path:/, '')).filter(row => row.terminal === reusedTerminal).at(-1) ?? null
+    : null
+  const continuation = !!a.task || !!terminalLaunch && (!terminalLaunch.spec || realPath(terminalLaunch.spec) === realPath(a.spec))
   const reuseOpts = passthru.filter((x) => x === '--agent' || x === '--model' || x === '--effort')
   if (passthru.includes('--terminal') && reuseOpts.length > 0) {
     err(`거부: --terminal 은 ${reuseOpts.join(' ')} 와 함께 쓰지 못한다(invalid_argument)`)
     return 1
   }
   if (!passthru.includes('--terminal')) {
-    const rejected = selectionReject(a.spec, passthru, retryRepo, !!a.task)
+    const rejected = selectionReject(a.spec, passthru, retryRepo, !!a.task, continuation)
     if (rejected) {
       err(`거부: ${rejected}`)
       return 1
@@ -570,7 +575,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (passthru.includes('--terminal')) {
     const text = readFileSync(a.spec, 'utf8')
-    const rejected = selectionVerdict(text, retryRepo, { launch: true, retry: true })
+    const rejected = selectionVerdict(text, retryRepo, { launch: true, retry: true, continuation })
     if (rejected.length) throw new Stop(rejected.join('; '), 1)
   }
   if (!requireMigrated(a.repo || a.worktree.replace(/^path:/, ''), 'launch-worker', null)) return 2
@@ -585,7 +590,7 @@ async function main(argv: string[]): Promise<number> {
     return 1
   }
 
-  const gate = await lintGate(a)
+  const gate = await lintGate(a, continuation)
   if (gate.stop !== null) return gate.stop
 
   const specText = readFileSync(a.spec, 'utf8')
@@ -785,11 +790,7 @@ async function main(argv: string[]): Promise<number> {
       if (value && typeof value === 'object' && !Array.isArray(value)) effective = value
     } catch { /* receipt 를 읽지 못하면 실행 설정은 null 로 기록한다 */ }
     const reused = passValue(passthru, '--terminal')
-    let inherited: ReturnType<typeof latestTerminal> = null
-    if (reused) {
-      try { inherited = latestTerminal(repo, reused) ?? retryLaunch }
-      catch (e) { err(`launch-worker: 터미널의 이전 선택을 읽지 못했다: ${(e as Error).message}`) }
-    }
+    const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
       dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch,
       run: a.run || jget(result.stdout, 'dispatch.runId|task.runId|run.id|worker.runId') || null,
