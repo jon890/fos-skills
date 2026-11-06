@@ -531,7 +531,7 @@ describe('선택 정책과 영구 이력', () => {
       recordHistory(tmp, prior({ spec }))
       env.SPEC_LINT = fileURLToPath(new URL('../scripts/spec/spec-lint.ts', import.meta.url))
       const terminal = mode === 'resume-terminal' ? 'term_new' : 'term_old'
-      state({ next_ids: ['ctx_1'], terminals: [{ handle: terminal, worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+      state({ next_ids: ['ctx_1'], terminals: mode === 'task-retry' ? [] : [{ handle: terminal, worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
       const args = mode === 'terminal' ? ['--worktree', worktree, '--', '--terminal', terminal]
         : mode === 'resume-terminal' ? ['--repo', tmp, '--task', 'task_1', '--', '--terminal', terminal]
         : ['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium']
@@ -554,6 +554,16 @@ describe('선택 정책과 영구 이력', () => {
     assert.match(r.stderr, /LAUNCH-HISTORY-SKIP/)
     assert.match(readFileSync(file, 'utf8'), /"dispatch":"ctx_1"/)
     assert.equal(launchHistory(tmp).at(-1)?.dispatch, 'ctx_1')
+  })
+
+  test('이전 dispatch 의 터미널이 열려 있으면 다른 에이전트를 같은 워크트리에 띄우지 않는다', () => {
+    select()
+    recordHistory(tmp, prior())
+    state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_old', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
+    const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
+    assert.equal(r.code, 1, both(r))
+    assert.match(both(r), /터미널이 남아 있다/)
+    assert.deepEqual(lines('orca orchestration worker-start'), [])
   })
 
   test('모델 없는 옛 Launch 를 근거로 Opus high 를 띄울 수 있다', () => {

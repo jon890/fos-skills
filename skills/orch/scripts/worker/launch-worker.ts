@@ -274,7 +274,7 @@ function passValue(passthru: string[], name: string): string | null {
 }
 
 // 그 워크트리에 붙은 터미널(handle 과 제목). reuse 는 이어 쓸 터미널이라 뺀다. 읽지 못하면 Stop(1).
-function leftTerminals(worktree: string, reuse = '', previous = ''): string {
+function leftTerminals(worktree: string, reuse = ''): string {
   const done = orca(['terminal', 'list', '--json'])
   if (done.code !== 0) throw new Stop('거부: orca terminal list 를 읽지 못해 남은 터미널을 확인할 수 없다', 1)
   let rows: Record<string, unknown>[]
@@ -286,7 +286,7 @@ function leftTerminals(worktree: string, reuse = '', previous = ''): string {
     throw new Stop('거부: 터미널 목록을 해석하지 못했다', 1)
   }
   return rows
-    .filter((t) => t?.worktreePath === worktree && t?.handle !== reuse && t?.handle !== previous)
+    .filter((t) => t?.worktreePath === worktree && t?.handle !== reuse)
     .map((t) => `${t.handle} ${Array.from(String(t.title ?? '')).slice(0, 60).join('')}`)
     .join('\n')
 }
@@ -530,14 +530,12 @@ async function main(argv: string[]): Promise<number> {
   if (passValue(passthru, '--task') || passValue(passthru, '--retry-of')) throw new Stop('--task 와 --retry-of 는 -- 앞에 준다', 2)
   let retryRepo = a.repo || process.cwd()
   let retryDispatch: string | null = null
-  let retryTerminal: string | null = null
   let retryLaunch: ReturnType<typeof readLaunch> = null
   if (a.task) {
     const prior = a.retryOf ? launchHistory(retryRepo).find(row => row.dispatch === a.retryOf) ?? readLaunch(retryRepo, a.retryOf) : launchHistory(retryRepo).filter(row => row.task === a.task).at(-1) ?? latestTaskLaunch(retryRepo, a.task)
     if (!prior || prior.task !== a.task) throw new Stop('다시 띄울 dispatch 와 Task 를 이력에서 찾지 못했다', 1)
     retryLaunch = prior
     retryDispatch = prior.dispatch
-    retryTerminal = prior.terminal
     a.worktree = prior.worktree
     a.run ||= prior.run ?? ''
   }
@@ -615,7 +613,7 @@ async function main(argv: string[]): Promise<number> {
       return 1
     }
     worktree = target
-    const left = leftTerminals(worktree, passValue(passthru, '--terminal') ?? '', retryTerminal ?? '')
+    const left = leftTerminals(worktree, passValue(passthru, '--terminal') ?? '')
     if (left) {
       out(`거부: 이 워크트리에 터미널이 남아 있다. 끝났는지 보고 orca terminal close --terminal <handle> 로 닫은 뒤 다시 띄운다\n${left}`)
       return 1
