@@ -50,6 +50,7 @@
 
 | 절 | 키 | 담는 것 |
 | --- | --- | --- |
+| `routing` | `review_author`, `review_pattern`, `size_pattern` | PR 관측값을 읽을 자동 리뷰 계정과 본문 꼴. 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다 |
 | `finish` | `gh_host` | gh 에 줄 호스트. github.com 이 아닌 저장소에서만 |
 | `finish` | `run` | worker 를 찾을 Orca Run id |
 | `finish` | `base_branch` | `cleanup-sweep.ts` 의 기준 브랜치. 없으면 origin/HEAD |

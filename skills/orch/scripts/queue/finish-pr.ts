@@ -16,30 +16,31 @@
 //        끝나면 `worker 끝남: <dispatch> (<상태>)`, 시간이 지나면 `worker 남음: <dispatch> 가 아직 살아 있다 ...` 를 남기고 정리로 넘어간다.
 //        보내지 못했으면(send-to-worker 의 3, 5 같은 것) 기다리지 않는다. worker 목록을 읽지 못하면 알리지 않고 그 사실을 남긴다.
 //        출력 줄은 `notify: ` 로 시작한다
-//     3. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
+//     3. worker 종료 대기 뒤 lib/routing-log.ts로 PR 관측값을 기록한다. 기록 실패는 정리를 막지 않는다.
+//     4. 그 PR 브랜치의 worker 를 정리한다. `cleanup-sweep.ts --apply` 가 dispatch 해제, 터미널 닫기,
 //        워크트리와 브랜치 삭제를 맡고, 이 명령은 그 브랜치의 워크트리가 사라졌는지 확인하며 다시 시도한다.
 //        배포 확인보다 먼저 한다. 기능 PR 도 같고, 후속 검증이 대기면 cleanup-sweep 이 지시서만 남긴다
-//     4. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
+//     5. --deploy-workflow 와 --deploy-branch 를 주면, 머지 커밋을 조상으로 가진 커밋의 배포 실행이
 //        성공할 때까지 기다린다(--deploy-timeout). 뒤 커밋의 배포에 합쳐져 머지 커밋의 실행이 skipped 나
 //        cancelled 로 끝나도 뒤 커밋의 실행이 성공하면 성공이다. skipped 만 남으면 배포 브랜치의 원격 끝 커밋으로 판정한다.
 //        끝 커밋이 뒤 커밋이면 `배포 판정: 뒤 커밋 <sha> 에 포함됨, 그 배포를 기다린다` 를 남기고 기다리고,
 //        끝 커밋의 실행도 skipped 면 `배포 실패 <sha> (근거: 배포가 건너뛰어졌다)` 로 끝낸다.
 //        판정은 lib/deploy.ts 의 deployVerdict 가 소유한다
-//     5. 이 PR 이 업무의 마지막 PR 인지 판정하고 `마지막 PR 판정: <마지막|중간>(근거)` 한 줄을 낸다(아래 「마지막 PR 판정」).
+//     6. 이 PR 이 업무의 마지막 PR 인지 판정하고 `마지막 PR 판정: <마지막|중간>(근거)` 한 줄을 낸다(아래 「마지막 PR 판정」).
 //        배포가 실패하거나 시간이 지나도 판정한다
-//     6. --specs-dir 를 줬고 마지막 PR 이면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
+//     7. --specs-dir 를 줬고 마지막 PR 이면 `브랜치:` 줄이 그 브랜치인 spec-*.md 를 지운다.
 //        지우기는 lib/spec.ts 의 deleteSpecs 한 경로다. 살아 있는 dispatch(--run 의 Run, 없으면 모든 Run)가 쓰는 지시서와,
 //        그 목록을 읽지 못한 실행에서는 지우지 않는다. 지시서 폴더가 orch 루트 밖이어도 지운다.
 //        중간 PR 이면 지시서는 남긴다. 업무 하나가 PR 여럿이면 다음 PR 에도 지시서를 쓴다
 //        마지막과 중간 모두, --specs-dir 와 상관없이 <orch 루트>/specs 의 이 PR 의 충돌 후속 지시서(spec-conflict-<PR>.md 와
 //        옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md, lib/conflicts.ts 의 conflictSpecFiles)를 같은 deleteSpecs 로 지운다(ADR-015).
 //        그 PR 이 머지되면 쓸모가 없다. 지울 것이 없으면 살아 있는 지시서 목록도 읽지 않는다
-//     7. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
-//     8. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
-//     9. 보드 항목을 고친다(아래 「보드 항목」)
+//     8. after-deploy 이벤트를 낸다. 배포가 실패하거나 시간이 지나도 낸다. 핸들러는 입력의 deploy 로 스스로 판단한다
+//     9. 배포가 실패하거나 시간이 지났으면 보드를 건드리지 않고 FINISH-FAIL 이다
+//     10. 보드 항목을 고친다(아래 「보드 항목」)
 //
-// 기능 PR(지시서가 기능 루프이거나 본문에 완료 근거 블록이 있다): 단계 5 의 판정 뒤, after-deploy 앞에서 PR 본문을 새로 읽어 완료 근거를 검사한다.
-//     근거가 빠졌거나 후속 검증이 대기·실패면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 워크트리는 단계 3 에서 이미 지웠다.
+// 기능 PR(지시서가 기능 루프이거나 본문에 완료 근거 블록이 있다): 단계 6 의 판정 뒤, after-deploy 앞에서 PR 본문을 새로 읽어 완료 근거를 검사한다.
+//     근거가 빠졌거나 후속 검증이 대기·실패면 지시서, 업무 완료, 보드를 남기고 FINISH-FAIL 이다. 워크트리는 단계 4 에서 이미 지웠다.
 //     근거를 갱신한 뒤 같은 명령으로 재개한다
 //
 // 마무리 표시: 시작할 때 lib/finish-marks.ts 로 그 PR 에 마무리가 돈 것을 남긴다. cleanup-sweep 이 머지된 워크트리를 치울 때
@@ -108,6 +109,7 @@
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
 // CLEANUP_SWEEP 환경 변수로 정리 스크립트 경로를, SEND_TO_WORKER 로 worker 에게 보내는 명령을, BOARD_BIN 으로 보드 명령을, GH 와 GIT 로 실행 파일을, ORCA 로 orca 를 바꾼다.
+// ORCA_USAGE_DIR은 토큰을 읽을 사용량 폴더다. 없으면 macOS Orca 앱 데이터 폴더를 쓴다(lib/routing-log.ts).
 // 정리 스크립트와 보드 명령은 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
 //
 // 출력의 마지막 줄은 FINISH-DONE 이나 FINISH-FAIL 이다. 그 줄이 없으면 아직 돌고 있거나 죽은 것이다.
@@ -468,7 +470,7 @@ function deleteBranchSpecs(args: Args, repo: string, branch: string): void {
   deleteSpecs({ root: dirname(realPath(specsDirOf(args, repo))), specs, prBodies: [], live: liveSpecPaths(args.run), mode: 'delete', apply: true, log })
 }
 
-// 이 PR 의 충돌 후속 지시서를 지운다(머리 주석의 단계 6). root 는 deleteBranchSpecs 와 같이 지시서 폴더 실경로의 부모다
+// 이 PR 의 충돌 후속 지시서를 지운다(머리 주석의 단계 7). root 는 deleteBranchSpecs 와 같이 지시서 폴더 실경로의 부모다
 function deleteConflictSpecs(args: Args, repo: string): void {
   const specs = conflictSpecFiles(repo, Number(args.pr))
   if (specs.length === 0) return
@@ -486,7 +488,7 @@ function judgeLast(args: Args, repo: string, merged: Merged): { last: boolean; k
   return { last: verdict.last === true, known: verdict.last !== null, reason: verdict.reason, prs: verdict.prs, specs: verdict.specs }
 }
 
-// 머리 주석의 단계 4. note 는 lib/deploy.ts 의 판정 근거다. 바뀔 때마다 `배포 판정: <근거>` 한 줄을 남긴다
+// 머리 주석의 단계 5. note 는 lib/deploy.ts 의 판정 근거다. 바뀔 때마다 `배포 판정: <근거>` 한 줄을 남긴다
 async function waitDeployed(args: Args, repo: string, merge: string): Promise<{ deploy: Deploy; sha: string; note: string }> {
   const deadline = Date.now() + args.deployTimeout * 60_000
   const branch = args.deployBranch as string
