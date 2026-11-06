@@ -51,10 +51,10 @@ experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `mediu
 {"dispatch":"ctx_…","task":"task_…","run":"run_…","terminal":"term_…","at":"2026-11-05T10:00:00Z","branch":"feat/x","worktree":"/…","spec":"/…/spec-x.md","title":"…","agent":"claude","model":"claude-opus-5-5","effort":"medium","effective":{"agent":"claude","model":"claude-opus-5-5","effort":"medium"},"row":"hard-design","experiment":null,"retry_of":null}
 ```
 
-- `--terminal` 이어 띄우기는 `--agent`, `--model`, `--effort` 가 없다. 그 터미널의 가장 최근 이력 줄에서 세 값을 물려받는다. 없으면 `null` 이다.
+- `--terminal` 이어 띄우기는 `--agent`, `--model`, `--effort` 가 없다. 그 터미널의 가장 최근 기록에서 세 값을 물려받는다. resume 이 연 새 터미널은 다시 잇는 이전 dispatch 의 기록에서 물려받는다. 둘 다 없으면 `null` 이다.
 - `effective` 는 `worker-start` 응답의 `launch.effective` 다. 읽지 못하면 `null` 이다.
 - 대조(REQ1): 이력에서 `dispatch` 가 같은 줄을 찾는다. `effective.model`(없으면 `model`)이 `claude-opus-*` 이고 effort 가 `medium` 이면 통과다. 이력에 줄이 없어도 `launched-workers/<dispatch>.json` 이 남아 있으면 이력 도입 전의 「모델이 없는 옛 기록」 으로 보아 통과다(스펙 DECISION1). 둘 다 없거나 모델·effort 가 다르면 막는다.
-- 다음 후보(REQ6): 이력에서 `experiment` 가 같은 줄을 후보마다 센다. 가장 적은 후보, 같으면 줄에 먼저 적힌 후보가 다음이다. `--retry-of` 로 같은 Task 를 다시 띄운 줄(위 다시 띄우기 꼴)은 세지 않는다. 새 배정이 아니다. 자동 abandon 뒤 다시 띄운 것은 위처럼 한 줄이라 한 번 센다.
+- 다음 후보(REQ6): 이력에서 `experiment` 가 같은 줄을 후보마다 센다. 가장 적은 후보, 같으면 줄에 먼저 적힌 후보가 다음이다. 같은 Task 의 재시도와 터미널 이어 쓰기는 `retry_of` 에 이전 dispatch 를 적고 세지 않는다. 새 배정이 아니다. 자동 abandon 뒤 다시 띄운 것은 위처럼 한 줄이라 한 번 센다.
 
 ### routing 기록 `state/routing-log.jsonl`
 
@@ -74,10 +74,11 @@ experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `mediu
 
 ## 실패와 일관성
 
+- 이력의 손상된 줄은 경고하고 건너뛴다. 마지막 줄이 잘렸으면 새 기록 앞에 줄 경계를 둬 정상 기록을 보존한다.
 - 이력 쓰기 실패는 띄우기를 막지 않는다(지금 `recordLaunch` 실패와 같게 stderr 한 줄). 그 dispatch 는 나중에 근거와 실험 수에서 빠진다. 띄운 worker 를 되돌리는 것이 더 비싸다.
 - `finish-pr` 의 기록은 2단계(worker 에 머지를 알리고 끝나기를 기다림) 뒤, 3단계(정리) 앞이다. worker 세션이 끝난 뒤라 토큰이 다 모이고, 정리가 오래 걸리거나 실패해도 기록이 남는다. 정리가 `launched-workers` 를 지워도 이력은 남는다.
 - 닫힌 PR 과 마무리가 빠진 머지 PR: `cleanup-sweep` 이 `--run` 없이도 이력의 브랜치로 찾아 기록한다. 조회는 `routing-log.jsonl` 에 아직 줄이 없고 이력 줄의 `at` 이 30일 안인 브랜치만 본다. 정리는 깨어날 때마다 돌고, PR 조회가 루프의 제한 시간을 다 쓴 실측이 있다(`cleanup-sweep` 머리 주석 「일하는 중」). 터미널 닫기 같은 지금 동작의 `--run` 조건은 바꾸지 않는다. 기록만 넓힌다.
-- 호환: 옛 `launched-workers` 기록(새 키 없음)은 `readLaunch` 가 그대로 읽는다. 옛 지시서(`행:` 없음)는 이미 떠 있으면 `--active` 라 막지 않는다. 새로 띄우는 옛 지시서는 막힌다. PR-B 를 배포하기 전에 PR-A 가 지시서 쓰는 법을 먼저 알린다.
+- 호환: 옛 `launched-workers` 기록(새 키 없음)은 `readLaunch` 가 그대로 읽는다. 옛 지시서(`행:` 없음)는 이미 떠 있으면 `--active` 라 막지 않는다. 같은 Task 재시도와 기록된 터미널에서 같은 지시서를 이어 쓰는 경로도 행 누락을 허용한다. 나머지 선택 정책은 검사하며 새로 띄우는 옛 지시서는 막힌다. PR-B 를 배포하기 전에 PR-A 가 지시서 쓰는 법을 먼저 알린다.
 - 공통 지시서 사본 13개는 PR-A 머지 뒤 `공통` 경고로 드러나고 코디네이터가 옮긴다(스펙 범위 밖).
 - orch-cli PR3(스크립트 폴더 이동)과의 순서: PR-A 는 문서와 틀만 고쳐 PR3 과 파일이 겹치지 않는다. PR-B~D 는 `scripts/` 아래를 고치므로 PR3 머지 뒤 PR3 의 폴더 배치(`scripts/<묶음>/`)에 맞춰 쓴다. 명령 표의 경로만 PR3 이 정한 꼴을 따른다.
 

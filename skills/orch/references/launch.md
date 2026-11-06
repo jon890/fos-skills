@@ -29,14 +29,14 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 **`--spec` 의 첫 지시 줄은 `spec-line` 이 지시서의 경로와 `허락:` 줄(형식은 [`spec-writing.md`](spec-writing.md))로 만든다.**
 
 **worker 는 `launch-worker` 로 띄운다.** 첫 지시 줄 만들기(`spec-line --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
-`worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. `launch-worker` 는 `--spec` 이 필수라 늘 Task 를 새로 만들므로, `--task` 로 기존 Task 를 다시 띄우는 호출(`--retry-of` 유무와 관계없이)만 예외로 `worker-start` 를 직접 부른다.
+`worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. 기존 Task 도 `launch-worker --spec <지시서> --repo <저장소> --task <Task>` 로 다시 띄운다. failed·blocked Task 는 `--retry-of <dispatch>` 를 함께 주고 ready Task 는 생략한다.
 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
 **`launch-worker` 는 워크트리를 만들기 전에 `spec-lint` 로 그 지시서를 검사한다.** 함께 넘기는 것은 같은 폴더에서 살아 있는 dispatch 가 쓰는 지시서라, 먼저 띄운 지시서와 담당 경로가 겹치는 지시서는 나중에 띄울 때 막힌다. 막을 발견이 있으면 발견 줄을 내고 종료 코드 5 로 멈춘다. 지시서를 고치는 것이 기본이다.
 「할 일」 첫 줄의 `루프` 발견([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」)도 같은 5 로 멈춘다.
 의도한 겹침(두 PR 이 같은 플러그인 버전 줄을 고치는 것 같은 것)만 `--lint-ack "<이유>"` 로 넘긴다. 이유는 출력의 `lint-ack:` 줄과 그 worker 의 기록(`state/launched-workers/<dispatch>.json` 의 `lint_ack`)에 남는다. 이유 없이 끄는 옵션은 없다. 활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다.
-**`launch-worker` 는 지시서의 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md))과 `--agent`, `--model` 을 대조한다.** 줄이 없거나, 요소가 빠졌거나, 값이 다르거나, 둘 가운데 하나를 넘기지 않으면 orca 를 부르기 전에 종료 코드 1 로 거부한다. `--terminal` 로 이어 쓰면 보지 않는다.
+**`launch-worker` 는 지시서의 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md))과 `--agent`, `--model`, `--effort` 를 대조한다.** 줄이 없거나 요소가 빠졌거나 값이 다르면 Orca 를 부르기 전에 종료 코드 1 로 거부한다. effort 가 `기본` 이면 옵션을 주지 않는다. `--terminal` 은 실행 값 대조 대신 이전 기록을 물려받으며 선택 정책은 검사한다. 이미 띄운 옛 지시서의 행 누락은 같은 Task 나 기록된 터미널의 같은 지시서를 이을 때 허용한다.
 **`--agent codex` 의 `--model`, `--effort` 는 워크트리를 만들기 전에 `codex debug models` 로 검사한다.** 없는 모델이나 그 모델이 지원하지 않는 effort 면 종료 코드 4 로 멈추고 쓸 수 있는 값을 낸다.
-조회가 실패하거나 claude(모델 목록을 내는 명령이 없다)면 경고만 내고 띄운다. `worker-start` 를 직접 부르는 예외 호출은 이 검사를 거치지 않으니 모델을 `agent-selection.md` 의 명령으로 먼저 확인한다.
+조회가 실패하거나 claude(모델 목록을 내는 명령이 없다)면 경고만 내고 띄운다. 같은 Task 를 다시 띄울 때도 이 검사를 거친다.
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
@@ -167,19 +167,19 @@ codex 의 hook 신뢰 확인이 fos-skills 의 orch hook 때문이면 Codex 설�
    handle 을 `"$TERMINAL_HANDLE"` 같은 변수로 주면 대상을 확인할 수 없어 이 hook 이 거부한다.
    거절하면 그 터미널을 `worker-release` 로 닫고 claude worker 로 다시 띄운다
 2. `terminal wait --for tui-idle` 로 입력 대기 상태를 확인한다
-3. `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --terminal "$TERMINAL_HANDLE" --worktree "id:$WORKTREE_ID"` 로 붙인다(`--task` 로 기존 Task 를 다시 띄우는 호출이라 3단계의 예외다).
-   기존 worktree 에 띄웠던 worker 는 `worker-start` 응답에 worktree id 가 없다. `--worktree "path:$WORKTREE"` 로 준다.
+3. `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$DISPATCH_ID" -- --terminal "$TERMINAL_HANDLE"` 로 붙인다(같은 Task 를 선택 검사와 이력 기록을 거쳐 다시 띄운다).
+   워크트리는 이전 dispatch 이력에서 읽는다.
    `--model` 은 줄 수 없지만 처음 띄울 때 준 모델이 그 터미널에 남아 있다
 
 ## 시작 직후 실패
 
 worker 가 `stage.detail: agent_readiness`, `outcome: failed` 로 아무 출력 없이 끝나면, codex 는 먼저 위 「codex 준비 판정」 의 설정을 본다.
-설정이 있는데도 실패하면 그 모델이 이 환경에서 뜨지 않는 것이므로 같은 Task 를 다른 모델로 다시 띄운다. `--retry-of` 는 `--spec` 이 아니라 `--task` 와 함께 쓰고, Task 가 `failed` 나 `blocked` 일 때만 받아들여진다. 터미널이 끊겨 `abandoned` 가 된 경우는 아래 「끊긴 worker 다시 띄우기」 의 표를 따른다.
+설정이 있는데도 실패하면 그 모델이 이 환경에서 뜨지 않는 것이므로 같은 Task 를 다른 모델로 다시 띄운다. `launch-worker` 의 `--spec` 은 검사할 지시서이고, `--task` 는 기존 Task 를 고른다. `--retry-of` 는 `--task` 와 함께 쓰고, Task 가 `failed` 나 `blocked` 일 때만 받아들여진다. 터미널이 끊겨 `abandoned` 가 된 경우는 아래 「끊긴 worker 다시 띄우기」 의 표를 따른다.
 `$WORKTREE` 는 처음 띄운 워크트리 경로다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다.
-이 `worker-start` 는 `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker` 를 쓰지 않는 예외다.
+다른 모델을 고르면 지시서의 `worker 선택:` 줄을 먼저 고친다. `launch-worker` 가 선택 검사 뒤 이력의 워크트리에서 같은 Task 를 다시 띄운다.
 
 ```bash
-orca orchestration worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID" --agent "$AGENT" --model "$MODEL" --effort "$EFFORT" --worktree "path:$WORKTREE"
+orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$DISPATCH_ID" -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
 ## 이전 세션 이어받기
@@ -216,7 +216,8 @@ orch worker resume --dispatch "$DISPATCH_ID"
 - 명령은 세션을 찾은 뒤에야 옛 dispatch 를 abandon 하고 옛 터미널을 닫는다. 기록을 찾지 못하면 옛 worker 를 건드리지 않고 끝난다.
 - 찾기와 에이전트 준비의 시한이 기본 100초이고, 그 뒤 같은 Task 에 잇는 호출이 붙는다. 대개 2분 안에 끝나지만 넘길 수 있으니 Bash 도구의 `timeout` 을 300000 으로 주고 전경으로 부른다. 중간에 끊겨도 잠금이 같은 세션의 두 번째 실행을 막는다.
 - 출력 줄과 단계별 종료 코드, `NEXT` 의 원본은 `scripts/worker/resume-worker.ts` 머리 주석이다. `RESUME-FAIL` 이 나면 같은 출력의 `NEXT` 를 따른다.
-- `RESUME-FAIL link` 뒤에는 `NEXT` 의 `worker-start --terminal` 한 줄만 부르고 같은 명령을 다시 부르지 않는다. 남은 터미널에 이미 resume 한 에이전트가 붙어 있어, 같은 명령은 한 세션에 두 번째 프로세스를 띄우려다 잠금으로 거부된다.
+- `RESUME-FAIL link` 뒤에는 `NEXT` 의 `orch worker launch ... -- --terminal` 한 줄만 부르고 같은 명령을 다시 부르지 않는다. 남은 터미널에 이미 resume 한 에이전트가 붙어 있어, 같은 명령은 한 세션에 두 번째 프로세스를 띄우려다 잠금으로 거부된다.
+- link 실패의 `NEXT` 는 선택 검사와 이력 기록을 받는 launch 명령이다. resume 내부의 연결 호출은 그대로다. 지시서 기록이 없어 `<지시서 경로>` 가 나오면 실제 경로로 채운다.
 - resume 이 실패했거나 제공자를 바꿔야 하면 아래 「끊긴 worker 다시 띄우기」 로 새 worker 를 띄우고 재개 절을 쓴다.
 
 ## 끊긴 worker 다시 띄우기
@@ -228,16 +229,16 @@ orch worker resume --dispatch "$DISPATCH_ID"
 같은 dispatch 는 다음 대기에서 다시 알리지 않으므로 이 줄을 받은 자리에서 처리한다.
 다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소해 기록을 남긴다.
 `$DISPATCH_ID` 는 그 줄의 dispatch, `$TASK_ID` 는 `worker-show` 의 `dispatch.taskId`, `$WORKTREE` 는 처음 띄운 워크트리 경로다.
-이 절의 `worker-start` 도 모두 `--task` 로 기존 Task 를 다시 띄우는 호출이라 `launch-worker` 를 쓰지 않는 예외다.
+이 절도 `launch-worker` 를 거쳐 같은 Task 를 다시 띄운다. `$SPEC` 은 지시서 경로이고, `$REPO` 는 저장소 경로다. 모델을 바꾸면 지시서의 선택 줄부터 고친다.
 이 절은 일하던 worker 가 끊긴 경우다. 이미 `worker_done` 을 보낸 worker 의 PR 에 충돌이나 리뷰가 달렸는데 터미널이 없으면, 이 절의 새 worker 띄우기보다 [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 가 우선한다.
 
 어느 상태에서 어느 명령을 쓰는지는 이 표가 소유한다. `--retry-of` 는 실패하거나 막힌 Task 의 가장 최근 settled dispatch 에만 받아들여진다.
 
 | Task 상태 | dispatch 상태 | 쓰는 명령 |
 | --- | --- | --- |
-| `failed` 또는 `blocked` | 가장 최근 settled dispatch 가 `agent_readiness` 같은 시작 실패 | `worker-start --task "$TASK_ID" --retry-of "$DISPATCH_ID"` (위 「시작 직후 실패」) |
-| `ready` | `abandoned` (`terminal_missing`) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"` |
-| `ready` | 가장 최근 dispatch 가 `failed` (재부팅으로 터미널과 루프가 함께 사라졌다) | `--retry-of` 없이 `worker-start --task "$TASK_ID" --worktree "path:$WORKTREE"`. `adopt-sessions` 는 이 경우 `RESTART` 줄과 `orch worker resume` 을 낸다. 이 명령은 resume 이 실패했을 때 쓴다 |
+| `failed` 또는 `blocked` | 가장 최근 settled dispatch 가 `agent_readiness` 같은 시작 실패 | `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$DISPATCH_ID"` (위 「시작 직후 실패」) |
+| `ready` | `abandoned` (`terminal_missing`) | `--retry-of` 없이 `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID"` |
+| `ready` | 가장 최근 dispatch 가 `failed` (재부팅으로 터미널과 루프가 함께 사라졌다) | `--retry-of` 없이 `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID"`. `adopt-sessions` 는 이 경우 `RESTART` 줄과 `orch worker resume` 을 낸다. 이 명령은 resume 이 실패했을 때 쓴다 |
 | `dispatched` | 살아 있는 dispatch | 다시 띄우지 않는다. 같은 worker 에 `send-to-worker` 로 보낸다 |
 
 Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본다. 상태를 모르고 `--retry-of` 를 주면 `task_not_startable`(「--retry-of must name the latest settled Dispatch of a failed or blocked Task」)로 거절된다. 거절되면 표의 둘째 줄로 간다.
@@ -246,11 +247,11 @@ Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본�
 2. 워크트리에서 `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD` 와 `git -C "$WORKTREE" status --short` 로 끝난 커밋과 작업 트리의 변경을 확인한다. 커밋 안 된 변경은 버리지 않고 그대로 둔다
 3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다.
    앞 worker 의 회신, 사용자 결정, 조사 결과는 내용을 이 절에 옮겨 적는다. 임시 폴더(`/tmp`, `$TMPDIR`, scratchpad)의 파일은 재부팅이나 세션 종료 뒤 사라져 새 worker 가 막힌다. `spec-lint` 가 그런 경로를 `임시` 경고로 알린다
-4. 표대로 띄운다. 워크트리를 `path:` 로 주면 같은 워크트리에 이어 붙는다
+4. 표대로 띄운다. 워크트리는 이전 dispatch 이력에서 읽는다
 5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 가 `identity_unproven` 으로 닫지 않으므로 `orca terminal close` 를 쓴다. 이 세션이 띄운 worker 의 터미널만 닫는다
 
 ```bash
-orca orchestration worker-start --task "$TASK_ID" --worktree "path:$WORKTREE" --json
+orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 orca terminal close --terminal "$OLD_TERMINAL_HANDLE"
 ```
 

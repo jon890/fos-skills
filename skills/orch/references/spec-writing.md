@@ -56,8 +56,16 @@ worker 가 직접 `orca orchestration ask` 를 부르면 답을 기다리는 동
   `행:` 은 모든 새 지시서에 모델 표의 id 를 적는다. `high 근거:` 는 `agent-selection.md` 「Opus `high`」 가 요구할 때만 적고, 꼴은 「high 근거: medium 실패 <dispatch id>」 나 「high 근거: 사용자 지정 YYYY-MM-DD」 다. effort 를 지정하지 않는 행(Haiku)은 effort 를 `기본` 으로 적는다.
   예: 「worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Claude Sonnet 5.5. 이유: 계획서가 수정 위치를 정했고 CI 리뷰가 Claude 라 제공자를 나눈다.」
   후보와 고르는 규칙은 [`agent-selection.md`](agent-selection.md) 가 소유한다. 비교 없이 익숙한 제공자로 기우는 것을 막으려고 줄을 강제한다.
-  `spec-lint` 는 줄이 없거나 요소가 빠지면 `선택` 발견으로 막고(지금 검사는 에이전트·모델·effort·비교·이유만 본다. `행:` 과 `high 근거:` 는 코디네이터가 확인한다), `launch-worker` 는 그 지시서를 거부하며 `--agent`, `--model` 이 줄의 값과 다를 때도 거부한다. `--lint-ack` 으로 넘기지 못한다.
-  `--terminal` 로 이어 쓰는 띄우기는 처음 띄울 때의 선택을 쓰므로 대조하지 않는다
+  `spec-lint` 는 줄이 없거나 요소가 빠지면 `선택` 발견으로 막고(모델 표의 행 id 와 Opus 높은 effort 의 근거도 검사한다), `launch-worker` 는 그 지시서를 거부하며 `--agent`, `--model`, `--effort` 가 줄의 값과 다를 때도 거부한다. `--lint-ack` 으로 넘기지 못한다.
+  같은 Task 를 다시 띄우거나 이미 기록된 터미널에서 같은 지시서를 이어 쓸 때는 옛 지시서의 행 누락을 허용한다. 새로 띄우는 지시서에는 행이 필수다.
+  `--terminal` 로 이어 쓸 때도 나머지 선택 정책을 검사한다. 요청한 실행 값은 그 터미널의 최근 기록이나 다시 잇는 이전 dispatch 에서 물려받는다. 둘 다 없으면 null 로 기록한다.
+- 비교 실험은 다음처럼 `experiment:` 줄 하나를 더한다. 후보는 `/` 로 나누며 둘 이상이고 중복 없이 agent, model, effort 를 적는다. `worker 선택:` 은 후보 중 하나여야 한다.
+
+  ```text
+  experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `medium` / `codex` `gpt-6.1-sol` effort `medium`.
+  ```
+
+  `launch-worker` 는 같은 실험 이름의 새 배정 이력 수가 가장 적은 후보를 요구한다. 같으면 줄에 먼저 적힌 후보를 쓴다. 같은 Task 의 다시 띄우기는 배정 수에 세지 않는다. 실험 후보인 Opus 높은 effort 는 별도 high 근거 없이 허용한다. 이름과 후보를 지시서에서 바꾸면 그 줄에 적힌 후보로 집계한다.
 - PR 을 열게 하면 「`gh pr create` 나 리뷰 회신이 거부되면 push 한 뒤 본문 파일 경로(회신이면 스레드 id 와 회신 파일)를 status 로 보낸다. 묻지 않고 다음 일을 계속한다」 도 적는다.
   지시서의 승인은 worker 세션의 권한 분류기에 전달되지 않아, 같은 요청이 세션마다 허용되기도 하고 거부되기도 한다.
   받은 뒤의 처리는 [`replying.md`](replying.md) 의 「PR 생성과 리뷰 회신을 대신 한다」 가 정한다

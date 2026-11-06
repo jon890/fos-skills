@@ -56,7 +56,7 @@ beforeEach(() => {
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 // 제목 경고와 선택, 루프 발견이 다른 검사의 출력에 섞이지 않게 끝에 제목 줄과 선택 줄, 할 일 절을 둔다. 줄 번호는 그대로다
-const SELECTED = 'worker 선택: `codex` `gpt-6.1-sol` effort `low`. 비교: Claude Sonnet 5.5. 이유: CI 리뷰가 Claude 다.'
+const SELECTED = 'worker 선택: `codex` `gpt-6.1-sol` effort `low`. 행: impl-planned. 비교: Claude Sonnet 5.5. 이유: CI 리뷰가 Claude 다.'
 const NO_LOOP = '## 할 일\n루프 없이: 테스트 지시서다'
 
 function spec(name: string, text: string): string {
@@ -369,9 +369,37 @@ describe('지시서 검사', () => {
     const r = lint([none, partial, twice])
     assert.equal(r.code, 1, r.stdout)
     assert.match(r.stdout, /spec-none\.md:1: 선택: `worker 선택:` 줄이 없다\. 형식: worker 선택: `<에이전트>`/)
-    assert.match(r.stdout, /spec-partial\.md:2: 선택: effort, 비교, 이유 가 빠졌다/)
-    assert.match(r.stdout, /spec-twice\.md:3: 선택: `worker 선택:` 줄이 둘 이상이다/)
-    assert.equal(count(r.stdout, ': 선택: '), 3, r.stdout)
+    assert.match(r.stdout, /spec-partial\.md:1: 선택: 행 가 빠졌거나 형식이 틀렸다/)
+    assert.match(r.stdout, /spec-twice\.md:1: 선택: `worker 선택:` 줄은 하나만 둔다/)
+    assert.equal(count(r.stdout, ': 선택: '), 6, r.stdout)
+  })
+
+  test('새 지시서의 행과 Opus high 근거, 실험 후보를 검사한다', () => {
+    const source = (selection: string, experiment = '') => `# 선택\n${selection}\n${experiment}\n${NO_LOOP}\n`
+    const opus = 'worker 선택: `claude` `claude-opus-5-5` effort `high`. 행: hard-design. 비교: sol. 이유: 설계.'
+    const cases = [
+      [SELECTED.replace('행: impl-planned.', ''), '', /행/],
+      [SELECTED.replace('impl-planned', 'missing-row'), '', /모델 표에 없다/],
+      [opus, '', /high 근거/],
+      [opus.replace('비교:', 'high 근거: medium 실패 ctx_missing. 비교:'), '', /Opus medium/],
+      [SELECTED, 'experiment: broken.', /experiment/],
+      [SELECTED, 'experiment: outside. 후보: `claude` `claude-sonnet-5-5` effort `medium` / `codex` `gpt-6-luna` effort `high`.', /후보 밖/],
+    ] as const
+    for (const [selection, experiment, expected] of cases) {
+      const file = write(join(specs, 'spec-selection.md'), source(selection, experiment))
+      const r = lint([file])
+      assert.equal(r.code, 1, r.stdout)
+      assert.match(r.stdout, expected)
+    }
+    const valid = write(join(specs, 'spec-valid.md'), source(opus.replace('비교:', 'high 근거: 사용자 지정 2026-11-05. 비교:')))
+    assert.equal(lint([valid]).code, 0)
+  })
+
+  test('행 없는 옛 선택 줄은 활성 지시서로만 호환한다', () => {
+    const old = write(join(specs, 'spec-old-selection.md'), `# 이전 일\n${SELECTED.replace('행: impl-planned.', '')}\n${NO_LOOP}`)
+    assert.equal(lint([old]).code, 1)
+    const r = run(['--repo', repo, '--active', old, spec('spec-fresh-selection', '')])
+    assert.equal(r.code, 0, r.stdout)
   })
 
   test('--active 로 넘긴 이미 띄운 지시서는 선택 줄을 보지 않고 겹침은 본다', () => {
