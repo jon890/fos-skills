@@ -21,7 +21,7 @@
 //
 // 옵션은 argparse 처럼 긴 옵션의 고유한 접두(--dra)와 `--옵션=값` 을 받는다. 모르는 옵션은 사용법 오류(2)다.
 
-import { isAbsolutePath, isRelativeTo, lstripPy, pathParent, posixJoin, pyPath, pyResolve, stripChars } from './pylike.ts'
+import { isAbsolutePath, pyre, isRelativeTo, lstripPy, pathParent, posixJoin, pyPath, pyResolve, stripChars } from './pylike.ts'
 import { isExpected, isMain, readTextFile as readText, ValueError, write } from './io.ts'
 import { type Spec, parseCli, UsageError } from './cli.ts'
 import { pySplitLines, pyStrCompare, pyStrip } from './kit/py.ts'
@@ -32,8 +32,8 @@ const ID = /^(?:REQ|R)[1-9][0-9]*$/
 const DECISION_ID = /^(?:DECISION|D)[1-9][0-9]*$/
 const DECIDER = /^(사용자 \p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2}|작성자|작성자\(위임\))$/u
 const OPEN_ANSWERS = new Set(['', '미정', 'tbd', '?', '-'])
-const CONFIRMED = /^확인:\s*(\p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2})\s*$/u
-const NO_DECISION = /^-?\s*없음:\s*\S[^\n]*$/
+const CONFIRMED = pyre(/^확인:\s*(\p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2})\s*$/u)
+const NO_DECISION = pyre(/^-?\s*없음:\s*\S[^\n]*$/)
 const SPLIT_CELLS = /(?<!\\)\|/
 
 const USAGE = `usage: check_feature.ts [-h] [--plan PLAN] [--require-verification] [--design DESIGN] [--draft] spec
@@ -68,7 +68,7 @@ export function sections(text: string): Map<string, string> {
   let current = ''
   let fence: string | null = null
   for (const line of splitLines(text)) {
-    const marker = /^\s*(`{3,}|~{3,})/.exec(line)
+    const marker = pyre(/^\s*(`{3,}|~{3,})/).exec(line)
     if (marker) {
       const token = marker[1]
       if (fence === null) fence = token
@@ -145,7 +145,7 @@ function checkConfirmed(head: string): string[] {
 }
 
 function checkDomainChanges(rawBody: string, draft = false): string[] {
-  const body = pyStrip(rawBody.replace(/<!--[\s\S]*?-->/g, ''))
+  const body = pyStrip(rawBody.replace(pyre(/<!--[\s\S]*?-->/g), ''))
   if (!body || body.startsWith('도메인 규칙 변경 없음:')) return []
   const rows = [...tableRows(body)].filter((cells) => cells.length > 0 && /(?<![\p{L}\p{N}_])RULE[1-9][0-9]*(?![\p{L}\p{N}_])/u.test(cells[0]))
   if (rows.length === 0) return ['도메인 규칙 변경 절에 RULE ID 의 변경 표 또는 「도메인 규칙 변경 없음: 이유」 가 필요하다']
@@ -238,7 +238,7 @@ export function checkVerification(text: string, assigned: Set<string>): string[]
       problems.push(`${rid}: 인수 검증 사례의 빈칸·미정·양식 자리표시자를 채운다`)
     }
     if (timing !== 'PR 전' && timing !== 'PR 뒤') problems.push(`${rid}: 인수 검증 시점은 PR 전 또는 PR 뒤다`)
-    if (!/^(없음|push|머지|배포)(?:\s|$|[(:])/.test(prerequisite)) problems.push(`${rid}: 선행 조건은 없음, push, 머지, 배포 중 하나로 시작한다`)
+    if (!pyre(/^(없음|push|머지|배포)(?:\s|$|[(:])/).test(prerequisite)) problems.push(`${rid}: 선행 조건은 없음, push, 머지, 배포 중 하나로 시작한다`)
     if (timing === 'PR 전' && (prerequisite.startsWith('머지') || prerequisite.startsWith('배포'))) problems.push(`${rid}: 머지·배포가 필요한 검증은 PR 뒤다`)
   }
   const uncovered = [...assigned].filter((id) => !covered.has(id))

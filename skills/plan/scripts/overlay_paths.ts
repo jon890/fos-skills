@@ -26,11 +26,11 @@
 import { readdirSync, statSync } from 'node:fs'
 import { capture, isMain, readStdin, readTextFile, ValueError, write } from './io.ts'
 import { type Spec, parseCli, UsageError } from './cli.ts'
-import { fnmatchcase, pathParts, pyResolve } from './pylike.ts'
+import { fnmatchcase, pathParts, pyre, pyResolve } from './pylike.ts'
 import { pyStrCompare, pyStrip } from './kit/py.ts'
 
 // 오버레이의 「저장소 배치」 표에서 plan 접두사를 읽는다. 형식은 references/monorepo.md 가 정한다
-const PREFIX_ROW = /(?<![^\n])\|\s*plan 접두사\s*\|\s*`([^`]+)`\s*\|/
+const PREFIX_ROW = pyre(/(?<![^\n])\|\s*plan 접두사\s*\|\s*`([^`]+)`\s*\|/)
 const HARNESS = ['AGENTS.md', 'CLAUDE.md']
 const ALIASES: Record<string, string> = { plan: 'planning', implementation: 'build-with-teams', 'docs-audit': 'docs-check' }
 

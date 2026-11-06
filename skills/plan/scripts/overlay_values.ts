@@ -4,7 +4,7 @@
 // 파일을 찾는 순서는 overlay_paths.ts 가 정한다. 값 하나마다 그 순서로 찾고, 앞의 파일에 있으면 그것을 쓴다.
 // verify_task.ts 와 run_doc_checks.ts 가 모듈로 불러 쓴다. 단독 실행 명령은 없다.
 
-import { escapeRegExp, pyRepr } from './pylike.ts'
+import { escapeRegExp, PyRegExp, pyRepr } from './pylike.ts'
 import { isExpected, readTextFile, ValueError } from './io.ts'
 import { resolveTargets, searchOrder, subprojects } from './overlay_paths.ts'
 import { pyInt, pyStrip } from './kit/py.ts'
@@ -18,7 +18,7 @@ export function targets(root: string, paths: string[]): (string | null)[] {
 
 // `| <name> | <값> |` 행의 값 칸이다. 표가 어느 절에 있든 행 이름으로 찾는다
 export function cell(text: string, name: string): string | null {
-  const found = new RegExp(`(?<![^\\n])\\|\\s*${escapeRegExp(name)}\\s*\\|\\s*(.*?)\\s*\\|\\s*(?![^\\n])`).exec(text)
+  const found = new PyRegExp(`(?<![^\\n])\\|\\s*${escapeRegExp(name)}\\s*\\|\\s*(.*?)\\s*\\|\\s*(?![^\\n])`).exec(text)
   return found ? found[1] : null
 }
 

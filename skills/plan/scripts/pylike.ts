@@ -13,8 +13,8 @@
 //     unquote          urllib.parse.unquote
 //     lstripPy, stripChars   str.lstrip(), str.strip(chars)
 
-import { type Dirent, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { type Dirent, lstatSync, readdirSync, readlinkSync, statSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { PY_SPACE } from './kit/py.ts'
 
 const SPACE_AT_START = new RegExp(`^${PY_SPACE}+`)
@@ -32,6 +32,36 @@ export function stripChars(text: string, chars: string): string {
 }
 
 export const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// 정규식의 \s, \S 를 Python re 의 공백 집합으로 바꾼다. JS 의 \s 는 \ufeff 를 공백으로 보고 \x1c~\x1f, \x85 를 보지 않는다
+const SPACE_INNER = PY_SPACE.slice(1, -1)
+
+export function pyre(re: RegExp): RegExp {
+  const src = re.source.replaceAll('[\\s\\S]', '[^]')
+  let out = ''
+  let inClass = false
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i]
+    if (ch === '\\') {
+      const next = src[++i]
+      if (next === 's') out += inClass ? SPACE_INNER : PY_SPACE
+      else if (next === 'S') out += inClass ? '\\S' : `[^${SPACE_INNER}]`
+      else out += ch + next
+      continue
+    }
+    if (ch === '[' && !inClass) inClass = true
+    else if (ch === ']' && inClass) inClass = false
+    out += ch
+  }
+  return new RegExp(out, re.flags)
+}
+
+// new RegExp 처럼 쓰되 \s, \S 를 Python 의 뜻으로 읽는다
+export class PyRegExp extends RegExp {
+  constructor(source: string, flags?: string) {
+    super(pyre(new RegExp(source, flags)).source, flags)
+  }
+}
 
 // shlex
 
@@ -147,37 +177,60 @@ export function shlexSplit(line: string): string[] {
 
 const FNMATCH_CACHE = new Map<string, RegExp>()
 
-function translate(pattern: string): string {
+// fnmatch.translate 와 같은 규칙으로 정규식 글자를 만든다. 문자 단위는 코드 포인트이고 `u` 플래그로 쓴다
+function translate(source: string): string {
+  const pat = Array.from(source)
   let out = ''
   let i = 0
-  const n = pattern.length
+  const n = pat.length
   while (i < n) {
-    const c = pattern[i++]
-    if (c === '*') {
-      out += '.*'
-    } else if (c === '?') {
-      out += '.'
-    } else if (c === '[') {
+    const c = pat[i++]
+    if (c === '*') out += '.*'
+    else if (c === '?') out += '.'
+    else if (c === '[') {
       let j = i
-      if (j < n && pattern[j] === '!') j++
-      if (j < n && pattern[j] === ']') j++
-      while (j < n && pattern[j] !== ']') j++
+      if (j < n && pat[j] === '!') j++
+      if (j < n && pat[j] === ']') j++
+      while (j < n && pat[j] !== ']') j++
       if (j >= n) {
         out += '\\['
-      } else {
-        let stuff = pattern.slice(i, j).replaceAll('\\', '\\\\').replace(/([&~|\]])/g, '\\$1').replaceAll('[', '\\[')
-        i = j + 1
-        if (stuff === '') out += '(?!)'
-        else if (stuff === '!') out += '.'
-        else {
-          if (stuff[0] === '!') stuff = '^' + stuff.slice(1)
-          else if (stuff[0] === '^') stuff = '\\' + stuff
-          out += `[${stuff}]`
-        }
+        continue
       }
-    } else {
-      out += escapeRegExp(c)
-    }
+      let stuff: string
+      if (!pat.slice(i, j).includes('-')) {
+        stuff = pat.slice(i, j).join('').replaceAll('\\', '\\\\')
+      } else {
+        const chunks: string[][] = []
+        let k = pat[i] === '!' ? i + 2 : i + 1
+        for (;;) {
+          k = pat.indexOf('-', k)
+          if (k < 0 || k >= j) break
+          chunks.push(pat.slice(i, k))
+          i = k + 1
+          k += 3
+        }
+        const chunk = pat.slice(i, j)
+        if (chunk.length) chunks.push(chunk)
+        else chunks[chunks.length - 1].push('-')
+        // 역순 범위는 정규식에서 틀리므로 지운다
+        for (let m = chunks.length - 1; m > 0; m--) {
+          if (chunks[m - 1].at(-1)!.codePointAt(0)! > chunks[m][0].codePointAt(0)!) {
+            chunks[m - 1] = [...chunks[m - 1].slice(0, -1), ...chunks[m].slice(1)]
+            chunks.splice(m, 1)
+          }
+        }
+        stuff = chunks.map((part) => part.join('').replaceAll('\\', '\\\\').replaceAll('-', '\\-')).join('-')
+      }
+      stuff = stuff.replace(/([&~|])/g, '\\$1')
+      i = j + 1
+      if (stuff === '') out += '(?!)'
+      else if (stuff === '!') out += '.'
+      else {
+        if (stuff[0] === '!') stuff = `^${stuff.slice(1)}`
+        else if (stuff[0] === '^' || stuff[0] === '[') stuff = `\\${stuff}`
+        out += `[${stuff.replace(/(?<!\\)((?:\\\\)*)([\][])/g, '$1\\$2')}]`
+      }
+    } else out += escapeRegExp(c)
   }
   return `^(?:${out})$`
 }
@@ -185,7 +238,7 @@ function translate(pattern: string): string {
 export function fnmatchcase(name: string, pattern: string): boolean {
   let re = FNMATCH_CACHE.get(pattern)
   if (!re) {
-    re = new RegExp(translate(pattern), 's')
+    re = new RegExp(translate(pattern), 'su')
     FNMATCH_CACHE.set(pattern, re)
   }
   return re.test(name)
@@ -310,21 +363,25 @@ export function isRelativeTo(path: string, base: string): boolean {
   return path === base || path.startsWith(base.endsWith('/') ? base : `${base}/`)
 }
 
-// Path.resolve(). 심볼릭 링크를 풀고, 없는 뒷부분은 그대로 붙인다
+// Path.resolve(). 구성 요소를 앞에서부터 하나씩 풀어, 심볼릭 링크를 따라간 뒤에 `..` 를 처리한다. 없는 뒷부분은 그대로 붙인다
 export function pyResolve(path: string): string {
-  const full = resolve(path)
-  const tail: string[] = []
-  let head = full
-  for (;;) {
-    try {
-      return [realpathSync(head), ...tail.reverse()].join('/').replace(/\/+/g, '/').replace(/^\/\//, '/')
-    } catch {
-      const parent = dirname(head)
-      if (parent === head) return full
-      tail.push(basename(head))
-      head = parent
+  const queue = (path.startsWith('/') ? path : `${process.cwd()}/${path}`).split('/').filter((part) => part !== '' && part !== '.')
+  let resolved = '/'
+  let links = 0
+  while (queue.length) {
+    const part = queue.shift()!
+    if (part === '..') {
+      resolved = dirname(resolved)
+      continue
     }
+    const candidate = resolved === '/' ? `/${part}` : `${resolved}/${part}`
+    if (lstatSync(candidate, { throwIfNoEntry: false })?.isSymbolicLink() && links++ < 40) {
+      const target = readlinkSync(candidate)
+      if (target.startsWith('/')) resolved = '/'
+      queue.unshift(...target.split('/').filter((p) => p !== '' && p !== '.'))
+    } else resolved = candidate
   }
+  return resolved
 }
 
 // posixpath

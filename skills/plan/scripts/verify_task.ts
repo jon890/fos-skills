@@ -54,6 +54,8 @@ import { run as checkFeature } from './check_feature.ts'
 import * as overlayValues from './overlay_values.ts'
 import {
   fnmatchcase,
+  PyRegExp,
+  pyre,
   globRel,
   isAbsolutePath,
   lstripPy,
@@ -92,15 +94,15 @@ const DEFERRED_KEYS = ['what', 'why', 'after']
 const PROFILES = new Set(['fast', 'standard', 'deep'])
 const MODELS = new Set(['haiku', 'sonnet', 'opus'])
 
-const VAGUE_SCOPE = /전체\s*(?:수정|변경|적용|교체|리팩토링|삭제)/g
+const VAGUE_SCOPE = pyre(/전체\s*(?:수정|변경|적용|교체|리팩토링|삭제)/g)
 // 「전체 삭제 경로」 처럼 뒤에 명사가 이어지면 수식어라 범위 지시가 아니다.
 // 바로 붙은 조사, 또는 떨어져 있어도 서술어로 이어지면 범위 지시로 본다. 목록에 없는 어미는 오탐으로 남는다
-const VAGUE_SCOPE_TAIL = /^(?:(?:[을를은는이가도만과와에]|으로|로|에서|및)|\s*(?:하|한|할|해|합|되|된|될|시키|시켜))/
+const VAGUE_SCOPE_TAIL = pyre(/^(?:(?:[을를은는이가도만과와에]|으로|로|에서|및)|\s*(?:하|한|할|해|합|되|된|될|시키|시켜))/)
 const PLAN_NUMBER = /^(.*?)plan(\p{Nd}+)-/u
-const HUMAN_CHECK = /수동\s*(?:검토|확인|검증)|눈으로\s*확인|직접\s*확인|육안/
-const BSD_SED = /sed\s.*\\b/
+const HUMAN_CHECK = pyre(/수동\s*(?:검토|확인|검증)|눈으로\s*확인|직접\s*확인|육안/)
+const BSD_SED = pyre(/sed\s.*\\b/)
 // 모노레포는 하위 프로젝트마다 docs 를 둔다. 루트 기준 경로의 어느 조각이든 `docs` 면 근거 문서로 본다
-const DOC_PATH = /`((?:[A-Za-z0-9_.-]+\/)*docs\/[^`\s]+)`/g
+const DOC_PATH = pyre(/`((?:[A-Za-z0-9_.-]+\/)*docs\/[^`\s]+)`/g)
 const TEST_DIRS = new Set(['test', 'tests', '__tests__'])
 // `-spec.js` 는 테스트 이름이 아니다. `bottom-panel-spec.js` 같은 운영 코드의 이름이라 spec 은 `.spec.ts` 와 `_spec.rb` 처럼 `.` 나 `_` 로 이은 것만 본다
 const TEST_NAME = /^test[_-]|(?:Test|Tests)\.[^.]+$|[._-]test\.[^.]+$|[._]spec\.[^.]+$/
@@ -110,9 +112,9 @@ const BUNDLE = /\$(?:SKILL_DIR|\{SKILL_DIR\})|~\/\.(?:claude|codex)\/skills|\$HO
 const CODE_SUFFIXES = new Set(['.java', '.kt', '.groovy', '.scala', '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.go', '.rs', '.cs', '.rb', '.php', '.swift', '.sh', '.bash', '.c', '.cpp'])
 const SHELL = new Set(['', 'bash', 'sh', 'shell', 'zsh'])
 // 「다음 케이스」 처럼 phase 와 무관한 「다음」 은 미루기가 아니다. 다른 phase 나 plan 을 가리키는 구절만 본다
-const DEFER_TEST = /(?=.*(?:테스트|회귀\s*검증))(?=.*(?:(?:다음|후속|이후)\s*(?:phase|단계|plan)|나중에?))(?=.*(?:작성|추가|미루|미룬|넘기|넘긴|진행|수행|다루|다룬|구현|보강|처리))/i
-const NOT_DEFERRED = /(?:미루|넘기)지\s*(?:않|말)/
-const HUMAN_ONLY = /(?:사람이|담당자가|사용자가)\s*(?:확인|검토|판정)|화면(?:에서|을)\s*(?:확인|검토)/
+const DEFER_TEST = pyre(/(?=.*(?:테스트|회귀\s*검증))(?=.*(?:(?:다음|후속|이후)\s*(?:phase|단계|plan)|나중에?))(?=.*(?:작성|추가|미루|미룬|넘기|넘긴|진행|수행|다루|다룬|구현|보강|처리))/i)
+const NOT_DEFERRED = pyre(/(?:미루|넘기)지\s*(?:않|말)/)
+const HUMAN_ONLY = pyre(/(?:사람이|담당자가|사용자가)\s*(?:확인|검토|판정)|화면(?:에서|을)\s*(?:확인|검토)/)
 
 export type Entry = [rel: string, action: string]
 type Command = string[]
@@ -151,7 +153,7 @@ export function fences(text: string): Fence[] {
   pySplitLines(text).forEach((line, index) => {
     const n = index + 1
     if (fence === null) {
-      const marker = /^\s*(`{3,}|~{3,})\s*([\p{L}\p{N}_+-]*)/u.exec(line)
+      const marker = pyre(/^\s*(`{3,}|~{3,})\s*([\p{L}\p{N}_+-]*)/u).exec(line)
       if (marker) {
         fence = marker[1]
         language = marker[2].toLowerCase()
@@ -159,7 +161,7 @@ export function fences(text: string): Fence[] {
       } else out.push({ n, line, kind: 'text', language: '' })
       return
     }
-    const marker = /^\s*(`{3,}|~{3,})\s*$/.exec(line)
+    const marker = pyre(/^\s*(`{3,}|~{3,})\s*$/).exec(line)
     if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) {
       fence = null
       out.push({ n, line, kind: 'close', language })
@@ -221,7 +223,7 @@ function manifest(path: string, text: string, out: string[], warnings: string[])
       continue
     }
     const files = [...cells[0].matchAll(/`([^`]+)`/g)].map((m) => m[1])
-    const action = /^\s*(신규·수정|신규|수정|삭제)(?:\s|$|\()/.exec(cells[1])
+    const action = pyre(/^\s*(신규·수정|신규|수정|삭제)(?:\s|$|\()/).exec(cells[1])
     if (files.length !== 1 || !action) {
       out.push(`${path} — 변경 파일 행의 경로 또는 변경 종류가 잘못됐다: ${line}`)
       continue
@@ -777,7 +779,7 @@ function checkRemoteVerification(path: string, out: string[], warnings: string[]
       warnings.push(`${path}:${n} — 명령 칸에 원격 접속이나 push 형태가 있다. 접속 대상과 운영 값 대신 절차 이름이나 저장소 스크립트만 적고, 실행 위치는 저장소 이름만 적는다`)
     }
     const prerequisite = cell('선행 조건')
-    if (!new RegExp(`^(?:${REMOTE_PREREQUISITES.join('|')})(?:\\s|$)`).test(prerequisite)) {
+    if (!new PyRegExp(`^(?:${REMOTE_PREREQUISITES.join('|')})(?:\\s|$)`).test(prerequisite)) {
       const message = `${path}:${n} — 선행 조건은 ${REMOTE_PREREQUISITES.join(', ')} 중 하나로 시작한다: ${prerequisite}`
       ;(legacy ? warnings : out).push(message)
       continue
@@ -785,7 +787,7 @@ function checkRemoteVerification(path: string, out: string[], warnings: string[]
     if (legacy) continue
     const timing = cell('시점')
     if (!REMOTE_TIMINGS.includes(timing)) out.push(`${path}:${n} — 시점은 ${REMOTE_TIMINGS.join(' 또는 ')} 이다: ${timing}`)
-    else if (timing === 'PR 전' && ['머지', '배포'].includes(prerequisite.split(/\s+/)[0])) out.push(`${path}:${n} — 머지나 배포가 선행 조건인 검증은 PR 전에 돌릴 수 없다`)
+    else if (timing === 'PR 전' && ['머지', '배포'].includes(prerequisite.split(pyre(/\s+/))[0])) out.push(`${path}:${n} — 머지나 배포가 선행 조건인 검증은 PR 전에 돌릴 수 없다`)
   }
 }
 
@@ -1057,16 +1059,16 @@ function checkPlanNumber(repo: string, tasksDir: string, plan: string, out: stri
   }
   // `refs/remotes/origin/HEAD` 는 짧은 이름이 `origin` 이라 전체 이름에서 HEAD 를 제외한 뒤 줄인다
   const refs = capture(['git', '-C', repo, 'for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes'])
-  for (const full of refs.code === 0 ? refs.stdout.split(/\s+/).filter(Boolean) : []) {
+  for (const full of refs.code === 0 ? refs.stdout.split(pyre(/\s+/)).filter(Boolean) : []) {
     if (full.endsWith('/HEAD')) continue
     const ref = full.replace(/^refs\/heads\//, '').replace(/^refs\/remotes\//, '')
     const tree = capture(['git', '-C', repo, 'ls-tree', '-d', '--name-only', ref, `${tasksDir}/`])
-    for (const name of tree.stdout.split(/\s+/).filter(Boolean)) add(name.slice(name.lastIndexOf('/') + 1), ref)
+    for (const name of tree.stdout.split(pyre(/\s+/)).filter(Boolean)) add(name.slice(name.lastIndexOf('/') + 1), ref)
   }
   // 그 계획을 처음 더한 커밋의 날짜. 아직 커밋하지 않았으면 null 이다
   const added = (name: string): string | null => {
     const log = capture(['git', '-C', repo, 'log', '--all', '--diff-filter=A', '--format=%cs', '--', `${tasksDir}/${name}`])
-    const dates = log.code === 0 ? log.stdout.split(/\s+/).filter(Boolean) : []
+    const dates = log.code === 0 ? log.stdout.split(pyre(/\s+/)).filter(Boolean) : []
     return dates.length ? dates.at(-1)! : null
   }
   for (const [name, places] of [...where].sort((a, b) => pyStrCompare(a[0], b[0]))) {
@@ -1095,7 +1097,7 @@ function isDirectory(path: string): boolean {
 function checkBashCwd(path: string, text: string, out: string[]): void {
   for (const { start, language, body } of codeBlocks(text)) {
     if (['bash', 'sh', 'shell', 'zsh'].includes(language) && BUNDLE.test(body)) {
-      if (!/(?<![^\n])\s*# cwd:/.test(body)) out.push(`${path}:${start} — 스킬 번들 명령의 cwd 주석 누락`)
+      if (!pyre(/(?<![^\n])\s*# cwd:/).test(body)) out.push(`${path}:${start} — 스킬 번들 명령의 cwd 주석 누락`)
     }
   }
 }
@@ -1104,7 +1106,7 @@ function checkBashCwd(path: string, text: string, out: string[]): void {
 export function vagueScope(line: string): boolean {
   for (const m of line.matchAll(VAGUE_SCOPE)) {
     const tail = line.slice(m.index! + m[0].length)
-    if (!pyStrip(tail) || !/^\s*[가-힣]/.test(tail) || VAGUE_SCOPE_TAIL.test(tail)) return true
+    if (!pyStrip(tail) || !pyre(/^\s*[가-힣]/).test(tail) || VAGUE_SCOPE_TAIL.test(tail)) return true
   }
   return false
 }
@@ -1134,7 +1136,7 @@ export function iterProse(text: string): [number, string][] {
 // 같은 phase 의 테스트 작업과 실행 지시를 본다. 작업 순서는 강제하지 않는다
 export function checkPhasePrompt(path: string, text: string, out: string[], entries: Entry[] = [], repo: string = process.cwd(), warnings: string[] = []): void {
   const context = section(text, '컨텍스트') || text
-  const evidence = /\*\*근거 문서\*\*\s*:([\s\S]*?)(?=\n\s*\n|$)/.exec(context)
+  const evidence = pyre(/\*\*근거 문서\*\*\s*:([\s\S]*?)(?=\n\s*\n|$)/).exec(context)
   const docs = evidence ? [...evidence[1].matchAll(DOC_PATH)].map((m) => m[1]) : []
   if (!evidence || docs.length === 0) out.push(`${path} — 근거 문서에 docs/ 경로가 없다`)
   else {
@@ -1167,11 +1169,11 @@ export function checkPhasePrompt(path: string, text: string, out: string[], entr
 
   for (const { language, body } of codeBlocks(validation)) {
     if (!SHELL.has(language)) continue
-    const pipefail = /set\s+-[A-Za-z]*o\s+pipefail/.test(body)
+    const pipefail = pyre(/set\s+-[A-Za-z]*o\s+pipefail/).test(body)
     for (const line of pySplitLines(body)) {
-      if (/\|\|\s*(?:true|:|exit\s+0)(?:\s|;|$)/.test(line) && runs(line.split('||')[0])) out.push(`${path} — 테스트 실패를 무시하는 명령: ${pyStrip(line)}`)
+      if (pyre(/\|\|\s*(?:true|:|exit\s+0)(?:\s|;|$)/).test(line) && runs(line.split('||')[0])) out.push(`${path} — 테스트 실패를 무시하는 명령: ${pyStrip(line)}`)
       const pipes = line.split(/(?<!\|)\|(?!\|)/)
-      if (!pipefail && pipes.length > 1 && /^\s*tee(?![\p{L}\p{N}_])/u.test(pipes.at(-1)!) && runs(pipes[0])) {
+      if (!pipefail && pipes.length > 1 && pyre(/^\s*tee(?![\p{L}\p{N}_])/u).test(pipes.at(-1)!) && runs(pipes[0])) {
         warnings.push(`${path} — pipefail 없이 tee 로 넘기면 테스트 실패 종료 코드가 사라진다: ${pyStrip(line)}`)
       }
     }
@@ -1235,8 +1237,8 @@ function under(rel: string, directory: string): boolean {
   return directory === '.' || (rel.startsWith('./') ? rel.slice(2) : rel).startsWith(`${directory.replace(/\/+$/, '')}/`)
 }
 
-const MARKDOWN_LINK = /!?\[[^\]\n]*\]\(\s*(<[^>\n]+>|[^\s)]+)/g
-const REFERENCE_LINK = /^ {0,3}\[[^\]\n]+\]:\s*(<[^>\n]+>|\S+)/
+const MARKDOWN_LINK = pyre(/!?\[[^\]\n]*\]\(\s*(<[^>\n]+>|[^\s)]+)/g)
+const REFERENCE_LINK = pyre(/^ {0,3}\[[^\]\n]+\]:\s*(<[^>\n]+>|\S+)/)
 
 // phase 안 Markdown 상대 링크를 그 파일 위치 기준으로 풀어 없는 파일이면 위반으로 낸다.
 //
@@ -1322,7 +1324,7 @@ function jsMembers(source: string, opening: number): Set<string> {
     depth += Number('{(['.includes(char)) - Number('})]'.includes(char))
   }
   const members = new Set<string>()
-  const pattern = new RegExp(
+  const pattern = new PyRegExp(
     '(?:(?<![^])|[;,\\n}])\\s*(?:(?:public|static|async|get|set|readonly|abstract|declare)\\s+)*([A-Za-z_$][\\p{L}\\p{N}_$]*)\\s*(?=[(:=,]|(?![^]))',
     'dgu',
   )
@@ -1341,35 +1343,35 @@ const LINE_END = '(?![^\\n])'
 export function ownsCallName(file: string, name: string): boolean {
   const raw = normalizeNewlines(readFileSync(file).toString('utf8').replaceAll('�', ''))
   if (!['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(pathSuffix(file))) {
-    return new RegExp(`${WORD_BEFORE}${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${WORD_AFTER}`, 'u').test(raw)
+    return new PyRegExp(`${WORD_BEFORE}${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${WORD_AFTER}`, 'u').test(raw)
   }
   // 주석과 문자열 속 export 예시는 공개 선언이 아니다. 템플릿 문자열도 함께 뺀다
-  const source = raw.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|(?<![\p{L}\p{N}_$])'(?:\\[^\n]|[^'\\\n])*'|"(?:\\[^\n]|[^"\\\n])*"|`(?:\\[^\n]|[^`\\])*`/gu, ' ')
-  const declarations = [...source.matchAll(new RegExp(`${WORD_BEFORE}export\\s+(?:default\\s+)?(?:(?:async|abstract|declare)\\s+)*(?:function\\s*\\*?\\s*|const\\s+|let\\s+|var\\s+|class\\s+)(${IDENTIFIER})`, 'gu'))].map((m) => m[1])
-  const defaults = [...source.matchAll(new RegExp(`${WORD_BEFORE}export\\s+default\\s+(${IDENTIFIER})\\s*(?=;|${LINE_END})`, 'gu'))].map((m) => m[1])
+  const source = raw.replace(pyre(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|(?<![\p{L}\p{N}_$])'(?:\\[^\n]|[^'\\\n])*'|"(?:\\[^\n]|[^"\\\n])*"|`(?:\\[^\n]|[^`\\])*`/gu), ' ')
+  const declarations = [...source.matchAll(new PyRegExp(`${WORD_BEFORE}export\\s+(?:default\\s+)?(?:(?:async|abstract|declare)\\s+)*(?:function\\s*\\*?\\s*|const\\s+|let\\s+|var\\s+|class\\s+)(${IDENTIFIER})`, 'gu'))].map((m) => m[1])
+  const defaults = [...source.matchAll(new PyRegExp(`${WORD_BEFORE}export\\s+default\\s+(${IDENTIFIER})\\s*(?=;|${LINE_END})`, 'gu'))].map((m) => m[1])
   const exported = new Set([...declarations, ...defaults])
   const commonjs = '(?<![\\p{L}\\p{N}_$.])(?:module\\s*\\.\\s*exports|exports)'
-  for (const m of source.matchAll(new RegExp(`${commonjs}\\s*\\.\\s*(${IDENTIFIER})\\s*=(?!=|>)`, 'gu'))) exported.add(m[1])
-  for (const m of source.matchAll(new RegExp(`${commonjs}\\s*=\\s*(${IDENTIFIER})\\s*(?=;|${LINE_END})`, 'gu'))) exported.add(m[1])
+  for (const m of source.matchAll(new PyRegExp(`${commonjs}\\s*\\.\\s*(${IDENTIFIER})\\s*=(?!=|>)`, 'gu'))) exported.add(m[1])
+  for (const m of source.matchAll(new PyRegExp(`${commonjs}\\s*=\\s*(${IDENTIFIER})\\s*(?=;|${LINE_END})`, 'gu'))) exported.add(m[1])
   const containers = new Set(exported)
-  for (const listing of source.matchAll(new RegExp(`${WORD_BEFORE}export\\s*\\{([^}]*)\\}`, 'gu'))) {
+  for (const listing of source.matchAll(new PyRegExp(`${WORD_BEFORE}export\\s*\\{([^}]*)\\}`, 'gu'))) {
     for (const item of listing[1].split(',')) {
-      const match = new RegExp(`^\\s*(${IDENTIFIER})(?:\\s+as\\s+(${IDENTIFIER}))?\\s*$`, 'u').exec(item)
+      const match = new PyRegExp(`^\\s*(${IDENTIFIER})(?:\\s+as\\s+(${IDENTIFIER}))?\\s*$`, 'u').exec(item)
       if (match) {
         exported.add(match[2] ?? match[1])
         containers.add(match[1])
       }
     }
   }
-  for (const container of source.matchAll(new RegExp(`${WORD_BEFORE}(?:class\\s+(${IDENTIFIER})[^{;]*|(?:const|let|var)\\s+(${IDENTIFIER})\\s*=\\s*)\\{`, 'gu'))) {
+  for (const container of source.matchAll(new PyRegExp(`${WORD_BEFORE}(?:class\\s+(${IDENTIFIER})[^{;]*|(?:const|let|var)\\s+(${IDENTIFIER})\\s*=\\s*)\\{`, 'gu'))) {
     if (containers.has(container[1] ?? container[2])) {
       if (jsMembers(source, container.index + container[0].length - 1).has(name)) return true
     }
   }
-  for (const container of source.matchAll(new RegExp(`${WORD_BEFORE}export\\s+default\\s+(?:class\\s*)?\\{`, 'gu'))) {
+  for (const container of source.matchAll(new PyRegExp(`${WORD_BEFORE}export\\s+default\\s+(?:class\\s*)?\\{`, 'gu'))) {
     if (jsMembers(source, container.index + container[0].length - 1).has(name)) return true
   }
-  for (const container of source.matchAll(new RegExp(`${commonjs}\\s*=\\s*\\{`, 'gu'))) {
+  for (const container of source.matchAll(new PyRegExp(`${commonjs}\\s*=\\s*\\{`, 'gu'))) {
     if (jsMembers(source, container.index + container[0].length - 1).has(name)) return true
   }
   return exported.has(name)
