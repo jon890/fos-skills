@@ -1693,6 +1693,8 @@ function onSignal(signal: NodeJS.Signals): void {
     process.exit(signalCode(signal))
   })
 }
+// active, sleepScale, exiting 은 이 모듈의 상태다. main 은 프로세스마다 한 번만 호출한다.
+// 같은 프로세스에서 재호출하거나 동시에 호출하지 않는다. 테스트도 호출별 프로세스로 격리한다.
 export function main(argv: string[], runner?: typeof run): Promise<number> {
   return runner ? withRun(runner, () => mainImpl(argv)) : mainImpl(argv)
 }
