@@ -8,10 +8,12 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 import { launchHistory, recordHistory } from '../scripts/lib/launch-history.ts'
 import { recordLaunch } from '../scripts/lib/launched.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/worker/launch-worker.ts', import.meta.url))
+const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/launch-worker-run.ts', import.meta.url))
 
 // 상태 파일로 움직이는 가짜 orca. 받은 인자를 한 줄씩 기록한다. 확장자가 없어 타입 문법 없이 쓴다.
 // macOS 에서 파이프로 가는 process.stdout 쓰기는 비동기라 process.exit 가 출력을 자를 수 있어 writeSync 로 쓴다.
@@ -97,8 +99,7 @@ let env: NodeJS.ProcessEnv
 
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'launch-worker-bin-')))
-  writeFileSync(join(binDir, 'orca'), FAKE_ORCA)
-  chmodSync(join(binDir, 'orca'), 0o755)
+  linkBin(binDir, 'orca', FAKE_ORCA.replace(/^#![^\n]*\n/, ''))
   writeFileSync(join(binDir, 'spec-lint-ok.sh'), '#!/bin/sh\nexit 0\n')
   chmodSync(join(binDir, 'spec-lint-ok.sh'), 0o755)
 })
@@ -186,9 +187,9 @@ function fillSelection(args: string[]): void {
   writeFileSync(spec, `${text}\nworker 선택: \`${agent}\` \`${model}\` effort \`${value('--effort') ?? '기본'}\`. 행: impl-planned. 비교: 다른 제공자. 이유: 테스트.\n`)
 }
 
-function launch(args: string[], shell = 'bash', fill = true): Launch {
+function launch(args: string[], shell = 'bash', fill = true, script = FUNCTION_RUNNER): Launch {
   if (fill) fillSelection(args)
-  const done = spawnSync(shell, ['-c', 'exec "$NODE_BIN" --disable-warning=ExperimentalWarning "$@"', 'launch', SCRIPT, '--spec', spec, ...args], {
+  const done = spawnSync(shell, ['-c', 'exec "$NODE_BIN" --disable-warning=ExperimentalWarning "$@"', 'launch', script, '--spec', spec, ...args], {
     env,
     encoding: 'utf8',
     timeout: 60_000,
@@ -624,7 +625,7 @@ describe('띄우기', () => {
       resetLog()
       rmSync(join(tmp, 'new'), { recursive: true, force: true })
       state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
-      const r = launch(['--repo', tmp, '--name', 'feat', '--base', 'develop', '--run', 'run_x', '--watch', '1', '--', ...CODEX], shell)
+      const r = launch(['--repo', tmp, '--name', 'feat', '--base', 'develop', '--run', 'run_x', '--watch', '1', '--', ...CODEX], shell, true, SCRIPT)
       assert.equal(r.code, 0, `${shell}: ${both(r)}`)
       assert.deepEqual(lines('make'), [`make --repo ${tmp} --spec ${spec} --name feat --base develop`])
       const [first, retry] = lines('orca orchestration worker-start')
@@ -638,7 +639,7 @@ describe('띄우기', () => {
       if (!hasShell(shell)) continue
       resetLog()
       state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
-      const r = launch(['--repo', tmp, '--name', 'feat', '--', ...CODEX], shell)
+      const r = launch(['--repo', tmp, '--name', 'feat', '--', ...CODEX], shell, true, SCRIPT)
       assert.equal(r.code, 0, `${shell}: ${both(r)}`)
       assert.deepEqual(lines('make'), [`make --repo ${tmp} --spec ${spec} --name feat`])
       assert.ok(lines('orca orchestration worker-start')[0].startsWith('orca orchestration worker-start --spec '))
@@ -657,7 +658,7 @@ describe('띄우기', () => {
     for (const shell of ['bash', 'zsh']) {
       if (!hasShell(shell)) continue
       state({ start_fails: true, terminals: [{ handle: 'term_left', title: 'codex hooks review', worktreePath: `${tmp}/new` }] })
-      const r = launch(['--repo', tmp, '--name', 'feat', '--run', 'run_x', '--', '--agent', 'codex', '--model', 'gpt 6'], shell)
+      const r = launch(['--repo', tmp, '--name', 'feat', '--run', 'run_x', '--', '--agent', 'codex', '--model', 'gpt 6'], shell, true, SCRIPT)
       assert.equal(r.code, 1, both(r))
       assert.ok(r.stderr.includes(`워크트리는 남아 있다: ${tmp}/new`), r.stderr)
       // 사람이 그대로 붙여 넣는 명령이라 실행 규칙의 꼴(node 와 경고 끄기, 이 파일의 절대경로)이다
@@ -2007,4 +2008,37 @@ describe('짧은 출력', () => {
     assert.equal(r.code, 1, both(r))
     assert.match(r.stdout, /^REFUSED 이 워크트리에 터미널이 남아 있다.*\n$/)
   })
+})
+
+// 실제 진입점에서 종료 코드 종류와 출력·상태를 fixture 와 대조한다.
+describe('CLI 와 함수 진입점 대응', () => {
+  for (const example of [
+    { name: '성공', code: 0, values: { next_ids: ['ctx_cli'] } },
+    { name: '실행 실패', code: 1, values: { next_ids: ['ctx_cli'], start_fails: true } },
+    { name: '사용법 오류', code: 2, values: {}, extra: ['--unknown-option'] },
+    { name: '이어 쓰기 실패', code: 3, values: { next_ids: ['ctx_cli'], start_errors: ['agent_unconfigured: missing'] }, terminal: true },
+    { name: '모델 거부', code: 4, values: {}, models: true },
+    { name: 'lint 거부', code: 5, values: {}, lint: true },
+  ]) {
+    test(`${example.name} 의 출력·종료·상태가 같다`, () => {
+      if (example.models) env.CODEX_BIN = linkBin(tmp, 'codex', `console.log(JSON.stringify({ models: [{ slug: 'allowed', supported_reasoning_levels: [] }] }))`)
+      if (example.lint) {
+        const lint = join(tmp, 'lint.sh')
+        writeFileSync(lint, '#!/bin/sh\nexit 1\n')
+        env.SPEC_LINT = lint
+      }
+      const args = ['--worktree', worktree, '--watch', '0', ...(example.extra ?? []), '--', ...(example.terminal ? ['--terminal', 'term_cli'] : CODEX)]
+      state(example.values)
+      const real = launch(args, 'bash', true, SCRIPT)
+      const realState = readFileSync(stateFile, 'utf8')
+      const realLog = existsSync(log) ? readFileSync(log, 'utf8') : ''
+      state(example.values)
+      resetLog()
+      const fake = launch(args)
+      assert.equal(real.code, example.code, both(real))
+      assert.deepEqual(fake, real)
+      assert.equal(readFileSync(stateFile, 'utf8'), realState)
+      assert.equal(existsSync(log) ? readFileSync(log, 'utf8') : '', realLog)
+    })
+  }
 })

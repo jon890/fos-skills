@@ -32,6 +32,10 @@
 
 같은 phase 에서 기존 launch-worker.spec.ts, orch-doctor.spec.ts 와 가짜 대응 테스트를 실행한다. 주입 커밋에서는 단언과 테스트 파일을 수정하지 않는다.
 
+### 3. `skills/orch/tests/orch-loop-run.spec.ts` 로 깨진 상태의 실제 실행 경계를 검증한다
+
+공통 평가기를 분리할 때 지연 판정용 상태 파일의 파싱 예외도 실제 명령 실패로 돌려준다.
+
 ## 검증
 
 ```bash
@@ -57,3 +61,5 @@ node scripts/run-tests.ts skills/orch/tests/launch-worker.spec.ts skills/orch/te
 | `skills/orch/tests/fixtures/orch-doctor-run.ts` | 신규 |
 | `skills/orch/tests/worker-doctor-run.spec.ts` | 신규 |
 | `skills/orch/changes/testkit-launch-worker.patch.md` | 신규 |
+| `skills/orch/tests/fixtures/orch-loop-run.ts` | 수정 |
+| `skills/orch/tests/orch-loop-run.spec.ts` | 수정 |

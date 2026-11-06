@@ -58,6 +58,14 @@ test('가짜 본문 예외는 명령 실패로 돌려주고 실제 명령은 기
   assert.deepEqual(statefulRun([process.execPath, '-e', 'process.stdout.write("real")']), runProcess([process.execPath, '-e', 'process.stdout.write("real")']))
 })
 
+test('지연 판정용 상태가 깨져도 runner 밖으로 예외를 던지지 않는다', (t) => {
+  const dir = tempDir('loop-run-broken-state-', t)
+  writeFileSync(join(dir, 'orca.json'), '{')
+  const orca = linkBin(dir, 'orca', "JSON.parse(require('node:fs').readFileSync(process.env.FAKE_DIR + '/orca.json', 'utf8'))")
+  const opts = { env: { ORCA: orca, FAKE_DIR: dir } }
+  assert.deepEqual(statefulRun([orca], opts), runProcess([orca], opts))
+})
+
 test('셸 ps 와 지연된 orca 는 실제 실행과 시간 제한을 유지한다', (t) => {
   const dir = tempDir('loop-run-process-', t)
   const ps = join(dir, 'ps')

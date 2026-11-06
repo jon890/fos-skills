@@ -8,8 +8,13 @@ export const statefulRun = createStatefulRun({
   resolveCommand(argv, env) {
     if (![env.GH, env.ORCA, env.PS].filter(Boolean).includes(argv[0])) return undefined
     if (argv[0] === env.ORCA && env.FAKE_DIR && fs.existsSync(`${env.FAKE_DIR}/orca.json`)) {
-      const state = JSON.parse(fs.readFileSync(`${env.FAKE_DIR}/orca.json`, 'utf8'))
-      if (state.sleep || state.slow_run_current) return undefined
+      try {
+        const state = JSON.parse(fs.readFileSync(`${env.FAKE_DIR}/orca.json`, 'utf8'))
+        if (state.sleep || state.slow_run_current) return undefined
+      } catch {
+        // 깨진 상태의 오류도 실제 가짜 자식이 명령 실패로 돌려주게 한다.
+        return undefined
+      }
     }
     return argv[0]
   },
