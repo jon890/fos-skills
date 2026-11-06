@@ -164,7 +164,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -181,7 +181,8 @@ import { defaultBase, mainCheckout } from '../lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from '../lib/loop.ts'
 import { orchDir, pathOf } from '../lib/paths.ts'
 import { isOpen, scan as scanStudy } from '../lib/study.ts'
-import { run } from '../lib/proc.ts'
+import { run, withRun } from '../lib/proc.ts'
+import type { Runner } from '../lib/proc.ts'
 import { shQuote } from '../lib/py.ts'
 import { ageSeconds, closedReason, snapshot } from '../lib/questions.ts'
 import { waiterPids as findWaiters } from '../lib/waiters.ts'
@@ -756,7 +757,11 @@ function newFormMissing(doc: string, rows: string[], skillDir: string, seen: Set
   return lines
 }
 
-async function main(argv: string[]): Promise<number> {
+export function main(argv: string[], runner?: Runner): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+}
+
+async function executeMain(argv: string[]): Promise<number> {
   let values
   try {
     const options = {
@@ -826,12 +831,14 @@ async function main(argv: string[]): Promise<number> {
   return Math.max(version.code, scripts.code, questions.code, repoLines.some((line) => line.startsWith('INVALID-CONFIG')) ? 1 : 0)
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e: unknown) => {
-    process.stderr.write(`orch-doctor: ${(e as Error)?.stack ?? String(e)}\n`)
-    process.exitCode = 1
-  },
-)
+export function reportError(e: unknown): void {
+  process.stderr.write(`orch-doctor: ${(e as Error)?.stack ?? String(e)}\n`)
+  process.exitCode = 1
+}
+
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  main(process.argv.slice(2)).then(
+    (code) => { process.exitCode = code },
+    reportError,
+  )
+}

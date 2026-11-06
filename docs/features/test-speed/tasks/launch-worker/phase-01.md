@@ -34,7 +34,7 @@
 ## 검증
 
 ```bash
-node scripts/run-tests.ts skills/orch/tests/launch-worker.spec.ts skills/orch/tests/orch-doctor.spec.ts skills/orch/tests/orch-loop-run.spec.ts skills/orch/tests/cleanup-sweep-run.spec.ts skills/orch/tests/proc.spec.ts
+node scripts/run-tests.ts skills/orch/tests/launch-worker.spec.ts skills/orch/tests/orch-doctor.spec.ts skills/orch/tests/orch-loop-run.spec.ts skills/orch/tests/cleanup-sweep-run.spec.ts skills/orch/tests/lib-proc.spec.ts
 ```
 
 ## 인수 검증 계획
