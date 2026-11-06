@@ -9,8 +9,8 @@
       "after": "이 PR 머지"
     },
     {
-      "what": "review-fix 문서의 plan 검사기 호출(`adr-docs.ts check --changed-since`)",
-      "why": "그 호출은 이미 TypeScript 다. plan 영역(영역 7)이 옮기는 `verify_task.py`, `overlay_paths.py` 를 review-fix 가 부르는 줄이 있으면 그 PR 이 바꾼다",
+      "what": "review-fix 의 `SKILL.md` 가 부르는 `overlay_paths.py` 와 `migrated_docs` 등록",
+      "why": "그 명령은 plan 영역(영역 7)이 옮긴다. 그 PR 이 호출 줄을 바꾸고 `skills/review-fix/` 를 `migrated_docs` 에 더한다",
       "after": "영역 7(plan) PR"
     },
     {

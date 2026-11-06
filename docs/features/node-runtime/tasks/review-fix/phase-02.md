@@ -6,7 +6,7 @@
 
 phase-01 의 명령 경계 테스트를 사례는 고치지 않은 채 TypeScript 구현으로 통과시키고, 옛 Python·셸 파일과 테스트를 지운다. 스킬 문서와 orch 의 호출, 저장소 정책이 새 이름을 부른다.
 
-**범위 외**: 다른 영역의 명령(plan 의 `verify_task.py` 등)을 부르는 줄, 다른 저장소의 호출(머지 뒤 후속), 팀 저장소 반영.
+**범위 외**: 다른 영역의 명령(plan 의 `overlay_paths.py` 등)을 부르는 줄, 다른 저장소의 호출(머지 뒤 후속), 팀 저장소 반영.
 
 ## 컨텍스트
 
@@ -47,7 +47,7 @@ phase-01 의 명령 경계 테스트를 사례는 고치지 않은 채 TypeScrip
 
 ### 5. 저장소 정책
 
-`runtime-policy.json` 에서 `review-fix` 줄을 지우고 `migrated_docs` 에 `skills/review-fix/` 를 더한다. 설계의 알려진 호출 줄(「실패와 일관성」)을 새 사정에 맞춘다.
+`runtime-policy.json` 에서 `review-fix` 줄을 지운다. `SKILL.md` 에 plan 영역의 `overlay_paths.py` 호출 줄이 남아 `migrated_docs` 에는 아직 들이지 않는다(영역 7 이 옮긴 뒤). 설계의 알려진 호출 줄(「실패와 일관성」)을 새 사정에 맞춘다.
 
 ## 검증
 
@@ -91,6 +91,7 @@ node scripts/sync-kit.ts --check
 | `skills/review-fix/README.md` | 수정 |
 | `skills/review-fix/CHANGELOG.md` | 수정 |
 | `skills/review-fix/references/reply.md` | 수정 |
+| `skills/orch/changes/review-threads-node.patch.md` | 신규 |
 | `skills/orch/scripts/queue/merge_queue.ts` | 수정 |
 | `skills/orch/scripts/loop/orch-loop.ts` | 수정 |
 | `skills/orch/references/gh-call-budget.md` | 수정 |
