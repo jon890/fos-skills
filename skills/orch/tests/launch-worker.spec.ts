@@ -480,7 +480,7 @@ describe('선택 정책과 영구 이력', () => {
     recordLaunch(tmp, prior())
     state({ next_ids: ['ctx_1'], terminals: [{ handle: 'term_new', worktreePath: worktree }], dispatches: { ctx_1: shown('input_accepted') } })
     const args = ['--repo', tmp, '--task', 'task_1', '--', '--terminal', 'term_new']
-    writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-planned.', ''))
+    writeFileSync(spec, readFileSync(spec, 'utf8').replace('행: impl-planned.', '행: unknown-row.'))
     const rejected = launch(args, 'bash', false)
     assert.equal(rejected.code, 1, both(rejected))
     assert.deepEqual(lines('orca orchestration worker-start'), [])
