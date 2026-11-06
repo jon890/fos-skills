@@ -1,0 +1,40 @@
+{
+  "name": "routing-log",
+  "description": "PR 종료 시 모델 선택 관측 기록을 남긴다",
+  "pr_scope": "REQ5 routing 기록 수집·쓰기와 PR-B 후속 P3 수정",
+  "deferred": [
+    {
+      "what": "REQ7 집계 명령",
+      "why": "PR-D 범위",
+      "after": "routing 기록 구현"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/orch-routing/spec.md",
+  "design": "docs/features/orch-routing/design.md",
+  "verification_plan": "phase-02.md",
+  "requirements": [
+    "REQ5"
+  ],
+  "total_phases": 2,
+  "current_phase": 2,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ5"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ5"
+      ]
+    }
+  ]
+}

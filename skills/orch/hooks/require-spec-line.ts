@@ -58,11 +58,11 @@ function rawRetry(command: string): boolean {
   return pieces(masked).some(({ start, end }) => {
     if (!masked.slice(start, end).trim()) return false
     // 명령과 옵션의 리터럴 인용은 풀되 shell 확장이나 eval 은 실행하지 않는다.
-    const words = (text.slice(start, end).match(/(?:[^\s"'\\]|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g) ?? [])
+    const words = (text.slice(start, end).match(/[()]|(?:[^\s()"'\\]|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g) ?? [])
       .map(word => word.replace(/'([^']*)'|"((?:\\.|[^"\\])*)"/g, (_, single, double) => single ?? double).replace(/\\(.)/g, '$1'))
     while (words.length) {
       if (/^[A-Za-z_]\w*=/.test(words[0])) { words.shift(); continue }
-      if (['env', 'command', 'exec'].includes(words[0])) {
+      if (['(', ')', 'if', 'then', 'elif', 'else', '!', 'time', 'env', 'command', 'exec'].includes(words[0])) {
         words.shift()
         while (words[0]?.startsWith('-')) words.shift()
         continue
@@ -71,7 +71,9 @@ function rawRetry(command: string): boolean {
     }
     const executable = words[0] ?? ''
     const orca = /(?:^|\/)orca(?:-dev|-ide)?$/.test(executable) || /^\$\{?ORCA(?:_CLI_COMMAND)?\}?$/.test(executable)
-    return orca && words[1] === 'orchestration' && words[2] === 'worker-start' && words.slice(3).some(word => word === '--task' || word.startsWith('--task='))
+    const args = words.slice(1)
+    while (args[0]?.startsWith('-')) args.shift()
+    return orca && args[0] === 'orchestration' && args[1] === 'worker-start' && args.slice(2).some(word => word === '--task' || word.startsWith('--task='))
   })
 }
 
