@@ -1,6 +1,5 @@
 {
   "pending": [
-    { "area": "small-skills", "prefix": "skills/report/" },
     { "area": "small-skills", "prefix": "skills/presentation/" },
     { "area": "small-skills", "prefix": "skills/browser/" },
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/orch-doctor.py" },
@@ -24,7 +23,7 @@
     "skills/orch/scripts/lib/guard/gh",
     "skills/orch/scripts/lib/guard/orca"
   ],
-  "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/"],
+  "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/", "skills/report/"],
   "kit_sources": ["modules/kit/"],
   "min_node": [24, 0]
 }

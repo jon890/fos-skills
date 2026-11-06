@@ -2,7 +2,7 @@
 // 옛 Python html.parser 와 같은 태그 짝, 줄 번호, 문자 참조 처리를 사례로 고정한다.
 
 import assert from 'node:assert/strict'
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { runCommand } from '../../../modules/testkit/command.ts'
@@ -10,8 +10,8 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const SKILL = join(import.meta.dirname, '..')
-const SCRIPT_NAME = 'check-report.py'
-const COMMAND = ['python3', join(SKILL, 'scripts', SCRIPT_NAME)]
+const SCRIPT_NAME = 'check-report.ts'
+const COMMAND = ['node', join(SKILL, 'scripts', SCRIPT_NAME)]
 // ──
 
 const OK_BODY = `<!DOCTYPE html>
@@ -238,7 +238,7 @@ describe('--korean', () => {
     const s = setup(t)
     const scripts = join(s.dir, 'lonely', 'report', 'scripts')
     mkdirSync(scripts, { recursive: true })
-    copyFileSync(join(SKILL, 'scripts', SCRIPT_NAME), join(scripts, SCRIPT_NAME))
+    cpSync(join(SKILL, 'scripts'), scripts, { recursive: true })
     const env = { ...process.env, HOME: join(s.dir, 'home') }
     delete env.KOREAN_CHECK
     const done = runCommand([COMMAND[0], join(scripts, SCRIPT_NAME), '--korean', s.write(OK_BODY)], { env })
