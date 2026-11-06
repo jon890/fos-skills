@@ -1,0 +1,67 @@
+{
+  "name": "harness-cleanup",
+  "description": "node-runtime 영역 8: harness-cleanup 의 Python 스크립트 열넷과 테스트를 TypeScript 로 옮기고 부르는 문서, CI 의 zsh 설치, 정책 파일을 맞춘다",
+  "pr_scope": "harness-cleanup 의 collect_targets, run_checks, check_references, check_facts, check_duplication, check_rename_drift, check_enforcement, find_test_requirements, run_doc_snippets, extract_skill_usage, render_session, model_fit_signals(와 공용 target_files, session_log)를 같은 옵션·stdout·종료 코드의 TypeScript 로 옮기고, 스킬 문서의 호출을 새 꼴로 바꾸며 runtime-policy 의 harness-cleanup 줄을 지운다. 명령 경계 테스트를 먼저 옛 구현에서 통과시킨 뒤 구현만 바꾼다. 영역 하나에 PR 하나다(스펙 DECISION6). 변경 파일 수가 많은 것은 옛 .py 열넷과 Python 테스트 일곱의 삭제와 같은 .ts 로의 일대일 옮김이라서다.",
+  "deferred": [
+    {
+      "what": "mac-cleanup, browser-driver 영역과 마무리",
+      "why": "스펙 DECISION6 의 영역 하나에 PR 하나",
+      "after": "이 PR 머지"
+    },
+    {
+      "what": "저장소 밖 개인 문서 `~/.claude/references/skill-structure.md` 의 옛 호출(`run_doc_snippets.py`, `collect_targets.py`)",
+      "why": "스펙 REQ7. 저장소가 아니라 사용자 홈의 파일이라 머지 뒤 코디네이터가 고친다. 다른 저장소의 `.claude/`, `.orch/overlay.md`, `AGENTS.md`, `CLAUDE.md` 에는 옛 호출이 없다(2026-11-06 확인)",
+      "after": "이 PR 머지"
+    },
+    {
+      "what": "팀 저장소 반영",
+      "why": "harness-cleanup 은 개인 스킬이라 내보내지 않는다. 팀 PR 의 대상이 아니다",
+      "after": "없음"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/node-runtime/spec.md",
+  "design": "docs/features/node-runtime/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ5",
+    "REQ7"
+  ],
+  "total_phases": 3,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ3"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ5"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ4",
+        "REQ7"
+      ]
+    }
+  ]
+}
