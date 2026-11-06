@@ -82,7 +82,7 @@ export function reportRows(records: RoutingRecord[], prices: Prices): ReportRow[
     const first = [...record.dispatches].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))[0]
     const initial = bucket(identity(first, record.task_row))
     initial.first++
-    if (record.dispatches.length > 1) initial.retried++
+    if (Date.parse(first.at) < Date.parse(opener.at)) initial.retried++
   }
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, g]) => ({
     ...g.id, samples: g.records.length, small_sample: g.records.length < 10,

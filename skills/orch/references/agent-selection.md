@@ -135,7 +135,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 - **쓰는 자리.** `<orch 루트>/state/routing-log.jsonl` 이다
 - **쓰는 주체.** 머지된 PR 은 `finish-pr` 가, 머지 없이 닫힌 PR 과 마무리가 빠진 머지 PR 은 `cleanup-sweep` 이 쓴다. 스펙은 [`spec.md`](../../../docs/features/orch-routing/spec.md) 다
 - **집계 명령.** `orch routing report --repo "$FOS_REPO" --repo "$ANALYSIS_REPO" --since 2026-11-05 --full` 로 모은다. 변수에는 대상 저장소 경로를 넣고 `--repo` 를 필요한 만큼 준다. 생략하면 현재 저장소다. `--json` 은 가공용, 기본은 `ROUTING-ROW` 줄이다. `--since` 는 UTC 기준 PR 종료일부터 포함한다
-- **읽는 법.** 누락값은 평균·중앙값에서 제외한다. 품질 표본은 PR 을 연 effective 모델·effort·지침 행이고, 다시 띄운 비율과 그 표본 수의 모델·effort 는 첫 dispatch 기준이며 지침 행은 기록의 `task_row` 를 유지한다. 재시도로 다른 모델이 PR 을 열었으면 첫 모델 행의 품질 표본 수는 0일 수 있다. 품질 표본 10건 미만은 「표본 적음」 이다
+- **읽는 법.** 누락값은 평균·중앙값에서 제외한다. 품질 표본은 PR 을 연 effective 모델·effort·지침 행이고, 다시 띄운 비율과 그 표본 수의 모델·effort 는 첫 dispatch 기준이며 지침 행은 기록의 `task_row` 를 유지한다. 다시 띄운 PR 은 PR 을 연 dispatch 보다 앞선 dispatch 가 있는 경우다. PR 을 연 뒤 붙은 후속 dispatch 는 세지 않는다. 재시도로 다른 모델이 PR 을 열었으면 첫 모델 행의 품질 표본 수는 0일 수 있다. 품질 표본 10건 미만은 「표본 적음」 이다
 - **비용 추정.** PR 전체 토큰에 PR 을 연 모델의 현재 단가를 적용한다. 다른 모델로 다시 띄운 PR 의 실제 청구액과는 다를 수 있다. 캐시 쓰기는 Claude 5분, Codex 30분 기준이다. 가격표가 없거나 모델을 찾지 못하면 비용을 비운다
 - **다시 보는 주기.** 기록이 한 행에 열 건 쌓이거나 한 달이 지나면 행별로 모아 이 표의 후보와 effort 를 다시 본다. 수치마다 측정일과 표본 수를 함께 적는다
 

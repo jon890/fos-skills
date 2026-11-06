@@ -139,3 +139,16 @@ test('Codex 캐시 쓰기는 30분 배수이며 배수를 모르는 새 모델�
   r.tokens!.cache_read = 1
   assert.equal(reportRows([r], new Map([['future', { input: 1, output: 5 }]]))[0].estimated_cost_usd_median, null)
 })
+
+
+test('PR을 연 뒤 붙은 후속 dispatch는 다시 띄운 PR로 세지 않는다', () => {
+  for (const retry_of of [null, 'd1']) {
+    const r = record(1)
+    const opener = r.dispatches[0]
+    r.dispatches = [{ ...opener, dispatch: 'follow-up', at: '2026-11-06T01:00:00Z', opened_pr: false, retry_of }, opener]
+    const row = reportRows([r], readPrices())[0]
+    assert.equal(row.samples, 1)
+    assert.equal(row.first_dispatch_samples, 1)
+    assert.equal(row.retried_pr_ratio, 0)
+  }
+})
