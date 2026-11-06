@@ -1,0 +1,60 @@
+{
+  "name": "launch-worker",
+  "description": "launch-worker 와 남은 느린 테스트의 기동 비용을 줄인다",
+  "pr_scope": "공통 가짜 평가기와 launch-worker·doctor 테스트 전환",
+  "deferred": [
+    {
+      "what": "대기 옵션 정리와 전체 2분 목표 확인",
+      "why": "파일 묶음 전환 뒤 마지막 PR 에서 다룬다",
+      "after": "PR7 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-06",
+  "spec": "docs/features/test-speed/spec.md",
+  "design": "docs/features/test-speed/design.md",
+  "verification_plan": "phase-03.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ6"
+  ],
+  "total_phases": 3,
+  "current_phase": 2,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ6"
+      ]
+    },
+    {
+      "number": 2,
+      "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ6"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ6"
+      ]
+    }
+  ]
+}

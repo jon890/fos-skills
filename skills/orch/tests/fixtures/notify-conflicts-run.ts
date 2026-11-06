@@ -1,8 +1,10 @@
 // 알림 main 의 호출별 프로세스 격리는 유지하고 gh·orca 가짜만 함수로 실행한다.
+import * as fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { main, reportError } from '../../scripts/queue/notify-conflicts.ts'
-import { statefulRun } from './cleanup-sweep-run.ts'
+import { statefulRun } from './cleanup-stateful-run.ts'
 
-if (import.meta.main) {
+if (import.meta.main || (process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2), statefulRun).then(
     (code) => { process.exitCode = code },
     reportError,
