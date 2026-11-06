@@ -10,7 +10,7 @@
 //   node scripts/test-plugin-install.ts --keep    임시 디렉터리를 지우지 않고 경로를 출력한다
 //
 // 출력: 점검마다 `ok: <내용>` 또는 `FAIL: <내용>` 줄, 끝에 `통과` 또는 `실패 N 건`.
-// 아직 옮기지 않은 영역의 명령(plan 의 verify_task.py)은 옛 꼴로 부른다.
+// 아직 옮기지 않은 영역의 명령(tools/browser-driver 의 browser_driver.py)은 옛 꼴로 부른다.
 // 종료 코드: 0 통과, 1 점검 실패, 2 실행 불가(모르는 인자, claude·git·python3·bash 없음, 격리 실패)
 
 import { spawnSync } from 'node:child_process'
@@ -256,9 +256,9 @@ function check(T: string): number {
     else fail('도구: tools/browser-driver/browser_driver.py 가 없거나 실행 권한이 없다')
 
     // 스크립트 실행
-    r = run(['python3', join(cache, 'skills/plan/scripts/verify_task.py'), '--help'], { env })
-    if (r.rc === 0) ok('스크립트 실행: skills/plan/scripts/verify_task.py --help 가 종료 코드 0 이다')
-    else fail(`스크립트 실행: verify_task.py --help 가 종료 코드 ${r.rc} 로 끝났다`, r.out)
+    r = run([process.execPath, join(cache, 'skills/plan/scripts/verify_task.ts'), '--help'], { env })
+    if (r.rc === 0) ok('스크립트 실행: skills/plan/scripts/verify_task.ts --help 가 종료 코드 0 이다')
+    else fail(`스크립트 실행: verify_task.ts --help 가 종료 코드 ${r.rc} 로 끝났다`, r.out)
 
     // 확장 기능의 상대 모듈과 스킬 참조도 설치 캐시에서 실행한다
     r = run([process.execPath, join(cache, 'extensions/work-board/bin/board.ts'), '--help'], { env })

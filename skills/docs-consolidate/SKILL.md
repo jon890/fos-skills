@@ -18,7 +18,7 @@ metadata:
 | 공통화 | 사용자나 orch 가 모인 후보의 문서 정리를 작업 범위로 지정했을 때 | 지정한 후보마다 판정이 있고 채택한 내용이 한곳에 있으며 문서 검증을 통과했다 |
 
 [기능 문서와 단계 인계](../spec/references/feature-docs.md)와 [문서 소유권과 변경](../spec/references/document-ownership.md), [문서 대조 양식](templates/document-review.md)을 먼저 읽는다.
-plan 번들의 `scripts/overlay_paths.py --skill docs-consolidate` 를 대상 저장소 루트에서 실행하고 출력의 `search` 순서대로 경로·검사 명령을 읽는다.
+plan 번들의 `scripts/overlay_paths.ts --skill docs-consolidate` 를 대상 저장소 루트에서 실행하고 출력의 `search` 순서대로 경로·검사 명령을 읽는다.
 감사 범위가 정해졌으면 그 파일 경로도 인자로 넘긴다. 모노레포 판정과 종료 코드는 [오버레이 탐색 규칙](../plan/references/monorepo.md)을 따른다.
 같은 위치에서 `docs-consolidate-overlay.md` 를 먼저 읽고, 없으면 docs-audit 의 새 이름 → 옛 이름 폴백과 경고를 따른다.
 

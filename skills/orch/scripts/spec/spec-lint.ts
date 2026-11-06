@@ -491,7 +491,7 @@ function selectionErrors(spec: Spec, repo: string): string[] {
   return selectionVerdict(spec.lines.join('\n'), repo).map(error => `${spec.name}:1: 선택: ${error}. 형식: ${SELECTION_FORMAT}`)
 }
 
-// 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 plan 의 check_feature.py 를 따른다
+// 머리 주석의 「루프」. 첫 줄 꼴과 스펙 확인 줄 규칙은 기능 루프(references/feature-loop.md)와 plan 의 check_feature.ts 를 따른다
 const LOOP_FORMAT = '`루프를 쓴다(스펙: <경로>)`, `루프를 쓴다(스펙: 새로 쓴다)`, `루프 없이: <이유>`'
 const LOOP_SPEC = /^루프를 쓴다\s*\(스펙\s*:\s*(.*?)\s*\)/
 const LOOP_NONE = /^루프 없이\s*:(.*)$/
@@ -522,7 +522,7 @@ function outsideFences(lines: string[]): string[] {
   })
 }
 
-// 스펙 본문에서 확인 줄 문제. 없으면 null. 제목과 첫 `## ` 절 사이만 본다(check_feature.py 의 check_confirmed)
+// 스펙 본문에서 확인 줄 문제. 없으면 null. 제목과 첫 `## ` 절 사이만 본다(check_feature.ts 의 check_confirmed)
 function confirmProblem(text: string): string | null {
   for (const line of outsideFences(splitLines(text))) {
     if (/^##\s/.test(line)) break

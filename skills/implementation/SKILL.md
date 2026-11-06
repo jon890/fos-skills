@@ -17,7 +17,7 @@ metadata:
 | --- | --- | --- | --- |
 | 1 | 사전 확인 | `plan_precheck.ts` 가 중복 실행을 찾지 못했고, 계획 브랜치의 분리된 작업 공간이 있다. 이어 하는 작업이면 `current_phase` 와 기존 커밋을 대조했다 | `scripts/plan_precheck.ts` |
 | 2 | 읽기와 위임 | 스펙·설계·phase 를 읽었고 executor 에게 맡길지 순차로 할지 정했다 | [`team-spawn.md`](references/team-spawn.md), [`role-executor.md`](references/role-executor.md), [`executor-routing.md`](references/executor-routing.md) |
-| 3 | phase 구현 | phase 마다 phase 테스트가 통과했고, `verify_task.py --staged` 종료 코드가 0 이며, 한 커밋으로 끝났다 | [`step-finish.md`](references/step-finish.md) |
+| 3 | phase 구현 | phase 마다 phase 테스트가 통과했고, `verify_task.ts --staged` 종료 코드가 0 이며, 한 커밋으로 끝났다 | [`step-finish.md`](references/step-finish.md) |
 | 4 | 누적 개발 검증 | 누적 변경에 저장소의 개발 검증 명령 종료 코드가 0 이다 | |
 | 5 | 인계 | 아래 인계 블록의 항목이 모두 채워졌다 | |
 
@@ -54,7 +54,7 @@ plan 의 index.json 을 먼저 읽는다. `spec` 필드가 없는 기존 계획�
 
 ```bash
 node "$SKILL_DIR/scripts/plan_precheck.ts" "$PLAN" --repo "$REPO" --base "$BASE_BRANCH" --branch "$BRANCH" --tasks-dir "$TASKS_DIR" --docs-dir "$DOCS_DIR" --json
-python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "$TASKS_DIR"
+node "$PLAN_SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "$TASKS_DIR"
 ```
 
 phase 커밋 전에는 다음 검사로 해당 phase 의 staged 파일을 대조한다.
@@ -63,7 +63,7 @@ phase 커밋 전에는 다음 검사로 해당 phase 의 staged 파일을 대조
 구현 파일이 함께 있으면 현재 index 의 범위·변경 종류·신규 파일 누락을 검사한다. 앞 커밋의 diff 를 합치지 않으므로 phase 구현은 한 커밋으로 끝낸다.
 
 ```bash
-python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
+node "$PLAN_SKILL_DIR/scripts/verify_task.ts" --staged "$PHASE_FILE"
 ```
 
 push·원격 접속·배포가 필요한 명령은 실행 시점과 기대값을 인계한다. 필요한 검증을 없애거나 통과로 표시하지 않는다.

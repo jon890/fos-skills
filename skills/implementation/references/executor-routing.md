@@ -125,7 +125,7 @@ executor 가 중단 보고하는 조건과 형식은 [`role-executor.md`](role-e
 
 나란히 돌릴 때 지키는 것이다.
 
-- **커밋은 phase 마다 따로 한다.** 그 phase 의 「변경 파일」 경로만 골라 stage 하고 `SKILL.md` 의 phase 커밋 전 `verify_task.py --staged` 대조를 통과시킨다.
+- **커밋은 phase 마다 따로 한다.** 그 phase 의 「변경 파일」 경로만 골라 stage 하고 `SKILL.md` 의 phase 커밋 전 `verify_task.ts --staged` 대조를 통과시킨다.
   `git add -A` 나 `git add .` 는 다른 executor 의 변경까지 stage 한다.
 - **각 executor 의 스폰 프롬프트에 `team-spawn.md` 「스폰 프롬프트에 넣는 문구」 의 구현자 규칙(커밋·push 금지, staging 범위)과 아래 문구를 함께 넣는다.**
 

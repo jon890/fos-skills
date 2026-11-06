@@ -123,7 +123,7 @@ critic 을 띄우기 전에 계획서 형식을 검사한다. `$PLAN_SKILL_DIR` 
 
 ```bash
 # cwd: plan 작업 공간(worktree) root
-python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
+node "$PLAN_SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "${TASKS_DIR:-tasks}"
 ```
 
 critic 을 스폰하고 호출 인자(task 파일 절대경로, 반복 함정 목록 경로)를 담는다.
@@ -176,7 +176,7 @@ executor의 테스트 실행 결과가 모두 통과했는지 확인한 뒤 목�
 
 ```bash
 # cwd: plan 작업 공간(worktree) root
-python3 "$PLAN_SKILL_DIR/scripts/verify_task.py" --staged "$PHASE_FILE"
+node "$PLAN_SKILL_DIR/scripts/verify_task.ts" --staged "$PHASE_FILE"
 ```
 
 executor 가 `git mv` 를 staged 로 남겼으면 team-lead 는 그 phase 의 경로만 더 stage 한 뒤 대조한다. `git add -A` 는 그 경로에만 쓴다.
@@ -255,7 +255,7 @@ PR 이 둘 이상이거나 세션 재시작, 계정 전환을 넘길 수 있는 
 | 2 | 코드 리뷰와 문서 정합성 검토 | code-reviewer 와 docs-verifier 가 둘 다 `PASS` 다 | `references/role-code-reviewer.md`, `references/role-docs-verifier.md` |
 | 3 | 통합 검증과 PR | 위 6단계의 통과 조건에서 계획서 삭제 커밋을 뺀 것을 채웠다 | `references/step-finish.md` |
 
-- 재실행 확인, 계획 검토, phase 구현(위 1, 3, 4단계)은 돌지 않는다. 계획서가 없어 `plan_precheck.ts` 와 `verify_task.py` 가 볼 것이 없다.
+- 재실행 확인, 계획 검토, phase 구현(위 1, 3, 4단계)은 돌지 않는다. 계획서가 없어 `plan_precheck.ts` 와 `verify_task.ts` 가 볼 것이 없다.
 - 2단계는 위 5단계와 같다. code-reviewer 에게 phase 파일 대신 `$PLAN_INPUT` 을 넘긴다. 발견의 phase 자리에는 `-` 를 쓴다.
   `FIX_NEEDED` 와 `VIOLATION` 은 executor 를 하나 띄워 고치고, 수정은 검토 반영 커밋 하나로 묶는다.
 - 3단계는 `references/step-finish.md` 에서 「원격 검증 목록」 과 「커밋 검토와 계획서 삭제」 를 건너뛴다. 지울 계획서가 없다.

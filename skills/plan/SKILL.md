@@ -20,7 +20,7 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 입력과 설정 | `check_feature.py "$SPEC" --design "$DESIGN"` 종료 코드가 0 이다(스펙 없는 계획은 범위가 한 문장으로 정해졌다). 레포 설정을 읽었다 | [`monorepo.md`](references/monorepo.md) |
+| 1 | 입력과 설정 | `check_feature.ts "$SPEC" --design "$DESIGN"` 종료 코드가 0 이다(스펙 없는 계획은 범위가 한 문장으로 정해졌다). 레포 설정을 읽었다 | [`monorepo.md`](references/monorepo.md) |
 | 2 | 코드 대조 | phase 에 인용할 식별자, 호출 경계, 스키마를 실제 정의에서 읽었다. 재사용할 모듈의 부수 효과를 범위 안이나 밖에 적었다 | |
 | 3 | PR 범위 | 이번 PR 의 요구사항 ID 와 `pr_scope` 가 정해졌고, 뒤 PR 은 `deferred` 에 목표와 선행 조건만 있다 | [`plan-size.md`](references/plan-size.md) |
 | 4 | task 작성 | 양식으로 index·phase·인수 검증 계획을 썼고, 필요한 책임 문서 변경을 반영했다. 도메인 규칙 변경이 있으면 도메인 문서·출력 계약 수정과 규칙별 확인 사례가 작업에 들어 있다([문서 소유권의 「단계별 책임」](../spec/references/document-ownership.md#단계별-책임)) | [`task-create.md`](references/task-create.md) |
@@ -37,7 +37,7 @@ metadata:
 `$SKILL_DIR` 은 plan 번들이고 `$SPEC` 은 대상 저장소 루트 기준 스펙 경로다. 아래 명령은 대상 저장소 루트에서 실행한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/check_feature.py" "$SPEC" --design "$DESIGN"
+node "$SKILL_DIR/scripts/check_feature.ts" "$SPEC" --design "$DESIGN"
 ```
 
 종료 코드가 0 이 아니면 계획을 쓰지 않는다. 확인 줄이 없거나 결정 표가 닫히지 않은 스펙은 spec 으로 돌려보낸다.
@@ -79,7 +79,7 @@ verification_plan 은 index.json 의 부모 기준 상대경로이고, spec/desi
 아래 명령은 새 기능 계획용이다. PR 하나라도 기능 계획과 인수 검증 계획을 남긴다. 기능 없는 작업과 기존 계획 재개는 --require-verification 을 빼고 실행한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/verify_task.py" "$PLAN" --tasks-dir "$TASKS_DIR" --require-verification
+node "$SKILL_DIR/scripts/verify_task.ts" "$PLAN" --tasks-dir "$TASKS_DIR" --require-verification
 ```
 
 통과하면 [critic 계약](../implementation/references/role-critic.md)으로 계획을 검토한다.
