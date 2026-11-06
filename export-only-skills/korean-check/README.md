@@ -50,10 +50,10 @@
 
 ## 준비
 
-`bash` 와 `python3` 가 필요하다. 검사기는 표준 라이브러리만 쓴다.
+Node 24 이상이 필요하다. 검사기는 Node 내장 모듈만 쓴다.
 매핑 표는 `references/korean-style.md` 다. 다른 위치의 표를 쓰려면 `KOREAN_STYLE_RULES` 로 경로를 준다.
 
-검사기에 파일을 직접 넘기면(`korean-style-check.py <파일>...`) 확장자와 상관없이 검사한다. `--hook` 모드는 편집 훅에서 돌아 `.md` 만 검사한다.
+검사기에 파일을 직접 넘기면(`node korean-style-check.ts <파일>...`) 확장자와 상관없이 검사한다. `--hook` 모드는 편집 훅에서 돌아 `.md` 만 검사한다.
 
 금지어를 품은 고유명사가 있는 저장소는 `.claude/korean-check-allow.txt` 에 한 줄에 하나씩 적는다.
 검사기는 그 문자열 안의 발견을 건너뛰고, 문자열 밖의 금지어는 그대로 잡는다.
@@ -70,11 +70,13 @@ ln -sfn "$CHECKOUT"/korean-check ~/.claude/skills/korean-check
 심링크로 걸면 스킬을 고칠 때 훅 설정을 다시 손대지 않는다.
 
 ```bash
-ln -sfn "$CHECKOUT"/korean-check/scripts/korean-style-check.py ~/.claude/scripts/korean-style-check.py
-ln -sfn "$CHECKOUT"/korean-check/scripts/check-readability.py ~/.claude/scripts/check-readability.py
+ln -sfn "$CHECKOUT"/korean-check/scripts/korean-style-check.ts ~/.claude/scripts/korean-style-check.ts
+ln -sfn "$CHECKOUT"/korean-check/scripts/check-readability.ts ~/.claude/scripts/check-readability.ts
 ```
 
-`korean-style-check.py` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
+`korean-style-check.ts` 는 심링크를 실체까지 따라가 매핑 표를 찾는다.
+
+이전에 `korean-style-check.py`, `check-readability.py` 이름으로 링크를 걸어 둔 훅은 그대로 돈다. 두 이름은 한 major 동안 새 명령을 부르는 진입으로 남고, 훅 모드는 발견을 알릴 때 새 명령을 한 줄로 알린다. 다음 major 에서 지우므로 그 전에 위 새 이름으로 바꾼다.
 
 규칙 파일을 항상 맥락에 두려면 규칙 디렉터리에도 건다.
 그러면 스킬이 발동하지 않아도 판정 기준이 올라온다.
@@ -95,8 +97,8 @@ Claude Code 는 `~/.claude/settings.json` 의 `hooks` 에 아래를 넣는다.
 "PostToolUse": [{
   "matcher": "Edit|Write|MultiEdit",
   "hooks": [
-    { "type": "command", "command": "~/.claude/scripts/korean-style-check.py --hook", "timeout": 15 },
-    { "type": "command", "command": "~/.claude/scripts/check-readability.py --hook", "timeout": 15 }
+    { "type": "command", "command": "node ~/.claude/scripts/korean-style-check.ts --hook", "timeout": 15 },
+    { "type": "command", "command": "node ~/.claude/scripts/check-readability.ts --hook", "timeout": 15 }
   ]
 }]
 ```

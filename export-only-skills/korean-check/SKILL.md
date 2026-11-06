@@ -1,7 +1,7 @@
 ---
 name: korean-check
 metadata:
-  version: "1.36.5"
+  version: "2.0.0"
 description: |
   한국어로 내보내는 산출물을 내보내기 직전에 점검한다.
   어휘와 문장 구성, 분량과 구조의 판정 기준과 검사기를 이 스킬이 소유한다.
@@ -37,13 +37,13 @@ description: |
 
 ```bash
 # cwd: 아무 곳
-bash "$SKILL_DIR/scripts/check.sh" "$FILE"
-bash "$SKILL_DIR/scripts/check.sh" --text "$TITLE"
+node "$SKILL_DIR/scripts/check.ts" "$FILE"
+node "$SKILL_DIR/scripts/check.ts" --text "$TITLE"
 ```
 
 **실패(종료 코드 1)로 막는 것은 매핑 표의 금지어뿐이다.**
 경고 줄은 문맥을 보고 고칠지 판단한다. 맞는 표현이면 그대로 둔다.
-종료 코드 규약과 나머지 인자는 `check.sh` 의 머리말이 소유한다.
+종료 코드 규약과 나머지 인자는 `check.ts` 의 머리말이 소유한다.
 
 **만든 방법과 무관하게 파일 경로로 직접 돌린다.**
 훅이 어떤 파일을 놓치는지와 검사를 등록과 묶으면 무엇이 일어나는지는
@@ -58,8 +58,8 @@ cwd 는 검사할 저장소 안이다. `$BASE` 는 비교 기준이고, 브랜�
 
 ```bash
 # cwd: 검사할 저장소 안
-bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE"
-bash "$SKILL_DIR/scripts/check.sh" --diff "$BASE" -- "$FILE"
+node "$SKILL_DIR/scripts/check.ts" --diff "$BASE"
+node "$SKILL_DIR/scripts/check.ts" --diff "$BASE" -- "$FILE"
 ```
 
 기존 줄의 발견은 완료 보고에 범위 밖 발견으로 남긴다. 기준을 생략하면 커밋하지 않은 변경만 본다.

@@ -113,7 +113,7 @@
 
 | 저장소 밖의 것 | 가리키는 곳 | 플러그인으로 옮긴 뒤 |
 | --- | --- | --- |
-| `~/.claude/scripts/korean-style-check.py`, `check-readability.py` 링크 | 체크아웃의 `export-only-skills/korean-check/scripts/` | 그대로 둔다 |
+| `~/.claude/scripts/korean-style-check.py`, `check-readability.py` 링크 | 체크아웃의 `export-only-skills/korean-check/scripts/` 의 같은 이름 진입(node shebang JS). 새 `.ts` 를 불러 같은 결과를 낸다. 새로 거는 링크는 `.ts` 이름이다 | 그대로 둔다. 진입은 다음 major 에서 지운다 |
 | `~/.claude/scripts/browser-driver` 링크 | 체크아웃의 `tools/browser-driver/browser_driver.py` | 그대로 둔다 |
 | `~/.claude/rules/korean-style.md` 링크 | 체크아웃의 `export-only-skills/korean-check/references/korean-style.md` | 그대로 둔다 |
 | `~/.claude/settings.json` 의 `PostToolUse` 훅 | `~/.claude/scripts/` 의 링크 | 그대로 둔다 |

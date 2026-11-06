@@ -10,7 +10,7 @@
 //   node scripts/test-plugin-install.ts --keep    임시 디렉터리를 지우지 않고 경로를 출력한다
 //
 // 출력: 점검마다 `ok: <내용>` 또는 `FAIL: <내용>` 줄, 끝에 `통과` 또는 `실패 N 건`.
-// 아직 옮기지 않은 영역의 명령(plan 의 verify_task.py)은 옛 꼴로 부른다. style-check.ts 는 korean-check 의 check.sh 를 옛 꼴로 부르므로 bash 가 필요하다.
+// 아직 옮기지 않은 영역의 명령(plan 의 verify_task.py)은 옛 꼴로 부른다.
 // 종료 코드: 0 통과, 1 점검 실패, 2 실행 불가(모르는 인자, claude·git·python3·bash 없음, 격리 실패)
 
 import { spawnSync } from 'node:child_process'

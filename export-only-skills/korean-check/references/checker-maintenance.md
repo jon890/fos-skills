@@ -34,7 +34,7 @@
 `평가를` 의 `가를` 처럼 앞 글자가 한글인 오탐은 `WORD_START_PREFIXES` 에 `가르`, `가를`, `가름`, `갈` 을 더해 건너뛴다. `가` 한 글자는 `가 선다` 가 시작하는 글자라 넣지 않았다. `판가름` 은 `COMPOUND_ALLOW` 에 두었다.
 
 `재시험` 처럼 금지어를 품은 합성어는 함께 걸린다. 테스트 뜻이면 그대로 고친다.
-다른 뜻의 합성어가 걸리면 `scripts/korean-style-check.py` 의 `COMPOUND_ALLOW` 에 더하고 테스트에 표본을 넣는다.
+다른 뜻의 합성어가 걸리면 `scripts/korean-style-check.ts` 의 `COMPOUND_ALLOW` 에 더하고 테스트에 표본을 넣는다.
 **특정 저장소에만 있는 고유명사는 `COMPOUND_ALLOW` 에 더하지 않는다.** 그 저장소의 `.claude/korean-check-allow.txt` 에 적는다. 이 스킬은 공용이라 한 저장소의 이름을 알 수 없다.
 
 **금지어 앞에 글자가 붙은 합성어가 걸리면 금지어의 첫 글자를 `WORD_START_PREFIXES` 에 더한다.**
@@ -53,7 +53,7 @@ grep -n '^| 시' "$SKILL_DIR/references/korean-style.md"
 ## 문맥으로만 막는 말
 
 `표` 와 `칸` 은 문서 표를 가리킬 때도 쓰여 매핑 표에 올리면 `아래 표` 까지 걸린다.
-DB 의 table 과 column 을 옮긴 쓰임만 `scripts/korean-style-check.py` 의 `DB_CONTEXT_PATTERNS` 로 막는다.
+DB 의 table 과 column 을 옮긴 쓰임만 `scripts/korean-style-check.ts` 의 `DB_CONTEXT_PATTERNS` 로 막는다.
 
 | 막는 형태 | 이유 |
 | --- | --- |

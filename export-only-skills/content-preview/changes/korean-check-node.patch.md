@@ -1,0 +1,1 @@
+- 표기 검사가 korean-check 의 `check.sh` 대신 `check.ts` 를 node 로 부른다. 실행 권한은 필요 없다

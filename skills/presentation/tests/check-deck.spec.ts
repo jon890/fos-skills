@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, describe, test } from 'node:test'
@@ -172,9 +172,8 @@ describe('금지어', () => {
     const s = setup()
     const sibling = join(s.root, 'skills', 'korean-check')
     mkdirSync(join(sibling, 'references'), { recursive: true })
-    mkdirSync(join(sibling, 'scripts'), { recursive: true })
     copyFileSync(join(KOREAN_CHECK, 'references', 'korean-style.md'), join(sibling, 'references', 'korean-style.md'))
-    copyFileSync(join(KOREAN_CHECK, 'scripts', 'korean-style-check.py'), join(sibling, 'scripts', 'korean-style-check.py'))
+    cpSync(join(KOREAN_CHECK, 'scripts'), join(sibling, 'scripts'), { recursive: true, filter: (src) => !src.includes('__pycache__') })
     const env = { KOREAN_CHECK_DIR: undefined }
     const done = s.run([s.write(DECK.replace('안녕 1', '시험 결과'))], env)
     assert.equal(done.stdout, `· 장 2개\n${bad('금지어: 시험')}`)
