@@ -110,3 +110,21 @@ test('링크 경로로 직접 실행해도 사용법 오류를 반환한다', (t
     assert.equal(result.stderr, '모르는 옵션: --unknown\n')
   }
 })
+
+
+test('가짜 본문의 예외도 실행 파일처럼 종료 코드와 stderr로 반환한다', { skip: !HAS_TOOLS }, (t) => {
+  const dir = tempDir('queue-exception-', t)
+  const bin = writeNodeBin(dir, 'gh', FAKE_GH)
+  const state = join(dir, 'state.json')
+  writeFileSync(state, '{}')
+  const env = { ...process.env, FAKE_STATE: state, FAKE_LOG: join(dir, 'calls.txt') }
+  const args = ['pr', 'view', '9', '--json', 'state', '--jq', '.state']
+  const command = runCommand([bin, ...args], { env })
+  const result = statefulRun(true)(['gh', ...args], { env })
+  assert.equal(command.code, 1)
+  assert.equal(result.code, command.code)
+  assert.equal(result.stdout, command.stdout)
+  const error = /TypeError:.*(?:\n|$)/
+  assert.match(command.stderr, error)
+  assert.equal(result.stderr.match(error)?.[0], command.stderr.match(error)?.[0])
+})

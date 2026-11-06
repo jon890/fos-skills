@@ -41,7 +41,10 @@ export function statefulRun(fakeGit: boolean) {
         exit(status = 0) { code = status; throw exited },
       })
     } catch (error) {
-      if (error !== exited) throw error
+      if (error !== exited) {
+        code = 1
+        stderr += `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`
+      }
     }
     return { code, stdout, stderr, timedOut: false }
   }
