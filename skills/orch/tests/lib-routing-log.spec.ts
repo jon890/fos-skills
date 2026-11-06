@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
-import { dispatchesFor, recordRouting, reviewCounts, writeRoutingRecord } from '../scripts/lib/routing-log.ts'
+import { MAX_MESSAGE_LIMIT, MESSAGE_LIMIT, dispatchesFor, recordRouting, reviewCounts, writeRoutingRecord } from '../scripts/lib/routing-log.ts'
 import { fixture, launch, msg, PR } from './fixtures/routing-fakes.ts'
 
 let f: ReturnType<typeof fixture>
@@ -105,12 +105,31 @@ test('각 dispatch의 Run을 읽고 준비를 처음 알린 dispatch의 행을 �
   assert.ok(!JSON.stringify(row).includes('PRIVATE'))
 })
 
-test('메시지 한도에 닿으면 0으로 꾸미지 않는다', async () => {
-  f.state.inbox['run:run_a'] = Array.from({ length: 200 }, (_, i) => msg(String(i))); f.save()
+test('메시지 한도 안에 창 밖의 과거 시각이 있으면 그대로 쓴다', async () => {
+  f.state.inbox['run:run_a'] = [msg('ready', { body: `준비됨 #7, head ${'a'.repeat(40)}` }),
+    ...Array.from({ length: MESSAGE_LIMIT - 1 }, (_, i) => msg(`old_${i}`, { created_at: '2026-11-05T00:00:00Z' }))]
+  f.save()
   await recordRouting(f.dir, 7, 'merged')
-  assert.equal(f.rows()[0].questions, null)
-  assert.equal(f.rows()[0].minutes_to_ready, null)
+  assert.equal(f.rows()[0].questions, 0)
+  assert.equal(f.rows()[0].minutes_to_ready, 30)
+  const reads = f.calls().filter(args => args.includes('run:run_a'))
+  assert.equal(reads.length, 1)
 })
+
+test('창 안에서 메시지 한도에 닿으면 넓혀서 오래된 질문과 첫 준비까지 읽는다', async () => {
+  f.state.inbox['run:run_a'] = [
+    ...Array.from({ length: MESSAGE_LIMIT }, (_, i) => msg(`later_${i}`, { created_at: '2026-11-06T01:40:00Z' })),
+    msg('question', { type: 'question', created_at: '2026-11-06T01:10:00Z' }),
+    msg('ready', { body: `준비됨 #7, head ${'a'.repeat(40)}` }),
+  ]
+  f.save()
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows()[0].questions, 1)
+  assert.equal(f.rows()[0].minutes_to_ready, 30)
+  const limits = f.calls().filter(args => args.includes('run:run_a')).map(args => Number(args[args.indexOf('--limit') + 1]))
+  assert.deepEqual(limits, [MESSAGE_LIMIT, MESSAGE_LIMIT * 2])
+})
+
 
 test('사용량의 알려지지 않은 형식과 위치 혼합은 null이다', async () => {
   f.usage('codex', [{ firstTimestamp: '2026-11-06T01:01:00Z', primaryWorktreeId: 'wt_a', hasMixedLocations: true, totalInputTokens: 100, totalCachedInputTokens: 40, totalOutputTokens: 30 }])
@@ -192,4 +211,12 @@ test('effective 응답에 추가 필드가 있어도 실행 설정만 기록한�
   await recordRouting(f.dir, 7, 'merged')
   assert.deepEqual(Object.keys(f.rows()[0].dispatches[0].effective!).sort(), ['agent', 'effort', 'model'])
   assert.ok(!JSON.stringify(f.rows()).includes('PRIVATE'))
+})
+
+test('조회 상한까지 창 안에서 가득 차면 값을 0으로 꾸미지 않는다', async () => {
+  f.state.inbox['run:run_a'] = Array.from({ length: MAX_MESSAGE_LIMIT }, (_, i) => msg(String(i)))
+  f.save()
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows()[0].questions, null)
+  assert.equal(f.rows()[0].minutes_to_ready, null)
 })

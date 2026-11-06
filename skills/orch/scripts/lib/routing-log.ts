@@ -29,7 +29,8 @@ export type RoutingRecord = {
 }
 
 const FIELDS = 'number,url,headRefName,headRefOid,createdAt,closedAt,mergedAt,state'
-const MESSAGE_LIMIT = 200
+export const MESSAGE_LIMIT = 200
+export const MAX_MESSAGE_LIMIT = MESSAGE_LIMIT * 32
 const ms = (value: unknown): number => typeof value === 'string' ? Date.parse(value) : NaN
 const attempt = <T>(fn: () => T): T | null => { try { return fn() } catch { return null } }
 const object = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -126,12 +127,16 @@ function reviews(repo: string, target: { host: string; slug: string }, pr: numbe
   return { first_review: null, size_grade: null, at: null }
 }
 
-function inbox(handle: string): Json[] {
-  const got = orcaJson<Json>(['orchestration', 'inbox', '--terminal', handle, '--limit', String(MESSAGE_LIMIT)], { timeoutMs: 10_000 })
-  if (!got.ok || !Array.isArray(got.data.messages) || !got.data.messages.every(object) || got.data.messages.length >= MESSAGE_LIMIT) {
-    throw new Error('메시지 조회 실패 또는 조회 한도 도달')
+function inbox(handle: string, since: number): Json[] {
+  for (let limit = MESSAGE_LIMIT; limit <= MAX_MESSAGE_LIMIT; limit *= 2) {
+    const got = orcaJson<Json>(['orchestration', 'inbox', '--terminal', handle, '--limit', String(limit)], { timeoutMs: 10_000 })
+    if (!got.ok || !Array.isArray(got.data.messages) || !got.data.messages.every(object)) throw new Error('메시지 조회 실패')
+    const rows = got.data.messages as Json[]
+    if (rows.some(row => !Number.isFinite(ms(row.created_at)))) throw new Error('메시지 시각 누락')
+    // 최신순 응답이 첫 dispatch보다 앞까지 닿았으면 필요한 창은 모두 들어왔다.
+    if (rows.length < limit || rows.some(row => ms(row.created_at) < since)) return rows
   }
-  return got.data.messages
+  throw new Error('메시지 조회 한도에서 필요한 시각 범위를 확인하지 못했다')
 }
 
 type MessageMetrics = Pick<RoutingRecord, 'questions' | 'escalations' | 'coordinator_messages' | 'minutes_to_ready' | 'minutes_waiting_user'> & { opener: string | null }
@@ -140,8 +145,8 @@ function messages(pr: number, rows: LaunchHistory[], ended: number): MessageMetr
   const runs = new Map<string, Json[]>()
   for (const row of rows) {
     if (!row.run) throw new Error('dispatch Run 누락')
-    if (!runs.has(row.run)) runs.set(row.run, inbox(`run:${row.run}`))
-    for (const m of [...runs.get(row.run)!, ...inbox(`dispatch:${row.dispatch}`)]) {
+    if (!runs.has(row.run)) runs.set(row.run, inbox(`run:${row.run}`, ms(rows[0].at)))
+    for (const m of [...runs.get(row.run)!, ...inbox(`dispatch:${row.dispatch}`, ms(rows[0].at))]) {
       if (typeof m.id !== 'string' || !Number.isFinite(ms(m.created_at))) throw new Error('메시지 필수 값 누락')
       if (ms(m.created_at) >= ms(rows[0].at) && ms(m.created_at) <= ended) all.set(m.id, m)
     }

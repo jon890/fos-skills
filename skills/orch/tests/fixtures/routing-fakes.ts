@@ -49,7 +49,8 @@ if (args[0] === 'api') {
 }
 if (args[0] === 'orchestration') {
  if (!args.includes('--full')) process.exit(5);
- out({ok:true,result:{messages:state.inbox[value('--terminal')]||[]}});
+ const rows = (state.inbox[value('--terminal')]||[]).slice().sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at));
+ out({ok:true,result:{messages:rows.slice(0,Number(value('--limit')))}});
 }
 if (args[0] === 'worktree') out({ok:true,result:{worktrees:[{id:'wt_a',path:'/temp/worktree'}],truncated:false}});
 process.exit(3);
