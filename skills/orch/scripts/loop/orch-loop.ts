@@ -392,7 +392,7 @@
 //     쓴다. 최신화도 쓴다. 기본은 이 폴더의 send-to-worker.ts), ORCH_LOOP_ALIVE_SEC(생존 타이머 간격),
 //     MERGE_WITH_FINISH(자동 머지가 띄우는 큐 명령. 기본은 이 폴더의 merge-with-finish.ts),
 //     THREADS_CMD(미해결 스레드 수를 내는 bash 명령. 환경 변수 OWNER, REPO, PR, GH_HOST 를 받는다. 기본은 머지 큐의 기본 --threads-cmd 와
-//     같은 review-fix 의 review_threads.py), PS(프로세스 목록 명령. 자동 머지와 최신화가 쓴다. 기본 ps), NUDGE_WORKER(대기 없음을 코디네이터 터미널에 넣는 명령.
+//     같은 review-fix 의 review_threads.ts), PS(프로세스 목록 명령. 자동 머지와 최신화가 쓴다. 기본 ps), NUDGE_WORKER(대기 없음을 코디네이터 터미널에 넣는 명령.
 //     기본은 이 폴더의 nudge-worker.ts), ORCH_NO_WAIT_SEC(대기 확인의 기다리는 초)
 //
 // 종료 코드:
@@ -2128,7 +2128,7 @@ function judgeTarget(
     }
   }
   const [owner, name] = pr.slug.split('/')
-  const command = process.env.THREADS_CMD || `python3 '${HERE}/../../../review-fix/scripts/review_threads.py' list --count "$OWNER" "$REPO" "$PR"`
+  const command = process.env.THREADS_CMD || `node '${HERE}/../../../review-fix/scripts/review_threads.ts' list --count "$OWNER" "$REPO" "$PR"`
   const threads = runSync(['bash', '-c', command], { cwd: ctx.repo, env: { OWNER: owner, REPO: name, PR: String(pr.number), GH_HOST: pr.host } })
   const count = threads.stdout.trim()
   if (threads.code !== 0 || !/^\d+$/.test(count)) {

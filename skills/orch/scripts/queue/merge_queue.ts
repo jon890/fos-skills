@@ -92,7 +92,7 @@
 //   --last-of-task PR     그 PR 이 task 의 마지막 PR 이다. before-merge 입력의 last_of_task 가 true 다. 여러 번 준다.
 //                         큐에 없는 번호면 사용법 오류다
 //   --method M            merge | squash | rebase. 기본 merge
-//   --threads-cmd CMD     미해결 스레드 수를 정수로 내는 명령. 기본은 형제 스킬 review-fix 의 review_threads.py
+//   --threads-cmd CMD     미해결 스레드 수를 정수로 내는 명령. 기본은 형제 스킬 review-fix 의 review_threads.ts
 //   --check-timeout MIN   체크 대기 한도(분). 기본 60
 //   --missing-timeout MIN 진행 중인 체크가 없는데 필수 체크가 나타나지 않은 채로 이 시간(분)이 지나면 --check-timeout 전에 멈춘다. 기본 5, 0 이면 끈다.
 //                         멈출 때 나타나지 않은 이름과 PR 에 붙은 체크 이름을 함께 찍는다. 필수 체크 이름이 틀린 경우(예: 쉼표로 나뉜 이름)를 60분 기다리지 않게 한다.
@@ -624,15 +624,15 @@ class Queue {
     this.copyDir = o.copyDir || this.realTmp
     if (!o.threadsCmd) {
       // 옛 명령과 같은 글자를 내려고 정규화하지 않고 잇는다
-      const rt = `${HERE}/../../../review-fix/scripts/review_threads.py`
+      const rt = `${HERE}/../../../review-fix/scripts/review_threads.ts`
       let found = false
       try {
         found = statSync(rt).isFile()
       } catch {
         found = false
       }
-      if (!found) throw new Usage(`review_threads.py 를 찾지 못했다: ${rt}. --threads-cmd 로 준다`)
-      o.threadsCmd = `python3 '${rt}' list --count "$OWNER" "$REPO" "$PR"`
+      if (!found) throw new Usage(`review_threads.ts 를 찾지 못했다: ${rt}. --threads-cmd 로 준다`)
+      o.threadsCmd = `node '${rt}' list --count "$OWNER" "$REPO" "$PR"`
     }
     // 빈 값은 설정하지 않은 것으로 보고 기본값을 쓴다
     const retries = process.env.MERGE_QUEUE_GH_RETRIES || '3'

@@ -35,7 +35,7 @@ GraphQL 은 인자에 직접 쓴 query 만 캐시한다. mutation 이거나 quer
 HEAD, mergeable, mergeStateStatus, 브랜치 비교·필수 규칙·리뷰 스레드와 ready 판정은 캐시를 건너뛴다.
 CI 루프는 PR 목록의 HEAD 와 체크를 한 번에 새로 읽는다. 판정 호출자가 `cache: false` 로 캐시를 끈다.
 표시용 조회 분류는 `scripts/lib/gh-budget.ts` 가 소유한다. 판정 읽기는 표시 캐시를 무효화하지 않는다.
-미해결 스레드 명령에도 `ORCH_GH_CACHE=0` 을 넘긴다. 기본 `review_threads.py` 는 gh 를 직접 실행한다.
+미해결 스레드 명령에도 `ORCH_GH_CACHE=0` 을 넘긴다. 기본 `review_threads.ts` 는 gh 를 직접 실행한다.
 
 체크 롤업은 gh 가 PR 의 마지막 커밋에서 읽는다. 머지 큐는 검사 대상 HEAD 와 다르면 멈춘다.
 같은 체크 이름과 워크플로에서 시작 시각이 더 늦은 실행이 확인되면 옛 `CANCELLED` 만 뺀다.
