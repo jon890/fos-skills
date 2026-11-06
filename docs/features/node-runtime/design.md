@@ -180,9 +180,9 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 - 한 영역 PR 은 그 영역의 구현, 테스트, 문서 호출, `runtime-policy.json` 의 줄을 함께 바꾼다. 그래서 main 의 어느 커밋을 설치해도 문서가 부르는 파일이 있다. `doc-script-refs` 테스트가 이를 본다.
 - 다른 영역이 부르는 명령을 옮기면 부르는 쪽도 같은 PR 에서 고친다. 영역 PR 은 머지 전에 옮긴 옛 이름마다 `git grep -n '<옛 이름>'` 을 코드, 테스트, 문서 전체에 돌려 남은 곳을 고치거나 다음 영역의 몫으로 PR 본문에 적는다. 2026-11-05 에 알려진 곳:
   - `review-fix/scripts/review_threads.py` 를 orch 의 `merge_queue.ts`, `orch-loop.ts` 가 `python3` 로 불렀다. 영역 4(`review-fix`)가 `node` 와 `review_threads.ts` 로 바꿨다(기본 `--threads-cmd`, `THREADS_CMD`).
-  - `githooks/commit-msg` 가 korean-check 검사기를, `content-preview/scripts/style-check.ts`(영역 5 가 옮겼다)가 `korean-check/scripts/check.sh` 를 부른다. 부르는 쪽(PR2, PR5)이 먼저 옮겨졌으므로 지금은 옛 검사기를 옛 꼴로 부르고, PR6 이 부르는 쪽까지 새 꼴로 바꾼다.
+  - `githooks/commit-msg` 가 korean-check 검사기를, `content-preview/scripts/style-check.ts`(영역 5 가 옮겼다)가 `korean-check/scripts/check.sh` 를 부른다. 부르는 쪽(PR2, PR5)이 먼저 옮겨졌으므로 옛 검사기를 옛 꼴로 불렀고, PR6 이 부르는 쪽(`report` 의 `check-report.ts` 포함)을 `node …/korean-style-check.ts`, `node …/check.ts` 로 바꿨다.
   - `plan` 의 검사기를 spec, technical-design, implementation, review-fix 문서가 부른다. PR7 이 그 문서들의 호출을 함께 바꾼다. 영역 3 의 `implementation`, `docs-audit` 와 영역 4 의 `review-fix`(`SKILL.md` 의 `overlay_paths.py` 줄)는 그 줄이 남아 PR7 전까지 `migrated_docs` 에 들이지 않는다.
-  - `presentation` 의 `check-deck.ts` 는 korean-check 의 `korean-style-check.py` 를 옛 꼴(`python3 <경로>`, 새 `.ts` 가 생기면 그것을 먼저)로 자식 프로세스로 부른다. 옛 구현은 그 파일을 Python 모듈로 불러 매처를 빌렸다. PR6 이 부르는 꼴을 정한다.
+  - `presentation` 의 `check-deck.ts` 는 korean-check 의 `korean-style-check.py` 를 옛 꼴로 자식 프로세스로 부른다. 옛 구현은 그 파일을 Python 모듈로 불러 매처를 빌렸다. PR6 이 `node …/korean-style-check.ts` 한 가지로 정했다.
   - `scripts/test-plugin-install.ts`(PR2 에서 `.ts`)가 `style-check.ts --where`(영역 5 가 바꿨다), `browser_driver.py` 의 실행 권한, `verify_task.py --help` 를 본다. PR7, PR10 이 그 줄을 함께 고친다.
   - `scripts/tests/test_export_to_team.py`(PR2 에서 `.spec.ts`) 109줄이 `skills/plan/tests/test_verify_task.py` 의 바이트를 fixture 로 읽는다. PR2 가 옮길 때 fixture 를 테스트 안의 내용으로 바꿔 다른 영역 파일에 기대지 않게 한다.
   - `skills/browser/tests/skill-doc.spec.ts` 의 `DRIVER_ENTRY` 가 `browser_driver.py` 경로를 본다. PR3 가 옮겼고 PR10 이 경로를 바꾼다.

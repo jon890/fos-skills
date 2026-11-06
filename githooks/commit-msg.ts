@@ -35,7 +35,7 @@ export function messageText(text: string): string {
 export function main(argv: string[]): number {
   if (argv.length < 1) return 0
   const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout?.trim() ?? ''
-  const checker = join(root, 'export-only-skills', 'korean-check', 'scripts', 'korean-style-check.py')
+  const checker = join(root, 'export-only-skills', 'korean-check', 'scripts', 'korean-style-check.ts')
   if (!isFile(checker)) return 0
   const text = messageText(normalizeNewlines(readFileSync(argv[0], 'utf8')))
   const tmp = mkdtempSync(join(tmpdir(), 'commit-msg-'))
@@ -43,7 +43,7 @@ export function main(argv: string[]): number {
   const msg = join(tmp, 'COMMIT_EDITMSG.md')
   try {
     writeFileSync(msg, text)
-    done = spawnSync('python3', [checker, msg], { encoding: 'utf8' })
+    done = spawnSync(process.execPath, [checker, msg], { encoding: 'utf8' })
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }

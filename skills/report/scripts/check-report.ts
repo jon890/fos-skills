@@ -6,7 +6,7 @@
 // 사용법:
 //   node "$SKILL_DIR/scripts/check-report.ts" <파일.html>          검사한다
 //   node "$SKILL_DIR/scripts/check-report.ts" --text <파일.html>   보이는 글만 한 덩어리에 한 줄씩 낸다
-//   node "$SKILL_DIR/scripts/check-report.ts" --korean <파일.html> 보이는 글을 korean-check 의 check.sh 로 검사한다
+//   node "$SKILL_DIR/scripts/check-report.ts" --korean <파일.html> 보이는 글을 korean-check 의 check.ts 로 검사한다
 //
 // korean-check 의 검사기는 .md 만 받고, HTML 을 그대로 넘기면 태그로 시작하는 줄을 건너뛰어 금지어를 놓친다.
 // 그래서 --korean 은 보이는 글을 임시 .md 로 써서 넘긴다. 줄 머리의 <, |, # 는 \ 를 붙여
@@ -82,7 +82,7 @@ const isTagSpace = (ch: string | undefined) => ch !== undefined && /[\t\n\r\f ]/
 const USAGE = `사용법:
     check-report.ts <파일.html>          검사한다
     check-report.ts --text <파일.html>   보이는 글만 한 덩어리에 한 줄씩 낸다
-    check-report.ts --korean <파일.html> 보이는 글을 korean-check 의 check.sh 로 검사한다
+    check-report.ts --korean <파일.html> 보이는 글을 korean-check 의 check.ts 로 검사한다
 `
 
 function write(fd: 1 | 2, text: string): void {
@@ -427,15 +427,15 @@ export function mdSafe(line: string): string {
 function findKoreanCheck(): string | null {
   const here = resolve(import.meta.dirname, '..')
   for (const base of [process.env.KOREAN_CHECK ?? '', join(here, '..', 'korean-check'), join(here, '..', '..', 'export-only-skills', 'korean-check'), join(homedir(), '.claude', 'skills', 'korean-check')]) {
-    const script = join(base, 'scripts', 'check.sh')
+    const script = join(base, 'scripts', 'check.ts')
     if (base && existsSync(script) && statSync(script).isFile()) return script
   }
   return null
 }
 
 function korean(path: string, shown: string): number {
-  const checkSh = findKoreanCheck()
-  if (!checkSh) {
+  const checkTs = findKoreanCheck()
+  if (!checkTs) {
     write(2, 'check-report: korean-check 를 찾지 못했다. KOREAN_CHECK 로 그 스킬 경로를 준다\n')
     return 2
   }
@@ -444,7 +444,7 @@ function korean(path: string, shown: string): number {
     const stem = basename(path).replace(/(?<=.)\.[^.]*$/, '')
     const md = join(dir, `${stem}.md`)
     writeFileSync(md, `${extractText(pyReadText(path)).map(mdSafe).join('\n')}\n`)
-    const result = spawnSync('bash', [checkSh, md], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+    const result = spawnSync(process.execPath, [checkTs, md], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
     // 임시 파일 이름 대신 보고서 이름으로 알린다. 줄 번호는 --text 출력의 줄이다
     write(1, (result.stdout ?? '').replaceAll(md, `${shown} (--text 줄)`))
     write(2, result.stderr ?? '')

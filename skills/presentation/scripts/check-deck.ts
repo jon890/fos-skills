@@ -34,7 +34,6 @@ const KOREAN_CHECK = expandUser(process.env.KOREAN_CHECK_DIR ?? (existsSync(SIBL
 const RULES = join(KOREAN_CHECK, 'references', 'korean-style.md')
 const STYLE_CHECKERS: [string, string[]][] = [
   [join(KOREAN_CHECK, 'scripts', 'korean-style-check.ts'), [process.execPath]],
-  [join(KOREAN_CHECK, 'scripts', 'korean-style-check.py'), ['python3']],
 ]
 
 const isFile = (path: string) => existsSync(path) && statSync(path).isFile()
