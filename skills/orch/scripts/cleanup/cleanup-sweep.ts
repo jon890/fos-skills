@@ -2057,14 +2057,16 @@ async function executeMain(argv: string[]): Promise<number> {
   return code
 }
 
+export function reportError(e: unknown): void {
+  err(`cleanup-sweep: ${(e as Error)?.stack ?? String(e)}`)
+  process.exitCode = 1
+}
+
 if (import.meta.main) {
   main(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code
     },
-    (e: unknown) => {
-      err(`cleanup-sweep: ${(e as Error)?.stack ?? String(e)}`)
-      process.exitCode = 1
-    },
+    reportError,
   )
 }

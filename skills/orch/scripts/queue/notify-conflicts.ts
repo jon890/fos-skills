@@ -213,19 +213,21 @@ async function executeMain(argv: string[]): Promise<number> {
   return 1
 }
 
+export function reportError(e: unknown): void {
+  if (e instanceof ConfigError) {
+    err(`notify-conflicts: ${e.message}`)
+    process.exitCode = 2
+  } else {
+    err(`notify-conflicts: ${(e as Error)?.stack ?? String(e)}`)
+    process.exitCode = 1
+  }
+}
+
 if (import.meta.main) {
   main(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code
     },
-    (e: unknown) => {
-      if (e instanceof ConfigError) {
-        err(`notify-conflicts: ${e.message}`)
-        process.exitCode = 2
-      } else {
-        err(`notify-conflicts: ${(e as Error)?.stack ?? String(e)}`)
-        process.exitCode = 1
-      }
-    },
+    reportError,
   )
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { linkBin, fakeBin } from '../../../modules/testkit/fake-bin.ts'
 import { runProcess } from '../scripts/lib/proc.ts'
@@ -130,4 +131,28 @@ test('같은 가짜 본문은 링크 경로가 달라도 같은 inode 를 쓴다
   const a = linkBin(fx.tmp, 'first', body)
   const b = linkBin(fx.tmp, 'second', body)
   assert.equal(statSync(a).ino, statSync(b).ino)
+})
+
+
+test('실제 CLI 와 함수 fixture 는 같은 예외 출력·종료 코드를 낸다', () => {
+  const config = new URL('../scripts/lib/config.ts', import.meta.url).href
+  const entries = [
+    { script: SCRIPT, fixture: fileURLToPath(new URL('./fixtures/cleanup-sweep-run.ts', import.meta.url)), code: 1, prefix: 'cleanup-sweep' },
+    { script: fileURLToPath(new URL('../scripts/queue/notify-conflicts.ts', import.meta.url)), fixture: fileURLToPath(new URL('./fixtures/notify-conflicts-run.ts', import.meta.url)), code: 2, prefix: 'notify-conflicts' },
+  ]
+  for (const name of ['Error', 'ConfigError']) {
+    const preload = join(fx.tmp, `error-${name}.mjs`)
+    writeFileSync(preload, `import { ConfigError } from ${JSON.stringify(config)}; process.stdout.write = () => { throw new ${name}('forced-main-error') }`)
+    for (const entry of entries) {
+      const run = (script: string) => spawnSync(process.execPath, ['--import', preload, script, '--help'], { env: fx.env, encoding: 'utf8' })
+      const cli = run(entry.script)
+      const fixture = run(entry.fixture)
+      const code = name === 'ConfigError' ? entry.code : 1
+      assert.equal(cli.status, code, cli.stderr)
+      assert.equal(fixture.status, code, fixture.stderr)
+      assert.equal(fixture.stderr.split('\n')[0], cli.stderr.split('\n')[0])
+      assert.match(cli.stderr, new RegExp(`^${entry.prefix}: .*forced-main-error`))
+      if (name === 'ConfigError' && entry.prefix === 'notify-conflicts') assert.equal(cli.stderr, 'notify-conflicts: forced-main-error\n')
+    }
+  }
 })

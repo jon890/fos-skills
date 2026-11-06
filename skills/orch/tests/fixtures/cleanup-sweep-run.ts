@@ -7,8 +7,7 @@ import { Console } from 'node:console'
 import { createRequire } from 'node:module'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { Writable } from 'node:stream'
-import { main } from '../../scripts/cleanup/cleanup-sweep.ts'
-import { ConfigError } from '../../scripts/lib/config.ts'
+import { main, reportError } from '../../scripts/cleanup/cleanup-sweep.ts'
 import { runProcess } from '../../scripts/lib/proc.ts'
 import type { RunOptions, RunResult } from '../../scripts/lib/proc.ts'
 
@@ -76,6 +75,6 @@ export function statefulRun(argv: string[], opts: RunOptions = {}): RunResult {
 if (import.meta.main) {
   main(process.argv.slice(2), statefulRun).then(
     (code) => { process.exitCode = code },
-    (error) => { console.error(error); process.exitCode = error instanceof ConfigError ? 2 : 1 },
+    reportError,
   )
 }
