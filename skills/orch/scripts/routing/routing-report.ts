@@ -16,7 +16,7 @@ const options = { repo: { type: 'string', multiple: true }, since: { type: 'stri
 function show(v: unknown): string { return v == null ? '' : typeof v === 'number' ? String(Number(v.toFixed(6))) : String(v).replace(/[|\r\n]/g, ' ') }
 const columns: Array<[keyof ReportRow, string]> = [
   ['agent', 'agent'], ['model', '모델'], ['effort', 'effort'], ['task_row', '지침 행'], ['samples', '표본 수'],
-  ['minutes_to_ready_median', '준비 중앙(분)'], ['first_review_p1_mean', '첫 리뷰 P1 평균'], ['first_review_p2_mean', '첫 리뷰 P2 평균'],
+  ['hours_to_ready_median', '준비 중앙(시간)'], ['first_review_p1_mean', '첫 리뷰 P1 평균'], ['first_review_p2_mean', '첫 리뷰 P2 평균'],
   ['fix_commits_after_review_mean', '리뷰 뒤 커밋 평균'], ['ci_failures_mean', 'CI 실패 평균'], ['questions_mean', '질문 평균'],
   ['output_tokens_median', '출력 토큰 중앙'], ['estimated_cost_usd_median', '비용 추정 중앙($)'],
   ['first_dispatch_samples', '첫 dispatch 표본 수'], ['retried_pr_ratio', '다시 띄운 PR 비율'],

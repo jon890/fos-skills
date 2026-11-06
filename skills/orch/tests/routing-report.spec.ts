@@ -38,12 +38,14 @@ test('실제 진입점으로 두 저장소를 모아 중앙값·평균·요청�
   const b = repo('b', [record(1, { repo: 'test/b', minutes_to_ready: null, first_review: null, tokens: null, ci_failures: null, questions: null, fix_commits_after_review: null })])
   const result = cli(['--repo', a, '--repo', b, '--json'])
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout), [{ ...sol, task_row: 'impl-explore', samples: 3, small_sample: true, minutes_to_ready_median: 20,
+  assert.deepEqual(JSON.parse(result.stdout), [{ ...sol, task_row: 'impl-explore', samples: 3, small_sample: true, hours_to_ready_median: 1 / 3,
     first_review_p1_mean: 1, first_review_p2_mean: 3, fix_commits_after_review_mean: 3, ci_failures_mean: 1, questions_mean: 2,
     output_tokens_median: 200_000, estimated_cost_usd_median: 5.025, first_dispatch_samples: 3, retried_pr_ratio: 0 }])
   const full = cli(['--repo', a, '--repo', b, '--full'])
   assert.match(full.stdout, /^\| agent \|/)
   assert.match(full.stdout, /표본 적음/)
+  assert.match(full.stdout, /준비 중앙\(시간\)/)
+  assert.match(full.stdout, /0\.333333/)
   const short = cli(['--repo', a])
   assert.match(short.stdout, /^ROUTING-ROW /)
   assert.match(short.stdout, /samples=2/)
@@ -61,7 +63,7 @@ test('품질은 PR을 연 모델에, 재시도 비율만 시각상 첫 모델에
   assert.equal(a.retried_pr_ratio, 0)
   assert.equal(b.task_row, 'impl-explore')
   assert.equal(b.samples, 0)
-  assert.equal(b.minutes_to_ready_median, null)
+  assert.equal(b.hours_to_ready_median, null)
   assert.equal(b.first_dispatch_samples, 1)
   assert.equal(b.retried_pr_ratio, 1)
 })

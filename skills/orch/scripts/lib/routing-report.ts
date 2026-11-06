@@ -8,7 +8,7 @@ type Price = { input: number; output: number }
 export type Prices = Map<string, Price>
 export type ReportRow = {
   agent: string | null; model: string | null; effort: string | null; task_row: string | null
-  samples: number; small_sample: boolean; minutes_to_ready_median: number | null
+  samples: number; small_sample: boolean; hours_to_ready_median: number | null
   first_review_p1_mean: number | null; first_review_p2_mean: number | null
   fix_commits_after_review_mean: number | null; ci_failures_mean: number | null; questions_mean: number | null
   output_tokens_median: number | null; estimated_cost_usd_median: number | null
@@ -86,7 +86,7 @@ export function reportRows(records: RoutingRecord[], prices: Prices): ReportRow[
   }
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, g]) => ({
     ...g.id, samples: g.records.length, small_sample: g.records.length < 10,
-    minutes_to_ready_median: median(g.records.map(r => r.minutes_to_ready)),
+    hours_to_ready_median: median(g.records.map(r => numeric(r.minutes_to_ready) ? r.minutes_to_ready / 60 : null)),
     first_review_p1_mean: mean(g.records.map(r => r.first_review?.P1)),
     first_review_p2_mean: mean(g.records.map(r => r.first_review?.P2)),
     fix_commits_after_review_mean: mean(g.records.map(r => r.fix_commits_after_review)),
