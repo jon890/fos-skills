@@ -7,7 +7,7 @@ import { describe, test } from 'node:test'
 import { copyScripts, linkFake, run, tempDir, write } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const command = (scripts: string) => ['bash', join(scripts, 'style-check.sh')]
+const command = (scripts: string) => [process.execPath, join(scripts, 'style-check.ts')]
 // ──
 
 function layout(t: { after(fn: () => void): void }) {

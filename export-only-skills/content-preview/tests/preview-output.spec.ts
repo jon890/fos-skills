@@ -10,8 +10,8 @@ import { SCRIPTS_DIR, tempDir } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const GENERATORS: Record<string, string[]> = {
-  dooray: ['python3', join(SCRIPTS_DIR, 'dooray-preview', 'generate.py'), '--mode', 'comment'],
-  github: ['python3', join(SCRIPTS_DIR, 'github-preview', 'generate.py'), '--type', 'pr'],
+  dooray: [process.execPath, join(SCRIPTS_DIR, 'dooray-preview', 'generate.ts'), '--mode', 'comment'],
+  github: [process.execPath, join(SCRIPTS_DIR, 'github-preview', 'generate.ts'), '--type', 'pr'],
 }
 // ──
 

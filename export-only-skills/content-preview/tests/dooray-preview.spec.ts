@@ -9,8 +9,8 @@ import { generate, parsePreview } from './generator.ts'
 import { SCRIPTS_DIR, tempDir } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const COMMAND = ['python3', join(SCRIPTS_DIR, 'dooray-preview', 'generate.py')]
-const PROG = 'generate.py'
+const COMMAND = [process.execPath, join(SCRIPTS_DIR, 'dooray-preview', 'generate.ts')]
+const PROG = 'generate.ts'
 // ──
 
 function messenger(body: string, strict = false, extra: string[] = []) {

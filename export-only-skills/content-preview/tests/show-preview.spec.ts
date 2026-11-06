@@ -9,7 +9,7 @@ import { describe, test } from 'node:test'
 import { copyScripts, linkFake, linkTools, lines, realPython, run, tempDir, write } from './helpers.ts'
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const command = (scripts: string) => ['bash', join(scripts, 'show-preview.sh')]
+const command = (scripts: string) => [process.execPath, join(scripts, 'show-preview.ts')]
 // ──
 
 type T = { after(fn: () => void): void }
