@@ -1464,4 +1464,36 @@ describe('CLI와 함수 조회 대응', () => {
       assert.deepEqual(allCalls(), realCalls)
     })
   }
+
+  for (const example of [
+    { code: 1, replies: [{ ok: false, error: { code: 'runtime_unavailable', message: 'offline' } }], args: ['--lost-interval-sec', '0'] },
+    { code: 3, replies: [sleeping(batch('slow', 'heartbeat'), 2)], args: ['--lost-interval-sec', '0', '--timeout-ms', '300'] },
+    { code: 4, replies: [{ ok: false, error: { code: 'waiter_exists', message: 'waiter exists' } }], args: ['--lost-interval-sec', '0'] },
+    { code: 5, replies: [batch('lost_fallback', 'worker_done')], args: ['--lost-interval-sec', '0.3'], opts: { workers: [GONE], tasks: [{ id: 't1', status: 'dispatched' }], latest: { t1: 'ctx_a' } } },
+    { code: 6, replies: [batch('suspect', 'worker_done')], args: ['--lost-interval-sec', '0'], opts: { contract: 'ready', historyFail: true } },
+    { code: 8, replies: [], args: ['--lost-interval-sec', '0', '--loop-repo'] },
+  ]) {
+    test(`종료 코드 ${example.code}의 출력·상태·호출 기록이 같다`, () => {
+      const args = example.code === 8 ? [...example.args, tmp] : example.args
+      const opts = example.opts ?? {}
+      // 순차 실행 시각만 제외하고 판정 종류와 저장한 dispatch를 모두 비교한다.
+      const savedLost = () => existsSync(lostState)
+        ? readFileSync(lostState, 'utf8').replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ/g, '<time>')
+        : null
+      const real = wait(example.replies, args, opts, {}, SCRIPT)
+      assert.equal(real.code, example.code, real.stdout + real.stderr)
+      const realState = readFileSync(stateFile, 'utf8')
+      const realLost = savedLost()
+      const realCalls = allCalls()
+      const realCwd = existsSync(cwdLog) ? readFileSync(cwdLog, 'utf8') : null
+      for (const file of [log, lostState, cwdLog]) if (existsSync(file)) unlinkSync(file)
+      const fake = wait(example.replies, args, opts)
+      assert.deepEqual(fake, real)
+      assert.equal(readFileSync(stateFile, 'utf8'), realState)
+      assert.equal(savedLost(), realLost)
+      assert.deepEqual(allCalls(), realCalls)
+      assert.equal(existsSync(cwdLog) ? readFileSync(cwdLog, 'utf8') : null, realCwd)
+    })
+  }
+
 })
