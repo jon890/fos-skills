@@ -339,7 +339,7 @@ REQ1·REQ3·REQ4와 스펙 DECISION4·DECISION16을 따른다. PR8 뒤 기준 �
 
 테스트 fixture는 동기 CommonJS 가짜 Orca를 기존 stateful-run으로 평가하고, spec-line·spec-lint는 실제 판정 함수를 호출한다. 동기 판정 함수의 표준 출력을 잠시 모은 뒤 즉시 복구한다. shell 가짜·make-worktree·review 준비·hook은 실제 실행한다. 가짜의 비동기 동작·신호·시간 제한·출력 한도는 함수 평가가 지원하지 않으므로 해당 호출은 실제 실행으로 남긴다. 함수 예외는 명령 실패로 돌려주고 launch 예외는 실제 CLI의 reportError를 공유한다.
 
-`wait-important.main(argv, runner?)`도 기존 withRun 경계를 재사용한다. fixture는 worker-list·task-list·dispatch-show·terminal read·inbox·check --all 조회만 동기 평가한다. 실제 check --wait는 비동기 출력과 자식 종료를 검증하므로 그대로 spawn한다. 지워진 cwd 검사는 실제 CLI로 남긴다.
+`wait-important.main(argv, runner?)`도 기존 withRun 경계를 재사용한다. fixture는 gh PR 조회와 worker-list·task-list·dispatch-show·terminal read·inbox·check --all 조회를 동기 평가한다. 실제 check --wait는 비동기 출력과 자식 종료를 검증하므로 그대로 spawn한다. 지워진 cwd 검사는 실제 CLI로 남긴다.
 
 ### 판정 대응표
 
