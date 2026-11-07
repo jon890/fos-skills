@@ -15,7 +15,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { orchDir } from '../../orch/scripts/lib/paths.ts'
@@ -26,7 +26,9 @@ import { boardView, isOff, type RepoFilter, visibleItems } from './lib/view.ts'
 
 // 받기 한 번에 「답함」 을 확인하는 새 항목 수. 항목마다 두레이 호출이 하나씩 든다
 export const MAX_ANSWER_CHECKS = 15
+// 옛 필터 파일(한 major 동안 함께 읽는다). 새 자리는 CONFIG_FILE 의 inbox 절이다
 export const FILTER_FILE = join('config', 'notification.json')
+export const CONFIG_FILE = 'config.json'
 // 두레이 명령 하나를 기다리는 한도. 넘으면 그 호출만 실패로 친다
 const COMMAND_TIMEOUT_MS = 60000
 
@@ -64,29 +66,64 @@ function samePath(a: string, b: string): boolean {
   return norm(a) === norm(b)
 }
 
-export function filterPath(repo: string): string {
+// 옛 자리. 다음 major 에 읽기를 지운다
+export function legacyFilterPath(repo: string): string {
   return join(orchDir(repo), FILTER_FILE)
 }
 
-function readFilterFile(path: string): RepoFilter | null {
-  if (!existsSync(path)) return null
-  const value = JSON.parse(readFileSync(path, 'utf8'))
+// 새 자리: <orch 폴더>/config.json 의 inbox 절
+export function filterPath(repo: string): string {
+  return join(orchDir(repo), CONFIG_FILE)
+}
+
+// 저장해 둔 경로가 옛 파일이면 같은 orch 폴더의 config.json 으로 바꾼다. 같은 저장소를 한 번만 세려는 것이다
+function configPathOf(path: string): string {
+  return basename(path) === 'notification.json' && basename(dirname(path)) === 'config' ? join(dirname(dirname(path)), CONFIG_FILE) : path
+}
+
+function legacyPathOf(path: string): string {
+  return join(dirname(path), FILTER_FILE)
+}
+
+function asFilter(value: unknown, path: string): RepoFilter {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${path} 는 adapter 이름을 키로 둔 객체여야 한다`)
   return value as RepoFilter
 }
 
+// config.json 의 inbox 절이 있으면 그것, 없으면 옛 파일. source 는 어디서 읽었는지, notes 는 사용자에게 알릴 줄이다
+function readFilterFile(configPath: string): { filter: RepoFilter | null; source: 'config' | 'legacy' | 'none'; notes: string[] } {
+  const notes: string[] = []
+  let section: unknown
+  if (existsSync(configPath)) {
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8'))
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) section = (parsed as Record<string, unknown>).inbox
+  }
+  const legacy = legacyPathOf(configPath)
+  const hasLegacy = existsSync(legacy)
+  if (section !== undefined) {
+    if (hasLegacy) notes.push(`옛 자리 ${legacy} 는 ${configPath} 의 inbox 절이 있어 무시한다. 지워도 된다`)
+    return { filter: asFilter(section, `${configPath} 의 inbox 절`), source: 'config', notes }
+  }
+  if (!hasLegacy) return { filter: null, source: 'none', notes }
+  notes.push(`옛 자리 ${legacy} 를 읽었다. 이 내용을 ${configPath} 의 "inbox" 절로 옮긴다(다음 major 에 옛 파일 읽기를 지운다)`)
+  return { filter: asFilter(JSON.parse(readFileSync(legacy, 'utf8')), legacy), source: 'legacy', notes }
+}
+
 // 이 저장소의 필터와, 보드가 연 모든 저장소의 필터. 다른 저장소의 필터는 그 저장소가 적어 둔 파일 경로로 읽는다.
 // 저장소 경로로 다시 풀면 이 프로세스의 ORCH_DIR 이 다른 저장소에도 적용돼 틀린 파일을 읽는다
-function repoFilters(store: Store, repo: string): { filter: RepoFilter | null; knownFilters: RepoFilter[]; error: string } {
+function repoFilters(store: Store, repo: string): { filter: RepoFilter | null; knownFilters: RepoFilter[]; error: string; notes: string[] } {
   const path = filterPath(repo)
   let filter: RepoFilter | null = null
   let error = ''
+  let notes: string[] = []
   try {
-    filter = readFilterFile(path)
+    const read = readFilterFile(path)
+    filter = read.filter
+    notes = read.notes
   } catch (failure) {
     error = (failure as Error).message
   }
-  let paths = store.repos()
+  let paths = store.repos().map(configPathOf)
   if (filter && !isOff(filter) && !paths.some((known) => samePath(known, path))) {
     paths = [...paths, path]
     store.write('repos', paths)
@@ -95,14 +132,14 @@ function repoFilters(store: Store, repo: string): { filter: RepoFilter | null; k
   for (const known of paths) {
     if (samePath(known, path)) continue
     try {
-      const other = readFilterFile(known)
+      const other = readFilterFile(known).filter
       if (other && !isOff(other)) knownFilters.push(other)
     } catch {
       // 다른 저장소의 필터가 깨졌으면 그 저장소는 미분류 판정에서 뺀다
     }
   }
   if (filter && !isOff(filter)) knownFilters.push(filter)
-  return { filter, knownFilters, error }
+  return { filter, knownFilters, error, notes }
 }
 
 type Session = { config: Config; store: Store; deps: Deps; adapters: Map<string, Adapter> }
@@ -248,8 +285,9 @@ function boardCommand(a: Parsed, session: Session, setupErrors: Record<string, s
     errors.inbox = (error as Error).message
   }
   const repo = a.repo as string
-  const { filter, knownFilters, error } = repoFilters(store, repo)
+  const { filter, knownFilters, error, notes } = repoFilters(store, repo)
   if (error) errors.filter = error
+  for (const note of notes) deps.err(`${note}\n`)
   const isDefault = config.defaultBoard ? samePath(config.defaultBoard, repo) : null
   const view = boardView({ items: cache.items, dismissed: store.dismissed(), now: deps.now(), days: config.days, filter, knownFilters, isDefault })
   const result = {
@@ -295,7 +333,8 @@ function run(a: Parsed, deps: Deps): number {
       const cache = store.cache()
       let items = visibleItems(cache.items, store.dismissed(), session.deps.now(), config.days)
       if (a.repo) {
-        const { filter, knownFilters } = repoFilters(store, a.repo)
+        const { filter, knownFilters, notes } = repoFilters(store, a.repo)
+        for (const note of notes) deps.err(`${note}\n`)
         const isDefault = config.defaultBoard ? samePath(config.defaultBoard, a.repo) : null
         items = boardView({ items: cache.items, dismissed: store.dismissed(), now: session.deps.now(), days: config.days, filter, knownFilters, isDefault }).items
       }

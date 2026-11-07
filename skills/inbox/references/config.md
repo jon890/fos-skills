@@ -37,8 +37,12 @@
 
 ## 저장소 필터
 
-그 저장소의 `<orch 폴더>/config/notification.json` 이다. orch 폴더는 주 checkout 의 `.orch` 이고 `ORCH_DIR` 이 있으면 그 값이다.
+그 저장소의 `<orch 폴더>/config.json` 의 `inbox` 절이다. orch 폴더는 주 checkout 의 `.orch` 이고 `ORCH_DIR` 이 있으면 그 값이다.
 `.orch/` 를 git 이 무시하는지 확인한다. 무시하지 않으면 사내 프로젝트 id 가 커밋된다.
+`config.json` 은 orch 가 읽는 파일이기도 하다. orch 의 새 번들을 설치한 뒤에만 `inbox` 절을 넣는다. 옛 번들은 모르는 절을 설정 오류로 거부한다.
+
+옛 자리 `<orch 폴더>/config/notification.json` 은 한 major 동안 함께 읽는다(사용자 2026-11-08). `inbox` 절이 없을 때만 읽고 「옛 자리」 경고를 stderr 에 한 줄 낸다. 둘 다 있으면 `inbox` 절을 쓰고 옛 파일은 무시한다고 알린다. 다음 major 에 옛 파일 읽기를 지운다.
+옮기는 법은 옛 파일의 내용을 `config.json` 의 `inbox` 키 값으로 넣고 옛 파일을 지우는 것이다. `orch doctor --repo` 가 옛 파일을 찾으면 알린다.
 
 ```json
 {

@@ -1,0 +1,4 @@
+- 저장소 알림 필터를 `.orch/config.json` 의 `inbox` 절에서 읽는다
+- 옛 `.orch/config/notification.json` 은 `inbox` 절이 없을 때만 읽고 옛 자리 경고를 stderr 에 낸다
+- 옮기는 법: 옛 파일의 내용을 `inbox` 절 값으로 넣고 옛 파일을 지운다. orch 새 번들을 설치한 뒤에만 옮긴다
+- 다음 major 에 옛 파일 읽기를 지운다

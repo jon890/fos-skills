@@ -24,10 +24,10 @@ import { isFile } from './fs.ts'
 import { pathOf } from './paths.ts'
 import { shQuote } from './py.ts'
 
-export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'board' | 'review' | 'docker' | 'routing'
+export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'board' | 'review' | 'docker' | 'routing' | 'inbox'
 export type Config = Partial<Record<Section, Record<string, unknown>>>
 
-const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'board', 'review', 'docker', 'routing']
+const SECTIONS: readonly Section[] = ['finish', 'cleanup', 'queue', 'hooks', 'pipeline', 'heavy', 'migrations', 'adr', 'board', 'review', 'docker', 'routing', 'inbox']
 
 export class ConfigError extends Error {}
 
@@ -94,6 +94,13 @@ export const REVIEW_KEYS: readonly string[] = ['prepare']
 
 // PR 종료 관측값의 저장소별 읽기 규칙.
 export const ROUTING_KEYS: readonly string[] = ['review_author', 'review_pattern', 'size_pattern']
+
+// inbox 절의 아는 키. 알림 필터이고 inbox 스킬(skills/inbox/scripts/inbox.ts)이 읽는다. docs/data-schema.md 「config.json 에 더하는 절」 표의 inbox 행이다.
+// enabled 는 false 로 그 저장소의 알림을 끄고, 나머지는 adapter 이름이다. adapter 를 더하면 이 목록에도 더한다
+export const INBOX_KEYS: readonly string[] = ['enabled', 'dooray', 'slack']
+
+// 옛 알림 필터 파일(<orch 루트>/config/notification.json)의 orch 루트 기준 상대 경로. 한 major 동안 inbox 가 함께 읽고 다음 major 에 지운다
+export const LEGACY_INBOX_FILTER = 'config/notification.json'
 
 // event 는 그 키가 하던 일을 옮겨 받을 핸들러의 이벤트 이름이다(<orch 루트>/hooks/<event>.ts).
 export const REMOVED_CONFIG_KEYS: ReadonlyArray<{ section: Section; key: string; event: string }> = [

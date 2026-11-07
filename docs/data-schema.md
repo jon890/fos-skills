@@ -81,6 +81,7 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `routing` | `review_author` | GitHub 로그인 문자열 | 없음 | 첫 자동 리뷰를 남기는 계정. 절이 없으면 첫 리뷰와 크기 등급은 null이다 |
 | `routing` | `review_pattern` | 정규식 문자열. P1~P5 수를 순서대로 캡처한다 | P1~P5 머리의 Markdown 표 | 첫 자동 리뷰 본문의 지적 수를 읽는 꼴 |
 | `routing` | `size_pattern` | 정규식 문자열. 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
+| `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 adapter 이름 아래 값 목록(두레이는 `projects`·`channels`, Slack 은 `channels`) | 절이 없으면 필터 없이 모두 보인다 | inbox 스킬의 저장소별 알림 필터. `enabled: false` 면 그 저장소의 보드가 알림을 보지 않는다. 옛 자리 `config/notification.json` 은 inbox 스킬이 한 major 동안 함께 읽고, `inbox` 절이 있으면 무시한다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 초로. 모르는 이벤트 이름이나 양수가 아닌 값은 사용법 오류다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
 | `pipeline` | `enabled` | bool | false | 상주 루프의 자동 진행(ready 슬롯, 문서 PR 바로 머지, 배포 묶기)을 켠다. 질문 확인과 원격 브랜치 정리는 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | number | 300 | 틱 간격 |

@@ -1,0 +1,2 @@
+- `config.json` 에 `inbox` 절(inbox 스킬의 알림 필터)을 더하고 키를 검사한다. 새 번들을 설치한 뒤에만 저장소 `config.json` 에 `inbox` 절을 넣는다
+- `orch doctor --repo` 가 옛 알림 필터 `config/notification.json` 을 찾으면 `OLD-INBOX-FILTER` 로 옮기는 법을 알린다

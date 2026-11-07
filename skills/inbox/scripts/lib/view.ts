@@ -1,6 +1,6 @@
 // 받은 항목을 저장소 하나의 보드에 보일 목록으로 나눈다. 파일을 읽지 않는 순수 함수다.
 //
-// 저장소 필터(<orch 폴더>/config/notification.json)는 adapter 이름 아래 값 목록을 둔다.
+// 저장소 필터(<orch 폴더>/config.json 의 inbox 절. 옛 자리는 config/notification.json)는 adapter 이름 아래 값 목록을 둔다.
 //   { "dooray": { "projects": ["2345678901234567890", "EXAMPLE-PROJECT"], "channels": ["예시 개발방"] }, "slack": { "channels": ["C012"] } }
 // 항목의 scope 가 그 adapter 아래 어느 목록의 값 하나와 같으면 그 저장소의 항목이다.
 //

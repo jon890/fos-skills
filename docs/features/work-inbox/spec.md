@@ -103,7 +103,7 @@ Slack adapter 를 더하면 adapter 파일 하나와 등록 줄 하나, 필터 �
 | --- | --- | --- |
 | `${XDG_CONFIG_HOME:-~/.config}/fos-skills/inbox.json` | 사람 | 켤 adapter, `intervalMinutes`(기본 5), `days`(기본 7), `signature`, `defaultBoard`(주 checkout 경로), adapter 별 값(두레이 웹 주소 등). 없으면 기능이 꺼진다 |
 | `${XDG_STATE_HOME:-~/.local/state}/fos-skills/inbox/` | 사람 | 받은 항목 캐시와 받은 시각, 넘김 기록, 이름 캐시, 필터를 가진 저장소 목록 |
-| `<orch 폴더>/config/notification.json` | 저장소 | adapter 별 키 아래 볼 범위. 두레이는 `projects`(id 나 코드)와 `channels`(id 나 이름), Slack 은 `channels` |
+| `<orch 폴더>/config.json` 의 `inbox` 절 | 저장소 | adapter 별 키 아래 볼 범위. 두레이는 `projects`(id 나 코드)와 `channels`(id 나 이름), Slack 은 `channels` |
 
 orch 폴더는 주 checkout 의 `.orch` 다(`ORCH_DIR` 이 있으면 그 값). 워크트리에서 불러도 같은 파일을 읽는다. 해석은 `skills/orch/scripts/lib/paths.ts` 의 `orchDir` 이 소유한다.
 `.orch/` 는 이 저장소와 ai-analysis 에서 git 이 무시해 사내 id 가 커밋되지 않는다.
@@ -141,7 +141,7 @@ R1, R5, R7 의 실제 동작은 `dooray stream list` 가 배포된 뒤 인수 �
 | D6 | 보여 줄 기간 | 최근 7일. 설정 `days` 로 바꾼다 | 사용자 2026-11-02 | streams 는 2주만 준다 |
 | D7 | 답변의 AI 작성 표기 | 기본으로 붙이고 설정 `signature` 로 바꾸거나 끈다 | 사용자 2026-11-02 | 개인 규칙과 다른 사용자를 함께 맞춘다 |
 | D8 | 답변의 받는 사람 멘션 | 알림을 보낸 사람을 id 로 멘션한다 | 사용자 2026-11-02 | 이름 오기를 막는다 |
-| D9 | 저장소별 필터를 둘 곳 | 그 저장소의 `<orch 폴더>/config/notification.json`. 파일이 없으면 필터 없이 모두 보인다. 캐시, 넘김, 기본 보드는 사람 단위 파일에 둔다 | 사용자 2026-11-02 | `.orch/` 는 git 이 무시해 사내 id 가 커밋되지 않는다 |
+| D9 | 저장소별 필터를 둘 곳 | 그 저장소의 `<orch 폴더>/config.json` 의 `inbox` 절. 절이 없으면 필터 없이 모두 보인다. 옛 자리 `config/notification.json` 은 한 major 동안 `inbox` 절이 없을 때만 읽고 경고하며, 다음 major 에 지운다. 캐시, 넘김, 기본 보드는 사람 단위 파일에 둔다 | 사용자 2026-11-02, 자리 이동 사용자 2026-11-08 | `.orch/` 는 git 이 무시해 사내 id 가 커밋되지 않는다. orch 설정 파일 하나로 모으고 docs-check → docs-audit 때와 같이 옛 자리를 한 major 읽는다 |
 | D10 | 어느 필터에도 들지 않는 알림 | 사람 단위 설정의 `defaultBoard` 에 목록, 다른 필터 보드에는 수만. 지정이 없으면 모든 보드에 보인다 | 사용자 2026-11-02 | 놓치지 않고 각 보드는 자기 프로젝트에 집중한다 |
 | D11 | 넘김 기록 공유 | 사람 단위로 공유한다 | 사용자 2026-11-02 | 알림 하나는 사람 하나에게 온 것이라 처리도 한 번이다 |
 | D12 | 공통 모델과 adapter 계약 | 위 「설계」 의 모델과 표 | 작성자 | 사용자 요청(2026-11-02)의 공통 모델, adapter 동작 목록에 답한 여부 판정을 더했다 |
