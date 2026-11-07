@@ -2042,3 +2042,30 @@ describe('CLI 와 함수 진입점 대응', () => {
     })
   }
 })
+
+
+describe('실제 spec-lint의 CLI와 함수 판정 대응', () => {
+  for (const example of [{ name: '막음', code: 5 }, { name: '경로 경고', code: 0 }]) {
+    test(`${example.name}의 launch 출력·종료·상태·호출 기록이 같다`, () => {
+      assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', worktree], { env }).status, 0)
+      assert.equal(spawnSync('git', ['-C', worktree, 'commit', '-q', '--allow-empty', '-m', 'init'], { env }).status, 0)
+      env.SPEC_LINT = fileURLToPath(new URL('../scripts/spec/spec-lint.ts', import.meta.url))
+      writeFileSync(spec, '# 일\n허락: push는 허락했다.\n\n## 할 일\n' +
+        (example.code === 5 ? '화면에 취소 단추를 더한다\n' : '루프 없이: 테스트 지시서다\n`src/not-found.ts`를 만든다\n'))
+      const args = ['--worktree', worktree, '--watch', '0', '--', ...CLAUDE]
+      const values = { next_ids: ['ctx_spec'], dispatches: { ctx_spec: shown('input_accepted') } }
+      state(values)
+      const real = launch(args, 'bash', true, SCRIPT)
+      assert.equal(real.code, example.code, both(real))
+      assert.match(real.stderr, example.code === 5 ? /루프:/ : /경로:.*src\/not-found\.ts/)
+      const realState = readFileSync(stateFile, 'utf8')
+      const realLog = existsSync(log) ? readFileSync(log, 'utf8') : ''
+      state(values)
+      resetLog()
+      const fake = launch(args)
+      assert.deepEqual(fake, real)
+      assert.equal(readFileSync(stateFile, 'utf8'), realState)
+      assert.equal(existsSync(log) ? readFileSync(log, 'utf8') : '', realLog)
+    })
+  }
+})
