@@ -337,7 +337,7 @@ REQ1·REQ3·REQ4와 스펙 DECISION4·DECISION16을 따른다. PR8 뒤 기준 �
 
 `launch-worker.main(argv, runner?, asyncRunner?)`에 호출별 비동기 실행 함수를 받는다. 기본값은 기존 `runAsync`이며 lib/proc의 전역 동작은 바꾸지 않는다. lintGate와 prepareReview도 같은 실행 함수를 전달받는다. spec-line과 spec-lint는 기존 main을 내보내고 직접 실행일 때만 호출한다. 직접 실행 판정은 `import.meta.main`과 실경로를 비교한다.
 
-테스트 fixture는 동기 CommonJS 가짜 Orca를 기존 stateful-run으로 평가하고, spec-line·spec-lint는 실제 판정 함수를 호출한다. 동기 판정 함수의 표준 출력을 잠시 모은 뒤 즉시 복구한다. shell 가짜·make-worktree·review 준비·hook은 실제 실행한다. 가짜의 비동기 동작·신호·시간 제한·출력 한도는 함수 평가가 지원하지 않으므로 해당 호출은 실제 실행으로 남긴다. 함수 예외는 명령 실패로 돌려주고 launch 예외는 실제 CLI의 reportError를 공유한다.
+테스트 fixture는 동기 CommonJS 가짜 Orca를 기존 stateful-run으로 평가하고, spec-line·spec-lint는 실제 판정 함수를 호출한다. 동기 판정 함수의 표준 출력을 잠시 모은 뒤 즉시 복구한다. shell 가짜·make-worktree·review 준비·hook은 실제 실행한다. launch-worker fixture의 Orca 가짜는 동기 본문이어야 하며, 주어진 timeoutMs를 함수 평가에 적용하지 않는다. 이 fixture에서 Orca의 비동기 동작·신호·시간 제한·출력 한도를 검증하지 않는다. 해당 성질은 실제 CLI 대표 사례와 lib-proc 회귀로 확인한다. shell·외부 도구와 실행 옵션이 있는 spec 호출은 실제 실행으로 남긴다. 함수 예외는 명령 실패로 돌려주고 launch 예외는 실제 CLI의 reportError를 공유한다.
 
 `wait-important.main(argv, runner?)`도 기존 withRun 경계를 재사용한다. fixture는 gh PR 조회와 worker-list·task-list·dispatch-show·terminal read·inbox·check --all 조회를 동기 평가한다. 실제 check --wait는 비동기 출력과 자식 종료를 검증하므로 그대로 spawn한다. 지워진 cwd 검사는 실제 CLI로 남긴다.
 

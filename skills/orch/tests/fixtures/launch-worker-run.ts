@@ -1,5 +1,7 @@
 // 함수 평가에는 timeoutMs·input·maxBuffer 를 적용하지 않는다.
-// 지연·입력·출력 한도를 검증하는 가짜는 resolveCommand 에서 undefined 를 돌려 실제 실행으로 넘긴다.
+// 이 fixture의 Orca 가짜는 동기 본문만 허용한다. Orca 호출의 timeoutMs는 함수 평가에 적용하지 않는다.
+// Orca의 비동기 동작·시간 제한은 실제 CLI와 lib-proc 회귀로 검증한다.
+// shell·외부 도구와 실행 옵션이 있는 spec 호출은 실제 실행으로 넘긴다.
 // launch 의 호출별 격리는 fixture 자식이 맡는다. hook·shell·외부 도구는 실제 실행한다.
 // Orca 가짜는 동기 본문이고 spec 명령의 main은 동기 출력만 하므로 함수로 호출한다.
 import * as fs from 'node:fs'
