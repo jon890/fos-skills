@@ -1,1 +1,0 @@
-- `harness-cleanup` 의 사용 기록 감사 스크립트가 `session_log.ts` 로 바뀐 이름을 따랐다
