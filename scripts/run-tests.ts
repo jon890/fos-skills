@@ -24,7 +24,7 @@
 //   node scripts/run-tests.ts --wait "$DIR"                결과 폴더의 끝 줄을 기다린다
 //
 // 옵션
-//   --concurrency N   node --test 의 동시 파일 수. Python 묶음은 ceil(N/2) 개씩 함께 돈다 (기본 4)
+//   --concurrency N   node --test 의 동시 파일 수. Python 묶음은 ceil(N/2) 개씩 함께 돈다 (기본 CPU 수, 최대 8)
 //   --timeout SEC     node 테스트 하나의 제한(--test-timeout), node 단계의 무진행 감시, Python 묶음 하나와
 //                     tsc 의 제한 (기본 600). 넘으면 그 프로세스 그룹을 통째로 끝내고 실패로 센다.
 //                     node 단계는 파일 완료 보고가 SEC 초 동안 없을 때 끊고, 보고가 없는 파일을 모두 시간 초과로 센다
@@ -59,7 +59,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { availableParallelism, homedir, tmpdir } from "node:os";
 import { basename, dirname, join, normalize, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -80,8 +80,8 @@ const running = new Set<ChildProcess>();
 type Options = { concurrency: number; timeout: number; out?: string; maxWait: number; background: boolean; wait?: string; patterns: string[] };
 export type Targets = { node: string[]; python: string[]; tsc: boolean };
 
-export function parseArgs(argv: string[]): Options {
-  const opts: Options = { concurrency: 4, timeout: 600, maxWait: 540, background: false, patterns: [] };
+export function parseArgs(argv: string[], parallelism = availableParallelism()): Options {
+  const opts: Options = { concurrency: Math.min(8, parallelism), timeout: 600, maxWait: 540, background: false, patterns: [] };
   const value = (i: number, name: string) => {
     if (i >= argv.length) throw new Error(`${name} 에 값이 없다`);
     return argv[i];

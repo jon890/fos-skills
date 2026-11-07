@@ -14,7 +14,7 @@
 //     --skill-dir       볼 스킬 디렉터리. 기본은 이 스크립트의 상위 디렉터리($SKILL_DIR)
 //     --remote          원본 저장소. 주지 않으면 설치 경로의 마켓플레이스 clone 의 origin 을 쓴다
 //     --branch          원본의 기준 브랜치. 기본 main
-//     --skip-version    설치본 비교를 건너뛰고 스크립트 존재만 본다. 저장소 테스트가 스킬마다 이것으로 부른다
+//     --skip-version    설치본 비교를 건너뛴다. 저장소 문서 테스트는 checkScripts 를 직접 부른다
 //     --run             미답변 질문과 worker 판정을 볼 Run. 주면 session-resume 이벤트도 낸다
 //     --skip-questions  질문 상태 조회를 건너뛴다
 //     --repo            핸들러와 설정을 볼 저장소. 기본은 작업 디렉터리의 주 checkout
@@ -360,7 +360,7 @@ function exists(target: string): boolean {
   }
 }
 
-function checkScripts(skillDir: string): Checked {
+export function checkScripts(skillDir: string): Checked {
   const lines: string[] = []
   const seen = new Set<string>()
   for (const doc of markdownFiles(skillDir)) {

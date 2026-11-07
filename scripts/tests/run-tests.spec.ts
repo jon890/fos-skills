@@ -4,11 +4,11 @@
 import { spawn, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { reconcile } from "../run-tests.ts";
+import { parseArgs, reconcile } from "../run-tests.ts";
 
 const RUNNER = fileURLToPath(new URL("../run-tests.ts", import.meta.url));
 
@@ -88,6 +88,16 @@ function summary(out: string) {
 }
 
 describe("run-tests", { concurrency: true }, () => {
+  test("기본 동시 수는 사용 가능한 CPU 이하이고 상한이 있으며 명시 옵션이 우선한다", () => {
+    for (const [cpu, expected] of [[1, 1], [2, 2], [6, 6], [8, 8], [12, 8], [64, 8]]) {
+      assert.equal(parseArgs([], cpu).concurrency, expected);
+    }
+    const actual = parseArgs([]).concurrency;
+    assert.ok(actual >= 1 && actual <= 8 && actual <= availableParallelism());
+    assert.equal(parseArgs(["--concurrency", "12"], 2).concurrency, 12);
+    assert.equal(parseArgs(["--concurrency", "2"], 12).concurrency, 2);
+  });
+
   test("인자 없이 git 이 추적하거나 무시하지 않는 묶음과 tsc 를 함께 돈다", async () => {
     const root = gitRepo({
       ".gitignore": "ignored/\n",
@@ -168,7 +178,8 @@ describe("run-tests", { concurrency: true }, () => {
     write(root, "t/slow.spec.mjs", SLOW);
     const done = await runner(root, ["--concurrency", "3", "t/*.spec.mjs"]);
     assert.equal(done.code, 1, done.out + done.err);
-    assert.match(done.out, /^실패 t\/slow\.spec\.mjs 0\.0s \(보고 없음\) 로그: /m);
+    // 신호 전달 시점에 따라 Node가 파일 실패를 보고하거나 보고 전에 끝난다. 둘 다 실패여야 한다.
+    assert.match(done.out, /^실패 t\/slow\.spec\.mjs [\d.]+s \((?:보고 없음|신호 SIGTERM)\) 로그: /m);
     assert.match(done.out, /^실패 t\/kill\.spec\.mjs /m);
     assert.doesNotMatch(done.out, /^결과: .* 실패 0,/m);
     assert.match(done.out, /^결과: 통과 0, 실패 3, 전체 3, /m);
