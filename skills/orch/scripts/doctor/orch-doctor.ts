@@ -134,7 +134,8 @@
 //     MISSING <문서>:<줄> <경로>                 문서가 부르는 스크립트가 없다
 //     OK-SCRIPTS <개수>                          문서가 부르는 스크립트가 모두 있다
 //     UNKNOWN-HOOK <파일>                        이벤트 이름이 아닌 핸들러 파일
-//     INVALID-CONFIG <이유>                       삭제한 옛 설정 칸, 모르는 리뷰 조건 이름
+//     INVALID-CONFIG <이유>                       삭제한 옛 설정 칸, 모르는 리뷰 조건 이름, 모르는 inbox 절 키
+//     OLD-INBOX-FILTER <옛 파일> ...              옛 알림 필터(<orch 루트>/config/notification.json)가 있다. config.json 의 inbox 절로 옮기는 법을 알린다. 종료 코드에는 영향이 없다
 //     끝난 dispatch 의 질문은 lib/questions.ts 와 같은 PR 종료 근거로 제외한다.
 //     UNANSWERED <id> <설명>                     10분 이상 답이 없는 질문이 있다
 //     SKIP-QUESTIONS <이유>                      질문 상태를 조회하지 못했다. orca 가 조회마다 30초(ORCH_QUESTIONS_TIMEOUT_SEC) 안에 답하지 않은 경우도 여기다
@@ -158,7 +159,7 @@
 // 짧은 출력(진입점의 orch doctor, lib/output.ts): 판정 줄과 그 뒤 들여 쓴 고칠 줄(고칠 명령, 새 꼴, 명령)만 낸다. `  안내:` 줄은 --full 이다.
 //
 // 종료 코드:
-//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*, OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
+//     0  STALE, MISSING, UNANSWERED, INVALID-CONFIG 가 없다(SKIP, UNKNOWN-HOOK, PLUGIN-PATH-MISSING, LOOP-DEAD, LOOP-STALE, WAIT-STALE, WORKER-STATE, OLD-INBOX-FILTER, FEEDBACK-OPEN, STUDY-OPEN, ORCA-SHAPE, CLI-*, OLD-CALL, DIRECT-PATH, WAIT-READER, HOOK-FAIL 줄은 있을 수 있다)
 //     1  STALE, MISSING, UNANSWERED 나 INVALID-CONFIG 가 있다
 //     2  사용법 오류
 //
@@ -173,7 +174,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { autoMergeConfig, unknownConditionsText } from '../lib/auto-merge.ts'
 import { COMMANDS, isGroup, LAUNCHER_MARK, legacyNames, orchWord, resolveLegacy, resolveNew, scriptIn, SCRIPTS_DIR } from '../lib/commands.ts'
-import { ConfigError, RemovedConfigError, loadConfig } from '../lib/config.ts'
+import { ConfigError, INBOX_KEYS, LEGACY_INBOX_FILTER, RemovedConfigError, loadConfig, section } from '../lib/config.ts'
 import type { Config } from '../lib/config.ts'
 import { fire, unknownHandlers } from '../lib/events.ts'
 import { isFile, real, realPath } from '../lib/fs.ts'
@@ -444,7 +445,23 @@ function checkRepo(repo: string): string[] {
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e
   }
+  try {
+    section(config, 'inbox', INBOX_KEYS)
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
+    lines.push(`INVALID-CONFIG ${e.message}`)
+  }
+  lines.push(...legacyInboxFilter(repo, config))
   return lines
+}
+
+// 옛 알림 필터 파일이 있으면 옮기는 법을 알린다. 옛 파일은 아직 읽히므로 종료 코드에는 영향이 없다
+function legacyInboxFilter(repo: string, config: Config): string[] {
+  const legacy = join(orchDir(repo), LEGACY_INBOX_FILTER)
+  if (!existsSync(legacy)) return []
+  const target = pathOf('config', repo)
+  if (config.inbox) return [`OLD-INBOX-FILTER ${legacy} 는 ${target} 의 inbox 절이 있어 읽히지 않는다. 지운다`]
+  return [`OLD-INBOX-FILTER ${legacy} 의 내용을 ${target} 의 "inbox" 절로 옮긴다(옮긴 뒤 옛 파일을 지운다). 새 번들을 설치한 뒤에만 옮긴다. 옛 파일 읽기는 inbox 의 다음 major 에 없어진다`]
 }
 
 function checkFeedback(repo: string): string[] {

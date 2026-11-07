@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ConfigError, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
+import { ConfigError, INBOX_KEYS, REMOVED_CONFIG_KEYS, ROUTING_KEYS, HEAVY_KEYS, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, QUEUE_KEYS, QUEUE_LOOP_KEYS, section } from '../scripts/lib/config.ts'
 import { QUEUE_FLAGS, QUEUE_GROUPS, QUEUE_REPEATED, QUEUE_VALUES } from '../scripts/lib/queue-options.ts'
 import type { Section } from '../scripts/lib/config.ts'
 
@@ -126,6 +126,13 @@ describe('section', () => {
     assert.deepEqual(section(config, 'heavy', HEAVY_KEYS), body)
     const typo = loadConfig(repo, { file: file(JSON.stringify({ heavy: { exclusiv: ['local-ci'] } })) })
     assert.throws(() => section(typo, 'heavy', HEAVY_KEYS), (e: unknown) => e instanceof ConfigError && /heavy 절에 모르는 키가 있다: exclusiv$/.test(e.message))
+  })
+
+  test('inbox 절은 최상위 절로 통과하고 INBOX_KEYS 의 enabled 와 adapter 이름만 허용한다', () => {
+    const ok = loadConfig(repo, { file: file('{"inbox":{"enabled":false,"dooray":{"projects":["p1"]}}}') })
+    assert.deepEqual(section(ok, 'inbox', INBOX_KEYS), { enabled: false, dooray: { projects: ['p1'] } })
+    const typo = loadConfig(repo, { file: file('{"inbox":{"doorey":{}}}') })
+    assert.throws(() => section(typo, 'inbox', INBOX_KEYS), (e: unknown) => e instanceof ConfigError && /inbox 절에 모르는 키가 있다: doorey$/.test(e.message))
   })
 
   test('모르는 키는 ConfigError 이고 그 키 이름을 알린다', () => {

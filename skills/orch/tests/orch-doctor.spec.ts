@@ -586,6 +586,35 @@ describe('저장소 판정', () => {
     assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
   })
 
+  test('옛 알림 필터 파일만 있으면 OLD-INBOX-FILTER 로 옮기는 법을 알리고 종료 코드는 0 이다', () => {
+    write(join(tmp, '.orch', 'config', 'notification.json'), JSON.stringify({ dooray: { projects: ['p1'] } }))
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^OLD-INBOX-FILTER .*notification\.json 의 내용을 .*config\.json 의 "inbox" 절로 옮긴다/m)
+  })
+
+  test('옛 필터 파일과 inbox 절이 함께 있으면 옛 파일이 읽히지 않는다고 알린다', () => {
+    write(join(tmp, '.orch', 'config', 'notification.json'), '{}')
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ inbox: { dooray: { projects: ['p1'] } } }))
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /^OLD-INBOX-FILTER .*inbox 절이 있어 읽히지 않는다/m)
+  })
+
+  test('inbox 절만 있으면 알릴 것이 없다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ inbox: { enabled: false, dooray: { projects: ['p1'] } } }))
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(r.stdout, 'OK-SCRIPTS 0\n')
+  })
+
+  test('inbox 절의 모르는 키는 INVALID-CONFIG 이고 종료 코드 1 이다', () => {
+    write(join(tmp, '.orch', 'config.json'), JSON.stringify({ inbox: { doorey: {} } }))
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 1, r.stdout + r.stderr)
+    assert.match(r.stdout, /^INVALID-CONFIG .*inbox 절에 모르는 키가 있다: doorey/m)
+  })
+
   test('설정 파일이 깨졌으면 이유를 stderr 에 내고 그 판정만 건너뛴다', () => {
     write(join(tmp, '.orch', 'config.json'), '{')
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
