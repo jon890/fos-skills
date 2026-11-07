@@ -76,7 +76,8 @@ test('spec 실행에 별도 env를 주면 실제 프로세스에서 적용한다
   assert.match(done.stdout, /^preloaded\n사용법:/)
 })
 
-test('wait의 동기 조회는 함수로 호출하고 check --wait의 비동기 자식은 실제 실행한다', (t) => {
+// wait-important 본체의 spawn·종료는 wait-important.spec.ts의 신호·대기 사례가 검증한다.
+test('wait fixture의 resolver는 동기 조회만 평가하고 check --wait는 실제 실행으로 넘긴다', (t) => {
   const dir = tempDir('wait-functions-', t)
   const bin = linkBin(dir, 'orca', `
     if (process.argv.includes('--wait')) setTimeout(() => console.log('waited'), 20)
