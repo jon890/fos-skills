@@ -3,7 +3,6 @@
 //
 // 「명령 경계」 상수(IMPL)가 구현을 가린다. 테스트 사례는 이 상수만 보고 명령을 부르고, 구현을 바꿀 때 이 상수만 바꾼다.
 
-import { spawnSync } from 'node:child_process'
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { runCommand } from '../../../modules/testkit/command.ts'
@@ -13,9 +12,7 @@ import { tempDir } from '../../../modules/testkit/temp.ts'
 export const SCRIPTS_DIR = join(import.meta.dirname, '..', 'scripts')
 
 // 명령 경계. 실행기와 확장자다
-// PATH 를 비운 환경에서도 실행기를 찾도록 절대 경로로 둔다
-const PYTHON = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim()
-export const IMPL = { argv: [PYTHON], ext: '.py' }
+export const IMPL = { argv: [process.execPath], ext: '.ts' }
 
 export type Result = { code: number | null; stdout: string; stderr: string }
 

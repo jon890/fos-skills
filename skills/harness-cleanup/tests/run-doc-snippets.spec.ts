@@ -218,23 +218,27 @@ describe('실행', () => {
     assert.ok(done.stdout.includes('[bash] 문법 OK / 출력 0줄\n'))
   })
 
-  test('셸이 두 개 다 있으면 bash 다음 zsh 순서로 돈다', { skip: !HAS_ZSH && !process.env.CI }, () => {
-    // CI 는 zsh 를 설치한다(.github/workflows/ci.yml). 빠지면 건너뛰지 않고 실패해 알린다
-    assert.ok(HAS_ZSH, 'zsh 가 없다')
+  test('셸이 두 개 다 있으면 bash 다음 zsh 순서로 돈다', { skip: !HAS_ZSH }, () => {
     const d = doc(fence('echo "$0" | sed s,.*/,, ; echo ${BASH_VERSION:+bash}${ZSH_VERSION:+zsh}'))
     const out = d.snip('--block', '1').stdout
     assert.ok(out.indexOf('[bash] 문법 OK') < out.indexOf('[zsh] 문법 OK'), out)
     assert.ok(out.includes('    bash\n') && out.includes('    zsh\n'), out)
   })
 
-  test('셸이 설치돼 있지 않으면 건너뛰는 줄을 낸다', () => {
+  test('zsh 가 없으면 한 줄 알리고 bash 만 돈다', () => {
     const bin = tempDir('hc-bin-')
     symlinkSync('/bin/bash', join(bin, 'bash'))
     const d = doc(fence('echo hi'))
     const done = run('run_doc_snippets', [d.path, '--block', '1'], { cwd: d.dir, env: { ...gitEnv(), PATH: bin } })
     assert.equal(done.code, 0, done.stderr)
     assert.ok(done.stdout.includes('[bash] 문법 OK / 출력 1줄\n    hi\n'), done.stdout)
-    assert.ok(done.stdout.includes('[zsh] 설치돼 있지 않아 건너뛴다\n'), done.stdout)
+    assert.ok(done.stdout.includes('zsh 없음, bash 만\n'), done.stdout)
+    assert.equal(done.stdout.split('zsh 없음').length - 1, 1)
+    const many = doc(`${fence('echo one')}\n${fence('echo two')}`)
+    const all = run('run_doc_snippets', [many.path], { cwd: many.dir, env: { ...gitEnv(), PATH: bin } })
+    assert.equal(all.code, 0, all.stderr)
+    assert.equal(all.stdout.split('zsh 없음').length - 1, 1, all.stdout)
+    assert.equal(all.stdout.split('[bash] 문법 OK').length - 1, 2)
   })
 
   test('임시 스크립트 파일을 남기지 않는다', () => {
