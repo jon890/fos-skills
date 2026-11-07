@@ -17,6 +17,7 @@
   "requirements": [
     "REQ1",
     "REQ2",
+    "REQ3",
     "REQ7",
     "REQ8"
   ],
@@ -30,6 +31,7 @@
       "requirements": [
         "REQ1",
         "REQ2",
+        "REQ3",
         "REQ7",
         "REQ8"
       ]

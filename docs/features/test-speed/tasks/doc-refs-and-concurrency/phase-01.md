@@ -10,7 +10,7 @@
 
 ## 컨텍스트
 
-**요구사항**: REQ1, REQ2, REQ7, REQ8
+**요구사항**: REQ1, REQ2, REQ3, REQ7, REQ8
 
 **근거 문서**: `docs/features/test-speed/spec.md`, `docs/features/test-speed/design.md` PR8 절.
 기존 `checkScripts`는 파일 시스템만 읽고 CLI가 부른다. `parseArgs`는 기본 동시 4를 소유한다. 공용 testkit의 임시 폴더와 가짜 run을 재사용한다.
@@ -50,6 +50,7 @@ node scripts/run-tests.ts
 | REQ1 | 임시 스킬에 없는 파일 참조 | 검사 후 파일을 만들고 재검사 | 코드 1과 정확한 진단, 복구 후 코드 0 | 같은 환경 | 없음 | PR 전 |
 | REQ2 | 기존 doctor 테스트 | 전환 전후 실행 | CLI 인자·출력·종료 유지 | 같은 환경 | 없음 | PR 전 |
 | REQ1 | 실패하는 외부 명령 주입 | 실제 문서 함수 검사 | 외부 명령 없이 동일 판정 | Orca 세션 내부 | 없음 | PR 전 |
+| REQ3 | 동일 머신과 독점 실행 자리 | 동시 수별 전체 실행과 기본 전체 실행을 측정 | 끝 줄과 시작·끝 load average를 보존 | macOS, Node 24 이상 | 없음 | PR 전 |
 | REQ7 | 사용 가능한 CPU와 명시 옵션 | 실행기 테스트와 기본 전체 실행 | CPU 이하 기본값, 옵션 우선, 요약 유지 | 같은 머신과 CI | 없음 | PR 전 |
 | REQ8 | 사용 가능한 CPU와 명시 옵션 | 실행기 테스트와 기본 전체 실행 | CPU 이하 기본값, 옵션 우선, 요약 유지 | 같은 머신과 CI | 없음 | PR 전 |
 
