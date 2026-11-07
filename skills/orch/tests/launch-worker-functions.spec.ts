@@ -37,11 +37,11 @@ test('spec 명령의 함수 출력과 실제 CLI 출력이 같다', async () => 
   }
 })
 
-test('spec 명령은 심볼릭 링크로 직접 실행해도 CLI를 실행한다', (t) => {
+test('판정 명령은 심볼릭 링크로 직접 실행해도 CLI를 실행한다', (t) => {
   const dir = tempDir('spec-main-links-', t)
-  for (const name of ['spec-line', 'spec-lint']) {
-    const script = fileURLToPath(new URL(`../scripts/spec/${name}.ts`, import.meta.url))
-    const link = join(dir, `${name}.ts`)
+  for (const name of ['spec/spec-line', 'spec/spec-lint', 'wait/wait-important']) {
+    const script = fileURLToPath(new URL(`../scripts/${name}.ts`, import.meta.url))
+    const link = join(dir, `${name.replaceAll('/', '-')}.ts`)
     symlinkSync(script, link)
     const done = runCommand(scriptCommand(link, ['--help']))
     assert.equal(done.code, 0)
