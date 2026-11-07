@@ -100,7 +100,14 @@ function writeConfig(value: Record<string, unknown>): void {
 function repo(name: string, filter: Record<string, unknown> | null): string {
   const root = join(dir, name)
   mkdirSync(join(root, '.orch', 'config'), { recursive: true })
-  if (filter) writeFileSync(join(root, '.orch', 'config', 'notification.json'), JSON.stringify(filter))
+  if (filter) writeFileSync(join(root, '.orch', 'config.json'), JSON.stringify({ inbox: filter }))
+  return root
+}
+
+// 옛 자리(config/notification.json)에 필터를 둔 저장소 폴더
+function legacyRepo(name: string, filter: Record<string, unknown>): string {
+  const root = repo(name, null)
+  writeFileSync(join(root, '.orch', 'config', 'notification.json'), JSON.stringify(filter))
   return root
 }
 
@@ -293,10 +300,63 @@ describe('저장소 필터 (R8, R9)', () => {
     writeConfig({})
     state.items = [item('1', ['p1'])]
     const root = repo('a', null)
-    writeFileSync(join(root, '.orch', 'config', 'notification.json'), '{')
+    writeFileSync(join(root, '.orch', 'config.json'), '{')
     const view = board(root)
     assert.ok(view.errors.filter)
     assert.equal(view.items.length, 1)
+  })
+
+  test('config.json 의 inbox 절이 없고 옛 파일만 있으면 옛 파일로 거르고 옛 자리 경고를 stderr 에 낸다', () => {
+    writeConfig({ defaultBoard: join(dir, 'other') })
+    state.items = [item('1', ['p1']), item('2', ['p2'])]
+    const root = legacyRepo('old', { fake: { projects: ['p1'] } })
+    // inbox 절 없는 config.json 이 있어도 옛 파일로 내려간다
+    writeFileSync(join(root, '.orch', 'config.json'), JSON.stringify({ pipeline: {} }))
+    const view = board(root)
+    assert.equal(view.filtered, true)
+    assert.deepEqual(view.items.map((row) => row.id), ['fake:task:1'])
+    assert.match(err, /옛 자리 .*notification\.json.*"inbox" 절로 옮긴다/)
+  })
+
+  test('옛 파일만 있어도 enabled false 는 알림을 끈다', () => {
+    writeConfig({})
+    state.items = [item('1', ['p1'])]
+    assert.deepEqual(board(legacyRepo('old', { enabled: false })), { enabled: false })
+  })
+
+  test('둘 다 있으면 inbox 절을 쓰고 옛 파일은 무시한다고 알린다', () => {
+    writeConfig({ defaultBoard: join(dir, 'other') })
+    state.items = [item('1', ['p1']), item('2', ['p2'])]
+    const root = legacyRepo('both', { fake: { projects: ['p2'] } })
+    writeFileSync(join(root, '.orch', 'config.json'), JSON.stringify({ inbox: { fake: { projects: ['p1'] } } }))
+    assert.deepEqual(board(root).items.map((row) => row.id), ['fake:task:1'])
+    assert.match(err, /무시한다/)
+  })
+
+  test('inbox 절만 있으면 경고가 없다', () => {
+    writeConfig({})
+    state.items = [item('1', ['p1'])]
+    board(repo('new', { fake: { projects: ['p1'] } }))
+    assert.equal(err, '')
+  })
+
+  test('inbox 절이 객체가 아니면 오류로 알리고 필터 없이 보인다', () => {
+    writeConfig({})
+    state.items = [item('1', ['p1'])]
+    const root = repo('a', null)
+    writeFileSync(join(root, '.orch', 'config.json'), JSON.stringify({ inbox: [] }))
+    const view = board(root)
+    assert.match(view.errors.filter, /inbox 절/)
+    assert.equal(view.items.length, 1)
+  })
+
+  test('옛 파일 필터의 저장소도 다른 보드의 미분류 판정에 든다', () => {
+    const home = legacyRepo('home', { fake: { projects: ['smarthome'] } })
+    const main = repo('main', { fake: { channels: ['개인'] } })
+    writeConfig({ defaultBoard: main })
+    state.items = [item('home', ['smarthome']), item('loose', ['etc'])]
+    board(home)
+    assert.deepEqual(board(main).items.map((row) => row.id), ['fake:task:loose'])
   })
 })
 
