@@ -6,7 +6,6 @@
 // 이 스킬의 명령은 파일과 컨테이너 자원을 지우는 명령을 부른다. 그래서 테스트는 임시 홈과 임시 저장소, PATH 맨 앞의 가짜 실행 파일만 쓴다.
 // 자식의 PATH 는 가짜 폴더와, 실제 실행 파일을 링크한 폴더 하나로 한정한다. 이 머신의 docker, gh, colima 가 섞이지 않는다.
 
-import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
 import { runCommand } from '../../../modules/testkit/command.ts'
@@ -25,19 +24,13 @@ export function findExecutable(name: string, searchPath = process.env.PATH ?? ''
   throw new Error(`${name} 을 PATH 에서 찾지 못했다`)
 }
 
-const PYTHON = execFileSync(findExecutable('python3'), ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).trim()
-
-// 명령 경계. 실행기와 확장자다. survey_gradle 만 셸 스크립트다
-export const IMPL = {
-  main: { argv: [PYTHON], ext: '.py' },
-  shell: { argv: ['/bin/bash'], ext: '.sh' },
-}
+// 명령 경계. 실행기와 확장자다
+export const IMPL = { argv: [process.execPath], ext: '.ts' }
 
 export type Result = { code: number | null; stdout: string; stderr: string }
 
 export function command(name: string): string[] {
-  const impl = name === 'survey_gradle' ? IMPL.shell : IMPL.main
-  return [...impl.argv, join(SCRIPTS_DIR, `${name}${impl.ext}`)]
+  return [...IMPL.argv, join(SCRIPTS_DIR, `${name}${IMPL.ext}`)]
 }
 
 export function write(path: string, text = '', mode = 0o644): string {
