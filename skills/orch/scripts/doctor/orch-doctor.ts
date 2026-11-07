@@ -360,7 +360,7 @@ function exists(target: string): boolean {
   }
 }
 
-function checkScripts(skillDir: string): Checked {
+export function checkScripts(skillDir: string): Checked {
   const lines: string[] = []
   const seen = new Set<string>()
   for (const doc of markdownFiles(skillDir)) {

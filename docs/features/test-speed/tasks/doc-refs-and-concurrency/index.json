@@ -1,0 +1,38 @@
+{
+  "name": "doc-refs-and-concurrency",
+  "description": "문서 판정 격리와 실행기 동시 수 조정",
+  "pr_scope": "PR8의 문서 판정 환경 격리와 CPU 기준 동시 실행을 완성한다.",
+  "deferred": [
+    {
+      "what": "PR9에서 launch-worker, orch-loop, wait-important, cleanup-sweep, plan Python의 남은 기동 비용을 줄인다",
+      "why": "PR8의 문서 판정 격리와 실행기 설정 범위를 유지한다",
+      "after": "PR8 전체 측정 결과"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-08",
+  "spec": "docs/features/test-speed/spec.md",
+  "design": "docs/features/test-speed/design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ7",
+    "REQ8"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ7",
+        "REQ8"
+      ]
+    }
+  ]
+}
