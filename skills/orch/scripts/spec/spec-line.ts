@@ -24,7 +24,8 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { real } from '../lib/fs.ts'
@@ -32,7 +33,7 @@ import { permissionsOf } from '../lib/spec.ts'
 
 const USAGE = '사용법: spec-line.ts SPEC_FILE [--require-permission]'
 
-function main(argv: string[]): number {
+export function main(argv: string[]): number {
   let parsed
   try {
     const options = { 'require-permission': { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } as const
@@ -67,4 +68,6 @@ function main(argv: string[]): number {
   return 0
 }
 
-process.exitCode = main(process.argv.slice(2))
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  process.exitCode = main(process.argv.slice(2))
+}

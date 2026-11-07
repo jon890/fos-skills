@@ -160,8 +160,9 @@
 
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
@@ -179,7 +180,8 @@ import { orcaBin, orcaJson, withFull } from '../lib/orca.ts'
 import { fullAsked, short } from '../lib/output.ts'
 import { shortLines, triage } from './triage-messages.ts'
 import { boardPath, makeParent, pathOf, warnLegacy } from '../lib/paths.ts'
-import { run, signalCode } from '../lib/proc.ts'
+import { run, signalCode, withRun } from '../lib/proc.ts'
+import type { Runner } from '../lib/proc.ts'
 import { pyJson, pyStr as text, shQuote } from '../lib/py.ts'
 import { reviewPrOfDispatch } from '../lib/review.ts'
 import { judge, readScreens, screenHandles } from '../lib/worker-state.ts'
@@ -567,12 +569,18 @@ function stopGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
-for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
-  process.on(signal, () => {
-    if (waiting) stopGroup(waiting, 'SIGTERM')
-    err(`wait-important: ${signal} 를 받아 check --wait 를 끝내고 나간다`)
-    process.exit(signalCode(signal))
-  })
+let signalsInstalled = false
+
+function installSignals(): void {
+  if (signalsInstalled) return
+  signalsInstalled = true
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+    process.on(signal, () => {
+      if (waiting) stopGroup(waiting, 'SIGTERM')
+      err(`wait-important: ${signal} 를 받아 check --wait 를 끝내고 나간다`)
+      process.exit(signalCode(signal))
+    })
+  }
 }
 
 // `check --wait --json` 한 번. 결과 JSON 과 원문을 낸다. JSON 이 아니면 data 가 null 이다.
@@ -984,7 +992,12 @@ function enterWorkDir(repos: string[]): { origin: string | null; base: string; l
 
 // 본체 ------------------------------------------------------------------
 
-async function main(argv: string[]): Promise<number> {
+export function main(argv: string[], runner?: Runner): Promise<number> {
+  installSignals()
+  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+}
+
+async function executeMain(argv: string[]): Promise<number> {
   let values
   let timeoutMs: number
   let interval: number
@@ -1147,12 +1160,14 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e: unknown) => {
-    err(`wait-important: ${(e as Error)?.stack ?? String(e)}`)
-    process.exitCode = 1
-  },
-)
+export function reportError(e: unknown): void {
+  err(`wait-important: ${(e as Error)?.stack ?? String(e)}`)
+  process.exitCode = 1
+}
+
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  main(process.argv.slice(2)).then(
+    (code) => { process.exitCode = code },
+    reportError,
+  )
+}

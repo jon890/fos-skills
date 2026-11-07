@@ -93,7 +93,7 @@
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
 import { taskFirstLine } from '../lib/spec.ts'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -643,7 +643,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
   return { errors, warnings }
 }
 
-function main(argv: string[]): number {
+export function main(argv: string[]): number {
   let parsed
   try {
     const options = {
@@ -717,4 +717,6 @@ function main(argv: string[]): number {
   }
 }
 
-process.exitCode = main(process.argv.slice(2))
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  process.exitCode = main(process.argv.slice(2))
+}

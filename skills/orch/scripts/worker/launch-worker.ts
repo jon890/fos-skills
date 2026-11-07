@@ -341,7 +341,7 @@ function loopSource(a: Args, specPath: string): string[] {
 
 // spec-lint 로 이 지시서를 검사한다. 머리 주석의 「1-1」. 막으면 종료 코드, 통과하거나 넘기면 null 이다.
 // acked 는 --lint-ack 으로 넘긴 발견의 이유다. 넘길 발견이 없으면 null 이라 기록에 남지 않는다.
-async function lintGate(a: Args, continuation: boolean): Promise<{ stop: number | null; acked: string | null }> {
+async function lintGate(a: Args, continuation: boolean, execute: typeof runAsync): Promise<{ stop: number | null; acked: string | null }> {
   const specPath = resolve(a.spec)
   const repo = a.repo || mainCheckout(realPath(a.worktree.replace(/^path:/, '')))
   const live = liveSpecPaths(a.run || null)
@@ -352,7 +352,7 @@ async function lintGate(a: Args, continuation: boolean): Promise<{ stop: number 
   const base = (a.base || defaultBase(repo) || '').replace(/^origin\//, '')
   const source = loopSource(a, specPath)
   const args = ['--repo', repo, ...(base ? ['--base', base] : []), ...source, ...others.flatMap((file) => ['--active', file]), ...(continuation ? ['--active', specPath] : []), specPath]
-  const done = await runAsync(scriptCommand(process.env.SPEC_LINT || scriptPath('spec-lint'), args))
+  const done = await execute(scriptCommand(process.env.SPEC_LINT || scriptPath('spec-lint'), args))
   if (done.code !== 1) {
     if (done.code === 0 && done.stdout.trim()) err(done.stdout.trim())
     if (done.code !== 0) err(`경고: spec-lint 가 종료 코드 ${done.code} 로 끝나 검사하지 못했다: ${done.stderr.trim().split('\n').pop() ?? ''}`)
@@ -479,7 +479,7 @@ function parse(argv: string[]): Args | 'help' {
 }
 
 // 차례 2-1(머리 주석). 리뷰 PR head 를 받아 워크트리를 그 커밋에 두고 저장소의 생성물 준비 명령을 한 번 돌린다. 멈춰야 하면 종료 코드, 아니면 null 이다
-async function prepareReview(worktree: string, repo: string, pr: number): Promise<number | null> {
+async function prepareReview(worktree: string, repo: string, pr: number, execute: typeof runAsync): Promise<number | null> {
   const ref = `refs/orch/review/pr-${pr}`
   const fetched = git(repo, ['fetch', '-q', 'origin', `+refs/pull/${pr}/head:${ref}`], { timeoutMs: LONG_MS })
   const sha = fetched.code === 0 ? git(repo, ['rev-parse', '--verify', '-q', `${ref}^{commit}`]).stdout.trim() : ''
@@ -506,7 +506,7 @@ async function prepareReview(worktree: string, repo: string, pr: number): Promis
   const command = section<{ prepare?: unknown }>(loadConfig(repo), 'review', REVIEW_KEYS).prepare
   if (command === undefined) return null
   if (typeof command !== 'string') throw new ConfigError('설정 파일의 review.prepare 는 bash 명령 문자열이어야 한다')
-  const done = await runAsync(['bash', '-c', command], {
+  const done = await execute(['bash', '-c', command], {
     cwd: worktree,
     timeoutMs: PREPARE_MS,
     group: true,
@@ -521,11 +521,11 @@ async function prepareReview(worktree: string, repo: string, pr: number): Promis
   return null
 }
 
-export function main(argv: string[], runner?: Runner): Promise<number> {
-  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+export function main(argv: string[], runner?: Runner, asyncRunner: typeof runAsync = runAsync): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv, asyncRunner)) : executeMain(argv, asyncRunner)
 }
 
-async function executeMain(argv: string[]): Promise<number> {
+async function executeMain(argv: string[], execute: typeof runAsync): Promise<number> {
   const a = parse(argv)
   if (a === 'help') {
     out(USAGE)
@@ -591,15 +591,15 @@ async function executeMain(argv: string[]): Promise<number> {
   const poll = seconds('LAUNCH_POLL', '5')
   const wtWait = seconds('LAUNCH_WT_WAIT', '30')
   const wtPoll = seconds('LAUNCH_WT_POLL', '2')
-  const call = (args: string[], timeoutMs?: number): Promise<RunResult> => runAsync([orcaBin(), ...withFull(args)], { timeoutMs })
+  const call = (args: string[], timeoutMs?: number): Promise<RunResult> => execute([orcaBin(), ...withFull(args)], { timeoutMs })
 
-  const specLine = await runAsync(scriptCommand(process.env.SPEC_LINE || scriptPath('spec-line'), [a.spec, '--require-permission']))
+  const specLine = await execute(scriptCommand(process.env.SPEC_LINE || scriptPath('spec-line'), [a.spec, '--require-permission']))
   if (specLine.code !== 0) {
     err('거부: 첫 지시 줄을 만들지 못했다(지시서에 `허락:` 줄을 적는다)')
     return 1
   }
 
-  const gate = await lintGate(a, continuation)
+  const gate = await lintGate(a, continuation, execute)
   if (gate.stop !== null) return gate.stop
 
   const specText = readFileSync(a.spec, 'utf8')
@@ -610,7 +610,7 @@ async function executeMain(argv: string[]): Promise<number> {
     const args = ['--repo', a.repo, '--spec', a.spec, '--name', a.name]
     if (a.base) args.push('--base', a.base)
     if (a.resumeRemote) args.push('--resume-remote')
-    const made = await runAsync(scriptCommand(process.env.MAKE_WORKTREE || scriptPath('make-worktree'), args), { timeoutMs: LONG_MS })
+    const made = await execute(scriptCommand(process.env.MAKE_WORKTREE || scriptPath('make-worktree'), args), { timeoutMs: LONG_MS })
     if (made.code !== 0) {
       err(made.stderr)
       return 1
@@ -653,7 +653,7 @@ async function executeMain(argv: string[]): Promise<number> {
   if (reviewPr !== null) {
     let stopped: number | null
     try {
-      stopped = await prepareReview(worktree, repo, reviewPr)
+      stopped = await prepareReview(worktree, repo, reviewPr, execute)
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e
       err(`launch-worker: ${e.message}`)
