@@ -142,20 +142,27 @@ export function pyResolve(path: string): string {
   return resolved
 }
 
-export function isDir(path: string): boolean {
-  return statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false
+// Path.stat(). 없거나 읽을 수 없거나 링크가 순환이면(ELOOP) undefined. Python 의 is_dir, is_file, exists 가 OSError 를 False 로 삼는 것과 같다
+function statOrNone(path: string) {
+  try {
+    return statSync(path, { throwIfNoEntry: false })
+  } catch {
+    return undefined
+  }
 }
 
-export function isFile(path: string): boolean {
-  return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false
-}
+export const isDir = (path: string): boolean => statOrNone(path)?.isDirectory() ?? false
 
-export function exists(path: string): boolean {
-  return statSync(path, { throwIfNoEntry: false }) !== undefined
-}
+export const isFile = (path: string): boolean => statOrNone(path)?.isFile() ?? false
+
+export const exists = (path: string): boolean => statOrNone(path) !== undefined
 
 export function isSymlink(path: string): boolean {
-  return lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink() ?? false
+  try {
+    return lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink() ?? false
+  } catch {
+    return false
+  }
 }
 
 // os.walk(top). 디렉터리 링크는 내려가지 않는다. 읽을 수 없는 폴더는 건너뛴다.

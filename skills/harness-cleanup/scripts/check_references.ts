@@ -71,7 +71,7 @@ const TITLE = /「([^」\n]+)」/gu
 const PLACEHOLDER_TITLE = pyre(/^[.…\s]+$/u)
 const BOLD_LABEL = pyre(/^\s*(?:(?:[-*+]|\p{Nd}+\.)\s+)?\*\*([^*]+)\*\*/u)
 const MAX_EXTRA_BYTES = 2_000_000
-const SKILL_REF = /`([a-z][a-z0-9-]+)`\s*(?:skill|스킬)/gu
+const SKILL_REF = pyre(/`([a-z][a-z0-9-]+)`\s*(?:skill|스킬)/gu)
 // 같은 줄이 형제 스킬을 말하는 표기 — `플러그인:스킬` 이나 `스킬` 스킬
 const QUALIFIED_SKILL = new RegExp(`(?<!${WORD})([a-z][a-z0-9-]*):([a-z][a-z0-9-]+)`, 'gu')
 const BUNDLE_DIRS = ['assets/', 'references/', 'scripts/']

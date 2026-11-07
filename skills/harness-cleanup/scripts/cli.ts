@@ -104,7 +104,7 @@ export function parseCli(argv: string[], spec: Spec): Parsed {
         given = kind.explicit
       } else {
         const value = argv[i + 1]
-        if (value === undefined || (value !== '--' && classify(value, spec).kind !== 'positional')) throw new UsageError(`argument --${option.name}: expected one argument`)
+        if (value === undefined || value === '--' || classify(value, spec).kind !== 'positional') throw new UsageError(`argument --${option.name}: expected one argument`)
         given = value
         i++
       }
