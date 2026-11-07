@@ -279,7 +279,7 @@ REQ1, REQ2, REQ3, REQ6 을 맡는다. 운영 출력·종료·상태 계약은 �
 
 | 후속 대상 | 줄일 원인과 검토할 방법 | 유지할 실제 경계 |
 | --- | --- | --- |
-| `doc-script-refs.spec.ts` | 실제 Orca 세션·질문·루프·설치 CLI 환경에 기대어 독립 리뷰에서 실패하고 97.3초가 걸렸다. `--skip-questions`, 가짜 ORCA·PS 와 임시 저장소·고정 CLI 환경으로 문서 판정만 격리한다(P4-2). 이번 PR 에서는 기록만 한다 | 실제 doctor 의 문서 경로 검사 |
+| `doc-script-refs.spec.ts` | 실제 Orca 세션·질문·루프·설치 CLI 환경에 기대어 독립 리뷰에서 실패하고 97.3초가 걸렸다. `--skip-questions`, 가짜 ORCA·PS 와 임시 저장소·고정 CLI 환경으로 문서 판정만 격리한다(P4-2). PR7에서는 기록만 했고 PR8은 가짜 환경 대신 문서 판정 함수를 직접 호출한다 | 실제 doctor 의 문서 경로 검사 |
 | `launch-worker.spec.ts` | 테스트별 spec-line·spec-lint 기동이 남았다. 비동기 실행 경계를 주입해 판정 사례는 해당 진입 함수를 호출하도록 후속 설계한다 | spec-line·spec-lint 의 인자·출력·종료 대표 CLI, make-worktree·hook |
 | `orch-loop.spec.ts`, `wait-important.spec.ts` | 설정·인자·Run·질문 판정을 환경·출력 주입이 가능한 함수 테스트로 분리해 호출별 CLI 비용을 줄인다 | 시작·멈춤·신호·부모 감시·pid·자식 생명주기 |
 | `cleanup-sweep-merge.spec.ts`, `cleanup-sweep-repos.spec.ts` | 반복되는 선택·보존·정리 판정을 함수 테스트로 분리하고 준비 저장소 재사용을 보강한다 | 실제 git merge·worktree·브랜치 삭제와 대표 실패 |
