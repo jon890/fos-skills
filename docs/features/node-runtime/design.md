@@ -221,7 +221,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 | 6 | `korean-check` | 옛 이름 진입 둘이 여기 생긴다. 훅 모드 JSON 의 바이트 꼴(`ensure_ascii`)을 맞춘다. README 의 링크와 훅 안내를 새 이름으로 바꾼다(스펙 DECISION21) |
 | 7 | `plan` | `plan_number.sh` 는 원격 브랜치를 읽는다. 다른 문서가 가장 많이 부르는 영역이다 |
 | 8 | `harness-cleanup` | 다른 저장소의 `.py`, `.sh` 를 감사하는 판정은 그대로 둔다. 감사 대상 확장자 목록을 옮기며 바꾸지 않는다. `run_doc_snippets` 는 zsh 가 없으면 bash 만 돌도록 바꿔(옛 구현과 다른 동작, 사용자 2026-11-08) CI 의 zsh 설치를 지운다 |
-| 9 | `mac-cleanup` | 테스트 대부분이 내부 함수 테스트다. 명령 경계로 관측되는 사례부터 옮긴다. `survey_gradle.sh` 는 읽기 전용이다 |
+| 9 | `mac-cleanup` | 테스트 대부분이 내부 함수 테스트다. 명령 경계로 관측되는 사례부터 옮긴다. `survey_gradle.sh` 는 읽기 전용이다. 파일과 컨테이너 자원을 지우는 명령이 있어 테스트는 임시 홈, 임시 저장소, PATH 맨 앞의 가짜 실행 파일(docker, colima, gh, ps, lsof, du)만 쓴다. `str.format` 의 짝수 반올림, JSON 의 `24.0` 표기, `nargs="+"` 옵션, `fromisoformat`, 지역 시각을 읽는 `mktime` 은 처음부터 맞췄다. `survey_gradle` 은 버전을 읽지 못한 `dists` 폴더를 삭제 후보에서 빼(옛 구현은 `caches/` 와 `daemon/` 전체를 지우는 줄을 냈다) 이 한 곳만 옛 구현과 다르다 |
 | 10 | `tools/browser-driver` | 백엔드 넷(ego, orca, cmux, agent_browser)과 `install` 이 거는 링크. 먼저 `skills/browser/browser-driver/` 로 이름만 바꾸는 이동을 하고 옮긴다. 커밋 순서와 깨지는 곳은 「browser-driver 를 browser 스킬 안으로 옮긴다」 |
 | 11 | 마무리 | Python job 삭제, `pending` 비우기, README 와 `docs/code-architecture.md` 의 남은 `python3` 줄 정리 |
 

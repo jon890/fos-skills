@@ -47,7 +47,7 @@
 
 ## 준비
 
-- macOS 와 `python3` 가 필요하다. `gh` 에 로그인돼 있으면 squash 머지된 브랜치도 찾는다
+- macOS 와 Node 24 이상이 필요하다. `gh` 에 로그인돼 있으면 squash 머지된 브랜치도 찾는다
 - Docker 항목은 Docker(Colima 포함)가 떠 있을 때만 조사한다
 - 이 머신에서 정리하지 않을 앱이 있으면 `~/.claude/mac-cleanup-overlay.md` 에 앱과 이유를 적는다. 그 항목은 후보에 올라오지 않는다
 

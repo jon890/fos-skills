@@ -19,13 +19,13 @@
 | --- | --- | --- |
 | 실행 중인 앱의 캐시(IntelliJ, Chrome, 브라우저 앱) | 유지 | 인덱스가 깨지거나 앱이 비정상 동작한다. 앱을 닫은 뒤에만 지운다 |
 | 설치본이 없는 이전 버전 디렉터리(`JetBrains/DataGrip2025.3` 등) | 안전 | 실행 중인 앱이 쓰지 않는다 |
-| `*.ShipIt`, `*-updater` | 대기 표시가 없을 때만 안전, 있으면 유지 | 업데이트 설치 파일 캐시다. `survey_system.py` 의 「업데이트 캐시」 절이 디렉터리마다 크기와 대기 표시(`pending`, `update.zip`, `update-info.json`)를 보인다. 표시가 있으면 아직 설치하지 않은 업데이트라 지우면 그 업데이트가 사라진다(실측: `orca-updater` 에 `pending` 과 `update.zip` 268MB). 앱이 업데이트를 설치한 뒤에 지운다 |
+| `*.ShipIt`, `*-updater` | 대기 표시가 없을 때만 안전, 있으면 유지 | 업데이트 설치 파일 캐시다. `survey_system.ts` 의 「업데이트 캐시」 절이 디렉터리마다 크기와 대기 표시(`pending`, `update.zip`, `update-info.json`)를 보인다. 표시가 있으면 아직 설치하지 않은 업데이트라 지우면 그 업데이트가 사라진다(실측: `orca-updater` 에 `pending` 과 `update.zip` 268MB). 앱이 업데이트를 설치한 뒤에 지운다 |
 | `~/Library/Application Support/Claude/vm_bundles` | 확인 필요 | Claude 데스크톱 Cowork VM 이미지다. 앱 본체가 꺼져 있을 때만 지운다. `chrome-native-host` 와 `crashpad_handler` 만 떠 있으면 본체는 꺼진 것이다. 다시 쓰면 앱이 받는다 |
 | `~/.codex/.tmp/marketplaces/.staging/marketplace-upgrade-*` | 하루 지난 것은 안전 | codex 플러그인 업그레이드 임시 사본이다. `~/.codex/.tmp` 전체를 임시 파일로 보지 않는다 |
 
 ## 큰 영역 후보
 
-`survey_system.py` 가 절로 보이는 후보다. 모두 확인 필요 등급이고, 되살릴 수 있는지와 확보량을 승인 질문에 적는다.
+`survey_system.ts` 가 절로 보이는 후보다. 모두 확인 필요 등급이고, 되살릴 수 있는지와 확보량을 승인 질문에 적는다.
 `$RELEASE` 는 지울 Codex 릴리스 디렉터리, `$TOOL` 과 `$VERSION` 은 사용자가 고른 mise 도구와 버전, `$DIR` 은 지울 `~/.cache` 하위 디렉터리다.
 
 | 대상 | 등급 | 지우는 조건 | 이유 |
@@ -83,38 +83,39 @@ rm -rf "${DIR:?}"
 
 ## Docker
 
-- **Colima 에서 prune 해도 호스트 디스크는 바로 늘지 않는다.** VM 디스크 파일이 그대로라 `scripts/colima_trim.py` 로 trim 해야 반영된다.
+- **Colima 에서 prune 해도 호스트 디스크는 바로 늘지 않는다.** VM 디스크 파일이 그대로라 `scripts/colima_trim.ts` 로 trim 해야 반영된다.
   **volume 을 지운 직후 이어서 돌리면 trim 이 덜 될 수 있다.** 스크립트는 `sync` 뒤에 `fstrim -v` 를 돌리고, 호스트 디스크 파일의 점유 크기와 VM 안 사용량의 차이가 기준값(기본 4GiB)보다 크면 기다렸다 다시 돈다.
   근거(실측): 이미지와 빌드 캐시를 지운 뒤 따로 돌린 trim 은 48.5GiB 를 비워 디스크 파일이 68G 에서 40G 가 됐다. volume 을 지운 직후 돌린 trim 은 8GiB 만 비웠고, 1분 뒤 다시 돌리자 43.8GiB 를 비워 호스트 여유가 17GiB 늘었다.
   전체 시간은 `--max-seconds`(기본 100초)로 제한해 도구의 명령 시간 한도(120초) 안에 끝난다.
   종료 코드는 0 이 완료, 1 이 Colima 정지나 측정 실패, 2 가 횟수나 시간 상한까지 차이가 남은 경우다. 2 면 남은 차이를 사용자에게 보고한다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/colima_trim.py"
+node "$SKILL_DIR/scripts/colima_trim.ts"
 ```
-- **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** `scripts/docker_volumes.py` 가 dangling 인 것을 골라 생성 시각과 크기를 붙이고, 후보 합계를 낸다.
+- **익명 volume(이름이 64자리 hex)은 대개 컨테이너를 지울 때 남은 테스트 DB 데이터다.** `scripts/docker_volumes.ts` 가 dangling 인 것을 골라 생성 시각과 크기를 붙이고, 후보 합계를 낸다.
   **`docker volume prune` 을 쓰지 않는다.** 정리 도중 다른 세션이 시작한 테스트의 volume 까지 지울 수 있다(실측: 정리 중 `testcontainers/ryuk` 컨테이너가 떴다).
   기본 등급은 확인 필요다. `--peek all` 로 후보의 최상위 항목을 열어 내용 종류를 붙이고 등급을 정한다. `postgres`(`PG_VERSION`)와 `mysql`(`ibdata1`, `#innodb_redo`, `mysql`, `auto.cnf`) 같은 테스트 DB 데이터는 안전에 가깝다.
   `other` 는 에이전트 홈(`SOUL.md`, `auth.json`)이나 SQLite 파일(`gersang.db`)일 수 있어 테스트 DB 와 따로 묻는다. 실측: 후보 101개 중 Postgres 77개, MySQL 2개, `other` 22개였다.
-  조사 때 열어 본 volume 만 `delete_volumes.py` 로 지운다. 이름마다 `docker volume rm` 을 따로 부르고, 열지 않은 volume 과 최근 volume 은 건드리지 않는다. 기본 `--kind` 는 `postgres`, `mysql` 이고 `other` 는 승인 뒤 `--kind other` 로만 지운다.
+  조사 때 열어 본 volume 만 `delete_volumes.ts` 로 지운다. 이름마다 `docker volume rm` 을 따로 부르고, 열지 않은 volume 과 최근 volume 은 건드리지 않는다. 기본 `--kind` 는 `postgres`, `mysql` 이고 `other` 는 승인 뒤 `--kind other` 로만 지운다.
   스크립트는 기준 시간(기본 24시간) 안에 생긴 volume 을 후보에서 빼 "최근" 으로 따로 보이고, ryuk 가 떠 있으면 경고한다. 경고가 나면 다른 세션이 테스트 중이니 지우기 전에 사용자에게 알린다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/docker_volumes.py" --peek all --json-out "$VOLUMES"
-python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES"                    # dry-run
-python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES" --apply            # 테스트 DB
-python3 "$SKILL_DIR/scripts/delete_volumes.py" "$VOLUMES" --apply --kind other   # 따로 승인받은 other
+node "$SKILL_DIR/scripts/docker_volumes.ts" --peek all --json-out "$VOLUMES"
+node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES"                    # dry-run
+node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply            # 테스트 DB
+node "$SKILL_DIR/scripts/delete_volumes.ts" "$VOLUMES" --apply --kind other   # 따로 승인받은 other
 ```
-- 이미지는 `scripts/docker_images.py` 가 사용 중, 미사용, 최근 생성으로 나눈다.
+- 이미지는 `scripts/docker_images.ts` 가 사용 중, 미사용, 최근 생성으로 나눈다.
 - 이미지는 각 줄 끝의 `rmi=` 값으로 지운다. 태그가 있으면 `repo:tag`, 저장소나 태그가 `<none>` 이면 이미지 ID 다. `traefik:<none>` 을 넘기면 `invalid reference format` 으로 실패한다. 태그가 여럿인 이미지를 ID 로 지우면 `-f` 없이는 거절되므로, 태그가 있는 줄은 `repo:tag` 로 지운다. 다만 `repo:tag` 로 조회되지 않는 이미지도 이미지 ID 다. 이름이 `repo:tag@digest` 로 저장된 이미지는 `docker images` 가 태그를 보여 줘도 `docker rmi repo:tag` 가 `No such image` 로 실패한다. 실측 사례는 `ghcr.io/actions/actions-runner:2.338.0` 이다. 이 줄은 `rmi=4ffadc0002b2` 로 지워졌다.
 - 오래됐거나 같은 이미지의 이전 버전, `<none>` 태그는 안전에 가깝다. 최근 하루 안에 만든 로컬 테스트 이미지는 확인 필요다.
-- 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다(실측: `docker system df` 와 `docker_images.py` 의 미사용 합계는 5.1GB, `docker image prune -af` 의 확보량은 1.14GB). 호스트 디스크의 실제 확보는 `colima_trim.py` 뒤에 잰다.
+- 승인 질문에 이미지 확보량을 적을 때는 "최대" 로 적고 약속하지 않는다. 지우는 이미지가 남는 이미지와 레이어를 공유하면 실제 확보량이 훨씬 작다(실측: `docker system df` 와 `docker_images.ts` 의 미사용 합계는 5.1GB, `docker image prune -af` 의 확보량은 1.14GB). 호스트 디스크의 실제 확보는 `colima_trim.ts` 뒤에 잰다.
 - 확인용으로 받은 이미지(`alpine` 등)는 끝나고 지운다.
 
 ## Gradle
 
-`survey_gradle.sh` 가 "삭제 후보" 로 낸 버전만 `~/.gradle/wrapper/dists`, `~/.gradle/caches`, `~/.gradle/daemon` 에서 지운다. 안전 등급이다.
+`survey_gradle.ts` 가 "삭제 후보" 로 낸 버전만 `~/.gradle/wrapper/dists`, `~/.gradle/caches`, `~/.gradle/daemon` 에서 지운다. 안전 등급이다.
 사용처도 데몬도 없는 버전이므로 지워도 wrapper 가 필요할 때 다시 받는다.
+버전 이름을 읽지 못한 `dists` 폴더는 후보에 올리지 않는다.
 스크립트가 후보 경로를 한 줄에 하나씩 보이고 끝에 「승인 뒤 돌릴 명령」 으로 `rm -rf` 한 줄을 낸다. 사용자가 승인한 뒤 그 줄을 그대로 돌린다.
 glob 반복문(`for d in ~/.gradle/wrapper/dists/gradle-9.8.0-*; do rm -rf "${d:?}"; done`)으로 지우지 않는다.
 2026-11-04 실측: auto mode 분류기가 glob 반복문과 npm, brew, pnpm, mise 정리를 한 명령에 묶은 것을 되돌릴 수 없는 로컬 삭제로 막았다. 원인이 반복문인지 묶음인지는 확인하지 않았다. 경로를 하나씩 적은 `rm -rf` 는 통과했다.
@@ -141,7 +142,7 @@ find "$PROJECT" -type d \( -name node_modules -o -name build -o -name .gradle -o
 
 ## 대화 기록 명령
 
-`$LOG_DIR` 은 `survey_sessions.py` 가 보인 디렉터리이고, `$DAYS` 는 사용자가 정한 기준 일수다.
+`$LOG_DIR` 은 `survey_sessions.ts` 가 보인 디렉터리이고, `$DAYS` 는 사용자가 정한 기준 일수다.
 지우기 전에 같은 `find` 를 `-delete` 없이 돌려 개수를 사용자에게 보인다.
 
 ```bash
@@ -152,21 +153,21 @@ find "$LOG_DIR" -type d -empty -delete
 
 ## 워크트리가 사라진 대화 기록 명령
 
-`survey_sessions.py` 의 「워크트리가 사라진 대화 기록」 절이 3일, 7일, 14일, 30일 넘은 묶음마다 개수와 크기를 보인다. 기준 일수는 사용자가 정한다.
+`survey_sessions.ts` 의 「워크트리가 사라진 대화 기록」 절이 3일, 7일, 14일, 30일 넘은 묶음마다 개수와 크기를 보인다. 기준 일수는 사용자가 정한다.
 승인 질문에 묶음별 개수와 크기를 그대로 보이고, `harness-cleanup` 감사 자료가 준다는 점을 적는다.
 실측(2026-11-04): `~/.claude/projects` 18.4GB 의 폴더 1532개 가운데 1500개(13.5GB)가 `cwd` 가 없는 기록이었다. 30일 기준 대화 기록 절은 350.8MB 만 잡았다. orch worker 워크트리가 머지 뒤 지워지면서 남은 기록이다. 마지막 수정이 3일 넘은 것 1279개 12.4GB, 7일 넘은 것 1003개 10.7GB, 14일 넘은 것 731개 7.5GB 였다.
-`delete_sessions.py` 는 지우기 직전에 경로가 기록 폴더 바로 아래인지, `cwd` 가 여전히 없는지, 가장 늦은 수정 시각이 조사 때와 같은지 다시 확인하고 하나라도 다르면 남긴다.
+`delete_sessions.ts` 는 지우기 직전에 경로가 기록 폴더 바로 아래인지, `cwd` 가 여전히 없는지, 가장 늦은 수정 시각이 조사 때와 같은지 다시 확인하고 하나라도 다르면 남긴다.
 기본은 dry-run 이고 `--apply` 일 때만 지운다. 실패가 있으면 종료 코드가 1 이다. `cwd` 를 읽지 못한 폴더는 후보에 넣지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/survey_sessions.py" --json-out "$ORPHANS"
-python3 "$SKILL_DIR/scripts/delete_sessions.py" "$ORPHANS" --older-than-days "$DAYS"           # dry-run
-python3 "$SKILL_DIR/scripts/delete_sessions.py" "$ORPHANS" --older-than-days "$DAYS" --apply
+node "$SKILL_DIR/scripts/survey_sessions.ts" --json-out "$ORPHANS"
+node "$SKILL_DIR/scripts/delete_sessions.ts" "$ORPHANS" --older-than-days "$DAYS"           # dry-run
+node "$SKILL_DIR/scripts/delete_sessions.ts" "$ORPHANS" --older-than-days "$DAYS" --apply
 ```
 
 ## 반복 helper 명령
 
-`$PATTERN` 은 `survey_sessions.py` 가 보인 명령줄의 일부다. 종료 뒤 남은 개수가 0 인지 확인한다.
+`$PATTERN` 은 `survey_sessions.ts` 가 보인 명령줄의 일부다. 종료 뒤 남은 개수가 0 인지 확인한다.
 
 ```bash
 pkill -f "$PATTERN"
