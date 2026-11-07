@@ -36,7 +36,7 @@ node scripts/run-tests.ts skills/orch/tests/launch-worker.spec.ts skills/orch/te
 | --- | --- |
 | `skills/orch/tests/fixtures/launch-worker-run.ts` | 수정 |
 | `skills/orch/tests/launch-worker-functions.spec.ts` | 수정 |
-| `skills/orch/changes/top-files-functions.patch.md` | 신규 |
+| `skills/orch/changes/top-files-functions.patch.md` | 수정 |
 | `skills/orch/tests/wait-important.spec.ts` | 수정 |
 | `skills/orch/tests/fixtures/wait-important-run.ts` | 신규 |
 
