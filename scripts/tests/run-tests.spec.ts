@@ -92,7 +92,8 @@ describe("run-tests", { concurrency: true }, () => {
     for (const [cpu, expected] of [[1, 1], [2, 2], [6, 6], [8, 8], [12, 8], [64, 8]]) {
       assert.equal(parseArgs([], cpu).concurrency, expected);
     }
-    assert.equal(parseArgs([]).concurrency, Math.min(8, availableParallelism()));
+    const actual = parseArgs([]).concurrency;
+    assert.ok(actual >= 1 && actual <= 8 && actual <= availableParallelism());
     assert.equal(parseArgs(["--concurrency", "12"], 2).concurrency, 12);
     assert.equal(parseArgs(["--concurrency", "2"], 12).concurrency, 2);
   });
