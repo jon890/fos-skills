@@ -351,7 +351,7 @@ REQ1·REQ3·REQ4와 스펙 DECISION4·DECISION16을 따른다. PR8 뒤 기준 �
 | 가짜 orca의 비동기 worker-start·worker-show 판정 | 기존 FAKE_STATE·FAKE_LOG 본문을 stateful-run으로 평가한다 | 지연·프로세스 생명주기와 명령 옵션의 실제 실행, CLI 대응표 |
 | wait-important의 worker·완료·이력 판정 | wait-important.spec.ts의 기존 replies·workers·tasks·history·lost-state와 단언을 유지한다 | check --wait·신호·시간 제한·hook·지워진 cwd와 CLI 대응표 |
 
-출력·종료·상태 계약, 도메인 규칙, 배포 순서는 바뀌지 않는다. 새 저장소나 캐시도 없다. 기존 testkit 의존 방향과 ADR-010의 외부 의존성 없는 구조를 유지하므로 ADR은 추가하지 않는다.
+출력·종료·상태 계약, 도메인 규칙, 배포 순서는 바뀌지 않는다. 새 저장소나 캐시도 없다. 기존 testkit 의존 방향과 [ADR-010](../../adr/010-orch-typescript.md)의 외부 의존성 없는 구조를 유지하므로 ADR은 추가하지 않는다.
 
 ### 검증과 인계
 
