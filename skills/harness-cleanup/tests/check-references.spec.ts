@@ -95,6 +95,16 @@ describe('스킬 참조', () => {
     ok(c.check())
   })
 
+  test('스킬 표기 사이의 공백은 Python 이 공백으로 보는 글자만이다', () => {
+    const c = new Case()
+    c.claude('`aaa-bb`\x1f스킬\n')
+    broken(c.check())
+    c.claude('`aaa-bb`\ufeff스킬\n')
+    ok(c.check())
+    c.claude('`aaa-bb`\u3000스킬\n')
+    broken(c.check())
+  })
+
   test('알 수 없는 이름은 플러그인이 있어도 보고한다', () => {
     const c = new Case()
     c.repoSkill('plugins/nhn-dev/skills/dooray-cli')

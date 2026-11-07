@@ -2,7 +2,7 @@
 // 실제 대화 기록은 쓰지 않고 임시 jsonl 표본을 쓴다. session_log 의 읽기, 가리기, 세션 id 처리도 이 출력으로 본다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, utimesSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { tempDir } from '../../../modules/testkit/temp.ts'
@@ -408,6 +408,18 @@ describe('render_session', () => {
       assert.equal(done.code, 2, args.join(' '))
       assert.ok(done.stderr.endsWith('인자 오류. 사용법은 이 파일의 docstring 에 있다\n'), done.stderr)
     }
+  })
+
+  test('값 옵션 뒤의 -- 는 값이 아니라 값 누락이다', () => {
+    const c = new Case()
+    c.session(SID, [user('x', '2026-10-05T00:00:00Z')])
+    for (const args of [[SID, '--out', '--', '--projects', c.projects], [SID, '--out', join(c.out, 's.txt'), '--projects', '--'], ['--out', '--', SID]]) {
+      const done = render(c, ...args)
+      assert.equal(done.code, 2, args.join(' '))
+      assert.ok(done.stderr.endsWith('인자 오류. 사용법은 이 파일의 docstring 에 있다\n'), done.stderr)
+    }
+    assert.ok(!existsSync(join(c.base, '--')))
+    assert.equal(c.extract('--since', '--').code, 2)
   })
 
   test('옵션은 접두로 줄여 쓸 수 있다', () => {

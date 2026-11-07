@@ -65,6 +65,20 @@ describe('대상 선택', () => {
     assert.deepEqual(names(done.stdout), ['real/AGENTS.md'])
   })
 
+  test('순환 심볼릭 링크는 파일로 보고 순회를 계속한다', () => {
+    const r = new Repo()
+    r.file('CLAUDE.md', 'x\n')
+    r.link('loop', 'loop')
+    r.link('sub/a', 'b')
+    r.link('sub/b', 'a')
+    r.link('skills/loop', 'loop')
+    r.file('skills/ok/SKILL.md', 'x\n')
+    const done = r.run('collect_targets', [r.root])
+    assert.equal(done.code, 0, done.stderr)
+    assert.deepEqual(names(done.stdout), ['CLAUDE.md', 'skills/ok/SKILL.md'])
+    assert.equal(r.run('collect_targets', [r.root, '--scope', 'sub']).code, 2)
+  })
+
   test('저장소 밖을 가리키는 링크는 대상 아님으로 낸다', () => {
     const r = new Repo()
     const outside = tempDir('hc-out-')
