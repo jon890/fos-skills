@@ -158,7 +158,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 
 - 영역을 옮기거나 폴더 자리를 바꿔도(PR10 의 `skills/browser/browser-driver/tests` 포함) 테스트 묶음 때문에 CI 나 실행기를 고치지 않는다. 테스트 묶음의 원본은 실행기 머리 주석이다.
 - 타입 검사의 `tsconfig.json` 은 실행 코드를 본다. 영역 PR 이 처음 `.ts` 를 들일 때 `include` 에 `<단위>/scripts/**/*.ts` 와 진입 `.ts`(`githooks/*.ts`)를 더한다. 테스트 폴더는 지금처럼 넣지 않는다. `extensions/work-board/tests/*.test.ts` 가 `claude-code/testing` 을 import 해 검사가 깨진다.
-- PR11 이 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22). 머지 조건의 job 이름은 `Tests` 다. `jq` 설치도 함께 없어진다. `zsh` 는 `harness-cleanup` 의 문서 코드 블록 실행(`run_doc_snippets`, bash 와 zsh 양쪽에서 돈다)이 쓴다. PR8 이 그 테스트를 옮길 때 `zsh` 설치가 계속 필요한지 본다.
+- PR11 이 테스트 실행기의 Python 부분을 지운다(스펙 DECISION22). 머지 조건의 job 이름은 `Tests` 다. `jq` 설치도 함께 없어진다. `zsh` 설치는 PR8 이 지웠다. `harness-cleanup` 의 문서 코드 블록 실행(`run_doc_snippets`)은 zsh 가 있으면 bash 와 zsh 양쪽에서 돌고, 없으면 「zsh 없음, bash 만」 을 알리고 bash 만 돈다(사용자 2026-11-08). 테스트는 zsh 없이 통과한다.
 - `plugin-version.yml` 은 PR2 가 고친다. `python3` 두 줄을 `node` 로 바꾸고(스펙 DECISION16), `actions/setup-node` 의 `node-version: '24'` 단계를 더한다. 지금은 setup-node 가 없어 runner 기본 node 로 돈다. 이 workflow 는 main push 에서만 돌아 PR CI 로 미리 잡히지 않는다.
 
 ### 팀 저장소
@@ -220,7 +220,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 | 5 | `content-preview` | `show-preview.ts` 는 browser-driver 를 부른다. 드라이버는 아직 Python 이라 옛 꼴로 부른다 |
 | 6 | `korean-check` | 옛 이름 진입 둘이 여기 생긴다. 훅 모드 JSON 의 바이트 꼴(`ensure_ascii`)을 맞춘다. README 의 링크와 훅 안내를 새 이름으로 바꾼다(스펙 DECISION21) |
 | 7 | `plan` | `plan_number.sh` 는 원격 브랜치를 읽는다. 다른 문서가 가장 많이 부르는 영역이다 |
-| 8 | `harness-cleanup` | 다른 저장소의 `.py`, `.sh` 를 감사하는 판정은 그대로 둔다. 감사 대상 확장자 목록을 옮기며 바꾸지 않는다. `run_doc_snippets` 가 zsh 를 쓰므로 `Plugin tests` job 에 zsh 설치를 옮긴다 |
+| 8 | `harness-cleanup` | 다른 저장소의 `.py`, `.sh` 를 감사하는 판정은 그대로 둔다. 감사 대상 확장자 목록을 옮기며 바꾸지 않는다. `run_doc_snippets` 는 zsh 가 없으면 bash 만 돌도록 바꿔(옛 구현과 다른 동작, 사용자 2026-11-08) CI 의 zsh 설치를 지운다 |
 | 9 | `mac-cleanup` | 테스트 대부분이 내부 함수 테스트다. 명령 경계로 관측되는 사례부터 옮긴다. `survey_gradle.sh` 는 읽기 전용이다 |
 | 10 | `tools/browser-driver` | 백엔드 넷(ego, orca, cmux, agent_browser)과 `install` 이 거는 링크. 먼저 `skills/browser/browser-driver/` 로 이름만 바꾸는 이동을 하고 옮긴다. 커밋 순서와 깨지는 곳은 「browser-driver 를 browser 스킬 안으로 옮긴다」 |
 | 11 | 마무리 | Python job 삭제, `pending` 비우기, README 와 `docs/code-architecture.md` 의 남은 `python3` 줄 정리 |

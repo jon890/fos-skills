@@ -20,10 +20,10 @@
 
 ```bash
 # cwd: 아무 곳. $SKILL 은 감사할 스킬, $SINCE 는 YYYY-MM-DD, $SCRATCH 는 세션 임시 폴더다
-python3 "$SKILL_DIR/scripts/extract_skill_usage.py" --skill "$SKILL" --since "$SINCE" --out "$SCRATCH/usage" --samples 20
+node "$SKILL_DIR/scripts/extract_skill_usage.ts" --skill "$SKILL" --since "$SINCE" --out "$SCRATCH/usage" --samples 20
 ```
 
-`--skill` 은 여러 번 줄 수 있다. 인자, 출력 열, 종료 코드는 그 파일의 docstring 이 소유한다.
+`--skill` 은 여러 번 줄 수 있다. 인자, 출력 열, 종료 코드는 그 파일의 머리 주석이 소유한다.
 
 - **`rg` 나 `grep -r` 로 대화 기록을 세지 않는다.** `~/.claude` 는 숨은 폴더라 `rg` 기본값이 건너뛰어 0건이 나온다.
 - **`api-request-blob` 같은 레코드를 함께 세지 않는다.** 메시지를 다시 담아 호출 수가 부풀려진다. 스크립트는 `user`, `assistant` 레코드만 센다.
@@ -42,7 +42,7 @@ python3 "$SKILL_DIR/scripts/extract_skill_usage.py" --skill "$SKILL" --since "$S
 
 ```bash
 # $SID 는 --samples 의 session 열, $TS 는 timestamp 열이다
-python3 "$SKILL_DIR/scripts/render_session.py" "$SID" --from "$TS" --out "$SCRATCH/sessions/$SID.txt"
+node "$SKILL_DIR/scripts/render_session.ts" "$SID" --from "$TS" --out "$SCRATCH/sessions/$SID.txt"
 ```
 
 발췌 파일을 읽고 마찰의 원인을 한 줄로 적는다. 원인은 지침의 문장, 스크립트, 사용자 정정 중 무엇인지 구분한다.

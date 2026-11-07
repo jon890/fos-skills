@@ -100,7 +100,7 @@
 | `export-only-skills/content-preview/scripts/style-check.ts` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
 | `export-only-skills/content-preview/scripts/show-preview.ts` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `tools/` 에서 찾는다 |
 | `skills/browser/SKILL.md` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, `$SKILL_DIR/../tools/browser-driver/`, `~/.claude/scripts/browser-driver`, PATH 의 `browser-driver` 순이다. 캐시에서는 형제인 루트의 `tools/` 에서 찾는다 |
-| `skills/harness-cleanup/scripts/check_references.py` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
+| `skills/harness-cleanup/scripts/check_references.ts` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
 
 루트 `bin/` 에는 orch 실행기 `orch` 하나만 둔다. 설치 기록에서 번들을 골라 `skills/orch/bin/orch.ts` 에 넘기기만 한다. 번들 고르기의 원본은 `skills/orch/scripts/lib/install-record.ts` 이고, 실행기 머리 주석이 그 사본임을 적는다. `browser-driver` 명령은 팀 저장소의 플러그인이 PATH 에 싣는다. 근거는 [ADR-004](adr/004-no-plugin-bin.md) 가 소유한다.
 
