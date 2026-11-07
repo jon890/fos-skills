@@ -5,15 +5,15 @@
 
 ```bash
 # cwd: 블록이 전제하는 디렉터리. $DOC 는 감사 대상 문서다
-python3 "$SKILL_DIR/scripts/run_doc_snippets.py" "$DOC"
-python3 "$SKILL_DIR/scripts/run_doc_snippets.py" "$DOC" "$MARKER"
+node "$SKILL_DIR/scripts/run_doc_snippets.ts" "$DOC"
+node "$SKILL_DIR/scripts/run_doc_snippets.ts" "$DOC" "$MARKER"
 ```
 
 머리말을 생략하면 그 파일의 블록을 전부 돌고, `$MARKER` 를 주면 그 뒤 첫 블록 하나만 돈다.
 
 ## 출력으로 판정한다
 
-**종료 코드가 아니라 출력으로 판정한다.** 종료 코드의 뜻은 스크립트 docstring 이 소유한다.
+**종료 코드가 아니라 출력으로 판정한다.** 종료 코드의 뜻은 스크립트 머리 주석이 소유한다.
 
 검출 명령은 실제 입력과 대조 표본으로 검사한다.
 탐지 대상을 심어 잡히는지 보고, 빼면 0건이 되는지 본다. 한쪽만 보면 죽은 검출을 통과로 읽는다.
@@ -34,8 +34,8 @@ python3 "$SKILL_DIR/scripts/run_doc_snippets.py" "$DOC" "$MARKER"
 
 ```bash
 # cwd: 블록이 전제하는 디렉터리
-python3 "$SKILL_DIR/scripts/run_doc_snippets.py" "$DOC" --list
-python3 "$SKILL_DIR/scripts/run_doc_snippets.py" "$DOC" --block "$N"
+node "$SKILL_DIR/scripts/run_doc_snippets.ts" "$DOC" --list
+node "$SKILL_DIR/scripts/run_doc_snippets.ts" "$DOC" --block "$N"
 ```
 
 위험 표시는 정규식 목록이라 놓치는 명령이 있다. 표시가 없어도 블록을 읽는다.
@@ -55,7 +55,7 @@ python3 "$SKILL_DIR/scripts/run_doc_snippets.py" "$DOC" --block "$N"
 
 | 블록 | 처리 |
 | --- | --- |
-| 문서가 단독 실행을 요구하는 것(예: 다른 검사와 같은 DB, 포트, 캐시를 쓰는 `pnpm verify`) | `run_checks.py` 와 다른 블록이 모두 끝난 뒤 혼자 돌린다. 겹치면 서로 깨뜨려 실패가 검사 결과로 오인된다 |
+| 문서가 단독 실행을 요구하는 것(예: 다른 검사와 같은 DB, 포트, 캐시를 쓰는 `pnpm verify`) | `run_checks.ts` 와 다른 블록이 모두 끝난 뒤 혼자 돌린다. 겹치면 서로 깨뜨려 실패가 검사 결과로 오인된다 |
 | 몇 분 넘게 걸리는 것(전체 빌드, 전체 테스트) | `run_in_background` 로 돌리고 끝나면 이어 간다. 6단계 재검증에서 한 번 더 돌리는 블록이면 2단계에서는 읽어서 판정해도 된다 |
 | 외부 상태를 바꾸는 것(배포, 푸시, 설정 변경) | 돌리지 않는다. 읽어서 판정하고 이유에 「외부 상태 변경」 이라 적는다 |
 | 위 어느 것도 아닌 것 | 돌린다 |

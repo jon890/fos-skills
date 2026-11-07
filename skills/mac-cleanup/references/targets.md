@@ -134,7 +134,7 @@ find "$PROJECT" -type d \( -name node_modules -o -name build -o -name .gradle -o
 | 대상 | 등급 | 이유 |
 | --- | --- | --- |
 | `~/.claude/projects`, `~/.codex/sessions`, `orca/codex-accounts/*/home/sessions` | 확인 필요 | 지우면 resume 할 수 없다. 기본 기준은 30일이다. 명령은 아래 「대화 기록 명령」 |
-| 워크트리가 사라진 Claude 기록 폴더(`~/.claude/projects` 하위) | 확인 필요 | 안의 `cwd` 경로가 이미 없는 폴더다. 명령은 아래 「워크트리가 사라진 대화 기록 명령」. `harness-cleanup` 의 사용 기록 감사(`session_log.py`)가 이 기록을 입력으로 읽으므로 지우면 감사 자료가 준다 |
+| 워크트리가 사라진 Claude 기록 폴더(`~/.claude/projects` 하위) | 확인 필요 | 안의 `cwd` 경로가 이미 없는 폴더다. 명령은 아래 「워크트리가 사라진 대화 기록 명령」. `harness-cleanup` 의 사용 기록 감사(`session_log.ts`)가 이 기록을 입력으로 읽으므로 지우면 감사 자료가 준다 |
 | `orca/codex-accounts/*` 디렉터리 자체 | 유지 | 로그인 정보가 들어 있어 지우지 않는다. 그 안의 `home/sessions` 만 정리 대상이다 |
 | `.orca-worktree-trash` | 유지 | Orca 가 관리한다 |
 | 반복 helper 프로세스 | 확인 필요 | 절차는 `git-and-sessions.md`. 명령은 아래 「반복 helper 명령」 |

@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install shell test dependencies
-        run: sudo apt-get update && sudo apt-get install --yes jq zsh
+        run: sudo apt-get update && sudo apt-get install --yes jq
       - name: Install Claude Code CLI
         run: npm install --global @anthropic-ai/claude-code@2.1.309
       - name: Run plugin tests from repository root

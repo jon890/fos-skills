@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["skills/orch/scripts/**/*.ts", "skills/orch/bin/**/*.ts", "skills/orch/hooks/**/*.ts", "extensions/work-board/**/*.ts", "skills/inbox/scripts/**/*.ts", "skills/plan/scripts/**/*.ts", "skills/pr-review/scripts/**/*.ts", "skills/review-fix/scripts/**/*.ts", "skills/implementation/scripts/**/*.ts", "skills/docs-audit/scripts/**/*.ts", "skills/report/scripts/**/*.ts", "skills/presentation/scripts/**/*.ts", "export-only-skills/content-preview/scripts/**/*.ts", "export-only-skills/korean-check/scripts/**/*.ts", "scripts/**/*.ts", "modules/**/*.ts", "githooks/*.ts"],
+  "include": ["skills/orch/scripts/**/*.ts", "skills/orch/bin/**/*.ts", "skills/orch/hooks/**/*.ts", "extensions/work-board/**/*.ts", "skills/inbox/scripts/**/*.ts", "skills/plan/scripts/**/*.ts", "skills/harness-cleanup/scripts/**/*.ts", "skills/pr-review/scripts/**/*.ts", "skills/review-fix/scripts/**/*.ts", "skills/implementation/scripts/**/*.ts", "skills/docs-audit/scripts/**/*.ts", "skills/report/scripts/**/*.ts", "skills/presentation/scripts/**/*.ts", "export-only-skills/content-preview/scripts/**/*.ts", "export-only-skills/korean-check/scripts/**/*.ts", "scripts/**/*.ts", "modules/**/*.ts", "githooks/*.ts"],
   "exclude": ["extensions/work-board/tests"]
 }

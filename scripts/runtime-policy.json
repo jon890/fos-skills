@@ -2,7 +2,6 @@
   "pending": [
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/orch-doctor.py" },
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/ts_shim.py" },
-    { "area": "harness-cleanup", "prefix": "skills/harness-cleanup/" },
     { "area": "mac-cleanup", "prefix": "skills/mac-cleanup/" },
     { "area": "browser-driver", "prefix": "tools/browser-driver/" }
   ],
@@ -17,7 +16,7 @@
     "skills/orch/scripts/lib/guard/gh",
     "skills/orch/scripts/lib/guard/orca"
   ],
-  "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/", "skills/report/", "skills/presentation/", "skills/browser/", "skills/plan/", "skills/spec/", "skills/technical-design/", "skills/implementation/", "skills/docs-audit/", "skills/docs-consolidate/", "skills/review-fix/", "export-only-skills/content-preview/", "export-only-skills/korean-check/"],
+  "migrated_docs": ["githooks/", "scripts/", "skills/pr-review/", "skills/report/", "skills/presentation/", "skills/browser/", "skills/plan/", "skills/harness-cleanup/", "skills/spec/", "skills/technical-design/", "skills/implementation/", "skills/docs-audit/", "skills/docs-consolidate/", "skills/review-fix/", "export-only-skills/content-preview/", "export-only-skills/korean-check/"],
   "kit_sources": ["modules/kit/"],
   "min_node": [24, 0]
 }

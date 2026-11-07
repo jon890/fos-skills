@@ -7,7 +7,7 @@ description: |
   일반 hook 설정 추가, 제품 문서 수정과 보통 코드 수정은 대상이 아니다.
   일반 제품 문서가 코드와 맞는지는 `docs-audit` 가 맡는다.
 metadata:
-  version: "3.24.1"
+  version: "4.0.0"
 ---
 
 # harness-cleanup
@@ -24,8 +24,8 @@ metadata:
 
 | 단계 | 이름 | 통과 조건 | reference |
 | --- | --- | --- | --- |
-| 1 | 기준과 범위 | 확인한 모델·런타임 기록(없으면 검증 공백 표기)과 `collect_targets.py` 의 대상 목록이 있다 | `scripts/target_files.py` |
-| 2 | 실측 | `run_checks.py` 의 표에 실행 실패가 없고, 대상 파일 수가 1 이상이고, `--list` 결과와 돌린 블록과 읽어서 판정한 블록을 이유와 함께 적었다 | `scripts/`, `references/run-doc-snippets.md` |
+| 1 | 기준과 범위 | 확인한 모델·런타임 기록(없으면 검증 공백 표기)과 `collect_targets.ts` 의 대상 목록이 있다 | `scripts/target_files.ts` |
+| 2 | 실측 | `run_checks.ts` 의 표에 실행 실패가 없고, 대상 파일 수가 1 이상이고, `--list` 결과와 돌린 블록과 읽어서 판정한 블록을 이유와 함께 적었다 | `scripts/`, `references/run-doc-snippets.md` |
 | 3 | 의미 감사 | 문장과 절마다 판정과 근거 등급이 붙었다 | `references/audit-axes.md`, `references/judgment.md` |
 | 4 | 판정표와 승인 | 판정표를 냈고 사용자가 고칠 항목을 정했다 | |
 | 5 | 교정 | 승인 항목만 고쳤다 | |
@@ -50,8 +50,8 @@ metadata:
 세션 모델이 지침을 쓸 때와 다르거나 사용자가 새 모델을 언급했으면
 3단계에서 `references/audit-axes.md` 의 「모델 교체」 축을 읽는다.
 
-감사 대상은 `scripts/collect_targets.py` 가 내는 목록과 실행 중 소비되는 회피 패턴이다.
-어떤 파일이 대상인지는 `scripts/target_files.py` 가 소유한다.
+감사 대상은 `scripts/collect_targets.ts` 가 내는 목록과 실행 중 소비되는 회피 패턴이다.
+어떤 파일이 대상인지는 `scripts/target_files.ts` 가 소유한다.
 
 **사용자가 스킬 하나나 디렉터리 하나만 감사해 달라고 하면 `--scope` 로 대상 범위를 정한다.**
 범위를 지정하지 않으면 다른 스킬의 오버레이까지 대상에 들어와, 검사 결과에서 대상이 아닌 자리를 직접 골라내야 한다.
@@ -61,14 +61,14 @@ metadata:
 
 ```bash
 # cwd: 아무 곳
-python3 "$SKILL_DIR/scripts/collect_targets.py" "$ROOT" --scope "$SCOPE"
+node "$SKILL_DIR/scripts/collect_targets.ts" "$ROOT" --scope "$SCOPE"
 ```
 
 범위는 저장소 루트 밑의 디렉터리나 파일 경로다.
 대상 판정은 언제나 저장소 루트 기준이므로, `--scope` 를 지정해도 같은 파일이 같은 판정을 받는다.
 **범위를 정했으면 2단계와 6단계에서 같은 값을 쓴다.** 범위가 달라지면 재검증이 다른 것을 본다.
 
-**`collect_targets.py` 가 stderr 로 내는 「경고: git 이 추적하지 않는 스킬 폴더」 를 읽는다.**
+**`collect_targets.ts` 가 stderr 로 내는 「경고: git 이 추적하지 않는 스킬 폴더」 를 읽는다.**
 `__pycache__` 와 `.omc` 만 남은 옛 스킬 폴더가 스킬 루트에 있으면 그 저장소의 `validate.sh` 와 테스트가 로컬에서만 실패한다.
 경고는 종료 코드를 바꾸지 않고 파일도 지우지 않는다.
 경고가 났으면 이후 검증 실패의 원인 후보로 적어 두고, 지울지는 사용자에게 묻는다.
@@ -80,7 +80,7 @@ python3 "$SKILL_DIR/scripts/collect_targets.py" "$ROOT" --scope "$SCOPE"
 
 ```bash
 # cwd: 아무 곳. $BASE 는 check_rename_drift 의 기준 커밋이다
-python3 "$SKILL_DIR/scripts/run_checks.py" "$ROOT" --base "$BASE"
+node "$SKILL_DIR/scripts/run_checks.ts" "$ROOT" --base "$BASE"
 ```
 
 1단계에서 범위를 정했으면 `--scope "$SCOPE"` 를 붙인다.
@@ -89,19 +89,19 @@ python3 "$SKILL_DIR/scripts/run_checks.py" "$ROOT" --base "$BASE"
 검사를 파이프로 자르거나 `echo $?` 로 읽지 않는다. 종료 코드가 뒤 명령의 것으로 바뀌어 통과로 잘못 읽는다.
 표의 판정이 `실행 실패` 이면 통과가 아니다. 이어 붙은 검사별 출력을 읽고 `발견` 과 `출력 판정` 을 처리한다.
 
-**종료 코드의 뜻은 스크립트마다 다르다.** 각 파일 머리 docstring 의 「종료 코드」 가 소유한다.
-`check_facts.py` 처럼 1 을 내지 않고 출력으로 판정해야 하는 스크립트가 있어, 표가 `출력 판정` 으로 알린다.
+**종료 코드의 뜻은 스크립트마다 다르다.** 각 파일 머리 주석의 「종료 코드」 가 소유한다.
+`check_facts.ts` 처럼 1 을 내지 않고 출력으로 판정해야 하는 스크립트가 있어, 표가 `출력 판정` 으로 알린다.
 
 - **대상 파일 수가 0이면 통과가 아니다.**
 - 깨진 참조와 중복 0건은 정적 검사가 찾지 못했다는 뜻일 뿐 의미 검사의 통과가 아니다.
 - 고정 개수, 옵션과 파일 목록은 실제 코드와 설정에 대조한다.
-  이 스킬의 스크립트는 `--help` 를 받지 않는다. 사용법은 각 파일 머리의 docstring 이 소유한다.
-- `check_references.py` 는 파일 표기 바로 뒤의 「제목」 참조도 본다. 범위는 그 docstring 이 소유한다.
-  지침의 절 이름을 바꾼 뒤에는 이 검사를 다시 돌린다. `check_rename_drift.py` 는 이 참조를 보지 않는다.
+  이 스킬의 스크립트는 `--help` 를 받지 않는다. 사용법은 각 파일 머리 주석이 소유한다.
+- `check_references.ts` 는 파일 표기 바로 뒤의 「제목」 참조도 본다. 범위는 그 머리 주석이 소유한다.
+  지침의 절 이름을 바꾼 뒤에는 이 검사를 다시 돌린다. `check_rename_drift.ts` 는 이 참조를 보지 않는다.
 - **깨진 참조를 판정하기 전에 그 문장이 다른 저장소를 말하는지 본다.**
   그렇다면 문서를 `~/` 로 시작하는 전체 경로로 고친다. 검사기는 `~/` 경로가 이 머신에 있는지 보고 없으면 실패가 아니라 경고로 낸다.
   경고가 나오면 지침 작성자만 가진 파일인지, 틀린 경로인지 판정한다.
-- **범위에 Markdown 이 없고 스크립트만 있으면** `collect_targets.py` 가 스크립트 수를 내고 2 로 끝난다.
+- **범위에 Markdown 이 없고 스크립트만 있으면** `collect_targets.ts` 가 스크립트 수를 내고 2 로 끝난다.
   [`references/script-audit.md`](references/script-audit.md) 를 읽고 그 절차로 감사한다.
 - **문서의 실행 가능한 블록을 `--list` 로 모두 보고, 돌린 것과 읽어서 판정한 것을 이유와 함께 적는다.** 검출 명령만이 아니다.
   블록을 그대로 실행하는 스크립트라 먼저 무엇이 도는지 확인한다.
@@ -116,16 +116,16 @@ python3 "$SKILL_DIR/scripts/run_checks.py" "$ROOT" --base "$BASE"
 위임한 조사는 정해진 범위만 보고 판정표 형식으로 회신한다.
 
 스킬을 감사할 때는 `스킬 구조와 유지보수성` 축으로 목표, 책임 분리, 단계별 context, 검증 실행과 사람이 읽는 구조를 함께 본다.
-도구가 이미 막는다는 근거로 지우려면 `scripts/check_enforcement.py` 로 확인한다.
+도구가 이미 막는다는 근거로 지우려면 `scripts/check_enforcement.ts` 로 확인한다.
 발동 조건과 모드별 통과 조건은 `references/judgment.md` 가 소유한다.
 
 **제거, 축소, 이름 변경으로 판정하기 전에 그 제목과 문장을 테스트가 요구하는지 찾는다.**
-무엇을 읽고 어떤 줄을 내는지는 `find_test_requirements.py` 의 docstring 이 소유한다.
+무엇을 읽고 어떤 줄을 내는지는 `find_test_requirements.ts` 의 머리 주석이 소유한다.
 찾은 위치는 판정표 근거에 「테스트가 요구」 로 적고, 테스트도 함께 고칠지를 별도 승인 항목으로 낸다.
 
 ```bash
 # cwd: 아무 곳. 지우거나 바꿀 제목과 문장을 인자로 준다
-python3 "$SKILL_DIR/scripts/find_test_requirements.py" "$ROOT" "## 언제 쓰나" "## 일곱 단계"
+node "$SKILL_DIR/scripts/find_test_requirements.ts" "$ROOT" "## 언제 쓰나" "## 일곱 단계"
 ```
 
 ## 4. 판정표와 승인
