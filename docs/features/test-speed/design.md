@@ -295,7 +295,7 @@ REQ1, REQ2, REQ3, REQ6 을 맡는다. 운영 출력·종료·상태 계약은 �
 
 `doctor/orch-doctor.ts`의 기존 `checkScripts(skillDir)`를 내보낸다. 파일 읽기와 경로 존재 확인만 수행하는 함수이며, 반환값 `{ lines, code }`와 CLI에서 부르는 순서는 유지한다. `doc-script-refs.spec.ts`는 같은 함수를 스킬마다 직접 호출한다. 실제 문서를 읽으므로 문서와 스크립트의 불일치는 계속 검출한다. 질문·루프·설치 CLI·Orca 조회는 이 검사의 책임에서 빠지고 기존 doctor 테스트가 맡는다. 새 모듈이나 의존성, 상태 저장은 필요 없다.
 
-동시 실행 기본값은 `availableParallelism()`을 바탕으로 정한다. CPU 제한이 있는 CI에서도 실행 가능한 병렬 수를 기준으로 삼고, 명시한 `--concurrency`는 우선한다. 이 머신의 4·6·8·12 전체 실행을 비교한 뒤 상한을 확정한다. 초기 후보는 `min(8, availableParallelism())`이다. Python과 tsc도 함께 돌기 때문에 CPU 수 전체를 node에 주는 안과 비교한다. 측정 결과와 부하는 PR에 보존한다. CLI 인자·끝 줄·실패 합산 계약은 그대로다.
+동시 실행 기본값은 `availableParallelism()`을 바탕으로 정한다. CPU 제한이 있는 CI에서도 실행 가능한 병렬 수를 기준으로 삼고, 명시한 `--concurrency`는 우선한다. 이 머신의 4·6·8·12 전체 실행을 비교한 뒤 상한을 확정한다. 초기 후보는 `min(8, availableParallelism())`이다. Python과 tsc도 함께 돌기 때문에 CPU 수 전체를 node에 주는 안과 비교한다. 측정 결과와 부하는 PR에 보존한다. CLI 인자·끝 줄·실패 합산 계약은 그대로다. 현재 워크플로의 공개 `ubuntu-latest` 러너(4 vCPU)에서는 기본 동시 수가 4로 기존과 같다. 더 적은 CPU를 허용하는 환경에서는 그 수만 사용한다.
 
 #### 같은 판정의 대응표
 
