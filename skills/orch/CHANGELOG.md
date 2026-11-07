@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 7.20.0 (2026-11-08)
+
+- `config.json` 에 `inbox` 절(inbox 스킬의 알림 필터)을 더하고 키를 검사한다. 새 번들을 설치한 뒤에만 저장소 `config.json` 에 `inbox` 절을 넣는다
+- `orch doctor --repo` 가 옛 알림 필터 `config/notification.json` 을 찾으면 `OLD-INBOX-FILTER` 로 옮기는 법을 알린다
+
 ## 7.19.6 (2026-11-08)
 
 - 문서의 스크립트 참조 판정을 직접 호출할 수 있게 해 저장소 문서 검사를 Orca 세션 환경과 분리한다. doctor의 CLI 판정과 출력은 유지한다.

@@ -3,6 +3,13 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 1.3.0 (2026-11-08)
+
+- 저장소 알림 필터를 `.orch/config.json` 의 `inbox` 절에서 읽는다
+- 옛 `.orch/config/notification.json` 은 `inbox` 절이 없을 때만 읽고 옛 자리 경고를 stderr 에 낸다
+- 옮기는 법: 옛 파일의 내용을 `inbox` 절 값으로 넣고 옛 파일을 지운다. orch 새 번들을 설치한 뒤에만 옮긴다
+- 다음 major 에 옛 파일 읽기를 지운다
+
 ## 1.2.2 (2026-11-05)
 
 - 메신저 멘션 표기의 가정 문장을 content-preview 의 실측 문서를 가리키게 바꿨다
