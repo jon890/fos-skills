@@ -51,6 +51,7 @@
 | 절 | 키 | 담는 것 |
 | --- | --- | --- |
 | `routing` | `review_author`, `review_pattern`, `size_pattern` | PR 관측값을 읽을 자동 리뷰 계정과 본문 꼴. 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다 |
+| `inbox` | `enabled`, `dooray`, `slack` | inbox 스킬의 저장소별 알림 필터. 꼴은 `skills/inbox/references/config.md` 「저장소 필터」 와 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다 |
 | `finish` | `gh_host` | gh 에 줄 호스트. github.com 이 아닌 저장소에서만 |
 | `finish` | `run` | worker 를 찾을 Orca Run id |
 | `finish` | `base_branch` | `cleanup-sweep.ts` 의 기준 브랜치. 없으면 origin/HEAD |
@@ -266,6 +267,11 @@ Java 마이그레이션은 `reserve-migration.ts --kind java` 로 받는다. 그
 다른 표를 쓰는 저장소는 P1부터 P5까지의 수를 차례로 캡처하는 정규식을 준다.
 등급을 읽을 꼴이 없으면 `size_grade`는 null이다.
 본문·질문 글·금액은 기록하지 않는다.
+
+### 알림 필터 설정
+
+`inbox` 절도 이 절을 지원하는 새 번들을 설치한 뒤에만 저장소 `config.json`에 넣는다. 옛 번들은 모르는 최상위 절을 설정 오류로 거부해 상주 루프가 틱마다 실패한다.
+옛 자리 `config/notification.json` 의 내용을 그대로 `inbox` 절에 옮기고 옛 파일을 지운다. `orch doctor --repo` 가 옛 파일을 찾으면 `OLD-INBOX-FILTER` 로 알린다.
 
 ### 자동 머지 리뷰 조건
 

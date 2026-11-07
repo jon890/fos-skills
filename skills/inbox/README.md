@@ -49,7 +49,7 @@
 
 - `node` 24 이상과 `dooray` CLI 로그인이 필요하다. 업무 피드를 읽는 `dooray stream list` 명령이 있는 CLI 버전이어야 한다
 - `~/.config/fos-skills/inbox.json` 에 켤 adapter 를 적는다. 이 파일이 없으면 알림함이 꺼진다. 형식은 [config.md](references/config.md) 에 있다
-- 프로젝트별로 나누려면 각 저장소의 `.orch/config/notification.json` 에 볼 두레이 프로젝트와 대화방을 적는다
+- 프로젝트별로 나누려면 각 저장소의 `.orch/config.json` 의 `inbox` 절에 볼 두레이 프로젝트와 대화방을 적는다(옛 `.orch/config/notification.json` 은 이번 major 동안 함께 읽는다)
 
 ## 함께 쓰는 스킬
 
