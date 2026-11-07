@@ -105,7 +105,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts). WORKER_ARGS 는 펼치지 않는다.
 
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -123,7 +123,8 @@ import { launchesAt, latestTaskLaunch, readLaunch, recordLaunch } from '../lib/l
 import { orca, orcaBin, repoVisibility, repoVisibilityActions, withFull } from '../lib/orca.ts'
 import { requireMigrated } from '../lib/paths.ts'
 import { readScreen, screenLines } from '../lib/screen.ts'
-import { runAsync, scriptCommand } from '../lib/proc.ts'
+import { runAsync, scriptCommand, withRun } from '../lib/proc.ts'
+import type { Runner } from '../lib/proc.ts'
 import type { RunResult } from '../lib/proc.ts'
 import { orchWord, scriptPath } from '../lib/commands.ts'
 import { shQuote } from '../lib/py.ts'
@@ -520,7 +521,11 @@ async function prepareReview(worktree: string, repo: string, pr: number): Promis
   return null
 }
 
-async function main(argv: string[]): Promise<number> {
+export function main(argv: string[], runner?: Runner): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+}
+
+async function executeMain(argv: string[]): Promise<number> {
   const a = parse(argv)
   if (a === 'help') {
     out(USAGE)
@@ -851,20 +856,22 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e: unknown) => {
-    if (e instanceof Stop) {
-      err(e.message)
-      process.exitCode = e.code
-    } else if (e instanceof ConfigError) {
-      err(`launch-worker: ${e.message}`)
-      process.exitCode = 2
-    } else {
-      err(`launch-worker: ${(e as Error)?.stack ?? String(e)}`)
-      process.exitCode = 1
-    }
-  },
-)
+export function reportError(e: unknown): void {
+  if (e instanceof Stop) {
+    err(e.message)
+    process.exitCode = e.code
+  } else if (e instanceof ConfigError) {
+    err(`launch-worker: ${e.message}`)
+    process.exitCode = 2
+  } else {
+    err(`launch-worker: ${(e as Error)?.stack ?? String(e)}`)
+    process.exitCode = 1
+  }
+}
+
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  main(process.argv.slice(2)).then(
+    (code) => { process.exitCode = code },
+    reportError,
+  )
+}

@@ -247,3 +247,43 @@ REQ1, REQ2, REQ3, REQ6 을 맡는다. PR4·PR5 의 `withRun` 경계를 재사용
 첫 구현 커밋은 주입 자리만 더하고 기존 테스트를 그대로 실행한다(DECISION16). 다음 커밋에서 fixture 와 준비 코드를 옮긴다. 검증은 실행기로 대상 파일과 proc 회귀 테스트를 돌리고 전체 검사로 잇는다. 전후 시간과 preload 기동 수는 「측정 방법」의 명령으로 같은 머신에서 번갈아 잰다. 독립 설계·계획·코드·문서 검토는 PR 생성 뒤 코디네이터가 마련하며 그 전에는 대기로 기록한다.
 
 운영 상태 형식·도메인 규칙·배포 계약과 데이터 소유권은 바뀌지 않는다. 새 ADR 과 트랜잭션·재시도 정책은 필요 없다. 함수 가짜가 지원하지 않는 실행은 실제 실행 경계에 남긴다.
+
+## PR7: launch-worker 와 남은 느린 테스트
+
+REQ1, REQ2, REQ3, REQ6 을 맡는다. 운영 출력·종료·상태 계약은 유지하고 PR4~PR6 의 `withRun` 경계를 재사용한다.
+
+- 먼저 orch fixtures 의 `stateful-run.ts` 에 동기 CommonJS 가짜 평가를 모은다. 허용 명령과 PATH 해석, 실제 실행으로 보낼 조건은 호출자가 정한다. 가짜 자식의 부모 pid 는 main 을 실행하는 현재 프로세스다. 루프·정리·알림의 진입점과 분리해 알림이 정리 스크립트를 import 하지 않게 한다. 본문 예외는 명령 실패로 돌려주며 `exitCode` 뒤 `exit()` 와 console 출력을 보존한다. 지원하지 않는 지연·신호·비동기 출력·상대 파일 접근은 머리 주석과 실제 실행 대응 테스트로 경계를 남긴다.
+- launch-worker 와 orch-doctor 는 `main(argv, runner?)` 과 기존 오류 처리기를 내보내고 직접 실행 판정에 `import.meta.main` 및 realpath 비교를 쓴다. 첫 주입 커밋에서는 기존 테스트를 그대로 실행한다(DECISION16).
+- 테스트는 호출마다 별도 fixture 프로세스를 유지한다. 환경·cwd·캐시·pid 격리는 그대로이고 orca 와 doctor 의 ps 대역만 함수로 부른다. launch 의 make-worktree, spec-line, spec-lint, 이벤트 핸들러와 doctor 의 실제 git·shallow clone·지연은 프로세스 경계를 유지한다. 운영 기본 환경은 바꾸지 않는다.
+- 같은 가짜 실행 파일은 `linkBin` 으로 재사용한다. doctor 의 설치본 테스트는 파일을 넣고 커밋한 템플릿 저장소를 한 번 만들고 `copyRepo` 로 복사한다. shallow 마켓플레이스 clone 은 매번 실제 `git clone --depth 1 file://...` 로 만든다.
+- 전체 기준 실행에서 launch-worker 다음으로 느린 remove-worktree 도 포함한다. `copyRepo` 로 초기 bare origin 과 clone 을 복사하고, 가짜 본문의 상태 경로는 `FAKE_STATE` 환경 변수로 받아 `linkBin` 으로 재사용한다. main 의 빈 커밋·upstream 은 기존과 같고 origin 의 임시 경로만 바뀐다. 실제 worktree 추가·push·삭제·소유 확인·hook 대기는 그대로다.
+- merge-queue-overlap 은 PR4 에서 gh 함수 주입과 템플릿 복사가 이미 적용됐다. 실제 겹침·merge·worktree·origin 이동 검증에 필요한 git 비용을 남기며, 재측정으로 남은 비중을 확인한다. 전체 실행기의 느린 파일도 함께 재측정하고 추가 변경은 실제 원인이 같은 경우에만 한다.
+
+| 기존 관측 경계 | 전환 뒤 같은 판정과 남기는 경계 |
+| --- | --- |
+| launch 도우미의 거부·선택·Run·재시도·준비·hook·감시 | 같은 인자·출력·종료·상태 단언을 유지하고 fixture 의 main 을 호출한다. bash/zsh 인자 전달은 그대로다 |
+| doctor 도우미의 설치본·질문·루프·환경·hook | 같은 단언을 유지하고 orca/ps 만 함수로 실행한다. 직접 spawn 하는 생명주기 사례와 지연은 실제 CLI 로 유지한다 |
+| remove-worktree 의 정리·소유·브랜치·docker·hook | 기존 실제 CLI 와 단언을 유지한다. 준비 저장소와 가짜 본문만 재사용하고 종료·대기·실제 git 경계는 바꾸지 않는다 |
+| 초기 저장소 상태 | doctor·remove-worktree 의 origin 임시 경로는 copyRepo 사본 주소로 바뀐다. remove-worktree 는 기존 빈 커밋·upstream 을 유지한다. doctor 템플릿에는 파일 커밋 앞의 빈 커밋과 main upstream 이 추가된다. shallow clone 여부와 설치 tree 비교는 유지한다. merge-queue-overlap 은 기존 템플릿 그대로다 |
+| CLI 인자·stdout·stderr·종료 코드 | 실제 진입점에서 성공·사용법 오류·거부·조회 실패의 대표 사례를 남기고 함수 진입점과 대조한다 |
+| 가짜 평가의 env·cwd·출력·종료·상태 | 기존 루프·정리 대응 테스트를 유지하고 launch/doctor 가 쓰는 가짜도 실행 파일과 같은 결과·기록을 내는지 대조한다 |
+
+검증은 실행기로 대상 파일·가짜 대응·proc 회귀를 돌리고 전체 검사로 잇는다. 전후 시간과 기동 수는 「측정 방법」의 명령으로 같은 머신에서 번갈아 잰다. 전체 기본 실행 시간과 남은 실제 git·CLI 기동 비용은 PR 에 남긴다. 독립 설계·계획·코드·문서 검토는 코디네이터가 PR 뒤 마련하며 자기 점검으로 통과 처리하지 않는다. 새 도메인·배포·상태 계약이 없어 ADR 은 추가하지 않는다.
+
+
+### PR7 뒤: 2분 목표 미달 분석과 후속 범위
+
+[Claude 독립 리뷰](https://github.com/jon890/fos-skills/pull/375#pullrequestreview-5799905232)의 저부하(load 4~7) 실행은 311.8초였다. 파일별 시간 합은 1273.7초이고 동시 4개로 나눈 값은 318.4초로 실제 시간과 가깝다. 한 파일의 긴 실행보다 전체 처리량에 묶여 있다는 근거다. Python·tsc 는 별도로 함께 실행하므로 이 나눗셈은 처리량을 보는 근사이며 정확한 예측식은 아니다.
+
+동시 4개를 유지하면 2분에 맞는 파일 시간 합은 약 480초다. 관측한 합에서 약 62%를 줄여야 하며 상위 파일 일부만 줄이거나 부하가 낮을 때 다시 재는 것으로는 부족하다. 해당 독립 실행은 통과 184·실패 1이고 실패는 문서 검사 환경 문제다. worker 의 기본 전체 실행 통과 185·실패 0·299.9초와 별도 기록으로 구분한다.
+
+| 후속 대상 | 줄일 원인과 검토할 방법 | 유지할 실제 경계 |
+| --- | --- | --- |
+| `doc-script-refs.spec.ts` | 실제 Orca 세션·질문·루프·설치 CLI 환경에 기대어 독립 리뷰에서 실패하고 97.3초가 걸렸다. `--skip-questions`, 가짜 ORCA·PS 와 임시 저장소·고정 CLI 환경으로 문서 판정만 격리한다(P4-2). 이번 PR 에서는 기록만 한다 | 실제 doctor 의 문서 경로 검사 |
+| `launch-worker.spec.ts` | 테스트별 spec-line·spec-lint 기동이 남았다. 비동기 실행 경계를 주입해 판정 사례는 해당 진입 함수를 호출하도록 후속 설계한다 | spec-line·spec-lint 의 인자·출력·종료 대표 CLI, make-worktree·hook |
+| `orch-loop.spec.ts`, `wait-important.spec.ts` | 설정·인자·Run·질문 판정을 환경·출력 주입이 가능한 함수 테스트로 분리해 호출별 CLI 비용을 줄인다 | 시작·멈춤·신호·부모 감시·pid·자식 생명주기 |
+| `cleanup-sweep-merge.spec.ts`, `cleanup-sweep-repos.spec.ts` | 반복되는 선택·보존·정리 판정을 함수 테스트로 분리하고 준비 저장소 재사용을 보강한다 | 실제 git merge·worktree·브랜치 삭제와 대표 실패 |
+| plan Python 묶음 | 외부 명령과 저장소 준비 비용을 먼저 계측하고 반복 준비를 재사용한다. 아직 원인별 비용은 측정하지 않았다 | 기존 판정과 인수 사례 |
+| 실행기 동시 수 기본값 | 고정 4와 CPU 수에 맞춘 값을 비교한다. 측정 머신의 CPU 12를 상한으로 동시 수를 높여 시간·최대 메모리·실패 여부를 재고 결과로 기본값을 정한다 | 명시한 `--concurrency` 와 테스트 격리 |
+
+후속 PR 은 위 비용 감소와 대기 옵션 정리를 함께 계획하고, 같은 판정을 유지하는 대응표와 전후 기동 수를 남긴다. 마지막에 환경을 격리한 기본 전체 실행으로 2분 목표를 다시 확인한다. 이번 PR 은 동시 수 기본값이나 문서 검사 실행 환경을 바꾸지 않는다.

@@ -2983,14 +2983,16 @@ async function executeMain(argv: string[], entrypoint: string): Promise<number> 
   return foreground(ctx, values.once as boolean, interval, entrypoint)
 }
 
+export function reportError(e: unknown): void {
+  log(`orch-loop: ${(e as Error)?.stack ?? String(e)}`)
+  process.exitCode = 1
+}
+
 if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === SELF)) {
   main(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code
     },
-    (e: unknown) => {
-      log(`orch-loop: ${(e as Error)?.stack ?? String(e)}`)
-      process.exitCode = 1
-    },
+    reportError,
   )
 }

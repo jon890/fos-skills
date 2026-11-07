@@ -9,8 +9,13 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
+import { copyRepo, git as templateGit, templateRepo } from '../../../modules/testkit/git.ts'
+import type { Repo } from '../../../modules/testkit/git.ts'
+import { tempDir } from '../../../modules/testkit/temp.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/doctor/orch-doctor.ts', import.meta.url))
+const FUNCTION_RUNNER = fileURLToPath(new URL('./fixtures/orch-doctor-run.ts', import.meta.url))
 const LAUNCHER = fileURLToPath(new URL('../../../bin/orch', import.meta.url))
 // 안내 줄의 앞 낱말. beforeEach 가 표지 있는 실행기를 PATH 에 두므로 orch 다(lib/commands.ts 의 orchWord)
 const WORD = 'orch'
@@ -73,8 +78,8 @@ function write(file: string, text: string): void {
   writeFileSync(file, text)
 }
 
-function doctor(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): { code: number | null; stdout: string; stderr: string } {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], {
+function doctor(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; cli?: boolean } = {}): { code: number | null; stdout: string; stderr: string } {
+  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', opts.cli ? SCRIPT : FUNCTION_RUNNER, ...args], {
     cwd: opts.cwd ?? tmp,
     env: { ...env, ...opts.env },
     encoding: 'utf8',
@@ -85,11 +90,9 @@ function doctor(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } 
 
 before(() => {
   binDir = realpathSync(mkdtempSync(join(tmpdir(), 'orch-doctor-bin-')))
-  writeFileSync(join(binDir, 'orca'), FAKE_ORCA)
+  linkBin(binDir, 'orca', FAKE_ORCA.replace(/^#![^\n]*\n/, ''))
   // ps 는 FAKE_PS 파일의 내용을 낸다
-  writeFileSync(join(binDir, 'ps'), '#!/bin/sh\ncat "$FAKE_PS" 2>/dev/null\n')
-  chmodSync(join(binDir, 'orca'), 0o755)
-  chmodSync(join(binDir, 'ps'), 0o755)
+  linkBin(binDir, 'ps', "const fs = require('node:fs'); try { fs.writeSync(1, fs.readFileSync(process.env.FAKE_PS)) } catch { process.exit(1) }")
 })
 after(() => rmSync(binDir, { recursive: true, force: true }))
 
@@ -117,6 +120,7 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 describe('설치본 판정', () => {
   let origin: string
+  let template: Repo
   let dev: string
   let clone: string
   let skill: string
@@ -147,17 +151,21 @@ describe('설치본 판정', () => {
     }
   }
 
+  before(() => {
+    template = copyRepo(join(tempDir('doctor-template-'), 'repo'), templateRepo())
+    write(join(template.dir, '.gitignore'), '__pycache__/\n')
+    write(join(template.dir, 'orch', 'SKILL.md'), '```bash\npython3 "$SKILL_DIR/scripts/a.py"\n```\n')
+    write(join(template.dir, 'orch', 'scripts', 'a.py'), '')
+    write(join(template.dir, 'other', 'SKILL.md'), '# other\n')
+    templateGit(template.dir, ['add', '-A'])
+    templateGit(template.dir, ['commit', '-q', '-m', 'doctor fixture'])
+    templateGit(template.dir, ['push', '-q', 'origin', 'main'])
+  })
+
   beforeEach(() => {
-    origin = join(tmp, 'origin.git')
-    git('init', '-q', '--bare', '-b', 'main', origin)
     dev = join(tmp, 'dev')
-    git('init', '-q', '-b', 'main', dev)
-    git('-C', dev, 'remote', 'add', 'origin', origin)
-    write(join(dev, '.gitignore'), '__pycache__/\n')
-    write(join(dev, 'orch', 'SKILL.md'), '```bash\npython3 "$SKILL_DIR/scripts/a.py"\n```\n')
-    write(join(dev, 'orch', 'scripts', 'a.py'), '')
-    write(join(dev, 'other', 'SKILL.md'), '# other\n')
-    installed = commit('처음')
+    origin = copyRepo(dev, template).origin
+    installed = git('-C', dev, 'rev-parse', 'HEAD')
     clone = join(tmp, 'plugins', 'marketplaces', 'mkt')
     git('clone', '-q', '--depth', '1', `file://${origin}`, clone)
     write(join(tmp, 'plugins', 'known_marketplaces.json'), JSON.stringify({ mkt: { installLocation: clone } }))
@@ -165,6 +173,10 @@ describe('설치본 판정', () => {
     skill = join(tmp, 'plugins', 'cache', 'mkt', 'plug', installed.slice(0, 12), 'orch')
     cpSync(join(dev, 'orch'), skill, { recursive: true })
     write(join(skill, 'scripts', '__pycache__', 'a.cpython-313.pyc'), 'x')
+  })
+
+  test('설치본 준비가 공유 기본 템플릿의 파일을 바꾸지 않는다', () => {
+    assert.equal(templateGit(templateRepo().dir, ['ls-tree', '--name-only', 'HEAD']), '')
   })
 
   test('skills 아래 설치 캐시도 같은 커밋과 스크립트를 확인한다', () => {
@@ -1062,5 +1074,27 @@ describe('설치 기록 판정', () => {
     delete e.CLAUDE_CONFIG_DIR
     const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--skip-version', '--skip-questions', '--skill-dir', skill], { cwd: tmp, env: e, encoding: 'utf8' })
     assert.match(done.stdout, /^PLUGIN-PATH-MISSING a@b user /m)
+  })
+})
+
+describe('doctor CLI 와 함수 진입점 대응', () => {
+  test('성공·사용법 오류·질문 조회 실패의 출력과 종료가 같다', () => {
+    const skill = join(tmp, 'skill')
+    write(join(skill, 'SKILL.md'), '# 스킬\n')
+    const broken = join(tmp, 'broken-skill')
+    write(join(broken, 'SKILL.md'), '```bash\nnode \"$SKILL_DIR/scripts/missing.ts\"\n```\n')
+    const psFile = join(tmp, 'ps.txt')
+    writeFileSync(psFile, '')
+    for (const example of [
+      { args: ['--skip-version', '--skip-questions', '--skill-dir', skill], code: 0 },
+      { args: ['--unknown-option'], code: 2 },
+      { args: ['--skip-version', '--skip-questions', '--skill-dir', broken], code: 1 },
+      { args: ['--skip-version', '--skill-dir', skill, '--run', 'r'], code: 0, fail: '1' },
+    ]) {
+      const opts = { env: { FAKE_PS: psFile, FAKE_FAIL: example.fail } }
+      const real = doctor(example.args, { ...opts, cli: true })
+      assert.equal(real.code, example.code, real.stdout + real.stderr)
+      assert.deepEqual(doctor(example.args, opts), real)
+    }
   })
 })
