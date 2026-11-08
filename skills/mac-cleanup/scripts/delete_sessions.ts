@@ -101,7 +101,9 @@ export function main(argv: string[]): number {
     if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('survey_sessions.ts --json-out 형식이 아니다')
     base = data.base
     items = data.orphans
-    if (typeof base !== 'string' || !Array.isArray(items) || items.some((i) => i === null || typeof i !== 'object' || !['path', 'cwd', 'newest_mtime'].every((k) => k in i))) {
+    // 삭제 전에 모든 항목을 검사한다. 하나라도 틀리면 아무것도 지우지 않고 입력 오류로 끝낸다
+    const finite = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+    if (typeof base !== 'string' || !Array.isArray(items) || items.some((i) => i === null || typeof i !== 'object' || !['path', 'cwd', 'newest_mtime'].every((k) => k in i) || typeof i.path !== 'string' || typeof i.cwd !== 'string' || !finite(i.newest_mtime) || (i.size_bytes !== undefined && i.size_bytes !== null && !finite(i.size_bytes)))) {
       throw new Error('survey_sessions.ts --json-out 형식이 아니다')
     }
   } catch (error) {

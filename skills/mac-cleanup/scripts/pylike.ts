@@ -102,8 +102,14 @@ export function pyResolve(path: string): string {
       continue
     }
     const candidate = resolved === '/' ? `/${part}` : `${resolved}/${part}`
-    if (lstatSync(candidate, { throwIfNoEntry: false })?.isSymbolicLink() && links++ < 40) {
-      const target = readlinkSync(candidate)
+    // 읽을 수 없거나(EACCES) 폴더가 아닌(ENOTDIR) 경로는 풀지 못한 채 남기고 계속한다(os.path.realpath 의 strict=False)
+    let target: string | null = null
+    try {
+      if (lstatSync(candidate, { throwIfNoEntry: false })?.isSymbolicLink() && links++ < 40) target = readlinkSync(candidate)
+    } catch {
+      target = null
+    }
+    if (target !== null) {
       if (target.startsWith('/')) resolved = '/'
       queue.unshift(...pieces(target))
     } else resolved = candidate

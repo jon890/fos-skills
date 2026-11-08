@@ -102,7 +102,7 @@ export function main(argv: string[]): number {
     const data = loadJson(readInput(args.positionals.volumes_json as string)) as Json
     if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('docker_volumes.ts --json-out 형식이 아니다')
     volumes = data.volumes
-    if (!Array.isArray(volumes) || volumes.some((v) => v === null || typeof v !== 'object' || !('name' in v))) throw new Error('docker_volumes.ts --json-out 형식이 아니다')
+    if (!Array.isArray(volumes) || volumes.some((v) => v === null || typeof v !== 'object' || !('name' in v) || typeof v.name !== 'string' || (v.size_bytes !== undefined && v.size_bytes !== null && typeof v.size_bytes !== 'number'))) throw new Error('docker_volumes.ts --json-out 형식이 아니다')
   } catch (error) {
     write(2, `입력을 읽을 수 없다: ${(error as Error).message}\n`)
     return 2

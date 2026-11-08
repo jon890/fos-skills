@@ -114,7 +114,7 @@ export function main(argv: string[]): number {
   let survey: Json[]
   try {
     const loaded = loadJson(readInput(args.positionals.survey_json as string))
-    if (!Array.isArray(loaded) || loaded.some((r) => r === null || typeof r !== 'object' || !('repo' in r) || !('base' in r) || !('branches' in r))) throw new Error('survey_git.ts --json 형식이 아니다')
+    if (!Array.isArray(loaded) || loaded.some((r) => r === null || typeof r !== 'object' || !('repo' in r) || !('base' in r) || !('branches' in r) || typeof r.repo !== 'string' || typeof r.base !== 'string' || !Array.isArray(r.branches) || r.branches.some((b: unknown) => b === null || typeof b !== 'object' || typeof (b as Json).name !== 'string' || ((b as Json).tip !== undefined && (b as Json).tip !== null && typeof (b as Json).tip !== 'string')))) throw new Error('survey_git.ts --json 형식이 아니다')
     survey = loaded
   } catch (error) {
     write(2, `입력을 읽을 수 없다: ${(error as Error).message}\n`)

@@ -1,7 +1,7 @@
 // 명령 경계로 관측되지 않는 내부 함수 테스트. Python 표준 라이브러리 동작을 옮긴 helper 와 공용 모듈의 판정을 본다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { tempDir } from '../../../modules/testkit/temp.ts'
@@ -536,5 +536,22 @@ describe('survey_gradle', () => {
     assert.ok(out.includes('rm -rf ~/.gradle/caches/8.1.0 ~/.gradle/daemon/8.1.0\n'), out)
     assert.ok(!/~\/\.gradle\/(caches|daemon)\/( |\n)/.test(out), out)
     assert.ok(!/\n {8,}dists /.test(out), out)
+  })
+})
+
+// 옛 구현은 앞 항목을 지운 뒤 틀린 항목에서 멈췄다. 새 구현은 지우기 전에 모든 항목을 검사한다
+describe('delete_sessions 입력 검사', () => {
+  test('올바른 항목이 함께 있어도 틀린 항목이 있으면 모두 남기고 2 로 끝난다', () => {
+    const box = new Sandbox('mc-ds-')
+    const base = join(box.root, 'projects')
+    const gone = join(box.root, 'gone')
+    const old = join(base, 'old')
+    const file = write(join(old, 'a.jsonl'), `${JSON.stringify({ cwd: gone })}\n`)
+    const t = Math.floor(Date.now() / 1000) - 30 * 86400
+    utimesSync(file, t, t)
+    const input = write(join(box.root, 'o.json'), JSON.stringify({ base, orphans: [{ path: old, cwd: gone, newest_mtime: t, size_bytes: 1 }, { path: old, cwd: gone, newest_mtime: 'x' }] }))
+    const done = box.run('delete_sessions', [input, '--older-than-days', '14', '--apply'])
+    assert.equal(done.code, 2)
+    assert.ok(existsSync(old))
   })
 })
