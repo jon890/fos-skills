@@ -199,3 +199,14 @@ describe('옵션과 입력', () => {
     assert.ok(done.stdout.includes('  merged  브랜치가 없다\n'))
   })
 })
+
+describe('형식이 틀린 입력', () => {
+  test('branches 가 목록이 아니면 아무것도 지우지 않고 실패로 끝난다', () => {
+    const { box, repo } = setup()
+    const file = write(join(box.root, 'bad.json'), JSON.stringify([{ repo: repo.dir, base: BASE, branches: 'merged' }]))
+    const done = box.run('delete_branches', [file, '--apply'])
+    assert.notEqual(done.code, 0)
+    assert.ok(repo.has('merged'))
+  })
+})
+

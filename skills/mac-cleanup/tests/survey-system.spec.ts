@@ -2,7 +2,7 @@
 // PATH 에는 가짜 폴더만 두므로 이 머신의 docker, mise, brew 가 섞이지 않는다.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, symlinkSync, utimesSync } from 'node:fs'
+import { chmodSync, mkdirSync, symlinkSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { FakeRule } from '../../../modules/testkit/fake-bin.ts'
@@ -265,6 +265,23 @@ describe('~/.cache, Codex, Cursor', () => {
     })
     const rel = join(home, '.codex/packages/standalone/releases')
     assert.equal(section(run().stdout, 'Codex 이전 버전'), `  100K  0.1\n  200K  0.2 실행중\n  300K  0.3 current\n버전 3개, 합계 600K, 남길 것(current 또는 실행중) 2개\n`)
+  })
+
+  test('읽을 수 없는 폴더 아래 경로가 있어도 풀지 못한 채 계속한다', (ctx) => {
+    let locked = ''
+    const { run } = setup({
+      extra: (b) => {
+        const rel = join(b.home, '.codex/packages/standalone/releases')
+        locked = join(rel, 'locked')
+        mkdirSync(locked, { recursive: true })
+        chmodSync(locked, 0)
+        b.fake('du', [duDirs(rel, [[100, join(locked, '0.1')], [100, rel]])])
+      },
+    })
+    ctx.after(() => chmodSync(locked, 0o755))
+    const done = run()
+    assert.equal(done.code, 0)
+    assert.ok(section(done.stdout, 'Codex 이전 버전').startsWith('  100K  0.1\n'))
   })
 
   test('실행 중인 릴리스가 없으면 안내 줄을 더한다', () => {

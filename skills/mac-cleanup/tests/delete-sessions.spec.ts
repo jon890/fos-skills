@@ -242,3 +242,17 @@ describe('입력 오류와 옵션', () => {
     assert.equal(box.run('delete_sessions', [input([]), '--o', '3', '--ap']).code, 0)
   })
 })
+
+describe('수정 시각이 숫자가 아닌 항목', () => {
+  test('하나라도 틀리면 아무것도 지우지 않고 실패로 끝난다', () => {
+    const { box, session, item, run } = setup()
+    const gone = join(box.root, 'gone')
+    const folder = session('a', gone, 2)
+    for (const bad of ['not-a-time', null, '123']) {
+      const done = run([{ ...item(folder, gone, 2), newest_mtime: bad }], ['--older-than-days', '14', '--apply'])
+      assert.notEqual(done.code, 0, String(bad))
+      assert.ok(existsSync(folder), String(bad))
+    }
+  })
+})
+
