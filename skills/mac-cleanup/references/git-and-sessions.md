@@ -1,7 +1,7 @@
 # 세션, 브랜치, 워크트리 정리
 
-`survey_sessions.py` 와 `survey_git.py` 의 결과를 실행할 때 읽는다.
-실행할 목록은 1단계에서 `survey_git.py --json-out "$SURVEY"` 로 이미 남겼다. 항목마다 `repo`, 브랜치 이름, 끝 커밋 전체 해시 `tip`, 분류 `class` 가 있다.
+`survey_sessions.ts` 와 `survey_git.ts` 의 결과를 실행할 때 읽는다.
+실행할 목록은 1단계에서 `survey_git.ts --json-out "$SURVEY"` 로 이미 남겼다. 항목마다 `repo`, 브랜치 이름, 끝 커밋 전체 해시 `tip`, 분류 `class` 가 있다.
 텍스트 출력은 사람이 읽는 용도다. 텍스트와 JSON 이 한 번의 조사에서 나오므로 사용자에게 보인 목록과 실행 목록이 같다. 따로 `--json` 으로 다시 돌리면 그 사이 결과가 바뀔 수 있다. 맨 끝 `## 합계` 줄이 저장소 줄(`## 경로`)과 같은 모양이라 줄 단위로 파싱하면 저장소로 잘못 잡힌다.
 
 `$REPO` 는 저장소 경로, `$WT` 는 워크트리 경로, `$BR` 는 브랜치 이름, `$BASE` 는 조사 JSON 의 `base`, `$SURVEY` 는 조사 JSON 을 저장한 파일, `$PIDS` 는 사용자가 지정한 PID 다.
@@ -11,7 +11,7 @@
 **기본으로 직접 종료하지 않는다.** PID, 실행 시간, cwd 표를 보여 주고 사용자가 닫게 한다.
 
 - 사용자가 PID 를 지정해 승인하면 `kill -TERM` 만 쓴다.
-- 현재 세션과 그 조상은 절대 대상에 넣지 않는다. `survey_sessions.py` 가 "현재" 로 표시한 PID 다.
+- 현재 세션과 그 조상은 절대 대상에 넣지 않는다. `survey_sessions.ts` 가 "현재" 로 표시한 PID 다.
 - 그 세션의 cwd 워크트리에 미커밋 변경이 있으면 종료 전에 같이 알린다.
 
 ```bash
@@ -25,12 +25,12 @@ kill -TERM $PIDS
 ## 대화 기록
 
 오래된 기록은 `targets.md` 의 「대화 기록 명령」, 워크트리가 사라진 기록은 「워크트리가 사라진 대화 기록 명령」 이 절차를 소유한다.
-후자는 `survey_sessions.py --json-out` 파일을 `delete_sessions.py` 에 넘긴다.
+후자는 `survey_sessions.ts --json-out` 파일을 `delete_sessions.ts` 에 넘긴다.
 
 ## 워크트리
 
 "제거 후보" 는 머지됨, 미커밋 변경 0, 그 브랜치의 stash 0, 사용 중 아님을 모두 만족한 것이다.
-`survey_git.py` 가 기본으로 도는 PR 조회(`--no-check-prs` 로 끈다)로 나온 "제거 후보(PR 머지됨)" 는 머지됨 대신 머지된 PR 이 있는 것이고, 나머지 조건은 같다.
+`survey_git.ts` 가 기본으로 도는 PR 조회(`--no-check-prs` 로 끈다)로 나온 "제거 후보(PR 머지됨)" 는 머지됨 대신 머지된 PR 이 있는 것이고, 나머지 조건은 같다.
 기준 브랜치와 같은 커밋에서 막 만든 워크트리도 머지됨으로 잡히므로, 경과 일수가 짧은 것은 사용자에게 한 번 더 확인한다.
 
 **먼저 그 워크트리에 Orca 터미널이 붙어 있는지 본다.** `orch` 가 띄운 worker 의 워크트리는 `orch` 의 정리(`orch cleanup worktree`)가 지운다. 이 스킬이 `git worktree remove` 로 지우면 활동 중인 worker 가 종료된다.
@@ -57,29 +57,29 @@ git -C "$REPO" worktree remove "$WT"
 - `--force` 는 쓰지 않는다. 미커밋 변경이 있으면 거절되는 것이 맞다.
 - "기록만 남음"(prunable)은 디렉터리가 이미 없는 기록이므로 `git -C "$REPO" worktree prune` 만 돌린다.
 - "PR 확인 필요"는 upstream 이 사라졌지만 머지 판정이 안 된 것이다. squash 머지일 수 있으므로 아래 「PR 확인 필요 브랜치 점검」 으로 확인한 뒤에만 제거한다.
-- 워크트리에 체크아웃된 브랜치는 브랜치 후보에서 빠진다. 워크트리를 지운 뒤 `survey_git.py` 를 다시 돌려야 그 브랜치가 후보로 올라온다.
+- 워크트리에 체크아웃된 브랜치는 브랜치 후보에서 빠진다. 워크트리를 지운 뒤 `survey_git.ts` 를 다시 돌려야 그 브랜치가 후보로 올라온다.
 
 ## 브랜치
 
-실행은 `scripts/delete_branches.py` 가 한다. 입력은 `survey_git.py --json-out` 으로 저장한 파일이다.
+실행은 `scripts/delete_branches.ts` 가 한다. 입력은 `survey_git.ts --json-out` 으로 저장한 파일이다.
 기본은 dry-run 이라 아무것도 바꾸지 않고, 브랜치마다 무엇을 할지(삭제 예정, 유지와 이유, 건드리지 않음)만 보인다. 사용자 승인 뒤에 `--apply` 를 붙여 돈다.
 `--only` 로 지울 분류를 고른다. `merged`(삭제 후보 `-d`, 기본)와 `pr-merged`(PR 머지됨 `-D`)가 있고, 승인받은 묶음에 맞춰 고른다.
 브랜치마다 결과를 내고 실패가 하나라도 있으면 종료 코드가 1 이다. 원격 브랜치는 이 스킬에서 지우지 않는다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/survey_git.py" --json-out "$SURVEY"
-python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged
-python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged --apply
+node "$SKILL_DIR/scripts/survey_git.ts" --json-out "$SURVEY"
+node "$SKILL_DIR/scripts/delete_branches.ts" "$SURVEY" --only merged
+node "$SKILL_DIR/scripts/delete_branches.ts" "$SURVEY" --only merged --apply
 ```
 
-`survey_git.py` 의 `KEEP_BRANCHES` 에 든 이름은 기준 브랜치가 아니어도 후보에서 빠진다. 기본 브랜치나 배포 브랜치로 쓰는 이름이다.
+`survey_git.ts` 의 `KEEP_BRANCHES` 에 든 이름은 기준 브랜치가 아니어도 후보에서 빠진다. 기본 브랜치나 배포 브랜치로 쓰는 이름이다.
 
 ### 지우는 기준
 
 스크립트는 아래 판단대로 동작한다. 기준을 바꿀 때나 스크립트가 유지한 이유를 읽을 때 본다.
 
 **삭제 후보(`-d`)는 `git branch -d` 로 지운다.** 실측으로 후보 둘이 `not fully merged` 로 거절된 적이 있다.
-`survey_git.py` 는 원격 기준 브랜치(JSON 의 `base`)와 비교하고, `git branch -d` 는 upstream 이 사라진 브랜치를 로컬 HEAD 와 비교하기 때문이다.
+`survey_git.ts` 는 원격 기준 브랜치(JSON 의 `base`)와 비교하고, `git branch -d` 는 upstream 이 사라진 브랜치를 로컬 HEAD 와 비교하기 때문이다.
 로컬 main 이 뒤처졌거나 detached HEAD 이면 `origin/<기준>` 에는 포함된 브랜치도 거절된다.
 거절되면 아래 두 조건을 모두 확인하고, 둘 다 맞을 때만 `-D` 로 지운다. 하나라도 다르면 유지한다.
 
@@ -89,7 +89,7 @@ python3 "$SKILL_DIR/scripts/delete_branches.py" "$SURVEY" --only merged --apply
 사용자 체크아웃(로컬 main pull 등)은 이 때문에 바꾸지 않는다.
 
 **PR 머지됨(`-D`)은 squash 머지처럼 `--is-ancestor` 로 보이지 않는 머지다.**
-PR 조회(`survey_git.py` 의 기본 동작)가 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조해 낸 분류다.
+PR 조회(`survey_git.ts` 의 기본 동작)가 머지된 PR 의 `headRefOid` 와 로컬 브랜치 끝 커밋을 대조해 낸 분류다.
 조사와 실행 사이에 커밋이 생길 수 있으므로, 실행 직전 `git rev-parse` 값이 조사 JSON 의 `tip` 과 같을 때만 `-D` 를 쓴다. 다르면 지우지 않는다.
 
 **스크립트가 건드리지 않는 것.**
@@ -99,16 +99,16 @@ PR 조회(`survey_git.py` 의 기본 동작)가 머지된 PR 의 `headRefOid` �
 
 ### PR 확인 필요 브랜치 점검
 
-`scripts/check_pr_branches.py` 가 조사 JSON 에서 `PR 확인 필요(-D)` 인 브랜치마다 읽기 전용으로 확인한다. 브랜치를 지우지 않는다.
+`scripts/check_pr_branches.ts` 가 조사 JSON 에서 `PR 확인 필요(-D)` 인 브랜치마다 읽기 전용으로 확인한다. 브랜치를 지우지 않는다.
 브랜치마다 지금 `git rev-parse` 값이 조사 `tip` 과 같은지, 최근 PR(번호, 상태, head 가 tip 과 같은지, 머지 시각), 원격 어디에도 없는 로컬 커밋 수, 판정 한 줄을 낸다.
 `gh` 실패는 그 브랜치만 표시하고 계속한다. `--json` 이 있다.
 
 ```bash
-python3 "$SKILL_DIR/scripts/check_pr_branches.py" "$SURVEY"
+node "$SKILL_DIR/scripts/check_pr_branches.ts" "$SURVEY"
 ```
 
 판정은 원격에 없는 로컬 커밋 수로 정한다.
 
 - `잃는 커밋 없음`(0개): 지워도 잃는 커밋이 없다. PR 이 머지 없이 닫힌 브랜치(`CLOSED`, head 가 tip 과 같음)도 이 수로 판단한다. 사용자 승인 뒤 지운다.
 - `로컬 커밋 N개, 사용자 판단`: 지우면 그 커밋을 잃는다. 사용자가 정한다.
-- `tip 바뀜, 다시 조사`와 `브랜치 없음, 다시 조사`: 조사 뒤 브랜치가 움직였다. 지우지 않고 `survey_git.py` 를 다시 돌린다.
+- `tip 바뀜, 다시 조사`와 `브랜치 없음, 다시 조사`: 조사 뒤 브랜치가 움직였다. 지우지 않고 `survey_git.ts` 를 다시 돌린다.
