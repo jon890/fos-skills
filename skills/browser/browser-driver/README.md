@@ -18,20 +18,23 @@ $B doctor
 
 | 파일 | 담는 것 |
 | --- | --- |
-| `browser_driver.py` | 진입점. 명령을 나눠 보내고 예외를 종료 코드로 바꾼다 |
-| `driver/commands.py` | 명령 스펙과 `help` 렌더 |
-| `driver/args.py` | `--timeout`, `--button` 같은 옵션을 떼어 내고 좌표를 검증한다 |
-| `driver/config.py` | 설정 파일 경로와 기본 제한 시간 |
-| `driver/errors.py` | 예외와 종료 코드 |
-| `driver/shell.py` | 백엔드 프로세스 호출과 반환값 정규화 |
-| `driver/admin.py` | `doctor`, `install` |
-| `driver/backends/__init__.py` | 백엔드 목록과 선택 규칙 |
-| `driver/backends/base.py` | 백엔드 공통 계약 |
-| `driver/backends/ego.py`, `orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
+| `browser_driver.ts` | 진입점. 명령을 나눠 보내고 예외를 종료 코드로 바꾼다. `main` 을 내보내고 직접 실행일 때만 스스로 돈다 |
+| `driver/commands.ts` | 명령 스펙과 `help` 렌더 |
+| `driver/args.ts` | `--timeout`, `--button` 같은 옵션을 떼어 내고 좌표를 검증한다 |
+| `driver/config.ts` | 설정 파일 경로와 기본 제한 시간 |
+| `driver/errors.ts` | 예외와 종료 코드 |
+| `driver/shell.ts` | 백엔드 프로세스 호출과 반환값 정규화 |
+| `driver/io.ts` | 출력과 직접 실행 판정 |
+| `driver/pylike.ts` | 옛 구현이 쓰던 표준 라이브러리 동작(JSON 읽기·쓰기, `float`, 경로, `which`)을 같은 결과로 내는 도구. 이 폴더는 팀 저장소에 `tools/browser-driver` 로 실려 폴더 밖을 import 하지 못해 따로 둔다 |
+| `driver/admin.ts` | `doctor`, `install` |
+| `driver/backends/index.ts` | 백엔드 목록과 선택 규칙 |
+| `driver/backends/base.ts` | 백엔드 공통 계약 |
+| `driver/backends/ego.ts`, `orca.ts`, `agent_browser.ts`, `cmux.ts` | 백엔드 하나씩 |
 | `browser.config.example.json` | 설정 예시 |
-| `tests/` | `unittest` 테스트. 이 폴더에서 `-m unittest discover -s tests` 로 돈다 |
+| `tests/` | `node:test` 명령 경계 테스트. 가짜 백엔드와 임시 폴더만 쓰고 실제 브라우저를 열지 않는다. `fixtures/` 는 옛 구현이 낸 스크립트·도움말·진단 출력이다. 저장소 루트에서 `node scripts/run-tests.ts 'skills/browser/browser-driver/tests/*.spec.ts'` 로 돈다 |
 
-진입점만 실행 파일이다. 심링크로 불려도 실체 경로를 잡아 옆의 `driver` 패키지를 찾는다.
+진입점만 실행 파일이다(`#!/usr/bin/env node`). 심링크로 불려도 Node 가 모듈 경로를 실체로 풀어 옆의 `driver` 폴더를 찾는다.
+이 폴더는 팀 저장소에 `tools/browser-driver` 로 실린다. 폴더 밖을 import 하지 않는다.
 
 ## 부르는 쪽
 
@@ -41,23 +44,28 @@ $B doctor
 전역에서 부르려면 심볼릭 링크를 만든다. `git pull` 만으로 최신이 반영된다.
 
 ```bash
-./browser_driver.py install
+node browser_driver.ts install
 ```
 
 같은 이름의 실제 파일이 있으면 `.bak.{pid}` 로 옮긴 뒤 링크를 건다.
 
+옛 링크(`~/.claude/scripts/browser-driver` 가 `tools/browser-driver/browser_driver.py` 를 가리키는 것)는 그대로 돈다.
+그 경로에 옛 이름 진입(node shebang JS)이 남아 있어 새 `browser_driver.ts` 를 불러 같은 결과를 낸다.
+부를 때마다 stderr 맨 앞에 새 명령을 알리는 한 줄을 붙이고, 이 진입은 이 저장소의 다음 major 에 지운다.
+새로 거는 링크는 `install` 이 `browser_driver.ts` 로 건다.
+
 ## 설정 파일
 
 경로는 `config-path` 가 한 줄로 낸다. 파일이 없어도 경로를 내고 종료 코드는 0 이다.
-경로를 정하는 곳은 `driver/config.py` 하나이고, `show-preview.sh` 도 이 명령으로 같은 파일을 읽는다.
+경로를 정하는 곳은 `driver/config.ts` 하나이고, `show-preview.ts` 도 이 명령으로 같은 파일을 읽는다.
 
 1. 환경변수 `BROWSER_CONFIG`
 2. 본체가 플러그인 설치 캐시 안에 있으면 그 플러그인의 데이터 폴더에 있는 `browser.config.json`. 그 파일이 있을 때만 쓴다
 3. 본체가 설치 캐시 밖에 있으면 Claude 설정 폴더의 `plugins/data/*/browser.config.json`. 파일이 정확히 하나일 때만 쓴다
 4. 옛 위치 `~/.claude/browser.config.json`
 
-2번의 판정은 `Path(__file__).resolve()` 가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/skills/browser/browser-driver/driver/config.py` 꼴인지 본다.
-팀 사본은 `.../<버전>/tools/browser-driver/driver/config.py` 꼴도 같게 본다.
+2번의 판정은 `driver/config.ts` 의 실체 경로가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/skills/browser/browser-driver/driver/config.ts` 꼴인지 본다.
+팀 사본은 `.../<버전>/tools/browser-driver/driver/config.ts` 꼴도 같게 본다.
 맞으면 데이터 폴더는 `<루트>/plugins/data/<플러그인>-<마켓플레이스>/` 다. 이 이름 규칙은 Claude Code 2.1.286 에서 실측했다.
 Codex 설치본(`<CODEX_HOME>/plugins/cache/…`)은 `<CODEX_HOME>/config.toml` 이 파일로 있고 데이터 폴더가 없다.
 이때는 Claude Code 와 같은 설정을 쓰도록 `<Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/` 를 본다.
@@ -81,7 +89,7 @@ ln -s "$BROWSER_CONFIG" ~/.claude/browser.config.json
 
 1. 환경변수 `BROWSER_DRIVER`
 2. 설정 파일의 `driver` (경로는 위 「설정 파일」)
-3. 자동 감지. 순서와 그 이유는 `driver/backends/__init__.py` 의 `DETECT_ORDER` 가 소유한다
+3. 자동 감지. 순서와 그 이유는 `driver/backends/index.ts` 의 `DETECT_ORDER` 가 소유한다
 
 **용도가 갈리면 부르는 쪽이 백엔드를 고정한다.** 자동 감지는 쓸 수 있는 것을 고르는 규칙이고
 그 호출에 알맞은 것을 고르는 규칙이 아니다.
@@ -89,7 +97,7 @@ ln -s "$BROWSER_CONFIG" ~/.claude/browser.config.json
 사람이 보지 않는 자동화는 `ego` 가 맞다.
 `ego` 는 사용자가 로그인해 둔 프로필의 세션을 그대로 쓰므로 SSO 와 로그인이 필요한 주소에서 다른 백엔드가 못 여는 화면을 연다.
 그래서 예시 설정의 `driver` 도 `ego` 이고, 설치돼 있지 않으면 `doctor` 와 오류 문구가 ego lite(`https://lite.ego.app/`)를 권한다.
-`content-preview` 의 `show-preview.sh` 가 그 값을 설정 파일의 `previewDriver` 로 읽는다.
+`content-preview` 의 `show-preview.ts` 가 그 값을 설정 파일의 `previewDriver` 로 읽는다.
 
 ## 백엔드마다 갈리는 것
 
@@ -335,11 +343,11 @@ ORCA_WORKTREE="path:$HOME/projects/MyRepo" $B open "file:///tmp/preview.html"
 ## 새 백엔드 추가
 
 `driver/backends/` 에 파일 하나를 더한다.
-`base.py` 의 `Backend` 를 상속하고 `__init__.py` 의 `BACKENDS` 에 등록한다.
+`base.ts` 의 `Backend` 를 상속하고 `index.ts` 의 `BACKENDS` 에 등록한다.
 
 - 실패를 종료 코드로 알리지 않는 CLI 라면 출력에서 실패 표식을 찾아 `DriverError` 를 던진다.
   종료 코드로 알리는 CLI 라면 `run` 에 `check_exit=True` 를 준다.
 - 조건 대기 명령이 없으면 `wait_expression` 으로 만든 폴링 표현식을 `eval` 에 넘긴다.
   그 백엔드에 대기 API 가 있으면 폴링으로 대신하지 말고 그것을 쓴다.
-- `js` 의 반환값은 `shell.py` 의 `js_value` 를 거쳐 낸다. 백엔드마다 형식이 갈리면
+- `js` 의 반환값은 `shell.ts` 의 `jsValue` 를 거쳐 낸다. 백엔드마다 형식이 갈리면
   같은 표현식이 다른 바이트로 나온다.

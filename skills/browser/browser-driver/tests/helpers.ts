@@ -19,11 +19,11 @@ import { delimiter, dirname, join } from 'node:path'
 export const DRIVER_DIR = realpathSync(join(import.meta.dirname, '..'))
 
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
-const PYTHON = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim()
-const ENTRY_NAME = 'browser_driver.py'
-export const COMMAND: string[] = [PYTHON, join(DRIVER_DIR, ENTRY_NAME)]
+const INTERPRETER = [process.execPath]
+const ENTRY_NAME = 'browser_driver.ts'
+export const COMMAND: string[] = [...INTERPRETER, join(DRIVER_DIR, ENTRY_NAME)]
 // 드라이버 폴더를 복사한 사본(설치 캐시 배치 등)의 진입을 부르는 명령
-export const commandIn = (dir: string): string[] => [PYTHON, join(dir, ENTRY_NAME)]
+export const commandIn = (dir: string): string[] => [...INTERPRETER, join(dir, ENTRY_NAME)]
 // ──
 
 export type Result = { code: number | null; stdout: string; stderr: string }

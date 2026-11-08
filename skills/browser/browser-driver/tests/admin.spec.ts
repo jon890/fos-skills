@@ -3,10 +3,10 @@
 // 긴 출력은 fixtures/admin.json 에 옛 구현이 낸 글자를 적어 두고 같은지 본다(임시 경로는 <ROOT0> 로 가린다).
 
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, symlinkSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { Box, golden, mask, tempDir, write, type EnvChange, type FakeRule, type T } from './helpers.ts'
+import { Box, DRIVER_DIR, golden, mask, write, type EnvChange, type FakeRule, type T } from './helpers.ts'
 
 function setup(t: T, installed: Record<string, FakeRule[]> = {}, env: EnvChange = {}) {
   const box = new Box(t)
@@ -131,6 +131,21 @@ describe('install', () => {
         "  mkdir -p <ROOT0>\n  cp <EXAMPLE> <ROOT0>/browser.config.json\n",
     )
     assert.equal(done.stderr, '')
+  })
+
+  // 옛 Python 구현은 링크를 driver/admin.py 로 걸고 예시 설정을 driver/ 아래에서 찾는 잘못이 있었다. README 의 「진입점을 연결한다」 와
+  // 어긋난 버그라 새 구현은 문서대로 진입 파일과 폴더의 예시 설정을 가리킨다. 옛 구현에서 통과하지 않는 유일한 사례다.
+  test('링크는 진입 파일을 가리키고 안내의 예시 설정은 드라이버 폴더에 있다', (t) => {
+    const box = setup(t, { orca: [] })
+    const done = box.run(['install'])
+    const entry = realpathSync(join(DRIVER_DIR, 'browser_driver.ts'))
+    const link = join(box.home, '.claude/scripts/browser-driver')
+    assert.equal(readlinkSync(link), entry)
+    assert.ok(done.stdout.includes(`  ✓ ${link} → ${entry}\n`))
+    assert.ok(done.stdout.includes(`  cp ${join(DRIVER_DIR, 'browser.config.example.json')} ${box.config}\n`))
+    // 링크로 부르면 실제로 돈다
+    const run = box.run(['driver'], {}, { command: [process.execPath, link] })
+    assert.deepEqual([run.code, run.stdout], [0, 'orca\n'])
   })
 
   test('백엔드가 없으면 안내를 내고 그래도 0 으로 끝난다', (t) => {

@@ -26,7 +26,7 @@
 //   1  경로를 주지 않았다
 //   2  파일이 없거나 어떤 방법으로도 열지 못했다
 //
-// browser-driver(browser_driver.py)는 아직 Python 이라 옛 꼴 그대로 실행 파일로 부른다.
+// browser-driver(browser_driver.ts)는 node shebang 이 있는 실행 파일이라 그대로 부른다.
 
 import { spawnSync } from 'node:child_process'
 import { accessSync, constants, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -65,7 +65,7 @@ function logicalCwd(): string {
   return cwd
 }
 
-// 스킬 번들 위치에서 위로 올라가며 browser_driver.py 를 찾는다.
+// 스킬 번들 위치에서 위로 올라가며 browser_driver.ts 를 찾는다.
 // 이 저장소의 드라이버는 skills/browser/browser-driver/, 팀 사본은 tools/browser-driver/ 에 있다.
 // 스킬 번들도 이 저장소는 export-only-skills/content-preview/scripts, 팀 사본은 skills/content-preview/scripts 라
 // 거리가 한 단 다르다. 고정 상대경로로는 둘 다 맞출 수 없다 (실측).
@@ -77,7 +77,7 @@ function findBundledDriver(): string | null {
     dir = dirname(dir)
     if (dir === '/') return null
     for (const home of DRIVER_HOMES) {
-      const cand = join(dir, home, 'browser_driver.py')
+      const cand = join(dir, home, 'browser_driver.ts')
       if (isExecutable(cand)) return cand
     }
   }

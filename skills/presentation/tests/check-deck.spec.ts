@@ -46,7 +46,7 @@ function setup() {
     return path
   }
   const driver = (body: string) => {
-    const path = join(root, 'skills', 'browser', 'browser-driver', 'browser_driver.py')
+    const path = join(root, 'skills', 'browser', 'browser-driver', 'browser_driver.ts')
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, `#!${process.execPath}\n${body}`)
     chmodSync(path, 0o755)

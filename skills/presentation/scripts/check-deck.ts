@@ -197,7 +197,7 @@ export function main(argv: string[]): number {
 
 // 이 저장소의 skills/browser/browser-driver(팀 사본은 tools/browser-driver)를 먼저 찾고, 없으면 개인이 걸어 둔 것으로 내려간다.
 function findDriver(): string | null {
-  for (const candidate of [join(ROOT, 'skills', 'browser', 'browser-driver', 'browser_driver.py'), join(ROOT, 'tools', 'browser-driver', 'browser_driver.py'), expandUser('~/.claude/scripts/browser-driver')]) {
+  for (const candidate of [join(ROOT, 'skills', 'browser', 'browser-driver', 'browser_driver.ts'), join(ROOT, 'tools', 'browser-driver', 'browser_driver.ts'), expandUser('~/.claude/scripts/browser-driver')]) {
     if (existsSync(candidate)) return candidate
   }
   return null

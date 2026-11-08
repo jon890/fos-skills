@@ -1,10 +1,9 @@
 {
   "pending": [
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/orch-doctor.py" },
-    { "area": "orch-legacy", "prefix": "skills/orch/scripts/ts_shim.py" },
-    { "area": "browser-driver", "prefix": "skills/browser/browser-driver/" }
+    { "area": "orch-legacy", "prefix": "skills/orch/scripts/ts_shim.py" }
   ],
-  "legacy": ["export-only-skills/korean-check/scripts/korean-style-check.py", "export-only-skills/korean-check/scripts/check-readability.py"],
+  "legacy": ["export-only-skills/korean-check/scripts/korean-style-check.py", "export-only-skills/korean-check/scripts/check-readability.py", "tools/browser-driver/browser_driver.py"],
   "entry_js": [
     "bin/orch",
     "githooks/commit-msg",

@@ -77,7 +77,7 @@ describe('show-preview 드라이버 선택', () => {
     const s = setup(t)
     const handlers = OK(s.wantDir)
     const env = s.driver(join(s.root, 'by-env'), handlers)
-    const bundled = s.driver(join(s.root, 'tools', 'browser-driver', 'browser_driver.py'), handlers)
+    const bundled = s.driver(join(s.root, 'tools', 'browser-driver', 'browser_driver.ts'), handlers)
     const personal = s.driver(join(s.home, '.claude', 'scripts', 'browser-driver'), handlers)
     return { s, env, bundled, personal }
   }
@@ -89,7 +89,7 @@ describe('show-preview 드라이버 선택', () => {
     assert.equal(first(s), 'by-env')
     rmSync(s.log)
     assert.equal(s.exec(['p.html']).code, 0)
-    assert.equal(first(s), 'browser_driver.py')
+    assert.equal(first(s), 'browser_driver.ts')
     rmSync(s.log)
     rmSync(bundled)
     assert.equal(s.exec(['p.html']).code, 0)
@@ -119,10 +119,10 @@ describe('show-preview 드라이버 선택', () => {
     const deep = join(s.root, 'a', 'b', 'skills', 'content-preview', 'scripts')
     mkdirSync(join(s.root, 'a', 'b', 'skills', 'content-preview'), { recursive: true })
     run(['cp', '-R', s.scripts, deep])
-    s.driver(join(s.root, 'a', 'tools', 'browser-driver', 'browser_driver.py'), OK(s.wantDir))
+    s.driver(join(s.root, 'a', 'tools', 'browser-driver', 'browser_driver.ts'), OK(s.wantDir))
     const done = run([...command(deep), 'p.html'], { cwd: s.work, env: { ...s.env, PWD: s.work } })
     assert.equal(done.code, 0)
-    assert.equal(lines(s.log)[0].split(' ')[0], 'browser_driver.py')
+    assert.equal(lines(s.log)[0].split(' ')[0], 'browser_driver.ts')
   })
 })
 
