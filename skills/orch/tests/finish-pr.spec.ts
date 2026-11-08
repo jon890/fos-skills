@@ -1144,6 +1144,20 @@ describe('finish-pr 실제 CLI 대응', () => {
     })
   }
 
+  test('잡히지 않은 파일 예외도 실제 CLI와 fixture가 1로 끝내고 정리하지 않는다', async (t) => {
+    for (const cli of [false, true]) {
+      const c = setup(t, cli)
+      const blocked = join(c.tmp, 'blocked')
+      writeFileSync(blocked, '')
+      const result = await c.finish(['--pid-file', join(blocked, 'pid')])
+      assert.equal(result.code, 1, both(result))
+      assert.match(result.stderr, /EEXIST|ENOTDIR/)
+      assert.equal(result.stdout, '')
+      assert.equal(existsSync(c.wt), true)
+      assert.equal(c.calls().some((line) => line.startsWith('sweep ')), false)
+    }
+  })
+
   test('import는 실행 없이 main을 내보낸다', () => {
     const done = spawnSync(process.execPath, ['--input-type=module', '-e', `
       const { main } = await import(${JSON.stringify(new URL('../scripts/queue/finish-pr.ts', import.meta.url).href)})
