@@ -817,8 +817,8 @@ describe('--start, --status, --stop', () => {
 
   test('명의 조회가 주입한 시작 대기보다 느려도 띄운 루프는 다시 조회하지 않고 시작한다', { timeout: 60_000 }, () => {
     config({ pipeline: { tick_sec: 3600 } })
-    orca({ bound: 'r1', slow_run_current: 2.5 })
-    const started = loop(['--run', 'r1', '--start'], { ORCH_LOOP_START_WAIT_SEC: '2' })
+    orca({ bound: 'r1', slow_run_current: 5 })
+    const started = loop(['--run', 'r1', '--start'], { ORCH_LOOP_START_WAIT_SEC: '4' })
     assert.equal(started.code, 0, started.stdout + started.stderr)
     assert.match(started.stdout, /^LOOP-STARTED \d+ run=r1$/m)
     assert.equal(loopState()?.bound_run, 'r1')
