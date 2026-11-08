@@ -78,7 +78,7 @@ describe('orca', () => {
       assert.equal(box.run(['ready', 'P', raw]).code, 0, raw)
       assert.equal(argvs().at(-1)![4], want, raw)
     }
-    for (const raw of ['x', '1.5', '', '1e3', '0x1']) assert.equal(box.run(['ready', 'P', raw]).code, 1, JSON.stringify(raw))
+    for (const raw of ['x', '1.5', '', '1e3', '0x1', '\x1c15', '15\x1f']) assert.equal(box.run(['ready', 'P', raw]).code, 1, JSON.stringify(raw))
   })
 
   test('js 는 문자열은 그대로, 나머지는 여백 없는 JSON 으로 낸다', (t) => {

@@ -68,6 +68,10 @@ export const isDigit = (text: string): boolean => IS_DIGIT.test(text)
 
 // ── 숫자 ──
 
+// int(), float() 가 앞뒤에서 받는 공백. str.strip 의 PY_SPACE 에서 \x1c~\x1f 만 빠진다(Python 이 거절한다)
+const NUM_SPACE = PY_SPACE.replace('\\x1c-\\x1f ', ' ')
+const NUM_STRIP = new RegExp(`^${NUM_SPACE}+|${NUM_SPACE}+$`, 'g')
+
 const NUMERIC = /^\p{Nd}$/u
 
 // 유니코드의 십진 숫자는 0~9 가 이어진 자리에 열 개씩 놓여 있다. 이어진 숫자 줄의 처음에서 떨어진 거리를 10 으로 나눈 나머지가 값이다
@@ -83,7 +87,7 @@ const toAscii = (text: string) => Array.from(text, (ch) => (NUMERIC.test(ch) ? S
 
 // int(text). 앞뒤 공백, 부호, 숫자 사이의 밑줄을 받고 그 밖이면 던진다
 export function parsePyInt(text: string): bigint {
-  const m = new RegExp(`^${PY_SPACE}*([+-]?)(\\p{Nd}+(?:_\\p{Nd}+)*)${PY_SPACE}*$`, 'u').exec(text)
+  const m = new RegExp(`^${NUM_SPACE}*([+-]?)(\\p{Nd}+(?:_\\p{Nd}+)*)${NUM_SPACE}*$`, 'u').exec(text)
   if (!m) throw new Error(`invalid literal for int() with base 10: ${pyRepr(text)}`)
   const value = BigInt(toAscii(m[2]).replaceAll('_', ''))
   return m[1] === '-' ? -value : value
@@ -91,7 +95,7 @@ export function parsePyInt(text: string): bigint {
 
 // float(text). 앞뒤 공백과 숫자 사이 밑줄을 받고 그 밖이면 던진다
 export function parsePyFloat(text: string): number {
-  const stripped = pyStrip(text)
+  const stripped = text.replace(NUM_STRIP, '')
   const special = /^([+-]?)(inf|infinity|nan)$/i.exec(stripped)
   if (special) return special[2].toLowerCase() === 'nan' ? NaN : special[1] === '-' ? -Infinity : Infinity
   const digits = '\\p{Nd}+(?:_\\p{Nd}+)*'
