@@ -8,7 +8,7 @@
 | PR2 | testkit 첫 판(`modules/testkit`)과 기존 fixtures 이전, 내보내는 폴더의 import 검사 | orch-cli PR3 앞 |
 | PR3 | 실행기 하나(`scripts/run-tests.ts`), CI job 하나, 로컬 검증 문서 | orch-cli PR3 앞, PR2 뒤 |
 | PR4~ | 파일 묶음마다 가짜 재사용, 템플릿 저장소, 함수 주입 전환(merge-queue, orch-loop 계열, cleanup-sweep 계열, launch-worker 와 나머지) | orch-cli PR3 뒤 |
-| 마지막 | 대기 옵션 정리와 2분 목표 확인 | 실행기 전체가 600초 아래로 내려온 뒤 |
+| 마지막 | 대기 옵션 정리와 3분 안팎 목표 확인 | 실행기 전체가 600초 아래로 내려온 뒤 |
 
 ## 요구사항 연결
 
