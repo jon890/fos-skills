@@ -266,7 +266,7 @@ ln -sfn ~/personal/fos-skills/skills/plan ~/.claude/skills/plan
 공용 도구를 전역에서도 부르려면 함께 걸어요.
 
 ```bash
-ln -sfn ~/personal/fos-skills/skills/browser/browser-driver/browser_driver.py ~/.claude/scripts/browser-driver
+ln -sfn ~/personal/fos-skills/skills/browser/browser-driver/browser_driver.ts ~/.claude/scripts/browser-driver
 ```
 
 ## 공용 도구
