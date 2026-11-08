@@ -1,0 +1,3 @@
+{
+ "unknown-command": "모르는 명령: nope\n쓸 수 있는 명령: open, nav, js, jsfile, click, drag, hover, waitjs, ready, url, snap, shot, console, errors, worktree, close, pages, spaces, reset, driver, doctor, config-path, help, install\n자세한 사용법은 help 로 본다.\n"
+}
