@@ -31,7 +31,7 @@ describe('test-plugin-install 의 실행 불가 경로', () => {
 
   test('claude 가 없으면 2 다', (t) => {
     const bin = tempDir('plugin-install-bin-', t)
-    for (const tool of ['git', 'tar', 'python3', 'dirname', 'mktemp']) symlinkSync(which(tool), join(bin, tool))
+    for (const tool of ['git', 'tar', 'dirname', 'mktemp']) symlinkSync(which(tool), join(bin, tool))
     const done = runCommand(COMMAND, { env: { ...process.env, PATH: bin } })
     assert.equal(done.code, 2, done.stderr)
     assert.match(done.stderr, /claude/)

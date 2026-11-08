@@ -10,7 +10,7 @@
 //   node scripts/test-plugin-install.ts --keep    임시 디렉터리를 지우지 않고 경로를 출력한다
 //
 // 출력: 점검마다 `ok: <내용>` 또는 `FAIL: <내용>` 줄, 끝에 `통과` 또는 `실패 N 건`.
-// 종료 코드: 0 통과, 1 점검 실패, 2 실행 불가(모르는 인자, claude·git·python3·bash 없음, 격리 실패)
+// 종료 코드: 0 통과, 1 점검 실패, 2 실행 불가(모르는 인자, claude·git·bash 없음, 격리 실패)
 
 import { spawnSync } from 'node:child_process'
 import {
@@ -107,7 +107,7 @@ export function main(argv: string[]): number {
       return 2
     }
   }
-  for (const tool of ['claude', 'git', 'python3', 'bash']) {
+  for (const tool of ['claude', 'git', 'bash']) {
     if (!onPath(tool)) {
       process.stderr.write(`실행 불가: ${tool} 없음\n`)
       return 2
