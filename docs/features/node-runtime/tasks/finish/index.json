@@ -1,0 +1,27 @@
+{
+  "name": "finish",
+  "description": "node-runtime 영역 11: 마무리. CI 의 Python 설치와 테스트 실행기의 Python 묶음을 지우고 문서에 남은 python3 안내를 정리한다",
+  "pr_scope": "scripts/run-tests.ts 와 그 테스트에서 Python 묶음을 지우고, CI 의 setup-python·jq 설치 단계와 README·orch·presentation 문서의 python3 안내를 정리한다. pending 의 orch-legacy 는 orch-cli 의 옛 이름 정리 PR 이 지우므로 남긴다. 영역 하나에 PR 하나다(스펙 DECISION6).",
+  "deferred": [
+    {
+      "what": "pending 의 orch-legacy(orch-doctor.py, ts_shim.py)와 그 .py 에 기대는 orch 테스트(ts-shim, goal-progress, heavy-slot 의 python3 fcntl, finish-pr, merge-queue, merge-with-finish 의 .py 가짜 스크립트)",
+      "why": "설계 DECISION14 와 orch-cli 스펙 DECISION13 이 지우는 때를 소유한다. python3 이 없는 PATH 에서 이 테스트 7파일이 실패한다",
+      "after": "orch-cli 의 옛 이름 정리 PR"
+    },
+    {
+      "what": "팀 저장소 반영(스펙 REQ8)",
+      "why": "머지 뒤 코디네이터가 AiSdtSkill 에 따로 맡긴다",
+      "after": "이 PR 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-09",
+  "spec": "docs/features/node-runtime/spec.md",
+  "design": "docs/features/node-runtime/design.md",
+  "requirements": ["REQ1", "REQ4", "REQ5", "REQ9"],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    { "number": 1, "file": "phase-01.md", "execution_profile": "standard", "requirements": ["REQ1", "REQ4", "REQ5", "REQ9"] }
+  ]
+}
