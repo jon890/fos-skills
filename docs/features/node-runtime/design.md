@@ -7,7 +7,7 @@
 
 | ID | 해결 방법 |
 | --- | --- |
-| REQ1 | 저장소 테스트 `scripts/tests/runtime-policy.spec.ts` 가 추적 파일에서 `.py` 와 python shebang 을 찾는다. PR1 은 지금 남은 파일을 허용 목록(`scripts/runtime-policy.json` 의 `pending`)에 적고, 영역 PR 마다 그 영역 줄을 지운다. 마지막 PR 에서 `pending` 이 비고 옛 이름 진입 셋만 `legacy` 로 남는다 |
+| REQ1 | 저장소 테스트 `scripts/tests/runtime-policy.spec.ts` 가 추적 파일에서 `.py` 와 python shebang 을 찾는다. PR1 은 지금 남은 파일을 허용 목록(`scripts/runtime-policy.json` 의 `pending`)에 적고, 영역 PR 마다 그 영역 줄을 지운다. 영역 11 에서 `pending` 에는 `orch-legacy` 묶음(`orch-doctor.py`, `ts_shim.py`)만 남고, 그 둘은 orch-cli 의 옛 이름 정리 PR 이 지운다. 그 PR 이 머지되면 `pending` 이 비고 옛 이름 진입 셋만 `legacy` 로 남는다 |
 | REQ2 | 같은 테스트가 `.sh`, `.bash`, `.zsh` 와 셸 shebang 을 찾는다. git 훅은 「진입 파일」 절의 확장자 없는 JS 진입으로 바꾸고, 임시 저장소 테스트가 `install-hooks.ts` 로 건 훅이 `git commit` 에서 도는지 본다 |
 | REQ3 | 「동등성 확인」 절의 두 커밋 방식과 공통 꼴 모듈(`kit`)로 stdout, 쓰는 파일, 종료 코드를 맞춘다 |
 | REQ4 | 영역 PR 이 그 영역 문서의 호출을 「호출 꼴」 절대로 같은 커밋에서 바꾼다. 기존 `scripts/tests/test_doc_script_refs.py`(PR2 에서 `doc-script-refs.spec.ts`)가 문서가 부르는 스크립트의 존재를 본다. `runtime-policy.spec.ts` 가 이행을 마친 영역의 문서에 `python3 `, `bash "$SKILL_DIR` 꼴이 남으면 실패한다 |
@@ -112,7 +112,7 @@ PR1 이 만든다. 키의 정확한 뜻과 판정은 명령 `scripts/runtime-pol
 
 | 키 | 뜻 | 바뀌는 때 |
 | --- | --- | --- |
-| `pending` | 아직 옮기지 않은 `.py`, `.sh`, 셸·python shebang 파일. 영역 단위로 묶는다 | 영역 PR 이 자기 묶음을 지운다. PR11 에서 빈다 |
+| `pending` | 아직 옮기지 않은 `.py`, `.sh`, 셸·python shebang 파일. 영역 단위로 묶는다 | 영역 PR 이 자기 묶음을 지운다. `orch-legacy` 는 PR11 이 아니라 orch-cli 의 옛 이름 정리 PR 이 지우므로 `pending` 은 그 PR 에서 빈다 |
 | `legacy` | 옛 이름 진입 셋 | 옮긴 영역 PR 이 더하고, DECISION17 의 다음 major PR 이 지운다 |
 | `entry_js` | 허용하는 `.js`, `.mjs`, `.cjs`, 확장자 없는 JS | 진입이 생기거나 없어질 때 |
 | `migrated_docs` | 문서 호출 검사를 켤 영역 | 영역 PR 이 자기 영역을 더한다 |
@@ -195,7 +195,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 
 | ID | 어디서 확인하나 |
 | --- | --- |
-| REQ1, REQ2, REQ9 | `runtime-policy.spec.ts`. 허용 목록 밖의 파일을 하나씩 더한 임시 사본에서 그 파일 이름으로 실패하는지 본다. PR11 에서 `pending` 이 빈 채로 통과한다 |
+| REQ1, REQ2, REQ9 | `runtime-policy.spec.ts`. 허용 목록 밖의 파일을 하나씩 더한 임시 사본에서 그 파일 이름으로 실패하는지 본다. PR11 에서 `pending` 에 `orch-legacy` 만 남은 채로 통과하고, orch-cli 의 옛 이름 정리 PR 에서 빈 채로 통과한다 |
 | REQ2 의 훅 | 임시 저장소에 `install-hooks.ts` 로 훅을 걸고 금지어 메시지 커밋이 막히는지, 공용 스킬 파일 커밋에서 알림이 나는지 본다(기존 `test_commit_msg_hook.py`, `test_post_commit_hook.py` 를 명령 경계 테스트로 옮긴다) |
 | REQ3 | 영역 PR 마다 두 커밋의 명령 경계 테스트 결과와, 정규식 중심 검사기의 문서 전체 비교 |
 | REQ4 | `doc-script-refs.spec.ts` 와 `runtime-policy.spec.ts` 의 `migrated_docs` 검사 |
