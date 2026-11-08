@@ -1177,9 +1177,9 @@ describe('상주 루프', () => {
     return child.pid as number
   }
 
-  // 생존 타이머 간격 0.2초에 여유 0.8초다. 운영 기본은 30초에 5초다
-  const RECHECK_MS = 1_000
-  const LOOP_ENV = { ORCH_LOOP_ALIVE_SEC: '0.2', ORCH_LOOP_RECHECK_MARGIN_SEC: '0.8' }
+  // 생존 타이머 간격 0.2초에 여유 1.8초다. 운영 기본은 30초에 5초다
+  const RECHECK_MS = 2_000
+  const LOOP_ENV = { ORCH_LOOP_ALIVE_SEC: '0.2', ORCH_LOOP_RECHECK_MARGIN_SEC: '1.8' }
 
   test('루프 pid 가 살아 있으면 오래된 alive_at 은 다시 본 뒤에야 LOOP-DEAD 와 8 이다. 간격이 0 이어도 다시 본다', { timeout: 60_000 }, async (t) => {
     loopJson({ pid: await fakeLoop(t), alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
