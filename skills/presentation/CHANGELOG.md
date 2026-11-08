@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.0.3 (2026-11-09)
+
+- `--browser` 가 브라우저 드라이버를 `skills/browser/browser-driver/`(팀 사본은 `tools/browser-driver/`)에서도 찾는다
+
 ## 2.0.2 (2026-11-06)
 
 - 심볼릭 링크로 부른 진입도 import.meta.main 이 없는 Node 24.0·24.1 에서 일을 하도록 직접 실행 판정을 실체 경로로 비교한다
