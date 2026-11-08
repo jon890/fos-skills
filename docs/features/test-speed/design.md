@@ -327,3 +327,32 @@ Node 24.22.1, 사용 가능한 CPU 12개인 동일 macOS 머신에서 `orch slot
 부하가 높아 이 시간 비교는 기본값이나 2분 목표 판정에 쓰지 않는다. 동시 12 측정은 이번 PR 범위에서 제외한다. 기본 최대 8은 위 정확성 결과와 CPU 제한·명시 옵션 우선순위 검사로 정했고, 가장 빠른 값이라는 결론은 유보한다.
 
 저부하에서 옵션 없는 `node scripts/run-tests.ts` 실행과 로컬 전체 2분 확인은 코디네이터가 test-speed 13단계에서 수행한다. PR9 완료와 저부하 확보 뒤 저장소 루트에서 실행하며 끝 줄의 실패 0과 실제 시간 120초 이하를 확인한다. 이 PR에서는 동시 8을 명시한 전체 실행으로 해당 동시 수에서의 테스트 간 간섭 여부를 확인했다. 저부하 기본 전체 실행을 아직 재지 않았으므로 2분에 남은 시간을 수치로 확정하지 않는다.
+
+
+## PR9: launch-worker 의 비동기 판정을 함수로 호출한다
+
+REQ1·REQ3·REQ4와 스펙 DECISION4·DECISION16을 따른다. PR8 뒤 기준 전체 실행을 먼저 시작하고 상위 파일 시간을 다시 모은다. launch-worker는 기존 fixture의 동기 실행 주입만으로 비동기 Orca·spec-line·spec-lint 기동을 줄이지 못한다. 이 PR은 그 호출 경계와 wait-important의 동기 조회를 바꾼다. 실제 git·신호·hook 비용은 유지한다.
+
+### 책임과 인터페이스
+
+`launch-worker.main(argv, runner?, asyncRunner?)`에 호출별 비동기 실행 함수를 받는다. 기본값은 기존 `runAsync`이며 lib/proc의 전역 동작은 바꾸지 않는다. lintGate와 prepareReview도 같은 실행 함수를 전달받는다. spec-line과 spec-lint는 기존 main을 내보내고 직접 실행일 때만 호출한다. 직접 실행 판정은 `import.meta.main`과 실경로를 비교한다.
+
+테스트 fixture는 동기 CommonJS 가짜 Orca를 기존 stateful-run으로 평가하고, spec-line·spec-lint는 실제 판정 함수를 호출한다. 동기 판정 함수의 표준 출력을 잠시 모은 뒤 즉시 복구한다. shell 가짜·make-worktree·review 준비·hook은 실제 실행한다. launch-worker fixture의 Orca 가짜는 동기 본문이어야 하며, 주어진 timeoutMs를 함수 평가에 적용하지 않는다. 이 fixture에서 Orca의 비동기 동작·신호·시간 제한·출력 한도를 검증하지 않는다. 해당 성질은 실제 CLI 대표 사례와 lib-proc 회귀로 확인한다. shell·외부 도구와 실행 옵션이 있는 spec 호출은 실제 실행으로 남긴다. 함수 예외는 명령 실패로 돌려주고 launch 예외는 실제 CLI의 reportError를 공유한다.
+
+`wait-important.main(argv, runner?)`도 기존 withRun 경계를 재사용한다. fixture는 gh PR 조회와 worker-list·task-list·dispatch-show·terminal read·inbox·check --all 조회를 동기 평가한다. 실제 check --wait는 비동기 출력과 자식 종료를 검증하므로 그대로 spawn한다. 지워진 cwd 검사는 실제 CLI로 남긴다.
+
+### 판정 대응표
+
+| 기존 프로세스 판정 | 함수 테스트와 초기 상태 | 남기는 실제 경계 |
+| --- | --- | --- |
+| launch-worker의 허락·선택·재시도·상태·짧은 출력 | launch-worker.spec.ts의 기존 각 state(values), spec, env와 단언을 유지하고 fixture의 asyncRunner만 바꾼다 | CLI 대응표의 성공·실패·사용법·이어 쓰기·모델·lint 종료 코드와 출력·상태·호출 기록 |
+| spec-line의 허락·읽기·인자 판정 | 같은 파일·argv로 내보낸 main을 호출한다 | spec-line.spec.ts의 CLI 검사 및 직접 실행·import 회귀 |
+| spec-lint의 담당 겹침·루프·ack 판정 | 기존 main을 같은 repo·spec-root·active 인자로 호출한다 | spec-lint.spec.ts의 CLI 검사, shell lint 대체·실패 경계 |
+| 가짜 orca의 비동기 worker-start·worker-show 판정 | 기존 FAKE_STATE·FAKE_LOG 본문을 stateful-run으로 평가한다 | 지연·프로세스 생명주기와 명령 옵션의 실제 실행, CLI 대응표 |
+| wait-important의 worker·완료·이력 판정 | wait-important.spec.ts의 기존 replies·workers·tasks·history·lost-state와 단언을 유지한다 | check --wait·신호·시간 제한·hook·지워진 cwd와 CLI 대응표 |
+
+출력·종료·상태 계약, 도메인 규칙, 배포 순서는 바뀌지 않는다. 새 저장소나 캐시도 없다. 기존 testkit 의존 방향과 [ADR-010](../../adr/010-orch-typescript.md)의 외부 의존성 없는 구조를 유지하므로 ADR은 추가하지 않는다.
+
+### 검증과 인계
+
+먼저 주입 자리와 import 보호만 커밋하고 기존 테스트를 실행한다. 다음 커밋에서 fixture와 회귀 검사를 바꾼다. 실행기로 대상 파일·proc·spec-line·spec-lint 회귀와 옵션 없는 전체 실행을 확인한다. 측정 명령으로 기준/구현 커밋을 번갈아 재고 기동 수와 비율, 시작·끝 load를 PR에 남긴다. 전체 파일 시간 합과 동시 8의 끝 줄을 함께 남기며 저부하 2분 판정은 코디네이터의 통합 검증에 맡긴다. 설계·계획·코드·문서 독립 리뷰는 지시서대로 PR 뒤 코디네이터에게 요청하며 그 전에는 대기다.

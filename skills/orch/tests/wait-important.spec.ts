@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/wait/wait-important.ts', import.meta.url))
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/wait-important-run.ts', import.meta.url))
 const ORCH_BIN = fileURLToPath(new URL('../bin/orch.ts', import.meta.url))
 const TRIAGE = fileURLToPath(new URL('../scripts/wait/triage-messages.ts', import.meta.url))
 const SHA = 'a'.repeat(40)
@@ -150,7 +151,7 @@ type WaitOptions = {
   screens?: Json
 }
 
-function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extraEnv: NodeJS.ProcessEnv = {}): Result {
+function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extraEnv: NodeJS.ProcessEnv = {}, script = FUNCTION_SCRIPT): Result {
   writeFileSync(
     stateFile,
     JSON.stringify({
@@ -164,7 +165,7 @@ function wait(replies: Json[], args: string[] = [], opts: WaitOptions = {}, extr
       screens: opts.screens ?? {},
     }),
   )
-  const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', opts.contract ?? 'none', ...args]
+  const argv = ['--disable-warning=ExperimentalWarning', opts.deleted ? SCRIPT : script, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', opts.contract ?? 'none', ...args]
   const childEnv = { ...env, ...extraEnv }
   const done = opts.deleted
     ? // 셸이 PWD 로 지워진 폴더를 남긴 채 node 가 시작한다. 머지 뒤 워크트리 정리로 시작 폴더가 사라진 상황이다
@@ -1445,4 +1446,54 @@ describe('짧은 출력의 원문 정리와 --full', () => {
     const plain = wait([batch('d2', 'question')], ['--lost-interval-sec', '0'])
     assert.doesNotMatch(nextWait(plain.stderr), /--full/)
   })
+})
+
+
+describe('CLI와 함수 조회 대응', () => {
+  for (const type of ['question', 'worker_done', 'escalation']) {
+    test(`${type}의 출력·종료·상태·호출 기록이 같다`, () => {
+      const replies = [batch('cli_match', type)]
+      const real = wait(replies, [], {}, {}, SCRIPT)
+      const realState = readFileSync(stateFile, 'utf8')
+      const realCalls = allCalls()
+      unlinkSync(log)
+      if (existsSync(lostState)) unlinkSync(lostState)
+      const fake = wait(replies)
+      assert.deepEqual(fake, real)
+      assert.equal(readFileSync(stateFile, 'utf8'), realState)
+      assert.deepEqual(allCalls(), realCalls)
+    })
+  }
+
+  for (const example of [
+    { code: 1, replies: [{ ok: false, error: { code: 'runtime_unavailable', message: 'offline' } }], args: ['--lost-interval-sec', '0'] },
+    { code: 3, replies: [sleeping(batch('slow', 'heartbeat'), 2)], args: ['--lost-interval-sec', '0', '--timeout-ms', '300'] },
+    { code: 4, replies: [{ ok: false, error: { code: 'waiter_exists', message: 'waiter exists' } }], args: ['--lost-interval-sec', '0'] },
+    { code: 5, replies: [batch('lost_fallback', 'worker_done')], args: ['--lost-interval-sec', '0.3'], opts: { workers: [GONE], tasks: [{ id: 't1', status: 'dispatched' }], latest: { t1: 'ctx_a' } } },
+    { code: 6, replies: [batch('suspect', 'worker_done')], args: ['--lost-interval-sec', '0'], opts: { contract: 'ready', historyFail: true } },
+    { code: 8, replies: [], args: ['--lost-interval-sec', '0', '--loop-repo'] },
+  ]) {
+    test(`종료 코드 ${example.code}의 출력·상태·호출 기록이 같다`, () => {
+      const args = example.code === 8 ? [...example.args, tmp] : example.args
+      const opts = example.opts ?? {}
+      // 순차 실행 시각만 제외하고 판정 종류와 저장한 dispatch를 모두 비교한다.
+      const savedLost = () => existsSync(lostState)
+        ? readFileSync(lostState, 'utf8').replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ/g, '<time>')
+        : null
+      const real = wait(example.replies, args, opts, {}, SCRIPT)
+      assert.equal(real.code, example.code, real.stdout + real.stderr)
+      const realState = readFileSync(stateFile, 'utf8')
+      const realLost = savedLost()
+      const realCalls = allCalls()
+      const realCwd = existsSync(cwdLog) ? readFileSync(cwdLog, 'utf8') : null
+      for (const file of [log, lostState, cwdLog]) if (existsSync(file)) unlinkSync(file)
+      const fake = wait(example.replies, args, opts)
+      assert.deepEqual(fake, real)
+      assert.equal(readFileSync(stateFile, 'utf8'), realState)
+      assert.equal(savedLost(), realLost)
+      assert.deepEqual(allCalls(), realCalls)
+      assert.equal(existsSync(cwdLog) ? readFileSync(cwdLog, 'utf8') : null, realCwd)
+    })
+  }
+
 })
