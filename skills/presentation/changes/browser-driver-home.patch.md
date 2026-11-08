@@ -1,0 +1,1 @@
+- `--browser` 가 브라우저 드라이버를 `skills/browser/browser-driver/`(팀 사본은 `tools/browser-driver/`)에서도 찾는다

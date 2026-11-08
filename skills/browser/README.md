@@ -39,7 +39,7 @@ CLI 나 API 로 안 되는 웹 작업을 「사람이 직접 해 주세요」 �
 
 `browser-driver` 와 그 백엔드(기본은 ego 브라우저)가 있어야 한다.
 플러그인으로 설치하면 드라이버는 함께 받는다. `browser-driver doctor` 가 백엔드 준비 상태를 판정한다.
-개인 계정 서비스를 쓰려면 설정 파일의 `egoProfiles` 에 `personal` 용도를 적는다. 형식은 [`tools/browser-driver/README.md`](../../tools/browser-driver/README.md) 의 「로그인 세션과 프로필」 에 있다.
+개인 계정 서비스를 쓰려면 설정 파일의 `egoProfiles` 에 `personal` 용도를 적는다. 형식은 [`browser-driver/README.md`](browser-driver/README.md) 의 「로그인 세션과 프로필」 에 있다.
 
 ## 함께 쓰는 스킬
 

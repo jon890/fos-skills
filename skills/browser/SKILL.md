@@ -5,11 +5,11 @@ description: |
   "브라우저로 해 줘", "콘솔에서 만들어 줘", "웹 화면에서 확인해 줘", "화면으로 해야 하는 작업", "CLI 나 API 로 안 되는 작업",
   "관리 콘솔", "웹 콘솔 설정", "사이트에서 신청해 줘", "화면 캡처해 줘" 같은 요청이면 이 스킬을 쓴다.
   사용자가 브라우저를 말하지 않아도, 웹 화면에서만 되는 일을 「사람이 할 일」 로 넘기려는 순간 이 스킬로 할 수 있는지 먼저 본다.
-  명령 목록과 반환값은 `browser-driver help`, 백엔드 함정은 `tools/browser-driver/README.md` 가 소유한다.
+  명령 목록과 반환값은 `browser-driver help`, 백엔드 함정은 `browser-driver/README.md` 가 소유한다.
   외부에 게시할 본문을 렌더링해 보이는 일은 `content-preview`, HTML 보고서를 띄우는 일은 `report` 가 맡는다.
   `ego-browser` 스킬이 같이 설치돼 있어도 에이전트의 웹 작업은 이 스킬이 먼저다. ego 는 browser-driver 가 쓰는 백엔드이고, 공간 분리, 로그인, 되돌리기 어려운 버튼의 확인은 이 스킬이 소유한다. ego 의 명령 문법만 필요할 때 `ego-browser` 스킬을 읽는다.
 metadata:
-  version: "1.1.0"
+  version: "2.0.0"
 ---
 
 # browser
@@ -61,7 +61,7 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && cat "$ROOT/.claude/browser-
 드라이버를 찾는다. Bash 호출마다 셸이 새로 뜨므로 출력된 절대 경로를 이후 호출에 그대로 쓴다.
 
 ```bash
-for cand in "${BROWSER_DRIVER_PATH:-}" "$SKILL_DIR/../../tools/browser-driver/browser_driver.py" "$HOME/.claude/scripts/browser-driver" "$(command -v browser-driver)"; do
+for cand in "${BROWSER_DRIVER_PATH:-}" "$SKILL_DIR/browser-driver/browser_driver.ts" "$HOME/.claude/scripts/browser-driver" "$(command -v browser-driver)"; do
   if [ -n "$cand" ] && [ -x "$cand" ]; then echo "$cand"; break; fi
 done
 ```
@@ -77,7 +77,7 @@ B="$HOME/.claude/scripts/browser-driver"
 `B` 는 위에서 찾은 경로로 바꾼다.
 `doctor` 가 종료 코드 0 이 아니면 그 출력의 복구 안내를 사용자에게 그대로 알리고 멈춘다.
 명령 목록, 반환값, 종료 코드는 `help` 가 소유한다. 이 문서에 다시 적지 않는다.
-백엔드마다 갈리는 동작(핸들 형식, `js` 반환값, 프로필과 공간)은 [`tools/browser-driver/README.md`](../../tools/browser-driver/README.md) 가 소유한다. 이상한 동작을 만나면 그 문서부터 본다.
+백엔드마다 갈리는 동작(핸들 형식, `js` 반환값, 프로필과 공간)은 [`browser-driver/README.md`](browser-driver/README.md) 가 소유한다. 이상한 동작을 만나면 그 문서부터 본다.
 
 ## 3. 공간 열기
 

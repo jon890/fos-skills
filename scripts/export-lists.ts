@@ -12,3 +12,12 @@ export function sharedLists(text: string): { skills: string[]; tools: string[] }
   const tools = read('SHARED_TOOLS')
   return skills && tools ? { skills, tools } : null
 }
+
+// 도구의 원본 폴더 후보(저장소 상대 경로). 앞이 지금 자리이고 뒤는 옛 커밋의 자리다.
+// 팀 저장소에는 어느 후보에서 가져왔든 tools/<이름> 으로 실린다. 소유 스킬 안으로 옮긴 도구만 앞 후보를 따로 적는다.
+const TOOL_HOMES: Record<string, string> = { 'browser-driver': 'skills/browser/browser-driver' }
+
+export function toolSources(name: string): string[] {
+  const home = TOOL_HOMES[name]
+  return home ? [home, `tools/${name}`] : [`tools/${name}`]
+}

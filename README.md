@@ -266,18 +266,19 @@ ln -sfn ~/personal/fos-skills/skills/plan ~/.claude/skills/plan
 공용 도구를 전역에서도 부르려면 함께 걸어요.
 
 ```bash
-ln -sfn ~/personal/fos-skills/tools/browser-driver/browser_driver.py ~/.claude/scripts/browser-driver
+ln -sfn ~/personal/fos-skills/skills/browser/browser-driver/browser_driver.ts ~/.claude/scripts/browser-driver
 ```
 
 ## 공용 도구
 
-`tools/` 에는 스킬이 아닌 공용 도구를 둬요.
-스킬 하나가 소유하기에는 다른 스킬도 쓰고, 전역에 두기에는 이 저장소가 관리해야 하는 것이에요.
+스킬이 아닌 공용 도구는 그 도구를 소유한 스킬 폴더 안에 둬요.
 
 | 도구 | 하는 일 | 쓰는 스킬 |
 | --- | --- | --- |
-| `tools/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview` |
+| `skills/browser/browser-driver` | 브라우저 백엔드가 달라도 같은 명령으로 조작해요. 실패를 종료 코드로 드러내요 | `browser`, `content-preview`, `presentation` |
 
+소유자는 `browser` 스킬이에요. 팀 저장소에는 `tools/browser-driver` 로 실려요.
+`tools/browser-driver/browser_driver.py` 는 옛 링크가 깨지지 않게 남긴 옛 이름 진입이에요. 새 `.ts` 를 불러요. 다음 major 에 지워요.
 스킬은 이 도구를 저장소 안에서 찾고, 없으면 개인이 걸어 둔 것으로 내려가요.
 이 플러그인의 루트 `bin/` 에는 orch 실행기 `orch` 하나만 있어요. `browser-driver` 는 PATH 명령으로 싣지 않아요. 근거는 [ADR-004](docs/adr/004-no-plugin-bin.md) 에 있어요.
 

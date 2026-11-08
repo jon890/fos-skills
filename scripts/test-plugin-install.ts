@@ -10,7 +10,6 @@
 //   node scripts/test-plugin-install.ts --keep    임시 디렉터리를 지우지 않고 경로를 출력한다
 //
 // 출력: 점검마다 `ok: <내용>` 또는 `FAIL: <내용>` 줄, 끝에 `통과` 또는 `실패 N 건`.
-// 아직 옮기지 않은 영역의 명령(tools/browser-driver 의 browser_driver.py)은 옛 꼴로 부른다.
 // 종료 코드: 0 통과, 1 점검 실패, 2 실행 불가(모르는 인자, claude·git·python3·bash 없음, 격리 실패)
 
 import { spawnSync } from 'node:child_process'
@@ -252,8 +251,10 @@ function check(T: string): number {
     else fail(`검사기 탐색: 기대 ${expectCheck}, 실제 '${r.out}' (종료 코드 ${r.rc})`)
 
     // 도구
-    if (isExecutableFile(join(cache, 'tools/browser-driver/browser_driver.py'))) ok('도구: tools/browser-driver/browser_driver.py 가 있고 실행 권한이 있다')
-    else fail('도구: tools/browser-driver/browser_driver.py 가 없거나 실행 권한이 없다')
+    if (isExecutableFile(join(cache, 'skills/browser/browser-driver/browser_driver.ts'))) ok('도구: skills/browser/browser-driver/browser_driver.ts 가 있고 실행 권한이 있다')
+    else fail('도구: skills/browser/browser-driver/browser_driver.ts 가 없거나 실행 권한이 없다')
+    if (isExecutableFile(join(cache, 'tools/browser-driver/browser_driver.py'))) ok('도구: 옛 이름 진입 tools/browser-driver/browser_driver.py 가 있고 실행 권한이 있다')
+    else fail('도구: 옛 이름 진입 tools/browser-driver/browser_driver.py 가 없거나 실행 권한이 없다')
 
     // 스크립트 실행
     r = run([process.execPath, join(cache, 'skills/plan/scripts/verify_task.ts'), '--help'], { env })

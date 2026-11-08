@@ -40,7 +40,7 @@
 - 덱을 짜기 전에 인터뷰로 발표 성격, 청중이 놀랄 한 지점, 도구를 드러내는 방식, 시간과 질문 시점, 데모 여부, 부 구성을 정해요
 - Node 24 가 있어야 검사기가 돌아요. JS 문법도 같은 `node` 로 검사해요
 - 금지어는 같은 저장소의 `korean-check` 스킬이 소유해요. 그 스킬이 없으면 금지어 검사를 건너뛰어요. 그 스킬의 검사기가 `python3` 로 도는 동안은 `python3` 도 있어야 해요
-- `--browser` 로 세로 넘침을 재려면 `tools/browser-driver` 나 `~/.claude/scripts/browser-driver` 가 있어야 해요. 없으면 그 항목만 건너뛰어요
+- `--browser` 로 세로 넘침을 재려면 `skills/browser/browser-driver`(팀 사본은 `tools/browser-driver`) 나 `~/.claude/scripts/browser-driver` 가 있어야 해요. 없으면 그 항목만 건너뛰어요
 - 글꼴을 Google Fonts 에서 받으므로 망이 없는 발표장에서는 화면이 달라져요. 발표 전에 망 없이 한 번 열어 확인해요
 
 ## 함께 쓰는 스킬

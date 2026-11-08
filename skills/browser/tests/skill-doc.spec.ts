@@ -9,8 +9,8 @@ const SKILL = join(import.meta.dirname, '..')
 const TEXT = readFileSync(join(SKILL, 'SKILL.md'), 'utf8')
 const DESCRIPTION = TEXT.split('description:')[1].split('metadata:')[0].split(/\s+/).filter(Boolean).join(' ')
 
-// browser-driver 의 진입점. 영역 10 이 이 스킬 안으로 옮기면 이 경로만 고친다
-const DRIVER_ENTRY = join(SKILL, '..', '..', 'tools', 'browser-driver', 'browser_driver.py')
+// browser-driver 의 진입점. 스킬 폴더 안에 있다. 구현 언어를 바꾸면 이 경로만 고친다
+const DRIVER_ENTRY = join(SKILL, 'browser-driver', 'browser_driver.ts')
 
 describe('browser SKILL.md', () => {
   test('description 이 부르는 말을 갖는다', () => {
@@ -20,13 +20,13 @@ describe('browser SKILL.md', () => {
   })
 
   test('description 은 소유자를 가리키고 내용을 되풀이하지 않는다', () => {
-    for (const phrase of ['browser-driver help', 'tools/browser-driver/README.md', '사람이 할 일']) {
+    for (const phrase of ['browser-driver help', 'browser-driver/README.md', '사람이 할 일']) {
       assert.ok(DESCRIPTION.includes(phrase), phrase)
     }
   })
 
   test('번들 드라이버 경로가 스킬 폴더에서 진입점을 가리킨다', () => {
-    assert.ok(TEXT.includes('"$SKILL_DIR/../../tools/browser-driver/browser_driver.py"'))
+    assert.ok(TEXT.includes('"$SKILL_DIR/browser-driver/browser_driver.ts"'))
     assert.ok(existsSync(DRIVER_ENTRY))
   })
 
