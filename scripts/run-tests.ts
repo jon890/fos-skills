@@ -1,16 +1,14 @@
 #!/usr/bin/env node
-// 저장소의 node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌고 결과를 파일에 남긴다.
+// 저장소의 node 테스트와 tsc 타입 검사를 함께 돌고 결과를 파일에 남긴다.
 //
 // 왜 필요한가:
-//   두 언어와 tsc 를 명령 하나로 돈다. 묶음 목록과 TypeScript 버전의 원본이다. CI 와 로컬 검증은 테스트와 tsc 를
+//   node 테스트와 tsc 를 명령 하나로 돈다. 묶음 목록과 TypeScript 버전의 원본이다. CI 와 로컬 검증은 테스트와 tsc 를
 //   이 명령 하나로 돈다(`claude plugin test .` 는 따로 부른다).
 //   결과 폴더에 요약을 남기므로 백그라운드로 띄우고 --wait 로 끝 줄을 나눠 기다릴 수 있다.
 //
 // 묶음 (인자가 없을 때)
-//   git 이 추적하거나 무시하지 않는 파일 가운데 tests/ 아래 *.spec.ts 를 `node --test` 한 번으로 돌고,
-//   tests/test_*.py 를 가진 tests 폴더마다 `python3 -m unittest discover -s <폴더>` 를 돈다. tsc 도 함께 돈다.
-//   인자를 주면 그 파일이나 glob, 폴더만 돈다(tsc 는 돌지 않는다). test_*.py 파일이나 그것을 바로 가진 폴더는
-//   Python 묶음만 돈다(그 폴더의 *.spec.ts 는 파일로 따로 준다). 그 밖의 폴더는 그 아래 *.spec.ts, 나머지 파일은 node 파일이다.
+//   git 이 추적하거나 무시하지 않는 파일 가운데 tests/ 아래 *.spec.ts 를 `node --test` 한 번으로 돌고, tsc 도 함께 돈다.
+//   인자를 주면 그 파일이나 glob, 폴더만 돈다(tsc 는 돌지 않는다). 폴더는 그 아래 *.spec.ts, 나머지는 node 파일이다.
 //
 // tsc:
 //   node 는 타입을 지우기만 해서 잘못된 속성 접근이 실행 때까지 드러나지 않는다. 저장소에 package.json 과
@@ -24,14 +22,13 @@
 //   node scripts/run-tests.ts --wait "$DIR"                결과 폴더의 끝 줄을 기다린다
 //
 // 옵션
-//   --concurrency N   node --test 의 동시 파일 수. Python 묶음은 ceil(N/2) 개씩 함께 돈다 (기본 CPU 수, 최대 8)
-//   --timeout SEC     node 테스트 하나의 제한(--test-timeout), node 단계의 무진행 감시, Python 묶음 하나와
-//                     tsc 의 제한 (기본 600). 넘으면 그 프로세스 그룹을 통째로 끝내고 실패로 센다.
+//   --concurrency N   node --test 의 동시 파일 수 (기본 CPU 수, 최대 8)
+//   --timeout SEC     node 테스트 하나의 제한(--test-timeout), node 단계의 무진행 감시, tsc 의 제한 (기본 600). 넘으면 그 프로세스 그룹을 통째로 끝내고 실패로 센다.
 //                     node 단계는 파일 완료 보고가 SEC 초 동안 없을 때 끊고, 보고가 없는 파일을 모두 시간 초과로 센다
 //   --out DIR         결과 폴더 (기본: 임시 폴더 아래 새 폴더)
 //   --max-wait SEC    --wait 가 기다릴 최대 시간 (기본 540, Bash 도구의 600초 안)
 //
-// 결과 폴더에는 단계별 로그와 summary.txt 를 쓴다. summary.txt 는 node 파일, Python 묶음, tsc 가 끝날 때마다
+// 결과 폴더에는 단계별 로그와 summary.txt 를 쓴다. summary.txt 는 node 파일과 tsc 가 끝날 때마다
 // 한 줄씩 늘고(`통과 <이름> <초>s`, `실패 <이름> <초>s (<이유>) 로그: <로그>`), 모두 끝나면
 // `결과: 통과 P, 실패 F, 전체 T, 걸린 시간 Ss` 끝 줄을 쓴다.
 //
@@ -72,13 +69,12 @@ export const END_PREFIX = "결과: ";
 const SUMMARY = "summary.txt";
 const PID_FILE = "runner.pid";
 const REPORTER = fileURLToPath(new URL("./run-tests-reporter.ts", import.meta.url));
-const PY_TEST = /^test_.*\.py$/;
 
 // 띄운 단계들. 신호나 예외로 끝날 때 그룹을 모두 정리한다.
 const running = new Set<ChildProcess>();
 
 type Options = { concurrency: number; timeout: number; out?: string; maxWait: number; background: boolean; wait?: string; patterns: string[] };
-export type Targets = { node: string[]; python: string[]; tsc: boolean };
+export type Targets = { node: string[]; tsc: boolean };
 
 export function parseArgs(argv: string[], parallelism = availableParallelism()): Options {
   const opts: Options = { concurrency: Math.min(8, parallelism), timeout: 600, maxWait: 540, background: false, patterns: [] };
@@ -118,47 +114,32 @@ function isDir(path: string) {
   }
 }
 
-function hasPythonTests(dir: string) {
-  try {
-    return readdirSync(dir).some((name) => PY_TEST.test(name));
-  } catch {
-    return false;
-  }
-}
-
 // 인자 없이 부르면 git 의 파일 목록에서 묶음을 찾는다. git 저장소 밖이면 null.
 export function discover(cwd: string): Targets | null {
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd, encoding: "utf8" });
   if (listed.error || listed.status !== 0) return null;
   const node = new Set<string>();
-  const python = new Set<string>();
   for (const file of listed.stdout.split("\0")) {
     // --cached 는 지웠지만 커밋하지 않은 파일도 낸다.
     if (!file || !existsSync(join(cwd, file))) continue;
     if (/(^|\/)tests\/.*\.spec\.ts$/.test(file)) node.add(file);
-    const m = /^(.*\/)?tests\/(test_[^/]*\.py)$/.exec(file);
-    if (m) python.add(`${m[1] ?? ""}tests`);
   }
-  return { node: [...node].sort(), python: [...python].sort(), tsc: true };
+  return { node: [...node].sort(), tsc: true };
 }
 
 // 인자를 주면 파일 시스템에서 푼다. git 은 필요 없다.
 export function expand(patterns: string[], cwd: string): Targets {
   const node = new Set<string>();
-  const python = new Set<string>();
   for (const pattern of patterns) {
     const found = /[*?[]/.test(pattern) ? globSync(pattern, { cwd }) : existsSync(resolve(cwd, pattern)) ? [pattern] : [];
     for (const raw of found) {
       const item = clean(raw);
       const full = resolve(cwd, item);
-      if (isDir(full)) {
-        if (hasPythonTests(full)) python.add(item);
-        else for (const file of globSync("**/*.spec.ts", { cwd: full })) node.add(join(item, file));
-      } else if (PY_TEST.test(basename(item))) python.add(dirname(item));
+      if (isDir(full)) for (const file of globSync("**/*.spec.ts", { cwd: full })) node.add(join(item, file));
       else node.add(item);
     }
   }
-  return { node: [...node].sort(), python: [...python].sort(), tsc: false };
+  return { node: [...node].sort(), tsc: false };
 }
 
 function childEnv(extra: Record<string, string> = {}) {
@@ -329,30 +310,6 @@ async function nodePhase(r: Runner, files: string[], concurrency: number) {
   for (const line of reconcile(files, reported, failures, exit, stalled)) r.record(false, line.name, 0, line.why, log);
 }
 
-async function pythonPhase(r: Runner, suites: string[], concurrency: number) {
-  let next = 0;
-  let missing = false;
-  const one = async (suite: string, index: number) => {
-    const log = join(r.out, `py-${String(index + 1).padStart(2, "0")}-${suite.replace(/[^A-Za-z0-9._-]+/g, "_")}.log`);
-    if (missing) return r.record(false, suite, 0, "python3 가 없다");
-    const started = Date.now();
-    const exit = await runGroup(r, "python3", ["-m", "unittest", "discover", "-s", suite], log);
-    if (exit.error?.code === "ENOENT") {
-      missing = true;
-      return r.record(false, suite, 0, "python3 가 없다");
-    }
-    const ok = exit.code === 0 && !exit.timedOut && !exit.error;
-    r.record(ok, suite, seconds(started), exit.error ? `실행 실패 ${exit.error.code}` : why(exit), log);
-  };
-  const worker = async () => {
-    while (next < suites.length) {
-      const index = next++;
-      await one(suites[index], index);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, suites.length) }, worker));
-}
-
 // 다른 실행기가 남긴 임시 설치 폴더는 그 pid 가 죽었을 때만 지운다. worker 여럿이 함께 돌기 때문이다.
 function sweepStaleInstalls(dir: string) {
   const parent = dirname(dir);
@@ -418,8 +375,8 @@ async function run(opts: Options, cwd: string): Promise<number> {
     }
     targets = found;
   }
-  if (!targets.node.length && !targets.python.length) {
-    console.error(`돌릴 테스트 파일이 없다: ${opts.patterns.length ? opts.patterns.join(" ") : "tests/ 아래 *.spec.ts 와 test_*.py"}`);
+  if (!targets.node.length) {
+    console.error(`돌릴 테스트 파일이 없다: ${opts.patterns.length ? opts.patterns.join(" ") : "tests/ 아래 *.spec.ts"}`);
     return 2;
   }
   const out = opts.out ? resolve(opts.out) : mkdtempSync(join(tmpdir(), "run-tests-"));
@@ -427,9 +384,8 @@ async function run(opts: Options, cwd: string): Promise<number> {
   const summary = join(out, SUMMARY);
   writeFileSync(summary, "");
   writeFileSync(join(out, PID_FILE), String(process.pid));
-  const pyConcurrency = Math.ceil(opts.concurrency / 2);
   console.log(
-    `결과 폴더: ${out} (node 파일 ${targets.node.length}개, Python 묶음 ${targets.python.length}개${targets.tsc ? ", tsc" : ""}, 동시 ${opts.concurrency}개)`,
+    `결과 폴더: ${out} (node 파일 ${targets.node.length}개${targets.tsc ? ", tsc" : ""}, 동시 ${opts.concurrency}개)`,
   );
 
   const stop = () => {
@@ -452,7 +408,6 @@ async function run(opts: Options, cwd: string): Promise<number> {
   await Promise.all([
     targets.tsc ? tscPhase(r) : undefined,
     targets.node.length ? nodePhase(r, targets.node, opts.concurrency) : undefined,
-    targets.python.length ? pythonPhase(r, targets.python, pyConcurrency) : undefined,
   ]);
   const end = `${END_PREFIX}통과 ${passed}, 실패 ${failed}, 전체 ${passed + failed}, 걸린 시간 ${seconds(started).toFixed(1)}s`;
   appendFileSync(summary, end + "\n");

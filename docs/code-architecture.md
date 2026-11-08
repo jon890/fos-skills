@@ -152,7 +152,7 @@
 
 | 명령 | 확인하는 것 |
 | --- | --- |
-| `node scripts/run-tests.ts` | 저장소의 모든 node·Python 테스트와 tsc |
+| `node scripts/run-tests.ts` | 저장소의 모든 node 테스트와 tsc |
 | `node scripts/runtime-policy.ts --pending` | 허용 목록 밖의 새 Python·셸 파일과 JS 진입이 없다. 영역마다 남은 파일 수를 낸다 |
 | `node scripts/run-tests.ts scripts/tests` | 내보내기 전용 원본을 제외한 설치·내보내기 원본 디렉터리 집합이 `skills` 배열과 같다. 두 매니페스트에 `version` 이 없다. 마켓플레이스의 소스가 `./` 다. `export-to-team.spec.ts` 가 `export-to-team.ts` 의 인자 처리와 `--source-ref` 를 임시 저장소로 확인한다 |
 | `node scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 설치 스킬 16개가 인식되고 내보내기 전용 원본은 목록에 없다. 캐시에 원본이 남고 형제 참조와 도구 탐색이 된다 |
