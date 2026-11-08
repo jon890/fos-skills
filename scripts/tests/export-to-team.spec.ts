@@ -15,7 +15,7 @@ import { copyFromRepo, REPO_ROOT } from './boundary.ts'
 // ── 명령 경계: 구현을 바꿀 때 이 묶음만 고친다 ──
 const INTERPRETER = ['node']
 const SCRIPT = 'scripts/export-to-team.ts'
-const FILES = ['scripts/export-to-team.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts']
+const FILES = ['scripts/export-to-team.ts', 'scripts/export-lists.ts', 'scripts/is-main.ts', 'scripts/skill_paths.ts', 'modules/kit/py.ts']
 // 내보내는 목록을 명령 파일에서 읽는다. 목록을 테스트에 다시 적지 않는다
 function sharedNames(variable: 'SHARED_SKILLS' | 'SHARED_TOOLS'): string[] {
   const lists = sharedLists(readFileSync(join(REPO_ROOT, SCRIPT), 'utf8'))
@@ -235,6 +235,39 @@ describe('export-to-team 이 내보내지 않는 파일과 권한', () => {
     const done = run(e, '--source-ref', 'HEAD')
     assert.equal(done.code, 2)
     assert.match(done.stderr, /그 커밋에 내보낼 디렉터리가 없다: HEAD/)
+  })
+})
+
+describe('export-to-team 의 도구 원본 자리', () => {
+  // 도구는 팀 저장소의 tools/<이름> 으로 실린다. 이 저장소의 원본은 소유 스킬 안(skills/browser/browser-driver)이고,
+  // 옛 커밋(team-export)은 tools/<이름> 에 있다. 어느 쪽에서도 같은 팀 경로로 낸다.
+  function moveToolIntoSkill(e: Env): void {
+    mkdirSync(join(e.repo, 'skills/browser'), { recursive: true })
+    renameSync(join(e.repo, 'tools/browser-driver'), join(e.repo, 'skills/browser/browser-driver'))
+    git(e.repo, ['add', '-A'])
+    git(e.repo, ['commit', '-q', '-m', 'move tool'])
+  }
+
+  test('소유 스킬 안의 도구를 팀의 tools 로 내보낸다', (t) => {
+    const e = setup(t)
+    moveToolIntoSkill(e)
+    const done = run(e, '--apply')
+    assert.equal(done.code, 0, done.stderr)
+    assert.equal(readFileSync(join(e.team, 'tools/browser-driver/NOTE.md'), 'utf8'), 'committed\n')
+    assert.ok(!existsSync(join(e.team, 'skills/browser')))
+    assert.equal(run(e).code, 0)
+  })
+
+  test('--source-ref 는 새 자리와 옛 자리를 모두 읽는다', (t) => {
+    const e = setup(t)
+    const before = e.sha
+    moveToolIntoSkill(e)
+    for (const ref of [before, 'HEAD']) {
+      rmSync(join(e.team, 'tools'), { recursive: true, force: true })
+      const done = run(e, '--apply', '--source-ref', ref)
+      assert.equal(done.code, 0, done.stderr)
+      assert.equal(readFileSync(join(e.team, 'tools/browser-driver/NOTE.md'), 'utf8'), 'committed\n', ref)
+    }
   })
 })
 

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, join, relative, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { tempDir } from '../../modules/testkit/temp.ts'
-import { sharedLists } from '../export-lists.ts'
+import { sharedLists, toolSources } from '../export-lists.ts'
 import { SKILL_ROOTS } from '../skill_paths.ts'
 
 const EXTENSIONS = /\.(?:ts|mts|cts|js|mjs|cjs)$/
@@ -63,8 +63,9 @@ export function exportedFolders(root: string): string[] {
     folders.push(found)
   }
   for (const name of names('SHARED_TOOLS')) {
-    if (!existsSync(join(root, `tools/${name}`))) throw new Error(`내보내는 도구 폴더가 없다: tools/${name}`)
-    folders.push(`tools/${name}`)
+    const found = toolSources(name).find((p) => existsSync(join(root, p)))
+    if (!found) throw new Error(`내보내는 도구 폴더가 없다: ${toolSources(name).join(', ')}`)
+    folders.push(found)
   }
   return folders
 }
@@ -121,6 +122,15 @@ describe('내보내는 폴더의 바깥 import', () => {
     mkdirSync(join(root, 'export-only-skills/beta'), { recursive: true })
     mkdirSync(join(root, 'tools/drv'), { recursive: true })
     assert.deepEqual(exportedFolders(root), ['skills/alpha', 'export-only-skills/beta', 'tools/drv'])
+  })
+
+  it('exportedFolders 는 소유 스킬 안으로 옮긴 도구를 그 자리에서 찾는다', () => {
+    const root = tempDir()
+    write(root, 'scripts/export-to-team.ts', "export const SHARED_SKILLS = []\nexport const SHARED_TOOLS = ['browser-driver']\n")
+    mkdirSync(join(root, 'tools/browser-driver'), { recursive: true })
+    assert.deepEqual(exportedFolders(root), ['tools/browser-driver'])
+    mkdirSync(join(root, 'skills/browser/browser-driver'), { recursive: true })
+    assert.deepEqual(exportedFolders(root), ['skills/browser/browser-driver'])
   })
 
   it('목록에 없는 폴더 이름이면 exportedFolders 가 던진다', () => {

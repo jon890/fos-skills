@@ -34,12 +34,13 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, posix } from 'node:path'
 import { PY_SPACE, pyDecode, pyPathCompare, pyReadText, pySplitLines } from '../modules/kit/py.ts'
+import { toolSources } from './export-lists.ts'
 import { isDir, isFile, SKILL_ROOTS, sourcePath } from './skill_paths.ts'
 import { isMainModule } from './is-main.ts'
 
 // 팀 저장소로 내보내는 스킬. 늘어나면 여기에 추가한다
 export const SHARED_SKILLS = ['content-preview', 'spec', 'technical-design', 'plan', 'implementation', 'verify', 'docs-consolidate', 'docs-audit', 'review-fix', 'korean-check', 'presentation']
-// 스킬이 아닌 공용 도구. 이 저장소의 tools/<이름> 이 팀 저장소의 tools/<이름> 이 된다
+// 스킬이 아닌 공용 도구. 팀 저장소의 tools/<이름> 이 된다. 이 저장소의 원본 자리는 export-lists.ts 의 toolSources 가 갖는다
 export const SHARED_TOOLS = ['browser-driver']
 // 개인 자산이라 내보내지 않는 경로 (스킬 디렉터리 기준 상대 경로)
 const EXCLUDE = new Set(['references/work-writing-persona.md'])
@@ -203,7 +204,7 @@ function exportFiles(repo: string, teamDir: string, apply: boolean): number {
   const team = pathlibForm(teamDir)
   const pairs: Pair[] = [
     ...SHARED_SKILLS.map((name): Pair => [sourcePath(repo, name).slice(repo.length + 1), `skills/${name}`]),
-    ...SHARED_TOOLS.map((name): Pair => [`tools/${name}`, `tools/${name}`]),
+    ...SHARED_TOOLS.map((name): Pair => [toolSources(name).find((rel) => isDir(join(repo, rel))) ?? toolSources(name)[0], `tools/${name}`]),
   ]
 
   // 방향 보호. 이 저장소가 원본이라는 전제는 이쪽 버전이 뒤처지지 않았을 때만 성립한다.
@@ -300,6 +301,16 @@ function sharedPaths(sourceRef: string, sourceSha: string): string[] {
   return paths
 }
 
+// 그 원본에서 도구의 실제 경로를 고른다. 옛 커밋은 tools/<이름> 에 있고 지금은 소유 스킬 안에 있다
+function sharedToolPaths(sourceRef: string, sourceSha: string): string[] {
+  const files = sourceRef ? pySplitLines(gitOut(['ls-tree', '-r', '--name-only', sourceSha]).stdout) : []
+  return SHARED_TOOLS.map((name) => {
+    const candidates = toolSources(name)
+    const found = sourceRef ? candidates.find((rel) => files.some((file) => file.startsWith(`${rel}/`))) : candidates.find((rel) => isDir(join(REPO_DIR, rel)))
+    return found ?? candidates[0]
+  })
+}
+
 export function main(argv: string[]): number {
   let apply = false
   let sourceRef = ''
@@ -330,7 +341,7 @@ export function main(argv: string[]): number {
 
   const paths = sharedPaths(sourceRef, sourceSha)
   if (paths.length !== SHARED_SKILLS.length) fail(2, '그 원본에 내보낼 스킬 디렉터리가 없다')
-  const exported = [...paths, ...SHARED_TOOLS.map((name) => `tools/${name}`)]
+  const exported = [...paths, ...sharedToolPaths(sourceRef, sourceSha)]
 
   let srcDir = REPO_DIR
   let description: string
