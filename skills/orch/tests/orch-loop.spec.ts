@@ -637,8 +637,8 @@ describe('마무리 빠짐과 대기 확인', () => {
 
 describe('생존 타이머', () => {
   test('정리가 도는 동안에도 alive_at 이 바뀌고 last_tick 은 그대로다', async () => {
-    fake('sweep', { sleep: 1.5 })
-    const { code, samples } = await sampled(['--run', 'r', '--foreground', '--once'], { ORCH_LOOP_ALIVE_SEC: '0.2' })
+    fake('sweep', { sleep: 0.6 })
+    const { code, samples } = await sampled(['--run', 'r', '--foreground', '--once'], { ORCH_LOOP_ALIVE_SEC: '0.05' })
     assert.equal(code, 0)
     const during = samples.filter((state) => state.last_tick === null)
     const distinct = new Set(during.map((state) => state.alive_at))
@@ -647,8 +647,8 @@ describe('생존 타이머', () => {
   })
 
   test('틱 자식 안의 동기 조회가 막혀도 부모가 alive_at 을 쓴다', async () => {
-    orca({ sleep: 2 })
-    const { code, samples } = await sampled(['--run', 'r', '--foreground', '--once'], { ORCH_LOOP_ALIVE_SEC: '0.2' })
+    orca({ sleep: 0.5 })
+    const { code, samples } = await sampled(['--run', 'r', '--foreground', '--once'], { ORCH_LOOP_ALIVE_SEC: '0.05' })
     assert.equal(code, 0)
     const distinct = new Set(samples.filter((state) => state.last_tick === null).map((state) => state.alive_at))
     assert.ok(distinct.size >= 3, JSON.stringify([...distinct]))
@@ -815,10 +815,10 @@ describe('--start, --status, --stop', () => {
     assert.equal(loop(['--run', 'r1', '--stop']).code, 0)
   })
 
-  test('명의 조회가 시작 대기(10초)보다 느려도 띄운 루프는 다시 조회하지 않고 시작한다', { timeout: 60_000 }, () => {
+  test('명의 조회가 주입한 시작 대기보다 느려도 띄운 루프는 다시 조회하지 않고 시작한다', { timeout: 60_000 }, () => {
     config({ pipeline: { tick_sec: 3600 } })
-    orca({ bound: 'r1', slow_run_current: 11 })
-    const started = loop(['--run', 'r1', '--start'])
+    orca({ bound: 'r1', slow_run_current: 2.5 })
+    const started = loop(['--run', 'r1', '--start'], { ORCH_LOOP_START_WAIT_SEC: '2' })
     assert.equal(started.code, 0, started.stdout + started.stderr)
     assert.match(started.stdout, /^LOOP-STARTED \d+ run=r1$/m)
     assert.equal(loopState()?.bound_run, 'r1')
