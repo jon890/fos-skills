@@ -11,7 +11,7 @@
 | --- | --- |
 | 플러그인에 담는다 | `.claude-plugin/plugin.json` 의 `skills` 배열에 등록한 스킬 |
 | 내보내기 전용 원본으로 함께 복사한다 | `content-preview`, `korean-check`. 스킬 목록에는 등록하지 않는다 |
-| 플러그인과 함께 복사되지만 스킬이 아니다 | `tools/browser-driver`, `modules/`, `scripts/`, `githooks/`, `docs/` |
+| 플러그인과 함께 복사되지만 스킬이 아니다 | `modules/`, `scripts/`, `githooks/`, `docs/` |
 | 플러그인이 싣는 훅 | `skills/orch/hooks/hooks.json` 의 PreToolUse 훅. `plugin.json` 의 `hooks` 배열이 가리킨다([ADR-005](adr/005-plugin-hooks-under-skill.md)) |
 | 플러그인이 싣는 mod | `extensions/work-board/hooks/hooks.json` 의 hooks 모듈. 작업 현황 창 `/board` 를 그린다. `hooks` 배열이 가리킨다([ADR-006](adr/006-work-board-in-plugin.md)) |
 | Codex 가 싣는 것 | `.codex-plugin/plugin.json` 의 `skills` 배열뿐이다. 훅과 mod 는 Claude Code 전용이라 싣지 않는다([ADR-007](adr/007-codex-manifest-without-hooks.md)) |
@@ -78,7 +78,8 @@
 | `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
 | `skills/plan/scripts/{verify_task,check_feature,run_doc_checks,overlay_paths,plan_number}.ts` | 계획서 검사, 스펙·설계 형식 검사, 레포 설정의 문서 검사 명령 실행, 하위 프로젝트 판정과 오버레이 탐색 순서, plan 번호 계산. 옵션, 출력 줄, 종료 코드는 각 머리 주석이 소유한다 | plan·spec·technical-design·implementation·docs-audit·docs-consolidate·review-fix 의 단계, `skills/plan/tests/` |
-| `tools/browser-driver/` | 브라우저 백엔드 중립 계층 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts` |
+| `skills/browser/browser-driver/` | 브라우저 백엔드 중립 계층. 소유자는 `browser` 스킬이고 팀 저장소에는 `tools/browser-driver/` 로 실린다. 명령 목록은 `help` 가, 백엔드 규칙은 그 폴더의 `README.md` 가 소유한다 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts`, `skills/presentation/scripts/check-deck.ts` |
+| `tools/browser-driver/browser_driver.py` | 옛 이름 진입(node shebang JS). 옛 링크와 저장소 밖 호출이 이 경로를 부른다. 새 `.ts` 를 불러 같은 결과를 낸다 | `~/.claude/scripts/browser-driver` 링크, 팀 저장소의 옛 래퍼 |
 | `scripts/run-tests.ts` | 저장소의 검증 명령. 사용법과 종료 코드는 머리 주석이 소유한다 | 사람, worker, CI |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용 진입을 정책 파일과 대조한다. 출력 줄과 종료 코드는 머리 주석이 소유한다 | `scripts/tests/runtime-policy.spec.ts`, CI, worker |
 | `scripts/runtime-policy.json` | TypeScript 이행 상태의 원본(남은 영역, 허용 JS 진입, 최소 Node) | `scripts/runtime-policy.ts` |
@@ -98,8 +99,8 @@
 | 스킬 문서의 `../export-only-skills/korean-check` 같은 형제 경로 | 캐시 안에서 그대로 풀린다 |
 | `implementation`, `review-fix`, `spec`, `technical-design`, `docs-audit`, `docs-consolidate` 의 `$PLAN_SKILL_DIR` | 자기 번들의 형제 디렉터리 `plan` 이다. 값은 `$SKILL_DIR/../plan` 이다 |
 | `export-only-skills/content-preview/scripts/style-check.ts` 가 `korean-check` 를 찾는 순서 | `KOREAN_CHECK` 환경 변수, 형제 디렉터리, `~/.claude/skills/korean-check` 순이다. 캐시에서는 형제 디렉터리에서 찾는다 |
-| `export-only-skills/content-preview/scripts/show-preview.ts` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `tools/browser-driver/`, `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `tools/` 에서 찾는다 |
-| `skills/browser/SKILL.md` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, `$SKILL_DIR/../tools/browser-driver/`, `~/.claude/scripts/browser-driver`, PATH 의 `browser-driver` 순이다. 캐시에서는 형제인 루트의 `tools/` 에서 찾는다 |
+| `export-only-skills/content-preview/scripts/show-preview.ts` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, 위로 올라가며 찾은 `skills/browser/browser-driver/`(팀 사본은 `tools/browser-driver/`), `~/.claude/scripts/browser-driver` 순이다. 캐시에서는 루트의 `skills/browser/browser-driver/` 에서 찾는다 |
+| `skills/browser/SKILL.md` 가 드라이버를 찾는 순서 | `BROWSER_DRIVER_PATH`, `$SKILL_DIR/browser-driver/`, `~/.claude/scripts/browser-driver`, PATH 의 `browser-driver` 순이다. 드라이버가 스킬 폴더 안에 있어 캐시에서도 같은 상대 경로다 |
 | `skills/harness-cleanup/scripts/check_references.ts` 의 설치된 스킬 이름 수집 | `~/.claude/plugins` 아래에서 `SKILL.md` 를 가진 디렉터리 이름을 모은다. 스킬이 `skills/` 아래에 있지 않아도 찾는다 |
 
 루트 `bin/` 에는 orch 실행기 `orch` 하나만 둔다. 설치 기록에서 번들을 골라 `skills/orch/bin/orch.ts` 에 넘기기만 한다. 번들 고르기의 원본은 `skills/orch/scripts/lib/install-record.ts` 이고, 실행기 머리 주석이 그 사본임을 적는다. `browser-driver` 명령은 팀 저장소의 플러그인이 PATH 에 싣는다. 근거는 [ADR-004](adr/004-no-plugin-bin.md) 가 소유한다.
@@ -115,7 +116,7 @@
 | 저장소 밖의 것 | 가리키는 곳 | 플러그인으로 옮긴 뒤 |
 | --- | --- | --- |
 | `~/.claude/scripts/korean-style-check.py`, `check-readability.py` 링크 | 체크아웃의 `export-only-skills/korean-check/scripts/` 의 같은 이름 진입(node shebang JS). 새 `.ts` 를 불러 같은 결과를 낸다. 새로 거는 링크는 `.ts` 이름이다 | 그대로 둔다. 진입은 다음 major 에서 지운다 |
-| `~/.claude/scripts/browser-driver` 링크 | 체크아웃의 `tools/browser-driver/browser_driver.py` | 그대로 둔다 |
+| `~/.claude/scripts/browser-driver` 링크 | 체크아웃의 `tools/browser-driver/browser_driver.py`(옛 이름 진입). 새로 거는 링크는 `skills/browser/browser-driver/browser_driver.ts` 이다 | 그대로 둔다. 진입은 다음 major 에서 지운다 |
 | `~/.claude/rules/korean-style.md` 링크 | 체크아웃의 `export-only-skills/korean-check/references/korean-style.md` | 그대로 둔다 |
 | `~/.claude/settings.json` 의 `PostToolUse` 훅 | `~/.claude/scripts/` 의 링크 | 그대로 둔다 |
 | 전역 지침과 `~/.claude/references/` 가 적은 `~/.claude/skills/<스킬>/` 아래 경로 | 스킬 링크 | `~/personal/fos-skills/<스킬>/` 로 고친다 |

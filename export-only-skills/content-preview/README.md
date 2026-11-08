@@ -58,7 +58,7 @@
 ## 준비
 
 - Node 24 이상이 필요하다. 미리보기 스타일과 렌더러를 CDN 에서 받으므로 망이 없으면 스타일이 빠진다
-- 이 저장소의 `tools/browser-driver/` 를 함께 받으면 그 드라이버로 띄운다. 드라이버는 `python3` 가 필요하다. 없으면 기본 브라우저로 띄운다
+- 이 저장소의 `skills/browser/browser-driver/`(팀 사본은 `tools/browser-driver/`)를 함께 받으면 그 드라이버로 띄운다. 드라이버는 `python3` 가 필요하다. 없으면 기본 브라우저로 띄운다
 - 드라이버가 쓸 브라우저 백엔드는 설정 파일의 `previewDriver` 나 환경 변수 `PREVIEW_BROWSER_DRIVER` 로 정한다. 정하지 않으면 드라이버의 자동 감지를 따르고, 그 백엔드가 탭의 워크트리를 대조하지 못하면 그 사실을 알린다
 - `korean-check` 스킬을 함께 받는다. 이 저장소가 같이 배포하며, 다른 곳에 두었으면 `KOREAN_CHECK` 로 경로를 준다. 찾지 못하면 표기 검사가 종료 코드 2 로 멈춘다
 - 본인 명의로 나가는 글의 문체를 고정하려면 `~/.claude/references/work-writing-persona.md` 를 만든다. 선택이며, 없으면 그 단계를 건너뛴다. 무엇을 적는지는 `references/persona.md` 에 있다

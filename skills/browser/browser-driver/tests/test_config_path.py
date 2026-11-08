@@ -17,15 +17,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
-REPO = ROOT.parent.parent
+REPO = ROOT.parent.parent.parent
 
-# 이 저장소는 <repo>/content-preview/ 에, 팀 저장소는 <repo>/plugins/<플러그인>/skills/content-preview/ 에 둔다.
-# 시험 파일은 팀 저장소에서 <repo>/plugins/<플러그인>/tools/browser-driver/tests/ 에 놓인다.
-SHOW_PREVIEW_CANDIDATES = (
-    REPO / "content-preview" / "scripts" / "show-preview.sh",
-    ROOT.parent.parent / "skills" / "content-preview" / "scripts" / "show-preview.sh",
-)
-SHOW_PREVIEW = next((p for p in SHOW_PREVIEW_CANDIDATES if p.is_file()), SHOW_PREVIEW_CANDIDATES[0])
+# 이 저장소는 export-only-skills/content-preview/ 에 둔다. 팀 저장소의 사본은 이 시험 파일 밖이라 찾지 않는다.
+SHOW_PREVIEW = REPO / "export-only-skills" / "content-preview" / "scripts" / "show-preview.ts"
 sys.path.insert(0, str(ROOT))
 
 from driver import config  # noqa: E402
@@ -39,14 +34,16 @@ def copy_driver(dst):
 
 
 class Layout:
-    """plugins/cache/m/p/1.0.0/tools/browser-driver 를 임시 디렉터리에 만든다."""
+    """plugins/cache/m/p/1.0.0/<드라이버 자리> 를 임시 디렉터리에 만든다. 자리는 이 저장소의 것이 기본이다."""
 
-    def __init__(self, codex=False):
+    PLACE = "skills/browser/browser-driver"
+
+    def __init__(self, codex=False, place=PLACE):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name).resolve()
         # Codex 설치본은 루트에 config.toml 파일이 있고 데이터 폴더가 없다. 데이터는 Claude 설정 폴더에 둔다.
         self.claude = self.root / "claude-home"
-        self.driver = copy_driver(self.root / "plugins/cache/m/p/1.0.0/tools/browser-driver")
+        self.driver = copy_driver(self.root / "plugins/cache/m/p/1.0.0" / place)
         self.data = self.root / "plugins/data/p-m"
         if codex:
             (self.root / "config.toml").write_text("", encoding="utf-8")
@@ -97,6 +94,13 @@ class ResolveConfigPathTest(unittest.TestCase):
     def test_outside_cache_uses_legacy(self):
         outside = copy_driver(self.lay.root / "checkout/tools/browser-driver")
         self.assertEqual(self.resolve(module=outside / "driver" / "config.py"), self.legacy)
+
+    def test_team_copy_place_is_also_cache(self):
+        team = Layout(place="tools/browser-driver")
+        self.addCleanup(team.close)
+        expected = team.put_data_config()
+        self.assertEqual(config.resolve_config_path({}, team.driver / "driver" / "config.py", self.legacy,
+                                                    team.root / "fake-home"), expected)
 
     def test_symlinked_driver_dir_is_resolved(self):
         expected = self.lay.put_data_config()
@@ -368,11 +372,11 @@ class ConfigPathCommandTest(unittest.TestCase):
 
 
 class ShowPreviewConfigTest(unittest.TestCase):
-    """show-preview.sh 가 드라이버에게 경로를 묻는지, 모르는 드라이버와도 도는지 본다."""
+    """show-preview.ts 가 드라이버에게 경로를 묻는지, 모르는 드라이버와도 도는지 본다."""
 
     def setUp(self):
         if not SHOW_PREVIEW.is_file():
-            self.skipTest("show-preview.sh 를 두 배치 어디에서도 찾지 못했다")
+            self.fail(f"{SHOW_PREVIEW} 가 없다")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
@@ -405,7 +409,7 @@ class ShowPreviewConfigTest(unittest.TestCase):
             f.write_text("#!/bin/sh\nexit 0\n")
             f.chmod(0o755)
         env["PATH"] = f"{shim}:{env['PATH']}"
-        return subprocess.run(["bash", str(SHOW_PREVIEW), str(self.html)], env=env,
+        return subprocess.run([shutil.which("node") or "node", str(SHOW_PREVIEW), str(self.html)], env=env,
                               capture_output=True, text=True, timeout=60)
 
     def make_cfg(self, name, driver):

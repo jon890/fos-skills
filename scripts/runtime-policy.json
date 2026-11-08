@@ -2,7 +2,7 @@
   "pending": [
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/orch-doctor.py" },
     { "area": "orch-legacy", "prefix": "skills/orch/scripts/ts_shim.py" },
-    { "area": "browser-driver", "prefix": "tools/browser-driver/" }
+    { "area": "browser-driver", "prefix": "skills/browser/browser-driver/" }
   ],
   "legacy": ["export-only-skills/korean-check/scripts/korean-style-check.py", "export-only-skills/korean-check/scripts/check-readability.py"],
   "entry_js": [

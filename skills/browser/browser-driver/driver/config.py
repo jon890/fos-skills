@@ -26,8 +26,9 @@ def claude_config_dir(env, home=None):
 def plugin_data_dir(module_file, env=None, home=None):
     """본체가 플러그인 설치 캐시 안에 있으면 그 플러그인의 데이터 폴더를 낸다. 아니면 None.
 
-    <루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/tools/browser-driver/driver/config.py
-    꼴일 때만 데이터 폴더를 돌려준다. 어느 도구의 설치본인지는 <루트>/config.toml 로 구분한다.
+    <루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/skills/browser/browser-driver/driver/config.py
+    (팀 사본은 .../<버전>/tools/browser-driver/driver/config.py) 꼴일 때만 데이터 폴더를 돌려준다.
+    어느 도구의 설치본인지는 <루트>/config.toml 로 구분한다.
       - config.toml 이 파일이면 Codex 설치본이다. Codex 에는 데이터 폴더가 없어서
         두 도구를 함께 쓰는 사람의 설정이 하나가 되도록 Claude 설정 폴더의 것을 쓴다.
         <Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/
@@ -38,13 +39,18 @@ def plugin_data_dir(module_file, env=None, home=None):
     읽기만 한다. env 와 home 은 시험이 바꿀 수 있게 열어 둔 인자다.
     """
     parts = Path(module_file).resolve().parts
-    # ..., plugins, cache, <마켓플레이스>, <플러그인>, <버전>, tools, browser-driver, driver, config.py
-    if len(parts) < 10 or parts[-4:-1] != ("tools", "browser-driver", "driver"):
+    # ..., plugins, cache, <마켓플레이스>, <플러그인>, <버전>, <드라이버 자리>, driver, config.py
+    # 드라이버 자리는 이 저장소에서 skills/browser/browser-driver, 팀 사본에서 tools/browser-driver 다.
+    for place in (("skills", "browser", "browser-driver"), ("tools", "browser-driver")):
+        tail = len(place) + 2
+        if len(parts) >= tail + 6 and parts[-tail:-1] == (*place, "driver"):
+            break
+    else:
         return None
-    plugin, marketplace = parts[-6], parts[-7]
-    if parts[-8] != "cache" or parts[-9] != "plugins":
+    plugin, marketplace = parts[-tail - 2], parts[-tail - 3]
+    if parts[-tail - 4] != "cache" or parts[-tail - 5] != "plugins":
         return None
-    root = Path(*parts[:-9])
+    root = Path(*parts[:-tail - 5])
     if (root / "config.toml").is_file():
         env = os.environ if env is None else env
         root = claude_config_dir(env, home)

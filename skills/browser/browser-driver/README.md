@@ -29,7 +29,7 @@ $B doctor
 | `driver/backends/base.py` | 백엔드 공통 계약 |
 | `driver/backends/ego.py`, `orca.py`, `agent_browser.py`, `cmux.py` | 백엔드 하나씩 |
 | `browser.config.example.json` | 설정 예시 |
-| `tests/` | `unittest` 테스트. `python3 -m unittest discover -s tests` |
+| `tests/` | `unittest` 테스트. 이 폴더에서 `-m unittest discover -s tests` 로 돈다 |
 
 진입점만 실행 파일이다. 심링크로 불려도 실체 경로를 잡아 옆의 `driver` 패키지를 찾는다.
 
@@ -56,7 +56,8 @@ $B doctor
 3. 본체가 설치 캐시 밖에 있으면 Claude 설정 폴더의 `plugins/data/*/browser.config.json`. 파일이 정확히 하나일 때만 쓴다
 4. 옛 위치 `~/.claude/browser.config.json`
 
-2번의 판정은 `Path(__file__).resolve()` 가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/tools/browser-driver/driver/config.py` 꼴인지 본다.
+2번의 판정은 `Path(__file__).resolve()` 가 `<루트>/plugins/cache/<마켓플레이스>/<플러그인>/<버전>/skills/browser/browser-driver/driver/config.py` 꼴인지 본다.
+팀 사본은 `.../<버전>/tools/browser-driver/driver/config.py` 꼴도 같게 본다.
 맞으면 데이터 폴더는 `<루트>/plugins/data/<플러그인>-<마켓플레이스>/` 다. 이 이름 규칙은 Claude Code 2.1.286 에서 실측했다.
 Codex 설치본(`<CODEX_HOME>/plugins/cache/…`)은 `<CODEX_HOME>/config.toml` 이 파일로 있고 데이터 폴더가 없다.
 이때는 Claude Code 와 같은 설정을 쓰도록 `<Claude 설정 폴더>/plugins/data/<플러그인>-<마켓플레이스>/` 를 본다.
