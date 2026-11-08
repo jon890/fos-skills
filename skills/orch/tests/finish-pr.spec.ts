@@ -1135,6 +1135,8 @@ describe('finish-pr 실제 CLI 대응', () => {
       assert.equal(actual.code, expected.code)
       assert.equal(actual.stdout, expected.stdout)
       assert.equal(actual.stderr, expected.stderr)
+      assert.equal(existsSync(cli.wt), scenario.code !== 0)
+      if (scenario.code === 0) assert.equal(cli.git('branch', '--list', 'feat/x'), '')
       assert.equal(existsSync(cli.wt), existsSync(local.wt))
       assert.equal(cli.git('branch', '--list', 'feat/x'), local.git('branch', '--list', 'feat/x'))
       const normalize = (c: Ctx) => c.calls().map((line) => line.replaceAll(c.tmp, '<tmp>'))
