@@ -144,7 +144,6 @@ before(() => {
   const later = git('rev-parse', 'HEAD')
   git('push', '-q', 'origin', 'main')
   history = { init, merge, later }
-
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
 
