@@ -415,9 +415,9 @@ describe('send-to-worker 의 사용법 오류', () => {
 describe('생존 타이머', () => {
   test('send-to-worker 를 기다리는 동안 alive_at 이 바뀌고 loopStatus 가 살아 있다고 낸다', async () => {
     setupConflict('running')
-    send({ sleep: 3 })
+    send({ sleep: 0.6 })
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', repo, '--run', 'r', '--foreground', '--once'], {
-      env: { ...env, ORCH_LOOP_ALIVE_SEC: '0.2' },
+      env: { ...env, ORCH_LOOP_ALIVE_SEC: '0.05' },
       cwd: tmp,
     })
     spawned.push(child)

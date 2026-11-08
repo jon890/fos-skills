@@ -36,7 +36,7 @@ const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
 const argv = process.argv.slice(2)
 const print = (value) => fs.writeSync(1, JSON.stringify(value) + '\\n')
-if (process.env.FAKE_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_SLEEP) * 1000)
+if (process.env.FAKE_SLEEP && argv.includes('check')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_SLEEP) * 1000)
 if (process.env.FAKE_FAIL) {
   fs.writeSync(2, 'orca offline\\n')
   process.exit(1)
@@ -745,8 +745,8 @@ describe('session-resume', () => {
   })
 
   test('질문 조회가 시간 초과면 SKIP-QUESTIONS 이고 종료 코드는 0 이다', { timeout: 120_000 }, () => {
-    // 질문 조회는 orca 호출마다 시간 제한이 있다(운영 30초, lib/questions.ts). 테스트는 1초로 줄이고 가짜 orca 는 그보다 오래 잔다
-    const r = doctor(['--skip-version', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_SLEEP: '3', FAKE_PS: psFile, ORCH_QUESTIONS_TIMEOUT_SEC: '1' } })
+    // 질문 조회는 orca 호출마다 시간 제한이 있다(운영 30초, lib/questions.ts). 테스트는 0.1초로 줄이고 가짜 orca 는 그보다 오래 잔다
+    const r = doctor(['--skip-version', '--skill-dir', skill, '--run', 'r'], { env: { FAKE_SLEEP: '0.5', FAKE_PS: psFile, ORCH_QUESTIONS_TIMEOUT_SEC: '0.1' } })
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.match(r.stdout, /^SKIP-QUESTIONS .+/m)
     assert.doesNotMatch(r.stdout, /^UNANSWERED /m)

@@ -1,7 +1,7 @@
 // finish-pr.ts 를 임시 git 저장소와 가짜 gh, orca, 업무 명령, 정리 스크립트, 보드 명령으로 돌려 본다.
 //
 // 실제 GitHub, Orca, 업무 시스템에는 닿지 않는다. 워크트리와 브랜치는 모두 임시 저장소의 것이다.
-// 판정(배포 판정, 업무 번호 뽑기, 브랜치 줄, 워크트리 찾기)은 명령을 돌려 출력과 남은 파일로 본다.
+// 판정은 main에 동기 조회를 주입하는 fixture로 보고, 실제 CLI와 출력·종료·상태를 대조한다.
 // 가짜 gh, orca, 업무 명령은 이 테스트를 도는 node 를 shebang 에 박은 실행 파일이다(tests/fixtures/merge-queue-fakes.ts 의 writeNodeBin).
 // 가짜 정리 스크립트와 보드 명령은 `.py` 라 확장자대로 python3 로 돈다.
 
@@ -15,9 +15,12 @@ import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
+import { copyRepo, git as templateGit, gitEnv, templateRepo } from '../../../modules/testkit/git.ts'
+import type { Repo } from '../../../modules/testkit/git.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/finish-pr.ts', import.meta.url))
-const NODE = [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT]
+const FUNCTION_SCRIPT = fileURLToPath(new URL('./fixtures/finish-pr-run.ts', import.meta.url))
+const NODE = [process.execPath, '--disable-warning=ExperimentalWarning', FUNCTION_SCRIPT]
 // 정리 스크립트를 다시 부르는 횟수. finish-pr.ts 의 동작 규칙 값이다
 const CLEANUP_TRIES = 5
 
@@ -117,6 +120,8 @@ type Ctx = {
 }
 
 let bindir = ''
+let prepared: Repo
+let history: { init: string; merge: string; later: string }
 before(() => {
   bindir = mkdtempSync(join(tmpdir(), 'finish-pr-bin-'))
   writeNodeBin(bindir, 'gh', FAKE_GH)
@@ -125,10 +130,24 @@ before(() => {
   writeFileSync(join(bindir, 'sweep.py'), FAKE_SWEEP)
   writeFileSync(join(bindir, 'send.ts'), FAKE_SEND)
   writeFileSync(join(bindir, 'board.py'), FAKE_BOARD)
+  // 같은 이력을 한 번 만들고 각 테스트에 독립된 origin과 clone을 복사한다.
+  prepared = copyRepo(join(bindir, 'template'), templateRepo())
+  const git = (...args: string[]) => templateGit(prepared.dir, args, gitEnv())
+  const init = git('rev-parse', 'HEAD')
+  git('checkout', '-q', '-b', 'feat/x')
+  git('commit', '-q', '--allow-empty', '-m', 'work')
+  git('push', '-q', '-u', 'origin', 'feat/x')
+  git('checkout', '-q', 'main')
+  git('merge', '-q', '--no-ff', '-m', 'merge feat/x', 'feat/x')
+  const merge = git('rev-parse', 'HEAD')
+  git('commit', '-q', '--allow-empty', '-m', 'later')
+  const later = git('rev-parse', 'HEAD')
+  git('push', '-q', 'origin', 'main')
+  history = { init, merge, later }
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
 
-function setup(t: TestContext): Ctx {
+function setup(t: TestContext, cli = false): Ctx {
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'finish-pr-')))
   t.after(() => rmSync(tmp, { recursive: true, force: true }))
   const env: NodeJS.ProcessEnv = {
@@ -154,26 +173,13 @@ function setup(t: TestContext): Ctx {
     assert.equal(done.status, 0, `${cmd.join(' ')}: ${done.stderr}`)
     return done.stdout.trim()
   }
-  const origin = join(tmp, 'origin.git')
   const repo = join(tmp, 'repo')
+  copyRepo(repo, prepared)
   const git = (...args: string[]) => sh(['git', '-C', repo, ...args])
-  sh(['git', 'init', '-q', '--bare', '-b', 'main', origin])
-  sh(['git', 'clone', '-q', origin, repo])
-  git('commit', '-q', '--allow-empty', '-m', 'init')
-  const init = git('rev-parse', 'HEAD')
-  git('push', '-q', '-u', 'origin', 'main')
+  const { init, merge, later } = history
   const branch = 'feat/x'
   const wt = join(tmp, 'wt')
-  git('worktree', 'add', '-q', '-b', branch, wt, 'origin/main')
-  git('-C', wt, 'commit', '-q', '--allow-empty', '-m', 'work')
-  git('push', '-q', '-u', 'origin', branch)
-  git('checkout', '-q', '--detach', 'origin/main')
-  git('merge', '-q', '--no-ff', '-m', 'merge feat/x', branch)
-  const merge = git('rev-parse', 'HEAD')
-  git('checkout', '-q', '-B', 'main')
-  git('commit', '-q', '--allow-empty', '-m', 'later')
-  const later = git('rev-parse', 'HEAD')
-  git('push', '-q', 'origin', 'main')
+  git('worktree', 'add', '-q', wt, branch)
   env.FAKE_WORKTREE = wt
   env.FAKE_BRANCH = branch
   const specs = join(tmp, 'specs')
@@ -197,7 +203,7 @@ function setup(t: TestContext): Ctx {
     finish: (args, extra = {}) => {
       writeFileSync(join(tmp, 'state.json'), JSON.stringify(c.state))
       return spawnDone(
-        [...NODE, '77', '--repo', repo, '--poll-interval', '0.01', '--merge-timeout', '0.005', '--deploy-timeout', '0.005', ...args],
+        [...(cli ? [process.execPath, '--disable-warning=ExperimentalWarning', SCRIPT] : NODE), '77', '--repo', repo, '--poll-interval', '0.01', '--merge-timeout', '0.005', '--deploy-timeout', '0.005', ...args],
         { env: { ...env, ...extra } },
       )
     },
@@ -1106,5 +1112,58 @@ describe('짧은 출력', () => {
     assert.ok(out.includes('LAST-PR 마지막'), r.stdout)
     assert.equal(out.at(-1), 'FINISH-DONE')
     assert.ok(out.every((l) => !/^\d\d:\d\d /.test(l)), r.stdout)
+  })
+})
+
+
+describe('finish-pr 실제 CLI 대응', () => {
+  for (const scenario of [
+    { name: '성공', args: ['--intermediate'], state: 'MERGED', code: 0 },
+    { name: '지시서 정리', args: ['--complete'], state: 'MERGED', code: 0 },
+    { name: '실패', args: [], state: 'CLOSED', code: 1 },
+    { name: '사용법 오류', args: ['--complete', '--intermediate'], state: 'MERGED', code: 2 },
+  ]) {
+    test(`${scenario.name}의 출력·종료·삭제·조회 기록이 같다`, async (t) => {
+      const local = setup(t)
+      const cli = setup(t, true)
+      local.state.pr.state = cli.state.pr.state = scenario.state
+      const args = (c: Ctx) => scenario.name === '지시서 정리' ? [...scenario.args, '--specs-dir', c.specs] : scenario.args
+      const expected = await local.finish(args(local), { ORCH_OUTPUT: 'short' })
+      const actual = await cli.finish(args(cli), { ORCH_OUTPUT: 'short' })
+      assert.equal(actual.code, scenario.code, both(actual))
+      assert.equal(actual.code, expected.code)
+      assert.equal(actual.stdout, expected.stdout)
+      assert.equal(actual.stderr, expected.stderr)
+      assert.equal(existsSync(cli.wt), scenario.code !== 0)
+      if (scenario.code === 0) assert.equal(cli.git('branch', '--list', 'feat/x'), '')
+      assert.equal(existsSync(cli.wt), existsSync(local.wt))
+      assert.equal(cli.git('branch', '--list', 'feat/x'), local.git('branch', '--list', 'feat/x'))
+      const normalize = (c: Ctx) => c.calls().map((line) => line.replaceAll(c.tmp, '<tmp>'))
+      assert.deepEqual(normalize(cli), normalize(local))
+    })
+  }
+
+  test('잡히지 않은 파일 예외도 실제 CLI와 fixture가 1로 끝내고 정리하지 않는다', async (t) => {
+    for (const cli of [false, true]) {
+      const c = setup(t, cli)
+      const blocked = join(c.tmp, 'blocked')
+      writeFileSync(blocked, '')
+      const result = await c.finish(['--pid-file', join(blocked, 'pid')])
+      assert.equal(result.code, 1, both(result))
+      assert.match(result.stderr, /EEXIST|ENOTDIR/)
+      assert.equal(result.stdout, '')
+      assert.equal(existsSync(c.wt), true)
+      assert.equal(c.calls().some((line) => line.startsWith('sweep ')), false)
+    }
+  })
+
+  test('import는 실행 없이 main을 내보낸다', () => {
+    const done = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      const { main } = await import(${JSON.stringify(new URL('../scripts/queue/finish-pr.ts', import.meta.url).href)})
+      if (typeof main !== 'function') process.exitCode = 1
+    `], { encoding: 'utf8' })
+    assert.equal(done.status, 0, done.stderr)
+    assert.equal(done.stdout, '')
+    assert.equal(done.stderr, '')
   })
 })

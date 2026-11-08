@@ -118,7 +118,7 @@
 //           orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
 import { recordRouting } from '../lib/routing-log.ts'
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -141,7 +141,8 @@ import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
 import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges } from '../lib/feature-evidence.ts'
 import { boardPath, pathOf, requireMigrated } from '../lib/paths.ts'
-import { run, runAsync, scriptCommand } from '../lib/proc.ts'
+import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
+import type { Runner } from '../lib/proc.ts'
 import { pyStr } from '../lib/py.ts'
 import { branchesOf, deleteSpecs, liveSpecPaths } from '../lib/spec.ts'
 import { LIVE_DISPATCH, workerFor, workerRows } from '../lib/workers.ts'
@@ -693,7 +694,11 @@ async function finish(args: Args, repo: string): Promise<number> {
   return 0
 }
 
-async function main(argv: string[]): Promise<number> {
+export function main(argv: string[], runner?: Runner): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+}
+
+async function executeMain(argv: string[]): Promise<number> {
   let args: Args | null
   try {
     args = parse(argv)
@@ -741,12 +746,14 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e) => {
-    process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
-    process.exitCode = 1
-  },
-)
+export function reportError(e: unknown): void {
+  process.stderr.write(`${(e as Error)?.stack ?? String(e)}\n`)
+  process.exitCode = 1
+}
+
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  main(process.argv.slice(2)).then(
+    (code) => { process.exitCode = code },
+    reportError,
+  )
+}
