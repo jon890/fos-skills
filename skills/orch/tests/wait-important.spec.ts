@@ -1177,9 +1177,9 @@ describe('상주 루프', () => {
     return child.pid as number
   }
 
-  // 생존 타이머 간격 1초에 여유 1.5초다. 운영 기본은 30초에 5초다
-  const RECHECK_MS = 2_500
-  const LOOP_ENV = { ORCH_LOOP_ALIVE_SEC: '1', ORCH_LOOP_RECHECK_MARGIN_SEC: '1.5' }
+  // 생존 타이머 간격 0.2초에 여유 1.8초다. 운영 기본은 30초에 5초다
+  const RECHECK_MS = 2_000
+  const LOOP_ENV = { ORCH_LOOP_ALIVE_SEC: '0.2', ORCH_LOOP_RECHECK_MARGIN_SEC: '1.8' }
 
   test('루프 pid 가 살아 있으면 오래된 alive_at 은 다시 본 뒤에야 LOOP-DEAD 와 8 이다. 간격이 0 이어도 다시 본다', { timeout: 60_000 }, async (t) => {
     loopJson({ pid: await fakeLoop(t), alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
@@ -1197,15 +1197,19 @@ describe('상주 루프', () => {
     loopJson({ pid: await fakeLoop(t), alive_at: new Date(Date.now() - 3600_000).toISOString(), tick_sec: 10 })
     const pid = JSON.parse(readFileSync(join(stateDir(), 'loop.json'), 'utf8')).pid as number
     // 다시 보는 시각 뒤에 묶음이 온다
-    writeFileSync(stateFile, JSON.stringify({ replies: [sleeping(batch('d1', 'status'), RECHECK_MS / 1000 + 3)], workers: [], tasks: [], latest: {}, history: [] }))
+    writeFileSync(stateFile, JSON.stringify({ replies: [sleeping(batch('d1', 'status'), RECHECK_MS / 1000 + 1)], workers: [], tasks: [], latest: {}, history: [] }))
     const argv = ['--disable-warning=ExperimentalWarning', SCRIPT, '--run', 'run_x', '--lost-state', lostState, '--completion-contract', 'none', '--lost-interval-sec', '0.2', '--loop-repo', tmp]
     const child = spawn(process.execPath, argv, { env: { ...env, ...LOOP_ENV }, cwd: tmp })
     t.after(() => child.kill('SIGKILL'))
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))
     const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)))
-    // 잠들었다 깬 루프의 생존 타이머가 다시 쓴 것이다
-    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    // 실제 대기 조회가 시작된 뒤 갱신해, 프로세스 기동 전에 새 값이 써지는 경우를 막는다.
+    const deadline = Date.now() + 10_000
+    while (!allCalls().some((argv) => argv.includes('--wait'))) {
+      assert.ok(Date.now() < deadline, '대기 조회가 시작하지 않았다')
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
     loopJson({ pid })
     assert.equal(await closed, 0, stdout)
     assert.doesNotMatch(stdout, /LOOP-DEAD/)

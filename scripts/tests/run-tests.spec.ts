@@ -3,7 +3,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -225,17 +225,23 @@ describe("run-tests", { concurrency: true }, () => {
     assert.deepEqual(readdirSync(dirname(empty)).filter((name) => name.startsWith(`${basename(empty)}.tmp-`)), []);
   });
 
-  test("--background 뒤 --wait 가 끝 줄을 읽고, 덜 끝났으면 3 이다", async () => {
+  test("--background 뒤 --wait 가 끝 줄을 읽고, 덜 끝났으면 3 이다", async (t) => {
     const root = tempDir();
     const out = join(root, "out");
     write(root, "t/a.spec.mjs", PASS);
-    write(root, "t/slow.spec.mjs", SLOW);
+    const release = join(root, "release");
+    t.after(() => { if (existsSync(root)) writeFileSync(release, ""); });
+    write(root, "t/slow.spec.mjs", `import test from 'node:test';
+import { existsSync } from 'node:fs';
+test('release', async () => { while (!existsSync(${JSON.stringify(release)})) await new Promise((r) => setTimeout(r, 10)); });
+`);
     const started = await runner(root, ["--background", "--out", out, "t/*.spec.mjs"]);
     assert.equal(started.code, 0, started.err);
     assert.ok(started.out.includes(`node scripts/run-tests.ts --wait "${out}"`), started.out);
     const early = await runner(root, ["--wait", out, "--max-wait", "1"]);
     assert.equal(early.code, 3, early.out + early.err);
     assert.match(early.out, /같은 명령으로 다시 기다린다/);
+    writeFileSync(release, "");
     const done = await runner(root, ["--wait", out, "--max-wait", "60"]);
     assert.equal(done.code, 0, done.out + done.err);
     assert.match(done.out, /^결과: 통과 2, 실패 0, 전체 2, 걸린 시간 [\d.]+s$/m);

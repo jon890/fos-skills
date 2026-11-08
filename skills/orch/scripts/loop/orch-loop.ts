@@ -66,7 +66,7 @@
 //     `orca orchestration check --run <Run> --peek --types question` 을 한 번 불러 본다. 묶인 Run 은 오류 문구에서 읽고,
 //     없으면 run-current 로 읽고, 그것도 못 읽으면 unknown 이다. consumer_fenced 가 아닌 실패는 명의 문제로 보지 않고 stderr 에 적고 진행한다.
 //     --foreground 는 시작할 때 자기가 묶인 Run 을 loop.json 의 bound_run 에 적는다. --start 가 띄운 자식은 부모가 띄우기 전에 run-current 로
-//     읽어 ORCH_LOOP_BOUND 로 넘긴 값을 쓰고 다시 조회하지 않는다. 조회가 느려도 START_WAIT_MS 안에 loop.json 을 쓰게 하려는 것이다.
+//     읽어 ORCH_LOOP_BOUND 로 넘긴 값을 쓰고 다시 조회하지 않는다. 조회가 느려도 시작 대기 한도 안에 loop.json 을 쓰게 하려는 것이다.
 //     직접 띄운 --foreground 는 run-current 로 읽는다. 묶이지 않았으면 null 이고,
 //     읽지 못하면 적지 않는다. 묶이지 않은 루프는 여러 Run 을 조회할 수 있어 합류를 받는다.
 //
@@ -437,6 +437,7 @@ import { boardPath, makeParent, pathOf } from '../lib/paths.ts'
 import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_GRACE_MS, stopChildren, stopping, withRun } from '../lib/proc.ts'
 import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
+import { envMs } from '../lib/env.ts'
 import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
 import { NO_WAIT_PREFIX, userActive } from '../lib/user-active.ts'
@@ -462,7 +463,7 @@ const SELF = fileURLToPath(import.meta.url)
 const HERE = dirname(SELF)
 const DEFAULT_TICK_SEC = 300
 const REMIND_AFTER_SEC = 600
-const START_WAIT_MS = 10_000
+function startWaitMs(): number { return envMs('ORCH_LOOP_START_WAIT_SEC', 10) }
 const STOP_WAIT_MS = 20_000
 const POLL_MS = 100
 // --start 의 명의 확인 조회 한도
@@ -666,7 +667,7 @@ function freshEmpty(lock: string): boolean {
 // 잠금을 얻으면 null, 살아 있는 다른 루프가 쥐고 있으면 그 pid 다.
 async function takeLock(lock: string, repo: string): Promise<number | null> {
   makeParent(lock, repo)
-  const deadline = Date.now() + START_WAIT_MS
+  const deadline = Date.now() + startWaitMs()
   while (Date.now() < deadline) {
     if (createLock(lock)) return null
     const seen = readText(lock)
@@ -680,7 +681,7 @@ async function takeLock(lock: string, repo: string): Promise<number | null> {
     }
     if (reclaim(lock, seen) === 'wait') await sleep(POLL_MS)
   }
-  throw new Error(`${lock} 를 ${START_WAIT_MS / 1000}초 안에 얻지 못했다`)
+  throw new Error(`${lock} 를 ${startWaitMs() / 1000}초 안에 얻지 못했다`)
 }
 
 function releaseLock(lock: string): void {
@@ -798,7 +799,7 @@ function callerFenced(run: string): string | null {
 
 // 도는 루프가 묶인 Run. 묶이지 않았으면 null, 모르면 UNKNOWN_BOUND 다. 막 뜨는 루프는 loop.json 을 쓸 때까지 기다린다
 async function loopBound(repo: string, pid: number): Promise<string | null> {
-  const deadline = Date.now() + START_WAIT_MS
+  const deadline = Date.now() + startWaitMs()
   for (;;) {
     const state = readLoop(repo)
     if (state && Number(state.pid) === pid) {
@@ -824,7 +825,7 @@ async function start(ctx: Context, entrypoint: string): Promise<number> {
   if (found) return joinLoop(ctx, found, false)
   // registered_at 을 새로 쓴다. 새로 뜬 루프는 앞 루프의 alive_at 뒤에 쓴 등록을 살아 있는 세션의 것으로 보고 남긴다(머리 주석의 「Run」)
   if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir, true, process.env.ORCA_TERMINAL_HANDLE)
-  // 자식은 이 프로세스의 명의를 물려받는다. 명의 조회는 느릴 수 있어 START_WAIT_MS 를 쓰기 전에 여기서 한 번 읽어 넘긴다(머리 주석의 「명의」)
+  // 자식은 이 프로세스의 명의를 물려받는다. 명의 조회는 느릴 수 있어 시작 대기 한도를 쓰기 전에 여기서 한 번 읽어 넘긴다(머리 주석의 「명의」)
   const bound = boundRun()
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', entrypoint, ...passArgs(ctx), '--foreground'], {
     cwd: ctx.repo,
@@ -842,7 +843,7 @@ async function start(ctx: Context, entrypoint: string): Promise<number> {
   })
   child.unref()
   const pid = child.pid
-  const deadline = Date.now() + START_WAIT_MS
+  const deadline = Date.now() + startWaitMs()
   while (Date.now() < deadline) {
     if (failed !== null) {
       log(`LOOP-START-FAIL 루프를 띄우지 못했다: ${failed}`)
@@ -872,7 +873,7 @@ async function start(ctx: Context, entrypoint: string): Promise<number> {
       // 이미 끝났다
     }
   }
-  log(`LOOP-START-FAIL ${START_WAIT_MS / 1000}초 안에 loop.json 에 pid ${pid ?? '-'} 를 쓰지 않아 끝냈다`)
+  log(`LOOP-START-FAIL ${startWaitMs() / 1000}초 안에 loop.json 에 pid ${pid ?? '-'} 를 쓰지 않아 끝냈다`)
   return 1
 }
 
