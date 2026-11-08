@@ -356,3 +356,33 @@ REQ1·REQ3·REQ4와 스펙 DECISION4·DECISION16을 따른다. PR8 뒤 기준 �
 ### 검증과 인계
 
 먼저 주입 자리와 import 보호만 커밋하고 기존 테스트를 실행한다. 다음 커밋에서 fixture와 회귀 검사를 바꾼다. 실행기로 대상 파일·proc·spec-line·spec-lint 회귀와 옵션 없는 전체 실행을 확인한다. 측정 명령으로 기준/구현 커밋을 번갈아 재고 기동 수와 비율, 시작·끝 load를 PR에 남긴다. 전체 파일 시간 합과 동시 8의 끝 줄을 함께 남기며 저부하 2분 판정은 코디네이터의 통합 검증에 맡긴다. 설계·계획·코드·문서 독립 리뷰는 지시서대로 PR 뒤 코디네이터에게 요청하며 그 전에는 대기다.
+
+
+## PR10: 실제 대기와 finish-pr 준비·조회 비용을 줄인다
+
+REQ1·REQ2·REQ3·REQ4와 DECISION3의 2026-11-08 조정을 따른다. 앞 절의 2분 기록은 당시 목표와 실측이며, 현재 목표는 스펙의 3분 안팎이다.
+
+### 책임과 인터페이스
+
+`finish-pr.main(argv, runner?)`는 기존 `withRun`으로 동기 조회만 주입받는다. 테스트 fixture는 main을 호출하고 CommonJS 가짜 gh·orca만 stateful-run으로 평가한다. stdout·stderr·종료·상태 단언은 유지한다. fixture 자체는 자식 프로세스로 띄워 테스트별 env·cwd·전역 로그를 격리한다. 비동기 sweep·send·hook과 git은 실제 실행한다. 워크트리·브랜치 삭제를 함수 가짜로 흉내 내지 않는다. 실제 CLI와 fixture는 예외 처리기를 공유하고 import 시 실행하지 않는다.
+
+finish-pr의 준비 이력은 testkit `copyRepo`로 재사용한다. 템플릿은 기존 init → feat/x 빈 커밋 → merge → later 이력과 main·feat/x upstream을 만들고 bare origin에 push한다. 사본마다 origin 주소를 바꾸고 feat/x 워크트리를 실제로 추가한다. 기존 HEAD·원격 끝·브랜치 관계는 같고 origin의 임시 경로만 달라진다. 실제 삭제·추가 검증은 기존 단언이 맡는다.
+
+루프 시작 대기는 `envMs`로 `ORCH_LOOP_START_WAIT_SEC`를 호출마다 읽으며 기본 10초를 유지한다. 느린 명의 조회 사례만 대기 한도를 줄이고 조회 지연이 그보다 길도록 둔다. 기존 생존·재확인·질문 시간 제한 환경 변수는 해당 테스트에서만 짧게 준다. doctor의 지연 가짜는 질문 check에만 지연을 주어 다른 조회까지 기다리지 않게 한다. 실행기 background 사례는 파일 신호로 테스트를 붙들고 --wait의 미완료 판정 뒤 해제하여 고정 4초 대기를 없앤다.
+
+### 같은 판정의 대응표
+
+| 기존 관측 경계 | 변경 뒤 같은 판정 | 유지하는 실제 경계 |
+| --- | --- | --- |
+| finish-pr 흐름·배포·마지막 PR·보드·알림의 조회 | 기존 상태·인자·출력·종료·파일 단언과 main 함수 호출 | 성공 0·실패 1·사용법 2 대표 CLI를 fixture와 대조, git·Python sweep·send·hook은 실제 자식 |
+| 준비 저장소의 init·merge·later·upstream | 위 템플릿 이력을 사본별로 복사하고 origin 재설정 | worktree add·remove·branch 삭제·배포 조상 조회 |
+| 명의 조회가 시작 대기보다 오래 걸림 | 지연 > 주입한 시작 한도, run-current 1회·시작 성공·bound_run 단언 | start·stop 실제 프로세스와 loop.json |
+| 생존 타이머·오래된 alive_at 재확인 | 짧은 간격과 충분한 관측 구간, 값 변경·재확인 하한 단언 유지 | 동기 조회·send 중 부모 타이머, 실제 pid·자식 |
+| 질문 조회 시간 초과 | 질문만 지연 > 기존 환경 변수의 짧은 제한, SKIP-QUESTIONS·코드 0 | 실제 timeout·자식 종료 |
+| background 뒤 --wait | 해제 신호 전 코드 3, 해제 뒤 끝 줄·코드 0 | 실제 실행기·백그라운드 프로세스·파일 |
+
+### 실패·원칙·검증
+
+예외는 기존 CLI와 같은 코드 1로 처리한다. stateful-run의 timeout·input·maxBuffer·비동기·상대 파일 접근 제약은 그대로이며 이 성질을 확인하는 명령은 실제 실행한다. 도메인 규칙·출력 계약·배포 순서는 바꾸지 않고 새 의존성·ADR도 없다. REQ1의 판정 범위와 [ADR-010](../../adr/010-orch-typescript.md)의 의존성 없는 구조를 유지한다.
+
+대상 파일과 proc·직접 실행/import 회귀를 실행기로 확인한다. 기준/구현 커밋을 같은 머신에서 번갈아 측정하고 preload 기동 수·시작/끝 load를 남긴다. 전체 동시 8 실행의 끝 줄과 파일 시간 합을 PR에 보존한다. 설계·계획·코드·문서 독립 검토는 지시서에 따라 PR 뒤 코디네이터의 Claude 리뷰를 기다린다. 자기 점검을 독립 검토 통과로 기록하지 않는다.

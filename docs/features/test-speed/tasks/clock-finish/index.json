@@ -1,0 +1,32 @@
+{
+  "name": "clock-finish",
+  "description": "실제 대기와 finish-pr 반복 준비·조회 비용 감소",
+  "pr_scope": "PR10의 시간 제한 주입·finish-pr 함수 테스트 전환과 측정",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-08",
+  "spec": "docs/features/test-speed/spec.md",
+  "design": "docs/features/test-speed/design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ4"
+      ]
+    }
+  ]
+}
