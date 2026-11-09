@@ -6,6 +6,16 @@
 `orca orchestration run-use --id "$RUN_ID"` 로 옮겨 붙은 뒤 메시지를 읽는다.
 상태만 볼 때는 fenced 상태에서도 `worker-list --run "$RUN_ID"` 가 동작한다.
 
+**묶인 run 이 없으면(`run-current` 가 비었으면) 먼저 만든다.** 문법은 `orca orchestration run-create --help` 가 소유한다.
+`worker-start --spec` 도 묶인 run 이 없으면 하나 만들지만, Task 그래프를 쓰거나 새 목표로 시작하려면 `run-create` 로 직접 만든다. 만들면 코디네이터가 그 run 에 묶인다.
+이미 있는 run 을 이어 쓰려면 `run-use` 로 붙는다. 상주 루프는 그 run 의 코디네이터 세션에서 띄운다.
+
+```bash
+orca orchestration run-create --objective "<이번 목표 한 문장>"
+orca orchestration run-use --id "$RUN_ID"
+orch loop start --run "$RUN_ID"
+```
+
 **워크트리는 `origin/<기준 브랜치>` 위에 만든다.** 로컬 브랜치를 기준으로 만들면 로컬 브랜치가 뒤처져 있어도 오류 없이 만들어져, worker 가 옛 코드 위에서 계획하고 구현한다.
 `make-worktree` 가 워크트리를 만들 때 스스로 `git fetch origin` 을 한다. 그래도 띄우기 전에 원격을 갱신하는 이유는 `spec-lint` 가 fetch 없이 지금 있는 `origin/<기준 브랜치>` 로 오버레이와 지시서가 가리키는 경로를 검사하기 때문이다. 로컬 기준 브랜치가 깨끗하면 fast-forward 로 맞춘다.
 `$REPO` 는 대상 저장소 경로, `$BASE` 는 기준 브랜치 이름이다.
