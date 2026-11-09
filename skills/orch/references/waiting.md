@@ -121,7 +121,7 @@ orch wait --ack "$DELIVERY_ID"
 - `TIMEOUT LAST_DELIVERY <id>` 는 실패가 아니다. 그 id 로 다시 건다
 - orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
 - 종료 코드 4(`waiter_exists`)는 다시 걸어도 같은 오류만 받는다. stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다
-- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않으므로, 다시 대기를 걸기 전에 처리한다. 화면이 작업 중이면 끊긴 것으로 보지 않는 판정과 stderr 줄은 `wait-important.ts` 머리 주석이 소유한다
+- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않으므로, 다시 대기를 걸기 전에 처리한다. 같은 Task 를 다시 띄워 살아 있는 dispatch 가 생겼으면 앞 dispatch 는 처리한 것으로 보고 기록을 고치지 않아도 된다. 화면이 작업 중이면 끊긴 것으로 보지 않는 판정과 stderr 줄은 `wait-important.ts` 머리 주석이 소유한다
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `REMINDER`: 답이 없는 기술 질문이나 일반 escalation의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다. 사용자 결정의 재알림은 이 이벤트로 오지 않는다
@@ -278,7 +278,7 @@ heartbeat 와 liveness 는 `live` 로 남아 대기만으로는 알 수 없다. 
 
 `RESUME-FAIL` 이 나면 먼저 출력의 `NEXT` 를 따른다. 바꿀 계정이 없거나 `NEXT` 로도 이어 가지 못하면 다른 제공자로 새로 띄운다.
 resume 이 옛 dispatch 를 이미 정리했으면(출력의 `RESUME-TARGET` 이 `limited`) 아래 `worker-abandon` 을 건너뛰고, [`launch.md`](launch.md) 「끊긴 worker 다시 띄우기」 표의 Task 상태에 맞는 줄을 따른다. `RESUME-FAIL link` 뒤라면 새 worker 를 띄우지 않는다. 남은 터미널에 resume 한 에이전트가 붙어 있다.
-`worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝난다. `worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
+`worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝나고, 이 상태의 Task 에 `--retry-of` 를 주면 `task_not_startable` 로 거절된다. `worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
 `$AGENT`, `$MODEL`, `$EFFORT` 는 다시 고른 값이다. 지시서의 `worker 선택:` 줄을 먼저 고치고 같은 Task 를 다시 띄운다.
 
 ```bash

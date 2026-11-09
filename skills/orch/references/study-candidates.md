@@ -138,5 +138,5 @@ orch 5.16.0 전에는 `study/candidates.md` 한 파일의 표 한 줄이 후보 
 orch study migrate --slug 1=minio-object-key-length --slug 2=... --slug 8=expand-contract
 ```
 
-slug 가 빠진 줄이 있으면 `NEED-SLUG` 목록만 내고 아무 파일도 만들지 않는다. 옮기는 규칙은 `orch study migrate --help` 가 소유한다.
+slug 가 빠진 줄이 있으면 `NEED-SLUG` 목록만 내고 아무 파일도 만들지 않는다. 옮기는 규칙은 `scripts/study/study-candidates.ts` 머리 주석의 `migrate` 가 소유한다.
 표 앞의 규칙 글은 옮기지 않는다. 그 저장소만의 규칙이었으면 오버레이의 「공부 후보」 칸에 옮겨 적는다.
