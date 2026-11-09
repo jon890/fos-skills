@@ -28,7 +28,7 @@
   - 얻는 것: 큐가 자동 머지를 막는 동안 무엇을 기다리는지 `state/loop.log` 의 `AUTO-MERGE-HELD` 로 보인다.
   - 감당할 것: 공용 경로처럼 PR 끼리도 늘 겹치면 앞 PR 이 머지된 뒤 다시 최신화해야 하므로 줄지 않는다. 큐의 앞 PR 과 겹치는 PR 은 미뤄 runner 를 아낀다.
   - 감당할 것: 루프가 merge 커밋을 원격 브랜치에 더하므로 worker 는 push 전에 원격 브랜치를 pull 한다(공통 지시서의 규칙). 자동 리뷰 판정은 base 를 합친 merge 커밋만 더한 HEAD 의 앞 리뷰를 인정한다([ADR-016](016-orch-auto-merge.md)).
-  - 감당할 것(2026-11-04 보탬): `update-branch` 는 HEAD 를 새 merge 커밋으로 바꿔 기능 완료 근거의 「검증 커밋 = 지금 HEAD」 검사에 늘 걸렸다. 검증 커밋 뒤에 base 쪽 변경만 들여온 merge 커밋만 있으면(두 부모를 합친 tree 와 같고 둘째 부모가 base 에 든다) 통과로 보고 지금 HEAD 의 CI 통과로 갈음한다. 판정은 `skills/orch/scripts/lib/feature-evidence.ts` 의 `baseMergesOnly` 가 소유한다.
+  - 감당할 것(2026-11-04 보탬): `update-branch` 는 HEAD 를 새 merge 커밋으로 바꿔 기능 완료 근거의 「검증 커밋 = 지금 HEAD」 검사에 늘 걸렸다. 검증 커밋 뒤에 base 쪽 변경만 들여온 merge 커밋만 있으면(두 부모를 합친 tree 와 같고 둘째 부모가 base 에 든다) 통과로 보고 지금 HEAD 의 CI 통과로 대신한다. 판정은 `skills/orch/scripts/lib/feature-evidence.ts` 의 `baseMergesOnly` 가 소유한다.
   - 바뀐 결정(2026-11-04 보탬, 사용자 결정): 맨 앞 PR 이 막혀 뒤의 머지할 수 있는 PR 셋이 머지되지 않은 일이 있어 두 가지를 더했다.
     머지 큐는 보류한 PR 만 빼고 다음 PR 로 가는 것이 기본이다(`--stop-on-hold` 로 옛 동작). 차례 PR 이 update-branch 뒤 CI 를 기다리는 동안에는 묶음 밖이고 체크가 통과했고 최신화가 필요 없고 차례 PR 과 겹치지 않는 뒤 PR 을 먼저 머지한다.
     위 「대안 기각」 의 큐 순서 바꾸기는 겹치지 않는 PR 에만, 기다리는 동안에만 하는 것으로 좁혀 받아들였다. 겹치는 PR 과 묶음은 순서를 지킨다.

@@ -151,7 +151,7 @@ TTL, 기록 위치, 호출 수 확인 명령은 [`references/gh-call-budget.md`]
 
 여러 worker 가 같은 PC 에서 무거운 검사를 실행하면 [`references/heavy-checks.md`](references/heavy-checks.md)의 대기열로 감싼다.
 
-`worker_done` 은 근거가 아니다. git 으로 완료 기준을 대조하고, diff 를 읽고, CI 밖 검사만 다시 돌린다. CI 가 같은 head SHA 로 돌린 검사는 그 결과로 갈음한다.
+`worker_done` 은 근거가 아니다. git 으로 완료 기준을 대조하고, diff 를 읽고, CI 밖 검사만 다시 돌린다. CI 가 같은 head SHA 로 돌린 검사는 그 결과로 대신한다.
 충돌은 그 PR 을 만든 worker 가 풀고, 푸는 규칙은 reference 의 「충돌을 풀 때」 를 따른다.
 
 ## 7. 머지와 정리
