@@ -87,7 +87,7 @@ export function syncCommon(copy: string, template: string, repo: string): { text
       replacement.push(...Array(Math.max(0, trailing)).fill(''))
     } else replacement.push('')
     edits.push({ head, end, lines: replacement })
-    output.push(`SYNC-${mine ? 'UPDATE' : 'ADD'} ${name}`, `@@ -${head + 1},${end - head} +${head + 1},${replacement.length} @@`)
+    output.push(`SYNC-${mine ? 'UPDATE' : 'ADD'} ${name}`, `@@ -${head === end ? head : head + 1},${end - head} +${head + 1},${replacement.length} @@`)
     if (mine) output.push(...lines.slice(head, end).map((line) => `-${line}`))
     output.push(...replacement.map((line) => `+${line}`))
   }

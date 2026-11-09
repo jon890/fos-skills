@@ -172,3 +172,9 @@ test('코드 블록 안의 표지와 절 제목을 규칙이나 삽입 위치로
     assert.equal(syncCommon(example, example, repo).text, example)
   }
 })
+
+
+test('파일 첫 줄 앞 삽입은 diff 의 기존 범위를 0줄로 표시한다', () => {
+  const result = syncCommon(rule('b', '유지'), rule('a', '추가') + rule('b', '유지'), repo)
+  assert.match(result.output.join('\n'), /@@ -0,0 \+1,/)
+})
