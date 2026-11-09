@@ -12,8 +12,12 @@
 //   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
 //   (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목의 「#342」 같은 업무 번호를 이 주소의 링크로 그린다)
 //   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
+//   (--detail 로 바꿀 때 앞 표시가 없고 글이 옛 줄과 같은 줄은 옛 줄의 끝냄 표시를 이어받는다. 줄 하나만 고치려면 detail-edit 를 쓴다)
+//   (--detail 이나 --next 로 줄을 바꾸는 set 은 쓰기 전 파일을 <보드 파일>.bak 에 한 세대 남긴다)
 //   (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
 //   doing 항목은 진행률이 있어야 한다. 단계 줄이나 --progress N/M 이 없으면 set 을 거절하고 보드를 고치지 않는다
+//   board.ts detail-edit <id> <n> <글>   (details 의 n 번째 줄(list 의 mark 번호와 같다) 글만 바꾼다. 끝냄 표시는 글에 앞 표시를 쓰지 않으면 그대로다)
+//   board.ts detail-add <id> <글>   (details 끝에 줄 하나를 더한다. 앞 표시를 쓰지 않으면 끝나지 않은 줄이다)
 //   board.ts step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
 //   board.ts steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
 //     단계 밖의 줄이 있으면 stderr 에 mark 번호와 함께 낸다. stdout 의 JSON 은 orch 가 읽어 단계를 판정하므로 그 줄을 넣지 않는다
@@ -42,7 +46,7 @@
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 
@@ -60,9 +64,9 @@ const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-const COMMANDS = ['set', 'step', 'steps', 'mark', 'del', 'list']
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list']
 const USAGE =
-  '사용법: board.ts {set,step,steps,mark,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
   '[--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
@@ -77,7 +81,11 @@ const HELP = `${USAGE}
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
   (--task 는 그 항목의 업무(두레이 등) 주소다. http 나 https 로 시작해야 하고, 창이 제목의 「#342」 같은 업무 번호를 이 주소의 링크로 그린다)
   (값을 '' 로 주면 그 칸을 지운다. --detail 은 여러 번 줄 수 있고 주면 하위 항목 전체를 바꾼다. --detail '' 은 지운다)
+  (--detail 로 바꿀 때 앞 표시가 없고 글이 옛 줄과 같은 줄은 옛 줄의 끝냄 표시를 이어받는다)
+  (--detail 이나 --next 로 줄을 바꾸는 set 은 쓰기 전 파일을 <보드 파일>.bak 에 한 세대 남긴다)
   (--next 를 여러 번 주면 줄바꿈으로 잇는다. 「--next '1. 구현' --next '2. 머지'」 가 단계 두 줄이 된다)
+  board.ts detail-edit <id> <n> <글>   (details 의 n 번째 줄만 고친다. 끝냄 표시는 글에 앞 표시를 쓰지 않으면 그대로다)
+  board.ts detail-add <id> <글>   (details 끝에 줄 하나를 더한다)
   doing 항목은 진행률이 있어야 한다. 단계 줄이나 --progress N/M 이 없으면 set 을 거절하고 보드를 고치지 않는다
   board.ts step <id> <n> [--undo]   (n 번 단계 줄을 끝낸 것으로 표시한다. --undo 는 되돌린다)
   board.ts steps <id>   (진행률을 세는 단계 줄을 JSON 목록 [{"number", "done", "text"}] 으로 낸다. 보드를 고치지 않는다)
@@ -136,6 +144,19 @@ function normalizeLine(line: unknown): Line {
 function normalizeLines(value: unknown): Line[] {
   const lines = Array.isArray(value) ? value : String(value || '').split('\n')
   return lines.map(normalizeLine)
+}
+
+// 글 한 줄을 Line 으로 바꾼다. 앞 표시가 없으면 같은 글의 옛 줄(old)에서 끝냄 표시를 이어받는다.
+// 같은 글이 여럿이면 앞에서부터 하나씩 쓴다
+function inheritLines(texts: string[], old: Line[] | undefined): Line[] {
+  const pool = [...(old ?? [])]
+  return texts.map((raw) => {
+    const line = normalizeLine(raw)
+    if (LEAD_MARK.test(raw)) return line
+    const at = pool.findIndex((row) => row.text === line.text)
+    if (at >= 0) line.done = pool.splice(at, 1)[0].done
+    return line
+  })
 }
 
 function normalizeItem(item: Item): void {
@@ -277,6 +298,7 @@ type Args = {
   cmd: string
   id?: string
   status?: string
+  text?: string
   undo: boolean
   fields: Partial<Record<(typeof FIELDS)[number], string>>
   detail?: string[]
@@ -307,12 +329,13 @@ function parse(argv: string[]): Args | 'help' {
   if (head.includes('-h') || head.includes('--help')) return 'help'
   const { values, positionals } = parseArgs({ args, options, allowPositionals: true, strict: true })
   if (positionals.length === 0) throw new Error('cmd 가 필요하다')
-  if (positionals.length > 3) throw new Error(`모르는 인자: ${positionals.slice(3).join(' ')}`)
-  const [cmd, id, status] = positionals
+  const limit = positionals[0] === 'detail-edit' ? 4 : 3
+  if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
+  const [cmd, id, status, text] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, undo: values.undo ?? false, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, undo: values.undo ?? false, fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -383,6 +406,27 @@ function apply(a: Args, board: Board): boolean {
     if (!a.undo) closeDecided(item)
     return true
   }
+  if (a.cmd === 'detail-edit' || a.cmd === 'detail-add') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    const details = (item.details as Line[] | undefined) ?? []
+    if (a.cmd === 'detail-add') {
+      const text = a.status
+      if (!text?.trim()) throw new Refused('detail-add 에는 더할 글이 필요하다: board.ts detail-add <id> <글>')
+      item.details = [...details, normalizeLine(text)]
+      return true
+    }
+    if (!/^\d+$/.test(a.status ?? '')) throw new Refused('detail-edit 에는 줄 번호가 필요하다: board.ts detail-edit <id> <n> <글>')
+    const number = Number(a.status)
+    const line = details[number - 1]
+    if (number < 1 || !line) throw new Refused(`details 에 ${number} 번 줄이 없다. details 는 ${details.length} 줄이다. 번호는 board.ts list 로 본다`)
+    if (!a.text?.trim()) throw new Refused('detail-edit 에는 새 글이 필요하다: board.ts detail-edit <id> <n> <글>')
+    // 앞 표시가 없으면 끝냄 표시는 그대로 둔다. 글이 바뀌어도 같은 줄이므로 짝짓기로 찾지 않는다
+    const fresh = normalizeLine(a.text)
+    details[number - 1] = LEAD_MARK.test(a.text) ? fresh : { text: fresh.text, done: line.done }
+    item.details = details
+    return true
+  }
   if (a.cmd === 'del') {
     board.items = board.items.filter((item) => item.id !== id)
     return true
@@ -410,7 +454,7 @@ function apply(a: Args, board: Board): boolean {
   ] as const) {
     if (values === undefined) continue
     const lines = values.flatMap((value) => value.split('\n')).filter((line) => line)
-    if (lines.length > 0) item[key] = normalizeLines(lines)
+    if (lines.length > 0) item[key] = inheritLines(lines, item[key] as Line[] | undefined)
     else delete item[key]
   }
   if (item.status === 'doing' && progressOf(item) === null) throw new Refused(MISSING_PROGRESS(id))
@@ -455,6 +499,8 @@ function main(argv: string[]): number {
   board.updatedAt = stamp
   for (const item of board.items) if (before.get(item) !== stepKey(item)) item.stepAt = stamp
   mkdirSync(dirname(path), { recursive: true })
+  // 줄을 통째로 바꾸는 set 은 쓰기 전 파일을 한 세대 남긴다. 잘못 덮어쓴 끝냄 표시를 되살릴 수 있게 한다
+  if (a.cmd === 'set' && (a.detail !== undefined || a.next !== undefined) && existsSync(path)) copyFileSync(path, `${path}.bak`)
   const tmp = `${path}.tmp`
   writeFileSync(tmp, JSON.stringify(board, null, 1))
   renameSync(tmp, path)
