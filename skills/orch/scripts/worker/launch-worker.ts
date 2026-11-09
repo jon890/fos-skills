@@ -68,7 +68,7 @@
 //        살아 일하는 worker 를 abandon 하고 같은 워크트리에 하나 더 띄웠다(2026-11-02 세 번)
 //        --watch 초가 지나도 worktree_creating 이거나 단계가 없으면 일하는 흔적을 본다(아래 「일하는 흔적」).
 //        흔적이 있으면 `<dispatch> 단계는 <단계> 지만 일하는 흔적이 있어(<근거>) 다시 띄우지 않는다` 를 내고 그대로 LAUNCHED 다
-//        흔적을 확인하지 못하면 `STALLED-START <dispatch> <단계 또는 -> watch=<초>s,no-signs-of-life` 와 종료 코드 1 로 멈춘다.
+//        흔적을 확인하지 못하면 `STALLED-START <dispatch> <단계 또는 -> watch=<초>s,no-signs-of-life terminal=<handle 또는 -> screen=<화면 상태>` 와 종료 코드 1 로 멈춘다.
 //        시간 초과나 흔적 부재는 종료 증거가 아니다. abandon 과 재시도는 하지 않고 코디네이터가 화면을 보고 판단한다
 //        멈춤도 재개·정리용 launched-workers 기록, 보드와 worker-launched 이벤트는 남긴다. 배정 통계의 성공 이력은 남기지 않는다
 //     일하는 흔적(하나라도 있으면): dispatch 의 lastHeartbeatAt, dispatch.status 가 running, worker-start 직전과 비교해
@@ -229,30 +229,30 @@ function worktreeSnapshot(worktree: string): string {
   return `${head.stdout.trim()}\n${status.stdout}`
 }
 
-// 머리 주석의 「일하는 흔적」. 근거 한 마디를 내고, 없으면 빈 문자열이다
+// 머리 주석의 「일하는 흔적」. 흔적 근거와 터미널·화면 관측을 함께 돌려 멈춤 보고에 쓴다.
 async function signsOfLife(
   show: string,
   worktree: string,
   snapshot: string,
   call: (args: string[], timeoutMs?: number) => Promise<RunResult>,
-): Promise<string> {
-  if (jget(show, 'dispatch.lastHeartbeatAt')) return `heartbeat ${jget(show, 'dispatch.lastHeartbeatAt')}`
-  if (jget(show, 'dispatch.status') === 'running') return 'dispatch running'
+): Promise<{ evidence: string; terminal: string; screen: string }> {
+  const observation = { terminal: jget(show, 'worker.agentTerminalHandle|dispatch.assigneeHandle|terminal') || '-', screen: 'unavailable' }
+  if (jget(show, 'dispatch.lastHeartbeatAt')) return { ...observation, evidence: `heartbeat ${jget(show, 'dispatch.lastHeartbeatAt')}` }
+  if (jget(show, 'dispatch.status') === 'running') return { ...observation, evidence: 'dispatch running' }
   const now = worktreeSnapshot(worktree)
-  if (snapshot && now && now !== snapshot) return '워크트리 변경'
-  const handle = jget(show, 'worker.agentTerminalHandle|dispatch.assigneeHandle|terminal')
-  if (handle) {
-    const read = await call(['terminal', 'read', '--terminal', handle, '--screen', '--json'])
+  if (snapshot && now && now !== snapshot) return { ...observation, evidence: '워크트리 변경' }
+  if (observation.terminal !== '-') {
+    const read = await call(['terminal', 'read', '--terminal', observation.terminal, '--screen', '--json'])
     let result: Record<string, unknown> = {}
     try {
       result = ((JSON.parse(read.stdout) as { result?: Record<string, unknown> }).result ?? {}) as Record<string, unknown>
     } catch {
       result = {}
     }
-    const state = read.code === 0 ? readScreen(screenLines(result)).state : 'unknown'
-    if (state === 'working' || state === 'permission') return `터미널 화면 ${state}`
+    observation.screen = read.code === 0 ? readScreen(screenLines(result)).state : 'unknown'
+    if (observation.screen === 'working' || observation.screen === 'permission') return { ...observation, evidence: `터미널 화면 ${observation.screen}` }
   }
-  return ''
+  return { ...observation, evidence: '' }
 }
 
 // worker-start 출력에서 오류를 `code: message` 한 줄로 뽑는다. 못 찾으면 빈 문자열이다
@@ -730,11 +730,11 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
         }
         if (spent >= a.watch) {
           const life = await signsOfLife(lastShow, worktree, snapshot, call)
-          if (life) {
-            out(`${dispatch} 단계는 ${stage || '단계 없음'} 지만 일하는 흔적이 있어(${life}) 다시 띄우지 않는다`)
+          if (life.evidence) {
+            out(`${dispatch} 단계는 ${stage || '단계 없음'} 지만 일하는 흔적이 있어(${life.evidence}) 다시 띄우지 않는다`)
             return true
           }
-          out(`STALLED-START ${dispatch} ${stage || '-'} watch=${a.watch}s,no-signs-of-life`)
+          out(`STALLED-START ${dispatch} ${stage || '-'} watch=${a.watch}s,no-signs-of-life terminal=${life.terminal} screen=${life.screen}`)
           return false
         }
         await sleep(poll * 1000)

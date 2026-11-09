@@ -51,6 +51,7 @@ if (is('worktree', 'list')) {
 }
 if (is('repo', 'show')) out({ repo: { externalWorktreeVisibility: state.visibility || 'hide' } })
 if (is('terminal', 'list')) out({ terminals: state.terminals || [] })
+if (is('terminal', 'read') && state.screen) out({ terminal: { tail: state.screen } })
 if (is('terminal', 'close')) out({}, state.close_fails ? 1 : 0)
 if (is('orchestration', 'worker-start')) {
   if (state.start_errors && state.start_errors.length) out({ error: state.start_errors.shift() }, 1)
@@ -693,7 +694,7 @@ describe('띄우기', () => {
     assert.equal(r.code, 1, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
     assert.equal(lines('orca orchestration worker-start').length, 1)
-    assert.match(r.stdout, /^STALLED-START ctx_1 worktree_creating watch=3s,no-signs-of-life$/m)
+    assert.match(r.stdout, /^STALLED-START ctx_1 worktree_creating watch=3s,no-signs-of-life terminal=- screen=unavailable$/m)
     assert.doesNotMatch(r.stdout, /LAUNCHED/)
   })
 
@@ -724,6 +725,26 @@ describe('띄우기', () => {
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
     assert.match(r.stdout, /일하는 흔적이 있어\(워크트리 변경\)/)
+  })
+
+  for (const sample of [
+    { screen: ['›'], state: 'idle', stalled: true },
+    { screen: undefined, state: 'unknown', stalled: true },
+    { screen: ['• Working (1s • esc to interrupt)'], state: 'working', stalled: false },
+    { screen: ['Do you want to proceed?'], state: 'permission', stalled: false },
+  ]) test(`시작 확인 화면 ${sample.state} 의 관측을 남기고 자동 포기하지 않는다`, () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('worktree_creating'), worker: { agentTerminalHandle: 'term_wait' } } }, screen: sample.screen })
+    const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
+    assert.equal(r.code, sample.stalled ? 1 : 0, both(r))
+    if (sample.stalled) {
+      assert.match(r.stdout, new RegExp(`^STALLED-START ctx_1 worktree_creating .*terminal=term_wait screen=${sample.state}$`, 'm'))
+      assert.doesNotMatch(r.stdout, /LAUNCHED/)
+    } else {
+      assert.match(r.stdout, /LAUNCHED ctx_1/)
+      assert.match(r.stdout, new RegExp(`터미널 화면 ${sample.state}`))
+    }
+    assert.deepEqual(lines('orca orchestration worker-abandon'), [])
+    assert.equal(lines('orca orchestration worker-start').length, 1)
   })
 
   test('줄인 보기의 stage 키도 단계로 읽는다', () => {
@@ -2010,7 +2031,7 @@ describe('짧은 출력', () => {
     env.ORCH_OUTPUT = 'short'
     const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /^STALLED-START ctx_1 worktree_creating watch=2s,no-signs-of-life$/m)
+    assert.match(r.stdout, /^STALLED-START ctx_1 worktree_creating watch=2s,no-signs-of-life terminal=- screen=unavailable$/m)
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
     assert.equal(lines('orca orchestration worker-start').length, 1)
     assert.doesNotMatch(r.stdout, /LAUNCHED/)
@@ -2021,7 +2042,7 @@ describe('짧은 출력', () => {
     env.ORCH_OUTPUT = 'short'
     const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /^STALLED-START ctx_1 - watch=1s,no-signs-of-life$/m)
+    assert.match(r.stdout, /^STALLED-START ctx_1 - watch=1s,no-signs-of-life terminal=- screen=unavailable$/m)
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
     assert.equal(lines('orca orchestration worker-start').length, 1)
   })
