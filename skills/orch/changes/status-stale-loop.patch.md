@@ -1,0 +1,1 @@
+- `orch status` 가 살아 있는 루프의 번들을 doctor 와 같은 기준으로 대조해 `LOOP-STALE` 도 내보낸다.

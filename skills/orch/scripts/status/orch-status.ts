@@ -10,6 +10,7 @@
 //
 // 출력(한 줄에 판정 하나):
 //     LOOP-ALIVE <pid> runs=<등록된 Run 을 쉼표로 또는 -> last_tick=<시각 또는 ->   루프가 살았다
+//     LOOP-STALE <repo> <pid> <번들>                   살아 있지만 지금 세션의 user 설치본과 다른 번들이다(doctor 와 같은 판정)
 //     LOOP-DEAD <repo> <이유>                         루프가 없거나 죽었다(lib/loop.ts 의 loopStatus. 재확인을 기다리지 않는다)
 //     RUN <id> workers=<이 저장소 워크트리의 열린 dispatch 수> stalled=<멈춘 수>   같은 Run 의 다른 저장소 worker 는 세지 않는다
 //     SKIP-WORKERS <Run> <이유>                       그 Run 의 worker 목록을 읽지 못했다
@@ -31,6 +32,7 @@ import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { FINISH_KEYS } from '../lib/finish-options.ts'
 import { real } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
+import { staleLoopBundles } from '../lib/loop-bundle.ts'
 import { loopStatus, registeredRuns } from '../lib/loop.ts'
 import { collectStages, collectWorkers, movementSettings, screenMarks, stageLine, workerLine, worktreeOf } from '../lib/movement.ts'
 import { boardPath } from '../lib/paths.ts'
@@ -95,6 +97,8 @@ function main(argv: string[]): number {
   if (loop.alive) {
     const registered = registeredRuns(repo).map((entry) => entry.run)
     out(`LOOP-ALIVE ${loop.state.pid} runs=${registered.join(',') || '-'} last_tick=${loop.state.last_tick || '-'}`)
+    const stale = staleLoopBundles().find((entry) => entry.pid === loop.state.pid)
+    if (stale) out(`LOOP-STALE ${repo} ${stale.pid} ${stale.sha}`)
   } else {
     out(`LOOP-DEAD ${repo} ${loop.reason}`)
   }

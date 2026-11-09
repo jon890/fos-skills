@@ -81,7 +81,7 @@ ps -eo pid,command | grep -E "orch-loop|wait-important|orchestration check" | gr
 orch doctor --run "$RUN_ID"
 ```
 
-**doctor 의 `LOOP-STALE <repo> <pid> <번들 해시나 버전>` 은 지금 세션 프로필의 user 범위 설치본이 아닌 번들로 도는 루프다.** 플러그인을 갱신했거나 계정을 바꾼 뒤에 생긴다. 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
+**doctor 와 `orch status` 의 `LOOP-STALE <repo> <pid> <번들 해시나 버전>` 은 지금 세션 프로필의 user 범위 설치본이 아닌 번들로 도는 루프다.** 플러그인을 갱신했거나 계정을 바꾼 뒤에 생긴다. 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
 
 doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. 끝난 dispatch 는 같은 Task 의 PR 종료 근거가 있으면 루프와 doctor 모두 질문에서 제외한다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
 doctor 의 `WORKER-STATE <dispatch> <상태> <근거>` 는 살아 있는 dispatch 인데 터미널이 `user_owned` 로 표시된 worker 의 판정이다(`scripts/lib/worker-state.ts`).

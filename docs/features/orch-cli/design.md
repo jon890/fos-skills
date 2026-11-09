@@ -198,7 +198,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `TRACKED <명령>`, `NOTHING`, 고칠 참조의 위치 `OLD-REF <파일>:<줄>`, `OLD-REF-SCRIPT`, `WOULD-REWRITE <파일>:<줄>` | `references/overlay.md` |
 | `queue reserve`, `wait user-active`, `wait questions`, `wait ack-lost`, `doctor gh-usage`, `doctor install-cli` | 없음 | 지금 줄이 판정 줄이다 | |
 | `paths`, `worker worktree`, `spec line`, `slot heavy`, `slot mem` | 없음 | 결과 그대로(스펙 DECISION20) | |
-| `status` | (새로) | 저장소의 `LOOP-ALIVE …` 나 `LOOP-DEAD …`, Run 마다 `RUN <id> workers=<살아 있는 수> stalled=<수>`, `BOARD doing=<수> decide=<수>`, 멈춘 것마다 `STALLED`, `STAGE`(`loop stalled` 와 같은 줄). 조회 실패는 `SKIP-WORKERS`, `SKIP-BOARD`, `SKIP-STAGES` | `SKILL.md` |
+| `status` | (새로) | 저장소의 `LOOP-ALIVE …` 나 `LOOP-DEAD …`, 살아 있지만 지금 세션의 user 설치본과 다른 번들이면 `LOOP-STALE <repo> <pid> <번들>` 도 함께, Run 마다 `RUN <id> workers=<살아 있는 수> stalled=<수>`, `BOARD doing=<수> decide=<수>`, 멈춘 것마다 `STALLED`, `STAGE`(`loop stalled` 와 같은 줄). 조회 실패는 `SKIP-WORKERS`, `SKIP-BOARD`, `SKIP-STAGES` | `SKILL.md` |
 
 한 명령의 규칙은 그 스크립트가 소유한다(`emit` 에 넘기는 규칙표나 짧은 출력 분기). 규칙이 없는 줄은 판정 줄만 남는다.
 
