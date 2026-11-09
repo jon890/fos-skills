@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { FIELDS, parse } from '../scripts/lib/feedback.ts'
+import { syncCommon } from '../scripts/spec/sync-common.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/feedback/feedback-candidates.ts', import.meta.url))
 let repo: string
@@ -124,4 +125,13 @@ test('워크트리에서 실행해도 주 checkout 의 후보 폴더에 쌓인�
   assert.ok(existsSync(join(dir, 'a.md')))
   assert.equal(existsSync(join(wt, '.orch')), false)
   assert.equal(runAt(wt, 'list').stdout, run('list').stdout)
+})
+
+
+test('공통 지시서 동기화가 후보 기록 명령과 필수 옵션을 함께 옮긴다', () => {
+  const template = readFileSync(new URL('../templates/spec-common.md', import.meta.url), 'utf8')
+  const result = syncCommon('## 스킬 개선 후보 보고\n', template, repo)
+  assert.ok(result.output.includes('SYNC-ADD feedback-add'))
+  assert.match(result.text, /orch feedback add --slug/)
+  assert.match(result.text, /--structural/)
 })
