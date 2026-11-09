@@ -95,6 +95,7 @@ beforeEach(() => {
     CLEANUP_SWEEP: join(binDir, 'sweep.ts'),
     SEND_TO_WORKER: join(binDir, 'send.ts'),
     FAKE_DIR: tmp,
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
     RECEIVED_DIR: join(tmp, 'received'),
     // 임시 폴더 위의 git 저장소를 올라가 찾지 않게 막는다
     GIT_CEILING_DIRECTORIES: tmp,
