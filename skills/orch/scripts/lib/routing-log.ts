@@ -1,6 +1,6 @@
 // PR 종료 시 남기는 관측 기록. 본문·질문·금액은 저장하지 않는다.
 // 수집기 실패는 해당 값만 null, 쓰기 실패는 ROUTING-LOG-FAIL 한 줄이며 정리를 막지 않는다.
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -12,10 +12,12 @@ import { apiTarget, ghJson } from './gh.ts'
 import { launchHistory, type LaunchHistory } from './launch-history.ts'
 import { orcaJson } from './orca.ts'
 import { ensure, pathOf } from './paths.ts'
+import { SLACK_MS, sessionTokens } from './session-tokens.ts'
 import { isQuietStop } from './stop-reports.ts'
 
 type Json = Record<string, any>
 type Outcome = 'merged' | 'closed'
+export type TokensSource = 'session' | 'orca-usage' | 'stale' | 'unavailable'
 type Tokens = { input: number; output: number; cache_read: number; cache_write: number }
 export type RoutingRecord = {
   version: 1; recorded_at: string; pr: number; repo: string; branch: string
@@ -26,6 +28,8 @@ export type RoutingRecord = {
   fix_commits_after_review: number | null; ci_failures: number | null
   questions: number | null; escalations: number | null; coordinator_messages: number | null
   minutes_to_ready: number | null; minutes_waiting_user: number | null; tokens: Tokens | null
+  // tokens 를 어디서 읽었는지. null 이면 이유: stale 은 Orca 사용량 파일이 dispatch 시작보다 오래됨, unavailable 은 못 찾음
+  tokens_source?: TokensSource
 }
 
 const CI_FAILURES = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE'])
@@ -193,8 +197,24 @@ function messages(pr: number, rows: LaunchHistory[], ended: number): MessageMetr
     minutes_waiting_user: waitingKnown ? total / 60_000 : null, opener: ready ? from(ready)!.dispatch : null }
 }
 
-// Orca usage schema 7의 세션을 시작 시각으로 dispatch에 잇는다. 형식이나 위치가 모호하면 null.
-function tokens(rows: LaunchHistory[], history: LaunchHistory[], ended: number): Tokens | null {
+const sum = (list: Tokens[]): Tokens => list.reduce((a, t) => ({ input: a.input + t.input, output: a.output + t.output,
+  cache_read: a.cache_read + t.cache_read, cache_write: a.cache_write + t.cache_write }), { input: 0, output: 0, cache_read: 0, cache_write: 0 })
+
+// dispatch 마다 세션 기록을 센다. 하나라도 못 읽으면 일부만 더한 값이 되므로 쓰지 않는다.
+function fromSessions(rows: LaunchHistory[], history: LaunchHistory[], ended: number): Tokens | null {
+  const found: Tokens[] = []
+  for (const row of rows) {
+    const agent = row.effective?.agent ?? row.agent
+    const until = Math.min(ended, ...history.filter(next => next.worktree === row.worktree && ms(next.at) > ms(row.at)).map(next => ms(next.at) - SLACK_MS))
+    const got = agent ? sessionTokens(agent, { worktree: row.worktree, from: ms(row.at) - SLACK_MS, until }) : null
+    if (!got) return null
+    found.push(got)
+  }
+  return sum(found)
+}
+
+// 두 세션 기록 모두 못 읽을 때만 쓴다. 파일이 dispatch 시작보다 오래됐으면 null 이고 이유를 stale 로 남긴다.
+function fromOrcaUsage(rows: LaunchHistory[], history: LaunchHistory[], ended: number): { tokens: Tokens | null; stale: boolean } {
   const dir = process.env.ORCA_USAGE_DIR ?? join(homedir(), 'Library', 'Application Support', 'Orca')
   const total: Tokens = { input: 0, output: 0, cache_read: 0, cache_write: 0 }
   let found = false
@@ -203,28 +223,40 @@ function tokens(rows: LaunchHistory[], history: LaunchHistory[], ended: number):
     if (!got.ok || !Array.isArray(got.data.worktrees) || got.data.truncated) throw new Error('워크트리 조회 실패')
     return got.data.worktrees as Json[]
   })
+  const start = Math.min(...rows.map(row => ms(row.at)))
   for (const agent of new Set(rows.map(row => row.effective?.agent ?? row.agent))) {
-    if (agent !== 'claude' && agent !== 'codex') return null
-    const data = JSON.parse(readFileSync(join(dir, `orca-${agent}-usage.json`), 'utf8'))
-    if (data.schemaVersion !== 7 || !Array.isArray(data.sessions)) return null
+    if (agent !== 'claude' && agent !== 'codex') return { tokens: null, stale: false }
+    const file = join(dir, `orca-${agent}-usage.json`)
+    if (statSync(file).mtimeMs < start) return { tokens: null, stale: true }
+    const data = JSON.parse(readFileSync(file, 'utf8'))
+    if (data.schemaVersion !== 7 || !Array.isArray(data.sessions)) return { tokens: null, stale: false }
     for (const session of data.sessions) {
-      if (!object(session) || !Number.isFinite(ms(session.firstTimestamp))) return null
+      if (!object(session) || !Number.isFinite(ms(session.firstTimestamp))) return { tokens: null, stale: false }
       const row = rows.find(row => (row.effective?.agent ?? row.agent) === agent &&
         ms(session.firstTimestamp) >= ms(row.at) && ms(session.firstTimestamp) < Math.min(ended,
           ...history.filter(next => next.worktree === row.worktree && ms(next.at) > ms(row.at)).map(next => ms(next.at))) &&
         (session.lastCwd === row.worktree || worktrees?.some(wt => wt.id === session.primaryWorktreeId && resolve(wt.path) === resolve(row.worktree))))
       if (!row) continue
       // 위치가 섞인 세션 전체를 더하면 다른 PR의 토큰이 들어가므로 쓰지 않는다.
-      if (session.hasMixedLocations || (Array.isArray(session.locationBreakdown) && session.locationBreakdown.length > 1)) return null
+      if (session.hasMixedLocations || (Array.isArray(session.locationBreakdown) && session.locationBreakdown.length > 1)) return { tokens: null, stale: false }
       const counts = agent === 'claude'
         ? [session.totalInputTokens, session.totalOutputTokens, session.totalCacheReadTokens, session.totalCacheWriteTokens]
         : [session.totalInputTokens - session.totalCachedInputTokens, session.totalOutputTokens, session.totalCachedInputTokens, 0]
-      if (!counts.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)) return null
+      if (!counts.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)) return { tokens: null, stale: false }
       found = true
       for (const [i, key] of (['input', 'output', 'cache_read', 'cache_write'] as const).entries()) total[key] += counts[i]
     }
   }
-  return found ? total : null
+  return { tokens: found ? total : null, stale: false }
+}
+
+// 세션 기록 → 갱신된 Orca 사용량 파일 순으로 읽는다. 못 읽으면 null 과 이유를 낸다.
+export function collectTokens(rows: LaunchHistory[], history: LaunchHistory[], ended: number): { tokens: Tokens | null; tokens_source: TokensSource } {
+  const session = attempt(() => fromSessions(rows, history, ended))
+  if (session) return { tokens: session, tokens_source: 'session' }
+  const usage = attempt(() => fromOrcaUsage(rows, history, ended))
+  if (usage?.tokens) return { tokens: usage.tokens, tokens_source: 'orca-usage' }
+  return { tokens: null, tokens_source: usage?.stale ? 'stale' : 'unavailable' }
 }
 
 async function collect(repo: string, pr: number, outcome: Outcome): Promise<void> {
@@ -281,7 +313,7 @@ async function collect(repo: string, pr: number, outcome: Outcome): Promise<void
     fix_commits_after_review: review?.at && commits ? commits.filter(c => ms(c.commit?.committer?.date) > ms(review.at)).length : null,
     ci_failures: ci, questions: message?.questions ?? null, escalations: message?.escalations ?? null,
     coordinator_messages: message?.coordinator_messages ?? null, minutes_to_ready: message?.minutes_to_ready ?? null,
-    minutes_waiting_user: message?.minutes_waiting_user ?? null, tokens: attempt(() => tokens(rows, history, ended)),
+    minutes_waiting_user: message?.minutes_waiting_user ?? null, ...collectTokens(rows, history, ended),
   })
 }
 

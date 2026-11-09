@@ -214,29 +214,42 @@ function inside(root: string, value: unknown): string {
   return path
 }
 
+// worker 가 할 수 없는 실행 환경을 가리키는 낱말이다. 실행 환경 칸에 있으면 담당은 코디네이터여야 한다.
+// 원본은 templates/verification-plan.md 의 주석이다. 둘을 함께 고친다
+const WORKER_IMPOSSIBLE = ['Orca', 'worker 띄우', 'worker 를 띄', 'worker 를 시작', '워커 띄', '코디네이터 세션']
+
 // 검증 계획의 구조와 PR 요구사항 연결만 본다. 절차의 충분성·실행 결과는 보지 않는다
 export function checkVerification(text: string, assigned: Set<string>): string[] {
   const body = sections(text).get('인수 검증 계획') ?? ''
   if (!body) return ['인수 검증 계획 절이 없거나 비었다']
-  const headers = ['요구사항', '준비 조건', '실행 절차', '기대 결과', '실행 환경', '선행 조건', '시점']
+  const legacyHeaders = ['요구사항', '준비 조건', '실행 절차', '기대 결과', '실행 환경', '선행 조건', '시점']
+  // 실행 담당 칸은 실행 환경 다음에 온다. 칸이 없는 옛 표는 담당을 검사하지 않고 그대로 받는다
+  const headers = [...legacyHeaders.slice(0, 5), '실행 담당', ...legacyHeaders.slice(5)]
   const rows = [...tableRows(body)]
-  if (rows.length === 0 || rows[0].length !== headers.length || rows[0].some((cell, i) => cell !== headers[i])) {
-    return [`인수 검증 계획 표의 열은 ${headers.join(', ')} 순서여야 한다`]
-  }
+  const owned = rows.length > 0 && rows[0].length === headers.length && rows[0].every((cell, i) => cell === headers[i])
+  const legacy = rows.length > 0 && rows[0].length === legacyHeaders.length && rows[0].every((cell, i) => cell === legacyHeaders[i])
+  if (!owned && !legacy) return [`인수 검증 계획 표의 열은 ${headers.join(', ')} 순서여야 한다`]
+  const width = owned ? headers.length : legacyHeaders.length
   const problems: string[] = []
   const covered = new Set<string>()
   for (const cells of rows.slice(1)) {
     if (cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell))) continue
-    if (cells.length !== headers.length) {
-      problems.push('인수 검증 사례에 준비 조건·절차·기대값·환경·선행 조건·시점이 필요하다')
+    if (cells.length !== width) {
+      problems.push('인수 검증 사례에 준비 조건·절차·기대값·환경·담당·선행 조건·시점이 필요하다')
       continue
     }
-    const [rid, , , , , prerequisite, timing] = cells
+    const [rid, , , , environment] = cells
+    const owner = owned ? cells[5] : ''
+    const prerequisite = cells[width - 2]
+    const timing = cells[width - 1]
     if (!assigned.has(rid)) problems.push(`인수 검증에 이번 PR 범위 밖의 요구사항: ${rid}`)
     else covered.add(rid)
     if (cells.some((cell) => OPEN_ANSWERS.has(cell.toLowerCase()) || cell.includes('{{') || cell.includes('}}'))) {
       problems.push(`${rid}: 인수 검증 사례의 빈칸·미정·양식 자리표시자를 채운다`)
     }
+    if (owned && owner !== 'worker' && owner !== '코디네이터') problems.push(`${rid}: 실행 담당은 worker 또는 코디네이터다: ${owner}`)
+    const blocked = WORKER_IMPOSSIBLE.find((word) => environment.toLowerCase().includes(word.toLowerCase()))
+    if (owner === 'worker' && blocked) problems.push(`${rid}: 실행 환경에 \`${blocked}\` 가 있어 worker 가 할 수 없는 검증이다. 실행 담당을 코디네이터로 적는다`)
     if (timing !== 'PR 전' && timing !== 'PR 뒤') problems.push(`${rid}: 인수 검증 시점은 PR 전 또는 PR 뒤다`)
     if (!pyre(/^(없음|push|머지|배포)(?:\s|$|[(:])/).test(prerequisite)) problems.push(`${rid}: 선행 조건은 없음, push, 머지, 배포 중 하나로 시작한다`)
     if (timing === 'PR 전' && (prerequisite.startsWith('머지') || prerequisite.startsWith('배포'))) problems.push(`${rid}: 머지·배포가 필요한 검증은 PR 뒤다`)

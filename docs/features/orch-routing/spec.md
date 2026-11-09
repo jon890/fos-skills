@@ -57,6 +57,7 @@
 | `minutes_to_ready`, `minutes_waiting_user` | 띄운 때부터 첫 `준비됨` 까지, 그 가운데 질문이 답을 기다린 시간 |
 | `outcome` | `merged` 또는 `closed` |
 | `tokens` | 입력, 출력, 캐시 읽기, 캐시 쓰기 토큰. 금액은 남기지 않는다(DECISION4) |
+| `tokens_source` | `tokens` 를 읽은 곳(`session`, `orca-usage`). `tokens` 가 `null` 이면 이유(`stale`, `unavailable`)라 보고서가 「모름」 과 「0」 을 가른다. 옛 기록에는 없다 |
 
 메시지 본문, 질문 글, 지시서 본문은 남기지 않는다. 수와 시각만 남긴다.
 

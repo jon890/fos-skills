@@ -1,10 +1,10 @@
 // verify_task 의 명령 경계 테스트 2: 변경 파일 표, 구현 전 파일 상태, git index 대조(--staged), 상대 링크, 옵션과 종료 코드.
 
 import assert from 'node:assert/strict'
-import { symlinkSync, mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { type Entry, indexJson, Repo, verify, writePlan } from './helpers.ts'
+import { type Entry, indexJson, Repo, SKILL_DIR, verify, writePlan } from './helpers.ts'
 
 const has = (lines: string[], needle: string) => lines.some((line) => line.includes(needle))
 
@@ -210,6 +210,18 @@ test('변경 파일 행의 형식 오류와 중복을 알린다', () => {
   assert.ok(has(r.violations, '변경 파일 행은 파일과 변경 두 칸이어야 한다'), r.violations.join('\n'))
   assert.ok(has(r.violations, '변경 파일 행의 경로 또는 변경 종류가 잘못됐다'))
   assert.ok(has(r.violations, '변경 파일 중복: c.py'))
+  // 오류 문구가 허용 값과 설명을 붙이는 꼴을 알려 준다
+  const message = r.violations.find((line) => line.includes('변경 종류가 잘못됐다'))!
+  for (const needle of ['신규', '수정', '삭제', '신규·수정', '수정 (설명)']) assert.ok(message.includes(needle), needle)
+})
+
+test('변경 칸에 수정 (설명) 꼴을 쓸 수 있고 양식이 그 꼴을 보여 준다', () => {
+  const repo = new Repo()
+  repo.file('docs/flow.md')
+  writePlan(repo, 'plan1-x', [{ entries: [] }])
+  repo.file('tasks/plan1-x/phase-01.md', require_text('## 변경 파일\n| 파일 | 변경 |\n| --- | --- |\n| `a.py` | 수정 (기본값 추가) |\n'))
+  assert.ok(!has(verify(repo, ['plan1-x', '--audit']).violations, '변경 종류가 잘못됐다'))
+  assert.ok(readFileSync(join(SKILL_DIR, 'templates', 'phase.md'), 'utf8').includes('| 수정 (기본값 추가) |'))
 })
 
 test('4단계에서 먼저 쓴 커밋 전 docs 는 경고이고 나머지는 위반이다', () => {
