@@ -372,6 +372,24 @@ process.exitCode = done.status ?? 1
     assert.equal(out, 'PRUNED api V4 feat-old\nRESERVED api V4 db/api/V4__add_index.sql\n')
   })
 
+  test('예약 뒤 유예 안이면 아직 만들지 않은 브랜치의 예약을 지우지 않고 같은 번호를 또 주지 않는다', () => {
+    // 코디네이터가 worker 를 띄우기 전에 --branch 로 아직 없는 브랜치의 번호를 받아 둔다
+    assert.equal(ok(reserve(['--module', 'api', '--name', 'add index', '--branch', 'feat-new'])), 'RESERVED api V4 db/api/V4__add_index.sql\n')
+    const out = ok(reserve(['--module', 'api', '--name', 'add col', '--branch', 'feat-a']))
+    assert.equal(out, 'RESERVED api V5 db/api/V5__add_col.sql\n')
+    assert.deepEqual(
+      reservations().map((r) => r.branch),
+      ['feat-new', 'feat-a'],
+    )
+  })
+
+  test('유예가 지난 뒤에도 브랜치가 없으면 지운다', () => {
+    seed([entry('feat-old', 'V4', new Date(Date.now() - 60_000).toISOString())])
+    assert.equal(ok(reserve(['--prune'])), 'PRUNE-DONE 0\n')
+    assert.equal(ok(reserve(['--prune'], { env: { RESERVE_GONE_GRACE_MS: '1000' } })), 'PRUNED api V4 feat-old\nPRUNE-DONE 1\n')
+    assert.deepEqual(reservations(), [])
+  })
+
   test('원격에만 브랜치가 있으면 남긴다', () => {
     git(['push', '-q', 'origin', 'main:refs/heads/feat-old'])
     seed([entry('feat-old', 'V4', '2026-10-27T00:00:00Z')])
