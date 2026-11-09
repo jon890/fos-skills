@@ -5,6 +5,10 @@
 규칙과 근거는 [ADR-023](../docs/adr/023-version-at-merge.md) 도 함께 본다.
 플러그인 version 규칙은 [ADR-019](../docs/adr/019-plugin-version-auto-bump.md) 가 소유한다.
 
+## 14.4.0 (2026-11-09)
+
+- harness-cleanup 4.0.1 (#386)
+
 ## 14.3.0 (2026-11-09)
 
 - browser 2.0.2, presentation 2.0.5 (#385)
