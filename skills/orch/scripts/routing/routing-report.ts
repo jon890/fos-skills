@@ -1,5 +1,6 @@
 // 읽기 전용 routing 집계. --since는 PR 종료일(UTC)부터 포함한다.
 // 비용은 PR 전체 토큰에 PR을 연 모델의 현재 단가를 적용한 추정이다. dispatch별 비용은 기록에 없다.
+// 요청 단위 정보가 없어 Haiku 의 10만 토큰 초과 요청 단가와 Fast mode 단가는 반영하지 않는다.
 // 종료 코드: 0 성공(손상 줄 경고 포함), 1 파일 읽기 실패, 2 사용법 오류.
 import { parseArgs } from 'node:util'
 import { statSync } from 'node:fs'
