@@ -161,10 +161,12 @@ test('실제 CLI 와 함수 fixture 는 같은 예외 출력·종료 코드를 �
 test('실제 삭제 자식과 함수 가짜 자식의 0·1·2 출력과 종료가 같다', () => {
   const dirty = worktree('dirty-remove')
   writeFileSync(join(dirty, 'untracked.txt'), 'keep')
-  for (const args of [[join(fx.tmp, 'missing')], ['--unknown-option'], [dirty, '--wait', '0']]) {
+  const cases: [string[], number][] = [[['--help'], 0], [[join(fx.tmp, 'missing')], 1], [['--unknown-option'], 2], [[dirty, '--wait', '0'], 1]]
+  for (const [args, code] of cases) {
     save()
     const argv = [process.execPath, '--disable-warning=ExperimentalWarning', REMOVE, ...args]
     const real = runProcess(argv, { env: fx.env })
+    assert.equal(real.code, code, args.join(' '))
     save()
     assert.deepEqual(statefulRun(argv, { env: fx.env }), real, args.join(' '))
   }
