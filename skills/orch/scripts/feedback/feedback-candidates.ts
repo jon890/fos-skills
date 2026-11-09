@@ -15,6 +15,7 @@ const USAGE = [
   '        orch feedback list [--open] [--repo DIR]',
   '        orch feedback set --slug 이름 --status "후보 | 채택 #PR | 기각(이유) | 보류(이유)" [--repo DIR]',
   '        orch feedback migrate [--apply] [--trash DIR] [--repo DIR]',
+  '후보 파일은 add 와 set 으로만 기록하고 고친다. 파일에 직접 글을 덧붙이지 않는다.',
 ].join('\n')
 const OPTIONS = {
   ...Object.fromEntries(['slug', 'title', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural', 'status', 'repo', 'trash'].map(key => [key, { type: 'string' as const }])),

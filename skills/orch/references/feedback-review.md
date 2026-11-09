@@ -5,7 +5,7 @@ worker 가 공통 지시서의 「스킬 개선 후보 보고」 절을 따라 �
 
 ## 후보 파일
 
-후보는 `orch feedback add` 로만 적는다. worker 와 코디네이터가 같은 명령을 쓰며, `<orch 루트>/feedback/<slug>.md` 에 후보 하나당 파일 하나를 만든다. 워크트리에서 불러도 주 checkout 의 orch 루트에 모인다. 공통 지시서의 `{{FEEDBACK_DIR}}` 는 이 폴더다.
+후보는 `orch feedback add` 로만 적고, 상태는 `orch feedback set` 으로만 고친다. 생성된 파일에 글을 직접 덧붙이지 않는다. 설명을 바꿔야 하면 기존 후보에 기각 이유를 남기고 새 이름으로 다시 적는다. worker 와 코디네이터가 같은 명령을 쓰며, `<orch 루트>/feedback/<slug>.md` 에 후보 하나당 파일 하나를 만든다. 워크트리에서 불러도 주 checkout 의 orch 루트에 모인다. 공통 지시서의 `{{FEEDBACK_DIR}}` 는 이 폴더다.
 필수 옵션과 사용법은 `orch feedback add --help`, 값을 채운 호출 양식은 `templates/spec-common.md` 의 「스킬 개선 후보 보고」 에 있다.
 
 명령이 만드는 칸과 순서는 고정이다. 값 안의 줄바꿈은 빈칸으로 바꾼다.
