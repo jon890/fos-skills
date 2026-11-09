@@ -4,7 +4,7 @@ import { constants } from 'node:os'
 import { WAIT_INTERVAL } from './config.ts'
 import { DriverError } from './errors.ts'
 import { dumpJson, normalizeNewlines, pyDecode, pySplitLines, pyStrip } from './pylike.ts'
-import { spawn as spawnSync, runtimeEnv } from './runtime.ts'
+import { runtimeSpawnSync, runtimeEnv } from './runtime.ts'
 
 // 외부 명령을 돌리고 stdout+stderr 를 한 덩어리로 돌려준다.
 //
@@ -14,7 +14,7 @@ import { spawn as spawnSync, runtimeEnv } from './runtime.ts'
 export function run(argv: string[], opts: { checkMarker?: string; stdinText?: string; checkExit?: boolean } = {}): string {
   // subprocess 는 문자열이 아닌 인자를 TypeError 로 거절한다
   for (const arg of argv) if (typeof arg !== 'string') throw new TypeError(`expected str, bytes or os.PathLike object, not ${typeof arg}`)
-  const done = spawnSync(argv[0], argv.slice(1), {
+  const done = runtimeSpawnSync(argv[0], argv.slice(1), {
     input: opts.stdinText,
     stdio: [opts.stdinText === undefined ? 'inherit' : 'pipe', 'pipe', 'pipe'],
     maxBuffer: 1 << 30,

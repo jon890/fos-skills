@@ -10,7 +10,7 @@ export type Runtime = {
 const scope = new AsyncLocalStorage<Runtime>()
 export const currentRuntime = (): Runtime | undefined => scope.getStore()
 export const runtimeEnv = (): NodeJS.ProcessEnv => scope.getStore()?.env ?? process.env
-export const spawn: typeof spawnSync = ((...args: Parameters<typeof spawnSync>) =>
+export const runtimeSpawnSync: typeof spawnSync = ((...args: Parameters<typeof spawnSync>) =>
   (scope.getStore()?.spawn ?? spawnSync)(...args)) as typeof spawnSync
 export function withRuntime<T>(runtime: Runtime, action: () => T): T {
   return scope.run(runtime, action)

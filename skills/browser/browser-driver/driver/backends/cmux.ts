@@ -6,7 +6,7 @@ import { JsonDecodeError, loadJson, normalizeNewlines, parsePyInt, pyDecode, pyS
 import { jsValue } from '../shell.ts'
 import { Backend } from './base.ts'
 import { runtimeEnv } from '../runtime.ts'
-import { spawn as spawnSync } from '../runtime.ts'
+import { runtimeSpawnSync } from '../runtime.ts'
 
 const rstripNewlines = (text: string) => text.replace(/\n+$/, '')
 
@@ -26,7 +26,7 @@ export class CmuxBackend extends Backend {
   readonly supported = new Set(['open', 'nav', 'js', 'waitjs', 'ready', 'url', 'snap', 'shot', 'console', 'errors', 'close'])
 
   private cmux(...args: string[]): string {
-    const done = spawnSync(this.binary, args, { stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 1 << 30, env: runtimeEnv() })
+    const done = runtimeSpawnSync(this.binary, args, { stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 1 << 30, env: runtimeEnv() })
     if (done.error) throw done.error
     const decode = (bytes: Buffer | null) => normalizeNewlines(pyDecode(bytes ?? Buffer.alloc(0)))
     const out = decode(done.stdout) + decode(done.stderr)
