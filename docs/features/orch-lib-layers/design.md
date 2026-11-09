@@ -114,7 +114,10 @@
   - Run 이 없는 루프(옛 꼴)는 받을 곳이 없어 loop.log 에만 남긴다.
 - **보내기 실패**: 지금 각 단계는 알림 파일에 쓴 뒤 「알렸다」 를 상태에 적는다. 바뀐 뒤에는 `notifyRun` 이 ok 일 때만 적는다. 실패하면 다음 틱이 같은 알림을 다시 낸다. `WATCH-ERROR` 처럼 errors 로 겹침을 막는 것은 보내지 못했으면 errors 에 새 이유를 적지 않는다. 보내지 못한 이유는 loop.log 에 `NOTICE-FAIL <kind> <이유>` 로 남긴다.
 - **알림 종류**: 지금 알림 파일의 kind 를 그대로 subject 첫 낱말로 쓴다(CI-FAILED, CONFLICT-ORPHAN, WORKER-STALLED, WORKER-LIMITED, FINISH-MISSING, AUTO-MERGE …). 바뀌는 것은 셋이다. `NO-WAIT` 는 `UNANSWERED` 로, 기술 질문 `REMINDER` 는 `UNANSWERED` 로 합치고, `DONE-SUSPECT`, `WORKER-LOST`, `LOOP-RESTARTED` 를 더한다. 원본 목록은 `docs/data-schema.md` 가 아니라 `orch-loop.ts` 머리 주석이다(지금과 같다).
-- **완료 보고 확인 단계(REQ5, REQ14)**: Run 마다 `check --run <Run> --all --types worker_done,status --json --full` 을 읽는다. 처음 보는 worker_done 마다 `lib/completion.ts` 로 근거를 판정한다.
+- **완료 보고 확인 단계(REQ5, REQ14)**: worker_done 과 준비 상태를 따로 읽는다. 한 조회로 둘을 읽으면 `check --all` 의 100행 제한에 준비 상태나 보고가 밀린다.
+  - worker_done 읽기: Run 마다 `check --run <Run> --all --types worker_done --json --full` 을 읽는다. 받은 행이 100행이고 가장 오래된 행도 `state/done-seen/<Run>.json` 의 마지막으로 본 시각보다 늦으면, 틱 사이에 100건 넘게 와 앞 보고가 밀린 것이다. 그때는 `inbox --terminal run:<Run> --limit 3000 --full` 에서 worker_done 만 골라 보탠다. 그래도 마지막으로 본 시각에 닿지 못하면 `WATCH-ERROR done: 완료 보고 일부를 읽지 못했다` 를 보낸다. 모르는 보고를 없는 것으로 넘기지 않는다.
+  - 준비 상태 읽기: 지금 `wait-important.ts` 의 `verifyCompletion` 을 그대로 옮긴다. `check --all --types status` 로 읽고, 의심스러운 보고가 남으면 `inbox --limit 3000` 에서 그 Run 의 status 를 보태 다시 판정한다. 판정 입력이 지금과 같아야 REQ5 의 「같은 입력에 같은 결과」 를 지킨다.
+  - 처음 보는 worker_done 마다 `lib/completion.ts` 로 근거를 판정한다.
   - 근거가 ready: `worker-done` 이벤트(evidence ready, pr 칸은 `gh pr view` 로 채움)를 내고 보드의 pr 칸을 채운다(`lib/board.ts` 의 `linkBoardPr`). 알림은 보내지 않는다. Orca 가 그 worker_done 으로 이미 깨웠다.
   - 근거 없음: `worker-done` 이벤트(evidence suspicious)를 내고 `DONE-SUSPECT <dispatch> <이유>` 를 보낸다. dispatch 가 띄우기 기록에 `completion: "none"` 이면 알리지 않는다. 리뷰 dispatch 의 근거 규칙은 지금 그대로다.
   - `--outcome failed` 는 판정하지 않는다(지금과 같다).
@@ -187,7 +190,7 @@
 | --- | --- | --- |
 | REQ7, REQ8(ask) | `worker-ask.ts` 프로세스 | 가짜 orca 로 결과 꼴별 출력과 종료 코드를 본다(`tests/worker-ask.spec.ts`). 인수 검증은 실제 Orca 에서 worker 하나가 묻고 턴을 끝낸 뒤 답으로 깨는 것을 본다 |
 | REQ6, REQ18 | `send-to-worker.ts` 프로세스 | 가짜 orca 로 상태별 경로, `FOLLOW-UP`, 띄우기 기록을 본다. `reopened` 영수증에서 새 dispatch 의 터미널이 앞 터미널과 다른 사례로, 기록에 새 터미널이 적히고 그 기록으로 `cleanup-sweep` 이 그 터미널을 코디네이터가 띄운 것으로 보는지 본다. 인수 검증은 실제 Orca 에서 마친 worker 에게 후속 지시서를 보내 같은 터미널이 새 Task 로 시작하고 `orch status` 에 보이는 것을 본다 |
-| REQ1, REQ3, REQ5, REQ14, REQ15 | 루프 틱(`--tick`) | 가짜 orca 가 받은 send 인자를 적어 Run 별 알림과 한 번만 가는지 본다. 인수 검증은 실제 Orca 에서 대기 없이 질문과 루프 알림으로 코디네이터가 깨는 것을 본다 |
+| REQ1, REQ3, REQ5, REQ14, REQ15 | 루프 틱(`--tick`) | 가짜 orca 가 받은 send 인자를 적어 Run 별 알림과 한 번만 가는지 본다. 완료 보고 확인은 준비 상태 뒤에 다른 status 가 100행 넘게 쌓인 사례(정상 완료와 리뷰 완료가 DONE-SUSPECT 가 되지 않는다)와, 틱 사이에 worker_done 이 100건 넘게 온 사례(worker-done 이벤트와 보드 pr 칸이 빠지지 않는다)를 따로 둔다. 인수 검증은 실제 Orca 에서 대기 없이 질문과 루프 알림으로 코디네이터가 깨는 것을 본다 |
 | REQ2 | 소스 글자 | `tests/check-peek.spec.ts` |
 | REQ4, REQ9 | 소스 글자와 정리 | 지운 이름이 남지 않았는지 grep, 정리의 옛 파일 옮기기는 임시 orch 루트로 |
 | REQ8 | 진입점과 껍데기 | 옛 꼴마다 한 줄과 2, 가짜 orca 가 불리지 않은 것 |
