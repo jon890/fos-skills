@@ -387,6 +387,11 @@ test('저장소 테스트 실행기의 인자 파일·폴더로 작업 항목의
     assert.ok(!has(r.violations, NOT_RUN) && !has(r.violations, '검증 절에 테스트 실행 명령이 없다'), `${command}\n${r.violations.join('\n')}`)
     assert.ok(!has(r.warnings, '판정하지 못한'), command)
   }
+  // 옵션 값은 경로가 아니고, `.` 은 저장소 전체다
+  for (const command of ['node scripts/run-tests.ts --concurrency 4', 'node scripts/run-tests.ts --timeout 600 skills/plan/tests', 'node scripts/run-tests.ts --out result --max-wait 9 .', 'node scripts/run-tests.ts .', 'node scripts/run-tests.ts ./']) {
+    const r = inspect(work, command, entries, { files })
+    assert.ok(!has(r.violations, NOT_RUN), `${command}\n${r.violations.join('\n')}`)
+  }
   for (const command of ['node scripts/run-tests.ts skills/plan/tests/other.spec.ts', 'node scripts/run-tests.ts skills/orch/tests']) {
     assert.ok(has(inspect(work, command, entries, { files }).violations, NOT_RUN), command)
   }

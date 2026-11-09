@@ -610,8 +610,18 @@ function repoTestRunnerArgs(command: Command): string[] | null {
   if (command.length === 0 || pathName(command[0]) !== 'node') return null
   const script = nodeScript(command.slice(1))
   if (script === null || !isRepoTestRunner(script.startsWith('./') ? script.slice(2) : script)) return null
-  return command.slice(command.indexOf(script) + 1).filter((arg) => !arg.startsWith('-'))
+  const rest: string[] = []
+  let skip = false
+  for (const arg of command.slice(command.indexOf(script) + 1)) {
+    if (skip) skip = false
+    else if (REPO_TEST_RUNNER_VALUE_OPTIONS.has(arg)) skip = true
+    else if (!arg.startsWith('-') && !['.', './'].includes(arg)) rest.push(arg) // `.` 은 저장소 전체라 범위를 좁히지 않는다
+  }
+  return rest
 }
+
+// run-tests.ts 에서 값을 따로 받는 옵션이다. 값은 테스트 경로가 아니다
+const REPO_TEST_RUNNER_VALUE_OPTIONS = new Set(['--concurrency', '--timeout', '--max-wait', '--out', '--wait'])
 
 // 같은 줄의 `cd <dir>` 를 반영한다. 줄이 바뀌면 저장소 루트로 돌아간다.
 // 줄 번호가 없으면 한 줄의 명령 체인으로 본다. 절대 경로와 `cd` 인자 없음은 루트로 본다
