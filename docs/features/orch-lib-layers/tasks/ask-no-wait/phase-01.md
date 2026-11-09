@@ -32,7 +32,7 @@
 
 ### 1. `skills/orch/scripts/worker/worker-ask.ts`
 
-- 머리 주석을 새 흐름으로 다시 쓴다. 사용법 `worker-ask.ts --from HANDLE --question TEXT [--options CSV] [--run ID] [--force] [--decision]`. 종료 코드는 0(보냈다, 또는 바로 답을 받았다), 2(사용법·실행 오류, `--decision` 위반, `--resume`, 바쁨 지속, 닿았는지 모름), 3(Run 메일함으로 대신 보냄), 5(읽지 않은 메시지). 4 를 지운다.
+- 머리 주석을 새 흐름으로 다시 쓴다. 사용법 줄의 옵션은 `--from HANDLE --question TEXT [--options CSV] [--run ID] [--force] [--decision]` 이다. 종료 코드는 0(보냈다, 또는 바로 답을 받았다), 2(사용법·실행 오류, `--decision` 위반, `--resume`, 바쁨 지속, 닿았는지 모름), 3(Run 메일함으로 대신 보냄), 5(읽지 않은 메시지). 4 를 지운다.
 - 옵션: `resume`, `timeout-ms`, `max-wait` 는 parseArgs 에 남긴다(모르는 옵션 오류가 나지 않게). `--resume` 이 있으면 orca 를 부르지 않고 stderr 에 `worker-ask: --resume 은 없어졌다. 질문을 보낸 뒤 턴을 끝내면 Orca 가 답과 함께 깨운다. 읽을 문서: 공통 지시서의 worker-ask 규칙` 한 줄과 2. `--timeout-ms` 나 `--max-wait` 가 있으면 stderr 에 `worker-ask: --timeout-ms, --max-wait 는 없어진 옵션이라 무시했다` 한 줄을 내고 계속한다. 값 검사(`양의 정수`)와 `ORCA_MAX_TIMEOUT_MS` 줄이기를 지운다.
 - ask 호출: `['orchestration', 'ask', '--from', sender, '--question', question, '--timeout-ms', String(ASK_RETURN_MS), '--json']` 에 `--options` 를 더하고 `withFull` 을 붙인다. `ASK_RETURN_MS` 는 5000, `ORCH_ASK_RETURN_MS` 로 바꿀 수 있다(테스트용). `run`(동기)으로 부르고 제한 시간은 `ASK_RETURN_MS + ASK_SLACK_MS`.
 - 결과 처리(설계 표 순서): 답이 있으면 `answered`(지금 함수) 후 0. 그 밖에 `messageIdOf` 가 있으면(pending, timedOut 모두) 짧은 출력 `ASKED <id>`, 긴 출력 `ASKED <id>` 뒤에 ask 출력, 0. stderr 에 `worker-ask: 질문 <id> 를 보냈다. 턴을 끝낸다. 답이 오면 Orca 가 깨우고, 깬 뒤 orca orchestration check 로 읽는다`. 0 인데 둘 다 없으면 `NO-ANSWER -` 와 2. 실패는 지금의 바쁨, 끝난 dispatch, 그 밖의 코드 분기를 그대로 쓴다. `if (resume)` 분기는 지운다.
