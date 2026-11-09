@@ -2,7 +2,7 @@
 // 실제 대화 기록은 쓰지 않고 임시 jsonl 표본을 쓴다. session_log 의 읽기, 가리기, 세션 id 처리도 이 출력으로 본다.
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, utimesSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { tempDir } from '../../../modules/testkit/temp.ts'
@@ -36,6 +36,31 @@ class Case {
 }
 
 describe('extract_skill_usage 집계', () => {
+  test('혼합 줄 끝과 잘못된 UTF-8 도 집계와 발췌 출력이 같다', () => {
+    const c = new Case()
+    const records = [
+      user('첫 요청 한글😀', '2026-10-05T00:00:00Z'),
+      skillCall('orch', '2026-10-05T00:01:00Z', 't1'),
+      user('다시 \uFFFD', '2026-10-05T00:02:00Z'),
+    ]
+    const file = c.session(SID, records, '-repo', '')
+    const args = ['--skill', 'orch', '--since', '2026-10-01', '--out', c.out]
+    const expected = c.extract(...args)
+    const excerpts = () => ['invocations.jsonl', 'sessions.jsonl'].map((name) => readFileSync(join(c.out, name), 'utf8'))
+    const expectedExcerpts = excerpts()
+    const target = join(c.out, 'render.txt')
+    const renderArgs = [file, '--out', target]
+    const expectedRender = run('render_session', renderArgs, { cwd: c.base })
+    const expectedText = readFileSync(target, 'utf8')
+    const mixed = Buffer.from(records.map((record) => JSON.stringify(record)).join('\r\n{깨진 줄\r'))
+    const replacement = mixed.indexOf(Buffer.from('\uFFFD'))
+    writeFileSync(file, Buffer.concat([mixed.subarray(0, replacement), Buffer.from([0xff]), mixed.subarray(replacement + 3)]))
+    assert.deepEqual(c.extract(...args), expected)
+    assert.deepEqual(excerpts(), expectedExcerpts)
+    assert.deepEqual(run('render_session', renderArgs, { cwd: c.base }), expectedRender)
+    assert.equal(readFileSync(target, 'utf8'), expectedText)
+  })
+
   test('user 와 assistant 레코드만 센다', () => {
     const c = new Case()
     const call = skillCall('fos-skills:plan', '2026-10-10T00:00:00Z', 't1')

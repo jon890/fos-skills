@@ -2,7 +2,7 @@
 // 출력은 자식 프로세스와 같은 fd 에 쓰므로 순서가 바뀌지 않게 동기로 쓴다.
 
 import { spawnSync } from 'node:child_process'
-import { accessSync, constants as fsConstants, readFileSync, realpathSync, statSync, writeSync } from 'node:fs'
+import { accessSync, closeSync, constants as fsConstants, openSync, readFileSync, readSync, realpathSync, statSync, writeSync } from 'node:fs'
 import { constants } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { normalizeNewlines } from './kit/py.ts'
@@ -34,6 +34,40 @@ export function isMain(url: string, flag: boolean | undefined): boolean {
 // Path.read_text(encoding="utf-8", errors="replace"). 줄바꿈을 \n 으로 바꾸고 잘못된 바이트는 U+FFFD 로 바꾼다. BOM 은 지우지 않는다
 export function readTextReplace(path: string): string {
   return normalizeNewlines(new TextDecoder('utf-8', { ignoreBOM: true }).decode(readFileSync(path)))
+}
+
+// 같은 UTF-8 대체 규칙으로 파일을 조금씩 읽는다. 줄 끝은 빼고, 마지막 개행 없는 줄도 낸다.
+// 청크 사이 UTF-8 문자와 CRLF 를 이어 처리한다. 중간에 반복을 끝내도 파일을 닫는다.
+export function* iterTextLinesReplace(path: string, chunkSize = 64 * 1024): Generator<string> {
+  if (!Number.isSafeInteger(chunkSize) || chunkSize <= 0) throw new RangeError('chunkSize must be a positive integer')
+  const buffer = Buffer.alloc(chunkSize)
+  const decoder = new TextDecoder('utf-8', { ignoreBOM: true })
+  const fd = openSync(path, 'r')
+  const fragments: string[] = []
+  let afterCR = false
+  try {
+    while (true) {
+      const size = readSync(fd, buffer, 0, buffer.length, null)
+      let text = decoder.decode(buffer.subarray(0, size), { stream: size !== 0 })
+      if (text) {
+        if (afterCR && text.startsWith('\n')) text = text.slice(1)
+        afterCR = text.endsWith('\r')
+        let start = 0
+        for (const match of text.matchAll(/\r\n|\r|\n/g)) {
+          fragments.push(text.slice(start, match.index))
+          const line = fragments.join('')
+          fragments.length = 0
+          yield line
+          start = match.index + match[0].length
+        }
+        if (start < text.length) fragments.push(text.slice(start))
+      }
+      if (size === 0) break
+    }
+    if (fragments.length) yield fragments.join('')
+  } finally {
+    closeSync(fd)
+  }
 }
 
 // bytes.decode("utf-8", errors="replace")
