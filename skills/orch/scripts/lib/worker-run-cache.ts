@@ -1,5 +1,5 @@
 // 끝난 Run 의 worker 행만 머신 폴더의 worker-runs/<실행 파일과 Run id의 해시>.json 에 기억한다.
-// run-list 에 완료 상태가 없어 worker-list 의 모든 dispatch 가 completed/failed/canceled 이고,
+// run-list 에 완료 상태가 없어 worker-list 의 모든 dispatch 가 completed/failed/abandoned/canceled 이고,
 // working/ready 행이 없으며 updated_at 이 10분 이상 지난 Run 만 저장한다. 갱신 시각이 없으면 저장하지 않는다.
 // run-list 의 updated_at 이 바뀌면 무효다. 같은 시각이어도 현재 살아 있는 터미널 handle 이 행에 있으면 다시 읽는다.
 // 따라서 끝난 Run 의 터미널을 사용자가 넘겨받아도 옛 소유 상태로 닫거나 입력을 허락하지 않는다.
@@ -16,7 +16,7 @@ type Row = Record<string, unknown>
 const OLD_MS = 600_000
 
 function settled(rows: Row[]): boolean {
-  return rows.every((r) => ['completed', 'failed', 'canceled'].includes(String(r.dispatchStatus)) &&
+  return rows.every((r) => ['completed', 'failed', 'abandoned', 'canceled'].includes(String(r.dispatchStatus)) &&
     !['working', 'ready'].includes(String(r.workerState)))
 }
 

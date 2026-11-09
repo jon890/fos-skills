@@ -38,6 +38,24 @@ describe('Orca 가 worker 반납 뒤 띄운 빈 셸', () => {
     has(calls(), 'orca terminal close --terminal term_shell')
   })
 
+  test('워크트리 둘을 정리해도 끝난 Run 의 worker 목록은 한 번만 읽는다', () => {
+    const paths = ['feat-once-a', 'feat-once-b'].map((name) => {
+      const path = worktree(name)
+      squashMerge(name, path)
+      return path
+    })
+    fx.terminals = paths.map((path, index) => ({ handle: `term_once_${index}`, worktreePath: path }))
+    fx.runs = { run_x: [], run_finished: paths.map((path, index) => ({
+      runId: 'run_finished', dispatchId: `ctx_once_${index}`, dispatchStatus: 'completed', workerState: 'succeeded',
+      terminalState: 'released', agentTerminalHandle: `term_once_${index}`,
+      resource: { terminalHandle: `term_once_${index}`, ownershipState: 'owned', worktreeId: `x::${path}` },
+    })) }
+    const out = runSweep(['--run', 'run_x', '--apply'])
+    for (const path of paths) gone(path, out)
+    assert.equal(sweepCalls('worker-list').filter((line) => line.includes('--run run_finished')).length, 1, calls())
+    for (let index = 0; index < paths.length; index++) has(calls(), `terminal close --terminal term_once_${index}`)
+  })
+
   test('자식이 도는 셸은 닫지 않는다', () => {
     const path = releasedWorkerWithShell('feat-p', true)
     const out = runSweep(['--run', 'run_x', '--apply'])

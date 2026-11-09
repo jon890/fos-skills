@@ -183,11 +183,14 @@ describe('cached', () => {
     assert.equal(calls('worker-list').length, 2, 'worker-list 를 부른 횟수')
   })
 
-  test('실패를 기억하고 다시 읽지 않는다', async () => {
+  test('실패 뒤 다음 호출이 다시 읽고 성공한 목록은 재사용한다', async () => {
     orca.setRules(orcaRules([{ handle: 't', worktreePath: wt }], { run_a: [row('x')] }, { failRun: 'run_a' }))
     const workers = cached(allWorkers)
-    for (let i = 0; i < 2; i++) assert.equal(await blocker(wt, new Set(), workers), FAILED)
-    assert.equal(calls('--run').length, 1, '--run 조회 횟수')
+    assert.equal(await blocker(wt, new Set(), workers), FAILED)
+    orca.setRules(orcaRules([{ handle: 't', worktreePath: wt }], { run_a: [row('t')] }))
+    assert.equal(await blocker(wt, new Set(), workers), '')
+    assert.equal(await blocker(wt, new Set(), workers), '')
+    assert.equal(calls('--run').length, 2, '--run 조회 횟수')
   })
 
   test('maxAge 가 지나면 다시 읽는다', async () => {
@@ -249,6 +252,10 @@ describe('실행 단위 스냅샷과 끝난 Run 캐시', () => {
       cache.remember(other, [bad])
       assert.equal(cache.read(other, new Set()), null)
     }
+    const abandoned = { id: 'run_abandoned', updated_at: old }
+    const abandonedRows = [{ ...finished('gone'), dispatchStatus: 'abandoned', workerState: 'abandoned' }]
+    cache.remember(abandoned, abandonedRows)
+    assert.deepEqual(cache.read(abandoned, new Set()), abandonedRows)
     for (const updated_at of [undefined, 'bad', new Date().toISOString()]) {
       const other = { id: 'recent', updated_at }
       cache.remember(other, rows)

@@ -23,7 +23,7 @@
 //     allWorkers     모든 Run 의 worker 행
 //     runWorkers     한 Run 의 worker 행
 //     workerSnapshot 실행 단위 전체 목록과 삭제 직전 경로별 새 조회
-//     cached         함수의 결과나 LookupError 를 maxAge 초 동안 되풀이한다
+//     cached         성공한 결과를 maxAge 초 동안 되풀이한다. 실패 뒤에는 다음 호출이 다시 조회한다
 //     rowHandles     한 행이 가리키는 터미널 handle
 //     blocker        안전하면 빈 문자열, 남길 때는 이유
 
@@ -34,7 +34,8 @@ import { WorkerRunCache, type RunInfo } from './worker-run-cache.ts'
 
 // Run 마다 읽을 때 동시에 띄우는 orca 수. Run 251개 실측: 8 이면 30초, 16 이면 18초
 export const JOBS = 16
-// 캐시는 호출자가 만든 실행 단위다. 삭제 직전에는 forWorktree 가 관련 Run 을 새로 읽어 소유 변경을 확인한다.
+// 성공한 목록은 정리 실행 동안 유지한다. 삭제 직전 forWorktree 가 해당 경로와 변경된 Run 을 새로 읽으므로
+// 기다리는 사이 터미널을 사용자가 넘겨받아도 옛 소유 상태로 닫지 않는다. 조회 실패는 다음 호출이 다시 시도한다.
 export const MAX_AGE = Infinity
 const QUERY_TIMEOUT_MS = 30_000
 
@@ -186,6 +187,8 @@ export function workerSnapshot(): {
   const all = cached(() => allWorkers((listed) => { runs = listed }, known))
   return {
     all,
+    // all() 을 부르기 전에 이미 읽은 자기 Run 을 넣는다. 이 행은 뒤에 읽는 Run 갱신 시각보다 오래될 수 있다.
+    // forWorktree 는 갱신 시각이 같아도 경로·handle 로 관련 Run 을 골라 다시 읽으므로 삭제 전 확인은 생략되지 않는다.
     seedRun: (run, rows) => { known.set(run, rows) },
     async forWorktree(path) {
       const rows = await all()
@@ -210,25 +213,17 @@ export function workerSnapshot(): {
   }
 }
 
-// fn 의 결과나 LookupError 를 maxAge 초 동안 되풀이한다. 기본값은 실행 단위라 만료하지 않는다. 시간이 필요한 호출자는 maxAge 를 준다.
-// LookupError 가 아닌 예외는 기억하지 않고 그대로 던진다.
+// 성공한 결과만 maxAge 초 동안 재사용한다. 기본값은 실행 단위라 만료하지 않는다.
+// 진행 중인 호출은 공유하지만 실패는 저장하지 않아 다음 호출이 다시 조회한다.
 export function cached<T>(fn: () => Promise<T>, maxAge: number = MAX_AGE): () => Promise<T> {
   let pending: Promise<T> | null = null
-  let box: { at: number; value?: T; error?: LookupError } | null = null
+  let box: { at: number; value: T } | null = null
   return async () => {
-    if (box === null || (performance.now() - box.at) / 1000 > maxAge) {
-      try {
-        const value = await (pending ??= fn())
-        box = { at: performance.now(), value }
-      } catch (e) {
-        if (!(e instanceof LookupError)) throw e
-        box = { at: performance.now(), error: e }
-      } finally {
-        pending = null
-      }
-    }
-    if (box.error) throw box.error
-    return box.value as T
+    if (box !== null && (performance.now() - box.at) / 1000 <= maxAge) return box.value
+    return pending ??= fn().then((value) => {
+      box = { at: performance.now(), value }
+      return value
+    }).finally(() => { pending = null })
   }
 }
 
