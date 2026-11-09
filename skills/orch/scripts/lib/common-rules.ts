@@ -1,7 +1,7 @@
 // 공통 지시서의 표지 항목과 비교 규칙. lint 와 sync-common 이 함께 쓴다.
 import { ConfigError, loadConfig } from './config.ts'
 
-export type RuleBody = { no: number; body: string; head: number; end: number; raw: string; keep: boolean; unsafe: boolean }
+export type RuleBody = { no: number; body: string; head: number; end: number; raw: string; keep: boolean; unsafe: boolean; section: string | null }
 const RULE_MARK = /<!--\s*orch-rule:\s*([A-Za-z0-9_-]+)([^>]*?)-->/g
 export type RuleMark = { name: string; no: number; keep: boolean; error?: string }
 export function ruleMarks(text: string): RuleMark[] {
@@ -48,7 +48,7 @@ export function ruleBodies(text: string): Map<string, RuleBody> {
         .map((l, i) => (i === 0 ? l.replace(/^(?:[-*]|\d+\.)\s+/, '') : l).trimEnd())
         .filter((l) => l !== '')
         .join('\n').replace(RULE_MARK, (_all, name) => `<!-- orch-rule: ${name} -->`)
-      found.set(mark.name, { no: head + 1, body, head, end, raw: lines.slice(head, end).join('\n'), keep: mark.keep, unsafe: index !== head || lines.slice(head + 1, end).some((row) => /^\s+(?:[-*+]|\d+[.)])\s+/.test(row)) })
+      found.set(mark.name, { no: head + 1, body, head, end, raw: lines.slice(head, end).join('\n'), section: lines.slice(0, head).findLast((row) => /^#{1,6}\s+/.test(row))?.trim() ?? null, keep: mark.keep, unsafe: index !== head || lines.slice(head + 1, end).some((row) => /^\s+(?:[-*+]|\d+[.)])\s+/.test(row)) })
     }
   })
   return found

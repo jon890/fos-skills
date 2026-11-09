@@ -122,3 +122,16 @@ test('하위 표지의 부모와 표지 아래 저장소 하위 목록을 수동
     assert.match(result.output.join('\n'), /SYNC-MANUAL a/)
   }
 })
+
+
+test('빠진 표지는 틀의 절 안에 넣고 위치를 알리며 없는 절은 제목과 함께 만든다', () => {
+  const template = '## 공통\n' + rule('migration', '예약') + '\n## 판단\n' + rule('ask', '묻기')
+  writeFileSync(join(repo, '.orch', 'config.json'), JSON.stringify({ migrations: { dirs: { api: 'db' } } }))
+  const copy = '## 공통\n- 저장소 규칙\n\n## 판단\n' + rule('ask', '묻기')
+  const result = syncCommon(copy, template, repo)
+  assert.ok(result.text.indexOf('orch-rule: migration') < result.text.indexOf('## 판단'))
+  assert.match(result.output.join('\n'), /SYNC-LOCATION migration: ## 공통/)
+  assert.equal(syncCommon(result.text, template, repo).text, result.text)
+  const absent = syncCommon('## 판단\n' + rule('ask', '묻기'), template, repo)
+  assert.match(absent.text, /## 공통\n\n- 예약/)
+})

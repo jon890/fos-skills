@@ -32,6 +32,7 @@ export function syncCommon(copy: string, template: string, repo: string): { text
   const edits: { head: number; end: number; lines: string[] }[] = []
   const output: string[] = []
   let manual = false
+  const addedSections = new Set<string>()
   for (const [name, want] of wanted) {
     const mine = existing.get(name)
     if (!mine && Object.hasOwn(CONDITIONAL_RULES, name) && !CONDITIONAL_RULES[name](repo)) continue
@@ -53,14 +54,30 @@ export function syncCommon(copy: string, template: string, repo: string): { text
     }
     let head = mine?.head ?? lines.length
     let end = mine?.end ?? head
+    let sectionPrefix: string[] = []
     if (!mine) {
-      const next = [...wanted.entries()].find(([key, rule]) => rule.head > want.head && existing.has(key))
-      if (next) head = end = existing.get(next[0])!.head
+      const headings = lines.flatMap((line, index) => /^#{1,6}\s+/.test(line) ? [{ title: line.trim(), head: index }] : [])
+      const sections = headings.filter((heading) => heading.title === want.section)
+      if (sections.length > 1) {
+        output.push(`SYNC-MANUAL ${name}: 같은 절 제목이 둘 이상이다: ${want.section}`)
+        manual = true
+        continue
+      }
+      const section = sections[0]
+      const sectionEnd = section ? headings.find((heading) => heading.head > section.head)?.head ?? lines.length : lines.length
+      const next = [...wanted.entries()].find(([key, rule]) => rule.head > want.head && rule.section === want.section && existing.has(key) &&
+        (!want.section || (section && existing.get(key)!.head > section.head && existing.get(key)!.head < sectionEnd)))
+      head = end = next ? existing.get(next[0])!.head : sectionEnd
+      if (want.section && !section && !addedSections.has(want.section)) {
+        sectionPrefix = ['', want.section, '']
+        addedSections.add(want.section)
+      }
+      output.push(`SYNC-LOCATION ${name}: ${want.section ?? '절 제목 없음'}, ${head + 1}줄 앞${next ? `, 표지 ${next[0]} 앞` : ''}`)
     }
     // 기존 목록 번호와 기호는 저장소의 문맥이다.
     const prefix = mine?.raw.match(/^(?:[-*]|\d+\.)\s+/)?.[0]
     const raw = prefix ? want.raw.replace(/^(?:[-*]|\d+\.)\s+/, prefix) : want.raw
-    const replacement = raw.replace(/\n+$/, '').split('\n')
+    const replacement = [...sectionPrefix, ...raw.replace(/\n+$/, '').split('\n')]
     if (mine) {
       const trailing = lines.slice(mine.head, mine.end).reverse().findIndex((line) => line.trim() !== '')
       replacement.push(...Array(Math.max(0, trailing)).fill(''))
