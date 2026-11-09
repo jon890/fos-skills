@@ -246,8 +246,8 @@ test('읽기 보고서는 손상 줄을 건너뛰고 쓰기는 경로와 줄 번
 const assistant = (id: string, at: string, usage: Record<string, number>) => ({ type: 'assistant', timestamp: at, message: { id, usage } })
 const codexRows = (cwd: string, start: string, total: Record<string, number>) => [
   { type: 'session_meta', payload: { cwd, timestamp: start } },
-  { type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } } } },
-  { type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: total } } },
+  { type: 'event_msg', timestamp: '2026-11-06T01:10:00Z', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } } } },
+  { type: 'event_msg', timestamp: '2026-11-06T01:50:00Z', payload: { type: 'token_count', info: { total_token_usage: total } } },
 ]
 
 test('Claude 세션 기록의 usage 를 기간 안에서 message.id 별로 한 번만 센다', async () => {
@@ -293,4 +293,18 @@ test('세션 기록이 없으면 갱신된 Orca 사용량 파일을 쓴다', asy
   await recordRouting(f.dir, 7, 'merged')
   assert.equal(f.rows()[0].tokens_source, 'orca-usage')
   assert.deepEqual(f.rows()[0].tokens, { input: 60, output: 30, cache_read: 40, cache_write: 0 })
+})
+
+test('실행 이력보다 먼저 시작한 Codex 세션도 센다', async () => {
+  f.codexSession('2026/11/06', codexRows('/temp/worktree', '2026-11-06T00:58:00Z', { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 }))
+  await recordRouting(f.dir, 7, 'merged')
+  assert.deepEqual(f.rows()[0].tokens, { input: 10, output: 5, cache_read: 0, cache_write: 0 })
+})
+
+test('Codex 세션의 종료 시각 뒤 누적값은 세지 않는다', async () => {
+  const rows = codexRows('/temp/worktree', '2026-11-06T01:01:00Z', { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 })
+  rows.push({ type: 'event_msg', timestamp: '2026-11-06T05:00:00Z', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 999, cached_input_tokens: 0, output_tokens: 999 } } } })
+  f.codexSession('2026/11/06', rows)
+  await recordRouting(f.dir, 7, 'merged')
+  assert.deepEqual(f.rows()[0].tokens, { input: 10, output: 5, cache_read: 0, cache_write: 0 })
 })

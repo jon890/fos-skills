@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path'
 import { profilesRoot } from './claude-profile.ts'
 
 export type SessionTokens = { input: number; output: number; cache_read: number; cache_write: number }
+// 실행 이력의 at 은 worker 를 띄운 뒤에 적히므로 세션은 그보다 조금 먼저 시작할 수 있다. 호출하는 쪽이 SLACK_MS 만큼 앞당긴 기간을 준다.
+export const SLACK_MS = 5 * 60_000
 export type Window = { worktree: string; from: number; until: number }
 
 const num = (v: unknown): number => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0
@@ -75,11 +77,15 @@ export function codexTokens(w: Window): SessionTokens | null {
       const start = Date.parse(meta?.payload?.timestamp ?? meta?.timestamp)
       const cwd = meta?.payload?.cwd
       if (meta?.type !== 'session_meta' || typeof cwd !== 'string' || resolve(cwd) !== resolve(w.worktree) || !(start >= w.from && start < w.until)) continue
-      const end = text.lastIndexOf('"total_token_usage"')
-      if (end < 0) continue
-      const lineEnd = text.indexOf('\n', end)
+      // 집계를 끝낼 시각 뒤의 누적값은 다른 일의 토큰이라 until 앞의 마지막 token_count 를 쓴다.
       let usage: any
-      try { usage = JSON.parse(text.slice(text.lastIndexOf('\n', end) + 1, lineEnd < 0 ? undefined : lineEnd))?.payload?.info?.total_token_usage } catch { continue }
+      for (const line of text.split('\n')) {
+        if (!line.includes('"total_token_usage"')) continue
+        try {
+          const row = JSON.parse(line)
+          if (Date.parse(row?.timestamp) < w.until && row?.payload?.info?.total_token_usage) usage = row.payload.info.total_token_usage
+        } catch { continue }
+      }
       if (!usage) continue
       const cached = num(usage.cached_input_tokens)
       add(total, { input: Math.max(0, num(usage.input_tokens) - cached), output: num(usage.output_tokens), cache_read: cached, cache_write: 0 })

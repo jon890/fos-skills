@@ -12,7 +12,7 @@ import { apiTarget, ghJson } from './gh.ts'
 import { launchHistory, type LaunchHistory } from './launch-history.ts'
 import { orcaJson } from './orca.ts'
 import { ensure, pathOf } from './paths.ts'
-import { sessionTokens } from './session-tokens.ts'
+import { SLACK_MS, sessionTokens } from './session-tokens.ts'
 import { isQuietStop } from './stop-reports.ts'
 
 type Json = Record<string, any>
@@ -205,8 +205,8 @@ function fromSessions(rows: LaunchHistory[], history: LaunchHistory[], ended: nu
   const found: Tokens[] = []
   for (const row of rows) {
     const agent = row.effective?.agent ?? row.agent
-    const until = Math.min(ended, ...history.filter(next => next.worktree === row.worktree && ms(next.at) > ms(row.at)).map(next => ms(next.at)))
-    const got = agent ? sessionTokens(agent, { worktree: row.worktree, from: ms(row.at), until }) : null
+    const until = Math.min(ended, ...history.filter(next => next.worktree === row.worktree && ms(next.at) > ms(row.at)).map(next => ms(next.at) - SLACK_MS))
+    const got = agent ? sessionTokens(agent, { worktree: row.worktree, from: ms(row.at) - SLACK_MS, until }) : null
     if (!got) return null
     found.push(got)
   }
