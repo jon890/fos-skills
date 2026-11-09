@@ -121,7 +121,7 @@ Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비�
 원격을 갱신한 뒤 `launch-worker` 로 띄운다. 거부 조건과 워크트리 만들기는 `launch-worker.ts` 머리 주석이 소유한다.
 새로 띄우기는 `launch-worker`, 후속 지시는 `send-to-worker` 로 한다. 같은 Task 를 다시 띄울 때도 `launch-worker` 를 쓰고, 실패한 Task 는 `--retry-of <dispatch>` 를 함께 준다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
-`STALLED-START` 와 종료 코드 1 이면 자동 abandon·재시도 없이 코디네이터가 화면을 확인한다. 첫 화면에서 멈추거나 시작 직후 실패하면 reference 의 해당 절을 따른다.
+`STALLED-START` 와 종료 코드 1 이면 자동 abandon·재시도 없이 코디네이터가 화면을 확인하고 다시 띄울지 사용자에게 묻는다. 첫 화면에서 멈추거나 시작 직후 실패하면 reference 의 해당 절을 따른다.
 
 ## 4. 기다리기
 
