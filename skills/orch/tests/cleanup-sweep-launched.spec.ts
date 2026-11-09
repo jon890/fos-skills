@@ -2,7 +2,9 @@
 // 가짜 실행 파일, 상태와 공통 도우미는 fixtures/cleanup-sweep.ts 가 소유한다.
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { type Row, branches, calls, exists, fx, git, gone, has, lacks, runSweep, squashMerge, worktree } from './fixtures/cleanup-sweep.ts'
@@ -42,6 +44,34 @@ describe('launch-worker 가 기록한 user_owned 터미널', () => {
     has(calls(), 'orca terminal close --terminal term_o')
     has(calls(), 'orca orchestration worker-release --dispatch ctx_o')
     assert.ok(!existsSync(join(fx.repo, '.orch/state/launched-workers/ctx_o.json')))
+  })
+
+  test('send reopened 가 기록한 새 터미널도 코디네이터가 띄운 것으로 본다', () => {
+    const path = worktree('feat-reopened')
+    squashMerge('feat-reopened', path)
+    ownTerminal(path, { record: false })
+    const spec = join(fx.tmp, 'follow.md')
+    writeFileSync(spec, '# 후속 작업\n허락: 로컬 검증.\nworker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 비교: claude. 이유: 구현.\n')
+    const fake = join(fx.tmp, 'follow-orca.js')
+    writeFileSync(fake, `#!${process.execPath}
+const args = process.argv.slice(2)
+const result = args[1] === 'send'
+  ? { delivery: 'reopened', dispatchId: 'ctx_o', taskId: 'task_new' }
+  : args[args.indexOf('--dispatch') + 1] === 'ctx_old'
+    ? { dispatch: { status: 'completed', runId: 'run_x' }, worker: { worktreeId: ${JSON.stringify(path)}, agentTerminalHandle: 'term_old' } }
+    : { worker: { agentTerminalHandle: 'term_o' } }
+console.log(JSON.stringify({ ok: true, result }))
+`)
+    chmodSync(fake, 0o755)
+    const script = fileURLToPath(new URL('../scripts/worker/send-to-worker.ts', import.meta.url))
+    const sent = spawnSync(process.execPath, [script, '--dispatch', 'ctx_old', '--spec', spec], {
+      env: { ...fx.env, ORCA: fake, ORCH_DIR: join(fx.repo, '.orch') }, encoding: 'utf8',
+    })
+    assert.equal(sent.status, 0, sent.stdout + sent.stderr)
+    assert.match(sent.stdout, /FOLLOW-UP ctx_old ctx_o task_new/)
+    const out = runSweep(['--run', 'run_x'])
+    has(out, '터미널을 닫을 것 term_o')
+    lacks(out, '남김: 사용자 보유 터미널')
   })
 
   test('failed 와 canceled 도 끝난 것으로 본다', () => {

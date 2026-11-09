@@ -1,8 +1,8 @@
 // send-to-worker.ts 를 가짜 orca, 가짜 nudge-worker, 가짜 launch-worker 로 본다. Orca 에는 닿지 않는다.
 
 import assert from 'node:assert/strict'
-import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -38,10 +38,12 @@ function opt(name) {
 const is = (a, b) => args[0] === a && args[1] === b
 if (state.fail) print('boom', 1)
 if (is('terminal', 'list')) out({ terminals: state.terminals || [] })
+if (is('terminal', 'read')) out({ terminal: { tail: state.screen || [] } })
 if (is('terminal', 'close')) out({}, state.close_fails ? 1 : 0)
 if (is('orchestration', 'worker-show')) {
   const d = state.dispatches[opt('--dispatch')]
-  out({ dispatch: d.dispatch, worker: d.worker || {}, terminalResource: d.terminalResource || {} })
+  if (!d) out({}, 1)
+  out({ dispatch: d.dispatch, worker: d.worker || {}, resource: d.resource || {}, terminalResource: d.terminalResource || {} })
 }
 if (is('orchestration', 'inbox')) out({ messages: state.inbox || [] })
 if (is('orchestration', 'check')) out({ messages: args.includes('--types') ? state.questions || state.inbox || [] : state.inbox || [] })
@@ -61,10 +63,12 @@ if (is('orchestration', 'reply')) {
   out({ message: { id: 'msg_new' } })
 }
 if (is('orchestration', 'send')) {
+  if (state.send_rejected && (opt('--body') || '').startsWith('지시서 ')) print(JSON.stringify({ ok: false, error: { code: 'dispatch_inactive', message: 'remote finished worker refuses follow-up' } }), 1)
+  if (state.send_ambiguous) print('connection lost', 1)
   if (state.fenced && args.includes('--from')) {
     print(JSON.stringify({ ok: false, error: { code: 'consumer_fenced', message: 'run consumer is fenced to another terminal' } }), 1)
   }
-  out({ message: { id: 'msg_sent' } })
+  out(state.receipt || { message: { id: 'msg_sent' } })
 }
 if (is('orchestration', 'worker-list')) {
   if (state.worker_pages && state.worker_pages.length) out(state.worker_pages.shift())
@@ -109,11 +113,13 @@ beforeEach(() => {
     ORCA: join(binDir, 'orca'),
     FAKE_STATE: stateFile,
     FAKE_LOG: log,
+    ORCH_DIR: join(tmp, 'orch'),
     NUDGE_WORKER: join(tmp, 'nudge.sh'),
     LAUNCH_WORKER: launch,
     // 닫은 질문 기록(lib/questions.ts)을 이 머신의 폴더에 쓰지 않게 한다
     ORCH_MACHINE_DIR: join(tmp, 'machine'),
   }
+  writeFileSync(join(tmp, 'next.md'), '# 후속 작업\n브랜치: `feat/next`\n허락: 로컬 검증을 허락했다.\nworker 선택: `codex` `gpt-6.1-sol` effort `medium`. 행: impl-explore. 비교: claude. 이유: 구현.\n')
   delete env.FAKE_OUT
   delete env.FAKE_EXIT
 })
@@ -128,7 +134,8 @@ afterEach(() => {
 type Json = Record<string, any>
 
 function state(values: Json): void {
-  writeFileSync(stateFile, JSON.stringify(values))
+  // 기존 복구 사례는 send 가 거절된 서버를 나타낸다. 후속 일 사례는 receipt 를 명시한다.
+  writeFileSync(stateFile, JSON.stringify({ send_rejected: !!values.dispatches?.ctx_1 && !['pending', 'dispatched', 'running'].includes(values.dispatches.ctx_1.dispatch.status) && !values.receipt, ...values }))
 }
 
 function readState(): Json {
@@ -221,7 +228,7 @@ describe('살아 있는 dispatch', () => {
     const r = send('--body', '그렇게 한다')
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_q --body 그렇게 한다 --run run_x --from run:run_x'])
-    assert.match(r.stdout, /^delivered: 구조화 worker 라 Orca 가 msg_new 로 깨운다/m)
+    assert.match(r.stdout, /^delivered: Orca 가 msg_new 로 깨운다/m)
     assert.deepEqual(lines('nudge'), [])
   })
 
@@ -247,7 +254,7 @@ describe('살아 있는 dispatch', () => {
     const r = send('--body', '그렇게 한다')
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration reply'), ['orca orchestration reply --id m_q --body 그렇게 한다 --run run_x --from run:run_x'])
-    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_new'])
+    assert.deepEqual(lines('nudge'), [])
   })
 
   test('이미 답한 question 으로 거부되면 다음 후보에 답한다', () => {
@@ -260,7 +267,7 @@ describe('살아 있는 dispatch', () => {
       lines('orca orchestration reply').map((line) => line.split(' ').slice(3, 5).join(' ')),
       ['--id m_q', '--id m_st'],
     )
-    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_new'])
+    assert.deepEqual(lines('nudge'), [])
   })
 
   test('이미 답한 question 은 닫은 질문으로 적어 루프가 다시 알리지 않게 한다', () => {
@@ -290,7 +297,7 @@ describe('살아 있는 dispatch', () => {
     // 본문의 줄바꿈 때문에 기록이 두 줄로 나뉜다. 제목은 첫 줄이다
     assert.deepEqual(lines('orca orchestration send'), ['orca orchestration send --run run_x --to dispatch:ctx_1 --subject 후속 지시 --body 후속 지시'])
     assert.match(r.stdout, /^sent: 후보가 모두 이미 답한 question 이라 reply 대신 dispatch:ctx_1 에 새 메시지로 보냈다 \(msg_sent\)$/m)
-    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+    assert.deepEqual(lines('nudge'), [])
   })
 
   test('--reply-to 로 준 질문이 이미 답했으면 새 메시지로 보낸다', () => {
@@ -298,16 +305,16 @@ describe('살아 있는 dispatch', () => {
     const r = send('--body', 'x', '--reply-to', 'm_done')
     assert.equal(r.code, 0, both(r))
     assert.match(r.stdout, /^sent: .*dispatch:ctx_1 에 새 메시지로 보냈다 \(msg_sent\)$/m)
-    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+    assert.deepEqual(lines('nudge'), [])
   })
 
-  test('--reply-to 와 --body-file 을 쓰고 nudge-worker 의 종료 코드를 그대로 낸다', () => {
+  test('--reply-to 와 --body-file 을 쓰고 nudge-worker 를 부르지 않고 끝난다', () => {
     state({ dispatches: worker('dispatched') })
     env.FAKE_EXIT = '4'
     const body = join(tmp, 'body.txt')
     writeFileSync(body, '파일 본문\n')
     const r = send('--body-file', body, '--reply-to', 'm_given')
-    assert.equal(r.code, 4, both(r))
+    assert.equal(r.code, 0, both(r))
     assert.ok(lines('orca orchestration reply')[0].includes('--id m_given --body 파일 본문'), logText())
   })
 
@@ -325,7 +332,7 @@ describe('살아 있는 dispatch', () => {
     assert.deepEqual(lines('orca orchestration reply'), [])
     assert.deepEqual(lines('orca orchestration send'), ['orca orchestration send --run run_x --to dispatch:ctx_1 --subject x --body x --from run:run_x'])
     assert.match(r.stdout, /^sent: 보낸 메시지가 없어 reply 대신 dispatch:ctx_1 에 새 메시지로 보냈다 \(msg_sent\)$/m)
-    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+    assert.deepEqual(lines('nudge'), [])
   })
 
   test('새 메시지의 --from run:<run> 이 consumer_fenced 면 --from 없이 다시 보낸다', () => {
@@ -349,7 +356,7 @@ describe('살아 있는 dispatch', () => {
 
   test('--spec 만 주면 보낼 글이 없어 2 다', () => {
     state({ dispatches: worker('dispatched'), inbox: [message('m_st', 'term_w')] })
-    const r = send('--spec', '/s/next.md')
+    const r = send('--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 2, both(r))
     assert.match(r.stderr, /아직 살아 있어/)
     assert.deepEqual(lines('orca orchestration reply'), [])
@@ -383,10 +390,10 @@ describe('끝난 dispatch', () => {
 
   test('--reply-to 와 --spec 을 주면 답을 단 뒤 이어 띄운다', () => {
     state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
-    const r = send('--body', '답', '--reply-to', 'm_esc', '--spec', '/s/next.md')
+    const r = send('--body', '답', '--reply-to', 'm_esc', '--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 0, both(r))
     assert.equal(lines('orca orchestration reply').length, 1)
-    assert.deepEqual(lines('launch'), ['launch --spec /s/next.md --worktree /w/feat --run run_x -- --terminal term_w'])
+    assert.deepEqual(lines('launch'), [`launch --spec ${join(tmp, 'next.md')} --worktree /w/feat --run run_x -- --terminal term_w`])
     assert.doesNotMatch(r.stdout, /note:/)
   })
 
@@ -441,34 +448,30 @@ describe('끝난 dispatch', () => {
     assert.deepEqual(lines('launch'), [])
   })
 
-  test('아직 일하는 터미널에는 경고와 함께 본문을 넣는다', () => {
-    // worker 가 phase 중간에 worker_done 을 보내 dispatch 가 닫혔지만 계속 일하는 경우다
-    state({ dispatches: worker('succeeded'), terminals: [{ handle: 'term_w' }] })
-    env.FAKE_OUT = 'working'
+  test('아직 일하는 터미널도 입력하지 않고 Orca 메시지로 보낸다', () => {
+    state({ dispatches: worker('succeeded'), terminals: [{ handle: 'term_w' }], screen: ['• Working (1s)'], send_rejected: false })
     const r = send('--body', 'main 을 합쳐라')
     assert.equal(r.code, 0, both(r))
-    assert.match(r.stdout, /Task 기록에 묶이지 않는다/)
-    assert.deepEqual(lines('nudge'), [
-      'nudge --terminal term_w --state',
-      'nudge --terminal term_w --text 코디네이터(닫힌 dispatch ctx_1): main 을 합쳐라',
-    ])
-    assert.deepEqual(lines('orca orchestration reply'), [])
+    assert.match(r.stderr, /띄우기 기록에 남지 않는다/)
+    assert.equal(lines('orca orchestration send').length, 1)
+    assert.deepEqual(lines('nudge'), [])
+    assert.deepEqual(lines('orca terminal send'), [])
     assert.deepEqual(lines('launch'), [])
   })
 
   test('남은 터미널에 후속 지시서로 이어 띄운다', () => {
     state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
-    const r = send('--body', 'x', '--spec', '/s/next.md')
+    const r = send('--body', 'x', '--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(lines('launch'), ['launch --spec /s/next.md --worktree /w/feat --run run_x -- --terminal term_w'])
+    assert.deepEqual(lines('launch'), [`launch --spec ${join(tmp, 'next.md')} --worktree /w/feat --run run_x -- --terminal term_w`])
     assert.match(r.stdout, /--body 가 가지 않는다/)
   })
 
   test('--spec 만 주면 본문 없이 이어 띄우고 note 를 내지 않는다', () => {
     state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
-    const r = send('--spec', '/s/next.md')
+    const r = send('--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(lines('launch'), ['launch --spec /s/next.md --worktree /w/feat --run run_x -- --terminal term_w'])
+    assert.deepEqual(lines('launch'), [`launch --spec ${join(tmp, 'next.md')} --worktree /w/feat --run run_x -- --terminal term_w`])
     assert.doesNotMatch(r.stdout, /note:/)
   })
 
@@ -479,7 +482,7 @@ describe('끝난 dispatch', () => {
 
   test('터미널도 없으면 새로 띄우라고 안내하고 3 이다', () => {
     state({ dispatches: worker('failed'), terminals: [{ handle: 'term_other' }] })
-    const r = send('--body', 'x', '--spec', '/s/next.md')
+    const r = send('--body', 'x')
     assert.equal(r.code, 3, both(r))
     assert.ok(r.stdout.includes(`${LAUNCH_HINT} --spec <지시서> --worktree /w/feat 로 새로 띄운다`), r.stdout)
     assert.deepEqual(lines('launch'), [])
@@ -506,7 +509,7 @@ describe('코디네이터 터미널의 pane 신원이 없을 때', () => {
     assert.equal(lines('orca orchestration reply').length, 2)
     assert.deepEqual(lines(STATUS), [`${STATUS} answer: 그렇게 한다 --body 그렇게 한다 --from run:run_x`])
     assert.match(r.stdout, /^fallback: reply 가 stable_pane_required 로 거부돼 m_q 스레드에 status answer 로 보냈다 \(msg_sent\)$/m)
-    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_sent'])
+    assert.deepEqual(lines('nudge'), [])
   })
 
   test('--run 과 --from 을 뺀 plain reply 가 받아들여지면 status 로 바꾸지 않는다', () => {
@@ -519,7 +522,7 @@ describe('코디네이터 터미널의 pane 신원이 없을 때', () => {
     ])
     assert.deepEqual(lines('orca orchestration send'), [])
     assert.match(r.stdout, /^retry: reply 가 stable_pane_required 로 거부돼 --run 과 --from 없이 다시 보냈다$/m)
-    assert.deepEqual(lines('nudge'), ['nudge --terminal term_w --msg-id msg_new'])
+    assert.deepEqual(lines('nudge'), [])
   })
 
   test('여러 줄 본문은 첫 줄만 제목에 쓰고 본문은 그대로 보낸다', () => {
@@ -566,6 +569,117 @@ describe('코디네이터 터미널의 pane 신원이 없을 때', () => {
   })
 })
 
+describe('Orca 후속 일과 기록', () => {
+  function follow(delivery = 'follow_up', extra: Json = {}): void {
+    state({
+      dispatches: {
+        ...worker('completed'),
+        ctx_new: { dispatch: { id: 'ctx_new', status: 'dispatched' }, worker: { agentTerminalHandle: 'term_new' } },
+      },
+      terminals: [],
+      receipt: { delivery, dispatchId: 'ctx_new', taskId: 'task_new' },
+      ...extra,
+    })
+  }
+
+  for (const delivery of ['follow_up', 'reopened']) {
+    test(`${delivery} 는 새 터미널과 Task 를 기록하고 launch 를 부르지 않는다`, () => {
+      follow(delivery)
+      const r = send('--spec', join(tmp, 'next.md'))
+      assert.equal(r.code, 0, both(r))
+      assert.equal(r.stdout.trim(), 'FOLLOW-UP ctx_1 ctx_new task_new')
+      const record = JSON.parse(readFileSync(join(tmp, 'orch/state/launched-workers/ctx_new.json'), 'utf8'))
+      assert.equal(record.terminal, 'term_new')
+      assert.equal(record.task, 'task_new')
+      assert.equal(record.worktree, '/w/feat')
+      assert.equal(record.spec, join(tmp, 'next.md'))
+      const history = JSON.parse(readFileSync(join(tmp, 'orch/state/launch-history.jsonl'), 'utf8'))
+      assert.equal(history.dispatch, record.dispatch)
+      assert.equal(history.retry_of, 'ctx_1')
+      assert.equal(history.row, 'impl-explore')
+      const sent = lines('orca orchestration send')[0]
+      assert.ok(sent.includes('--subject 후속 작업 --body 지시서 ' + join(tmp, 'next.md')))
+      assert.ok(sent.includes(' 를 끝까지 읽고 수행한다. 로컬 검증을 허락했다. 못 읽으면 escalation 으로 알린다.'))
+      assert.deepEqual(lines('launch'), [])
+      assert.deepEqual(lines('orca terminal close'), [])
+    })
+  }
+
+  test('새 worker 의 resource.terminalHandle 도 읽는다', () => {
+    follow()
+    const st = readState()
+    st.dispatches.ctx_new = { dispatch: {}, worker: {}, resource: { terminalHandle: 'term_resource' } }
+    state(st)
+    assert.equal(send('--spec', join(tmp, 'next.md')).code, 0)
+    const record = JSON.parse(readFileSync(join(tmp, 'orch/state/launched-workers/ctx_new.json'), 'utf8'))
+    assert.equal(record.terminal, 'term_resource')
+  })
+
+  test('새 터미널 조회가 실패해도 앞 터미널을 쓰지 않고 빈 값과 경고로 기록한다', () => {
+    follow()
+    const st = readState()
+    delete st.dispatches.ctx_new
+    state(st)
+    const r = send('--spec', join(tmp, 'next.md'))
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stderr, /터미널을 읽지 못해 빈 값/)
+    const record = JSON.parse(readFileSync(join(tmp, 'orch/state/launched-workers/ctx_new.json'), 'utf8'))
+    assert.equal(record.terminal, null)
+    assert.deepEqual(lines('launch'), [])
+  })
+
+  test('허락이나 worker 선택이 잘못되면 reply 와 send 전에 2 다', () => {
+    for (const text of ['# 허락 없음', '# 선택 없음\n허락: 허락했다.', '# 선택 오류\n허락: 허락했다.\nworker 선택: `codex`']) {
+      follow()
+      writeFileSync(join(tmp, 'bad.md'), text)
+      const r = send('--spec', join(tmp, 'bad.md'), '--body', '답', '--reply-to', 'm_q')
+      assert.equal(r.code, 2, both(r))
+      assert.deepEqual(lines('orca orchestration send'), [])
+      assert.deepEqual(lines('orca orchestration reply'), [])
+    }
+  })
+
+  test('성공 영수증이 불완전하면 5 이며 중복 실행하지 않는다', () => {
+    for (const receipt of [{ delivery: 'delivered' }, { delivery: 'follow_up', dispatchId: 'ctx_new' }]) {
+      follow('follow_up', { receipt })
+      const r = send('--spec', join(tmp, 'next.md'))
+      assert.equal(r.code, 5, both(r))
+      assert.deepEqual(lines('launch'), [])
+    }
+  })
+
+  test('연결 오류로 전달 여부를 모르면 복구 작업을 만들지 않는다', () => {
+    follow('follow_up', { send_ambiguous: true })
+    assert.equal(send('--spec', join(tmp, 'next.md')).code, 5)
+    assert.deepEqual(lines('launch'), [])
+  })
+
+  test('각 기록의 쓰기 실패는 경고만 내고 다른 기록은 시도한다', () => {
+    for (const blocked of ['launched-workers', 'launch-history.jsonl']) {
+      follow()
+      const dir = join(tmp, 'orch/state')
+      mkdirSync(dir, { recursive: true })
+      const target = join(dir, blocked)
+      if (blocked === 'launched-workers') writeFileSync(target, 'blocked')
+      else mkdirSync(target)
+      const r = send('--spec', join(tmp, 'next.md'))
+      assert.equal(r.code, 0, both(r))
+      assert.match(r.stderr, /기록을 쓰지 못했다|이력을 쓰지 못했다/)
+      assert.deepEqual(lines('launch'), [])
+      if (blocked === 'launched-workers') assert.ok(existsSync(join(dir, 'launch-history.jsonl')))
+      else assert.ok(existsSync(join(dir, 'launched-workers/ctx_new.json')))
+      rmSync(join(tmp, 'orch'), { recursive: true, force: true })
+    }
+  })
+
+  test('짧은 출력도 FOLLOW-UP 이다', () => {
+    follow()
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--spec', join(tmp, 'next.md'))
+    assert.equal(r.stdout.trim(), 'FOLLOW-UP ctx_1 ctx_new task_new')
+  })
+})
+
 describe('agent_unconfigured 뒤 다시 띄우기', () => {
   function restartSetup(extra: Json = {}): void {
     const dispatches = worker('completed')
@@ -582,10 +696,10 @@ describe('agent_unconfigured 뒤 다시 띄우기', () => {
 
   test('터미널을 닫고 원래 설정으로 같은 워크트리에 띄운다', () => {
     restartSetup()
-    const r = send('--body', 'x', '--spec', '/s/next.md')
+    const r = send('--body', 'x', '--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca terminal close'), ['orca terminal close --terminal term_w'])
-    assert.equal(lines('launch').at(-1), 'launch --spec /s/next.md --worktree /w/feat --run run_x -- --agent codex --model original-model --effort high')
+    assert.equal(lines('launch').at(-1), `launch --spec ${join(tmp, 'next.md')} --worktree /w/feat --run run_x -- --agent codex --model original-model --effort high`)
     assert.ok(logText().indexOf('orca terminal close') < logText().lastIndexOf('launch --spec'), logText())
   })
 
@@ -596,35 +710,35 @@ describe('agent_unconfigured 뒤 다시 띄우기', () => {
       launch: { requested: { agent: 'claude', model: 'asked-model', effort: 'low' }, effective: { model: 'real-model', effort: '' } },
     }
     state(data)
-    const r = send('--spec', '/s/next.md')
+    const r = send('--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 0, both(r))
     assert.ok(lines('launch').at(-1)?.endsWith('-- --agent claude --model real-model --effort low'), logText())
   })
 
   test('--agent, --model, --effort 로 설정을 바꾼다', () => {
     restartSetup()
-    const r = send('--body', 'x', '--spec', '/s/next.md', '--agent', 'claude', '--model', 'new-model', '--effort', 'low')
+    const r = send('--body', 'x', '--spec', join(tmp, 'next.md'), '--agent', 'claude', '--model', 'new-model', '--effort', 'low')
     assert.equal(r.code, 0, both(r))
     assert.ok(lines('launch').at(-1)?.includes('--agent claude --model new-model --effort low'), logText())
   })
 
   test('활성 dispatch 가 붙은 터미널은 닫지 않는다', () => {
     restartSetup({ workers: [{ dispatchStatus: 'dispatched', agentTerminalHandle: 'term_w' }] })
-    assert.equal(send('--body', 'x', '--spec', '/s/next.md').code, 1)
+    assert.equal(send('--body', 'x', '--spec', join(tmp, 'next.md')).code, 1)
     assert.deepEqual(lines('orca terminal close'), [])
     assert.equal(lines('launch').length, 1)
   })
 
   test('닫기가 실패하면 새로 띄우지 않고 5 다', () => {
     restartSetup({ close_fails: true })
-    assert.equal(send('--body', 'x', '--spec', '/s/next.md').code, 5)
+    assert.equal(send('--body', 'x', '--spec', join(tmp, 'next.md')).code, 5)
     assert.equal(lines('launch').length, 1)
   })
 
   test('agent_unconfigured 가 아닌 띄우기 실패는 다시 시도하지 않는다', () => {
     restartSetup()
     writeFileSync(launch, 'echo "launch $*" >> "$FAKE_LOG"\nexit 1\n')
-    assert.equal(send('--body', 'x', '--spec', '/s/next.md').code, 1)
+    assert.equal(send('--body', 'x', '--spec', join(tmp, 'next.md')).code, 1)
     assert.deepEqual(lines('orca terminal close'), [])
   })
 
@@ -633,7 +747,7 @@ describe('agent_unconfigured 뒤 다시 띄우기', () => {
     const data = readState()
     delete data.dispatches.ctx_1.worker.startOptions
     state(data)
-    const r = send('--body', 'x', '--spec', '/s/next.md')
+    const r = send('--body', 'x', '--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 1, both(r))
     assert.match(r.stdout, /--agent 와 --model 을 주면/)
     assert.deepEqual(lines('orca terminal close'), [])
@@ -642,7 +756,7 @@ describe('agent_unconfigured 뒤 다시 띄우기', () => {
   test('터미널 소유 dispatch 가 바뀌었으면 닫지 않는다', () => {
     restartSetup()
     withResource({ ownerDispatchId: 'ctx_other' })
-    assert.equal(send('--body', 'x', '--spec', '/s/next.md').code, 1)
+    assert.equal(send('--body', 'x', '--spec', join(tmp, 'next.md')).code, 1)
     assert.deepEqual(lines('orca terminal close'), [])
   })
 
@@ -653,7 +767,7 @@ describe('agent_unconfigured 뒤 다시 띄우기', () => {
         { workers: [{ agentTerminalHandle: 'term_w', dispatchStatus: 'running' }] },
       ],
     })
-    assert.equal(send('--body', 'x', '--spec', '/s/next.md').code, 1)
+    assert.equal(send('--body', 'x', '--spec', join(tmp, 'next.md')).code, 1)
     assert.deepEqual(lines('orca terminal close'), [])
     assert.ok(lines('orca orchestration worker-list').at(-1)?.includes('--cursor page2'), logText())
   })
@@ -661,45 +775,25 @@ describe('agent_unconfigured 뒤 다시 띄우기', () => {
   test('사용자가 보유한 터미널은 닫지 않고 직접 할 명령을 알린다', () => {
     restartSetup()
     withResource({ ownerDispatchId: 'ctx_1', ownershipState: 'user_owned' })
-    const r = send('--body', 'x', '--spec', '/s/next.md')
+    const r = send('--body', 'x', '--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 1, both(r))
     assert.match(r.stdout, /orca terminal close --terminal term_w/)
     assert.match(r.stdout, /orca terminal read --terminal term_w/)
-    assert.ok(r.stdout.includes(`${LAUNCH_HINT} --spec /s/next.md --worktree /w/feat (--terminal 없이) 로 띄우기`), r.stdout)
+    assert.ok(r.stdout.includes(`${LAUNCH_HINT} --spec ${join(tmp, 'next.md')} --worktree /w/feat (--terminal 없이) 로 띄우기`), r.stdout)
     assert.deepEqual(lines('orca terminal close'), [])
   })
 })
 
-describe('자식 출력', () => {
-  test('nudge-worker 의 줄을 모으지 않고 낸 차례대로 바로 흘린다', { timeout: 60_000 }, async () => {
-    state({ dispatches: worker('dispatched'), inbox: [message('m_st', 'term_w')] })
-    writeFileSync(join(tmp, 'nudge.sh'), 'echo "nudge $*" >> "$FAKE_LOG"\necho NUDGE-START\nsleep 2\necho NUDGE-END\n')
-    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--dispatch', 'ctx_1', '--body', 'x'], { env })
-    const seen: { line: string; at: number }[] = []
-    let rest = ''
-    child.stdout.on('data', (chunk: Buffer) => {
-      const parts = (rest + chunk.toString('utf8')).split('\n')
-      rest = parts.pop() ?? ''
-      for (const line of parts) seen.push({ line, at: Date.now() })
-    })
-    const code = await new Promise((resolve) => child.on('close', resolve))
-    assert.equal(code, 0)
-    assert.deepEqual(
-      seen.map((s) => s.line),
-      ['replied: m_st 에 답했다 (msg_new)', 'NUDGE-START', 'NUDGE-END'],
-    )
-    // 모아서 냈다면 두 표지 줄이 자식이 끝난 뒤 함께 온다. 잠든 2초 가운데 대부분이 둘 사이에 있어야 한다
-    const gap = seen[2].at - seen[1].at
-    assert.ok(gap >= 1000, `NUDGE-START 와 NUDGE-END 가 ${gap}ms 차이로 왔다`)
-  })
-
-  test('nudge-worker 가 제한 시간에 끊기면 124 가 아니라 1 이다', () => {
-    state({ dispatches: worker('dispatched'), inbox: [message('m_st', 'term_w')] })
-    writeFileSync(join(tmp, 'nudge.sh'), 'exec sleep 20\n')
-    env.ORCH_NUDGE_TIMEOUT_MS = '500'
-    const r = send('--body', 'x')
-    assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /nudge-worker 가 0\.5초 안에 끝나지 않아 끊었다/)
+describe('입력 경로 제거', () => {
+  test('handle 이 없어도 전송에 성공하고 nudge 를 실행하지 않는다', () => {
+    const dispatches = worker('dispatched')
+    delete dispatches.ctx_1.worker.agentTerminalHandle
+    state({ dispatches })
+    env.FAKE_EXIT = '4'
+    const r = send('--body', '계속', '--no-reply')
+    assert.equal(r.code, 0, both(r))
+    assert.deepEqual(lines('nudge'), [])
+    assert.deepEqual(lines('orca terminal send'), [])
   })
 })
 
@@ -742,20 +836,20 @@ describe('짧은 출력', () => {
     env.ORCH_OUTPUT = 'short'
     const r = send('--body', '그렇게 한다')
     assert.equal(r.code, 0, both(r))
-    assert.deepEqual(r.stdout.trim().split('\n'), ['REPLIED m_q msg_new', 'NUDGED out=short'])
+    assert.deepEqual(r.stdout.trim().split('\n'), ['REPLIED m_q msg_new', 'DELIVERED msg_new'])
   })
 
   test('신호가 없으면 지금 줄이고 자식에도 신호가 없다', () => {
     state({ dispatches: worker('dispatched'), inbox: [message('m_q', 'dispatch:ctx_1', 'question', 5)] })
     const r = send('--body', '그렇게 한다')
     assert.match(r.stdout, /^replied: m_q 에 답했다/m)
-    assert.match(r.stdout, /^NUDGED out=$/m)
+    assert.match(r.stdout, /^delivered: Orca 가 msg_new/m)
   })
 
   test('끝난 dispatch 를 이어 띄우면 RESUMED 와 띄운 자식의 짧은 줄이고 자식에 신호를 넘긴다', () => {
     state({ dispatches: worker('completed'), terminals: [{ handle: 'term_w' }] })
     env.ORCH_OUTPUT = 'short'
-    const r = send('--spec', '/s/next.md')
+    const r = send('--spec', join(tmp, 'next.md'))
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(r.stdout.trim().split('\n'), ['RESUMED ctx_1 term_w', 'LAUNCHED out=short'])
   })
