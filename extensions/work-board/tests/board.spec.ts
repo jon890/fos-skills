@@ -555,6 +555,25 @@ describe('set --detail 의 끝냄 표시 보존과 detail-edit, detail-add', () 
     assert.equal(readFileSync(file, 'utf8'), before)
   })
 
+  test('detail-edit 은 list 가 보여 준 번호의 줄을 고친다. 빈 줄이 앞에 있어도 다른 줄을 건드리지 않는다', () => {
+    write({ id: 'k', status: 'doing', progress: '0/2', details: rows(['', false], ['1. a', false], ['2. b', false]) })
+    const shown = board('list')
+    assert.ok(shown.stdout.includes('    1   1. a\n'), shown.stdout)
+    assert.equal(board('detail-edit', 'k', '1', '1. a 고침').code, 0)
+    assert.deepEqual(item('k').details, rows(['', false], ['1. a 고침', false], ['2. b', false]))
+    assert.equal(board('detail-edit', 'k', '2', '2. b 고침').code, 0)
+    assert.deepEqual(item('k').details, rows(['', false], ['1. a 고침', false], ['2. b 고침', false]))
+  })
+
+  test('앞 표시가 있는 줄은 옛 줄을 쓴 것으로 치워, 뒤의 같은 글 줄이 옛 끝냄 상태를 잇지 않는다', () => {
+    write({ id: 'k', status: 'doing', progress: '0/2', details: rows(['x', true], ['x', false]) })
+    board('set', 'k', '--detail', '✓ x', '--detail', 'x')
+    assert.deepEqual(item('k').details, rows(['x', true], ['x', false]))
+    write({ id: 'k', status: 'doing', progress: '0/2', details: rows(['x', true], ['x', false]) })
+    board('set', 'k', '--detail', '[ ] x', '--detail', 'x')
+    assert.deepEqual(item('k').details, rows(['x', false], ['x', false]))
+  })
+
   test('detail-add 는 details 끝에 줄을 더한다', () => {
     write({ id: 'k', status: 'doing', details: rows(['1. a', true]) })
     assert.equal(board('detail-add', 'k', '2. b').code, 0)

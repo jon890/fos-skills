@@ -152,9 +152,10 @@ function inheritLines(texts: string[], old: Line[] | undefined): Line[] {
   const pool = [...(old ?? [])]
   return texts.map((raw) => {
     const line = normalizeLine(raw)
-    if (LEAD_MARK.test(raw)) return line
+    // 앞 표시가 있어도 같은 글의 옛 줄 하나를 쓴 것으로 치워, 뒤의 같은 글 줄이 그 옛 상태를 잇지 않게 한다
     const at = pool.findIndex((row) => row.text === line.text)
-    if (at >= 0) line.done = pool.splice(at, 1)[0].done
+    const taken = at >= 0 ? pool.splice(at, 1)[0] : undefined
+    if (!LEAD_MARK.test(raw) && taken) line.done = taken.done
     return line
   })
 }
@@ -418,12 +419,14 @@ function apply(a: Args, board: Board): boolean {
     }
     if (!/^\d+$/.test(a.status ?? '')) throw new Refused('detail-edit 에는 줄 번호가 필요하다: board.ts detail-edit <id> <n> <글>')
     const number = Number(a.status)
-    const line = details[number - 1]
-    if (number < 1 || !line) throw new Refused(`details 에 ${number} 번 줄이 없다. details 는 ${details.length} 줄이다. 번호는 board.ts list 로 본다`)
+    // 번호는 list 가 보여 주는 번호(빈 줄을 뺀 details·next 순서)다. 그 줄이 details 에 있을 때만 고친다
+    const line = allLines(item)[number - 1]
+    const at = line ? details.indexOf(line) : -1
+    if (number < 1 || at < 0) throw new Refused(`list 의 ${number} 번 줄이 details 에 없다. board.ts list 로 번호를 본다`)
     if (!a.text?.trim()) throw new Refused('detail-edit 에는 새 글이 필요하다: board.ts detail-edit <id> <n> <글>')
     // 앞 표시가 없으면 끝냄 표시는 그대로 둔다. 글이 바뀌어도 같은 줄이므로 짝짓기로 찾지 않는다
     const fresh = normalizeLine(a.text)
-    details[number - 1] = LEAD_MARK.test(a.text) ? fresh : { text: fresh.text, done: line.done }
+    details[at] = LEAD_MARK.test(a.text) ? fresh : { text: fresh.text, done: line.done }
     item.details = details
     return true
   }
