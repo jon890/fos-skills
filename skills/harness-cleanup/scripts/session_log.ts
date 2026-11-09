@@ -12,7 +12,7 @@
 import { spawnSync } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { readTextReplace } from './io.ts'
+import { iterTextLinesReplace } from './io.ts'
 import { pyHead, pyPathCompare } from './kit/py.ts'
 import { exists, isDir, pathName, pathParent, pathParts, pathStem, pjoin, pyRepr, pyre, walk } from './pylike.ts'
 
@@ -73,10 +73,8 @@ export function iterSessionFiles(root: string, since: number | null = null): str
 }
 
 // user, assistant 레코드만 낸다. 깨진 줄은 건너뛴다
-export function iterMessages(path: string): Message[] {
-  const out: Message[] = []
-  const lines = readTextReplace(path).split('\n')
-  for (const line of lines) {
+export function* iterMessages(path: string): Generator<Message> {
+  for (const line of iterTextLinesReplace(path)) {
     if (!MESSAGE_LINE.test(line)) continue
     let record: unknown
     try {
@@ -84,9 +82,8 @@ export function iterMessages(path: string): Message[] {
     } catch {
       continue
     }
-    if (typeof record === 'object' && record !== null && !Array.isArray(record) && MESSAGE_TYPES.includes((record as Message).type)) out.push(record as Message)
+    if (typeof record === 'object' && record !== null && !Array.isArray(record) && MESSAGE_TYPES.includes((record as Message).type)) yield record as Message
   }
-  return out
 }
 
 export const isSubagent = (path: string): boolean => pathParts(path).includes('subagents')
