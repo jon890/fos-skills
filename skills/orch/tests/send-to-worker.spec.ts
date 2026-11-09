@@ -176,6 +176,14 @@ function both(r: Result): string {
 }
 
 describe('살아 있는 dispatch', () => {
+  test('본문과 --spec 을 함께 주면 본문만 보내고 무시한 옵션을 알린다', () => {
+    state({ dispatches: worker('dispatched') })
+    const r = send('--body', '답', '--spec', join(tmp, '없는-지시서.md'), '--no-reply')
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /note: 살아 있는 dispatch 에는 본문만 보낸다.*--spec.*무시했다/)
+    assert.match(lines('orca orchestration send')[0], /--body 답/)
+    assert.deepEqual(lines('launch'), [])
+  })
   test('status 에 밀린 질문은 Run 질문 조회로 찾고 전역 inbox 는 읽지 않는다', () => {
     state({ dispatches: worker('dispatched'), inbox: [message('status', 'term_w', 'status', 20)],
       questions: [{ ...message('q', 'term_w', 'question', 2), payload: { dispatchId: 'ctx_1' } }] })
@@ -725,13 +733,27 @@ describe('Orca 후속 일과 기록', () => {
     }
   })
 
-  test('성공 영수증이 불완전하면 5 이며 중복 실행하지 않는다', () => {
-    for (const receipt of [{ delivery: 'delivered' }, { delivery: 'follow_up', dispatchId: 'ctx_new' }]) {
+  test('성공 영수증이 불완전하면 5 이며 전송 사실과 영수증을 알리고 중복 실행하지 않는다', () => {
+    for (const receipt of [{ delivery: 'unknown' }, { delivery: 'follow_up', dispatchId: 'ctx_new' }]) {
       follow('follow_up', { receipt })
       const r = send('--spec', join(tmp, 'next.md'))
       assert.equal(r.code, 5, both(r))
+      assert.match(r.stdout, /note: 전송은 성공했지만/)
+      assert.ok(r.stdout.includes(`"delivery":"${receipt.delivery}"`))
+      assert.doesNotMatch(r.stdout, /^FAIL /m)
       assert.deepEqual(lines('launch'), [])
     }
+  })
+
+  test('delivered 영수증이면 보낸 것으로 끝내고 후속 기록을 만들지 않는다', () => {
+    follow('delivered', { receipt: { delivery: 'delivered', message: { id: 'msg_live' } } })
+    env.ORCH_OUTPUT = 'short'
+    const r = send('--spec', join(tmp, 'next.md'))
+    assert.equal(r.code, 0, both(r))
+    assert.equal(r.stdout.trim(), 'SENT ctx_1 msg_live\nDELIVERED msg_live')
+    assert.equal(existsSync(join(tmp, 'orch/state/launched-workers/ctx_new.json')), false)
+    assert.equal(existsSync(join(tmp, 'orch/state/launch-history.jsonl')), false)
+    assert.deepEqual(lines('launch'), [])
   })
 
   test('연결 오류로 전달 여부를 모르면 복구 작업을 만들지 않는다', () => {

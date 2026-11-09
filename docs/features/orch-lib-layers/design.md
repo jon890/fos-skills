@@ -105,6 +105,8 @@
 
 - 후속 일의 실행 설정은 새 dispatch 의 `startOptions.launch.effective` 를 먼저 읽고, 없으면 앞 dispatch 의 띄우기 기록과 실행 설정에서 물려받는다. 지시서의 worker 선택은 검사에만 쓰며 실제 설정과 다르면 note 로 알린다. 알 수 없는 설정은 빈 값으로 남긴다.
 - 기록 뒤 `registerBoard` 로 후속 지시서의 보드 항목을 갱신하고 `worker-launched` 이벤트를 낸다. 기록·보드·이벤트가 실패해도 이미 전달한 작업을 다시 띄우지 않는다.
+- 상태 조회와 전송 사이에 dispatch 가 살아나 `delivery: delivered` 가 오면 `SENT`, `DELIVERED` 와 0 으로 끝내고 새 Task 기록을 만들지 않는다. 그 밖의 예상과 다른 영수증은 전송 성공 사실과 받은 값을 note 로 알리고 5 로 끝낸다. 다시 전송하거나 띄우지 않는다.
+- 활성 dispatch 에 본문과 `--spec` 을 함께 주면 본문만 보내고 지시서 옵션을 무시했다고 note 로 알린다.
 
 - 종료 코드 1(깨우지 못함)과 4(입력란에 글이 있어 깨우지 않음)는 더 나오지 않는다. 1 은 다시 띄우기 실패에만 남는다. 부르는 쪽(`lib/tell-worker.ts`, 루프, `finish-pr`)은 0, 1, 4 를 보낸 것으로 보므로 고치지 않는다.
 - 짧은 출력의 `RESUMED`, `RESTARTED` 는 다시 띄우기 경로에만 남고 `FOLLOW-UP` 이 더해진다.

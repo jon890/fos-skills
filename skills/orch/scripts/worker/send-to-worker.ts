@@ -4,6 +4,8 @@
 // stable_pane_required 는 plain reply, question 의 status answer 차례로 시도한다.
 // 끝난 dispatch 의 질문에 답만 달면 0 이다. --spec 이 있으면 허락/worker 선택을 검사한 한 줄 지시를 send 한다.
 // follow_up/reopened 영수증은 새 Task/dispatch 와 새 worker-show 의 터미널로 띄우기 기록을 남긴다.
+// 실행 설정은 새 dispatch 의 실제 값, 앞 기록 순으로 물려받고 보드와 worker-launched 이벤트도 갱신한다.
+// delivered 영수증은 새 Task 없이 전달된 것으로 0 이다. 다른 불완전 영수증은 전송 사실과 값을 알리고 5 다.
 // 새 터미널 조회나 기록 쓰기 실패는 경고만 내며 이미 전달된 일을 다시 띄우지 않는다.
 // send 거절 때만 launch-worker 로 내려간다. 재사용 터미널의 agent_unconfigured 는 소유 확인 뒤 새 터미널로 복구한다.
 // --spec 없이 끝난 dispatch 에 보내는 본문은 질문 답이 아니면 작업 중인 화면에만 send 한다.
@@ -311,10 +313,16 @@ function followUpSpec(file: string, repo: string): { text: string; line: string;
 }
 
 async function recordFollowUp(a: Args, prior: Described, run: string, receipt: Json, spec: ReturnType<typeof followUpSpec>): Promise<number> {
+  if (receipt.delivery === 'delivered') {
+    const sent = String(obj(receipt.message).id || receipt.messageId || receipt.id || '')
+    out(`sent: 후속 Task 대신 dispatch:${a.dispatch} 에 새 메시지로 보냈다 (${sent || 'None'})`)
+    out(`delivered: Orca 가 ${sent || a.dispatch} 로 깨운다. delivery=delivered 이므로 새 Task 기록은 남기지 않는다`)
+    return 0
+  }
   const dispatch = String(receipt.dispatchId || '')
   const task = String(receipt.taskId || '')
   if (!['follow_up', 'reopened'].includes(String(receipt.delivery)) || !dispatch || !task) {
-    out('send-to-worker: 보냈지만 후속 Task 영수증을 확인하지 못했다. 중복 실행하지 않고 worker-show 로 확인한다')
+    out(`note: 전송은 성공했지만 후속 Task 영수증을 확인하지 못했다: ${JSON.stringify({ delivery: receipt.delivery ?? null, dispatchId: dispatch, taskId: task })}. 중복 전송하지 말고 worker-show 로 확인한다`)
     return 5
   }
   const repo = prior.worktree || process.cwd()
@@ -449,6 +457,7 @@ async function main(argv: string[]): Promise<number> {
         )
         return 2
       }
+      if (a.spec) out('note: 살아 있는 dispatch 에는 본문만 보낸다. --spec 은 끝난 dispatch 의 후속 지시에만 쓰므로 무시했다')
       const targets = a.noReply ? [] : a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, undefined, run)
       const replied = targets.length > 0 ? replyFirst(targets, body, run, a.dispatch) : null
       let wake: string
