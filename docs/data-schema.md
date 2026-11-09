@@ -122,7 +122,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
 | `state/launch-history.jsonl` | 띄울 때마다 남기는 영구 이력. `dispatch`, `task`, `run`, `terminal`, `at`, `branch`, `worktree`, `spec`, `title`, `agent`, `model`, `effort`, `effective`, `row`, `experiment`, `retry_of`. 모르는 값은 null. 필드와 선택 검사 계약은 [orch-routing 설계](features/orch-routing/design.md) 가 소유한다 | 자동으로 지우지 않는다. launched-workers 정리와 별개다 |
-| `state/routing-log.jsonl` | worker PR이 머지되거나 닫힐 때 남기는 관측 기록. 필드는 [orch-routing 스펙의 기록 항목](features/orch-routing/spec.md#기록-항목), 수집과 쓰기는 [설계](features/orch-routing/design.md)가 소유한다. `version`과 `recorded_at`을 함께 둔다. 토큰 키는 `input`, `output`, `cache_read`, `cache_write`이고 입력은 캐시 읽기를 제외한 값이다 | PR마다 한 줄. 같은 결과는 보존하고 closed에서 merged로 바뀌면 교체한다. 자동으로 지우지 않는다 |
+| `state/routing-log.jsonl` | worker PR이 머지되거나 닫힐 때 남기는 관측 기록. 필드는 [orch-routing 스펙의 기록 항목](features/orch-routing/spec.md#기록-항목), 수집과 쓰기는 [설계](features/orch-routing/design.md)가 소유한다. `version`과 `recorded_at`을 함께 둔다. 토큰 키는 `input`, `output`, `cache_read`, `cache_write`이고 입력은 캐시 읽기를 제외한 값이다. `tokens_source`는 토큰을 읽은 곳(`session`, `orca-usage`)이거나 `tokens`가 `null`인 이유(`stale`, `unavailable`)다 | PR마다 한 줄. 같은 결과는 보존하고 closed에서 merged로 바뀌면 교체한다. 자동으로 지우지 않는다 |
 | `state/routing-log.lock` | routing 기록을 원자적으로 바꿀 때 잡는 pid 잠금 | 쓰기를 끝내면 반납하고 죽은 잠금은 회수한다 |
 | `hooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
 | `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
