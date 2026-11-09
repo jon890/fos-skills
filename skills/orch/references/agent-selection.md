@@ -2,7 +2,7 @@
 
 **모델과 effort 는 Task 마다 성능과 가격을 비교해 고르고, 비교한 후보와 고른 이유를 지시서의 `worker 선택:` 줄에 남긴다.**
 기본값을 두지 않는다. 사용자가 지정하면 그것을 따른다.
-줄의 형식은 [`spec-writing.md`](spec-writing.md) 의 「넣을 것」 이 소유한다. `spec-lint` 가 줄이 없는 지시서를 막고, `launch-worker` 가 줄과 다른 `--agent`, `--model` 을 거부한다. `행:` 은 이 문서의 표와 대조하고 `high 근거:` 는 저장소의 띄우기 이력과 대조한다. `launch-worker` 는 effort 도 지시서와 대조한다.
+줄의 형식은 [`spec-writing.md`](spec-writing.md) 의 「넣을 것」 이 소유하고, 거부 조건은 `launch-worker.ts` 머리 주석이 소유한다. `행:` 은 이 문서의 표와, `high 근거:` 는 저장소의 띄우기 이력과 대조한다.
 문서의 명령 예시는 이 단계에서 고른 값을 `$AGENT`, `$MODEL`, `$EFFORT` 변수로 받는다.
 기본으로 뺀 모델은 아래 「기본 후보에서 뺀 모델」 이 정하고, 사용자나 오버레이가 지정하면 그것을 따른다.
 사용 한도에 걸렸을 때의 모델 변경은 아래 「사용 한도에 걸렸을 때」 표를 따른다.
@@ -10,10 +10,10 @@
 ## 제공자
 
 모델 표를 보기 전에 Claude 와 Codex 중 어느 쪽에 맡길지 먼저 정한다.
-같은 계열을 기본값으로 두지 않는다. 한 세션에서 worker 를 모두 Claude 로 띄우고 「리뷰와 검증」 행을 한 번도 쓰지 않은 일이 있었다.
+같은 계열을 기본값으로 두지 않는다.
 
 - 주 산출물이 한국어 문서나 스킬 문서인 작업은 Claude 로 띄운다. Claude Code hook(한국어 표기 검사, orch 안전 hook)에 기대기 때문이다. Codex 매니페스트는 hook 을 싣지 않는다([ADR-007](../../../docs/adr/007-codex-manifest-without-hooks.md))
-- 코드 작업에 딸린 ADR, flow 문서 수정은 위 규칙에 들지 않는다. 주 산출물이 코드면 코드 중심 구현으로 본다. 문서 수정까지 넓혀 적용하자 코드 작업도 거의 모두 Claude 로 띄운 일이 있었다(2026-10-26~30)
+- 코드 작업에 딸린 ADR, flow 문서 수정은 위 규칙에 들지 않는다. 주 산출물이 코드면 코드 중심 구현으로 본다.
 - 코드 중심 구현은 `gpt-6.1-sol` 과 Claude Sonnet 5.5 를 비교해 고르고, 고른 이유를 `worker 선택:` 줄에 남긴다
 - Claude 가 만든 PR 의 머지 전 독립 리뷰는 Codex 로 띄운다. 보안 리뷰는 아래 표대로 Claude 다
 - 화면과 이미지 판정은 `gpt-6.1-terra` 를 먼저 본다
@@ -36,16 +36,14 @@
 | `security-review` | 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
 
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
-- sol 은 사용자 결정이 남은 Task 에 맞지 않는다. sol `high` 는 질문이 PR 당 2.17, 코디네이터 지시가 3.94 로 가장 많았다([표 2](../../../docs/features/orch-routing/evidence.md)). 결정이 남은 Task 는 Claude 로 띄운다.
+- sol 은 사용자 결정이 남은 Task 에 맞지 않는다. 질문과 코디네이터 지시가 가장 많았다([표 2](../../../docs/features/orch-routing/evidence.md)). 결정이 남은 Task 는 Claude 로 띄운다.
 
 ### Opus `high`
 
 Claude Opus 5.5 에 `high`, `xhigh`, `max` 를 고르려면 `worker 선택:` 줄에 「high 근거: medium 실패 <dispatch id>」 나 「high 근거: 사용자 지정 YYYY-MM-DD」 를 적는다.
 
 - 근거로 적는 dispatch 는 그 저장소에서 Opus `medium` 으로 띄운 dispatch 다. 브랜치는 달라도 된다. 실패였는지는 코디네이터가 판단한다.
-- 크기 C 에서는 Opus `high` 가 `medium` 보다 준비가 두 배 남짓 늦고 비용도 두 배 남짓이었다. 이 표본에서 `high` 의 품질 개선 신호는 관측되지 않았다. 크기 B 는 차이가 더 작다.
-- 지시서의 83% 가 Opus `high` 였고, 사용 한도에 걸린 PR 은 모두 Opus 였다.
-- 수치와 표본은 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다(측정 2026-11-05, ai-analysis PR 486건).
+- Opus `high` 는 `medium` 보다 준비와 비용이 두 배 남짓이었고 품질 개선 신호는 관측되지 않았다. 수치와 표본은 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다.
 - Sonnet `high` 와 sol `high` 는 이 규칙 밖이다. 위 표의 effort 칸을 따른다.
 
 ### 두 모델을 나란히 둔 행
@@ -125,19 +123,10 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 ### 실측 기록
 
-공식 자료만으로는 같은 Task 에서 어느 모델이 나은지 알 수 없다. terra 처럼 「실측 전」 인 행을 확정하려면 PR 마다 실측이 쌓여야 한다.
+공식 자료만으로는 같은 Task 에서 어느 모델이 나은지 알 수 없어 PR 마다 실측을 쌓는다. 기록 형식은 스펙 [「기록 항목」](../../../docs/features/orch-routing/spec.md), 표본과 한계는 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다.
 
-- **첫 측정일.** 2026-11-05 이다.
-- **대상.** 저장소 하나(ai-analysis)의 orch worker PR 486건이다.
-- **요지.** 결과 품질은 모델과 effort 사이 차이가 작았고, Opus `high` 는 같은 크기에서 준비와 비용이 `medium` 의 두 배쯤이었다. Task 를 무작위로 배정하지 않았다.
-- **근거.** 표와 한계는 [`evidence.md`](../../../docs/features/orch-routing/evidence.md) 가 소유한다
-- **형식.** PR 하나에 JSON 한 줄이다. 키는 스펙 [「기록 항목」](../../../docs/features/orch-routing/spec.md) 을 따른다. 토큰만 남기고 금액은 집계 때 그때의 가격표로 계산하며, 메시지와 지시서 본문은 남기지 않는다
-- **쓰는 자리.** `<orch 루트>/state/routing-log.jsonl` 이다
-- **쓰는 주체.** 머지된 PR 은 `finish-pr` 가, 머지 없이 닫힌 PR 과 마무리가 빠진 머지 PR 은 `cleanup-sweep` 이 쓴다. 스펙은 [`spec.md`](../../../docs/features/orch-routing/spec.md) 다
-- **집계 명령.** `orch routing report --repo "$FOS_REPO" --repo "$ANALYSIS_REPO" --since 2026-11-05 --full` 로 모은다. 변수에는 대상 저장소 경로를 넣고 `--repo` 를 필요한 만큼 준다. 생략하면 현재 저장소다. `--json` 은 가공용, 기본은 `ROUTING-ROW` 줄이다. `--since` 는 UTC 기준 PR 종료일부터 포함한다
-- **읽는 법.** 누락값은 평균·중앙값에서 제외하고 준비 중앙값은 시간 단위로 낸다. 품질 표본은 PR 을 연 effective 모델·effort·지침 행이고, 다시 띄운 비율과 그 표본 수의 모델·effort 는 첫 dispatch 기준이며 지침 행은 기록의 `task_row` 를 유지한다. 다시 띄운 PR 은 PR 을 연 dispatch 보다 앞선 dispatch 가 있는 경우다. PR 을 연 뒤 붙은 후속 dispatch 는 세지 않는다. 재시도로 다른 모델이 PR 을 열었으면 첫 모델 행의 품질 표본 수는 0일 수 있다. 품질 표본 10건 미만은 「표본 적음」 이다
-- **옛 기록.** `effective` 가 없으면 요청한 모델로 대체하지 않고 agent·모델·effort 를 빈 값으로 모은다
-- **비용 추정.** PR 전체 토큰에 PR 을 연 모델의 현재 단가를 적용한다. 다른 모델로 다시 띄운 PR 의 실제 청구액과는 다를 수 있다. 캐시 쓰기는 Claude 5분, Codex 30분 기준이다. 요청 단위 정보가 없어 Haiku의 10만 토큰 초과 요청 단가와 Fast mode 단가는 반영하지 않는다. 가격표가 없거나 모델을 찾지 못하면 비용을 비운다
+- **기록.** `<orch 루트>/state/routing-log.jsonl` 에 PR 하나당 JSON 한 줄이다. `finish-pr` 와 `cleanup-sweep` 이 쓴다. 토큰만 남기고 금액은 집계 때 계산한다.
+- **집계.** `orch routing report --repo "$REPO" --since YYYY-MM-DD --full`. 읽는 법과 비용 추정 규칙은 `routing-report.ts` 와 `lib/routing-report.ts` 머리 주석이 소유한다.
 - **다시 보는 주기.** 기록이 한 행에 열 건 쌓이거나 한 달이 지나면 행별로 모아 이 표의 후보와 effort 를 다시 본다. 수치마다 측정일과 표본 수를 함께 적는다
 
 ## effort
@@ -170,6 +159,4 @@ codex debug models | node -e "const d=JSON.parse(require('fs').readFileSync(0,'u
 
 `~/.codex/models_cache.json` 은 읽지 않는다. 대화형 codex 를 띄울 때만 갱신돼 새 모델이 빠진다.
 기본 service tier 가 `priority`(Fast)일 수 있고, Fast 는 사용량이 늘어난다. 실제 적용 값은 `worker-start` 응답의 `launch.effective` 로 확인한다.
-사용자의 `~/.codex/config.toml` 에 `[shell_environment_policy] inherit = "core"` 가 있으면 Codex 가 띄우는 셸에서 `SSH_AUTH_SOCK` 이 빠져 worker 의 `git fetch`·`git push` 가 `Permission denied (publickey)` 로 막힌다.
-`launch-worker` 는 `--agent codex` 이고 코디네이터 환경에 `SSH_AUTH_SOCK` 이 있으면 그 워크트리에만 걸리는 `core.sshCommand`(`ssh -o IdentityAgent=<소켓>`)를 둔다. 사용자가 이미 정한 `core.sshCommand` 는 덮지 않는다.
-`worker-start` 에는 Codex 실행 인자(`-c shell_environment_policy.set.*`)를 넘기는 옵션이 없어 환경 변수로 되돌릴 수 없다. Orca 에 인자 전달이 생기면 그쪽으로 옮긴다.
+`~/.codex/config.toml` 에 `[shell_environment_policy] inherit = "core"` 가 있으면 Codex 셸에서 `SSH_AUTH_SOCK` 이 빠져 worker 의 `git push` 가 `Permission denied (publickey)` 로 막힌다. `launch-worker` 가 `--agent codex` 일 때 그 워크트리에만 걸리는 `core.sshCommand` 를 둔다(사용자가 정한 값은 덮지 않는다. 판정은 `launch-worker.ts` 머리 주석이 소유한다).
