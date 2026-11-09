@@ -93,7 +93,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
-import { CONDITIONAL_RULES, ruleBodies, ruleIssues, sameBody, type RuleBody } from '../lib/common-rules.ts'
+import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, sameBody, type RuleBody } from '../lib/common-rules.ts'
 import { taskFirstLine } from '../lib/spec.ts'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -444,7 +444,6 @@ const LOOP_FORMAT = '`루프를 쓴다(스펙: <경로>)`, `루프를 쓴다(스
 const LOOP_SPEC = /^루프를 쓴다\s*\(스펙\s*:\s*(.*?)\s*\)/
 const LOOP_NONE = /^루프 없이\s*:(.*)$/
 const LOOP_NEW = '새로 쓴다'
-const FENCE = /^\s*(```|~~~)/
 const CONFIRMED = /^확인:\s*(\d{4}-\d{2}-\d{2})\s*$/
 
 // 상대경로 스펙을 읽을 곳. 기본은 origin/<base> 이고, launch-worker 가 worker 가 실제로 일할 곳을 준다
@@ -454,20 +453,6 @@ function validDate(text: string): boolean {
   const [y, m, d] = text.split('-').map(Number)
   const at = new Date(Date.UTC(y, m - 1, d))
   return at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d
-}
-
-// 코드 블록(``` 나 ~~~) 안의 줄을 빈 줄로 바꾼다. 줄 번호는 그대로다. 예시로 인용한 제목과 줄을 판정에 쓰지 않으려는 것이다
-function outsideFences(lines: string[]): string[] {
-  let fence: string | null = null
-  return lines.map((line) => {
-    const m = FENCE.exec(line)
-    if (m) {
-      if (fence === null) fence = m[1]
-      else if (fence === m[1]) fence = null
-      return ''
-    }
-    return fence === null ? line : ''
-  })
 }
 
 // 스펙 본문에서 확인 줄 문제. 없으면 null. 제목과 첫 `## ` 절 사이만 본다(check_feature.ts 의 check_confirmed)

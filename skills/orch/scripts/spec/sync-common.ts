@@ -10,7 +10,7 @@ import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { expandArgs } from '../lib/args.ts'
 import { bundleRoot } from '../lib/bundle.ts'
-import { CONDITIONAL_RULES, ruleBodies, ruleIssues, sameBody } from '../lib/common-rules.ts'
+import { CONDITIONAL_RULES, outsideFences, ruleBodies, ruleIssues, sameBody } from '../lib/common-rules.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 
 export function syncCommon(copy: string, template: string, repo: string): { text: string; output: string[]; manual: boolean } {
@@ -60,7 +60,7 @@ export function syncCommon(copy: string, template: string, repo: string): { text
     let end = mine?.end ?? head
     let sectionPrefix: string[] = []
     if (!mine) {
-      const headings = lines.flatMap((line, index) => /^#{1,6}\s+/.test(line) ? [{ title: line.trim(), head: index }] : [])
+      const headings = outsideFences(lines).flatMap((line, index) => /^#{1,6}\s+/.test(line) ? [{ title: line.trim(), head: index }] : [])
       const sections = headings.filter((heading) => heading.title === want.section)
       if (sections.length > 1) {
         output.push(`SYNC-MANUAL ${name}: 같은 절 제목이 둘 이상이다: ${want.section}`)

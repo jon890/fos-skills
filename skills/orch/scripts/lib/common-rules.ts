@@ -3,9 +3,24 @@ import { ConfigError, loadConfig } from './config.ts'
 
 export type RuleBody = { no: number; body: string; head: number; end: number; raw: string; keep: boolean; unsafe: boolean; section: string | null }
 const RULE_MARK = /<!--\s*orch-rule:\s*([A-Za-z0-9_-]+)([^>]*?)-->/g
+const FENCE = /^\s*(```|~~~)/
+// 코드 블록(``` 나 ~~~) 안의 줄을 빈 줄로 바꾼다. 줄 번호는 그대로다. 예시로 인용한 제목과 줄을 판정에 쓰지 않으려는 것이다
+export function outsideFences(lines: string[]): string[] {
+  let fence: string | null = null
+  return lines.map((line) => {
+    const m = FENCE.exec(line)
+    if (m) {
+      if (fence === null) fence = m[1]
+      else if (fence === m[1]) fence = null
+      return ''
+    }
+    return fence === null ? line : ''
+  })
+}
+
 export type RuleMark = { name: string; no: number; keep: boolean; error?: string }
 export function ruleMarks(text: string): RuleMark[] {
-  return text.split(/\r\n|[\n\r\u2028\u2029]/).flatMap((line, index) => [...line.matchAll(RULE_MARK)].map((m) => {
+  return outsideFences(text.split(/\r\n|[\n\r\u2028\u2029]/)).flatMap((line, index) => [...line.matchAll(RULE_MARK)].map((m) => {
     const tail = m[2].trim()
     const keep = /^keep(?:\s+이유:\s*.+)?$/i.test(tail)
     return { name: m[1], no: index + 1, keep, ...(tail && !keep ? { error: `표지 ${m[1]}:${index + 1} 의 뒤꼬리를 알 수 없다: ${tail}` } : {}) }
@@ -45,9 +60,10 @@ function configured(repoRoot: string, name: 'migrations' | 'adr', keys: string[]
 // 표지마다 그 표지가 든 목록 항목의 본문과 머리 줄 번호. 머리 주석의 「공통」 이 범위를 정한다
 export function ruleBodies(text: string): Map<string, RuleBody> {
   const lines = text.split(/\r\n|[\n\r\u2028\u2029]/)
+  const visible = outsideFences(lines)
   const indented = (line: string) => /^\s/.test(line)
   const found = new Map<string, RuleBody>()
-  lines.forEach((line, index) => {
+  visible.forEach((line, index) => {
     for (const mark of ruleMarks(line)) {
       let head = index
       while (head > 0 && indented(lines[head])) head -= 1
@@ -58,7 +74,7 @@ export function ruleBodies(text: string): Map<string, RuleBody> {
         .map((l, i) => (i === 0 ? l.replace(/^(?:[-*]|\d+\.)\s+/, '') : l).trimEnd())
         .filter((l) => l !== '')
         .join('\n').replace(RULE_MARK, (_all, name) => `<!-- orch-rule: ${name} -->`)
-      found.set(mark.name, { no: head + 1, body, head, end, raw: lines.slice(head, end).join('\n'), section: lines.slice(0, head).findLast((row) => /^#{1,6}\s+/.test(row))?.trim() ?? null, keep: mark.keep, unsafe: index !== head || lines.slice(head + 1, end).some((row) => /^\s+(?:[-*+]|\d+[.)])\s+/.test(row)) })
+      found.set(mark.name, { no: head + 1, body, head, end, raw: lines.slice(head, end).join('\n'), section: visible.slice(0, head).findLast((row) => /^#{1,6}\s+/.test(row))?.trim() ?? null, keep: mark.keep, unsafe: index !== head || visible.slice(head + 1, end).some((row) => /^\s+(?:[-*+]|\d+[.)])\s+/.test(row)) })
     }
   })
   return found

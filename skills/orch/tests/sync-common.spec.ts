@@ -160,3 +160,15 @@ test('변경 범위 밖의 혼합 줄바꿈과 유니코드 줄 구분자를 바
   assert.equal(syncCommon(result.text, rule('a', '새것'), repo).text, result.text)
   assert.equal(syncCommon('- 고유 항목', rule('a', '새것'), repo).text, '- 고유 항목\n' + rule('a', '새것'))
 })
+
+
+test('코드 블록 안의 표지와 절 제목을 규칙이나 삽입 위치로 읽지 않는다', () => {
+  for (const fence of ['```md', '~~~md']) {
+    const end = fence.slice(0, 3)
+    const example = `${fence}\n## 예시 제목\n- 예시 <!-- orch-rule: a -->\n${end}\n`
+    const template = rule('a', '새 규칙')
+    const result = syncCommon(example + rule('a', '옛 규칙'), template, repo)
+    assert.equal(result.text, example + template)
+    assert.equal(syncCommon(example, example, repo).text, example)
+  }
+})
