@@ -1,0 +1,34 @@
+{
+  "name": "send-wake",
+  "description": "Orca 메시지로 worker 를 깨우고 후속 일을 기록한다",
+  "pr_scope": "worker send 의 터미널 입력을 없애고 후속 Task 기록을 남긴다.",
+  "deferred": [
+    {
+      "what": "orca-wake 이후 계획",
+      "why": "REQ6/REQ18 외 변경은 뒤 PR",
+      "after": "send-wake 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-09",
+  "spec": "docs/features/orch-lib-layers/spec.md",
+  "design": "docs/features/orch-lib-layers/design.md",
+  "verification_plan": "verification-plan.md",
+  "requirements": [
+    "REQ6",
+    "REQ18"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ6",
+        "REQ18"
+      ]
+    }
+  ]
+}
