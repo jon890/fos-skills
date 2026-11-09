@@ -104,12 +104,17 @@ describe('orch status', () => {
 
   for (const [name, bundle, scope, expectStale] of [
     ['옛 user 번들', '5.12.0', 'user', true],
+    ['문자열 pid 의 옛 번들', '5.12.0', 'user', true],
     ['현재 user 번들', '5.13.0', 'user', false],
     ['project 행과 같은 옛 번들', '5.12.0', 'project', true],
     ['개발 checkout', 'checkout', 'user', false],
   ] as const) {
     test(`${name}: 살아 있는 루프의 번들도 판정한다`, () => {
       scene()
+      if (name.startsWith('문자열')) {
+        const state = JSON.parse(readFileSync(join(repo, '.orch', 'state', 'loop.json'), 'utf8'))
+        write('.orch/state/loop.json', { ...state, pid: String(state.pid) })
+      }
       const profile = join(tmp, 'Application Support', 'profile')
       const bundleOf = (version: string) => join(profile, 'plugins', 'cache', 'fos-skills', 'fos-skills', version)
       const record = join(profile, 'plugins', 'installed_plugins.json')

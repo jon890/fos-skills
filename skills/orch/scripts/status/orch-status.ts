@@ -97,7 +97,7 @@ function main(argv: string[]): number {
   if (loop.alive) {
     const registered = registeredRuns(repo).map((entry) => entry.run)
     out(`LOOP-ALIVE ${loop.state.pid} runs=${registered.join(',') || '-'} last_tick=${loop.state.last_tick || '-'}`)
-    const stale = staleLoopBundles().find((entry) => entry.pid === loop.state.pid)
+    const stale = staleLoopBundles().find((entry) => entry.pid === Number(loop.state.pid))
     if (stale) out(`LOOP-STALE ${repo} ${stale.pid} ${stale.sha}`)
   } else {
     out(`LOOP-DEAD ${repo} ${loop.reason}`)
