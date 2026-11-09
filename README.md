@@ -296,6 +296,7 @@ orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여�
 | `scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-skill-docs.ts` | 스킬 README 와 CHANGELOG, 변경 이력 조각이 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
 | `scripts/skill_changes.ts` | 변경 이력 조각의 이름·내용 규칙과 조각으로 스킬 버전과 CHANGELOG 를 올리는 코드예요. 검사기와 `bump-plugin-version.ts` 가 같이 써요 |
+| `scripts/bump-skill-major.ts` | 스킬 major 를 올려요. 버전 줄을 바꾸고 이전 major 절을 `## N.x` 한 절로 접고 새 major 절 머리를 만들어요. 기본은 미리보기, `--apply` 로 써요 |
 | `scripts/render-development-loop.ts` | 이 README 의 Mermaid 원본으로 손그림 SVG 를 다시 그려요 |
 | `scripts/bump-plugin-version.ts` | main 에 들어온 변경 이력 조각과 변경으로 스킬 버전, 플러그인 version, `.claude-plugin/CHANGELOG.md` 를 올려요. `plugin-version.yml` workflow 가 불러요 |
 
@@ -310,6 +311,7 @@ CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `
 나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. node 테스트와 tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
 `claude plugin test .` 는 이 명령에 들지 않으니 따로 돌려요.
 한 파일이나 폴더만 돌릴 때는 `node scripts/run-tests.ts skills/mac-cleanup/tests` 처럼 인자로 줘요. 인자를 주면 tsc 는 돌지 않아요.
+타입만 보고 싶으면 `node scripts/run-tests.ts --tsc-only` 로 tsc 만 돌려요. 테스트는 돌지 않고, 파일 인자와 함께 줄 수 없어요.
 기본 동시 수는 실행 가능한 CPU 수 이하이고 최대 8이에요. worker 여럿이 함께 검증하면 `--concurrency 4`처럼 낮출 수 있어요.
 오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둬요.
@@ -394,7 +396,7 @@ ORCH_SCRIPTS_DIR="$(git rev-parse --show-toplevel)/skills/orch/scripts" orch loo
 - 내용은 CHANGELOG 항목 그대로 `- ` 줄 1~5개예요. 제목과 버전은 적지 않아요.
 - main 에 머지되면 `plugin-version.yml` 이 조각마다 버전 하나를 머지 순서대로 올려요. CHANGELOG 맨 위에 `## X.Y.Z (한국 시간 날짜)` 절을 만들고 `SKILL.md` 의 `metadata.version` 도 바꾸고 조각을 지워요.
 - 한 PR 이 같은 스킬에서 버전·CHANGELOG 를 직접 올리면서 조각도 더하지 않아요. 버전이 두 번 올라요.
-- **major 는 조각으로 받지 않아요.** 기존 사용법이 깨지면(`호환성:` 항목) PR 이 `metadata.version` 과 CHANGELOG 를 직접 올리고 이전 major 를 `## N.x` 한 절로 줄여요. 이 방식으로 올린 스킬은 workflow 가 건드리지 않아요.
+- **major 는 조각으로 받지 않아요.** 기존 사용법이 깨지면(`호환성:` 항목) PR 이 `metadata.version` 과 CHANGELOG 를 직접 올리고 이전 major 를 `## N.x` 한 절로 줄여요. `node scripts/bump-skill-major.ts <스킬> --note "<깨지는 것>"` 이 미리보기를 보이고 `--apply` 를 주면 버전 줄과 CHANGELOG 를 함께 고쳐요. 접은 절이 한도를 넘으면 `--summary` 로 직접 요약해 줘요. 이 방식으로 올린 스킬은 workflow 가 건드리지 않아요.
 - 조각이 없는 변경은 스킬 버전이 그대로예요. 플러그인 version 만 patch 로 올라요.
 
 플러그인 버전은 `.claude-plugin/plugin.json` 의 `version` 이에요. **사람이 올리지 않아요.**
