@@ -1794,15 +1794,16 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
 // 살아 있는 dispatch 가 쓰는 지시서와 기능 후속 검증이 남은 지시서는 남긴다. 판정 근거는 옮기기 전 한 줄로 낸다
 function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): void {
   if (!specsDir) return
+  const dir: string = specsDir
   let names: string[] = []
   try {
-    names = readdirSync(specsDir).filter((name) => name.endsWith('.md')).sort()
+    names = readdirSync(dir).filter((name) => name.endsWith('.md')).sort()
   } catch {
     return
   }
   for (const name of names) {
-    const file = join(specsDir, name)
-    const branches = [...new Set(branchesOf(readText(file)))]
+    const file = join(dir, name)
+    const branches = [...new Set(branchesOf(readText(file) ?? ''))]
     if (branches.length === 0) continue
     const proofs: string[] = []
     let keep = ''
