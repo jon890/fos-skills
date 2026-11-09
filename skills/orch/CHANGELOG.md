@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.25.0 (2026-11-09)
+
+- `orch worker ask` 는 질문을 보내고 바로 끝난다(`ASKED <질문 id>`). worker 는 턴을 끝내고 Orca 가 답과 함께 깨운다. `--resume` 은 없어졌고 `--timeout-ms`, `--max-wait` 는 받되 무시한다
+
 ## 7.24.3 (2026-11-09)
 
 - 화면에 백그라운드 셸·모니터·Codex 백그라운드 터미널 표시가 있는 worker 를 멈춤 알림(stalled-workers, 움직임 확인, idle 멈춤 확인)에서 뺀다. 그 작업이 끝나면 하네스가 worker 를 깨우므로 멈춤이 아니다

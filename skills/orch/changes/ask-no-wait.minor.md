@@ -1,1 +1,0 @@
-- `orch worker ask` 는 질문을 보내고 바로 끝난다(`ASKED <질문 id>`). worker 는 턴을 끝내고 Orca 가 답과 함께 깨운다. `--resume` 은 없어졌고 `--timeout-ms`, `--max-wait` 는 받되 무시한다
