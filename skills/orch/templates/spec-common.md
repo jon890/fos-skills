@@ -143,10 +143,11 @@
   SIGNIFICANCE=""
   NONTRIVIAL=""
   STRUCTURAL=""
+  command -v orch >/dev/null || orch() { _o="$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")')" || return 3; node "$_o" "$@"; }
   orch feedback add --slug "$SLUG" --title "$TITLE" --skill "$SKILL" --file "$FILE" --situation "$SITUATION" --problem "$PROBLEM" --want "$WANT" --evidence "$EVIDENCE" --significance "$SIGNIFICANCE" --nontrivial "$NONTRIVIAL" --structural "$STRUCTURAL"
   ```
 
-  PATH 에 `orch` 가 없으면 아래 「공부 후보 보고」 의 실행기 찾기 함수로 푼다. 워크트리에서 불러도 주 checkout 의 orch 루트 아래 `feedback/` 에 후보 하나당 파일 하나를 만든다. 칸과 순서는 `references/feedback-review.md` 의 「후보 파일」 이 소유한다.
+  PATH 에 `orch` 가 없으면 위 함수가 설치 기록에서 실행기를 찾는다. 워크트리에서 불러도 주 checkout 의 orch 루트 아래 `feedback/` 에 후보 하나당 파일 하나를 만든다. 칸과 순서는 `references/feedback-review.md` 의 「후보 파일」 이 소유한다.
 - `worker_done` 본문 끝에 「스킬 개선 후보 N건: <파일 경로>」 를 적는다. 없으면 「스킬 개선 후보 없음」. <!-- orch-rule: skill-feedback -->
 - 스킬 파일은 직접 고치지 않는다. 코디네이터가 사용자와 정한 뒤 고친다.
 
