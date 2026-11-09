@@ -2,7 +2,6 @@
 name: orch
 description: |
   Orca orchestration 으로 worker 를 띄워 PR 머지와 정리까지 끝내는 코디네이터 절차다.
-  에이전트와 모델 고르기, 지시서, 띄우기, 기다리기, 답하기, 완료 검증, 머지와 정리를 다룬다.
   "/orch", "worker 띄워", "worker 로 맡겨", "병렬로 맡겨", "코디네이터", "머지 큐",
   "worker_done 확인", "PR 머지하고 정리" 같은 요청이면 이 스킬을 쓴다.
   다른 저장소의 파일을 고치고 커밋해야 할 때도 이 스킬로 worker 에게 맡긴다.
@@ -19,36 +18,33 @@ metadata:
 이 스킬은 그 가이드에 없는 코디네이터의 판단과, 각 단계에서 같은 실패를 피하는 규칙을 담는다.
 `$SKILL_DIR` 은 이 스킬 번들 경로다.
 스크립트는 `orch <묶음> <동작> [인자]` 로 부른다. 묶음과 동작은 `orch --help` 가 보이고, 원본은 명령 표 `scripts/lib/commands.ts` 다.
-저장소(`--repo`), Run(`--run`), 지시서 폴더(`--specs-dir`), 대기의 루프 저장소(`--loop-repo`)는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽고, 무엇을 읽었는지 stderr 에 한 줄 남긴다. 다른 저장소나 다른 Run 이면 그 값을 준다.
-기본 출력은 판정 줄(대문자 낱말로 시작하는 줄)과 결과 데이터다. 설명과 진행 줄이 필요하면 `--full` 을 붙인다. `--json` 출력은 그대로다. 명령마다의 줄은 각 스크립트 머리 주석의 「짧은 출력」 이 소유한다.
-루프, worker, 보드를 한 번에 보려면 `orch status` 를 부른다. Run 을 주지 않으면 작업 폴더 저장소의 루프에 등록된 Run 을 모두 요약한다.
-`orch` 는 부를 때마다 `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 설치 기록에서 지금 설치된 번들을 골라 그 번들의 스크립트를 실행한다. user 범위 설치본이 있으면 그것만 쓴다. 갱신이나 프로필 전환 뒤에도 기억해 둔 명령이 옛 번들을 부르지 않는다.
-Claude 세션의 Bash 는 플러그인 `bin/` 이 PATH 에 있어 `orch` 를 그대로 부른다. PATH 에 없으면(Codex, 사람 셸) 아래 첫 점검의 한 줄이 셸 함수를 두고, `orch doctor install-cli` 를 한 번 돌리면 `~/.local/bin/orch` 가 생긴다.
+저장소(`--repo`), Run(`--run`), 지시서 폴더(`--specs-dir`), 대기의 루프 저장소(`--loop-repo`)는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽는다. 다른 저장소나 다른 Run 이면 그 값을 준다.
+기본 출력은 판정 줄(대문자 낱말로 시작하는 줄)과 결과 데이터다. 설명과 진행 줄은 `--full` 로 본다. 명령마다의 줄은 각 스크립트 머리 주석의 「짧은 출력」 이 소유한다. 루프, worker, 보드는 `orch status` 로 한 번에 본다.
+`orch` 는 부를 때마다 설치 기록의 지금 설치된 번들을 골라 실행하므로, 갱신이나 프로필 전환 뒤에도 옛 번들을 부르지 않는다. PATH 에 없는 셸(Codex, 사람 셸)은 아래 첫 점검의 셸 함수를 쓰고, `orch doctor install-cli` 를 한 번 돌리면 `~/.local/bin/orch` 가 생긴다.
 <!-- orch-compat -->
 옛 꼴 `"$SKILL_DIR/bin/orch.ts" <스크립트 이름> [인자]` 도 같은 스크립트를 같은 인자로 부르고 stderr 에 새 꼴을 안내한다. 옛 이름을 지우는 PR 까지 받는다. 저장소 스크립트가 orch 를 부르는 방법은 [`references/overlay.md`](references/overlay.md) 의 「저장소 스크립트에서 orch 부르기」 가 소유한다.
 캐시의 스크립트를 직접 불러 현재 설치 기록과 다르면 stderr 에 `STALE-BUNDLE` 경고와 현재 진입점 경로가 나온다.
 **`orca orchestration` 조회를 직접 부를 때는 `--full` 을 붙인다.** Orca 1.4.246 부터 `--full` 이 없으면 줄인 보기라 `dispatchStatus`, `resource`, `thread_id` 처럼 판정에 쓰는 키가 빠진다. 스크립트는 스스로 붙인다(`scripts/lib/orca.ts` 의 `withFull`).
 
-스킬을 열면 먼저 설치본을 점검한다. 커밋 SHA 이름 캐시는 폴더 이름으로, 버전 이름 캐시는 `installed_plugins.json` 의 같은 설치 경로에 적힌 `gitCommitSha` 로 원본과 비교한다. 버전 이름 캐시의 설치 기록을 읽지 못하거나 경로 또는 SHA 가 없으면 `SKIP-VERSION` 으로 알리고 그대로 진행한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
-`MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
+스킬을 열면 먼저 설치본을 점검한다. 비교 방법은 `orch-doctor.ts` 머리 주석이 소유한다. `STALE` 이면 출력의 갱신 명령을 사용자에게 보인다. `SKIP-VERSION` 은 원본을 비교하지 못했다는 알림이라 그대로 진행한다.
+`MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다.
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
 `UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG <이유>` 는 `config.json` 에 고칠 곳이 있다는 뜻이다. 이유별 조치는 [`references/hooks.md`](references/hooks.md) 의 줄 표가 소유한다.
 `FEEDBACK-OPEN <개수> <폴더>` 는 다시 보지 않은 스킬 개선 후보가 있다는 뜻이다. 그날 안에 [`references/feedback-review.md`](references/feedback-review.md) 대로 판정한다.
 `STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 「고를 공부 후보 <개수>개가 <폴더> 에 있다」 로 알리기만 하고 고르라고 재촉하지 않는다.
 사용자 질문이나 결정에서 일반 기술 개념이 판단을 바꿨으면(뜻을 물은 경우 포함) 그 자리에서 공부 후보로 적는다. 아무 주제나 적지 않고 네 기준을 모두 채운 것만 적는다. 기준, 적는 법, 사용자가 고른 후보를 글로 잇는 법은 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.
-`PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록(`installed_plugins.json`)이 가리키는 폴더가 없어 그 플러그인이 실리지 않았다는 뜻이다. 이 스킬이 실렸어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있다. 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다. 설정 폴더가 바뀐 세션에서 옛 폴더 경로가 남은 경우가 대표적이다.
+`PLUGIN-PATH-MISSING <플러그인> <scope> <경로>` 는 설치 기록이 가리키는 폴더가 없어 그 플러그인이 실리지 않았다는 뜻이다. 이 스킬이 실렸어도 다른 플러그인의 스킬과 명령이 빠져 있을 수 있으니 다음 줄들의 안내를 사용자에게 보인다. doctor 는 설치 기록을 고치지 않는다.
 `ORCA-SHAPE worker-list <키>` 는 Orca 출력 형식이 바뀌어 orch 가 읽는 키가 없다는 뜻이다. worker 판정과 정리가 빈 값으로 엇나가므로 orch 를 갱신하고, 최신에도 나오면 사용자에게 알린다.
-설치본이 옛 커밋이면 문서가 부르는 스크립트가 없어 그 단계를 건너뛰게 된다.
 
 ```bash
 command -v orch >/dev/null || orch() { node "$SKILL_DIR/../../bin/orch" "$@"; }
 orch doctor
 ```
 
-`orch` 가 PATH 에 없는 셸은 첫 줄의 셸 함수로 실행기를 부른다. 셸 함수는 그 Bash 호출 안에서만 살아, 다른 문서의 `orch` 명령도 같은 셸에서는 이 줄을 먼저 둔다.
-`CLI-MISSING`, `CLI-STALE` 은 Codex 와 사람 셸이 쓸 `~/.local/bin/orch` 가 없거나 낡았다는 뜻이다. 다음 줄의 `orch doctor install-cli` 를 한 번 돌린다. 다른 `orch` 가 있으면 덮지 않고 `CLI-CONFLICT` 로 끝나니 사용자에게 알린다. `CLI-NOT-ON-PATH` 면 셸 설정 안내를 사용자에게 보인다.
-`OLD-CALL`, `DIRECT-PATH` 는 작업 디렉터리 저장소의 오버레이·공통 지시서·핸들러가 옛 꼴이나 스크립트 경로로 orch 를 부른다는 뜻이다. 다음 줄의 새 꼴로 그 저장소 worker 에게 고치게 한다. 진행을 막지 않는다.
-`LOOP-STALE`, `WAIT-STALE` 은 지금 설치본이 아닌 번들로 도는 상주 루프와 대기다. 다음 줄의 명령을 그 Run 의 코디네이터 세션에서 돌려 다시 띄운다. 이유를 적은 안내 줄은 `orch doctor --full` 에 있다.
+셸 함수는 그 Bash 호출 안에서만 살아, 다른 문서의 `orch` 명령도 같은 셸에서는 이 줄을 먼저 둔다.
+`CLI-MISSING`, `CLI-STALE` 이면 다음 줄의 `orch doctor install-cli` 를 한 번 돌린다. `CLI-CONFLICT`(다른 `orch` 가 있어 덮지 않았다)와 `CLI-NOT-ON-PATH` 는 사용자에게 알린다.
+`OLD-CALL`, `DIRECT-PATH` 는 그 저장소의 오버레이·공통 지시서·핸들러가 옛 꼴로 orch 를 부른다는 뜻이다. 진행을 막지 않으니 다음 줄의 새 꼴로 그 저장소 worker 에게 고치게 한다.
+`LOOP-STALE`, `WAIT-STALE` 이면 다음 줄의 명령을 그 Run 의 코디네이터 세션에서 돌려 다시 띄운다.
 
 새 세션을 시작하거나 압축·계정 전환 뒤에는 `orch worker adopt` 로 이전 세션에서 떨어진 터미널을 확인한다. 저장소는 작업 폴더에서 읽고, 다른 저장소면 `--repo` 를 준다. 목록을 검토한 뒤 이어받을 때만 `--apply` 를 쓴다. 상세는 [`references/launch.md`](references/launch.md) 의 「이전 세션 이어받기」 를 따른다.
 
@@ -81,7 +77,7 @@ orch doctor
 - **worker 는 PR 이 머지될 때까지 맡는다.** 준비됨 뒤에도 CI 실패, 충돌, 기준 브랜치 변경을 worker 가 직접 처리하고 `worker_done` 은 MERGED 뒤에 보낸다. 지시서 하나의 완료 기준은 PR 하나의 MERGED 다. 계획이 PR 여럿이면 지시서는 PR1 만 맡고, 앞 PR 이 머지되면 코디네이터가 다음 지시서를 써 새 worker 를 띄운다(worker 하나가 PR 여럿을 이어 맡지 않는다)
 - **PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡긴다.** 허락받지 않았으면 worker 는 push 까지만 하고, 코디네이터가 확인받은 뒤 PR 을 연다. 머지는 worker 에게 맡기지 않는다
 - **기능 루프를 쓸지는 지시서를 쓰기 전에 정하고 `## 할 일` 아래 첫 줄에 적는다.** 새 동작, 새 계약, 여러 PR 이면 루프를 쓰고, 버그 수정·정리·설정·측정 같은 작은 일은 쓰지 않는다. 첫 줄의 꼴이 틀리거나 가리킨 스펙이 확인받지 않은 것이면 `launch-worker` 가 띄우지 않는다. 기준과 꼴은 [`references/feature-loop.md`](references/feature-loop.md) 의 「루프를 쓸지 정한다」 가 소유한다
-- **worker 의 spec 인터뷰는 코디네이터가 사용자에게 중계한다.** 결정 블록을 4개씩 나눠 묻고 답을 모아 돌려주며, 스펙 확인도 사용자에게 받는다. 절차는 [`references/replying.md`](references/replying.md) 의 「spec 인터뷰를 중계한다」 가 소유한다
+- **worker 의 spec 인터뷰는 코디네이터가 사용자에게 중계한다.** 결정 블록을 나눠 묻고 답을 모아 돌려주며, 스펙 확인도 사용자에게 받는다. 절차는 [`references/replying.md`](references/replying.md) 의 「spec 인터뷰를 중계한다」 가 소유한다
 - **worker 보고서의 사용자 안내(누를 단추, 순서, 화면 문구)는 코드나 화면으로 확인한 뒤 사용자에게 전한다.** 계획한 화면과 실제 화면이 다를 수 있다
 - **auto mode 분류기가 코디네이터의 머지나 배포를 막으면 우회 스크립트를 새로 쓰지 않는다.** 돌릴 명령을 보여 주고 사용자가 직접 실행하게 한다. 우회 스크립트는 다시 거부되기 쉽다
 - **「따로 맡기겠다」 고 말한 일은 그 자리에서 맡기거나 할 일로 남긴다.** 말로만 미룬 일은 다음 요청에 묻혀 빠진다
@@ -122,8 +118,8 @@ Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비�
 
 ## 3. 띄우기
 
-원격을 갱신한 뒤 `launch-worker` 로 띄운다. 지시서의 `허락:` 줄을 첫 지시 줄에 붙이고, `worker 선택:` 줄과 `--agent`, `--model` 이 다르면 거부하고, 지시서의 브랜치 이름으로 `origin/<기준 브랜치>` 위에 워크트리를 만들고, 기존 워크트리에 남은 터미널이 있으면 거부한다.
-새로 띄우기는 `launch-worker`, 후속 지시는 `send-to-worker` 로 한다. 같은 Task 를 다시 띄울 때도 `launch-worker --spec <지시서> --repo <저장소> --task <Task>` 를 쓴다. 실패한 Task 는 `--retry-of <dispatch>` 를 함께 주고, ready Task 는 생략한다. 워크트리는 이력에서 읽는다.
+원격을 갱신한 뒤 `launch-worker` 로 띄운다. 거부 조건과 워크트리 만들기는 `launch-worker.ts` 머리 주석이 소유한다.
+새로 띄우기는 `launch-worker`, 후속 지시는 `send-to-worker` 로 한다. 같은 Task 를 다시 띄울 때도 `launch-worker` 를 쓰고, 실패한 Task 는 `--retry-of <dispatch>` 를 함께 준다.
 띄운 직후 reference 의 「띄운 직후 확인」 을 본다.
 첫 화면에서 멈추거나 시작 직후 실패하면 새로 띄우지 않고 reference 의 해당 절을 따른다.
 
@@ -145,9 +141,8 @@ TTL, 기록 위치, 호출 수 확인 명령은 [`references/gh-call-budget.md`]
 
 ## 5. 답하고 지시 보내기
 
-답과 지시는 `send-to-worker` 로 보낸다. 살아 있는 dispatch 면 최신 미답변 질문에 `reply` 하고 깨운다. 별도 지시는 `--no-reply` 로 보내고, 끝났으면 후속 지시서로 남은 터미널을 이어 쓴다. 그 터미널이 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄우고, 터미널도 없으면 종료 코드 3 이다. worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
-충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받고, 종료 코드 3 이면 새 worker 를 띄우지 않고 사용자에게 알린다.
-PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
+답과 지시는 `send-to-worker` 로 보낸다(분기와 종료 코드는 그 스크립트 머리 주석이 소유한다). worker 터미널에 `orca terminal send` 로 직접 쓰지 않는다.
+충돌과 리뷰 반영은 그 PR 을 만든 worker 가 이어 받고, 종료 코드 3 이면 새 worker 를 띄우지 않고 사용자에게 알린다. PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 
 ## 6. 완료 검증
 
