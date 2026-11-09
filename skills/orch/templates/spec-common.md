@@ -148,7 +148,7 @@
   ```
 
   PATH 에 `orch` 가 없으면 위 함수가 설치 기록에서 실행기를 찾는다. 워크트리에서 불러도 주 checkout 의 orch 루트 아래 `feedback/` 에 후보 하나당 파일 하나를 만든다. 칸과 순서는 `references/feedback-review.md` 의 「후보 파일」 이 소유한다.
-- `worker_done` 본문 끝에 「스킬 개선 후보 N건: <파일 경로>」 를 적는다. 없으면 「스킬 개선 후보 없음」. <!-- orch-rule: skill-feedback -->
+- `worker_done` 본문 끝에 「스킬 개선 후보 N건: <이름 목록>」 를 적는다. 없으면 「스킬 개선 후보 없음」. <!-- orch-rule: skill-feedback -->
 - 스킬 파일은 직접 고치지 않는다. 코디네이터가 사용자와 정한 뒤 고친다.
 
 ## 공부 후보 보고
