@@ -44,6 +44,7 @@
 //   <폴더>/INDEX.md:1: INDEX_DESYNC ...           ids 모드에서 식별자 집합이 다르다
 //   <경로>:1: ADR_DUPLICATE ...                   한 ADR 폴더 안에서 같은 식별자가 두 파일에 있다
 //   <경로>:<줄>: ADR_PLACEMENT ...                superseded 인 ADR 이 superseded/ 밖에 있거나 그 반대다
+//   stderr `경고: <경로>:<줄>: AMBIGUOUS_ANCHOR <대상> ...`   같은 이름 제목이 둘 이상인 문서의 `#제목`, `#제목-1` 링크. 종료 코드에 세지 않는다
 //   stderr 마지막 줄: `검사한 Markdown: N개, ADR 폴더: M개`
 //
 // 앵커 슬러그: GitHub 규칙. 제목에서 링크는 글만, 코드 스팬은 백틱만 남기고 소문자로 바꾼 뒤
@@ -233,7 +234,17 @@ export function slugify(heading: string): string {
 // 그 파일이 내는 앵커. 코드 블록 안 제목은 빼고, 같은 슬러그는 GitHub(github-slugger)처럼 번호를 붙인다.
 // 번호는 이미 쓴 앵커와 겹치지 않을 때까지 올린다. `foo`, `foo`, `foo-1` 이면 `foo`, `foo-1`, `foo-1-1` 이다.
 export function anchorsOf(text: string): Set<string> {
+  return anchorInfo(text).found;
+}
+
+// 같은 이름 제목이 둘 이상인 문서에서 그 제목들이 내는 앵커(`foo`, `foo-1`, ...). 어느 제목을 가리키는지 읽는 쪽이 알기 어렵다.
+export function ambiguousAnchorsOf(text: string): Set<string> {
+  return anchorInfo(text).ambiguous;
+}
+
+function anchorInfo(text: string): { found: Set<string>; ambiguous: Set<string> } {
   const found = new Set<string>();
+  const groups = new Map<string, string[]>();
   const counts = new Map<string, number>();
   const used = new Set<string>();
   const lines = prose(text, false);
@@ -254,8 +265,11 @@ export function anchorsOf(text: string): Set<string> {
     }
     used.add(slug);
     found.add(slug);
+    groups.set(base, [...(groups.get(base) ?? []), slug]);
   });
-  return found;
+  const ambiguous = new Set<string>();
+  for (const slugs of groups.values()) if (slugs.length > 1) for (const s of slugs) ambiguous.add(s);
+  return { found, ambiguous };
 }
 
 export type Link = { line: number; text: string | null; target: string };
@@ -555,7 +569,7 @@ function existsExact(repo: Repo, abs: string) {
   return true;
 }
 
-function checkLinks(repo: Repo, path: string, lines: string[], anchors: Map<string, Set<string>>): Violation[] {
+function checkLinks(repo: Repo, path: string, lines: string[], anchors: Map<string, Set<string>>, warnings: string[] = [], ambiguous: Map<string, Set<string>> = new Map()): Violation[] {
   const out: Violation[] = [];
   for (const link of linksOf(lines)) {
     const local = splitLocal(link.target);
@@ -573,14 +587,19 @@ function checkLinks(repo: Repo, path: string, lines: string[], anchors: Map<stri
     } else if (!anchor) continue;
     let set = anchors.get(targetPath);
     if (!set) {
+      let info = { found: new Set<string>(), ambiguous: new Set<string>() };
       try {
-        set = anchorsOf(readFileSync(join(repo.root, targetPath), "utf8"));
+        info = anchorInfo(readFileSync(join(repo.root, targetPath), "utf8"));
       } catch {
-        set = new Set();
+        // 읽지 못하면 앵커가 없는 문서로 본다
       }
+      set = info.found;
       anchors.set(targetPath, set);
+      ambiguous.set(targetPath, info.ambiguous);
     }
-    if (!set.has(decode(anchor).toLowerCase())) out.push({ path, line: link.line, code: "BROKEN_ANCHOR", message: link.target, target: targetPath });
+    const key = decode(anchor).toLowerCase();
+    if (!set.has(key)) out.push({ path, line: link.line, code: "BROKEN_ANCHOR", message: link.target, target: targetPath });
+    else if (ambiguous.get(targetPath)?.has(key)) warnings.push(`${path}:${link.line}: AMBIGUOUS_ANCHOR ${link.target} (${targetPath} 에 같은 이름의 제목이 둘 이상이다. 제목을 고치거나 <a id> 를 둔다)`);
   }
   return out;
 }
@@ -746,7 +765,7 @@ function inScope(path: string, scope: string | undefined) {
   return !scope || scope === "." || path === scope || path.startsWith(`${scope}/`);
 }
 
-export type CheckResult = { lines: string[]; failed: boolean; checked: number; adrDirs: number; notice: string[] };
+export type CheckResult = { lines: string[]; failed: boolean; checked: number; adrDirs: number; notice: string[]; warnings: string[] };
 
 export function runCheck(root: string, opts: Options): CheckResult {
   const repo = loadRepo(root, opts.adrDirs);
@@ -759,6 +778,8 @@ export function runCheck(root: string, opts: Options): CheckResult {
   const kinds = new Set(repo.adrs.map((a) => a.kind));
   const pattern = idPattern(kinds);
   const anchors = new Map<string, Set<string>>();
+  const ambiguous = new Map<string, Set<string>>();
+  const warnings: string[] = [];
   const violations: Violation[] = [];
   let checked = 0;
   // 생성 색인은 INDEX_STALE 이 보증한다. ADR 제목에 다른 식별자나 링크가 있으면 색인 칸이
@@ -769,18 +790,18 @@ export function runCheck(root: string, opts: Options): CheckResult {
     checked++;
     if (generated.has(path)) continue;
     const lines = prose(read(repo, path));
-    violations.push(...checkLinks(repo, path, lines, anchors));
+    violations.push(...checkLinks(repo, path, lines, anchors, warnings, ambiguous));
     if (pattern) violations.push(...checkUnlinked(repo, path, lines, pattern));
   }
   violations.push(...checkAdrDirs(repo, opts).filter((v) => inScope(v.path, scope)));
   violations.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
 
-  if (!changes) return { lines: violations.map(format), failed: violations.length > 0, checked, adrDirs: repo.adrDirs.length, notice };
+  if (!changes) return { lines: violations.map(format), failed: violations.length > 0, checked, adrDirs: repo.adrDirs.length, notice, warnings };
   const mine = violations.filter((v) => isChanged(v, changes));
   const others = violations.filter((v) => !mine.includes(v));
   const lines = mine.map(format);
   if (others.length) lines.push("PR 밖 위반:", ...others.map(format));
-  return { lines, failed: mine.length > 0, checked, adrDirs: repo.adrDirs.length, notice };
+  return { lines, failed: mine.length > 0, checked, adrDirs: repo.adrDirs.length, notice, warnings };
 }
 
 export function runWriteIndex(root: string, opts: Options): string[] {
@@ -815,6 +836,7 @@ function main(argv: string[]) {
     const result = runCheck(root, opts);
     if (result.lines.length) process.stdout.write(`${result.lines.join("\n")}\n`);
     for (const line of result.notice) process.stderr.write(`${line}\n`);
+    for (const line of result.warnings) process.stderr.write(`경고: ${line}\n`);
     process.stderr.write(`검사한 Markdown: ${result.checked}개, ADR 폴더: ${result.adrDirs}개\n`);
     // process.exit 는 파이프에 아직 쓰지 못한 출력을 버린다. 종료 코드만 두고 이벤트 루프가 비우게 한다
     process.exitCode = result.failed ? 1 : 0;
