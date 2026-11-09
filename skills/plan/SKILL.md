@@ -63,7 +63,7 @@ node "$SKILL_DIR/scripts/check_feature.ts" "$SPEC" --design "$DESIGN"
 
 [task 작성 규칙](references/task-create.md)으로 번호를 정하고 index 와 phase 를 만든다.
 [index 양식](templates/index.json)과 [phase 양식](templates/phase.md)을 먼저 읽고 실제 값으로 바꾼다.
-[인수 검증 계획 양식](templates/verification-plan.md)으로 준비 조건·절차·기대값·환경·선행 조건·시점을 적는다.
+[인수 검증 계획 양식](templates/verification-plan.md)으로 준비 조건·절차·기대값·환경·실행 담당(worker/코디네이터)·선행 조건·시점을 적는다.
 작으면 한 phase 의 `## 인수 검증 계획` 절에 쓰고 verification_plan 은 그 phase 를 가리킨다.
 같은 문서의 「문서 영향과 ADR」 대로, 이번 PR 이 바꾸는 전역 문서와 ADR 만 갱신한다. 기능 설계가 소유한 내용을 전역 문서에 다시 적지 않는다.
 장기 결정이 있으면 [결정 기록의 단계별 책임](../spec/references/document-ownership.md#결정-기록의-단계별-책임)에 따라 ADR·현재 원본 갱신과 확인 사례를 같은 PR 의 작업으로 묶는다.
