@@ -9,16 +9,13 @@ import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { expandArgs } from '../lib/args.ts'
 import { bundleRoot } from '../lib/bundle.ts'
-import { CONDITIONAL_RULES, ruleBodies, ruleMarks, sameBody } from '../lib/common-rules.ts'
+import { CONDITIONAL_RULES, ruleBodies, ruleIssues, sameBody } from '../lib/common-rules.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
 
 export function syncCommon(copy: string, template: string, repo: string): { text: string; output: string[]; manual: boolean } {
   for (const text of [copy, template]) {
-    const marks = ruleMarks(text)
-    const error = marks.find((mark) => mark.error)?.error
-    if (error) throw new Error(error)
-    const names = marks.map((mark) => mark.name)
-    if (new Set(names).size !== names.length) throw new Error('같은 표지가 둘 이상 있다. 중복을 없앤 뒤 다시 실행한다')
+    const issues = ruleIssues(text)
+    if (issues.length) throw new Error(issues.map((issue) => issue.message).join('; '))
   }
   const wanted = ruleBodies(template)
   const existing = ruleBodies(copy)

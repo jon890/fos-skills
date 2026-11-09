@@ -12,6 +12,16 @@ export function ruleMarks(text: string): RuleMark[] {
   }))
 }
 
+export function ruleIssues(text: string): { no: number; message: string }[] {
+  const marks = ruleMarks(text)
+  const issues = marks.filter((mark) => mark.error).map((mark) => ({ no: mark.no, message: mark.error! }))
+  for (const name of new Set(marks.map((mark) => mark.name))) {
+    const rows = marks.filter((mark) => mark.name === name)
+    if (rows.length > 1) issues.push({ no: rows[0].no, message: `같은 표지 ${name} 가 둘 이상 있다: ${rows.map((mark) => mark.no).join(', ')}줄` })
+  }
+  return issues
+}
+
 // 머리 주석의 「공통」 의 조건부 표지. 조건이 거짓인 저장소에서는 그 표지가 빠져도 알리지 않는다
 export const CONDITIONAL_RULES: Record<string, (repoRoot: string) => boolean> = {
   migration: (repoRoot) => configured(repoRoot, 'migrations', ['dirs', 'watch']),

@@ -93,7 +93,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
-import { CONDITIONAL_RULES, ruleBodies, sameBody, type RuleBody } from '../lib/common-rules.ts'
+import { CONDITIONAL_RULES, ruleBodies, ruleIssues, sameBody, type RuleBody } from '../lib/common-rules.ts'
 import { taskFirstLine } from '../lib/spec.ts'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -411,7 +411,9 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
   for (const dir of new Set(specs.map((s) => dirname(normalize(s))))) {
     const common = join(dir, COMMON)
     if (!isFile(common)) continue
-    const has = ruleBodies(readFileSync(common, 'utf8'))
+    const text = readFileSync(common, 'utf8')
+    for (const issue of ruleIssues(text)) found.push(`${common}:${issue.no}: 공통: ${issue.message}`)
+    const has = ruleBodies(text)
     const missing = required.filter((name) => !has.has(name))
     if (missing.length > 0) {
       found.push(

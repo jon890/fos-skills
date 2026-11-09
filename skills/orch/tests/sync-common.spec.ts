@@ -98,7 +98,7 @@ test('실제 진입점은 기본 diff 만 내고 --apply 일 때만 쓰며 오�
 
 
 test('중복 표지와 겹친 항목은 원문을 잘못 덮지 않도록 거부한다', () => {
-  assert.throws(() => syncCommon(rule('a', '하나') + rule('a', '둘'), rule('a', '새것'), repo), /같은 표지/)
+  assert.throws(() => syncCommon(rule('a', '하나') + rule('a', '둘'), rule('a', '새것'), repo), /같은 표지 a 가 둘 이상 있다: 1, 2줄/)
   for (const keep of ['', ' keep']) {
     assert.throws(() => syncCommon(`- 옛것 <!-- orch-rule: a${keep} --> <!-- orch-rule: b -->\n`, rule('a', '새것') + rule('b', '다른 것'), repo), /범위가 겹친다/)
   }
