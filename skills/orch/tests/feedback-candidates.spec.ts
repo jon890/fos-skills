@@ -152,3 +152,14 @@ test('옛 메모의 새 판단 이름을 우선하고 실제로 쓰던 변형과
   const [table] = parseLegacy('## 문제\n| 유의미함 | 시간을 줄인다 |\n| 단순 함정이 아님 | 반복된다 |\n| 구조로 막을 수 있음 | 검사를 둔다 |\n', 'old.md')
   assert.ok(!table.values.판단.includes('확인 필요'))
 })
+
+
+test('다시 보기와 보류 기록은 앞 후보의 근거에 붙이고 별도 후보로 만들지 않는다', () => {
+  const candidates = parseLegacy('## 원래 문제\n- 문제: 실패\n## 다시 보기 (2026-11-04): 보류\n재발을 기다린다\n## 보류\n추가 근거\n## 다른 문제\n다른 기록\n', 'old.md')
+  assert.equal(candidates.length, 2)
+  assert.equal(candidates[0].title, '원래 문제')
+  assert.match(candidates[0].values.근거, /재발을 기다린다.*추가 근거/)
+  const [table] = parseLegacy('# 후보 모음\n| 후보 | 근거 |\n| a | log |\n## 보류\n다음에 본다\n', 'table.md')
+  assert.equal(table.title, '후보 모음')
+  assert.match(table.values.근거, /다음에 본다/)
+})

@@ -69,7 +69,14 @@ export type Legacy = { title: string; values: Record<Field, string> }
 // 명시된 칸만 옮기고, 읽지 못한 원문은 근거에 남긴다.
 export function parseLegacy(text: string, source: string): Legacy[] {
   const lines = text.split(/\r?\n/)
-  const starts = lines.flatMap((line, index) => /^## /.test(line) ? [index] : [])
+  const starts: number[] = []
+  for (const [index, line] of lines.entries()) {
+    if (!/^## /.test(line)) continue
+    const followup = /^## (?:다시 보기|보류)(?:\s|[:(]|$)/.test(line)
+    if (followup && starts.length > 0) continue
+    if (followup && lines.slice(0, index).some(row => row.trim() && !row.startsWith('#'))) starts.push(0)
+    else starts.push(index)
+  }
   if (starts.length === 0) starts.push(0)
   return starts.map((start, i) => {
     const section = lines.slice(start, starts[i + 1] ?? lines.length)
