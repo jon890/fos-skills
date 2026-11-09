@@ -233,9 +233,9 @@ describe('지시서 검사', () => {
   test('표지는 있지만 본문이 틀과 다른 규칙을 표지마다 그 항목 머리 줄로 경고한다', () => {
     const template = readFileSync(TEMPLATE, 'utf8')
     const a = spec('spec-a', '담당: `src/a/**`')
-    // 옛 사본: worker-ask 의 이어지는 설명에 --max-wait 안내가 없고, 보드 줄은 표지만 남긴 채 단계 체크를 시킨다
-    const sentence = /오래 기다릴 때는 `--max-wait`[^\n]*?\. /.exec(template)
-    assert.ok(sentence, '틀에서 --max-wait 안내를 찾지 못했다')
+    // 옛 사본: worker-ask 의 이어지는 설명에 `SENT-RUN` 안내가 없고, 보드 줄은 표지만 남긴 채 단계 체크를 시킨다
+    const sentence = /3 이고 `SENT-RUN <id>` 면[^\n]*?\.(?=\n)/.exec(template)
+    assert.ok(sentence, '틀에서 SENT-RUN 안내를 찾지 못했다')
     const board = /^- 진행 보드\(`board\.json`\)를 고치지 않는다\..*$/m.exec(template)
     assert.ok(board, '틀에서 보드 줄을 찾지 못했다')
     const old = template

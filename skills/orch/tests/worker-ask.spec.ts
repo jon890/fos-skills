@@ -18,6 +18,7 @@ case "$2" in
   ask)
     n=$(($(cat "$FAKE_DIR/ask-n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/ask-n"
     if [ -f "$FAKE_DIR/ask$n.out" ]; then cat "$FAKE_DIR/ask$n.out"; echo; exit "$(cat "$FAKE_DIR/ask$n.rc" 2>/dev/null || echo 0)"; fi
+    [ -n "\${FAKE_IGNORE_TERM:-}" ] && trap '' TERM
     sleep "\${FAKE_ASK_SLEEP:-0}"; cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
   check)
     n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
@@ -137,19 +138,26 @@ describe('묻고 답 받기', () => {
   })
 })
 
-describe('바로 돌아온 ask', () => {
-  test('pending 과 질문 ID 만 내면 그 ID 로 --resume 해 답을 기다리고 질문을 다시 보내지 않는다', () => {
-    fake('{"result":{"answer":"없어야 한다"}}', 0)
-    writeFileSync(join(tmp, 'ask1.out'), '{"ok":true,"result":{"messageId":"msg_q","pending":true,"next":"End your turn"}}')
-    writeFileSync(join(tmp, 'ask2.out'), '{"ok":true,"result":{"answer":"권장안으로 간다","messageId":"msg_q"}}')
+describe('질문만 보내고 끝나기', () => {
+  const askCalls = (r: Result) => r.calls.filter((c) => c.includes('[ask]'))
+
+  test('pending 과 질문 ID 를 내면 ASKED 와 0 이고 ask 를 한 번만 부른다', () => {
+    fake('{"ok":true,"result":{"messageId":"msg_q","pending":true,"next":"End your turn"}}', 0)
     const r = ask('--from', 'term_w', '--question', '이대로 갈까')
     assert.equal(r.code, 0, r.stderr)
-    assert.equal(firstLine(r.stdout), 'answer: 권장안으로 간다')
-    const asks = r.calls.filter((c) => c.includes('[ask]'))
-    assert.equal(asks.length, 2)
-    assert.ok(asks[0].includes('[--question][이대로 갈까]'), asks[0])
-    assert.ok(asks[1].includes('[--resume][msg_q]') && !asks[1].includes('[--question]'), asks[1])
-    assert.match(r.stderr, /질문 msg_q 를 보냈다/)
+    assert.equal(firstLine(r.stdout), 'ASKED msg_q')
+    assert.match(r.stdout, /"pending":true/)
+    assert.equal(askCalls(r).length, 1)
+    assert.ok(askCalls(r)[0].includes('[--question][이대로 갈까]'), askCalls(r)[0])
+    assert.ok(askCalls(r)[0].includes('[--timeout-ms][5000]'), askCalls(r)[0])
+    assert.ok(!askCalls(r)[0].includes('[--wait]'), askCalls(r)[0])
+    assert.match(r.stderr, /질문 msg_q 를 보냈다. 턴을 끝낸다/)
+  })
+
+  test('시간 초과여도 질문 ID 가 있으면 ASKED 와 0 이다', () => {
+    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, firstLine(r.stdout), askCalls(r).length], [0, 'ASKED m1', 1])
   })
 
   test('0 으로 끝났는데 답도 질문 ID 도 없으면 닿았는지 몰라 2 다', () => {
@@ -160,10 +168,39 @@ describe('바로 돌아온 ask', () => {
     assert.match(r.stderr, /답도 질문 ID 도 내지 않았다/)
   })
 
+  test('시간 초과인데 질문 ID 가 없으면 NO-ANSWER 와 2 이고 대신 보내지 않는다', () => {
+    fake('{"result":{"timedOut":true}}', 0)
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
+    assert.ok(!r.calls.some((c) => c.includes('[send]')), r.calls.join('\n'))
+    assert.match(r.stderr, /닿았는지 알 수 없다/)
+  })
+
   test('orca 명령에 --full 을 붙인다', () => {
     fake('{"result":{"answer":"x","messageId":"m1"}}', 0)
     const r = ask('--from', 'term_w', '--question', 'q')
     assert.ok(r.calls.every((c) => c.includes('[--full]')), r.calls.join('\n'))
+  })
+})
+
+describe('없어진 옵션', () => {
+  test('--resume 은 orca 를 부르지 않고 안내 한 줄과 2 다', () => {
+    fake('{"result":{"answer":"x"}}', 0)
+    const r = ask('--from', 'term_w', '--resume', 'm1')
+    assert.equal(r.code, 2, r.stderr)
+    assert.deepEqual(r.calls, [])
+    assert.deepEqual(r.stderr.trim().split('\n'), ['worker-ask: --resume 은 없어졌다. 질문을 보낸 뒤 턴을 끝내면 Orca 가 답과 함께 깨운다. 읽을 문서: 공통 지시서의 worker-ask 규칙'])
+  })
+
+  test('--timeout-ms 와 --max-wait 는 안내 한 줄만 내고 값과 상관없이 묻는다', () => {
+    fake('{"result":{"messageId":"m1","pending":true}}', 0)
+    for (const args of [['--timeout-ms', '600000', '--max-wait', '3600000'], ['--timeout-ms', 'abc'], ['--max-wait', '0']]) {
+      const r = ask('--from', 'term_w', '--question', 'q', ...args)
+      assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'ASKED m1'])
+      assert.match(r.stderr, /worker-ask: --timeout-ms, --max-wait 는 없어진 옵션이라 무시했다/)
+      // 받은 값을 orca 에 넘기지 않는다
+      assert.ok(r.calls.find((c) => c.includes('[ask]'))!.includes('[--timeout-ms][5000]'))
+    }
   })
 })
 
@@ -222,13 +259,6 @@ describe('결정 질문 형식', () => {
     assert.deepEqual(r.calls, [])
   })
 
-  test('--resume 으로 재개할 때는 형식을 보지 않는다', () => {
-    fake('{"result":{"answer":"재개한 답"}}', 0)
-    const r = ask('--from', 'term_w', '--resume', 'm1', '--decision')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: 재개한 답'])
-    // 앞의 check 는 status 답을 가릴 기준이다. 재개해도 읽지 않은 메시지로 막지는 않는다
-    assert.ok(r.calls[1].includes('[ask]') && r.calls[1].includes('[--resume][m1]'), r.calls[1])
-  })
 })
 
 describe('읽지 않은 메시지', () => {
@@ -264,108 +294,35 @@ describe('읽지 않은 메시지', () => {
 })
 
 describe('시간 제한', () => {
-  test('답이 없으면 4 로 끝나 재개할 ID 를 남긴다', () => {
-    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
-    const r = ask('--from', 'term_w', '--question', 'q', '--timeout-ms', '1000')
-    assert.deepEqual([r.code, r.calls.length], [4, 3])
-    assert.match(r.stdout, /"messageId":"m1"/)
-    assert.doesNotMatch(r.stdout, /answer:/)
-  })
-
-  test('그 질문 스레드의 status 답을 찾으면 3 이고 첫 줄이 그 본문이다', () => {
-    const reply = message({ body: 'status 로 답한다: B', thread: 'm1', to: 'run:run_x' })
-    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(reply)] })
-    const r = ask('--from', 'term_w', '--question', 'q')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [3, 'answer: status 로 답한다: B'])
-  })
-
-  test('이 dispatch 로 온 status 도 답으로 본다', () => {
-    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(message({ body: 'dispatch 로 답한다' }))] })
-    const r = ask('--from', 'term_w', '--question', 'q')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [3, 'answer: dispatch 로 답한다'])
-  })
-
-  test('시간 초과 뒤에도 이 dispatch 로 왔지만 다른 질문 스레드인 status 는 답이 아니다', () => {
-    const other = message({ body: '다른 질문의 답', thread: 'm9' })
-    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(other)] })
-    const r = ask('--from', 'term_w', '--question', 'q')
-    assert.equal(r.code, 4, r.stderr)
-  })
-
-  test('다른 스레드와 다른 dispatch 의 status 는 답이 아니다', () => {
-    const other = message({ body: '다른 질문의 답', thread: 'm9', to: 'dispatch:ctx_9' })
-    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(other)] })
-    const r = ask('--from', 'term_w', '--question', 'q')
-    assert.equal(r.code, 4, r.stderr)
-    assert.doesNotMatch(r.stdout, /answer:/)
-  })
-
-  test('ask 가 제한 시간 안에 끝나지 않아 끊으면 시간 초과 4 이고 대신 보내지 않는다', () => {
+  test('ask 가 제한 시간 안에 끝나지 않아 끊으면 2 이고 대신 보내지 않는다', () => {
     fake('', 1)
     env.FAKE_ASK_SLEEP = '5'
     env.ORCH_ASK_SLACK_MS = '300'
-    const r = ask('--from', 'term_w', '--question', 'q', '--timeout-ms', '1')
-    assert.equal(r.code, 4, r.stderr)
+    env.ORCH_ASK_RETURN_MS = '1'
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
     assert.match(r.stderr, /ask 가 301ms 안에 끝나지 않아 끊었다/)
     assert.ok(!r.calls.some((c) => c.includes('[send]')), r.calls.join('\n'))
     assert.doesNotMatch(r.stdout, /^answer:/m)
   })
 
+  test('TERM 을 무시하는 ask 도 제한 시간 뒤 강제로 끝내 2 로 돌아온다', () => {
+    fake('', 1)
+    env.FAKE_ASK_SLEEP = '30'
+    env.FAKE_IGNORE_TERM = '1'
+    env.ORCH_ASK_SLACK_MS = '300'
+    env.ORCH_ASK_RETURN_MS = '1'
+    env.ORCH_KILL_GRACE_SEC = '1'
+    const started = Date.now()
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
+    assert.ok(Date.now() - started < 20_000, `끝까지 기다렸다: ${Date.now() - started}ms`)
+    assert.ok(!r.calls.some((c) => c.includes('[send]')), r.calls.join('\n'))
+  })
+
   test('사용법 문구의 timeout 은 시간 초과가 아니다', () => {
     fake('Usage: ask [--timeout-ms <n>]', 1)
     assert.equal(ask('--from', 'term_w', '--question', 'q', '--run', 'run_y').code, 3)
-  })
-})
-
-describe('기다리는 동안 status 답', () => {
-  test('ask 를 기다리는 동안 이 dispatch 로 온 status 를 찾으면 ask 를 끊고 3 이다', () => {
-    fake('{"result":{"answer":"늦은 답"}}', 0, { checks: [inbox(), inbox(message({ body: '기다리는 중에 status 로 답한다' }))] })
-    env.FAKE_ASK_SLEEP = '20'
-    env.ORCH_ASK_POLL_MS = '200'
-    const started = Date.now()
-    const r = ask('--from', 'term_w', '--question', 'q')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [3, 'answer: 기다리는 중에 status 로 답한다'])
-    assert.match(r.stderr, /ask 를 끊었다/)
-    assert.ok(Date.now() - started < 10_000, `ask 를 끝까지 기다렸다: ${Date.now() - started}ms`)
-  })
-
-  test('ask 를 부르기 전에 있던 status 는 답으로 보지 않는다', () => {
-    // 앞서 받은 지시가 ack 되지 않아 --peek 에 남아 있다. 한 번 보인 메시지라 묻기를 막지 않는다
-    const old = inbox(message({ body: '앞서 받은 지시' }))
-    fake('{"result":{"answer":"ask 의 답"}}', 0, { checks: [old, old, old, old, old, old] })
-    writeFileSync(join(tmp, 'seen'), 'msg_c\n')
-    env.FAKE_ASK_SLEEP = '1'
-    env.ORCH_ASK_POLL_MS = '100'
-    const r = ask('--from', 'term_w', '--question', 'q')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: ask 의 답'])
-    assert.ok(r.calls.filter((c) => c.includes('[check]')).length >= 2, '기다리는 동안 check 를 다시 읽어야 한다')
-  })
-
-  test('--resume 으로 기다리는 동안 같은 dispatch 의 다른 질문 스레드로 온 status 는 답이 아니다', () => {
-    const other = inbox(message({ body: '다른 질문 m9 의 답', thread: 'm9' }))
-    fake('{"result":{"answer":"m1 의 답"}}', 0, { checks: [inbox(), other, other, other, other, other] })
-    env.FAKE_ASK_SLEEP = '1'
-    env.ORCH_ASK_POLL_MS = '100'
-    const r = ask('--from', 'term_w', '--resume', 'm1')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: m1 의 답'])
-  })
-
-  test('--resume 으로 기다리는 동안 그 질문 스레드로 온 status 는 답이다', () => {
-    const mine = inbox(message({ body: 'm1 에 status 로 답한다', thread: 'm1', to: 'run:run_x' }))
-    fake('{"result":{"answer":"늦은 답"}}', 0, { checks: [inbox(), mine] })
-    env.FAKE_ASK_SLEEP = '20'
-    env.ORCH_ASK_POLL_MS = '200'
-    const r = ask('--from', 'term_w', '--resume', 'm1')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [3, 'answer: m1 에 status 로 답한다'])
-  })
-
-  test('다른 dispatch 로 간 status 로는 ask 를 끊지 않는다', () => {
-    const other = inbox(message({ body: '다른 worker 의 답', to: 'dispatch:ctx_9' }))
-    fake('{"result":{"answer":"ask 의 답"}}', 0, { checks: [inbox(), other, other, other, other, other] })
-    env.FAKE_ASK_SLEEP = '1'
-    env.ORCH_ASK_POLL_MS = '100'
-    const r = ask('--from', 'term_w', '--question', 'q')
-    assert.deepEqual([r.code, firstLine(r.stdout)], [0, 'answer: ask 의 답'])
   })
 })
 
@@ -440,12 +397,6 @@ describe('ask 실패 뒤 대신 보내기', () => {
     assert.ok(!r.calls.some((c) => c.includes('[send]')))
   })
 
-  test('--resume 이 실패하면 대신 보내지 않고 2 다', () => {
-    fake('unknown message', 1)
-    const r = ask('--from', 'term_w', '--resume', 'm1')
-    assert.deepEqual([r.code, r.calls.length], [2, 2])
-    assert.ok(!r.calls.some((c) => c.includes('[send]')))
-  })
 })
 
 describe('바쁜 Orca', () => {
@@ -489,7 +440,7 @@ describe('바쁜 Orca', () => {
 })
 
 describe('사용법', () => {
-  test('--question 과 --resume 이 모두 없으면 orca 를 부르지 않고 2 다', () => {
+  test('--question 이 없으면 orca 를 부르지 않고 2 다', () => {
     fake('{"result":{"answer":"x"}}', 0)
     const r = ask('--from', 'term_w')
     assert.equal(r.code, 2, r.stderr)
@@ -503,52 +454,6 @@ describe('사용법', () => {
   })
 })
 
-
-test('Orca 상한을 넘긴 timeout 은 줄여서 전달하고 이유를 알린다', () => {
-  fake('{"result":{"answer":"ok"}}', 0)
-  const r = ask('--from', 'w', '--question', 'q', '--timeout-ms', '3600000')
-  assert.equal(r.code, 0, r.stderr)
-  assert.match(r.calls.find((c) => c.includes('[ask]'))!, /\[--timeout-ms\]\[1800000\]/)
-  assert.match(r.stderr, /Orca 상한/)
-})
-
-test('max-wait 는 같은 메시지 ID 로 재개하고 질문을 다시 보내지 않는다', () => {
-  fake('{"result":{"timedOut":true,"messageId":"msg_first"}}', 0)
-  writeFileSync(join(tmp, 'ask2.out'), '{"result":{"timedOut":true}}')
-  writeFileSync(join(tmp, 'ask3.out'), '{"result":{"answer":"승인"}}')
-  const r = ask('--from', 'w', '--question', 'q', '--max-wait', '10000')
-  assert.equal(r.code, 0, r.stderr)
-  assert.equal(firstLine(r.stdout), 'answer: 승인')
-  const asked = r.calls.filter((c) => c.includes('[ask]'))
-  assert.equal(asked.length, 3)
-  assert.match(asked[0], /\[--question\]\[q\]/)
-  for (const call of asked.slice(1)) {
-    assert.match(call, /\[--resume\]\[msg_first\]/)
-    assert.doesNotMatch(call, /\[--question\]/)
-  }
-})
-
-test('max-wait 가 끝나거나 메시지 ID 가 없으면 4 로 멈춘다', () => {
-  fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
-  env.FAKE_ASK_SLEEP = '0.03'
-  let r = ask('--from', 'w', '--question', 'q', '--max-wait', '10')
-  assert.equal(r.code, 4, r.stderr)
-  assert.equal(r.calls.filter((c) => c.includes('[ask]')).length, 1)
-  fake('{"result":{"timedOut":true}}', 0)
-  r = ask('--from', 'w', '--question', 'q', '--max-wait', '1000')
-  assert.equal(r.code, 4, r.stderr)
-})
-
-test('잘못된 대기 시간은 Orca 를 부르기 전에 거절한다', () => {
-  fake('{}', 0)
-  for (const option of ['--timeout-ms', '--max-wait']) {
-    for (const value of ['0', '-1', 'NaN', 'Infinity', '1.5']) {
-      const r = ask('--from', 'w', '--question', 'q', option, value)
-      assert.equal(r.code, 2, r.stderr)
-      assert.deepEqual(r.calls, [])
-    }
-  }
-})
 
 describe('짧은 출력', () => {
   // fake() 가 env 를 새로 만들므로 부르기 직전에 신호를 넣는다
@@ -569,17 +474,16 @@ describe('짧은 출력', () => {
     assert.deepEqual([r.code, r.stdout], [0, 'answer: 첫 줄\n둘째 줄\n'])
   })
 
-  test('시간 초과는 재개할 질문 id 를 TIMEOUT 줄로 낸다', () => {
-    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0)
-    const r = shortAsk('--from', 'term_w', '--question', 'q', '--timeout-ms', '1000')
-    assert.deepEqual([r.code, r.stdout], [4, 'TIMEOUT m1\n'])
+  test('질문만 보내면 ASKED 한 줄만 낸다', () => {
+    fake('{"result":{"messageId":"m1","pending":true}}', 0)
+    const r = shortAsk('--from', 'term_w', '--question', 'q')
+    assert.deepEqual([r.code, r.stdout], [0, 'ASKED m1\n'])
   })
 
-  test('status 답도 answer: 한 줄이다', () => {
-    const reply = message({ body: 'status 로 답한다: B', thread: 'm1', to: 'run:run_x' })
-    fake('{"result":{"timedOut":true,"messageId":"m1"}}', 0, { checks: [inbox(), inbox(reply)] })
+  test('시간 초과에 질문 id 가 없으면 NO-ANSWER - 한 줄이다', () => {
+    fake('{"result":{"timedOut":true}}', 0)
     const r = shortAsk('--from', 'term_w', '--question', 'q')
-    assert.deepEqual([r.code, r.stdout], [3, 'answer: status 로 답한다: B\n'])
+    assert.deepEqual([r.code, r.stdout], [2, 'NO-ANSWER -\n'])
   })
 
   test('Run 메일함으로 대신 보내면 SENT-RUN 과 보낸 id 다', () => {

@@ -1,29 +1,26 @@
-// 읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문한다.
+// 읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문을 보낸 뒤, 답을 기다리지 않고 끝난다.
 //
-// 사용: worker-ask.ts --from HANDLE (--question TEXT | --resume ID)
-//                    [--options CSV] [--run ID] [--timeout-ms N] [--max-wait N] [--force] [--decision]
+// 사용: worker-ask.ts --from HANDLE --question TEXT
+//                    [--options CSV] [--run ID] [--force] [--decision]
+// 질문을 보내면 worker 는 턴을 끝낸다. 답이 오면 Orca 가 worker 를 깨우고, 깬 뒤 orca orchestration check 로 읽는다.
 // --decision: 사용자가 정할 결정 질문이다. 본문이 docs/data-schema.md 「사용자 결정 질문 형식」
 // (첫 줄 `결정:` 과 비지 않은 제목, `- ` 선택지 둘 이상, `권장:` 줄 하나)을 따르는지 보고, 어긋나면 묻지 않고 줄마다 stderr 에 낸다.
 // `결정:` 줄이 여럿이면 그 줄마다 블록을 나눠 블록마다 같은 규칙을 보고, 위반 줄 앞에 `결정 블록 N:` 을 붙인다.
-// `--resume` 으로 재개할 때는 검사하지 않는다.
-// 종료: 0 답 수신, 2 사용법·실행 오류(--decision 형식 위반, 다시 불러도 바쁜 Orca, 끝난 dispatch 가 아닌 ask 실패 포함), 3 status 답 또는 Run 메일함으로 대신 보냄,
-// 4 시간 초과(출력의 ID로 재개), 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
-// 2 에는 질문이 닿았는지 확인하지 못한 경우도 든다. ask 가 0 으로 끝났는데 답도 질문 ID 도 없거나,
-// Run 메일함으로 대신 보낸 send 가 메시지 ID 를 내지 않은 경우다. 답 없이 `answer: ` 빈 줄로 0 을 내면 worker 가 물었다고 믿고 넘어간다.
+// 없어진 옵션: `--resume` 은 orca 를 부르지 않고 안내 한 줄과 2 로 끝난다. `--timeout-ms`, `--max-wait` 는 값을 보지 않고
+// 안내 한 줄만 내고 무시한다. 옛 규칙대로 도는 worker 가 어떤 값을 넘겨도 멈추지 않게 하려는 것이다.
+// 종료: 0 보냈다(`ASKED <질문 id>`) 또는 바로 답을 받았다(`answer: `), 2 사용법·실행 오류(--decision 형식 위반, --resume, 다시 불러도 바쁜 Orca,
+// 끝난 dispatch 가 아닌 ask 실패 포함), 3 Run 메일함으로 대신 보냄, 5 읽지 않은 코디네이터 메시지가 있어 묻지 않음.
+// 2 에는 질문이 닿았는지 확인하지 못한 경우도 든다. ask 가 0 으로 끝났는데 답도 질문 ID 도 없거나, 시간 초과인데 질문 ID 가 없거나,
+// Run 메일함으로 대신 보낸 send 가 메시지 ID 를 내지 않은 경우다. 답 없이 0 을 내면 worker 가 물었다고 믿고 넘어간다.
 // ORCA로 CLI, ORCH_ASK_SEEN으로 읽은 메시지 기록 경로를 바꾼다.
 // orca orchestration 명령에는 --full 을 붙인다(lib/orca.ts 의 withFull). 줄인 보기는 from_handle, thread_id 를 빼 답을 찾지 못한다.
 //
-// 바로 돌아온 ask: Orca 1.4.246 부터 새 질문의 ask 는 답을 기다리지 않고 `pending: true` 와 messageId 를 내고 0 으로 끝난다.
-// 그러면 그 ID 로 --resume 해 같은 질문의 답을 기다린다(--resume 은 늘 기다린다). 질문을 두 번 보내지 않는다.
+// ask 호출: `--timeout-ms ASK_RETURN_MS`(기본 5000, ORCH_ASK_RETURN_MS 로 바꾼다. 테스트용)로 한 번 부른다. `--wait` 는 주지 않는다.
+// Orca 는 살아 있는 worker 의 새 질문은 바로 돌려주고 끝난 worker 의 ask 는 답이 올 때까지 막아 두므로, 짧게 끊고 질문은 남긴다.
 //
-// 출력: 답을 받으면 첫 줄이 `answer: <답 본문>` 이고 그 뒤에 ask 의 출력이 온다.
-// 짧은 출력(진입점의 orch worker ask, lib/output.ts): 답이 있으면 `answer: <답 본문>` 만 낸다. 시간 초과는 `TIMEOUT <질문 id 또는 ->`,
-// 빈 답은 `NO-ANSWER <질문 id 또는 ->`, Run 메일함으로 대신 보내기는 `SENT-RUN <보낸 id>` 다. 종료 코드 5 의 읽지 않은 메시지는 그대로다.
-//
-// status 답 기다리기: ask 를 기다리는 동안 ORCH_ASK_POLL_MS(기본 30000)마다 check --peek 을 다시 읽는다. 아래 「status 답」 이 오면
-// ask 를 끊고 시간 초과 뒤의 status 답과 같게 3 으로 끝난다(첫 줄 `answer: <본문>`). 코디네이터가 reply 대신 status 로 답해도
-// 시간 제한(기본 600초)을 다 기다리지 않게 하려는 것이다. 끊은 ask 의 질문은 Orca 에 답 없이 남는다.
-// 기다리는 동안에는 질문 메시지 ID 를 모르므로 스레드가 아니라 받는 곳으로만 판정하고, ask 를 부르기 전에 이미 있던 status 는 뺀다.
+// 출력: 답이 바로 오면 첫 줄이 `answer: <답 본문>` 이고 그 뒤에 ask 의 출력이 온다.
+// 질문만 보냈으면 첫 줄이 `ASKED <질문 id>` 이고 그 뒤에 ask 의 출력이 온다. 짧은 출력(진입점의 orch worker ask, lib/output.ts)은 첫 줄만 낸다.
+// 질문이 닿았는지 모르면 `NO-ANSWER -`, Run 메일함으로 대신 보내면 `SENT-RUN <보낸 id>` 다. 종료 코드 5 의 읽지 않은 메시지는 그대로다.
 //
 // ask 실패의 종류: 실패한 ask 출력의 `error.code`(JSON 이 없으면 글 속의 코드 낱말)로 구분한다.
 //     바쁨(BUSY_CODES, 글에 `retry with backoff` 가 든 것)  Orca 가 요청을 받지 않았다. dispatch 는 살아 있다.
@@ -31,8 +28,8 @@
 //     끝난 dispatch(DISPATCH_GONE)이거나 코드를 읽지 못함  Run 메일함으로 대신 보낸다(아래 「대신 보내기」). 코드 없는 옛 출력도 여기다
 //     그 밖의 코드  대신 보내지 않고 2 다. 살아 있는 dispatch 의 질문을 메일함으로 보내면 답이 ask 스레드에 오지 않는다(2026-11-02)
 //
-// 시간 초과: ask 출력의 timedOut 이나 `timed out` 말고도, ask 가 --timeout-ms 에 여유(2분)를 더한 시간 안에 끝나지 않아
-// 이 명령이 끊은 경우도 시간 초과(4, status 답이 있으면 3)다. 실패로 보고 Run 메일함으로 대신 보내면 같은 질문이 두 번 간다.
+// 시간 초과: ask 출력의 timedOut 이나 `timed out`, 또는 이 명령이 ask 를 끊은 경우다. 질문 ID 가 있으면 질문이 남은 것이라 `ASKED` 로 끝난다.
+// 없으면 닿았는지 몰라 `NO-ANSWER -` 와 2 이고, 실패로 보고 Run 메일함으로 대신 보내지 않는다. 질문이 이미 저장됐으면 같은 질문이 두 번 간다.
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있고 `--question "- 선택지"` 처럼 값이 - 로 시작해도 받는다(lib/args.ts).
 //
@@ -43,10 +40,6 @@
 //     읽지 않은 메시지 check --peek 결과에서 heartbeat 와 자기가 보낸 것을 뺀 메시지. ORCH_ASK_SEEN 파일에 든 ID 는 건너뛰고,
 //                   보인 ID 를 그 파일에 더한다. worker 가 `check` 로 읽어도 ack 하지 않으면 --peek 에 계속 남아(실측),
 //                   한 번 보여 준 메시지로 다시 막지 않으려는 것이다
-//     status 답     check --peek 결과에서 스레드가 그 질문이거나 받는 곳이 이 dispatch 인 status 의 본문. 받는 곳으로 찾은 것은
-//                   ask 를 부르기 직전의 check --peek 에 이미 있던 ID 를 뺀다. 앞서 받은 다른 지시를 이 질문의 답으로 읽지 않게 한다.
-//                   스레드가 적힌 status 는 그 스레드가 이 질문일 때만 답이다. 질문 ID 를 모르는 기다리는 동안에는 스레드 없는 것만 받는다.
-//                   같은 dispatch 의 다른 질문(--resume m1 을 기다리는데 m9 스레드로 온 답)을 이 질문의 답으로 읽지 않게 한다
 //     출력 앞뒤에 다른 줄이 섞여도 마지막 JSON 객체를 읽는다. JSON 이 없으면 값이 없는 것으로 본다
 
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
@@ -63,19 +56,20 @@ function answered(answer: string, output: string): void {
   process.stdout.write(short() ? `answer: ${answer}\n` : `answer: ${answer}\n${output}\n`)
 }
 
+// 질문만 보낸 출력. 첫 줄이 `ASKED <질문 id>` 이고, 지금 출력은 그 뒤에 ask 의 출력을 잇는다. 짧은 출력은 첫 줄만이다
+function asked(id: string, output: string): void {
+  process.stdout.write(short() ? `ASKED ${id}\n` : `ASKED ${id}\n${output}\n`)
+}
+
 const USAGE = [
-  '사용: worker-ask.ts --from HANDLE (--question TEXT | --resume ID)',
-  '                   [--options CSV] [--run ID] [--timeout-ms N] [--max-wait N] [--force] [--decision]',
+  '사용: worker-ask.ts --from HANDLE --question TEXT',
+  '                   [--options CSV] [--run ID] [--force] [--decision]',
 ].join('\n')
-// ask 는 --timeout-ms 만큼 기다린다. 그 위에 orca 자체의 여유를 더해, orca 가 시간 초과를 알리기 전에 끊지 않게 한다.
-// ORCH_ASK_SLACK_MS 는 이 여유를 바꾼다. 테스트만 쓴다
+// ask 가 바로 돌아오게 주는 --timeout-ms. 끝난 worker 의 ask 는 Orca 가 답이 올 때까지 막아 두므로 짧게 끊는다(머리 주석).
+// ORCH_ASK_RETURN_MS 는 이 값을 바꾼다. 테스트만 쓴다
+const ASK_RETURN_MS = Number(process.env.ORCH_ASK_RETURN_MS) || 5_000
+// ask 호출 제한은 ASK_RETURN_MS 에 orca 자체의 여유를 더한 시간이다. ORCH_ASK_SLACK_MS 는 이 여유를 바꾼다. 테스트만 쓴다
 const ASK_SLACK_MS = Number(process.env.ORCH_ASK_SLACK_MS) || 120_000
-const DEFAULT_TIMEOUT_MS = '600000'
-const ORCA_MAX_TIMEOUT_MS = 1_800_000
-// --max-wait 는 총 대기 시간(밀리초)이다. 시간 제한이면 같은 메시지 ID 로 다시 기다린다.
-// 생략하면 시간 제한 때 종료 코드 4 로 끝나는 기존 동작을 유지한다.
-// ask 를 기다리는 동안 status 답을 찾는 간격. ORCH_ASK_POLL_MS 로 바꾼다(테스트가 줄인다)
-const POLL_MS = Number(process.env.ORCH_ASK_POLL_MS) || 30_000
 // Python 의 str.splitlines 와 같은 줄 경계다. 결정 질문 형식 판정이 옛 명령과 같게 한다
 // Orca 가 요청을 받지 않고 돌려보낸 바쁨 코드. 받지 않았으니 같은 질문을 다시 보내도 두 번 가지 않는다
 const BUSY_CODES = new Set(['runtime_busy', 'remote_runtime_busy', 'runtime_rpc_queue_overloaded'])
@@ -183,26 +177,6 @@ function unreadOf(output: string, sender: string, seenFile: string): string {
   return lines.join('\n').trim()
 }
 
-// before 는 ask 를 부르기 전에 있던 메시지 ID 다. 받는 곳으로만 맞은 status 가운데 여기 든 것은 답으로 보지 않는다
-function replyOf(output: string, sender: string, question: string, before: ReadonlySet<string>): string {
-  const result = load(output)
-  const dispatch = result.dispatchId
-  for (const m of messages(result)) {
-    if (m.from_handle === sender || m.type !== 'status') continue
-    if (m.thread_id) {
-      if (question && m.thread_id === question) return String(m.body || '').trim()
-      continue
-    }
-    const toMe = Boolean(dispatch) && m.to_handle === `dispatch:${dispatch}` && !before.has(String(m.id))
-    if (toMe) return String(m.body || '').trim()
-  }
-  return ''
-}
-
-function idsOf(output: string): Set<string> {
-  return new Set(messages(load(output)).map((m) => String(m.id)))
-}
-
 function decisionProblems(question: string): string[] {
   const lines = question === '' ? [] : question.replace(new RegExp(`(?:${LINE_BREAK.source})$`, 'u'), '').split(LINE_BREAK).map((line) => line.trim())
   const problems: string[] = []
@@ -243,10 +217,11 @@ async function main(argv: string[]): Promise<number> {
     const optionSpec = {
       from: { type: 'string' },
       question: { type: 'string', default: '' },
+      // 없어진 옵션. 모르는 옵션 오류가 나지 않게 받기만 한다
       resume: { type: 'string', default: '' },
       options: { type: 'string', default: '' },
       run: { type: 'string', default: '' },
-      'timeout-ms': { type: 'string', default: DEFAULT_TIMEOUT_MS },
+      'timeout-ms': { type: 'string' },
       'max-wait': { type: 'string' },
       force: { type: 'boolean', default: false },
       decision: { type: 'boolean', default: false },
@@ -268,24 +243,20 @@ async function main(argv: string[]): Promise<number> {
     err(`${USAGE}\nworker-ask: --from 이 필요하다`)
     return 2
   }
+  if (values.resume) {
+    err('worker-ask: --resume 은 없어졌다. 질문을 보낸 뒤 턴을 끝내면 Orca 가 답과 함께 깨운다. 읽을 문서: 공통 지시서의 worker-ask 규칙')
+    return 2
+  }
+  if (values['timeout-ms'] !== undefined || values['max-wait'] !== undefined) {
+    err('worker-ask: --timeout-ms, --max-wait 는 없어진 옵션이라 무시했다')
+  }
   const question = values.question as string
-  let resume = values.resume as string
   const options = values.options as string
-  const requestedMs = Number(values['timeout-ms'])
-  const maxWaitMs = values['max-wait'] === undefined ? undefined : Number(values['max-wait'])
-  if (!Number.isSafeInteger(requestedMs) || requestedMs <= 0 ||
-      (maxWaitMs !== undefined && (!Number.isSafeInteger(maxWaitMs) || maxWaitMs <= 0))) {
-    err('worker-ask: --timeout-ms 와 --max-wait 는 양의 정수(밀리초)여야 한다')
+  if (!question) {
+    err(`${USAGE}\nworker-ask: --question 이 필요하다`)
     return 2
   }
-  const timeoutMs = Math.min(requestedMs, ORCA_MAX_TIMEOUT_MS)
-  if (requestedMs > ORCA_MAX_TIMEOUT_MS) err(`worker-ask: --timeout-ms ${requestedMs}ms 는 Orca 상한 ${ORCA_MAX_TIMEOUT_MS}ms 를 넘어 상한으로 줄였다`)
-
-  if (!question && !resume) {
-    err(`${USAGE}\nworker-ask: --question 이나 --resume 중 하나가 필요하다`)
-    return 2
-  }
-  if (values.decision && !resume) {
+  if (values.decision) {
     const problems = decisionProblems(question)
     if (problems.length) {
       for (const problem of problems) err(`worker-ask: --decision 형식 위반: ${problem}`)
@@ -293,10 +264,9 @@ async function main(argv: string[]): Promise<number> {
     }
   }
   const orca = orcaBin()
-  const peekArgs = [orca, ...withFull(['orchestration', 'check', '--terminal', sender, '--peek', '--json'])]
-  const peek = () => run(peekArgs).stdout
+  const peek = () => run([orca, ...withFull(['orchestration', 'check', '--terminal', sender, '--peek', '--json'])]).stdout
   const first = peek()
-  if (!resume && !values.force) {
+  if (!values.force) {
     const seen = process.env.ORCH_ASK_SEEN || join(process.env.TMPDIR || '/tmp', `orch-worker-ask-${sender}.seen`)
     const unread = unreadOf(first, sender, seen)
     if (unread) {
@@ -305,86 +275,41 @@ async function main(argv: string[]): Promise<number> {
       return 5
     }
   }
-  const before = idsOf(first)
-  const started = Date.now()
   let busy = 0
   while (true) {
-    const remainingMs = maxWaitMs === undefined ? timeoutMs : Math.max(1, maxWaitMs - (Date.now() - started))
-    const attemptMs = Math.min(timeoutMs, remainingMs)
-    const askArgs = ['orchestration', 'ask', '--from', sender, '--timeout-ms', String(attemptMs), '--json']
-    askArgs.push(...(resume ? ['--resume', resume] : ['--question', question]))
-    if (options && !resume) askArgs.push('--options', options)
-    const args = [orca, ...withFull(askArgs)]
-    const limitMs = attemptMs + ASK_SLACK_MS
-    // ask 를 기다리는 동안 status 답을 찾는다(머리 주석의 「status 답 기다리기」). 찾으면 ask 를 끊는다
-    const stop = new AbortController()
-    let early = ''
-    const watching = (async () => {
-      while (!stop.signal.aborted) {
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, POLL_MS)
-          stop.signal.addEventListener('abort', () => {
-            clearTimeout(timer)
-            resolve()
-          }, { once: true })
-        })
-        if (stop.signal.aborted) return
-        const polled = await runAsync(peekArgs)
-        if (stop.signal.aborted) return
-        const reply = replyOf(polled.stdout, sender, resume, before)
-        if (reply) {
-          early = reply
-          stop.abort()
-        }
+    const askArgs = ['orchestration', 'ask', '--from', sender, '--question', question, '--timeout-ms', String(ASK_RETURN_MS), '--json']
+    if (options) askArgs.push('--options', options)
+    const limitMs = ASK_RETURN_MS + ASK_SLACK_MS
+    // 동기 run 은 TERM 을 무시하는 자식을 끝까지 기다린다(lib/proc.ts). runAsync 는 유예 뒤 KILL 을 보내 시간 초과로 돌아온다
+    const done = await runAsync([orca, ...withFull(askArgs)], { timeoutMs: limitMs })
+    const output = done.stdout + done.stderr
+    const messageId = messageIdOf(output)
+    // 끊은 ask 는 질문을 이미 보냈을 수 있다. 아래 실패 경로(Run 메일함으로 대신 보내기)로 가지 않게 시간 초과를 먼저 본다.
+    // run 이 끊으면 출력이 비어 코드 없는 실패로 보이기 때문이다
+    if (done.timedOut) err(`worker-ask: ask 가 ${limitMs}ms 안에 끝나지 않아 끊었다`)
+    if (done.timedOut || /"timedOut"\s*:\s*true|timed out/.test(output)) {
+      if (messageId) {
+        asked(messageId, output)
+        err(`worker-ask: 질문 ${messageId} 를 보냈다. 턴을 끝낸다. 답이 오면 Orca 가 깨우고, 깬 뒤 orca orchestration check 로 읽는다`)
+        return 0
       }
-    })()
-    const asked = await runAsync(args, { timeoutMs: limitMs, signal: stop.signal })
-    stop.abort()
-    await watching
-    const output = asked.stdout + asked.stderr
-    if (early) {
-      answered(early, output)
-      err('worker-ask: ask 를 기다리는 동안 코디네이터가 status 로 답해 ask 를 끊었다. 첫 줄이 그 본문이다')
-      return 3
+      process.stdout.write(short() ? 'NO-ANSWER -\n' : `${output}\n`)
+      err('worker-ask: 질문이 닿았는지 알 수 없다. 코디네이터 답을 기다리지 말고 같은 명령을 다시 부르기 전에 orca orchestration check 로 확인한다')
+      return 2
     }
-    // 끊은 ask 는 질문을 이미 보냈을 수 있다. 아래 실패 경로(Run 메일함으로 대신 보내기)로 가지 않게 시간 초과를 먼저 본다
-    if (asked.timedOut) err(`worker-ask: ask 가 ${limitMs}ms 안에 끝나지 않아 끊었다`)
-    if (asked.timedOut || /"timedOut"\s*:\s*true|timed out/.test(output)) {
-      const reply = replyOf(peek(), sender, messageIdOf(output) || resume, before)
-      if (reply) {
-        answered(reply, output)
-        err('worker-ask: ask 에는 답이 없지만 코디네이터가 status 로 답했다. 첫 줄이 그 본문이다')
-        return 3
-      }
-      const messageId = messageIdOf(output) || resume
-      if (maxWaitMs !== undefined && Date.now() - started < maxWaitMs && messageId) {
-        resume = messageId
-        err(`worker-ask: 시간 제한으로 같은 메시지 ${resume} 의 답을 다시 기다린다`)
-        continue
-      }
-      process.stdout.write(short() ? `TIMEOUT ${messageId || '-'}\n` : `${output}\n`)
-      err(`worker-ask: 시간 제한으로 답을 받지 못했다. ${messageId ? `--resume ${messageId} 로 다시 기다린다` : '출력에 메시지 ID 가 없어 자동 재개하지 않았다'}`)
-      return 4
-    }
-    if (asked.code === 0) {
+    if (done.code === 0) {
       const answer = answerOf(output)
       if (answer) {
         answered(answer, output)
         return 0
       }
-      // 머리 주석의 「바로 돌아온 ask」. 질문 ID 가 있으면 그 질문의 답을 기다린다(--resume 은 늘 기다린다)
-      const messageId = messageIdOf(output)
-      if (load(output).pending === true && messageId && messageId !== resume) {
-        resume = messageId
-        err(`worker-ask: 질문 ${messageId} 를 보냈다. ask 가 답을 기다리지 않고 돌아와 같은 질문의 답을 기다린다`)
-        continue
+      if (messageId) {
+        asked(messageId, output)
+        err(`worker-ask: 질문 ${messageId} 를 보냈다. 턴을 끝낸다. 답이 오면 Orca 가 깨우고, 깬 뒤 orca orchestration check 로 읽는다`)
+        return 0
       }
-      process.stdout.write(short() ? `NO-ANSWER ${messageId || '-'}\n` : `${output}\n`)
-      err(
-        messageId
-          ? `worker-ask: ask 가 0 으로 끝났지만 답이 비었다. --resume ${messageId} 로 다시 기다린다`
-          : 'worker-ask: ask 가 답도 질문 ID 도 내지 않았다. 질문이 코디네이터에 닿았는지 알 수 없어 실패로 끝낸다',
-      )
+      process.stdout.write(short() ? 'NO-ANSWER -\n' : `${output}\n`)
+      err('worker-ask: ask 가 답도 질문 ID 도 내지 않았다. 질문이 코디네이터에 닿았는지 알 수 없어 실패로 끝낸다')
       return 2
     }
     const code = errorCodeOf(output)
@@ -403,10 +328,6 @@ async function main(argv: string[]): Promise<number> {
     err(output)
     if (code && !DISPATCH_GONE.has(code)) {
       err(`worker-ask: ask 가 ${code} 로 실패했다. 끝난 dispatch 의 오류가 아니라 Run 메일함으로 대신 보내지 않는다`)
-      return 2
-    }
-    if (resume) {
-      err('worker-ask: --resume 이 실패했다. 대신 보낼 질문 본문이 없어 멈춘다')
       return 2
     }
     err(`worker-ask: ask 가 실패했다(${code || '코드 없음'}). Dispatch 가 끝났을 수 있어 Run 메일함으로 대신 보낸다`)

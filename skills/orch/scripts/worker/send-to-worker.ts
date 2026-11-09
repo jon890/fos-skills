@@ -36,7 +36,7 @@
 // 그러면 먼저 `--run` 과 `--from` 을 뺀 plain `reply --id <질문> --body ...` 를 한 번 보내고 `retry:` 줄로 알린다.
 // 이 답은 질문을 바로 닫는다. status answer 는 lib/questions.ts 가 답으로 찾지 못해 decision-pending 이 다시 묻는 일이 있었다(2026-11-02).
 // plain reply 도 같은 이유로 거부되고 그 메시지가 question 이면 같은 스레드에 `send --type status --thread-id <질문> --to dispatch:<id> --subject "answer: ..."` 로 답하고
-// `fallback:` 줄로 알린다. worker-ask 가 이 status 의 본문을 답으로 읽는다. question 이 아닌 메시지에는 전환하지 않고 실패로 둔다
+// `fallback:` 줄로 알린다. worker 는 이 status 로도 깨고 `check` 로 본문을 읽는다. question 이 아닌 메시지에는 전환하지 않고 실패로 둔다
 //
 // reply 와 새 메시지는 `--run <run> --from run:<run>` 과 함께 보낸다. Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다.
 // Orca 터미널에서 돌면 터미널 증명 때문에 `--from run:<run>` 이 `consumer_fenced` 로 거부된다. 그러면 `--from` 만 빼고 한 번 다시 보낸다.
