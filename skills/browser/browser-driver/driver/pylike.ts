@@ -1,3 +1,4 @@
+import { runtimeEnv } from './runtime.ts'
 // 옛 Python 구현이 표준 라이브러리로 하던 일 가운데 이 드라이버가 쓰는 것만 옮겼다.
 // 같은 입력에 같은 글자를 내는 것이 목적이라 이름과 순서를 원본(str, float, int, json, os.path, pathlib, shutil, shlex)에 맞췄다.
 // 이 폴더는 팀 저장소에 tools/browser-driver 로 실려 폴더 밖을 import 할 수 없다(docs/features/node-runtime/design.md DECISION1).
@@ -462,7 +463,7 @@ export function pyHome(): string {
 
 // 홈 뒤에 `/…` 를 이어 붙일 때 쓰는 앞부분. 홈이 / 이면 빈 문자열이라 `//…` 가 되지 않는다
 export function pyHomePrefix(): string {
-  const home = process.env.HOME
+  const home = runtimeEnv().HOME
   if (home !== undefined) return home.replace(/\/+$/, '')
   return homedir().replace(/\/+$/, '')
 }
@@ -543,7 +544,7 @@ export function isSymlink(path: string): boolean {
 
 // shutil.which(cmd). PATH 가 비었으면 못 찾은 것이다. 빈 PATH 항목은 현재 폴더다
 export function which(cmd: string): string | null {
-  let path = process.env.PATH
+  let path = runtimeEnv().PATH
   if (path === undefined) path = '/usr/bin:/bin:/usr/sbin:/sbin'
   if (!path) return null
   const check = (file: string) => {

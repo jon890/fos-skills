@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../runtime.ts'
 // ego-browser 백엔드. 사용자가 쓰는 Chromium 의 로그인 세션을 그대로 쓴다.
 
 import { READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT, configValue, profileConfigGuidance } from '../config.ts'
@@ -44,7 +45,7 @@ const jd = (value: unknown): string => dumpJson(value, { ascii: true })
 
 // 공간의 기준 이름을 검증한다. 없거나 빈 값이면 기존 이름을 쓴다
 export function resolveSpace(): string | null {
-  const raw = process.env[SPACE_ENV]
+  const raw = runtimeEnv()[SPACE_ENV]
   if (raw === undefined || raw === '') return null
   const name = pyStrip(raw)
   const lines = pySplitLines(raw)
@@ -65,14 +66,14 @@ export function resolveSpace(): string | null {
 // 그때만 경고를 낸다. `isDefault` 가 어느 계정인지는 머신마다 달라, 정하지 않은 호출이
 // 의도와 다른 계정의 프로필에서 돌 수 있다.
 export function resolveProfile(): [unknown, string | null] {
-  const direct = process.env[PROFILE_ENV]
+  const direct = runtimeEnv()[PROFILE_ENV]
   if (direct) return [direct, `${PROFILE_ENV}=${direct}`]
 
   const configured = configValue(PROFILES_KEY)
   const table = pyTruthy(configured) ? configured : new Map<string, unknown>()
   if (!(table instanceof Map)) throw new UsageError(`설정의 ${PROFILES_KEY} 는 용도와 프로필을 잇는 객체여야 한다`)
 
-  const purpose = process.env[PURPOSE_ENV]
+  const purpose = runtimeEnv()[PURPOSE_ENV]
   if (purpose) {
     const value = table.get(purpose)
     if (!pyTruthy(value)) {

@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../runtime.ts'
 // orca 백엔드. 워크트리에 탭을 만들고 앱의 로그인 세션을 그대로 쓴다.
 
 import { writeFileSync } from 'node:fs'
@@ -110,7 +111,7 @@ export class OrcaBackend extends Backend {
       // orca tab create 는 셸의 작업 디렉토리가 속한 워크트리에 탭을 만든다. 조사하느라 다른
       // 저장소로 옮긴 상태에서 열면 사용자가 보는 워크트리가 아닌 곳에 탭이 생긴다 (실측).
       // --worktree active 로도 막지 못한다. active 역시 작업 디렉토리를 따라간다 (실측).
-      const worktree = process.env.ORCA_WORKTREE
+      const worktree = runtimeEnv().ORCA_WORKTREE
       const create = ['tab', 'create', '--url', url]
       if (worktree) create.push('--worktree', worktree)
       const handle = this.call('browserPageId', ...create)

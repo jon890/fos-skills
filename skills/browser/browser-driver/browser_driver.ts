@@ -18,13 +18,15 @@
 // 심링크로 불려도 실체 옆의 driver 폴더를 찾는다(Node 가 모듈 경로를 실체로 푼다).
 // main 을 내보내고 직접 실행일 때만 스스로 돈다. 옛 이름 진입(tools/browser-driver/browser_driver.py)이 이 main 을 불러 쓴다.
 
+import { withRuntime, type Runtime } from './driver/runtime.ts'
+
 import { readFileSync } from 'node:fs'
 import { cmdDoctor, cmdInstall } from './driver/admin.ts'
 import { parseJsArgs, parsePointerArgs, parseResetArgs } from './driver/args.ts'
 import type { Backend } from './driver/backends/base.ts'
 import { backendByName, loadBackend, resolveBackendName, unknownBackendMessage } from './driver/backends/index.ts'
 import { COMMAND_MAP, COMMANDS, META_COMMANDS, renderHelp, required, usage } from './driver/commands.ts'
-import { CONFIG_PATH } from './driver/config.ts'
+import { configPath } from './driver/config.ts'
 import { DriverError, EXIT_FAIL, EXIT_USAGE, UsageError } from './driver/errors.ts'
 import { eprint, isMain, print } from './driver/io.ts'
 import { PyFloat, dumpJson, normalizeNewlines, osErrorMessage, pyDecode, pyFloatStr, pyPath } from './driver/pylike.ts'
@@ -94,7 +96,7 @@ function run(argv: string[]): number {
 
   if (cmd === 'config-path') {
     // 파일이 있는지는 보지 않는다. 미리보기 같은 호출자가 드라이버와 같은 파일을 읽으려고 묻는다.
-    print(CONFIG_PATH)
+    print(configPath())
     return 0
   }
 
@@ -131,7 +133,8 @@ function run(argv: string[]): number {
 
 // 명령 하나를 돌리고 종료 코드를 낸다. 오류는 여기서 stderr 로 쓰고 종료 코드로 바꾼다.
 // 처리하지 못한 오류는 Python 의 traceback 처럼 stderr 에 적고 1 이다.
-export function main(argv: string[]): number {
+export function main(argv: string[], runtime?: Runtime): number {
+  if (runtime) return withRuntime(runtime, () => main(argv))
   try {
     return run(argv)
   } catch (error) {

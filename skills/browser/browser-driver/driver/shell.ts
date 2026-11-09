@@ -1,6 +1,6 @@
 // 백엔드 프로세스를 부르고 반환값을 정규화하는 공통 도구.
 
-import { spawnSync } from 'node:child_process'
+import { spawn as spawnSync, runtimeEnv } from './runtime.ts'
 import { constants } from 'node:os'
 import { WAIT_INTERVAL } from './config.ts'
 import { DriverError } from './errors.ts'
@@ -18,6 +18,7 @@ export function run(argv: string[], opts: { checkMarker?: string; stdinText?: st
     input: opts.stdinText,
     stdio: [opts.stdinText === undefined ? 'inherit' : 'pipe', 'pipe', 'pipe'],
     maxBuffer: 1 << 30,
+    env: runtimeEnv(),
   })
   if (done.error) throw done.error
   // text=True: 로캘 인코딩(UTF-8)으로 엄격히 읽고 줄바꿈을 \n 으로 바꾼다

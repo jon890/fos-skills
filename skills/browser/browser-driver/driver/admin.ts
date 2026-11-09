@@ -1,10 +1,11 @@
+import { runtimeEnv } from './runtime.ts'
 // 진단과 설치. 브라우저를 조작하지 않는 명령이다.
 
 import { mkdirSync, renameSync, symlinkSync, unlinkSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { BACKENDS, EGO_INSTALL_URL, resolveBackendName } from './backends/index.ts'
 import { COMMANDS } from './commands.ts'
-import { CONFIG_PATH, CONFIG_RESOLUTION } from './config.ts'
+import { configPath, configResolution } from './config.ts'
 import { EXIT_USAGE, UsageError } from './errors.ts'
 import { print } from './io.ts'
 import { exists, isSymlink, pyExpanduser, pyHomePrefix, pyPath, pyResolve, pyStrCompare, shQuote, which } from './pylike.ts'
@@ -12,10 +13,10 @@ import { exists, isSymlink, pyExpanduser, pyHomePrefix, pyPath, pyResolve, pyStr
 export function cmdDoctor(): number {
   print('=== 브라우저 드라이버 진단 ===')
   print('')
-  print(`설정 파일: ${CONFIG_PATH}` + (exists(CONFIG_PATH) ? '' : '  (없음, 자동 감지로 돈다)'))
-  print(`설정 판정: ${CONFIG_RESOLUTION.reason}`)
+  print(`설정 파일: ${configPath()}` + (exists(configPath()) ? '' : '  (없음, 자동 감지로 돈다)'))
+  print(`설정 판정: ${configResolution().reason}`)
 
-  const env = process.env.BROWSER_DRIVER
+  const env = runtimeEnv().BROWSER_DRIVER
   print(`BROWSER_DRIVER: ${env ? env : '(비어 있음)'}`)
 
   print('')
@@ -126,8 +127,8 @@ export function cmdInstall(argv: string[]): number {
   print('')
   print('설정을 바꾸려면 예시를 복사해 고친다.')
   // 플러그인 데이터 폴더는 설치만으로는 생기지 않아 부모가 없으면 cp 가 실패한다.
-  print(`  mkdir -p ${shQuote(dirname(CONFIG_PATH))}`)
-  print(`  cp ${shQuote(`${dirname(src)}/browser.config.example.json`)} ${shQuote(CONFIG_PATH)}`)
+  print(`  mkdir -p ${shQuote(dirname(configPath()))}`)
+  print(`  cp ${shQuote(`${dirname(src)}/browser.config.example.json`)} ${shQuote(configPath())}`)
   return 0
 }
 

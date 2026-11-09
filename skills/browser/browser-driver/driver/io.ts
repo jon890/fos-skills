@@ -1,3 +1,4 @@
+import { currentRuntime } from './runtime.ts'
 // 출력과 직접 실행 판정. 출력은 자식 프로세스와 같은 fd 에 쓰므로 순서가 바뀌지 않게 동기로 쓴다.
 
 import { realpathSync, writeSync } from 'node:fs'
@@ -6,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 export function write(fd: 1 | 2, text: string): void {
   // 짝 없는 서로게이트는 UTF-8 로 쓸 수 없다. Python 은 UnicodeEncodeError 로 끝난다
   if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(text)) throw new Error("'utf-8' codec can't encode character: surrogates not allowed")
+  const runtime = currentRuntime()
+  if (runtime) return runtime.write(fd, text)
   let buf = Buffer.from(text)
   while (buf.length) {
     try {

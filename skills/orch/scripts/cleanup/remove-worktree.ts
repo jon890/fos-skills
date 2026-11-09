@@ -29,7 +29,8 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
-import { statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
@@ -41,7 +42,8 @@ import { closeTerminal, holderRows, idleShellVerdict, orcaTerminals } from '../l
 import { LookupError, allWorkers, blocker, rowHandles } from '../lib/ownership.ts'
 import { LIVE_DISPATCH } from '../lib/workers.ts'
 import { liveReviews, originBranch, reviewKeepReason, reviewPrOfBranch, reviewPrState } from '../lib/review.ts'
-import { NO_LIMIT_MS, run } from '../lib/proc.ts'
+import { NO_LIMIT_MS, run, withRun } from '../lib/proc.ts'
+import type { Runner } from '../lib/proc.ts'
 import type { RunResult } from '../lib/proc.ts'
 import { cwdHolders } from '../lib/process.ts'
 import { emit, short } from '../lib/output.ts'
@@ -208,7 +210,11 @@ function originKept(repo: string, origin: string, mergedHead: string): string | 
   return unique.length ? `원격에 없는 커밋 ${unique.length} 개` : null
 }
 
-async function main(argv: string[]): Promise<number> {
+export function main(argv: string[], runner?: Runner): Promise<number> {
+  return runner ? withRun(runner, () => executeMain(argv)) : executeMain(argv)
+}
+
+async function executeMain(argv: string[]): Promise<number> {
   const options = {
     'delete-branch': { type: 'boolean', default: false },
     'merged-head': { type: 'string', default: '' },
@@ -338,12 +344,14 @@ async function main(argv: string[]): Promise<number> {
   return 0
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code
-  },
-  (e: unknown) => {
-    err(`remove-worktree: ${(e as Error)?.stack ?? String(e)}`)
-    process.exitCode = 1
-  },
-)
+export function reportError(e: unknown): void {
+  err(`remove-worktree: ${(e as Error)?.stack ?? String(e)}`)
+  process.exitCode = 1
+}
+
+if (import.meta.main || (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))) {
+  main(process.argv.slice(2)).then(
+    (code) => { process.exitCode = code },
+    reportError,
+  )
+}
