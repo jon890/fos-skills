@@ -15,7 +15,7 @@
 **근거 문서**: `docs/features/orch-lib-layers/spec.md`, `docs/features/orch-lib-layers/design.md`의 「worker 에게 보내기와 후속 일」.
 `worker/send-to-worker.ts` 의 reply 거절 처리와 launch-worker 복구 경로는 보존한다.
 기록은 `lib/launched.ts` 의 recordLaunch 와 `lib/launch-history.ts` 의 recordHistory 를 쓴다.
-두 함수의 상태 파일 쓰기는 범위 안이며 보드 등록과 이벤트 발행은 추가하지 않는다.
+두 함수의 상태 파일 쓰기와 후속 지시서의 보드 등록, worker-launched 이벤트 발행은 범위 안이다.
 
 ## 의도 메모
 

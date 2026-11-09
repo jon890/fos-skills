@@ -574,7 +574,10 @@ describe('Orca 후속 일과 기록', () => {
     state({
       dispatches: {
         ...worker('completed'),
-        ctx_new: { dispatch: { id: 'ctx_new', status: 'dispatched' }, worker: { agentTerminalHandle: 'term_new' } },
+        ctx_new: { dispatch: { id: 'ctx_new', status: 'dispatched' }, worker: {
+          agentTerminalHandle: 'term_new',
+          startOptions: { launch: { effective: { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' } } },
+        } },
       },
       terminals: [],
       receipt: { delivery, dispatchId: 'ctx_new', taskId: 'task_new' },
@@ -614,6 +617,89 @@ describe('Orca 후속 일과 기록', () => {
     const record = JSON.parse(readFileSync(join(tmp, 'orch/state/launched-workers/ctx_new.json'), 'utf8'))
     assert.equal(record.terminal, 'term_resource')
   })
+
+  test('지시서 선택과 달라도 새 dispatch 의 실제 설정을 기록한다', () => {
+    follow()
+    const st = readState()
+    const actual = { agent: 'claude', model: 'actual-model', effort: 'high' }
+    st.dispatches.ctx_new.worker.startOptions.launch.effective = actual
+    state(st)
+    const r = send('--spec', join(tmp, 'next.md'))
+    assert.equal(r.code, 0, both(r))
+    assert.match(r.stdout, /note: 지시서의 worker 선택과 실제 실행 설정이 달라/)
+    const record = JSON.parse(readFileSync(join(tmp, 'orch/state/launched-workers/ctx_new.json'), 'utf8'))
+    const history = JSON.parse(readFileSync(join(tmp, 'orch/state/launch-history.jsonl'), 'utf8'))
+    for (const saved of [record, history]) {
+      assert.deepEqual(saved.effective, actual)
+      for (const key of ['agent', 'model', 'effort']) assert.equal(saved[key], actual[key as keyof typeof actual])
+    }
+  })
+
+  test('새 설정을 읽지 못하면 앞 기록의 실제 설정을 물려받는다', () => {
+    follow()
+    const st = readState()
+    delete st.dispatches.ctx_new
+    st.dispatches.ctx_1.worker.startOptions = { launch: { requested: { agent: 'codex', model: 'requested-model' } } }
+    state(st)
+    const dir = join(tmp, 'orch/state/launched-workers')
+    mkdirSync(dir, { recursive: true })
+    const actual = { agent: 'claude', model: 'inherited-model', effort: 'low' }
+    writeFileSync(join(dir, 'ctx_1.json'), JSON.stringify({ dispatch: 'ctx_1', worktree: '/w/feat', effective: actual }))
+    const r = send('--spec', join(tmp, 'next.md'))
+    assert.equal(r.code, 0, both(r))
+    const record = JSON.parse(readFileSync(join(dir, 'ctx_new.json'), 'utf8'))
+    assert.deepEqual(record.effective, actual)
+    assert.equal(record.terminal, null)
+  })
+
+  test('실제 설정을 모르면 지시서 선택을 실제 값으로 적지 않는다', () => {
+    follow()
+    const st = readState()
+    delete st.dispatches.ctx_new.worker.startOptions
+    state(st)
+    assert.equal(send('--spec', join(tmp, 'next.md')).code, 0)
+    const record = JSON.parse(readFileSync(join(tmp, 'orch/state/launched-workers/ctx_new.json'), 'utf8'))
+    assert.deepEqual(record.effective, { agent: null, model: null, effort: null })
+  })
+
+  for (const broken of ['', 'board', 'hook']) {
+    test(`후속 일도 보드와 worker-launched 를 갱신하며 실패가 전달을 취소하지 않는다: ${broken || '정상'}`, () => {
+      follow()
+      const st = readState()
+      st.dispatches.ctx_1.worker.worktreeId = `repo::${tmp}`
+      state(st)
+      const board = join(tmp, '.omc/board.json')
+      mkdirSync(dirname(board), { recursive: true })
+      writeFileSync(board, broken === 'board' ? 'invalid' : JSON.stringify({ items: [{ id: 'next', title: '기존 제목', status: 'doing', worktree: 'old', branch: 'old', progress: '0/1' }] }))
+      const spec = join(tmp, 'next.md')
+      writeFileSync(spec, readFileSync(spec, 'utf8') + '보드 항목 id: next\n')
+      const hook = join(tmp, 'orch/hooks/worker-launched.ts')
+      mkdirSync(dirname(hook), { recursive: true })
+      const captured = join(tmp, 'event.json')
+      writeFileSync(hook, `import { readFileSync, writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(captured)}, readFileSync(0, 'utf8'))\nprocess.exitCode = ${broken === 'hook' ? 1 : 0}\n`)
+      const r = send('--spec', spec)
+      assert.equal(r.code, 0, both(r))
+      const event = JSON.parse(readFileSync(captured, 'utf8'))
+      assert.equal(event.event, 'worker-launched')
+      assert.equal(event.worker.dispatch, 'ctx_new')
+      assert.equal(event.worker.task, 'task_new')
+      assert.equal(event.worker.terminal, 'term_new')
+      assert.equal(event.worker.worktree, tmp)
+      assert.equal(event.worker.spec, spec)
+      assert.equal(event.model, 'gpt-6.1-sol')
+      assert.equal(event.run, 'run_x')
+      if (broken === 'board') assert.match(r.stderr, /보드를 갱신하지 못했다/)
+      else {
+        assert.equal(r.stderr, '', both(r))
+        const item = JSON.parse(readFileSync(board, 'utf8')).items[0]
+        assert.equal(item.worktree, tmp.split('/').at(-1))
+        assert.equal(item.branch, 'feat/next')
+        assert.equal(item.title, '기존 제목')
+      }
+      if (broken === 'hook') assert.match(r.stdout, /HOOK-FAIL worker-launched 1/)
+      assert.deepEqual(lines('launch'), [])
+    })
+  }
 
   test('새 터미널 조회가 실패해도 앞 터미널을 쓰지 않고 빈 값과 경고로 기록한다', () => {
     follow()

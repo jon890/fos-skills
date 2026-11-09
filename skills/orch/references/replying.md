@@ -50,6 +50,8 @@ worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하
 
 **끝난 worker 의 후속 지시서는 `send-to-worker --spec` 으로 보낸다.** 허락과 worker 선택 줄을 검사한 뒤 지시서를 읽으라는 한 줄을 Orca 메시지로 보낸다. 새 Task 와 dispatch 가 생기면 `FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>` 를 내고 띄우기 기록에 남긴다. 터미널은 새 dispatch 에서 읽으므로 자동 해제 뒤 다시 열린 터미널도 기록에 잡힌다. 전송이 거절된 경우에만 아래의 `launch-worker` 복구 경로로 내려간다.
 
+후속 일의 실행 설정은 실제 worker 의 값으로 기록한다. 새 dispatch 에서 읽지 못하면 앞 기록을 물려받고, 지시서의 선택과 다르면 note 로 알린다. 후속 지시서로 보드 항목을 갱신하고 `worker-launched` 이벤트도 낸다. 기록·보드·이벤트 실패는 경고로 남기며 이미 전달한 일을 다시 띄우지 않는다.
+
 지시서 없이 끝난 worker 에게 본문만 보낼 때는 남은 미답변 질문에 먼저 답한다. 답할 곳이 없고 화면이 작업 중이면 메시지를 후속 Task 로 보낸다. 이때는 띄우기 기록에 남지 않는다고 stderr 에 알린다. 그 밖에는 종료 코드 3 으로 후속 지시서를 요구한다.
 
 worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 가 없으면 [`launch.md`](launch.md) 의 기존 worktree 예시로 띄운다.

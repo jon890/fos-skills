@@ -33,8 +33,12 @@ import { scriptPath } from '../lib/commands.ts'
 import { classify, screenLines } from '../lib/screen.ts'
 import { branchesOf, permissionsOf, selectionsOf } from '../lib/spec.ts'
 import { selectionVerdict } from '../lib/selection.ts'
-import { recordLaunch } from '../lib/launched.ts'
+import { readLaunch, recordLaunch } from '../lib/launched.ts'
+import type { Effective } from '../lib/launched.ts'
 import { recordHistory } from '../lib/launch-history.ts'
+import { registerBoard } from '../lib/board.ts'
+import { fire } from '../lib/events.ts'
+import { defaultBase } from '../lib/git.ts'
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
@@ -306,32 +310,52 @@ function followUpSpec(file: string, repo: string): { text: string; line: string;
   }
 }
 
-function recordFollowUp(a: Args, prior: Described, run: string, receipt: Json, spec: ReturnType<typeof followUpSpec>): number {
+async function recordFollowUp(a: Args, prior: Described, run: string, receipt: Json, spec: ReturnType<typeof followUpSpec>): Promise<number> {
   const dispatch = String(receipt.dispatchId || '')
   const task = String(receipt.taskId || '')
   if (!['follow_up', 'reopened'].includes(String(receipt.delivery)) || !dispatch || !task) {
     out('send-to-worker: 보냈지만 후속 Task 영수증을 확인하지 못했다. 중복 실행하지 않고 worker-show 로 확인한다')
     return 5
   }
+  const repo = prior.worktree || process.cwd()
+  const inherited = readLaunch(repo, a.dispatch)
+  const actual: Effective = { agent: null, model: null, effort: null }
+  const apply = (settings: Json) => {
+    for (const key of SETTING_KEYS) if (typeof settings[key] === 'string' && settings[key]) actual[key] = settings[key] as string
+  }
+  apply(prior.settings)
+  apply(inherited ?? {})
+  apply(obj(inherited?.effective))
   let terminal: string | null = null
   try {
     const shown = orcaJson(['orchestration', 'worker-show', '--dispatch', dispatch])
+    apply(obj(obj(obj(obj(shown.worker).startOptions).launch).effective))
     terminal = String(obj(shown.worker).agentTerminalHandle || obj(shown.resource).terminalHandle || obj(obj(shown.worker).resource).terminalHandle || '') || null
     if (!terminal) throw new Error('새 터미널 handle 이 없다')
   } catch (e) {
     err(`send-to-worker: 새 dispatch ${dispatch} 의 터미널을 읽지 못해 빈 값으로 기록한다: ${(e as Error).message}`)
   }
   const choice = selectionsOf(spec.text)[0]
+  if (SETTING_KEYS.some((key) => actual[key] && actual[key] !== (key === 'effort' && choice[key] === '기본' ? null : choice[key]))) {
+    out(`note: 지시서의 worker 선택과 실제 실행 설정이 달라 실제 값으로 기록한다: ${JSON.stringify(actual)}`)
+  }
   const launch = {
     dispatch, task, terminal, worktree: prior.worktree, run: run || null, spec: real(a.spec!),
     branch: branchesOf(spec.text)[0] ?? null,
-    agent: choice.agent, model: choice.model, effort: choice.effort === '기본' ? null : choice.effort,
+    ...actual, effective: actual,
   }
-  const repo = prior.worktree || process.cwd()
   try { recordLaunch(repo, launch) }
   catch (e) { err(`send-to-worker: 후속 worker 기록을 쓰지 못했다: ${(e as Error).message}`) }
   try { recordHistory(repo, { ...launch, at: new Date().toISOString(), title: spec.title, row: choice.row, retry_of: a.dispatch }) }
   catch (e) { err(`send-to-worker: 후속 worker 이력을 쓰지 못했다: ${(e as Error).message}`) }
+  try { registerBoard(repo, a.spec!, prior.worktree, '', launch.branch || '') }
+  catch (e) { err(`send-to-worker: 보드를 갱신하지 못했다: ${(e as Error).message}`) }
+  try {
+    await fire('worker-launched', {
+      worker: { task, dispatch, terminal, worktree: prior.worktree, spec: launch.spec },
+      branch: launch.branch, ...actual,
+    }, { repo, base: (defaultBase(repo) || '').replace(/^origin\//, ''), run: run || null, out })
+  } catch (e) { err(`send-to-worker: worker-launched 를 내지 못했다: ${(e as Error).message}`) }
   out(`FOLLOW-UP ${a.dispatch} ${dispatch} ${task}`)
   return 0
 }
