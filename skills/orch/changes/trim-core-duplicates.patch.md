@@ -1,1 +1,2 @@
-- SKILL.md 와 references(launch, agent-selection, spec-writing, replying, verification)에서 스크립트 머리 주석, 공통 지시서 틀, 소유 문서가 이미 가진 내용을 다시 적은 줄을 줄이고 참조로 바꾼다. 동작 규칙은 바꾸지 않는다.
+- SKILL.md 와 references 다섯 개에서 스크립트 머리 주석과 소유 문서가 가진 내용을 다시 적은 줄을 참조로 줄인다.
+- 동작 규칙은 바꾸지 않는다.
