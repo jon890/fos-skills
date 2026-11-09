@@ -73,7 +73,7 @@ export function featureBranch(repo: string, branch: string, explicit?: string): 
 //   부모가 둘이다. 둘째 부모가 origin/<base> 에 든다(base 쪽이다).
 //   커밋의 tree 가 두 부모를 `git merge-tree --write-tree` 로 합친 tree 와 같다. 충돌을 풀거나 merge 커밋에 손댄 변경은 다르다.
 // 커밋이 로컬에 없거나 git 이 실패하면 false 다. 부르는 쪽은 origin/<base> 와 PR HEAD 를 받아 둔다.
-// 이 경우 머지 조건은 지금 HEAD 의 CI 통과로 갈음한다. 머지 큐와 자동 머지는 지금 HEAD 의 필수 체크 통과를 따로 본다.
+// 이 경우 머지 조건은 지금 HEAD 의 CI 통과로 대신한다. 머지 큐와 자동 머지는 지금 HEAD 의 필수 체크 통과를 따로 본다.
 export const BASE_MERGE_LIMIT = 50
 
 export function baseMergesOnly(repo: string, head: string, verified: string, base: string): boolean {
