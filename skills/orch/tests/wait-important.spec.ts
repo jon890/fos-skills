@@ -1120,7 +1120,7 @@ describe('상주 루프', () => {
     ['DECISION-PENDING', '정할 것 묻기: 질문 1, 보드 결정 0; questions=q@dispatch:d'],
     ['NO-WAIT', '대기 없음: 미답변 질문 1 개. questions=q@dispatch:d. 대기를 다시 건다'],
   ]) {
-    test(`${kind} 의 질문 위치를 대기 출력에도 그대로 전한다`, () => {
+    test(`회귀: ${kind} 의 질문 위치를 대기 출력에도 그대로 전한다`, () => {
       loopJson()
       loopEvents([event(1, kind, null, text)])
       const r = wait(NEVER(), ['--loop-repo', tmp])
