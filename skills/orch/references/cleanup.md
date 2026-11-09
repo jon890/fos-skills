@@ -6,6 +6,19 @@
 
 `user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 구분하지 못한다. 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
+**worker 터미널을 닫는 기본 경로는 `orca orchestration worker-release --dispatch <id>` 다.** 이 문서가 소유하고, 다른 문서는 가리키기만 한다.
+`worker-release` 는 끝난 worker 의 터미널 하나만 닫고 출력 보관본을 남긴다. 결과가 `retained` 이면 먼저 `worker-show --full` 의 `retainedReason` 으로 이유를 구분한다.
+사용자가 Keep open(`worker-keep-open`, `--keep-open`)으로 남겼거나 사용자가 넘겨받은 터미널은 닫지 않는다. 직접 닫는 것은 신원 미확인(`identity_unproven`)처럼 Orca 가 소유를 증명하지 못했고, 사용자 보존이 아님이 확인된 터미널뿐이다.
+그때만 아래 세 조건을 모두 확인한 뒤 `orca terminal close --terminal <handle>` 로 닫는다.
+
+- 띄움 기록: 이 세션의 `launch-worker` 가 띄운 dispatch 이고 `worker-show` 의 `agentTerminalHandle` 이 그 터미널이다.
+- 화면: `orca terminal read` 로 읽어 에이전트가 일하는 중이 아니고 사용자가 쓰는 흔적이 없다.
+- 프로세스: 그 터미널에서 도는 프로세스가 worker 의 claude·codex 가 아니고 빈 셸이다.
+
+Orca 의 판정을 그대로 믿지 않는 이유는 새 세션에서 띄운 worker 를 `user_takeover` 로 잘못 적은 일이 있어서다(`CHANGELOG.md` 2.3.0, `cleanup-sweep.ts` 의 「새 세션에서 띄운 worker」 주석, `orch-doctor.ts` 의 터미널 판정 주석).
+worker_done 을 받은 뒤 Orca 가 약 2분 뒤 자동으로 release 한다(`worker-show` 의 `autoReleaseAt`). 바로 정리할 때만 `worker-release` 를 부른다.
+PR 이 머지될 때까지 같은 worker 가 이어 받아야 하면 자동 release 를 막는다. 띄울 때 `worker-start --keep-open` 을 주거나 이미 뜬 worker 에 `worker-keep-open --dispatch <id>` 를 부른다. 머지 뒤 `worker-release` 가 그 보존을 풀고 닫는다. 새 워크트리(`new-child`, `new-top-level`)에 띄운 worker 는 처음부터 열려 있다.
+
 **`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 과 「PR 없이 끝난 워크트리」 가 소유한다.
 
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `orch cleanup sweep --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
@@ -329,7 +342,7 @@ orch queue merge --sweep-arg --kill-holders 101 102
 **worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다.** 충돌과 리뷰 반영을 그 PR 을 만든 worker 가 이어 받기 때문이다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」).
 머지 뒤에는 그 터미널을 바로 정리한다. `cleanup-sweep.ts` 가 PR 이 MERGED 일 때 닫는다.
 머지 없이 닫힌 PR 의 터미널도 `--run` 을 주면 `cleanup-sweep.ts` 가 닫는다. 대상은 내 PR 의 끝난 dispatch 터미널이다.
-다른 사람의 PR 이거나 `--run` 이 없으면 코디네이터가 화면을 확인하고 이 세션이 띄운 worker 의 터미널만 `orca terminal close` 로 닫는다.
+다른 사람의 PR 이거나 `--run` 이 없으면 코디네이터가 이 세션이 띄운 worker 의 터미널만 `worker-release` 로 닫는다(기본 경로는 위 문단이 소유한다).
 
 스크립트가 하지 않아 직접 하는 일은 그 작업만의 문서 정리다. 진행 보드 항목은 마무리(`finish-pr`)와 `board-sync` 가 done 으로 바꾸므로 직접 바꾸지 않는다([`board.md`](board.md)).
 
@@ -363,13 +376,13 @@ orch cleanup sweep --repo "$OTHER_REPO" --run "$RUN_ID" --kill-holders --apply
 ```
 
 스크립트가 건너뛴 것만 아래 묶음으로 직접 지운다. 묶음은 PR 이 `MERGED` 일 때만 돈다.
-돌리기 전에 그 터미널이 이 세션이 띄운 worker 의 것인지 `worker-list` 의 `ownershipState` 로 본다. `owned` 가 아니면 `orca terminal close` 줄을 빼고 돌린다.
+돌리기 전에 그 터미널이 이 세션이 띄운 worker 의 것인지 `worker-list` 의 `ownershipState` 로 본다. `owned` 가 아니면 `worker-release` 줄을 빼고 돌린다. `$DISPATCH_ID` 는 그 worker 의 dispatch 다.
 
 ```bash
 if [ "$(cd "$OTHER_REPO" && gh pr view "$PR" --json state --jq .state)" = MERGED ]; then
   BRANCH=$(git -C "$WORKTREE" branch --show-current)
   PR_HEAD=$(cd "$OTHER_REPO" && gh pr view "$PR" --json headRefOid --jq .headRefOid)
-  orca terminal close --terminal "$WORKER_TERM"
+  orca orchestration worker-release --dispatch "$DISPATCH_ID"
   orch cleanup worktree "$WORKTREE" --delete-branch --merged-head "$PR_HEAD" --wait 30
   if git -C "$OTHER_REPO" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
     git -C "$OTHER_REPO" push origin --delete "$BRANCH"

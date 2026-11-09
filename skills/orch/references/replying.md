@@ -84,11 +84,11 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 
 **`worker_done` 만으로는 터미널이 사용자 보유가 되지 않는다.** 실측(2026-10-23, `worker-list --terminal-state reclaimable`)에서 `worker_done` 뒤의 터미널은 `terminalState: reclaimable`, `ownershipState: owned`, `releaseState: not_requested` 였다. 이 상태는 닫고 새로 띄울 수 있다.
 `user_owned`(`retainedReason: user_takeover`)는 사용자가 그 터미널에 직접 입력했을 때, `released` 는 `worker-release` 로 넘겼을 때 생긴다. 둘 다 사용자에게 넘어간 터미널이라 `send-to-worker` 는 닫지 않고 종료 코드 1 로 끝난다.
-이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다.
+이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다. `worker_done` 을 받으면 Orca 가 약 2분 뒤 자동 release 한다(`worker-show` 의 `autoReleaseAt`). 10-23 실측은 이 자동 release 가 없던 때의 것이고, 자동 release 전에는 `send-to-worker` 로 이어 쓸 수 있다. 이어 쓰면 `autoReleaseAt` 이 사라지고 다시 쉴 때 새로 잡힌다. 머지까지 계속 남겨야 하는 worker 는 `worker-keep-open` 으로 자동 release 를 막는다([`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」).
 
 1. `orca orchestration worker-show --dispatch <끝난 dispatch> --full --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
 2. `orca terminal read --terminal <handle>` 로 화면이 비어 있고 입력을 기다리는지 본다. 사용자가 쓰는 중이면 닫지 않는다
-3. 이 세션이 띄운 것이 맞으면 `orca terminal close --terminal <handle>` 로 닫는다
+3. 이 세션이 띄운 것이 맞으면 `worker-release` 로 닫는다. `retained`, `identity_unproven` 이면 [`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」 조건을 확인한 뒤 `orca terminal close --terminal <handle>` 을 쓴다
 4. `launch-worker --spec <후속 지시서> --worktree <워크트리>` 를 `--terminal` 없이 부른다
 
 `send-to-worker --spec` 은 `launch-worker` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 설정으로 새 worker 를 띄운다. 설정을 읽는 법과 닫지 않는 조건은 `send-to-worker` 머리 주석이 소유한다. 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
@@ -98,7 +98,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 **새 worker 로 이어받는 순서**
 
 1. 앞 worker 의 작업이 push 됐는지 본다. `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD`, `git -C "$WORKTREE" status --short`, `git ls-remote origin "$BRANCH"` 를 본다. 커밋하지 않은 변경은 워크트리에 남아 있으니 버리지 않는다
-2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `orca terminal close --terminal "$OLD_TERMINAL_HANDLE"` 로 닫는다. 다른 세션이나 사용자의 터미널은 닫지 않는다
+2. 그 터미널이 **이 세션이 띄운 worker 의 것일 때만** `worker-release` 로 닫는다(안 닫히면 `cleanup.md` 의 「worker 터미널을 닫는 기본 경로」). 다른 세션이나 사용자의 터미널은 닫지 않는다
 3. 후속 지시서에 이어받는 상태를 적는다. 끝난 커밋, 커밋 안 된 변경, 앞 worker 의 마지막 status 다. 새 worker 는 앞 대화를 모른다
 4. 같은 워크트리에 `--terminal` 없이 `launch-worker --worktree "$WORKTREE" ... -- --agent ... --model ... --effort ...` 로 띄운다. 1 에서 본 커밋 안 된 변경을 새 worker 가 이어받을 것이면 `--dirty-ack <이유>` 를 준다. 주지 않으면 `launch-worker` 가 변경 목록을 내고 거부한다
 

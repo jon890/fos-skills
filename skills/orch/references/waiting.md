@@ -106,8 +106,8 @@ ps -eo pid,command | grep -E "orchestration check|wait-important" | grep -v grep
 출력의 마지막 줄 `LAST_DELIVERY <id>` 의 id 를 `$DELIVERY_ID` 에 넣는다. 첫 대기처럼 넘길 delivery 가 없거나 id 가 `-` 면 `--ack "$DELIVERY_ID"` 를 통째로 뺀다.
 
 **대기 시간은 하네스의 명령 한도보다 짧게 준다.**
-Claude Code 의 백그라운드 Bash 는 따로 정하지 않으면 30분 뒤 멈춘다.
-Bash 도구의 `timeout` 을 최대인 7200000 으로 주고, 스크립트의 `--timeout-ms` 는 기본값 7000000 을 쓴다.
+Claude Code 의 백그라운드 Bash 한도는 세션 종류에 따라 다르다(공식 문서 tools-reference 「Time limit for background commands」, env-vars 의 `BASH_DEFAULT_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS`). 대화형 세션은 제한이 없고, 무인 세션(`-p`, Agent SDK, CI)은 따로 정하지 않으면 30분 뒤 멈춘다. 적용은 Claude Code v2.1.285 이상이다. `-p` 에 프롬프트를 텍스트로 넘기면(`--input-format stream-json` 이 아니면) 기본이 10분이다.
+무인 세션이면 Bash 도구의 `timeout` 을 최대인 7200000 으로 주고(두 환경 변수로 올릴 수 있다), 스크립트의 `--timeout-ms` 는 기본값 7000000 을 쓴다.
 
 ```bash
 orch wait --ack "$DELIVERY_ID"

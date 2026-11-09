@@ -2,9 +2,20 @@
 
 여러 worker 를 동시에 두면 **지금 묶인 run 하나에** 띄운다. 묶인 run 은 `run-current` 로 본다.
 새 run 을 만들면 코디네이터가 그쪽으로 옮겨 묶인다. 이전 run 의 메일도 코디네이터를 깨우지만(Orca 1.4.254 가이드) worker 는 묶인 run 에 띄운다.
-`check` 나 `worker-start --run` 이 `consumer_fenced` 로 거절되면 코디네이터가 다른 run 에 묶인 것이다.
-`orca orchestration run-use --id "$RUN_ID"` 로 옮겨 붙은 뒤 메시지를 읽는다.
+`check` 나 `worker-start --run` 이 `consumer_fenced` 로 거절되면 먼저 명령에 `--run <id>` 를 붙여 본다.
+그래도 거절되면 다른 터미널이 그 Run 을 쥔 것이다. `orca orchestration run-list` 로 살아 있는 다른 Run 을 보고, 있으면 `run-use` 가 그 Run 들의 메일을 끊는다는 것(Orca: 「run-use keeps only the Run it names」)을 사용자에게 알리고 물은 뒤에 `orca orchestration run-use --id "$RUN_ID"` 로 옮겨 붙는다.
 상태만 볼 때는 fenced 상태에서도 `worker-list --run "$RUN_ID"` 가 동작한다.
+
+**묶인 run 이 없으면(`run-current` 가 비었으면) 먼저 만든다.** 문법은 `orca orchestration run-create --help` 가 소유한다.
+`worker-start --spec` 도 묶인 run 이 없으면 하나 만들지만, Task 그래프를 쓰거나 새 목표로 시작하려면 `run-create` 로 직접 만든다. 만들면 코디네이터가 그 run 에 묶인다.
+`run-create` 는 만든 run 에 바로 묶으므로 `run-use` 를 잇지 않는다. 출력의 run id 로 상주 루프를 그 run 의 코디네이터 세션에서 띄운다.
+
+```bash
+orca orchestration run-create --objective "<이번 목표 한 문장>"
+orch loop start --run "$RUN_ID"
+```
+
+이미 있는 run 으로 옮겨 붙을 때만 `run-use --id "$RUN_ID"` 를 쓴다. 이 명령은 다른 Run 의 메일을 끊으므로 위 `consumer_fenced` 절차대로 사용자에게 알리고 묻는다.
 
 **워크트리는 `origin/<기준 브랜치>` 위에 만든다.** 로컬 브랜치를 기준으로 만들면 로컬 브랜치가 뒤처져 있어도 오류 없이 만들어져, worker 가 옛 코드 위에서 계획하고 구현한다.
 `make-worktree` 가 워크트리를 만들 때 스스로 `git fetch origin` 을 한다. 그래도 띄우기 전에 원격을 갱신하는 이유는 `spec-lint` 가 fetch 없이 지금 있는 `origin/<기준 브랜치>` 로 오버레이와 지시서가 가리키는 경로를 검사하기 때문이다. 로컬 기준 브랜치가 깨끗하면 fast-forward 로 맞춘다.
@@ -60,7 +71,7 @@ orch worker launch --spec "$SPEC_FILE" --name "$NAME" --resume-remote \
 ```
 
 **`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree` 가 「경로가 이미 있다」 로 거부한다. 스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다.
-**그 워크트리에 터미널이 남아 있거나 커밋 안 된 변경이 있으면 스크립트가 `REFUSED <이유>` 로 거부한다**(목록은 `--full`). 이 세션이 띄운 터미널인지, 끝난 것인지 보고 `orca terminal close` 로 닫거나, 변경을 커밋하거나 정리한 뒤 다시 부른다. 끊긴 worker 의 변경을 새 worker 가 이어받는 일이면 `--dirty-ack <이유>` 를 준다.
+**그 워크트리에 터미널이 남아 있거나 커밋 안 된 변경이 있으면 스크립트가 `REFUSED <이유>` 로 거부한다**(목록은 `--full`). 이 세션이 띄운 터미널인지, 끝난 것인지 보고 `worker-release` 로 닫거나(조건은 [`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」), 변경을 커밋하거나 정리한 뒤 다시 부른다. 끊긴 worker 의 변경을 새 worker 가 이어받는 일이면 `--dirty-ack <이유>` 를 준다.
 끝난 dispatch 의 터미널을 이어 쓰는 일은 `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서>` 가 한다. 판정은 그 스크립트 머리 주석이 소유한다.
 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
@@ -220,11 +231,11 @@ Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본�
 3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다.
    앞 worker 의 회신, 사용자 결정, 조사 결과는 내용을 이 절에 옮겨 적는다. 임시 폴더(`/tmp`, `$TMPDIR`, scratchpad)의 파일은 재부팅이나 세션 종료 뒤 사라져 새 worker 가 막힌다. `spec-lint` 가 그런 경로를 `임시` 경고로 알린다
 4. 표대로 띄운다. 워크트리는 이전 dispatch 이력에서 읽는다
-5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 가 `identity_unproven` 으로 닫지 않으므로 `orca terminal close` 를 쓴다. 이 세션이 띄운 worker 의 터미널만 닫는다
+5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 를 먼저 부르고, `identity_unproven` 으로 닫지 않았을 때만 [`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」 조건을 확인한 뒤 `orca terminal close` 를 쓴다
 
 ```bash
 orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
-orca terminal close --terminal "$OLD_TERMINAL_HANDLE"
+orca orchestration worker-release --dispatch "$OLD_DISPATCH_ID"
 ```
 
-`$OLD_TERMINAL_HANDLE` 은 `worker-show` 의 `worker.agentTerminalHandle` 이다. 새로 띄운 worker 의 터미널과 다른지 확인한 뒤 닫는다.
+`$OLD_DISPATCH_ID` 는 끊긴 dispatch 다. `terminal close` 로 넘어가면 `worker-show` 의 `worker.agentTerminalHandle` 이 새로 띄운 worker 의 터미널과 다른지 확인한 뒤 닫는다.
