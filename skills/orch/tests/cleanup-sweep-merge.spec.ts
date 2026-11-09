@@ -106,6 +106,19 @@ describe('머지 판정과 기본 정리', () => {
       assert.ok(existsSync(join(specs, 'spec-still.md')))
       lacks(out, '워크트리 없는 지시서 판정')
     })
+
+    test('같은 브랜치에 PR 이 여럿이면 가장 최신 PR 로 판정한다(목록은 최신순)', () => {
+      const { specs, trash } = setup()
+      // gh pr list --head 는 만든 시각 역순이다. 맨 앞(#2)이 최신, 뒤(#1)가 오래된 PR
+      fx.ghRaw['reused-branch'] = JSON.stringify([
+        { number: 2, state: 'MERGED', headRefOid: 'c'.repeat(40), headRefName: 'reused-branch', isCrossRepository: false },
+        { number: 1, state: 'MERGED', headRefOid: 'd'.repeat(40), headRefName: 'reused-branch', isCrossRepository: false },
+      ])
+      writeFileSync(join(specs, 'spec-reused.md'), '# 재사용\n\n브랜치: `reused-branch`\n')
+      const out = runSweep(sweepArgs(trash, ['--run', 'run_x', '--apply']))
+      has(out, 'spec-reused.md: 브랜치 reused-branch PR #2 MERGED')
+      lacks(out, 'PR #1 MERGED')
+    })
   })
 
   test('dry-run 은 아무것도 바꾸지 않는다', () => {

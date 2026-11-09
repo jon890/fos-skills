@@ -1819,7 +1819,8 @@ function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, spec
       else if (prs.length === 0) keep = `브랜치 ${branch} 의 PR 이 없다`
       else if (prs.some((p) => p.state !== 'MERGED')) keep = `브랜치 ${branch} 에 머지되지 않은 PR 이 있다`
       if (keep) break
-      const pr = prs[prs.length - 1]
+      // PR 목록은 만든 시각 역순이라 맨 앞이 최신이다. 후속 검증은 최신 PR 기준으로 본다
+      const pr = prs[0]
       // 같은 이름을 다시 쓴 로컬 브랜치가 머지된 끝점과 다르면 새 작업이다
       const tip = branchTip(repo, branch)
       if (tip && truthy(pr.headRefOid) && tip !== String(pr.headRefOid)) {
