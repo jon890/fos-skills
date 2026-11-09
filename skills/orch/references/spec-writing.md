@@ -78,7 +78,7 @@
   ```
 
   배정 규칙은 `launch-worker.ts` 머리 주석이 소유한다. 실험 후보인 Opus 높은 effort 는 별도 high 근거 없이 허용한다.
-- PR 을 열게 하면 「PR 본문 파일은 worker 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 쓰고 PR 이 열릴 때까지 지우지 않는다. 경로는 status 나 `worker_done` 에 적는다」 도 적는다. 권한 거부로 worker 가 PR 을 못 열면 코디네이터가 그 경로의 파일로 연다. 저장소의 `.orch/` 에는 두지 않는다
+- PR 을 열게 하면 「PR 본문 파일은 worker 세션 임시 폴더(scratchpad, 없으면 `$TMPDIR`)에 `pr-body-<워크트리 이름>.md` 처럼 작업 이름을 넣어 쓰고 PR 이 열릴 때까지 지우지 않는다. `pr-body.md` 같은 고정 이름은 다른 PR 의 본문과 섞여 `spec-lint` 가 `본문` 경고로 알린다. 경로는 status 나 `worker_done` 에 적는다」 도 적는다. 권한 거부로 worker 가 PR 을 못 열면 코디네이터가 그 경로의 파일로 연다. 저장소의 `.orch/` 에는 두지 않는다
 - PR 을 열게 하면 「PR 은 기준 브랜치를 base 로 따로 연다. 다른 PR 브랜치를 base 로 두지 않는다」 도 적는다.
   앞 PR 브랜치를 base 로 연 PR 은 앞 PR 을 `--delete-branch` 로 머지하면 자동으로 닫히거나 앞 브랜치로 머지된다
 - 지시서 하나는 PR 하나로 쓴다([`SKILL.md`](../SKILL.md) 원칙). 설계 문서만 따로 PR 로 올리지 않고 설계와 구현을 한 PR 에 담는다(사용자 결정 2026-10-26). PR 이 둘 이상 필요한 일은 지시서를 나누고, 뒤 지시서는 앞 PR 이 머지된 뒤 쓴다.

@@ -336,6 +336,24 @@ describe('지시서 검사', () => {
     assert.match(r.stderr, /임시 경고 6건/)
   })
 
+  test('PR 본문 파일을 작업 이름 없는 고정 이름으로 적으면 본문 경고를 내고 종료 코드는 0 이다', () => {
+    const a = spec(
+      'spec-body',
+      [
+        'PR 본문은 `$TMPDIR/pr-body.md` 에 쓴다.',
+        '본문 파일 body.md 를 만든다.',
+        'PR 본문은 pr-body-fb1109-spec-sweep.md 로 쓴다.',
+        '예외: 옛 이름 pr-body.md 는 안 쓴다',
+      ].join('\n'),
+    )
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    assert.ok(r.stdout.includes('spec-body.md:1: 본문: `pr-body.md` 는 고정된 공용 이름'), r.stdout)
+    assert.ok(r.stdout.includes('spec-body.md:2: 본문: `body.md` 는 고정된 공용 이름'), r.stdout)
+    assert.equal(count(r.stdout, ': 본문: '), 2, r.stdout)
+    assert.match(r.stderr, /본문 경고 2건/)
+  })
+
   test('완료 기준에 PR 이 둘 이상이면 한 PR 기준을 가리키며 경고하고 종료 코드는 0 이다', () => {
     const multi = spec('spec-multi', '## 완료 기준\n\n- PR1 과 PR2 가 MERGED 됐다.\n')
     const r = run(['--repo', repo, multi])
