@@ -71,6 +71,7 @@
 | `pending` 이나 시간 초과이고 질문 id 가 있다 | `ASKED <질문 id>` | 0 |
 | 답이 바로 왔다(끝난 worker 가 5초 안에 답을 받음) | `answer: <답>` | 0 |
 | 0 으로 끝났는데 답도 질문 id 도 없다 | `NO-ANSWER -` | 2 |
+| 시간 초과(ask 출력의 `timedOut`, 또는 이 명령이 제한 시간에 끊어 `run` 이 `timedOut` 을 냄)인데 질문 id 가 없다 | `NO-ANSWER -`. stderr 에 「질문이 닿았는지 알 수 없다. 코디네이터 답을 기다리지 말고 같은 명령을 다시 부르기 전에 `check` 로 확인한다」 | 2. Run 메일함으로 대신 보내지 않는다. 질문이 이미 저장됐으면 두 번 간다 |
 | 바쁨 코드 | 지금처럼 다시 부른다. 다섯 번 뒤에도 바쁘면 2 | 2 |
 | 끝난 dispatch 코드(`dispatch_inactive`, `dispatch_not_found`)나 코드 없음 | Run 메일함으로 대신 보내고 `SENT-RUN <id>` | 3 |
 | 그 밖의 코드 | 대신 보내지 않는다 | 2 |

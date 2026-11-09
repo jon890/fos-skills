@@ -35,19 +35,19 @@
 - 머리 주석을 새 흐름으로 다시 쓴다. 사용법 줄의 옵션은 `--from HANDLE --question TEXT [--options CSV] [--run ID] [--force] [--decision]` 이다. 종료 코드는 0(보냈다, 또는 바로 답을 받았다), 2(사용법·실행 오류, `--decision` 위반, `--resume`, 바쁨 지속, 닿았는지 모름), 3(Run 메일함으로 대신 보냄), 5(읽지 않은 메시지). 4 를 지운다.
 - 옵션: `resume`, `timeout-ms`, `max-wait` 는 parseArgs 에 남긴다(모르는 옵션 오류가 나지 않게). `--resume` 이 있으면 orca 를 부르지 않고 stderr 에 `worker-ask: --resume 은 없어졌다. 질문을 보낸 뒤 턴을 끝내면 Orca 가 답과 함께 깨운다. 읽을 문서: 공통 지시서의 worker-ask 규칙` 한 줄과 2. `--timeout-ms` 나 `--max-wait` 가 있으면 stderr 에 `worker-ask: --timeout-ms, --max-wait 는 없어진 옵션이라 무시했다` 한 줄을 내고 계속한다. 값 검사(`양의 정수`)와 `ORCA_MAX_TIMEOUT_MS` 줄이기를 지운다.
 - ask 호출: `['orchestration', 'ask', '--from', sender, '--question', question, '--timeout-ms', String(ASK_RETURN_MS), '--json']` 에 `--options` 를 더하고 `withFull` 을 붙인다. `ASK_RETURN_MS` 는 5000, `ORCH_ASK_RETURN_MS` 로 바꿀 수 있다(테스트용). `run`(동기)으로 부르고 제한 시간은 `ASK_RETURN_MS + ASK_SLACK_MS`.
-- 결과 처리(설계 표 순서): 답이 있으면 `answered`(지금 함수) 후 0. 그 밖에 `messageIdOf` 가 있으면(pending, timedOut 모두) 짧은 출력 `ASKED <id>`, 긴 출력 `ASKED <id>` 뒤에 ask 출력, 0. stderr 에 `worker-ask: 질문 <id> 를 보냈다. 턴을 끝낸다. 답이 오면 Orca 가 깨우고, 깬 뒤 orca orchestration check 로 읽는다`. 0 인데 둘 다 없으면 `NO-ANSWER -` 와 2. 실패는 지금의 바쁨, 끝난 dispatch, 그 밖의 코드 분기를 그대로 쓴다. `if (resume)` 분기는 지운다.
+- 결과 처리(설계 표 순서): 답이 있으면 `answered`(지금 함수) 후 0. 그 밖에 `messageIdOf` 가 있으면(pending, timedOut 모두) 짧은 출력 `ASKED <id>`, 긴 출력 `ASKED <id>` 뒤에 ask 출력, 0. stderr 에 `worker-ask: 질문 <id> 를 보냈다. 턴을 끝낸다. 답이 오면 Orca 가 깨우고, 깬 뒤 orca orchestration check 로 읽는다`. 0 인데 둘 다 없으면 `NO-ANSWER -` 와 2. 시간 초과(ask 출력의 `timedOut` 이나 `timed out`, 또는 `run` 결과의 `timedOut`)인데 질문 id 가 없으면 `NO-ANSWER -` 와 2 이고 Run 메일함으로 대신 보내지 않는다. 이 판정을 아래 실패 분기보다 먼저 한다. `run` 이 끊으면 출력이 비어 코드 없는 실패로 보여 대신 보내기로 들어가기 때문이다. 실패는 지금의 바쁨, 끝난 dispatch, 그 밖의 코드 분기를 그대로 쓴다. `if (resume)` 분기는 지운다.
 - 지울 것: `POLL_MS`, `replyOf`, `idsOf`, 기다리는 루프의 `AbortController` 감시, 시간 초과 분기, `TIMEOUT` 출력, `DEFAULT_TIMEOUT_MS`, `ORCA_MAX_TIMEOUT_MS`. `runAsync` import 가 남지 않으면 지운다. 바쁨 대기는 `setTimeout` 프로미스로 남는다.
 
 ### 2. `skills/orch/tests/worker-ask.spec.ts`
 
-- 지울 사례: 「바로 돌아온 ask」 의 `--resume` 으로 기다리기, 「시간 제한」 전체, 「기다리는 동안 status 답」 전체, max-wait 두 사례, timeout 줄이기 사례, 「잘못된 대기 시간」, 짧은 출력의 `TIMEOUT`·status 답 사례, `--resume 으로 재개할 때는 형식을 보지 않는다`, `--resume 이 실패하면`.
+- 지울 사례: 「바로 돌아온 ask」 의 `--resume` 으로 기다리기, 「시간 제한」 가운데 아래 남길 한 사례 밖의 것, 「기다리는 동안 status 답」 전체, max-wait 두 사례, timeout 줄이기 사례, 「잘못된 대기 시간」, 짧은 출력의 `TIMEOUT`·status 답 사례, `--resume 으로 재개할 때는 형식을 보지 않는다`, `--resume 이 실패하면`.
 - 더할 사례:
   - pending 과 질문 id 를 내면 `ASKED <id>` 와 0 이고 ask 를 한 번만 부른다(가짜 orca 의 호출 기록으로 센다). ask 인자에 `--wait` 가 없고 `--timeout-ms 5000` 이 있다.
   - 시간 초과(`timedOut: true`)에 질문 id 가 있어도 `ASKED <id>` 와 0 이다.
   - `--resume m1` 은 orca 를 부르지 않고 안내 한 줄과 2 다.
   - `--timeout-ms 600000 --max-wait 3600000` 을 줘도 안내 한 줄을 내고 묻는다. `--timeout-ms abc` 같은 값도 거절하지 않는다.
   - 짧은 출력에서 `ASKED <id>` 한 줄만 낸다.
-- 남길 사례: 답 받기(`answer:`), 결정 질문 형식, 읽지 않은 메시지, 대신 보내기, 바쁜 Orca, 사용법.
+- 남길 사례: 「ask 가 제한 시간 안에 끝나지 않아 끊으면 시간 초과 4 이고 대신 보내지 않는다」 는 종료 코드만 2 로 바꾸고 send 를 부르지 않는 단언을 그대로 둔다. 답 받기(`answer:`), 결정 질문 형식, 읽지 않은 메시지, 대신 보내기, 바쁜 Orca, 사용법.
 
 ### 3. `skills/orch/templates/spec-common.md` 의 `worker-ask` 규칙
 
