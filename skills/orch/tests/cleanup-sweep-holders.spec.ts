@@ -30,6 +30,8 @@ function reopenedShell(name: string, opts: { child?: boolean; agent?: string; sc
 describe('Orca 가 worker 반납 뒤 띄운 빈 셸', () => {
   test('반납 뒤 남은 빈 셸 터미널을 닫고 worktree 를 지운다', () => {
     const path = releasedWorkerWithShell('feat-o')
+    // 삭제 직전 새 Run 도 확인할 수 있도록 실제 Orca 처럼 Run 목록을 제공한다.
+    fx.runs = { run_x: fx.workers }
     const out = runSweep(['--run', 'run_x', '--apply'])
     gone(path, out)
     assert.ok(!branches().has('feat-o'))
