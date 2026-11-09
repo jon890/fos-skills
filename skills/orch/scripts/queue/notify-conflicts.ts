@@ -11,7 +11,7 @@
 //     --repo     대상 저장소 체크아웃. 기본은 현재 디렉터리
 //     --base     열린 PR 의 base. 기본은 origin/HEAD 가 가리키는 브랜치, 없으면 main
 //     --run      worker 를 찾을 Orca Run. 없으면 코디네이터에 묶인 Run 이다. send-to-worker 와 이벤트의 run 에도 준다
-//     --state    이미 알린 (PR, base SHA) 를 적는 파일. 기본 <orch 작업 폴더>/state/notify-conflicts.json
+//     --state    이미 알린 (PR, PR HEAD, 충돌 파일) 을 적는 파일. 기본 <orch 작업 폴더>/state/notify-conflicts.json
 //     --dry-run  알리지 않고 충돌과 할 일만 낸다. 후속 지시서를 쓰지 않고, 보내지 않고, 이벤트를 내지 않고, 기록하지 않는다
 //     옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts)
 //
@@ -20,11 +20,12 @@
 // 다른 사람 PR 은 줄도 내지 않고 종료 코드에도 세지 않는다. 작성자 목록은 config.json 의 pipeline.authors,
 // 없으면 PR URL 호스트의 gh 현재 사용자다(lib/gh.ts 의 ownAuthors). 그 목록을 정하지 못하면 조회 실패다.
 //
-// 충돌한 내 PR 마다 `#<PR> CONFLICTING <브랜치>: 파일...` 을 낸다. (PR, base SHA) 가 기록에 있으면 `이미 알렸다(<값>)` 로 넘어간다.
-// base 가 움직이면 새 충돌일 수 있어 다시 알린다. 처음 보면:
+// 충돌한 내 PR 마다 `#<PR> CONFLICTING <브랜치>: 파일...` 을 낸다. (PR, PR HEAD, 충돌 파일) 이 기록에 있으면
+// `이미 알렸다(<값>)` 로 넘어간다. 키는 lib/conflicts.ts 머리 주석의 「알린 기록」 이 소유한다. worker 가 push 해 HEAD 가 바뀌었거나
+// 충돌 파일이 달라졌으면 새 충돌이라 다시 알린다. base 만 움직이고 HEAD 와 충돌 파일이 같으면 worker 가 풀고 있는 같은 충돌이라 다시 알리지 않는다. 처음 보면:
 //     1. 그 브랜치의 워크트리(git worktree list)와 그 워크트리의 dispatch(worker-list, 살아 있는 것을 먼저)를 찾는다
 //     2. dispatch 가 살아 있으면 본문을 `send-to-worker --dispatch <id> --body <본문>` 으로 보낸다
-//     3. dispatch 가 끝났으면 후속 지시서 <지시서 폴더>/spec-conflict-<PR>.md 를 쓰고(base 가 움직이면 덮어쓴다)
+//     3. dispatch 가 끝났으면 후속 지시서 <지시서 폴더>/spec-conflict-<PR>.md 를 쓰고(다시 알릴 때 덮어쓴다)
 //        `send-to-worker --dispatch <id> --spec <지시서>` 로 보낸다. --body 는 주지 않는다. 끝난 dispatch 에는 가지 않는다
 //        지시서 이름을 spec- 으로 시작하게 둔 것은 정리 경로(cleanup-sweep, handoff-cleanup, finish-pr)가 이 이름만 보기 때문이다
 //     4. 아래 표로 기록하고 pr-conflict 이벤트를 낸다. 기록하지 않은 경우에는 이벤트도 내지 않는다. 다음 실행이 다시 본다
@@ -33,7 +34,7 @@
 //     0                          notified               resumed                기록. `<dispatch> 에 알렸다`
 //     4                          notified(깨우지 못함)  resumed                기록. 알림 줄 끝에 `(깨우지 못했다, 종료 코드 4)`
 //     1                          notified(reply 는 남음) 아래 참고              살아 있는 경로는 기록한다. 기록하지 않으면 다음 실행이 같은 reply 를 또 보낸다
-//     3                          orphan                 orphan                 기록. `CONFLICT-ORPHAN <PR> <이유>`. 같은 (PR, base SHA) 로 다시 알리지 않는다
+//     3                          orphan                 orphan                 기록. `CONFLICT-ORPHAN <PR> <이유>`. 같은 키로 다시 알리지 않는다
 //     5 와 그 밖                  보내지 못함            보내지 못함            기록하지 않는다. `보내지 못했다(… 종료 코드 N)` 와 stderr 의 이유
 //     2                          사용법 오류            사용법 오류            그 자리에서 멈추고 명령 종료 코드 2
 //     끝난 dispatch 의 1: send-to-worker 의 1 은 다시 띄우기의 실패지만, launch-worker 가 worker-start 를 이미 성공한 뒤에
@@ -183,7 +184,7 @@ async function executeMain(argv: string[]): Promise<number> {
       else if (/^ {2}\S+ 에 알렸다/.test(line)) result ||= 'notified'
     }
     if (!brief) out(`#${number} CONFLICTING ${pr.headRefName}: ${files.join(' ')}`)
-    const key = notifiedKey(number, baseSha)
+    const key = notifiedKey(number, pr.headRefOid, files)
     if (Object.hasOwn(state, key)) {
       if (!brief) out(`  이미 알렸다(${state[key]})`)
       result = 'already'

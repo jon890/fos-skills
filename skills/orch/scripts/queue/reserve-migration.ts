@@ -61,6 +61,9 @@
 //     `git ls-remote --heads origin <branch>`  0 이고 그 브랜치 줄이 없으면 원격에 없음, 있으면 있음, 0 이 아니면 판정 못 함
 //     `git show-ref --verify --quiet refs/heads/<branch>`  0 이면 있음, 1 이면 없음, 그 밖은 판정 못 함
 //     둘 다 없음이면 지운다(근거 gone. 잠금 안에서 로컬 브랜치를 다시 본다). 하나라도 있음이면 남긴다. 그 밖은 판정 못 함이라 남긴다. 지우면 그 번호가 다시 나가기 때문이다
+//     다만 예약 시각(at)에서 RESERVE_GONE_GRACE_MS 가 지나지 않은 예약은 브랜치가 없어도 남긴다. 코디네이터가 worker 를 띄우기 전에
+//     --branch 로 아직 만들지 않은 브랜치의 번호를 받아 두면, 브랜치가 생기기 전의 다른 예약이 그 예약을 지우고 같은 번호를 또 주기 때문이다.
+//     유예가 지난 뒤에도 브랜치가 없으면 지운다. at 을 읽지 못하면 유예 없이 판정한다
 //
 // 출력(stdout):
 //     PRUNED <module> <label> <branch>      정리로 지운 항목마다. 아래 끝 줄보다 앞에 낸다. ADR 예약이면 label 이 `ADR-<번호>` 다
@@ -82,6 +85,8 @@
 //
 // 환경 변수:
 //     RESERVE_LOCK_WAIT_MS  잠금을 기다리는 최대 시간(밀리초). 기본 10000. 0 이상의 정수가 아니면 기본값을 쓴다
+//     RESERVE_GONE_GRACE_MS 브랜치가 없어도 예약을 남기는 예약 뒤 유예(밀리초, 위 「정리 판정」). 기본 86400000(24시간).
+//                           0 이상의 정수가 아니면 기본값을 쓴다
 //     GH                    gh 실행 파일(lib/gh.ts). 기본 gh
 //     ORCH_DIR              orch 루트(lib/paths.ts). 기본은 주 checkout 의 .orch
 
@@ -103,6 +108,8 @@ const USAGE = [
   '        reserve-migration.ts --repo DIR --prune',
 ].join('\n')
 const LOCK_WAIT_MS = 10_000
+// 브랜치가 없어도 예약을 남기는 예약 뒤 유예(머리 주석의 「정리 판정」). worker 를 띄워 브랜치를 만들기까지 하루를 넘기지 않는다고 본다
+const GONE_GRACE_MS = 86_400_000
 const OPEN_FIELDS = 'number,headRefName,baseRefName,files'
 const OPEN_LIMIT = 200
 
@@ -152,6 +159,11 @@ function lockWaitMs(): number {
   return /^\d+$/.test(raw) ? Number(raw) : LOCK_WAIT_MS
 }
 
+function goneGraceMs(): number {
+  const raw = process.env.RESERVE_GONE_GRACE_MS ?? ''
+  return /^\d+$/.test(raw) ? Number(raw) : GONE_GRACE_MS
+}
+
 // 잠금 밖의 판정을 잠금 안에서 다시 읽은 목록에 붙이는 열쇠. --again 으로 바뀐 항목은 at 이 달라 옛 판정이 붙지 않는다.
 // 두 예약 파일의 module 은 서로 다른 이름 공간이라 파일 종류도 넣는다
 function verdictKey(store: ReservationStore, r: Reservation): string {
@@ -176,6 +188,7 @@ function pruneJudge(repo: string): (r: Reservation) => Verdict {
   const prs = new Map<string, Record<string, unknown>[] | null>()
   const branches = new Map<string, Presence>()
   const time = (value: unknown) => (typeof value === 'string' ? Date.parse(value) : Number.NaN)
+  const grace = goneGraceMs()
   return (r) => {
     if (!prs.has(r.branch)) {
       const got = ghJson<unknown>(['pr', 'list', '--state', 'all', '--head', r.branch, '--limit', '20', '--json', 'state,mergedAt,closedAt'], { cwd: repo })
@@ -192,7 +205,9 @@ function pruneJudge(repo: string): (r: Reservation) => Verdict {
       branches.set(r.branch, remote === 'present' || local === 'present' ? 'present' : remote === 'absent' && local === 'absent' ? 'absent' : null)
     }
     const state = branches.get(r.branch) ?? null
-    return state === null ? null : state === 'absent' ? 'gone' : false
+    if (state !== 'absent') return state === null ? null : false
+    // 아직 만들지 않은 브랜치의 예약일 수 있어 유예 안이면 남긴다(머리 주석의 「정리 판정」)
+    return Date.now() - at < grace ? false : 'gone'
   }
 }
 

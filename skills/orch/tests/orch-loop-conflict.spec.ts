@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { notifiedKey } from '../scripts/lib/conflicts.ts'
 import { loopStatus } from '../scripts/lib/loop.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 import type { FakeBin } from './fixtures/fake-bin.ts'
@@ -243,6 +244,11 @@ function baseSha(): string {
   return git(repo, 'rev-parse', 'origin/main')
 }
 
+// 알린 기록에서 PR 7 의 지금 HEAD 와 a.txt 충돌의 키
+function featKey(): string {
+  return notifiedKey(7, git(repo, 'rev-parse', 'origin/feat'), ['a.txt'])
+}
+
 function loopState(): Json | null {
   try {
     return JSON.parse(readFileSync(orchFile('state', 'loop.json'), 'utf8')) as Json
@@ -270,11 +276,11 @@ describe('살아 있는 dispatch', () => {
     assert.equal(input.base_head, baseSha())
     assert.deepEqual(input.files, ['a.txt'])
     assert.equal((input.worker as Json).dispatch, 'd1')
-    assert.deepEqual(record(), { [`7@${baseSha()}`]: 'd1' })
+    assert.deepEqual(record(), { [featKey()]: 'd1' })
     assert.deepEqual(events(), [])
   })
 
-  test('같은 (PR, base SHA) 는 다음 틱도 notify-conflicts 도 다시 보내지 않는다', () => {
+  test('같은 (PR, PR HEAD, 충돌 파일) 은 다음 틱도 notify-conflicts 도 다시 보내지 않는다', () => {
     setupConflict('running')
     once()
     once()
@@ -302,7 +308,7 @@ describe('끝난 dispatch', () => {
     const [input] = hookInputs()
     assert.equal(input.action, 'resumed')
     assert.deepEqual(input.worker, { task: 'task_d1', dispatch: 'd1', terminal: 'term_d1', worktree: path, spec })
-    assert.deepEqual(record(), { [`7@${baseSha()}`]: 'd1' })
+    assert.deepEqual(record(), { [featKey()]: 'd1' })
   })
 
   test('send-to-worker 가 1 이어도 stdout 에 LAUNCHED 가 있으면 resumed 로 기록한다', () => {
@@ -310,7 +316,7 @@ describe('끝난 dispatch', () => {
     send({ code: 1, stdout: 'LAUNCHED d2' })
     once()
     assert.equal(hookInputs()[0]?.action, 'resumed', JSON.stringify(hookInputs()))
-    assert.deepEqual(record(), { [`7@${baseSha()}`]: 'd1' })
+    assert.deepEqual(record(), { [featKey()]: 'd1' })
     once()
     assert.equal(sends().length, 1)
   })
@@ -323,7 +329,7 @@ describe('끝난 dispatch', () => {
     assert.deepEqual(events().filter(e => e.kind === 'CONFLICT-STALLED').map(e => ({ pr: e.pr, text: e.text })), [
       { pr: 7, text: 'd2 worktree_creating watch=90s,no-signs-of-life 사용자 판단 필요' },
     ])
-    assert.deepEqual(record(), { [`7@${baseSha()}`]: 'd1' })
+    assert.deepEqual(record(), { [featKey()]: 'd1' })
     once()
     assert.equal(sends().length, 1)
     assert.equal(events().filter(e => e.kind === 'CONFLICT-STALLED').length, 1)
@@ -351,7 +357,7 @@ describe('이어 쓰지 못함', () => {
     assert.equal(lines[0].pr, 7)
     assert.match(String(lines[0].text), /^d1 에 보낼 수 없다\(send-to-worker 종료 코드 3\)/)
     assert.equal(hookInputs()[0]?.action, 'orphan')
-    assert.deepEqual(record(), { [`7@${baseSha()}`]: 'orphan' })
+    assert.deepEqual(record(), { [featKey()]: 'orphan' })
   })
 
   test('워크트리가 없으면 보내지 않고 CONFLICT-ORPHAN 이다', () => {
@@ -366,7 +372,7 @@ describe('이어 쓰지 못함', () => {
     const [input] = hookInputs()
     assert.equal(input.action, 'orphan')
     assert.equal(input.worker, null)
-    assert.deepEqual(record(), { [`7@${baseSha()}`]: 'orphan' })
+    assert.deepEqual(record(), { [featKey()]: 'orphan' })
   })
 
   test('worker-list 가 실패하면 기록도 pr-conflict 도 없고 WATCH-ERROR conflicts 한 줄이다', () => {

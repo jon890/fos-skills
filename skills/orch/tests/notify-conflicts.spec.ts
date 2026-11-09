@@ -10,6 +10,7 @@ import { afterEach, before, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { copyRepo, gitEnv, templateRepo, type Repo } from '../../../modules/testkit/git.ts'
+import { notifiedKey } from '../scripts/lib/conflicts.ts'
 import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/queue/notify-conflicts.ts', import.meta.url))
@@ -171,6 +172,11 @@ function baseSha(): string {
   return git(repo, 'rev-parse', 'origin/main')
 }
 
+// 알린 기록에서 PR 7 의 지금 HEAD 와 a.txt 충돌의 키
+function featKey(): string {
+  return notifiedKey(7, git(repo, 'rev-parse', 'origin/feat'), ['a.txt'])
+}
+
 // feat 는 base 와 a.txt 에서 충돌하고 other 는 충돌하지 않는다. feat 워크트리에 끝난 dispatch 와 살아 있는 dispatch 가 있다.
 function setupConflict(): string {
   const feat = branch('feat', { 'a.txt': '1\nfeat\n3\n', 'c.txt': 'c\n' })
@@ -261,12 +267,42 @@ describe('살아 있는 dispatch', () => {
     }
   })
 
-  test('base 가 움직이면 다시 알린다', () => {
+  test('base 가 움직여도 HEAD 와 충돌 파일이 같으면 다시 알리지 않는다', () => {
     setupConflict()
     notify()
     advanceMain({ 'b.txt': 'b2\n' })
+    const r = notify()
+    assert.match(r.stdout, /이미 알렸다\(ctx_live\)/)
+    assert.equal(sent().length, 1)
+  })
+
+  test('base 가 움직여 충돌 파일이 늘면 다시 알린다', () => {
+    setupConflict()
     notify()
+    advanceMain({ 'c.txt': 'main c\n' })
+    const r = notify()
+    assert.match(r.stdout, /^#7 CONFLICTING feat: a\.txt c\.txt$/m)
     assert.equal(sent().length, 2)
+    assert.match(sent()[1][3], /충돌 파일: a\.txt, c\.txt\./)
+  })
+
+  test('worker 가 push 해 HEAD 가 바뀌었는데 아직 충돌하면 다시 알린다', () => {
+    const path = setupConflict()
+    // 바뀐 HEAD 를 담은 PR 목록을 읽게 gh 읽기 캐시(lib/gh-budget.ts)를 끈다. env 는 beforeEach 가 다시 만든다
+    env.ORCH_GH_CACHE = '0'
+    notify()
+    commit(path, { 'e.txt': 'e\n' }, 'more')
+    git(path, 'push', '-q', 'origin', 'feat')
+    prs([7, 'feat', git(path, 'rev-parse', 'HEAD')], [8, 'other', git(repo, 'rev-parse', 'origin/other')])
+    const r = notify()
+    assert.equal(sent().length, 2, r.both)
+    assert.equal(Object.keys(JSON.parse(readFileSync(stateFile(), 'utf8'))).length, 2)
+  })
+
+  test('알림 본문은 합친 뒤 마이그레이션 번호를 다시 받으라고 안내한다', () => {
+    setupConflict()
+    notify()
+    assert.match(sent()[0][3], /`orch queue reserve` 를 다시 부르고, 줄 끝이 renewed 면 파일 이름을 그 경로로 바꾼다/)
   })
 
   test('send-to-worker 가 1 이면 reply 는 남았으니 기록하고 두 번째 실행은 보내지 않는다', () => {
@@ -277,7 +313,7 @@ describe('살아 있는 dispatch', () => {
     env.FAKE_EXIT = '0'
     notify()
     assert.equal(sent().length, 1)
-    assert.equal(JSON.parse(readFileSync(stateFile(), 'utf8'))[`7@${baseSha()}`], 'ctx_live')
+    assert.equal(JSON.parse(readFileSync(stateFile(), 'utf8'))[featKey()], 'ctx_live')
   })
 
   test('send-to-worker 가 4 면 깨우지 못했다고 붙이고 기록한다', () => {
@@ -350,6 +386,7 @@ describe('끝난 dispatch', () => {
     assert.match(text, /^허락: push 는 허락됐다\. PR 은 이미 있으므로 새로 열지 않는다$/m)
     assert.match(text, /origin\/main/)
     assert.match(text, /^- a\.txt$/m)
+    assert.match(text, /^2\. 마이그레이션을 더한 PR 이면 합친 뒤 같은 모듈과 이름으로 `orch queue reserve` 를 다시 부르고/m)
     assert.deepEqual(sent(), [['--dispatch', 'ctx_old', '--spec', spec, '--run', 'run_x']])
     const [input] = hookInputs()
     assert.equal(input.action, 'resumed')
@@ -358,14 +395,14 @@ describe('끝난 dispatch', () => {
     assert.equal(input.run, 'run_x')
     assert.deepEqual(input.worker, { task: 'task_ctx_old', dispatch: 'ctx_old', terminal: 'term_ctx_old', worktree: path, spec })
     assert.equal((input.pr as Record<string, unknown>).number, 7)
-    assert.equal(JSON.parse(readFileSync(stateFile(), 'utf8'))[`7@${sha}`], 'ctx_old')
+    assert.equal(JSON.parse(readFileSync(stateFile(), 'utf8'))[featKey()], 'ctx_old')
   })
 
-  test('base 가 움직여 다시 보내도 후속 지시서는 PR 마다 하나이고 새 base 로 덮어쓴다', () => {
+  test('충돌 파일이 늘어 다시 보내도 후속 지시서는 PR 마다 하나이고 새 base 로 덮어쓴다', () => {
     setupEnded()
     notify()
     const before = baseSha()
-    advanceMain({ 'b.txt': 'b2\n' })
+    advanceMain({ 'c.txt': 'main c\n' })
     notify()
     assert.equal(sent().length, 2)
     assert.deepEqual(specFiles(), ['spec-conflict-7.md'])
