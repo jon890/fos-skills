@@ -60,6 +60,7 @@
 //                 표지가 있어도 본문이 옛것이면 같은 일이 난다(옛 종료 코드 설명, 틀이 금지한 명령).
 //                 본문은 표지가 든 목록 항목이다. 항목 머리 줄(들여쓰지 않은 줄)부터 들여쓴 이어지는 줄과 빈 줄까지 보고,
 //                 줄 끝 공백과 빈 줄은 빼고 비교한다. 틀 본문의 `{{...}}` 는 아무 글자에나 맞는다. 다른 표지는 한 줄에 하나씩 낸다.
+//                 `<!-- orch-rule: 이름 keep -->` 는 저장소가 일부러 바꾼 항목이라 본문 경고를 내지 않는다.
 //                 조건부 표지(CONDITIONAL_RULES)는 조건이 맞는 저장소에서만 빠진 것을 알린다. `migration` 은 orch 설정의
 //                 migrations.dirs 나 migrations.watch 가 있는 저장소, `adr` 은 adr.dirs 가 있는 저장소다.
 //                 조건이 맞지 않아도 표지가 있으면 본문은 비교한다.
@@ -92,6 +93,7 @@
 //
 // 옵션은 고유 접두로 줄여 쓸 수 있다(lib/args.ts).
 
+import { CONDITIONAL_RULES, ruleBodies, sameBody, type RuleBody } from '../lib/common-rules.ts'
 import { taskFirstLine } from '../lib/spec.ts'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -99,7 +101,6 @@ import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:pa
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
-import { ConfigError, loadConfig } from '../lib/config.ts'
 import { isFile } from '../lib/fs.ts'
 import { defaultBase, git } from '../lib/git.ts'
 import { pathOf, requireMigrated } from '../lib/paths.ts'
@@ -126,7 +127,6 @@ const PATHLIKE = new RegExp(`^(?:[${W}.\\-]+/)*[${W}\\-]+(?:\\.[${W}\\-]+)*\\.[A
 // 저장소 공통 지시서가 따라야 할 틀. SPEC_TEMPLATE 은 테스트가 바꾼다
 const TEMPLATE = process.env.SPEC_TEMPLATE || join(bundleRoot(), 'templates', 'spec-common.md')
 const COMMON = 'spec-common.md'
-const RULE_MARK = /<!--\s*orch-rule:\s*([A-Za-z0-9_-]+)\s*-->/g
 // 임시 폴더 아래 경로. 폴더 이름만 말한 것(「scratchpad 에 쓴다」)은 빼고 그 아래 파일이나 폴더를 가리킨 것만 잡는다
 const TEMP_PATH = /(?:^|[\s`'"(=])((?:\/private)?\/tmp\/[^\s`'"()]*|(?:\/private)?\/var\/folders\/[^\s`'"()]*|\$\{?TMPDIR\}?\/[^\s`'"()]*|[^\s`'"()]*\/scratchpad\/[^\s`'"()]*)/g
 const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사라진다. 내용을 지시서 본문에 옮기거나 저장소나 orch 폴더에 둔다'
@@ -398,63 +398,9 @@ function readSpec(path: string): Spec {
   return { path: normalize(path), name, stem: basename(path, extname(path)), owned, lines }
 }
 
-function ruleMarks(text: string): Set<string> {
-  return new Set([...text.matchAll(RULE_MARK)].map((m) => m[1]))
-}
-
-// 머리 주석의 「공통」 의 조건부 표지. 조건이 거짓인 저장소에서는 그 표지가 빠져도 알리지 않는다
-const CONDITIONAL_RULES: Record<string, (repoRoot: string) => boolean> = {
-  migration: (repoRoot) => configured(repoRoot, 'migrations', ['dirs', 'watch']),
-  adr: (repoRoot) => configured(repoRoot, 'adr', ['dirs']),
-}
-
-// 설정 절의 keys 가운데 하나라도 비지 않은 객체인지. 설정을 읽지 못하면 거짓이다
-function configured(repoRoot: string, name: 'migrations' | 'adr', keys: string[]): boolean {
-  let body: unknown
-  try {
-    body = loadConfig(repoRoot)[name]
-  } catch (e) {
-    if (e instanceof ConfigError) return false
-    throw e
-  }
-  if (typeof body !== 'object' || body === null) return false
-  const filled = (value: unknown) => typeof value === 'object' && value !== null && Object.keys(value).length > 0
-  return keys.some((key) => filled((body as Record<string, unknown>)[key]))
-}
-
-// 표지마다 그 표지가 든 목록 항목의 본문과 머리 줄 번호. 머리 주석의 「공통」 이 범위를 정한다
-function ruleBodies(text: string): Map<string, { no: number; body: string }> {
-  const lines = splitLines(text)
-  const indented = (line: string) => /^\s/.test(line)
-  const found = new Map<string, { no: number; body: string }>()
-  lines.forEach((line, index) => {
-    for (const m of line.matchAll(RULE_MARK)) {
-      let head = index
-      while (head > 0 && indented(lines[head])) head -= 1
-      let end = index + 1
-      while (end < lines.length && (lines[end].trim() === '' || indented(lines[end]))) end += 1
-      const body = lines
-        .slice(head, end)
-        .map((l, i) => (i === 0 ? l.replace(/^(?:[-*]|\d+\.)\s+/, '') : l).trimEnd())
-        .filter((l) => l !== '')
-        .join('\n')
-      found.set(m[1], { no: head + 1, body })
-    }
-  })
-  return found
-}
-
-// 틀 본문의 {{...}} 는 저장소가 채운 값이라 아무 글자에나 맞춘다
-function sameBody(template: string, copy: string): boolean {
-  const parts = template.split(/\{\{[^}]*\}\}/)
-  if (parts.length === 1) return template === copy
-  const pattern = parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s\\S]*?')
-  return new RegExp(`^${pattern}$`).test(copy)
-}
-
 // 머리 주석의 「공통」. 지시서 폴더마다 한 번 본다
 function staleCommon(specs: string[], repoRoot: string): string[] {
-  let template: Map<string, { no: number; body: string }>
+  let template: Map<string, RuleBody>
   try {
     template = ruleBodies(readFileSync(TEMPLATE, 'utf8'))
   } catch {
@@ -475,7 +421,7 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
     }
     for (const [name, mine] of has) {
       const want = template.get(name)
-      if (want && !sameBody(want.body, mine.body)) {
+      if (want && !mine.keep && !sameBody(want.body, mine.body)) {
         found.push(
           `${common}:${mine.no}: 공통: 표지 \`${name}\` 가 붙은 규칙이 틀과 다르다. ` +
             `저장소가 일부러 바꾼 것이 아니면 틀(${TEMPLATE}:${want.no})의 그 항목으로 바꾼다`,

@@ -605,3 +605,13 @@ describe('--check-overlay', () => {
     assert.equal(run([]).code, 2)
   })
 })
+
+test('keep 표지의 의도적 변경은 공통 본문 경고를 내지 않는다', () => {
+  const template = write(join(tmp, 'keep-template.md'), '- 새 규칙 <!-- orch-rule: local -->\n')
+  write(join(specs, 'spec-common.md'), '- 저장소 규칙 <!-- orch-rule: local keep -->\n')
+  const done = spawnSync(process.execPath, [SCRIPT, '--repo', repo, spec('keep', '')], {
+    encoding: 'utf8', env: { ...ENV, SPEC_TEMPLATE: template },
+  })
+  assert.equal(done.status, 0, done.stderr)
+  assert.doesNotMatch(done.stdout, /공통:/)
+})

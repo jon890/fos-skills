@@ -167,6 +167,7 @@ const ROWS: Row[] = [
   ),
   // spec
   { group: 'spec', verb: 'lint', script: 'spec/spec-lint.ts', context: ['repo'], legacy: { name: 'spec-lint', flags: [] }, usage: 'orch spec lint' },
+  { group: 'spec', verb: 'sync-common', script: 'spec/sync-common.ts', context: ['repo', 'specs-dir'], usage: 'orch spec sync-common [--apply]' },
   { group: 'spec', verb: 'line', script: 'spec/spec-line.ts', legacy: { name: 'spec-line', flags: [] }, usage: 'orch spec line <지시서> [--require-permission]' },
   // doctor. Run 은 문맥으로 채우지 않는다(스펙 DECISION23)
   { group: 'doctor', verb: null, script: 'doctor/orch-doctor.ts', context: ['repo'], legacy: { name: 'orch-doctor', flags: [] }, usage: 'orch doctor [--run <Run>]' },
