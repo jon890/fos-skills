@@ -8,7 +8,7 @@ description: |
   외부에 게시하는 본문은 `content-preview` 가, 문서 감사는 `docs-audit` 가 맡는다.
   혼자 읽는 HTML 보고서는 `report` 스킬이 설치돼 있으면 그쪽이 맡는다.
 metadata:
-  version: "2.0.4"
+  version: "2.0.5"
 ---
 
 # presentation
