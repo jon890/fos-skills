@@ -32,7 +32,7 @@ function migratedSlug(file: string, index: number): string {
 function main(): number {
   try {
     let parsed
-    try { parsed = parseArgs({ args: expandArgs(process.argv.slice(2), OPTIONS), options: OPTIONS, allowPositionals: true }) }
+    try { parsed = parseArgs({ args: expandArgs(process.argv.slice(2), OPTIONS, ['title', 'skill', 'file', 'situation', 'problem', 'want', 'evidence', 'significance', 'nontrivial', 'structural', 'status']), options: OPTIONS, allowPositionals: true }) }
     catch (error) { throw new Usage((error as Error).message) }
     const { values, positionals } = parsed
     if (values.help) { process.stdout.write(`${USAGE}\n`); return 0 }

@@ -135,3 +135,12 @@ test('공통 지시서 동기화가 후보 기록 명령과 필수 옵션을 함
   assert.match(result.text, /orch feedback add --slug/)
   assert.match(result.text, /--structural/)
 })
+
+
+test('하이픈으로 시작하는 설명도 옵션 대신 값으로 저장한다', () => {
+  const args = [...fields]
+  args[args.indexOf('--want') + 1] = '--dry-run 을 기본으로'
+  const result = run('add', ...args)
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(parse(readFileSync(join(dir, 'a.md'), 'utf8'))!.values['바라는 기능'], '--dry-run 을 기본으로')
+})
