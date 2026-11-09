@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { utimesSync } from 'node:fs'
 import { afterEach, beforeEach, test } from 'node:test'
 import { MAX_MESSAGE_LIMIT, MESSAGE_LIMIT, dispatchesFor, recordRouting, routingRecords, reviewCounts, writeRoutingRecord } from '../scripts/lib/routing-log.ts'
 import { fixture, launch, msg, PR } from './fixtures/routing-fakes.ts'
@@ -240,4 +241,70 @@ test('읽기 보고서는 손상 줄을 건너뛰고 쓰기는 경로와 줄 번
   assert.deepEqual(warnings, [`${file}:2: routing 기록 형식 오류`])
   await assert.rejects(writeRoutingRecord(f.dir, { ...row, pr: 8 }), { message: `${file}:2: routing 기록 형식 오류` })
   assert.equal(readFileSync(file, 'utf8'), original)
+})
+
+const assistant = (id: string, at: string, usage: Record<string, number>) => ({ type: 'assistant', timestamp: at, message: { id, usage } })
+const codexRows = (cwd: string, start: string, total: Record<string, number>) => [
+  { type: 'session_meta', payload: { cwd, timestamp: start } },
+  { type: 'event_msg', timestamp: '2026-11-06T01:10:00Z', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } } } },
+  { type: 'event_msg', timestamp: '2026-11-06T01:50:00Z', payload: { type: 'token_count', info: { total_token_usage: total } } },
+]
+
+test('Claude 세션 기록의 usage 를 기간 안에서 message.id 별로 한 번만 센다', async () => {
+  writeFileSync(join(f.dir, '.orch/state/launch-history.jsonl'), '')
+  f.history(launch({ agent: 'claude', effective: { agent: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' } }))
+  const u = { input_tokens: 2, output_tokens: 10, cache_read_input_tokens: 100, cache_creation_input_tokens: 5 }
+  f.claudeSession('/temp/worktree', [
+    assistant('m1', '2026-11-06T01:05:00Z', u), assistant('m1', '2026-11-06T01:05:01Z', u),
+    assistant('m2', '2026-11-06T01:20:00Z', u),
+    assistant('before', '2026-11-06T00:30:00Z', u), assistant('after', '2026-11-06T03:00:00Z', u),
+  ])
+  await recordRouting(f.dir, 7, 'merged')
+  const row = f.rows()[0]
+  assert.deepEqual(row.tokens, { input: 4, output: 20, cache_read: 200, cache_write: 10 })
+  assert.equal(row.tokens_source, 'session')
+})
+
+test('Codex 세션 기록의 마지막 누적값을 읽고 입력에서 캐시 읽기를 뺀다', async () => {
+  f.codexSession('2026/11/06', codexRows('/temp/worktree', '2026-11-06T01:01:00Z', { input_tokens: 1000, cached_input_tokens: 900, output_tokens: 50 }))
+  await recordRouting(f.dir, 7, 'merged')
+  assert.deepEqual(f.rows()[0].tokens, { input: 100, output: 50, cache_read: 900, cache_write: 0 })
+  assert.equal(f.rows()[0].tokens_source, 'session')
+})
+
+test('다른 워크트리이거나 기간 밖인 Codex 세션은 세지 않고 이유를 unavailable 로 남긴다', async () => {
+  f.codexSession('2026/11/06', codexRows('/elsewhere', '2026-11-06T01:01:00Z', { input_tokens: 9, cached_input_tokens: 0, output_tokens: 9 }))
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows()[0].tokens, null)
+  assert.equal(f.rows()[0].tokens_source, 'unavailable')
+})
+
+test('세션 기록이 없고 Orca 사용량 파일이 dispatch 시작보다 오래됐으면 stale 로 남긴다', async () => {
+  f.usage('codex', [{ firstTimestamp: '2026-11-06T01:01:00Z', primaryWorktreeId: 'wt_a', totalInputTokens: 100, totalCachedInputTokens: 40, totalOutputTokens: 30 }])
+  const old = new Date('2026-11-05T00:00:00Z')
+  utimesSync(join(f.dir, 'usage', 'orca-codex-usage.json'), old, old)
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows()[0].tokens, null)
+  assert.equal(f.rows()[0].tokens_source, 'stale')
+})
+
+test('세션 기록이 없으면 갱신된 Orca 사용량 파일을 쓴다', async () => {
+  f.usage('codex', [{ firstTimestamp: '2026-11-06T01:01:00Z', primaryWorktreeId: 'wt_a', totalInputTokens: 100, totalCachedInputTokens: 40, totalOutputTokens: 30 }])
+  await recordRouting(f.dir, 7, 'merged')
+  assert.equal(f.rows()[0].tokens_source, 'orca-usage')
+  assert.deepEqual(f.rows()[0].tokens, { input: 60, output: 30, cache_read: 40, cache_write: 0 })
+})
+
+test('실행 이력보다 먼저 시작한 Codex 세션도 센다', async () => {
+  f.codexSession('2026/11/06', codexRows('/temp/worktree', '2026-11-06T00:58:00Z', { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 }))
+  await recordRouting(f.dir, 7, 'merged')
+  assert.deepEqual(f.rows()[0].tokens, { input: 10, output: 5, cache_read: 0, cache_write: 0 })
+})
+
+test('Codex 세션의 종료 시각 뒤 누적값은 세지 않는다', async () => {
+  const rows = codexRows('/temp/worktree', '2026-11-06T01:01:00Z', { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 })
+  rows.push({ type: 'event_msg', timestamp: '2026-11-06T05:00:00Z', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 999, cached_input_tokens: 0, output_tokens: 999 } } } })
+  f.codexSession('2026/11/06', rows)
+  await recordRouting(f.dir, 7, 'merged')
+  assert.deepEqual(f.rows()[0].tokens, { input: 10, output: 5, cache_read: 0, cache_write: 0 })
 })
