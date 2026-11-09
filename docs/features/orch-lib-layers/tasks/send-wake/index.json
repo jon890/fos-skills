@@ -4,8 +4,8 @@
   "pr_scope": "worker send 의 터미널 입력을 없애고 후속 Task 기록을 남긴다.",
   "deferred": [
     {
-      "what": "orca-wake 이후 계획",
-      "why": "REQ6/REQ18 외 변경은 뒤 PR",
+      "what": "orca-wake: REQ6 의 남은 터미널 입력 경로(nudge 명령, 루프, 결정 알림) 제거와 나머지 후속 계획",
+      "why": "이번 PR 은 REQ6 중 send-to-worker 경로와 REQ18 을 구현한다",
       "after": "send-wake 머지"
     }
   ],

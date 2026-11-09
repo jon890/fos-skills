@@ -10,7 +10,7 @@
 
 ## 컨텍스트
 
-**요구사항**: REQ6, REQ18
+**요구사항**: REQ6 중 send-to-worker 경로, REQ18
 
 **근거 문서**: `docs/features/orch-lib-layers/spec.md`, `docs/features/orch-lib-layers/design.md`의 「worker 에게 보내기와 후속 일」.
 `worker/send-to-worker.ts` 의 reply 거절 처리와 launch-worker 복구 경로는 보존한다.
