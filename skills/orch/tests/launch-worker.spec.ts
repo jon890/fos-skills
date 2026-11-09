@@ -671,7 +671,7 @@ describe('띄우기', () => {
 
   test('worker-start 가 성공한 뒤의 실패는 이어 띄우는 명령을 알리지 않는다', () => {
     // dispatch 가 이미 떠 있으면 --worktree 로 다시 띄우라고 하지 않는다. 같은 일의 task 가 하나 더 생긴다
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
     const r = launch(['--repo', tmp, '--name', 'feat', '--watch', '1', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.doesNotMatch(r.stderr, /워크트리는 남아 있다/)
@@ -689,7 +689,7 @@ describe('띄우기', () => {
   })
 
   test('worktree_creating 에서 시간이 넘으면 멈춤만 알리고 abandon 과 재시도를 하지 않는다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
     const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
@@ -698,16 +698,8 @@ describe('띄우기', () => {
     assert.doesNotMatch(r.stdout, /LAUNCHED/)
   })
 
-  test('시간 초과로 멈추면 실패이며 새 dispatch 를 만들지 않는다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
-    const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
-    assert.equal(r.code, 1, both(r))
-    assert.equal(lines('orca orchestration worker-start').length, 1)
-    assert.doesNotMatch(r.stdout, /LAUNCHED/)
-  })
-
   test('worktree_creating 이어도 heartbeat 가 있으면 abandon 하지 않고 LAUNCHED 다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: { ...shown('worktree_creating'), dispatch: { lastHeartbeatAt: '2026-11-02T08:00:00Z' } } } })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('worktree_creating'), dispatch: { lastHeartbeatAt: '2026-11-02T08:00:00Z' } } } })
     const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
@@ -790,7 +782,7 @@ describe('띄우기', () => {
       const board = join(worktree, '.omc/board.json')
       mkdirSync(dirname(board), { recursive: true })
       writeFileSync(board, JSON.stringify({ items: [] }))
-      state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
       const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
       assert.equal(r.code, 1, both(r))
       assert.ok(existsSync(recordOf('ctx_1')))
@@ -2027,7 +2019,7 @@ describe('짧은 출력', () => {
   })
 
   test('시간 초과는 짧은 출력에도 STALLED-START 줄로 근거를 남긴다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
     env.ORCH_OUTPUT = 'short'
     const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
