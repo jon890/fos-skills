@@ -40,6 +40,11 @@ export function syncCommon(copy: string, template: string, repo: string): { text
       continue
     }
     if (mine && sameBody(want.body, mine.body)) continue
+    if (mine?.unsafe || want.unsafe) {
+      output.push(`SYNC-MANUAL ${name}: 표지 없는 부모나 하위 목록이 교체 범위에 있다`)
+      manual = true
+      continue
+    }
     // 현재 틀만으로 바뀐 본문 안의 저장소 값을 확정할 수 없다. 원문을 남기고 직접 맞추게 한다.
     if (/\{\{[^}]*\}\}/.test(want.raw)) {
       output.push(`SYNC-MANUAL ${name}: 자리표시자 값을 확인해 직접 맞춘다`)

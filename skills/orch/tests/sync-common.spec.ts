@@ -112,3 +112,13 @@ test('keep 대소문자와 이유를 받아 보존하고 모르는 뒤꼬리는 
   }
   assert.throws(() => syncCommon('- 저장소 결정 <!-- orch-rule: a unknown -->\n', rule('a', '새것'), repo), /뒤꼬리/)
 })
+
+
+test('하위 표지의 부모와 표지 아래 저장소 하위 목록을 수동 확인으로 보존한다', () => {
+  for (const copy of ['- 저장소 부모\n  - 하위 <!-- orch-rule: a -->\n', rule('a', '옛것') + '  - 저장소 하위 규칙\n']) {
+    const result = syncCommon(copy, rule('a', '새것'), repo)
+    assert.equal(result.text, copy)
+    assert.equal(result.manual, true)
+    assert.match(result.output.join('\n'), /SYNC-MANUAL a/)
+  }
+})
