@@ -1,10 +1,10 @@
-import { currentRuntime, runtimeEnv } from './runtime.ts'
 // 설정 파일과 기본 제한 시간.
 
 import { readdirSync, statSync } from 'node:fs'
 import { JsonDecodeError, exists, isFile, loadJson, osErrorMessage, pyExpanduser, pyHomePrefix, pyPath, pyReadText, pyResolve, pyStrCompare, pyTruthy, shQuote } from './pylike.ts'
 import { UsageError } from './errors.ts'
 import { eprint } from './io.ts'
+import { currentRuntime, runtimeEnv } from './runtime.ts'
 
 export const READY_TIMEOUT_DEFAULT = 30000n
 export const WAIT_TIMEOUT_DEFAULT = 10000n

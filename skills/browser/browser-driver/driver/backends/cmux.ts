@@ -1,12 +1,12 @@
-import { runtimeEnv } from '../runtime.ts'
 // cmux 백엔드. 실패를 종료 코드로 정확히 알리는 유일한 백엔드다.
 
-import { spawn as spawnSync } from '../runtime.ts'
 import { READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT } from '../config.ts'
 import { DriverError, UsageError } from '../errors.ts'
 import { JsonDecodeError, loadJson, normalizeNewlines, parsePyInt, pyDecode, pySplitLines, pyStrip } from '../pylike.ts'
 import { jsValue } from '../shell.ts'
 import { Backend } from './base.ts'
+import { runtimeEnv } from '../runtime.ts'
+import { spawn as spawnSync } from '../runtime.ts'
 
 const rstripNewlines = (text: string) => text.replace(/\n+$/, '')
 

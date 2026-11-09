@@ -1,4 +1,3 @@
-import { runtimeEnv } from './runtime.ts'
 // 진단과 설치. 브라우저를 조작하지 않는 명령이다.
 
 import { mkdirSync, renameSync, symlinkSync, unlinkSync } from 'node:fs'
@@ -9,6 +8,7 @@ import { configPath, configResolution } from './config.ts'
 import { EXIT_USAGE, UsageError } from './errors.ts'
 import { print } from './io.ts'
 import { exists, isSymlink, pyExpanduser, pyHomePrefix, pyPath, pyResolve, pyStrCompare, shQuote, which } from './pylike.ts'
+import { runtimeEnv } from './runtime.ts'
 
 export function cmdDoctor(): number {
   print('=== 브라우저 드라이버 진단 ===')

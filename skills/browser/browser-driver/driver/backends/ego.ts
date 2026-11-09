@@ -1,4 +1,3 @@
-import { runtimeEnv } from '../runtime.ts'
 // ego-browser 백엔드. 사용자가 쓰는 Chromium 의 로그인 세션을 그대로 쓴다.
 
 import { READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT, configValue, profileConfigGuidance } from '../config.ts'
@@ -7,6 +6,7 @@ import { eprint } from '../io.ts'
 import { JsonDecodeError, PyFloat, dumpJson, isDigit, loadJson, parsePyInt, pyFloatStr, pySplitLines, pyStrCompare, pyStrOf, pyStrip, pyTruthy } from '../pylike.ts'
 import { jsValue, run } from '../shell.ts'
 import { Backend } from './base.ts'
+import { runtimeEnv } from '../runtime.ts'
 
 // TaskSpace 이름의 앞부분. 뒤에 프로필 id 를 붙여 `browser-driver/Profile 2` 로 쓴다.
 // 여러 번 open 해도 같은 프로필의 호출은 한 공간에 모이고, 프로필이 다르면 공간도 갈린다.

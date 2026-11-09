@@ -1,4 +1,3 @@
-import { runtimeEnv } from '../runtime.ts'
 // 백엔드 목록과 선택 규칙.
 
 import { configPath, configValue } from '../config.ts'
@@ -9,6 +8,7 @@ import type { Backend } from './base.ts'
 import { CmuxBackend } from './cmux.ts'
 import { EgoBackend } from './ego.ts'
 import { OrcaBackend } from './orca.ts'
+import { runtimeEnv } from '../runtime.ts'
 
 export const BACKENDS = new Map<string, Backend>([new EgoBackend(), new OrcaBackend(), new AgentBrowserBackend(), new CmuxBackend()].map((b) => [b.name, b]))
 

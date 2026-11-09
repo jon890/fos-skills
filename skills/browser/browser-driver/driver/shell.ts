@@ -1,10 +1,10 @@
 // 백엔드 프로세스를 부르고 반환값을 정규화하는 공통 도구.
 
-import { spawn as spawnSync, runtimeEnv } from './runtime.ts'
 import { constants } from 'node:os'
 import { WAIT_INTERVAL } from './config.ts'
 import { DriverError } from './errors.ts'
 import { dumpJson, normalizeNewlines, pyDecode, pySplitLines, pyStrip } from './pylike.ts'
+import { spawn as spawnSync, runtimeEnv } from './runtime.ts'
 
 // 외부 명령을 돌리고 stdout+stderr 를 한 덩어리로 돌려준다.
 //

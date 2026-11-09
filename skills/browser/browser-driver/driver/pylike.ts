@@ -1,4 +1,3 @@
-import { runtimeEnv } from './runtime.ts'
 // 옛 Python 구현이 표준 라이브러리로 하던 일 가운데 이 드라이버가 쓰는 것만 옮겼다.
 // 같은 입력에 같은 글자를 내는 것이 목적이라 이름과 순서를 원본(str, float, int, json, os.path, pathlib, shutil, shlex)에 맞췄다.
 // 이 폴더는 팀 저장소에 tools/browser-driver 로 실려 폴더 밖을 import 할 수 없다(docs/features/node-runtime/design.md DECISION1).
@@ -26,6 +25,7 @@ import { runtimeEnv } from './runtime.ts'
 import { accessSync, constants, lstatSync, readFileSync, readlinkSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname as nodeDirname } from 'node:path'
+import { runtimeEnv } from './runtime.ts'
 
 // ── 문자열 ──
 

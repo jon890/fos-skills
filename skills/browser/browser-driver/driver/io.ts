@@ -1,8 +1,8 @@
-import { currentRuntime } from './runtime.ts'
 // 출력과 직접 실행 판정. 출력은 자식 프로세스와 같은 fd 에 쓰므로 순서가 바뀌지 않게 동기로 쓴다.
 
 import { realpathSync, writeSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { currentRuntime } from './runtime.ts'
 
 export function write(fd: 1 | 2, text: string): void {
   // 짝 없는 서로게이트는 UTF-8 로 쓸 수 없다. Python 은 UnicodeEncodeError 로 끝난다
