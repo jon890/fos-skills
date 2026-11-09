@@ -1737,7 +1737,8 @@ async function handleConflicts(ctx: Context, lookup: Lookup, base: string, found
     await concludeConflict(statePath, ctx.repo, fireCtx, pr, files, baseSha, outcome)
     if (outcome.action === 'orphan' || outcome.action === 'stalled') {
       try {
-        appendEvent(ctx.repo, outcome.action === 'stalled' ? 'CONFLICT-STALLED' : 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '', run)
+        if (outcome.action === 'stalled') appendEvent(ctx.repo, 'CONFLICT-STALLED', pr.number, outcome.reason ?? '', run)
+        else appendEvent(ctx.repo, 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '', run)
       } catch (e) {
         log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
       }
