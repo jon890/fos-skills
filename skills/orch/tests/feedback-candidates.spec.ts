@@ -163,3 +163,24 @@ test('다시 보기와 보류 기록은 앞 후보의 근거에 붙이고 별도
   assert.equal(table.title, '후보 모음')
   assert.match(table.values.근거, /다음에 본다/)
 })
+
+
+test('휴지통 준비가 실패해도 원본을 지키고 같은 옮기기 명령을 다시 실행할 수 있다', () => {
+  mkdirSync(dir, { recursive: true })
+  const source = join(dir, 'old.md')
+  writeFileSync(source, '## 문제\n원문\n')
+  const blocked = join(repo, 'not-a-dir')
+  writeFileSync(blocked, '파일')
+  const failed = run('migrate', '--apply', '--trash', join(blocked, 'trash'))
+  assert.equal(failed.status, 1)
+  assert.match(failed.stderr, /원본을 남겼으니/)
+  assert.deepEqual(readdirSync(dir), ['old.md'])
+  // 프로세스가 멈추기 전에 이미 쓴 동일한 후보도 다시 쓸 수 있다.
+  const preview = run('migrate', '--trash', join(repo, 'trash')).stdout
+  const target = /^PREVIEW .* -> (.+)$/m.exec(preview)![1]
+  const content = preview.slice(preview.indexOf('\n') + 1, preview.lastIndexOf('DRY-RUN'))
+  writeFileSync(target, content)
+  assert.equal(run('migrate', '--apply', '--trash', join(repo, 'trash')).status, 0)
+  assert.equal(existsSync(source), false)
+  assert.equal(readFileSync(join(repo, 'trash', 'old.md'), 'utf8'), '## 문제\n원문\n')
+})

@@ -1,7 +1,7 @@
 // 개선 후보를 정해진 칸으로만 적는다. migrate 는 미리보기가 기본이고 --apply 일 때만 원본을 휴지통으로 옮긴다.
 // 종료 코드: 0 성공, 1 중복·없는 후보·옮기기 실패, 2 사용법 오류.
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -95,18 +95,33 @@ function main(): number {
       // 쓰기 전에 모두 확인하고 기존 후보와 휴지통 파일을 덮어쓰지 않는다.
       for (const plan of plans) {
         if (existsSync(plan.dest)) throw new Refused(`휴지통에 같은 이름이 있다: ${plan.dest}`)
-        for (const candidate of plan.candidates) if (existsSync(candidate.file)) throw new Refused(`옮길 파일이 이미 있다: ${candidate.file}`)
+        for (const candidate of plan.candidates) if (existsSync(candidate.file) && readFileSync(candidate.file, 'utf8') !== candidate.text) throw new Refused(`옮길 파일이 이미 있다: ${candidate.file}`)
       }
       for (const plan of plans) {
-        for (const candidate of plan.candidates) {
-          process.stdout.write(`${values.apply ? 'MIGRATED' : 'PREVIEW'} ${plan.file} -> ${candidate.file}\n${candidate.text}`)
-          if (values.apply) writeFileSync(candidate.file, candidate.text, { flag: 'wx' })
+        const created: string[] = []
+        try {
+          if (values.apply) mkdirSync(trash, { recursive: true })
+          for (const candidate of plan.candidates) {
+            if (values.apply && !existsSync(candidate.file)) {
+              writeFileSync(candidate.file, candidate.text, { flag: 'wx' })
+              created.push(candidate.file)
+            }
+          }
+          if (values.apply) {
+            try { renameSync(plan.file, plan.dest) }
+            catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+              copyFileSync(plan.file, plan.dest, constants.COPYFILE_EXCL)
+              try { unlinkSync(plan.file) }
+              catch (error) { rmSync(plan.dest); throw error }
+            }
+          }
+        } catch (error) {
+          for (const file of created) rmSync(file, { force: true })
+          throw new Refused(`옮기지 못했다. 원본을 남겼으니 같은 명령으로 다시 실행한다: ${plan.file}: ${(error as Error).message}`)
         }
-        if (values.apply) {
-          mkdirSync(trash, { recursive: true })
-          renameSync(plan.file, plan.dest)
-          process.stdout.write(`TRASHED ${plan.file} ${plan.dest}\n`)
-        }
+        for (const candidate of plan.candidates) process.stdout.write(`${values.apply ? 'MIGRATED' : 'PREVIEW'} ${plan.file} -> ${candidate.file}\n${candidate.text}`)
+        if (values.apply) process.stdout.write(`TRASHED ${plan.file} ${plan.dest}\n`)
       }
       process.stdout.write(`${values.apply ? 'APPLIED' : 'DRY-RUN'} ${plans.length} files ${plans.reduce((n, p) => n + p.candidates.length, 0)} candidates\n`)
     }
