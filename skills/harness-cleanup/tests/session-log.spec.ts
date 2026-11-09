@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { tempDir } from '../../../modules/testkit/temp.ts'
@@ -36,4 +36,32 @@ test('메시지는 필요한 시점에 읽고 깨진 줄과 중복 blob 을 건�
   appendFileSync(file, Buffer.from([0xff]))
   appendFileSync(file, `"}}\r${JSON.stringify(last)}`)
   assert.deepEqual([...messages], [first, { type: 'user', message: { content: '\uFFFD' } }, last])
+})
+
+test('메시지 반복을 break 로 끝내도 파일을 닫는다', () => {
+  const file = join(tempDir('hc-close-break-'), 'session.jsonl')
+  writeFileSync(file, '{"type":"user"}\n{"type":"assistant"}\n')
+  const before = readdirSync('/dev/fd').length
+  let visited = 0
+  for (const record of iterMessages(file)) {
+    assert.equal(record.type, 'user')
+    visited++
+    break
+  }
+  assert.equal(visited, 1)
+  assert.equal(readdirSync('/dev/fd').length, before)
+})
+
+test('메시지 반복 안에서 예외가 나도 파일을 닫는다', () => {
+  const file = join(tempDir('hc-close-throw-'), 'session.jsonl')
+  writeFileSync(file, '{"type":"user"}\n{"type":"assistant"}\n')
+  const before = readdirSync('/dev/fd').length
+  const failure = new Error('stop iteration')
+  assert.throws(() => {
+    for (const record of iterMessages(file)) {
+      assert.equal(record.type, 'user')
+      throw failure
+    }
+  }, (error) => error === failure)
+  assert.equal(readdirSync('/dev/fd').length, before)
 })
