@@ -41,12 +41,7 @@
 
 `merge-with-finish.ts`, `finish-pr.ts`, `handoff-cleanup.ts` 는 `<repo>/.orch/config.json` 이 있으면 읽는다.
 `--config FILE` 로 다른 파일을 줄 수 있고, 명령줄 옵션이 파일 값보다 우선한다. 파일에 없는 값은 옵션이나 기본값을 쓴다.
-스크립트마다 자기 절만 읽는다. `finish` 절은 `finish-pr.ts` 가, `cleanup` 절은 `handoff-cleanup.ts` 가, `queue` 절은 `merge-with-finish.ts` 가 읽는다.
-`hooks` 절은 이벤트를 내는 모든 명령이, `pipeline` 절은 아래 표의 명령이, `migrations` 절은 상주 루프가 읽는다.
-`board` 절은 `launch-worker`, `board-sync.ts`, `finish-pr.ts`, `board-release.ts` 가 읽는다.
-`docker` 절은 `cleanup-sweep.ts` 가 저장소마다 읽는다.
-상주 루프(`orch-loop.ts`)는 `finish` 절의 `run`, `specs_dir`, `queue` 절의 `required`, `skipped_is_missing`, `auto_merge`, `auto_review`, `pipeline` 절을 읽는다.
-절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다.
+스크립트마다 자기 절만 읽고, 어느 명령이 어느 절을 읽는지는 `scripts/lib/config.ts` 머리 주석과 각 스크립트 머리 주석이 소유한다. 절 안에 모르는 키가 있으면 사용법 오류로 멈춘다. 키 이름은 옵션 이름의 하이픈을 밑줄로 바꾼 것이다. 아래 표에 없는 키(더하는 절)는 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다.
 
 | 절 | 키 | 담는 것 |
 | --- | --- | --- |
@@ -119,9 +114,7 @@
 ### 뒤처진 PR 미리 최신화
 
 **`pipeline.refresh_slots` 는 상주 루프가 건 최신화 가운데 동시에 CI 가 도는 PR 수의 상한이다. 기본 0 이고 0 이면 끈다.**
-켜면 루프가 틱마다 base 에 뒤처진 내 PR 을 찾아, 머지 큐가 차례에 할 `update-branch` 를 미리 PR 마다 따로 건다.
-뒤처진 PR 들의 CI 가 함께 돌고, 머지 큐는 지금처럼 하나씩 머지하되 차례가 온 PR 이 이미 최신이면 기다리지 않는다.
-최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
+동작과 효과는 [`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」 가 소유한다. 최신화할지는 머지 큐와 같은 `queue` 키(`require_up_to_date`, `up_to_date_when`, `shared_paths`, `unit_groups`, `docs_glob`)로 정한다. `require_up_to_date` 가 false 면 돌지 않는다.
 대상과 미루는 경우는 `orch-loop.ts` 머리 주석의 「최신화」 가, 근거는 저장소 `docs/adr/020-orch-loop-refresh.md` 가 소유한다.
 
 **값은 CI runner 수보다 작게 둔다.** 최신화 하나가 PR CI 한 벌을 돌린다. worker 의 push, 머지 큐 차례의 CI, base 브랜치의 CI 도 같은 runner 를 쓰므로 runner 를 모두 주면 그쪽이 줄을 선다.
@@ -244,15 +237,11 @@ orch doctor migrate --repo "$REPO" --apply
 }
 ```
 
-`dirs`는 `orch queue reserve` 가 SQL 파일 경로를 만드는 자리이고 자동 감시에도 들어간다. `watch`는 같은 모듈에 더할 감시 폴더 목록이다. 따라서 위 설정은 Java 경로의 Flyway 번호도 SQL 예약과 같은 번호 공간으로 본다.
-Java 마이그레이션은 `orch queue reserve --kind java` 로 받는다. 그 모듈의 `watch` 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 를 낸다. Flyway 는 클래스 이름을 파일 이름으로 쓰므로 이름은 대소문자를 지키고, Java 식별자가 아니면 사용법 오류다.
-`watch`에만 적은 모듈은 `--kind java` 로만 예약할 수 있다.
+`dirs` 는 SQL 예약 자리이고 자동 감시에도 들어간다. `watch` 는 같은 모듈에 더할 Java 감시 폴더라 Java 경로의 Flyway 번호도 SQL 예약과 같은 번호 공간으로 본다. Java 마이그레이션은 `orch queue reserve --kind java` 로 받는다. 이름 규칙과 `--dir` 은 `queue reserve` 머리 주석이 소유한다.
 
 ### 모델 선택 관측 설정
 
-`routing` 절은 이 절을 지원하는 새 번들을 설치한 뒤 저장소 `config.json`에 더한다.
-옛 번들은 모르는 최상위 절을 설정 오류로 거부한다.
-키와 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다.
+`routing` 절은 이 절을 지원하는 새 번들을 설치한 뒤에만 `config.json` 에 더한다(옛 번들은 모르는 절을 설정 오류로 거부한다). 키와 형식은 [데이터 스키마](../../../docs/data-schema.md#configjson-에-더하는-절)가 소유한다.
 
 ```json
 {
@@ -263,28 +252,18 @@ Java 마이그레이션은 `orch queue reserve --kind java` 로 받는다. 그 �
 }
 ```
 
-`review_pattern`을 생략하면 P1~P5가 열 머리인 Markdown 표에서 첫 수 행을 읽는다.
-다른 표를 쓰는 저장소는 P1부터 P5까지의 수를 차례로 캡처하는 정규식을 준다.
-등급을 읽을 꼴이 없으면 `size_grade`는 null이다.
-본문·질문 글·금액은 기록하지 않는다.
+`review_pattern` 의 기본 꼴과 `size_grade` 규칙은 데이터 스키마가 소유한다.
 
 ### 알림 필터 설정
 
-`inbox` 절도 이 절을 지원하는 새 번들을 설치한 뒤에만 저장소 `config.json`에 넣는다. 옛 번들은 모르는 최상위 절을 설정 오류로 거부해 상주 루프가 틱마다 실패한다.
-옛 자리 `config/notification.json` 의 내용을 그대로 `inbox` 절에 옮기고 옛 파일을 지운다. `orch doctor --repo` 가 옛 파일을 찾으면 `OLD-INBOX-FILTER` 로 알린다.
+`inbox` 절도 새 번들을 설치한 뒤에만 넣는다. 옛 번들에서는 상주 루프가 틱마다 실패한다. 옛 자리 `config/notification.json` 의 내용을 그대로 `inbox` 절에 옮기고 옛 파일을 지운다. `orch doctor --repo` 가 옛 파일을 찾으면 `OLD-INBOX-FILTER` 로 알린다.
 
 ### 자동 머지 리뷰 조건
 
 `queue.auto_review.require` 에 조건 이름을 적어 저장소마다 리뷰 판정을 조합한다.
-조건의 뜻은 `scripts/lib/auto-merge.ts` 머리 주석의 「judgeReview」, 키 형식은 저장소 `docs/data-schema.md` 가 소유한다.
-미해결 스레드 0, CI 통과, 보류 표시 없음은 조합과 상관없이 늘 본다.
-모르는 이름을 적으면 상주 루프가 어느 PR 도 걸지 않고 `AUTO-MERGE-WAIT` 로그에 이유를 남기며, `orch-doctor` 가 `INVALID-CONFIG` 로 알린다.
+조건의 뜻은 `scripts/lib/auto-merge.ts` 머리 주석의 「judgeReview」, 키 형식은 저장소 `docs/data-schema.md` 가 소유한다. 모르는 이름을 적으면 루프가 어느 PR 도 걸지 않고 `orch-doctor` 가 `INVALID-CONFIG` 로 알린다.
 
 `require` 를 적지 않은 저장소는 `verdict-on-head` 하나와 같다. 리뷰 뒤 코드 커밋을 더하면 다시 리뷰를 받아야 건다.
-
-```json
-{ "queue": { "auto_merge": true, "auto_review": { "pass": "머지 가능", "block": "반영 필요|반영 후 머지" } } }
-```
 
 「머지 가능」 판정 뒤 P3 이하만 반영하면 재리뷰를 받지 않는 저장소는 아래처럼 조합한다.
 판정이 한 번도 없으면 걸지 않고, 마지막 판정이 `pass` 면 그 뒤 반영 커밋이 있어도 건다.
@@ -303,4 +282,4 @@ Java 마이그레이션은 `orch queue reserve --kind java` 로 받는다. 그 �
 }
 ```
 
-큐를 걸면 PR 마다 `AUTO-MERGE-BASIS #<PR> HEAD <앞 8자리> <근거>` 를 루프 로그에 남긴다. 근거는 조건마다 어느 판정(리뷰의 커밋이나 댓글, 시각)으로 통과했는지다.
+큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.
