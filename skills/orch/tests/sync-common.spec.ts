@@ -1,12 +1,12 @@
 // 임시 저장소에서 공통 지시서 미리보기와 적용, lint 와의 비교 규칙을 확인한다.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { syncCommon } from '../scripts/spec/sync-common.ts'
+import { atomicWrite, syncCommon } from '../scripts/spec/sync-common.ts'
 
 let repo: string
 const rule = (name: string, body: string, keep = false) => `- ${body} <!-- orch-rule: ${name}${keep ? ' keep' : ''} -->\n`
@@ -134,4 +134,18 @@ test('빠진 표지는 틀의 절 안에 넣고 위치를 알리며 없는 절�
   assert.equal(syncCommon(result.text, template, repo).text, result.text)
   const absent = syncCommon('## 판단\n' + rule('ask', '묻기'), template, repo)
   assert.match(absent.text, /## 공통\n\n- 예약/)
+})
+
+
+test('원자적 쓰기는 이름 변경 실패 때 원본을 지키고 임시 파일을 치우며 성공 때 권한을 유지한다', () => {
+  const file = join(repo, 'common.md')
+  writeFileSync(file, '원본')
+  chmodSync(file, 0o640)
+  assert.throws(() => atomicWrite(file, '새것', () => { throw new Error('rename 실패') }), /rename 실패/)
+  assert.equal(readFileSync(file, 'utf8'), '원본')
+  assert.deepEqual(readdirSync(repo).sort(), ['.orch', 'common.md'])
+  const previousMask = process.umask(0o077)
+  try { atomicWrite(file, '새것') } finally { process.umask(previousMask) }
+  assert.equal(readFileSync(file, 'utf8'), '새것')
+  assert.equal(statSync(file).mode & 0o777, 0o640)
 })

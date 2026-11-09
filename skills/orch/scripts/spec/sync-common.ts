@@ -3,8 +3,9 @@
 // 표지 없는 항목과 keep 표지는 보존한다. 자리표시자 값이 있는 낡은 항목은 추측하지 않고 수동 확인으로 남긴다.
 // 출력: SYNC-ADD/UPDATE 뒤 항목 diff, SYNC-KEEP, SYNC-MANUAL, SYNC-PREVIEW/APPLIED/UNCHANGED.
 // 종료 코드: 0 성공(미리보기 포함), 1 수동 확인 필요(안전한 항목은 적용), 2 인자 또는 파일 오류.
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { chmodSync, existsSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { expandArgs } from '../lib/args.ts'
@@ -89,6 +90,19 @@ export function syncCommon(copy: string, template: string, repo: string): { text
   return { text: edits.length ? lines.join(eol) : copy, output, manual }
 }
 
+// 같은 폴더에서 완성한 파일을 rename 한다. 실패하면 원본과 권한을 지키고 임시 파일만 치운다.
+export function atomicWrite(file: string, text: string, rename: typeof renameSync = renameSync): void {
+  const target = realpathSync(file)
+  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`)
+  try {
+    writeFileSync(temporary, text, { flag: 'wx', mode: statSync(target).mode })
+    chmodSync(temporary, statSync(target).mode & 0o7777)
+    rename(temporary, target)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+}
+
 export function main(argv: string[]): number {
   try {
     const options = { repo: { type: 'string' }, 'specs-dir': { type: 'string' }, apply: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } as const
@@ -105,7 +119,7 @@ export function main(argv: string[]): number {
     const result = syncCommon(original, template, repo)
     for (const line of result.output) console.log(line)
     const changed = result.text !== original
-    if (values.apply && changed) writeFileSync(file, result.text)
+    if (values.apply && changed) atomicWrite(file, result.text)
     console.log(`SYNC-${changed ? values.apply ? 'APPLIED' : 'PREVIEW' : 'UNCHANGED'} ${file}`)
     return result.manual ? 1 : 0
   } catch (error) {
