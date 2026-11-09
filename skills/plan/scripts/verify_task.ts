@@ -225,7 +225,7 @@ function manifest(path: string, text: string, out: string[], warnings: string[])
     const files = [...cells[0].matchAll(/`([^`]+)`/g)].map((m) => m[1])
     const action = pyre(/^\s*(신규·수정|신규|수정|삭제)(?:\s|$|\()/).exec(cells[1])
     if (files.length !== 1 || !action) {
-      out.push(`${path} — 변경 파일 행의 경로 또는 변경 종류가 잘못됐다: ${line}`)
+      out.push(`${path} — 변경 파일 행의 경로 또는 변경 종류가 잘못됐다. 변경 칸은 신규, 수정, 삭제, 신규·수정(glob 행) 중 하나로 시작하고 설명은 \`수정 (설명)\` 처럼 괄호나 공백 뒤에 붙인다: ${line}`)
       continue
     }
     const rel = files[0].startsWith('./') ? files[0].slice(2) : files[0]
@@ -392,6 +392,17 @@ const KNOWN = new Set([...TEST_RUNNERS, ...VALUE_OPTIONS.keys(), 'python', 'pyth
 // node 에서 값을 따로 받는 옵션이다. `--test` 가 스크립트 이름보다 앞에 있는지 볼 때 건너뛴다
 const NODE_VALUE_OPTIONS = new Set(['--import', '--require', '-r', '--loader', '--experimental-loader', '--env-file', '--conditions', '-C'])
 
+// `node [옵션] <스크립트> [인자...]` 의 스크립트 경로다. 없으면 null 이다
+function nodeScript(args: string[]): string | null {
+  let skip = false
+  for (const arg of args) {
+    if (skip) skip = false
+    else if (NODE_VALUE_OPTIONS.has(arg)) skip = true
+    else if (!arg.startsWith('-')) return arg
+  }
+  return null
+}
+
 // `node [옵션] --test [파일...]` 이다. 스크립트 이름 뒤의 `--test` 는 스크립트 인자다
 function nodeTest(args: string[]): boolean {
   let skip = false
@@ -496,14 +507,21 @@ export function classify(commandIn: Command, entries: Entry[], repo: string, cwd
   if (['bash', 'sh', 'python', 'python3'].includes(program)) {
     if (args.length === 0 || args[0].startsWith('-')) return 'other'
     script = args[0]
+  } else if (program === 'node') {
+    // node <스크립트> 도 bash·python 처럼 스크립트 경로로 판정한다. 경로가 없으면 판정하지 못한 명령이다
+    script = nodeScript(args) ?? script
   } else if (NON_TEST.has(program)) return 'other'
   if (script.startsWith('./')) script = script.slice(2)
   if (!['scripts/', 'tests/', 'test/'].some((p) => script.startsWith(p))) return KNOWN.has(program) || script.includes('/') ? 'other' : 'unknown'
-  const named = isTest(script) || /(?:^|\/)(?:check|verify|test)[_.-]/.test(script)
+  const named = isTest(script) || /(?:^|\/)(?:check|verify|test)[_.-]/.test(script) || isRepoTestRunner(script)
   const rooted = cwd ? posixNormpath(posixJoin(cwd, script)) : script
   const available = isFile(`${repo}/${rooted}`) || entries.some(([rel, action]) => matches(rooted, rel) && action !== '삭제')
   return named && available ? 'test' : 'other'
 }
+
+// 저장소 테스트 실행기다. 인자로 준 파일·폴더가 실행 범위다
+const REPO_TEST_RUNNER = /(?:^|\/)scripts\/run-tests\.(?:ts|js|mjs|cjs)$/
+const isRepoTestRunner = (script: string) => REPO_TEST_RUNNER.test(script)
 
 function isFile(path: string): boolean {
   try {
@@ -546,6 +564,7 @@ export function recursiveDirectoryRunner(commandIn: Command): boolean {
   const program = pathName(command[0])
   const args = command.slice(1)
   if (program === 'bun') return positional('bun', args)[0] === 'test'
+  if (repoTestRunnerArgs(command) !== null) return true
   return DIRECTORY_RUNNERS.has(program) || DIRECTORY_PACKAGE_MANAGERS.has(program) || ((program === 'python' || program === 'python3') && args[0] === '-m' && args[1] === 'pytest')
 }
 
@@ -581,7 +600,17 @@ export function directoryArgs(commandIn: Command): string[] {
     }
     return rest
   }
+  const runnerArgs = repoTestRunnerArgs(command)
+  if (runnerArgs !== null) return runnerArgs
   return command.filter((arg) => isTest(arg))
+}
+
+// `node scripts/run-tests.ts <파일·폴더...>` 의 인자다. 그 명령이 아니면 null 이다. 인자가 없으면 저장소 전체라 빈 목록이다
+function repoTestRunnerArgs(command: Command): string[] | null {
+  if (command.length === 0 || pathName(command[0]) !== 'node') return null
+  const script = nodeScript(command.slice(1))
+  if (script === null || !isRepoTestRunner(script.startsWith('./') ? script.slice(2) : script)) return null
+  return command.slice(command.indexOf(script) + 1).filter((arg) => !arg.startsWith('-'))
 }
 
 // 같은 줄의 `cd <dir>` 를 반영한다. 줄이 바뀌면 저장소 루트로 돌아간다.
@@ -1232,6 +1261,7 @@ export function checkPhasePrompt(path: string, text: string, out: string[], entr
     }
   }
   for (const command of runners) {
+    if (repoTestRunnerArgs(unwrap(command)) !== null) continue
     if (command.some((arg) => (arg.startsWith('./') ? arg.slice(2) : arg).startsWith('scripts/'))) warnings.push(`${path} — 저장소 스크립트의 테스트 범위와 실패 종료 코드는 직접 확인한다: ${command.join(' ')}`)
   }
 }
