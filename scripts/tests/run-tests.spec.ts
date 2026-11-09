@@ -142,6 +142,31 @@ describe("run-tests", { concurrency: true }, () => {
     assert.match(done.out, /^결과: 통과 1, 실패 0, 전체 1, 걸린 시간 [\d.]+s$/m);
   });
 
+  test("--tsc-only 는 tsc 줄만 내고 테스트는 돌지 않으며 종료 코드는 tsc 를 따른다", async () => {
+    const root = gitRepo({ "a/tests/bad.spec.ts": FAIL });
+    git(root, "add", "-A");
+    git(root, "commit", "-qm", "init");
+    const ok = await runner(root, ["--tsc-only"], { FOS_TSC_DIR: fakeTsc(0) });
+    assert.equal(ok.code, 0, ok.out + ok.err);
+    assert.match(ok.out, /^통과 tsc [\d.]+s$/m);
+    assert.doesNotMatch(ok.out, /bad\.spec/);
+    assert.match(ok.out, /^결과: 통과 1, 실패 0, 전체 1, 걸린 시간 [\d.]+s$/m);
+    const bad = await runner(root, ["--tsc-only"], { FOS_TSC_DIR: fakeTsc(1) });
+    assert.equal(bad.code, 1, bad.out + bad.err);
+    assert.match(bad.out, /^실패 tsc [\d.]+s \(종료 코드 1\) 로그: .+tsc\.log$/m);
+  });
+
+  test("--tsc-only 는 테스트 파일이 없어도 돌고 파일 인자와 함께 주면 2 다", async () => {
+    const root = tempDir();
+    const ok = await runner(root, ["--tsc-only"], { FOS_TSC_DIR: fakeTsc(0) });
+    assert.equal(ok.code, 0, ok.out + ok.err);
+    const both = await runner(root, ["--tsc-only", "t/a.spec.mjs"], { FOS_TSC_DIR: fakeTsc(0) });
+    assert.equal(both.code, 2, both.out + both.err);
+    assert.match(both.err, /--tsc-only 는 파일 인자와 함께/);
+    assert.equal(parseArgs(["--tsc-only"], 2).tscOnly, true);
+    assert.equal(parseArgs([], 2).tscOnly, false);
+  });
+
   test("폴더를 인자로 주면 그 아래 *.spec.ts 다", async () => {
     const root = tempDir();
     write(root, "x/tests/a.spec.ts", PASS);

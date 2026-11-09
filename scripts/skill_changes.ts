@@ -21,7 +21,7 @@ export const LEVELS = ['patch', 'minor'] as const
 const FRAGMENT_NAME = /^[a-z0-9][a-z0-9-]*\.(patch|minor)\.md(?=\n?$)/
 const VERSION_HEADING = /^## (\p{Nd}+)\.(\p{Nd}+)\.(\p{Nd}+) \(\p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2}\)/u
 // re.M 의 ^ 와 $. 뒤의 공백은 줄바꿈까지 먹을 수 있어 옛 정규식과 같은 꼴로 둔다
-const SKILL_VERSION_LINE = new RegExp(`(?<![^\\n])(${PY_SPACE}+version:${PY_SPACE}*")(\\p{Nd}+\\.\\p{Nd}+\\.\\p{Nd}+)(")${PY_SPACE}*(?![^\\n])`, 'u')
+export const SKILL_VERSION_LINE = new RegExp(`(?<![^\\n])(${PY_SPACE}+version:${PY_SPACE}*")(\\p{Nd}+\\.\\p{Nd}+\\.\\p{Nd}+)(")${PY_SPACE}*(?![^\\n])`, 'u')
 
 export type Applied = [unit: string, version: string]
 

@@ -9,6 +9,7 @@
 // 묶음 (인자가 없을 때)
 //   git 이 추적하거나 무시하지 않는 파일 가운데 tests/ 아래 *.spec.ts 를 `node --test` 한 번으로 돌고, tsc 도 함께 돈다.
 //   인자를 주면 그 파일이나 glob, 폴더만 돈다(tsc 는 돌지 않는다). 폴더는 그 아래 *.spec.ts, 나머지는 node 파일이다.
+//   --tsc-only 는 반대로 tsc 만 돌고 테스트는 돌지 않는다. 타입만 확인할 때 쓴다. tsc 줄과 종료 코드는 전체 실행의 tsc 단계와 같다.
 //
 // tsc:
 //   node 는 타입을 지우기만 해서 잘못된 속성 접근이 실행 때까지 드러나지 않는다. 저장소에 package.json 과
@@ -18,6 +19,7 @@
 // 사용법 (cwd: 저장소 루트)
 //   node scripts/run-tests.ts                              모든 묶음과 tsc 를 전경으로 돌린다
 //   node scripts/run-tests.ts skills/orch/tests/a.spec.ts  주어진 파일이나 glob, 폴더만 돌린다
+//   node scripts/run-tests.ts --tsc-only                  tsc 타입 검사만 돌린다(테스트 없음, 파일 인자와 함께 쓰지 않는다)
 //   node scripts/run-tests.ts --background                 띄우고 결과 폴더를 출력한 뒤 바로 끝난다
 //   node scripts/run-tests.ts --wait "$DIR"                결과 폴더의 끝 줄을 기다린다
 //
@@ -25,6 +27,7 @@
 //   --concurrency N   node --test 의 동시 파일 수 (기본 CPU 수, 최대 8)
 //   --timeout SEC     node 테스트 하나의 제한(--test-timeout), node 단계의 무진행 감시, tsc 의 제한 (기본 600). 넘으면 그 프로세스 그룹을 통째로 끝내고 실패로 센다.
 //                     node 단계는 파일 완료 보고가 SEC 초 동안 없을 때 끊고, 보고가 없는 파일을 모두 시간 초과로 센다
+//   --tsc-only        tsc 만 돈다. 파일 인자와 함께 줄 수 없다(2)
 //   --out DIR         결과 폴더 (기본: 임시 폴더 아래 새 폴더)
 //   --max-wait SEC    --wait 가 기다릴 최대 시간 (기본 540, Bash 도구의 600초 안)
 //
@@ -73,11 +76,11 @@ const REPORTER = fileURLToPath(new URL("./run-tests-reporter.ts", import.meta.ur
 // 띄운 단계들. 신호나 예외로 끝날 때 그룹을 모두 정리한다.
 const running = new Set<ChildProcess>();
 
-type Options = { concurrency: number; timeout: number; out?: string; maxWait: number; background: boolean; wait?: string; patterns: string[] };
+type Options = { concurrency: number; timeout: number; out?: string; maxWait: number; background: boolean; tscOnly: boolean; wait?: string; patterns: string[] };
 export type Targets = { node: string[]; tsc: boolean };
 
 export function parseArgs(argv: string[], parallelism = availableParallelism()): Options {
-  const opts: Options = { concurrency: Math.min(8, parallelism), timeout: 600, maxWait: 540, background: false, patterns: [] };
+  const opts: Options = { concurrency: Math.min(8, parallelism), timeout: 600, maxWait: 540, background: false, tscOnly: false, patterns: [] };
   const value = (i: number, name: string) => {
     if (i >= argv.length) throw new Error(`${name} 에 값이 없다`);
     return argv[i];
@@ -95,9 +98,11 @@ export function parseArgs(argv: string[], parallelism = availableParallelism()):
     else if (arg === "--out") opts.out = value(++i, arg);
     else if (arg === "--wait") opts.wait = value(++i, arg);
     else if (arg === "--background") opts.background = true;
+    else if (arg === "--tsc-only") opts.tscOnly = true;
     else if (arg.startsWith("-")) throw new Error(`모르는 옵션: ${arg}`);
     else opts.patterns.push(arg);
   }
+  if (opts.tscOnly && opts.patterns.length) throw new Error(`--tsc-only 는 파일 인자와 함께 쓰지 않는다: ${opts.patterns.join(" ")}`);
   return opts;
 }
 
@@ -366,7 +371,8 @@ async function tscPhase(r: Runner) {
 async function run(opts: Options, cwd: string): Promise<number> {
   const started = Date.now();
   let targets: Targets;
-  if (opts.patterns.length) targets = expand(opts.patterns, cwd);
+  if (opts.tscOnly) targets = { node: [], tsc: true };
+  else if (opts.patterns.length) targets = expand(opts.patterns, cwd);
   else {
     const found = discover(cwd);
     if (!found) {
@@ -375,7 +381,7 @@ async function run(opts: Options, cwd: string): Promise<number> {
     }
     targets = found;
   }
-  if (!targets.node.length) {
+  if (!targets.node.length && !targets.tsc) {
     console.error(`돌릴 테스트 파일이 없다: ${opts.patterns.length ? opts.patterns.join(" ") : "tests/ 아래 *.spec.ts"}`);
     return 2;
   }
