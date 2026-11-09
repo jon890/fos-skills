@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, describe, test } from 'node:test'
@@ -15,8 +15,9 @@ const RUNNER = ['node']
 const SCRIPTS = ['check-deck.ts', 'io.ts']
 // ──
 
-// 전역 금지어 표를 가진 korean-check. 저장소의 내보내기 전용 원본을 쓴다
-const KOREAN_CHECK = join(SKILL, '..', '..', 'export-only-skills', 'korean-check')
+// 전역 금지어 표를 가진 korean-check. 스크립트와 같은 순서로 찾는다: 팀 배치의 형제 korean-check, 없으면 저장소의 내보내기 전용 원본
+const SIBLING_CHECK = join(SKILL, '..', 'korean-check')
+const KOREAN_CHECK = existsSync(SIBLING_CHECK) ? SIBLING_CHECK : join(SKILL, '..', '..', 'export-only-skills', 'korean-check')
 
 const roots: string[] = []
 after(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })))
