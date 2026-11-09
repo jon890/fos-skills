@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.25.1 (2026-11-09)
+
+- 모델 사용 기록의 토큰을 worker 세션 기록에서 먼저 읽고, 못 읽으면 `tokens_source` 에 이유를 남긴다. Orca 사용량 파일은 dispatch 시작보다 새로울 때만 쓴다.
+
 ## 7.25.0 (2026-11-09)
 
 - `orch worker ask` 는 질문을 보내고 바로 끝난다(`ASKED <질문 id>`). worker 는 턴을 끝내고 Orca 가 답과 함께 깨운다. `--resume` 은 없어졌고 `--timeout-ms`, `--max-wait` 는 받되 무시한다
