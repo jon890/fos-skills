@@ -55,6 +55,9 @@ describe('문서가 부르는 스크립트', () => {
     for (const p of globSync('*.py', { cwd: ORCH_SCRIPTS })) entries.add(p.replace(/\.py$/, ''))
     const joined = [...entries].sort((a, b) => b.length - a.length).map(escapeRegExp).join('|')
     const old = new RegExp(`"\\$SKILL_DIR/bin/orch\\.ts"\\s+[a-z_-]+|(?:\\$SKILL_DIR|\\$\\{?ORCH_SCRIPTS\\}?)/(?:scripts/)?(?:[a-z]+/)?(?:${joined})\\.(?:ts|py)(?![\\p{L}\\p{N}_])`, 'u')
+    // 산문의 맨 `<이름>.ts --옵션` 도 옛 꼴이다. 새 꼴은 `orch <묶음> <동작>` 이라 파일 이름에 옵션을 붙여 부르지 않는다.
+    // 머리 주석을 가리키는 파일 이름 언급(예: `merge_queue.ts` 의 머리 주석)은 뒤에 옵션이 없어 걸리지 않는다
+    const bare = new RegExp(`(?<![\\p{L}\\p{N}_/.-])(?:${joined})\\.(?:ts|py)\\s+--?[a-z]`, 'u')
     // 요청문은 Markdown 이 아니라 경로 꼴이 다르다(코디네이터에게 보내는 글)
     const prompt = new RegExp(`skills/orch/scripts/(?:[a-z]+/)?(?:${joined})\\.ts|(?<![\\p{L}\\p{N}_])(?:${joined})\\.ts 답장`, 'u')
     const files = ['README.md', ...['skills', 'export-only-skills', 'docs', 'extensions'].flatMap((top) => globSync(`${top}/**/*.md`, { cwd: ROOT }))]
@@ -64,7 +67,7 @@ describe('문서가 부르는 스크립트', () => {
       const rows = readFileSync(join(ROOT, rel), 'utf8').split('\n')
       rows.forEach((row, i) => {
         if (row.includes('orch-compat') || (i > 0 && rows[i - 1].includes('orch-compat'))) return
-        if (old.test(row)) found.push(`${rel}:${i + 1}: ${row.trim().slice(0, 120)}`)
+        if (old.test(row) || bare.test(row)) found.push(`${rel}:${i + 1}: ${row.trim().slice(0, 120)}`)
       })
     }
     const register = 'extensions/work-board/hooks/register.js'

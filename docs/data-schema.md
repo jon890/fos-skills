@@ -37,7 +37,7 @@
 
 입력 필드의 표는 `skills/orch/scripts/lib/events.ts` 머리 주석이 소유한다. 「공통 필드」 와 「이벤트별 필드」 가 그것이다.
 
-5.2.0 전 설정의 환경 변수와 입력 필드 대응이다. `migrate-orch-dir.ts --hooks`가 만드는 핸들러는 이 대응대로 이전 설정의 명령에 환경 변수를 채워 부른다.
+5.2.0 전 설정의 환경 변수와 입력 필드 대응이다. `orch doctor migrate-hooks` 가 만드는 핸들러는 이 대응대로 이전 설정의 명령에 환경 변수를 채워 부른다.
 
 | 옛 칸 | 이벤트 | 옛 환경 변수 → 입력 필드 |
 | --- | --- | --- |
@@ -83,13 +83,13 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `routing` | `size_pattern` | 정규식 문자열. 첫 캡처가 크기 등급이다 | 없음 | 저장소가 리뷰 본문에 적은 등급을 읽는다. 새 등급을 계산하지 않는다 |
 | `inbox` | `enabled`, `dooray`, `slack` | `enabled` 는 bool, 나머지는 adapter 이름 아래 값 목록(두레이는 `projects`·`channels`, Slack 은 `channels`) | 절이 없으면 필터 없이 모두 보인다 | inbox 스킬의 저장소별 알림 필터. `enabled: false` 면 그 저장소의 보드가 알림을 보지 않는다. 옛 자리 `config/notification.json` 은 inbox 스킬이 한 major 동안 함께 읽고, `inbox` 절이 있으면 무시한다 |
 | `hooks` | `timeouts` | 이벤트 이름에서 초로. 모르는 이벤트 이름이나 양수가 아닌 값은 사용법 오류다 | 위 「위치와 실행」 | 핸들러 시간 제한 |
-| `pipeline` | `enabled` | bool | false | 상주 루프의 자동 진행(ready 슬롯, 문서 PR 바로 머지, 배포 묶기)을 켠다. 질문 확인과 원격 브랜치 정리는 이 값과 무관하게 돈다 |
+| `pipeline` | `enabled` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 상주 루프가 하는 일은 모두 이 값과 무관하게 돈다 |
 | `pipeline` | `tick_sec` | number | 300 | 틱 간격 |
-| `pipeline` | `ready_slots` | number | 1 | 동시에 ready 로 둘 내 PR 수. CI runner 수에 맞춘다 |
-| `pipeline` | `docs_merge` | bool | false | 바꾼 파일이 모두 `queue.docs_glob` 에 맞는 PR 을 필수 체크 통과 뒤 바로 머지한다 |
-| `pipeline` | `after_queue_interval_sec` | number | 0 | `after-queue` 를 이 간격 안에서는 한 번으로 묶는다. 0 이면 묶지 않는다 |
-| `pipeline` | `ci_missing_after_sec` | number | 600 | ready 뒤 필수 체크가 나타나지 않으면 `ci-missing` 을 내는 시간 |
-| `pipeline` | `update_behind_drafts` | bool | false | base 에 뒤처진 내 draft PR 에 틱마다 base 를 합친다. ready PR 은 합치지 않는다 |
+| `pipeline` | `ready_slots` | number | 1 | 동시에 ready 로 둘 내 PR 수. `orch queue ready` 가 읽는다. CI runner 수에 맞춘다 |
+| `pipeline` | `docs_merge` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. 문서 PR 바로 머지는 하지 않는다 |
+| `pipeline` | `after_queue_interval_sec` | number | 0 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `after-queue` 는 묶이지 않는다 |
+| `pipeline` | `ci_missing_after_sec` | number | 600 | 읽는 코드가 없다. 설정 검사만 통과시킨다. `ci-missing` 을 내는 코드도 아직 없다 |
+| `pipeline` | `update_behind_drafts` | bool | false | 읽는 코드가 없다. 설정 검사만 통과시킨다. draft PR 에 base 를 합치지 않는다 |
 | `pipeline` | `refresh_slots` | 0 이상의 정수. 아니면 설정 오류다 | 0 | 상주 루프가 머지 차례 전에 뒤처진 ready PR 에 base 를 미리 합치는 최신화를 켠다. 값은 루프가 건 최신화 가운데 CI 가 아직 도는 것의 상한이다. 0 이면 끈다. CI runner 수보다 작게 둔다. 대상과 순서는 `orch-loop.ts` 머리 주석의 「최신화」 가, 근거는 [ADR-020](adr/020-orch-loop-refresh.md) 가 소유한다 |
 | `pipeline` | `refresh_worker_paths` | 정규식 문자열이나 그 목록(Python 정규식. 목록은 `\|` 로 잇는다) | 없음 | 최신화할 PR 과 base 가 모두 바꾼 파일이 이 정규식에 맞으면 update-branch 대신 그 PR 의 살아 있는 worker 에게 합치기를 보낸다. 계약 버전 파일처럼 글자 충돌이 없어도 worker 가 판단해야 하는 파일을 적는다. `refresh_slots` 가 0 이면 읽지 않는다 |
 | `pipeline` | `authors` | 문자열 목록 | gh 의 현재 사용자 | 「내 PR」 로 볼 작성자. 루프, 원격 브랜치 정리, 충돌 알림이 이 PR 만 본다 |
@@ -105,16 +105,16 @@ worker 가 `worker-ask` 로, 코디네이터가 사용자에게 묻는 결정 �
 | `queue` | `auto_merge` | bool | false | 상주 루프가 머지할 수 있는 PR 을 스스로 `merge-with-finish.ts` 에 건다. 대상과 순서는 `orch-loop.ts` 머리 주석의 「자동 머지」 가, 근거는 [ADR-016](adr/016-orch-auto-merge.md) 가 소유한다. `pipeline.enabled` 와 무관하다 |
 | `queue` | `auto_review` | `{"pass": 정규식, "block": 정규식, "require": [조건 이름]}`. `pass`, `block` 은 비지 않은 문자열이고 `require` 는 없거나 비지 않은 문자열의 비지 않은 목록이다 | 없음(리뷰 판정을 보지 않는다). `require` 가 없으면 `["verdict-on-head"]` | 자동 리뷰의 판정 문구와 판정 조건의 조합. `pass` 나 `block` 에 맞는 리뷰나 댓글이 「판정」 이고 둘 다 맞으면 `block` 이다. Python 정규식이고 본문 어디든 맞으면 된다. `require` 의 조건을 모두 만족해야 자동 머지 대상이다. 조건은 `verdict-on-head`(지금 HEAD 범위의 마지막 판정이 `pass`), `verdict-seen`(PR 에 판정이 하나 이상), `last-verdict-pass`(PR 전체의 마지막 판정이 `pass`. HEAD 가 달라도 된다), `rereview-after-block`(마지막 `block` 뒤에 같은 커밋이나 그 뒤 커밋의 `pass` 가 있다. `block` 이 없으면 통과)이다. 조건의 정확한 뜻은 `lib/auto-merge.ts` 머리 주석의 「judgeReview」, HEAD 범위는 「reviewScope」 가 소유한다. 미해결 스레드 0 은 조합에 넣지 않고 늘 본다. 모르는 조건 이름은 사용법 오류가 아니다. 상주 루프는 PR 을 걸지 않고 이유를 로그에 남기며, `orch-doctor` 가 `INVALID-CONFIG` 로 알린다. 판정 문구가 든 본문이 없어 멈추면 `AUTO-MERGE-NO-REVIEW` 로 알린다. 조합 예시는 `skills/orch/references/overlay.md` 의 「자동 머지 리뷰 조건」 에 있다 |
 | `migrations` | `dirs` | 모듈 이름에서 저장소 루트 기준 폴더로. 폴더는 비지 않은 문자열이다 | 없음(마이그레이션을 보지 않는다) | `reserve-migration.ts` 가 그 모듈의 SQL 예약 경로를 만드는 폴더다. 자동 머지는 이 폴더도 감시한다. Flyway 버전 마이그레이션(`V<버전>__<설명>`)의 버전은 `.` 과 `_` 로 나눈 숫자 목록으로 비교한다 |
-| `migrations` | `watch` | 모듈 이름에서 저장소 루트 기준 추가 감시 폴더의 문자열 목록으로. 목록의 폴더는 비지 않은 문자열이다 | 빈 객체 | `dirs`에 자동으로 더해 자동 머지의 번호 충돌과 순서를 판정할 감시 전용 폴더다. 예를 들어 `src/main/java/db/migration`을 같은 모듈에 넣을 수 있다. `reserve-migration.ts --kind java` 는 이 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 경로를 예약한다. `watch`에만 있는 모듈은 `--kind java` 로만 번호를 받는다 |
+| `migrations` | `watch` | 모듈 이름에서 저장소 루트 기준 추가 감시 폴더의 문자열 목록으로. 목록의 폴더는 비지 않은 문자열이다 | 빈 객체 | `dirs`에 자동으로 더해 자동 머지의 번호 충돌과 순서를 판정할 감시 전용 폴더다. 예를 들어 `src/main/java/db/migration`을 같은 모듈에 넣을 수 있다. `orch queue reserve --kind java` 는 이 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 경로를 예약한다. `watch`에만 있는 모듈은 `--kind java` 로만 번호를 받는다 |
 | `migrations` | `before` | 모듈 이름에서 셸 명령으로. `*` 는 나머지 모듈의 명령이고 `{module}` 을 모듈 이름으로 바꾼다 | 없음(머지 전 명령을 붙이지 않는다) | 마이그레이션이 든 PR 을 자동 머지할 때 붙일 머지 전 명령(DB 백업). 모듈이 여럿이면 ` && ` 로 잇는다. 이 키가 있는데 규칙이 없는 모듈의 PR 은 걸지 않는다. 명령은 `merge_queue.ts` 의 `PR:명령` 처럼 돈다 |
 | `migrations` | `blocked_after_sec` | 양수 | 3600 | 같은 모듈에 더 낮은 번호를 더한 열린 PR 이나 PR 이 없는 다른 브랜치의 예약(`state/migration-reservations.json`) 때문에 기다린 시간이 이 값을 넘으면 `MIGRATION-BLOCKED` 를 한 번 낸다 |
-| `adr` | `dirs` | 모듈 이름에서 저장소 루트 기준 ADR 폴더로. 폴더는 비지 않은 문자열이다 | 없음(ADR 번호를 예약하지 않는다) | `reserve-migration.ts --kind adr` 가 그 이름의 ADR 경로(`<번호>-<설명>.md`)를 만드는 폴더다. 폴더마다 번호가 따로다. 번호로 세는 파일 꼴과 자릿수는 `lib/reservations.ts` 머리 주석의 「ADR 번호」 가 소유한다. 자동 머지는 이 절을 읽지 않는다. 있으면 `spec-lint` 가 공통 지시서의 `adr` 표지를 요구한다 |
+| `adr` | `dirs` | 모듈 이름에서 저장소 루트 기준 ADR 폴더로. 폴더는 비지 않은 문자열이다 | 없음(ADR 번호를 예약하지 않는다) | `orch queue reserve --kind adr` 가 그 이름의 ADR 경로(`<번호>-<설명>.md`)를 만드는 폴더다. 폴더마다 번호가 따로다. 번호로 세는 파일 꼴과 자릿수는 `lib/reservations.ts` 머리 주석의 「ADR 번호」 가 소유한다. 자동 머지는 이 절을 읽지 않는다. 있으면 `spec-lint` 가 공통 지시서의 `adr` 표지를 요구한다 |
 
 orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 `finish.complete_cmd`와 대응 명령줄 옵션 `--before`, `--verify-merged`,
 `--after-merged`, `--complete-cmd`를 받지 않는다. 일반 런타임 명령은 남은 설정을
 사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로
-알린다. worker와 머지 큐가 끝난 뒤 `migrate-orch-dir.ts --hooks --apply`로 이벤트
+알린다. worker와 머지 큐가 끝난 뒤 `orch doctor migrate-hooks --apply` 로 이벤트
 핸들러로 옮긴다. `queue.verify_merged_when`과 `finish.task_pattern`은 계속 쓴다.
 
 ## orch 루트에 더하는 파일
@@ -124,7 +124,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `state/launch-history.jsonl` | 띄울 때마다 남기는 영구 이력. `dispatch`, `task`, `run`, `terminal`, `at`, `branch`, `worktree`, `spec`, `title`, `agent`, `model`, `effort`, `effective`, `row`, `experiment`, `retry_of`. 모르는 값은 null. 필드와 선택 검사 계약은 [orch-routing 설계](features/orch-routing/design.md) 가 소유한다 | 자동으로 지우지 않는다. launched-workers 정리와 별개다 |
 | `state/routing-log.jsonl` | worker PR이 머지되거나 닫힐 때 남기는 관측 기록. 필드는 [orch-routing 스펙의 기록 항목](features/orch-routing/spec.md#기록-항목), 수집과 쓰기는 [설계](features/orch-routing/design.md)가 소유한다. `version`과 `recorded_at`을 함께 둔다. 토큰 키는 `input`, `output`, `cache_read`, `cache_write`이고 입력은 캐시 읽기를 제외한 값이다 | PR마다 한 줄. 같은 결과는 보존하고 closed에서 merged로 바뀌면 교체한다. 자동으로 지우지 않는다 |
 | `state/routing-log.lock` | routing 기록을 원자적으로 바꿀 때 잡는 pid 잠금 | 쓰기를 끝내면 반납하고 죽은 잠금은 회수한다 |
-| `githooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
+| `hooks/<이벤트>.ts` | 저장소의 핸들러 | 저장소가 정한다. 추적하려면 `git add -f` 다 |
 | `state/hooks.jsonl` | 핸들러 실행 기록. 한 줄에 `time`, `event`, `handler`, `exit`, `result`(`pass`, `reject`, `fail`, `timeout`), `duration_ms`, `reason`. `exit` 는 시간 초과와 잠금 실패에서 null 이다. `duration_ms` 는 잠금 대기를 포함한다 | 1MB 를 넘으면 `hooks.jsonl.1` 로 돌리고 하나만 남긴다 |
 | `state/hooks/<이벤트>.lock` | 핸들러 잠금 | 실행이 끝나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다 |
 | `state/loop.json` | 상주 루프의 상태. `pid`, `run`(주 Run id 또는 null), `repo`, `tick_sec`, `started_at`, `alive_at`(생존 타이머가 쓴 마지막 시각), `runs`(마지막 틱이 본 등록된 Run id 목록. 앞이 주 Run 이다. 이 키가 없으면 Run 등록을 모르는 옛 루프다), `bound_run`(루프 프로세스가 묶인 Run id. Orca 는 호출자를 그 프로세스가 나온 터미널로 정한다. 묶이지 않았으면 null 이고, 시작할 때 `run-current` 를 읽지 못했으면 키가 없다. `--start` 는 이 값이 합류하려는 Run 과 다르거나 키가 없으면 합류하지 않는다), `last_tick`(마지막으로 끝난 틱의 시각 또는 null), `ticks`, `errors`(출처마다 마지막 오류 이유 또는 null. 키는 `<출처>@<Run>` 이고, 저장소 공유 일의 출처(`prs`, `board`, `ci`, `auto-merge`, `conflicts`, `tick`)는 Run 자리에 주 Run 을 둔다. Run 이 없는 루프는 출처 이름 그대로다), `ci`(PR 번호에서 `{ head, state }`. `head` 는 판정한 HEAD SHA, `state` 는 `passed`, `failed`, `pending`), `stalls`(dispatch id 에서 `{ run, terminal, state, hash, errors, since, ticks, fired }`. `state` 는 `error` 나 `idle`, `hash` 는 마지막 메시지 묶음과 화면의 오류 줄 수로 만든 해시, `errors` 는 그 멈춤에서 본 가장 많은 오류 줄 수, `since` 는 그 상태를 처음 본 시각(같은 상태에서 hash 만 바뀌면 그대로다), `ticks` 는 같은 상태와 같은 hash 를 본 틱 수, `fired` 는 `worker-stalled` 를 냈는지. 오류 줄 수가 `errors` 보다 늘 때만 다시 false 가 된다). 시각은 ISO 8601 UTC 다 | 루프의 부모 프로세스만 옆 파일에 쓴 뒤 rename 으로 덮어쓴다. 같은 실패를 두 번 알리지 않는 데 쓴다. `ci` 는 같은 HEAD 의 같은 상태를, `stalls` 는 같은 멈춤을 두 번 알리지 않는 데 쓴다 |
@@ -137,7 +137,7 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | `state/queue-dropped.json` | 상주 루프가 `QUEUE-DROPPED` 로 옮긴 차례 기록의 `held` 항목. `<pid>:<PR>` 에서 옮긴 시각으로. 같은 항목을 틱마다 다시 쓰지 않게 한다 | 그 pid 의 차례 기록을 지울 때 그 pid 의 키도 지운다 |
 | `state/auto-merge/<YYYYMMDDTHHMMSSZ>.log` | 루프가 건 `merge-with-finish` 의 출력. 머지 큐 로그 폴더(`queue/`)에 두지 않는 것은 정리가 끝난 큐 로그를 휴지통으로 옮겨 루프가 끝 줄을 읽기 전에 사라지기 때문이다 | 마지막으로 바뀐 지 7일이 넘은 로그를 자동 머지 단계가 지운다. `queue` 기록이 가리키는 로그는 남긴다 |
 | `state/migration-reservations.json` | 마이그레이션 번호 예약 목록. `{"reservations": [{"module", "version"(숫자 목록), "label"(`V13`), "branch", "name"(파일 이름의 설명 조각. SQL 은 설명의 slug, Java 는 받은 클래스 이름 조각 그대로다. 같은 예약인지 이 값으로 가린다), "path"(저장소 루트 기준 파일 경로), "at"(ISO 8601 UTC)}]}`. (module, version) 은 한 항목에만 있고, (branch, module, name) 도 한 항목에만 있다. `reserve-migration.ts` 가 잠금 안에서 옆 파일에 쓰고 rename 한다. 상주 루프는 잠금 없이 읽기만 한다 | `reserve-migration.ts` 가 부를 때마다(`--prune` 포함) 그 브랜치에 열린 PR 이 없고, 예약 시각 뒤에 머지된 PR 이 있거나 브랜치가 원격과 로컬에 모두 없는 항목을 지운다. 닫히기만 한 PR 은 세지 않는다. 브랜치가 없다는 이유로 지우는 항목은 지우기 직전에 로컬 브랜치를 다시 보고, 있으면 남긴다. 판정하지 못한 항목은 남긴다. `--again` 은 그 브랜치, 모듈, 설명의 항목을 새 번호로 바꾼다 |
-| `state/adr-reservations.json` | ADR 번호 예약 목록. 항목 꼴은 `migration-reservations.json` 과 같고, `module` 은 `adr.dirs` 의 이름, `label` 은 `ADR-084` 꼴, `name` 은 설명을 하이픈으로 이은 조각이다. 마이그레이션 예약과 따로 둔 것은 상주 루프의 자동 머지가 ADR 번호를 마이그레이션 번호로 세지 않게 하려는 것이다 | `reserve-migration.ts --kind adr` 가 부를 때와 `--prune` 이 `migration-reservations.json` 과 같은 기준으로 지운다. 마이그레이션 예약 호출은 이 파일을 읽지 않는다 |
+| `state/adr-reservations.json` | ADR 번호 예약 목록. 항목 꼴은 `migration-reservations.json` 과 같고, `module` 은 `adr.dirs` 의 이름, `label` 은 `ADR-084` 꼴, `name` 은 설명을 하이픈으로 이은 조각이다. 마이그레이션 예약과 따로 둔 것은 상주 루프의 자동 머지가 ADR 번호를 마이그레이션 번호로 세지 않게 하려는 것이다 | `orch queue reserve --kind adr` 가 부를 때와 `--prune` 이 `migration-reservations.json` 과 같은 기준으로 지운다. 마이그레이션 예약 호출은 이 파일을 읽지 않는다 |
 | `state/migration-reservations.lock` | 예약 잠금. 쥔 프로세스의 pid. 마이그레이션 예약과 ADR 예약 파일을 함께 지킨다 | 예약을 쓰고 나면 푼다. 죽은 pid 의 잠금은 다음 실행이 회수한다(`lib/events.ts` 의 `reclaim`) |
 | `state/loop.log` | 상주 루프의 출력 | 1MB 를 넘으면 `loop.log.1` 로 돌리고 하나만 남긴다 |
 | `state/wait/<delivery>.json` | 짧은 출력의 `orch wait` 이 처리할 묶음을 낼 때 남기는 원문. `check --json` 결과에 완료 판정(`completionVerification`, `suspicious_worker_done`)을 붙인 한 줄 JSON 이다. 출력의 `RAW <파일>` 줄이 이 경로다. `orch wait triage <파일>` 이 읽는다. delivery id 의 영문, 숫자, `_`, `.`, `-` 밖의 글자는 `_` 로 바꾼다 | 다음 대기가 그 delivery 를 `--ack` 로 넘겨 check 가 성공하면 지운다. 짧은 출력의 대기가 시작할 때 수정한 지 7일이 지난 파일을 지운다. `--full` 대기와 경로로 직접 부른 대기는 쓰지 않는다 |

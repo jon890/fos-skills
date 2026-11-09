@@ -4,9 +4,9 @@
 긴 지시는 앞부분도 중간도 잘려 도착한다.
 지시서에 적지 않은 일이 빠진 채 완료로 보고되는 것을 막으려면 해야 할 일과 완료 기준을 지시서에 적는다. 후속 지시도 짧게 보내거나 새 파일로 준다.
 
-지시서 폴더의 기본은 `<repo>/.orch/specs/` 다(`orch_paths.ts specs`). 오버레이가 다른 폴더를 정하면 그것을 따른다.
+지시서 폴더의 기본은 `<repo>/.orch/specs/` 다(`orch paths specs`). 오버레이가 다른 폴더를 정하면 그것을 따른다.
 
-- 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `cleanup-sweep.ts --specs-dir` 가 이 이름과, 지시서의 `브랜치:` 줄이 가리키는 머지된 브랜치를 보고 머지 뒤 지시서를 지운다. 후속 지시서처럼 이름이 워크트리와 달라도 `브랜치:` 줄이 있으면 지워진다. 그 줄이 없는 지시서는 이름이 워크트리 이름과 같아야 지워진다.
+- 파일 이름은 `spec-<worktree 이름>.md` 로 한다. 공통 지시서는 `spec-common.md` 다. `orch cleanup sweep` 이 지시서 폴더(`--specs-dir`)에서 이 이름과, 지시서의 `브랜치:` 줄이 가리키는 머지된 브랜치를 보고 머지 뒤 지시서를 지운다. 후속 지시서처럼 이름이 워크트리와 달라도 `브랜치:` 줄이 있으면 지워진다. 그 줄이 없는 지시서는 이름이 워크트리 이름과 같아야 지워진다.
 - 폴더는 `orch paths --ensure specs` 로 만든다. 만들면서 `.orch/` 를 로컬 전용 `.git/info/exclude` 에 더해 git 이 무시하게 한다. 다른 폴더를 쓰면 `git -C "$REPO" check-ignore -q` 로 무시되는지 본다.
 - scratchpad 에 쓰지 않는다. **실측으로** 코디네이터 세션이 다시 시작되면서 scratchpad 가 정리돼 전날 쓴 지시서가 사라졌다. worker 는 받은 경로를 계속 읽으므로, 도중에 사라지면 읽을 곳을 잃는다.
 
@@ -19,7 +19,7 @@
 **worker 마다 같은 규칙은 공통 지시서 한 파일에 두고, 개별 지시서는 제목 줄 다음 줄에서 그 파일을 가리킨다.**
 틀은 [`../templates/spec-common.md`](../templates/spec-common.md) 다. 저장소마다 한 번 복사해 `{{...}}` 를 채운다.
 `<!-- orch-rule: ... -->` 표지는 지우지 않는다. `spec-lint` 가 이 표지와 표지가 붙은 항목의 본문으로 공통 지시서가 틀보다 낡았는지 본다. 틀의 그 항목이 바뀌면 저장소 사본도 옮겨야 경고가 사라진다.
-**스크립트 경로는 채우지 않는다.** 틀의 명령이 worker 세션의 `CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `skills/orch/scripts` 를 푼다. 캐시 폴더 이름은 해시라 `ls | tail -1` 이나 `ls -t` 로 고르면 설치되지 않은 번들을 집는다. 코디네이터가 그때의 캐시 경로를 박으면 번들이 갱신되거나 worker 가 다른 프로필에서 돌 때 옛 스크립트를 가리킨다. 저장소 체크아웃 경로도 박지 않는다. 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
+**실행기 경로는 채우지 않는다.** `orch` 가 PATH 에 없으면 틀의 명령이 worker 세션의 `CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` 에서 `fos-skills@fos-skills` 의 `installPath` 를 읽어 `bin/orch` 를 푼다. 캐시 폴더 이름은 해시라 `ls | tail -1` 이나 `ls -t` 로 고르면 설치되지 않은 번들을 집는다. 코디네이터가 그때의 캐시 경로를 박으면 번들이 갱신되거나 worker 가 다른 프로필에서 돌 때 옛 스크립트를 가리킨다. 저장소 체크아웃 경로도 박지 않는다. 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
 같은 항목이 `user` 와 `project` 범위로 여러 개면 `user` 범위를 쓴다.
 `{{DRAFT_PR_RULE}}` 는 오버레이가 draft 로 CI 를 미루는 저장소면 「PR 은 `gh pr create --draft` 로 연다. ready 로 바꾸는 것은 코디네이터가 한다」 이고, 아니면 그 줄을 지운다.
 `{{DESIGN_DIR}}` 는 worker 가 `spec`, `technical-design` 으로 만든 요구사항·설계 문서를 둘 폴더다(예: `docs/<분야>/`). 두 스킬을 쓰게 하지 않으면 그 절을 지운다.
@@ -145,7 +145,7 @@ PR head 를 받지 못해 멈추면 원인을 고친 뒤 같은 지시서로 `--
 준비가 실패해도 worker 는 뜬다. 코디네이터는 0 이 아니면 지시서나 후속 지시로 「생성물이 없어 서비스 테스트는 돌지 않는다」 를 알린다.
 10-31 리뷰 셋이 모두 생성물이 없어 서비스와 UI 테스트를 수집 단계에서 못 돌리고 코드 읽기로만 끝났다.
 
-**리뷰가 끝난 뒤의 정리는 스크립트가 한다.** 리뷰 워크트리는 `remove-worktree.ts --delete-branch` 로 지운다. detached 워크트리여도 그것을 만든 `review/pr-<N>` 을 함께 지운다.
+**리뷰가 끝난 뒤의 정리는 스크립트가 한다.** 리뷰 워크트리는 `orch cleanup worktree --delete-branch` 로 지운다. detached 워크트리여도 그것을 만든 `review/pr-<N>` 을 함께 지운다.
 두 정리 모두 PR 이 MERGED 나 CLOSED 이고 모든 Run 에서 그 리뷰 dispatch 가 끝났을 때만 지운다. 남은 리뷰 워크트리, 리뷰 브랜치와 리뷰 지시서는 `cleanup-sweep` 이 지운다. 리뷰 워크트리는 그 리뷰 dispatch 가 끝났고, 모든 Run 에서 그 경로를 쓰는 살아 있는 dispatch 가 없고, 변경이 없으면 PR 이 열려 있어도 지운다. 판정은 스크립트 머리 주석의 「리뷰 흔적」 이 소유한다.
 
 ## 스킬 개선 후보를 모으게 할 때

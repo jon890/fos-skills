@@ -141,7 +141,7 @@ flowchart TD
 이 문서의 그 부분은 설계이고, 지금 동작은 `skills/orch/SKILL.md` 와 `skills/orch/references/` 가 소유한다.
 핸들러의 입력과 종료 코드는 [data-schema.md](data-schema.md) 의 「orch 이벤트 핸들러 입력」, 코어와 핸들러의 경계는 [code-architecture.md](code-architecture.md) 의 「orch 코어와 핸들러」 가 소유한다.
 
-orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.skills/orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
+orch 의 공용 코어는 단계마다 이벤트를 낸다. 저장소에 `.orch/hooks/<이벤트>.ts` 가 있으면 그 시점에 실행하고, 없으면 코어 동작만 한다.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"'Noto Sans KR', sans-serif","fontSize":"14px","lineColor":"#7A8594","primaryTextColor":"#1D1F23","edgeLabelBackground":"#FFFFFF","clusterBkg":"#FAFAFA"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":60,"padding":14}}}%%
@@ -250,7 +250,7 @@ flowchart TD
 | 나머지 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | `HOOK-FAIL` 을 내고 코어 동작은 이어 간다. 명령의 종료 코드에 반영한다. 띄우기, 대기, 질문 감시, doctor, ready 전환, 충돌 알림, 정리 명령은 알림 이벤트의 실패를 종료 코드에 반영하지 않는다. 대기의 종료 코드는 코디네이터의 다음 동작을 고르는 계약이고, 질문 감시는 질문 줄을 이미 냈으며 멈추면 다음 질문을 알리지 못하기 때문이다. ready 전환(`ci-ready`)의 종료 코드는 코디네이터의 ready 판정 계약이라, 0 을 다른 값으로 바꾸면 이미 ready 로 바뀐 PR 을 보류로 읽는다. 충돌 알림(`notify-conflicts`)의 `pr-conflict` 는 충돌한 PR 이 있을 때만 나서 종료 코드가 이미 1 이고, 실패를 따로 나타낼 값이 없다. 정리(`cleanup-sweep`)의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(머리 주석의 「종료 코드」). `after-cleanup` 의 실패를 2 에 섞으면 정리 자체가 실패한 경우와 구별할 수 없다. 코어는 핸들러를 다시 돌리지 않는다. `tick` 만 다음 틱에 다시 돈다 |
 | 같은 저장소의 같은 이벤트가 동시에 난다(PR 여럿의 `after-deploy`) | 이벤트마다 잠금을 잡아 하나씩 실행한다 |
 | worker 를 띄운 저장소가 둘 이상이다 | 이벤트는 그 PR 이나 워크트리의 저장소에서 나고, 그 저장소의 핸들러만 돈다 |
-| `config.json` 에 삭제한 셸 명령 칸이 있다 | 일반 런타임 명령은 사용법 오류(종료 코드 2)로 멈춘다. `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다. worker와 머지 큐가 끝난 뒤 `migrate-orch-dir.ts --hooks --apply`로 핸들러에 옮긴다 |
+| `config.json` 에 삭제한 셸 명령 칸이 있다 | 일반 런타임 명령은 사용법 오류(종료 코드 2)로 멈춘다. `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다. worker와 머지 큐가 끝난 뒤 `orch doctor migrate-hooks --apply` 로 핸들러에 옮긴다 |
 | 머지한 브랜치를 base 로 둔 열린 PR 가운데 내 PR 이 아닌 것이 있거나, 그 조회 또는 base 옮기기가 실패한다 | 원격 브랜치를 남기고 `after-merge` 의 `remote_branch_deleted` 를 false 로 낸다 |
 | worker 가 `worker_done` 을 보냈는데 PR 이 아직 열려 있다 | 그 worker 터미널을 남긴다. 충돌이나 리뷰 반영을 같은 worker 가 이어 받는다. PR 이 머지되거나 닫히면 정리가 바로 닫는다 |
 | 상주 루프가 죽었거나 틱이 멈췄다 | `state/loop.json` 의 pid 가 죽었거나 `alive_at` 이 `max(3 × tick_sec, 120)` 초보다 오래되면 `wait-important` 가 `LOOP-DEAD` 로 깨어난다. `alive_at` 은 루프의 부모 프로세스가 틱과 따로 쓰므로 긴 틱은 죽음이 아니다. pid 가 살아 있는 루프 프로세스인데 `alive_at` 만 오래됐으면 생존 타이머 간격에 5초를 더한 만큼 기다려 한 번 더 판정한다. 잠들었다 깬 뒤의 거짓 `LOOP-DEAD` 를 막는다. 기다리는 시간은 `lib/loop.ts` 머리 주석의 「생존」 이 소유한다. 코디네이터가 루프를 다시 띄운다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다 |
@@ -324,7 +324,7 @@ flowchart TD
 | 대상 PR 이 여러 Run 의 것이다 | 큐 첫 PR 의 Run 것만 건다. 나머지는 그 큐가 끝난 뒤 다음 틱에 건다 |
 | PR 의 리뷰, 스레드, 파일을 읽지 못했다 | 그 PR 만 넘어가고 다른 PR 은 건다. 열린 PR 의 마이그레이션 목록이나 마이그레이션 예약 파일을 읽지 못하면 마이그레이션이 든 PR 만 뺀다. 이유는 `WATCH-ERROR auto-merge` 로 알린다 |
 | gh 출력의 파일 행에 `changeType` 이 없다(옛 gh) | 그 파일을 새로 더한 파일로 본다. 이미 있는 마이그레이션을 고친 PR 이 겹침으로 막힐 수 있지만, 겹친 번호를 놓치고 거는 것보다 덜 거는 쪽을 고른다 |
-| 마이그레이션 예약 파일에 형식이 틀린 항목이 있다 | 버린 항목의 번호를 놓친 채 걸지 않게, 마이그레이션이 든 PR 을 그 틱에 걸지 않고 `WATCH-ERROR auto-merge` 로 그 수를 알린다. 코디네이터가 `reserve-migration.ts --prune` 을 부르면 그 항목을 빼고 다시 쓴다 |
+| 마이그레이션 예약 파일에 형식이 틀린 항목이 있다 | 버린 항목의 번호를 놓친 채 걸지 않게, 마이그레이션이 든 PR 을 그 틱에 걸지 않고 `WATCH-ERROR auto-merge` 로 그 수를 알린다. 코디네이터가 `orch queue reserve prune` 을 부르면 그 항목을 빼고 다시 쓴다 |
 | 틱의 CI 감시가 필수 체크 규칙을 읽지 못했다 | 옛 판정으로 걸지 않게 그 base 의 PR 은 그 틱에 걸지 않는다 |
 | 틱의 열린 PR 조회가 실패했다 | 자동 머지 단계를 건너뛴다. 이유는 `WATCH-ERROR prs` 로 알린다 |
 

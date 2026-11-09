@@ -6,6 +6,17 @@ import { launchHistory } from './launch-history.ts'
 import { readLaunch } from './launched.ts'
 import { experimentOf, selectionsOf, type Candidate } from './spec.ts'
 
+// agent-selection.md 의 `## 모델` 제목과 그 아래 첫 하위 제목 사이의 표에서 행 id(첫 칸)만 읽는다.
+// 하위 절의 표(비교 근거, 가격 등)의 첫 칸이 행 id 로 통과하지 않게 좁힌다
+export function modelRowIds(table: string): string[] {
+  const lines = table.split('\n')
+  const start = lines.indexOf('## 모델')
+  if (start === -1) return []
+  const rest = lines.slice(start + 1)
+  const end = rest.findIndex(line => /^#{1,6} /.test(line))
+  return [...(end === -1 ? rest : rest.slice(0, end)).join('\n').matchAll(/^\| `([a-z][a-z0-9-]*)` \|/gm)].map(m => m[1])
+}
+
 export function selectionVerdict(text: string, repo: string, options: { launch?: boolean; table?: string; retry?: boolean; continuation?: boolean } = {}): string[] {
   const choices = selectionsOf(text)
   if (!choices.length) return ['`worker 선택:` 줄이 없다']
@@ -15,7 +26,7 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
   let table: string
   try { table = readFileSync(options.table ?? join(bundleRoot(), 'references', 'agent-selection.md'), 'utf8') }
   catch { return [...errors, '모델 표를 읽지 못했다'] }
-  const ids = [...table.matchAll(/^\| `([a-z][a-z0-9-]*)` \|/gm)].map(m => m[1])
+  const ids = modelRowIds(table)
   if (!ids.length) errors.push('모델 표를 읽지 못했다')
   else if (selection.row && !ids.includes(selection.row)) errors.push(`행 id 가 모델 표에 없다: ${selection.row}`)
   const experiment = experimentOf(text)

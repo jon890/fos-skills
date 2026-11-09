@@ -20,7 +20,7 @@
 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 이 소유한다.
 PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 끝났고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 그 경로의 터미널을 닫고 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
 
-**코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `cleanup-sweep.ts --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
+**코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `orch cleanup sweep --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
 `finish-pr.ts` 와 `merge-with-finish.ts` 는 스스로 이 옵션을 더하지 않는다. `queue.sweep_args` 에 두면 `merge-with-finish.ts` 가 머지 큐의 정리에 넘기는데, `--run` 도 설정의 `finish.run` 도 없으면 그 옵션을 빼고 경고한다. Run 없이 넘기면 정리가 사용법 오류로 끝나기 때문이다.
 
@@ -32,7 +32,7 @@ PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch
 **PR 머지는 `merge-with-finish.ts` 로 건다. 사용자가 말하지 않아도 마무리까지 함께 건다.**
 이 스크립트가 PR 마다 `finish-pr.ts`(아래 「머지 뒤 마무리」)를 백그라운드로 걸고, 같은 인자로 `merge_queue.ts` 를 돌린다.
 머지 큐만 걸면 worker 정리, 배포 확인, 업무 완료, 보드 갱신이 코디네이터의 기억에 달려 빠진다.
-마무리가 필요 없는 저장소만 `merge_queue.ts` 를 직접 걸거나 `merge-with-finish.ts --no-finish` 를 쓴다.
+마무리가 필요 없는 저장소만 `orch queue run` 을 직접 걸거나 `orch queue merge --no-finish` 를 쓴다.
 
 머지 큐는 오래 걸리므로 Bash 도구의 `run_in_background` 로 건다. 셸의 `&` 나 `nohup` 은 쓰지 않는다.
 `merge_queue.ts` 의 옵션과 종료 코드는 그 스크립트 머리 주석이, 래퍼 옵션은 `merge-with-finish.ts` 머리 주석이 소유한다.
@@ -51,8 +51,8 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 | 표시 | 뜻 | 쓰는 때 |
 | --- | --- | --- |
 | 없음 | 마무리가 판정한다 | 늘 |
-| `PR!` | 판정 없이 마지막 PR 이다(`finish-pr.ts --complete`) | 판정 규칙이 모르는 남은 일이 없다고 코디네이터가 안다. 업무 번호 설정이 없는 저장소에서 업무를 끝낼 때 |
-| `PR~` | 판정 없이 중간 PR 이다(`finish-pr.ts --intermediate`) | 열린 PR 도 지시서도 없지만 뒤 작업이 남았다(사용자 확인 대기 같은 것) |
+| `PR!` | 판정 없이 마지막 PR 이다(`orch queue finish --complete`) | 판정 규칙이 모르는 남은 일이 없다고 코디네이터가 안다. 업무 번호 설정이 없는 저장소에서 업무를 끝낼 때 |
+| `PR~` | 판정 없이 중간 PR 이다(`orch queue finish --intermediate`) | 열린 PR 도 지시서도 없지만 뒤 작업이 남았다(사용자 확인 대기 같은 것) |
 
 `!` 와 `~` 는 함께 쓸 수 없다. before-merge 입력의 `last_of_task` 는 `!` 일 때만 true 다. 판정은 머지와 배포 뒤에야 하기 때문이다.
 
@@ -116,7 +116,7 @@ worker 가 고쳐야 하는 보류(근거 블록 불일치, 미해결 리뷰 스
 
 **차례 PR 이 base 를 합친 뒤 CI 를 기다려야 하면, 그동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다.** `--require-up-to-date` 와 `--up-to-date-when overlap` 일 때만 한다.
 먼저 머지하는 PR 은 묶음(`--chain`)에 들지 않았고, 필수 체크가 이미 모두 통과했고, 최신화가 필요 없고, 차례 PR 과 단위가 겹치지 않는 PR 이다. 겹치는 PR 을 먼저 머지하면 차례 PR 이 다시 뒤처져 방금 돌린 CI 가 쓸모없어진다.
-`<PR> 앞지르지 않는다: <이유>` 와 `<PR> 차례 PR <번호> 보다 먼저 머지했다` 줄로 무엇을 먼저 머지했는지 보인다. 판정은 `merge_queue.ts` 머리 주석의 「앞지르기」 가 소유한다..
+`<PR> 앞지르지 않는다: <이유>` 와 `<PR> 차례 PR <번호> 보다 먼저 머지했다` 줄로 무엇을 먼저 머지했는지 보인다. 판정은 `merge_queue.ts` 머리 주석의 「앞지르기」 가 소유한다.
 
 PR 마다 하는 확인(HEAD 고정, 필수 체크가 모두 나타난 뒤 대기, 충돌과 미해결 스레드, 머지 결과 확인)의 순서와 종료 코드는 `merge_queue.ts` 머리 주석이 소유한다.
 
@@ -342,14 +342,16 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 대상은 worker 터미널, 워크트리, 로컬 브랜치다(원격 브랜치는 위 조건을 따른다). 지시한 쪽이 정리하지 않으면 아무도 정리하지 않는다.
 절차는 아래 「다른 저장소에 맡긴 PR 을 직접 머지했을 때」 가 소유한다.
 **다른 세션이 띄운 작업은 건드리지 않는다.** 그 세션이나 사용자가 하던 작업이 끊긴다.
-판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더와 Run 은 `--sweep-arg` 로 넘긴다.
+판정 조건과 실행 순서는 스크립트 머리 주석이 소유한다. 지시서 폴더 같은 정리 인자는 설정 `queue.sweep_args` 에 두는 것이 기본이다. Run 은 `--run` 으로 준 값이 자동으로 정리에 넘어간다.
 
 ```bash
-orch queue merge --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir --sweep-arg "$SPECS_DIR" --sweep-arg --kill-holders 101 102
+orch queue merge --sweep-arg --kill-holders 101 102
 ```
 
+**`--sweep-arg` 를 명령줄에 하나라도 주면 설정의 `queue.sweep_args` 를 통째로 쓰지 않는다.** `--specs-dir` 처럼 설정에 둔 인자도 `--sweep-arg --specs-dir --sweep-arg "$SPECS_DIR"` 로 다시 준다.
+
 **스크립트 머리 주석이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
-저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 감시 루프 예시).
+저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」).
 
 스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다. 읽는 법은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 소유한다.
 
@@ -362,13 +364,12 @@ orch queue merge --sweep-arg --run --sweep-arg "$RUN_ID" --sweep-arg --specs-dir
 머지 없이 닫힌 PR 의 터미널도 `--run` 을 주면 `cleanup-sweep.ts` 가 닫는다. 대상은 내 PR 의 끝난 dispatch 터미널이다.
 다른 사람의 PR 이거나 `--run` 이 없으면 코디네이터가 화면을 확인하고 이 세션이 띄운 worker 의 터미널만 `orca terminal close` 로 닫는다.
 
-스크립트가 하지 않아 직접 하는 일은 아래 둘이다.
+스크립트가 하지 않아 직접 하는 일은 그 작업만의 문서 정리다. 진행 보드 항목은 마무리(`finish-pr`)와 `board-sync` 가 done 으로 바꾸므로 직접 바꾸지 않는다([`board.md`](board.md)).
 
-1. 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 지운다.
-   `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 지운다(`handoff-cleanup.ts`).
+- 그 작업만의 문서(지시서 사본, 설계 메모, PR 본문, 리뷰 회신 사본)를 정리한다.
+   `.orch/` 에 둔 지시서, 조사 보고, 큐 로그, 임시 계획도 작업이 끝나면 휴지통 폴더로 옮긴다(`orch cleanup handoff`, 아래 「handoff 산출물 정리」).
    공통 지시서, 결정 기록, 인수인계 문서, 진행 중 작업의 문서는 남긴다.
-   사용자 미리보기 폴더는 content-preview 의 것이라 사용자가 지우라고 말하거나 설정의 `cleanup.previews` 로 맡겼을 때만 지운다
-2. 진행 보드를 쓰면 그 항목을 done 으로 바꾼다. [`board.md`](board.md)
+   사용자 미리보기 폴더는 content-preview 의 것이라 사용자가 정리하라고 말하거나 설정의 `cleanup.previews` 로 맡겼을 때만 정리한다
 
 **다음 PR 은 새 worker 로 띄운다.** 계획이 PR 여럿이면 앞 PR 이 MERGED 인 것을 확인한 뒤 코디네이터가 뒤 PR 의 지시서를 쓴다. 지시서는 PR1 한 개만 맡기는 규칙([`spec-writing.md`](spec-writing.md))으로 쓰고, 앞 PR 의 결과가 뒤 PR 의 전제가 되면 그 내용을 지시서에 적는다.
 worktree 는 재사용하지 않고 새로 만든다. 앞 PR 의 워크트리와 로컬 브랜치는 위 정리가 지우고, `launch-worker --repo --name` 이 원격을 갱신한 뒤 `origin/<기준 브랜치>`(앞 PR 이 머지된 최신) 위에 새 브랜치로 워크트리를 만든다. 앞 worker 의 터미널은 이미 닫혔으므로 이어 쓰지 않는다. 브랜치 이름은 앞 PR 과 다르게 한다.
@@ -416,7 +417,7 @@ fi
 거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
 **워크트리를 쥔 것이 자식 없는 Orca 기본 셸(「Terminal 1」 같은 에이전트 없는 로그인 셸)뿐이면 스스로 그 터미널을 닫고 지운다.** 끝난 worker 의 워크트리에서만 닫고, 에이전트 터미널, 살아 있는 dispatch 의 터미널, 자식이 있는 셸, worker 기록이 없는 워크트리의 셸(사람이 연 셸일 수 있다)은 남긴다. 커밋 안 된 변경처럼 어차피 거부할 워크트리면 셸을 닫기 전에 거부한다. 판정은 `scripts/lib/idle-shells.ts` 한 곳이 소유하고 `cleanup-sweep.ts` 도 같은 판정을 쓴다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
-거부 줄의 pid 가 끝난 dispatch 의 것이면 `cleanup-sweep.ts --kill-holders` 로 끈다. 위 판정이 「끝남」 인 워크트리(PR MERGED, PR 없이 끝남)의 남은 프로세스만 끈다. lsof 로 직접 찾아 끄지 않는다.
+거부 줄의 pid 가 끝난 dispatch 의 것이면 `orch cleanup sweep --kill-holders` 로 끈다. 위 판정이 「끝남」 인 워크트리(PR MERGED, PR 없이 끝남)의 남은 프로세스만 끈다. lsof 로 직접 찾아 끄지 않는다.
 
 ```bash
 orch cleanup worktree "$WORKTREE" --delete-branch

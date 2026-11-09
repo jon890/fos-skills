@@ -79,7 +79,7 @@ CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체�
 알림은 Run 마다 `<orch 루트>/state/loop-events/<Run>.jsonl` 에 쌓이고, 아래 대기가 `--run` 과 `--loop-repo` 로 자기 Run 의 것만 읽는다. 주인을 모르는 알림(공유 일의 실패, 보드 결정)은 가장 먼저 등록한 Run 에 간다. 루프의 출력은 `state/loop.log` 에 남는다.
 조회 실패는 이유가 바뀔 때만 알림 파일에 쓰므로 틱마다 코디네이터를 깨우지 않는다.
 
-**Monitor 로 `watch-questions.ts` 를 띄우는 것은 루프를 쓸 수 없을 때의 대안이다.** `--run "$RUN_ID" --repo "$REPO"` 를 주고, 질문과 재알림을 한 줄씩 받는다. 이때는 아래 「깨어날 때마다 정리와 보드 동기화」 의 수동 명령도 돌려야 한다.
+**Monitor 로 `orch wait questions` 를 띄우는 것은 루프를 쓸 수 없을 때의 대안이다.** 질문과 재알림을 한 줄씩 받는다. `--run`, `--repo` 는 주지 않으면 작업 폴더와 코디네이터 터미널에서 읽는다. 이때는 아래 「깨어날 때마다 정리와 보드 동기화」 의 수동 명령도 돌려야 한다.
 
 **압축이나 세션 재시작 뒤 첫 작업은 루프와 대기 복구다.** doctor 에 `--run` 을 주면(저장소는 작업 폴더에서 읽는다) 루프가 죽었을 때 `LOOP-DEAD <repo> <이유>` 줄과 다시 띄울 명령을 낸다. 꺼진 루프는 그 명령으로 다시 띄운다.
 완료 대기는 이 문서의 「이전 세션의 대기」 절차로 복구한다. 이미 켜진 루프와 대기는 두 번째로 띄우지 않는다.
@@ -142,21 +142,21 @@ orch wait --ack "$DELIVERY_ID"
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
   - `AUTO-MERGE-NO-REVIEW`: 판정 문구가 든 리뷰가 없어 자동 머지에 걸지 않았다. text 가 `HEAD <SHA> 에` 로 시작하면 `verdict-on-head` 조건이라 지금 HEAD 에 판정이 없고, `HEAD <SHA> 의 PR 에` 로 시작하면 괄호 안의 조건이 PR 전체에서 판정을 찾지 못했다. 리뷰 봇이 결과 없이 실패했거나 아직 돌지 않았다. 리뷰 봇을 다시 돌리거나 독립 리뷰를 받아, 그 결과를 `queue.auto_review.pass` 문구가 든 리뷰나 댓글로 남긴다(`verdict-on-head` 면 이 HEAD 에). 다음 틱이 건다. PR 본문에 `머지 보류` 줄을 넣어 막을 필요가 없다. 같은 HEAD 는 한 번만 온다
   - `AUTO-MERGE-END`: 루프가 건 큐가 끝났다. 내용의 끝 줄은 머지 큐의 결과 줄(`QUEUE-DONE`, `QUEUE-HELD …`, `STOP …`)이다. `QUEUE-DONE` 이 아니면 `log=` 의 로그를 읽고 멈춘 이유를 처리한다. `끝 줄 없음` 이면 머지 큐가 시작 전에 끝났거나(사용법 오류, 마무리를 띄우지 못함) 도중에 신호를 받아 끝났다. 로그로 어디까지 머지했는지 확인하고 오류를 고친다. 같은 HEAD 는 루프가 다시 걸지 않으므로, 이유를 풀었으면 코디네이터가 직접 건다
-  - `MIGRATION-CLASH`: 그 PR 의 마이그레이션 번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같다. 그 PR 의 worker 에게 `reserve-migration.ts` 를 다시 불러 파일 이름을 바꾸게 한다. 줄 끝이 `renewed` 면 그 경로로 바꾼다
-  - `MIGRATION-BLOCKED`: 더 낮은 번호가 오래 막혀 있다. 막는 쪽은 열린 PR 이거나 PR 없는 예약이다. 막는 쪽 worker 에게 `reserve-migration.ts --again` 으로 번호를 다시 받아 파일 이름을 바꾸게 한다. 루프는 파일 이름을 바꾸지 않는다
-    막는 쪽 브랜치를 버렸으면 그 브랜치를 지운 뒤 `reserve-migration.ts --repo <저장소> --prune` 을 부른다. 다음 틱에 막힘이 풀린다
+  - `MIGRATION-CLASH`: 그 PR 의 마이그레이션 번호가 base 이하거나 다른 열린 PR 이나 다른 브랜치의 예약과 같다. 그 PR 의 worker 에게 `orch queue reserve` 를 다시 불러 파일 이름을 바꾸게 한다. 줄 끝이 `renewed` 면 그 경로로 바꾼다
+  - `MIGRATION-BLOCKED`: 더 낮은 번호가 오래 막혀 있다. 막는 쪽은 열린 PR 이거나 PR 없는 예약이다. 막는 쪽 worker 에게 `orch queue reserve --again` 으로 번호를 다시 받아 파일 이름을 바꾸게 한다. 루프는 파일 이름을 바꾸지 않는다
+    막는 쪽 브랜치를 버렸으면 그 브랜치를 지운 뒤 `orch queue reserve prune --repo <저장소>` 를 부른다. 다음 틱에 막힘이 풀린다
     알림은 한 번만 오므로 기다리는 PR 은 그 뒤 알림 없이 기다린다
   - `WORKER-LIMITED`: 사용 한도로 멈춘 dispatch 와 터미널이다. 터미널 worker 면 사용자에게 계정 전환을 요청하고, 바꾼 뒤 알림의 `orch worker resume --dispatch <id>` 를 부른다. 바꿀 계정이 없거나 resume 이 실패하면, 그리고 구조화 worker 면 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」를 따른다. 같은 dispatch 는 한 번만 알리며 자동 재시도하지 않는다
-  - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `nudge-worker.ts --terminal <터미널> --state` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
-  - `WORKER-IDLE`: 내용은 `<dispatch> <idle 또는 exited> <분>분 <워크트리> <터미널>` 이다. 그 worker 가 그 분 동안 파일, 커밋, 화면 어느 것도 바꾸지 않았거나(`idle`) 프로세스가 끝났는데 dispatch 가 열려 있다(`exited`). 미답변 질문을 보낸 worker 와 CI 를 통과해 머지를 기다리는 worker 는 오지 않는다. `idle` 이면 `nudge-worker.ts --terminal <터미널> --state` 로 화면을 보고 `send-to-worker` 로 진행을 묻는다. `exited` 면 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 멈춤은 한 번만 오고, 그 뒤에 움직였다 다시 멈추면 다시 온다
+  - `WORKER-STALLED`: 내용은 `<dispatch> <상태> <틱 수>틱 <터미널>` 이다. 그 worker 가 모델 오류(`error`)나 입력 대기(`idle`)로 멈춰 있고 `worker-stalled` 핸들러가 없거나 처리하지 못했다. `orch worker screen <터미널>` 로 지금 화면을 확인하고, 아직 멈춰 있으면 `send-to-worker` 로 이어 가라고 보낸다. 화면이 그대로인 동안은 한 번만 온다. 이어 가게 한 worker 가 같은 오류로 다시 멈추면 화면에 오류 줄이 늘어 다시 온다
+  - `WORKER-IDLE`: 내용은 `<dispatch> <idle 또는 exited> <분>분 <워크트리> <터미널>` 이다. 그 worker 가 그 분 동안 파일, 커밋, 화면 어느 것도 바꾸지 않았거나(`idle`) 프로세스가 끝났는데 dispatch 가 열려 있다(`exited`). 미답변 질문을 보낸 worker 와 CI 를 통과해 머지를 기다리는 worker 는 오지 않는다. `idle` 이면 `orch worker screen <터미널>` 로 화면을 보고 `send-to-worker` 로 진행을 묻는다. `exited` 면 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 멈춤은 한 번만 오고, 그 뒤에 움직였다 다시 멈추면 다시 온다
   - `STAGE-STALLED`: 내용은 `<보드 항목 id> <worktree 또는 branch> <분>분 <끝나지 않은 첫 단계>` 이다. 보드의 `doing` 항목에 남은 단계가 있는데 그 항목의 worker 가 없이 그 분이 지났다. 평가 결과를 기다리던 단계처럼 코디네이터가 다음 worker 를 띄우거나 직접 처리할 차례다. 기다리는 것이 맞으면 그 항목을 `wait` 로 바꾼다. 같은 단계는 한 번만 온다
   - `HEAVY-SLOT-HELD`: 내용은 `pid <pid> <분>분 <명령줄>` 목록과 상한이다. 그 검사가 무거운 검사 자리를 상한보다 오래 쥐어 다른 worker 의 검사가 기다린다. 명령줄과 그 pid 의 worktree 로 어느 worker 의 검사인지 찾고, 그 worker 에게 끝났는지 묻거나 사용자에게 끊을지 묻는다. 루프는 끊지 않는다. 같은 검사가 쥐고 있는 동안은 한 번만 온다
   - `FINISH-MISSING`: 루프의 정리가 머지된 PR 의 워크트리를 치웠는데 그 PR 에 머지 뒤 마무리(`finish-pr`)가 돈 적이 없다. `gh pr merge` 로 바로 머지한 PR 이다. 내용 끝의 `finish-pr` 명령으로 마무리를 돌려 배포 확인, 업무 완료, 보드 done 을 채운다. 같은 PR 은 한 번만 온다
   - `NO-WAIT`: 살아 있는 dispatch 가 있는데 이 Run 의 `wait-important` 대기가 몇 분째 없었다. 루프가 같은 글을 코디네이터 터미널에도 넣는다. 받은 메시지를 처리한 뒤 마지막 `NEXT_WAIT` 명령으로 대기를 다시 건다. 사용자와 대화 중인 동안에는 루프가 이 알림을 미룬다
-  - `WATCH-ERROR`, `HOOK-FAIL`: 루프가 무엇을 하지 못했다는 알림이다. 내용의 이유(Orca 꺼짐, 핸들러 오류)를 고친다. 같은 이유는 한 번만 오고, 한 번 성공한 뒤 다시 실패하면 다시 온다. 내용이 `auto-merge: 마이그레이션 예약 <n> 개의 형식이 틀렸다` 로 시작하면 `reserve-migration.ts --repo <저장소> --prune` 으로 그 항목을 뺀다. 내용이 `refresh: pipeline.refresh_slots 를 켰지만` 으로 시작하면 머지 큐가 최신화하지 않는 저장소라 최신화도 돌지 않는다. 오버레이가 정한 대로 `queue.require_up_to_date` 를 켜거나 `refresh_slots` 를 0 으로 둔다
+  - `WATCH-ERROR`, `HOOK-FAIL`: 루프가 무엇을 하지 못했다는 알림이다. 내용의 이유(Orca 꺼짐, 핸들러 오류)를 고친다. 같은 이유는 한 번만 오고, 한 번 성공한 뒤 다시 실패하면 다시 온다. 내용이 `auto-merge: 마이그레이션 예약 <n> 개의 형식이 틀렸다` 로 시작하면 `orch queue reserve prune --repo <저장소>` 로 그 항목을 뺀다. 내용이 `refresh: pipeline.refresh_slots 를 켰지만` 으로 시작하면 머지 큐가 최신화하지 않는 저장소라 최신화도 돌지 않는다. 오버레이가 정한 대로 `queue.require_up_to_date` 를 켜거나 `refresh_slots` 를 0 으로 둔다
   - `GAP`: 알림 파일이 1000 줄을 넘어 잘려 일부를 잃었다. `<orch 루트>/state/loop.log` 를 읽어 놓친 일을 찾는다
-- 종료 코드 8 의 `LOOP-DEAD <repo> run <Run> 미등록` 은 루프는 살아 있는데 이 Run 이 등록되지 않았다는 뜻이다. `orch-loop.ts --start --run` 으로 등록한 뒤 다시 건다
-- 종료 코드 8(`LOOP-DEAD <repo> <이유>`)은 그 저장소의 루프가 죽었다. 알림 줄이 있으면 그 줄이 먼저 오고 죽음은 다음 대기가 낸다. doctor 가 낸 명령(`orch-loop.ts --start`)으로 다시 띄운 뒤 다시 건다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 본다
+- 종료 코드 8 의 `LOOP-DEAD <repo> run <Run> 미등록` 은 루프는 살아 있는데 이 Run 이 등록되지 않았다는 뜻이다. `orch loop start` 로 등록한 뒤 다시 건다
+- 종료 코드 8(`LOOP-DEAD <repo> <이유>`)은 그 저장소의 루프가 죽었다. 알림 줄이 있으면 그 줄이 먼저 오고 죽음은 다음 대기가 낸다. doctor 가 낸 명령(`orch loop start …`)으로 다시 띄운 뒤 다시 건다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 본다
 
 **복구하거나 더 처리할 일이 없다고 확인한 dispatch 는 `--ack-lost` 로 기록한다.**
 `--ack-lost` 는 기록만 쓴 뒤 종료 코드 0 으로 끝나므로 대기는 따로 건다. `--ignore-lost` 와의 차이와 실패 처리는 스크립트 머리 주석이 소유한다.
@@ -208,13 +208,12 @@ orch cleanup sweep --repo "$REPO" --repo "$OTHER_REPO" --specs-dir .orch/specs -
 ## 받은 메시지 읽기
 
 **`orch wait` 의 출력이 분류까지 한다.** 받은 메시지마다 판정 줄 하나가 우선 차례로 오고, heartbeat 는 개수만 온다. `orch wait triage` 를 따로 부르지 않는다.
-한 delivery 에 heartbeat 가 수십 건 섞여도 `worker_done` 하나를 놓치지 않게 하려는 것이다. 줄 꼴과 차례는 `scripts/wait/triage-messages.ts` 머리 주석의 「짧은 출력」 이 소유한다.
+한 delivery 에 heartbeat 가 수십 건 섞여도 `worker_done` 하나를 놓치지 않게 하려는 것이다. 전체 줄 꼴과 차례는 `scripts/wait/triage-messages.ts` 머리 주석의 「짧은 출력」 이 소유한다.
 
 ```text
 DONE-SUSPECT <dispatch> <task> <본문 앞 120자>   근거 없는 worker_done. 종료 코드 6
 DONE <dispatch> <task> <본문 앞 120자>
-STOPPED, ESCALATION, QUESTION, STATUS …           같은 꼴
-HEARTBEAT <개수>
+… 그 밖의 종류와 HEARTBEAT, QUIET-STOP 개수 줄은 `scripts/wait/triage-messages.ts` 머리 주석이 소유한다
 RAW <원문 파일>
 LAST_DELIVERY <id>
 ```

@@ -16,22 +16,22 @@
 | 검증 명령 | worker 와 코디네이터가 돌릴 포맷, lint, 테스트 명령 | 2, 6 |
 | 머지 조건 | 필수 체크 이름(`--required` 로 넘길 값), base 최신을 품게 할지(`--require-up-to-date`), 관리자 우회 가능 여부, 머지 방식(merge, squash) | 7 |
 | 합친 사본 검사 | 같은 파일을 고친 PR 을 base 와 합친 사본에서 돌릴 `hooks/verify-merged.ts`, 사본 폴더(`--copy-dir`), 겹치지 않아도 검사할지(`--verify-merged-when`), 검사 없이 머지할 문서 glob(`--docs-glob`). 폴더는 저장소 hook 이 워크트리를 허용하는 곳이다 | 6, 7 |
-| draft 로 CI 미루기 | draft PR 에서 CI 를 돌리지 않는 저장소인지. 켜면 worker 는 PR 을 draft 로 열고, 코디네이터가 검증 뒤 `ci-ready.ts` 로 ready 로 바꾼다 | 2, 7 |
+| draft 로 CI 미루기 | draft PR 에서 CI 를 돌리지 않는 저장소인지. 켜면 worker 는 PR 을 draft 로 열고, 코디네이터가 검증 뒤 `orch queue ready` 로 ready 로 바꾼다 | 2, 7 |
 | 무거운 검사 분류 | 같은 PC 에서 혼자 돌아야 하는 전체 검사와 브라우저 검사 명령, 대기열을 거치지 않아도 되는 가벼운 명령 | 6 |
 | 문서 PR 의 CI | 문서만 바꾼 PR 이 CI 를 생략하는지, 그때 머지 큐에 줄 `--docs-glob` | 7 |
 | 머지 전 명령 | DB 마이그레이션이 든 PR 앞의 백업 명령과 인자, 보관 개수 | 7 |
 | 머지 뒤 명령 | `hooks/after-queue.ts`가 머지 뒤 한 번 돌릴 배포 명령. 문서 PR 만 머지했을 때 건너뛸지(`CODE_PRS`) | 7 |
 | draft 때 건너뛴 체크 | draft 에서 CI 를 건너뛰게 둔 저장소면 `--skipped-is-missing` | 7 |
-| 마이그레이션 순서 | 마이그레이션 PR 끼리의 머지 순서, 모듈별 선후, 공유 DB 에 적용하지 않는 규칙. 번호는 `reserve-migration.ts` 로 예약한다. SQL 은 `migrations.dirs` 에, `--kind java` 는 `migrations.watch` 폴더에 경로를 받는다. 번호 붙은 ADR 은 `--kind adr` 로 `adr.dirs` 폴더에 받는다 | 2, 7 |
+| 마이그레이션 순서 | 마이그레이션 PR 끼리의 머지 순서, 모듈별 선후, 공유 DB 에 적용하지 않는 규칙. 번호는 `orch queue reserve` 로 예약한다. SQL 은 `migrations.dirs` 에, `--kind java` 는 `migrations.watch` 폴더에 경로를 받는다. 번호 붙은 ADR 은 `--kind adr` 로 `adr.dirs` 폴더에 받는다 | 2, 7 |
 | CI runner 장애 대응 | runner 가 offline 이 됐을 때 누가 무엇을 하는지, 끊긴 실행을 다시 돌리는 명령 | 4, 7 |
 | 원격 접속 규칙 | 개발 서버 조회에 쓸 접속 설정, 읽기만 허용하는지 | 2 |
 | 비밀값 규칙 | 읽지 않을 파일, 비밀값을 넘기는 방법 | 2 |
 | 업무 시스템 연동 | 업무 등록 양식, 상태 전환 시점, 링크 규칙 | 7 |
 | 머지 뒤 정리에서 지울 문서 위치 | 지시서 사본, 설계 메모, PR 본문을 두는 폴더 | 7 |
-| 지시서 폴더 | `cleanup-sweep.ts --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더에 남은 옛 위치의 PR 본문 파일 `pr-<이름>.md` 를 지운다. 새 PR 본문 파일은 worker 세션 임시 폴더에 있어 이 폴더에 생기지 않는다 (예: `.orch/specs/`) | 4, 7 |
+| 지시서 폴더 | `orch cleanup sweep --specs-dir` 에 줄 경로. worktree 이름과 같은 지시서와, 그 부모 폴더에 남은 옛 위치의 PR 본문 파일 `pr-<이름>.md` 를 지운다. 새 PR 본문 파일은 worker 세션 임시 폴더에 있어 이 폴더에 생기지 않는다 (예: `.orch/specs/`) | 4, 7 |
 | spec-lint | `## spec-lint` 절에 코디네이터 소유 경로, 소유 계약, 금지 문구. 형식은 `scripts/spec/spec-lint.ts` 머리 주석. 오버레이가 가리키는 경로는 `--check-overlay` 가 `origin/<base>` 와 대조한다 | 2 |
 | 공부 후보 | 사용자가 고른 후보를 글로 쓸 스킬 이름과 글이 놓일 저장소. 없으면 글을 쓸 때 어디에 쓸지 묻는다. 절차는 [`study-candidates.md`](study-candidates.md) | - |
-| 진행 보드 | 보드 파일 위치, 목표 항목 id(`board-sync.ts --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
+| 진행 보드 | 보드 파일 위치, 목표 항목 id(`orch board sync --goal`). `--goal-items` 는 하위 호환 옵션이라 새 설정에 쓰지 않는다 | 4, 7 |
 | 머지 뒤 마무리 | `<repo>/.orch/config.json` 의 `finish` 절. gh 호스트, Run id, 배포 워크플로 파일과 브랜치, 업무 번호를 PR 제목에서 뽑는 정규식, 업무 완료 명령 틀, 보드 파일과 지시서 폴더. 키는 아래 표가 소유한다 | 7 |
 | 산출물 정리 | 같은 파일의 `cleanup` 절. 함께 정리할 미리보기 폴더, 보드 파일, 휴지통 폴더, 기준 일수 | 7 |
 | Docker 자원 | 같은 파일의 `docker` 절. 검사 스크립트가 띄우는 임시 컨테이너의 표식과 이름, 해시 태그로 쌓이는 이미지 이름. 판정은 [`cleanup.md`](cleanup.md) 의 「Docker 자원 반납」 이 소유한다 | 7 |
@@ -82,7 +82,7 @@
 | `pipeline` | `enabled`, `docs_merge`, `after_queue_interval_sec`, `ci_missing_after_sec`, `update_behind_drafts` | 상주 루프의 자동 진행에 쓸 값이다. 키는 사용법 오류 없이 받지만 아직 읽는 명령이 없다 |
 | `heavy` | `exclusive`, `normal`, `light`, `wait_idle` | 정규식 목록이다. `heavy-slot.ts` 가 읽는다. 사용법은 [`heavy-checks.md`](heavy-checks.md) 가 소유한다 |
 | `migrations` | `dirs`, `watch`, `before`, `blocked_after_sec` | SQL 예약 폴더, 모듈별 추가 감시 경로 목록(Java 예약 폴더), 자동 머지의 머지 전 명령, 막힘 알림 시간 |
-| `adr` | `dirs` | 이름에서 ADR 폴더로 가는 객체. `reserve-migration.ts --kind adr` 가 이 폴더에 번호를 예약한다. 폴더마다 번호가 따로이고 자동 머지는 읽지 않는다 |
+| `adr` | `dirs` | 이름에서 ADR 폴더로 가는 객체. `orch queue reserve --kind adr` 가 이 폴더에 번호를 예약한다. 폴더마다 번호가 따로이고 자동 머지는 읽지 않는다 |
 | `board` | `steps` | 띄울 때 만드는 보드 마일스톤 단계의 문자열 목록. 줄 앞 꼬리표 `[pr]`, `[merge]`, `[deploy]`, `[release]` 가 그 단계를 끝낼 사건이다. 없으면 `[pr] PR`, `[merge] 머지` 다. 규칙은 [`board.md`](board.md) 의 「마일스톤 단계」 가 소유한다 |
 | `board` | `done_after` | 보드 항목을 done 으로 바꾸는 사건. `merge`, `deploy`, `release` 중 하나이고 기본은 `merge` 다 |
 | `docker` | `containers` | 정리가 지울 컨테이너 규칙의 목록. 규칙은 `label`(`키` 나 `키=값`)과 `name`(이름 전체에 맞출 정규식) 가운데 하나 이상을 둔 객체이고, 둘 다 두면 둘 다 맞아야 한다. `name` 에 이름 붙은 묶음 `pid` 가 있으면 그 프로세스가 없을 때만, 없으면 멈춘 컨테이너만 지운다. `cleanup-sweep.ts` 가 읽는다. 언제 무엇을 지우는지는 [`cleanup.md`](cleanup.md) 의 「Docker 자원 반납」 이 소유한다 |
@@ -114,7 +114,7 @@
 }
 ```
 
-업무 완료와 합친 사본 검사 명령은 설정 칸이 아니라 `.skills/orch/hooks/after-deploy.ts`, `.skills/orch/hooks/verify-merged.ts` 에 둔다. 쓰는 법은 [`hooks.md`](hooks.md) 다.
+업무 완료와 합친 사본 검사 명령은 설정 칸이 아니라 `.orch/hooks/after-deploy.ts`, `.orch/hooks/verify-merged.ts` 에 둔다. 쓰는 법은 [`hooks.md`](hooks.md) 다.
 
 ### 뒤처진 PR 미리 최신화
 
@@ -146,7 +146,7 @@ runner 5대 저장소는 2~3 을 권한다. PR CI 한 벌이 job 여럿을 함�
 ## orch 작업 폴더
 
 orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에서 불러도 같은 폴더다.
-경로는 `scripts/paths/orch_paths.ts` 가 정하고, 셸과 문서에서는 `orch paths specs` 처럼 이름으로 받는다.
+이름과 경로는 `scripts/lib/paths.ts` 의 `NAMES` 가 정하고, 셸과 문서에서는 `orch paths specs` 처럼 이름으로 받는다.
 루트를 옮기려면 `ORCH_DIR` 을 orch 스크립트를 부르는 모든 환경(코디네이터 셸, 훅)에 같은 값으로 둔다.
 
 | 경로 | 담는 것 |
@@ -155,7 +155,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | `config.json` | 위 「마무리 설정 파일」 |
 | `specs/` | 지시서와 `spec-common.md`. 옛 위치의 PR 본문 `pr-<이름>.md` 는 그 부모인 `.orch/` 에 있다. 지금 PR 본문 파일은 worker 세션 임시 폴더에 둔다 |
 | `queue/` | 머지 큐와 마무리(`finish-<PR>.out`, `.pid`) 출력 |
-| `state/` | `wait-important`, `notify-conflicts.ts` 가 기억하는 것. 상주 루프의 파일(`loop.json`, `loop.lock`, `loop.log`, `loop-events.jsonl`, `loop-events.cursor`)도 여기 있다. 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
+| `state/` | `wait-important`, `notify-conflicts.ts` 가 기억하는 것. 상주 루프의 파일(`loop.json`, `loop.lock`, `loop.log`)도 여기 있다. 알림 파일은 `state/loop-events/<Run>.jsonl` 과 `<Run>.cursor` 다([`data-schema.md`](../../../docs/data-schema.md)). 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
 | `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |
 | `bin/` | 저장소 포장 스크립트 |
 | `feedback/` | worker 가 쌓은 스킬 개선 후보. 다시 보는 법은 [`feedback-review.md`](feedback-review.md) |
@@ -163,7 +163,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 
 ## 저장소 스크립트에서 orch 부르기
 
-**저장소의 `.skills/orch/bin/` 스크립트와 `.orch/queue-env.sh` 같은 파일은 번들 경로를 박지 않는다.** 플러그인 경로는 프로필과 버전마다 바뀌어(`<설정 폴더>/plugins/cache/<마켓플레이스>/<플러그인>/<해시>/`), 박아 둔 경로는 갱신 뒤 옛 스크립트를 조용히 부른다. 저장소 체크아웃 경로도 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
+**저장소의 `.orch/bin/` 스크립트와 `.orch/queue-env.sh` 같은 파일은 번들 경로를 박지 않는다.** 플러그인 경로는 프로필과 버전마다 바뀌어(`<설정 폴더>/plugins/cache/<마켓플레이스>/<플러그인>/<해시>/`), 박아 둔 경로는 갱신 뒤 옛 스크립트를 조용히 부른다. 저장소 체크아웃 경로도 그 체크아웃이 다른 브랜치에 있으면 main 과 다른 스크립트가 돈다.
 아래 한 줄이 설치 기록에서 orch 실행기(플러그인 루트의 `bin/orch`)의 위치를 풀고, 스크립트는 `"$ORCH" <묶음> <동작> [인자]` 로 부른다. 저장소 스크립트는 PATH 의 `orch` 를 믿을 수 없어(Codex, 훅, cron) 경로를 푼다. 실행기가 그 호출의 설치 기록을 다시 읽어 현재 번들의 진입점에 넘긴다. 스크립트마다 새 셸이 뜨면 스크립트마다 이 줄을 둔다.
 고르는 규칙은 `scripts/lib/install-record.ts` 의 `selectBundle` 과 같다. user 범위 설치본이 있으면 그것만 보고, 스크립트 폴더가 없으면 다른 범위로 넘어가지 않고 3 으로 끝난다.
 
@@ -194,8 +194,8 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 | `merge-with-finish.ts` | 설정을 `--finish-config` 로 주지 않았을 때. 머지 큐를 걸지 않는다 |
 | `spec-lint` | `--overlay` 를 주지 않았을 때 |
 | `cleanup-sweep.ts` | `--specs-dir` 를 주지 않았을 때. 그 저장소만 건너뛴다 |
-| `launch-worker` | 늘. 셸 스크립트는 `orch_paths.ts check` 로 같은 검사를 한다 |
-| `orch_paths.ts --ensure` | 늘 |
+| `launch-worker` | 늘. 셸 스크립트는 `orch paths check` 로 같은 검사를 한다 |
+| `orch paths --ensure` | 늘 |
 
 `orch wait` 와 `orch queue conflicts` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
 
@@ -213,7 +213,7 @@ orch doctor migrate --repo "$REPO" --apply
 - 「추적 파일」 로 나온 것(기본 출력의 `TRACKED <명령>`)은 보인 `git mv` 명령으로 옮겨 커밋한다. 대상 폴더는 `--apply` 가 만들어 둔다
 - 「스크립트」 가 붙은 옛 경로 참조(`OLD-REF-SCRIPT`)는 옮긴 뒤 바로 고친다. 그 스크립트가 옛 폴더를 다시 만들면 위 진입점이 다시 멈춘다
 - 옮기다 실패하면 그때까지 옮긴 것을 보이고 멈춘다. 원인을 고친 뒤 다시 돌리면 남은 것을 옮기고, 옮긴 뒤 고치는 단계는 `.orch` 전체를 다시 본다
-- 폴더를 옮긴 뒤 `config.json` 에 5.2.0에서 지운 칸이 남았으면 `--hooks --apply`로 핸들러로 바꾼다. 순서는 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 가 소유한다
+- 폴더를 옮긴 뒤 `config.json` 에 5.2.0에서 지운 칸이 남았으면 `orch doctor migrate-hooks --apply` 로 핸들러로 바꾼다. 순서는 [`hooks.md`](hooks.md) 의 「옛 설정 칸 옮기기」 가 소유한다
 
 ## 예시
 
@@ -225,7 +225,7 @@ orch doctor migrate --repo "$REPO" --apply
 - 같은 파일을 고친 PR 은 `hooks/verify-merged.ts`에서 `cd "$copy" && ./gradlew test`를 돌리고 `--copy-dir worktrees/repo`로 머지한다
 - 공통 지시서: `.orch/specs/spec-common.md`
 - 검증: `scripts/verify.sh format`, `scripts/verify.sh test`
-- draft PR 은 CI 를 돌리지 않는다. worker 는 `gh pr create --draft` 로 열고, 코디네이터가 `ci-ready.ts` 로 ready 로 바꾼다
+- draft PR 은 CI 를 돌리지 않는다. worker 는 `gh pr create --draft` 로 열고, 코디네이터가 `orch queue ready` 로 ready 로 바꾼다
 - 머지 전 명령: DB 마이그레이션이 든 PR 은 `PR:./bin/backup-db.sh <db> "before-pr-$PR"`. DB 마다 최근 2개만 보관
 - CI runner 가 offline 이면 묻지 않고 runner 호스트를 재부팅하고, 끊긴 실행은 `gh run rerun --failed` 로 다시 돌린다
 - 공부 후보: 글쓰기 스킬은 `blog-writer`, 글은 `~/blog` 저장소에 둔다
@@ -239,13 +239,13 @@ orch doctor migrate --repo "$REPO" --apply
   "migrations": {
     "dirs": { "api": "modules/api/src/main/resources/db/migration" },
     "watch": { "api": ["src/main/java/db/migration"] },
-    "before": { "*": ".skills/orch/bin/backup-db.sh {module} \"pre-$PR\"" }
+    "before": { "*": ".orch/bin/backup-db.sh {module} \"pre-$PR\"" }
   }
 }
 ```
 
-`dirs`는 `reserve-migration.ts`가 SQL 파일 경로를 만드는 자리이고 자동 감시에도 들어간다. `watch`는 같은 모듈에 더할 감시 폴더 목록이다. 따라서 위 설정은 Java 경로의 Flyway 번호도 SQL 예약과 같은 번호 공간으로 본다.
-Java 마이그레이션은 `reserve-migration.ts --kind java` 로 받는다. 그 모듈의 `watch` 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 를 낸다. Flyway 는 클래스 이름을 파일 이름으로 쓰므로 이름은 대소문자를 지키고, Java 식별자가 아니면 사용법 오류다.
+`dirs`는 `orch queue reserve` 가 SQL 파일 경로를 만드는 자리이고 자동 감시에도 들어간다. `watch`는 같은 모듈에 더할 감시 폴더 목록이다. 따라서 위 설정은 Java 경로의 Flyway 번호도 SQL 예약과 같은 번호 공간으로 본다.
+Java 마이그레이션은 `orch queue reserve --kind java` 로 받는다. 그 모듈의 `watch` 폴더(여럿이면 `--dir` 로 고른 것)에 `V<버전>__<이름>.java` 를 낸다. Flyway 는 클래스 이름을 파일 이름으로 쓰므로 이름은 대소문자를 지키고, Java 식별자가 아니면 사용법 오류다.
 `watch`에만 적은 모듈은 `--kind java` 로만 예약할 수 있다.
 
 ### 모델 선택 관측 설정
@@ -303,4 +303,4 @@ Java 마이그레이션은 `reserve-migration.ts --kind java` 로 받는다. 그
 }
 ```
 
-큐를 걸면 PR 마다 `AUTO-MERGE-BASIS #<PR> HEAD <SHA> <근거>` 를 루프 로그에 남긴다. 근거는 조건마다 어느 판정(리뷰의 커밋이나 댓글, 시각)으로 통과했는지다.
+큐를 걸면 PR 마다 `AUTO-MERGE-BASIS #<PR> HEAD <앞 8자리> <근거>` 를 루프 로그에 남긴다. 근거는 조건마다 어느 판정(리뷰의 커밋이나 댓글, 시각)으로 통과했는지다.
