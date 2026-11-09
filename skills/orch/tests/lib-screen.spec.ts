@@ -137,4 +137,9 @@ describe('백그라운드 작업', () => {
     assert.equal(backgroundWork(lines), '2 background terminals running')
     assert.equal(backgroundWork(['• 끝났다.', '› Ask Codex to do anything', '  ? for shortcuts']), null)
   })
+
+  test('답변 본문에 같은 문구가 있어도 상태 표시줄에 없으면 백그라운드 작업이 아니다', () => {
+    assert.equal(backgroundWork(['• 상태 문구는 2 background terminals running 입니다.', '› Ask Codex to do anything', '  ? for shortcuts']), null)
+    assert.equal(backgroundWork(['⏺ 1 shell', '───────────────', '❯', '───────────────', '  ⏵⏵ auto mode on']), null)
+  })
 })
