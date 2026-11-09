@@ -1,10 +1,10 @@
 // 백엔드 프로세스를 부르고 반환값을 정규화하는 공통 도구.
 
-import { spawnSync } from 'node:child_process'
 import { constants } from 'node:os'
 import { WAIT_INTERVAL } from './config.ts'
 import { DriverError } from './errors.ts'
 import { dumpJson, normalizeNewlines, pyDecode, pySplitLines, pyStrip } from './pylike.ts'
+import { runtimeSpawnSync, runtimeEnv } from './runtime.ts'
 
 // 외부 명령을 돌리고 stdout+stderr 를 한 덩어리로 돌려준다.
 //
@@ -14,10 +14,11 @@ import { dumpJson, normalizeNewlines, pyDecode, pySplitLines, pyStrip } from './
 export function run(argv: string[], opts: { checkMarker?: string; stdinText?: string; checkExit?: boolean } = {}): string {
   // subprocess 는 문자열이 아닌 인자를 TypeError 로 거절한다
   for (const arg of argv) if (typeof arg !== 'string') throw new TypeError(`expected str, bytes or os.PathLike object, not ${typeof arg}`)
-  const done = spawnSync(argv[0], argv.slice(1), {
+  const done = runtimeSpawnSync(argv[0], argv.slice(1), {
     input: opts.stdinText,
     stdio: [opts.stdinText === undefined ? 'inherit' : 'pipe', 'pipe', 'pipe'],
     maxBuffer: 1 << 30,
+    env: runtimeEnv(),
   })
   if (done.error) throw done.error
   // text=True: 로캘 인코딩(UTF-8)으로 엄격히 읽고 줄바꿈을 \n 으로 바꾼다

@@ -1,6 +1,6 @@
 // agent-browser 백엔드. 조건 대기 명령이 없어 eval 폴링으로 대신한다.
 
-import { CONFIG_PATH, READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT, configValue } from '../config.ts'
+import { configPath, READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT, configValue } from '../config.ts'
 import { DriverError, UsageError } from '../errors.ts'
 import { JsonDecodeError, loadJson, parsePyInt, pyStrOf, pyStrip } from '../pylike.ts'
 import { jsValue, run, waitExpression } from '../shell.ts'
@@ -34,7 +34,7 @@ export class AgentBrowserBackend extends Backend {
       return (
         'cdpPort 가 없어도 스스로 브라우저를 띄운다 (실측). 다만 그 브라우저에는 ' +
         '로그인 세션이 없다. SSO 가 필요한 시스템은 Chrome 을 ' +
-        `--remote-debugging-port 로 띄우고 ${CONFIG_PATH} 에 cdpPort 를 적는다`
+        `--remote-debugging-port 로 띄우고 ${configPath()} 에 cdpPort 를 적는다`
       )
     }
     return ''

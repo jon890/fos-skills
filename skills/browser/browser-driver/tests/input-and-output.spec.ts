@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { join } from 'node:path'
-import { Box, egoOut, MARKER, NOTICE, write, type T } from './helpers.ts'
+import { egoOut, MARKER, NOTICE, write, type T } from './helpers.ts'
+import { FunctionBox as Box } from './function-box.ts'
 
 function ego(t: T, stdout = '') {
   const box = new Box(t)

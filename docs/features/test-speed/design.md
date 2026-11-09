@@ -8,6 +8,7 @@
 | PR2 | testkit 첫 판(`modules/testkit`)과 기존 fixtures 이전, 내보내는 폴더의 import 검사 | orch-cli PR3 앞 |
 | PR3 | 실행기 하나(`scripts/run-tests.ts`), CI job 하나, 로컬 검증 문서 | orch-cli PR3 앞, PR2 뒤 |
 | PR4~ | 파일 묶음마다 가짜 재사용, 템플릿 저장소, 함수 주입 전환(merge-queue, orch-loop 계열, cleanup-sweep 계열, launch-worker 와 나머지) | orch-cli PR3 뒤 |
+| PR11 | cleanup-sweep 준비와 browser-driver 반복 기동, 마지막 전체 측정 | 마지막 PR. 머지 뒤 재측정하고 항목을 닫는다(사용자 2026-11-09) |
 | 마지막 | 대기 옵션 정리와 3분 안팎 목표 확인 | 실행기 전체가 600초 아래로 내려온 뒤 |
 
 ## 요구사항 연결
@@ -386,3 +387,21 @@ finish-pr의 준비 이력은 testkit `copyRepo`로 재사용한다. 템플릿�
 예외는 기존 CLI와 같은 코드 1로 처리한다. stateful-run의 timeout·input·maxBuffer·비동기·상대 파일 접근 제약은 그대로이며 이 성질을 확인하는 명령은 실제 실행한다. 도메인 규칙·출력 계약·배포 순서는 바꾸지 않고 새 의존성·ADR도 없다. REQ1의 판정 범위와 [ADR-010](../../adr/010-orch-typescript.md)의 의존성 없는 구조를 유지한다.
 
 대상 파일과 proc·직접 실행/import 회귀를 실행기로 확인한다. 기준/구현 커밋을 같은 머신에서 번갈아 측정하고 preload 기동 수·시작/끝 load를 남긴다. 전체 동시 8 실행의 끝 줄과 파일 시간 합을 PR에 보존한다. 설계·계획·코드·문서 독립 검토는 지시서에 따라 PR 뒤 코디네이터의 Claude 리뷰를 기다린다. 자기 점검을 독립 검토 통과로 기록하지 않는다.
+
+
+## PR11: cleanup-sweep 준비와 browser-driver 반복 기동
+
+REQ1·REQ2·REQ3·REQ4·REQ6·REQ9를 맡는다. PR6의 cleanup-sweep 격리와 실제 삭제 자식은 유지한다. browser-driver는 동기 main의 호출 범위에 환경·출력·명령 실행을 주입한다. 기본값은 기존 process.env·fd 출력·spawnSync다. AsyncLocalStorage로 호출 상태를 나눠 전역 환경을 바꾸지 않는다. 설정 경로는 호출 환경마다 다시 판정하며 기본 CLI의 import 시점 경고는 유지한다.
+
+| 기존 관측 경계 | 전환 뒤 같은 판정과 남기는 경계 |
+| --- | --- |
+| backends의 명령 인자·응답 파싱·숫자·JSON·오류 표 | 기존 단언과 golden을 main 함수 호출에서 유지한다. 가짜 실행 파일과 같은 본문을 평가하고 argv·stdin·환경·출력·종료 코드를 기록한다 |
+| input-and-output의 옵션·출력 분리·jsfile·포인터 | 기존 단언을 함수 호출로 유지한다. 스크립트를 실행하는 prelude·입력/출력 크기·대기와 신호는 실제 자식으로 보낸다 |
+| ego-space의 공간 선택·reset | main만 함수로 부른다. 비동기 ego 스크립트는 기존 가짜 실행 파일과 Node 자식으로 실행한다 |
+| 실제 CLI 대표 | 각 백엔드의 성공과 실패, 사용법 오류(0·1·2), stdout/stderr 분리, js --timeout·jsfile·포인터·reset 옵션을 `function-box.spec.ts`의 명령 경계에 남긴다. 함수/CLI 결과와 호출 기록도 대조한다 |
+| cleanup-sweep 준비 | PR6의 템플릿 저장소·함수 가짜를 재사용한다. remove-worktree는 별도 자식에서 main을 호출하고 그 안의 동기 가짜 조회만 같은 본문으로 평가한다. git과 삭제는 실제 실행이다. `cleanup-sweep-run.spec.ts`에서 실제 삭제 진입과 함수 가짜 자식의 0·1·2를 대조한다. 프로세스 pid 판정 때문에 main의 별도 프로세스 격리는 유지한다 |
+| 초기 저장소 상태 | cleanup-sweep의 빈 초기 커밋·main upstream·테스트별 브랜치/파일/커밋/원격 상태를 유지한다. browser-driver는 각 Box의 빈 홈·설정·PATH를 유지한다 |
+
+함수 가짜는 동기 CommonJS 본문만 평가한다. timeout·신호·비동기 출력·자식 생명주기·상대 파일 접근을 보증하지 않으며 prelude는 실제 실행으로 넘긴다. 본문 예외는 명령 실패로 돌려준다. 함수 main은 runtime 진입 직후 설정 경로를 판정해 CLI의 import 시점 경고와 출력 순서를 맞춘다. 후보가 여럿이고 BROWSER_CONFIG가 없는 help·driver·인자 부족 호출도 CLI와 대조한다. browser-driver 테스트 도우미는 배포되는 폴더 안에 두고 바깥 모듈을 import하지 않는다. 새 도메인 규칙·데이터 형식·트랜잭션·배포 순서 변경과 ADR은 없다.
+
+검증은 실행기로 대상 파일과 명령 경계 회귀를 실행한다. 기준/구현 커밋의 파일별 시간과 preload 기동 수를 heavy exclusive slot에서 번갈아 재고 load를 남긴다. 마지막 PR이므로 동시 8 전체 실행의 끝 줄과 파일 시간 합을 PR 본문에 보존한다. 독립 설계·계획·코드·문서 검토는 PR 뒤 코디네이터가 마련하며 그전에는 미완료로 기록한다.

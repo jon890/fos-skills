@@ -1,6 +1,6 @@
 // 백엔드 목록과 선택 규칙.
 
-import { CONFIG_PATH, configValue } from '../config.ts'
+import { configPath, configValue } from '../config.ts'
 import { UsageError } from '../errors.ts'
 import { pyStrOf } from '../pylike.ts'
 import { AgentBrowserBackend } from './agent_browser.ts'
@@ -8,6 +8,7 @@ import type { Backend } from './base.ts'
 import { CmuxBackend } from './cmux.ts'
 import { EgoBackend } from './ego.ts'
 import { OrcaBackend } from './orca.ts'
+import { runtimeEnv } from '../runtime.ts'
 
 export const BACKENDS = new Map<string, Backend>([new EgoBackend(), new OrcaBackend(), new AgentBrowserBackend(), new CmuxBackend()].map((b) => [b.name, b]))
 
@@ -21,17 +22,17 @@ export const EGO_INSTALL_URL = 'https://lite.ego.app/'
 
 // 환경변수 → 설정 파일 → 자동 감지 순서로 백엔드를 정한다. 이름은 설정 파일에서 읽은 값이라 문자열이 아닐 수 있다
 export function resolveBackendName(): [unknown, string] {
-  const fromEnv = process.env.BROWSER_DRIVER
+  const fromEnv = runtimeEnv().BROWSER_DRIVER
   if (fromEnv) return [fromEnv, '환경변수 BROWSER_DRIVER']
   const fromConfig = configValue('driver')
-  if (fromConfig) return [fromConfig, `${CONFIG_PATH} 의 driver`]
+  if (fromConfig) return [fromConfig, `${configPath()} 의 driver`]
   for (const name of DETECT_ORDER) {
     if (BACKENDS.get(name)!.available()) return [name, '자동 감지']
   }
   throw new UsageError(
     `쓸 수 있는 브라우저 백엔드가 없다. ego lite(${EGO_INSTALL_URL})를 먼저 설치한다.\n` +
       'orca 나 agent-browser 를 설치해도 된다.\n' +
-      `${CONFIG_PATH} 에 driver 를 적을 수도 있다. 자세한 상태는 doctor 로 본다.`,
+      `${configPath()} 에 driver 를 적을 수도 있다. 자세한 상태는 doctor 로 본다.`,
   )
 }
 

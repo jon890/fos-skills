@@ -3,7 +3,8 @@
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { Box, egoOut, type T } from './helpers.ts'
+import { egoOut, type T } from './helpers.ts'
+import { FunctionBox as Box } from './function-box.ts'
 
 const FAKE_API = `
 const profiles = async () => [{id: 'Default', name: 'Personal', isDefault: true}];

@@ -7,6 +7,7 @@ import { eprint } from '../io.ts'
 import { JsonDecodeError, dumpJson, loadJson, parsePyInt, pyPath, pyStrOf, pySuffix, pyTruthy } from '../pylike.ts'
 import { jsValue, run } from '../shell.ts'
 import { Backend } from './base.ts'
+import { runtimeEnv } from '../runtime.ts'
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
@@ -110,7 +111,7 @@ export class OrcaBackend extends Backend {
       // orca tab create 는 셸의 작업 디렉토리가 속한 워크트리에 탭을 만든다. 조사하느라 다른
       // 저장소로 옮긴 상태에서 열면 사용자가 보는 워크트리가 아닌 곳에 탭이 생긴다 (실측).
       // --worktree active 로도 막지 못한다. active 역시 작업 디렉토리를 따라간다 (실측).
-      const worktree = process.env.ORCA_WORKTREE
+      const worktree = runtimeEnv().ORCA_WORKTREE
       const create = ['tab', 'create', '--url', url]
       if (worktree) create.push('--worktree', worktree)
       const handle = this.call('browserPageId', ...create)

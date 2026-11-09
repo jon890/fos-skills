@@ -4,6 +4,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { JsonDecodeError, exists, isFile, loadJson, osErrorMessage, pyExpanduser, pyHomePrefix, pyPath, pyReadText, pyResolve, pyStrCompare, pyTruthy, shQuote } from './pylike.ts'
 import { UsageError } from './errors.ts'
 import { eprint } from './io.ts'
+import { currentRuntime, runtimeEnv } from './runtime.ts'
 
 export const READY_TIMEOUT_DEFAULT = 30000n
 export const WAIT_TIMEOUT_DEFAULT = 10000n
@@ -117,16 +118,28 @@ function globConfigs(dataRoot: string): string[] {
 }
 
 // 캐시 밖에서 여러 후보가 있을 때의 경고는 stdout 대신 stderr 로 낸다
-export const CONFIG_RESOLUTION = resolveConfig(process.env, import.meta.filename)
-export const CONFIG_PATH = CONFIG_RESOLUTION.path
-if (CONFIG_RESOLUTION.warning) eprint(CONFIG_RESOLUTION.warning)
+const defaultResolution = resolveConfig(process.env, import.meta.filename)
+if (defaultResolution.warning) eprint(defaultResolution.warning)
+const resolutions = new WeakMap<object, ConfigResolution>()
+export function configResolution(): ConfigResolution {
+  const runtime = currentRuntime()
+  if (!runtime) return defaultResolution
+  let resolution = resolutions.get(runtime)
+  if (!resolution) {
+    resolution = resolveConfig(runtimeEnv(), import.meta.filename)
+    resolutions.set(runtime, resolution)
+    if (resolution.warning) eprint(resolution.warning)
+  }
+  return resolution
+}
+export const configPath = (): string => configResolution().path
 
 // 용도별 프로필 설정이 없을 때 실제 탐색 경로와 복구 명령을 안내한다
 export function profileConfigGuidance(): string {
-  const paths = CONFIG_RESOLUTION.searched.map((p) => `  ${p}`).join('\n')
-  const legacy = shQuote(CONFIG_RESOLUTION.legacy)
+  const paths = configResolution().searched.map((p) => `  ${p}`).join('\n')
+  const legacy = shQuote(configResolution().legacy)
   return (
-    `\n설정 파일: ${CONFIG_PATH}\n설정 판정: ${CONFIG_RESOLUTION.reason}` +
+    `\n설정 파일: ${configPath()}\n설정 판정: ${configResolution().reason}` +
     `\n찾아본 경로:\n${paths}` +
     '\negoProfiles 가 있는 설정 파일을 BROWSER_CONFIG 로 지정한다.' +
     '\n  export BROWSER_CONFIG="/실제/설정/browser.config.json"' +
@@ -136,13 +149,13 @@ export function profileConfigGuidance(): string {
 
 // 설정 파일에서 키 하나를 읽는다. 파일이나 키가 없으면 null. 값이 거짓(0, 빈 문자열 등)이면 없는 것으로 본다
 export function configValue(key: string): unknown {
-  if (!exists(CONFIG_PATH)) return null
+  if (!exists(configPath())) return null
   let data: unknown
   try {
-    data = loadJson(pyReadText(CONFIG_PATH))
+    data = loadJson(pyReadText(configPath()))
   } catch (error) {
-    if (error instanceof JsonDecodeError) throw new UsageError(`${CONFIG_PATH} 를 읽지 못했다: ${error.message}`)
-    if ((error as NodeJS.ErrnoException).code) throw new UsageError(`${CONFIG_PATH} 를 읽지 못했다: ${osErrorMessage(error, CONFIG_PATH)}`)
+    if (error instanceof JsonDecodeError) throw new UsageError(`${configPath()} 를 읽지 못했다: ${error.message}`)
+    if ((error as NodeJS.ErrnoException).code) throw new UsageError(`${configPath()} 를 읽지 못했다: ${osErrorMessage(error, configPath())}`)
     throw error
   }
   // 객체가 아니면 data.get 이 AttributeError 로 끝난다

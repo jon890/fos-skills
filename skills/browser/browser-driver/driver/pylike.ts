@@ -25,6 +25,7 @@
 import { accessSync, constants, lstatSync, readFileSync, readlinkSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname as nodeDirname } from 'node:path'
+import { runtimeEnv } from './runtime.ts'
 
 // ── 문자열 ──
 
@@ -462,7 +463,7 @@ export function pyHome(): string {
 
 // 홈 뒤에 `/…` 를 이어 붙일 때 쓰는 앞부분. 홈이 / 이면 빈 문자열이라 `//…` 가 되지 않는다
 export function pyHomePrefix(): string {
-  const home = process.env.HOME
+  const home = runtimeEnv().HOME
   if (home !== undefined) return home.replace(/\/+$/, '')
   return homedir().replace(/\/+$/, '')
 }
@@ -543,7 +544,7 @@ export function isSymlink(path: string): boolean {
 
 // shutil.which(cmd). PATH 가 비었으면 못 찾은 것이다. 빈 PATH 항목은 현재 폴더다
 export function which(cmd: string): string | null {
-  let path = process.env.PATH
+  let path = runtimeEnv().PATH
   if (path === undefined) path = '/usr/bin:/bin:/usr/sbin:/sbin'
   if (!path) return null
   const check = (file: string) => {

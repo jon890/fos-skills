@@ -1,11 +1,12 @@
 // cmux 백엔드. 실패를 종료 코드로 정확히 알리는 유일한 백엔드다.
 
-import { spawnSync } from 'node:child_process'
 import { READY_TIMEOUT_DEFAULT, WAIT_TIMEOUT_DEFAULT } from '../config.ts'
 import { DriverError, UsageError } from '../errors.ts'
 import { JsonDecodeError, loadJson, normalizeNewlines, parsePyInt, pyDecode, pySplitLines, pyStrip } from '../pylike.ts'
 import { jsValue } from '../shell.ts'
 import { Backend } from './base.ts'
+import { runtimeEnv } from '../runtime.ts'
+import { runtimeSpawnSync } from '../runtime.ts'
 
 const rstripNewlines = (text: string) => text.replace(/\n+$/, '')
 
@@ -25,7 +26,7 @@ export class CmuxBackend extends Backend {
   readonly supported = new Set(['open', 'nav', 'js', 'waitjs', 'ready', 'url', 'snap', 'shot', 'console', 'errors', 'close'])
 
   private cmux(...args: string[]): string {
-    const done = spawnSync(this.binary, args, { stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 1 << 30 })
+    const done = runtimeSpawnSync(this.binary, args, { stdio: ['inherit', 'pipe', 'pipe'], maxBuffer: 1 << 30, env: runtimeEnv() })
     if (done.error) throw done.error
     const decode = (bytes: Buffer | null) => normalizeNewlines(pyDecode(bytes ?? Buffer.alloc(0)))
     const out = decode(done.stdout) + decode(done.stderr)
@@ -61,7 +62,7 @@ export class CmuxBackend extends Backend {
       let surface: string
       if (!m) {
         // 환경변수로 지정한 surface 를 마지막 수단으로 쓴다. 출력 형식이 바뀌어도 막히지 않는다.
-        const fixed = process.env.BROWSER_CMUX_SURFACE
+        const fixed = runtimeEnv().BROWSER_CMUX_SURFACE
         if (!fixed) throw new DriverError(`open 출력에서 surface 를 찾지 못했다. BROWSER_CMUX_SURFACE 로 지정한다.\n${pyStrip(out)}`)
         surface = CmuxBackend.surface(fixed)
       } else surface = m[1]

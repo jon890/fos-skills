@@ -24,10 +24,11 @@ import { parseJsArgs, parsePointerArgs, parseResetArgs } from './driver/args.ts'
 import type { Backend } from './driver/backends/base.ts'
 import { backendByName, loadBackend, resolveBackendName, unknownBackendMessage } from './driver/backends/index.ts'
 import { COMMAND_MAP, COMMANDS, META_COMMANDS, renderHelp, required, usage } from './driver/commands.ts'
-import { CONFIG_PATH } from './driver/config.ts'
+import { configPath, configResolution } from './driver/config.ts'
 import { DriverError, EXIT_FAIL, EXIT_USAGE, UsageError } from './driver/errors.ts'
 import { eprint, isMain, print } from './driver/io.ts'
 import { PyFloat, dumpJson, normalizeNewlines, osErrorMessage, pyDecode, pyFloatStr, pyPath } from './driver/pylike.ts'
+import { withRuntime, type Runtime } from './driver/runtime.ts'
 
 // 포인터 명령이 받는 좌표 쌍의 수와 --button 허용 여부
 const POINTER_SHAPES: Record<string, [number, boolean]> = { click: [1, true], drag: [2, true], hover: [1, false] }
@@ -94,7 +95,7 @@ function run(argv: string[]): number {
 
   if (cmd === 'config-path') {
     // 파일이 있는지는 보지 않는다. 미리보기 같은 호출자가 드라이버와 같은 파일을 읽으려고 묻는다.
-    print(CONFIG_PATH)
+    print(configPath())
     return 0
   }
 
@@ -131,7 +132,12 @@ function run(argv: string[]): number {
 
 // 명령 하나를 돌리고 종료 코드를 낸다. 오류는 여기서 stderr 로 쓰고 종료 코드로 바꾼다.
 // 처리하지 못한 오류는 Python 의 traceback 처럼 stderr 에 적고 1 이다.
-export function main(argv: string[]): number {
+export function main(argv: string[], runtime?: Runtime): number {
+  if (runtime) return withRuntime(runtime, () => {
+    // CLI의 import 시점처럼 명령 검사보다 먼저 설정 경고를 낸다.
+    configResolution()
+    return main(argv)
+  })
   try {
     return run(argv)
   } catch (error) {
