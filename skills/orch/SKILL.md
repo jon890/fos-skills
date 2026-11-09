@@ -106,7 +106,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 3 | 띄우기 | `orch worker launch` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `LAUNCH-EFFECTIVE` 줄(`launch.effective`)이 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
 | 4 | 기다리기 | 저장소마다 `orch loop start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `orch wait` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다(사용자와 대화 중이면 `orch wait user-active` 가 `USER-ACTIVE` 이고 대기가 없다). 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 대기 출력의 메시지 판정 줄을 처리했다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
-| 6 | 완료 검증 | diff 를 직접 읽었고 검사를 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
+| 6 | 완료 검증 | diff 를 직접 읽었고, CI 가 같은 head SHA 로 돌린 검사는 CI 결과로 확인했고 CI 밖 검사는 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
 | 7 | 머지와 정리 | `orch queue merge` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
 
 진행 보드가 있으면 띄우기와 루프가 항목, PR 연결, 머지를 자동 반영한다. 코디네이터는 결정과 다음 단계를 관리한다([보드 갱신 담당](references/board.md)). 보드가 없으면 건너뛴다.
@@ -153,7 +153,7 @@ PR 생성과 회신이 막힌 worker 는 reference 의 해당 절을 따른다.
 
 여러 worker 가 같은 PC 에서 무거운 검사를 실행하면 [`references/heavy-checks.md`](references/heavy-checks.md)의 대기열로 감싼다.
 
-`worker_done` 은 근거가 아니다. git 으로 완료 기준을 대조하고, diff 를 읽고, 검사를 다시 돌린다.
+`worker_done` 은 근거가 아니다. git 으로 완료 기준을 대조하고, diff 를 읽고, CI 밖 검사만 다시 돌린다. CI 가 같은 head SHA 로 돌린 검사는 그 결과로 갈음한다.
 충돌은 그 PR 을 만든 worker 가 풀고, 푸는 규칙은 reference 의 「충돌을 풀 때」 를 따른다.
 
 ## 7. 머지와 정리

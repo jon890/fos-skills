@@ -40,11 +40,11 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 스킬: 지시서 검사를 통과해 worker 둘을 띄웠습니다.
         결제 취소 API     Claude   feat/partial-cancel
         알림 설정 화면     Codex    feat/notify-settings
-      PR 이 준비되면 diff 를 읽고 검사를 다시 돌립니다.
+      PR 이 준비되면 diff 를 읽고 CI 결과를 확인하며, CI 밖 검사만 다시 돌립니다.
 
       (worker 가 #512, #513 준비됨을 보낸다)
 
-스킬: 두 PR 의 diff 와 테스트를 확인하고 머지 큐로 머지했습니다.
+스킬: 두 PR 의 diff 와 CI 결과를 확인하고 머지 큐로 머지했습니다.
         배포    성공
         정리    워크트리 2개, 로컬과 원격 브랜치, worker 터미널, 지시서를 지웠습니다
       열린 PR #520 이 이번 머지로 base 와 충돌해, 그 PR 을 만든 worker 에게 base 를 합치라고 보냈습니다.
