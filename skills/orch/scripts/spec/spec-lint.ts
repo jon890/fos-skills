@@ -68,6 +68,9 @@
 //     임시        지시서가 임시 폴더 아래 경로(`/tmp/…`, `/private/tmp/…`, `/var/folders/…`, `$TMPDIR/…`, `…/scratchpad/…`)를 가리킨다.
 //                 세션이 끝나거나 재부팅하면 그 파일이 사라져 다시 띄운 worker 가 막힌다. 내용을 지시서 본문에 옮기거나 저장소나
 //                 orch 폴더에 둔다. `예외:` 줄은 보지 않는다. 경고이고 종료 코드에 넣지 않는다
+//     본문        PR 본문 파일 이름이 `pr-body.md`, `body.md` 처럼 작업 이름 없는 고정 공용 이름이다. 세션 임시 폴더를 나눠 쓰면 다른 PR 의 본문이
+//                 덮이거나 올라간다(ai-analysis #1338). 이름에 작업(워크트리) 이름을 넣는다. `예외:`, `담당:` 줄은 보지 않는다.
+//                 경고이고 종료 코드에 넣지 않는다
 //     제목        `# ` 제목 줄도 `보드 항목 id:` 줄도 없다. 보드 항목 제목이 업무 연결 줄, `## 목표` 첫 문장, 워크트리 이름으로 밀려나
 //                 보드에 업무 목적이 보이지 않을 수 있다(lib/board.ts 의 specTitle). 경고이고 종료 코드에 넣지 않는다
 //     보드        `보드 항목 id:` 줄에 id 뒤 설명이 붙었다. id 는 백틱 안의 글이나 공백 앞 첫 토큰으로만 읽는다(lib/spec.ts 의 boardIdOf).
@@ -129,6 +132,9 @@ const TEMPLATE = process.env.SPEC_TEMPLATE || join(bundleRoot(), 'templates', 's
 const COMMON = 'spec-common.md'
 // 임시 폴더 아래 경로. 폴더 이름만 말한 것(「scratchpad 에 쓴다」)은 빼고 그 아래 파일이나 폴더를 가리킨 것만 잡는다
 const TEMP_PATH = /(?:^|[\s`'"(=])((?:\/private)?\/tmp\/[^\s`'"()]*|(?:\/private)?\/var\/folders\/[^\s`'"()]*|\$\{?TMPDIR\}?\/[^\s`'"()]*|[^\s`'"()]*\/scratchpad\/[^\s`'"()]*)/g
+// PR 본문 파일 이름이 작업 이름 없이 고정된 공용 이름. 세션 임시 폴더를 여럿이 나눠 쓰면 다른 PR 의 본문이 덮이거나 올라간다
+const BODY_NAME = /(?:^|[\s`'"(/=])((?:pr[-_]?body|pr[-_]?description|body)\.md)(?![\w-])/g
+const BODY_HINT = '고정된 공용 이름이라 다른 작업의 PR 본문과 섞인다. 파일 이름에 작업(워크트리) 이름을 넣는다(예: pr-body-<워크트리 이름>.md)'
 const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사라진다. 내용을 지시서 본문에 옮기거나 저장소나 orch 폴더에 둔다'
 
 class UsageError extends Error {}
@@ -556,6 +562,7 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
         const path = m[1].replace(/[.,;:]+$/, '')
         warnings.push(`${spec.name}:${no}: 임시: \`${path}\` 는 ${TEMP_HINT}`)
       }
+      for (const m of line.matchAll(BODY_NAME)) warnings.push(`${spec.name}:${no}: 본문: \`${m[1]}\` 는 ${BODY_HINT}`)
       for (const phrase of forbidden) {
         if (line.includes(phrase) && !NEGATION.some((n) => line.includes(n))) {
           errors.push(`${spec.name}:${no}: 금지: \`${phrase.trim()}\` 를 요구한다`)
@@ -633,14 +640,16 @@ export function main(argv: string[]): number {
     const boards = warnings.filter((line) => line.includes(': 보드: ')).length
     const dones = warnings.filter((line) => line.includes(': 완료: ')).length
     const temps = warnings.filter((line) => line.includes(': 임시: ')).length
+    const bodies = warnings.filter((line) => line.includes(': 본문: ')).length
     const tail =
       (overlaps > 0 ? `, 겹침 경고 ${overlaps}건` : '') +
       (titles > 0 ? `, 제목 경고 ${titles}건` : '') +
       (commons > 0 ? `, 공통 경고 ${commons}건` : '') +
       (boards > 0 ? `, 보드 경고 ${boards}건` : '') +
       (dones > 0 ? `, 완료 경고 ${dones}건` : '') +
-      (temps > 0 ? `, 임시 경고 ${temps}건` : '')
-    const paths = warnings.length - titles - commons - boards - dones - overlaps - temps
+      (temps > 0 ? `, 임시 경고 ${temps}건` : '') +
+      (bodies > 0 ? `, 본문 경고 ${bodies}건` : '')
+    const paths = warnings.length - titles - commons - boards - dones - overlaps - temps - bodies
     process.stderr.write(`spec-lint: 막을 발견 ${errors.length}건, 경로 경고 ${paths}건${tail}\n`)
     return errors.length > 0 ? 1 : 0
   } catch (e) {
