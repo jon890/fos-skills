@@ -100,7 +100,7 @@
 1. 지시서를 `launch-worker` 와 같은 검사(`lib/spec.ts` 의 `허락:` 줄과 `worker 선택:` 줄 검사)에 통과시킨다. 실패하면 보내지 않고 2 다.
 2. 본문은 `orch spec line` 이 만드는 한 줄(지시서 경로를 읽으라는 글)이다. 가드 훅(`require-spec-line.ts`)이 받는 꼴과 같다.
 3. `orca orchestration send --to dispatch:<끝난 id> --subject <지시서 제목> --body <한 줄> --json --full` 을 보낸다.
-4. 영수증의 `delivery` 가 `follow_up` 이나 `reopened`(자동 해제로 닫힌 worker, 「설계 단계 실측」 2번)이면 `dispatchId`, `taskId` 로 `state/launch-history.jsonl` 과 `state/launched-workers` 에 한 줄씩 남긴다. 워크트리와 터미널은 앞 dispatch 의 것을 옮겨 적는다. 출력은 `FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>` 와 0 이다.
+4. 영수증의 `delivery` 가 `follow_up` 이나 `reopened`(자동 해제로 닫힌 worker, 「설계 단계 실측」 2번)이면 `dispatchId`, `taskId` 로 `state/launch-history.jsonl` 과 `state/launched-workers` 에 한 줄씩 남긴다. 워크트리는 앞 dispatch 의 것을 옮겨 적는다. 터미널은 옮겨 적지 않고 새 dispatch 의 `worker-show --dispatch <새 id> --json --full` 에서 읽는다(`agentTerminalHandle`, 없으면 `resource.terminalHandle`). `reopened` 는 새 터미널이 열려 앞 터미널과 다르다(「설계 단계 실측」 2번). 앞 터미널을 적으면 정리의 `launchedOwn`(`cleanup/cleanup-sweep.ts`)이 그 worker 를 코디네이터가 띄운 것으로 보지 않아 후속 일이 끝나도 자동 정리에서 빠진다. 읽지 못하면 터미널을 빈 값으로 적고 stderr 에 한 줄 알린다. 빈 값은 `launchedOwn` 이 터미널 대조를 건너뛰는 지금 규칙을 따른다. 출력은 `FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>` 와 0 이다.
 5. send 가 거절되면(연결된 서버의 끝난 worker 처럼 Orca 가 받지 않음) 지금의 다시 띄우기(`launch-worker --worktree <그 워크트리>`, agent_unconfigured 처리 포함)로 내려간다.
 
 - 종료 코드 1(깨우지 못함)과 4(입력란에 글이 있어 깨우지 않음)는 더 나오지 않는다. 1 은 다시 띄우기 실패에만 남는다. 부르는 쪽(`lib/tell-worker.ts`, 루프, `finish-pr`)은 0, 1, 4 를 보낸 것으로 보므로 고치지 않는다.
@@ -186,7 +186,7 @@
 | 대상 | 경계 | 방법 |
 | --- | --- | --- |
 | REQ7, REQ8(ask) | `worker-ask.ts` 프로세스 | 가짜 orca 로 결과 꼴별 출력과 종료 코드를 본다(`tests/worker-ask.spec.ts`). 인수 검증은 실제 Orca 에서 worker 하나가 묻고 턴을 끝낸 뒤 답으로 깨는 것을 본다 |
-| REQ6, REQ18 | `send-to-worker.ts` 프로세스 | 가짜 orca 로 상태별 경로, `FOLLOW-UP`, 띄우기 기록을 본다. 인수 검증은 실제 Orca 에서 마친 worker 에게 후속 지시서를 보내 같은 터미널이 새 Task 로 시작하고 `orch status` 에 보이는 것을 본다 |
+| REQ6, REQ18 | `send-to-worker.ts` 프로세스 | 가짜 orca 로 상태별 경로, `FOLLOW-UP`, 띄우기 기록을 본다. `reopened` 영수증에서 새 dispatch 의 터미널이 앞 터미널과 다른 사례로, 기록에 새 터미널이 적히고 그 기록으로 `cleanup-sweep` 이 그 터미널을 코디네이터가 띄운 것으로 보는지 본다. 인수 검증은 실제 Orca 에서 마친 worker 에게 후속 지시서를 보내 같은 터미널이 새 Task 로 시작하고 `orch status` 에 보이는 것을 본다 |
 | REQ1, REQ3, REQ5, REQ14, REQ15 | 루프 틱(`--tick`) | 가짜 orca 가 받은 send 인자를 적어 Run 별 알림과 한 번만 가는지 본다. 인수 검증은 실제 Orca 에서 대기 없이 질문과 루프 알림으로 코디네이터가 깨는 것을 본다 |
 | REQ2 | 소스 글자 | `tests/check-peek.spec.ts` |
 | REQ4, REQ9 | 소스 글자와 정리 | 지운 이름이 남지 않았는지 grep, 정리의 옛 파일 옮기기는 임시 orch 루트로 |
