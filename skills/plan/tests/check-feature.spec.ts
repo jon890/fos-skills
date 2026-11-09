@@ -44,6 +44,13 @@ test('도메인 규칙 변경은 확정돼야 하고 draft 는 기다릴 수 있
   assert.equal(run(VALID + '\n## 도메인 규칙 변경\n도메인 규칙 변경 없음: 기존 규칙 유지'), 0)
 })
 
+test('RULE ID 는 번호 형식과 하이픈 형식을 모두 받는다', () => {
+  const table = (id: string) =>
+    `\n## 도메인 규칙 변경\n| 규칙 | 바꿀 내용 | 결정 상태 | 제안자 | 확정 근거 | 외부 검토 |\n| --- | --- | --- | --- | --- | --- |\n| docs/domain/subject.md ${id} | 분류 변경 | 확정 | 기획 | 사용자 2026-11-04 | 해당 없음 |\n`
+  for (const id of ['RULE1', 'RULE-SUBJECT-039', 'RULE-JOB-LIMIT']) assert.equal(check(feature(VALID + table(id)), SPEC).code, 0, id)
+  assert.equal(check(feature(VALID + table('RULEX')), SPEC).code, 1)
+})
+
 test('PR 하나는 기능의 요구사항을 모두 갖지 않아도 된다', () => {
   assert.equal(checkPlan(feature(), plan()).code, 0)
 })
