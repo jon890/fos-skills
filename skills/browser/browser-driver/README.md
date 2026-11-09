@@ -49,9 +49,10 @@ node browser_driver.ts install
 
 같은 이름의 실제 파일이 있으면 `.bak.{pid}` 로 옮긴 뒤 링크를 건다.
 
-옛 링크(`~/.claude/scripts/browser-driver` 가 `tools/browser-driver/browser_driver.py` 를 가리키는 것)는 그대로 돈다.
+옛 링크(`~/.claude/scripts/browser-driver` 가 `tools/browser-driver/browser_driver.py` 를 가리키는 것)는 원본 체크아웃(fos-skills)에서만 그대로 돈다.
 그 경로에 옛 이름 진입(node shebang JS)이 남아 있어 새 `browser_driver.ts` 를 불러 같은 결과를 낸다.
 부를 때마다 stderr 맨 앞에 새 명령을 알리는 한 줄을 붙이고, 이 진입은 이 저장소의 다음 major 에 지운다.
+팀 사본(`tools/browser-driver`)에는 옛 이름 진입이 없다. 옛 링크가 있으면 `node tools/browser-driver/browser_driver.ts install` 로 링크를 다시 건다.
 새로 거는 링크는 `install` 이 `browser_driver.ts` 로 건다.
 
 ## 설정 파일
