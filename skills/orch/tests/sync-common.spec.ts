@@ -103,3 +103,12 @@ test('중복 표지와 겹친 항목은 원문을 잘못 덮지 않도록 거부
     assert.throws(() => syncCommon(`- 옛것 <!-- orch-rule: a${keep} --> <!-- orch-rule: b -->\n`, rule('a', '새것') + rule('b', '다른 것'), repo), /범위가 겹친다/)
   }
 })
+
+
+test('keep 대소문자와 이유를 받아 보존하고 모르는 뒤꼬리는 적용 전에 거부한다', () => {
+  for (const tail of ['KEEP', 'keep 이유: 팀 결정']) {
+    const copy = `- 저장소 결정 <!-- orch-rule: a ${tail} -->\n`
+    assert.equal(syncCommon(copy, rule('a', '새것'), repo).text, copy)
+  }
+  assert.throws(() => syncCommon('- 저장소 결정 <!-- orch-rule: a unknown -->\n', rule('a', '새것'), repo), /뒤꼬리/)
+})
