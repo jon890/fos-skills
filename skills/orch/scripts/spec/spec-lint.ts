@@ -418,7 +418,7 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
     if (missing.length > 0) {
       found.push(
         `${common}:1: 공통: 틀의 규칙 표지 ${missing.map((m) => `\`${m}\``).join(', ')} 가 없다. ` +
-          `공통 지시서가 틀(${TEMPLATE})보다 낡았을 수 있다. 틀에서 그 표지가 붙은 줄을 옮긴다`,
+          `공통 지시서가 틀(${TEMPLATE})보다 낡았을 수 있다. 먼저 orch spec sync-common 으로 diff 를 본다`,
       )
     }
     for (const [name, mine] of has) {
@@ -426,7 +426,7 @@ function staleCommon(specs: string[], repoRoot: string): string[] {
       if (want && !mine.keep && !sameBody(want.body, mine.body)) {
         found.push(
           `${common}:${mine.no}: 공통: 표지 \`${name}\` 가 붙은 규칙이 틀과 다르다. ` +
-            `저장소가 일부러 바꾼 것이 아니면 틀(${TEMPLATE}:${want.no})의 그 항목으로 바꾼다`,
+            `먼저 orch spec sync-common 으로 diff 를 본다. 일부러 바꾼 항목은 표지 이름 뒤에 keep 을 붙여 보존한다(틀: ${TEMPLATE}:${want.no})`,
         )
       }
     }
