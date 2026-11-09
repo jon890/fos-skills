@@ -76,6 +76,7 @@ test('옛 메모는 기본으로 미리 보기만 하고 모르는 칸과 상태
   const applied = run('migrate', '--apply', '--trash', trash)
   assert.equal(applied.status, 0, applied.stderr)
   assert.equal(readFileSync(join(trash, 'old.md'), 'utf8'), text)
+  assert.ok(readdirSync(dir).every(name => parse(readFileSync(join(dir, name), 'utf8'))!.values.근거.startsWith(join(trash, 'old.md') + ':')))
   assert.equal(existsSync(file), false)
   assert.ok(readdirSync(dir).every(name => parse(readFileSync(join(dir, name), 'utf8'))))
   assert.match(run('migrate').stdout, /DRY-RUN 0 files 0 candidates/)

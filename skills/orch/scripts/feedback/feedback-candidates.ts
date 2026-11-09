@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { ensure, pathOf } from '../lib/paths.ts'
 import { isOpen, parseLegacy, render, scan, validStatus, type Field } from '../lib/feedback.ts'
-import { localDate, oneLine, validSlug } from '../lib/study.ts'
+import { oneLine, validSlug } from '../lib/study.ts'
 
 const USAGE = [
   '사용법: orch feedback add --slug 이름 --title 제목 --skill 스킬 --file 스킬파일 --situation 상황 --problem 문제 --want 바라는기능 --evidence 근거 --significance 유의미한이유 --nontrivial 단순함정이아닌이유 --structural 구조로막는방법 [--repo DIR]',
@@ -83,11 +83,11 @@ function main(): number {
         process.stdout.write(`SET ${slug} ${status}\n`)
       }
     } else {
-      const trash = resolve(typeof values.trash === 'string' ? values.trash : join(homedir(), '.Trash', `orch-feedback-${localDate()}-${Date.now()}-${process.pid}`))
+      const trash = resolve(typeof values.trash === 'string' ? values.trash : join(homedir(), '.Trash', 'orch-feedback'))
       if (trash === resolve(dir) || trash.startsWith(`${resolve(dir)}${sep}`)) throw new Usage('--trash 는 후보 폴더 밖에 둔다')
       const plans = found.legacy.map((file) => ({
         file, dest: join(trash, basename(file)),
-        candidates: parseLegacy(readFileSync(file, 'utf8'), file).map((candidate, i) => ({
+        candidates: parseLegacy(readFileSync(file, 'utf8'), join(trash, basename(file))).map((candidate, i) => ({
           file: join(dir, `${migratedSlug(file, i)}.md`),
           text: render(candidate.title, candidate.values),
         })),
