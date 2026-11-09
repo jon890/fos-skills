@@ -41,7 +41,7 @@ hook 을 싣지 않은 세션(Codex 코디네이터 같은)은 기록이 없어 
 
 **저장소마다 상주 루프 `orch-loop.ts` 를 하나 띄우고, 세션은 자기 Run 을 그 루프에 등록한다.** 루프는 하네스의 백그라운드 명령이 아니라 분리된 프로세스라 시간 한도에 묶이지 않고, 세션이 끝나도 살아 있다.
 같은 저장소를 쓰는 다른 세션이 이미 루프를 띄웠으면 그 루프에 자기 Run 을 더한다. 루프는 Run 마다 그 Run 범위로 질문을 확인하고 정리하며, 알림도 Run 마다 나뉜다([ADR-012](../../../docs/adr/012-orch-loop-multi-run.md)).
-저장소, Run, 지시서 폴더는 작업 폴더와 코디네이터 터미널에서 읽는다(Run 을 읽지 못하면 `.orch/config.json` 의 `finish.run`, 지시서 폴더는 `finish.specs_dir`, 없으면 `.orch/specs`). 다른 저장소의 루프면 `--repo`, 다른 Run 이면 `--run` 을 준다.
+저장소, Run, 지시서 폴더는 작업 폴더와 코디네이터 터미널에서 읽는다(순서는 `orch-loop.ts` 머리 주석). 다른 저장소의 루프면 `--repo`, 다른 Run 이면 `--run` 을 준다.
 
 ```bash
 orch loop start
@@ -62,18 +62,8 @@ Run 을 읽지 못하고 `finish.run` 도 없으면 Run 이 하나라도 등록�
 
 **4 와 함께 `LOOP-LEGACY <pid> run=<Run>` 줄이 오면 그 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다.** `--full` 이면 이 줄 대신 `안내:` 줄이다. 다른 세션의 루프이므로 멈추지 않는다. 그 루프를 띄운 세션이나 사용자에게 다시 띄워 달라고 알리고, 그동안은 아래 Monitor 대안을 쓴다.
 
-루프는 `pipeline.tick_sec`(기본 300초)마다 아래를 차례로 한다. 판정과 순서는 `orch-loop.ts` 머리 주석이 소유한다.
-
-- 등록된 Run 마다 질문 확인. 기술 질문과 일반 escalation은 답이 없는 채 재알림 시간이 지나면 알림 파일에 `REMINDER` 를 쓴다. 사용자 결정 질문의 재알림은 루프 로그에만 남기고, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING` 알림과 단일 notifier가 맡는다. 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다
-- Run 마다 그 Run 범위의 정리(`cleanup-sweep --run`), 원격 브랜치 정리와 보드 동기화(`board-sync`)는 틱마다 한 번
-- 내 열린 PR 의 CI 감시. 체크가 실패로 바뀌면 같은 워크플로의 base 최신 완료된 push 실행을 공유 캐시로 확인한다. base 의 실패가 6시간 이내면 `CI-FAILED` 에 `<base> 도 실패` 를 남겨 코디네이터에게만 알리고, 그 밖에는 그 PR 의 worker 에게 알린다. 통과로 바뀌면 `ci-passed` 를 낸다. 루프는 CI 를 보고 알린다. `queue.auto_merge` 를 켠 저장소에서는 머지할 수 있는 PR 을 머지 큐에 건다(`orch-loop.ts` 머리 주석의 「자동 머지」)
-- Run 마다 그 Run 이 띄운 살아 있는 worker 의 화면 확인. 사용 한도 화면은 `stall_ticks` 와 무관하게 dispatch 마다 `WORKER-LIMITED` 알림을 한 번 쓴다. 터미널 worker 의 알림은 계정 전환 요청과 `orch worker resume --dispatch <id>` 를 안내하고, 구조화 worker 의 알림은 [`agent-selection.md`](agent-selection.md) 의 「사용 한도에 걸렸을 때」 만 가리킨다. 모델 오류로 멈춘 화면이 기준 틱 수(`pipeline.stall_ticks`, 기본 2틱)만큼 이어지면 `worker-stalled` 를 낸다. 사람이 Esc 로 끊은 화면은 멈춤으로 보지 않는다. 루프는 입력하지 않는다. 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」)
-- Run 마다 그 Run 이 띄운 살아 있는 worker 의 움직임 확인. 워크트리 파일, 브랜치의 마지막 커밋, 화면이 `pipeline.idle_min`(기본 30분)분 넘게 그대로이거나 프로세스가 끝났으면(`exited`) `WORKER-IDLE` 을 쓴다. 보드의 `doing` 항목에 끝나지 않은 단계가 있는데 그 항목의 worker 가 없으면 `STAGE-STALLED` 를 쓴다. 화면 상태를 읽지 못하는 structured worker 도 이 확인으로 잡는다
-- Run 마다 `tick` 이벤트. 저장소 공유 일을 하는 핸들러는 입력의 `primary` 가 true 일 때만 한다
-- `queue.auto_merge` 를 켠 저장소에서 머지할 수 있는 PR 을 머지 큐에 건다. 다른 큐가 돌아 걸지 못한 틱에는 그 큐가 무엇을 기다리는지 `AUTO-MERGE-HELD` 한 줄을 루프 로그에 남긴다
-- 머지 큐가 뺀 PR 과 이유를 차례 기록에서 읽어 루프 로그에 `QUEUE-DROPPED` 로 한 번씩 옮긴다. 끝난 큐의 차례 기록은 옮긴 뒤 지운다
-- 충돌한 내 PR 을 그 PR 을 만든 worker 에게 알리기. 끝난 dispatch 에 이어 쓰는 동안(최대 65분)은 다음 틱이 밀린다
-- `pipeline.refresh_slots` 를 켠 저장소에서 base 에 뒤처진 내 PR 을 머지 차례 전에 최신화한다. 루프 로그에만 남기고 알림 파일에는 쓰지 않는다([`cleanup.md`](cleanup.md) 의 「머지 차례 전에 미리 최신화하기」)
+루프는 `pipeline.tick_sec`(기본 300초)마다 질문 확인, Run 별 정리와 보드 동기화, 내 열린 PR 의 CI 감시와 자동 머지, worker 화면·움직임 확인, 충돌한 PR 알리기, `tick` 이벤트를 차례로 한다. 판정과 순서, 알림 조건은 `orch-loop.ts` 머리 주석이 소유하고, 코디네이터가 할 일은 아래 종료 코드 7 의 `LOOP-EVENT` 목록이 갖는다.
+새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다. 사용자 결정 질문의 재알림은 루프 로그에만 남고, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING` 이 맡는다. 루프는 입력하지 않는다. 멈춘 worker 를 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」).
 
 CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체크의 실패도 `failed` 로 본다. 루프는 `--allow-fail` 을 모르므로, 그 옵션을 주고 머지 큐를 거는 저장소에서는 루프가 실패로 알린 PR 도 큐가 머지할 수 있다.
 알림은 Run 마다 `<orch 루트>/state/loop-events/<Run>.jsonl` 에 쌓이고, 아래 대기가 `--run` 과 `--loop-repo` 로 자기 Run 의 것만 읽는다. 주인을 모르는 알림(공유 일의 실패, 보드 결정)은 가장 먼저 등록한 Run 에 간다. 루프의 출력은 `state/loop.log` 에 남는다.
@@ -131,8 +121,7 @@ orch wait --ack "$DELIVERY_ID"
 - `TIMEOUT LAST_DELIVERY <id>` 는 실패가 아니다. 그 id 로 다시 건다
 - orca 오류로 끝나면 아래 「대기가 바로 끝나거나 남음」 을 따른다
 - 종료 코드 4(`waiter_exists`)는 다시 걸어도 같은 오류만 받는다. stderr 로 보여 준 남은 대기를 정리한 뒤 건다. 고아 대기만 남았으면 `--kill-stale` 을 더해 다시 건다
-- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않고 stderr 에 `아직 처리되지 않았다` 한 줄로 남기므로, 다시 대기를 걸기 전에 처리한다. 같은 Task 를 다시 띄워 살아 있는 dispatch 가 생겼으면 앞 dispatch 는 처리한 것으로 보고 기록을 고치지 않아도 된다.
-  Orca 가 끊김이나 실패로 적어도 그 터미널 화면이 에이전트 작업 중이면 끊긴 것으로 보지 않고 stderr 에 `끊긴 것으로 보지 않는다` 한 줄만 남긴다. 화면이 멈추면 다음 확인이 알린다
+- 종료 코드 5(`WORKER_LOST`)는 처리하지 않은 끊긴 worker 다. 받은 그 자리에서 [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 를 따른다. 같은 dispatch 는 다음 대기에서 다시 깨우지 않으므로, 다시 대기를 걸기 전에 처리한다. 화면이 작업 중이면 끊긴 것으로 보지 않는 판정과 stderr 줄은 `wait-important.ts` 머리 주석이 소유한다
 - 종료 코드 7(상주 루프의 알림)은 `LOOP-EVENT <kind> <PR 번호 또는 -> <내용>` 줄이 하나 이상 있다. 줄마다 아래를 하고, 마지막 줄 `LAST_DELIVERY` 의 id 로 다시 건다. 줄의 내용은 알림 파일의 `text` 와 같고 `kind` 는 한 번만 나온다(예: `LOOP-EVENT WATCH-ERROR - questions: offline`)
   - `DECISION-PENDING`: 새 사용자 결정이다. 기본 핸들러의 요청을 받았으면 같은 결정을 중복해서 묻지 않는다. [`replying.md`](replying.md) 의 질문 처리를 따른다
   - `REMINDER`: 답이 없는 기술 질문이나 일반 escalation의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다. 사용자 결정의 재알림은 이 이벤트로 오지 않는다
@@ -169,15 +158,14 @@ orch wait --ack "$DELIVERY_ID" --kill-stale
 ## 깨어날 때마다 정리와 보드 동기화
 
 **정리와 보드 동기화는 상주 루프의 틱이 한다.** 사용자가 정리하라고 말하지 않아도 돈다. 끝난 워크트리, 세션(터미널과 Dispatch), 브랜치를 코디네이터가 직접 지우지 않고 루프가 지운다.
-머지마다 직접 정리하면 잊히고, 프로세스가 worktree 를 잡아 실패한 정리는 다시 돌아보지 않는다.
-두 스크립트는 상태로만 판정하므로, 건너뛴 항목은 다음 틱에서 다시 시도된다. 따로 기억하지 않는다.
+건너뛴 항목은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다.
 
-루프가 하지 않는 수동 경로는 둘이다.
+루프가 하지 않는 수동 경로:
 
 - **목표 진행률은 코디네이터가 목표 항목을 고친 뒤 직접 돌린다.** 루프는 `--goal` 을 넘기지 않는다. `$GOAL_ID` 는 목표 항목 id 이고 저장소 오버레이가 정한다
-- **루프가 없는 저장소는 대기가 끝날 때마다, 기다리는 동안 5분마다 아래 명령을 돌린다.** 5분 주기는 하네스의 예약 기능이나 다음 깨어남에 붙인다. 보드가 없는 저장소는 `board-sync.ts` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다. `--goal-items` 는 하위 호환 옵션이라 예시에 쓰지 않는다
+- **루프가 없는 저장소는 대기가 끝날 때마다, 기다리는 동안 5분마다 아래 명령을 돌린다.** 보드가 없는 저장소는 `board sync` 를 건너뛰고, 목표 항목이 없으면 `--goal` 을 뺀다
 
-`$BASE` 는 기준 브랜치, `$SPECS_DIR` 은 지시서 폴더다.
+`$BASE` 는 기준 브랜치다.
 
 ```bash
 orch cleanup sweep --base "$BASE" --kill-holders --apply
@@ -245,23 +233,17 @@ Orca runtime 이 잠시 끊기면 `runtime_unavailable` 로 끝나기도 한다.
 
 ### 이전 세션의 대기
 
-세션을 다시 띄운 뒤 첫 대기가 `waiter_exists` 면 이것이다.
-이전 세션의 백그라운드 대기(`wait-important` 와 그 안의 `check --wait`)는 세션이 끝나도 부모 없는 프로세스로 남는다.
-그 대기가 받은 메시지는 아무에게도 전달되지 않는다.
+세션을 다시 띄운 뒤 첫 대기가 `waiter_exists` 면 이전 세션의 백그라운드 대기가 부모 없이 남은 것이다. 그 대기가 받은 메시지는 아무에게도 전달되지 않는다.
 
 ```bash
 ps -ax -o pid,ppid,lstart,command | grep -E "orchestration check|wait-important" | grep "$RUN_ID"
 ```
 
-고아 대기의 판정과 `--kill-stale` 이 종료하는 범위는 `wait-important` 머리 주석이 소유한다. 다른 run 의 대기는 다른 세션의 것이므로 직접 건드리지 않는다.
-종료 뒤에는 대기를 다시 건다. 그 대기가 이미 받아 간 메시지는 위 `--live --since` 로 다시 본다.
+고아 판정과 `--kill-stale` 이 종료하는 범위는 `wait-important` 머리 주석이 소유한다. 다른 run 의 대기는 다른 세션의 것이므로 직접 건드리지 않는다. 종료 뒤 대기를 다시 걸고, 그 대기가 이미 받아 간 메시지는 `orch wait triage --live --since` 로 다시 본다.
 
 ## 턴만 끝낸 멈춤 보고
 
-worker 가 `worker_done` 없이 턴을 끝내면 Orca 가 그 worker 이름으로 escalation 을 보낸다. 제목이 `Worker stopped without reporting` 인 것(턴만 끝냄)은 백그라운드 검사를 기다리는 worker 도 턴마다 보내 하루 메시지의 1/3 이었다.
-**대기와 요약은 이 보고를 기본으로 뺀다.** `wait-important` 는 이것만 든 묶음에 깨어나지 않고, `triage-messages` 는 dispatch 마다 개수만 보이고, 질문 재알림도 세지 않는다.
-오류로 멈춤, 입력 대기, 프로세스 끝남(`Worker stopped on an error…`, `Worker is waiting on a prompt`, `Worker exited…`)은 실제로 멈춘 worker 라 그대로 깨어나고 `triage-messages` 의 「멈춘 worker」 로 따로 보인다.
-턴만 끝낸 보고도 보려면 두 스크립트에 `--stop-reports` 를 준다. 가리는 규칙은 `lib/stop-reports.ts` 머리 주석이 소유한다.
+worker 가 `worker_done` 없이 턴을 끝내면 Orca 가 그 worker 이름으로 escalation 을 보낸다. 제목이 `Worker stopped without reporting` 인 것(턴만 끝냄)은 **대기와 요약이 기본으로 뺀다.** 오류로 멈춤, 입력 대기, 프로세스 끝남 보고는 실제로 멈춘 worker 라 그대로 깨어난다. 턴만 끝낸 보고도 보려면 두 스크립트에 `--stop-reports` 를 준다. 가리는 규칙은 `lib/stop-reports.ts` 머리 주석이 소유한다.
 
 ## heartbeat 만 올 때
 
@@ -295,10 +277,9 @@ heartbeat 와 liveness 는 `live` 로 남아 대기만으로는 알 수 없다. 
 #### resume 이 안 될 때
 
 `RESUME-FAIL` 이 나면 먼저 출력의 `NEXT` 를 따른다. 바꿀 계정이 없거나 `NEXT` 로도 이어 가지 못하면 다른 제공자로 새로 띄운다.
-resume 이 옛 dispatch 를 이미 정리했으면(`cleanup` 뒤의 실패, 출력의 `RESUME-TARGET` 이 `limited` 였다) 아래 `worker-abandon` 을 건너뛰고, [`launch.md`](launch.md) 「끊긴 worker 다시 띄우기」 표의 Task 상태에 맞는 줄을 따른다. `RESUME-FAIL link` 뒤라면 새 worker 를 띄우지 않는다. 남은 터미널에 resume 한 에이전트가 붙어 있다.
-`worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝나고, 이 상태의 Task 에 `--retry-of` 를 주면 `task_not_startable` 로 거절된다.
-`worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
-`$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 다시 고른 값이다. 지시서의 `worker 선택:` 줄을 먼저 고치고 `launch-worker` 로 같은 Task 를 다시 띄운다.
+resume 이 옛 dispatch 를 이미 정리했으면(출력의 `RESUME-TARGET` 이 `limited`) 아래 `worker-abandon` 을 건너뛰고, [`launch.md`](launch.md) 「끊긴 worker 다시 띄우기」 표의 Task 상태에 맞는 줄을 따른다. `RESUME-FAIL link` 뒤라면 새 worker 를 띄우지 않는다. 남은 터미널에 resume 한 에이전트가 붙어 있다.
+`worker-stop` 은 터미널이 `user_owned` 이면 `stop_unknown` 으로 끝난다. `worker-abandon` 으로 dispatch 를 닫은 뒤 다른 제공자로 다시 띄운다. 워크트리는 그대로 이어 쓴다.
+`$AGENT`, `$MODEL`, `$EFFORT` 는 다시 고른 값이다. 지시서의 `worker 선택:` 줄을 먼저 고치고 같은 Task 를 다시 띄운다.
 
 ```bash
 orca orchestration worker-abandon --dispatch "$DISPATCH_ID" --json
