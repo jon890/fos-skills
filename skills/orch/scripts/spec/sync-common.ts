@@ -19,6 +19,11 @@ export function syncCommon(copy: string, template: string, repo: string): { text
   }
   const wanted = ruleBodies(template)
   const existing = ruleBodies(copy)
+  // 한 항목에 표지가 여럿이면 keep 항목까지 함께 교체할 수 있어 쓰기 전에 거부한다.
+  for (const rules of [wanted, existing]) {
+    const spans = [...rules.values()].sort((a, b) => a.head - b.head)
+    if (spans.some((span, i) => i > 0 && span.head < spans[i - 1].end)) throw new Error('표지 항목의 범위가 겹친다')
+  }
   const lines = copy.split(/\r\n|[\n\r\u2028\u2029]/)
   const eol = copy.includes('\r\n') ? '\r\n' : '\n'
   const edits: { head: number; end: number; lines: string[] }[] = []
@@ -52,9 +57,6 @@ export function syncCommon(copy: string, template: string, repo: string): { text
       const trailing = lines.slice(mine.head, mine.end).reverse().findIndex((line) => line.trim() !== '')
       replacement.push(...Array(Math.max(0, trailing)).fill(''))
     } else replacement.push('')
-    if (edits.some((edit) => head < edit.end && edit.head < end)) {
-      throw new Error(`표지 항목의 범위가 겹친다: ${name}`)
-    }
     edits.push({ head, end, lines: replacement })
     output.push(`SYNC-${mine ? 'UPDATE' : 'ADD'} ${name}`, `@@ -${head + 1},${end - head} +${head + 1},${replacement.length} @@`)
     if (mine) output.push(...lines.slice(head, end).map((line) => `-${line}`))
