@@ -15,6 +15,12 @@ test('오늘 시작 요청문은 보드 갱신, 정리, 감시, 보고, 확인 �
   }
 })
 
+test('오늘 시작 요청문은 전날 미룬 결정과 아침 확인 목록을 맨 앞 단계로 둔다', () => {
+  const lines = START_PROMPT.split('\n')
+  assert.match(lines[1], /^1\. .*미룬 결정.*아침에 확인/)
+  assert.match(lines[2], /^2\. .*orch cleanup handoff --apply/)
+})
+
 test('정할 것 묻기 요청문은 결정 모으기, 질문, 보드와 worker 반영을 담는다', () => {
   for (const text of ['결정 필요(decide)', 'AskUserQuestion', '(Recommended)', 'board.ts mark', 'orch worker send']) {
     assert.ok(DECIDE_PROMPT.includes(text), text)

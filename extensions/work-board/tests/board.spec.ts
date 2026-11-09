@@ -366,7 +366,9 @@ describe('사용법', () => {
     test(`${flag} 는 사용법을 stdout 에 내고 0 이다`, () => {
       const r = board('set', flag)
       assert.equal(r.code, 0, r.stderr)
-      assert.ok(r.stdout.startsWith('사용법: board.ts {set,step,steps,mark,del,list}'), r.stdout)
+      assert.ok(r.stdout.startsWith('사용법: board.ts {set,detail-edit,detail-add,'), r.stdout)
+      assert.ok(r.stdout.includes('board.ts detail-edit <id> <n>'), r.stdout)
+      assert.ok(r.stdout.includes('board.ts detail-add <id>'), r.stdout)
       assert.ok(r.stdout.includes('board.ts steps <id>'), r.stdout)
       assert.ok(r.stdout.includes('board.ts mark <id> <n>'), r.stdout)
       assert.equal(existsSync(file), false, '도움말인데 보드를 만들었다')
@@ -505,5 +507,79 @@ describe('stepAt', () => {
     const r = board('set', 'n', '--title', '새 제목')
     assert.equal(r.code, 0, r.stderr)
     assert.equal('stepAt' in item('n'), false)
+  })
+})
+
+describe('set --detail 의 끝냄 표시 보존과 detail-edit, detail-add', () => {
+  test('글이 같은 줄은 끝냄 표시를 이어받고 새 줄과 앞 표시가 있는 줄은 따로 정한다', () => {
+    write({ id: 'k', status: 'doing', details: rows(['1. a', true], ['2. b', true], ['3. c', false]) })
+    const r = board('set', 'k', '--detail', '1. a', '--detail', '2. b 고침', '--detail', '[ ] 3. c', '--detail', '4. d', '--detail', '✓ 5. e')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('k').details, rows(['1. a', true], ['2. b 고침', false], ['3. c', false], ['4. d', false], ['5. e', true]))
+  })
+
+  test('같은 글이 여럿이면 앞에서부터 하나씩 이어받는다', () => {
+    write({ id: 'k', status: 'doing', details: rows(['1. x', true], ['2. x', false]) })
+    board('set', 'k', '--detail', '1. x', '--detail', '2. x', '--detail', '1. x')
+    assert.deepEqual(item('k').details, rows(['1. x', true], ['2. x', false], ['1. x', false]))
+  })
+
+  test('덮어쓰기 전 파일을 .bak 에 한 세대 남긴다', () => {
+    write({ id: 'k', status: 'doing', details: rows(['1. a', true]) })
+    const before = readFileSync(file, 'utf8')
+    board('set', 'k', '--detail', '1. z', '--detail', '2. y')
+    assert.equal(readFileSync(`${file}.bak`, 'utf8'), before)
+  })
+
+  test('줄을 바꾸지 않는 set 은 .bak 을 만들지 않는다', () => {
+    write({ id: 'k', status: 'doing', details: rows(['1. a', true]) })
+    board('set', 'k', '--title', 'T')
+    assert.equal(existsSync(`${file}.bak`), false)
+  })
+
+  test('detail-edit 은 한 줄의 글만 바꾸고 끝냄 표시를 둔다', () => {
+    write({ id: 'k', status: 'doing', details: rows(['참고', false], ['1. a', true], ['2. b', false]) })
+    const r = board('detail-edit', 'k', '2', '1. a 고침')
+    assert.equal(r.code, 0, r.stderr)
+    assert.deepEqual(item('k').details, rows(['참고', false], ['1. a 고침', true], ['2. b', false]))
+    board('detail-edit', 'k', '3', '✓ 2. b')
+    assert.deepEqual(item('k').details, rows(['참고', false], ['1. a 고침', true], ['2. b', true]))
+  })
+
+  test('detail-edit 은 없는 줄 번호와 빈 글을 거절하고 파일을 고치지 않는다', () => {
+    write({ id: 'k', status: 'doing', details: rows(['1. a', false]) })
+    const before = readFileSync(file, 'utf8')
+    assert.equal(board('detail-edit', 'k', '2', 'x').code, 1)
+    assert.equal(board('detail-edit', 'k', '1', ' ').code, 1)
+    assert.equal(board('detail-edit', 'none', '1', 'x').code, 1)
+    assert.equal(readFileSync(file, 'utf8'), before)
+  })
+
+  test('detail-edit 은 list 가 보여 준 번호의 줄을 고친다. 빈 줄이 앞에 있어도 다른 줄을 건드리지 않는다', () => {
+    write({ id: 'k', status: 'doing', progress: '0/2', details: rows(['', false], ['1. a', false], ['2. b', false]) })
+    const shown = board('list')
+    assert.ok(shown.stdout.includes('    1   1. a\n'), shown.stdout)
+    assert.equal(board('detail-edit', 'k', '1', '1. a 고침').code, 0)
+    assert.deepEqual(item('k').details, rows(['', false], ['1. a 고침', false], ['2. b', false]))
+    assert.equal(board('detail-edit', 'k', '2', '2. b 고침').code, 0)
+    assert.deepEqual(item('k').details, rows(['', false], ['1. a 고침', false], ['2. b 고침', false]))
+  })
+
+  test('앞 표시가 있는 줄은 옛 줄을 쓴 것으로 치워, 뒤의 같은 글 줄이 옛 끝냄 상태를 잇지 않는다', () => {
+    write({ id: 'k', status: 'doing', progress: '0/2', details: rows(['x', true], ['x', false]) })
+    board('set', 'k', '--detail', '✓ x', '--detail', 'x')
+    assert.deepEqual(item('k').details, rows(['x', true], ['x', false]))
+    write({ id: 'k', status: 'doing', progress: '0/2', details: rows(['x', true], ['x', false]) })
+    board('set', 'k', '--detail', '[ ] x', '--detail', 'x')
+    assert.deepEqual(item('k').details, rows(['x', false], ['x', false]))
+  })
+
+  test('detail-add 는 details 끝에 줄을 더한다', () => {
+    write({ id: 'k', status: 'doing', details: rows(['1. a', true]) })
+    assert.equal(board('detail-add', 'k', '2. b').code, 0)
+    assert.deepEqual(item('k').details, rows(['1. a', true], ['2. b', false]))
+    write({ id: 'e', status: 'goal' })
+    board('detail-add', 'e', '1. c')
+    assert.deepEqual(item('e').details, rows(['1. c', false]))
   })
 })
