@@ -102,6 +102,41 @@ describe('orch status', () => {
     assert.deepEqual(snapshot(), before)
   })
 
+  for (const [name, bundle, scope, expectStale] of [
+    ['옛 user 번들', '5.12.0', 'user', true],
+    ['문자열 pid 의 옛 번들', '5.12.0', 'user', true],
+    ['현재 user 번들', '5.13.0', 'user', false],
+    ['project 행과 같은 옛 번들', '5.12.0', 'project', true],
+    ['개발 checkout', 'checkout', 'user', false],
+  ] as const) {
+    test(`${name}: 살아 있는 루프의 번들도 판정한다`, () => {
+      scene()
+      if (name.startsWith('문자열')) {
+        const state = JSON.parse(readFileSync(join(repo, '.orch', 'state', 'loop.json'), 'utf8'))
+        write('.orch/state/loop.json', { ...state, pid: String(state.pid) })
+      }
+      const profile = join(tmp, 'Application Support', 'profile')
+      const bundleOf = (version: string) => join(profile, 'plugins', 'cache', 'fos-skills', 'fos-skills', version)
+      const record = join(profile, 'plugins', 'installed_plugins.json')
+      mkdirSync(dirname(record), { recursive: true })
+      writeFileSync(record, JSON.stringify({ plugins: { 'fos-skills@fos-skills': [
+        { scope: 'user', installPath: bundleOf('5.13.0') },
+        ...(scope === 'project' ? [{ scope, installPath: bundleOf(bundle) }] : []),
+      ] } }))
+      const script = bundle === 'checkout' ? join(tmp, 'repo', 'skills', 'orch', 'scripts', 'loop', 'orch-loop.ts')
+        : join(bundleOf(bundle), 'skills', 'orch', 'scripts', 'loop', 'orch-loop.ts')
+      const ps = join(tmp, 'ps')
+      writeFileSync(ps, `#!${process.execPath}\nconsole.log(${JSON.stringify(` ${process.pid} node ${script} --repo ${repo} --foreground`)})\n`)
+      chmodSync(ps, 0o755)
+      env.PS = ps
+      env.CLAUDE_CONFIG_DIR = profile
+      const r = status()
+      assert.equal(r.code, 0, r.stdout + r.stderr)
+      assert.match(r.stdout, /^LOOP-ALIVE /m)
+      assert.equal(r.lines.includes(`LOOP-STALE ${repo} ${process.pid} ${bundle}`), expectStale, r.stdout)
+    })
+  }
+
   test('같은 Run 이 다른 저장소의 worker 도 맡아도 이 저장소의 worker 만 센다', () => {
     scene()
     const other = join(tmp, 'other')

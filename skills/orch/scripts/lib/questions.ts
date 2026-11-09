@@ -1,5 +1,6 @@
 // 코디네이터가 아직 답하지 않은 질문을 Orca 에서 읽고, 알릴 줄과 알린 기록을 정한다. delivery 를 소비하지 않는다.
 // 사용처: watch-questions.ts(Monitor 의 이벤트 소스), orch-loop.ts(상주 루프의 틱), orch-doctor.ts(snapshot, ageSeconds).
+// lib/decisions.ts 와 handlers/decision-pending.ts 는 questionLocations 로 질문 위치를 표시한다.
 //
 // 이 Run 의 질문(question, escalation)을 읽고, 그다음 질문을 보낸 쪽마다 받은 답을 읽는다. 전역 inbox 는 읽지 않는다.
 // 전역 기록은 수십 MB 까지 커져 조회가 느려지고 출력 한도에 닿는다.
@@ -21,7 +22,8 @@
 //
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { context, isoTime, readyOf } from './completion.ts'
 import { envMs } from './env.ts'
@@ -112,6 +114,7 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   }
   // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
   const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run))
+    .filter((m) => !sharedClosedReason(run, String(m.id), true))
   // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
   if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {
     throw new Error('답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다')
@@ -181,6 +184,18 @@ export function poll(run: string | null, state: string, now: number, remindAfter
   return { run: found.run, notices, pending: found.pending }
 }
 
+// 알림 본문에 붙이는 질문 위치다. 많은 질문은 앞 일부만 내고 전체 수는 원래 문장에 둔다.
+export function questionLocations(questions: { id?: unknown; dispatch?: unknown; from_handle?: unknown; payload?: unknown }[]): string {
+  const limit = 5
+  const refs = questions.slice(0, limit).map((q) => {
+    const dispatch = q.dispatch || dispatchOf(q)
+    const from = dispatch ? `dispatch:${dispatch}` : String(q.from_handle || '-')
+    return `${String(q.id || '-').replace(/\s+/g, '_')}@${from.replace(/\s+/g, '_')}`
+  })
+  const extra = questions.length > limit ? ` (외 ${questions.length - limit}개)` : ''
+  return `questions=${refs.join(',') || '-'}${extra}`
+}
+
 // 알릴 줄 하나에 worker-question 이벤트를 낸다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 // worker.task, worker.dispatch 는 질문 메시지에서, worker.terminal 은 보낸 쪽이다.
 // command 는 stderr 줄의 접두로 쓰는 부른 명령 이름이다(watch-questions, orch-loop).
@@ -216,7 +231,8 @@ export async function notifyQuestion(notice: Notice, repo: string, run: string |
 // 준비 상태는 그 Run 의 status 를 100건까지 읽는다. 그보다 오래된 준비 상태는 찾지 못해 재알림이 남는다.
 //
 // 닫힌 기록(보통 <orch 작업 폴더>/state/questions-closed.json): {<Run id>: {<질문 id>: <판정 근거>}}.
-// 한 번 닫힌 질문은 다시 판정하지 않는다. 미답변 목록에서 빠진 질문의 기록은 지운다.
+// 종료 근거는 머신 폴더 questions-closed/ 에 질문별로 공유한다. snapshot 이 다른 저장소에서도 미답변에서 뺀다.
+// 저장소의 옛 기록은 읽을 때 공유 기록으로 옮긴다. 미답변 목록에서 빠진 옛 기록은 지운다.
 
 export const SETTLED = new Set(['completed', 'failed', 'abandoned', 'canceled'])
 const CLOSED_PR = new Set(['MERGED', 'CLOSED'])
@@ -300,6 +316,60 @@ export function closedReason(message: Message, run: string, repo: string, lookup
     states.push(`#${pr} ${state}`)
   }
   return `dispatch ${dispatch} ${status}, PR ${states.join(', ')}`
+}
+
+// 질문별 파일로 써서 다른 저장소 루프의 동시 쓰기가 다른 질문의 종료 근거를 덮지 않게 한다.
+function sharedClosedFile(run: string, id: string): string {
+  const key = createHash('sha256').update(JSON.stringify([run, id])).digest('hex')
+  return join(machineDir(), 'questions-closed', `${key}.json`)
+}
+
+export function sharedClosedReason(run: string, id: string, refresh = false): string | null {
+  try {
+    const file = sharedClosedFile(run, id)
+    const data = JSON.parse(readFileSync(file, 'utf8'))
+    if (data?.run !== run || data?.id !== id || typeof data.reason !== 'string') return null
+    if (refresh) {
+      try {
+        const now = new Date()
+        utimesSync(file, now, now)
+      } catch {
+        // 조회한 근거는 유효하다. 갱신 실패 때문에 그 질문을 다시 알리지 않는다.
+      }
+    }
+    return data.reason
+  } catch {
+    return null
+  }
+}
+
+// 마지막 조회나 저장 뒤 30일이 지난 캐시만 회수한다. 계속 관측되는 질문은 snapshot 이 시각을 갱신한다.
+export function pruneSharedClosed(now = Date.now()): void {
+  const directory = join(machineDir(), 'questions-closed')
+  let entries
+  try {
+    entries = readdirSync(directory, { withFileTypes: true })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw e
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.(json|tmp)$/.test(entry.name)) continue
+    const file = join(directory, entry.name)
+    try {
+      if (now - statSync(file).mtimeMs > 30 * 24 * 60 * 60 * 1000) rmSync(file, { force: true })
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+    }
+  }
+}
+
+export function shareClosedQuestion(run: string, id: string, reason: string): void {
+  const file = sharedClosedFile(run, id)
+  mkdirSync(dirname(file), { recursive: true })
+  const temporary = `${file}.${process.pid}.tmp`
+  writeFileSync(temporary, `${JSON.stringify({ run, id, reason })}\n`)
+  renameSync(temporary, file)
 }
 
 type Closed = Record<string, Record<string, string>>

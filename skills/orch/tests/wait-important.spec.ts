@@ -1116,6 +1116,19 @@ describe('상주 루프', () => {
     assert.equal(lastLine(again.stdout), 'LAST_DELIVERY d1')
   })
 
+  for (const [kind, text] of [
+    ['DECISION-PENDING', '정할 것 묻기: 질문 1, 보드 결정 0; questions=q@dispatch:d'],
+    ['NO-WAIT', '대기 없음: 미답변 질문 1 개. questions=q@dispatch:d. 대기를 다시 건다'],
+  ]) {
+    test(`회귀: ${kind} 의 질문 위치를 대기 출력에도 그대로 전한다`, () => {
+      loopJson()
+      loopEvents([event(1, kind, null, text)])
+      const r = wait(NEVER(), ['--loop-repo', tmp])
+      assert.equal(r.code, 7, r.stdout + r.stderr)
+      assert.deepEqual(lines(r.stdout), [`LOOP-EVENT ${kind} - ${text}`, 'LAST_DELIVERY -'])
+    })
+  }
+
   test('잘려 잃은 구간은 GAP 줄로 먼저 낸다', () => {
     loopJson()
     loopEvents([event(6, 'REMINDER', null, 'r')], 2)

@@ -31,7 +31,7 @@ hook 을 싣지 않은 세션(Codex 코디네이터 같은)은 기록이 없어 
 
 ### 새 사용자 결정을 놓치지 않기
 
-루프는 틱마다 `결정:` 으로 시작하는 살아 있는 worker 의 미답변 질문과 보드의 남은 `decide` 줄을 확인한다. 새 결정이면 `DECISION-PENDING` 을 그 Run 의 알림 파일에 쓰고 `decision-pending` 기본 핸들러가 현재 코디네이터에게 「정할 것 묻기」 를 요청한다. 대기가 꺼져 있어도 터미널로 요청이 들어간다. cron 은 쓰지 않는다.
+루프는 틱마다 `결정:` 으로 시작하는 살아 있는 worker 의 미답변 질문과 보드의 남은 `decide` 줄을 확인한다. 새 결정이면 `DECISION-PENDING` 을 그 Run 의 알림 파일에 쓰고 `decision-pending` 기본 핸들러가 현재 코디네이터에게 「정할 것 묻기」 를 요청한다. 대기가 꺼져 있어도 터미널로 요청이 들어간다. `DECISION-PENDING` 본문과 기본 핸들러의 요청에는 `questions=<질문 id>@dispatch:<dispatch id>` 목록을 붙인다. dispatch 를 모르면 보낸 터미널을 쓰고, 질문이 없으면 `questions=-` 다. 앞 5개 뒤에는 `(외 N개)` 로 나머지 수를 쓴다. cron 은 쓰지 않는다.
 
 같은 dispatch 의 같은 본문 재전송은 다시 깨우지 않는다. 보드의 완료된 줄과 `참고:` 줄은 제외하고, 결정이 사라졌다 다시 생기면 새로 알린다. 실패한 전달은 10분부터 두 배씩, 한 시간까지 기다렸다 다시 시도한다. 결정 묶음이 바뀌면 기다리지 않는다. 보드 결정은 주 Run 만 맡는다.
 코디네이터가 사용자와 대화 중이면 전달을 미루고 대화가 끝난 뒤의 틱이 전달한다(아래 「사용자와 대화 중일 때」).
@@ -63,6 +63,8 @@ Run 을 읽지 못하고 `finish.run` 도 없으면 Run 이 하나라도 등록�
 **4 와 함께 `LOOP-LEGACY <pid> run=<Run>` 줄이 오면 그 루프는 Run 등록을 모르는 옛 orch 로 띄운 루프다.** `--full` 이면 이 줄 대신 `안내:` 줄이다. 다른 세션의 루프이므로 멈추지 않는다. 그 루프를 띄운 세션이나 사용자에게 다시 띄워 달라고 알리고, 그동안은 아래 Monitor 대안을 쓴다.
 
 루프는 `pipeline.tick_sec`(기본 300초)마다 질문 확인, Run 별 정리와 보드 동기화, 내 열린 PR 의 CI 감시와 자동 머지, worker 화면·움직임 확인, 충돌한 PR 알리기, `tick` 이벤트를 차례로 한다. 판정과 순서, 알림 조건은 `orch-loop.ts` 머리 주석이 소유하고, 코디네이터가 할 일은 아래 종료 코드 7 의 `LOOP-EVENT` 목록이 갖는다.
+종료 근거를 확인한 질문은 머신 공통 기록(`docs/data-schema.md` 의 `questions-closed/`)으로 공유한다. 같은 Run 을 보는 다른 저장소 루프와 새 루프도 그 질문을 알리지 않는다.
+
 새 질문은 `wait-important` 가 question 메시지로 이미 깨어나므로 알림 파일에 쓰지 않는다. 사용자 결정 질문의 재알림은 루프 로그에만 남고, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING` 이 맡는다. 루프는 입력하지 않는다. 멈춘 worker 를 다시 시도시키는 일은 저장소의 핸들러가 맡는다([`hooks.md`](hooks.md) 의 「멈춘 worker 다시 시도시키기」).
 
 CI 판정은 머지 큐의 기본 판정과 같다. 필수 체크가 아닌 체크의 실패도 `failed` 로 본다. 루프는 `--allow-fail` 을 모르므로, 그 옵션을 주고 머지 큐를 거는 저장소에서는 루프가 실패로 알린 PR 도 큐가 머지할 수 있다.
@@ -79,7 +81,7 @@ ps -eo pid,command | grep -E "orch-loop|wait-important|orchestration check" | gr
 orch doctor --run "$RUN_ID"
 ```
 
-**doctor 의 `LOOP-STALE <repo> <pid> <번들 해시나 버전>` 은 지금 세션 프로필의 user 범위 설치본이 아닌 번들로 도는 루프다.** 플러그인을 갱신했거나 계정을 바꾼 뒤에 생긴다. 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
+**doctor 와 `orch status` 의 `LOOP-STALE <repo> <pid> <번들 해시나 버전>` 은 지금 세션 프로필의 user 범위 설치본이 아닌 번들로 도는 루프다.** 플러그인을 갱신했거나 계정을 바꾼 뒤에 생긴다. 이미 고친 결함이 그 루프에서 계속 난다. 다음 줄의 명령은 그 루프의 Run 코디네이터 세션에서 돌린다. 내 Run 의 루프가 아니면 그 세션이나 사용자에게 알린다. 내 터미널에서 다시 띄우면 새 루프가 내 Run 명의를 물려받는다(위 `LOOP-START-FENCED`).
 
 doctor 의 `UNANSWERED` 는 10분 이상 답이 없는 질문이다. 끝난 dispatch 는 같은 Task 의 PR 종료 근거가 있으면 루프와 doctor 모두 질문에서 제외한다. `SKIP-QUESTIONS` 는 조회하지 못했다는 뜻이므로 질문이 없다는 근거로 쓰지 않는다.
 doctor 의 `WORKER-STATE <dispatch> <상태> <근거>` 는 살아 있는 dispatch 인데 터미널이 `user_owned` 로 표시된 worker 의 판정이다(`scripts/lib/worker-state.ts`).
@@ -141,7 +143,7 @@ orch wait --ack "$DELIVERY_ID"
   - `STAGE-STALLED`: 내용은 `<보드 항목 id> <worktree 또는 branch> <분>분 <끝나지 않은 첫 단계>` 이다. 보드의 `doing` 항목에 남은 단계가 있는데 그 항목의 worker 가 없이 그 분이 지났다. 평가 결과를 기다리던 단계처럼 코디네이터가 다음 worker 를 띄우거나 직접 처리할 차례다. 기다리는 것이 맞으면 그 항목을 `wait` 로 바꾼다. 같은 단계는 한 번만 온다
   - `HEAVY-SLOT-HELD`: 내용은 `pid <pid> <분>분 <명령줄>` 목록과 상한이다. 그 검사가 무거운 검사 자리를 상한보다 오래 쥐어 다른 worker 의 검사가 기다린다. 명령줄과 그 pid 의 worktree 로 어느 worker 의 검사인지 찾고, 그 worker 에게 끝났는지 묻거나 사용자에게 끊을지 묻는다. 루프는 끊지 않는다. 같은 검사가 쥐고 있는 동안은 한 번만 온다
   - `FINISH-MISSING`: 루프의 정리가 머지된 PR 의 워크트리를 치웠는데 그 PR 에 머지 뒤 마무리(`finish-pr`)가 돈 적이 없다. `gh pr merge` 로 바로 머지한 PR 이다. 내용 끝의 `finish-pr` 명령으로 마무리를 돌려 배포 확인, 업무 완료, 보드 done 을 채운다. 같은 PR 은 한 번만 온다
-  - `NO-WAIT`: 살아 있는 dispatch 가 있는데 이 Run 의 `wait-important` 대기가 몇 분째 없었다. 루프가 같은 글을 코디네이터 터미널에도 넣는다. 받은 메시지를 처리한 뒤 마지막 `NEXT_WAIT` 명령으로 대기를 다시 건다. 사용자와 대화 중인 동안에는 루프가 이 알림을 미룬다
+  - `NO-WAIT`: 본문에 미답변 질문 수와 `DECISION-PENDING` 과 같은 `questions=` 목록이 온다. 질문 조회에 실패했으면 `questions=unknown` 이다. 살아 있는 dispatch 가 있는데 이 Run 의 `wait-important` 대기가 몇 분째 없었다. 루프가 같은 글을 코디네이터 터미널에도 넣는다. 받은 메시지를 처리한 뒤 마지막 `NEXT_WAIT` 명령으로 대기를 다시 건다. 사용자와 대화 중인 동안에는 루프가 이 알림을 미룬다
   - `WATCH-ERROR`, `HOOK-FAIL`: 루프가 무엇을 하지 못했다는 알림이다. 내용의 이유(Orca 꺼짐, 핸들러 오류)를 고친다. 같은 이유는 한 번만 오고, 한 번 성공한 뒤 다시 실패하면 다시 온다. 내용이 `auto-merge: 마이그레이션 예약 <n> 개의 형식이 틀렸다` 로 시작하면 `orch queue reserve prune --repo <저장소>` 로 그 항목을 뺀다. 내용이 `refresh: pipeline.refresh_slots 를 켰지만` 으로 시작하면 머지 큐가 최신화하지 않는 저장소라 최신화도 돌지 않는다. 오버레이가 정한 대로 `queue.require_up_to_date` 를 켜거나 `refresh_slots` 를 0 으로 둔다
   - `GAP`: 알림 파일이 1000 줄을 넘어 잘려 일부를 잃었다. `<orch 루트>/state/loop.log` 를 읽어 놓친 일을 찾는다
 - 종료 코드 8 의 `LOOP-DEAD <repo> run <Run> 미등록` 은 루프는 살아 있는데 이 Run 이 등록되지 않았다는 뜻이다. `orch loop start` 로 등록한 뒤 다시 건다

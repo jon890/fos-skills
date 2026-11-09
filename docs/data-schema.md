@@ -154,5 +154,6 @@ orch 5.2.0은 `queue.before`, `queue.verify_merged`, `queue.after_merged`,
 | 경로 | 담는 것 | 지우는 때 |
 | --- | --- | --- |
 | `user-input/<터미널>.json` | 그 터미널의 마지막 사용자 입력 시각 `{"at": <epoch ms>}`. UserPromptSubmit hook(`skills/orch/hooks/record-user-input.ts`)이 쓰고, 상주 루프와 `user-active` 가 대화 중인지 판정한다. orch 가 넣은 자동 입력은 쓰지 않는다 | 쓸 때마다 7일 넘은 파일을 지운다 |
+| `questions-closed/<해시>.json` | 루프가 확인한 종료 근거 `{run, id, reason}`. 파일 이름은 Run 과 질문 id 의 SHA-256 이다. 질문별 파일을 옆 파일에 쓴 뒤 rename 해 여러 저장소의 동시 쓰기가 서로 덮지 않게 한다. 질문 조회가 저장소와 무관하게 미답변에서 뺀다. 저장소의 옛 `state/questions-closed.json` 은 루프가 읽을 때 이 기록으로 옮긴다 | 루프가 마지막 조회나 저장 뒤 30일이 지난 파일을 지운다. 질문 조회는 여전히 관측되는 닫힌 질문의 시각을 갱신한다. 갱신과 정리 실패는 질문 판정이나 틱을 막지 않는다 |
 | `questions-dismissed.json` | 닫은 질문 `{<질문 id>: <이유>}`. 이유는 `dispatch_inactive` 나 `answer_conflict` 다. `send-to-worker` 가 reply 를 그 코드로 거절받으면 쓰고, 질문 조회(`lib/questions.ts` 의 `snapshot`)가 미답변에서 뺀다 | 지우지 않는다 |
 | `send-hook-cache.json` | worker 터미널 send hook 이 worker 가 아니라고 정한 에이전트 터미널 `{<handle>: <epoch ms>}` | 쓸 때마다 기한(`ORCH_SEND_HOOK_CACHE_SEC`, 기본 600초)이 지난 항목을 지운다 |

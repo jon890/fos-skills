@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
@@ -475,4 +475,42 @@ test('브랜치 없는 옛 띄우기 기록은 끝난 dispatch 의 같은 경로
   assert.equal(closedReason(q, 'r', tmp, lookup), null)
   assert.equal(closedReason(q, 'r', tmp, { ...lookup, launches: new Map([['old', { ...launch, worktree: join(tmp, 'other') }]]) }), null)
   assert.equal(closedReason(q, 'r', tmp, { ...lookup, launches: new Map([['old', null]]) }), null)
+})
+
+test('종료 근거는 질문별로 보존하고 Run 을 구분한다', async () => {
+  const { shareClosedQuestion, sharedClosedReason } = await import('../scripts/lib/questions.ts')
+  const previous = process.env.ORCH_MACHINE_DIR
+  process.env.ORCH_MACHINE_DIR = join(tmp, 'machine')
+  try {
+    shareClosedQuestion('r1', 'q1', 'PR merged')
+    shareClosedQuestion('r2', 'q2', 'worktree removed')
+    assert.equal(sharedClosedReason('r1', 'q1'), 'PR merged')
+    assert.equal(sharedClosedReason('r2', 'q2'), 'worktree removed')
+    assert.equal(sharedClosedReason('r2', 'q1'), null)
+  } finally {
+    if (previous === undefined) delete process.env.ORCH_MACHINE_DIR
+    else process.env.ORCH_MACHINE_DIR = previous
+  }
+})
+
+test('오랫동안 조회하지 않은 종료 근거만 정리하고 계속 관측한 질문은 보존한다', async () => {
+  const { shareClosedQuestion, sharedClosedReason, pruneSharedClosed } = await import('../scripts/lib/questions.ts')
+  const previous = process.env.ORCH_MACHINE_DIR
+  process.env.ORCH_MACHINE_DIR = join(tmp, 'machine')
+  try {
+    shareClosedQuestion('r', 'old', 'merged')
+    shareClosedQuestion('r', 'observed', 'merged')
+    const directory = join(tmp, 'machine', 'questions-closed')
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
+    for (const name of readdirSync(directory)) utimesSync(join(directory, name), old, old)
+    assert.equal(sharedClosedReason('r', 'observed', true), 'merged')
+    shareClosedQuestion('r', 'new', 'merged')
+    pruneSharedClosed()
+    assert.equal(sharedClosedReason('r', 'old'), null)
+    assert.equal(sharedClosedReason('r', 'observed'), 'merged')
+    assert.equal(sharedClosedReason('r', 'new'), 'merged')
+  } finally {
+    if (previous === undefined) delete process.env.ORCH_MACHINE_DIR
+    else process.env.ORCH_MACHINE_DIR = previous
+  }
 })

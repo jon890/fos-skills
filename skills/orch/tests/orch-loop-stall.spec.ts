@@ -107,6 +107,7 @@ beforeEach(() => {
     GH: gh.path,
     CLEANUP_SWEEP: join(binDir, 'sweep.ts'),
     FAKE_DIR: tmp,
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
     RECEIVED_DIR: join(tmp, 'received'),
     GIT_CEILING_DIRECTORIES: tmp,
   }

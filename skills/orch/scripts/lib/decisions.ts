@@ -16,7 +16,7 @@ import { payload } from './completion.ts'
 import { fire } from './events.ts'
 import { appendEvent, registeredRuns, runKey } from './loop.ts'
 import { boardPath, makeParent, pathOf } from './paths.ts'
-import { dispatchOf } from './questions.ts'
+import { dispatchOf, questionLocations } from './questions.ts'
 import type { Message } from './questions.ts'
 import { userActive } from './user-active.ts'
 import { LIVE_DISPATCH, workerRows } from './workers.ts'
@@ -108,7 +108,7 @@ export async function notifyDecisions(repo: string, run: string, pending: Messag
     renameSync(`${file}.tmp`, file)
   }
   if (keys.some((key) => !seen.announced.includes(key))) {
-    appendEvent(repo, 'DECISION-PENDING', null, `정할 것 묻기: 질문 ${entries.filter((e) => e.question).length}, 보드 결정 ${entries.filter((e) => e.item).length}`, run)
+    appendEvent(repo, 'DECISION-PENDING', null, `정할 것 묻기: 질문 ${entries.filter((e) => e.question).length}, 보드 결정 ${entries.filter((e) => e.item).length}; ${questionLocations(entries.flatMap((e) => e.question ? [e.question] : []))}`, run)
     seen.announced = keys
     save()
   }

@@ -1,0 +1,1 @@
+- `DECISION-PENDING`, 기본 결정 요청과 `NO-WAIT` 본문에 질문 id 와 dispatch 를 붙인다. 질문이 많으면 앞 일부와 나머지 수를 내보낸다.

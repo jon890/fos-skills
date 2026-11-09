@@ -367,6 +367,43 @@ describe('질문 확인', () => {
       assert.equal(viewed(), 1)
     })
 
+    for (const legacy of [false, true]) {
+      test(`공유 기록 쓰기 실패에도 질문 확인과 나머지 틱을 계속한다: legacy=${legacy}`, () => {
+        orca({ messages: [question()], statuses: [ready], workers: settled('completed') })
+        pr('MERGED')
+        remindLater()
+        if (legacy) write(orchFile('state', 'questions-closed.json'), JSON.stringify({ r: { q: 'already closed' } }))
+        const blocked = join(tmp, 'blocked-machine')
+        writeFileSync(blocked, 'directory unavailable')
+        once({ ORCH_MACHINE_DIR: blocked })
+        assert.match(logText(), /공유 닫힌 질문 기록을 쓰지 못했다/)
+        assert.doesNotMatch(logText(), /WATCH-ERROR questions/)
+        assert.ok(existsSync(join(tmp, 'sweep.jsonl')), '공유 기록 실패 뒤에도 정리를 실행한다')
+        assert.deepEqual(events().filter((event) => event.kind === 'REMINDER'), [])
+      })
+    }
+
+    for (const kind of ['question', 'escalation', 'errored', 'needs-input', 'exited']) {
+      test(`${kind}: 다른 저장소 루프도 같은 Run 에서 닫힌 질문을 처음 알리거나 재알림하지 않는다`, () => {
+        const stop = !['question', 'escalation'].includes(kind)
+        orca({ messages: [{ ...question(), type: stop ? 'escalation' : kind, ...(stop ? { payload: { dispatchId: 'd', stopReason: kind } } : {}) }], statuses: [ready], workers: settled('completed') })
+        pr('MERGED')
+        remindLater()
+        once()
+        assert.deepEqual(events(), [])
+        // 다른 저장소에는 질문 기록도 PR 도 없다. 공유한 종료 근거만으로 제외해야 한다.
+        repo = join(tmp, 'other-repo')
+        mkdirSync(repo)
+        pr('OPEN', 'b'.repeat(40))
+        once()
+        assert.doesNotMatch(logText(), /^(?:QUESTION|REMINDER) q /m)
+        remindLater()
+        once()
+        assert.deepEqual(events(), [])
+        assert.equal(gh.calls().filter((c) => c.argv.includes('view')).length, 1)
+      })
+    }
+
     for (const [name, workers, state, head] of [
       ['dispatch 가 살아 있다', settled('running'), 'MERGED', SHA],
       ['PR 이 열려 있다', settled('completed'), 'OPEN', SHA],
@@ -607,6 +644,16 @@ describe('마무리 빠짐과 대기 확인', () => {
     // 대기가 다시 생기면 기록을 지워 다음 공백을 새로 센다
     once({ ...extra, PS: fakePs('  20 node /x/wait-important.ts --run r --loop-repo /r\n') })
     assert.ok(!existsSync(file))
+  })
+
+  test('NO-WAIT 는 답할 질문의 id 와 dispatch 를 붙인다', () => {
+    orca({ messages: [question()], workers: [{ dispatchId: 'd', dispatchStatus: 'dispatched' }] })
+    const extra = { PS: fakePs(''), NUDGE_WORKER: nudge() }
+    once(extra)
+    write(orchFile('state', 'no-wait', 'r.json'), JSON.stringify({ since: Date.now() - 600_000, notified: false }))
+    once(extra)
+    const noWait = events().find((e) => e.kind === 'NO-WAIT')
+    assert.match(String(noWait?.text), /미답변 질문 1 개.*questions=q@dispatch:d/)
   })
 
   test('코디네이터가 사용자와 대화 중이면 대기 없음 알림을 미루고 대화가 끝난 뒤 알린다', () => {

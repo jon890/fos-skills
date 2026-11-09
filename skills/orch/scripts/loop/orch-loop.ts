@@ -438,7 +438,7 @@ import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_
 import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { envMs } from '../lib/env.ts'
-import { closedReason, notifyQuestion, poll, readClosed, writeClosed } from '../lib/questions.ts'
+import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, questionLocations, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
 import { NO_WAIT_PREFIX, userActive } from '../lib/user-active.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
@@ -2517,7 +2517,7 @@ function relayFinishMissing(repo: string, stdout: string, run: string | null): v
 }
 
 // 머리 주석의 「대기 확인」. 오류면 이유를, 아니면 null 을 낸다
-async function watchWaiter(repo: string, run: string, pending: number | null): Promise<string | null> {
+async function watchWaiter(repo: string, run: string, pending: ReturnType<typeof poll>['pending'] | null): Promise<string | null> {
   const file = join(pathOf('state', repo), 'no-wait', `${runKey(run)}.json`)
   const clear = () => rmSync(file, { force: true })
   const waiters = waiterPids(run)
@@ -2565,7 +2565,7 @@ async function watchWaiter(repo: string, run: string, pending: number | null): P
   const minutes = Math.floor((now - seen.since) / 60_000)
   const text =
     `${NO_WAIT_PREFIX} Run ${run} 에 살아 있는 dispatch ${live.length} 개가 있는데 wait-important 대기가 ${minutes}분째 없다. ` +
-    `미답변 질문 ${pending === null ? '확인 못 함' : `${pending} 개`}. 마지막 대기가 남긴 NEXT_WAIT 명령으로 wait-important 를 백그라운드로 다시 건다`
+    `미답변 질문 ${pending === null ? '확인 못 함' : `${pending.length} 개`}. ${pending === null ? 'questions=unknown' : questionLocations(pending)}. 마지막 대기가 남긴 NEXT_WAIT 명령으로 wait-important 를 백그라운드로 다시 건다`
   appendEvent(repo, 'NO-WAIT', null, text, run)
   log(`NO-WAIT ${text}`)
   if (typeof coordinator === 'string' && coordinator.startsWith('term_')) {
@@ -2616,6 +2616,13 @@ async function tick(ctx: Context, n: number): Promise<number> {
   const pendingDecisions = new Map<string, ReturnType<typeof poll>['pending']>()
   const closedFile = join(pathOf('state', ctx.repo), 'questions-closed.json')
   const closed = readClosed(closedFile)
+  const share = (run: string, id: string, reason: string) => {
+    try {
+      shareClosedQuestion(run, id, reason)
+    } catch (e) {
+      log(`orch-loop: 공유 닫힌 질문 기록을 쓰지 못했다: ${oneLine(e)}`)
+    }
+  }
   let closedChanged = false
   for (const { run } of runs) {
     if (!run) {
@@ -2624,6 +2631,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
     let notices: ReturnType<typeof poll>['notices'] = []
     try {
+      for (const [id, reason] of Object.entries(closed[run] ?? {})) share(run, id, reason)
       const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo)
       notices = polled.notices
       pendingDecisions.set(run, polled.pending)
@@ -2648,6 +2656,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
         if (closed[run]?.[id]) continue
         const reason = closedReason(notice.message, run, ctx.repo, lookup)
         if (reason) {
+          share(run, id, reason)
           ;(closed[run] ??= {})[id] = reason
           closedChanged = true
           log(`REMINDER-SKIP ${id}: ${reason}`)
@@ -2666,6 +2675,17 @@ async function tick(ctx: Context, n: number): Promise<number> {
       }
       await notifyQuestion(notice, ctx.repo, run, 'orch-loop')
     }
+    const pending = pendingDecisions.get(run)
+    if (pending) {
+      const open = pending.filter((message) => !closed[run]?.[String(message.id)])
+      pendingDecisions.set(run, open)
+      waiting.set(run, askers(open))
+    }
+  }
+  try {
+    pruneSharedClosed()
+  } catch (e) {
+    log(`orch-loop: 오래된 공유 닫힌 질문 기록을 지우지 못했다: ${oneLine(e)}`)
   }
   if (closedChanged) {
     try {
@@ -2855,7 +2875,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
   for (const { run } of runs) {
     if (!run) continue
     try {
-      report('waiter', await watchWaiter(ctx.repo, run, pendingDecisions.get(run)?.length ?? null), { run })
+      report('waiter', await watchWaiter(ctx.repo, run, pendingDecisions.get(run) ?? null), { run })
     } catch (e) {
       report('waiter', oneLine(e), { run })
     }

@@ -106,6 +106,7 @@ beforeEach(() => {
     BOARD_SYNC: join(binDir, 'noop.ts'),
     SEND_TO_WORKER: join(binDir, 'send.ts'),
     FAKE_DIR: tmp,
+    ORCH_MACHINE_DIR: join(tmp, 'machine'),
     GIT_CEILING_DIRECTORIES: tmp,
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
