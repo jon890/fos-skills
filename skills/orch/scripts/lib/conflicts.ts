@@ -148,13 +148,15 @@ export const SEND_MS = 3_900_000
 const SHOWN_FILES = 10
 // 끝난 dispatch 의 send-to-worker 1 에서 worker-start 가 성공했다는 표시(notify-conflicts.ts 머리 주석의 「끝난 dispatch 의 1」)
 const RELAUNCHED = /^LAUNCHED \S/m
+// 시작은 성공했지만 확인 시간이 넘은 경우도 자동 재전송하지 않는다. 살아 있는 worker 일 수 있다.
+const STALLED_START = /^STALLED-START \S+ \S+ .+/m
 
 export type Worker = { task: unknown; dispatch: string; terminal: unknown; worktree: string; spec: string | null }
 export type WorkerRow = Record<string, unknown>
 // 찾은 워크트리와 worker 행, 또는 orphan 이유
 export type WorkerFound = { path: string; row: WorkerRow } | { orphan: string }
 export type ConflictOutcome =
-  | { kind: 'record'; value: string; action: 'notified' | 'resumed' | 'orphan'; worker: Worker | null; reason: string | null }
+  | { kind: 'record'; value: string; action: 'notified' | 'resumed' | 'orphan' | 'stalled'; worker: Worker | null; reason: string | null }
   | { kind: 'skip' }
   | { kind: 'usage' }
 
@@ -262,6 +264,12 @@ export async function resolveConflict(args: {
     return { kind: 'usage' }
   }
   if (sent.code === 3) return orphaned(out, number, `${dispatch} 에 보낼 수 없다(send-to-worker 종료 코드 3). 새 worker 는 띄우지 않는다`, worker, false)
+  const stalled = sent.code === 1 ? STALLED_START.exec(sent.stdout)?.[0] : null
+  if (stalled) {
+    const reason = `${stalled.replace(/^STALLED-START /, '')} 사용자 판단 필요`
+    out(`CONFLICT-STALLED ${number} ${reason}`)
+    return { kind: 'record', value: dispatch, action: 'stalled', worker, reason }
+  }
   const delivered = sent.code === 0 || sent.code === 4 || (sent.code === 1 && (live || RELAUNCHED.test(sent.stdout)))
   if (!delivered) {
     out(`  ${dispatch} 에 보내지 못했다(send-to-worker 종료 코드 ${sent.code})`)

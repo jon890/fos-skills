@@ -114,7 +114,7 @@ const ASKS = new Set(['question', 'escalation'])
 const SUBJECT_MAX = 120
 // nudge-worker 는 턴 시작을 기본 15초씩 두 번 기다린다. ORCH_NUDGE_TIMEOUT_MS 는 이 한도를 바꾼다. 테스트만 쓴다
 const NUDGE_MS = Number(process.env.ORCH_NUDGE_TIMEOUT_MS) || 300_000
-// launch-worker 는 make-worktree 와 worker-start 를 각각 10분까지 기다리고, 멈춘 dispatch 를 한 번 다시 띄운다
+// launch-worker 는 make-worktree 와 worker-start 를 각각 10분까지 기다린다. 시작 확인 시간 초과는 STALLED-START 와 1 로 알리고 재시도하지 않는다
 const LAUNCH_MS = 3_600_000
 const SETTING_KEYS = ['agent', 'model', 'effort'] as const
 // 구조화 worker 의 터미널 handle 접두. worker-show 의 startOptions.mode 가 없을 때 이것으로 가린다

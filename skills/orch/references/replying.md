@@ -71,9 +71,9 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 | 화면 | 판단 | 할 일 |
 | --- | --- | --- |
 | `Working` 이 보이거나 새 턴이 진행 중이다 | 늦게 시작한 것이다 | 그대로 두고 4단계 대기를 건다 |
-| 입력란이 비어 있고 새 턴이 없다 | 지시가 전달되지 않았다 | `worker-abandon` 으로 그 dispatch 를 닫고, `worker-show` 의 `taskId` 로 `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$DISPATCH_ID" -- --terminal "$TERMINAL_HANDLE"` 를 다시 보낸다(같은 Task 를 선택 검사와 이력 기록을 거쳐 다시 띄운다) |
+| 입력란이 비어 있고 새 턴이 없다 | 전달 여부를 확인하지 못했다 | 화면과 dispatch 상태를 사용자에게 알리고 다시 띄울지 묻는다. 화면이 비었다는 이유로 abandon·재시도하지 않는다 |
 
-`launch-worker` 에 `--task` 를 빼고 다시 보내면 Task 가 둘 생겨 어느 쪽이 유효한 시도인지 흐려진다. 같은 Task 를 고른 채 지시서 경로를 준다.
+사용자가 다시 띄우기로 정하면 `worker-show` 의 `taskId` 로 같은 Task 를 고른다. [`launch.md`](launch.md) 의 「끊긴 worker 다시 띄우기」 Task 상태 표에 따라 `--retry-of` 를 붙일지 정한다. `launch-worker` 에 `--task` 를 빼고 다시 보내면 Task 가 둘 생겨 어느 쪽이 유효한 시도인지 흐려진다.
 
 ### 이어 쓸 수 없는 터미널
 

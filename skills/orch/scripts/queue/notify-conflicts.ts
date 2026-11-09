@@ -37,11 +37,13 @@
 //     5 와 그 밖                  보내지 못함            보내지 못함            기록하지 않는다. `보내지 못했다(… 종료 코드 N)` 와 stderr 의 이유
 //     2                          사용법 오류            사용법 오류            그 자리에서 멈추고 명령 종료 코드 2
 //     끝난 dispatch 의 1: send-to-worker 의 1 은 다시 띄우기의 실패지만, launch-worker 가 worker-start 를 이미 성공한 뒤에
-//     dispatch id 를 읽지 못했거나 다시 띄운 뒤 단계가 멈춰도 1 이다. 그 실행의 stdout 에 `LAUNCHED <id>` 줄이 있으면
+//     dispatch id 를 읽지 못했거나 시작 확인 시간이 넘어도 1 이다. 그 실행의 stdout 에 `LAUNCHED <id>` 줄이 있으면
 //     worker-start 가 성공해 worker 가 떴으므로 resumed 로 기록한다. 다시 보내면 같은 워크트리에 Task 가 하나 더 생긴다.
+//     `STALLED-START <id> <단계> <근거>` 는 action stalled 로 기록해 자동 재전송을 막고 `CONFLICT-STALLED <PR> <id> <단계> <근거> 사용자 판단 필요` 를 낸다.
+//     상주 루프는 이 결과를 그 worker 의 Run 알림 파일에 쓰므로 코디네이터 대기가 받는다. 시작 완료로 기록하지 않는다.
 //     `restart: ` 줄은 근거로 보지 않는다. 다시 띄우겠다는 예고일 뿐이라 그 뒤 worker-start 가 실패해도 남는다.
-//     LAUNCHED 줄이 없으면 보내지 못한 것으로 두고 기록하지 않는다. 그래서 worker-start 가 성공한 뒤 LAUNCHED 를 내기 전에
-//     멈춘 경우(dispatch id 를 읽지 못함, 다시 띄운 뒤 watch 가 멈춤)도 다음 실행이 다시 보내고, 같은 워크트리에 Task 가 겹칠 수 있다
+//     두 판정 줄이 없으면 보내지 못한 것으로 두고 기록하지 않는다. dispatch id 를 읽지 못한 경우는 다음 실행이 다시 보므로
+//     남은 자원을 코디네이터가 확인해야 한다
 //     agent_unconfigured 로 send-to-worker 가 같은 워크트리에 다시 띄운 것도 resumed 다. 워크트리와 터미널 수가 늘지 않는다
 //     워크트리나 dispatch 를 찾지 못한 경우도 orphan 이고 기록한다. worker-list 를 읽지 못하면 알리지도 기록하지도 않는다
 //
@@ -167,13 +169,13 @@ async function executeMain(argv: string[]): Promise<number> {
     const number = pr.number
     let result = ''
     const report = () => {
-      if (brief && result && result !== 'orphan') out(`CONFLICT ${number} ${pr.headRefName} ${result}`)
+      if (brief && result && result !== 'orphan' && result !== 'stalled') out(`CONFLICT ${number} ${pr.headRefName} ${result}`)
     }
     // resolveConflict 의 줄. 짧은 출력이면 결과 낱말만 기억하고 CONFLICT-ORPHAN 만 그대로 낸다
     const told = (line: string) => {
       if (!brief) return out(line)
-      if (line.startsWith('CONFLICT-ORPHAN ')) {
-        result = 'orphan'
+      if (line.startsWith('CONFLICT-ORPHAN ') || line.startsWith('CONFLICT-STALLED ')) {
+        result = line.startsWith('CONFLICT-STALLED ') ? 'stalled' : 'orphan'
         out(line)
       } else if (/ 에 알릴 것: /.test(line)) result = 'would-notify'
       else if (/ 에 이어 쓸 것: /.test(line)) result = 'would-relaunch'

@@ -21,7 +21,7 @@
 - **선택 검사는 ack 으로 넘기지 않는다.** `--lint-ack` 은 겹침처럼 의도한 발견을 넘기는 길이다(`references/launch.md`). 지금도 `worker 선택:` 대조(차례 0)는 ack 으로 넘기지 못한다. 새 검사를 그 자리에 두어 같은 성질을 갖게 한다. `--effort` 대조는 지시서 effort 와 `--effort` 가 다르면 거부한다. Haiku 행처럼 effort 를 지정하지 않는 지시서는 effort 를 `기본` 으로 적고 `--effort` 를 주지 않는다.
 - **다시 띄우기를 `launch-worker` 로 모은다.** 지금 지침은 같은 Task 를 다른 모델로 다시 띄울 때 `worker-start --task --retry-of` 를 직접 부른다(`references/launch.md` 「시작 직후 실패」, `waiting.md`, `replying.md`). 그 길은 이력도 선택 검사도 거치지 않아, medium 실패 뒤 high 로 올리는 바로 그 띄우기가 REQ1 밖에 있다. `launch-worker` 에 다시 띄우기 꼴(`--task <id> --retry-of <dispatch> --spec <지시서>`)을 더한다. 워크트리는 이력의 그 dispatch 의 것을 쓰고, 선택 검사와 이력 쓰기는 새 띄우기와 같다. 지침의 직접 호출은 이 꼴로 바꾸고, `hooks/require-spec-line.ts` 옆에 `worker-start --task` 직접 호출을 거부하는 hook 조건을 더한다. 바꾼 모델은 지시서의 `worker 선택:` 줄을 먼저 고친 뒤 띄운다(지금 「사용 한도에 걸렸을 때」 규칙과 같다).
 - **지시서 읽기는 `lib/spec.ts` 한 곳이다.** `worker 선택:` 줄의 새 조각(`행:`, `high 근거:`)과 `experiment:` 줄 해석을 여기 둔다. `spec-lint` 와 `launch-worker` 가 같은 함수를 쓴다(지금 `selectionsOf` 와 같다).
-- **띄우기 이력은 새 `lib/launch-history.ts` 가 소유한다.** `<orch 루트>/state/launch-history.jsonl` 에 띄울 때마다 한 줄을 더하고 지우지 않는다. 자동으로 abandon 하고 다시 띄운 dispatch(`launch-worker` 의 `worktree_creating` 멈춤 처리)는 마지막 dispatch 한 줄만 남긴다. 한 `launch-worker` 호출은 이력 한 줄이다. `launched-workers/` 는 지금처럼 정리용 기록으로 남는다. 둘을 합치지 않는 이유: `launched-workers` 는 「정리가 지워야 끝난 것」 이라는 뜻을 이미 갖고 있다(`cleanup-sweep` 의 `forgetLaunch`). 오래 남길 기록을 같은 파일에 두면 그 뜻이 깨진다.
+- **띄우기 이력은 새 `lib/launch-history.ts` 가 소유한다.** `<orch 루트>/state/launch-history.jsonl` 에 띄울 때마다 한 줄을 더하고 지우지 않는다. `LAUNCHED` 로 끝난 `launch-worker` 호출은 이력 한 줄이다. 시작 확인 시간이 넘으면 자동 abandon·재시도 없이 멈추고 성공 이력을 남기지 않는다(`launch-worker.ts` 머리 주석). `launched-workers/` 는 지금처럼 정리용 기록으로 남는다. 둘을 합치지 않는 이유: `launched-workers` 는 「정리가 지워야 끝난 것」 이라는 뜻을 이미 갖고 있다(`cleanup-sweep` 의 `forgetLaunch`). 오래 남길 기록을 같은 파일에 두면 그 뜻이 깨진다.
 - **routing 기록은 새 `lib/routing-log.ts` 가 소유한다.** 모으기(수집기 묶음)와 쓰기(PR 번호로 한 줄, 원자적 다시 쓰기)를 둔다. `finish-pr` 와 `cleanup-sweep` 은 PR 번호와 결과만 넘긴다. `cleanup-sweep` 은 머지 없이 닫힌 PR 과, 마무리가 빠진 머지 PR(`FINISH-MISSING`)을 쓴다. 두 쓰는 쪽이 같은 PR 에 두 번 써도 멱등이다. 쓰기 실패는 마무리와 정리를 막지 않는다. stderr 에 `ROUTING-LOG-FAIL <PR> <이유>` 한 줄을 남긴다. 기록은 판정이 아니라 관측이라, 기록 실패로 머지 뒤 정리가 멈추면 안 된다.
 - **수집기는 출처마다 나눈다.** 하나가 실패하면 그 키만 `null` 이고 나머지는 쓴다.
   - GitHub(`lib/gh.ts` 의 `ghJson`): 리뷰, 커밋, head 별 CI 실행, 머지·닫힘 시각.
@@ -54,7 +54,7 @@ experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `mediu
 - `--terminal` 이어 띄우기는 `--agent`, `--model`, `--effort` 가 없다. 그 터미널의 가장 최근 기록에서 세 값을 물려받는다. resume 이 연 새 터미널은 다시 잇는 이전 dispatch 의 기록에서 물려받는다. 둘 다 없으면 `null` 이다.
 - `effective` 는 `worker-start` 응답의 `launch.effective` 다. 읽지 못하면 `null` 이다.
 - 대조(REQ1): 이력에서 `dispatch` 가 같은 줄을 찾는다. `effective.model`(없으면 `model`)이 `claude-opus-*` 이고 effort 가 `medium` 이면 통과다. 이력에 줄이 없어도 `launched-workers/<dispatch>.json` 이 남아 있으면 이력 도입 전의 「모델이 없는 옛 기록」 으로 보아 통과다(스펙 DECISION1). 둘 다 없거나 모델·effort 가 다르면 막는다.
-- 다음 후보(REQ6): 이력에서 `experiment` 가 같은 줄을 후보마다 센다. 가장 적은 후보, 같으면 줄에 먼저 적힌 후보가 다음이다. 같은 Task 의 재시도와 터미널 이어 쓰기는 `retry_of` 에 이전 dispatch 를 적고 세지 않는다. 새 배정이 아니다. 자동 abandon 뒤 다시 띄운 것은 위처럼 한 줄이라 한 번 센다.
+- 다음 후보(REQ6): 이력에서 `experiment` 가 같은 줄을 후보마다 센다. 가장 적은 후보, 같으면 줄에 먼저 적힌 후보가 다음이다. 같은 Task 의 재시도와 터미널 이어 쓰기는 `retry_of` 에 이전 dispatch 를 적고 세지 않는다. 새 배정이 아니다. 시작 확인 시간 초과는 성공 이력이 없어 세지 않는다.
 
 ### routing 기록 `state/routing-log.jsonl`
 
@@ -101,7 +101,7 @@ experiment: review-fix-small. 후보: `claude` `claude-sonnet-5-5` effort `mediu
 | DECISION4 | 기록 실패의 영향 | 마무리와 정리를 막지 않고 `ROUTING-LOG-FAIL` 한 줄 | 작성자 | 관측 기록이 머지 뒤 정리를 멈추면 안 된다 |
 | DECISION5 | 토큰 출처 | Orca 사용량 파일. 형식이 다르면 `null` | 작성자 | 공개 CLI 에 사용량 조회가 없다(`orca orchestration --help`). 근거 표가 같은 파일을 썼다 |
 | DECISION6 | PR 나누기 | PR-A 문서·틀, PR-B 지시서 검사·띄우기 이력·다시 띄우기 꼴, PR-C routing 기록 쓰기, PR-D 집계 명령. PR-B 는 orch-cli PR3 머지 뒤 | 작성자 | 지시서(코디네이터 2026-11-05)가 문서 PR 과 PR3 뒤 스크립트 PR 을 나누라고 했다. 스크립트 쪽은 쓰는 쪽(B, C)과 읽는 쪽(D)이 독립이라 PR 하나 크기로 나눈다 |
-| DECISION7 | 실험 다시 띄우기 | `--retry-of` 다시 띄우기는 실험 수에 세지 않는다. 자동 abandon 뒤 다시 띄우기는 한 줄이라 한 번 센다 | 작성자 | 같은 Task 다시 띄우기는 배정이 아니다. 독립 검토 발견 4 |
+| DECISION7 | 실험 다시 띄우기 | `--retry-of` 다시 띄우기는 실험 수에 세지 않는다. 시작 확인 시간 초과는 성공 이력이 없어 세지 않는다 | 작성자 | 같은 Task 다시 띄우기는 배정이 아니다. 독립 검토 발견 4 |
 | DECISION8 | 선택 검사 자리 | 공용 `selectionVerdict` 를 `spec-lint` 와 `launch-worker` 차례 0 이 함께 부른다. 차례 0 은 ack 으로 넘기지 못하고 `--effort` 도 대조한다 | 작성자 | 독립 검토 발견 1, 2. `lintGate` 는 ack 과 종료 코드 2 로 넘어간다(`launch-worker.ts` 의 `lintGate`). 스펙 REQ1 은 「launch-worker 가 거부한다」 다 |
 | DECISION9 | 같은 Task 다시 띄우기 | `launch-worker` 에 `--task --retry-of` 꼴을 더하고 직접 `worker-start --task` 를 hook 으로 거부한다 | 작성자 | 독립 검토 발견 3. 직접 호출은 이력과 선택 검사를 빠져나가 REQ1 과 「다시 띄운 PR 비율」 이 어긋난다. 우회를 한계로만 적는 안은 REQ1 의 실효를 잃어 고르지 않았다 |
 | DECISION10 | 마무리가 빠진 머지 PR | `cleanup-sweep` 이 `FINISH-MISSING` 인 PR 도 `merged` 로 쓴다 | 작성자 | 독립 검토 발견 9. 빠지면 표본이 기운다 |

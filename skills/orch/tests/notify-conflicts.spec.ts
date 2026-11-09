@@ -406,6 +406,18 @@ describe('끝난 dispatch', () => {
     assert.equal(sent().length, 1)
   })
 
+  test('시작 확인 시간 초과는 사용자 판단을 알리고 다음 실행에 다시 보내지 않는다', () => {
+    setupEnded()
+    hook(0)
+    env.FAKE_EXIT = '1'
+    env.FAKE_OUT = 'STALLED-START ctx_new worktree_creating watch=90s,no-signs-of-life'
+    const r = notify()
+    assert.match(r.stdout, /^CONFLICT-STALLED 7 ctx_new worktree_creating .*사용자 판단 필요$/m)
+    assert.equal(hookInputs()[0].action, 'stalled')
+    notify()
+    assert.equal(sent().length, 1)
+  })
+
   test('send-to-worker 가 1 이고 stdout 에 restart: 만 있으면 기록하지 않아 두 번째 실행이 다시 보낸다', () => {
     setupEnded()
     env.FAKE_EXIT = '1'

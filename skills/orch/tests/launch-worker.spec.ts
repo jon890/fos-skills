@@ -51,6 +51,7 @@ if (is('worktree', 'list')) {
 }
 if (is('repo', 'show')) out({ repo: { externalWorktreeVisibility: state.visibility || 'hide' } })
 if (is('terminal', 'list')) out({ terminals: state.terminals || [] })
+if (is('terminal', 'read') && state.screen) out({ terminal: { tail: state.screen } })
 if (is('terminal', 'close')) out({}, state.close_fails ? 1 : 0)
 if (is('orchestration', 'worker-start')) {
   if (state.start_errors && state.start_errors.length) out({ error: state.start_errors.shift() }, 1)
@@ -68,7 +69,7 @@ if (is('orchestration', 'worker-show')) {
   // worker 가 워크트리에 파일을 만든 것처럼 한다(일하는 흔적)
   if (state.touch) fs.writeFileSync(state.touch, 'x')
   // 줄인 보기처럼 단계를 맨 위 stage 에 둔다
-  if (d.flat) out({ dispatchId: opt('--dispatch'), stage: d.flat })
+  if ('flat' in d) out({ dispatchId: opt('--dispatch'), stage: d.flat })
   const stages = d.stages || []
   const stage = stages.length > 1 ? stages.shift() : stages[0] || 'input_accepted'
   out({ dispatch: d.dispatch, worker: Object.assign({}, d.worker || {}, { stage }), terminalResource: d.terminalResource || {} })
@@ -624,13 +625,13 @@ describe('띄우기', () => {
       if (!hasShell(shell)) continue
       resetLog()
       rmSync(join(tmp, 'new'), { recursive: true, force: true })
-      state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
       const r = launch(['--repo', tmp, '--name', 'feat', '--base', 'develop', '--run', 'run_x', '--watch', '1', '--', ...CODEX], shell, true, SCRIPT)
       assert.equal(r.code, 0, `${shell}: ${both(r)}`)
       assert.deepEqual(lines('make'), [`make --repo ${tmp} --spec ${spec} --name feat --base develop`])
-      const [first, retry] = lines('orca orchestration worker-start')
+      const [first] = lines('orca orchestration worker-start')
       assert.ok(first.startsWith('orca orchestration worker-start --run run_x --spec '), first)
-      assert.ok(retry.includes('--run run_x --task task_1 --retry-of ctx_1'), retry)
+      assert.equal(lines('orca orchestration worker-start').length, 1)
     }
   })
 
@@ -670,7 +671,7 @@ describe('띄우기', () => {
 
   test('worker-start 가 성공한 뒤의 실패는 이어 띄우는 명령을 알리지 않는다', () => {
     // dispatch 가 이미 떠 있으면 --worktree 로 다시 띄우라고 하지 않는다. 같은 일의 task 가 하나 더 생긴다
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
     const r = launch(['--repo', tmp, '--name', 'feat', '--watch', '1', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
     assert.doesNotMatch(r.stderr, /워크트리는 남아 있다/)
@@ -687,27 +688,18 @@ describe('띄우기', () => {
     assert.doesNotMatch(r.stderr, /워크트리는 남아 있다/)
   })
 
-  test('worktree_creating 에서 멈추면 abandon 하고 한 번 다시 띄운다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
+  test('worktree_creating 에서 시간이 넘으면 멈춤만 알리고 abandon 과 재시도를 하지 않는다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
     const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
-    assert.equal(r.code, 0, both(r))
-    assert.deepEqual(lines('orca orchestration worker-abandon'), ['orca orchestration worker-abandon --dispatch ctx_1'])
-    const retry = lines('orca orchestration worker-start')[1]
-    assert.ok(retry.includes(`--task task_1 --retry-of ctx_1 --worktree path:${worktree} --agent claude`), retry)
-    assert.ok(!retry.includes('--spec'), retry)
-    assert.match(r.stdout, /LAUNCHED ctx_2/)
-  })
-
-  test('다시 띄워도 멈추면 실패다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
-    const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
-    assert.equal(lines('orca orchestration worker-start').length, 2)
+    assert.deepEqual(lines('orca orchestration worker-abandon'), [])
+    assert.equal(lines('orca orchestration worker-start').length, 1)
+    assert.match(r.stdout, /^STALLED-START ctx_1 worktree_creating watch=3s,no-signs-of-life terminal=- screen=unavailable$/m)
     assert.doesNotMatch(r.stdout, /LAUNCHED/)
   })
 
   test('worktree_creating 이어도 heartbeat 가 있으면 abandon 하지 않고 LAUNCHED 다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: { ...shown('worktree_creating'), dispatch: { lastHeartbeatAt: '2026-11-02T08:00:00Z' } } } })
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('worktree_creating'), dispatch: { lastHeartbeatAt: '2026-11-02T08:00:00Z' } } } })
     const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
@@ -725,6 +717,26 @@ describe('띄우기', () => {
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(lines('orca orchestration worker-abandon'), [])
     assert.match(r.stdout, /일하는 흔적이 있어\(워크트리 변경\)/)
+  })
+
+  for (const sample of [
+    { screen: ['›'], state: 'idle', stalled: true },
+    { screen: undefined, state: 'unknown', stalled: true },
+    { screen: ['• Working (1s • esc to interrupt)'], state: 'working', stalled: false },
+    { screen: ['Do you want to proceed?'], state: 'permission', stalled: false },
+  ]) test(`시작 확인 화면 ${sample.state} 의 관측을 남기고 자동 포기하지 않는다`, () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('worktree_creating'), worker: { agentTerminalHandle: 'term_wait' } } }, screen: sample.screen })
+    const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
+    assert.equal(r.code, sample.stalled ? 1 : 0, both(r))
+    if (sample.stalled) {
+      assert.match(r.stdout, new RegExp(`^STALLED-START ctx_1 worktree_creating .*terminal=term_wait screen=${sample.state}$`, 'm'))
+      assert.doesNotMatch(r.stdout, /LAUNCHED/)
+    } else {
+      assert.match(r.stdout, /LAUNCHED ctx_1/)
+      assert.match(r.stdout, new RegExp(`터미널 화면 ${sample.state}`))
+    }
+    assert.deepEqual(lines('orca orchestration worker-abandon'), [])
+    assert.equal(lines('orca orchestration worker-start').length, 1)
   })
 
   test('줄인 보기의 stage 키도 단계로 읽는다', () => {
@@ -766,14 +778,25 @@ describe('띄우기', () => {
       })
     })
 
-    test('다시 띄우면 새 dispatch 의 기록이 생긴다', () => {
-      state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
+    test('시간 초과도 재개용 기록을 남기고 같은 Task 의 워크트리를 다시 찾는다', () => {
+      const board = join(worktree, '.omc/board.json')
+      mkdirSync(dirname(board), { recursive: true })
+      writeFileSync(board, JSON.stringify({ items: [] }))
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
       const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
-      assert.equal(r.code, 0, both(r))
+      assert.equal(r.code, 1, both(r))
+      assert.ok(existsSync(recordOf('ctx_1')))
+      assert.ok(!existsSync(recordOf('ctx_2')))
+      assert.ok(!existsSync(join(worktree, '.orch/state/launch-history.jsonl')))
+      assert.equal(JSON.parse(readFileSync(board, 'utf8')).items[0].status, 'doing')
+      resetLog()
+      // 사용자가 포기를 결정해 기존 dispatch 를 정리한 뒤 ready Task 를 다시 띄우는 상황이다.
+      state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+      const resumed = launch(['--repo', worktree, '--task', 'task_1', '--', ...CLAUDE])
+      assert.equal(resumed.code, 0, both(resumed))
+      assert.match(lines('orca orchestration worker-start')[0], /--task task_1 --worktree path:/)
+      assert.doesNotMatch(lines('orca orchestration worker-start')[0], /--retry-of/)
       assert.ok(existsSync(recordOf('ctx_2')))
-      const history = readFileSync(join(worktree, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
-      assert.deepEqual(history.map(row => row.dispatch), ['ctx_2'])
-      assert.equal(history[0].retry_of, null)
     })
 
     test('--terminal 이어 쓰기는 그 터미널을 기록한다', () => {
@@ -994,6 +1017,17 @@ describe('before-launch 와 worker-launched', () => {
     assert.deepEqual(input.worker, { task: 'task_1', dispatch: 'ctx_1', terminal: 'term_w', worktree: hookWt, spec })
     assert.equal(input.event, 'worker-launched')
     assert.equal(input.branch, 'feature/hook')
+  })
+
+  test('시작 확인 시간이 넘어도 worker-launched 를 내고 종료 코드 1 을 유지한다', () => {
+    const file = capture('worker-launched', 1)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('worktree_creating'), worker: { agentTerminalHandle: 'term_w' } } } })
+    const r = launchNew(['--watch', '1'])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^STALLED-START ctx_1 /m)
+    assert.doesNotMatch(r.stdout, /LAUNCHED/)
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).worker.terminal, 'term_w')
+    assert.ok(existsSync(join(proj, '.orch/state/launched-workers/ctx_1.json')))
   })
 
   test('--base 의 origin/ 은 떼고 핸들러에 넘긴다', () => {
@@ -1984,12 +2018,25 @@ describe('짧은 출력', () => {
     assert.match(out[1], new RegExp(`^LAUNCHED ctx_1 \\S+ ${worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
   })
 
-  test('다시 띄워도 멈추면 STALLED-START 줄로 이유를 남긴다', () => {
-    state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('worktree_creating') } })
+  test('시간 초과는 짧은 출력에도 STALLED-START 줄로 근거를 남긴다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('worktree_creating') } })
     env.ORCH_OUTPUT = 'short'
     const r = launch(['--worktree', worktree, '--watch', '2', '--', ...CLAUDE])
     assert.equal(r.code, 1, both(r))
-    assert.match(r.stdout, /^STALLED-START ctx_2 worktree_creating$/m)
+    assert.match(r.stdout, /^STALLED-START ctx_1 worktree_creating watch=2s,no-signs-of-life terminal=- screen=unavailable$/m)
+    assert.deepEqual(lines('orca orchestration worker-abandon'), [])
+    assert.equal(lines('orca orchestration worker-start').length, 1)
+    assert.doesNotMatch(r.stdout, /LAUNCHED/)
+  })
+
+  test('단계가 없어도 시간 초과로 abandon 하거나 재시도하지 않는다', () => {
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { flat: '' } } })
+    env.ORCH_OUTPUT = 'short'
+    const r = launch(['--worktree', worktree, '--watch', '1', '--', ...CLAUDE])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^STALLED-START ctx_1 - watch=1s,no-signs-of-life terminal=- screen=unavailable$/m)
+    assert.deepEqual(lines('orca orchestration worker-abandon'), [])
+    assert.equal(lines('orca orchestration worker-start').length, 1)
   })
 
   test('worker-start 가 실패하면 receipt 전체를 START-FAIL 한 줄로 남긴다', () => {
