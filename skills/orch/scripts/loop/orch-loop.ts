@@ -2616,6 +2616,13 @@ async function tick(ctx: Context, n: number): Promise<number> {
   const pendingDecisions = new Map<string, ReturnType<typeof poll>['pending']>()
   const closedFile = join(pathOf('state', ctx.repo), 'questions-closed.json')
   const closed = readClosed(closedFile)
+  const share = (run: string, id: string, reason: string) => {
+    try {
+      shareClosedQuestion(run, id, reason)
+    } catch (e) {
+      log(`orch-loop: 공유 닫힌 질문 기록을 쓰지 못했다: ${oneLine(e)}`)
+    }
+  }
   let closedChanged = false
   for (const { run } of runs) {
     if (!run) {
@@ -2624,7 +2631,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     }
     let notices: ReturnType<typeof poll>['notices'] = []
     try {
-      for (const [id, reason] of Object.entries(closed[run] ?? {})) shareClosedQuestion(run, id, reason)
+      for (const [id, reason] of Object.entries(closed[run] ?? {})) share(run, id, reason)
       const polled = poll(run, join(pathOf('state', ctx.repo), 'questions-seen.json'), Date.now() / 1000, REMIND_AFTER_SEC, ctx.repo)
       notices = polled.notices
       pendingDecisions.set(run, polled.pending)
@@ -2649,7 +2656,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
         if (closed[run]?.[id]) continue
         const reason = closedReason(notice.message, run, ctx.repo, lookup)
         if (reason) {
-          shareClosedQuestion(run, id, reason)
+          share(run, id, reason)
           ;(closed[run] ??= {})[id] = reason
           closedChanged = true
           log(`REMINDER-SKIP ${id}: ${reason}`)

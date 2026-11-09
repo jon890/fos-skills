@@ -367,6 +367,22 @@ describe('질문 확인', () => {
       assert.equal(viewed(), 1)
     })
 
+    for (const legacy of [false, true]) {
+      test(`공유 기록 쓰기 실패에도 질문 확인과 나머지 틱을 계속한다: legacy=${legacy}`, () => {
+        orca({ messages: [question()], statuses: [ready], workers: settled('completed') })
+        pr('MERGED')
+        remindLater()
+        if (legacy) write(orchFile('state', 'questions-closed.json'), JSON.stringify({ r: { q: 'already closed' } }))
+        const blocked = join(tmp, 'blocked-machine')
+        writeFileSync(blocked, 'directory unavailable')
+        once({ ORCH_MACHINE_DIR: blocked })
+        assert.match(logText(), /공유 닫힌 질문 기록을 쓰지 못했다/)
+        assert.doesNotMatch(logText(), /WATCH-ERROR questions/)
+        assert.ok(existsSync(join(tmp, 'sweep.jsonl')), '공유 기록 실패 뒤에도 정리를 실행한다')
+        assert.deepEqual(events().filter((event) => event.kind === 'REMINDER'), [])
+      })
+    }
+
     for (const kind of ['question', 'escalation', 'errored', 'needs-input', 'exited']) {
       test(`${kind}: 다른 저장소 루프도 같은 Run 에서 닫힌 질문을 처음 알리거나 재알림하지 않는다`, () => {
         const stop = !['question', 'escalation'].includes(kind)
