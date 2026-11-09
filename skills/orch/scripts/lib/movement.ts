@@ -8,11 +8,15 @@
 //   - 워크트리 파일의 마지막 수정 시각(latestMtime). SKIP_DIRS 의 폴더는 들어가지 않고, 파일을 MTIME_BUDGET 개까지만 본다
 //   - 브랜치의 마지막 커밋 시각(lastCommitMs. git log -1 --format=%ct)
 //   - 터미널 화면 끝 줄(lib/screen.ts 의 screenTail)이 마지막으로 바뀐 시각(screen.changedAt). 화면 hash 를 틱마다 적어 두는
-//     orch-loop 만 이 값을 안다. stalled-workers 는 루프가 적은 값(movement.json 의 screens)을 읽기만 한다
+//     orch-loop 만 이 값을 안다. stalled-workers 는 루프가 적은 값(movement.json 의 screens)을 읽기만 한다.
+//     같은 기록의 background 는 그 틱 화면의 백그라운드 작업 표시(lib/screen.ts 의 backgroundWork)다. 없으면 빠진다
 // 멈춤 판정(judgeWorker. 위에서부터 처음 걸린 것):
 //   1. Orca 의 liveness(projection.liveness.verdict)가 exited 이고 settings.exited 가 true 면 exited. 프로세스가 끝났는데 dispatch 가 열려 있다
 //   2. 부르는 쪽이 기다리는 이유(waiting)를 주면 멈춤이 아니다. 루프는 그 Run 의 질문을 읽지 못한 것, 그 dispatch 가 보낸 미답변 질문,
-//      그 워크트리 브랜치의 열린 PR 의 CI 가 통과한 것(머지를 기다린다)을 준다. 뒤의 둘은 코디네이터의 차례다
+//      그 워크트리 브랜치의 열린 PR 의 CI 가 통과한 것(머지를 기다린다)을 준다. 뒤의 둘은 코디네이터의 차례다.
+//      이유가 없어도 화면 기록(screen.background)에 백그라운드 작업 표시가 있으면 `백그라운드 작업을 기다린다(<표시>)` 로 멈춤이 아니다.
+//      백그라운드 셸이나 모니터가 끝나면 하네스가 worker 의 턴을 깨운다(lib/screen.ts 의 「백그라운드 작업」). 2026-11-04 에 멈춤 16건 가운데
+//      13건이 이런 worker 였다
 //   3. settings.idleMin 이 0 이면 보지 않는다. 멈춘 단계도 보지 않는다
 //   4. 움직임을 하나도 모르면(워크트리가 없고 화면 기록도 없다) 멈춤이 아니다. 모르는 것을 멈춤으로 알리지 않는다
 //   5. 움직임에서 idleMin 분이 지났으면 idle
@@ -46,7 +50,7 @@ export const MTIME_BUDGET = 4000
 export const DEFAULT_IDLE_MIN = 30
 
 export type MovementSettings = { idleMin: number; exited: boolean }
-export type ScreenMark = { hash: string; changedAt: number }
+export type ScreenMark = { hash: string; changedAt: number; background?: string }
 export type WorkerVerdict = {
   run: string
   dispatch: string
@@ -135,9 +139,11 @@ export function tailHash(lines: string[]): string {
   return createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16)
 }
 
-// 앞 틱의 기록과 이번 화면으로 새 기록을 낸다. 처음 본 화면은 지금 바뀐 것으로 본다. 루프가 막 뜬 때 오래된 화면을 멈춤으로 알리지 않는다
-export function markScreen(previous: ScreenMark | undefined, hash: string, now: number): ScreenMark {
-  return previous && previous.hash === hash ? previous : { hash, changedAt: now }
+// 앞 틱의 기록과 이번 화면으로 새 기록을 낸다. 처음 본 화면은 지금 바뀐 것으로 본다. 루프가 막 뜬 때 오래된 화면을 멈춤으로 알리지 않는다.
+// background 는 이번 화면의 백그라운드 작업 표시다. 바뀐 시각과 무관하게 늘 이번 값으로 둔다
+export function markScreen(previous: ScreenMark | undefined, hash: string, now: number, background: string | null = null): ScreenMark {
+  const changedAt = previous && previous.hash === hash ? previous.changedAt : now
+  return background ? { hash, changedAt, background } : { hash, changedAt }
 }
 
 // 머리 주석의 「멈춤 판정」
@@ -169,6 +175,7 @@ export function judgeWorker(input: {
   }
   if (settings.exited && liveness === 'exited') return { ...verdict, reason: 'exited' }
   if (input.waiting) return { ...verdict, waiting: input.waiting }
+  if (input.screen?.background) return { ...verdict, waiting: `백그라운드 작업을 기다린다(${input.screen.background})` }
   if (settings.idleMin === 0 || movedAt === null) return verdict
   return now - movedAt >= settings.idleMin * 60_000 ? { ...verdict, reason: 'idle' } : verdict
 }
@@ -263,7 +270,8 @@ export function readRecords(value: unknown): {
   const screens: Record<string, ScreenMark> = {}
   for (const [k, v] of Object.entries(obj(body.screens))) {
     const e = obj(v)
-    if (typeof e.hash === 'string' && typeof e.changedAt === 'number') screens[k] = { hash: e.hash, changedAt: e.changedAt }
+    if (typeof e.hash !== 'string' || typeof e.changedAt !== 'number') continue
+    screens[k] = typeof e.background === 'string' && e.background ? { hash: e.hash, changedAt: e.changedAt, background: e.background } : { hash: e.hash, changedAt: e.changedAt }
   }
   const workers: Record<string, IdleRecord> = {}
   for (const [k, v] of Object.entries(obj(body.workers))) {

@@ -72,6 +72,13 @@ const CLAUDE_IDLE = `⏺ 백그라운드 에이전트를 기다린다.
 ───────────────────────────────
   ⏵⏵ bypass permissions on`
 
+// 빈 입력란이지만 백그라운드 셸을 기다린다. Claude Code 바닥 모드 줄의 실제 꼴이다
+const CLAUDE_BACKGROUND = `⏺ 빌드를 백그라운드로 돌렸다. 끝나면 이어 간다.
+───────────────────────────────
+❯
+───────────────────────────────
+  ⏵⏵ auto mode on · 2 shells · ← 1 agent`
+
 const CLAUDE_WORKING = `⏺ 검사를 다시 돌린다.
 ✳ Lollygagging… (3m 0s · esc to interrupt)
 ❯ `
@@ -538,6 +545,15 @@ describe('idle 멈춤', () => {
     )
   })
 
+  test('백그라운드 셸을 기다리는 idle 화면은 세지 않는다', () => {
+    write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_ticks: { idle: 2 } } }))
+    orca({ workers_by_run: { A: [worker('d1', 'tA'), worker('d2', 'tB')] }, screens: { tA: CLAUDE_BACKGROUND, tB: CLAUDE_IDLE } })
+    tick()
+    const result = tick()
+    assert.equal(stallOf(result, 'd1'), undefined)
+    assert.deepEqual(stalledEvents('A').map((row) => row.text), ['d2 idle 2틱 tB'])
+  })
+
   test('질문을 읽지 못한 틱은 idle 을 세지도 지우지도 않는다', () => {
     write(orchFile('config.json'), JSON.stringify({ pipeline: { stall_ticks: { idle: 2 } } }))
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: CLAUDE_IDLE } })
@@ -614,6 +630,19 @@ describe('움직임 확인', () => {
     sameScreenSince('d1', CLAUDE_WORKING, 40)
     tick()
     assert.deepEqual(idleEvents('A'), ['d2 exited N분 wt-b tB'])
+  })
+
+  test('백그라운드 작업 표시가 있는 화면은 오래 그대로여도 알리지 않고 그 표시를 movement.json 에 둔다', () => {
+    orca({ workers_by_run: { A: [moving('d1', 'tA', worktree('wt-a', 45)), moving('d2', 'tB', worktree('wt-b', 45))] }, screens: { tA: CLAUDE_BACKGROUND, tB: CLAUDE_IDLE } })
+    const hashOf = (text: string) => tailHash(screenTail(screenLines({ terminal: { tail: text.split('\n') } })))
+    const since = Date.now() - 40 * MIN
+    write(orchFile('state', 'movement.json'), JSON.stringify({ screens: { d1: { hash: hashOf(CLAUDE_BACKGROUND), changedAt: since }, d2: { hash: hashOf(CLAUDE_IDLE), changedAt: since } } }))
+    tick()
+    assert.deepEqual(idleEvents('A'), ['d2 idle N분 wt-b tB'])
+    const saved = JSON.parse(readFileSync(orchFile('state', 'movement.json'), 'utf8')) as { screens: Record<string, Json> }
+    assert.equal(saved.screens.d1.background, '2 shells')
+    assert.equal(saved.screens.d1.changedAt, since)
+    assert.equal(saved.screens.d2.background, undefined)
   })
 
   test('pipeline.idle_min 이 0 이고 idle_exited 가 false 면 돌지 않는다', () => {

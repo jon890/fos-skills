@@ -75,7 +75,7 @@ describe('movementSettings', () => {
 })
 
 describe('judgeWorker', () => {
-  const judge = (opts: { mtime?: number | null; commit?: number | null; screen?: number; liveness?: string; waiting?: string; settings?: typeof ON }) =>
+  const judge = (opts: { mtime?: number | null; commit?: number | null; screen?: number; background?: string; liveness?: string; waiting?: string; settings?: typeof ON }) =>
     judgeWorker({
       run: 'A',
       row: row('d1', { liveness: opts.liveness }),
@@ -83,7 +83,7 @@ describe('judgeWorker', () => {
       settings: opts.settings ?? ON,
       mtime: opts.mtime ?? null,
       commit: opts.commit ?? null,
-      screen: opts.screen === undefined ? undefined : { hash: 'h', changedAt: opts.screen },
+      screen: opts.screen === undefined ? undefined : { hash: 'h', changedAt: opts.screen, ...(opts.background ? { background: opts.background } : {}) },
       waiting: opts.waiting ?? null,
     })
 
@@ -111,6 +111,15 @@ describe('judgeWorker', () => {
     const v = judge({ mtime: NOW - 90 * MIN, waiting: 'CI 를 통과해 머지를 기다린다' })
     assert.equal(v.reason, null)
     assert.equal(v.waiting, 'CI 를 통과해 머지를 기다린다')
+  })
+
+  test('화면 기록에 백그라운드 작업 표시가 있으면 오래 그대로여도 멈춤이 아니고 그 표시를 이유로 남긴다', () => {
+    const v = judge({ mtime: NOW - 90 * MIN, screen: NOW - 60 * MIN, background: '2 shells' })
+    assert.equal(v.reason, null)
+    assert.equal(v.waiting, '백그라운드 작업을 기다린다(2 shells)')
+    // 부르는 쪽의 이유가 먼저고, exited 는 표시가 있어도 알린다
+    assert.equal(judge({ screen: NOW - 60 * MIN, background: '1 shell', waiting: '질문의 답을 기다린다' }).waiting, '질문의 답을 기다린다')
+    assert.equal(judge({ screen: NOW - 60 * MIN, background: '1 shell', liveness: 'exited' }).reason, 'exited')
   })
 
   test('idle_min 이 0 이면 idle 을 보지 않는다', () => {
@@ -159,8 +168,15 @@ describe('워크트리 움직임', () => {
     assert.notEqual(hash, tailHash(['a', 'c']))
     const first = markScreen(undefined, hash, NOW - 50 * MIN)
     assert.deepEqual(first, { hash, changedAt: NOW - 50 * MIN })
-    assert.equal(markScreen(first, hash, NOW), first)
+    assert.deepEqual(markScreen(first, hash, NOW), first)
     assert.deepEqual(markScreen(first, tailHash(['a', 'c']), NOW), { hash: tailHash(['a', 'c']), changedAt: NOW })
+  })
+
+  test('markScreen 은 백그라운드 작업 표시를 이번 화면 값으로 두고 바뀐 시각은 hash 로만 정한다', () => {
+    const hash = tailHash(['a'])
+    const first = markScreen(undefined, hash, NOW - 50 * MIN, '1 shell')
+    assert.deepEqual(first, { hash, changedAt: NOW - 50 * MIN, background: '1 shell' })
+    assert.deepEqual(markScreen(first, hash, NOW), { hash, changedAt: NOW - 50 * MIN })
   })
 })
 
@@ -259,12 +275,12 @@ describe('알림 기록', () => {
 
   test('readRecords 는 형식이 맞는 항목만 남긴다', () => {
     const got = readRecords({
-      screens: { d1: { hash: 'h', changedAt: 1 }, d2: { hash: 3 } },
+      screens: { d1: { hash: 'h', changedAt: 1 }, d2: { hash: 3 }, d3: { hash: 'h', changedAt: 2, background: '1 shell' }, d4: { hash: 'h', changedAt: 3, background: 7 } },
       workers: { d1: { run: 'A', reason: 'idle', movedAt: 2 }, d2: { run: 'A', reason: 'busy' } },
       stages: { a: { step: 's', since: 1, fired: false }, b: { step: 's' } },
     })
     assert.deepEqual(got, {
-      screens: { d1: { hash: 'h', changedAt: 1 } },
+      screens: { d1: { hash: 'h', changedAt: 1 }, d3: { hash: 'h', changedAt: 2, background: '1 shell' }, d4: { hash: 'h', changedAt: 3 } },
       workers: { d1: { run: 'A', reason: 'idle', movedAt: 2 } },
       stages: { a: { step: 's', since: 1, fired: false } },
     })

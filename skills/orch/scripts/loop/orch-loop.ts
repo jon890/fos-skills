@@ -174,6 +174,7 @@
 //     interrupted(사람이 Esc 로 끊은 화면)는 멈춤이 아니다. 사람이 일부러 멈춘 작업을 핸들러가 다시 돌리지 않게 한다.
 //     기본은 error 2, idle 0 이다. idle 은 백그라운드 에이전트를 기다리는 정상 화면과 구분되지 않아 기본으로 끈다.
 //     idle 을 켜도 그 dispatch(또는 그 터미널)가 보낸 미답변 질문(1 의 poll 이 본 question, escalation)이 있으면 세지 않는다.
+//     화면에 백그라운드 작업 표시(lib/screen.ts 의 backgroundWork)가 있는 idle 도 세지 않는다. 그 작업이 끝나면 하네스가 worker 를 깨운다.
 //     그 Run 의 질문을 읽지 못한 틱은 질문을 기다리는지 모르므로 idle 항목을 세지도 지우지도 않는다.
 //     멈춤 항목(loop.json 의 stalls[<dispatch>]): run, terminal, state, hash(lib/screen.ts 의 stallHash), errors(그 멈춤에서 본 가장 많은
 //     오류 줄 수), since(그 상태를 처음 본 틱의 ISO 8601 UTC 시각), ticks(같은 상태와 같은 hash 를 본 틱 수. 핸들러가 처리한 뒤로 다시 센다),
@@ -200,6 +201,7 @@
 //     머리 주석이 소유하고, 이 단계는 읽기, 기록, 알리기만 한다. 코디네이터가 지금 상태를 직접 볼 때는 stalled-workers.ts 가 같은 판정을 낸다.
 //     pipeline.idle_min 이 0 이고 pipeline.idle_exited 가 false 면 돌지 않는다.
 //     화면: 멈춤 확인이 이번 틱에 읽은 화면 끝 줄의 hash 를 state/movement.json 의 screens[<dispatch>] 에 바뀐 시각과 함께 둔다. 화면을 다시 읽지 않는다.
+//     같은 화면의 백그라운드 작업 표시(lib/screen.ts 의 backgroundWork)도 background 로 둔다. 판정은 그 표시가 있으면 멈춤으로 보지 않는다(lib/movement.ts).
 //     기다리는 이유: 그 Run 의 질문을 읽지 못했거나, 그 dispatch(또는 터미널)가 보낸 미답변 질문이 있거나, 그 워크트리 브랜치의 내 열린 PR 이
 //     이번 틱의 CI 감시에서 지금 HEAD 로 passed 면 멈춤으로 보지 않는다. 코디네이터의 차례다. exited 는 이유가 있어도 알린다.
 //     worker: 새로 멈춘 dispatch 마다 그 worker 를 띄운 Run 의 알림 파일에 WORKER-IDLE(text `<dispatch> <idle 또는 exited> <움직임 뒤 분 또는 ->분
@@ -448,7 +450,7 @@ import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshFile, refreshSet
 import type { ForkFiles, RefreshSettings } from '../lib/refresh.ts'
 import { addedPaths, readReservations } from '../lib/reservations.ts'
 import { isStructured, limitedScreen, structuredScreen } from '../lib/sessions.ts'
-import { readScreen, screenLines, screenTail, stallHash } from '../lib/screen.ts'
+import { backgroundWork, readScreen, screenLines, screenTail, stallHash } from '../lib/screen.ts'
 import { collectStages, collectWorkers, idleNotices, markScreen, movementSettings, readRecords, stageNotices, tailHash } from '../lib/movement.ts'
 import type { MovementSettings, ScreenMark } from '../lib/movement.ts'
 import { emit, short } from '../lib/output.ts'
@@ -1542,6 +1544,8 @@ async function watchStalls(
           continue
         }
         if (asked.dispatches.has(dispatch) || asked.terminals.has(terminal)) continue
+        // 백그라운드 셸이나 모니터를 기다리는 빈 입력란이다. 끝나면 하네스가 턴을 깨운다(lib/screen.ts 의 「백그라운드 작업」)
+        if (backgroundWork(lines)) continue
       }
       const hash = stallHash(screen)
       const before = previous[dispatch]
@@ -1628,7 +1632,7 @@ function watchMovement(
   const previous = readRecords(parsed)
   const now = Date.now()
   const screens: Record<string, ScreenMark> = { ...previous.screens }
-  for (const [dispatch, tail] of tails) screens[dispatch] = markScreen(previous.screens[dispatch], tailHash(tail), now)
+  for (const [dispatch, tail] of tails) screens[dispatch] = markScreen(previous.screens[dispatch], tailHash(tail), now, backgroundWork(tail))
   lookup.paths ??= worktreePaths(ctx.repo)
   const branchOf = new Map([...lookup.paths].map(([branch, path]) => [path, branch]))
   // CI 를 통과한 내 열린 PR 의 브랜치. 이번 틱의 판정이 지금 HEAD 의 것일 때만 센다

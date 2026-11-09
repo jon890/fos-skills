@@ -80,6 +80,17 @@ describe('stalled-workers', () => {
     ])
   })
 
+  test('루프가 적은 화면 기록에 백그라운드 작업 표시가 있으면 오래 그대로여도 MOVING 이다', () => {
+    orca({ A: [row('d1', worktree('wt-bg', 52))] })
+    mkdirSync(join(repo, '.orch', 'state'), { recursive: true })
+    const changedAt = Date.now() - 52 * 60_000
+    writeFileSync(join(repo, '.orch', 'state', 'movement.json'), JSON.stringify({ screens: { d1: { hash: 'h', changedAt, background: '1 shell' } } }))
+    const got = run('--run', 'A', '--json')
+    assert.equal(got.code, 0, got.stderr)
+    const [worker] = (JSON.parse(got.stdout) as { workers: Json[] }).workers
+    assert.deepEqual([worker.reason, worker.waiting], [null, '백그라운드 작업을 기다린다(1 shell)'])
+  })
+
   test('짧은 출력은 MOVING 을 빼고 STALLED 만 낸다', () => {
     orca({ A: [row('d1', worktree('wt-old', 45)), row('d2', worktree('wt-new', 2))] })
     env.ORCH_OUTPUT = 'short'

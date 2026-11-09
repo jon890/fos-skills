@@ -1,5 +1,5 @@
 // worker 터미널 화면의 판정 한 벌이다. 화면 문자열의 마지막 줄들로 에이전트가 무엇을 기다리는지 정한다.
-// 사용처: nudge-worker.ts(입력할지 정하기와 --state, --classify), orch-loop.ts(멈춘 worker 찾기).
+// 사용처: nudge-worker.ts(입력할지 정하기와 --state, --classify), orch-loop.ts(멈춘 worker 찾기, 백그라운드 작업을 기다리는 worker 빼기).
 //
 // 화면 상태:
 //     working     작업 중이다. Claude 의 「✳ Thinking… (」 줄, Codex 의 「• Working (」 줄, 「esc to interrupt」
@@ -26,6 +26,16 @@
 // 끊김 줄: Codex 의 「■ Conversation interrupted」 로 시작하는 줄. Codex 0.164 는 Esc 로 끊긴 턴을
 //     「■ Conversation interrupted - use /feedback if something went wrong」 로 그린다
 //     (codex-rs/tui/src/chatwidget/input_restore.rs 의 on_interrupted_turn, rust-v0.164.0).
+//
+// 백그라운드 작업(backgroundWork): 입력란이 비었어도 에이전트가 백그라운드 작업의 끝을 기다리는 화면이다. 끝나면 하네스가 턴을 깨우므로
+//     멈춤이 아니다. 화면 상태(위 「화면 상태」)와 따로 낸다. nudge-worker 의 입력 판정과 출력은 그대로 두려는 것이다.
+//     화면 아래 BOTTOM 줄에서 아래 표시를 찾고, 찾은 글(예: `2 shells`)을 낸다. 없으면 null 이다.
+//     Claude  바닥 모드 줄의 「· 」 로 나뉜 칸. `N shell(s)`, `N monitor(s)`, `N local agent(s)`, `N background task(s)`,
+//             `N background dynamic workflow(s)`, `N MCP task(s)`. Claude Code 2.1.319 의 배경 작업 칸 그리기(같은 종류면
+//             `1 shell, 2 monitors` 처럼 쉼표로 잇는다)와 실제 화면(`⏵⏵ auto mode on · 7 shells · ← 1 agent`)에서 확인했다.
+//             `← 1 agent` 는 에이전트 보기 안내라 넣지 않는다
+//     Codex   `N background terminal(s) running`. Codex 의 작업 줄(`• Working (… · 2 background terminals running · /ps to view`)에서 확인했다
+//     예약된 깨우기(ScheduleWakeup)는 Claude 화면에 고정 문구를 그리지 않아(도구 그리기가 비어 있다) 판정에 넣지 않는다.
 //
 // 멈춤 해시(stallHash): 마지막 메시지 묶음과, 입력란 위 화면에 있는 오류 줄의 수로 만든다. Codex 의 오류 묶음은 「■ 」 한 줄뿐이라,
 //     이어 가게 한 worker 가 같은 오류로 다시 끝나면 묶음이 앞과 같다. 그때 화면에 오류 줄이 하나 늘어 해시가 바뀐다.
@@ -63,6 +73,10 @@ const INTERRUPTED = /^\s*■\s+Conversation interrupted\b/u
 const BLOCK_START = /^\s*(?:[⏺●•■]|[❯›>](?:\s|$))/u
 const DECORATION = /^[\s─━═│┃╭╮╰╯┌┐└┘├┤▔▁-]*$/u
 const STATUS = /^\s*[✻✳✶✢✽※]/u
+// 머리 주석의 「백그라운드 작업」. Claude 칸은 줄 처음이나 「· 」 뒤에서 시작하고 「 ·」 나 줄 끝에서 끝난다
+const CLAUDE_BACKGROUND_ITEM = String.raw`\d+ (?:shells?|monitors?|local agents?|background (?:tasks?|dynamic workflows?)|MCP tasks?)`
+const CLAUDE_BACKGROUND = new RegExp(String.raw`(?:^|·)\s*(${CLAUDE_BACKGROUND_ITEM}(?:, ${CLAUDE_BACKGROUND_ITEM})*)\s*(?=·|$)`, 'u')
+const CODEX_BACKGROUND = /\b(\d+ background terminals? running)\b/u
 // Python 의 str.splitlines 와 같은 줄 경계다. 화면 문자열에 \r 이나 \u2028 이 섞여도 같은 줄로 나눈다
 export const LINE_BREAK = /\r\n|[\n\r\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/u
 
@@ -116,6 +130,15 @@ export function readScreen(raw: string[]): Screen {
     return { state: block.some(isError) ? 'error' : 'idle', block, errors }
   }
   return { state: 'unknown', block: [], errors: 0 }
+}
+
+// 머리 주석의 「백그라운드 작업」. 찾은 표시 글, 없으면 null
+export function backgroundWork(raw: string[]): string | null {
+  for (const line of screenTail(raw, BOTTOM).reverse()) {
+    const found = CLAUDE_BACKGROUND.exec(line) ?? CODEX_BACKGROUND.exec(line)
+    if (found) return found[1]
+  }
+  return null
 }
 
 export function classify(lines: string[]): ScreenState {
