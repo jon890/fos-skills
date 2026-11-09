@@ -36,7 +36,8 @@ class Case {
 }
 
 describe('extract_skill_usage 집계', () => {
-  test('혼합 줄 끝과 잘못된 UTF-8 도 집계와 발췌 출력이 같다', () => {
+  // 명령 출력 동일성 회귀 검사다. 청크 경계는 session-log.spec.ts 에서 검증한다.
+  test('출력 동일성 회귀: 혼합 줄 끝과 잘못된 UTF-8 도 집계와 발췌 출력이 같다', () => {
     const c = new Case()
     const records = [
       user('첫 요청 한글😀', '2026-10-05T00:00:00Z'),
