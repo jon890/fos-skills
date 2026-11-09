@@ -8,6 +8,7 @@
 | PR2 | testkit 첫 판(`modules/testkit`)과 기존 fixtures 이전, 내보내는 폴더의 import 검사 | orch-cli PR3 앞 |
 | PR3 | 실행기 하나(`scripts/run-tests.ts`), CI job 하나, 로컬 검증 문서 | orch-cli PR3 앞, PR2 뒤 |
 | PR4~ | 파일 묶음마다 가짜 재사용, 템플릿 저장소, 함수 주입 전환(merge-queue, orch-loop 계열, cleanup-sweep 계열, launch-worker 와 나머지) | orch-cli PR3 뒤 |
+| PR11 | cleanup-sweep 준비와 browser-driver 반복 기동, 마지막 전체 측정 | 마지막 PR. 머지 뒤 재측정하고 항목을 닫는다(사용자 2026-11-09) |
 | 마지막 | 대기 옵션 정리와 3분 안팎 목표 확인 | 실행기 전체가 600초 아래로 내려온 뒤 |
 
 ## 요구사항 연결
@@ -397,8 +398,8 @@ REQ1·REQ2·REQ3·REQ4·REQ6·REQ9를 맡는다. PR6의 cleanup-sweep 격리와 
 | backends의 명령 인자·응답 파싱·숫자·JSON·오류 표 | 기존 단언과 golden을 main 함수 호출에서 유지한다. 가짜 실행 파일과 같은 본문을 평가하고 argv·stdin·환경·출력·종료 코드를 기록한다 |
 | input-and-output의 옵션·출력 분리·jsfile·포인터 | 기존 단언을 함수 호출로 유지한다. 스크립트를 실행하는 prelude·입력/출력 크기·대기와 신호는 실제 자식으로 보낸다 |
 | ego-space의 공간 선택·reset | main만 함수로 부른다. 비동기 ego 스크립트는 기존 가짜 실행 파일과 Node 자식으로 실행한다 |
-| 실제 CLI 대표 | 각 백엔드의 성공과 실패, 사용법 오류(0·1·2), stdout/stderr 분리, js --timeout·jsfile·포인터 옵션을 명령 경계에 남긴다. 함수/CLI 결과와 호출 기록도 대조한다 |
-| cleanup-sweep 준비 | PR6의 템플릿 저장소·함수 가짜를 재사용한다. remove-worktree는 별도 자식에서 main을 호출하고 그 안의 동기 가짜 조회만 같은 본문으로 평가한다. git과 삭제는 실제 실행이다. 프로세스 pid 판정 때문에 main의 별도 프로세스 격리는 유지한다 |
+| 실제 CLI 대표 | 각 백엔드의 성공과 실패, 사용법 오류(0·1·2), stdout/stderr 분리, js --timeout·jsfile·포인터·reset 옵션을 `function-box.spec.ts`의 명령 경계에 남긴다. 함수/CLI 결과와 호출 기록도 대조한다 |
+| cleanup-sweep 준비 | PR6의 템플릿 저장소·함수 가짜를 재사용한다. remove-worktree는 별도 자식에서 main을 호출하고 그 안의 동기 가짜 조회만 같은 본문으로 평가한다. git과 삭제는 실제 실행이다. `cleanup-sweep-run.spec.ts`에서 실제 삭제 진입과 함수 가짜 자식의 0·1·2를 대조한다. 프로세스 pid 판정 때문에 main의 별도 프로세스 격리는 유지한다 |
 | 초기 저장소 상태 | cleanup-sweep의 빈 초기 커밋·main upstream·테스트별 브랜치/파일/커밋/원격 상태를 유지한다. browser-driver는 각 Box의 빈 홈·설정·PATH를 유지한다 |
 
 함수 가짜는 동기 CommonJS 본문만 평가한다. timeout·신호·비동기 출력·자식 생명주기·상대 파일 접근을 보증하지 않으며 prelude는 실제 실행으로 넘긴다. 본문 예외는 명령 실패로 돌려준다. browser-driver 테스트 도우미는 배포되는 폴더 안에 두고 바깥 모듈을 import하지 않는다. 새 도메인 규칙·데이터 형식·트랜잭션·배포 순서 변경과 ADR은 없다.

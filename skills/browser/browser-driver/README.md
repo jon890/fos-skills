@@ -25,13 +25,14 @@ $B doctor
 | `driver/errors.ts` | 예외와 종료 코드 |
 | `driver/shell.ts` | 백엔드 프로세스 호출과 반환값 정규화 |
 | `driver/io.ts` | 출력과 직접 실행 판정 |
+| `driver/runtime.ts` | 명령 호출별 환경·출력·실행 함수. 생략하면 실제 CLI 동작을 쓴다 |
 | `driver/pylike.ts` | 옛 구현이 쓰던 표준 라이브러리 동작(JSON 읽기·쓰기, `float`, 경로, `which`)을 같은 결과로 내는 도구. 이 폴더는 팀 저장소에 `tools/browser-driver` 로 실려 폴더 밖을 import 하지 못해 따로 둔다 |
 | `driver/admin.ts` | `doctor`, `install` |
 | `driver/backends/index.ts` | 백엔드 목록과 선택 규칙 |
 | `driver/backends/base.ts` | 백엔드 공통 계약 |
 | `driver/backends/ego.ts`, `orca.ts`, `agent_browser.ts`, `cmux.ts` | 백엔드 하나씩 |
 | `browser.config.example.json` | 설정 예시 |
-| `tests/` | `node:test` 명령 경계 테스트. 가짜 백엔드와 임시 폴더만 쓰고 실제 브라우저를 열지 않는다. `fixtures/` 는 옛 구현이 낸 스크립트·도움말·진단 출력이다. 저장소 루트에서 `node scripts/run-tests.ts 'skills/browser/browser-driver/tests/*.spec.ts'` 로 돈다 |
+| `tests/` | `node:test` 함수 테스트와 대표 CLI 대조. 동기 가짜는 같은 본문을 함수로 평가하고 비동기 ego 스크립트는 실제 자식으로 실행한다. 가짜 백엔드와 임시 폴더만 쓰고 실제 브라우저를 열지 않는다. `fixtures/` 는 옛 구현이 낸 스크립트·도움말·진단 출력이다. 저장소 루트에서 `node scripts/run-tests.ts 'skills/browser/browser-driver/tests/*.spec.ts'` 로 돈다 |
 
 진입점만 실행 파일이다(`#!/usr/bin/env node`). 심링크로 불려도 Node 가 모듈 경로를 실체로 풀어 옆의 `driver` 폴더를 찾는다.
 이 폴더는 팀 저장소에 `tools/browser-driver` 로 실린다. 폴더 밖을 import 하지 않는다.
