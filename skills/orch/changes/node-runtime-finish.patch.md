@@ -1,2 +1,0 @@
-- README 의 준비 항목에서 `python3` 요구를 뺀다. orch 의 실행 경로는 node 24 이상만 쓴다
-- `agent-selection.md` 의 Codex 모델 목록 명령이 `python3 -c` 대신 `node -e` 로 JSON 을 읽는다

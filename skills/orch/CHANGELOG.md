@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 7.20.3 (2026-11-09)
+
+- README 의 준비 항목에서 `python3` 요구를 뺀다. orch 의 실행 경로는 node 24 이상만 쓴다
+- `agent-selection.md` 의 Codex 모델 목록 명령이 `python3 -c` 대신 `node -e` 로 JSON 을 읽는다
+
 ## 7.20.2 (2026-11-09)
 
 - finish-pr의 동기 조회를 함수로 주입하고, 테스트 준비 이력과 실제 대기를 줄였다.

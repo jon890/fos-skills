@@ -1,1 +1,0 @@
-- README 준비 항목에서 korean-check 검사기가 `python3` 로 돈다는 낡은 안내를 지운다. 검사기는 node 로 돈다

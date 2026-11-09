@@ -3,6 +3,10 @@
 버전은 `SKILL.md` frontmatter 의 `metadata.version` 과 같은 값을 쓴다.
 올리는 기준과 쓰는 형식은 저장소 README 의 "버전과 변경 이력" 을 따른다.
 
+## 2.0.4 (2026-11-09)
+
+- README 준비 항목에서 korean-check 검사기가 `python3` 로 돈다는 낡은 안내를 지운다. 검사기는 node 로 돈다
+
 ## 2.0.3 (2026-11-09)
 
 - `--browser` 가 브라우저 드라이버를 `skills/browser/browser-driver/`(팀 사본은 `tools/browser-driver/`)에서도 찾는다
