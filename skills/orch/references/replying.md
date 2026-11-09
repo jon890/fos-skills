@@ -84,7 +84,7 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 
 **`worker_done` 만으로는 터미널이 사용자 보유가 되지 않는다.** 실측(2026-10-23, `worker-list --terminal-state reclaimable`)에서 `worker_done` 뒤의 터미널은 `terminalState: reclaimable`, `ownershipState: owned`, `releaseState: not_requested` 였다. 이 상태는 닫고 새로 띄울 수 있다.
 `user_owned`(`retainedReason: user_takeover`)는 사용자가 그 터미널에 직접 입력했을 때, `released` 는 `worker-release` 로 넘겼을 때 생긴다. 둘 다 사용자에게 넘어간 터미널이라 `send-to-worker` 는 닫지 않고 종료 코드 1 로 끝난다.
-이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다. `worker_done` 을 받으면 Orca 가 약 2분 뒤 자동 release 한다(`worker-show` 의 `autoReleaseAt`). 10-23 실측은 이 자동 release 가 없던 때의 것이고, 자동 release 전에는 `send-to-worker` 로 이어 쓸 수 있다. 이어 쓰면 `autoReleaseAt` 이 사라지고 다시 쉴 때 새로 잡힌다.
+이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다. `worker_done` 을 받으면 Orca 가 약 2분 뒤 자동 release 한다(`worker-show` 의 `autoReleaseAt`). 10-23 실측은 이 자동 release 가 없던 때의 것이고, 자동 release 전에는 `send-to-worker` 로 이어 쓸 수 있다. 이어 쓰면 `autoReleaseAt` 이 사라지고 다시 쉴 때 새로 잡힌다. 머지까지 계속 남겨야 하는 worker 는 `worker-keep-open` 으로 자동 release 를 막는다([`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」).
 
 1. `orca orchestration worker-show --dispatch <끝난 dispatch> --full --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
 2. `orca terminal read --terminal <handle>` 로 화면이 비어 있고 입력을 기다리는지 본다. 사용자가 쓰는 중이면 닫지 않는다
