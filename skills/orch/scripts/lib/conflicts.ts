@@ -156,7 +156,7 @@ export type WorkerRow = Record<string, unknown>
 // 찾은 워크트리와 worker 행, 또는 orphan 이유
 export type WorkerFound = { path: string; row: WorkerRow } | { orphan: string }
 export type ConflictOutcome =
-  | { kind: 'record'; value: string; action: 'notified' | 'resumed' | 'orphan'; worker: Worker | null; reason: string | null }
+  | { kind: 'record'; value: string; action: 'notified' | 'resumed' | 'orphan' | 'stalled'; worker: Worker | null; reason: string | null }
   | { kind: 'skip' }
   | { kind: 'usage' }
 
@@ -264,14 +264,19 @@ export async function resolveConflict(args: {
     return { kind: 'usage' }
   }
   if (sent.code === 3) return orphaned(out, number, `${dispatch} 에 보낼 수 없다(send-to-worker 종료 코드 3). 새 worker 는 띄우지 않는다`, worker, false)
-  const stalled = sent.code === 1 && STALLED_START.test(sent.stdout)
-  const delivered = sent.code === 0 || sent.code === 4 || (sent.code === 1 && (live || RELAUNCHED.test(sent.stdout) || stalled))
+  const stalled = sent.code === 1 ? STALLED_START.exec(sent.stdout)?.[0] : null
+  if (stalled) {
+    const reason = `${stalled.replace(/^STALLED-START /, '')} 사용자 판단 필요`
+    out(`CONFLICT-STALLED ${number} ${reason}`)
+    return { kind: 'record', value: dispatch, action: 'stalled', worker, reason }
+  }
+  const delivered = sent.code === 0 || sent.code === 4 || (sent.code === 1 && (live || RELAUNCHED.test(sent.stdout)))
   if (!delivered) {
     out(`  ${dispatch} 에 보내지 못했다(send-to-worker 종료 코드 ${sent.code})`)
     err(`notify-conflicts: #${number} 를 ${dispatch} 에 보내지 못해 기록하지 않는다. 다음 실행이 다시 본다`)
     return { kind: 'skip' }
   }
-  const note = stalled ? '(시작 확인 시간 초과, 사용자 판단 필요)' : sent.code === 0 ? '' : live || sent.code === 4 ? `(깨우지 못했다, 종료 코드 ${sent.code})` : '(다시 띄운 뒤 종료 코드 1 로 끝났다)'
+  const note = sent.code === 0 ? '' : live || sent.code === 4 ? `(깨우지 못했다, 종료 코드 ${sent.code})` : '(다시 띄운 뒤 종료 코드 1 로 끝났다)'
   out(`  ${dispatch} 에 알렸다${note}`)
   return { kind: 'record', value: dispatch, action: live ? 'notified' : 'resumed', worker, reason: null }
 }

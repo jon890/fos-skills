@@ -412,8 +412,8 @@ describe('끝난 dispatch', () => {
     env.FAKE_EXIT = '1'
     env.FAKE_OUT = 'STALLED-START ctx_new worktree_creating watch=90s,no-signs-of-life'
     const r = notify()
-    assert.match(r.stdout, /시작 확인 시간 초과, 사용자 판단 필요/)
-    assert.equal(hookInputs()[0].action, 'resumed')
+    assert.match(r.stdout, /^CONFLICT-STALLED 7 ctx_new worktree_creating .*사용자 판단 필요$/m)
+    assert.equal(hookInputs()[0].action, 'stalled')
     notify()
     assert.equal(sent().length, 1)
   })

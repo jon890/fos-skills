@@ -318,10 +318,14 @@ describe('끝난 dispatch', () => {
     setupConflict('completed')
     send({ code: 1, stdout: 'STALLED-START d2 worktree_creating watch=90s,no-signs-of-life' })
     once()
-    assert.equal(hookInputs()[0]?.action, 'resumed')
+    assert.equal(hookInputs()[0]?.action, 'stalled')
+    assert.deepEqual(events().filter(e => e.kind === 'CONFLICT-STALLED').map(e => ({ pr: e.pr, text: e.text })), [
+      { pr: 7, text: 'd2 worktree_creating watch=90s,no-signs-of-life 사용자 판단 필요' },
+    ])
     assert.deepEqual(record(), { [`7@${baseSha()}`]: 'd1' })
     once()
     assert.equal(sends().length, 1)
+    assert.equal(events().filter(e => e.kind === 'CONFLICT-STALLED').length, 1)
   })
 
   test('send-to-worker 가 1 이고 LAUNCHED 줄이 없으면 기록하지 않아 다음 틱이 다시 보낸다', () => {

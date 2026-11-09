@@ -127,6 +127,7 @@ orch wait --ack "$DELIVERY_ID"
   - `REMINDER`: 답이 없는 기술 질문이나 일반 escalation의 재알림이다. [`replying.md`](replying.md) 의 질문 처리를 따른다. 사용자 결정의 재알림은 이 이벤트로 오지 않는다
   - `CI-FAILED`: 그 PR 의 체크가 실패했다. 내용 끝에 worker 에게 보냈는지가 있다. `<base> 도 실패` 면 같은 워크플로의 base 최신 완료된 push 실행도 실패해 보내지 않았다. 코디네이터가 공통 원인을 별도 작업으로 처리한다. 보내지 못했거나 살아 있는 dispatch 가 없으면 그 PR 의 worker 와 CI 를 직접 확인한다. 끝이 `취소만 있음` 이면 실패한 체크가 모두 취소다. worker 에게 보내지 않았다. 일부러 취소한 CI 면 아무것도 하지 않고, 아니면 코디네이터가 CI 를 다시 돌린다
   - `CONFLICT-ORPHAN`: 충돌한 PR 을 이어 받을 worker 가 없다. 코디네이터가 충돌을 맡거나 사용자에게 알린다
+  - `CONFLICT-STALLED`: 충돌 지시로 시작한 worker 의 시작 확인 시간이 넘었다. 내용은 `<dispatch> <단계> <근거> 사용자 판단 필요` 다. 코디네이터가 화면을 보고 다시 띄울지 사용자에게 묻는다. 같은 충돌은 자동 재전송하지 않는다. 재개는 [`launch.md`](launch.md) 의 Task 상태 표를 따른다
   - `QUEUE-CONFLICT`: 머지 큐가 base 와 충돌한 PR 을 빼고 뒤 PR 을 이어 머지했다. 내용은 충돌 이유다. worker 에게 알리는 일은 루프의 충돌 처리가 한다. worker 가 base 를 합친 뒤 그 PR 만 다시 머지 큐에 건다
   - `AUTO-MERGE`: 루프가 PR 들을 머지 큐에 걸었다. 그 PR 을 따로 다시 걸지 않는다
   - `AUTO-MERGE-NO-REVIEW`: 판정 문구가 든 리뷰가 없어 자동 머지에 걸지 않았다. text 가 `HEAD <SHA> 에` 로 시작하면 `verdict-on-head` 조건이라 지금 HEAD 에 판정이 없고, `HEAD <SHA> 의 PR 에` 로 시작하면 괄호 안의 조건이 PR 전체에서 판정을 찾지 못했다. 리뷰 봇이 결과 없이 실패했거나 아직 돌지 않았다. 리뷰 봇을 다시 돌리거나 독립 리뷰를 받아, 그 결과를 `queue.auto_review.pass` 문구가 든 리뷰나 댓글로 남긴다(`verdict-on-head` 면 이 HEAD 에). 다음 틱이 건다. PR 본문에 `머지 보류` 줄을 넣어 막을 필요가 없다. 같은 HEAD 는 한 번만 온다

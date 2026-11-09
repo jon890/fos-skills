@@ -39,8 +39,8 @@
 //     끝난 dispatch 의 1: send-to-worker 의 1 은 다시 띄우기의 실패지만, launch-worker 가 worker-start 를 이미 성공한 뒤에
 //     dispatch id 를 읽지 못했거나 시작 확인 시간이 넘어도 1 이다. 그 실행의 stdout 에 `LAUNCHED <id>` 줄이 있으면
 //     worker-start 가 성공해 worker 가 떴으므로 resumed 로 기록한다. 다시 보내면 같은 워크트리에 Task 가 하나 더 생긴다.
-//     `STALLED-START <id> <단계> <근거>` 도 시작은 성공했으므로 resumed 로 기록해 자동 재전송을 막고 사용자 판단이 필요하다고 알린다.
-//     이때 resumed 는 시작 요청 성공만 뜻하며, worker 가 일을 시작했거나 끝났다는 판정이 아니다.
+//     `STALLED-START <id> <단계> <근거>` 는 action stalled 로 기록해 자동 재전송을 막고 `CONFLICT-STALLED <PR> <id> <단계> <근거> 사용자 판단 필요` 를 낸다.
+//     상주 루프는 이 결과를 그 worker 의 Run 알림 파일에 쓰므로 코디네이터 대기가 받는다. 시작 완료로 기록하지 않는다.
 //     `restart: ` 줄은 근거로 보지 않는다. 다시 띄우겠다는 예고일 뿐이라 그 뒤 worker-start 가 실패해도 남는다.
 //     두 판정 줄이 없으면 보내지 못한 것으로 두고 기록하지 않는다. dispatch id 를 읽지 못한 경우는 다음 실행이 다시 보므로
 //     남은 자원을 코디네이터가 확인해야 한다
@@ -169,13 +169,13 @@ async function executeMain(argv: string[]): Promise<number> {
     const number = pr.number
     let result = ''
     const report = () => {
-      if (brief && result && result !== 'orphan') out(`CONFLICT ${number} ${pr.headRefName} ${result}`)
+      if (brief && result && result !== 'orphan' && result !== 'stalled') out(`CONFLICT ${number} ${pr.headRefName} ${result}`)
     }
     // resolveConflict 의 줄. 짧은 출력이면 결과 낱말만 기억하고 CONFLICT-ORPHAN 만 그대로 낸다
     const told = (line: string) => {
       if (!brief) return out(line)
-      if (line.startsWith('CONFLICT-ORPHAN ')) {
-        result = 'orphan'
+      if (line.startsWith('CONFLICT-ORPHAN ') || line.startsWith('CONFLICT-STALLED ')) {
+        result = line.startsWith('CONFLICT-STALLED ') ? 'stalled' : 'orphan'
         out(line)
       } else if (/ 에 알릴 것: /.test(line)) result = 'would-notify'
       else if (/ 에 이어 쓸 것: /.test(line)) result = 'would-relaunch'

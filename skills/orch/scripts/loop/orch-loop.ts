@@ -286,6 +286,7 @@
 //     오류 이유는 `; ` 로 이어 errors 의 auto-merge 에 둔다(아래 「오류 줄 억제」). 바꿀 수 있는 명령은 아래 「환경 변수」 의
 //     MERGE_WITH_FINISH, THREADS_CMD, PS 다.
 //
+// 시작 확인 시간 초과는 action stalled 와 CONFLICT-STALLED 로 worker 의 Run 알림 파일에 쓰고 자동 재전송하지 않는다.
 // 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
 //     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
 //     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 (PR, base SHA) 를 두 번 보내지 않는다. 둘이 겹쳐 돌면
@@ -1734,9 +1735,9 @@ async function handleConflicts(ctx: Context, lookup: Lookup, base: string, found
     }
     if (outcome.kind !== 'record') continue
     await concludeConflict(statePath, ctx.repo, fireCtx, pr, files, baseSha, outcome)
-    if (outcome.action === 'orphan') {
+    if (outcome.action === 'orphan' || outcome.action === 'stalled') {
       try {
-        appendEvent(ctx.repo, 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '', run)
+        appendEvent(ctx.repo, outcome.action === 'stalled' ? 'CONFLICT-STALLED' : 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '', run)
       } catch (e) {
         log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
       }

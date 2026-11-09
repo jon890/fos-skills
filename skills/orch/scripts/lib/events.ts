@@ -33,7 +33,7 @@
 //   before-ready, pr-ready  pr, ready_count(이미 ready 인 내 PR 수), slots
 //   ci-passed, ci-failed, ci-missing  pr, checks(이름, 상태, 결론, URL 의 목록), required(이름 목록)
 //   pr-conflict  pr, base_head, files, worker(터미널이 없으면 null), action
-//       action 은 notified(살아 있는 dispatch 에 보냄), resumed(남은 터미널에 후속 지시서로 이어 씀), orphan(이어 쓰지 못함)이다
+//       action 은 notified(살아 있는 dispatch 에 보냄), resumed(남은 터미널에 후속 지시서로 이어 씀), orphan(이어 쓰지 못함), stalled(시작 확인 시간 초과)다
 //   before-merge  pr, owner, name(GitHub 저장소 이름), last_of_task(bool), has_pr_command(bool. 빈 PR:도 true)
 //   verify-merged  pr, copy(사본 절대경로), base_head, changed_files, overlap_files
 //   after-merge  pr, merge_commit, remote_branch_deleted(bool), retargeted(base 를 옮긴 PR 번호 목록)
