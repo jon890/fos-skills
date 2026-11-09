@@ -1,3 +1,3 @@
-- 문서의 옛 명령 꼴(`reserve-migration.ts --prune`, `nudge-worker.ts --state`, `orch-loop.ts --start` 따위)을 `orch <묶음> <동작>` 으로 고친다. 옛 `.skills/orch/` 경로와 `githooks/` 도 지금 경로로 맞춘다
-- 문서가 틀리게 말한 곳을 코드대로 고친다: 마지막 메시지의 reply, 머지 큐 정리 인자(`--sweep-arg`) 함정, before-launch 예시의 페이지 넘김, INVALID-CONFIG 사유, 읽는 코드가 없는 pipeline 키
-- 검사기를 더한다: 산문의 `<스크립트>.ts --옵션` 옛 꼴, 모델 표에서만 읽는 행 id, LOOP-EVENT kind 목록과 gh TTL 표의 드리프트
+- 문서에 남은 옛 스크립트 호출을 `orch <묶음> <동작>` 으로 고치고, 옛 `.skills/orch/` 경로와 `githooks/` 도 지금 경로로 맞춘다
+- 문서가 코드와 달리 말한 곳을 고친다: 마지막 메시지의 reply, `--sweep-arg` 함정, before-launch 예시, INVALID-CONFIG 이유, 읽는 코드가 없는 pipeline 키
+- 검사기를 더한다: 산문의 옛 호출 꼴, 모델 표에서만 읽는 행 id, LOOP-EVENT kind 목록과 gh TTL 표가 코드와 같은지
