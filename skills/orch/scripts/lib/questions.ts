@@ -22,7 +22,7 @@
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { context, isoTime, readyOf } from './completion.ts'
 import { envMs } from './env.ts'
@@ -113,7 +113,7 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   }
   // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
   const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run))
-    .filter((m) => !sharedClosedReason(run, String(m.id)))
+    .filter((m) => !sharedClosedReason(run, String(m.id), true))
   // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
   if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {
     throw new Error('답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다')
@@ -323,12 +323,43 @@ function sharedClosedFile(run: string, id: string): string {
   return join(machineDir(), 'questions-closed', `${key}.json`)
 }
 
-export function sharedClosedReason(run: string, id: string): string | null {
+export function sharedClosedReason(run: string, id: string, refresh = false): string | null {
   try {
-    const data = JSON.parse(readFileSync(sharedClosedFile(run, id), 'utf8'))
-    return data?.run === run && data?.id === id && typeof data.reason === 'string' ? data.reason : null
+    const file = sharedClosedFile(run, id)
+    const data = JSON.parse(readFileSync(file, 'utf8'))
+    if (data?.run !== run || data?.id !== id || typeof data.reason !== 'string') return null
+    if (refresh) {
+      try {
+        const now = new Date()
+        utimesSync(file, now, now)
+      } catch {
+        // 조회한 근거는 유효하다. 갱신 실패 때문에 그 질문을 다시 알리지 않는다.
+      }
+    }
+    return data.reason
   } catch {
     return null
+  }
+}
+
+// 마지막 조회나 저장 뒤 30일이 지난 캐시만 회수한다. 계속 관측되는 질문은 snapshot 이 시각을 갱신한다.
+export function pruneSharedClosed(now = Date.now()): void {
+  const directory = join(machineDir(), 'questions-closed')
+  let entries
+  try {
+    entries = readdirSync(directory, { withFileTypes: true })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw e
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.(json|tmp)$/.test(entry.name)) continue
+    const file = join(directory, entry.name)
+    try {
+      if (now - statSync(file).mtimeMs > 30 * 24 * 60 * 60 * 1000) rmSync(file, { force: true })
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+    }
   }
 }
 

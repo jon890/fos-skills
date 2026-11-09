@@ -438,7 +438,7 @@ import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_
 import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { envMs } from '../lib/env.ts'
-import { closedReason, shareClosedQuestion, notifyQuestion, poll, questionLocations, readClosed, writeClosed } from '../lib/questions.ts'
+import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, questionLocations, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
 import { NO_WAIT_PREFIX, userActive } from '../lib/user-active.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
@@ -2681,6 +2681,11 @@ async function tick(ctx: Context, n: number): Promise<number> {
       pendingDecisions.set(run, open)
       waiting.set(run, askers(open))
     }
+  }
+  try {
+    pruneSharedClosed()
+  } catch (e) {
+    log(`orch-loop: 오래된 공유 닫힌 질문 기록을 지우지 못했다: ${oneLine(e)}`)
   }
   if (closedChanged) {
     try {
