@@ -367,6 +367,27 @@ describe('질문 확인', () => {
       assert.equal(viewed(), 1)
     })
 
+    for (const kind of ['question', 'escalation', 'errored', 'needs-input', 'exited']) {
+      test(`${kind}: 다른 저장소 루프도 같은 Run 에서 닫힌 질문을 처음 알리거나 재알림하지 않는다`, () => {
+        const stop = !['question', 'escalation'].includes(kind)
+        orca({ messages: [{ ...question(), type: stop ? 'escalation' : kind, ...(stop ? { payload: { dispatchId: 'd', stopReason: kind } } : {}) }], statuses: [ready], workers: settled('completed') })
+        pr('MERGED')
+        remindLater()
+        once()
+        assert.deepEqual(events(), [])
+        // 다른 저장소에는 질문 기록도 PR 도 없다. 공유한 종료 근거만으로 제외해야 한다.
+        repo = join(tmp, 'other-repo')
+        mkdirSync(repo)
+        pr('OPEN', 'b'.repeat(40))
+        once()
+        assert.doesNotMatch(logText(), /^(?:QUESTION|REMINDER) q /m)
+        remindLater()
+        once()
+        assert.deepEqual(events(), [])
+        assert.equal(gh.calls().filter((c) => c.argv.includes('view')).length, 1)
+      })
+    }
+
     for (const [name, workers, state, head] of [
       ['dispatch 가 살아 있다', settled('running'), 'MERGED', SHA],
       ['PR 이 열려 있다', settled('completed'), 'OPEN', SHA],

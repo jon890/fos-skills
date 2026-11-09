@@ -21,6 +21,7 @@
 //
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { context, isoTime, readyOf } from './completion.ts'
@@ -112,6 +113,7 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   }
   // 아래 「닫은 질문」 은 답할 수 없거나 이미 답이 있어 미답변으로 세지 않는다
   const pending = withoutDismissed(unanswered([...candidates.values(), ...replies], run))
+    .filter((m) => !sharedClosedReason(run, String(m.id)))
   // 다른 handle 에서 답이 확인되면 한도에 닿은 handle 의 질문이라도 오류가 아니다
   if (pending.some((m) => handlesOf(m).some((h) => full.has(h)))) {
     throw new Error('답변 기록 한도에 닿아 질문의 답변 여부를 확인할 수 없다')
@@ -216,7 +218,8 @@ export async function notifyQuestion(notice: Notice, repo: string, run: string |
 // 준비 상태는 그 Run 의 status 를 100건까지 읽는다. 그보다 오래된 준비 상태는 찾지 못해 재알림이 남는다.
 //
 // 닫힌 기록(보통 <orch 작업 폴더>/state/questions-closed.json): {<Run id>: {<질문 id>: <판정 근거>}}.
-// 한 번 닫힌 질문은 다시 판정하지 않는다. 미답변 목록에서 빠진 질문의 기록은 지운다.
+// 종료 근거는 머신 폴더 questions-closed/ 에 질문별로 공유한다. snapshot 이 다른 저장소에서도 미답변에서 뺀다.
+// 저장소의 옛 기록은 읽을 때 공유 기록으로 옮긴다. 미답변 목록에서 빠진 옛 기록은 지운다.
 
 export const SETTLED = new Set(['completed', 'failed', 'abandoned', 'canceled'])
 const CLOSED_PR = new Set(['MERGED', 'CLOSED'])
@@ -300,6 +303,29 @@ export function closedReason(message: Message, run: string, repo: string, lookup
     states.push(`#${pr} ${state}`)
   }
   return `dispatch ${dispatch} ${status}, PR ${states.join(', ')}`
+}
+
+// 질문별 파일로 써서 다른 저장소 루프의 동시 쓰기가 다른 질문의 종료 근거를 덮지 않게 한다.
+function sharedClosedFile(run: string, id: string): string {
+  const key = createHash('sha256').update(JSON.stringify([run, id])).digest('hex')
+  return join(machineDir(), 'questions-closed', `${key}.json`)
+}
+
+export function sharedClosedReason(run: string, id: string): string | null {
+  try {
+    const data = JSON.parse(readFileSync(sharedClosedFile(run, id), 'utf8'))
+    return data?.run === run && data?.id === id && typeof data.reason === 'string' ? data.reason : null
+  } catch {
+    return null
+  }
+}
+
+export function shareClosedQuestion(run: string, id: string, reason: string): void {
+  const file = sharedClosedFile(run, id)
+  mkdirSync(dirname(file), { recursive: true })
+  const temporary = `${file}.${process.pid}.tmp`
+  writeFileSync(temporary, `${JSON.stringify({ run, id, reason })}\n`)
+  renameSync(temporary, file)
 }
 
 type Closed = Record<string, Record<string, string>>
