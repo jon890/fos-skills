@@ -27,13 +27,15 @@
 | id | Task 성격 | 모델 | effort |
 | --- | --- | --- | --- |
 | `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `low`, Sonnet `medium` |
-| `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화, 작은 분기와 단위 테스트) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
+| `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
 | `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
 | `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `medium`(기본), Sonnet `medium`. 같은 Task 가 실패하면 `high` |
 | `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
 | `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작. 실측 전이다. 두세 작업에 써 본 뒤 확정한다 |
 | `review` | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델. 실제로 다른 제공자가 되는지는 아래 「리뷰 제공자」 를 본다 | `medium` |
 | `security-review` | 공격 경로를 재현하거나 exploit 형태의 검증이 필요한 보안 리뷰 | Claude Sonnet 5.5, Claude Opus 5.5. Codex 에 맡기지 않는다 | `medium` |
+
+Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다. 분기 논리를 고친 Haiku PR 둘에서 첫 리뷰 차단 버그가 나왔다. 사용자 결정(2026-11-10)이고, 근거 수치는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절이다.
 
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
 - 사용자 결정이나 설계 판단을 묻는 질문이 남은 Task 는 Claude 로 띄운다. 실행 전 확인처럼 답이 정해진 확인 질문은 sol 을 막지 않는다. 표 2 에서 sol 은 질문과 코디네이터 지시가 가장 많았다. #404 로 질문 하나가 worker 를 붙잡지 않게 돼서, 이 조건만 남기고 sol 을 쓴다([표 2](../../../docs/features/orch-routing/evidence.md)).
