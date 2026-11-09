@@ -635,6 +635,8 @@ describe('저장소 판정', () => {
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
     assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+    assert.equal(r.stderr.split('\n').filter(line => line.includes('옛 개선 후보 메모')).length, 1)
+    assert.match(r.stderr, /메모 2개는 feedback migrate/)
   })
 
   test('코디네이터의 coordinator-<YYYYMMDD>.md 도 열린 후보로 센다. 다른 이름의 폴더는 세지 않는다', () => {

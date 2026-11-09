@@ -448,7 +448,7 @@ function legacyInboxFilter(repo: string, config: Config): string[] {
 function checkFeedback(repo: string): string[] {
   const dir = pathOf('feedback', repo)
   const found = scanFeedback(dir)
-  for (const file of found.legacy) process.stderr.write(`orch-doctor: 옛 개선 후보 메모는 feedback migrate 로 미리 본다: ${file}\n`)
+  if (found.legacy.length) process.stderr.write(`orch-doctor: 옛 개선 후보 메모 ${found.legacy.length}개는 feedback migrate 로 미리 본다: ${dir}\n`)
   const count = found.candidates.filter(feedbackOpen).length + found.legacy.length
   return count > 0 ? [`FEEDBACK-OPEN ${count} ${dir}`] : []
 }
