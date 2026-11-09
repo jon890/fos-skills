@@ -8,7 +8,9 @@ export type Field = typeof FIELDS[number]
 export type Candidate = { title: string; values: Record<Field, string>; text: string; file: string; slug: string }
 
 export function validStatus(value: string): boolean {
-  return /^(?:후보|채택 #[1-9]\d*|기각\(.+\)|보류\(.+\))$/.test(value)
+  if (value === '후보' || /^채택 #[1-9]\d*$/.test(value)) return true
+  const reason = /^(?:기각|보류)\((.*)\)$/.exec(value)?.[1]
+  return reason !== undefined && reason.trim() !== ''
 }
 
 export function isOpen(candidate: Candidate): boolean {

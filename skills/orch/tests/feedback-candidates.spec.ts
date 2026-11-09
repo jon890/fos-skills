@@ -50,7 +50,7 @@ test('정해진 순서로 저장하고 목록과 상태를 바꾸며 다른 칸�
     assert.equal(run('list', '--open').stdout.includes('a\t'), status === '후보' || status.startsWith('보류('))
     assert.ok(run('list').stdout.includes(status))
   }
-  for (const status of ['채택', '기각()', '보류()', '채택 #0', '아무거나']) assert.equal(run('set', '--slug', 'a', '--status', status).status, 2)
+  for (const status of ['채택', '기각()', '보류()', '기각( )', '보류(  )', '채택 #0', '아무거나']) assert.equal(run('set', '--slug', 'a', '--status', status).status, 2)
   assert.equal(run('set', '--slug', 'absent', '--status', '후보').status, 1)
   assert.equal(run('add', ...fields, '--apply').status, 2)
   assert.equal(run('add', ...fields.slice(0, 1), '../bad', ...fields.slice(2)).status, 2)
