@@ -32,9 +32,9 @@
 
 | 항목 | 잰 방법 | 결과 | 설계에 반영한 것 |
 | --- | --- | --- | --- |
-| 루프 메시지로 코디네이터가 깨는가(DECISION1) | 코디네이터가 실측용 세션에서 쟀다 | (실측 대기) | 「루프 알림 보내기」 의 보내는 꼴 |
-| 자동 해제가 지난 worker 에게 send(DECISION4) | 코디네이터가 실측용 세션에서 쟀다 | (실측 대기) | 「후속 일 보내기」 의 다시 띄우기 조건 |
-| 오류로 멈춘 worker 를 send 가 깨우는가(REQ17) | 코디네이터가 실측용 세션에서 쟀다 | (실측 대기) | hooks.md 예시 |
+| 루프 메시지로 코디네이터가 깨는가(DECISION1) | 실측용 Run 의 코디네이터가 쉬는 동안 자기 터미널의 백그라운드 셸에서 `send --to run:<Run>` 을 세 꼴로 보냈다 | `--from` 없는 꼴과 `--from run:<Run>` 꼴은 약 6초 뒤 깨웠다. 보낸 쪽이 코디네이터 자기 터미널이어도 깬다. `--from run:` 은 거절되지 않았고 보낸 쪽이 `run:<Run>` 으로 찍혔다. `ORCA_TERMINAL_HANDLE` 을 뺀 꼴은 메일만 닿고 깨우지 않았다 | Orca 깨움만 쓴다(스펙 DECISION1 의 내려가기 조건이 아니다). 보내는 꼴은 `--from run:<Run>`, 환경 변수는 빼지 않는다 |
+| 자동 해제가 지난 worker 에게 send(DECISION4) | worker_done 뒤 자동 해제(약 2분)로 터미널이 닫힌 dispatch 에 send | 거절 없이 `delivery: reopened` 였다. 같은 워크트리에 새 터미널이 열리고 새 Task 와 dispatch 가 생겼다(`followUpOf` 가 앞 dispatch). worker 가 답하고 worker_done 을 보냈다 | 「후속 일 보내기」 는 `follow_up` 과 `reopened` 를 모두 보낸 것으로 본다. 다시 띄우기는 send 가 거절될 때만 쓴다 |
+| 오류로 멈춘 worker 를 send 가 깨우는가(REQ17) | worker_done 없이 턴을 끝낸 worker(`stopReason=finished`)와 잘못된 `--model` 로 오류가 난 worker(`stopReason=errored`)에게 send | 둘 다 깼다. 앞은 같은 dispatch 에서 한 턴 더 돌았다. 뒤는 턴이 시작됐지만 모델이 그대로라 같은 오류를 되풀이했다 | hooks.md 예시를 `orch worker send` 로 바꾼다(스펙 DECISION21 의 다시 묻기 조건이 아니다). 예시의 횟수 상한은 그대로 둔다. 같은 원인의 오류는 다시 시도로 풀리지 않기 때문이다 |
 | 결정 알림 기록·움직임 기록을 Orca 기능으로 대신할 수 있는가(DECISION7) | `orca orchestration gate-create --help`, `worker-list --help`, `orca skills get orchestration --full` 과 `lib/decisions.ts`, `lib/movement.ts` 를 읽었다 | 대신할 수 없다. 아래 두 줄 | 두 파일을 그대로 둔다. 스펙이 「같은 정보를 주면 다시 묻는다」 고 했으므로 다시 묻지 않는다 |
 
 - **결정 알림 기록(`state/decision-pending/<Run>.json`)**: 이미 알린 결정 묶음과 실패 뒤 다시 낼 시각(10분부터 두 배씩)을 적는다. Orca 결정 게이트는 Task 하나를 막는 질문과 선택지를 둘 뿐이다. 보드의 decide 항목은 Orca Task 가 아니어서 게이트로 만들 수 없고, 게이트에는 「언제 알렸는지」 와 「다시 낼 시각」 이 없다.
@@ -99,8 +99,8 @@
 1. 지시서를 `launch-worker` 와 같은 검사(`lib/spec.ts` 의 `허락:` 줄과 `worker 선택:` 줄 검사)에 통과시킨다. 실패하면 보내지 않고 2 다.
 2. 본문은 `orch spec line` 이 만드는 한 줄(지시서 경로를 읽으라는 글)이다. 가드 훅(`require-spec-line.ts`)이 받는 꼴과 같다.
 3. `orca orchestration send --to dispatch:<끝난 id> --subject <지시서 제목> --body <한 줄> --json --full` 을 보낸다.
-4. 영수증의 `delivery` 가 `follow_up` 이면 `dispatchId`, `taskId` 로 `state/launch-history.jsonl` 과 `state/launched-workers` 에 한 줄씩 남긴다. 워크트리와 터미널은 앞 dispatch 의 것을 옮겨 적는다. 출력은 `FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>` 와 0 이다.
-5. send 가 거절되면(연결된 서버의 끝난 worker 처럼 Orca 가 받지 않음) 지금의 다시 띄우기(`launch-worker --worktree <그 워크트리>`, agent_unconfigured 처리 포함)로 내려간다. 자동 해제가 지난 worker 의 동작은 「설계 단계 실측」 의 결과를 따른다.
+4. 영수증의 `delivery` 가 `follow_up` 이나 `reopened`(자동 해제로 닫힌 worker, 「설계 단계 실측」 2번)이면 `dispatchId`, `taskId` 로 `state/launch-history.jsonl` 과 `state/launched-workers` 에 한 줄씩 남긴다. 워크트리와 터미널은 앞 dispatch 의 것을 옮겨 적는다. 출력은 `FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>` 와 0 이다.
+5. send 가 거절되면(연결된 서버의 끝난 worker 처럼 Orca 가 받지 않음) 지금의 다시 띄우기(`launch-worker --worktree <그 워크트리>`, agent_unconfigured 처리 포함)로 내려간다.
 
 - 종료 코드 1(깨우지 못함)과 4(입력란에 글이 있어 깨우지 않음)는 더 나오지 않는다. 1 은 다시 띄우기 실패에만 남는다. 부르는 쪽(`lib/tell-worker.ts`, 루프, `finish-pr`)은 0, 1, 4 를 보낸 것으로 보므로 고치지 않는다.
 - 짧은 출력의 `RESUMED`, `RESTARTED` 는 다시 띄우기 경로에만 남고 `FOLLOW-UP` 이 더해진다.
@@ -109,7 +109,7 @@
 ### 루프 알림 보내기(PR3)
 
 - `lib/run-notice.ts` 의 `notifyRun(run, kind, text, pr?) : { ok: true; id } | { ok: false; error }`.
-  - 보내는 꼴: `orca orchestration send --to run:<Run> --type status --subject "<kind> <text 앞 80자>" --body <text> --payload '{"source":"orch-loop","kind":…,"pr":…}' --json`. `--from` 을 붙일지와 환경 변수를 뺄지는 「설계 단계 실측」 1번의 결과를 따른다.
+  - 보내는 꼴: `orca orchestration send --to run:<Run> --type status --subject "<kind> <text 앞 80자>" --body <text> --payload '{"source":"orch-loop","kind":…,"pr":…}' --json`. `--from run:<Run>` 을 붙인다. 보낸 쪽이 Run 으로 찍혀 worker 의 메일과 갈린다. `consumer_fenced` 로 거절되면 `--from` 을 빼고 한 번 다시 보낸다(`send-to-worker` 의 `sendAs` 와 같은 규칙). 두 꼴 모두 깨운다(「설계 단계 실측」 1번). `ORCA_TERMINAL_HANDLE` 은 빼지 않는다. 빼면 깨우지 않았다.
   - Run 이 없는 루프(옛 꼴)는 받을 곳이 없어 loop.log 에만 남긴다.
 - **보내기 실패**: 지금 각 단계는 알림 파일에 쓴 뒤 「알렸다」 를 상태에 적는다. 바뀐 뒤에는 `notifyRun` 이 ok 일 때만 적는다. 실패하면 다음 틱이 같은 알림을 다시 낸다. `WATCH-ERROR` 처럼 errors 로 겹침을 막는 것은 보내지 못했으면 errors 에 새 이유를 적지 않는다. 보내지 못한 이유는 loop.log 에 `NOTICE-FAIL <kind> <이유>` 로 남긴다.
 - **알림 종류**: 지금 알림 파일의 kind 를 그대로 subject 첫 낱말로 쓴다(CI-FAILED, CONFLICT-ORPHAN, WORKER-STALLED, WORKER-LIMITED, FINISH-MISSING, AUTO-MERGE …). 바뀌는 것은 셋이다. `NO-WAIT` 는 `UNANSWERED` 로, 기술 질문 `REMINDER` 는 `UNANSWERED` 로 합치고, `DONE-SUSPECT`, `WORKER-LOST`, `LOOP-RESTARTED` 를 더한다. 원본 목록은 `docs/data-schema.md` 가 아니라 `orch-loop.ts` 머리 주석이다(지금과 같다).
