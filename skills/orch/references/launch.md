@@ -31,12 +31,8 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 **worker 는 `launch-worker` 로 띄운다.** 첫 지시 줄 만들기(`spec-line --require-permission`), 워크트리 만들기, `worker-start`, 띄운 직후 단계 확인을 한 명령으로 돈다.
 `worker-start` 를 직접 부르면 그 가운데 하나가 빠진다. 기존 Task 도 `launch-worker --spec <지시서> --repo <저장소> --task <Task>` 로 다시 띄운다. failed·blocked Task 는 `--retry-of <dispatch>` 를 함께 주고 ready Task 는 생략한다.
 옵션과 종료 코드는 스크립트 머리 주석이 소유한다.
-**`launch-worker` 는 워크트리를 만들기 전에 `spec-lint` 로 그 지시서를 검사한다.** 함께 넘기는 것은 같은 폴더에서 살아 있는 dispatch 가 쓰는 지시서라, 먼저 띄운 지시서와 담당 경로가 겹치는 지시서는 나중에 띄울 때 막힌다. 막을 발견이 있으면 발견 줄을 내고 종료 코드 5 로 멈춘다. 지시서를 고치는 것이 기본이다.
-「할 일」 첫 줄의 `루프` 발견([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」)도 같은 5 로 멈춘다.
-의도한 겹침(두 PR 이 같은 플러그인 버전 줄을 고치는 것 같은 것)만 `--lint-ack "<이유>"` 로 넘긴다. 이유는 출력의 `lint-ack:` 줄과 그 worker 의 기록(`state/launched-workers/<dispatch>.json` 의 `lint_ack`)에 남는다. 이유 없이 끄는 옵션은 없다. 활성 지시서를 읽지 못하면 경고하고 이 지시서 하나만 검사한다.
-**`launch-worker` 는 지시서의 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md))과 `--agent`, `--model`, `--effort` 를 대조한다.** 줄이 없거나 요소가 빠졌거나 값이 다르면 Orca 를 부르기 전에 종료 코드 1 로 거부한다. effort 가 `기본` 이면 옵션을 주지 않는다. `--terminal` 은 실행 값 대조 대신 이전 기록을 물려받으며 선택 정책은 검사한다. 이미 띄운 옛 지시서의 행 누락은 같은 Task 나 기록된 터미널의 같은 지시서를 이을 때 허용한다.
-**`--agent codex` 의 `--model`, `--effort` 는 워크트리를 만들기 전에 `codex debug models` 로 검사한다.** 없는 모델이나 그 모델이 지원하지 않는 effort 면 종료 코드 4 로 멈추고 쓸 수 있는 값을 낸다.
-조회가 실패하거나 claude(모델 목록을 내는 명령이 없다)면 경고만 내고 띄운다. 같은 Task 를 다시 띄울 때도 이 검사를 거친다.
+**`launch-worker` 는 워크트리를 만들기 전에 `spec-lint` 로 그 지시서와 `worker 선택:` 줄(형식은 [`spec-writing.md`](spec-writing.md)), codex 의 `--model`, `--effort` 를 검사하고, 어긋나면 종료 코드 1, 4, 5 로 멈춘다.** 거부 조건과 종료 코드는 `launch-worker.ts` 머리 주석이 소유한다. 지시서를 고치는 것이 기본이다. 「할 일」 첫 줄의 `루프` 발견([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」)도 같은 5 로 멈춘다.
+먼저 띄운 지시서와 담당 경로가 겹치는 것처럼 의도한 겹침만 `--lint-ack "<이유>"` 로 넘긴다. 이유 없이 끄는 옵션은 없다. effort 가 `기본` 이면 `--effort` 를 주지 않는다.
 `$SPEC_FILE` 은 2단계의 지시서 경로, `$NAME` 은 새 worktree 이름이다. `$AGENT`, `$MODEL`, `$EFFORT` 는 1단계에서 고른 값이다. `--` 뒤는 `worker-start` 에 그대로 간다.
 
 ```bash
@@ -63,15 +59,9 @@ orch worker launch --spec "$SPEC_FILE" --name "$NAME" --resume-remote \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
-**`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree` 가 「경로가 이미 있다」 로 거부한다.
-스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다. 실패한 띄우기가 그 워크트리에 터미널을 남겼으면 그 목록도 함께 낸다. 이 세션이 띄운 것인지 보고 닫은 뒤 부른다.
-**그 워크트리에 터미널이 남아 있으면 스크립트가 거부한다.** 기본 출력은 `REFUSED <이유>` 한 줄이고 남은 터미널 목록은 `--full` 에 있다. 같은 워크트리에 이어 띄우면 앞 세션이 닫히지 않고 쌓여, 한 워크트리에 세션이 셋 쌓인 일이 있었다.
-목록의 터미널이 끝난 것인지 보고 `orca terminal close` 로 닫은 뒤 다시 부른다.
-**그 워크트리에 커밋 안 된 변경이 있어도 거부한다(`REFUSED`, 변경 목록은 `--full`).** 재사용한 워크트리에 다른 PR 을 되돌린 변경 35개가 남아 있던 일이 있었다.
-무엇인지 보고 커밋하거나 정리한 뒤 다시 부른다. 끊긴 worker 의 변경을 새 worker 가 이어받는 일이면 `--dirty-ack <이유>` 를 준다. `--terminal` 로 이어 쓸 때와 리뷰 worker 는 보지 않는다.
-끝난 dispatch 의 터미널을 이어 쓰는 일은 `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서>` 가 한다.
-터미널이 남았으면 그 터미널을 이어 쓴다. 에이전트를 다시 띄우지 못하면 스크립트가 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다. 터미널도 없으면 종료 코드 3 이다. 판정은 `send-to-worker` 머리 주석이 소유한다.
-**충돌과 리뷰 반영에는 닫고 새로 띄우지 않고 [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 를 따른다.**
+**`--repo`, `--name` 으로 워크트리를 만든 뒤 띄우지 못하면 같은 `--name` 으로 다시 부르지 않는다.** `make-worktree` 가 「경로가 이미 있다」 로 거부한다. 스크립트가 stderr 끝에 낸 `--worktree <만든 경로>` 명령으로 이어 띄운다.
+**그 워크트리에 터미널이 남아 있거나 커밋 안 된 변경이 있으면 스크립트가 `REFUSED <이유>` 로 거부한다**(목록은 `--full`). 이 세션이 띄운 터미널인지, 끝난 것인지 보고 `orca terminal close` 로 닫거나, 변경을 커밋하거나 정리한 뒤 다시 부른다. 끊긴 worker 의 변경을 새 worker 가 이어받는 일이면 `--dirty-ack <이유>` 를 준다.
+끝난 dispatch 의 터미널을 이어 쓰는 일은 `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서>` 가 한다. 판정은 그 스크립트 머리 주석이 소유한다.
 떠 있는 에이전트를 이어 쓸 때만 `--` 뒤에 `--terminal` 로 준다. `--terminal` 은 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다(스크립트가 거부한다). `agent_unconfigured` 로 이어 쓰지 못하면 스크립트가 종료 코드 3 으로 끝나며, [`replying.md`](replying.md) 의 「이어 쓸 수 없는 터미널」 을 따른다.
 
 ```bash
@@ -79,13 +69,8 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
-**`orca worktree list` 에 그 경로가 보일 때까지 스크립트가 기다린다.** Orca 가 새 워크트리를 늦게 알아봐 바로 부르면 `worker-start` 가 `selector_not_found` 로 실패한다.
-기본 30초를 2초 간격으로 보고, 넘기면 종료 코드 1 로 멈춘다. 그 뒤에도 `worker-start` 가 `selector_not_found` 로 끝나면 한 번만 다시 부른다. 다른 오류는 다시 부르지 않는다.
-
-**띄운 뒤 `worktree_creating` 에서 넘어가지 않으면 스크립트가 abandon 하고 같은 Task 를 `--retry-of` 로 한 번 다시 띄운다.** 기본으로 90초를 본다(`--watch`).
-abandon 하기 전에 일하는 흔적(heartbeat, 워크트리 변경, 작업 중 화면)을 보고, 있으면 다시 띄우지 않고 그대로 `LAUNCHED` 로 끝낸다. 살아 일하는 worker 옆에 같은 일의 worker 를 하나 더 띄워 한 워크트리에서 커밋이 섞인 일이 있었다. 근거 목록은 스크립트 머리 주석이 소유한다.
-다시 띄워도 멈추면 종료 코드 1 이다. 그때는 아래 「첫 화면에서 멈춤」 처럼 `worker-show` 의 `lastFailure` 를 본다.
-`worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다. 기본 출력의 `START-FAIL <receipt>` 줄이 실패 단계(`failedStage`)와 남은 자원을 담는다. 다시 불러 확인하지 않는다.
+워크트리 대기, `worktree_creating` 에서 안 넘어갈 때의 재시도(`--watch`, 일하는 흔적을 본 뒤 abandon)는 `launch-worker.ts` 머리 주석이 소유한다. 다시 띄워도 멈추면 종료 코드 1 이니 아래 「첫 화면에서 멈춤」 처럼 `worker-show` 의 `lastFailure` 를 본다.
+`worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다. `START-FAIL <receipt>` 줄이 실패 단계와 남은 자원을 담으니 다시 불러 확인하지 않는다.
 
 ## 띄운 직후 확인
 
@@ -95,21 +80,12 @@ abandon 하기 전에 일하는 흔적(heartbeat, 워크트리 변경, 작업 �
 **사용자에게 띄웠다고 보고할 때, 「할 일」 첫 줄이 `루프 없이: <이유>` 인 worker 는 그 이유를 한 줄로 함께 적는다.** 예: 「`orch-log-typo` 를 루프 없이 띄웠다. 이유: 로그 오타만 고치는 버그 수정이다.」
 루프를 건너뛸지는 코디네이터가 정하고 스크립트는 이유가 타당한지 보지 않는다. 사용자가 보고에서 보고 바로잡게 하려는 것이다([`feature-loop.md`](feature-loop.md) 의 「루프를 쓸지 정한다」).
 
-`make-worktree` 는 Orca 가 직접 만드는 경로와 같은 `<repo>/worktrees/<repo>/<name>` 에 워크트리를 만든다.
-2026-10-23 다른 저장소에서 `orca worktree create` 가 만든 경로로 확인했다. Orca 전역 설정은 `workspaceDir: "worktrees"`, `nestWorkspaces: true` 이고, 저장소별 `worktreeBasePath` 로 덮어쓸 수 있다.
-그래서 경로 계산은 바꾸지 않는다. 경로가 맞아도 `git worktree add` 로 만든 워크트리는 Orca 에게 외부 워크트리라서, 저장소의 `externalWorktreeVisibility` 가 `hide` 면 Orca 가 숨기고 `launch-worker` 가 30초 대기 끝에 멈춘다.
-`make-worktree` 는 만들기 전에 `orca repo show` 로 그 값을 읽고 `hide` 면 만들지 않고 종료 코드 1 로 멈춘다. `show`, `inherit`, 읽지 못한 경우는 그대로 진행한다.
-`hide` 일 때 사용자가 고를 조치는 둘이다. 스크립트는 Orca 설정을 바꾸지 않는다.
+`make-worktree` 가 만드는 경로와 `externalWorktreeVisibility` 가 `hide` 일 때의 거부는 `make-worktree.ts` 머리 주석이 소유한다. `hide` 일 때 사용자가 고를 조치는 둘이다. 스크립트는 Orca 설정을 바꾸지 않는다.
 
 - Orca 화면에서 그 워크트리를 등록한다
 - `orca repo set --repo path:<repo> --external-worktree-visibility show`
 
-`launch-worker` 가 「Orca 가 워크트리를 알아보지 못했다」 로 멈출 때도 만든 경로, 그 저장소의 `externalWorktreeVisibility`, 위 조치를 stderr 에 낸다. 조치한 뒤에는 `--worktree` 로 이어 띄운다.
-
-만든 경로가 ignore 되지 않으면 기준 브랜치에서 `git add -A` 를 할 때 워크트리가 커밋될 수 있어, 스크립트가 로컬 전용인 `.git/info/exclude` 에 `/worktrees/` 를 더한다.
-공유되는 `.gitignore` 는 고치지 않는다.
-대상 저장소의 `.claude/settings.local.json` 도 스크립트가 복사한다. 추적되지 않는 파일이라 워크트리에 따라오지 않고,
-없으면 사용자가 허용해 둔 `gh pr`, 리뷰 회신 같은 명령이 worker 세션에서 다시 막힌다.
+조치한 뒤에는 `--worktree` 로 이어 띄운다. exclude 와 `.claude/settings.local.json` 복사도 스크립트가 한다.
 이 복사는 `permissions` 의 허용 규칙에만 듣는다. Claude Code 자동 모드 분류기의 허용 기준(`autoMode.allow`)은 워크트리의 `.claude/settings.local.json` 에서 먹지 않았다(2026-10-31 실측).
 worker 에게 push, PR 생성, 리뷰 회신과 resolve 를 맡기는 저장소는 worker 가 쓰는 Claude 프로필의 사용자 `settings.json` 에 그 저장소로 한정한 `autoMode.allow` 를 둔다.
 저장소를 한정하지 않으면 다른 저장소의 외부 쓰기까지 허용된다. 프로필 폴더는 `link-claude-profile.ts` 가 맞추는 곳이다.
@@ -135,13 +111,7 @@ terminal_title = ["app-name", "run-state", "project-name"]
 
 ## claude 프로필 준비 판정
 
-Orca 는 Claude 계정마다 `~/Library/Application Support/orca/claude-profiles/<id>/home` 을 따로 만들어 worker 의 설정 폴더로 쓴다.
-새로 쓰는 계정의 프로필에는 플러그인 링크와 `settings.json` 이 없어, 그 계정으로 뜬 worker 에게 플러그인과 스킬, 지침이 보이지 않는다.
-
-`launch-worker` 는 `--agent claude` 면 지금 선택된 계정의 프로필(그 폴더의 `selected-host`)에 `plugins` 링크와 `settings.json` 이 있는지 본다.
-없으면 띄우지 않고 종료 코드 1 과 함께 맞추는 명령 한 줄을 낸다. 고치는 것은 사용자나 코디네이터가 그 명령으로 한다.
-프로필 폴더나 `selected-host` 가 없으면 Orca 를 쓰지 않는 환경으로 보고 건너뛴다.
-
+새로 쓰는 Claude 계정의 프로필에는 플러그인 링크와 `settings.json` 이 없어 그 계정으로 뜬 worker 에게 플러그인과 스킬, 지침이 보이지 않는다. `launch-worker` 는 `--agent claude` 면 이를 먼저 보고, 없으면 띄우지 않고 종료 코드 1 과 맞추는 명령 한 줄을 낸다(판정은 `launch-worker.ts` 머리 주석이 소유한다).
 맞추는 명령은 `link-claude-profile` 이다. `--apply` 를 빼고 먼저 돌려 바꿀 목록을 본다.
 `$PROFILE_ID` 는 거부 메시지에 나온 프로필 id 다.
 
@@ -232,7 +202,7 @@ orch worker resume --dispatch "$DISPATCH_ID"
 다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소해 기록을 남긴다.
 `$DISPATCH_ID` 는 그 줄의 dispatch, `$TASK_ID` 는 `worker-show` 의 `dispatch.taskId`, `$WORKTREE` 는 처음 띄운 워크트리 경로다.
 이 절도 `launch-worker` 를 거쳐 같은 Task 를 다시 띄운다. `$SPEC` 은 지시서 경로이고, `$REPO` 는 저장소 경로다. 모델을 바꾸면 지시서의 선택 줄부터 고친다.
-이 절은 일하던 worker 가 끊긴 경우다. 이미 `worker_done` 을 보낸 worker 의 PR 에 충돌이나 리뷰가 달렸는데 터미널이 없으면, 이 절의 새 worker 띄우기보다 [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 가 우선한다.
+이 절은 일하던 worker 가 끊긴 경우다. 충돌과 리뷰 반영은 [`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」 가 우선한다.
 
 어느 상태에서 어느 명령을 쓰는지는 이 표가 소유한다. `--retry-of` 는 실패하거나 막힌 Task 의 가장 최근 settled dispatch 에만 받아들여진다.
 
