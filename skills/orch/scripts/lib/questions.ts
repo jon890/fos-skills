@@ -1,5 +1,6 @@
 // 코디네이터가 아직 답하지 않은 질문을 Orca 에서 읽고, 알릴 줄과 알린 기록을 정한다. delivery 를 소비하지 않는다.
 // 사용처: watch-questions.ts(Monitor 의 이벤트 소스), orch-loop.ts(상주 루프의 틱), orch-doctor.ts(snapshot, ageSeconds).
+// lib/decisions.ts 와 handlers/decision-pending.ts 는 questionLocations 로 질문 위치를 표시한다.
 //
 // 이 Run 의 질문(question, escalation)을 읽고, 그다음 질문을 보낸 쪽마다 받은 답을 읽는다. 전역 inbox 는 읽지 않는다.
 // 전역 기록은 수십 MB 까지 커져 조회가 느려지고 출력 한도에 닿는다.
