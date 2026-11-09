@@ -1,1 +1,0 @@
-- `board.ts set --detail` 이 글이 같은 줄의 끝냄 표시를 이어받고, 쓰기 전 보드 파일을 `.bak` 에 한 세대 남긴다. 줄 하나만 고치는 `detail-edit` 와 `detail-add` 를 더했다
