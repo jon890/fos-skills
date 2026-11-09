@@ -62,3 +62,4 @@ node --test tests/application.spec.ts
 |---|---|
 | `src/application.ts` | 신규 |
 | `tests/application.spec.ts` | 신규 |
+| `src/config.ts` | 수정 (기본값 추가) |

@@ -256,6 +256,27 @@ test('이번 PR 밖의 사례와 빈 절차는 통과하지 못한다', () => {
   for (const text of cases) assert.equal(checkVerification(verificationRepo(text), withVerification()).code, 1, text)
 })
 
+test('worker 가 할 수 없는 실행 환경의 검증은 담당이 코디네이터여야 한다', () => {
+  const orca = VERIFICATION.replace('격리된 API·DB 테스트 환경 | worker', '실제 Orca 로 worker 띄우기 | worker')
+  const r = checkVerification(verificationRepo(orca), withVerification())
+  assert.equal(r.code, 1)
+  assert.ok(lines(r).some((line) => line.includes('R1') && line.includes('코디네이터')), r.stdout)
+  assert.equal(checkVerification(verificationRepo(orca.replace('띄우기 | worker', '띄우기 | 코디네이터')), withVerification()).code, 0)
+  // 양식은 낱말 목록을 적는다. 목록의 낱말이 실제로 검사를 일으킨다
+  const template = readFileSync(join(SKILL_DIR, 'templates', 'verification-plan.md'), 'utf8')
+  for (const word of ['Orca', 'worker 띄우', 'worker 를 띄', 'worker 를 시작', '워커 띄', '코디네이터 세션']) {
+    assert.ok(template.includes(`\`${word}\``), word)
+    const text = VERIFICATION.replace('격리된 API·DB 테스트 환경 | worker', `${word} 환경 | worker`)
+    assert.equal(checkVerification(verificationRepo(text), withVerification()).code, 1, word)
+  }
+})
+
+test('실행 담당은 worker 또는 코디네이터이고 담당 칸이 없는 옛 표도 받는다', () => {
+  assert.equal(checkVerification(verificationRepo(VERIFICATION.replace('| worker |', '| 사람 |')), withVerification()).code, 1)
+  const oldTable = VERIFICATION.replace('| 실행 담당 ', '').replace('| --- | --- | --- | --- | --- | --- | --- | --- |', '| --- | --- | --- | --- | --- | --- | --- |').replaceAll('| worker ', '')
+  assert.equal(checkVerification(verificationRepo(oldTable), withVerification()).code, 0)
+})
+
 test('명령 안의 이스케이프한 파이프는 칸을 늘리지 않는다', () => {
   const text = VERIFICATION.replace('다른 사용자로 취소 API 를 호출하고 저장 상태를 조회', '`pytest tests/test_cancel.py \\| tee results.log`')
   const r = checkVerification(verificationRepo(text), withVerification())

@@ -364,8 +364,36 @@ test('node 테스트 실행기와 deno, bun 의 test', () => {
     assert.equal(kind(command), 'test', command)
   }
   // --test 가 없거나 스크립트 뒤에 있으면 판정하지 못한 명령으로 둔다
-  for (const [command, expected] of [['node scripts/build.ts', 'unknown'], ['node build.ts --test', 'unknown'], ['deno run main.ts', 'other']] as const) {
+  for (const [command, expected] of [['node build.ts', 'unknown'], ['node build.ts --test', 'unknown'], ['deno run main.ts', 'other']] as const) {
     assert.equal(kind(command), expected, command)
+  }
+})
+
+test('node <스크립트> 는 스크립트 경로로 판정하고 저장소 테스트 실행기를 테스트로 센다', () => {
+  const runner = { 'scripts/run-tests.ts': '' }
+  // scripts/ 아래의 일반 스크립트는 bash·python 처럼 테스트가 아닌 명령이다
+  assert.equal(kind('node scripts/build.ts', { 'scripts/build.ts': '' }), 'other')
+  for (const command of ['node scripts/run-tests.ts', 'node scripts/run-tests.ts skills/plan/tests/a.spec.ts', 'node --import tsx scripts/run-tests.ts skills/plan/tests', 'node ./scripts/run-tests.ts skills/plan']) {
+    assert.equal(kind(command, runner), 'test', command)
+  }
+})
+
+test('저장소 테스트 실행기의 인자 파일·폴더로 작업 항목의 테스트 범위를 대조한다', () => {
+  const work = '### 1. `skills/plan/tests/a.spec.ts` 추가'
+  const entries: Entry[] = [['skills/plan/tests/a.spec.ts', '신규']]
+  const files = { 'scripts/run-tests.ts': '' }
+  for (const command of ['node scripts/run-tests.ts skills/plan/tests/a.spec.ts', 'node scripts/run-tests.ts skills/plan/tests', 'node scripts/run-tests.ts skills/plan', 'node scripts/run-tests.ts']) {
+    const r = inspect(work, command, entries, { files })
+    assert.ok(!has(r.violations, NOT_RUN) && !has(r.violations, '검증 절에 테스트 실행 명령이 없다'), `${command}\n${r.violations.join('\n')}`)
+    assert.ok(!has(r.warnings, '판정하지 못한'), command)
+  }
+  // 옵션 값은 경로가 아니고, `.` 은 저장소 전체다
+  for (const command of ['node scripts/run-tests.ts --concurrency 4', 'node scripts/run-tests.ts --timeout 600 skills/plan/tests', 'node scripts/run-tests.ts --out result --max-wait 9 .', 'node scripts/run-tests.ts .', 'node scripts/run-tests.ts ./']) {
+    const r = inspect(work, command, entries, { files })
+    assert.ok(!has(r.violations, NOT_RUN), `${command}\n${r.violations.join('\n')}`)
+  }
+  for (const command of ['node scripts/run-tests.ts skills/plan/tests/other.spec.ts', 'node scripts/run-tests.ts skills/orch/tests']) {
+    assert.ok(has(inspect(work, command, entries, { files }).violations, NOT_RUN), command)
   }
 })
 

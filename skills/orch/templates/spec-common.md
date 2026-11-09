@@ -99,7 +99,7 @@
 
 - 새 기능은 `spec → technical-design → plan → implementation → verify → docs-consolidate 후보 추출` 순서로 진행한다. 스펙이나 계획이 있으면 필요한 단계부터 시작한다. 상세 인계는 orch 의 `references/feature-loop.md` 를 따른다. <!-- orch-rule: feature-loop -->
 - spec 단계는 `spec` 스킬의 인터뷰 절차(`references/interview.md` 「직접 묻지 못할 때」)대로 결정 블록은 `worker-ask --decision` 으로, 스펙 확인 요청은 형식 없이 `worker-ask` 로 보낸다. 혼자 정하고 넘어가지 않는다. 코디네이터가 사용자의 확인을 돌려주기 전에는 plan 과 구현을 시작하지 않는다. <!-- orch-rule: spec-interview -->
-- `implementation` 는 PR 을 열지 않는다. PR 전 인수 검증과 문서 대조·후보 추출을 마친 뒤, PR 생성이 허락됐으면 worker 가 위 공통 규칙에 따라 PR 을 연다.
+- `implementation` 는 PR 을 열지 않는다. 실행 담당이 worker 인 PR 전 인수 검증(실행 담당이 코디네이터인 행은 코디네이터가 한다)과 문서 대조·후보 추출을 마친 뒤, PR 생성이 허락됐으면 worker 가 위 공통 규칙에 따라 PR 을 연다.
 
 - `plan` 과 `implementation` 는 사용자와 대화하는 세션을 전제로 한다. worker 는 사용자에게 묻지 못하므로 아래로 바꿔 읽는다.
 - 사용자에게 확인하라는 단계는 위 「판단이 필요할 때」 의 기준으로 정한다. 기술 판단은 권장안으로 진행하고, ask 대상만 `worker-ask` 로 묻는다. `AskUserQuestion` 은 쓰지 않는다.
