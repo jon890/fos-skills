@@ -291,7 +291,7 @@ orch 스킬이 보드를 고치는 `extensions/work-board/bin/board.ts` 도 여�
 | --- | --- |
 | `scripts/export-to-team.ts` | 공용 스킬을 팀 저장소로 내보내고 어긋남을 판정해요. 커밋을 고르는 `--source-ref` 는 머리 주석에 있어요 |
 | `scripts/install-hooks.ts` | `githooks/` 의 훅을 `.git/hooks` 에 걸어요. `commit-msg` 는 커밋 메시지의 금지어를 커밋 전에 막고, `post-commit` 은 팀 저장소와의 어긋남을 알려요 |
-| `scripts/run-tests.ts` | node, Python 테스트와 tsc 를 함께 돌고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
+| `scripts/run-tests.ts` | node 테스트와 tsc 를 함께 돌고 결과 폴더에 요약을 남겨요. 사용법은 머리 주석에 있어요 |
 | `scripts/runtime-policy.ts` | 남은 Python·셸 파일과 허용한 JS 진입을 `scripts/runtime-policy.json` 과 대조해 새 파일을 막아요. 새 스크립트는 TypeScript 로 써요([ADR-025](docs/adr/025-script-runtime-typescript.md)) |
 | `scripts/test-plugin-install.ts` | 격리된 설정 폴더에서 플러그인 설치를 테스트해요 |
 | `scripts/check-skill-docs.ts` | 스킬 README 와 CHANGELOG, 변경 이력 조각이 아래 「스킬 README」, 「버전과 변경 이력」 의 형식을 따르는지 검사해요 |
@@ -307,11 +307,10 @@ PR 은 draft 없이 열어요. CI 가 PR 과 main push 에서 돌아요.
 
 CI 는 Claude Code CLI 2.1.309 를 npm 으로 설치해 저장소 루트에서 `claude plugin test .` 를 실행해요.
 이 명령은 `claude-code/testing` 을 쓰는 TypeScript 테스트를 실행하며, 로그인이나 API 키가 필요하지 않아요.
-나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. node 테스트, Python 테스트 묶음, tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
+나머지 테스트는 Node 24 이상에서 저장소 루트의 `node scripts/run-tests.ts` 하나로 실행해요. node 테스트와 tsc 타입 검사를 함께 돌아요. CI 의 `Tests` job 도 같은 명령을 불러요.
 `claude plugin test .` 는 이 명령에 들지 않으니 따로 돌려요.
 한 파일이나 폴더만 돌릴 때는 `node scripts/run-tests.ts skills/mac-cleanup/tests` 처럼 인자로 줘요. 인자를 주면 tsc 는 돌지 않아요.
-기본 동시 수는 실행 가능한 CPU 수 이하이고 최대 8이에요. worker 여럿이 함께 검증하면 `--concurrency 4`처럼 낮출 수 있어요. Python 묶음은 node 동시 수의 절반을 올림한 수만큼 함께 돌아요.
-`test_*.py` 가 있는 폴더를 주면 Python 묶음만 돌아요. 그 폴더의 `*.spec.ts` 는 파일 경로로 따로 줘요.
+기본 동시 수는 실행 가능한 CPU 수 이하이고 최대 8이에요. worker 여럿이 함께 검증하면 `--concurrency 4`처럼 낮출 수 있어요.
 오래 걸리면 `--background` 로 띄우고 `--wait` 로 결과를 기다려요. 한 번의 `--wait` 는 Bash 도구의 600초 안에 끝나요.
 저장소별 PR 설정은 [orch 오버레이](.orch/overlay.md)에 둬요.
 

@@ -7,7 +7,7 @@
 
 | ID | 해결 방법 |
 | --- | --- |
-| REQ1 | 저장소 테스트 `scripts/tests/runtime-policy.spec.ts` 가 추적 파일에서 `.py` 와 python shebang 을 찾는다. PR1 은 지금 남은 파일을 허용 목록(`scripts/runtime-policy.json` 의 `pending`)에 적고, 영역 PR 마다 그 영역 줄을 지운다. 마지막 PR 에서 `pending` 이 비고 옛 이름 진입 셋만 `legacy` 로 남는다 |
+| REQ1 | 저장소 테스트 `scripts/tests/runtime-policy.spec.ts` 가 추적 파일에서 `.py` 와 python shebang 을 찾는다. PR1 은 지금 남은 파일을 허용 목록(`scripts/runtime-policy.json` 의 `pending`)에 적고, 영역 PR 마다 그 영역 줄을 지운다. 영역 11 에서 `pending` 에는 `orch-legacy` 묶음(`orch-doctor.py`, `ts_shim.py`)만 남고, 그 둘은 orch-cli 의 옛 이름 정리 PR 이 지운다. 그 PR 이 머지되면 `pending` 이 비고 옛 이름 진입 셋만 `legacy` 로 남는다 |
 | REQ2 | 같은 테스트가 `.sh`, `.bash`, `.zsh` 와 셸 shebang 을 찾는다. git 훅은 「진입 파일」 절의 확장자 없는 JS 진입으로 바꾸고, 임시 저장소 테스트가 `install-hooks.ts` 로 건 훅이 `git commit` 에서 도는지 본다 |
 | REQ3 | 「동등성 확인」 절의 두 커밋 방식과 공통 꼴 모듈(`kit`)로 stdout, 쓰는 파일, 종료 코드를 맞춘다 |
 | REQ4 | 영역 PR 이 그 영역 문서의 호출을 「호출 꼴」 절대로 같은 커밋에서 바꾼다. 기존 `scripts/tests/test_doc_script_refs.py`(PR2 에서 `doc-script-refs.spec.ts`)가 문서가 부르는 스크립트의 존재를 본다. `runtime-policy.spec.ts` 가 이행을 마친 영역의 문서에 `python3 `, `bash "$SKILL_DIR` 꼴이 남으면 실패한다 |
@@ -112,7 +112,7 @@ PR1 이 만든다. 키의 정확한 뜻과 판정은 명령 `scripts/runtime-pol
 
 | 키 | 뜻 | 바뀌는 때 |
 | --- | --- | --- |
-| `pending` | 아직 옮기지 않은 `.py`, `.sh`, 셸·python shebang 파일. 영역 단위로 묶는다 | 영역 PR 이 자기 묶음을 지운다. PR11 에서 빈다 |
+| `pending` | 아직 옮기지 않은 `.py`, `.sh`, 셸·python shebang 파일. 영역 단위로 묶는다 | 영역 PR 이 자기 묶음을 지운다. `orch-legacy` 는 PR11 이 아니라 orch-cli 의 옛 이름 정리 PR 이 지우므로 `pending` 은 그 PR 에서 빈다 |
 | `legacy` | 옛 이름 진입 셋 | 옮긴 영역 PR 이 더하고, DECISION17 의 다음 major PR 이 지운다 |
 | `entry_js` | 허용하는 `.js`, `.mjs`, `.cjs`, 확장자 없는 JS | 진입이 생기거나 없어질 때 |
 | `migrated_docs` | 문서 호출 검사를 켤 영역 | 영역 PR 이 자기 영역을 더한다 |
@@ -195,7 +195,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 
 | ID | 어디서 확인하나 |
 | --- | --- |
-| REQ1, REQ2, REQ9 | `runtime-policy.spec.ts`. 허용 목록 밖의 파일을 하나씩 더한 임시 사본에서 그 파일 이름으로 실패하는지 본다. PR11 에서 `pending` 이 빈 채로 통과한다 |
+| REQ1, REQ2, REQ9 | `runtime-policy.spec.ts`. 허용 목록 밖의 파일을 하나씩 더한 임시 사본에서 그 파일 이름으로 실패하는지 본다. PR11 에서 `pending` 에 `orch-legacy` 만 남은 채로 통과하고, orch-cli 의 옛 이름 정리 PR 에서 빈 채로 통과한다 |
 | REQ2 의 훅 | 임시 저장소에 `install-hooks.ts` 로 훅을 걸고 금지어 메시지 커밋이 막히는지, 공용 스킬 파일 커밋에서 알림이 나는지 본다(기존 `test_commit_msg_hook.py`, `test_post_commit_hook.py` 를 명령 경계 테스트로 옮긴다) |
 | REQ3 | 영역 PR 마다 두 커밋의 명령 경계 테스트 결과와, 정규식 중심 검사기의 문서 전체 비교 |
 | REQ4 | `doc-script-refs.spec.ts` 와 `runtime-policy.spec.ts` 의 `migrated_docs` 검사 |
@@ -223,7 +223,7 @@ CI 는 `Tests` job 하나가 테스트 실행기 `scripts/run-tests.ts` 를 옵�
 | 8 | `harness-cleanup` | 다른 저장소의 `.py`, `.sh` 를 감사하는 판정은 그대로 둔다. 감사 대상 확장자 목록을 옮기며 바꾸지 않는다. `run_doc_snippets` 는 zsh 가 없으면 bash 만 돌도록 바꿔(옛 구현과 다른 동작, 사용자 2026-11-08) CI 의 zsh 설치를 지운다 |
 | 9 | `mac-cleanup` | 테스트 대부분이 내부 함수 테스트다. 명령 경계로 관측되는 사례부터 옮긴다. `survey_gradle.sh` 는 읽기 전용이다. 파일과 컨테이너 자원을 지우는 명령이 있어 테스트는 임시 홈, 임시 저장소, PATH 맨 앞의 가짜 실행 파일(docker, colima, gh, ps, lsof, du)만 쓴다. `str.format` 의 짝수 반올림, JSON 의 `24.0` 표기, `nargs="+"` 옵션, `fromisoformat`, 지역 시각을 읽는 `mktime` 은 처음부터 맞췄다. `survey_gradle` 은 버전을 읽지 못한 `dists` 폴더를 삭제 후보에서 빼(옛 구현은 `caches/` 와 `daemon/` 전체를 지우는 줄을 냈다) 이 한 곳만 옛 구현과 다르다 |
 | 10 | `tools/browser-driver` | 백엔드 넷(ego, orca, cmux, agent_browser)과 `install` 이 거는 링크. 먼저 `skills/browser/browser-driver/` 로 이름만 바꾸는 이동을 하고 옮긴다. 커밋 순서와 깨지는 곳은 「browser-driver 를 browser 스킬 안으로 옮긴다」**결정(2026-11-09):** 백엔드 넷의 명령 경계 테스트는 가짜 `ego-browser`·`orca`·`cmux`·`agent-browser` 와 임시 홈으로 쓰고, ego 가 stdin 으로 받는 스크립트와 도움말·진단 출력은 옛 구현이 낸 글자를 `tests/fixtures/` 에 적어 비교한다. 이 폴더는 팀 저장소에 실려 폴더 밖을 import 하지 못하므로 Python 호환 helper 는 `driver/pylike.ts` 에 따로 둔다(`modules/kit` 으로 모으는 일은 영역 11 이후). JSON 은 정수와 실수를 구분하고 오류 문장과 위치까지 Python 과 같게 읽고 쓴다(`json.loads`, `json.dumps`). 설치 캐시 판정은 `skills/browser/browser-driver` 와 팀 사본 `tools/browser-driver` 를 모두 읽는다. 옛 구현과 다른 곳은 `install` 하나다. 옛 구현은 링크를 `driver/admin.py` 로 걸고 예시 설정을 `driver/` 아래에서 찾아 README 의 「진입점을 연결한다」 와 어긋났다. 새 구현은 진입 파일과 폴더의 예시 설정을 가리킨다. 팀 사본에는 옛 이름 진입을 두지 않는다: 팀 내보내기는 PR11 뒤에 새 main 으로 한 번 나가고, 그 전에는 `team-export` 브랜치의 Python 사본이 나가 팀 래퍼의 `browser_driver.py` 호출이 그대로 돈다 |
-| 11 | 마무리 | Python job 삭제, `pending` 비우기, README 와 `docs/code-architecture.md` 의 남은 `python3` 줄 정리 |
+| 11 | 마무리 | 테스트 실행기·CI 의 Python 단계 제거, README 와 `docs/code-architecture.md` 의 남은 `python3` 줄 정리. `pending` 의 `orch-legacy` 는 orch-cli 정리 PR 이 지운다 |
 
 ## 결정
 

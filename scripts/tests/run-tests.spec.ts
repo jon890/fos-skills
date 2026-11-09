@@ -21,8 +21,6 @@ const EXIT3 = "import test from 'node:test';\ntest('exit', () => { process.exit(
 const KILLER = "import test from 'node:test';\ntest('kill group', async () => { await new Promise((r) => setTimeout(r, 300)); process.kill(0, 'SIGTERM'); });\n";
 // stdio 를 쥔 손자를 남긴다. --test-timeout 으로도 node --test 가 끝나지 않는다.
 const LEAK = "import test from 'node:test';\nimport { spawn } from 'node:child_process';\ntest('leak', () => { spawn('sleep', ['30'], { stdio: 'inherit' }).unref(); });\n";
-const PY_OK = "import unittest\n\nclass T(unittest.TestCase):\n    def test_ok(self):\n        pass\n";
-const PY_BAD = "import unittest\n\nclass T(unittest.TestCase):\n    def test_bad(self):\n        self.fail('no')\n";
 
 const roots: string[] = [];
 after(() => {
@@ -98,14 +96,14 @@ describe("run-tests", { concurrency: true }, () => {
     assert.equal(parseArgs(["--concurrency", "2"], 12).concurrency, 2);
   });
 
-  test("인자 없이 git 이 추적하거나 무시하지 않는 묶음과 tsc 를 함께 돈다", async () => {
+  test("인자 없이 git 이 추적하거나 무시하지 않는 묶음과 tsc 를 함께 돌고 test_*.py 는 찾지 않는다", async () => {
     const root = gitRepo({
       ".gitignore": "ignored/\n",
       "a/tests/ok.spec.ts": PASS,
       "a/tests/bad.spec.ts": FAIL,
-      "b/tests/test_ok.py": PY_OK,
+      "b/tests/test_ok.py": "raise SystemExit(1)\n",
       "ignored/tests/x.spec.ts": PASS,
-      "c/tests/test_gone.py": PY_OK,
+      "c/tests/gone.spec.ts": PASS,
     });
     git(root, "add", "-A");
     git(root, "commit", "-qm", "init");
@@ -117,20 +115,10 @@ describe("run-tests", { concurrency: true }, () => {
     const text = summary(out);
     assert.match(text, /^통과 a\/tests\/ok\.spec\.ts [\d.]+s$/m);
     assert.match(text, /^실패 a\/tests\/bad\.spec\.ts [\d.]+s \(테스트 실패\) 로그: .+node\.log$/m);
-    assert.match(text, /^통과 b\/tests [\d.]+s$/m);
     assert.match(text, /^통과 tsc [\d.]+s$/m);
-    assert.match(text, /^결과: 통과 3, 실패 1, 전체 4, 걸린 시간 [\d.]+s$/m);
-    assert.doesNotMatch(text, /ignored|c\/tests/);
+    assert.match(text, /^결과: 통과 2, 실패 1, 전체 3, 걸린 시간 [\d.]+s$/m);
+    assert.doesNotMatch(text, /ignored|c\/tests|b\/tests/);
     assert.equal(done.out.trim().split("\n").at(-1), text.trim().split("\n").at(-1));
-  });
-
-  test("실패하는 Python 묶음을 인자로 주면 그 폴더가 실패다", async () => {
-    const root = tempDir();
-    write(root, "d/tests/test_bad.py", PY_BAD);
-    const done = await runner(root, ["d/tests/test_bad.py"]);
-    assert.equal(done.code, 1, done.out + done.err);
-    assert.match(done.out, /^실패 d\/tests [\d.]+s \(종료 코드 1\) 로그: /m);
-    assert.match(done.out, /^결과: 통과 0, 실패 1, 전체 1, /m);
   });
 
   test("--test-timeout 에 걸린 테스트가 든 파일은 시간 초과 실패다", async () => {
@@ -147,28 +135,25 @@ describe("run-tests", { concurrency: true }, () => {
     const root = tempDir();
     write(root, "t/a.spec.mjs", PASS);
     write(root, "t/b.spec.mjs", FAIL);
-    write(root, "py/tests/test_ok.py", PY_OK);
     const done = await runner(root, ["t/a.spec.mjs"]);
     assert.equal(done.code, 0, done.out + done.err);
     assert.match(done.out, /^통과 t\/a\.spec\.mjs [\d.]+s$/m);
-    assert.doesNotMatch(done.out, /b\.spec|tsc|py\/tests/);
+    assert.doesNotMatch(done.out, /b\.spec|tsc/);
     assert.match(done.out, /^결과: 통과 1, 실패 0, 전체 1, 걸린 시간 [\d.]+s$/m);
   });
 
-  test("폴더를 인자로 주면 Python 묶음이거나 그 아래 *.spec.ts 다", async () => {
+  test("폴더를 인자로 주면 그 아래 *.spec.ts 다", async () => {
     const root = tempDir();
     write(root, "x/tests/a.spec.ts", PASS);
     write(root, "x/tests/deep/b.spec.ts", PASS);
-    write(root, "y/tests/test_ok.py", PY_OK);
     write(root, "z/one.spec.mjs", PASS);
-    const done = await runner(root, ["x/tests/", "y/tests", join(root, "z/one.spec.mjs")]);
+    const done = await runner(root, ["x/tests/", join(root, "z/one.spec.mjs")]);
     assert.equal(done.code, 0, done.out + done.err);
     assert.match(done.out, /^통과 x\/tests\/a\.spec\.ts /m);
     assert.match(done.out, /^통과 x\/tests\/deep\/b\.spec\.ts /m);
-    assert.match(done.out, /^통과 y\/tests /m);
     const absolute = join(root, "z/one.spec.mjs");
     assert.ok(done.out.split("\n").some((line) => line.startsWith(`통과 ${absolute} `)), done.out);
-    assert.match(done.out, /^결과: 통과 4, 실패 0, 전체 4, /m);
+    assert.match(done.out, /^결과: 통과 3, 실패 0, 전체 3, /m);
   });
 
   test("process.exit 로 끝나는 파일과 그룹에 신호를 보내 끊긴 실행은 실패 0 이 아니다", async () => {
@@ -192,17 +177,6 @@ describe("run-tests", { concurrency: true }, () => {
     assert.equal(done.code, 1, done.out + done.err);
     assert.match(done.out, /^실패 t\/leak\.spec\.mjs [\d.]+s \(시간 초과\) 로그: /m);
     assert.ok(done.ms < 20000, `${done.ms}ms`);
-  });
-
-  test("python3 를 띄우지 못하면 Python 묶음이 실패다", async () => {
-    const root = tempDir();
-    write(root, "b/tests/test_ok.py", PY_OK);
-    write(root, "e/tests/test_ok.py", PY_OK);
-    write(root, "f/tests/test_ok.py", PY_OK);
-    // 실행기는 node 를 process.execPath 로 띄우고 인자 모드는 git 이 필요 없어 빈 PATH 로 돈다.
-    const done = await runner(root, ["--concurrency", "2", "b/tests", "e/tests", "f/tests"], { PATH: tempDir("run-tests-bin-") });
-    assert.equal(done.code, 1, done.out + done.err);
-    for (const suite of ["b", "e", "f"]) assert.match(done.out, new RegExp(`^실패 ${suite}/tests 0\\.0s \\(python3 가 없다\\)`, "m"));
   });
 
   test("tsc 가 실패하면 실패 tsc 와 1 이다", async () => {
