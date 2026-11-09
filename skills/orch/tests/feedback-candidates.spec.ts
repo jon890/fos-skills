@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -184,4 +184,20 @@ test('휴지통 준비가 실패해도 원본을 지키고 같은 옮기기 명�
   assert.equal(run('migrate', '--apply', '--trash', join(repo, 'trash')).status, 0)
   assert.equal(existsSync(source), false)
   assert.equal(readFileSync(join(repo, 'trash', 'old.md'), 'utf8'), '## 문제\n원문\n')
+})
+
+
+test('같은 이름을 동시에 적으면 하나만 저장하고 다른 실행은 안내하며 끝난다', async () => {
+  const env = { ...process.env }
+  delete env.ORCH_DIR
+  const add = () => new Promise<{ code: number | null; stderr: string }>(resolve => {
+    const child = spawn(process.execPath, [SCRIPT, 'add', ...fields], { cwd: repo, env })
+    let stderr = ''
+    child.stderr.on('data', value => { stderr += String(value) })
+    child.on('close', code => resolve({ code, stderr }))
+  })
+  const results = await Promise.all([add(), add()])
+  assert.deepEqual(results.map(r => r.code).sort(), [0, 1])
+  assert.ok(results.every(r => !r.stderr.includes('Error:') && !r.stderr.includes(' at ')))
+  assert.ok(parse(readFileSync(join(dir, 'a.md'), 'utf8')))
 })

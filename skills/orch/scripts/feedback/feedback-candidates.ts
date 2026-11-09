@@ -128,6 +128,7 @@ function main(): number {
     return 0
   } catch (error) {
     if (error instanceof Usage) { process.stderr.write(`${USAGE}\n${error.message}\n`); return 2 }
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') { process.stderr.write(`다른 실행이 같은 이름을 먼저 저장했다. feedback list 로 확인한다: ${(error as NodeJS.ErrnoException).path ?? ''}\n`); return 1 }
     if (error instanceof Refused) { process.stderr.write(`${error.message}\n`); return 1 }
     throw error
   }
