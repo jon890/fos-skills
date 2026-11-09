@@ -307,15 +307,19 @@ function checkFileState(path: string, entries: Entry[], repo: string, virtual: M
     for (const p of virtual.keys()) if (!isGlob(p) && matches(p, rel)) candidates.add(p)
     let exists = [...candidates].some((p) => (virtual.has(p) ? virtual.get(p)! : existsSync(`${repo}/${p}`)))
     const deleted = [...virtual].filter(([, alive]) => alive === false).map(([p]) => p)
+    let coveredBy: string | undefined
     if (!exists && !deleted.some((p) => matches(rel, p))) {
       // glob 끼리는 한쪽 문자열을 경로로 보고 다른 쪽에 맞춰 포함 관계를 판정한다
-      exists = created.some((pattern) => matches(rel, pattern) || matches(pattern, rel))
+      coveredBy = created.find((pattern) => matches(rel, pattern) || matches(pattern, rel))
+      exists = coveredBy !== undefined
     }
     if (action === '신규' && glob) {
       warnings.push(`${path} — 신규 glob 은 구체 파일의 부재를 보장하지 못한다: ${rel}`)
       created.push(rel)
     } else if (action === '신규' && exists && uncommittedDocs(repo, rel)) {
       warnings.push(`${path} — 4단계에서 먼저 쓴 docs 로 보여 신규 존재를 허용한다: ${rel} (이미 쓴 docs 는 변경 파일 표에 넣지 않는다)`)
+    } else if (action === '신규' && exists && coveredBy !== undefined) {
+      out.push(`${path} — 앞 phase 의 glob ${coveredBy} 이 이미 덮는다: ${rel} (glob 을 좁히거나 수정으로 적는다)`)
     } else if (action === '신규' && exists) {
       out.push(`${path} — 신규 파일이 이미 존재한다: ${rel} (구현 후 검사는 --audit)`)
     } else if ((action === '수정' || action === '삭제') && !exists) {

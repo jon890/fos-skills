@@ -181,6 +181,22 @@ describe("BROKEN_ANCHOR", () => {
   });
 });
 
+describe("AMBIGUOUS_ANCHOR", () => {
+  test("같은 이름 제목으로 가는 앵커 링크는 stderr 경고이고 종료 코드는 0 이다", () => {
+    const root = repo({
+      "docs/a.md": "# 문서\n\n## 절\n\n## 절\n\n## 유일\n",
+      "README.md": "[가](docs/a.md#절) [나](docs/a.md#절-1) [다](docs/a.md#유일)\n",
+    });
+    const r = run(root, "check");
+    assert.equal(r.code, 0);
+    assert.deepEqual(r.out, []);
+    const warned = r.err.split("\n").filter((l) => l.startsWith("경고:"));
+    assert.equal(warned.length, 2, r.err);
+    assert.ok(warned[0].includes("README.md:1: AMBIGUOUS_ANCHOR docs/a.md#절 "));
+    assert.ok(warned[1].includes("AMBIGUOUS_ANCHOR docs/a.md#절-1 "));
+  });
+});
+
 describe("ADR_UNLINKED", () => {
   const files = {
     "docs/adr/001-a.md": adr("ADR-001", "가"),

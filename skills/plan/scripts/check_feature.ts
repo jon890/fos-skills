@@ -147,7 +147,7 @@ function checkConfirmed(head: string): string[] {
 function checkDomainChanges(rawBody: string, draft = false): string[] {
   const body = pyStrip(rawBody.replace(pyre(/<!--[\s\S]*?-->/g), ''))
   if (!body || body.startsWith('도메인 규칙 변경 없음:')) return []
-  const rows = [...tableRows(body)].filter((cells) => cells.length > 0 && /(?<![\p{L}\p{N}_])RULE[1-9][0-9]*(?![\p{L}\p{N}_])/u.test(cells[0]))
+  const rows = [...tableRows(body)].filter((cells) => cells.length > 0 && /(?<![\p{L}\p{N}_])RULE(?:[1-9][0-9]*|(?:-[A-Z0-9]+)+)(?![\p{L}\p{N}_])/u.test(cells[0]))
   if (rows.length === 0) return ['도메인 규칙 변경 절에 RULE ID 의 변경 표 또는 「도메인 규칙 변경 없음: 이유」 가 필요하다']
   const problems: string[] = []
   for (const cells of rows) {
