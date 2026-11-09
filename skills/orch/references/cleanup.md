@@ -7,7 +7,7 @@
 `user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 구분하지 못한다. 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
 **worker 터미널을 닫는 기본 경로는 `orca orchestration worker-release --dispatch <id>` 다.** 이 문서가 소유하고, 다른 문서는 가리키기만 한다.
-`worker-release` 는 끝난 worker 의 터미널 하나만 닫고 출력 보관본을 남긴다. 결과가 `retained` 이면 먼저 `worker-show --full` 의 `retainedReason` 으로 이유를 가른다.
+`worker-release` 는 끝난 worker 의 터미널 하나만 닫고 출력 보관본을 남긴다. 결과가 `retained` 이면 먼저 `worker-show --full` 의 `retainedReason` 으로 이유를 구분한다.
 사용자가 Keep open(`worker-keep-open`, `--keep-open`)으로 남겼거나 사용자가 넘겨받은 터미널은 닫지 않는다. 직접 닫는 것은 신원 미확인(`identity_unproven`)처럼 Orca 가 소유를 증명하지 못했고, 사용자 보존이 아님이 확인된 터미널뿐이다.
 그때만 아래 세 조건을 모두 확인한 뒤 `orca terminal close --terminal <handle>` 로 닫는다.
 
