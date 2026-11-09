@@ -158,6 +158,11 @@ const ROWS: Row[] = [
   { group: 'board', verb: 'goal', script: 'board/goal-progress.ts', legacy: { name: 'goal-progress', flags: [] }, usage: 'orch board goal <목표 id>' },
   // routing
   { group: 'routing', verb: 'report', script: 'routing/routing-report.ts', context: ['repo'], usage: 'orch routing report [--repo DIR]... [--since YYYY-MM-DD] [--json | --full]' },
+  // feedback
+  ...['list', 'add', 'set', 'migrate'].map((verb): Row => ({
+    group: 'feedback', verb, script: 'feedback/feedback-candidates.ts', prepend: [verb], context: ['repo'],
+    legacy: { name: 'feedback-candidates', flags: [verb] }, usage: `orch feedback ${verb}`,
+  })),
   // study
   ...(['list', 'add', 'set', 'migrate'] as const).map(
     (verb): Row => ({

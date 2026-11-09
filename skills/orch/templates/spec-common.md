@@ -128,9 +128,27 @@
   - 유의미한가: 고치면 다음 작업의 시간이나 실패가 실제로 줄어드는가. 한 번 겪고 끝날 일, 취향 차이는 올리지 않는다.
   - 단순 함정이 아닌가: 오타, 일시적인 네트워크나 권한 문제, 이 작업에만 있는 사정처럼 스킬을 고쳐도 재발을 못 막는 것은 올리지 않는다.
   - 구조로 막을 수 있는가: 스크립트, 검사기, 명령 한 줄, 문서 구조 변경처럼 다시 일어나지 않게 만드는 방법이 있어야 한다. 「주의한다」 같은 문장 추가로만 막을 수 있으면 올리지 않는다.
-- 올릴 때는 세 항목에 대한 판단 근거를 한 줄씩 함께 적는다.
-- 메모는 `{{FEEDBACK_DIR}}/<워크트리 이름>.md` 에 쌓는다(스킬 이름, 상황, 실제로 한 것, 개선 제안).
-- `worker_done` 본문 끝에 「스킬 개선 후보 N건: <파일 경로>」 를 적는다. 없으면 「스킬 개선 후보 없음」. <!-- orch-rule: skill-feedback -->
+- 후보는 파일을 직접 쓰지 않고 `orch feedback add` 로 적는다. 필수 칸이 빠지면 명령이 저장하지 않는다. <!-- orch-rule: feedback-add -->
+  `SLUG` 는 영문 소문자·숫자·하이픈으로 짓고, `TITLE` 은 무엇이 안 됐는지 쉬운 말로 쓴다. 나머지는 옵션 이름에 맞는 설명과 근거를 채운다.
+
+  ```bash
+  SLUG=""
+  TITLE=""
+  SKILL=""
+  FILE=""
+  SITUATION=""
+  PROBLEM=""
+  WANT=""
+  EVIDENCE=""
+  SIGNIFICANCE=""
+  NONTRIVIAL=""
+  STRUCTURAL=""
+  command -v orch >/dev/null || orch() { _o="$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAUDE_CONFIG_DIR||os.homedir()+"/.claude";let l=[];try{l=JSON.parse(fs.readFileSync(d+"/plugins/installed_plugins.json","utf8")).plugins["fos-skills@fos-skills"]||[]}catch{}l=l.filter(e=>e&&e.installPath);const u=l.filter(e=>e.scope==="user");const e=(u.length?u:l).find(e=>fs.existsSync(e.installPath+"/skills/orch/scripts"));if(!e||!fs.existsSync(e.installPath+"/bin/orch")){console.error("orch: fos-skills 설치본이 없거나 실행기가 없는 옛 번들이다. claude plugin update fos-skills@fos-skills");process.exit(3)}console.log(e.installPath+"/bin/orch")')" || return 3; node "$_o" "$@"; }
+  orch feedback add --slug "$SLUG" --title "$TITLE" --skill "$SKILL" --file "$FILE" --situation "$SITUATION" --problem "$PROBLEM" --want "$WANT" --evidence "$EVIDENCE" --significance "$SIGNIFICANCE" --nontrivial "$NONTRIVIAL" --structural "$STRUCTURAL"
+  ```
+
+  PATH 에 `orch` 가 없으면 위 함수가 설치 기록에서 실행기를 찾는다. 워크트리에서 불러도 주 checkout 의 orch 루트 아래 `feedback/` 에 후보 하나당 파일 하나를 만든다. 칸과 순서는 `references/feedback-review.md` 의 「후보 파일」 이 소유한다.
+- `worker_done` 본문 끝에 「스킬 개선 후보 N건: <이름 목록>」 를 적는다. 없으면 「스킬 개선 후보 없음」. <!-- orch-rule: skill-feedback -->
 - 스킬 파일은 직접 고치지 않는다. 코디네이터가 사용자와 정한 뒤 고친다.
 
 ## 공부 후보 보고

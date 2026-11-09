@@ -102,7 +102,10 @@ describe('spec-common.md 의 스크립트 경로', () => {
 
   test('틀의 모든 블록이 같은 셸 함수 줄을 두고 새 꼴로 부른다', () => {
     const resolvers = [...template().matchAll(FN)].map((m) => m[1])
-    assert.equal(resolvers.length, 4, `셸 함수 줄이 ${resolvers.length}개다`)
+    const blocks = [...template().matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1])
+    for (const block of blocks.filter(text => /^\s*orch\s/m.test(text))) {
+      assert.match(block, new RegExp(FN.source), 'orch 를 부르는 블록에 실행기 찾기 함수가 없다')
+    }
     assert.deepEqual(new Set(resolvers), new Set([resolver()]))
     assert.doesNotMatch(template(), /ORCH_SCRIPTS|\$SKILL_DIR|bin\/orch\.ts/)
     const item = (marker: string) => template().split('\n- ').find((part) => part.includes(`<!-- orch-rule: ${marker} -->`)) ?? ''
