@@ -41,7 +41,6 @@ orch worker send --dispatch "$DISPATCH_ID" --body "$BODY"
 ```
 
 `send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤에는 `recipient_run_mismatch`, 끝난 dispatch 에는 `dispatch_inactive` 로 거절된다.
-같은 worker 의 마지막 메시지에 단 `reply` 는 전달된다.
 
 ## spec 인터뷰를 중계한다
 

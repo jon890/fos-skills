@@ -32,8 +32,7 @@ Claude 세션의 Bash 는 플러그인 `bin/` 이 PATH 에 있어 `orch` 를 그
 스킬을 열면 먼저 설치본을 점검한다. 커밋 SHA 이름 캐시는 폴더 이름으로, 버전 이름 캐시는 `installed_plugins.json` 의 같은 설치 경로에 적힌 `gitCommitSha` 로 원본과 비교한다. 버전 이름 캐시의 설치 기록을 읽지 못하거나 경로 또는 SHA 가 없으면 `SKIP-VERSION` 으로 알리고 그대로 진행한다. `STALE` 이면 출력의 갱신 명령 두 줄을 사용자에게 보인다.
 `MISSING` 이면 문서가 부르는 스크립트가 설치본에 없다는 뜻이라, 그 단계를 건너뛰지 않고 갱신한 뒤에도 없으면 사용자에게 알린다. `SKIP-VERSION` 은 그대로 진행한다.
 `NODE-TOO-OLD` 면 이 스킬의 명령이 돌지 않는다. node 24 이상을 PATH 에 둔 뒤 다시 점검한다.
-`UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG` 은 doctor가 5.2.0에서 지운 설정 칸을 찾았다는 뜻이다. 일반 명령은 같은 설정을 사용법 오류로 거부한다. 고치는 법은 [`references/hooks.md`](references/hooks.md) 가 소유한다.
-`INVALID-CONFIG queue.auto_review.require 에 모르는 조건이 있다` 는 자동 머지 리뷰 조건에 오타가 있다는 뜻이다. 상주 루프가 어느 PR 도 걸지 않으니 줄에 나온 조건 이름으로 고친다.
+`UNKNOWN-HOOK` 은 작업 디렉터리 저장소의 핸들러 경고라 진행을 막지 않는다. `INVALID-CONFIG <이유>` 는 `config.json` 에 고칠 곳이 있다는 뜻이다. 이유별 조치는 [`references/hooks.md`](references/hooks.md) 의 줄 표가 소유한다.
 `FEEDBACK-OPEN <개수> <폴더>` 는 다시 보지 않은 스킬 개선 후보가 있다는 뜻이다. 그날 안에 [`references/feedback-review.md`](references/feedback-review.md) 대로 판정한다.
 `STUDY-OPEN <개수> <폴더>` 는 글로 쓰지도 빼지도 않은 공부 후보가 있다는 뜻이다. 「고를 공부 후보 <개수>개가 <폴더> 에 있다」 로 알리기만 하고 고르라고 재촉하지 않는다.
 사용자 질문이나 결정에서 일반 기술 개념이 판단을 바꿨으면(뜻을 물은 경우 포함) 그 자리에서 공부 후보로 적는다. 아무 주제나 적지 않고 네 기준을 모두 채운 것만 적는다. 기준, 적는 법, 사용자가 고른 후보를 글로 잇는 법은 [`references/study-candidates.md`](references/study-candidates.md) 를 따른다.
@@ -130,7 +129,7 @@ Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비�
 
 ## 4. 기다리기
 
-저장소마다 상주 루프 `orch-loop.ts` 를 띄운다. 루프가 틱마다 질문 확인, 정리, 보드 동기화, CI 감시, 멈춘 worker 와 worker 없이 남은 보드 단계 찾기, 충돌 PR 처리를 한다.
+저장소마다 상주 루프(`orch loop start`)를 띄운다. 루프가 틱마다 질문 확인, 정리, 보드 동기화, CI 감시, 멈춘 worker 와 worker 없이 남은 보드 단계 찾기, 충돌 PR 처리를 한다.
 `orch wait` 를 `--loop-repo` 와 함께 백그라운드로 하나만 걸고, 깨어나면 출력의 메시지 판정 줄(`DONE-SUSPECT`, `DONE`, `STOPPED`, `ESCALATION`, `QUESTION` 차례)을 먼저 본다. 루프의 알림(`LOOP-EVENT`)과 죽음(`LOOP-DEAD`)에도 이 대기가 깨어난다.
 받은 메시지와 알림을 처리하면 stderr 의 `NEXT_WAIT` 명령으로 즉시 다음 대기를 건다. 미완료 dispatch 가 있는 동안 대기 없이 턴을 끝내지 않는다.
 예외는 사용자와 대화 중일 때다. `user-active` 가 `USER-ACTIVE` 면 다시 걸지 않고 상주 루프의 `NO-WAIT` 에 맡긴다([`references/waiting.md`](references/waiting.md) 의 「사용자와 대화 중일 때」).

@@ -95,7 +95,7 @@
 | REQ1 | 저장소에 Python 파일이 남지 않는다 | 마지막 PR 뒤 python3 shebang 을 가진 파일이 없고, `git ls-files '*.py'` 가 DECISION3 의 옛 이름 진입 셋(node shebang 의 JS)뿐이다. 저장소 테스트가 이를 확인하고 어긴 파일 이름을 낸다. 옛 이름 진입을 지우는 시점은 DECISION17 이다 |
 | REQ2 | 셸 파일이 남지 않는다. git 훅처럼 이름이 정해진 진입 파일도 node 로 돈다 | 마지막 PR 뒤 `.sh`, `.bash`, `.zsh` 파일과 셸 shebang 을 가진 파일이 없다(저장소 테스트). 임시 저장소에서 `install-hooks` 로 건 `commit-msg`, `post-commit` 훅이 `git commit` 때 node 로 돌아, 금지어가 든 메시지는 막고 공용 스킬 변경은 알린다 |
 | REQ3 | 옮긴 명령의 옵션, stdout, 쓰는 파일, 종료 코드가 옮기기 전과 같다 | 영역 PR 마다 명령 경계 테스트가 옮기기 전 구현(첫 커밋)과 옮긴 구현(다음 커밋) 모두에서 통과하고, 두 실행 결과가 PR 본문에 있다. 정규식이 판정의 중심인 검사기(korean-check, plan 의 문서 검사기)는 저장소 문서 전체를 옛 명령과 새 명령에 돌린 출력이 같다는 비교가 PR 본문에 있다. stderr 는 문서나 테스트가 읽는 문구만 같다. 같음의 정도는 DECISION19, DECISION20 이다 |
-| REQ4 | 문서가 새 명령을 부른다 | 영역 PR 뒤 그 영역 문서에 `python3`, `bash ...sh` 호출이 없다(`git grep`). 문서가 부르는 스크립트가 모두 있다(`orch-doctor.ts --skip-version --skill-dir`) |
+| REQ4 | 문서가 새 명령을 부른다 | 영역 PR 뒤 그 영역 문서에 `python3`, `bash ...sh` 호출이 없다(`git grep`). 문서가 부르는 스크립트가 모두 있다(`orch doctor --skip-version --skill-dir`) |
 | REQ5 | 이행 중 CI 가 두 언어의 테스트를 모두 돌고, 끝나면 node 테스트만 돈다 | 이행 중 PR 마다 CI 가 남은 Python 테스트와 옮긴 node 테스트를 함께 돌아 통과한다. Python 테스트가 없어진 폴더 때문에 CI 가 실패하지 않는다. 마지막 PR 에서 테스트 실행기의 Python 부분과 jq, zsh 설치가 없어지고, 머지 조건의 job 이름은 testkit 계획이 정한 이름을 따른다 |
 | REQ6 | 저장소 밖에서 옛 이름을 직접 실행하는 곳이 정한 기간 동안 돈다 | `korean-style-check.py --hook`, `check-readability.py --hook`, `browser_driver.py` 를 링크나 직접 실행으로 부르면 새 구현과 같은 결과를 내고, DECISION18 의 자리에 새 명령을 알린다. 이행 뒤 설치 안내(README, `browser_driver install`)는 새 이름만 가리킨다(DECISION21). 셋을 지우는 시점은 DECISION17 이다 |
 | REQ7 | 인터프리터로 옛 이름을 부르는 다른 저장소가 깨진 채 남지 않는다 | 영역 PR 이 머지된 뒤 「다른 저장소의 옛 호출」 의 그 영역 행마다 그 저장소에서 새 명령으로 바꾼 커밋이 있다. 바뀐 이름은 스킬 CHANGELOG 의 `호환성:` 항목에 새 명령과 함께 있다 |

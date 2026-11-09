@@ -66,7 +66,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 - `gh` 에 로그인돼 있어야 PR 을 확인하고 머지한다
 - 같은 PC 의 무거운 검사를 대기열로 돌리는 `heavy-slot` 은 perl 이 PATH 에 있어야 한다
 - 스킬을 열 때 설치본이 원본 main 보다 낡았으면 갱신 명령을 보여 준다
-- 저장소마다 다른 기준 브랜치, 검증 명령, 머지 조건은 `<저장소>/.orch/overlay.md` 에, 배포 워크플로와 보드 위치는 `.orch/config.json` 에, 업무 완료 같은 저장소 고유 동작은 `.skills/orch/hooks/<이벤트>.ts` 에 둔다. 없으면 기본값으로 동작한다
+- 저장소마다 다른 기준 브랜치, 검증 명령, 머지 조건은 `<저장소>/.orch/overlay.md` 에, 배포 워크플로와 보드 위치는 `.orch/config.json` 에, 업무 완료 같은 저장소 고유 동작은 `.orch/hooks/<이벤트>.ts` 에 둔다. 없으면 기본값으로 동작한다
 
 ## 설정한 저장소의 예
 
@@ -96,7 +96,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
   },
   "migrations": {
     "dirs": { "order-api": "modules/order-api/src/main/resources/db/migration" },
-    "before": { "order-api": ".skills/orch/bin/backup-db.sh order pre-auto" }
+    "before": { "order-api": ".orch/bin/backup-db.sh order pre-auto" }
   }
 }
 ```
@@ -110,7 +110,7 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 | `migrations.dirs`, `before` | 마이그레이션이 든 PR 은 번호 순서를 지켜 머지하고, 머지 직전에 그 모듈의 DB 를 백업한다 |
 
 `.orch/overlay.md` 에는 검증 명령(`./gradlew :<모듈>:build` 와 통합 테스트), 마이그레이션 파일을 고치지 않는 규칙, CI runner 장애 대응처럼 설정 값으로 적을 수 없는 절차를 둔다.
-`.skills/orch/hooks/after-deploy.ts` 는 dev 배포가 끝나면 업무 상태를 바꾸고 태그를 단다.
+`.orch/hooks/after-deploy.ts` 는 dev 배포가 끝나면 업무 상태를 바꾸고 태그를 단다.
 키 전체는 [`references/overlay.md`](references/overlay.md) 가 소유한다.
 
 이렇게 설정하면 worker 를 띄운 뒤에는 코디네이터에게 알릴 일이 있을 때만 대화가 이어진다.

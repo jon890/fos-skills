@@ -199,7 +199,7 @@
 | 진행 순서 | 설계 문서를 먼저 합의하고 구현한다 |
 | handoff 산출물 정리 | 묻지 않고 `--apply` 로 휴지통 폴더에 옮긴다. 지우지 않으므로 되살릴 수 있다 |
 | 옛 `.py` 명령 경로 | orch 5.0.0 에서 doctor 의 Node 버전 검사에 필요한 `orch-doctor.py`, `ts_shim.py` 만 남기고 지웠다 |
-| 핸들러 언어 | `.skills/orch/hooks/<이벤트>.ts` 만 받는다. 다른 언어는 그 핸들러가 자식 프로세스로 부른다 |
+| 핸들러 언어 | `.orch/hooks/<이벤트>.ts` 만 받는다. 다른 언어는 그 핸들러가 자식 프로세스로 부른다 |
 | 충돌한 PR | 그 PR 을 만든 기존 worker 가 푼다. worker 터미널은 `worker_done` 뒤에도 그 PR 이 머지되거나 닫힐 때까지 남기고, 충돌이 나면 같은 worker 에게 후속 지시서를 보낸다. 이어 받지 못하면 새 worker 를 띄우지 않고 코디네이터에게 알린다. 새 worker 자동 띄우기 설정은 두지 않는다. 로컬 자원을 아끼기 위해서다. 머지 뒤에는 그 터미널을 바로 정리한다. 처음 답(설정으로 자동 띄우기)을 같은 날 바꿨다 |
 | 사용자 결정 질문 | worker 와 코디네이터가 사용자에게 묻는 결정은 첫 줄 `결정: <무엇을 정하는지>` 와 배경, 선택지별 결과, 권장안과 이유를 갖춘다. 보드는 결정 필요 항목마다 그 첫 줄과 권장안을 보인다. 코디네이터는 사용자가 정할 질문에 대신 답하지 않고 권장안을 보여 사용자가 고르게 한다 |
 | 터미널 직접 입력 금지 hook | 대상이 변수이거나 orca 조회가 실패하면 막는다. `send-to-worker` 를 안내한다 |
@@ -275,7 +275,7 @@ work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worke
 | runner 수만큼 draft 를 ready 로 | ready 슬롯 | `pipeline.ready_slots`, `before-ready.ts` |
 | 머지 순서 | `state/order.json` | 없음 |
 | 마이그레이션 번호 예약 | `reserve-migration.ts`, `lib/reservations.ts` | `migrations.dirs` |
-| ADR 번호 예약 | `reserve-migration.ts --kind adr`, `lib/reservations.ts` | `adr.dirs` |
+| ADR 번호 예약 | `orch queue reserve --kind adr`, `lib/reservations.ts` | `adr.dirs` |
 | 자동 머지 | 루프의 틱(`lib/auto-merge.ts`) | `queue.auto_merge`, `queue.auto_review`, `migrations.*`, 지시서와 보드의 `머지 보류` 줄 |
 | 바로 머지 판정 | 머지 큐의 단위 겹침 판정 | `queue.*` |
 | 문서 PR 바로 머지 | 루프 | `pipeline.docs_merge`, `queue.docs_glob` |
@@ -311,6 +311,6 @@ work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worke
 | `skills/orch/references/hooks.md` | 이벤트를 고르는 법과 핸들러 예시 | 입력 필드 표. `lib/events.ts` 머리 주석이 소유한다 |
 | 스크립트 머리 주석 | 사용법, 옵션, 판정, 종료 코드 | 다른 스크립트의 동작 |
 | `skills/orch/templates/spec-common.md` | 모든 worker 에게 같은 규칙. `{{...}}` 는 저장소마다 한 번 채우는 값만 | Run 마다 바뀌는 값, 허락. 허락은 지시서의 `허락:` 줄이 소유한다 |
-| 저장소의 `.skills/orch/overlay.md`, `config.json`, `hooks/` | 저장소 고유 값과 일 | 코어 규칙의 사본 |
+| 저장소의 `.orch/overlay.md`, `config.json`, `hooks/` | 저장소 고유 값과 일 | 코어 규칙의 사본 |
 
 한 저장소의 명령 이름, CI job 이름, 배포 스크립트는 공용 스킬에 두지 않는다. 예시가 필요하면 `example.com` 과 일반 이름으로 쓴다.

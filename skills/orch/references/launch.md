@@ -1,13 +1,13 @@
 # 3. 띄우기
 
 여러 worker 를 동시에 두면 **지금 묶인 run 하나에** 띄운다. 묶인 run 은 `run-current` 로 본다.
-새 run 을 만들면 코디네이터가 그쪽으로 옮겨 묶이고, 이전 run 의 메시지를 받지 못한다.
+새 run 을 만들면 코디네이터가 그쪽으로 옮겨 묶인다. 이전 run 의 메일도 코디네이터를 깨우지만(Orca 1.4.254 가이드) worker 는 묶인 run 에 띄운다.
 `check` 나 `worker-start --run` 이 `consumer_fenced` 로 거절되면 코디네이터가 다른 run 에 묶인 것이다.
 `orca orchestration run-use --id "$RUN_ID"` 로 옮겨 붙은 뒤 메시지를 읽는다.
 상태만 볼 때는 fenced 상태에서도 `worker-list --run "$RUN_ID"` 가 동작한다.
 
 **워크트리는 `origin/<기준 브랜치>` 위에 만든다.** 로컬 브랜치를 기준으로 만들면 로컬 브랜치가 뒤처져 있어도 오류 없이 만들어져, worker 가 옛 코드 위에서 계획하고 구현한다.
-띄우기 전에 원격을 갱신하고, 로컬 기준 브랜치가 깨끗하면 fast-forward 로 맞춘다.
+`make-worktree` 가 워크트리를 만들 때 스스로 `git fetch origin` 을 한다. 그래도 띄우기 전에 원격을 갱신하는 이유는 `spec-lint` 가 fetch 없이 지금 있는 `origin/<기준 브랜치>` 로 오버레이와 지시서가 가리키는 경로를 검사하기 때문이다. 로컬 기준 브랜치가 깨끗하면 fast-forward 로 맞춘다.
 `$REPO` 는 대상 저장소 경로, `$BASE` 는 기준 브랜치 이름이다.
 
 `merge --ff-only` 는 지금 체크아웃된 브랜치에 들어가므로 기준 브랜치가 체크아웃돼 있을 때만 돌린다.
@@ -43,6 +43,8 @@ Orca 의 `--worktree new-top-level` 은 브랜치 이름을 `<git 사용자>/<�
 orch worker launch --spec "$SPEC_FILE" --name "$NAME" --base "$BASE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
+
+지시서의 `worker 선택:` 줄이 effort 를 `기본` 으로 적었으면(예: Haiku 행) `--effort "$EFFORT"` 를 통째로 뺀다. 넣으면 `launch-worker` 가 줄과 인자가 다르다며 종료 코드 1 로 거부한다. 이 절 아래와 다른 절의 같은 꼴 블록도 같다.
 
 `make-worktree` 가 거부하면 같은 이름의 로컬이나 원격 브랜치, 또는 경로가 이미 있는 것이다.
 새 일이면 지시서의 브랜치 이름을 바꾼다. 예전에 머지된 PR 과 같은 이름을 다시 쓰면 그 PR 의 기록과 섞인다.
@@ -196,7 +198,7 @@ orch worker adopt --apply "$TERMINAL"
 목록의 `SESSION <터미널> <화면 상태> <브랜치> specs=<지시서 후보>` 줄에서 지시서 후보를 확인한다(세션의 전체 기록은 `--full`). 후보가 없거나 여럿이면 `--spec` 으로 해당 브랜치의 지시서를 고른다. 사람의 셸과 작업·권한·초안 대기 화면은 자동으로 이어 붙이지 않는다. 원래 허락 범위와 막힌 결정을 먼저 확인한다.
 기본 실행은 다시 띄울 worker 도 낸다. 명령은 안내만 하고 부르지 않는다.
 
-- `LIMITED <터미널>`: 살아 있는 dispatch 인데 화면이 사용 한도 안내(`Usage limit reached`, `You've hit your ... limit`)에서 멈췄다. 계정을 바꾼 뒤 이전 계정의 worker 가 이렇게 남는다. heartbeat 는 계속 와 대기로는 알 수 없다. 아래 줄의 `orch worker resume` 을 부른다(아래 「한도나 재부팅으로 멈춘 worker 이어 가기」)
+- `LIMITED <터미널>`: 살아 있는 dispatch 인데 화면이 사용 한도 안내에서 멈췄다(문구는 `scripts/lib/sessions.ts` 의 `LIMIT_LINE` 이 소유한다). 계정을 바꾼 뒤 이전 계정의 worker 가 이렇게 남는다. heartbeat 는 계속 와 대기로는 알 수 없다. 아래 줄의 `orch worker resume` 을 부른다(아래 「한도나 재부팅으로 멈춘 worker 이어 가기」)
 - `RESTART`: Task 가 `ready` 인데 가장 최근 dispatch 가 `failed` 이고 그 터미널이 열려 있지 않다. 아래 줄의 `orch worker resume` 을 부른다
 
 명령이 `ADOPT-MANUAL` 을 내면 CLI 에 재연결 기능이 없는 것이다. 출력된 임시 이어받기 지시서를 검토하고, 사용자가 교체를 고른 뒤 같은 워크트리에 새 worker 를 띄운다. `ADOPT-ERROR` 면 잔여 자원과 실패 단계를 확인하고 자동으로 다시 띄우지 않는다.

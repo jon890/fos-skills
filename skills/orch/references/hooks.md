@@ -6,7 +6,7 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 
 ## 이벤트 고르기
 
-이벤트 이름, 내는 명령, 시점, 거부할 수 있는지는 저장소의 `docs/flow.md` 「이벤트 목록」 표가 소유한다. 이름 목록의 원본은 `scripts/lib/events.ts` 의 `EVENTS` 다.
+이벤트 이름, 내는 명령, 거부할 수 있는지는 아래 표와 이 절의 설명이 소유한다. 이름 목록의 원본은 `scripts/lib/events.ts` 의 `EVENTS` 다.
 
 - **동작을 막아야 하면 거부할 수 있는 이벤트를 고른다.** `before-` 로 시작하는 이벤트와 `verify-merged`, `worker-stalled` 다. 핸들러가 종료 코드 10 으로 끝나면 명령이 그 동작을 하지 않는다. `worker-stalled` 의 10 은 넘김이다. 코어가 코디네이터에게 `WORKER-STALLED` 를 알린다.
 - **알리거나 기록만 하면 나머지 이벤트를 고른다.** 핸들러가 실패해도 코어 동작은 이어 간다.
@@ -18,7 +18,7 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 | `launch-worker.ts` | `before-launch`, `worker-launched` |
 | `watch-questions.ts` | `worker-question` |
 | `wait-important.ts` | `worker-done`, `worker-lost` |
-| `orch-doctor.ts --run` | `session-resume` |
+| `orch doctor --run` | `session-resume` |
 | `ci-ready.ts` | `before-ready`, `pr-ready` |
 | `notify-conflicts.ts` | `pr-conflict` |
 | `merge_queue.ts`(`merge-with-finish.ts` 가 건 것 포함) | `before-merge`, `verify-merged`, `after-merge`, `after-queue` |
@@ -49,9 +49,24 @@ const LIMIT = 4
 const input = JSON.parse(readFileSync(0, 'utf8'))
 if (!input.run) process.exit(0)
 
-const out = execFileSync(process.env.ORCA ?? 'orca', ['orchestration', 'worker-list', '--run', input.run, '--limit', '100', '--json'], { encoding: 'utf8' })
-const workers: { dispatchStatus?: string }[] = JSON.parse(out).result.workers ?? []
-const live = workers.filter((w) => ['pending', 'dispatched', 'running'].includes(w.dispatchStatus ?? ''))
+// worker-list 는 한 페이지가 100개다. 첫 페이지만 읽으면 오래된 worker 를 놓친다
+type Worker = { dispatchStatus?: string; workerState?: string; terminalState?: string; resource?: { releaseState?: string } }
+const workers: Worker[] = []
+let cursor = ''
+do {
+  const args = ['orchestration', 'worker-list', '--run', input.run, '--limit', '100', '--json', ...(cursor ? ['--cursor', cursor] : [])]
+  const result = JSON.parse(execFileSync(process.env.ORCA ?? 'orca', args, { encoding: 'utf8' })).result
+  workers.push(...(result.workers ?? []))
+  cursor = result.page?.nextCursor ?? ''
+} while (cursor)
+// 끊기거나(abandoned, failed, stopped) 터미널을 반납한(released) worker 는 살아 있지 않다. 판정은 lib/worker-state.ts 의 isLive 와 같다
+const isLive = (w: Worker) =>
+  ['working', 'ready'].includes(w.workerState ?? '') ||
+  (['pending', 'dispatched', 'running'].includes(w.dispatchStatus ?? '') &&
+    !['abandoned', 'failed', 'stopped'].includes(w.workerState ?? '') &&
+    w.terminalState !== 'released' &&
+    w.resource?.releaseState !== 'released')
+const live = workers.filter(isLive)
 if (live.length >= LIMIT) {
   console.log(`동시 worker ${live.length}개가 상한 ${LIMIT}개에 닿아 ${input.branch} 를 띄우지 않는다`)
   process.exit(10)
@@ -123,6 +138,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
 | `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
 | `INVALID-CONFIG queue.auto_review.require 에 모르는 조건이 있다: ...` | 자동 머지 리뷰 조건에 모르는 이름이 있다. 상주 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | `config.json` 의 이름을 줄에 나온 「쓸 수 있는 조건」 가운데 하나로 고친다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」) |
+| `INVALID-CONFIG 설정 파일의 inbox 절에 모르는 키가 있다: ...` | `config.json` 의 `inbox` 절에 모르는 키가 있다 | 줄에 나온 키를 지우거나 고친다([`overlay.md`](overlay.md) 의 `inbox` 절) |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
 나머지 이벤트에서 명령의 종료 코드에 반영하는지는 `docs/flow.md` 「갈래」 표가 소유한다.
@@ -131,7 +147,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 ## 옛 설정 칸 옮기기
 
 orch 5.2.0에서 `config.json`의 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`와 대응 명령줄 옵션 `--before`, `--verify-merged`, `--after-merged`, `--complete-cmd`를 지웠다. 일반 런타임 명령은 남은 설정을 사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다. `finish.task_pattern`은 마지막 PR 판정이 읽으므로 남는다.
-`migrate-orch-dir.ts --hooks` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다. 만든 핸들러는 옛 칸을 돌리던 것과 같은 인자, 환경 변수, 작업 디렉터리로 옛 명령을 부른다.
+`orch doctor migrate-hooks --apply` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다. 만든 핸들러는 옛 칸을 돌리던 것과 같은 인자, 환경 변수, 작업 디렉터리로 옛 명령을 부른다.
 
 머지 큐와 worker 가 돌지 않을 때 옮긴다. `$REPO` 는 대상 저장소의 주 checkout 이다.
 
