@@ -1,12 +1,15 @@
-// 열린 PR 의 충돌 찾기, PR 하나의 처리, (PR, base SHA) 마다 한 번 알린 기록의 한 벌이다.
+// 열린 PR 의 충돌 찾기, PR 하나의 처리, (PR, PR HEAD, 충돌 파일) 마다 한 번 알린 기록의 한 벌이다.
 // 사용처: notify-conflicts.ts(머지 직후 한 번 보기), orch-loop.ts(틱의 마지막 단계). PR HEAD 받기(fetchPrHead)와
 // base 받기(baseHead)는 ci-ready 도 쓴다. 충돌 판정은 lib/git.ts 의 conflicts(merge-tree) 한 벌이다.
 // GitHub 의 mergeable 은 머지 직후 한동안 UNKNOWN 이라 쓰지 않는다.
 //
 // 실패는 예외 대신 { ok: false, error } 로 낸다. 부르는 쪽이 조회 실패(종료 코드 2)나 보류로 바꾼다.
 //
-// 알린 기록: <orch 루트>/state/notify-conflicts.json. 옛 notify-conflicts.py 와 같은 파일과 키(`<PR>@<base SHA>`)다.
-//   값은 notified 와 resumed 면 dispatch id, orphan 이면 `orphan` 이다. base 가 움직이면 키가 달라져 다시 알린다.
+// 알린 기록: <orch 루트>/state/notify-conflicts.json. 옛 notify-conflicts.py 와 같은 파일이다. 키는 notifiedKey 의
+//   `<PR>@<PR HEAD SHA>#<충돌 파일 지문>` 이다. 지문은 정렬한 충돌 파일 목록을 줄바꿈으로 이은 SHA-256 의 앞 12자리다.
+//   값은 notified 와 resumed 면 dispatch id, orphan 이면 `orphan` 이다. worker 가 push 해 HEAD 가 바뀌거나 충돌 파일이 달라지면
+//   키가 달라져 다시 알린다. base 만 움직이고 HEAD 와 충돌 파일이 같으면 다시 알리지 않는다. worker 가 아직 풀고 있는 같은 충돌이라서다.
+//   옛 키(`<PR>@<base SHA>`)는 새 키와 맞지 않아, 올린 뒤 처음 보는 충돌은 PR 마다 한 번 다시 알린다.
 //   파일이 없거나 깨졌으면 빈 기록이다. 쓰기는 lib/paths.ts 의 makeParent 로 부모 폴더를 만들고 git 이 무시하게 한 뒤 한다.
 //   notify-conflicts 와 루프가 같은 파일을 쓰므로, 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 충돌을 두 번 보내지 않는다.
 //   둘이 겹쳐 돌면 둘 다 기록을 읽은 뒤 보내므로 두 번 보낼 수 있다. 기록 파일에는 잠금이 없다.
@@ -18,10 +21,11 @@
 //   concludeConflict  기록한 뒤 pr-conflict 를 낸다. 이벤트를 내지 못한 오류는 stderr 에 한 줄 남기고 넘어간다
 //   SEND_TO_WORKER 환경 변수가 send-to-worker 의 경로를 바꾼다. 기본은 이 폴더의 부모 폴더의 send-to-worker.ts 다.
 //
-// 후속 지시서 이름: <지시서 폴더>/spec-conflict-<PR>.md(conflictSpecPath). PR 마다 하나이고 base 가 움직이면 덮어쓴다(ADR-015).
+// 후속 지시서 이름: <지시서 폴더>/spec-conflict-<PR>.md(conflictSpecPath). PR 마다 하나이고 다시 알릴 때 덮어쓴다(ADR-015).
 //   앞 base 의 지시서는 다음 base 에서 쓸모가 없다. `중간 과정: PR #<PR>` 줄을 담아 launch-worker 가 보드에 새 항목을 만들지 않는다.
 //   그 PR 의 마무리(finish-pr.ts)가 머지 뒤 conflictSpecFiles 로 찾아 지운다. 옛 이름 spec-conflict-<PR>-<base SHA 앞 8자리>.md 도 그 목록에 든다.
 
+import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { INTERIM } from './board.ts'
@@ -119,8 +123,10 @@ export function notifiedFile(repo: string): string {
   return join(pathOf('state', repo), 'notify-conflicts.json')
 }
 
-export function notifiedKey(pr: number, baseSha: string): string {
-  return `${pr}@${baseSha}`
+// 알린 기록의 키(머리 주석의 「알린 기록」). files 의 순서는 보지 않는다
+export function notifiedKey(pr: number, headSha: string, files: readonly string[]): string {
+  const print = createHash('sha256').update([...files].sort().join('\n')).digest('hex').slice(0, 12)
+  return `${pr}@${headSha}#${print}`
 }
 
 export function loadNotified(file: string): Record<string, string> {
@@ -144,6 +150,10 @@ export function recordNotified(file: string, repo: string, key: string, value: s
 
 // send-to-worker 는 끝난 dispatch 를 이어 쓸 때 launch-worker 를 1시간까지, 살아 있는 worker 를 깨울 때 5분까지 기다린다
 export const SEND_MS = 3_900_000
+// 합친 뒤 마이그레이션 번호를 다시 받으라는 안내. 합친 base 에 같은 번호가 들어왔으면 머지 큐의 MIGRATION-CLASH 에서야 드러나
+// 검증을 한 바퀴 더 돌기 때문이다. 공통 지시서 틀(templates/spec-common.md)의 마이그레이션 예약 절과 같은 내용이다
+export const RESERVE_AGAIN =
+  '마이그레이션을 더한 PR 이면 합친 뒤 같은 모듈과 이름으로 `orch queue reserve` 를 다시 부르고, 줄 끝이 renewed 면 파일 이름을 그 경로로 바꾼다.'
 // 본문에 이름을 적는 충돌 파일 수
 const SHOWN_FILES = 10
 // 끝난 dispatch 의 send-to-worker 1 에서 worker-start 가 성공했다는 표시(notify-conflicts.ts 머리 주석의 「끝난 dispatch 의 1」)
@@ -168,7 +178,7 @@ function message(number: number, base: string, baseSha: string, files: string[])
   const shown = files.slice(0, SHOWN_FILES).join(', ') + (files.length > SHOWN_FILES ? ` 외 ${files.length - SHOWN_FILES}개` : '')
   return (
     `PR #${number} 이 base ${base}(${baseSha.slice(0, 8)}) 와 충돌한다. 충돌 파일: ${shown}. ` +
-    `origin/${base} 를 합쳐 충돌을 풀고 검사를 다시 돌린 뒤 push 한다. 끝나면 status 로 알린다.`
+    `origin/${base} 를 합쳐 충돌을 풀고 검사를 다시 돌린 뒤 push 한다. ${RESERVE_AGAIN} 끝나면 status 로 알린다.`
   )
 }
 
@@ -189,8 +199,9 @@ function followUp(repo: string, pr: OpenPr, base: string, baseSha: string, files
     '## 할 일',
     '',
     `1. \`origin/${base}\` 를 합쳐 아래 충돌 파일을 푼다`,
-    '2. 저장소 검증 명령을 돌린다',
-    '3. push 한 뒤 status 로 알린다',
+    `2. ${RESERVE_AGAIN}`,
+    '3. 저장소 검증 명령을 돌린다',
+    '4. push 한 뒤 status 로 알린다',
     '',
     '## 충돌 파일',
     '',
@@ -291,7 +302,7 @@ export async function concludeConflict(
   baseSha: string,
   outcome: Extract<ConflictOutcome, { kind: 'record' }>,
 ): Promise<void> {
-  recordNotified(statePath, repo, notifiedKey(pr.number, baseSha), outcome.value)
+  recordNotified(statePath, repo, notifiedKey(pr.number, pr.headRefOid, files), outcome.value)
   try {
     await fire('pr-conflict', { pr: prInput(pr), base_head: baseSha, files, worker: outcome.worker, action: outcome.action }, ctx)
   } catch (e) {

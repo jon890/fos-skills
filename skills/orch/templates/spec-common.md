@@ -39,7 +39,7 @@
   orch queue reserve --repo "$(git rev-parse --show-toplevel)" --module "$MODULE" --name "$NAME"
   ```
 
-  `MODULE` 은 orch 설정 `migrations.dirs` 의 모듈 이름이고 `NAME` 은 영문 설명이다. Java 마이그레이션은 `--kind java` 를 더하고 `NAME` 을 PascalCase 이름으로 준다. 줄 끝이 `renewed` 면 이미 만든 파일의 이름을 그 경로로 바꾼다. `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)나 1(조회 실패)이면 한 번 다시 부르고, 그래도 아니면 그 줄을 붙여 ask 로 묻는다. 2 면 바로 ask 로 묻는다. out-of-order 를 켜지 않는다. 코디네이터가 이 PR 이 막는 쪽이라고 알리면 `--again` 을 더해 새 번호를 받고 파일 이름을 바꾼다.
+  `MODULE` 은 orch 설정 `migrations.dirs` 의 모듈 이름이고 `NAME` 은 영문 설명이다. Java 마이그레이션은 `--kind java` 를 더하고 `NAME` 을 그 폴더의 기존 파일 이름 형식(snake_case 나 PascalCase)대로 준다. 줄 끝이 `renewed` 면 이미 만든 파일의 이름을 그 경로로 바꾼다. 기준 브랜치를 합친 뒤에는 같은 `MODULE` 과 `NAME` 으로 다시 부르고, `renewed` 면 파일 이름을 바꾼다. 합친 base 에 같은 번호가 들어왔으면 머지 단계의 번호 충돌에서야 드러나 검증을 한 바퀴 더 돌기 때문이다. `RESERVED` 줄이 없으면 파일을 만들지 않는다. 종료 코드 4(잠금)나 1(조회 실패)이면 한 번 다시 부르고, 그래도 아니면 그 줄을 붙여 ask 로 묻는다. 2 면 바로 ask 로 묻는다. out-of-order 를 켜지 않는다. 코디네이터가 이 PR 이 막는 쪽이라고 알리면 `--again` 을 더해 새 번호를 받고 파일 이름을 바꾼다.
 - 번호 붙은 ADR 파일 이름은 직접 정하지 않는다. 만들기 전에 자기 워크트리에서 아래 블록으로 번호를 예약하고 `RESERVED` 줄의 경로로 만든다. 병렬 PR 이 같은 폴더에 같은 ADR 번호를 쓰지 않게 하려는 것이다. <!-- orch-rule: adr -->
 
   ```bash

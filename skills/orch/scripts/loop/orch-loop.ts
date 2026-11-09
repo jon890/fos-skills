@@ -289,12 +289,12 @@
 // 시작 확인 시간 초과는 action stalled 와 CONFLICT-STALLED 로 worker 의 Run 알림 파일에 쓰고 자동 재전송하지 않는다.
 // 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
 //     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
-//     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 (PR, base SHA) 를 두 번 보내지 않는다. 둘이 겹쳐 돌면
+//     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 (PR, PR HEAD, 충돌 파일) 을 두 번 보내지 않는다. 둘이 겹쳐 돌면
 //     둘 다 기록을 읽은 뒤 보내므로 두 번 보낼 수 있다(기록 파일에 잠금이 없다). 새 worker 는 띄우지 않는다.
 //     내 열린 PR 이 없으면 git fetch 없이 끝낸다. 열린 PR 을 읽지 못한 틱은 건너뛴다.
 //     1. lib/conflicts.ts 의 findConflicts(base 는 origin/HEAD 가 가리키는 브랜치, 없으면 main). 실패하면 `WATCH-ERROR conflicts: …`
 //     2. 내 PR 만 남긴다. 작성자를 정하지 못하면 `WATCH-ERROR conflicts: …` 를 쓰고 그 틱의 충돌 처리를 끝낸다
-//     3. 기록에 있는 (PR, base SHA) 는 넘어간다. 아니면 브랜치의 워크트리와 worker 행(lib/workers.ts)을 찾아 resolveConflict 와
+//     3. 기록에 있는 (PR, PR HEAD, 충돌 파일) 은 넘어간다. 아니면 브랜치의 워크트리와 worker 행(lib/workers.ts)을 찾아 resolveConflict 와
 //        concludeConflict 를 부른다. 워크트리나 dispatch 가 없으면 orphan 이다. worker-list 를 읽지 못하면 그 PR 은 기록하지 않고
 //        `WATCH-ERROR conflicts: worker 목록을 읽지 못했다: …` 를 쓴다
 //     4. orphan 이면 알림 파일에 CONFLICT-ORPHAN(pr 은 PR 번호, text 는 이유)을 쓴다
@@ -1708,7 +1708,7 @@ async function handleConflicts(ctx: Context, lookup: Lookup, base: string, found
   const primary = primaryRun(lookup)
   const errors = new Set<string>()
   for (const { pr, files } of mine) {
-    if (Object.hasOwn(state, notifiedKey(pr.number, baseSha))) continue
+    if (Object.hasOwn(state, notifiedKey(pr.number, pr.headRefOid, files))) continue
     log(`#${pr.number} CONFLICTING ${pr.headRefName}: ${files.join(' ')}`)
     lookup.paths ??= worktreePaths(ctx.repo)
     const path = lookup.paths.get(pr.headRefName)
