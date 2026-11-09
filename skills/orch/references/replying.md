@@ -31,7 +31,7 @@ delivery 는 질문 외의 보고와 터미널 처리까지 마친 뒤 ack 한�
 orch worker send --dispatch "$DISPATCH_ID" --body "$BODY"
 ```
 
-`send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤에는 `recipient_run_mismatch`, 끝난 dispatch 에는 `dispatch_inactive` 로 거절된다.
+`send --to dispatch:<id>` 는 worker 가 하위 run 을 만든 뒤 `recipient_run_mismatch` 로 거절될 수 있다. 끝난 worker 는 후속 Task 로 다시 시작하고, 자동 해제로 닫힌 터미널도 다시 열린다. 연결된 서버처럼 후속 작업을 거절하는 경우에는 다시 띄우기로 넘어간다.
 
 ## spec 인터뷰를 중계한다
 
@@ -44,23 +44,16 @@ worker 가 spec 단계에서 결정 블록 여러 개를 `--decision` 질문 하
 
 **확인을 코디네이터가 대신하지 않는다.** 결정이 모두 권장안대로여도 사용자에게 보이고 받는다. 사용자가 「이후는 권장안으로 진행」 처럼 위임했으면 그 말을 답에 그대로 옮긴다.
 
-## 입력 대기로 멈춘 worker 를 깨운다
+## 메시지로 worker 를 깨운다
 
-**worker 가 status 를 보내고 입력 대기로 멈춰 있으면 `reply` 와 `send` 가 그 worker 를 깨우지 않는다.**
-worker 는 메시지를 다음 턴의 `check` 에서 읽는데, 입력 대기인 worker 에게는 다음 턴이 오지 않는다.
-dispatch 가 끝나지 않아 `worker-start --terminal` 도 `already has an active dispatch` 로 거절된다.
-구조화 worker(터미널 handle 이 `structworker_` 로 시작)는 화면이 없고 Orca 가 새 메시지로 직접 깨운다. `send-to-worker` 는 이 worker 에게 보낸 뒤 `DELIVERED` 한 줄로 끝나고 `nudge-worker` 를 부르지 않는다.
-**`send-to-worker` 가 아니라 `reply` 나 `send` 를 직접 보냈으면 그 직후에 `nudge-worker` 를 부른다.** 화면 판정과 재시도는 스크립트 머리 주석이 소유한다.
-`$MSG_ID` 는 방금 보낸 메시지 id 다.
+**Orca 가 reply 와 send 로 worker 를 깨운다.** 작업 중이면 턴이 끝난 뒤 메시지를 읽고, 쉬는 worker 는 바로 깨어난다. `send-to-worker` 는 터미널에 입력하지 않고 전송 뒤 `DELIVERED` 와 0 으로 끝난다.
 
-```bash
-orch worker nudge --terminal "$TERMINAL_HANDLE" --msg-id "$MSG_ID"
-```
+**끝난 worker 의 후속 지시서는 `send-to-worker --spec` 으로 보낸다.** 허락과 worker 선택 줄을 검사한 뒤 지시서를 읽으라는 한 줄을 Orca 메시지로 보낸다. 새 Task 와 dispatch 가 생기면 `FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>` 를 내고 띄우기 기록에 남긴다. 터미널은 새 dispatch 에서 읽으므로 자동 해제 뒤 다시 열린 터미널도 기록에 잡힌다. 전송이 거절된 경우에만 아래의 `launch-worker` 복구 경로로 내려간다.
 
-종료 코드 4 는 입력란에 쓰다 만 글이 있거나 권한 확인 창이라 입력하지 않은 것이다. `terminal read --screen` 으로 화면을 보고, 권한 확인 창이면 4단계의 「권한 확인 창」 을 따른다.
-종료 코드 1 이면 다시 확인해도 턴이 시작되지 않은 것이다. 화면을 보고 아래 「후속 지시가 전달되지 않음」 의 표로 판단한다.
+후속 일의 실행 설정은 실제 worker 의 값으로 기록한다. 새 dispatch 에서 읽지 못하면 앞 기록을 물려받고, 지시서의 선택과 다르면 note 로 알린다. 후속 지시서로 보드 항목을 갱신하고 `worker-launched` 이벤트도 낸다. 기록·보드·이벤트 실패는 경고로 남기며 이미 전달한 일을 다시 띄우지 않는다.
 
-**끝난(settled) worker 의 후속 지시서는 `send-to-worker --spec` 으로 보낸다.** 끝난 dispatch 에는 `reply` 가 가지 않는다. 스크립트가 남은 터미널을 한 번 이어 쓰고, `agent_unconfigured` 이면 같은 worktree 에 새 worker 를 띄운다. 그 밖의 실패는 아래 기준으로 처리한다.
+지시서 없이 끝난 worker 에게 본문만 보낼 때는 남은 미답변 질문에 먼저 답한다. 답할 곳이 없고 화면이 작업 중이면 메시지를 후속 Task 로 보낸다. 이때는 띄우기 기록에 남지 않는다고 stderr 에 알린다. 그 밖에는 종료 코드 3 으로 후속 지시서를 요구한다.
+
 worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 가 없으면 [`launch.md`](launch.md) 의 기존 worktree 예시로 띄운다.
 
 ### 후속 지시가 전달되지 않음
@@ -80,18 +73,18 @@ worker 가 보낸 `ready: <plan> <worktree> <지시서>` 처럼 대상 dispatch 
 **`worker-start --terminal` 은 떠 있는 에이전트를 이어 쓰므로 `--agent`, `--model`, `--effort` 와 함께 쓰지 못한다**(`launch-worker` 가 Orca 에 보내기 전에 거부한다). `--model`, `--effort`, `--agent` 를 함께 줬다는 `invalid_argument` 는 그 옵션을 뺀다. 모델을 바꿔야 하면 아래 새 worker 로 간다.
 `agent_unconfigured: Terminal ... is not running a recognized agent` 는 Orca 가 그 터미널의 에이전트를 인식하지 못한 것이다. 화면에서 Claude 가 입력을 기다려도 나고, 끝난 dispatch 의 터미널과 재부팅·잠자기 뒤 세션에서 흔하다. 이어 쓰지 못하니 아래 새 worker 로 간다.
 
-**끝난 dispatch 를 이어 쓸 때는 `--spec` 만 준다.** `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서> --run ...` 이면 된다. `--body` 는 끝난 dispatch 로 가지 않으므로 줘도 무시한다. 살아 있는 dispatch 에 `--spec` 만 주면 보낼 글이 없어 종료 코드 2 로 거부한다.
+**끝난 dispatch 를 이어 쓸 때는 `--spec` 만 준다.** `send-to-worker --dispatch <끝난 dispatch> --spec <후속 지시서> --run ...` 이면 된다. `--body` 는 남은 질문에 답할 때만 쓰고, 그 밖의 후속 지시는 지시서에서 읽는다. 살아 있는 dispatch 에 `--spec` 만 주면 보낼 글이 없어 종료 코드 2 로 거부한다.
 
 **`worker_done` 만으로는 터미널이 사용자 보유가 되지 않는다.** 실측(2026-10-23, `worker-list --terminal-state reclaimable`)에서 `worker_done` 뒤의 터미널은 `terminalState: reclaimable`, `ownershipState: owned`, `releaseState: not_requested` 였다. 이 상태는 닫고 새로 띄울 수 있다.
-`user_owned`(`retainedReason: user_takeover`)는 사용자가 그 터미널에 직접 입력했을 때, `released` 는 `worker-release` 로 넘겼을 때 생긴다. 둘 다 사용자에게 넘어간 터미널이라 `send-to-worker` 는 닫지 않고 종료 코드 1 로 끝난다.
-이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다. `worker_done` 을 받으면 Orca 가 약 2분 뒤 자동 release 한다(`worker-show` 의 `autoReleaseAt`). 10-23 실측은 이 자동 release 가 없던 때의 것이고, 자동 release 전에는 `send-to-worker` 로 이어 쓸 수 있다. 이어 쓰면 `autoReleaseAt` 이 사라지고 다시 쉴 때 새로 잡힌다. 머지까지 계속 남겨야 하는 worker 는 `worker-keep-open` 으로 자동 release 를 막는다([`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」).
+`user_owned`(`retainedReason: user_takeover`)는 사용자가 그 터미널에 직접 입력했을 때, `released` 는 `worker-release` 로 넘겼을 때 생긴다. 전송이 거절돼 터미널을 다시 쓰는 복구 경로에서는 둘 다 닫지 않고 종료 코드 1 로 끝난다.
+이 세션이 띄운 worker 의 터미널이 맞는지 확인한 뒤 코디네이터가 직접 정리한다. `worker_done` 을 받으면 Orca 가 약 2분 뒤 자동 release 한다(`worker-show` 의 `autoReleaseAt`). 10-23 실측은 이 자동 release 가 없던 때의 것이고, 자동 release 뒤에도 `send-to-worker --spec` 이 Orca 후속 작업으로 다시 연다. 이어 쓰면 `autoReleaseAt` 이 사라지고 다시 쉴 때 새로 잡힌다. 머지까지 계속 남겨야 하는 worker 는 `worker-keep-open` 으로 자동 release 를 막는다([`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」).
 
 1. `orca orchestration worker-show --dispatch <끝난 dispatch> --full --json` 으로 `ownershipState` 와 `ownerDispatchId` 를 본다
 2. `orca terminal read --terminal <handle>` 로 화면이 비어 있고 입력을 기다리는지 본다. 사용자가 쓰는 중이면 닫지 않는다
 3. 이 세션이 띄운 것이 맞으면 `worker-release` 로 닫는다. `retained`, `identity_unproven` 이면 [`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」 조건을 확인한 뒤 `orca terminal close --terminal <handle>` 을 쓴다
 4. `launch-worker --spec <후속 지시서> --worktree <워크트리>` 를 `--terminal` 없이 부른다
 
-`send-to-worker --spec` 은 `launch-worker` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 설정으로 새 worker 를 띄운다. 설정을 읽는 법과 닫지 않는 조건은 `send-to-worker` 머리 주석이 소유한다. 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
+`send-to-worker --spec` 의 전송 거절 뒤 복구 경로는 `launch-worker` 의 종료 코드 3(`agent_unconfigured`)을 받으면 원래 dispatch 의 설정으로 새 worker 를 띄운다. 설정을 읽는 법과 닫지 않는 조건은 `send-to-worker` 머리 주석이 소유한다. 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
 
 `launch-worker` 를 직접 부르면 종료 코드 3 과 안내만 낸다. 그 경우 아래 순서로 복구한다.
 
@@ -144,7 +137,7 @@ orch worker send --dispatch "$DISPATCH_ID" --spec "$SPEC_FILE"
 ```
 
 - 스크립트가 같은 워크트리에서 터미널을 바꿔 다시 띄우는 것(`agent_unconfigured`)도 이어 받기로 본다. 워크트리와 터미널 수가 늘지 않는다
-- 종료 코드 3(터미널이 없다)이면 새 worker 를 띄우지 않고 사용자에게 알린다
+- 후속 지시서를 보내도 종료 코드 3 이면 안내를 읽고 코디네이터에게 알린다
 - 리뷰 반영 지시서에는 PR 번호와 「반영하지 않을 지적은 회신 전에 ask 로 묻는다」 를 적는다. 모델은 [`agent-selection.md`](agent-selection.md) 의 모델 표에서 단순 반영 행으로 고른다
 - 위 「새 worker 로 이어받는 순서」 나 [`launch.md`](launch.md) 의 새 worker 띄우기와 어긋나면 충돌과 리뷰 반영에는 이 절이 우선한다
 

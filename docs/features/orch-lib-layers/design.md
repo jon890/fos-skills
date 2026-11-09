@@ -103,6 +103,11 @@
 4. 영수증의 `delivery` 가 `follow_up` 이나 `reopened`(자동 해제로 닫힌 worker, 「설계 단계 실측」 2번)이면 `dispatchId`, `taskId` 로 `state/launch-history.jsonl` 과 `state/launched-workers` 에 한 줄씩 남긴다. 워크트리는 앞 dispatch 의 것을 옮겨 적는다. 터미널은 옮겨 적지 않고 새 dispatch 의 `worker-show --dispatch <새 id> --json --full` 에서 읽는다(`agentTerminalHandle`, 없으면 `resource.terminalHandle`). `reopened` 는 새 터미널이 열려 앞 터미널과 다르다(「설계 단계 실측」 2번). 앞 터미널을 적으면 정리의 `launchedOwn`(`cleanup/cleanup-sweep.ts`)이 그 worker 를 코디네이터가 띄운 것으로 보지 않아 후속 일이 끝나도 자동 정리에서 빠진다. 읽지 못하면 터미널을 빈 값으로 적고 stderr 에 한 줄 알린다. 빈 값은 `launchedOwn` 이 터미널 대조를 건너뛰는 지금 규칙을 따른다. 출력은 `FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>` 와 0 이다.
 5. send 가 거절되면(연결된 서버의 끝난 worker 처럼 Orca 가 받지 않음) 지금의 다시 띄우기(`launch-worker --worktree <그 워크트리>`, agent_unconfigured 처리 포함)로 내려간다.
 
+- 후속 일의 실행 설정은 새 dispatch 의 `startOptions.launch.effective` 를 먼저 읽고, 없으면 앞 dispatch 의 띄우기 기록과 실행 설정에서 물려받는다. 지시서의 worker 선택은 검사에만 쓰며 실제 설정과 다르면 note 로 알린다. 알 수 없는 설정은 빈 값으로 남긴다.
+- 기록 뒤 `registerBoard` 로 후속 지시서의 보드 항목을 갱신하고 `worker-launched` 이벤트를 낸다. 기록·보드·이벤트가 실패해도 이미 전달한 작업을 다시 띄우지 않는다.
+- 상태 조회와 전송 사이에 dispatch 가 살아나 `delivery: delivered` 가 오면 `SENT`, `DELIVERED` 와 0 으로 끝내고 새 Task 기록을 만들지 않는다. 그 밖의 예상과 다른 영수증은 전송 성공 사실과 받은 값을 note 로 알리고 5 로 끝낸다. 다시 전송하거나 띄우지 않는다.
+- 활성 dispatch 에 본문과 `--spec` 을 함께 주면 본문만 보내고 지시서 옵션을 무시했다고 note 로 알린다.
+
 - 종료 코드 1(깨우지 못함)과 4(입력란에 글이 있어 깨우지 않음)는 더 나오지 않는다. 1 은 다시 띄우기 실패에만 남는다. 부르는 쪽(`lib/tell-worker.ts`, 루프, `finish-pr`)은 0, 1, 4 를 보낸 것으로 보므로 고치지 않는다.
 - 짧은 출력의 `RESUMED`, `RESTARTED` 는 다시 띄우기 경로에만 남고 `FOLLOW-UP` 이 더해진다.
 - `finish-pr.ts:158` 의 「send-to-worker 는 nudge-worker 를 5분까지 기다린다」 시간 한도는 줄여도 되지만 겉 동작이 아니므로 이번에 바꾸지 않는다.

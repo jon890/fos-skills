@@ -1,101 +1,51 @@
-// worker 에게 답이나 후속 지시를 보낸다. dispatch 의 상태에 따라 전달 경로를 고른다.
+// worker 에게 답이나 후속 지시를 보낸다. Orca 가 메시지마다 worker 를 깨우므로 터미널에 입력하지 않는다.
+// 활성 dispatch 는 미답변 질문에 reply 하고, 답할 후보가 없거나 --no-reply 면 send 한다.
+// answer_conflict/dispatch_inactive 는 닫은 질문으로 기록한다. consumer_fenced 는 --from 없이 재시도한다.
+// stable_pane_required 는 plain reply, question 의 status answer 차례로 시도한다.
+// 끝난 dispatch 의 질문에 답만 달면 0 이다. --spec 이 있으면 허락/worker 선택을 검사한 한 줄 지시를 send 한다.
+// follow_up/reopened 영수증은 새 Task/dispatch 와 새 worker-show 의 터미널로 띄우기 기록을 남긴다.
+// 실행 설정은 새 dispatch 의 실제 값, 앞 기록 순으로 물려받고 보드와 worker-launched 이벤트도 갱신한다.
+// delivered 영수증은 새 Task 없이 전달된 것으로 0 이다. 다른 불완전 영수증은 전송 사실과 값을 알리고 5 다.
+// 새 터미널 조회나 기록 쓰기 실패는 경고만 내며 이미 전달된 일을 다시 띄우지 않는다.
+// send 거절 때만 launch-worker 로 내려간다. 재사용 터미널의 agent_unconfigured 는 소유 확인 뒤 새 터미널로 복구한다.
+// --spec 없이 끝난 dispatch 에 보내는 본문은 질문 답이 아니면 작업 중인 화면에만 send 한다.
+// 이 경로는 후속 Task 가 되지만 지시서가 없어 띄우기 기록을 남기지 못한다는 경고를 stderr 에 낸다.
 //
-// 코디네이터가 worker 터미널에 `orca terminal send` 로 직접 쓰면, 그 worker 가 작업 중일 때 입력이 섞이고
-// 끝난 dispatch 의 터미널에 쓴 지시는 Task 기록 없이 사라진다. 닫힌 dispatch 에 `reply` 해도 전달되지 않는다.
-// 이 명령이 경로를 고른다.
-//
-//     dispatch 가 살아 있다   가장 늦은 미답변 question/escalation 에 `reply` 하고 `nudge-worker` 로 깨운다.
-//                             질문이 없으면 마지막 status 를 쓴다. --reply-to 는 지정한 메시지를 먼저 쓰고, --no-reply 는 새 메시지로 보낸다.
-//                             이미 답이 달린 question 은 건너뛴다. orca 가 「already has a different answer」(answer_conflict)로 거부하면
-//                             그 메시지를 닫은 질문으로 적고(`closed:` 줄) 다음 후보 메시지로 한 번 더 시도한다. reply 할 후보가 없거나 시도한 후보가 모두 그 문구로 거부되면
-//                             `send --to dispatch:<id> --subject <본문 첫 줄> --body <본문>` 으로 새 메시지를 보내고
-//                             `sent: ...` 한 줄을 찍은 뒤 `nudge-worker --msg-id <새 메시지>` 로 깨운다
-//     reply 가 dispatch_inactive 로 거부되면 그 메시지를 닫은 질문으로 적고(`closed:` 줄) 답할 곳이 없는 것으로 다룬다.
-//     닫은 질문은 lib/questions.ts 의 「닫은 질문」 이 루프와 doctor 의 미답변에서 뺀다
-//     끝났고 답할 메시지가 있다  `--reply-to`(없으면 그 worker 의 미답변 question 과 escalation 중 마지막)에 `reply` 한다.
-//                             worker 가 없어 깨우지는 않는다. `--spec` 이 없으면 답만 달고 0 으로 끝나고, 있으면 아래처럼 이어 띄운다
-//     끝났고 터미널이 남았다  `--spec` 의 지시서로 `launch-worker --worktree <그 워크트리> -- --terminal <그 터미널>` 을 부른다.
-//                             agent_unconfigured(종료 코드 3)이면 그 터미널을 닫고 같은 워크트리에 새 worker 를 띄운다
-//     끝났는데 아직 일한다    `--spec` 이 없고 그 터미널 화면이 작업 중이면 `nudge-worker --text` 로 본문을 넣고,
-//                             Task 기록에 묶이지 않는다고 경고한다. worker 가 중간에 worker_done 을 보내 dispatch 가
-//                             닫혔는데 계속 일하는 일이 있었다. 작업 중이 아니면 종료 코드 3 으로 --spec 을 요구한다
-//     터미널도 없다           새로 띄우라고 안내하고 종료 코드 3 이다
-//
-// 짧은 출력(진입점의 orch worker send, lib/output.ts): 위 소문자 줄 대신 REPLIED <메시지> <보낸 id>, SENT <dispatch> <보낸 id>, DELIVERED <id>,
-// RESUMED <dispatch> <터미널>, RESTARTED <터미널>, ENDED <dispatch> <상태>[ no-terminal], NOTE <내용>, FAIL <내용> 을 낸다.
-// 깨우는 nudge-worker 와 이어 띄우는 launch-worker 는 stdio 를 이어 받으므로 짧은 출력 신호를 넘겨 그 짧은 줄이 뒤따른다.
-//
-// 구조화 worker: worker-show 의 startOptions.mode.mode 가 structured 이거나 터미널 handle 이 structworker_ 로 시작하는 worker 다.
-// 화면이 없어 nudge-worker 가 입력할 곳을 판정하지 못한다(늘 unknown 이라 4 였다). Orca 가 dispatch 로 온 새 메시지마다 그 worker 의
-// 턴을 깨우므로, 살아 있는 dispatch 에 reply 나 새 메시지를 보낸 뒤 깨우기를 건너뛰고 `delivered: ...` 한 줄과 0 으로 끝난다.
-//
-// worker-show 는 --full 로 읽는다(lib/orca.ts 의 withFull). Orca 1.4.246 의 줄인 보기에는 dispatch.status 가 없어,
-// 살아 있는 dispatch 를 끝난 것으로 보고 「끝난 dispatch 라 깨우지 않았다」 로 끝났다(2026-11-02)
-//
-// 세션을 다시 시작한 코디네이터 터미널은 orca 가 `reply` 를 `stable_pane_required`(「no stable pane identity」)로 거부한다.
-// 그러면 먼저 `--run` 과 `--from` 을 뺀 plain `reply --id <질문> --body ...` 를 한 번 보내고 `retry:` 줄로 알린다.
-// 이 답은 질문을 바로 닫는다. status answer 는 lib/questions.ts 가 답으로 찾지 못해 decision-pending 이 다시 묻는 일이 있었다(2026-11-02).
-// plain reply 도 같은 이유로 거부되고 그 메시지가 question 이면 같은 스레드에 `send --type status --thread-id <질문> --to dispatch:<id> --subject "answer: ..."` 로 답하고
-// `fallback:` 줄로 알린다. worker 는 이 status 로도 깨고 `check` 로 본문을 읽는다. question 이 아닌 메시지에는 전환하지 않고 실패로 둔다
-//
-// reply 와 새 메시지는 `--run <run> --from run:<run>` 과 함께 보낸다. Run 을 모르면(--run 도 dispatch 의 runId 도 없으면) 붙이지 않는다.
-// Orca 터미널에서 돌면 터미널 증명 때문에 `--from run:<run>` 이 `consumer_fenced` 로 거부된다. 그러면 `--from` 만 빼고 한 번 다시 보낸다.
-// 그 답의 보낸 쪽은 코디네이터 터미널(term_*)이지만 lib/questions.ts 의 unanswered() 는 worker 쪽으로 간 답을 모두 센다(ADR-015)
-//
-// agent_unconfigured 로 새 worker 를 띄울 때 실행 설정은 원래 dispatch 의 `startOptions.launch` 에서 읽는다.
-// effective 를 우선하고 없는 값은 requested 에서 읽으며, --agent, --model, --effort 로 바꿀 수 있다.
-// 에이전트나 모델을 모르면 터미널을 남기고 그 인자를 요구한다. 터미널이 사용자 보유나 해제 상태이거나
-// 소유 dispatch 가 바뀌었거나 활성 dispatch 가 붙었으면 닫지 않는다. 닫기 실패나 다른 실행 오류는 자동 재시도하지 않는다.
-// 워크트리 파일은 보존되지만 새 worker 는 앞 대화를 모르므로 후속 지시서에 이어받을 상태를 적는다.
-//
-// 사용법:
-//     send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID] [--spec FILE] [--run RUN]
-//     send-to-worker.ts --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]
-//
-//     --dispatch   worker 의 dispatch id
-//     --body       보낼 글. --body-file 로 파일에서 읽을 수 있다. 끝난 dispatch 를 --spec 으로 이어 쓸 때는 필요 없다
-//     --reply-to   답을 달 메시지 id. 없으면 최신 미답변 질문, status, heartbeat 차례로 고른다.
-//                  끝난 dispatch 는 question 과 escalation 만 후보로 보고, 이미 답한 것은 뺀다
-//     --no-reply   질문에 답하지 않고 새 메시지로 보낸다. 자동 알림이나 별도 지시에 쓴다. --reply-to 와 함께 쓰지 않는다
-//     --spec       dispatch 가 끝났을 때 이어 쓸 후속 지시서. `허락:` 줄이 있어야 한다.
-//                  끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 이 지시서에 적는다. 그래서 --spec 만 주면 된다
-//                  (--body 를 함께 주면 무시한다고 알린다). 살아 있는 dispatch 에 --spec 만 주면 보낼 글이 없어 거부한다
-//     --run        reply 와 다시 띄우기에 줄 Run id
-//     --agent, --model, --effort  새 worker 실행 설정. 생략하면 원래 dispatch 설정을 쓴다
-//
-// ORCA, NUDGE_WORKER, LAUNCH_WORKER 환경 변수로 실행 파일과 스크립트 경로를 바꾼다.
-// 스크립트는 확장자로 인터프리터를 고른다(lib/proc.ts 의 scriptCommand).
-// 깨우기와 다시 띄우기의 nudge-worker, launch-worker 출력은 모으지 않고 그대로 흘린다(lib/proc.ts 의 runInherit).
-// 옵션은 고유 접두로 줄여 쓸 수 있고 값이 - 로 시작해도 받는다(lib/args.ts).
-//
-// 종료 코드:
-//     0  보냈다(reply 나 새 메시지). 살아 있는 worker 면 깨웠거나 작업 중이거나 Orca 가 깨우는 구조화 worker 다. 닫힌 dispatch 의 일하는 터미널이면 입력을 넣었다.
-//        닫힌 dispatch 에 답만 달았으면(--spec 없음) `replied: ... 끝난 dispatch 라 깨우지 않았다` 한 줄을 찍고 0 이다
-//     1  보냈지만 턴 시작을 보지 못했거나, 다시 띄우기가 실패했다. nudge-worker 가 제한 시간(5분)에 끊겨도 1 이다
-//     3  dispatch 가 끝나 보낼 수 없다. 표준 출력이 다음에 할 일을 말한다
-//     4  보냈지만 입력란에 글이 있거나 권한 확인 창이라 깨우지 않았다(nudge-worker 의 4)
-//     5  orca 가 오류를 냈다
-//     2  사용법 오류
+// 사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG | --no-reply] [--spec FILE] [--run RUN]
+//         send-to-worker.ts --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]
+// --spec 은 끝난 dispatch 의 후속 지시서다. 본문이 함께 있으면 질문 답으로 먼저 쓰고 나머지는 무시한다.
+// --agent/--model/--effort 는 send 거절 뒤 새로 띄우는 복구 경로에서만 실행 설정을 바꾼다.
+// ORCA, LAUNCH_WORKER 환경 변수로 실행 파일을 바꾼다. --full 조회는 lib/orca.ts 가 붙인다.
+// 짧은 출력은 REPLIED, SENT, DELIVERED, FOLLOW-UP <앞 dispatch> <새 dispatch> <새 Task>,
+// RESUMED, RESTARTED, ENDED, NOTE, FAIL 이다. 복구 자식에는 짧은 출력 신호를 넘긴다.
+// 종료 코드: 0 전달됨, 1 다시 띄우기 실패, 2 사용법/지시서 오류, 3 끝나서 보낼 수 없음, 5 Orca/영수증 오류.
 
 import { readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { real } from '../lib/fs.ts'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { context } from '../lib/completion.ts'
 import { orca } from '../lib/orca.ts'
 import { emit, oneLine, shortEnv } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
-import { runAsync, runInherit, scriptCommand } from '../lib/proc.ts'
+import { runInherit, scriptCommand } from '../lib/proc.ts'
 import { pyStr, shQuote } from '../lib/py.ts'
 import { dismissQuestion } from '../lib/questions.ts'
 import { scriptPath } from '../lib/commands.ts'
+import { classify, screenLines } from '../lib/screen.ts'
+import { branchesOf, permissionsOf, selectionsOf } from '../lib/spec.ts'
+import { selectionVerdict } from '../lib/selection.ts'
+import { readLaunch, recordLaunch } from '../lib/launched.ts'
+import type { Effective } from '../lib/launched.ts'
+import { recordHistory } from '../lib/launch-history.ts'
+import { registerBoard } from '../lib/board.ts'
+import { fire } from '../lib/events.ts'
+import { defaultBase } from '../lib/git.ts'
 
 const USAGE = [
   '사용법: send-to-worker.ts --dispatch ID (--body TEXT | --body-file FILE) [--reply-to MSG_ID | --no-reply] [--spec FILE] [--run RUN]',
   '        send-to-worker.ts --dispatch ENDED_ID --spec FILE [--run RUN] [--agent A --model M --effort E]',
 ].join('\n')
-const NUDGE_WORKER = process.env.NUDGE_WORKER || scriptPath('nudge-worker')
 const LAUNCH_WORKER = process.env.LAUNCH_WORKER || scriptPath('launch-worker')
 // 이 상태의 dispatch 는 reply 를 받는다. 나머지(completed, failed 같은 것)는 끝난 것이다
 const ACTIVE = new Set(['pending', 'dispatched', 'running'])
@@ -112,20 +62,22 @@ const NO_PANE = ['stable_pane_required', 'no stable pane identity']
 const ASKS = new Set(['question', 'escalation'])
 // 새 메시지 제목에 쓰는 본문 첫 줄의 최대 글자 수
 const SUBJECT_MAX = 120
-// nudge-worker 는 턴 시작을 기본 15초씩 두 번 기다린다. ORCH_NUDGE_TIMEOUT_MS 는 이 한도를 바꾼다. 테스트만 쓴다
-const NUDGE_MS = Number(process.env.ORCH_NUDGE_TIMEOUT_MS) || 300_000
 // launch-worker 는 make-worktree 와 worker-start 를 각각 10분까지 기다린다. 시작 확인 시간 초과는 STALLED-START 와 1 로 알리고 재시도하지 않는다
 const LAUNCH_MS = 3_600_000
 const SETTING_KEYS = ['agent', 'model', 'effort'] as const
-// 구조화 worker 의 터미널 handle 접두. worker-show 의 startOptions.mode 가 없을 때 이것으로 가린다
-const STRUCTURED_PREFIX = 'structworker_'
 // 사람에게 다시 띄우라고 안내하는 명령. 실행 규칙의 꼴(node 와 경고 끄기, 절대경로)로 낸다
 const LAUNCH_HINT = `node --disable-warning=ExperimentalWarning ${shQuote(scriptPath('launch-worker'))}`
 
 type Json = Record<string, unknown>
 type Settings = Record<string, unknown>
 
-class OrcaFailed extends Error {}
+class OrcaFailed extends Error {
+  rejected: boolean
+  constructor(message: string, rejected = false) {
+    super(message)
+    this.rejected = rejected
+  }
+}
 
 // 짧은 출력(진입점의 orch worker send)의 줄 규칙. docs/features/orch-cli/design.md 「짧은 출력 (PR2)」 의 worker send 행이다
 const SHORT_RULES: Rule[] = [
@@ -168,12 +120,12 @@ function orcaJson(args: string[]): Json {
   const body = obj(data)
   if (done.code !== 0 || data !== body || !body.ok) {
     const detail = Array.from((done.stdout + done.stderr).trim()).slice(0, 300).join('')
-    throw new OrcaFailed(`orca ${args.slice(0, 2).join(' ')} 실패: ${detail}`)
+    throw new OrcaFailed(`orca ${args.slice(0, 2).join(' ')} 실패: ${detail}`, body.ok === false && !!obj(body.error).code)
   }
   return obj(body.result)
 }
 
-type Described = { status: unknown; handle: string; worktree: string; runId: string; settings: Settings; structured: boolean }
+type Described = { status: unknown; handle: string; worktree: string; runId: string; settings: Settings }
 
 function describe(dispatchId: string): Described {
   const shown = orcaJson(['orchestration', 'worker-show', '--dispatch', dispatchId])
@@ -188,9 +140,7 @@ function describe(dispatchId: string): Described {
   Object.assign(settings, obj(launch.requested))
   for (const [key, value] of Object.entries(obj(launch.effective))) if (value) settings[key] = value
   if (!settings.agent) settings.agent = options.agent
-  // 구조화 worker(채팅 세션 worker)는 터미널 화면이 없고 Orca 가 새 메시지로 직접 깨운다(머리 주석의 「구조화 worker」)
-  const structured = obj(options.mode).mode === 'structured' || handle.startsWith(STRUCTURED_PREFIX)
-  return { status: dispatch.status, handle, worktree, runId: String(dispatch.runId || ''), settings, structured }
+  return { status: dispatch.status, handle, worktree, runId: String(dispatch.runId || ''), settings }
 }
 
 // reply 할 후보 메시지 id. 앞이 우선이다. heartbeat 는 뒤로 미루고, 답이 보이는 question 은 뺀다.
@@ -233,7 +183,7 @@ function liveHandles(): Set<string> {
 }
 
 // `--from run:<run>` 을 붙여 보내고, consumer_fenced 로 거부되면 빼고 한 번 다시 보낸다. 보낸 메시지 id 를 낸다
-function sendAs(base: string[], run: string): string {
+function sendAsResult(base: string[], run: string): Json {
   let result: Json
   try {
     result = orcaJson([...base, ...(run ? ['--from', `run:${run}`] : [])])
@@ -242,6 +192,11 @@ function sendAs(base: string[], run: string): string {
     out(`retry: --from run:${run} 이 ${FENCED} 로 거부돼 --from 없이 다시 보낸다`)
     result = orcaJson(base)
   }
+  return result
+}
+
+function sendAs(base: string[], run: string): string {
+  const result = sendAsResult(base, run)
   return String(obj(result.message).id || result.messageId || result.id || '')
 }
 
@@ -343,19 +298,74 @@ async function passThrough(argv: string[], timeoutMs: number): Promise<number> {
   return (await runInherit(argv, { timeoutMs, env: shortEnv() })).code
 }
 
-// nudge-worker 로 깨운다. 제한 시간에 끊기면 124 대신 1 이다. 종료 코드 계약에 124 가 없고, 보냈지만 턴 시작을 보지 못한 경우다
-async function nudge(args: string[]): Promise<number> {
-  const done = await runInherit(scriptCommand(NUDGE_WORKER, args), { timeoutMs: NUDGE_MS, env: shortEnv() })
-  if (done.timedOut) {
-    out(`send-to-worker: nudge-worker 가 ${NUDGE_MS / 1000}초 안에 끝나지 않아 끊었다`)
-    return 1
+// 후속 지시서는 새 Task 가 생기기 전에 검사한다. spec-line 과 같은 한 줄을 만든다.
+function followUpSpec(file: string, repo: string): { text: string; line: string; title: string } {
+  const text = readFileSync(file, 'utf8')
+  const permissions = permissionsOf(text)
+  const errors = selectionVerdict(text, repo, { launch: true, retry: true, continuation: false })
+  if (!permissions.length) errors.unshift('지시서에 `허락:` 줄이 없다')
+  if (errors.length) throw new Error(errors.join('; '))
+  return {
+    text,
+    line: [`지시서 ${real(file)} 를 끝까지 읽고 수행한다.`, ...permissions, '못 읽으면 escalation 으로 알린다.'].join(' '),
+    title: /^#\s+(.+)$/m.exec(text)?.[1] ?? '코디네이터 후속 지시',
   }
-  return done.code
 }
 
-async function screenState(handle: string): Promise<string> {
-  const done = await runAsync(scriptCommand(NUDGE_WORKER, ['--terminal', handle, '--state']), { timeoutMs: NUDGE_MS })
-  return done.code === 0 ? done.stdout.trim() : 'unknown'
+async function recordFollowUp(a: Args, prior: Described, run: string, receipt: Json, spec: ReturnType<typeof followUpSpec>): Promise<number> {
+  if (receipt.delivery === 'delivered') {
+    const sent = String(obj(receipt.message).id || receipt.messageId || receipt.id || '')
+    out(`sent: 후속 Task 대신 dispatch:${a.dispatch} 에 새 메시지로 보냈다 (${sent || 'None'})`)
+    out(`delivered: Orca 가 ${sent || a.dispatch} 로 깨운다. delivery=delivered 이므로 새 Task 기록은 남기지 않는다`)
+    return 0
+  }
+  const dispatch = String(receipt.dispatchId || '')
+  const task = String(receipt.taskId || '')
+  if (!['follow_up', 'reopened'].includes(String(receipt.delivery)) || !dispatch || !task) {
+    out(`note: 전송은 성공했지만 후속 Task 영수증을 확인하지 못했다: ${JSON.stringify({ delivery: receipt.delivery ?? null, dispatchId: dispatch, taskId: task })}. 중복 전송하지 말고 worker-show 로 확인한다`)
+    return 5
+  }
+  const repo = prior.worktree || process.cwd()
+  const inherited = readLaunch(repo, a.dispatch)
+  const actual: Effective = { agent: null, model: null, effort: null }
+  const apply = (settings: Json) => {
+    for (const key of SETTING_KEYS) if (typeof settings[key] === 'string' && settings[key]) actual[key] = settings[key] as string
+  }
+  apply(prior.settings)
+  apply(inherited ?? {})
+  apply(obj(inherited?.effective))
+  let terminal: string | null = null
+  try {
+    const shown = orcaJson(['orchestration', 'worker-show', '--dispatch', dispatch])
+    apply(obj(obj(obj(obj(shown.worker).startOptions).launch).effective))
+    terminal = String(obj(shown.worker).agentTerminalHandle || obj(shown.resource).terminalHandle || obj(obj(shown.worker).resource).terminalHandle || '') || null
+    if (!terminal) throw new Error('새 터미널 handle 이 없다')
+  } catch (e) {
+    err(`send-to-worker: 새 dispatch ${dispatch} 의 터미널을 읽지 못해 빈 값으로 기록한다: ${(e as Error).message}`)
+  }
+  const choice = selectionsOf(spec.text)[0]
+  if (SETTING_KEYS.some((key) => actual[key] && actual[key] !== (key === 'effort' && choice[key] === '기본' ? null : choice[key]))) {
+    out(`note: 지시서의 worker 선택과 실제 실행 설정이 달라 실제 값으로 기록한다: ${JSON.stringify(actual)}`)
+  }
+  const launch = {
+    dispatch, task, terminal, worktree: prior.worktree, run: run || null, spec: real(a.spec!),
+    branch: branchesOf(spec.text)[0] ?? null,
+    ...actual, effective: actual,
+  }
+  try { recordLaunch(repo, launch) }
+  catch (e) { err(`send-to-worker: 후속 worker 기록을 쓰지 못했다: ${(e as Error).message}`) }
+  try { recordHistory(repo, { ...launch, at: new Date().toISOString(), title: spec.title, row: choice.row, retry_of: a.dispatch }) }
+  catch (e) { err(`send-to-worker: 후속 worker 이력을 쓰지 못했다: ${(e as Error).message}`) }
+  try { registerBoard(repo, a.spec!, prior.worktree, '', launch.branch || '') }
+  catch (e) { err(`send-to-worker: 보드를 갱신하지 못했다: ${(e as Error).message}`) }
+  try {
+    await fire('worker-launched', {
+      worker: { task, dispatch, terminal, worktree: prior.worktree, spec: launch.spec },
+      branch: launch.branch, ...actual,
+    }, { repo, base: (defaultBase(repo) || '').replace(/^origin\//, ''), run: run || null, out })
+  } catch (e) { err(`send-to-worker: worker-launched 를 내지 못했다: ${(e as Error).message}`) }
+  out(`FOLLOW-UP ${a.dispatch} ${dispatch} ${task}`)
+  return 0
 }
 
 type Args = {
@@ -434,6 +444,7 @@ async function main(argv: string[]): Promise<number> {
   let described: Described
   let run: string
   let alive: boolean
+  let spec: ReturnType<typeof followUpSpec> | undefined
   try {
     described = describe(a.dispatch)
     const { status, handle } = described
@@ -446,6 +457,7 @@ async function main(argv: string[]): Promise<number> {
         )
         return 2
       }
+      if (a.spec) out('note: 살아 있는 dispatch 에는 본문만 보낸다. --spec 은 끝난 dispatch 의 후속 지시에만 쓰므로 무시했다')
       const targets = a.noReply ? [] : a.replyTo ? [a.replyTo] : candidates(a.dispatch, handle, undefined, run)
       const replied = targets.length > 0 ? replyFirst(targets, body, run, a.dispatch) : null
       let wake: string
@@ -459,19 +471,16 @@ async function main(argv: string[]): Promise<number> {
         out(`sent: ${why} reply 대신 dispatch:${a.dispatch} 에 새 메시지로 보냈다 (${sent || 'None'})`)
         if (!sent) {
           out('send-to-worker: 새 메시지 id 를 받지 못해 깨우지 못했다')
-          return 1
+          return 5
         }
         wake = sent
       }
-      if (described.structured) {
-        out(`delivered: 구조화 worker 라 Orca 가 ${wake} 로 깨운다. 터미널에 입력하지 않았다`)
-        return 0
-      }
-      if (!handle) {
-        out('send-to-worker: 터미널 handle 을 몰라 깨우지 못했다')
-        return 1
-      }
-      return await nudge(['--terminal', handle, '--msg-id', wake])
+      out(`delivered: Orca 가 ${wake} 로 깨운다. 터미널에 입력하지 않았다`)
+      return 0
+    }
+    if (a.spec) {
+      try { spec = followUpSpec(a.spec, described.worktree || process.cwd()) }
+      catch (e) { err(`send-to-worker: ${(e as Error).message}`); return 2 }
     }
     // 끝난 dispatch 라도 worker 가 보낸 question 과 escalation 이 남았으면 답을 단다. 깨울 worker 는 없다
     if (body) {
@@ -483,6 +492,18 @@ async function main(argv: string[]): Promise<number> {
         body = ''
       }
     }
+    // --spec 경로는 터미널이 닫혀 있어도 Orca 가 새 터미널로 다시 연다.
+    if (a.spec && spec) {
+      if (body) out('note: 끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 --spec 지시서에 적어야 한다')
+      let receipt: Json | null = null
+      try {
+        receipt = sendAsResult(['orchestration', 'send', ...(run ? ['--run', run] : []), '--to', `dispatch:${a.dispatch}`, '--subject', spec.title, '--body', spec.line], run)
+      } catch (e) {
+        if (!(e instanceof OrcaFailed) || !e.rejected) throw e
+        err(`send-to-worker: 후속 지시 전송이 거절돼 launch-worker 로 다시 띄운다: ${e.message}`)
+      }
+      if (receipt) return recordFollowUp(a, described, run, receipt, spec)
+    }
     alive = handle ? liveHandles().has(handle) : false
   } catch (e) {
     if (!(e instanceof OrcaFailed)) throw e
@@ -491,7 +512,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const { status, handle, worktree, settings } = described
-  if (!alive) {
+  if (!alive && !a.spec) {
     out(
       `ended: ${a.dispatch} 가 끝났고(${pyStr(status)}) 터미널도 없다. ` +
         `후속 지시서를 써서 ${LAUNCH_HINT} --spec <지시서> --worktree ${worktree ? shQuote(worktree) : '<워크트리>'} 로 새로 띄운다`,
@@ -503,10 +524,18 @@ async function main(argv: string[]): Promise<number> {
     return 2
   }
   if (!a.spec) {
-    if ((await screenState(handle)) === 'working') {
-      out(`warning: ${a.dispatch} 가 닫혀(${pyStr(status)}) 이 지시는 Task 기록에 묶이지 않는다. 작업 중인 터미널 ${handle} 에 직접 넣는다`)
-      const text = `코디네이터(닫힌 dispatch ${a.dispatch}): ${body}`
-      return await nudge(['--terminal', handle, '--text', text])
+    try {
+      const screen = orcaJson(['terminal', 'read', '--terminal', handle, '--screen'])
+      if (classify(screenLines(screen)) === 'working') {
+        const sent = sendNew(a.dispatch, body, run)
+        err(`send-to-worker: 지시서 없이 후속 Task 로 보냈으므로 띄우기 기록에 남지 않는다: ${a.dispatch}`)
+        out(`sent: 닫힌 dispatch:${a.dispatch} 에 새 메시지로 보냈다 (${sent || 'None'})`)
+        return 0
+      }
+    } catch (e) {
+      if (!(e instanceof OrcaFailed)) throw e
+      out(`send-to-worker: ${e.message}`)
+      return 5
     }
     out(
       `ended: ${a.dispatch} 가 끝났다(${pyStr(status)}). 닫힌 dispatch 에는 reply 가 가지 않는다. ` +
@@ -514,7 +543,6 @@ async function main(argv: string[]): Promise<number> {
     )
     return 3
   }
-  if (body) out('note: 끝난 dispatch 에는 --body 가 가지 않는다. 후속 지시는 --spec 지시서에 적어야 한다')
   if (!worktree) {
     out(`send-to-worker: ${a.dispatch} 의 워크트리를 몰라 이어 띄우지 못한다`)
     return 1
@@ -522,7 +550,7 @@ async function main(argv: string[]): Promise<number> {
   const runArgs = run ? ['--run', run] : []
   out(`relaunch: 끝난 ${a.dispatch} 의 터미널 ${handle} 에 새 Task 로 띄운다`)
   const code = await passThrough(
-    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, '--', '--terminal', handle]),
+    scriptCommand(LAUNCH_WORKER, ['--spec', a.spec, '--worktree', worktree, ...runArgs, '--', ...(alive ? ['--terminal', handle] : SETTING_KEYS.flatMap(key => a[key] || settings[key] ? [`--${key}`, String(a[key] || settings[key])] : []))]),
     LAUNCH_MS,
   )
   if (code !== 3) return code === 0 ? 0 : 1

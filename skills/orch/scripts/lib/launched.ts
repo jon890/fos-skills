@@ -9,7 +9,7 @@
 // 다음 resume 이 이 값으로 같은 에이전트를 다시 띄운다.
 // branch 는 워크트리와 지시서가 정리된 뒤에도 질문의 PR 종료를 확인할 때 쓴다. 옛 기록에는 없을 수 있다.
 // lint_ack 은 spec-lint 가 막을 발견을 냈는데 `--lint-ack` 으로 넘기고 띄운 이유다.
-// 다시 띄우기(--retry-of)와 `--terminal` 이어 쓰기는 새 dispatch 를 만들어 새 파일이 생긴다. send-to-worker 의 이어 쓰기도 launch-worker 를 부르므로 같다.
+// 다시 띄우기(--retry-of)와 `--terminal` 이어 쓰기는 새 dispatch 를 만들어 새 파일이 생긴다. send-to-worker 의 후속 일도 Orca send 의 새 dispatch 로 기록한다.
 // 그래서 한 워크트리에 쓴 지시서(첫 지시서, 이어받기, 충돌 해소, 후속)는 그 워크트리를 가리키는 기록들의 spec 이다.
 //
 // 내보내는 것:
