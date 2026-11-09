@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { linkBin, fakeBin } from '../../../modules/testkit/fake-bin.ts'
 import { runProcess } from '../scripts/lib/proc.ts'
 import { statefulRun } from './fixtures/cleanup-sweep-run.ts'
-import { fx, SCRIPT, save } from './fixtures/cleanup-sweep.ts'
+import { fx, SCRIPT, REMOVE, save, worktree } from './fixtures/cleanup-sweep.ts'
 
 function cli(args: string[]) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { env: fx.env, encoding: 'utf8' })
@@ -155,4 +155,22 @@ test('실제 CLI 와 함수 fixture 는 같은 예외 출력·종료 코드를 �
       if (name === 'ConfigError' && entry.prefix === 'notify-conflicts') assert.equal(cli.stderr, 'notify-conflicts: forced-main-error\n')
     }
   }
+})
+
+
+test('실제 삭제 자식과 함수 가짜 자식의 0·1·2 출력과 종료가 같다', () => {
+  const dirty = worktree('dirty-remove')
+  writeFileSync(join(dirty, 'untracked.txt'), 'keep')
+  for (const args of [[join(fx.tmp, 'missing')], ['--unknown-option'], [dirty, '--wait', '0']]) {
+    save()
+    const argv = [process.execPath, '--disable-warning=ExperimentalWarning', REMOVE, ...args]
+    const real = runProcess(argv, { env: fx.env })
+    save()
+    assert.deepEqual(statefulRun(argv, { env: fx.env }), real, args.join(' '))
+  }
+})
+
+test('remove-worktree를 import하면 삭제 명령을 실행하지 않는다', () => {
+  const done = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(REMOVE)})`], { env: fx.env, encoding: 'utf8' })
+  assert.deepEqual([done.status, done.stdout, done.stderr], [0, '', ''])
 })

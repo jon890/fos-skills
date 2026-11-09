@@ -1,0 +1,36 @@
+{
+  "name": "sweep-browser",
+  "description": "반복 명령과 준비 비용을 줄인다",
+  "pr_scope": "browser-driver 호출 주입과 cleanup-sweep 준비 비용을 줄이고 마지막 전체 측정 근거를 남긴다.",
+  "deferred": [],
+  "status": "pending",
+  "created_at": "2026-11-09",
+  "spec": "docs/features/test-speed/spec.md",
+  "design": "docs/features/test-speed/design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ1",
+    "REQ2",
+    "REQ3",
+    "REQ4",
+    "REQ6",
+    "REQ9"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ1",
+        "REQ2",
+        "REQ3",
+        "REQ4",
+        "REQ6",
+        "REQ9"
+      ]
+    }
+  ]
+}

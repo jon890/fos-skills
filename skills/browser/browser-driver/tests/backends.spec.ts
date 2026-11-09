@@ -5,7 +5,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { Box, golden, type FakeRule, type T } from './helpers.ts'
+import { golden, type FakeRule, type T } from './helpers.ts'
+import { FunctionBox as Box } from './function-box.ts'
 
 const json = (value: unknown) => `${JSON.stringify(value)}\n`
 
