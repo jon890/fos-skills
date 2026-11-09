@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { readScreen, stallHash } from '../scripts/lib/screen.ts'
+import { backgroundWork, readScreen, stallHash } from '../scripts/lib/screen.ts'
 
 function claudeScreen(status: string): string[] {
   return `⏺ 검사를 다시 돌린다.
@@ -108,5 +108,38 @@ ${body}
     ]) {
       assert.equal(readScreen(claude(body)).state, 'idle', body)
     }
+  })
+})
+
+describe('백그라운드 작업', () => {
+  const claude = (footer: string) => `⏺ 빌드를 백그라운드로 돌렸다. 끝나면 이어 간다.
+───────────────────────────────────────────────
+❯
+───────────────────────────────────────────────
+  ${footer}`.split('\n')
+
+  test('Claude 바닥 모드 줄의 셸, 모니터, 백그라운드 작업 칸을 찾는다(실제 화면 문구)', () => {
+    assert.equal(backgroundWork(claude('⏵⏵ auto mode on · 7 shells · ← 1 agent')), '7 shells')
+    assert.equal(backgroundWork(claude('⏵⏵ auto mode on · 1 shell · ← 1 agent')), '1 shell')
+    assert.equal(backgroundWork(claude('⏵⏵ bypass permissions on · 1 shell, 2 monitors')), '1 shell, 2 monitors')
+    assert.equal(backgroundWork(claude('⏵⏵ auto mode on · 3 background tasks')), '3 background tasks')
+    // 화면 상태는 그대로 idle 이다. nudge-worker 의 판정과 출력을 바꾸지 않는다
+    assert.equal(readScreen(claude('⏵⏵ auto mode on · 1 shell · ← 1 agent')).state, 'idle')
+  })
+
+  test('에이전트 보기 안내와 답 본문의 같은 낱말은 백그라운드 작업이 아니다', () => {
+    assert.equal(backgroundWork(claude('⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent')), null)
+    assert.equal(backgroundWork(['⏺ 3 shells 를 열어 확인했다', '❯', '  ⏵⏵ auto mode on']), null)
+  })
+
+  test('Codex 의 백그라운드 터미널 표시를 찾는다', () => {
+    const lines = ['• Working (13m 09s • esc to interrupt) · 2 background terminals running · /ps to view · /stop to close', '› Ask Codex to do anything', '  ? for shortcuts']
+    assert.equal(backgroundWork(lines), '2 background terminals running')
+    assert.equal(backgroundWork(['• 끝났다.', '› Ask Codex to do anything', '  ? for shortcuts']), null)
+  })
+
+  test('답변 본문에 같은 문구가 있어도 상태 표시줄에 없으면 백그라운드 작업이 아니다', () => {
+    assert.equal(backgroundWork(['• 상태 문구는 2 background terminals running 입니다.', '› Ask Codex to do anything', '  ? for shortcuts']), null)
+    assert.equal(backgroundWork(['⏺ 1 shell', '───────────────', '❯', '───────────────', '  ⏵⏵ auto mode on']), null)
   })
 })
