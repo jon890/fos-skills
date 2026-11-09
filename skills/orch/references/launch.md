@@ -213,6 +213,8 @@ orch worker resume --dispatch "$DISPATCH_ID"
 | `ready` | 가장 최근 dispatch 가 `failed` (재부팅으로 터미널과 루프가 함께 사라졌다) | `--retry-of` 없이 `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID"`. `adopt-sessions` 는 이 경우 `RESTART` 줄과 `orch worker resume` 을 낸다. 이 명령은 resume 이 실패했을 때 쓴다 |
 | `dispatched` | 살아 있는 dispatch | 다시 띄우지 않는다. 같은 worker 에 `send-to-worker` 로 보낸다 |
 
+사용자가 화면을 보고 기존 배정을 의도적으로 포기하고 다시 띄우기로 정한 경우에만 `worker-abandon --dispatch "$DISPATCH_ID"` 로 그 배정을 포기한다. Task 가 `ready` 인지 확인한 뒤 표의 ready 줄처럼 `--retry-of` 없이 `--task` 로 띄운다. abandon 은 에이전트가 끝났다는 증거가 아니므로 같은 워크트리에 새 worker 를 띄우기 전에 기존 에이전트가 실제로 멈췄는지도 확인한다.
+
 Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본다. 상태를 모르고 `--retry-of` 를 주면 `task_not_startable`(「--retry-of must name the latest settled Dispatch of a failed or blocked Task」)로 거절된다. 거절되면 표의 둘째 줄로 간다.
 
 1. `worker-show --dispatch "$DISPATCH_ID"` 로 dispatch 상태를 보고, `task-list` 로 Task 상태를 본다
