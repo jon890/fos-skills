@@ -9,7 +9,7 @@ import { type Entry, indexJson, Repo, verify, writePlan } from './helpers.ts'
 const has = (lines: string[], needle: string) => lines.some((line) => line.includes(needle))
 
 // 파일 상태 대조가 내는 줄만 남긴다
-const STATE = /존재|생략하지 않은|신규 glob|생략 경로|신규·수정|4단계/
+const STATE = /존재|이미 덮는다|생략하지 않은|신규 glob|생략 경로|신규·수정|4단계/
 const state = (lines: string[]) => lines.filter((line) => STATE.test(line))
 
 // phase 마다 변경 파일만 다른 계획을 만들어 구현 전 상태로 검사한다. repo 의 파일은 호출하는 쪽이 미리 둔다
@@ -50,6 +50,12 @@ test('없는 파일 위반은 rebase 를 안내한다', () => {
     assert.ok(out[0].includes(`${action} 파일이 존재하지 않는다: absent.py`), out[0])
     assert.ok(out[0].includes('선행 계획이 만들 파일이면 그 계획이 머지된 뒤 기준 브랜치로 rebase 해 다시 돌린다'), out[0])
   }
+})
+
+test('앞 phase 의 glob 이 덮는 신규 파일은 디스크에 있다고 하지 않고 glob 을 알린다', () => {
+  const r = check(new Repo(), [[['src/*.py', '신규']], [['src/new.py', '신규']]])
+  assert.ok(has(r.violations, '앞 phase 의 glob src/*.py 이 이미 덮는다: src/new.py'), r.violations.join('\n'))
+  assert.ok(!has(r.violations, '신규 파일이 이미 존재한다: src/new.py'), r.violations.join('\n'))
 })
 
 test('glob 삭제는 뒤 phase 에서 보인다', () => {
