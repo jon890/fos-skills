@@ -34,10 +34,8 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 
 ### 사용자 결정 요청 바꾸기
 
-`decision-pending` 은 기본 핸들러가 있는 이벤트다. 루프에 새 사용자 결정이 생기면 Run 등록의 현재 코디네이터에게 「정할 것 묻기」 를 넣는다. 등록된 터미널이 없거나 입력을 확인하지 못하면 실패로 남겨 10분부터 두 배씩 기다렸다 다시 시도한다. 코디네이터가 사용자와 대화 중이면 루프가 이 이벤트를 미룬다([`waiting.md`](waiting.md) 의 「사용자와 대화 중일 때」).
-저장소에 `.orch/hooks/decision-pending.ts` 를 두면 기본 핸들러를 대체한다. 입력의 `questions` 는 질문 id·dispatch·본문 목록이고 `items` 는 보드 항목 id·남은 줄 목록이다. 이 핸들러는 코디네이터에게 묻기를 요청하며 사용자의 답을 대신 정하지 않는다. 전달했을 때만 0 으로 끝낸다.
-
-사용자 결정은 `decision-pending`만 코디네이터를 깨운다. `worker-question`은 기술 질문과 일반 escalation의 새 알림·재알림만 맡고, 결정 질문의 재알림은 루프 로그에만 남긴다. 따라서 결정 질문의 재알림으로 `worker-question` 핸들러를 다시 부르지 않는다.
+`decision-pending` 은 기본 핸들러(`scripts/handlers/decision-pending.ts`)가 있는 이벤트다. 새 사용자 결정을 현재 코디네이터에게 「정할 것 묻기」 로 넣고, 재시도와 대화 중 미룸은 [`waiting.md`](waiting.md) 의 「새 사용자 결정을 놓치지 않기」 가 소유한다. 저장소에 `.orch/hooks/decision-pending.ts` 를 두면 기본 핸들러를 대체한다. 입력 필드는 `events.ts` 머리 주석이 소유한다. 이 핸들러는 묻기를 요청할 뿐 사용자의 답을 대신 정하지 않고, 전달했을 때만 0 으로 끝난다.
+사용자 결정은 `decision-pending` 만 코디네이터를 깨우고, `worker-question` 은 기술 질문과 일반 escalation 만 맡는다.
 
 동시에 도는 worker 가 상한에 닿았으면 새 worker 를 띄우지 않는 `before-launch` 핸들러다. `.orch/hooks/before-launch.ts` 에 둔다.
 
@@ -137,8 +135,7 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 | `HOOK-FAIL <이벤트> timeout` | 시간 제한을 넘겼다 | 핸들러를 줄이거나 `config.json` 의 `hooks.timeouts.<이벤트>`(초)를 늘린다 |
 | `HOOK-FAIL <이벤트> lock` | 같은 이벤트의 앞 실행이 잠금을 놓지 않았다 | 앞 실행이 끝난 뒤 다시 부른다 |
 | `INVALID-CONFIG ... doctor migrate-hooks ... --apply` | `orch doctor` 가 5.2.0에서 지운 설정 칸을 찾았다 | worker와 머지 큐가 끝난 뒤 아래 절차로 핸들러로 옮긴다 |
-| `INVALID-CONFIG queue.auto_review.require 에 모르는 조건이 있다: ...` | 자동 머지 리뷰 조건에 모르는 이름이 있다. 상주 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | `config.json` 의 이름을 줄에 나온 「쓸 수 있는 조건」 가운데 하나로 고친다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」) |
-| `INVALID-CONFIG 설정 파일의 inbox 절에 모르는 키가 있다: ...` | `config.json` 의 `inbox` 절에 모르는 키가 있다 | 줄에 나온 키를 지우거나 고친다([`overlay.md`](overlay.md) 의 `inbox` 절) |
+| `INVALID-CONFIG <설정 칸> ...` (그 밖) | `config.json` 의 값이 틀렸다. 자동 머지 리뷰 조건(`queue.auto_review.require`)이면 루프는 멈추지 않지만 어느 PR 도 걸지 않는다 | 줄에 나온 이름이나 키를 고친다([`overlay.md`](overlay.md) 의 「자동 머지 리뷰 조건」, `inbox` 절) |
 
 거부할 수 있는 이벤트에서는 `HOOK-FAIL` 도 거부처럼 멈춘다. 모르는 실패로 머지하거나 지우지 않기 위해서다.
 나머지 이벤트에서 명령의 종료 코드에 반영하는지는 `docs/flow.md` 「갈래」 표가 소유한다.
@@ -146,8 +143,8 @@ execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_
 
 ## 옛 설정 칸 옮기기
 
-orch 5.2.0에서 `config.json`의 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`와 대응 명령줄 옵션 `--before`, `--verify-merged`, `--after-merged`, `--complete-cmd`를 지웠다. 일반 런타임 명령은 남은 설정을 사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다. `finish.task_pattern`은 마지막 PR 판정이 읽으므로 남는다.
-`orch doctor migrate-hooks --apply` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다. 만든 핸들러는 옛 칸을 돌리던 것과 같은 인자, 환경 변수, 작업 디렉터리로 옛 명령을 부른다.
+orch 5.2.0에서 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `finish.complete_cmd`와 대응 명령줄 옵션을 지웠다(목록은 `scripts/lib/config.ts` 의 `REMOVED_CONFIG_KEYS`). 일반 런타임 명령은 남은 설정을 사용법 오류(종료 코드 2)로 거부하고, `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다.
+`orch doctor migrate-hooks --apply` 가 칸마다 같은 일을 하는 핸들러를 만들고 그 칸을 설정에서 지운다.
 
 머지 큐와 worker 가 돌지 않을 때 옮긴다. `$REPO` 는 대상 저장소의 주 checkout 이다.
 
