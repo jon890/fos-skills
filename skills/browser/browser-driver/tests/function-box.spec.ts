@@ -4,7 +4,7 @@ import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { FunctionBox } from './function-box.ts'
-import { egoOut, type FakeRule } from './helpers.ts'
+import { egoOut, write, type FakeRule } from './helpers.ts'
 import { withRuntime, runtimeEnv } from '../driver/runtime.ts'
 
 type Case = { name: string; driver: string; args: string[]; rules: FakeRule[]; code: number }
@@ -97,3 +97,20 @@ test('처리하지 못한 오류도 main의 실제 오류 처리기를 거친다
   assert.equal(cli.code, 1)
   assert.equal(direct.stderr.split('\n').slice(0, 2).join('\n'), cli.stderr.split('\n').slice(0, 2).join('\n'))
 })
+
+
+for (const args of [['help'], ['driver'], ['nav', 'P']]) {
+  test(`CLI 대조: 설정 후보 경고를 ${args.join(' ')}의 출력보다 먼저 낸다`, (t) => {
+    const box = new FunctionBox(t)
+    box.env.BROWSER_CONFIG = undefined
+    box.env.BROWSER_DRIVER = 'orca'
+    box.fake('orca')
+    for (const name of ['a-x', 'b-y']) {
+      write(join(box.claude, 'plugins', 'data', name, 'browser.config.json'), '{}')
+    }
+    const direct = box.run(args)
+    const cli = box.cli(args)
+    assert.match(cli.stderr, /^경고: 설치 캐시 밖에서 플러그인 데이터 설정 후보가 여러 개여서 옛 위치 사용:/)
+    assert.deepEqual(direct, cli)
+  })
+}

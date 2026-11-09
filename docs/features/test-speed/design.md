@@ -402,6 +402,6 @@ REQ1·REQ2·REQ3·REQ4·REQ6·REQ9를 맡는다. PR6의 cleanup-sweep 격리와 
 | cleanup-sweep 준비 | PR6의 템플릿 저장소·함수 가짜를 재사용한다. remove-worktree는 별도 자식에서 main을 호출하고 그 안의 동기 가짜 조회만 같은 본문으로 평가한다. git과 삭제는 실제 실행이다. `cleanup-sweep-run.spec.ts`에서 실제 삭제 진입과 함수 가짜 자식의 0·1·2를 대조한다. 프로세스 pid 판정 때문에 main의 별도 프로세스 격리는 유지한다 |
 | 초기 저장소 상태 | cleanup-sweep의 빈 초기 커밋·main upstream·테스트별 브랜치/파일/커밋/원격 상태를 유지한다. browser-driver는 각 Box의 빈 홈·설정·PATH를 유지한다 |
 
-함수 가짜는 동기 CommonJS 본문만 평가한다. timeout·신호·비동기 출력·자식 생명주기·상대 파일 접근을 보증하지 않으며 prelude는 실제 실행으로 넘긴다. 본문 예외는 명령 실패로 돌려준다. browser-driver 테스트 도우미는 배포되는 폴더 안에 두고 바깥 모듈을 import하지 않는다. 새 도메인 규칙·데이터 형식·트랜잭션·배포 순서 변경과 ADR은 없다.
+함수 가짜는 동기 CommonJS 본문만 평가한다. timeout·신호·비동기 출력·자식 생명주기·상대 파일 접근을 보증하지 않으며 prelude는 실제 실행으로 넘긴다. 본문 예외는 명령 실패로 돌려준다. 함수 main은 runtime 진입 직후 설정 경로를 판정해 CLI의 import 시점 경고와 출력 순서를 맞춘다. 후보가 여럿이고 BROWSER_CONFIG가 없는 help·driver·인자 부족 호출도 CLI와 대조한다. browser-driver 테스트 도우미는 배포되는 폴더 안에 두고 바깥 모듈을 import하지 않는다. 새 도메인 규칙·데이터 형식·트랜잭션·배포 순서 변경과 ADR은 없다.
 
 검증은 실행기로 대상 파일과 명령 경계 회귀를 실행한다. 기준/구현 커밋의 파일별 시간과 preload 기동 수를 heavy exclusive slot에서 번갈아 재고 load를 남긴다. 마지막 PR이므로 동시 8 전체 실행의 끝 줄과 파일 시간 합을 PR 본문에 보존한다. 독립 설계·계획·코드·문서 검토는 PR 뒤 코디네이터가 마련하며 그전에는 미완료로 기록한다.

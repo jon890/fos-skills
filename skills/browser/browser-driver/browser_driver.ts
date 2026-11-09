@@ -26,7 +26,7 @@ import { parseJsArgs, parsePointerArgs, parseResetArgs } from './driver/args.ts'
 import type { Backend } from './driver/backends/base.ts'
 import { backendByName, loadBackend, resolveBackendName, unknownBackendMessage } from './driver/backends/index.ts'
 import { COMMAND_MAP, COMMANDS, META_COMMANDS, renderHelp, required, usage } from './driver/commands.ts'
-import { configPath } from './driver/config.ts'
+import { configPath, configResolution } from './driver/config.ts'
 import { DriverError, EXIT_FAIL, EXIT_USAGE, UsageError } from './driver/errors.ts'
 import { eprint, isMain, print } from './driver/io.ts'
 import { PyFloat, dumpJson, normalizeNewlines, osErrorMessage, pyDecode, pyFloatStr, pyPath } from './driver/pylike.ts'
@@ -134,7 +134,11 @@ function run(argv: string[]): number {
 // 명령 하나를 돌리고 종료 코드를 낸다. 오류는 여기서 stderr 로 쓰고 종료 코드로 바꾼다.
 // 처리하지 못한 오류는 Python 의 traceback 처럼 stderr 에 적고 1 이다.
 export function main(argv: string[], runtime?: Runtime): number {
-  if (runtime) return withRuntime(runtime, () => main(argv))
+  if (runtime) return withRuntime(runtime, () => {
+    // CLI의 import 시점처럼 명령 검사보다 먼저 설정 경고를 낸다.
+    configResolution()
+    return main(argv)
+  })
   try {
     return run(argv)
   } catch (error) {
