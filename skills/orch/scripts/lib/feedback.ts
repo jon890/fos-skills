@@ -41,8 +41,12 @@ export function scan(dir: string): { candidates: Candidate[]; legacy: string[] }
   for (const name of names) {
     if (!name.endsWith('.md') || name === 'README.md') continue
     const file = join(dir, name)
-    if (!statSync(file).isFile()) continue
-    const candidate = parse(readFileSync(file, 'utf8'), file, name.slice(0, -3))
+    let text: string
+    try {
+      if (!statSync(file).isFile()) continue
+      text = readFileSync(file, 'utf8')
+    } catch { continue }
+    const candidate = parse(text, file, name.slice(0, -3))
     if (candidate) out.candidates.push(candidate)
     else out.legacy.push(file)
   }
