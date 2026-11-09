@@ -24,6 +24,7 @@
 //                   고르기와 지우기는 lib/spec.ts 의 specCandidates, specsOnBranch 와 deleteSpecs 다
 //                   워크트리를 지우면 launch-worker 가 그 워크트리에 준 지시서(lib/launched.ts 의 기록. 이어받기, 충돌 해소, 후속 지시서처럼
 //                   이름이 다른 것도 든다)를 --trash 로 옮기고 그 기록을 지운다. 살아 있는 dispatch 가 가리키는 지시서는 남긴다
+//                   워크트리가 먼저 지워져 위 순회가 만나지 못한 지시서도 치운다(아래 「워크트리 없는 지시서」)
 //     --kill-holders  터미널을 닫은 뒤에도 그 경로를 쓰는 프로세스를 끈다(아래 「남은 프로세스 끄기」)
 //     --agent-glob  하위 에이전트 워크트리 폴더 이름의 glob. 기본 `agent-*`(아래 「하위 에이전트 워크트리」)
 //     --close-own-taken-over
@@ -183,6 +184,16 @@
 //     지시서는 deleteSpecs 로 지운다. 원격 브랜치는 건드리지 않는다.
 //     출력은 `리뷰 브랜치를 지울 것 <브랜치> (#<N> <state>)`, `리뷰 브랜치 삭제 <브랜치> (#<N> <state>)`, `리뷰 브랜치 남김 <브랜치>: <이유>`,
 //     `리뷰 흔적 남김 #<N>: <이유>` 와 deleteSpecs 의 줄이다.
+//
+// 워크트리 없는 지시서 (저장소마다 리뷰 흔적 뒤에 한 번. --specs-dir 를 줬을 때):
+//     워크트리가 먼저 지워지면 위 워크트리 순회가 그 지시서를 만나지 못해 쌓인다. --specs-dir 바로 아래 .md 가운데
+//     `브랜치:` 줄이 있는 지시서마다 아래를 모두 채우면 --trash 로 옮긴다.
+//       - 줄의 브랜치마다 PR 이 있고 모두 MERGED 다(OPEN 이 하나라도 있거나 조회가 실패하면 남긴다)
+//       - 그 브랜치를 쓰는 워크트리가 없다. 같은 이름의 로컬 브랜치가 있으면 끝점이 머지된 PR 의 headRefOid 와 같다
+//       - 기능 PR 의 후속 검증이 대기가 아니다(featureCompletionProblem)
+//       - 살아 있는 dispatch 가 가리키는 지시서가 아니고 orch 루트 안이다(deleteSpecs)
+//     옮기기 전 `워크트리 없는 지시서 판정 <경로>: 브랜치 <b> PR #<N> MERGED, 그 브랜치의 워크트리 없음` 한 줄을 낸다.
+//     남기는 이유는 `워크트리 없는 지시서 남김 <경로>: <이유>` 로 낸다(PR 이 없는 지시서는 줄 없이 남긴다)
 //
 // 저장소 밖 detached 워크트리:
 //     worker 가 기준선 비교나 임시 검사로 저장소 밖(임시 폴더 같은 곳)에 만든 detached 워크트리는 끝나도
@@ -376,7 +387,7 @@ import { lsofOpenedBy, sweepQueueLogs } from '../lib/queue-logs.ts'
 import { finishStarted } from '../lib/finish-marks.ts'
 import { run as runCommand, scriptCommand, withRun } from '../lib/proc.ts'
 import { liveReviewPrs, originBranch, reviewKeepReason, reviewPrOf, reviewPrOfBranch, reviewPrState } from '../lib/review.ts'
-import { allLiveSpecPaths, deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from '../lib/spec.ts'
+import { allLiveSpecPaths, branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths, specCandidates, specsOnBranch } from '../lib/spec.ts'
 import { isFinished, isLive, judge, readScreens, screenHandles } from '../lib/worker-state.ts'
 import type { Verdict } from '../lib/worker-state.ts'
 import { isVerdict, short } from '../lib/output.ts'
@@ -1778,6 +1789,59 @@ function sweepReviews(repo: string, args: Args, checkedOut: Set<string>, specsDi
   }
 }
 
+// 머리 주석의 「워크트리 없는 지시서」. --specs-dir 폴더 바로 아래 지시서의 `브랜치:` PR 이 모두 MERGED 이고 그 브랜치를 쓰는
+// 워크트리가 없으면 휴지통으로 옮긴다. 워크트리가 먼저 지워진 지시서는 워크트리 순회가 만나지 못해 쌓이기 때문이다.
+// 살아 있는 dispatch 가 쓰는 지시서와 기능 후속 검증이 남은 지시서는 남긴다. 판정 근거는 옮기기 전 한 줄로 낸다
+function sweepStaleSpecs(repo: string, args: Args, checkedOut: Set<string>, specsDir: string | null, log: Log): void {
+  if (!specsDir) return
+  let names: string[] = []
+  try {
+    names = readdirSync(specsDir).filter((name) => name.endsWith('.md')).sort()
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const file = join(specsDir, name)
+    const branches = [...new Set(branchesOf(readText(file)))]
+    if (branches.length === 0) continue
+    const proofs: string[] = []
+    let keep = ''
+    let last: Pr | null = null
+    for (const branch of branches) {
+      if (checkedOut.has(branch)) {
+        keep = `브랜치 ${branch} 의 워크트리가 남아 있다`
+        break
+      }
+      const listed = prList(repo, branch)
+      const prs = listed.prs.filter((p) => !truthy(p.isCrossRepository) && p.headRefName === branch)
+      if (!listed.ok) keep = `브랜치 ${branch} 의 PR 조회 실패`
+      else if (prs.length === 0) keep = `브랜치 ${branch} 의 PR 이 없다`
+      else if (prs.some((p) => p.state !== 'MERGED')) keep = `브랜치 ${branch} 에 머지되지 않은 PR 이 있다`
+      if (keep) break
+      const pr = prs[prs.length - 1]
+      // 같은 이름을 다시 쓴 로컬 브랜치가 머지된 끝점과 다르면 새 작업이다
+      const tip = branchTip(repo, branch)
+      if (tip && truthy(pr.headRefOid) && tip !== String(pr.headRefOid)) {
+        keep = `로컬 브랜치 ${branch} 의 끝점이 머지된 PR 과 다르다`
+        break
+      }
+      last = pr
+      proofs.push(`브랜치 ${branch} PR #${pr.number} MERGED`)
+    }
+    if (keep || !last) {
+      if (keep && !keep.endsWith('PR 이 없다')) log(`워크트리 없는 지시서 남김 ${file}: ${keep}`)
+      continue
+    }
+    const pending = featureCompletionProblem(repo, String(last.number), branches[0], specsDir, String(last.body ?? ''))
+    if (pending) {
+      log(`워크트리 없는 지시서 남김 ${file}: ${pending}`)
+      continue
+    }
+    log(`워크트리 없는 지시서 판정 ${file}: ${proofs.join(', ')}, 그 브랜치의 워크트리 없음`)
+    deleteSpecs({ root: dirname(realPath(specsDir)), specs: [file], prBodies: [], live: args.liveSpecs, mode: { trash: args.trash }, apply: args.apply, log: (line) => log(`  ${line}`) })
+  }
+}
+
 // 머지 큐 로그 정리가 쓰는 실제 조회. PR 상태는 번호를 묶어 한 번에 읽고(lib/pr-lookup.ts 의 states) 읽지 못한 번호는 담지 않는다
 function queueLogHost(repo: string) {
   return {
@@ -1837,6 +1901,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   remaining.add(git(repo, 'branch', '--show-current').out)
   sweepBranches(repo, args, remaining, log)
   sweepReviews(repo, args, remaining, specsDir, log)
+  sweepStaleSpecs(repo, args, remaining, specsDir, log)
   if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, remaining, log)) code = 2
   sweepQueueLogs({ dir: pathOf('queue', repo), trash: args.trash, apply: args.apply, log, host: queueLogHost(repo) })
   pruneMerged(repo, new Set(lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)))

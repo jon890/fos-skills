@@ -66,6 +66,48 @@ describe('머지 판정과 기본 정리', () => {
     assert.ok(existsSync(join(specs, 'spec-common.md')))
   })
 
+  describe('워크트리 없는 지시서', () => {
+    const sweepArgs = (trash: string, extra: string[] = []) => ['--specs-dir', '.orch/specs', '--trash', trash, ...extra]
+
+    function setup(): { specs: string; trash: string } {
+      const specs = join(fx.repo, '.orch/specs')
+      mkdirSync(specs, { recursive: true })
+      return { specs, trash: join(fx.tmp, 'trash') }
+    }
+
+    test('워크트리가 이미 없고 PR 이 MERGED 인 지시서를 판정 근거 한 줄과 함께 휴지통으로 옮긴다', () => {
+      const { specs, trash } = setup()
+      fx.prs['gone-branch'] = ['MERGED', 'a'.repeat(40)]
+      writeFileSync(join(specs, 'spec-gone.md'), '# 끝난 일\n\n브랜치: `gone-branch`\n')
+      writeFileSync(join(specs, 'spec-open.md'), '# 진행 중\n\n브랜치: `open-branch`\n')
+      fx.prs['open-branch'] = ['OPEN', 'b'.repeat(40)]
+      writeFileSync(join(specs, 'spec-nopr.md'), '# PR 전\n\n브랜치: `nopr-branch`\n')
+      writeFileSync(join(specs, 'spec-common.md'), '지시서의 `브랜치:` 이름으로 만든다.\n')
+      const dry = runSweep(sweepArgs(trash, ['--run', 'run_x']))
+      has(dry, '워크트리 없는 지시서 판정')
+      has(dry, 'spec-gone.md: 브랜치 gone-branch PR #1 MERGED, 그 브랜치의 워크트리 없음')
+      assert.ok(existsSync(join(specs, 'spec-gone.md')), 'dry-run 이 옮겼다')
+      const out = runSweep(sweepArgs(trash, ['--run', 'run_x', '--apply']))
+      has(out, '워크트리 없는 지시서 판정')
+      assert.ok(!existsSync(join(specs, 'spec-gone.md')))
+      assert.ok(existsSync(join(specs, 'spec-open.md')))
+      assert.ok(existsSync(join(specs, 'spec-nopr.md')))
+      assert.ok(existsSync(join(specs, 'spec-common.md')))
+      has(out, '지시서 옮김')
+    })
+
+    test('워크트리가 남은 브랜치의 지시서는 옮기지 않는다', () => {
+      const { specs, trash } = setup()
+      const path = worktree('still-here')
+      fx.prs['still-here'] = ['MERGED', git('-C', path, 'rev-parse', 'HEAD')]
+      writeFileSync(join(specs, 'spec-still.md'), '# 남음\n\n브랜치: `still-here`\n')
+      writeFileSync(join(path, 'dirty.txt'), 'x')
+      const out = runSweep(sweepArgs(trash, ['--run', 'run_x', '--apply']))
+      assert.ok(existsSync(join(specs, 'spec-still.md')))
+      lacks(out, '워크트리 없는 지시서 판정')
+    })
+  })
+
   test('dry-run 은 아무것도 바꾸지 않는다', () => {
     const path = worktree('feat-a')
     squashMerge('feat-a', path)
