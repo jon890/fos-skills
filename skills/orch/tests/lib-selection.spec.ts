@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, mock, test } from 'node:test'
-import { selectionVerdict } from '../scripts/lib/selection.ts'
+import { modelRowIds, selectionVerdict } from '../scripts/lib/selection.ts'
 import { experimentOf, selectionsOf } from '../scripts/lib/spec.ts'
 import { launchHistory, latestTerminal, recordHistory, type LaunchHistory } from '../scripts/lib/launch-history.ts'
 import { forgetLaunch, readLaunch, recordLaunch } from '../scripts/lib/launched.ts'
@@ -29,7 +29,7 @@ test('문서의 행을 읽고 누락, 알 수 없는 행과 읽을 수 없는 �
   assert.match(selectionVerdict(sol.replace('행: impl-planned.', ''), repo).join(), /행/)
   assert.match(selectionVerdict(sol.replace('impl-planned', 'unknown'), repo).join(), /모델 표에 없다/)
   assert.match(selectionVerdict(sol, repo, { table: join(repo, 'missing') }).join(), /표를 읽지 못했다/)
-  const table = join(repo, 'table.md'); writeFileSync(table, '| `new-row` | 설명 |')
+  const table = join(repo, 'table.md'); writeFileSync(table, '## 모델\n\n| `new-row` | 설명 |')
   assert.deepEqual(selectionVerdict(sol.replace('impl-planned', 'new-row'), repo, { table }), [])
 })
 
@@ -106,4 +106,14 @@ test('손상된 JSON 과 잘못된 필드 줄은 경고하고 정상 이력의 �
     assert.deepEqual(launchHistory(repo).map(row => row.dispatch), ['ctx_old', 'ctx_medium', 'ctx_new'])
     assert.match(warnings.join(''), /LAUNCH-HISTORY-SKIP/)
   } finally { mocked.mock.restore() }
+})
+
+test('행 id 는 agent-selection.md 의 `## 모델` 표에서만 읽고 id 집합을 고정한다', () => {
+  const text = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
+  assert.deepEqual(modelRowIds(text), ['impl-planned', 'small-fix', 'simple-apply', 'impl-explore', 'hard-design', 'visual', 'review', 'security-review'])
+  // 다른 절의 표 첫 칸은 행 id 가 아니다
+  for (const other of ['low', 'gpt-6-astra', 'gpt-6.1-sol']) assert.ok(!modelRowIds(text).includes(other), other)
+  assert.ok(text.includes('| `gpt-6-astra` |'), '모델 표 밖에 이 id 로 시작하는 표가 있어야 좁힌 효과를 본다')
+  const spec = '행: low'
+  assert.match(selectionVerdict(`worker 선택: \`codex\` \`gpt-6.1-sol\` effort \`low\`. ${spec}`, tmpdir()).join(), /행 id 가 모델 표에 없다: low/)
 })
