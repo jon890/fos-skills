@@ -14,7 +14,7 @@ export const msg = (id: string, extra: Record<string, unknown> = {}) => ({ id, r
   dispatch_id: 'ctx_a', type: 'status', created_at: '2026-11-06T01:30:00Z', ...extra })
 export function fixture() {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'routing-')))
-  const saved = Object.fromEntries(['GH', 'ORCA', 'ORCH_DIR', 'ORCA_USAGE_DIR', 'GIT_CEILING_DIRECTORIES', 'ROUTING_FAKE'].map(key => [key, process.env[key]]))
+  const saved = Object.fromEntries(['GH', 'ORCA', 'ORCH_DIR', 'ORCA_USAGE_DIR', 'HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'ORCA_CODEX_ACCOUNTS', 'ORCA_CLAUDE_PROFILES', 'GIT_CEILING_DIRECTORIES', 'ROUTING_FAKE'].map(key => [key, process.env[key]]))
   const state = {
     pr: { ...PR }, siblings: [] as Record<string, unknown>[], history: [] as unknown[], inbox: {} as Record<string, unknown[]>,
     comments: [{ user: { login: 'review-bot' }, body: '| P1 | P2 | P3 | P4 | P5 |\n| --- | --- | --- | --- | --- |\n| 0 | 1 | 2 | 0 | 0 |\nPR 크기 등급: **B', created_at: '2026-11-06T01:20:00Z' }],
@@ -27,6 +27,10 @@ export function fixture() {
   process.env.ORCH_DIR = join(dir, '.orch')
   process.env.ORCA_USAGE_DIR = join(dir, 'usage')
   process.env.GIT_CEILING_DIRECTORIES = dir
+  // 실제 세션 기록이 테스트에 섞이지 않도록 홈을 임시 폴더로 바꾼다.
+  process.env.HOME = join(dir, 'home')
+  for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'ORCA_CODEX_ACCOUNTS', 'ORCA_CLAUDE_PROFILES']) delete process.env[key]
+  mkdirSync(process.env.HOME)
   mkdirSync(process.env.ORCH_DIR)
   mkdirSync(process.env.ORCA_USAGE_DIR)
   const bin = join(dir, 'fake')
@@ -65,6 +69,17 @@ process.exit(3);
     config: () => writeFileSync(join(dir, '.orch/config.json'), JSON.stringify({ routing: { review_author: 'review-bot', size_pattern: 'PR 크기 등급: \\**([A-D])' } })),
     history: (...rows: LaunchHistory[]) => rows.forEach(row => recordHistory(dir, row)),
     rows: () => routingRecords(dir),
+    home: () => join(dir, 'home'),
+    claudeSession: (worktree: string, lines: unknown[]) => {
+      const folder = join(dir, 'home', '.claude', 'projects', worktree.replace(/[^A-Za-z0-9]/g, '-'))
+      mkdirSync(folder, { recursive: true })
+      writeFileSync(join(folder, 's1.jsonl'), lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+    },
+    codexSession: (day: string, rows: unknown[]) => {
+      const folder = join(dir, 'home', '.codex', 'sessions', day)
+      mkdirSync(folder, { recursive: true })
+      writeFileSync(join(folder, 'rollout-x.jsonl'), rows.map(l => JSON.stringify(l)).join('\n') + '\n')
+    },
     usage: (agent: string, sessions: unknown[]) => writeFileSync(join(dir, 'usage', `orca-${agent}-usage.json`), JSON.stringify({ schemaVersion: 7, sessions })),
     calls: () => readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]),
     close: () => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } rmSync(dir, { recursive: true, force: true }) },
