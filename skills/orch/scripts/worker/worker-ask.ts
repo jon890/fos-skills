@@ -47,7 +47,7 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { orcaBin, withFull } from '../lib/orca.ts'
-import { run } from '../lib/proc.ts'
+import { run, runAsync } from '../lib/proc.ts'
 import { short } from '../lib/output.ts'
 import { pyStr as text } from '../lib/py.ts'
 
@@ -280,7 +280,8 @@ async function main(argv: string[]): Promise<number> {
     const askArgs = ['orchestration', 'ask', '--from', sender, '--question', question, '--timeout-ms', String(ASK_RETURN_MS), '--json']
     if (options) askArgs.push('--options', options)
     const limitMs = ASK_RETURN_MS + ASK_SLACK_MS
-    const done = run([orca, ...withFull(askArgs)], { timeoutMs: limitMs })
+    // 동기 run 은 TERM 을 무시하는 자식을 끝까지 기다린다(lib/proc.ts). runAsync 는 유예 뒤 KILL 을 보내 시간 초과로 돌아온다
+    const done = await runAsync([orca, ...withFull(askArgs)], { timeoutMs: limitMs })
     const output = done.stdout + done.stderr
     const messageId = messageIdOf(output)
     // 끊은 ask 는 질문을 이미 보냈을 수 있다. 아래 실패 경로(Run 메일함으로 대신 보내기)로 가지 않게 시간 초과를 먼저 본다.

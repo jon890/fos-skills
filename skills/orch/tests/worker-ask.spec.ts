@@ -18,6 +18,7 @@ case "$2" in
   ask)
     n=$(($(cat "$FAKE_DIR/ask-n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/ask-n"
     if [ -f "$FAKE_DIR/ask$n.out" ]; then cat "$FAKE_DIR/ask$n.out"; echo; exit "$(cat "$FAKE_DIR/ask$n.rc" 2>/dev/null || echo 0)"; fi
+    [ -n "\${FAKE_IGNORE_TERM:-}" ] && trap '' TERM
     sleep "\${FAKE_ASK_SLEEP:-0}"; cat "$FAKE_DIR/ask.out"; echo; exit "$FAKE_ASK_RC" ;;
   check)
     n=$(($(cat "$FAKE_DIR/n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_DIR/n"
@@ -303,6 +304,20 @@ describe('시간 제한', () => {
     assert.match(r.stderr, /ask 가 301ms 안에 끝나지 않아 끊었다/)
     assert.ok(!r.calls.some((c) => c.includes('[send]')), r.calls.join('\n'))
     assert.doesNotMatch(r.stdout, /^answer:/m)
+  })
+
+  test('TERM 을 무시하는 ask 도 제한 시간 뒤 강제로 끝내 2 로 돌아온다', () => {
+    fake('', 1)
+    env.FAKE_ASK_SLEEP = '30'
+    env.FAKE_IGNORE_TERM = '1'
+    env.ORCH_ASK_SLACK_MS = '300'
+    env.ORCH_ASK_RETURN_MS = '1'
+    env.ORCH_KILL_GRACE_SEC = '1'
+    const started = Date.now()
+    const r = ask('--from', 'term_w', '--question', 'q')
+    assert.equal(r.code, 2, r.stderr)
+    assert.ok(Date.now() - started < 20_000, `끝까지 기다렸다: ${Date.now() - started}ms`)
+    assert.ok(!r.calls.some((c) => c.includes('[send]')), r.calls.join('\n'))
   })
 
   test('사용법 문구의 timeout 은 시간 초과가 아니다', () => {
