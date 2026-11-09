@@ -85,6 +85,8 @@
 | DECISION18 | 같은 PR 을 다시 쓸 때 | PR 번호로 한 줄만 둔다. 같은 `outcome` 이면 건너뛰고, `closed` 로 쓴 PR 이 다시 열려 머지되면 그 줄을 `merged` 로 바꿔 쓴다. 닫힌 PR 은 `merged_at` 이 `null` 이고 `closed_at` 에 닫힌 시각을 둔다 | 작성자 | 독립 검토 발견 8. 마지막 상태가 실제 결과다 |
 | DECISION19 | dispatch 가 여럿인 PR 의 집계 묶음 | PR 을 연 dispatch 의 `launch.effective` 모델과 effort 로 묶는다. 첫 dispatch 의 모델 기준으로 「다시 띄운 PR 비율」 을 따로 낸다 | 사용자 2026-11-05 | 독립 검토 발견 4. 품질 열은 결과를 낸 모델에, 실패는 다시 띄움 비율로 첫 모델에 돌아간다 |
 | DECISION20 | 지시서가 고른 모델 표 행을 적는 법 | `agent-selection.md` 모델 표에 짧은 행 id 열을 더하고, `worker 선택:` 줄에 「행: <id>」 를 적게 한다. `spec-lint` 가 표의 id 인지 보고 없거나 틀리면 `선택` 발견으로 막는다 | 사용자 2026-11-05 | 독립 검토 발견 5. 자유 글 이유로는 행을 찾지 못해 행별 재측정이 걸리지 않는다. id 는 행 문구를 고쳐도 기록이 이어진다 |
+| DECISION21 | 제공자 자리 짝과 사용 한도 대체 표 | 제공자 안의 같은 자리(sol ↔ Opus 5.5, terra ↔ Sonnet 5.5, luna ↔ Haiku 5.5)를 짝으로 본다. Sonnet 행의 같은 등급 대응에 `gpt-6.1-terra` 를 더하되 「코딩 근거가 Sonnet 보다 약하다, experiment 전」 이라고 적는다. 자리 짝은 코딩 능력이 같다는 뜻이 아니다 | 사용자 2026-11-10 | 사용 한도에 걸렸을 때 같은 자리로 옮길 후보가 필요하다. 근거와 출처는 evidence 의 2026-11-10 절 |
+| DECISION22 | 계획을 마친 구현의 effort | `impl-planned`, `impl-explore` 에서 Opus 5.5 와 sol 은 `medium` 을 넘기지 않고, Sonnet 5.5 는 `high` 가 기본이다. 실패하면 sol 과 Opus 는 effort 를 올리지 않고 모델을 바꾼다. Terra 로 구현을 옮길지는 experiment 다섯 번을 본 뒤 정한다 | 사용자 2026-11-10 | 「Opus·Sol 은 medium, Sonnet 구현은 high」. 반대 근거와 한계는 evidence 의 2026-11-10 절 |
 
 ## 도메인 규칙 변경
 
