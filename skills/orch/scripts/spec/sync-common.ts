@@ -26,7 +26,13 @@ export function syncCommon(copy: string, template: string, repo: string): { text
     if (spans.some((span, i) => i > 0 && span.head < spans[i - 1].end)) throw new Error('표지 항목의 범위가 겹친다')
   }
   const lines = copy.split(/\r\n|[\n\r\u2028\u2029]/)
-  const eol = copy.includes('\r\n') ? '\r\n' : '\n'
+  const separators = [...copy.matchAll(/\r\n|[\n\r\u2028\u2029]/g)].map((match) => match[0])
+  const starts: number[] = []
+  let offset = 0
+  for (const [index, line] of lines.entries()) {
+    starts.push(offset)
+    offset += line.length + (separators[index]?.length ?? 0)
+  }
   const edits: { head: number; end: number; lines: string[] }[] = []
   const output: string[] = []
   let manual = false
@@ -85,9 +91,18 @@ export function syncCommon(copy: string, template: string, repo: string): { text
     if (mine) output.push(...lines.slice(head, end).map((line) => `-${line}`))
     output.push(...replacement.map((line) => `+${line}`))
   }
-  // 같은 위치에 빠진 항목을 넣을 때 틀의 순서를 보존한다.
-  for (const edit of edits.toReversed().sort((a, b) => b.head - a.head)) lines.splice(edit.head, edit.end - edit.head, ...edit.lines)
-  return { text: edits.length ? lines.join(eol) : copy, output, manual }
+  // 원문의 문자 오프셋으로 잘라 붙여 교체 범위 밖의 줄바꿈은 그대로 둔다.
+  let text = copy
+  for (const edit of edits.toReversed().sort((a, b) => b.head - a.head)) {
+    const start = starts[edit.head] ?? copy.length
+    const end = starts[edit.end] ?? copy.length
+    const eol = separators[edit.head] ?? separators[edit.head - 1] ?? separators[0] ?? '\n'
+    let replacement = edit.lines.join(eol)
+    if (edit.end < lines.length) replacement += eol
+    if (edit.head === edit.end && start === copy.length && copy.length && !/[\r\n\u2028\u2029]$/.test(copy)) replacement = eol + replacement
+    text = text.slice(0, start) + replacement + text.slice(end)
+  }
+  return { text, output, manual }
 }
 
 // 같은 폴더에서 완성한 파일을 rename 한다. 실패하면 원본과 권한을 지키고 임시 파일만 치운다.

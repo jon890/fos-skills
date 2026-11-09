@@ -149,3 +149,14 @@ test('원자적 쓰기는 이름 변경 실패 때 원본을 지키고 임시 �
   assert.equal(readFileSync(file, 'utf8'), '새것')
   assert.equal(statSync(file).mode & 0o777, 0o640)
 })
+
+
+test('변경 범위 밖의 혼합 줄바꿈과 유니코드 줄 구분자를 바이트 그대로 보존한다', () => {
+  const before = '## 제목\r\n- 고유 앞\u2028'
+  const after = '- 고유 뒤\r- 끝\r\n'
+  const copy = before + rule('a', '옛것') + after
+  const result = syncCommon(copy, rule('a', '새것'), repo)
+  assert.equal(result.text, before + rule('a', '새것') + after)
+  assert.equal(syncCommon(result.text, rule('a', '새것'), repo).text, result.text)
+  assert.equal(syncCommon('- 고유 항목', rule('a', '새것'), repo).text, '- 고유 항목\n' + rule('a', '새것'))
+})
