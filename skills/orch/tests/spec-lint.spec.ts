@@ -605,3 +605,24 @@ describe('--check-overlay', () => {
     assert.equal(run([]).code, 2)
   })
 })
+
+test('keep 표지의 의도적 변경은 공통 본문 경고를 내지 않는다', () => {
+  const template = write(join(tmp, 'keep-template.md'), '- 새 규칙 <!-- orch-rule: local -->\n')
+  write(join(specs, 'spec-common.md'), '- 저장소 규칙 <!-- orch-rule: local keep -->\n')
+  const done = spawnSync(process.execPath, [SCRIPT, '--repo', repo, spec('keep', '')], {
+    encoding: 'utf8', env: { ...ENV, SPEC_TEMPLATE: template },
+  })
+  assert.equal(done.status, 0, done.stderr)
+  assert.doesNotMatch(done.stdout, /공통:/)
+})
+
+
+test('중복 표지를 공통 경고로 알리고 표지 이름과 모든 줄 번호를 보인다', () => {
+  const template = write(join(tmp, 'duplicate-template.md'), '- 새 규칙 <!-- orch-rule: local -->\n')
+  write(join(specs, 'spec-common.md'), '- 하나 <!-- orch-rule: local -->\n- 둘 <!-- orch-rule: local -->\n')
+  const done = spawnSync(process.execPath, [SCRIPT, '--repo', repo, spec('duplicate', '')], {
+    encoding: 'utf8', env: { ...ENV, SPEC_TEMPLATE: template },
+  })
+  assert.equal(done.status, 0, done.stderr)
+  assert.match(done.stdout, /공통: 같은 표지 local 가 둘 이상 있다: 1, 2줄/)
+})
