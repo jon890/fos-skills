@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { FIELDS, parse } from '../scripts/lib/feedback.ts'
+import { FIELDS, parse, parseLegacy } from '../scripts/lib/feedback.ts'
 import { syncCommon } from '../scripts/spec/sync-common.ts'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/feedback/feedback-candidates.ts', import.meta.url))
@@ -143,4 +143,12 @@ test('하이픈으로 시작하는 설명도 옵션 대신 값으로 저장한�
   const result = run('add', ...args)
   assert.equal(result.status, 0, result.stderr)
   assert.equal(parse(readFileSync(join(dir, 'a.md'), 'utf8'))!.values['바라는 기능'], '--dry-run 을 기본으로')
+})
+
+
+test('옛 메모의 새 판단 이름을 우선하고 실제로 쓰던 변형과 표도 읽는다', () => {
+  const [candidate] = parseLegacy('## 문제\n- 유의미: 옛 값\n- 유의미한가: 새 값\n- 단순 함정 여부: 반복 구조 문제\n- 구조로 막는 방법: 검사기를 둔다\n', 'old.md')
+  assert.equal(candidate.values.판단, '유의미한가: 새 값 / 단순 함정이 아닌가: 반복 구조 문제 / 구조로 막을 수 있는가: 검사기를 둔다')
+  const [table] = parseLegacy('## 문제\n| 유의미함 | 시간을 줄인다 |\n| 단순 함정이 아님 | 반복된다 |\n| 구조로 막을 수 있음 | 검사를 둔다 |\n', 'old.md')
+  assert.ok(!table.values.판단.includes('확인 필요'))
 })

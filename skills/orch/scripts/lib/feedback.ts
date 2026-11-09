@@ -53,6 +53,18 @@ export function scan(dir: string): { candidates: Candidate[]; legacy: string[] }
   return out
 }
 
+function labeled(lines: string[], labels: string[]): string | undefined {
+  for (const label of labels) {
+    for (const line of lines) {
+      const bullet = /^- (?:\*\*)?(.+?)(?:\*\*)?:\s*(.*)$/.exec(line)
+      if (bullet?.[1] === label && bullet[2].trim()) return bullet[2].trim()
+      const cells = line.split('|').slice(1, -1).map(cell => cell.trim().replace(/^\*\*|\*\*$/g, ''))
+      if (cells[0] === label && cells[1]) return cells[1]
+    }
+  }
+  return undefined
+}
+
 export type Legacy = { title: string; values: Record<Field, string> }
 // 명시된 칸만 옮기고, 읽지 못한 원문은 근거에 남긴다.
 export function parseLegacy(text: string, source: string): Legacy[] {
@@ -66,10 +78,11 @@ export function parseLegacy(text: string, source: string): Legacy[] {
       const found = section.find(line => line.startsWith(`- ${field}: `))
       values[field] = found?.slice(`- ${field}: `.length).trim() || '확인 필요'
     }
-    const judgments = [['유의미', '유의미한가'], ['단순 함정 아님', '단순 함정이 아닌가'], ['구조로 막기', '구조로 막을 수 있는가']].map(([label, target]) => {
-      const found = section.find(line => line.startsWith(`- ${label}: `))
-      return `${target}: ${found?.slice(`- ${label}: `.length).trim() || '확인 필요'}`
-    })
+    const judgments = [
+      ['유의미한가', '유의미', '유의미성', '유의미함'],
+      ['단순 함정이 아닌가', '단순 함정 아님', '단순 함정이 아님', '단순 함정 여부'],
+      ['구조로 막을 수 있는가', '구조로 막기', '구조로 막는 방법', '구조로 막을 수 있음', '구조로 방지 가능', '구조로 예방 가능', '구조로 막음'],
+    ].map(labels => `${labels[0]}: ${labeled(section, labels) || '확인 필요'}`)
     if (values.판단 === '확인 필요') values.판단 = judgments.join(' / ')
     // 원문 전체를 근거에 남겨 알 수 없는 칸과 파일 앞의 메모도 잃지 않는다.
     values.근거 = `${source}:${start + 1}; ${values.근거}; 원문: ${oneLine(i === 0 ? lines.slice(0, starts[1] ?? lines.length).join('\n') : section.join('\n'))}`
