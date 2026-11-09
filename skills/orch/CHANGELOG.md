@@ -1,5 +1,12 @@
 # CHANGELOG: orch
 
+## 7.25.3 (2026-11-09)
+
+- 모델 선택에서 `gpt-6.1-sol` `medium` 을 Claude Opus 5.5 `medium` 과 같은 등급으로 본다. 구현 행의 첫 후보로 둔다.
+- sol 을 막는 조건을 「사용자 결정이나 설계 판단이 남은 Task」 로 좁힌다. 실행 전 확인 질문은 sol 을 막지 않는다.
+- 사용 한도 대체 표에 `gpt-6.1-sol` `medium` 행을 더한다.
+- 근거는 `docs/features/orch-routing/evidence.md` 의 2026-11-09 절이다.
+
 ## 7.25.2 (2026-11-09)
 
 - 공통 지시서 틀의 「PR 전 인수 검증」 이 실행 담당이 worker 인 행만 가리킨다.
