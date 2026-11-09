@@ -205,7 +205,7 @@
 - 실행기 `tests/fixtures/golden-run.ts` 는 임시 폴더에 처음 상태를 펼치고, 기존 `fake-bin.ts` 로 가짜 orca·gh 를 PATH 앞에 둔 뒤 스크립트를 부른다. 시계는 `node --import tests/fixtures/fixed-clock.ts` 로 `Date` 를 고정한다. 제품 코드에 시계 주입을 더하지 않는다.
 - 비교 전에 임시 폴더 경로와 pid 만 자리표시자로 바꾼다. 시각은 고정했으므로 바꾸지 않는다.
 - 사례는 루프 틱 셋(CI 실패와 충돌 PR, 미답변 질문과 멈춘 worker, 조회 실패), 머지 큐 셋(머지 가능, CI 실패 보류, 충돌), 정리 셋(머지된 워크트리, 살아 있는 worker 건너뛰기, 옛 상태 파일)을 최소로 한다. 실제 사례는 PR4 의 plan 이 기존 fixture(`merge-queue-run.ts`, `cleanup-sweep-run.ts`, `cleanup-stateful-run.ts`)를 읽어 정한다.
-- 기록은 `node skills/orch/tests/fixtures/golden-run.ts --record` 로 만든다. PR4 의 첫 커밋이 PR3 머지 뒤의 main 코드로 만들고, 그 뒤 커밋과 PR5-PR7 은 `git diff --exit-code origin/main -- skills/orch/tests/golden` 으로 기록이 바뀌지 않았음을 보인다.
+- 기록은 `node skills/orch/tests/fixtures/golden-run.ts --record` 로 만든다. PR4 의 첫 커밋이 PR3 머지 뒤의 main 코드로 만든다. PR4 는 그 첫 기록 커밋과 HEAD 를 `git diff --exit-code <첫 기록 커밋> HEAD -- skills/orch/tests/golden` 으로 비교한다. origin/main 에는 아직 기록이 없어 그것과 비교하면 늘 다르다. 기록이 main 에 들어간 뒤의 PR5-PR7 은 `git diff --exit-code origin/main -- skills/orch/tests/golden` 으로 비교한다.
 - 기존 테스트의 기대값은 PR4-PR7 에서 바꾸지 않는다. 테스트가 옮긴 파일 경로를 import 하는 줄은 기대값이 아니므로 고친다. 기대값을 바꿔야 하면 멈추고 묻는다.
 - PR1-PR3 은 동작을 바꾸는 PR 이라 바뀐 동작의 테스트 기대값을 고친다. DECISION10 은 구조 정리 PR(REQ13)의 규칙이다.
 
