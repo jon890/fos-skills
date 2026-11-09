@@ -84,7 +84,7 @@ orch doctor
 - **worker 보고서의 사용자 안내(누를 단추, 순서, 화면 문구)는 코드나 화면으로 확인한 뒤 사용자에게 전한다.** 계획한 화면과 실제 화면이 다를 수 있다
 - **auto mode 분류기가 코디네이터의 머지나 배포를 막으면 우회 스크립트를 새로 쓰지 않는다.** 돌릴 명령을 보여 주고 사용자가 직접 실행하게 한다. 우회 스크립트는 다시 거부되기 쉽다
 - **「따로 맡기겠다」 고 말한 일은 그 자리에서 맡기거나 할 일로 남긴다.** 말로만 미룬 일은 다음 요청에 묻혀 빠진다
-- **코디네이터가 겪은 스킬 개선 후보도 겪은 자리에서 `<orch 루트>/feedback/coordinator-<YYYYMMDD>.md` 에 쌓는다.** 형식과 세 기준은 worker 와 같고, [`references/feedback-review.md`](references/feedback-review.md) 의 「후보 파일」 이 소유한다. 대화에만 두면 압축될 때 사라진다
+- **코디네이터가 겪은 스킬 개선 후보도 겪은 자리에서 `orch feedback add` 로 적는다.** 형식과 세 기준은 worker 와 같고, [`references/feedback-review.md`](references/feedback-review.md) 의 「후보 파일」 이 소유한다. 대화에만 두면 압축될 때 사라진다
 
 ## 레포 오버레이
 

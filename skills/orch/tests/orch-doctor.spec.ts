@@ -3,6 +3,7 @@
 // 핸들러와 설정은 작업 디렉터리(임시 폴더)의 .orch/ 에 둔다.
 
 import assert from 'node:assert/strict'
+import { render as renderFeedback } from '../scripts/lib/feedback.ts'
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -643,6 +644,18 @@ describe('저장소 판정', () => {
     write(join(tmp, '.orch', 'skill-feedback', 'wt-b.md'), '후보\n')
     const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
     assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
+  })
+
+  test('새 양식에서 후보와 보류만 세고 채택과 기각은 세지 않는다', () => {
+    const dir = join(tmp, '.orch', 'feedback')
+    for (const [slug, status] of Object.entries({ a: '후보', b: '보류(근거 확인)', c: '채택 #123', d: '기각(해결됨)' })) {
+      write(join(dir, `${slug}.md`), renderFeedback('문제가 생겼다', {
+        스킬: 'orch (SKILL.md)', 상황: '실행 중', 문제: '반복 실패', '바라는 기능': '검사', 근거: 'log:1', 판단: '기준별 근거', 상태: status,
+      }))
+    }
+    const r = doctor(['--skip-version', '--skip-questions', '--skill-dir', skill])
+    assert.equal(r.code, 0, r.stderr)
     assert.equal(r.stdout, `OK-SCRIPTS 0\nFEEDBACK-OPEN 2 ${dir}\n`)
   })
 

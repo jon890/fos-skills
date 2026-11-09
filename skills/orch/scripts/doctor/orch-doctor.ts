@@ -51,7 +51,7 @@
 //     UNKNOWN-HOOK 과 깨진 JSON 경고는 종료 코드를 바꾸지 않는다. 오타 난 핸들러는 불리지 않아 조용히 빠지므로 알려야 한다.
 //
 // 개선 후보 판정(늘 본다):
-//     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 `.md` 가운데 README.md 가 아닌 파일 수를 센다.
+//     --repo 의 <orch 루트>/feedback/(lib/paths.ts 의 feedback) 바로 아래 새 양식의 후보·보류와 아직 옮기지 않은 옛 메모 파일을 센다.
 //     하나 이상이면 FEEDBACK-OPEN 줄을 낸다. 다시 보는 주기와 판정은 references/feedback-review.md 가 소유한다.
 //     폴더가 없거나 읽지 못하면 내지 않는다. 경고라 종료 코드를 바꾸지 않는다.
 //
@@ -182,6 +182,7 @@ import { isFile, real, realPath } from '../lib/fs.ts'
 import { defaultBase, mainCheckout } from '../lib/git.ts'
 import { isRegistered, loopStatus, readLoop, recheckMs } from '../lib/loop.ts'
 import { orchDir, pathOf } from '../lib/paths.ts'
+import { isOpen as feedbackOpen, scan as scanFeedback } from '../lib/feedback.ts'
 import { isOpen, scan as scanStudy } from '../lib/study.ts'
 import { run, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
@@ -446,15 +447,10 @@ function legacyInboxFilter(repo: string, config: Config): string[] {
 
 function checkFeedback(repo: string): string[] {
   const dir = pathOf('feedback', repo)
-  let names: string[]
-  try {
-    names = readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'README.md')
-      .map((entry) => entry.name)
-  } catch {
-    return []
-  }
-  return names.length > 0 ? [`FEEDBACK-OPEN ${names.length} ${dir}`] : []
+  const found = scanFeedback(dir)
+  for (const file of found.legacy) process.stderr.write(`orch-doctor: 옛 개선 후보 메모는 feedback migrate 로 미리 본다: ${file}\n`)
+  const count = found.candidates.filter(feedbackOpen).length + found.legacy.length
+  return count > 0 ? [`FEEDBACK-OPEN ${count} ${dir}`] : []
 }
 
 function checkStudy(repo: string): string[] {
