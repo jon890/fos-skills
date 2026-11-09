@@ -16,7 +16,7 @@
 //     --run         기다릴 Run
 //     --ack         앞 대기가 낸 delivery id. 첫 대기처럼 넘길 것이 없으면 뺀다
 //     --types       깨어날 메시지 종류. 기본 worker_done,question,escalation,status
-//     --timeout-ms  전체 대기 한도(ms). 기본 7000000. 하네스의 명령 한도(Bash 최대 7200000)보다 짧게 준다
+//     --timeout-ms  전체 대기 한도(ms). 기본 7000000. 하네스의 명령 한도보다 짧게 준다(무인 세션의 Bash 최대는 기본 7200000 이고 대화형 세션은 백그라운드 한도가 없다)
 //     --lost-interval-sec  대기하는 동안 Run 의 worker 상태를 볼 간격(초). 기본 60. 0 이면 보지 않는다. 아래 「끊긴 worker」
 //     --ignore-lost  끊긴 worker 로 보지 않을 dispatch id. 여러 번 줄 수 있다. 아래 「끊긴 worker」
 //     --lost-state  이미 알린 끊긴 dispatch 를 적는 파일. 기본 <orch 작업 폴더>/state/wait-important-lost.json. 아래 「끊긴 worker」

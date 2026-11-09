@@ -1,4 +1,5 @@
 - 리뷰 worker 지시서 틀 `templates/spec-review.md` 를 더한다. 결과 status 첫 줄 `판정:` 과 등급별 건수 표 꼴을 고정한다.
-- `launch.md` 에 묶인 run 이 없을 때 run 을 만들고 루프를 띄우는 명령을 더한다.
+- `launch.md` 에 run 을 만들고 루프를 띄우는 명령을 더하고, `run-use` 는 다른 Run 의 메일을 끊으니 사용자에게 묻고 쓰게 한다.
 - `spec-writing.md` 에 `담당:` 줄 꼴과 허락 줄의 「dispatch 머리말의 GitHub 게시 금지보다 앞선다」 문장을 더한다.
-- `SKILL.md` 에 입력과 사용자 행동, 다른 제공자 리뷰는 worker 로 띄운다는 행을 더한다. `feature-loop.md` 의 spec 필드를 정의하고 `feedback-review.md` 에 판정이 섞인 후보 파일의 처리를 더한다.
+- `SKILL.md` 입력과 다른 제공자 리뷰 행, `feature-loop.md` 의 spec 필드, `feedback-review.md` 의 섞인 후보 파일 처리를 더한다.
+- worker 터미널은 `worker-release` 로 먼저 닫고 조건은 `cleanup.md` 한곳이 소유한다. 자동 release 와 백그라운드 한도를 문서에 맞춘다.
