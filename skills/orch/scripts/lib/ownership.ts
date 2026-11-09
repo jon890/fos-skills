@@ -13,28 +13,30 @@
 //     external / external_terminal          소유 상태가 owned 가 아니라 `터미널 소유 상태 조회 실패` 로 남긴다
 //     owned / identity_unproven             owned 라 막지 않는다. Orca 의 release 는 닫지 않으므로 sweep 이 경로로 찾아 닫는다
 //
-// 범위 읽기: 소유 상태는 모든 Run 의 worker 행(allWorkers)에서 읽는다. 범위 없는 `worker-list` 는 부른 터미널에 Run 이
-// 묶여 있으면 그 Run 만 준다(scope.source bound). 코디네이터와 그 자식 프로세스에서 부르면 늘 그렇다.
-// Orca CLI 는 `ORCA_TERMINAL_HANDLE` 이 없으면 작업 디렉터리가 든 워크트리의 활성 터미널로 호출자를 정해,
-// 환경 변수를 빼도 범위가 넓어지지 않는다(lib/orca.ts 머리 주석). 그래서 범위가 all 이 아니면 `run-list` 를 끝까지 따라
-// Run 마다 `worker-list --run`(scope flag)을 읽어 합친다. 조회 자체가 실패할 때만 실패다.
+// 범위 읽기: `run-list` 를 끝까지 따라 Run 마다 `worker-list --run` 을 읽는다. 먼저 Run 목록을 읽어야
+// 호출 터미널의 바인딩 유무와 관계없이 끝난 Run 의 머신 캐시를 쓸 수 있다(worker-run-cache.ts).
+// run-list 를 읽을 수 없는 옛 Orca 에서는 scope.source 가 all 인 완전한 목록만 대신 쓴다.
+// 범위 없는 worker-list 는 호출 터미널이나 작업 디렉터리에 묶인 Run 만 줄 수 있다(lib/orca.ts).
 //
 // 내보내는 것:
 //     LookupError    조회 실패. 옛 LOOKUP_ERRORS 에 해당한다. 아래 함수는 조회 실패를 모두 이것으로 던진다
 //     allWorkers     모든 Run 의 worker 행
 //     runWorkers     한 Run 의 worker 행
-//     cached         함수의 결과나 LookupError 를 maxAge 초 동안 되풀이한다
+//     workerSnapshot 실행 단위 전체 목록과 삭제 직전 경로별 새 조회
+//     cached         성공한 결과를 maxAge 초 동안 되풀이한다. 실패 뒤에는 다음 호출이 다시 조회한다
 //     rowHandles     한 행이 가리키는 터미널 handle
 //     blocker        안전하면 빈 문자열, 남길 때는 이유
 
 import { realPath, inside } from './fs.ts'
 import { orcaBin, withFull } from './orca.ts'
 import { runAsync } from './proc.ts'
+import { WorkerRunCache, type RunInfo } from './worker-run-cache.ts'
 
 // Run 마다 읽을 때 동시에 띄우는 orca 수. Run 251개 실측: 8 이면 30초, 16 이면 18초
 export const JOBS = 16
-// 정리 한 번 안에서 읽은 행을 다시 쓰는 시간(초). 워크트리 삭제가 길어져도 그사이 넘겨받은 터미널을 놓치지 않게 다시 읽는다
-export const MAX_AGE = 60
+// 성공한 목록은 정리 실행 동안 유지한다. 삭제 직전 forWorktree 가 해당 경로와 변경된 Run 을 새로 읽으므로
+// 기다리는 사이 터미널을 사용자가 넘겨받아도 옛 소유 상태로 닫지 않는다. 조회 실패는 다음 호출이 다시 시도한다.
+export const MAX_AGE = Infinity
 const QUERY_TIMEOUT_MS = 30_000
 
 export class LookupError extends Error {}
@@ -106,8 +108,8 @@ export async function runWorkers(run: string): Promise<WorkerRow[]> {
   return rows
 }
 
-async function runIds(): Promise<string[]> {
-  const ids: string[] = []
+export async function workerRuns(): Promise<RunInfo[]> {
+  const ids: RunInfo[] = []
   const seen = new Set<string>()
   let cursor: string | null = null
   for (;;) {
@@ -115,7 +117,7 @@ async function runIds(): Promise<string[]> {
     if (!Array.isArray(result.runs)) throw new LookupError('Run 목록 형식 오류')
     for (const run of result.runs) {
       if (!isObject(run) || typeof run.id !== 'string') throw new LookupError('Run 행 형식 오류')
-      ids.push(run.id)
+      ids.push({ id: run.id, updated_at: run.updated_at })
     }
     const next = result.nextCursor
     if (!given(next)) return ids
@@ -127,10 +129,34 @@ async function runIds(): Promise<string[]> {
 
 // 모든 Run 의 worker 행. 읽지 못하면 LookupError 를 던진다.
 // Run 마다 읽을 때 JOBS 개까지 동시에 띄운다. 한 Run 이라도 실패하면 새로 띄우지 않고, 띄운 것이 끝난 뒤 그 실패를 던진다.
-export async function allWorkers(): Promise<WorkerRow[]> {
-  const rows = await workerPages([], 'all')
-  if (rows !== null) return rows
-  const ids = await runIds()
+export async function allWorkers(
+  onRuns?: (runs: RunInfo[]) => void,
+  known: ReadonlyMap<string, WorkerRow[]> = new Map(),
+): Promise<WorkerRow[]> {
+  let ids: RunInfo[]
+  try {
+    ids = await workerRuns()
+  } catch (error) {
+    if (!(error instanceof LookupError)) throw error
+    // 옛 Orca 에서 run-list 를 못 읽어도 명시적으로 all 인 완전한 응답은 사용할 수 있다.
+    const rows = await workerPages([], 'all')
+    if (rows !== null) return rows
+    throw error
+  }
+  onRuns?.(ids)
+  const terminals = (await query(['terminal', 'list'])).terminals
+  if (!Array.isArray(terminals)) throw new LookupError('터미널 목록 형식 오류')
+  const live = new Set(terminals.map((t) => isObject(t) ? t.handle : undefined))
+  const cache = new WorkerRunCache()
+  return readRuns(ids, async (run) => {
+    const remembered = known.get(run.id) ?? cache.read(run, live)
+    const workers = remembered ?? await runWorkers(run.id)
+    if (remembered === null) cache.remember(run, workers)
+    return workers
+  })
+}
+
+async function readRuns(ids: RunInfo[], read: (run: RunInfo) => Promise<WorkerRow[]>): Promise<WorkerRow[]> {
   const results: WorkerRow[][] = new Array(ids.length)
   let next = 0
   let failure: unknown = null
@@ -138,7 +164,7 @@ export async function allWorkers(): Promise<WorkerRow[]> {
     while (failure === null && next < ids.length) {
       const at = next++
       try {
-        results[at] = await runWorkers(ids[at])
+        results[at] = await read(ids[at])
       } catch (e) {
         failure ??= e
       }
@@ -149,22 +175,55 @@ export async function allWorkers(): Promise<WorkerRow[]> {
   return results.flat()
 }
 
-// fn 의 결과나 LookupError 를 maxAge 초 동안 되풀이한다. 여러 경로를 볼 때 모든 Run 을 경로마다 다시 읽지 않는다.
-// LookupError 가 아닌 예외는 기억하지 않고 그대로 던진다.
+// 정리 실행 하나가 공유하는 스냅샷. 진행 중인 조회도 공유하며 시간이 지나도 전체 목록을 다시 읽지 않는다.
+// 삭제 직전에는 해당 경로의 Run 과 스냅샷 뒤 바뀌거나 새로 생긴 Run 만 다시 읽는다.
+export function workerSnapshot(): {
+  all: () => Promise<WorkerRow[]>
+  seedRun: (run: string, rows: WorkerRow[]) => void
+  forWorktree: (path: string) => Promise<WorkerRow[]>
+} {
+  let runs: RunInfo[] = []
+  const known = new Map<string, WorkerRow[]>()
+  const all = cached(() => allWorkers((listed) => { runs = listed }, known))
+  return {
+    all,
+    // all() 을 부르기 전에 이미 읽은 자기 Run 을 넣는다. 이 행은 뒤에 읽는 Run 갱신 시각보다 오래될 수 있다.
+    // forWorktree 는 갱신 시각이 같아도 경로·handle 로 관련 Run 을 골라 다시 읽으므로 삭제 전 확인은 생략되지 않는다.
+    seedRun: (run, rows) => { known.set(run, rows) },
+    async forWorktree(path) {
+      const rows = await all()
+      const target = realPath(path)
+      const terminals = (await query(['terminal', 'list'])).terminals
+      if (!Array.isArray(terminals)) throw new LookupError('터미널 목록 형식 오류')
+      const handles = new Set(terminals.filter((t) => isObject(t) && typeof t.worktreePath === 'string' &&
+        inside(realPath(t.worktreePath), target)).map((t) => t.handle))
+      const relevant = new Set(rows.filter((row) => {
+        if ([...rowHandles(row)].some((handle) => handles.has(handle))) return true
+        const projection = isObject(row.projection) ? row.projection : {}
+        const workspace = isObject(projection.workspace) ? projection.workspace : {}
+        const id = resourceOf(row).worktreeId ?? workspace.id
+        return typeof id === 'string' && id.includes('::') && inside(realPath(id.slice(id.indexOf('::') + 2)), target)
+      }).map((row) => row.runId))
+      const previous = new Map(runs.map((run) => [run.id, run.updated_at]))
+      const current = await workerRuns()
+      const selected = current.filter((run) => relevant.has(run.id) || !previous.has(run.id) ||
+        !run.updated_at || previous.get(run.id) !== run.updated_at)
+      return readRuns(selected, (run) => runWorkers(run.id))
+    },
+  }
+}
+
+// 성공한 결과만 maxAge 초 동안 재사용한다. 기본값은 실행 단위라 만료하지 않는다.
+// 진행 중인 호출은 공유하지만 실패는 저장하지 않아 다음 호출이 다시 조회한다.
 export function cached<T>(fn: () => Promise<T>, maxAge: number = MAX_AGE): () => Promise<T> {
-  let box: { at: number; value?: T; error?: LookupError } | null = null
+  let pending: Promise<T> | null = null
+  let box: { at: number; value: T } | null = null
   return async () => {
-    if (box === null || (performance.now() - box.at) / 1000 > maxAge) {
-      try {
-        const value = await fn()
-        box = { at: performance.now(), value }
-      } catch (e) {
-        if (!(e instanceof LookupError)) throw e
-        box = { at: performance.now(), error: e }
-      }
-    }
-    if (box.error) throw box.error
-    return box.value as T
+    if (box !== null && (performance.now() - box.at) / 1000 <= maxAge) return box.value
+    return pending ??= fn().then((value) => {
+      box = { at: performance.now(), value }
+      return value
+    }).finally(() => { pending = null })
   }
 }
 

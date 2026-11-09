@@ -59,7 +59,7 @@ test('살아 있는 dispatch, 끝난 dispatch, 사람 셸을 구분하고 기본
   assert.equal(sessions[0].branch, 'feat/old'); assert.equal(sessions[0].state, 'idle')
   assert.deepEqual(sessions[0].specs, [spec]); assert.equal(sessions[0].prs[0].number, 8)
   assert.equal(sessions[0].previous[0].dispatch, 'ctx_failed')
-  assert.ok(orca.calls().every((c) => ['list', 'read', 'worker-list'].includes(c.argv[1])))
+  assert.ok(orca.calls().every((c) => ['list', 'read', 'worker-list', 'run-list'].includes(c.argv[1])))
 })
 test('짧은 출력의 SESSION 은 상태, 브랜치, 지시서 후보를 한 줄로 내고 JSON 을 내지 않는다', () => {
   process.env.ORCH_OUTPUT = 'short'
