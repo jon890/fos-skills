@@ -1,5 +1,11 @@
 # CHANGELOG: plan
 
+## 7.0.1 (2026-11-09)
+
+- `check_feature` 가 `RULE-<도메인>-<번호>` 처럼 하이픈으로 이은 RULE ID 도 받는다.
+- 앞 phase 의 glob 이 덮는 신규 파일은 「이미 존재한다」 대신 「앞 phase 의 glob <패턴> 이 이미 덮는다」 로 알린다.
+- `adr-docs` 가 같은 이름 제목이 둘 이상인 문서로 가는 앵커 링크(`#제목`, `#제목-1`)에 stderr 경고(AMBIGUOUS_ANCHOR)를 낸다. 종료 코드는 그대로다.
+
 ## 7.0.0 (2026-11-06)
 
 - 호환성: 스크립트 일곱을 Node 24 의 `.ts` 로 바꿨다(`verify_task`, `check_feature`, `run_doc_checks`, `overlay_paths`, `overlay_values`, `plan_number`, `plan_numbers`)
