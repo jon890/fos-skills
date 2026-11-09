@@ -765,13 +765,25 @@ describe('띄우기', () => {
       })
     })
 
-    test('시간 초과는 성공 기록이나 재시도 이력을 남기지 않는다', () => {
+    test('시간 초과도 재개용 기록을 남기고 같은 Task 의 워크트리를 다시 찾는다', () => {
+      const board = join(worktree, '.omc/board.json')
+      mkdirSync(dirname(board), { recursive: true })
+      writeFileSync(board, JSON.stringify({ items: [] }))
       state({ next_ids: ['ctx_1', 'ctx_2'], dispatches: { ctx_1: shown('worktree_creating'), ctx_2: shown('input_accepted') } })
       const r = launch(['--worktree', worktree, '--watch', '3', '--', ...CLAUDE])
       assert.equal(r.code, 1, both(r))
-      assert.ok(!existsSync(recordOf('ctx_1')))
+      assert.ok(existsSync(recordOf('ctx_1')))
       assert.ok(!existsSync(recordOf('ctx_2')))
       assert.ok(!existsSync(join(worktree, '.orch/state/launch-history.jsonl')))
+      assert.equal(JSON.parse(readFileSync(board, 'utf8')).items[0].status, 'doing')
+      resetLog()
+      // 사용자가 포기를 결정해 기존 dispatch 를 정리한 뒤 ready Task 를 다시 띄우는 상황이다.
+      state({ next_ids: ['ctx_2'], dispatches: { ctx_2: shown('input_accepted') } })
+      const resumed = launch(['--repo', worktree, '--task', 'task_1', '--', ...CLAUDE])
+      assert.equal(resumed.code, 0, both(resumed))
+      assert.match(lines('orca orchestration worker-start')[0], /--task task_1 --worktree path:/)
+      assert.doesNotMatch(lines('orca orchestration worker-start')[0], /--retry-of/)
+      assert.ok(existsSync(recordOf('ctx_2')))
     })
 
     test('--terminal 이어 쓰기는 그 터미널을 기록한다', () => {
@@ -992,6 +1004,17 @@ describe('before-launch 와 worker-launched', () => {
     assert.deepEqual(input.worker, { task: 'task_1', dispatch: 'ctx_1', terminal: 'term_w', worktree: hookWt, spec })
     assert.equal(input.event, 'worker-launched')
     assert.equal(input.branch, 'feature/hook')
+  })
+
+  test('시작 확인 시간이 넘어도 worker-launched 를 내고 종료 코드 1 을 유지한다', () => {
+    const file = capture('worker-launched', 1)
+    state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('worktree_creating'), worker: { agentTerminalHandle: 'term_w' } } } })
+    const r = launchNew(['--watch', '1'])
+    assert.equal(r.code, 1, both(r))
+    assert.match(r.stdout, /^STALLED-START ctx_1 /m)
+    assert.doesNotMatch(r.stdout, /LAUNCHED/)
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).worker.terminal, 'term_w')
+    assert.ok(existsSync(join(proj, '.orch/state/launched-workers/ctx_1.json')))
   })
 
   test('--base 의 origin/ 은 떼고 핸들러에 넘긴다', () => {

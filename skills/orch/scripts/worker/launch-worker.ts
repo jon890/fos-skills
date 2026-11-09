@@ -70,6 +70,7 @@
 //        흔적이 있으면 `<dispatch> 단계는 <단계> 지만 일하는 흔적이 있어(<근거>) 다시 띄우지 않는다` 를 내고 그대로 LAUNCHED 다
 //        흔적을 확인하지 못하면 `STALLED-START <dispatch> <단계 또는 -> watch=<초>s,no-signs-of-life` 와 종료 코드 1 로 멈춘다.
 //        시간 초과나 흔적 부재는 종료 증거가 아니다. abandon 과 재시도는 하지 않고 코디네이터가 화면을 보고 판단한다
+//        멈춤도 재개·정리용 launched-workers 기록, 보드와 worker-launched 이벤트는 남긴다. 배정 통계의 성공 이력은 남기지 않는다
 //     일하는 흔적(하나라도 있으면): dispatch 의 lastHeartbeatAt, dispatch.status 가 running, worker-start 직전과 비교해
 //        워크트리의 HEAD 나 `git status --porcelain` 이 바뀜, worker 터미널 화면이 작업 중이거나 권한 확인 창(lib/screen.ts)
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
@@ -769,11 +770,11 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       return 1
     }
     // 시작 확인이 늦어도 worker 가 끝났다고 단정할 수 없다. 그대로 두고 코디네이터에게 멈춤만 알린다.
-    if (a.watch > 0 && !(await watch(dispatch))) return 1
+    const stalled = a.watch > 0 && !(await watch(dispatch))
     // worker-show 결과의 터미널 키는 send-to-worker 가 읽는 키와 같다.
     const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || jget(result.stdout, 'worker.agentTerminalHandle|dispatch.assigneeHandle|launch.terminalHandle') || passValue(passthru, '--terminal')
     // 짧은 출력은 터미널을 함께 낸다. 직접 실행(send-to-worker 가 읽는다)은 지금 꼴이다
-    out(short() ? `LAUNCHED ${dispatch} ${terminal || '-'} ${worktree}` : `LAUNCHED ${dispatch} ${worktree}`)
+    if (!stalled) out(short() ? `LAUNCHED ${dispatch} ${terminal || '-'} ${worktree}` : `LAUNCHED ${dispatch} ${worktree}`)
     const text = specText
     let effective = null
     try {
@@ -798,7 +799,8 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     } catch (e) {
       err(`launch-worker: 띄운 worker 를 기록하지 못했다. cleanup-sweep 이 이 터미널을 코디네이터의 것으로 알아보지 못한다: ${(e as Error).message}`)
     }
-    try {
+    // 멈춤도 정리·재개용 기록은 남긴다. 모델 배정 통계의 성공 이력에는 넣지 않는다.
+    if (!stalled) try {
       recordHistory(repo, {
         ...launch, at: new Date().toISOString(), title: /^#\s+(.+)$/m.exec(text)?.[1] ?? null,
         row: selectionsOf(text)[0]?.row ?? null, retry_of: retryDispatch ?? inherited?.dispatch ?? null,
@@ -819,7 +821,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       // worker 는 이미 떴다. 어떤 예외로든 종료 코드를 바꾸면 코디네이터가 띄우기 실패로 읽고 같은 일을 다시 띄운다
       err(`launch-worker: worker-launched 를 내지 못했다: ${(e as Error)?.message ?? String(e)}`)
     }
-    return 0
+    return stalled ? 1 : 0
   } finally {
     if (created && !started) {
       const hint = ['node', '--disable-warning=ExperimentalWarning', scriptPath('launch-worker'), '--spec', a.spec, '--worktree', worktree]
