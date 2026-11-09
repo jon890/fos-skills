@@ -76,6 +76,7 @@
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
 //        짧은 출력(진입점의 orch worker launch, lib/output.ts)은 `LAUNCHED <dispatch id> <터미널 또는 -> <워크트리>` 이고, worker-start 가 성공할 때마다
 //        `LAUNCH-EFFECTIVE <launch.effective 의 JSON 한 줄 또는 ->` 를, 실패하면 receipt 전체를 `START-FAIL <receipt 한 줄>` 로 낸다. 거부는 `REFUSED <이유 첫 줄>`,
+//        시작 확인 시간 초과는 `STALLED-START <dispatch> <단계 또는 -> <근거>` 다. 성공으로 알리지 않고 기록·이벤트 처리를 마친 뒤 1 로 끝난다.
 //        ack 줄과 REVIEW-*, SSH-AGENT 판정 줄 밖의 진행 줄과 worker-start JSON 은 내지 않는다
 //        그에 앞서 띄운 worker 의 터미널 handle, dispatch id, 워크트리와 브랜치를 orch 상태 폴더에 기록한다(lib/launched.ts).
 //        cleanup-sweep 이 그 터미널을 코디네이터의 것으로 알아보는 근거다. 다시 띄우기와 `--terminal` 이어 쓰기도 새 dispatch 로 기록한다.
