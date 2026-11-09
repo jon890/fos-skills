@@ -1,28 +1,16 @@
 # 7. 머지와 정리
 
-**worker 가 일하는 중인지, 끝났는지, 사용자가 넘겨받았는지는 `scripts/lib/worker-state.ts` 한 곳이 정한다.**
-`cleanup-sweep.ts`, `orch-doctor.ts`, `wait-important.ts` 가 같은 판정을 쓴다. 입력은 dispatch 상태, PR 상태, base 보다 앞선 커밋 수, 터미널 화면이고 판정 순서는 그 파일 머리 주석이 소유한다.
-`completed`, `failed`, 반납(released)된 dispatch 는 끝난 것이다. 그 위에 PR 이 MERGED 이거나, PR 이 없고 base 보다 앞선 커밋이 0 개면 치워도 된다.
-`user_takeover` 로 표시된 살아 있는 worker 라도 화면이 에이전트 작업 중이면 일하는 중으로 본다. 새 세션에서 띄운 worker 를 Orca 가 이렇게 적는다.
-`cleanup-sweep.ts` 는 살아 있는 dispatch 의 워크트리를 소유 확인과 PR 조회 앞에서 건너뛴다. 워크트리가 많아도 조회 시간이 일하는 워크트리 수에 따라 늘지 않는다.
+**worker 가 일하는 중인지, 끝났는지, 사용자가 넘겨받았는지는 `scripts/lib/worker-state.ts` 한 곳이 정한다.** `cleanup-sweep.ts`, `orch-doctor.ts`, `wait-important.ts` 가 같은 판정을 쓰고, 입력과 판정 순서는 그 파일 머리 주석이 소유한다. 끝난 dispatch 위에 PR 이 MERGED 이거나, PR 이 없고 base 보다 앞선 커밋이 0 개면 치워도 된다. `user_takeover` 표시라도 화면이 에이전트 작업 중이면 일하는 중으로 본다.
 
-`cleanup-sweep.ts` 와 `remove-worktree.ts` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다.
-소유 상태는 모든 Run 의 worker 행에서 읽는다. 코디네이터 터미널에서 부르면 범위 없는 `worker-list` 가 그 Run 만 주므로(scope `bound`), `run-list` 를 따라 Run 마다 `worker-list --run` 으로 읽어 합친다.
-정리 한 번 안에서는 읽은 지 60초가 지나기 전까지 다시 읽지 않고, 범위를 읽는 방법과 이유는 `scripts/lib/ownership.ts` 머리 주석이 소유한다.
-터미널 목록이나 모든 Run 의 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
+`cleanup-sweep.ts` 와 `remove-worktree.ts` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다. 소유 상태를 읽는 범위와 방법, 끝난 dispatch 터미널의 `남김` 사유는 `scripts/lib/ownership.ts` 머리 주석이 소유한다. 터미널 목록이나 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 
-끝난 dispatch 의 터미널을 상태별로 어떻게 정리하는지(`ownershipState` / `retainedReason` 별 `남김` 사유)는 `scripts/lib/ownership.ts` 머리 주석이 소유한다.
+`user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 구분하지 못한다. 사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
 
-`user_takeover` 는 사용자가 의도해 넘겨받은 터미널과, worker 의 claude 가 끝난 뒤 그 셸에 입력이 들어가 자동으로 기록된 터미널을 구분하지 못한다. Orca 의 필드에 시각과 주체가 없다.
-사용자 터미널을 잘못 닫는 것이 남기는 것보다 나쁘므로 기본은 남긴다.
-
-**`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 띄울 때 dispatch 마다 남긴 기록(`.orch/state/launched-workers/`)에 있고 그 dispatch 가 끝났으면(completed, failed, canceled) `user_owned` 여도 코디네이터의 터미널로 보고 닫은 뒤 PR 상태와 남은 커밋, 변경으로 정리를 판단한다.
-기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 이 소유한다.
-PR 을 만들지 않는 지시서(측정 같은 것)의 워크트리는 dispatch 가 끝났고 base 보다 앞선 커밋과 작업 트리 변경이 없으면 그 경로의 터미널을 닫고 치운다. 「PR 없이 끝난 워크트리」 가 소유한다.
+**`launch-worker.ts` 로 띄운 worker 의 끝난 터미널은 옵션 없이 알아본다.** 기록이 없는 터미널(사람이 연 것)은 그대로 남긴다. 조건은 `cleanup-sweep.ts` 머리 주석의 「코디네이터가 띄운 터미널」 과 「PR 없이 끝난 워크트리」 가 소유한다.
 
 **코디네이터가 그 워크트리가 자기 worker 것이고 사용자가 쓰지 않는다는 것을 알면 `orch cleanup sweep --run "$RUN_ID" --close-own-taken-over` 로 닫는다.**
 옵션은 `--run` 과 함께 줄 때만 동작하고, 소유 확인에서 빼는 조건은 `cleanup-sweep.ts` 머리 주석의 「넘겨받은 터미널」 이 소유한다.
-`finish-pr.ts` 와 `merge-with-finish.ts` 는 스스로 이 옵션을 더하지 않는다. `queue.sweep_args` 에 두면 `merge-with-finish.ts` 가 머지 큐의 정리에 넘기는데, `--run` 도 설정의 `finish.run` 도 없으면 그 옵션을 빼고 경고한다. Run 없이 넘기면 정리가 사용법 오류로 끝나기 때문이다.
+`finish-pr.ts` 와 `merge-with-finish.ts` 는 스스로 이 옵션을 더하지 않는다. `queue.sweep_args` 에 두면 머지 큐의 정리에 넘어가고, Run 이 없으면 옵션을 빼고 경고한다.
 
 머지는 worker 에게 맡기지 않는다.
 사용자가 머지까지 맡겼으면 코디네이터가 6단계 검증 뒤 머지한다. 맡기지 않았으면 6단계 검증 뒤 사용자에게 확인받고 머지한다.
@@ -45,7 +33,6 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 루프에 걸지 말아야 할 PR 은 지시서에 `- 머지 보류: <이유>` 줄을 두거나 보드 항목에 끝나지 않은 `머지 보류: <이유>` 줄을 둔다. 풀 때 그 줄을 지우거나 끝낸다.
 
 **업무의 마지막 PR 인지는 마무리(`finish-pr.ts`)가 배포를 확인한 뒤 스스로 판정한다. 코디네이터가 PR 마다 `!` 를 정하지 않아도 된다.**
-`!` 를 빠뜨려 배포가 끝나도 업무가 완료되지 않고 보드 항목이 진행 중으로 남은 일이 하루에 세 건 있었다.
 판정 규칙은 아래 「마지막 PR 판정」 이 소유한다. 판정을 덮어야 할 때만 표시를 붙인다.
 
 | 표시 | 뜻 | 쓰는 때 |
@@ -58,14 +45,8 @@ PR 번호는 머지할 순서대로 인자 하나씩 준다. 공백으로 이은
 
 #### 마지막 PR 판정
 
-`!` 와 `~` 가 없으면 아래를 모두 만족할 때 마지막 PR 이다. 조건의 원본은 `scripts/lib/last-pr.ts` 머리 주석이다.
-
-- PR 제목에서 `finish.task_pattern` 으로 업무 번호를 뽑았다
-- 같은 업무 번호를 제목에 가진 다른 열린 PR 이 없다
-- `finish.specs_dir` 에 같은 업무를 가리키는 다른 지시서가 없다. 지시서가 업무를 가리키는지는 `finish.spec_task_pattern` 을 지시서의 줄마다 맞춰 본다. 이 PR 의 브랜치를 `브랜치:` 줄에 둔 지시서와, `브랜치:` 줄의 브랜치가 모두 머지된 지시서는 세지 않는다
-
-판정하지 못하면(번호 없음, `specs_dir` 는 있는데 `spec_task_pattern` 이 없음, gh 조회 실패) 중간 PR 로 본다. 업무를 일찍 완료하는 것이 늦게 완료하는 것보다 되돌리기 어렵다.
-마무리 출력에 판정과 근거가 한 줄로 남는다. 예: `마지막 PR 판정: 중간(업무 PROJ-12, 남은 PR #31, 남은 지시서 spec-b.md)`.
+`!` 와 `~` 가 없으면 PR 제목의 업무 번호, 같은 업무의 다른 열린 PR, 같은 업무를 가리키는 다른 지시서가 모두 없을 때 마지막 PR 이다. 조건과 판정 줄은 `scripts/lib/last-pr.ts` 머리 주석이 소유한다.
+판정하지 못하면(번호 없음, `spec_task_pattern` 없음, gh 조회 실패) 중간 PR 로 본다. 업무를 일찍 완료하는 것이 늦게 완료하는 것보다 되돌리기 어렵다.
 보드 동기화(`board-sync.ts`)도 머지를 본 틱에 같은 판정을 쓴다. 그 PR 의 마무리가 돌고 있으면 보드 동기화는 그 항목을 마무리에 맡긴다([`board.md`](board.md)).
 
 ```json
@@ -84,13 +65,13 @@ Run 은 머지 뒤 정리가 다른 Run 의 worker 터미널을 닫지 않도록
 orch queue merge 101 102 103!
 ```
 
-기본 출력은 PR 마다 `FINISH-STARTED <PR> <로그>` 와 머지 큐의 `MERGED <PR>`, `STOP <PR> <이유>`, `CONFLICT …`, 끝 줄 `QUEUE-DONE` 이나 `QUEUE-HELD …` 다. 머지 뒤 정리는 `cleanup sweep` 의 짧은 줄(`REMOVED`, `KEPT`, 끝 줄 `SWEEP`)로 이어진다. 진행 줄(`HH:MM …`)은 `--full` 이다.
+출력 줄(`FINISH-STARTED`, `MERGED`, `STOP`, `CONFLICT`, 끝 줄 `QUEUE-DONE`/`QUEUE-HELD`)은 `merge_queue.ts` 와 `merge-with-finish.ts` 머리 주석이 소유한다. 진행 줄은 `--full` 이다.
 
 저장소마다 다른 값(배포 워크플로, 업무 번호 정규식, 업무 완료 명령, 보드 파일)은 `<repo>/.orch/config.json` 의 `finish` 절에 둔다. 항목은 [`overlay.md`](overlay.md) 가 소유한다.
 **머지 큐에 매번 붙이는 옵션(필수 체크, 합친 사본 검사, 문서 glob, 머지 방식, 최신화 규칙, 정리 인자)은 같은 파일의 `queue` 절에 둔다.** `merge-with-finish.ts` 가 명령줄에 없는 옵션을 그 절에서 채운다. 오버레이에서 옵션을 옮겨 적다 하나씩 빠뜨리는 일을 막는다.
 
 **머지 큐가 끝나면 `notify-conflicts.ts` 로 열린 PR 가운데 base 와 충돌하는 것을 찾는다.** 앞 PR 의 머지로 생긴 충돌은 그 PR 의 worker 가 모른 채 끝나, 머지 큐에 넣은 뒤에야 `STOP` 으로 드러난다.
-충돌 파일 출력과 알림 중복 방지는 스크립트 머리 주석이 소유한다. 기본 출력은 PR 마다 `CONFLICT <PR> <브랜치> <결과>`(notified, already, send-failed 같은 것)와 worker 없는 PR 의 `CONFLICT-ORPHAN` 이고, 충돌이 없으면 `NO-CONFLICT` 다.
+출력 줄과 알림 중복 방지는 스크립트 머리 주석이 소유한다.
 
 ```bash
 orch queue conflicts --base "$BASE"
@@ -99,7 +80,6 @@ orch queue conflicts --base "$BASE"
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
 
 **base 와 충돌하는 PR 은 큐를 멈추지 않는다.** update-branch 가 충돌로 실패하거나 mergeable 이 `CONFLICTING` 이면 `CONFLICT <PR> <이유>` 를 찍고 그 PR 만 빼고 뒤 PR 을 이어 머지한다.
-충돌 PR 하나 때문에 머지할 수 있는 PR 셋이 함께 멈춘 일이 있었다.
 상주 루프의 알림 파일에 `QUEUE-CONFLICT` 가 쓰이고(대기가 `LOOP-EVENT QUEUE-CONFLICT` 로 깨운다), 그 PR 의 worker 에게 base 를 합치라고 보내는 일은 루프의 충돌 처리와 `notify-conflicts.ts` 가 한다.
 끝 줄 앞에 `QUEUE-CONFLICT <번호...>` 가 오고, 끝 줄은 `QUEUE-HELD` 이며 종료 코드는 1 이다. worker 가 충돌을 푼 뒤 그 PR 만 다시 건다.
 
@@ -108,8 +88,7 @@ orch queue conflicts --base "$BASE"
 ```bash
 orch queue merge --chain 101,102 101 102 103
 ```
-**보류한 PR 은 큐를 멈추지 않는다(orch 7.9.0 부터 기본).** 체크 실패, 근거 블록 불일치처럼 조건에 못 미친 PR 은 `STOP` 줄을 찍고 그 PR 만 빼고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다.
-맨 앞 PR 하나가 차례에 base 를 합친 뒤 테스트에 실패해 뒤의 머지할 수 있는 PR 셋이 함께 머지되지 않은 일이 있었다(2026-11-04).
+**보류한 PR 은 큐를 멈추지 않는다(기본).** 체크 실패, 근거 블록 불일치처럼 조건에 못 미친 PR 은 `STOP` 줄을 찍고 그 PR 만 빼고 다음 PR 로 간다. 끝 줄이 `QUEUE-DONE` 대신 `QUEUE-HELD <번호...>` 이고 종료 코드는 1 이다.
 뒤 PR 이 앞 PR 에 기대면 `--chain` 으로 묶는다. 첫 보류에서 멈추는 옛 동작이 필요하면 `--stop-on-hold` 를 준다. `--continue-on-hold` 는 기본과 같아 그대로 받는다.
 뺀 PR 과 이유는 차례 기록(`state/queue-turn/<pid>.json`)의 `held` 에 남고, 상주 루프가 `state/loop.log` 에 `QUEUE-DROPPED #<PR> pid <pid>: <이유>` 한 줄로 옮긴다.
 worker 가 고쳐야 하는 보류(근거 블록 불일치, 미해결 리뷰 스레드, 합친 사본 검사 실패)는 큐가 그 PR 의 살아 있는 worker 에게 이유를 보낸다. Run 은 정리 인자의 `--run` 이다. 체크 실패와 충돌은 루프의 CI 감시와 충돌 처리가 보내므로 큐는 보내지 않는다.
@@ -154,8 +133,7 @@ orch queue merge --required test,browser --allow-fail claude-review 101
 
 **`--require-up-to-date` 는 기본이 꺼져 있다. 저장소 오버레이가 켜라고 정한 저장소에서만 쓴다.**
 켜면 머지 직전에 PR 이 base 최신을 품는지 보고, 품지 않으면 `update-branch` 로 base 를 merge 한 뒤 필수 체크를 다시 기다리고 머지한다.
-오래된 base 위에서 각각 통과한 PR 둘이 머지돼 base 빌드가 깨진 일이 있었다. 한 PR 은 계약 칸이 서로 일치하는지 보는 테스트를 더했고, 다른 PR 은 계약 칸을 더했다. 둘 다 서로를 모른 채 통과했고, 머지된 base 에서 테스트가 실패했다.
-체크는 PR HEAD 기준으로 도는 것이라 base 가 움직였는지는 모른다. 이 옵션이 그 틈을 닫는다.
+체크는 PR HEAD 기준으로 돌아 base 가 움직였는지 모른다. 오래된 base 위에서 각각 통과한 PR 둘이 머지돼 base 빌드가 깨질 수 있고, 이 옵션이 그 틈을 닫는다.
 
 - 충돌이 나면 `update-branch` 가 실패하고 그 PR 을 큐에서 뺀다(위 `CONFLICT`). 충돌을 푸는 일은 그 PR 의 worker 가 한다
 - 머지 큐에서 앞선 PR 이 머지되면 뒤 PR 은 base 가 달라진 것이므로 이 옵션이 뒤 PR 마다 다시 base 를 merge 한다. 시간이 더 걸리는 대신 base 가 깨지지 않는다
@@ -167,9 +145,7 @@ orch queue merge --require-up-to-date --required backend,frontend 101 102
 ### 머지 차례 전에 미리 최신화하기
 
 **`pipeline.refresh_slots` 를 켠 저장소에서는 상주 루프가 뒤처진 PR 의 `update-branch` 를 머지 차례 전에 PR 마다 따로 건다.** 머지 큐는 지금처럼 하나씩 머지한다.
-`--require-up-to-date` 만으로는 앞 PR 이 머지될 때마다 뒤 PR 이 차례에 base 를 합치고 CI 를 기다려, CI 한 번(7~10분)씩 줄을 선다(2026-11-04 공용 경로를 건드린 PR 이 PR 마다 10분 넘게 기다렸다).
-루프가 미리 합치면 뒤처진 PR 들의 CI 가 함께 돌고, 차례가 온 PR 이 이미 최신이고 CI 를 통과했으면 머지 큐가 기다리지 않고 머지한다.
-머지 큐는 차례가 왔을 때 체크가 이미 60초 넘게 전에 끝나 있었으면 새 체크를 기다리는 60초도 건너뛴다.
+`--require-up-to-date` 만으로는 뒤 PR 이 차례마다 base 를 합치고 CI 를 기다려 CI 한 번씩 줄을 선다. 루프가 미리 합치면 CI 들이 함께 돌고, 차례가 온 PR 이 이미 최신이고 통과했으면 머지 큐가 기다리지 않고 머지한다.
 
 - 판정은 머지 큐와 같은 `queue` 키로 한다. 최신이거나 겹치지 않아 머지 큐가 바로 머지할 PR 은 건드리지 않는다
 - 충돌한 PR 은 지금처럼 충돌 처리가 그 worker 에게 보낸다. `pipeline.refresh_worker_paths` 에 맞는 파일을 양쪽이 바꾼 PR 은 `update-branch` 대신 그 worker 에게 base 를 합쳐 검증하고 한 번 push 하라고 보낸다
@@ -181,9 +157,7 @@ orch queue merge --require-up-to-date --required backend,frontend 101 102
 
 ### 체크 확인 간격
 
-머지 큐는 진행 중인 체크를 60초에서 시작해 두 배씩 늘린 간격(최대 300초)으로 다시 본다. CI 가 끝난 뒤에도 다음 확인까지 최대 5분을 더 기다릴 수 있다.
-`queue.ci_expected_sec` 에 그 저장소의 보통 PR CI 시간을 두면 체크가 시작된 뒤 그 시간이 지나는 시각을 넘겨 자지 않고, 그 뒤로는 `queue.poll_min_sec` 마다 본다.
-간격 자체는 `queue.poll_min_sec`, `queue.poll_max_sec` 로 바꾼다. 값이 없으면 지금 동작과 같다. 키 뜻은 [`overlay.md`](overlay.md) 의 queue 행이 소유한다.
+머지 큐는 진행 중인 체크를 60초에서 시작해 두 배씩 늘린 간격(최대 300초)으로 다시 본다. 간격은 `queue.poll_min_sec`, `queue.poll_max_sec`, `queue.ci_expected_sec` 로 바꾼다. 키 뜻은 [`overlay.md`](overlay.md) 의 queue 행이 소유한다.
 간격을 줄이면 PR 하나를 기다리는 동안 gh 호출이 는다. 호출 예산은 [`gh-call-budget.md`](gh-call-budget.md) 를 본다.
 
 ### 겹치지 않는 PR 은 최신화하지 않기
@@ -315,13 +289,8 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 
 ### 머지 뒤 마무리
 
-**`finish-pr.ts` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 머지 직후 `cleanup-sweep.ts` 가 먼저 돌면 GitHub 상태가 아직 반영되지 않아 worker 의 터미널이 살아 있다고 보고 워크트리를 남긴 적이 있다.
-순서(머지 확인, worker 에게 머지 알림, worker 정리, 배포 확인, 마지막 PR 판정, 업무 완료, 보드 done)와 옵션, 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `merge-with-finish.ts` 의 `PR!` 도 같은 뜻이다.
-**워크트리는 배포 확인보다 먼저 지운다.** 배포 브랜치에 연달아 머지하면 배포 확인이 길어지는데, 그동안 머지된 워크트리가 남았다(2026-11-04).
-**연달아 머지해 배포가 건너뛰어지면 끝없이 기다리지 않는다.** 앞 머지의 배포가 skipped 로만 끝나면 배포 브랜치의 끝 커밋 배포를 기다리고, 끝 커밋도 skipped 면 배포 실패로 끝낸다. 근거는 출력의 `배포 판정:` 줄과 `배포 실패 <sha> (근거: ...)` 줄에 남는다.
-
-**정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지를 알린다.** 머지된 줄 모르고 기다리는 worker 의 dispatch 가 살아 있으면 `cleanup-sweep` 이 그 워크트리를 「살아 있는 worker」 로 계속 건너뛴다. 코디네이터가 「MERGED 됐다, worker_done 을 보내라」 를 따로 보내지 않는다.
-알린 뒤 `finish.worker_done_timeout`(분, 기본 10) 동안 dispatch 가 끝나기를 기다린다. 출력의 `notify: worker 남음` 줄이면 worker 가 끝내지 않았다는 뜻이다. 그 worker 의 화면을 보고 이어 가게 한다.
+**`finish-pr.ts` 는 PR 이 MERGED 인 것을 `gh` 로 직접 확인한 뒤에 정리한다.** 순서(머지 확인, worker 에게 머지 알림, worker 정리, 배포 확인, 마지막 PR 판정, 업무 완료, 보드 done), 옵션, 배포 판정은 스크립트 머리 주석이 소유한다. 업무 시스템이 없는 저장소는 `--complete` 만 주면 되고, `PR!` 도 같은 뜻이다.
+머지된 줄 모르고 기다리는 worker 가 정리를 막으므로 스크립트가 먼저 알린다. 코디네이터가 「MERGED 됐다」 를 따로 보내지 않는다. 출력에 `notify: worker 남음` 이 있으면 그 worker 의 화면을 보고 이어 가게 한다.
 
 출력은 `<로그 폴더>/finish-<PR>.out` 에 쌓이고 마지막 줄이 `FINISH-DONE` 이나 `FINISH-FAIL` 이다. 깨어날 때마다 그 줄을 본다.
 이 로그는 `orch queue merge` 가 신호 없이 띄워 지금 출력 그대로다. `FINISH-FAIL` 의 이유는 그 앞의 진행 줄에 있다. `orch queue finish <PR>` 로 직접 부르면 기본 출력이 `LAST-PR <마지막|중간>` 과 이유를 붙인 `FINISH-FAIL <이유>` 다.
@@ -336,7 +305,6 @@ orch queue merge 101 '102:./bin/backup-db.sh orders "before-pr-$PR"' 103
 머지 큐 로그 폴더(`.orch/queue`)의 끝난 마무리 로그와 큐 로그도 휴지통(`--trash`)으로 옮긴다. 돌고 있는 것, 모르는 파일, 1시간이 안 된 실패 로그와, 끝 표시 없이 pid 만 죽은 마무리 로그는 남긴다(1시간이 지나면 옮긴다). 조건은 `lib/queue-logs.ts` 머리 주석이 소유한다.
 작업이 띄운 Docker 컨테이너와 쌓은 이미지도 반납한다. 무엇을 지우고 남기는지는 아래 「Docker 자원 반납」 이 소유한다.
 상세 판정은 `cleanup-sweep.ts` 머리 주석이 소유한다.
-머지나 완료를 확인하는 즉시 worker 의 워크트리, 브랜치, 터미널을 사용자에게 묻지 않고 정리한다.
 
 **코디네이터가 worker 에게 맡긴 작업은 그 PR 이 머지되면 그 자리에서 정리한다.** 작업을 맡긴 저장소가 코디네이터의 저장소가 아니어도 같다.
 대상은 worker 터미널, 워크트리, 로컬 브랜치다(원격 브랜치는 위 조건을 따른다). 지시한 쪽이 정리하지 않으면 아무도 정리하지 않는다.
@@ -355,8 +323,7 @@ orch queue merge --sweep-arg --kill-holders 101 102
 
 스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다. 읽는 법은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 소유한다.
 
-**PR 을 머지한 직후 같은 흐름에서, 사용자 지시를 기다리지 않고 정리한다.**
-워크트리와 터미널이 쌓이면 다음 작업이 어느 것을 써야 할지 매번 판단해야 한다.
+**머지나 완료를 확인하면 사용자 지시를 기다리지 않고 worker 의 워크트리, 브랜치, 터미널을 정리한다.**
 같은 워크트리에서 후속 작업을 하는 worker 가 있으면 그 worker 가 끝날 때까지 남긴다.
 
 **worker 터미널은 `worker_done` 뒤에도 PR 이 머지되거나 닫힐 때까지 남긴다.** 충돌과 리뷰 반영을 그 PR 을 만든 worker 가 이어 받기 때문이다([`replying.md`](replying.md) 의 「충돌과 리뷰 반영은 만든 worker 가 이어 받는다」).
@@ -413,7 +380,6 @@ fi
 ### 워크트리 지우기
 
 **작업이 끝난 워크트리는 `remove-worktree.ts` 로만 지운다.** `git worktree remove` 를 바로 쓰지 않는다.
-활동 중인 worker 의 워크트리를 `git worktree remove` 로 지워 그 worker 가 종료된 사고가 있었다.
 거부하는 경우와 전제는 스크립트 머리 주석이 소유한다. squash 머지로 거부되면 `--merged-head` 를 주고(아래), PR 이 `MERGED` 인 것을 확인했으면 사용자에게 묻지 않고 지운다.
 **워크트리를 쥔 것이 자식 없는 Orca 기본 셸(「Terminal 1」 같은 에이전트 없는 로그인 셸)뿐이면 스스로 그 터미널을 닫고 지운다.** 끝난 worker 의 워크트리에서만 닫고, 에이전트 터미널, 살아 있는 dispatch 의 터미널, 자식이 있는 셸, worker 기록이 없는 워크트리의 셸(사람이 연 셸일 수 있다)은 남긴다. 커밋 안 된 변경처럼 어차피 거부할 워크트리면 셸을 닫기 전에 거부한다. 판정은 `scripts/lib/idle-shells.ts` 한 곳이 소유하고 `cleanup-sweep.ts` 도 같은 판정을 쓴다.
 거부되면 먼저 그 worker 터미널을 닫고 `--wait 30` 을 붙여 다시 돌린다.
