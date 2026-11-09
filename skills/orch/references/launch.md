@@ -69,7 +69,7 @@ orch worker launch --spec "$SPEC_FILE" --worktree "$WORKTREE" \
   -- --agent "$AGENT" --model "$MODEL" --effort "$EFFORT"
 ```
 
-워크트리 대기, `worktree_creating` 에서 안 넘어갈 때의 재시도(`--watch`, 일하는 흔적을 본 뒤 abandon)는 `launch-worker.ts` 머리 주석이 소유한다. 다시 띄워도 멈추면 종료 코드 1 이니 아래 「첫 화면에서 멈춤」 처럼 `worker-show` 의 `lastFailure` 를 본다.
+워크트리 대기와 `--watch` 의 시작 확인은 `launch-worker.ts` 머리 주석이 소유한다. 시간이 넘고 일하는 흔적을 확인하지 못하면 `STALLED-START <dispatch> <단계 또는 -> <근거>` 와 종료 코드 1 로 멈춘다. 시간 초과만으로 worker 종료를 단정하거나 abandon·재시도하지 않는다. 코디네이터가 `worker-show` 의 `lastFailure` 와 터미널 화면을 보고 사용자에게 다시 띄울지 묻는다. 다시 띄우기로 정하면 아래 「끊긴 worker 다시 띄우기」 의 Task 상태 표에 따라 `--retry-of` 를 붙일지 정한다.
 `worker-start` 자체가 0 이 아닌 코드로 끝나면 스크립트는 다시 띄우지 않는다. `START-FAIL <receipt>` 줄이 실패 단계와 남은 자원을 담으니 다시 불러 확인하지 않는다.
 
 ## 띄운 직후 확인
@@ -139,7 +139,7 @@ codex 의 hook 신뢰 확인이 fos-skills 의 orch hook 때문이면 Codex 설�
    handle 을 `"$TERMINAL_HANDLE"` 같은 변수로 주면 대상을 확인할 수 없어 이 hook 이 거부한다.
    거절하면 그 터미널을 `worker-release` 로 닫고 claude worker 로 다시 띄운다
 2. `terminal wait --for tui-idle` 로 입력 대기 상태를 확인한다
-3. `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" --retry-of "$DISPATCH_ID" -- --terminal "$TERMINAL_HANDLE"` 로 붙인다(같은 Task 를 선택 검사와 이력 기록을 거쳐 다시 띄운다).
+3. 아래 「끊긴 worker 다시 띄우기」 의 Task 상태 표를 먼저 본다. 다시 띄울 수 있는 Task 이면 `orch worker launch --spec "$SPEC" --repo "$REPO" --task "$TASK_ID" -- --terminal "$TERMINAL_HANDLE"` 로 붙이고, `failed`·`blocked` 이면 `--retry-of "$DISPATCH_ID"` 도 준다. 살아 있는 dispatch 에는 새로 띄우지 않는다.
    워크트리는 이전 dispatch 이력에서 읽는다.
    `--model` 은 줄 수 없지만 처음 띄울 때 준 모델이 그 터미널에 남아 있다
 

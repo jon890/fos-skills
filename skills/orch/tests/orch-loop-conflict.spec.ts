@@ -314,6 +314,16 @@ describe('끝난 dispatch', () => {
     assert.equal(sends().length, 1)
   })
 
+  test('시작 확인 시간 초과는 기록해 다음 틱에 다시 보내지 않는다', () => {
+    setupConflict('completed')
+    send({ code: 1, stdout: 'STALLED-START d2 worktree_creating watch=90s,no-signs-of-life' })
+    once()
+    assert.equal(hookInputs()[0]?.action, 'resumed')
+    assert.deepEqual(record(), { [`7@${baseSha()}`]: 'd1' })
+    once()
+    assert.equal(sends().length, 1)
+  })
+
   test('send-to-worker 가 1 이고 LAUNCHED 줄이 없으면 기록하지 않아 다음 틱이 다시 보낸다', () => {
     setupConflict('completed')
     send({ code: 1, stdout: 'relaunch: 끝난 d1 의 터미널에 새 Task 로 띄운다' })

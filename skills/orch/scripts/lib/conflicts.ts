@@ -148,6 +148,8 @@ export const SEND_MS = 3_900_000
 const SHOWN_FILES = 10
 // 끝난 dispatch 의 send-to-worker 1 에서 worker-start 가 성공했다는 표시(notify-conflicts.ts 머리 주석의 「끝난 dispatch 의 1」)
 const RELAUNCHED = /^LAUNCHED \S/m
+// 시작은 성공했지만 확인 시간이 넘은 경우도 자동 재전송하지 않는다. 살아 있는 worker 일 수 있다.
+const STALLED_START = /^STALLED-START \S+ \S+ .+/m
 
 export type Worker = { task: unknown; dispatch: string; terminal: unknown; worktree: string; spec: string | null }
 export type WorkerRow = Record<string, unknown>
@@ -262,13 +264,14 @@ export async function resolveConflict(args: {
     return { kind: 'usage' }
   }
   if (sent.code === 3) return orphaned(out, number, `${dispatch} 에 보낼 수 없다(send-to-worker 종료 코드 3). 새 worker 는 띄우지 않는다`, worker, false)
-  const delivered = sent.code === 0 || sent.code === 4 || (sent.code === 1 && (live || RELAUNCHED.test(sent.stdout)))
+  const stalled = sent.code === 1 && STALLED_START.test(sent.stdout)
+  const delivered = sent.code === 0 || sent.code === 4 || (sent.code === 1 && (live || RELAUNCHED.test(sent.stdout) || stalled))
   if (!delivered) {
     out(`  ${dispatch} 에 보내지 못했다(send-to-worker 종료 코드 ${sent.code})`)
     err(`notify-conflicts: #${number} 를 ${dispatch} 에 보내지 못해 기록하지 않는다. 다음 실행이 다시 본다`)
     return { kind: 'skip' }
   }
-  const note = sent.code === 0 ? '' : live || sent.code === 4 ? `(깨우지 못했다, 종료 코드 ${sent.code})` : '(다시 띄운 뒤 종료 코드 1 로 끝났다)'
+  const note = stalled ? '(시작 확인 시간 초과, 사용자 판단 필요)' : sent.code === 0 ? '' : live || sent.code === 4 ? `(깨우지 못했다, 종료 코드 ${sent.code})` : '(다시 띄운 뒤 종료 코드 1 로 끝났다)'
   out(`  ${dispatch} 에 알렸다${note}`)
   return { kind: 'record', value: dispatch, action: live ? 'notified' : 'resumed', worker, reason: null }
 }

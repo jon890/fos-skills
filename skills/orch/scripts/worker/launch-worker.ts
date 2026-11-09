@@ -66,8 +66,10 @@
 //        실패하면 출력의 error 를 `worker-start 오류: <code>: <message>` 한 줄로 낸다
 //        단계는 `worker-show --full` 의 worker.stage 다. --full 없이 읽은 줄인 보기는 이 키가 없어 늘 「단계 없음」 으로 보였고,
 //        살아 일하는 worker 를 abandon 하고 같은 워크트리에 하나 더 띄웠다(2026-11-02 세 번)
-//        --watch 초가 지나도 worktree_creating 이면 abandon 하기 전에 일하는 흔적을 본다(아래 「일하는 흔적」).
+//        --watch 초가 지나도 worktree_creating 이거나 단계가 없으면 일하는 흔적을 본다(아래 「일하는 흔적」).
 //        흔적이 있으면 `<dispatch> 단계는 <단계> 지만 일하는 흔적이 있어(<근거>) 다시 띄우지 않는다` 를 내고 그대로 LAUNCHED 다
+//        흔적을 확인하지 못하면 `STALLED-START <dispatch> <단계 또는 -> watch=<초>s,no-signs-of-life` 와 종료 코드 1 로 멈춘다.
+//        시간 초과나 흔적 부재는 종료 증거가 아니다. abandon 과 재시도는 하지 않고 코디네이터가 화면을 보고 판단한다
 //     일하는 흔적(하나라도 있으면): dispatch 의 lastHeartbeatAt, dispatch.status 가 running, worker-start 직전과 비교해
 //        워크트리의 HEAD 나 `git status --porcelain` 이 바뀜, worker 터미널 화면이 작업 중이거나 권한 확인 창(lib/screen.ts)
 //     6. `LAUNCHED <dispatch id> <워크트리>` 를 낸 뒤 worker-launched 이벤트를 낸다. 그 실패는 종료 코드를 바꾸지 않는다.
@@ -95,7 +97,7 @@
 //     branch   워크트리의 현재 브랜치. 없으면 null
 //     agent, model, effort   WORKER_ARGS 의 값. 없으면 null
 //
-// 종료 코드: 0 LAUNCHED, 1 거부, 실행 실패, before-launch 가 막음, 리뷰 PR head 를 받거나 꺼내지 못함, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
+// 종료 코드: 0 LAUNCHED, 1 STALLED-START, 거부, 실행 실패, before-launch 가 막음, 리뷰 PR head 를 받거나 꺼내지 못함, 2 사용법 오류, orch 폴더 미이전, 설정 파일 오류,
 //            3 --terminal 의 터미널이 에이전트를 인식하지 못함(agent_unconfigured),
 //            4 --agent 에 없는 --model, 그 모델이 지원하지 않는 --effort(worktree 를 만들기 전에 멈춘다),
 //            5 spec-lint 가 막을 발견을 냈고 --lint-ack 이 없다(worktree 를 만들기 전에 멈춘다)
@@ -158,8 +160,6 @@ class Stop extends Error {
 const SHORT_RULES: Rule[] = [
   [/^거부: ([^\n]*)/, (m) => `REFUSED ${m[1]}`],
   [/^((?:lint|dirty)-ack: .*)$/, (m) => m[1]],
-  // 다시 띄운 worker 도 멈추면 이 줄이 실패 이유다. 버리면 종료 코드 1 만 남는다
-  [/^(\S+) 가 \d+초 동안 (.*) 에서 넘어가지 않았다$/, (m) => `STALLED-START ${m[1]} ${m[2].replaceAll(' ', '-')}`],
 ]
 
 function out(line: string): void {
@@ -716,7 +716,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
       return result
     }
     let lastShow = ''
-    let snapshot = worktreeSnapshot(worktree)
+    const snapshot = worktreeSnapshot(worktree)
     const watch = async (dispatch: string): Promise<boolean> => {
       let spent = 0
       for (;;) {
@@ -732,7 +732,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
             out(`${dispatch} 단계는 ${stage || '단계 없음'} 지만 일하는 흔적이 있어(${life}) 다시 띄우지 않는다`)
             return true
           }
-          out(`${dispatch} 가 ${a.watch}초 동안 ${stage || '단계 없음'} 에서 넘어가지 않았다`)
+          out(`STALLED-START ${dispatch} ${stage || '-'} watch=${a.watch}s,no-signs-of-life`)
           return false
         }
         await sleep(poll * 1000)
@@ -741,7 +741,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     }
 
     const runArgs = a.run ? ['--run', a.run] : []
-    let result = await start([...runArgs, ...(a.task ? ['--task', a.task, ...(a.retryOf ? ['--retry-of', a.retryOf] : [])] : ['--spec', specLine.stdout.trim()]), '--worktree', `path:${worktree}`, ...passthru])
+    const result = await start([...runArgs, ...(a.task ? ['--task', a.task, ...(a.retryOf ? ['--retry-of', a.retryOf] : [])] : ['--spec', specLine.stdout.trim()]), '--worktree', `path:${worktree}`, ...passthru])
     if (result.code !== 0) {
       const output = result.stdout + result.stderr
       if (passthru.includes('--terminal') && output.includes('agent_unconfigured')) {
@@ -762,32 +762,14 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     started = true
     const DISPATCH_KEYS = 'dispatch.id|dispatchId|worker.dispatchId'
     const TASK_KEYS = 'dispatch.taskId|taskId|task.id'
-    let dispatch = jget(result.stdout, DISPATCH_KEYS)
-    let task = jget(result.stdout, TASK_KEYS)
+    const dispatch = jget(result.stdout, DISPATCH_KEYS)
+    const task = jget(result.stdout, TASK_KEYS)
     if (!dispatch) {
       err('worker-start 출력에서 dispatch id 를 읽지 못했다')
       return 1
     }
-    // worker-start 는 성공했는데 dispatch 가 worktree_creating 에서 넘어가지 않는 일이 있다. 그 dispatch 는 스스로 풀리지 않아
-    // abandon 하고 같은 Task 를 --retry-of 로 한 번 다시 띄운다. 다시 띄워도 멈추면 원인이 다른 곳이라 멈춘다.
-    if (a.watch > 0 && !(await watch(dispatch))) {
-      if (!task) {
-        err(`task id 를 몰라 다시 띄우지 못한다: ${dispatch}`)
-        return 1
-      }
-      if ((await call(['orchestration', 'worker-abandon', '--dispatch', dispatch, '--json'])).code !== 0) return 1
-      out(`${dispatch} 를 abandon 하고 같은 Task 를 path:${worktree} 로 다시 띄운다`)
-      snapshot = worktreeSnapshot(worktree)
-      result = await start([...runArgs, '--task', task, '--retry-of', dispatch, '--worktree', `path:${worktree}`, ...passthru])
-      if (result.code !== 0) {
-        const reason = startError(result.stdout)
-        err(`다시 띄운 worker-start 가 종료 코드 ${result.code} 로 끝났다${reason ? `: ${reason}` : ''}`)
-        return 1
-      }
-      dispatch = jget(result.stdout, DISPATCH_KEYS)
-      task = jget(result.stdout, TASK_KEYS) || task
-      if (!dispatch || !(await watch(dispatch))) return 1
-    }
+    // 시작 확인이 늦어도 worker 가 끝났다고 단정할 수 없다. 그대로 두고 코디네이터에게 멈춤만 알린다.
+    if (a.watch > 0 && !(await watch(dispatch))) return 1
     // worker-show 결과의 터미널 키는 send-to-worker 가 읽는 키와 같다.
     const terminal = jget(lastShow, 'worker.agentTerminalHandle|dispatch.assigneeHandle') || jget(result.stdout, 'worker.agentTerminalHandle|dispatch.assigneeHandle|launch.terminalHandle') || passValue(passthru, '--terminal')
     // 짧은 출력은 터미널을 함께 낸다. 직접 실행(send-to-worker 가 읽는다)은 지금 꼴이다
