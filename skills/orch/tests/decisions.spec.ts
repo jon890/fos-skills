@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { decisionEntries, notifyDecisions } from '../scripts/lib/decisions.ts'
+import { questionLocations } from '../scripts/lib/questions.ts'
 import { fire, handlerFile } from '../scripts/lib/events.ts'
 import { registerRun } from '../scripts/lib/loop.ts'
 
@@ -166,11 +167,12 @@ test('저장소 핸들러가 없으면 기본 핸들러가 그 Run 의 코디네
   writeFileSync(nudge, `import { writeFileSync } from 'node:fs'; writeFileSync(process.env.RECEIVED, JSON.stringify(process.argv.slice(2)))`)
   process.env.NUDGE_WORKER = nudge
   registerRun(repo, 'r', null, false, 'term_coordinator')
-  const result = await fire('decision-pending', { questions: [], items: [] }, { repo, run: 'r', base: 'main' })
+  const result = await fire('decision-pending', { questions: [{ id: 'q', dispatch: 'd' }], items: [] }, { repo, run: 'r', base: 'main' })
   assert.equal(result.result, 'pass', result.reason)
   const args = JSON.parse(readFileSync(process.env.RECEIVED!, 'utf8'))
   assert.equal(args[1], 'term_coordinator')
   assert.match(args[3], /정할 것 묻기: Run r/)
+  assert.match(args[3], /questions=q@dispatch:d/)
   hook()
   assert.equal(handlerFile('decision-pending', repo), join(repo, '.orch', 'hooks', 'decision-pending.ts'))
 })
@@ -179,4 +181,18 @@ test('기본 핸들러는 오래된 run-show를 읽지 않고 미등록 Run에�
   const result = await fire('decision-pending', { questions: [], items: [] }, { repo, run: 'r', base: 'main' })
   assert.equal(result.result, 'fail')
   assert.equal(result.reason, '종료 코드 1')
+})
+
+test('결정 알림에는 질문 id 와 dispatch 를 남긴다', async () => {
+  hook()
+  await notifyDecisions(repo, 'r', [question()], false)
+  const event = JSON.parse(readFileSync(join(repo, '.orch', 'state', 'loop-events', 'r.jsonl'), 'utf8').trim())
+  assert.match(event.text, /질문 1, 보드 결정 0.*questions=q@dispatch:d/)
+})
+
+test('질문 위치는 앞 5개와 나머지 수를 내고 dispatch 가 없으면 터미널을 낸다', () => {
+  const rows = Array.from({ length: 8 }, (_, i) => ({ id: `q${i}`, dispatch: `d${i}` }))
+  assert.equal(questionLocations(rows), 'questions=q0@dispatch:d0,q1@dispatch:d1,q2@dispatch:d2,q3@dispatch:d3,q4@dispatch:d4 (외 3개)')
+  assert.equal(questionLocations([]), 'questions=-')
+  assert.equal(questionLocations([{ id: 'q', from_handle: 'term_w' }]), 'questions=q@term_w')
 })

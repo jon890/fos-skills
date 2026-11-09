@@ -438,7 +438,7 @@ import { NO_LIMIT_MS, run as runSync, runAsync, scriptCommand, signalCode, STOP_
 import type { RunOptions, RunResult } from '../lib/proc.ts'
 import { alive } from '../lib/process.ts'
 import { envMs } from '../lib/env.ts'
-import { closedReason, shareClosedQuestion, notifyQuestion, poll, readClosed, writeClosed } from '../lib/questions.ts'
+import { closedReason, shareClosedQuestion, notifyQuestion, poll, questionLocations, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
 import { NO_WAIT_PREFIX, userActive } from '../lib/user-active.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
@@ -2517,7 +2517,7 @@ function relayFinishMissing(repo: string, stdout: string, run: string | null): v
 }
 
 // 머리 주석의 「대기 확인」. 오류면 이유를, 아니면 null 을 낸다
-async function watchWaiter(repo: string, run: string, pending: number | null): Promise<string | null> {
+async function watchWaiter(repo: string, run: string, pending: ReturnType<typeof poll>['pending'] | null): Promise<string | null> {
   const file = join(pathOf('state', repo), 'no-wait', `${runKey(run)}.json`)
   const clear = () => rmSync(file, { force: true })
   const waiters = waiterPids(run)
@@ -2565,7 +2565,7 @@ async function watchWaiter(repo: string, run: string, pending: number | null): P
   const minutes = Math.floor((now - seen.since) / 60_000)
   const text =
     `${NO_WAIT_PREFIX} Run ${run} 에 살아 있는 dispatch ${live.length} 개가 있는데 wait-important 대기가 ${minutes}분째 없다. ` +
-    `미답변 질문 ${pending === null ? '확인 못 함' : `${pending} 개`}. 마지막 대기가 남긴 NEXT_WAIT 명령으로 wait-important 를 백그라운드로 다시 건다`
+    `미답변 질문 ${pending === null ? '확인 못 함' : `${pending.length} 개`}. ${pending === null ? 'questions=unknown' : questionLocations(pending)}. 마지막 대기가 남긴 NEXT_WAIT 명령으로 wait-important 를 백그라운드로 다시 건다`
   appendEvent(repo, 'NO-WAIT', null, text, run)
   log(`NO-WAIT ${text}`)
   if (typeof coordinator === 'string' && coordinator.startsWith('term_')) {
@@ -2863,7 +2863,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
   for (const { run } of runs) {
     if (!run) continue
     try {
-      report('waiter', await watchWaiter(ctx.repo, run, pendingDecisions.get(run)?.length ?? null), { run })
+      report('waiter', await watchWaiter(ctx.repo, run, pendingDecisions.get(run) ?? null), { run })
     } catch (e) {
       report('waiter', oneLine(e), { run })
     }

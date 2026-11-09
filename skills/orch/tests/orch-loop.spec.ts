@@ -630,6 +630,16 @@ describe('마무리 빠짐과 대기 확인', () => {
     assert.ok(!existsSync(file))
   })
 
+  test('NO-WAIT 는 답할 질문의 id 와 dispatch 를 붙인다', () => {
+    orca({ messages: [question()], workers: [{ dispatchId: 'd', dispatchStatus: 'dispatched' }] })
+    const extra = { PS: fakePs(''), NUDGE_WORKER: nudge() }
+    once(extra)
+    write(orchFile('state', 'no-wait', 'r.json'), JSON.stringify({ since: Date.now() - 600_000, notified: false }))
+    once(extra)
+    const noWait = events().find((e) => e.kind === 'NO-WAIT')
+    assert.match(String(noWait?.text), /미답변 질문 1 개.*questions=q@dispatch:d/)
+  })
+
   test('코디네이터가 사용자와 대화 중이면 대기 없음 알림을 미루고 대화가 끝난 뒤 알린다', () => {
     orca({ workers: [{ dispatchId: 'ctx_1', dispatchStatus: 'dispatched' }] })
     write(orchFile('state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: new Date().toISOString(), coordinator_terminal: 'term_coord' }))

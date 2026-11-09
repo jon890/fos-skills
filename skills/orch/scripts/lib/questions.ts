@@ -183,6 +183,18 @@ export function poll(run: string | null, state: string, now: number, remindAfter
   return { run: found.run, notices, pending: found.pending }
 }
 
+// 알림 본문에 붙이는 질문 위치다. 많은 질문은 앞 일부만 내고 전체 수는 원래 문장에 둔다.
+export function questionLocations(questions: { id?: unknown; dispatch?: unknown; from_handle?: unknown; payload?: unknown }[]): string {
+  const limit = 5
+  const refs = questions.slice(0, limit).map((q) => {
+    const dispatch = q.dispatch || dispatchOf(q)
+    const from = dispatch ? `dispatch:${dispatch}` : String(q.from_handle || '-')
+    return `${String(q.id || '-').replace(/\s+/g, '_')}@${from.replace(/\s+/g, '_')}`
+  })
+  const extra = questions.length > limit ? ` (외 ${questions.length - limit}개)` : ''
+  return `questions=${refs.join(',') || '-'}${extra}`
+}
+
 // 알릴 줄 하나에 worker-question 이벤트를 낸다(lib/events.ts 머리 주석의 「이벤트별 필드」).
 // worker.task, worker.dispatch 는 질문 메시지에서, worker.terminal 은 보낸 쪽이다.
 // command 는 stderr 줄의 접두로 쓰는 부른 명령 이름이다(watch-questions, orch-loop).

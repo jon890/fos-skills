@@ -7,6 +7,7 @@
 //     실패하면 루프가 10분부터 두 배씩 기다렸다 다시 낸다. 저장소 핸들러도 같은 시점에 불린다.
 //     요청 글은 DECISION_PREFIX 로 시작한다. 입력 기록 hook 이 그 글을 사용자 입력으로 세지 않는다.
 import { readFileSync } from 'node:fs'
+import { questionLocations } from '../lib/questions.ts'
 import { registeredRuns } from '../lib/loop.ts'
 import { DECISION_PREFIX } from '../lib/user-active.ts'
 import { runAsync, scriptCommand } from '../lib/proc.ts'
@@ -21,7 +22,7 @@ async function main(): Promise<number> {
     throw new Error(`Run ${input.run}의 코디네이터 터미널이 등록되지 않았다. 그 코디네이터 터미널에서 orch-loop --start --run ${input.run}으로 다시 등록한다`)
   }
   const prompt = [
-    `${DECISION_PREFIX} Run ${input.run} 에 사용자 결정이 남아 있다.`,
+    `${DECISION_PREFIX} Run ${input.run} 에 사용자 결정이 남아 있다. ${questionLocations(input.questions || [])}`,
     'fos-skills:orch 의 replying 절차로 미답변 결정 질문과 보드 decide 항목을 다시 조회하고, 배경과 권장안을 붙여 사용자에게 물어라.',
     '이미 물어 답을 기다리는 결정은 다시 묻지 말고, 받은 답은 원래 질문에 --reply-to 로 보내고 보드의 해당 줄을 mark 한다.',
     '미완료 dispatch 가 있으면 메시지를 처리한 직후 wait-important 를 백그라운드로 다시 걸어라. 사용자가 답하며 대화를 이어 가면 그동안은 다시 걸지 않는다(references/waiting.md).',
