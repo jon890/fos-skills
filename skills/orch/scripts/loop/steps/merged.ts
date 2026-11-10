@@ -1,6 +1,6 @@
 // 머지 알림: 열린 PR 을 읽은 틱에만 돈다. 앞 틱의 ci(loop.json)에 있었는데 이번 틱의 내 열린 PR 에 없는 PR 마다 gh pr view 로 상태를 읽는다.
 //     MERGED 이고 그 브랜치의 워크트리에 살아 있는 dispatch(shared.ts 머리 주석의 「worker 찾기」)가 있으면 send-to-worker --no-reply 로
-//     `PR #<N> 이 MERGED 됐다(머지 커밋 <SHA>). … worker_done 을 보낸 뒤 끝낸다` 를 보낸다. 로그에 `MERGED-NOTIFY #<N> <dispatch> 종료 코드 <n>` 을 쓴다.
+//     `PR #<N> 이 MERGED 됐다(머지 커밋 <SHA>). … 머지 뒤 할 일이 없으면 worker_done 을 보내고 끝낸다` 를 보낸다(core/merge-notice.ts). 로그에 `MERGED-NOTIFY #<N> <dispatch> 종료 코드 <n>` 을 쓴다.
 //     머지 알림을 받지 못한 worker 의 dispatch 가 열린 채 남아 정리가 그 워크트리를 「살아 있는 worker」 로 건너뛰었다(2026-11-02 #945, #288).
 //     마무리(finish-pr)가 돈 PR(lib/finish-marks.ts)은 마무리가 같은 알림을 보내므로 보지 않는다. 판정한 PR 은 결과와 함께
 //     state/merged-notified.json 에 적어 다시 보지 않는다. 보내지 못해도 적는다. 닫힌 PR 은 다음 틱의 ci 에 없어 다시 볼 수 없다.
@@ -9,6 +9,7 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isObject } from '../../core/json.ts'
+import { mergeNotice } from '../../core/merge-notice.ts'
 import { scriptPath } from '../../lib/commands.ts'
 import { SEND_MS } from '../../lib/conflicts.ts'
 import { finishStarted } from '../../lib/finish-marks.ts'
@@ -66,7 +67,7 @@ async function tellMerged(ctx: Context, mine: OwnPr[], previous: Record<string, 
     }
     const dispatch = String(found.row.dispatchId)
     const commit = isObject(data.mergeCommit) ? String(data.mergeCommit.oid ?? '') : ''
-    const body = `PR #${n} 이 MERGED 됐다${commit ? `(머지 커밋 ${commit})` : ''}. 지시서의 완료 기준대로 확인하고 worker_done 을 보낸 뒤 끝낸다.`
+    const body = mergeNotice(n, commit)
     const send = process.env.SEND_TO_WORKER || scriptPath('send-to-worker')
     const sent = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', found.run, '--no-reply']), { cwd: ctx.repo, timeoutMs: SEND_MS })
     relay(sent)

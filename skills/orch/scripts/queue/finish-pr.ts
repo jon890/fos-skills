@@ -118,6 +118,7 @@
 //           orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
 import { gitBin } from '../lib/git.ts'
+import { mergeNotice } from '../core/merge-notice.ts'
 import { recordRouting } from '../lib/routing-log.ts'
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -421,7 +422,7 @@ async function tellMerged(args: Args, runId: string, worktree: string, merge: st
   const row = workerFor(found.rows, worktree)
   if (!row || !LIVE_DISPATCH.has(String(row.dispatchStatus))) return
   const dispatch = String(row.dispatchId)
-  const body = `PR #${args.pr} 이 MERGED 됐다(머지 커밋 ${merge}). gh pr view 로 확인한 뒤 worker_done 을 보내고 끝낸다`
+  const body = mergeNotice(args.pr, merge)
   const send = process.env.SEND_TO_WORKER || scriptPath('send-to-worker')
   const done = await runAsync(scriptCommand(send, ['--dispatch', dispatch, '--body', body, '--run', runId, '--no-reply']), {
     cwd: worktree,
