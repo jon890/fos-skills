@@ -465,7 +465,7 @@ describe('Orca 꺼짐', () => {
     assert.equal((both.errors as Json)['stalls@A'], null)
     assert.deepEqual(
       runEvents('A').map((row) => String(row.text).split(':')[0]),
-      ['questions'],
+      ['questions', 'done'],
     )
     orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: {} })
     tick()

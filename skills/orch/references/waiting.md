@@ -24,4 +24,4 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 
 압축·계정 전환 뒤 `orch status` 와 `orch doctor --run` 으로 루프가 살아 있는지 확인한다. LOOP-DEAD 는 루프를 다시 시작하라는 뜻이다. 다시 시작한 루프는 앞서 멈춘 시간을 LOOP-RESTARTED 로 알린다.
 WAITER-LEFT 는 옛 대기 프로세스가 남았다는 뜻이다. 출력의 pid 를 확인하고 안내한 kill 명령으로 직접 끝낸다. 스크립트는 자동 종료하지 않는다.
-`orch wait` 와 하위 명령, 옛 NEXT_WAIT, `orch worker nudge` 는 RETIRED 한 줄과 종료 코드 2 로 끝난다. worker 메시지는 `orch worker send`, 화면 조회는 `orch worker screen` 을 쓴다. PR 없는 작업은 띄울 때 `orch worker launch --no-pr` 로 기록한다.
+`orch wait` 와 하위 명령, 옛 NEXT_WAIT, `orch worker nudge` 는 RETIRED 한 줄과 종료 코드 2 로 끝난다. worker 메시지는 `orch worker send`, 화면 조회는 `orch worker screen <터미널>` 을 쓴다. PR 없는 작업은 띄울 때 `orch worker launch --no-pr` 로 기록한다.
