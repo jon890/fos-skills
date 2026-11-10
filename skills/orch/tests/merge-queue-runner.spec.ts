@@ -3,7 +3,13 @@ import { test } from 'node:test'
 import { fakeRun } from '../../../modules/testkit/fake-run.ts'
 import { run, runProcess, withRun } from '../scripts/lib/proc.ts'
 import { main } from '../scripts/queue/merge_queue.ts'
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { ConfigError } from '../scripts/lib/config.ts'
+import { Conflict, Deferred, HeadChanged, NotReady, StepState, WorkerFix } from '../scripts/queue/steps/model.ts'
+import { parseArgs } from '../scripts/queue/steps/options.ts'
+import { setup } from '../scripts/queue/steps/setup.ts'
+import { afterQueue } from '../scripts/queue/steps/finish.ts'
+import { attempt } from '../scripts/queue/steps/select.ts'
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -127,4 +133,76 @@ test('가짜 본문의 예외도 실행 파일처럼 종료 코드와 stderr로 
   const error = /TypeError:.*(?:\n|$)/
   assert.match(command.stderr, error)
   assert.equal(result.stderr.match(error)?.[0], command.stderr.match(error)?.[0])
+})
+
+
+test('단계 파일을 각각 import 해도 실행 환경과 신호 처리기를 바꾸지 않는다', () => {
+  const folder = new URL('../scripts/queue/steps/', import.meta.url)
+  const urls = readdirSync(folder).filter((name) => name.endsWith('.ts')).map((name) => new URL(name, folder).href)
+  const code = `
+    const before = { cwd: process.cwd(), term: process.listenerCount('SIGTERM'), int: process.listenerCount('SIGINT') }
+    for (const url of ${JSON.stringify(urls)}) await import(url)
+    console.log(JSON.stringify({ before, after: { cwd: process.cwd(), term: process.listenerCount('SIGTERM'), int: process.listenerCount('SIGINT') } }))
+  `
+  const result = runCommand([process.execPath, '--input-type=module', '-e', code])
+  assert.equal(result.code, 0, result.stderr)
+  assert.equal(result.stderr, '')
+  const { before, after } = JSON.parse(result.stdout)
+  assert.deepEqual(after, before)
+})
+
+for (const [error, kind, conflict, retryable] of [
+  [new Conflict('base 충돌'), 'held', true, undefined],
+  [new WorkerFix('고침 필요', '리뷰 스레드', true), 'held', false, true],
+  [new HeadChanged('HEAD 변경'), 'held', false, true],
+  [new Deferred('1', ['changed.ts']), 'deferred', false, undefined],
+  [new NotReady('CI 대기'), 'not-ready', false, undefined],
+  [new ConfigError('설정 오류'), 'config', false, undefined],
+] as const) {
+  test(`단계를 나눠도 ${error.constructor.name} 분류와 정리 상태를 유지한다`, async () => {
+    const state = new StepState(parseArgs(['--no-sweep', '1']))
+    state.copy = 'fake-queue-copy'
+    const calls: string[][] = []
+    const runner: typeof run = (argv) => {
+      calls.push(argv)
+      if (basename(argv[0]) !== 'git') throw error
+      return { code: 0, stdout: '', stderr: '', timedOut: false }
+    }
+    const context = { script, here: new URL('../scripts/queue/', import.meta.url).pathname, sleepScale: 0 }
+    const result = await withRun(runner, () => attempt(context, state, '1', 'quick'))
+    assert.equal(result.kind, kind)
+    assert.equal(state.mode, 'normal')
+    assert.equal(state.copy, '')
+    assert.deepEqual(state.conflicted, [])
+    Object.assign(state, result.changes)
+    assert.deepEqual(state.conflicted, conflict ? ['1'] : [])
+    if (result.kind === 'held') assert.equal(result.retryable, retryable)
+    if (result.kind === 'config') assert.equal(result.error, error)
+    if (result.kind === 'deferred') assert.equal(result.deferred, error)
+    assert.ok(calls.some((argv) => argv.join(' ') === 'git worktree remove --force fake-queue-copy'))
+    assert.ok(calls.some((argv) => argv.join(' ') === 'git worktree prune'))
+  })
+}
+
+
+test('준비 단계의 사용법 오류를 결과로 받고 작업 폴더는 유지한다', async (t) => {
+  const missing = join(tempDir('queue-missing-repo-', t), 'missing')
+  const before = process.cwd()
+  const state = new StepState(parseArgs(['--repo', missing, '1']))
+  const result = await setup({ script, here: '', sleepScale: 0 }, state)
+  assert.equal(result.kind, 'error')
+  if (result.kind === 'error') assert.match(result.error.message, /로 이동하지 못했다/)
+  assert.equal(process.cwd(), before)
+  Object.assign(state, result.changes)
+  assert.equal(state.repoDir, '')
+})
+
+test('머지 뒤 핸들러가 없으면 결과를 합쳐도 머지 기록을 유지한다', async () => {
+  const state = new StepState(parseArgs(['--no-sweep', '1']))
+  state.merged = [['1', 'code']]
+  const result = await afterQueue({ script, here: '', sleepScale: 0 }, state)
+  assert.equal(result.kind, 'done')
+  Object.assign(state, result.changes)
+  assert.deepEqual(state.merged, [['1', 'code']])
+  assert.equal(state.afterFailed, false)
 })

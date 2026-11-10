@@ -23,6 +23,7 @@
 - StepContext 는 진입 파일 위치와 대기 배율을 소유한다. StepState 는 Queue 의 기존 실행 상태를 담는다. 오류 뒤에도 정리와 신호 처리가 같은 상태를 보도록 상태 갱신 순서를 유지한다.
 - attempt 는 기존 오류 분류와 changes 를 반환한다. 진입 루프와 앞지르기 루프는 각 호출의 changes 를 Object.assign 으로 한 번만 합친다. 충돌 목록은 이 결과로 넘긴다.
 - copy, 현재 PR, 체크 재시도 상태는 동일한 StepState 참조에 즉시 반영하여 오류·신호 정리가 읽는다. 하위 도우미는 기존 scalar/void 반환과 실행 횟수를 유지한다.
+- 공개 조합 단계 setup, selectQueue, afterQueue, sweep 은 공통 StepResult<T> 로 종료 종류, 최종 상태 조각과 예상 오류를 반환한다. 진입 파일은 각 결과의 changes 를 한 번 합친다. setup 의 Usage/ConfigError 와 afterQueue 의 ConfigError 는 결과로 넘기고, 예상하지 못한 오류만 던진다. 하위 도우미의 기존 오류 전파는 attempt 가 같은 오류 타입으로 분류한다.
 - 제어 예외 생성자는 model.ts 의 같은 정의를 쓰고 instanceof 분류를 유지한다. 이미 생긴 외부 효과를 취소하거나 재실행하지 않는다.
 - SCRIPT/HERE 는 기존 진입 파일 위치를 유지한다. 도움말은 기존 파일 맨 위 설명을 계속 읽는다.
 - 기존 테스트의 기대값과 golden 파일을 고치지 않는다. 이 PR 은 스펙이 지정한 단일 큐 분리이므로 이동량이 커도 다른 분리 작업을 섞지 않는다.
@@ -31,8 +32,8 @@
 
 ### 1. 단계 함수와 실행 상태
 
-`skills/orch/scripts/queue/steps/` 아래 model.ts(타입·오류·실행 상태), runtime.ts(출력·대기·공통 실행), options.ts(옵션), setup.ts(시작 전 검사·임시 사본), pr.ts(PR 조회·이벤트 입력·차례 기록), overlap.ts(변경 파일 겹침), checks.ts(CI 대기), update.ts(base 최신화), verify.ts(합친 사본 검사), merge.ts(머지 전 조건·머지·원격 브랜치), finish.ts(머지 뒤 이벤트·정리 전달), select.ts(차례·보류·앞지르기)로 기존 코드를 옮긴다.
-`queue/merge_queue.ts` 의 main 주입 계약과 직접 실행 가드를 유지하고 준비·큐 진행·정리를 연결한다. 관련 경로를 쓰는 소비자를 찾아 조정한다.
+`skills/orch/scripts/queue/steps/` 아래 model.ts(타입·오류·실행 상태), runtime.ts(출력·대기·공통 실행), options.ts(옵션), setup.ts(시작 전 검사·임시 사본), pr.ts(PR 조회·이벤트 입력·차례 기록), overlap.ts(변경 파일 겹침), checks.ts(CI 대기), update.ts(base 최신화), verify.ts(합친 사본 검사), merge.ts(머지 전 조건·머지·원격 브랜치), finish.ts(머지 뒤 이벤트·정리 전달), select.ts(차례·보류·앞지르기·재판정 루프)로 기존 코드를 옮긴다.
+`queue/merge_queue.ts` 의 main 주입 계약과 직접 실행 가드를 유지하고 준비·selectQueue 결과(config/held/done)·머지 뒤 이벤트·정리를 연결한다. 진입 파일에는 차례 선택과 재판정 루프를 남기지 않는다. 관련 경로를 쓰는 소비자를 찾아 조정한다.
 
 ### 2. skills/orch/tests/merge-queue-runner.spec.ts 의 회귀 확인과 기록
 
