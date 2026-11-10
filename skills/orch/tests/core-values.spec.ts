@@ -8,6 +8,7 @@ import { deployVerdict, parseRuns } from '../scripts/core/deploy.ts'
 import { FINISH_KEYS, FINISH_OPTIONS } from '../scripts/core/finish-options.ts'
 import { QUEUE_VALUE_OPTIONS } from '../scripts/core/queue-options.ts'
 import { boardSettingsFromConfig } from '../scripts/core/milestones.ts'
+import { mergeNotice } from '../scripts/core/merge-notice.ts'
 import { isObject, jsonEqual, objectOr } from '../scripts/core/json.ts'
 
 test('객체 기본값과 JSON 값 비교는 키 순서와 잘못된 입력을 구분한다', () => {
@@ -65,4 +66,12 @@ test('미답변과 멈춤, 결정은 외부 조회 없이 구분한다', () => {
   assert.equal(notifiedKey(1, 'head', ['b', 'a']), notifiedKey(1, 'head', ['a', 'b']))
   assert.deepEqual([...retriedLost([{ taskId: 't', dispatchId: 'old' }, { taskId: 't', dispatchId: 'new', dispatchStatus: 'running' }], [['old', 'exited']])], ['old'])
   assert.equal(inFlight({ base: 'base', from: 'head', at: '2026-01-01T00:00:00Z', action: 'update', value: 'updated' }, 'new-head', 'passed', Date.parse('2026-01-02T00:00:00Z')), false)
+})
+
+test('머지 알림 글은 조건 없이 끝내라고 하지 않고 머지 뒤 할 일이 남은 경우를 말한다', () => {
+  const text = mergeNotice(7, 'abc123')
+  assert.match(text, /PR #7 이 MERGED 됐다\(머지 커밋 abc123\)/)
+  assert.match(text, /머지 뒤에 할 일이 남았으면 그 일을 마친 뒤에, 없으면 바로 worker_done/)
+  assert.doesNotMatch(text, /다음 PR/)
+  assert.doesNotMatch(mergeNotice(7, ''), /머지 커밋/)
 })

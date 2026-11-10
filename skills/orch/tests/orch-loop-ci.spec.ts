@@ -519,7 +519,7 @@ describe('머지 알림', () => {
     once()
     assert.deepEqual(sends(), [[
       '--dispatch', 'd1',
-      '--body', 'PR #1 이 MERGED 됐다(머지 커밋 c0ffee). 지시서의 완료 기준대로 확인하고 worker_done 을 보낸 뒤 끝낸다.',
+      '--body', 'PR #1 이 MERGED 됐다(머지 커밋 c0ffee). gh pr view 로 확인한다. 지시서의 완료 기준에 머지 뒤에 할 일이 남았으면 그 일을 마친 뒤에, 없으면 바로 worker_done 을 보내고 끝낸다.',
       '--run', 'r', '--no-reply',
     ]])
     const notified = JSON.parse(readFileSync(orchFile('state', 'merged-notified.json'), 'utf8')) as Json
