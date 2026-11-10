@@ -96,7 +96,7 @@ type Command = {
 | `worker send`, `worker adopt` | run(adopt 는 `--apply` 일 때만), repo(adopt) | worker send 의 run 은 run-current 에서만 채운다 |
 | `worker resume` | repo | run 은 채우지 않는다. 옛 dispatch 의 runId 를 쓰며, 지금 Run 으로 채우면 다른 Run 의 worker 를 잘못 잇는다(docs/features/limit-resume/design.md DECISION9) |
 | `queue merge`, `queue conflicts`, `queue ready`, `queue finish` | repo, run(ready 빼고) | queue merge 는 `explicit` 의 `--finish-arg`, `--sweep-arg` 안의 `--run` 도 명시로 본다 |
-| `queue run`, `queue overlap`, `queue reserve`, `worker worktree`, `doctor gh-usage` | repo | |
+| `queue run`, `queue gate`, `queue overlap`, `queue reserve`, `worker worktree`, `doctor gh-usage` | repo | |
 | `cleanup sweep` | repo, run, specs-dir | `--repo` 를 하나라도 주면 repo 를 채우지 않는다 |
 | `cleanup handoff`, `doctor migrate`, `doctor migrate-hooks` | repo, run | |
 | `doctor` | repo | run 을 채우지 않는다(스펙 DECISION23). 스킬 첫 점검(`--run` 없이 부른다)이 지금처럼 Run 별 점검과 `session-resume` 을 하지 않게 한다. Run 을 보려면 `--run` 을 준다 |
@@ -196,7 +196,7 @@ doctor 가 `--repo` 저장소(없으면 작업 폴더의 주 checkout)에서 본
 | `spec lint` | `<지시서>: <발견>` | `SPEC-ERROR <지시서>: <발견>`, `SPEC-WARN <지시서>: <발견>` | `references/spec-writing.md` |
 | `doctor` | `  안내: …` | 판정 줄과 들여 쓴 고칠 줄 | `SKILL.md` |
 | `doctor migrate`, `migrate-hooks` | 한국어 진행·결과 줄 | `MOVED <원래> <새 자리>`(dry-run `WOULD-MOVE`), `REWRITE <파일> <곳 수>`(`WOULD-REWRITE`), `CONFLICT <원래> <새 자리>`, `KEPT <파일> board`, `HANDLER <파일>`(`WOULD-HANDLER`), `TRACKED <명령>`, `NOTHING`, 고칠 참조의 위치 `OLD-REF <파일>:<줄>`, `OLD-REF-SCRIPT`, `WOULD-REWRITE <파일>:<줄>` | `references/overlay.md` |
-| `queue reserve`, `wait user-active`, `wait questions`, `wait ack-lost`, `doctor gh-usage`, `doctor install-cli` | 없음 | 지금 줄이 판정 줄이다 | |
+| `queue reserve`, `queue gate`, `wait user-active`, `wait questions`, `wait ack-lost`, `doctor gh-usage`, `doctor install-cli` | 없음 | 지금 줄이 판정 줄이다(`queue gate` 는 `GATE-OK <PR>` 나 `GATE-FAIL <PR>` 과 이유 줄) | |
 | `paths`, `worker worktree`, `spec line`, `slot heavy`, `slot mem` | 없음 | 결과 그대로(스펙 DECISION20) | |
 | `status` | (새로) | 저장소의 `LOOP-ALIVE …` 나 `LOOP-DEAD …`, 살아 있지만 지금 세션의 user 설치본과 다른 번들이면 `LOOP-STALE <repo> <pid> <번들>` 도 함께, Run 마다 `RUN <id> workers=<살아 있는 수> stalled=<수>`, `BOARD doing=<수> decide=<수>`, 멈춘 것마다 `STALLED`, `STAGE`(`loop stalled` 와 같은 줄). 조회 실패는 `SKIP-WORKERS`, `SKIP-BOARD`, `SKIP-STAGES` | `SKILL.md` |
 
