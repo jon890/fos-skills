@@ -117,3 +117,14 @@ test('행 id 는 agent-selection.md 의 `## 모델` 표에서만 읽고 id 집�
   const spec = '행: low'
   assert.match(selectionVerdict(`worker 선택: \`codex\` \`gpt-6.1-sol\` effort \`low\`. ${spec}`, tmpdir()).join(), /행 id 가 모델 표에 없다: low/)
 })
+
+test('행 id 가 모델 표에 없으면 표의 행 id 목록을 함께 내고, 모델 이름이면 작업 종류 id 를 쓰라고 덧붙인다', () => {
+  const text = readFileSync(join(import.meta.dirname, '..', 'references', 'agent-selection.md'), 'utf8')
+  const ids = modelRowIds(text).join(', ')
+  const verdict = (row: string) => selectionVerdict(`worker 선택: \`claude\` \`claude-haiku-5-5\` effort \`low\`. 행: ${row}`, tmpdir()).join('\n')
+  const model = verdict('claude-haiku-5-5')
+  assert.match(model, new RegExp(`행 id 가 모델 표에 없다: claude-haiku-5-5\\. 모델 표의 행 id: ${ids}\\. 행에는 작업 종류 id 를 쓴다`))
+  const plain = verdict('typo')
+  assert.ok(plain.includes(`모델 표의 행 id: ${ids}`), plain)
+  assert.doesNotMatch(plain, /작업 종류 id 를 쓴다/)
+})

@@ -28,7 +28,11 @@ export function selectionVerdict(text: string, repo: string, options: { launch?:
   catch { return [...errors, '모델 표를 읽지 못했다'] }
   const ids = modelRowIds(table)
   if (!ids.length) errors.push('모델 표를 읽지 못했다')
-  else if (selection.row && !ids.includes(selection.row)) errors.push(`행 id 가 모델 표에 없다: ${selection.row}`)
+  else if (selection.row && !ids.includes(selection.row)) {
+    // 모델 이름(claude-haiku-5-5, gpt-6-luna)을 행 id 로 쓴 실수가 잦다. 쓸 수 있는 id 목록과 함께 알린다
+    const modelName = selection.row === selection.model || /^(claude|gpt|codex|gemini|o\d)-/.test(selection.row)
+    errors.push(`행 id 가 모델 표에 없다: ${selection.row}. 모델 표의 행 id: ${ids.join(', ')}${modelName ? '. 행에는 작업 종류 id 를 쓴다' : ''}`)
+  }
   const experiment = experimentOf(text)
   const effortOf = (value: string | null | undefined) => value === '기본' ? null : value ?? null
   const same = (a: Partial<Candidate>, b: Partial<Candidate>) =>
