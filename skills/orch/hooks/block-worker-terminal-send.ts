@@ -11,24 +11,10 @@
 //     - 값이 모든 Run 의 active worker 터미널이면 거부한다. 첫 화면 승인은 아래 예외다
 //     - 어느 Run 의 worker 도 아니면 통과한다
 //
-// worker 판정 범위(앞 단계에서 정해지면 뒤 단계로 가지 않는다):
-//     조회는 `worker-list ... --limit 100` 을 page.nextCursor 끝까지 읽는다. 행의 agentTerminalHandle(없으면 resource.terminalHandle)이
-//     대상이면 worker 이고, 그 행의 dispatchId 로 첫 화면을 본다.
-//     1. `worker-list --terminal-state active` 를 읽는다. 일하는 worker 와 막 띄운 worker 는 모두 여기 있다
-//     2. send-hook-cache.json 에 기한 안의 기록이 있으면 terminal show 와 Run 조회를 건너뛴다. active 는 늘 먼저 읽는다.
-//        기록이 없으면 `orca terminal show --terminal <대상>` 의 agentIdentity 를 본다. 비어 있으면(에이전트가 돌지 않는 셸) worker 가 아니다.
-//        막 띄워 에이전트를 아직 알아보지 못한 worker 는 1단계가 찾았다
-//     3. 남은 터미널 상태(LIVE_STATES: reclaimable, release_unknown, release_pending, retained)를 동시에 읽는다.
-//        끝난 dispatch 가 남긴 살아 있는 터미널이 여기 있다. released 는 읽지 않는다. 터미널을 돌려준 행이라 지금 보내는 터미널의 행일 수 없다
-//        (2026-11-04 실측: released 2243행 가운데 살아 있는 터미널 0)
-//     4. 없고 1단계 응답의 scope.source 가 all 이면 worker 가 아니다
-//     5. all 이 아니면(묶인 Run 만 봤다) `run-list --limit 100` 을 result.nextCursor 끝까지 읽어 updated_at 이 최근인 순서로 놓고,
-//        Run 마다 `worker-list --run <id> --limit 100` 을 읽는다. 동시 16개까지 부르고, 대상을 모두 찾으면 남은 호출을 기다리지 않는다.
-//        모두 읽고도 없으면 worker 가 아니다. lib/worker-run-cache.ts 의 끝난 Run 캐시를 함께 쓴다.
-//        대상 handle 이 캐시에 있으면 건너뛰지 않고 새로 읽으므로 넘겨받은 터미널도 찾는다
-//     상태 없이 모든 행을 읽던 때는 4천여 행 45쪽이 7초 한도를 넘어, worker 가 아닌 터미널로 보내도 10번 중 6~7번 거부됐다(2026-11-02).
-//     active 만 읽으면 끝난 dispatch 의 살아 있는 터미널을 놓친다. 끝난 dispatch 도 식별해 직접 입력을 막고 adopt-sessions 로 새 dispatch 에
-//     연결하도록 안내한다.
+// worker 조회 범위와 페이지·Run 순회는 scripts/lib/worker-terminal.ts 가 소유한다.
+// active 조회 뒤 이 hook 고유의 기억과 terminal show 를 거쳐 LIVE_STATES 를 조회한다.
+// 호출 전체는 7초 한도이며 ORCH_SEND_HOOK_BUDGET_MS 는 테스트에서만 한도를 바꾼다.
+// 조회가 끝나지 않았어도 아래 process.exit 로 hook 을 끝낸다.
 //
 // 판정 기억: 3~5단계로 worker 가 아니라고 정한 에이전트 터미널은 머신 폴더(lib/machine.ts)의 send-hook-cache.json 에
 //     {handle: 정한 epoch ms} 로 남긴다. ORCH_SEND_HOOK_CACHE_SEC(기본 600)초 안에는 3~5단계를 건너뛴다. 1단계는 늘 읽으므로
@@ -62,7 +48,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { WorkerRunCache, type RunInfo } from '../scripts/lib/worker-run-cache.ts'
+import { activeWorkers, remainingWorkers, LIVE_STATES, type LookupStats } from '../scripts/lib/worker-terminal.ts'
 import { machineDir } from '../scripts/lib/machine.ts'
 import { orcaBin, withFull } from '../scripts/lib/orca.ts'
 import { runAsync } from '../scripts/lib/proc.ts'
@@ -79,12 +65,7 @@ const ENTER_FLAG = /--enter\b/
 // Orca 가 첫 화면에서 사람을 기다린다고 알리는 이름. 사용자가 답할 화면이라 키 입력만 허용한다
 const FIRST_SCREEN = /agent-(?:trust-workspace|update-prompt|cwd-prompt|hooks-review-prompt)/
 
-// 3단계에서 동시에 읽는 터미널 상태. active 는 1단계가 먼저 읽는다
-const LIVE_STATES = ['reclaimable', 'release_unknown', 'release_pending', 'retained']
-
 const DEFAULT_BUDGET_MS = 7_000
-const PAGE_LIMIT = '100'
-const RUN_CONCURRENCY = 16
 
 const SEND_TO_WORKER = '`orch worker send --dispatch <id> --body ...` 로 보낸다.'
 const RESEND = 'worker 가 아니면 `--terminal term_...` 처럼 handle 을 그대로 적어 다시 부른다.'
@@ -162,6 +143,12 @@ let lastQuery = '-'
 let runTotal = 0
 let runsRead = 0
 
+function addStats(stats: LookupStats): void {
+  queries += stats.queries; completed += stats.completed
+  if (stats.queries) lastQuery = stats.lastQuery
+  runTotal += stats.runTotal; runsRead += stats.runsRead
+}
+
 // orca 를 한 번 부르고 봉투의 result 객체를 낸다. 남은 시간이 없거나 넘기면 시간 초과, 그 밖의 문제는 조회 실패다.
 async function orcaResult(args: string[]): Promise<Record<string, unknown>> {
   const left = deadline - Date.now()
@@ -196,125 +183,12 @@ async function orcaResult(args: string[]): Promise<Record<string, unknown>> {
   return result as Record<string, unknown>
 }
 
-function nextCursor(value: unknown): string | null {
-  return typeof value === 'string' && value !== '' ? value : null
-}
-
-type WorkerPage = { workers: Record<string, unknown>[]; scope: unknown; next: string | null }
-
-async function workerPage(args: string[]): Promise<WorkerPage> {
-  const result = await orcaResult(['orchestration', 'worker-list', ...args])
-  if (!Array.isArray(result.workers)) throw new LookupFailure('worker-list 응답의 result.workers 가 배열이 아니다')
-  const page = result.page as { nextCursor?: unknown } | undefined
-  return {
-    workers: result.workers.filter((w): w is Record<string, unknown> => typeof w === 'object' && w !== null),
-    scope: (result.scope as { source?: unknown } | undefined)?.source,
-    next: nextCursor(page?.nextCursor),
-  }
-}
-
-// worker-list 를 page.nextCursor 끝까지 읽는다. 대상을 찾으면 found 에 넣고, 모두 찾았거나 stop() 이 참이면 멈춘다.
-async function scanWorkers(
-  base: string[],
-  wanted: Set<string>,
-  found: Map<string, Worker>,
-  stop: () => boolean = () => false,
-  collected?: Record<string, unknown>[],
-): Promise<unknown> {
-  let cursor: string | null = null
-  let scope: unknown
-  let first = true
-  do {
-    if (stop()) return scope
-    const page = await workerPage([...base, '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
-    collected?.push(...page.workers)
-    if (first) scope = page.scope
-    first = false
-    for (const w of page.workers) {
-      const handle = w.agentTerminalHandle
-      if (typeof handle === 'string' && wanted.has(handle) && !found.has(handle)) {
-        found.set(handle, { dispatchId: typeof w.dispatchId === 'string' ? w.dispatchId : null })
-      }
-      const resourceHandle = (w.resource as { terminalHandle?: unknown } | undefined)?.terminalHandle
-      if (typeof resourceHandle === 'string' && wanted.has(resourceHandle) && !found.has(resourceHandle)) {
-        found.set(resourceHandle, { dispatchId: typeof w.dispatchId === 'string' ? w.dispatchId : null })
-      }
-    }
-    if ([...wanted].every((h) => found.has(h))) return scope
-    cursor = page.next
-  } while (cursor)
-  return scope
-}
-
 async function hasAgent(handle: string): Promise<boolean> {
   const result = await orcaResult(['terminal', 'show', '--terminal', handle])
   const terminal = result.terminal
   if (typeof terminal !== 'object' || terminal === null) throw new LookupFailure('terminal show 응답에 result.terminal 이 없다')
   const identity = (terminal as { agentIdentity?: unknown }).agentIdentity
   return identity !== undefined && identity !== null && identity !== ''
-}
-
-// run-list 를 result.nextCursor 끝까지 읽고 updated_at 이 최근인 순서로 Run id 를 낸다.
-async function runIds(): Promise<RunInfo[]> {
-  const runs: RunInfo[] = []
-  let cursor: string | null = null
-  do {
-    const result = await orcaResult(['orchestration', 'run-list', '--limit', PAGE_LIMIT, ...(cursor ? ['--cursor', cursor] : [])])
-    if (!Array.isArray(result.runs)) throw new LookupFailure('run-list 응답의 result.runs 가 배열이 아니다')
-    for (const r of result.runs as { id?: unknown; updated_at?: unknown }[]) {
-      if (typeof r?.id === 'string') runs.push({ id: r.id, updated_at: r.updated_at })
-    }
-    runTotal = runs.length
-    cursor = nextCursor(result.nextCursor)
-  } while (cursor)
-  return runs.sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))
-}
-
-// Run 마다 worker-list --run 을 동시 RUN_CONCURRENCY 개까지 부른다. 대상을 모두 찾거나 하나라도 실패하면 바로 돌아온다.
-function scanRuns(ids: RunInfo[], wanted: Set<string>, found: Map<string, Worker>): Promise<void> {
-  runTotal = ids.length
-  const cache = new WorkerRunCache()
-  return new Promise((resolve, reject) => {
-    let next = 0
-    let running = 0
-    let settled = false
-    const allFound = () => [...wanted].every((h) => found.has(h))
-    const launch = () => {
-      if (settled) return
-      if (allFound() || (next >= ids.length && running === 0)) {
-        settled = true
-        resolve()
-        return
-      }
-      while (running < RUN_CONCURRENCY && next < ids.length) {
-        const run = ids[next++]
-        if (cache.read(run, wanted) !== null) {
-          runsRead++
-          continue
-        }
-        running++
-        const rows: Record<string, unknown>[] = []
-        scanWorkers(['--run', run.id], wanted, found, () => settled || allFound(), rows).then(
-          () => {
-            running--
-            runsRead++
-            if (!settled && !allFound()) cache.remember(run, rows)
-            launch()
-          },
-          (err: unknown) => {
-            if (settled) return
-            settled = true
-            reject(err)
-          },
-        )
-      }
-      if (next >= ids.length && running === 0) {
-        settled = true
-        resolve()
-      }
-    }
-    launch()
-  })
 }
 
 // 머리 주석의 「판정 기억」
@@ -355,8 +229,11 @@ function rememberNonWorkers(handles: string[]): void {
 
 // 대상 가운데 worker 터미널인 것. {handle: 그 행}. 단계는 머리 주석의 「worker 판정 범위」 다
 async function lookupWorkers(handles: string[]): Promise<Map<string, Worker>> {
-  const found = new Map<string, Worker>()
-  const scope = await scanWorkers(['--terminal-state', 'active'], new Set(handles), found)
+  const active = await activeWorkers(handles, { deadline })
+  addStats(active.stats)
+  if (!active.ok) throw new LookupFailure(active.error, active.timeout)
+  const found = active.found
+  const scope = active.scope
   const cache = readCache()
   const now = Date.now()
   const fresh: string[] = []
@@ -365,12 +242,11 @@ async function lookupWorkers(handles: string[]): Promise<Map<string, Worker>> {
     if (await hasAgent(handle)) fresh.push(handle)
   }
   if (fresh.length === 0) return found
-  const wanted = new Set(fresh)
-  const allFound = () => fresh.every((h) => found.has(h))
-  await Promise.all(LIVE_STATES.map((state) => scanWorkers(['--terminal-state', state], wanted, found, allFound)))
-  const left = fresh.filter((h) => !found.has(h))
-  if (left.length > 0 && scope !== 'all') await scanRuns(await runIds(), new Set(left), found)
-  rememberNonWorkers(left.filter((h) => !found.has(h)))
+  const rest = await remainingWorkers(fresh, scope, { states: LIVE_STATES, deadline })
+  addStats(rest.stats)
+  if (!rest.ok) throw new LookupFailure(rest.error, rest.timeout)
+  for (const [handle, hit] of rest.found) found.set(handle, hit)
+  rememberNonWorkers(fresh.filter(h => !found.has(h)))
   return found
 }
 
