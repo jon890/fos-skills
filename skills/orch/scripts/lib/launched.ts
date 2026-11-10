@@ -27,6 +27,7 @@ import { ensure, pathOf } from './paths.ts'
 export type Effective = { agent?: string | null; model?: string | null; effort?: string | null }
 
 export type Launch = {
+  completion?: "none" | null
   branch?: string | null; dispatch: string; task?: string | null; terminal: string | null; worktree: string; run: string | null; spec?: string | null; lint_ack?: string | null
   agent?: string | null; model?: string | null; effort?: string | null
   effective?: Effective | null; experiment?: string | null
@@ -59,7 +60,7 @@ export function readLaunch(repo: string, dispatch: string): Launch | null {
     const v = data as Record<string, unknown>
     if (v.dispatch !== dispatch || typeof v.worktree !== 'string') return null
     const text = (x: unknown) => (typeof x === 'string' && x ? x : null)
-    return { dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective: typeof v.effective === 'object' && v.effective !== null ? { agent: text((v.effective as Effective).agent), model: text((v.effective as Effective).model), effort: text((v.effective as Effective).effort) } : null, experiment: text(v.experiment) }
+    return { ...(v.completion === "none" ? { completion: "none" as const } : {}), dispatch, branch: text(v.branch), task: text(v.task), terminal: text(v.terminal), worktree: v.worktree, run: text(v.run), spec: text(v.spec), lint_ack: text(v.lint_ack), agent: text(v.agent), model: text(v.model), effort: text(v.effort), effective: typeof v.effective === 'object' && v.effective !== null ? { agent: text((v.effective as Effective).agent), model: text((v.effective as Effective).model), effort: text((v.effective as Effective).effort) } : null, experiment: text(v.experiment) }
   } catch {
     return null
   }

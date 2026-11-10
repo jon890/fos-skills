@@ -358,6 +358,7 @@
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
+import { migrateLegacyNotices } from './legacy-notices.ts'
 import type { Runner } from '../lib/proc.ts'
 import { sweepRouting } from '../lib/routing-log.ts'
 
@@ -1906,6 +1907,7 @@ async function sweepRepo(repo: string, given: Args, workers: WorkerRow[], termin
   sweepReviews(repo, args, remaining, specsDir, log)
   sweepStaleSpecs(repo, args, remaining, specsDir, log)
   if (args.remoteBranches && !sweepRemoteBranches(repo, base, args.apply, owners, remaining, log)) code = 2
+  migrateLegacyNotices(repo, args.trash, args.apply, log)
   sweepQueueLogs({ dir: pathOf('queue', repo), trash: args.trash, apply: args.apply, log, host: queueLogHost(repo) })
   pruneMerged(repo, new Set(lines(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').out)))
   if (!sweepDocker(repo, args.apply, log)) code = 2

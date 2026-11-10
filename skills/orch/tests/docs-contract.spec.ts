@@ -23,31 +23,12 @@ function section(text: string, heading: string): string[] {
   return end === -1 ? rest : rest.slice(0, end)
 }
 
-test('waiting.md 의 LOOP-EVENT kind 는 코드가 알림 파일에 쓰는 kind 와 같다', () => {
-  const doc = new Set<string>()
-  let inside = false
-  for (const line of read('references', 'waiting.md').split('\n')) {
-    if (line.startsWith('- 종료 코드 7')) inside = true
-    else if (inside && line.startsWith('- ')) break
-    else if (inside) {
-      const item = /^ {2}- ((?:`[A-Z][A-Z-]+`(?:, )?)+):/.exec(line)
-      if (item) for (const m of item[1].matchAll(/`([A-Z][A-Z-]+)`/g)) doc.add(m[1])
-    }
-  }
-  assert.ok(doc.size > 0, '종료 코드 7 의 kind 목록을 읽지 못했다')
-
-  // 코드가 쓰는 kind: appendEvent, notifyAutoMerge 의 둘째 인자와 report 의 kind 옵션. 줄 머리 주석은 센다
-  const code = new Set<string>(['GAP']) // GAP 은 wait-important.ts 가 읽을 때 만든다. 알림 파일에는 쓰지 않는다
-  const write = /(?:appendEvent|notifyAutoMerge)\([^,]+,\s*'([A-Z][A-Z-]+)'|\bkind: '([A-Z][A-Z-]+)'/g
-  for (const file of globSync('scripts/**/*.ts', { cwd: ORCH })) {
-    for (const m of read(file).matchAll(write)) code.add(m[1] ?? m[2])
-  }
-  assert.ok(code.size > 1, '코드의 kind 를 찾지 못했다')
-  assert.match(read('scripts', 'wait', 'wait-important.ts'), /`LOOP-EVENT GAP - /)
-
-  // REMINDER 는 lib/questions.ts 가 줄을 만들고 루프가 알림 파일에 쓴다. 위 정규식이 둘째 인자로 잡는다
-  assert.deepEqual([...doc].filter((k) => !code.has(k)).sort(), [], 'waiting.md 에 있고 코드에 없는 kind')
-  assert.deepEqual([...code].filter((k) => !doc.has(k)).sort(), [], '코드에 있고 waiting.md 에 없는 kind')
+test('waiting.md 는 Orca 깨움과 사용자 답 우선 규칙을 설명한다', () => {
+  const doc = read('references', 'waiting.md')
+  assert.match(doc, /사용자 답을 먼저 하고/)
+  assert.match(doc, /Orca 가 코디네이터를 깨운다/)
+  assert.match(doc, /WAITER-LEFT/)
+  assert.match(doc, /UNANSWERED/)
 })
 
 test('gh-call-budget.md 의 TTL 표는 gh-budget.ts 의 기본 TTL 과 같다', () => {

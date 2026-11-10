@@ -1,6 +1,6 @@
 # 7. 머지와 정리
 
-**worker 가 일하는 중인지, 끝났는지, 사용자가 넘겨받았는지는 `scripts/lib/worker-state.ts` 한 곳이 정한다.** `cleanup-sweep.ts`, `orch-doctor.ts`, `wait-important.ts` 가 같은 판정을 쓰고, 입력과 판정 순서는 그 파일 머리 주석이 소유한다. 끝난 dispatch 위에 PR 이 MERGED 이거나, PR 이 없고 base 보다 앞선 커밋이 0 개면 치워도 된다. `user_takeover` 표시라도 화면이 에이전트 작업 중이면 일하는 중으로 본다.
+**worker 가 일하는 중인지, 끝났는지, 사용자가 넘겨받았는지는 `scripts/lib/worker-state.ts` 한 곳이 정한다.** `cleanup-sweep.ts`, `orch-doctor.ts`, `lib/lost-workers.ts` 가 같은 판정을 쓰고, 입력과 판정 순서는 그 파일 머리 주석이 소유한다. 끝난 dispatch 위에 PR 이 MERGED 이거나, PR 이 없고 base 보다 앞선 커밋이 0 개면 치워도 된다. `user_takeover` 표시라도 화면이 에이전트 작업 중이면 일하는 중으로 본다.
 
 `cleanup-sweep.ts` 와 `remove-worktree.ts` 는 삭제 전에 그 경로와 하위 경로의 터미널 소유 상태를 확인한다. 소유 상태를 읽는 범위와 방법, 끝난 dispatch 터미널의 `남김` 사유는 `scripts/lib/ownership.ts` 머리 주석이 소유한다. 터미널 목록이나 소유 상태를 읽지 못하면 빈 셸도 닫지 않고 남긴다.
 
@@ -93,7 +93,7 @@ orch queue conflicts --base "$BASE"
 `STOP` 줄이 나오면 그 PR 에서 멈춘 것이다. 이유를 읽고 고친 뒤 남은 PR 만 다시 준다. 이미 MERGED 인 PR 은 건너뛴다.
 
 **base 와 충돌하는 PR 은 큐를 멈추지 않는다.** update-branch 가 충돌로 실패하거나 mergeable 이 `CONFLICTING` 이면 `CONFLICT <PR> <이유>` 를 찍고 그 PR 만 빼고 뒤 PR 을 이어 머지한다.
-상주 루프의 알림 파일에 `QUEUE-CONFLICT` 가 쓰이고(대기가 `LOOP-EVENT QUEUE-CONFLICT` 로 깨운다), 그 PR 의 worker 에게 base 를 합치라고 보내는 일은 루프의 충돌 처리와 `notify-conflicts.ts` 가 한다.
+해당 Run 에 `QUEUE-CONFLICT` 메시지가 가고, 그 PR 의 worker 에게 base 를 합치라고 보내는 일은 루프의 충돌 처리와 `notify-conflicts.ts` 가 한다.
 끝 줄 앞에 `QUEUE-CONFLICT <번호...>` 가 오고, 끝 줄은 `QUEUE-HELD` 이며 종료 코드는 1 이다. worker 가 충돌을 푼 뒤 그 PR 만 다시 건다.
 
 **앞 PR 이 먼저 들어가야 하는 PR 들은 `--chain 101,102` 로 묶는다.** 마이그레이션 순서가 있는 PR 이 예다. 묶음 안 앞 PR 이 머지되지 않고 빠지면 뒤 PR 은 `SKIP <PR> 묶음의 앞 PR <번호> 가 머지되지 않았다` 로 머지하지 않는다. 묶음 밖의 PR 은 이어 머지한다.
@@ -165,7 +165,7 @@ orch queue merge --require-up-to-date --required backend,frontend 101 102
 - 도는 머지 큐의 차례 PR 은 건드리지 않는다. 큐 밖에서 HEAD 가 바뀌면 그 PR 이 `STOP` 으로 멈춘다. 큐에서 아직 머지되지 않은 앞 PR 과 겹치는 PR 은 그 머지 뒤로 미룬다. 곧 다시 뒤처져 방금 돌린 CI 가 쓸모없어지기 때문이다
 - 같은 (PR, base SHA) 에는 한 번만 건다. CI 가 passed 가 아닌 PR 은 걸지 않는다
 
-루프 로그(`state/loop.log`)의 `REFRESH`, `REFRESH-WAIT`, `REFRESH-WORKER`, `REFRESH-ORPHAN` 줄이 무엇을 걸었고 왜 미뤘는지 보인다. 알림 파일에는 쓰지 않는다.
+루프 로그(`state/loop.log`)의 `REFRESH`, `REFRESH-WAIT`, `REFRESH-WORKER`, `REFRESH-ORPHAN` 줄이 무엇을 걸었고 왜 미뤘는지 보인다. Run 메시지는 보내지 않는다.
 자리 수와 runner 의 관계, 설정 예시는 [`overlay.md`](overlay.md) 의 「뒤처진 PR 미리 최신화」 가, 판정 순서는 `orch-loop.ts` 머리 주석의 「최신화」 가 소유한다.
 
 ### 체크 확인 간격
@@ -332,9 +332,9 @@ orch queue merge --sweep-arg --kill-holders 101 102
 **`--sweep-arg` 를 명령줄에 하나라도 주면 설정의 `queue.sweep_args` 를 통째로 쓰지 않는다.** `--specs-dir` 처럼 설정에 둔 인자도 `--sweep-arg --specs-dir --sweep-arg "$SPECS_DIR"` 로 다시 준다.
 
 **스크립트 머리 주석이 다루는 경우는 코디네이터가 직접 지우지 않는다.** squash 머지, 로컬과 PR 의 브랜치 이름 차이, 빈 셸 터미널, 살아 있는 dispatch 의 지시서 보호, 남은 프로세스가 대표적이다.
-저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」).
+저장소가 여럿이면 `--repo` 를 저장소마다 준다([`waiting.md`](waiting.md) 의 「메시지가 오면」).
 
-스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다. 읽는 법은 [`waiting.md`](waiting.md) 의 「깨어날 때마다 정리와 보드 동기화」 가 소유한다.
+스크립트가 건너뛴 항목은 기본 출력의 `KEPT <대상> <이유>` 줄(`--full` 과 루프 로그는 `건너뜀` 줄)로 읽는다. 지운 것은 `REMOVED`, 실패는 `FAILED` 이고 끝 줄이 `SWEEP <지운 수> <남긴 수>` 다. 읽는 법은 [`waiting.md`](waiting.md) 의 「메시지가 오면」 가 소유한다.
 
 **머지나 완료를 확인하면 사용자 지시를 기다리지 않고 worker 의 워크트리, 브랜치, 터미널을 정리한다.**
 같은 워크트리에서 후속 작업을 하는 worker 가 있으면 그 worker 가 끝날 때까지 남긴다.

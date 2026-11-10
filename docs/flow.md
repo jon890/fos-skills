@@ -197,15 +197,15 @@ flowchart TD
 | --- | --- | --- | --- | --- | --- |
 | `before-launch` | `launch-worker` | 워크트리를 만든 뒤, `worker-start` 전 | 예 | 지시서 검사, 허락 줄, deny 규칙 | 저장소의 동시 worker 상한, 준비되지 않은 개발 환경 거부 |
 | `worker-launched` | `launch-worker` | `LAUNCHED` 를 낸 뒤 | 아니오 | `LAUNCHED` 줄과 `launch.effective` | 개발 서버 접속 설정을 워크트리에 복사 |
-| `worker-question` | `orch-loop`, `watch-questions` | 기술 question 이나 일반 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄 | 메신저 알림 |
+| `worker-question` | `orch-loop` | 기술 question 이나 일반 escalation 을 처음 알릴 때와 다시 알릴 때 | 아니오 | `QUESTION`, `REMINDER` 줄 | 메신저 알림 |
 | `decision-pending` | `orch-loop` | 새 사용자 결정 질문이나 보드의 미완료 결정 줄을 찾을 때 | 아니오 | `DECISION-PENDING`, 현재 코디네이터에게 묻기 요청 | 저장소의 결정 요청 전달 |
-| `worker-done` | `wait-important` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
-| `worker-lost` | `wait-important` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER_LOST` 줄과 상태 기록 | runner 호스트 상태 확인 |
-| `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 입력하지 않는다. 핸들러가 없거나 0 이 아니면(거부는 넘김) 그 Run 의 알림 파일에 `WORKER-STALLED` 줄 | `nudge-worker --text` 로 다시 시도시키고 횟수 상한에서 코디네이터에게 넘긴다 |
+| `worker-done` | `orch-loop` | `worker_done` 을 받고 완료 근거를 판정한 뒤 | 아니오 | 의심스러운 완료 분리 | 저장소 고유 완료 조건 확인 결과를 출력에 붙인다 |
+| `worker-lost` | `orch-loop` | 끊긴 dispatch 를 처음 알릴 때 | 아니오 | `WORKER-LOST` 메시지과 상태 기록 | runner 호스트 상태 확인 |
+| `worker-stalled` | `orch-loop` | 등록된 Run 의 살아 있는 dispatch 화면에서 같은 멈춤(`error`, 켜면 `idle`)을 `pipeline.stall_ticks` 의 틱 수만큼 본 때. 핸들러가 0 으로 끝나면 같은 화면이 그 틱 수만큼 더 이어질 때 다시 낸다. 사람이 끊은 화면(`interrupted`)에는 내지 않는다 | 예 | 입력하지 않는다. 핸들러가 없거나 0 이 아니면(거부는 넘김) 그 Run 에 `WORKER-STALLED` 메시지 | `orch worker send` 로 다시 시도시키고 횟수 상한에서 코디네이터에게 넘긴다 |
 | `before-ready` | `ci-ready`, `orch-loop` | draft 를 ready 로 바꾸기 전 | 예 | 겹침과 충돌 보류, ready 슬롯 | 이 저장소에서 CI 를 돌릴 수 없는 시간대 거부 |
 | `pr-ready` | `ci-ready`, `orch-loop` | ready 로 바꾼 뒤 | 아니오 | 없음 | 리뷰 요청 |
 | `ci-passed` | `orch-loop` | 필수 체크가 모두 통과한 것을 처음 본 때 | 아니오 | 순서 파일에 따라 머지 큐 차례 | 없음 |
-| `ci-failed` | `orch-loop` | 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 살아 있는 dispatch 의 worker 에게 알림. 알림 파일에 `CI-FAILED` 줄 | runner 장애면 다시 실행 |
+| `ci-failed` | `orch-loop` | 체크 하나가 실패한 것을 처음 본 때 | 아니오 | 살아 있는 dispatch 의 worker 에게 알림. Run 에 `CI-FAILED` 메시지 | runner 장애면 다시 실행 |
 | `ci-missing` | `orch-loop` | ready 뒤 `pipeline.ci_missing_after_sec` 안에 필수 체크가 나타나지 않을 때 | 아니오 | `CI-MISSING` 줄 | runner 재시작 |
 | `pr-conflict` | `notify-conflicts`, `orch-loop` | base 와 충돌하는 내 PR 을 (PR, PR HEAD, 충돌 파일) 마다 처음 본 때 | 아니오 | 그 PR 을 만든 worker 에게 base 를 합치라고 보낸다. dispatch 가 끝났으면 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 `CONFLICT-ORPHAN` 줄. 새 worker 는 띄우지 않는다 | 없음 |
 | `before-merge` | `merge_queue` | PR 마다 머지 직전, HEAD 를 고정한 뒤 | 예 | 머지 조건 확인 | DB 마이그레이션 PR 앞의 백업 |
@@ -222,18 +222,18 @@ flowchart TD
 
 | 공백 | 막는 곳 | 방법 |
 | --- | --- | --- |
-| 질문 감시가 꺼진다. Monitor 는 시간이 지나면 끝나고, 조회 실패를 stderr 로만 내 알림이 없다 | `orch-loop` 의 `tick`, `wait-important`, `session-resume` | 질문 확인을 루프의 틱에 넣어 Monitor 에 기대지 않는다. 루프는 하네스의 백그라운드 명령이 아니라 스스로 분리된 프로세스로 돌아 하네스의 시간 한도에 묶이지 않는다. 코디네이터를 깨워야 하는 일은 알림 파일에 적고, 코디네이터가 늘 다시 거는 `wait-important` 가 그 파일을 읽어 깨어난다. 조회 실패도 `WATCH-ERROR` 로 같은 파일에 간다. 루프가 죽으면 `wait-important` 가 `LOOP-DEAD` 로 깨어나고, doctor 가 다시 띄울 명령을 낸다 |
-| 미답변 질문이 쌓인다 | `tick`, `worker-question`, `decision-pending` | 틱마다 미답변을 센다. 기술 질문과 일반 escalation의 재알림은 `REMINDER` 로 알림 파일에 적고 `worker-question`으로 외부에 알린다. 사용자 결정의 재알림은 로그에만 남기며, 새 결정과 보드의 남은 결정 줄은 `DECISION-PENDING`과 결정 notifier가 코디네이터에게 한 번만 전달한다. 코디네이터가 사용자와 대화 중이면 전달을 미루고, 전달에 실패하면 기다리는 시간을 늘려 다시 낸다. 답할 수 없는 질문(`dispatch_inactive`, `answer_conflict`)은 `send-to-worker` 가 닫은 질문으로 적어 미답변에서 뺀다 |
+| 질문·보고를 놓친다 | Orca 메시지, 상주 루프, doctor | worker 메시지는 Orca 가 직접 깨운다. 루프는 알림을 Run 에 보내고 조회 실패도 WATCH-ERROR 로 알린다. doctor 와 status 가 LOOP-DEAD 를 보이며, 다시 시작한 루프가 멈췄던 시간을 LOOP-RESTARTED 로 보낸다 |
+| 미답변 질문이 쌓인다 | `tick`, `worker-question`, `decision-pending` | 600초 넘은 기술 질문 id 묶음이 바뀔 때 UNANSWERED 를 Run 에 보낸다. 사용자 결정은 decision-pending 이 맡는다. 대화 중에도 미루지 않고 실패하면 재시도한다. 닫힌 질문은 재알림에서 뺀다 |
 | 원격 브랜치가 쌓인다. 직접 머지한 PR 과 다른 PR 에 합쳐 닫힌 PR 의 브랜치가 남는다 | `after-merge`, `tick` | 머지를 확인한 자리에서 원격 브랜치를 지운다. 틱마다 내 PR 가운데 MERGED 이거나, CLOSED 이고 head 커밋이 base 에 들어간 PR 의 원격 브랜치를 지운다 |
-| 같은 저장소를 쓰는 둘째 세션이 루프를 쓰지 못한다. 첫 세션의 루프를 멈추면 첫 세션이 루프를 잃는다 | `orch-loop --start --run`, `wait-important --run --loop-repo` | 루프는 저장소마다 하나이고 여러 Run 을 맡는다([ADR-012](adr/012-orch-loop-multi-run.md)). 세션은 자기 Run 을 등록하고 뺀다. 질문 확인, 정리, `tick` 은 Run 마다 그 Run 범위로 돌고, 알림 파일도 Run 마다 나뉘어 대기는 자기 Run 의 알림에만 깨어난다 |
+| 같은 저장소의 여러 Run 을 관리한다 | `orch loop start` | 루프는 저장소마다 하나이고 Run 별 질문 확인·정리·tick 을 실행한다. 알림도 해당 Run 메일함으로 보낸다([ADR-012](adr/012-orch-loop-multi-run.md), [ADR-027](adr/027-orca-message-wake.md)) |
 | 정리가 다른 세션의 산출물을 옮긴다 | `cleanup-sweep --run`, `handoff-cleanup --run` | `--run` 을 주면 그 Run 의 worker 와 Task 가 쓴 것만 정리한다. Run 에 묶을 수 없는 산출물(큐 로그, 폴더, csv)은 `--run` 없이 사용자가 직접 돌릴 때만 옮긴다 |
 | worker 가 모델 오류 화면에서 멈춰 사람이 터미널을 봐야 안다 | `tick`, `worker-stalled` | 틱마다 등록된 Run 이 띄운 살아 있는 worker 의 화면을 판정해 같은 멈춤이 이어지면 이벤트를 낸다. 다시 시도시키는 일은 저장소 핸들러가 맡고, 맡지 못하면 그 Run 의 코디네이터가 `WORKER-STALLED` 로 깨어난다([ADR-013](adr/013-orch-worker-stalled.md)) |
 | 머지된 줄 모르는 worker 의 dispatch 가 살아 있어 정리가 그 워크트리를 「살아 있는 worker」 로 계속 건너뛴다 | `finish-pr`, `send-to-worker` | 마무리가 정리 전에 그 PR 워크트리의 살아 있는 worker 에게 머지와 머지 커밋을 알리고, `finish.worker_done_timeout` 동안 dispatch 가 끝나기를 기다린다. 답할 메시지가 없으면 `send-to-worker` 가 새 메시지로 보낸다 |
 | 코디네이터가 `!` 를 빠뜨려 배포가 끝나도 업무가 완료되지 않고 보드 항목이 진행 중으로 남는다 | `finish-pr`, `board-sync` | 표시가 없는 PR 은 마무리가 배포 확인 뒤, 보드 동기화가 머지를 본 틱에 업무의 마지막 PR 인지 판정한다([ADR-014](adr/014-orch-auto-last-pr.md)). 판정하지 못하면 중간 PR 이다 |
-| 보드 항목의 `pr` 필드가 비어 머지 뒤에도 항목이 진행 중으로 남는다 | `launch-worker`, `wait-important`, `board-sync`, `finish-pr` | 띄울 때 같은 워크트리의 항목을 이어 쓰고, 준비됨 `worker_done` 과 틱이 브랜치로 `pr` 필드를 채우고, 마무리가 `pr` 필드가 빈 항목을 브랜치나 워크트리 이름으로 찾는다 |
+| 보드 항목의 `pr` 필드가 비어 머지 뒤에도 항목이 진행 중으로 남는다 | `launch-worker`, `orch-loop`, `board-sync`, `finish-pr` | 띄울 때 같은 워크트리의 항목을 이어 쓰고, 준비됨 `worker_done` 과 틱이 브랜치로 `pr` 필드를 채우고, 마무리가 `pr` 필드가 빈 항목을 브랜치나 워크트리 이름으로 찾는다 |
 | 답한 결정과 worker 질문이 보드의 결정 필요에 계속 남는다 | `board.ts mark`, 창의 질문 조회 | 답한 줄을 끝내면 줄이 모두 끝난 decide 항목은 done 이 된다. 질문은 그 thread 에 worker 쪽으로 간 메시지가 있으면 답한 것으로 보고, 같은 worker 의 미답변은 가장 최근 것 하나로 센다([ADR-015](adr/015-board-decide-clear.md)) |
 | 충돌 해결, CI 고침, 리뷰 반영 worker 가 보드에 새 항목을 만들고 충돌 지시서가 base 마다 쌓인다 | `launch-worker`, 충돌 처리, `finish-pr` | 지시서의 `중간 과정: PR #N` 줄을 보면 그 PR 의 기존 항목에 한 줄만 남긴다. 충돌 지시서는 PR 마다 `spec-conflict-<PR>.md` 하나이고, 마무리가 머지 뒤 지운다([ADR-015](adr/015-board-decide-clear.md)) |
-| 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. 알림 파일에 `QUEUE-CONFLICT` 를 쓴다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
+| 충돌한 PR 하나 때문에 머지 큐가 멈춰 머지할 수 있는 뒤 PR 도 머지되지 않는다 | `merge_queue` | 충돌한 PR 은 `CONFLICT` 로 빼고 뒤 PR 을 이어 머지한다. Run 에 `QUEUE-CONFLICT` 메시지를 보낸다. 순서가 있는 PR 은 `--chain` 으로 묶어 앞 PR 이 빠지면 뒤 PR 도 뺀다 |
 | 준비된 PR 이 코디네이터가 다른 일을 하는 동안 몇 시간씩 머지되지 않는다. 같은 모듈의 마이그레이션 번호를 PR 끼리 겹쳐 써 두 번째 PR 이 개발 서버 기동을 깨뜨린다 | `orch-loop` 의 `tick` | `queue.auto_merge` 를 켠 저장소에서 틱이 머지할 수 있는 PR 을 골라 `merge-with-finish` 를 건다. 마이그레이션 번호가 base 이하거나 다른 열린 PR 과 같으면 걸지 않고 `MIGRATION-CLASH` 로 알린다([ADR-016](adr/016-orch-auto-merge.md)). 아래 「상주 루프의 자동 머지」 |
 | ready PR 의 CI 가 머지마다 처음부터 다시 돈다 | 코어 gh 모듈과 가드 shim | base 를 합치는 일(`update-branch`)은 머지 큐가 차례가 온 PR 에, `pipeline.update_behind_drafts` 가 draft 에, 상주 루프의 최신화가 머지 큐와 같은 판정으로 갱신이 필요한 ready PR 에만 한다. 핸들러의 `gh` 는 `update-branch` 를 거부한다 |
 | 머지 큐의 맨 앞 PR 이 막히면 뒤의 머지할 수 있는 PR 이 모두 기다린다 | `merge_queue` | 보류한 PR 은 큐에서 빼고 다음 PR 로 간다(기본. 옛 동작은 `--stop-on-hold`). 차례 PR 이 base 를 합쳐 CI 를 기다리는 동안 겹치지 않고 준비된 뒤 PR 을 먼저 머지한다. worker 가 고쳐야 하는 보류는 그 worker 에게 이유를 보낸다 |
@@ -247,17 +247,17 @@ flowchart TD
 | 모르는 이름의 핸들러 파일이 있다 | `orch-doctor` 가 `UNKNOWN-HOOK <파일>` 로 경고한다. 실행하지 않는다 |
 | 거부할 수 있는 이벤트의 핸들러가 거부한다 | `HOOK-REJECT <이벤트> <이유>` 를 내고 그 동작을 하지 않는다. 머지 큐는 그 PR 에서 `STOP` 이다 |
 | 거부할 수 있는 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | 거부처럼 멈춘다. 줄은 `HOOK-FAIL <이벤트> <종료 코드>` 다. 시간을 넘기면 `HOOK-FAIL <이벤트> timeout`, 잠금을 기다리다 시간을 넘기면 `HOOK-FAIL <이벤트> lock` 이다. 모르는 실패로 머지하거나 지우지 않는다 |
-| 나머지 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | `HOOK-FAIL` 을 내고 코어 동작은 이어 간다. 명령의 종료 코드에 반영한다. 띄우기, 대기, 질문 감시, doctor, ready 전환, 충돌 알림, 정리 명령은 알림 이벤트의 실패를 종료 코드에 반영하지 않는다. 대기의 종료 코드는 코디네이터의 다음 동작을 고르는 계약이고, 질문 감시는 질문 줄을 이미 냈으며 멈추면 다음 질문을 알리지 못하기 때문이다. ready 전환(`ci-ready`)의 종료 코드는 코디네이터의 ready 판정 계약이라, 0 을 다른 값으로 바꾸면 이미 ready 로 바뀐 PR 을 보류로 읽는다. 충돌 알림(`notify-conflicts`)의 `pr-conflict` 는 충돌한 PR 이 있을 때만 나서 종료 코드가 이미 1 이고, 실패를 따로 나타낼 값이 없다. 정리(`cleanup-sweep`)의 2 는 사용법 오류와 저장소 조회 실패를 뜻한다(머리 주석의 「종료 코드」). `after-cleanup` 의 실패를 2 에 섞으면 정리 자체가 실패한 경우와 구별할 수 없다. 코어는 핸들러를 다시 돌리지 않는다. `tick` 만 다음 틱에 다시 돈다 |
+| 알림 이벤트의 핸들러가 실패하거나 시간을 넘긴다 | HOOK-FAIL 을 기록하고 코어 동작을 이어 간다. decision-pending 은 재시도 시각을 기록하고 다시 전달한다. 완료·끊김 감시는 이미 보낸 메시지와 처리 기록을 보존한다. 거부할 수 있는 이벤트와 종료 코드의 정확한 계약은 `skills/orch/scripts/lib/events.ts` 가 소유한다 |
 | 같은 저장소의 같은 이벤트가 동시에 난다(PR 여럿의 `after-deploy`) | 이벤트마다 잠금을 잡아 하나씩 실행한다 |
 | worker 를 띄운 저장소가 둘 이상이다 | 이벤트는 그 PR 이나 워크트리의 저장소에서 나고, 그 저장소의 핸들러만 돈다 |
 | `config.json` 에 삭제한 셸 명령 칸이 있다 | 일반 런타임 명령은 사용법 오류(종료 코드 2)로 멈춘다. `orch-doctor`만 `INVALID-CONFIG`과 종료 코드 1로 알린다. worker와 머지 큐가 끝난 뒤 `orch doctor migrate-hooks --apply` 로 핸들러에 옮긴다 |
 | 머지한 브랜치를 base 로 둔 열린 PR 가운데 내 PR 이 아닌 것이 있거나, 그 조회 또는 base 옮기기가 실패한다 | 원격 브랜치를 남기고 `after-merge` 의 `remote_branch_deleted` 를 false 로 낸다 |
 | worker 가 `worker_done` 을 보냈는데 PR 이 아직 열려 있다 | 그 worker 터미널을 남긴다. 충돌이나 리뷰 반영을 같은 worker 가 이어 받는다. PR 이 머지되거나 닫히면 정리가 바로 닫는다 |
-| 상주 루프가 죽었거나 틱이 멈췄다 | `state/loop.json` 의 pid 가 죽었거나 `alive_at` 이 `max(3 × tick_sec, 120)` 초보다 오래되면 `wait-important` 가 `LOOP-DEAD` 로 깨어난다. `alive_at` 은 루프의 부모 프로세스가 틱과 따로 쓰므로 긴 틱은 죽음이 아니다. pid 가 살아 있는 루프 프로세스인데 `alive_at` 만 오래됐으면 생존 타이머 간격에 5초를 더한 만큼 기다려 한 번 더 판정한다. 잠들었다 깬 뒤의 거짓 `LOOP-DEAD` 를 막는다. 기다리는 시간은 `lib/loop.ts` 머리 주석의 「생존」 이 소유한다. 코디네이터가 루프를 다시 띄운다. 루프가 없던 동안의 일은 다음 틱이 상태로 다시 판정하므로 따로 기억하지 않는다 |
+| 상주 루프가 죽었거나 틱이 멈췄다 | doctor 와 status 가 pid·alive_at 기준으로 LOOP-DEAD 를 보인다. 코디네이터가 루프를 다시 시작하고 다음 틱이 상태를 다시 확인한다. 생존 기준은 `lib/loop.ts` 가 소유한다 |
 | `notify-conflicts` 와 상주 루프의 충돌 처리가 겹쳐 돈다 | 같은 (PR, PR HEAD, 충돌 파일) 을 두 번 보낼 수 있다. `state/notify-conflicts.json` 에 잠금이 없다. 차례로 돌면 한 번이다 |
 | 같은 저장소에 루프를 둘 띄운다 | 둘째 프로세스는 `state/loop.lock` 이나 `state/loop.json` 의 살아 있는 루프 프로세스(명령줄에 `orch-loop` 가 든 pid)를 보고 띄우지 않는다. `--run` 을 줬고 그 Run 이 아직 등록되지 않았으면 등록하고 `LOOP-JOINED` 와 0 으로 끝난다. 이미 등록됐거나 `--run` 이 없으면 `LOOP-RUNNING` 과 4 다. 등록을 모르는 옛 루프면 등록하지 못하고 4 와 안내 줄을 낸다. 부른 터미널이나 도는 루프가 다른 Run 에 묶였거나 루프의 명의를 모르면(`loop.json` 에 `bound_run` 이 없다) 그 Run 의 질문을 읽지 못하므로 띄우지도 합류하지도 않고 `LOOP-START-FENCED <Run> <묶인 Run>` 과 5 다. 두 세션이 거의 동시에 `--start` 해 둘 다 루프를 띄우면 잠금을 먼저 쥔 쪽이 돌고, 진 쪽은 그 루프에 합류해 `LOOP-JOINED` 와 0 으로 끝난다. 새로 뜬 루프는 앞 루프의 `alive_at` 뒤에 쓴 등록을 지우지 않으므로 두 Run 이 함께 등록된다 |
 | Run 이 등록된 루프를 `--run` 없이 멈춘다 | 등록이 하나여도 다른 세션의 Run 일 수 있다. `finish.run` 도 없으면 다른 세션의 루프를 끊지 않게 신호를 보내지 않고 `LOOP-STOP-SHARED` 와 1 이다. 자기 Run 만 빼려면 `--stop --run`, 모두 멈추려면 `--stop --all` 이다. 마지막 Run 이 빠지면 루프가 끝난다 |
-| 대기의 Run 이 살아 있는 루프에 등록되지 않았다 | `wait-important --run <Run> --loop-repo` 가 `LOOP-DEAD <repo> run <Run> 미등록` 과 8 로 깨어난다. 코디네이터가 `--start --run` 으로 등록한다. 등록을 모르는 옛 루프면 이 판정을 하지 않는다 |
+| Run 이 살아 있는 루프에 등록되지 않았다 | doctor 와 status 의 미등록 안내를 따라 `orch loop start` 로 등록한다 |
 
 ### 머지 뒤 마지막 PR 판정
 

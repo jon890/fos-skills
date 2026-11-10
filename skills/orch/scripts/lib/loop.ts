@@ -1,14 +1,10 @@
-// 상주 루프(orch-loop.ts)의 상태 판정 한 벌이다. 루프 상태 읽기, 생존 판정, 알림 파일과 커서를 이 모듈 한 곳이 소유한다.
-// 사용처: orch-loop.ts(쓰는 쪽과 --status), wait-important.ts(--loop-repo 로 깨어나기), orch-doctor.ts(session-resume 의 loop_alive).
+// 상주 루프(orch-loop.ts)의 상태 판정 한 벌이다. 루프 상태 읽기, 생존 판정과 Run 등록을 맡는다.
+// 사용처: orch-loop.ts(쓰는 쪽과 --status), orch-doctor.ts(session-resume 의 loop_alive).
 // 파일 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이 정한다. 경로는 모두 <orch 루트>/state/ 아래다.
 //
 //   loop.json            루프 상태. 루프의 부모 프로세스만 쓴다(옆 파일에 쓰고 rename). runs 가 없으면 Run 등록을 모르는 옛 루프다
 //   loop.lock            한 저장소에 루프 하나. orch-loop.ts --foreground 가 쥔다
 //   loop-runs/<Run>.json         루프에 등록된 Run 하나. {"run", "specs_dir", "registered_at", "coordinator_terminal"}. 아래 「Run 등록」
-//   loop-events/<Run>.jsonl      그 Run 의 코디네이터를 깨워야 하는 알림. 한 줄에 {"seq", "time", "kind", "pr", "text"}. text 는 kind 를 뺀 나머지다
-//   loop-events/<Run>.cursor     그 Run 의 읽는 쪽이 마지막으로 읽은 seq 하나
-//   loop-events.jsonl, loop-events.cursor
-//                                Run 이 없는 루프(옛 루프 포함)의 알림과 커서. 함수에 run 을 주지 않으면(null) 이 파일이다
 //   <Run> 은 runKey 로 바꾼 이름이다(영문, 숫자, _, ., - 밖의 글자를 _ 로).
 //
 // Run 등록(registerRun, unregisterRun, registeredRuns, ADR-012):
@@ -35,31 +31,14 @@
 //   다룬다(잠금을 회수하지 않고, recheck 를 붙인다). 루프가 아니라고 잘못 보면 살아 있는 루프의 잠금을 빼앗아 루프가 둘이 된다.
 //   ps 가 실패한 사이 pid 가 죽었으면 false 다.
 //
-// 알림 파일(appendEvent, readEvents):
-//   - 쓰는 쪽은 루프(틱 자식, 또는 틱 자식이 끝난 뒤의 부모)와, 충돌한 PR 을 뺀 머지 큐(QUEUE-CONFLICT)다. 잠금이 없다.
-//     머지 큐와 틱이 같은 순간에 쓰면 두 줄이 같은 seq 를 받을 수 있다. 충돌한 PR 마다 한 번 쓰는 드문 일이라 그대로 둔다
-//     쓰는 프로세스가 틱마다 바뀌므로 부를 때마다 파일의 마지막 seq 와 커서 값 가운데 큰 것의 다음 값을 새 seq 로 쓴다.
-//     파일을 잘라 내거나 지운 뒤에도 seq 가 되돌아가 새 알림이 커서 뒤에 숨지 않게 하기 위해서다
-//   - 더한 뒤 줄이 1000 줄을 넘으면 마지막 1000 줄만 옆 파일에 써서 rename 으로 바꾼다. 읽는 쪽은 rename 전이나 뒤의 온전한 파일 하나를 읽는다
-//   - 읽는 쪽은 seq 가 커서보다 큰 줄만 낸다. 파일의 첫 seq 가 커서의 다음 값보다 크면 그 사이를 gap 으로 낸다.
-//     읽지 않은 줄이 1000 줄을 넘어 잘린 경우다. 읽는 것만으로는 커서를 옮기지 않는다. 낸 뒤 writeCursor 로 옮긴다
-//   - 커서 파일이 없거나 정수가 아니면 0 이다. 깨진 커서로 멈추면 알림을 다시 받을 길이 없어서다(대신 남은 줄을 다시 낸다)
-//   - JSON 으로 읽지 못한 줄(쓰다 끊긴 줄)은 건너뛴다
-//
-// 알림 파일 지우기(dropReadEvents): 루프에서 뺀 Run 의 알림 파일과 커서를 지운다. orch-loop.ts --stop 이 등록을 지운 Run 마다 부른다.
-//   커서 뒤의 줄이 없을 때만 지운다. 읽지 않은 줄이 있으면 둘 다 남겨, 그 Run 을 다시 등록한 대기가 읽게 한다.
-//   알림 파일을 먼저, 커서를 나중에 지운다. 그 사이 틱이 새 줄을 쓰면 커서 다음 seq 로 새 파일이 생기고, 커서까지 지운 뒤에는
-//   커서가 0 이라 그 줄이 읽지 않은 줄로 남는다. 읽지 않은 줄이 없다고 본 뒤 지우기 전에 틱이 쓴 줄은 잃는다. 루프를 떠나는
-//   Run 의 알림이고 그 사이가 몇 밀리초라 그대로 둔다.
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeParent, pathOf } from './paths.ts'
 import { envMs } from './env.ts'
 import { run } from './proc.ts'
 import { alive } from './process.ts'
 
-export const EVENTS_LIMIT = 1000
 const DEFAULT_TICK_SEC = 300
 const MIN_DEAD_SEC = 120
 export const DEFAULT_ALIVE_SEC = 30
@@ -78,7 +57,6 @@ export type LoopState = {
   [key: string]: unknown
 }
 export type LoopStatus = { alive: true; state: LoopState } | { alive: false; reason: string; recheck?: true }
-export type LoopEvent = { seq: number; time: string; kind: string; pr: number | null; text: string }
 export type RunEntry = { run: string; specs_dir: string | null; registered_at: string; coordinator_terminal: string | null }
 
 // 파일 이름에 쓸 Run. 머리 주석의 「<Run>」
@@ -88,21 +66,6 @@ export function runKey(run: string): string {
 
 export function loopFile(repo: string): string {
   return join(pathOf('state', repo), 'loop.json')
-}
-
-// run 이 없으면 Run 이 없는 루프의 파일이다(머리 주석)
-function eventPaths(dir: string, run: string | null | undefined): { events: string; cursor: string } {
-  if (!run) return { events: join(dir, 'loop-events.jsonl'), cursor: join(dir, 'loop-events.cursor') }
-  const base = join(dir, 'loop-events', runKey(run))
-  return { events: `${base}.jsonl`, cursor: `${base}.cursor` }
-}
-
-export function eventsFile(repo: string, run: string | null = null): string {
-  return eventPaths(pathOf('state', repo), run).events
-}
-
-export function cursorFile(repo: string, run: string | null = null): string {
-  return eventPaths(pathOf('state', repo), run).cursor
 }
 
 function runFile(repo: string, run: string): string {
@@ -233,90 +196,4 @@ export function loopStatus(repo: string, now: number): LoopStatus {
     return isLoopProcess(pid) !== false ? { alive: false, reason, recheck: true } : { alive: false, reason }
   }
   return { alive: true, state }
-}
-
-function parseLines(raw: string | null): LoopEvent[] {
-  const rows: LoopEvent[] = []
-  for (const line of (raw ?? '').split('\n')) {
-    if (!line.trim()) continue
-    try {
-      const row = JSON.parse(line) as LoopEvent
-      if (row && typeof row === 'object' && Number.isInteger(row.seq)) rows.push(row)
-    } catch {
-      // 쓰다 끊긴 줄이다. 건너뛴다
-    }
-  }
-  return rows
-}
-
-function cursorAt(file: string): number {
-  let raw: string | null
-  try {
-    raw = readText(file)
-  } catch {
-    return 0
-  }
-  const text = (raw ?? '').trim()
-  return /^\d+$/.test(text) ? Number(text) : 0
-}
-
-export function readCursor(repo: string, run: string | null = null): number {
-  return cursorAt(cursorFile(repo, run))
-}
-
-export function writeCursor(repo: string, seq: number, run: string | null = null): void {
-  replace(cursorFile(repo, run), `${seq}\n`, repo)
-}
-
-// 알림 한 줄을 그 Run 의 알림 파일에 더하고 그 줄을 돌려준다. pr 은 PR 번호이고 없으면 null 이다. run 이 없으면 Run 이 없는 루프의 파일이다.
-// 상태 폴더는 한 번만 구한다. pathOf 는 부를 때마다 git 으로 주 checkout 을 찾는다.
-export function appendEvent(repo: string, kind: string, pr: number | null, text: string, run: string | null = null): LoopEvent {
-  const paths = eventPaths(pathOf('state', repo), run)
-  const file = paths.events
-  const raw = readText(file)
-  const rows = parseLines(raw)
-  const last = rows.reduce((max, row) => Math.max(max, row.seq), 0)
-  const event: LoopEvent = { seq: Math.max(last, cursorAt(paths.cursor)) + 1, time: new Date().toISOString(), kind, pr, text }
-  const line = `${JSON.stringify(event)}\n`
-  if (raw === null) makeParent(file, repo)
-  if (rows.length + 1 > EVENTS_LIMIT) {
-    const kept = [...rows.slice(rows.length + 1 - EVENTS_LIMIT).map((row) => JSON.stringify(row)), JSON.stringify(event)]
-    const temporary = `${file}.${process.pid}.tmp`
-    writeFileSync(temporary, `${kept.join('\n')}\n`)
-    renameSync(temporary, file)
-  } else {
-    // 쓰다 끊긴 마지막 줄에 이어 붙지 않게 줄을 먼저 끝낸다
-    appendFileSync(file, raw && !raw.endsWith('\n') ? `\n${line}` : line)
-  }
-  return event
-}
-
-function removeFile(file: string): boolean {
-  try {
-    unlinkSync(file)
-    return true
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw e
-  }
-}
-
-// 머리 주석의 「알림 파일 지우기」. 지웠으면 true, 읽지 않은 줄이 있어 남겼거나 지울 파일이 없으면 false
-export function dropReadEvents(repo: string, run: string): boolean {
-  if (readEvents(repo, run).events.length > 0) return false
-  const paths = eventPaths(pathOf('state', repo), run)
-  const events = removeFile(paths.events)
-  const cursor = removeFile(paths.cursor)
-  return events || cursor
-}
-
-// 그 Run 의 알림 파일에서 커서보다 큰 seq 의 줄과 빠진 구간. 커서는 옮기지 않는다.
-export function readEvents(repo: string, run: string | null = null): { events: LoopEvent[]; gap: [number, number] | null } {
-  const paths = eventPaths(pathOf('state', repo), run)
-  const cursor = cursorAt(paths.cursor)
-  const rows = parseLines(readText(paths.events))
-  const events = rows.filter((row) => row.seq > cursor)
-  const first = rows.reduce((min, row) => Math.min(min, row.seq), Number.POSITIVE_INFINITY)
-  const gap: [number, number] | null = events.length > 0 && first > cursor + 1 ? [cursor + 1, first - 1] : null
-  return { events, gap }
 }

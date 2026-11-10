@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync,
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { appendEvent, eventsFile, isLoopProcess, loopFile, loopStatus, readEvents, recheckMs, registerRun, registeredRuns, writeCursor } from '../scripts/lib/loop.ts'
+import { isLoopProcess, loopFile, loopStatus, recheckMs, registerRun, registeredRuns } from '../scripts/lib/loop.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
 
 let tmp: string
@@ -55,22 +55,6 @@ function writeState(fields: Record<string, unknown>): void {
     file,
     JSON.stringify({ pid: process.pid, run: 'r', repo, tick_sec: 300, started_at: ago(7200), alive_at: ago(10), last_tick: ago(60), ticks: 1, errors: {}, ...fields }),
   )
-}
-
-function seqs(): number[] {
-  return readEvents(repo).events.map((event) => event.seq)
-}
-
-// seq 1..count 의 줄을 파일에 바로 쓴다. appendEvent 를 천 번 부르면 부를 때마다 git 으로 주 checkout 을 찾느라 느리다
-function seed(count: number): void {
-  const file = eventsFile(repo)
-  mkdirSync(dirname(file), { recursive: true })
-  const rows = Array.from({ length: count }, (_, i) => JSON.stringify({ seq: i + 1, time: ago(0), kind: 'REMINDER', pr: null, text: `줄 ${i + 1}` }))
-  writeFileSync(file, `${rows.join('\n')}\n`)
-}
-
-function fileLines(): string[] {
-  return readFileSync(eventsFile(repo), 'utf8').split('\n').filter((line) => line)
 }
 
 describe('loopStatus', () => {
@@ -141,72 +125,5 @@ describe('loopStatus', () => {
     writeState({})
     writeFileSync(loopFile(repo), '{깨짐')
     assert.deepEqual(loopStatus(repo, NOW), { alive: false, reason: '없음' })
-  })
-})
-
-describe('알림 파일과 커서', () => {
-  test('세 줄을 더하면 커서 0 에서 세 줄, 커서 3 에서 빈 목록이다', () => {
-    appendEvent(repo, 'REMINDER', null, 'REMINDER q')
-    appendEvent(repo, 'WATCH-ERROR', null, 'WATCH-ERROR questions: offline')
-    appendEvent(repo, 'CI-FAILED', 12, 'ci')
-    const first = readEvents(repo)
-    assert.deepEqual(
-      first.events.map((event) => [event.seq, event.kind, event.pr, event.text]),
-      [
-        [1, 'REMINDER', null, 'REMINDER q'],
-        [2, 'WATCH-ERROR', null, 'WATCH-ERROR questions: offline'],
-        [3, 'CI-FAILED', 12, 'ci'],
-      ],
-    )
-    assert.equal(first.gap, null)
-    assert.ok(first.events.every((event) => !Number.isNaN(Date.parse(event.time))), JSON.stringify(first.events))
-    // 읽기만으로는 커서를 옮기지 않는다
-    assert.deepEqual(seqs(), [1, 2, 3])
-    writeCursor(repo, 3)
-    assert.deepEqual(readEvents(repo), { events: [], gap: null })
-  })
-
-  test('1000 줄을 넘으면 마지막 1000 줄만 남고, 잘라 낸 뒤에도 커서 뒤의 줄을 한 번씩만 낸다', () => {
-    seed(1000)
-    writeCursor(repo, 1000)
-    for (let i = 1000; i < 1005; i++) appendEvent(repo, 'REMINDER', null, `줄 ${i + 1}`)
-    const kept = fileLines()
-    assert.equal(kept.length, 1000)
-    assert.equal(JSON.parse(kept[0]).seq, 6)
-    const found = readEvents(repo)
-    assert.deepEqual(
-      found.events.map((event) => event.seq),
-      [1001, 1002, 1003, 1004, 1005],
-    )
-    assert.equal(found.gap, null)
-    writeCursor(repo, 1005)
-    assert.deepEqual(readEvents(repo), { events: [], gap: null })
-  })
-
-  test('읽지 않은 줄이 잘렸으면 그 구간을 gap 으로 낸다', () => {
-    seed(1000)
-    for (let i = 1000; i < 1005; i++) appendEvent(repo, 'REMINDER', null, `줄 ${i + 1}`)
-    writeCursor(repo, 2)
-    const found = readEvents(repo)
-    // 커서 2 보다 큰 seq 는 3 부터다. 파일에는 6 부터 남았으므로 3..5 를 잃었다
-    assert.deepEqual(found.gap, [3, 5])
-    assert.equal(found.events[0].seq, 6)
-    assert.equal(found.events.length, 1000)
-  })
-
-  test('알림 파일을 지운 뒤 새로 쓰는 쪽도 커서 다음 seq 를 쓴다', () => {
-    appendEvent(repo, 'REMINDER', null, 'a')
-    writeCursor(repo, 7)
-    unlinkSync(eventsFile(repo))
-    const event = appendEvent(repo, 'REMINDER', null, 'b')
-    assert.equal(event.seq, 8)
-    assert.deepEqual(seqs(), [8])
-  })
-
-  test('쓰다 끊긴 마지막 줄은 건너뛰고 새 줄을 이어 붙이지 않는다', () => {
-    appendEvent(repo, 'REMINDER', null, 'a')
-    writeFileSync(eventsFile(repo), `${readFileSync(eventsFile(repo), 'utf8')}{"seq": 2, "ki`)
-    appendEvent(repo, 'REMINDER', null, 'b')
-    assert.deepEqual(seqs(), [1, 2])
   })
 })

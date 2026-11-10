@@ -11,7 +11,6 @@ import type { TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { readEvents } from '../scripts/lib/loop.ts'
 import { FAKE_GH, FAKE_GIT, HAS_TOOLS, spawnDone, writeNodeBin } from './fixtures/merge-queue-fakes.ts'
 import type { Done } from './fixtures/merge-queue-fakes.ts'
 
@@ -38,6 +37,7 @@ before(() => {
   bindir = mkdtempSync(join(tmpdir(), 'merge-queue-bin-'))
   writeNodeBin(bindir, 'gh', FAKE_GH)
   writeNodeBin(bindir, 'git', FAKE_GIT)
+  writeNodeBin(bindir, 'orca', `const fs = require('node:fs'); fs.appendFileSync(process.env.NOTICE_LOG, JSON.stringify(process.argv.slice(2)) + '\\n'); console.log(JSON.stringify({ok:true,result:{message:{id:'notice'}}}))`)
 })
 after(() => rmSync(bindir, { recursive: true, force: true }))
 
@@ -52,6 +52,8 @@ function setup(t: TestContext): Ctx {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${bindir}:${process.env.PATH}`,
+    ORCA: join(bindir, 'orca'),
+    NOTICE_LOG: join(tmp, 'notices.jsonl'),
     FAKE_STATE: stateFile,
     FAKE_LOG: logFile,
     FAKE_REMOTE_HEAD: 'abc',
@@ -1192,7 +1194,7 @@ describe('merge_queue 보류', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하�
     lacks(c.log(), 'pr merge 1 ')
     has(c.log(), 'pr merge 2 --merge')
     has(r.stdout, 'QUEUE-CONFLICT 1\nQUEUE-HELD 1\n')
-    const events = readEvents(c.tmp, 'run_q').events
+    const events = readFileSync(join(c.tmp, 'notices.jsonl'), 'utf8').trim().split('\n').map(line => { const args = JSON.parse(line); assert.equal(args[args.indexOf('--to') + 1], 'run:run_q'); return { ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] } })
     assert.deepEqual(
       events.map((e) => [e.kind, e.pr, e.text]),
       [['QUEUE-CONFLICT', 1, '1 update-branch 가 충돌로 실패했다']],

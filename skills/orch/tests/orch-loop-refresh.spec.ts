@@ -22,7 +22,10 @@ const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
 const st = JSON.parse(fs.readFileSync(process.env.FAKE_DIR + '/orca.json', 'utf8'))
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
+const argv = process.argv.slice(2)
+fs.appendFileSync(process.env.FAKE_DIR + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const sub = process.argv[3]
+if (sub === 'send') { reply({message:{id:'notice'}}); process.exit(0) }
 if (sub === 'worker-list') reply({ workers: st.workers || [], page: {} })
 else if (sub === 'check' || sub === 'inbox') reply({ messages: [] })
 else reply({})
@@ -223,11 +226,10 @@ function records(): Record<string, Json> {
 }
 
 function events(): Json[] {
-  const dir = orchFile('state', 'loop-events')
-  if (!existsSync(dir)) return []
-  return readdirSync(dir)
-    .filter((name) => name.endsWith('.jsonl'))
-    .flatMap((name) => readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as Json))
+  return (existsSync(join(tmp, 'orca-calls.jsonl')) ? readFileSync(join(tmp, 'orca-calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : []).flatMap((args: any) => {
+    if (args[1] !== 'send' || !args.includes('--payload')) return []
+    return [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }]
+  })
 }
 
 describe('update-branch', () => {

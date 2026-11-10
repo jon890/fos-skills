@@ -393,7 +393,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     const spec = readLaunch(repo, dispatchId)?.spec ?? null
     if (!spec) emit('RESUME-WARN spec 기록 없음')
     // 실행 설정을 옮겨 적어 이 dispatch 가 다시 멈췄을 때도 resume 할 수 있게 한다
-    recordLaunch(repo, { dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec,
+    recordLaunch(repo, { ...(readLaunch(repo, dispatchId)?.completion === 'none' ? { completion: 'none' as const } : {}), dispatch: newDispatch, task: target.task, terminal: fresh, worktree: target.worktree, branch, run: target.run, spec,
       agent: target.agent, model: target.model, effort: target.effort })
   } catch (error) {
     emit(`RESUME-WARN launched-workers 기록을 쓰지 못했다: ${(error as Error).message}`)

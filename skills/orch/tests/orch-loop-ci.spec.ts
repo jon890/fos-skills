@@ -30,6 +30,7 @@ fs.appendFileSync(dir + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const st = JSON.parse(fs.readFileSync(dir + '/orca.json', 'utf8'))
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const sub = argv[1]
+if (sub === 'send') { reply({ message: { id: 'notice' } }); process.exit(0) }
 const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
 if (sub === 'worker-list') reply({ workers: (st.workers_by_run && run ? st.workers_by_run[run] : st.workers) || [], page: {} })
 else if (sub === 'check' || sub === 'inbox') reply({ messages: [] })
@@ -184,9 +185,10 @@ function jsonl(file: string): Json[] {
 
 // 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
-  const dir = orchFile('state', 'loop-events')
-  const perRun = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().flatMap((name) => jsonl(join(dir, name))) : []
-  return [...jsonl(orchFile('state', 'loop-events.jsonl')), ...perRun]
+  return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => {
+    if (args[1] !== 'send' || !args.includes('--payload')) return []
+    return [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }]
+  })
 }
 
 function received(event: string): Json[] {
@@ -232,7 +234,7 @@ describe('여러 Run', () => {
     const [argv] = sends()
     assert.deepEqual(argv.slice(0, 2), ['--dispatch', 'd1'])
     assert.deepEqual(argv.slice(4), ['--run', 'B', '--no-reply'])
-    assert.deepEqual(jsonl(orchFile('state', 'loop-events', 'B.jsonl')).map((line) => line.text), ['test: 보냈다 d1'])
+    assert.deepEqual(events().map((line) => line.text), ['test: 보냈다 d1'])
     assert.equal(existsSync(orchFile('state', 'loop-events', 'r.jsonl')), false)
     assert.equal(received('ci-failed')[0].run, 'B')
   })

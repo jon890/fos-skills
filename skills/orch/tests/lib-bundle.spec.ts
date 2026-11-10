@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { COMMANDS } from '../scripts/lib/commands.ts'
 import { staleBundleWarning } from '../scripts/lib/bundle.ts'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
@@ -79,7 +80,9 @@ test('모든 직접 실행 스크립트가 공용 경고 모듈에 닿는다', (
   const names = groups.flatMap((group) => readdirSync(join(SCRIPTS, group)).filter((name) => name.endsWith('.ts')).map((name) => `${group}/${name}`))
   assert.ok(names.length > 0)
   for (const name of Object.keys(exempt)) assert.ok(names.includes(name), `예외 목록의 ${name} 이 없다`)
-  for (const name of names.filter((name) => !(name in exempt))) assert.ok(reaches(join(SCRIPTS, name)), name)
+  // 폐기 안내 껍데기는 RETIRED 한 줄만 내야 하므로 설치 경고를 더하지 않는다. retired.spec.ts 가 무조회를 확인한다.
+  const retired = new Set(COMMANDS.filter(c => c.retired && !COMMANDS.some(other => other.script === c.script && !other.retired)).map(c => c.script))
+  for (const name of names.filter((name) => !(name in exempt) && !retired.has(name))) assert.ok(reaches(join(SCRIPTS, name)), name)
 })
 
 test('새 skills 배치의 직접 호출도 플러그인 루트와 현재 진입점을 대조한다', () => {

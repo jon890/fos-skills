@@ -39,7 +39,7 @@ function bundle(name: string, opts: { base?: string; lib?: boolean } = {}): stri
   for (const fake of ['wait/wait-important.ts', 'loop/orch-loop.ts']) put(fake, echo)
   writeFileSync(join(scripts, 'sleeper.ts'), "console.log('ready')\nsetInterval(() => {}, 1000)\n")
   const signal = "console.log(process.argv.slice(2).join(' '), 'out=' + (process.env.ORCH_OUTPUT ?? ''))\n"
-  for (const fake of ['wait/user-active.ts', 'slot/heavy-slot.ts']) put(fake, signal)
+  for (const fake of ['wait/user-active.ts', 'worker/worker-ask.ts', 'slot/heavy-slot.ts']) put(fake, signal)
   if (opts.lib !== false) {
     mkdirSync(join(root, 'skills', 'orch', 'bin'), { recursive: true })
     copyFileSync(ENTRY, join(root, 'skills', 'orch', 'bin', 'orch.ts'))
@@ -245,7 +245,7 @@ describe('사용법 오류', () => {
   test('없는 이름은 쓸 수 있는 이름을 알리고 2 다', () => {
     const r = orch(['nope'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 2)
-    assert.match(r.stderr, /쓸 수 있는 이름: heavy-slot hello orch-loop sleeper user-active wait-important$/m)
+    assert.match(r.stderr, /쓸 수 있는 이름: heavy-slot hello orch-loop sleeper user-active wait-important worker-ask$/m)
   })
 
   test('경로 구분자나 .. 이 든 이름은 거부한다', () => {
@@ -286,10 +286,10 @@ describe('새 꼴과 옛 꼴', () => {
   test('옛 꼴은 같은 stdout 과 종료 코드를 내고 stderr 에 새 꼴을 한 줄 안내한다', () => {
     const fresh = orch(['wait', '--ack', 'd1', '--run', 'R'], { CLAUDE_CONFIG_DIR: config, HELLO_EXIT: '5' })
     const old = orch(['wait-important', '--ack', 'd1', '--run', 'R'], { CLAUDE_CONFIG_DIR: config, HELLO_EXIT: '5' })
-    assert.equal(fresh.code, 5)
+    assert.equal(fresh.code, 2)
     assert.equal(old.code, fresh.code)
     assert.equal(old.stdout, fresh.stdout)
-    assert.equal(old.stderr.split('\n').filter((l) => l === 'orch: 새 꼴: orch wait').length, 1)
+    assert.match(old.stderr, /^RETIRED/)
     const loop = orch(['orch-loop.ts', '--start'], { CLAUDE_CONFIG_DIR: config })
     assert.match(loop.stderr, /^orch: 새 꼴: orch loop start$/m)
   })
@@ -305,10 +305,10 @@ describe('새 꼴과 옛 꼴', () => {
     const r = orch(['wait', 'ack-lost', '--run', 'R'], { CLAUDE_CONFIG_DIR: config })
     assert.equal(r.code, 2)
     assert.equal(r.stdout, '')
-    assert.match(r.stderr, /dispatch/)
+    assert.match(r.stderr, /RETIRED/)
     const fine = orch(['wait', 'ack-lost', 'd1', '--run', 'R'], { CLAUDE_CONFIG_DIR: config })
-    assert.equal(fine.code, 0, fine.stderr)
-    assert.equal(fine.stdout.trim(), 'b --ack-lost d1 --run R hop=')
+    assert.equal(fine.code, 2, fine.stderr)
+    assert.equal(fine.stdout, '')
   })
 
   test('묶음의 --help 는 동작 목록을 낸다', () => {
@@ -430,14 +430,14 @@ describe('짧은 출력 신호', () => {
   })
 
   test('새 꼴과 옛 꼴 모두 ORCH_OUTPUT=short 를 넘기고 --full 이면 떼고 full 을 넘긴다', () => {
-    assert.equal(orch(['wait', 'user-active', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
-    assert.equal(orch(['user-active', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
-    assert.equal(orch(['wait', 'user-active', '--full', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=full')
-    assert.equal(orch(['user-active.ts', '--terminal', 't', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=full')
+    assert.equal(orch(['worker', 'ask', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
+    assert.equal(orch(['worker-ask', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=short')
+    assert.equal(orch(['worker', 'ask', '--full', '--terminal', 't'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=full')
+    assert.equal(orch(['worker-ask.ts', '--terminal', 't', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '--terminal t out=full')
   })
 
   test('첫 -- 뒤의 --full 은 떼지 않는다', () => {
-    assert.equal(orch(['wait', 'user-active', '--', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '-- --full out=short')
+    assert.equal(orch(['worker', 'ask', '--', '--full'], { CLAUDE_CONFIG_DIR: config }).stdout.trim(), '-- --full out=short')
   })
 
   test('감싼 명령에는 신호를 넘기지 않고 --full 도 떼지 않는다', () => {
@@ -447,7 +447,7 @@ describe('짧은 출력 신호', () => {
 
   test('부모 환경의 ORCH_OUTPUT 은 --full 호출과 감싼 명령으로 새지 않는다', () => {
     const extra = { CLAUDE_CONFIG_DIR: config, ORCH_OUTPUT: 'short' }
-    assert.equal(orch(['wait', 'user-active', '--full'], extra).stdout.trim(), 'out=full')
+    assert.equal(orch(['worker', 'ask', '--full'], extra).stdout.trim(), 'out=full')
     assert.equal(orch(['slot', 'heavy', '--', 'x'], extra).stdout.trim(), '-- x out=')
   })
 

@@ -22,6 +22,7 @@ beforeEach(() => {
   const orca = join(repo, 'orca')
   writeFileSync(orca, `#!${process.execPath}
 const args = process.argv.slice(2)
+if (args.includes('send')) { require('node:fs').appendFileSync(process.env.RECEIVED, JSON.stringify(args)+'\\n'); console.log(JSON.stringify({ok:true,result:{message:{id:'notice'}}})); process.exit(0) }
 const result = args.includes('worker-list') ? { workers: ${JSON.stringify(active)}, page: {} }
   : args.includes('run-show') ? { run: { coordinator_handle: 'term_stale' } } : {}
 console.log(JSON.stringify({ ok: true, result }))
@@ -79,9 +80,7 @@ test('재전송 질문과 미완료 보드 줄은 한 번 알리고 새 결정�
   await notifyDecisions(repo, 'r', [], false)
   await notifyDecisions(repo, 'r', [question()], false)
   assert.equal(received().length, 2)
-  const events = readFileSync(join(repo, '.orch', 'state', 'loop-events', 'r.jsonl'), 'utf8').trim().split('\n')
-  assert.equal(events.length, 2)
-  assert.equal(JSON.parse(events[0]).kind, 'DECISION-PENDING')
+  assert.equal(existsSync(join(repo, '.orch', 'state', 'loop-events')), false)
 })
 
 test('핸들러 실패 뒤에는 기다렸다 다시 보내고 알림 파일에는 같은 결정을 쌓지 않는다', async () => {
@@ -96,8 +95,7 @@ test('핸들러 실패 뒤에는 기다렸다 다시 보내고 알림 파일에�
   await notifyDecisions(repo, 'r', [question()], false, t + 600_000)
   await notifyDecisions(repo, 'r', [question()], false, t + 700_000)
   assert.equal(received().length, 2)
-  const events = readFileSync(join(repo, '.orch', 'state', 'loop-events', 'r.jsonl'), 'utf8').trim().split('\n')
-  assert.equal(events.length, 1)
+  assert.equal(existsSync(join(repo, '.orch', 'state', 'loop-events')), false)
 })
 
 test('거듭 실패하면 기다리는 시간이 두 배씩 늘고 새 결정이 생기면 바로 보낸다', async () => {
@@ -127,7 +125,7 @@ test('보드 decide 항목의 참고: 줄은 결정으로 세지 않고, 참고 
   assert.deepEqual(decisionEntries([], items, []).map((e) => e.item), [{ id: 'mixed', text: '정할 것' }, { id: 'notes', text: '제목 결정' }])
 })
 
-test('코디네이터가 사용자와 대화 중이면 전달을 미루고 대화가 끝나면 보낸다', async () => {
+test('코디네이터가 사용자와 대화 중이어도 즉시 전달한다', async () => {
   hook()
   process.env.ORCH_USER_ACTIVE_SEC = '600'
   registerRun(repo, 'r', null, false, 'term_coordinator')
@@ -135,9 +133,7 @@ test('코디네이터가 사용자와 대화 중이면 전달을 미루고 대�
   mkdirSync(join(repo, 'machine', 'user-input'), { recursive: true })
   writeFileSync(join(repo, 'machine', 'user-input', 'term_coordinator.json'), JSON.stringify({ at: t }))
   await notifyDecisions(repo, 'r', [question()], false, t + 60_000)
-  assert.equal(received().length, 0)
-  // 알림 파일 줄은 미루지 않는다
-  assert.equal(readFileSync(join(repo, '.orch', 'state', 'loop-events', 'r.jsonl'), 'utf8').trim().split('\n').length, 1)
+  assert.equal(received().length, 1)
   await notifyDecisions(repo, 'r', [question()], false, t + 600_000)
   assert.equal(received().length, 1)
 })
@@ -163,31 +159,19 @@ test('새 코디네이터로 등록하면 남아 있는 결정을 새 세션에 
 
 test('저장소 핸들러가 없으면 기본 핸들러가 그 Run 의 코디네이터를 깨운다', async () => {
   assert.match(handlerFile('decision-pending', repo)!, /scripts\/handlers\/decision-pending.ts$/)
-  const nudge = join(repo, 'nudge.ts')
-  writeFileSync(nudge, `import { writeFileSync } from 'node:fs'; writeFileSync(process.env.RECEIVED, JSON.stringify(process.argv.slice(2)))`)
-  process.env.NUDGE_WORKER = nudge
   registerRun(repo, 'r', null, false, 'term_coordinator')
   const result = await fire('decision-pending', { questions: [{ id: 'q', dispatch: 'd' }], items: [] }, { repo, run: 'r', base: 'main' })
   assert.equal(result.result, 'pass', result.reason)
   const args = JSON.parse(readFileSync(process.env.RECEIVED!, 'utf8'))
-  assert.equal(args[1], 'term_coordinator')
-  assert.match(args[3], /정할 것 묻기: Run r/)
-  assert.match(args[3], /questions=q@dispatch:d/)
+  assert.equal(args[args.indexOf('--to') + 1], 'run:r')
+  assert.match(args[args.indexOf('--body') + 1], /questions=q@dispatch:d/)
   hook()
   assert.equal(handlerFile('decision-pending', repo), join(repo, '.orch', 'hooks', 'decision-pending.ts'))
 })
 
-test('기본 핸들러는 오래된 run-show를 읽지 않고 미등록 Run에는 재등록을 안내한다', async () => {
+test('기본 핸들러는 터미널 미등록 Run 에도 메시지를 보낸다', async () => {
   const result = await fire('decision-pending', { questions: [], items: [] }, { repo, run: 'r', base: 'main' })
-  assert.equal(result.result, 'fail')
-  assert.equal(result.reason, '종료 코드 1')
-})
-
-test('결정 알림에는 질문 id 와 dispatch 를 남긴다', async () => {
-  hook()
-  await notifyDecisions(repo, 'r', [question()], false)
-  const event = JSON.parse(readFileSync(join(repo, '.orch', 'state', 'loop-events', 'r.jsonl'), 'utf8').trim())
-  assert.match(event.text, /질문 1, 보드 결정 0.*questions=q@dispatch:d/)
+  assert.equal(result.result, 'pass', result.reason)
 })
 
 test('질문 위치는 앞 5개와 나머지 수를 내고 dispatch 가 없으면 터미널을 낸다', () => {

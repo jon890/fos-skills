@@ -40,6 +40,8 @@ describe('스크립트 폴더', () => {
   test('묶음 폴더의 .ts 는 명령 표의 스크립트이거나 그 스크립트가 부르는 보조 스크립트다', () => {
     // 명령 표에 넣지 않는 보조 스크립트와 그 이유
     const helpers: Record<string, string> = {
+      'cleanup/legacy-notices.ts': 'cleanup-sweep 가 옛 알림을 이전할 때 부르는 단계다. 직접 실행하지 않는다',
+      'loop/completion-watch.ts': 'orch-loop 가 완료 보고를 확인할 때 부르는 단계다. 직접 실행하지 않는다',
       'worker/resume-exec.ts': 'worker/resume-worker.ts 가 연 새 터미널의 셸이 부르는 실행기다. 코디네이터가 직접 부르지 않는다',
     }
     const found = GROUPS.flatMap((g) => readdirSync(join(SCRIPTS, g)).filter((n) => n.endsWith('.ts')).map((n) => `${g}/${n}`)).sort()

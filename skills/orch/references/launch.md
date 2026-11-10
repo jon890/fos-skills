@@ -208,7 +208,7 @@ orch worker resume --dispatch "$DISPATCH_ID"
 같은 제공자로 이어 갈 수 있으면 먼저 위 「한도나 재부팅으로 멈춘 worker 이어 가기」 의 `orch worker resume` 을 쓴다. 이 절은 resume 이 실패했거나 제공자를 바꿀 때다.
 
 기기가 재시작되어 worker 터미널이 사라지면 `worker-show` 가 `[abandoned] stage=terminal_missing` 으로 보인다.
-`wait-important` 는 이때 `WORKER_LOST <dispatch> stage=terminal_missing` 줄을 내고 종료 코드 5 로 끝난다.
+상주 루프는 이때 WORKER-LOST 메시지를 Run 에 보낸다.
 같은 dispatch 는 다음 대기에서 다시 알리지 않으므로 이 줄을 받은 자리에서 처리한다.
 다시 띄우지 않기로 했으면 task 를 `task-update --status failed --result cancelled` 로 취소해 기록을 남긴다.
 `$DISPATCH_ID` 는 그 줄의 dispatch, `$TASK_ID` 는 `worker-show` 의 `dispatch.taskId`, `$WORKTREE` 는 처음 띄운 워크트리 경로다.
@@ -241,3 +241,5 @@ orca orchestration worker-release --dispatch "$OLD_DISPATCH_ID"
 ```
 
 `$OLD_DISPATCH_ID` 는 끊긴 dispatch 다. `terminal close` 로 넘어가면 `worker-show` 의 `worker.agentTerminalHandle` 이 새로 띄운 worker 의 터미널과 다른지 확인한 뒤 닫는다.
+
+PR 없는 조사·정리 작업은 `orch worker launch --no-pr` 로 띄워 완료 근거 경고에서 제외한다. 이 값은 재시도·resume 기록에도 이어진다.

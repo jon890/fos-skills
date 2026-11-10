@@ -29,8 +29,10 @@ const WAIT_MS = 20_000
 // 질문 조회와 worker-list 에 빈 답을 내는 가짜 orca. 확장자 없는 실행 파일이라 타입 문법을 쓰지 않는다
 const FAKE_ORCA = `#!/usr/bin/env node
 const argv = process.argv.slice(2)
+require('node:fs').appendFileSync(process.env.FAKE_DIR + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
-if (argv[1] === 'worker-list') reply({ workers: [], page: {} })
+if (argv[1] === 'send') reply({ message: { id: 'notice' } })
+else if (argv[1] === 'worker-list') reply({ workers: [], page: {} })
 else if (argv[1] === 'check' || argv[1] === 'inbox') reply({ messages: [] })
 else reply({})
 `
@@ -219,7 +221,7 @@ function jsonl(file: string): Json[] {
 }
 
 function events(kind?: string): Json[] {
-  const rows = jsonl(orchFile('state', 'loop-events', `${RUN}.jsonl`))
+  const rows = jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args.includes('--payload') ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
   return kind ? rows.filter((row) => row.kind === kind) : rows
 }
 

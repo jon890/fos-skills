@@ -456,7 +456,7 @@ describe('선택 정책과 영구 이력', () => {
 
   test('같은 Task 재시도는 이력의 워크트리를 쓰고 새 Task 나 배정을 만들지 않는다', () => {
     select()
-    recordHistory(tmp, prior())
+    recordHistory(tmp, prior({ completion: 'none' }))
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
     assert.equal(r.code, 0, both(r))
@@ -464,6 +464,7 @@ describe('선택 정책과 영구 이력', () => {
     assert.match(call, /--task task_1 --retry-of ctx_old/)
     assert.doesNotMatch(call, /--spec/)
     assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).retry_of, 'ctx_old')
+    assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).completion, 'none')
     assert.deepEqual(lines('make'), [])
   })
 
@@ -756,6 +757,16 @@ describe('띄우기', () => {
 
   describe('띄운 worker 의 기록', () => {
     const recordOf = (dispatch: string) => join(worktree, '.orch/state/launched-workers', `${dispatch}.json`)
+
+    test('--no-pr 는 정리 기록과 영구 이력에 PR 없는 작업을 남긴다', () => {
+      state({ next_ids: ['ctx_1'], dispatches: { ctx_1: { ...shown('input_accepted'), worker: { agentTerminalHandle: 'term_w' } } } })
+      const r = launch(['--spec', spec, '--worktree', worktree, '--run', 'run_a', '--no-pr', '--watch', '0', '--', ...CLAUDE])
+      assert.equal(r.code, 0, r.stderr + r.stdout)
+      const entry = JSON.parse(readFileSync(join(worktree, '.orch', 'state', 'launched-workers', 'ctx_1.json'), 'utf8'))
+      assert.equal(entry.completion, 'none')
+      const history = readFileSync(join(worktree, '.orch', 'state', 'launch-history.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+      assert.equal(history.at(-1).completion, 'none')
+    })
 
     test('LAUNCHED 뒤 dispatch, Task, 터미널, 워크트리, 브랜치, 지시서를 상태 폴더에 남긴다', () => {
       const init = spawnSync('git', ['init', '-q', '-b', 'feature/record', worktree], { env, encoding: 'utf8' })

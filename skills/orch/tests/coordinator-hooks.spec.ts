@@ -595,34 +595,6 @@ describe('require-spec-line', () => {
   })
 })
 
-describe('record-user-input', () => {
-  const HOOK = 'record-user-input.ts'
-  const input = (prompt: string) => JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt })
-  const dir = () => mkdtempSync(join(root, 'user-input-'))
-
-  test('Orca 터미널의 사용자 입력 시각을 그 터미널 파일에 남기고 출력 없이 0 으로 끝난다', () => {
-    const at = dir()
-    const r = runHook(HOOK, input('이거 왜 자꾸 날라오지?'), { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: 'term_coord-1' })
-    assert.deepEqual({ code: r.code, stdout: r.stdout }, { code: 0, stdout: '' })
-    const saved = JSON.parse(readFileSync(join(at, 'user-input', 'term_coord-1.json'), 'utf8'))
-    assert.ok(Math.abs(Date.now() - saved.at) < 60_000, JSON.stringify(saved))
-  })
-
-  test('orch 가 넣은 자동 입력, Orca 밖의 세션, 읽지 못한 입력은 남기지 않는다', () => {
-    const at = dir()
-    for (const prompt of ['대기 없음: Run r 에 살아 있는 dispatch 2 개가 있는데', '정할 것 묻기: Run r 에 사용자 결정이 남아 있다.', 'You have 3 orchestration messages']) {
-      const r = runHook(HOOK, input(prompt), { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: 'term_coord-1' })
-      assert.deepEqual({ code: r.code, stdout: r.stdout }, { code: 0, stdout: '' }, prompt)
-    }
-    // 이 테스트를 돌리는 세션의 ORCA_TERMINAL_HANDLE 을 비워 Orca 밖의 세션으로 만든다
-    const env: Record<string, string> = { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: '' }
-    const r = runHook(HOOK, input('사용자 말'), env)
-    assert.equal(r.code, 0)
-    assert.equal(runHook(HOOK, 'not json', { ORCH_MACHINE_DIR: at, ORCA_TERMINAL_HANDLE: 'term_coord-1' }).code, 0)
-    assert.ok(!existsSync(join(at, 'user-input')) || readdirSync(join(at, 'user-input')).length === 0)
-  })
-})
-
 describe('hooks.json', () => {
   test('모든 hook 을 node 로 부르고 timeout 은 10초다', () => {
     const config = JSON.parse(readFileSync(join(HOOKS, 'hooks.json'), 'utf8'))
