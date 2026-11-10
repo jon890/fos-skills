@@ -23,7 +23,8 @@
 ## 의도 메모
 
 - 프로세스가 살아 있는지로 낡은 잠금을 가리지 않는다. 잠금 파일의 나이(마지막 수정 시각)만 본다(스펙 DECISION16).
-- 낡은 잠금을 지우고 다시 만들지 않는다. 둘이 함께 지우면 둘 다 새로 만들어 함께 쥔다. 자기 표지를 쓴 임시 파일을 잠금 파일 이름으로 바꿔 덮고, 잠깐 뒤 다시 읽어 자기 표지일 때만 잡은 것으로 본다.
+- 낡은 잠금을 지우고 다시 만들지 않는다. 둘이 함께 지우면 둘 다 새로 만들어 함께 쥔다. 「다시 확인한 뒤 이름 바꾸기로 덮기」 도 쓰지 않는다. 확인과 덮어쓰기 사이에 한쪽이 멈추면 둘 다 들어간다(PR #430 리뷰의 재현). 넘겨받을 권리는 그 낡은 잠금에 묶인 권리 파일을 「없을 때만 만들기」 로 얻은 프로세스 하나에게만 준다.
+- 넘겨받다 죽어 남은 권리 파일은 저절로 풀지 않는다. 풀려면 같은 경쟁이 한 단계 더 생긴다. 지울 파일을 알리고 사람이 지운다.
 - 읽는 동작은 잠그지 않는다. 쓰기가 이름 바꾸기로 끝나 읽는 쪽은 늘 온전한 파일을 본다.
 - 잠금 코드는 보드 형식을 모르는 모듈로 뗀다. 뒤에 orch 의 다른 상태 파일이 같은 함수를 쓴다.
 
@@ -37,21 +38,31 @@ node 내장 모듈만 import 한다. stdout, stderr 에 쓰지 않는다.
 
 ```ts
 export class LockTimeout extends Error {}
-export type LockOptions = { waitMs?: number; staleMs?: number; pollMs?: number; settleMs?: number }
+export type LockOptions = { waitMs?: number; staleMs?: number; pollMs?: number }
 export type Lock = { file: string; held(): boolean }
 export function withFileLock<T>(target: string, work: (lock: Lock) => T, opts?: LockOptions): T
+
+// 넘겨받기의 단계. withFileLock 이 쓰고, 테스트가 두 경쟁자의 순서를 끼워 실행하려고 내보낸다
+export type Seen = { key: string; stale: boolean; text: string; mtimeMs: number }
+export function peekLock(lock: string, staleMs: number): Seen | null          // 잠금 파일이 없으면 null
+export function claimFile(lock: string, key: string): string                   // `${lock}.claim.${key}`
+export function claimStale(lock: string, seen: Seen, token: string): boolean   // 권리 파일을 없을 때만 만든다
+export function replaceStale(lock: string, seen: Seen, token: string): boolean // 다시 확인하고 덮는다
 ```
 
-- 기본값: `waitMs` 5000, `staleMs` 30000, `pollMs` 50, `settleMs` 50.
+- 기본값: `waitMs` 5000, `staleMs` 30000, `pollMs` 50.
 - 잠금 파일은 `` `${target}.lock` `` 이다. 폴더는 부르는 쪽이 먼저 만든다. 그래도 `openSync` 가 `ENOENT` 면(다른 프로세스가 빈 폴더를 막 지웠다) `mkdirSync(dirname(lock), { recursive: true })` 로 다시 만들고 쉬지 않고 1 로 돌아간다.
-- 표지는 `` `${process.pid} ${randomBytes(8).toString('hex')}` `` 다.
+- 표지는 `` `${process.pid}-${randomBytes(8).toString('hex')}` `` 다.
+- `peekLock` 의 `key` 는 잠금 파일의 내용과 `mtimeMs` 를 `` `${text}\0${mtimeMs}` `` 로 이어 sha1 로 줄인 16진 글의 앞 12 글자다. 낡은 잠금 하나마다 다르다. `stale` 은 `Date.now() - mtimeMs > staleMs` 다.
+- `claimStale` 은 `openSync(claimFile(lock, seen.key), 'wx')` 로 권리 파일을 만들고 표지를 쓴다. `EEXIST` 면 `false` 다. 이 한 번의 호출이 넘겨받을 프로세스를 정한다. 그 앞에 다른 확인을 두지 않는다.
+- `replaceStale` 은 권리를 얻은 뒤에만 부른다. `peekLock` 을 다시 불러 `key` 가 `seen.key` 와 같으면 `` `${lock}.${process.pid}.tmp` `` 에 표지를 쓰고 `renameSync` 로 잠금 파일을 덮은 뒤 `true` 다. 다르거나 잠금 파일이 없으면 권리 파일을 지우고 `false` 다.
 - 잡기 순서. 시작 시각에서 `waitMs` 가 지날 때까지 되풀이한다. `waitMs` 가 0 이어도 적어도 한 번은 1 과 2 를 해 본다(기다리는 한도는 3 에서 쉬기 전에 본다).
   1. `openSync(lock, 'wx')` 로 만들고 표지를 쓴 뒤 닫는다. 성공하면 잡은 것이다.
-  2. `EEXIST` 면 잠금 파일의 내용과 `statSync(lock).mtimeMs` 를 읽는다. 지금보다 `staleMs` 넘게 오래됐으면 넘겨받기를 한다: `` `${lock}.${process.pid}.tmp` `` 에 자기 표지를 쓰고, 잠금 파일을 한 번 더 읽어 내용과 `mtimeMs` 가 방금 낡았다고 본 값 그대로일 때만 `renameSync` 로 잠금 파일을 덮는다(그 사이 다른 프로세스가 새로 잡았으면 덮지 않고 임시 파일을 지운 뒤 3 으로 간다). 덮은 뒤 `settleMs` 를 쉬고 잠금 파일을 다시 읽어 자기 표지면 잡은 것이다. 아니면 3 으로 간다.
+  2. `EEXIST` 면 `peekLock` 으로 본다. `stale` 이면 `claimStale` 을 부르고, `true` 면 `replaceStale` 을 부른다. `replaceStale` 이 `true` 면 잡은 것이고 넘겨받은 권리 파일의 경로를 기억한다. 어느 쪽이든 `false` 면 3 으로 간다.
   3. `waitMs` 가 지났으면 4 로 간다. 아니면 `pollMs` 를 쉬고 1 로 돌아간다. `stat` 이나 읽기가 `ENOENT` 로 실패하면(그 사이 잠금이 풀렸다) 쉬지 않고 1 로 돌아간다.
-  4. `waitMs` 가 지나면 `LockTimeout` 을 던진다. 메시지에 잠금 파일 경로를 넣는다. `work` 는 부르지 않는다.
+  4. `waitMs` 가 지나면 `LockTimeout` 을 던진다. 메시지에 잠금 파일 경로를 넣는다. `work` 는 부르지 않는다. 마지막으로 본 잠금이 낡았는데 그 권리 파일이 있고 권리 파일의 `mtimeMs` 도 `staleMs` 보다 오래됐으면(넘겨받던 프로세스가 죽었다) 메시지에 `` `넘겨받기가 끝나지 않은 채 남아 있다. 다른 쓰기가 돌고 있지 않으면 ${lock} 과 ${권리 파일} 을 지운다` `` 를 더한다. 저절로 지우지 않는다.
 - `held()` 는 잠금 파일을 읽어 자기 표지와 같으면 `true` 다. 읽지 못하면 `false` 다.
-- `work` 가 값을 돌려주든 던지든 `finally` 에서 `held()` 가 참일 때만 잠금 파일을 지운다.
+- `work` 가 값을 돌려주든 던지든 `finally` 에서 `held()` 가 참일 때만 잠금 파일을 지운다. 넘겨받아 잡았으면 기억해 둔 권리 파일도 지운다(잠금 파일보다 먼저 지운다).
 
 ### 2. `extensions/work-board/bin/board.ts` 의 `main` 이 쓰는 동작을 잠금 안에서 한다
 
@@ -91,12 +102,16 @@ export function item(file: string, id: string): Record<string, unknown>
 
 ### 4. `extensions/work-board/tests/file-lock.spec.ts` 를 새로 만든다
 
-`withFileLock` 을 import 해 임시 폴더에서 본다. 시간은 옵션으로 줄인다(`waitMs: 200`, `pollMs: 10`, `settleMs: 10`).
+`withFileLock` 과 넘겨받기 단계 함수를 import 해 임시 폴더에서 본다. 시간은 옵션으로 줄인다(`waitMs: 200`, `pollMs: 10`).
 
 - 정상: `work` 가 도는 동안 잠금 파일이 있고 `lock.held()` 가 참이다. 끝나면 잠금 파일이 없고 `work` 의 반환값을 돌려준다.
 - 기다림 실패: 테스트가 미리 만든 새 잠금 파일(다른 표지)이 있으면 `LockTimeout` 을 던지고 `work` 를 부르지 않는다. 미리 만든 잠금 파일은 그대로 남는다.
 - 낡은 잠금: 미리 만든 잠금 파일의 시각을 `utimesSync` 로 40초 전으로 옮기면(`staleMs` 기본값) `work` 가 돌고 끝난 뒤 잠금 파일이 없다.
 - 낡지 않은 잠금은 넘겨받지 않는다: 시각을 10초 전으로 옮긴 잠금 파일은 `LockTimeout` 이고 그 파일의 내용이 그대로다.
+- 넘겨받기 경쟁(PR #430 리뷰의 순서): 낡은 잠금을 두고 A 와 B 가 각각 `peekLock` 을 부른다(둘 다 `stale` 이고 `key` 가 같다). A 가 `claimStale`, `replaceStale` 을 마친다(둘 다 `true`). 그 뒤 B 가 옛 `seen` 으로 `claimStale` 을 부르면 `false` 이고 잠금 파일의 내용이 A 의 표지 그대로다. B 가 `peekLock` 을 다시 부르면 `stale` 이 거짓이다.
+- 늦게 온 권리: 위에 이어 A 가 권리 파일과 잠금 파일을 지우고(놓았다) 테스트가 다른 표지 C 로 잠금 파일을 새로 만든다. B 가 옛 `seen` 으로 `claimStale` 을 부르면 `true` 이지만 `replaceStale` 은 `false` 이고, 잠금 파일의 내용이 C 그대로이고 B 의 권리 파일이 남지 않는다.
+- 넘겨받고 놓기: 낡은 잠금에서 `withFileLock` 이 끝나면 잠금 파일과 `.claim.` 이 든 파일이 그 폴더에 남지 않는다.
+- 죽은 넘겨받기: 낡은 잠금과, 그 `key` 의 권리 파일(시각을 40초 전으로 옮긴다)을 미리 두면 `LockTimeout` 이고 메시지에 권리 파일 경로와 「지운다」 가 있다. 두 파일은 그대로 남는다.
 - 예외: `work` 가 던지면 같은 예외가 나오고 잠금 파일이 없다.
 - 넘겨받힘: `work` 안에서 잠금 파일을 다른 글로 덮어쓰면 `lock.held()` 가 거짓이고, 끝난 뒤 그 잠금 파일이 남아 있다(남의 잠금을 지우지 않는다).
 
@@ -108,7 +123,8 @@ export function item(file: string, id: string): Record<string, unknown>
 - 잠금을 잃으면 쓰지 않는다: `saveBoard` 를 import 해 `{ held: () => false }` 로 부르면 `false` 를 돌려주고, 보드 파일의 바이트가 그대로이고, 그 폴더에 `.tmp` 로 끝나는 파일이 남지 않는다. `{ held: () => true }` 로 부르면 `true` 이고 보드 파일이 `JSON.stringify(값, null, 1)` 과 같다.
 - 함께 쓰기: 빈 보드에서 `runAsync` 12개가 서로 다른 id 로 `set <id> wait` 를 함께 부른다. 모두 종료 코드 0 이고 보드에 12개 항목이 모두 있다. 끝난 뒤 `<보드 파일>.lock` 이 없다.
 - 기다림 실패: 새 잠금 파일을 미리 두고 `BOARD_LOCK_WAIT_MS=200` 으로 `set a wait` 를 부르면 종료 코드 1 이고 stderr 에 「잠금」 과 잠금 파일 경로가 있다. 보드 파일의 바이트가 부르기 전과 같다.
-- 낡은 잠금: 잠금 파일의 시각을 40초 전으로 옮긴 뒤 `set a wait` 가 종료 코드 0 이고 항목이 생기고 잠금 파일이 없다.
+- 낡은 잠금: 잠금 파일의 시각을 40초 전으로 옮긴 뒤 `set a wait` 가 종료 코드 0 이고 항목이 생기고 잠금 파일과 권리 파일(`.claim.` 이 든 파일)이 없다.
+- 낡은 잠금을 함께 넘겨받기: 시각을 40초 전으로 옮긴 잠금 파일을 두고 `runAsync` 8개가 서로 다른 id 로 `set <id> wait` 를 함께 부른다. 모두 종료 코드 0 이고 8개 항목이 모두 있다.
 - 읽기는 잠그지 않는다: 새 잠금 파일이 있어도 `list` 와 `steps <id>` 가 종료 코드 0 이다.
 - 거절 뒤 정리: 항목이 있는 보드에 `step a 9` 를 부르면 종료 코드 1 이고 잠금 파일이 없다. 없는 폴더의 보드(`<임시>/none/board.json`)에 `step a 1` 을 부르면 종료 코드 1 이고 `<임시>/none` 폴더가 없다. 두 단계가 없는 보드(`<임시>/x/y/board.json`)도 같은 호출 뒤 `<임시>/x` 가 없다.
 - 기다리는 한도 0: 잠금 파일이 없을 때 `BOARD_LOCK_WAIT_MS=0` 으로 `set a wait` 를 부르면 종료 코드 0 이다(한 번은 잡아 본다).

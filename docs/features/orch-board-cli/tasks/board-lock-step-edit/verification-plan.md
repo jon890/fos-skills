@@ -33,6 +33,8 @@ b() { node --disable-warning=ExperimentalWarning "$BOARD" "$@"; }
 | REQ11 | 빈 보드 | 서로 다른 id 로 `b set <id> wait` 12개를 함께 띄운다(`&` 와 `wait`) | 모두 종료 코드 0, 보드에 12개 항목이 모두 있고 잠금 파일이 없다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
 | REQ11 | `touch <보드>.lock` 으로 만든 새 잠금 파일 | `time b set a wait`(환경 변수 없이) | 5초쯤 뒤 종료 코드 1, stderr 에 잠금 파일 경로, 보드 바이트가 같다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
 | REQ11 | 40초 전 시각으로 옮긴 잠금 파일(`touch -t` 나 `utimes`) | `b set a wait` | 종료 코드 0, 항목이 생기고 잠금 파일이 없다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ11 | 빈 보드와 40초 전 시각으로 옮긴 잠금 파일 | 서로 다른 id 로 `b set <id> wait` 8개를 함께 띄운다(`&` 와 `wait`) | 모두 종료 코드 0, 보드에 8개 항목이 모두 있고 잠금 파일과 `.claim.` 이 든 파일이 없다(낡은 잠금을 하나만 넘겨받는다) | 로컬 임시 폴더 | worker | 없음 | PR 전 |
+| REQ11 | 이 PR 의 브랜치 | `node scripts/run-tests.ts extensions/work-board/tests/file-lock.spec.ts` 의 넘겨받기 경쟁 사례(두 경쟁자의 단계를 PR #430 리뷰의 순서로 끼워 실행) | 늦게 온 쪽이 권리를 얻지 못하거나 덮지 못하고, 잠금 파일이 먼저 넘겨받은 쪽의 표지 그대로다 | 로컬 작업 트리 | worker | 없음 | PR 전 |
 | REQ11 | 단계가 둘인 항목 `a` | `b view a` 로 `rev` 를 읽는다. `b detail-edit a 1 '1. 바꾼 글'` 뒤 `b set a --detail '1. 구현' --detail '2. 리뷰' --if-rev <읽어 둔 rev>` | 통째 저장이 종료 코드 1 이고 「1. 바꾼 글」 이 남아 있다. 지금 `rev` 로 다시 부르면 종료 코드 0 이다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
 | REQ3 | `9.머지`(번호 뒤 공백 없음) 줄과 `1. 구현` 줄이 있는 항목 | `b step a 9 --exact` | 종료 코드 1, stderr 에 「9 번 단계가 없다. 있는 번호: 1」. 그 줄은 단계 줄이 아니다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
 | REQ4 | 사람이 직접 쓴 `2. [merge] 머지` 줄이 있는 항목 | `b step-edit a 2 '2. 머지'`, 이어서 `b step-edit a 2 '2. [merge] develop 머지'` | 첫 호출은 종료 코드 1 이고 줄이 그대로다. 둘째는 종료 코드 0 이다 | 로컬 임시 폴더 | worker | 없음 | PR 전 |
