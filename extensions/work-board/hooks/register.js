@@ -146,6 +146,7 @@ let approvalSelfBusy = false
 let approvalOrigin = 'none' // 마지막 ui.press, ui.input 이벤트의 origin.kind. 나중에 확인할 기록이고 버튼을 막는 조건이 아니다
 let armed = null // real 대기의 「승인」 을 처음 누른 { key, until }
 let reviseKey = '' // 「고쳐 달라」 글칸이 열린 대기의 버튼 키
+let whereSkips = 0 // where 가 실패한 동안 5초마다 다시 부르지 않고 열두 번에 한 번만 부른다
 const pressing = new Set()
 
 // 플러그인 버전. install 은 설치본(installOf), latest 는 main 의 { commit, version } 이나 { error }, 아직 읽지 않았으면 undefined
@@ -1139,9 +1140,10 @@ export function approvalKey(entry, action) {
   return 'approval:' + entry.id + ':' + entry.version + ':' + action
 }
 
-// 이 창이 그 대기에 무엇을 그릴지: press(승인, 고쳐 달라), fill(명령 채우기), text(명령 글만), guide(누를 수 없다는 안내).
-// self 는 bin/approvals.ts self 의 결과다. 아직 읽지 못했거나 worker 이거나 모르면 guide 다. 숨기는 쪽이 안전하다
+// 이 창이 그 대기에 무엇을 그릴지: press(승인, 고쳐 달라), fill(명령 채우기), text(명령 글만), guide(누를 수 없다는 안내),
+// checking(이 창이 누를 수 있는 곳인지 읽는 중). self 는 bin/approvals.ts self 의 결과다. worker 이거나 worker 인지 모르면 guide 다. 숨기는 쪽이 안전하다
 export function approvalControls(entry, self) {
+  if (!self || !self.known) return 'checking'
   if (entry.kind === 'command') return self && self.terminal && self.terminal === entry.terminal ? 'fill' : 'text'
   return self && self.known && self.worker === false ? 'press' : 'guide'
 }
@@ -1512,7 +1514,8 @@ export async function updatePlugin($, install = plugin.install) {
 // 못 받으면 상자를 그리지 않는다. force 는 /board 를 열 때 경로를 다시 받는다
 async function loadApprovals($, force = false) {
   const root = await boardRoot($)
-  if (root && (force || !approvals.path)) {
+  if (root && !approvals.path && !force) whereSkips++
+  if (root && (force || (!approvals.path && whereSkips % 12 === 1))) {
     try {
       const where = (await run($, ['node', '--disable-warning=ExperimentalWarning',
         $.plugin.root + '/extensions/work-board/bin/approvals.ts', 'where', '--repo', root])).trim()
@@ -1989,7 +1992,7 @@ export function register(on) {
                 } })
               : controls === 'text'
                 ? dim('text', '명령을 올린 코디네이터 창에서 눌러요')
-                : dim('guide', '코디네이터 창이나 다른 창에서 누르세요')),
+                : dim('guide', controls === 'checking' ? '누를 수 있는 창인지 확인하는 중이에요' : '코디네이터 창이나 다른 창에서 누르세요')),
           ...(controls === 'press' && reviseKey === reviseKeyOf ? [indent('note', 2, Input({
             key: 'approval-note:' + entry.id + ':' + entry.version,
             label: '고칠 내용',

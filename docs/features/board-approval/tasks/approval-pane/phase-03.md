@@ -34,7 +34,7 @@
 - `parseApprovals(source)`: 승인 파일 글 → `{ open: Entry[] } | { error }`. `entries` 중 `state === 'open'` 만 `version` 오름차순으로 낸다. 빈 글은 `{ open: [] }`. 꼴이 틀리면 `{ error }`.
 - `approvalWait(createdAt, now)` → `{ text: 'N분'|'N시간'|'N일', old: boolean }`(24시간 넘으면 `old`). 본문은 `bin/worker-marks.ts` 의 시간 꼴(60분부터 시간, 하루부터 일)과 같다.
 - `approvalKey(entry, action)` → `approval:<id>:<버전>:<approve|revise|fill>`.
-- `approvalControls(entry, self, selfTerminalMatches)` → `'press' | 'fill' | 'guide' | 'text'`: `command` 이고 `self.terminal` 이 `entry.terminal` 과 같으면 `fill`, `command` 인데 다르면 `text`(명령 글만). 그 밖의 종류는 `self` 를 아직 읽지 못했거나 `worker` 가 `true`·`null` 이면 `guide`(「코디네이터 창이나 다른 창에서 누르세요」), `worker === false` 면 `press`.
+- `approvalControls(entry, self)` → `'press' | 'fill' | 'guide' | 'text' | 'checking'`: `self` 를 아직 읽지 못했으면 `checking`(「누를 수 있는 창인지 확인하는 중이에요」). 읽은 뒤 `command` 이고 `self.terminal` 이 `entry.terminal` 과 같으면 `fill`, `command` 인데 다르면 `text`(명령 글만). 그 밖의 종류는 `worker` 가 `true`·`null` 이면 `guide`(「코디네이터 창이나 다른 창에서 누르세요」), `worker === false` 면 `press`.
 - `approvalArgv(pluginRoot, repo, entry, action, note, origin)` → `['node', '--disable-warning=ExperimentalWarning', <root>/extensions/work-board/bin/approvals.ts, 'press', id, String(버전), action, '--origin', origin, '--repo', repo, ...(note ? ['--note=' + note] : [])]`.
 - `armedState(armed, key, now)` → `'idle' | 'armed'`: `armed.key === key` 이고 `now < armed.until` 일 때만 `armed`.
 - `pressToast(reason)`: 이유가 「내용이 바뀌었어요」 면 「내용이 바뀌었어요. 새 미리보기를 확인하세요」, 그 밖에는 이유 그대로.

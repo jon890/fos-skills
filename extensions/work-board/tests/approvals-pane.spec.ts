@@ -39,17 +39,17 @@ test('approvalKey 는 id 와 버전과 동작을 함께 쓴다', () => {
   assert.notEqual(approvalKey(entry({ version: 4 }), 'approve'), approvalKey(entry(), 'approve'))
 })
 
-test('approvalControls: worker 가 아닌 창만 press, 모르거나 worker 면 guide, command 는 올린 터미널만 fill', () => {
+test('approvalControls: worker 가 아닌 창만 press, worker 이거나 모르면 guide, 읽는 중이면 checking, command 는 올린 터미널만 fill', () => {
   assert.equal(approvalControls(entry(), { known: true, terminal: 'term_x', worker: false }), 'press')
   assert.equal(approvalControls(entry(), { known: true, terminal: 'term_x', worker: true }), 'guide')
   assert.equal(approvalControls(entry(), { known: true, terminal: 'term_x', worker: null }), 'guide')
-  assert.equal(approvalControls(entry(), { known: false, terminal: null, worker: null }), 'guide')
+  assert.equal(approvalControls(entry(), { known: false, terminal: null, worker: null }), 'checking')
   assert.equal(approvalControls(entry({ kind: 'real' }), { known: true, terminal: null, worker: false }), 'press')
   const command = entry({ kind: 'command', terminal: 'term_c' })
   assert.equal(approvalControls(command, { known: true, terminal: 'term_c', worker: false }), 'fill')
   assert.equal(approvalControls(command, { known: true, terminal: 'term_other', worker: false }), 'text')
   assert.equal(approvalControls(command, { known: true, terminal: null, worker: false }), 'text')
-  assert.equal(approvalControls(command, { known: false, terminal: null, worker: null }), 'text')
+  assert.equal(approvalControls(command, { known: false, terminal: null, worker: null }), 'checking')
 })
 
 test('approvalArgv: 인자 순서와 - 로 시작하는 글', () => {
