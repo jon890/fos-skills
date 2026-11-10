@@ -26,10 +26,10 @@
 
 | id | Task 성격 | 모델 | effort |
 | --- | --- | --- | --- |
-| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `low`, Sonnet `medium` |
+| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본. 위 「effort」 의 계획을 마친 구현 규칙) |
 | `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
 | `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
-| `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `medium`(기본), Sonnet `medium`. 같은 Task 가 실패하면 `high` |
+| `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `medium`(넘기지 않는다), Sonnet `high`(기본). 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
 | `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
 | `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작. 실측 전이다. 두세 작업에 써 본 뒤 확정한다 |
 | `review` | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델. 실제로 다른 제공자가 되는지는 아래 「리뷰 제공자」 를 본다 | `medium` |
@@ -82,7 +82,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | Claude Opus 5.5 | `gpt-6.1-sol` `high`, `gpt-6.1-sol` `medium` | Claude Sonnet 5.5 |
 | `gpt-6.1-sol` `high` | Claude Opus 5.5 | `gpt-6.1-sol` `medium` |
 | `gpt-6.1-sol` `medium` | Claude Opus 5.5 `medium` | Claude Sonnet 5.5 |
-| Claude Sonnet 5.5 | `gpt-6.1-sol` | Claude Haiku 5.5 |
+| Claude Sonnet 5.5 | `gpt-6.1-sol`, `gpt-6.1-terra`(코딩 근거가 Sonnet 보다 약하다, experiment 전) | Claude Haiku 5.5 |
 | `gpt-6.1-sol` | Claude Sonnet 5.5 | `gpt-6-luna` |
 | Claude Haiku 5.5 | `gpt-6-luna` | 없음. 한도가 풀릴 때까지 기다린다 |
 | `gpt-6-luna` | Claude Haiku 5.5 | 없음. 한도가 풀릴 때까지 기다린다 |
@@ -120,7 +120,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 - 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
 - effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 는 effort 를 지정하지 않고 공식 기본값 `medium` 을 쓴다
 - astra 행은 비교를 위해 두었다. 후보에서 뺀 이유는 위 「기본 후보에서 뺀 모델」 이 갖는다
-- terra 는 코딩 성능과 한국어 품질의 근거가 공식 자료에 없어 여러 파일 구현, 어려운 디버깅, 한국어 문서에 넣지 않는다
+- terra 는 중간급 코딩 모델이다. 코딩 지수는 sol 보다 낮다([evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절). OpenAI 는 가장 복잡한 코딩에 sol·astra 를 권한다. 범위가 분명한 실행 하위 일에 쓴 사례가 있다([사례](https://github.com/makeitworkcloud/charts/pull/132)). 한국어 품질의 근거는 없으니 한국어 문서에는 넣지 않는다. Sonnet 이 맡던 구현을 terra 로 옮길지는 experiment 다섯 번을 본 뒤 정한다
 - 출처: [astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
 - 출처: [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing), [Claude 모델 선택](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model), [Claude 모델 비교](https://platform.claude.com/docs/en/about-claude/models/overview)
 
@@ -136,11 +136,13 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 **모델마다 공식 시작점이 다르다. 계획서가 있으면 위 표의 낮은 쪽에서 시작한다.**
 
+- **계획을 마친 구현**(`impl-planned`, `impl-explore`)은 Opus 5.5 와 sol 이 `medium` 을 넘기지 않고, Sonnet 5.5 는 `high` 가 기본이다(사용자 2026-11-10). 근거와 반대 근거는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절이다.
+
 | 단계 | 올리거나 내리는 조건 |
 | --- | --- |
 | `low` | 계획서에 수정 위치와 검증 명령이 정해진 sol 구현. Claude 에서는 속도와 가격이 중요한 단순 Task 와 서브에이전트 |
-| `medium` | 지연, 성능, 비용의 균형점. 모델과 Task 에 따라 위 선택 표를 따른다 |
-| `high` | 어려운 디버깅이나 깊은 계획. 같은 Task 가 `medium` 에서 실패했을 때 올린다. Opus 는 위 「Opus `high`」 의 근거가 있을 때만 |
+| `medium` | 지연, 성능, 비용의 균형점. 모델과 Task 에 따라 위 선택 표를 따른다. 계획을 마친 구현에서 sol 과 Opus 의 상한이다 |
+| `high` | 어려운 디버깅(`hard-design`)이나 깊은 계획. 계획을 마친 구현은 위 규칙대로 Sonnet 이 기본이다. 같은 Task 가 실패해도 sol 과 Opus 는 올리지 않고 모델을 바꾼다. Opus 는 위 「Opus `high`」 의 근거가 있을 때만 |
 | `xhigh`, `max` | 기본으로 쓰지 않는다. 같은 Task 에서 `high` 보다 낫다는 결과가 있을 때만. Opus 는 `high` 와 같은 「Opus `high`」 근거가 필요하다 |
 | `ultra` | worker 에 쓰지 않는다. 스스로 subagent 를 띄워 코디네이터가 모르는 작업자가 생긴다 |
 
