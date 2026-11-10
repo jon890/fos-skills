@@ -96,6 +96,18 @@ test('죽은 큐가 남긴 잠금은 다음 큐가 회수하고 머지한다', {
   assert.match(c.log(), /^pr merge 1/m)
 })
 
+test('프로세스 목록 조회 실패는 중복 큐와 구분하고 잠금을 남기지 않는다', { skip: !HAS_TOOLS }, async (t) => {
+  const c = setup(t, false)
+  c.write({ 1: c.pr(7) })
+  c.env.PS = writeNodeBin(join(c.dir, 'bin'), 'ps', `const args=process.argv.slice(2); if(args.includes('-Ao')) process.exit(1); const r=require('node:child_process').spawnSync('ps',args,{env:{...process.env,PATH:${JSON.stringify(process.env.PATH)}},encoding:'utf8'}); process.stdout.write(r.stdout||''); process.exit(r.status??1)`)
+  const result = await c.run('1')
+  assert.equal(result.code, 2, result.stdout + result.stderr)
+  assert.match(result.stderr, /QUEUE-CHECK-FAILED.*프로세스 목록/)
+  assert.doesNotMatch(result.stderr, /QUEUE-BUSY/)
+  assert.equal(existsSync(join(c.dir, '.orch', 'state', 'merge-queue.lock')), false)
+  assert.doesNotMatch(c.log(), /^pr merge /m)
+})
+
 test('base 최고 이하인 번호는 머지하지 않고 gate 에도 새 번호 안내를 낸다', { skip: !HAS_TOOLS }, async (t) => {
   const c = setup(t)
   for (const version of [7, 8]) {
