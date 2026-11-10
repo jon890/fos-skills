@@ -536,6 +536,9 @@ describe('block-approval-press', () => {
       `node ${SCRIPT} --repo /r press demo 1 approve --origin x`,
       `node --disable-warning=ExperimentalWarning '${SCRIPT}' --origin x press demo 1 approve`,
       `echo ok; node ${SCRIPT} press demo 1 approve --origin x`,
+      `node ${SCRIPT} --note="press it" press demo 1 approve --origin x`,
+      `node ${SCRIPT} 'press' demo 1 approve --origin x`,
+      `node ${SCRIPT} "press" demo 1 approve --origin x`,
     ]) assert.equal(decide(HOOK, command), 'deny', command)
     assert.match(verdict(HOOK, `node ${SCRIPT} press a 1 approve --origin x`).reason, /사람이 보드 창에서 누른 버튼/)
   })
@@ -550,6 +553,7 @@ describe('block-approval-press', () => {
       "git commit -m 'approvals.ts press 를 막는다'",
       'git commit -m "$(cat <<\'EOF\'\nfeat: node approvals.ts press 를 거부한다\nEOF\n)"',
       'node X/approvals.ts pressure',
+      `node ${SCRIPT} where --note="press it"`,
       `node ${SCRIPT} where --repo /r && echo "press"`,
       'node tools/check.ts press && cat lib/approvals.ts',
       'orch board approval check demo --version 1',

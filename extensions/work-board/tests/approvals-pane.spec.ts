@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { approvalArgv, approvalControls, approvalKey, approvalWait, armedState, parseApprovals, pressToast, statusLine } from '../hooks/register.js'
+import { approvalArgv, approvalSelfArgs, approvalControls, approvalKey, approvalWait, armedState, parseApprovals, pressToast, statusLine } from '../hooks/register.js'
 
 const entry = (over: Record<string, unknown> = {}) => ({ id: 'post-1', version: 3, kind: 'post', title: '제목', state: 'open', terminal: 'term_c', ...over })
 
@@ -85,4 +85,11 @@ test('statusLine: 「승인 n」 은 알림 다음 결정 필요 앞에 붙고 0
   assert.ok(line.indexOf('알림 1') < line.indexOf('승인 3') && line.indexOf('승인 3') < line.indexOf('결정 필요 2'), line)
   assert.ok(!statusLine([], live, inbox, null, 0).includes('승인'))
   assert.equal(statusLine([], live, inbox), statusLine([], live, inbox, null, 0))
+})
+
+test('approvalSelfArgs: 전체 조회가 한 번 성공하기 전에는 live 를 줘도 --live 를 붙이지 않는다', () => {
+  assert.deepEqual(approvalSelfArgs(false, false), ['self'])
+  assert.deepEqual(approvalSelfArgs(true, false), ['self'])
+  assert.deepEqual(approvalSelfArgs(true, true), ['self', '--live'])
+  assert.deepEqual(approvalSelfArgs(false, true), ['self'])
 })

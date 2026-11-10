@@ -1159,6 +1159,12 @@ export function approvalArgv(pluginRoot, repo, entry, action, note, origin) {
     'press', entry.id, String(entry.version), action, '--origin', origin || 'none', '--repo', repo, ...(note ? ['--note=' + note] : [])]
 }
 
+// self 를 부르는 인자. 전체 조회(released 포함)가 한 번 성공하기 전에는 live 를 줘도 --live 를 붙이지 않는다.
+// 그 전에 --live 로 넘어가면 끝난 worker 터미널이 worker 가 아닌 것으로 읽힌다
+export function approvalSelfArgs(live, fullDone) {
+  return ['self', ...(live && fullDone ? ['--live'] : [])]
+}
+
 // real 대기의 「승인」 두 번 누르기. 처음 누른 키를 REAL_ARM_MS 안에 다시 눌러야 armed 다
 export function armedState(armed, key, now) {
   return armed && armed.key === key && now < armed.until ? 'armed' : 'idle'
@@ -1523,6 +1529,8 @@ async function loadApprovals($, force = false) {
     approvalsRoot = root
     approvals = { open: [], error: '', path: '' }
     reviseKey = ''
+    whereSkips = 0
+    force = true
   }
   if (root && !approvals.path && !force) whereSkips++
   if (root && (force || (!approvals.path && whereSkips % 12 === 1))) {
@@ -1555,7 +1563,7 @@ async function loadApprovalSelf($, live) {
   const useLive = live && approvalSelfFull
   try {
     const value = JSON.parse(await run($, ['node', '--disable-warning=ExperimentalWarning',
-      $.plugin.root + '/extensions/work-board/bin/approvals.ts', 'self', ...(useLive ? ['--live'] : [])], SELF_TIMEOUT_MS))
+      $.plugin.root + '/extensions/work-board/bin/approvals.ts', ...approvalSelfArgs(live, approvalSelfFull)], SELF_TIMEOUT_MS))
     if (!useLive && typeof value.worker === 'boolean') approvalSelfFull = true
     const worker = approvalSelf.worker === true || value.worker === true ? true : value.worker === false ? false : null
     approvalSelf = { known: true, terminal: typeof value.terminal === 'string' ? value.terminal : null, worker }
@@ -1593,7 +1601,8 @@ async function pressApproval($, entry, action, note, origin) {
   } finally {
     pressing.delete(key)
     armed = null
-    reviseKey = ''
+    // 누른 대기의 글칸만 닫는다. 다른 대기의 글칸에 적던 글을 지우지 않는다
+    if (reviseKey === approvalKey(entry, 'revise')) reviseKey = ''
   }
   await loadApprovals($)
 }
