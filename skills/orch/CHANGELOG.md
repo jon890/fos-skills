@@ -1,5 +1,9 @@
 # CHANGELOG: orch
 
+## 7.28.2 (2026-11-10)
+
+- 정리 명령을 단계별 파일로 나누고 실행 순서와 기존 출력, 보호 규칙을 유지했다.
+
 ## 7.28.1 (2026-11-10)
 
 - 저장소 checkout 의 `bin/orch.ts` 가 `ORCH_SCRIPTS_DIR` 없이 설치본으로 넘어가면 stderr 에 설치본 버전과 `ORCH_SCRIPTS_DIR` 안내를 한 줄 낸다. 동작은 그대로다
