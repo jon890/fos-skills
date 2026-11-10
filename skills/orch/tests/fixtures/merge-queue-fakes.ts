@@ -130,6 +130,12 @@ process.exit(3)
 export const FAKE_GIT = `const fs = require('node:fs')
 const args = process.argv.slice(2)
 fs.appendFileSync(process.env.FAKE_LOG, 'git ' + args.join(' ') + '\\n')
+if (args[0] === 'ls-tree') {
+  const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
+  if (state._tree_fails) process.exit(1)
+  if (state._tree_paths?.length) fs.writeSync(1, state._tree_paths.join('\\n') + '\\n')
+  process.exit(0)
+}
 if (args[0] === 'diff' && args[1] === '--name-only') {
   const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, 'utf8'))
   const index = state._diff_index ?? 0

@@ -81,8 +81,8 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync,
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isObject } from '../../core/json.ts'
-import { beforeCommand, boardHold, judgeMigrations, judgeReview, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, reviewScope, specHold, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
-import type { ChainCommit, Migration, MigrationJudgement, OpenMigrations, ReservedMigrations, ReviewNote, ReviewScope } from '../../lib/auto-merge.ts'
+import { beforeCommand, boardHold, judgeMigrations, maxByModule, migrationOf, queueOrder, reservedFor, REVIEW_WAIT, specHold, sweepArgs, unknownConditionsText, watchedDirs } from '../../lib/auto-merge.ts'
+import type { Migration, MigrationJudgement, OpenMigrations, ReservedMigrations } from '../../lib/auto-merge.ts'
 import { findBoardItems, readBoard } from '../../lib/board.ts'
 import type { BoardItem } from '../../lib/board.ts'
 import { orchWord, scriptPath } from '../../lib/commands.ts'
@@ -90,10 +90,12 @@ import { featureEvidenceProblem, featureLoopRequested, fetchedBaseMerges } from 
 import { isFile } from '../../lib/fs.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { git } from '../../lib/git.ts'
+import { judgePrReview } from '../../lib/review-judgement.ts'
 import { specFiles } from '../../lib/last-pr.ts'
 import { boardPath, makeParent, pathOf } from '../../lib/paths.ts'
 import { run as runSync, scriptCommand } from '../../lib/proc.ts'
 import { turnLine } from '../../lib/queue-turn.ts'
+import { isQueueCommand } from '../../lib/queue-process.ts'
 import { addedPaths, readReservations } from '../../lib/reservations.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import { branchesOf } from '../../lib/spec.ts'
@@ -110,17 +112,11 @@ const LOOP_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 // 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
 const AUTO_MERGE_LOG_KEEP_MS = 7 * 24 * 60 * 60 * 1000
 
-// 명령줄에 이 글자가 들면 도는 머지 큐로 본다(머리 주석의 「자동 머지」 2)
-const QUEUE_COMMANDS: readonly string[] = ['merge_queue.', 'merge-queue.sh', 'merge-with-finish.']
-
 // AUTO-MERGE-HELD 줄에 옮기는 명령줄의 앞 글자 수
 const HELD_COMMAND_CHARS = 160
 
 // 마이그레이션을 보는 열린 PR 조회의 최대 줄 수. 이만큼 오면 잘렸을 수 있다(머리 주석의 「자동 머지」 4)
 const MIGRATION_PR_LIMIT = 200
-
-// 리뷰 범위를 볼 때 HEAD 부터 첫 부모를 따라 읽는 커밋 수. merge 커밋이 이만큼 이어지는 일은 없다
-const REVIEW_CHAIN_LIMIT = 50
 
 type Ready = { head: string; at: string }
 
@@ -218,7 +214,7 @@ function dropOldLogs(dir: string, keep: string | null): void {
 }
 
 function queueRunning(list: Proc[]): boolean {
-  return list.some((p) => QUEUE_COMMANDS.some((name) => p.command.includes(name)))
+  return list.some((p) => isQueueCommand(p.command))
 }
 
 // 도는 큐 때문에 이 틱의 자동 머지를 미룬다. 큐가 무엇을 기다리는지 로그에 한 줄씩 남긴다(머리 주석의 「자동 머지」 2)
@@ -228,7 +224,7 @@ function logHeld(repo: string, list: Proc[]): void {
     for (const turn of turns) log(`AUTO-MERGE-HELD ${turnLine(turn, Date.now())}`)
     return
   }
-  for (const p of list.filter((row) => QUEUE_COMMANDS.some((name) => row.command.includes(name)))) {
+  for (const p of list.filter((row) => isQueueCommand(row.command))) {
     log(`AUTO-MERGE-HELD pid ${p.pid} 차례 기록 없음: ${p.command.slice(0, HELD_COMMAND_CHARS)}`)
   }
 }
@@ -255,30 +251,6 @@ function addedMigrations(files: unknown, dirs: Record<string, string | string[]>
     if (migration) found.push(migration)
   }
   return found
-}
-
-function reviewNotes(rows: unknown, at: string): ReviewNote[] {
-  if (!Array.isArray(rows)) return []
-  return rows.filter(isObject).map((row) => {
-    const commit = isObject(row.commit) && typeof row.commit.oid === 'string' && row.commit.oid ? row.commit.oid : null
-    return { body: typeof row.body === 'string' ? row.body : '', at: typeof row[at] === 'string' ? (row[at] as string) : '', commit }
-  })
-}
-
-// 리뷰를 셀 범위(머리 주석의 「자동 머지」 3). PR 브랜치와 base 를 받아 HEAD 부터 첫 부모를 따라 읽는다.
-// 받지 못하거나 HEAD 가 없으면 빈 체인이라 reviewScope 가 HEAD 의 리뷰만 센다. chain 은 judgeReview 의 rereview-after-block 도 쓴다
-function prReviewScope(ctx: Context, pr: OwnPr): { scope: ReviewScope; chain: ChainCommit[] } {
-  git(ctx.repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base])
-  const listed = git(ctx.repo, ['log', '--first-parent', `--max-count=${REVIEW_CHAIN_LIMIT}`, '--format=%H%x09%P%x09%cI', pr.head, '--'])
-  const chain: ChainCommit[] = []
-  if (listed.code === 0) {
-    for (const row of lines(listed.stdout)) {
-      const [oid, parents, at] = row.split('\t')
-      chain.push({ oid, parents: parents ? parents.split(' ') : [], at: at ?? '' })
-    }
-  }
-  const inBase = (oid: string) => git(ctx.repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0
-  return { scope: reviewScope(pr.head, chain, inBase), chain }
 }
 
 // 판정(머리 주석의 「자동 머지」 3). wait 은 AUTO-MERGE-WAIT 의 이유, error 는 오류 이유다.
@@ -334,9 +306,7 @@ function judgeTarget(
   }
   let basis = noReview
   if (review) {
-    const notes = [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')]
-    const rule = feature ? { ...review, require: [...new Set(['verdict-on-head' as const, ...review.require])] } : review
-    const judged = judgeReview({ notes, ...prReviewScope(ctx, pr) }, rule)
+    const judged = judgePrReview(ctx.repo, { head: pr.head, branch: pr.branch, base: pr.base }, data, review, feature)
     if (!judged.ok) return judged.missing && judged.condition ? { wait: judged.wait, missing: judged.condition } : { wait: judged.wait }
     basis = judged.basis.join('; ')
   }

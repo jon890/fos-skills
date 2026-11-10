@@ -216,7 +216,7 @@ export function checkSnapshot(repo: string, number: string, head: string, refres
 }
 
 // gh 는 commits(last:1) 의 롤업을 낸다. HEAD 와 같은 응답에서 읽고 도중의 push 는 호출자가 막는다.
-// 더 새 실행이 확인된 옛 취소만 뺀다. 시각이나 workflow 를 모르면 실패를 숨기지 않는다.
+// 같은 워크플로와 이름의 더 늦게 시작한 실행이 확인되면 이전 실행을 뺀다. 시각을 모르면 실패를 숨기지 않는다.
 export function currentChecks(rollup: unknown, head?: string): Record<string, unknown>[] {
   const rows = (Array.isArray(rollup) ? rollup : []).filter(
     (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
@@ -228,9 +228,17 @@ export function currentChecks(rollup: unknown, head?: string): Record<string, un
     const name = suite?.workflowRun?.workflow?.name
     return typeof name === 'string' && name ? name : null
   }
-  return rows.filter((row) => field(row, 'conclusion') !== 'CANCELLED' || !rows.some((newer) =>
-    checkName(row) !== '' && checkName(newer) === checkName(row) && workflow(row) !== null && workflow(newer) === workflow(row) &&
-    Date.parse(field(newer, 'startedAt') ?? '') > Date.parse(field(row, 'startedAt') ?? ''),
+  const sameSource = (a: Record<string, unknown>, b: Record<string, unknown>): boolean => {
+    const left = workflow(a), right = workflow(b)
+    return left !== null && left === right || left === null && right === null && !!field(a, 'context') && !!field(b, 'context')
+  }
+  const started = (row: Record<string, unknown>): number => {
+    const value = field(row, 'startedAt') ?? ''
+    return value.startsWith('0001-') ? Number.NaN : Date.parse(value)
+  }
+  return rows.filter((row) => !rows.some((newer) =>
+    sameSource(row, newer) && checkName(row) !== '' && checkName(newer) === checkName(row) &&
+    started(newer) > started(row),
   ))
 }
 

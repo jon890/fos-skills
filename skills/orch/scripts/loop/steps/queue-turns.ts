@@ -9,26 +9,16 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { isObject } from '../../core/json.ts'
 import { makeParent, pathOf } from '../../lib/paths.ts'
-import { run as runSync } from '../../lib/proc.ts'
+import { processes } from '../../lib/queue-process.ts'
+import type { Proc } from '../../lib/queue-process.ts'
 import { finishedTurns, readTurns } from '../../lib/queue-turn.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'
 import { iso, log, oneLine } from './shared.ts'
 
-export type Proc = { pid: number; command: string }
-
-// PS -Ao pid=,command= 의 줄. 0 이 아니면 null
-export function processes(): Proc[] | null {
-  const done = runSync([process.env.PS || 'ps', '-Ao', 'pid=,command='], { env: { LC_ALL: 'C' } })
-  if (done.code !== 0) return null
-  const found: Proc[] = []
-  for (const line of done.stdout.split('\n')) {
-    const m = /^\s*(\d+)\s+(.*)$/.exec(line)
-    if (m) found.push({ pid: Number(m[1]), command: m[2] })
-  }
-  return found
-}
+export { processes } from '../../lib/queue-process.ts'
+export type { Proc } from '../../lib/queue-process.ts'
 
 // 차례 기록(lib/queue-turn.ts)의 pid 가 지금 머지 큐 프로세스인지. 명령줄로 본다. pid 를 다른 프로세스가 다시 받았을 수 있다
 export function queueTurns(repo: string, list: Proc[]): ReturnType<typeof readTurns> {
