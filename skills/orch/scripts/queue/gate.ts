@@ -9,6 +9,7 @@
 // 걸린 이유는 첫 이유에서 멈추지 않고 모두 낸다. base 최신화, 겹침 판정, 합친 사본 검사, before-merge 이벤트는 머지 큐만 한다.
 //
 // 옵션은 머지 큐와 같은 이름과 뜻이다(--repo, --required, --required-check, --allow-fail, --allow-fail-check, --threads-cmd, --skipped-is-missing).
+// 명령줄에 없는 옵션은 머지 큐(merge-with-finish.ts)와 같은 길로 설정 파일의 queue 절(queue.required 등)에서 채운다. 명령줄에 준 옵션이 우선한다.
 // 머지 큐 전용 옵션을 주어도 받지만 쓰지 않는다. PR 은 하나만 받고 `PR:명령` 꼴은 받지 않는다.
 //
 // 출력(판정 줄은 `orch --full` 이어도 그대로다):
@@ -22,10 +23,12 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ConfigError } from '../lib/config.ts'
+import { ConfigError, loadConfig } from '../lib/config.ts'
 import { repoArgProblem } from '../lib/git.ts'
+import { pathOf } from '../lib/paths.ts'
 import type { run } from '../lib/proc.ts'
 import { withRun } from '../lib/proc.ts'
+import { queueDefaults } from '../lib/queue-defaults.ts'
 import type { GateReason } from './steps/gate.ts'
 import { gateReasons, loadPr } from './steps/gate.ts'
 import type { StepContext } from './steps/model.ts'
@@ -67,7 +70,13 @@ async function mainImpl(argv: string[]): Promise<number> {
     const scale = process.env.MERGE_QUEUE_SLEEP_SCALE ?? '1'
     stepContext.sleepScale = Number(scale)
     if (!scale.trim() || !Number.isFinite(stepContext.sleepScale) || stepContext.sleepScale < 0) throw new Usage(`MERGE_QUEUE_SLEEP_SCALE 는 0 이상의 수다: ${scale}`)
-    const opts = parseArgs(argv)
+    // 명령줄에 없는 옵션은 머지 큐와 같은 길로 설정 파일의 queue 절에서 채운다(lib/queue-defaults.ts). 명령줄이 우선한다
+    const repoAt = argv.indexOf('--repo')
+    const repoArg = repoAt >= 0 && repoAt + 1 < argv.length ? argv[repoAt + 1] : '.'
+    const repoPre = repoArgProblem(repoArg)
+    if (repoPre) throw new Usage(repoPre)
+    const config = loadConfig(repoArg)
+    const opts = parseArgs([...queueDefaults(pathOf('config', repoArg), argv, config), ...argv])
     if (opts.items.length !== 1 || opts.items[0].includes(':')) throw new Usage('PR 번호를 하나만 준다(PR:명령 꼴은 받지 않는다)')
     n = opts.items[0]
     const repoProblem = repoArgProblem(opts.repo)

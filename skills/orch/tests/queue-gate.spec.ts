@@ -150,6 +150,29 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.match(r.stdout, /GATE-FAIL 1\n {2}state=CLOSED/)
   })
 
+  test('설정 파일의 queue.required 를 머지 큐와 같은 길로 읽는다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { required: ['Tests'] } }))
+    // 필수 체크 Tests 가 없는 PR 은 통과시키지 않는다
+    let r = await gate(c, { '1': pr() }, 0)
+    assert.equal(r.code, 1, both(r))
+    assert.match(gateReason(r), /나타나지 않은 필수 체크 Tests/)
+    // Tests 가 끝난 PR 은 통과한다
+    r = await gate(c, { '1': pr({ statusCheckRollup: [{ name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }) }, 0)
+    assert.equal(r.code, 0, both(r))
+    // 명령줄의 --required-check 가 설정보다 우선한다
+    r = await gate(c, { '1': pr({ statusCheckRollup: [{ name: 'ci', status: 'COMPLETED', conclusion: 'SUCCESS' }] }) }, 0, ['--required-check', 'ci'])
+    assert.equal(r.code, 0, both(r))
+  })
+
+  test('설정 파일의 queue 절이 잘못되면 사용법 오류다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { required: 5 } }))
+    const r = await gate(c, { '1': pr() }, 0)
+    assert.equal(r.code, 2, both(r))
+    assert.equal(r.stdout, '')
+  })
+
   test('PR 을 하나만 받는다', async (t) => {
     const c = setup(t)
     c.writeState({ '1': pr() })
