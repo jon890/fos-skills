@@ -22,6 +22,7 @@
 //     --dirty-ack      커밋 안 된 변경이 이어 할 일의 것이라 그대로 띄우는 이유. 빈 값은 사용법 오류다.
 //                      이유는 `dirty-ack: <이유>` 줄로 출력한다. 끊긴 worker 를 이어 띄울 때 쓴다(references/launch.md 「끊긴 worker 다시 띄우기」)
 //     --run            worker-start 와 다시 띄우기에 줄 Run. 없으면 코디네이터에 묶인 Run 이다
+//     --no-pr      PR 없는 작업으로 기록해 완료 근거 경고를 생략한다
 //     --watch          띄운 뒤 worker-show 의 단계를 볼 초. 기본 90. 0 이면 보지 않는다
 //     WORKER_ARGS      worker-start 에 그대로 넘긴다(--agent, --model, --effort, --terminal 같은 것).
 //                      --terminal 은 --agent, --model, --effort 와 함께 쓰지 못한다
@@ -410,6 +411,7 @@ function uncommitted(worktree: string): string[] {
 }
 
 type Args = {
+  noPr: boolean
   spec: string
   task: string
   retryOf: string
@@ -429,6 +431,7 @@ function parse(argv: string[]): Args | 'help' {
   const split = argv.includes('--') ? argv.indexOf('--') : argv.length
   const passthru = argv.slice(split + 1)
   const options = {
+    'no-pr': { type: 'boolean', default: false },
     spec: { type: 'string' },
     task: { type: 'string', default: '' },
     'retry-of': { type: 'string', default: '' },
@@ -464,6 +467,7 @@ function parse(argv: string[]): Args | 'help' {
   if (!values.task && values.worktree && (values.repo || values.name || resumeRemote)) throw usage('--worktree 와 --repo/--name/--resume-remote 은 함께 쓰지 않는다')
   if (!values.task && !values.worktree && !(values.repo && values.name)) throw usage('새 워크트리는 --repo 와 --name, 기존 워크트리는 --worktree 를 준다')
   return {
+    noPr: values['no-pr'] as boolean,
     spec: values.spec,
     task: values.task as string,
     retryOf: values['retry-of'] as string,
@@ -785,6 +789,7 @@ async function executeMain(argv: string[], execute: typeof runAsync): Promise<nu
     const reused = passValue(passthru, '--terminal')
     const inherited = reused ? terminalLaunch ?? retryLaunch : null
     const launch = {
+      ...(a.noPr || retryLaunch?.completion === 'none' || inherited?.completion === 'none' ? { completion: 'none' as const } : {}),
       dispatch, task: task || null, terminal: terminal || null, worktree, branch: common.branch,
       run: a.run || jget(result.stdout, 'dispatch.runId|task.runId|run.id|worker.runId') || null,
       spec: resolve(a.spec),

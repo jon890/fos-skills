@@ -1029,8 +1029,8 @@ describe('여러 Run', () => {
     const result = tickOnce()
     const kinds = (run: string) => runEvents(run).map((row) => String(row.text).split(':')[0])
     // 같은 틱에 질문 확인도 실패한 Run 의 멈춤 확인 실패는 로그에만 쓴다. Orca 가 꺼진 틱에 같은 원인으로 두 번 깨우지 않는다
-    assert.deepEqual(kinds('A').sort(), ['prs', 'questions'])
-    assert.deepEqual(kinds('B').sort(), ['questions'])
+    assert.deepEqual(kinds('A').sort(), ['done', 'lost', 'prs', 'questions'])
+    assert.deepEqual(kinds('B').sort(), ['done', 'lost', 'questions'])
     const errors = result.errors as Json
     assert.equal(errors['questions@A'], null)
     assert.equal(errors['questions@B'], null)
@@ -1180,3 +1180,9 @@ test('완료한 decide 줄만 있으면 REMINDER 와 DECISION-PENDING 을 만들
   assert.deepEqual(received('decision-pending'), [])
 })
 
+test('질문 조회 실패 중에도 완료 보고 감시는 같은 틱에 실행한다', () => {
+  write(orchFile('state','done-seen','r.json'),JSON.stringify({ids:[],last:'2026-01-01T00:00:00Z',suspects:[],events:[]}))
+  orca({ question_fail:true, messages:[{id:'done',type:'worker_done',run_id:'r',task_id:'t',dispatch_id:'d',from_handle:'worker',created_at:'2026-11-10T00:00:00Z'}] })
+  once()
+  assert.equal(events().filter(e=>e.kind==='DONE-SUSPECT').length,1)
+})

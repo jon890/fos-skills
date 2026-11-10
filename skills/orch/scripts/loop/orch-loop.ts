@@ -398,6 +398,8 @@
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
 import { createHash } from 'node:crypto'
+import { watchCompletions } from './completion-watch.ts'
+import { watchLost } from '../lib/lost-workers.ts'
 import { spawn } from 'node:child_process'
 import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -2843,6 +2845,14 @@ async function tick(ctx: Context, n: number): Promise<number> {
       report('waiter', (await watchUnanswered(ctx.repo, run, pendingDecisions.get(run) ?? null), null), { run })
     } catch (e) {
       report('waiter', oneLine(e), { run })
+    }
+  }
+
+  for (const { run } of runs) {
+    if (!run) continue
+    for (const [source, action] of [['done', watchCompletions], ['lost', watchLost]] as const) {
+      try { await action(ctx.repo, run, defaultBase(ctx.repo) ?? ''); report(source, null, { run }) }
+      catch (e) { report(source, oneLine(e), { run }) }
     }
   }
 
