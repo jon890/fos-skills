@@ -1,4 +1,4 @@
-// lib/questions.ts 의 미답변 판정과 watch-questions.ts 를 가짜 orca 로 본다. Orca 에는 닿지 않는다.
+// lib/questions.ts 의 미답변 판정과 poll 기록을 가짜 orca 로 본다. Orca 에는 닿지 않는다.
 // 가짜 orca 는 ORCA 환경 변수로 넣는다. lib/orca.ts 는 ORCA_CLI_COMMAND 를 읽지 않는다.
 
 import assert from 'node:assert/strict'
@@ -238,16 +238,6 @@ describe('ageSeconds', () => {
 
 type Result = { code: number | null; stdout: string; stderr: string }
 
-function watch(...args: string[]): Result {
-  const done = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', tmp, ...args], {
-    env,
-    cwd: tmp,
-    encoding: 'utf8',
-    timeout: 60_000,
-  })
-  return { code: done.status, stdout: done.stdout, stderr: done.stderr }
-}
-
 function seenFile(): string {
   return join(tmp, '.orch/state/questions-seen.json')
 }
@@ -256,23 +246,7 @@ function lines(text: string, prefix: string): string[] {
   return text.split('\n').filter((line) => line.startsWith(prefix))
 }
 
-describe('watch-questions', () => {
-  test('처음 보는 질문은 QUESTION 이고 다시 불러도 재알림 전에는 조용하다', () => {
-    fake({ all: { messages: [message()] } })
-    const first = watch('--run', 'r', '--once')
-    assert.equal(first.code, 0, first.stderr)
-    assert.deepEqual(lines(first.stdout, 'QUESTION'), ['QUESTION q question from=dispatch:d: 두 줄 질문'])
-    const second = watch('--run', 'r', '--once')
-    assert.deepEqual([second.code, second.stdout], [0, ''])
-    // 알린 지 --remind-after(600초)가 지나면 다시 알린다. 지나지 않았으면 알리지 않는다
-    const now = Date.now() / 1000
-    writeFileSync(seenFile(), JSON.stringify({ r: { q: now - 590 } }))
-    assert.equal(watch('--run', 'r', '--once').stdout, '')
-    writeFileSync(seenFile(), JSON.stringify({ r: { q: now - 601 } }))
-    const reminded = watch('--run', 'r', '--once')
-    assert.match(reminded.stdout, /^REMINDER q question from=dispatch:d: /m)
-  })
-
+describe('poll 기록과 재알림', () => {
   test('재알림은 알린 뒤 --remind-after 초가 되는 때부터다', () => {
     // 옛 명령의 테스트와 같은 시각이다. 1000 에 알리고 600 초 뒤인 1600 에 다시 알린다. 1599 는 조용하다
     fake({ all: { messages: [message()] } })
@@ -285,130 +259,17 @@ describe('watch-questions', () => {
     assert.equal(readFileSync(state, 'utf8'), '{"r": {"q": 1600}}\n')
   })
 
-  test('알린 시각이 수가 아니면 형식 오류로 WATCH-ERROR 이고 기록을 바꾸지 않는다', () => {
+  test('깨진 알림 기록과 조회 실패는 기록을 덮지 않고 오류를 낸다', () => {
     fake({ all: { messages: [message()] } })
     mkdirSync(dirname(seenFile()), { recursive: true })
-    writeFileSync(seenFile(), '{"r": {"q": "1000"}}')
-    const r = watch('--run', 'r', '--once')
-    assert.equal(r.code, 1, r.stderr)
-    assert.match(r.stdout, /^WATCH-ERROR 알림 기록 형식이 잘못됐다: /m)
-    // stderr 도 wait-important 와 같은 WATCH-ERROR 줄이다
-    assert.match(r.stderr, /^WATCH-ERROR 알림 기록 형식이 잘못됐다: /m)
-    assert.equal(readFileSync(seenFile(), 'utf8'), '{"r": {"q": "1000"}}')
-  })
-
-  test('알림 기록은 Run 별이고 답한 질문은 다시 알리지 않는다', () => {
-    fake({ all: { messages: [message()] } })
-    assert.equal(lines(watch('--run', 'r', '--once').stdout, 'QUESTION').length, 1)
-    fake({ all: { messages: [message('q', 'question', { run_id: 'other', to_handle: 'run:other' })] } })
-    assert.equal(lines(watch('--run', 'other', '--once').stdout, 'QUESTION').length, 1)
-    assert.deepEqual(Object.keys(JSON.parse(readFileSync(seenFile(), 'utf8'))).sort(), ['other', 'r'])
-    writeFileSync(seenFile(), JSON.stringify({ r: { q: 0 } }))
-    fake({ all: { messages: [message()] }, inbox: { 'dispatch:d': [answer()] } })
-    assert.deepEqual(watch('--run', 'r', '--once'), { code: 0, stdout: '', stderr: '' })
-  })
-
-  test('질문이 없어도 Run 의 빈 기록을 남긴다', () => {
-    fake({})
-    assert.equal(watch('--run', 'r', '--once').code, 0)
-    assert.deepEqual(JSON.parse(readFileSync(seenFile(), 'utf8')), { r: {} })
-  })
-
-  test('check 가 실패하면 --once 는 WATCH-ERROR 줄과 1 이고 알림 기록을 바꾸지 않는다', () => {
-    mkdirSync(dirname(seenFile()), { recursive: true })
-    writeFileSync(seenFile(), '{"r":{"q":1000}}')
-    fake({ checkSeq: ['fail'] })
-    const r = watch('--run', 'r', '--once')
-    assert.equal(r.code, 1, r.stderr)
-    const errors = lines(r.stdout, 'WATCH-ERROR ')
-    assert.equal(errors.length, 1, r.stdout)
-    assert.match(errors[0], /offline/)
-    assert.ok(r.stderr.includes(errors[0].slice('WATCH-ERROR '.length)), r.stderr)
-    assert.equal(readFileSync(seenFile(), 'utf8'), '{"r":{"q":1000}}')
-  })
-
-  test('답 기록 한도와 깨진 알림 기록도 WATCH-ERROR 다', () => {
-    const unrelated = { ...message(), id: 'follow', type: 'status' }
-    fake({ all: { messages: [message()] }, inbox: { 'dispatch:d': Array.from({ length: REPLY_LIMIT }, () => unrelated) } })
-    assert.match(watch('--run', 'r', '--once').stdout, /^WATCH-ERROR .*답변 기록 한도/m)
-    fake({})
-    mkdirSync(dirname(seenFile()), { recursive: true })
-    writeFileSync(seenFile(), 'not json')
-    const broken = watch('--run', 'r', '--once')
-    assert.equal(broken.code, 1)
-    assert.match(broken.stdout, /^WATCH-ERROR /m)
-    assert.equal(readFileSync(seenFile(), 'utf8'), 'not json')
-  })
-
-  test('반복 모드는 같은 이유를 한 번만 내고 조회가 성공한 뒤에는 다시 낸다', async () => {
-    // 실패, 실패, 성공, 실패, 실패 순이다. 처음 실패와 성공 뒤 실패에서만 낸다
-    fake({ checkSeq: ['fail', 'fail', 'ok', 'fail'] })
-    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, '--repo', tmp, '--run', 'r', '--interval', '0.1'], { env, cwd: tmp })
-    let stdout = ''
-    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))
-    const closed = new Promise((resolve) => child.on('close', resolve))
-    const counter = join(tmp, 'all-count')
-    const deadline = Date.now() + 30_000
-    while (!(existsSync(counter) && Number(readFileSync(counter, 'utf8')) >= 5)) {
-      assert.ok(Date.now() < deadline, `조회가 다섯 번 돌지 않았다: ${stdout}`)
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
-    child.kill('SIGTERM')
-    await closed
-    assert.equal(lines(stdout, 'WATCH-ERROR ').length, 2, stdout)
-  })
-
-  test('질문 100건인 Run 은 조회 범위를 stderr 로만 알린다', () => {
-    fake({ all: { messages: Array.from({ length: 100 }, () => message()) } })
-    const r = watch('--run', 'r', '--once')
-    assert.equal(r.code, 0, r.stderr)
-    assert.doesNotMatch(r.stdout, /WATCH-ERROR/)
-    assert.match(r.stderr, /더 오래된 미답변은 빠질 수 있다/)
-    assert.equal(lines(r.stdout, 'QUESTION').length, 1)
-  })
-
-  test('QUESTION 과 REMINDER 뒤에 worker-question 핸들러가 질문을 받는다', () => {
-    const capture = join(tmp, 'input.jsonl')
-    mkdirSync(join(tmp, '.orch/hooks'), { recursive: true })
-    writeFileSync(
-      join(tmp, '.orch/hooks/worker-question.ts'),
-      `import { appendFileSync, readFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(capture)}, readFileSync(0, 'utf8') + '\\n')\nconsole.log('알렸다')\n`,
-    )
-    fake({ all: { messages: [message('q', 'question', { task_id: 'task_a', payload: { dispatchId: 'ctx_a' }, subject: '제목' })] } })
-    const r = watch('--run', 'r', '--once')
-    assert.equal(r.code, 0, r.stderr)
-    const out = r.stdout.split('\n')
-    assert.ok(out.indexOf('[hook worker-question] 알렸다') > out.findIndex((line) => line.startsWith('QUESTION q')), r.stdout)
-    writeFileSync(seenFile(), JSON.stringify({ r: { q: Date.now() / 1000 - 601 } }))
-    assert.match(watch('--run', 'r', '--once').stdout, /^REMINDER q/m)
-    const inputs = readFileSync(capture, 'utf8')
-      .split('\n')
-      .filter((line) => line)
-      .map((line) => JSON.parse(line) as Json)
-    assert.equal(inputs.length, 2)
-    const [first, second] = inputs
-    assert.equal(first.event, 'worker-question')
-    assert.equal(first.run, 'r')
-    assert.deepEqual(first.message, { id: 'q', type: 'question', subject: '제목', body: '두 줄\n질문' })
-    assert.equal(first.reminder, false)
-    assert.deepEqual(first.worker, { task: 'task_a', dispatch: 'ctx_a', terminal: 'dispatch:d', worktree: null, spec: null })
-    assert.ok(Number.isInteger(first.age_sec) && (first.age_sec as number) > 0, String(first.age_sec))
-    assert.equal(second.reminder, true)
-  })
-
-  test('worker-question 핸들러가 실패해도 종료 코드는 그대로다', () => {
-    mkdirSync(join(tmp, '.orch/hooks'), { recursive: true })
-    writeFileSync(join(tmp, '.orch/hooks/worker-question.ts'), 'process.exitCode = 1\n')
-    fake({ all: { messages: [message()] } })
-    const r = watch('--run', 'r', '--once')
-    assert.equal(r.code, 0, r.stderr)
-    assert.match(r.stdout, /^HOOK-FAIL worker-question 1$/m)
-  })
-
-  test('간격이 양수가 아니면 사용법 오류다', () => {
-    for (const option of ['--interval', '--remind-after']) {
-      for (const value of ['0', 'abc']) assert.equal(watch(option, value).code, 2, `${option} ${value}`)
-    }
+    const raw='{"r":{"q":"1000"}}'
+    writeFileSync(seenFile(),raw)
+    assert.throws(() => poll('r',seenFile(),1600,600,tmp), /알림 기록 형식/)
+    assert.equal(readFileSync(seenFile(),'utf8'),raw)
+    writeFileSync(seenFile(),'{"r":{"q":1000}}')
+    fake({checkSeq:['fail']})
+    assert.throws(() => poll('r',seenFile(),1600,600,tmp), /offline/)
+    assert.equal(readFileSync(seenFile(),'utf8'),'{"r":{"q":1000}}')
   })
 })
 

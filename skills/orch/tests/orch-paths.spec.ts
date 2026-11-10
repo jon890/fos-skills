@@ -146,13 +146,13 @@ describe('옛 구조', () => {
     assert.ok(r.stderr.includes('옮기기 전이라 건너뛴다'), r.stderr)
   })
 
-  test('대기와 충돌 알림 명령은 알리기만 한다', () => {
+  test('옛 대기는 안내로 끝나고 충돌 알림은 옛 위치를 알려준다', () => {
     write('.claude/orch-finish.json', '{}')
     let r = cmd('wait-important.ts', ['--run', 'run_x', '--ack-lost', 'ctx_1'], { cwd: repo })
-    assert.equal(r.code, 0, r.stderr)
-    assert.ok(r.stdout.includes('ACK_LOST ctx_1'), r.stdout)
-    assert.ok(r.stderr.includes('wait-important: 옛 위치가 남아 있다'), r.stderr)
-    assert.ok(statSync(join(repo, '.orch/state/wait-important-lost.json')).isFile())
+    assert.equal(r.code, 2, r.stderr)
+    assert.equal(r.stdout, '')
+    assert.match(r.stderr, /^RETIRED wait-important:/)
+    assert.equal(existsSync(join(repo, '.orch/state/wait-important-lost.json')), false)
     r = cmd('notify-conflicts.ts', ['--repo', repo, '--base', 'main'])
     assert.ok(r.stderr.includes('notify-conflicts: 옛 위치가 남아 있다'), r.stderr)
     assert.ok(r.stderr.includes('git fetch origin 실패'), r.stderr)
