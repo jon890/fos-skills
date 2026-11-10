@@ -1,3 +1,0 @@
-- 계획을 마친 구현은 Claude Sonnet 5.5 를 `high` 로 기본 띄우고, Claude Opus 5.5 와 `gpt-6.1-sol` 은 `medium` 을 넘기지 않는다.
-- 사용 한도에 걸렸을 때 Claude Sonnet 5.5 의 같은 등급 대응에 `gpt-6.1-terra` 를 더한다. 코딩 근거가 약해 experiment 전이라고 적는다.
-- `gpt-6.1-terra` 설명을 중간급 코딩 모델로 고친다. 한국어 문서에는 쓰지 않는다.
