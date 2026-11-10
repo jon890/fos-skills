@@ -137,6 +137,14 @@ describe('orch queue gate', { skip: !HAS_TOOLS && 'jq 와 bash 가 필요하다'
     assert.equal(passed.code, 0, both(passed))
   })
 
+  test('기능 PR 은 설정에 HEAD 조건이 없어도 현재 HEAD 의 판정이 필요하다', async (t) => {
+    const c = setup(t)
+    writeFileSync(join(c.tmp, '.orch', 'config.json'), JSON.stringify({ queue: { auto_review: { pass: 'PASS', block: 'BLOCK', require: ['last-verdict-pass'] } } }))
+    const r = await gate(c, { '1': pr({ reviews: [{ body: 'PASS', submittedAt: '2026-01-01T00:00:00Z', commit: { oid: 'b'.repeat(40) } }], comments: [] }) }, 0)
+    assert.equal(r.code, 1, both(r))
+    assert.match(gateReason(r), /HEAD aaaaaaaa 에 리뷰 판정이 없다/)
+  })
+
   test('같은 이름 체크의 이전 실패보다 새 통과를 센다', async (t) => {
     const c = setup(t)
     const checks = [

@@ -2,10 +2,9 @@
 // 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 기능 완료 근거 블록(독립 리뷰 줄 포함).
 // 첫 이유에서 멈추지 않고 걸린 이유를 모두 모아 돌려준다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
 
-import { autoMergeConfig, judgeReview, reviewScope } from '../../lib/auto-merge.ts'
-import type { ChainCommit, ReviewNote } from '../../lib/auto-merge.ts'
+import { autoMergeConfig } from '../../lib/auto-merge.ts'
+import { judgePrReview } from '../../lib/review-judgement.ts'
 import { loadConfig } from '../../lib/config.ts'
-import { git } from '../../lib/git.ts'
 import { baseMergesOnly, featureBranch, featureEvidenceProblem } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
@@ -145,24 +144,14 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
 
   const review = autoMergeConfig(loadConfig(state.repoDir)).review
   if (review) {
-    const got = ghJson<{ reviews: unknown; comments: unknown; headRefOid: string }>(['pr', 'view', n, '--json', 'reviews,comments,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
+    const got = ghJson<{ reviews: unknown; comments: unknown; headRefOid: string; body: string }>(['pr', 'view', n, '--json', 'reviews,comments,headRefOid,body', '--jq', '.'], { cwd: o.repo, cache: false })
     if (!got.ok || !got.data || !Array.isArray(got.data.reviews) || !Array.isArray(got.data.comments)) {
       reasons.push({ kind: 'lookup', text: '리뷰 판정 조회 실패' })
     } else if (got.data.headRefOid !== p.ph) {
       throw new HeadChanged(`${n} 리뷰 조회 중 HEAD 가 바뀌었다`)
     } else {
-      const notes = (rows: unknown[], key: string): ReviewNote[] => rows.filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null).map((row) => {
-        const commit = row.commit as { oid?: unknown } | null
-        return { body: typeof row.body === 'string' ? row.body : '', at: typeof row[key] === 'string' ? row[key] as string : '', commit: typeof commit?.oid === 'string' ? commit.oid : null }
-      })
-      git(state.repoDir, ['fetch', '--quiet', 'origin', p.branch, p.base])
-      const listed = git(state.repoDir, ['log', '--first-parent', '--max-count=50', '--format=%H%x09%P%x09%cI', p.ph, '--'])
-      const chain: ChainCommit[] = listed.code === 0 ? listed.stdout.trim().split('\n').filter(Boolean).map((line) => {
-        const [oid, parents, at] = line.split('\t')
-        return { oid, parents: parents ? parents.split(' ') : [], at: at ?? '' }
-      }) : []
-      const scope = reviewScope(p.ph, chain, (oid) => git(state.repoDir, ['merge-base', '--is-ancestor', oid, `origin/${p.base}`]).code === 0)
-      const judged = judgeReview({ notes: [...notes(got.data.reviews, 'submittedAt'), ...notes(got.data.comments, 'createdAt')], scope, chain }, review)
+      const feature = Boolean(featureBranch(o.repo, p.branch)) || (typeof got.data.body === 'string' && got.data.body.includes('fos-feature-evidence'))
+      const judged = judgePrReview(state.repoDir, { head: p.ph, branch: p.branch, base: p.base }, got.data, review, feature)
       if (!judged.ok) reasons.push({ kind: 'review', text: judged.missing && judged.condition === 'verdict-on-head' ? `HEAD ${p.ph.slice(0, 8)} 에 리뷰 판정이 없다` : judged.wait })
     }
   }
