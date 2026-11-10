@@ -92,14 +92,25 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 ### 기본 후보에서 뺀 모델
 
-아래 두 모델은 가격 대비 효과가 낮아 worker 와 하위 에이전트의 후보에 넣지 않는다(사용자 결정 2026-10-30). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
+아래 두 모델은 worker 와 하위 에이전트의 후보에 넣지 않는다. `gpt-6-astra` 는 가격 대비 효과가 낮아서다(사용자 결정 2026-10-30). Claude Fable 5.2 는 실험이 끝날 때까지 뺀다(사용자 결정 2026-11-10, 아래 「Fable 5.2 실험」). 가장 어려운 작업도 Claude Opus 5.5 나 `gpt-6.1-sol` `high` 까지 쓴다.
 
 | 모델 | 입력 / 출력 ($/1M 토큰) | 뺀 이유 |
 | --- | --- | --- |
-| Claude Fable 5.1 | 10 / 50 | Opus 5.5(4 / 20)의 2.5배다. 공식 기본 effort 가 `high` 라 한 Task 의 토큰도 더 든다 |
+| Claude Fable 5.2 | 8 / 40 | Opus 5.5(4 / 20)의 2배다. 작업 한 건 비용은 2.6배다(Artificial Analysis, 2026-11-10). 실험 다섯 건의 결과를 본 뒤 후보에 넣을지 정한다 |
 | `gpt-6-astra` | 10 / 50 | sol(2 / 10)의 5배다. sol 의 공식 설명이 「astra 에 가까운 성능을 낮은 가격에」 다 |
 
-출처는 아래 비교 근거와 같다. Fable 행은 2026-10-30 claude-api 스킬(가격 2026-10-06 기준)로 확인했다.
+출처는 아래 비교 근거와 같다. Fable 5.2 행은 2026-11-10 공개 자료로 확인했다.
+
+### Fable 5.2 실험 (2026-11-10)
+
+작업을 끝까지 해내는 능력을 먼저 보고, 가격은 그다음에 맞춘다(사용자 결정 2026-11-10). 그래서 Fable 5.2 를 바로 후보에 넣지 않고 크고 어려운 일 다섯 건에 먼저 쓴다.
+
+- **대상.** 크고 어려운 일 다섯 건까지다. 큰 파일을 여러 시간 고치는 구조 정리(`impl-explore` 가운데 크기 C 이상)와 `technical-design` 이다.
+- **effort.** `high` 다(Anthropic 권장 기본값).
+- **예외.** 계획을 마친 구현에서 Opus·sol 을 `medium` 까지만 쓰는 규칙(아래 「effort」)의 예외다. 실험 다섯 건에만 적용한다.
+- **지시서 표시.** `worker 선택:` 줄에 `claude-fable-5-2` `high` 와 「Fable 실험 N/5」 를 적는다. 비교 칸에는 그 일을 원래 맡았을 모델을 적는다.
+- **기록.** 건마다 Task, 크기, 걸린 시간, 비용, 첫 리뷰 차단 건수, 다시 맡긴 횟수를 남긴다. 코디네이터가 보드 항목 `routing-fable-experiment` 의 단계 줄에 적는다. 비교는 같은 크기의 Opus·sol 작업 실측 기록(`routing-log.jsonl`)과 한다.
+- **끝.** 다섯 건이 끝나면 코디네이터가 결과를 사용자에게 올려 후보에 넣을지 정한다. 그때까지 Fable 은 기본 후보가 아니다.
 
 ### 비교 근거
 
@@ -114,12 +125,14 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 | Claude Sonnet 5.5 | `claude-sonnet-5-5` | 일상 코딩과 에이전트 | 잘 정의된 Task 는 `medium`, 어렵거나 긴 Task 는 `high`(기본) | 2 / 10 | Fast |
 | Claude Opus 5.5 | `claude-opus-5-5` | 장시간 에이전트 코딩과 지식 작업 | `medium`(기본) | 4 / 20 | Moderate |
 | Claude Haiku 5.5 | `claude-haiku-5-5` | 분류, 추출, 라우팅 같은 대량·저지연 작업 | `medium`(기본). 짧은 도구 작업은 `low`, 긴 에이전트 작업은 `high` | 0.10 / 0.50 (프롬프트 10만 토큰 초과 요청은 0.50 / 2.50) | Fastest |
+| Claude Fable 5.2 | `claude-fable-5-2` | 가장 어려운 기술 과제 | `high`(Anthropic 권장 기본값) | 8 / 40 | Fable 5.1 보다 최대 30% 빠름 |
 
 - 보안 리뷰 행의 근거: 2026-10-20 인프라 저장소의 PR 리뷰를 Codex worker 에 맡겼더니 symlink 덮어쓰기, 토큰 유출 경로, 컨테이너 권한 같은 공격 경로를 재현하는 내용에서 OpenAI 의 보안 요청 제한(「This content can't be shown」)에 걸려 리뷰가 끝나지 않았다. Claude Sonnet 하위 에이전트로 옮기자 끝났다. 구현한 쪽이 Claude 라서 다른 제공자 리뷰어가 필요하면, 공격 재현이 필요 없는 범위만 Codex 에 맡기고 나머지는 구현에 관여하지 않은 Claude 에이전트가 본다
 - worker 가 시작 직후 출력 없이 실패하면 [`launch.md`](launch.md) 의 「시작 직후 실패」 대로 다른 모델로 다시 띄운다
 - 확인하지 못한 effort 별 코딩 점수는 선택 근거에서 뺐다. 제공자 사이의 점수도 직접 비교하지 않는다
 - effort 별 지연과 비용 배수는 양쪽 공식 문서에 수치가 없다(2026-10-12 확인). 정성 설명만 있으므로 같은 Task 결과로 판단한다. Haiku 는 effort 를 지정하지 않고 공식 기본값 `medium` 을 쓴다
 - astra 행은 비교를 위해 두었다. 후보에서 뺀 이유는 위 「기본 후보에서 뺀 모델」 이 갖는다
+- Fable 5.2 행은 2026-11-10 공개 자료다. 공식 권장 용도와 상대 속도는 Anthropic 발표, 가격과 비용 배수는 Artificial Analysis 와 Fortune 보도다. 수치 출처와 독립 측정은 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 Fable 5.2 절이다.
 - terra 는 중간급 코딩 모델이다. 코딩 지수는 sol 보다 낮다([evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절). OpenAI 는 가장 복잡한 코딩에 sol·astra 를 권한다. 범위가 분명한 실행 하위 일에 쓴 사례가 있다([사례](https://github.com/makeitworkcloud/charts/pull/132)). 한국어 품질의 근거는 없으니 한국어 문서에는 넣지 않는다. Sonnet 이 맡던 구현을 terra 로 옮길지는 experiment 다섯 번을 본 뒤 정한다
 - 출처: [astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Codex 모델](https://learn.chatgpt.com/docs/models)
 - 출처: [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude 가격](https://platform.claude.com/docs/en/about-claude/pricing), [Claude 모델 선택](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model), [Claude 모델 비교](https://platform.claude.com/docs/en/about-claude/models/overview)
@@ -136,7 +149,7 @@ Claude 는 `projects` 를 공유하는 프로필끼리면 계정을 바꿔도 �
 
 **모델마다 공식 시작점이 다르다. 계획서가 있으면 위 표의 낮은 쪽에서 시작한다.**
 
-- **계획을 마친 구현**(`impl-planned`, `impl-explore`)은 Opus 5.5 와 sol 이 `medium` 을 넘기지 않고, Sonnet 5.5 는 `high` 가 기본이다(사용자 2026-11-10). 근거와 반대 근거는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절이다.
+- **계획을 마친 구현**(`impl-planned`, `impl-explore`)은 Opus 5.5 와 sol 이 `medium` 을 넘기지 않고, Sonnet 5.5 는 `high` 가 기본이다(사용자 2026-11-10). 「Fable 5.2 실험」 의 다섯 건만 예외다. 근거와 반대 근거는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 2026-11-10 절이다.
 
 | 단계 | 올리거나 내리는 조건 |
 | --- | --- |
