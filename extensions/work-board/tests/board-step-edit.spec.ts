@@ -78,7 +78,8 @@ test('사건 꼬리표, stages 와 progress 알림과 저장 형식을 확인한
       assert.equal(result.code, 1); assert.equal(readFileSync(t.file, 'utf8'), before)
     }
     write(t.file, { id: 'a', progress: '2/5' }); result = run(t.file, ['step-add', 'a', '글'])
-    assert.equal(result.code, 0); assert.match(result.stderr, /progress/)
+    assert.equal(result.code, 0); assert.match(result.stderr, /progress 값을 지우면 단계 수로 센다/)
+    assert.doesNotMatch(result.stderr, /set a --progress auto/)
     const text = readFileSync(t.file, 'utf8'); assert.equal(text, JSON.stringify(JSON.parse(text), null, 1))
     for (const args of [['set', 'a', 'wait', '--event', '1 merge'], ['step-add', 'a', '글', '--exact'], ['step-edit', 'a', '1', '1. 글', '--if-rev', 'x']]) {
       const before = readFileSync(t.file, 'utf8'); result = run(t.file, args)

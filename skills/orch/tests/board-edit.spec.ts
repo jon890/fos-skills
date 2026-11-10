@@ -122,6 +122,7 @@ test('--on 꼬리표를 붙이고 교체하며 잘못된 값과 꼬리표 삭제
   save([item({ progress: '1/3', stages: 'pr=1,merge=9' })])
   const warned = ok(['add-step', 'x', '배포', '--on', '2 deploy'], 'BOARD-STEP-ADD x 10')
   assert.match(warned.err, /progress/)
+  assert.match(warned.err, /progress 값을 지우면 단계 수로 센다/)
   assert.match(warned.err, /stages/)
   row = JSON.parse(readFileSync(file, 'utf8')).items[0]
   assert.equal(row.details.at(-1).done, false)

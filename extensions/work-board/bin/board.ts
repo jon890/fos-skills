@@ -505,7 +505,7 @@ function apply(a: Args, board: Board): boolean | View {
       text = explicit === undefined ? `${number}. ${fresh.text}` : fresh.text
       if (event) text = withEventTag(text, event[1], event[2])
       item[key] = [...((item[key] ?? []) as Line[]), { text, done: false }]
-      if (PROGRESS.test(String(item.progress || ''))) process.stderr.write(`${id} 의 progress 값이 단계 수보다 앞서 새 줄이 진행률에 안 보인다. 단계로 세려면 set ${id} --progress auto 를 부른다\n`)
+      if (PROGRESS.test(String(item.progress || ''))) process.stderr.write(`${id} 의 progress 값이 단계 수보다 앞서 새 줄이 진행률에 안 보인다. progress 값을 지우면 단계 수로 센다\n`)
     }
     if (typeof item.stages === 'string' && item.stages.trim() && parseEventTag(text)) {
       process.stderr.write(`${id} 는 stages 가 있는 항목이다. 줄 끝 꼬리표가 생기면 꼬리표 줄만 사건으로 끝나고 stages 의 단계는 저절로 끝나지 않는다\n`)
