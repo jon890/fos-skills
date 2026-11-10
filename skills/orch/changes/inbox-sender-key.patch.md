@@ -1,5 +1,0 @@
-- 리뷰 worker 의 완료가 `DONE-SUSPECT` 로 다시 알려지던 것을 고친다. 결과 status 와 worker_done 이 같은 초에 오면 앞선 근거로 세지 못했다.
-- 시각이 같으면 Orca 의 순번(sequence)으로 앞뒤를 가린다.
-- Orca 명령마다 다른 메시지 필드 이름(`from_handle`, `from`, `to_handle`, `to`, `thread_id`)을 `core/message-fields.ts` 한 곳에서 읽는다.
-- 실측한 메시지 꼴로 리뷰 완료와 답한 질문의 판정을 확인하는 회귀 테스트를 더한다.
-- 기본 결정 알림 핸들러가 저장소를 알리지 않아 여러 저장소 루프의 DECISION-PENDING 중복 억제가 듣지 않던 것을 고친다.
