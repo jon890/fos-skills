@@ -67,6 +67,7 @@ test('set 은 상태만 바꾸고 없는 항목과 진행률 없는 doing 을 �
   save([item(), item({ id: 'empty', status: 'wait', details: [] })])
   for (const state of ['goal', 'decide', 'wait', 'done', 'doing']) ok(['set', 'x', state], `BOARD-SET x ${state}`)
   refused(['set', 'x', 'bad'], /goal.*decide.*doing.*wait.*done/)
+  refused(['set', 'x', ''], /goal.*decide.*doing.*wait.*done/)
   refused(['set', 'missing', 'wait'], /항목이 없다/)
   refused(['set', '99', 'wait'], /항목이 없다/)
   refused(['set', 'empty', 'doing'], /진행률|단계/)

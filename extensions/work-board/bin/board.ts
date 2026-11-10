@@ -560,7 +560,7 @@ function apply(a: Args, board: Board): boolean | View {
     item = { id, title: a.fields.title || id }
     board.items.push(item)
   }
-  if (a.status) {
+  if (a.status || (a.exact && a.status !== undefined)) {
     if (!STATUSES.includes(a.status)) throw new Refused(`status 는 ${STATUSES.join('|')} 중 하나다`)
     item.status = a.status
   }

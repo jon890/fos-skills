@@ -128,7 +128,7 @@ orch board release --release "$RELEASE_PR"
 | 배포 성공 뒤 | `board-sync.ts`, `finish-pr.ts` | 마일스톤 항목의 `[deploy]` 단계를 끝내고, 마지막 PR 이 done 지점에 닿았으면 done 으로 바꾼다. `finish-pr.ts` 는 마지막 PR 인지 판정하지 못하면 중간 PR 로 본다. `merged-pr` 의 PR 은 다시 판정하지 않는다 |
 | 릴리스 뒤 | `board-release.ts` | 저장소가 부른다. 릴리스에 든 PR 의 항목에서 `[release]` 단계까지 끝내고, done 지점에 닿았으면 done 으로 바꾼다 |
 | 사건 꼬리표 확인 | `board-sync.ts`, `board-release.ts` | done 을 제외한 goal 과 수동 항목도 줄 끝의 `(#PR번호 사건)` 을 읽어 그 줄만 끝낸다. 다른 줄과 항목 상태는 그대로 둔다 |
-| 결정·수동 단계 변경 | 코디네이터 | decide·wait 상태와 꼬리표 없는 수동 단계의 완료를 `orch board set/step` 으로 반영한다. 번호 없는 결정 줄은 `board.ts mark` 로 끝낸다. 자동 반영이 빠졌을 때만 사건 단계를 직접 고친다 |
+| 결정·수동 단계 변경 | 코디네이터 | decide·wait 상태와 꼬리표 없는 수동 단계의 완료를 `orch board set`, `orch board step` 으로 반영한다. 번호 없는 결정 줄은 `board.ts mark` 로 끝낸다. 자동 반영이 빠졌을 때만 사건 단계를 직접 고친다 |
 
 자동 연결의 근거와 `pr`·`merged-pr` 필드의 값 읽기는 `board-sync.ts` 와 `board.ts` 머리 주석이 소유한다. 수동 갱신은 자동 반영이 누락됐을 때만 쓴다.
 
