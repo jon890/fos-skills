@@ -113,7 +113,7 @@ export function withEventTag(text, pr, event)
 - `done` 항목은 종료 코드 1 이다.
 - `'✓ 정리'` 처럼 앞 표시를 줘도 끝나지 않은 줄이다.
 - `--event '1455 merge'` 와 `--event '#1455 merge'` 는 둘 다 `N. 글 (#1455 merge)` 를 더한다. 그 줄을 `parseEventTag` 가 `{pr: '1455', event: 'merge'}` 로 읽는다. `--event '1455 build'`, `--event 'abc merge'`, `--event '1455'`, `--event '0 merge'` 는 종료 코드 1 이다.
-- `stages` 가 `pr=1,merge=2` 인 항목에 `step-add a 글 --event '1455 merge'` 를 주면 종료 코드 0 이고 stderr 에 「stages」 가 든 한 줄이 나온다. 같은 항목에 `step-edit a 3 '3. 확인 (#1455 merge)'` 처럼 글에 직접 써도 나온다. 꼬리표 없는 글이나 `stages` 가 없는 항목은 그 줄이 없다.
+- `stages` 가 `pr=1,merge=2` 이고 줄이 `1. PR`, `2. 머지`, `3. 확인` 인 항목에 `step-add a 글 --event '1455 merge'` 를 주면 종료 코드 0 이고 stderr 에 「stages」 가 든 한 줄이 나온다. 같은 항목에 `step-edit a 3 '3. 확인 (#1455 merge)'` 처럼 글에 직접 써도 나온다. 꼬리표 없는 글이나 `stages` 가 없는 항목은 그 줄이 없다.
 - `progress` 값이 `2/5` 인 항목은 종료 코드 0 이고 stderr 에 「progress」 가 든 한 줄이 나온다. `progress` 가 없는 항목은 stderr 가 비어 있다.
 
 공통:
