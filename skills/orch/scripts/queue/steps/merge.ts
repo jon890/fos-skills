@@ -2,18 +2,17 @@
 
 import { ConfigError } from '../../lib/config.ts'
 import { fire } from '../../lib/events.ts'
-import { baseMergesOnly, featureBranch, featureEvidenceProblem } from '../../lib/feature-evidence.ts'
 import { apiTarget, gh, ghJson, isOwnPr, ownAuthors } from '../../lib/gh.ts'
 import { oneLine, short } from '../../lib/output.ts'
-import { NO_LIMIT_MS, runAsync, runInherit, stopping } from '../../lib/proc.ts'
+import { NO_LIMIT_MS, runInherit, stopping } from '../../lib/proc.ts'
 import { TURN_PHASES } from '../../lib/queue-turn.ts'
-import { requiredChecks } from './checks.ts'
-import type { GhPr, Pr, StepContext } from './model.ts'
-import { Conflict, FAIL_SEL, HeadChanged, NotReady, PENDING, ROLL_NAMES, ROLL_NAMES_NO_SKIPPED, WorkerFix } from './model.ts'
+import { gateReasons, holdWith, loadPr } from './gate.ts'
+import type { GhPr, StepContext } from './model.ts'
+import { CheckStop, HeadChanged, NotReady, PENDING } from './model.ts'
 import type { StepState } from './model.ts'
-import { docsOnly, fetchPrRefs, overlapFiles, overlapsDeferred } from './overlap.ts'
+import { docsOnly, overlapFiles, overlapsDeferred } from './overlap.ts'
 import { eventContext, field, prEnv, prInput, turn } from './pr.ts'
-import { chomp, failed, git, log, namesJson, nap, out, refuseWhenStopping, stop } from './runtime.ts'
+import { chomp, failed, git, log, nap, out, refuseWhenStopping, stop } from './runtime.ts'
 import { bringUpToDate, remoteBase } from './update.ts'
 import { verifyMerged } from './verify.ts'
 
@@ -24,76 +23,8 @@ export async function processPr(stepContext: StepContext, state: StepState, item
   // `PR:명령` 은 이벤트가 아니라 before-merge 다음에 따로 돈다.
   // 콜론 뒤가 비면 일회성 명령은 돌리지 않는다. 콜론이 없으면 null 이다
   const prCommand = colon >= 0 ? item.slice(colon + 1) : null
-  const p: Pr = (state.pr = {
-    n,
-    ph: '',
-    branch: '',
-    cross: false,
-    apiHost: '',
-    owner: '',
-    repo: '',
-    base: '',
-    beforeHead: null,
-    judgments: 0,
-    judgedBase: null,
-    ov: [],
-    title: null,
-    author: null,
-    draft: false,
-    url: '',
-  })
-
-  const st = await field(stepContext, state, n, 'state', '.state')
-  if (st === 'MERGED') {
-    log(`${n} 이미 MERGED`)
-    state.sweepBase = state.sweepBase || (await field(stepContext, state, n, 'baseRefName', '.baseRefName'))
-    return
-  }
-  if (st !== 'OPEN') stop(`${n} state=${st || '조회 실패'}`)
-
-  // 검사 대상 HEAD 를 체크를 보기 전에 고정한다
-  p.ph = await field(stepContext, state, n, 'headRefOid', '.headRefOid')
-  p.branch = await field(stepContext, state, n, 'headRefName', '.headRefName')
-  const cross = await field(stepContext, state, n, 'isCrossRepository', '.isCrossRepository')
-  if (!p.ph) stop(`${n} headRefOid 조회 실패`)
-  if (!p.branch) stop(`${n} headRefName 조회 실패`)
-  if (cross !== 'true' && cross !== 'false') stop(`${n} isCrossRepository 조회 실패`)
-  p.cross = cross === 'true'
-
-  // https://<호스트>/<owner>/<repo>/pull/<번호>. `://` 가 없으면 호스트가 비어 조회 실패다
-  const url = await field(stepContext, state, n, 'url', '.url')
-  const scheme = url.indexOf('://')
-  const [host, owner, repo] = (scheme >= 0 ? url.slice(scheme + 3) : '').split('/')
-  p.apiHost = host ?? ''
-  p.owner = owner ?? ''
-  p.repo = repo ?? ''
-  if (!(p.owner && p.repo && p.apiHost)) stop(`${n} url 조회 실패`)
-  p.url = url
-  // 이벤트 입력의 pr 을 채운다. 조회하지 못했으면 핸들러에 틀린 값을 넘기지 않도록 멈춘다
-  const info = await field(stepContext, state, n, 'title,author,isDraft', '{title, author: .author.login, isDraft} | tojson')
-  try {
-    const parsed = JSON.parse(info) as { title: unknown; author: unknown; isDraft: unknown }
-    p.title = typeof parsed.title === 'string' ? parsed.title : null
-    p.author = typeof parsed.author === 'string' ? parsed.author : null
-    p.draft = parsed.isDraft === true
-  } catch {
-    stop(`${n} title, author, isDraft 조회 실패`)
-  }
-  p.base = await field(stepContext, state, n, 'baseRefName', '.baseRefName')
-  if (!p.base) stop(`${n} baseRefName 조회 실패`)
-  state.sweepBase = p.base
-
-  const req = requiredChecks(stepContext, state)
-  for (const name of o.allowFail) {
-    if (req.includes(name)) stop(`${n} --allow-fail 의 ${name} 는 필수 체크다. 필수 체크의 실패는 허용할 수 없다`)
-  }
-  const roll = o.skippedMissing ? ROLL_NAMES_NO_SKIPPED : ROLL_NAMES
-  const allowed = `(.name // .context) as $nm | (${namesJson(o.allowFail)} | any(. == $nm))`
-  state.q = {
-    missing: `((${namesJson(req)}) - ${roll})`,
-    failed: `[.statusCheckRollup[] | ${FAIL_SEL} | select(${allowed} | not)] | length`,
-    allowedFailed: `[.statusCheckRollup[] | ${FAIL_SEL} | select(${allowed}) | (.name // .context)] | unique | .[]`,
-  }
+  if ((await loadPr(stepContext, state, n)) === 'merged') return
+  const p = state.p
 
   p.beforeHead = null
   p.judgments = 0
@@ -135,29 +66,23 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
   const p = state.p
   const n = p.n
   for (;;) {
-    await bringUpToDate(stepContext, state)
+    try {
+      await bringUpToDate(stepContext, state)
+    } catch (e) {
+      // 체크를 넘지 못해도 스레드, 충돌, 근거 블록에 걸리는지 함께 보고 이유를 한 번에 낸다
+      if (e instanceof CheckStop) {
+        const rest = await gateReasons(stepContext, state, 'none')
+        if (rest.reasons.length > 0) holdWith(state, [{ kind: 'ci', text: e.reason }, ...rest.reasons])
+      }
+      throw e
+    }
 
-    const f = await field(stepContext, state, n, 'statusCheckRollup', state.q.failed)
     for (const name of (await field(stepContext, state, n, 'statusCheckRollup', state.q.allowedFailed)).split('\n')) {
       if (name) out(`경고: ${n} 실패를 허용한 체크 ${name}`)
     }
-    const threads = await runAsync(['bash', '-c', o.threadsCmd], { env: { ...prEnv(stepContext, state), GH_HOST: p.apiHost, ORCH_GH_CACHE: '0' }, timeoutMs: NO_LIMIT_MS })
-    // 옛 명령은 스레드 명령의 stderr 를 받지 않고 그대로 흘렸다
-    if (threads.stderr) process.stderr.write(threads.stderr)
-    if (threads.code !== 0) stop(`${n} 스레드 조회 실패`)
-    const t = chomp(threads.stdout)
-
-    let m = await field(stepContext, state, n, 'mergeable', '.mergeable')
-    for (let i = 0; i < 4; i++) {
-      if (m !== 'UNKNOWN') break
-      await nap(stepContext, 20)
-      m = await field(stepContext, state, n, 'mergeable', '.mergeable')
-    }
-
-    log(`${n} fails=${f} threads=${t} mergeable=${m}`)
-    if (m === 'CONFLICTING') throw new Conflict(`${n} base(${p.base}) 와 충돌한다(mergeable=CONFLICTING)`)
-    if (f === '0' && t !== '0' && m === 'MERGEABLE') throw new WorkerFix(n, `미해결 리뷰 스레드 ${t} 개`, true)
-    if (f !== '0' || t !== '0' || m !== 'MERGEABLE') stop(n)
+    const gate = await gateReasons(stepContext, state, 'failed')
+    log(`${n} ${gate.summary}`)
+    if (gate.reasons.length > 0) holdWith(state, gate.reasons)
 
     p.ov = []
     if (o.overlap) {
@@ -189,13 +114,6 @@ export async function readyToMerge(stepContext: StepContext, state: StepState, p
 
     const ph2 = await field(stepContext, state, n, 'headRefOid', '.headRefOid')
     if (p.ph !== ph2) throw new HeadChanged(`${n} 검사 뒤 HEAD 가 바뀌었다 checked=${p.ph.slice(0, 8)} now=${ph2.slice(0, 8)}`)
-    const evidence = ghJson<{ body: string; headRefOid: string }>(['pr', 'view', n, '--json', 'body,headRefOid', '--jq', '.'], { cwd: o.repo, cache: false })
-    if (!evidence.ok || evidence.data.headRefOid !== p.ph) stop(`${n} 기능 완료 근거 또는 HEAD 조회 실패`)
-    // 검증 커밋 뒤에 base 를 합친 merge 만 있으면(이 큐나 상주 루프의 update-branch) 받아들인다. 지금 HEAD 의 필수 체크는 위에서 기다렸다
-    const problem = featureEvidenceProblem(evidence.data.body ?? '', p.ph, featureBranch(o.repo, p.branch), false,
-      (verified) => fetchPrRefs(stepContext, state) && baseMergesOnly(state.repoDir, p.ph, verified, p.base))
-    if (problem) throw new WorkerFix(`${n} ${problem}`, problem)
-
     // 같은 HEAD 에 재실행만 생겨도 캐시의 완료 결과로 머지하지 않는다. 머지 전 명령 뒤에 읽는다.
     const latestFailed = await field(stepContext, state, n, 'statusCheckRollup', state.q.failed, true)
     const latestPending = await field(stepContext, state, n, 'statusCheckRollup', PENDING)
