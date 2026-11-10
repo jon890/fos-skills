@@ -22,6 +22,7 @@ test('종류별 필수 칸을 모두 알리고 command 는 미리보기 없이 �
   assert.deepEqual(validateAdd({ ...input('real'), real: null }), { ok: false, missing: ['target', 'change', 'rollback'] })
   assert.deepEqual(validateAdd({ ...input('step'), item: null, step: null }), { ok: false, missing: ['item', 'step'] })
   assert.equal(validateAdd({ ...input(), kind: 'other' as ApprovalKind }).ok, false)
+  assert.deepEqual(validateAdd({ ...input(), kind: '' as ApprovalKind, title: '' }), { ok: false, missing: ['title', 'kind'] })
 })
 test('열린 대기만 바꾸고 keep-open 은 버전과 파일을 그대로 둔다', () => {
   const a = applyAdd(emptyFile(), input(), now)

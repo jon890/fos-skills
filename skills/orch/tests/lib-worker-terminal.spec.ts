@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { APPROVAL_STATES, LIVE_STATES, lookupWorkerTerminals } from '../scripts/lib/worker-terminal.ts'
 import { fakeBin } from './fixtures/fake-bin.ts'
+import { linkBin } from '../../../modules/testkit/fake-bin.ts'
 const envelope = (result: unknown) => JSON.stringify({ ok: true, result })
 const rows = (handles: string[], scope = 'all', next: string | null = null) => envelope({ workers: handles.map(agentTerminalHandle => ({ agentTerminalHandle, dispatchId: 'd' })), scope: { source: scope }, page: { nextCursor: next } })
 test('approval 은 released 를 읽고 hook 상태 목록은 읽지 않는다', async () => {
@@ -39,5 +40,8 @@ test('bound 조회는 다른 Run 의 모든 상태와 페이지를 읽는다', a
     assert.ok(!timed.ok && timed.timeout)
     fake.setRules([{ stdout: envelope({ workers: {} }) }])
     assert.equal((await lookupWorkerTerminals(['term_w'], { states: APPROVAL_STATES })).ok, false)
+    process.env.ORCA = linkBin(dir, 'slow-orca', 'setTimeout(() => console.log(JSON.stringify({result:{workers:[],scope:{source:"all"}}})), 300)')
+    const slow = await lookupWorkerTerminals(['term_w'], { states: APPROVAL_STATES, deadline: Date.now() + 100 })
+    assert.ok(!slow.ok && slow.timeout)
   } finally { if (old === undefined) delete process.env.ORCA; else process.env.ORCA = old; rmSync(dir, { recursive: true, force: true }) }
 })

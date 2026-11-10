@@ -49,7 +49,7 @@ export function parseFile(source: string): ApprovalFile {
 }
 
 export function validateAdd(input: AddInput): { ok: true } | { ok: false; missing: string[] } | { ok: false; error: string } {
-  if (!KINDS.includes(input.kind)) return { ok: false, error: '모르는 승인 종류다' }
+  if (text(input.kind) && !KINDS.includes(input.kind)) return { ok: false, error: '모르는 승인 종류다' }
   const missing: string[] = []
   for (const name of ['title', 'kind'] as const) if (!text(input[name])) missing.push(name)
   if (input.kind !== 'command' && !input.preview) missing.push('preview')

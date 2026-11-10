@@ -50,6 +50,8 @@ test('종류별 필수 인자, 미리보기 해시와 Run·터미널 저장, 입
     }
     const bad = f.add('bad', 'real', ['--target', 'x']); assert.equal(bad.code, 2); assert.match(bad.err, /--change, --rollback/)
     assert.equal(f.add('bad', 'step').code, 2)
+    const missingKind = f.run(['add', 'bad', '--preview', f.preview, '--run', 'R'])
+    assert.equal(missingKind.code, 2); assert.match(missingKind.err, /--title, --kind/)
     for (const id of ['a b', 'a:b']) assert.equal(f.add(id).code, 2)
     assert.equal(f.run(['add', 'c', '--title', '명령', '--kind', 'command', '--command', 'echo x', '--run', 'R'], script, { ORCA_TERMINAL_HANDLE: '' }).code, 1)
   } finally { f.clean() }
@@ -121,6 +123,16 @@ test('worker 는 대기를 올리거나 거둘 수 없고 조회 실패도 거�
       assert.equal(f.add().code, 1); assert.equal(f.run(['cancel', 'demo']).code, 1)
       assert.equal(readFileSync(f.file, 'utf8'), before)
     }
+  } finally { f.clean() }
+})
+test('같은 단계의 keep-open 은 열린 대기를 하나만 남긴다', () => {
+  const f = fixture()
+  try {
+    const args = ['--item', 'x', '--step', '2', '--keep-open']
+    assert.equal(f.add('step-x-2', 'step', args).code, 0)
+    assert.match(f.add('step-x-2', 'step', args).out, /1 kept$/)
+    assert.equal(f.run(['list']).out.split('\n').length, 1)
+    assert.equal(f.read().seq, 1)
   } finally { f.clean() }
 })
 test('깨진 파일은 add 만 옮겨 보존하고 쓰기 때 끝난 지 7일 넘은 기록만 정리한다', () => {
