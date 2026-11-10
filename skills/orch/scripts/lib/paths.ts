@@ -18,7 +18,7 @@
 //   feedback     feedback/          worker 가 쌓은 스킬 개선 후보(references/feedback-review.md)
 //   study        study/             일하다 생긴 공부 후보(references/study-candidates.md)
 //
-// 보드는 work-board 소유라 여기 없다. boardPath 의 기본 위치는 extensions/work-board/bin/board.ts 의 defaultBoardPath 를 import 해 쓴다.
+// 보드는 work-board 소유라 여기 없다. 보드 경로는 lib/board-file.ts 가 정한다.
 //
 // 옛 구조: .claude/orch-overlay.md, .claude/orch-finish.json, .omc/orch/, .omc/handoffs/specs/ 가 남아 있으면
 // (폴더는 안에 파일이 있을 때만 센다) requireMigrated 가 옮기는 명령(migrate-orch-dir.ts)을 알린다.
@@ -31,7 +31,6 @@
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { defaultBoardPath } from '../../../../extensions/work-board/bin/board.ts'
 import { orchWord } from './commands.ts'
 import { inside, real } from './fs.ts'
 import { shQuote } from './py.ts'
@@ -89,15 +88,6 @@ export function orchDir(repo: string): string {
 export function pathOf(name: string, repo: string): string {
   if (!Object.hasOwn(NAMES, name)) throw new Error(`모르는 이름: ${name}. ${Object.keys(NAMES).join(', ')} 중 하나다`)
   return join(orchDir(repo), NAMES[name])
-}
-
-// 보드 파일. explicit(명령줄이나 설정의 board)이 있으면 그것을 주 checkout 기준으로, 없으면 work-board 의 기본 위치다.
-export function boardPath(repo: string, explicit?: string | null): string {
-  if (explicit) {
-    const board = expandUser(explicit)
-    return isAbsolute(board) ? board : join(mainCheckout(repo), board)
-  }
-  return defaultBoardPath(real(repo))
 }
 
 const ignoredMemo = new Map<string, 'ignored' | 'no-git'>()

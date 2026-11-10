@@ -1,9 +1,9 @@
-// 보드 동기화(틱 3, 워크트리 정리 전): 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
+// 보드 동기화(틱 3, 워크트리 정리 전): 보드 파일(lib/board-file.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
 //     결정이 남았을 때의 알림은 decisions.ts 가 맡는다.
 
 import { scriptPath } from '../../lib/commands.ts'
 import { isFile } from '../../lib/fs.ts'
-import { boardPath } from '../../lib/paths.ts'
+import { boardPath } from '../../lib/board-file.ts'
 import { runAsync, scriptCommand } from '../../lib/proc.ts'
 import type { StepContext, StepResult, StepState } from './context.ts'
 import { reporter } from './errors.ts'

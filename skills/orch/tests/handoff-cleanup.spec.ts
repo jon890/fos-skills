@@ -261,6 +261,20 @@ describe('handoff-cleanup', () => {
     assert.equal(existsSync(join(trash, '.orch/specs/spec-finished.md')), true)
   })
 
+  test('명시 값이 없으면 finish.board 를 쓰고 cleanup.board 가 있으면 먼저 쓴다', () => {
+    make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))
+    writeFileSync(join(repo, 'chosen.json'), JSON.stringify({ items: [{ id: 'item-done', status: 'done' }] }))
+    writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: 'chosen.json' } }))
+    let result = clean([], {}, { noBoard: true })
+    assert.equal(result.code, 0, result.stderr)
+    assert.match(result.stdout, /spec-finished.md/)
+    writeFileSync(join(repo, 'blocked.json'), JSON.stringify({ items: [{ id: 'item-done', status: 'doing' }] }))
+    writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: 'chosen.json' }, cleanup: { board: 'blocked.json' } }))
+    result = clean(['--apply'], {}, { noBoard: true })
+    assert.equal(result.code, 0, result.stderr)
+    assert.equal(existsSync(join(orch, 'specs/spec-finished.md')), true)
+  })
+
   test('보드를 읽지 못하면 보드 항목 줄이 있는 지시서는 옮기지 않는다', () => {
     writeFileSync(join(repo, 'board.json'), 'not json')
     make('.orch/specs/spec-finished.md', spec('feat/finished', 'item-done'))

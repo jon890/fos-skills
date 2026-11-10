@@ -58,10 +58,11 @@ test('status 100행 뒤의 준비 상태는 inbox 에서 읽어 ready 이벤트�
   const ready = { id:'ready', type:'status', run_id:'R', task_id:'task', dispatch_id:'d', from_handle:'worker', body:`준비됨 #7, head ${sha}`, created_at:'2026-11-10T00:00:30Z' }
   rules([done('d')], Array.from({length:100},(_,i)=>({id:`s${i}`,type:'status'})), [ready])
   const gh = fakeBin(repo,'gh',[{stdout:JSON.stringify({number:7,headRefName:'feat/x',headRefOid:sha,title:'제목',url:'url'})}]); process.env.GH=gh.path; process.env.ORCH_GH_CACHE='0'
-  mkdirSync(join(repo,'.omc')); writeFileSync(join(repo,'.omc','board.json'),JSON.stringify({items:[{id:'item',title:'작업',branch:'feat/x'}]}))
+  writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: 'chosen.json' } }))
+  writeFileSync(join(repo, 'chosen.json'), JSON.stringify({ items: [{ id: 'item', title: '작업', branch: 'feat/x' }] }))
   await watchCompletions(repo,'R','main')
   assert.equal(notices().length,0)
-  assert.equal(JSON.parse(readFileSync(join(repo,'.omc','board.json'),'utf8')).items[0].pr,7)
+  assert.equal(JSON.parse(readFileSync(join(repo, 'chosen.json'), 'utf8')).items[0].pr, 7)
 })
 test('띄우기 기록이 지워져도 영구 이력의 리뷰 지시서와 첫 판정 status 로 리뷰 worker 완료를 의심하지 않는다', async () => {
   const spec = join(repo, 'spec-review.md'); writeFileSync(spec, '# 리뷰\n\n리뷰 PR: #9\n')

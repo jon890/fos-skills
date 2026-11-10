@@ -74,7 +74,8 @@ import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
 import { ghJson } from '../lib/gh.ts'
-import { boardPath, orchDir, requireMigrated } from '../lib/paths.ts'
+import { boardPath } from '../lib/board-file.ts'
+import { orchDir, requireMigrated } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
 import { branchesOf, deleteSpecs, LINE_BREAK, liveSpecPaths, runSpecPaths, specCandidates } from '../lib/spec.ts'
 import { emit } from '../lib/output.ts'
@@ -462,7 +463,7 @@ function main(argv: string[]): number {
     args = parse(argv)
   } catch (e) {
     if (!(e instanceof Usage || e instanceof ConfigError)) throw e
-    err(`${USAGE}\nhandoff-cleanup: ${e.message}`)
+    err(e instanceof ConfigError ? `handoff-cleanup: ${e.message.replace(/\s+/g, ' ')}` : `${USAGE}\nhandoff-cleanup: ${e.message}`)
     return 2
   }
   if (args === null) {
@@ -474,7 +475,14 @@ function main(argv: string[]): number {
   const mainRoot = mainCheckout(repo)
   const orch = args.orchDir ? realPath(resolve(mainRoot, expandUser(args.orchDir))) : orchDir(repo)
   const previews = args.previews ? realPath(resolve(mainRoot, expandUser(args.previews))) : null
-  const board = boardPath(repo, args.board)
+  let board: string
+  try {
+    board = boardPath(repo, args.board)
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
+    err(`handoff-cleanup: ${e.message.replace(/\s+/g, ' ')}`)
+    return 2
+  }
   const nowMs = Date.now()
   const day = new Date(nowMs)
   const stamp = `${day.getFullYear()}${String(day.getMonth() + 1).padStart(2, '0')}${String(day.getDate()).padStart(2, '0')}`

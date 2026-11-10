@@ -5,7 +5,7 @@
 //     orch_paths.ts [--repo DIR] check
 //     NAME 은 lib/paths.ts 의 NAMES(overlay, config, specs, queue, state, heavy-slot, hooks, hooks-state, bin)나
 //     root, board 다. 절대경로 한 줄을 낸다. --repo 의 기본은 현재 디렉터리다.
-//     board 는 work-board 의 기본 보드 위치(lib/paths.ts 의 boardPath)다.
+//     board 는 lib/board-file.ts 의 boardPath 가 고른 보드 위치다.
 //     --ensure  폴더를 만들고 git 이 루트를 무시하게 한다. 파일 이름이면 그 부모 폴더를 만든다.
 //               옛 구조가 남아 있으면 만들지 않고 종료 코드 2 다. 빈 새 폴더에서 조용히 시작하지 않게 한다
 //     check     옛 구조가 남아 있으면 옮기는 명령을 알리고 종료 코드 2 다. 셸 스크립트가 시작할 때 부른다
@@ -17,7 +17,9 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
-import { boardPath, ensure, ensureIgnored, NAMES, orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
+import { boardPath } from '../lib/board-file.ts'
+import { ConfigError } from '../lib/config.ts'
+import { ensure, ensureIgnored, NAMES, orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 
 const CHOICES = ['root', 'board', 'check', ...Object.keys(NAMES)]
 const USAGE = `사용법: orch_paths.ts [--repo DIR] [--ensure] {${CHOICES.join(',')}}`
@@ -51,7 +53,13 @@ function main(argv: string[]): number {
   if (name === 'check') return requireMigrated(repo, 'orch_paths', null) ? 0 : 2
   if (values.ensure && !requireMigrated(repo, 'orch_paths', null)) return 2
   if (name === 'board') {
-    process.stdout.write(`${boardPath(repo)}\n`)
+    try {
+      process.stdout.write(`${boardPath(repo)}\n`)
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e
+      process.stderr.write(`orch_paths: ${e.message.replace(/\s+/g, ' ')}\n`)
+      return 2
+    }
   } else if (name === 'root') {
     const root = orchDir(repo)
     if (values.ensure) {

@@ -35,7 +35,7 @@ import { mainCheckout } from '../lib/git.ts'
 import { staleLoopBundles } from '../lib/loop-bundle.ts'
 import { loopStatus, registeredRuns } from '../lib/loop.ts'
 import { collectStages, collectWorkers, movementSettings, screenMarks, stageLine, workerLine, worktreeOf } from '../lib/movement.ts'
-import { boardPath } from '../lib/paths.ts'
+import { boardPath } from '../lib/board-file.ts'
 import { workerRows } from '../lib/workers.ts'
 
 const USAGE = '사용법: orch-status.ts --repo DIR [--run ID]...'
@@ -119,8 +119,8 @@ function main(argv: string[]): number {
     const mine = workers.verdicts.filter((v) => v.run === run)
     out(`RUN ${run} workers=${mine.length} stalled=${mine.filter((v) => v.reason).length}`)
   }
-  const board = boardPath(repo)
   try {
+    const board = boardPath(repo)
     const items = existsSync(board) ? readBoard(board) : []
     const count = (status: string) => items.filter((item) => item.status === status).length
     out(`BOARD doing=${count('doing')} decide=${count('decide')}`)

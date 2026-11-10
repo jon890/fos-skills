@@ -127,7 +127,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { markFinishStarted } from '../lib/finish-marks.ts'
-import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard, BOARD_BIN } from '../lib/board.ts'
+import { hasEventTags, findBoardItems, intermediateCommands, noteLine, readBoard, BOARD_BIN, guardedCommands, linesRev, staleBoardWrite } from '../lib/board.ts'
 import type { BoardDetail, BoardStep } from '../lib/board.ts'
 import { conflictSpecFiles } from '../lib/conflicts.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
@@ -142,7 +142,8 @@ import { gh } from '../lib/gh.ts'
 import { repoArgProblem } from '../lib/git.ts'
 import { pollSeconds } from '../lib/gh-budget.ts'
 import { EVIDENCE_START, featureBranch, featureEvidenceProblem, fetchedBaseMerges } from '../lib/feature-evidence.ts'
-import { boardPath, pathOf, requireMigrated } from '../lib/paths.ts'
+import { boardPath } from '../lib/board-file.ts'
+import { pathOf, requireMigrated } from '../lib/paths.ts'
 import { run, runAsync, scriptCommand, withRun } from '../lib/proc.ts'
 import type { Runner } from '../lib/proc.ts'
 import { pyStr } from '../lib/py.ts'
@@ -549,6 +550,27 @@ function board(args: Args, repo: string, argv: string[]): boolean {
   return done.code === 0
 }
 
+// 통째 저장의 지문 거절만 다시 읽어 한 번 재시도한다. 나머지 명령은 거절 뒤 실행하지 않는다.
+function updateBoardRows<T>(args: Args, repo: string, item: string, make: (row: Record<string, unknown>, steps: BoardStep[]) => { cmds: string[][]; value: T }): T | false {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const got = boardRow(args, repo, item)
+    if (!got) return false
+    const made = make(got.row, got.steps)
+    let stale = false
+    for (const argv of guardedCommands(made.cmds, linesRev(got.row))) {
+      const done = run(scriptCommand(args.boardBin, [...argv, '--file', boardPath(repo, args.board)]), { cwd: repo, timeoutMs: RUN_TIMEOUT_MS })
+      if (done.code !== 0) {
+        log(`보드 명령이 실패했다: ${done.stderr.trim()}`)
+        if (!staleBoardWrite(argv, done)) return false
+        stale = true
+        break
+      }
+    }
+    if (!stale) return made.value
+  }
+  return false
+}
+
 function setBoardDone(args: Args, repo: string, item: string): boolean {
   return board(args, repo, ['set', item, 'done', '--worktree', '', '--pr', '', '--next', ''])
 }
@@ -578,10 +600,9 @@ function boardRow(args: Args, repo: string, item: string): { row: Record<string,
 
 // 중간 PR 을 옛 단계 항목에 반영한다(lib/board.ts 의 intermediateCommands). 항목이나 단계 목록을 읽지 못하면 false 다
 function setBoardIntermediate(args: Args, repo: string, item: string, note: string | null): boolean {
-  const got = boardRow(args, repo, item)
-  if (!got) return false
-  const details = (Array.isArray(got.row.details) ? got.row.details : []) as BoardDetail[]
-  return intermediateCommands(item, details, got.steps, args.pr, note, got.row['merged-pr']).every((cmd) => board(args, repo, cmd))
+  return updateBoardRows(args, repo, item, (row, steps) => ({
+    cmds: intermediateCommands(item, (Array.isArray(row.details) ? row.details : []) as BoardDetail[], steps, args.pr, note, row['merged-pr']), value: true,
+  }))
 }
 
 // 마일스톤 항목(stages 칸이 있다)에 머지와 배포를 반영한다(lib/milestones.ts 의 mergedCommands). 배포가 성공했으면 [deploy] 단계까지 끝낸다.
@@ -594,11 +615,10 @@ function setBoardMilestone(args: Args, repo: string, item: string, stages: Stage
     log(`보드 설정을 읽지 못했다: ${(e as Error).message}`)
     return false
   }
-  const got = boardRow(args, repo, item)
-  if (!got) return false
-  const made = mergedCommands({ ...got.row, id: item }, got.steps, stages, args.pr, deploy === 'success' ? 'deploy' : 'merge', { last, doneAfter, note })
-  if (!made.cmds.every((cmd) => board(args, repo, cmd))) return false
-  return made.done ? 'done' : 'doing'
+  return updateBoardRows(args, repo, item, (row, steps) => {
+    const made = mergedCommands({ ...row, id: item }, steps, stagesOf(row) ?? stages, args.pr, deploy === 'success' ? 'deploy' : 'merge', { last, doneAfter, note })
+    return { cmds: made.cmds, value: made.done ? 'done' as const : 'doing' as const }
+  })
 }
 
 async function finish(args: Args, repo: string): Promise<number> {
