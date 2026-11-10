@@ -48,7 +48,7 @@ export function queueDigest(repo: string, run: string, kind: string, text: strin
   save(repo, run, data)
 }
 
-// 오류가 이어진 틱 수를 센다. 연속 세 틱을 넘긴 첫 틱에 true 를 낸다(그 뒤에는 오류가 풀릴 때까지 다시 내지 않는다). reason 이 null 이면 풀린 것이다
+// 오류가 이어진 틱 수를 센다. 연속 세 틱을 넘기면 true 를 낸다(markStreakSent 로 보낸 것을 확정하면 오류가 풀릴 때까지 다시 내지 않는다). reason 이 null 이면 풀린 것이다
 export function watchStreak(repo: string, key: string, reason: string | null): boolean {
   const data = load(repo, '__streaks__') ?? { sent_at: '', items: [], streaks: {} }
   const current = data.streaks[key]
@@ -57,11 +57,18 @@ export function watchStreak(repo: string, key: string, reason: string | null): b
     delete data.streaks[key]; save(repo, '__streaks__', data); return false
   }
   const next: Streak = current && current.reason === reason ? { ...current, count: current.count + 1 } : { reason, count: 1, sent: false }
-  const fire = next.count > STREAK_LIMIT && !next.sent
-  if (fire) next.sent = true
   data.streaks[key] = next
   save(repo, '__streaks__', data)
-  return fire
+  // 보낸 것으로 확정하는 것은 markStreakSent 다. 전송이 실패하면 다음 틱도 true 를 낸다
+  return next.count > STREAK_LIMIT && !next.sent
+}
+
+// 연속 오류의 바로 보내기가 성공한 뒤 불러 같은 오류가 풀릴 때까지 다시 보내지 않게 한다
+export function markStreakSent(repo: string, key: string): void {
+  const data = load(repo, '__streaks__')
+  if (!data?.streaks[key]) return
+  data.streaks[key].sent = true
+  save(repo, '__streaks__', data)
 }
 
 // 주기가 지났고 쌓인 것이 있으면 DIGEST 하나로 보낸다. 보내지 못하면 남겨 다음 틱이 다시 보낸다. 보냈으면 true

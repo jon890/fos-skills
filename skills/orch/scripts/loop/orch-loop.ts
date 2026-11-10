@@ -444,7 +444,7 @@ import { envMs } from '../lib/env.ts'
 import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
 import { sendNotice, setNoticeOwner } from '../lib/run-notice.ts'
-import { DEFAULT_DIGEST_SEC, flushDigest, watchStreak } from '../lib/notice-digest.ts'
+import { DEFAULT_DIGEST_SEC, flushDigest, markStreakSent, watchStreak } from '../lib/notice-digest.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
 import { finishedTurns, readTurns, turnLine } from '../lib/queue-turn.ts'
 import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshFile, refreshSettings, verdict as refreshVerdict, writeRefresh } from '../lib/refresh.ts'
@@ -2049,7 +2049,9 @@ function watchQueueTurns(repo: string, run: string | null): string | null {
     // 없거나 깨졌으면 빈 기록이다. 다시 옮겨도 로그 줄이 겹칠 뿐이다
   }
   const before = JSON.stringify(seen)
-  const copy = (turn: ReturnType<typeof readTurns>[number]) => {
+  // 모두 옮겼으면 true. 보내지 못한 항목이 있으면 false 라 호출한 쪽이 차례 기록을 지우지 않고 다음 틱이 다시 보낸다
+  const copy = (turn: ReturnType<typeof readTurns>[number]): boolean => {
+    let all = true
     for (const held of turn.held) {
       const key = `${turn.pid}:${held.pr}`
       if (Object.hasOwn(seen, key)) continue
@@ -2058,15 +2060,16 @@ function watchQueueTurns(repo: string, run: string | null): string | null {
       const same = `reason:${held.pr}:${held.reason}`
       if (!Object.hasOwn(seen, same)) {
         try { sendNotice('QUEUE-DROPPED', held.pr, `#${held.pr} ${held.reason}`, run, repo) }
-        catch (e) { log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`); continue }
+        catch (e) { log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`); all = false; continue }
         seen[same] = iso()
       }
       seen[key] = iso()
     }
+    return all
   }
   for (const turn of readTurns(repo, isQueue)) copy(turn)
   for (const { file: turnFile, turn } of finishedTurns(repo, isQueue)) {
-    if (turn) copy(turn)
+    if (turn && !copy(turn)) continue
     rmSync(turnFile, { force: true })
     const pid = basename(turnFile).replace(/\.json$/, '')
     for (const key of Object.keys(seen)) if (key.startsWith(`${pid}:`)) delete seen[key]
@@ -2600,6 +2603,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     if (previous[key] === reason && !streak) return
     try {
       sendNotice(kind, null, text, run, ctx.repo, streak)
+      if (streak) markStreakSent(ctx.repo, key)
       errors[key] = reason
     } catch (e) {
       log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)

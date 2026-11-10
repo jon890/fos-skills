@@ -32,7 +32,8 @@ const FAKE_ORCA = `#!/usr/bin/env node
 const argv = process.argv.slice(2)
 require('node:fs').appendFileSync(process.env.FAKE_DIR + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
-if (argv[1] === 'send') reply({ message: { id: 'notice' } })
+if (argv[1] === 'send' && require('node:fs').existsSync(process.env.FAKE_DIR + '/send-fail')) { process.stderr.write('offline\\n'); process.exit(1) }
+else if (argv[1] === 'send') reply({ message: { id: 'notice' } })
 else if (argv[1] === 'worker-list') reply({ workers: [], page: {} })
 else if (argv[1] === 'check' || argv[1] === 'inbox') reply({ messages: [] })
 else reply({})
@@ -610,6 +611,22 @@ describe('큐가 도는 동안', () => {
     write(orchFile('state', 'queue-turn', '99997.json'), JSON.stringify({ pid: 99997, prs: [], pr: null, phase: '끝', since, held: [{ pr: 8, reason: '8 HOOK-REJECT' }] }))
     once()
     assert.equal(events('QUEUE-DROPPED').length, 2)
+  })
+
+  test('끝난 큐의 QUEUE-DROPPED 전송이 실패하면 차례 기록을 남겨 다음 틱이 다시 보낸다', () => {
+    writeFileSync(join(tmp, 'ps-lines.txt'), '')
+    const since = new Date().toISOString()
+    const turn = orchFile('state', 'queue-turn', '99997.json')
+    write(turn, JSON.stringify({ pid: 99997, prs: [], pr: null, phase: '끝', since, held: [{ pr: 8, reason: '8 HOOK-REJECT' }] }))
+    github([pr(1)])
+    writeFileSync(join(tmp, 'send-fail'), '')
+    once()
+    assert.equal(existsSync(turn), true)
+    assert.equal(events('QUEUE-DROPPED').length, 1, '실패한 전송 시도 하나')
+    rmSync(join(tmp, 'send-fail'))
+    once()
+    assert.equal(existsSync(turn), false)
+    assert.deepEqual(events('QUEUE-DROPPED').map((row) => row.pr), [8, 8], '다음 틱이 다시 보낸다')
   })
 
   test('도는 큐의 차례 기록이 있으면 무엇을 기다리는지 AUTO-MERGE-HELD 한 줄로 남긴다', () => {

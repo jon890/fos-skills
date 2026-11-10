@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tempDir } from '../../../modules/testkit/temp.ts'
 import { fakeBin, type FakeBin } from './fixtures/fake-bin.ts'
 import { sendNotice, setNoticeOwner } from '../scripts/lib/run-notice.ts'
-import { flushDigest, watchStreak } from '../scripts/lib/notice-digest.ts'
+import { flushDigest, markStreakSent, watchStreak } from '../scripts/lib/notice-digest.ts'
 let repo: string, bin: FakeBin
 const saved = { ...process.env }
 beforeEach(t => {
@@ -37,7 +37,9 @@ test('DIGEST 전송이 실패하면 쌓아 둔 것을 지우지 않고 다음에
   assert.equal(flushDigest(repo, 'R', 1, Date.now() + 5000), true)
 })
 test('같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 한 번 바로 보내고 풀리면 다시 센다', () => {
-  assert.deepEqual([1, 2, 3, 4, 5].map(() => watchStreak(repo, 'q@R', 'offline')), [false, false, false, true, false])
+  assert.deepEqual([1, 2, 3, 4].map(() => watchStreak(repo, 'q@R', 'offline')), [false, false, false, true])
+  markStreakSent(repo, 'q@R')
+  assert.equal(watchStreak(repo, 'q@R', 'offline'), false)
   assert.equal(watchStreak(repo, 'q@R', null), false)
   assert.deepEqual([1, 2, 3, 4].map(() => watchStreak(repo, 'q@R', 'offline')), [false, false, false, true])
 })
@@ -49,4 +51,11 @@ test('한 Run 에 등록된 다른 저장소의 루프가 보낸 같은 알림�
   assert.equal(kinds().length, 1, '다른 저장소의 루프는 이미 보낸 같은 알림을 건너뛴다')
   setNoticeOwner('/repo/a'); sendNotice('DECISION-PENDING', null, '같은 결정', 'R'); sendNotice('DECISION-PENDING', null, '다른 결정', 'R')
   assert.equal(kinds().length, 3, '같은 저장소의 되풀이 억제는 호출한 쪽이 맡고 다른 본문은 보낸다')
+})
+test('연속 오류의 바로 보내기가 실패하면 다음 틱도 다시 시도하고 성공을 확정한 뒤에는 멈춘다', () => {
+  const fires = () => watchStreak(repo, 'q@R', 'offline')
+  assert.deepEqual([fires(), fires(), fires(), fires()], [false, false, false, true])
+  assert.equal(fires(), true, '전송이 실패해 확정하지 않았으면 다시 낸다')
+  markStreakSent(repo, 'q@R')
+  assert.equal(fires(), false)
 })
