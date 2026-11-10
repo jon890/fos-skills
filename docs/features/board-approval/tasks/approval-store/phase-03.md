@@ -18,7 +18,7 @@
 - `--full` 은 진입점이 떼고 `ORCH_OUTPUT=full` 로 넘긴다(`bin/orch.ts` 의 `stripFull`). `list` 는 `lib/output.ts` 의 `fullAsked()` 로 읽는다. 스크립트를 직접 부를 때를 위해 `--full` 인자도 받는다.
 - 인자 풀이는 `skills/orch/scripts/board/goal-progress.ts` 처럼 `node:util` 의 `parseArgs` 와 `lib/args.ts` 의 `expandArgs` 를 쓴다. 종료 코드는 0 반영·통과, 1 거절, 2 사용법 오류다.
 - 승인 파일 경로는 `lib/paths.ts` 의 `pathOf('state', repo)` 아래 `approvals.json` 이다. 옆 파일에 쓴 뒤 `renameSync` 로 바꾸는 방식은 `lib/reservations.ts` 를 따른다.
-- 잠금은 `lib/events.ts` 의 `acquireLock(lock, Date.now() + 5000)` 과 `releaseLock` 이다. `lib/routing-log.ts` 의 쓰임(잠금 폴더를 먼저 만들고, `finally` 에서 푼다)을 따른다. 설계 DECISION13.
+- 잠금은 보드 명령 구현 PR1 이 더한 `extensions/work-board/bin/file-lock.ts` 의 `withFileLock(approvalsFile, 할 일)` 이다. 기본값(5초 기다림, 30초 넘은 잠금 넘겨받기)을 그대로 쓴다. 설계 DECISION13. 그 함수의 실제 이름과 옵션은 머지된 코드에서 읽는다. 테스트가 5초를 기다리지 않게 하는 방법(옵션이나 환경 변수)도 그 모듈의 것을 쓴다.
 - Orca 호출은 `lib/orca.ts` 의 `orcaJson` 을 쓴다. 메시지 필드는 `core/message-fields.ts` 의 `senderOf`, `subjectOf`, `payloadOf` 로 읽는다.
 
 ## 의도 메모
@@ -30,6 +30,7 @@
 
 ## Blocked 조건
 
+- `extensions/work-board/bin/file-lock.ts` 가 `origin/main` 에 없다 → `PHASE_BLOCKED: 보드 명령 구현 PR1(file-lock.ts)이 아직 머지되지 않았다`. 계획 전체의 선행 조건이라 phase 01 을 시작하기 전에 먼저 확인한다
 - 인수 검증 계획의 「PR1 첫 실측」 결과가 `docs/features/board-approval/tasks/approval-store/verification-plan.md` 아래 「실측 결과」 에 없다 → `PHASE_BLOCKED: 신호 메시지 찾기 명령과 from_handle 실측이 없다`. 코디네이터가 실측을 마치고 결과를 적은 뒤 이어 간다
 
 ## 작업 항목
@@ -86,7 +87,7 @@ export async function selfIsWorker(): Promise<boolean | null>                   
   - `--keep-open`: 열린 대기에 다시 부르면 ` kept` 와 같은 버전.
   - 깨진 파일: `add` 가 `approvals.json.broken-*` 을 남기고 새 파일에 올린다. `list` 는 1.
   - REQ11: 8일 전에 끝난 기록이 다음 `add` 뒤 `list --full` 에 없고, 30시간 열린 기록은 남는다.
-  - 잠금: 살아 있는 pid(테스트 프로세스 자신)를 적은 잠금 파일을 둔 채 부르면 5초 뒤 1. 죽은 pid 를 적은 잠금 파일은 회수하고 돈다.
+  - 잠금: 잠금 파일을 미리 둔 채 부르면 기다림 끝에 1(기다리는 시간은 `file-lock.ts` 가 주는 테스트용 방법으로 줄인다). `utimesSync` 로 나이를 30초 넘게 옮긴 잠금 파일은 넘겨받고 돈다.
 - `skills/orch/tests/lib-commands.spec.ts` 에 사례: `orch board approval add` 가 `board/board-approval.ts add` 로 풀리고, `board` 묶음에 `approve`, `revise` 가 든 동작이 없다(REQ4). 이 파일의 「스크립트가 받는 문맥 인자는 문맥 칸에 있다」 테스트(36~61행)는 같은 스크립트의 행마다 소스의 `run` 옵션을 본다. `approval list`, `approval cancel`, `approval check` 는 기록의 `run` 을 쓰므로 `run` 문맥이 없다. 그 테스트의 `omitted` 에 세 키와 이유 「기록의 run 을 쓴다」 를 더한다.
 - `skills/orch/tests/board-approval-static.spec.ts` 신규(REQ4): `skills/orch/scripts`, `skills/orch/hooks`, `extensions/work-board/bin`, `extensions/work-board/hooks` 아래 `.ts`, `.js` 파일(테스트 폴더 제외)에서 정규식 `state\s*[:=]\s*['"](approved|revise)['"]` 에 맞는 줄이 `core/approvals.ts` 에만 있다. 비교(`===`)는 이 정규식에 걸리지 않는다. 주석 줄(`//` 로 시작)은 뺀다.
 
