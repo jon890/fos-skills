@@ -250,7 +250,7 @@ Orca 밖 창에서 누른 승인은 `press.terminal` 이 null 이고 보낸 쪽�
 
 | 순서 | PR | 담는 것 | 계획서 |
 | --- | --- | --- | --- |
-| 1 | PR1 명령·저장·규칙 | `core/approvals.ts`, `lib/approvals.ts`, `lib/worker-terminal.ts`(hook 에서 옮김), `core/message-fields.ts` 의 두 함수, `board/board-approval.ts`, 명령 표 네 행, `data-schema.md`, `replying.md`, `waiting.md`, `board.md` 의 명령 안내, orch 변경 조각 | [tasks/approval-store](tasks/approval-store/index.json) |
+| 1 | PR1 명령·저장·규칙 | `core/approvals.ts`, `lib/approvals.ts`, `lib/worker-terminal.ts`(hook 에서 옮김), `core/message-fields.ts` 의 두 함수, `board/board-approval.ts`, 명령 표 네 행, `data-schema.md`, `replying.md`, `waiting.md`, `board.md` 의 명령 안내, orch 변경 조각 | 구현 PR 본문의 검증 근거(구현한 계획서는 해당 PR에서 삭제) |
 | 2 | PR2 창 | `bin/approvals.ts`(`where`, `self`, `press`), `core/approvals.ts` 의 `applyPress`·`revertPress`, `lib/approvals.ts` 의 `recordPress`, `hooks/block-approval-press.ts`, `register.js` 의 상자·버튼·글칸·real 두 번·명령 채우기, `behavior.md`, README, 창 실측 | PR1 머지 뒤에 쓴다 |
 
 `recordPress` 를 PR2 에 두는 것은 PR1 만 머지된 동안 승인 기록을 쓰는 길이 하나도 없게 하려는 것이다. 그동안 `check` 는 늘 「아직 누르지 않음」 이고 코디네이터는 채팅 승인을 쓴다.

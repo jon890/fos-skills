@@ -1,6 +1,6 @@
 // Orca 명령마다 다른 메시지 필드 이름을 한 곳에서 읽는지 확인한다.
 // 가짜 메시지 꼴는 2026-11-10 실측이다. `inbox --json`(줄인 보기)은 from, to 만 있고 created_at, thread_id, sequence 가 없다.
-// `check --json` 과 `inbox --full --json` 은 from_handle, to_handle, thread_id, created_at, sequence 가 있다.
+// `check --full --json` 과 `inbox --full --json` 은 from_handle, to_handle, thread_id, created_at, sequence 가 있다.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { classify } from '../scripts/core/completion.ts'
