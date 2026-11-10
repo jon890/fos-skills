@@ -36,6 +36,7 @@ if (st.fail) {
 }
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const sub = argv[1]
+if (sub === 'send') { if(st.send_fail) { process.exitCode = 1; process.exit(1) }; reply({ message: { id: 'notice' } }); process.exit(0) }
 const run = argv.includes('--run') ? argv[argv.indexOf('--run') + 1] : null
 const byRun = st.by_run && run ? st.by_run[run] || [] : null
 if (st.bound && sub === 'check' && run && run !== st.bound) {
@@ -47,6 +48,7 @@ if (sub === 'run-current') {
   reply({ run: st.bound ? { id: st.bound } : null })
   process.exit(0)
 }
+if (sub === 'check' && st.question_fail && !argv.includes('--all')) { process.stderr.write('questions offline\\n'); process.exit(1) }
 if (sub === 'check' && argv.includes('--all') && argv.includes('status')) reply({ messages: st.statuses || [] })
 else if (sub === 'check' && argv.includes('--all')) reply({ messages: byRun || st.messages || [] })
 else if (sub === 'worker-list') reply({ workers: st.workers || [], page: {} })
@@ -220,9 +222,8 @@ function jsonl(file: string): Json[] {
 
 // 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
-  const dir = orchFile('state', 'loop-events')
-  const perRun = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().flatMap((name) => jsonl(join(dir, name))) : []
-  return [...jsonl(orchFile('state', 'loop-events.jsonl')), ...perRun]
+  return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args.includes('--payload')
+    ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
 }
 
 function received(event: string): Json[] {
@@ -311,7 +312,7 @@ describe('질문 확인', () => {
     orca({ messages: [ask('first'), ask('retry')], workers })
     once()
     assert.equal(received('decision-pending').length, 1)
-    assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 1)
+    assert.equal(received('decision-pending').length, 1)
     assert.deepEqual(events().filter((e) => e.kind === 'REMINDER'), [])
     assert.equal(received('worker-question').length, workerQuestionCount)
     // 끝난 dispatch 의 질문은 결정 알림에서 제거된다.
@@ -327,8 +328,8 @@ describe('질문 확인', () => {
     once()
     const lines = events()
     assert.equal(lines.length, 1, JSON.stringify(lines))
-    assert.equal(lines[0].kind, 'REMINDER')
-    assert.match(String(lines[0].text), /^q question from=dispatch:d: 기술 질문: 연결을 확인한다$/)
+    assert.equal(lines[0].kind, 'UNANSWERED')
+    assert.equal(lines[0].text, 'q')
     assert.equal(lines[0].pr, null)
     const inputs = received('worker-question')
     assert.equal(inputs.length, 1)
@@ -414,7 +415,7 @@ describe('질문 확인', () => {
         pr(state, head)
         remindLater()
         once()
-        assert.deepEqual(events().map((e) => e.kind), ['REMINDER'])
+        assert.deepEqual(events().map((e) => e.kind), ['UNANSWERED'])
         assert.doesNotMatch(logText(), /REMINDER-SKIP/)
       })
     }
@@ -424,12 +425,12 @@ describe('질문 확인', () => {
       pr('MERGED')
       remindLater()
       once()
-      assert.deepEqual(events().map((e) => e.kind), ['REMINDER'])
+      assert.deepEqual(events().map((e) => e.kind), ['UNANSWERED'])
     })
   })
 
   test('처음 보는 미답변 질문은 loop.log 에 QUESTION 줄이고 알림 파일에는 쓰지 않는다', () => {
-    orca({ messages: [question()] })
+    orca({ messages: [question('q', new Date().toISOString())] })
     once()
     assert.match(logText(), /^QUESTION q question from=dispatch:d: 질문$/m)
     assert.deepEqual(events(), [])
@@ -440,7 +441,7 @@ describe('질문 확인', () => {
     orca({ fail: true })
     once()
     // 멈춤 확인의 worker 목록 조회도 같은 orca 로 실패해 stalls 를 따로 알린다. 여기서는 질문 확인만 본다
-    const notStalls = () => events().filter((line) => !String(line.text).startsWith('stalls: '))
+    const notStalls = () => events().filter((line) => String(line.text).startsWith('questions: '))
     const first = notStalls()
     assert.equal(first.length, 1, JSON.stringify(first))
     assert.equal(first[0].kind, 'WATCH-ERROR')
@@ -449,7 +450,7 @@ describe('질문 확인', () => {
     assert.equal(argsOf('sweep').length, 1)
     assert.equal(argsOf('board').length, 1)
     once()
-    assert.equal(notStalls().length, 1, '같은 실패를 다시 알렸다')
+    assert.equal(notStalls().length, 2, '전송하지 못한 실패는 다음 틱이 다시 시도한다')
     // loop.log 에는 실패할 때마다 쓴다
     assert.equal(logText().match(/^WATCH-ERROR questions: /gm)?.length, 2, logText())
     orca({})
@@ -457,7 +458,7 @@ describe('질문 확인', () => {
     assert.equal(loopState()?.errors && (loopState()?.errors as Json)['questions@r'], null)
     orca({ fail: true })
     once()
-    assert.equal(notStalls().length, 2, JSON.stringify(events()))
+    assert.equal(notStalls().length, 3, JSON.stringify(events()))
   })
 })
 
@@ -607,78 +608,14 @@ describe('마무리 빠짐과 대기 확인', () => {
     assert.match(String(missing[0].text), /^feat-x: 머지 뒤 마무리\(finish-pr\)가 돈 적이 없다\. 마무리를 뒤늦게 돌리려면 \S+ queue finish 7 --repo .* --run r$/)
   })
 
-  // ps 가짜. PS_OUT 을 낸다
-  function fakePs(out: string): string {
-    const file = join(tmp, 'ps')
-    writeFileSync(join(tmp, 'ps.out'), out)
-    writeFileSync(file, `#!/bin/sh\ncat "${join(tmp, 'ps.out')}"\n`)
-    chmodSync(file, 0o755)
-    return file
-  }
-
-  function nudge(): string {
-    const file = join(tmp, 'nudge.ts')
-    writeFileSync(file, `import { appendFileSync } from 'node:fs'\nappendFileSync(process.env.FAKE_DIR + '/nudge.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n')\n`)
-    return file
-  }
-
-  test('살아 있는 dispatch 가 있는데 대기가 기준 시간보다 오래 없으면 한 번 알리고 코디네이터 터미널에 넣는다', () => {
-    orca({ workers: [{ dispatchId: 'ctx_1', dispatchStatus: 'dispatched' }] })
-    // --start 한 코디네이터 터미널의 등록(lib/loop.ts 의 「Run 등록」)
-    write(orchFile('state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: new Date().toISOString(), coordinator_terminal: 'term_coord' }))
-    const extra = { PS: fakePs('  10 node other.js\n'), NUDGE_WORKER: nudge() }
-    once(extra)
-    assert.deepEqual(events().filter((line) => line.kind === 'NO-WAIT'), [])
-    const file = orchFile('state', 'no-wait', 'r.json')
-    const first = JSON.parse(readFileSync(file, 'utf8')) as Json
-    assert.equal(first.notified, false)
-    write(file, JSON.stringify({ since: Date.now() - 600_000, notified: false }))
-    once(extra)
-    once(extra)
-    const noWait = events().filter((line) => line.kind === 'NO-WAIT')
-    assert.equal(noWait.length, 1, JSON.stringify(events()))
-    assert.match(String(noWait[0].text), /^대기 없음: Run r 에 살아 있는 dispatch 1 개가 있는데 wait-important 대기가 10분째 없다\. 미답변 질문 0 개\./)
-    const typed = jsonl(join(tmp, 'nudge.jsonl')) as unknown as string[][]
-    assert.equal(typed.length, 1)
-    assert.deepEqual(typed[0].slice(0, 3), ['--terminal', 'term_coord', '--text'])
-    // 대기가 다시 생기면 기록을 지워 다음 공백을 새로 센다
-    once({ ...extra, PS: fakePs('  20 node /x/wait-important.ts --run r --loop-repo /r\n') })
-    assert.ok(!existsSync(file))
-  })
-
-  test('NO-WAIT 는 답할 질문의 id 와 dispatch 를 붙인다', () => {
-    orca({ messages: [question()], workers: [{ dispatchId: 'd', dispatchStatus: 'dispatched' }] })
-    const extra = { PS: fakePs(''), NUDGE_WORKER: nudge() }
-    once(extra)
-    write(orchFile('state', 'no-wait', 'r.json'), JSON.stringify({ since: Date.now() - 600_000, notified: false }))
-    once(extra)
-    const noWait = events().find((e) => e.kind === 'NO-WAIT')
-    assert.match(String(noWait?.text), /미답변 질문 1 개.*questions=q@dispatch:d/)
-  })
-
-  test('코디네이터가 사용자와 대화 중이면 대기 없음 알림을 미루고 대화가 끝난 뒤 알린다', () => {
-    orca({ workers: [{ dispatchId: 'ctx_1', dispatchStatus: 'dispatched' }] })
-    write(orchFile('state', 'loop-runs', 'r.json'), JSON.stringify({ run: 'r', specs_dir: null, registered_at: new Date().toISOString(), coordinator_terminal: 'term_coord' }))
-    write(orchFile('state', 'no-wait', 'r.json'), JSON.stringify({ since: Date.now() - 600_000, notified: false }))
-    const input = join(tmp, 'machine', 'user-input', 'term_coord.json')
-    write(input, JSON.stringify({ at: Date.now() - 60_000 }))
-    const extra = { PS: fakePs('  10 node other.js\n'), NUDGE_WORKER: nudge() }
-    once(extra)
-    assert.deepEqual(events().filter((line) => line.kind === 'NO-WAIT'), [])
-    assert.ok(!existsSync(join(tmp, 'nudge.jsonl')))
-    assert.match(logText(), /NO-WAIT-DEFER Run r 의 코디네이터가 사용자와 대화 중이라\(마지막 입력 \d+초 전\)/)
-    write(input, JSON.stringify({ at: Date.now() - 700_000 }))
-    once(extra)
-    assert.equal(events().filter((line) => line.kind === 'NO-WAIT').length, 1, JSON.stringify(events()))
-    assert.equal((jsonl(join(tmp, 'nudge.jsonl')) as unknown as string[][]).length, 1)
-  })
-
-  test('살아 있는 dispatch 가 없으면 대기가 없어도 알리지 않는다', () => {
-    const extra = { PS: fakePs(''), NUDGE_WORKER: nudge() }
-    write(orchFile('state', 'no-wait', 'r.json'), JSON.stringify({ since: Date.now() - 600_000, notified: false }))
-    once(extra)
-    assert.deepEqual(events().filter((line) => line.kind === 'NO-WAIT'), [])
-    assert.ok(!existsSync(orchFile('state', 'no-wait', 'r.json')))
+  test('오래 남은 질문 묶음은 한 번만 알리고 묶음이 바뀌면 다시 알린다', () => {
+    orca({ messages: [question()] }); once(); once()
+    assert.equal(events().filter(e => e.kind === 'UNANSWERED').length, 1)
+    orca({ messages: [question(), question('q2')] }); once()
+    assert.equal(events().filter(e => e.kind === 'UNANSWERED').length, 2)
+    orca({ messages: [] }); once()
+    orca({ messages: [question()] }); once()
+    assert.equal(events().filter(e => e.kind === 'UNANSWERED').length, 3)
   })
 })
 
@@ -942,8 +879,8 @@ describe('--start, --status, --stop', () => {
     const left = loop(['--run', 'r1', '--stop'])
     assert.equal(left.code, 0, left.stdout + left.stderr)
     assert.equal(left.stdout.trim(), 'LOOP-LEFT - run=r1 runs=r2')
-    assert.equal(existsSync(orchFile('state', 'loop-events', 'r1.jsonl')), false)
-    assert.equal(existsSync(orchFile('state', 'loop-events', 'r1.cursor')), false)
+    assert.equal(existsSync(orchFile('state', 'loop-events', 'r1.jsonl')), true)
+    assert.equal(existsSync(orchFile('state', 'loop-events', 'r1.cursor')), true)
     const stopped = loop(['--run', 'r2', '--stop'])
     assert.equal(stopped.code, 0, stopped.stdout + stopped.stderr)
     assert.equal(stopped.stdout.trim(), 'LOOP-NOT-RUNNING')
@@ -1051,7 +988,7 @@ describe('여러 Run', () => {
   }
 
   function runEvents(run: string): Json[] {
-    return jsonl(orchFile('state', 'loop-events', `${run}.jsonl`))
+    return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args[args.indexOf('--to') + 1] === `run:${run}` ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
   }
 
   // 틱 자식을 바로 돌린다. 새로 뜬 루프(--foreground)는 앞 루프의 등록을 지우므로, 등록된 Run 을 맡는 틱은 자식으로 본다
@@ -1079,8 +1016,8 @@ describe('여러 Run', () => {
       ['A', true],
       ['B', false],
     ])
-    assert.deepEqual(runEvents('A').map((row) => [row.kind, String(row.text).split(' ')[0]]), [['REMINDER', 'qA']])
-    assert.deepEqual(runEvents('B').map((row) => [row.kind, String(row.text).split(' ')[0]]), [['REMINDER', 'qB']])
+    assert.deepEqual(runEvents('A').map((row) => [row.kind, String(row.text).split(' ')[0]]), [['UNANSWERED', 'qA']])
+    assert.deepEqual(runEvents('B').map((row) => [row.kind, String(row.text).split(' ')[0]]), [['UNANSWERED', 'qB']])
     assert.equal(existsSync(orchFile('state', 'loop-events.jsonl')), false)
   })
 
@@ -1095,8 +1032,8 @@ describe('여러 Run', () => {
     assert.deepEqual(kinds('A').sort(), ['prs', 'questions'])
     assert.deepEqual(kinds('B').sort(), ['questions'])
     const errors = result.errors as Json
-    assert.equal(typeof errors['questions@A'], 'string')
-    assert.equal(typeof errors['questions@B'], 'string')
+    assert.equal(errors['questions@A'], null)
+    assert.equal(errors['questions@B'], null)
     assert.deepEqual([errors['stalls@A'], errors['stalls@B']], [null, null])
   })
 
@@ -1219,18 +1156,18 @@ test('decide 제목과 줄이 바뀔 때만 DECISION-PENDING 을 보내고 삭�
   save()
   once()
   once()
-  assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 1)
+  assert.equal(received('decision-pending').length, 1)
   assert.equal(received('decision-pending').length, 1)
   save('보관 방식 선택')
   once()
   save('보관 방식 선택', '1. 보관 기간 고르기')
   once()
-  assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 3)
+  assert.equal(received('decision-pending').length, 3)
   board()
   once()
   save()
   once()
-  assert.equal(events().filter((e) => e.kind === 'DECISION-PENDING').length, 4)
+  assert.equal(received('decision-pending').length, 4)
 })
 
 test('완료한 decide 줄만 있으면 REMINDER 와 DECISION-PENDING 을 만들지 않는다', () => {
@@ -1239,6 +1176,7 @@ test('완료한 decide 줄만 있으면 REMINDER 와 DECISION-PENDING 을 만들
     id: 'done-choice', status: 'decide', title: '끝난 결정', details: [{ text: '선택 완료', done: true }], next: ['✓ 후속 작업 완료'],
   }] }))
   once()
-  assert.deepEqual(events().filter((e) => e.kind === 'REMINDER' || e.kind === 'DECISION-PENDING'), [])
+  assert.deepEqual(events().filter((e) => e.kind === 'REMINDER' || e.event === 'decision-pending'), [])
   assert.deepEqual(received('decision-pending'), [])
 })
+

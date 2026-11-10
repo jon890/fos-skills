@@ -30,12 +30,13 @@ const st = JSON.parse(fs.readFileSync(dir + '/orca.json', 'utf8'))
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null)
 const sub = argv[1]
+if (sub === 'send') { if(st.send_fail) process.exit(1); reply({ message: { id: 'notice' } }); process.exit(0) }
 if (sub === 'worker-list') reply({ workers: (st.workers_by_run || {})[flag('--run')] || [], page: {} })
 else if (sub === 'check') reply({ messages: (st.questions_by_run || {})[flag('--run')] || [] })
 else if (sub === 'inbox') reply({ messages: [] })
 else if (sub === 'worker-show') {
   const shown = (st.shows || {})[flag('--dispatch')]
-  if (shown === undefined) process.stdout.write(JSON.stringify({ ok: false, error: { code: 'dispatch_not_found' } }) + '\\n')
+  if (shown === undefined && !(st.workers_by_run?.A || []).some(row => row.agentTerminalHandle === 'structworker_a')) reply({ dispatch: { id: flag('--dispatch'), status: 'running', runId: 'A' }, worker: { agentTerminalHandle: 'tA' } })
   else reply(shown)
 }
 else if (argv[0] === 'terminal' && sub === 'read') {
@@ -168,7 +169,8 @@ function jsonl(file: string): Json[] {
 }
 
 function runEvents(run: string): Json[] {
-  return jsonl(orchFile('state', 'loop-events', `${run}.jsonl`))
+  return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => args[1] === 'send' && args[args.indexOf('--to') + 1] === `run:${run}`
+    ? [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }] : [])
 }
 
 function stalledEvents(run: string): Json[] {
@@ -182,7 +184,7 @@ function received(event: string): Json[] {
 function sends(): string[][] {
   return jsonl(join(tmp, 'orca-calls.jsonl'))
     .map((argv) => argv as unknown as string[])
-    .filter((argv) => argv[0] === 'terminal' && argv[1] === 'send')
+    .filter((argv) => argv[0] === 'orchestration' && argv[1] === 'send' && argv.includes('--to') && !String(argv[argv.indexOf('--to') + 1]).startsWith('run:'))
 }
 
 // references/hooks.md 「멈춘 worker 다시 시도시키기」 의 핸들러 예시
@@ -349,7 +351,7 @@ describe('error 멈춤', () => {
     for (let i = 0; i < 6; i++) tick()
     assert.equal(sends().length, 3)
     assert.deepEqual(stalledEvents('A'), [])
-    for (const argv of sends()) assert.deepEqual(argv.slice(argv.indexOf('--terminal'), argv.indexOf('--terminal') + 4), ['--terminal', 'tA', '--text', '계속 진행해'])
+    for (const argv of sends()) { assert.equal(argv[argv.indexOf('--to') + 1], 'dispatch:d1'); assert.equal(argv[argv.indexOf('--body') + 1], '계속 진행해') }
     tick()
     const result = tick()
     assert.equal(stallOf(result, 'd1')?.fired, true)
@@ -736,10 +738,9 @@ test('한도 안내가 남아 있어도 작업 중인 화면은 한도 멈춤이
 test('한도 알림 파일 쓰기가 실패해도 틱은 끝나고 다음 틱에 다시 알린다', () => {
   register('A', '2026-01-01T00:00:00Z')
   orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: 'Your workspace is out of credits' } })
-  const blocked = orchFile('state', 'loop-events', 'A.jsonl')
-  mkdirSync(blocked, { recursive: true })
+  orca({ send_fail: true, workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: 'Your workspace is out of credits' } })
   assert.equal(stallOf(tick(), 'd1')?.limitedNotified, false)
-  rmSync(blocked, { recursive: true })
+  orca({ workers_by_run: { A: [worker('d1', 'tA')] }, screens: { tA: 'Your workspace is out of credits' } })
   assert.equal(stallOf(tick(), 'd1')?.limitedNotified, true)
-  assert.equal(runEvents('A').filter((row) => row.kind === 'WORKER-LIMITED').length, 1)
+  assert.equal(runEvents('A').filter((row) => row.kind === 'WORKER-LIMITED').length, 2)
 })

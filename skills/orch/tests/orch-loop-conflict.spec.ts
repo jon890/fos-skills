@@ -29,9 +29,11 @@ const FAKE_ORCA = `#!/usr/bin/env node
 const fs = require('node:fs')
 const dir = process.env.FAKE_DIR
 const argv = process.argv.slice(2)
+fs.appendFileSync(dir + '/orca-calls.jsonl', JSON.stringify(argv) + '\\n')
 const st = JSON.parse(fs.readFileSync(dir + '/orca.json', 'utf8'))
 const reply = (result) => process.stdout.write(JSON.stringify({ ok: true, result }) + '\\n')
 const sub = argv[1]
+if (sub === 'send') { reply({ message: { id: 'notice' } }); process.exit(0) }
 if (sub === 'worker-list' && st.workers_fail) {
   process.stderr.write('worker-list offline\\n')
   process.exit(1)
@@ -222,9 +224,10 @@ function jsonl(file: string): Json[] {
 
 // 알림 파일 전부. Run 이 없는 루프의 파일과 Run 마다의 파일(state/loop-events/<Run>.jsonl)을 합친다
 function events(): Json[] {
-  const dir = orchFile('state', 'loop-events')
-  const perRun = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().flatMap((name) => jsonl(join(dir, name))) : []
-  return [...jsonl(orchFile('state', 'loop-events.jsonl')), ...perRun]
+  return jsonl(join(tmp, 'orca-calls.jsonl')).flatMap((args: any) => {
+    if (args[1] !== 'send' || !args.includes('--payload')) return []
+    return [{ ...JSON.parse(args[args.indexOf('--payload') + 1]), text: args[args.indexOf('--body') + 1] }]
+  })
 }
 
 function sends(): string[][] {
@@ -383,7 +386,7 @@ describe('이어 쓰지 못함', () => {
     assert.deepEqual(hookInputs(), [])
     assert.deepEqual(sends(), [])
     // 멈춤 확인도 같은 worker 목록을 읽지 못해 stalls 를 따로 알린다. 여기서는 충돌 처리만 본다
-    const lines = events().filter((line) => !String(line.text).startsWith('stalls: '))
+    const lines = events().filter((line) => String(line.text).startsWith('conflicts: '))
     assert.equal(lines.length, 1, JSON.stringify(lines))
     assert.equal(lines[0].kind, 'WATCH-ERROR')
     assert.match(String(lines[0].text), /^conflicts: worker 목록을 읽지 못했다: .*worker-list offline/)

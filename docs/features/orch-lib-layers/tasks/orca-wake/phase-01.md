@@ -47,23 +47,22 @@ claude plugin test .
 
 | 파일 | 변경 |
 | --- | --- |
-| `skills/orch/scripts/lib/loop.ts` | 수정 |
 | `skills/orch/scripts/lib/decisions.ts` | 수정 |
 | `skills/orch/scripts/handlers/decision-pending.ts` | 수정 |
 | `skills/orch/scripts/loop/orch-loop.ts` | 수정 |
 | `skills/orch/scripts/queue/merge_queue.ts` | 수정 |
 | `skills/orch/scripts/cleanup/cleanup-sweep.ts` | 수정 |
 | `skills/orch/hooks/hooks.json` | 수정 |
-| `skills/orch/tests/lib-loop.spec.ts` | 수정 |
 | `skills/orch/tests/decisions.spec.ts` | 수정 |
 | `skills/orch/tests/orch-loop.spec.ts` | 수정 |
 | `skills/orch/tests/orch-loop-ci.spec.ts` | 수정 |
 | `skills/orch/tests/orch-loop-stall.spec.ts` | 수정 |
 | `skills/orch/tests/orch-loop-conflict.spec.ts` | 수정 |
 | `skills/orch/tests/orch-loop-auto-merge.spec.ts` | 수정 |
-| `skills/orch/tests/cleanup-sweep-state.spec.ts` | 수정 |
 | `skills/orch/scripts/lib/run-notice.ts` | 신규 |
 | `skills/orch/scripts/cleanup/legacy-notices.ts` | 신규 |
 | `skills/orch/tests/run-notice.spec.ts` | 신규 |
 | `skills/orch/hooks/record-user-input.ts` | 삭제 |
 | `skills/orch/tests/coordinator-hooks.spec.ts` | 수정 |
+| `skills/orch/references/hooks.md` | 수정 |
+| `skills/orch/tests/orch-loop-refresh.spec.ts` | 수정 |

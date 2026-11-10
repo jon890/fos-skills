@@ -1,36 +1,15 @@
-// decision-pending 기본 핸들러. 현재 Run 의 코디네이터에게 질문 절차를 요청한다.
-// 화면 판정과 안전한 입력은 nudge-worker 가 맡고, 저장소 핸들러가 있으면 이 기본 핸들러를 대체한다.
-//
-// 언제 불리나: 상주 루프(lib/decisions.ts)는 코디네이터가 사용자와 대화 중이면 이 이벤트를 내지 않는다.
-//     대화 중은 코디네이터 터미널의 마지막 사용자 입력이 ORCH_USER_ACTIVE_SEC(기본 600초) 안인 때다(lib/user-active.ts 가 판정한다).
-//     그래서 이 요청은 사용자가 10분 넘게 입력하지 않은 터미널에 들어가고, 대화 중 입력란에 끼어들지 않는다.
-//     실패하면 루프가 10분부터 두 배씩 기다렸다 다시 낸다. 저장소 핸들러도 같은 시점에 불린다.
-//     요청 글은 DECISION_PREFIX 로 시작한다. 입력 기록 hook 이 그 글을 사용자 입력으로 세지 않는다.
+// decision-pending 기본 핸들러. 저장소 핸들러가 없을 때 Run 에 결정을 묻도록 요청한다.
+// 실패하면 lib/decisions.ts 의 재시도 규칙이 다시 보낸다.
 import { readFileSync } from 'node:fs'
 import { questionLocations } from '../lib/questions.ts'
-import { registeredRuns } from '../lib/loop.ts'
-import { DECISION_PREFIX } from '../lib/user-active.ts'
-import { runAsync, scriptCommand } from '../lib/proc.ts'
-import { scriptPath } from '../lib/commands.ts'
+import { notifyRun } from '../lib/run-notice.ts'
 
-async function main(): Promise<number> {
-  const input = JSON.parse(readFileSync(0, 'utf8'))
-  if (input.event !== 'decision-pending' || typeof input.run !== 'string' || !input.run) throw new Error('결정 알림의 Run 이 없다')
-  const registered = registeredRuns(input.repo).find((entry) => entry.run === input.run)
-  const terminal = registered?.coordinator_terminal
-  if (typeof terminal !== 'string' || !terminal.startsWith('term_')) {
-    throw new Error(`Run ${input.run}의 코디네이터 터미널이 등록되지 않았다. 그 코디네이터 터미널에서 orch-loop --start --run ${input.run}으로 다시 등록한다`)
-  }
-  const prompt = [
-    `${DECISION_PREFIX} Run ${input.run} 에 사용자 결정이 남아 있다. ${questionLocations(input.questions || [])}`,
-    'fos-skills:orch 의 replying 절차로 미답변 결정 질문과 보드 decide 항목을 다시 조회하고, 배경과 권장안을 붙여 사용자에게 물어라.',
-    '이미 물어 답을 기다리는 결정은 다시 묻지 말고, 받은 답은 원래 질문에 --reply-to 로 보내고 보드의 해당 줄을 mark 한다.',
-    '미완료 dispatch 가 있으면 메시지를 처리한 직후 wait-important 를 백그라운드로 다시 걸어라. 사용자가 답하며 대화를 이어 가면 그동안은 다시 걸지 않는다(references/waiting.md).',
-  ].join('\n')
-  const script = process.env.NUDGE_WORKER || scriptPath('nudge-worker')
-  const done = await runAsync(scriptCommand(script, ['--terminal', terminal, '--text', prompt]), { timeoutMs: 90_000 })
-  process.stdout.write(done.stdout)
-  process.stderr.write(done.stderr)
-  return done.code
-}
-main().then((code) => { process.exitCode = code }, (error) => { console.error(String(error)); process.exitCode = 1 })
+const input = JSON.parse(readFileSync(0, 'utf8'))
+if (input.event !== 'decision-pending' || typeof input.run !== 'string' || !input.run) throw new Error('결정 알림의 Run 이 없다')
+const text = [
+  `Run ${input.run} 에 사용자 결정이 남아 있다. ${questionLocations(input.questions || [])}`,
+  'fos-skills:orch 의 replying 절차로 미답변 결정 질문과 보드 decide 항목을 다시 조회하고, 배경과 권장안을 붙여 사용자에게 물어라.',
+  '이미 물어 답을 기다리는 결정은 다시 묻지 말고, 받은 답은 원래 질문에 --reply-to 로 보낸다.',
+].join('\n')
+const sent = notifyRun(input.run, 'DECISION-PENDING', text)
+if (!sent.ok) { console.error(`NOTICE-FAIL DECISION-PENDING ${sent.error}`); process.exitCode = 1 }

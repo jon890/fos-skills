@@ -1,5 +1,5 @@
 {
-  "description": "orch: check --wait 를 셸의 & 나 nohup 으로 띄우는 호출, cd 뒤 ; 나 줄바꿈으로 이은 git 쓰기, worker 터미널이거나 worker 인지 확인하지 못한 터미널로의 직접 orca terminal send, spec-line 이 아닌 worker-start --spec 을 거부한다. UserPromptSubmit 에서는 사용자 입력 시각을 남겨 상주 루프가 대화 중 알림을 미루게 한다",
+  "description": "orch: check --wait 를 셸의 & 나 nohup 으로 띄우는 호출, cd 뒤 ; 나 줄바꿈으로 이은 git 쓰기, worker 터미널이거나 worker 인지 확인하지 못한 터미널로의 직접 orca terminal send, spec-line 이 아닌 worker-start --spec 을 거부한다",
   "hooks": {
     "PreToolUse": [
       {
@@ -23,17 +23,6 @@
           {
             "type": "command",
             "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/skills/orch/hooks/require-spec-line.ts\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/skills/orch/hooks/record-user-input.ts\"",
             "timeout": 10
           }
         ]

@@ -16,15 +16,13 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 | 내는 명령 | 이벤트 |
 | --- | --- |
 | `launch-worker.ts` | `before-launch`, `worker-launched` |
-| `watch-questions.ts` | `worker-question` |
-| `wait-important.ts` | `worker-done`, `worker-lost` |
 | `orch doctor --run` | `session-resume` |
 | `ci-ready.ts` | `before-ready`, `pr-ready` |
 | `notify-conflicts.ts` | `pr-conflict` |
 | `merge_queue.ts`(`merge-with-finish.ts` 가 건 것 포함) | `before-merge`, `verify-merged`, `after-merge`, `after-queue` |
 | `finish-pr.ts` | `after-deploy` |
 | `cleanup-sweep.ts` | `before-cleanup`, `after-cleanup` |
-| `orch-loop.ts`(상주 루프) | `worker-question`, `decision-pending`, `worker-stalled`, `tick`, `ci-passed`, `ci-failed`, `pr-conflict` |
+| `orch-loop.ts`(상주 루프) | `worker-question`, `decision-pending`, `worker-done`, `worker-lost`, `worker-stalled`, `tick`, `ci-passed`, `ci-failed`, `pr-conflict` |
 | 아직 없다. 핸들러를 두어도 불리지 않는다 | `ci-missing` |
 
 핸들러는 stdin 으로 JSON 객체 하나를 받는다. 공통 필드와 이벤트별 필드는 `scripts/lib/events.ts` 머리 주석의 「공통 필드」 와 「이벤트별 필드」 가 소유한다.
@@ -34,7 +32,7 @@ orch 명령은 정한 시점에 저장소의 `<orch 루트>/hooks/<이벤트>.ts
 
 ### 사용자 결정 요청 바꾸기
 
-`decision-pending` 은 기본 핸들러(`scripts/handlers/decision-pending.ts`)가 있는 이벤트다. 새 사용자 결정을 현재 코디네이터에게 「정할 것 묻기」 로 넣고, 재시도와 대화 중 미룸은 [`waiting.md`](waiting.md) 의 「새 사용자 결정을 놓치지 않기」 가 소유한다. 저장소에 `.orch/hooks/decision-pending.ts` 를 두면 기본 핸들러를 대체한다. 입력 필드는 `events.ts` 머리 주석이 소유한다. 이 핸들러는 묻기를 요청할 뿐 사용자의 답을 대신 정하지 않고, 전달했을 때만 0 으로 끝난다.
+`decision-pending` 은 기본 핸들러(`scripts/handlers/decision-pending.ts`)가 있는 이벤트다. 새 사용자 결정을 현재 코디네이터에게 「정할 것 묻기」 로 넣고, 재시도은 [`waiting.md`](waiting.md) 의 「새 사용자 결정을 놓치지 않기」 가 소유한다. 저장소에 `.orch/hooks/decision-pending.ts` 를 두면 기본 핸들러를 대체한다. 입력 필드는 `events.ts` 머리 주석이 소유한다. 이 핸들러는 묻기를 요청할 뿐 사용자의 답을 대신 정하지 않고, 전달했을 때만 0 으로 끝난다.
 사용자 결정은 `decision-pending` 만 코디네이터를 깨우고, `worker-question` 은 기술 질문과 일반 escalation 만 맡는다.
 
 동시에 도는 worker 가 상한에 닿았으면 새 worker 를 띄우지 않는 `before-launch` 핸들러다. `.orch/hooks/before-launch.ts` 에 둔다.
@@ -81,7 +79,7 @@ if (live.length >= LIMIT) {
 상주 루프는 멈춘 worker 를 알리기만 하고 입력하지 않는다. 다시 시도시킬지와 몇 번까지 할지는 저장소의 `worker-stalled` 핸들러가 정한다.
 판정 기준과 틱 수는 `scripts/loop/orch-loop.ts` 머리 주석의 「멈춤 확인」 이 소유한다.
 
-아래는 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 멈춤마다 세 번까지 「계속 진행해」 를 넣는 핸들러다. `.orch/hooks/worker-stalled.ts` 에 둔다.
+아래는 모델 오류(`state` 가 `error`)로 멈춘 worker 에게 멈춤마다 세 번까지 「계속 진행해」 메시지를 보내는 핸들러다. `.orch/hooks/worker-stalled.ts` 에 둔다.
 
 ```ts
 import { execFileSync } from 'node:child_process'
@@ -111,15 +109,15 @@ writeFileSync(`${file}.tmp`, JSON.stringify(retries))
 renameSync(`${file}.tmp`, file)
 
 // ORCH_BIN 은 orch 진입점 절대경로다. 핸들러의 PATH 앞에는 가드 폴더가 있어 PATH 의 orch 를 믿지 않는다
-execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_BIN!, 'worker', 'nudge', '--terminal', input.worker.terminal, '--text', '계속 진행해'], { stdio: 'inherit' })
+execFileSync('node', ['--disable-warning=ExperimentalWarning', process.env.ORCH_BIN!, 'worker', 'send', '--dispatch', input.worker.dispatch, '--body', '계속 진행해'], { stdio: 'inherit' })
 ```
 
-- **0 으로 끝나면 코디네이터를 깨우지 않는다.** 0 이 아니면 루프가 그 Run 의 알림 파일에 `WORKER-STALLED` 를 써 코디네이터가 깨어난다.
+- **0 으로 끝나면 코디네이터를 깨우지 않는다.** 0 이 아니면 루프가 그 Run 에 `WORKER-STALLED` 메시지를 보내 코디네이터가 깨어난다.
 - **넘길 때는 10 으로 끝낸다.** 루프 로그에 `HOOK-REJECT worker-stalled <이유>` 가 남는다. 다른 0 아닌 값도 넘기지만 `HOOK-FAIL worker-stalled <종료 코드>` 로 남아 핸들러의 결함과 구분되지 않는다. 위 예시는 상한에 닿았거나 `error` 가 아닌 멈춤이면 10 으로 넘긴다.
 - **횟수는 멈춤마다 센다.** 같은 상태가 이어지는 동안 입력의 `since` 가 그대로이고, 작업 중 화면을 거쳐 다시 멈추면 `since` 가 바뀐다. dispatch 수명 전체로 세면 앞 멈춤에서 쓴 횟수 때문에 다음 멈춤을 다시 시도시키지 못한다.
 - **0 으로 끝나면 같은 화면이 기준 틱 수만큼 더 이어질 때 다시 불린다.** 다시 시도한 worker 의 화면이 그대로일 수 있어서다. 화면에 오류 줄이 늘어도 다시 불린다. 0 이 아니면 그 화면에는 다시 불리지 않는다.
 - **사람이 Esc 로 끊은 화면(`interrupted`)에는 불리지 않는다.** 사람이 일부러 멈춘 작업을 다시 돌리지 않는다.
-- **입력은 코어 명령(`orch worker nudge`, `orch worker send`)으로만 한다.** `node "$ORCH_BIN" worker nudge …` 처럼 진입점 절대경로 `ORCH_BIN` 으로 부른다. 그 명령은 진짜 orca(`ORCH_REAL_ORCA`)로 입력해 가드에 막히지 않는다. 플러그인 설치 경로는 커밋마다 바뀌므로 경로를 핸들러에 적지 않는다.
+- **지시는 `orch worker send` 로 보낸다.** Orca 가 worker 를 깨운다. `orch worker nudge` 를 쓰는 저장소 핸들러는 doctor 의 NUDGE-HANDLER 경고를 따라 바꾼다.
   <!-- orch-compat -->
   `ORCH_SCRIPTS`(스크립트 폴더)도 계속 넘기지만 스크립트는 그 아래 묶음 폴더(`worker/nudge-worker.ts` 꼴)로 옮겼다. `$ORCH_SCRIPTS/<이름>.ts`, `join(ORCH_SCRIPTS, '<이름>.ts')` 꼴은 파일이 없어 깨진다. 핸들러는 `node "$ORCH_BIN" <묶음> <동작>` 으로 부른다. doctor 가 `DIRECT-PATH` 로 알린다.
 - 코어가 `error` 로 보는 오류 줄은 에이전트가 오류를 그리는 공통 형식뿐이다. 그 밖의 문구는 입력의 `lines` 로 핸들러가 판정한다. 그 판정을 쓰려면 `config.json` 의 `pipeline.stall_ticks.idle` 을 켠다.
@@ -175,5 +173,5 @@ orch 5.2.0에서 `queue.before`, `queue.verify_merged`, `queue.after_merged`, `f
 - `gh pr merge`, `gh pr update-branch`, PR 머지와 브랜치 갱신 API, GraphQL 의 머지 mutation. 머지는 머지 큐가, base 합치기는 차례가 온 PR 에만 코어가 한다
 
 막히면 stderr 에 이유를 내고 종료 코드 126 으로 끝난다. 판정의 원본은 `scripts/lib/guard/guard.ts` 머리 주석이다.
-worker 에게 입력하는 코어 명령(`nudge-worker`, `send-to-worker`)은 `ORCH_REAL_ORCA` 로 진짜 orca 를 불러 가드를 거치지 않는다.
+worker 에게 보내는 코어 명령은 `orch worker send` 다. 터미널 직접 입력은 사용하지 않는다.
 가드는 보안 경계가 아니다. 진짜 실행 파일 경로(`ORCH_REAL_ORCA`, `ORCH_REAL_GH`)가 환경에 보이므로 일부러 부르면 우회된다. 근거는 [ADR-013](../../../docs/adr/013-orch-worker-stalled.md) 이 소유한다.

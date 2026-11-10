@@ -203,7 +203,7 @@ import { queuePollSeconds } from '../lib/gh-budget.ts'
 import { groupMap, isDoc, judge } from '../lib/overlap.ts'
 import { NO_LIMIT_MS, withRun, run, runAsync, runInherit, scriptCommand, signalCode, stopChildren, stopping } from '../lib/proc.ts'
 import type { RunResult } from '../lib/proc.ts'
-import { appendEvent } from '../lib/loop.ts'
+import { sendNotice } from '../lib/run-notice.ts'
 import { alive } from '../lib/process.ts'
 import { pyJson } from '../lib/py.ts'
 import { emit, oneLine, short, shortEnv } from '../lib/output.ts'
@@ -1483,7 +1483,7 @@ class Queue {
     const at = sweep.indexOf('--run')
     const run = at >= 0 && at + 1 < sweep.length ? sweep[at + 1] : null
     try {
-      appendEvent(this.repoDir, 'QUEUE-CONFLICT', Number(n), reason, run)
+      sendNotice('QUEUE-CONFLICT', Number(n), reason, run)
     } catch (e) {
       process.stderr.write(`경고: QUEUE-CONFLICT 알림을 쓰지 못했다: ${(e as Error)?.message ?? String(e)}\n`)
     }

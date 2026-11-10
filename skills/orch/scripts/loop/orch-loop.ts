@@ -1,5 +1,5 @@
 // 저장소마다 하나 도는 상주 루프다. 여러 세션의 Run 을 함께 맡는다(ADR-012, 아래 「Run」). 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 자동 머지, 충돌 PR 처리를 한다.
-// 코디네이터를 깨워야 하는 일은 그 Run 의 알림 파일(state/loop-events/<Run>.jsonl)에 적고, 코디네이터의 wait-important --loop-repo 가 그 파일로 깨어난다.
+// 코디네이터를 깨워야 하는 일은 그 Run 에 Orca status 메시지로 보낸다. 전송은 lib/run-notice.ts 가 맡는다.
 // 루프는 상태로만 판정한다. 루프가 없던 동안 생긴 일은 다음 틱이 다시 보므로, 죽으면 다시 띄우기만 하면 된다.
 // 상태 파일의 읽기, 생존 판정, 알림 파일과 커서는 lib/loop.ts 가 소유한다. 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이다.
 //
@@ -338,17 +338,8 @@
 //     충돌 처리(pr-conflict)와 메시지와 기록을 합치지 않는다. 충돌한 PR 은 충돌 찾기의 clean 에 없어 이 단계에 오지 않는다.
 //     오류 이유는 `; ` 로 이어 errors 의 refresh 에 둔다(아래 「오류 줄 억제」)
 //
-// 대기 확인: 맡은 Run 마다, Run id 가 있을 때만. 코디네이터가 wait-important 를 다시 걸지 않으면 질문과 알림을 받을 대기가 없다
-//     (2026-11-02 80분 동안 대기가 없어 결정 질문 9개가 묻혔다). lib/waiters.ts 로 그 Run 의 wait-important, watch-questions 프로세스를 찾는다.
-//     있거나 그 Run 에 살아 있는 dispatch(LIVE_DISPATCH)가 없으면 state/no-wait/<Run>.json 을 지운다. 둘 다 아니면 처음 본 시각을 그 파일에 적고,
-//     ORCH_NO_WAIT_SEC(기본 300)초가 지나도 대기가 없으면 한 번만 알린다. 코디네이터가 묶음을 처리하는 사이의 짧은 공백은 알리지 않는다.
-//     알림은 그 Run 의 알림 파일의 NO-WAIT(text `대기 없음: Run <Run> 에 살아 있는 dispatch <n> 개가 있는데 … 다시 건다`)와,
-//     Run 등록의 coordinator_terminal(term_)에 nudge-worker --text 로 넣는 같은 글이다. 대기가 없으니 알림 파일만으로는 아무도 깨지 않는다.
-//     등록된 터미널이 없으면 알림 파일에만 쓰고 로그에 남긴다. 대기가 다시 생기면 파일을 지워 다음 공백을 새로 센다.
-//     코디네이터가 사용자와 대화 중이면(lib/user-active.ts 의 「대화 중」) 알리지 않고 로그에 NO-WAIT-DEFER 줄만 남긴다.
-//     대화 중에는 코디네이터가 일부러 대기를 다시 걸지 않는다(references/waiting.md). 대화가 끝난 뒤의 틱이 한 번 알린다
-//     ps 를 읽지 못하면 errors 의 waiter@<Run> 에 이유를 둔다(아래 「오류 줄 억제」). worker-list 를 읽지 못한 틱은 로그에만 남기고 판정하지 않는다.
-//     같은 원인(Orca 꺼짐)을 질문 확인과 충돌 처리가 이미 알린다
+// 미답변 질문 확인: 600초 넘은 기술 질문 id 묶음이 바뀔 때 UNANSWERED 를 Run 에 보낸다.
+// 완료 보고·끊김은 completion-watch.ts 와 lib/lost-workers.ts 가 확인하며 메시지는 소비하지 않는다.
 //
 // 자리 보유 확인: 무거운 검사 대기열(HEAVY_SLOT_DIR, 없으면 lib/paths.ts 의 heavy-slot)에서 상한(HEAVY_HOLD_MAX 초, 기본 1800)보다
 //     오래 자리를 쥔 살아 있는 등록을 lib/heavy-hold.ts 의 overHeld 로 찾는다. 있으면 주 Run 의 알림 파일에 HEAVY-SLOT-HELD 를 쓴다.
@@ -406,6 +397,7 @@
 //     5  --start 가 명의 때문에 띄우지도 합류하지도 않았다(LOOP-START-FENCED)
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
+import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -431,7 +423,7 @@ import { baseWorkflowFailed, apiTarget, cancelledOnly, ciState, failedCheck, ghJ
 import type { CiCheck, Names } from '../lib/gh.ts'
 import { defaultBase, git, mainCheckout } from '../lib/git.ts'
 import { specFiles } from '../lib/last-pr.ts'
-import { appendEvent, DEFAULT_ALIVE_SEC, dropReadEvents, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, runKey, unregisterRun, writeLoop } from '../lib/loop.ts'
+import { DEFAULT_ALIVE_SEC, isLoopProcess, isRegistered, lockFile, loopStatus, readLoop, registeredRuns, registerRun, runKey, unregisterRun, writeLoop } from '../lib/loop.ts'
 import type { LoopState } from '../lib/loop.ts'
 import { orcaJson } from '../lib/orca.ts'
 import { findBoardItems, readBoard } from '../lib/board.ts'
@@ -443,7 +435,7 @@ import { alive } from '../lib/process.ts'
 import { envMs } from '../lib/env.ts'
 import { closedReason, shareClosedQuestion, notifyQuestion, poll, pruneSharedClosed, questionLocations, readClosed, writeClosed } from '../lib/questions.ts'
 import { isUserDecision, notifyDecisions } from '../lib/decisions.ts'
-import { NO_WAIT_PREFIX, userActive } from '../lib/user-active.ts'
+import { sendNotice } from '../lib/run-notice.ts'
 import type { ClosedLookup } from '../lib/questions.ts'
 import { finishedTurns, readTurns, turnLine } from '../lib/queue-turn.ts'
 import { aheadInQueue, forkFiles, inFlight, readRefresh, refreshFile, refreshSettings, verdict as refreshVerdict, writeRefresh } from '../lib/refresh.ts'
@@ -481,9 +473,7 @@ const TICK_STOP_GRACE_MS = STOP_GRACE_MS + 3_000
 // 틱 자식이 부모가 살아 있는지 보는 간격(머리 주석의 「틱」)
 const PARENT_POLL_MS = 2_000
 // 대기 없음을 알리기 전에 기다리는 초(머리 주석의 「대기 확인」). 코디네이터가 묶음을 처리하는 사이에는 대기가 잠깐 없다
-const NO_WAIT_SEC = Number(process.env.ORCH_NO_WAIT_SEC) || 300
 // 코디네이터 터미널에 대기 없음을 넣는 nudge-worker 의 시간 제한
-const NUDGE_TIMEOUT_MS = 90_000
 const MODES = ['start', 'stop', 'status', 'foreground', 'tick'] as const
 // 저장소 공유 일의 오류 출처. 알림이 주 Run 에 가므로 키에 주 Run 을 붙인다(머리 주석의 「오류 줄 억제」)
 const SHARED_SOURCES: ReadonlySet<string> = new Set(['prs', 'board', 'ci', 'merged', 'movement', 'auto-merge', 'conflicts', 'refresh', 'queue-turn', 'tick', 'heavy-slot'])
@@ -921,7 +911,6 @@ async function stop(repo: string, run: string | null, all: boolean): Promise<num
 // 뺀 Run 의 알림 파일과 커서를 지운다. 읽지 않은 줄이 있으면 남긴다(lib/loop.ts 의 「알림 파일 지우기」). 지우지 못해도 --stop 은 이어 간다
 function dropEvents(repo: string, run: string): void {
   try {
-    dropReadEvents(repo, run)
   } catch (e) {
     log(`orch-loop: Run ${run} 의 알림 파일을 지우지 못했다: ${oneLine(e)}`)
   }
@@ -1005,6 +994,10 @@ function tickResult(done: RunResult): { result: TickResult | null; reason: strin
 }
 
 async function foreground(ctx: Context, once: boolean, interval: number, entrypoint: string): Promise<number> {
+  if (ctx.run) {
+    const found = waiterPids(ctx.run)
+    if (found.ok) for (const pid of found.pids) log(`WAITER-LEFT ${pid}: 옛 대기를 직접 종료한다: kill ${pid}`)
+  }
   const lock = lockFile(ctx.repo)
   const holder = await takeLock(lock, ctx.repo)
   if (holder !== null) {
@@ -1016,6 +1009,12 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
   // 그 뒤의 등록은 살아 있는 세션이 동시에 --start 한 것이라 남긴다. 앞 loop.json 이 없으면 지우지 않는다(머리 주석의 「Run」)
   const before = readLoop(ctx.repo)
   const cutoff = typeof before?.alive_at === 'string' ? Date.parse(before.alive_at) : Number.NaN
+  if (Number.isFinite(cutoff) && Date.now() - cutoff > Math.max(3 * (before?.tick_sec ?? 300), 120) * 1000) {
+    for (const entry of registeredRuns(ctx.repo)) {
+      try { sendNotice('LOOP-RESTARTED', null, `${before!.alive_at} 부터 멈춰 있었다`, entry.run) }
+      catch (e) { log(`NOTICE-FAIL LOOP-RESTARTED ${oneLine(e)}`) }
+    }
+  }
   for (const entry of registeredRuns(ctx.repo)) {
     if (entry.run === ctx.run || !Number.isFinite(cutoff)) continue
     const at = Date.parse(entry.registered_at)
@@ -1093,13 +1092,14 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
         log(`WATCH-ERROR tick: ${reason}`)
         if (state.errors[tickKey] !== reason) {
           try {
-            appendEvent(ctx.repo, 'WATCH-ERROR', null, `tick: ${reason}`, state.run)
+            sendNotice('WATCH-ERROR', null, `tick: ${reason}`, state.run)
+            state.errors[tickKey] = reason
           } catch (e) {
-            log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+            log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
           }
         }
       }
-      state.errors[tickKey] = reason
+      if (reason === null || state.errors[tickKey] === reason) state.errors[tickKey] = reason
       dropStaleErrors(state.errors, runs, state.run)
       state.alive_at = iso()
       writeLoop(ctx.repo, state)
@@ -1409,9 +1409,11 @@ async function watchCi(
       const run = told.run ?? primaryRun(lookup)
       log(`CI-FAILED #${pr.number} ${text}`)
       try {
-        appendEvent(ctx.repo, 'CI-FAILED', pr.number, text, run)
+        sendNotice('CI-FAILED', pr.number, text, run)
       } catch (e) {
-        log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+        if (before) ci[key] = before
+        else delete ci[key]
+        log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
       }
       await fireCi('ci-failed', ctx, pr, judged.checks, names.names, run)
     }
@@ -1520,7 +1522,7 @@ async function watchStalls(
           ? `사용 한도 ${dispatch} ${terminal}: references/agent-selection.md 의 「사용 한도에 걸렸을 때」에 따라 제공자나 모델을 바꿔 이어받는다`
           : `사용 한도 ${dispatch} ${terminal}: 사용자에게 계정 전환을 요청하고, 바꾼 뒤 ${orchWord()} worker resume --dispatch ${shQuote(dispatch)}. resume 이 실패하면 출력의 NEXT 를 먼저 따르고, 바꿀 계정이 없거나 그래도 안 되면 references/agent-selection.md 의 「사용 한도에 걸렸을 때」`
         try {
-          appendEvent(ctx.repo, 'WORKER-LIMITED', null, text, run)
+          sendNotice('WORKER-LIMITED', null, text, run)
           limitedNotified = true
           log(text)
         } catch (e) {
@@ -1561,10 +1563,11 @@ async function watchStalls(
       if (limitedNotified) entry.limitedNotified = true
       stalls[dispatch] = entry
       if (entry.ticks < limit || entry.fired) continue
-      if (await notifyStall(ctx, run, row, entry, screenTail(lines), base)) {
+      const notified = await notifyStall(ctx, run, row, entry, screenTail(lines), base)
+      if (notified === true) {
         // 핸들러가 처리했다. 다시 시도한 뒤에도 화면이 그대로면 해시가 같으므로, 처음부터 다시 세 핸들러를 다시 부른다
         entry.ticks = 0
-      } else {
+      } else if (notified === false) {
         entry.fired = true
       }
     }
@@ -1575,7 +1578,7 @@ async function watchStalls(
 
 // worker-stalled 를 내고, 핸들러가 0 으로 끝나지 않았으면 그 Run 의 알림 파일에 WORKER-STALLED 를 쓴다(머리 주석의 「멈춤 확인」).
 // 핸들러가 0 으로 끝났으면 true 다
-async function notifyStall(ctx: Context, run: string, row: Record<string, unknown>, entry: Stall, lines: string[], base: string): Promise<boolean> {
+async function notifyStall(ctx: Context, run: string, row: Record<string, unknown>, entry: Stall, lines: string[], base: string): Promise<boolean | null> {
   const dispatch = String(row.dispatchId)
   const resource = isObject(row.resource) ? row.resource : {}
   const id = String(resource.worktreeId ?? '')
@@ -1601,9 +1604,11 @@ async function notifyStall(ctx: Context, run: string, row: Record<string, unknow
   }
   if (handled) return true
   try {
-    appendEvent(ctx.repo, 'WORKER-STALLED', null, text, run)
+    sendNotice('WORKER-STALLED', null, text, run)
   } catch (e) {
-    log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+    log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
+    entry.fired = false
+    return null
   }
   return false
 }
@@ -1657,9 +1662,11 @@ function watchMovement(
     const text = `${v.dispatch} ${v.reason} ${v.idleMin ?? '-'}분 ${v.worktree ? basename(v.worktree) : '-'} ${v.terminal || '-'}`
     log(`WORKER-IDLE ${text}`)
     try {
-      appendEvent(ctx.repo, 'WORKER-IDLE', null, text, v.run)
+      sendNotice('WORKER-IDLE', null, text, v.run)
     } catch (e) {
-      log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+      if (previous.workers[v.dispatch]) idle.records[v.dispatch] = previous.workers[v.dispatch]
+      else delete idle.records[v.dispatch]
+      log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
     }
   }
   // 멈춘 단계는 모든 Run 의 worker 목록을 읽은 틱에만 본다. 하나라도 못 읽으면 살아 있는 worker 를 몰라 앞 기록을 그대로 둔다
@@ -1673,9 +1680,10 @@ function watchMovement(
         const text = `${stage.id} ${stage.worktree ?? stage.branch ?? '-'} ${stage.minutes}분 ${stage.step}`
         log(`STAGE-STALLED ${text}`)
         try {
-          appendEvent(ctx.repo, 'STAGE-STALLED', null, text, primary)
+          sendNotice('STAGE-STALLED', null, text, primary)
         } catch (e) {
-          log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+          found.records[stage.id].fired = false
+          log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
         }
       }
     } catch (e) {
@@ -1738,15 +1746,16 @@ async function handleConflicts(ctx: Context, lookup: Lookup, base: string, found
       break
     }
     if (outcome.kind !== 'record') continue
-    await concludeConflict(statePath, ctx.repo, fireCtx, pr, files, baseSha, outcome)
     if (outcome.action === 'orphan' || outcome.action === 'stalled') {
       try {
-        if (outcome.action === 'stalled') appendEvent(ctx.repo, 'CONFLICT-STALLED', pr.number, outcome.reason ?? '', run)
-        else appendEvent(ctx.repo, 'CONFLICT-ORPHAN', pr.number, outcome.reason ?? '', run)
+        if (outcome.action === 'stalled') sendNotice('CONFLICT-STALLED', pr.number, outcome.reason ?? '', run)
+        else sendNotice('CONFLICT-ORPHAN', pr.number, outcome.reason ?? '', run)
       } catch (e) {
-        log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+        log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
+        continue
       }
     }
+    await concludeConflict(statePath, ctx.repo, fireCtx, pr, files, baseSha, outcome)
   }
   return errors.size > 0 ? [...errors].join('; ') : null
 }
@@ -1899,7 +1908,7 @@ async function tellRefresh(
 
 type Ready = { head: string; at: string }
 type Blocked = { head: string; since: string; fired: boolean }
-type QueueRecord = { pid: number; log: string; run: string; prs: number[]; at: string }
+type QueueRecord = { announced?: boolean; pid: number; log: string; run: string; prs: number[]; at: string }
 // state/auto-merge.json(머리 주석의 「자동 머지」, docs/data-schema.md)
 type AutoMergeState = {
   ready: Record<string, Ready>
@@ -1929,7 +1938,7 @@ function pickEntries<T>(value: unknown, ok: (entry: unknown) => boolean): Record
 function queueRecord(value: unknown): QueueRecord | null {
   if (!isObject(value) || !Number.isInteger(value.pid) || typeof value.log !== 'string' || typeof value.run !== 'string' || typeof value.at !== 'string') return null
   if (!Array.isArray(value.prs) || !value.prs.every((n) => Number.isInteger(n))) return null
-  return { pid: value.pid as number, log: value.log, run: value.run, prs: value.prs as number[], at: value.at }
+  return { ...(typeof value.announced === 'boolean' ? { announced: value.announced } : {}), pid: value.pid as number, log: value.log, run: value.run, prs: value.prs as number[], at: value.at }
 }
 
 // 파일이 없거나 깨졌으면 빈 기록이다
@@ -2265,10 +2274,10 @@ async function autoMerge(ctx: Context, mine: OwnPr[], ci: Record<string, CiEntry
 function notifyAutoMerge(ctx: Context, kind: string, pr: number | null, text: string, run: string): boolean {
   log(`${kind} ${pr === null ? '' : `#${pr} `}${text}`)
   try {
-    appendEvent(ctx.repo, kind, pr, text, run)
+    sendNotice(kind, pr, text, run)
     return true
   } catch (e) {
-    log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+    log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
     return false
   }
 }
@@ -2295,6 +2304,10 @@ async function autoMergeStep(
   }
   if (state.queue) {
     const queue = state.queue
+    if (queue.announced === false) {
+      if (!notifyAutoMerge(ctx, 'AUTO-MERGE', null, `${queue.prs.map(n => `#${n}`).join(' ')} run=${queue.run} log=${queue.log}`, queue.run)) return
+      queue.announced = true
+    }
     if (listed.some((p) => p.pid === queue.pid && p.command.includes('merge-with-finish.'))) {
       logHeld(ctx.repo, listed)
       return
@@ -2485,7 +2498,7 @@ async function autoMergeStep(
   state.queue = { pid: launched.pid, log: queueLog, run: queueRun, prs: order, at }
   for (const n of order) state.tried[`${n}@${byNumber.get(n)?.pr.head}`] = at
   for (const n of order) log(`AUTO-MERGE-BASIS #${n} HEAD ${byNumber.get(n)?.pr.head.slice(0, 8)} ${byNumber.get(n)?.basis}`)
-  notifyAutoMerge(ctx, 'AUTO-MERGE', null, `${order.map((n) => `#${n}`).join(' ')} run=${queueRun} log=${queueLog}`, queueRun)
+  state.queue.announced = notifyAutoMerge(ctx, 'AUTO-MERGE', null, `${order.map((n) => `#${n}`).join(' ')} run=${queueRun} log=${queueLog}`, queueRun)
 }
 
 // 머리 주석의 「마무리 빠짐」. 정리 출력의 FINISH-MISSING 줄을 그 Run 의 알림 파일에 옮긴다. 같은 PR 은 한 번만 쓴다
@@ -2505,11 +2518,11 @@ function relayFinishMissing(repo: string, stdout: string, run: string | null): v
     if (Object.hasOwn(seen, m[1])) continue
     const hint = `마무리를 뒤늦게 돌리려면 ${orchWord()} queue finish ${m[1]} --repo ${shQuote(repo)}${run ? ` --run ${run}` : ''}`
     try {
-      appendEvent(repo, 'FINISH-MISSING', Number(m[1]), `${m[2]}. ${hint}`, run)
+      sendNotice('FINISH-MISSING', Number(m[1]), `${m[2]}. ${hint}`, run)
       seen[m[1]] = iso()
       changed = true
     } catch (e) {
-      log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+      log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
     }
   }
   if (!changed) return
@@ -2523,66 +2536,18 @@ function relayFinishMissing(repo: string, stdout: string, run: string | null): v
 }
 
 // 머리 주석의 「대기 확인」. 오류면 이유를, 아니면 null 을 낸다
-async function watchWaiter(repo: string, run: string, pending: ReturnType<typeof poll>['pending'] | null): Promise<string | null> {
-  const file = join(pathOf('state', repo), 'no-wait', `${runKey(run)}.json`)
-  const clear = () => rmSync(file, { force: true })
-  const waiters = waiterPids(run)
-  if (!waiters.ok) return waiters.error
-  if (waiters.pids.length > 0) {
-    clear()
-    return null
-  }
-  // worker 목록을 읽지 못하면 이번 틱은 판정하지 않는다. 같은 원인(Orca 꺼짐)은 질문 확인과 정리가 이미 알린다
-  const workers = workerRows(run)
-  if (!workers.ok) {
-    log(`orch-loop: 대기 확인을 건너뛴다. worker 목록을 읽지 못했다: ${oneLine(workers.error)}`)
-    return null
-  }
-  const live = workers.rows.filter((w) => LIVE_DISPATCH.has(String(w.dispatchStatus)))
-  if (live.length === 0) {
-    clear()
-    return null
-  }
-  let seen: { since: number; notified: boolean } | null = null
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
-    if (isObject(parsed) && typeof parsed.since === 'number') seen = { since: parsed.since, notified: parsed.notified === true }
-  } catch {
-    seen = null
-  }
-  const now = Date.now()
-  const save = (value: { since: number; notified: boolean }) => {
-    makeParent(file, repo)
-    writeFileSync(`${file}.tmp`, `${JSON.stringify(value)}\n`)
-    renameSync(`${file}.tmp`, file)
-  }
-  if (seen === null) {
-    save({ since: now, notified: false })
-    return null
-  }
-  if (seen.notified || now - seen.since < NO_WAIT_SEC * 1000) return null
-  const coordinator = registeredRuns(repo).find((entry) => entry.run === run)?.coordinator_terminal
-  // 사용자와 대화 중이면 코디네이터가 일부러 대기를 걸지 않았다(lib/user-active.ts). 대화가 끝난 뒤의 틱이 알린다
-  const talking = userActive(typeof coordinator === 'string' ? coordinator : null, now)
-  if (talking.active) {
-    log(`NO-WAIT-DEFER Run ${run} 의 코디네이터가 사용자와 대화 중이라(마지막 입력 ${talking.ago}초 전) 대기 없음 알림을 미룬다`)
-    return null
-  }
-  const minutes = Math.floor((now - seen.since) / 60_000)
-  const text =
-    `${NO_WAIT_PREFIX} Run ${run} 에 살아 있는 dispatch ${live.length} 개가 있는데 wait-important 대기가 ${minutes}분째 없다. ` +
-    `미답변 질문 ${pending === null ? '확인 못 함' : `${pending.length} 개`}. ${pending === null ? 'questions=unknown' : questionLocations(pending)}. 마지막 대기가 남긴 NEXT_WAIT 명령으로 wait-important 를 백그라운드로 다시 건다`
-  appendEvent(repo, 'NO-WAIT', null, text, run)
-  log(`NO-WAIT ${text}`)
-  if (typeof coordinator === 'string' && coordinator.startsWith('term_')) {
-    const nudge = process.env.NUDGE_WORKER || scriptPath('nudge-worker')
-    const done = await runAsync(scriptCommand(nudge, ['--terminal', coordinator, '--text', text]), { timeoutMs: NUDGE_TIMEOUT_MS })
-    relay(done)
-  } else {
-    log(`NO-WAIT Run ${run} 의 코디네이터 터미널이 등록되지 않아 알림 파일에만 적었다`)
-  }
-  save({ since: seen.since, notified: true })
-  return null
+async function watchUnanswered(repo: string, run: string, pending: ReturnType<typeof poll>['pending'] | null): Promise<void> {
+  if (pending === null) return
+  const ids = pending.filter(m => !isUserDecision(m) && Date.now() - Date.parse(String(m.created_at ?? m.createdAt ?? '')) >= REMIND_AFTER_SEC * 1000).map(m => String(m.id)).sort()
+  const file = join(pathOf('state', repo), 'unanswered', `${runKey(run)}.json`)
+  const hash = createHash('sha256').update(JSON.stringify(ids)).digest('hex')
+  let previous = ''
+  try { previous = JSON.parse(readFileSync(file, 'utf8')).hash } catch { /* 처음 확인한다 */ }
+  if (previous === hash) return
+  if (ids.length) sendNotice('UNANSWERED', null, ids.join(', '), run)
+  makeParent(file, repo)
+  writeFileSync(`${file}.tmp`, JSON.stringify({ hash, ids }))
+  renameSync(`${file}.tmp`, file)
 }
 
 function relay(done: RunResult): void {
@@ -2605,14 +2570,15 @@ async function tick(ctx: Context, n: number): Promise<number> {
     const key = keyOf(source, run)
     const kind = opts.kind ?? 'WATCH-ERROR'
     const text = opts.text ?? `${source}: ${reason}`
-    errors[key] = reason
-    if (reason === null) return
+    if (reason === null) { errors[key] = null; return }
+    errors[key] = previous[key] === reason ? reason : null
     if (!opts.logged) log(`${kind} ${text}`)
     if (previous[key] === reason) return
     try {
-      appendEvent(ctx.repo, kind, null, text, run)
+      sendNotice(kind, null, text, run)
+      errors[key] = reason
     } catch (e) {
-      log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
+      log(`orch-loop: Orca 알림을 보내지 못했다: ${oneLine(e)}`)
     }
   }
 
@@ -2672,13 +2638,6 @@ async function tick(ctx: Context, n: number): Promise<number> {
       log(notice.line)
       // 사용자 결정은 decision-pending 만 깨운다. 600초 재알림이 중복 억제를 우회하지 않게 한다.
       if (notice.reminder && isUserDecision(notice.message)) continue
-      if (notice.reminder) {
-        try {
-          appendEvent(ctx.repo, 'REMINDER', null, notice.line.replace(/^REMINDER /, ''), run)
-        } catch (e) {
-          log(`orch-loop: 알림 파일에 쓰지 못했다: ${oneLine(e)}`)
-        }
-      }
       await notifyQuestion(notice, ctx.repo, run, 'orch-loop')
     }
     const pending = pendingDecisions.get(run)
@@ -2727,7 +2686,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     report('board', oneLine(e))
   }
 
-  // 대기가 꺼져 있어도 기본 핸들러가 코디네이터를 깨운다. 같은 결정은 해결될 때까지 한 번만 보낸다.
+  // 결정은 질문 조회 성공 뒤에만 처리한다. 완료·끊김 감시는 아래에서 별도로 돈다.
   for (const { run } of runs) {
     if (!run || !pendingDecisions.has(run)) continue
     try {
@@ -2881,7 +2840,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
   for (const { run } of runs) {
     if (!run) continue
     try {
-      report('waiter', await watchWaiter(ctx.repo, run, pendingDecisions.get(run) ?? null), { run })
+      report('waiter', (await watchUnanswered(ctx.repo, run, pendingDecisions.get(run) ?? null), null), { run })
     } catch (e) {
       report('waiter', oneLine(e), { run })
     }
