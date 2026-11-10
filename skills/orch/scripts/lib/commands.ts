@@ -332,7 +332,7 @@ export function scriptIn(dir: string, name: string): string | null {
 
 // 사람이 읽는 사용법. 묶음을 주면 그 묶음만 낸다
 export function helpText(group?: string, lead?: string): string {
-  const rows = group ? COMMANDS.filter((c) => c.group === group && (!lead || c.verb?.startsWith(lead + ' '))) : COMMANDS
+  const rows = group ? COMMANDS.filter((c) => c.group === group && (!lead || c.verb === lead || c.verb?.startsWith(lead + ' '))) : COMMANDS
   const lines = group
     ? [`사용법: orch ${group}${lead ? ' ' + lead : ''} <동작> [인자]`, '', ...rows.map((c) => `  ${c.usage}`)]
     : [

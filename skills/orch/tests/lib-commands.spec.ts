@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { COMMANDS, GROUPS, form, isGroup, orchWord, resolveLegacy, resolveNew, scriptIn, scriptPath, SCRIPTS_DIR, type Command } from '../scripts/lib/commands.ts'
+import { COMMANDS, GROUPS, form, helpText, isGroup, orchWord, resolveLegacy, resolveNew, scriptIn, scriptPath, SCRIPTS_DIR, type Command } from '../scripts/lib/commands.ts'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 
@@ -228,4 +228,7 @@ test('승인 대기는 add/list/cancel/check 만 명령으로 노출한다', () 
   assert.equal(result.command.script, 'board/board-approval.ts')
   assert.deepEqual(result.args, ['add', 'demo'])
   assert.ok(!COMMANDS.some(c => c.group === 'board' && /approve|revise/.test(c.verb ?? '')))
+  assert.match(helpText('queue', 'reserve'), /reserve --module/)
+  assert.match(helpText('queue', 'reserve'), /reserve prune/)
+  assert.doesNotMatch(helpText('board', 'approval'), /board sync/)
 })
