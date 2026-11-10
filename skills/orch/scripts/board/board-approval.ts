@@ -70,7 +70,9 @@ async function main(): Promise<number> {
   if (entry.preview && facts.previewSha !== entry.preview.sha256) return reject(id, '미리보기가 바뀜')
   if (facts.askedVersion !== null && facts.askedVersion !== entry.version) return reject(id, '버전이 다름')
   facts.message = readSignal(entry)
-  if (facts.message.found) facts.workers = await signalWorkers([facts.message.sender, entry.press?.terminal ?? '', entry.terminal ?? ''])
+  const caller = process.env.ORCA_TERMINAL_HANDLE ?? ''
+  if (facts.message.found) facts.workers = await signalWorkers([facts.message.sender, entry.press?.terminal ?? '', entry.terminal ?? '', caller])
+  if (caller && facts.workers.ok && facts.workers.workerHandles.has(caller)) return reject(id, 'worker 가 보냄')
   const verdict = checkVerdict(entry, facts)
   if (!verdict.ok) return reject(id, verdict.reason)
   const result = updateApprovals(repo, (file, now) => { const next = applyUsed(file, id, entry.version, entry.press!.nonce, now); return { file: 'file' in next ? next.file : file, result: next } })

@@ -153,6 +153,19 @@ test('같은 단계의 keep-open 은 열린 대기를 하나만 남긴다', () =
     assert.equal(f.read().seq, 1)
   } finally { f.clean() }
 })
+test('check 호출자가 worker 이면 다른 세션의 승인을 소모하지 않는다', () => {
+  const f = fixture()
+  try {
+    f.add(); const payload = f.approve()
+    f.fake.setRules([{ args: ['inbox'], stdout: envelope({ messages: [{ from_handle: 'term_sender', payload }] }) }, { stdout: workers(['term_worker']) }])
+    const result = f.run(['check', 'demo'], script, { ORCA_TERMINAL_HANDLE: 'term_worker' })
+    assert.equal(result.code, 1); assert.match(result.out, /worker 가 보냄$/)
+    assert.equal(f.read().entries[0].state, 'approved')
+    f.fake.setRules([{ args: ['inbox'], stdout: envelope({ messages: [{ from_handle: 'term_sender', payload }] }) }, { code: 1 }])
+    assert.match(f.run(['check', 'demo'], script, { ORCA_TERMINAL_HANDLE: 'term_worker' }).out, /신호를 읽지 못함$/)
+    assert.equal(f.read().entries[0].state, 'approved')
+  } finally { f.clean() }
+})
 test('깨진 파일은 add 만 옮겨 보존하고 쓰기 때 끝난 지 7일 넘은 기록만 정리한다', () => {
   const f = fixture()
   try {
