@@ -70,7 +70,7 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { ConfigError, loadConfig, section } from '../lib/config.ts'
 import { FINISH_KEYS } from '../lib/finish-options.ts'
-import { taggedBoardSteps, boardSteps, detailArgs, detailText as textOf, NOTE, noteLine, prNumbers, prSteps, withNote, BOARD_BIN } from '../lib/board.ts'
+import { taggedBoardSteps, boardSteps, detailArgs, detailText as textOf, NOTE, noteLine, prNumbers, prSteps, withNote, BOARD_BIN, guardedCommands, linesRev, staleBoardWrite } from '../lib/board.ts'
 import type { BoardDetail as Detail } from '../lib/board.ts'
 import { deployVerdict, parseRuns } from '../lib/deploy.ts'
 import type { DeployVerdict, RunRow } from '../lib/deploy.ts'
@@ -82,7 +82,8 @@ import { pidFileAlive } from '../lib/process.ts'
 import type { LastPrRules, LastPrVerdict } from '../lib/last-pr.ts'
 import { worktreePaths } from '../lib/workers.ts'
 import { gh, ghJson } from '../lib/gh.ts'
-import { boardPath, pathOf } from '../lib/paths.ts'
+import { boardPath } from '../lib/board-file.ts'
+import { pathOf } from '../lib/paths.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import { pyStr } from '../lib/py.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
@@ -239,6 +240,7 @@ function main(argv: string[]): number {
     return tagStates.get(num) ?? null
   }
   const changed: string[] = []
+  itemsLoop:
   for (const item of items) {
     const id = String(item.id)
     const cmds: string[][] = []
@@ -390,11 +392,13 @@ function main(argv: string[]): number {
       }
     }
     const rewrite = details.length !== old.length || details.some((d, i) => d !== old[i])
-    if (rewrite) cmds.push(['set', id, ...detailArgs(details)])
-    cmds.push(...after)
+    const commands = guardedCommands([
+      ...(rewrite ? [['set', id, ...detailArgs(details)]] : []), ...cmds, ...after,
+    ], linesRev(item))
+    cmds.splice(0, cmds.length, ...commands)
     if (cmds.length === 0) continue
-    changed.push(id)
     if (dryRun) {
+      changed.push(id)
       if (short()) brief(`BOARD ${id} ${finish ? 'would-done' : 'would-update'}`)
       else out([id + (finish ? ' -> done' : ''), ...cmds.map((c) => c.join(' '))].join('\n  '))
       continue
@@ -402,11 +406,17 @@ function main(argv: string[]): number {
     for (const cmd of cmds) {
       const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { killSignal: 'SIGKILL' })
       if (done.code !== 0) {
+        if (staleBoardWrite(cmd, done)) {
+          err(`board-sync: ${id} 의 줄이 바뀌어 다음 틱에 다시 읽는다`)
+          brief(`BOARD ${id} stale`)
+          continue itemsLoop
+        }
         if (done.stderr) process.stderr.write(done.stderr)
         err(`board-sync: 보드 명령이 실패했다: ${id}`)
         return 1
       }
     }
+    changed.push(id)
     brief(`BOARD ${id} ${finish ? 'done' : 'updated'}`)
   }
   if (values.goal && !dryRun) {

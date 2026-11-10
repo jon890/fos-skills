@@ -1,3 +1,4 @@
+import { boardPath } from '../scripts/lib/board-file.ts'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -5,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import {
-  boardPath,
   ensure,
   FILES,
   legacyPaths,

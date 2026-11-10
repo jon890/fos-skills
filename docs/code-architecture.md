@@ -75,7 +75,7 @@
 | `scripts/skill_changes.ts` | 변경 이력 조각(`<스킬>/changes/<슬러그>.<등급>.md`)의 형식 검사, 머지 순서 정렬, 스킬 버전과 CHANGELOG 절 적용 | `scripts/check-skill-docs.ts`, `scripts/bump-plugin-version.ts` |
 | `skills/orch/hooks/` | PreToolUse 훅. `hooks.json` 이 `<이름>.ts` 를 PATH 의 node 로 부른다. 무엇을 거부하는지와 판정은 각 파일 머리 주석이 소유한다 | 세션의 모든 Bash 호출 |
 | `<스킬>/SKILL.md` | 그 스킬의 절차. 자기 스크립트를 `$SKILL_DIR` 로 부른다 | Claude |
-| `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/paths.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
+| `extensions/work-board/bin/board.ts` | 보드 편집 명령과 기본 보드 위치(`defaultBoardPath`) | orch 명령의 `BOARD_BIN` 기본값, `lib/board-file.ts`, 코디네이터. 부르는 명령은 각 명령의 머리 주석이 소유한다 |
 | `skills/plan/scripts/adr-docs.ts` | 문서 링크와 ADR 검사, ADR 색인 생성. 검사 항목, 옵션, 출력 줄, 종료 코드는 머리 주석이 소유한다 | spec·technical-design·review-fix·docs-audit 의 검사 단계, `skills/plan/tests/adr-docs.spec.ts` |
 | `skills/plan/scripts/{verify_task,check_feature,run_doc_checks,overlay_paths,plan_number}.ts` | 계획서 검사, 스펙·설계 형식 검사, 레포 설정의 문서 검사 명령 실행, 하위 프로젝트 판정과 오버레이 탐색 순서, plan 번호 계산. 옵션, 출력 줄, 종료 코드는 각 머리 주석이 소유한다 | plan·spec·technical-design·implementation·docs-audit·docs-consolidate·review-fix 의 단계, `skills/plan/tests/` |
 | `skills/browser/browser-driver/` | 브라우저 백엔드 중립 계층. 소유자는 `browser` 스킬이고 팀 저장소에는 `tools/browser-driver/` 로 실린다. 명령 목록은 `help` 가, 백엔드 규칙은 그 폴더의 `README.md` 가 소유한다 | `skills/browser/SKILL.md`, `export-only-skills/content-preview/scripts/show-preview.ts`, `skills/presentation/scripts/check-deck.ts` |
@@ -255,13 +255,13 @@ skills/orch/tests/core-*.spec.ts         값 입력 검증과 경계·중복 검
 skills/orch/tests/fixtures/              가짜 orca, gh 와 임시 저장소 helper
 skills/orch/tests/golden/                고정 입력과 stdout·stderr·종료 코드·종료 뒤 상태. fixtures/golden-run.ts 가 비교한다
 skills/orch/tests/loop-order/            Run 이 둘인 루프 틱의 로그 줄·결과 줄·orca 와 gh 호출 순서. fixtures/loop-order-run.ts 가 비교한다
-extensions/work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/paths.ts 가 import 한다
+extensions/work-board/bin/board.ts           보드 편집 명령. 기본 보드 위치 규칙 한 벌(defaultBoardPath)을 두고 lib/board-file.ts 가 import 한다
 ```
 
 `skills/orch/scripts/` 의 명령은 외부 조회·기록에 `lib/`, 값 판정에 `core/` 를 import 한다. core 는 실행 모듈을 import 하지 않는다. 명령끼리는 import 하지 않고 자식 프로세스로 부른다.
-예외는 `lib/paths.ts` 하나다. 보드는 work-board 의 것이라 기본 보드 위치(`defaultBoardPath`) 하나만 `extensions/work-board/bin/board.ts` 에서 import 한다.
+보드 위치와 줄 지문은 work-board 가 소유한다. `lib/board-file.ts` 는 `defaultBoardPath` 를, `lib/board.ts` 는 `linesRev` 를 `extensions/work-board/bin/board.ts` 에서 import 한다.
 work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worker-marks.ts` 하나다. 보드 worker 줄의 멈춤 판정을 상주 루프와 한 벌로 두려는 것이다.
-`extensions/work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/paths.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.
+`extensions/work-board/bin/board.ts` 는 orch 를 import 하지 않는다. `lib/board-file.ts` 와 `lib/board.ts` 가 board.ts 를 import 해 고리가 생기기 때문이다.
 옛 코드는 하이픈이 든 파일을 `importlib` 로 읽어 함수를 빌려 썼다. 그 함수는 `lib/` 로 옮긴다.
 
 ### 실행 규칙

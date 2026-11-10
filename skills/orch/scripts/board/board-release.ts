@@ -32,12 +32,12 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
-import { taggedBoardSteps, boardSteps, prNumbers, BOARD_BIN } from '../lib/board.ts'
+import { taggedBoardSteps, boardSteps, prNumbers, BOARD_BIN, guardedCommands, linesRev, staleBoardWrite } from '../lib/board.ts'
 import { ConfigError } from '../lib/config.ts'
 import { git } from '../lib/git.ts'
 import { ghJson } from '../lib/gh.ts'
 import { boardSettings, mergedCommands, stagesOf } from '../lib/milestones.ts'
-import { boardPath } from '../lib/paths.ts'
+import { boardPath } from '../lib/board-file.ts'
 import { run, scriptCommand } from '../lib/proc.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { emit, short } from '../lib/output.ts'
@@ -161,6 +161,7 @@ function main(argv: string[]): number {
   }
 
   const changed: string[] = []
+  let stale = false
   const ancestors = new Map<string, boolean>()
   function included(pr: string): boolean | null {
     if (!views.has(pr)) views.set(pr, view(repo, pr))
@@ -171,6 +172,7 @@ function main(argv: string[]): number {
     if (!ancestors.has(merge)) ancestors.set(merge, git(repo, ['merge-base', '--is-ancestor', merge, target], { killSignal: 'SIGKILL' }).code === 0)
     return ancestors.get(merge)!
   }
+  itemsLoop:
   for (const item of items) {
     if (item.status === 'done') continue
     err(`board-release: ${item.id} 확인 중`)
@@ -233,8 +235,9 @@ function main(argv: string[]): number {
     }
     if (steps.some((step) => step.number === stages.release && step.done)) continue
     const made = mergedCommands(item, steps, stages, pr, 'release', { last: true, doneAfter, note: null })
-    changed.push(id)
+    made.cmds = guardedCommands(made.cmds, linesRev(item))
     if (dryRun) {
+      changed.push(id)
       if (short()) brief(`BOARD ${id} would-release PR ${pr}${made.done ? ' done' : ''}`)
       else out([`${id}${made.done ? ' -> done' : ''} (PR #${pr})`, ...made.cmds.map((c) => c.join(' '))].join('\n  '))
       continue
@@ -242,17 +245,24 @@ function main(argv: string[]): number {
     for (const cmd of made.cmds) {
       const done = run(scriptCommand(boardBin, [...cmd, '--file', board]), { killSignal: 'SIGKILL' })
       if (done.code !== 0) {
+        if (staleBoardWrite(cmd, done)) {
+          stale = true
+          err(`board-release: ${id} 의 줄이 바뀌어 다시 실행해야 한다`)
+          brief(`BOARD ${id} stale`)
+          continue itemsLoop
+        }
         if (done.stderr) process.stderr.write(done.stderr)
         err(`board-release: 보드 명령이 실패했다: ${id}`)
         return 1
       }
     }
+    changed.push(id)
     out(`board-release: ${id} 의 [release] 단계를 끝냈다 (PR #${pr})${made.done ? ', done' : ''}`)
     brief(`BOARD ${id} release PR ${pr}${made.done ? ' done' : ''}`)
   }
   if (short()) brief(`BOARD-RELEASE ${changed.length}`)
   else out(`board-release: ${changed.join(', ') || '바뀐 항목 없음'}`)
-  return 0
+  return stale ? 1 : 0
 }
 
 process.exitCode = main(process.argv.slice(2))

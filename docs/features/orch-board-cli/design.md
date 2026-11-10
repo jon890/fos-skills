@@ -82,7 +82,7 @@ flowchart TD
 | orch core | `skills/orch/scripts/core/board.ts` | 값으로 정하는 판정. 명령 묶음에 지문을 붙이는 함수(PR2), 못 맞춘 머지와 풀림 판정(PR4)을 더한다 |
 | orch lib | `skills/orch/scripts/lib/board-unmatched.ts`(새 파일, PR4) | 못 맞춘 머지 기록 파일을 읽고 쓴다 |
 
-- `board.ts` 와 `hooks/` 의 파일은 지금처럼 orch 를 import 하지 않는다(`lib/paths.ts` 가 `board.ts` 를 import 해 고리가 생긴다). work-board 의 다른 파일(`bin/worker-marks.ts`, `bin/merge-queue.ts`)이 orch 를 import 하는 것은 그대로이고 새 고리는 생기지 않는다. 그래서 `board.ts` 를 직접 부르면 `finish.board` 를 모르고 부른 폴더의 기본 위치를 쓴다. 이 동작은 그대로 둔다.
+- `board.ts` 와 `hooks/` 의 파일은 지금처럼 orch 를 import 하지 않는다(`lib/board-file.ts` 와 `lib/board.ts` 가 `board.ts` 를 import 해 고리가 생긴다). work-board 의 다른 파일(`bin/worker-marks.ts`, `bin/merge-queue.ts`)이 orch 를 import 하는 것은 그대로이고 새 고리는 생기지 않는다. 그래서 `board.ts` 를 직접 부르면 `finish.board` 를 모르고 부른 폴더의 기본 위치를 쓴다. 이 동작은 그대로 둔다.
 - 새 명령은 다른 orch 스크립트처럼 `board.ts` 를 자식 프로세스로 부른다. `BOARD_BIN` 환경 변수로 바꿀 수 있다.
 - 소유 경계의 분리 신호(쓰는 사람, 배포 환경, 데이터 생명주기, 거꾸로 읽기)에 걸리는 것이 없다. 새 파일은 모두 지금 모듈 안에 둔다.
 

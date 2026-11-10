@@ -5,10 +5,22 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { findBoardItems, interimOf, intermediateCommands, noteLine, prNumbers } from '../scripts/lib/board.ts'
+import { findBoardItems, interimOf, intermediateCommands, noteLine, prNumbers, guardedCommands, staleBoardWrite } from '../scripts/lib/board.ts'
 
 let tmp = ''
 let n = 0
+test('통째 저장은 마지막 목록 하나가 맨 앞이고 나머지 명령의 순서는 같다', () => {
+  const commands = [['set', 'a', '--worktree', ''], ['set', 'a', '--detail', '옛 목록'], ['set', 'a', '--detail', '새 목록'], ['step', 'a', '1']]
+  assert.deepEqual(guardedCommands(commands, 'rev'), [['set', 'a', '--detail', '새 목록', '--if-rev', 'rev'], commands[0], commands[3]])
+  assert.deepEqual(guardedCommands([commands[0]], 'rev'), [commands[0]])
+})
+test('지문을 보낸 명령의 정확한 거절만 오래된 목록으로 본다', () => {
+  const stderr = 'board.ts: 읽은 뒤 a 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다\n'
+  assert.equal(staleBoardWrite(['set', 'a', '--if-rev', 'rev'], { code: 1, stderr }), true)
+  assert.equal(staleBoardWrite(['set', 'a'], { code: 1, stderr }), false)
+  assert.equal(staleBoardWrite(['set', 'a', '--if-rev', 'rev'], { code: 1, stderr: '잠금 실패' }), false)
+  assert.equal(staleBoardWrite(['set', 'a', '--if-rev', 'rev'], { code: 2, stderr }), false)
+})
 before(() => {
   tmp = mkdtempSync(join(tmpdir(), 'lib-board-'))
 })

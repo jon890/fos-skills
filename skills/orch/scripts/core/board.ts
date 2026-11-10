@@ -27,6 +27,18 @@ export function detailArgs(details: BoardDetail[]): string[] {
   return details.flatMap((d) => ['--detail', typeof d === 'string' ? d : (d.done === true ? '✓ ' : '') + d.text])
 }
 
+// 통째 저장은 마지막 목록 하나만 맨 앞에 둔다. 나머지 칸 변경과 단계 명령의 순서는 보존한다.
+// 지문은 파일을 읽은 lib 호출자가 계산한다(core 는 work-board 를 읽지 않는다).
+export function guardedCommands(commands: string[][], rev: string): string[][] {
+  let rewrite: string[] | undefined
+  const rest: string[][] = []
+  for (const command of commands) {
+    if (command[0] === 'set' && command.includes('--detail')) rewrite = command
+    else rest.push(command)
+  }
+  return rewrite ? [[...rewrite, '--if-rev', rev], ...rest] : rest
+}
+
 // 남은 일 줄. 남은 PR 도 지시서도 없으면 null
 export function noteLine(prs: string[], specs: string[]): string | null {
   const parts = [prs.length > 0 ? `PR ${prs.join(' ')}` : '', specs.length > 0 ? `지시서 ${specs.join(' ')}` : ''].filter(Boolean)

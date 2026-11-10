@@ -5,6 +5,8 @@
 // 가짜 gh, orca, 업무 명령은 이 테스트를 도는 node 를 shebang 에 박은 실행 파일이다(tests/fixtures/merge-queue-fakes.ts 의 writeNodeBin).
 // 가짜 정리 스크립트와 보드 명령은 `.py` 라 확장자대로 python3 로 돈다.
 
+import { linesRev } from '../scripts/lib/board.ts'
+import { racingBoard } from './fixtures/board-race.ts'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -873,6 +875,31 @@ describe('finish-pr 마지막 PR 판정', { concurrency: 4 }, () => {
 })
 
 describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
+  for (const milestone of [false, true]) {
+    for (const mode of ['once', 'always', 'error'] as const) {
+      test(`설정 보드의 ${milestone ? '마일스톤' : '중간 PR'} 저장은 ${mode} 경쟁을 처리한다`, async (t) => {
+        const c = setup(t)
+        mkdirSync(join(c.repo, '.orch'), { recursive: true })
+        writeFileSync(join(c.repo, '.orch/config.json'), JSON.stringify({ finish: { board: 'chosen.json' } }))
+        const file = join(c.repo, 'chosen.json')
+        writeFileSync(file, JSON.stringify({ items: [{ id: 'a', status: 'doing', pr: '#77',
+          ...(milestone ? { stages: 'pr=1,merge=2' } : {}),
+          details: ['1. PR #77', '2. 머지', '남은 일: 옛 줄'],
+        }] }))
+        const bin = racingBoard(c.tmp, mode)
+        const r = await c.finish(['--intermediate', '--board-bin', bin])
+        assert.equal(r.code, mode === 'once' ? 0 : 1, both(r))
+        const row = JSON.parse(readFileSync(file, 'utf8')).items[0]
+        const first = row.details[0]
+        if (mode !== 'error') assert.match(typeof first === 'string' ? first : first.text, /사용자가 고친 글/)
+        if (mode === 'once') assert.equal(row['merged-pr'], 77)
+        else assert.equal(row['merged-pr'], undefined)
+        const calls: string[][] = readFileSync(bin + '.log', 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+        assert.equal(calls.filter((args) => args.includes('--detail')).length, mode === 'error' ? 1 : 2)
+      })
+    }
+  }
+
   function board(c: Ctx, items: Json[]): string[] {
     mkdirSync(join(c.repo, '.omc'), { recursive: true })
     writeFileSync(join(c.repo, '.omc', 'board.json'), JSON.stringify({ items }))
@@ -920,7 +947,7 @@ describe('finish-pr 보드 항목 찾기', { concurrency: 4 }, () => {
     assert.equal(r.code, 0, both(r))
     assert.deepEqual(starting(c.calls(), 'board '), [
       `board steps task-x --file ${file}`,
-      `board set task-x --detail 1. PR #77 --detail 남은 일: PR #78 --file ${file}`,
+      `board set task-x --detail 1. PR #77 --detail 남은 일: PR #78 --if-rev ${linesRev({ details: [{ text: '1. PR #77', done: false }, '남은 일: 옛 줄'] })} --file ${file}`,
       `board step task-x 1 --file ${file}`,
       `board set task-x --pr  --merged-pr 77 --file ${file}`,
     ])

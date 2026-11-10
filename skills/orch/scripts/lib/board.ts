@@ -5,6 +5,7 @@
 // 새 단계는 지시서의 「할 일」 이 아니라 사용자 마일스톤 단계다(lib/milestones.ts, ADR-018)
 
 import { INTERIM, prNumbers, NOTE, detailText, detailArgs } from '../core/board.ts'
+import { linesRev } from '../../../../extensions/work-board/bin/board.ts'
 import type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'
 import { parseEventTag } from '../../../../extensions/work-board/hooks/event-tags.js'
 import { existsSync, readFileSync } from 'node:fs'
@@ -12,7 +13,7 @@ import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { boardSettings, DEFAULT_STEPS, DEFAULT_TASK_LINE, milestoneLines, specSteps, stagesText } from './milestones.ts'
 import { loadConfig } from './config.ts'
-import { boardPath } from './paths.ts'
+import { boardPath } from './board-file.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from './proc.ts'
 import { boardIdOf, interimOf } from './spec.ts'
 
@@ -41,6 +42,20 @@ const LEAD_MARK = /^\s*(?:✓|\[[xX ]\]|▶|◇)\s*/
 // 설정이 틀리면 ConfigError 다. 지시서의 「할 일」 줄은 보드에 올리지 않는다. 구현 세부라 머지와 배포로 끝낼 수 없다
 // 보드 파일이 없으면 넘어간다. 단 설정이 보드를 가리키면 Error 로 알린다
 export function registerBoard(repo: string, spec: string, worktree: string, name: string, branch: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try { return registerBoardOnce(repo, spec, worktree, name, branch) }
+    catch (e) { if (!(e instanceof StaleBoardWrite) || attempt > 0) throw e }
+  }
+}
+
+class StaleBoardWrite extends Error {}
+
+export function staleBoardWrite(command: string[], result: { code: number; stderr: string }): boolean {
+  return command.includes('--if-rev') && result.code === 1 &&
+    result.stderr.split('\n').some((line) => line.endsWith(`읽은 뒤 ${command[1]} 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다`))
+}
+
+function registerBoardOnce(repo: string, spec: string, worktree: string, name: string, branch: string): void {
   const file = boardPath(repo)
   if (!existsSync(file)) {
     const config = loadConfig(repo)
@@ -70,7 +85,7 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
       throw new Error(`중간 과정 지시서의 보드 항목을 찾지 못해 만들지 않는다: ${why}`)
     }
     const kept = lines(found[0].details).filter((d) => !plain(d).startsWith(INTERIM))
-    return write(['set', found[0].id, '--worktree', basename(worktree), ...branchArgs, ...detailArgs([...kept, INTERIM + (heading || basename(spec))])])
+    return write(['set', found[0].id, '--worktree', basename(worktree), ...branchArgs, ...detailArgs([...kept, INTERIM + (heading || basename(spec))]), '--if-rev', linesRev(found[0])])
   }
   const given = boardIdOf(text)
   const explicit = given?.id
@@ -108,7 +123,7 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
     const args = ['set', id, 'doing', '--worktree', basename(worktree), ...branchArgs, '--progress', 'auto', '--stages', stagesText(added.stages)]
     const merged = [...prNumbers(item.pr)]
     if (merged.length) args.push('--pr', '', '--merged-pr', [...new Set([...merged, ...prNumbers(item['merged-pr'])])].join(', '))
-    return write([...args, ...detailArgs([...old, ...added.details])])
+    return write([...args, ...detailArgs([...old, ...added.details]), '--if-rev', linesRev(item)])
   }
   // 이미 있는 끝나지 않은 항목은 제목과 단계를 그대로 두고 worker 의 워크트리와 브랜치만 바꾼다.
   // 이어 띄운 지시서(충돌 풀기, CI 고침)의 머리줄과 할 일이 마일스톤 제목과 단계를 덮지 않게 한다.
@@ -126,6 +141,7 @@ export function registerBoard(repo: string, spec: string, worktree: string, name
   write(args)
   function write(args: string[]): void {
     const done = run(scriptCommand(bin, [...args, '--file', file]), { timeoutMs: NO_LIMIT_MS })
+    if (staleBoardWrite(args, done)) throw new StaleBoardWrite(done.stderr)
     if (done.code !== 0) throw new Error(done.stderr || `보드 명령 종료 코드 ${done.code}`)
   }
 }
@@ -236,4 +252,6 @@ export function hasEventTags(item: Record<string, unknown>): boolean {
 }
 
 export { INTERIM, prNumbers, NOTE, detailText, detailArgs, noteLine, withNote, prSteps, intermediateCommands } from '../core/board.ts'
+export { guardedCommands } from '../core/board.ts'
+export { linesRev }
 export type { BoardItem, BoardDetail, BoardStep } from '../core/board.ts'

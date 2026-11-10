@@ -1,7 +1,7 @@
 // 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
 //
 // 파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
-// 이 기본 위치 규칙은 defaultBoardPath 한 곳이 소유한다. orch 의 lib/paths.ts 가 import 해 같은 값을 쓴다.
+// 이 기본 위치 규칙은 defaultBoardPath 한 곳이 소유한다. orch 의 lib/board-file.ts 가 import 해 같은 값을 쓴다.
 // import 할 때 명령이 돌지 않도록 명령 실행은 import.meta.main 안에만 둔다.
 //
 // 사용:

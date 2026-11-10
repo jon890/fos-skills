@@ -1,0 +1,44 @@
+{
+  "name": "board-path",
+  "description": "보드 파일 찾기와 오래된 목록 보호",
+  "pr_scope": "PR2: 보드 경로를 통일하고 통째 저장 호출자를 지문으로 보호한다.",
+  "deferred": [
+    {
+      "what": "PR3: 새 편집 명령",
+      "why": "설계에서 분리한 뒤 PR 범위",
+      "after": "PR2 머지"
+    },
+    {
+      "what": "PR4: 못 맞춘 머지 알림",
+      "why": "설계에서 분리한 뒤 PR 범위",
+      "after": "PR2 머지"
+    },
+    {
+      "what": "PR5: 자동 진행 표시",
+      "why": "설계에서 분리한 뒤 PR 범위",
+      "after": "PR2 머지"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-11-10",
+  "spec": "docs/features/orch-board-cli/spec.md",
+  "design": "docs/features/orch-board-cli/design.md",
+  "verification_plan": "phase-01.md",
+  "requirements": [
+    "REQ2",
+    "REQ11"
+  ],
+  "total_phases": 1,
+  "current_phase": 1,
+  "phases": [
+    {
+      "number": 1,
+      "file": "phase-01.md",
+      "execution_profile": "deep",
+      "requirements": [
+        "REQ2",
+        "REQ11"
+      ]
+    }
+  ]
+}

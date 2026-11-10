@@ -40,6 +40,15 @@ afterEach(() => {
   rmSync(repo, { force: true, recursive: true })
 })
 const received = () => existsSync(process.env.RECEIVED!) ? readFileSync(process.env.RECEIVED!, 'utf8').trim().split('\n').map((line) => JSON.parse(line)) : []
+test('결정 알림은 finish.board 의 남은 결정만 읽는다', async () => {
+  hook()
+  board([{ id: 'fallback', status: 'decide', details: ['기본 파일 결정'] }])
+  writeFileSync(join(repo, '.orch/config.json'), JSON.stringify({ finish: { board: 'chosen.json' } }))
+  writeFileSync(join(repo, 'chosen.json'), JSON.stringify({ items: [{ id: 'chosen', status: 'decide', details: ['지정 파일 결정'] }] }))
+  await notifyDecisions(repo, 'r', [], true)
+  assert.match(JSON.stringify(received()), /지정 파일 결정/)
+  assert.doesNotMatch(JSON.stringify(received()), /기본 파일 결정/)
+})
 function hook(code = 0): void {
   writeFileSync(join(repo, '.orch', 'hooks', 'decision-pending.ts'), `import { appendFileSync, readFileSync } from 'node:fs'
 appendFileSync(process.env.RECEIVED, readFileSync(0, 'utf8') + '\\n')

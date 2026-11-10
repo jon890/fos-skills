@@ -512,8 +512,9 @@ describe('보류 표시', () => {
   })
 
   test('pr 칸에 그 번호가 든 보드 항목에 끝나지 않은 머지 보류 줄이 있으면 걸지 않는다', () => {
+    config({ finish: { board: 'chosen.json' } })
     write(
-      join(repo, '.omc', 'board.json'),
+      join(repo, 'chosen.json'),
       JSON.stringify({ items: [{ id: 'job', status: 'doing', pr: '#1', next: [{ text: '머지 보류: 배포 창 대기', done: false }] }] }),
     )
     github([pr(1)])
