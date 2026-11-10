@@ -336,6 +336,32 @@ describe('지시서 검사', () => {
     assert.match(r.stderr, /임시 경고 6건/)
   })
 
+  test('재개 절이 임시 경로를 가리키면 재개 절 안내가 붙은 임시 경고를 내고, 다른 절의 경고에는 붙지 않는다', () => {
+    const a = spec(
+      'spec-resume',
+      [
+        '## 할 일',
+        '루프 없이: 작은 고침이다.',
+        '측정은 `/tmp/measure.md` 를 본다.',
+        '## 재개',
+        '앞 worker 의 측정 보고서는 `/var/folders/ab/T/report.md` 와 $TMPDIR/mk-review.py 에 있다.',
+        '- 커밋 abc123 까지 끝났다.',
+        '## 완료 기준',
+        '결과는 /tmp/after.md 에 쓴다.',
+      ].join('\n'),
+    )
+    const r = run(['--repo', repo, a])
+    assert.equal(r.code, 0, r.stdout)
+    const lines = r.stdout.split('\n')
+    const at = (no: number, path: string) => lines.find((line) => line.includes(`spec-resume.md:${no}: 임시: \`${path}\``)) ?? ''
+    assert.match(at(5, '/var/folders/ab/T/report.md'), /재개 절에는 회신과 측정 결과를 본문에 옮겨 적고 임시 경로를 가리키지 않는다/)
+    assert.match(at(5, '$TMPDIR/mk-review.py'), /재개 절에는 회신과 측정 결과를/)
+    assert.doesNotMatch(at(3, '/tmp/measure.md'), /재개 절/)
+    assert.match(at(3, '/tmp/measure.md'), /임시 폴더라/)
+    assert.doesNotMatch(at(8, '/tmp/after.md'), /재개 절/)
+    assert.equal(count(r.stdout, ': 임시: '), 4, r.stdout)
+  })
+
   test('PR 본문 파일을 작업 이름 없는 고정 이름으로 적으면 본문 경고를 내고 종료 코드는 0 이다', () => {
     const a = spec(
       'spec-body',

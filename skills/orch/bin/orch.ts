@@ -15,6 +15,7 @@
 //     2. 설치 기록. 규칙은 ../scripts/lib/install-record.ts 의 selectBundle 이다(user 범위 항목이 있으면 그것만 본다)
 //     3. 고른 번들이 이 진입점의 번들과 다르면(실경로 비교) 그 번들의 진입점에 ORCH_ENTRY_HOP=1 로 넘긴다. 넘겨받은 진입점은 다시 넘기지 않는다.
 //        그 번들에 진입점이나 명령 표가 없으면(이 기능 이전 번들) 넘기지 않고 3 이다
+//        이 진입점이 저장소 checkout(번들 루트에 .git)에 있는데 설치본으로 넘기면 stderr 에 한 줄 알린다. 동작은 그대로다
 // 이 파일은 내장 모듈만 정적으로 import 한다. lib 는 번들을 정한 뒤 동적으로 읽어, 옛 번들의 진입점이 넘길 때 그 번들의 lib 가 돌지 않게 한다.
 // 그래서 이 파일 하나만 복사해 쓸 수 없다. 저장소에 복사해 둘 것은 플러그인 루트의 실행기 `bin/orch` 다.
 //
@@ -33,9 +34,9 @@
 //     3  스크립트 폴더나 넘길 진입점을 찾지 못했다
 
 import { spawn } from 'node:child_process'
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { constants, homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const SELF = fileURLToPath(import.meta.url)
@@ -102,6 +103,22 @@ function hop(entry: string, argv: string[]): Promise<number> {
   return run(entry, argv, { ...process.env, ORCH_ENTRY_HOP: '1' })
 }
 
+// 설치본의 버전. 플러그인 매니페스트에서 읽고, 읽지 못하면 번들 폴더 이름을 쓴다
+function bundleVersion(bundle: string): string {
+  try {
+    const version = (JSON.parse(readFileSync(join(bundle, '.claude-plugin', 'plugin.json'), 'utf8')) as { version?: unknown }).version
+    if (typeof version === 'string' && version) return version
+  } catch {
+    // 매니페스트가 없으면 폴더 이름으로 갈음한다
+  }
+  return basename(bundle)
+}
+
+// 저장소 checkout 의 진입점이 ORCH_SCRIPTS_DIR 없이 설치본으로 넘어갈 때 stderr 에 내는 한 줄
+function checkoutNotice(bundle: string): string {
+  return `orch: 이 checkout 의 scripts 가 아니라 설치본 ${bundleVersion(bundle)} 을 쓴다. 이 checkout 을 쓰려면 ORCH_SCRIPTS_DIR=${OWN_SCRIPTS}`
+}
+
 // 스크립트 폴더를 정하거나, 다른 진입점에 넘긴 종료 코드를 돌려준다
 async function locate(argv: string[]): Promise<{ dir: string } | { code: number }> {
   const hopped = process.env.ORCH_ENTRY_HOP === '1'
@@ -141,6 +158,8 @@ async function locate(argv: string[]): Promise<{ dir: string } | { code: number 
       err(`orch: 설치본 ${chosen.bundle} 에 새 진입점이 없다(이 기능 이전 번들이다). claude plugin update ${record.PLUGIN} 으로 갱신한다`)
       return { code: 3 }
     }
+    // 저장소 checkout 의 진입점이 설치본으로 넘어가면 이 checkout 에서 고친 동작이 아니라 설치본의 옛 동작이 돈다. 조용히 넘기지 않고 알린다
+    if (existsSync(join(OWN_BUNDLE, '.git'))) err(checkoutNotice(chosen.bundle))
     return { code: await hop(entry, argv) }
   }
   // 넘겨받은 진입점은 자기 명령 표와 같은 번들의 스크립트를 쓴다. 두 판의 고르기 규칙이 달라도 표와 스크립트가 섞이지 않는다

@@ -136,6 +136,7 @@ const TEMP_PATH = /(?:^|[\s`'"(=])((?:\/private)?\/tmp\/[^\s`'"()]*|(?:\/private
 const BODY_NAME = /(?:^|[\s`'"(/=])((?:pr[-_]?body|pr[-_]?description|body)\.md)(?![\w-])/g
 const BODY_HINT = '고정된 공용 이름이라 다른 작업의 PR 본문과 섞인다. 파일 이름에 작업(워크트리) 이름을 넣는다(예: pr-body-<워크트리 이름>.md)'
 const TEMP_HINT = '임시 폴더라 세션이 끝나거나 재부팅하면 사라진다. 내용을 지시서 본문에 옮기거나 저장소나 orch 폴더에 둔다'
+const RESUME_TEMP_HINT = '임시 폴더라 PC 를 다시 켜면 사라진다. 재개 절에는 회신과 측정 결과를 본문에 옮겨 적고 임시 경로를 가리키지 않는다'
 
 class UsageError extends Error {}
 
@@ -555,12 +556,14 @@ function lint(repo: Repo, specs: string[], overlay: string | null, active: strin
         }
       }
     }
+    let inResume = false
     spec.lines.forEach((line, index) => {
       const no = index + 1
+      if (/^#{1,6}\s/.test(line)) inResume = /^#{1,6}\s*재개/.test(line)
       if (field(line, '예외') !== null || field(line, '담당') !== null) return
       for (const m of line.matchAll(TEMP_PATH)) {
         const path = m[1].replace(/[.,;:]+$/, '')
-        warnings.push(`${spec.name}:${no}: 임시: \`${path}\` 는 ${TEMP_HINT}`)
+        warnings.push(`${spec.name}:${no}: 임시: \`${path}\` 는 ${inResume ? RESUME_TEMP_HINT : TEMP_HINT}`)
       }
       for (const m of line.matchAll(BODY_NAME)) warnings.push(`${spec.name}:${no}: 본문: \`${m[1]}\` 는 ${BODY_HINT}`)
       for (const phrase of forbidden) {

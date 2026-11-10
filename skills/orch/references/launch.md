@@ -231,7 +231,7 @@ Task 상태는 `orca orchestration task-list --run "$RUN_ID" --json` 으로 본�
 1. `worker-show --dispatch "$DISPATCH_ID"` 로 dispatch 상태를 보고, `task-list` 로 Task 상태를 본다
 2. 워크트리에서 `git -C "$WORKTREE" log --oneline origin/"$BASE"..HEAD` 와 `git -C "$WORKTREE" status --short` 로 끝난 커밋과 작업 트리의 변경을 확인한다. 커밋 안 된 변경은 버리지 않고 그대로 둔다
 3. 지시서에 「재개」 절을 더한다. 끝난 phase 와 그 커밋, 작업 트리에 남은 변경, 다음에 할 일을 적는다. 새 worker 는 앞 대화를 모르므로 이 절만 보고 이어 가야 한다.
-   앞 worker 의 회신, 사용자 결정, 조사 결과는 내용을 이 절에 옮겨 적는다. 임시 폴더(`/tmp`, `$TMPDIR`, scratchpad)의 파일은 재부팅이나 세션 종료 뒤 사라져 새 worker 가 막힌다. `spec-lint` 가 그런 경로를 `임시` 경고로 알린다
+   앞 worker 의 회신, 사용자 결정, 조사와 측정 결과는 내용을 이 절 본문에 옮겨 적고 임시 경로(`$TMPDIR`, `/tmp`, `/var/folders`, scratchpad)를 가리키지 않는다. 그 폴더의 파일은 PC 재시작이나 세션 종료 뒤 사라져 새 worker 가 막힌다(2026-11-10 재시작 때 측정 보고서와 지시서 생성 스크립트가 사라졌다). `spec-lint` 가 지시서의 그런 경로를 `임시` 경고로 알리고, 재개 절이면 안내를 덧붙인다
 4. 표대로 띄운다. 워크트리는 이전 dispatch 이력에서 읽는다
 5. 끊긴 dispatch 의 터미널을 닫는다. `worker-release` 를 먼저 부르고, `identity_unproven` 으로 닫지 않았을 때만 [`cleanup.md`](cleanup.md) 의 「worker 터미널을 닫는 기본 경로」 조건을 확인한 뒤 `orca terminal close` 를 쓴다
 
