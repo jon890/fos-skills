@@ -25,6 +25,10 @@
 //     step 과 mark 뒤에 decide 항목의 줄이 모두 끝났으면 그 항목을 done 으로 바꾼다. --undo 는 status 를 바꾸지 않는다
 //   board.ts del <id>
 //   board.ts list   (항목마다 진행률 「n/m (p%)」 를 붙이고, 그 아래에 details 와 next 의 줄을 mark 번호와 끝냄 표시 ✓ 와 함께 낸다)
+//   board.ts view <id> (읽기 전용 항목 JSON)
+//   set, step --exact: 있는 항목과 하나뿐인 단계에만 적용하고 결과 JSON 을 낸다.
+//   set --if-rev REV: 읽은 뒤 줄이 바뀌었으면 통째 저장을 거절한다.
+//   JSON: id, status, was, progress, rev, lines 와 단계 동작의 number.
 // status: goal(목표) | decide(결정 필요) | doing(진행 중) | wait(대기) | done(완료)
 // 진행률은 단계 줄에서 센다. --progress 는 단계로 나타낼 수 없을 때만 쓴다
 //   단계 줄은 번호로 시작하는 줄이다. 「1 …」, 「1. …」, 「1) …」 를 모두 단계로 본다. 참고 줄은 세지 않는다
@@ -47,6 +51,7 @@
 // list, steps 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -67,10 +72,10 @@ const STAGES = /^\s*(?:pr|merge|deploy|release)=\d+(?:\s*,\s*(?:pr|merge|deploy|
 const PR_FIELDS: ReadonlySet<string> = new Set(['pr', 'merged-pr'])
 // 번호 하나와 구분자만 든 값. 「#492, #495」 「492/495」 를 받는다
 const PR_LIST = /^\s*#?\d+(?:\s*[,/ ]\s*#?\d+)*\s*$/
-const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list']
+const COMMANDS = ['set', 'detail-edit', 'detail-add', 'step', 'steps', 'mark', 'del', 'list', 'view']
 const USAGE =
-  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
-  '[--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
+  '사용법: board.ts {set,detail-edit,detail-add,step,steps,mark,del,list,view} [id] [status] [--undo] [--title T] [--owner O] [--pr P] [--worktree W] [--branch B] ' +
+  '[--exact] [--if-rev REV] [--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
 쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps 는 잠그지 않는다.
@@ -80,6 +85,9 @@ const HELP = `${USAGE}
 파일 위치: git 루트의 .omc/board.json. 이미 .omc/handoffs/board.json 이 있으면 그것을 쓴다. --file 로 바꿀 수 있다.
 
 사용:
+  board.ts view <id> (읽기 전용 JSON: id, status, was, progress, rev, lines)
+  set, step --exact 는 엄격 검사 뒤 결과 JSON 을 낸다. step 결과에는 number 도 있다.
+  set --if-rev REV 는 읽은 뒤 줄이 바뀌면 저장을 거절한다.
   board.ts set <id> [<status>] [--title T] [--owner O] [--pr P] [--next N] [--worktree W] [--branch B] [--task URL] [--progress N/M] [--stages S] [--detail D ...]
   (--stages 는 사건과 단계 번호의 짝이다. 「pr=1,merge=2,deploy=3,release=4」. orch 가 쓴다)
   (--worktree 는 그 항목을 맡은 worker 의 워크트리 이름이다. 창이 그 worker 상태를 항목 아래에 붙인다)
@@ -305,6 +313,8 @@ type Args = {
   status?: string
   text?: string
   undo: boolean
+  exact: boolean
+  ifRev?: string
   fields: Partial<Record<(typeof FIELDS)[number], string>>
   detail?: string[]
   next?: string[]
@@ -314,6 +324,8 @@ type Args = {
 function parse(argv: string[]): Args | 'help' {
   const options = {
     undo: { type: 'boolean' },
+    exact: { type: 'boolean' },
+    'if-rev': { type: 'string' },
     title: { type: 'string' },
     owner: { type: 'string' },
     pr: { type: 'string' },
@@ -327,7 +339,7 @@ function parse(argv: string[]): Args | 'help' {
     next: { type: 'string', multiple: true },
     file: { type: 'string' },
   } as const
-  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'help'])
+  const args = expand(argv, [...Object.keys(options), 'help'], ['undo', 'exact', 'help'])
   // argparse 처럼 다른 인자가 틀려도 -h 나 --help(줄임 포함)가 `--` 앞에 있으면 도움말이 먼저다
   const end = args.indexOf('--')
   const head = end < 0 ? args : args.slice(0, end)
@@ -338,9 +350,11 @@ function parse(argv: string[]): Args | 'help' {
   if (positionals.length > limit) throw new Error(`모르는 인자: ${positionals.slice(limit).join(' ')}`)
   const [cmd, id, status, text] = positionals
   if (!COMMANDS.includes(cmd)) throw new Error(`cmd 는 ${COMMANDS.join(', ')} 중 하나다: ${cmd}`)
+  if (values.exact !== undefined && !['set', 'step'].includes(cmd)) throw new Error('--exact 는 set, step 에만 쓴다')
+  if (values['if-rev'] !== undefined && cmd !== 'set') throw new Error('--if-rev 는 set 에만 쓴다')
   const fields: Args['fields'] = {}
   for (const key of FIELDS) if (values[key] !== undefined) fields[key] = values[key]
-  return { cmd, id, status, text, undo: values.undo ?? false, fields, detail: values.detail, next: values.next, file: values.file }
+  return { cmd, id, status, text, undo: values.undo ?? false, exact: values.exact ?? false, ifRev: values['if-rev'], fields, detail: values.detail, next: values.next, file: values.file }
 }
 
 // pr 칸과 merged-pr 칸의 저장 값. PR 번호 하나면 숫자, 여럿이면 「492, 495」 문자열이다. PR 번호만 든 값이 아니면 그대로 둔다
@@ -355,8 +369,36 @@ function find(board: Board, id: string): Item | undefined {
   return board.items.find((item) => item.id === id)
 }
 
-// 보드를 고친다. 쓸 내용이 있으면 true, 읽기만 했으면 false 다.
-function apply(a: Args, board: Board): boolean {
+// 줄 글과 끝냄 값을 함께 비교한다. 저장 형식이 달라도 같은 줄은 같은 지문이다.
+export function linesRev(item: Record<string, unknown> | undefined): string {
+  const lists = ['details', 'next'].map((key) => item && key in item ? normalizeLines(item[key]).map(({ text, done }) => [text, done]) : [])
+  return createHash('sha1').update(JSON.stringify(lists)).digest('hex').slice(0, 12)
+}
+
+function itemView(item: Item, was: unknown, number?: number) {
+  const [source] = stepSource(item)
+  return {
+    id: item.id, status: typeof item.status === 'string' ? item.status : null,
+    was: typeof was === 'string' ? was : null, progress: progressOf(item), rev: linesRev(item),
+    ...(number === undefined ? {} : { number }),
+    lines: ['details', 'next'].flatMap((key) => ((item[key] ?? []) as Line[])
+      .filter((line) => line.text.trim())
+      .map((line) => ({ number: key === source ? parseStep(line)?.[0] ?? null : null, done: line.done, text: line.text, in: key }))),
+  }
+}
+
+function findStep(item: Item, id: string, number: number): { source: string; lines: Line[]; index: number } {
+  const [source, lines] = stepSource(item)
+  const numbers = lines.flatMap((line) => { const step = parseStep(line); return step ? [step[0]] : [] })
+  const indices = lines.flatMap((line, index) => parseStep(line)?.[0] === number ? [index] : [])
+  if (!indices.length || source === null) throw new Refused(`${number} 번 단계가 없다. 있는 번호: ${numbers.join(' ') || '없음'}`)
+  if (indices.length > 1) throw new Refused(`${number} 번 단계 줄이 둘 이상이다: ${id}`)
+  return { source, lines, index: indices[0] }
+}
+
+type View = ReturnType<typeof itemView>
+// 읽기는 false, 기존 쓰기는 true, 결과를 내는 쓰기는 잠금 안에서 만든 항목 값이다.
+function apply(a: Args, board: Board): boolean | View {
   if (a.cmd === 'list') {
     for (const item of board.items) {
       const status = typeof item.status === 'string' ? item.status : String(item.status ?? '?')
@@ -367,6 +409,12 @@ function apply(a: Args, board: Board): boolean {
   }
   if (!a.id) throw new Refused('id 가 필요하다')
   const id = a.id
+  if (a.cmd === 'view') {
+    const item = find(board, id)
+    if (!item) throw new Refused(`항목이 없다: ${id}`)
+    process.stdout.write(`${JSON.stringify(itemView(item, item.status))}\n`)
+    return false
+  }
   if (a.cmd === 'steps') {
     const item = find(board, id)
     if (!item) throw new Refused(`항목이 없다: ${id}`)
@@ -389,6 +437,14 @@ function apply(a: Args, board: Board): boolean {
     if (!item) throw new Refused(`항목이 없다: ${id}`)
     if (!/^\d+$/.test(a.status ?? '')) throw new Refused('step 에는 단계 번호가 필요하다')
     const number = Number(a.status)
+    const was = item.status
+    if (a.exact) {
+      const { source, lines, index } = findStep(item, id, number)
+      lines[index].done = !a.undo
+      item[source] = lines
+      if (!a.undo) closeDecided(item)
+      return itemView(item, was, number)
+    }
     const [source, lines] = stepSource(item)
     const line = lines.find((row) => parseStep(row)?.[0] === number)
     if (!line || source === null) {
@@ -439,6 +495,9 @@ function apply(a: Args, board: Board): boolean {
     return true
   }
   let item = find(board, id)
+  const was = item?.status
+  if (!item && (a.exact || a.ifRev !== undefined)) throw new Refused(`항목이 없다: ${id}`)
+  if (a.ifRev !== undefined && linesRev(item) !== a.ifRev) throw new Refused(`읽은 뒤 ${id} 의 줄이 바뀌어 저장하지 않았다. 다시 읽어 판정한다`)
   if (!item) {
     if (!a.status) throw new Refused('새 항목에는 status 가 필요하다')
     item = { id, title: a.fields.title || id }
@@ -465,7 +524,7 @@ function apply(a: Args, board: Board): boolean {
     else delete item[key]
   }
   if (item.status === 'doing' && progressOf(item) === null) throw new Refused(MISSING_PROGRESS(id))
-  return true
+  return a.exact ? itemView(item, was) : true
 }
 
 function main(argv: string[]): number {
@@ -497,7 +556,7 @@ function main(argv: string[]): number {
     for (const item of board.items) normalizeItem(item)
     return board
   }
-  const readonly = ['list', 'steps'].includes(a.cmd)
+  const readonly = ['list', 'steps', 'view'].includes(a.cmd)
   const dir = dirname(path)
   const made = readonly ? undefined : mkdirSync(dir, { recursive: true })
   let saved = false
@@ -508,7 +567,8 @@ function main(argv: string[]): number {
     return withFileLock(path, (lock: Lock) => {
       const board = read()
       const before = new Map(board.items.map((item) => [item, stepKey(item)]))
-      if (!apply(a, board)) return 0
+      const result = apply(a, board)
+      if (!result) return 0
       const stamp = localIso(new Date())
       board.updatedAt = stamp
       for (const item of board.items) if (before.get(item) !== stepKey(item)) item.stepAt = stamp
@@ -519,6 +579,7 @@ function main(argv: string[]): number {
         process.stderr.write(`보드 잠금을 다른 프로세스가 넘겨받아 쓰지 않았다: ${lock.file}\n`)
         return 1
       }
+      if (typeof result === 'object') process.stdout.write(`${JSON.stringify(result)}\n`)
       return 0
     }, { waitMs })
   } catch (error) {
