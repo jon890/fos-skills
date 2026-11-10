@@ -180,3 +180,15 @@ test('질문 위치는 앞 5개와 나머지 수를 내고 dispatch 가 없으�
   assert.equal(questionLocations([]), 'questions=-')
   assert.equal(questionLocations([{ id: 'q', from_handle: 'term_w' }]), 'questions=q@term_w')
 })
+
+test('기본 핸들러는 다른 저장소의 루프가 같은 결정 알림을 이미 보냈으면 다시 보내지 않는다', async () => {
+  const other = realpathSync(mkdtempSync(join(tmpdir(), 'decision-pending-peer-')))
+  try {
+    mkdirSync(join(other, '.orch'), { recursive: true })
+    registerRun(repo, 'r', null, false, 'term_coordinator')
+    const input = { questions: [{ id: 'q', dispatch: 'd' }], items: [] }
+    assert.equal((await fire('decision-pending', input, { repo, run: 'r', base: 'main' })).result, 'pass')
+    assert.equal((await fire('decision-pending', input, { repo: other, run: 'r', base: 'main' })).result, 'pass')
+    assert.equal(received().length, 1)
+  } finally { rmSync(other, { force: true, recursive: true }) }
+})

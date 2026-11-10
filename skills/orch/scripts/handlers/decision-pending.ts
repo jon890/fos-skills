@@ -2,10 +2,12 @@
 // 실패하면 lib/decisions.ts 의 재시도 규칙이 다시 보낸다.
 import { readFileSync } from 'node:fs'
 import { questionLocations } from '../lib/questions.ts'
-import { notifyRun } from '../lib/run-notice.ts'
+import { notifyRun, setNoticeOwner } from '../lib/run-notice.ts'
 
 const input = JSON.parse(readFileSync(0, 'utf8'))
 if (input.event !== 'decision-pending' || typeof input.run !== 'string' || !input.run) throw new Error('결정 알림의 Run 이 없다')
+// 이 핸들러는 루프와 다른 프로세스라 루프의 setNoticeOwner 가 닿지 않는다. owner 가 없으면 다른 저장소 루프의 같은 알림을 거르지 못한다
+if (typeof input.repo === 'string' && input.repo) setNoticeOwner(input.repo)
 const text = [
   `Run ${input.run} 에 사용자 결정이 남아 있다. ${questionLocations(input.questions || [])}`,
   'fos-skills:orch 의 replying 절차로 미답변 결정 질문과 보드 decide 항목을 다시 조회하고, 배경과 권장안을 붙여 사용자에게 물어라.',
