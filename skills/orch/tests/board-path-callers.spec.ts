@@ -43,6 +43,29 @@ function cli(script: string, args: string[] = []) {
 function board(items: Record<string, unknown>[]) { writeFileSync(chosen, JSON.stringify({ items })) }
 function items() { return JSON.parse(readFileSync(chosen, 'utf8')).items }
 
+for (const [script, args, prefix] of [
+  ['board/board-sync', ['--repo'], 'board-sync'],
+  ['board/board-release', ['--repo', '--pr', '1'], 'board-release'],
+  ['board/goal-progress', ['goal'], 'goal-progress'],
+  ['paths/orch_paths', ['--repo', 'board'], 'orch_paths'],
+  ['cleanup/handoff-cleanup', ['--repo'], 'handoff-cleanup'],
+] as const) {
+  for (const invalid of ['number', 'broken'] as const) {
+    test(`${script}: ${invalid} 설정 오류는 한 줄과 종료 코드 2 이며 기본 보드를 고치지 않는다`, () => {
+      const before = readFileSync(fallback, 'utf8')
+      writeFileSync(join(repo, '.orch/config.json'), invalid === 'number' ? JSON.stringify({ finish: { board: 3 } }) : '{broken')
+      const argv = args.flatMap((arg) => arg === '--repo' ? [arg, repo] : [arg])
+      const done = cli(script, argv)
+      assert.equal(done.status, 2, done.stderr)
+      assert.equal(done.stderr.trim().split('\n').length, 1, done.stderr)
+      assert.match(done.stderr, new RegExp(`^${prefix}: `))
+      assert.match(done.stderr, invalid === 'number' ? /finish.board 는 문자열이어야 한다/ : /설정 파일을 읽지 못했다/)
+      assert.equal(done.stdout, '')
+      assert.equal(readFileSync(fallback, 'utf8'), before)
+    })
+  }
+}
+
 test('sync, release, goal, paths 는 설정 보드만 읽거나 고친다', () => {
   const original = readFileSync(fallback, 'utf8')
   board([{ id: 'sync', status: 'doing', pr: '#7', details: ['1. 구현'] }])

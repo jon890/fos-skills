@@ -196,7 +196,14 @@ function main(argv: string[]): number {
     return 2
   }
   const boardBin = values['board-bin'] || process.env.BOARD_BIN || BOARD_BIN
-  const board = values.board ? resolve(values.board) : boardPath(resolve(values.repo ?? '.'))
+  let board: string
+  try {
+    board = values.board ? resolve(values.board) : boardPath(resolve(values.repo ?? '.'))
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
+    err(`board-sync: ${e.message.replace(/\s+/g, ' ')}`)
+    return 2
+  }
   const repo = resolve(values.repo ?? '.')
   const dryRun = values['dry-run'] === true
   let items: Record<string, unknown>[]

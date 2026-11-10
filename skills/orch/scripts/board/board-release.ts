@@ -122,15 +122,16 @@ function main(argv: string[]): number {
     return 2
   }
   const repo = resolve(values.repo ?? '.')
-  const board = values.board ? resolve(values.board) : boardPath(repo)
+  let board: string
   const boardBin = values['board-bin'] || process.env.BOARD_BIN || BOARD_BIN
   const dryRun = values['dry-run'] === true
   let doneAfter
   try {
+    board = values.board ? resolve(values.board) : boardPath(repo)
     doneAfter = boardSettings(repo).doneAfter
   } catch (e) {
     if (!(e instanceof ConfigError)) throw e
-    err(`board-release: ${e.message}`)
+    err(`board-release: ${e.message.replace(/\s+/g, ' ')}`)
     return 2
   }
   let items: Record<string, unknown>[]

@@ -568,6 +568,19 @@ describe('tick 이벤트', () => {
 })
 
 describe('정리와 보드 동기화', () => {
+  test('보드 경로 설정 오류는 WATCH-ERROR 로 알리고 뒤 단계와 다음 틱을 계속 실행한다', () => {
+    config({ finish: { board: 3 } })
+    hook('tick')
+    for (let i = 0; i < 2; i++) {
+      const result = once()
+      assert.match(result.stdout, /WATCH-ERROR board: finish.board 는 문자열이어야 한다/)
+      assert.doesNotMatch(result.stdout + result.stderr, /ConfigError:|\n\s+at /)
+    }
+    assert.equal(jsonl(join(tmp, 'received/tick.jsonl')).length, 2)
+    assert.ok(events().some((event) => event.kind === 'WATCH-ERROR' && String(event.text).includes('board: finish.board')))
+    assert.deepEqual(argsOf('board'), [])
+  })
+
   test('finish.run, finish.specs_dir 를 정리에 넘기고 다른 finish 키가 있어도 돈다. loop.json 에 last_tick, alive_at 을 쓴다', () => {
     config({ finish: { run: 'run_cfg', specs_dir: 'specs/here', deploy_workflow: 'deploy.yml' } })
     once({}, [])

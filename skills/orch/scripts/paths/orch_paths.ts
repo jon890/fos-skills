@@ -18,6 +18,7 @@ import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { boardPath } from '../lib/board-file.ts'
+import { ConfigError } from '../lib/config.ts'
 import { ensure, ensureIgnored, NAMES, orchDir, pathOf, requireMigrated } from '../lib/paths.ts'
 
 const CHOICES = ['root', 'board', 'check', ...Object.keys(NAMES)]
@@ -52,7 +53,13 @@ function main(argv: string[]): number {
   if (name === 'check') return requireMigrated(repo, 'orch_paths', null) ? 0 : 2
   if (values.ensure && !requireMigrated(repo, 'orch_paths', null)) return 2
   if (name === 'board') {
-    process.stdout.write(`${boardPath(repo)}\n`)
+    try {
+      process.stdout.write(`${boardPath(repo)}\n`)
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e
+      process.stderr.write(`orch_paths: ${e.message.replace(/\s+/g, ' ')}\n`)
+      return 2
+    }
   } else if (name === 'root') {
     const root = orchDir(repo)
     if (values.ensure) {

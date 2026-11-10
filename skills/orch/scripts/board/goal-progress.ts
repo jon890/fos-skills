@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { boardPath } from '../lib/board-file.ts'
+import { ConfigError } from '../lib/config.ts'
 import { NO_LIMIT_MS, run, scriptCommand } from '../lib/proc.ts'
 import { LINE_BREAK } from '../lib/spec.ts'
 import { short } from '../lib/output.ts'
@@ -133,7 +134,14 @@ function main(argv: string[]): number {
     return 1
   }
   tracked = [...new Set(tracked)]
-  const board = values.board ? resolve(values.board) : boardPath(process.cwd())
+  let board: string
+  try {
+    board = values.board ? resolve(values.board) : boardPath(process.cwd())
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
+    err(`goal-progress: ${e.message.replace(/\s+/g, ' ')}`)
+    return 2
+  }
   let byId: Map<string, Item>
   try {
     byId = boardItems(JSON.parse(readFileSync(board, 'utf8')))
