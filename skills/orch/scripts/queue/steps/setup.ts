@@ -6,6 +6,11 @@ import { ConfigError, HOOKS_KEYS, loadConfig, PIPELINE_KEYS, section } from '../
 import { eventTimeoutSec, handlerFile } from '../../lib/events.ts'
 import { ownAuthors } from '../../lib/gh.ts'
 import { alive } from '../../lib/process.ts'
+import { makeParent, pathOf } from '../../lib/paths.ts'
+import { acquireQueueLock, releaseQueueLock } from '../../lib/queue-lock.ts'
+import { isQueueCommand, processes } from '../../lib/queue-process.ts'
+import { readTurns } from '../../lib/queue-turn.ts'
+import { orderQueueMigrations } from './migrations.ts'
 import type { QueueEvent, StepContext, StepResult } from './model.ts'
 import { COPY_NAME, DOCS_ONLY_NOTE, QUEUE_EVENTS, Usage } from './model.ts'
 import type { StepState } from './model.ts'
@@ -18,8 +23,11 @@ export async function setup(stepContext: StepContext, state: StepState): Promise
   }
   try {
     setupImpl(stepContext, state)
+    await lockQueue(state)
+    orderQueueMigrations(state)
     return { kind: 'ready', changes: changes() }
   } catch (error) {
+    unlockQueue(state)
     if (!(error instanceof Usage || error instanceof ConfigError)) throw error
     return { kind: 'error', error, changes: changes() }
   }
@@ -134,4 +142,27 @@ export function dropCopy(stepContext: StepContext, state: StepState): void {
   removeCopy(stepContext, state, state.copy)
   git('worktree', 'prune')
   state.copy = ''
+}
+
+// 주 checkout 의 state 경로는 워크트리끼리 공유한다. wx 잠금이 동시에 시작한 큐도 한 실행만 통과시킨다.
+export async function lockQueue(state: StepState): Promise<void> {
+  const lock = join(pathOf('state', state.repoDir), 'merge-queue.lock')
+  makeParent(lock, state.repoDir)
+  let token: string | null
+  try { token = acquireQueueLock(lock) }
+  catch (error) { throw new Usage(`QUEUE-CHECK-FAILED 큐 잠금을 확인하지 못했다: ${(error as Error).message}`) }
+  if (!token) throw new Usage('QUEUE-BUSY 같은 저장소의 머지 큐가 실행 중이다. 끝난 뒤 다시 건다')
+  state.queueLock = lock
+  state.queueLockToken = token
+  // 잠금 도입 전에 시작한 큐도 차례 기록과 명령줄로 확인한다. 래퍼인 부모 프로세스는 차례 기록이 없어 제외된다.
+  const list = processes()
+  if (!list) throw new Usage('QUEUE-CHECK-FAILED 프로세스 목록을 읽지 못해 다른 머지 큐가 있는지 확인할 수 없다')
+  const running = readTurns(state.repoDir, (pid) => pid !== process.pid && list.some((p) => p.pid === pid && isQueueCommand(p.command)))
+  if (running.length) throw new Usage(`QUEUE-BUSY 같은 저장소의 머지 큐(pid ${running[0].pid})가 실행 중이다. 끝난 뒤 다시 건다`)
+}
+
+export function unlockQueue(state: StepState): void {
+  if (state.queueLock) releaseQueueLock(state.queueLock, state.queueLockToken)
+  state.queueLock = ''
+  state.queueLockToken = ''
 }

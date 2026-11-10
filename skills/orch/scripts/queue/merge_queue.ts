@@ -190,9 +190,15 @@
 //           3 모두 머지했지만 after-merge 나 after-queue가 하나라도 실패하거나 시간을 넘겼다,
 //           143 SIGTERM 을 받았다, 130 SIGINT 를 받았다
 //
+// 큐 시작: 같은 저장소의 state/merge-queue.lock 을 wx 로 잡는다. 다른 큐가 돌면 QUEUE-BUSY 이유와 코드 2 로 거절한다.
+//   정상 종료와 SIGTERM/SIGINT 에 잠금을 풀고, 죽은 pid 나 시작 시각·명령줄이 달라진 pid 의 잠금은 다음 실행이 회수한다. 워크트리도 주 checkout 의 잠금을 쓴다.
+//   migrations 설정이 있으면 queueOrder 로 낮은 번호부터 정렬하고 자동 --chain 을 만든다. 수동 묶음도 함께 지키되 모순되면 코드 2 다.
+//   순서가 바뀌면 QUEUE-ORDER <번호...>: <이유> 를 낸다. 설정이 없으면 입력 순서를 유지한다.
+//   gate 와 머지 직전에 새 origin/<base> 의 최고 번호를 judgeMigrations 로 확인한다. 최고 이하이면 --again 안내와 함께 worker 에게 보류를 보낸다.
+//
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
 
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError } from '../lib/config.ts'
@@ -206,7 +212,7 @@ import { parseArgs, usageText } from './steps/options.ts'
 import { endTurn, turn } from './steps/pr.ts'
 import { out } from './steps/runtime.ts'
 import { selectQueue } from './steps/select.ts'
-import { dropCopy, setup } from './steps/setup.ts'
+import { dropCopy, setup, unlockQueue } from './steps/setup.ts'
 
 const SCRIPT = fileURLToPath(import.meta.url)
 const stepContext: StepContext = { script: SCRIPT, here: dirname(SCRIPT), sleepScale: 1 }
@@ -242,6 +248,7 @@ function onSignal(signal: NodeJS.Signals): void {
   void stopChildren(signal).finally(() => {
     active && dropCopy(stepContext, active)
     active && endTurn(stepContext, active)
+    active && unlockQueue(active)
     process.exit(signalCode(signal))
   })
 }
@@ -266,6 +273,8 @@ async function mainImpl(argv: string[]): Promise<number> {
     const prepared = await setup(stepContext, queue)
     Object.assign(queue, prepared.changes)
     if (prepared.kind === 'error') throw prepared.error
+    // 래퍼가 시작 전 거절과 머지 도중 설정 오류를 구분한다. 파일은 래퍼가 임시 폴더에서 만들고 지운다.
+    if (process.env.MERGE_QUEUE_ACCEPTED_FILE) writeFileSync(process.env.MERGE_QUEUE_ACCEPTED_FILE, '1')
   } catch (e) {
     if (e instanceof ConfigError) {
       process.stderr.write(`${e.message}\n`)
@@ -285,6 +294,7 @@ async function mainImpl(argv: string[]): Promise<number> {
   } finally {
     dropCopy(stepContext, queue)
     endTurn(stepContext, queue)
+    unlockQueue(queue)
   }
 }
 

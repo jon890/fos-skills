@@ -115,6 +115,37 @@ function hook(tmp: string, event: string, body = 'process.exit(0)\n'): void {
   writeFileSync(join(tmp, '.orch', 'hooks', `${event}.ts`), body)
 }
 
+test('큐 시작 거절은 새 마무리만 끝내고 이미 돌던 마무리는 남긴다', { skip: !HAS_BASH }, async (t) => {
+  const c = setup(t)
+  const first = await c.wrap(['--no-sweep', '1'], { FAKE_FINISH_SLEEP: '300' })
+  assert.equal(first.code, 0, both(first))
+  await c.finishes(1)
+  const oldPid = Number(readFileSync(join(c.logs, 'finish-1.pid'), 'utf8'))
+  t.after(() => { try { process.kill(-oldPid, 'SIGKILL') } catch {} })
+  const rejected = join(c.tmp, 'reject.ts')
+  const freshPidFile = join(c.logs, 'finish-2.pid')
+  const recorded = join(c.tmp, 'new-pid')
+  writeFileSync(rejected, `import fs from 'node:fs'; import {setTimeout as sleep} from 'node:timers/promises'; const deadline=Date.now()+10000; while(!fs.existsSync(${JSON.stringify(freshPidFile)})&&Date.now()<deadline) await sleep(20); fs.writeFileSync(${JSON.stringify(recorded)},fs.readFileSync(${JSON.stringify(freshPidFile)})); console.error('QUEUE-BUSY'); process.exit(2)`)
+  const result = await c.wrap(['--no-sweep', '1', '2'], { MERGE_QUEUE: rejected, FAKE_FINISH_SLEEP: '300' })
+  assert.equal(result.code, 2, both(result))
+  const freshPid = Number(readFileSync(recorded, 'utf8'))
+  assert.throws(() => process.kill(freshPid, 0), /ESRCH/)
+  assert.equal(existsSync(freshPidFile), false)
+  assert.doesNotThrow(() => process.kill(oldPid, 0))
+})
+
+test('이미 시작한 큐가 코드 2 로 멈추면 머지된 PR 을 마무리할 프로세스를 남긴다', { skip: !HAS_BASH }, async (t) => {
+  const c = setup(t)
+  const accepted = join(c.tmp, 'accepted.ts')
+  writeFileSync(accepted, "import fs from 'node:fs'; fs.writeFileSync(process.env.MERGE_QUEUE_ACCEPTED_FILE!, '1'); process.exit(2)")
+  const result = await c.wrap(['--no-sweep', '1'], { MERGE_QUEUE: accepted, FAKE_FINISH_SLEEP: '300' })
+  assert.equal(result.code, 2, both(result))
+  await c.finishes(1)
+  const pid = Number(readFileSync(join(c.logs, 'finish-1.pid'), 'utf8'))
+  t.after(() => { try { process.kill(-pid, 'SIGKILL') } catch {} })
+  assert.doesNotThrow(() => process.kill(pid, 0))
+})
+
 describe('merge-with-finish PR 인자 해석', { skip: !HAS_BASH && 'bash 가 필요하다', concurrency: 4 }, () => {
   test('PR, PR!, PR:명령, PR!:명령 을 나눠 머지 큐에는 ! 를 뗀 인자를, 마무리에는 --complete 를 넘긴다', async (t) => {
     const c = setup(t)

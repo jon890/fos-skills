@@ -154,6 +154,8 @@ export class StepState {
   notifyFailed = false
   // 주 checkout 이 아니라 --repo 로 옮겨 간 작업 디렉터리다. 이벤트의 repo 와 핸들러 위치는 fire 가 이것으로 정한다
   repoDir = ''
+  queueLock = ''
+  queueLockToken = ''
   // 큐를 시작할 때 있던 핸들러 파일의 이벤트. 입력에 조회가 드는 이벤트(after-merge)와 검사를 켜는 이벤트(verify-merged)가 본다
   hooks = new Set<QueueEvent>()
   // 합친 사본 검사를 하는가. hooks/verify-merged.ts 가 있으면 한다
