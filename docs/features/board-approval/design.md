@@ -180,7 +180,7 @@ node bin/approvals.ts press <id> <버전> approve|revise [--note <글>] --origin
 4. `--version` 을 받았고 기록의 버전과 다르면 「버전이 다름」. 코디네이터가 v12 신호를 들고 있는 사이 v13 이 승인돼도 v12 기준으로 실행하지 않게 한다.
 5. 신호 메시지를 읽는다. 기록의 Run 메일함에서 payload 가 `{source: board-approval, action: approve, id, version, nonce}` 와 같은 메시지를 찾는다. 찾지 못하거나 조회가 실패하면 「신호를 읽지 못함」. 읽는 필드는 `core/message-fields.ts` 의 `senderOf` 와 새로 더하는 `subjectOf`, `payloadOf` 다(아래). 조회 명령은 `orca orchestration check --run <Run> --all --types status --json` 과 `orca orchestration inbox --terminal run:<Run> --limit <n> --full --json` 가운데 PR1 첫 작업의 실측으로 고른다. 기준은 승인 신호를 놓치지 않는 범위와 걸린 시간이다.
 6. 메시지를 보낸 터미널(`senderOf`, 비어 있으면 뺀다), `press.terminal`, 기록의 `terminal`(올린 터미널), `check` 를 부른 터미널(`ORCA_TERMINAL_HANDLE`, 있으면)을 「approval 꼴」 로 함께 판정한다. 하나라도 worker 면 「worker 가 보냄」. 조회가 실패하면 「신호를 읽지 못함」.
-7. 잠금을 잡고 다시 읽는다. 먼저 그 id 의 가장 늦은 기록(`latest`)이 1단계에서 고른 버전과 같은지 본다. 다르면(조회하는 동안 같은 id 로 다시 올렸다) 새 기록의 상태로 2단계 이유를 낸다. 새 기록은 `open` 이라 보통 「아직 누르지 않음」 이다. 같으면 그 기록이 아직 `approved` 이고 `press.nonce` 가 같을 때만 `used` 와 `closedAt` 을 쓰고 `APPROVAL-OK <id>` 다. 그 사이 상태가 바뀌었으면 바뀐 상태로 2단계 이유를 낸다. 앞 버전에 눌린 승인이 새 내용에 쓰이지 않게 한다(스펙 REQ2).
+7. 잠금을 잡고 다시 읽는다. 먼저 그 id 의 가장 늦은 기록(`latest`)이 1단계에서 고른 버전과 같은지 본다. 다르면(조회하는 동안 같은 id 로 다시 올렸다) 새 기록의 상태로 2단계 이유를 낸다. 새 기록은 `open` 이라 보통 「아직 누르지 않음」 이다. 같으면 그 기록이 아직 `approved` 이고 `press.nonce` 가 같은지 본다. 미리보기 해시도 잠금 안에서 다시 재어 다르거나 읽지 못하면 「미리보기가 바뀜」 으로 거절한다. 이 조건이 모두 맞을 때만 `used` 와 `closedAt` 을 쓰고 `APPROVAL-OK <id>` 다. 그 사이 상태가 바뀌었으면 바뀐 상태로 2단계 이유를 낸다. 앞 버전에 눌린 승인이 새 내용에 쓰이지 않게 한다(스펙 REQ2).
 
 Orca 조회(5, 6단계)를 잠금 밖에서 하는 것은 조회가 몇 초 걸려 다른 쓰기의 5초 기다림을 넘길 수 있어서다. 7단계의 다시 읽기가 그 사이의 변경을 막는다. 보드 명령 스펙(#421) REQ11 의 「미리 읽은 목록 저장 거절」 과 같은 생각이다.
 

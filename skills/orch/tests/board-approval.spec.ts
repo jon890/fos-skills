@@ -201,3 +201,13 @@ test('신호 조회 중 같은 id 로 다시 올리면 이전 승인을 쓰지 �
     assert.deepEqual(f.read().entries.map(e => e.state), ['approved', 'open'])
   } finally { f.clean() }
 })
+test('신호 조회 중 미리보기가 바뀌면 승인을 소모하지 않는다', () => {
+  const f = fixture()
+  try {
+    f.add(); const payload = f.approve()
+    const race = linkBin(f.root, 'orca-preview-race', `const fs=require('node:fs'); if(process.argv.includes('inbox')) { fs.writeFileSync(${JSON.stringify(f.preview)}, '바뀐 내용'); console.log(${JSON.stringify(envelope({ messages: [{ from_handle: 'term_sender', payload }] }))}); } else console.log(${JSON.stringify(workers())});`)
+    const result = f.run(['check', 'demo'], script, { ORCA: race })
+    assert.equal(result.code, 1); assert.match(result.out, /미리보기가 바뀜$/)
+    assert.equal(f.read().entries[0].state, 'approved')
+  } finally { f.clean() }
+})

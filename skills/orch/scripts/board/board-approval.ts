@@ -75,7 +75,14 @@ async function main(): Promise<number> {
   if (caller && facts.workers.ok && facts.workers.workerHandles.has(caller)) return reject(id, 'worker 가 보냄')
   const verdict = checkVerdict(entry, facts)
   if (!verdict.ok) return reject(id, verdict.reason)
-  const result = updateApprovals(repo, (file, now) => { const next = applyUsed(file, id, entry.version, entry.press!.nonce, now); return { file: 'file' in next ? next.file : file, result: next } })
+  const result = updateApprovals(repo, (file, now) => {
+    const next = applyUsed(file, id, entry.version, entry.press!.nonce, now)
+    const current = latest(file, id)
+    if ('file' in next && current?.preview && previewSha(current.preview.path) !== current.preview.sha256) {
+      return { file, result: { reason: '미리보기가 바뀜' as const } }
+    }
+    return { file: 'file' in next ? next.file : file, result: next }
+  })
   if ('reason' in result) return reject(id, result.reason)
   out(`APPROVAL-OK ${id}`); return 0
 }
