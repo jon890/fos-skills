@@ -523,6 +523,40 @@ describe('block-worker-terminal-send 의 첫 화면 승인', () => {
   })
 })
 
+describe('block-approval-press', () => {
+  const HOOK = 'block-approval-press.ts'
+  const SCRIPT = '/plugin/extensions/work-board/bin/approvals.ts'
+
+  test('창 전용 press 호출은 앞에 cd 나 따옴표 경로가 붙어도 거부한다', () => {
+    for (const command of [
+      `node ${SCRIPT} press demo 1 approve --origin person --repo /r`,
+      `node --disable-warning=ExperimentalWarning "${SCRIPT}" press demo 1 approve --origin x`,
+      `cd /r && node ${SCRIPT} press demo 1 revise --note=고쳐 --origin x`,
+      `node ${SCRIPT}\tpress demo 1 approve --origin x`,
+    ]) assert.equal(decide(HOOK, command), 'deny', command)
+    assert.match(verdict(HOOK, `node ${SCRIPT} press a 1 approve --origin x`).reason, /사람이 보드 창에서 누른 버튼/)
+  })
+
+  test('where, self, 파일을 여는 명령, 따옴표와 heredoc 안의 글은 통과한다', () => {
+    for (const command of [
+      `node ${SCRIPT} where --repo /r`,
+      `node ${SCRIPT} self --live`,
+      'grep press skills/orch/scripts/lib/approvals.ts',
+      'cat skills/orch/scripts/lib/approvals.ts | grep press',
+      'echo "approvals.ts press"',
+      "git commit -m 'approvals.ts press 를 막는다'",
+      'git commit -m "$(cat <<\'EOF\'\nfeat: node approvals.ts press 를 거부한다\nEOF\n)"',
+      'node X/approvals.ts pressure',
+      'orch board approval check demo --version 1',
+    ]) assert.equal(decide(HOOK, command), 'pass', command)
+  })
+
+  test('다른 도구와 읽지 못한 입력은 통과한다', () => {
+    assert.equal(decide(HOOK, `node ${SCRIPT} press a 1 approve --origin x`, {}, 'Read'), 'pass')
+    assert.deepEqual({ ...runHook(HOOK, 'not json'), ms: 0 }, { code: 0, stdout: '', stderr: '', ms: 0 })
+  })
+})
+
 describe('require-spec-line', () => {
   const HOOK = 'require-spec-line.ts'
   const LINE = '지시서 /repo/.orch/specs/spec-a.md 를 끝까지 읽고 수행한다. push 는 허락했다. 못 읽으면 escalation 으로 알린다.'

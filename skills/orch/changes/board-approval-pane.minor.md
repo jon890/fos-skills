@@ -1,0 +1,2 @@
+- 보드 창에서 사람이 누른 승인과 고쳐 달라를 기록하고 올린 Run 으로 신호를 보내는 코드(`recordPress`)를 더했다. 신호를 보내지 못하면 기록을 되돌린다.
+- 에이전트가 Bash 도구로 창 전용 승인 기록 스크립트(`approvals.ts press`)를 부르면 거부하는 hook(`block-approval-press.ts`)을 더했다.

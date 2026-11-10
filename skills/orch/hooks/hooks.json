@@ -1,5 +1,5 @@
 {
-  "description": "orch: check --wait 를 셸의 & 나 nohup 으로 띄우는 호출, cd 뒤 ; 나 줄바꿈으로 이은 git 쓰기, worker 터미널이거나 worker 인지 확인하지 못한 터미널로의 직접 orca terminal send, spec-line 이 아닌 worker-start --spec 을 거부한다",
+  "description": "orch: check --wait 를 셸의 & 나 nohup 으로 띄우는 호출, cd 뒤 ; 나 줄바꿈으로 이은 git 쓰기, worker 터미널이거나 worker 인지 확인하지 못한 터미널로의 직접 orca terminal send, 보드 창 전용 승인 기록 스크립트(approvals.ts press) 호출, spec-line 이 아닌 worker-start --spec 을 거부한다",
   "hooks": {
     "PreToolUse": [
       {
@@ -18,6 +18,11 @@
           {
             "type": "command",
             "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/skills/orch/hooks/block-worker-terminal-send.ts\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/skills/orch/hooks/block-approval-press.ts\"",
             "timeout": 10
           },
           {
