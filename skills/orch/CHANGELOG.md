@@ -1,5 +1,13 @@
 # CHANGELOG: orch
 
+## 7.29.1 (2026-11-10)
+
+- 리뷰 worker 의 worker_done 을 DONE-SUSPECT 로 알리던 것을 고친다. 영구 이력의 지시서나 첫 status 의 `판정:` 줄로 리뷰 dispatch 를 알아본다.
+- 루프 알림은 할 일만 바로 보내고 WATCH-ERROR, LEGACY-NOTICE, STAGE-STALLED, LOOP-RESTARTED 는 `pipeline.digest_sec`(기본 1800초)마다 DIGEST 하나로 모은다.
+- 같은 WATCH-ERROR 가 연속 세 틱 넘게 이어지면 바로 보낸다. 머지 큐가 뺀 PR 은 QUEUE-DROPPED 로 바로 알린다.
+- 한 Run 에 여러 저장소의 루프가 있어도 같은 알림이 한 번만 가고, 남의 저장소 dispatch 의 PR 조회 실패는 건너뛴다.
+- DONE-SUSPECT 와 WORKER-LOST 의 보낸 기록 위치를 머리 주석에 적고 재시작을 지나도 한 번만 가는 회귀 테스트를 더한다.
+
 ## 7.29.0 (2026-11-10)
 
 - 모델 선택 참고에 Claude Fable 5.2 를 더한다. 바로 후보에 넣지 않고 크고 어려운 일 다섯 건에 `high` 로 실험한다(사용자 결정 2026-11-10).
