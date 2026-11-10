@@ -173,7 +173,7 @@ for (const [error, kind, conflict, retryable] of [
     assert.equal(result.kind, kind)
     assert.equal(state.mode, 'normal')
     assert.equal(state.copy, '')
-    assert.deepEqual(state.conflicted, [])
+    assert.deepEqual(state.conflicted, conflict ? ['1'] : [])
     Object.assign(state, result.changes)
     assert.deepEqual(state.conflicted, conflict ? ['1'] : [])
     if (result.kind === 'held') assert.equal(result.retryable, retryable)

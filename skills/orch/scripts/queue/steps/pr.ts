@@ -42,27 +42,27 @@ export async function field(stepContext: StepContext, state: StepState, n: strin
   }
 }
 
-export function api(stepContext: StepContext, state: StepState, ...args: string[]): RunResult {
+export function api(state: StepState, ...args: string[]): RunResult {
   return gh(['api', '--hostname', state.p.apiHost, ...args], { cache: false })
 }
 
-export function prEnv(stepContext: StepContext, state: StepState): Record<string, string> {
+export function prEnv(state: StepState): Record<string, string> {
   const p = state.p
   return { PR: p.n, BRANCH: p.branch, OWNER: p.owner, REPO: p.repo }
 }
 
 // 이벤트 입력의 pr 객체(lib/events.ts 머리 주석의 「이벤트별 필드」)
-export function prInput(stepContext: StepContext, state: StepState): Record<string, unknown> {
+export function prInput(state: StepState): Record<string, unknown> {
   const p = state.p
   return { number: Number(p.n), title: p.title, branch: p.branch, head: p.ph, author: p.author, draft: p.draft, url: p.url }
 }
 
-export function eventContext(stepContext: StepContext, state: StepState): FireContext {
+export function eventContext(state: StepState): FireContext {
   return { repo: state.repoDir, base: state.p.base, run: null }
 }
 
 // 차례 기록을 쓴다(머리 주석의 「차례 기록」). 쓰지 못해도 큐는 이어 간다. 첫 실패만 stderr 에 남긴다
-export function turn(stepContext: StepContext, state: StepState, phase: string, pr: number | null = state.pr ? Number(state.pr.n) : null): void {
+export function turn(state: StepState, phase: string, pr: number | null = state.pr ? Number(state.pr.n) : null): void {
   if (!state.repoDir) return
   try {
     const turn = { pid: process.pid, prs: state.remaining, pr, phase, since: new Date().toISOString(), held: state.heldReasons }
@@ -76,8 +76,8 @@ export function turn(stepContext: StepContext, state: StepState, phase: string, 
 }
 
 // 끝난 큐의 기록을 남긴다. 지우지 않는다. 끝난 뒤 들어온 틱이 held 를 루프 로그에 옮기고 지운다(lib/queue-turn.ts)
-export function endTurn(stepContext: StepContext, state: StepState): void {
+export function endTurn(state: StepState): void {
   if (!state.turnPath) return
   state.remaining = []
-  turn(stepContext, state, TURN_PHASES.end, null)
+  turn(state, TURN_PHASES.end, null)
 }

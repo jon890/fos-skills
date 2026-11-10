@@ -12,7 +12,7 @@ import { log, out } from './runtime.ts'
 import { dropCopy } from './setup.ts'
 
 // 묶음 안에서 n 보다 앞에 있고 머지되지 않고 빠진 PR. 없으면 null
-export function droppedBefore(stepContext: StepContext, state: StepState, n: string): string | null {
+export function droppedBefore(state: StepState, n: string): string | null {
   const chain = state.o.chains.find((c) => c.includes(n))
   if (!chain) return null
   return chain.slice(0, chain.indexOf(n)).find((m) => state.held.includes(m)) ?? null
@@ -32,12 +32,13 @@ export async function attempt(stepContext: StepContext, state: StepState, item: 
     if (e instanceof NotReady) return { kind: 'not-ready', reason: e.message, changes: {} }
     if (e instanceof Conflict) {
       out(`CONFLICT ${e.message}`)
-      notifyConflict(stepContext, state, n, e.message)
-      return { kind: 'held', reason: e.message, changes: { conflicted: [...state.conflicted, n] } }
+      state.conflicted.push(n)
+      notifyConflict(state, n, e.message)
+      return { kind: 'held', reason: e.message, changes: {} }
     }
     if (e instanceof Stop) {
       out(`STOP ${e.message}`)
-      if (e instanceof WorkerFix) await tellHeld(stepContext, state, n, e.why)
+      if (e instanceof WorkerFix) await tellHeld(state, n, e.why)
       return { kind: 'held', reason: e instanceof WorkerFix ? `${e.message}: ${e.why}` : e.message,
         changes: {}, retryable: e instanceof HeadChanged || (e instanceof WorkerFix && e.retryable) }
     }
@@ -46,19 +47,19 @@ export async function attempt(stepContext: StepContext, state: StepState, item: 
     out(`STOP ${n} 예상 못 한 오류`)
     return { kind: 'held', reason: `${n} 예상 못 한 오류`, changes: {} }
   } finally {
-    dropCopy(stepContext, state)
+    dropCopy(state)
     state.mode = 'normal'
   }
 }
 
 // 그 차례 PR 의 update-branch 뒤 대기를 미뤄도 되는가(머리 주석의 「앞지르기」). 뒤에 앞지를 후보가 있어야 한다
-export function canDefer(stepContext: StepContext, state: StepState, i: number, handled: Set<number>): boolean {
+export function canDefer(state: StepState, i: number, handled: Set<number>): boolean {
   const o = state.o
   if (!(o.upToDate && o.upToDateWhen === 'overlap' && o.continueOnHold)) return false
-  return o.items.some((item, j) => j > i && !handled.has(j) && !inChain(stepContext, state, item.split(':')[0]))
+  return o.items.some((item, j) => j > i && !handled.has(j) && !inChain(state, item.split(':')[0]))
 }
 
-export function inChain(stepContext: StepContext, state: StepState, n: string): boolean {
+export function inChain(state: StepState, n: string): boolean {
   return state.o.chains.some((chain) => chain.includes(n))
 }
 
@@ -71,9 +72,9 @@ export async function overtake(stepContext: StepContext, state: StepState, i: nu
     for (const [j, item] of o.items.entries()) {
       if (j <= i || handled.has(j)) continue
       const m = item.split(':')[0]
-      if (inChain(stepContext, state, m)) continue
-      state.remaining = left(stepContext, state, i, handled)
-      turn(stepContext, state, TURN_PHASES.overtake, Number(m))
+      if (inChain(state, m)) continue
+      state.remaining = left(state, i, handled)
+      turn(state, TURN_PHASES.overtake, Number(m))
       const result = await attempt(stepContext, state, item, 'quick')
       Object.assign(state, result.changes)
       if (result.kind === 'not-ready') {
@@ -84,7 +85,7 @@ export async function overtake(stepContext: StepContext, state: StepState, i: nu
       handled.add(j)
       if (result.kind === 'merged') log(`${m} 차례 PR ${deferred.n} 보다 먼저 머지했다`)
       else if (result.kind === 'held') {
-        hold(stepContext, state, m, result.reason)
+        hold(state, m, result.reason)
         if (result.retryable) state.retryItems.add(item)
         log(state.conflicted.includes(m) ? `${m} 충돌. 큐에서 빼고 다음 PR 로 간다` : `${m} 보류. 다음 PR 로 간다`)
       }
@@ -96,11 +97,11 @@ export async function overtake(stepContext: StepContext, state: StepState, i: nu
 }
 
 // 차례 기록의 prs. i 부터 끝까지에서 이미 처리한 PR 을 뺀다
-export function left(stepContext: StepContext, state: StepState, i: number, handled: Set<number>): number[] {
+export function left(state: StepState, i: number, handled: Set<number>): number[] {
   return state.o.items.flatMap((item, j) => (j >= i && !handled.has(j) ? [Number(item.split(':')[0])] : []))
 }
 
-export function hold(stepContext: StepContext, state: StepState, n: string, reason: string): void {
+export function hold(state: StepState, n: string, reason: string): void {
   state.held.push(n)
   state.heldReasons.push({ pr: Number(n), reason })
 }
@@ -113,23 +114,23 @@ export async function selectQueue(stepContext: StepContext, state: StepState): P
   for (const [i, item] of o.items.entries()) {
     if (handled.has(i)) continue
     const n = item.split(':')[0]
-    state.remaining = left(stepContext, state, i, handled)
+    state.remaining = left(state, i, handled)
     state.pr = null
-    turn(stepContext, state, TURN_PHASES.start, Number(n))
-    const before = droppedBefore(stepContext, state, n)
+    turn(state, TURN_PHASES.start, Number(n))
+    const before = droppedBefore(state, n)
     if (before !== null) {
       out(`SKIP ${n} 묶음의 앞 PR ${before} 가 머지되지 않았다`)
       state.held.push(n)
       state.heldReasons.push({ pr: Number(n), reason: `묶음의 앞 PR ${before} 가 머지되지 않았다` })
       continue
     }
-    let result = await attempt(stepContext, state, item, canDefer(stepContext, state, i, handled) ? 'defer' : 'normal')
+    let result = await attempt(stepContext, state, item, canDefer(state, i, handled) ? 'defer' : 'normal')
     Object.assign(state, result.changes)
     if (result.kind === 'deferred') {
       const stopped = await overtake(stepContext, state, i, result.deferred, handled)
       if (stopped) result = stopped
       else {
-        state.remaining = left(stepContext, state, i, handled)
+        state.remaining = left(state, i, handled)
         log(`${n} 차례로 돌아와 체크를 기다린다`)
         result = await attempt(stepContext, state, item, 'normal')
         Object.assign(state, result.changes)
@@ -137,7 +138,7 @@ export async function selectQueue(stepContext: StepContext, state: StepState): P
     }
     if (result.kind === 'config') return { ...result, changes: queueChanges(state) }
     if (result.kind !== 'held') continue
-    hold(stepContext, state, n, result.reason)
+    hold(state, n, result.reason)
     if (result.retryable) state.retryItems.add(item)
     if (state.conflicted.includes(n)) {
       log(`${n} 충돌. 큐에서 빼고 다음 PR 로 간다`)
@@ -154,7 +155,7 @@ export async function selectQueue(stepContext: StepContext, state: StepState): P
     const n = item.split(':')[0]
     state.recheckWaited = 0
     state.remaining = [...state.retryItems].map((entry) => Number(entry.split(':')[0]))
-    turn(stepContext, state, TURN_PHASES.start, Number(n))
+    turn(state, TURN_PHASES.start, Number(n))
     log(`${n} 보류 사유를 다시 판정한다(CI 대기 최대 ${Math.min(5, Number(o.checkTimeout))}분)`)
     const result = await attempt(stepContext, state, item, 'normal')
     Object.assign(state, result.changes)

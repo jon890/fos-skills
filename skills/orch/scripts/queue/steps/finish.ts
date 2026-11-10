@@ -16,7 +16,7 @@ import { failLabel, failed, log, out } from './runtime.ts'
 export async function afterQueue(stepContext: StepContext, state: StepState): Promise<StepResult<{ kind: 'done' | 'failed' } | { kind: 'config'; error: ConfigError }>> {
   const changes = () => ({ merged: state.merged, afterFailed: state.afterFailed })
   try {
-    await runAfterMerged(stepContext, state)
+    await runAfterMerged(state)
     return { kind: state.afterFailed ? 'failed' : 'done', changes: changes() }
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error
@@ -25,7 +25,7 @@ export async function afterQueue(stepContext: StepContext, state: StepState): Pr
 }
 
 // 이번 실행에서 머지한 PR 이 있으면 after-queue 를 한 번 낸다
-async function runAfterMerged(stepContext: StepContext, state: StepState): Promise<void> {
+async function runAfterMerged(state: StepState): Promise<void> {
   if (!(state.merged.length > 0 && state.hooks.has('after-queue'))) return
   const merged = state.merged.map(([n]) => n)
   const code = state.merged.filter(([, kind]) => kind === 'code').map(([n]) => n)
@@ -66,11 +66,11 @@ export async function sweep(stepContext: StepContext, state: StepState): Promise
 
 // 큐 도중의 설정 오류로 멈춘다. 종료 코드 2 다. 이번 실행에서 머지한 PR 이 있으면 그 전에 after-queue 만 돌린다.
 // 옛 명령은 보류로 멈춘 자리에서도 앞에서 머지한 PR 의 머지 뒤 명령을 돌리고 정리는 부르지 않았다. 그 규칙을 따른다
-export async function stopOnConfig(stepContext: StepContext, state: StepState, e: ConfigError): Promise<number> {
+export async function stopOnConfig(state: StepState, e: ConfigError): Promise<number> {
   process.stderr.write(`${e.message}\n`)
   if (state.merged.length === 0) return 2
   try {
-    await runAfterMerged(stepContext, state)
+    await runAfterMerged(state)
   } catch (again) {
     if (!(again instanceof ConfigError)) throw again
     process.stderr.write(`${again.message}\n`)
@@ -80,7 +80,7 @@ export async function stopOnConfig(stepContext: StepContext, state: StepState, e
 }
 
 // 충돌로 뺀 PR 을 상주 루프의 알림 파일에 쓴다. 쓰지 못해도 큐는 이어 간다
-export function notifyConflict(stepContext: StepContext, state: StepState, n: string, reason: string): void {
+export function notifyConflict(state: StepState, n: string, reason: string): void {
   const sweep = state.o.sweepArgs
   const at = sweep.indexOf('--run')
   const run = at >= 0 && at + 1 < sweep.length ? sweep[at + 1] : null
@@ -92,7 +92,7 @@ export function notifyConflict(stepContext: StepContext, state: StepState, n: st
 }
 
 // 보류한 PR 의 살아 있는 worker 에게 이유를 보낸다(머리 주석의 「보류」). Run 을 모르거나 worker 가 없으면 로그만 남긴다
-export async function tellHeld(stepContext: StepContext, state: StepState, n: string, why: string): Promise<void> {
+export async function tellHeld(state: StepState, n: string, why: string): Promise<void> {
   const sweep = state.o.sweepArgs
   const at = sweep.indexOf('--run')
   const run = at >= 0 && at + 1 < sweep.length ? sweep[at + 1] : null
