@@ -146,3 +146,19 @@ PR 생성은 사용자가 미리 허락한 경우에만 worker 에게 맡기고,
 - 결과만 받으면 되는 짧은 조사, 판정, 리뷰는 이 스킬 대신 하위 에이전트에게 맡긴다
 - 기능의 결정과 설계는 `spec` 이 사용자를 인터뷰해 확정한다. worker 가 spec 을 돌리면 코디네이터가 질문과 확인을 사용자에게 중계한다
 - 미해결 리뷰 스레드 세기와 리뷰 회신은 `review-fix` 의 스크립트를 쓴다
+
+## 코드 구조와 동작 보존 검사
+
+입력 값으로 결과를 정하는 함수는 `scripts/core/`, 파일·프로세스·외부 명령을 다루는 함수는 `scripts/lib/` 와 명령 파일에 둬요.
+기존 lib import 경로는 계속 쓸 수 있어요. 선택 이유는 [ADR-028](../../docs/adr/028-orch-core-layer.md), 허용 의존과 금지 접근은 [경계 검사](tests/core-boundary.spec.ts)가 소유해요.
+
+구조를 고친 뒤에는 바꾼 함수의 테스트와 함께 아래 검사를 실행해요. `core-values.spec.ts` 는 가짜 실행 파일 없이 값만으로 확인해요.
+
+```bash
+node scripts/run-tests.ts skills/orch/tests/core-boundary.spec.ts skills/orch/tests/core-dedup.spec.ts skills/orch/tests/core-values.spec.ts
+node skills/orch/tests/fixtures/golden-run.ts
+```
+
+명령은 저장소 루트에서 실행해요. 고정 입력 실행기는 임시 폴더에서 루프 틱·머지 큐·정리를 실행하고 출력과 종료 뒤 상태를 기록과 비교해요.
+시계와 캐시 식별자는 실행 전에 고정하고, 비교할 때는 임시 경로와 pid 만 바꿔요. 기록은 `tests/golden/` 에 있어요.
+`--record` 는 새 기준을 만들 때만 써요. 구조만 고치는 PR 은 기존 기록과 테스트 기대값을 유지해요.

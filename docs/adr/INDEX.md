@@ -31,6 +31,7 @@
 | [ADR-025](025-script-runtime-typescript.md) | 저장소의 스크립트와 테스트를 TypeScript(Node 24) 하나로 둔다 | accepted | - |
 | [ADR-026](026-docs-checks-at-authoring-time.md) | 문서 링크와 ADR 검사는 plan 번들 검사기 하나가 작성 단계에서 맡는다 | accepted | - |
 | [ADR-027](027-orca-message-wake.md) | 코디네이터 깨우기는 Orca 메시지를 쓴다 | accepted | - |
+| [ADR-028](028-orch-core-layer.md) | 값 판정과 외부 실행을 폴더로 나눈다 | accepted | - |
 
 ## 대체됨
 
