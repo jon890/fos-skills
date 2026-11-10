@@ -26,10 +26,10 @@
 
 | id | Task 성격 | 모델 | effort |
 | --- | --- | --- | --- |
-| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본. 위 「effort」 의 계획을 마친 구현 규칙) |
+| `impl-planned` | 계획서가 있고 수정 위치와 검증 명령이 정해진 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `low`, Sonnet `high`(기본. 위 「effort」 의 계획을 마친 구현 규칙) |
 | `small-fix` | 수정 위치와 검증 명령이 정해진 작은 수정(설정, 주석, 문서 동기화. 작은 분기와 단위 테스트는 Sonnet 쪽) | Claude Sonnet 5.5(분기나 상태를 다루는 수정), Claude Haiku 5.5(분기 논리가 없는 문서·문구·설정·정규식 한 줄), `gpt-6-luna` | Sonnet `medium`, Haiku 는 지정하지 않는다(기본값 `medium`), luna `high`(공식 시작점) |
 | `simple-apply` | 단순 반영(리뷰 지적, 문구, 설정 한 줄) | Claude Haiku 5.5, `gpt-6-luna` | Haiku 는 지정하지 않는다, luna `high`. 코디네이터가 diff 를 지적 원문과 한 줄씩 대조한다 |
-| `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`(사용자 결정이나 설계 판단이 남지 않은 Task), Claude Sonnet 5.5 | sol `medium`(넘기지 않는다), Sonnet `high`(기본). 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
+| `impl-explore` | 계획은 있지만 저장소를 탐색해야 하는 여러 파일 구현 | `gpt-6.1-sol`, Claude Sonnet 5.5 | sol `medium`(넘기지 않는다), Sonnet `high`(기본). 실패하면 effort 를 올리지 않고 다른 모델로 바꾼다 |
 | `hard-design` | 어려운 디버깅, 계약 설계, 데이터 마이그레이션 | Claude Opus 5.5, `gpt-6.1-sol` | Opus `medium`. `high` 이상은 아래 「Opus `high`」 의 근거가 있을 때만. sol `high` |
 | `visual` | 화면이나 이미지를 보고 판정하는 일, 브라우저나 앱 조작 | `gpt-6.1-terra` | `low` 에서 시작. 실측 전이다. 두세 작업에 써 본 뒤 확정한다 |
 | `review` | 리뷰와 검증 | 구현한 쪽과 다른 제공자의 모델. 실제로 다른 제공자가 되는지는 아래 「리뷰 제공자」 를 본다 | `medium` |
@@ -40,7 +40,7 @@ Haiku 는 분기 논리가 없는 고침에만 첫 후보로 둔다. 분기 논�
 - `launch-worker` 는 이 표의 행에 있는 모델만 띄운다. 후보 밖 모델이 필요하면 `worker 선택:` 줄에 `후보 밖: <이유>` 를 덧붙인다. 빈 이유는 거부하고, 이유가 있으면 `LAUNCH-EFFECTIVE` 의 `candidateOverride` 에 행·모델·이유를 남긴다.
 - `review` 행은 후보 검사를 하지 않고 아래 「리뷰 제공자」 규칙을 따른다. Fable 과 Terra 는 선택 줄에 해당 모델의 `Fable 실험 N/5` 또는 `Terra 실험 N/5`(N 은 1~5)가 있으면 허용한다. Terra 는 Sonnet 이 후보인 행에서만 이 예외를 쓴다. 일반 `experiment:` 줄은 행의 후보 검사를 생략하지 않는다.
 - 지시서의 `worker 선택:` 줄에 `행: <id>` 를 적는다. 줄의 꼴은 [`spec-writing.md`](spec-writing.md) 가 소유한다. id 의 원본은 이 표다.
-- 사용자 결정이나 설계 판단을 묻는 질문이 남은 Task 는 Claude 로 띄운다. 실행 전 확인처럼 답이 정해진 확인 질문은 sol 을 막지 않는다. 표 2 에서 sol 은 질문과 코디네이터 지시가 가장 많았다. #404 로 질문 하나가 worker 를 붙잡지 않게 돼서, 이 조건만 남기고 sol 을 쓴다([표 2](../../../docs/features/orch-routing/evidence.md)).
+- 질문이 남은 Task 도 sol 을 쓸 수 있다. 주 산출물이 한국어 문서인 spec 인터뷰는 한국어 표기 검사 hook 이 있는 Claude 로 띄운다. `technical-design` 과 `hard-design` 은 Claude Opus 5.5 `medium` 과 sol 을 번갈아 쓰고 결과를 실측 기록으로 비교한다. 근거는 [evidence](../../../docs/features/orch-routing/evidence.md) 의 「2026-11-10 질문이 남은 설계 작업의 sol 후보」 에 있다.
 
 ### Opus `high`
 

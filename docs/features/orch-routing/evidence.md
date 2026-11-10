@@ -138,3 +138,7 @@
 - Artificial Analysis 지능 지수 v5: Fable 5.2 max 65, high 62(출력 토큰 40% 적음), Opus 5.5 max 59, sol max 55. 코딩 에이전트 지수 v2.0 은 Opus 5.5 61.7, Fable 5.1 57.6, sol 54.1 이고 Fable 5.2 는 아직 없다.
 - 읽기: 몇 시간짜리 큰 작업(FrontierSWE)에서만 뚜렷이 앞선다. 독립 측정의 터미널 작업은 Opus 와 같다. Anthropic 은 일상 작업에 Opus 5.5 를 권한다. 그래서 큰 일 다섯 건만 실험하고, 가격 기준은 그 결과 뒤에 정한다.
 - 출처: [llm-stats(Anthropic 수치)](https://llm-stats.com/blog/research/claude-fable-5-2-launch), [Vals AI](https://www.vals.ai/models/anthropic_claude-fable-5-2), [Artificial Analysis](https://artificialanalysis.ai/models/claude-fable-5-2), [Artificial Analysis 발표](https://x.com/ArtificialAnlys/status/2119878995386982508), [The Decoder](https://the-decoder.com/claude-fable-5-2-and-mythos-5-2-cement-anthropics-ai-lead-just-before-its-ipo/), [CNBC](https://www.cnbc.com/2026/11/09/anthropic-claude-fable-5-2-mythos-5-2.html), [Fortune](https://fortune.com/2026/11/09/anthropic-debuts-updated-claude-fable-and-mythos-models-undercutting-price-of-openais-gpt-6-astra-by-up-to-80/)
+
+## 2026-11-10 질문이 남은 설계 작업의 sol 후보
+
+사용자 결정(2026-11-10)으로 사용자 결정이나 설계 판단이 남은 Task 에도 sol 을 후보로 둔다. `orch worker ask` 가 질문을 보내고 바로 끝나도록 바뀐 뒤(#404), 같은 날 Codex worker 들이 마이그레이션 순서·gate·보드 명령에 관한 판단 질문을 문제없이 보냈다는 코디네이터의 관측을 근거로 삼았다. 질문 처리 사례이며 설계 품질의 우위를 입증한 비교 실험은 아니다. 주 산출물이 한국어 문서인 spec 인터뷰는 한국어 표기 검사 hook 이 있는 Claude 를 유지하고, `technical-design` 과 `hard-design` 은 Claude Opus 5.5 medium 과 sol 을 번갈아 쓴 결과를 실측 기록으로 비교한다.
