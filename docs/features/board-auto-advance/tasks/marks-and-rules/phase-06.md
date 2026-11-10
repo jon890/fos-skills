@@ -14,7 +14,7 @@
   - `skills/orch/references/board.md`: 보드 규칙. 지금 절은 「마일스톤 단계」, 「보드 단계」(지시서 예시 안의 제목), 「직접 작성한 사건 단계」, 「갱신 담당」, 「목표 진행 표시줄」 이다.
   - `skills/orch/references/replying.md`: 사용자에게 묻고 worker 에게 지시를 보내는 절차.
   - `skills/orch/references/waiting.md`: 메시지와 루프 알림을 받았을 때. 「메시지가 오면」 절이 있다.
-- 문서는 지금 있는 동작만 적는다. 이 PR 이 머지된 시점에 루프는 표시를 읽지 않으므로, 표시 줄도 표시 없는 줄처럼 30분 뒤 멈춤 알림을 받는다고 적는다.
+- 문서는 지금 있는 동작만 적는다. 이 PR 이 머지된 시점에 루프는 표시를 읽지 않는다(설계 「PR A 만 머지된 동안」 표). `board.md` 「자동 진행 표시」 에 그 시점의 동작 셋을 적는다: 표시 줄도(`[wait]` 포함) 표시 없는 줄처럼 30분 뒤 멈춤 알림을 받는다, `[wait: 시각]` 줄은 저절로 끝나지 않아 코디네이터가 끝낸다, 다음 단계는 코디네이터가 `worker_done` 과 머지·배포 알림을 받은 턴에 보드를 보고 이어 간다.
 - `[ask]` 단계를 무엇으로 묻는지는 승인 버튼 기능이 머지됐는지에 달렸다. `skills/orch/references/replying.md` 에 「보드 승인」 절이 이미 있으면 「`orch board approval add step-<항목>-<번호> --kind step …` 으로 승인 대기를 올린다」 로 적고 그 절을 가리킨다. 없으면 「결정 질문 형식으로 사용자에게 묻는다」 로 적는다(설계 「`[ask]` 단계와 승인 대기」).
 - 거절 이유 글의 원본은 `skills/orch/scripts/core/auto-advance.ts` 의 `ADVANCE_REASONS` 다(phase 03).
 - 문서 테스트는 `skills/orch/tests/docs-contract.spec.ts` 다. `read('references', 'waiting.md')` 로 문서를 읽고 `section(text, '## 제목')` 으로 절을 떼어 정규식으로 단언한다.
