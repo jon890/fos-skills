@@ -25,3 +25,8 @@ UNANSWERED 는 600초 넘게 남은 기술 질문 id 묶음이다. 같은 묶음
 압축·계정 전환 뒤 `orch status` 와 `orch doctor --run` 으로 루프가 살아 있는지 확인한다. LOOP-DEAD 는 루프를 다시 시작하라는 뜻이다. 다시 시작한 루프는 앞서 멈춘 시간을 LOOP-RESTARTED 로 알린다.
 WAITER-LEFT 는 옛 대기 프로세스가 남았다는 뜻이다. 출력의 pid 를 확인하고 안내한 kill 명령으로 직접 끝낸다. 스크립트는 자동 종료하지 않는다.
 `orch wait` 와 하위 명령, 옛 NEXT_WAIT, `orch worker nudge` 는 RETIRED 한 줄과 종료 코드 2 로 끝난다. worker 메시지는 `orch worker send`, 화면 조회는 `orch worker screen <터미널>` 을 쓴다. PR 없는 작업은 띄울 때 `orch worker launch --no-pr` 로 기록한다.
+
+## 플러그인을 갱신한 뒤
+
+플러그인 갱신은 이미 실행 중인 옛 번들 루프의 코드를 바꾸지 않는다. 갱신 뒤 `orch doctor --run <Run>` 으로 LOOP-STALE 을 확인하고, 그 Run 의 코디네이터 세션에서 안내한 stop·start 명령으로 루프를 다시 띄운다. start 만 부르면 옛 루프에 합류할 수 있다.
+다시 시작한 루프는 옛 파일에 남은 읽지 않은 알림을 정리 단계에서 Run 메시지로 전달한다. 앞 루프에서 등록을 뺀 Run 은 재시작 알림이 거절돼도 한 번만 시도하고, 지금 등록된 Run 의 일시 실패는 다음 틱에 재시도한다.

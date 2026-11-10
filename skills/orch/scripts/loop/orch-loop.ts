@@ -1,7 +1,7 @@
 // 저장소마다 하나 도는 상주 루프다. 여러 세션의 Run 을 함께 맡는다(ADR-012, 아래 「Run」). 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 자동 머지, 충돌 PR 처리를 한다.
 // 코디네이터를 깨워야 하는 일은 그 Run 에 Orca status 메시지로 보낸다. 전송은 lib/run-notice.ts 가 맡는다.
 // 루프는 상태로만 판정한다. 루프가 없던 동안 생긴 일은 다음 틱이 다시 보므로, 죽으면 다시 띄우기만 하면 된다.
-// 상태 파일의 읽기, 생존 판정, 알림 파일과 커서는 lib/loop.ts 가 소유한다. 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이다.
+// 상태 파일의 읽기, 생존 판정과 Run 등록은 lib/loop.ts 가 소유한다. 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이다.
 //
 // 사용법:
 //     orch-loop.ts --repo DIR [--run ID] [--specs-dir DIR] (--start | --stop [--all] | --status | --foreground) [--once]
@@ -31,7 +31,7 @@
 //     --stop         --run 을 주면 그 Run 의 등록만 지운다. 다른 Run 이 남으면 루프를 멈추지 않고
 //                    LOOP-LEFT <pid> run=<Run id> runs=<남은 Run 목록> 와 0, 등록돼 있지 않았으면 LOOP-NOT-REGISTERED run=<Run id> 와 0.
 //                    옛 루프가 다른 Run 의 것이면 멈추지 않고 LOOP-NOT-REGISTERED 와 안내 줄, 0 이다.
-//                    등록을 지운 Run 은 알림 파일과 커서도 지운다. 읽지 않은 줄이 있으면 남긴다(lib/loop.ts 의 「알림 파일 지우기」). --all 도 같다.
+//                    옛 알림 파일은 --stop 에서 건드리지 않고 cleanup/legacy-notices.ts 가 전달한 뒤 휴지통으로 옮긴다.
 //                    --run 이 없고 finish.run 도 없으면 등록된 Run 이 하나라도 있을 때 멈추지 않고 LOOP-STOP-SHARED <pid> runs=<목록> 와 1 이다.
 //                    등록이 하나여도 다른 세션의 Run 일 수 있어, 다른 세션의 루프를 끊지 않으려는 것이다. --all 을 주면 모두 지우고 멈춘다.
 //                    등록을 뺀 뒤 신호를 보내기 직전에 다른 세션이 합류했으면 멈추지 않고 LOOP-LEFT <pid> run=<Run id> runs=<목록> 와 0 이다.
@@ -77,15 +77,15 @@
 //     이전인 것을 지우고 --run(또는 finish.run)을 등록한다. 루프가 죽은 뒤 끝난 세션의 Run 을 계속 맡지 않게 하려는 것이다.
 //     그 뒤의 등록은 남긴다. 살아 있는 루프 없이 --start 한 세션은 등록의 registered_at 을 새로 쓰므로, 루프가 죽어 여러 세션이 함께
 //     --start 해도 서로의 등록을 지우지 않는다. 앞 loop.json 이 없으면(alive_at 을 읽지 못하면) 지우지 않는다.
-//     지운 Run 의 세션이 살아 있으면 wait-important 가 미등록 LOOP-DEAD 로 깨워 다시 등록하게 한다.
+//     지운 Run 의 세션이 살아 있으면 LOOP-RESTARTED 메시지나 doctor 의 미등록 안내를 따라 다시 등록한다.
 //     --stop 도 --run 이 없으면 finish.run 을 쓴다.
 //     틱 자식은 등록을 다시 읽는다. 등록이 없으면 --run(또는 finish.run) 하나를, 그것도 없으면 Run 없는 한 칸을 맡는다.
-//     알림의 Run: Run 에 묶인 일(질문, 그 Run 의 정리, 그 Run 의 tick 핸들러)의 알림은 그 Run 의 파일에 쓴다.
+//     알림의 Run: Run 에 묶인 일(질문, 그 Run 의 정리, 그 Run 의 tick 핸들러)의 알림은 그 Run 메일함으로 쓴다.
 //     PR 에 붙는 알림(CI-FAILED, CONFLICT-ORPHAN)은 그 PR 워크트리의 worker 를 띄운 Run(아래 「worker 찾기」)에, 주인을 모르면 주 Run 에 쓴다.
 //     AUTO-MERGE, AUTO-MERGE-END 는 루프가 건 큐의 Run(state/auto-merge.json 의 queue.run)에, AUTO-MERGE-NO-REVIEW, MIGRATION-CLASH, MIGRATION-BLOCKED 는
 //     그 PR 지시서의 Run 에 쓴다(아래 「자동 머지」).
-//     공유 일(열린 PR 조회, 보드, CI 규칙, 자동 머지, 충돌 처리, 최신화)의 WATCH-ERROR, 보드 결정의 REMINDER, 부모의 WATCH-ERROR tick 은 주 Run 에 쓴다.
-//     Run 없는 한 칸이면 옛 파일(state/loop-events.jsonl)에 쓴다.
+//     공유 일(열린 PR 조회, 보드, CI 규칙, 자동 머지, 충돌 처리, 최신화)의 WATCH-ERROR, 보드 결정의 DECISION-PENDING, 부모의 WATCH-ERROR tick 은 주 Run 에 쓴다.
+//     Run 없는 한 칸이면 loop.log 에만 남긴다.
 //     worker 찾기: 맡은 Run 마다 worker-list --run 을 읽어(한 틱에 Run 마다 한 번) 그 워크트리의 worker 를 찾는다. 살아 있는 dispatch 가
 //     있는 Run 을 먼저 고르고, 없으면 처음 찾은 Run 이다. 살아 있는 dispatch 를 못 찾았고 읽지 못한 Run 이 있으면 읽지 못한 것으로 본다.
 //     ci-passed 와 ci-failed 핸들러의 run 도 그 Run 이다(모르면 주 Run).
@@ -99,10 +99,10 @@
 //     바뀌었거나 그 pid 가 죽었으면 SIGHUP 을 받은 것처럼 자기 자식을 끝내고 129 로 끝난다. 동기 조회(질문 조회, gh) 중에는 그 조회가
 //     끝난 뒤에 본다. 부모가 없으면 stdout 을 읽는 쪽도 없으므로 그 뒤의 쓰기 오류(EPIPE)는 버린다.
 //     틱 자식이 하는 일(순서대로, 하나가 실패해도 다음을 한다):
-//     1. 질문 확인. Run 마다, Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초, watch-questions 의 기본과 같다)을 부르고
-//        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓴다. 기술 질문의 REMINDER 는 알림 파일과 worker-question 에도 낸다.
+//     1. 질문 확인. Run 마다, Run id 가 있을 때만. lib/questions.ts 의 poll(재알림 600초)을 부르고
+//        알릴 줄마다 QUESTION 이나 REMINDER 줄을 로그에 쓴다. 기술 질문의 REMINDER 는 worker-question 이벤트를 내고, Run 메시지는 미답변 질문 묶음의 UNANSWERED 가 맡는다.
 //        사용자 결정 재알림은 로그만 남기고 decision-pending 의 중복 억제를 따른다.
-//        새 질문(QUESTION)은 알림 파일에 쓰지 않는다. 코디네이터의 wait-important 가 question 메시지로 이미 깨어난다
+//        새 질문(QUESTION)은 루프가 별도 메시지로 보내지 않는다. Orca 가 원래 question 메시지로 코디네이터를 깨운다
 //        닫힌 질문(lib/questions.ts 의 「닫힌 질문」)의 REMINDER 는 내지 않고, 처음 닫힌 것으로 판정한 틱에 `REMINDER-SKIP <id>: <근거>` 를 로그에 한 번 쓴다
 //     2. 열린 PR 조회. gh pr list 한 번으로 읽어 보드, CI, tick, 자동 머지, 충돌 처리, 최신화가 함께 쓴다. 내 PR 은 lib/gh.ts 의 ownAuthors 와 isOwnPr 로 가린다
 //     3. 보드 동기화(워크트리 정리 전). 보드 파일(lib/paths.ts 의 boardPath)이 없으면 건너뛴다. 있으면 열린 PR 목록과 --repo 를 board-sync 에 준다.
@@ -110,7 +110,7 @@
 //        기본 핸들러가 --start 로 등록한 현재 코디네이터에게 묻기를 요청한다. 같은 결정은 해결될 때까지 다시 깨우지 않는다.
 //     4. 정리. Run 마다 cleanup-sweep --repo <repo> --kill-holders [--remote-branches] --apply [--run <run>] [--specs-dir <그 Run 의 dir>].
 //        --remote-branches 는 저장소 공유 일이라 주 Run 의 차례에서만 준다.
-//        정리 출력의 `FINISH-MISSING #<PR> <글>` 줄(cleanup-sweep 머리 주석의 「마무리 빠짐」)은 그 Run 의 알림 파일에 FINISH-MISSING(pr 그 PR,
+//        정리 출력의 `FINISH-MISSING #<PR> <글>` 줄(cleanup-sweep 머리 주석의 「마무리 빠짐」)은 그 Run 에 Orca 메시지로 FINISH-MISSING(pr 그 PR,
 //        text `<글>. 마무리를 뒤늦게 돌리려면 orch.ts finish-pr <PR> --repo <repo> [--run <Run>]`)으로 옮긴다. 같은 PR 은
 //        state/finish-missing.json 에 적어 한 번만 쓴다. 워크트리를 치우지 못해 다음 틱이 같은 줄을 내도 다시 깨우지 않는다
 //     5. CI 감시. 아래 「CI 감시」
@@ -139,7 +139,7 @@
 //     base 조회가 실패하거나 예외가 나면 기존 worker 전달로 돌아간다.
 //     같은 워크플로의 base 최신 실행도 실패하면 worker 에게 보내지 않고 CI-FAILED 에 `<base> 도 실패` 를 쓴다. 조회는 공유 캐시를 쓴다.
 //     loop.json 의 ci[<PR>] 와 HEAD 와 상태가 같으면 넘어간다. 다르면 새 값을 결과의 ci 에 담고, passed 로 바뀌었으면 ci-passed 를,
-//     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 알림 파일에 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 lib/events.ts 머리 주석의
+//     failed 로 바뀌었으면 그 PR 의 worker 에게 보내고 Run 에 Orca 메시지로 CI-FAILED 를 쓴 뒤 ci-failed 를 낸다(입력은 lib/events.ts 머리 주석의
 //     「이벤트별 필드」). 같은 HEAD 에서 다시 돌린 체크가 통과로 바뀌면 ci-passed 를 낸다. 새 HEAD 는 새로 판정한다.
 //     처음 본 PR(이전 값이 없는 PR)은 지금 상태를 한 번 알린다. 루프를 처음 띄운 때 이미 실패해 있던 PR 도 알리려는 의도다.
 //     결과의 ci 는 이번 틱에 본 내 열린 PR 의 값이라 닫힌 PR 의 항목은 빠진다. draft 와 규칙을 읽지 못한 base 의 PR 처럼 이번 틱에
@@ -187,9 +187,9 @@
 //     화면에 오류 줄이 늘어 다시 알린다. 창 크기가 바뀌어 오류 줄이 화면 위로 밀려났다 돌아온 화면은 같은 멈춤을 다시 알리지 않는다.
 //     처음 본 창보다 크게 늘려 밀려나 있던 오류 줄이 보이면 늘어난 것과 구분하지 못해 다시 알린다.
 //     ticks 가 기준에 닿은 틱에 worker-stalled 를 그 Run 으로 낸다.
-//     핸들러가 0 으로 끝나면(pass) 알림 파일에 쓰지 않고 ticks 를 0 으로 되돌린다. 다시 시도시킨 worker 의 화면이 그대로면 hash 가 같다.
+//     핸들러가 0 으로 끝나면(pass) Run 메시지를 보내지 않고 ticks 를 0 으로 되돌린다. 다시 시도시킨 worker 의 화면이 그대로면 hash 가 같다.
 //     그래서 같은 화면이 기준 틱 수만큼 더 이어지면 핸들러를 다시 부른다. 횟수 상한은 핸들러가 since 로 센다.
-//     핸들러가 없거나 0 이 아니면(10 은 넘김이다) 그 Run 의 알림 파일에 WORKER-STALLED 를 쓰고 fired 를 true 로 둔다. 같은 hash 가 이어지는 동안 다시 내지 않는다.
+//     핸들러가 없거나 0 이 아니면(10 은 넘김이다) 그 Run 에 Orca 메시지로 WORKER-STALLED 를 쓰고 fired 를 true 로 둔다. 같은 hash 가 이어지는 동안 다시 내지 않는다.
 //     text 는 `<dispatch> <state> <ticks>틱 <terminal>` 이다.
 //     작업 중이거나 멈춤이 아니면 일반 멈춤 항목은 빠지되 한도 알림 기록은 남긴다. dispatch 가 끝났거나 등록에서 빠진 Run 의 항목은 결과에서 빠진다.
 //     worker-list 를 읽지 못한 Run 의 항목과 화면을 읽지 못한 dispatch 의 항목은 그대로 옮기고, 그 Run 의 errors 의 stalls@<Run> 에 이유를 둔다.
@@ -204,9 +204,9 @@
 //     같은 화면의 백그라운드 작업 표시(lib/screen.ts 의 backgroundWork)도 background 로 둔다. 판정은 그 표시가 있으면 멈춤으로 보지 않는다(lib/movement.ts).
 //     기다리는 이유: 그 Run 의 질문을 읽지 못했거나, 그 dispatch(또는 터미널)가 보낸 미답변 질문이 있거나, 그 워크트리 브랜치의 내 열린 PR 이
 //     이번 틱의 CI 감시에서 지금 HEAD 로 passed 면 멈춤으로 보지 않는다. 코디네이터의 차례다. exited 는 이유가 있어도 알린다.
-//     worker: 새로 멈춘 dispatch 마다 그 worker 를 띄운 Run 의 알림 파일에 WORKER-IDLE(text `<dispatch> <idle 또는 exited> <움직임 뒤 분 또는 ->분
+//     worker: 새로 멈춘 dispatch 마다 그 worker 를 띄운 Run 의 Run 에 Orca 메시지로 WORKER-IDLE(text `<dispatch> <idle 또는 exited> <움직임 뒤 분 또는 ->분
 //     <워크트리 이름 또는 -> <터미널 또는 ->`)을 쓴다. 다시 알리는 때는 lib/movement.ts 의 「알림 기록」 이다.
-//     단계: 맡은 Run 의 worker 목록을 모두 읽은 틱에만 본다. 새로 멈춘 단계마다 주 Run 의 알림 파일에 STAGE-STALLED(text `<보드 항목 id>
+//     단계: 맡은 Run 의 worker 목록을 모두 읽은 틱에만 본다. 새로 멈춘 단계마다 주 Run 에 Orca 메시지로 STAGE-STALLED(text `<보드 항목 id>
 //     <worktree 칸, 없으면 branch 칸> <분>분 <끝나지 않은 첫 단계>`)를 쓴다. 못 읽은 Run 이 있으면 단계 기록을 그대로 둔다.
 //     보드를 읽지 못했거나 movement.json 을 쓰지 못하면 errors 의 movement 에 이유를 둔다(아래 「오류 줄 억제」).
 //
@@ -230,7 +230,7 @@
 //        걸지 않은 틱에는 큐가 무엇을 기다리는지 로그에 한 줄씩 쓴다. 명령줄에 `merge_queue.` 가 든 프로세스의 차례 기록(lib/queue-turn.ts)마다
 //        `AUTO-MERGE-HELD pid <pid> #<차례 PR> <단계> <분>분 남은 #a #b` 이고, 차례 기록이 하나도 없으면 도는 큐 프로세스마다
 //        `AUTO-MERGE-HELD pid <pid> 차례 기록 없음: <명령줄 앞 160자>` 다. 코디네이터가 따로 건 큐가 자동 머지를 막을 때 무엇을 기다리는지
-//        loop.log 로 알게 하려는 것이다. 알림 파일에는 쓰지 않는다. 도는 큐에 PR 을 덧붙이지 않는 이유는 docs/adr/020-orch-loop-refresh.md 에 있다
+//        loop.log 로 알게 하려는 것이다. Run 메시지로는 보내지 않는다. 도는 큐에 PR 을 덧붙이지 않는 이유는 docs/adr/020-orch-loop-refresh.md 에 있다
 //     3. 대상: Run id 와 지시서 폴더가 둘 다 있는 Run 의 지시서(lib/last-pr.ts 의 specFiles)의 `브랜치:` 줄에 든 내 열린 PR 이다.
 //        같은 브랜치는 앞 Run 의 것이다. Run id 가 없는 칸은 큐의 --run 과 알림의 Run 을 정할 수 없어 보지 않는다.
 //        보드 파일이 있으면 한 번 읽는다. 읽지 못하면 `보드를 읽지 못했다: <이유>` 로 걸지 않는다. 보류 표시를 놓친 채 걸지 않으려는 것이다.
@@ -288,7 +288,7 @@
 //     오류 이유는 `; ` 로 이어 errors 의 auto-merge 에 둔다(아래 「오류 줄 억제」). 바꿀 수 있는 명령은 아래 「환경 변수」 의
 //     MERGE_WITH_FINISH, THREADS_CMD, PS 다.
 //
-// 시작 확인 시간 초과는 action stalled 와 CONFLICT-STALLED 로 worker 의 Run 알림 파일에 쓰고 자동 재전송하지 않는다.
+// 시작 확인 시간 초과는 action stalled 와 CONFLICT-STALLED 로 worker 의 Run 에 Orca 메시지로 쓰고 자동 재전송하지 않는다.
 // 충돌 처리: 내 열린 PR 의 base 충돌을 그 PR 을 만든 기존 worker 에게 풀게 한다. notify-conflicts 와 같은 함수, 같은 기록
 //     (state/notify-conflicts.json), 같은 send-to-worker 종료 코드 분류(notify-conflicts.ts 머리 주석의 표)를 쓴다(lib/conflicts.ts).
 //     그래서 머지 큐 뒤의 notify-conflicts 와 틱이 차례로 실행될 때 같은 (PR, PR HEAD, 충돌 파일) 을 두 번 보내지 않는다. 둘이 겹쳐 돌면
@@ -299,7 +299,7 @@
 //     3. 기록에 있는 (PR, PR HEAD, 충돌 파일) 은 넘어간다. 아니면 브랜치의 워크트리와 worker 행(lib/workers.ts)을 찾아 resolveConflict 와
 //        concludeConflict 를 부른다. 워크트리나 dispatch 가 없으면 orphan 이다. worker-list 를 읽지 못하면 그 PR 은 기록하지 않고
 //        `WATCH-ERROR conflicts: worker 목록을 읽지 못했다: …` 를 쓴다
-//     4. orphan 이면 알림 파일에 CONFLICT-ORPHAN(pr 은 PR 번호, text 는 이유)을 쓴다
+//     4. orphan 이면 Run 에 Orca 메시지로 CONFLICT-ORPHAN(pr 은 PR 번호, text 는 이유)을 쓴다
 //     5. send-to-worker 가 2(사용법 오류)로 끝나면 그 틱의 충돌 처리를 멈추고 `WATCH-ERROR conflicts: send-to-worker 사용법 오류` 를 쓴다.
 //        notify-conflicts 는 2 로 끝나지만 루프는 끝내지 않는다. 끝내면 질문 확인도 멈춘다
 //     resolveConflict 의 줄(`<dispatch> 에 알렸다` 따위)은 로그에 쓴다. send-to-worker 를 틱 자식 안에서 기다리는 동안에도
@@ -308,7 +308,7 @@
 // 큐 기록: 열린 PR 과 상관없이 틱마다 돈다. lib/queue-turn.ts 의 차례 기록을 읽는다. 명령줄에 `merge_queue.` 가 든 프로세스의 기록은 도는 큐,
 //     아닌 pid 의 기록은 끝난 큐다. 두 쪽의 held 가운데 아직 옮기지 않은 항목마다 `QUEUE-DROPPED #<PR> pid <pid>: <이유>` 를 로그에 쓴다.
 //     옮긴 항목은 state/queue-dropped.json 의 `<pid>:<PR>` 키로 기억한다. 끝난 큐의 기록은 옮긴 뒤 지우고 그 pid 의 키도 지운다.
-//     머지 큐가 뺀 PR 과 이유를, 누가 큐를 걸었든 loop.log 하나에서 보게 하려는 것이다. 알림 파일에는 쓰지 않는다.
+//     머지 큐가 뺀 PR 과 이유를, 누가 큐를 걸었든 loop.log 하나에서 보게 하려는 것이다. Run 메시지로는 보내지 않는다.
 //     PS 를 읽지 못하면 errors 의 queue-turn 에 `프로세스 목록을 읽지 못했다` 를 둔다
 //
 // 최신화(ADR-020): pipeline.refresh_slots 가 1 이상이고 열린 PR 을 읽은 틱에만 돈다. 머지 큐가 차례가 온 PR 에 할 update-branch 를 미리,
@@ -342,7 +342,7 @@
 // 완료 보고·끊김은 completion-watch.ts 와 lib/lost-workers.ts 가 확인하며 메시지는 소비하지 않는다.
 //
 // 자리 보유 확인: 무거운 검사 대기열(HEAVY_SLOT_DIR, 없으면 lib/paths.ts 의 heavy-slot)에서 상한(HEAVY_HOLD_MAX 초, 기본 1800)보다
-//     오래 자리를 쥔 살아 있는 등록을 lib/heavy-hold.ts 의 overHeld 로 찾는다. 있으면 주 Run 의 알림 파일에 HEAVY-SLOT-HELD 를 쓴다.
+//     오래 자리를 쥔 살아 있는 등록을 lib/heavy-hold.ts 의 overHeld 로 찾는다. 있으면 주 Run 에 Orca 메시지로 HEAVY-SLOT-HELD 를 쓴다.
 //     text 는 등록마다 `pid <pid> <분>분 <명령줄>` 을 `; ` 로 이은 뒤 ` (상한 <분>분)` 을 붙인 것이다.
 //     오류 줄 억제와 같은 규칙으로 errors 의 heavy-slot 에 `<pid>@<held_at>` 목록을 두고, 그 목록이 바뀔 때만 다시 쓴다.
 //     같은 검사가 계속 쥐고 있으면 분이 늘어도 다시 깨우지 않는다. 자리를 내놓으면 지우고, 다른 검사가 넘기면 다시 쓴다.
@@ -362,11 +362,11 @@
 //     남긴 값)를 지운다. 다시 등록된 Run 의 첫 실패가 지난 값에 막히지 않게 한다. 출처는 questions(질문 조회), cleanup(정리 명령이 0 이 아닌 종료),
 //     board(보드 동기화가 0 이 아닌 종료), prs(열린 PR 조회), ci(필수 체크 규칙 조회), hook(tick 핸들러), stalls(멈춤 확인의 worker 목록과 화면 읽기), movement(움직임 확인의 보드 읽기와 기록 쓰기), auto-merge(자동 머지), conflicts(충돌 처리), refresh(최신화), queue-turn(큐 기록),
 //     tick(틱 자식이 0 이 아니거나 결과 줄 없이 끝남), heavy-slot(자리 보유 확인. 알림의 kind 는 HEAVY-SLOT-HELD)이다.
-//     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 알림 파일에 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
-//     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 알림 파일의 text 는 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
-//     REMINDER 의 text 도 줄에서 `REMINDER ` 를 뺀 나머지다. 한 번 성공하면 이유를 지우고, 다시 실패하면 다시 쓴다. loop.log 에는 실패할 때마다 쓴다.
-//     하네스는 백그라운드 명령의 stderr 를 알리지 않으므로 실패도 알림 파일로 보낸다. 틱마다 같은 실패로 코디네이터를 깨우지 않으려고 억제한다.
-//     알림 파일의 HOOK-FAIL 은 tick 핸들러의 것만이다. worker-question 핸들러의 실패는 loop.log 의 HOOK-FAIL 줄로만 남는다.
+//     tick 만 부모가 판정한다. 출처의 이유가 이전과 다를 때만 Run 에 Orca 메시지로 쓴다. hook 은 `HOOK-FAIL tick <종료 코드, timeout, lock>`,
+//     나머지는 `WATCH-ERROR <출처>: <이유>` 다. 메시지 본문은 이 줄에서 kind 를 뺀 나머지(`tick 1`, `questions: offline`)다.
+//     한 번 성공하면 이유를 지우고, 다시 실패하면 다시 쓴다. loop.log 에는 실패할 때마다 쓴다.
+//     하네스는 백그라운드 명령의 stderr 를 알리지 않으므로 실패도 Run 메시지로 보낸다. 틱마다 같은 실패로 코디네이터를 깨우지 않으려고 억제한다.
+//     Run 메시지의 HOOK-FAIL 은 tick 핸들러의 것만이다. worker-question 핸들러의 실패는 loop.log 의 HOOK-FAIL 줄로만 남는다.
 //
 // 로그: 모든 줄을 state/loop.log 에 붙이고 stdout 에도 쓴다. 붙이기 전에 1MB 를 넘으면 loop.log.1 로 돌린다.
 //     --start 의 자식은 stdio 를 버린다. 파일 서술자를 자식에 넘기지 않는 것은 돌린 뒤에도 자식이 loop.log.1 에 쓰게 되기 때문이다.
@@ -883,7 +883,6 @@ async function stop(repo: string, run: string | null, all: boolean): Promise<num
       return 0
     }
     const removed = unregisterRun(repo, run)
-    if (removed) dropEvents(repo, run)
     const left = registeredRuns(repo)
     // 등록돼 있지 않던 Run 은 루프를 멈추지 않는다. Run 없이 띄운 루프는 --run 없는 --stop 으로 멈춘다
     if (!removed && !legacyLoop(state)) {
@@ -905,17 +904,9 @@ async function stop(repo: string, run: string | null, all: boolean): Promise<num
     }
   }
   for (const entry of registeredRuns(repo)) {
-    if (unregisterRun(repo, entry.run)) dropEvents(repo, entry.run)
+    unregisterRun(repo, entry.run)
   }
   return stopProcess(repo, null)
-}
-
-// 뺀 Run 의 알림 파일과 커서를 지운다. 읽지 않은 줄이 있으면 남긴다(lib/loop.ts 의 「알림 파일 지우기」). 지우지 못해도 --stop 은 이어 간다
-function dropEvents(repo: string, run: string): void {
-  try {
-  } catch (e) {
-    log(`orch-loop: Run ${run} 의 알림 파일을 지우지 못했다: ${oneLine(e)}`)
-  }
 }
 
 // left 는 방금 등록을 뺀 Run 이다. 있으면 신호를 보내기 직전에 등록을 다시 본다. 마지막 Run 을 뺀 사이 다른 세션이 합류했으면 멈추지 않는다
@@ -1338,7 +1329,7 @@ async function tellMerged(ctx: Context, mine: OwnPr[], previous: Record<string, 
 
 async function fireCi(event: 'ci-passed' | 'ci-failed', ctx: Context, pr: OwnPr, checks: CiCheck[], required: string[], run: string | null): Promise<void> {
   try {
-    // 핸들러의 실패는 fire 가 낸 HOOK-FAIL 줄로만 남는다. 알림 파일의 HOOK-FAIL 은 tick 핸들러의 것만이다
+    // 핸들러의 실패는 fire 가 낸 HOOK-FAIL 줄로만 남는다. Run 메시지의 HOOK-FAIL 은 tick 핸들러의 것만이다
     await fire(event, { pr: prInput(pr), checks, required }, { repo: ctx.repo, base: pr.base, run })
   } catch (e) {
     log(`orch-loop: ${event} 를 내지 못했다: ${oneLine(e)}`)
@@ -1590,7 +1581,7 @@ async function watchStalls(
   return { stalls, errors }
 }
 
-// worker-stalled 를 내고, 핸들러가 0 으로 끝나지 않았으면 그 Run 의 알림 파일에 WORKER-STALLED 를 쓴다(머리 주석의 「멈춤 확인」).
+// worker-stalled 를 내고, 핸들러가 0 으로 끝나지 않았으면 그 Run 에 Orca 메시지로 WORKER-STALLED 를 쓴다(머리 주석의 「멈춤 확인」).
 // 핸들러가 0 으로 끝났으면 true 다
 async function notifyStall(ctx: Context, run: string, row: Record<string, unknown>, entry: Stall, lines: string[], base: string): Promise<boolean | null> {
   const dispatch = String(row.dispatchId)
@@ -2284,7 +2275,7 @@ async function autoMerge(ctx: Context, mine: OwnPr[], ci: Record<string, CiEntry
   return errors.size > 0 ? [...errors].join('; ') : null
 }
 
-// 알림 파일에 쓰고 같은 줄을 로그에 쓴다. 쓰지 못하면 false 다. 기록을 남기지 않아 다음 틱이 다시 쓴다
+// Run 에 Orca 메시지로 쓰고 같은 줄을 로그에 쓴다. 쓰지 못하면 false 다. 기록을 남기지 않아 다음 틱이 다시 쓴다
 function notifyAutoMerge(ctx: Context, kind: string, pr: number | null, text: string, run: string): boolean {
   log(`${kind} ${pr === null ? '' : `#${pr} `}${text}`)
   try {
@@ -2515,7 +2506,7 @@ async function autoMergeStep(
   state.queue.announced = notifyAutoMerge(ctx, 'AUTO-MERGE', null, `${order.map((n) => `#${n}`).join(' ')} run=${queueRun} log=${queueLog}`, queueRun)
 }
 
-// 머리 주석의 「마무리 빠짐」. 정리 출력의 FINISH-MISSING 줄을 그 Run 의 알림 파일에 옮긴다. 같은 PR 은 한 번만 쓴다
+// 머리 주석의 「마무리 빠짐」. 정리 출력의 FINISH-MISSING 줄을 그 Run 에 Orca 메시지로 옮긴다. 같은 PR 은 한 번만 쓴다
 function relayFinishMissing(repo: string, stdout: string, run: string | null): void {
   const found = lines(stdout).map((line) => /^\s*FINISH-MISSING #(\d+) (.*)$/.exec(line)).filter((m) => m !== null)
   if (found.length === 0) return
@@ -2577,8 +2568,8 @@ async function tick(ctx: Context, n: number): Promise<number> {
   const primary = runs[0].run
   // errors 키는 `<출처>@<Run>` 이다. 공유 출처는 주 Run 이 Run 이다. Run 없는 한 칸이면 출처 이름 그대로다(머리 주석의 「오류 줄 억제」)
   const keyOf = (source: string, run: string | null) => (run ? `${source}@${run}` : source)
-  // 출처의 실패를 기록한다. 이유가 이전과 다를 때만 그 Run 의 알림 파일에 쓴다(머리 주석의 「오류 줄 억제」).
-  // 로그 줄은 `<kind> <text>` 이고 알림 파일의 text 는 kind 를 뺀 나머지다. logged 면 그 줄은 이미 stdout 에 나갔다(fire 의 HOOK-FAIL 줄)
+  // 출처의 실패를 기록한다. 이유가 이전과 다를 때만 그 Run 에 Orca 메시지로 쓴다(머리 주석의 「오류 줄 억제」).
+  // 로그 줄은 `<kind> <text>` 이고 메시지 본문은 kind 를 뺀 나머지다. logged 면 그 줄은 이미 stdout 에 나갔다(fire 의 HOOK-FAIL 줄)
   const report = (source: string, reason: string | null, opts: { run?: string | null; kind?: string; text?: string; logged?: boolean } = {}) => {
     const run = opts.run === undefined ? primary : opts.run
     const key = keyOf(source, run)
@@ -2850,7 +2841,7 @@ async function tick(ctx: Context, n: number): Promise<number> {
     log(`orch-loop: 무거운 검사 자리를 읽지 못했다: ${oneLine(e)}`)
   }
 
-  // 11. 대기 확인. Run 마다. 질문을 읽지 못한 Run 은 미답변 수를 모르지만 대기 확인은 한다
+  // 11. 미답변 질문 확인. 질문 조회에 성공한 Run 에서 오래 남은 기술 질문 묶음을 알린다
   for (const { run } of runs) {
     if (!run) continue
     try {
