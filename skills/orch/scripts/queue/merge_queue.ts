@@ -198,7 +198,7 @@
 //
 // MERGE_QUEUE_SLEEP_SCALE 는 모든 대기 시간에 곱할 배율이다(기본 1). tests 가 0 으로 둔다.
 
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigError } from '../lib/config.ts'
@@ -273,6 +273,8 @@ async function mainImpl(argv: string[]): Promise<number> {
     const prepared = await setup(stepContext, queue)
     Object.assign(queue, prepared.changes)
     if (prepared.kind === 'error') throw prepared.error
+    // 래퍼가 시작 전 거절과 머지 도중 설정 오류를 구분한다. 파일은 래퍼가 임시 폴더에서 만들고 지운다.
+    if (process.env.MERGE_QUEUE_ACCEPTED_FILE) writeFileSync(process.env.MERGE_QUEUE_ACCEPTED_FILE, '1')
   } catch (e) {
     if (e instanceof ConfigError) {
       process.stderr.write(`${e.message}\n`)

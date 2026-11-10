@@ -14,6 +14,7 @@
 //        신호를 보낼 권한이 없는 pid(EPERM)도 살아 있는 것으로 본다(lib/process.ts 의 alive).
 //        머지 큐가 STOP 으로 멈춘 뒤 남은 PR 만 다시 걸어도 마무리가 겹치지 않는다
 //     2. `merge_queue.ts` 를 같은 인자로 돌리고 그 종료 코드로 끝난다.
+//        큐가 코드 2 로 시작을 거절하거나 마무리 시작이 실패하면, 이번 호출이 새로 띄운 마무리만 끝낸다. 이미 돌던 마무리는 남긴다.
 //        오래 걸리므로 Bash 도구의 run_in_background 로 건다. 셸의 `&` 나 nohup 은 쓰지 않는다
 //     짧은 출력(진입점의 orch queue merge, lib/output.ts)은 `마무리 시작` 줄 대신 `FINISH-STARTED <PR> <로그>`, 이미 돌면 `FINISH-RUNNING <PR> <pid 파일>` 이고,
 //        머지 큐에 신호를 넘겨 그 짧은 줄(MERGED, STOP, QUEUE-DONE 같은 것)이 잇는다. 마무리 로그는 지금 출력 그대로다
@@ -72,7 +73,10 @@
 //           옮기기 전이라는 뜻이기도 하다. 1 은 마무리를 띄우지 못해 머지 큐를 걸지 않았다는 뜻이기도 하다
 
 import { spawn } from 'node:child_process'
-import { closeSync, openSync, readFileSync } from 'node:fs'
+import type { ChildProcess } from 'node:child_process'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -254,19 +258,19 @@ function validateFinishArgs(wrapper: Wrapper): void {
 }
 
 // 새 세션으로 띄워 이 명령이 끝나도 마무리가 이어 돌게 한다. 프로세스가 시작되면 null, 띄우지 못하면 이유다
-function launch(cmd: string[], fd: number): Promise<string | null> {
+function launch(cmd: string[], fd: number): Promise<ChildProcess | string> {
   return new Promise((resolve) => {
     const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', fd, fd], detached: true })
     child.once('error', (e) => resolve(`${cmd[0]} 를 실행하지 못했다: ${e.message}`))
     child.once('spawn', () => {
       child.unref()
-      resolve(null)
+      resolve(child)
     })
   })
 }
 
 // 마무리를 걸었거나 이미 돌고 있으면 true. 띄우지 못하면 이유를 stderr 에 내고 false 다
-async function startFinish(wrapper: Wrapper, pr: PrArg): Promise<boolean> {
+async function startFinish(wrapper: Wrapper, pr: PrArg, started: StartedFinish[]): Promise<boolean> {
   const repo = real(wrapper.repo)
   const logDir = wrapper.logDir ?? pathOf('queue', repo)
   makeParent(join(logDir, 'x'), repo)
@@ -290,19 +294,42 @@ async function startFinish(wrapper: Wrapper, pr: PrArg): Promise<boolean> {
   args.push(...wrapper.finishArg)
   const outFile = join(logDir, `finish-${pr.number}.out`)
   const fd = openSync(outFile, 'w')
-  let failure: string | null
+  let launched: ChildProcess | string
   try {
-    failure = await launch(scriptCommand(script, args), fd)
+    launched = await launch(scriptCommand(script, args), fd)
   } finally {
     closeSync(fd)
   }
-  if (failure) {
-    process.stderr.write(`merge-with-finish: 마무리를 띄우지 못했다: PR ${pr.number}: ${failure}\n`)
+  if (typeof launched === 'string') {
+    process.stderr.write(`merge-with-finish: 마무리를 띄우지 못했다: PR ${pr.number}: ${launched}\n`)
     return false
   }
+  started.push({ child: launched, pidFile })
   const note = pr.mark === '!' ? '업무의 마지막 PR' : pr.mark === '~' ? '중간 PR' : '마지막 PR 인지는 배포 뒤 판정'
   out(`마무리 시작: PR ${pr.number} (${note}) -> ${outFile}`)
   return true
+}
+
+type StartedFinish = { child: ChildProcess; pidFile: string }
+
+// 이번 호출이 시작한 자식 핸들로만 끝낸다. 앞서 돌던 다른 큐의 마무리는 건드리지 않는다.
+async function stopFinishes(started: StartedFinish[]): Promise<void> {
+  await Promise.all(started.map(async ({ child, pidFile }) => {
+    const pid = child.pid!
+    if (child.exitCode === null && child.signalCode === null) {
+      const ended = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+      const signal = (name: NodeJS.Signals) => {
+        try { process.kill(-pid, name) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error }
+      }
+      signal('SIGTERM')
+      await Promise.race([ended, sleep(1000)])
+      if (child.exitCode === null && child.signalCode === null) { signal('SIGKILL'); await ended }
+    }
+    try {
+      if (readFileSync(pidFile, 'utf8').trim() === String(pid)) unlinkSync(pidFile)
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+  }))
 }
 
 // MERGE_QUEUE 의 명령줄. 옛 명령은 `.py` 면 python3, 그 밖은 bash 로 띄웠고 여기에 `.ts` 를 더했다(머리 주석)
@@ -351,12 +378,22 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(`merge-with-finish: ${e.message}\n`)
     return 2
   }
-  if (!wrapper.noFinish) {
-    for (const pr of prs) if (!(await startFinish(wrapper, pr))) return 1
+  const admissionDir = mkdtempSync(join(tmpdir(), 'merge-queue-admission-'))
+  const accepted = join(admissionDir, 'accepted')
+  const started: StartedFinish[] = []
+  let keepFinishes = false
+  try {
+    if (!wrapper.noFinish) {
+      for (const pr of prs) if (!(await startFinish(wrapper, pr, started))) return 1
+    }
+    // 코드 2 여도 큐가 이미 시작됐으면 머지된 PR 의 마무리를 남긴다.
+    const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || scriptPath('merge_queue'), queue), { timeoutMs: NO_LIMIT_MS, env: { ...shortEnv(), MERGE_QUEUE_ACCEPTED_FILE: accepted } })
+    keepFinishes = done.code !== 2 || existsSync(accepted)
+    return done.code
+  } finally {
+    try { if (!keepFinishes) await stopFinishes(started) }
+    finally { rmSync(admissionDir, { recursive: true, force: true }) }
   }
-  // 머지 큐의 출력은 이 명령의 출력에 그대로 이어진다. 짧은 출력이면 머지 큐도 짧은 출력이다(설계 DECISION9)
-  const done = await runInherit(queueCommand(process.env.MERGE_QUEUE || scriptPath('merge_queue'), queue), { timeoutMs: NO_LIMIT_MS, env: shortEnv() })
-  return done.code
 }
 
 main(process.argv.slice(2)).then(
