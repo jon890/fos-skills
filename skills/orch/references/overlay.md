@@ -283,4 +283,6 @@ orch doctor migrate --repo "$REPO" --apply
 }
 ```
 
+기능 PR 은 `require` 와 상관없이 `verdict-on-head` 도 요구한다. 그래서 위 조합이어도 반영 push 마다 HEAD 에 새 판정이 있어야 건다. 반영 뒤 재리뷰를 받지 않으려면 `auto_review` 에 `"feature_head": false` 를 더한다. 기능 PR 도 `require` 만 보고, 마지막 판정이 `block` 이면 여전히 건다.
+
 큐를 걸면 PR 마다 `AUTO-MERGE-BASIS` 줄에 통과 근거를 루프 로그에 남긴다.

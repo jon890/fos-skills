@@ -1,0 +1,1 @@
+- `queue.auto_review.feature_head`(기본 true)를 더했다. false 면 기능 PR 에 `verdict-on-head` 를 덧붙이지 않고 저장소의 `require` 만 본다. 반영 push 마다 재리뷰를 받지 않으려는 저장소가 쓴다.

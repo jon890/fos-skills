@@ -14,6 +14,12 @@ function reviewNotes(rows: unknown, at: string): ReviewNote[] {
   })
 }
 
+// 기능 PR 이면 저장소의 require 와 상관없이 verdict-on-head 를 더한다. 저장소가 queue.auto_review.feature_head 를 false 로 두면 더하지 않는다
+export function featureReviewRule(review: ReviewConfig, feature: boolean): ReviewConfig {
+  if (!feature || review.featureHead === false) return review
+  return { ...review, require: [...new Set(['verdict-on-head' as const, ...review.require])] }
+}
+
 export function judgePrReview(repo: string, pr: { head: string; branch: string; base: string }, data: { reviews?: unknown; comments?: unknown }, review: ReviewConfig, feature: boolean): ReviewJudgement {
   git(repo, ['fetch', '--quiet', 'origin', pr.branch, pr.base])
   const listed = git(repo, ['log', '--first-parent', `--max-count=${REVIEW_CHAIN_LIMIT}`, '--format=%H%x09%P%x09%cI', pr.head, '--'])
@@ -22,6 +28,6 @@ export function judgePrReview(repo: string, pr: { head: string; branch: string; 
     return { oid, parents: parents ? parents.split(' ') : [], at: at ?? '' }
   }) : []
   const scope = reviewScope(pr.head, chain, (oid) => git(repo, ['merge-base', '--is-ancestor', oid, `origin/${pr.base}`]).code === 0)
-  const rule = feature ? { ...review, require: [...new Set(['verdict-on-head' as const, ...review.require])] } : review
+  const rule = featureReviewRule(review, feature)
   return judgeReview({ notes: [...reviewNotes(data.reviews, 'submittedAt'), ...reviewNotes(data.comments, 'createdAt')], scope, chain }, rule)
 }
