@@ -1,3 +1,4 @@
+import { alive } from './process.ts'
 // gh 실행 결과만 캐시한다. 인자와 응답은 호출 기록에 남기지 않는다.
 import { createHash, randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -131,9 +132,7 @@ export function budgetGh(args: string[], repo: string, identity: unknown, execut
         try {
           const pid = Number(readFileSync(join(lock, 'pid'), 'utf8'))
           if (Number.isInteger(pid) && pid > 0) {
-            try { process.kill(pid, 0) } catch (e) {
-              if ((e as NodeJS.ErrnoException).code === 'ESRCH') rmSync(lock, { recursive: true, force: true })
-            }
+            if (!alive(pid, { keepOnUnknownError: true })) rmSync(lock, { recursive: true, force: true })
           }
         } catch { /* 잠금을 막 만든 프로세스가 pid 를 쓰기 전일 수 있다. */ }
         if (Date.now() >= deadline) throw new Error('gh cache lock timeout')

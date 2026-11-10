@@ -88,9 +88,17 @@ export function orcaJsonOrThrow(args: string[], options: { failure?: (message: s
   return objectOr(body.result)
 }
 
-// 기존 cleanup/resume 은 종료 코드만, idle-shells 는 응답 봉투까지 확인했다.
-export function closeTerminal(handle: string, options: RunOptions & { checkResponse?: boolean } = {}): boolean {
-  const { checkResponse = true, ...runOptions } = options
+// 기존 호출자의 종료 코드·결과·예외 계약을 같은 닫기 명령에 연결한다.
+type CloseOptions = RunOptions & { checkResponse?: boolean }
+type OrcaResult = { ok: true; data: unknown } | { ok: false; error: string }
+type OrcaFailure = (message: string, structured: boolean) => Error
+export function closeTerminal(handle: string, options: CloseOptions & { mode: 'result' }): OrcaResult
+export function closeTerminal(handle: string, options: CloseOptions & { mode: 'throw'; failure?: OrcaFailure }): Record<string, any>
+export function closeTerminal(handle: string, options?: CloseOptions): boolean
+export function closeTerminal(handle: string, options: CloseOptions & { mode?: 'result' | 'throw'; failure?: OrcaFailure } = {}): boolean | OrcaResult | Record<string, any> {
+  const { checkResponse = true, mode, failure, ...runOptions } = options
   const args = ['terminal', 'close', '--terminal', handle]
+  if (mode === 'result') return orcaJson(args, runOptions)
+  if (mode === 'throw') return orcaJsonOrThrow(args, { failure, run: runOptions })
   return checkResponse ? orcaJson(args, runOptions).ok : orca([...args, '--json'], runOptions).code === 0
 }

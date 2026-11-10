@@ -26,3 +26,10 @@ test('pid 생존 확인과 실행 응답 읽기는 공통 모듈을 부른다', 
   assert.match(send, /orcaJsonOrThrow/)
   assert.doesNotMatch(send, /JSON\.parse\(done\.stdout\)/)
 })
+
+test('개별 pid 생존 확인과 terminal close 명령은 공통 모듈만 소유한다', () => {
+  const pidOwners = source.filter(({ text }) => /process\.kill\(\s*(?!-)[^,]+,\s*0\s*\)/.test(text)).map(({ file }) => file)
+  assert.deepEqual(pidOwners, ['lib/process.ts'])
+  const closeOwners = source.filter(({ text }) => /\[\s*['"]terminal['"]\s*,\s*['"]close['"]/.test(text)).map(({ file }) => file)
+  assert.deepEqual(closeOwners, ['lib/orca.ts'])
+})

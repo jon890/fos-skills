@@ -153,6 +153,8 @@ test('터미널 닫기는 호출자가 쓰던 응답 검사 기준을 유지한�
   fake.setRules([{ stdout: 'broken', code: 0 }])
   assert.equal(closeTerminal('t'), false)
   assert.equal(closeTerminal('t', { checkResponse: false }), true)
+  assert.equal(closeTerminal('t', { mode: 'result' }).ok, false)
+  assert.throws(() => closeTerminal('t', { mode: 'throw' }), /실패/)
   fake.setRules([{ code: 1 }])
   assert.equal(closeTerminal('t', { checkResponse: false }), false)
 })

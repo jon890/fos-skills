@@ -334,7 +334,7 @@ async function resume(dispatchId: string, runFlag: string | undefined, repo: str
     if (target.kind === 'limited') {
       const abandoned = orcaJson<Json>(['orchestration', 'worker-abandon', '--dispatch', dispatchId])
       if (!abandoned.ok) throw new Fail('cleanup', `옛 dispatch 를 abandon 하지 못했다: ${abandoned.error}`, again)
-      const closed = orcaJson<Json>(['terminal', 'close', '--terminal', target.oldTerminal!])
+      const closed = closeOrcaTerminal(target.oldTerminal!, { mode: 'result' })
       if (!closed.ok) throw new Fail('cleanup', `옛 터미널을 닫지 못했다: ${closed.error}`, `orca terminal close --terminal ${shQuote(target.oldTerminal!)} && ${again}`)
     }
     // 5. 출발 신호

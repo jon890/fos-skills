@@ -1,4 +1,4 @@
-import { orcaJsonOrThrow } from '../lib/orca.ts'
+import { orcaJsonOrThrow, closeTerminal } from '../lib/orca.ts'
 import { objectOr } from '../core/json.ts'
 // worker 에게 답이나 후속 지시를 보낸다. Orca 가 메시지마다 worker 를 깨우므로 터미널에 입력하지 않는다.
 // 활성 dispatch 는 미답변 질문에 reply 하고, 답할 후보가 없거나 --no-reply 면 send 한다.
@@ -577,7 +577,7 @@ async function main(argv: string[]): Promise<number> {
       if (!cursor || seen.has(cursor)) throw new OrcaFailed('worker-list 의 다음 페이지를 확인하지 못했다')
       seen.add(cursor)
     }
-    workerOrcaJson(['terminal', 'close', '--terminal', handle])
+    closeTerminal(handle, { mode: 'throw', failure: (message, structured) => new OrcaFailed(message, structured) })
   } catch (e) {
     if (!(e instanceof OrcaFailed)) throw e
     out(`send-to-worker: ${e.message}`)
