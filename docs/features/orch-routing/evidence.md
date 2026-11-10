@@ -119,7 +119,8 @@
 
 - Anthropic effort 문서(https://platform.claude.com/docs/en/build-with-claude/effort): Sonnet 5.5 는 요구가 분명한 에이전트 코딩을 `medium` 에서 시작하고, 어렵거나 긴 일은 `high` 를 쓴다. 기본값은 Opus 와 Haiku 가 `medium`, Sonnet 이 `high` 다.
 - Terminal-Bench 4.0(Anthropic 이 Claude Code 로 측정, Harry Smaje 정리 https://smaje.net/blog/reasoning-effort, 2026-10-17): Opus 5.5 는 low 38.5, medium 57.6, high 64.2, xhigh 66.4, max 64.8 이다. Sonnet 5.5 는 low 20.0, medium 28.8, high 43.0, xhigh 61.5, max 70.6 이다. Opus 는 medium 에서 대부분을 얻고, Sonnet 은 effort 에 매우 민감하다.
-- 반대 근거: ax0x 실측(https://blog.ax0x.ai/opus-55-medium-vs-high, 2026-09-22)은 Opus 5.5 medium 과 high 가 숨긴 테스트를 모두 통과했고, 블라인드 판정은 high 16승, medium 7승, 무승부 21(p≈0.09)이었다. high 는 시간 약 1.33배, 비용 약 1.29배다. 품질 차이가 작고 비용만 늘었다는 뜻이다.
+- 반대 근거: ax0x 실측(https://blog.ax0x.ai/opus-55-medium-vs-high, 2026-09-22)은 Opus 5.5 medium 과 high 가 숨긴 테스트를 모두 통과했고, 블라인드 판정은 high 16승, medium 7승, 무승부 21(p≈0.09)이었다. 저자는 p≈0.09 를 유의하지 않다고 보고 경향(lean)이라고 했다. high 가 이긴 쌍 대부분은 테스트가 잡지 못한 실제 버그를 잡은 것이었다. 저자의 결론은 사람이 diff 를 보지 않는 무인 에이전트는 high, 사람이 diff 를 보는 짝 작업은 medium 이다. high 는 시간 약 1.33배, 비용 약 1.29배다.
+- 우리가 그래도 medium 을 상한으로 두는 이유(추정): 지시서 worker 는 뒤에 독립 리뷰와 CI 가 있고, 위 차이가 통계로 확정되지 않았으며, 우리 실측에서 high 의 품질 개선 신호가 없었다.
 - 우리 실측: Opus high 는 크기 C 에서 준비 1.6시간, 비용 $31.8 이었고 medium 은 0.7시간, $13.9 였다(표 3). 준비와 비용이 두 배 남짓인데 품질 개선 신호가 없었다.
 - 우리 실측 Sonnet medium: fos-skills 저장소의 2026-11-05 이후 Sonnet medium `impl-explore` 13건은 첫 리뷰 P2 평균 1.15 다. 같은 기간 sol medium 14건은 0.42 다(코디네이터 정리). 이 수치는 Sonnet 구현을 `high` 로 올리는 근거 가운데 하나다. 표본이 작아 방향만 본다.
 - 한계: 같은 계획을 medium 과 high 로 구현해 비교한 직접 측정은 찾지 못했다. effort 이름은 제공자와 세대마다 뜻이 달라 Opus medium 과 sol medium 은 같은 양이 아니다(OpenAI 모델 안내 https://learn.chatgpt.com/docs/models). 저장소 하나, 표본이 작다.
