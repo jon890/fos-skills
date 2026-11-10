@@ -1,3 +1,4 @@
+import { notifiedKey } from '../core/conflicts.ts'
 // 열린 PR 의 충돌 찾기, PR 하나의 처리, (PR, PR HEAD, 충돌 파일) 마다 한 번 알린 기록의 한 벌이다.
 // 사용처: notify-conflicts.ts(머지 직후 한 번 보기), orch-loop.ts(틱의 마지막 단계). PR HEAD 받기(fetchPrHead)와
 // base 받기(baseHead)는 ci-ready 도 쓴다. 충돌 판정은 lib/git.ts 의 conflicts(merge-tree) 한 벌이다.
@@ -121,12 +122,6 @@ export function conflictSpecFiles(repo: string, pr: number): string[] {
 
 export function notifiedFile(repo: string): string {
   return join(pathOf('state', repo), 'notify-conflicts.json')
-}
-
-// 알린 기록의 키(머리 주석의 「알린 기록」). files 의 순서는 보지 않는다
-export function notifiedKey(pr: number, headSha: string, files: readonly string[]): string {
-  const print = createHash('sha256').update([...files].sort().join('\n')).digest('hex').slice(0, 12)
-  return `${pr}@${headSha}#${print}`
 }
 
 export function loadNotified(file: string): Record<string, string> {
@@ -310,3 +305,5 @@ export async function concludeConflict(
     err(`notify-conflicts: pr-conflict 를 내지 못했다: ${(e as Error)?.message ?? String(e)}`)
   }
 }
+
+export { notifiedKey } from '../core/conflicts.ts'

@@ -1,3 +1,4 @@
+import { LIVE_DISPATCH } from '../core/workers.ts'
 // 브랜치의 워크트리와 그 워크트리의 worker-list 행 찾기 한 벌이다.
 // 사용처: notify-conflicts.ts(충돌한 PR 의 worker 에게 알리기), orch-loop.ts(체크가 실패한 PR 의 worker 에게 알리기),
 // orch-doctor.ts(--run 의 worker 판정은 workerRows, Orca 형식 점검은 missingRowKeys 를 쓴다).
@@ -7,9 +8,6 @@ import { orcaJson } from './orca.ts'
 import type { RunOptions } from './proc.ts'
 
 type Json = Record<string, unknown>
-
-// 살아 있는 dispatch 의 상태
-export const LIVE_DISPATCH = new Set(['pending', 'dispatched', 'running'])
 
 function obj(value: unknown): Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : {}
@@ -64,3 +62,5 @@ export function workerFor(rows: Json[], path: string): Json | null {
   const pick = live.length > 0 ? live : here
   return pick.length > 0 ? pick[pick.length - 1] : null
 }
+
+export { LIVE_DISPATCH } from '../core/workers.ts'

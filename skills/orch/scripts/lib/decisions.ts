@@ -1,3 +1,5 @@
+import { NOTE_LINE, hash, flatten, isUserDecision, lines, decisionEntries, sameKeys } from '../core/decisions.ts'
+import type { Entry } from '../core/decisions.ts'
 // 상주 루프의 사용자 결정 알림. 같은 내용은 답하거나 사라지기 전까지 다시 깨우지 않는다.
 // 질문 재전송은 dispatch 와 본문으로 묶고 보드 결정은 남은 줄마다 추적한다.
 // 보드 decide 항목의 `참고:` 로 시작하는 줄은 결정이 아니라 배경이라 세지 않는다.
@@ -17,68 +19,15 @@ import { boardPath, makeParent, pathOf } from './paths.ts'
 import { dispatchOf, questionLocations } from './questions.ts'
 import type { Message } from './questions.ts'
 import { LIVE_DISPATCH, workerRows } from './workers.ts'
-
-type Entry = { key: string; question?: { id: unknown; dispatch: string; text: string }; item?: { id: string; text: string } }
 type Retry = { keys: string[]; failures: number; at: number; reason: string }
 type Seen = { announced: string[]; notified: string[]; coordinator?: string | null; retry?: Retry | null }
-const NOTE_LINE = /^참고\s*:/
 const RETRY_MAX_SEC = 3600
-const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-const flatten = (value: unknown) => String(value || '').replace(/\s+/g, ' ').trim()
-
-export function isUserDecision(message: Message): boolean {
-  return /^결정:\s*\S/.test(String(payload(message).question || message.body || '').trim())
-}
-
-// done 값과 옛 문자열의 완료 표시를 함께 읽는다. 빈 줄만 든 항목도 줄 없는 항목처럼 취급한다.
-function lines(value: unknown): string[] {
-  return (Array.isArray(value) ? value : String(value || '').split('\n')).flatMap((line) => {
-    const text = typeof line === 'string' ? line : line?.text
-    return (typeof line !== 'string' && line?.done === true) || /^\s*(?:✓|\[[xX]\])/.test(String(text || ''))
-      ? [] : flatten(text) && !NOTE_LINE.test(flatten(text)) ? [flatten(text)] : []
-  })
-}
-
-export function decisionEntries(pending: Message[], items: BoardItem[], active: { dispatchId?: unknown; agentTerminalHandle?: unknown }[]): Entry[] {
-  const live = new Set(active.map((w) => String(w.dispatchId)))
-  const byTerminal = new Map(active.filter((w) => w.agentTerminalHandle).map((w) => [w.agentTerminalHandle, String(w.dispatchId)]))
-  const newest = new Map<string, Message>()
-  for (const message of pending) {
-    const dispatch = dispatchOf(message) || byTerminal.get(message.from_handle)
-    if (!dispatch || !live.has(dispatch)) continue
-    const previous = newest.get(dispatch)
-    if (!previous || String(message.created_at || '') >= String(previous.created_at || '')) newest.set(dispatch, message)
-  }
-  const entries: Entry[] = []
-  for (const [dispatch, message] of newest) {
-    const text = String(payload(message).question || message.body || '').trim()
-    if (!isUserDecision(message)) continue
-    entries.push({ key: `question:${dispatch}:${hash(flatten(text))}`, question: { id: message.id, dispatch, text } })
-  }
-  for (const item of items.filter((item) => item.status === 'decide')) {
-    const open = [...lines(item.details), ...lines(item.next)]
-    const raw = [...(Array.isArray(item.details) ? item.details : String(item.details || '').split('\n')),
-      ...(Array.isArray(item.next) ? item.next : String(item.next || '').split('\n'))]
-    // 결정 줄이 있었는데 모두 끝났으면 더 물을 결정이 없다. `참고:` 줄만 있으면 제목으로 묻는다
-    const decisionLine = (line: unknown) => {
-      const text = flatten(typeof line === 'string' ? line : (line as { text?: unknown } | null)?.text)
-      return Boolean(text) && !NOTE_LINE.test(text.replace(/^(?:✓|\[[xX]\])\s*/, ''))
-    }
-    if (!open.length && raw.some(decisionLine)) continue
-    for (const text of open.length ? open : [flatten(item.title) || item.id]) {
-      entries.push({ key: `board:${item.id}:${hash([item.title, text])}`, item: { id: item.id, text } })
-    }
-  }
-  return [...new Map(entries.map((entry) => [entry.key, entry])).values()]
-}
 
 function retryMs(failures: number): number {
   const raw = Number(process.env.ORCH_DECISION_RETRY_SEC)
   const base = Number.isFinite(raw) && raw >= 0 ? raw : 600
   return Math.min(base * 2 ** (failures - 1), RETRY_MAX_SEC) * 1000
 }
-
-const sameKeys = (a: string[], b: string[]) => a.length === b.length && a.every((key) => b.includes(key))
 
 // 조회 실패 시 앞 기록을 보존한다. 성공한 전달만 notified 에 적는다. 실패 재시도는 머리 주석을 따른다.
 export async function notifyDecisions(repo: string, run: string, pending: Message[], includeBoard: boolean, now = Date.now()): Promise<void> {
@@ -131,3 +80,6 @@ export async function notifyDecisions(repo: string, run: string, pending: Messag
   }
   save()
 }
+
+export { NOTE_LINE, hash, flatten, isUserDecision, lines, decisionEntries, sameKeys } from '../core/decisions.ts'
+export type { Entry } from '../core/decisions.ts'

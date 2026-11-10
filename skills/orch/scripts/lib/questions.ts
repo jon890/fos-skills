@@ -1,3 +1,5 @@
+import { KINDS, unanswered, ageSeconds, brief, questionLocations, dispatchOf } from '../core/questions.ts'
+import type { Message, Notice } from '../core/questions.ts'
 // 코디네이터가 아직 답하지 않은 질문을 Orca 에서 읽고, 알릴 줄과 알린 기록을 정한다. delivery 를 소비하지 않는다.
 // 사용처: watch-questions.ts(Monitor 의 이벤트 소스), orch-loop.ts(상주 루프의 틱), orch-doctor.ts(snapshot, ageSeconds).
 // lib/decisions.ts 와 handlers/decision-pending.ts 는 questionLocations 로 질문 위치를 표시한다.
@@ -41,9 +43,6 @@ import { workerRows, worktreePaths } from './workers.ts'
 
 export const HISTORY_LIMIT = 100
 export const REPLY_LIMIT = 200
-const KINDS = new Set(['question', 'escalation'])
-
-export type Message = Record<string, unknown>
 
 function orca(args: string[]): Record<string, unknown> {
   const got = orcaJson<unknown>(['orchestration', ...args], { timeoutMs: envMs('ORCH_QUESTIONS_TIMEOUT_SEC', 30) })
@@ -58,26 +57,6 @@ function messages(data: Record<string, unknown>): Message[] {
     throw new Error('질문 기록을 읽지 못했다')
   }
   return rows as Message[]
-}
-
-// worker 쪽으로 간 답이 질문을 푼다. Run 으로 간 worker 의 후속 메시지는 풀지 않는다.
-export function unanswered(rows: Message[], run: string): Message[] {
-  const scoped = rows.filter((m) => m.run_id === run)
-  const answered = new Set(
-    scoped.filter((r) => r.thread_id && r.id !== r.thread_id && r.to_handle && r.to_handle !== `run:${run}`).map((r) => r.thread_id),
-  )
-  const asked = [...new Map(scoped.filter((m) => KINDS.has(String(m.type)) && m.to_handle === `run:${run}` && m.id)
-    .map((m) => [m.id, m])).values()]
-  const key = (m: Message) => dispatchOf(m) || m.from_handle || m.id
-  const later = (a: Message, b: Message) => String(a.created_at || '') === String(b.created_at || '')
-    ? asked.indexOf(a) > asked.indexOf(b) : String(a.created_at || '') > String(b.created_at || '')
-  const latestAnswered = new Map<unknown, Message>()
-  for (const message of asked.filter((m) => answered.has(m.id))) {
-    const previous = latestAnswered.get(key(message))
-    if (!previous || later(message, previous)) latestAnswered.set(key(message), message)
-  }
-  // ask 는 한 번에 한 질문의 답을 기다린다. 뒤 질문에 답하면 같은 dispatch 의 앞선 재전송 질문도 푼다.
-  return asked.filter((m) => !answered.has(m.id) && (!latestAnswered.has(key(m)) || later(m, latestAnswered.get(key(m))!)))
 }
 
 // run 이 없으면 run-current 의 Run 이다. { run, pending } 을 낸다.
@@ -122,14 +101,7 @@ export function snapshot(run?: string | null): { run: string; pending: Message[]
   return { run, pending }
 }
 
-// 질문이 만들어진 뒤 지난 초. now 는 epoch 초다. 시각을 읽지 못하면 0.
-export function ageSeconds(message: Message, now: number): number {
-  const created = isoTime(message.created_at)
-  return created === null ? 0 : now - created / 1000
-}
-
 type Seen = Record<string, Record<string, number>>
-export type Notice = { line: string; message: Message; reminder: boolean }
 
 function exists(file: string): boolean {
   try {
@@ -138,12 +110,6 @@ function exists(file: string): boolean {
   } catch {
     return false
   }
-}
-
-// Python 의 str.split() 처럼 공백 덩어리로 나눠 한 칸으로 잇고 앞 160자(코드 포인트)만 남긴다
-function brief(body: unknown): string {
-  const flat = String(body || '').split(/\s+/).filter(Boolean).join(' ')
-  return Array.from(flat).slice(0, 160).join('')
 }
 
 // now 는 epoch 초다. 알릴 줄을 정하고 알린 시각을 state 에 적는다.
@@ -182,18 +148,6 @@ export function poll(run: string | null, state: string, now: number, remindAfter
   writeFileSync(temporary, `${pyJson(seen)}\n`)
   renameSync(temporary, state)
   return { run: found.run, notices, pending: found.pending }
-}
-
-// 알림 본문에 붙이는 질문 위치다. 많은 질문은 앞 일부만 내고 전체 수는 원래 문장에 둔다.
-export function questionLocations(questions: { id?: unknown; dispatch?: unknown; from_handle?: unknown; payload?: unknown }[]): string {
-  const limit = 5
-  const refs = questions.slice(0, limit).map((q) => {
-    const dispatch = q.dispatch || dispatchOf(q)
-    const from = dispatch ? `dispatch:${dispatch}` : String(q.from_handle || '-')
-    return `${String(q.id || '-').replace(/\s+/g, '_')}@${from.replace(/\s+/g, '_')}`
-  })
-  const extra = questions.length > limit ? ` (외 ${questions.length - limit}개)` : ''
-  return `questions=${refs.join(',') || '-'}${extra}`
 }
 
 // 알릴 줄 하나에 worker-question 이벤트를 낸다(lib/events.ts 머리 주석의 「이벤트별 필드」).
@@ -239,13 +193,6 @@ const CLOSED_PR = new Set(['MERGED', 'CLOSED'])
 
 // 틱 안에서 Run 마다 한 번만 읽는 worker 행과 status 메시지
 export type ClosedLookup = { rows?: ReturnType<typeof workerRows>; reports?: Message[] | null; readPr?: typeof ghJson; branches?: Map<string, string>; launches?: Map<string, Launch | null> }
-
-export function dispatchOf(message: Message): string | null {
-  const dispatch = context(message)[1]
-  if (dispatch) return String(dispatch)
-  const from = String(message.from_handle ?? '')
-  return from.startsWith('dispatch:') ? from.slice('dispatch:'.length) : null
-}
 
 // 닫힌 질문이면 판정 근거, 아니면 null 이다
 export function closedReason(message: Message, run: string, repo: string, lookup: ClosedLookup): string | null {
@@ -431,3 +378,6 @@ export function dismissQuestion(id: string, reason: string): void {
 export function withoutDismissed(pending: Message[], dismissed = readDismissed()): Message[] {
   return pending.filter((m) => !Object.hasOwn(dismissed, String(m.id)))
 }
+
+export { KINDS, unanswered, ageSeconds, brief, questionLocations, dispatchOf } from '../core/questions.ts'
+export type { Message, Notice } from '../core/questions.ts'

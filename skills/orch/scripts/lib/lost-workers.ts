@@ -1,3 +1,5 @@
+import { LIVE_STATUSES, LOST_WORKER_STATES, lostWorkers, retriedLost, deliberateEnd, taskClosed } from '../core/lost-workers.ts'
+import type { Json, Lost } from '../core/lost-workers.ts'
 // 옛 wait 의 끊김 판정을 루프에서 재사용한다. 일부러 끝낸 작업과 작업 중인 화면은 알리지 않는다.
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -7,64 +9,12 @@ import { judge, readScreens, screenHandles } from './worker-state.ts'
 import { makeParent, pathOf } from './paths.ts'
 import { fire } from './events.ts'
 import { notifyRun } from './run-notice.ts'
-type Json = Record<string, any>
-type Lost = [string, unknown]
-const LIVE_STATUSES = LIVE_DISPATCH
-const LOST_WORKER_STATES = new Set(['abandoned', 'failed', 'stopped'])
 const obj = (v: unknown): Json => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Json : {}
 const err = (line: string) => console.error(line)
 function orcaResult(args: string[]): Json | null {
   const got = orcaJson<Json>(['orchestration', ...args])
   if (!got.ok) throw new Error(got.error)
   return got.data
-}
-function lostWorkers(rows: Json[], watched: Set<unknown>): Lost[] {
-  const lost: Lost[] = []
-  for (const w of rows) {
-    if (!w.dispatchId || !watched.has(w.dispatchId)) continue
-    // 정리로 터미널이 사라져도 이미 끝난 dispatch 는 끊김이 아니다
-    if (w.dispatchStatus === 'completed' || w.dispatchStatus === 'abandoned') continue
-    const projection = obj(w.projection)
-    if (projection.outcome === 'succeeded' || projection.outcome === 'cancelled') continue
-    const detail = obj(projection.stage).detail
-    if (LOST_WORKER_STATES.has(String(w.workerState)) || w.dispatchStatus === 'failed' || detail === 'terminal_missing') {
-      lost.push([String(w.dispatchId), detail || w.workerState])
-    } else if (LIVE_STATUSES.has(String(w.dispatchStatus)) && obj(projection.liveness).verdict === 'exited') {
-      // 열린 dispatch 인데 worker 프로세스가 끝났다. 보낸 답을 받을 쪽이 없다(머리 주석의 「끊긴 worker」)
-      lost.push([String(w.dispatchId), 'liveness_exited'])
-    }
-  }
-  return lost
-}
-
-export function retriedLost(rows: Json[], lost: Lost[]): Set<string> {
-  const liveByTask = new Map<unknown, Set<unknown>>()
-  for (const w of rows) {
-    if (!w.taskId || !w.dispatchId || !LIVE_STATUSES.has(String(w.dispatchStatus))) continue
-    liveByTask.set(w.taskId, new Set([...(liveByTask.get(w.taskId) ?? []), w.dispatchId]))
-  }
-  const taskOf = new Map(rows.map((w) => [w.dispatchId, w.taskId]))
-  const retried = new Set<string>()
-  for (const [dispatch] of lost) {
-    const live = liveByTask.get(taskOf.get(dispatch))
-    if (live && [...live].some((d) => d !== dispatch)) retried.add(dispatch)
-  }
-  return retried
-}
-
-function deliberateEnd(dispatch: Json): string | null {
-  const termination = dispatch.terminationReason || dispatch.termination_reason
-  if (termination === 'operator_close' || termination === 'worker_report') return termination
-  let failure = dispatch.lastFailure || dispatch.last_failure
-  if (failure === 'abandoned') return 'abandoned'
-  if (typeof failure === 'string') {
-    try {
-      failure = JSON.parse(failure)
-    } catch {
-      failure = null
-    }
-  }
-  return obj(failure).provenance === 'worker_report' ? 'worker_report' : null
 }
 
 function latestDispatch(taskId: unknown): Json {
@@ -104,10 +54,6 @@ function saveReported(file: string, runId: string, kinds: Record<string, string>
     err(`wait-important: 판정한 dispatch 를 ${file} 에 적지 못했다: ${(e as Error).message}`)
     return false
   }
-}
-
-function taskClosed(task: Json): boolean {
-  return task.status === 'completed' || (task.status === 'failed' && String(task.result || '').toLowerCase().includes('cancel'))
 }
 
 function unhandledLost(runId: string, rows: Json[], ignore: Set<unknown>): { found: Lost[]; deliberate: Record<string, string> } {
@@ -177,3 +123,6 @@ export async function watchLost(repo: string, run: string, base: string): Promis
 
   }
 }
+
+export { LIVE_STATUSES, LOST_WORKER_STATES, lostWorkers, retriedLost, deliberateEnd, taskClosed } from '../core/lost-workers.ts'
+export type { Json, Lost } from '../core/lost-workers.ts'

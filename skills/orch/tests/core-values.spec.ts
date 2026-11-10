@@ -38,3 +38,31 @@ test('배포 결과와 완료 보고는 값만으로 정한다', () => {
   const done = { id: 'done', type: 'worker_done', task_id: 't', dispatch_id: 'd', from_handle: 'w' }
   assert.deepEqual(classify([ready, done])[1].completionVerification, { status: 'ready', pr: 1, head, statusMessageId: 'ready' })
 })
+
+import { judgeLoop, type LoopState } from '../scripts/core/loop.ts'
+import { judgeWorker } from '../scripts/core/movement.ts'
+import { unanswered, ageSeconds } from '../scripts/core/questions.ts'
+import { decisionEntries } from '../scripts/core/decisions.ts'
+import { notifiedKey } from '../scripts/core/conflicts.ts'
+import { retriedLost } from '../scripts/core/lost-workers.ts'
+import { inFlight } from '../scripts/core/refresh.ts'
+
+test('루프의 만료와 프로세스 확인 삼상태를 입력으로 보존한다', () => {
+  const state: LoopState = { pid: 10, run: 'r', repo: '/repo', tick_sec: 1, started_at: '', alive_at: '2026-01-01T00:00:00Z', last_tick: null, ticks: 0, errors: {} }
+  const now = Date.parse('2026-01-02T00:00:00Z')
+  assert.deepEqual(judgeLoop(null, now, false), { alive: false, reason: '없음' })
+  for (const status of [true, null]) assert.equal((judgeLoop(state, now, true, status) as { recheck?: boolean }).recheck, true)
+  assert.equal((judgeLoop(state, now, true, false) as { recheck?: boolean }).recheck, undefined)
+  assert.deepEqual(judgeLoop(state, now, false), { alive: false, reason: 'pid 10 종료' })
+})
+test('미답변과 멈춤, 결정은 외부 조회 없이 구분한다', () => {
+  const asked = { id: 'q', type: 'question', run_id: 'r', to_handle: 'run:r', from_handle: 'w', dispatch_id: 'd', created_at: '2026-01-01T00:00:00Z' }
+  assert.deepEqual(unanswered([asked], 'r'), [asked])
+  assert.deepEqual(unanswered([asked, { ...asked, id: 'a', thread_id: 'q', to_handle: 'w', type: 'status' }], 'r'), [])
+  assert.equal(ageSeconds(asked, Date.parse('2026-01-01T00:10:00Z') / 1000), 600)
+  assert.equal(judgeWorker({ run: 'r', row: { dispatchId: 'd' }, now: 120_000, settings: { idleMin: 1, exited: true }, mtime: 0, commit: null }).reason, 'idle')
+  assert.deepEqual(decisionEntries([], [{ id: 'x', status: 'decide', details: [{ text: '끝남', done: true }] }], []), [])
+  assert.equal(notifiedKey(1, 'head', ['b', 'a']), notifiedKey(1, 'head', ['a', 'b']))
+  assert.deepEqual([...retriedLost([{ taskId: 't', dispatchId: 'old' }, { taskId: 't', dispatchId: 'new', dispatchStatus: 'running' }], [['old', 'exited']])], ['old'])
+  assert.equal(inFlight({ base: 'base', from: 'head', at: '2026-01-01T00:00:00Z', action: 'update', value: 'updated' }, 'new-head', 'passed', Date.parse('2026-01-02T00:00:00Z')), false)
+})
