@@ -40,7 +40,7 @@ git diff "origin/$BASE" -- "$FILE"
 
 ## 완료 전에 온 worker_done
 
-`orch wait` 와 `orch wait triage` 는 PR 준비 상태가 없는 성공 보고를 `DONE-SUSPECT` 줄로 분류하고 종료 코드 6 으로 끝나며 자동 ack 하지 않는다. 근거 판정(준비 상태 줄의 꼴, 같은 Dispatch 우선, 리뷰 dispatch 의 결과 status)은 `lib/completion.ts` 와 `wait-important.ts` 머리 주석이 소유한다. 읽기 전용 파일에 이력이 빠졌으면 `orch wait triage --live` 로 다시 확인한다.
+상주 루프는 PR 준비 근거 없는 성공 보고를 DONE-SUSPECT 메시지로 알린다. 근거 규칙은 `lib/completion.ts`, 완료·보드 연결은 `loop/completion-watch.ts` 가 소유한다. 코디네이터는 아래 마무리 절차의 MERGED 확인을 그대로 한다.
 이 검사는 발신 프로세스 인증이나 지시서 전체의 완료 증명이 아니다.
 이미 전송된 `worker_done` 은 Orca 에서 settled 로 기록된다. 분류 결과만으로 worker 를 해제하지 않고 아래 절차로 검증한다.
 

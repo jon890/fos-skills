@@ -148,7 +148,7 @@ orch 의 파일은 주 checkout 의 `.orch/` 아래에 둔다. 워크트리에�
 | `config.json` | 위 「마무리 설정 파일」 |
 | `specs/` | 지시서와 `spec-common.md`. 옛 위치의 PR 본문 `pr-<이름>.md` 는 그 부모인 `.orch/` 에 있다. 지금 PR 본문 파일은 worker 세션 임시 폴더에 둔다 |
 | `queue/` | 머지 큐와 마무리(`finish-<PR>.out`, `.pid`) 출력 |
-| `state/` | `wait-important`, `notify-conflicts.ts` 가 기억하는 것. 상주 루프의 파일(`loop.json`, `loop.lock`, `loop.log`)도 여기 있다. 알림 파일은 `state/loop-events/<Run>.jsonl` 과 `<Run>.cursor` 다([`data-schema.md`](../../../docs/data-schema.md)). 무거운 검사 대기열은 `state/heavy-slot/` 을 쓴다 |
+| `state/` | 상주 루프와 충돌 알림이 기억하는 것. 생존·완료·끊김·미답변 기록과 무거운 검사 대기열이 있다. 알림은 Orca Run 메일함이 소유한다([`data-schema.md`](../../../docs/data-schema.md)) |
 | `hooks/` | 이벤트 핸들러 `<이벤트>.ts`. 쓰는 법은 [`hooks.md`](hooks.md) |
 | `bin/` | 저장소 포장 스크립트 |
 | `feedback/` | worker 가 쌓은 스킬 개선 후보. 다시 보는 법은 [`feedback-review.md`](feedback-review.md) |
@@ -190,7 +190,7 @@ ORCH=$(node -e 'const fs=require("fs"),os=require("os");const d=process.env.CLAU
 | `launch-worker` | 늘. 셸 스크립트는 `orch paths check` 로 같은 검사를 한다 |
 | `orch paths --ensure` | 늘 |
 
-`orch wait` 와 `orch queue conflicts` 는 알리기만 한다. 대기를 막으면 worker 가 끝나지 않아 옮길 수도 없다.
+`orch queue conflicts` 는 알리기만 한다. 옛 `orch wait` 은 안내와 함께 끝난다.
 
 머지 큐와 worker 가 모두 끝난 때에 옮긴다. 먼저 미리보기로 옮길 것과 옛 경로를 적은 파일을 본다.
 `$REPO` 는 대상 저장소의 주 checkout 이다.

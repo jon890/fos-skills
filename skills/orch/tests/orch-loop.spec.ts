@@ -1186,3 +1186,14 @@ test('질문 조회 실패 중에도 완료 보고 감시는 같은 틱에 실�
   once()
   assert.equal(events().filter(e=>e.kind==='DONE-SUSPECT').length,1)
 })
+
+test('다시 시작 알림 전송이 실패하면 loop.json 에 남기고 다음 시작에서 재시도한다', () => {
+  const since='2026-01-01T00:00:00Z'
+  write(orchFile('state','loop.json'),JSON.stringify({pid:999999,run:'r',runs:['r'],alive_at:since,tick_sec:300}))
+  write(orchFile('state','loop-runs','r.json'),JSON.stringify({run:'r',specs_dir:null,registered_at:since}))
+  orca({send_fail:true});once()
+  assert.equal((loopState()?.restart_notices as Json).r,since)
+  orca({});once()
+  assert.deepEqual(loopState()?.restart_notices,{})
+  assert.equal(events().filter(e=>e.kind==='LOOP-RESTARTED').length,2)
+})

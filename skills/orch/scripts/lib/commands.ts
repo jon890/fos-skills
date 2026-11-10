@@ -34,6 +34,7 @@ export type Command = {
   passthrough: boolean
   legacy: { name: string; flags: string[] } | null
   usage: string
+  retired?: { since: string; doc: string }
 }
 
 type Row = Partial<Command> & Pick<Command, 'group' | 'verb' | 'script' | 'usage'>
@@ -208,6 +209,7 @@ export const COMMANDS: Command[] = ROWS.map((r) => ({
   passthrough: false,
   legacy: null,
   ...r,
+  ...((r.group === 'wait' || r.group === 'worker' && r.verb === 'nudge') ? { retired: { since: 'orca-wake', doc: 'skills/orch/references/waiting.md' } } : {}),
 }))
 
 export const GROUPS: string[] = [...new Set(COMMANDS.map((c) => c.group))]

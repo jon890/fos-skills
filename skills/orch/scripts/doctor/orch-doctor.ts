@@ -577,7 +577,7 @@ function staleWaiters(configDir: string): string[] {
     if (!stale) continue
     lines.push(
       `WAIT-STALE ${m[1]} ${stale.sha}`,
-      `  안내: 이 대기는 설치되지 않은 번들(${stale.sha})로 돈다. 그 대기의 코디네이터 세션에서 끝내고(kill ${m[1]}) ${orchWord()} wait --ack <마지막 delivery> 로 다시 건다`,
+      `  안내: 이 대기는 설치되지 않은 번들(${stale.sha})로 돈다. 그 대기의 코디네이터 세션에서 끝내고(kill ${m[1]}) Orca 메시지로 이어받는다`,
     )
   }
   return lines
@@ -635,7 +635,7 @@ function hintFor(name: string, rest: string): string {
   return row ? `  새 꼴: ${legacy?.hint ?? ['orch', row.group, ...(row.verb ? [row.verb] : [])].join(' ')}` : ''
 }
 
-const WAIT_READER_FIX = '  고칠 것: orch wait 의 짧은 출력은 메시지마다 판정 줄을 낸다. 원문 JSON 이 필요하면 RAW 줄의 파일을 orch wait triage --full 로 읽는다'
+const WAIT_READER_FIX = '  고칠 것: orch wait 은 없어졌다. Orca 깨움으로 바꾸고 references/waiting.md 를 읽는다'
 
 function checkCalls(repo: string): string[] {
   const root = mainCheckout(repo)
@@ -753,6 +753,14 @@ async function executeMain(argv: string[]): Promise<number> {
   const scripts = checkScripts(skillDir)
   const installLines = checkInstallPaths(configDir)
   const repoLines = [...checkRepo(repo), ...checkFeedback(repo), ...checkStudy(repo), ...checkCalls(repo)]
+  const hookDir = join(pathOf('hooks', repo))
+  if (existsSync(hookDir)) {
+    for (const name of readdirSync(hookDir)) {
+      const file = join(hookDir, name)
+      if (isFile(file) && /(?:worker[\s'",]+nudge|nudge-worker)/.test(readFileSync(file, 'utf8'))) repoLines.push(`NUDGE-HANDLER ${file}: orch worker send 로 바꾼다`)
+    }
+  }
+  if (runId) for (const pid of waiterPids(runId)) repoLines.push(`WAITER-LEFT ${pid}: 옛 대기를 직접 종료한다: kill ${pid}`)
   const questions = values['skip-questions'] ? { lines: [], code: 0, pending: [] } : checkQuestions(runId, repo)
   let loop = runId ? loopStatus(repo, Date.now()) : null
   if (loop && !loop.alive && loop.recheck) {

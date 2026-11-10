@@ -46,7 +46,7 @@ orch doctor
 셸 함수는 그 Bash 호출 안에서만 살아, 다른 문서의 `orch` 명령도 같은 셸에서는 이 줄을 먼저 둔다.
 `CLI-MISSING`, `CLI-STALE` 이면 다음 줄의 `orch doctor install-cli` 를 한 번 돌린다. `CLI-CONFLICT`(다른 `orch` 가 있어 덮지 않았다)와 `CLI-NOT-ON-PATH` 는 사용자에게 알린다.
 `OLD-CALL`, `DIRECT-PATH` 는 그 저장소의 오버레이·공통 지시서·핸들러가 옛 꼴로 orch 를 부른다는 뜻이다. 진행을 막지 않으니 다음 줄의 새 꼴로 그 저장소 worker 에게 고치게 한다.
-`LOOP-STALE`, `WAIT-STALE` 이면 다음 줄의 명령을 그 Run 의 코디네이터 세션에서 돌려 다시 띄운다.
+`LOOP-STALE` 이면 다음 줄의 명령으로 다시 시작한다. `WAITER-LEFT` 는 옛 대기 종료 안내를 따른다.
 
 새 세션을 시작하거나 압축·계정 전환 뒤에는 `orch worker adopt` 로 이전 세션에서 떨어진 터미널을 확인한다. 저장소는 작업 폴더에서 읽고, 다른 저장소면 `--repo` 를 준다. 목록을 검토한 뒤 이어받을 때만 `--apply` 를 쓴다. 상세는 [`references/launch.md`](references/launch.md) 의 「이전 세션 이어받기」 를 따른다.
 
@@ -103,7 +103,7 @@ worker 하나마다 1단계부터 7단계를 돈다. 여러 worker 를 동시에
 | 1 | 에이전트 고르기 | 에이전트, 모델, effort, 모델 표의 행 id 와 비교한 후보, 고른 이유가 지시서의 `worker 선택:` 줄에 있다 | [`references/agent-selection.md`](references/agent-selection.md) |
 | 2 | 지시서 쓰기 | 지시 본문이 파일에 있고 `--spec` 에는 그 경로만 있다. 이번에 띄울 지시서를 넘긴 `spec-lint` 가 0 으로 끝났다(`launch-worker` 도 띄우기 전에 한 번 더 돌려 막는다) | [`references/spec-writing.md`](references/spec-writing.md), [`templates/spec-common.md`](templates/spec-common.md) |
 | 3 | 띄우기 | `orch worker launch` 가 종료 코드 0 과 `LAUNCHED` 줄로 끝났고, `LAUNCH-EFFECTIVE` 줄(`launch.effective`)이 고른 값과 같고, 대상 저장소 `git status` 에 `worktrees/` 가 없다 | [`references/launch.md`](references/launch.md) |
-| 4 | 기다리기 | 저장소마다 `orch loop start` 로 띄운 루프가 살아 있고, 이 세션의 백그라운드 `orch wait` 가 그 저장소들을 `--loop-repo` 로 받아 하나만 돈다(사용자와 대화 중이면 `orch wait user-active` 가 `USER-ACTIVE` 이고 대기가 없다). 앞 대기의 `LAST_DELIVERY` id 를 `--ack` 로 넘겼고 대기 출력의 메시지 판정 줄을 처리했다 | [`references/waiting.md`](references/waiting.md) |
+| 4 | 기다리기 | 저장소별 루프가 살아 있고 Run 이 등록돼 있다. 메시지는 Orca 가 깨우며 별도 대기를 걸지 않는다 | [`references/waiting.md`](references/waiting.md) |
 | 5 | 답하고 지시 보내기 | 답과 지시를 `send-to-worker` 로 보냈고 종료 코드가 0 이며, 그 답이 검사를 무력화하지 않는다 | [`references/replying.md`](references/replying.md) |
 | 6 | 완료 검증 | diff 를 직접 읽었고, CI 가 같은 head SHA 로 돌린 검사는 CI 결과로 확인했고 CI 밖 검사는 다시 돌려 통과했다 | [`references/verification.md`](references/verification.md) |
 | 7 | 머지와 정리 | `orch queue merge` 가 건 머지 큐가 `QUEUE-DONE` 으로 끝났고, PR 마다 마무리 출력의 마지막 줄이 `FINISH-DONE` 이다. 끝난 dispatch, 워크트리, 머지된 로컬 브랜치, 그 작업만의 문서가 없다 | [`references/cleanup.md`](references/cleanup.md), [`references/board.md`](references/board.md) |
@@ -128,13 +128,9 @@ Task 성격으로 모델과 effort 를 고르고, 모델 표의 행 id 와 비�
 
 ## 4. 기다리기
 
-저장소마다 상주 루프(`orch loop start`)를 띄운다. 루프가 틱마다 질문 확인, 정리, 보드 동기화, CI 감시, 멈춘 worker 와 worker 없이 남은 보드 단계 찾기, 충돌 PR 처리를 한다.
-`orch wait` 를 `--loop-repo` 와 함께 백그라운드로 하나만 걸고, 깨어나면 출력의 메시지 판정 줄(`DONE-SUSPECT`, `DONE`, `STOPPED`, `ESCALATION`, `QUESTION` 차례)을 먼저 본다. 루프의 알림(`LOOP-EVENT`)과 죽음(`LOOP-DEAD`)에도 이 대기가 깨어난다.
-받은 메시지와 알림을 처리하면 stderr 의 `NEXT_WAIT` 명령으로 즉시 다음 대기를 건다. 미완료 dispatch 가 있는 동안 대기 없이 턴을 끝내지 않는다.
-예외는 사용자와 대화 중일 때다. `user-active` 가 `USER-ACTIVE` 면 다시 걸지 않고 상주 루프의 `NO-WAIT` 에 맡긴다([`references/waiting.md`](references/waiting.md) 의 「사용자와 대화 중일 때」).
-루프가 새 사용자 결정 질문이나 보드의 남은 `decide` 줄을 찾으면 `decision-pending` 기본 핸들러가 코디네이터에게 「정할 것 묻기」 를 요청한다. 이미 물어 답을 기다리는 결정은 다시 묻지 않는다.
-압축 뒤에는 루프와 대기가 살아 있는지 확인하고 꺼진 것만 다시 띄운다.
-heartbeat 만 오는데 커밋과 화면이 그대로면 reference 의 「heartbeat 만 올 때」 를 따른다.
+저장소마다 `orch loop start` 로 루프를 등록한 뒤 턴을 끝낸다. worker 질문·보고와 루프 알림은 Orca 가 코디네이터를 깨운다. 깨어났을 때의 처리와 옛 대기 정리는 [`references/waiting.md`](references/waiting.md)를 따른다.
+사용자와 대화 중이면 사용자 답을 먼저 한다. decision-pending 은 남은 결정을 사용자에게 묻도록 요청하고, 이미 답을 기다리는 결정은 다시 묻지 않는다.
+압축 뒤에는 `orch status` 와 doctor 로 루프 생존을 확인하고 꺼진 것만 다시 시작한다.
 
 ### gh 호출 예산
 

@@ -287,7 +287,7 @@ work-board 에서 orch 를 import 하는 곳은 `extensions/work-board/bin/worke
 | 충돌한 PR | 기존 worker 에게 base 를 합치라는 지시. 끝난 dispatch 는 남은 터미널에 후속 지시서로 이어 쓴다. 이어 쓰지 못하면 알림 | 없음 |
 | 뒤처진 draft 최신화 | 틱 | `pipeline.update_behind_drafts` |
 | 뒤처진 ready PR 미리 최신화 | 틱의 최신화(`lib/refresh.ts`), 머지 큐의 차례 기록(`lib/queue-turn.ts`) | `pipeline.refresh_slots`, `pipeline.refresh_worker_paths`, `queue.*` |
-| 질문 감시 | 루프의 틱과 `watch-questions.ts` | `worker-question.ts` |
+| 질문 감시 | 루프의 틱과 `orch-loop.ts` | `worker-question.ts` |
 | 무거운 검사 대기열 | `heavy-slot.ts` | `heavy.*` 분류 정규식과 `wait_idle` |
 | 큐 옵션 | `queue` 절 | 검증 본문은 `verify-merged.ts` |
 | Run id | `finish.run` 한 곳과 명령줄 `--run` | 로컬 스크립트에 박지 않는다 |

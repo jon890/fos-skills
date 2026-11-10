@@ -15,8 +15,8 @@
 | [ADR-009](009-orch-event-handlers.md) | orch 는 단계마다 이벤트를 내고, 저장소 고유 일은 저장소의 이벤트 핸들러가 맡는다 | accepted | - |
 | [ADR-010](010-orch-typescript.md) | orch 와 work-board 의 Python 스크립트를 빌드 없는 TypeScript 로 한 번에 옮긴다 | accepted | [ADR-011](011-node-24-minimum.md) |
 | [ADR-011](011-node-24-minimum.md) | orch 와 work-board 의 최소 Node 를 24 로 올린다 | accepted | - |
-| [ADR-012](012-orch-loop-multi-run.md) | 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다 | accepted | - |
-| [ADR-013](013-orch-worker-stalled.md) | 상주 루프는 멈춘 worker 를 이벤트로 알리고, 다시 시도시키는 일은 저장소 핸들러가 맡는다 | accepted | - |
+| [ADR-012](012-orch-loop-multi-run.md) | 상주 루프는 저장소마다 하나로 두고 여러 Run 을 맡는다 | accepted | [ADR-027](027-orca-message-wake.md) |
+| [ADR-013](013-orch-worker-stalled.md) | 상주 루프는 멈춘 worker 를 이벤트로 알리고, 다시 시도시키는 일은 저장소 핸들러가 맡는다 | accepted | [ADR-027](027-orca-message-wake.md) |
 | [ADR-014](014-orch-auto-last-pr.md) | 업무의 마지막 PR 은 마무리가 머지와 배포 뒤에 판정하고, 충돌한 PR 은 머지 큐를 멈추지 않는다 | accepted | - |
 | [ADR-015](015-board-decide-clear.md) | 보드의 결정 필요는 남은 줄과 남은 질문만 세고, 중간 과정은 보드 항목을 만들지 않는다 | accepted | - |
 | [ADR-016](016-orch-auto-merge.md) | 상주 루프가 머지할 수 있는 PR 을 스스로 머지 큐에 건다 | accepted | - |
@@ -30,6 +30,7 @@
 | [ADR-024](024-decision-record-classification.md) | 결정 기록은 종류를 나누고 현재 규칙의 원본을 연결한다 | accepted | - |
 | [ADR-025](025-script-runtime-typescript.md) | 저장소의 스크립트와 테스트를 TypeScript(Node 24) 하나로 둔다 | accepted | - |
 | [ADR-026](026-docs-checks-at-authoring-time.md) | 문서 링크와 ADR 검사는 plan 번들 검사기 하나가 작성 단계에서 맡는다 | accepted | - |
+| [ADR-027](027-orca-message-wake.md) | 코디네이터 깨우기는 Orca 메시지를 쓴다 | accepted | - |
 
 ## 대체됨
 

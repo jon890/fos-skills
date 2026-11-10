@@ -461,7 +461,7 @@ describe('orch 명령 판정', () => {
     assert.equal(r.code, 0, r.stdout + r.stderr)
     const out = r.stdout.split('\n')
     assert.deepEqual(out.filter((l) => l.startsWith('WAIT-READER')), ['WAIT-READER .orch/bin/summary.py:3'])
-    assert.match(out[out.indexOf('WAIT-READER .orch/bin/summary.py:3') + 1], /^  고칠 것: orch wait 의 짧은 출력/)
+    assert.match(out[out.indexOf('WAIT-READER .orch/bin/summary.py:3') + 1], /^  고칠 것: orch wait 은 없어졌다/)
   })
 
   test('옛 번들로 도는 대기는 WAIT-STALE 로 알린다', () => {
@@ -486,7 +486,7 @@ describe('orch 명령 판정', () => {
     assert.equal(again.code, 0, again.stdout + again.stderr)
     const out = again.stdout.split('\n')
     assert.deepEqual(out.filter((l) => l.startsWith('WAIT-STALE')), ['WAIT-STALE 501 4.2.0'])
-    assert.match(out[out.indexOf('WAIT-STALE 501 4.2.0') + 1], /kill 501\) orch wait --ack/)
+    assert.match(out[out.indexOf('WAIT-STALE 501 4.2.0') + 1], /kill 501\) Orca 메시지로/)
   })
 
   test('문서의 새 꼴은 명령 표로 확인하고 산문은 보지 않는다', () => {
@@ -552,6 +552,14 @@ describe('저장소 판정', () => {
   beforeEach(() => {
     skill = join(tmp, 'skill')
     write(join(skill, 'SKILL.md'), '# 스킬\n')
+  })
+
+  test('옛 nudge 핸들러와 남은 대기 pid 를 알려 자동 종료하지 않는다', () => {
+    write(join(tmp, '.orch', 'hooks', 'worker-stalled.ts'), "const args = ['worker', 'nudge']")
+    const ps = join(tmp, 'ps.txt'); write(ps, '123 node /old/wait-important.ts --run r\n')
+    const r = doctor(['--skip-version','--skip-questions','--skill-dir',skill,'--run','r'], { env: { FAKE_PS: ps } })
+    assert.match(r.stdout, /NUDGE-HANDLER .*worker-stalled.ts/)
+    assert.match(r.stdout, /WAITER-LEFT 123/)
   })
 
   test('이벤트 이름이 아닌 핸들러 파일은 UNKNOWN-HOOK 이고 종료 코드 0 이다', () => {

@@ -1011,10 +1011,13 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
   // 그 뒤의 등록은 살아 있는 세션이 동시에 --start 한 것이라 남긴다. 앞 loop.json 이 없으면 지우지 않는다(머리 주석의 「Run」)
   const before = readLoop(ctx.repo)
   const cutoff = typeof before?.alive_at === 'string' ? Date.parse(before.alive_at) : Number.NaN
+  const restartNotices: Record<string, string> = {}
+  if (isObject(before?.restart_notices)) for (const [run, since] of Object.entries(before.restart_notices)) {
+    if (typeof since === 'string') restartNotices[run] = since
+  }
   if (Number.isFinite(cutoff) && Date.now() - cutoff > Math.max(3 * (before?.tick_sec ?? 300), 120) * 1000) {
     for (const entry of registeredRuns(ctx.repo)) {
-      try { sendNotice('LOOP-RESTARTED', null, `${before!.alive_at} 부터 멈춰 있었다`, entry.run) }
-      catch (e) { log(`NOTICE-FAIL LOOP-RESTARTED ${oneLine(e)}`) }
+      restartNotices[entry.run] ??= before!.alive_at
     }
   }
   for (const entry of registeredRuns(ctx.repo)) {
@@ -1022,7 +1025,7 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
     const at = Date.parse(entry.registered_at)
     if (Number.isFinite(at) && at > cutoff) continue
     unregisterRun(ctx.repo, entry.run)
-    log(`앞 루프의 Run ${entry.run} 등록을 지웠다. 그 세션이 살아 있으면 대기가 미등록으로 깨어나 다시 등록한다`)
+    log(`앞 루프의 Run ${entry.run} 등록을 지웠다. 그 세션이 살아 있으면 LOOP-RESTARTED 메시지나 doctor 안내를 따라 다시 등록한다`)
   }
   if (ctx.run) registerRun(ctx.repo, ctx.run, ctx.specsDir)
   let runs = registeredRuns(ctx.repo).map((entry) => entry.run)
@@ -1042,6 +1045,7 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
     runs,
     repo: ctx.repo,
     tick_sec: ctx.tickSec,
+    restart_notices: restartNotices,
     started_at: now,
     alive_at: now,
     last_tick: null,
@@ -1070,6 +1074,10 @@ async function foreground(ctx: Context, once: boolean, interval: number, entrypo
       hadRuns ||= runs.length > 0
       state.runs = runs
       state.run = runs[0] ?? ctx.run
+      for (const [run, since] of Object.entries(restartNotices)) {
+        try { sendNotice('LOOP-RESTARTED', null, `${since} 부터 멈춰 있었다`, run); delete restartNotices[run] }
+        catch (e) { log(`NOTICE-FAIL LOOP-RESTARTED ${oneLine(e)}`) }
+      }
       log(`tick ${n} ${iso()}`)
       const done = await runAsync(scriptCommand(entrypoint, [...passArgs(ctx), '--tick', '--tick-number', String(n)]), {
         cwd: ctx.repo,

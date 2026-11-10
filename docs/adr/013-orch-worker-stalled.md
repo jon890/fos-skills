@@ -13,6 +13,7 @@
   사람이 Esc 로 끊은 Codex 화면(`■ Conversation interrupted`)은 `interrupted` 로 따로 두고 멈춤으로 세지 않는다. 사람이 일부러 멈춘 작업을 코어가 다시 돌리지 않는다.
   핸들러 환경의 `ORCH_SCRIPTS` 가 코어 명령의 폴더를 알리고, worker 에게 입력하는 코어 명령(`nudge-worker`, `send-to-worker`)은 `ORCH_REAL_ORCA` 로 진짜 orca 를 부른다.
   사용자 결정 2026-10-26: 코어는 이벤트를 내고 저장소 고유의 일은 처리기가 맡는다. 스크립트를 늘리지 않고, 개입은 그 세션(Run)이 띄운 것만 한다.
+- **대체된 부분**: 깨우기와 터미널 입력 관련 부분은 [ADR-027](027-orca-message-wake.md)이 대체한다. 해당 부분의 옛 알림 파일·대기·직접 입력은 현재 사용하지 않는다.
 - **맥락**: 2026-10-26 에 codex worker 가 「Selected model is at capacity. Please try a different model.」 화면에서 멈췄고, 사용자가 터미널에 「계속 진행해」 를 직접 쳐서 이어 갔다.
   코디네이터는 깨어날 때마다 `nudge-worker --state` 로 화면을 확인해야 했다. 그때의 `--state` 는 오류로 멈춘 화면과 백그라운드 에이전트를 기다리는 화면을 같은 `idle` 로 냈다.
   또 핸들러 환경의 `ORCA` 는 `orca terminal send` 를 막는 가드 shim 이라, 가드가 쓰라고 안내하는 코어 명령도 그 안에서 막혔다.

@@ -70,7 +70,7 @@
 //
 // 충돌: update-branch 가 충돌로 실패하거나 mergeable 이 CONFLICTING 인 PR 은 `CONFLICT <PR> <이유>` 를 찍고 큐에서 뺀다.
 //   --stop-on-hold 여도 다음 PR 로 간다. 충돌한 PR 하나 때문에 머지할 수 있는 뒤 PR 이 함께 멈추지 않게 하기 위해서다.
-//   상주 루프의 알림 파일(lib/loop.ts 의 appendEvent)에 `QUEUE-CONFLICT` 를 쓴다. Run 은 --sweep-arg 로 준 --run 이고, 없으면 Run 이 없는 루프의 파일이다.
+//   정리 인자의 --run 으로 지정한 Run 에 QUEUE-CONFLICT 메시지를 보낸다. Run 이 없으면 로그에만 남긴다.
 //   그 PR 의 worker 에게 base 를 합치라고 보내는 일은 상주 루프의 충돌 처리와 notify-conflicts.ts 가 한다(pr-conflict).
 //   충돌로 뺀 PR 은 큐 끝에 `QUEUE-CONFLICT 번호...` 로 다시 모으고 `QUEUE-HELD` 에도 든다. 종료 코드는 1 이다.
 //   update-branch 의 다른 실패(검사한 HEAD 와 다르다 같은 것)는 지금처럼 멈춘다

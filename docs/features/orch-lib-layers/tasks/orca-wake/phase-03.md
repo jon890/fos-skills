@@ -35,12 +35,16 @@ waiting 을 Orca 깨움과 사용자 답 우선 규칙으로 다시 쓰고 hooks
 
 ### 3. 개발 테스트
 
+`skills/orch/tests/orch-loop.spec.ts` 에 다시 시작 알림 전송 실패 기록과 다음 시작 재시도를 확인한다.
+
+`skills/orch/tests/docs-contract.spec.ts` `skills/orch/tests/launch-worker-functions.spec.ts` `skills/orch/tests/lib-loop.spec.ts` `skills/orch/tests/merge-queue.spec.ts` `skills/orch/tests/nudge-worker.spec.ts` `skills/orch/tests/orch-doctor.spec.ts` `skills/orch/tests/orch-entry.spec.ts` `skills/orch/tests/retired.spec.ts` `skills/orch/tests/check-peek.spec.ts` 를 같은 변경에서 실행한다.
+
 `skills/orch/tests/retired.spec.ts` 로 새 CLI·legacy·직접 경로·NEXT_WAIT 옵션의 한 줄 안내와 2, Orca 무조회를 확인한다. `skills/orch/tests/check-peek.spec.ts` 로 check 호출이 peek/all 을 쓰고 ack 하지 않는 것을 확인한다. 기존 nudge/doctor/launcher/docs-contract 테스트를 바뀐 계약에 맞춘다.
 
 ## 검증
 
 ```bash
-node scripts/run-tests.ts skills/orch/tests/retired.spec.ts skills/orch/tests/check-peek.spec.ts skills/orch/tests/nudge-worker.spec.ts skills/orch/tests/orch-doctor.spec.ts skills/orch/tests/orch-launcher.spec.ts skills/orch/tests/coordinator-hooks.spec.ts
+node scripts/run-tests.ts skills/orch/tests/orch-loop.spec.ts skills/orch/tests/docs-contract.spec.ts skills/orch/tests/launch-worker-functions.spec.ts skills/orch/tests/lib-loop.spec.ts skills/orch/tests/merge-queue.spec.ts skills/orch/tests/nudge-worker.spec.ts skills/orch/tests/orch-doctor.spec.ts skills/orch/tests/orch-entry.spec.ts skills/orch/tests/retired.spec.ts skills/orch/tests/check-peek.spec.ts
 claude plugin test .
 ```
 
@@ -48,24 +52,46 @@ claude plugin test .
 
 | 파일 | 변경 |
 | --- | --- |
-| `skills/orch/bin/orch.ts` | 수정 |
-| `skills/orch/scripts/lib/commands.ts` | 수정 |
-| `skills/orch/scripts/wait/*.ts` | 수정 |
-| `skills/orch/scripts/worker/nudge-worker.ts` | 수정 |
-| `skills/orch/scripts/doctor/orch-doctor.ts` | 수정 |
-| `skills/orch/scripts/loop/orch-loop.ts` | 수정 |
-| `skills/orch/SKILL.md` | 수정 |
-| `skills/orch/README.md` | 수정 |
-| `skills/orch/references/*.md` | 수정 |
+| `docs/adr/012-orch-loop-multi-run.md` | 수정 |
+| `docs/adr/013-orch-worker-stalled.md` | 수정 |
+| `docs/adr/INDEX.md` | 수정 |
+| `docs/code-architecture.md` | 수정 |
 | `docs/data-schema.md` | 수정 |
-| `docs/adr/*.md` | 수정 |
+| `docs/flow.md` | 수정 |
+| `skills/orch/README.md` | 수정 |
+| `skills/orch/SKILL.md` | 수정 |
+| `skills/orch/bin/orch.ts` | 수정 |
+| `skills/orch/references/board.md` | 수정 |
+| `skills/orch/references/cleanup.md` | 수정 |
+| `skills/orch/references/launch.md` | 수정 |
+| `skills/orch/references/overlay.md` | 수정 |
+| `skills/orch/references/verification.md` | 수정 |
+| `skills/orch/references/waiting.md` | 수정 |
+| `skills/orch/scripts/doctor/orch-doctor.ts` | 수정 |
+| `skills/orch/scripts/lib/commands.ts` | 수정 |
+| `skills/orch/scripts/lib/loop.ts` | 수정 |
+| `skills/orch/scripts/lib/user-active.ts` | 삭제 |
+| `skills/orch/scripts/queue/merge_queue.ts` | 수정 |
+| `skills/orch/scripts/wait/triage-messages.ts` | 수정 |
+| `skills/orch/scripts/wait/user-active.ts` | 수정 |
+| `skills/orch/scripts/wait/wait-important.ts` | 수정 |
+| `skills/orch/scripts/wait/watch-questions.ts` | 수정 |
+| `skills/orch/scripts/worker/nudge-worker.ts` | 수정 |
+| `skills/orch/tests/docs-contract.spec.ts` | 수정 |
+| `skills/orch/tests/fixtures/wait-important-run.ts` | 삭제 |
+| `skills/orch/tests/launch-worker-functions.spec.ts` | 수정 |
+| `skills/orch/tests/lib-loop.spec.ts` | 수정 |
+| `skills/orch/tests/merge-queue.spec.ts` | 수정 |
 | `skills/orch/tests/nudge-worker.spec.ts` | 수정 |
 | `skills/orch/tests/orch-doctor.spec.ts` | 수정 |
-| `skills/orch/tests/orch-launcher.spec.ts` | 수정 |
-| `skills/orch/tests/coordinator-hooks.spec.ts` | 수정 |
+| `skills/orch/tests/orch-entry.spec.ts` | 수정 |
+| `skills/orch/tests/triage-messages.spec.ts` | 삭제 |
+| `skills/orch/tests/user-active.spec.ts` | 삭제 |
+| `skills/orch/tests/wait-important.spec.ts` | 삭제 |
+| `docs/adr/027-orca-message-wake.md` | 신규 |
+| `skills/orch/changes/orca-wake.minor.md` | 신규 |
 | `skills/orch/scripts/lib/retired.ts` | 신규 |
 | `skills/orch/tests/retired.spec.ts` | 신규 |
 | `skills/orch/tests/check-peek.spec.ts` | 신규 |
-| `skills/orch/changes/orca-wake.minor.md` | 신규 |
-| `skills/orch/scripts/lib/user-active.ts` | 삭제 |
-| `skills/orch/scripts/lib/loop.ts` | 수정 |
+| `skills/orch/scripts/loop/orch-loop.ts` | 수정 |
+| `skills/orch/tests/orch-loop.spec.ts` | 수정 |

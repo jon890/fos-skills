@@ -192,6 +192,12 @@ async function main(argv: string[]): Promise<number> {
       process.stdout.write(commands.helpText(first))
       return 0
     }
+    const retired = commands.COMMANDS.find(c => c.retired && c.group === first && (c.verb === null || c.verb === rest[0]))
+    if (retired) {
+      const { retiredMessage } = await import('../scripts/lib/retired.ts')
+      err(retiredMessage(commands.form(retired), retired.retired!.doc))
+      return 2
+    }
     const stripped = stripFull(rest)
     let resolved = commands.resolveNew([first, ...stripped.args])
     // 감싼 명령은 `--full` 을 떼지 않는다. 감싼 명령의 인자일 수 있다
@@ -199,6 +205,11 @@ async function main(argv: string[]): Promise<number> {
     if ('error' in resolved) {
       err(`orch: ${resolved.error}`)
       err(commands.helpText(first).trimEnd())
+      return 2
+    }
+    if (resolved.command.retired) {
+      const { retiredMessage } = await import('../scripts/lib/retired.ts')
+      err(retiredMessage(commands.form(resolved.command), resolved.command.retired.doc))
       return 2
     }
     const file = commands.scriptIn(dir, resolved.command.script)
@@ -249,6 +260,11 @@ async function main(argv: string[]): Promise<number> {
     return 2
   }
   const legacy = commands.resolveLegacy(bare, printing ? [] : rest)
+  if (!printing && legacy?.command.retired) {
+    const { retiredMessage } = await import('../scripts/lib/retired.ts')
+    err(retiredMessage(legacy.hint, legacy.command.retired.doc))
+    return 2
+  }
   if (legacy) err(`orch: 새 꼴: ${legacy.hint}`)
   if (printing) {
     process.stdout.write(`${file}\n`)
