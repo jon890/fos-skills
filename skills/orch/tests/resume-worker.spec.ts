@@ -130,7 +130,7 @@ const calls = (...words: string[]) => log().filter((e) => is(e, ...words))
 const writes = () => log().filter((e) => is(e, 'terminal', 'create') || is(e, 'worker-abandon') || is(e, 'terminal', 'close') || is(e, 'worker-start'))
 
 test('limited Claude: 새 터미널, abandon, 옛 터미널 닫기, 잇기 순서이고 정리는 go 전에 한다', () => {
-  recordLaunch(repo, { dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: '/specs/old.md' })
+  recordLaunch(repo, { completion: 'none', dispatch: 'ctx_old', task: 'task_a', terminal: 'term_old', worktree, branch: 'feat/old', run: 'run_a', spec: '/specs/old.md' })
   const r = run()
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const order = writes()
@@ -157,6 +157,7 @@ test('limited Claude: 새 터미널, abandon, 옛 터미널 닫기, 잇기 순�
   assert.match(command, /resume-exec\.ts'? '?[^ ]*ctx_old'? && \. '?[^ ]*ctx_old\/launch\.sh'?$/)
   assert.ok(command.includes(process.execPath))
   const launch = readLaunch(repo, 'ctx_new')!
+  assert.equal(launch.completion, 'none')
   assert.equal(launch.branch, 'feat/old'); assert.equal(launch.spec, '/specs/old.md'); assert.equal(launch.terminal, 'term_new')
   // 다음 resume 이 쓸 실행 설정을 옮겨 적는다
   assert.equal(launch.agent, 'claude'); assert.equal(launch.model, 'claude-haiku-5-5'); assert.equal(launch.effort, 'low')

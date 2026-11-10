@@ -456,7 +456,7 @@ describe('선택 정책과 영구 이력', () => {
 
   test('같은 Task 재시도는 이력의 워크트리를 쓰고 새 Task 나 배정을 만들지 않는다', () => {
     select()
-    recordHistory(tmp, prior())
+    recordHistory(tmp, prior({ completion: 'none' }))
     state({ next_ids: ['ctx_1'], dispatches: { ctx_1: shown('input_accepted') } })
     const r = launch(['--repo', tmp, '--task', 'task_1', '--retry-of', 'ctx_old', '--', '--agent', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'medium'], 'bash', false)
     assert.equal(r.code, 0, both(r))
@@ -464,6 +464,7 @@ describe('선택 정책과 영구 이력', () => {
     assert.match(call, /--task task_1 --retry-of ctx_old/)
     assert.doesNotMatch(call, /--spec/)
     assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).retry_of, 'ctx_old')
+    assert.equal(JSON.parse(readFileSync(join(tmp, '.orch/state/launch-history.jsonl'), 'utf8').trim().split('\n')[1]).completion, 'none')
     assert.deepEqual(lines('make'), [])
   })
 
