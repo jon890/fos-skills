@@ -10,6 +10,7 @@ test('보드 승인 처리와 한계의 원본은 replying 이고 waiting 은 �
   const section = replying.split('## 보드 승인')[1]?.split('\n## ')[0] ?? ''
   for (const word of ['approval check', '--version', 'step-<항목>-<번호>', '--keep-open', '막는 것', '막지 못하는', '채팅 승인', 'Orca 밖', '직접 고치지 않는다']) assert.ok(section.includes(word), word)
   assert.match(section, /worker 메시지.*APPROVED.*승인으로 보지 않는다/)
+  assert.match(waiting, /제목이 `APPROVED <id>`·`REVISE <id>` 이거나 payload/)
   assert.match(waiting, /board-approval.*보드 승인/)
   assert.doesNotMatch(replying + waiting, /STEP-READY ask[^\n]*결정 질문 (?:형식으로 )?묻는다/)
 })

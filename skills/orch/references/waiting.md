@@ -4,7 +4,7 @@
 
 ## 메시지가 오면
 
-payload `source` 가 `board-approval` 인 `APPROVED`, `REVISE` 는 [`replying.md` 「보드 승인」](replying.md#보드-승인)을 따른다.
+제목이 `APPROVED <id>`·`REVISE <id>` 이거나 payload `source` 가 `board-approval` 인 메시지는 [`replying.md` 「보드 승인」](replying.md#보드-승인)을 따른다.
 
 사용자와 대화 중에 깨어나면 **사용자 답을 먼저 하고 깨운 메시지는 답에 덧붙이거나 다음 턴에 처리한다. 결정 질문이면 사용자에게 같이 묻는다.** 사용자 입력 시각으로 알림을 미루지 않는다.
 Orca 가 check 명령을 지정한 깨움은 그 명령으로 읽는다. orch 감시 스크립트는 `check --peek` 또는 `check --all` 만 쓰고 메일을 읽음 처리하지 않는다.
