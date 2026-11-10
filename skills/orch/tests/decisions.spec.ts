@@ -192,3 +192,14 @@ test('기본 핸들러는 다른 저장소의 루프가 같은 결정 알림을 
     assert.equal(received().length, 1)
   } finally { rmSync(other, { force: true, recursive: true }) }
 })
+
+test('저장소마다 다른 보드 결정은 중복으로 버리지 않고 각각 보낸다', async () => {
+  const other = realpathSync(mkdtempSync(join(tmpdir(), 'decision-pending-peer-')))
+  try {
+    mkdirSync(join(other, '.orch'), { recursive: true })
+    registerRun(repo, 'r', null, false, 'term_coordinator')
+    await fire('decision-pending', { questions: [], items: [{ id: 'a', text: '결정 A' }] }, { repo, run: 'r', base: 'main' })
+    await fire('decision-pending', { questions: [], items: [{ id: 'b', text: '결정 B' }] }, { repo: other, run: 'r', base: 'main' })
+    assert.equal(received().length, 2)
+  } finally { rmSync(other, { force: true, recursive: true }) }
+})
