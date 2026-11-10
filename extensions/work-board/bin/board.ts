@@ -43,12 +43,15 @@
 // 파일은 json.dump(indent=1, ensure_ascii=False) 의 꼴로 쓴다. 한 칸 들여쓰기, 한글 그대로, 끝 줄바꿈 없음이다.
 // 숫자는 JS number 로 다시 쓴다. 1.0 은 1 이 되고 2^53 을 넘는 정수는 바뀐다. 이 명령이 쓰는 칸은 PR 번호 말고는 문자열이다.
 //
+// 쓰기는 <보드 파일>.lock 을 읽기부터 저장까지 잡는다. 기본 5초 대기, 30초 넘은 잠금은 넘겨받는다.
+// list, steps 는 잠그지 않는다. BOARD_LOCK_WAIT_MS 는 테스트용 기다리는 한도다.
 // 종료 코드: 0 반영했다, 1 거절했다(이유는 stderr), 2 사용법 오류
 
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { LockTimeout, withFileLock, type Lock } from './file-lock.ts'
 
 export { parseEventTag } from '../hooks/event-tags.js'
 import { STEP } from '../hooks/event-tags.js'
@@ -70,6 +73,7 @@ const USAGE =
   '[--task URL] [--progress N/M] [--stages S] [--detail D] [--next N] [--file F]'
 // --help 가 내는 글. 사용법 줄 뒤에 머리 설명을 붙인다
 const HELP = `${USAGE}
+쓰기 잠금: <보드 파일>.lock, 5초 대기, 30초 뒤 넘겨받기. list, steps 는 잠그지 않는다.
 
 저장소의 작업 현황 파일(board.json)을 고친다. work-board mod 가 이 파일을 읽어 /board 창에 보여 준다.
 
@@ -488,26 +492,62 @@ function main(argv: string[]): number {
     return 1
   }
   const path = a.file || defaultBoardPath(process.cwd())
-  const board: Board = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { items: [] }
-  for (const item of board.items) normalizeItem(item)
-  const before = new Map(board.items.map((item) => [item, stepKey(item)]))
-  try {
-    if (!apply(a, board)) return 0
-  } catch (e) {
-    if (!(e instanceof Refused)) throw e
-    process.stderr.write(`${e.message}\n`)
-    return 1
+  const read = (): Board => {
+    const board: Board = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { items: [] }
+    for (const item of board.items) normalizeItem(item)
+    return board
   }
-  const stamp = localIso(new Date())
-  board.updatedAt = stamp
-  for (const item of board.items) if (before.get(item) !== stepKey(item)) item.stepAt = stamp
-  mkdirSync(dirname(path), { recursive: true })
-  // 줄을 통째로 바꾸는 set 은 쓰기 전 파일을 한 세대 남긴다. 잘못 덮어쓴 끝냄 표시를 되살릴 수 있게 한다
-  if (a.cmd === 'set' && (a.detail !== undefined || a.next !== undefined) && existsSync(path)) copyFileSync(path, `${path}.bak`)
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, JSON.stringify(board, null, 1))
-  renameSync(tmp, path)
-  return 0
+  const readonly = ['list', 'steps'].includes(a.cmd)
+  const dir = dirname(path)
+  const made = readonly ? undefined : mkdirSync(dir, { recursive: true })
+  let saved = false
+  try {
+    if (readonly) { apply(a, read()); return 0 }
+    const given = process.env.BOARD_LOCK_WAIT_MS
+    const waitMs = given !== undefined && /^\d+$/.test(given) && Number.isSafeInteger(Number(given)) ? Number(given) : 5000
+    return withFileLock(path, (lock: Lock) => {
+      const board = read()
+      const before = new Map(board.items.map((item) => [item, stepKey(item)]))
+      if (!apply(a, board)) return 0
+      const stamp = localIso(new Date())
+      board.updatedAt = stamp
+      for (const item of board.items) if (before.get(item) !== stepKey(item)) item.stepAt = stamp
+      // 줄 전체를 바꾸기 전 사본도 잠금 안에서 남긴다.
+      if (a.cmd === 'set' && (a.detail !== undefined || a.next !== undefined) && existsSync(path)) copyFileSync(path, `${path}.bak`)
+      saved = saveBoard(path, board, lock)
+      if (!saved) {
+        process.stderr.write(`보드 잠금을 다른 프로세스가 넘겨받아 쓰지 않았다: ${lock.file}\n`)
+        return 1
+      }
+      return 0
+    }, { waitMs })
+  } catch (error) {
+    if (!(error instanceof Refused) && !(error instanceof LockTimeout)) throw error
+    process.stderr.write(`${error instanceof LockTimeout ? error.message.replace('파일 잠금을', '보드 잠금을') : error.message}\n`)
+    return 1
+  } finally {
+    if (!saved && made) {
+      let current = dir
+      for (;;) {
+        try { rmdirSync(current) } catch { break }
+        if (current === made) break
+        current = dirname(current)
+      }
+    }
+  }
+}
+
+// 임시 파일에 쓰고 이름을 바꾼다. 쓰기 직전에 잠금의 표지를 확인한다.
+export function saveBoard(path: string, board: unknown, lock: { held(): boolean }): boolean {
+  const tmp = `${path}.${process.pid}.tmp`
+  try {
+    writeFileSync(tmp, JSON.stringify(board, null, 1))
+    if (!lock.held()) return false
+    renameSync(tmp, path)
+    return true
+  } finally {
+    try { unlinkSync(tmp) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+  }
 }
 
 if (import.meta.main) {
