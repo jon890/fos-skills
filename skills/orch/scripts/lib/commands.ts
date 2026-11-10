@@ -155,6 +155,10 @@ const ROWS: Row[] = [
   { group: 'cleanup', verb: 'worktree', script: 'cleanup/remove-worktree.ts', legacy: { name: 'remove-worktree', flags: [] }, usage: 'orch cleanup worktree <워크트리>' },
   { group: 'cleanup', verb: 'handoff', script: 'cleanup/handoff-cleanup.ts', context: ['repo', 'run'], legacy: { name: 'handoff-cleanup', flags: [] }, usage: 'orch cleanup handoff [--apply]' },
   // board
+  { group: 'board', verb: 'approval add', script: 'board/board-approval.ts', prepend: ['add'], context: ['repo', 'run'], runFrom: 'run-current', usage: 'orch board approval add <id> --title <제목> --kind <post|spec|step|real|command> [--keep-open] [...]' },
+  { group: 'board', verb: 'approval list', script: 'board/board-approval.ts', prepend: ['list'], context: ['repo'], usage: 'orch board approval list [--full]' },
+  { group: 'board', verb: 'approval cancel', script: 'board/board-approval.ts', prepend: ['cancel'], context: ['repo'], usage: 'orch board approval cancel <id> [--reason <이유>]' },
+  { group: 'board', verb: 'approval check', script: 'board/board-approval.ts', prepend: ['check'], context: ['repo'], usage: 'orch board approval check <id> [--version <버전>]' },
   { group: 'board', verb: 'sync', script: 'board/board-sync.ts', context: ['repo'], legacy: { name: 'board-sync', flags: [] }, usage: 'orch board sync' },
   { group: 'board', verb: 'release', script: 'board/board-release.ts', context: ['repo'], legacy: { name: 'board-release', flags: [] }, usage: 'orch board release --pr <N>' },
   { group: 'board', verb: 'goal', script: 'board/goal-progress.ts', legacy: { name: 'goal-progress', flags: [] }, usage: 'orch board goal <목표 id>' },
@@ -327,10 +331,10 @@ export function scriptIn(dir: string, name: string): string | null {
 }
 
 // 사람이 읽는 사용법. 묶음을 주면 그 묶음만 낸다
-export function helpText(group?: string): string {
-  const rows = group ? COMMANDS.filter((c) => c.group === group) : COMMANDS
+export function helpText(group?: string, lead?: string): string {
+  const rows = group ? COMMANDS.filter((c) => c.group === group && (!lead || c.verb === lead || c.verb?.startsWith(lead + ' '))) : COMMANDS
   const lines = group
-    ? [`사용법: orch ${group} <동작> [인자]`, '', ...rows.map((c) => `  ${c.usage}`)]
+    ? [`사용법: orch ${group}${lead ? ' ' + lead : ''} <동작> [인자]`, '', ...rows.map((c) => `  ${c.usage}`)]
     : [
         '사용법: orch <묶음> <동작> [인자]',
         '',

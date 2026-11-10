@@ -55,13 +55,14 @@ extensions/work-board/hooks/register.js (그리기, 누름, 글칸, real 두 번
 | worker 가 `APPROVED <id> <버전>` 제목으로 Run 에 보낸다 | `check` 가 기록 상태를 먼저 본다 | 누른 기록이 없어 「아직 누르지 않음」 |
 | worker 터미널에서 연 창의 버튼을 누른다 | 창이 버튼을 그리지 않는다. `press` 도 자기 터미널이 worker 면 거절한다 | 기록도 신호도 없다 |
 | 에이전트(코디네이터든 worker 든)가 Bash 도구로 창 전용 스크립트 `press` 를 부른다 | PreToolUse hook `block-approval-press.ts` 가 거부한다. worker 터미널이면 `press` 1단계도 거절한다 | 기록도 신호도 없다 |
+| worker 가 다른 세션의 승인을 `check` 로 소모한다 | `check` 가 부른 터미널도 worker 판정한다 | 「worker 가 보냄」, 조회 실패는 「신호를 읽지 못함」 이며 승인 상태 유지 |
 | worker 가 승인 대기를 올리거나 거둔다 | `add`, `cancel` 이 자기 터미널을 worker 판정해 거절한다. `check` 는 올린 터미널(`terminal`)이 worker 인 기록도 「worker 가 보냄」 으로 거절한다 | 종료 코드 1 |
 | 코디네이터가 승인됐다고 짐작해 실행한다 | 규칙 문서: 실행 직전 `check` 통과만 승인으로 본다(채팅 승인 제외) | 문서로 막는다 |
 | 승인 뒤 미리보기를 고쳐 등록한다 | `check` 가 해시를 다시 잰다 | 「미리보기가 바뀜」 |
 | 한 승인으로 두 번 등록한다 | `check` 가 통과할 때 `used` 로 닫는다 | 둘째 `check` 는 「이미 사용함」 |
 | 같은 사용자 권한으로 승인 파일과 Orca 메시지를 함께 꾸민다. hook 이 읽지 못하는 꼴(스크립트 파일 안, 다른 이름의 사본)로 `press` 를 부른다. `ORCA_TERMINAL_HANDLE` 을 바꿔 부른다 | 없음 | 막지 못함. 문서에 한계로 적는다 |
 
-한계 하나 더: 코디네이터 터미널 자체가 어느 Run 의 worker 목록에 있으면(넘김으로 띄운 코디네이터, 중첩 코디네이터) 그 터미널의 승인 대기는 `check` 가 늘 「worker 가 보냄」 으로 거절한다. 스펙 DECISION21 이 「worker 목록에 있는 터미널」 을 거절하기로 한 결과다. 그런 코디네이터는 채팅 승인을 쓴다.
+한계 하나 더: 코디네이터 터미널 자체가 어느 Run 의 worker 목록에 있으면(넘김으로 띄운 코디네이터, 중첩 코디네이터) 그 터미널에서 부른 `check` 와 그 터미널이 올린 승인 대기는 늘 「worker 가 보냄」 으로 거절한다. 스펙 DECISION21 이 「worker 목록에 있는 터미널」 을 거절하기로 한 결과다. 그런 코디네이터는 채팅 승인을 쓴다.
 
 ## 인터페이스와 데이터
 
@@ -178,8 +179,8 @@ node bin/approvals.ts press <id> <버전> approve|revise [--note <글>] --origin
 3. 미리보기 해시를 다시 잰다. 파일이 없거나 다르면 「미리보기가 바뀜」.
 4. `--version` 을 받았고 기록의 버전과 다르면 「버전이 다름」. 코디네이터가 v12 신호를 들고 있는 사이 v13 이 승인돼도 v12 기준으로 실행하지 않게 한다.
 5. 신호 메시지를 읽는다. 기록의 Run 메일함에서 payload 가 `{source: board-approval, action: approve, id, version, nonce}` 와 같은 메시지를 찾는다. 찾지 못하거나 조회가 실패하면 「신호를 읽지 못함」. 읽는 필드는 `core/message-fields.ts` 의 `senderOf` 와 새로 더하는 `subjectOf`, `payloadOf` 다(아래). 조회 명령은 `orca orchestration check --run <Run> --all --types status --json` 과 `orca orchestration inbox --terminal run:<Run> --limit <n> --full --json` 가운데 PR1 첫 작업의 실측으로 고른다. 기준은 승인 신호를 놓치지 않는 범위와 걸린 시간이다.
-6. 메시지를 보낸 터미널(`senderOf`, 비어 있으면 뺀다), `press.terminal`, 기록의 `terminal`(올린 터미널)을 「approval 꼴」 로 판정한다. 하나라도 worker 면 「worker 가 보냄」. 조회가 실패하면 「신호를 읽지 못함」.
-7. 잠금을 잡고 다시 읽는다. 먼저 그 id 의 가장 늦은 기록(`latest`)이 1단계에서 고른 버전과 같은지 본다. 다르면(조회하는 동안 같은 id 로 다시 올렸다) 새 기록의 상태로 2단계 이유를 낸다. 새 기록은 `open` 이라 보통 「아직 누르지 않음」 이다. 같으면 그 기록이 아직 `approved` 이고 `press.nonce` 가 같을 때만 `used` 와 `closedAt` 을 쓰고 `APPROVAL-OK <id>` 다. 그 사이 상태가 바뀌었으면 바뀐 상태로 2단계 이유를 낸다. 앞 버전에 눌린 승인이 새 내용에 쓰이지 않게 한다(스펙 REQ2).
+6. 메시지를 보낸 터미널(`senderOf`, 비어 있으면 뺀다), `press.terminal`, 기록의 `terminal`(올린 터미널), `check` 를 부른 터미널(`ORCA_TERMINAL_HANDLE`, 있으면)을 「approval 꼴」 로 함께 판정한다. 하나라도 worker 면 「worker 가 보냄」. 조회가 실패하면 「신호를 읽지 못함」.
+7. 잠금을 잡고 다시 읽는다. 먼저 그 id 의 가장 늦은 기록(`latest`)이 1단계에서 고른 버전과 같은지 본다. 다르면(조회하는 동안 같은 id 로 다시 올렸다) 새 기록의 상태로 2단계 이유를 낸다. 새 기록은 `open` 이라 보통 「아직 누르지 않음」 이다. 같으면 그 기록이 아직 `approved` 이고 `press.nonce` 가 같은지 본다. 미리보기 해시도 잠금 안에서 다시 재어 다르거나 읽지 못하면 「미리보기가 바뀜」 으로 거절한다. 이 조건이 모두 맞을 때만 `used` 와 `closedAt` 을 쓰고 `APPROVAL-OK <id>` 다. 그 사이 상태가 바뀌었으면 바뀐 상태로 2단계 이유를 낸다. 앞 버전에 눌린 승인이 새 내용에 쓰이지 않게 한다(스펙 REQ2).
 
 Orca 조회(5, 6단계)를 잠금 밖에서 하는 것은 조회가 몇 초 걸려 다른 쓰기의 5초 기다림을 넘길 수 있어서다. 7단계의 다시 읽기가 그 사이의 변경을 막는다. 보드 명령 스펙(#421) REQ11 의 「미리 읽은 목록 저장 거절」 과 같은 생각이다.
 
@@ -190,7 +191,7 @@ export function subjectOf(message: Json): string   // subject, title
 export function payloadOf(message: Json): Json      // payload 가 문자열이면 JSON 으로 푼다
 ```
 
-`check --all` 은 100건까지 돌려준다(`lib/questions.ts` 머리 주석, `behavior.md` 「질문 조회 범위」 의 실측). 승인 뒤 그보다 많은 메시지가 쌓인 Run 에서는 5단계가 「신호를 읽지 못함」 이 된다. 이때 코디네이터는 규칙대로 사용자에게 묻고 같은 id 로 다시 올린다.
+`inbox --terminal run:<Run> --limit 200` 을 고른다. 2026-11-10 실측에서 최근 메시지부터 왔다(표본 200건의 sequence 가 45650 → 44602로 모두 내림차순). 이미 읽은 메시지도 소비 없이 읽으며 0.56초였다. 비교한 `check --all` 은 100건, 0.58초였다. 승인 뒤 조회 한도보다 많은 메시지가 쌓인 Run 에서는 5단계가 「신호를 읽지 못함」 이 된다. 이때 코디네이터는 규칙대로 사용자에게 묻고 같은 id 로 다시 올린다.
 
 Orca 밖 창에서 누른 승인은 `press.terminal` 이 null 이고 보낸 쪽도 비거나 Orca 가 정한 값일 수 있어, 보낸 터미널을 대조하지 못한다. 이때 worker 판정은 올린 터미널과 (있으면) 보낸 쪽만 본다. 스펙 REQ13 의 막지 못하는 것에 든다.
 
@@ -250,7 +251,7 @@ Orca 밖 창에서 누른 승인은 `press.terminal` 이 null 이고 보낸 쪽�
 
 | 순서 | PR | 담는 것 | 계획서 |
 | --- | --- | --- | --- |
-| 1 | PR1 명령·저장·규칙 | `core/approvals.ts`, `lib/approvals.ts`, `lib/worker-terminal.ts`(hook 에서 옮김), `core/message-fields.ts` 의 두 함수, `board/board-approval.ts`, 명령 표 네 행, `data-schema.md`, `replying.md`, `waiting.md`, `board.md` 의 명령 안내, orch 변경 조각 | [tasks/approval-store](tasks/approval-store/index.json) |
+| 1 | PR1 명령·저장·규칙 | `core/approvals.ts`, `lib/approvals.ts`, `lib/worker-terminal.ts`(hook 에서 옮김), `core/message-fields.ts` 의 두 함수, `board/board-approval.ts`, 명령 표 네 행, `data-schema.md`, `replying.md`, `waiting.md`, `board.md` 의 명령 안내, orch 변경 조각 | 구현 PR 본문의 검증 근거(구현한 계획서는 해당 PR에서 삭제) |
 | 2 | PR2 창 | `bin/approvals.ts`(`where`, `self`, `press`), `core/approvals.ts` 의 `applyPress`·`revertPress`, `lib/approvals.ts` 의 `recordPress`, `hooks/block-approval-press.ts`, `register.js` 의 상자·버튼·글칸·real 두 번·명령 채우기, `behavior.md`, README, 창 실측 | PR1 머지 뒤에 쓴다 |
 
 `recordPress` 를 PR2 에 두는 것은 PR1 만 머지된 동안 승인 기록을 쓰는 길이 하나도 없게 하려는 것이다. 그동안 `check` 는 늘 「아직 누르지 않음」 이고 코디네이터는 채팅 승인을 쓴다.
