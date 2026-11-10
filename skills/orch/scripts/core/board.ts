@@ -1,4 +1,3 @@
-
 export type BoardItem = Record<string, unknown> & { id: string }
 
 // CI 고침, 리뷰 반영, 충돌 해결처럼 기존 PR 을 마무리하는 지시서의 줄 머리. 단계 줄이 아니라 진행률에 세지 않는다

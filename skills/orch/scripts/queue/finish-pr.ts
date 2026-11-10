@@ -1,4 +1,3 @@
-import { gitBin } from '../lib/git.ts'
 // PR 하나의 머지 뒤 마무리를 끝까지 한다: worker 정리, 배포 확인, 마지막 PR 판정, after-deploy 이벤트(업무 완료), 보드 done.
 //
 // 머지 큐(`merge_queue.ts`)를 건 자리에서 PR 마다 함께 건다. 보통은 `merge-with-finish.ts` 가 대신 건다.
@@ -118,6 +117,7 @@ import { gitBin } from '../lib/git.ts'
 // 종료 코드: 0 FINISH-DONE, 1 FINISH-FAIL, 2 사용법 오류(설정 파일 오류, 업무 완료 명령과 핸들러가 함께 있음 포함)이거나
 //           orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
+import { gitBin } from '../lib/git.ts'
 import { recordRouting } from '../lib/routing-log.ts'
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'

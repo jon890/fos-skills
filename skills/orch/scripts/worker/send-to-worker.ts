@@ -1,5 +1,3 @@
-import { orcaJsonOrThrow, closeTerminal } from '../lib/orca.ts'
-import { objectOr } from '../core/json.ts'
 // worker 에게 답이나 후속 지시를 보낸다. Orca 가 메시지마다 worker 를 깨우므로 터미널에 입력하지 않는다.
 // 활성 dispatch 는 미답변 질문에 reply 하고, 답할 후보가 없거나 --no-reply 면 send 한다.
 // answer_conflict/dispatch_inactive 는 닫은 질문으로 기록한다. consumer_fenced 는 --from 없이 재시도한다.
@@ -22,12 +20,13 @@ import { objectOr } from '../core/json.ts'
 // RESUMED, RESTARTED, ENDED, NOTE, FAIL 이다. 복구 자식에는 짧은 출력 신호를 넘긴다.
 // 종료 코드: 0 전달됨, 1 다시 띄우기 실패, 2 사용법/지시서 오류, 3 끝나서 보낼 수 없음, 5 Orca/영수증 오류.
 
+import { orcaJsonOrThrow, closeTerminal } from '../lib/orca.ts'
+import { objectOr } from '../core/json.ts'
 import { readFileSync } from 'node:fs'
 import { real } from '../lib/fs.ts'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { context } from '../lib/completion.ts'
-
 import { emit, oneLine, shortEnv } from '../lib/output.ts'
 import type { Rule } from '../lib/output.ts'
 import { runInherit, scriptCommand } from '../lib/proc.ts'

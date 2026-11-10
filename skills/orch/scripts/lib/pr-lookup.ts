@@ -1,4 +1,3 @@
-import { isObject } from '../core/json.ts'
 // 정리(cleanup-sweep.ts)의 PR 조회를 저장소마다 묶는 한 벌이다.
 //
 // 예전에는 브랜치마다 이름 변형까지 `gh pr list --head` 를 부르고, 열린 PR 의 base 인지 `gh pr list --base` 로 따로 물었다.
@@ -15,6 +14,7 @@ import { isObject } from '../core/json.ts'
 //
 // 조회 결과의 PR 은 `gh pr list --json` 과 같은 꼴(author 는 { login })이다. 판정은 부르는 쪽이 한다.
 
+import { isObject } from '../core/json.ts'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { apiTarget, gh, ghJson } from './gh.ts'

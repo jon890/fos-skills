@@ -3,6 +3,7 @@ import type { Config } from './config.ts'
 import { judge } from './overlap.ts'
 import type { JudgeOptions } from './overlap.ts'
 import { pyRegExp } from './regexp.ts'
+
 export type RefreshSettings = {
   slots: number
   workerPaths: RegExp | null

@@ -9,6 +9,7 @@ import { run } from './proc.ts'
 // keepOnUnknownError 는 기존 캐시 잠금처럼 ESRCH 로 확인한 종료만 회수할 때 쓴다.
 // 정수가 아니거나 1 미만이면 process.kill 을 부르지 않는다. process.kill(0, 0) 은 자기 프로세스 그룹에 보내져 늘 성공하므로
 // 깨진 pid 파일이 살아 있는 것으로 읽혀 잠금이 회수되지 않는다.
+
 export function alive(pid: number, options: { keepOnUnknownError?: boolean } = {}): boolean {
   if (!Number.isInteger(pid) || pid < 1) return false
   try {

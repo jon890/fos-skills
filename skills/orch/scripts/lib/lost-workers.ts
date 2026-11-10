@@ -1,7 +1,8 @@
+// 옛 wait 의 끊김 판정을 루프에서 재사용한다. 일부러 끝낸 작업과 작업 중인 화면은 알리지 않는다.
+
 import { objectOr } from '../core/json.ts'
 import { lostWorkers, retriedLost, deliberateEnd, taskClosed } from '../core/lost-workers.ts'
 import type { Json, Lost } from '../core/lost-workers.ts'
-// 옛 wait 의 끊김 판정을 루프에서 재사용한다. 일부러 끝낸 작업과 작업 중인 화면은 알리지 않는다.
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { orcaJson } from './orca.ts'
@@ -10,6 +11,7 @@ import { judge, readScreens, screenHandles } from './worker-state.ts'
 import { makeParent, pathOf } from './paths.ts'
 import { fire } from './events.ts'
 import { notifyRun } from './run-notice.ts'
+
 const err = (line: string) => console.error(line)
 function orcaResult(args: string[]): Json | null {
   const got = orcaJson<Json>(['orchestration', ...args])

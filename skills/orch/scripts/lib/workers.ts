@@ -1,9 +1,9 @@
-import { isObject, objectOr } from '../core/json.ts'
-import { LIVE_DISPATCH } from '../core/workers.ts'
 // 브랜치의 워크트리와 그 워크트리의 worker-list 행 찾기 한 벌이다.
 // 사용처: notify-conflicts.ts(충돌한 PR 의 worker 에게 알리기), orch-loop.ts(체크가 실패한 PR 의 worker 에게 알리기),
 // orch-doctor.ts(--run 의 worker 판정은 workerRows, Orca 형식 점검은 missingRowKeys 를 쓴다).
 
+import { isObject, objectOr } from '../core/json.ts'
+import { LIVE_DISPATCH } from '../core/workers.ts'
 import { git } from './git.ts'
 import { orcaJson } from './orca.ts'
 import type { RunOptions } from './proc.ts'

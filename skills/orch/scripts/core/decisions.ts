@@ -3,6 +3,7 @@ import { payload } from './completion.ts'
 import { dispatchOf } from './questions.ts'
 import type { Message } from './questions.ts'
 import type { BoardItem } from './board.ts'
+
 export type Entry = { key: string; question?: { id: unknown; dispatch: string; text: string }; item?: { id: string; text: string } }
 export const NOTE_LINE = /^참고\s*:/
 export const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')

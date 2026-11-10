@@ -1,4 +1,3 @@
-import { objectOr } from './json.ts'
 // PR 작업의 완료 신호(worker_done)를 같은 Task 의 앞선 준비 상태와 대조한다. wait-important 와 triage-messages 가 쓴다.
 //
 // 이 검사는 발신 프로세스를 인증하지 않는다. Orca 의 settlement 를 바꾸지 않고, 완료 조건의 근거가 없는 신호를
@@ -17,6 +16,7 @@ import { objectOr } from './json.ts'
 //   failure_report  worker_done --outcome failed 같은 실패 보고다. PR 준비를 요구하지 않는다
 //   suspicious      근거가 없다. type 을 suspicious_worker_done 으로, 원래 type 을 originalType 으로 둔다
 
+import { objectOr } from './json.ts'
 import { jsonEqual } from './json.ts'
 
 type Json = Record<string, unknown>

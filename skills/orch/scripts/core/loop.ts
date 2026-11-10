@@ -1,4 +1,3 @@
-
 export const DEFAULT_TICK_SEC = 300
 export const MIN_DEAD_SEC = 120
 

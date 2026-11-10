@@ -1,6 +1,3 @@
-import { closeTerminal as closeOrcaTerminal } from '../lib/orca.ts'
-import { alive } from '../lib/process.ts'
-import { objectOr } from '../core/json.ts'
 // 사용 한도로 멈췄거나 재부팅으로 끊긴 worker 를 같은 워크트리에서 claude --resume / codex resume 으로 다시 띄워 같은 Task 에 잇는다.
 // 사용법: resume-worker.ts --dispatch ID [--run ID] [--repo DIR] [--timeout-ms N]   (진입점: orch worker resume --dispatch <id>)
 // 계약은 docs/features/limit-resume/spec.md 와 design.md 다. 세션 찾기와 실행 줄은 lib/resume.ts, 새 터미널 쪽은 resume-exec.ts 가 맡는다.
@@ -47,6 +44,9 @@ import { objectOr } from '../core/json.ts'
 // 잠금(<orch 루트>/state/resume/<dispatch>/lock): 이미 있으면 그 pid 가 살아 있거나 그 terminal 이 열려 있을 때 RESUME-FAIL target 이다.
 // 둘 다 아니면 옛 폴더를 비우고 새로 잡는다. 회수는 reclaim 파일을 잡은 실행 하나만 한다. 그래서 link 실패로 남은 터미널이 열려 있는 동안 같은 세션에 두 번째 프로세스를 띄우지 않는다.
 
+import { closeTerminal as closeOrcaTerminal } from '../lib/orca.ts'
+import { alive } from '../lib/process.ts'
+import { objectOr } from '../core/json.ts'
 import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'

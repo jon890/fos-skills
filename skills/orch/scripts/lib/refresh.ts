@@ -1,5 +1,3 @@
-import { isRecord } from '../core/refresh.ts'
-import type { ForkFiles, RefreshRecord } from '../core/refresh.ts'
 // 상주 루프의 「뒤처진 PR 최신화」 판정 한 벌이다. 루프(orch-loop.ts)가 읽기, 기록, 부르기를 하고 여기는 설정 읽기와 판정만 한다.
 // 단계의 차례와 알림은 orch-loop.ts 머리 주석의 「최신화」 가 소유한다. 결정의 배경은 docs/adr/020-orch-loop-refresh.md 다.
 //
@@ -22,11 +20,11 @@ import type { ForkFiles, RefreshRecord } from '../core/refresh.ts'
 //   그 PR 이 머지되면 이 PR 은 다시 뒤처져 방금 돌린 CI 가 쓸모없어지기 때문이다. 큐에 든 PR 의 「앞」 은 큐 순서에서 앞선 PR 이고,
 //   큐에 없는 PR 의 「앞」 은 큐의 남은 PR 전부다. always 면 겹침을 따지지 않고 앞 PR 이 하나라도 있으면 미룬다.
 
+import { isRecord } from '../core/refresh.ts'
+import type { ForkFiles, RefreshRecord } from '../core/refresh.ts'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-
 import { git } from './git.ts'
-
 import { makeParent, pathOf } from './paths.ts'
 
 export function forkFiles(repo: string, base: string, head: string): { ok: true; files: ForkFiles } | { ok: false; error: string } {

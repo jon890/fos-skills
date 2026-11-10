@@ -1,4 +1,3 @@
-
 export function pyRegExp(source: string): RegExp {
   let out = ''
   for (let i = 0; i < source.length; i++) {

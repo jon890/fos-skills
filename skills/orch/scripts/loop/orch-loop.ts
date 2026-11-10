@@ -1,4 +1,3 @@
-import { isObject } from '../core/json.ts'
 // 저장소마다 하나 도는 상주 루프다. 여러 세션의 Run 을 함께 맡는다(ADR-012, 아래 「Run」). 틱마다 질문 확인, 정리(원격 브랜치 포함), 보드 동기화, CI 감시와 알림, tick 이벤트, 자동 머지, 충돌 PR 처리를 한다.
 // 코디네이터를 깨워야 하는 일은 그 Run 에 Orca status 메시지로 보낸다. 전송은 lib/run-notice.ts 가 맡는다.
 // 루프는 상태로만 판정한다. 루프가 없던 동안 생긴 일은 다음 틱이 다시 보므로, 죽으면 다시 띄우기만 하면 된다.
@@ -398,6 +397,7 @@ import { isObject } from '../core/json.ts'
 //     5  --start 가 명의 때문에 띄우지도 합류하지도 않았다(LOOP-START-FENCED)
 //     128 + 신호 번호  --foreground 나 --tick 이 신호를 받았다. --tick 의 부모가 사라지면 129(SIGHUP)
 
+import { isObject } from '../core/json.ts'
 import { createHash } from 'node:crypto'
 import { watchCompletions } from './completion-watch.ts'
 import { watchLost } from '../lib/lost-workers.ts'

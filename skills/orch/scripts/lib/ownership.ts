@@ -1,4 +1,3 @@
-import { isObject } from '../core/json.ts'
 // 워크트리 정리 전에 그 경로의 살아 있는 터미널이 사용자 소유인지 확인하는 판정 한 벌이다.
 //
 // 사용처: remove-worktree.ts 와 cleanup-sweep.ts 가 삭제 전에 blocker 를 부른다. cleanup-sweep.ts 는 allWorkers 를 cached 로 감싸
@@ -28,12 +27,14 @@ import { isObject } from '../core/json.ts'
 //     rowHandles     한 행이 가리키는 터미널 handle
 //     blocker        안전하면 빈 문자열, 남길 때는 이유
 
+import { isObject } from '../core/json.ts'
 import { realPath, inside } from './fs.ts'
 import { orcaBin, withFull } from './orca.ts'
 import { runAsync } from './proc.ts'
 import { WorkerRunCache, type RunInfo } from './worker-run-cache.ts'
 
 // Run 마다 읽을 때 동시에 띄우는 orca 수. Run 251개 실측: 8 이면 30초, 16 이면 18초
+
 export const JOBS = 16
 // 성공한 목록은 정리 실행 동안 유지한다. 삭제 직전 forWorktree 가 해당 경로와 변경된 Run 을 새로 읽으므로
 // 기다리는 사이 터미널을 사용자가 넘겨받아도 옛 소유 상태로 닫지 않는다. 조회 실패는 다음 호출이 다시 시도한다.

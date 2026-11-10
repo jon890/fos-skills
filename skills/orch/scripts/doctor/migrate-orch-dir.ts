@@ -1,6 +1,3 @@
-import { workerRows } from '../lib/workers.ts'
-import { gitBin } from '../lib/git.ts'
-import { isObject } from '../core/json.ts'
 // 옛 위치(.omc, .claude)에 있던 orch 파일을 orch 작업 폴더(.orch)로 옮긴다.
 // --hooks 는 따로 도는 모드다. config.json 의 옛 셸 명령 칸을 같은 일을 하는 핸들러 파일(<orch 루트>/hooks/<이벤트>.ts)로 바꾼다.
 //
@@ -81,6 +78,9 @@ import { isObject } from '../core/json.ts'
 //
 // GIT, ORCA, PGREP 환경 변수로 실행 파일을 바꾼다.
 
+import { workerRows } from '../lib/workers.ts'
+import { gitBin } from '../lib/git.ts'
+import { isObject } from '../core/json.ts'
 import {
   accessSync,
   constants as fsConstants,
@@ -105,7 +105,6 @@ import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { inside, isFile, realPath } from '../lib/fs.ts'
 import { mainCheckout } from '../lib/git.ts'
-
 import { DEFAULT_MOVES, ensureIgnored, hasFiles, LEGACY_MARKERS, legacyPaths, NAMES, orchDir, pathOf } from '../lib/paths.ts'
 import { run } from '../lib/proc.ts'
 import { pyRegExp, pyStr, shSplit } from '../lib/py.ts'
@@ -127,7 +126,6 @@ const LOCAL_SKIP = new Set(['worktrees'])
 const KEEP_DIRS = new Set(['.omc', '.claude'])
 const PREVIEWS = '.omc/previews'
 const SHOWN_REFS = 60
-const PAGE_LIMIT = '100'
 // finish-pr.ts 의 NUMBER_OK 와 같다. 만든 after-deploy.ts 에 그대로 적는다
 const NUMBER_OK = '^[A-Za-z0-9._/-]+$'
 

@@ -1,7 +1,3 @@
-import { isObject } from '../core/json.ts'
-import { SECTIONS } from '../core/config.ts'
-import { ConfigError, RemovedConfigError, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'
-import type { Config } from '../core/config.ts'
 // <orch 루트>/config.json 읽기의 한 벌이다.
 //
 // 최상위는 절(Section)마다 객체 하나다. 지금 절(finish, cleanup, queue)의 키는 skills/orch/references/overlay.md 의
@@ -21,6 +17,10 @@ import type { Config } from '../core/config.ts'
 //
 // REMOVED_CONFIG_KEYS 는 orch 5.2.0 에서 지운 키다. 실행 전에 거부하고 핸들러로 옮기는 명령을 알린다.
 
+import { isObject } from '../core/json.ts'
+import { SECTIONS } from '../core/config.ts'
+import { ConfigError, RemovedConfigError, REMOVED_CONFIG_KEYS, section } from '../core/config.ts'
+import type { Config } from '../core/config.ts'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { orchWord } from './commands.ts'
@@ -29,6 +29,7 @@ import { pathOf } from './paths.ts'
 import { shQuote } from './py.ts'
 
 // opts.file 이 없으면 <orch 루트>/config.json 이다. 상대경로 file 은 작업 디렉터리 기준이다.
+
 export function loadConfig(repo: string, opts: { file?: string } = {}): Config {
   const file = opts.file ? resolve(opts.file) : pathOf('config', repo)
   if (!isFile(file)) return {}

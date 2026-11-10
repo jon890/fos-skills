@@ -1,4 +1,3 @@
-import { isObject } from './json.ts'
 // 상주 루프의 자동 머지(orch-loop.ts 머리 주석의 「자동 머지」)가 쓰는 판정의 한 벌이다. 근거는 docs/adr/016-orch-auto-merge.md 다.
 //
 // 함수는 gh, git, 파일 시스템을 부르지 않는다. 입력은 부르는 쪽이 이미 읽은 값(경로 목록, 리뷰 본문, 보드 항목)이다.
@@ -39,6 +38,7 @@ import { isObject } from './json.ts'
 //   - queueOrder       준비를 처음 본 순서에서 같은 모듈 마이그레이션 PR 의 자리만 번호 순으로 바꾸고, 모듈을 함께 가진 PR 을 묶음(--chain)으로 만든다
 //   - sweepArgs        queue.sweep_args 의 --run 을 큐의 Run 으로 맞춘다. merge-with-finish 는 설정의 --run 과 --run 옵션이 다르면 사용법 오류다
 
+import { isObject } from './json.ts'
 import { ConfigError, MIGRATIONS_KEYS, QUEUE_KEYS, section } from './config.ts'
 import { detailText } from './board.ts'
 import { pyRegExp } from './regexp.ts'

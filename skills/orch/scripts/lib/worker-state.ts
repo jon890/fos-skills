@@ -1,4 +1,3 @@
-import { objectOr } from '../core/json.ts'
 // worker 상태 판정 한 벌이다. 한 워크트리(또는 한 dispatch)의 worker 행, PR, 앞선 커밋 수, 터미널 화면을 받아 넷 가운데 하나로 정한다.
 // 사용처: cleanup-sweep.ts(일하는 중 먼저 건너뛰기, PR 없이 끝난 워크트리, 남은 프로세스 끄기), orch-doctor.ts(--run 의 WORKER-STATE 줄),
 // wait-important.ts(화면이 작업 중인 worker 를 끊긴 것으로 보지 않기).
@@ -42,6 +41,7 @@ import { objectOr } from '../core/json.ts'
 //
 // judge 는 조회하지 않는다. 화면이 필요한 handle 은 screenHandles 로 고르고 readScreens 로 읽어 넘긴다.
 
+import { objectOr } from '../core/json.ts'
 import { orcaJson } from './orca.ts'
 import { readScreen, screenLines } from './screen.ts'
 import type { ScreenState } from './screen.ts'

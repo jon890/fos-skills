@@ -1,5 +1,3 @@
-import { alive as pidAlive } from './process.ts'
-import { isObject } from '../core/json.ts'
 // 작업이 만든 Docker 컨테이너, 네트워크, 이미지를 귀속을 확인한 것만 지운다.
 //
 // 무엇을 언제 지우고 무엇을 남기는지는 skills/orch/references/cleanup.md 의 「Docker 자원 반납」 이 소유한다.
@@ -28,6 +26,8 @@ import { isObject } from '../core/json.ts'
 //
 // 환경 변수 DOCKER 로 docker 실행 파일을 바꾼다. 기본 docker.
 
+import { alive as pidAlive } from './process.ts'
+import { isObject } from '../core/json.ts'
 import { ConfigError, section } from './config.ts'
 import type { Config } from './config.ts'
 import { run } from './proc.ts'

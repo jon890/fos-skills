@@ -1,4 +1,3 @@
-import { isObject, objectOr } from '../core/json.ts'
 // Orca CLI 호출의 한 벌이다. 실행 파일은 ORCA 환경 변수, 없으면 orca 다. ORCA_CLI_COMMAND 는 읽지 않는다.
 //
 // `orca orchestration worker-list` 를 부르는 쪽이 알아야 할 동작(worker-list --help 와 실제 Orca 에서 확인했다):
@@ -15,6 +14,7 @@ import { isObject, objectOr } from '../core/json.ts'
 // orchestration 명령에는 늘 withFull 로 --full 을 붙인다. 붙이지 않으면 값이 빈 채로 판정이 엇나간다
 // (띄운 worker 의 단계를 읽지 못해 abandon 하고 다시 띄우거나, 살아 있는 dispatch 를 끝난 것으로 본다).
 
+import { isObject, objectOr } from '../core/json.ts'
 import { run } from './proc.ts'
 import type { RunOptions, RunResult } from './proc.ts'
 

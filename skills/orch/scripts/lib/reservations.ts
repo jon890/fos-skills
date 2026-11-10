@@ -1,4 +1,3 @@
-import { isObject } from '../core/json.ts'
 // 마이그레이션 번호 예약(docs/adr/017-orch-migration-reserve.md)과 ADR 번호 예약의 파일, 잠금, 번호 판정을 이 모듈 한 곳이 소유한다.
 // 명령은 reserve-migration.ts, 읽기만 하는 쪽은 상주 루프의 자동 머지다. 자동 머지는 마이그레이션 예약만 읽는다.
 //
@@ -32,6 +31,7 @@ import { isObject } from '../core/json.ts'
 //                  kind 가 adr 이면 label 과 경로를 위 「ADR 번호」 꼴로 만든다. 부르는 쪽은 ADR 예약 파일의 목록을 넘긴다
 //   - prune        gone 이 true 인 항목만 지운다. null(판정 못 함)과 false 는 남긴다. 지우면 그 번호가 다시 나가기 때문이다
 
+import { isObject } from '../core/json.ts'
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { compareVersion } from './auto-merge.ts'

@@ -1,4 +1,3 @@
-import { objectOr } from '../core/json.ts'
 // 읽지 않은 메시지를 먼저 확인하고 코디네이터에게 질문을 보낸 뒤, 답을 기다리지 않고 끝난다.
 //
 // 사용: worker-ask.ts --from HANDLE --question TEXT
@@ -43,6 +42,7 @@ import { objectOr } from '../core/json.ts'
 //                   한 번 보여 준 메시지로 다시 막지 않으려는 것이다
 //     출력 앞뒤에 다른 줄이 섞여도 마지막 JSON 객체를 읽는다. JSON 이 없으면 값이 없는 것으로 본다
 
+import { objectOr } from '../core/json.ts'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -53,6 +53,7 @@ import { short } from '../lib/output.ts'
 import { pyStr as text } from '../lib/py.ts'
 
 // 답을 받은 출력. 첫 줄이 `answer: <답>` 이고, 지금 출력은 그 뒤에 ask 의 출력을 잇는다. 짧은 출력은 첫 줄만이다
+
 function answered(answer: string, output: string): void {
   process.stdout.write(short() ? `answer: ${answer}\n` : `answer: ${answer}\n${output}\n`)
 }

@@ -1,6 +1,3 @@
-
-import { DEFAULT_IDLE_MIN, worktreeOf, judgeWorker, openRows, stalledStages, readRecords } from '../core/movement.ts'
-import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict } from '../core/movement.ts'
 // 움직임으로 멈춘 worker 와 worker 없이 멈춘 보드 단계를 찾는 한 벌이다.
 // 사용처: stalled-workers.ts(코디네이터가 부르는 조회), orch-loop.ts(틱의 「움직임 확인」), extensions/work-board/bin/worker-marks.ts(보드 worker 줄의 멈춤 표시).
 // 판정 함수는 조회하지 않는다.
@@ -35,6 +32,8 @@ import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict } 
 //   지금 멈추지 않은 것의 기록은 지운다.
 // 조회(collectWorkers, collectStages)는 worker 목록, 워크트리 파일, git, 보드를 읽어 판정 함수에 넘긴다. 쓰지 않는다.
 
+import { DEFAULT_IDLE_MIN, worktreeOf, judgeWorker, openRows, stalledStages, readRecords } from '../core/movement.ts'
+import type { Json, MovementSettings, ScreenMark, WorkerVerdict, StageVerdict } from '../core/movement.ts'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { readBoard } from './board.ts'

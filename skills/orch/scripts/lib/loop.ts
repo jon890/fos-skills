@@ -1,5 +1,3 @@
-import { runKey } from '../core/loop.ts'
-import type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'
 // 상주 루프(orch-loop.ts)의 상태 판정 한 벌이다. 루프 상태 읽기, 생존 판정과 Run 등록을 맡는다.
 // 사용처: orch-loop.ts(쓰는 쪽과 --status), orch-doctor.ts(session-resume 의 loop_alive).
 // 파일 형식은 docs/data-schema.md 「orch 루트에 더하는 파일」 이 정한다. 경로는 모두 <orch 루트>/state/ 아래다.
@@ -34,12 +32,16 @@ import type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'
 //   ps 가 실패한 사이 pid 가 죽었으면 false 다.
 //
 
+import { runKey } from '../core/loop.ts'
+import type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'
 import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeParent, pathOf } from './paths.ts'
 import { envMs } from './env.ts'
 import { run } from './proc.ts'
 import { alive } from './process.ts'
+import { judgeLoop } from '../core/loop.ts'
+
 export const DEFAULT_ALIVE_SEC = 30
 
 export function loopFile(repo: string): string {
@@ -171,5 +173,3 @@ export function loopStatus(repo: string, now: number): LoopStatus {
 
 export { DEFAULT_TICK_SEC, MIN_DEAD_SEC, runKey } from '../core/loop.ts'
 export type { LoopState, LoopStatus, RunEntry } from '../core/loop.ts'
-
-import { judgeLoop } from '../core/loop.ts'

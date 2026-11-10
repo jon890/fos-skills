@@ -1,5 +1,3 @@
-import { closeTerminal as closeOrcaTerminal } from '../lib/orca.ts'
-import { isObject } from '../core/json.ts'
 // 머지가 끝난 worktree 와 로컬 브랜치, 그 worker 터미널과 지시서를 찾아 정리한다.
 //
 // 머지마다 수동으로 정리하면 잊히고, 프로세스가 worktree 를 잡고 있어 그 자리에서 실패한 것은 다시 돌아보지 않는다.
@@ -360,10 +358,11 @@ import { isObject } from '../core/json.ts'
 //
 // 테스트가 waitFree, stopHolders 를 import 한다. 명령으로 실행했을 때만 main 을 부른다.
 
+import { closeTerminal as closeOrcaTerminal } from '../lib/orca.ts'
+import { isObject } from '../core/json.ts'
 import { migrateLegacyNotices } from './legacy-notices.ts'
 import type { Runner } from '../lib/proc.ts'
 import { sweepRouting } from '../lib/routing-log.ts'
-
 import { featureCompletionProblem } from '../lib/feature-evidence.ts'
 import { idleShellVerdict } from '../lib/idle-shells.ts'
 import type { Holder } from '../lib/idle-shells.ts'
@@ -372,7 +371,6 @@ import { homedir } from 'node:os'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
-
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'
 import { ConfigError, loadConfig } from '../lib/config.ts'

@@ -8,6 +8,7 @@
 import { pyRegExp } from './regexp.ts'
 
 // 이유에 이름을 적는 개수. 넘으면 「외 N」 으로 줄인다
+
 const SHOWN = 3
 
 export type Verdict = { update: boolean; reason: string }

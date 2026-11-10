@@ -1,4 +1,3 @@
-import { isObject } from '../core/json.ts'
 // worker 가 Flyway 마이그레이션 파일이나 ADR 문서를 만들기 전에 다음 번호를 잠금을 걸고 예약한다. 근거는 docs/adr/017-orch-migration-reserve.md 다.
 // 파일은 만들지 않는다. 경로만 돌려주고 worker 가 그 이름으로 만든다. 명령이 만들면 다른 worktree 의 경로와 섞인다.
 //
@@ -91,6 +90,7 @@ import { isObject } from '../core/json.ts'
 //     GH                    gh 실행 파일(lib/gh.ts). 기본 gh
 //     ORCH_DIR              orch 루트(lib/paths.ts). 기본은 주 checkout 의 .orch
 
+import { isObject } from '../core/json.ts'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { expandArgs } from '../lib/args.ts'

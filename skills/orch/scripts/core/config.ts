@@ -1,4 +1,5 @@
 import { isObject } from './json.ts'
+
 export type Section = 'finish' | 'cleanup' | 'queue' | 'hooks' | 'pipeline' | 'heavy' | 'migrations' | 'adr' | 'board' | 'review' | 'docker' | 'routing' | 'inbox'
 
 export type Config = Partial<Record<Section, Record<string, unknown>>>

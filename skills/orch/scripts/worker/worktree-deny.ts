@@ -1,4 +1,3 @@
-import { isObject } from '../core/json.ts'
 // 워크트리의 `.claude/settings.local.json` 에 다른 worker 의 자원을 빼앗는 명령과 PR 머지의 deny 규칙을 더한다.
 //
 // 한 머신에서 worker 여럿이 같은 이름의 프로세스와 같은 브라우저를 쓴다.
@@ -23,6 +22,7 @@ import { isObject } from '../core/json.ts'
 //
 // `--help` 는 고유 접두(`--he`)로 줄여 쓸 수 있다(lib/args.ts).
 
+import { isObject } from '../core/json.ts'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expandArgs } from '../lib/args.ts'

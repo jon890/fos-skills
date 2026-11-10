@@ -1,5 +1,3 @@
-import { isUserDecision, decisionEntries, sameKeys } from '../core/decisions.ts'
-
 // 상주 루프의 사용자 결정 알림. 같은 내용은 답하거나 사라지기 전까지 다시 깨우지 않는다.
 // 질문 재전송은 dispatch 와 본문으로 묶고 보드 결정은 남은 줄마다 추적한다.
 // 보드 decide 항목의 `참고:` 로 시작하는 줄은 결정이 아니라 배경이라 세지 않는다.
@@ -8,16 +6,16 @@ import { isUserDecision, decisionEntries, sameKeys } from '../core/decisions.ts'
 //     그동안은 앞 실패와 같은 이유로 던져 루프가 같은 WATCH-ERROR 를 다시 쓰지 않는다. 묶음이 바뀌거나(새 결정, 답한 결정)
 //     코디네이터가 바뀌면 기다리지 않는다. 틱마다 다시 내던 때는 미룬 결정으로 「정할 것 묻기」 가 몇 분마다 왔다(2026-11-04).
 
+import { isUserDecision, decisionEntries, sameKeys } from '../core/decisions.ts'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readBoard } from './board.ts'
-
 import { fire } from './events.ts'
 import { registeredRuns, runKey } from './loop.ts'
 import { boardPath, makeParent, pathOf } from './paths.ts'
-
 import type { Message } from './questions.ts'
 import { LIVE_DISPATCH, workerRows } from './workers.ts'
+
 type Retry = { keys: string[]; failures: number; at: number; reason: string }
 type Seen = { announced: string[]; notified: string[]; coordinator?: string | null; retry?: Retry | null }
 const RETRY_MAX_SEC = 3600

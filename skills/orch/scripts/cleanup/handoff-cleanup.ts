@@ -1,4 +1,3 @@
-import { gitBin } from '../lib/git.ts'
 // orch 작업 폴더에 남은 끝난 산출물을 휴지통 폴더로 옮긴다. 지우지 않으므로 되살릴 수 있다.
 //
 // 기본은 옮길 후보만 보인다. `--apply` 를 주면 옮긴다. 몇 번을 돌려도 같은 상태에서는 같은 결과다.
@@ -65,6 +64,7 @@ import { gitBin } from '../lib/git.ts'
 // 짧은 출력(진입점의 orch cleanup handoff, lib/output.ts): WOULD-TRASH <파일>(dry-run), TRASHED <파일>, TRASH-DIR <폴더> 다. 지시서 줄도 같은 낱말이다.
 // 종료 코드: 0 돌았다(후보가 없어도 0), 2 사용법 오류이거나 orch 작업 폴더를 옮기기 전이다(lib/paths.ts 「옛 구조」)
 
+import { gitBin } from '../lib/git.ts'
 import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, normalize, relative, resolve, sep } from 'node:path'

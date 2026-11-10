@@ -1,5 +1,3 @@
-import { KINDS, unanswered, ageSeconds, brief, dispatchOf } from '../core/questions.ts'
-import type { Message, Notice } from '../core/questions.ts'
 // 코디네이터가 아직 답하지 않은 질문을 Orca 에서 읽고, 알릴 줄과 알린 기록을 정한다. delivery 를 소비하지 않는다.
 // 사용처: watch-questions.ts(Monitor 의 이벤트 소스), orch-loop.ts(상주 루프의 틱), orch-doctor.ts(snapshot, ageSeconds).
 // lib/decisions.ts 와 handlers/decision-pending.ts 는 questionLocations 로 질문 위치를 표시한다.
@@ -24,6 +22,8 @@ import type { Message, Notice } from '../core/questions.ts'
 //
 // 오류는 모두 Error 로 던진다. 부르는 쪽이 조회 실패로 다룬다.
 
+import { KINDS, unanswered, ageSeconds, brief, dispatchOf } from '../core/questions.ts'
+import type { Message, Notice } from '../core/questions.ts'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
