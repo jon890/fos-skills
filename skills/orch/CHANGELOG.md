@@ -1,5 +1,10 @@
 # CHANGELOG: orch
 
+## 7.33.0 (2026-11-10)
+
+- 보드 상태와 단계를 `orch board set`, `step`, `add-step`, `show` 로 고치고 확인한다. 기본 결과는 한 줄이며 `--full` 로 모든 줄을 본다.
+- 코디네이터 안내가 보드 파일 직접 수정 대신 새 명령을 가리킨다.
+
 ## 7.32.0 (2026-11-10)
 
 - 승인 대기를 올리고, 목록을 보고, 거두고, 실행 직전 확인하는 `orch board approval add`, `list`, `cancel`, `check` 를 더한다.
