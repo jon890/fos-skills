@@ -4,6 +4,26 @@ import { test } from 'node:test'
 import { linesRev } from '../bin/board.ts'
 import { item, run, tempBoard, write } from './board-run.ts'
 
+test('엄격 set 은 명시한 빈 상태를 거절하고 상태 생략과 기존 호출은 유지한다', () => {
+  const t = tempBoard()
+  try {
+    write(t.file, { id: 'a', status: 'wait', title: '기존 제목' })
+    const before = readFileSync(t.file, 'utf8')
+    const refused = run(t.file, ['set', 'a', '', '--exact'])
+    assert.equal(refused.code, 1)
+    assert.match(refused.stderr, /status 는 goal\|decide\|doing\|wait\|done 중 하나다/)
+    assert.equal(refused.stdout, '')
+    assert.equal(readFileSync(t.file, 'utf8'), before)
+    assert.equal(run(t.file, ['set', 'a', '--title', '바꾼 제목', '--exact']).code, 0)
+    assert.equal(item(t.file, 'a').status, 'wait')
+    assert.equal(item(t.file, 'a').title, '바꾼 제목')
+    const normal = run(t.file, ['set', 'a', ''])
+    assert.equal(normal.code, 0)
+    assert.equal(normal.stdout, '')
+    assert.equal(item(t.file, 'a').status, 'wait')
+  } finally { t.cleanup() }
+})
+
 test('엄격 set 은 없는 항목을 만들지 않고 기존 진행률 검사를 지킨다', () => {
   const t = tempBoard()
   try {

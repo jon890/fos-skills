@@ -9,9 +9,21 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { readTtl } from '../scripts/lib/gh-budget.ts'
+import { COMMANDS } from '../scripts/lib/commands.ts'
 
 const ORCH = fileURLToPath(new URL('..', import.meta.url))
 const read = (...parts: string[]) => readFileSync(join(ORCH, ...parts), 'utf8')
+
+test('보드 안내는 파일 직접 수정 대신 등록된 상태·단계 명령과 남는 board.ts 동작을 가리킨다', () => {
+  const doc = read('references', 'board.md')
+  assert.match(doc, /`board.json` 은 직접 고치지 않는다/)
+  for (const verb of ['set', 'step', 'add-step', 'show']) {
+    assert.ok(COMMANDS.some((row) => row.group === 'board' && row.verb === verb))
+    assert.ok(doc.includes(`orch board ${verb}`))
+  }
+  for (const verb of ['set', 'mark', 'del']) assert.ok(doc.includes(`board.ts ${verb}`))
+  assert.ok(!doc.includes('`board.ts set/step/mark`'))
+})
 
 // `## 제목` 줄 아래부터 다음 같은 단계 제목 전까지
 function section(text: string, heading: string): string[] {

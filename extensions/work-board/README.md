@@ -41,7 +41,7 @@ Claude Code 안에서 `/board` 를 열면 보드 파일의 항목, 일하는 wor
 - worker: order-api  PR #877 CI 12/12
 - PR: #877
 1. PR·CI·배포·worker 보고·업무 상태와 대조해 지금 상태를 확인하고, 멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘.
-2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.
+2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 orch board set/step/add-step 명령으로 이 항목의 상태와 단계를 고쳐 줘.
 3. 확인한 상태, 진행한 것, 내가 정할 것만 짧게 보고해 줘.
 ```
 
@@ -56,7 +56,7 @@ Claude Code 안에서 `/board` 를 열면 보드 파일의 항목, 일하는 wor
 1. 기다리던 것(답, 결정, 배포, 외부 회신)이 왔는지 업무 댓글, 메신저, PR, 배포 상태로 확인해 줘.
 2. 왔으면 그 내용으로 다음 단계를 진행하고 이 항목을 진행 중(doing)으로 올려 줘.
 3. 아직 오지 않았으면 무엇을 누구에게 기다리는지 적고, 재촉하거나 우회할 방법을 제안해 줘.
-4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.
+4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 orch board set/step/add-step 명령으로 이 항목의 상태와 단계를 고쳐 줘.
 5. 확인한 것, 진행한 것, 내가 정할 것만 짧게 보고해 줘.
 ```
 
@@ -108,19 +108,21 @@ worker 줄 끝의 빨간 글은 손이 필요하다는 뜻이에요. 「멈춤 4
 ## 보드에 항목 적기
 
 보드 파일은 저장소 git 루트의 `.omc/board.json` 이에요. orch 가 worker 를 띄우고 PR 을 머지할 때마다 항목과 단계를 자동으로 고쳐요.
-직접 적을 때는 `board.ts` 를 써요. 경로는 플러그인 안의 `extensions/work-board/bin/board.ts` 예요.
+상태와 단계는 `orch board` 로 고쳐요. `board.json` 은 직접 고치지 않아요. 새 항목을 만들거나 제목·PR 같은 칸을 고칠 때는 플러그인의 `extensions/work-board/bin/board.ts` 를 써요.
 
 ```bash
 BOARD_BIN="<플러그인 경로>/extensions/work-board/bin/board.ts"
 node --disable-warning=ExperimentalWarning "$BOARD_BIN" set order-api doing --title "주문 이력 조회 API" --pr 877 \
   --next "1. 구현" --next "2. 리뷰" --next "3. 머지"
-node --disable-warning=ExperimentalWarning "$BOARD_BIN" step order-api 1   # 1번 단계를 끝내요
+orch board step order-api 1 done        # 1번 단계를 끝내요
+orch board show order-api               # 남은 단계를 봐요
+orch board add-step order-api "배포" --on "877 deploy"
 node --disable-warning=ExperimentalWarning "$BOARD_BIN" list               # 모든 항목과 진행률을 봐요
 ```
 
 상태는 `goal`(목표), `decide`(결정 필요), `doing`(진행 중), `wait`(대기), `done`(완료) 중 하나예요.
 「1. 구현」 처럼 번호로 시작하는 줄이 단계가 되고, 막대는 끝낸 단계 수로 채워져요. 진행 중 항목에는 단계가 하나 이상 있어야 해요.
-모든 옵션은 `board.ts --help` 에 있어요.
+새 명령은 `orch board --help`, 칸을 고치는 옵션은 `board.ts --help` 에 있어요. 단계 번호, `--full`, 보드 파일 선택 규칙은 [보드 명령 안내](../../skills/orch/references/board.md#상태와-단계-고치기)에 있어요.
 
 ## 받는 것
 

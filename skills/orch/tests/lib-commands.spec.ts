@@ -111,6 +111,14 @@ describe('표의 행', () => {
 })
 
 describe('인자 바꾸기', () => {
+  test('보드 수정 명령은 동작 이름과 repo 문맥을 같은 스크립트에 넘긴다', () => {
+    for (const verb of ['set', 'step', 'add-step', 'show']) {
+      const result = ok(['board', verb, 'x'])
+      assert.equal(result.command.script, 'board/board-edit.ts')
+      assert.deepEqual(result.command.context, ['repo'])
+      assert.deepEqual(result.args, [verb, 'x'])
+    }
+  })
   test('동작이 모드 플래그와 위치 인자로 바뀐다', () => {
     assert.deepEqual(ok(['loop', 'start']).args, ['--start'])
     assert.deepEqual(ok(['loop', 'run', '--once']).args, ['--foreground', '--once'])

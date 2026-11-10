@@ -155,6 +155,12 @@ const ROWS: Row[] = [
   { group: 'cleanup', verb: 'worktree', script: 'cleanup/remove-worktree.ts', legacy: { name: 'remove-worktree', flags: [] }, usage: 'orch cleanup worktree <워크트리>' },
   { group: 'cleanup', verb: 'handoff', script: 'cleanup/handoff-cleanup.ts', context: ['repo', 'run'], legacy: { name: 'handoff-cleanup', flags: [] }, usage: 'orch cleanup handoff [--apply]' },
   // board
+  ...[
+    ['set', '<항목> <상태>'], ['step', '<항목> <번호> done|undo|text [글] [--on 사건]'],
+    ['add-step', '<항목> <글> [--on 사건]'], ['show', '<항목>'],
+  ].map(([verb, args]): Row => ({
+    group: 'board', verb, script: 'board/board-edit.ts', prepend: [verb], context: ['repo'], usage: `orch board ${verb} ${args}`,
+  })),
   { group: 'board', verb: 'approval add', script: 'board/board-approval.ts', prepend: ['add'], context: ['repo', 'run'], runFrom: 'run-current', usage: 'orch board approval add <id> --title <제목> --kind <post|spec|step|real|command> [--keep-open] [...]' },
   { group: 'board', verb: 'approval list', script: 'board/board-approval.ts', prepend: ['list'], context: ['repo'], usage: 'orch board approval list [--full]' },
   { group: 'board', verb: 'approval cancel', script: 'board/board-approval.ts', prepend: ['cancel'], context: ['repo'], usage: 'orch board approval cancel <id> [--reason <이유>]' },

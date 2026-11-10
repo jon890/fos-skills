@@ -890,7 +890,7 @@ export function checkable(item) {
 // 항목 상태 확인 요청문의 지시 부분. checkPrompt 가 항목 정보 뒤에 붙인다
 export const CHECK_PROMPT = [
   '1. PR·CI·배포·worker 보고·업무 상태와 대조해 지금 상태를 확인하고, 멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘.',
-  '2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.',
+  '2. 확인하지 못한 상태는 추측하지 말고 남겨 줘. 확인한 근거로 orch board set/step/add-step 명령으로 이 항목의 상태와 단계를 고쳐 줘.',
   '3. 확인한 상태, 진행한 것, 내가 정할 것만 짧게 보고해 줘.',
 ].join('\n')
 
@@ -921,7 +921,7 @@ export const RESUME_PROMPT = [
   '1. 기다리던 것(답, 결정, 배포, 외부 회신)이 왔는지 업무 댓글, 메신저, PR, 배포 상태로 확인해 줘.',
   '2. 왔으면 그 내용으로 다음 단계를 진행하고 이 항목을 진행 중(doing)으로 올려 줘.',
   '3. 아직 오지 않았으면 무엇을 누구에게 기다리는지 적고, 재촉하거나 우회할 방법을 제안해 줘.',
-  '4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 extensions/work-board/bin/board.ts 로 이 항목의 상태와 단계를 고쳐 줘.',
+  '4. 확인하지 못한 것은 추측하지 말고 남겨 줘. 확인한 근거로 orch board set/step/add-step 명령으로 이 항목의 상태와 단계를 고쳐 줘.',
   '5. 확인한 것, 진행한 것, 내가 정할 것만 짧게 보고해 줘.',
 ].join('\n')
 
@@ -1455,7 +1455,7 @@ function ago(at) {
 export const START_PROMPT = [
   '오늘 작업을 시작하자.',
   '1. 먼저 어제 미룬 결정과 아침에 확인하기로 한 목록을 모아 줘. 보드의 결정 필요(decide) 항목과 끝나지 않은 확인 단계, 어제 대화에서 미룬 결정, 답하지 않은 worker 질문을 찾아 맨 앞에 짧게 보여 주고, 지금 정할 수 있는 것은 바로 물어봐 줘.',
-  '2. orch cleanup handoff --apply 로 끝난 지시서를 정리해 줘. 그다음 .omc/board.json 을 오늘 기준으로 갱신하고 done 항목은 비워 줘.',
+  '2. orch cleanup handoff --apply 로 끝난 지시서를 정리해 줘. 그다음 보드 상태와 단계는 orch board 명령으로 오늘 기준에 맞추고, done 항목은 board.ts del 로 비워 줘. board.json 은 직접 고치지 마.',
   '3. 남은 워크트리, 세션, 머지된 브랜치 정리는 상주 루프의 cleanup-sweep 이 맡는다. 루프가 정리하지 못하고 남긴 것만 알려 줘.',
   '4. orch 상주 루프와 대기(wait-important)가 꺼져 있으면 다시 띄우고, 쌓인 worker 보고를 처리해 줘.',
   '5. 열린 PR 의 CI 와 리뷰, 막힌 것, 내가 정할 것을 짧게 보고하고 정할 것은 바로 물어봐 줘.',

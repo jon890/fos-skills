@@ -48,7 +48,7 @@ test('요청문은 상태 확인과 다음 단계 진행이나 정할 것 묻기
   const sentence = 'PR·CI·배포·worker 보고·업무 상태와 대조해 지금 상태를 확인하고, 멈춰 있으면 다음 단계를 진행하거나 내가 정할 것을 물어 줘'
   assert.ok(CHECK_PROMPT.includes(sentence))
   assert.ok(checkPrompt({ id: 'a', status: 'doing' }, null, null).endsWith(CHECK_PROMPT))
-  for (const text of ['추측하지 말고', 'board.ts']) assert.ok(CHECK_PROMPT.includes(text), text)
+  for (const text of ['추측하지 말고', 'orch board']) assert.ok(CHECK_PROMPT.includes(text), text)
 })
 
 test('대기 사유는 끝나지 않은 단계와 기다림을 적은 참고 줄이다', () => {
@@ -75,7 +75,7 @@ test('대기 항목 요청문은 대기 사유, 업무 주소, worker, PR 을 �
   assert.match(text, /- worker: 없음 \(워크트리 login-fix\)\n/)
   assert.match(text, /- PR: #41\n/)
   assert.ok(text.endsWith(RESUME_PROMPT))
-  for (const words of ['업무 댓글, 메신저, PR, 배포 상태로 확인', '진행 중(doing)으로 올려', '재촉하거나 우회할 방법', '추측하지 말고', 'board.ts'])
+  for (const words of ['업무 댓글, 메신저, PR, 배포 상태로 확인', '진행 중(doing)으로 올려', '재촉하거나 우회할 방법', '추측하지 말고', 'orch board'])
     assert.ok(RESUME_PROMPT.includes(words), words)
   const bare = resumePrompt({ id: 'b', status: 'wait' }, null, null)
   assert.match(bare, /대기 사유: 적혀 있지 않음\n- 업무: 없음\n- worker: 없음\n- PR: 없음/)

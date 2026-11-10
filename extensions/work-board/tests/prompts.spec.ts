@@ -10,7 +10,7 @@ import { START_PROMPT, DECIDE_PROMPT } from '../hooks/register.js'
 const read = (path: string) => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8')
 
 test('오늘 시작 요청문은 보드 갱신, 정리, 감시, 보고, 확인 단계 확인을 담는다', () => {
-  for (const text of ['orch cleanup handoff --apply', 'done 항목은 비워', 'cleanup-sweep 이 맡는다', 'wait-important', '정할 것은 바로 물어봐', '확인 단계', '사람이 할 확인만']) {
+  for (const text of ['orch cleanup handoff --apply', 'done 항목은 board.ts del 로 비워', 'cleanup-sweep 이 맡는다', 'wait-important', '정할 것은 바로 물어봐', '확인 단계', '사람이 할 확인만']) {
     assert.ok(START_PROMPT.includes(text), text)
   }
 })
@@ -38,4 +38,11 @@ test('보드 스킬은 매니페스트에 없고 훅은 요청문을 직접 보�
     assert.doesNotMatch(read(file), /work-board\/board-/, file)
   }
   assert.doesNotMatch(read('extensions/work-board/hooks/register.js'), /prompt\.submit\(|command: 'board-start'|command: 'board-decide'/)
+})
+
+test('시작 요청은 직접 JSON 수정 대신 보드 명령을 안내한다', () => {
+  assert.ok(START_PROMPT.includes('orch board'))
+  assert.ok(START_PROMPT.includes('board.ts del'))
+  assert.ok(START_PROMPT.includes('board.json 은 직접 고치지 마'))
+  assert.ok(!START_PROMPT.includes('.omc/board.json 을 오늘 기준으로 갱신'))
 })
