@@ -274,6 +274,9 @@ describe('ciState', () => {
     assert.equal(ciState([old, attempt('SUCCESS', '2026-10-30T02:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'failed')
     assert.equal(ciState([attempt('FAILURE', '2026-10-30T01:00:00Z', 'CI', 'COMPLETED', 'old-head')], ['test'], false, 'head').state, 'pending')
     assert.equal(ciState([old, attempt('SUCCESS', 'invalid')], ['test'], false, 'head').state, 'failed')
+    const queued = attempt(null, '0001-01-01T00:00:00Z', 'CI', 'QUEUED')
+    assert.equal(ciState([old, queued], ['test'], false, 'head').state, 'failed')
+    assert.equal(ciState([attempt('SUCCESS', '2026-10-30T01:00:00Z'), queued], ['test'], false, 'head').state, 'pending')
     assert.equal(ciState([run('test', 'CANCELLED'), run('test', 'SUCCESS')], ['test'], false, 'head').state, 'failed')
   })
   test('필수 체크가 모두 나타나 성공으로 끝나고 실패가 없으면 passed 이고 checks 는 나타난 체크 전부다', () => {

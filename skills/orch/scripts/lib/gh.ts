@@ -232,9 +232,13 @@ export function currentChecks(rollup: unknown, head?: string): Record<string, un
     const left = workflow(a), right = workflow(b)
     return left !== null && left === right || left === null && right === null && !!field(a, 'context') && !!field(b, 'context')
   }
+  const started = (row: Record<string, unknown>): number => {
+    const value = field(row, 'startedAt') ?? ''
+    return value.startsWith('0001-') ? Number.NaN : Date.parse(value)
+  }
   return rows.filter((row) => !rows.some((newer) =>
     sameSource(row, newer) && checkName(row) !== '' && checkName(newer) === checkName(row) &&
-    Date.parse(field(newer, 'startedAt') ?? '') > Date.parse(field(row, 'startedAt') ?? ''),
+    started(newer) > started(row),
   ))
 }
 
