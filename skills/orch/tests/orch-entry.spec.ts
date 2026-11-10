@@ -138,6 +138,34 @@ describe('번들 고르기', () => {
     assert.doesNotMatch(r.stderr, /STALE-BUNDLE/)
   })
 
+  test('저장소 checkout 의 진입점이 설치본으로 넘어가면 stderr 에 설치본 버전과 ORCH_SCRIPTS_DIR 를 알리고 동작은 그대로다', () => {
+    const config = join(tmp, 'profile')
+    const installed = bundle('installed')
+    mkdirSync(join(installed, '.claude-plugin'), { recursive: true })
+    writeFileSync(join(installed, '.claude-plugin', 'plugin.json'), JSON.stringify({ version: '9.8.7' }))
+    install(config, [{ scope: 'user', installPath: installed }])
+    const checkout = bundle('checkout')
+    mkdirSync(join(checkout, '.git'))
+    const entry = join(checkout, 'skills', 'orch', 'bin', 'orch.ts')
+    const r = orch(['hello', 'x'], { CLAUDE_CONFIG_DIR: config }, entry)
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(r.stdout.trim(), 'installed x')
+    assert.match(r.stderr, /orch: 이 checkout 의 scripts 가 아니라 설치본 9\.8\.7 을 쓴다\. 이 checkout 을 쓰려면 ORCH_SCRIPTS_DIR=\S*checkout\/skills\/orch\/scripts$/m)
+    assert.equal(r.stderr.split('\n').filter((line) => line.includes('설치본 9.8.7')).length, 1)
+  })
+
+  test('checkout 이 아닌 번들의 진입점이나 ORCH_SCRIPTS_DIR 를 준 호출은 설치본 안내를 내지 않는다', () => {
+    const config = join(tmp, 'profile')
+    install(config, [{ scope: 'user', installPath: bundle('installed') }])
+    const plain = orch(['hello'], { CLAUDE_CONFIG_DIR: config }, join(bundle('copy'), 'skills', 'orch', 'bin', 'orch.ts'))
+    assert.doesNotMatch(plain.stderr, /이 checkout 의 scripts/)
+    const checkout = bundle('checkout')
+    mkdirSync(join(checkout, '.git'))
+    const forced = orch(['hello'], { CLAUDE_CONFIG_DIR: config, ORCH_SCRIPTS_DIR: join(checkout, 'skills', 'orch', 'scripts') }, join(checkout, 'skills', 'orch', 'bin', 'orch.ts'))
+    assert.equal(forced.stdout.trim(), 'checkout')
+    assert.doesNotMatch(forced.stderr, /이 checkout 의 scripts/)
+  })
+
   test('설치본이 이 기능 이전 번들이면 넘기지 않고 갱신을 안내하며 3 이다', () => {
     const config = join(tmp, 'profile')
     install(config, [{ scope: 'user', installPath: bundle('before', { lib: false }) }])
@@ -289,7 +317,7 @@ describe('새 꼴과 옛 꼴', () => {
     assert.equal(fresh.code, 2)
     assert.equal(old.code, fresh.code)
     assert.equal(old.stdout, fresh.stdout)
-    assert.match(old.stderr, /^RETIRED/)
+    assert.match(old.stderr, /^RETIRED/m)
     const loop = orch(['orch-loop.ts', '--start'], { CLAUDE_CONFIG_DIR: config })
     assert.match(loop.stderr, /^orch: 새 꼴: orch loop start$/m)
   })
