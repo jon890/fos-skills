@@ -94,6 +94,7 @@ import { specFiles } from '../../lib/last-pr.ts'
 import { boardPath, makeParent, pathOf } from '../../lib/paths.ts'
 import { run as runSync, scriptCommand } from '../../lib/proc.ts'
 import { turnLine } from '../../lib/queue-turn.ts'
+import { isQueueCommand } from '../../lib/queue-process.ts'
 import { addedPaths, readReservations } from '../../lib/reservations.ts'
 import { sendNotice } from '../../lib/run-notice.ts'
 import { branchesOf } from '../../lib/spec.ts'
@@ -109,9 +110,6 @@ const LOOP_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 
 // 자동 머지 로그를 남기는 기간(머리 주석의 「자동 머지」 1)
 const AUTO_MERGE_LOG_KEEP_MS = 7 * 24 * 60 * 60 * 1000
-
-// 명령줄에 이 글자가 들면 도는 머지 큐로 본다(머리 주석의 「자동 머지」 2)
-const QUEUE_COMMANDS: readonly string[] = ['merge_queue.', 'merge-queue.sh', 'merge-with-finish.']
 
 // AUTO-MERGE-HELD 줄에 옮기는 명령줄의 앞 글자 수
 const HELD_COMMAND_CHARS = 160
@@ -218,7 +216,7 @@ function dropOldLogs(dir: string, keep: string | null): void {
 }
 
 function queueRunning(list: Proc[]): boolean {
-  return list.some((p) => QUEUE_COMMANDS.some((name) => p.command.includes(name)))
+  return list.some((p) => isQueueCommand(p.command))
 }
 
 // 도는 큐 때문에 이 틱의 자동 머지를 미룬다. 큐가 무엇을 기다리는지 로그에 한 줄씩 남긴다(머리 주석의 「자동 머지」 2)
@@ -228,7 +226,7 @@ function logHeld(repo: string, list: Proc[]): void {
     for (const turn of turns) log(`AUTO-MERGE-HELD ${turnLine(turn, Date.now())}`)
     return
   }
-  for (const p of list.filter((row) => QUEUE_COMMANDS.some((name) => row.command.includes(name)))) {
+  for (const p of list.filter((row) => isQueueCommand(row.command))) {
     log(`AUTO-MERGE-HELD pid ${p.pid} 차례 기록 없음: ${p.command.slice(0, HELD_COMMAND_CHARS)}`)
   }
 }

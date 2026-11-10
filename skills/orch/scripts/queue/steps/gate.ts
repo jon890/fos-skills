@@ -1,10 +1,11 @@
 // 머지 전 조건 판정. 머지 큐(merge.ts 의 readyToMerge)와 `orch queue gate`(queue/gate.ts)가 같은 함수를 쓴다.
-// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 기능 완료 근거 블록(독립 리뷰 줄 포함).
+// 조건은 여기 한 곳에만 둔다: 필수 체크, 미해결 리뷰 스레드, base 와의 충돌, 기능 완료 근거 블록(독립 리뷰 줄 포함), 마이그레이션 번호.
 // 첫 이유에서 멈추지 않고 걸린 이유를 모두 모아 돌려준다. 고친 뒤 다시 걸었을 때 다음 이유로 또 멈추는 일을 줄이려는 것이다.
 
 import { baseMergesOnly, featureBranch, featureEvidenceProblem } from '../../lib/feature-evidence.ts'
 import { ghJson } from '../../lib/gh.ts'
 import { NO_LIMIT_MS, runAsync } from '../../lib/proc.ts'
+import { migrationReasons } from './migrations.ts'
 import { requiredChecks } from './checks.ts'
 import type { Pr, StepContext } from './model.ts'
 import { Conflict, FAIL_SEL, HeadChanged, PENDING, ROLL_NAMES, ROLL_NAMES_NO_SKIPPED, Stop, WorkerFix } from './model.ts'
@@ -13,8 +14,8 @@ import { fetchPrRefs } from './overlap.ts'
 import { field, prEnv } from './pr.ts'
 import { chomp, log, namesJson, nap, stop } from './runtime.ts'
 
-// ci 는 체크, threads 와 evidence 는 worker 가 고칠 것, conflict 는 base 와의 충돌, mergeable 은 그 밖의 합칠 수 없는 상태, lookup 은 조회 실패다
-export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'lookup'
+// ci 는 체크, threads·evidence·migration 은 worker 가 고칠 것, conflict 는 base 와의 충돌, mergeable 은 그 밖의 합칠 수 없는 상태, lookup 은 조회 실패다
+export type GateKind = 'ci' | 'threads' | 'conflict' | 'mergeable' | 'evidence' | 'lookup' | 'migration'
 export type GateReason = { kind: GateKind; text: string }
 // none 은 체크를 보지 않고, failed 는 실패한 체크만 보고(체크를 기다린 뒤), all 은 진행 중이거나 나타나지 않은 체크도 본다
 export type GateChecks = 'none' | 'failed' | 'all'
@@ -150,6 +151,7 @@ export async function gateReasons(stepContext: StepContext, state: StepState, ch
       (verified) => fetchPrRefs(stepContext, state) && baseMergesOnly(state.repoDir, p.ph, verified, p.base))
     if (problem) reasons.push({ kind: 'evidence', text: problem })
   }
+  reasons.push(...migrationReasons(state))
   return { reasons, summary: facts.join(' ') }
 }
 
@@ -160,7 +162,7 @@ export function holdWith(state: StepState, reasons: GateReason[]): never {
   const n = state.p.n
   const joined = reasons.map((r) => r.text).join('; ')
   if (reasons.some((r) => r.kind === 'conflict')) throw new Conflict(`${n} ${joined}`)
-  if (reasons.some((r) => r.kind === 'threads' || r.kind === 'evidence')) {
+  if (reasons.some((r) => r.kind === 'threads' || r.kind === 'evidence' || r.kind === 'migration')) {
     // 스레드는 worker 가 고치는 동안 다른 PR 을 먼저 처리하고 정리 전에 한 번 다시 본다
     throw new WorkerFix(`${n} ${joined}`, joined, reasons.some((r) => r.kind === 'threads'))
   }
