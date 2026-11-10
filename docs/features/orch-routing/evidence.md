@@ -125,3 +125,16 @@
 - 우리 실측 Sonnet medium: fos-skills 저장소의 2026-11-05 이후 Sonnet medium `impl-explore` 13건은 첫 리뷰 P2 평균 1.15 다. 같은 기간 sol medium 14건은 0.42 다(코디네이터 정리). 이 수치는 Sonnet 구현을 `high` 로 올리는 근거 가운데 하나다. 표본이 작아 방향만 본다.
 - 한계: 같은 계획을 medium 과 high 로 구현해 비교한 직접 측정은 찾지 못했다. effort 이름은 제공자와 세대마다 뜻이 달라 Opus medium 과 sol medium 은 같은 양이 아니다(OpenAI 모델 안내 https://learn.chatgpt.com/docs/models). 저장소 하나, 표본이 작다.
 - 결정: 계획을 마친 구현(`impl-planned`, `impl-explore`)에서 Opus 5.5 와 sol 은 `medium` 을 넘기지 않는다. Sonnet 5.5 는 `high` 가 기본이다. 실패하면 sol 과 Opus 는 effort 를 올리지 않고 모델을 바꾼다. Sonnet 의 medium 과 high 는 실측 기록(`routing-log.jsonl`)이 쌓이면 다시 본다. 집계 방법은 [agent-selection.md](../../../skills/orch/references/agent-selection.md) 의 「실측 기록」 절이다.
+
+## 2026-11-10 Claude Fable 5.2 (실험 전 수치)
+
+사용자 결정(2026-11-10)으로 Fable 5.2 를 바로 후보에 넣지 않고 크고 어려운 일 다섯 건에 실험한다. 이 절은 실험을 시작하기 전에 본 공개 수치를 모은다. 실험 결과는 실측 기록으로 따로 남긴다. 수치는 2026-11-10 에 수집했고, 값이 바뀌면 아래 출처에서 다시 확인한다.
+
+- 모델 id 는 `claude-fable-5-2` 다(`--model fable` 도 5.2 로 풀린다). 2026-11-10 코디네이터가 `claude -p --model claude-fable-5-2` 로 응답을 확인했다. 공개는 2026-11-09 다.
+- 가격은 입력 8, 출력 40($/1M 토큰)이다. Fable 5.1 은 10 / 50, Opus 5.5 는 4 / 20 이다.
+- Artificial Analysis 작업 한 건(최상위 effort): Fable 5.2 26.54달러·46.4분, Opus 5.5 약 10달러다. 코딩 에이전트 지수의 작업 한 건은 Opus 5.5 11.42달러, sol 1.50달러다.
+- Anthropic 측정(Fable 5.2 / Opus 5.5): FrontierSWE v2 69.9 / 62.3, FrontierCode 2.0 49.1(xhigh) / 45.5, SWE-bench Pro 93.0 / 89.9, Terminal-Bench 4.0 67.6 / 66.4(오차 안).
+- 독립 측정 Vals AI(Fable 5.2 / Opus 5.5): Terminal-Bench 4.0 65.15 / 65.15, ProgramBench 19.0 / 18.5, SWE-bench Multimodal 62.3 / 70.2.
+- Artificial Analysis 지능 지수 v5: Fable 5.2 max 65, high 62(출력 토큰 40% 적음), Opus 5.5 max 59, sol max 55. 코딩 에이전트 지수 v2.0 은 Opus 5.5 61.7, Fable 5.1 57.6, sol 54.1 이고 Fable 5.2 는 아직 없다.
+- 읽기: 몇 시간짜리 큰 작업(FrontierSWE)에서만 뚜렷이 앞선다. 독립 측정의 터미널 작업은 Opus 와 같다. Anthropic 은 일상 작업에 Opus 5.5 를 권한다. 그래서 큰 일 다섯 건만 실험하고, 가격 기준은 그 결과 뒤에 정한다.
+- 출처: [llm-stats(Anthropic 수치)](https://llm-stats.com/blog/research/claude-fable-5-2-launch), [Vals AI](https://www.vals.ai/models/anthropic_claude-fable-5-2), [Artificial Analysis](https://artificialanalysis.ai/models/claude-fable-5-2), [Artificial Analysis 발표](https://x.com/ArtificialAnlys/status/2119878995386982508), [The Decoder](https://the-decoder.com/claude-fable-5-2-and-mythos-5-2-cement-anthropics-ai-lead-just-before-its-ipo/), [CNBC](https://www.cnbc.com/2026/11/09/anthropic-claude-fable-5-2-mythos-5-2.html), [Fortune](https://fortune.com/2026/11/09/anthropic-debuts-updated-claude-fable-and-mythos-models-undercutting-price-of-openais-gpt-6-astra-by-up-to-80/)
