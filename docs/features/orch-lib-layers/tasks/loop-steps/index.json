@@ -1,18 +1,18 @@
 {
   "name": "loop-steps",
   "description": "상주 루프를 단계 파일과 lifecycle 로 나누고 기존 결과를 유지한다",
-  "pr_scope": "orch-loop.ts 의 틱 단계를 loop/steps/ 로, 잠금·시작·멈춤·생존 타이머를 loop/lifecycle.ts 로 옮기는 일괄 이동이며 진입 경로와 출력·상태 파일은 그대로 둔다.",
+  "pr_scope": "orch-loop.ts 의 틱 단계를 loop/steps/ 로, 잠금·시작·멈춤·생존 타이머를 loop/lifecycle.ts 로 옮기는 일괄 이동이며 진입 경로와 출력·상태 파일은 그대로 두고, 지시서가 함께 맡긴 옛 cleanup-sweep 머리 주석 가리킴과 옛 「대기 확인」 주석도 고친다.",
   "deferred": [],
   "status": "pending",
   "created_at": "2026-11-10",
   "spec": "docs/features/orch-lib-layers/spec.md",
   "design": "docs/features/orch-lib-layers/design.md",
-  "verification_plan": "phase-01.md",
+  "verification_plan": "phase-02.md",
   "requirements": [
     "REQ12",
     "REQ13"
   ],
-  "total_phases": 2,
+  "total_phases": 3,
   "current_phase": 1,
   "phases": [
     {
@@ -20,13 +20,21 @@
       "file": "phase-01.md",
       "execution_profile": "standard",
       "requirements": [
-        "REQ12",
         "REQ13"
       ]
     },
     {
       "number": 2,
       "file": "phase-02.md",
+      "execution_profile": "standard",
+      "requirements": [
+        "REQ12",
+        "REQ13"
+      ]
+    },
+    {
+      "number": 3,
+      "file": "phase-03.md",
       "execution_profile": "standard",
       "requirements": [
         "REQ12"
